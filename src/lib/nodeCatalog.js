@@ -27,8 +27,13 @@ import { GAMEPAD_BUTTONS, GAMEPAD_AXES } from './gamepadPrefs';
  * `initial` or `invert` reads perfectly well on a card. It exists for the ones that do
  * not — a flag whose meaning is a sentence ("reset each round") cannot be a camelCase
  * identifier without becoming a riddle.
+ * 21-B B7: `note` is one line of prose the CARD renders under its rows. It exists for the
+ * facts a socket label cannot carry and that get filed as bugs otherwise — "my peer does
+ * not see it", "my copies vanished when I stopped the sim". HudNode had hand-rolled
+ * exactly this for `hudscreen`; a spec field means the next such node needs no card of
+ * its own to say its one important thing.
  * @typedef {{ key: string, kind: 'range' | 'select' | 'toggle' | 'text', label?: string, min?: number, max?: number, step?: number, options?: string[], placeholder?: string, maxLength?: number }} NodeParam
- * @typedef {{ type: string, label: string, defaults: Record<string, any>, params?: NodeParam[], inputs?: string[], inputLabels?: Record<string, string> }} NodeSpec
+ * @typedef {{ type: string, label: string, defaults: Record<string, any>, params?: NodeParam[], inputs?: string[], inputLabels?: Record<string, string>, note?: string }} NodeSpec
  */
 
 /** @type {{ group: string, items: NodeSpec[] }[]} */
@@ -101,6 +106,37 @@ export const nodeCatalog = [
 				inputs: ['target'],
 				inputLabels: { target: 'target object' },
 				params: [{ key: 'read', kind: 'select', options: ['top', 'bottom', 'height', 'y', 'speed'] }]
+			},
+			// 21-B B7: THE SPAWNER. Copies of a template object, with real bodies — the
+			// thing that could not exist before, because startSimulation walked the scene
+			// exactly once and anything created during a run was inert.
+			{
+				type: 'spawn',
+				label: 'Spawn',
+				defaults: {
+					x: 0,
+					y: 3,
+					z: 0,
+					count: 1,
+					maxAlive: 32,
+					interval: 0,
+					spread: 0.5
+				},
+				inputs: ['trigger', 'at', 'source'],
+				inputLabels: {
+					at: 'at — offset from the template (wire a Vector 3)',
+					source: 'template — the object copies are made from'
+				},
+				// `count`/`maxAlive` are CLAMPED again in spawner.js (20 and 200): a param is
+				// an authored value, never a limit — a peer's edited node arrives as data.
+				params: [
+					{ key: 'count', kind: 'range', min: 1, max: 20, step: 1, label: 'copies per fire' },
+					{ key: 'maxAlive', kind: 'range', min: 1, max: 200, step: 1, label: 'max alive' },
+					{ key: 'interval', kind: 'range', min: 0, max: 10, step: 0.1, label: 'min seconds between' },
+					{ key: 'spread', kind: 'range', min: 0, max: 5, step: 0.1 }
+				],
+				// the two things that WILL be reported otherwise
+				note: 'Copies exist only while the simulation runs — never saved. The host spawns; every peer receives the copy.'
 			}
 		]
 	},

@@ -24,6 +24,10 @@ import {
 	scenePhysicsDefaults
 } from './scenePhysics';
 import { velocityFromSamples, clampThrow, MAX_LINVEL, MAX_ANGVEL } from './throwVelocity';
+// B7: spawned objects are swept when the run ends. transientObjects is a LEAF (the two
+// stores only), so this edge closes nothing — unlike objectActions, which the
+// out-of-bounds delete has to reach dynamically.
+import { removeTransientObjects } from './transientObjects';
 import { burstObjectParticles } from './particleActions';
 import { hasImpactEmitter } from './particleRuntime';
 import { nameOf } from './lockControl';
@@ -635,6 +639,148 @@ function createCollidersFor(object, body, p, dynamic, entry, knownSpec) {
 	return { colliders, spec };
 }
 
+/**
+ * B7: ONE body constructor, called from BOTH sim start and `physicsAddBody`.
+ *
+ * There was no mid-sim creation path at all before this: `startSimulation` walked
+ * `group.children` exactly once, so an object created during a run was inert. Rather
+ * than a second, drifting copy of the construction, the block moved here VERBATIM —
+ * which matters because it encodes four conventions that are not obvious from outside:
+ * every body starts WORLD-ALIGNED with `initialQuat` compensating (revolute joints
+ * require one axis valid in both bodies' local frames, C3), hull/custom bodies sit at
+ * the OBJECT ORIGIN while primitives sit at the AABB centre, sleep is OFF for dynamics
+ * (a kinematic platform moving under a sleeping body never wakes it), and a
+ * flow-ANIMATED non-dynamic object becomes a kinematic platform.
+ *
+ * Returns null for anything with no collider spec (lights, empties). `entry` is null for
+ * a FIXED body: BodyEntry only exists for dynamic/kinematic, which is the same split the
+ * `fixedBodies`/`fixedColliders` maps encode.
+ * @param {any} object @param {any} p collectParams entry
+ * @param {{dynamic: boolean, kinematic: boolean, spec?: any}} opts
+ * @returns {{entry: BodyEntry|null, body: any, colliders: any[], spec: any} | null}
+ */
+function createBodyFor(object, p, opts) {
+	// CL-A A1: the shape measurement + hull/custom vert extraction live in
+	// colliderSpec.js (ONE source of truth, shared with the collider viz).
+	// Colliders stay ORIENTED: primitives fit the LOCAL AABB (rotation stripped
+	// for the measure) and carry the rotation on the desc; hull/custom pieces
+	// bake it into the verts — so every body starts WORLD-ALIGNED.
+	const spec = opts.spec ?? specOf(object, p);
+	if (!spec) return null; // lights/empties
+	const { dynamic, kinematic } = opts;
+	// hull/custom bodies sit at the OBJECT ORIGIN (verts are origin-relative);
+	// primitives at the AABB center (center-offset bookkeeping)
+	const at = spec.pieces ? object.position : spec.center;
+	// sleep OFF for dynamics: a kinematic platform moving UNDER a sleeping
+	// body never wakes it (existing contact, unchanged normal) — the resting
+	// box would ignore the spinning slab; broadcasts gate on movement instead
+	const bodyDesc = (dynamic
+		? RAPIER.RigidBodyDesc.dynamic().setCanSleep(false)
+		: kinematic
+			? RAPIER.RigidBodyDesc.kinematicPositionBased()
+			: RAPIER.RigidBodyDesc.fixed()
+	).setTranslation(at.x, at.y, at.z);
+	// B4: scene damping defaults — the knob that turns a jittery tower stable
+	// and stops crates sliding forever. Dynamics only: a kinematic body's motion
+	// is prescribed and a fixed one has none.
+	if (dynamic) {
+		const defaults = get(scenePhysicsDefaults);
+		bodyDesc.setLinearDamping(defaults.damping.linear ?? 0);
+		bodyDesc.setAngularDamping(defaults.damping.angular ?? 0);
+	}
+	const body = world.createRigidBody(bodyDesc);
+	// B4: no CCD by default, and a 20 m/s throw moves 0.33 m per step — thin
+	// walls tunnel, which is precisely the throw gesture's failure mode
+	if (dynamic && get(scenePhysicsDefaults).ccd) body.enableCcd(true);
+	/** @type {BodyEntry} */
+	const entry = {
+		object,
+		body,
+		offset: new THREE.Vector3(),
+		initialQuat: object.quaternion.clone(),
+		mode: /** @type {'dynamic'|'kinematic'} */ (dynamic ? 'dynamic' : 'kinematic'),
+		hull: false,
+		hold: /** @type {'user'|'external'|null} */ (null),
+		holdUntil: 0,
+		samples: /** @type {any[]} */ ([]),
+		colliders: /** @type {any[]} */ ([]),
+		shapeKey: '',
+		// the pose WE last wrote — a deviation means someone else (a peer's
+		// move applier, undo, an AI edit) wrote the object mid-sim
+		lastWritten: { pos: object.position.clone(), quat: object.quaternion.clone() }
+	};
+	const tracked = dynamic || kinematic;
+	const built = createCollidersFor(object, body, p ?? {}, dynamic, tracked ? entry : null, spec);
+	if (dynamic && p?.freeze) applyFreeze(body, p.freeze); // CL-A A5
+	return { entry: tracked ? entry : null, body, colliders: built?.colliders ?? [], spec };
+}
+
+/**
+ * B7: the bookkeeping half of createBodyFor — which array/map a fresh body belongs in,
+ * plus the two things only a DYNAMIC body owes: a `beforeStates` row (the sim-start pose
+ * that Reset, `stopSimulation`'s undo entry and out-of-bounds RESPAWN all read) and a
+ * suspended animation effect when it is also flow-animated (dynamic wins for the run).
+ * @param {any} object @param {any} p @param {{entry: BodyEntry|null, body: any, colliders: any[]}} made
+ */
+function trackBody(object, p, made) {
+	const { entry, body, colliders } = made;
+	if (entry?.mode === 'dynamic') {
+		beforeStates.push({ uuid: object.uuid, before: transformOf(object) });
+		// dynamic wins over an animation: suspend the effect for the run
+		if (isAnimatedTarget(object.uuid)) {
+			suspendAnimation(object.uuid);
+			suspendedForRun.push(object.uuid);
+		}
+		bodies.push(entry);
+	} else if (entry) {
+		bodies.push(entry);
+	} else {
+		fixedBodies.set(object.uuid, body); // a joint may pin something to it (P-B)
+		fixedColliders.set(object.uuid, colliders);
+		fixedShapeKeys.set(object.uuid, shapeKeyOf(p, object));
+	}
+	return entry;
+}
+
+/**
+ * B7: a body for an object that appeared AFTER the run started (the spawner; anything
+ * else that creates mid-sim). Everything it needs beyond `createBodyFor` is bookkeeping
+ * the sim-start loop also does, which is why they share `trackBody`.
+ *
+ * Deliberately does NOT touch the ground: `groundHandle` is compared BY VALUE in
+ * `queueContact` and rapier reuses small integer handles, so the only safe things to do
+ * with it are build it once per run and set it to -1 when disabled (see `buildGround`).
+ * A fresh collider here can never alias it because the ground's handle is never freed
+ * for the life of the world.
+ * @param {string} uuid @returns {boolean} did a body appear?
+ */
+export function physicsAddBody(uuid) {
+	if (!world || !get(simulating)) return false;
+	const group = get(objectsGroup);
+	const object = group?.getObjectByProperty('uuid', uuid);
+	if (!object) return false;
+	// idempotent: a second call for the same object would leave two bodies fighting
+	// over one transform, and the write-back would alternate between them
+	if (bodies.some((e) => e.object.uuid === uuid) || fixedBodies.has(uuid)) return false;
+	const p = collectParams(group)[uuid] ?? {};
+	const locked = get(lockedObjects).map((l) => l[1]);
+	// the same eligibility test startSimulation runs, minus the "nothing has physics,
+	// simulate the selection" fallback — that is a start-up affordance, not a rule
+	const dynamic = p.mass != null && !p.forceStatic && !locked.includes(uuid);
+	const kinematic = !dynamic && isAnimatedTarget(uuid);
+	const made = createBodyFor(object, p, { dynamic, kinematic });
+	if (!made) return false;
+	trackBody(object, p, made);
+	// applyLiveParams' angvel pass ran before this body existed
+	if (dynamic && p.angvel && made.entry)
+		made.entry.body.setAngvel(angvelWorld(object, p.angvel), true);
+	// `liveSnapshot` is deliberately NOT refreshed here. It is a whole-scene digest, so
+	// refreshing it per spawn is O(objects) per copy — and being stale costs nothing: the
+	// new body's shapeKey was just computed from those same params, so the one extra
+	// applyLiveParams the next graph edit triggers finds no drift and rebuilds nothing.
+	return true;
+}
+
 async function startSimulation() {
 	const group = get(objectsGroup);
 	/** @type {any} */
@@ -685,78 +831,16 @@ async function startSimulation() {
 	fixedShapeKeys = new Map();
 
 	group.children.forEach((/** @type {any} */ object) => {
-		// CL-A A1: the shape measurement + hull/custom vert extraction moved to
-		// colliderSpec.js (ONE source of truth, shared with the collider viz).
-		// Colliders stay ORIENTED: primitives fit the LOCAL AABB (rotation
-		// stripped for the measure) and carry the rotation on the desc;
-		// hull/custom pieces bake it into the verts — so every body starts
-		// WORLD-ALIGNED (identity rotation; joints require it, C3).
 		const p = params[object.uuid];
-		const spec = specOf(object, p);
-		if (!spec) return; // lights/empties
 		const dynamic = !!p && p.mass != null && dynamicUuids.includes(object.uuid);
 		// flow-animated objects (not dynamic) become KINEMATIC platforms: the
 		// flow pose feeds the body each step so rapier derives their velocity
 		const kinematic = !dynamic && isAnimatedTarget(object.uuid);
-		// hull/custom bodies sit at the OBJECT ORIGIN (verts are origin-
-		// relative); primitives at the AABB center (center-offset bookkeeping)
-		const at = spec.pieces ? object.position : spec.center;
-		// sleep OFF for dynamics: a kinematic platform moving UNDER a sleeping
-		// body never wakes it (existing contact, unchanged normal) — the resting
-		// box would ignore the spinning slab; broadcasts gate on movement instead
-		const bodyDesc = (dynamic
-			? RAPIER.RigidBodyDesc.dynamic().setCanSleep(false)
-			: kinematic
-				? RAPIER.RigidBodyDesc.kinematicPositionBased()
-				: RAPIER.RigidBodyDesc.fixed()
-		).setTranslation(at.x, at.y, at.z);
-		// B4: scene damping defaults — the knob that turns a jittery tower stable
-		// and stops crates sliding forever. Dynamics only: a kinematic body's motion
-		// is prescribed and a fixed one has none.
-		if (dynamic) {
-			const defaults = get(scenePhysicsDefaults);
-			bodyDesc.setLinearDamping(defaults.damping.linear ?? 0);
-			bodyDesc.setAngularDamping(defaults.damping.angular ?? 0);
-		}
-		const body = world.createRigidBody(bodyDesc);
-		// B4: no CCD exists today, and a 20 m/s throw moves 0.33 m per step — thin
-		// walls tunnel, which is precisely the new gesture's failure mode
-		if (dynamic && get(scenePhysicsDefaults).ccd) body.enableCcd(true);
-		/** @type {BodyEntry} */
-		const entry = {
-			object,
-			body,
-			offset: new THREE.Vector3(),
-			initialQuat: object.quaternion.clone(),
-			mode: /** @type {'dynamic'|'kinematic'} */ (dynamic ? 'dynamic' : 'kinematic'),
-			hull: false,
-			hold: /** @type {'user'|'external'|null} */ (null),
-			holdUntil: 0,
-			samples: /** @type {any[]} */ ([]),
-			colliders: /** @type {any[]} */ ([]),
-			shapeKey: '',
-			// the pose WE last wrote — a deviation means someone else (a peer's
-			// move applier, undo, an AI edit) wrote the object mid-sim
-			lastWritten: { pos: object.position.clone(), quat: object.quaternion.clone() }
-		};
-		const tracked = dynamic || kinematic;
-		const built = createCollidersFor(object, body, p ?? {}, dynamic, tracked ? entry : null, spec);
-		if (dynamic && p?.freeze) applyFreeze(body, p.freeze); // CL-A A5
-		if (dynamic) {
-			beforeStates.push({ uuid: object.uuid, before: transformOf(object) });
-			// dynamic wins over an animation: suspend the effect for the run
-			if (isAnimatedTarget(object.uuid)) {
-				suspendAnimation(object.uuid);
-				suspendedForRun.push(object.uuid);
-			}
-			bodies.push(entry);
-		} else if (kinematic) {
-			bodies.push(entry);
-		} else {
-			fixedBodies.set(object.uuid, body); // a joint may pin something to it (P-B)
-			fixedColliders.set(object.uuid, built?.colliders ?? []);
-			fixedShapeKeys.set(object.uuid, shapeKeyOf(p, object));
-		}
+		// B7: the construction itself lives in createBodyFor, shared with
+		// physicsAddBody — see the conventions listed there
+		const made = createBodyFor(object, p, { dynamic, kinematic });
+		if (!made) return; // lights/empties
+		trackBody(object, p, made);
 	});
 
 	// P-B: build rapier impulse joints from the replicated defs. Anchors are
@@ -919,6 +1003,10 @@ export function physicsRemoveBody(uuid) {
 	world.removeRigidBody(entry.body);
 	bodies.splice(index, 1);
 	beforeStates = beforeStates.filter((b) => b.uuid !== uuid);
+	// B7: a recycling spawner removes bodies for the whole run, so the per-uuid impact
+	// cooldown would grow without bound. Purging is also strictly correct — a uuid is
+	// never reused, so a surviving row could only ever suppress nothing.
+	lastImpactAt.delete(uuid);
 	return true;
 }
 
@@ -1421,6 +1509,12 @@ export function stopSimulation(opts = {}) {
 	setPostTick(null); // clear the hook BEFORE freeing the world
 	liveUnsubs.forEach((unsub) => unsub());
 	liveUnsubs = [];
+	// B7: spawned objects live only for the run. Swept BEFORE the beforeStates loop on
+	// purpose: their rows are in it (they were dynamic), so sweeping afterwards would put
+	// them in the transformSet undo entry and broadcast a `move` for an object that no
+	// longer exists. Gone first, the loop's own `if (!object) return` skips them, and the
+	// run leaves nothing on the undo stack that a spawner created.
+	removeTransientObjects();
 	/** @type {any} */
 	const peer = get(peers);
 	const group = get(objectsGroup);
@@ -1582,16 +1676,41 @@ export function physicsWorldDebug() {
 		groundTop: groundCollider ? (get(scenePhysicsGround).height ?? 0) : null,
 		bodies: bodies.length,
 		ownerHandles: [...colliderOwner.keys()],
-		oobPending: oobCount
+		oobPending: oobCount,
+		// B7: the FIXED half of the construction — createBodyFor's other branch, and the
+		// one physicsDebug says nothing about. Named, for the same parity reason.
+		fixed: [...fixedBodies.keys()].map((uuid) => ({
+			name: get(objectsGroup)?.getObjectByProperty('uuid', uuid)?.name ?? uuid,
+			colliders: (fixedColliders.get(uuid) ?? []).length,
+			shapeKey: fixedShapeKeys.get(uuid) ?? null
+		})),
+		beforeStates: beforeStates.length,
+		suspended: [...suspendedForRun]
 	};
 }
 
-/** test/debug view of the live bodies */
+/**
+ * test/debug view of the live bodies.
+ *
+ * B7 widened it with the four fields the createBodyFor extraction could plausibly have
+ * broken silently — the write-back bookkeeping (`offset`, `initialQuat`), the collider
+ * change-detection key and the body mass. `flow-spawner` section 1 compares these
+ * against a snapshot taken from the pre-extraction code, which is the only safe way to
+ * land a refactor of the construction block. `name` is there so that comparison can be
+ * keyed by something stable across runs (uuids are fresh every time).
+ */
 export function physicsDebug() {
 	return bodies.map((entry) => ({
 		uuid: entry.object.uuid,
+		name: entry.object.name || entry.object.type,
 		mode: entry.mode,
 		hull: !!entry.hull,
+		offset: entry.offset.toArray(),
+		initialQuat: entry.initialQuat.toArray(),
+		shapeKey: entry.shapeKey,
+		mass: entry.body?.mass?.() ?? null,
+		linearDamping: entry.body?.linearDamping?.() ?? null,
+		angularDamping: entry.body?.angularDamping?.() ?? null,
 		hold: entry.hold,
 		bodyType: entry.body?.bodyType?.(),
 		sleeping: entry.body?.isSleeping?.() ?? null,

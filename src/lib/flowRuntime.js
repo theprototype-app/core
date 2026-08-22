@@ -78,6 +78,7 @@ import {
 /** @type {any} */ let animRef = null;
 /** @type {any} */ let physicsRef = null;
 /** @type {any} */ let jointsRef = null;
+/** @type {any} */ let spawnerRef = null;
 /** B6: which On Rest nodes have already fired for the current rest episode
  * @type {Map<string, boolean>} */
 const restFired = new Map();
@@ -544,8 +545,75 @@ function warnNoSimulation(type) {
 	const now = Date.now();
 	if (now - lastNoSimWarn < 5000) return;
 	lastNoSimWarn = now;
-	const label = type === 'setvelocity' ? 'Set Velocity' : type === 'joint' ? 'Joint' : 'Impulse';
+	const label =
+		type === 'setvelocity'
+			? 'Set Velocity'
+			: type === 'joint'
+				? 'Joint'
+				: type === 'spawn'
+					? 'Spawn'
+					: 'Impulse';
 	showToast(label + ' fired, but no simulation is running — press P (or the play button) to start physics');
+}
+
+/** B7: the stamp a spawn node last acted on (the setgamestate shape, not the physics
+ * family's rising VALUE — a spawn must fire once per pulse whatever a held key does to
+ * the level) @type {Map<string, number>} */
+const spawnActed = new Map();
+
+/**
+ * B7: the TEMPLATE a spawn node copies. Same precedence as every other action node — an
+ * explicit input, then an Object Selector this node feeds, then the owner of an object
+ * graph — with `source` as the key instead of `target`, because for a spawner the wired
+ * object is what gets COPIED rather than what gets written to.
+ * @param {any} node @param {any} data
+ */
+function spawnTemplateOf(node, data) {
+	if (typeof data?.source === 'string' && data.source && data.source !== '-None-') return data.source;
+	return charTargetOf(node, {}); // {} skips its explicit-target branch; selector -> owner
+}
+
+/**
+ * B7: the Spawn node. Acts on the trigger's STAMP EDGE and sits inside the actionSeenAt
+ * family — a fresh Spawn node adopting a stale On Click stamp would drop crates on the
+ * graph the moment a peer connected, the documented 21-E trap.
+ *
+ * Every peer runs this branch from the same replicated stamp, and `spawnFrom` then does
+ * nothing on all but the stepping peer (see the file header there). One writer, one
+ * `duplicate` broadcast, no new message type.
+ * @param {number} time @param {any} ctx
+ */
+function updateSpawnNodes(time, ctx) {
+	for (const node of nodes) {
+		if (node.type !== 'spawn') continue;
+		seeActionNode(node, time);
+		const stamp = triggerStampFor(node.id, ctx);
+		if (stamp === null) continue;
+		if (spawnActed.get(node.id) === stamp) continue;
+		spawnActed.set(node.id, stamp); // CONSUMED first, then refused (the setgamestate note)
+		if (staleTrigger(node, stamp)) continue;
+		const data = resolveInputs(node, nodes, edges, time, ctx);
+		const template = spawnTemplateOf(node, data);
+		if (!template) continue;
+		// a spawn with no simulation would make an INERT object — the exact failure B7
+		// exists to remove — so refuse and say why, on the physics-action terms
+		const simRunning =
+			!!physicsRef?.isInitiator?.() ||
+			!!(physicsRef?.remoteSimulating && get(physicsRef.remoteSimulating));
+		if (!simRunning) {
+			warnNoSimulation('spawn');
+			continue;
+		}
+		spawnerRef?.spawnFrom?.(node.id, template, {
+			at: vectorFrom(data.at, [data.x, data.y, data.z]),
+			count: data.count,
+			maxAlive: data.maxAlive,
+			interval: data.interval,
+			spread: data.spread
+		});
+	}
+	// forget nodes that no longer exist, so a rebuilt node starts fresh
+	for (const id of [...spawnActed.keys()]) if (!nodes.some((n) => n.id === id)) spawnActed.delete(id);
 }
 
 /** a wired vector3 wins over the node's own dialled fallback.
@@ -2960,6 +3028,10 @@ function runTick(now) {
 			physicsPairs.push({ node: { ...node, data }, uuid: uuid ?? '' });
 	});
 	updatePhysicsActions(physicsPairs, ctx, time);
+	// B7: the spawner, immediately after the physics actions and for the same reason —
+	// this runs before the physics post-tick hook, so a body created this frame is
+	// stepped this frame instead of hanging for one.
+	updateSpawnNodes(time, ctx);
 
 	// A3: ONE HUD collection pass, on the sound/particle/playanim shape. What every
 	// element SAYS is computed here from the already-replicated graph, which is why the
@@ -3135,6 +3207,9 @@ export function startFlowRuntime() {
 	// reachable from history's own import subtree.
 	import('./physics').then((m) => (physicsRef = m));
 	import('./joints').then((m) => (jointsRef = m));
+	// B7: the spawner reaches objectActions AND physics, both of which reach history, so
+	// a static edge from here would close history -> flowRuntime -> spawner -> history
+	import('./spawner').then((m) => (spawnerRef = m));
 	// SH4: a compiled shader material must never reach a serializer — primed, like
 	// animationPreview, so flowRuntime keeps no static edge into it
 	import('./shaderGraph').then((m) => (shaderRef = m));

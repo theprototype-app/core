@@ -29,7 +29,13 @@ const ALWAYS_ALLOWED = new Set([
 	'getannotations',
 	'getmodulestate',
 	'getnodedefs',
-	'getjoints'
+	'getjoints',
+	// DEVX #18: the flow trigger log. On the floor beside `getnodes` for the same reason
+	// the list gives — answering a full-state REQUEST is how a peer ever syncs, and this
+	// one decides whether a joiner sees a collected world or a reset one. The `triggers`
+	// REPLY is deliberately NOT here: a reply is content, and every other domain leaves
+	// its content gateable (`getnodes` is on the floor, `nodes` is not).
+	'gettriggers'
 ]);
 
 /** @type {((peerId: string, msgType: string) => boolean) | null} */

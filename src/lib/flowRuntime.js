@@ -103,6 +103,52 @@ const physicsActionEdge = new Map();
 /** action node id -> the synced second we FIRST saw it @type {Map<string, number>} */
 const actionSeenAt = new Map();
 
+// --- DEVX #18: THE HISTORY EPOCH — "a stamp that arrived as HISTORY is not a pulse" ----
+//
+// The trigger log now has a handshake reply (`triggerSync.js`), so a late joiner receives
+// every pulse that happened before it arrived. That is the whole point for the READ side —
+// a latch reads SET, a Once reads spent, a Counter reads its value — and it must be
+// completely inert on the ACT side: replaying that history would travel to another level,
+// restart the round, spawn a crate and flip somebody's HUD screen the moment they connect.
+//
+// WHY THIS IS NOT ALREADY COVERED BY `actionSeenAt`. It very nearly is: a joiner's action
+// node takes its cutoff on its first tick, which is after every historical stamp, so the
+// guarded families refuse them for free. The hole is a peer that LOADED the scene and sat
+// in the editor before dialling — its nodes were first seen at load time, so a pulse the
+// host made in between is NEWER than the cutoff and would act. One number closes it, for
+// every family at once: the moment history arrived. Anything older than that was somebody
+// else's pulse, witnessed before we were in the room.
+//
+// It is ZERO unless a restore actually happens, so a host — and every solo session — is
+// byte-identical to before this existed. An UNSYNCED runtime gets no protection here for
+// the reason `roundCutoffFor` states: it runs on performance.now(), which has no relation
+// to a peer's stamps, so no comparison between the two means anything (already true of
+// every `nodetrigger` such a peer receives).
+let triggerHistoryAt = 0;
+
+/**
+ * Called by `triggerSync` once a restored log has been merged in. Forward-only: two
+ * replies (we dialled two peers) must not walk the epoch backwards.
+ */
+export function markTriggerHistory() {
+	triggerHistoryAt = Math.max(triggerHistoryAt, syncedNow());
+}
+
+/**
+ * Is this stamp part of the history that arrived on the wire, rather than a pulse this
+ * peer witnessed? Used by the stamp-EDGE consumers; the pulse-VALUE consumers need
+ * nothing, because a historical stamp produces a pulse of 0 and they never see an edge.
+ * @param {number|null|undefined} stamp @returns {boolean}
+ */
+function historicTrigger(stamp) {
+	return typeof stamp === 'number' && stamp < triggerHistoryAt;
+}
+
+/** test/debug view of the epoch. */
+export function triggerHistoryEpoch() {
+	return triggerHistoryAt;
+}
+
 /**
  * Register an action node's first-seen moment. Called for EVERY action node on EVERY
  * tick, whether or not a stamp exists — the cutoff has to be set by mere PRESENCE. The
@@ -123,6 +169,10 @@ function seeActionNode(node, time) {
  */
 function staleTrigger(node, stamp) {
 	if (stamp === null || stamp === undefined) return false;
+	// DEVX #18: folded in HERE rather than added at each call site, so every family that
+	// already asks this question inherits it — the same argument that gave the three
+	// families one map instead of three.
+	if (historicTrigger(stamp)) return true;
 	const seenAt = actionSeenAt.get(node.id);
 	return seenAt !== undefined && stamp < seenAt;
 }
@@ -764,6 +814,13 @@ function updateHudRuntime(time, ctx, now) {
 		// and re-acting every frame would make 'toggle' flicker at 60Hz
 		if (hudScreenActed.get(node.id) === stamp) continue;
 		hudScreenActed.set(node.id, stamp);
+		// DEVX #18: CONSUMED first, then refused (the setgamestate note). A joiner must not
+		// be moved to whatever screen the last press before it arrived asked for — a
+		// `toggle` would land on the wrong one anyway, and putting a late joiner on the
+		// right screen is `showWhile`'s job, which derives from the replicated game state
+		// instead of replaying a press. This family carries no `actionSeenAt` cutoff (it
+		// predates the shared one), so the epoch is checked on its own here.
+		if (historicTrigger(stamp)) continue;
 		const data = resolveInputs(node, nodes, edges, time, ctx);
 		// 21-E2.2: the SAME resolution the node card uses. Inline it was the graph id, which
 		// in an object graph is the object uuid — so `showHudScreen` wrote a per-peer override
@@ -913,6 +970,10 @@ function updateHudSetNodes(time, ctx) {
 		if (stamp === null) continue;
 		if (hudSetActed.get(node.id) === stamp) continue;
 		hudSetActed.set(node.id, stamp);
+		// DEVX #18: history must not re-write a control. The SHARED half of a player-set
+		// value has its own late-joiner reply (`gethudvalues`), so nothing is lost by
+		// refusing to replay the press that produced it.
+		if (historicTrigger(stamp)) continue;
 		const data = resolveInputs(node, nodes, edges, time, ctx);
 		const element = String(data.element ?? '').trim();
 		if (!element) continue;
@@ -951,6 +1012,9 @@ function updateHudRowsNodes(time, ctx) {
 		if (stamp === null) continue;
 		if (hudRowsActed.get(node.id) === stamp) continue;
 		hudRowsActed.set(node.id, stamp);
+		// DEVX #18: an `append` replaying on arrival would put a duplicate row on a
+		// leaderboard every time somebody joined.
+		if (historicTrigger(stamp)) continue;
 		const data = resolveInputs(node, nodes, edges, time, ctx);
 		const element = String(data.element ?? '').trim();
 		if (!element) continue;
@@ -1515,6 +1579,17 @@ function updateDerivedPulses(ctx) {
 			}
 			if (scheduledFired.get(key) === at) continue;
 			scheduledFired.set(key, at);
+			// DEVX #18: THE ONE PLACE A RESTORED LOG COULD DESYNC THE NUMBERS. This map is
+			// LOCAL and starts empty, so a joiner holding restored history derives every
+			// past moment as brand new and PUSHES it — bumping a downstream Counter that
+			// already carries that bump in its own restored entry, and flipping a Latch's
+			// parity. Seeding the dedupe key (above) and refusing to push is exactly "we
+			// consider this already fired", which on the host it was.
+			//
+			// A moment still in the FUTURE is deliberately not refused: a Delay that was
+			// pending when we joined completes for us too, which is the behaviour a peer
+			// arriving mid-respawn should see.
+			if (historicTrigger(at)) continue;
 			applyNodeTrigger(node.id, at, false, handle);
 		}
 	}

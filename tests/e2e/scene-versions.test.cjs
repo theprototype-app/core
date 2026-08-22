@@ -824,6 +824,48 @@ h.run(async () => {
 	);
 
 	// =====================================================================
+	// 13b. A VERSION LANDS BESIDE THE VERSION IT SUPERSEDES  (21-I, reported)
+	// =====================================================================
+	// A manual "Save version…" of a scene living in a SUBFOLDER wrote the new file at the
+	// library ROOT — and because the new version becomes the pointer, and the pointer is
+	// the one visible card, the scene appeared to MOVE there. `saveSceneVersion` passed
+	// `null`, which since 21-H1 means the root (locked answer 6 retired the invented
+	// `Scenes` folder). Every other scene in this suite lives at the root, so only one in
+	// a real folder can tell the fix from the bug.
+	//
+	// LAST, and with a scene name of its own, on purpose: it saves — which moves
+	// `currentLevel` — and every earlier section reasons about Arena being the open scene.
+	const chapters = await A.page.evaluate(
+		() => window.__stores.explorer.createFolder('Chapters', null)?.id ?? null
+	);
+	h.check(!!chapters, 'premise: a real library folder to keep a scene in');
+	const folderOfHash = (hash) =>
+		A.page.evaluate((h2) => window.__stores.explorer.itemByHash(h2)?.folderId ?? null, hash);
+	const archiveV1 = await A.page.evaluate(async (folderId) => {
+		const item = await window.__stores.levels.saveSceneAsLevel('Archive', folderId);
+		return item?.hash ?? null;
+	}, chapters);
+	h.check((await folderOfHash(archiveV1)) === chapters, 'premise: Archive was saved INTO that folder');
+	// no edit needed to make the next version differ: a .tpscene embeds a fresh uuid,
+	// createdAt and thumbnail per save, which is the very reason `sceneSignature` exists
+	const archiveV2 = await A.page.evaluate(async () => {
+		const item = await window.__stores.levels.saveSceneVersion('Archive', 'Chapter two');
+		return item?.hash ?? null;
+	});
+	const archiveFolder2 = await folderOfHash(archiveV2);
+	h.check(
+		!!archiveV2 && archiveV2 !== archiveV1 && archiveFolder2 === chapters,
+		`THE FIX: the new version landed in the scene's own folder, not the root (${
+			archiveFolder2 === chapters ? 'Chapters' : String(archiveFolder2)
+		})`
+	);
+	const archiveShelf = await shelves(A, 'Archive.tpscene');
+	h.check(
+		archiveShelf.visible.length === 1 && archiveShelf.visible[0] === archiveV2,
+		'…so the scene did not appear to MOVE — its one visible card is still in that folder'
+	);
+
+	// =====================================================================
 	// 14. A PEER — a label is ordinary manifest data
 	// =====================================================================
 	const B = await h.setupPage(browser, 'B');

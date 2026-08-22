@@ -331,7 +331,33 @@ export async function saveSceneAsLevel(name, folderId = null, opts = {}) {
  * @param {string} name @param {string} label
  */
 export async function saveSceneVersion(name, label) {
-	return saveSceneAsLevel(name, null, { label: String(label ?? '').trim() });
+	// REPORTED: saving a version of a scene that lived in a subfolder put the new file at
+	// the ROOT — and since the new version becomes the pointer, and the pointer is the one
+	// visible card, the scene appeared to MOVE there. The cause was this call passing
+	// `null`, which since 21-H1 means "the library root" (locked answer 6 retired the
+	// invented `Scenes` folder). A version is not a new scene: it belongs beside the
+	// version it supersedes, which is the rule the travel-away write-back already used.
+	return saveSceneAsLevel(name, sceneFolderOf(name), { label: String(label ?? '').trim() });
+}
+
+/**
+ * 21-I: WHERE this scene's files live — the folder a NEW VERSION of it belongs in.
+ *
+ * The pointer's own folder when this machine holds those bytes, else the newest older
+ * version it still holds: a PRUNED pointer (fork 4 drops local bytes, never history) must
+ * not send the next save to the root, which is the same "the app moved my files" surprise
+ * one step removed. Null — the library root — only when no file of this scene is here at
+ * all, which is the honest answer then.
+ * @param {string} name @returns {string|null}
+ */
+function sceneFolderOf(name) {
+	const entry = get(projectManifest).scenes[String(name ?? '').trim()];
+	if (!entry) return null;
+	for (let i = entry.history.length - 1; i >= 0; i--) {
+		const item = itemByHash(entry.history[i]);
+		if (item) return item.folderId ?? null;
+	}
+	return null;
 }
 
 /**
@@ -387,7 +413,12 @@ export async function publishCurrentIfChanged(opts = {}) {
 	// this machine does not hold those bytes. It used to premake `Scenes`, which is
 	// exactly the invented folder locked answer 6 retires: an automatic write-back is
 	// the last thing that should be moving a user's files around.
-	const folderId = await targetFolder(itemByHash(at.hash)?.folderId ?? null);
+	// 21-I: `sceneFolderOf` is the fallback for a PRUNED pointer — without it a scene whose
+	// current bytes were pruned locally sent its next auto-version to the root as well.
+	const pointerItem = itemByHash(at.hash);
+	const folderId = await targetFolder(
+		pointerItem ? pointerItem.folderId ?? null : sceneFolderOf(at.name)
+	);
 	const bytes = await exportSessionZip(payload, { assets: true, packs: false, flow: true });
 	const item = await addItemFromBytes(
 		bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength),

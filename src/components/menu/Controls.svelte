@@ -24,6 +24,7 @@
 	import ContextMenu from '../ContextMenu.svelte';
 	import MobileAddButton from './MobileAddButton.svelte';
 	import AiHudButton from './AiHudButton.svelte';
+	import ArEnterButton from './ArEnterButton.svelte';
 	import SimControls from './SimControls.svelte';
 	import { focusStack, raiseWindow, isTopWindow } from '$lib/windowFocus';
 	import { tabbable, groupRectOf, moveGroupOf, resizeGroup } from '$lib/windowTabs';
@@ -681,6 +682,10 @@
 
 <!-- A2: AI assistant button, bottom-left below the "+" (own component, onclick) -->
 <AiHudButton />
+
+<!-- CO4: explicit Enter AR beside the play button — renders only when the device
+     reports immersive-ar support (own component, onclick) -->
+<ArEnterButton />
 
 <!-- physics transport (P-A): play / pause / stop / reset, above the chat toggle -->
 <SimControls />

@@ -35,7 +35,7 @@
 
 import * as THREE from 'three';
 import { writable, get } from 'svelte/store';
-import { globalScene, globalRenderer, globalCamera, vrMenuHand } from '../stores/sceneStore';
+import { globalScene, globalRenderer, globalCamera, vrMenuHand, passthroughActive } from '../stores/sceneStore';
 import { peers, showToast } from '../stores/appStore';
 import { sessionHost } from './connectionState';
 import {
@@ -61,6 +61,32 @@ import { registerVRMenuEntry } from './vrRadialMenu';
 
 const UP = new THREE.Vector3(0, 1, 0);
 const MARKER_GROUP = 'colocate-calibration';
+// CO4: two marker palettes. Over passthrough the ghost must read against a REAL
+// room — usually brighter and busier than the void sky — so it takes a lighter
+// cyan at FULL opacity. The materials stay MeshBasicMaterial (unlit is already
+// "emissive"); depthWrite stays true on the point (the documented postprocessing
+// trap). The style is applied on build AND re-applied by the passthroughActive
+// subscription below, so a session that outlives an AR entry/exit restyles live.
+const MARKER_COLOR = 0x4da3ff;
+const MARKER_COLOR_AR = 0x9fe8ff;
+
+function markerStyle() {
+	return get(passthroughActive)
+		? { color: MARKER_COLOR_AR, opacity: 1 }
+		: { color: MARKER_COLOR, opacity: 0.85 };
+}
+
+/** Re-style the ghost point + aim arrow for the current view @param {any} group */
+function applyMarkerStyle(group) {
+	const style = markerStyle();
+	const point = group.getObjectByName('colocate-point');
+	const arrow = group.getObjectByName('colocate-aim');
+	if (point?.material) {
+		point.material.color.set(style.color);
+		point.material.opacity = style.opacity;
+	}
+	if (arrow?.setColor) arrow.setColor(style.color);
+}
 
 // ---- module state (every `let` ABOVE the module-level subscribe — the TDZ rule) ----
 
@@ -88,6 +114,13 @@ let registered = false;
 // subscriber.)
 roomAnchor.subscribe(() => {
 	if (get(roomAlignment)) applyRoomAlignment();
+});
+
+// CO4: entering/leaving passthrough re-styles any LIVE markers — over a real room
+// the ghost needs the AR palette immediately, not on the next ritual. (Reads only;
+// never writes a store — safe inside a subscriber.)
+passthroughActive.subscribe(() => {
+	if (markerGroup) applyMarkerStyle(markerGroup);
 });
 
 // ---- roomKey minting ---------------------------------------------------------
@@ -135,6 +168,7 @@ function ensureMarkers() {
 	arrow.visible = false;
 	group.add(point);
 	group.add(arrow);
+	applyMarkerStyle(group); // CO4: pick the palette for the CURRENT view
 	scene.add(group);
 	markerGroup = group;
 	return group;
@@ -505,7 +539,14 @@ export function calibrateDebug() {
 		sessionKey: session?.roomKey ?? null,
 		point: session?.point ? session.point.toArray() : null,
 		markers: group
-			? group.children.map((/** @type {any} */ c) => ({ name: c.name, visible: c.visible }))
+			? group.children.map((/** @type {any} */ c) => ({
+					name: c.name,
+					visible: c.visible,
+					// CO4: the suite reads the palette off the live materials — the point is a
+					// mesh, the aim an ArrowHelper (color lives on its .line material)
+					color: c.material?.color?.getHexString?.() ?? c.line?.material?.color?.getHexString?.() ?? null,
+					opacity: c.material?.opacity ?? null
+				}))
 			: null,
 		registered
 	};

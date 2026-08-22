@@ -66,7 +66,7 @@
 		const r = (e.currentTarget as HTMLElement).getBoundingClientRect();
 		const w = 256;
 		// 21-H1: one more row (Show GLTF) — the clamp has to know about it.
-		// 21-I5: +2 rows, +1 group heading, +1 divider (the version-history checkboxes)
+		// 21-I5: +1 row, +1 group heading, +1 divider (the .tp version-history checkbox)
 		const h = 360;
 		let left = r.left; // top-left of the popup aligns under the cog, extending right
 		let top = r.bottom + 6;
@@ -78,12 +78,15 @@
 	let tpAssets = $state(typeof localStorage !== 'undefined' && localStorage.getItem('tpsceneAssets') !== 'false');
 	let tpPacks = $state(typeof localStorage !== 'undefined' && localStorage.getItem('tpscenePacks') === 'true');
 	let tpFlow = $state(typeof localStorage !== 'undefined' && localStorage.getItem('tpsceneFlow') !== 'false');
-	// 21-I5 (locked answers 1 + 2): versions live inside the FILE for transport and
-	// outside it in the content-addressed store. The SCENE box is OFF by default (a
-	// handoff artifact is not what most saves are); the PROJECT box is ON, because a .tp
-	// has carried its scene history since 21-G3 and flipping that off silently would make
-	// an existing behaviour vanish. Nothing reads either section back — see the ruling.
-	let tpVersions = $state(typeof localStorage !== 'undefined' && localStorage.getItem('tpsceneVersions') === 'true');
+	// 21-I5 (locked answer 2): the PROJECT box is ON by default, because a .tp has carried
+	// its scene history since 21-G3 and flipping that off silently would make an existing
+	// behaviour vanish — and it gates machinery with its own proper import.
+	//
+	// There is no SCENE counterpart, and the absence is deliberate. The Save button
+	// exports whatever is in the viewport, which cannot always answer "and its history":
+	// an unnamed or never-travelled scene has no manifest entry, so the box that used to
+	// sit here silently bundled nothing. The Explorer's scene card knows the name and the
+	// history unambiguously, so downloading versions lives on ITS menu instead.
 	let tpProjectVersions = $state(typeof localStorage === 'undefined' || localStorage.getItem('tpProjectVersions') !== 'false');
 	function pickFormat(f: string) {
 		saveFormat = f;
@@ -283,10 +286,6 @@
 		<label class="flex items-center gap-2 py-0.5">
 			<input id="tpscene-flow" class="tp-check" type="checkbox" checked={tpFlow} onchange={(e: any) => { tpFlow = e.target.checked; localStorage.setItem('tpsceneFlow', String(tpFlow)); }} />
 			Flow graph (nodes + edges)
-		</label>
-		<label class="flex items-center gap-2 py-0.5">
-			<input id="tpscene-versions" class="tp-check" type="checkbox" checked={tpVersions} onchange={(e: any) => { tpVersions = e.target.checked; localStorage.setItem('tpsceneVersions', String(tpVersions)); }} />
-			<span title="Older saved versions of this scene ride along inside the file. Loading it still opens the current scene — unzip the file by hand to reach one.">Version history</span>
 		</label>
 		<div class="my-2 border-t border-gray-700"></div>
 		<p class="mb-1 text-[11px] text-gray-400">Project (.tp) includes:</p>

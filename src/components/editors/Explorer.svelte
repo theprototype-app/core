@@ -26,6 +26,7 @@
 		renameItem,
 		isValidName,
 		itemBlob,
+		itemByHash,
 		inspectedFile,
 		updateItemBytes,
 		parseObjectFile
@@ -52,8 +53,18 @@
 	// 21-G2: the "update available" dot on old scene versions. The manifest store is
 	// passed as the reactive dependency — a helper reading through get() registers none
 	// (the documented rule), so the badge would otherwise never appear live.
-	import { projectManifest, staleSceneHash, manifestInUse, setProjectName } from '$lib/projectManifest';
+	import {
+		projectManifest,
+		staleSceneHash,
+		manifestInUse,
+		setProjectName,
+		sceneOfHash,
+		sceneEntry
+	} from '$lib/projectManifest';
 	const staleScene = (_manifest: any, hash: string) => staleSceneHash(hash);
+	// 21-I5 REVISED: the ONE filesystem sanitiser, plus the version-date stamp the zip
+	// entries and the panel's per-row download both name their files with.
+	import { fileNameBase, versionStamp } from '$lib/saveName';
 	// 21-G3: the whole project as ONE .tp file (manifest + scenes + assets).
 	import { downloadProject } from '$lib/projectFile';
 	import ModelPreview from './ModelPreview.svelte';
@@ -1210,6 +1221,75 @@
 		);
 	}
 
+	// ---- 21-I5 REVISED: DOWNLOADING A SCENE'S VERSIONS -------------------------------
+	// The interim 21-I5 build bundled versions into the working .tpscene from an Export
+	// Settings checkbox, and it could not work: that path exports whatever is in the
+	// viewport, so a scene that is not a NAMED project scene has no manifest entry, no
+	// history to look up, and the box silently produced nothing. HERE the scene card
+	// makes both unambiguous, which is the whole reason the action moved.
+
+	/** The DISTINCT versions the manifest records for the scene a card points at, newest
+	 * last (history order). A restore RE-APPENDS a hash it already had — the manifest's
+	 * own rule — so one history can name the same version twice and it is one file either
+	 * way. Empty for anything that is not a scene card of ours. */
+	function sceneVersionHashes(item: any): string[] {
+		if (!item || item.kind !== 'scene' || item.packEntry || item.sceneEntry) return [];
+		const scene = sceneOfHash(item.hash);
+		const entry = scene ? sceneEntry(scene) : null;
+		return [...new Set((entry?.history ?? []).filter(Boolean))];
+	}
+
+	/**
+	 * Every version of ONE scene as a single .zip of .tpscene files.
+	 *
+	 * ONE archive rather than N downloads for the reason `downloadSelection` already
+	 * documents: a burst of anchor clicks is a prompt storm in every browser and an
+	 * outright block in some. `itemByHash` reaches the HIDDEN shelf (21-G7), so the
+	 * folded-away older versions resolve here with nothing extra.
+	 *
+	 * A version whose bytes this machine no longer holds is COUNTED and reported — the
+	 * `exportProject` rule, because a lossy export you are not told about is how a gap
+	 * gets discovered a month later. The manifest keeps such a hash regardless (fork 4):
+	 * a peer who still has it can serve it back.
+	 */
+	async function downloadSceneVersions(item: any) {
+		const scene = sceneOfHash(item.hash);
+		const hashes = sceneVersionHashes(item);
+		if (!scene || hashes.length < 2)
+			return showToast('That scene has only one version — use Download for it');
+		const { zipSync } = await import('fflate');
+		const entries: Record<string, Uint8Array> = {};
+		let missing = 0;
+		for (const hash of hashes) {
+			const record: any = itemByHash(hash);
+			const blob = record ? await itemBlob(record.id) : null;
+			if (!blob) {
+				missing++;
+				continue;
+			}
+			// ISO date FIRST so a file listing sorts chronologically, then a short hash so
+			// two versions written in the same millisecond still differ. `uniqueZipName` is
+			// the backstop for a collision even that cannot rule out.
+			const name = `${versionStamp(record.createdAt)}-${String(hash).slice(0, 8)}.tpscene`;
+			entries[uniqueZipName(entries, name)] = new Uint8Array(await blob.arrayBuffer());
+		}
+		const count = Object.keys(entries).length;
+		if (!count)
+			return showToast(
+				`None of ${scene}'s ${plural(hashes.length, 'version')} still have stored bytes here`
+			);
+		saveBlob(
+			new Blob([zipSync(entries, { level: 6 })], { type: 'application/zip' }),
+			`${fileNameBase(scene) || 'scene'}-versions.zip`
+		);
+		showToast(
+			`Downloaded ${plural(count, 'version')} of ${scene} as a .zip` +
+				(missing
+					? ` — ${missing} whose bytes are not on this machine ${missing === 1 ? 'was' : 'were'} left out`
+					: '')
+		);
+	}
+
 	/**
 	 * N prefabs / 3D objects as ONE file. `exportGltf` has always taken an ARRAY of roots
 	 * (that is how the viewport's multi-selection export works), so this reuses 21-H2's
@@ -1463,6 +1543,20 @@
 								action: () => downloadItem(item)
 							}
 						]),
+				// 21-I5 REVISED: the scene's PAST, as files. Offered only when there is more
+				// than one version — a single-version scene already has Download one line up,
+				// and an entry that produces a one-file zip is a worse version of it.
+				...(sceneVersionHashes(item).length > 1
+					? [
+							{
+								label: 'Download all versions (.zip)',
+								icon: 'arrow-down-to-line',
+								tooltip:
+									'Every version of this scene as one .zip of .tpscene files — versions whose bytes are no longer here are reported',
+								action: () => void downloadSceneVersions(item)
+							}
+						]
+					: []),
 				{ label: 'Properties', action: () => showProperties({ kind: 'item', item }) },
 				{
 					label: 'Rename',

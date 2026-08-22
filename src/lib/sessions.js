@@ -424,25 +424,21 @@ export async function importSession(json) {
 // ---- session ZIP: session.json + the scene's binary assets (127) ----
 
 /**
- * 21-I5: the name of ONE bundled version inside `versions/`. The date is the version's
- * OWN `createdAt`, never "now" — stamping the export time would make every version in
- * the file claim to be from the moment it was handed over, which is the one fact the
- * section exists to carry. A colon is illegal in a Windows filename, so the ISO string
- * loses its two; everything else about it stays readable at a glance.
- * @param {number} createdAt @param {string} hash
- */
-function versionEntryName(createdAt, hash) {
-	const at = Number(createdAt);
-	const iso = new Date(Number.isFinite(at) && at > 0 ? at : Date.now()).toISOString();
-	return 'versions/' + iso.replace(/:/g, '-') + '-' + hash + '.tpscene';
-}
-
-/**
- * 21-I5 — THE HONESTY TOAST. The bundle is EXPORT-ONLY: nothing in the app reads
- * `versions/` back, because a second door into the library is exactly what would let a
- * content-addressed item be created from a fat file whose hash is not its content's.
- * So the load path says what it is NOT doing, rather than silently ignoring a section
- * the user asked to be written.
+ * 21-I5 — THE HONESTY TOAST, and the ONE half of the bundle that survives its revision.
+ *
+ * The interim 21-I5 build could WRITE a `versions/` section into a `.tpscene` from an
+ * Export Settings checkbox. That option is GONE: `saveTpScene` exports whatever is in
+ * the viewport, which cannot always answer "and its history" — an unnamed or
+ * never-travelled scene has no manifest entry to look one up in, so the box silently
+ * produced nothing. Per-scene DOWNLOADS in the Explorer replaced it, where the scene
+ * card makes the name and the history unambiguous.
+ *
+ * **NOTHING IN THE APP WRITES `versions/` ANY MORE**, and nothing ever read it back
+ * (the export-only ruling: a second door into the library is exactly what would let a
+ * content-addressed item be created from a fat file whose hash is not its content's).
+ * This stays because files produced by that interim build EXIST on people's disks, and
+ * a load that ignored their extra section in silence would be the dishonest half of
+ * what was just removed.
  * @param {Record<string, Uint8Array>} entries @returns {number} versions in the file
  */
 function noteBundledVersions(entries) {
@@ -461,16 +457,14 @@ function noteBundledVersions(entries) {
  * (the 108 scene manifest's audio/config/textures) + an assets/index.json map.
  * Portable — re-importing on a fresh machine restores the assets too.
  *
- * 21-I5 adds an optional `versions/` section (`opts.versions`, default OFF): the scene's
- * own past, for handing someone a scene WITH its history. It is a fourth include-option
- * exactly like the other three, and the returned bytes carry `versions`/`skippedVersions`
- * counts as properties (the `carveAlongSpline` tagging idiom) so the caller can report
- * them without this function growing a second return shape every existing call site
- * would have to learn.
+ * A scene's VERSION HISTORY is deliberately not one of the include-options. The interim
+ * 21-I5 build had it as a fourth checkbox and it could not work from here: this function
+ * is handed "whatever is in the viewport", which is not always a named project scene, so
+ * there was frequently no history to look up and the box wrote nothing. Downloading
+ * versions is a per-SCENE action in the Explorer now — see `noteBundledVersions` above.
  *
  * @param {any} payload
- * @param {{assets?: boolean, packs?: boolean, flow?: boolean, versions?: boolean,
- *   sceneName?: string}} [opts]
+ * @param {{assets?: boolean, packs?: boolean, flow?: boolean}} [opts]
  */
 export async function exportSessionZip(payload, opts = { assets: true, packs: false, flow: true }) {
 	const { zipSync, strToU8 } = await import('fflate');
@@ -524,43 +518,7 @@ export async function exportSessionZip(payload, opts = { assets: true, packs: fa
 		}
 		files['packs/index.json'] = strToU8(JSON.stringify({ packs, items: packIndex }));
 	}
-	// 21-I5 — VERSIONS INSIDE THE FILE (the ruling: inside the file for TRANSPORT,
-	// outside it in the content-addressed store). The versions to carry are the ones
-	// this machine still HOLDS for that scene name; `itemByHash` searches the hidden
-	// shelf too (21-G7), so folded-away older versions resolve with no change here.
-	// A hash whose bytes were pruned is COUNTED, never silently missing — the
-	// exportProject rule, because a lossy export you are not told about is how a gap
-	// gets discovered a month later.
-	//
-	// NOTE what is deliberately absent: an index. Nothing reads this section, so an
-	// index would be a manifest for a reader that must never exist; the entry names
-	// carry the date and the hash for the human who unzips it.
-	let versions = 0;
-	let skippedVersions = 0;
-	if (opts.versions) {
-		const scene = String(opts.sceneName ?? payload?.name ?? '').trim();
-		const { sceneEntry } = await import('./projectManifest');
-		const entry = scene ? sceneEntry(scene) : null;
-		const seenVersion = new Set();
-		for (const hash of entry?.history ?? []) {
-			// a restore RE-APPENDS a hash it already had (the manifest's own rule), so one
-			// history can name the same version twice — it is one file either way
-			if (!hash || seenVersion.has(hash)) continue;
-			seenVersion.add(hash);
-			const item = /** @type {any} */ (itemByHash(hash));
-			const blob = item ? await itemBlob(item.id) : null;
-			if (!blob) {
-				skippedVersions++;
-				continue;
-			}
-			files[versionEntryName(item.createdAt, hash)] = new Uint8Array(await blob.arrayBuffer());
-			versions++;
-		}
-	}
-	const bytes = zipSync(files, { level: 6 });
-	/** @type {any} */ (bytes).versions = versions;
-	/** @type {any} */ (bytes).skippedVersions = skippedVersions;
-	return bytes;
+	return zipSync(files, { level: 6 });
 }
 
 /** The zip's bundled assets into the Explorer (hash-deduped) so sound/texture hashes

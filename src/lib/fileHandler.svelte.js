@@ -64,13 +64,14 @@ export function tpsceneOptions() {
 		const v = typeof localStorage !== 'undefined' ? localStorage.getItem(k) : null;
 		return v === null ? dflt : v === 'true';
 	};
+	// 21-I5 REVISED: there is deliberately no `versions` option here. This path exports
+	// whatever is in the viewport, which is not always a NAMED project scene — so the
+	// checkbox that used to live here could not look a history up and silently bundled
+	// nothing. Downloading versions is a per-scene action in the Explorer instead.
 	return {
 		assets: read('tpsceneAssets', true),
 		packs: read('tpscenePacks', false),
-		flow: read('tpsceneFlow', true),
-		// 21-I5: DEFAULT OFF — a handoff artifact is not what most saves are, and the
-		// bytes are the scene's whole past
-		versions: read('tpsceneVersions', false)
+		flow: read('tpsceneFlow', true)
 	};
 }
 
@@ -78,30 +79,18 @@ export function tpsceneOptions() {
 async function saveTpScene() {
 	const { buildSessionPayload, exportSessionZip } = await import('./sessions');
 	const payload = buildSessionPayload('Scene export');
-	// 21-I5: the manifest keys history by SCENE NAME, and the payload's name is the
-	// slot label ('Scene export') — so the scene we are standing in has to be named
-	// explicitly or the bundle would look for the history of a scene nobody has.
-	const zip = /** @type {any} */ (
-		await exportSessionZip(payload, { ...tpsceneOptions(), sceneName })
-	);
+	const zip = await exportSessionZip(payload, tpsceneOptions());
 	const blob = new Blob([zip], { type: 'application/zip' });
 	const a = document.createElement('a');
 	document.body.appendChild(a);
 	a.style.display = 'none';
 	const url = window.URL.createObjectURL(blob);
 	a.href = url;
+	// 21-I5: the scene's NAME still names the file (the save-name template) — that is
+	// the one thing the removed option and this line had in common and it stays
 	a.download = `${saveFileBase(sceneName)}.tpscene`;
 	a.click();
 	window.URL.revokeObjectURL(url);
-	const bundled = zip.versions ?? 0;
-	const missing = zip.skippedVersions ?? 0;
-	if (bundled || missing)
-		showToast(
-			'Scene saved with ' + bundled + ' version' + (bundled === 1 ? '' : 's') + ' inside' +
-				(missing
-					? ' — ' + missing + ' whose bytes are not on this machine were left out'
-					: '')
-		);
 }
 
 /** The selected objects (union of the primary selection + the multi-select set),

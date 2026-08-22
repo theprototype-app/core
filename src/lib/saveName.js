@@ -60,6 +60,29 @@ export function fileNameBase(name) {
 		.replace(/^[-. ]+|[-. ]+$/g, '');
 }
 
+/**
+ * 21-I5 REVISED — the date part of ONE version's filename, shared by the Explorer's
+ * "Download all versions" zip entries and the Version history panel's per-row download.
+ *
+ * TWO decisions live in this one line. The instant is the version's OWN `createdAt`,
+ * never "now": stamping the export moment would make every file in an archive claim to
+ * be from the second it was handed over, which is the single fact these names exist to
+ * carry. And a COLON is illegal in a Windows filename, so the ISO string loses its two
+ * — everything else about it stays readable, and ISO-first still sorts chronologically
+ * in any file listing, which is why the date leads.
+ *
+ * The save-name TEMPLATE deliberately does not apply to these: its date tokens resolve
+ * to now, which is exactly the value that must not appear here.
+ *
+ * @param {number} createdAt epoch ms — a non-finite or non-positive value falls back to now
+ * @returns {string} e.g. `2026-01-02T03-04-05.678Z`
+ */
+export function versionStamp(createdAt) {
+	const at = Number(createdAt);
+	const iso = new Date(Number.isFinite(at) && at > 0 ? at : Date.now()).toISOString();
+	return iso.replace(/:/g, '-');
+}
+
 /** @param {number} n @param {number} width */
 function pad(n, width = 2) {
 	return String(n).padStart(width, '0');

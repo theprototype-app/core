@@ -12,10 +12,13 @@
 	// a re-append plus a local load. A peer learns where the pointer went because the
 	// manifest replicates — which is the whole "offer travel for the session" half of
 	// fork 13, and why the toast says so instead of a message type saying it.
-	import { History, Pin, RotateCcw, Trash2 } from '@lucide/svelte';
-	import { explorerItems, hiddenItems, deleteItem } from '$lib/explorer';
+	import { ArrowDownToLine, History, Pin, RotateCcw, Trash2 } from '@lucide/svelte';
+	import { explorerItems, hiddenItems, deleteItem, itemBlob } from '$lib/explorer';
 	import { projectManifest, sceneOfHash, pinSceneVersion } from '$lib/projectManifest';
 	import { restoreSceneVersion, saveSceneVersion } from '$lib/levels';
+	// 21-I5 REVISED: ONE sanitiser and ONE version-date stamp, shared with the Explorer's
+	// "Download all versions" archive so a single row and a bulk export name files alike.
+	import { fileNameBase, versionStamp } from '$lib/saveName';
 
 	let { item = null }: { item: any } = $props();
 
@@ -74,6 +77,36 @@
 			busy = false;
 		}
 	}
+	/**
+	 * 21-I5 REVISED — ONE version, as a .tpscene. The Explorer's card menu downloads the
+	 * whole history as a zip; this is the row-level half, for when you want exactly the
+	 * version you are looking at.
+	 *
+	 * A `Not held` row DISABLES the button rather than hiding it, and says why in its
+	 * title: Download is the thing a reader will look for on every row, so an absent one
+	 * reads as "this panel cannot do that" where a disabled one names the actual state
+	 * (the Shaded+AO chip's rule). Delete stays hidden there because with no local bytes
+	 * it has no meaning at all.
+	 *
+	 * The anchor + object-URL dance is the only way a page starts a download (fileHandler's
+	 * own path, and the Explorer's `saveBlob`, verbatim).
+	 */
+	async function download(row: any) {
+		if (!row?.item) return;
+		const blob = await itemBlob(row.item.id);
+		if (!blob) return;
+		const a = document.createElement('a');
+		document.body.appendChild(a);
+		a.style.display = 'none';
+		const url = URL.createObjectURL(blob);
+		a.href = url;
+		// the scene's name plus THIS version's own date — never the moment of download,
+		// which is the whole point of `versionStamp`
+		a.download = `${fileNameBase(scene ?? '') || 'scene'}-${versionStamp(row.item.createdAt)}.tpscene`;
+		a.click();
+		URL.revokeObjectURL(url);
+		a.remove();
+	}
 	async function restore(hash: string) {
 		if (!scene || busy) return;
 		busy = true;
@@ -123,6 +156,15 @@
 				</span>
 				{#if row.pointer}<span class="vh-badge">Current</span>{/if}
 				{#if !row.item}<span class="vh-badge vh-badge-away">Not held</span>{/if}
+				<button
+					class="ui-button-quiet vh-download shrink-0"
+					disabled={!row.item}
+					aria-label="Download this version (.tpscene)"
+					title={row.item
+						? 'Save this version to your computer as a .tpscene'
+						: 'The bytes of this version are not on this machine — nothing to download'}
+					onclick={() => download(row)}><ArrowDownToLine size={13} aria-hidden="true" /></button
+				>
 				<button
 					class="ui-button-quiet vh-pin shrink-0"
 					aria-pressed={row.pinned}

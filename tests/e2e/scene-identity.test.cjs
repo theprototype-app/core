@@ -13,8 +13,12 @@
 //                        `buildSessionPayload`, which serializes the whole scene. So the
 //                        throttle is asserted DIRECTLY — the title must NOT move in the
 //                        instant after an edit, and must move once the window passes.
-//   the BREADCRUMB       Project / Scene in the Explorer header, with the project name
-//                        editable IN PLACE (fork 14: never a window.prompt).
+//   the CHIP             Project and Scene in the Explorer header, with the project name
+//                        editable IN PLACE (fork 14: never a window.prompt). 21-I2 moved
+//                        it out of its own row and in beside the search box; the ids are
+//                        deliberately unchanged, so what is asserted here is unchanged
+//                        too. Its LAYOUT (where it sits, and that it truncates instead
+//                        of pushing the search box off) belongs to explorer-header-panels.
 //   the HIGHLIGHT        the open scene's own card wears an accent. Keyed by HASH, which
 //                        section 7 proves by renaming the file underneath it.
 //   the ACTIVE FOLDER    "Save scene…" lands where the user is looking, and falls back
@@ -278,17 +282,17 @@ h.run(async () => {
 	);
 
 	// =====================================================================
-	// 4. THE EXPLORER HEADER: Project / Scene, EDITABLE IN PLACE
+	// 4. THE EXPLORER HEADER CHIP: Project / Scene, EDITABLE IN PLACE
 	// =====================================================================
 	await A.page.locator('#explorer-slot').click();
 	await A.page.waitForTimeout(900);
-	const crumb = async () =>
+	const chip = async () =>
 		A.page.evaluate(() => ({
 			project: document.querySelector('#explorer-project')?.textContent?.trim() ?? null,
 			editing: !!document.querySelector('#explorer-project-input'),
 			scene: document.querySelector('#explorer-scene')?.textContent?.trim() ?? null
 		}));
-	let c = await crumb();
+	let c = await chip();
 	h.check(
 		c.project === 'Dungeon Crawl' && c.scene === 'Arena',
 		`the header reads Project / Scene (${JSON.stringify(c)})`
@@ -297,11 +301,11 @@ h.run(async () => {
 	// Escape cancels — the file's own inline-rename convention, and never a prompt
 	await A.page.locator('#explorer-project').click();
 	await A.page.waitForTimeout(250);
-	h.check((await crumb()).editing, 'clicking the project name opens an inline input, not a prompt');
+	h.check((await chip()).editing, 'clicking the project name opens an inline input, not a prompt');
 	await A.page.locator('#explorer-project-input').fill('Typed and abandoned');
 	await A.page.keyboard.press('Escape');
 	await A.page.waitForTimeout(250);
-	c = await crumb();
+	c = await chip();
 	h.check(
 		c.project === 'Dungeon Crawl' && !c.editing,
 		`Escape cancels and leaves the name alone (${JSON.stringify(c)})`
@@ -313,7 +317,7 @@ h.run(async () => {
 	await A.page.keyboard.press('Enter');
 	await A.page.waitForTimeout(300);
 	h.check(
-		(await crumb()).project === 'Tower Defence' &&
+		(await chip()).project === 'Tower Defence' &&
 			(await manifestOf(A)).name === 'Tower Defence',
 		'Enter commits into the manifest — one write path, replicated and persisted'
 	);
@@ -327,8 +331,8 @@ h.run(async () => {
 	await A.page.evaluate(() => window.__stores.projectManifest.setProjectName(''));
 	await A.page.waitForTimeout(300);
 	h.check(
-		(await crumb()).project === 'Untitled project',
-		'an unnamed project says so rather than showing an empty crumb'
+		(await chip()).project === 'Untitled project',
+		'an unnamed project says so rather than showing an empty segment'
 	);
 	const unnamed = await titleOf(A);
 	h.check(
@@ -464,8 +468,8 @@ h.run(async () => {
 		'the title shows the scene name, not the filename'
 	);
 	h.check(
-		(await crumb()).scene === 'Arena',
-		'and so does the breadcrumb — both read the manifest name'
+		(await chip()).scene === 'Arena',
+		'and so does the header chip — both read the manifest name'
 	);
 	await A.page.evaluate(() => window.__stores.explorer.activeFolder.set(null));
 	await A.page.waitForTimeout(600);

@@ -244,6 +244,8 @@
 	}
 	let thumbIdx: Record<string, number> = $state({}); // per pack-item webp->png->screenshot cursor
 	let packZipInput: HTMLInputElement | undefined = $state();
+	// 21-G8: the "Import project as folder (.tp)…" menu entry's hidden picker
+	let tpImportInput: HTMLInputElement | undefined = $state();
 	let hideBuiltinPacks = $state(
 		typeof localStorage !== 'undefined' && localStorage.getItem('explorerHideBuiltinPacks') === 'true'
 	);
@@ -840,7 +842,8 @@
 						// 21-G3: the whole project as ONE file. Offered only once there IS
 						// a project — a pristine manifest would export an empty zip, and an
 						// entry that can only produce nothing is worse than no entry.
-						// Importing one rides the Sidebar's Open (a .tp in the file dialog).
+						// 21-G8: OPENING one (replace everything) rides the Sidebar's Load;
+						// this menu's import MERGES the file in as a folder (fork 12).
 						...(manifestInUse()
 							? [
 									{
@@ -850,7 +853,13 @@
 										action: () => downloadProject()
 									}
 								]
-							: [])
+							: []),
+						{
+							label: 'Import project as folder (.tp)…',
+							tooltip:
+								'Adds a .tp file’s contents to your library as one folder — nothing opens, your project stays',
+							action: () => tpImportInput?.click()
+						}
 					]
 		};
 	}
@@ -897,7 +906,28 @@
 			showToast('This view is read-only — drop files into a Library folder');
 			return;
 		}
-		importFiles(files, folder === 'prefabs' ? null : folder);
+		// 21-G8 fork 12: a dropped .tp is an IMPORT — it merges in as a folder named
+		// after the project and never opens anything (the Sidebar's Load is the OPEN
+		// path). Everything else takes the ordinary item import, .tpscene included —
+		// a scene file is an ordinary kind-'scene' item in the active folder.
+		const rest: File[] = [];
+		for (const f of Array.from(files)) {
+			if (f.name.toLowerCase().endsWith('.tp')) void importTpAsFolder(f);
+			else rest.push(f);
+		}
+		if (rest.length) importFiles(rest, folder === 'prefabs' ? null : folder);
+	}
+
+	/** 21-G8: route a .tp file to the merge-as-folder import (never OPEN from a drop) */
+	async function importTpAsFolder(file: File) {
+		const { importProjectAsFolder } = await import('$lib/projectFile');
+		await importProjectAsFolder(await file.arrayBuffer());
+	}
+	async function onImportTpFile(e: Event) {
+		const input = e.currentTarget as HTMLInputElement; // capture BEFORE any await
+		const file = input?.files?.[0];
+		if (file) await importTpAsFolder(file);
+		if (input) input.value = '';
 	}
 
 	function itemDragPayload(item: any) {
@@ -1601,6 +1631,9 @@
 {/snippet}
 
 {#if !$explorerClose}
+	<!-- 21-G8: the "Import project as folder (.tp)…" picker — mounted whenever the
+	     Explorer is open (the menu entry that clicks it can open from any view) -->
+	<input bind:this={tpImportInput} type="file" accept=".tp" class="hidden" onchange={onImportTpFile} />
 	{#if docked}
 		<div
 			id="explorer-list"

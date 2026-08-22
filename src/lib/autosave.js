@@ -186,9 +186,27 @@ async function saveSnapshot() {
 	}
 }
 
+/** 21-G8: one-shot listeners for "the scene just got dirtied" — the seam behind the
+ * "Save into your project" prompt after opening a loose .tpscene. Each fires ONCE and
+ * is removed BEFORE it runs (a listener that saves would re-enter markDirty).
+ * @type {Set<() => void>} */
+const dirtyOnce = new Set();
+/** @param {() => void} fn @returns {() => void} unsubscribe */
+export function onNextDirty(fn) {
+	dirtyOnce.add(fn);
+	return () => dirtyOnce.delete(fn);
+}
+
 function markDirty() {
 	if (!started) return;
 	dirty = true;
+	if (dirtyOnce.size)
+		for (const fn of [...dirtyOnce]) {
+			dirtyOnce.delete(fn);
+			try {
+				fn();
+			} catch {}
+		}
 	clearTimeout(debounceTimer);
 	debounceTimer = setTimeout(saveSnapshot, DEBOUNCE_MS);
 }

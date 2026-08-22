@@ -70,7 +70,9 @@ export const SCENES_FOLDER = 'Scenes';
  * either. LOCAL on purpose — a late joiner converges on the level's CONTENT through the
  * ordinary handshake sync and simply shows no name until the next travel names one.
  * `signature` is the content identity the auto-save compares against (see sceneSignature).
- * @type {import('svelte/store').Writable<{hash: string, name: string, signature?: string} | null>} */
+ * 21-G8 fork 12: `unsaved` marks a loose .tpscene OPENED from disk — named, on screen,
+ * but NOT a member of the project until the user saves it in.
+ * @type {import('svelte/store').Writable<{hash: string, name: string, signature?: string, unsaved?: boolean} | null>} */
 export const currentLevel = writable(null);
 
 /**
@@ -190,6 +192,11 @@ export async function saveSceneAsLevel(name) {
 async function autoSavePublishDeparting() {
 	const at = get(currentLevel);
 	if (!at?.name) return false;
+	// 21-G8 fork 12: a loose .tpscene opened from disk carries a name but is NOT a
+	// project member — publishing it on travel-away would add it to the project
+	// uninvited. The user was offered "Save into project" on their first edit; until
+	// they take it, this scene has the protection an unnamed scene has (the autosave).
+	if (at.unsaved) return false;
 	if (get(sessionHost) !== null) return false; // not the writer
 	/** @type {any} */
 	let payload = null;

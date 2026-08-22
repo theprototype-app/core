@@ -45,6 +45,10 @@ import { applyHandModel, handModelState, dropPeerHandModel } from '$lib/handMode
 import { applyRemoteEnvironment, environmentState, envPresetsState, applyRemoteEnvPresets, dropPeerEnvPresets } from '$lib/environment';
 import { applyRemoteMusic, musicState } from '$lib/sceneMusic';
 import { applyRemoteScenePhysics, scenePhysicsState } from '$lib/scenePhysics';
+// CO1: where the physical room's origin sits in content coords. The scenephysics
+// shape — one latest-wins singleton + a getroomanchor reply. The per-device ALIGNMENT
+// that composes with it is deliberately not on the wire at all.
+import { applyRoomAnchorRemote, sendRoomAnchor } from '$lib/colocation';
 import { applyRemoteScenePost, scenePostStates, sendScenePost } from '$lib/scenePost';
 import { applyRemoteShaderGraph, applyRemoteShaderGraphDelete, applyRemoteShaderGraphs, sendShaderGraphs } from '$lib/shaderSync';
 import {
@@ -447,6 +451,13 @@ export class PeerConnection {
 					applyRemoteMusic(data);
 				} else if(data.type == 'scenephysics') {
 					applyRemoteScenePhysics(data);
+				} else if(data.type == 'roomanchor') {
+					// CO1: the room anchor, latest-wins on `at`. Applying it never re-poses
+					// the rig here — a peer that is not colocated has no alignment to
+					// compose it with, and one that is re-composes on its own next apply.
+					applyRoomAnchorRemote(data);
+				} else if(data.type == 'getroomanchor') {
+					sendRoomAnchor(data.sender);
 				} else if(data.type == 'manifest') {
 					// 21-G2: the project manifest, latest-wins on changedAt
 					applyRemoteManifest(data);
@@ -720,6 +731,10 @@ export class PeerConnection {
 		if (getobjects) conn.send({type: 'getjoints', sender: this.peer.id})
 		if (getobjects) conn.send({type: 'getanim', sender: this.peer.id})
 		if (getobjects) conn.send({type: 'getscenepost', sender: this.peer.id})
+		// CO1: a REQUEST rather than a push, because a scene that never colocated must
+		// send nothing at all — `sendRoomAnchor` returns early on a null anchor, so the
+		// handshake of a non-colocated session is byte-identical to what it always was.
+		if (getobjects) conn.send({type: 'getroomanchor', sender: this.peer.id})
 		if (getobjects) conn.send({type: 'getshadergraphs', sender: this.peer.id})
 		if (getobjects) conn.send({type: 'gethuds', sender: this.peer.id})
 		if (getobjects) conn.send({type: 'gethudvalues', sender: this.peer.id})

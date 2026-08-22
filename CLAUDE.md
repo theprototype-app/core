@@ -267,9 +267,19 @@ loadable play content. Everything a user does must be visible to connected peers
   not exist anywhere: MeshEditPopup/SculptToolbar are rendered by a consumer's own
   `{#if}` over state their SESSION stores already own, so a sessionless toolbox had
   nowhere to keep open/closed — and those two are deliberately NOT moved onto it.
-  `buildToolboxItems` is the ONE builder the sidebar's Modules section and the viewport
-  menu share (the `buildObjectMenuItems` precedent); a toolbox is LOCAL, hidden in Play
-  mode unless it passes `playMode: true`,
+  `buildToolboxItems(list, open, surface)` is the ONE builder the sidebar's Modules
+  section and the viewport menu share (the `buildObjectMenuItems` precedent), and the
+  SURFACE argument is why the filter lives there rather than in Sidebar's markup: R3a
+  added `sidebar: false`, so a toolbox belonging to a WORKFLOW (the collectible manager)
+  keeps its viewport-menu row and drops the permanent burger-menu one — the burger menu
+  is the app's own chrome and a row there is a standing claim on it (the 21-C3 Road-menu
+  ruling, one surface over). Absent = listed, so every shipped module is byte-unchanged.
+  A toolbox is LOCAL, hidden in Play mode unless it passes `playMode: true`; R3a also
+  added the OPEN half — `api.openToolbox/closeToolbox/toggleToolbox` take the id
+  `registerToolbox` returns, which had been documented as "open/close it with this"
+  since A5 with nothing able to do it (the `api.hud.rows` family). `openToolbox` also
+  DISMISSES the Modules manager, the one chrome that can cover a toolbox — pair it with
+  `registerMenu`, which renders a button on the module's own card,
   `physics` (#12 rework: rapier steps as a flowRuntime **post-tick hook** —
   flow poses → kinematic targets → step → write-back; fixed-timestep accumulator
   (1/60, ≤8 substeps) so sim time tracks REAL time under throttled rAF; flow-animated
@@ -826,12 +836,16 @@ loadable play content. Everything a user does must be visible to connected peers
   parity-zero act on a FINITE cutoff only. Respawn is BUILT into the graph — a Delay
   off the CLICK (never the Once: rearm DELETES the entry a Once-sourced Delay
   re-derives its moment from) → latch.reset + once.rearm. Groups = every child MESH,
-  ONE flownodes entry per group; `makeCollectiblePrompt` + CollectibleDialog (chips,
-  not a datalist — the 21-D3 finding). `collectcount` (F3) derives
-  total/collected/left by WALKING the recipe shape backwards from the counter (the
-  variable is a score that only goes up and lies after a respawn);
-  `collectibleCountsFor` is the same derivation exported for the `debug` HUD kind —
-  a collapsed pill (state/round/elapsed/vars/counts/per-player mode chips/fps,
+  ONE flownodes entry per group. **EVERYTHING COLLECTIBLE-SHAPED IN THIS PARAGRAPH LEFT
+  CORE IN R3a** — the recipe (`gameRecipes`/`recipeDialog`/CollectibleDialog), the
+  `collectcount` node and its chain WALK, `collectibleCountsFor`, the hudActions
+  "showleft" entry and the debug pill's counts line all live in the collectible MODULE
+  now (see the R3a status entry); what stayed is every PRIMITIVE they stood on —
+  perRound/whilePlaying, roundCutoff's two rules, replicatesPulse, peerVars — which is
+  the whole point of the split. The 7-node chain survives as a TEST FIXTURE
+  (`helpers.makeCollectibleChains`), because those primitives still need covering. The
+  `debug` HUD kind keeps its pill —
+  a collapsed pill (state/round/elapsed/vars/per-player mode chips/module lines/fps,
   click-to-expand LOCAL, a 500ms sampler because half its sources have no store
   signal). F1: `hudArrange.js` (imports NOTHING) — 9 align/distribute/equalize ops
   as DATA over ABSOLUTE stage rects, written back through each element's OWN anchor
@@ -1390,6 +1404,27 @@ loadable play content. Everything a user does must be visible to connected peers
 
 ## Hard-won gotchas (do not rediscover)
 
+- **A SURFACE WHOSE OWN DOCS PROMISE AN API THAT DOES NOT EXIST.** `registerToolbox` has
+  returned its id documented as "open/close it with this" since A5, and nothing could
+  open it — the first module to want a button of its own (the collectible manager) found
+  the gap. Same family as `api.hud.rows`, whose element summary advertised an API that
+  had to be built to make the sentence true, and as the sidebar Modules section moduleSDK
+  claimed before it existed. When writing a JSDoc promise about a RETURNED handle, grep
+  for the thing that consumes it before shipping the sentence.
+- **KILLING THE npm TASK DOES NOT KILL VITE.** `TaskStop` on a backgrounded
+  `npm run dev` reaped npm and left the vite CHILD listening — so the port still
+  answered 200, and the `npm run build` that followed ran against a live server (the
+  documented never-build-under-a-dev-server trap, entered by way of a kill that looked
+  successful). Confirm with `netstat -ano | grep :PORT` and `taskkill //PID n //F`
+  before trusting that a lane server is down; a 200 after a kill means the child
+  outlived its parent, not that the kill failed to register.
+- **A CHECK CANNOT DRIVE A UI THAT ONLY EXISTS FOR REAL RECORDS.** The Modules manager
+  renders cards for CORE modules and installed USER records, so an inline
+  `initModules` test module has no card and `getByRole('button')` waits 30s for a
+  button that cannot exist. The generic seam is asserted in core against the registered
+  menu ENTRY's own action (the same function the card calls); the REAL DOM click lives
+  in the module repo's flight, where the module is genuinely installed. Split the
+  coverage at the seam, not at the click.
 - **A NEW NODE TYPE HAS TWO REGISTRIES, AND ONLY ONE COMPLAINS.** `nodeCatalog` fills
   the palette; `CORE_NODE_TYPES` in `Nodes.svelte` maps a type to its CARD, and its
   fallback for an unrecognised type is `UnknownNode` — "This node comes from a module
@@ -3039,6 +3074,39 @@ override for e2e — never share 5173 (the user's main-checkout server).
   (open-core: OSS ships only inert hooks — capability gate / auth hook /
   VITE_CLOUD_PLUGIN — cloud repo holds registration/rooms/roles; contract in its
   MAINTAINING.md).
+- Status (2026-08-22, latest): **21-G ROUND 3 — COLLECTIBLES v3 IS A MODULE. R3a (core
+  seams + the extraction) and R3b (the module) BOTH SHIPPED**: core PR #170 on
+  `feat/sdk-game-seams` (`6e994d1` the seams + migration, `78899d2` the toolbox
+  follow-ups) and modules PR #1 on `feat/collectible`. Baseline **385/62** at every
+  commit; build green. THE RULING, worth not re-litigating: **framework stays in core,
+  mechanics become modules** — nothing collectible had SHIPPED, so extraction was cheap
+  then and dearer later, and the SDK seams it forced are good for every module author
+  (the 17-A playbook). What LEFT: gameRecipes/recipeDialog/CollectibleDialog, the
+  `collectcount` node + its chain walk, hudActions' "showleft", the debug pill's counts
+  line + its `variable` field, and the node editor's pane-menu recipe injection. What
+  STAYED: every primitive they stood on. New SDK surface + the `trigger` ctx are in the
+  Module SDK section; the toolbox pair (`sidebar: false` + openToolbox/closeToolbox/
+  toggleToolbox) is in the moduleToolboxes entry. Suites: NEW `sdk-game-seams` (40, two
+  peers) covering every seam incl. the counterfactual that the migrated pieces are GONE;
+  `module-toolbox` grown to 46; `helpers.makeCollectibleChains` is the 7-node chain as a
+  FIXTURE, and collectibles-v2 (70) / game-loop-v2 (63) / v3 (27) / v4 (18) /
+  game-presence (62) / peer-variables (72) / scene-folders (38) were rewired onto it,
+  their recipe-UI sections flipped to assert the migration and their collectcount
+  readings derived from latch `flowValues` (FILTER those ids against the live graph — a
+  wipe or a scene swap must drop them). Module side: ONE `collectible` node
+  (variable/scope/trigger click|touch/radius/respawn/hide + perRound + whilePlaying),
+  touch = per-peer self-proximity, stamp-edge counting that SEEDS-WITHOUT-COUNTING on
+  first sight, `collectiblecount` reading BOTH the module shape and legacy chains, the
+  manager toolbox (rows/live counts/inline edits/make-selection-collectible), and NO
+  `registerStateSync` because every bit of state was already replicated — suite
+  `module-collectible` 82 checks on the real zip across three peers incl. the late
+  joiner. **DEVX #18, the one core follow-up worth doing: the flow TRIGGER LOG has no
+  handshake reply**, so a peer joining mid-round sees collected objects back on the
+  table — pre-existing (the 21-F recipe stood on the same stamps), asserted in the
+  module suite so a core `gettriggers`/`triggers` pair would flip it loudly. OWED
+  on-device: the manager in non-dark themes and as a <=640px sheet, touch radius feel in
+  VR, a 3+ player per-player scramble. Plan: cloud `plans-core/roadmap-21g-projects-
+  presence.md` ROUND 3 REVISED.
 - Status (2026-08-21, latest): **ROADMAP 21-G — PROJECTS, CROSS-SCENE PRESENCE,
   PER-PLAYER PROGRESS: G1-G6 EXECUTED same-day off the 21-F merge (release/next
   @fdfbe39); MERGED 2026-08-22: PRs #164 -> #165 -> #166 to release/next @f126b85 (both lane merges landed CLEAN - G1 was already both branches' base - and the App.svelte hook counts held 164/164). ROUND 2 (G7-G10, DCC-standard projects: hidden version history + panel, the TP|Scene|GLTF menu with open-replaces vs import-furnishes, project/scene identity, inline naming) and ROUND 3 (the collectible NODE + manager toolbox) are PLANNED with locked forks 10-20 in the same plan doc, executing in parallel windows.** The user's four fork
@@ -4283,6 +4351,37 @@ target socket at all; `registerToolbox({id, title, mount, playMode?, shortcut?})
 real UI surface over ToolboxWindow (see the moduleToolboxes entry). `NodeParam.kind`
 also gained `'text'`, which writes on COMMIT (change/blur) and never on `input`,
 because a node edit replicates the WHOLE node.
+**R3a additions — THE GAME SEAMS** (roadmap 21-G round 3; collectibles v3 is a MODULE,
+so core's job is seams plus the 17-A extraction ritual): `api.game.{roundCutoff,
+roundUnderway, playActive, getVar, setVar}` (the round reads perRound content gates on
++ the shared game variable); `api.peerVars.{setMine, mine, all}` (peer-owned rows, ONE
+writer per row BY CONSTRUCTION — this api only ever writes YOUR row, which is what makes
+per-player counting immune to the shared-add race); `fireNodeTrigger(type, match,
+{replicate:false})` (the per-player LOCAL pulse, stated by the CALLER because a module
+spells its scope its own way and `replicatesPulse` only knows `perPlayer`);
+`api.playerPosition()` (the viewer camera as [x,y,z] — a touch trigger's self-proximity
+read, no sim involved); `api.selectObject`/`selectedUuids` (the SET, never the sticky
+primary); `api.flow.{nodes, edges, nodeValue, triggerStamp, setNodeData, addNodes}` —
+graph reads are DETERMINISTIC because the graph is replicated (treat them as replicated
+state, the value-node rule), `nodeValue` is how a module reads a CORE Latch's
+round-aware state instead of reimplementing it, and `addNodes` is the recipe path
+verbatim (nodecreate/edgecreate per item + ONE `flownodes` undo entry + canonical
+handle-qualified edge ids); `api.hud.registerDebugLine(fn)` + `registerAction(entry)`
+(the debug pill's line and a hudActions catalog entry, both held in the
+`moduleHudKinds` LEAF because hudActions reaches the history family and moduleSDK may
+not import it — moduleSDK writes the leaf, hudActions reads it, the moduleToolboxes
+rule). **THE ONE THAT MAKES THE REST WORK**: module effect AND value ctx now carry
+`trigger: {stamp, age} | null` — the node's OWN trigger-log entry ALREADY folded
+through the round rules in CORE (`moduleTriggerInfo`/`freshStamp`), so a module stamps
+`perRound` on its node data and never does round arithmetic; `whilePlaying` likewise
+generalised from the Visibility node to ANY effect node, so a module that hides an
+object inherits the restore-loop hand-back (manual visibility wins outside play) rather
+than reimplementing the 21-F2 fix wrong. FRAMEWORK STAYS, MECHANICS LEAVE — that is the
+line, and it is the industry's (Unreal ships GameMode/GameState/PlayerState in the
+engine and pickups in the marketplace): a Game-category node stays core if it is SHELL
+(state, round, time, variables, per-player rows) and becomes a module if it encodes a
+MECHANIC's shape. `collectcount` was the one node in that group that knew a content
+shape, and it is gone.
 A module KIND that must agree across peers derives from the replicated object
 NAME, never locally-set userData (essentials + car). User modules (zip/URL via the
 manager) must be self-contained — no imports; guide in `MODULES.md` + the public

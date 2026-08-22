@@ -93,7 +93,68 @@ export function moduleHudKindList() {
 	return get(moduleHudKinds);
 }
 
+// --- R3a: MODULE DEBUG LINES -------------------------------------------------------
+//
+// The debug HUD element's collectibles line was the one line in it that knew the
+// recipe's chain shape, and the chain moved to the collectible module — so the LINE is
+// now a seam. A module registers `() => string | null` and the debug element's 500ms
+// sampler renders whatever comes back (null = nothing to say right now). Same leaf
+// reasoning as the kinds above: moduleSDK writes here, HudElement reads here.
+
+/** @type {import('svelte/store').Writable<{moduleId: string, fn: () => string | null}[]>} */
+export const moduleDebugLines = writable([]);
+
+/** @param {string} moduleId @param {() => string | null} fn @returns {() => void} */
+export function registerModuleDebugLine(moduleId, fn) {
+	const entry = { moduleId, fn };
+	moduleDebugLines.update((list) => [...list, entry]);
+	return () => moduleDebugLines.update((list) => list.filter((e) => e !== entry));
+}
+
+/** The sampled strings, errors and nulls dropped. @returns {string[]} */
+export function moduleDebugLineTexts() {
+	/** @type {string[]} */
+	const out = [];
+	for (const entry of get(moduleDebugLines)) {
+		try {
+			const text = entry.fn();
+			if (typeof text === 'string' && text) out.push(text);
+		} catch {}
+	}
+	return out;
+}
+
+// --- R3a: MODULE HUD ACTIONS -------------------------------------------------------
+//
+// hudActions' catalog entry "Show collectibles left" moved out with the collectcount
+// node, so the CATALOG is a seam now too: a module contributes entries in the exact
+// HudActionDef shape (hudActions.js documents it) and `actionsForKind` merges them.
+// The registry lives HERE and not in hudActions because hudActions reaches
+// nodesHandler/flowGraphs (the history family) and moduleSDK may not import it —
+// moduleSDK writes into this leaf, hudActions reads out of it (moduleHudKinds' rule).
+
+/** @type {import('svelte/store').Writable<any[]>} */
+export const moduleHudActions = writable([]);
+
+/** Keys are namespaced `mod-<moduleId>-<key>` — same rule as kinds, same reason.
+ * @param {string} moduleId @param {any} entry @returns {() => void} */
+export function registerModuleHudAction(moduleId, entry) {
+	const key = 'mod-' + moduleId + '-' + String(entry?.key ?? 'action');
+	const tagged = { ...(entry ?? {}), key, moduleId };
+	moduleHudActions.update((list) => [...list.filter((a) => a.key !== key), tagged]);
+	return () => moduleHudActions.update((list) => list.filter((a) => a !== tagged));
+}
+
+/** Plain read for hudActions' merge point. @returns {any[]} */
+export function moduleHudActionList() {
+	return get(moduleHudActions);
+}
+
 /** test/debug view */
 export function moduleHudKindsDebug() {
-	return { kinds: Object.keys(byKind) };
+	return {
+		kinds: Object.keys(byKind),
+		debugLines: get(moduleDebugLines).length,
+		actions: get(moduleHudActions).map((a) => a.key)
+	};
 }

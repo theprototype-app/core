@@ -28,7 +28,7 @@
 //     outlive a round by definition. A racing game that resets laps on a new round is a
 //     game DECISION, not a property of the storage.
 //   * 21-F2's collectible reset does not need it: the reset is DERIVED from `perRound`
-//     LATCHES against the replicated round, and `collectcount` reads those latches
+//     LATCHES against the replicated round, and the collectible module's count reads those
 //     rather than the variable, so a per-player collectible chain already reads
 //     un-collected on a new round with no clear of any kind.
 //   * And an automatic clear would need a WRITER and a MOMENT. Whoever bumped the round

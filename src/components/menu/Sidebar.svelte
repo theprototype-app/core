@@ -169,8 +169,10 @@
 		     what makes moduleSDK's JSDoc true — it already CLAIMED a sidebar Modules
 		     section that did not exist. Deliberately not a Controls HUD button: the
 		     corner HUD already reflows four buttons at <=600px and does not scale to N
-		     modules. The rows come from the SAME builder the viewport menu uses. -->
-		{#each buildToolboxItems($moduleToolboxes, $openToolboxes) as box (box.id)}
+		     modules. The rows come from the SAME builder the viewport menu uses, which is
+		     asked as the 'sidebar' surface: a toolbox may opt OUT of this permanent row
+		     (`sidebar: false`) and keep its viewport-menu one. -->
+		{#each buildToolboxItems($moduleToolboxes, $openToolboxes, 'sidebar') as box (box.id)}
 			<button
 				id="open-toolbox-{box.id}"
 				class="side-row side-sub"

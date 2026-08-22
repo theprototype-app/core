@@ -55,9 +55,8 @@ const OUTPUT = {
 	ongamestate: 'event',
 	getvariable: 'number',
 	gametime: 'number',
-	// 21-F3: how many collectibles are left / collected / there are. A count, so a
-	// number socket — it wires into a HUD Text exactly like Get Variable does.
-	collectcount: 'number',
+	// 21-F3's `collectcount` MOVED to the collectible module (R3a); a module value
+	// node's socket type comes from its registerValueNode `vtype`, so no entry here.
 	// 21-G4: one player's own number (mine / a named peer / the sum / the max)
 	peervariable: 'number',
 	// 21-E4: the logic a game loop is made of. Latch is the only STATE node here -

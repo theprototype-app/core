@@ -94,10 +94,40 @@ const makeBoxes = (peer, count) =>
 		return uuids;
 	}, count);
 
-const recipe = (peer, uuids, opts = {}) =>
+// 21-G R3a moved the RECIPE out of core into the collectible module, so the builder is a
+// test FIXTURE now (`h.makeCollectibleChains`). Everything this suite is about — the
+// `perPlayer` mark on the click, `scope: 'player'` on the counter, peer-owned rows — is
+// core and unchanged. `chainsByVar` remembers the node ids so per-peer progress can be
+// read straight off each chain's own Latch.
+/** @type {Record<string, any[]>} */
+const chainsByVar = {};
+const recipe = async (peer, uuids, opts = {}) => {
+	const result = await h.makeCollectibleChains(peer, uuids, opts);
+	chainsByVar[result.variable] = (chainsByVar[result.variable] ?? []).concat(result.chains);
+	return result;
+};
+
+/**
+ * What `collectcount` used to report, derived here instead — R3a took that node into the
+ * module with the recipe. A collectible is COLLECTED when its Latch reads truthy, and a
+ * Latch is a value node, so its live output sits in `flowValues`. The latch ids are
+ * filtered against the live graph, so a `wipe` drops those chains rather than inflating
+ * the total.
+ */
+const countsFor = (peer, variable) =>
 	peer.page.evaluate(
-		({ uuids, opts }) => window.__stores.gameRecipes.makeCollectible(uuids, { quiet: true, ...opts }),
-		{ uuids, opts }
+		(latches) => {
+			const s = window.__stores;
+			let g;
+			s.flowGraphs.subscribe((x) => (g = x))();
+			const live = new Set((g.scene?.nodes ?? []).map((n) => n.id));
+			const present = latches.filter((id) => live.has(id));
+			let v;
+			s.flowValues.subscribe((x) => (v = x))();
+			const collected = present.filter((id) => !!v[id]).length;
+			return { total: present.length, collected, left: present.length - collected };
+		},
+		(chainsByVar[variable] ?? []).map((c) => c.ids.latch)
 	);
 
 /** The chain the recipe built for ONE object, walked back from its Object Selector. */
@@ -210,7 +240,11 @@ h.run(async () => {
 	const browser = await h.launch({ args: h.GPU_ARGS });
 	const A = await h.setupPage(browser, 'A');
 	const B = await h.setupPage(browser, 'B');
-	for (const p of [A, B]) await p.page.waitForFunction(() => !!window.__stores?.peerVars, { timeout: 30000 });
+	for (const p of [A, B])
+		await p.page.waitForFunction(
+			() => !!window.__stores?.peerVars && !!window.__stores?.flowGraphsCtl && !!window.__stores?.nodesHandler,
+			{ timeout: 30000 }
+		);
 	// connect BEFORE anyone plays — a peer cannot approve a request while in play mode.
 	// A dials, B approves, so B holds sessionHost === null and is the session writer.
 	await h.connect(A, B);
@@ -360,17 +394,18 @@ h.run(async () => {
 		12000
 	);
 
-	// ---- 2b. `collectcount` reads MY progress by construction --------------------
-	const counts = await Promise.all(
-		[A, B].map((p) => p.page.evaluate(() => window.__stores.flowRuntime.collectibleCountsFor('gems')))
-	);
+	// ---- 2b. per-peer progress reads MY latches by construction ------------------
+	// The old shape of this check ran core's `collectcount` node; R3a moved that node into
+	// the collectible module, so the reading is derived here. The POINT is untouched: one
+	// replicated graph, and each peer's own Latches say only what THAT peer collected.
+	const counts = await Promise.all([A, B].map((p) => countsFor(p, 'gems')));
 	h.check(
 		counts[0].collected === 2 && counts[0].left === 0,
-		`A's Collectibles node reads 2 collected / 0 left (${JSON.stringify(counts[0])})`
+		`A's own latches read 2 collected / 0 left (${JSON.stringify(counts[0])})`
 	);
 	h.check(
 		counts[1].collected === 1 && counts[1].left === 1,
-		`and B's reads 1 / 1 — same graph, own latches (${JSON.stringify(counts[1])})`
+		`and B's read 1 / 1 — same graph, own latches (${JSON.stringify(counts[1])})`
 	);
 
 	// =====================================================================

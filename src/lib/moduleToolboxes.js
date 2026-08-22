@@ -30,7 +30,7 @@ import { writable, get } from 'svelte/store';
  *   defaultRect?: {left?: number, top?: number, right?: number, bottom?: number},
  *   mount: (el: HTMLElement) => (() => void) | void,
  *   onOpen?: () => void, onClose?: () => void,
- *   playMode?: boolean, shortcut?: string
+ *   playMode?: boolean, shortcut?: string, sidebar?: boolean
  * }} ModuleToolbox
  */
 
@@ -116,15 +116,25 @@ export function unregisterModuleToolboxes(moduleId) {
  * THE ONE BUILDER for "which module toolboxes can I open", shared by the sidebar's
  * Modules section and the viewport menu — the `buildObjectMenuItems` precedent, so the
  * two hosts cannot drift. Rows are plain data; each host renders them its own way.
- * @param {ModuleToolbox[]} list @param {string[]} open
+ *
+ * `surface` is which host is asking. A toolbox with `sidebar: false` is left out of the
+ * SIDEBAR's list and keeps its viewport-menu row — for a module whose window belongs to
+ * a workflow rather than to the app's permanent chrome, and which would rather be found
+ * where the work is (a right-click in the viewport, or its own button in the Modules
+ * manager) than add a row to the burger menu forever. ABSENT means listed, so every
+ * shipped module and both hosts are byte-identical to before this parameter existed;
+ * filtering here rather than in the sidebar's markup is what keeps this the ONE builder.
+ * @param {ModuleToolbox[]} list @param {string[]} open @param {'sidebar'|'menu'} [surface]
  * @returns {{id: string, label: string, checked: boolean, shortcut: string|null, action: () => void}[]}
  */
-export function buildToolboxItems(list, open) {
-	return (list ?? []).map((box) => ({
-		id: box.id,
-		label: box.title,
-		checked: (open ?? []).includes(box.id),
-		shortcut: box.shortcut ?? null,
-		action: () => toggleModuleToolbox(box.id)
-	}));
+export function buildToolboxItems(list, open, surface) {
+	return (list ?? [])
+		.filter((box) => surface !== 'sidebar' || box.sidebar !== false)
+		.map((box) => ({
+			id: box.id,
+			label: box.title,
+			checked: (open ?? []).includes(box.id),
+			shortcut: box.shortcut ?? null,
+			action: () => toggleModuleToolbox(box.id)
+		}));
 }

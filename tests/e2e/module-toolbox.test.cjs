@@ -335,6 +335,137 @@ h.run(async () => {
 	});
 	h.check(optedIn, 'playMode: true keeps a toolbox visible in Play mode (a game`s host settings)');
 
+	// ---- 7b. `sidebar: false` + the open/close API (R3a follow-up) -----------
+	//
+	// TWO seams the collectible module needed. A toolbox that belongs to a WORKFLOW does
+	// not want a permanent row in the burger menu (the app's own chrome), so it opts out
+	// of the sidebar and keeps its viewport-menu row — and then something has to be able
+	// to OPEN it, which `registerToolbox`'s returned id always promised ("open/close it
+	// with this") and nothing delivered (the `api.hud.rows` family: a surface whose own
+	// docs claim an API that does not exist).
+	const quiet = await page.evaluate(async () => {
+		const s = window.__stores;
+		window.__quiet = {};
+		await s.moduleSDK.initModules([
+			{
+				id: 'testquiet',
+				name: 'Quiet toolbox',
+				version: '1.0.0',
+				description: 'sidebar opt-out + the open API',
+				register(api) {
+					window.__quiet.id = api.registerToolbox({
+						id: 'panel',
+						title: 'Quiet Panel',
+						sidebar: false,
+						mount: (el) => {
+							el.textContent = 'quiet';
+						}
+					});
+					// the way IN a module gets instead: a button on its own manager card
+					api.registerMenu('Open Quiet', () => api.openToolbox(window.__quiet.id));
+				}
+			}
+		]);
+		const t = s.moduleToolboxes;
+		let list, open, menuItems;
+		t.moduleToolboxes.subscribe((v) => (list = v))();
+		t.openToolboxes.subscribe((v) => (open = v))();
+		s.moduleSDK.moduleMenuItems.subscribe((v) => (menuItems = v))();
+		// the ONE builder, asked the way each host asks it
+		const rowIds = (surface) => t.buildToolboxItems(list, open, surface).map((b) => b.id);
+		return {
+			sidebar: rowIds('sidebar'),
+			viewport: rowIds('menu'),
+			unfiltered: rowIds(),
+			card: menuItems.filter((m) => m.moduleId === 'testquiet').map((m) => m.label)
+		};
+	});
+	h.check(
+		!quiet.sidebar.includes('mod-testquiet-panel') && quiet.sidebar.includes('mod-testtbx-panel'),
+		`sidebar: false drops ITS row and leaves every other module's alone (${JSON.stringify(quiet.sidebar)})`
+	);
+	h.check(
+		quiet.viewport.includes('mod-testquiet-panel'),
+		`and it keeps its viewport-menu row (${JSON.stringify(quiet.viewport)})`
+	);
+	h.check(
+		quiet.unfiltered.includes('mod-testquiet-panel'),
+		'an unqualified build (no surface) still lists everything — the additive default'
+	);
+	h.check(
+		JSON.stringify(quiet.card) === '["Open Quiet"]',
+		`the module put its own opener on its manager card (${JSON.stringify(quiet.card)})`
+	);
+	// and the SIDEBAR really does not render it — measured in the DOM, not in the store
+	await page.locator('#logo-menu').click();
+	await page.waitForTimeout(600);
+	const domRows = await page.evaluate(() => ({
+		quiet: !!document.querySelector('#open-toolbox-mod-testquiet-panel'),
+		other: !!document.querySelector('#open-toolbox-mod-testtbx-panel')
+	}));
+	h.check(!domRows.quiet && domRows.other, 'the sidebar renders no row for it (and still renders the other)');
+	await page.keyboard.press('Escape');
+	await page.waitForTimeout(400);
+
+	// The card ENTRY's own action, with the manager open — the exact function the card's
+	// button calls. (A real DOM click on the card lives in the collectible module's own
+	// suite: the manager renders cards for core modules and installed USER records, and
+	// an inline `initModules` module is neither, so it has no card here to click.)
+	await page.evaluate(() => window.__stores.modulesOpen.set(true));
+	await page.waitForTimeout(700);
+	const afterCard = await page.evaluate(async () => {
+		const s = window.__stores;
+		let items, open;
+		s.moduleSDK.moduleMenuItems.subscribe((v) => (items = v))();
+		items.find((m) => m.moduleId === 'testquiet')?.action();
+		await new Promise((r) => setTimeout(r, 600));
+		s.modulesOpen.subscribe((v) => (open = v))();
+		return { managerOpen: open, inDom: !!document.querySelector('#mod-testquiet-panel') };
+	});
+	h.check(afterCard.inDom, 'the card button opens the toolbox through api.openToolbox');
+	h.check(
+		!afterCard.managerOpen,
+		'and dismisses the Modules manager, which is the one chrome that could cover it'
+	);
+	const closeApi = await page.evaluate(async () => {
+		const s = window.__stores;
+		let api = null;
+		await s.moduleSDK.initModules([
+			{
+				id: 'testquiet2',
+				name: 'Quiet 2',
+				version: '1.0.0',
+				description: 'close + toggle',
+				register(a) {
+					api = a;
+					window.__quiet.id2 = a.registerToolbox({
+						id: 'p',
+						title: 'Q2',
+						mount: (el) => (el.textContent = 'x')
+					});
+				}
+			}
+		]);
+		const id = window.__quiet.id2;
+		api.openToolbox(id);
+		await new Promise((r) => setTimeout(r, 400));
+		const opened = !!document.querySelector('#' + id);
+		api.closeToolbox(id);
+		await new Promise((r) => setTimeout(r, 400));
+		const closed = !document.querySelector('#' + id);
+		api.toggleToolbox(id);
+		await new Promise((r) => setTimeout(r, 400));
+		const toggledOn = !!document.querySelector('#' + id);
+		api.toggleToolbox(id);
+		await new Promise((r) => setTimeout(r, 400));
+		return { opened, closed, toggledOn, toggledOff: !document.querySelector('#' + id) };
+	});
+	h.check(
+		closeApi.opened && closeApi.closed,
+		`api.openToolbox / closeToolbox drive the real window (${JSON.stringify(closeApi)})`
+	);
+	h.check(closeApi.toggledOn && closeApi.toggledOff, 'and toggleToolbox flips it both ways');
+
 	// ---- 8. cloudMount is genuinely SHARED, not copied -----------------------
 	// CloudSlot.svelte was the only consumer; the action moved into $lib/cloudMount and
 	// CloudSlot imports it, so an OSS build with no plugin still renders nothing.

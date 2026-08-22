@@ -151,6 +151,37 @@ function replicatesPulse(node) {
 	return !node?.data?.perPlayer;
 }
 
+/**
+ * R3a: THE TRIGGER-LOG READ HANDED TO MODULE NODES — the node's OWN log entry (not what
+ * is wired into it: that is `triggerStampFor`), already folded through the round rules,
+ * so a module never reimplements latch/perRound semantics (decision 18). `stamp` is the
+ * round-aware pulse identity (null = never fired, or retired by `perRound` against the
+ * replicated round — `freshStamp` reads `node.data.perRound`, which the module's node
+ * carries like the recipe chain's Latch does). `age` is seconds since it, corrected for
+ * the trigger clock's midnight wrap — what a respawn countdown compares against.
+ * @param {any} node @param {any} ctx @returns {{stamp: number, age: number} | null}
+ */
+function moduleTriggerInfo(node, ctx) {
+	const raw = ctx?.triggers?.[node.id]?.lastT;
+	const stamp = typeof raw === 'number' ? freshStamp(node, raw) : null;
+	if (stamp === null) return null;
+	let age = syncedNow() - stamp;
+	if (age < 0) age += 86400; // the trigger clock wraps at midnight (the 43200 rule)
+	return { stamp, age };
+}
+
+/**
+ * R3a: the same read for the SDK (`api.flow.triggerStamp`) — the manager toolbox and a
+ * module's own count node poll it. Null when the node does not exist, never fired, or
+ * its stamp is retired by a round bump.
+ * @param {string} id @returns {{stamp: number, age: number} | null}
+ */
+export function nodeTriggerStamp(id) {
+	const node = nodes.find((n) => n.id === id);
+	if (!node) return null;
+	return moduleTriggerInfo(node, { triggers: get(flowTriggers) });
+}
+
 // --- 21-F2: THE TWO RECIPE RULES, and they are deliberately separate ----------------
 //
 // A collectible is an ordinary graph, so both rules are OPT-IN PER NODE through a param
@@ -1609,8 +1640,8 @@ export const valueTypes = [
 	'hudinput', // 21-D4: the HUD as a SOURCE - what the player set on a slider/toggle/etc
 	// 21-D6 the game shell
 	'ongamestate', 'getvariable', 'gametime',
-	// 21-F3: how many collectibles are left, counted off the graph's own latches
-	'collectcount',
+	// 21-F3's `collectcount` MOVED to the collectible module (R3a) — the chain walk was
+	// the one reader that knew the recipe's shape, and the module owns that shape now
 	// 21-E4: the logic a game LOOP is made of. Sequence's value is a handle MAP,
 	// like objectflow's - unwrapHandle resolves it per reading edge.
 	'latch', 'delay', 'sequence', 'once',
@@ -1681,104 +1712,11 @@ function pointOf(v, ctx) {
 	return null;
 }
 
-// --- 21-F3: HOW MANY COLLECTIBLES ARE LEFT ------------------------------------------
-//
-// THE VARIABLE CANNOT ANSWER THIS, which is the whole reason this reads the graph. The
-// recipe counts pickups INTO a variable, so the variable is a SCORE: it only goes up, it
-// keeps its value through a round bump (nothing resets `vars`), and with F2's respawn it
-// passes the number of objects in the scene. Deriving `left` as `total - variable` would
-// therefore go negative on a respawning scene and stay wrong for the whole of round 2.
-//
-// The LATCHES are the truth. Each collectible's Latch IS "this one is collected", it is
-// already `perRound`, and it is already read by the same pure evaluator every peer runs
-// — so counting the latches gives an answer that self-heals on a round bump, tracks a
-// respawn back down, and needs nothing sent. `collected` is counted the same way, not
-// taken from the variable, so `collected + left === total` by construction rather than
-// by two sources agreeing.
-//
-// WHAT COUNTS AS A COLLECTIBLE CHAIN: the shape `makeCollectible` builds, walked BACK
-// from the counter — SetVariable(name) <-trigger- Once <-trigger- (the pickup event)
-// -set-> Latch. The pickup event is deliberately unconstrained (an On Click today, an On
-// Enter sensor tomorrow); what identifies the chain is the Once feeding this variable
-// and a Latch armed by the same event.
-/** index the edges once — the walk is three hops and a graph can hold hundreds
- * @param {any[]} allEdges */
-function edgeIndex(allEdges) {
-	/** @type {Map<string, any[]>} */ const bySource = new Map();
-	/** @type {Map<string, any[]>} */ const byTarget = new Map();
-	for (const edge of allEdges) {
-		if (!bySource.has(edge.source)) bySource.set(edge.source, []);
-		bySource.get(edge.source)?.push(edge);
-		if (!byTarget.has(edge.target)) byTarget.set(edge.target, []);
-		byTarget.get(edge.target)?.push(edge);
-	}
-	return { bySource, byTarget };
-}
-
-/** Every collectible Latch counting into `variable`, deduped.
- * @param {string} variable @param {any[]} allNodes @param {any[]} allEdges @returns {any[]} */
-export function collectibleLatches(variable, allNodes, allEdges) {
-	const name = String(variable ?? '').trim();
-	if (!name) return [];
-	const { bySource, byTarget } = edgeIndex(allEdges);
-	const byId = new Map(allNodes.map((/** @type {any} */ n) => [n.id, n]));
-	/** @type {Map<string, any>} */
-	const latches = new Map();
-	const into = (/** @type {string} */ id, /** @type {string} */ handle) =>
-		(byTarget.get(id) ?? []).filter((/** @type {any} */ e) => (e.targetHandle ?? null) === handle);
-	for (const counter of allNodes) {
-		if (counter.type !== 'setvariable') continue;
-		if (String(counter.data?.name ?? '').trim() !== name) continue;
-		for (const toCounter of into(counter.id, 'trigger')) {
-			const once = byId.get(toCounter.source);
-			if (once?.type !== 'once') continue;
-			for (const toOnce of into(once.id, 'trigger')) {
-				// the pickup event arms the Latch through its own `set` edge
-				for (const fromEvent of bySource.get(toOnce.source) ?? []) {
-					if ((fromEvent.targetHandle ?? null) !== 'set') continue;
-					const latch = byId.get(fromEvent.target);
-					if (latch?.type === 'latch') latches.set(latch.id, latch);
-				}
-			}
-		}
-	}
-	return [...latches.values()];
-}
-
-/**
- * `{total, collected, left}` for one collectible variable.
- * @param {string} variable @param {any[]} allNodes @param {any[]} allEdges
- * @param {number} time @param {Set<string>} seen @param {any} ctx
- */
-function collectibleStats(variable, allNodes, allEdges, time, seen, ctx) {
-	const latches = collectibleLatches(variable, allNodes, allEdges);
-	let collected = 0;
-	let left = 0;
-	for (const latch of latches) {
-		// the Latch's own eval already applies `perRound` against the replicated round,
-		// so a latch set in a previous round reads UN-collected here with no work of ours
-		if (bool(evalNode(latch, allNodes, allEdges, time, seen, ctx))) collected++;
-		else left++;
-	}
-	return { total: latches.length, collected, left };
-}
-
-/**
- * 21-F4: the debug HUD element's read — the SAME derivation the collectcount node
- * uses (one implementation, two consumers, the registry rule), with the runtime's
- * own graph and clock supplied. A latch eval needs only the trigger log for ctx.
- * @param {string} variable @returns {{total: number, collected: number, left: number}}
- */
-export function collectibleCountsFor(variable) {
-	return collectibleStats(
-		String(variable || 'gems'),
-		nodes,
-		edges,
-		syncedNow(),
-		new Set(),
-		{ triggers: get(flowTriggers) }
-	);
-}
+// --- 21-F3's collectible chain walk (edgeIndex / collectibleLatches / collectibleStats /
+// collectibleCountsFor) MOVED to the collectible module in R3a: it was the one core
+// reader that knew the recipe's chain shape, and the module owns that shape now. The
+// module re-derives it over api.flow.nodes()/edges() + api.flow.nodeValue() (a Latch is
+// a value node, so its round-aware state is already in flowValues).
 
 /**
  * Evaluate a node's OUTPUT value as a PURE function of the graph + synced time.
@@ -2253,21 +2191,7 @@ function evalNodeBody(node, allNodes, allEdges, time, seen, ctx) {
 					return elapsed;
 			}
 		}
-		case 'collectcount': {
-			// 21-F3: DERIVED FROM THE GRAPH, never from the variable — see the long note
-			// above `collectibleLatches`. Pure and local like every other value node: each
-			// peer walks the same replicated graph and reads the same replicated latches,
-			// so nothing about this reading goes on the wire.
-			const stats = collectibleStats(String(d.variable ?? 'gems'), allNodes, allEdges, time, seen, ctx);
-			switch (d.read ?? 'left') {
-				case 'collected':
-					return stats.collected;
-				case 'total':
-					return stats.total;
-				default:
-					return stats.left;
-			}
-		}
+		// 21-F3's `collectcount` case MOVED to the collectible module (R3a)
 		// --- H5: object-flow composition ---
 		case 'flowinput': {
 			// value injected by the scene graph's embedded Object Flow node this
@@ -2294,8 +2218,12 @@ function evalNodeBody(node, allNodes, allEdges, time, seen, ctx) {
 			const declared = moduleNodeInputs[node.type];
 			if (declared)
 				for (const handle of Object.keys(declared)) data[handle] = input(handle, d[handle]);
+			// R3a: `trigger` mirrors the module-effect ctx — a value node can read its own
+			// round-aware pulse (a module collectcount reads its siblings through the SDK,
+			// its own state through this)
 			return evalModuleValueNode(node.type, data, time, {
 				id: node.id,
+				trigger: moduleTriggerInfo(node, ctx),
 				graphId: node.__graph ?? SCENE_GRAPH
 			});
 		}
@@ -2537,16 +2465,21 @@ export function fireAnimMarker(uuid, name) {
  * applyNodeTrigger — a module event is a real event on ONE peer, not a derivation,
  * so it replicates exactly like a click and every peer computes the identical pulse
  * from the shared stamp.
+ * R3a: `opts.replicate === false` keeps the pulse in THIS peer's log — the per-player
+ * collectible's local pulse, stated by the CALLER because a module's node spells its
+ * scope its own way (`scope: 'player'`) and `replicatesPulse` only knows `perPlayer`.
+ * Absent, the node's own `perPlayer` flag decides, exactly as before.
  * @param {string} type the module's node type
  * @param {(data: any, id: string) => boolean} [match] which instances fire (all when absent)
+ * @param {{replicate?: boolean}} [opts]
  * @returns {number} how many nodes were pulsed
  */
-export function fireModuleTrigger(type, match) {
+export function fireModuleTrigger(type, match, opts) {
 	let fired = 0;
 	nodes.forEach((node) => {
 		if (node.type !== type) return;
 		if (typeof match === 'function' && !match(node.data ?? {}, node.id)) return;
-		applyNodeTrigger(node.id, syncedNow(), replicatesPulse(node));
+		applyNodeTrigger(node.id, syncedNow(), opts?.replicate === false ? false : replicatesPulse(node));
 		fired++;
 	});
 	return fired;
@@ -2676,9 +2609,13 @@ function applyAnimation(object, base, anim, time, ctx) {
 			// A1: the 5th arg is ADDITIVE — every shipped module takes four params and
 			// stays byte-unchanged; a new one can learn its own node id and graph, which
 			// is what lets one module host several instances of the same node type.
+			// R3a: `trigger` is the node's OWN round-aware log entry ({stamp, age} | null)
+			// — the collectible module's latch read, computed HERE so no module ever
+			// reimplements perRound (moduleTriggerInfo says why).
 			moduleEffects[anim.type](object, base, data, time, {
 				id: anim.id,
-				graphId: anim.__graph ?? SCENE_GRAPH
+				graphId: anim.__graph ?? SCENE_GRAPH,
+				trigger: moduleTriggerInfo(anim, ctx)
 			});
 		} catch (error) {
 			console.log('module effect ' + anim.type + ' failed', error);
@@ -2873,9 +2810,14 @@ function runTick(now) {
 	 * writes `object.visible` again and the object list can hide and show it normally. A
 	 * gate inside applyAnimation would have left restoreBase re-asserting the base every
 	 * frame, which is the same bug with one more step.
+	 *
+	 * R3a GENERALIZED it from `node.type === 'visibility'` to ANY effect node: the param
+	 * is opt-in per node and only the recipe ever stamped it, so every existing graph is
+	 * byte-identical — and a MODULE effect that hides an object (the collectible module)
+	 * gets the restore-loop hand-back for free instead of reimplementing it wrong.
 	 * @param {any} node
 	 */
-	const dormant = (node) => node.type === 'visibility' && !!node.data?.whilePlaying && !playActive;
+	const dormant = (node) => !!node.data?.whilePlaying && !playActive;
 	/** @param {any} node */
 	const isEffectNode = (node) =>
 		(animationTypes.includes(node.type) ||

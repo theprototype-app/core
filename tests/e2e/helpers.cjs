@@ -432,6 +432,125 @@ function run(body) {
 	});
 }
 
+// R3a: the 7-node collectible CHAIN as a TEST FIXTURE. The recipe that used to build it
+// (gameRecipes.makeCollectible) moved to the collectible module, but the chain's
+// SEMANTICS — latch/once perRound, visibility whilePlaying, the respawn delay, perPlayer
+// pulses — are core primitives these suites still cover, so the builder lives here now:
+// the same nodes, the same handle-qualified edge ids, one replicated `flownodes` undo
+// entry per batch (a group is one batch). Returns makeCollectible's old shape plus
+// `chains: [{uuid, ids: {click, latch, gate, vis, selector, once, count, back?}}]` so a
+// suite can read latch state directly (collectibleCountsFor moved out with the recipe).
+async function makeCollectibleChains(peer, uuids, opts = {}) {
+	return peer.page.evaluate(
+		({ uuids, opts }) => {
+			const s = window.__stores;
+			const variable = String(opts.variable ?? 'gems').trim() || 'gems';
+			const respawn = Math.max(0, Number(opts.respawn) || 0);
+			const perPlayer = !!opts.perPlayer;
+			const graphId = s.SCENE_GRAPH;
+			const g = (() => {
+				let v;
+				s.flowGraphs.subscribe((x) => (v = x))();
+				return v[graphId] ?? { nodes: [], edges: [] };
+			})();
+			const uuid4 = () => crypto.randomUUID();
+			const spec = (t) => s.nodeCatalog.findNodeSpec(t);
+			const makeNode = (type, x, y, data) => ({
+				id: uuid4(),
+				type,
+				position: { x, y },
+				data: { label: spec(type)?.label ?? type, type, ...(spec(type)?.defaults ?? {}), ...(data ?? {}) },
+				class: 'w-[150px]'
+			});
+			const makeEdge = (source, target, handle) => ({
+				id: 'e-' + source.id + '-' + target.id + (handle ? '.' + handle : ''),
+				source: source.id,
+				target: target.id,
+				...(handle ? { targetHandle: handle } : {})
+			});
+			// already driven by a hide/show chain? (the recipe's own skip test)
+			const already = (id) => {
+				const sel = g.nodes.filter((n) => n.type === 'objectselector' && String(n.data?.selected ?? '') === id).map((n) => n.id);
+				if (!sel.length) return false;
+				return g.edges.some((e) => sel.includes(e.target) && g.nodes.find((n) => n.id === e.source)?.type === 'visibility');
+			};
+			let group;
+			s.objectsGroup.subscribe((x) => (group = x))();
+			let peerConn;
+			s.peers.subscribe((x) => (peerConn = x))();
+			const COL = 210, BRANCH_Y = 92, RESPAWN_Y = 184;
+			const baseY = g.nodes.reduce((m, n) => Math.max(m, Number(n.position?.y) || 0), 0) + (g.nodes.length ? 190 : 40);
+			const rowHeight = respawn > 0 ? RESPAWN_Y + 96 : 190;
+			const targets = (Array.isArray(uuids) ? uuids : [uuids]).filter(Boolean);
+			const batches = targets.map((id) => {
+				const object = group?.getObjectByProperty('uuid', id);
+				if (!object) return [id];
+				if (object.type !== 'Group') return [id];
+				const out = [];
+				object.traverse((c) => { if (c !== object && c.isMesh) out.push(c.uuid); });
+				return out;
+			});
+			const built = [], skipped = [], chains = [];
+			let row = 0, entries = 0;
+			for (const batch of batches) {
+				const created = [], createdEdges = [];
+				for (const id of batch) {
+					if (!group?.getObjectByProperty('uuid', id) || already(id)) { skipped.push(id); continue; }
+					const y = baseY + row * rowHeight;
+					row++;
+					const click = makeNode('onclick', 60, y, perPlayer ? { perPlayer: true } : undefined);
+					const latch = makeNode('latch', 60 + COL, y, { perRound: true });
+					const gate = makeNode('gate', 60 + COL * 2, y, { op: 'not' });
+					const vis = makeNode('visibility', 60 + COL * 3, y, { whilePlaying: true });
+					const selector = makeNode('objectselector', 60 + COL * 4, y, { selected: id });
+					const once = makeNode('once', 60 + COL, y + BRANCH_Y, { perRound: true });
+					const count = makeNode('setvariable', 60 + COL * 2, y + BRANCH_Y, {
+						name: variable, op: 'add', value: 1, ...(perPlayer ? { scope: 'player' } : {})
+					});
+					const nodes = [click, latch, gate, vis, selector, once, count];
+					const edges = [
+						makeEdge(click, latch, 'set'),
+						makeEdge(latch, gate, 'a'),
+						makeEdge(gate, vis, 'on'),
+						makeEdge(vis, selector),
+						makeEdge(click, once, 'trigger'),
+						makeEdge(once, count, 'trigger')
+					];
+					const ids = { click: click.id, latch: latch.id, gate: gate.id, vis: vis.id, selector: selector.id, once: once.id, count: count.id };
+					if (respawn > 0) {
+						const back = makeNode('delay', 60 + COL * 3, y + RESPAWN_Y, { seconds: respawn });
+						nodes.push(back);
+						edges.push(makeEdge(click, back, 'trigger'), makeEdge(back, latch, 'reset'), makeEdge(back, once, 'rearm'));
+						ids.back = back.id;
+					}
+					created.push(...nodes);
+					createdEdges.push(...edges);
+					built.push(id);
+					chains.push({ uuid: id, ids });
+				}
+				if (!created.length) continue;
+				for (const node of created) {
+					s.nodesHandler.createFlowNode(node, graphId);
+					if (peerConn) peerConn.send({ type: 'nodecreate', node: s.nodesHandler.serializeNode(node), graphId });
+				}
+				for (const edge of createdEdges) {
+					s.nodesHandler.createFlowEdge(edge, graphId);
+					if (peerConn) peerConn.send({ type: 'edgecreate', edge: s.nodesHandler.serializeEdge(edge), graphId });
+				}
+				s.flowGraphsCtl.recordFlowNodesEntry({
+					op: 'create',
+					graphId,
+					nodes: created.map(s.nodesHandler.serializeNode),
+					edges: createdEdges.map(s.nodesHandler.serializeEdge)
+				});
+				entries++;
+			}
+			return { built, skipped, variable, respawn, perPlayer, entries, chains };
+		},
+		{ uuids, opts }
+	);
+}
+
 
 // ---- audio verification -------------------------------------------------------
 //
@@ -668,4 +787,4 @@ function envelopeDelta(a, b) {
 	return { maxDelta, meanDelta: n ? sum / n : 0, worstSlice };
 }
 
-module.exports = { URL, GPU_ARGS, check, launch, setupPage, connect, eventually, projectPoint, freshReload, finish, run, installModule, moduleZipPath, pageErrors, grabFrame, centeredClip, frameDelta, framePixelsOffColor, AUDIO_ARGS, audioMetrics, renderOffline, envelopeDelta };
+module.exports = { URL, GPU_ARGS, check, launch, setupPage, connect, eventually, projectPoint, freshReload, finish, run, installModule, moduleZipPath, makeCollectibleChains, pageErrors, grabFrame, centeredClip, frameDelta, framePixelsOffColor, AUDIO_ARGS, audioMetrics, renderOffline, envelopeDelta };

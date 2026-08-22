@@ -360,8 +360,8 @@ export function buildObjectMenuItems(uuid, opts = {}) {
 		// benefit of one game. This project is not only for games, so a game recipe does
 		// not get a permanent shelf on every object's right-click.
 		//
-		// The entry point is `gameRecipes.recipeMenuItems()`, which acts on the SELECTION —
-		// so the gesture is unchanged (select the gems, then run it), only its address is.
+		// R3a moved the recipe again — into the collectible MODULE, whose manager toolbox
+		// owns it now (Modules ▸ Browse). Core keeps no collectible entry point at all.
 		{
 			label: (muted ? 'Enable flow effects' : 'Disable flow effects') + suffix,
 			icon: 'workflow',

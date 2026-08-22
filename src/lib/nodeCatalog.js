@@ -231,25 +231,9 @@ export const nodeCatalog = [
 					{ key: 'peer', kind: 'text', placeholder: 'peer id (read: peer)', maxLength: 64 }
 				]
 			},
-			// 21-F3: how many collectibles are left. COUNTED FROM THE GRAPH — every
-			// collectible chain counting into this variable is found and its Latch read —
-			// and NOT from the variable, which is a score that only ever goes up and would
-			// make `left` go negative the first time something respawned. Because the
-			// latches are `perRound`, all three readings self-heal when a round starts.
-			//
-			// 21-G4: on a PER-PLAYER chain it reads MY progress with no extra machinery, and
-			// that falls out of the design rather than being a case here — the latches it
-			// counts are set by a pulse that never left this peer, so "how many have I
-			// collected" is simply what counting my own latches means.
-			{
-				type: 'collectcount',
-				label: 'Collectibles',
-				defaults: { variable: 'gems', read: 'left' },
-				params: [
-					{ key: 'variable', kind: 'text', placeholder: 'gems', maxLength: 40 },
-					{ key: 'read', kind: 'select', options: ['left', 'collected', 'total'] }
-				]
-			}
+			// 21-F3's `collectcount` ("Collectibles") MOVED to the collectible module in
+			// R3a — it was the palette's one card that knew the recipe's chain shape, and
+			// the module's own count node replaces it (install it from Modules ▸ Browse).
 		]
 	},
 	{

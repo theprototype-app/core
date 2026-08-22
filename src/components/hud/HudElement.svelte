@@ -25,7 +25,9 @@
 	import { gameState, gameElapsed } from '$lib/gameState';
 	import { currentLevel } from '$lib/levels';
 	import { peerPlayModes, myPlayMode } from '$lib/gamePresence';
-	import { collectibleCountsFor } from '$lib/flowRuntime';
+	// R3a: the collectibles line moved to the collectible module — a module contributes
+	// debug-pill lines through `api.hud.registerDebugLine`, sampled with the rest below
+	import { moduleDebugLineTexts } from '$lib/moduleHudKinds';
 	// 21-G4: the per-player rows. A scoreboard that disagrees between two screens is the
 	// hardest thing to notice and the worst to debug, so the pill shows every peer's own
 	// numbers as this peer holds them — put two screens side by side and read them off.
@@ -168,10 +170,6 @@
 			/** @type {any} */
 			const peer = get(peers);
 			const myId = peer?.peer?.id ?? null;
-			let counts = { total: 0, collected: 0, left: 0 };
-			try {
-				counts = collectibleCountsFor(String(element?.variable || 'gems'));
-			} catch {}
 			const rows = get(peerVarsAll);
 			const varNames = peerVarNames();
 			debugInfo = {
@@ -183,7 +181,9 @@
 				round: g.round,
 				elapsed: Math.round(gameElapsed()),
 				vars: { ...g.vars },
-				counts,
+				// R3a: whatever the installed modules want on the pill (the collectible
+				// module's counts line arrives through this)
+				moduleLines: moduleDebugLineTexts(),
 				players: users.map((u, i) => {
 					const me = u[0] === myId || (i === 0 && !myId);
 					const own = rows[u[0]] ?? (me ? rows.me : null);
@@ -545,7 +545,7 @@
 	>
 		{#if debugInfo}
 			<span class="hud-debug-head"
-				>{debugInfo.state} · r{debugInfo.round} · {debugInfo.elapsed}s · {debugInfo.counts.left}/{debugInfo.counts.total} left · {debugInfo.fps}fps</span
+				>{debugInfo.state} · r{debugInfo.round} · {debugInfo.elapsed}s · {debugInfo.fps}fps</span
 			>
 			{#if debugOpen}
 				<!-- 21-G1: "scene", not "level" — the store keeps its name, the label follows
@@ -563,9 +563,11 @@
 				<span class="hud-debug-row"
 					>player vars: {debugInfo.peerVarNames.length ? debugInfo.peerVarNames.join(', ') : '—'}</span
 				>
-				<span class="hud-debug-row"
-					>collectibles ({String(element?.variable || 'gems')}): {debugInfo.counts.collected} collected, {debugInfo.counts.left} left of {debugInfo.counts.total}</span
-				>
+				<!-- R3a: the collectibles line moved to the collectible module — modules put
+				     their own lines here through api.hud.registerDebugLine -->
+				{#each debugInfo.moduleLines as line, i (i)}
+					<span class="hud-debug-row">{line}</span>
+				{/each}
 				{#each debugInfo.players as p (p.id ?? p.name)}
 					<span class="hud-debug-row"
 						>{p.me ? '● ' : '○ '}{p.name}<span class="hud-debug-chip" class:hud-debug-playing={p.mode === 'playing'}>{p.mode}</span

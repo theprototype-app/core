@@ -24,6 +24,15 @@ cap), `uv-live-faces` (live paint preview + face scoping), `uv-texture-params`
 (sampler state + the orientation arbiter), `uv-slots` + `uv-slots-persist` (UV4
 slots, live and across a reload), plus `mesh-grab-uv` and `object-sync` — the first
 coverage this repo has of the gizmo-grab uv path and of the late-joiner object sync.
+The GAME line: `game-state`, `hud-actions`, `logic-nodes`, `collectibles-v2`,
+`peer-variables`, `game-presence`, `scene-levels`, `project-manifest`, `project-file`,
+`scene-folders` and the `game-loop-v2/v3/v4` acceptance suites, plus (R3a)
+`sdk-game-seams` — the module-facing seams api.game/peerVars/flow/playerPosition, the
+`{replicate:false}` local pulse, the round-aware `ctx.trigger`, and the counterfactual
+that the migrated collectible pieces are GONE from core. `module-toolbox` covers the
+toolbox seams incl. the `sidebar: false` opt-out and openToolbox/closeToolbox/
+toggleToolbox. The collectible MODULE's own flight lives in the modules repo
+(`tests/module-collectible.test.cjs`, 82 checks, three peers).
 The mesh pro tools each have one: `mesh-edge-gizmo`, `mesh-bevel` (faces), `mesh-vertex-bevel`,
 `mesh-edge-bevel`, `mesh-vertex-slide`, `mesh-proportional`, `mesh-knife`, `mesh-symmetrize`,
 `mesh-bridge-normals`, `mesh-gizmo-modes` (the gizmo across element modes, driven by REAL mouse
@@ -722,6 +731,30 @@ await h.installModule(B, 'dungeon');   // EVERY peer — see below
   matches — that was the long-standing user-modules failure).
 - flowbite `Toggle` renders an **sr-only** checkbox: click the wrapping
   `label`, and give the toggle an id when a card carries more than one.
+
+**R3a: a MECHANIC that leaves core takes its suite coverage with it, and the split is
+not at the click.** When collectibles v3 became a module, the collectible RECIPE went
+with it — but the chain it built stood on core PRIMITIVES (perRound/whilePlaying/
+perPlayer/respawn) that still need covering, so the 7-node builder survives as
+`h.makeCollectibleChains(peer, uuids, opts)` in helpers.cjs: same nodes, same
+handle-qualified edge ids, ONE `flownodes` entry per batch, returning the old
+`{built, skipped, variable, respawn, perPlayer, entries}` plus `chains[].ids` so a
+check can read latch state straight out of `flowValues`. Three rules learned doing it:
+
+- **Derive counts from the LATCHES, and filter their ids against the LIVE graph.** With
+  `collectcount` gone, total/collected/left comes from each chain's Latch value — and a
+  `wipe()` or a scene TRAVEL must drop those chains from the total, or a later section
+  inflates. game-presence/peer-variables/game-loop-v3 all do the filter.
+- **Flip a removed UI to its COUNTERFACTUAL rather than deleting the section.** The old
+  recipe-menu/dialog checks now assert core exposes no `gameRecipes`/`recipeDialog` and
+  that `addBinding(el, 'showleft')` answers `{ok:false, reason:'unknown action'}`. A
+  deleted section is a silent regression; an inverted one fails loudly if the thing
+  comes back.
+- **Assert the module-facing seam in CORE, the real click in the MODULE repo.** The
+  Modules manager renders cards only for core modules and installed USER records, so an
+  inline `initModules` module has NO card — a `getByRole('button')` for its
+  `registerMenu` entry waits the full 30s. Core drives the registered entry's own
+  action (the same function the card calls); the module's own flight clicks the button.
 
 For a module with no committed suite, drive it through the REAL install path in a
 scratch script, then assert its scene-root group / behavior, and simulate a

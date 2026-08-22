@@ -339,42 +339,23 @@ h.run(async () => {
 	);
 
 	// =====================================================================
-	// 7. THE RECIPE LIVES IN THE NODE EDITOR'S GAME CATEGORY
+	// 7. THE RECIPE HAS LEFT CORE ALTOGETHER
 	// =====================================================================
-	// with NOTHING selected it is offered and REFUSED, with the reason on the row
-	await A.page.evaluate(() => window.__stores.objectActions.deselectObject());
-	await A.page.waitForTimeout(300);
-	const empty = await A.page.evaluate(() => window.__stores.gameRecipes.recipeMenuItems());
-	const emptyEntry = empty.find((i) => i.label);
+	// 21-G1 moved it from the object menu into the node editor's Game category; 21-G R3a
+	// moved it out of core, into the collectible MODULE, which offers it from its own
+	// manager toolbox. So this section keeps the two facts that are still core's: the
+	// module is not here (nothing of the recipe is), and the node editor's pane menu — the
+	// place 21-G1 put it — carries no collectible entry either. The module's own suite owns
+	// the entry, the dialog and the chain it builds.
 	h.check(
-		empty.some((i) => i.section === 'Recipes'),
-		'the entry sits under its own Recipes section, apart from the node rows'
-	);
-	h.check(
-		emptyEntry?.disabled === true && /select/i.test(emptyEntry?.tooltip ?? ''),
-		`with no selection it is disabled WITH the reason ("${emptyEntry?.tooltip?.slice(0, 40)}…")`
-	);
-
-	// it reads the SELECTION SET, not the sticky primary — deselect leaves `selectedObject`
-	// pointing at the last box, and the entry must still refuse
-	h.check(
-		await A.page.evaluate(() => {
-			let sticky;
-			window.__stores.selectedObject.subscribe((v) => (sticky = v))();
-			return !!sticky?.uuid;
-		}),
-		'premise: the sticky selectedObject still holds the deselected box (the trap this avoids)'
+		await A.page.evaluate(() => !window.__stores.gameRecipes),
+		'core exposes no recipe at all — the entry lives in the collectible module\'s manager toolbox now'
 	);
 
 	await A.page.evaluate((id) => window.__stores.objectActions.applySelectionSet([id]), box);
 	await A.page.waitForTimeout(300);
-	const armed = await A.page.evaluate(() => window.__stores.gameRecipes.recipeMenuItems());
-	h.check(
-		armed.find((i) => i.label)?.disabled === false,
-		'selecting an object arms it'
-	);
 
-	// now drive it through the REAL menu, the way a user reaches it. The Explorer is the
+	// the pane menu is still reached the way a user reaches it. The Explorer is the
 	// dock's EXCLUSIVE panel — opening the flow editor without closing it leaves the pane
 	// mounted but hidden, which reads as "the pane is not visible" rather than as a bug.
 	await A.page.evaluate(() => {
@@ -387,11 +368,11 @@ h.run(async () => {
 	const pane = A.page.locator('.svelte-flow__pane');
 	await pane.waitFor({ state: 'visible', timeout: 15000 });
 	await A.page.waitForTimeout(600);
-	// THE REACHABILITY TRAP this section exists to pin: the editor's scope FOLLOWS the
-	// selection, so having an object selected — the very state the recipe acts on — puts
-	// the editor on THAT object's (empty) flow, whose explanation overlay covers the
-	// pane. Until 21-G1 forwarded the right-click, the entry was unreachable in the only
-	// state where it is enabled.
+	// THE REACHABILITY TRAP this section exists to pin, and the one piece of 21-G1 that is
+	// still core's: the editor's scope FOLLOWS the selection, so having an object selected
+	// puts the editor on THAT object's (empty) flow, whose explanation overlay covers the
+	// pane. Until 21-G1 forwarded the right-click, the pane menu was unreachable there —
+	// which is now what a module's own entry depends on too.
 	const overlay = A.page.locator('#flow-empty-state');
 	const covered = (await overlay.count()) === 1;
 	h.check(covered, 'premise: a selected object scopes the editor to its EMPTY flow, covering the pane');
@@ -401,59 +382,32 @@ h.run(async () => {
 		await A.page.locator('[role="menu"]').first().isVisible(),
 		'the pane menu opens THROUGH that overlay — an explanation is not a modal'
 	);
-	// the shared filter flattens every leaf as "Group ▸ Label", which also proves the
-	// entry is INSIDE the Game category rather than loose at the top level
-	await A.page.locator('.ctx-filter-input').fill('make selected');
+	// the counterfactual of the check this used to be: the shared filter flattens every
+	// leaf, so a search across the WHOLE menu is the strongest way to say the recipe is not
+	// in it any more — and searching for the word the user would type is the same reading
+	// the positive check made.
+	await A.page.locator('.ctx-filter-input').fill('collectible');
 	await A.page.waitForTimeout(300);
 	const matches = await A.page.evaluate(() =>
 		[...document.querySelectorAll('.ctx-match')].map((m) => m.textContent?.trim())
 	);
 	h.check(
-		matches.some((m) => m.includes('Game') && m.includes('Make selected collectible')),
-		`the node editor's Game category carries the recipe (${JSON.stringify(matches.slice(0, 3))})`
+		!matches.some((m) => /collectible/i.test(m ?? '')),
+		`and no collectible entry anywhere in the node editor's own menu (${matches.length} matches: ${JSON.stringify(matches.slice(0, 3))})`
 	);
-	await A.page.locator('.ctx-match', { hasText: 'Make selected collectible' }).first().click();
-
-	await A.page.waitForSelector('#collectible-variable', { timeout: 8000 });
-	h.check(true, 'clicking it opens the recipe dialog');
-	await A.page.fill('#collectible-variable', 'shards');
-	await A.page.click('#collectible-create');
-	await A.page.waitForTimeout(1000);
-
-	const chain = await A.page.evaluate((id) => {
-		let g;
-		window.__stores.flowGraphs.subscribe((v) => (g = v))();
-		const nodes = g.scene?.nodes ?? [];
-		const edges = g.scene?.edges ?? [];
-		const sel = nodes.find((n) => n.type === 'objectselector' && n.data?.selected === id);
-		if (!sel) return null;
-		const back = (targetId, handle) => {
-			const e = edges.find((x) => x.target === targetId && (handle === undefined || (x.targetHandle ?? null) === handle));
-			return e ? nodes.find((n) => n.id === e.source) : null;
-		};
-		const vis = back(sel.id, null);
-		const gate = back(vis?.id, 'on');
-		const latch = back(gate?.id, 'a');
-		const click = back(latch?.id, 'set');
-		const counter = nodes.find((n) => n.type === 'setvariable');
-		return {
-			vis: vis?.type ?? null,
-			whilePlaying: vis?.data?.whilePlaying ?? null,
-			latch: latch?.type ?? null,
-			perRound: latch?.data?.perRound ?? null,
-			click: click?.type ?? null,
-			variable: counter?.data?.name ?? null
-		};
-	}, box);
+	// the search itself still works — otherwise the check above would pass on a broken
+	// filter rather than on an absent entry
+	await A.page.locator('.ctx-filter-input').fill('latch');
+	await A.page.waitForTimeout(300);
+	const latchMatches = await A.page.evaluate(() =>
+		[...document.querySelectorAll('.ctx-match')].map((m) => m.textContent?.trim())
+	);
 	h.check(
-		chain?.click === 'onclick' && chain?.latch === 'latch' && chain?.vis === 'visibility',
-		`the recipe built the same chain from its new home (${JSON.stringify(chain)})`
+		latchMatches.some((m) => /latch/i.test(m ?? '')),
+		`premise: the same filter DOES find the chain primitives, which stayed in core (${JSON.stringify(latchMatches.slice(0, 3))})`
 	);
-	h.check(chain?.variable === 'shards', `into the variable the dialog asked for ("${chain?.variable}")`);
-	h.check(
-		chain?.perRound === true && chain?.whilePlaying === true,
-		'with 21-F2\'s two opt-in flags still stamped on it'
-	);
+	await A.page.keyboard.press('Escape');
+	await A.page.waitForTimeout(250);
 
 	const errs = await h.pageErrors(A);
 	h.check(errs.length === 0, `no page errors (${JSON.stringify(errs.slice(0, 2))})`);

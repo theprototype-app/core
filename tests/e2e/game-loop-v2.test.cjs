@@ -62,7 +62,8 @@ h.run(async () => {
 	const browser = await h.launch({ args: h.GPU_ARGS });
 	const A = await h.setupPage(browser, 'A');
 	const B = await h.setupPage(browser, 'B');
-	for (const p of [A, B]) await p.page.waitForFunction(() => !!window.__stores?.gameRecipes, { timeout: 30000 });
+	for (const p of [A, B])
+		await p.page.waitForFunction(() => !!window.__stores?.flowGraphsCtl && !!window.__stores?.nodesHandler, { timeout: 30000 });
 	await h.connect(A, B);
 	const page = A.page;
 
@@ -290,7 +291,7 @@ h.run(async () => {
 	// =======================================================================
 	// 3. THE COLLECTIBLES: the object-menu recipe, on three boxes
 	// =======================================================================
-	const gems = await page.evaluate(async () => {
+	const gemUuids = await page.evaluate(async () => {
 		const s = window.__stores;
 		/** @type {string[]} */
 		const uuids = [];
@@ -304,24 +305,34 @@ h.run(async () => {
 		s.objectActions.deselectObject();
 		s.setActiveGraph(s.SCENE_GRAPH);
 		await new Promise((r) => setTimeout(r, 500));
-		// the recipe — one replicated `flownodes` entry PER OBJECT
-		const result = s.gameRecipes.makeCollectible(uuids, { quiet: true });
-		await new Promise((r) => setTimeout(r, 1000));
-		let g;
-		s.flowGraphs.subscribe((v) => (g = v))();
-		const types = g.scene.nodes.map((n) => n.type);
-		const countOf = (t) => types.filter((x) => x === t).length;
-		return {
-			uuids,
-			built: result.built.length,
-			variable: result.variable,
-			latches: countOf('latch'),
-			gates: countOf('gate'),
-			onces: countOf('once'),
-			clicks: countOf('onclick'),
-			setvars: countOf('setvariable')
-		};
+		return uuids;
 	});
+	// the chain — one replicated `flownodes` entry PER OBJECT. 21-G R3a moved the RECIPE
+	// out of core into the collectible module, so the builder is a test FIXTURE now
+	// (`h.makeCollectibleChains`); the chain it assembles, and everything asserted about
+	// it below, is core and unchanged.
+	const gemResult = await h.makeCollectibleChains(A, gemUuids);
+	await page.waitForTimeout(1000);
+	const gems = await page.evaluate(
+		({ uuids, result }) => {
+			const s = window.__stores;
+			let g;
+			s.flowGraphs.subscribe((v) => (g = v))();
+			const types = g.scene.nodes.map((n) => n.type);
+			const countOf = (t) => types.filter((x) => x === t).length;
+			return {
+				uuids,
+				built: result.built.length,
+				variable: result.variable,
+				latches: countOf('latch'),
+				gates: countOf('gate'),
+				onces: countOf('once'),
+				clicks: countOf('onclick'),
+				setvars: countOf('setvariable')
+			};
+		},
+		{ uuids: gemUuids, result: gemResult }
+	);
 	h.check(gems.built === 3, `three collectibles built from the recipe (${gems.built})`);
 	h.check(
 		gems.latches === 3 && gems.gates === 3 && gems.onces === 3 && gems.clicks === 3 && gems.setvars === 3,

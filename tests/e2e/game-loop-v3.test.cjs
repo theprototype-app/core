@@ -25,8 +25,36 @@ const gstate = (peer) =>
 		window.__stores.gameState.gameState.subscribe((v) => (g = v))();
 		return g;
 	});
+// 21-G R3a: the recipe AND its `collectcount` node left core for the collectible module,
+// so `collectibleCountsFor` is gone. The truth it derived is still readable straight off
+// the chains the fixture built: a collectible is COLLECTED when its Latch reads truthy,
+// and every Latch is a value node, so its live output is in `flowValues` (~6/s, so the
+// existing settles are what make it readable). `chainsByVar` is filled as each batch is
+// built — one variable per recipe call, exactly as the graph is authored.
+/** @type {Record<string, any[]>} */
+const chainsByVar = {};
+const recipe = async (peer, uuids, opts = {}) => {
+	const result = await h.makeCollectibleChains(peer, uuids, opts);
+	chainsByVar[result.variable] = (chainsByVar[result.variable] ?? []).concat(result.chains);
+	return result;
+};
 const counts = (peer, variable) =>
-	peer.page.evaluate((v) => window.__stores.flowRuntime.collectibleCountsFor(v), variable);
+	peer.page.evaluate(
+		(ids) => {
+			// filter against the LIVE graph (the game-presence/peer-variables rule): this
+			// suite TRAVELS, and a latch whose chain left with the old scene must not
+			// inflate the total
+			let g;
+			window.__stores.flowGraphs.subscribe((x) => (g = x))();
+			const live = new Set((g.scene?.nodes ?? []).map((n) => n.id));
+			const latches = ids.filter((id) => live.has(id));
+			let v;
+			window.__stores.flowValues.subscribe((x) => (v = x))();
+			const collected = latches.filter((id) => !!v[id]).length;
+			return { total: latches.length, collected, left: latches.length - collected };
+		},
+		(chainsByVar[variable] ?? []).map((c) => c.ids.latch)
+	);
 const collect = async (peer, uuid, settle = 900) => {
 	await peer.page.evaluate((id) => window.__stores.flowRuntime.fireObjectClick(id), uuid);
 	await peer.page.waitForTimeout(settle);
@@ -54,14 +82,18 @@ h.run(async () => {
 	const browser = await h.launch({ args: h.GPU_ARGS });
 	const A = await h.setupPage(browser, 'A');
 	const B = await h.setupPage(browser, 'B');
-	for (const p of [A, B]) await p.page.waitForFunction(() => !!window.__stores?.levels, { timeout: 30000 });
+	for (const p of [A, B])
+		await p.page.waitForFunction(
+			() => !!window.__stores?.levels && !!window.__stores?.flowGraphsCtl && !!window.__stores?.nodesHandler,
+			{ timeout: 30000 }
+		);
 	await h.connect(A, B); // A dials, B approves -> B is the session host / admin
 
 	// =====================================================================
 	// 1. AUTHOR LEVEL TWO first: one gem counting into "gems", saved as an asset
 	// =====================================================================
 	const [l2gem] = await makeBoxes(A, 1);
-	await A.page.evaluate((uuid) => window.__stores.gameRecipes.makeCollectible([uuid], { quiet: true }), l2gem);
+	await recipe(A, [l2gem]);
 	const levelTwo = await A.page.evaluate(() => window.__stores.levels.saveSceneAsLevel('Level Two'));
 	h.check(!!levelTwo?.hash, 'Level Two saved — its collectible chain rides the level graph');
 
@@ -79,10 +111,7 @@ h.run(async () => {
 		return uuid;
 	}, crystals);
 	h.check(!!groupUuid, 'premise: the two crystals are one Group');
-	const built = await A.page.evaluate(
-		({ group, variable }) => window.__stores.gameRecipes.makeCollectible([group], { quiet: true, variable }),
-		{ group: groupUuid, variable: 'crystals' }
-	);
+	const built = await recipe(A, [groupUuid], { variable: 'crystals' });
 	h.check(
 		built.built.length === 2 && built.entries === 1,
 		`the GROUP recipe: every child mesh a collectible, ONE undo entry (${built.built.length} built, ${built.entries} entries)`
@@ -140,9 +169,26 @@ h.run(async () => {
 		});
 	});
 	await A.page.waitForTimeout(1400);
-	const pill = await A.page.evaluate(() => document.querySelector('.hud-debug')?.textContent ?? '');
-	h.check(pill.includes('playing') && pill.includes('1/2 left'), `the debug element reads the live game (${pill.split('scene:')[0].trim()})`);
-	h.check((pill.match(/playing/g) || []).length >= 2, 'and shows both players in play mode');
+	const pill = await A.page.evaluate(() => ({
+		head: document.querySelector('.hud-debug-head')?.textContent ?? '',
+		all: document.querySelector('.hud-debug')?.textContent ?? ''
+	}));
+	// R3a: the collectibles line left the debug element WITH the recipe — a module puts its
+	// own line here through `api.hud.registerDebugLine`. What core's head still owes is the
+	// live shell: the state, the round, the elapsed seconds and a frame rate. The fps VALUE
+	// is deliberately not asserted: its 500ms sampler legitimately reads 0 on a throttled
+	// page (measured 60 on one run and 0 on the next), so demanding non-zero asserts the
+	// test machine's mood rather than the feature.
+	h.check(
+		pill.head.includes('playing') && /·\s*r\d+\s*·/.test(pill.head) && /\d+s\s*·\s*\d+fps/.test(pill.head),
+		`the debug head reads the live game (${pill.head})`
+	);
+	const dbgCounts = await counts(A, 'crystals');
+	h.check(
+		dbgCounts.total === 2 && dbgCounts.collected === 1,
+		`and the 1-of-2 truth the old counts line showed is still derivable from the chain's own Latches (${JSON.stringify(dbgCounts)})`
+	);
+	h.check((pill.all.match(/playing/g) || []).length >= 2, 'and shows both players in play mode');
 
 	// =====================================================================
 	// 4. MINIMAP SYMMETRY: A's colour for B is B's own peerColor, on BOTH screens

@@ -1,8 +1,8 @@
 import * as THREE from 'three';
 import { writable, get } from 'svelte/store';
-import { globalScene, objectsGroup, selectedObject, globalCamera, isVRMode, isLocked } from '../stores/sceneStore';
+import { globalScene, objectsGroup, selectedObject, selectedObjects, globalCamera, isVRMode, isLocked } from '../stores/sceneStore';
 import { peers, showToast, modulesOpen, userdata } from '../stores/appStore';
-import { syncedAnimations } from '../stores/flowStore';
+import { syncedAnimations, flowGraphs, flowValues, allNodes, findNodeAnyGraph, SCENE_GRAPH } from '../stores/flowStore';
 import { customGeometryBuilders } from './customGeometries';
 // A1: moduleNodeIO imports NOTHING, so a static edge to it closes no cycle
 import {
@@ -12,9 +12,27 @@ import {
 	unregisterModuleNodeInputs
 } from './moduleNodeIO';
 // A5: moduleToolboxes is store-only, same reasoning
-import { registerModuleToolbox, unregisterModuleToolbox } from './moduleToolboxes';
+import {
+	registerModuleToolbox,
+	unregisterModuleToolbox,
+	openModuleToolbox,
+	closeModuleToolbox,
+	toggleModuleToolbox,
+	isToolboxOpen
+} from './moduleToolboxes';
 // 21-E7.4: store-only leaf, the moduleToolboxes precedent
-import { registerModuleHudKind, unregisterModuleHudKind } from './moduleHudKinds';
+import {
+	registerModuleHudKind,
+	unregisterModuleHudKind,
+	registerModuleDebugLine,
+	registerModuleHudAction
+} from './moduleHudKinds';
+// R3a: all three are LEAVES (svelte stores only — gameState/peerVars say so in their own
+// headers; nodesHandler reaches only flowStore + appStore), so none of these edges can
+// close the history cycle. flowGraphs/nodeCatalog are NOT leaves and stay primed below.
+import { roundCutoff, roundUnderway, gameVar, setGameVar } from './gameState';
+import { setPeerVar, myPeerVar, leaderboardRows } from './peerVars';
+import { createFlowNode, createFlowEdge, serializeNode, serializeEdge, setNodeData as sendNodeData } from './nodesHandler';
 import { APP_VERSION } from './version.js';
 
 // Module SDK v1 — in-repo modules under src/modules/<name>/ register through
@@ -118,6 +136,13 @@ function removeSceneRootGroup(name) {
 /** 21-E7.1: primed for api.hud.rows — a fresh import().then() per push drops the first
  * seconds of them (the DEVX #8 family). @type {any} */
 let flowRuntimeRef = null;
+/** R3a: primed for api.flow.addNodes — flowGraphs' BODY calls registerHistoryKind, so a
+ * static edge from here (which history reaches through flowRuntime) TDZ-crashes the SSR
+ * prerender. @type {any} */
+let flowGraphsRef = null;
+/** R3a: primed for api.flow.addNodes' spec defaults — nodeCatalog statically imports
+ * THIS module, so a static edge back is a direct cycle. @type {any} */
+let nodeCatalogRef = null;
 if (typeof window !== 'undefined') {
 	import('./inputRuntime').then((m) => (inputRuntimeRef = m));
 	import('./physics').then((m) => (physicsRef = m));
@@ -128,6 +153,8 @@ if (typeof window !== 'undefined') {
 	import('./objectActions').then((m) => (objectActionsRef = m));
 	import('./pingAudio').then((m) => (pingAudioRef = m));
 	import('./flowRuntime').then((m) => (flowRuntimeRef = m));
+	import('./flowGraphs').then((m) => (flowGraphsRef = m));
+	import('./nodeCatalog').then((m) => (nodeCatalogRef = m));
 }
 
 // --- api.pointerRay (190): where the user is POINTING, as a world ray --------
@@ -445,11 +472,17 @@ function makeApi(moduleId, moduleName = moduleId) {
 		 *
 		 * `playMode: true` keeps it visible in Play mode (host settings for a game);
 		 * the default hides it, because a tool palette over a running game is in the way.
+		 *
+		 * `sidebar: false` leaves it OUT of the burger menu's Modules section and keeps
+		 * its viewport-menu row — for a window that belongs to a workflow rather than to
+		 * the app's permanent chrome. Pair it with a `registerMenu` button (which renders
+		 * on your card in the Modules manager, beside Update/Remove) and
+		 * `api.openToolbox(id)`, so the way in is where the module already is.
 		 * @param {{id: string, title: string, key?: string, width?: number, minW?: number,
 		 *   defaultRect?: {left?: number, top?: number, right?: number, bottom?: number},
 		 *   mount: (el: HTMLElement) => (() => void) | void,
 		 *   onOpen?: () => void, onClose?: () => void,
-		 *   playMode?: boolean, shortcut?: string}} box
+		 *   playMode?: boolean, shortcut?: string, sidebar?: boolean}} box
 		 * @returns {string} the namespaced toolbox id (open/close it with this)
 		 */
 		registerToolbox(box) {
@@ -471,6 +504,33 @@ function makeApi(moduleId, moduleName = moduleId) {
 			// window on screen backed by a mount fn that no longer exists
 			onDispose(() => unregisterModuleToolbox(id));
 			return id;
+		},
+		/**
+		 * R3a follow-up: OPEN one of your own toolboxes. `registerToolbox` has always
+		 * returned its id documented as "open/close it with this" — and there was nothing
+		 * to open it with, so the promise was unkeepable (the `api.hud.rows` family: a
+		 * surface whose own docs claim an API that does not exist). These are that half.
+		 *
+		 * `openToolbox` also DISMISSES the Modules manager when it is open, because the
+		 * manager is the one piece of chrome that can cover a toolbox — a button on your
+		 * module's card that opens a window behind the dialog it was clicked in is the
+		 * exact complaint `registerToolbox` was built to answer. It is a no-op when the
+		 * manager is closed, so nothing else changes.
+		 * @param {string} id the id `registerToolbox` returned
+		 */
+		openToolbox(id) {
+			modulesOpen.set(false);
+			return openModuleToolbox(id);
+		},
+		/** @param {string} id */
+		closeToolbox(id) {
+			return closeModuleToolbox(id);
+		},
+		/** Open it if closed, close it if open — what a menu row or a card button wants.
+		 * @param {string} id */
+		toggleToolbox(id) {
+			if (!isToolboxOpen(id)) modulesOpen.set(false);
+			return toggleModuleToolbox(id);
 		},
 		/**
 		 * Add a sector to the VR radial menu (74). group 'root' extends the base
@@ -712,10 +772,230 @@ function makeApi(moduleId, moduleName = moduleId) {
 		 * `match(data, id)` picks which instances fire; all of them when it is absent.
 		 * Register the node type's output as `{vtype: 'event'}` so it can be wired to a
 		 * Counter or an Object Selector.
+		 *
+		 * R3a: `opts.replicate === false` keeps the pulse in THIS peer's own trigger log —
+		 * the per-player mechanism (a per-player collect fires locally; everything
+		 * downstream — latch state, hide, counting — is then per-peer for free). Absent,
+		 * the node's own `perPlayer` data flag decides, exactly as before.
 		 * @param {string} type @param {(data: any, id: string) => boolean=} match
+		 * @param {{replicate?: boolean}=} opts
 		 */
-		fireNodeTrigger(type, match) {
-			import('./flowRuntime').then((m) => m.fireModuleTrigger(type, match));
+		fireNodeTrigger(type, match, opts) {
+			if (flowRuntimeRef) flowRuntimeRef.fireModuleTrigger(type, match, opts);
+			else import('./flowRuntime').then((m) => m.fireModuleTrigger(type, match, opts));
+		},
+		/**
+		 * R3a: where the VIEWER is — the active camera's world position as [x, y, z], or
+		 * null before the scene exists. In play mode the camera IS the player (walk mode,
+		 * fly mode and VR all move it), so this is the read a self-proximity trigger wants:
+		 * each peer detects ITSELF near an object and fires its own pulse, no physics sim
+		 * required. @returns {number[] | null}
+		 */
+		playerPosition() {
+			const cam = /** @type {any} */ (get(globalCamera));
+			if (!cam?.getWorldPosition) return null;
+			return cam.getWorldPosition(new THREE.Vector3()).toArray();
+		},
+		/**
+		 * R3a: select an object (the viewport-click path — selection is also the lock).
+		 * The manager-toolbox row click. @param {string} uuid
+		 */
+		selectObject(uuid) {
+			objectActionsRef?.selectObject?.(uuid);
+		},
+		/** R3a: the current selection SET's uuids — [] when nothing is selected. Reads the
+		 * SET, never the sticky primary (`selectedUuid`), which keeps the last object after
+		 * a deselect. @returns {string[]} */
+		selectedUuids() {
+			return [...(get(selectedObjects) ?? [])].filter(Boolean);
+		},
+		/**
+		 * R3a: THE GAME SHELL, read-mostly. The round reads are what `perRound` content
+		 * gates on; the variable pair is the shared scoreboard (the game singleton — writes
+		 * replicate latest-wins, and an `add` computed on every peer from one replicated
+		 * stamp is the standing shared-scope semantic). Per-player numbers live in
+		 * `api.peerVars` instead.
+		 */
+		game: {
+			/** The replicated round cutoff: null = shell unused, Infinity = menu/over, else
+			 * the running round's start (epoch ms). @returns {number | null} */
+			roundCutoff() {
+				return roundCutoff();
+			},
+			/** Is a round underway (playing or paused)? @returns {boolean} */
+			roundUnderway() {
+				return roundUnderway();
+			},
+			/** Is THIS peer playing inside a running round? (`isPlaying() && roundUnderway()`
+			 * — the gate recipe-driven effects act under.) @returns {boolean} */
+			playActive() {
+				return !!flowRuntimeRef?.gamePlayActive?.();
+			},
+			/** @param {string} name @param {number=} fallback @returns {number} */
+			getVar(name, fallback = 0) {
+				return gameVar(name, fallback);
+			},
+			/** Replicated latest-wins write to the shared game singleton.
+			 * @param {string} name @param {number} value */
+			setVar(name, value) {
+				setGameVar(name, value);
+			}
+		},
+		/**
+		 * R3a: PEER-OWNED variables (21-G4). One writer per row BY CONSTRUCTION — this api
+		 * only ever writes YOUR row (`setMine`), which is what makes per-player counting
+		 * immune to the shared-scope add race. Rows replicate on the presence channel,
+		 * late joiners converge, a row drops with its owner's disconnect.
+		 */
+		peerVars: {
+			/** Write MY OWN row. @param {string} name @param {number} value */
+			setMine(name, value) {
+				setPeerVar(name, value);
+			},
+			/** My own number. @param {string} name @param {number=} fallback @returns {number} */
+			mine(name, fallback = 0) {
+				return myPeerVar(name, fallback);
+			},
+			/** Everyone's rows for one name, roster-resolved and deterministically ordered —
+			 * `[{id, name, value, me, rank}]`, the leaderboard shape. @param {string} name
+			 * @param {{order?: 'desc'|'asc'}=} opts */
+			all(name, opts) {
+				return leaderboardRows(name, opts);
+			}
+		},
+		/**
+		 * R3a: THE GRAPH, for modules whose node needs neighbours — a manager toolbox
+		 * listing its instances, a count node reading its siblings, a recipe creating the
+		 * node wired to an Object Selector. Reads are DETERMINISTIC because the graph is
+		 * replicated; treat them exactly like replicated state (the value-node rule).
+		 */
+		flow: {
+			/** Every node (optionally one type) as plain snapshots:
+			 * `{id, type, graphId, data}` — graphId 'scene' or the owner object's uuid.
+			 * @param {string=} type @returns {any[]} */
+			nodes(type) {
+				const out = [];
+				for (const n of allNodes()) {
+					if (type && n.type !== type) continue;
+					out.push({ id: n.id, type: n.type, graphId: n.__graph ?? SCENE_GRAPH, data: { ...(n.data ?? {}) } });
+				}
+				return out;
+			},
+			/** Every edge, graph-tagged: `{id, source, target, sourceHandle, targetHandle,
+			 * graphId}`. @returns {any[]} */
+			edges() {
+				const out = [];
+				for (const [graphId, graph] of Object.entries(get(flowGraphs) ?? {})) {
+					for (const e of graph.edges ?? [])
+						out.push({
+							id: e.id,
+							source: e.source,
+							target: e.target,
+							sourceHandle: e.sourceHandle ?? null,
+							targetHandle: e.targetHandle ?? null,
+							graphId
+						});
+				}
+				return out;
+			},
+			/** A node's current evaluated VALUE (what its output socket carries this tick) —
+			 * how a module reads a core Latch's round-aware state without reimplementing it.
+			 * Undefined for nodes that carry no value. @param {string} id */
+			nodeValue(id) {
+				return get(flowValues)[id];
+			},
+			/** A node's OWN round-aware trigger-log entry: `{stamp, age}` or null (never
+			 * fired, or retired by `perRound` against the replicated round). The latch read
+			 * a collectible-style module polls. @param {string} id */
+			triggerStamp(id) {
+				return flowRuntimeRef?.nodeTriggerStamp?.(id) ?? null;
+			},
+			/** Replicated node-data MERGE (the editor's own `nodedata` path — same message,
+			 * same merge). The manager toolbox's inline param edit. @param {string} id
+			 * @param {Record<string, any>} patch @returns {boolean} found */
+			setNodeData(id, patch) {
+				const found = findNodeAnyGraph((n) => n.id === id);
+				if (!found) return false;
+				sendNodeData(id, patch ?? {}, found.graphId);
+				return true;
+			},
+			/**
+			 * Create nodes (and edges) the way the editor does: replicated `nodecreate`/
+			 * `edgecreate` per item plus ONE `flownodes` undo entry for the batch — so what a
+			 * module builds can be undone in one step and taken apart afterwards, because it
+			 * is an ordinary graph (the recipe rule).
+			 *
+			 * `nodes`: `[{type, x, y, data}]` — label defaults to the core spec's (or the
+			 * type), data is spread over the spec defaults. `edges`: `[{from, to, handle?,
+			 * fromHandle?}]` where from/to are INDICES into `nodes` or existing node ID
+			 * strings; `handle` is the target handle. Edge ids take the editor's canonical
+			 * handle-qualified shape — peer dedupe depends on it.
+			 * @param {{graphId?: string, nodes?: any[], edges?: any[]}} spec
+			 * @returns {string[]} the created node ids ([] until the runtime is primed)
+			 */
+			addNodes(spec) {
+				if (!flowGraphsRef) return [];
+				const graphId = spec?.graphId ?? SCENE_GRAPH;
+				/** @type {any} */
+				const peer = get(peers);
+				const uuid = () =>
+					typeof crypto !== 'undefined' && crypto.randomUUID
+						? crypto.randomUUID()
+						: 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (c) => {
+								const r = (Math.random() * 16) | 0;
+								return (c === 'x' ? r : (r & 0x3) | 0x8).toString(16);
+							});
+				const created = (spec?.nodes ?? []).map((n) => {
+					const nodeSpec = nodeCatalogRef?.findNodeSpec?.(n.type);
+					return {
+						id: uuid(),
+						type: n.type,
+						position: { x: Number(n.x) || 0, y: Number(n.y) || 0 },
+						data: {
+							label: nodeSpec?.label ?? n.data?.label ?? n.type,
+							type: n.type,
+							...(nodeSpec?.defaults ?? {}),
+							...(n.data ?? {})
+						},
+						class: 'w-[150px]'
+					};
+				});
+				const resolve = (/** @type {any} */ ref) =>
+					typeof ref === 'number' ? created[ref]?.id : String(ref ?? '');
+				const createdEdges = (spec?.edges ?? [])
+					.map((e) => {
+						const source = resolve(e.from);
+						const target = resolve(e.to);
+						if (!source || !target) return null;
+						const sh = e.fromHandle ? '.' + e.fromHandle : '';
+						const th = e.handle ? '.' + e.handle : '';
+						return {
+							id: 'e-' + source + sh + '-' + target + th,
+							source,
+							target,
+							...(e.fromHandle ? { sourceHandle: e.fromHandle } : {}),
+							...(e.handle ? { targetHandle: e.handle } : {})
+						};
+					})
+					.filter(Boolean);
+				// nodes before edges, the editor's own order
+				for (const node of created) {
+					createFlowNode(node, graphId);
+					if (peer) peer.send({ type: 'nodecreate', node: serializeNode(node), graphId });
+				}
+				for (const edge of createdEdges) {
+					createFlowEdge(edge, graphId);
+					if (peer) peer.send({ type: 'edgecreate', edge: serializeEdge(edge), graphId });
+				}
+				if (created.length || createdEdges.length)
+					flowGraphsRef.recordFlowNodesEntry({
+						op: 'create',
+						graphId,
+						nodes: created.map(serializeNode),
+						edges: createdEdges.map(serializeEdge)
+					});
+				return created.map((n) => n.id);
+			}
 		},
 		/**
 		 * Possess an object: WASD/arrows or the VR left stick drive it (tank
@@ -913,6 +1193,30 @@ function makeApi(moduleId, moduleName = moduleId) {
 				if (!id) return;
 				if (flowRuntimeRef) flowRuntimeRef.clearHudRows(id);
 				else import('./flowRuntime').then((m) => m.clearHudRows(id));
+			},
+			/**
+			 * R3a: a line on the DEBUG element's expanded pill. `fn()` returns a string, or
+			 * null/'' for "nothing to say right now"; it is sampled by the pill's own 500ms
+			 * timer (never per frame) and a throw is swallowed. The collectibles counts line
+			 * moved out of core through exactly this seam. @param {() => string | null} fn
+			 */
+			registerDebugLine(fn) {
+				const off = registerModuleDebugLine(moduleId, fn);
+				onDispose(off);
+			},
+			/**
+			 * R3a: an entry in the HUD editor's ACTION catalog (the Actions section's picker).
+			 * `entry` is the exact HudActionDef shape hudActions.js documents — {key, label,
+			 * group, role: 'press'|'drives'|'value'|'writes', node, data?, handle?, via?,
+			 * chain?, hint?}. The key is namespaced `mod-<moduleId>-<key>`. "Show collectibles
+			 * left" moved out of core through this seam. @param {any} entry
+			 * @returns {string} the namespaced key
+			 */
+			registerAction(entry) {
+				const key = 'mod-' + moduleId + '-' + String(entry?.key ?? 'action');
+				const off = registerModuleHudAction(moduleId, entry);
+				onDispose(off);
+				return key;
 			}
 		},
 

@@ -37,6 +37,8 @@ import {
 	createFolder,
 	explorerFolders,
 	explorerItems,
+	folderSubtree,
+	allItems,
 	loadExplorer
 } from './explorer';
 import { applyAssetFile } from './assetShare';
@@ -67,6 +69,39 @@ export const PROJECT_FORMAT = 2;
 /** @param {any} item @returns {string} the item's extension INCLUDING the dot, lowered */
 function extOf(item) {
 	return (String(item?.name ?? '').match(/\.[a-z0-9]+$/i)?.[0] ?? '').toLowerCase();
+}
+
+/**
+ * 21-I4 (locked answer 3) — THE SCOPE of an export. `null` is the whole project; a
+ * folder id scopes it to that folder's SUBTREE, and **the folder becomes the exported
+ * project's ROOT**.
+ *
+ * Making it the root — rather than a top-level row inside the file — is what keeps both
+ * import paths sane. `openProject` turns the library INTO that folder's contents, which
+ * is what "this folder is a project" means; and `importProjectAsFolder`, which already
+ * creates one folder named after the project, lands them in `<Folder>/` instead of
+ * `<Folder>/<Folder>/`.
+ *
+ * `allItems()` and not `explorerItems` is load-bearing: 21-G7 folds a scene's old
+ * versions onto the HIDDEN shelf, and a hidden record keeps its `folderId`, so a
+ * folder's scene versions are inside its subtree exactly the way its visible cards are.
+ * A folder export that walked the visible shelf alone would claim a history it could
+ * not carry.
+ *
+ * @param {string | null | undefined} folderId
+ * @returns {{id: string, ids: Set<string>, name: string, hashes: Set<string>} | null}
+ */
+function folderScope(folderId) {
+	const id = typeof folderId === 'string' ? folderId.trim() : '';
+	if (!id) return null;
+	const ids = new Set(folderSubtree(id));
+	/** @type {Set<string>} */
+	const hashes = new Set();
+	for (const item of allItems()) if (ids.has(item.folderId ?? '')) hashes.add(item.hash);
+	// an id that names no folder scopes to nothing, which exports an empty project —
+	// honest, and never the silent "whole project" a null fallback would produce
+	const name = get(explorerFolders).find((f) => f.id === id)?.name ?? '';
+	return { id, ids, name, hashes };
 }
 
 /** The stored bytes of a content hash, or null when this machine does not hold them.
@@ -103,15 +138,41 @@ async function bytesOf(hash) {
  * COUNTED separately from the pruned ones: "we chose not to" and "we could not" are
  * different facts and the toast says which.
  *
- * @param {{versions?: boolean}} [opts] `versions` overrides the stored preference
+ * 21-I4 adds `folderId` — the same export SCOPED to one folder's subtree (see
+ * `folderScope`). THE MANIFEST QUESTION it forces, and the answer: a .tp's manifest may
+ * only claim scenes the file CARRIES, or the other end opens a project full of dead
+ * pointers (the rule this module's header states). So a scoped export filters the
+ * manifest's scene MAP to the scenes whose files live in that folder, and its `assets`
+ * list to the hashes the subtree holds — while each surviving scene's own entry
+ * (history, pins, labels) rides VERBATIM. That asymmetry is deliberate and matches what
+ * this format already does: a history hash whose bytes are absent is the PRUNED case,
+ * which every reader has handled since 21-G3, so trimming a history would throw away
+ * pins and version names to solve a problem the format does not have.
+ *
+ * @param {{versions?: boolean, folderId?: string | null}} [opts] `versions` overrides
+ *   the stored preference; `folderId` scopes the whole export to one folder's subtree
  * @returns {Promise<{bytes: Uint8Array, scenes: number, assets: number, items: number,
- *   skippedScenes: number, skippedAssets: number, omittedVersions: number}>}
+ *   folder: string | null, skippedScenes: number, skippedAssets: number,
+ *   omittedVersions: number, omittedScenes: number}>}
  */
 export async function exportProject(opts = {}) {
 	const { zipSync, strToU8 } = await import('fflate');
 	const withVersions = opts.versions ?? projectVersionsEnabled();
+	// the scope reads the folder tree, so the library has to be loaded before it — the
+	// v2 item walk below used to be the first thing that needed this
+	await loadExplorer();
+	const scope = folderScope(opts.folderId);
 	// normalize at the boundary, like every other read of this document
 	const manifest = normalizeManifest(get(projectManifest));
+	// which SCENES this file may claim: all of them, or the ones with a file in the
+	// folder. "In the folder" is ANY of the scene's versions, not just its pointer — a
+	// scene dragged into a folder is in that folder whichever of its versions is the
+	// visible card, and the pointer's bytes may have been pruned away locally.
+	const sceneNames = Object.keys(manifest.scenes).filter(
+		(name) => !scope || manifest.scenes[name].history.some((h) => scope.hashes.has(h))
+	);
+	const omittedScenes = Object.keys(manifest.scenes).length - sceneNames.length;
+	const assetHashes = manifest.assets.filter((h) => !scope || scope.hashes.has(h));
 	/** @type {Record<string, Uint8Array>} */
 	const files = {};
 	/** @type {{hash: string, name: string, file: string}[]} */
@@ -123,7 +184,7 @@ export async function exportProject(opts = {}) {
 	let omittedVersions = 0;
 
 	const seen = new Set();
-	for (const name of Object.keys(manifest.scenes)) {
+	for (const name of sceneNames) {
 		const keep = keepableHashes(name);
 		// the GATE: pointer-only when history is switched off. The pointer is what the
 		// project's own travel resolves, so a gated file is still a whole project.
@@ -144,7 +205,7 @@ export async function exportProject(opts = {}) {
 		}
 	}
 
-	for (const hash of manifest.assets) {
+	for (const hash of assetHashes) {
 		const found = await bytesOf(hash);
 		if (!found) {
 			skippedAssets++;
@@ -159,12 +220,19 @@ export async function exportProject(opts = {}) {
 	// row with its placement, bytes hash-deduped against what scenes/ and assets/
 	// already carry — an item whose hash travels there gets a row pointing at that
 	// file rather than a second copy under items/.
-	await loadExplorer();
-	const folders = get(explorerFolders).map((f) => ({
-		id: f.id,
-		name: f.name,
-		parentId: f.parentId ?? null
-	}));
+	// 21-I4: a scoped export re-roots the tree — the exported folder itself is not a row
+	// (it IS the project), and its direct children become top-level
+	const inScope = (/** @type {string | null | undefined} */ id) =>
+		!scope || scope.ids.has(id ?? '');
+	const reparent = (/** @type {string | null | undefined} */ id) =>
+		scope && id === scope.id ? null : (id ?? null);
+	const folders = get(explorerFolders)
+		.filter((f) => inScope(f.id) && (!scope || f.id !== scope.id))
+		.map((f) => ({
+			id: f.id,
+			name: f.name,
+			parentId: reparent(f.parentId)
+		}));
 	/** @type {{hash: string, name: string, kind: string, folderId: string | null, file: string}[]} */
 	const items = [];
 	/** @type {Record<string, string>} hash -> the zip path already carrying these bytes */
@@ -172,6 +240,7 @@ export async function exportProject(opts = {}) {
 	for (const s of scenes) carried[s.hash] = s.file;
 	for (const a of assets) carried[a.hash] = a.file;
 	for (const item of get(explorerItems)) {
+		if (!inScope(item.folderId)) continue;
 		let file = carried[item.hash];
 		if (!file) {
 			const found = await bytesOf(item.hash);
@@ -184,10 +253,24 @@ export async function exportProject(opts = {}) {
 			hash: item.hash,
 			name: item.name,
 			kind: item.kind,
-			folderId: item.folderId ?? null,
+			folderId: reparent(item.folderId),
 			file
 		});
 	}
+
+	// 21-I4: THE SCOPED MANIFEST — the document the file is allowed to claim. Filtered
+	// to what this zip carries, and NAMED after the folder, because the folder is the
+	// project now (that name is also the .tp's filename and, on import-as-folder, the
+	// folder it lands in).
+	/** @type {any} */
+	const outManifest = scope
+		? {
+				...manifest,
+				name: scope.name,
+				scenes: Object.fromEntries(sceneNames.map((name) => [name, manifest.scenes[name]])),
+				assets: assetHashes
+			}
+		: manifest;
 
 	files['project.json'] = strToU8(
 		JSON.stringify({
@@ -196,8 +279,8 @@ export async function exportProject(opts = {}) {
 			createdAt: Date.now(),
 			// G9 owns the setter; normalize preserves the field, so it rides here whether
 			// or not this build knows how to edit it
-			name: String(/** @type {any} */ (manifest).name ?? ''),
-			manifest,
+			name: String(outManifest.name ?? ''),
+			manifest: outManifest,
 			scenes,
 			assets,
 			folders,
@@ -206,7 +289,9 @@ export async function exportProject(opts = {}) {
 			// 21-I5: `omittedVersions` is the other kind — versions this file could carry
 			// and was told not to. Additive; a reader that does not know the key sees the
 			// pruned counts exactly as before.
-			skipped: { scenes: skippedScenes, assets: skippedAssets, omittedVersions }
+			// 21-I4: `omittedScenes` is the THIRD kind — project scenes that are simply
+			// not in this folder. Recorded so the file itself says it is a slice.
+			skipped: { scenes: skippedScenes, assets: skippedAssets, omittedVersions, omittedScenes }
 		})
 	);
 	return {
@@ -214,9 +299,11 @@ export async function exportProject(opts = {}) {
 		scenes: scenes.length,
 		assets: assets.length,
 		items: items.length,
+		folder: scope ? scope.name : null,
 		skippedScenes,
 		skippedAssets,
-		omittedVersions
+		omittedVersions,
+		omittedScenes
 	};
 }
 
@@ -273,17 +360,35 @@ async function startSceneSaveBootstrap() {
  * here", not "is the manifest in use". Fork 11 made a .tp the WHOLE Explorer, so a
  * library of models with no scene in it is a legitimate project export and not an empty
  * zip — refusing it was the first of the two things wrong with this refusal. The second
- * was that it only described what to do; it carries the action now. */
-export async function downloadProject() {
+ * was that it only described what to do; it carries the action now.
+ *
+ * 21-I4 (locked answer 3): with a `folderId` this is "Export folder as .tp" — the same
+ * file, scoped to one subtree. ONE function rather than two, because the gate, the
+ * anchor, the filename rule and the honesty toast are the same three facts either way,
+ * and a second copy of the toast is how two counts drift apart.
+ * @param {{folderId?: string | null}} [opts]
+ */
+export async function downloadProject(opts = {}) {
 	await loadExplorer();
-	const hasLibrary = get(explorerItems).length > 0 || get(explorerFolders).length > 0;
-	if (!manifestInUse() && !hasLibrary) {
-		showToast('There is nothing here yet — save a scene and this becomes a project.', [
-			{ label: 'Save a scene', action: () => void startSceneSaveBootstrap() }
-		]);
-		return null;
+	const scope = folderScope(opts.folderId);
+	if (scope) {
+		// a folder with no files and no subfolders would write a zip of nothing
+		if (!scope.hashes.size && scope.ids.size <= 1) {
+			showToast(
+				'"' + (scope.name || 'That folder') + '" is empty — there is nothing to export yet.'
+			);
+			return null;
+		}
+	} else {
+		const hasLibrary = get(explorerItems).length > 0 || get(explorerFolders).length > 0;
+		if (!manifestInUse() && !hasLibrary) {
+			showToast('There is nothing here yet — save a scene and this becomes a project.', [
+				{ label: 'Save a scene', action: () => void startSceneSaveBootstrap() }
+			]);
+			return null;
+		}
 	}
-	const result = await exportProject();
+	const result = await exportProject({ folderId: opts.folderId ?? null });
 	// zipSync's Uint8Array is typed over ArrayBufferLike; BlobPart wants ArrayBuffer
 	const blob = new Blob([/** @type {BlobPart} */ (result.bytes)], { type: 'application/zip' });
 	const a = document.createElement('a');
@@ -296,18 +401,29 @@ export async function downloadProject() {
 	// 21-I5: through the save-name template, whose DEFAULT is `[name]` and whose no-name
 	// fallback is the old timestamp shape verbatim — so the behaviour above is intact and
 	// a user who wants a date in the filename can now say so once, for every save path.
-	a.download = `${saveFileBase(projectName())}.tp`;
+	// 21-I4: a folder export is a project called after the FOLDER — that is the thing the
+	// user pointed at, and the name their file manager should show them
+	a.download = `${saveFileBase(scope ? scope.name : projectName())}.tp`;
 	a.click();
 	URL.revokeObjectURL(url);
 	a.remove();
 	const skipped = result.skippedScenes + result.skippedAssets;
+	const plural = (/** @type {number} */ n, /** @type {string} */ word) =>
+		n + ' ' + word + (n === 1 ? '' : 's');
 	showToast(
-		'Project exported: ' + result.scenes + ' scene version' + (result.scenes === 1 ? '' : 's') +
-			', ' + result.assets + ' asset' + (result.assets === 1 ? '' : 's') +
+		(scope ? 'Folder exported: ' + (scope.name || 'folder') + ' — ' : 'Project exported: ') +
+			plural(result.scenes, 'scene version') +
+			', ' + plural(result.items, 'library item') +
+			', ' + plural(result.assets, 'asset') +
 			(skipped ? ' — ' + skipped + ' whose bytes are not on this machine were left out' : '') +
+			// 21-I4: what a SLICE left behind. "we chose not to", "we could not" and "it is
+			// not in this folder" are three different facts and the toast names each.
+			(result.omittedScenes
+				? ' — ' + plural(result.omittedScenes, 'project scene') +
+					' outside this folder ' + (result.omittedScenes === 1 ? 'was' : 'were') + ' left out'
+				: '') +
 			(result.omittedVersions
-				? ' — ' + result.omittedVersions + ' older version' +
-					(result.omittedVersions === 1 ? '' : 's') +
+				? ' — ' + plural(result.omittedVersions, 'older version') +
 					' left out (scene version history is off in Export settings)'
 				: '')
 	);

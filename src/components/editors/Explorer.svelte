@@ -34,7 +34,20 @@
 	// 21-F4: scenes as LEVELS — .tpscene items in a Levels folder, saved from here
 	// 21-G9: `currentLevel` is WHERE WE ARE — the header breadcrumb's scene half and
 	// the accent on the open scene's own card.
-	import { saveSceneAsLevel, newLevel, travelToLevel, currentLevel } from '$lib/levels';
+	// 21-I4: double-click OPENS a scene — `publishCurrentIfChanged` is the save half of
+	// the unsaved-changes guard (see `openSceneItem`).
+	import {
+		saveSceneAsLevel,
+		newLevel,
+		travelToLevel,
+		publishCurrentIfChanged,
+		currentLevel
+	} from '$lib/levels';
+	// 21-I4: 21-G9 already computes "does the open scene differ from the version its name
+	// points at", behind a throttle, because the answer costs a whole-scene
+	// serialization. This READS that flag and never recomputes it.
+	import { sceneDirty } from '$lib/sceneIdentity';
+	import { showChoice } from '$lib/confirmDialog';
 	import VersionHistory from './VersionHistory.svelte';
 	// 21-G2: the "update available" dot on old scene versions. The manifest store is
 	// passed as the reactive dependency — a helper reading through get() registers none
@@ -1033,6 +1046,16 @@
 				// 170: "New subfolder" only makes sense in the tree; the thumbnail grid drops it
 				...(inTree ? [{ label: 'New subfolder', action: () => startCreate(folder.id) }] : []),
 				{ label: 'Rename', action: () => startRename(folder, !inTree) },
+				// 21-I4 (locked answer 3): the folder's SUBTREE as a project file. The
+				// folder becomes that project's root and gives it its name, so what comes
+				// back out of an import is this folder, not a folder inside a folder.
+				{
+					label: 'Export folder as .tp',
+					icon: 'arrow-down-to-line',
+					tooltip:
+						'This folder and everything under it as a project file — its scenes, their version history and the assets they use',
+					action: () => downloadProject({ folderId: folder.id })
+				},
 				{ label: 'Delete folder', danger: true, action: () => confirmDeleteFolder(folder) }
 			]
 		};
@@ -1398,7 +1421,9 @@
 							{
 								label: 'Open here (this screen)',
 								tooltip: 'Load this scene locally — use a Travel node to move every player together',
-								action: () => travelToLevel(item.hash, item.name)
+								// 21-I4: the same fix as `openSceneItem` — the FILE name is not
+								// the scene name, and `currentLevel.name` is the manifest key
+								action: () => travelToLevel(item.hash)
 							},
 							{
 								// 21-G7: the scene's past. It lives in the file PROPERTIES (that is where a
@@ -1490,16 +1515,29 @@
 						// 21-H1: the same widened gate `downloadProject` now uses — fork 11
 						// made a .tp the WHOLE Explorer, so a library of models with no scene
 						// in it is a real project. Only a genuinely empty one hides this.
-						...(manifestInUse() || $explorerItems.length > 0 || $explorerFolders.length > 0
+						// 21-I4 (locked answer 3): the background menu means WHERE YOU ARE.
+						// At the library root that is the project; INSIDE a folder it is that
+						// folder, and offering "Export project" there would hand the user a
+						// file of everything they are not looking at.
+						...($activeFolder
 							? [
 									{
-										label: 'Export project (.tp)',
+										label: 'Export folder as .tp',
 										tooltip:
-											'The project manifest, every scene version still stored here, and the assets it uses — as one file',
-										action: () => downloadProject()
+											'This folder and everything under it as a project file — its scenes, their version history and the assets they use',
+										action: () => downloadProject({ folderId: $activeFolder })
 									}
 								]
-							: []),
+							: manifestInUse() || $explorerItems.length > 0 || $explorerFolders.length > 0
+								? [
+										{
+											label: 'Export project (.tp)',
+											tooltip:
+												'The project manifest, every scene version still stored here, and the assets it uses — as one file',
+											action: () => downloadProject()
+										}
+									]
+								: []),
 						{
 							label: 'Import project as folder (.tp)…',
 							tooltip:
@@ -1866,6 +1904,68 @@
 		}
 		deselect();
 	}
+	/**
+	 * 21-I4 — DOUBLE-CLICK A SCENE, AND IT OPENS. The right-click menu has offered this
+	 * ("Open here") since 21-F4; the double-click every other card answers to did
+	 * nothing at all, which reads as a broken card rather than as a missing feature.
+	 *
+	 * It is `travelToLevel`, and that is a LOCAL, SILENT scene replace: the replicated
+	 * half of travel is the travel NODE's pulse, so opening a scene out of your own file
+	 * browser broadcasts nothing and moves nobody else. Authoring, not a game move.
+	 *
+	 * THE GUARD, and why it is a three-way. This replaces the world, so an unsaved
+	 * current scene asks first — the DCC standard, and the reason `sceneDirty` exists.
+	 * That flag is READ, never recomputed: 21-G9 keeps it behind a throttle precisely
+	 * because the answer costs a whole-scene serialization. Two consequences worth
+	 * knowing: the verdict can lag a very recent edit by up to `SIGNATURE_THROTTLE_MS`,
+	 * and a scene that has never been NAMED is never "dirty" (there is no version to be
+	 * dirty against) — in both cases the ordinary autosave is what protects the work,
+	 * and travel's own writer-side auto-publish usually catches the first anyway.
+	 */
+	async function openSceneItem(item: any) {
+		// the scene you are standing in. Re-applying the file over your own edits is not
+		// what a double-click means, and it is the one "open" that can only lose work.
+		if ($currentLevel?.hash === item.hash) {
+			showToast(`"${item.name}" is the scene you are already in`);
+			return;
+		}
+		if ($sceneDirty) {
+			const here = $currentLevel?.name ?? 'This scene';
+			const choice = await showChoice({
+				title: `Open "${item.name}"?`,
+				message: `"${here}" has unsaved changes, and opening a scene replaces what is on screen.`,
+				// "Open anyway", NOT "Open without saving": travel's own writer-side
+				// auto-publish (fork 9) runs inside `travelToLevel` whatever is chosen
+				// here, so a named scene normally banks a version on the way out and the
+				// stronger label would be a lie. What "Save and open" adds is the cases
+				// that rule excludes — a viewer, a loose .tpscene, auto-versions switched
+				// off — and a deliberate one rather than an automatic one.
+				choices: [
+					{ value: 'save', label: 'Save and open' },
+					{ value: 'open', label: 'Open anyway', color: 'red' }
+				]
+			});
+			if (!choice) return;
+			if (choice === 'save') {
+				// the ordinary write-back first — it lands the new version BESIDE the one it
+				// supersedes and under the project's own rules. It answers false for the
+				// three cases those rules exclude (a viewer, a loose .tpscene opened from
+				// disk, an unnamed scene), and there an explicit save is what the user just
+				// asked for: it always writes a local item, and for a loose scene it is
+				// exactly the "Save into project" offer of fork 12.
+				const published = await publishCurrentIfChanged({ force: true });
+				if (published) showToast(`Saved a version of "${here}" first`);
+				else await saveSceneAsLevel(here, $activeFolder ?? null);
+			}
+		}
+		// NO name is passed, and that is a fix rather than an omission. `currentLevel.name`
+		// is the MANIFEST KEY — travel-away publishes under it — and an item name carries
+		// the `.tpscene` extension, so handing it over filed every version of "Arena"
+		// under a second scene called "Arena.tpscene": a duplicate card per open, and a
+		// history split in two. `travelToLevel` falls back to the payload's own `name`,
+		// which is the name the scene saved itself under and the key the manifest uses.
+		await travelToLevel(item.hash);
+	}
 	async function openItem(item: any) {
 		if (item.kind === 'pack-folder') {
 			openFolder('pack:' + item.packName);
@@ -1905,6 +2005,12 @@
 				const backing = $explorerItems.find((i) => i.id === item.itemId);
 				if (backing) inspectItem(backing);
 			}
+			return;
+		}
+		// 21-I4: a SCENE opens. Every other kind here opens a viewer; this one opens a
+		// world, which is why it has a guard and they do not.
+		if (item.kind === 'scene' && !item.packEntry) {
+			await openSceneItem(item);
 			return;
 		}
 		if (item.kind === 'text') {

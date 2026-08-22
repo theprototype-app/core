@@ -29,6 +29,8 @@
 const fs = require('fs');
 const crypto = require('crypto');
 const h = require('./helpers.cjs');
+// 21-I4: the folder export is asserted on the REAL downloaded bytes
+const { unzipSync, strFromU8 } = require('fflate');
 
 // ---- reading the world -----------------------------------------------------------
 const folderNames = (peer) =>
@@ -82,6 +84,104 @@ const makeBoxes = (peer, count) =>
 		s.objectActions.deselectObject();
 		return uuids;
 	}, count);
+
+/** 21-I4: the world, by uuid — "did the scene really change" has no cheaper answer */
+const worldUuids = (peer) =>
+	peer.page.evaluate(() => {
+		let group;
+		window.__stores.objectsGroup.subscribe((v) => (group = v))();
+		return (group?.children ?? []).map((c) => c.uuid);
+	});
+
+const currentLevelOf = (peer) =>
+	peer.page.evaluate(() => {
+		let at;
+		window.__stores.levels.currentLevel.subscribe((v) => (at = v))();
+		return at;
+	});
+
+/** 21-G9's flag, READ — the guard reads it too and never recomputes it */
+const dirtyOf = (peer) =>
+	peer.page.evaluate(() => {
+		let d;
+		window.__stores.sceneIdentity.sceneDirty.subscribe((v) => (d = v))();
+		return d;
+	});
+
+/** the live confirm/choice dialog: `{title, message, choices[]}` or null */
+const dialogOf = (peer) =>
+	peer.page.evaluate(() => {
+		let d;
+		window.__stores.confirmDialog.confirmDialog.subscribe((v) => (d = v))();
+		return d
+			? {
+					title: d.title,
+					message: d.message,
+					choices: (d.choices ?? []).map((c) => c.label),
+					cancel: d.cancelLabel
+				}
+			: null;
+	});
+
+/**
+ * Right-click the grid BACKGROUND — and prove the pixel really is background before
+ * clicking it. This grid fills up as the suite runs, so a fixed offset that was empty
+ * space in section 1 is a card by section 9, and `gridMenu` correctly returns early on
+ * a card: the menu simply never opens and the assertion reads as a missing entry.
+ */
+const gridBackgroundMenu = async (peer) => {
+	const box = await peer.page.locator('#explorer-list [role="region"]').first().boundingBox();
+	if (!box) return false;
+	const pt = await peer.page.evaluate((b) => {
+		for (let y = b.y + b.height - 8; y > b.y + 6; y -= 10)
+			for (let x = b.x + b.width - 12; x > b.x + 10; x -= 24) {
+				const el = document.elementFromPoint(x, y);
+				if (!el || el.closest('.explorer-card, .explorer-folder-card')) continue;
+				if (el.closest('#explorer-list')) return { x, y };
+			}
+		return null;
+	}, box);
+	if (!pt) return false;
+	await peer.page.mouse.click(pt.x, pt.y, { button: 'right' });
+	await peer.page.waitForTimeout(320);
+	return true;
+};
+
+/** answer it: a choice VALUE, or false for cancel */
+const answerDialog = (peer, answer) =>
+	peer.page.evaluate((a) => window.__stores.confirmDialog.resolveConfirm(a), answer);
+
+const toastsOf = (peer) =>
+	peer.page.evaluate(() => {
+		let toasts;
+		window.__stores.toastStore.subscribe((t) => (toasts = t))();
+		return (toasts ?? []).map((t) => (typeof t === 'string' ? t : (t.text ?? '')));
+	});
+
+const clearToasts = (peer) => peer.page.evaluate(() => window.__stores.toastStore.set([]));
+
+const manifestOf = (peer) =>
+	peer.page.evaluate(() => {
+		let m;
+		window.__stores.projectManifest.projectManifest.subscribe((v) => (m = v))();
+		return m;
+	});
+
+/** a scene asset with ONE recognisable object in it; leaves the world holding it */
+const seedScene = async (peer, name) => {
+	const [uuid] = await makeBoxes(peer, 1);
+	const item = await peer.page.evaluate((n) => window.__stores.levels.saveSceneAsLevel(n), name);
+	return { uuid, item };
+};
+
+/** the dialog BLOCKS the double-click's handler, so it is answered from here while the
+ *  page awaits — the project-file `answerOpenConfirm` shape */
+const waitForDialog = (peer, expect) =>
+	h.eventually(
+		() => dialogOf(peer),
+		(d) => !!d && d.title.includes(expect),
+		`the unsaved-changes dialog appeared for "${expect}"`
+	);
 
 h.run(async () => {
 	const browser = await h.launch();
@@ -375,7 +475,395 @@ h.run(async () => {
 		);
 
 	// =====================================================================
-	// 6. THE OBJECT MENU HAS NO GAME SUBMENU
+	// 6. DOUBLE-CLICK A SCENE CARD AND IT OPENS
+	// =====================================================================
+	// 21-I4. The right-click menu has offered "Open here" since 21-F4; the double-click
+	// every OTHER card in this grid answers to did nothing at all, which reads as a
+	// broken card rather than as a missing feature.
+	//
+	// "Did it open" is asserted on OBJECT UUIDS, never on a count: two scenes with one
+	// box each are indistinguishable by count, and a count is exactly what a travel that
+	// silently did nothing would also satisfy.
+	await A.page.evaluate(() => window.__stores.explorer.activeFolder.set(null));
+	await A.page.waitForTimeout(400);
+	const sceneA = await seedScene(A, 'Opened A');
+	await A.page.evaluate((u) => window.__stores.objectActions.deleteObjectsByUuid([u]), sceneA.uuid);
+	await A.page.waitForTimeout(400);
+	const sceneB = await seedScene(A, 'Opened B');
+	await A.page.waitForTimeout(600);
+	h.check(
+		!!sceneA.item?.hash && !!sceneB.item?.hash && sceneA.item.hash !== sceneB.item.hash,
+		'premise: two scene assets, each holding a different box'
+	);
+	h.check(
+		(await worldUuids(A)).includes(sceneB.uuid) && !(await worldUuids(A)).includes(sceneA.uuid),
+		'premise: the world is scene B'
+	);
+	// a save WRITES currentLevel, and 21-G9 resets the flag there by construction
+	h.check((await dirtyOf(A)) === false, 'premise: a scene just saved is CLEAN');
+
+	await clearToasts(A);
+	const cardA = A.page.locator('.explorer-card[title="Opened A.tpscene"]');
+	h.check((await cardA.count()) === 1, 'premise: scene A has a card in the grid');
+	await cardA.dblclick();
+	await h.eventually(
+		() => worldUuids(A),
+		(u) => u.includes(sceneA.uuid) && !u.includes(sceneB.uuid),
+		'a double-click on a CLEAN scene loads it — the world really changed'
+	);
+	h.check(
+		(await dialogOf(A)) === null,
+		'…with no dialog at all: there was nothing to lose, so nothing was asked'
+	);
+	const atA = await currentLevelOf(A);
+	h.check(
+		atA?.hash === sceneA.item.hash && atA?.name === 'Opened A',
+		`and the app knows where it is (${atA?.name} / ${String(atA?.hash).slice(0, 12)})`
+	);
+
+	// =====================================================================
+	// 7. THE UNSAVED-CHANGES GUARD, IN ALL THREE DIRECTIONS
+	// =====================================================================
+	// Opening a scene REPLACES the world, so it is the one card action in this grid that
+	// can destroy work. The flag it reads is 21-G9's throttled `sceneDirty`, driven here
+	// the way a user drives it — by editing and waiting — rather than by poking the store.
+	const [strayBox] = await makeBoxes(A, 1);
+	await h.eventually(
+		() => dirtyOf(A),
+		(d) => d === true,
+		'editing the open scene marks it dirty (the real throttled signal, not a poke)',
+		12000
+	);
+
+	// --- direction 1: CANCEL leaves the world exactly as it was ---
+	const beforeCancel = await worldUuids(A);
+	const cardB = A.page.locator('.explorer-card[title="Opened B.tpscene"]');
+	await cardB.dblclick();
+	await waitForDialog(A, 'Opened B');
+	const dialog = await dialogOf(A);
+	h.check(
+		(dialog?.title ?? '').includes('Opened B.tpscene') &&
+			/unsaved changes/i.test(dialog?.message ?? '') &&
+			(dialog?.message ?? '').includes('Opened A'),
+		`it names the scene being opened AND the one at risk ("${dialog?.title}" / "${dialog?.message}")`
+	);
+	h.check(
+		JSON.stringify(dialog?.choices) === JSON.stringify(['Save and open', 'Open anyway']) &&
+			dialog?.cancel === 'Cancel',
+		`it is the DCC three-way, not a yes/no (${JSON.stringify(dialog?.choices)} + ${dialog?.cancel})`
+	);
+	await answerDialog(A, false);
+	await A.page.waitForTimeout(1200);
+	h.check(
+		JSON.stringify(await worldUuids(A)) === JSON.stringify(beforeCancel) &&
+			(await worldUuids(A)).includes(strayBox),
+		'CANCEL loads nothing — the edited world is untouched, stray box and all'
+	);
+	h.check(
+		(await currentLevelOf(A))?.hash === sceneA.item.hash,
+		'…and the app still says it is standing in scene A'
+	);
+
+	// --- direction 2: OPEN WITHOUT SAVING really opens ---
+	await cardB.dblclick();
+	await waitForDialog(A, 'Opened B');
+	await answerDialog(A, 'open');
+	await h.eventually(
+		() => worldUuids(A),
+		(u) => u.includes(sceneB.uuid) && !u.includes(strayBox),
+		'"Open anyway" loads the scene and the unsaved edit leaves the viewport'
+	);
+	h.check(
+		(await currentLevelOf(A))?.name === 'Opened B',
+		'and the app moves with it'
+	);
+	// THE BUG THIS SECTION FOUND, kept as its guard. `currentLevel.name` is the key
+	// travel-away publishes under, and the card's name carries the `.tpscene`
+	// extension — handing THAT over filed a second scene per open, so every open
+	// minted a duplicate card and split the history in two.
+	const sceneKeys = Object.keys((await manifestOf(A)).scenes);
+	h.check(
+		!sceneKeys.some((n) => /\.tpscene$/i.test(n)),
+		`opening a scene files it under its SCENE name, never its file name (${JSON.stringify(sceneKeys)})`
+	);
+	h.check(
+		(await A.page.locator('.explorer-card[title="Opened B.tpscene"]').count()) === 1,
+		'…so opening it leaves ONE card for it, not a second one per visit'
+	);
+
+	// --- direction 3: SAVE AND OPEN keeps the departing scene ---
+	const [keptBox] = await makeBoxes(A, 1);
+	await h.eventually(() => dirtyOf(A), (d) => d === true, 'scene B is dirty again', 12000);
+	const historyBefore = (await manifestOf(A)).scenes['Opened B'].history.length;
+	await clearToasts(A);
+	await cardA.dblclick();
+	await waitForDialog(A, 'Opened A');
+	await answerDialog(A, 'save');
+	await h.eventually(
+		() => worldUuids(A),
+		(u) => u.includes(sceneA.uuid) && !u.includes(keptBox),
+		'"Save and open" opens the other scene too'
+	);
+	const historyAfter = (await manifestOf(A)).scenes['Opened B'].history.length;
+	h.check(
+		historyAfter === historyBefore + 1,
+		`…having first written a new version of the scene it LEFT (${historyBefore} -> ${historyAfter} in its history)`
+	);
+	// and that version is the edited one — the point of saving at all
+	const savedBack = await A.page.evaluate(async () => {
+		const s = window.__stores;
+		let m;
+		s.projectManifest.projectManifest.subscribe((v) => (m = v))();
+		const entry = m.scenes['Opened B'];
+		const hash = entry.history[entry.history.length - 1];
+		const item = s.explorer.itemByHash(hash);
+		if (!item) return null;
+		const blob = await s.explorer.itemBlob(item.id);
+		const payload = await s.sessions.readSessionZip(await blob.arrayBuffer());
+		return payload?.count ?? null;
+	});
+	h.check(
+		savedBack !== null && savedBack >= 2,
+		`the saved version really carries the edit (${savedBack} objects in the new .tpscene)`
+	);
+
+	// =====================================================================
+	// 8. DOUBLE-CLICKING THE SCENE YOU ARE ALREADY IN
+	// =====================================================================
+	// Re-applying the file over your own edits is not what a double-click means, and it
+	// is the one "open" that can ONLY lose work — so it is a cheap no-op with a word.
+	const before = await worldUuids(A);
+	await clearToasts(A);
+	await cardA.dblclick();
+	await h.eventually(
+		() => toastsOf(A),
+		(t) => t.some((x) => /already in/i.test(x)),
+		'double-clicking the open scene says so instead of reloading it'
+	);
+	h.check(
+		JSON.stringify(await worldUuids(A)) === JSON.stringify(before),
+		'and nothing at all was loaded'
+	);
+	h.check((await dialogOf(A)) === null, 'no dialog either — there is nothing to decide');
+
+	// =====================================================================
+	// 9. THE EXPORT ENTRIES ARE CONTEXT-SENSITIVE
+	// =====================================================================
+	// 21-I4 locked answer 3. A background menu means WHERE YOU ARE: the project at the
+	// library root, that folder inside one. Offering "Export project" from inside a
+	// folder hands the user a file of everything they are NOT looking at.
+	await A.page.evaluate(() => window.__stores.explorer.activeFolder.set(null));
+	await A.page.waitForTimeout(500);
+	h.check(await gridBackgroundMenu(A), 'premise: the ROOT grid background opens its menu');
+	const rootRows = await menuRows(A);
+	h.check(
+		rootRows.some((r) => r.startsWith('New folder')),
+		'premise: it really is the background menu and not a card menu'
+	);
+	h.check(
+		rootRows.some((r) => r.startsWith('Export project (.tp)')),
+		`the ROOT background offers the project export (${JSON.stringify(rootRows)})`
+	);
+	h.check(
+		!rootRows.some((r) => r.startsWith('Export folder')),
+		'and not a folder export — there is no folder here'
+	);
+	await closeMenu(A);
+
+	const protoId = await folderIdNamed(A, 'Prototypes');
+	await A.page.evaluate((id) => window.__stores.explorer.activeFolder.set(id), protoId);
+	await A.page.waitForTimeout(500);
+	h.check(await gridBackgroundMenu(A), 'premise: the background menu opens inside a folder too');
+	const insideRows = await menuRows(A);
+	h.check(
+		insideRows.some((r) => r.startsWith('Export folder as .tp')),
+		`inside a folder the background offers the FOLDER export (${JSON.stringify(insideRows)})`
+	);
+	h.check(
+		!insideRows.some((r) => r.startsWith('Export project (.tp)')),
+		'and the project export is gone from it'
+	);
+	await closeMenu(A);
+	await A.page.evaluate(() => window.__stores.explorer.activeFolder.set(null));
+	await A.page.waitForTimeout(400);
+
+	// the folder's OWN menu — the primary surface, and the one locked answer 3 names
+	const protoRow = A.page.locator('#explorer-tree button', { hasText: 'Prototypes' }).first();
+	await protoRow.click({ button: 'right' });
+	await A.page.waitForTimeout(300);
+	const folderRows = await menuRows(A);
+	h.check(
+		folderRows.some((r) => r.startsWith('Export folder as .tp')),
+		`a folder's own menu offers it (${JSON.stringify(folderRows)})`
+	);
+	await closeMenu(A);
+
+	// and it belongs to FOLDERS: a file card's menu has neither export
+	await A.page.locator('.explorer-card[title="note.txt"]').click({ button: 'right' });
+	await A.page.waitForTimeout(300);
+	const fileRows = await menuRows(A);
+	h.check(
+		!fileRows.some((r) => /^Export (folder|project)/.test(r)),
+		`an item's menu carries neither export (${JSON.stringify(fileRows)})`
+	);
+	await closeMenu(A);
+
+	// =====================================================================
+	// 10. THE FOLDER EXPORT, ASSERTED ON THE REAL DOWNLOADED BYTES
+	// =====================================================================
+	// THE DECISION this section exists to hold: a .tp's manifest may only claim scenes
+	// the file CARRIES. A folder export that shipped the whole project's manifest would
+	// open on the other machine as a project full of dead pointers — the rule
+	// projectFile.js's own header states, and the one thing about this feature that
+	// cannot be seen by looking at the Explorer afterwards.
+	const act = await A.page.evaluate(() => {
+		const s = window.__stores;
+		const folder = s.explorer.createFolder('Act 1', null);
+		const props = s.explorer.createFolder('Props', folder.id);
+		return { folder: folder.id, props: props.id };
+	});
+	// a scene INSIDE it, and a plain file inside its SUBFOLDER (the subtree, not one level)
+	const inside = await A.page.evaluate(
+		(id) => window.__stores.levels.saveSceneAsLevel('Act One', id),
+		act.folder
+	);
+	const propHash = await A.page.evaluate(async (id) => {
+		const bytes = new TextEncoder().encode('a prop that lives two levels down');
+		const item = await window.__stores.explorer.addItemFromBytes(bytes.buffer, 'prop.txt', id);
+		return item?.hash ?? null;
+	}, act.props);
+	await A.page.waitForTimeout(600);
+	h.check(!!inside?.hash && !!propHash, 'premise: a folder with a scene and a subfolder file');
+
+	// the COUNTERFACTUAL, computed in-test: the same export unscoped. Without it, every
+	// number below is consistent with the folder id having been ignored entirely.
+	const both = await A.page.evaluate(async (folderId) => {
+		const s = window.__stores;
+		const whole = await s.projectFile.exportProject();
+		const part = await s.projectFile.exportProject({ folderId });
+		return {
+			whole: { scenes: whole.scenes, items: whole.items, folder: whole.folder },
+			part: { scenes: part.scenes, items: part.items, folder: part.folder, omitted: part.omittedScenes }
+		};
+	}, act.folder);
+	h.check(
+		both.part.items < both.whole.items && both.part.scenes < both.whole.scenes,
+		`the scoped export is a SLICE of the whole one (${JSON.stringify(both.part)} vs ${JSON.stringify(both.whole)})`
+	);
+	h.check(
+		both.whole.folder === null && both.part.folder === 'Act 1',
+		'…and it knows which folder it is'
+	);
+	h.check(both.part.omitted > 0, `it counts what it left behind (${both.part.omitted} project scenes)`);
+
+	// now the real thing, through the real menu, and read as BYTES
+	await clearToasts(A);
+	const actRow = A.page.locator('#explorer-tree button', { hasText: 'Act 1' }).first();
+	await actRow.click({ button: 'right' });
+	await A.page.waitForTimeout(300);
+	const [tp] = await Promise.all([
+		A.page.waitForEvent('download', { timeout: 25000 }),
+		A.page.getByText('Export folder as .tp', { exact: false }).click()
+	]);
+	h.check(
+		tp.suggestedFilename() === 'Act 1.tp',
+		`the file is named after the FOLDER, which is now the project (${tp.suggestedFilename()})`
+	);
+	const zipBytes = fs.readFileSync(await tp.path());
+	const entries = unzipSync(new Uint8Array(zipBytes));
+	const doc = JSON.parse(strFromU8(entries['project.json']));
+	h.check(!!doc && doc.format === 2, `it is a real .tp (format ${doc?.format})`);
+	h.check(doc.name === 'Act 1', `the project is named after the folder ("${doc.name}")`);
+
+	// THE COHERENCE INVARIANT
+	const claimed = Object.keys(doc.manifest.scenes);
+	h.check(
+		JSON.stringify(claimed) === JSON.stringify(['Act One']),
+		`the manifest claims ONLY the scene inside the folder (${JSON.stringify(claimed)})`
+	);
+	const carriedHashes = new Set((doc.scenes ?? []).map((s) => s.hash));
+	const dead = claimed.filter((name) => {
+		const history = doc.manifest.scenes[name].history;
+		return !carriedHashes.has(history[history.length - 1]);
+	});
+	h.check(
+		dead.length === 0,
+		`every scene the manifest claims has its POINTER version in the file — no dead pointers (${JSON.stringify(dead)})`
+	);
+	h.check(
+		(doc.scenes ?? []).every((s) => !!entries[s.file]),
+		'and every scene row it lists really is a zip entry'
+	);
+	h.check(
+		doc.skipped?.omittedScenes > 0,
+		`the file itself records that it is a slice (skipped.omittedScenes = ${doc.skipped?.omittedScenes})`
+	);
+
+	// the Explorer half: the subtree, RE-ROOTED
+	const itemNames = (doc.items ?? []).map((i) => i.name);
+	h.check(
+		itemNames.includes('Act One.tpscene') && itemNames.includes('prop.txt'),
+		`it carries the folder's own files and its subfolder's (${JSON.stringify(itemNames)})`
+	);
+	h.check(
+		!itemNames.includes('note.txt') && !itemNames.includes('Alpha.tpscene') &&
+			!itemNames.includes('Opened A.tpscene'),
+		'and nothing from outside the folder'
+	);
+	const folderRowNames = (doc.folders ?? []).map((f) => f.name);
+	h.check(
+		JSON.stringify(folderRowNames) === JSON.stringify(['Props']),
+		`the exported folder is the ROOT — it is not a row, its child is (${JSON.stringify(folderRowNames)})`
+	);
+	const propsRow = (doc.folders ?? []).find((f) => f.name === 'Props');
+	h.check(propsRow?.parentId === null, 'the child folder re-parents to the new root');
+	h.check(
+		(doc.items ?? []).find((i) => i.name === 'Act One.tpscene')?.folderId === null,
+		'a file that sat directly in the folder lands at the new root too'
+	);
+	h.check(
+		(doc.items ?? []).find((i) => i.name === 'prop.txt')?.folderId === propsRow?.id,
+		'…while one in the subfolder keeps its place under it'
+	);
+
+	// the BYTES really travelled — fflate hands out VIEWS into one buffer, so a hash
+	// taken without the byteOffset slice is a hash of the whole zip's tail
+	const propRow = (doc.items ?? []).find((i) => i.name === 'prop.txt');
+	const view = entries[propRow.file];
+	const propSha = crypto
+		.createHash('sha256')
+		.update(Buffer.from(view.buffer, view.byteOffset, view.byteLength))
+		.digest('hex');
+	h.check(
+		propSha === propHash,
+		`the carried bytes hash to the item's own content hash (${propSha.slice(0, 12)} vs ${String(propHash).slice(0, 12)})`
+	);
+
+	// and the toast tells the truth about both halves
+	await h.eventually(
+		() => toastsOf(A),
+		(list) => list.some((t) => /Folder exported: Act 1/.test(t) && /outside this folder/.test(t)),
+		'the toast names the folder AND what it left out'
+	);
+
+	// an EMPTY folder refuses rather than writing a zip of nothing
+	await clearToasts(A);
+	const emptyId = await A.page.evaluate(
+		() => window.__stores.explorer.createFolder('Nothing here', null)?.id ?? null
+	);
+	const refused = await A.page.evaluate(
+		(id) => window.__stores.projectFile.downloadProject({ folderId: id }),
+		emptyId
+	);
+	h.check(refused === null, 'exporting an empty folder refuses');
+	await h.eventually(
+		() => toastsOf(A),
+		(list) => list.some((t) => /is empty/i.test(t)),
+		'and says why'
+	);
+
+	// =====================================================================
+	// 11. THE OBJECT MENU HAS NO GAME SUBMENU
 	// =====================================================================
 	const [box] = await makeBoxes(A, 1);
 	const objectMenu = await A.page.evaluate((id) => {
@@ -405,7 +893,7 @@ h.run(async () => {
 	);
 
 	// =====================================================================
-	// 7. THE RECIPE LIVES IN THE NODE EDITOR'S GAME CATEGORY
+	// 12. THE RECIPE LIVES IN THE NODE EDITOR'S GAME CATEGORY
 	// =====================================================================
 	// with NOTHING selected it is offered and REFUSED, with the reason on the row
 	await A.page.evaluate(() => window.__stores.objectActions.deselectObject());

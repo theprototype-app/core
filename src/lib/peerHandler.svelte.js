@@ -49,6 +49,10 @@ import { applyRemoteScenePhysics, scenePhysicsState } from '$lib/scenePhysics';
 // shape — one latest-wins singleton + a getroomanchor reply. The per-device ALIGNMENT
 // that composes with it is deliberately not on the wire at all.
 import { applyRoomAnchorRemote, sendRoomAnchor } from '$lib/colocation';
+// CO5: which physical ROOM a peer is in, if any — the playmode shape (a tiny per-peer
+// message, a reply riding getmodulestate, a drop at every disconnect site). Everything it
+// drives is LOCAL receive-side filtering; nobody stops broadcasting because of it.
+import { applyRemoteColocation, dropPeerColocation, sendColocationState } from '$lib/colocationPresence';
 import { applyRemoteScenePost, scenePostStates, sendScenePost } from '$lib/scenePost';
 import { applyRemoteShaderGraph, applyRemoteShaderGraphDelete, applyRemoteShaderGraphs, sendShaderGraphs } from '$lib/shaderSync';
 import {
@@ -572,6 +576,7 @@ export class PeerConnection {
 						handleDisconnected(data.peerId);
 						dropPeerPlayMode(data.peerId); // 21-F3
 						dropPeerVars(data.peerId); // 21-G4
+						dropPeerColocation(data.peerId); // CO5
 						dropPeerEnvPresets(data.peerId);
 						dropPeerHandModel(data.peerId);
 					}
@@ -643,10 +648,19 @@ export class PeerConnection {
 					sendCameraPreviewState(); // 16-P5: ride the same late-joiner request
 					sendPlayModeState(); // 21-F3: ...and so does play-mode presence
 					sendPeerVarsState(); // 21-G4: ...and our own per-player row, if we hold one
+					sendColocationState(); // CO5: ...and our physical room, if we are in one
 				} else if(data.type == 'peervars') {
 					// 21-G4: ONE peer's OWN numbers, whole-map latest-wins. Owner-only writer,
 					// so this applier can never be the thing that clobbers somebody's score.
 					applyRemotePeerVars(data);
+				} else if(data.type == 'colocated') {
+					// CO5: presence only — "X is in physical room K". ADDITIVE: sent only on a
+					// CHANGE and only when there IS a room, so an absent peer (or one on an
+					// older build that never sends it) reads as not colocated, which is what it
+					// is. Applying it hides nothing by itself — the renderers and the voice
+					// chain compare K against OUR OWN key, so a remote peer holding two
+					// colocated rows still sees and hears both of them.
+					applyRemoteColocation(data);
 				} else if(data.type == 'playmode') {
 					// 21-F3: presence only — "X is in play mode". ADDITIVE: the message goes out
 					// only while PLAYING, so an absent peer (or one on an older build that never
@@ -969,6 +983,7 @@ export class PeerConnection {
 		clearPeerPreview(peerId); // 16-P5
 		dropPeerPlayMode(peerId); // 21-F3
 		dropPeerVars(peerId); // 21-G4
+		dropPeerColocation(peerId); // CO5
 		dropPeerEnvPresets(peerId);
 		dropPeerHandModel(peerId);
 		if (relay) this.broadcast({ type: 'disconnected', peerId });
@@ -1001,6 +1016,7 @@ export class PeerConnection {
 				clearPeerPreview(peerId); // 16-P5
 				dropPeerPlayMode(peerId); // 21-F3
 				dropPeerVars(peerId); // 21-G4
+				dropPeerColocation(peerId); // CO5
 				dropPeerEnvPresets(peerId);
 				dropPeerHandModel(peerId);
 			}

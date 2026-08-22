@@ -620,13 +620,17 @@
 	}
 
 	// --- inline create/rename (106.1/2) ---
-	function startCreate(parentId: string | null) {
+	// 21-G10: `inGrid` says WHICH view hosts the input. The tree and the grid can both
+	// be showing the same parent folder, so without it a "New folder" started from the
+	// grid mounted a SECOND input in the tree — the duplicate focus/blur that
+	// startRename already documents, one mode over.
+	function startCreate(parentId: string | null, inGrid = false) {
 		if (parentId) {
 			const next = new Set(expanded);
 			next.add(parentId);
 			expanded = next;
 		}
-		editing = { mode: 'create', parentId, value: 'New folder' };
+		editing = { mode: 'create', parentId, value: 'New folder', inGrid };
 	}
 	// inGrid keeps the tree + thumbnail inputs from BOTH mounting for a root folder
 	// (it shows in both), whose duplicate focus/blur would tear the edit down instantly
@@ -643,13 +647,26 @@
 	function startRenamePack(pack: any) {
 		editing = { mode: 'rename-pack', packName: pack.name, value: pack.title || pack.name };
 	}
-	function commitEdit() {
+	// 21-G10 (fork 14): naming a SCENE is a create like any other, so it goes through
+	// the same inline editor rather than window.prompt() — the one input in this panel
+	// that no theme reaches, that blocks the page while it is up, and whose Escape is
+	// the browser's rather than ours. It always shows in the GRID: both entries live on
+	// the grid background's menu, and the tree has no row to hang a scene name on.
+	function startSceneName(mode: 'save-scene' | 'new-scene') {
+		editing = { mode, value: mode === 'save-scene' ? 'Scene' : 'New scene', inGrid: true };
+	}
+	async function commitEdit() {
 		if (!editing || !isValidName(editing.value)) return;
-		if (editing.mode === 'create') createFolder(editing.value, editing.parentId);
-		else if (editing.mode === 'rename-item') renameItem(editing.itemId, editing.value);
-		else if (editing.mode === 'rename-pack') renamePack(editing.packName, editing.value);
-		else renameFolder(editing.folderId, editing.value);
+		// snapshot and CLOSE first: the scene modes await, and an input still mounted over
+		// an in-flight save is one blur away from committing the same name twice
+		const edit = editing;
 		editing = null;
+		if (edit.mode === 'create') createFolder(edit.value, edit.parentId);
+		else if (edit.mode === 'rename-item') renameItem(edit.itemId, edit.value);
+		else if (edit.mode === 'rename-pack') renamePack(edit.packName, edit.value);
+		else if (edit.mode === 'save-scene') await saveSceneAsLevel(edit.value);
+		else if (edit.mode === 'new-scene') await newLevel(edit.value);
+		else renameFolder(edit.folderId, edit.value);
 	}
 	function editKeydown(e: KeyboardEvent) {
 		if (e.key === 'Enter') commitEdit();
@@ -659,6 +676,61 @@
 	function focusSelect(node: HTMLInputElement) {
 		node.focus();
 		node.select();
+	}
+	// 21-G10: which inline edit the GRID hosts, rendered as a placeholder CARD sitting
+	// where the thing being named will land. A `create` qualifies only when it was
+	// started from the grid — the tree keeps its own row editor for its own button.
+	const pendingCard = $derived(
+		editing &&
+			(editing.mode === 'save-scene' ||
+				editing.mode === 'new-scene' ||
+				(editing.mode === 'create' && editing.inGrid))
+			? (editing.mode as string)
+			: null
+	);
+
+	// --- 21-G10: the tree's roots section resizes -------------------------------------
+	// The pinned block under "New folder" (Prefabs / Packs / Scene, each expandable) used
+	// to grow without limit and shove the folder list off the top of the pane. The grip
+	// is GraphTree's verbatim with the SIGN FLIPPED: it sits ABOVE what it sizes, so
+	// dragging DOWN gives the folder list the room. The ceiling comes from the MEASURED
+	// column and never a constant — a flat cap is how a grip ends up off-screen on a
+	// short dock (18-B).
+	const ROOTS_MIN = 56;
+	const ROOTS_RESERVE = 120; // the folder list + the New folder button keep this much
+	let treeColH = $state(0);
+	let rootsResizing = $state(false);
+	let rootsH = $state(
+		(typeof localStorage !== 'undefined' && parseInt(localStorage.getItem('explorerRootsH') ?? '')) ||
+			160
+	);
+	const rootsMax = $derived(Math.max(ROOTS_MIN, (treeColH || 320) - ROOTS_RESERVE));
+	// re-clamp whenever the column SHRINKS (dock resize, undock, or a height stored on a
+	// taller pane): a size that was legal before must not strand the grip off the bottom
+	$effect(() => {
+		const max = rootsMax;
+		if (rootsH > max) rootsH = max;
+	});
+	function startRootsResize(e: PointerEvent) {
+		rootsResizing = true;
+		(e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
+		e.preventDefault();
+	}
+	function doRootsResize(e: PointerEvent) {
+		if (!rootsResizing) return;
+		rootsH = Math.min(Math.max(ROOTS_MIN, rootsH - e.movementY), rootsMax);
+	}
+	function endRootsResize(e: PointerEvent) {
+		if (!rootsResizing) return;
+		rootsResizing = false;
+		(e.currentTarget as HTMLElement).releasePointerCapture?.(e.pointerId);
+		localStorage.setItem('explorerRootsH', String(rootsH));
+	}
+	// 18-B's rule for every grip in the app: a double-click restores a size you might
+	// otherwise have no way to get back
+	function resetRootsH() {
+		rootsH = Math.min(160, rootsMax);
+		localStorage.setItem('explorerRootsH', String(rootsH));
 	}
 
 	function confirmDeleteFolder(folder: any) {
@@ -816,7 +888,7 @@
 						{ label: 'Load pack from URL', action: loadPackFromUrl }
 					]
 				: [
-						{ label: 'New folder', action: () => startCreate($activeFolder ?? null) },
+						{ label: 'New folder', action: () => startCreate($activeFolder ?? null, true) },
 						// 21-F4: a saved scene is an ordinary content-hashed .tpscene item —
 						// a Travel node loads it by hash. 21-G1: the `Scenes` folder is only
 						// where a save LANDS; discovery is BY KIND, so that folder can be
@@ -824,18 +896,12 @@
 						{
 							label: 'Save scene…',
 							tooltip: 'Save this scene as a .tpscene asset a Travel node can load',
-							action: () => {
-								const name = prompt('Scene name:', 'Scene');
-								if (name) saveSceneAsLevel(name);
-							}
+							action: () => startSceneName('save-scene')
 						},
 						{
 							label: 'New scene…',
 							tooltip: 'An EMPTY scene asset — it captures nothing from what is open',
-							action: () => {
-								const name = prompt('Scene name:', 'New scene');
-								if (name) newLevel(name);
-							}
+							action: () => startSceneName('new-scene')
 						},
 						// 21-G3: the whole project as ONE file. Offered only once there IS
 						// a project — a pristine manifest would export an empty zip, and an
@@ -1166,7 +1232,7 @@
 		{/snippet}
 		{#snippet primary()}
 		<!-- folder tree (106.6); width/collapse/side owned by WindowShell (197) -->
-		<div id="explorer-tree" class="flex h-full flex-col text-xs">
+		<div id="explorer-tree" class="flex h-full flex-col text-xs" bind:clientHeight={treeColH}>
 			<!-- scrollable folder list; the roots below stay pinned to the bottom -->
 			<div class="flex min-h-0 flex-1 flex-col gap-0.5 overflow-x-auto overflow-y-auto p-1">
 			<button
@@ -1178,7 +1244,7 @@
 				ondrop={(e) => dropInto(e, null)}
 				onclick={() => openFolder(null)}><House size={16} class="mr-1.5 w-4 text-center text-gray-400" aria-hidden="true" />Library</button
 			>
-			{#if editing?.mode === 'create' && editing.parentId === null}
+			{#if editing?.mode === 'create' && !editing.inGrid && editing.parentId === null}
 				{@render editRow(0)}
 			{/if}
 			{#each folderTree as row (row.folder.id)}
@@ -1217,7 +1283,7 @@
 						</button>
 					</div>
 				{/if}
-				{#if editing?.mode === 'create' && editing.parentId === row.folder.id}
+				{#if editing?.mode === 'create' && !editing.inGrid && editing.parentId === row.folder.id}
 					{@render editRow(row.depth + 1)}
 				{/if}
 			{/each}
@@ -1229,66 +1295,84 @@
 					class="whitespace-nowrap rounded-sm border border-dashed border-gray-600 px-2 py-1 text-left text-gray-400 hover:border-gray-400 hover:text-gray-200"
 					onclick={() => startCreate(typeof $activeFolder === 'string' && ($activeFolder === 'prefabs' || $activeFolder.startsWith('scene')) ? null : $activeFolder)}>＋ New folder</button
 				>
-				<div class="my-0.5 border-t border-gray-700/40"></div>
-				<button
-					id="prefabs-folder"
-					class="whitespace-nowrap rounded px-2 py-1 text-left {$activeFolder === 'prefabs'
-						? 'bg-primary-700 text-white'
-						: 'text-gray-300 hover:bg-gray-700'}"
-					onclick={() => openFolder('prefabs')}><Boxes size={16} class="ico-prefab mr-1.5 w-4 text-center" aria-hidden="true" />Prefabs</button
-				>
-				<button
-					id="packs-folder"
-					class="whitespace-nowrap rounded px-2 py-1 text-left {$activeFolder === 'packs'
-						? 'bg-primary-700 text-white'
-						: 'text-gray-300 hover:bg-gray-700'}"
-					title="Asset packs — click to list them, double-click to expand the tree"
-					onclick={() => openFolder('packs')} ondblclick={togglePacks}><PackageOpen size={16} class="mr-1.5 w-4 text-center text-gray-400" aria-hidden="true" />Packs {packsExpanded ? '▾' : '▸'}</button
-				>
-				{#if packsExpanded}
-					{#each shownPacks as pack (pack.name)}
-						{#if editing?.mode === 'rename-pack' && editing.packName === pack.name}
-							{@render editRow(1)}
-						{:else}
+				<!-- 21-G10: the divider became the grip. GraphTree's shape verbatim (pointer
+				     events, capture, a MEASURED ceiling, dblclick to reset) — startRootsResize
+				     carries the reasoning, including why dragging DOWN shrinks this. -->
+				<!-- svelte-ignore a11y_no_static_element_interactions -->
+				<div
+					id="explorer-roots-resize"
+					class="my-0.5 h-1.5 shrink-0 cursor-ns-resize border-t border-gray-700/40 {rootsResizing
+						? 'bg-primary-600/60'
+						: 'hover:bg-gray-600/60'}"
+					style="touch-action: none"
+					title="Drag to resize this section (double-click to reset)"
+					onpointerdown={startRootsResize}
+					onpointermove={doRootsResize}
+					onpointerup={endRootsResize}
+					onpointercancel={endRootsResize}
+					ondblclick={resetRootsH}
+				></div>
+				<div id="explorer-roots" class="flex flex-col gap-0.5 overflow-y-auto" style="max-height: {rootsH}px">
+					<button
+						id="prefabs-folder"
+						class="whitespace-nowrap rounded px-2 py-1 text-left {$activeFolder === 'prefabs'
+							? 'bg-primary-700 text-white'
+							: 'text-gray-300 hover:bg-gray-700'}"
+						onclick={() => openFolder('prefabs')}><Boxes size={16} class="ico-prefab mr-1.5 w-4 text-center" aria-hidden="true" />Prefabs</button
+					>
+					<button
+						id="packs-folder"
+						class="whitespace-nowrap rounded px-2 py-1 text-left {$activeFolder === 'packs'
+							? 'bg-primary-700 text-white'
+							: 'text-gray-300 hover:bg-gray-700'}"
+						title="Asset packs — click to list them, double-click to expand the tree"
+						onclick={() => openFolder('packs')} ondblclick={togglePacks}><PackageOpen size={16} class="mr-1.5 w-4 text-center text-gray-400" aria-hidden="true" />Packs {packsExpanded ? '▾' : '▸'}</button
+					>
+					{#if packsExpanded}
+						{#each shownPacks as pack (pack.name)}
+							{#if editing?.mode === 'rename-pack' && editing.packName === pack.name}
+								{@render editRow(1)}
+							{:else}
+							<button
+								data-pack={pack.name}
+								class="whitespace-nowrap rounded px-2 py-1 text-left {$activeFolder === 'pack:' + pack.name
+									? 'bg-primary-700 text-white'
+									: 'text-gray-400 hover:bg-gray-700'}"
+								style="padding-left: 22px"
+								title={pack.license ? pack.title + ' · ' + pack.license : pack.title}
+								oncontextmenu={(e) => packRowMenu(e, pack)}
+								onclick={() => openFolder('pack:' + pack.name)}
+							>
+								<PackageOpen size={16} class="mr-1.5 w-4 text-center text-gray-500" aria-hidden="true" />{pack.title}
+							</button>
+							{/if}
+						{/each}
+						{#if shownPacks.length === 0}
+							<span class="px-2 py-1 text-[10px] italic text-gray-500" style="padding-left: 22px">No packs</span>
+						{/if}
+					{/if}
+					<button
+						id="scene-folder"
+						class="whitespace-nowrap rounded px-2 py-1 text-left {$activeFolder === 'scene'
+							? 'bg-primary-700 text-white'
+							: 'text-gray-300 hover:bg-gray-700'}"
+						title="Assets the shared scene uses right now — identical on every peer"
+						onclick={() => openFolder('scene')} ondblclick={toggleScene}><Globe size={16} class="mr-1.5 w-4 text-center text-gray-400" aria-hidden="true" />Scene {sceneExpanded ? '▾' : '▸'}</button
+					>
+					{#if sceneExpanded}
+					{#each ['audio', 'config', 'textures'] as sub}
 						<button
-							data-pack={pack.name}
-							class="whitespace-nowrap rounded px-2 py-1 text-left {$activeFolder === 'pack:' + pack.name
+							class="whitespace-nowrap rounded px-2 py-1 text-left {$activeFolder === 'scene:' + sub
 								? 'bg-primary-700 text-white'
 								: 'text-gray-400 hover:bg-gray-700'}"
 							style="padding-left: 22px"
-							title={pack.license ? pack.title + ' · ' + pack.license : pack.title}
-							oncontextmenu={(e) => packRowMenu(e, pack)}
-							onclick={() => openFolder('pack:' + pack.name)}
+							onclick={() => openFolder('scene:' + sub)}
 						>
-							<PackageOpen size={16} class="mr-1.5 w-4 text-center text-gray-500" aria-hidden="true" />{pack.title}
+							<Folder size={16} class="ico-folder mr-1.5 w-4 text-center" aria-hidden="true" />{sub} ({$sceneAssets.filter((a) => a.group === sub).length})
 						</button>
-						{/if}
 					{/each}
-					{#if shownPacks.length === 0}
-						<span class="px-2 py-1 text-[10px] italic text-gray-500" style="padding-left: 22px">No packs</span>
 					{/if}
-				{/if}
-				<button
-					id="scene-folder"
-					class="whitespace-nowrap rounded px-2 py-1 text-left {$activeFolder === 'scene'
-						? 'bg-primary-700 text-white'
-						: 'text-gray-300 hover:bg-gray-700'}"
-					title="Assets the shared scene uses right now — identical on every peer"
-					onclick={() => openFolder('scene')} ondblclick={toggleScene}><Globe size={16} class="mr-1.5 w-4 text-center text-gray-400" aria-hidden="true" />Scene {sceneExpanded ? '▾' : '▸'}</button
-				>
-				{#if sceneExpanded}
-				{#each ['audio', 'config', 'textures'] as sub}
-					<button
-						class="whitespace-nowrap rounded px-2 py-1 text-left {$activeFolder === 'scene:' + sub
-							? 'bg-primary-700 text-white'
-							: 'text-gray-400 hover:bg-gray-700'}"
-						style="padding-left: 22px"
-						onclick={() => openFolder('scene:' + sub)}
-					>
-						<Folder size={16} class="ico-folder mr-1.5 w-4 text-center" aria-hidden="true" />{sub} ({$sceneAssets.filter((a) => a.group === sub).length})
-					</button>
-				{/each}
-				{/if}
+				</div>
 			</div>
 		</div>
 		{/snippet}
@@ -1305,7 +1389,7 @@
 			onkeydown={gridKeydown}
 			role="region"
 		>
-			{#if childFolders.length === 0 && gridItems.length === 0}
+			{#if !pendingCard && childFolders.length === 0 && gridItems.length === 0}
 				{#if openPack && $openPackLoading}
 					<!-- QW: first open of a pack fetches its item list from the CDN — show a
 					     real loading state instead of "no items" (or the stale previous list) -->
@@ -1338,6 +1422,23 @@
 				<!-- fixed-width columns (not 1fr) so cards don't resize/jiggle when the
 				     Properties sidebar toggles main's width -->
 				<div class="grid grid-cols-[repeat(auto-fill,96px)] justify-start gap-1">
+					{#if pendingCard}
+						<!-- 21-G10: name it where it will appear. A placeholder card, not a modal and
+						     not a browser prompt — Esc removes it having created nothing. -->
+						<div
+							id="explorer-new-card"
+							class="explorer-folder-card flex flex-col items-center gap-1 rounded border border-dashed border-primary-600/70 bg-primary-600/5 p-1.5"
+						>
+							<span class="flex h-14 w-14 items-center justify-center {pendingCard === 'create' ? 'ico-folder' : 'text-gray-400'}">
+								{#if pendingCard === 'create'}
+									<Folder size={32} aria-hidden="true" />
+								{:else}
+									<Icon name={KIND_ICONS.scene} size={32} />
+								{/if}
+							</span>
+							{@render cardEdit()}
+						</div>
+					{/if}
 					{#if !search && $activeFolder !== 'prefabs'}
 						{#each childFolders as folder (folder.id)}
 							<div

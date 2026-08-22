@@ -31,8 +31,14 @@ The GAME line: `game-state`, `hud-actions`, `logic-nodes`, `collectibles-v2`,
 `{replicate:false}` local pulse, the round-aware `ctx.trigger`, and the counterfactual
 that the migrated collectible pieces are GONE from core. `module-toolbox` covers the
 toolbox seams incl. the `sidebar: false` opt-out and openToolbox/closeToolbox/
-toggleToolbox. The collectible MODULE's own flight lives in the modules repo
-(`tests/module-collectible.test.cjs`, 82 checks, three peers).
+toggleToolbox. **`trigger-log-sync`** (56, three peers) covers DEVX #18 - the handshake
+reply for the trigger log, and the epoch that keeps arriving history readable while making
+it fire nothing; **`flow-spawner`** (43) covers B7, including the byte-identical
+`physicsDebug` PARITY GOLDEN for the createBodyFor extraction (embedded with the recipe to
+redo it - reuse that shape for any future body-construction change); **`palette-groups`**
+(12) asserts the Input-vs-Triggers rule from the socket types the catalog already declares,
+so a misfiled node cannot drift back. The collectible MODULE's own flight lives in the
+modules repo (`tests/module-collectible.test.cjs`, 129 checks, three peers).
 The mesh pro tools each have one: `mesh-edge-gizmo`, `mesh-bevel` (faces), `mesh-vertex-bevel`,
 `mesh-edge-bevel`, `mesh-vertex-slide`, `mesh-proportional`, `mesh-knife`, `mesh-symmetrize`,
 `mesh-bridge-normals`, `mesh-gizmo-modes` (the gizmo across element modes, driven by REAL mouse

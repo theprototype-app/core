@@ -34,6 +34,7 @@
 	import { viewPrefs, setViewPrefs, resetViewPrefs, DEFAULT_VIEW_PREFS } from '$lib/viewPrefs';
 	import { showWelcomeOnStart, showWhatsNewNotice, openWelcome, openWhatsNew } from '$lib/whatsNew';
 	import { resetWindowPoses } from '$lib/vrWindowPoses';
+	import { probeFindings, probeRunning, probeSupport, runArProbe, clearProbeState } from '$lib/arProbe';
 	import { resetWindowLayout } from '$lib/dragWindow';
 	import { shortcuts } from '$lib/shortcuts';
 	import {
@@ -1143,6 +1144,56 @@
 						</svelte:fragment>
 						Grabbed VR menus/panels snap back to their default spots on the controllers (111: hold the other grip on one to re-place it)
 					</SettingRow>
+					<SettingRow name="Colocation probe (dev)">
+						<svelte:fragment slot="control">
+							<span class="sr-stack">
+								<button
+									id="ar-probe-run"
+									class="rounded-sm bg-gray-600 px-2 py-1 text-xs text-white hover:bg-gray-500 disabled:opacity-50"
+									disabled={$probeRunning}
+									on:click={() => {
+										// USER ACTIVATION, and this ORDER is the whole reason for the comment:
+										// probeSupport() is STARTED and deliberately NOT awaited, so runArProbe()
+										// — whose first statement is the requestSession call, with no await
+										// ahead of it — runs in the SAME task as this click. Awaiting the
+										// isSessionSupported pre-checks first would push requestSession into a
+										// later task, which is exactly the shape a runtime refuses with
+										// "requires user activation". Nothing is lost: probeSupport records its
+										// synchronous surface checks before it returns and its two async lines a
+										// moment later, and every finding carries its own step name.
+										probeSupport();
+										runArProbe();
+									}}>{$probeRunning ? 'Probing…' : 'Probe AR capabilities'}</button
+								>
+								<button
+									id="ar-probe-clear"
+									class="rounded-sm bg-gray-600 px-2 py-1 text-xs text-white hover:bg-gray-500 disabled:opacity-50"
+									disabled={$probeRunning}
+									on:click={() => clearProbeState()}>Clear stored anchor</button
+								>
+							</span>
+						</svelte:fragment>
+						<span class="font-semibold">CO0 on-device probe</span> — run this <em>inside the headset</em>: it opens an
+						immersive-ar session, creates an anchor at your feet, persists the handle and reports what the runtime
+						actually supports. Run it once, fully restart the browser, run it again — the second run's
+						<em>restore delta</em> line is the answer. The report survives the session, a reload and a restart{arSupport ===
+						false
+							? '. This device reports no immersive-ar support'
+							: ''}
+					</SettingRow>
+					{#if $probeFindings.length}
+						<SettingRow name="Probe report" noControl>
+							<div class="flex max-h-72 flex-col gap-0.5 overflow-y-auto font-mono text-[11px] leading-snug">
+								{#each $probeFindings as finding, i (i)}
+									<div class="flex gap-1.5">
+										<span class={finding.ok ? 'text-green-400' : 'text-red-400'}>{finding.ok ? '✓' : '✗'}</span>
+										<span class="whitespace-nowrap font-semibold">{finding.step}</span>
+										<span class="min-w-0 break-words text-gray-400">{finding.detail}</span>
+									</div>
+								{/each}
+							</div>
+						</SettingRow>
+					{/if}
 				</AccordionItem>
 				<AccordionItem bind:open={aiExpanded}>
 					{#snippet header()}AI{/snippet}

@@ -6,6 +6,8 @@ import { serializeGraphs, copyGraphFrom } from './flowGraphs';
 import { serializeNode, serializeEdge, sendNodes } from './nodesHandler';
 import { parkAnimatedAtBase } from './flowRuntime';
 import { stripEditOverlays } from './editOverlays';
+// B7: a spawner's copies exist only while the world runs — never in a scene file
+import { isTransient } from './transientObjects';
 import {
 	animatedImportUuids,
 	animatedImportsSnapshot,
@@ -141,13 +143,16 @@ export function buildSessionPayload(name) {
 			// appVersion is display-only provenance
 			format: SESSION_FORMAT,
 			appVersion: APP_VERSION,
-			count: group?.children.length ?? 0,
+			count: (group?.children ?? []).filter((/** @type {any} */ child) => !isTransient(child)).length,
 			thumbnail: renderSceneThumbnail(group),
 			// animated imports are saved as their ORIGINAL bytes below instead:
 				// toJSON carries no AnimationClip and mangles rigs, so a saved scene
 				// used to come back with dead, static models
+				// B7: and a TRANSIENT object is not saved at all — it exists only while the
+				// simulation runs, so saving mid-run would bake a spawner's crates into the
+				// scene file as permanent content
 				objects: (group?.children ?? [])
-					.filter((/** @type {any} */ child) => !animatedUuids.includes(child.uuid))
+					.filter((/** @type {any} */ child) => !animatedUuids.includes(child.uuid) && !isTransient(child))
 					.map((/** @type {any} */ child) => child.toJSON()),
 				animated: animatedImportsSnapshot(group),
 				// authored movement tracks (the Animation window) were never saved

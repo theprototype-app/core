@@ -158,6 +158,10 @@
 		impulse: AnimationNode, // B6
 		setvelocity: AnimationNode, // B6
 		joint: AnimationNode, // B6
+		// B7: spec-driven (named input rows, four ranges, and the catalog `note`). A new
+		// node type has TWO registries and only one of them complains — a `spawn` in the
+		// catalog and not here renders as UnknownNode ("install the module that ships it").
+		spawn: AnimationNode,
 		counter: CounterNode,
 		flowinput: FlowIONode,
 		flowoutput: FlowIONode,

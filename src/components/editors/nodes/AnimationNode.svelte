@@ -144,5 +144,20 @@
 				</label>
 			{/each}
 		{/if}
+		{#if spec?.note}
+			<!-- B7: the one line a socket label cannot carry. Same purpose (and look) as
+			     HudNode's hand-rolled per-peer notice, but declared in the catalog so a
+			     node does not need a card of its own just to say its one important thing. -->
+			<span class="node-note">{spec.note}</span>
+		{/if}
 	</div>
 </NodeWrapper>
+
+<style>
+	.node-note {
+		margin-top: 2px;
+		font-size: 9px;
+		line-height: 1.25;
+		color: #9ca3af;
+	}
+</style>

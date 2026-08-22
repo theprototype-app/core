@@ -10,6 +10,9 @@ import { serializeNode, serializeEdge } from './nodesHandler';
 import { parkAnimatedAtBase } from './flowRuntime';
 import { shaderGraphsSnapshot, shaderGraphsRestore } from './shaderGraph';
 import { stripEditOverlays } from './editOverlays';
+// B7: a spawner's copies must never reach a snapshot — a crash mid-run would otherwise
+// restore them as permanent scene content
+import { isTransient, parkTransientObjects } from './transientObjects';
 import { animatedImportsSnapshot, animatedImportsRestore } from './animatedImports';
 import { animations, animationsSnapshot, animationsRestore } from './animationPreview';
 import { scenePost, scenePostSnapshot, scenePostRestore } from './scenePost';
@@ -65,7 +68,9 @@ function multiMaterialSnapshot() {
 	/** @type {any[]} */
 	const out = [];
 	group?.traverse?.((/** @type {any} */ child) => {
-		if (child !== group && isMultiMaterial(child))
+		// B7: a transient object is not in the GLTF snapshot, so a twin for it would be a
+		// replacement with nothing to replace
+		if (child !== group && isMultiMaterial(child) && !isTransient(child))
 			out.push({ uuid: child.uuid, element: serializeMeshWithGroups(child) });
 	});
 	return out;
@@ -77,6 +82,12 @@ function exportScene() {
 		if (!group || group.children.length === 0) return resolve(null);
 		// snapshots must store animation BASE poses, not the current swing (88)
 		const restore = parkAnimatedAtBase();
+		// B7: transient objects (a spawner's copies) are DETACHED for the export. There is
+		// no per-child filter to hook here — the whole group goes through one GLTF pass —
+		// and hiding them instead would lean on GLTFExporter's onlyVisible default, which
+		// is the documented trap in reverse. A crash mid-run must not leave forty crates in
+		// the snapshot to be restored as permanent scene content.
+		const unpark = parkTransientObjects(group);
 		// H1 fix: GLTFLoader assigns NEW uuids on parse, which orphans everything
 		// keyed by object uuid (object flows, annotations). Stamp each object's
 		// uuid into userData (GLTF extras round-trips it) so restoreSnapshot can
@@ -91,11 +102,13 @@ function exportScene() {
 		new GLTFExporter().parse(
 			group,
 			(result) => {
+				unpark(); // before unstamp, so the parked objects lose their __uuid too
 				unstamp();
 				restore();
 				resolve(result);
 			},
 			(error) => {
+				unpark();
 				unstamp();
 				restore();
 				console.log('autosave export failed', error);
@@ -125,7 +138,9 @@ async function saveSnapshot() {
 	const controls = get(orbitControls);
 	const snapshot = {
 		ts: Date.now(),
-		objects: get(objectsGroup)?.children.length ?? 0,
+		// B7: the count has to agree with what `scene` actually holds, or the restore
+		// prompt offers "42 objects" and hands back 2
+		objects: (get(objectsGroup)?.children ?? []).filter((/** @type {any} */ c) => !isTransient(c)).length,
 		scene,
 		// the GLTF export carries no AnimationClip and mangles rigs, and authored
 		// tracks live outside the scene graph entirely — both are saved beside it so

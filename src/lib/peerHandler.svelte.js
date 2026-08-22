@@ -534,7 +534,8 @@ export class PeerConnection {
 				} else if(data.type == 'objectParameters') {
 					objectParameters(data);
 				} else if(data.type == 'duplicate') {
-					applyRemoteDuplicate(data.sourceUuid, data.uuids, data.name, data.pos);
+					// B7: `transient` is additive — absent for every ordinary duplicate
+					applyRemoteDuplicate(data.sourceUuid, data.uuids, data.name, data.pos, data.transient);
 				} else if(data.type == 'clearscene') {
 					applyClearScene(data.peerId);
 				} else if(data.type == 'delete') {

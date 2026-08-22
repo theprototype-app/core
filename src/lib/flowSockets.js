@@ -34,6 +34,9 @@ const OUTPUT = {
 	impulse: 'effect', // B6: the physics ACTION nodes feed an Object Selector
 	setvelocity: 'effect',
 	joint: 'effect',
+	// B7: a spawner's Object Selector names the TEMPLATE it copies, not a target it
+	// writes to — but the channel is the same one, so no coercion table change
+	spawn: 'effect',
 	flowinput: 'number', // H5 fallback; the live check reads data.vtype
 	// A3 HUD: only the button and the timer produce anything. hudtext/hudbar/
 	// hudscreen/hudlist are SINKS — they write into an element, so their output stays
@@ -96,6 +99,11 @@ const INPUT = {
 	impulse: { trigger: 'event', force: 'vector3', target: 'object' },
 	setvelocity: { trigger: 'event', linear: 'vector3', angular: 'vector3', target: 'object' },
 	joint: { trigger: 'event', a: 'object', b: 'object' },
+	// B7: `source` is the alternative to an Object Selector edge (impulse's `target`
+	// precedent); `at` is an offset, so it takes the same vector3 a force does. Every
+	// range param keeps the numeric fallback, so only these three need declaring — an
+	// undeclared handle types as 'number', which would refuse an Object Selector.
+	spawn: { trigger: 'event', at: 'vector3', source: 'object' },
 	random: { seed: 'number', reroll: 'event' }, // B6
 	animstate: { target: 'object' }, // 17-E F3: whose clip to read (or the graph owner)
 	math: { a: 'number', b: 'number' },

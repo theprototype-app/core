@@ -12,7 +12,14 @@ import {
 	unregisterModuleNodeInputs
 } from './moduleNodeIO';
 // A5: moduleToolboxes is store-only, same reasoning
-import { registerModuleToolbox, unregisterModuleToolbox } from './moduleToolboxes';
+import {
+	registerModuleToolbox,
+	unregisterModuleToolbox,
+	openModuleToolbox,
+	closeModuleToolbox,
+	toggleModuleToolbox,
+	isToolboxOpen
+} from './moduleToolboxes';
 // 21-E7.4: store-only leaf, the moduleToolboxes precedent
 import {
 	registerModuleHudKind,
@@ -465,11 +472,17 @@ function makeApi(moduleId, moduleName = moduleId) {
 		 *
 		 * `playMode: true` keeps it visible in Play mode (host settings for a game);
 		 * the default hides it, because a tool palette over a running game is in the way.
+		 *
+		 * `sidebar: false` leaves it OUT of the burger menu's Modules section and keeps
+		 * its viewport-menu row — for a window that belongs to a workflow rather than to
+		 * the app's permanent chrome. Pair it with a `registerMenu` button (which renders
+		 * on your card in the Modules manager, beside Update/Remove) and
+		 * `api.openToolbox(id)`, so the way in is where the module already is.
 		 * @param {{id: string, title: string, key?: string, width?: number, minW?: number,
 		 *   defaultRect?: {left?: number, top?: number, right?: number, bottom?: number},
 		 *   mount: (el: HTMLElement) => (() => void) | void,
 		 *   onOpen?: () => void, onClose?: () => void,
-		 *   playMode?: boolean, shortcut?: string}} box
+		 *   playMode?: boolean, shortcut?: string, sidebar?: boolean}} box
 		 * @returns {string} the namespaced toolbox id (open/close it with this)
 		 */
 		registerToolbox(box) {
@@ -491,6 +504,33 @@ function makeApi(moduleId, moduleName = moduleId) {
 			// window on screen backed by a mount fn that no longer exists
 			onDispose(() => unregisterModuleToolbox(id));
 			return id;
+		},
+		/**
+		 * R3a follow-up: OPEN one of your own toolboxes. `registerToolbox` has always
+		 * returned its id documented as "open/close it with this" — and there was nothing
+		 * to open it with, so the promise was unkeepable (the `api.hud.rows` family: a
+		 * surface whose own docs claim an API that does not exist). These are that half.
+		 *
+		 * `openToolbox` also DISMISSES the Modules manager when it is open, because the
+		 * manager is the one piece of chrome that can cover a toolbox — a button on your
+		 * module's card that opens a window behind the dialog it was clicked in is the
+		 * exact complaint `registerToolbox` was built to answer. It is a no-op when the
+		 * manager is closed, so nothing else changes.
+		 * @param {string} id the id `registerToolbox` returned
+		 */
+		openToolbox(id) {
+			modulesOpen.set(false);
+			return openModuleToolbox(id);
+		},
+		/** @param {string} id */
+		closeToolbox(id) {
+			return closeModuleToolbox(id);
+		},
+		/** Open it if closed, close it if open — what a menu row or a card button wants.
+		 * @param {string} id */
+		toggleToolbox(id) {
+			if (!isToolboxOpen(id)) modulesOpen.set(false);
+			return toggleModuleToolbox(id);
 		},
 		/**
 		 * Add a sector to the VR radial menu (74). group 'root' extends the base

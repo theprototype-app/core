@@ -250,6 +250,8 @@ const id = api.registerToolbox({
 	width: 240,
 	shortcut: 'Ctrl+Shift+D',    // optional; also lists in Settings > Shortcuts
 	playMode: false,             // default: hidden in Play mode
+	sidebar: false,              // default true: also a row in the burger menu's Modules
+	                             // section. false = viewport menu only (see below)
 	mount(el) {
 		const label = document.createElement('div');
 		label.className = 'tbx-label';        // the shell styles this for you
@@ -276,6 +278,24 @@ The user opens it from the **sidebar's Modules section** and the **viewport menu
 (both from one builder, so they cannot drift), plus your `shortcut` if you name one. It
 starts CLOSED: a palette that appears uninvited is the thing `registerMenu` was
 avoiding. `onOpen`/`onClose` fire on each transition; the header ✕ closes it.
+
+**Where the way IN belongs is your call.** The burger menu's Modules section is the
+app's permanent chrome, so a row there is a standing claim on it — right for a tool a
+user reaches for constantly, heavy for a window that belongs to one workflow. Pass
+`sidebar: false` to keep the viewport-menu row and drop the permanent one, and open it
+from where your module already is:
+
+```js
+const id = api.registerToolbox({ id: 'manager', title: 'Collectibles', sidebar: false, mount });
+// a button on YOUR card in the Modules manager, beside Update/Remove
+api.registerMenu('Open Collectibles', () => api.openToolbox(id));
+```
+
+`api.openToolbox(id)` / `closeToolbox(id)` / `toggleToolbox(id)` take the id
+`registerToolbox` returned. `openToolbox` also dismisses the Modules manager when it is
+open, because the manager is the one piece of chrome that can cover a toolbox — a card
+button that opens a window *behind* the dialog it was clicked in is the complaint this
+whole seam exists to answer. It is a no-op when the manager is closed.
 
 `mount` returns its cleanup and a re-registration re-runs it, so dev-mode live reload
 rebuilds the contents in place. Disabling or removing the module force-closes and

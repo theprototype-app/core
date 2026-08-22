@@ -56,6 +56,7 @@
   import { startGameSync } from '$lib/gameSync'
   import { startGamePresence } from '$lib/gamePresence'
   import { loadProjectManifest } from '$lib/projectManifest'
+  import { startSceneIdentity } from '$lib/sceneIdentity'
   import HudLayer from './components/hud/HudLayer.svelte'
   import HudEditor from './components/editors/HudEditor.svelte'
   import { importFile, load } from '$lib/fileHandler.svelte'
@@ -114,6 +115,10 @@
     startGamePresence()
     // 21-G2: the local project (scene histories + asset list) survives a reload
     loadProjectManifest()
+    // 21-G9: the window title says where you are — "Scene* - Project - theprototype".
+    // The dirty asterisk rides autosave's own change signal, throttled: the check
+    // serializes the whole scene, so it may never run per keystroke (see the module).
+    startSceneIdentity()
     // #20 P5: deliberately NOTHING to start here. A plain reload comes up in the DEFAULT
     // state — all windows closed — and the layout is restored only by an explicit
     // Restore, by the auto-restore setting, or by loading a file, because it rides the

@@ -120,6 +120,24 @@ export async function ensureScenesFolder() {
 }
 
 /**
+ * 21-G9: WHERE a save lands. The caller may name a folder — the Explorer passes
+ * whatever the user is looking at — and it is honoured only when it is a REAL library
+ * folder: the activeFolder store also holds pseudo locations (`prefabs`, `packs`,
+ * `pack:<name>`, `scene…`) that hold no items of ours, and a stale id survives a folder
+ * being deleted. Anything that fails the existence test falls back to `Scenes`, which is
+ * what every caller got before this argument existed.
+ * @param {string|null} [folderId] @returns {Promise<string|null>}
+ */
+async function targetFolder(folderId) {
+	const id = typeof folderId === 'string' ? folderId.trim() : '';
+	if (id) {
+		await loadExplorer();
+		if (get(explorerFolders).some((/** @type {any} */ f) => f.id === id)) return id;
+	}
+	return ensureScenesFolder();
+}
+
+/**
  * 21-G1: every scene on offer, discovered BY KIND — an item of kind 'scene' (a
  * .tpscene), wherever in the library it happens to live. There is deliberately NO
  * folder filter: the folder-name convention made the folder load-bearing, so renaming
@@ -145,17 +163,19 @@ function levelFileName(name) {
  * the scene's binary assets), content-hashed into the Levels folder. The author's
  * workspace (open edit session, selection) is STRIPPED — a level is a place to travel
  * to, not a resume point.
- * @param {string} name @returns {Promise<{id: string, hash: string, name: string}|null>}
+ * @param {string} name @param {string|null} [folderId] 21-G9: land it HERE when it is a
+ *   real library folder (the Explorer's active folder); `Scenes` otherwise
+ * @returns {Promise<{id: string, hash: string, name: string}|null>}
  */
-export async function saveSceneAsLevel(name) {
-	const folderId = await ensureScenesFolder();
+export async function saveSceneAsLevel(name, folderId = null) {
+	const target = await targetFolder(folderId);
 	const payload = /** @type {any} */ (buildSessionPayload(String(name ?? '').trim() || 'Scene'));
 	delete payload.workspace;
 	const bytes = await exportSessionZip(payload, { assets: true, packs: false, flow: true });
 	const item = await addItemFromBytes(
 		bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength),
 		levelFileName(payload.name),
-		folderId
+		target
 	);
 	if (!item) return null;
 	currentLevel.set({ hash: item.hash, name: payload.name, signature: sceneSignature(payload) });
@@ -259,16 +279,16 @@ export async function travelToScene(name) {
 
 /**
  * A brand-new EMPTY scene asset — it deliberately captures nothing from the open scene.
- * @param {string} name
+ * @param {string} name @param {string|null} [folderId] 21-G9: as saveSceneAsLevel
  */
-export async function newLevel(name) {
-	const folderId = await ensureScenesFolder();
+export async function newLevel(name, folderId = null) {
+	const target = await targetFolder(folderId);
 	const payload = emptySessionPayload(String(name ?? '').trim() || 'New scene');
 	const bytes = await exportSessionZip(payload, { assets: false, packs: false, flow: true });
 	const item = await addItemFromBytes(
 		bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength),
 		levelFileName(payload.name),
-		folderId
+		target
 	);
 	if (item) showToast('Scene created: ' + payload.name);
 	return item;

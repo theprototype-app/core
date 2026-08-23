@@ -1,0 +1,335 @@
+(!) Your Vite config uses features that are unsupported by `configLoader: 'native'`, which is planned to become the default in a future major version of Vite:
+  - JSON import "./package.json" without import attributes (vite.config.ts:4:17). Add `with { type: 'json' }`
+Set `VITE_CONFIG_NATIVE_IGNORE_WARNING=true` to suppress this warning.
+
+  VITE v8.2.1  ready in 767 ms
+
+  ➜  Local:   https://localhost:5196/
+  ➜  Local:   https://vite.localhost:5196/
+  ➜  Network: https://172.30.251.61:5196/   vgate0
+  ➜  Network: https://172.23.240.1:5196/    vEthernet (Default …
+  ➜  Network: https://192.168.88.209:5196/  Ethernet
+  ➜  Network: https://192.168.59.1:5196/    Ethernet 4
+  ➜  Network: https://192.168.56.1:5196/    Ethernet 5
+  ➜  press h + enter to show help
+11:05:14 [vite-plugin-svelte] src/components/menu/Controls.svelte:589:1 Visible, non-interactive element `<p>` with a click event must be accompanied by a keyboard event handler. Consider whether an interactive element such as `<button type="button">` or `<a>` might be more appropriate
+https://svelte.dev/e/a11y_click_events_have_key_events
+11:05:14 [vite-plugin-svelte] src/components/menu/Controls.svelte:589:1 Non-interactive element `<p>` should not be assigned mouse or keyboard event listeners
+https://svelte.dev/e/a11y_no_noninteractive_element_interactions
+11:05:14 [vite-plugin-svelte] src/components/menu/Controls.svelte:589:61 Using `on:click` to listen to the click event is deprecated. Use the event attribute `onclick` instead
+https://svelte.dev/e/event_directive_deprecated
+11:05:14 [vite-plugin-svelte] src/components/menu/Controls.svelte:592:1 Visible, non-interactive element `<p>` with a click event must be accompanied by a keyboard event handler. Consider whether an interactive element such as `<button type="button">` or `<a>` might be more appropriate
+https://svelte.dev/e/a11y_click_events_have_key_events
+11:05:14 [vite-plugin-svelte] src/components/menu/Controls.svelte:592:1 Non-interactive element `<p>` should not be assigned mouse or keyboard event listeners
+https://svelte.dev/e/a11y_no_noninteractive_element_interactions
+11:05:14 [vite-plugin-svelte] src/components/menu/Controls.svelte:592:43 Using `on:click` to listen to the click event is deprecated. Use the event attribute `onclick` instead
+https://svelte.dev/e/event_directive_deprecated
+11:05:14 [vite-plugin-svelte] src/components/menu/Controls.svelte:596:1 Visible, non-interactive element `<p>` with a click event must be accompanied by a keyboard event handler. Consider whether an interactive element such as `<button type="button">` or `<a>` might be more appropriate
+https://svelte.dev/e/a11y_click_events_have_key_events
+11:05:14 [vite-plugin-svelte] src/components/menu/Controls.svelte:596:1 Non-interactive element `<p>` should not be assigned mouse or keyboard event listeners
+https://svelte.dev/e/a11y_no_noninteractive_element_interactions
+11:05:14 [vite-plugin-svelte] src/components/menu/Controls.svelte:596:42 Using `on:click` to listen to the click event is deprecated. Use the event attribute `onclick` instead
+https://svelte.dev/e/event_directive_deprecated
+11:05:14 [vite-plugin-svelte] src/components/menu/Controls.svelte:615:1 Visible, non-interactive element `<p>` with a click event must be accompanied by a keyboard event handler. Consider whether an interactive element such as `<button type="button">` or `<a>` might be more appropriate
+https://svelte.dev/e/a11y_click_events_have_key_events
+11:05:14 [vite-plugin-svelte] src/components/menu/Controls.svelte:615:1 Non-interactive element `<p>` should not be assigned mouse or keyboard event listeners
+https://svelte.dev/e/a11y_no_noninteractive_element_interactions
+11:05:14 [vite-plugin-svelte] src/components/menu/Controls.svelte:618:2 Using `on:click` to listen to the click event is deprecated. Use the event attribute `onclick` instead
+https://svelte.dev/e/event_directive_deprecated
+11:05:14 [vite-plugin-svelte] src/components/menu/Controls.svelte:622:1 Visible, non-interactive element `<p>` with a click event must be accompanied by a keyboard event handler. Consider whether an interactive element such as `<button type="button">` or `<a>` might be more appropriate
+https://svelte.dev/e/a11y_click_events_have_key_events
+11:05:14 [vite-plugin-svelte] src/components/menu/Controls.svelte:622:1 Non-interactive element `<p>` should not be assigned mouse or keyboard event listeners
+https://svelte.dev/e/a11y_no_noninteractive_element_interactions
+11:05:14 [vite-plugin-svelte] src/components/menu/Controls.svelte:625:2 Using `on:click` to listen to the click event is deprecated. Use the event attribute `onclick` instead
+https://svelte.dev/e/event_directive_deprecated
+11:05:14 [vite-plugin-svelte] src/components/menu/Controls.svelte:629:1 Visible, non-interactive element `<p>` with a click event must be accompanied by a keyboard event handler. Consider whether an interactive element such as `<button type="button">` or `<a>` might be more appropriate
+https://svelte.dev/e/a11y_click_events_have_key_events
+11:05:14 [vite-plugin-svelte] src/components/menu/Controls.svelte:629:1 Non-interactive element `<p>` should not be assigned mouse or keyboard event listeners
+https://svelte.dev/e/a11y_no_noninteractive_element_interactions
+11:05:14 [vite-plugin-svelte] src/components/menu/Controls.svelte:633:2 Using `on:click` to listen to the click event is deprecated. Use the event attribute `onclick` instead
+https://svelte.dev/e/event_directive_deprecated
+11:05:14 [vite-plugin-svelte] src/components/menu/Controls.svelte:645:1 Using `on:click` to listen to the click event is deprecated. Use the event attribute `onclick` instead
+https://svelte.dev/e/event_directive_deprecated
+11:05:14 [vite-plugin-svelte] src/components/menu/Controls.svelte:666:0 Visible, non-interactive element `<p>` with a click event must be accompanied by a keyboard event handler. Consider whether an interactive element such as `<button type="button">` or `<a>` might be more appropriate
+https://svelte.dev/e/a11y_click_events_have_key_events
+11:05:14 [vite-plugin-svelte] src/components/menu/Controls.svelte:666:0 Non-interactive element `<p>` should not be assigned mouse or keyboard event listeners
+https://svelte.dev/e/a11y_no_noninteractive_element_interactions
+11:05:14 [vite-plugin-svelte] src/components/menu/Controls.svelte:671:1 Using `on:click` to listen to the click event is deprecated. Use the event attribute `onclick` instead
+https://svelte.dev/e/event_directive_deprecated
+11:05:14 [vite-plugin-svelte] src/components/menu/Controls.svelte:703:2 Using `on:dragover` to listen to the dragover event is deprecated. Use the event attribute `ondragover` instead
+https://svelte.dev/e/event_directive_deprecated
+11:05:14 [vite-plugin-svelte] src/components/menu/Controls.svelte:704:2 Using `on:drop` to listen to the drop event is deprecated. Use the event attribute `ondrop` instead
+https://svelte.dev/e/event_directive_deprecated
+11:05:14 [vite-plugin-svelte] src/components/menu/Controls.svelte:719:3 Using `on:pointerdown` to listen to the pointerdown event is deprecated. Use the event attribute `onpointerdown` instead
+https://svelte.dev/e/event_directive_deprecated
+11:05:14 [vite-plugin-svelte] src/components/menu/Controls.svelte:720:3 Using `on:input` to listen to the input event is deprecated. Use the event attribute `oninput` instead
+https://svelte.dev/e/event_directive_deprecated
+11:05:14 [vite-plugin-svelte] src/components/menu/Controls.svelte:721:3 Using `on:keydown` to listen to the keydown event is deprecated. Use the event attribute `onkeydown` instead
+https://svelte.dev/e/event_directive_deprecated
+11:05:14 [vite-plugin-svelte] src/components/menu/Controls.svelte:724:52 Using `on:click` to listen to the click event is deprecated. Use the event attribute `onclick` instead
+https://svelte.dev/e/event_directive_deprecated
+11:05:14 [vite-plugin-svelte] src/components/menu/Controls.svelte:736:5 Using `on:click` to listen to the click event is deprecated. Use the event attribute `onclick` instead
+https://svelte.dev/e/event_directive_deprecated
+11:05:14 [vite-plugin-svelte] src/components/menu/Controls.svelte:747:7 Using `on:click` to listen to the click event is deprecated. Use the event attribute `onclick` instead
+https://svelte.dev/e/event_directive_deprecated
+11:05:14 [vite-plugin-svelte] src/components/menu/Controls.svelte:760:7 Using `on:click` to listen to the click event is deprecated. Use the event attribute `onclick` instead
+https://svelte.dev/e/event_directive_deprecated
+11:05:14 [vite-plugin-svelte] src/components/menu/Controls.svelte:775:4 Using `on:click` to listen to the click event is deprecated. Use the event attribute `onclick` instead
+https://svelte.dev/e/event_directive_deprecated
+11:05:14 [vite-plugin-svelte] src/components/menu/Controls.svelte:789:8 Using `on:change` to listen to the change event is deprecated. Use the event attribute `onchange` instead
+https://svelte.dev/e/event_directive_deprecated
+11:05:14 [vite-plugin-svelte] src/components/menu/Controls.svelte:797:6 Using `on:click` to listen to the click event is deprecated. Use the event attribute `onclick` instead
+https://svelte.dev/e/event_directive_deprecated
+11:05:14 [vite-plugin-svelte] src/components/menu/Controls.svelte:820:7 Using `on:click` to listen to the click event is deprecated. Use the event attribute `onclick` instead
+https://svelte.dev/e/event_directive_deprecated
+11:05:14 [vite-plugin-svelte] src/components/menu/Controls.svelte:832:8 Using `on:click` to listen to the click event is deprecated. Use the event attribute `onclick` instead
+https://svelte.dev/e/event_directive_deprecated
+11:05:14 [vite-plugin-svelte] src/components/menu/Controls.svelte:844:8 Using `on:click` to listen to the click event is deprecated. Use the event attribute `onclick` instead
+https://svelte.dev/e/event_directive_deprecated
+11:05:14 [vite-plugin-svelte] src/components/menu/Controls.svelte:848:8 Using `on:click` to listen to the click event is deprecated. Use the event attribute `onclick` instead
+https://svelte.dev/e/event_directive_deprecated
+11:05:14 [vite-plugin-svelte] src/components/menu/Controls.svelte:852:8 Using `on:click` to listen to the click event is deprecated. Use the event attribute `onclick` instead
+https://svelte.dev/e/event_directive_deprecated
+11:05:14 [vite-plugin-svelte] src/components/menu/Controls.svelte:873:7 Using `on:click` to listen to the click event is deprecated. Use the event attribute `onclick` instead
+https://svelte.dev/e/event_directive_deprecated
+11:05:14 [vite-plugin-svelte] src/components/menu/Controls.svelte:890:8 Using `on:click` to listen to the click event is deprecated. Use the event attribute `onclick` instead
+https://svelte.dev/e/event_directive_deprecated
+11:05:14 [vite-plugin-svelte] src/components/menu/Controls.svelte:894:8 Using `on:click` to listen to the click event is deprecated. Use the event attribute `onclick` instead
+https://svelte.dev/e/event_directive_deprecated
+11:05:14 [vite-plugin-svelte] src/components/ContextMenuItems.svelte:140:2 Elements with the 'menuitem' interactive role must have a tabindex value
+https://svelte.dev/e/a11y_interactive_supports_focus
+11:05:14 [vite-plugin-svelte] src/components/ContextMenuItems.svelte:183:2 Elements with the 'menuitem' interactive role must have a tabindex value
+https://svelte.dev/e/a11y_interactive_supports_focus
+11:05:14 [vite-plugin-svelte] src/components/ContextMenuItems.svelte:183:2 Visible, non-interactive element `<div>` with a click event must be accompanied by a keyboard event handler. Consider whether an interactive element such as `<button type="button">` or `<a>` might be more appropriate
+https://svelte.dev/e/a11y_click_events_have_key_events
+11:05:15 [vite-plugin-svelte] src/components/menu/Inspector.svelte:1011:1 `<div>` with a pointerdown, pointermove or pointerup handler must have an ARIA role
+https://svelte.dev/e/a11y_no_static_element_interactions
+11:05:16 [vite-plugin-svelte] src/components/menu/NotesDrawer.svelte:134:2 `<div>` with a pointerdown, pointermove or pointerup handler must have an ARIA role
+https://svelte.dev/e/a11y_no_static_element_interactions
+11:05:16 [vite-plugin-svelte] src/components/menu/Users.svelte:457:4 Visible, non-interactive element `<img>` with a click event must be accompanied by a keyboard event handler. Consider whether an interactive element such as `<button type="button">` or `<a>` might be more appropriate
+https://svelte.dev/e/a11y_click_events_have_key_events
+11:05:16 [vite-plugin-svelte] src/components/menu/Users.svelte:457:4 Non-interactive element `<img>` should not be assigned mouse or keyboard event listeners
+https://svelte.dev/e/a11y_no_noninteractive_element_interactions
+11:05:16 [vite-plugin-svelte] src/components/menu/Users.svelte:461:4 Visible, non-interactive element `<svg>` with a click event must be accompanied by a keyboard event handler. Consider whether an interactive element such as `<button type="button">` or `<a>` might be more appropriate
+https://svelte.dev/e/a11y_click_events_have_key_events
+11:05:16 [vite-plugin-svelte] src/components/menu/Users.svelte:461:4 `<svg>` with a click handler must have an ARIA role
+https://svelte.dev/e/a11y_no_static_element_interactions
+11:05:16 [vite-plugin-svelte] src/components/Flow.svelte:159:3 `<div>` with a pointerdown, pointermove or pointerup handler must have an ARIA role
+https://svelte.dev/e/a11y_no_static_element_interactions
+11:05:16 [vite-plugin-svelte] src/components/Flow.svelte:204:3 `<div>` with a pointerdown, pointermove, pointerup or dblclick handler must have an ARIA role
+https://svelte.dev/e/a11y_no_static_element_interactions
+11:05:16 [vite-plugin-svelte] src/components/editors/FlowCode.svelte:147:3 `<div>` with a pointerdown, pointermove or pointerup handler must have an ARIA role
+https://svelte.dev/e/a11y_no_static_element_interactions
+11:05:16 [vite-plugin-svelte] src/components/editors/FlowCode.svelte:186:3 `<div>` with a pointerdown, pointermove or pointerup handler must have an ARIA role
+https://svelte.dev/e/a11y_no_static_element_interactions
+11:05:17 [vite-plugin-svelte] src/components/editors/AnimationWindow.svelte:2409:3 `<div>` with a pointerdown, pointermove or pointerup handler must have an ARIA role
+https://svelte.dev/e/a11y_no_static_element_interactions
+11:05:17 [vite-plugin-svelte] src/components/editors/AnimationWindow.svelte:2449:3 `<div>` with a pointerdown, pointermove, pointerup or dblclick handler must have an ARIA role
+https://svelte.dev/e/a11y_no_static_element_interactions
+11:05:17 [vite-plugin-svelte] src/components/shared/WindowShell.svelte:152:3 `<div>` with a pointerdown, pointermove or pointerup handler must have an ARIA role
+https://svelte.dev/e/a11y_no_static_element_interactions
+11:05:17 [vite-plugin-svelte] src/components/editors/Explorer.svelte:1173:2 Non-interactive element `<div>` should not be assigned mouse or keyboard event listeners
+https://svelte.dev/e/a11y_no_noninteractive_element_interactions
+11:05:17 [vite-plugin-svelte] src/components/editors/Explorer.svelte:1249:6 Non-interactive element `<div>` should not be assigned mouse or keyboard event listeners
+https://svelte.dev/e/a11y_no_noninteractive_element_interactions
+11:05:17 [vite-plugin-svelte] src/components/editors/Explorer.svelte:1485:3 `<div>` with a pointerdown, pointermove or pointerup handler must have an ARIA role
+https://svelte.dev/e/a11y_no_static_element_interactions
+11:05:17 [vite-plugin-svelte] src/components/editors/Explorer.svelte:1549:3 `<div>` with a pointerdown, pointermove, pointerup or dblclick handler must have an ARIA role
+https://svelte.dev/e/a11y_no_static_element_interactions
+module loaded: hello v1.0.0
+module loaded: button v1.0.0
+module loaded: pong v1.0.0
+module loaded: vrsleeve v1.0.0
+Avoid calling `fetch` eagerly during server-side rendering — put your `fetch` calls inside `onMount` or a `load` function instead
+Avoid calling `fetch` eagerly during server-side rendering — put your `fetch` calls inside `onMount` or a `load` function instead
+11:05:35 [vite-plugin-svelte] src/components/menu/Inspector.svelte:1011:1 `<div>` with a pointerdown, pointermove or pointerup handler must have an ARIA role
+https://svelte.dev/e/a11y_no_static_element_interactions
+Avoid calling `fetch` eagerly during server-side rendering — put your `fetch` calls inside `onMount` or a `load` function instead
+11:05:42 [vite-plugin-svelte] src/components/editors/FlowCode.svelte:147:3 `<div>` with a pointerdown, pointermove or pointerup handler must have an ARIA role
+https://svelte.dev/e/a11y_no_static_element_interactions
+11:05:42 [vite-plugin-svelte] src/components/editors/FlowCode.svelte:186:3 `<div>` with a pointerdown, pointermove or pointerup handler must have an ARIA role
+https://svelte.dev/e/a11y_no_static_element_interactions
+11:05:42 [vite-plugin-svelte] src/components/Flow.svelte:159:3 `<div>` with a pointerdown, pointermove or pointerup handler must have an ARIA role
+https://svelte.dev/e/a11y_no_static_element_interactions
+11:05:42 [vite-plugin-svelte] src/components/Flow.svelte:204:3 `<div>` with a pointerdown, pointermove, pointerup or dblclick handler must have an ARIA role
+https://svelte.dev/e/a11y_no_static_element_interactions
+11:05:42 [vite-plugin-svelte] src/components/editors/AnimationWindow.svelte:2409:3 `<div>` with a pointerdown, pointermove or pointerup handler must have an ARIA role
+https://svelte.dev/e/a11y_no_static_element_interactions
+11:05:42 [vite-plugin-svelte] src/components/editors/AnimationWindow.svelte:2449:3 `<div>` with a pointerdown, pointermove, pointerup or dblclick handler must have an ARIA role
+https://svelte.dev/e/a11y_no_static_element_interactions
+11:05:42 [vite-plugin-svelte] src/components/editors/Explorer.svelte:1173:2 Non-interactive element `<div>` should not be assigned mouse or keyboard event listeners
+https://svelte.dev/e/a11y_no_noninteractive_element_interactions
+11:05:42 [vite-plugin-svelte] src/components/editors/Explorer.svelte:1249:6 Non-interactive element `<div>` should not be assigned mouse or keyboard event listeners
+https://svelte.dev/e/a11y_no_noninteractive_element_interactions
+11:05:42 [vite-plugin-svelte] src/components/editors/Explorer.svelte:1485:3 `<div>` with a pointerdown, pointermove or pointerup handler must have an ARIA role
+https://svelte.dev/e/a11y_no_static_element_interactions
+11:05:42 [vite-plugin-svelte] src/components/editors/Explorer.svelte:1549:3 `<div>` with a pointerdown, pointermove, pointerup or dblclick handler must have an ARIA role
+https://svelte.dev/e/a11y_no_static_element_interactions
+11:05:43 [vite-plugin-svelte] src/components/menu/Controls.svelte:589:1 Visible, non-interactive element `<p>` with a click event must be accompanied by a keyboard event handler. Consider whether an interactive element such as `<button type="button">` or `<a>` might be more appropriate
+https://svelte.dev/e/a11y_click_events_have_key_events
+11:05:43 [vite-plugin-svelte] src/components/menu/Controls.svelte:589:1 Non-interactive element `<p>` should not be assigned mouse or keyboard event listeners
+https://svelte.dev/e/a11y_no_noninteractive_element_interactions
+11:05:43 [vite-plugin-svelte] src/components/menu/Controls.svelte:589:61 Using `on:click` to listen to the click event is deprecated. Use the event attribute `onclick` instead
+https://svelte.dev/e/event_directive_deprecated
+11:05:43 [vite-plugin-svelte] src/components/menu/Controls.svelte:592:1 Visible, non-interactive element `<p>` with a click event must be accompanied by a keyboard event handler. Consider whether an interactive element such as `<button type="button">` or `<a>` might be more appropriate
+https://svelte.dev/e/a11y_click_events_have_key_events
+11:05:43 [vite-plugin-svelte] src/components/menu/Controls.svelte:592:1 Non-interactive element `<p>` should not be assigned mouse or keyboard event listeners
+https://svelte.dev/e/a11y_no_noninteractive_element_interactions
+11:05:43 [vite-plugin-svelte] src/components/menu/Controls.svelte:592:43 Using `on:click` to listen to the click event is deprecated. Use the event attribute `onclick` instead
+https://svelte.dev/e/event_directive_deprecated
+11:05:43 [vite-plugin-svelte] src/components/menu/Controls.svelte:596:1 Visible, non-interactive element `<p>` with a click event must be accompanied by a keyboard event handler. Consider whether an interactive element such as `<button type="button">` or `<a>` might be more appropriate
+https://svelte.dev/e/a11y_click_events_have_key_events
+11:05:43 [vite-plugin-svelte] src/components/menu/Controls.svelte:596:1 Non-interactive element `<p>` should not be assigned mouse or keyboard event listeners
+https://svelte.dev/e/a11y_no_noninteractive_element_interactions
+11:05:43 [vite-plugin-svelte] src/components/menu/Controls.svelte:596:42 Using `on:click` to listen to the click event is deprecated. Use the event attribute `onclick` instead
+https://svelte.dev/e/event_directive_deprecated
+11:05:43 [vite-plugin-svelte] src/components/menu/Controls.svelte:615:1 Visible, non-interactive element `<p>` with a click event must be accompanied by a keyboard event handler. Consider whether an interactive element such as `<button type="button">` or `<a>` might be more appropriate
+https://svelte.dev/e/a11y_click_events_have_key_events
+11:05:43 [vite-plugin-svelte] src/components/menu/Controls.svelte:615:1 Non-interactive element `<p>` should not be assigned mouse or keyboard event listeners
+https://svelte.dev/e/a11y_no_noninteractive_element_interactions
+11:05:43 [vite-plugin-svelte] src/components/menu/Controls.svelte:618:2 Using `on:click` to listen to the click event is deprecated. Use the event attribute `onclick` instead
+https://svelte.dev/e/event_directive_deprecated
+11:05:43 [vite-plugin-svelte] src/components/menu/Controls.svelte:622:1 Visible, non-interactive element `<p>` with a click event must be accompanied by a keyboard event handler. Consider whether an interactive element such as `<button type="button">` or `<a>` might be more appropriate
+https://svelte.dev/e/a11y_click_events_have_key_events
+11:05:43 [vite-plugin-svelte] src/components/menu/Controls.svelte:622:1 Non-interactive element `<p>` should not be assigned mouse or keyboard event listeners
+https://svelte.dev/e/a11y_no_noninteractive_element_interactions
+11:05:43 [vite-plugin-svelte] src/components/menu/Controls.svelte:625:2 Using `on:click` to listen to the click event is deprecated. Use the event attribute `onclick` instead
+https://svelte.dev/e/event_directive_deprecated
+11:05:43 [vite-plugin-svelte] src/components/menu/Controls.svelte:629:1 Visible, non-interactive element `<p>` with a click event must be accompanied by a keyboard event handler. Consider whether an interactive element such as `<button type="button">` or `<a>` might be more appropriate
+https://svelte.dev/e/a11y_click_events_have_key_events
+11:05:43 [vite-plugin-svelte] src/components/menu/Controls.svelte:629:1 Non-interactive element `<p>` should not be assigned mouse or keyboard event listeners
+https://svelte.dev/e/a11y_no_noninteractive_element_interactions
+11:05:43 [vite-plugin-svelte] src/components/menu/Controls.svelte:633:2 Using `on:click` to listen to the click event is deprecated. Use the event attribute `onclick` instead
+https://svelte.dev/e/event_directive_deprecated
+11:05:43 [vite-plugin-svelte] src/components/menu/Controls.svelte:645:1 Using `on:click` to listen to the click event is deprecated. Use the event attribute `onclick` instead
+https://svelte.dev/e/event_directive_deprecated
+11:05:43 [vite-plugin-svelte] src/components/menu/Controls.svelte:666:0 Visible, non-interactive element `<p>` with a click event must be accompanied by a keyboard event handler. Consider whether an interactive element such as `<button type="button">` or `<a>` might be more appropriate
+https://svelte.dev/e/a11y_click_events_have_key_events
+11:05:43 [vite-plugin-svelte] src/components/menu/Controls.svelte:666:0 Non-interactive element `<p>` should not be assigned mouse or keyboard event listeners
+https://svelte.dev/e/a11y_no_noninteractive_element_interactions
+11:05:43 [vite-plugin-svelte] src/components/menu/Controls.svelte:671:1 Using `on:click` to listen to the click event is deprecated. Use the event attribute `onclick` instead
+https://svelte.dev/e/event_directive_deprecated
+11:05:43 [vite-plugin-svelte] src/components/menu/Controls.svelte:703:2 Using `on:dragover` to listen to the dragover event is deprecated. Use the event attribute `ondragover` instead
+https://svelte.dev/e/event_directive_deprecated
+11:05:43 [vite-plugin-svelte] src/components/menu/Controls.svelte:704:2 Using `on:drop` to listen to the drop event is deprecated. Use the event attribute `ondrop` instead
+https://svelte.dev/e/event_directive_deprecated
+11:05:43 [vite-plugin-svelte] src/components/menu/Controls.svelte:719:3 Using `on:pointerdown` to listen to the pointerdown event is deprecated. Use the event attribute `onpointerdown` instead
+https://svelte.dev/e/event_directive_deprecated
+11:05:43 [vite-plugin-svelte] src/components/menu/Controls.svelte:720:3 Using `on:input` to listen to the input event is deprecated. Use the event attribute `oninput` instead
+https://svelte.dev/e/event_directive_deprecated
+11:05:43 [vite-plugin-svelte] src/components/menu/Controls.svelte:721:3 Using `on:keydown` to listen to the keydown event is deprecated. Use the event attribute `onkeydown` instead
+https://svelte.dev/e/event_directive_deprecated
+11:05:43 [vite-plugin-svelte] src/components/menu/Controls.svelte:724:52 Using `on:click` to listen to the click event is deprecated. Use the event attribute `onclick` instead
+https://svelte.dev/e/event_directive_deprecated
+11:05:43 [vite-plugin-svelte] src/components/menu/Controls.svelte:736:5 Using `on:click` to listen to the click event is deprecated. Use the event attribute `onclick` instead
+https://svelte.dev/e/event_directive_deprecated
+11:05:43 [vite-plugin-svelte] src/components/menu/Controls.svelte:747:7 Using `on:click` to listen to the click event is deprecated. Use the event attribute `onclick` instead
+https://svelte.dev/e/event_directive_deprecated
+11:05:43 [vite-plugin-svelte] src/components/menu/Controls.svelte:760:7 Using `on:click` to listen to the click event is deprecated. Use the event attribute `onclick` instead
+https://svelte.dev/e/event_directive_deprecated
+11:05:43 [vite-plugin-svelte] src/components/menu/Controls.svelte:775:4 Using `on:click` to listen to the click event is deprecated. Use the event attribute `onclick` instead
+https://svelte.dev/e/event_directive_deprecated
+11:05:43 [vite-plugin-svelte] src/components/menu/Controls.svelte:789:8 Using `on:change` to listen to the change event is deprecated. Use the event attribute `onchange` instead
+https://svelte.dev/e/event_directive_deprecated
+11:05:43 [vite-plugin-svelte] src/components/menu/Controls.svelte:797:6 Using `on:click` to listen to the click event is deprecated. Use the event attribute `onclick` instead
+https://svelte.dev/e/event_directive_deprecated
+11:05:43 [vite-plugin-svelte] src/components/menu/Controls.svelte:820:7 Using `on:click` to listen to the click event is deprecated. Use the event attribute `onclick` instead
+https://svelte.dev/e/event_directive_deprecated
+11:05:43 [vite-plugin-svelte] src/components/menu/Controls.svelte:832:8 Using `on:click` to listen to the click event is deprecated. Use the event attribute `onclick` instead
+https://svelte.dev/e/event_directive_deprecated
+11:05:43 [vite-plugin-svelte] src/components/menu/Controls.svelte:844:8 Using `on:click` to listen to the click event is deprecated. Use the event attribute `onclick` instead
+https://svelte.dev/e/event_directive_deprecated
+11:05:43 [vite-plugin-svelte] src/components/menu/Controls.svelte:848:8 Using `on:click` to listen to the click event is deprecated. Use the event attribute `onclick` instead
+https://svelte.dev/e/event_directive_deprecated
+11:05:43 [vite-plugin-svelte] src/components/menu/Controls.svelte:852:8 Using `on:click` to listen to the click event is deprecated. Use the event attribute `onclick` instead
+https://svelte.dev/e/event_directive_deprecated
+11:05:43 [vite-plugin-svelte] src/components/menu/Controls.svelte:873:7 Using `on:click` to listen to the click event is deprecated. Use the event attribute `onclick` instead
+https://svelte.dev/e/event_directive_deprecated
+11:05:43 [vite-plugin-svelte] src/components/menu/Controls.svelte:890:8 Using `on:click` to listen to the click event is deprecated. Use the event attribute `onclick` instead
+https://svelte.dev/e/event_directive_deprecated
+11:05:43 [vite-plugin-svelte] src/components/menu/Controls.svelte:894:8 Using `on:click` to listen to the click event is deprecated. Use the event attribute `onclick` instead
+https://svelte.dev/e/event_directive_deprecated
+11:05:43 [vite-plugin-svelte] src/components/menu/NotesDrawer.svelte:134:2 `<div>` with a pointerdown, pointermove or pointerup handler must have an ARIA role
+https://svelte.dev/e/a11y_no_static_element_interactions
+11:05:43 [vite-plugin-svelte] src/components/menu/Users.svelte:457:4 Visible, non-interactive element `<img>` with a click event must be accompanied by a keyboard event handler. Consider whether an interactive element such as `<button type="button">` or `<a>` might be more appropriate
+https://svelte.dev/e/a11y_click_events_have_key_events
+11:05:43 [vite-plugin-svelte] src/components/menu/Users.svelte:457:4 Non-interactive element `<img>` should not be assigned mouse or keyboard event listeners
+https://svelte.dev/e/a11y_no_noninteractive_element_interactions
+11:05:43 [vite-plugin-svelte] src/components/menu/Users.svelte:461:4 Visible, non-interactive element `<svg>` with a click event must be accompanied by a keyboard event handler. Consider whether an interactive element such as `<button type="button">` or `<a>` might be more appropriate
+https://svelte.dev/e/a11y_click_events_have_key_events
+11:05:43 [vite-plugin-svelte] src/components/menu/Users.svelte:461:4 `<svg>` with a click handler must have an ARIA role
+https://svelte.dev/e/a11y_no_static_element_interactions
+11:05:43 [vite-plugin-svelte] src/components/shared/WindowShell.svelte:152:3 `<div>` with a pointerdown, pointermove or pointerup handler must have an ARIA role
+https://svelte.dev/e/a11y_no_static_element_interactions
+11:05:44 [vite-plugin-svelte] src/components/ContextMenuItems.svelte:140:2 Elements with the 'menuitem' interactive role must have a tabindex value
+https://svelte.dev/e/a11y_interactive_supports_focus
+11:05:44 [vite-plugin-svelte] src/components/ContextMenuItems.svelte:183:2 Elements with the 'menuitem' interactive role must have a tabindex value
+https://svelte.dev/e/a11y_interactive_supports_focus
+11:05:44 [vite-plugin-svelte] src/components/ContextMenuItems.svelte:183:2 Visible, non-interactive element `<div>` with a click event must be accompanied by a keyboard event handler. Consider whether an interactive element such as `<button type="button">` or `<a>` might be more appropriate
+https://svelte.dev/e/a11y_click_events_have_key_events
+11:05:45 [vite] (client) [console.warn] THREE.WebGLShadowMap: PCFSoftShadowMap has been deprecated. Using PCFShadowMap instead.
+Avoid calling `fetch` eagerly during server-side rendering — put your `fetch` calls inside `onMount` or a `load` function instead
+11:05:47 [vite] (client) [console.warn] THREE.WebGLShadowMap: PCFSoftShadowMap has been deprecated. Using PCFShadowMap instead.
+Avoid calling `fetch` eagerly during server-side rendering — put your `fetch` calls inside `onMount` or a `load` function instead
+11:06:39 [vite] (client) [console.warn] THREE.WebGLShadowMap: PCFSoftShadowMap has been deprecated. Using PCFShadowMap instead.
+Avoid calling `fetch` eagerly during server-side rendering — put your `fetch` calls inside `onMount` or a `load` function instead
+11:06:54 [vite] (client) [console.warn] THREE.WebGLShadowMap: PCFSoftShadowMap has been deprecated. Using PCFShadowMap instead.
+Avoid calling `fetch` eagerly during server-side rendering — put your `fetch` calls inside `onMount` or a `load` function instead
+11:07:02 [vite] (client) [console.warn] THREE.WebGLShadowMap: PCFSoftShadowMap has been deprecated. Using PCFShadowMap instead.
+Avoid calling `fetch` eagerly during server-side rendering — put your `fetch` calls inside `onMount` or a `load` function instead
+11:07:13 [vite] (client) [console.warn] THREE.WebGLShadowMap: PCFSoftShadowMap has been deprecated. Using PCFShadowMap instead.
+Avoid calling `fetch` eagerly during server-side rendering — put your `fetch` calls inside `onMount` or a `load` function instead
+11:07:45 [vite] (client) [console.warn] THREE.WebGLShadowMap: PCFSoftShadowMap has been deprecated. Using PCFShadowMap instead.
+11:08:53 [vite] (client) page reload .svelte-kit/generated/client/nodes/0.js
+11:08:53 [vite] (client) page reload .svelte-kit/generated/client/nodes/1.js
+11:08:53 [vite] (client) page reload .svelte-kit/generated/client/nodes/2.js
+11:08:53 [vite] (client) page reload .svelte-kit/generated/client/app.js
+11:08:53 [vite] (ssr) page reload .svelte-kit/generated/shared/error-template.js
+11:08:53 [vite] (ssr) page reload .svelte-kit/generated/server/internal.js
+11:08:53 [vite] (client) page reload .svelte-kit/generated/client/matchers.js
+11:08:53 [vite] (client) page reload .svelte-kit/generated/root.js
+11:08:53 [vite] (ssr) page reload .svelte-kit/generated/root.js
+11:08:53 [vite] (ssr) page reload .svelte-kit/generated/root.svelte
+11:09:01 [vite] (client) page reload .svelte-kit/generated/client/nodes/0.js
+11:09:01 [vite] (client) page reload .svelte-kit/generated/client/nodes/1.js
+11:09:01 [vite] (client) page reload .svelte-kit/generated/client/nodes/2.js
+11:09:01 [vite] (client) page reload .svelte-kit/generated/client/app.js
+11:09:01 [vite] (client) page reload .svelte-kit/generated/client/matchers.js
+11:09:01 [vite] (ssr) page reload .svelte-kit/generated/shared/error-template.js
+11:09:01 [vite] (ssr) page reload .svelte-kit/generated/server/internal.js
+11:09:01 [vite] (client) page reload .svelte-kit/generated/root.js
+11:09:01 [vite] (ssr) page reload .svelte-kit/generated/root.js
+11:09:01 [vite] (ssr) page reload .svelte-kit/generated/root.svelte
+11:09:09 [vite] (client) page reload .svelte-kit/generated/client/nodes/0.js
+11:09:09 [vite] (client) page reload .svelte-kit/generated/client/nodes/1.js
+11:09:09 [vite] (client) page reload .svelte-kit/generated/client/nodes/2.js
+11:09:09 [vite] (client) page reload .svelte-kit/generated/client/app.js
+11:09:09 [vite] (ssr) page reload .svelte-kit/generated/shared/error-template.js
+11:09:09 [vite] (client) page reload .svelte-kit/generated/client/matchers.js
+11:09:09 [vite] (ssr) page reload .svelte-kit/generated/server/internal.js
+11:09:09 [vite] (client) page reload .svelte-kit/generated/root.js
+11:09:09 [vite] (ssr) page reload .svelte-kit/generated/root.js
+11:09:09 [vite] (ssr) page reload .svelte-kit/generated/root.svelte
+11:09:10 [vite] (client) page reload build/404.html
+11:09:10 [vite] (client) page reload build/library/default/attribution.html
+11:09:10 [vite] (client) page reload build/index.html
+11:09:10 [vite] (client) page reload build/index.html
+11:09:10 [vite] (client) page reload build/library/default/attribution.html
+Avoid calling `fetch` eagerly during server-side rendering — put your `fetch` calls inside `onMount` or a `load` function instead
+11:31:31 [vite] (client) [console.warn] THREE.WARNING: Multiple instances of Three.js being imported.
+11:31:31 [vite] (client) [console.warn] THREE.WebGLShadowMap: PCFSoftShadowMap has been deprecated. Using PCFShadowMap instead.
+11:32:01 [vite] (client) [console.warn] GLTFExporter: Use MeshStandardMaterial or MeshBasicMaterial for best results.
+11:32:47 [vite] (client) [console.warn] GLTFExporter: Use MeshStandardMaterial or MeshBasicMaterial for best results.
+Avoid calling `fetch` eagerly during server-side rendering — put your `fetch` calls inside `onMount` or a `load` function instead
+11:36:29 [vite] (client) [console.warn] THREE.WARNING: Multiple instances of Three.js being imported.
+11:36:29 [vite] (client) [console.warn] THREE.WebGLShadowMap: PCFSoftShadowMap has been deprecated. Using PCFShadowMap instead.
+11:38:29 [vite] (client) [console.warn] GLTFExporter: Use MeshStandardMaterial or MeshBasicMaterial for best results.
+11:39:29 [vite] (client) [console.warn] GLTFExporter: Use MeshStandardMaterial or MeshBasicMaterial for best results.
+11:40:14 [vite] (client) [console.warn] GLTFExporter: Use MeshStandardMaterial or MeshBasicMaterial for best results.
+11:40:14 [vite] (client) [console.warn] GLTFExporter: Use MeshStandardMaterial or MeshBasicMaterial for best results.
+Avoid calling `fetch` eagerly during server-side rendering — put your `fetch` calls inside `onMount` or a `load` function instead
+11:40:15 [vite] (client) [console.warn] THREE.WARNING: Multiple instances of Three.js being imported.
+11:40:15 [vite] (client) [console.warn] THREE.WebGLShadowMap: PCFSoftShadowMap has been deprecated. Using PCFShadowMap instead.
+Avoid calling `fetch` eagerly during server-side rendering — put your `fetch` calls inside `onMount` or a `load` function instead
+09:40:31 [vite] (client) [console.warn] THREE.WARNING: Multiple instances of Three.js being imported.
+09:40:32 [vite] (client) [console.warn] THREE.WebGLShadowMap: PCFSoftShadowMap has been deprecated. Using PCFShadowMap instead.

@@ -101,8 +101,13 @@ h.run(async () => {
 		'and the word "level" is gone from it entirely'
 	);
 
-	A.page.once('dialog', (d) => d.accept('Alpha'));
 	await A.page.getByText('Save scene…', { exact: false }).click();
+	// 21-G10 (fork 14): the name is typed INLINE in the grid now — the browser
+	// prompt this used to accept is gone (explorer-inline-input owns that contract)
+	await A.page.waitForTimeout(350);
+	await A.page.keyboard.press('Control+a');
+	await A.page.keyboard.type('Alpha');
+	await A.page.keyboard.press('Enter');
 	await h.eventually(
 		() => folderNames(A),
 		(names) => names.includes('Scenes'),

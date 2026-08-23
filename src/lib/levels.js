@@ -336,6 +336,31 @@ function levelFileName(name) {
 }
 
 /**
+ * REPORTED (bug 1): rename the FILE of the scene you are standing in, edit, then
+ * save - and the save landed under the OLD name, minting a second .tpscene beside
+ * the renamed one. `currentLevel.name` is the manifest key every save and publish
+ * reads, and nothing carried a file rename into it.
+ *
+ * Scoped to a LOOSE scene on purpose (locked answer: the scene is primary and files
+ * follow). For a loose file there is no manifest entry to protect and the file IS
+ * the scene's only identity, so the rename is the rename. For a scene the project
+ * DOES name, renaming its file must not rekey the document behind the user's back -
+ * that is the header rename, and it belongs with the shared-library work.
+ * @param {string} hash the renamed item's content hash
+ * @param {string} fileName its new name @returns {boolean} did the open scene move
+ */
+export function renameOpenLooseScene(hash, fileName) {
+	const at = get(currentLevel);
+	if (!at?.unsaved || at.hash !== String(hash ?? '')) return false;
+	const next = levelSceneName(fileName);
+	if (!next || next === at.name) return false;
+	// the SIGNATURE is content identity and the content did not change, so it rides
+	// across unchanged - renaming a scene must not make it look edited
+	currentLevel.set({ ...at, name: next });
+	return true;
+}
+
+/**
  * 21-I1 — the inverse: the scene NAME an item file name stands for. The Version history
  * panel needs it for a scene the manifest has no entry for yet (a New scene…, a viewer's
  * save): without it the panel derived its name only from `sceneOfHash` and rendered

@@ -140,6 +140,20 @@ const freshProfile = async (peer) => {
 	await peer.page.waitForTimeout(400);
 };
 
+/**
+ * Wait for the LIBRARY to reach a count, never for a clock. Measured on a loaded
+ * box: a .tpscene drop can take well over a second to land (hash + zip + idb), so a
+ * fixed sleep here is a lottery — and when it loses, the NEXT drop reads an empty
+ * library, both files import as fresh, and the section reports one file missing.
+ */
+const settleItems = (peer, count, label) =>
+	h.eventually(
+		() => itemsOf(peer),
+		(i) => i.visible.length === count,
+		label,
+		20000
+	);
+
 const modalOpen = (peer) => peer.page.locator('#dup-skip').isVisible().catch(() => false);
 
 /** what the modal is showing, per group */
@@ -182,9 +196,9 @@ h.run(async () => {
 	await freshProfile(A);
 	await setMode(A, 'ask');
 	await dropFile(A, 'Drifter.tpscene', 'application/zip', v1);
-	await A.page.waitForTimeout(900);
+	await settleItems(A, 1, 'premise: the first dragged-in file landed');
 	await dropFile(A, 'Drifter.tpscene', 'application/zip', v2);
-	await A.page.waitForTimeout(900);
+	await settleItems(A, 2, 'premise: the second dragged-in file landed');
 
 	let items = await itemsOf(A);
 	h.check(
@@ -326,8 +340,7 @@ h.run(async () => {
 	await setMode(A, 'ask');
 	await clearToasts(A);
 	await dropFile(A, 'Twin.tpscene', 'application/zip', v1);
-	await A.page.waitForTimeout(900);
-	h.check((await itemsOf(A)).visible.length === 1, 'premise: one file in the library');
+	await settleItems(A, 1, 'premise: one file in the library');
 
 	await dropFile(A, 'Twin.tpscene', 'application/zip', v1);
 	await h.eventually(() => modalOpen(A), (v) => v === true, 'ASK: re-importing the same bytes opens the modal instead of doing nothing at all');

@@ -41,6 +41,7 @@
 	import {
 		saveSceneAsLevel,
 		newLevel,
+		renameOpenLooseScene,
 		travelToLevel,
 		publishCurrentIfChanged,
 		currentLevel
@@ -48,7 +49,7 @@
 	// 21-I4: 21-G9 already computes "does the open scene differ from the version its name
 	// points at", behind a throttle, because the answer costs a whole-scene
 	// serialization. This READS that flag and never recomputes it.
-	import { sceneDirty } from '$lib/sceneIdentity';
+	import { sceneDirty, recomputeSceneDirty } from '$lib/sceneIdentity';
 	import { showChoice } from '$lib/confirmDialog';
 	import VersionHistory from './VersionHistory.svelte';
 	// 21-G2: the "update available" dot on old scene versions. The manifest store is
@@ -104,7 +105,7 @@
 	// 21-I3: Export ▸ scene (.tpscene) — a scene containing just this prefab. Built from
 	// the EMPTY payload plus this one object, never a capture of the live scene.
 	import { emptySessionPayload, exportSessionZip } from '$lib/sessions';
-	import { selectedObjects } from '../../stores/sceneStore.js';
+	import { selectedObjects, objectsGroup } from '../../stores/sceneStore.js';
 	import { sceneAssets } from '$lib/sceneAssets';
 	import { setNodeData } from '$lib/nodesHandler';
 	import { findNodeAnyGraph } from '../../stores/flowStore';
@@ -909,7 +910,19 @@
 	// be showing the same parent folder, so without it a "New folder" started from the
 	// grid mounted a SECOND input in the tree — the duplicate focus/blur that
 	// startRename already documents, one mode over.
+	/**
+	 * REPORTED (bug 1, second half): "when I create a new scene the filename renames
+	 * back in Explorer to what it was". Every opener below ASSIGNED `editing`
+	 * directly, so opening a second inline editor threw the first one's typed value
+	 * away - the card simply reverted to its old name with no message. Clicking away
+	 * already commits (21-H1 locked answer 7); opening another editor is the same
+	 * intent and now commits too.
+	 */
+	function settlePendingEdit() {
+		if (editing) void commitEdit();
+	}
 	function startCreate(parentId: string | null, inGrid = false) {
+		settlePendingEdit();
 		if (parentId) {
 			const next = new Set(expanded);
 			next.add(parentId);
@@ -920,22 +933,26 @@
 	// inGrid keeps the tree + thumbnail inputs from BOTH mounting for a root folder
 	// (it shows in both), whose duplicate focus/blur would tear the edit down instantly
 	function startRename(folder: any, inGrid = false) {
+		settlePendingEdit();
 		editing = { mode: 'rename', folderId: folder.id, parentId: folder.parentId ?? null, value: folder.name, inGrid };
 	}
 	// 170: inline item rename (replaces the browser prompt), works in either view
 	function startRenameItem(item: any) {
+		settlePendingEdit();
 		editing = { mode: 'rename-item', itemId: item.id, value: item.name };
 	}
 	// 21-H2: a PREFAB renames through the SAME inline editor — never window.prompt(),
 	// which is what the deleted Library modal used (fork 14's rule, one surface over).
 	// Its own mode because the id addresses the prefab library, not `explorerItems`.
 	function startRenamePrefab(item: any) {
+		settlePendingEdit();
 		editing = { mode: 'rename-prefab', prefabId: item.prefabId, value: item.name };
 	}
 	// 21-G1: a PACK row renames too — same inline editor, and it writes the pack's
 	// display TITLE only (its `name` is the identity every cache and view key uses;
 	// packs.js carries the reasoning)
 	function startRenamePack(pack: any) {
+		settlePendingEdit();
 		editing = { mode: 'rename-pack', packName: pack.name, value: pack.title || pack.name };
 	}
 	// 21-G10 (fork 14): naming a SCENE is a create like any other, so it goes through
@@ -944,6 +961,7 @@
 	// the browser's rather than ours. It always shows in the GRID: both entries live on
 	// the grid background's menu, and the tree has no row to hang a scene name on.
 	function startSceneName(mode: 'save-scene' | 'new-scene') {
+		settlePendingEdit();
 		editing = { mode, value: mode === 'save-scene' ? 'Scene' : 'New scene', inGrid: true };
 	}
 	// 21-H1 (locked answer 7): CLICKING AWAY COMMITS. Every inline name in this panel —
@@ -974,7 +992,14 @@
 		const edit = editing;
 		editing = null;
 		if (edit.mode === 'create') createFolder(edit.value, edit.parentId);
-		else if (edit.mode === 'rename-item') renameItem(edit.itemId, edit.value);
+		else if (edit.mode === 'rename-item') {
+			renameItem(edit.itemId, edit.value);
+			// REPORTED (bug 1): a file rename never reached `currentLevel.name`, so the
+			// next save of a LOOSE scene filed it under the old name and a second
+			// .tpscene appeared beside the renamed one
+			const renamed = $explorerItems.find((i) => i.id === edit.itemId);
+			if (renamed?.kind === 'scene') renameOpenLooseScene(renamed.hash, edit.value);
+		}
 		else if (edit.mode === 'rename-prefab') renamePrefab(edit.prefabId, edit.value);
 		else if (edit.mode === 'rename-pack') renamePack(edit.packName, edit.value);
 		// 21-G9 (union): land the scene where the user is looking — Scenes when the
@@ -1647,8 +1672,11 @@
 								label: 'Open here (this screen)',
 								tooltip: 'Load this scene locally — use a Travel node to move every player together',
 								// 21-I4: the same fix as `openSceneItem` — the FILE name is not
-								// the scene name, and `currentLevel.name` is the manifest key
-								action: () => travelToLevel(item.hash)
+								// the scene name, and `currentLevel.name` is the manifest key.
+								// REPORTED: this called travelToLevel DIRECTLY, so the menu route skipped
+								// the unsaved-changes guard the double-click route has - the one action in
+								// this grid that can destroy work was reachable two ways and guarded one.
+								action: () => void openSceneItem(item)
 							},
 							{
 								// 21-G7: the scene's past. It lives in the file PROPERTIES (that is where a
@@ -1684,24 +1712,15 @@
 					: [
 							{
 								label: item.kind === 'scene' ? 'Download (.tpscene)' : 'Download',
+								icon: 'download',
 								tooltip: 'Save this file to your computer',
 								action: () => downloadItem(item)
 							}
 						]),
-				// 21-I5 REVISED: the scene's PAST, as files. Offered only when there is more
-				// than one version — a single-version scene already has Download one line up,
-				// and an entry that produces a one-file zip is a worse version of it.
-				...(sceneVersionHashes(item).length > 1
-					? [
-							{
-								label: 'Download all versions (.zip)',
-								icon: 'arrow-down-to-line',
-								tooltip:
-									'Every version of this scene as one .zip of .tpscene files — versions whose bytes are no longer here are reported',
-								action: () => void downloadSceneVersions(item)
-							}
-						]
-					: []),
+				// 21-I5 REVISED / user: the scene's PAST, as files, used to be a menu row here.
+				// It moved INTO the Version history panel: its subject IS that history, the row
+				// sat one line under Download and read as a second Download, and the panel is
+				// where the version count it acts on is already shown.
 				{ label: 'Properties', action: () => showProperties({ kind: 'item', item }) },
 				{
 					label: 'Rename',
@@ -2200,11 +2219,32 @@
 			showToast(`"${item.name}" is the scene you are already in`);
 			return;
 		}
-		if ($sceneDirty) {
+		// REPORTED (bug 2): this used to read `$sceneDirty` — the THROTTLED verdict,
+		// which 21-G9 deliberately lets lag a very recent edit by up to
+		// SIGNATURE_THROTTLE_MS (2s) because recomputing costs a whole-scene
+		// serialization. That is the right trade for a TITLE BAR and the wrong one
+		// here: edit, immediately double-click another scene, and the guard read a
+		// stale `false`, so no dialog appeared and the work was gone. The one place
+		// the answer must be current is the action that destroys it, so it is
+		// recomputed synchronously; everywhere else keeps the throttle.
+		//
+		// The second half is a scene with NO IDENTITY to be dirty against.
+		// recomputeSceneDirty answers false for it by construction ("nothing to be
+		// dirty AGAINST"), which is honest but leaves the newest, least-saved work in
+		// the app completely unguarded. If there is no identity and the world is not
+		// empty, opening still destroys something, so it asks.
+		const identified =
+			!!$currentLevel?.name && typeof $currentLevel?.signature === 'string';
+		const risky = identified
+			? recomputeSceneDirty()
+			: ($objectsGroup?.children?.length ?? 0) > 0;
+		if (risky) {
 			const here = $currentLevel?.name ?? 'This scene';
 			const choice = await showChoice({
 				title: `Open "${item.name}"?`,
-				message: `"${here}" has unsaved changes, and opening a scene replaces what is on screen.`,
+				message: identified
+					? `"${here}" has unsaved changes, and opening a scene replaces what is on screen.`
+					: 'The scene on screen has never been saved, and opening a scene replaces it.',
 				// "Open anyway", NOT "Open without saving": travel's own writer-side
 				// auto-publish (fork 9) runs inside `travelToLevel` whatever is chosen
 				// here, so a named scene normally banks a version on the way out and the
@@ -2914,7 +2954,7 @@
 					</div>
 					<!-- 21-G7: a scene file's PAST belongs with the rest of its facts. Renders
 					     itself away for every other kind, and for a pack card (no history to have). -->
-					<VersionHistory item={selItem} />
+					<VersionHistory item={selItem} onDownloadAll={downloadSceneVersions} />
 				{:else if selected?.kind === 'folder'}
 					{@const counts = folderCounts(selected.folder.id)}
 					<div class="flex items-center gap-2">

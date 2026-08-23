@@ -5,6 +5,92 @@
      per release, newest first. HTML comments like this one are stripped before
      rendering, so maintainer notes stay out of the user-facing window. -->
 
+## 1.7.0 — Make a game, keep a project 🎮
+
+The biggest release so far. You can build and play an actual game now — a HUD you
+draw, logic nodes, a gamepad, a character controller — and the files behind it
+finally behave like a project: named scenes you travel between, version history you
+can go back through, and a session where everyone can see what exists and who is
+where.
+
+### 🎮 Games you can actually play
+
+- 🖼️ **A HUD editor.** Draw menus, scores, bars, timers and lists on a 2D artboard
+  and they render over your scene. Text, buttons, sliders, toggles, dropdowns and
+  text fields; screens that show themselves at the right moment; and a HUD can belong
+  to a camera, so looking through it brings its overlay.
+- 🔌 **Bind a button to something in two clicks.** The Actions panel builds the nodes
+  and the wiring for you — start the game, play an animation, fire an impulse, set a
+  variable.
+- 🧠 **The logic nodes game loops are made of** — latch, delay, sequence, once,
+  counter with reset, a four-way select. Plus a real **pause** that pauses: physics
+  stops, spins hold still and resume without a jump, menus keep working.
+- 🎯 **A game shell**: state, rounds, outcomes and variables that every peer agrees
+  on, with per-player variables for scores that are yours alone.
+- 🎮 **Gamepad support**, and a **character controller as nodes** — walk, jump,
+  camera follow, move speed, all authorable.
+- 🏆 Collectibles, leaderboards, respawn, and a walkthrough on the docs site.
+
+### 🗺️ Scenes, and travelling between them
+
+- 🎬 **A scene is a file you can open, save and travel to.** Save the scene you are
+  in, make another, and move between them — by hand, or with a Travel node that
+  takes everybody together.
+- 🕘 **Version history.** Every save keeps the one before it. Browse them, name them,
+  pin them, restore one — nothing is destroyed by going back — and download the lot
+  as a .zip. One card per scene instead of a shelf of look-alikes.
+- 📦 **A whole project as one `.tp` file** — scenes, versions, library and all — to
+  hand over or keep as a backup. Import one alongside yours, or open it to switch.
+
+### 🗂️ The Explorer grows up
+
+- 🧊 **Prefabs live here now**, with previews, export and the same menu everything
+  else has.
+- 🖱️ **Select more than one thing** — marquee, batch download, batch delete, drag
+  several at once — and rename in place instead of through a browser prompt.
+- 🏷️ **A Project ▸ Scene chip** beside the search says which project and scene you
+  are in, and clicking the scene name takes you to its file.
+
+### 👥 Everyone in one session
+
+- 🌍 **Project scenes show up for every peer**, even before they hold the file —
+  open one and it downloads from whoever has it. A scene somebody else creates no
+  longer just fails to appear.
+- 📍 **See who is in which scene**, right in the peer list. A peer in another scene
+  is not drawn in your viewport and cannot be watched — with the reason on the
+  button, not a dead control.
+- 🚪 Rooms are simply who is where: one session, one project, several scenes.
+
+### 📁 Files that behave
+
+- 🧾 **A file you dragged in is yours, not the project's.** Opening one and editing
+  it no longer quietly invents a project scene under a name you never chose; the
+  first edit offers to save it in.
+- 👯 **Importing something you already have says so** instead of silently doing
+  nothing — skip it, or take a real copy. Settings ▸ Files has the rule.
+- 💾 **Opening a scene over unsaved work always asks**, from the menu as well as a
+  double-click, and it asks about brand-new scenes too.
+
+### 🌄 Worlds
+
+- ⛰️ **Procedural terrain** from a seed, and **splines** you can draw, edit forever
+  and edit in VR.
+- 🛣️ **Flatten** works both ways: carve a bed into the terrain along a spline, or
+  drape the spline onto the ground. Pick the partner with a click.
+
+### 🧲 Physics you can play with
+
+- ✋ **Play mode is interact mode** — a reticle, grab, carry and throw, with the
+  throw a peer sees smoothed rather than stepped.
+- 🌍 Scene ground, out-of-bounds rules and the physics defaults worth having.
+- 💥 **Physics nodes**: impulse, set velocity, on rest, measure, joint — and a
+  **spawner** that can create bodies mid-simulation.
+
+### 🎥 Looks
+
+- 🎨 **A camera can carry its own look**, so switching cameras switches the grade,
+  and a Set Look node can turn one on from a graph.
+
 ## 1.6.0 — Measure twice 📐
 
 Numbers you can drag and type in your own units, copies that bring their behaviour

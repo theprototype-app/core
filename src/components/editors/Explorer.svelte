@@ -7,7 +7,7 @@
 	// + items), drag files in to import. Shares the bottom dock with the Flow
 	// editor as notebook tabs (bottomDock.js); undocks into a floating window.
 	import { get } from 'svelte/store';
-	import { untrack } from 'svelte';
+	import { tick, untrack } from 'svelte';
 	import { explorerClose, mobileUndockAllowed, explorerSceneSaveArm } from '../../stores/appStore.js';
 	import { showToast, enable3dPreview, stackOnDrop, confirmPrefabUpdate } from '../../stores/appStore.js';
 	import {
@@ -571,6 +571,37 @@
 		if (e.key === 'Enter') commitProjectEdit();
 		else if (e.key === 'Escape') projectEdit = null;
 		e.stopPropagation();
+	}
+	/**
+	 * 21-I2: clicking the SCENE half of the chip finds its card — navigate to the folder
+	 * the file lives in, select it and scroll it into view. It does NOT open or travel:
+	 * you are already in that scene, and the question the chip answers is "where IS it".
+	 * The card it lands on already wears 21-G9's emerald accent, so the answer is visible
+	 * the moment the grid redraws.
+	 *
+	 * The two ticks are load-bearing: changing `activeFolder` fires the view-change effect
+	 * that WIPES the selection (21-H3), so a selection written before it flushes is thrown
+	 * away — and `activeFolder.set` notifies even when the id is unchanged, so the
+	 * already-here case needs the same wait.
+	 */
+	async function revealOpenScene() {
+		const hash = openSceneHash;
+		if (!hash) return;
+		const item = $explorerItems.find((i) => i.hash === hash);
+		if (!item) {
+			showToast('The open scene has no file in this library');
+			return;
+		}
+		if (search) search = '';
+		activeFolder.set(item.folderId ?? null);
+		await tick();
+		await tick();
+		setSel([item.id]);
+		inspectItem(item);
+		await tick();
+		document
+			.querySelector(`[data-card-id="${item.id}"]`)
+			?.scrollIntoView({ block: 'nearest', inline: 'nearest' });
 	}
 
 	/**
@@ -2276,6 +2307,60 @@
 	/>
 {/snippet}
 
+{#snippet identityChip()}
+	<!-- 21-I2 (locked answer 4): WHO AM I, compact and beside the search box —
+	     Project ▸ Scene ●. It RETIRES 21-G9's own row, which spent a whole line
+	     of a bottom dock on two words. The LOCATION crumbs inside the shell stay exactly
+	     as they were: they answer a different question (which folder am I browsing).
+
+	     `min-w-0` is what makes it TRUNCATE instead of shoving the search box off a
+	     narrow dock (the documented flex trap: a flex item's min-width is `auto`, so it
+	     refuses to shrink below its content). The search keeps its width; this absorbs
+	     the shrinkage, and every segment carries a title so the full text is still
+	     readable once it is clipped. -->
+	<div id="explorer-identity" class="flex min-w-0 flex-1 items-center gap-0.5 text-[11px] font-normal">
+		{#if projectEdit !== null}
+			<input
+				id="explorer-project-input"
+				class="ui-input w-40 shrink py-0 text-[11px]"
+				aria-label="Project name"
+				value={projectEdit}
+				use:focusSelect
+				oninput={(e) => (projectEdit = e.currentTarget.value)}
+				onkeydown={projectKeydown}
+				onblur={commitProjectEdit}
+			/>
+		{:else}
+			<button
+				id="explorer-project"
+				class="min-w-0 truncate rounded-sm px-1 py-0.5 font-medium hover:bg-gray-700 {$projectManifest.name
+					? 'text-gray-200'
+					: 'italic text-gray-500'}"
+				title={projectLabel + ' — click to rename this project'}
+				onclick={startProjectEdit}>{projectLabel}</button
+			>
+		{/if}
+		{#if $currentLevel?.name}
+			<span class="shrink-0 px-0.5 text-gray-600" aria-hidden="true">▸</span>
+			<button
+				id="explorer-scene"
+				class="min-w-0 truncate rounded-sm px-1 py-0.5 text-white hover:bg-gray-700"
+				title={'The scene you have open: ' + $currentLevel.name + ' — click to find its file'}
+				onclick={revealOpenScene}>{$currentLevel.name}</button
+			>
+			{#if $sceneDirty}
+				<!-- the same signal the window title's asterisk uses (sceneIdentity.js) -->
+				<span
+					id="explorer-dirty"
+					class="shrink-0 text-[9px] leading-none text-amber-400"
+					title="This scene has changes that are not in the version its name points at"
+					aria-label="Unsaved changes">●</span
+				>
+			{/if}
+		{/if}
+	</div>
+{/snippet}
+
 {#snippet content()}
 	<WindowShell
 		key="explorer"
@@ -2287,41 +2372,9 @@
 		]}
 	>
 		{#snippet topbar()}
-			<!-- 21-G9: the identity line — Project / Scene. Always shown (the location
-			     crumbs below are the thing the ⚙ toggle hides), because "which project am
-			     I in" is the one question a file browser must never leave ambiguous. -->
-			<div
-				id="explorer-identity"
-				class="flex items-center gap-0.5 overflow-x-auto whitespace-nowrap border-b border-gray-700/60 px-2 py-1 text-[11px]"
-			>
-				{#if projectEdit !== null}
-					<input
-						id="explorer-project-input"
-						class="ui-input w-44 py-0 text-[11px]"
-						aria-label="Project name"
-						value={projectEdit}
-						use:focusSelect
-						oninput={(e) => (projectEdit = e.currentTarget.value)}
-						onkeydown={projectKeydown}
-						onblur={commitProjectEdit}
-					/>
-				{:else}
-					<button
-						id="explorer-project"
-						class="rounded-sm px-1 py-0.5 font-medium hover:bg-gray-700 {$projectManifest.name
-							? 'text-gray-200'
-							: 'italic text-gray-500'}"
-						title="Click to name this project"
-						onclick={startProjectEdit}>{projectLabel}</button
-					>
-				{/if}
-				{#if $currentLevel?.name}
-					<span class="px-0.5 text-gray-600">/</span>
-					<span id="explorer-scene" class="px-1 py-0.5 text-white" title="The scene you have open"
-						>{$currentLevel.name}</span
-					>
-				{/if}
-			</div>
+			<!-- 21-I2: the identity row that used to sit here is now the CHIP beside the
+			     search box. What is left is the LOCATION trail — which folder am I in —
+			     which is a different question and keeps its own ⚙ toggle. -->
 			{#if showBreadcrumb}
 				<div class="flex items-center gap-0.5 overflow-x-auto whitespace-nowrap border-b border-gray-700/60 px-2 py-1 text-[11px] text-gray-300">
 					{#each crumbs as c, i (c.id ?? 'root')}
@@ -2972,17 +3025,18 @@
 				onpointerup={endResize}
 			></div>
 			<div class="mb-1 flex items-center gap-2">
-				<span class="text-xs font-semibold text-gray-200"><FolderTree size={16} class="mr-1" aria-hidden="true" />Explorer</span>
+				<span class="shrink-0 text-xs font-semibold text-gray-200"><FolderTree size={16} class="mr-1" aria-hidden="true" />Explorer</span>
+				<!-- `shrink-0`: the identity chip beside it is the flex item that gives way -->
 				<input
 					id="explorer-search"
-					class="ui-input w-48 py-0.5"
+					class="ui-input w-48 shrink-0 py-0.5"
 					placeholder="Search assets…"
 					bind:value={search}
 				/>
-				<span class="flex-1"></span>
+				{@render identityChip()}
 				<button
 					id="explorer-undock"
-					class="ui-button-quiet"
+					class="ui-button-quiet shrink-0"
 					title="Undock into a floating window"
 					onclick={() => setDocked(false)}>⧉</button
 				>
@@ -3012,14 +3066,15 @@
 			role="region"
 		>
 			<div class="ui-panel-header move-handle shrink-0 cursor-move select-none py-1.5">
-				<span><FolderTree size={16} class="mr-1" aria-hidden="true" />Explorer</span>
+				<span class="shrink-0"><FolderTree size={16} class="mr-1" aria-hidden="true" />Explorer</span>
 				<input
-					class="ui-input w-44 py-0.5 font-normal"
+					id="explorer-search"
+					class="ui-input w-44 shrink-0 py-0.5 font-normal"
 					placeholder="Search assets…"
 					bind:value={search}
 				/>
-				<span class="flex-1"></span>
-				<button id="explorer-dock" class="ui-button-quiet" title="Dock to the bottom" onclick={() => setDocked(true)}>
+				{@render identityChip()}
+				<button id="explorer-dock" class="ui-button-quiet shrink-0" title="Dock to the bottom" onclick={() => setDocked(true)}>
 					⇩ Dock
 				</button>
 				<button class="ui-button-quiet" title="Close" onclick={() => explorerClose.set(true)}>✕</button>

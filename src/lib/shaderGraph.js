@@ -543,13 +543,26 @@ export function isShaderDriven(uuid) {
  * @returns {boolean} true when a graph was copied
  */
 export function copyShaderGraphTo(fromUuid, toUuid) {
-	if (!fromUuid || !toUuid || fromUuid === toUuid || toUuid === SCENE_GRAPH_KEY) return false;
+	if (!fromUuid || fromUuid === toUuid) return false;
 	const all = get(shaderGraphs);
 	// only an OWN graph is copied: an object inheriting the scene default already
 	// inherits it as the clone too, and copying would pin a private snapshot of it
-	if (!all[fromUuid] || all[toUuid]) return false;
-	const doc = structuredClone(normalizeShaderGraph(all[fromUuid]));
-	const after = setShaderGraphFor(toUuid, doc, { silent: true });
+	return copyShaderGraphFrom(all[fromUuid], toUuid);
+}
+
+/**
+ * A6.3: the same install, from a DOCUMENT rather than from the live store — what a
+ * MERGE import needs, because `importObjects` re-uuids every object it parses and
+ * the payload's shader graphs are keyed by the OLD uuids, so an imported object
+ * arrived on its plain material with the graph stranded in the file.
+ * @param {any} doc a shader-graph document @param {string} toUuid
+ * @returns {boolean} true when a graph was installed
+ */
+export function copyShaderGraphFrom(doc, toUuid) {
+	if (!doc || !toUuid || toUuid === SCENE_GRAPH_KEY) return false;
+	if (get(shaderGraphs)[toUuid]) return false; // never clobber an existing one
+	const copy = structuredClone(normalizeShaderGraph(doc));
+	const after = setShaderGraphFor(toUuid, copy, { silent: true });
 	if (after && broadcastHook) broadcastHook(toUuid, /** @type {any} */ (after));
 	return !!after;
 }

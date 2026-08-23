@@ -39,6 +39,14 @@ export const OVERRIDES = [
 		key: 'shaders',
 		label: 'Scene shaders',
 		hint: 'Materials driven by the scene’s shader graphs. Reserved for the shader work; nothing reads it yet.'
+	},
+	// 21-D5: the first REAL consumer of renderLayer(). A HUD is scene data and renders for
+	// everyone by default, exactly like the look above - this is only the right to switch it
+	// off on this screen.
+	{
+		key: 'hud',
+		label: 'Scene HUD',
+		hint: 'On-screen panels, scores and menus the scene author built. Turning this off is local — it changes nothing for anyone else.'
 	}
 ];
 
@@ -79,3 +87,19 @@ export function setRenderLayer(key, on) {
 export function viewportOverridesDebug() {
 	return { ...get(viewportOverrides) };
 }
+
+/**
+ * 21-A A8: run the post stack in VR. OFF by default and deliberately so — the
+ * composer's passes target canvas-sized buffers, not the XR framebuffer, so
+ * blitting them mismatches sizes and nothing reaches the headset (a dark
+ * viewport, with no error). This is the opt-in for a device where it works,
+ * not a promise that it does. LOCAL, like every other override here.
+ */
+export const vrPostEnabled = writable(
+	typeof localStorage !== 'undefined' && localStorage.getItem('vrPostEnabled') === 'true'
+);
+vrPostEnabled.subscribe((value) => {
+	try {
+		localStorage.setItem('vrPostEnabled', String(value));
+	} catch {}
+});

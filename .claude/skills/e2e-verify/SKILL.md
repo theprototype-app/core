@@ -24,6 +24,21 @@ cap), `uv-live-faces` (live paint preview + face scoping), `uv-texture-params`
 (sampler state + the orientation arbiter), `uv-slots` + `uv-slots-persist` (UV4
 slots, live and across a reload), plus `mesh-grab-uv` and `object-sync` — the first
 coverage this repo has of the gizmo-grab uv path and of the late-joiner object sync.
+The GAME line: `game-state`, `hud-actions`, `logic-nodes`, `collectibles-v2`,
+`peer-variables`, `game-presence`, `scene-levels`, `project-manifest`, `project-file`,
+`scene-folders` and the `game-loop-v2/v3/v4` acceptance suites, plus (R3a)
+`sdk-game-seams` — the module-facing seams api.game/peerVars/flow/playerPosition, the
+`{replicate:false}` local pulse, the round-aware `ctx.trigger`, and the counterfactual
+that the migrated collectible pieces are GONE from core. `module-toolbox` covers the
+toolbox seams incl. the `sidebar: false` opt-out and openToolbox/closeToolbox/
+toggleToolbox. **`trigger-log-sync`** (56, three peers) covers DEVX #18 - the handshake
+reply for the trigger log, and the epoch that keeps arriving history readable while making
+it fire nothing; **`flow-spawner`** (43) covers B7, including the byte-identical
+`physicsDebug` PARITY GOLDEN for the createBodyFor extraction (embedded with the recipe to
+redo it - reuse that shape for any future body-construction change); **`palette-groups`**
+(12) asserts the Input-vs-Triggers rule from the socket types the catalog already declares,
+so a misfiled node cannot drift back. The collectible MODULE's own flight lives in the
+modules repo (`tests/module-collectible.test.cjs`, 129 checks, three peers).
 The mesh pro tools each have one: `mesh-edge-gizmo`, `mesh-bevel` (faces), `mesh-vertex-bevel`,
 `mesh-edge-bevel`, `mesh-vertex-slide`, `mesh-proportional`, `mesh-knife`, `mesh-symmetrize`,
 `mesh-bridge-normals`, `mesh-gizmo-modes` (the gizmo across element modes, driven by REAL mouse
@@ -70,23 +85,101 @@ mousedown on an xyflow node card enters its drag handler, which reads `ownerDocu
 off the target and throws — select a node with a real `page.mouse.click`. Also: two
 picks of the SAME bytes are the same content hash, so a second texture assignment is
 silently a no-op (vary the image, or the check measures the first one twice).
+21-C terrain and splines have three: `terrain-procedural` (noise determinism imported
+DIRECTLY in node, plus two peers on a bit-identical position hash, the tiling seam and
+the sculpt lock with its Regenerate escape), `terrain-carve` (the pure carve with no
+browser, then both Flatten directions driven by real viewport clicks) and the ported
+`spline-tool`. Their traps are below and they generalise: a projected world point may
+not be ON the surface, a buffer-level metric cannot see a shattered mesh, and an
+idempotent op leaves later sections nothing to measure.
 Stored mesh topology is `topo-channel` (the partition's wire/undo/save round trips, the
 operators that author it, two-peer delivery and an old-peer message), and
-`mesh-loop-hardening` section 3b is where the twisted-band criterion lives. helpers.cjs exports: `launch(options)` (pass
+`mesh-loop-hardening` section 3b is where the twisted-band criterion lives.
+
+helpers.cjs exports: `launch(options)` (pass
 `{args:[...]}` for fake media), `setupPage(browser, name)` (init script + hydration +
 peer id), `connect(from, to, settleMs=9000)`, `check(ok, label)`,
 `eventually(fn, predicate, label, timeout)`, `projectPoint(page, [x,y,z])` (world →
-screen pixel for real clicks), `finish(browser)` (exit code), `run(body)`.
+screen pixel for real clicks), `finish(browser)` (exit code), `run(body)`,
+`freshReload(peer)`, `pageErrors(peer)`, `installModule(peer, id)` +
+`moduleZipPath(id)`, the pixel four (`grabFrame`/`centeredClip`/`frameDelta`/
+`framePixelsOffColor`), `URL`, and **`GPU_ARGS`**.
+
+**`GPU_ARGS` is not only for pixels — it is required for anything TIME-based.** A
+software-rendered headless page runs at about **2.5 fps** (measured 2026-08-18 by
+counting `requestAnimationFrame` callbacks over a 2s window: 5 frames). Any per-frame
+runtime is therefore ticking ~24x slower than a user's, so a throttle in the 10Hz range
+CANNOT ENGAGE and reads as "throttled" while doing nothing at all — a HUD store capped
+at 100ms measured 5-6 writes/2s either way, which passed a ceiling assertion vacuously.
+With `h.launch({ args: h.GPU_ARGS })` the same page runs **120 frames / 2s** and the cap
+shows as **19 writes against 120 frames**, which is the throttle actually being proven.
+Corollary for the assertion itself: state a rate claim RELATIVE to a frame count
+measured in the SAME window, never as an absolute Hz — an absolute floor is asserting
+the host's rAF cadence, not your code.
 
 Rules: never run suites in parallel AGAINST THE SAME dev server, never edit sources
 while one runs (HMR reloads the pages mid-test — see "HMR churn makes runs LIE").
 
 ## Assertion discipline (a check that cannot fail is not a check)
 
+- **A REPRO THAT DOES NOT REPRODUCE gives the most confidently wrong answer there is.**
+  Rebuilding a user's "pressing R does nothing" graph, the Key Press node was seeded
+  with `key: 'r'` — its field is `code: 'KeyR'` — so it never pulsed and the probe
+  reported "the node never fires". One field wrong turned a UX problem into a phantom
+  runtime bug. Before believing a repro, assert the FIRST link fired (here: the
+  trigger stamp / the override map), not just the last effect.
+- **Distinguish "did not fire" from "fired and did nothing".** They have completely
+  different fixes, and only one of them is a bug. The cheap way is to read the
+  smallest piece of state the action writes — the override map showed the node firing
+  perfectly while the screen stayed identical, which pointed straight at the design
+  rather than the wiring.
+- **Opening the Flow pane needs the REAL opener**: `p[title="Node editor (N)"]`.
+  `bottomDock.activateDock('flow')` alone leaves `.svelte-flow` unmounted, so a
+  pane-geometry or node-card check silently has nothing to look at. And the pane's
+  scope FOLLOWS THE SELECTION — creating an object selects it, so a suite that seeds
+  the SCENE graph then opens the pane sees that object's object-flow instead.
+  Deselect first.
+- **`centeredClip` falls back to the viewport centre** because a world point BEHIND the
+  active camera projects non-finite, and NaN survives a Math.min/max clamp —
+  Playwright then rejects the clip as "empty or outside the resulting image", which
+  reads as a broken feature rather than a bad measurement.
 PIXEL features have their own helpers now: `grabFrame`/`centeredClip`/`frameDelta`/
 `framePixelsOffColor` (screenshot -> back INTO the page -> 2D canvas -> RGBA, compared
 in the page so only metrics cross the bridge). Four rules came out of building them:
 
+- **A BUFFER-LEVEL metric cannot see a shattered mesh, and one shipped.** The carve
+  suite asserted the vertex count was "unchanged", both peers agreed, one message, one
+  undo entry — all green over a terrain that drew 208 arbitrary triangles plus a
+  fragment, because `applyMeshGeo` builds a NON-indexed geometry and it had been handed
+  an indexed terrain's 625 positions (not divisible by 3). The count being unchanged
+  WAS the symptom, and the assertion said so in as many words. For anything that
+  rebuilds geometry, assert the TRIANGLES: count divisible by 3, and no edge longer
+  than the lattice it came from (24.04m on a 1m grid with the bug in, 1.62m with it
+  out). Watertightness is the same rule for closed meshes.
+- **A projected world point is not necessarily ON the surface you meant to click.**
+  `projectPoint([-7, 0, -7])` over a hilly terrain gives a pixel whose ray the app
+  resolves to NOTHING (measured: `hits []`), because y=0 is underneath the hills — so
+  every click-driven check of an armed pick mode failed while the feature was perfect.
+  Cast DOWN onto the target first, project the SURFACE point, and verify both that
+  `elementFromPoint` is the canvas and that the app resolves that pixel to the intended
+  object. The second half matters just as much: selecting anything opens the properties
+  drawer over the right of the viewport, and the first round of aims landed on a drawer
+  DIV. `aimAtSurfaceOf` in terrain-carve is the reusable shape.
+- **An IDEMPOTENT operation leaves later sections nothing to measure.** Three checks in
+  the carve suite read a legitimate zero because earlier sections had already flattened
+  the bed. Re-seed the input at the top of each section that measures CHANGE, and take
+  the undo-depth baseline immediately BEFORE the gesture rather than before setup that
+  also records entries (that read +3 for one click).
+- **Measure both sides of a comparison in the SAME unit.** "A repeat carve converges"
+  compared 251 COLUMNS (before the commit expanded the mesh) against a toast's 876
+  VERTICES (after), and read as divergence when nothing had diverged. The same class of
+  mistake as the bug it was testing, one layer up: when a commit changes the mesh
+  REPRESENTATION, compare a representation-independent quantity (the (x,z)->y height
+  field, or a canonical soup) instead of buffer indices.
+- **Scan the WHOLE toast stack, never just the last entry.** This box emits peer-server
+  toasts ("Lost connection… reconnecting") throughout a run, so the newest toast is
+  regularly not the one your click produced — and clear the stack before the gesture,
+  or an earlier identical message satisfies the wait without anything having run.
 - **Assert the CHANGED PIXEL COUNT, not a mean.** A mean is blind to a thin edge — a
   one-pixel outline over 1280x720 moves it by ~0.1. But keep both metrics: AO on a lone
   convex box is a small contact BAND with a large delta, where a count alone reads as
@@ -645,6 +738,51 @@ await h.installModule(B, 'dungeon');   // EVERY peer — see below
 - flowbite `Toggle` renders an **sr-only** checkbox: click the wrapping
   `label`, and give the toggle an id when a card carries more than one.
 
+**Two ways a lane server lies about which code it serves, both hit in one session.**
+`vite dev --port N` has no `--strictPort`, so a lane started while N is busy silently
+binds N+1 — and a later lane can then answer on the port you meant for a third. A suite
+pointed at it verifies committed HEAD with none of the edits under test. Separately,
+`TaskStop` on a backgrounded `npm run dev` reaps npm and leaves the vite CHILD listening,
+so the port answers 200 after a "successful" kill and the build that follows runs against
+a live server. Before trusting a lane: `netstat -ano | grep :PORT` to map port -> pid, and
+`curl -sk https://localhost:PORT/src/lib/<file>.js | grep <your new symbol>` to prove it
+serves YOUR code. Kill with `taskkill //PID n //F`.
+
+**Flipping a check that RECORDED a limitation is where wrong premises hide.** When core
+fixed DEVX #18, three collectible checks had to invert — and the first attempt went red
+for reasons unrelated to the feature: an asserted `=== 1` collided with whatever earlier
+sections had left collected and with where the round clock was, and a "shared collect"
+check picked a gem an earlier section had put on `scope: player`, where the pulse staying
+local IS the feature. Two rules came out of it: assert the PROPERTY (the joiner agrees
+with the HOST) and read the reference value at run time rather than pinning a literal, and
+SELECT a fixture by reading its state rather than by guessing which one it is. Flip, never
+delete — a deleted section is a silent regression, an inverted one fails loudly if the
+limitation comes back.
+
+**R3a: a MECHANIC that leaves core takes its suite coverage with it, and the split is
+not at the click.** When collectibles v3 became a module, the collectible RECIPE went
+with it — but the chain it built stood on core PRIMITIVES (perRound/whilePlaying/
+perPlayer/respawn) that still need covering, so the 7-node builder survives as
+`h.makeCollectibleChains(peer, uuids, opts)` in helpers.cjs: same nodes, same
+handle-qualified edge ids, ONE `flownodes` entry per batch, returning the old
+`{built, skipped, variable, respawn, perPlayer, entries}` plus `chains[].ids` so a
+check can read latch state straight out of `flowValues`. Three rules learned doing it:
+
+- **Derive counts from the LATCHES, and filter their ids against the LIVE graph.** With
+  `collectcount` gone, total/collected/left comes from each chain's Latch value — and a
+  `wipe()` or a scene TRAVEL must drop those chains from the total, or a later section
+  inflates. game-presence/peer-variables/game-loop-v3 all do the filter.
+- **Flip a removed UI to its COUNTERFACTUAL rather than deleting the section.** The old
+  recipe-menu/dialog checks now assert core exposes no `gameRecipes`/`recipeDialog` and
+  that `addBinding(el, 'showleft')` answers `{ok:false, reason:'unknown action'}`. A
+  deleted section is a silent regression; an inverted one fails loudly if the thing
+  comes back.
+- **Assert the module-facing seam in CORE, the real click in the MODULE repo.** The
+  Modules manager renders cards only for core modules and installed USER records, so an
+  inline `initModules` module has NO card — a `getByRole('button')` for its
+  `registerMenu` entry waits the full 30s. Core drives the registered entry's own
+  action (the same function the card calls); the module's own flight clicks the button.
+
 For a module with no committed suite, drive it through the REAL install path in a
 scratch script, then assert its scene-root group / behavior, and simulate a
 PEER's ops via `__stores.moduleSDK.applyModuleMessage({type:'module', moduleId,
@@ -659,6 +797,18 @@ makes peerjs use the **public cloud** (localhost tries ws://localhost:9001 and f
 OUT in `etc/hosts`, so two-peer suites are env-gated locally — re-enable the mapping
 (or gate the block behind an env flag, as `connect-states.test.cjs` does with
 `TWO_PEER=1`) to run them.
+**Still commented out as of 2026-08-18, and you do not need it**: point `APP_URL` at
+`https://localhost:PORT/` and pass `PEER_CONFIG` for the self-hosted box, and
+three-peer suites connect fine. Reaching for the `.app` hostname while that line is
+commented resolves the REAL public IP and every page load dies on
+`net::ERR_CONNECTION_TIMED_OUT` — which looks like a dead dev server, not a DNS
+answer, so check the hosts file before restarting anything:
+
+```powershell
+$env:APP_URL='https://localhost:5201/'
+$env:PEER_CONFIG='{"mode":"custom","custom":{"host":"peerjs.theprototype.app","port":443,"path":"/peerjs","secure":true}}'
+npm run e2e -- hud-sync
+```
 `helpers.connect(B, A)` does: fill peer id → Connect → Approve on A → ~9s settle.
 Late joiners: connect a third context AFTER mutations, assert handshake state arrived
 (objects/nodes/annotations/joints/module state/env/music/handmodel/custom defs).
@@ -669,8 +819,53 @@ dual-module-instance split collapsed, `freshReload(peer)` BEFORE `connect` and
 re-read the id (`peer.id = await …peers.subscribe…peer.id`) — a reload mid-mesh
 drops the P2P session.
 
+## 21-B traps (2026-08-19)
+
+- **A synthesized wheel dispatched ON `window` cannot test a capture-phase
+  claim.** At the TARGET, capture and bubble listeners run in REGISTRATION
+  order, so a handler that wins by being registered in the capture phase never
+  gets to be first. Dispatch on the CANVAS, where a real wheel starts. Measured:
+  41 events leaked into walking speed as a 6.4x faster walk when dispatched on
+  window, and zero when dispatched on the canvas.
+- **Author a graph through `flowGraphs` AND `flowNodes`.** They mirror both
+  ways; writing one leaves the other stale and the stale side can be pushed back
+  over it (an earlier section's nodes returned while the new edges stayed).
+  Build edge ids the canonical way too —
+  `e-<source>[.<sourceHandle>]-<target>[.<targetHandle>]` — or they do not
+  survive a reconcile once a peer joins.
+- **A BACKGROUND page is rAF-throttled to a few frames a second**, and
+  `bringToFront()` does not always help with three contexts open (measured 5
+  samples in 1.24 s either way). Anything that lives in the frame loop —
+  interpolation, per-frame overlays — cannot be measured by sampling a watching
+  peer. Assert the MECHANISM instead and leave the look to a real machine.
+- **A fixed `waitForTimeout` after a key press is a race once a peer is
+  connected**: the same read saw 0.50 at ~700 ms and 3.36 at ~850 ms. Wait for
+  the thing.
+- **Creating an object SELECTS it, and `selectedObject` is sticky**, so the
+  handshake pushes it to a joiner as a LOCK — a fixture that then tries to grab
+  it is correctly refused. Deselect AFTER connecting.
+- **A two-peer suite cannot `h.connect(A, B2)` when A is already in a session**
+  (its connect input is gone). Dial from the newcomer.
+
 ## Known flakes / traps
 
+- **A trigger-edge action suite must SETTLE between "the peer holds the node" and the
+  pulse** (21-F4). `actionSeenAt` records a node's first-seen at TICK time, so a stamp
+  minted in the gap between the nodecreate landing and the peer's next tick is refused
+  as stale AND consumed (measured: stamp 21618.485 vs seenAt 21618.489 — a 4ms race).
+  Wait for the hold-premise, then `waitForTimeout(600)` before pulsing; a human press
+  comes seconds after wiring, so the guard is correct and the suite adapts.
+- **`h.connect(from, to)` dials FROM the first argument — and a connected peer's pill
+  has no dial input** (it becomes the disabled "Connected to <host>" box). A late
+  joiner must dial the host: `h.connect(C, A)`, never `h.connect(A, C)` — the wrong
+  direction surfaces as `connect: could not fill the peer id`.
+- **Who is the session host in a suite**: `h.connect(A, B)` has A dial and B approve,
+  so B holds `sessionHost === null` — B is the writer/admin for anything host-gated
+  (the abandon watch, Reset game). Assert gates against the right peer.
+- **The shared game singleton can race a test's wipe** (21-F2's 1-in-3 flake): a stale
+  `game` message landing after a reset changes what later checks MEAN. Pin the
+  game-state premise (assert or explicitly set it) before any section whose
+  assertions depend on it — the racing write must not be able to reinterpret them.
 - **An assertion whose deadline is a `waitForTimeout` asserts the SCHEDULER as much
   as the feature — and that is what a "flaky suite" almost always turns out to be.**
   Every standing red cleared before the 1.5.0 tag (PR #142) was this one shape: a
@@ -691,6 +886,11 @@ drops the P2P session.
   then assert the FULL set on a finished state; and when the app fires and forgets a
   write (`createFolder` does not await `persistIndex`), watch the RECORD rather than
   sleeping — it is the thing the reload actually reads.
+- **A first click that loads its module dynamically pays ~1.2s in dev**, which is long
+  enough to make a 900ms wait pass while nothing has happened — and long enough that a
+  real user thinks the button is dead. Wait on the OUTCOME (the toast, the geometry,
+  the store), and if the feature is user-facing consider PRIMING the import where the
+  affordance appears (the Inspector does it while a spline is selected).
 - **Before believing any standing red, restart the dev server.** Three suites
   (`prefabs`, `mesh-edit-materials`, `uv-materials`) were carried as a "known cluster"
   with a shared cause. The shared cause was real but external: none of them contains a
@@ -790,10 +990,97 @@ drops the P2P session.
   SWALLOWS it, so the message silently never leaves. Send raw bytes instead
   (`new Float32Array(arr).buffer`) and normalize on receive (meshgeo/terrain do this).
   If a big payload "never arrives" in a test, suspect this before the network.
+- **A capability headless does not have is asserted by SPYing the browser API, not
+  by skipping.** Pointer lock never engages in headless (requestPointerLock rejects,
+  pointerlockchange never fires), so 21-E3 patched `HTMLCanvasElement.prototype
+  .requestPointerLock` and `document.exitPointerLock` to COUNT calls: the machine is
+  then asserted by its ATTEMPTS plus its store transitions. Two traps inside that:
+  spy the PROTOTYPE, never `querySelector("canvas")` (DungeonMinimap renders a hidden
+  canvas first — the grabFrame trap), and do not assert a call that cannot happen
+  (with no lock ever HELD, a correct machine must NOT call exitPointerLock — the
+  first version of that check asserted the opposite and went red on working code).
+  Same recipe for gamepads: `Object.defineProperty(navigator, "getGamepads", …)`
+  returning a fake pad the test mutates.
+- **A svelte store emits its CURRENT value on subscribe**, so a log that means "what
+  happened during the cycle" must subscribe AFTER the state that starts it. 21-E3's
+  "isLocked never left true" check read `["null","true"]` and failed on correct code
+  because the subscribe itself replayed the pre-play value.
+- **A tolerance must be sized to the BUG, not to the noise.** The "resume does not
+  jump the pause gap" check first used 0.35 rad, which 200ms of legitimate motion
+  already exceeds; the bug it guards replays the whole ~1.5s span (~3 rad). Pick the
+  band from the failure magnitude, then confirm a correct run sits well inside it.
+- **A contract with two halves needs both pinned.** 21-E3 made Tab drive the HUD ring
+  ONLY under a held lock; the suite asserts bare Tab does NOT cycle AND that it does
+  with `document.pointerLockElement` stubbed to the renderer canvas. Pinning one half
+  lets the other regress silently.
+- **Clean a shared fixture on EVERY peer.** `flowNodes.set([])` does not broadcast, so
+  nodesync sees the emptier peer and pulls the graph BACK a few seconds later — a
+  section that wiped only peer A found C's old nodes reappearing mid-run (and with a
+  guard removed, that alone reproduced the bug the section was built to test, from a
+  route it never set up). Wipe every peer, push after each write, and assert the node
+  list as a premise.
+- **A held key keeps acting.** A `down`-edge keypress re-stamps ~3/s while held, so a
+  synthesized keydown never released keeps re-applying its action (one un-released
+  KeyP overwrote a Resume AND the game ending). Release what you press.
+- **`/create box` re-seats the object after the call returns and stamps
+  `userData.physics = {mode:"dynamic", mass:1}`** — a box used as a "floor" falls,
+  which reads exactly like the feature under test being broken.
+- **A peer cannot approve a connection request while in play mode** — the Approve
+  button renders and the click times out. Approve first, then press play.
+- **The definitive worktree A/B, when a red might be yours.** `git stash` is unsafe
+  in this repo (see the never-stash-pop rule) and the same-server A/B lies. Instead:
+  `git worktree add ../theprototype-ab origin/release/next --detach`, `npm install`,
+  start it on a spare port, and run the suspect suite there. Two notes from doing it:
+  the worktree has no `certs/` (gitignored), so it serves **http**, not https — use
+  `APP_URL=http://localhost:<port>/`; and the FIRST run on a cold server can fail at
+  `page.goto` for no other reason, so take a second reading before you conclude
+  anything. Remove it with `rm -rf` + `git worktree prune` when done. Used 21-D to
+  attribute `script-nodes` and `flow-object-embed` — both fail IDENTICALLY on base.
+- **A suite that compares an editor against its RUNTIME breaks the day the runtime is
+  deliberately hidden.** 21-D5 stopped painting the HUD in the viewport while the HUD
+  editor is open, which invalidated `hud-editor`'s artboard-vs-live rect comparison
+  and `hud-inputs`' control queries — neither was a regression, both were suites
+  asserting the old contract. Reach the state you need through the USER's own control
+  (there, `hudPreviewInViewport`, which the eye toggle writes), never a test-only door.
+- **Check what your own earlier sections already did to the fixture.** Two 21-D reds
+  were pure test premises: a "creates the reader" check failed because an earlier
+  section had already created that reader (the refusal was CORRECT), and a "sets its
+  value" check failed because an earlier section had already set it, so the press
+  flipped it back. Assert the CHANGE, or use a fixture the earlier sections did not
+  touch.
 - Pre-existing flakes (reproduce on a clean base — don't chase them into your diff):
   add-menu search-Enter + right-tap, sound-node Play overlap, connect-overlay
   querySelector, scene-music byte-push timing. To PROVE a failure is pre-existing:
   `git stash push -u`, run the suite on HEAD, `git stash pop`.
+- **`explorer-files` (2026-08-22): fails INSIDE A BATCH, passes ALONE.** "the editor is
+  dark ()" then "Ctrl+S saves back" — a fixed 1200 ms wait where it should wait on
+  `.cm-editor`, so a loaded machine misses CodeMirror's lazy load. A/B-proven on an
+  untouched base by three independent runs. `explorer-drop`'s last check is the
+  documented hidden-canvas trap (it aims a synthetic DragEvent at
+  `document.querySelector('canvas')`, which is DungeonMinimap's hidden one) and comes
+  and goes the same way. Neither belongs to your diff; both deserve their own ticket.
+- **A lane worktree with an INCOMPLETE `node_modules` invalidates every number you
+  measure there.** Missing `@shaderfrog/core` breaks import-analysis on
+  `shaderBackends.js`, so the app never boots (every suite dies in setupPage's
+  `waitForFunction`) and svelte-check reads **387/62 instead of 385/62 on BOTH base and
+  branch** — an A/B run there "proves" nothing in either direction. `npm install` in the
+  worktree and re-measure. Same family as the stale-dev-server rule above.
+- **`--noproxy '*'` is REQUIRED for curl on this box**, and lane URLs are
+  `https://localhost:<port>/` — a system proxy swallows loopback requests (they hang,
+  then return nothing, which reads exactly like a dead server), and the
+  `theprototype.app` hosts mapping is commented out.
+- **A suite section that SAVES or ADDS OBJECTS perturbs its neighbours.** One guard
+  inserted mid-file broke four later checks at once: its `/create box` broke a "four
+  objects are open" premise, and its save moved `currentLevel` away from the scene a
+  later restore section reasons about. Put such a section LAST, and give it its own
+  fixture NAME — a sibling section built its own `Depot` and asserted a single-hash
+  history that a second `Depot` would have poisoned.
+- **A counterfactual can fail for a CORRECT implementation — check that first.** The
+  guard for "version files are stamped with their own date, not the export moment" was
+  first written as "no entry is dated near now", which goes red on correct code because
+  the NEWEST version genuinely was saved seconds ago. What the bug actually produces is
+  two entries sharing ONE date, so the check is that the two DIFFER. Measure the quantity
+  the bug changes, never one it merely correlates with.
 - KNOWN failing suites in the localhost env (2026-07-28, proven identical across a
   full old-deps/new-deps baseline comparison — treat as the dirty baseline, not
   regressions): the drag-drop-SIMULATION cluster (explorer-drop, explorer,
@@ -813,6 +1100,14 @@ drops the P2P session.
 - `add-menu` documents its own flake in a comment at the failing line (a right-tap
   that does not open the viewport menu) — the fastest proof that a failure is not
   yours is still `git stash push -u` → run → `git stash pop`.
+- **Added to the dirty baseline 2026-08-18** (21-A), each proven by running the SAME
+  suite in a PRISTINE sibling worktree on its OWN freshly started server and diffing the
+  PASS/FAIL lines — the only A/B that means anything (see the day-lived-server trap):
+  `flow-customnode-io` (1 check — "a stale snapshot cannot resurrect the pruned edge"),
+  `flow-object-embed` (`locator.dblclick` timeout). `open-core-m1`'s single drawer check
+  was re-confirmed on that same pair: 18 identical PASS/FAIL lines both sides. Two
+  worktrees is what makes this cheap — you never touch the tree under test, so there is
+  no stash to pop and no chance of the "restart fixed it" confound.
 - Long full-suite runs: the Bash tool caps at 10 min — launch the runner DETACHED
   (PowerShell `Start-Process node -ArgumentList 'tests\e2e\run.cjs ...'` with
   output redirects) and poll/Monitor the log. A dev server started via the Bash
@@ -900,10 +1195,18 @@ drops the P2P session.
   (the runner just `node`s each file; see net-backoff.test.cjs). Track PASS/FAIL locally
   and `process.exit(1)` on failure (helpers.finish needs a browser).
 - svelte-check delta hunting: `npx svelte-check --output machine | grep <yourfile>`;
-  baseline 2026-08-02 = **419 errors / 62 warnings** (node 24; #15-C's one-way
-  pickers dropped 14, #15-K's outline rework 2 more) (drifts down as flowbite/typed
-  code is removed — hold whatever it currently is; add no NEW; the release.yml gate
-  hardcodes the numbers — update it when the baseline moves). Note: in the big
+  baseline 2026-08-18 = **388 errors / 62 warnings** (419 -> 417 at B5 -> 391 when 17-A
+  moved the demo modules out -> 388 when #20 annotated Scene's `marqueeStart`) (drifts
+  down as flowbite/typed code is removed — hold whatever it currently is, RATCHET IT
+  DOWN when a change legitimately removes errors; add no NEW; the release.yml gate
+  hardcodes the numbers — update it when the baseline moves). **RE-MEASURE ON A PRISTINE
+  WORKTREE before gating anything on the number in a plan** — a plan written a week
+  earlier said 391/62 while the tree was already at 388, and "held the baseline" would
+  have been a lie in both directions. To attribute a delta, diff PER-FILE counts against
+  a pristine sibling worktree rather than eyeballing the total:
+  `npx svelte-check --output machine | grep 'ERROR "' | sed 's/.*ERROR "\([^"]*\)".*/\1/' |
+  sort | uniq -c` on both, then `diff` — that is what found a +1 hiding inside a file
+  that already had pre-existing errors. Note: in the big
   JS-mode `.svelte` files (Scene.svelte) `@param {T}` JSDoc on a function is NOT honored —
   give the param a default (`slot = 0`) to force the type, and prefer explicit locals
   over dynamic string-indexing of a typed object (both tripped the baseline in N5). Runes-mode `.svelte` files
@@ -916,6 +1219,39 @@ drops the P2P session.
   `page.locator('#explorer-list').screenshot({ path: <scratchpad>/x.png })`. Read the PNG
   to eyeball it, then DELETE the throwaway (never commit a machine-specific scratchpad
   path). The runner only matches `*.test.cjs`.
+
+- **A suite that BUILDS a graph with `flowNodes.set()` has not sent anything.** Only the
+  `nodesHandler` entry points broadcast; the store mirror writes `flowGraphs` locally.
+  The peer DOES catch up through nodesync's periodic hash compare, which is what makes
+  this so nasty: the assertion fails by a LITTLE and intermittently (a Counter pulsed
+  before the peer held the graph read 2 where the author read 3), so it reads as a real
+  off-by-one in the feature. Push explicitly and WAIT for the peer to hold it:
+  `sendNodes(peerId)`, then poll the peer's `flowNodes` for your ids before doing
+  anything else, and keep that as a `premise:` check so the next reader sees why.
+- **Do not drive a rate test with `setNodeData`.** It is not throttled, but the chain
+  behind it (mirror -> flowGraphs -> autosave markDirty -> serializeGraphs) is heavy
+  enough that only about **5 of 50 calls at 40ms** landed inside 2s. A "the store only
+  wrote 5 times" reading was measuring setNodeData's cost, not the throttle under test.
+  Drive something that changes ON ITS OWN every frame (a `time` node) instead.
+- **`saveSnapshot` refuses to write an EMPTY snapshot** ("never overwrite a good
+  snapshot with emptiness"), so on a scene with no objects and no nodes autosave never
+  writes, `isDirty()` never settles, and a dirty-subscription test fails on its own
+  premise. Create one real object first — that is the premise, not decoration. And
+  `idbGet('latest')` returns the snapshot ITSELF, not a wrapper.
+- **The node editor's scope FOLLOWS THE SELECTION, so creating an object before opening
+  the dock shows that object's (empty) OBJECT graph.** Every DOM read then comes back
+  empty and it looks like the editor failed to render. `deselectObject()` first and
+  assert `activeGraphId === 'scene'` as a premise.
+- **A window-level BUBBLE listener cannot observe an event your own handler
+  `stopPropagation`'d** — and stopping it is often part of the contract, so the check
+  "the browser menu was prevented" came back with an EMPTY event list while the feature
+  worked perfectly. Register at window **CAPTURE**, keep the event OBJECT, and read
+  `defaultPrevented` after the dispatch has finished (it is a live property, so a
+  `preventDefault` called downstream still shows). Assert the propagation stop
+  separately with a bubble-phase counter that must read 0.
+- **`h.launch()` gives you a ~2.5fps page; `h.launch({ args: h.GPU_ARGS })` gives you 60.**
+  See the GPU_ARGS note in the first section — anything asserting a rate, a throttle, an
+  interval or "per frame" behaviour needs the GPU args or it measures nothing.
 
 ## Two ways a green suite lies (both cost a user-visible bug in 17-E)
 

@@ -4,11 +4,19 @@
 // Only serializable numeric/boolean params live here; Lathe/Tube keep their
 // default profile curves (quiz: fixed presets).
 
+// 21-C1: a spec may carry a `build` HOOK instead of relying on the
+// `new THREE[gtype + 'Geometry']` convention, which is what lets a CUSTOM
+// geometry (Terrain) be a first-class parametric primitive: the existing
+// {type:'geometry', uuid, gtype, params} message, the 'geometry' history kind
+// and userData.geometryParams riding toJSON + GLTF extras then all work with no
+// new wire type and no new history kind.
+import { terrainGeometry, TERRAIN_FALLOFFS } from './customGeometries';
+
 const TAU = Math.PI * 2;
 
-/** @typedef {{key: string, label: string, kind: 'slider'|'int'|'angle'|'bool', min?: number, max?: number, step?: number, def: number|boolean}} ParamSpec */
+/** @typedef {{key: string, label: string, kind: 'slider'|'int'|'angle'|'bool'|'choice', min?: number, max?: number, step?: number, options?: string[], def: number|boolean|string}} ParamSpec */
 
-/** @type {Record<string, {order: string[], params: ParamSpec[]}>} */
+/** @type {Record<string, {order: string[], params: ParamSpec[], build?: (params: any) => any}>} */
 export const GEOMETRY_PARAMS = {
 	Box: {
 		order: ['width', 'height', 'depth', 'widthSegments', 'heightSegments', 'depthSegments'],
@@ -152,6 +160,39 @@ export const GEOMETRY_PARAMS = {
 			{ key: 'radius', label: 'Radius', kind: 'slider', min: 0.02, max: 5, step: 0.02, def: 1 },
 			{ key: 'radialSegments', label: 'Radial segs', kind: 'int', min: 3, max: 32, def: 8 },
 			{ key: 'closed', label: 'Closed', kind: 'bool', def: false }
+		]
+	},
+	// 21-C1: PROCEDURAL TERRAIN. `build` bypasses the THREE-constructor
+	// convention; `order` is kept for shape-compatibility with every other entry
+	// (nothing reads it for a `build` spec, since the builder takes the params
+	// object). Segments cap 48 — see terrainGeometry for the budget that sets it.
+	Terrain: {
+		build: terrainGeometry,
+		order: [
+			'size',
+			'segments',
+			'seed',
+			'amplitude',
+			'frequency',
+			'octaves',
+			'ridged',
+			'warp',
+			'falloff',
+			'offsetX',
+			'offsetZ'
+		],
+		params: [
+			{ key: 'size', label: 'Size', kind: 'slider', min: 1, max: 200, step: 0.5, def: 24 },
+			{ key: 'segments', label: 'Segments', kind: 'int', min: 2, max: 48, def: 48 },
+			{ key: 'seed', label: 'Seed', kind: 'int', min: 0, max: 9999, def: 1 },
+			{ key: 'amplitude', label: 'Height', kind: 'slider', min: 0, max: 40, step: 0.1, def: 0 },
+			{ key: 'frequency', label: 'Detail', kind: 'slider', min: 0.005, max: 0.6, step: 0.005, def: 0.06 },
+			{ key: 'octaves', label: 'Octaves', kind: 'int', min: 1, max: 6, def: 4 },
+			{ key: 'ridged', label: 'Ridged', kind: 'bool', def: false },
+			{ key: 'warp', label: 'Warp', kind: 'slider', min: 0, max: 2, step: 0.05, def: 0 },
+			{ key: 'falloff', label: 'Edges', kind: 'choice', options: TERRAIN_FALLOFFS, def: 'flat' },
+			{ key: 'offsetX', label: 'Tile X', kind: 'slider', min: -2000, max: 2000, step: 1, def: 0 },
+			{ key: 'offsetZ', label: 'Tile Z', kind: 'slider', min: -2000, max: 2000, step: 1, def: 0 }
 		]
 	}
 };

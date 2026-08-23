@@ -7,6 +7,7 @@
 	import { applyVRFrameRate } from '$lib/vrControls';
 	import { settingsOpen, settingsSection, hidePanels, restorePanels, advancedMode, showEnvInList, objectSearchEnabled, showSimControls, showToast, showRoomsButton, toastsInDrawerOnly, mobileUndockAllowed, enableShiftAdd, noteDoubleClickToOpen, duplicateCarriesAnimation, duplicateCarriesFlow, duplicateCarriesShader, touchTools } from '../../stores/appStore.js';
 	import { trackpadMode, allowBrowserZoom, reversePan, panEnabled, pinchZoomEnabled } from '$lib/trackpadNav';
+	import { gamepadPrefs, setGamepadPrefs, DEADZONE_RANGE, SENSITIVITY_RANGE } from '$lib/gamepadPrefs';
 	import { drawerSlot, cloudPluginInfo } from '$lib/cloudHooks';
 	import { versionString } from '$lib/version.js';
 	const appVersionString = versionString();
@@ -30,6 +31,15 @@
 		removeCustomTheme
 	} from '$lib/themes';
 	import { autosaveEnabled, autoRestoreEnabled, clearSavedSession } from '$lib/autosave';
+	// 21-G7: how many past versions of each scene keep their bytes on this machine (0 = off)
+	import { keepVersionsSetting } from '$lib/projectManifest';
+	// 21-I5 (locked answer 5): the save-name template — one rule for every download
+	import { saveNameTemplate } from '$lib/saveName';
+	// loose-scenes fix (bug 2a): what an import does with bytes already in the library.
+	// It lives HERE and not in the Explorer's cog because that cog holds view and
+	// interaction prefs, while this governs what importing DOES — a file rule, beside
+	// the other file rules.
+	import { duplicateImportMode } from '$lib/importDuplicates';
 	import { viewPrefs, setViewPrefs, resetViewPrefs, DEFAULT_VIEW_PREFS } from '$lib/viewPrefs';
 	import { showWelcomeOnStart, showWhatsNewNotice, openWelcome, openWhatsNew } from '$lib/whatsNew';
 	import { resetWindowPoses } from '$lib/vrWindowPoses';
@@ -73,6 +83,7 @@
 	let vrExpanded = false; // D7: edit-cap toasts deep-link here ('vr')
 	let interfaceExpanded = false;
 	let controlsExpanded = false;
+	let inputExpanded = false; // 21-E5: gamepad (the shortcuts-registry precedent: LOCAL prefs)
 
 	// D7: sanitize a cap edit — an empty/garbage field falls back to the default
 	function setCap(store: any, raw: string, fallback: number) {
@@ -333,6 +344,7 @@
 		vrExpanded = $settingsSection === 'vr';
 		interfaceExpanded = $settingsSection === 'interface';
 		controlsExpanded = $settingsSection === 'controls';
+		inputExpanded = $settingsSection === 'input';
 	} else if ($settingsOpen === false) {
 		restorePanels();
 		$settingsSection = null;
@@ -365,6 +377,7 @@
 				sceneExpanded,
 				interfaceExpanded,
 				controlsExpanded,
+				inputExpanded,
 				connectionExpanded,
 				vrExpanded,
 				aboutExpanded
@@ -374,6 +387,7 @@
 			sceneExpanded = true;
 			interfaceExpanded = true;
 			controlsExpanded = true;
+			inputExpanded = true;
 			connectionExpanded = true;
 			vrExpanded = true;
 			aboutExpanded = true;
@@ -384,6 +398,7 @@
 				sceneExpanded,
 				interfaceExpanded,
 				controlsExpanded,
+				inputExpanded,
 				connectionExpanded,
 				vrExpanded,
 				aboutExpanded
@@ -656,6 +671,73 @@
 						Accessibility: let pinch / Ctrl+scroll zoom the whole PAGE again (off keeps pinch as an app gesture and stops accidental page zoom over panels, on desktop and mobile)
 					</SettingRow>
 				</AccordionItem>
+				<AccordionItem bind:open={inputExpanded}>
+					{#snippet header()}Input{/snippet}
+					<p class="ui-section-label">Gamepad</p>
+					<!-- 21-E5: LOCAL prefs (the shortcuts-registry / viewPrefs precedent) - never
+					     replicated and never saved into a scene. Which stick I hold in which hand is a
+					     fact about MY hardware. What they configure is the DEFAULT mapping, i.e. the
+					     no-nodes case; a game that binds its own controls overrides it. -->
+					<SettingRow name="Gamepad">
+						<svelte:fragment slot="control">
+							<Toggle
+								id="gamepad-enabled"
+								checked={$gamepadPrefs.enabled}
+								onchange={(e) => setGamepadPrefs({ enabled: e.currentTarget.checked })} />
+						</svelte:fragment>
+						<span>A connected controller drives the game with no setup: the left stick walks, the right stick looks, and the d-pad + <strong>A</strong> work a HUD menu. Off ignores the pad entirely</span>
+					</SettingRow>
+					<SettingRow name="Swap sticks">
+						<svelte:fragment slot="control">
+							<Toggle
+								id="gamepad-swap"
+								checked={$gamepadPrefs.swapSticks}
+								onchange={(e) => setGamepadPrefs({ swapSticks: e.currentTarget.checked })} />
+						</svelte:fragment>
+						<span>Move with the RIGHT stick and look with the left — the southpaw layout</span>
+					</SettingRow>
+					<SettingRow name="Invert look Y">
+						<svelte:fragment slot="control">
+							<Toggle
+								id="gamepad-invert-y"
+								checked={$gamepadPrefs.invertY}
+								onchange={(e) => setGamepadPrefs({ invertY: e.currentTarget.checked })} />
+						</svelte:fragment>
+						<span>Push the look stick up to look DOWN (the flight-stick convention)</span>
+					</SettingRow>
+					<SettingRow name="Stick deadzone">
+						<svelte:fragment slot="control">
+							<input
+								id="gamepad-deadzone"
+								type="number"
+								min={DEADZONE_RANGE.min}
+								max={DEADZONE_RANGE.max}
+								step="0.01"
+								class="w-20 rounded-sm bg-gray-700 px-1 py-0.5 text-xs text-white"
+								value={$gamepadPrefs.deadzone}
+								on:change={(e: any) => setGamepadPrefs({ deadzone: parseFloat(e.target.value) })} />
+						</svelte:fragment>
+						<span>How far a stick may drift at rest before it counts as pushed ({DEADZONE_RANGE.min}–{DEADZONE_RANGE.max}). Raise it if the camera creeps with your hands off the pad; the range beyond it is rescaled, so nothing jumps</span>
+					</SettingRow>
+					<SettingRow name="Look sensitivity">
+						<svelte:fragment slot="control">
+							<input
+								id="gamepad-sensitivity"
+								type="number"
+								min={SENSITIVITY_RANGE.min}
+								max={SENSITIVITY_RANGE.max}
+								step="0.1"
+								class="w-20 rounded-sm bg-gray-700 px-1 py-0.5 text-xs text-white"
+								value={$gamepadPrefs.lookSensitivity}
+								on:change={(e: any) => setGamepadPrefs({ lookSensitivity: parseFloat(e.target.value) })} />
+						</svelte:fragment>
+						<span>How fast the look stick turns ({SENSITIVITY_RANGE.min}–{SENSITIVITY_RANGE.max}×). Mouse look has its own speed and is unaffected</span>
+					</SettingRow>
+					<p class="ui-section-label">Bindings</p>
+					<SettingRow name="Per-game controls" noControl={true}>
+						<span>A scene can bind the pad itself with the <strong>Gamepad Button</strong> and <strong>Gamepad Axis</strong> nodes in the node editor (Input group) — button presses replicate like a key press, while a stick value stays local to the player holding it. Module bindings are listed under Shortcuts</span>
+					</SettingRow>
+				</AccordionItem>
 				<AccordionItem bind:open={sceneExpanded}>
 					{#snippet header()}Scene{/snippet}
 					<SettingRow name="Show grid">
@@ -731,6 +813,66 @@
 							<Checkbox id="auto-restore" bind:checked={$autoRestoreEnabled} />
 						</svelte:fragment>
 						Restore that snapshot automatically at startup instead of asking. Only ever runs when the scene is still empty; a message tells you what was restored
+					</SettingRow>
+					<p class="ui-section-label">Files</p>
+					<SettingRow name="Keep versions per scene">
+						<svelte:fragment slot="control">
+							<input
+								id="keep-versions"
+								type="number"
+								min="0"
+								max="200"
+								step="1"
+								class="w-20 rounded-sm bg-gray-700 px-1 py-0.5 text-xs text-white"
+								value={$keepVersionsSetting}
+								on:change={(e: any) =>
+									keepVersionsSetting.set(Math.max(0, Math.floor(Number(e.target.value) || 0)))} />
+						</svelte:fragment>
+						How many past versions of each scene keep their bytes on this machine — browse
+						them under <strong>Version history</strong> in a scene file's properties. Pinned
+						versions are always kept. <strong>0 turns auto-versioning off</strong>: leaving a
+						scene stops cutting one behind your back, and only the current version plus your
+						pins keep their bytes — saving a scene and <kbd>Save version…</kbd> still work
+					</SettingRow>
+					<SettingRow name="When importing files already in your library">
+						<svelte:fragment slot="control">
+							<ThemedSelect
+								id="import-duplicate-mode"
+								items={[
+									{ value: 'ask', name: 'Ask' },
+									{ value: 'skip', name: 'Skip them' },
+									{ value: 'copy', name: 'Import as copies' }
+								]}
+								bind:value={$duplicateImportMode}
+							/>
+						</svelte:fragment>
+						<span>
+							Rule for importing same files which already in your library.
+							<strong>Ask</strong> lets you decide file by file. <strong>Skip</strong>
+							keeps what you have and tells you how many it left out.
+							<strong>Import as copies</strong> brings them in as new files beside the
+							originals - scenes get a fresh copy, while identical files of other kinds
+							stay as one
+						</span>
+					</SettingRow>
+					<SettingRow name="Save name">
+						<svelte:fragment slot="control">
+							<input
+								id="save-name-template"
+								type="text"
+								class="w-40 rounded-sm bg-gray-700 px-1 py-0.5 text-xs text-white"
+								value={$saveNameTemplate}
+								on:change={(e: any) => saveNameTemplate.set(String(e.target.value ?? ''))} />
+						</svelte:fragment>
+						<span>
+							What a downloaded scene, project or GLTF file is called. <kbd>[name]</kbd> is
+							the scene's name (the project's, for a <kbd>.tp</kbd>); the date parts are
+							<kbd>[YYYY]</kbd> <kbd>[YY]</kbd> <kbd>[MM]</kbd> <kbd>[DD]</kbd>
+							<kbd>[HH]</kbd> <kbd>[mm]</kbd> <kbd>[ss]</kbd> <kbd>[ms]</kbd>, in UTC — so
+							<kbd>[name]-[DD]-[MM]-[YY]</kbd> gives <strong>Arena-22-08-26</strong>.
+							Something with no name yet falls back to a timestamp, so a save is never
+							nameless
+						</span>
 					</SettingRow>
 					<p class="ui-section-label">Selection</p>
 					<SettingRow name="Double-click action">
@@ -1149,11 +1291,11 @@
 									</div>
 								{/if}
 								<label class="flex items-center gap-2 text-[13px] text-gray-300">
-									<input type="checkbox" bind:checked={aiFormStream} />
+									<input class="tp-check" type="checkbox" bind:checked={aiFormStream} />
 									Stream responses
 								</label>
 								<label class="flex items-center gap-2 text-[13px] text-gray-300">
-									<input id="ai-physics-tools" type="checkbox" bind:checked={aiFormPhysics} />
+									<input id="ai-physics-tools" class="tp-check" type="checkbox" bind:checked={aiFormPhysics} />
 									Physics tools (advanced)
 								</label>
 								<span class="text-[11px] leading-snug text-gray-400">

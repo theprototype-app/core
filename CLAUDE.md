@@ -46,6 +46,53 @@ loadable play content. Everything a user does must be visible to connected peers
   role controls + gates viewer actions) + `setRolesInfo`; `sessionHost()` accessor;
   `captureThumbnail(maxW)` (renders a fresh frame + reads the canvas synchronously →
   downscaled JPEG blob, null in VR — for cloud room thumbnails).
+- `src/lib/triggerSync.js` (DEVX #18, the gameSync/hudSync shape — data in the leaf
+  store, wire out here, NO history kind because the log is RUNTIME state): the flow
+  TRIGGER LOG finally has a handshake reply. `flowTriggers` is what every stateful node
+  derives from (latch set/reset, once, counter, random's reroll seed, a module's
+  `ctx.trigger`) and `sendHandshake` asked eleven domains for full state and nothing for
+  it, while nodesync's hash compare covers the GRAPH — so a joiner started empty and saw
+  every collected object back on the table. `gettriggers` is on the ALWAYS_ALLOWED floor
+  (the getnodes precedent: a request is floor, its reply is content and stays gateable);
+  the payload is PRUNED to nodes that still exist (applyNodeTrigger never prunes, so the
+  log accumulates every deleted id — and the prune is also what stops us answering with
+  a scene we just STASHED); MEASURED at 559 bytes for a whole played round, so a plain
+  object is right and golden rule 6's raw-bytes rule (about ~40k-element arrays) does not
+  apply. THE MERGE: per node the entry with the newer `lastT` wins, ties keep ours, and
+  the count travels WITH the stamp — right for Counter (re-stamps per bump), Latch
+  set/reset (count zeroed, state in the stamp), Once (0-or-1 same instant) and random
+  (ignores it). Exactly ONE thing stays approximate: a Latch's TOGGLE parity, already
+  documented as re-basing on the next set/reset. **ARRIVING HISTORY MUST FIRE NOTHING**,
+  and that is ONE number (`triggerHistoryAt`, 0 unless a restore happens) folded into the
+  shared `staleTrigger` so every action family inherits it, plus three explicit calls
+  where no cutoff exists (hudscreen/hudset/hudrows predate the shared one). Why the epoch
+  and not just `actionSeenAt`: a joiner's nodes take their cutoff on the first tick, but a
+  peer that LOADED THE SCENE AND SAT IN THE EDITOR before dialling has nodes first-seen at
+  load time, so a pulse made in between is NEWER than the cutoff and would act.
+  `updateDerivedPulses` is the one place a restored log could desync the NUMBERS (a joiner
+  re-derives every past Delay/Once moment and pushes it into a Counter that already
+  carries the bump) — it seeds the dedupe key and refuses, while a moment still in the
+  FUTURE completes normally. No `handleDisconnected` cleanup, deliberately: the log is
+  keyed by NODE, not peer.
+- `src/lib/spawner.js` + `src/lib/transientObjects.js` (21-B B7): mid-sim body creation,
+  which did not exist at all before — `startSimulation` walked `group.children` once, so
+  an object created during a run was INERT. `createBodyFor` was extracted VERBATIM and is
+  shared with `physicsAddBody` (the block encodes world-aligned starts with initialQuat
+  compensating, hull-at-origin vs primitive-at-AABB-centre, sleep-off, and
+  animated-becomes-kinematic — four conventions a second copy would drift on, which is
+  why the extraction was gated on a byte-identical `physicsDebug` parity check).
+  `transientObjects` is the LEAF holding `userData.transient` and, in ONE place, all four
+  paths per-object state travels on: the wire (an additive field on the existing
+  `duplicate`), sessions, autosave (a park/restore ritual — the GLTF export has no
+  per-child filter and hiding instead would lean on `onlyVisible`, the documented trap in
+  reverse) and undo (nothing recorded). The sweep runs BEFORE stopSimulation's
+  beforeStates loop, or the copies land in the transformSet undo entry and broadcast a
+  `move` for an object that no longer exists. CAPS are enforced in the spawner and not
+  trusted to node params: per-node maxAlive 32, a GLOBAL 200 across every spawner, 20 per
+  fire, and a 100ms floor under the authored interval (a trigger EDGE is not a rate limit
+  — a held key re-stamps several times a second). The `spawn` node acts on the stamp edge
+  inside the actionSeenAt family; the INITIATOR spawns and peers receive the ordinary
+  `duplicate`, so there is no new message type.
 - `src/lib/objectPermissions.js` (#14, store-only) — viewer object permissions, ONLY
   active when a roles plugin publishes `rolesInfo` (OSS byte-unchanged): `canEditObject`
   (a viewer edits ONLY their own `__localOnly` objects), `markLocalOnly`/`clearLocalOnly`,
@@ -248,6 +295,38 @@ loadable play content. Everything a user does must be visible to connected peers
   ONE object context menu shared by Controls' direct menu + ViewportMenu's "Selected"
   submenu; #12: selection-aware — counted labels act on the SET, Group selection,
   Physics ▸ Weld/Hinge, Sculpt terrain), `moduleSDK` + `userModules` (zip/URL installs),
+  `moduleNodeIO` (21-A1, imports NOTHING — flowSockets, flowRuntime AND moduleSDK all
+  read it, and an edge from it to any of them closes a cycle back into `history`):
+  module nodes used to be effect SINKS ONLY, so a module node could not output a value,
+  fire a trigger or learn its own id, which is what made "module state -> core HUD"
+  unauthorable. Holds `moduleValueNodes`/`moduleValueTypes`/`moduleNodeInputs`. THE
+  BLOCKING BUG it fixes lived in `flowSockets.outputType`, which answered `'effect'`
+  for every unknown type — and an effect output may only reach an effect input, so a
+  module value could not be wired to ANYTHING; an undeclared named input typed as
+  `'number'`, which REFUSES an Object Selector (object -> number is not a coercion).
+  The evaluator contract is the SCRIPT-NODE one: a pure function of (data, time),
+  because values are never sent and every peer derives them,
+  `moduleToolboxes` + `cloudMount` (21-A5, both store-only/leaf): `api.registerToolbox`
+  over the shared ToolboxWindow. `cloudMount` is the `(el) => cleanup` action EXTRACTED
+  from CloudSlot.svelte — already core's shape for hosting UI it does not own — so a
+  module writes plain DOM and inherits dragWindow persistence, focusStack, the <=640px
+  bottom sheet and the whole `.tbx-*` contract. `openToolboxes` is the piece that did
+  not exist anywhere: MeshEditPopup/SculptToolbar are rendered by a consumer's own
+  `{#if}` over state their SESSION stores already own, so a sessionless toolbox had
+  nowhere to keep open/closed — and those two are deliberately NOT moved onto it.
+  `buildToolboxItems(list, open, surface)` is the ONE builder the sidebar's Modules
+  section and the viewport menu share (the `buildObjectMenuItems` precedent), and the
+  SURFACE argument is why the filter lives there rather than in Sidebar's markup: R3a
+  added `sidebar: false`, so a toolbox belonging to a WORKFLOW (the collectible manager)
+  keeps its viewport-menu row and drops the permanent burger-menu one — the burger menu
+  is the app's own chrome and a row there is a standing claim on it (the 21-C3 Road-menu
+  ruling, one surface over). Absent = listed, so every shipped module is byte-unchanged.
+  A toolbox is LOCAL, hidden in Play mode unless it passes `playMode: true`; R3a also
+  added the OPEN half — `api.openToolbox/closeToolbox/toggleToolbox` take the id
+  `registerToolbox` returns, which had been documented as "open/close it with this"
+  since A5 with nothing able to do it (the `api.hud.rows` family). `openToolbox` also
+  DISMISSES the Modules manager, the one chrome that can cover a toolbox — pair it with
+  `registerMenu`, which renders a button on the module's own card,
   `physics` (#12 rework: rapier steps as a flowRuntime **post-tick hook** —
   flow poses → kinematic targets → step → write-back; fixed-timestep accumulator
   (1/60, ≤8 substeps) so sim time tracks REAL time under throttled rAF; flow-animated
@@ -263,6 +342,36 @@ loadable play content. Everything a user does must be visible to connected peers
   it); SENSORS = trigger volumes (pass-through; pairs collected BOTH directions,
   per-frame dedupe → `fireObjectEnter/Exit` replicated stamps); `PHYSICS_MATERIALS`
   presets (ice/rubber/wood/metal); freeze axes via setEnabledRotations/Translations;
+  21-B WIDENED the scene singleton and added the play/throw layer:
+  `scenePhysics.js` is now the WHOLE shared physics config —
+  `{gravity, ground{enabled,height,friction,restitution}, bounds{limit,action},
+  material, damping, ccd, timeScale, play{interaction,grounded,simOnPlay}}` —
+  with the message `type` UNCHANGED, which is the entire argument for housing
+  the play block there rather than minting a second singleton: no dispatch case,
+  no canApply entry, no handshake work, no handleDisconnected cleanup.
+  `normalizeScenePhysics` is the ONE boundary and holds every clamp;
+  `setScenePhysics` merges nested blocks and stamps MONOTONICALLY (a gesture
+  writes several times per millisecond); `scenePhysicsSnapshot/Restore` return
+  null at defaults so a default scene writes no key (L5 wires sessions.js).
+  · `throwVelocity.js` (THREE only) = `velocityFromSamples`/`clampThrow`, shared
+  by the gizmo release, play mode and the `throw` applier: a QUATERNION delta
+  (Euler differencing is wrong across a wrap and wrong in general — YXZ couples
+  the axes) and a MAGNITUDE clamp (per-component clamping ROTATES the throw;
+  measured 4.6 degrees off on a skewed vector).
+  · `playInteract.js` = play mode's own input path, deliberately NOT a lift of
+  Scene's pick (the editor's select branch is a short STATIONARY click, its
+  `$isLocked` bails guard six editor modes, and play mode's ray is NDC (0,0)
+  every frame). The hold is a SMOOTHED KINEMATIC TARGET: kinematicTargetOf plus
+  the SLERPed substep feed are already the other half of that spring, so
+  smoothing the target costs no rapier surface and makes mass legible. A tap
+  under 180ms fires `fireObjectClick` — play mode had no clicking at all.
+  · `playSettings.js` = `resolvePlaySettings(scene)`, the shared block overridden
+  field-by-field by scene-root `userData.play` publishers in a DETERMINISTICALLY
+  SORTED scan (children order is per-peer, so an unsorted scan resolves
+  DIFFERENTLY on two peers). DEVX #13; `grounded` in PointerLockControls is #14;
+  `playMarkers` generalises the minimap's two hardcoded object names.
+  · `moveSmoothing.js` = receiver-side interpolation of a remote physics stream
+  (see the gotcha). · `PlayReticle.svelte` = the crosshair, presentation only.
   scene GRAVITY from `scenePhysics.js` (a sceneMusic-style latest-wins
   `scenephysics` singleton, applied at world create AND live); CUSTOM colliders are
   COMPOUND — one convexHull per SHELL, verts+pieces stored on userData.physics
@@ -303,7 +412,21 @@ loadable play content. Everything a user does must be visible to connected peers
   wireframe = scene.overrideMaterial, never per-material; L1-L5 removed the
   short-lived `custom` mode — a stored value reads as `shaded` — and `postSupported`
   is the AO capability gate generalised to every fullscreen pass),
-  `scenePost` (L1-L5 THE SCENE POST STACK: the replicated latest-wins singleton on
+  `scenePost` (L1-L5 + L-C THE SCENE POST STACK. **KEYED `'scene' | cameraUuid`** since
+  L-C, the flowGraphs/shaderGraphs/hudDocs shape — `hudDocs` predicted this exact
+  migration and named the post stack as the thing that would need it. A look ATTACHES
+  to a camera by being keyed to its uuid; no new concept, the same way a HUD attaches.
+  `scenePost` survives as a READ-ONLY derived view of the scene document (~20 readers),
+  and every mutator takes the key LAST with a default, so pre-L-C call sites are
+  untouched. `composeLook` APPENDS a camera document to the scene's — what HudLayer
+  does with HUDs — with the camera's effects running AFTER, since a grade on the hero
+  camera should grade the finished house look; `mode: 'replace'` is for the camera that
+  is deliberately not the house look. `mode` lives ON the document so it replicates,
+  saves and undoes with it. `lookOverride` is a SEPARATE per-peer runtime store
+  (`hudScreenOverride`'s shape) that the `setlook` node writes: a game must never flip
+  `enabled` INSIDE an authored document, or a runtime state becomes authored state the
+  next edit broadcasts. Which camera is "active" comes from `cameraPreview.uuid`, the
+  same source HudLayer uses. The original singleton was:
   the `scenePhysics` precedent — `{enabled, effects:[{id,kind,enabled,params}],
   changedAt}` with ONE `normalizeScenePost` at every store boundary — plus the
   `registerPostEffect` kind REGISTRY and the pure `planPostStack`. A deliberate LEAF
@@ -528,6 +651,331 @@ loadable play content. Everything a user does must be visible to connected peers
   pane, the palette tooltip AND the docs-site tables from one string; `shader-node-docs`
   fails if a node ships without one. Plan + as-built: cloud `plans-core/pending/shader-graph-editor.md`; the
   scene-wide half (post stack, layer 2) is `scene-look-post-processing.md`.
+  **THE HUD** (21-A, `hudDocs` + `hudSync` + `components/hud/` + the dock tab) — core
+  had not one UI/2D/screen node, so a game's menu and score could not be authored:
+  `dungeon-realms` hand-rolls a `#dr-gui` overlay at a hardcoded `z-index: 900` and
+  `dungeon` a `#dungeon-panel` at 40, inside the `--z-window` band it does not own.
+  `hudDocs` is deliberately `shaderGraph.js`'s SHAPE, not a new one — that module
+  already solves "keyed documents that replicate, save four ways and undo", so the
+  monotonic-stamp rule, normalize-at-every-boundary and preserve-a-newer-peer's-fields
+  come pre-solved. A LEAF (svelte/store only), keyed `'scene' | objectUuid` even though
+  the v1 UI only creates `'scene'` (a game prefab will want its own overlay, and
+  retrofitting a key later is a migration). `setHudDocFor` is the single write path with
+  a MONOTONIC per-key stamp; an UNKNOWN element `kind` is preserved VERBATIM and skipped
+  at RENDER, never deleted (the normalizeAnnotation/scenePost rule), and `at` is a
+  per-element stamp DECLARED AND UNREAD so a future per-element merge is additive.
+  **The anchor is the 9-GRID plus PIXEL offsets, never 0..1 fractions** — fractions
+  stretch text and borders on resize, and the 9-grid is literally what
+  `dungeon-realms/src/gui.js` hardcoded as its CORNERS map. `hudSync` carries
+  `hud`/`huddelete`/`huds`/`gethuds`, the `'hud'` history kind and
+  `begin/endHudGesture` (one entry, ONE broadcast per drag); its BODY calls
+  registerHistoryKind, so nothing in history's import subtree may reach it.
+  **GOLDEN RULE 8, the decision that matters: the authored DOCUMENT replicates
+  latest-wins, and the RUNTIME half never does** — an element's live text is derived
+  from the already-replicated flow graph so every peer computes the same string, and a
+  button press rides the existing `nodetrigger` path, so the whole batch adds ZERO new
+  runtime message types. Screen visibility (`hudScreenOverride`) is PER-PEER ON PURPOSE
+  — one player on the start menu while another plays — which the node card says out
+  loud, because it is otherwise filed as "my peer doesn't see the menu". Whole-doc
+  rather than per-element: a gesture already collapses to one broadcast, and per-element
+  would need its own ordering, latest-wins-per-element and delete tombstones.
+  `HudLayer.svelte` mounts at the App root BESIDE `<DungeonMinimap />` and OUTSIDE the
+  `{#if !$isLocked}` block (a HUD that dies when you press play is no HUD) at `--z-hud`
+  with NO new tier — it beats the camera PiP and loses to modal/toast/menu, which is
+  right, an approval toast must cover a game HUD; `pointer-events: none` except buttons.
+  Not rendered in VR (DOM is invisible in a headset; the in-scene path is a later phase).
+  Keyboard menus claim through `inputRuntime.claimInput('keys')` so PointerLockControls
+  and editorNavigation stand down — VERIFIED SAFE: the claim only gates a per-frame
+  MOVEMENT task, not the `onKeyDown` that owns Escape, and the HUD never consumes
+  Escape itself. `HudElement.svelte` is ONE renderer shared by the layer AND the editor
+  artboard, which is why the artboard is REAL DOM rather than a 2D canvas: a HUD element
+  IS a DOM box, and a canvas re-implementation would drift from the runtime look.
+  A3's node group is `hudscreen`/`hudtext`/`hudbar`/`hudbutton`/`hudtimer`/`hudlist`
+  through ONE `HudNode.svelte` card (the ShaderNode precedent) with an `<input list>` +
+  `<datalist>` element picker (the PlayAnimNode clip field), so a node authored in the
+  scene graph or naming an element this editor cannot enumerate still works. **The score
+  display is `counter -> hudtext` and needed NO new code.** `hudscreen` acts on the
+  trigger STAMP EDGE, not per frame (a live pulse reads the same time, so a toggle would
+  flip at 60Hz); `hudtimer` derives its remaining seconds from `triggerStampFor`, so
+  every peer reads the same number with no clock of its own; `hudlist` is an element
+  WRITTEN INTO by id (`setHudRows`), never a value that flows, because the socket system
+  has no arrays and every game wants a leaderboard. The `hudRuntime` store is throttled
+  to ~10Hz AND written only ON CHANGE — the layer is real DOM. `HudEditor.svelte` is the
+  6th `FLOW_FAMILY` member on UvEditor's shell (see the flex-feedback gotcha for the
+  artboard sizing), and `Controls.svelte`'s `flowDockSnapshot` needs its `hud` lines or
+  the tab never comes back after play mode. Plan: cloud `plans-core/pending/21-a-hud-and-sdk.md`.
+  **21-D — THE HUD BECOMES INTERACTIVE, AND THE GAME SHELL** (`hudKinds` + `hudImages` +
+  `hudActions` + `gameState` + `gameSync` + `HudElementPicker`/`HudPalette`/
+  `HudActionsSection`/`GameCameraNode`). 21-A shipped a PRESENTATION layer; a user could
+  not close the loop, had nothing to bind TO, and every kind rendered the same property
+  rows. `hudKinds.js` is the ELEMENT REGISTRY (the `registerPostEffect` schema /
+  `nodeCatalog` params precedent, imports NOTHING): each kind declares its own
+  `fields`/`style`/`defaultSize`/group, and the palette AND the properties pane render
+  FROM it, so adding a kind is one entry and nothing can drift between the two. The
+  `fields` vs `style` split is EXPLICIT because they are stored in different places
+  (`el.<key>` vs `el.style.<key>`). An element param is the AUTHORED value — what it
+  shows with nothing wired AND the runtime fallback — never a second source of truth.
+  `hudImages.js` is shaderTextures' cache/awaiting/listener-retry shape resolving an
+  Explorer hash to an OBJECT URL (a DOM `<img>` cannot take a THREE texture, which is
+  why ShaderTexturePicker could not be reused: its ready test is the texture cache, so
+  it would sit on "loading" forever). **The four INPUT kinds (slider/toggle/dropdown/
+  textfield) hold a VALUE, which is a THIRD kind of state beside the authored document
+  and the derived runtime — it is authored by the PLAYER at play time and is not
+  derivable from anything replicated.** `hudValues` is LOCAL per peer and an element
+  opts in with `shared`; that default is the design, because a volume slider is mine
+  and a difficulty setting is the host's, and the wrong default makes my own volume
+  change everyone else's — the failure nobody files as a sync bug because it looks like
+  the feature working. The shared half is the ONE runtime message this HUD line adds
+  (`hudvalue`/`hudvalues`/`gethudvalues`), latest-wins PER ELEMENT on a monotonic stamp:
+  unlike a document (one author, whole-doc, gesture-collapsed) these are touched by
+  DIFFERENT PEOPLE AT ONCE, which is what a settings menu in a shared session IS. Values
+  are play-time state, so a restore clears them and no snapshot holds them. `hudinput`
+  reads one (a slider as a number, a dropdown as its INDEX in its own option list — what
+  a Switcher wants — a toggle as 1/0, a field as text) and `hudset` writes one on the
+  trigger STAMP EDGE, never per frame, or it fights the player's own pointer at 60Hz.
+  `hudActions.js` is the CLOSED LOOP: a curated catalog as plain DATA (the
+  `buildObjectMenuItems` shape) plus a builder that creates the source node, the action
+  node and the edge as ONE replicated `flownodes` undo entry (flowTools' path verbatim,
+  including the handle-qualified edge id peer dedupe depends on), REUSING an existing
+  press node so three actions on one button share one source. The Actions section is a
+  VIEW ON THE GRAPH — it scans `allNodes()` for hud nodes naming the element and walks
+  one hop downstream to describe each binding in words (the Inspector shader-driven
+  notice, one domain over) — and the artboard badges a WIRED element so a dead button is
+  visible at a glance. **PRESS actions are offered only to kinds that actually FIRE**
+  (`PRESSABLE`), which is NOT the same as `interactive` once the inputs exist: a slider
+  is interactive and fires nothing, so it would have been offered "Start the game" and
+  built a binding that could never fire. A TOGGLE does both — it writes its value AND
+  pulses, which is what a Sound: on/off control wants. `HudElementPicker.svelte` is the
+  D3 answer to "the dropdown works like a filter": the RESOLVED name (label + kind) with
+  the screen beside it, a chevron opening the shared `ContextMenu` GROUPED BY SCREEN
+  with `revealFilter` + a remembered height, an X to clear, an amber UNRESOLVED state
+  for an id that is on no screen, and an EYEDROPPER whose seam is two write-once stores
+  (`hudPickArm`/`hudPickResult`) rather than a callback, because the field lives in the
+  node editor and the artboard in the HUD editor — with a TOKEN so a second armed field
+  cannot consume the first one's answer. Picking a reference is not editing a layout, so
+  the armed click changes no selection and moves nothing, and Escape cancels the pick
+  before it cancels anything else (the mesh editor's pending-cut order). The old
+  control's one virtue is kept INSIDE the picker: a typed id this editor cannot
+  enumerate still works. `gameState.js` is the GAME SHELL on the `scenePost` template —
+  a replicated latest-wins singleton `{state, outcome, round, startedAt, vars}` with a
+  monotonic stamp, snapshot/restore (null while pristine, so an ordinary save is
+  byte-unchanged) and a `game` history kind reading its direction by IDENTITY; `gameSync`
+  carries `game`/`getgame`. **CAMERA POLICY: replicate the DATA, decide locally** — the
+  press already replicates, so every peer calls `startCameraPreview` itself and the views
+  converge with NO new message and nobody's viewpoint forced; `syncGameCameraNow` is the
+  one-shot a LATE JOINER needs, which witnesses no transition. Screens gain `showWhile`,
+  so a menu hides itself when the game starts with no wiring — and that is the only
+  thing that can put a late joiner on the right screen. **Camera ATTACHMENT needed no
+  new concept**: `hudDocs` was already keyed `'scene' | objectUuid`, so a doc keyed by a
+  camera MARKER's uuid renders only while you look through that camera, and the artboard
+  borrows that camera's aspect. The HUD is hidden in the VIEWPORT while authoring
+  (`viewportOverrides` gains a `hud` key — its first real `renderLayer` caller — with
+  `hudPreviewInViewport` as the eye toggle). Plan + as-built: cloud
+  `plans-core/pending/21-d-hud-interaction-game-shell.md`.
+  **21-E — GAME HARDENING** (roadmap 21-E, all eight phases): the layer between "the
+  pieces exist" and "press Play and a game works". E1/E2 made the HUD editor WYSIWYG
+  (content at 1:1 inside a transform-scaled stage — it used to scale boxes and not
+  text; drag-drop finally had a consumer; adds land at the cursor; the layer drops to
+  z 38 while authoring so it cannot cover windows) and the screen model sane (nullable
+  `active` so "only when asked" is real; `hudDocKeyFor(graphId)` = own doc if it
+  EXISTS else scene, which un-strands every object graph; `hudViewportDrag.js` =
+  right-drag an element in the live viewport, found by RECT because a
+  pointer-events:none box is invisible to elementsFromPoint). **E3 THE MENU INPUT
+  MODE**: `playPointerFree` in sceneStore is a SUBSTATE of `isLocked === true` with
+  ONE WRITER (HudLayer — any visible screen with `input: 'menu'` while playing);
+  PLC releases the lock WITHOUT the exit path (the held-branch returns early on
+  pointerFree), the camera FOLLOWS `$isLocked` through one $effect (the old two
+  camera.set calls lived in onPointerlockChange, which never fires on a menu-substate
+  exit), moveState zeroes on menu-open AND the keydown listener is gated (the claim
+  gates the TASK, not the listener — a held W used to resume the instant a menu
+  closed), onMouseMove gained the `pointerLockElement !== domElement` ownership gate
+  it always needed, and Esc EXITS PLAY even with a menu open (Esc is not an
+  activation-triggering event, so Esc-driven re-lock can be refused; games author a
+  Resume button). `inputClaims` are REFCOUNTED (counts; contract byte-identical).
+  keypress gained `edge: down|up|held` — up is the falling edge hold-to-show needed;
+  the ~5/s held re-stamp skips `up` nodes. PAUSE PAUSES and is a GAME RULE (shared):
+  physics via simPaused, flow EFFECTS via a pause-folded `effectTime` (a spin holds
+  still and resumes with NO jump), flow/HUD/game nodes keep ticking so menus work,
+  `gameElapsed` excludes banked+live pause spans carried IN the replicated singleton
+  (pausedAt/pausedMs). Local per-peer pause deliberately does not exist: the world is
+  a shared simulation. **E4 the logic nodes**: `latch` (set/reset PURE off the stamp
+  log, toggle parity via the counter precedent, set/reset CLEARS parity so the halves
+  compose), `delay`/`sequence` (fully pure: moment = stamp + offset, WITHHELD until it
+  passes or stamp-edge consumers fire instantly; a cycle never fires), `once` (rearm
+  DELETES the entry — a restamp reads as a fresh pulse), counter `reset` input,
+  4-way `select`, `sound` trigger input. THE SEAM: event consumers split into PULL
+  (triggerStampFor/value reads) and PUSH (counter/latch/once inside applyNodeTrigger)
+  — `updateDerivedPulses` bridges them with replicate:false or delay→counter is a
+  silent no-op. **E5 gamepad**: polling rides runTick (works in VR via pumpFlowTick),
+  `gamepadPrefs.js` leaf (button/axis tables + rescaled deadzone), gamepadbutton/
+  gamepadaxis nodes on the keypress model (axis = LOCAL value, peers read 0), the
+  default left-move/right-look mapping behind the same claims/pointerFree gates,
+  D-pad+A drive the HUD ring through the onInput channel, Settings ▸ Input. **E6 the
+  character controller**: `charController.js` leaf — `charControl` null = NO
+  controller = the built-in behavior BYTE-IDENTICAL (the parity contract, asserted at
+  0.0%); walk mode hands Y to `tickWalker` with THREE-TIER ground resolution (rapier
+  KinematicCharacterController capsule when a sim RUNS — never a scene collider; the
+  dungeon raster; the ground plane), jump edge-triggered in the leaf; nodes
+  charcontroller/possessnode/camerafollow/movespeed/moveinput; the wheel writes
+  THROUGH `playMoveSpeed` while a controller is active so graphs can read/set speed.
+  **E7 HUD content**: hudlist authorable three ways (pane rowsText, the `hudrows`
+  node on stamp edges — rows DERIVE per peer, no message — and `api.hud.rows` with
+  journalled restore) + `api.peerNames()` (DEVX #15's name half); dropdown options
+  drivable via an optional `options` input on hudset; `hudRichText.js` renders a
+  token tree through {#each} so a hostile string is never markup;
+  `api.registerHudElement` (module kinds, cloudMount shape + {update,destroy}) and a
+  user-scripted `custom` kind (code in the document, the script-node trust model,
+  error chip on throw); the game pack (minimap = a top-down 2D PLOT, not a render
+  target; iconrow/progressradial/hotbar/damageflash off a `pulse` runtime channel) +
+  the menu pack (keyhint/tabs/scrollpanel/confirm with declared subPress sub-ids);
+  style presets applied as ONE gesture. **E8**: the action catalog reaches
+  playanim/sound/particles/impulse/reset-counter/toggle-visibility (chain actions),
+  the objectMenu "Make collectible" recipe (onclick→latch→not→visibility + setvariable
+  add, ONE flownodes entry per object), and the docs-site `build-a-game.md`
+  walkthrough. Plan + as-built: cloud `plans-core/roadmap-21e-game-hardening.md`.
+  **21-F — LEVELS, COLLECTIBLES v2, HUD EDITOR POLISH** (roadmap 21-F): `levels.js` —
+  a SCENE ASSET is an ordinary content-hashed .tpscene in the Explorer. **21-G1 renamed
+  the folder to `Scenes` and DEMOTED it**: `SCENES_FOLDER`/`ensureScenesFolder` premake it
+  on the first save and that is all it is, because `levelItems()` discovers BY KIND (every
+  item of kind 'scene', wherever it lives) with NO folder filter at all — so the folder
+  renames, moves and deletes freely, a scene dragged into any folder still counts, and a
+  PNG sitting inside `Scenes` is no longer offered as a travel destination. An existing
+  `Levels` folder keeps working by construction. The exported names keep their `level`
+  spelling (saveSceneAsLevel/newLevel/travelToLevel/levelItems/currentLevel) and the travel
+  node's DATA keys stay `level`/`levelName` — both are in saved graphs and on the wire, so
+  renaming them would be a migration for a word; the USER-VISIBLE copy is "scene"
+  everywhere (Explorer's Save scene… / New scene… / Open here, the node card, the debug
+  pill). `saveSceneAsLevel` strips the workspace,
+  `newLevel` captures NOTHING, and `travelToLevel` is a LOCAL SILENT scene replace:
+  the replicated trigger IS the netcode, so `applySession` gained
+  `{backup, replicate, game, workspace}` opts (every default byte-identical) — no
+  backup stash per hop, nothing sent (N peers broadcasting the same scene at each
+  other otherwise), the file's `game` EXCLUDED and the live state re-asserted after
+  the load (fork 3, campaign semantics; collectible latches are per-scene FREE
+  because the latch nodes live in the level's own graph). A missing hash pulls via
+  assetfile/getasset and WATCHES until the bytes land (the LUT rule); levels.js is
+  reached from flowRuntime via PRIMED import only (sessions is history-family). The
+  `travel` node acts on the stamp edge INSIDE the actionSeenAt family (a fresh node
+  adopting a stale stamp would load a level on connect); a double-fire is
+  SELF-LIMITING — the load replaces the graph containing the firing node.
+  `allplayers` = the group-travel gate: each player answers the wired condition for
+  THEMSELVES, the verdict rides the `playmode` presence message ADDITIVELY
+  (latest-wins per peer, dropped with the mode), and every peer derives "everyone in
+  play says yes" from the same replicated map, firing LOCALLY on the rising edge (the
+  ongamestate pattern) — editor peers are spectators and do not count, nobody playing
+  is not ready. `gamePresence.js` (F3, the campreview shape — NOT the userdata
+  roster, which is a whole-array whitelist): `playmode` sent ONLY while playing
+  (absent = editor, older peers unaffected), the late-joiner reply rides
+  getmodulestate, drops at all three disconnect sites; the ABANDON WATCH (arms per
+  round only once a real player was witnessed, one forward-only `lastPlayingAt`,
+  HOST-only writer — `sessionHost === null`) is what makes "the game resets only when
+  everyone has left play" real; `canResetGame` = admins under `rolesInfo`, else the
+  host or anyone alone (inert without a plugin); REJOIN = a play press inside the 2s
+  exit cooldown is QUEUED and replayed through checkPlay (it used to be silently
+  eaten). COLLECTIBLES v2 (F2): the recipe stamps `whilePlaying` on its Visibility
+  node — a marked node is DROPPED from the effect set outside
+  `isLocked === true && roundUnderway()`, so the restore loop hands the object back
+  and FORGETS it (manual visibility wins; the reported collect→Esc→invisible bug) —
+  and `perRound` on Latch/Once, derived from `roundCutoff()` (null = shell unused /
+  the round's `startedAt` while playing-or-paused / Infinity in menu-or-over). THE
+  CUTOFF HAS A PULL AND A PUSH RULE: reads honour Infinity (a latch reads
+  un-collected in menu — the locked fork) but `applyNodeTrigger`'s re-arm and
+  parity-zero act on a FINITE cutoff only. Respawn is BUILT into the graph — a Delay
+  off the CLICK (never the Once: rearm DELETES the entry a Once-sourced Delay
+  re-derives its moment from) → latch.reset + once.rearm. Groups = every child MESH,
+  ONE flownodes entry per group. **EVERYTHING COLLECTIBLE-SHAPED IN THIS PARAGRAPH LEFT
+  CORE IN R3a** — the recipe (`gameRecipes`/`recipeDialog`/CollectibleDialog), the
+  `collectcount` node and its chain WALK, `collectibleCountsFor`, the hudActions
+  "showleft" entry and the debug pill's counts line all live in the collectible MODULE
+  now (see the R3a status entry); what stayed is every PRIMITIVE they stood on —
+  perRound/whilePlaying, roundCutoff's two rules, replicatesPulse, peerVars — which is
+  the whole point of the split. The 7-node chain survives as a TEST FIXTURE
+  (`helpers.makeCollectibleChains`), because those primitives still need covering. The
+  `debug` HUD kind keeps its pill —
+  a collapsed pill (state/round/elapsed/vars/per-player mode chips/module lines/fps,
+  click-to-expand LOCAL, a 500ms sampler because half its sources have no store
+  signal). F1: `hudArrange.js` (imports NOTHING) — 9 align/distribute/equalize ops
+  as DATA over ABSOLUTE stage rects, written back through each element's OWN anchor
+  (`offsetsFrom`, size first in the same patch), each op ONE hud gesture; the
+  select/marquee tool pair (a MODE, not a modifier — a plain drag already means
+  deselect); the artboard context menu's Add submenu categorized from the SAME
+  `paletteGroups()` the palette renders. F5: `minimapDotColor` = ONE exported colour
+  rule (SELF = the theme accent resolved to a literal, every OTHER peer =
+  `peerColor(id)` — the old code fell back to a hardcoded green self while peers
+  drew the id hash, so two screens disagreed about one person) + `showFacing`
+  heading wedges (`facingAngle` = one atan2(z, x): canvas +y IS world +z). F7
+  (cross-scene presence on the rooms layer) deliberately slipped to 21-G. Plan +
+  as-built: cloud `plans-core/roadmap-21f-levels-and-polish.md`.
+  **21-G1 — SCENES NOT LEVELS; RECIPE RE-HOMING** (see the levels entry above for the
+  discovery change). Three more pieces. (1) **The object menu's `Game ▸` submenu is
+  GONE** — its only entries were the two collectible recipes, and they moved to the NODE
+  EDITOR's Game category via `gameRecipes.recipeMenuItems()`, injected by `Nodes.svelte`
+  into the PANE menu (never `nodeCatalog`, whose list the palette renders as DRAGGABLE
+  NODE CARDS — a recipe is an action) under its own `Recipes` section rule. It acts on
+  the `selectedObjects` SET, never `selectionUuids()`: the sticky-primary fallback would
+  offer the recipe over an empty viewport. THE TRAP IT FORCED: the editor's scope FOLLOWS
+  the selection, so having something selected — the state the recipe is FOR — puts the
+  editor on that object's empty flow, whose `#flow-empty-state` overlay covered the pane;
+  it forwards `oncontextmenu` to the pane menu now (an explanation is not a modal, and
+  `addNode` already created the object's flow implicitly from there). The removal follows
+  21-C3's Road-menu ruling: this project is not only for games. (2) An Explorer item's
+  menu gained **Download** (every library kind, `Download (.tpscene)` for a scene;
+  fileHandler's anchor+objectURL path, excluded for pack-view cards which have no stored
+  blob), and a PACK CARD in the Packs grid now routes to the pack menu instead of falling
+  through to item CRUD on an id that does not exist. (3) **Pack rename**: the reported
+  "the Audio Essentials folder can't be renamed" was never the folder — that library
+  folder always renamed (measured) — it was the PACK ROW beside it, which had no rename
+  at all. `packs.renamePack` writes the display TITLE only (`name` is the identity for
+  packByName / itemCache / the installed-list dedupe / thumb-cache prefix /
+  `activeFolder`'s `pack:<name>` / the default-row shadowing), through a LOCAL
+  `packTitles` override map applied in `loadPacks` — a DEFAULT pack's title is rebuilt
+  from the index on every load, so an in-list edit would silently revert on reload.
+  Suite: `scene-folders` (44).
+  **21-G2..G5 — PROJECTS, PER-PLAYER PROGRESS, CROSS-SCENE PRESENCE.**
+  `projectManifest.js` (G2a, a LEAF: stores + idb + isViewer/peers) = THE ONE MUTABLE
+  THING IN A PROJECT: `{scenes: {name -> {history[], pinned[]}}, assets[], changedAt}`,
+  latest-wins on a monotonic stamp, ONE normalize (unknown fields preserved), the
+  `manifest` message + `getproject` handshake reply, idb-persisted so a solo project
+  survives reload. History is APPEND-ONLY and restore-previous RE-APPENDS (the pointer
+  moves back, nothing is destroyed); `staleSceneHash` = the Explorer's amber update
+  dot; `keepableHashes` = newest 10 + pinned (pruning is LOCAL BYTES, never history);
+  editors publish, viewers never (inert without a plugin). G2b, THE REPORTED
+  disappearing-object BUG: travel-away AUTO-PUBLISHES the departing scene —
+  WRITER-ONLY (`sessionHost === null`; a .tpscene embeds a fresh uuid/createdAt/
+  thumbnail per save, so N peers saving identical content would mint N ghost hashes),
+  SIGNATURE-GATED (`sceneSignature` = the meaningful payload fields in fixed order,
+  volatiles + the game field excluded — the zip hash cannot tell idle from edited;
+  proven stable across a real load->serialize round trip: idle hops mint NOTHING) and
+  NAMED-ONLY (an unnamed scene is not opted in). `travelToScene(name)` resolves the
+  manifest pointer AT FIRE TIME — deterministic across peers, which no local folder
+  order is; the travel card lists project scenes (latest) and library files (frozen
+  hash) as two optgroups making two different promises. `projectFile.js` (G3):
+  the `.tp` = project.json (PROJECT_FORMAT 1, V4-gated with a DIALOG — an import is
+  one person at a file dialog, unlike travel) + scenes/<hash>.tpscene (kept versions)
+  + assets; a pruned hash stays in history and is COUNTED, never silently dropped;
+  import furnishes the library + manifest and LOADS NOTHING. `peerVars.js` (G4, a
+  leaf): PEER-OWNED variables — `peervars {peerId, vars, at}`, whole-map, OWNER-ONLY
+  writer (immune to the setvariable-add race by construction: one writer per row),
+  monotonic per-sender stamp, getmodulestate reply, dropped only on DISCONNECT (a row
+  survives its owner's Esc — a different lifetime from playmode, so a different
+  message); NO automatic round reset (vars already outlive rounds; a game authors
+  `On Game State -> Set Variable scope:player set 0`, each peer zeroing its OWN row).
+  `perPlayer` chains: ONE helper (`replicatesPulse`) gates every fire* site, so a
+  marked click stays in this peer's log and latch/visibility/count are per-peer free
+  — the gem hides only for its collector. `setvariable` gains `scope: shared|player`;
+  `peervariable` (mine/sum/max/peer) + the `leaderboard` sink node (derived rows,
+  roster names, deterministic id tie-break); hudActions gains the `writes` role.
+  G5 (F7): `cloudHooks.scenePresence` — the rolesInfo bridge one domain over; the
+  rooms plugin publishes the project's OTHER rooms `{id, name, scene, hostPeerId,
+  members: [{peerId, name, mode}]}` + an `invite` transport; Users renders per-room
+  groups with mode chips, Watch DISABLED with the reason (it cannot reach outside the
+  mesh), Invite only when the plugin provides it — and the popover host now ALSO
+  opens on cross-scene presence alone (being alone in your scene is when "where is
+  everyone" matters). cloudApi v2.4: setScenePresence/currentScene/playModes/
+  peerRoster. Plugin half (cloud repo): rooms records carry {scene, members, invites}
+  (PB fields in pocketbase-setup.md), a 30s presence POLL, invites riding MY room
+  record (self-expiring ~2min; Join = connectToPeer — the ordinary join sync lands
+  them in the scene). Plan: cloud `plans-core/roadmap-21g-projects-presence.md`.
   `editOverlays` (PR #133, imports NOTHING): park/strip for the edit WIREFRAME,
   which is a LineSegments CHILD of the edited mesh and therefore inside the
   serialized tree — a save taken mid-session wrote it into the file as a
@@ -656,7 +1104,89 @@ loadable play content. Everything a user does must be visible to connected peers
   and REPORTS `fellBackFrom` while the document keeps its original key),
   `bottomDock` (Flow/Explorer tabbed dock), `lockControl` (request-control, peerColor),
   `networkQuality` (N6/D3: LOCAL per-peer getStats RTT + relay dot, median, NOT replicated),
-  `drawMode`, `pathCapture`, `ping` + `pingAudio` (synth chimes, spatial), `voiceChat`
+  `drawMode` (+`drawTool` 'freehand'|'spline' — the toolbar tool switch, phase 57) +
+  the SPLINE trio: `splineTube` (PURE variable-radius tube builder — TubeGeometry
+  sweeps ONE radius, so the sweep is hand-rolled; radiusAt reuses
+  CatmullRomCurve3's own `(n-(closed?0:1))*t` segment mapping and every arc-length
+  sample converts u→t through getUtoTmapping, plus normal-tested end caps,
+  insert/remove point, `radiusFromDrag` multiplicative response) + `splineTool`
+  (click placement w/ live tube preview, "Spline" mesh carrying its record on
+  `userData.spline` — rides toJSON AND GLTF extras like `__uuid`, so late joiners
+  edit it too; ONE write path: applySplineEdit / streamSplineEdit (throttled) /
+  commitSplineEdit (+ the `'spline'` history kind), `splineedit` message = the
+  RECORD only, receivers rebuild deterministically; Properties setters) +
+  `splineEdit` (the session: scene-root handle group = point/radius/insert-marker
+  InstancedMeshes, gizmo on an `isSplineProxy` for position, vertical drag on the
+  amber dot for per-point radius, span-marker click inserts, right-click deletes;
+  VR rides the GENERIC vrControls hook registries — no vrControls edits at all),
+  `noise` (21-C1, imports NOTHING: `hash2i`/`valueNoise2`/`fbm2`. VALUE noise with a
+  smoothstep polynomial, so every number comes out of `+ - * / Math.floor Math.imul`
+  and integer bit ops and there is NO TRANSCENDENTAL anywhere — IEEE-754 does not pin
+  sin/cos/exp/pow across JS engines, which is dungeon-realms' own rule and what makes
+  a terrain built from {seed, params} bit-exact on every peer. fbm normalises by the
+  amplitude sum, so `octaves` buys DETAIL and not height) + PROCEDURAL TERRAIN
+  (21-C1: `terrainGeometry` in customGeometries + a `Terrain` entry in
+  GEOMETRY_PARAMS carrying an optional **`build` HOOK**, which is the whole
+  replication story — the existing `{type:'geometry', uuid, gtype, params}` message
+  (~240 bytes), the `'geometry'` history kind and `userData.geometryParams` riding
+  toJSON + GLTF extras mean NO new message type, no new history kind, and a late
+  joiner rebuilding from the object's own stamp. A PlaneGeometry rotated flat then
+  displaced in Y ONLY, so `amplitude: 0` is byte-identical to the flat plane it used
+  to be, epsilons included — the loop is skipped, not fed zeros. Segments cap 48
+  because 18·seg² = 41,472 floats is under the 45,000 meshgeo LIVE-PREVIEW budget a
+  sculpt stroke streams (meshBudget raised the COMMIT ceiling, not that one); bigger
+  worlds TILE on a shared seed plus per-tile `offsetX/offsetZ`, which are PARAMS and
+  not a transform because a moved tile samples the noise in its own frame and seams.
+  `geometryParamsOf` reads `userData.terrain` BEFORE the `geometry.type` fallback and
+  DERIVES size/segments from the mesh — createGeometry bakes every custom builder
+  into a plain BufferGeometry so toJSON carries real vertices, which means the type
+  fallback resolved NOTHING and a terrain had no Geometry section at all) +
+  `terrainCarve` (21-C3, a leaf: THREE + splineTube. `carveAlongSpline` is PURE and
+  the CALLER commits — the uvUnwrap backend shape, which is what makes it
+  property-testable with no GL and no scene. Arc-length `getSpacedPoints` bucketed
+  into an XZ hash grid (cell = width/2 + shoulder) so each vertex tests O(1) samples,
+  with the sample count floored at two per reach: coarser than that and a vertex sits
+  between two samples, so its distance to the nearest SAMPLE overstates its distance
+  to the CURVE and the road grows unflattened bites. flatten/lower/raise, clearance,
+  and a curvature bank clamped to a quarter of the width. `splineInFrameOf` is
+  load-bearing: a spline's record lives in the SPLINE MESH's frame (finishSpline
+  re-seats it on the centroid), so carving the raw record flattens a strip at the
+  origin — a plausible road in the wrong place) + `flattenActions` (21-C3 THE CALLERS,
+  and the only half that touches the scene, the wire, undo or a toast:
+  BOTH DIRECTIONS of Flatten, which is one menu CATEGORY: `carveTerrainAlong` (the
+  ground conforms to the spline — ONE `commitMeshGeoSnapshot`, positions-only because
+  the carve moves Y and never changes the vertex COUNT) and `drapeSplineOnto` (the
+  SPLINE conforms to the ground — each control point drops onto the target and rests
+  with the tube BOTTOM on it, hit + that point's radius, casting UPWARD for a point
+  that started underground; commits through the existing `commitSplineEdit`, so the
+  `splineedit` message and the `'spline'` history kind carry it). They are NOT
+  variants of one op: one writes geometry, the other writes the record, so they
+  replicate and undo through entirely different existing channels and neither needs
+  anything new on the wire.
+  Both choose their partner by a viewport CLICK, not a menu of names — `flattenPicking`
+  + `startFlattenPick`/`flattenPickClick`/`cancelFlattenPick`, the `snapAnchorPicking`
+  shape, with ONE Scene intercept for both because the interaction is identical. Two
+  deliberate differences from the snap/pivot picks: the armed spline is held in the
+  STORE rather than read from the selection (the partner click changes the selection on
+  its way through, so a later read flattens the wrong pair), and a hit on the WRONG
+  KIND of object keeps the mode armed with an explanation — those picks aim at a point
+  on an object already known to be right, while this one can genuinely be pointed at
+  the wrong thing. Reached by a dynamic import from objectMenu (primed by the Inspector
+  while a spline is selected), which keeps the leaves out of history's import subtree.
+  **SCOPE, settled after C4 shipped and worth not re-litigating:** conforming a
+  heightfield to a curve is a GENERAL world-building operation (roads, rivers,
+  footpaths, trenches, ledges, building pads), so it lives in core and reads in
+  TERRAIN vocabulary — "Flatten terrain along this", never "Road". The lap half that
+  shipped beside it in C4 (`roadGates.js`: `checkpointsFor` on arc length,
+  `progressAlong`, and a quadrant anti-cheat so a driver cannot farm laps by reversing
+  over the line) was racing RULES, and it made every spline in every scene sprout a
+  Road menu for the benefit of one game. It was REMOVED from core — the race module
+  owns it, and has to own it anyway since an installable module cannot import core.
+  The code is commit 233c707; the reasoning worth carrying over is in the 21-C plan.
+  Two constraints that shaped that call: a module cannot add object-menu entries at
+  all today (`registerMenu` is a sidebar button), and there is no `api.commitGeometry`,
+  so making the CARVE a module too would mean designing both seams first),
+  `pathCapture`, `ping` + `pingAudio` (synth chimes, spatial), `voiceChat`
   (+spatial PannerNodes, VR PTT, setMicMode), `vrControls` (locomotion/teleport math,
   world pan, rigid grip grab, haptics, panel raycasts + the `executeVRMenuAction`
   dispatcher — namespaces panel:/props:/prefabs:/chat:/kbd:/face:) + `vrRadialMenu`
@@ -898,7 +1428,20 @@ loadable play content. Everything a user does must be visible to connected peers
    `parkAnimatedAtBase()` first or receivers bake mid-swing poses as animation base;
    `restoreBase` calls `updateMatrix()` because toJSON/GLTF read the matrix
    the last RENDER composed.
-11. **Viewer object permissions** (#14, cloud-roles only) go through
+11. **A ~10Hz stream is smooth on the SENDER and stepped on every receiver.**
+   Physics broadcasts `move` on a 100ms gate, and `moveGeometry` snaps — fine at
+   walking pace, a slideshow on a 20 m/s throw. The fix belongs on the RECEIVER
+   (`moveSmoothing.js`: rewind to the previous pose and ease to the new one over
+   the cadence MEASURED for that object), never on the send rate: raising it
+   costs bandwidth for every body in every scene and is still a step function
+   between packets. Gate on what is OBSERVED — an object with physics params
+   whose moves arrive as a STREAM — not on `remoteSimulating`, which a LATE
+   JOINER is never told about, so the peer needing it most would be the one peer
+   without it. A jump over 3m snaps (a teleport must not smear), and a per-object
+   TIMER lands the exact target because the frame loop that advances the ease can
+   stall (a backgrounded tab is throttled to a few frames a second; measured 1.8m
+   short). Interpolation may change WHEN a pose is reached, never WHICH.
+12. **Viewer object permissions** (#14, cloud-roles only) go through
    `objectPermissions.js` — INERT unless a plugin publishes `rolesInfo`. A viewer's
    object-creation is not sent; the object is marked `__localOnly` (rides toJSON/GLTF
    extras like `__uuid`) and stays local until Share broadcasts its toJSON + clears the
@@ -907,6 +1450,310 @@ loadable play content. Everything a user does must be visible to connected peers
    a viewer's bytes; peers also drop gated types via `canApply`.
 
 ## Hard-won gotchas (do not rediscover)
+
+- **THE PALETTE HAS A RULE NOW, and it is two halves.** A user filed "Key Press is in
+  Triggers, it should be in Input" — and reading the palette against the socket types the
+  catalog already declares showed it was almost perfectly sorted with exactly two nodes
+  on the wrong side, NEITHER of them the one reported: `gamepadbutton` (an `event` among
+  Input's value widgets) and `counter` (a `number` with pulse/reset INPUTS among the event
+  sources). **Input holds no `event` outputs; Triggers holds only SOURCES (nothing with
+  declared inputs).** `gamepadaxis` proves those are the right halves — it outputs a
+  number, so a pure value/event rule would keep it in Input, but a stick is the player's
+  thumb and it belongs with its button. DOMAIN groups (Physics, HUD, Game, Animation…) are
+  organised by subject and legitimately hold both kinds, so the rule governs only the two
+  generic buckets. `palette-groups` asserts it from the declarations, so it cannot drift
+  back; a group is palette-only (the row plus the card accent), so a move changes no wire,
+  saved graph or message.
+- **A PORT CAN BE SHADOWED BY A LANE THAT DID NOT ASK FOR IT.** `vite dev --port N` without
+  `--strictPort` takes N+1 when N is busy, so a second lane started later can end up
+  answering on the port you MEANT to give a third — and the suite then verifies committed
+  HEAD with none of your edits, which is the "mid-session HMR lies" family with a cleaner
+  cause and no HMR involved. Two lanes in this session both had it (5185 answered from the
+  5184 lane; the real server was on 5186). Before trusting a lane server, curl one of YOUR
+  new symbols from it, and map ports to pids with `netstat -ano | grep :PORT` rather than
+  assuming the number you passed is the number it bound.
+- **KILLING A BACKGROUND `npm run dev` DOES NOT KILL VITE.** `TaskStop` reaped npm and left
+  the vite CHILD listening, so the port still answered 200 and the `npm run build` that
+  followed ran against a live server — the never-build-under-a-dev-server trap, entered by
+  way of a kill that looked successful. Find the pid with netstat and `taskkill //PID n
+  //F`; a 200 after a kill means the child outlived its parent.
+- **A CHECK THAT PINS A LITERAL PINS A SECOND, SILENT PREMISE.** Flipping the collectible
+  suite's DEVX #18 limitation to its counterfactual, an asserted `=== 1` went red because
+  the true collected count depends on what earlier sections left behind and on where the
+  round clock is — nothing to do with the feature. Assert the PROPERTY (the joiner agrees
+  with the HOST) and read the reference value at run time. The same pass produced the
+  sibling lesson: a "shared collect" check picked a gem an earlier section had put on
+  `scope: player`, where the pulse staying local IS the feature — so select the fixture by
+  reading its state, never by guessing which one it is.
+- **A MODULE THAT COUNTS ON A STAMP EDGE MUST HAVE ITS OWN FIRST-SIGHT RULE.** The moment
+  core learned to hand a joiner the trigger log, the collectible module's seed (which
+  recorded whatever stamp it saw first) became a bug: on a joiner the seed happens while
+  the log is still EMPTY, history lands a moment later, and the next sweep reads a stamp
+  where there was none and banks a point per already-collected object. Record WHEN you
+  first saw the node and treat anything older as history — `actionSeenAt`'s rule,
+  module-side. Any consumer deriving state from stamps inherits this the day the log
+  starts arriving.
+- **A SURFACE WHOSE OWN DOCS PROMISE AN API THAT DOES NOT EXIST.** `registerToolbox` has
+  returned its id documented as "open/close it with this" since A5, and nothing could
+  open it — the first module to want a button of its own (the collectible manager) found
+  the gap. Same family as `api.hud.rows`, whose element summary advertised an API that
+  had to be built to make the sentence true, and as the sidebar Modules section moduleSDK
+  claimed before it existed. When writing a JSDoc promise about a RETURNED handle, grep
+  for the thing that consumes it before shipping the sentence.
+- **KILLING THE npm TASK DOES NOT KILL VITE.** `TaskStop` on a backgrounded
+  `npm run dev` reaped npm and left the vite CHILD listening — so the port still
+  answered 200, and the `npm run build` that followed ran against a live server (the
+  documented never-build-under-a-dev-server trap, entered by way of a kill that looked
+  successful). Confirm with `netstat -ano | grep :PORT` and `taskkill //PID n //F`
+  before trusting that a lane server is down; a 200 after a kill means the child
+  outlived its parent, not that the kill failed to register.
+- **A CHECK CANNOT DRIVE A UI THAT ONLY EXISTS FOR REAL RECORDS.** The Modules manager
+  renders cards for CORE modules and installed USER records, so an inline
+  `initModules` test module has no card and `getByRole('button')` waits 30s for a
+  button that cannot exist. The generic seam is asserted in core against the registered
+  menu ENTRY's own action (the same function the card calls); the REAL DOM click lives
+  in the module repo's flight, where the module is genuinely installed. Split the
+  coverage at the seam, not at the click.
+- **A NEW NODE TYPE HAS TWO REGISTRIES, AND ONLY ONE COMPLAINS.** `nodeCatalog` fills
+  the palette; `CORE_NODE_TYPES` in `Nodes.svelte` maps a type to its CARD, and its
+  fallback for an unrecognised type is `UnknownNode` — "This node comes from a module
+  that isn't installed". Add to one and not the other and a node dragged out of the
+  CORE palette tells the user to go and install something. `flow-unknown-node` now
+  asserts the WHOLE catalog resolves to a real card, which costs the same line as
+  checking one type and covers every node added from here on.
+- **A field that HAND-LISTS what it sends will drop the next field somebody adds.**
+  `scenePostState` listed `{enabled, effects, changedAt}`, so a camera document's
+  `mode` never left the machine: the peer got the effects and COMPOSED them when the
+  author had asked for `replace`. It spreads the document now — the same reason every
+  `normalize*` spreads, one layer out.
+- **A helper that reads stores with `get()` registers NO svelte dependency.** Swapping
+  an `$effect`'s `$postStacks[...]` for a tidy `resolvedDoc()` call silently stopped
+  the composer chain re-running, so setting a camera to `replace` rendered nothing
+  new. If an effect must react to a store a helper reads internally, touch the store
+  in the effect (`void $store;`) and say why.
+- **A per-camera or per-viewpoint feature does nothing until that viewpoint is ACTIVE,
+  and that silence looks like a broken feature.** A camera's look only composes while
+  `cameraPreview.uuid` is that camera — which in play mode is null unless a
+  `setcamera` node put you there. Any node that targets such a document should say so
+  ON THE CARD; two silent no-ops (a switch that is already on, and a target that is
+  not active) are indistinguishable from a dead wire.
+- **Never run `npm run build` while the lane's `vite dev` watches the same worktree** —
+  it rewrites `.svelte-kit/output` under the server and kills it; the next ten suites
+  report `ERR_CONNECTION_REFUSED`, which reads as a mass regression.
+- **A HELD body's `lastWritten` is stale by definition, so every release must
+  refresh it.** The write-back skips a held body, so `lastWritten` still
+  describes the pose it had when it was GRABBED — and the deviation detector
+  exists precisely to notice that the object moved. Without a refresh in
+  `releaseHold`, the very next step reads a phantom external write and
+  re-engages a kinematic hold ONE FRAME after every release: measured
+  `hold:'external'` on a body that had just been thrown. `applyThrow` owes the
+  same refresh for the same reason (writing an object pose from a message is
+  exactly what the detector is built to catch).
+- **A warm-up that counts COMPOSER frames deadlocks the moment a direct render
+  path exists.** `postWarm` flips after N composer frames, and A8 skips the
+  composer when there is nothing to composite — so nothing to compose meant no
+  composer frame, so postWarm never flipped, so `effectivePostStack` stayed
+  empty, so there was still nothing to compose. Count FRAMES, not composed ones.
+  The signature is a stack that can never compile a pass in one mode.
+- **`flowGraphs` and `flowNodes` are mirrored BOTH ways, so a writer that sets
+  one leaves the other stale — and the stale one can be pushed back over it.**
+  flowGraphs is the document the runtime reads (`allNodes`/`allEdges`);
+  flowNodes is the ACTIVE graph's editor view. A suite that wrote only
+  flowGraphs had an EARLIER section's nodes restored while its new edges stayed,
+  which reads exactly like "the trigger fires and nothing happens". Write both.
+- **An edge id that is not the canonical shape does not survive a reconcile.**
+  Nodes.svelte builds `e-<source>[.<sourceHandle>]-<target>[.<targetHandle>]`;
+  a hand-made id in any other shape was dropped once a peer joined, leaving the
+  nodes in place and the WIRING gone — the trigger still fired, nothing acted.
+- **An action node must resolve its TARGET before it touches the rising-edge
+  map.** One node can appear in the pair list twice (an Object Selector edge AND
+  an implicit owner), and a pair with no target that consumed the edge left the
+  real pair looking like a repeat.
+- **A physics write with no simulation running is a silent no-op, and silence
+  reads as "broken".** Everything in physics.js is gated on `get(simulating)`,
+  so a correctly wired graph in a stopped scene does exactly nothing. Reported
+  as "I connect everything, press the key and nothing happens". Say so (throttled,
+  naming the node), and only when NOTHING is simulating anywhere — a
+  non-initiator doing nothing is correct and must stay quiet.
+- **The Object Selector had no OUTPUT handle for 200 phases.** flowSockets has
+  declared `OUTPUT.objectselector = 'object'` since 165 and the catalog is full
+  of object INPUTS (velocity.target, distance.a/b, proximity.a/b, lookat.target,
+  collider.source) — but the card never rendered a source handle, so not one of
+  them was reachable and every such node silently fell back to the implicit
+  owner. Two wiring styles exist and both are needed: node -> Object Selector is
+  "apply this TO that" (the effect channel, one target), Object Selector -> an
+  `object` input is "which object" as DATA (many consumers, and the only way to
+  express a node with TWO object operands — Joint's a/b, Distance's a/b).
+- **A named socket needs a LABELLED ROW, not a computed offset.** Two stacks of
+  absolutely-positioned handles on one card stop agreeing with the rows they
+  name. AnimationNode renders `spec.inputs` the ObjectFlowNode way (a relative
+  wrapper whose `-mx-3 px-3` cancels the card padding, `top: 50%`), with an
+  optional `inputLabels` map because a socket id is what the WIRE calls it and
+  not always what a person needs to read.
+- **`GLTFExporter` OPTIONS ARE THE FOURTH ARGUMENT OF `parse()`, NOT THE CONSTRUCTOR** —
+  three's constructor takes none, so `new GLTFExporter({...})` silently discards them.
+  `commandsHandler`'s long-standing `{outputEncoding: 'json'}` had therefore never done
+  anything, and the one that mattered was the one nobody had passed: **`onlyVisible`
+  DEFAULTS TO TRUE, so any object hidden LOCALLY is omitted from the export and the peer
+  never receives it at all — a local hide is a DELETE for every late joiner.** Found
+  through the camera preview, which hides the marker it is looking through: a peer
+  joining mid-game had the box and not the camera, so it could not follow the game to it
+  (measured: `"cameras": 0` -> `1`). A hidden object must replicate; the receiver simply
+  shows it.
+- **A fresh trigger-edge action node ADOPTS a stale stamp and fires on creation.**
+  Wire an On Click that was pulsed a minute ago into a fresh Set Game State and the
+  game starts the moment the edge connects (measured: menu→playing on connect; a fresh
+  Impulse on a still-high pulse threw the box). Every action family now refuses a
+  stamp OLDER than the node through ONE shared map (`actionSeenAt` in flowRuntime) —
+  when adding a trigger-edge family, register in it. The over-aggressive version is
+  as wrong as the bug: refuse-everything swallows a just-built HUD binding's first
+  press (proven red on hud-actions).
+- **A count cannot converge for a late joiner; a stamp can.** random's reroll seed
+  read a local count → a joiner's rolls ran N behind FOREVER ([651721, 651721,
+  186302]); seeding from the replicated stamp converges every peer on the next reroll.
+  The general rule for derived-from-triggers state: prefer stamp comparisons (latch
+  set/reset) over counters (latch toggle parity) wherever expressible — the suite
+  pins which property each node has.
+- **Two lanes can each be correct and compose wrong.** E6's walk mode returned from
+  useTask ABOVE E5's gamepad mapping, so after a textually clean auto-merge a pad
+  could not walk in the very mode built for pads. Both suites stayed green — only
+  reading the merged control flow caught it. After any auto-merge of two features in
+  ONE function, re-read the merged ORDER, not the diffs.
+- **A registry that renders {#each} rows must assert key uniqueness over itself.**
+  `progressradial` listed a style field its TEXT_STYLE base already carried →
+  duplicate {#each} key → svelte THROWS and the whole properties pane died (the
+  animation-window crash family). The hud-content suite asserts the invariant across
+  the registry so no future kind can reintroduce it.
+- **`/create box` re-seats the object after the call returns AND stamps
+  `userData.physics = {mode:'dynamic', mass:1}`** — a test fixture using one as a
+  "floor" watches it fall, which reads exactly like the feature under test being
+  broken. Park it kinematic/static or move it after the re-seat settles.
+- **A peer cannot approve a connection request while in play mode** — the Approve
+  button renders but the click times out. Approve first, then enter play.
+- **The debugStores destructure is POSITIONAL.** A missing binding does not fail - it
+  SHIFTS every later one onto the wrong module, mis-wiring dozens of namespaces
+  silently. Fold new entries into all THREE tails at the same index and assert the
+  import/destructure counts equal (the assertion caught a mis-fold twice in 21-G).
+- **A derived cutoff consulted on both the READ and the MUTATE side needs TWO rules.**
+  21-F2's round cutoff returns Infinity in menu/over so latches READ as un-collected
+  there (the locked fork) — but `applyNodeTrigger`'s re-arm honoured it too, so in menu
+  a spent perRound Once re-armed on EVERY click and banked the variable unboundedly
+  (surfaced as a 1-in-3 suite flake: a stale singleton racing a wipe). "We are not in a
+  round" is a statement about how stamps read, never a licence to mutate: the push side
+  acts on a FINITE cutoff (a real new round) only.
+- **Never source a Delay from a node whose consumption DELETES the log entry.** A Delay
+  has no state — `stampOfSource` re-derives its fire moment from its trigger's stamp on
+  every read — and a Once's `rearm` deletes the Once's entry. A respawn chain wired
+  Delay-from-Once therefore erased its own trigger at the instant it fired: the gem
+  counted twice and never came back. Source from the CLICK, whose entry persists (and a
+  re-click during the wait then restarts the timer instead of stacking a return).
+- **A stamp minted between a node's arrival on a peer and that peer's NEXT TICK is
+  refused as stale.** `actionSeenAt` records first-seen at TICK time, so a suite that
+  waits for the peer to hold the graph and pulses immediately loses the race (measured:
+  stamp 21618.485 vs seenAt 21618.489 — a 4ms refusal, and the guard then CONSUMES the
+  stamp). Settle ~600ms after the hold-premise before pulsing; a human press comes
+  seconds after wiring, so the guard is doing its 21-E job. Related travel property:
+  a double-fire is self-limiting because the load REPLACES the graph containing the
+  firing node.
+- **A layout artboard full of TEXT needs `user-select: none`.** Dragging across the HUD
+  artboard selected the labels it swept, and the NEXT press over that selection started
+  a native HTML5 text DRAG — after which Chromium delivers dragstart/drag/dragend and
+  NO pointermove or pointerup, so the gesture hung with its box on screen and its
+  window listeners attached (Escape never reached it either). `user-select: none` on
+  the board + preventDefault on the gesture's pointerdown.
+- **A canvas `fillStyle` cannot take a `var()` chain, so a colour rule split between
+  DOM and canvas WILL drift.** The minimap's self dot fell back to a hardcoded green
+  whenever the authored colour was a token (always), while every other screen drew that
+  peer as `hsl(hash(id))` — two screens, two answers for one person. Resolve tokens to
+  literals where the canvas is (`getComputedStyle` on the root) and export ONE rule
+  both dot paths call (`minimapDotColor`).
+- **`h.connect(from, to)` dials FROM the first arg — and a connected peer's pill has no
+  dial input.** A late joiner must dial the host (`h.connect(C, A)`), or the fill times
+  out on the disabled "Connected to <host>" input.
+- **`setvariable` `add` is a per-peer read-modify-write** — every peer computes
+  `current + 1` off its own tick, so two peers with skewed flow ticks can bank one
+  pickup twice (F3 measured gems=2 for a single click). PRE-EXISTING (21-D6's
+  accumulator); assert the WORLD (hidden/collected), not the score, until it gets an
+  authoritative writer or per-stamp dedupe.
+- **A LATCH guarding an idempotent call must be set on SUCCESS, never on intent.**
+  `startCameraPreview` builds a camera FROM the marker object and REFUSES when there is
+  none, which is the normal case for a LATE JOINER (state arrives before the scene).
+  Stamping the uuid up front made that failure permanent: the transition consumed the
+  only attempt, and `syncGameCameraNow` — the one-shot that exists precisely for a peer
+  that witnessed no transition — then early-returned on its own latch. The joiner sat in
+  the editor view for the rest of the game while every store read looked correct.
+- **A reference field must accept a NAME as well as an id.** A picker shows names, so a
+  node authored by hand, by a template or by an AI carries whichever the author had in
+  front of them — and `hudscreen` given a screen NAME rendered NOTHING, silently.
+  `resolveScreen` takes either. The same reasoning is why `resolveElement` exists: a
+  field that shows a raw id cannot tell "this names a real button" from "this names
+  nothing", which is exactly what made a `<datalist>` read as a filter.
+- **`interactive` stops meaning "fires a press" the moment inputs exist.** A slider is
+  interactive and emits nothing, so an action catalog keyed on that flag offered it
+  "Start the game" and would have built a binding that could never fire. When a flag
+  acquires a second population, re-read every consumer that treats it as a proxy for
+  something narrower.
+- **A suite that compares an editor against its RUNTIME breaks when the runtime is
+  deliberately hidden.** D5 stopped painting the HUD in the viewport while the editor is
+  open (the user asked why they saw it twice), which invalidated `hud-editor`'s
+  artboard-vs-live rect comparison and `hud-inputs`' control queries. Both turn the
+  preview on through the eye toggle's OWN store rather than a test-only door — if a
+  suite needs a state a user can reach, reach it the same way.
+- **A history KIND handler reads its direction by IDENTITY, not from a flag.**
+  `applyState(entry, state)` passes `entry.before` or `entry.after` AS `state`, so the
+  idiom every kind uses is `state === entry.before` (scenePost's `look`,
+  animationPreview's `anim`, flowGraphs' `flowgraph`). `shaderSync` instead read
+  `state.present` — a property that does not exist on a graph document — so it was
+  ALWAYS falsy and redo restored `before`: **shader-graph REDO was broken on
+  release/next** (measured: 2 nodes -> undo 1 -> redo 1) while undo looked perfect. The
+  first `hudSync` copied the line verbatim, which is how it was found — when you clone a
+  module as a template you inherit its bugs, so the new suite covers BOTH kinds.
+- **A `$derived` cannot see a `get()`, and the comma-operator workaround fails
+  svelte-check.** A helper that reaches a store through `get()` registers no dependency,
+  so `HudLayer` wrote `hudScreenOverride` and never re-rendered — and it LOOKED like it
+  worked, because the next write to the other store flushed the stale value too. Reading
+  the store as `($store, expr)` fixes the reactivity and adds an error ("Left side of
+  comma operator is unused"). Pass it as an UNUSED ARGUMENT to a small helper instead
+  (`screensFor($hudScreenOverride)`), which is reactive, typechecks, and says why in one
+  parameter name. Same shape as the non-reactive-registry family (`moduleNodeGroups` in a
+  node card).
+- **A child measured FROM its parent must not be able to size that parent.** The HUD
+  artboard reads the wrap's clientHeight, scales a 16:9 stage to it, and renders the
+  stage inside it — so the stage's height became the wrap's height, and a 360px stage in
+  a 320px dock hung the board 97px BELOW the viewport (measured: bottom 817 on a 720px
+  screen, its lower quadrant unclickable and `elementFromPoint` returning null). An
+  ABSOLUTELY POSITIONED centring layer contributes no size to its parent and breaks the
+  loop. The second half: **WindowShell renders its `main` snippet into a BLOCK div**
+  (`min-h-0 flex-1 overflow-hidden`), so `flex: 1` on your own root means NOTHING there —
+  it collapsed to 0. Take `height: 100%` against the parent's definite height.
+- **`isLocked` is a THREE-state store, not a boolean**: `null` = editor, ready to play ·
+  `true` = playing · `false` = just exited, which Controls' own effect turns back to
+  `null` with a 2s `allowPlay` cooldown. So the post-exit state is `null`, and any check
+  for "not playing" must be `!== true` — `=== false` reads the transient value and fails
+  a moment later.
+- **`NodeWrapper`'s `ACCENTS` map is keyed by GROUP NAME, so a new palette group is
+  invisible until it is added there** — and `'Object Flow'` had been MISSING since H5, so
+  `flowinput`/`flowoutput`/`objectflow` rendered in the module-node gray and read as
+  third-party cards. Adding a group to `nodeCatalog` is two edits, not one.
+- **`flowNodes.set()` / `flowEdges.set()` do NOT broadcast.** Only the `nodesHandler`
+  entry points send; the store mirror writes `flowGraphs` locally. A peer does catch up
+  eventually through nodesync's periodic hash compare, which makes this fail SLOWLY and
+  RACILY rather than cleanly — a Counter pulsed before the peer held the graph read 2
+  where the author read 3. Push with `sendNodes(peerId)` and wait for the peer to hold it.
+- **`setNodeData` is not throttled, but its write chain is heavy enough to look like it
+  is**: mirror -> flowGraphs -> autosave markDirty -> serializeGraphs on every call, so
+  only ~5 of 50 calls at 40ms intervals landed in 2s. Never use it to drive anything
+  rate-sensitive; drive a per-frame value (a `time` node) instead.
+- **`saveSnapshot` REFUSES to write an empty snapshot** ("never overwrite a good snapshot
+  with emptiness"), so a scene with no objects and no nodes never produces one and
+  `isDirty()` can never settle. Any autosave test needs at least one real object as its
+  premise, not as decoration.
+- **The debug hook's `Promise.all` array order MUST match its destructure order.**
+  Appending an `import()` in the middle of the array while appending the binding at the
+  END of the parameter list silently shifts every entry after it, mis-wiring ~60 debug
+  namespaces with no error anywhere. Add to BOTH tails, and assert the two counts match
+  (`imports N, destructured N`) before trusting a run.
+
 
 - **`renderer.toneMapping` NEVER REACHES A COMPOSED FRAME.** three applies it to a
   material only when the current render target is the CANVAS or an XR target
@@ -1072,6 +1919,43 @@ loadable play content. Everything a user does must be visible to connected peers
   object just turned white and lost its own colour); a glow with no colour of its
   own takes `material.color`. The Inspector had no emissive row at ALL until
   2026-08-17 — nothing in the app set that property except the selection tint.
+- **A PROP READ INSIDE AN `$effect` RE-RUNS IT ON EVERY PARENT RENDER, and for a
+  WebGL component that is fatal.** `ModelPreview` touched its `onStats` prop inside
+  the effect that builds the renderer; every consumer passes an INLINE arrow, which
+  is a new function each render, so any parent re-render tore the renderer down
+  (`forceContextLoss`) and immediately asked the SAME canvas for a new context —
+  which returns **null**, after which three throws `cannot read properties of null
+  (reading 'precision')` FROM INSIDE THE EFFECT and takes the whole svelte flush with
+  it. The visible symptom was unrelated UI failing to mount (the pop-out preview that
+  was opening). Read such a callback through `untrack`, and guard renderer creation.
+  The item source only escaped it by touching the prop after an `await`.
+- **AN INCOMPLETE `node_modules` MOVES THE svelte-check BASELINE AND KILLS THE APP.**
+  A lane worktree missing `@shaderfrog/core` fails import-analysis on
+  `shaderBackends.js`, so the app never boots (every suite dies in setupPage's
+  `waitForFunction`) — and it reads **387/62 instead of 385/62** on BOTH base and
+  branch, so a gate measured there is meaningless in either direction. `npm install`
+  in the worktree and re-measure before trusting any number.
+- **A NAME-BASED MIGRATION MUST BE WRITER-ONLY.** 21-I1 folds duplicate scene cards
+  by NAME, which is a migration of your own library against your own project — and on
+  a JOINER it is wrong twice: ADOPTING would file your unrelated `Arena.tpscene` into
+  the host's history and broadcast it (travel would then load a world nobody in the
+  room has seen), and FOLDING is no safer, because a joiner that has not pulled the
+  host's bytes holds only its OWN copy, so the sweep hides the single file it has —
+  measured, and it left the library with zero cards. A matching filename proves two
+  files sit on one machine under one name; it proves NOTHING across two machines.
+  Local data may never disappear because a remote document reused a name.
+- **A GATE ON BYTES IS NOT A GATE ON THE DOCUMENT.** The `.tp` "scene version history"
+  switch stopped old versions' BYTES from being written while the embedded manifest
+  went on claiming every one of them, so the recipient opened a project whose rows all
+  said "Not held" — the dead-pointer shape the 21-G3 header forbids, and the very thing
+  the folder-scoped export already trimmed its manifest to avoid. When you gate what a
+  file CARRIES, gate what it CLAIMS in the same breath.
+- **A SUITE SECTION THAT SAVES OR ADDS OBJECTS PERTURBS ITS NEIGHBOURS.** A guard
+  inserted mid-file broke four later checks at once: its `/create box` broke a "four
+  objects are open" premise, and its save moved `currentLevel` away from the scene the
+  restore section reasons about. Such a section goes LAST and under its own scene name
+  — a sibling section built its own `Depot` and asserted a single-hash history that a
+  second `Depot` would have poisoned.
 - **MEASURE THE LIMIT BEFORE BUILDING THE WORKAROUND.** The backlog asked for
   chunked meshgeo to lift the 45000-float cap; two peers carried **3,000,000
   floats (12 MB) intact in 4.9 s**, because peerjs already chunks binary itself.
@@ -1487,7 +2371,7 @@ loadable play content. Everything a user does must be visible to connected peers
 - **Backticks inside a double-quoted bash string are COMMAND SUBSTITUTION** and
   silently eat the identifiers (mangled a commit message and CLAUDE.md prose
   three times in one session). Same cure as the PowerShell/emoji rule: write a
-  scratch `.cjs` and run it with node for any text containing backticks.
+  scratch `.cjs` and run it with node for any text containing backticks. COMMIT MESSAGES GO THROUGH A FILE (git commit -F), always - inline multi-line messages ate backticked words twice in one day.
 - **flowbite `Button disabled` styling can go stale until the component
   remounts** — reported three times as a blocked cursor with the field filled,
   cured by closing and reopening the modal, and NEVER reproducible headlessly.
@@ -1507,7 +2391,10 @@ loadable play content. Everything a user does must be visible to connected peers
   (in-place-mutated) THREE object never propagates — return a fresh SNAPSHOT object
   per poke (the Inspector `material` derived is the reference; adding the store as a
   dependency alone does NOT fix it). svelte-check
-  baseline is **388 errors / 62 warnings** (2026-08-18; 419 -> 417 B5 -> 391 when 17-A
+  baseline is **385 errors / 62 warnings** (2026-08-21, MEASURED on release/next after the
+  21-E merge — consolidating PointerLockControls' two camera.set calls into one
+  camera-follows-isLocked effect removed a pre-existing error, and the per-camera-looks
+  round removed another; the release.yml gate moved with it; 419 -> 417 B5 -> 391 when 17-A
   moved the demo modules out -> 388 when #20 annotated Scene's `marqueeStart`, which was
   three implicit-anys) — hold it, and RATCHET IT DOWN when a change legitimately removes
   errors; the release.yml gate hardcodes the same numbers and must move with it. Svelte 5.5x added `state_referenced_locally` (intentional one-time
@@ -1708,9 +2595,76 @@ loadable play content. Everything a user does must be visible to connected peers
 - Anything drawn with **`depthWrite: false` loses the postprocessing passes**: the
   outline and N8AO effects read the depth buffer, so the AO and selection edges of
   whatever sits BEHIND a non-depth-writing sprite get painted across its face.
+- **A projected world point at y = 0 is UNDER a terrain, so the ray through its pixel
+  can miss the mesh entirely.** Every click-driven check of the flatten picks failed
+  this way while the feature was perfect: `projectPoint([-7, 0, -7])` gave a pixel the
+  app's own raycast resolved to NOTHING (measured: `hits []`), and a pick that hits
+  nothing exits by design. Cast DOWN onto the target first, project the SURFACE point,
+  and verify both that `elementFromPoint` is the canvas and that the app resolves that
+  pixel to the intended object — the properties drawer covers the right of the viewport
+  whenever anything is selected, which is the other half of the same helper
+  (`aimAtSurfaceOf` in terrain-carve). Same family as the UV suite's "a grip must be a
+  point that EXISTS".
+- **A section that measures CHANGE must re-seed what earlier sections consumed.** The
+  carve is idempotent, so by the third section there was nothing left to flatten and
+  three checks read zero — correctly. Re-apply the noise (`reseedHills`) at the top of
+  each such section, and take the undo-depth baseline immediately BEFORE the gesture,
+  not before the setup that also records entries.
+- **THE MESHGEO CHANNEL CARRIES A TRIANGLE SOUP, so any op committing through it must
+  go NON-INDEXED first** — `applyMeshGeo` builds a fresh BufferGeometry with no index.
+  The carve handed it a fresh Terrain's 625 positions and left a non-indexed mesh with
+  625 vertices, which is not divisible by 3: three drew 208 arbitrary triangles plus a
+  fragment and the terrain shattered on screen. `enterSculpt` had the answer already
+  (`toNonIndexed()` before its first stroke, syncing the representation), and the
+  expanded count then matches the previous index count, which is the case `preserveUVs`
+  handles, so the uvs survive.
+- **A BUFFER-LEVEL check cannot see a shattered mesh, and this one shipped.** Every
+  metric the carve suite had stayed green while the mesh was garbage: vertex count
+  "unchanged" (that WAS the symptom), both peers agreeing (equally broken), one
+  message, one undo entry. The e2e skill says it plainly and it was not applied here —
+  **for any op that rebuilds geometry, assert the TRIANGLES**: count divisible by 3,
+  and no edge longer than the lattice it came from (measured 24.04m on a 1m grid with
+  the fix out, 1.62m with it in).
+- **Two different situations both produce "nothing moved", and reporting the wrong one
+  is worse than silence.** A carve that finds no terrain under the road and a carve
+  whose bed is already flat are indistinguishable if you only look at movement, so
+  `carveAlongSpline` reports the count of vertices it REACHED (tagged on the returned
+  array, the `withSlot` idiom) and the caller picks the message.
+- **A repeat carve is NOT idempotent, and a test that claims it is passes vacuously.**
+  The shoulder is a partial lerp toward the bed, so a second pass pulls it further
+  (251 columns moved, then 152): the property is CONVERGENCE, not no-op. Measure both
+  passes in the SAME unit — the first pass counted columns pre-expansion and the
+  toast counts vertices post-expansion, so 251 vs 876 read as divergence when nothing
+  had diverged.
+- **A first click that loads its module dynamically feels broken.** Both carve entry
+  points import `carveActions` on demand (to keep a static edge out of history's
+  subtree) and a cold fetch of it plus its dependency graph measured ~1.2s in dev —
+  long enough to look like a dead button, and long enough to make a 900ms test wait
+  pass while nothing had run. The Inspector PRIMES the import while a road is merely
+  selected (the moduleSDK idiom).
+- **`toJSON` ALWAYS writes the vertex buffer, so "ship it parametric" does not make a
+  scene file small.** Measured on a 48-segment terrain tile in a `.tpscene` (which is
+  a zip): a PARAMETRIC, uncarved tile is 330.6 KB raw / **116.5 KB zipped**, and the
+  same tile CARVED is 142.5 KB raw / **32.9 KB zipped** — the carved one is 3.5x
+  SMALLER, because the carve goes through `applyMeshGeo`, which rebuilds the geometry
+  from Float32 positions whose numbers stringify shorter and compress better. The plan
+  had it backwards in both directions. The only route to a few-KB template is to ship
+  no geometry at all: `{geometryParams, spline}` is **220 bytes zipped per tile** (2.1
+  KB for ten) and a node re-runs `/create Terrain` + `applyGeometry` + the carve at
+  load, since all three are pure functions of those numbers.
+- **A CARVE is a mesh edit, so it LOCKS the parametric rows** (`applyMeshGeo` stamps
+  `faceEdited`) — which is correct and worth knowing before designing a flow around it:
+  after carving you cannot nudge the seed without Regenerate discarding the carve.
 - Grid/pattern FOLLOW must snap by the **section period** (`cell × sectionEvery`),
   not by one cell: a cell-step translation maps the thin lines onto themselves but
   hops every THICK line one cell per step (15-H13).
+- **A three.js XR controller cannot be hand-posed in a test**: `renderer.xr
+  .getController(i)` returns the target-ray Group with **`matrixAutoUpdate = false`**
+  (WebXRManager writes its matrix per frame), so setting `.position`/`.quaternion`
+  and calling `updateMatrixWorld(true)` leaves `matrixWorld` at the IDENTITY —
+  every controller-ray pick then fires from the origin and misses. Set
+  `controller.matrixAutoUpdate = true` first (phase 57's VR spline checks; the app
+  path is unaffected).
 - WebXR hand joints: read them from threlte's `useHand('left'/'right')` store
   (`.current?.hand.joints[name]` — the SAME XRHand space it renders), keyed by
   HANDEDNESS. Raw `renderer.xr.getHand(SLOT).joints` by app slot index is unreliable (the
@@ -2246,6 +3200,271 @@ override for e2e — never share 5173 (the user's main-checkout server).
   (open-core: OSS ships only inert hooks — capability gate / auth hook /
   VITE_CLOUD_PLUGIN — cloud repo holds registration/rooms/roles; contract in its
   MAINTAINING.md).
+- Status (2026-08-22, later): **B7 SPAWNER MERGED; DEVX #18, THE PALETTE RULE AND THE
+  COLLECTIBLE TOOLBOX v2 ARE OPEN PRs.** `release/next` @19a8a3c carries R3a (#170) and
+  B7 (#172, the spawner — see the architecture entry). OPEN: core **#176** DEVX #18 (the
+  trigger-log handshake reply; `trigger-log-sync` 56 checks on three peers, three guards
+  proven by breaking the code, and `logic-nodes` §12 flipped in-commit because it
+  RECORDED the limitation), core **fix/palette-groups** (the two-half palette rule +
+  `palette-groups` 12 checks + `flowSockets.inputHandles`), and modules
+  **feat/collectible-toolbox-v2** (collapsible groups with group-wide trigger/scope and
+  a disabled-and-refused em-dash for mixed values, one-line rows, plus the first-sight
+  fix DEVX #18 forced — `module-collectible` 78 -> 125). **LANDING ORDER: #176 before the
+  module branch**, whose suite now asserts the joiner converges. Baseline 385/62
+  throughout. Docs: `nodes/spawn.md` + the build-a-game collectible rewrite pushed to the
+  docs repo (the pending Splines/terrain/controls edits there belong to 21-C and were
+  left alone). NEW PENDING PLANS: `health-damage-and-wave-survival.md` (both are
+  MECHANICS, so both are modules; the fork is who owns a number several peers can lower,
+  and wave survival's whole size question is whether a module can author a core `spawn`
+  node through `api.flow.addNodes` and pulse it) and `sdk-polish-module-authoring.md`
+  (DEVX #16/#17, a batch setNodeData held pending evidence, and a recorded ruling that
+  `api.spawn` should NOT exist). B8 Towers deliberately NOT started — the user verifies
+  this batch first. MEASURED and worth keeping: a bulk group edit over 20 collectibles is
+  2.8ms and 20 `nodedata` messages (autosave.markDirty is debounced, so a synchronous
+  loop pays ONE serialize), so no batch seam is needed for performance — but
+  `setNodeData` records no undo entry, so one press can touch sixty nodes with no way
+  back, which is the real reason to want the batch.
+- Status (2026-08-22, latest): **21-G ROUND 3 — COLLECTIBLES v3 IS A MODULE. R3a (core
+  seams + the extraction) and R3b (the module) BOTH SHIPPED**: core PR #170 on
+  `feat/sdk-game-seams` (`6e994d1` the seams + migration, `78899d2` the toolbox
+  follow-ups) and modules PR #1 on `feat/collectible`. Baseline **385/62** at every
+  commit; build green. THE RULING, worth not re-litigating: **framework stays in core,
+  mechanics become modules** — nothing collectible had SHIPPED, so extraction was cheap
+  then and dearer later, and the SDK seams it forced are good for every module author
+  (the 17-A playbook). What LEFT: gameRecipes/recipeDialog/CollectibleDialog, the
+  `collectcount` node + its chain walk, hudActions' "showleft", the debug pill's counts
+  line + its `variable` field, and the node editor's pane-menu recipe injection. What
+  STAYED: every primitive they stood on. New SDK surface + the `trigger` ctx are in the
+  Module SDK section; the toolbox pair (`sidebar: false` + openToolbox/closeToolbox/
+  toggleToolbox) is in the moduleToolboxes entry. Suites: NEW `sdk-game-seams` (40, two
+  peers) covering every seam incl. the counterfactual that the migrated pieces are GONE;
+  `module-toolbox` grown to 46; `helpers.makeCollectibleChains` is the 7-node chain as a
+  FIXTURE, and collectibles-v2 (70) / game-loop-v2 (63) / v3 (27) / v4 (18) /
+  game-presence (62) / peer-variables (72) / scene-folders (38) were rewired onto it,
+  their recipe-UI sections flipped to assert the migration and their collectcount
+  readings derived from latch `flowValues` (FILTER those ids against the live graph — a
+  wipe or a scene swap must drop them). Module side: ONE `collectible` node
+  (variable/scope/trigger click|touch/radius/respawn/hide + perRound + whilePlaying),
+  touch = per-peer self-proximity, stamp-edge counting that SEEDS-WITHOUT-COUNTING on
+  first sight, `collectiblecount` reading BOTH the module shape and legacy chains, the
+  manager toolbox (rows/live counts/inline edits/make-selection-collectible), and NO
+  `registerStateSync` because every bit of state was already replicated — suite
+  `module-collectible` 82 checks on the real zip across three peers incl. the late
+  joiner. **DEVX #18, the one core follow-up worth doing: the flow TRIGGER LOG has no
+  handshake reply**, so a peer joining mid-round sees collected objects back on the
+  table — pre-existing (the 21-F recipe stood on the same stamps), asserted in the
+  module suite so a core `gettriggers`/`triggers` pair would flip it loudly. OWED
+  on-device: the manager in non-dark themes and as a <=640px sheet, touch radius feel in
+  VR, a 3+ player per-player scramble. Plan: cloud `plans-core/roadmap-21g-projects-
+  presence.md` ROUND 3 REVISED.
+- Status (2026-08-21, latest): **ROADMAP 21-G — PROJECTS, CROSS-SCENE PRESENCE,
+- Status (2026-08-22, latest): **21-G ROUND 2 — DCC-STANDARD PROJECTS (G7-G10 + docs)
+  EXECUTED same-day off release/next @6d9b285 (post #164-#166; baseline re-measured
+  pristine 385/62, held at every commit). FOUR PRs OPEN against release/next, NONE
+  merged (awaiting the user's word), landing order #169 (G9 identity: manifest `name`,
+  the sceneIdentity window title with the ONE-serialization-per-session dirty check,
+  the hash-keyed open-scene accent, saves into the active folder) -> #167 (G10 fork 14:
+  inline scene naming + the grid inline card + the roots resizer; window.prompt gone
+  from the save paths) -> #168 (G8 forks 11+12: PROJECT_FORMAT 2 = the WHOLE Explorer
+  in a .tp, the [TP|Scene|GLTF|cog] picker, OPEN-replaces behind a warning vs
+  IMPORT-as-folder, .tpscene opens UNSAVED with the first-edit save-into-project
+  prompt + the travel-away publish gated on the marker) -> #171 (G7 forks 10+13: the
+  hidden version shelf in explorer.js with itemByHash searching both lists,
+  hideOldVersions reconciling BOTH directions incl. unhide-the-pointer, keep-N
+  Settings with 0 gating only the UNASKED cut, manifest labels, VersionHistory.svelte
+  in the Explorer's REAL properties panel — the Inspector 'file' block is DEAD
+  SURFACE, and the restore checkpoint must publish BEFORE the re-append or travel's
+  own publish strands the pointer on it, suite-pinned).** Two merge-tree-measured
+  unions at landing: G10 takes G9's activeLibraryFolder() at the two save call sites;
+  G8+G9 share autosave's markDirty (dirtyPulse + the dirtyOnce one-shots); G7's
+  clearLibrary union adds one hiddenItems line. Suites: scene-identity(51)
+  explorer-inline-input(38) project-open-import(36) scene-versions(68) + project-file
+  updated to OPEN semantics; docs-site projects.md committed there (72d14c7);
+  build-a-game touch-ups ride the parallel round-3 session's uncommitted rewrite.
+  As-built + owed-on-device: cloud `plans-core/roadmap-21g-projects-presence.md`.
+- Status (2026-08-21): **ROADMAP 21-G — PROJECTS, CROSS-SCENE PRESENCE,
+  PER-PLAYER PROGRESS: G1-G6 EXECUTED same-day off the 21-F merge (release/next
+  @fdfbe39); MERGED 2026-08-22: PRs #164 -> #165 -> #166 to release/next @f126b85 (both lane merges landed CLEAN - G1 was already both branches' base - and the App.svelte hook counts held 164/164). ROUND 2 (G7-G10, DCC-standard projects: hidden version history + panel, the TP|Scene|GLTF menu with open-replaces vs import-furnishes, project/scene identity, inline naming) and ROUND 3 (the collectible NODE + manager toolbox) are PLANNED with locked forks 10-20 in the same plan doc, executing in parallel windows.** The user's four fork
+  answers locked in the plan (per-player mode + peer-owned vars; recipes into the
+  node editor's Game category with the object Game submenu REMOVED; the folder is
+  `Scenes` with kind-based discovery; file sharing stays manifest-scoped). Lanes:
+  **feat/21g-editor** (G1 `554128c`, Opus — Scenes rename, Download, the pack-ROW
+  rename root cause, recipe re-homing incl. the empty-flow-overlay contextmenu
+  forward, + a pre-existing fix: `hudrows` missing from CORE_NODE_TYPES, red on
+  release/next) · **feat/21g-manifest** (G2a `06fec6c` the manifest core · G2b the
+  travel-away auto-save/travel-by-name/update dot/prune — THE REPORTED
+  disappearing-object bug dead, idle hops mint nothing · G3 `a0e2455` the .tp file,
+  Opus · G5-core `38277b4` + peerRoster — the scenePresence bridge · G6 game-loop-v4)
+  · **feat/21g-peervars** (G4 `f5934d7`, Opus — peerVars/perPlayer/leaderboard),
+  merged into the manifest lane (peerHandler + App.svelte unions; the count
+  assertion caught a POSITIONAL miss — the destructure is positional, a missing
+  binding shifts every later one). Cloud repo: the rooms plugin publishes
+  {scene, members, invites} + the 30s presence poll (`bd95237`); **USER must add PB
+  fields rooms.scene/members/invites** (pocketbase-setup.md). Suites:
+  project-manifest(26) project-file(48) peer-variables(74) scene-folders(44)
+  scene-presence(11) game-loop-v4(18, first-run green). Baseline 385/62 at every
+  commit. KNOWN: the setvariable-add race flaked collectibles-v2 once (75/76,
+  76/76 twice on re-run) — the standing ticket; G4's peer-owned rows are the fix
+  for the per-player case. OWED on-device: the project round-trip feel, cross-scene
+  presence + invites on real cloud rooms (after the PB fields land), a 3+ player
+  leaderboard, the Scenes/Download/recipe UI in non-dark themes. Plan + as-built:
+  cloud `plans-core/roadmap-21g-projects-presence.md`.
+- Status (2026-08-21, later): **ROADMAP 21-F — LEVELS, COLLECTIBLES v2, HUD EDITOR
+  POLISH: F1-F6 EXECUTED across three lanes; F7 (cross-scene presence on the rooms
+  layer) deliberately slipped to 21-G per the plan.** Baseline re-measured 385/62 on a
+  pristine worktree at c44f84f before anything started (the gate was already
+  ratcheted), and held at EVERY commit. Lanes off c44f84f: **L-A
+  `feat/21f-hud-editor`** (F1 `6096a25` the toolbar/marquee/arrange + F5 `60cee2e` the
+  minimap colour rule + facing) · **L-B `feat/21f-collectibles`** (F2 `7aea87e`
+  collectibles v2 + F3 `1bab3a2` counts/presence/rejoin/admin-reset) · **L-C
+  `feat/21f-levels`** off F2's commit (F4a `05600d1` the level assets + local travel ·
+  the two lane merges with the App.svelte debugStores UNION — the count assertion
+  CAUGHT a mis-fold, 160/161, exactly what it exists for · F4b `c8060af` the travel
+  node / allplayers / debug element · F6 `f4cc0f9` the game-loop-v3 acceptance).
+  Suites: hud-editor-tools(57) collectibles-v2(76) game-presence(66) scene-levels(41)
+  game-loop-v3(26) + hud-content grown to 160; re-run green around every touch:
+  hud-editor family(143), hud-kinds(40), hud-actions(65), logic-nodes, game-state,
+  game-loop-v2(63), session-scene-data(27), workspace-restore(20). REVIEW-LOOP FINDS,
+  each fixed before its commit: the Infinity push/pull cutoff split (a 1-in-3 flake
+  root-caused to a real unbounded-banking bug), the Delay-sourced-from-Once respawn
+  trap (a red suite found it), the artboard native text-drag hang, the minimap's
+  hardcoded-green self dot, the eaten rejoin press, and the 4ms stale-stamp suite
+  race (the guard was RIGHT — the suite settles now). The must-not-regress fixture
+  (collect → Esc → visible again + object-list hide works) is collectibles-v2 section
+  1, proven by breaking the gate. KNOWN pre-existing, ticket-worthy: `setvariable`
+  `add` is a per-peer read-modify-write (see the gotcha). PRs open against
+  release/next, landing order L-A → L-B (App.svelte union at landing) → L-C; NOT
+  merged without the user's word. OWED, because headless cannot judge it: the guide's
+  playthrough incl. travel on real peers, minimap colours on three-plus peers, the
+  debug element and the new toolbar/dialog in non-dark themes, the marquee's feel on
+  a real pointer, and the confirmation that "equalize takes the FIRST pick's size" is
+  the right reference. Plan + as-built: cloud
+  `plans-core/roadmap-21f-levels-and-polish.md`.
+- Status (2026-08-21): **ROADMAP 21-E — GAME HARDENING, ALL EIGHT PHASES EXECUTED AND
+  MERGED — PRs #158/#159/#160 to `release/next` @2d8af51.** Baseline **385/62** measured
+  on the merged head; the release.yml gate ratcheted with it. Each lane PR took a
+  release/next merge before landing; the PLC conflict resolved ONCE and reused (a
+  `git checkout feat/21e-content -- PointerLockControls.svelte` — the same three-way
+  resolution, not a second attempt at it). Built
+  across three stacked lanes off release/next @9be9ecd (post #156/#157; baseline
+  re-measured 386/62 there — consolidating PLC's camera
+  swap removed a pre-existing error). Lanes: `feat/21e-editor` (E1 9f2a9c9 + E2
+  1c7e156) → `feat/21e-input-menu` (E3 b46e477 + E5 395b646) → `feat/21e-content`
+  (merge c27d214 + E7 ea46a7d + E8); parallel `feat/21e-logic-nodes` (E4 5f302e7 +
+  22ef9c1) → `feat/21e-controller` (E6 a297118 + the stamp guard 5fb18e2), merged
+  into content. THE MERGE captured a composition gap both suites missed (walk-vs-pad,
+  now a gotcha). Suites: hud-editor-wysiwyg(51) hud-screen-model(46)
+  play-menu-mode(32) logic-nodes(77) gamepad-input(61) char-controller(58)
+  hud-content(132) + extended hud-actions/game-state/flow-physics-actions/
+  hud-play-keyboard and the game-loop-v2 acceptance. Review-loop finds fixed along
+  the way: the DEAD keypress key-down handler (DEVX #8 family), random.reroll
+  (count→stamp seed), the stale-stamp adoption family, three E7 bugs (duplicate
+  {#each} key downing the pane; loadedModules naming race; number-coercion on text
+  channels). OWED: the user's on-device pass per docs-site `build-a-game.md`'s
+  "what to feel for" list (re-lock in Chromium+Firefox, real gamepad, pack kinds in
+  non-dark themes, jump-vs-menu precedence under a real lock).
+
+- Status (2026-08-19): **ROADMAP #21-A IS COMPLETE — A6+A7 (PR #152) and A8 (PR #153)
+  merged to `release/next` @f289f79**, closing the batch #149/#150 opened. Both phases were
+  already IMPLEMENTED on their lanes when this session went looking, so the work was
+  LANDING them: merge `origin/release/next` in, re-gate at the new 387/62, run their suites,
+  PR. **A6** (`feat/21-scene-data-games`, with A7 + 21-C's C5, which A7's game cards read):
+  a `.tpscene` now carries the scene's LOOK and RULES — environment/physics/music/hud/
+  modules, each null-when-default and OMITTED rather than written as null, so a plain
+  scene's session.json is byte-identical to a pre-A6 one and `SESSION_FORMAT` stays 1;
+  `moduleRequirements.js` derives the needed modules from what the scene USES (walk
+  allNodes -> moduleNodeGroups) in the handshake's own `{id,version}` shape; the import
+  prompt runs before any restore loop so a cancel mutates nothing; and A6.4's
+  `UnknownNode` + ONE rewrite of Nodes.svelte's type map fixed three bugs at once (a
+  NON-REACTIVE `get(moduleNodeGroups)` read, so a module installed after the dock mounted
+  rendered as xyflow's bare card — which broke the GOOD case and is exactly what a game
+  template does; module types spread LAST, so a module silently SHADOWED a core type; and
+  no explanation for a type nothing defines). **A8** was CHERRY-PICKED out of the 21-B
+  stack onto its own branch (`feat/21-a8-post-play-mode`) so 21-A could close without
+  waiting on 21-B: the composer mounts in play mode, both editor outlines stand DOWN while
+  playing, and with no stack passes and no outlines there is nothing to composite so the
+  frame goes DIRECT (which also restores the renderer's own tone mapping — the composer
+  path is measurably where it stops applying). Suites: session-scene-data, template-modules,
+  flow-unknown-node, templates-modal, post-play-mode (pixel: 921600 changed pixels, 0 off
+  the effect's fill), plus hud-persist/hud-nodes/game-state re-run because the merge
+  touched Nodes.svelte/sessions/autosave. Baseline **387/62**, build green. THE MERGE
+  RESOLUTION worth remembering: sessions/autosave/App.svelte were pure unions, but
+  `Nodes.svelte` was a REAL merge — A6.4 had restructured the very map 21-D extended, so
+  the HUD/game types fold into `CORE_NODE_TYPES` and 21-D's `...moduleTypes` spread is
+  DROPPED from it, because A6.4 moved that spread out on purpose and leaving it would
+  restore the shadowing bug. What is left of roadmap 21: **21-B** (`feat/21-physics-play`,
+  actively in flight elsewhere), **21-C** (C1-C4 on `feat/21-terrain-road`; C6-C9 unstarted
+  and living in the modules/scenes repos).
+- Status (2026-08-18, latest): **ROADMAP #21-D — HUD INTERACTION + THE GAME SHELL,
+  ALL EIGHT PHASES EXECUTED AND MERGED — PR #151 to `release/next` @af62820** (after
+  #149 and #150 landed 21-A). Branch `feat/21d-hud-interaction` off `feat/21-hud`, worktree
+  `../theprototype-lane-shader` @5201, 8 commits: D1+D2 `1adf06c` (the element registry
+  + per-kind params + the sidebar palette with the GraphTree grip) · D5 `fe5c6c5` (the
+  HUD hidden while authoring; a doc keyed by a CAMERA uuid) · D6 `23137ff` (the game
+  shell: state/cameras/variables) · D7 `5a346df` (actions: the closed loop) · D8
+  `5087151` (the game-loop acceptance test) · D3 `bd72a4a` (the DCC-standard picker) ·
+  D4 `5c4b8ad` (slider/toggle/dropdown/textfield + the shared-value channel) · D4b
+  `ab6c5fa` (actions for the input kinds; a toggle that fires). ONE lane, not the three
+  the plan's table proposed — the phases share `hudDocs`/`hudActions`/the node catalog
+  so heavily that a split would have spent its budget on merges. **The user's scenario
+  works end to end on three peers**, driven through the real UI: place a Start button
+  from the palette, assign three actions from the HUD editor alone (all sharing ONE
+  press node), click it, and both peers' state flips, both views move to the play
+  camera from the REPLICATED state with no camera message, and the menu gives way to the
+  in-game HUD; a late joiner lands on the playing screen through `showWhile` and is
+  caught up by `syncGameCameraNow`. The score display is `counter -> hudtext` and needed
+  no new code. Suites (13, green on a freshly restarted server): hud-core(47)
+  hud-sync(21) hud-persist(23) hud-play-keyboard(23) hud-nodes(24) hud-editor(34)
+  hud-kinds(40) hud-visibility(23) hud-picker(27) hud-inputs(39) game-state(40)
+  hud-actions(38) game-loop(26). Baseline **387/62** at every commit (one BELOW 388),
+  build green. THREE guards proven by BREAKING the code: the armed eyedropper click
+  (with the early-return gone it selected the element and bound nothing), the
+  local-by-default value gate (the peer read 33), and the shader-redo bug measured
+  before it was fixed in 21-A. THREE bugs found on the way, all now in the gotchas: the
+  **GLTFExporter options being `parse()`'s 4th argument** — so `onlyVisible` defaulted
+  TRUE and a locally hidden object was a DELETE for every late joiner — a camera latch
+  set on intent rather than success, and `hudscreen` silently rendering nothing when
+  given a screen NAME. PRE-EXISTING reds confirmed by A/B in a throwaway worktree at
+  `origin/release/next`: `script-nodes` and `flow-object-embed` fail identically on
+  base. OWED, because headless cannot judge it: the FEEL of the eyedropper and the
+  action picker, the new input controls in NON-DARK themes, the game loop in VR (the
+  HUD layer is DOM, desktop-only by design), and one judgement to confirm — an input
+  value is LOCAL by default with `shared` as a per-element opt-in. Plan + as-built:
+  cloud `plans-core/pending/21-d-hud-interaction-game-shell.md`.
+- Status (2026-08-18, later): **ROADMAP #21-A — lanes L1 and L2 MERGED, PRs #149 (L1) and
+  #150 (L2) to `release/next`.** The two lanes conflicted in exactly the ONE file
+  `git merge-tree` predicted — App.svelte's debugStores lines — resolved as a UNION with the
+  array/destructure/store-object counts asserted equal afterwards (141/141), which is the
+  whole point of that gotcha. Plan: cloud `plans-core/pending/21-a-hud-and-sdk.md` (parent
+  `roadmap-21-games-hud-physics.md`). flowRuntime, flowSockets, nodeCatalog and
+  AnimationNode all auto-merged despite both lanes touching them. **L1 `feat/21-module-node-io`** (worktree `../theprototype-lane-flow` @5200,
+  3 commits): `c48d1bc` the `'text'` param kind as its own commit so L2 could
+  cherry-pick it · `87ee0cc` **A1** module node I/O · `ff23502` **A5** the module toolbox
+  seam. **L2 `feat/21-hud`** (worktree `../theprototype-lane-shader` @5201, 4 commits):
+  `5fbd6a9` the cherry-pick · `9e34f6c` **A2** the HUD system core · `160d30f` **A3** the
+  HUD node group · `ae3398e` **A4** the HUD dock tab. Baseline **388/62 at every commit**
+  (re-measured on the pristine worktree first — the plan said 391/62, which #20 had
+  already ratcheted down); build green at every commit. Suites: `module-node-io` (42, two
+  peers), `module-toolbox` (37), `hud-core` (47), `hud-sync` (21, three peers + a late
+  joiner), `hud-persist` (23), `hud-play-keyboard` (23), `hud-nodes` (24, two peers),
+  `hud-editor` (34). Three guards proven by BREAKING the code: A1's socket fix asserts
+  its counterfactual in-test (declarations stripped in the page, the same three wires
+  re-offered, reading effect/refused/refused), the autosave dirty subscription was
+  removed and read `dirty=false`, and the shader-redo bug was measured before it was
+  fixed. **The plan's CANNOT-SHIP RISK is cleared**: `claimInput('keys')` only gates a
+  per-frame movement task and editorNavigation, NOT the `onKeyDown` that owns Escape, so
+  the claim can never strand a player — the real hazard was our own window-CAPTURE
+  handler, so the HUD never consumes Escape, asserted by watching it reach the bubble
+  phase unprevented AND by play mode actually exiting with a screen up. THREE bugs fixed
+  on the way, all in the gotchas: shader-graph redo, `NodeWrapper`'s missing
+  `'Object Flow'` accent, and the artboard overflowing its dock. Separate repo, separate
+  commit: modules `cb6dc83` marks DEVX #9/#12 + the UI surface SHIPPED and closes #10.
+  A6/A7 (L5 templates) and A8 (the composer in Play mode) were NOT touched. OWED,
+  because headless cannot judge it: the FEEL of the HUD editor (drag/snap, and whether a
+  16:9 stage is the right authoring reference), the HUD in NON-DARK themes, driving a
+  keyboard menu under a real pointer lock, and a module toolbox on a phone; plus one
+  judgement call to confirm — a module toolbox defaults to HIDDEN in Play mode unless it
+  passes `playMode: true`.
 - Status (2026-08-18): **ROADMAP #20 MERGED + v1.6.0 — PRs #146 and #147 to
   `release/next` @944eb8d.** Editor ergonomics, units, workspace restore, the graph
   tree. Plan + as-built: cloud `plans-core/roadmap-20-editor-ergonomics-units.md`.
@@ -2401,6 +3620,55 @@ override for e2e — never share 5173 (the user's main-checkout server).
   proportional TRANSLATE never replicates its falloff neighbours — the only
   user-visible one. 19-A's P6 (connect/dissolve/fill-hole/edge-slide/solidify/
   separate) and P7c (vertex-bevel segments + the mitered corner) stay PARKED.
+- Status (2026-08-19): **21-C1..C4 TERRAIN + SPLINES — branch `feat/21-terrain-road`
+  (lane `../theprototype-lane-spline` @ port 5203), 8 commits, MERGED to release/next.**
+  Plan: cloud `plans-core/pending/21-c-games-content.md` (C1-C4). **C2** is the PORT of
+  phase 57 (`feat/spline-tool` @6be9f8a cherry-picked, three conflicts, all in the
+  places the plan predicted) with the post-1.2.0 adaptations: SplineToolbar on the
+  shared ToolboxWindow, DragRow numbers, and the plan's registerEditProxy /
+  editOverlays worries MEASURED as not applicable (every handle is scene-root, so a
+  save taken mid-session carries none of them). **C1** procedural terrain: `noise.js`
+  (value-noise fBm, NO transcendentals) + a `build` HOOK on GEOMETRY_PARAMS, which is
+  the whole replication story — the existing geometry message (~240 bytes), the
+  existing history kind, and userData riding toJSON + GLTF extras. **C3** the carve.
+  **C4** shipped derived lap gates and then **the lap half was REMOVED from core** at
+  the user's prompting: a "Road" menu on every spline served one game, and an
+  installable module cannot import core anyway, so the race module owns that maths
+  (code at 233c707). What core keeps is FLATTEN, a category with both directions —
+  ground-to-spline and spline-to-ground — each choosing its partner by a viewport
+  CLICK (the snapAnchorPicking shape, one Scene intercept for both).
+  Suites: terrain-procedural (49), terrain-carve (45), spline-tool (57). Baseline
+  **387/62** at every commit (release/next ratcheted its gate to 387 the same day);
+  build green. Docs: `splines.md` (new) + a rewritten `terrain.md` in
+  theprototype-docs — NO new flow nodes in this lane, which is why there are no new
+  node pages. Four findings worth not re-deriving, all in the gotchas above: the
+  meshgeo channel carries a triangle SOUP (an indexed terrain handed to it shatters,
+  and every buffer-level check stayed green over the wreckage); `toJSON` always writes
+  the vertex buffer, so a PARAMETRIC tile costs 116.5 KB zipped against a CARVED
+  tile's 32.9 KB and the only few-KB route is to ship 220 bytes of seed and rebuild at
+  load; a carve stamps faceEdited, so it locks the parametric rows on purpose; and a
+  repeat carve is not idempotent but CONVERGENT (251 columns, then 152).
+  OWED: the user's on-device VR pass on spline editing, the 21-C plan write-up (C1-C4
+  as-built + the parked lap spec for C8), a "flatten into all terrains" pass for the
+  Race ring, and the parametric-vs-carved decision for the Race template, which the
+  measurement above answers but the user has not yet ruled on.
+- Status (2026-08-19): **PER-CAMERA LOOKS — branch `feat/camera-looks` (lane
+  `../theprototype-lane-post` @ port 5198) off release/next @1cbfeec, 3 commits, NOT
+  pushed.** `b3de92e` keyed the post documents so a look can belong to a camera (see
+  the `scenePost` entry); `8f93e49` added the **Set Look** node; `a9391fe` fixed it
+  announcing itself as a missing module (the two-registry gotcha above). Suite
+  `camera-looks` (41 checks: keyed documents, composition following the active camera,
+  append/replace, undo keyed to its own document, a REAL .tpscene zip round trip, two
+  peers, the node, and the two user reports as regression tests). **Baseline on this release/next is 386/62, NOT 391** — release.yml gates
+  `-gt 387`. Roadmap 21 had already shipped several things this plan listed as future
+  work: `postBackends.js`, `api.registerPostEffect`, `api.registerPostBackend`, the
+  composer running in PLAY mode, and `viewportOverrides` gaining a `hud` key (the
+  "add a key, not a concept" design used as intended). L6's only contact point is
+  confirmed: `FLOW_FAMILY` is `['flow','flowcode','animation','uv','shader']`, so the
+  post domain appends `'post'` plus a DockTabs entry. OWED: the user's feel pass, a
+  decision on the Set Look design fork (see below), CLAUDE-adjacent docs-site pages,
+  and a node that drives an effect PARAM per frame — which needs a live `applyParams`
+  seam per kind first (the `applyLocal` shape), or the composer rebuilds 60x/s.
 - Status (2026-08-18): **SCENE LOOK / POST-PROCESSING — branch `feat/scene-post-stack`
   (lane `../theprototype-lane-post` @ port 5198), 8 commits, release/next merged in
   CLEAN, baseline 391/62 at every commit, NOT PR'd.** Plan: cloud
@@ -2423,6 +3691,41 @@ override for e2e — never share 5173 (the user's main-checkout server).
   Watch-adopts-look: cloud `plans-core/pending/post-camera-looks-and-shader-integration.md`.
   The two lanes conflict in exactly TWO files (`App.svelte` debugStores,
   `peerHandler` dispatch) — measured with `git merge-tree`; everything else auto-merges.
+- Status (2026-08-19): **21-B PHYSICS PLAY — B1-B6 + A8 EXECUTED**, lane
+  `../theprototype-lane-post` @ port 5202, branch `feat/21-physics-play` off
+  release/next @803d040, 13 commits, NOT PR'd. Plan: cloud
+  `plans-core/pending/21-b-physics-play.md`. Baseline **388/62** at every commit
+  (roadmap 20 dropped it from 391 — re-measure on a pristine worktree, do not
+  trust the number in an older plan). B1 scenePhysics v2 · B2 the throw-velocity
+  leaf + the Euler/clamp fixes · B4 ground + out-of-bounds + the parameter
+  shortlist + the Inspector's ONE Physics section · B3 play mode becomes INTERACT
+  mode (`playInteract`/`playSettings`/PlayReticle, DEVX #13+#14) · B5 the
+  `{type:'throw'}` message + the grab claim · B6 five core physics nodes
+  (impulse/setvelocity/onrest/measure/joint) + `random` seed + `motor` side ·
+  A8 the composer in Play mode. Then four user-reported rounds: the node cards
+  said nothing about their sockets, the Object Selector had NO OUTPUT HANDLE (a
+  200-phase gap — see the gotcha), a stopped simulation failed silently, and a
+  peer-to-peer throw looked like 10 fps on the watching peer (`moveSmoothing`).
+  Suites: scene-physics-state(30) · throw-velocity(24, mostly no browser) ·
+  physics-ground-bounds(29) · play-interact(38) · throw-peer(20+, two peers) ·
+  flow-physics-actions(26, two peers) · post-play-mode(15, pixel). Docs: five new
+  node pages + random/motor/physics.md updated. B7 (spawner) and B8 (Towers) are
+  NOT started — B8 executes in L6. **OWED: the user's feel pass** (carry weight,
+  throw calibration, VR) and a decision on `play.interaction` defaulting to
+  'grab' (it is inert unless a simulation runs — asserted) and on
+  `damping.angular` defaulting to 0.05.
+  **STANDING PRE-EXISTING REDS, A/B'd against base 803d040 and NOT from this
+  work**: flow-physics-nodes, physics-discoverability, physics-kinematic (base
+  fails one MORE), flow-customnode-io and dungeon-play (identical 16 passes then
+  the same click timeout on both sides). collider-live is NOT one of them — it
+  only fails on a stale dev server.
+  **ONE UNEXPLAINED, reproducible**: a literal KEY PRESS in the seconds after a
+  peer joins does not drive a physics action, while the trigger stamp is fresh,
+  the graph keeps its nodes AND edges, the selector still names the object, the
+  body is dynamic and unheld, a nodetrigger goes out, and a direct applyImpulse
+  hops the same body. flow-physics-actions section 6 drives the trigger through
+  `applyNodeTrigger` (the same entry point) and says so; the same key press works
+  before the join and in every single-peer section. Deserves its own ticket.
 - Status (2026-08-18, later): **SH6b CLOSED BY MEASUREMENT** — `shader-scene-default`
   (17 checks) covers the scene default at 24 objects and records why the planned
   compile-once-and-clone is NOT built: 0.73-0.88 ms per object, programs already deduped
@@ -3208,7 +4511,53 @@ code} lands in the replicated customNodeDefs store as `mod-<moduleId>-<key>`
 points (desktop mouse NDC / VR pointer hand via vrControls.pointerHandRay,
 handedness-resolved; FRESH instance per call; null before the first pointer event);
 the drag recipe = click to pick → follow pointerRay() in a frame task → click to
-drop. A module KIND that must agree across peers derives from the replicated object
+drop. **21-A additions** (DEVX #9 + #12, and the module UI surface):
+`registerValueNode(type, fn, {vtype, inputs})` — a node that OUTPUTS a value, so
+module state can drive core nodes (a score into HUD Text, a level into Map Range). `fn`
+MUST be a pure function of (data, time, {id, graphId}), the script-node rule: values
+are never sent, every peer evaluates the node itself, and reading unreplicated local
+state desyncs every downstream consumer with NO error anywhere;
+`fireNodeTrigger(type, match?)` — pulse your own EVENT nodes, REPLICATED like
+`fireObjectClick`, so call it on ONE peer or a Counter counts it once per peer;
+`registerEffect` gained an ADDITIVE 5th arg `{id, graphId}` (a four-parameter effect is
+byte-unchanged) and an optional `{inputs}` — DECLARE your node's typed named inputs or
+every handle reads as `'number'`, which refuses an Object Selector wire and renders no
+target socket at all; `registerToolbox({id, title, mount, playMode?, shortcut?})` — a
+real UI surface over ToolboxWindow (see the moduleToolboxes entry). `NodeParam.kind`
+also gained `'text'`, which writes on COMMIT (change/blur) and never on `input`,
+because a node edit replicates the WHOLE node.
+**R3a additions — THE GAME SEAMS** (roadmap 21-G round 3; collectibles v3 is a MODULE,
+so core's job is seams plus the 17-A extraction ritual): `api.game.{roundCutoff,
+roundUnderway, playActive, getVar, setVar}` (the round reads perRound content gates on
++ the shared game variable); `api.peerVars.{setMine, mine, all}` (peer-owned rows, ONE
+writer per row BY CONSTRUCTION — this api only ever writes YOUR row, which is what makes
+per-player counting immune to the shared-add race); `fireNodeTrigger(type, match,
+{replicate:false})` (the per-player LOCAL pulse, stated by the CALLER because a module
+spells its scope its own way and `replicatesPulse` only knows `perPlayer`);
+`api.playerPosition()` (the viewer camera as [x,y,z] — a touch trigger's self-proximity
+read, no sim involved); `api.selectObject`/`selectedUuids` (the SET, never the sticky
+primary); `api.flow.{nodes, edges, nodeValue, triggerStamp, setNodeData, addNodes}` —
+graph reads are DETERMINISTIC because the graph is replicated (treat them as replicated
+state, the value-node rule), `nodeValue` is how a module reads a CORE Latch's
+round-aware state instead of reimplementing it, and `addNodes` is the recipe path
+verbatim (nodecreate/edgecreate per item + ONE `flownodes` undo entry + canonical
+handle-qualified edge ids); `api.hud.registerDebugLine(fn)` + `registerAction(entry)`
+(the debug pill's line and a hudActions catalog entry, both held in the
+`moduleHudKinds` LEAF because hudActions reaches the history family and moduleSDK may
+not import it — moduleSDK writes the leaf, hudActions reads it, the moduleToolboxes
+rule). **THE ONE THAT MAKES THE REST WORK**: module effect AND value ctx now carry
+`trigger: {stamp, age} | null` — the node's OWN trigger-log entry ALREADY folded
+through the round rules in CORE (`moduleTriggerInfo`/`freshStamp`), so a module stamps
+`perRound` on its node data and never does round arithmetic; `whilePlaying` likewise
+generalised from the Visibility node to ANY effect node, so a module that hides an
+object inherits the restore-loop hand-back (manual visibility wins outside play) rather
+than reimplementing the 21-F2 fix wrong. FRAMEWORK STAYS, MECHANICS LEAVE — that is the
+line, and it is the industry's (Unreal ships GameMode/GameState/PlayerState in the
+engine and pickups in the marketplace): a Game-category node stays core if it is SHELL
+(state, round, time, variables, per-player rows) and becomes a module if it encodes a
+MECHANIC's shape. `collectcount` was the one node in that group that knew a content
+shape, and it is gone.
+A module KIND that must agree across peers derives from the replicated object
 NAME, never locally-set userData (essentials + car). User modules (zip/URL via the
 manager) must be self-contained — no imports; guide in `MODULES.md` + the public
 docs site (module-sdk.md / module-package.md).

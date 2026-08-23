@@ -67,7 +67,9 @@ api.registerNodeGroup(
 				defaults: { amplitude: 0.4 }, // seeds node.data, replicated with the node
 				params: [                     // optional: auto-generated controls
 					{ key: 'amplitude', kind: 'range', min: 0, max: 1.5, step: 0.05 }
-					// kind: 'range' (min/max/step) or 'select' (options: [...])
+					// kind: 'range' (min/max/step), 'select' (options: [...]), 'toggle',
+					// or 'text' (placeholder?, maxLength?) — a text param writes on COMMIT
+					// (change/blur), never per keystroke: a node edit replicates the whole node
 				]
 			}
 		]
@@ -95,6 +97,112 @@ Effects run when an edge connects your node to an Object Selector node. `time`
 is wall-clock synced across peers (when "Sync animations" is on), so pure
 functions of `(data, time)` stay identical everywhere. Don't accumulate
 (`rotation.z += ...` breaks determinism) — always compute from `base` and `time`.
+
+An effect takes an optional **5th argument** `{id, graphId}` — its own node id and
+the graph it sits in, so one module can host many instances of the same node type.
+It is additive: a four-parameter effect is unchanged.
+
+```js
+api.registerEffect(
+	'wave',
+	(object, base, data, time, ctx) => {
+		// ctx.id = this node's id, ctx.graphId = 'scene' or the owning object's uuid
+	},
+	{ inputs: { who: 'object' } } // optional: typed named inputs, see below
+);
+```
+
+### Value nodes: your state into core nodes
+
+A node that **outputs a value**, so module state can drive core nodes — a score into
+a HUD Text, a level into Map Range, a flag into a Gate.
+
+```js
+api.registerValueNode(
+	'score',
+	(data, time, ctx) => Number(data.base ?? 0) * Number(data.mult ?? 1),
+	{
+		vtype: 'number',        // output socket type; also boolean/vector3/color/object/event
+		inputs: { mult: 'number' } // typed named inputs, resolved BEFORE fn runs
+	}
+);
+```
+
+**The evaluator MUST be a pure function of its arguments** — the same rule Script
+nodes follow, and the one way to break a session silently. Values are never sent:
+every peer evaluates the node itself from the replicated node data and the shared
+clock. Read unreplicated local state here (a mouse position, a plain module `Map`,
+`Math.random()`) and every downstream consumer diverges per peer with no error
+anywhere. Keep mutable state in a replicated place — `registerStateSync` /
+`api.send` — and read *that*, or let the value ride the node's own `data`.
+
+`inputs` matters more than it looks. Without a declaration every handle types as
+`number`, which **refuses** an Object Selector wire (`object -> number` is not a
+coercion) and renders no target socket on the card at all. `data.<handle>` is the
+wired value when wired and the node's own param when not. `registerEffect` accepts
+the same `{inputs}` option.
+
+### Firing your own events
+
+```js
+// pulse every instance of the type...
+api.fireNodeTrigger('levelcleared');
+// ...or just the ones you mean
+api.fireNodeTrigger('goal', (data, id) => data.team === 'blue');
+```
+
+Register the node with `{vtype: 'event'}` so it can be wired to a Counter or an
+Object Selector. **This REPLICATES**, exactly like `fireObjectClick`: the pulse rides
+the existing `nodetrigger` message from one peer's stamp, and every peer then computes
+the identical pulse. So call it on the peer where the event happened and **not on all
+of them**, or a Counter counts it once per peer. `api.peerIds()` and
+`api.physics.isInitiator()` are the usual ways to pick that peer.
+
+R3a: pass `{replicate: false}` as the third argument to keep the pulse in **this
+peer's own trigger log** — the per-player mechanism (a per-player pickup hides only
+for its collector because the pulse never left their machine). Your effect/value
+node then reads its own pulse through `ctx.trigger` (`{stamp, age}` or null), which
+core has ALREADY folded through the round rules: stamp a `perRound: true` flag on
+your node's data and a round bump (or a return to the menu) retires the read with no
+round math of your own. That is the whole latch story — never rebuild it.
+
+### The game shell, per-player rows, and the graph (R3a)
+
+```js
+api.game.roundCutoff();            // null (shell unused) | Infinity (menu/over) | startedAt
+api.game.roundUnderway();          // true while playing/paused (and when the shell is unused)
+api.game.playActive();             // THIS peer plays inside a running round
+api.game.getVar('score', 0);       // the shared game variable (replicated singleton)
+api.game.setVar('score', 7);
+
+api.peerVars.setMine('laps', 3);   // MY replicated row — one writer per row, by construction
+api.peerVars.mine('laps', 0);
+api.peerVars.all('laps');          // [{id, name, value, me, rank}] — the leaderboard shape
+
+api.playerPosition();              // [x, y, z] of the viewer — a touch trigger's read
+api.selectObject(uuid);            // the manager-row click
+api.selectedUuids();               // the selection SET (never the sticky primary)
+
+api.flow.nodes('mytype');          // [{id, type, graphId, data}] across every graph
+api.flow.edges();                  // [{id, source, target, sourceHandle, targetHandle, graphId}]
+api.flow.nodeValue(latchId);       // a node's evaluated output (a core Latch's round-aware state)
+api.flow.triggerStamp(nodeId);     // {stamp, age} | null — a node's own round-aware pulse
+api.flow.setNodeData(nodeId, { respawn: 5 });   // replicated MERGE (the editor's nodedata path)
+api.flow.addNodes({                // replicated, ONE undo entry for the batch
+	nodes: [{ type: 'mytype', x: 60, y: 40, data: {} }, { type: 'objectselector', x: 280, y: 40, data: { selected: uuid } }],
+	edges: [{ from: 0, to: 1 }]     // indices into nodes, or existing node id strings
+});
+
+api.hud.registerDebugLine(() => 'mymod: 3 left');   // a line on the debug HUD pill
+api.hud.registerAction({ key: 'showleft', label: 'Show it', group: 'Data',
+	role: 'drives', node: '', via: { node: 'mytype', data: {}, handle: 'value' } });
+```
+
+Graph reads are deterministic because the graph is replicated — treat them exactly
+like replicated state (the value-node rule). Two per-node data flags core honours on
+YOUR nodes: `perRound` (the trigger reads retire on a round bump) and `whilePlaying`
+(an effect node stands down outside play and the restore loop hands its object back —
+how a module hides an object without owning the give-back).
 
 ### Primitives
 
@@ -132,6 +240,132 @@ api.registerFrameTask((time) => { /* runs every frame, synced time */ });
 // module adds its own group at the scene root, register it for clicks:
 api.registerInteractiveGroup('pong-module');
 ```
+
+### Toolboxes: a real UI surface (A5)
+
+```js
+const id = api.registerToolbox({
+	id: 'settings',              // namespaced to mod-<moduleId>-settings
+	title: 'Dungeon Kit',
+	width: 240,
+	shortcut: 'Ctrl+Shift+D',    // optional; also lists in Settings > Shortcuts
+	playMode: false,             // default: hidden in Play mode
+	sidebar: false,              // default true: also a row in the burger menu's Modules
+	                             // section. false = viewport menu only (see below)
+	mount(el) {
+		const label = document.createElement('div');
+		label.className = 'tbx-label';        // the shell styles this for you
+		label.textContent = 'Rooms';
+		const go = document.createElement('button');
+		go.className = 'tbx-primary';
+		go.textContent = 'Generate';
+		go.onclick = () => regenerate();
+		el.append(label, go);
+		return () => { /* your cleanup */ };
+	}
+});
+```
+
+Write plain DOM into the node `mount` receives and you inherit the app's own
+tool-palette treatment: header drag with position persistence, the width grip, z-band
+focus, the bottom SHEET at <=640px, and the whole `.tbx-*` CSS contract (`.tbx-label`,
+`.tbx-row`, `.tbx-btn`, `.tbx-seg`, `.tbx-primary`, `.tbx-check`, `.tbx-danger`) with
+no CSS of your own. That is the point — before this seam, module controls could only
+live behind `registerMenu`, two clicks deep inside the Modules *modal*, which then had
+to be closed before the module's own overlay was usable.
+
+The user opens it from the **sidebar's Modules section** and the **viewport menu**
+(both from one builder, so they cannot drift), plus your `shortcut` if you name one. It
+starts CLOSED: a palette that appears uninvited is the thing `registerMenu` was
+avoiding. `onOpen`/`onClose` fire on each transition; the header ✕ closes it.
+
+**Where the way IN belongs is your call.** The burger menu's Modules section is the
+app's permanent chrome, so a row there is a standing claim on it — right for a tool a
+user reaches for constantly, heavy for a window that belongs to one workflow. Pass
+`sidebar: false` to keep the viewport-menu row and drop the permanent one, and open it
+from where your module already is:
+
+```js
+const id = api.registerToolbox({ id: 'manager', title: 'Collectibles', sidebar: false, mount });
+// a button on YOUR card in the Modules manager, beside Update/Remove
+api.registerMenu('Open Collectibles', () => api.openToolbox(id));
+```
+
+`api.openToolbox(id)` / `closeToolbox(id)` / `toggleToolbox(id)` take the id
+`registerToolbox` returned. `openToolbox` also dismisses the Modules manager when it is
+open, because the manager is the one piece of chrome that can cover a toolbox — a card
+button that opens a window *behind* the dialog it was clicked in is the complaint this
+whole seam exists to answer. It is a no-op when the manager is closed.
+
+`mount` returns its cleanup and a re-registration re-runs it, so dev-mode live reload
+rebuilds the contents in place. Disabling or removing the module force-closes and
+unregisters the toolbox — it never leaves a window behind a dead mount fn.
+
+A toolbox is **LOCAL**: it is this viewer's window, and nothing about it replicates or
+is saved with the scene. What it *changes* must still go through the replicated paths
+(`api.send`, `api.create`, `api.physics.set`).
+
+### HUD elements: rows, and your own element kind (21-E7)
+
+```js
+// fill a HUD List element (kind `list`) by id
+api.hud.rows('leaderboard', ['1. Ada 12', '2. Grace 9']);
+api.hud.clearRows('leaderboard');       // back to the element's authored rows
+
+// the roster WITH NICKNAMES - what a leaderboard actually needs
+api.peerNames();  // [{id, name, label, me}]  `label` falls back to 'peer abcd'
+```
+
+`api.hud.rows` is one of three doors onto the same store: the element's own **authored**
+rows (typed into the properties pane, one per line), a **HUD Rows** flow node
+(set / append / clear on a trigger edge), and this. A node or a module always wins over
+the authored rows, and clearing puts them back — the authored value is the fallback, not
+a second source of truth.
+
+**CALL IT ON EVERY PEER.** Rows are never sent. Like a value node, this writes LOCAL
+state that every peer is expected to compute identically, so calling it on one peer
+shows the rows to one person. Drive it from your own `registerStateSync` state, or from
+something every peer already derives (`api.peerNames()` is exactly that — the roster is
+already replicated). Your rows are cleared at teardown, so disabling the module shows
+the authored rows again rather than freezing the last thing you pushed.
+
+```js
+// YOUR OWN ELEMENT KIND: the registerToolbox contract, one layer in
+const kind = api.registerHudElement('gauge', {
+	label: 'Fuel gauge',            // palette + properties-pane heading
+	icon: 'gauge',                  // a lucide name
+	summary: 'A dial that reads a wired number.',
+	defaultSize: { w: 150, h: 40 },
+	defaults: { caption: 'Fuel' },  // your params' starting values
+	fields: [                       // the pane renders these; same schema as core kinds
+		{ key: 'caption', kind: 'text', label: 'caption' },
+		{ key: 'redline', kind: 'number', label: 'redline', min: 0, max: 100, step: 1 }
+	],
+	mount(container, el, runtime) {
+		const span = document.createElement('span');
+		span.textContent = el.caption;
+		container.append(span);
+		// return a bare cleanup fn, OR this pair to avoid a rebuild on every change:
+		return {
+			update(nextEl, nextRuntime) { span.textContent = nextEl.caption; },
+			destroy() { /* your cleanup */ }
+		};
+	}
+});
+// kind === 'mod-<moduleId>-gauge'
+```
+
+You write plain DOM and inherit the whole HUD system: the layer's z-tier, the 9-grid
+anchoring with pixel offsets, the properties pane, the palette, replication, undo and all
+four save paths. `runtime` is what a flow node is currently driving into the element
+(`{text, value, min, max, rows, options, pulse}`), so a HUD Text or HUD Bar node pointed
+at your element feeds it with no extra wiring.
+
+The kind name is **namespaced** and gets written into a replicated, saved document. A peer
+without your module — or the same scene opened after it is gone — reaches an unknown kind,
+which the HUD PRESERVES verbatim and skips at render. So nobody's layout is destroyed,
+installing the module makes the element appear, and a disable is the same story rather
+than a special case. Everything is unregistered and unmounted from the teardown journal.
 
 ### Messages and state
 

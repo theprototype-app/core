@@ -7,6 +7,17 @@
 //   npx vite dev --port 5174
 //   APP_URL=http://localhost:5174/ node scripts/author-templates.cjs [--out <scenes-repo-dir>]
 //
+// A def may be kind:'template' | 'example' | 'game'. A GAME carries the scene data a
+// playable scene needs on top of its objects — flow `graphs`, an `env` preset,
+// `gravity`, `hud`, `post`, `shaders` — plus the `modules` it needs and its `tags`.
+// Games are written under games/ and are NEVER part of the bundled seed: a game needs a
+// module download anyway, so a bundled offline game would be a broken promise.
+//
+// A game def may name `installModules: ['<id>']`, in which case the script installs
+// those zips from the sibling theprototype.app-modules checkout BEFORE building the
+// scene and runs `generate` (a command or an api action) so the thumbnail shows the
+// game rather than a grey box.
+//
 // Without --out only static/templates/ is (re)written, with TEMPLATE kinds only
 // (examples are curated remote content by definition — the bundled fallback keeps
 // examples: []). With --out the full templates/ + examples/ tree and a
@@ -16,6 +27,13 @@ const fs = require('fs');
 const path = require('path');
 
 const URL = process.env.APP_URL || 'https://localhost:5174/';
+// C5.3: game thumbnails need the game's own module loaded. Reuse the packed zips from
+// the sibling modules checkout rather than reimplementing the manager drive (the
+// tests/e2e helpers.cjs installModule approach).
+const MODULES_REPO = path.resolve(__dirname, '../../theprototype.app-modules');
+function moduleZipPath(id) {
+	return path.join(MODULES_REPO, id + '.zip');
+}
 const STATIC_OUT = path.join(__dirname, '../static/templates');
 const outFlag = process.argv.indexOf('--out');
 const REPO_OUT = outFlag !== -1 ? path.resolve(process.argv[outFlag + 1]) : null;
@@ -33,6 +51,7 @@ const DEFS = [
 		description: 'Greybox kit: floor, ramp to a platform, steps, walls and cover blocks',
 		license: 'CC0-1.0',
 		author: 'theprototype',
+		tags: ['greybox', 'level design'],
 		objects: [
 			{ type: 'box', name: 'Floor', color: gray.floor, size: [24, 0.5, 24], pos: [0, -0.25, 0] },
 			{ type: 'box', name: 'Platform', color: gray.block, size: [6, 0.5, 6], pos: [8, 2, -6] },
@@ -53,6 +72,7 @@ const DEFS = [
 		description: 'Static floor and ramp, a dynamic cube pyramid, dominos and a bouncy ball — press P to simulate',
 		license: 'CC0-1.0',
 		author: 'theprototype',
+		tags: ['physics', 'sandbox'],
 		objects: [
 			{
 				type: 'box', name: 'Floor', color: 0x7e8a97, size: [20, 0.5, 20], pos: [0, -0.25, 0],
@@ -87,6 +107,7 @@ const DEFS = [
 		description: 'Room shell with a door and window opening, columns and a half roof to block out interiors',
 		license: 'CC0-1.0',
 		author: 'theprototype',
+		tags: ['greybox', 'architecture'],
 		objects: [
 			{ type: 'box', name: 'Slab', color: 0x9aa3ad, size: [14, 0.3, 10], pos: [0, -0.15, 0] },
 			{ type: 'box', name: 'Wall back', color: 0xb8bfc7, size: [14, 3, 0.3], pos: [0, 1.5, -5] },
@@ -112,6 +133,7 @@ const DEFS = [
 		description: 'A small primitive-built lighthouse on an island — an example of composing simple shapes',
 		license: 'CC0-1.0',
 		author: 'theprototype',
+		tags: ['showcase', 'primitives'],
 		objects: [
 			{ type: 'cylinder', name: 'Island', color: 0x8a9a7b, r: 7, r2: 8.5, h: 1.2, pos: [0, -0.6, 0] },
 			{ type: 'cylinder', name: 'Tower base', color: 0xe8e2d6, r: 1.5, r2: 1.9, h: 3, pos: [0, 1.5, 0] },
@@ -147,6 +169,34 @@ const DEFS = [
 	/** @type {Record<string, {entry: any, bytes: Buffer, thumb: Buffer|null}>} */
 	const built = {};
 	for (const def of DEFS) {
+		// C5.3: a game thumbnail wants the GAME, not a grey box — install its module and
+		// run its generator first. Skipped (with a warning, never a failure) when the
+		// sibling modules checkout has no zips, the helpers.cjs installModule contract.
+		for (const id of def.installModules ?? []) {
+			const zip = moduleZipPath(id);
+			if (!fs.existsSync(zip)) {
+				console.log('  SKIP module ' + id + ' — no zip at ' + zip + ' (run "npm run pack -- --all" there)');
+				continue;
+			}
+			await page.evaluate(() => window.__stores.modulesOpen.set(true));
+			await page.waitForTimeout(400);
+			await page.getByRole('tab', { name: /^User/ }).click();
+			await page.waitForTimeout(200);
+			await page.locator('#install-module-zip').setInputFiles({
+				name: id + '.zip',
+				mimeType: 'application/zip',
+				buffer: fs.readFileSync(zip)
+			});
+			await page
+				.waitForFunction(
+					(want) => window.__stores.moduleSDK.loadedModules.some((m) => m.id === want),
+					id,
+					{ timeout: 20000 }
+				)
+				.catch(() => console.log('  WARN module ' + id + ' did not load'));
+			await page.evaluate(() => window.__stores.modulesOpen.set(false));
+			await page.waitForTimeout(300);
+		}
 		const out = await page.evaluate(async (d) => {
 			const s = window.__stores;
 			s.commandsHandler.sceneCommand('/clear all');
@@ -171,8 +221,65 @@ const DEFS = [
 				group.add(mesh);
 			}
 			s.objectsGroup.update((v) => v);
+
+			// ---- C5.3: the scene DATA a game carries beyond its objects -------------
+			// Each of these lands through the app's own write path, so what the script
+			// produces is exactly what a user authoring by hand would have saved.
+			if (d.env) s.environment.setEnvironment(d.env.preset ?? d.env, d.env.exposure ?? 1);
+			if (typeof d.gravity === 'number') s.scenePhysics.setSceneGravity(d.gravity);
+			if (d.post) s.scenePost.scenePostRestore(d.post, false);
+			// FLOW GRAPHS. node.position is filled in on a deterministic grid when a def
+			// omits it: xyflow dereferences node.position while ADOPTING nodes, so a graph
+			// written programmatically without one CRASHES the editor on mount — and a
+			// deterministic grid means two peers still agree byte for byte.
+			if (d.graphs) {
+				const named = {}; // def-local object names -> real uuids
+				group.children.forEach((c) => (named[c.name] = c.uuid));
+				const grid = (i) => ({ x: 40 + (i % 4) * 220, y: 40 + Math.floor(i / 4) * 140 });
+				const resolved = {};
+				for (const [key, doc] of Object.entries(d.graphs)) {
+					// a graph key may be 'scene' or a def-local OBJECT NAME
+					const graphId = key === 'scene' ? s.SCENE_GRAPH : named[key] ?? key;
+					resolved[graphId] = {
+						nodes: (doc.nodes ?? []).map((n, i) => ({
+							...n,
+							position: n.position ?? grid(i),
+							// a node's own object reference may also be a def-local name
+							data: n.data?.uuid && named[n.data.uuid] ? { ...n.data, uuid: named[n.data.uuid] } : { ...n.data }
+						})),
+						edges: doc.edges ?? []
+					};
+				}
+				s.restoreGraphs(resolved);
+			}
+			if (d.hud && s.hudDocs) s.hudDocs.hudDocsRestore(d.hud, false);
+			if (d.shaders && s.shaderGraph) s.shaderGraph.shaderGraphsRestore(d.shaders, false);
+			// let every write settle (the debounced compiles and the reconciles)
+			await new Promise((r) => setTimeout(r, d.graphs || d.shaders ? 900 : 100));
+
 			// belt and braces: let the render loop compose world matrices too
 			await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
+
+			// a game's content may come from its module rather than from primitives. Two
+			// seams, because modules use both: a scene COMMAND (registerPrimitive-style),
+			// or a registered manager MENU action, which is how untangle and dungeon-realms
+			// expose "generate/restart" (api.registerMenu).
+			if (d.generate) {
+				if (typeof d.generate === 'string') s.commandsHandler.sceneCommand(d.generate);
+				else if (d.generate.menu) {
+					/** @type {any} */ let items;
+					s.moduleSDK.moduleMenuItems.subscribe((/** @type {any} */ v) => (items = v))();
+					const hit = items.find(
+						(/** @type {any} */ it) =>
+							it.label === d.generate.menu && (!d.generate.moduleId || it.moduleId === d.generate.moduleId)
+					);
+					if (hit) hit.action();
+					else throw new Error('no module menu action named "' + d.generate.menu + '"');
+				}
+				await new Promise((r) => setTimeout(r, d.generateWaitMs ?? 2500));
+				s.objectsGroup.update((v) => v);
+				await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
+			}
 
 			// export through the REAL .tpscene path (no session slot needed)
 			const payload = s.sessions.buildSessionPayload(d.title);
@@ -206,7 +313,12 @@ const DEFS = [
 			} catch (e) {
 				console.log('thumb failed', e);
 			}
+			// leave no look or rule behind for the next def — a leaked sky or gravity is
+			// exactly the bug A6 exists to fix, and it would be baked into the next scene
 			s.commandsHandler.sceneCommand('/clear all');
+			s.environment.setEnvironment('studio', 1);
+			s.scenePhysics.resetSceneGravity();
+			s.restoreGraphs({});
 			return { bytes: Array.from(bytes), thumb };
 		}, def);
 		const bytes = Buffer.from(out.bytes);
@@ -228,11 +340,26 @@ const DEFS = [
 			description: def.description,
 			author: def.author,
 			license: def.license,
+			// A7: the chip row is derived from these — a def without tags gets an
+			// empty array rather than an absent key, so every row has the same shape
+			tags: def.tags ?? [],
+			// C5.2: only a GAME carries modules, and absent means absent — a template row
+			// must not grow an empty array it has no use for.
+			//
+			// NOTE there are TWO module lists and they must agree: this AUTHORED one, which
+			// the Games card reads, and the DERIVED one inside session.json, which
+			// moduleRequirements() computes from the flow at save time. They only line up
+			// when the def also lists the module in `installModules`, so the module is
+			// actually loaded while the scene is being built — otherwise the file derives
+			// nothing and the card promises a module the scene does not admit to needing.
+			...(def.modules?.length ? { modules: def.modules } : {}),
 			bytes: built[def.slug].bytes.length
 		};
 	};
 
-	// bundled seed: templates only, app-origin paths (examples stay remote-only)
+	// bundled seed: templates only, app-origin paths (examples + GAMES stay remote-only
+	// — a game needs a module download, so bundling one offline promises what it cannot
+	// deliver)
 	fs.mkdirSync(STATIC_OUT, { recursive: true });
 	const seedTemplates = DEFS.filter((d) => d.kind === 'template').map((d) => ({
 		...writeDef(STATIC_OUT, d),
@@ -247,9 +374,12 @@ const DEFS = [
 
 	// scenes-repo working copy: full tree, repo-relative paths
 	if (REPO_OUT) {
-		const index = { version: 1, templates: [], examples: [] };
+		// C5.2: version 2 = the file has a games section. Written even when empty, so a
+		// reader can tell "a v2 index with no games yet" from "a v1 index".
+		const index = { version: 2, templates: [], examples: [], games: [] };
 		for (const def of DEFS) {
-			const section = def.kind === 'template' ? 'templates' : 'examples';
+			const section =
+				def.kind === 'template' ? 'templates' : def.kind === 'game' ? 'games' : 'examples';
 			const row = writeDef(path.join(REPO_OUT, section), def);
 			index[section].push({
 				...row,

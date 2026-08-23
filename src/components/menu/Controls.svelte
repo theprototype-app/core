@@ -2,7 +2,7 @@
 	import { Cog, Eye, FolderOpen, List, Maximize2, MessageSquare, Move, Pin, Play, RotateCcw, SquarePen, Sun, Workflow } from '@lucide/svelte';
 	import { BottomNav, Listgroup } from 'flowbite-svelte';
 	import { objectsGroup, TControls, transformMode, isLocked, isVRMode, lockedObjects, globalScene, vrPassthrough, selectedObject, selectedObjects } from '../../stores/sceneStore';
-	import { chatHidden, flowGraphClose, flowCodeClose, animationClose, uvEditorClose, explorerClose, objectListClose, objectContextMenu, renamingObject, advancedMode, showEnvInList, showLocalObjects, shaderEditorClose } from '../../stores/appStore.js';
+	import { chatHidden, flowGraphClose, flowCodeClose, animationClose, uvEditorClose, explorerClose, objectListClose, objectContextMenu, renamingObject, advancedMode, showEnvInList, showLocalObjects, shaderEditorClose, hudEditorClose } from '../../stores/appStore.js';
 	import { systemGroupNames } from '$lib/moduleSDK';
 	import { ENV_ROOT } from '$lib/environment';
 	import { flyTo } from '$lib/objectActions';
@@ -66,13 +66,16 @@
 					flowcode: !!$dockOccupants.flowcode?.present,
 					animation: !!$dockOccupants.animation?.present,
 					uv: !!$dockOccupants.uv?.present,
-					shader: !!$dockOccupants.shader?.present
+					shader: !!$dockOccupants.shader?.present,
+					// A4: without this line the HUD tab never comes back after play mode
+					hud: !!$dockOccupants.hud?.present
 				};
 				flowGraphClose.set(true);
 				if (flowDockSnapshot.flowcode) flowCodeClose.set(true);
 				if (flowDockSnapshot.animation) animationClose.set(true);
 				if (flowDockSnapshot.uv) uvEditorClose.set(true);
 				if (flowDockSnapshot.shader) shaderEditorClose.set(true);
+				if (flowDockSnapshot.hud) hudEditorClose.set(true);
 			} else {
 				activateDock('flow'); // docked but hidden (Explorer covering) -> bring the dock back
 			}
@@ -81,12 +84,13 @@
 		// Node editor is CLOSED -> show it in its last mode
 		const wasDocked = typeof localStorage === 'undefined' || localStorage.getItem('flowDocked') !== 'false';
 		const snap = flowDockSnapshot;
-		if (snap && (snap.flow || snap.flowcode || snap.animation || snap.uv || snap.shader)) {
+		if (snap && (snap.flow || snap.flowcode || snap.animation || snap.uv || snap.shader || snap.hud)) {
 			if (snap.flow) flowGraphClose.set(false);
 			if (snap.flowcode) flowCodeClose.set(false);
 			if (snap.animation) animationClose.set(false);
 			if (snap.uv) uvEditorClose.set(false);
 			if (snap.shader) shaderEditorClose.set(false);
+			if (snap.hud) hudEditorClose.set(false);
 			flowDockSnapshot = null;
 			activateDock('flow');
 		} else {
@@ -116,6 +120,13 @@
 	}
 
 	let allowPlay = true;
+	// 21-F3 REJOIN: a play press that landed inside the exit cooldown, replayed when it
+	// expires. The cooldown itself has to stay — it exists because the browser refuses a
+	// pointer-lock request for about a second after a user-initiated Esc — but DROPPING
+	// the press was never part of that: the button simply did nothing, with no feedback,
+	// which is precisely the "I left play and could not get back in" report. Deferring is
+	// the whole fix, and it costs one flag.
+	let playQueued = false;
 	let resizing = $state(false);
 	// 132: toolbar icons tint when their panel is open / the transform mode is
 	// active. Move/Rotate/Scale only tint with a real selection. 151: the mode
@@ -565,8 +576,16 @@
 			$isVRMode = true;
 			vrButton.click();
 		} else {
-			if ($isLocked === null && allowPlay === true)
-			$isLocked	= true
+			// already in play — a second press is not a re-entry
+			if ($isLocked === true) return;
+			// 21-F3: inside the exit cooldown, REMEMBER the press instead of eating it.
+			// `isLocked === false` is the transient Controls itself writes on the way out
+			// (the effect below settles it to null), so both non-null values land here.
+			if (allowPlay !== true || $isLocked === false) {
+				playQueued = true;
+				return;
+			}
+			if ($isLocked === null) $isLocked = true;
 		}
 	}
 
@@ -578,6 +597,12 @@
 		allowPlay = false;
 		setTimeout(() => {
 			allowPlay = true;
+			// 21-F3: honour a press made during the cooldown. Through checkPlay, not a
+			// bare store write, so the VR branch and the guards above still decide.
+			if (playQueued) {
+				playQueued = false;
+				checkPlay();
+			}
 		}, 2000)
 	}
 	});

@@ -1,19 +1,21 @@
 import * as THREE from 'three';
 import { writable, get } from 'svelte/store';
 import { objectsGroup, globalCamera, orbitControls, TControls } from '../stores/sceneStore';
-import { restoreGraphs, clearGraphs, SCENE_GRAPH } from '../stores/flowStore';
-import { serializeGraphs } from './flowGraphs';
+import { restoreGraphs, clearGraphs, SCENE_GRAPH, allNodes } from '../stores/flowStore';
+import { serializeGraphs, copyGraphFrom } from './flowGraphs';
 import { serializeNode, serializeEdge, sendNodes } from './nodesHandler';
 import { parkAnimatedAtBase } from './flowRuntime';
 import { stripEditOverlays } from './editOverlays';
+// B7: a spawner's copies exist only while the world runs — never in a scene file
+import { isTransient } from './transientObjects';
 import {
 	animatedImportUuids,
 	animatedImportsSnapshot,
 	animatedImportsRestore
 } from './animatedImports';
-import { animationsSnapshot, animationsRestore } from './animationPreview';
-import { shaderGraphsSnapshot, shaderGraphsRestore } from './shaderGraph';
-import { peers, showToast, showInfoToast } from '../stores/appStore';
+import { animationsSnapshot, animationsRestore, copyAnimationsFrom } from './animationPreview';
+import { shaderGraphsSnapshot, shaderGraphsRestore, copyShaderGraphFrom } from './shaderGraph';
+import { peers, showToast, showInfoToast, dismissToastById, modulesOpen } from '../stores/appStore';
 import { recordObjectPresence } from './history';
 import { annotationsSnapshot, annotationsRestore } from './autosave';
 // #20 P5: selection + any open edit session ride the file; PANEL LAYOUT does not (that
@@ -22,10 +24,27 @@ import { annotationsSnapshot, annotationsRestore } from './autosave';
 import { captureEditResume, applyEditResume } from './editResume';
 import { jointsSnapshot, jointsRestore } from './joints';
 import { scenePostSnapshot, scenePostRestore } from './scenePost';
-import { sceneCommand, sendObjects } from './commandsHandler.svelte';
+// A6.1: the scene's LOOK and RULES ride the file beside its objects. They were
+// missing, so a template loaded into whatever sky and gravity the room happened to
+// have — and a physics scene is unplayable at a peer's edited gravity. Each pair
+// follows scenePost exactly: null when default, and restore stamps a fresh
+// changedAt because a restore is an authoritative local write.
+import { environmentSnapshot, environmentRestore } from './environment';
+import { scenePhysicsSnapshot, scenePhysicsRestore } from './scenePhysics';
+import { musicSnapshot, musicRestore } from './sceneMusic';
+import {
+	moduleRequirements,
+	classifyRequirements,
+	rememberSceneModules
+} from './moduleRequirements';
+import { disabledModules } from './moduleSDK';
+import { findNodeSpec } from './nodeCatalog';
+import { hudDocsSnapshot, hudDocsRestore } from './hudDocs';
+import { gameStateSnapshot, gameStateRestore } from './gameState';
+import { sceneCommand, sendObjects, clearSceneLocal } from './commandsHandler.svelte';
 import { nameOf } from './lockControl';
 import { idbGet, idbPut, idbDelete, idbKeys } from './idb';
-import { showConfirm } from './confirmDialog';
+import { showConfirm, showChoice } from './confirmDialog';
 import { APP_VERSION } from './version.js';
 
 // Multi-slot sessions (phase 50) on top of the autosave format. Each session
@@ -109,6 +128,12 @@ export function buildSessionPayload(name) {
 	const animatedUuids = animatedImportUuids(group);
 	/** @type {any} */
 	let graphs;
+	// A6.1/A6.2: none of these read the object graph, so they are taken before the
+	// serialization block and folded in with a conditional spread below
+	const env = environmentSnapshot();
+	const gravity = scenePhysicsSnapshot();
+	const track = musicSnapshot();
+	const mods = moduleRequirements();
 	try {
 		return {
 			id: crypto.randomUUID(),
@@ -118,13 +143,16 @@ export function buildSessionPayload(name) {
 			// appVersion is display-only provenance
 			format: SESSION_FORMAT,
 			appVersion: APP_VERSION,
-			count: group?.children.length ?? 0,
+			count: (group?.children ?? []).filter((/** @type {any} */ child) => !isTransient(child)).length,
 			thumbnail: renderSceneThumbnail(group),
 			// animated imports are saved as their ORIGINAL bytes below instead:
 				// toJSON carries no AnimationClip and mangles rigs, so a saved scene
 				// used to come back with dead, static models
+				// B7: and a TRANSIENT object is not saved at all — it exists only while the
+				// simulation runs, so saving mid-run would bake a spawner's crates into the
+				// scene file as permanent content
 				objects: (group?.children ?? [])
-					.filter((/** @type {any} */ child) => !animatedUuids.includes(child.uuid))
+					.filter((/** @type {any} */ child) => !animatedUuids.includes(child.uuid) && !isTransient(child))
 					.map((/** @type {any} */ child) => child.toJSON()),
 				animated: animatedImportsSnapshot(group),
 				// authored movement tracks (the Animation window) were never saved
@@ -146,6 +174,25 @@ export function buildSessionPayload(name) {
 			// annotations — it is scene data, not per-object data. Absent (null) when
 			// the scene has no look, so an older build reading this file sees no field.
 			post: scenePostSnapshot(),
+			// A6.1: sky/fog/exposure + extra lights, scene gravity, the shared music
+			// track, and which MODULES the flow needs. Each snapshot is NULL when it
+			// is the default, and a null one is OMITTED rather than written as
+			// `"environment":null` — so a plain scene's session.json is byte-identical
+			// to what a pre-A6 build wrote, and absent already means default on the
+			// way back in. (`post` predates this and keeps its explicit null.)
+			...(env ? { environment: env } : {}),
+			...(gravity ? { physics: gravity } : {}),
+			...(track ? { music: track } : {}),
+			// A6.2: {id, version} — the handshake's shape, so there is one shape for
+			// "which modules" in the whole system.
+			...(mods.length ? { modules: mods } : {}),
+			// A2: the HUD, on the same reasoning and the same terms — scene data beside the
+			// objects, null when nothing is authored so a default scene saves byte-identical
+			hud: hudDocsSnapshot({
+				pruneMissing: (uuid) => !group?.getObjectByProperty?.('uuid', uuid)
+			}),
+			// 21-D6: the game shell, null when pristine so a scene with no game is unchanged
+			game: gameStateSnapshot(),
 			camera: camera
 				? { position: camera.position.toArray(), target: controls?.target?.toArray() ?? [0, 0, 0] }
 				: null,
@@ -157,6 +204,37 @@ export function buildSessionPayload(name) {
 	} finally {
 		restore();
 	}
+}
+
+/**
+ * 21-F4: a payload with NOTHING in it — what "New scene…" saves as a fresh level asset.
+ * The same shape buildSessionPayload writes, minus every capture: an empty level must not
+ * inherit whatever scene happens to be open when it is created.
+ * @param {string} name
+ */
+export function emptySessionPayload(name) {
+	return {
+		id: crypto.randomUUID(),
+		name: name || 'New level',
+		createdAt: Date.now(),
+		format: SESSION_FORMAT,
+		appVersion: APP_VERSION,
+		count: 0,
+		thumbnail: null,
+		objects: [],
+		animated: [],
+		animations: {},
+		graphs: {},
+		nodes: [],
+		edges: [],
+		shaderGraphs: {},
+		annotations: [],
+		joints: [],
+		post: null,
+		hud: null,
+		game: null,
+		camera: null
+	};
 }
 
 /** Persist a payload as a slot @param {any} payload */
@@ -228,6 +306,105 @@ async function confirmSessionFormat(payload) {
 	});
 }
 
+
+/**
+ * A6.2: the module-requirement prompt. A scene's `modules` field names what its
+ * FLOW needs; this is where a player finds out before the scene lands looking
+ * broken.
+ *
+ * Runs where `confirmSessionFormat` runs — after the format check and BEFORE any
+ * restore or asset loop — because a cancelled import must not mutate anything.
+ * Returns false only for an explicit Cancel; every other answer proceeds, because
+ * this is ADVISORY by design (so is `checkModuleVersions`) and a scene the player
+ * wants to look at should never be un-openable.
+ *
+ * The one sentence it must say out loud is that installing here installs for THIS
+ * player: modules do not travel over the wire, so each peer needs their own copy.
+ * @param {any} payload @returns {Promise<boolean>} false = cancel the import
+ */
+async function confirmModuleRequirements(payload) {
+	const { missing, disabled } = classifyRequirements(payload?.modules);
+	if (!missing.length && !disabled.length) return true;
+	const name = (/** @type {any} */ entry) => entry.id + (entry.version ? ' v' + entry.version : '');
+	const lines = [];
+	if (missing.length) lines.push('Not installed: ' + missing.map(name).join(', '));
+	if (disabled.length) lines.push('Switched off: ' + disabled.map(name).join(', '));
+	/** @type {{value: string, label: string, color?: string}[]} */
+	const choices = [];
+	if (missing.length) choices.push({ value: 'install', label: 'Install (' + missing.length + ')' });
+	if (disabled.length) choices.push({ value: 'enable', label: 'Enable (' + disabled.length + ')' });
+	choices.push({ value: 'anyway', label: 'Load anyway', color: 'alternative' });
+	const answer = await showChoice({
+		title: 'This scene uses modules',
+		message:
+			lines.join('\n') +
+			'\n\nEach player needs this module — installing it here installs it for you only.',
+		choices
+	});
+	if (!answer) return false; // Cancel / Esc / outside-close: nothing has been touched
+	if (answer === 'enable') enableRequired(disabled);
+	if (answer === 'install') await installRequired(missing);
+	return true;
+}
+
+/** Switch requested modules back on (they are already installed).
+ * @param {{id: string}[]} entries */
+function enableRequired(entries) {
+	const ids = entries.map((entry) => entry.id);
+	disabledModules.update((list) => list.filter((id) => !ids.includes(id)));
+	showToast(
+		'Enabled ' + ids.join(', ') + ' — reload if a node still shows as missing'
+	);
+}
+
+/**
+ * Install the missing modules from the gallery. Reuses the Browse tab's own
+ * machinery (`loadModuleGallery` + `galleryInstallUrl` + `installUrl`), so there
+ * is no second install path to keep correct — and a module the gallery does not
+ * list is REPORTED rather than silently skipped.
+ * @param {{id: string}[]} entries
+ */
+async function installRequired(entries) {
+	const { loadModuleGallery, galleryModules, galleryInstallUrl } = await import('./moduleGallery');
+	const { installUrl } = await import('./userModules');
+	await loadModuleGallery();
+	const listed = get(galleryModules);
+	const absent = [];
+	let installed = 0;
+	for (const entry of entries) {
+		const found = listed.find((/** @type {any} */ item) => item.id === entry.id);
+		if (!found) {
+			absent.push(entry.id);
+			continue;
+		}
+		if (await installUrl(galleryInstallUrl(found))) installed++;
+		else absent.push(entry.id);
+	}
+	if (installed)
+		showToast(
+			'Installed ' + installed + ' module' + (installed === 1 ? '' : 's') +
+				' — every player needs their own copy'
+		);
+	if (absent.length)
+		showInfoToast(
+			'scene-modules-missing',
+			'Could not install: ' + absent.join(', ') + '. The scene loads without ' +
+				(absent.length === 1 ? 'it' : 'them') + ' — nodes from ' +
+				(absent.length === 1 ? 'that module' : 'those modules') + ' will show as missing.',
+			[
+				{
+					label: 'Open Modules',
+					// a sticky info toast is only removed by its id, so the action clears
+					// its own prompt on the way out (the share-or-stash precedent)
+					action: () => {
+						dismissToastById('scene-modules-missing');
+						modulesOpen.set(true);
+					}
+				}
+			]
+		);
+}
+
 /** Store an imported payload as a fresh slot. @param {any} payload */
 async function finishImport(payload) {
 	payload.id = crypto.randomUUID(); // never collide with an existing slot
@@ -244,16 +421,55 @@ async function finishImport(payload) {
 export async function importSession(json) {
 	const payload = parseSessionJson(json);
 	if (!(await confirmSessionFormat(payload))) return null;
+	// A6.2: BEFORE finishImport writes the slot — a cancelled import must not mutate
+	if (!(await confirmModuleRequirements(payload))) return null;
 	return finishImport(payload);
 }
 
 // ---- session ZIP: session.json + the scene's binary assets (127) ----
 
 /**
+ * 21-I5 — THE HONESTY TOAST, and the ONE half of the bundle that survives its revision.
+ *
+ * The interim 21-I5 build could WRITE a `versions/` section into a `.tpscene` from an
+ * Export Settings checkbox. That option is GONE: `saveTpScene` exports whatever is in
+ * the viewport, which cannot always answer "and its history" — an unnamed or
+ * never-travelled scene has no manifest entry to look one up in, so the box silently
+ * produced nothing. Per-scene DOWNLOADS in the Explorer replaced it, where the scene
+ * card makes the name and the history unambiguous.
+ *
+ * **NOTHING IN THE APP WRITES `versions/` ANY MORE**, and nothing ever read it back
+ * (the export-only ruling: a second door into the library is exactly what would let a
+ * content-addressed item be created from a fat file whose hash is not its content's).
+ * This stays because files produced by that interim build EXIST on people's disks, and
+ * a load that ignored their extra section in silence would be the dishonest half of
+ * what was just removed.
+ * @param {Record<string, Uint8Array>} entries @returns {number} versions in the file
+ */
+function noteBundledVersions(entries) {
+	const n = Object.keys(entries).filter((k) => k.startsWith('versions/')).length;
+	if (!n) return 0;
+	showToast(
+		'This scene file also carries ' + n + ' saved version' + (n === 1 ? '' : 's') +
+			' of the scene. ' + (n === 1 ? 'It is' : 'They are') +
+			' not loaded — unzip the file to open ' + (n === 1 ? 'it' : 'one') + '.'
+	);
+	return n;
+}
+
+/**
  * Build a .zip Uint8Array for a session: session.json + assets/<hash>.<ext>
  * (the 108 scene manifest's audio/config/textures) + an assets/index.json map.
  * Portable — re-importing on a fresh machine restores the assets too.
+ *
+ * A scene's VERSION HISTORY is deliberately not one of the include-options. The interim
+ * 21-I5 build had it as a fourth checkbox and it could not work from here: this function
+ * is handed "whatever is in the viewport", which is not always a named project scene, so
+ * there was frequently no history to look up and the box wrote nothing. Downloading
+ * versions is a per-SCENE action in the Explorer now — see `noteBundledVersions` above.
+ *
  * @param {any} payload
+ * @param {{assets?: boolean, packs?: boolean, flow?: boolean}} [opts]
  */
 export async function exportSessionZip(payload, opts = { assets: true, packs: false, flow: true }) {
 	const { zipSync, strToU8 } = await import('fflate');
@@ -261,7 +477,15 @@ export async function exportSessionZip(payload, opts = { assets: true, packs: fa
 	const { itemByHash, itemBlob } = await import('./explorer');
 	// B3 (.tpscene): the include-checkboxes — flow strips nodes/edges, assets
 	// toggles the hash bundle, packs adds the imported-pack section below
-	if (opts.flow === false) payload = { ...payload, nodes: [], edges: [] };
+	// A6.3 (bug): this stripped the LEGACY nodes/edges fields and left `graphs`
+	// untouched, so "don't include the flow" exported every graph document anyway —
+	// including per-object ones the legacy fields never carried. `modules` goes with
+	// it, because the requirement is DERIVED from the flow: keeping it would prompt
+	// for a module the exported file no longer uses.
+	if (opts.flow === false) {
+		payload = { ...payload, nodes: [], edges: [], graphs: {} };
+		delete payload.modules;
+	}
 	/** @type {Record<string, any>} */
 	const files = { 'session.json': strToU8(JSON.stringify(payload)) };
 	/** @type {Array<{hash: string, name: string, kind: string, file: string}>} */
@@ -302,6 +526,52 @@ export async function exportSessionZip(payload, opts = { assets: true, packs: fa
 	return zipSync(files, { level: 6 });
 }
 
+/** The zip's bundled assets into the Explorer (hash-deduped) so sound/texture hashes
+ * resolve. Shared by importSessionZip and 21-F4's readSessionZip.
+ * @param {Record<string, Uint8Array>} entries @param {(bytes: Uint8Array) => string} strFromU8 */
+async function restoreZipAssets(entries, strFromU8) {
+	let index = [];
+	try {
+		if (entries['assets/index.json']) index = JSON.parse(strFromU8(entries['assets/index.json']));
+	} catch {
+		index = [];
+	}
+	if (!index.length) return;
+	const { applyAssetFile } = await import('./assetShare');
+	for (const entry of index) {
+		const bytes = entries[entry.file];
+		if (!bytes) continue;
+		// pass the Uint8Array VIEW — applyAssetFile slices byteOffset..length
+		// so fflate's shared buffers don't corrupt the content hash
+		await applyAssetFile({ hash: entry.hash, name: entry.name, buffer: bytes });
+	}
+}
+
+/**
+ * 21-F4: read a session zip WITHOUT importing it — no slot written, no dialogs. LEVEL
+ * TRAVEL runs on every peer at once off a replicated trigger, so a confirm dialog has
+ * nobody to answer it and a cancel could not be honoured anyway (the others already
+ * left). A NEWER format is REFUSED with a toast instead of asked about; assets are
+ * restored (hash-deduped) so the level's textures and sounds resolve.
+ * @param {ArrayBuffer} buffer @returns {Promise<any|null>} the payload, or null
+ */
+export async function readSessionZip(buffer) {
+	const { unzipSync, strFromU8 } = await import('fflate');
+	const entries = unzipSync(new Uint8Array(buffer));
+	const sessionBytes = entries['session.json'];
+	if (!sessionBytes) return null;
+	const payload = parseSessionJson(strFromU8(sessionBytes));
+	const format = Number(payload?.format ?? 0);
+	if (!payload || format > SESSION_FORMAT) {
+		showToast('This level needs a newer app version (format ' + format + ' > ' + SESSION_FORMAT + ')');
+		return null;
+	}
+	await restoreZipAssets(entries, strFromU8);
+	// 21-I5: `versions/` is read by NOTHING — say so rather than ignore it silently
+	noteBundledVersions(entries);
+	return payload;
+}
+
 /**
  * Import a session .zip: restore its bundled assets into the Explorer (Shared,
  * hash-deduped) FIRST so sound/texture hashes resolve, then the session.json.
@@ -316,22 +586,13 @@ export async function importSessionZip(buffer) {
 	// cancelled import must not mutate the Explorer library
 	const payload = parseSessionJson(strFromU8(sessionBytes));
 	if (!(await confirmSessionFormat(payload))) return null;
-	let index = [];
-	try {
-		if (entries['assets/index.json']) index = JSON.parse(strFromU8(entries['assets/index.json']));
-	} catch {
-		index = [];
-	}
-	if (index.length) {
-		const { applyAssetFile } = await import('./assetShare');
-		for (const entry of index) {
-			const bytes = entries[entry.file];
-			if (!bytes) continue;
-			// pass the Uint8Array VIEW — applyAssetFile slices byteOffset..length
-			// so fflate's shared buffers don't corrupt the content hash
-			await applyAssetFile({ hash: entry.hash, name: entry.name, buffer: bytes });
-		}
-	}
+	// A6.2: and the module prompt sits right beside it, above the asset/pack loops
+	// for the same reason — a cancelled import must not touch the Explorer either
+	if (!(await confirmModuleRequirements(payload))) return null;
+	// 21-I5: after the confirms (a cancelled import must not talk about the file it did
+	// not read) and before the restore loops, which never touch `versions/`
+	noteBundledVersions(entries);
+	await restoreZipAssets(entries, strFromU8);
 	// B3: restore bundled packs — re-store each item blob (content-hash deduped;
 	// ids can CHANGE, so remap the pack's item ids), then re-register the pack
 	if (entries['packs/index.json']) {
@@ -379,6 +640,8 @@ export function importObjects(payload, indices) {
 	if (!group) return 0;
 	/** @type {any} */
 	const peer = get(peers);
+	/** @type {Map<string, string>} saved uuid -> the fresh one we gave it */
+	const uuidMap = new Map();
 	let added = 0;
 	for (const index of indices) {
 		const element = payload.objects?.[index];
@@ -390,23 +653,109 @@ export function importObjects(payload, indices) {
 			continue;
 		}
 		stripEditOverlays(object); // a stale wireframe saved by an older build
-		object.traverse((/** @type {any} */ node) => (node.uuid = crypto.randomUUID()));
+		// A6.3 (bug): every uuid is REASSIGNED here (a merge must not collide with
+		// what is already in the scene), and the payload's per-object documents are
+		// keyed by the OLD uuid — so a merge import used to drop this object's flow
+		// graph, its shader graph and its clips on the floor, silently. Remember the
+		// mapping and carry them across afterwards.
+		object.traverse((/** @type {any} */ node) => {
+			const fresh = crypto.randomUUID();
+			uuidMap.set(node.uuid, fresh);
+			node.uuid = fresh;
+		});
 		group.add(object);
 		recordObjectPresence('create', object);
 		if (peer) peer.send({ type: 'object', element: object.toJSON() });
 		added++;
 	}
 	objectsGroup.update((value) => value);
+	carryObjectDocuments(payload, uuidMap);
 	showToast('Imported ' + added + ' object' + (added === 1 ? '' : 's') + ' from the session');
 	return added;
 }
 
+/**
+ * A6.3: carry a merge-imported object's PER-OBJECT documents across the uuid
+ * reassignment `importObjects` performs — its flow graph, its shader graph and its
+ * authored clips. Each rides the copy-from-a-document helper its own module owns,
+ * so replication and the never-clobber rule are theirs, not this file's.
+ *
+ * Only objects we actually imported are remapped: a payload graph keyed by a uuid
+ * outside the map belongs to an object the user did not tick.
+ * @param {any} payload @param {Map<string, string>} uuidMap
+ */
+function carryObjectDocuments(payload, uuidMap) {
+	if (!uuidMap.size) return;
+	for (const [from, to] of uuidMap) {
+		const graph = payload.graphs?.[from];
+		if (graph) copyGraphFrom(graph, to);
+		const shader = payload.shaderGraphs?.[from];
+		if (shader) copyShaderGraphFrom(shader, to);
+		const clips = payload.animations?.[from];
+		if (clips) copyAnimationsFrom(clips, to);
+	}
+}
+
+/**
+ * A6.4: after a scene load, say ONCE how many nodes cannot be rendered and why.
+ *
+ * The flow editor grows a badge for this, but the dock is closed for most players
+ * loading a game, so the Notification Center is the channel that always reaches
+ * them. Counted from the LIVE graphs (post-restore), never from the payload, so it
+ * agrees with what the editor would show.
+ * @param {any} payload
+ */
+function reportUnknownNodes(payload) {
+	// remembered first: the unknown-node card names its provider from this
+	rememberSceneModules(payload?.modules);
+	const missing = allNodes().filter(
+		(/** @type {any} */ node) => node.type && !findNodeSpec(node.type)
+	);
+	if (!missing.length) return;
+	const kinds = [...new Set(missing.map((/** @type {any} */ node) => node.type))];
+	const provider = classifyRequirements(payload?.modules).missing.map((entry) => entry.id);
+	showInfoToast(
+		'scene-unknown-nodes',
+		missing.length + ' node' + (missing.length === 1 ? '' : 's') + ' in this scene need a module' +
+			(provider.length ? ' (' + provider.join(', ') + ')' : '') + ': ' + kinds.join(', ') +
+			'. They are kept exactly as saved — install the module and they come back to life.',
+		[
+			{
+				label: 'Open Modules',
+				// a sticky info toast is only removed by its id, so the action clears its
+				// own prompt on the way out (the share-or-stash precedent)
+				action: () => {
+					dismissToastById('scene-unknown-nodes');
+					modulesOpen.set(true);
+				}
+			}
+		]
+	);
+}
+
 /** Replace the scene with a session (safety-stash first). Replicates through
- * the normal clearscene/object/node messages. @param {any} payload */
-export async function applySession(payload) {
+ * the normal clearscene/object/node messages.
+ *
+ * 21-F4 opts, every default preserving today's behaviour byte-identically:
+ *   backup     false skips the safety-stash session — LEVEL TRAVEL runs this on every
+ *              peer at once, and N peers each stashing a backup per hop is noise
+ *   replicate  false applies LOCALLY with nothing sent — the deterministic model: a
+ *              travel trigger already replicated, so EVERY peer runs this itself, and
+ *              a replicating apply would be N peers broadcasting the same scene at
+ *              each other (clear storms included)
+ *   game       false EXCLUDES payload.game — fork 3: game state CARRIES across scene
+ *              travel, so the traveller re-asserts the live state after the load
+ *   workspace  false skips the edit-resume — a level hop mid-game must not reopen the
+ *              author's mesh-edit session
+ * @param {any} payload
+ * @param {{backup?: boolean, replicate?: boolean, game?: boolean, workspace?: boolean}} [opts]
+ */
+export async function applySession(payload, opts = {}) {
+	const { backup = true, replicate = true, game = true, workspace = true } = opts;
 	const group = get(objectsGroup);
-	if (group?.children.length) await saveSession('Backup before "' + payload.name + '"');
-	sceneCommand('/clear all'); // replicated clear (objects + module content)
+	if (backup && group?.children.length) await saveSession('Backup before "' + payload.name + '"');
+	if (replicate) sceneCommand('/clear all'); // replicated clear (objects + module content)
+	else clearSceneLocal();
 	/** @type {any} */
 	const peer = get(peers);
 	for (const element of payload.objects ?? []) {
@@ -423,15 +772,15 @@ export async function applySession(payload) {
 		// on the way in; the peers do the same in `createObject`.
 		stripEditOverlays(object);
 		group.add(object); // keep original uuids — every peer converges on them
-		if (peer) peer.send({ type: 'object', element });
+		if (replicate && peer) peer.send({ type: 'object', element });
 	}
 	objectsGroup.update((value) => value);
 	// animated imports come back from their original bytes (mixers rebuilt, peers
 	// reparse the same file) and authored tracks from the payload
-	await animatedImportsRestore(payload.animated ?? []);
+	await animatedImportsRestore(payload.animated ?? [], replicate);
 	// replicate: a loaded scene's movements reach the peers already in the room,
 	// the way each restored joint is re-broadcast below
-	animationsRestore(payload.animations ?? {}, true);
+	animationsRestore(payload.animations ?? {}, replicate);
 	// H1: new format restores EVERY graph document; legacy payloads carry the
 	// scene graph only. One 'nodes' snapshot replicates the whole map.
 	const graphsPayload =
@@ -442,7 +791,7 @@ export async function applySession(payload) {
 				: null;
 	if (graphsPayload) {
 		restoreGraphs(graphsPayload);
-		if (peer)
+		if (replicate && peer)
 			peer.send({
 				type: 'nodes',
 				graphs: graphsPayload,
@@ -451,14 +800,26 @@ export async function applySession(payload) {
 			});
 	}
 	// a scene LOAD replaces the world, so replace the documents too
-	shaderGraphsRestore(payload.shaderGraphs ?? {}, true);
+	shaderGraphsRestore(payload.shaderGraphs ?? {}, replicate);
 	annotationsRestore(payload.annotations ?? []);
 	// P-B: joints restore locally + replicate each def (receivers only apply)
 	jointsRestore(payload.joints ?? []);
 	// the look replicates on restore too, so loading a scene into a live room
 	// brings its art direction along (the jointsRestore precedent below)
-	scenePostRestore(payload.post, true);
-	if (peer) for (const joint of payload.joints ?? []) peer.send({ type: 'jointcreate', joint });
+	scenePostRestore(payload.post, replicate);
+	// A6.1: and so do the sky, the gravity and the music — a game template that
+	// loaded into the room's own sky and gravity was the reason this phase exists.
+	// Each is a no-op when the field is absent (= the scene wants the defaults).
+	environmentRestore(payload.environment, replicate);
+	scenePhysicsRestore(payload.physics, replicate);
+	musicRestore(payload.music, replicate);
+	// and the HUD with it: loading a game scene into a live room must bring its overlay
+	hudDocsRestore(payload.hud ?? null, true, replicate);
+	// and the game with it: loading a game scene into a live room must bring its state.
+	// 21-F4 fork 3: LEVEL TRAVEL passes game:false — state/round/vars CARRY across the
+	// hop (campaign semantics), so the traveller re-asserts the live state after this.
+	if (game) gameStateRestore(payload.game ?? null, replicate);
+	if (replicate && peer) for (const joint of payload.joints ?? []) peer.send({ type: 'jointcreate', joint });
 	/** @type {any} */
 	const camera = get(globalCamera);
 	/** @type {any} */
@@ -472,7 +833,11 @@ export async function applySession(payload) {
 	}
 	// P5: last, once the objects exist and the camera is parked — a selection applied
 	// before the tree is populated selects nothing, and a session entry needs its object
-	if (payload.workspace) applyEditResume(payload.workspace);
+	if (workspace && payload.workspace) applyEditResume(payload.workspace);
+	// A6.4: ONE Notification Center entry naming the unrenderable nodes, because the
+	// flow editor's badge is invisible when the dock is closed — which it is for most
+	// players loading a game. Runs after restoreGraphs, so the count is the real one.
+	reportUnknownNodes(payload);
 	showToast('Session loaded: ' + payload.name + ' (' + (payload.count ?? 0) + ' objects)');
 }
 
@@ -482,16 +847,20 @@ export async function applySession(payload) {
 let pendingProposal = null;
 
 /** Load a session — solo applies immediately, with peers it becomes a proposal
- * every connected peer must accept. @param {string} id */
+ * every connected peer must accept.
+ * @param {string} id
+ * @returns {Promise<boolean>} true when the load APPLIED NOW (solo path); false when
+ *   it became a proposal (or the session was missing) — 21-G8's "opened as the
+ *   current scene, unsaved" marker only makes sense for a load that actually happened */
 export async function requestLoadSession(id) {
 	const payload = await getSession(id);
-	if (!payload) return;
+	if (!payload) return false;
 	/** @type {any} */
 	const peer = get(peers);
 	const connected = Object.keys(peer?.connections ?? {});
 	if (!connected.length) {
 		await applySession(payload);
-		return;
+		return true;
 	}
 	pendingProposal = { payload, accepts: new Set(), needed: connected };
 	peer.send({
@@ -501,6 +870,7 @@ export async function requestLoadSession(id) {
 		from: peer.peer.id
 	});
 	showToast('Asked ' + connected.length + ' peer' + (connected.length === 1 ? '' : 's') + ' to load "' + payload.name + '"…');
+	return false;
 }
 
 /** Receiver side: Accept/Decline toast @param {any} data */

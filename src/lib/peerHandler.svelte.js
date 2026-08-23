@@ -15,6 +15,7 @@ import { applyMeshGeo } from '$lib/faceEdit';
 // registers no history kind at module eval and its own imports (faceEdit,
 // materialsHandler, history) are already in this file's subtree.
 import { applyUvPaint, applyUvPaintEnd } from '$lib/uvEditor';
+import { applySplineEdit } from '$lib/splineTool';
 import { initVoiceChat, attachVoiceToPeer, voicePeerConnected } from '$lib/voiceChat';
 import { resolvePeerOptions, describePeerServer, peerServerStatus, parseInviteHash, decodeInviteServer, applyInviteServerOverride } from '$lib/peerServer';
 import { sessionHost, markPeerJoined, resetSession } from '$lib/connectionState';
@@ -23,24 +24,47 @@ import { applyAnnotation, applyAnnotationsSnapshot, sendAnnotations } from '$lib
 import { applyPing } from '$lib/ping';
 import { applyAssetFile, answerAssetRequest } from '$lib/assetShare';
 import { applyRemoteCameraPreview, clearPeerPreview, sendCameraPreviewState } from '$lib/cameraPreview';
+// 21-F3: play-mode PRESENCE, the campreview shape — a tiny per-peer message, a reply
+// riding the getmodulestate request, and a drop on disconnect (golden rule 3).
+import { applyRemotePlayMode, dropPeerPlayMode, sendPlayModeState } from '$lib/gamePresence';
+// P2b: which SCENE each peer is standing in — the gamePresence shape exactly
+import { applyRemotePeerScene, dropPeerScene, sendMySceneState, peerScenes, myScene, elsewhereThan } from '$lib/peerScenes';
+// 21-G2: the project manifest — a latest-wins singleton like environment/scenephysics
+import { applyRemoteManifest, sendProjectManifest } from '$lib/projectManifest';
+// 21-G4: PEER-OWNED variables. The same three obligations as the mode above (dispatch,
+// late-joiner reply, drop on disconnect) and a DIFFERENT lifetime on purpose — a row
+// survives its owner leaving PLAY and is dropped only when they leave the SESSION.
+import { applyRemotePeerVars, dropPeerVars, sendPeerVarsState } from '$lib/peerVars';
 import { applyModuleMessage, moduleVersions, checkModuleVersions, checkPeerAppVersion, sendModuleStates, applyModuleStates } from '$lib/moduleSDK';
 import { APP_VERSION, COMMIT_SHA } from '$lib/version.js';
 import { applyLockRequest, applyUnlock, applyLockDenied } from '$lib/lockControl';
 import { applyDrawLive, applyDrawEnd } from '$lib/drawMode';
-import { applySimulate, physicsExternalMove } from '$lib/physics';
+import { applySimulate, physicsExternalMove, applyThrow } from '$lib/physics';
+import { noteRemoteMove } from '$lib/moveSmoothing';
 import { applyJointCreate, applyJointDelete, applyJointsSnapshot, sendJoints } from '$lib/joints';
 import { applyAnimData, applyAnimPlay, applyAnimationsSnapshot, sendAnimations } from '$lib/animationPreview';
 import { applyHandModel, handModelState, dropPeerHandModel } from '$lib/handModels';
 import { applyRemoteEnvironment, environmentState, envPresetsState, applyRemoteEnvPresets, dropPeerEnvPresets } from '$lib/environment';
 import { applyRemoteMusic, musicState } from '$lib/sceneMusic';
 import { applyRemoteScenePhysics, scenePhysicsState } from '$lib/scenePhysics';
-import { applyRemoteScenePost, scenePostState, sendScenePost } from '$lib/scenePost';
+import { applyRemoteScenePost, scenePostStates, sendScenePost } from '$lib/scenePost';
 import { applyRemoteShaderGraph, applyRemoteShaderGraphDelete, applyRemoteShaderGraphs, sendShaderGraphs } from '$lib/shaderSync';
+import {
+	applyRemoteHud,
+	applyRemoteHudDelete,
+	applyRemoteHuds,
+	sendHuds,
+	applyRemoteHudValue,
+	applyRemoteHudValues,
+	sendHudValues
+} from '$lib/hudSync';
+import { applyRemoteGameState, sendGameState, gameStatePayload } from '$lib/gameSync';
+import { applyRemoteTriggers, sendTriggers } from '$lib/triggerSync';
 import { applySessionProposal, applySessionAnswer, deferUntilShareChoice, localSceneCount } from '$lib/sessions';
 import { applyRemoteGeometry } from '$lib/geometryEdit';
 import { applyLightTarget } from '$lib/lightParams';
 import { applyObjectFile } from '$lib/animatedImports';
-import { lockedObjects, selectedObject, peerHands } from '../stores/sceneStore';
+import { lockedObjects, selectedObject, peerHands, objectsGroup } from '../stores/sceneStore';
 import { addMessage, peers, userdata, pendingApprovals, waitingForApproval, showToast } from '../stores/appStore';
 import { get } from 'svelte/store';
 
@@ -75,6 +99,10 @@ selectedObject.subscribe(value => { selected = value });
 let users = $state();
 userdata.subscribe(value => { users = value });
 
+
+/** P2b: the only messages `broadcast` will withhold from a peer in another scene.
+ * Pure presence, re-sent continuously, useless to somebody in a different world. */
+const STREAM_TYPES = new Set(['camera', 'vrhands']);
 
 export class PeerConnection {
 	constructor(id, updateIdFn) {
@@ -378,10 +406,24 @@ export class PeerConnection {
 				} else if(data.type == 'name') {
 					changeName(data.uuid, data.name);
 				} else if(data.type == 'move') {
+					// the pose BEFORE the write, so a remote physics stream can be eased
+					// across rather than stepped through (moveSmoothing; ~10 Hz on the wire
+					// looked like 10 fps on the watching peer)
+					const movedObject = get(objectsGroup)?.getObjectByProperty('uuid', data.uuid);
+					const movedFrom = movedObject
+						? { pos: movedObject.position.clone(), quat: movedObject.quaternion.clone() }
+						: null;
 					moveGeometry(data.uuid, data.pos, data.rot, data.scale);
+					if (movedFrom) noteRemoteMove(data.uuid, movedObject, movedFrom);
 					// P-A: mid-sim, a peer's move stream on a dynamic body becomes a
-					// kinematic hold (drops back to dynamic after 250ms of silence)
-					physicsExternalMove(data.uuid);
+					// kinematic hold (drops back to dynamic after 250ms of silence).
+					// B5: the sending peer is the CLAIM, so two carry streams cannot
+					// fight over one crate.
+					physicsExternalMove(data.uuid, conn.peer);
+				} else if(data.type == 'throw') {
+					// B5: a peer's EXACT release. Initiator-only, never re-broadcast —
+					// the flight itself replicates through the existing move stream.
+					applyThrow(data);
 				} else if(data.type == 'simulate') {
 					applySimulate(data);
 				} else if(data.type == 'jointcreate') {
@@ -411,6 +453,11 @@ export class PeerConnection {
 					applyRemoteMusic(data);
 				} else if(data.type == 'scenephysics') {
 					applyRemoteScenePhysics(data);
+				} else if(data.type == 'manifest') {
+					// 21-G2: the project manifest, latest-wins on changedAt
+					applyRemoteManifest(data);
+				} else if(data.type == 'getproject') {
+					sendProjectManifest(data.sender);
 				} else if(data.type == 'scenepost') {
 					// L1/L2: the authored post stack, latest-wins on changedAt. An effect
 					// KIND we don't know is kept and skipped at render time, never dropped.
@@ -425,6 +472,33 @@ export class PeerConnection {
 					applyRemoteShaderGraphs(data);
 				} else if(data.type == 'getshadergraphs') {
 					sendShaderGraphs(data.sender);
+				} else if(data.type == 'hud') {
+					// A2: the authored HUD document, latest-wins on changedAt. An element KIND
+					// we don't know is kept and skipped at render, never dropped. The RUNTIME
+					// half is derived from the replicated flow graph and never sent.
+					applyRemoteHud(data);
+				} else if(data.type == 'huddelete') {
+					applyRemoteHudDelete(data);
+				} else if(data.type == 'huds') {
+					applyRemoteHuds(data);
+				} else if(data.type == 'gethuds') {
+					sendHuds(data.sender);
+				} else if(data.type == 'hudvalue') {
+					// 21-D4: a SHARED input's value - the one runtime HUD message, because what a
+					// player dragged is the only HUD state a peer cannot derive for itself.
+					// Latest-wins per element on a monotonic stamp.
+					applyRemoteHudValue(data);
+				} else if(data.type == 'hudvalues') {
+					applyRemoteHudValues(data);
+				} else if(data.type == 'gethudvalues') {
+					sendHudValues(data.sender);
+				} else if(data.type == 'game') {
+					// 21-D6: the game state, a latest-wins singleton like scenephysics/music.
+					// Every peer then reacts LOCALLY (screens, the start camera) - the camera
+					// itself is never on the wire.
+					applyRemoteGameState(data);
+				} else if(data.type == 'getgame') {
+					sendGameState(data.sender);
 				} else if(data.type == 'envpresets') {
 					applyRemoteEnvPresets(data);
 				} else if(data.type == 'geometry') {
@@ -467,7 +541,8 @@ export class PeerConnection {
 				} else if(data.type == 'objectParameters') {
 					objectParameters(data);
 				} else if(data.type == 'duplicate') {
-					applyRemoteDuplicate(data.sourceUuid, data.uuids, data.name, data.pos);
+					// B7: `transient` is additive — absent for every ordinary duplicate
+					applyRemoteDuplicate(data.sourceUuid, data.uuids, data.name, data.pos, data.transient);
 				} else if(data.type == 'clearscene') {
 					applyClearScene(data.peerId);
 				} else if(data.type == 'delete') {
@@ -490,6 +565,9 @@ export class PeerConnection {
 						// Honoring these evicted live peers meshwide during formation (B5).
 					} else {
 						handleDisconnected(data.peerId);
+						dropPeerPlayMode(data.peerId); // 21-F3
+						dropPeerScene(data.peerId); // P2b
+						dropPeerVars(data.peerId); // 21-G4
 						dropPeerEnvPresets(data.peerId);
 						dropPeerHandModel(data.peerId);
 					}
@@ -525,6 +603,17 @@ export class PeerConnection {
 					deleteFlowEdges(data.ids, data.graphId);
 				} else if(data.type == 'nodetrigger') {
 						applyNodeTrigger(data.id, data.t, false); // 134: shared-timestamp pulse
+					} else if(data.type == 'gettriggers') {
+						// DEVX #18: the trigger LOG for a late joiner. Deliberately NOT behind
+						// share-or-stash like getobjects/getnodes: there is nothing here for a
+						// user to choose about — the log is runtime state, not their authored
+						// work — and the payload prunes to live nodes, so after a stash we
+						// answer with nothing at all.
+						sendTriggers(data.sender);
+					} else if(data.type == 'triggers') {
+						// merged per node (newer stamp wins), and the merge marks the history
+						// epoch so nothing in it can be ACTED on — see triggerSync
+						applyRemoteTriggers(data);
 					} else if(data.type == 'particleburst') {
 						// PFX-A: shared-timestamp burst — every peer seeds the identical
 						// particle burst from t (no re-broadcast)
@@ -548,6 +637,22 @@ export class PeerConnection {
 				} else if(data.type == 'getmodulestate') {
 					sendModuleStates(data.sender);
 					sendCameraPreviewState(); // 16-P5: ride the same late-joiner request
+					sendPlayModeState(); // 21-F3: ...and so does play-mode presence
+					sendMySceneState(); // P2b: ...and where we are standing
+					sendPeerVarsState(); // 21-G4: ...and our own per-player row, if we hold one
+				} else if(data.type == 'peervars') {
+					// 21-G4: ONE peer's OWN numbers, whole-map latest-wins. Owner-only writer,
+					// so this applier can never be the thing that clobbers somebody's score.
+					applyRemotePeerVars(data);
+				} else if(data.type == 'playmode') {
+					// 21-F3: presence only — "X is in play mode". ADDITIVE: the message goes out
+					// only while PLAYING, so an absent peer (or one on an older build that never
+					// sends it) reads as an editor, which is what it is.
+					applyRemotePlayMode(data);
+				} else if(data.type == 'atscene') {
+					// P2b: which scene a peer is in. Latest-wins per SENDER, and only that
+					// sender ever writes its own row, so the map cannot race.
+					applyRemotePeerScene(data);
 				} else if(data.type == 'modulestate') {
 					applyModuleStates(data.states);
 				} else if(data.type == 'campreview') {
@@ -567,6 +672,9 @@ export class PeerConnection {
 					applyUvPaint(data);
 				} else if(data.type == 'uvpaintend') {
 					applyUvPaintEnd(data);
+				} else if(data.type == 'splineedit') {
+					// 57.3: only the RECORD travels — the receiver rebuilds the tube
+					applySplineEdit(data.uuid, data.spline);
 				} else if(data.type == 'vrhands') {
 					peerHands.update((map) => ({
 						...map,
@@ -603,20 +711,38 @@ export class PeerConnection {
 		conn.send(environmentState())
 		conn.send(musicState())
 		conn.send(scenePhysicsState())
-		conn.send(scenePostState())
+		// L-C: one per post DOCUMENT — the scene look and any camera looks
+		for (const state of scenePostStates()) conn.send(state)
 		conn.send(handModelState())
 		conn.send(envPresetsState())
 		if (getobjects) conn.send({type: 'getobjects', sender: this.peer.id, count: localSceneCount()})
+		// DEVX #18: the flow TRIGGER LOG - without it a joiner's latches/counters/Once
+		// nodes all read "never happened", so every collected object is back on the
+		// table. Rides the same getobjects gate as getnodes: the log is only meaningful
+		// beside the graph whose node ids it keys into.
+		// AHEAD of getnodes ON PURPOSE, so a node lands in a COMPLETE history rather than
+		// history landing on top of a node that has already been ticking. Nothing in core
+		// needs it - the epoch and the merge are both order-independent, and getnodes can
+		// be deferred behind share-or-stash for minutes anyway - but a CONSUMER with a
+		// first-sight rule of its own (the collectible module seeds each node's stamp
+		// without counting) is racy in the other order and correct in this one.
+		if (getobjects) conn.send({type: 'gettriggers', sender: this.peer.id})
 		if (getobjects) conn.send({type: 'getnodes', sender: this.peer.id})
 		if (getobjects) conn.send({type: 'getannotations', sender: this.peer.id})
 		if (getobjects) conn.send({type: 'getjoints', sender: this.peer.id})
 		if (getobjects) conn.send({type: 'getanim', sender: this.peer.id})
 		if (getobjects) conn.send({type: 'getscenepost', sender: this.peer.id})
 		if (getobjects) conn.send({type: 'getshadergraphs', sender: this.peer.id})
+		if (getobjects) conn.send({type: 'gethuds', sender: this.peer.id})
+		if (getobjects) conn.send({type: 'gethudvalues', sender: this.peer.id})
+		// singleton PUSH, like environmentState/scenePhysicsState above
+		conn.send(gameStatePayload())
 		// module state is the one PER-PEER payload in the get* family (each peer
 		// answers with its OWN states — e.g. campreview presence), so it can't be
 		// deduped down to the host like the shared-scene requests above (B5)
 		conn.send({type: 'getmodulestate', sender: this.peer.id})
+		// 21-G2: the project manifest (scene histories + asset list) for late joiners
+		conn.send({type: 'getproject', sender: this.peer.id})
 		if (getobjects) conn.send({type: 'getnodedefs', sender: this.peer.id})
 		// join them into the voice mesh if our mic is live
 		voicePeerConnected(peerId);
@@ -838,6 +964,9 @@ export class PeerConnection {
 		this.openedPeers.delete(peerId);
 		handleDisconnected(peerId);
 		clearPeerPreview(peerId); // 16-P5
+		dropPeerPlayMode(peerId); // 21-F3
+		dropPeerScene(peerId); // P2b
+		dropPeerVars(peerId); // 21-G4
 		dropPeerEnvPresets(peerId);
 		dropPeerHandModel(peerId);
 		if (relay) this.broadcast({ type: 'disconnected', peerId });
@@ -868,6 +997,9 @@ export class PeerConnection {
 				this.openedPeers.delete(peerId);
 				handleDisconnected(peerId);
 				clearPeerPreview(peerId); // 16-P5
+				dropPeerPlayMode(peerId); // 21-F3
+				dropPeerScene(peerId); // P2b
+				dropPeerVars(peerId); // 21-G4
 				dropPeerEnvPresets(peerId);
 				dropPeerHandModel(peerId);
 			}
@@ -886,9 +1018,22 @@ export class PeerConnection {
 	// conn can't throw mid-loop and starve the rest of the mesh (172).
 	/** @param {any} payload */
 	broadcast(payload) {
+		// P2b: POSE STREAMS do not cross scenes. A peer standing in another scene cannot
+		// draw our avatar (Player.svelte refuses to) and cannot watch us, so streaming
+		// our camera and hands at them is bytes nobody can use.
+		//
+		// A DELIBERATELY TINY ALLOWLIST. Everything else on this channel is scene STATE
+		// or protocol, and skipping any of it would desync a peer who travels back — the
+		// saving is not worth reasoning about per message type. These two are pure
+		// presence and are re-derived continuously, so the worst a skip can cost is one
+		// stale frame, and even that is covered by the re-publish in Scene.svelte.
+		const stream = STREAM_TYPES.has(payload?.type);
+		const mine = stream ? (myScene()?.scene ?? '') : '';
+		const where = stream ? get(peerScenes) : {};
 		Object.keys(this.connections).forEach(peerId => {
 			const conn = this.connections[peerId];
 			if (!conn || !conn.open) return;
+			if (stream && elsewhereThan(where, mine, peerId)) return;
 			try {
 				conn.send(payload);
 			} catch (err) {

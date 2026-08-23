@@ -5,6 +5,10 @@
 
 	export let type: string;
 	export let label: string = '';
+	// A6.4: an explicit accent overrides the group lookup. Today the accent derives
+	// only from groupOf(type), and an UNKNOWN type has no group at all — it needs to
+	// read as a warning, not as another gray module node.
+	export let accent: string = '';
 
 	const ACCENTS: Record<string, string> = {
 		Input: '#38bdf8', // blue
@@ -13,16 +17,22 @@
 		Effects: '#c084fc', // purple
 		Physics: '#f87171', // red
 		Logic: '#2dd4bf', // teal
-		Triggers: '#facc15' // yellow
+		Triggers: '#facc15', // yellow
+		HUD: '#f0abfc', // A3: pink-violet, distinct from Effects' purple
+		Game: '#34d399', // 21-D6: emerald — the game shell
+		Character: '#fbbf24', // 21-E6: amber — the player's own movement
+		// 'Object Flow' was MISSING, so flowinput/flowoutput/objectflow fell through to
+		// the module-node gray and read as third-party cards. Fixed while adding HUD.
+		'Object Flow': '#818cf8' // indigo
 	};
 	$: group = groupOf(type);
 	// module groups → gray, user-designed custom nodes → user accent
-	$: accent = group ? (ACCENTS[group] ?? '#94a3b8') : '#e879f9';
+	$: resolvedAccent = accent || (group ? (ACCENTS[group] ?? '#94a3b8') : '#e879f9');
 </script>
 
 <div
 	class="node-card flex h-full flex-col rounded-lg border border-gray-600/70 bg-gray-800/95 text-gray-200 shadow-lg"
-	style={`--node-accent: ${accent}; border-top: 2px solid ${accent}`}
+	style={`--node-accent: ${resolvedAccent}; border-top: 2px solid ${resolvedAccent}`}
 >
 	<div
 		class="flex items-center gap-1.5 rounded-t-md border-b border-gray-700/60 bg-gray-900/50 px-3 py-1.5 font-mono text-xs font-semibold text-gray-100"

@@ -10,8 +10,7 @@ import {
 	shaderEditorClose,
 	explorerClose,
 	objectListClose,
-	notesDrawerOpen,
-	libraryClose
+	notesDrawerOpen
 } from '../stores/appStore';
 import { bottomDockActive } from './bottomDock';
 
@@ -48,7 +47,11 @@ const PANELS = [
 	{ name: 'shader', store: shaderEditorClose, closed: true },
 	{ name: 'explorer', store: explorerClose, closed: true },
 	{ name: 'objectList', store: objectListClose, closed: true },
-	{ name: 'library', store: libraryClose, closed: true },
+	// 21-H2: `library` retired with Library.svelte (an unreachable second home for
+	// prefabs). A saved payload naming it is simply not in this table any more, and
+	// `applyWorkspace` walks the TABLE — so an old record restores everything it still
+	// recognises and ignores that key without so much as a warning. That is the
+	// "restore less, never more" rule doing its job, not a special case for it.
 	{ name: 'notes', store: notesDrawerOpen, closed: false }
 ];
 

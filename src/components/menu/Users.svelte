@@ -25,15 +25,57 @@
 		notesDrawerOpen,
 		cloudIdentity,
 		connectDocked,
-		connectBarHeight
+		connectBarHeight,
+		showToast
 	} from '../../stores/appStore.js';
-	import { globalScene, globalCamera, camSave, peerHands } from '../../stores/sceneStore.js';
+	import { globalScene, globalCamera, camSave, peerHands, isLocked } from '../../stores/sceneStore.js';
+	// 21-F3: who is in play mode, and who may end the round
+	import { peerPlayModes, resetAllowed, requestResetGame } from '$lib/gamePresence';
+	// P2b: WHICH SCENE each peer is standing in. Reported as "if a peer opens another
+	// scene, peers would not see where he is" — the roster said present and nothing
+	// said where. Our own row reads `currentLevel` directly; peers read the map.
+	import { peerScenes, elsewhereThan } from '$lib/peerScenes';
+	import { currentLevel } from '$lib/levels';
+
+	/**
+	 * WHY WATCH IS GATED. Watching a peer attaches your camera to theirs — in THIS
+	 * world. A peer standing in another scene is looking at a world you do not have
+	 * loaded, so following them shows you nothing and leaves you somewhere you cannot
+	 * get back from. 21-G5 already made exactly this call for peers in other rooms via
+	 * the cloud bridge (disabled, WITH the reason, never hidden — a dead button with no
+	 * explanation is how it gets filed as a bug); now that peers in ONE mesh can be in
+	 * different scenes, the same rule has to hold inside the session.
+	 *
+	 * ONLY ON EVIDENCE. An absent row means "we have not been told", which is not the
+	 * same as "somewhere else" — a peer on an older build never sends one. And if WE
+	 * are not in a named scene there is nothing to compare against. Both unknowns
+	 * leave Watch enabled: refusing on a guess would break a working feature for
+	 * anybody whose scene simply has no name yet.
+	 * @returns {string} their scene when they are demonstrably elsewhere, else empty
+	 */
+	const watchBlockedBy = elsewhereThan;
+
+	/**
+	 * WHAT THE CHIP SAYS. A peer with a row and no scene name is in the session's
+	 * UNNAMED world — the ordinary state before anybody saves anything, and the state a
+	 * joiner is in when the host has never named a scene. Saying so beats an empty gap
+	 * that reads as "we lost them". No row at all still renders nothing: that is a peer
+	 * on an older build, and inventing a location for them would be a guess.
+	 */
+	const UNNAMED = 'Untitled scene';
+	function chipFor(map: any, mine: any, peerId: string, self: boolean): string {
+		if (self) return mine?.name || UNNAMED;
+		const row = map?.[peerId];
+		return row ? row.scene || UNNAMED : '';
+	}
+	import { gameState } from '$lib/gameState';
+	import { sessionHost } from '$lib/connectionState';
 	import { mutedPeers, toggleMutePeer } from '$lib/voiceChat';
 	import { peerQuality } from '$lib/networkQuality';
 	import ContextMenu from '../ContextMenu.svelte';
 	import NotificationCenter from './NotificationCenter.svelte';
 	import CloudSlot from '../CloudSlot.svelte';
-	import { usersSlot, profileSlot, rolesInfo } from '$lib/cloudHooks';
+	import { usersSlot, profileSlot, rolesInfo, scenePresence } from '$lib/cloudHooks';
 
 	// N3: latency-band dot color for a peer's network-quality indicator
 	const qColor = (level: string) =>
@@ -105,6 +147,34 @@
 	const effAvatar = $derived(avatarImage || ls('avatar') || cid?.avatar || '');
 	/** cloud roles bridge (null without the cloud plugin) */
 	const ri = $derived($rolesInfo);
+	// 21-G5 (F7): the project's OTHER rooms — mine is excluded, and a room with no
+	// members to show is skipped rather than rendering an empty header
+	const crossRooms = $derived(
+		(($scenePresence?.rooms as any[]) ?? []).filter(
+			(room) => room && room.id !== $scenePresence?.myRoomId && (room.members?.length ?? 0) > 0
+		)
+	);
+
+	// --- 21-F3: play-mode presence + the admin reset -------------------------------
+	/** A chip only appears when it SAYS something: a peer who is PLAYING, or — while a
+	 * round is actually running — a peer who is not, which is the moment "who is still
+	 * in the editor" becomes worth knowing. In a scene with no game every row would
+	 * otherwise carry a permanent "editor" badge that means nothing at all. */
+	const roundRunning = $derived($gameState.state === 'playing' || $gameState.state === 'paused');
+	/** the stores come in as ARGUMENTS so the read is tracked where the template calls
+	 * it — a helper reaching a store through `get()` registers no dependency, and the
+	 * `($store, expr)` workaround fails svelte-check */
+	const modeOf = (modes: Record<string, string>, locked: any, id: string, self: boolean) =>
+		self ? (locked === true ? 'playing' : 'editor') : modes[id] === 'playing' ? 'playing' : 'editor';
+	/** Is there a game to reset at all? A pristine shell has nothing to say. */
+	const gameInUse = $derived($gameState.round > 0 || $gameState.state !== 'menu');
+	/** INERT without a cloud plugin: falls back to the session host (see canResetGame) */
+	const canReset = $derived(resetAllowed(ri, $sessionHost, $peers));
+	function doResetGame() {
+		const result = requestResetGame();
+		if (!result.ok && result.reason) showToast(result.reason);
+		peersOpen = false;
+	}
 	/** peerId whose role dropdown is open (null = none) */
 	let roleMenuFor: string | null = $state(null);
 	/** fixed-position anchor for the (portaled) role dropdown */
@@ -230,8 +300,11 @@
 	<NotificationCenter />
 <!-- CN: gate on LIVE connections (openedPeers), not the roster — userdata is
 	 populated optimistically at dial time, which showed a phantom peer while an
-	 outbound request was still pending. -->
-{#if $userdata && $userdata.length > 1 && $peers && $peers.openedPeers?.size > 0}
+	 outbound request was still pending.
+	 21-G5: OR on cross-scene presence — being alone in YOUR scene is exactly when
+	 "where is everyone" matters, and a popover that only exists once somebody is
+	 already in your mesh could never show you the people who are not. -->
+{#if ($userdata && $userdata.length > 1 && $peers && $peers.openedPeers?.size > 0) || crossRooms.length > 0}
 	<div class="relative">
 		<!-- compact trigger: a few stacked avatars + the peer count -->
 		<button
@@ -269,6 +342,30 @@
 								<span class="truncate">{shortId(user[0])}</span>
 								{#if $mutedPeers.includes(user[0])}<span title="Muted"><VolumeX size={16} aria-hidden="true" /></span>{/if}
 								{#if $peerHands[user[0]]?.active}<span title="In VR"><Glasses size={16} aria-hidden="true" /></span>{/if}
+								<!-- 21-F3: play-mode presence. `{@const}` may only be the IMMEDIATE
+									 child of a block, so the mode is resolved in the `{#if}` and
+									 named inside it. -->
+								{#if modeOf($peerPlayModes, $isLocked, user[0], i === 0) === 'playing' || roundRunning}
+									{@const pmode = modeOf($peerPlayModes, $isLocked, user[0], i === 0)}
+									<span
+										class="mode-chip"
+										data-mode={pmode}
+										title={pmode === 'playing' ? 'In play mode' : 'In the editor, not playing'}>{pmode}</span
+									>
+								{/if}
+								<!-- P2b: where this peer is. Absent means we have not been told — which is
+								     not the same as "nowhere", so it renders nothing rather than guessing.
+								     `{@const}` may only be the IMMEDIATE child of a block, so the expression is
+								     repeated in the `{#if}` and named inside it — the mode chip above does the
+								     same, for the same reason. -->
+								{#if chipFor($peerScenes, $currentLevel, user[0], i === 0)}
+									{@const sceneName = chipFor($peerScenes, $currentLevel, user[0], i === 0)}
+									<span
+										class="scene-chip"
+										class:scene-chip-here={sceneName === ($currentLevel?.name ?? null)}
+										title={i === 0 ? 'The scene you have open' : 'In ' + sceneName}>{sceneName}</span
+									>
+								{/if}
 								{#if user[3]}<span class="text-amber-300">▸ {shortId(user[3])}</span>{/if}
 								{#if i > 0 && $peerQuality[user[0]]}
 									{@const q = $peerQuality[user[0]]}
@@ -289,8 +386,10 @@
 								<span class="role-badge" data-role={ri.roleOf(user[0])}>{ri.roleOf(user[0])}</span>
 							{/if}
 						{/if}
-						{#if i > 0 && $cameraPreviews[user[0]]}
-							<!-- 16-P5: this peer is looking through a scene camera — you can join -->
+						{#if i > 0 && $cameraPreviews[user[0]] && !watchBlockedBy($peerScenes, $currentLevel?.name ?? '', user[0])}
+							<!-- 16-P5: this peer is looking through a scene camera — you can join.
+							     P2b: not across scenes — the camera MARKER lives in their scene, so
+							     there would be nothing here to look through. -->
 							<button
 								class="peer-watch peer-preview shrink-0 rounded px-2 py-0.5 text-xs bg-gray-600 text-gray-100 hover:bg-gray-500"
 								title={`Previewing ${previewLabel($cameraPreviews[user[0]])} — click to look through it too`}
@@ -300,11 +399,19 @@
 							</button>
 						{/if}
 						{#if i > 0}
+							{@const away = watchBlockedBy($peerScenes, $currentLevel?.name ?? '', user[0])}
 							<button
-								class="peer-watch shrink-0 rounded px-2 py-0.5 text-xs {$specatorMode === user[0]
-									? 'bg-primary-600 text-white'
-									: 'bg-gray-600 text-gray-100 hover:bg-gray-500'}"
-								title={$specatorMode === user[0] ? 'Watching (exit from the banner)' : 'Watch this peer'}
+								class="peer-watch shrink-0 rounded px-2 py-0.5 text-xs {away
+									? 'bg-gray-700 text-gray-500'
+									: $specatorMode === user[0]
+										? 'bg-primary-600 text-white'
+										: 'bg-gray-600 text-gray-100 hover:bg-gray-500'}"
+								disabled={!!away}
+								title={away
+									? 'In ' + away + ' — open that scene to watch them'
+									: $specatorMode === user[0]
+										? 'Watching (exit from the banner)'
+										: 'Watch this peer'}
 								onclick={() => { specate(user[0]); peersOpen = false; }}
 								oncontextmenu={(e) => openMuteMenu(e, user[0])}
 							>
@@ -314,6 +421,67 @@
 					</div>
 				{/each}
 				</div>
+				<!-- 21-F3: the ADMIN half of "the game resets only when everyone has left
+					 play, or an admin resets it". Offered only when there is a game to
+					 reset, and DISABLED (with the reason in its tooltip) for anyone who is
+					 not entitled — an admin where a roles plugin says so, the session host
+					 otherwise. The flow node behind "Reset the game" is deliberately NOT
+					 gated: a node in a replicated graph is the author's intent, not an
+					 administrative act. -->
+				{#if gameInUse}
+					<div class="mt-1 border-t border-gray-700/60 pt-1">
+						<button
+							id="reset-game"
+							type="button"
+							class="reset-game-btn"
+							disabled={!canReset}
+							title={canReset
+								? 'Send everyone back to the game menu'
+								: ri
+									? 'Only an admin can reset the game'
+									: 'Only the session host can reset the game'}
+							onclick={doResetGame}>Reset game</button
+						>
+					</div>
+				{/if}
+				<!-- 21-G5 (F7): CROSS-SCENE PRESENCE — who is in the project's OTHER
+					 rooms/scenes, published by the rooms plugin (null in OSS = nothing
+					 renders). Watch is DISABLED with the reason, not hidden: it cannot
+					 reach a peer outside this mesh, and a dead button with no explanation
+					 is how that gets filed as a bug. Invite's transport belongs to the
+					 plugin; the button renders only when it provides one. -->
+				{#if crossRooms.length}
+					<div class="mt-1 border-t border-gray-700/60 pt-1" id="cross-scene-presence">
+						{#each crossRooms as room (room.id)}
+							<div class="px-1.5 py-0.5 text-[10px] uppercase tracking-wide text-gray-500">
+								in {room.scene || room.name || 'another scene'}
+							</div>
+							{#each room.members ?? [] as m (m.peerId)}
+								<div class="peers-row flex items-center gap-2 rounded px-1.5 py-1">
+									<span class="min-w-0 flex-1 truncate text-sm" title={m.name || m.peerId}
+										>{m.name || String(m.peerId ?? '').slice(0, 6)}</span
+									>
+									<span class="mode-chip" data-mode={m.mode === 'playing' ? 'playing' : 'editor'}
+										>{m.mode === 'playing' ? 'playing' : 'editor'}</span
+									>
+									<button
+										class="rounded px-1.5 py-0.5 text-xs text-gray-500"
+										disabled
+										title="In another scene — Watch cannot reach a peer outside your session. Join their room to watch."
+										>Watch</button
+									>
+									{#if typeof $scenePresence?.invite === 'function'}
+										<button
+											class="cross-scene-invite rounded bg-primary-600/80 px-1.5 py-0.5 text-xs text-white hover:bg-primary-500"
+											title="Ask them to join your scene — they get a toast; accepting connects them to your session"
+											onclick={() => $scenePresence.invite(m.peerId, room)}>Invite</button
+										>
+									{/if}
+								</div>
+							{/each}
+						{/each}
+					</div>
+				{/if}
 				<!-- open-core (M1d): cloud plugin roles section. Empty in the OSS
 					 build; the cloud plugin fills it via cloudApi.mountUsersSection(). -->
 				{#if $usersSlot}
@@ -529,6 +697,19 @@
 	.role-badge[data-role='admin'] { background: #7c3aed; }
 	/* keep the peers list scrollable so it never spills off a short/narrow screen */
 	.peers-scroll { max-height: 264px; overflow-y: auto; }
+	/* 21-F3 play-mode chip. Deliberately quieter than the role badge beside it: a role
+	   is an authority and a mode is a passing fact. */
+	.mode-chip { flex: 0 0 auto; font-size: 9px; font-weight: 600; letter-spacing: 0.02em; padding: 0 6px; border-radius: 9999px; text-transform: capitalize; line-height: 1.5; border: 1px solid transparent; }
+	.mode-chip[data-mode='playing'] { color: #86efac; background: rgb(34 197 94 / 0.16); border-color: rgb(34 197 94 / 0.35); }
+	.mode-chip[data-mode='editor'] { color: #cbd5e1; background: rgb(148 163 184 / 0.14); border-color: rgb(148 163 184 / 0.3); }
+	/* P2b: which SCENE a peer is in. Deliberately quieter than the mode chip — a room
+	   is where somebody is, not a state they are in — and highlighted only when it is
+	   the scene YOU have open, which is the one comparison the list is read for. */
+	.scene-chip { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 9px; padding: 0 6px; border-radius: 9999px; line-height: 1.5; color: #cbd5e1; background: rgb(148 163 184 / 0.14); border: 1px solid rgb(148 163 184 / 0.3); }
+	.scene-chip-here { color: #93c5fd; background: rgb(59 130 246 / 0.16); border-color: rgb(59 130 246 / 0.35); }
+	.reset-game-btn { width: 100%; padding: 5px 8px; border-radius: 7px; border: 1px solid rgb(255 255 255 / 0.12); background: transparent; color: #e5e7eb; font-size: 11px; text-align: left; cursor: pointer; }
+	.reset-game-btn:hover:not(:disabled) { background: rgb(255 255 255 / 0.09); }
+	.reset-game-btn:disabled { opacity: 0.45; cursor: not-allowed; }
 	/* PROFILE PANEL, horizontal edge only. floating-ui places this from the trigger, and
 	   under a MOBILE viewport (page scale != 1) its math drifts right by exactly the
 	   trigger's inset: on a phone the panel landed flush with the window edge while the

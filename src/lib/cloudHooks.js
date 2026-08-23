@@ -29,7 +29,13 @@ const ALWAYS_ALLOWED = new Set([
 	'getannotations',
 	'getmodulestate',
 	'getnodedefs',
-	'getjoints'
+	'getjoints',
+	// DEVX #18: the flow trigger log. On the floor beside `getnodes` for the same reason
+	// the list gives — answering a full-state REQUEST is how a peer ever syncs, and this
+	// one decides whether a joiner sees a collected world or a reset one. The `triggers`
+	// REPLY is deliberately NOT here: a reply is content, and every other domain leaves
+	// its content gateable (`getnodes` is on the floor, `nodes` is not).
+	'gettriggers'
 ]);
 
 /** @type {((peerId: string, msgType: string) => boolean) | null} */
@@ -154,3 +160,18 @@ export const CLOUD_HOOKS_VERSION = 2;
  * Settings ▸ About renders it as a "Cloud plugin x.y.z" row. Null without a plugin.
  * @type {import('svelte/store').Writable<{name: string, version: string} | null>} */
 export const cloudPluginInfo = writable(null);
+
+/**
+ * 21-G5 (F7): CROSS-SCENE PRESENCE, the rolesInfo-bridge shape one domain over. The
+ * rooms plugin publishes who is in the project's OTHER rooms/scenes and core renders
+ * it in the Users popover — chips, a Watch that says WHY it cannot reach them (a peer
+ * outside your mesh is unreachable by design), and an Invite whose transport belongs
+ * entirely to the plugin. NULL without a plugin, and every reader treats null as
+ * "render nothing" — the OSS build is byte-identical (the open-core rule).
+ *
+ * Shape (loose on purpose; core reads defensively):
+ *   { myRoomId: string|null,
+ *     rooms: [{ id, name, scene, hostPeerId, members: [{peerId, name, mode}] }],
+ *     invite?: (peerId, room) => void }
+ * @type {import('svelte/store').Writable<any>} */
+export const scenePresence = writable(null);

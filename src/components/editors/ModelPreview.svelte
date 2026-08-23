@@ -1,18 +1,31 @@
 <script lang="ts">
 	// @ts-ignore - no bundled three type declarations (project-wide)
 	import * as THREE from 'three'
+	import { untrack } from 'svelte'
 	import { itemBlob, parseObjectFile } from '$lib/explorer'
+	import { prefabObject } from '$lib/prefabs'
 
 	// N4: a self-contained (non-Threlte) three.js canvas that renders an Explorer
 	// object item, auto-fits it, spins gently, and lets you drag to rotate. Reports
 	// tris/verts/meshes via onStats. Reused by the Properties inline preview and the
 	// floating ModelPreviewWindow. Fully disposes its GL context on teardown.
+	// 21-H2: TWO sources now. `itemId` resolves an Explorer item to a blob and parses the
+	// file; `prefabId` parses the stored prefab JSON through the shared `prefabObject`
+	// seam (a prefab is not an item, which is why this could not already show one). Pass
+	// exactly one.
 	let {
-		itemId,
+		itemId = '',
+		prefabId = '',
 		name = '',
 		autoSpin = true,
 		onStats
-	}: { itemId: string; name?: string; autoSpin?: boolean; onStats?: (s: any) => void } = $props()
+	}: {
+		itemId?: string
+		prefabId?: string
+		name?: string
+		autoSpin?: boolean
+		onStats?: (s: any) => void
+	} = $props()
 
 	let canvas: HTMLCanvasElement | undefined = $state()
 
@@ -20,13 +33,40 @@
 		if (!canvas) return
 		const el = canvas
 		const id = itemId
+		const prefab = prefabId
 		const fileName = name
 		let raf = 0
 		let disposed = false
 		let dragging = false
 		let model: any = null
 
-		const renderer = new THREE.WebGLRenderer({ canvas: el, antialias: true, alpha: true })
+		// 21-H2 — READ THE CALLBACK OUT OF THE TRACKED SCOPE. Every consumer passes an
+		// INLINE arrow (`onStats={(s) => (stats = s)}`), which is a new function on each
+		// parent render, so touching the prop inside this effect makes the effect re-run
+		// whenever the parent merely re-renders. That tears the renderer down
+		// (forceContextLoss) and immediately asks the SAME canvas element for a new
+		// context, which returns null — three then throws "cannot read properties of null
+		// (reading 'precision')" from inside the effect and takes the whole svelte flush
+		// with it, so unrelated UI (here: the pop-out that was opening) never mounts. The
+		// item source was accidentally safe because it only touched `onStats` after an
+		// `await`; the prefab source is synchronous and had no such luck.
+		const report = untrack(() => onStats)
+
+		// 21-H2: THIS component clears the stats for a new source, rather than each
+		// consumer clearing them beside its own `{#key}` — the prefab source reports
+		// synchronously, so a consumer's "reset on target change" effect could otherwise
+		// run afterwards and blank the box. One writer, no ordering to get right.
+		report?.(null)
+
+		// A canvas cannot hand out a second context, and a browser will refuse one when
+		// too many are already live. Failing here must not throw into the flush.
+		let renderer: any
+		try {
+			renderer = new THREE.WebGLRenderer({ canvas: el, antialias: true, alpha: true })
+		} catch (error) {
+			console.log('model preview: no WebGL context', error)
+			return
+		}
 		renderer.setPixelRatio(Math.min(2, window.devicePixelRatio || 1))
 		const scene = new THREE.Scene()
 		scene.add(new THREE.HemisphereLight(0xffffff, 0x445, 2.2))
@@ -46,20 +86,28 @@
 		}
 
 		;(async () => {
-			let blob
-			try {
-				blob = await itemBlob(id)
-			} catch {
-				return
-			}
-			if (!blob || disposed) return
-			const buffer = await blob.arrayBuffer()
-			const ext = (fileName.split('.').pop() || 'glb').toLowerCase()
 			let obj: any
-			try {
-				obj = await parseObjectFile(buffer, ext)
-			} catch {
-				return
+			if (prefab) {
+				// the prefab source is SYNCHRONOUS (JSON already in memory) — no blob, no
+				// file parse; still inside the async body so both sources share the fit,
+				// the stats and the disposal guard below.
+				obj = prefabObject(prefab)
+				if (disposed || !obj) return
+			} else {
+				let blob
+				try {
+					blob = await itemBlob(id)
+				} catch {
+					return
+				}
+				if (!blob || disposed) return
+				const buffer = await blob.arrayBuffer()
+				const ext = (fileName.split('.').pop() || 'glb').toLowerCase()
+				try {
+					obj = await parseObjectFile(buffer, ext)
+				} catch {
+					return
+				}
 			}
 			if (disposed || !obj) return
 			model = obj
@@ -87,7 +135,7 @@
 					tris += g.index ? g.index.count / 3 : p / 3
 				}
 			})
-			onStats?.({ tris: Math.round(tris), verts, meshes })
+			report?.({ tris: Math.round(tris), verts, meshes })
 			resize()
 		})()
 

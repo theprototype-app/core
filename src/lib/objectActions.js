@@ -34,6 +34,8 @@ import {
 } from '../stores/appStore';
 import { canEditObject, warnViewerReadOnly } from './objectPermissions';
 import { stripEditOverlays } from './editOverlays';
+// B7: the transient marker (a LEAF — two stores only, so no cycle back through history)
+import { markTransient } from './transientObjects';
 import {
 	duplicateCarriesAnimation,
 	duplicateCarriesFlow,
@@ -366,9 +368,28 @@ function stripSelectionTint(source, clone) {
 /**
  * Duplicate an object (Ctrl+D / context menu) and replicate the copy to peers.
  * Peers clone their own instance of the source, so no geometry re-export is needed.
+ *
+ * 21-B B7 added the three SPAWNER options, all of them opt-in so Ctrl+D is byte-unchanged:
+ *
+ * - `history: false` records no undo entry. A spawner firing forty times would otherwise
+ *   flood the stack with forty creations the user never made, and the objects are swept
+ *   at the end of the run anyway — half a lifecycle on the undo stack is worse than none.
+ * - `transient: true` stamps `userData.transient` and tells peers to do the same, so the
+ *   copy is excluded from sessions and autosave and swept when the sim stops
+ *   (transientObjects.js documents all four paths). The message field is ADDITIVE: an
+ *   older peer ignores it and keeps an ordinary copy.
+ * - `at` places the clone BEFORE the broadcast. The default +0.5/+0.5 nudge is right for
+ *   Ctrl+D and wrong for a spawner, and moving the object afterwards would send peers the
+ *   nudged position and let the ~10 Hz move stream correct it a frame later — a visible pop.
+ *
+ * A transient duplicate deliberately carries NO per-object state (animation clips, object
+ * flow, shader graph). Each carrier broadcasts a whole DOCUMENT per copy, and volume is
+ * the spawner's entire point: thirty-two crates would be thirty-two replicated graph
+ * documents, into every peer and every save path, for objects that exist for one run.
  * @param {string=} uuid - defaults to the selected object
- * @param {{select?: boolean}=} options - select:false leaves the selection alone
- *   (duplicateSelection selects the whole clone SET once, at the end)
+ * @param {{select?: boolean, history?: boolean, transient?: boolean, at?: number[]}=} options
+ *   select:false leaves the selection alone (duplicateSelection selects the whole clone
+ *   SET once, at the end)
  */
 export function duplicateObject(uuid, options = {}) {
 	const group = get(objectsGroup);
@@ -390,8 +411,12 @@ export function duplicateObject(uuid, options = {}) {
 	const cloneNodes = collectTree(clone);
 	cloneNodes.forEach((node) => (node.uuid = crypto.randomUUID()));
 	clone.name = (source.name || source.type) + ' copy';
-	clone.position.x += 0.5;
-	clone.position.z += 0.5;
+	if (Array.isArray(options.at)) clone.position.fromArray(options.at);
+	else {
+		clone.position.x += 0.5;
+		clone.position.z += 0.5;
+	}
+	if (options.transient) markTransient(clone);
 	source.parent.add(clone);
 	objectsGroup.update((value) => value);
 
@@ -403,16 +428,19 @@ export function duplicateObject(uuid, options = {}) {
 			sourceUuid: source.uuid,
 			uuids: cloneNodes.map((node) => node.uuid),
 			name: clone.name,
-			pos: clone.position.toArray()
+			pos: clone.position.toArray(),
+			// B7: absent for every ordinary duplicate, so the message a peer already
+			// knows how to read is unchanged
+			...(options.transient ? { transient: true } : {})
 		});
 
 	// after the clone exists and its uuid is known, and after the `duplicate`
 	// message so a peer has the object before its clips/graph arrive (not
 	// required — both stores tolerate either order — but it keeps a trace readable)
-	carryObjectState(source.uuid, clone.uuid);
+	if (!options.transient) carryObjectState(source.uuid, clone.uuid);
 
 	if (options.select !== false) selectObject(clone.uuid);
-	recordObjectPresence('create', clone);
+	if (options.history !== false) recordObjectPresence('create', clone);
 	return clone;
 }
 
@@ -450,8 +478,12 @@ export function duplicateSelection() {
  * Apply a duplicate made by a peer: clone the same source locally and assign
  * the uuids the originator generated (same depth-first order on both sides).
  * @param {string} sourceUuid @param {string[]} uuids @param {string} name @param {number[]} pos
+ * @param {boolean=} transient B7: the sender says this copy lives only for the run — the
+ *   flag has to be stamped HERE because the clone is made from OUR source object, whose
+ *   userData is (correctly) not transient. Without it a peer would keep the spawned crates
+ *   in its own sessions and autosave, and only the initiator's sweep would remove them.
  */
-export function applyRemoteDuplicate(sourceUuid, uuids, name, pos) {
+export function applyRemoteDuplicate(sourceUuid, uuids, name, pos, transient) {
 	const group = get(objectsGroup);
 	const source = group?.getObjectByProperty('uuid', sourceUuid);
 	if (!source) return;
@@ -463,6 +495,7 @@ export function applyRemoteDuplicate(sourceUuid, uuids, name, pos) {
 	});
 	clone.name = name;
 	clone.position.fromArray(pos);
+	if (transient) markTransient(clone);
 	source.parent.add(clone);
 	objectsGroup.update((value) => value);
 }

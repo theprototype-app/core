@@ -127,7 +127,12 @@ export function shaderGestureActive(key) {
 }
 
 registerHistoryKind('shadergraph', (/** @type {any} */ entry, /** @type {any} */ state) => {
-	const doc = state.present ? entry.after : entry.before;
+	// `state` IS the doc history hands us (applyState passes entry.before or entry.after),
+	// so the direction is an IDENTITY comparison - the idiom every other kind uses. This
+	// read `state.present`, a flag that does not exist on a graph document, so it was
+	// ALWAYS falsy and redo restored `before`: undo worked and redo silently did nothing.
+	// Measured on release/next before the fix: 2 nodes -> undo 1 -> redo 1.
+	const doc = state === entry.before ? entry.before : entry.after;
 	// goes through the SINGLE write path, so undo replicates and recompiles exactly like
 	// an edit does. History mutes its own recording while applying, so this cannot
 	// re-record; the broadcast is deliberate (the joints precedent).

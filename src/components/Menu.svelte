@@ -26,7 +26,10 @@
 	import AnnotationMarkers from './menu/AnnotationMarkers.svelte';
 	import KnifeOverlay from './menu/KnifeOverlay.svelte';
 	import NotesDrawer from './menu/NotesDrawer.svelte';
-	import Library from './menu/Library.svelte';
+	// 21-H2: Library.svelte is GONE. It was a SECOND home for prefabs, and it was
+	// unreachable — `libraryClose` is writable(true) and nothing in the app ever set it
+	// false, so no menu entry, button or store write could open it. The Explorer owns
+	// prefabs now, carrying the CRUD that drawer had.
 	import { DarkMode } from 'flowbite-svelte';
 	import Users from './menu/Users.svelte';
 	// RW: replaced the gutted News.svelte stub (empty body, inverted hasSeenModal flag)
@@ -65,7 +68,6 @@
 <KnifeOverlay />
 <AnnotationPopover />
 <NotesDrawer />
-<Library />
 <Toasts />
 <Users />
 <!-- 16-P5: letterbox bars while previewing a camera at a fixed aspect -->

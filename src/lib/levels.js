@@ -396,10 +396,29 @@ export async function saveSceneAsLevel(name, folderId = null, opts = {}) {
 		target
 	);
 	if (!item) return null;
+	// REPORTED: read where we WERE before the save moves us — a LOOSE scene is about to
+	// become a project scene, and its source file is the only record of what it looked
+	// like before this save. Captured here because currentLevel.set below destroys it.
+	const cameFrom = get(currentLevel);
 	currentLevel.set({ hash: item.hash, name: payload.name, signature: sceneSignature(payload) });
 	// 21-G2: a manual save IS a version — the manifest pointer moves with it (refused
 	// for viewers inside publishSceneVersion; the local item exists either way)
 	publishSceneVersion(payload.name, item.hash);
+	// ADOPT THE FILE WE CAME FROM. Reported as: open a dragged-in cube.tpscene, rename
+	// it, move something, then save — and a SECOND cube2.tpscene appeared beside the
+	// first. Both cards were real and different (the save is a new version), but the
+	// source was left OUTSIDE the history, so the one-card-per-scene invariant could
+	// not apply to it: `hideOldVersions` folds by name and deliberately skips imported
+	// files, because two files a user dragged in independently are not versions of one
+	// scene. This one is not a stranger — it is literally the scene we are standing in,
+	// and `currentLevel.hash` says so, which is the signal the by-name sweep never has.
+	//
+	// Adopting it (rather than clearing its `imported` stamp) is what keeps both rules
+	// true at once: the file becomes version 1 of this scene, the fold hides it because
+	// the HISTORY now names it, and Version history gives those bytes a door. Nothing is
+	// deleted, and a scene saved from nowhere adopts nothing.
+	if (cameFrom?.unsaved && cameFrom.hash && cameFrom.hash !== item.hash && itemByHash(cameFrom.hash))
+		adoptSceneVersions(payload.name, [cameFrom.hash]);
 	if (opts.label) setVersionLabel(payload.name, item.hash, opts.label);
 	// 21-G7: one visible card per scene name — the pointer we just wrote
 	hideOldVersions(payload.name);

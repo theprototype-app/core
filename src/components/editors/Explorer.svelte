@@ -13,6 +13,7 @@
 	import {
 		explorerFolders,
 		explorerItems,
+		hiddenItems,
 		activeFolder,
 		loadExplorer,
 		createFolder,
@@ -544,7 +545,42 @@
 		const inFolder = $explorerItems.filter((item) => (item.folderId ?? null) === ($activeFolder ?? null));
 		const q = search.trim().toLowerCase();
 		const scoped = q ? $explorerItems.filter((item) => item.name.toLowerCase().includes(q)) : inFolder;
-		return scoped;
+		// P2a: PROJECT SCENES THIS PEER DOES NOT HOLD. Reported as "when a user connects
+		// they will not see project scenes" and "if peers create a scene in the project it
+		// disappears" — both the same gap: the manifest replicates and names every scene,
+		// while the library (placement + bytes) is local, so a joiner could TRAVEL to a
+		// scene it could not SEE. These cards are DERIVED from the manifest, never stored:
+		// no message type, nothing to migrate, and the moment the bytes land the real item
+		// takes over (the card is keyed by the same pointer hash). Opening one pulls it
+		// through travel's existing hash pull. The `sceneEntry` precedent, one view over:
+		// a derived card carries no CRUD.
+		const held = new Set([...$explorerItems, ...$hiddenItems].map((i) => i.hash));
+		const missing = Object.entries($projectManifest.scenes)
+			.map(([name, entry]: [string, any]) => ({
+				name,
+				hash: entry.history[entry.history.length - 1]
+			}))
+			.filter((r) => r.hash && !held.has(r.hash))
+			.filter((r) => !q || r.name.toLowerCase().includes(q))
+			.sort((a, b) => a.name.localeCompare(b.name))
+			.map((r) => ({
+				id: 'remote:' + r.hash,
+				name: r.name + '.tpscene',
+				kind: 'scene',
+				hash: r.hash,
+				folderId: null,
+				size: 0,
+				thumbnail: null,
+				createdAt: 0,
+				// the marker every consumer branches on. `remoteScene` and not a reuse of
+				// `sceneEntry`: that one means the Scene ASSET view, and conflating them would
+				// put this card in a menu written for a different thing.
+				remoteScene: true
+			}));
+		// they belong to the PROJECT rather than to a folder, so they show at the library
+		// root (and in any search) — never inside a folder they were never placed in
+		const atRoot = !q && ($activeFolder ?? null) === null;
+		return atRoot || q ? [...scoped, ...missing] : scoped;
 	});
 
 	// ---- 21-G9: IDENTITY (who am I / where am I), above the LOCATION crumbs -----------
@@ -1202,7 +1238,7 @@
 
 	/** a real, deletable library thing: a stored item, a prefab, or a folder */
 	const isOwnedItem = (item: any) =>
-		!!item && !item.packEntry && !item.sceneEntry && item.kind !== 'pack-folder';
+		!!item && !item.packEntry && !item.sceneEntry && !item.remoteScene && item.kind !== 'pack-folder';
 
 	/** what the selection breaks down into, once and for every batch entry point */
 	function selectionParts() {
@@ -1321,7 +1357,8 @@
 	 * own rule — so one history can name the same version twice and it is one file either
 	 * way. Empty for anything that is not a scene card of ours. */
 	function sceneVersionHashes(item: any): string[] {
-		if (!item || item.kind !== 'scene' || item.packEntry || item.sceneEntry) return [];
+		if (!item || item.kind !== 'scene' || item.packEntry || item.sceneEntry || item.remoteScene)
+			return [];
 		const scene = sceneOfHash(item.hash);
 		const entry = scene ? sceneEntry(scene) : null;
 		return [...new Set((entry?.history ?? []).filter(Boolean))];
@@ -1660,6 +1697,23 @@
 			return;
 		}
 		if (item.sceneEntry) return; // the Scene manifest IS a derived view — no CRUD
+		// P2a: so is a project scene we do not hold — there is no record to rename or
+		// delete here, only a scene to open. One entry, and it says what it will do.
+		if (item.remoteScene) {
+			menu = {
+				x: e.clientX,
+				y: e.clientY,
+				items: [
+					{
+						label: 'Open here (downloads it)',
+						icon: 'download',
+						tooltip: 'This project scene is not on this device yet — opening it fetches it from a peer',
+						action: () => void openSceneItem(item)
+					}
+				]
+			};
+			return;
+		}
 		menu = {
 			x: e.clientX,
 			y: e.clientY,
@@ -2065,6 +2119,14 @@
 		if (item.packEntry) {
 			// pack items aren't library items (no inspectedFile highlight); just select
 			// for the Properties panel
+			selected = { kind: 'item', item };
+			return;
+		}
+		if (item.remoteScene) {
+			// P2a: a project scene we do not hold. It selects (so the card reads as picked)
+			// but claims no `inspectedFile`, because there is no library record behind it —
+			// every panel that reads one would be reading a card we invented.
+			inspectedFile.set(null);
 			selected = { kind: 'item', item };
 			return;
 		}
@@ -2712,7 +2774,7 @@
 								item.id
 							)} {openSceneHash && item.hash === openSceneHash
 								? 'explorer-open-scene ring-1 ring-emerald-400'
-								: ''}"
+								: ''} {item.remoteScene ? 'explorer-remote opacity-60' : ''}"
 							draggable="true"
 							role="listitem"
 							title={item.name}
@@ -2733,7 +2795,15 @@
 									title="The scene you have open"
 								></span>
 							{/if}
-							{#if item.kind === 'scene' && staleScene($projectManifest, item.hash)}
+							{#if item.remoteScene}
+							<!-- P2a: a project scene whose bytes are not on this device. Dimmed rather
+							     than hidden: the project agrees it exists, and opening it fetches it. -->
+							<span
+								class="explorer-remote-dot absolute right-1 top-1 h-2.5 w-2.5 rounded-full bg-sky-400"
+								title="In this project, not on this device yet — open it to download it"
+							></span>
+						{/if}
+						{#if item.kind === 'scene' && !item.remoteScene && staleScene($projectManifest, item.hash)}
 								<!-- 21-G2: this file is an OLD version — the project's pointer for its
 								     scene moved past it. The manifest keeps every hash, so it still
 								     opens; the dot just says "not the latest". -->

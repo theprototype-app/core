@@ -297,18 +297,26 @@ h.run(async () => {
 		`premise: the project now has a scene called Drifter (${entry?.history.length} version(s))`
 	);
 	items = await itemsOf(A);
-	const stillVisible = items.visible.filter((i) => i.name === 'Drifter.tpscene');
+	// THE DISTINCTION, sharpened by the loose-scene adoption: §1 left us standing in
+	// fileTwo, so saving adopts THAT one as version 1 — it is not a stranger, it is
+	// literally the scene we saved. fileOne is a file the user merely dragged in, shares
+	// a name by coincidence, and must survive untouched. Two imported files, two
+	// different answers, decided by `currentLevel.hash` rather than by the name.
 	h.check(
-		stillVisible.filter((i) => i.imported).length === 2,
-		`the two IMPORTED files survived the fold (${stillVisible.filter((i) => i.imported).length} of 2 still visible)`
+		entry.history.includes(fileTwo.hash),
+		'the file we were STANDING IN is adopted as a version of the scene we saved'
 	);
 	h.check(
-		!items.hidden.some((i) => i.imported),
-		'…and nothing imported was pushed onto the hidden shelf'
+		items.hidden.some((i) => i.hash === fileTwo.hash),
+		'…and folded, so the scene keeps ONE card'
 	);
 	h.check(
-		!entry.history.includes(fileOne.hash) && !entry.history.includes(fileTwo.hash),
-		'…and neither was ADOPTED into the project scene it merely shares a name with'
+		items.visible.some((i) => i.hash === fileOne.hash && i.imported),
+		'…while the file we merely dragged in is still a card'
+	);
+	h.check(
+		!entry.history.includes(fileOne.hash),
+		'…and was NOT adopted into a project scene it only shares a name with'
 	);
 
 	// THE COUNTERFACTUAL, computed in-test: strip the stamp from ONE of them and re-run
@@ -329,8 +337,8 @@ h.run(async () => {
 		`COUNTERFACTUAL: with the stamp removed the very same sweep folds it (${folded} moved) — the guard is load-bearing, and the 21-I1 migration is untouched`
 	);
 	h.check(
-		items.visible.some((i) => i.hash === fileTwo.hash),
-		'…while the one that kept its stamp is still a card'
+		items.visible.filter((i) => i.name === 'Drifter.tpscene').length === 1,
+		`…leaving exactly the pointer visible, which is what the stamp had been preventing (${items.visible.filter((i) => i.name === 'Drifter.tpscene').length} card)`
 	);
 
 	// =====================================================================

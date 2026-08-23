@@ -31,6 +31,11 @@
 	import { globalScene, globalCamera, camSave, peerHands, isLocked } from '../../stores/sceneStore.js';
 	// 21-F3: who is in play mode, and who may end the round
 	import { peerPlayModes, resetAllowed, requestResetGame } from '$lib/gamePresence';
+	// P2b: WHICH SCENE each peer is standing in. Reported as "if a peer opens another
+	// scene, peers would not see where he is" — the roster said present and nothing
+	// said where. Our own row reads `currentLevel` directly; peers read the map.
+	import { peerScenes } from '$lib/peerScenes';
+	import { currentLevel } from '$lib/levels';
 	import { gameState } from '$lib/gameState';
 	import { sessionHost } from '$lib/connectionState';
 	import { mutedPeers, toggleMutePeer } from '$lib/voiceChat';
@@ -314,6 +319,19 @@
 										class="mode-chip"
 										data-mode={pmode}
 										title={pmode === 'playing' ? 'In play mode' : 'In the editor, not playing'}>{pmode}</span
+									>
+								{/if}
+								<!-- P2b: where this peer is. Absent means we have not been told — which is
+								     not the same as "nowhere", so it renders nothing rather than guessing.
+								     `{@const}` may only be the IMMEDIATE child of a block, so the expression is
+								     repeated in the `{#if}` and named inside it — the mode chip above does the
+								     same, for the same reason. -->
+								{#if i === 0 ? ($currentLevel?.name ?? '') : ($peerScenes[user[0]]?.scene ?? '')}
+									{@const sceneName = i === 0 ? ($currentLevel?.name ?? '') : ($peerScenes[user[0]]?.scene ?? '')}
+									<span
+										class="scene-chip"
+										class:scene-chip-here={sceneName === ($currentLevel?.name ?? null)}
+										title={i === 0 ? 'The scene you have open' : 'In ' + sceneName}>{sceneName}</span
 									>
 								{/if}
 								{#if user[3]}<span class="text-amber-300">▸ {shortId(user[3])}</span>{/if}
@@ -642,6 +660,11 @@
 	.mode-chip { flex: 0 0 auto; font-size: 9px; font-weight: 600; letter-spacing: 0.02em; padding: 0 6px; border-radius: 9999px; text-transform: capitalize; line-height: 1.5; border: 1px solid transparent; }
 	.mode-chip[data-mode='playing'] { color: #86efac; background: rgb(34 197 94 / 0.16); border-color: rgb(34 197 94 / 0.35); }
 	.mode-chip[data-mode='editor'] { color: #cbd5e1; background: rgb(148 163 184 / 0.14); border-color: rgb(148 163 184 / 0.3); }
+	/* P2b: which SCENE a peer is in. Deliberately quieter than the mode chip — a room
+	   is where somebody is, not a state they are in — and highlighted only when it is
+	   the scene YOU have open, which is the one comparison the list is read for. */
+	.scene-chip { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 9px; padding: 0 6px; border-radius: 9999px; line-height: 1.5; color: #cbd5e1; background: rgb(148 163 184 / 0.14); border: 1px solid rgb(148 163 184 / 0.3); }
+	.scene-chip-here { color: #93c5fd; background: rgb(59 130 246 / 0.16); border-color: rgb(59 130 246 / 0.35); }
 	.reset-game-btn { width: 100%; padding: 5px 8px; border-radius: 7px; border: 1px solid rgb(255 255 255 / 0.12); background: transparent; color: #e5e7eb; font-size: 11px; text-align: left; cursor: pointer; }
 	.reset-game-btn:hover:not(:disabled) { background: rgb(255 255 255 / 0.09); }
 	.reset-game-btn:disabled { opacity: 0.45; cursor: not-allowed; }

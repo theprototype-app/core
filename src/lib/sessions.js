@@ -805,16 +805,20 @@ export async function applySession(payload, opts = {}) {
 let pendingProposal = null;
 
 /** Load a session — solo applies immediately, with peers it becomes a proposal
- * every connected peer must accept. @param {string} id */
+ * every connected peer must accept.
+ * @param {string} id
+ * @returns {Promise<boolean>} true when the load APPLIED NOW (solo path); false when
+ *   it became a proposal (or the session was missing) — 21-G8's "opened as the
+ *   current scene, unsaved" marker only makes sense for a load that actually happened */
 export async function requestLoadSession(id) {
 	const payload = await getSession(id);
-	if (!payload) return;
+	if (!payload) return false;
 	/** @type {any} */
 	const peer = get(peers);
 	const connected = Object.keys(peer?.connections ?? {});
 	if (!connected.length) {
 		await applySession(payload);
-		return;
+		return true;
 	}
 	pendingProposal = { payload, accepts: new Set(), needed: connected };
 	peer.send({
@@ -824,6 +828,7 @@ export async function requestLoadSession(id) {
 		from: peer.peer.id
 	});
 	showToast('Asked ' + connected.length + ' peer' + (connected.length === 1 ? '' : 's') + ' to load "' + payload.name + '"…');
+	return false;
 }
 
 /** Receiver side: Accept/Decline toast @param {any} data */

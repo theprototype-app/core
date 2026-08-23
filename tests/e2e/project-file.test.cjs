@@ -22,13 +22,32 @@ const { unzipSync, zipSync, strToU8, strFromU8 } = require('fflate');
 // base64 both ways, CHUNKED on the page side on purpose: `String.fromCharCode(...bytes)`
 // over a whole zip overflows the argument stack, which reads as a mysteriously empty
 // export rather than as the bridge problem it is.
+// 21-G8: the whole-project restore is OPEN now (fork 12 — it replaces the project and
+// warns first), so the page-side call is openProject and the caller answers the
+// warning dialog with answerOpenConfirm below. importProjectAsFolder has its own
+// suite (project-open-import).
 const importOnPage = (peer, b64) =>
 	peer.page.evaluate(async (b64) => {
 		const bin = atob(b64);
 		const bytes = new Uint8Array(bin.length);
 		for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
-		return await window.__stores.projectFile.importProject(bytes.buffer);
+		return await window.__stores.projectFile.openProject(bytes.buffer);
 	}, b64);
+
+// the open warning BLOCKS openProject — watch for it and accept
+const answerOpenConfirm = async (peer) => {
+	await h.eventually(
+		() =>
+			peer.page.evaluate(() => {
+				let d;
+				window.__stores.confirmDialog.confirmDialog.subscribe((v) => (d = v))();
+				return d?.title ?? null;
+			}),
+		(t) => typeof t === 'string' && t.startsWith('Open project'),
+		'the OPEN warning dialog appeared (fork 12: open replaces, warned)'
+	);
+	await peer.page.evaluate(() => window.__stores.confirmDialog.resolveConfirm(true));
+};
 
 // ---- reading the world -------------------------------------------------------------
 const manifestOf = (peer) =>
@@ -179,7 +198,21 @@ h.run(async () => {
 	const names = Object.keys(zip).sort();
 	h.check(!!zip['project.json'], `project.json is at the archive root (${names.length} entries)`);
 	const doc = JSON.parse(strFromU8(zip['project.json']));
-	h.check(doc.format === 1, `format is an int and gates loading (${doc.format})`);
+	h.check(doc.format === 2, `format is an int and gates loading (${doc.format} — 2 since 21-G8)`);
+	// 21-G8 fork 11: a .tp is the WHOLE Explorer — folder rows and one row per library
+	// item (A holds 3: two visible scene versions + the tracked asset), each row naming
+	// a file the archive really carries
+	h.check(
+		Array.isArray(doc.folders) && doc.folders.some((f) => f.name === 'Scenes'),
+		`v2 carries the folder tree (${(doc.folders ?? []).length} folders incl. Scenes)`
+	);
+	h.check(
+		Array.isArray(doc.items) &&
+			doc.items.length === 3 &&
+			doc.items.every((row) => !!zip[row.file]),
+		`v2 carries one row per library item, each pointing at real bytes (${(doc.items ?? []).length})`
+	);
+	h.check(typeof doc.name === 'string', 'v2 carries the project name field (G9 owns its editor)');
 	h.check(
 		typeof doc.appVersion === 'string' && doc.appVersion.length > 0,
 		`appVersion provenance rides beside it (${doc.appVersion})`
@@ -223,10 +256,12 @@ h.run(async () => {
 		'PREMISE: B is a genuinely fresh machine — no project, no library'
 	);
 
-	const imported = await importOnPage(B, exported.b64);
+	const pendingOpen = importOnPage(B, exported.b64);
+	await answerOpenConfirm(B);
+	const imported = await pendingOpen;
 	h.check(
 		!!imported && imported.scenes === 2 && imported.assets === 1,
-		`import restored 2 scene versions + 1 asset (${JSON.stringify(imported)})`
+		`open restored 2 scene versions + 1 asset (${JSON.stringify(imported)})`
 	);
 
 	const mB = await manifestOf(B);
@@ -343,10 +378,12 @@ h.run(async () => {
 	// 7. RE-IMPORT IS IDEMPOTENT — content hashes dedupe, pointers do not drift
 	// =====================================================================
 	const libCount = (await libraryOf(B)).length;
-	await importOnPage(B, exported.b64);
+	const pendingReopen = importOnPage(B, exported.b64);
+	await answerOpenConfirm(B);
+	await pendingReopen;
 	h.check(
 		(await libraryOf(B)).length === libCount,
-		're-importing the same project adds no duplicate items (addItemFromBytes dedupes by hash)'
+		're-opening the same project lands on the same library (wipe + restore of identical content)'
 	);
 	h.check(
 		JSON.stringify((await manifestOf(B)).scenes) === JSON.stringify(mA.scenes),
@@ -388,8 +425,12 @@ h.run(async () => {
 		`PREMISE: the GRID menu opened on the empty library (${JSON.stringify(rowsC)})`
 	);
 	h.check(
-		rowsC.some((r) => r?.startsWith('Save scene')) && !rowsC.some((r) => r?.includes('.tp)')),
-		'no project yet: the export entry is not offered (it could only produce an empty zip)'
+		rowsC.some((r) => r?.startsWith('Save scene')) && !rowsC.some((r) => r?.includes('Export project')),
+		'no project yet: the EXPORT entry is not offered (it could only produce an empty zip)'
+	);
+	h.check(
+		rowsC.some((r) => r?.startsWith('Import project as folder')),
+		'…but the IMPORT entry is (21-G8: furnishing an empty library is the classic case)'
 	);
 	const rowsB = await gridRows(B);
 	h.check(rowsB.includes('New folder'), `PREMISE: the GRID menu opened on B (${JSON.stringify(rowsB)})`);
@@ -407,7 +448,8 @@ h.run(async () => {
 	);
 	await C.page.evaluate(() => window.__stores.closeMenu.set(true));
 	await C.page.waitForTimeout(200);
-	const viaLoad = await C.page.evaluate(
+	// load() blocks on the open warning — answer it from node while the page awaits
+	const viaLoadPending = C.page.evaluate(
 		async ({ b64 }) => {
 			const bin = atob(b64);
 			const bytes = new Uint8Array(bin.length);
@@ -420,9 +462,11 @@ h.run(async () => {
 		},
 		{ b64: exported.b64 }
 	);
+	await answerOpenConfirm(C);
+	const viaLoad = await viaLoadPending;
 	h.check(
 		JSON.stringify(viaLoad) === '["Arena","Pit"]',
-		`a .tp handed to the real open path imports the project (${JSON.stringify(viaLoad)})`
+		`a .tp handed to the real open path OPENS the project (${JSON.stringify(viaLoad)})`
 	);
 	h.check(
 		JSON.stringify(await childUuids(C)) === '[]',

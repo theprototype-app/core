@@ -30,10 +30,12 @@
 	// The Files format picker became a segmented control (the old dropdown was
 	// fiddly). Themed for light + dark.
 
-	// B3: Scene (.tpscene) is the primary format; JSON is demoted behind the
-	// export-settings cog ("Show JSON") since it's rarely used
+	// B3: Scene (.tpscene) is the primary SCENE format; JSON is demoted behind the
+	// export-settings cog ("Show JSON") since it's rarely used. 21-G8 (fork 11): TP —
+	// the whole PROJECT as one .tp — is the new default for anyone without a stored
+	// preference; a user who picked a format keeps it.
 	const initShowJson = typeof localStorage !== 'undefined' && localStorage.getItem('showJsonFormat') === 'true';
-	const initFormat = typeof localStorage !== 'undefined' ? localStorage.getItem('saveFormat') || 'tpscene' : 'tpscene';
+	const initFormat = typeof localStorage !== 'undefined' ? localStorage.getItem('saveFormat') || 'tp' : 'tp';
 	let saveFormat = $state(initFormat === 'json' && !initShowJson ? 'tpscene' : initFormat);
 	let showJson = $state(initShowJson);
 	let exportSettingsOpen = $state(false);
@@ -141,8 +143,10 @@
 			<span class="side-ico"><Save size={16} aria-hidden="true" /></span><span class="flex-1 whitespace-nowrap">Save</span>
 		</button>
 		<div class="mb-0.5 mt-0.5 flex gap-1 pl-9 pr-2">
+			<!-- 21-G8 fork 11: [ TP | Scene | GLTF | cog ] — TP saves the WHOLE project -->
+			<button id="format-tp" class="side-seg {saveFormat === 'tp' ? 'on' : ''}" title="Saves the whole project as .tp — the Explorer library, scene history and manifest" onclick={() => pickFormat('tp')}>TP</button>
+			<button id="format-tpscene" class="side-seg {saveFormat === 'tpscene' ? 'on' : ''}" title="Saves the open scene as .tpscene" onclick={() => pickFormat('tpscene')}>Scene</button>
 			<button class="side-seg {saveFormat === 'gltf' ? 'on' : ''}" onclick={() => pickFormat('gltf')}>GLTF</button>
-			<button id="format-tpscene" class="side-seg {saveFormat === 'tpscene' ? 'on' : ''}" onclick={() => pickFormat('tpscene')}>Scene</button>
 			{#if showJson}
 				<button class="side-seg {saveFormat === 'json' ? 'on' : ''}" onclick={() => pickFormat('json')}>JSON</button>
 			{/if}

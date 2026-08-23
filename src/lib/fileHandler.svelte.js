@@ -23,7 +23,7 @@ import { createGltfLoader, registerAnimatedImport, recordAnimatedImport, sendAni
 import { environment } from './environment';
 import { parkAnimatedAtBase } from '$lib/flowRuntime';
 import { stripEditOverlays } from '$lib/editOverlays';
-import { peers, fixLight, loadingFile, showToast } from '../stores/appStore';
+import { peers, fixLight, loadingFile, showToast, showInfoToast, dismissToastById } from '../stores/appStore';
 
 //Access objects Store
 let sceneObjects = $state();
@@ -147,6 +147,10 @@ function exportGltf(format, input) {
 
 export function save(format) {
 	console.log('Saving...');
+	// 21-G8: TP saves the WHOLE PROJECT (fork 11) — the Explorer, the scene history,
+	// the manifest. downloadProject owes its own honesty toasts (incl. "no project yet").
+	if (format === 'tp')
+		return void import('./projectFile').then((m) => m.downloadProject());
 	if (format === 'tpscene') return void saveTpScene(); // B3: Scene bundle path
 	// L2: glTF has nowhere to put a screen-space post stack, so a GLTF export
 	// silently loses the scene's look. Say so rather than let someone discover it
@@ -507,26 +511,66 @@ export async function importFile(file, name, ext, position, extras) {
 	}
 }
 
+/**
+ * 21-G8 fork 12: a loose .tpscene OPENED from disk is the current scene but not part
+ * of the project — mark it UNSAVED and, on the FIRST real edit, offer to save it in.
+ * Everything is a dynamic import on purpose: fileHandler already sits in the
+ * history-import family (it imports history), and a static levels edge would pull
+ * sessions into this module's static graph for a path only a file dialog reaches.
+ * @param {any} payload the session payload that just applied
+ */
+async function markOpenedUnsaved(payload) {
+	const { currentLevel, sceneSignature } = await import('./levels');
+	const name =
+		String(payload?.name ?? '').trim() || 'Opened scene';
+	currentLevel.set({ hash: '', name, unsaved: true, signature: sceneSignature(payload) });
+	const { onNextDirty } = await import('./autosave');
+	// arm AFTER the load settles — applying the session storms markDirty, and the
+	// prompt is about the user's first edit, not the load's own store pokes
+	setTimeout(() => {
+		onNextDirty(() => {
+			showInfoToast(
+				'save-into-project',
+				'"' + name + '" is not part of your project yet — your edits live only in the autosave.',
+				[
+					{
+						label: 'Save into project',
+						action: () => {
+							void import('./levels').then((m) => m.saveSceneAsLevel(name));
+							dismissToastById('save-into-project');
+						}
+					}
+				]
+			);
+		});
+	}, 1500);
+}
+
 export async function load(file) {
 try {
 	// B3: .tpscene bundles restore assets + packs, then apply the session (the
-	// request path confirms/proposes like the Sessions manager Load)
+	// request path confirms/proposes like the Sessions manager Load). 21-G8
+	// fork 12: a .tpscene OPENED here becomes the CURRENT scene, UNSAVED — it is a
+	// loose file, not a member of the project, until the user saves it in.
 	if (file.name?.toLowerCase().endsWith('.tpscene')) {
 		const { importSessionZip, requestLoadSession } = await import('./sessions');
 		const payload = await importSessionZip(await file.arrayBuffer());
 		if (!payload) return; // V4: user declined a newer-format confirm — silent
-		await requestLoadSession(payload.id);
+		const applied = await requestLoadSession(payload.id);
+		// the unsaved marker only makes sense for a load that HAPPENED — with peers
+		// the load is a proposal, and marking a scene we may never load would lie
+		if (applied) await markOpenedUnsaved(payload);
 		return;
 	}
-	// 21-G3: a .tp is the same idea ONE LEVEL UP — a whole PROJECT (manifest +
-	// scenes + assets). It rides this same switch because it is the same
-	// affordance (the Sidebar's Open), and it deliberately loads NOTHING into the
-	// scene: it furnishes the library and installs the manifest, and the user
-	// travels when they are ready. ('.tpscene'.endsWith('.tp') is false, so the
-	// order of these two branches is a readability choice, not a dependency.)
+	// 21-G8 fork 12: a .tp through the Sidebar's Load is OPEN — it REPLACES the
+	// project (warned inside openProject: library + folders + manifest swap; merging
+	// without opening is the Explorer's IMPORT, importProjectAsFolder). It still
+	// loads NOTHING into the scene: the user travels when they are ready.
+	// ('.tpscene'.endsWith('.tp') is false, so the order of these two branches is a
+	// readability choice, not a dependency.)
 	if (file.name?.toLowerCase().endsWith('.tp')) {
-		const { importProject } = await import('./projectFile');
-		await importProject(await file.arrayBuffer());
+		const { openProject } = await import('./projectFile');
+		await openProject(await file.arrayBuffer());
 		return;
 	}
 	const reader = new FileReader();

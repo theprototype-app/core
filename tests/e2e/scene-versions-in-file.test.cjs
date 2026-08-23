@@ -452,27 +452,47 @@ h.run(async () => {
 	await A.page.waitForTimeout(250);
 
 	const arenaRows = await cardMenu(A, 'Arena.tpscene');
+	// USER (the contract CHANGED, and this section records the change rather than being
+	// deleted): the all-versions archive moved OUT of this menu and INTO the Version
+	// history header, before the count it acts on. It sat one row under Download and
+	// read as a second Download, and its subject IS that history.
 	h.check(
-		arenaRows.some((r) => /^Download all versions \(\.zip\)/.test(r)),
-		`a scene with a history offers it (${JSON.stringify(arenaRows)})`
+		!arenaRows.some((r) => /Download all versions/.test(r)),
+		`the item menu no longer carries the archive (${JSON.stringify(arenaRows)})`
 	);
 	h.check(
 		arenaRows.some((r) => r.startsWith('Download (.tpscene)')) &&
 			arenaRows.some((r) => r.startsWith('Version history')),
-		'…beside the existing Download and Version history entries, not instead of them'
+		'…while Download and Version history stay exactly where they were'
+	);
+	// …and it is REACHABLE in its new home, which is what makes this a move rather than
+	// a removal: right-click, Version history, and the panel that now owns it.
+	await A.page.keyboard.press('Escape');
+	await A.page.waitForTimeout(250);
+	await cardMenu(A, 'Arena.tpscene');
+	await A.page
+		.locator('[role="menu"] [role="menuitem"]')
+		.filter({ hasText: 'Version history' })
+		.first()
+		.click();
+	await A.page.waitForTimeout(600);
+	h.check(
+		(await A.page.locator('#version-download-all').count()) === 1,
+		'…offered in the Version history header instead'
 	);
 
 	// =====================================================================
 	// 5. THE ARCHIVE, ON REAL BYTES
 	// =====================================================================
 	await clearToasts(A);
-	const bulk = await grabDownload(A, () =>
-		A.page
-			.locator('[role="menu"]')
-			.getByText('Download all versions', { exact: false })
-			.first()
-			.click()
-	);
+	// the archive button lives in the Version history header now. A properties pane
+	// scrolls, so make sure the thing we are about to click is actually reachable —
+	// otherwise Playwright waits on actionability and `waitForEvent` times out first,
+	// which reads as "the download never happened" rather than "the click never landed".
+	const archiveBtn = A.page.locator('#version-download-all');
+	await archiveBtn.scrollIntoViewIfNeeded();
+	h.check(await archiveBtn.isVisible(), 'premise: the archive button is on screen');
+	const bulk = await grabDownload(A, () => archiveBtn.click());
 	h.check(bulk.name === 'Arena-versions.zip', `the archive is named from the SCENE (${bulk.name})`);
 	h.check(!!bulk.bytes && bulk.bytes.length > 0, `the download produced bytes (${bulk.bytes?.length})`);
 	const arch = unzipSync(bulk.bytes);
@@ -546,14 +566,17 @@ h.run(async () => {
 	);
 	await A.page.waitForTimeout(400);
 	await clearToasts(A);
+	// the archive moved into the Version history header — reach it the way a user does
 	await cardMenu(A, 'Arena.tpscene');
-	const pruned = await grabDownload(A, () =>
-		A.page
-			.locator('[role="menu"]')
-			.getByText('Download all versions', { exact: false })
-			.first()
-			.click()
-	);
+	await A.page
+		.locator('[role="menu"] [role="menuitem"]')
+		.filter({ hasText: 'Version history' })
+		.first()
+		.click();
+	await A.page.waitForTimeout(600);
+	const prunedBtn = A.page.locator('#version-download-all');
+	await prunedBtn.scrollIntoViewIfNeeded();
+	const pruned = await grabDownload(A, () => prunedBtn.click());
 	const prunedNames = Object.keys(unzipSync(pruned.bytes));
 	const prunedToast = await toastTexts(A);
 	h.check(
@@ -564,14 +587,19 @@ h.run(async () => {
 		prunedToast.some((t) => /Downloaded 1 version of Arena/.test(t) && /1 whose bytes are not on this machine was left out/.test(t)),
 		`and the toast REPORTS the one it could not write ("${prunedToast.find((t) => /Downloaded/.test(t)) ?? '—'}")`
 	);
+	// the same claim, in the archive's new home: it is offered off the HISTORY, not off
+	// the bytes, so pruning one version locally must not retire it
 	h.check(
-		(await cardMenu(A, 'Arena.tpscene')).some((r) => /Download all versions/.test(r)),
-		'the entry stays offered — the manifest still records two versions, and a peer may hold the other'
+		(await A.page.locator('#version-download-all').count()) === 1,
+		'the archive stays offered — the manifest still records two versions, and a peer may hold the other'
 	);
 
 	// =====================================================================
 	// 7. ONE ROW, ONE VERSION — the Version history panel
 	// =====================================================================
+	// §6 used to leave a card menu open as a side effect of its last assertion; that
+	// assertion now reads the panel instead, so this section opens its own menu.
+	await cardMenu(A, 'Arena.tpscene');
 	await A.page
 		.locator('[role="menu"]')
 		.getByText('Version history', { exact: false })

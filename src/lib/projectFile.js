@@ -39,8 +39,13 @@ import {
 	explorerItems,
 	folderSubtree,
 	allItems,
-	loadExplorer
+	loadExplorer,
+	hashBytes,
+	kindOf
 } from './explorer';
+// loose-scenes fix (bug 2a): a .tp merge is an IMPORT a person asked for, so bytes it
+// brings that we already hold get the same visible treatment a dropped file gets.
+import { resolveDuplicates } from './importDuplicates';
 import { applyAssetFile } from './assetShare';
 import { fileNameBase, saveFileBase } from './saveName';
 import {
@@ -552,10 +557,54 @@ function restoreFolderTree(rows, rootId) {
  * @param {any} doc @param {Record<string, Uint8Array>} entries
  * @param {string | null} rootId where the folder tree and loose items land
  * @param {string | null} sceneFolderId where `scenes/` entries WITHOUT an item row land
+ * @param {{imported?: boolean, duplicates?: string}} [opts] loose-scenes fix: `imported`
+ *   stamps provenance on everything written (an IMPORT, never a project-minted save), and
+ *   `duplicates: 'ask'` surfaces bytes we already hold instead of deduping in silence
  * @returns {Promise<{scenes: number, assets: number, items: number}>}
  */
-async function restoreProjectContents(doc, entries, rootId, sceneFolderId) {
+async function restoreProjectContents(doc, entries, rootId, sceneFolderId, opts = {}) {
 	const remap = restoreFolderTree(doc.folders ?? [], rootId);
+	const imported = !!opts.imported;
+
+	// loose-scenes fix (bug 2a): BEFORE writing anything, find out how much of this file
+	// we already hold. addItemFromBytes dedupes silently, which is correct for the app
+	// writing its own bytes and wrong for a person importing a project — a .tp that is
+	// entirely already here used to report "Imported N items" having added nothing.
+	// The ask happens ONCE for the whole file rather than per row, and its answer is a
+	// set of copies keyed by hash that the loops below splice in.
+	/** @type {Map<string, {name: string, buffer: ArrayBuffer}[]>} */
+	const extraCopies = new Map();
+	if (opts.duplicates === 'ask') {
+		/** @type {any[]} */
+		const dupes = [];
+		const seen = new Set();
+		for (const row of [...(doc.items ?? []), ...(doc.scenes ?? [])]) {
+			const bytes = entries[row.file];
+			if (!bytes) continue;
+			const exact = /** @type {ArrayBuffer} */ (
+				bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength)
+			);
+			const hash = await hashBytes(exact);
+			if (seen.has(hash)) continue;
+			seen.add(hash);
+			const existing = itemByHash(hash);
+			if (!existing) continue;
+			const name = row.name || String(row.hash ?? 'item');
+			dupes.push({ name, kind: kindOf(name) ?? 'text', hash, buffer: exact, existing });
+		}
+		if (dupes.length) {
+			const { copies } = (await resolveDuplicates(dupes, { group: 'from this project file' })) ?? {
+				copies: []
+			};
+			// keyed by the hash each was copied FROM, so a copy lands in the folder its own
+			// row named rather than all of them at the project root
+			for (const copy of copies ?? []) {
+				const list = extraCopies.get(copy.from) ?? [];
+				list.push(copy);
+				extraCopies.set(copy.from, list);
+			}
+		}
+	}
 
 	// v2 items — every library item, placed where its saved folder landed
 	let items = 0;
@@ -568,7 +617,9 @@ async function restoreProjectContents(doc, entries, rootId, sceneFolderId) {
 			bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength)
 		);
 		const folderId = row.folderId == null ? rootId : (remap.get(String(row.folderId)) ?? rootId);
-		await addItemFromBytes(exact, row.name || String(row.hash ?? 'item'), folderId);
+		await addItemFromBytes(exact, row.name || String(row.hash ?? 'item'), folderId, { imported });
+		for (const copy of extraCopies.get(await hashBytes(exact)) ?? [])
+			await addItemFromBytes(copy.buffer, copy.name, folderId, { imported });
 		items++;
 	}
 
@@ -592,7 +643,11 @@ async function restoreProjectContents(doc, entries, rootId, sceneFolderId) {
 		const exact = /** @type {ArrayBuffer} */ (
 			bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength)
 		);
-		await addItemFromBytes(exact, entry.name || entry.hash + '.tpscene', sceneFolderId);
+		await addItemFromBytes(exact, entry.name || entry.hash + '.tpscene', sceneFolderId, {
+			imported
+		});
+		for (const copy of extraCopies.get(await hashBytes(exact)) ?? [])
+			await addItemFromBytes(copy.buffer, copy.name, sceneFolderId, { imported });
 		scenes++;
 	}
 
@@ -632,6 +687,8 @@ export async function openProject(buffer) {
 	// 21-H1 (locked answer 6): a v1 file carries no folder tree, and its scenes land at
 	// the library ROOT rather than in a `Scenes` folder we invent for them. A v2 file's
 	// own tree places its items itself, exactly as before.
+	// OPEN wiped the library first, so nothing here can be a duplicate — and its manifest
+	// becomes OURS, so its scene files are project-minted, never imported strangers
 	const counts = await restoreProjectContents(doc, entries, null, null);
 	manifestRestore(doc.manifest, true);
 	// the open scene belongs to no scene of THIS project — a named currentLevel would
@@ -683,7 +740,13 @@ export async function importProjectAsFolder(buffer, opts = {}) {
 	// createFolder validates names — a name its rules refuse falls back to the default
 	const folder = createFolder(name, parentId) ?? createFolder('Imported project', parentId);
 	const rootId = folder?.id ?? null;
-	const counts = await restoreProjectContents(doc, entries, rootId, rootId);
+	// IMPORT merges into a library that already has things in it, so both halves of the
+	// loose-scenes fix apply: ask about bytes we already hold, and stamp what lands as
+	// IMPORTED so another project's Arena.tpscene is never folded into ours as a version
+	const counts = await restoreProjectContents(doc, entries, rootId, rootId, {
+		imported: true,
+		duplicates: 'ask'
+	});
 	const total = counts.items || counts.scenes + counts.assets;
 	showToast(
 		'Imported "' + (folder?.name ?? name) + '" as a folder: ' + total + ' item' +

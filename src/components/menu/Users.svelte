@@ -31,6 +31,43 @@
 	import { globalScene, globalCamera, camSave, peerHands, isLocked } from '../../stores/sceneStore.js';
 	// 21-F3: who is in play mode, and who may end the round
 	import { peerPlayModes, resetAllowed, requestResetGame } from '$lib/gamePresence';
+	// P2b: WHICH SCENE each peer is standing in. Reported as "if a peer opens another
+	// scene, peers would not see where he is" — the roster said present and nothing
+	// said where. Our own row reads `currentLevel` directly; peers read the map.
+	import { peerScenes, elsewhereThan } from '$lib/peerScenes';
+	import { currentLevel } from '$lib/levels';
+
+	/**
+	 * WHY WATCH IS GATED. Watching a peer attaches your camera to theirs — in THIS
+	 * world. A peer standing in another scene is looking at a world you do not have
+	 * loaded, so following them shows you nothing and leaves you somewhere you cannot
+	 * get back from. 21-G5 already made exactly this call for peers in other rooms via
+	 * the cloud bridge (disabled, WITH the reason, never hidden — a dead button with no
+	 * explanation is how it gets filed as a bug); now that peers in ONE mesh can be in
+	 * different scenes, the same rule has to hold inside the session.
+	 *
+	 * ONLY ON EVIDENCE. An absent row means "we have not been told", which is not the
+	 * same as "somewhere else" — a peer on an older build never sends one. And if WE
+	 * are not in a named scene there is nothing to compare against. Both unknowns
+	 * leave Watch enabled: refusing on a guess would break a working feature for
+	 * anybody whose scene simply has no name yet.
+	 * @returns {string} their scene when they are demonstrably elsewhere, else empty
+	 */
+	const watchBlockedBy = elsewhereThan;
+
+	/**
+	 * WHAT THE CHIP SAYS. A peer with a row and no scene name is in the session's
+	 * UNNAMED world — the ordinary state before anybody saves anything, and the state a
+	 * joiner is in when the host has never named a scene. Saying so beats an empty gap
+	 * that reads as "we lost them". No row at all still renders nothing: that is a peer
+	 * on an older build, and inventing a location for them would be a guess.
+	 */
+	const UNNAMED = 'Untitled scene';
+	function chipFor(map: any, mine: any, peerId: string, self: boolean): string {
+		if (self) return mine?.name || UNNAMED;
+		const row = map?.[peerId];
+		return row ? row.scene || UNNAMED : '';
+	}
 	import { gameState } from '$lib/gameState';
 	import { sessionHost } from '$lib/connectionState';
 	import { mutedPeers, toggleMutePeer } from '$lib/voiceChat';
@@ -316,6 +353,19 @@
 										title={pmode === 'playing' ? 'In play mode' : 'In the editor, not playing'}>{pmode}</span
 									>
 								{/if}
+								<!-- P2b: where this peer is. Absent means we have not been told — which is
+								     not the same as "nowhere", so it renders nothing rather than guessing.
+								     `{@const}` may only be the IMMEDIATE child of a block, so the expression is
+								     repeated in the `{#if}` and named inside it — the mode chip above does the
+								     same, for the same reason. -->
+								{#if chipFor($peerScenes, $currentLevel, user[0], i === 0)}
+									{@const sceneName = chipFor($peerScenes, $currentLevel, user[0], i === 0)}
+									<span
+										class="scene-chip"
+										class:scene-chip-here={sceneName === ($currentLevel?.name ?? null)}
+										title={i === 0 ? 'The scene you have open' : 'In ' + sceneName}>{sceneName}</span
+									>
+								{/if}
 								{#if user[3]}<span class="text-amber-300">▸ {shortId(user[3])}</span>{/if}
 								{#if i > 0 && $peerQuality[user[0]]}
 									{@const q = $peerQuality[user[0]]}
@@ -336,8 +386,10 @@
 								<span class="role-badge" data-role={ri.roleOf(user[0])}>{ri.roleOf(user[0])}</span>
 							{/if}
 						{/if}
-						{#if i > 0 && $cameraPreviews[user[0]]}
-							<!-- 16-P5: this peer is looking through a scene camera — you can join -->
+						{#if i > 0 && $cameraPreviews[user[0]] && !watchBlockedBy($peerScenes, $currentLevel?.name ?? '', user[0])}
+							<!-- 16-P5: this peer is looking through a scene camera — you can join.
+							     P2b: not across scenes — the camera MARKER lives in their scene, so
+							     there would be nothing here to look through. -->
 							<button
 								class="peer-watch peer-preview shrink-0 rounded px-2 py-0.5 text-xs bg-gray-600 text-gray-100 hover:bg-gray-500"
 								title={`Previewing ${previewLabel($cameraPreviews[user[0]])} — click to look through it too`}
@@ -347,11 +399,19 @@
 							</button>
 						{/if}
 						{#if i > 0}
+							{@const away = watchBlockedBy($peerScenes, $currentLevel?.name ?? '', user[0])}
 							<button
-								class="peer-watch shrink-0 rounded px-2 py-0.5 text-xs {$specatorMode === user[0]
-									? 'bg-primary-600 text-white'
-									: 'bg-gray-600 text-gray-100 hover:bg-gray-500'}"
-								title={$specatorMode === user[0] ? 'Watching (exit from the banner)' : 'Watch this peer'}
+								class="peer-watch shrink-0 rounded px-2 py-0.5 text-xs {away
+									? 'bg-gray-700 text-gray-500'
+									: $specatorMode === user[0]
+										? 'bg-primary-600 text-white'
+										: 'bg-gray-600 text-gray-100 hover:bg-gray-500'}"
+								disabled={!!away}
+								title={away
+									? 'In ' + away + ' — open that scene to watch them'
+									: $specatorMode === user[0]
+										? 'Watching (exit from the banner)'
+										: 'Watch this peer'}
 								onclick={() => { specate(user[0]); peersOpen = false; }}
 								oncontextmenu={(e) => openMuteMenu(e, user[0])}
 							>
@@ -642,6 +702,11 @@
 	.mode-chip { flex: 0 0 auto; font-size: 9px; font-weight: 600; letter-spacing: 0.02em; padding: 0 6px; border-radius: 9999px; text-transform: capitalize; line-height: 1.5; border: 1px solid transparent; }
 	.mode-chip[data-mode='playing'] { color: #86efac; background: rgb(34 197 94 / 0.16); border-color: rgb(34 197 94 / 0.35); }
 	.mode-chip[data-mode='editor'] { color: #cbd5e1; background: rgb(148 163 184 / 0.14); border-color: rgb(148 163 184 / 0.3); }
+	/* P2b: which SCENE a peer is in. Deliberately quieter than the mode chip — a room
+	   is where somebody is, not a state they are in — and highlighted only when it is
+	   the scene YOU have open, which is the one comparison the list is read for. */
+	.scene-chip { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 9px; padding: 0 6px; border-radius: 9999px; line-height: 1.5; color: #cbd5e1; background: rgb(148 163 184 / 0.14); border: 1px solid rgb(148 163 184 / 0.3); }
+	.scene-chip-here { color: #93c5fd; background: rgb(59 130 246 / 0.16); border-color: rgb(59 130 246 / 0.35); }
 	.reset-game-btn { width: 100%; padding: 5px 8px; border-radius: 7px; border: 1px solid rgb(255 255 255 / 0.12); background: transparent; color: #e5e7eb; font-size: 11px; text-align: left; cursor: pointer; }
 	.reset-game-btn:hover:not(:disabled) { background: rgb(255 255 255 / 0.09); }
 	.reset-game-btn:disabled { opacity: 0.45; cursor: not-allowed; }

@@ -181,9 +181,18 @@ h.run(async () => {
 		const work = ex.createFolder('Work', null);
 		ex.createFolder('Sub one', work.id);
 		ex.createFolder('Sub two', work.id);
+		// the five files must hold DIFFERENT bytes. An Explorer item's identity IS its
+		// content hash, and since the loose-scenes fix `importFiles` enforces that the way
+		// `addItemFromBytes` always has — five files of identical content are ONE file, so
+		// the old fixture (one shared TINY_OBJ under five names) now seeds a single card.
+		// A comment per file keeps them distinct while leaving the geometry identical, so
+		// this suite goes on testing selection rather than deduplication.
 		await ex.importFiles(
 			['alpha', 'bravo', 'charlie', 'delta', 'echo'].map(
-				(n) => new File([new Blob([obj])], n + '.obj', { type: 'text/plain' })
+				(n) =>
+					new File([new Blob(['# ' + n + String.fromCharCode(10) + obj])], n + '.obj', {
+						type: 'text/plain'
+					})
 			),
 			work.id
 		);
@@ -477,7 +486,9 @@ h.run(async () => {
 		`the downloaded .zip really unzips to the three selected files (${zipNames.join(',')})`
 	);
 	h.check(
-		Buffer.from(zipEntries['alpha.obj']).toString() === TINY_OBJ,
+		// the fixture prefixes each file with a `# <name>` comment so the five hold
+		// DIFFERENT bytes (see section 0) — the geometry it round-trips is still TINY_OBJ
+		Buffer.from(zipEntries['alpha.obj']).toString() === '# alpha' + String.fromCharCode(10) + TINY_OBJ,
 		'…with the stored bytes intact'
 	);
 	h.check(/\.zip$/.test(zipDl.suggestedFilename()), `named after the folder (${zipDl.suggestedFilename()})`);

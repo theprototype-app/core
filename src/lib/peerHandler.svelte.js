@@ -27,6 +27,8 @@ import { applyRemoteCameraPreview, clearPeerPreview, sendCameraPreviewState } fr
 // 21-F3: play-mode PRESENCE, the campreview shape — a tiny per-peer message, a reply
 // riding the getmodulestate request, and a drop on disconnect (golden rule 3).
 import { applyRemotePlayMode, dropPeerPlayMode, sendPlayModeState } from '$lib/gamePresence';
+// P2b: which SCENE each peer is standing in — the gamePresence shape exactly
+import { applyRemotePeerScene, dropPeerScene, sendMySceneState, peerScenes, myScene, elsewhereThan } from '$lib/peerScenes';
 // 21-G2: the project manifest — a latest-wins singleton like environment/scenephysics
 import { applyRemoteManifest, sendProjectManifest } from '$lib/projectManifest';
 // 21-G4: PEER-OWNED variables. The same three obligations as the mode above (dispatch,
@@ -97,6 +99,10 @@ selectedObject.subscribe(value => { selected = value });
 let users = $state();
 userdata.subscribe(value => { users = value });
 
+
+/** P2b: the only messages `broadcast` will withhold from a peer in another scene.
+ * Pure presence, re-sent continuously, useless to somebody in a different world. */
+const STREAM_TYPES = new Set(['camera', 'vrhands']);
 
 export class PeerConnection {
 	constructor(id, updateIdFn) {
@@ -560,6 +566,7 @@ export class PeerConnection {
 					} else {
 						handleDisconnected(data.peerId);
 						dropPeerPlayMode(data.peerId); // 21-F3
+						dropPeerScene(data.peerId); // P2b
 						dropPeerVars(data.peerId); // 21-G4
 						dropPeerEnvPresets(data.peerId);
 						dropPeerHandModel(data.peerId);
@@ -631,6 +638,7 @@ export class PeerConnection {
 					sendModuleStates(data.sender);
 					sendCameraPreviewState(); // 16-P5: ride the same late-joiner request
 					sendPlayModeState(); // 21-F3: ...and so does play-mode presence
+					sendMySceneState(); // P2b: ...and where we are standing
 					sendPeerVarsState(); // 21-G4: ...and our own per-player row, if we hold one
 				} else if(data.type == 'peervars') {
 					// 21-G4: ONE peer's OWN numbers, whole-map latest-wins. Owner-only writer,
@@ -641,6 +649,10 @@ export class PeerConnection {
 					// only while PLAYING, so an absent peer (or one on an older build that never
 					// sends it) reads as an editor, which is what it is.
 					applyRemotePlayMode(data);
+				} else if(data.type == 'atscene') {
+					// P2b: which scene a peer is in. Latest-wins per SENDER, and only that
+					// sender ever writes its own row, so the map cannot race.
+					applyRemotePeerScene(data);
 				} else if(data.type == 'modulestate') {
 					applyModuleStates(data.states);
 				} else if(data.type == 'campreview') {
@@ -953,6 +965,7 @@ export class PeerConnection {
 		handleDisconnected(peerId);
 		clearPeerPreview(peerId); // 16-P5
 		dropPeerPlayMode(peerId); // 21-F3
+		dropPeerScene(peerId); // P2b
 		dropPeerVars(peerId); // 21-G4
 		dropPeerEnvPresets(peerId);
 		dropPeerHandModel(peerId);
@@ -985,6 +998,7 @@ export class PeerConnection {
 				handleDisconnected(peerId);
 				clearPeerPreview(peerId); // 16-P5
 				dropPeerPlayMode(peerId); // 21-F3
+				dropPeerScene(peerId); // P2b
 				dropPeerVars(peerId); // 21-G4
 				dropPeerEnvPresets(peerId);
 				dropPeerHandModel(peerId);
@@ -1004,9 +1018,22 @@ export class PeerConnection {
 	// conn can't throw mid-loop and starve the rest of the mesh (172).
 	/** @param {any} payload */
 	broadcast(payload) {
+		// P2b: POSE STREAMS do not cross scenes. A peer standing in another scene cannot
+		// draw our avatar (Player.svelte refuses to) and cannot watch us, so streaming
+		// our camera and hands at them is bytes nobody can use.
+		//
+		// A DELIBERATELY TINY ALLOWLIST. Everything else on this channel is scene STATE
+		// or protocol, and skipping any of it would desync a peer who travels back — the
+		// saving is not worth reasoning about per message type. These two are pure
+		// presence and are re-derived continuously, so the worst a skip can cost is one
+		// stale frame, and even that is covered by the re-publish in Scene.svelte.
+		const stream = STREAM_TYPES.has(payload?.type);
+		const mine = stream ? (myScene()?.scene ?? '') : '';
+		const where = stream ? get(peerScenes) : {};
 		Object.keys(this.connections).forEach(peerId => {
 			const conn = this.connections[peerId];
 			if (!conn || !conn.open) return;
+			if (stream && elsewhereThan(where, mine, peerId)) return;
 			try {
 				conn.send(payload);
 			} catch (err) {

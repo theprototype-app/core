@@ -9,6 +9,60 @@
 	import { objectsGroup, camSave, globalCamera, globalScene } from '../../stores/sceneStore.js';
 	import { Progressbar, Toast, Button } from 'flowbite-svelte';
     import { fly } from 'svelte/transition';
+    import { untrack } from 'svelte';
+    // P2b: watching follows a peer's camera IN THIS WORLD, so it cannot survive them
+    // opening another scene. Users.svelte gates STARTING one; this is the other half.
+    import { peerScenes } from '$lib/peerScenes';
+    import { currentLevel } from '$lib/levels';
+    import { showToast } from '../../stores/appStore';
+
+    /**
+     * Stop watching and give the camera back. EXTRACTED from the banner button so the
+     * automatic stop below cannot drift from the manual one — there is one teardown.
+     * The avatar lookup is GUARDED now: by the time this runs the peer may have
+     * travelled or left, and the inline version dereferenced it unconditionally.
+     */
+    function exitSpectate() {
+        if (!$specatorMode) return;
+        const dolly = $globalScene?.getObjectByName('dolly');
+        if (dolly) dolly.attach($globalCamera);
+        const avatar = $globalScene?.getObjectByName($specatorMode);
+        if (avatar) avatar.visible = true;
+        $specatorMode = false;
+        // the saved pose is written by `specate`, so the BUTTON always has one. The
+        // automatic stop below can fire in states the button cannot reach (a watch that
+        // began before a reload, a store poked from outside), and restoring a camera we
+        // never saved must be skipped rather than throw inside an $effect.
+        if ($camSave) {
+            $globalCamera.position.copy($camSave.position)
+            $globalCamera.rotation.copy($camSave.rotation)
+            $globalCamera.fov = $camSave.fov
+            $globalCamera.updateProjectionMatrix()
+        }
+        //specating has ended send camera position once to appear for peers
+        $peers.send({ type: 'camera', peerId: $peers.peer.id, position: $globalCamera.position.toArray(), rotation: $globalCamera.rotation.toArray() });
+        $peers.send({ type: 'specator', peerId: $peers.peer.id, watching: 'false' });
+        // bring back the panels hidden when spectating started
+        restorePanels();
+    }
+
+    // …and stop by itself when the peer we are watching opens another scene. ONLY ON
+    // EVIDENCE, the same rule the button uses: an absent row means "we have not been
+    // told", and no name on our side means there is nothing to compare against.
+    $effect(() => {
+        const map = $peerScenes;
+        // `specatorMode` is declared writable(false) but holds a peer-id STRING when it
+        // holds anything — coerce rather than index a boolean
+        const watching = typeof $specatorMode === 'string' ? $specatorMode : '';
+        const ours = $currentLevel?.name ?? '';
+        if (!watching) return;
+        const theirs = map?.[watching]?.scene ?? '';
+        if (!theirs || !ours || theirs === ours) return;
+        untrack(() => {
+            exitSpectate();
+            showToast('Stopped watching — they opened "' + theirs + '"');
+        });
+    });
 
 
 // CN toast routing. The viewport containers are HIDDEN (display:none, not removed —
@@ -162,24 +216,7 @@ $effect(() => {
             <button
             class="spectator-exit"
             title="Stop watching and return to your own camera"
-            onclick={() => {
-                let dolly = $globalScene.getObjectByName('dolly')
-                dolly.attach($globalCamera)
-                $globalScene.getObjectByName($specatorMode).visible = true
-                $specatorMode = false;
-                $globalCamera.position.copy($camSave.position)
-                $globalCamera.rotation.copy($camSave.rotation)
-                $globalCamera.fov = $camSave.fov
-                $globalCamera.updateProjectionMatrix()
-
-
-                //specating has ended send camera position once to appear for peers
-                $peers.send({ type: 'camera', peerId: $peers.peer.id, position: $globalCamera.position.toArray(), rotation: $globalCamera.rotation.toArray() });
-                $peers.send({ type: 'specator', peerId: $peers.peer.id, watching: 'false' });
-                // $globalCamera.zoom = $camSave.zoom
-                // bring back the panels hidden when spectating started
-                restorePanels();
-            }}
+            onclick={exitSpectate}
             >Exit</button
         >
         </div>

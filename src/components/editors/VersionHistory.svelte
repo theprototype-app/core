@@ -20,7 +20,12 @@
 	// "Download all versions" archive so a single row and a bulk export name files alike.
 	import { fileNameBase, versionStamp } from '$lib/saveName';
 
-	let { item = null }: { item: any } = $props();
+	// `onDownloadAll` stays in the Explorer, which owns saveBlob/uniqueZipName and the
+	// rest of the archive plumbing - this panel supplies the AFFORDANCE, not the zip.
+	let {
+		item = null,
+		onDownloadAll = null
+	}: { item: any; onDownloadAll?: ((item: any) => void) | null } = $props();
 
 	// `sceneOfHash` reads the manifest with get(), which registers NO dependency — the
 	// document is passed in as an unused argument so the derived stays reactive without
@@ -138,6 +143,20 @@
 		<div class="vh-head">
 			<History size={14} aria-hidden="true" />
 			<span class="flex-1">Version history</span>
+			<!-- user: the all-versions archive lives HERE now, before the count it acts on.
+			     Icon-only and 18px so it cannot grow the header line, and offered only when
+			     there is more than one version - a single-version scene has Download on its
+			     own card and a one-file zip is a worse version of it. -->
+			{#if rows.length > 1 && onDownloadAll}
+				<button
+					id="version-download-all"
+					class="vh-archive"
+					type="button"
+					aria-label="Download all versions (.zip)"
+					title="Every version of this scene as one .zip of .tpscene files — versions whose bytes are no longer here are reported"
+					onclick={() => onDownloadAll?.(item)}
+				><ArrowDownToLine size={13} aria-hidden="true" /></button>
+			{/if}
 			<span class="vh-count">{rows.length}</span>
 		</div>
 		{#if isOpenScene}
@@ -237,6 +256,22 @@
 	.vh-count {
 		font-size: 0.65rem;
 		opacity: 0.6;
+	}
+	/* sized so the header line keeps the height it has without the button */
+	.vh-archive {
+		display: inline-flex;
+		align-items: center;
+		justify-content: center;
+		height: 18px;
+		width: 18px;
+		flex: 0 0 auto;
+		border-radius: 3px;
+		opacity: 0.7;
+		cursor: pointer;
+	}
+	.vh-archive:hover {
+		opacity: 1;
+		background: rgba(255, 255, 255, 0.1);
 	}
 	.vh-save {
 		display: flex;

@@ -13,6 +13,7 @@
 	import {
 		explorerFolders,
 		explorerItems,
+		hiddenItems,
 		activeFolder,
 		loadExplorer,
 		createFolder,
@@ -22,6 +23,7 @@
 		moveFolder,
 		moveItem,
 		importFiles,
+		revealItemId,
 		deleteItem,
 		renameItem,
 		isValidName,
@@ -40,6 +42,7 @@
 	import {
 		saveSceneAsLevel,
 		newLevel,
+		renameOpenLooseScene,
 		travelToLevel,
 		publishCurrentIfChanged,
 		currentLevel
@@ -47,7 +50,7 @@
 	// 21-I4: 21-G9 already computes "does the open scene differ from the version its name
 	// points at", behind a throttle, because the answer costs a whole-scene
 	// serialization. This READS that flag and never recomputes it.
-	import { sceneDirty } from '$lib/sceneIdentity';
+	import { sceneDirty, recomputeSceneDirty } from '$lib/sceneIdentity';
 	import { showChoice } from '$lib/confirmDialog';
 	import VersionHistory from './VersionHistory.svelte';
 	// 21-G2: the "update available" dot on old scene versions. The manifest store is
@@ -103,7 +106,7 @@
 	// 21-I3: Export ▸ scene (.tpscene) — a scene containing just this prefab. Built from
 	// the EMPTY payload plus this one object, never a capture of the live scene.
 	import { emptySessionPayload, exportSessionZip } from '$lib/sessions';
-	import { selectedObjects } from '../../stores/sceneStore.js';
+	import { selectedObjects, objectsGroup } from '../../stores/sceneStore.js';
 	import { sceneAssets } from '$lib/sceneAssets';
 	import { setNodeData } from '$lib/nodesHandler';
 	import { findNodeAnyGraph } from '../../stores/flowStore';
@@ -542,7 +545,42 @@
 		const inFolder = $explorerItems.filter((item) => (item.folderId ?? null) === ($activeFolder ?? null));
 		const q = search.trim().toLowerCase();
 		const scoped = q ? $explorerItems.filter((item) => item.name.toLowerCase().includes(q)) : inFolder;
-		return scoped;
+		// P2a: PROJECT SCENES THIS PEER DOES NOT HOLD. Reported as "when a user connects
+		// they will not see project scenes" and "if peers create a scene in the project it
+		// disappears" — both the same gap: the manifest replicates and names every scene,
+		// while the library (placement + bytes) is local, so a joiner could TRAVEL to a
+		// scene it could not SEE. These cards are DERIVED from the manifest, never stored:
+		// no message type, nothing to migrate, and the moment the bytes land the real item
+		// takes over (the card is keyed by the same pointer hash). Opening one pulls it
+		// through travel's existing hash pull. The `sceneEntry` precedent, one view over:
+		// a derived card carries no CRUD.
+		const held = new Set([...$explorerItems, ...$hiddenItems].map((i) => i.hash));
+		const missing = Object.entries($projectManifest.scenes)
+			.map(([name, entry]: [string, any]) => ({
+				name,
+				hash: entry.history[entry.history.length - 1]
+			}))
+			.filter((r) => r.hash && !held.has(r.hash))
+			.filter((r) => !q || r.name.toLowerCase().includes(q))
+			.sort((a, b) => a.name.localeCompare(b.name))
+			.map((r) => ({
+				id: 'remote:' + r.hash,
+				name: r.name + '.tpscene',
+				kind: 'scene',
+				hash: r.hash,
+				folderId: null,
+				size: 0,
+				thumbnail: null,
+				createdAt: 0,
+				// the marker every consumer branches on. `remoteScene` and not a reuse of
+				// `sceneEntry`: that one means the Scene ASSET view, and conflating them would
+				// put this card in a menu written for a different thing.
+				remoteScene: true
+			}));
+		// they belong to the PROJECT rather than to a folder, so they show at the library
+		// root (and in any search) — never inside a folder they were never placed in
+		const atRoot = !q && ($activeFolder ?? null) === null;
+		return atRoot || q ? [...scoped, ...missing] : scoped;
 	});
 
 	// ---- 21-G9: IDENTITY (who am I / where am I), above the LOCATION crumbs -----------
@@ -592,6 +630,16 @@
 			showToast('The open scene has no file in this library');
 			return;
 		}
+		await revealItem(item);
+	}
+
+	/**
+	 * The body of the above, taking the ITEM rather than finding it — the same walk is
+	 * what the import-duplicates modal's Reveal asks for, and that asker is a modal at the
+	 * App root which cannot reach any of this component's state.
+	 * @param item the library item to land on
+	 */
+	async function revealItem(item: any) {
 		if (search) search = '';
 		activeFolder.set(item.folderId ?? null);
 		await tick();
@@ -603,6 +651,21 @@
 			.querySelector(`[data-card-id="${item.id}"]`)
 			?.scrollIntoView({ block: 'nearest', inline: 'nearest' });
 	}
+
+	// loose-scenes fix (bug 2a): Reveal, asked for from the import-duplicates modal.
+	// A request store rather than a callback because the asker lives at the App root
+	// and this component may not even be mounted; the id is CLEARED on the way through
+	// so a second Reveal of the same item still fires.
+	$effect(() => {
+		const id = $revealItemId;
+		if (!id) return;
+		untrack(() => {
+			revealItemId.set(null);
+			const item = [...$explorerItems].find((i) => i.id === id);
+			if (item) void revealItem(item);
+			else showToast('That file is no longer in your library');
+		});
+	});
 
 	/**
 	 * 21-G9: the active folder AS A REAL LIBRARY FOLDER, or null. `activeFolder` also
@@ -883,7 +946,19 @@
 	// be showing the same parent folder, so without it a "New folder" started from the
 	// grid mounted a SECOND input in the tree — the duplicate focus/blur that
 	// startRename already documents, one mode over.
+	/**
+	 * REPORTED (bug 1, second half): "when I create a new scene the filename renames
+	 * back in Explorer to what it was". Every opener below ASSIGNED `editing`
+	 * directly, so opening a second inline editor threw the first one's typed value
+	 * away - the card simply reverted to its old name with no message. Clicking away
+	 * already commits (21-H1 locked answer 7); opening another editor is the same
+	 * intent and now commits too.
+	 */
+	function settlePendingEdit() {
+		if (editing) void commitEdit();
+	}
 	function startCreate(parentId: string | null, inGrid = false) {
+		settlePendingEdit();
 		if (parentId) {
 			const next = new Set(expanded);
 			next.add(parentId);
@@ -894,22 +969,26 @@
 	// inGrid keeps the tree + thumbnail inputs from BOTH mounting for a root folder
 	// (it shows in both), whose duplicate focus/blur would tear the edit down instantly
 	function startRename(folder: any, inGrid = false) {
+		settlePendingEdit();
 		editing = { mode: 'rename', folderId: folder.id, parentId: folder.parentId ?? null, value: folder.name, inGrid };
 	}
 	// 170: inline item rename (replaces the browser prompt), works in either view
 	function startRenameItem(item: any) {
+		settlePendingEdit();
 		editing = { mode: 'rename-item', itemId: item.id, value: item.name };
 	}
 	// 21-H2: a PREFAB renames through the SAME inline editor — never window.prompt(),
 	// which is what the deleted Library modal used (fork 14's rule, one surface over).
 	// Its own mode because the id addresses the prefab library, not `explorerItems`.
 	function startRenamePrefab(item: any) {
+		settlePendingEdit();
 		editing = { mode: 'rename-prefab', prefabId: item.prefabId, value: item.name };
 	}
 	// 21-G1: a PACK row renames too — same inline editor, and it writes the pack's
 	// display TITLE only (its `name` is the identity every cache and view key uses;
 	// packs.js carries the reasoning)
 	function startRenamePack(pack: any) {
+		settlePendingEdit();
 		editing = { mode: 'rename-pack', packName: pack.name, value: pack.title || pack.name };
 	}
 	// 21-G10 (fork 14): naming a SCENE is a create like any other, so it goes through
@@ -918,6 +997,7 @@
 	// the browser's rather than ours. It always shows in the GRID: both entries live on
 	// the grid background's menu, and the tree has no row to hang a scene name on.
 	function startSceneName(mode: 'save-scene' | 'new-scene') {
+		settlePendingEdit();
 		editing = { mode, value: mode === 'save-scene' ? 'Scene' : 'New scene', inGrid: true };
 	}
 	// 21-H1 (locked answer 7): CLICKING AWAY COMMITS. Every inline name in this panel —
@@ -948,7 +1028,14 @@
 		const edit = editing;
 		editing = null;
 		if (edit.mode === 'create') createFolder(edit.value, edit.parentId);
-		else if (edit.mode === 'rename-item') renameItem(edit.itemId, edit.value);
+		else if (edit.mode === 'rename-item') {
+			renameItem(edit.itemId, edit.value);
+			// REPORTED (bug 1): a file rename never reached `currentLevel.name`, so the
+			// next save of a LOOSE scene filed it under the old name and a second
+			// .tpscene appeared beside the renamed one
+			const renamed = $explorerItems.find((i) => i.id === edit.itemId);
+			if (renamed?.kind === 'scene') renameOpenLooseScene(renamed.hash, edit.value);
+		}
 		else if (edit.mode === 'rename-prefab') renamePrefab(edit.prefabId, edit.value);
 		else if (edit.mode === 'rename-pack') renamePack(edit.packName, edit.value);
 		// 21-G9 (union): land the scene where the user is looking — Scenes when the
@@ -1151,7 +1238,7 @@
 
 	/** a real, deletable library thing: a stored item, a prefab, or a folder */
 	const isOwnedItem = (item: any) =>
-		!!item && !item.packEntry && !item.sceneEntry && item.kind !== 'pack-folder';
+		!!item && !item.packEntry && !item.sceneEntry && !item.remoteScene && item.kind !== 'pack-folder';
 
 	/** what the selection breaks down into, once and for every batch entry point */
 	function selectionParts() {
@@ -1270,7 +1357,8 @@
 	 * own rule — so one history can name the same version twice and it is one file either
 	 * way. Empty for anything that is not a scene card of ours. */
 	function sceneVersionHashes(item: any): string[] {
-		if (!item || item.kind !== 'scene' || item.packEntry || item.sceneEntry) return [];
+		if (!item || item.kind !== 'scene' || item.packEntry || item.sceneEntry || item.remoteScene)
+			return [];
 		const scene = sceneOfHash(item.hash);
 		const entry = scene ? sceneEntry(scene) : null;
 		return [...new Set((entry?.history ?? []).filter(Boolean))];
@@ -1609,6 +1697,23 @@
 			return;
 		}
 		if (item.sceneEntry) return; // the Scene manifest IS a derived view — no CRUD
+		// P2a: so is a project scene we do not hold — there is no record to rename or
+		// delete here, only a scene to open. One entry, and it says what it will do.
+		if (item.remoteScene) {
+			menu = {
+				x: e.clientX,
+				y: e.clientY,
+				items: [
+					{
+						label: 'Open here (downloads it)',
+						icon: 'download',
+						tooltip: 'This project scene is not on this device yet — opening it fetches it from a peer',
+						action: () => void openSceneItem(item)
+					}
+				]
+			};
+			return;
+		}
 		menu = {
 			x: e.clientX,
 			y: e.clientY,
@@ -1621,8 +1726,11 @@
 								label: 'Open here (this screen)',
 								tooltip: 'Load this scene locally — use a Travel node to move every player together',
 								// 21-I4: the same fix as `openSceneItem` — the FILE name is not
-								// the scene name, and `currentLevel.name` is the manifest key
-								action: () => travelToLevel(item.hash)
+								// the scene name, and `currentLevel.name` is the manifest key.
+								// REPORTED: this called travelToLevel DIRECTLY, so the menu route skipped
+								// the unsaved-changes guard the double-click route has - the one action in
+								// this grid that can destroy work was reachable two ways and guarded one.
+								action: () => void openSceneItem(item)
 							},
 							{
 								// 21-G7: the scene's past. It lives in the file PROPERTIES (that is where a
@@ -1658,24 +1766,15 @@
 					: [
 							{
 								label: item.kind === 'scene' ? 'Download (.tpscene)' : 'Download',
+								icon: 'download',
 								tooltip: 'Save this file to your computer',
 								action: () => downloadItem(item)
 							}
 						]),
-				// 21-I5 REVISED: the scene's PAST, as files. Offered only when there is more
-				// than one version — a single-version scene already has Download one line up,
-				// and an entry that produces a one-file zip is a worse version of it.
-				...(sceneVersionHashes(item).length > 1
-					? [
-							{
-								label: 'Download all versions (.zip)',
-								icon: 'arrow-down-to-line',
-								tooltip:
-									'Every version of this scene as one .zip of .tpscene files — versions whose bytes are no longer here are reported',
-								action: () => void downloadSceneVersions(item)
-							}
-						]
-					: []),
+				// 21-I5 REVISED / user: the scene's PAST, as files, used to be a menu row here.
+				// It moved INTO the Version history panel: its subject IS that history, the row
+				// sat one line under Download and read as a second Download, and the panel is
+				// where the version count it acts on is already shown.
 				{ label: 'Properties', action: () => showProperties({ kind: 'item', item }) },
 				{
 					label: 'Rename',
@@ -1833,7 +1932,12 @@
 			if (f.name.toLowerCase().endsWith('.tp')) void importTpAsFolder(f);
 			else rest.push(f);
 		}
-		if (rest.length) importFiles(rest, folder === 'prefabs' ? null : folder);
+		// loose-scenes fix (bug 2a): a DROP is a person importing, so bytes we already
+		// hold get the visible treatment — the setting decides ask / skip / copy. Every
+		// other importFiles caller (the texture pickers, a generated mesh) leaves this
+		// off and silently reuses the item it finds, which is what they want.
+		if (rest.length)
+			importFiles(rest, folder === 'prefabs' ? null : folder, { duplicates: 'ask' });
 	}
 
 	/** 21-G8: route a .tp file to the merge-as-folder import (never OPEN from a drop).
@@ -2018,6 +2122,14 @@
 			selected = { kind: 'item', item };
 			return;
 		}
+		if (item.remoteScene) {
+			// P2a: a project scene we do not hold. It selects (so the card reads as picked)
+			// but claims no `inspectedFile`, because there is no library record behind it —
+			// every panel that reads one would be reading a card we invented.
+			inspectedFile.set(null);
+			selected = { kind: 'item', item };
+			return;
+		}
 		if (item.sceneEntry) {
 			// hash-backed Scene entries inspect the real library item (108)
 			const backing = item.itemId ? $explorerItems.find((i) => i.id === item.itemId) : null;
@@ -2169,11 +2281,32 @@
 			showToast(`"${item.name}" is the scene you are already in`);
 			return;
 		}
-		if ($sceneDirty) {
+		// REPORTED (bug 2): this used to read `$sceneDirty` — the THROTTLED verdict,
+		// which 21-G9 deliberately lets lag a very recent edit by up to
+		// SIGNATURE_THROTTLE_MS (2s) because recomputing costs a whole-scene
+		// serialization. That is the right trade for a TITLE BAR and the wrong one
+		// here: edit, immediately double-click another scene, and the guard read a
+		// stale `false`, so no dialog appeared and the work was gone. The one place
+		// the answer must be current is the action that destroys it, so it is
+		// recomputed synchronously; everywhere else keeps the throttle.
+		//
+		// The second half is a scene with NO IDENTITY to be dirty against.
+		// recomputeSceneDirty answers false for it by construction ("nothing to be
+		// dirty AGAINST"), which is honest but leaves the newest, least-saved work in
+		// the app completely unguarded. If there is no identity and the world is not
+		// empty, opening still destroys something, so it asks.
+		const identified =
+			!!$currentLevel?.name && typeof $currentLevel?.signature === 'string';
+		const risky = identified
+			? recomputeSceneDirty()
+			: ($objectsGroup?.children?.length ?? 0) > 0;
+		if (risky) {
 			const here = $currentLevel?.name ?? 'This scene';
 			const choice = await showChoice({
 				title: `Open "${item.name}"?`,
-				message: `"${here}" has unsaved changes, and opening a scene replaces what is on screen.`,
+				message: identified
+					? `"${here}" has unsaved changes, and opening a scene replaces what is on screen.`
+					: 'The scene on screen has never been saved, and opening a scene replaces it.',
 				// "Open anyway", NOT "Open without saving": travel's own writer-side
 				// auto-publish (fork 9) runs inside `travelToLevel` whatever is chosen
 				// here, so a named scene normally banks a version on the way out and the
@@ -2641,7 +2774,7 @@
 								item.id
 							)} {openSceneHash && item.hash === openSceneHash
 								? 'explorer-open-scene ring-1 ring-emerald-400'
-								: ''}"
+								: ''} {item.remoteScene ? 'explorer-remote opacity-60' : ''}"
 							draggable="true"
 							role="listitem"
 							title={item.name}
@@ -2662,7 +2795,15 @@
 									title="The scene you have open"
 								></span>
 							{/if}
-							{#if item.kind === 'scene' && staleScene($projectManifest, item.hash)}
+							{#if item.remoteScene}
+							<!-- P2a: a project scene whose bytes are not on this device. Dimmed rather
+							     than hidden: the project agrees it exists, and opening it fetches it. -->
+							<span
+								class="explorer-remote-dot absolute right-1 top-1 h-2.5 w-2.5 rounded-full bg-sky-400"
+								title="In this project, not on this device yet — open it to download it"
+							></span>
+						{/if}
+						{#if item.kind === 'scene' && !item.remoteScene && staleScene($projectManifest, item.hash)}
 								<!-- 21-G2: this file is an OLD version — the project's pointer for its
 								     scene moved past it. The manifest keeps every hash, so it still
 								     opens; the dot just says "not the latest". -->
@@ -2883,7 +3024,7 @@
 					</div>
 					<!-- 21-G7: a scene file's PAST belongs with the rest of its facts. Renders
 					     itself away for every other kind, and for a pack card (no history to have). -->
-					<VersionHistory item={selItem} />
+					<VersionHistory item={selItem} onDownloadAll={downloadSceneVersions} />
 				{:else if selected?.kind === 'folder'}
 					{@const counts = folderCounts(selected.folder.id)}
 					<div class="flex items-center gap-2">

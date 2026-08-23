@@ -293,12 +293,30 @@ h.run(async () => {
 		'…and where I stand is untouched'
 	);
 	// hash-dedupe: a second import adds no duplicate ITEMS (a second, empty folder is
-	// the honest residue of "merge what I do not already have")
+	// the honest residue of "merge what I do not already have").
+	//
+	// LOOSE-SCENES FIX (bug 2a) DELIBERATELY CHANGED THE FRONT OF THIS: the dedupe used
+	// to happen in SILENCE, so a .tp whose contents were entirely already here reported
+	// "Imported N items" having added nothing. It ASKS now — an import is a person
+	// importing — and Skip is what produces the old outcome. The contract this section
+	// records is therefore the dedupe RESULT, reached through the answer.
 	const itemCount = cLib.length;
-	await importFolderOnPage(C, exported.b64, { fileName: 'Dungeon v3.tp' });
+	const pendingReimport = importFolderOnPage(C, exported.b64, { fileName: 'Dungeon v3.tp' });
+	await h.eventually(
+		() => C.page.locator('#dup-skip').isVisible().catch(() => false),
+		(v) => v === true,
+		're-importing a .tp we already hold ASKS instead of deduping in silence'
+	);
+	await C.page.locator('#dup-skip').click();
+	await pendingReimport;
 	h.check(
 		(await libraryOf(C)).length === itemCount,
 		're-importing the same .tp adds no duplicate items (hash-dedupe inside)'
+	);
+	// the remaining imports in this section are about WHERE a folder lands, not about
+	// duplicates — put the rule on Skip so each one is only testing its own claim
+	await C.page.evaluate(() =>
+		window.__stores.importDuplicates.setDuplicateImportMode('skip')
 	);
 
 	// 21-I (user): IT LANDS WHERE THE COMMAND WAS STARTED — inside the folder you are

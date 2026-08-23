@@ -305,6 +305,50 @@ h.run(async () => {
 		(await A.page.evaluate(() => 'versions' in window.__stores.fileHandler.tpsceneOptions())) === false,
 		'`tpsceneOptions()` no longer carries a `versions` key at all'
 	);
+
+	// ---- 21-I (user): THE .tp GATE COVERS THE DOCUMENT, NOT ONLY THE BYTES ------------
+	// REPORTED: with "Scene version history" off, the project still had versions in it.
+	// The bytes were gated; the MANIFEST was not — so the file claimed every version while
+	// carrying one, and opening it showed rows that all said "Not held". A manifest naming
+	// hashes the zip does not contain is the dead-pointer shape 21-G3 forbids.
+	const gateProbe = async (versions) =>
+		A.page.evaluate(async (v) => {
+			const r = await window.__stores.projectFile.exportProject({ versions: v });
+			let s = '';
+			for (let i = 0; i < r.bytes.length; i += 8192)
+				s += String.fromCharCode.apply(null, r.bytes.subarray(i, i + 8192));
+			return { b64: btoa(s), scenes: r.scenes, omittedVersions: r.omittedVersions };
+		}, versions);
+	const readClaim = (b64) => {
+		const zip = unzipSync(new Uint8Array(Buffer.from(b64, 'base64')));
+		const doc = JSON.parse(strFromU8(zip['project.json']));
+		const carried = new Set(
+			Object.keys(zip)
+				.filter((n) => n.startsWith('scenes/'))
+				.map((n) => n.slice('scenes/'.length).replace(/\.tpscene$/, ''))
+		);
+		const claimed = Object.values(doc.manifest.scenes).flatMap((e) => e.history);
+		return { claimed, carried, doc };
+	};
+	const on = readClaim((await gateProbe(true)).b64);
+	h.check(
+		on.claimed.length > 1 && on.claimed.every((h2) => on.carried.has(h2)),
+		`history ON: it claims every version and CARRIES each one (${on.claimed.length} claimed, ${on.carried.size} carried)`
+	);
+	const offRun = await gateProbe(false);
+	const off = readClaim(offRun.b64);
+	h.check(
+		off.claimed.length < on.claimed.length && off.claimed.every((h2) => off.carried.has(h2)),
+		`history OFF: it claims ONLY what it carries — no dead pointers (${off.claimed.length} claimed, ${off.carried.size} carried)`
+	);
+	h.check(
+		Object.values(off.doc.manifest.scenes).every((e) => e.history.length === 1),
+		'…one version per scene in the document, which is what "only the latest" means to a reader'
+	);
+	h.check(
+		offRun.omittedVersions > 0,
+		`…and the file still SAYS how many it was told to leave out (${offRun.omittedVersions})`
+	);
 	h.check(
 		(await A.page.evaluate(() => {
 			localStorage.setItem('tpsceneVersions', 'true'); // a stale preference from the interim build

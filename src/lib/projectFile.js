@@ -258,19 +258,47 @@ export async function exportProject(opts = {}) {
 		});
 	}
 
+	/**
+	 * 21-I (user): THE GATE COVERS THE DOCUMENT, NOT ONLY THE BYTES. With scene history
+	 * switched off this file carries one version per scene — so it must CLAIM one, or the
+	 * manifest names hashes the zip does not contain and the recipient opens a project
+	 * showing five versions of which four say "Not held". That is the dead-pointer shape
+	 * the 21-G3 header forbids, and the same reasoning 21-I4 used to scope a folder
+	 * export's manifest; this is that rule applied to the other gate.
+	 *
+	 * `pinned` and `labels` come along for the ride: a pin or a name for a version this
+	 * file does not carry is metadata about nothing (and `normalizeManifest` drops a label
+	 * whose hash has left the history anyway, so leaving them would only differ until the
+	 * first read). Trimming is safe HERE and nowhere else — the LOCAL manifest is never
+	 * touched, because pruning was always about bytes and never about history.
+	 * @param {any} entry @returns {any}
+	 */
+	const gateEntry = (entry) => {
+		if (withVersions || !entry) return entry;
+		const pointer = entry.history?.[entry.history.length - 1];
+		if (!pointer) return entry;
+		const label = entry.labels?.[pointer];
+		const gated = {
+			...entry,
+			history: [pointer],
+			pinned: (entry.pinned ?? []).filter((/** @type {string} */ h) => h === pointer)
+		};
+		if (label) gated.labels = { [pointer]: label };
+		else delete gated.labels;
+		return gated;
+	};
+
 	// 21-I4: THE SCOPED MANIFEST — the document the file is allowed to claim. Filtered
 	// to what this zip carries, and NAMED after the folder, because the folder is the
 	// project now (that name is also the .tp's filename and, on import-as-folder, the
 	// folder it lands in).
+	const claimed = scope ? sceneNames : Object.keys(manifest.scenes);
 	/** @type {any} */
-	const outManifest = scope
-		? {
-				...manifest,
-				name: scope.name,
-				scenes: Object.fromEntries(sceneNames.map((name) => [name, manifest.scenes[name]])),
-				assets: assetHashes
-			}
-		: manifest;
+	const outManifest = {
+		...manifest,
+		...(scope ? { name: scope.name, assets: assetHashes } : {}),
+		scenes: Object.fromEntries(claimed.map((name) => [name, gateEntry(manifest.scenes[name])]))
+	};
 
 	files['project.json'] = strToU8(
 		JSON.stringify({

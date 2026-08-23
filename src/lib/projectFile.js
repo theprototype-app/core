@@ -33,7 +33,8 @@ import {
 	normalizeManifest,
 	manifestInUse,
 	manifestRestore,
-	keepableHashes
+	keepableHashes,
+	projectName
 } from './projectManifest';
 import { ensureScenesFolder } from './levels';
 
@@ -130,6 +131,21 @@ export async function exportProject() {
 	return { bytes: zipSync(files, { level: 6 }), scenes: scenes.length, assets: assets.length, skippedScenes, skippedAssets };
 }
 
+/**
+ * 21-G9: a project NAME is what the user calls this thing, and a file dialog is the one
+ * place that name has to survive a filesystem. Everything Windows, macOS and the shell
+ * dislike becomes a dash; a name that sanitizes to nothing falls back to the timestamp,
+ * which is what an unnamed project gets anyway.
+ * @param {string} name @returns {string} a safe basename, or '' when nothing survives
+ */
+export function projectFileBase(name) {
+	return String(name ?? '')
+		.replace(/[\\/:*?"<>|\x00-\x1f]+/g, '-')
+		.replace(/\s+/g, ' ')
+		.slice(0, 80)
+		.replace(/^[-. ]+|[-. ]+$/g, '');
+}
+
 /** Hand the project to the user as a file — the Explorer's `downloadItem` mechanism,
  * one level up (a Blob, an anchor, a revoked object URL). */
 export async function downloadProject() {
@@ -146,7 +162,12 @@ export async function downloadProject() {
 	const url = URL.createObjectURL(blob);
 	a.href = url;
 	const date = new Date().toISOString().replace(/[T:.Z]/g, '-');
-	a.download = `ThePrototype-${date}UTC.tp`;
+	// 21-G9: a named project comes out as `<Name>.tp` — someone who called it "Dungeon
+	// Crawl" should not have to recognise it by timestamp in their Downloads folder.
+	// The timestamp remains the fallback for a project with no name (or one whose name
+	// sanitizes away entirely), so the old behaviour is intact wherever it applied.
+	const base = projectFileBase(projectName());
+	a.download = base ? `${base}.tp` : `ThePrototype-${date}UTC.tp`;
 	a.click();
 	URL.revokeObjectURL(url);
 	a.remove();

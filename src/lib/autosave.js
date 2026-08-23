@@ -49,6 +49,17 @@ export const autoRestoreEnabled = writable(
 /** @type {import('svelte/store').Writable<any>} */
 export const restoreAvailable = writable(null);
 
+/**
+ * 21-G9: a counter bumped on EVERY dirty mark — "something in the scene changed", the
+ * one signal this module already computes for its own debounce. `sceneIdentity` rides
+ * it so the window title's dirty asterisk costs no second set of subscriptions and, more
+ * to the point, no work of its own: it is a bare integer, and its consumer throttles
+ * before it does anything expensive. Deliberately NOT the `dirty` boolean as a store —
+ * a save clears that flag, and the title's question ("does this differ from the version
+ * its NAME points at") is not the same question.
+ */
+export const dirtyPulse = writable(0);
+
 let started = false;
 let dirty = false;
 /** @type {any} */ let debounceTimer = null;
@@ -204,6 +215,7 @@ async function saveSnapshot() {
 function markDirty() {
 	if (!started) return;
 	dirty = true;
+	dirtyPulse.update((n) => n + 1);
 	clearTimeout(debounceTimer);
 	debounceTimer = setTimeout(saveSnapshot, DEBOUNCE_MS);
 }

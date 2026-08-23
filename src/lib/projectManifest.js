@@ -36,12 +36,13 @@ export const KEEP_VERSIONS = 10;
 /**
  * @typedef {{history: string[], pinned: string[]}} SceneEntry  history newest-LAST;
  *   the pointer is the last element
- * @typedef {{scenes: Record<string, SceneEntry>, assets: string[], changedAt: number}} Manifest
+ * @typedef {{name: string, scenes: Record<string, SceneEntry>, assets: string[],
+ *   changedAt: number}} Manifest
  */
 
 /** @returns {Manifest} */
 function defaultManifest() {
-	return { scenes: {}, assets: [], changedAt: 0 };
+	return { name: '', scenes: {}, assets: [], changedAt: 0 };
 }
 
 /**
@@ -70,6 +71,10 @@ export function normalizeManifest(data) {
 	}
 	return {
 		...data,
+		// 21-G9: the project NAME — the Explorer header's identity, the .tp default
+		// filename and (G8) the import folder name. A plain trimmed string, absent
+		// meaning '' so every pre-G9 manifest normalizes unchanged.
+		name: String(data.name ?? '').trim(),
 		scenes,
 		assets: Array.isArray(data.assets) ? [...new Set(data.assets.map(String).filter(Boolean))] : [],
 		changedAt: Number(data.changedAt) || 0
@@ -79,10 +84,12 @@ export function normalizeManifest(data) {
 /** The live document. @type {import('svelte/store').Writable<Manifest>} */
 export const projectManifest = writable(defaultManifest());
 
-/** Is there anything in it? A pristine manifest writes no idb key and rides no save. */
+/** Is there anything in it? A pristine manifest writes no idb key and rides no save.
+ * 21-G9: NAMING a project is itself an act of creating one — a user who types a name
+ * and reloads must find it there, so the name counts alongside scenes and assets. */
 export function manifestInUse() {
 	const m = get(projectManifest);
-	return Object.keys(m.scenes).length > 0 || m.assets.length > 0;
+	return !!m.name || Object.keys(m.scenes).length > 0 || m.assets.length > 0;
 }
 
 // ---- persistence -------------------------------------------------------------------
@@ -146,6 +153,30 @@ export function publishSceneVersion(name, hash) {
 		scenes: { ...m.scenes, [scene]: { ...entry, history: [...entry.history, h] } }
 	});
 	return true;
+}
+
+/**
+ * 21-G9: name the project. It rides the manifest, so it replicates, persists to idb
+ * and travels inside a .tp for free — there is nothing else to build.
+ *
+ * FORK 3, verbatim from publishSceneVersion: an editor writes the project document, a
+ * viewer never does. Inert without a roles plugin. Refused rather than queued, for the
+ * same reason a viewer's scene version is: there is no later moment at which it becomes
+ * theirs to write.
+ * @param {string} name @returns {boolean} did the document change
+ */
+export function setProjectName(name) {
+	const clean = String(name ?? '').trim();
+	if (isViewer()) return false;
+	const m = get(projectManifest);
+	if (clean === m.name) return false;
+	commitManifest({ ...m, name: clean });
+	return true;
+}
+
+/** The project's name, or '' while it has none. @returns {string} */
+export function projectName() {
+	return get(projectManifest).name ?? '';
 }
 
 /** Pin/unpin a version so the local prune never drops it (fork 4).

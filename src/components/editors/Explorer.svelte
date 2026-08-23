@@ -30,11 +30,13 @@
 	} from '$lib/explorer';
 	import { openTextEditor, openImagePreview, openModelPreview } from '$lib/fileWindows';
 	// 21-F4: scenes as LEVELS — .tpscene items in a Levels folder, saved from here
-	import { saveSceneAsLevel, newLevel, travelToLevel } from '$lib/levels';
+	// 21-G9: `currentLevel` is WHERE WE ARE — the header breadcrumb's scene half and
+	// the accent on the open scene's own card.
+	import { saveSceneAsLevel, newLevel, travelToLevel, currentLevel } from '$lib/levels';
 	// 21-G2: the "update available" dot on old scene versions. The manifest store is
 	// passed as the reactive dependency — a helper reading through get() registers none
 	// (the documented rule), so the badge would otherwise never appear live.
-	import { projectManifest, staleSceneHash, manifestInUse } from '$lib/projectManifest';
+	import { projectManifest, staleSceneHash, manifestInUse, setProjectName } from '$lib/projectManifest';
 	const staleScene = (_manifest: any, hash: string) => staleSceneHash(hash);
 	// 21-G3: the whole project as ONE .tp file (manifest + scenes + assets).
 	import { downloadProject } from '$lib/projectFile';
@@ -494,6 +496,44 @@
 		return scoped;
 	});
 
+	// ---- 21-G9: IDENTITY (who am I / where am I), above the LOCATION crumbs -----------
+	// Two different questions, deliberately two rows: the crumbs below say which FOLDER
+	// you are browsing, this one says which PROJECT and SCENE you are in. The project
+	// name is editable in place (the file's own inline-rename convention: Enter commits,
+	// Escape and blur cancel) — never a window.prompt (fork 14).
+	// The scene half reads `currentLevel`, the manifest's authoritative NAME, and not
+	// the item's filename: `renameItem` can rename the file under it, and travel-by-name
+	// resolves the name, so the filename is not the identity.
+	let projectEdit: string | null = $state(null);
+	const projectLabel = $derived($projectManifest.name || 'Untitled project');
+	const openSceneHash = $derived($currentLevel?.hash ?? null);
+	function startProjectEdit() {
+		projectEdit = $projectManifest.name ?? '';
+	}
+	function commitProjectEdit() {
+		if (projectEdit === null) return;
+		setProjectName(projectEdit);
+		projectEdit = null;
+	}
+	function projectKeydown(e: KeyboardEvent) {
+		if (e.key === 'Enter') commitProjectEdit();
+		else if (e.key === 'Escape') projectEdit = null;
+		e.stopPropagation();
+	}
+
+	/**
+	 * 21-G9: the active folder AS A REAL LIBRARY FOLDER, or null. `activeFolder` also
+	 * holds pseudo locations — `prefabs`, `packs`, `pack:<name>`, `scene…` — which are
+	 * views, not places a file can be written to. levels.js validates the id it is given
+	 * as well (a folder can be deleted between here and there); this is the cheap half.
+	 */
+	function activeLibraryFolder(): string | null {
+		const a = $activeFolder;
+		if (typeof a !== 'string' || !a) return null;
+		if (a === 'prefabs' || a === 'packs' || a.startsWith('pack:') || a.startsWith('scene')) return null;
+		return a;
+	}
+
 	// 197d: breadcrumb trail for the current location (click a crumb to navigate)
 	const crumbs = $derived.by(() => {
 		const a = $activeFolder;
@@ -826,7 +866,9 @@
 							tooltip: 'Save this scene as a .tpscene asset a Travel node can load',
 							action: () => {
 								const name = prompt('Scene name:', 'Scene');
-								if (name) saveSceneAsLevel(name);
+								// 21-G9: land it where the user is looking (Scenes when that is
+								// not a real library folder)
+								if (name) saveSceneAsLevel(name, activeLibraryFolder());
 							}
 						},
 						{
@@ -834,7 +876,7 @@
 							tooltip: 'An EMPTY scene asset — it captures nothing from what is open',
 							action: () => {
 								const name = prompt('Scene name:', 'New scene');
-								if (name) newLevel(name);
+								if (name) newLevel(name, activeLibraryFolder());
 							}
 						},
 						// 21-G3: the whole project as ONE file. Offered only once there IS
@@ -1152,6 +1194,41 @@
 		]}
 	>
 		{#snippet topbar()}
+			<!-- 21-G9: the identity line — Project / Scene. Always shown (the location
+			     crumbs below are the thing the ⚙ toggle hides), because "which project am
+			     I in" is the one question a file browser must never leave ambiguous. -->
+			<div
+				id="explorer-identity"
+				class="flex items-center gap-0.5 overflow-x-auto whitespace-nowrap border-b border-gray-700/60 px-2 py-1 text-[11px]"
+			>
+				{#if projectEdit !== null}
+					<input
+						id="explorer-project-input"
+						class="ui-input w-44 py-0 text-[11px]"
+						aria-label="Project name"
+						value={projectEdit}
+						use:focusSelect
+						oninput={(e) => (projectEdit = e.currentTarget.value)}
+						onkeydown={projectKeydown}
+						onblur={() => (projectEdit = null)}
+					/>
+				{:else}
+					<button
+						id="explorer-project"
+						class="rounded-sm px-1 py-0.5 font-medium hover:bg-gray-700 {$projectManifest.name
+							? 'text-gray-200'
+							: 'italic text-gray-500'}"
+						title="Click to name this project"
+						onclick={startProjectEdit}>{projectLabel}</button
+					>
+				{/if}
+				{#if $currentLevel?.name}
+					<span class="px-0.5 text-gray-600">/</span>
+					<span id="explorer-scene" class="px-1 py-0.5 text-white" title="The scene you have open"
+						>{$currentLevel.name}</span
+					>
+				{/if}
+			</div>
 			{#if showBreadcrumb}
 				<div class="flex items-center gap-0.5 overflow-x-auto whitespace-nowrap border-b border-gray-700/60 px-2 py-1 text-[11px] text-gray-300">
 					{#each crumbs as c, i (c.id ?? 'root')}
@@ -1374,7 +1451,10 @@
 						<div
 							class="explorer-card group relative flex cursor-grab flex-col items-center gap-1 rounded border p-1.5 {$inspectedFile === item.id
 								? 'border-primary-600 bg-primary-600/10'
-								: 'border-transparent hover:border-gray-600 hover:bg-gray-700/60'}"
+								: 'border-transparent hover:border-gray-600 hover:bg-gray-700/60'} {openSceneHash &&
+							item.hash === openSceneHash
+								? 'explorer-open-scene ring-1 ring-emerald-400'
+								: ''}"
 							draggable="true"
 							role="listitem"
 							title={item.name}
@@ -1387,6 +1467,14 @@
 							onclick={() => onCardClick(item)}
 							ondblclick={() => openItem(item)}
 						>
+							{#if openSceneHash && item.hash === openSceneHash}
+								<!-- 21-G9: THIS is the scene you have open. The ring alone reads as a
+								     selection at a glance, so the dot carries the meaning in words. -->
+								<span
+									class="explorer-open-dot absolute left-1 top-1 h-2.5 w-2.5 rounded-full bg-emerald-400"
+									title="The scene you have open"
+								></span>
+							{/if}
 							{#if item.kind === 'scene' && staleScene($projectManifest, item.hash)}
 								<!-- 21-G2: this file is an OLD version — the project's pointer for its
 								     scene moved past it. The manifest keeps every hash, so it still

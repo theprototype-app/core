@@ -992,6 +992,35 @@ drops the P2P session.
   add-menu search-Enter + right-tap, sound-node Play overlap, connect-overlay
   querySelector, scene-music byte-push timing. To PROVE a failure is pre-existing:
   `git stash push -u`, run the suite on HEAD, `git stash pop`.
+- **`explorer-files` (2026-08-22): fails INSIDE A BATCH, passes ALONE.** "the editor is
+  dark ()" then "Ctrl+S saves back" — a fixed 1200 ms wait where it should wait on
+  `.cm-editor`, so a loaded machine misses CodeMirror's lazy load. A/B-proven on an
+  untouched base by three independent runs. `explorer-drop`'s last check is the
+  documented hidden-canvas trap (it aims a synthetic DragEvent at
+  `document.querySelector('canvas')`, which is DungeonMinimap's hidden one) and comes
+  and goes the same way. Neither belongs to your diff; both deserve their own ticket.
+- **A lane worktree with an INCOMPLETE `node_modules` invalidates every number you
+  measure there.** Missing `@shaderfrog/core` breaks import-analysis on
+  `shaderBackends.js`, so the app never boots (every suite dies in setupPage's
+  `waitForFunction`) and svelte-check reads **387/62 instead of 385/62 on BOTH base and
+  branch** — an A/B run there "proves" nothing in either direction. `npm install` in the
+  worktree and re-measure. Same family as the stale-dev-server rule above.
+- **`--noproxy '*'` is REQUIRED for curl on this box**, and lane URLs are
+  `https://localhost:<port>/` — a system proxy swallows loopback requests (they hang,
+  then return nothing, which reads exactly like a dead server), and the
+  `theprototype.app` hosts mapping is commented out.
+- **A suite section that SAVES or ADDS OBJECTS perturbs its neighbours.** One guard
+  inserted mid-file broke four later checks at once: its `/create box` broke a "four
+  objects are open" premise, and its save moved `currentLevel` away from the scene a
+  later restore section reasons about. Put such a section LAST, and give it its own
+  fixture NAME — a sibling section built its own `Depot` and asserted a single-hash
+  history that a second `Depot` would have poisoned.
+- **A counterfactual can fail for a CORRECT implementation — check that first.** The
+  guard for "version files are stamped with their own date, not the export moment" was
+  first written as "no entry is dated near now", which goes red on correct code because
+  the NEWEST version genuinely was saved seconds ago. What the bug actually produces is
+  two entries sharing ONE date, so the check is that the two DIFFER. Measure the quantity
+  the bug changes, never one it merely correlates with.
 - KNOWN failing suites in the localhost env (2026-07-28, proven identical across a
   full old-deps/new-deps baseline comparison — treat as the dirty baseline, not
   regressions): the drag-drop-SIMULATION cluster (explorer-drop, explorer,

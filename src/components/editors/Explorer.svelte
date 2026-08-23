@@ -7,8 +7,9 @@
 	// + items), drag files in to import. Shares the bottom dock with the Flow
 	// editor as notebook tabs (bottomDock.js); undocks into a floating window.
 	import { get } from 'svelte/store';
-	import { explorerClose, mobileUndockAllowed } from '../../stores/appStore.js';
-	import { showToast, enable3dPreview } from '../../stores/appStore.js';
+	import { untrack } from 'svelte';
+	import { explorerClose, mobileUndockAllowed, explorerSceneSaveArm } from '../../stores/appStore.js';
+	import { showToast, enable3dPreview, stackOnDrop } from '../../stores/appStore.js';
 	import {
 		explorerFolders,
 		explorerItems,
@@ -25,20 +26,45 @@
 		renameItem,
 		isValidName,
 		itemBlob,
+		itemByHash,
 		inspectedFile,
-		updateItemBytes
+		updateItemBytes,
+		parseObjectFile
 	} from '$lib/explorer';
-	import { openTextEditor, openImagePreview, openModelPreview } from '$lib/fileWindows';
+	import { openTextEditor, openImagePreview, openModelPreview, previewSuspended } from '$lib/fileWindows';
 	// 21-F4: scenes as LEVELS — .tpscene items in a Levels folder, saved from here
 	// 21-G9: `currentLevel` is WHERE WE ARE — the header breadcrumb's scene half and
 	// the accent on the open scene's own card.
-	import { saveSceneAsLevel, newLevel, travelToLevel, currentLevel } from '$lib/levels';
+	// 21-I4: double-click OPENS a scene — `publishCurrentIfChanged` is the save half of
+	// the unsaved-changes guard (see `openSceneItem`).
+	import {
+		saveSceneAsLevel,
+		newLevel,
+		travelToLevel,
+		publishCurrentIfChanged,
+		currentLevel
+	} from '$lib/levels';
+	// 21-I4: 21-G9 already computes "does the open scene differ from the version its name
+	// points at", behind a throttle, because the answer costs a whole-scene
+	// serialization. This READS that flag and never recomputes it.
+	import { sceneDirty } from '$lib/sceneIdentity';
+	import { showChoice } from '$lib/confirmDialog';
 	import VersionHistory from './VersionHistory.svelte';
 	// 21-G2: the "update available" dot on old scene versions. The manifest store is
 	// passed as the reactive dependency — a helper reading through get() registers none
 	// (the documented rule), so the badge would otherwise never appear live.
-	import { projectManifest, staleSceneHash, manifestInUse, setProjectName } from '$lib/projectManifest';
+	import {
+		projectManifest,
+		staleSceneHash,
+		manifestInUse,
+		setProjectName,
+		sceneOfHash,
+		sceneEntry
+	} from '$lib/projectManifest';
 	const staleScene = (_manifest: any, hash: string) => staleSceneHash(hash);
+	// 21-I5 REVISED: the ONE filesystem sanitiser, plus the version-date stamp the zip
+	// entries and the panel's per-row download both name their files with.
+	import { fileNameBase, versionStamp } from '$lib/saveName';
 	// 21-G3: the whole project as ONE .tp file (manifest + scenes + assets).
 	import { downloadProject } from '$lib/projectFile';
 	import ModelPreview from './ModelPreview.svelte';
@@ -56,8 +82,22 @@
 		rememberThumb,
 		openPackLoading
 	} from '$lib/packs';
-	import { importFile } from '$lib/fileHandler.svelte';
-	import { prefabs, loadPrefabs } from '$lib/prefabs';
+	import { importFile, exportObjectsAsGltf } from '$lib/fileHandler.svelte';
+	// 21-H2: the Explorer is the prefab HOME (the Library modal is gone), so it owns
+	// their whole CRUD — add, export both ways, update, rename, properties, delete.
+	import {
+		prefabs,
+		loadPrefabs,
+		prefabById,
+		prefabObject,
+		prefabFacts,
+		instantiatePrefab,
+		removePrefab,
+		renamePrefab,
+		updatePrefab,
+		exportPrefab
+	} from '$lib/prefabs';
+	import { selectedObject, selectedObjects } from '../../stores/sceneStore.js';
 	import { sceneAssets } from '$lib/sceneAssets';
 	import { setNodeData } from '$lib/nodesHandler';
 	import { findNodeAnyGraph } from '../../stores/flowStore';
@@ -502,11 +542,14 @@
 	// ---- 21-G9: IDENTITY (who am I / where am I), above the LOCATION crumbs -----------
 	// Two different questions, deliberately two rows: the crumbs below say which FOLDER
 	// you are browsing, this one says which PROJECT and SCENE you are in. The project
-	// name is editable in place (the file's own inline-rename convention: Enter commits,
-	// Escape and blur cancel) — never a window.prompt (fork 14).
+	// name is editable in place (the file's own inline-rename convention: Enter and blur
+	// commit, Escape cancels) — never a window.prompt (fork 14).
 	// The scene half reads `currentLevel`, the manifest's authoritative NAME, and not
 	// the item's filename: `renameItem` can rename the file under it, and travel-by-name
 	// resolves the name, so the filename is not the identity.
+	// 21-H1 (locked answer 7): blur COMMITS here too — `commitProjectEdit` is the blur
+	// handler, and Escape nulls the state before any blur can read it, so cancelling and
+	// then losing focus cannot re-commit the name Escape just dropped.
 	let projectEdit: string | null = $state(null);
 	const projectLabel = $derived($projectManifest.name || 'Untitled project');
 	const openSceneHash = $derived($currentLevel?.hash ?? null);
@@ -583,11 +626,18 @@
 		}
 		return 'Library' + (parts.length ? ' / ' + parts.join(' / ') : '');
 	});
+	// 21-H2: a prefab's facts. `$prefabs` is passed as an UNUSED first argument for the
+	// same reason `staleScene` above takes the manifest — a helper reading a store
+	// through get() registers no dependency, and the comma-operator workaround does not
+	// typecheck (the documented rule). So the pane re-reads after a rename or an update.
+	const factsFor = (_list: any, id: string) => prefabFacts(id);
+	const selPrefab = $derived(selItem?.kind === 'prefab' ? factsFor($prefabs, selItem.prefabId) : null);
 	let itemDetails = $state('');
 	$effect(() => {
 		const item = selItem;
 		itemDetails = '';
 		if (!item) return;
+		if (item.kind === 'prefab') return; // 21-H2: no stored blob — its facts come from prefabFacts
 		itemBlob(item.id).then(async (blob: any) => {
 			if (!blob || selItem?.id !== item.id) return;
 			try {
@@ -623,6 +673,106 @@
 			: []),
 		...gridItems.map((it: any) => ({ kind: 'item', item: it }))
 	]);
+
+	// ---- 21-H3: MULTI-SELECT ---------------------------------------------------------
+	// `selected` (the single anchor) is UNCHANGED: it still drives the Properties pane,
+	// and it is the Shift-range anchor. `selectedIds` is the SET beside it, keyed by the
+	// card's own id — which already exists and is already unique for every kind the grid
+	// can draw (library item / 'prefab:<id>' / 'pack:<pack>:<name>' / 'packfolder:<name>'
+	// / a folder's uuid), so nothing had to be minted for this.
+	//
+	// THE RULE: a Set mutated in place gives a `$derived` (and this component's own
+	// template reads) no signal at all — everything compares with `===`. Every write
+	// therefore REPLACES it, which is what `setSel` is for.
+	let selectedIds = $state(new Set<string>());
+	/** the card id of a grid ENTRY — the one place the two kinds are folded together */
+	const entryId = (entry: any): string =>
+		entry.kind === 'folder' ? entry.folder.id : entry.item.id;
+	function setSel(ids: Iterable<string>) {
+		selectedIds = new Set(ids);
+	}
+	/** read through a helper so the template's `selectedIds` argument is the dependency */
+	const inSel = (ids: Set<string>, id: string) => ids.has(id);
+	/** the anchor as a card id (the Shift range's fixed end) */
+	function anchorId(): string | null {
+		if (!selected) return null;
+		return (selected.kind === 'folder' ? selected.folder?.id : selected.item?.id) ?? null;
+	}
+	/**
+	 * The ids between the anchor and `toId` in the CURRENT VISUAL ORDER. That order is
+	 * read off `gridEntries` — the ONE array the grid is built from — rather than
+	 * reasoned about across the two `{#each}` blocks that render it, which is how a
+	 * range silently starts skipping the folder row at the top.
+	 */
+	function rangeIds(fromId: string | null, toId: string): string[] {
+		const order = gridEntries.map(entryId);
+		const b = order.indexOf(toId);
+		if (b < 0) return [toId];
+		const a = fromId ? order.indexOf(fromId) : -1;
+		if (a < 0) return [toId];
+		return a <= b ? order.slice(a, b + 1) : order.slice(b, a + 1);
+	}
+	/**
+	 * The selection half of a MODIFIED card click. Ctrl/Cmd toggles and MOVES the anchor
+	 * (so the next Shift range starts where you last clicked); Shift ranges and leaves
+	 * the anchor where it is, because a second Shift-click has to be able to re-range
+	 * from the same card rather than from its own previous end.
+	 */
+	function modifierSelect(e: MouseEvent, id: string, moveAnchor: () => void) {
+		if (e.shiftKey) {
+			const range = rangeIds(anchorId(), id);
+			setSel(e.ctrlKey || e.metaKey ? [...selectedIds, ...range] : range);
+			return;
+		}
+		const next = new Set(selectedIds);
+		next.has(id) ? next.delete(id) : next.add(id);
+		selectedIds = next;
+		moveAnchor();
+	}
+	/** the selected grid entries, in visual order (stale ids simply do not match) */
+	function selectedEntries(): any[] {
+		return gridEntries.filter((entry: any) => selectedIds.has(entryId(entry)));
+	}
+	/**
+	 * A view change wipes the set. Ctrl+A in one folder followed by Delete in another
+	 * would otherwise act on cards nobody can see — and a search narrows the grid the
+	 * same way a folder does, so both are the trigger.
+	 */
+	$effect(() => {
+		void $activeFolder;
+		void search;
+		untrack(() => {
+			if (selectedIds.size) selectedIds = new Set();
+		});
+	});
+
+	/**
+	 * THREE states have to stay apart on one card: the INSPECTED card (whose facts the
+	 * Properties pane is showing), the OPEN SCENE's emerald ring (21-G9, drawn as a ring
+	 * so it composes with either), and now a multi-selected member. The anchor keeps the
+	 * primary treatment it has always had — a single selection is therefore byte-identical
+	 * to before this phase — and the rest of the set takes the sky tint.
+	 */
+	function cardClass(ids: Set<string>, inspected: string | null, sel: any, id: string): string {
+		const picked = ids.has(id);
+		const isAnchor =
+			inspected === id || (sel?.kind === 'item' ? sel.item?.id : sel?.folder?.id) === id;
+		// The anchor keeps the primary treatment it has always had — but only while it is
+		// PART of the set, or while nothing is selected at all (the pre-21-H3 "this is what
+		// Properties is showing" state, which the tree's own menu still reaches). A card
+		// Ctrl-clicked OUT of a set must stop looking picked even though the anchor stays
+		// on it, or the highlight and the set disagree about what Delete would take.
+		const tint =
+			isAnchor && (ids.size === 0 || picked)
+				? 'border-primary-600 bg-primary-600/10'
+				: picked
+					? 'border-sky-400 bg-sky-400/20'
+					: 'border-transparent hover:border-gray-600 hover:bg-gray-700/60';
+		// `explorer-selected` marks MEMBERSHIP independently of which of the two tints the
+		// card ended up with, so nothing has to infer the set from a colour
+		return picked ? 'explorer-selected ' + tint : tint;
+	}
+
 	function gridIndex() {
 		if (!selected) return -1;
 		return gridEntries.findIndex((e: any) =>
@@ -638,6 +788,10 @@
 		let i = gridIndex();
 		i = i < 0 ? (delta > 0 ? 0 : gridEntries.length - 1) : Math.min(Math.max(i + delta, 0), gridEntries.length - 1);
 		const e: any = gridEntries[i];
+		// 21-H3: an arrow step is a fresh single selection, so the SET follows the
+		// anchor — leaving it behind would make Delete act on the card you walked away
+		// from while the highlight sits somewhere else
+		setSel([entryId(e)]);
 		if (e.kind === 'folder') selectFolder(e.folder);
 		else inspectItem(e.item);
 	}
@@ -653,7 +807,32 @@
 	function gridKeydown(e: KeyboardEvent) {
 		const tag = (e.target as HTMLElement)?.tagName;
 		if (tag === 'INPUT' || tag === 'TEXTAREA') return; // don't hijack typing
-		if (e.key === 'ArrowRight' || e.key === 'ArrowDown') (e.preventDefault(), moveSel(1));
+		// 21-H3: the selection keys. `stopPropagation` as well as `preventDefault`,
+		// because shortcuts.js listens on WINDOW — svelte delegates this handler to the
+		// app root, which is BELOW window, so stopping here is what keeps Ctrl+A from
+		// ALSO selecting every object in the scene behind the panel.
+		const mod = e.ctrlKey || e.metaKey;
+		if (mod && e.code === 'KeyA') {
+			e.preventDefault();
+			e.stopPropagation();
+			setSel(gridEntries.map(entryId));
+		} else if (mod && e.code === 'KeyI') {
+			e.preventDefault();
+			e.stopPropagation();
+			setSel(gridEntries.map(entryId).filter((id: string) => !selectedIds.has(id)));
+		} else if (e.key === 'Escape') {
+			// only when there IS a selection: Escape belongs to a dozen local handlers in
+			// this app, and swallowing it while nothing is selected steals it from them
+			if (!selectedIds.size) return;
+			e.preventDefault();
+			e.stopPropagation();
+			setSel([]);
+		} else if (e.key === 'Delete') {
+			if (!selectedIds.size) return;
+			e.preventDefault();
+			e.stopPropagation();
+			deleteSelection();
+		} else if (e.key === 'ArrowRight' || e.key === 'ArrowDown') (e.preventDefault(), moveSel(1));
 		else if (e.key === 'ArrowLeft' || e.key === 'ArrowUp') (e.preventDefault(), moveSel(-1));
 		else if (e.key === 'Enter') {
 			e.preventDefault();
@@ -684,6 +863,12 @@
 	function startRenameItem(item: any) {
 		editing = { mode: 'rename-item', itemId: item.id, value: item.name };
 	}
+	// 21-H2: a PREFAB renames through the SAME inline editor — never window.prompt(),
+	// which is what the deleted Library modal used (fork 14's rule, one surface over).
+	// Its own mode because the id addresses the prefab library, not `explorerItems`.
+	function startRenamePrefab(item: any) {
+		editing = { mode: 'rename-prefab', prefabId: item.prefabId, value: item.name };
+	}
 	// 21-G1: a PACK row renames too — same inline editor, and it writes the pack's
 	// display TITLE only (its `name` is the identity every cache and view key uses;
 	// packs.js carries the reasoning)
@@ -698,6 +883,27 @@
 	function startSceneName(mode: 'save-scene' | 'new-scene') {
 		editing = { mode, value: mode === 'save-scene' ? 'Scene' : 'New scene', inGrid: true };
 	}
+	// 21-H1 (locked answer 7): CLICKING AWAY COMMITS. Every inline name in this panel —
+	// scene save/new, folder create, item/folder/pack rename, and the project name —
+	// used to be thrown away by its own blur, which is the opposite of what every file
+	// browser does and of what typing a name then reaching for the mouse means. ESCAPE
+	// is the only cancel now.
+	//
+	// The ordering hazard, and why Escape clears the state FIRST: unmounting the input
+	// can deliver a blur, and `commitEdit`/`commitProjectEdit` are the same functions
+	// that blur calls — so both bail on null state, and Escape nulls it before anything
+	// else can read it. That also makes Enter safe, since it closes before awaiting.
+	// An INVALID name (empty, or carrying `* \ /`) is the one thing blur cannot commit,
+	// and leaving the input mounted after focus has gone would strand it on screen with
+	// no way back to it. Clicking away from a name that cannot exist discards it.
+	function blurCommit() {
+		if (!editing) return;
+		if (!isValidName(editing.value)) {
+			editing = null;
+			return;
+		}
+		void commitEdit();
+	}
 	async function commitEdit() {
 		if (!editing || !isValidName(editing.value)) return;
 		// snapshot and CLOSE first: the scene modes await, and an input still mounted over
@@ -706,9 +912,10 @@
 		editing = null;
 		if (edit.mode === 'create') createFolder(edit.value, edit.parentId);
 		else if (edit.mode === 'rename-item') renameItem(edit.itemId, edit.value);
+		else if (edit.mode === 'rename-prefab') renamePrefab(edit.prefabId, edit.value);
 		else if (edit.mode === 'rename-pack') renamePack(edit.packName, edit.value);
-		// 21-G9 (union): land the scene where the user is looking — the library root when
-		// the active folder is a pseudo view or a stale id
+		// 21-G9 (union): land the scene where the user is looking — Scenes when the
+		// active folder is a pseudo view or a stale id
 		else if (edit.mode === 'save-scene') await saveSceneAsLevel(edit.value, activeLibraryFolder());
 		else if (edit.mode === 'new-scene') await newLevel(edit.value, activeLibraryFolder());
 		else renameFolder(edit.folderId, edit.value);
@@ -722,6 +929,22 @@
 		node.focus();
 		node.select();
 	}
+	// 21-H1 (locked answer 5): CONSUME the arm store. projectFile's empty-library
+	// bootstrap ("Save a scene" on the export refusal) opens this panel and asks for the
+	// inline save input, in a folder it premade. A write-once store rather than a
+	// callback, because that module must not import a component — and it is consumed
+	// (cleared) as it is acted on, so a stale request cannot re-open the input the next
+	// time this panel mounts.
+	$effect(() => {
+		const arm = $explorerSceneSaveArm;
+		if (!arm) return;
+		explorerSceneSaveArm.set(null);
+		untrack(() => {
+			openFolder(arm.folderId);
+			startSceneName('save-scene');
+		});
+	});
+
 	// 21-G10: which inline edit the GRID hosts, rendered as a placeholder CARD sitting
 	// where the thing being named will land. A `create` qualifies only when it was
 	// started from the grid — the tree keeps its own row editor for its own button.
@@ -820,6 +1043,12 @@
 
 	function folderMenu(e: MouseEvent, folder: any, inTree = true) {
 		e.preventDefault();
+		// 21-H3: the grid's folder cards join the selection like any other card (the TREE
+		// row is a different surface — it is a navigator, and it always means one folder)
+		if (!inTree) {
+			if (!selectedIds.has(folder.id)) setSel([folder.id]);
+			if (selectedIds.size > 1) return batchMenu(e);
+		}
 		menu = {
 			x: e.clientX,
 			y: e.clientY,
@@ -828,6 +1057,16 @@
 				// 170: "New subfolder" only makes sense in the tree; the thumbnail grid drops it
 				...(inTree ? [{ label: 'New subfolder', action: () => startCreate(folder.id) }] : []),
 				{ label: 'Rename', action: () => startRename(folder, !inTree) },
+				// 21-I4 (locked answer 3): the folder's SUBTREE as a project file. The
+				// folder becomes that project's root and gives it its name, so what comes
+				// back out of an import is this folder, not a folder inside a folder.
+				{
+					label: 'Export folder as .tp',
+					icon: 'arrow-down-to-line',
+					tooltip:
+						'This folder and everything under it as a project file — its scenes, their version history and the assets they use',
+					action: () => downloadProject({ folderId: folder.id })
+				},
 				{ label: 'Delete folder', danger: true, action: () => confirmDeleteFolder(folder) }
 			]
 		};
@@ -851,9 +1090,391 @@
 		a.remove();
 	}
 
+	/** the anchor + object-URL download, factored out of `downloadItem` for the zip */
+	function saveBlob(blob: Blob, filename: string) {
+		const a = document.createElement('a');
+		document.body.appendChild(a);
+		a.style.display = 'none';
+		const url = URL.createObjectURL(blob);
+		a.href = url;
+		a.download = filename;
+		a.click();
+		URL.revokeObjectURL(url);
+		a.remove();
+	}
+
+	// ---- 21-H3: BATCH OPERATIONS -----------------------------------------------------
+	// Everything here answers the same two questions: which of the selected cards can
+	// this actually act on, and what happens to the rest. A pack card and a Scene-manifest
+	// entry are VIEWS of something else — a pack item is a remote URL with no stored blob,
+	// a Scene entry is derived from the live scene — so they are skipped and SAID to be
+	// skipped, never quietly dropped from a count the user is reading.
+
+	const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? '' : 's'}`;
+
+	/** a real, deletable library thing: a stored item, a prefab, or a folder */
+	const isOwnedItem = (item: any) =>
+		!!item && !item.packEntry && !item.sceneEntry && item.kind !== 'pack-folder';
+
+	/** what the selection breaks down into, once and for every batch entry point */
+	function selectionParts() {
+		const entries = selectedEntries();
+		const folders = entries.filter((e: any) => e.kind === 'folder').map((e: any) => e.folder);
+		const items = entries
+			.filter((e: any) => e.kind === 'item' && isOwnedItem(e.item))
+			.map((e: any) => e.item);
+		return { entries, folders, items, skipped: entries.length - folders.length - items.length };
+	}
+
+	/**
+	 * ONE confirm naming the count. A folder brings its subtree with it, so its existing
+	 * `folderCounts` numbers go into the same sentence — otherwise "delete 2 folders"
+	 * hides however many files that is.
+	 */
+	function deleteSelection() {
+		const { folders, items, skipped } = selectionParts();
+		if (!folders.length && !items.length)
+			return showToast(
+				skipped
+					? `Nothing to delete — ${plural(skipped, 'card')} here ${skipped === 1 ? 'is a view' : 'are views'} of something else (pack or scene contents)`
+					: 'Nothing selected'
+			);
+		let subFolders = 0;
+		let subItems = 0;
+		for (const folder of folders) {
+			const counts = folderCounts(folder.id);
+			subFolders += counts.folders - 1; // folderCounts includes the folder itself
+			subItems += counts.items;
+		}
+		const parts: string[] = [];
+		if (items.length) parts.push(plural(items.length, 'item'));
+		if (folders.length) parts.push(plural(folders.length, 'folder'));
+		const cascade =
+			subFolders || subItems
+				? ` — with ${plural(subFolders, 'subfolder')} and ${plural(subItems, 'item')} inside`
+				: '';
+		const note = skipped ? ` (${plural(skipped, 'pack/scene card')} will be skipped)` : '';
+		showToast(`Delete ${parts.join(' and ')}${cascade}?${note}`, [
+			{ label: 'Delete', action: () => void runDeleteSelection(folders, items) },
+			{ label: 'Cancel', action: () => {} }
+		]);
+	}
+	async function runDeleteSelection(folders: any[], items: any[]) {
+		for (const item of items) {
+			if (item.kind === 'prefab') await removePrefab(item.prefabId);
+			else await deleteItem(item.id);
+		}
+		for (const folder of folders) await deleteFolder(folder.id);
+		setSel([]);
+		deselect();
+	}
+
+	/** a name no other entry in the zip has yet ("a.png" -> "a (2).png") */
+	function uniqueZipName(taken: Record<string, any>, name: string) {
+		if (!taken[name]) return name;
+		const dot = name.lastIndexOf('.');
+		const stem = dot > 0 ? name.slice(0, dot) : name;
+		const ext = dot > 0 ? name.slice(dot) : '';
+		let n = 2;
+		while (taken[`${stem} (${n})${ext}`]) n++;
+		return `${stem} (${n})${ext}`;
+	}
+
+	/** the name a batch download takes — the folder you are looking at */
+	function currentFolderName() {
+		const id = activeLibraryFolder();
+		return (id && $explorerFolders.find((f: any) => f.id === id)?.name) || 'Library';
+	}
+
+	/**
+	 * ONE item = today's direct download, byte for byte. N = ONE .zip, because N
+	 * simultaneous anchor clicks are a download prompt storm in every browser and an
+	 * outright block in some. fflate is already a dependency (the .tpscene / .tp
+	 * precedent), and the menu LABEL says .zip so nobody wonders where their files went.
+	 */
+	async function downloadSelection() {
+		const files = selectionParts().items.filter((item: any) => item.kind !== 'prefab' && item.id);
+		if (!files.length) return showToast('Nothing in this selection has stored bytes to download');
+		if (files.length === 1) return downloadItem(files[0]);
+		const { zipSync } = await import('fflate');
+		/** @type {Record<string, Uint8Array>} */
+		const entries: Record<string, Uint8Array> = {};
+		let missing = 0;
+		for (const item of files) {
+			const blob = await itemBlob(item.id);
+			if (!blob) {
+				missing++;
+				continue;
+			}
+			entries[uniqueZipName(entries, item.name || 'file')] = new Uint8Array(
+				await blob.arrayBuffer()
+			);
+		}
+		const count = Object.keys(entries).length;
+		if (!count) return showToast('None of those files still have stored bytes');
+		saveBlob(
+			new Blob([zipSync(entries, { level: 6 })], { type: 'application/zip' }),
+			fileStem(currentFolderName()) + '.zip'
+		);
+		showToast(
+			`Downloaded ${plural(count, 'file')} as a .zip` + (missing ? ` (${missing} had no bytes)` : '')
+		);
+	}
+
+	// ---- 21-I5 REVISED: DOWNLOADING A SCENE'S VERSIONS -------------------------------
+	// The interim 21-I5 build bundled versions into the working .tpscene from an Export
+	// Settings checkbox, and it could not work: that path exports whatever is in the
+	// viewport, so a scene that is not a NAMED project scene has no manifest entry, no
+	// history to look up, and the box silently produced nothing. HERE the scene card
+	// makes both unambiguous, which is the whole reason the action moved.
+
+	/** The DISTINCT versions the manifest records for the scene a card points at, newest
+	 * last (history order). A restore RE-APPENDS a hash it already had — the manifest's
+	 * own rule — so one history can name the same version twice and it is one file either
+	 * way. Empty for anything that is not a scene card of ours. */
+	function sceneVersionHashes(item: any): string[] {
+		if (!item || item.kind !== 'scene' || item.packEntry || item.sceneEntry) return [];
+		const scene = sceneOfHash(item.hash);
+		const entry = scene ? sceneEntry(scene) : null;
+		return [...new Set((entry?.history ?? []).filter(Boolean))];
+	}
+
+	/**
+	 * Every version of ONE scene as a single .zip of .tpscene files.
+	 *
+	 * ONE archive rather than N downloads for the reason `downloadSelection` already
+	 * documents: a burst of anchor clicks is a prompt storm in every browser and an
+	 * outright block in some. `itemByHash` reaches the HIDDEN shelf (21-G7), so the
+	 * folded-away older versions resolve here with nothing extra.
+	 *
+	 * A version whose bytes this machine no longer holds is COUNTED and reported — the
+	 * `exportProject` rule, because a lossy export you are not told about is how a gap
+	 * gets discovered a month later. The manifest keeps such a hash regardless (fork 4):
+	 * a peer who still has it can serve it back.
+	 */
+	async function downloadSceneVersions(item: any) {
+		const scene = sceneOfHash(item.hash);
+		const hashes = sceneVersionHashes(item);
+		if (!scene || hashes.length < 2)
+			return showToast('That scene has only one version — use Download for it');
+		const { zipSync } = await import('fflate');
+		const entries: Record<string, Uint8Array> = {};
+		let missing = 0;
+		for (const hash of hashes) {
+			const record: any = itemByHash(hash);
+			const blob = record ? await itemBlob(record.id) : null;
+			if (!blob) {
+				missing++;
+				continue;
+			}
+			// ISO date FIRST so a file listing sorts chronologically, then a short hash so
+			// two versions written in the same millisecond still differ. `uniqueZipName` is
+			// the backstop for a collision even that cannot rule out.
+			const name = `${versionStamp(record.createdAt)}-${String(hash).slice(0, 8)}.tpscene`;
+			entries[uniqueZipName(entries, name)] = new Uint8Array(await blob.arrayBuffer());
+		}
+		const count = Object.keys(entries).length;
+		if (!count)
+			return showToast(
+				`None of ${scene}'s ${plural(hashes.length, 'version')} still have stored bytes here`
+			);
+		saveBlob(
+			new Blob([zipSync(entries, { level: 6 })], { type: 'application/zip' }),
+			`${fileNameBase(scene) || 'scene'}-versions.zip`
+		);
+		showToast(
+			`Downloaded ${plural(count, 'version')} of ${scene} as a .zip` +
+				(missing
+					? ` — ${missing} whose bytes are not on this machine ${missing === 1 ? 'was' : 'were'} left out`
+					: '')
+		);
+	}
+
+	/**
+	 * N prefabs / 3D objects as ONE file. `exportGltf` has always taken an ARRAY of roots
+	 * (that is how the viewport's multi-selection export works), so this reuses 21-H2's
+	 * `exportObjectsAsGltf` seam — with its park, its origin bake and its animation bake —
+	 * rather than growing a second exporter here.
+	 */
+	async function exportSelectionGltf() {
+		const roots: any[] = [];
+		let failed = 0;
+		for (const item of selectionParts().items) {
+			if (item.kind === 'prefab') {
+				const object = prefabObject(item.prefabId);
+				object ? roots.push(object) : failed++;
+			} else if (item.kind === 'object') {
+				const blob = await itemBlob(item.id);
+				if (!blob) {
+					failed++;
+					continue;
+				}
+				try {
+					roots.push(
+						await parseObjectFile(await blob.arrayBuffer(), item.name.split('.').pop()?.toLowerCase() ?? 'glb')
+					);
+				} catch {
+					failed++;
+				}
+			}
+		}
+		if (!roots.length) return showToast('Select prefabs or 3D objects to export as GLTF');
+		exportObjectsAsGltf(roots, fileStem(currentFolderName()) + '.gltf');
+		showToast(`Exported ${plural(roots.length, 'object')} as one GLTF` + (failed ? ` (${failed} could not be read)` : ''));
+	}
+
+	/** how many of the selected cards each batch entry can actually act on */
+	function batchCounts() {
+		const { items, folders, skipped } = selectionParts();
+		return {
+			files: items.filter((item: any) => item.kind !== 'prefab' && item.id).length,
+			models: items.filter((item: any) => item.kind === 'prefab' || item.kind === 'object').length,
+			deletable: items.length + folders.length,
+			skipped
+		};
+	}
+
+	/** the menu a right-click gets while several cards are selected */
+	function batchMenu(e: MouseEvent) {
+		const n = selectedIds.size;
+		const counts = batchCounts();
+		const items: any[] = [];
+		if (counts.files)
+			items.push({
+				label: counts.files === 1 ? 'Download' : `Download ${plural(counts.files, 'file')} as .zip`,
+				icon: 'arrow-down-to-line',
+				tooltip: 'Save them to your computer — several files come down as one .zip',
+				action: () => void downloadSelection()
+			});
+		if (counts.models)
+			items.push({
+				label: `Export ${plural(counts.models, 'object')} as GLTF`,
+				tooltip: 'One .gltf file containing every selected prefab and 3D object',
+				action: () => void exportSelectionGltf()
+			});
+		if (counts.deletable)
+			items.push({
+				label: `Delete ${plural(counts.deletable, 'item')}`,
+				danger: true,
+				action: deleteSelection
+			});
+		items.push({ label: `Clear selection (${n})`, action: () => setSel([]) });
+		menu = { x: e.clientX, y: e.clientY, items };
+	}
+
+	// ---- 21-H2: prefab CRUD ----------------------------------------------------------
+	// A prefab card used to have NO menu at all (`itemMenu` early-returned on the kind,
+	// "derived views have no CRUD") while a second surface — the Library modal, which
+	// nothing could open — carried export/delete/rename for the same prefabs. The kind is
+	// derived, but a prefab is not: it is a real stored asset, and this is its home.
+
+	/** The current selection as uuids — the SET, with the sticky primary folded in
+	 *  (the `selectedRoots` rule in fileHandler, which is what a prefab save reads). */
+	function selectionUuids(): string[] {
+		const uuids = new Set<string>($selectedObjects ?? []);
+		const primary: any = $selectedObject;
+		if (primary?.uuid) uuids.add(primary.uuid);
+		return [...uuids];
+	}
+
+	/** A filename stem safe on every OS, matching the old Library download */
+	const fileStem = (name: string) => String(name || 'prefab').replace(/[^\w-]+/g, '_');
+
+	/** Export ▸ prefab (.json): the same bytes `importPrefab` reads back */
+	function downloadPrefabJson(prefab: any) {
+		const blob = new Blob([exportPrefab(prefab)], { type: 'application/json' });
+		const a = document.createElement('a');
+		document.body.appendChild(a);
+		a.style.display = 'none';
+		const url = URL.createObjectURL(blob);
+		a.href = url;
+		a.download = fileStem(prefab.name) + '.prefab.json';
+		a.click();
+		URL.revokeObjectURL(url);
+		a.remove();
+	}
+
+	/** Export ▸ GLTF: the parsed tree through fileHandler's own exporter (park + origin
+	 *  bake + animation bake), never a second copy of that ritual here. */
+	function downloadPrefabGltf(prefab: any) {
+		const object = prefabObject(prefab.id);
+		if (!object) return showToast('This prefab could not be loaded');
+		exportObjectsAsGltf(object, fileStem(prefab.name) + '.gltf');
+	}
+
+	/** Re-save an existing prefab from what is selected. Confirmed, because it replaces
+	 *  bytes that may be the only copy — and refused with the REASON when there is no
+	 *  selection, which is otherwise indistinguishable from a dead menu entry. */
+	function updatePrefabFromSelection(prefab: any) {
+		const uuids = selectionUuids();
+		if (!uuids.length)
+			return showToast('Select the object (or objects) to save into this prefab first');
+		showToast(
+			`Replace "${prefab.name}" with ${uuids.length === 1 ? 'the selected object' : uuids.length + ' selected objects'}?`,
+			[
+				{ label: 'Update', action: () => void updatePrefab(prefab.id, uuids) },
+				{ label: 'Cancel', action: () => {} }
+			]
+		);
+	}
+
+	function confirmDeletePrefab(prefab: any) {
+		showToast(`Delete the prefab "${prefab.name}"?`, [
+			{ label: 'Delete', action: () => void removePrefab(prefab.id) },
+			{ label: 'Cancel', action: () => {} }
+		]);
+	}
+
+	function prefabMenu(e: MouseEvent, item: any) {
+		const prefab = prefabById(item.prefabId);
+		if (!prefab) return;
+		menu = {
+			x: e.clientX,
+			y: e.clientY,
+			items: [
+				{
+					label: 'Add to scene',
+					icon: 'boxes',
+					tooltip: 'Place a copy of this prefab in the scene (every peer gets it)',
+					action: () => instantiatePrefab(prefab)
+				},
+				{
+					label: 'Export',
+					icon: 'arrow-down-to-line', // Icon.svelte's MAP falls back to a plain Box for an unknown name
+					children: [
+						{
+							label: 'GLTF',
+							tooltip: 'A .gltf model file other tools can open',
+							action: () => downloadPrefabGltf(prefab)
+						},
+						{
+							label: 'prefab (.json)',
+							tooltip: 'This prefab as a file — import it back on any machine',
+							action: () => downloadPrefabJson(prefab)
+						}
+					]
+				},
+				{
+					label: 'Update from selection',
+					tooltip: 'Re-save this prefab from the objects selected in the scene',
+					action: () => updatePrefabFromSelection(prefab)
+				},
+				{ label: 'Properties', action: () => showProperties({ kind: 'item', item }) },
+				{ label: 'Rename', action: () => startRenamePrefab(item) },
+				{ label: 'Delete', danger: true, action: () => confirmDeletePrefab(prefab) }
+			]
+		};
+	}
+
 	function itemMenu(e: MouseEvent, item: any) {
 		e.preventDefault();
 		e.stopPropagation();
+		// 21-H3: right-clicking a card OUTSIDE the selection replaces the selection with
+		// it — every file manager does this, and the alternative is a batch menu acting
+		// on cards nowhere near the one you pointed at. Inside it, the whole set gets the
+		// BATCH menu instead of the single-card one.
+		if (!selectedIds.has(item.id)) setSel([item.id]);
+		if (selectedIds.size > 1) return batchMenu(e);
 		// 21-G1: a PACK CARD in the Packs grid is not an item at all — it is the same
 		// registry row the tree draws, so it gets the same menu. Without this it fell
 		// through to Properties/Rename/Delete, every one of which addressed an item id
@@ -863,7 +1484,12 @@
 			if (pack) packRowMenu(e, pack);
 			return;
 		}
-		if (item.kind === 'prefab' || item.sceneEntry) return; // derived views have no CRUD
+		// 21-H2: a PREFAB has its own menu — it is a stored asset, not a derived view.
+		if (item.kind === 'prefab') {
+			prefabMenu(e, item);
+			return;
+		}
+		if (item.sceneEntry) return; // the Scene manifest IS a derived view — no CRUD
 		menu = {
 			x: e.clientX,
 			y: e.clientY,
@@ -875,7 +1501,9 @@
 							{
 								label: 'Open here (this screen)',
 								tooltip: 'Load this scene locally — use a Travel node to move every player together',
-								action: () => travelToLevel(item.hash, item.name)
+								// 21-I4: the same fix as `openSceneItem` — the FILE name is not
+								// the scene name, and `currentLevel.name` is the manifest key
+								action: () => travelToLevel(item.hash)
 							},
 							{
 								// 21-G7: the scene's past. It lives in the file PROPERTIES (that is where a
@@ -915,6 +1543,20 @@
 								action: () => downloadItem(item)
 							}
 						]),
+				// 21-I5 REVISED: the scene's PAST, as files. Offered only when there is more
+				// than one version — a single-version scene already has Download one line up,
+				// and an entry that produces a one-file zip is a worse version of it.
+				...(sceneVersionHashes(item).length > 1
+					? [
+							{
+								label: 'Download all versions (.zip)',
+								icon: 'arrow-down-to-line',
+								tooltip:
+									'Every version of this scene as one .zip of .tpscene files — versions whose bytes are no longer here are reported',
+								action: () => void downloadSceneVersions(item)
+							}
+						]
+					: []),
 				{ label: 'Properties', action: () => showProperties({ kind: 'item', item }) },
 				{
 					label: 'Rename',
@@ -950,8 +1592,8 @@
 						{
 							label: 'Save scene…',
 							tooltip: 'Save this scene as a .tpscene asset a Travel node can load',
-							// 21-G10 fork 14: the name is typed INLINE; commitEdit lands it in the
-							// active folder (21-G9's half of this union)
+							// 21-G10 fork 14: the name is typed INLINE (commitEdit lands it in
+							// the active folder — the G9 half of this union)
 							action: () => startSceneName('save-scene')
 						},
 						{
@@ -960,20 +1602,36 @@
 							action: () => startSceneName('new-scene')
 						},
 						// 21-G3: the whole project as ONE file. Offered only once there IS
-						// a project — a pristine manifest would export an empty zip, and an
-						// entry that can only produce nothing is worse than no entry.
+						// something to export — an entry that can only produce nothing is
+						// worse than no entry.
 						// 21-G8: OPENING one (replace everything) rides the Sidebar's Load;
 						// this menu's import MERGES the file in as a folder (fork 12).
-						...(manifestInUse()
+						// 21-H1: the same widened gate `downloadProject` now uses — fork 11
+						// made a .tp the WHOLE Explorer, so a library of models with no scene
+						// in it is a real project. Only a genuinely empty one hides this.
+						// 21-I4 (locked answer 3): the background menu means WHERE YOU ARE.
+						// At the library root that is the project; INSIDE a folder it is that
+						// folder, and offering "Export project" there would hand the user a
+						// file of everything they are not looking at.
+						...($activeFolder
 							? [
 									{
-										label: 'Export project (.tp)',
+										label: 'Export folder as .tp',
 										tooltip:
-											'The project manifest, every scene version still stored here, and the assets it uses — as one file',
-										action: () => downloadProject()
+											'This folder and everything under it as a project file — its scenes, their version history and the assets they use',
+										action: () => downloadProject({ folderId: $activeFolder })
 									}
 								]
-							: []),
+							: manifestInUse() || $explorerItems.length > 0 || $explorerFolders.length > 0
+								? [
+										{
+											label: 'Export project (.tp)',
+											tooltip:
+												'The project manifest, every scene version still stored here, and the assets it uses — as one file',
+											action: () => downloadProject()
+										}
+									]
+								: []),
 						{
 							label: 'Import project as folder (.tp)…',
 							tooltip:
@@ -1038,10 +1696,16 @@
 		if (rest.length) importFiles(rest, folder === 'prefabs' ? null : folder);
 	}
 
-	/** 21-G8: route a .tp file to the merge-as-folder import (never OPEN from a drop) */
+	/** 21-G8: route a .tp file to the merge-as-folder import (never OPEN from a drop).
+	 *  21-I (user): it lands WHERE THE COMMAND WAS STARTED, in a folder named after the
+	 *  FILE. Both facts are read HERE — "where I am" belongs to this component, and the
+	 *  filename only exists on the File the caller holds. */
 	async function importTpAsFolder(file: File) {
 		const { importProjectAsFolder } = await import('$lib/projectFile');
-		await importProjectAsFolder(await file.arrayBuffer());
+		await importProjectAsFolder(await file.arrayBuffer(), {
+			fileName: file.name,
+			parentId: activeLibraryFolder()
+		});
 	}
 	async function onImportTpFile(e: Event) {
 		const input = e.currentTarget as HTMLInputElement; // capture BEFORE any await
@@ -1059,11 +1723,27 @@
 			url: item.glbUrl ?? null
 		};
 	}
+	/**
+	 * 21-H3: the payload for a drag STARTING on `item`. A single drag keeps EXACTLY its
+	 * old top-level shape and gains nothing, so `dropExplorerItem`, the Inspector's
+	 * texture target and every other consumer of this payload are byte-compatible; the
+	 * `items` array appears only when the dragged card is part of a multi-selection.
+	 * A card OUTSIDE the selection drags alone and leaves the selection untouched — it
+	 * is a drag, not a click, so it has no business changing what is picked.
+	 */
+	function dragPayloadFor(item: any) {
+		const base = itemDragPayload(item);
+		if (!selectedIds.has(item.id) || selectedIds.size < 2) return base;
+		const carried = selectedEntries()
+			.filter((entry: any) => entry.kind === 'item')
+			.map((entry: any) => itemDragPayload(entry.item));
+		return carried.length > 1 ? { ...base, items: carried } : base;
+	}
 	function onItemDragStart(e: DragEvent, item: any) {
 		// 96 consumes these payloads (viewport placement / texture drop). N6: a
 		// default-pack item carries a `url` so the drop can fetch+place it without
 		// first storing it in the Explorer library.
-		e.dataTransfer?.setData('application/x-explorer-item', JSON.stringify(itemDragPayload(item)));
+		e.dataTransfer?.setData('application/x-explorer-item', JSON.stringify(dragPayloadFor(item)));
 	}
 
 	// --- MOBILE drag-to-place (HTML5 DnD is desktop-only). On touch a LONG-PRESS on a
@@ -1085,8 +1765,12 @@
 		tStartY = e.clientY;
 		const target = e.currentTarget as HTMLElement;
 		const pid = e.pointerId;
-		const payload = itemDragPayload(item);
-		const label = item.name;
+		// 21-H3: the touch path carries the SET too, on the same rule as the HTML5 drag —
+		// press a card that is part of the selection and the whole set comes; press one
+		// outside it and only that card does
+		const payload: any = dragPayloadFor(item);
+		const carried = payload.items?.length ?? 1;
+		const label = carried > 1 ? `${item.name} + ${carried - 1} more` : item.name;
 		clearTimeout(tPressTimer);
 		tPressTimer = window.setTimeout(() => {
 			tDrag = { payload, label };
@@ -1129,12 +1813,29 @@
 		tDragging = false;
 		tDrag = null;
 	}
-	function onCardClick(item: any) {
+	function onCardClick(e: MouseEvent, item: any) {
 		if (tSuppressClick) {
 			tSuppressClick = false;
 			return;
 		}
+		// 21-H3: a MODIFIED click is a selection gesture and never an open — a pack card
+		// would otherwise navigate away from the set you are still building
+		if (e.shiftKey || e.ctrlKey || e.metaKey) {
+			modifierSelect(e, item.id, () => (selected = { kind: 'item', item }));
+			return;
+		}
+		setSel([item.id]);
 		inspectItem(item);
+	}
+	/** the folder card's twin of `onCardClick` (single-click-open stays a plain click) */
+	function onFolderCardClick(e: MouseEvent, folder: any) {
+		if (e.shiftKey || e.ctrlKey || e.metaKey) {
+			modifierSelect(e, folder.id, () => selectFolder(folder));
+			return;
+		}
+		setSel([folder.id]);
+		if (singleClickOpen) openFolder(folder.id);
+		else selectFolder(folder);
 	}
 
 	// N6: place a default-pack item into the scene (double-click / Enter) at origin
@@ -1160,7 +1861,13 @@
 	// 197b: single-click = select + show properties in the ⓘ panel; double-click
 	// opens/previews (openItem). Right-click Properties routes here too.
 	function inspectItem(item: any) {
-		if (item.kind === 'prefab') return;
+		if (item.kind === 'prefab') {
+			// 21-H2: a prefab inspects like any other card — the highlight reads off
+			// `inspectedFile`, so it takes the card's own ('prefab:<id>') id
+			inspectedFile.set(item.id);
+			selected = { kind: 'item', item };
+			return;
+		}
 		if (item.kind === 'pack-folder') {
 			openFolder('pack:' + item.packName); // P4: single-click a pack card opens it
 			return;
@@ -1195,9 +1902,92 @@
 		search = '';
 		activeFolder.set(id);
 	}
+	// ---- 21-H3: the MARQUEE ----------------------------------------------------------
+	// A rubber band over empty grid space. Three hazards, all of them already paid for
+	// elsewhere in this codebase, are called out at the line that answers them.
+	//
+	// MOUSE ONLY, and that is a decision rather than an oversight: on touch a drag
+	// across the background must keep SCROLLING the grid, and touch already has its own
+	// pick-up gesture (the long press below), so a marquee there would take both away.
+	let mq = $state<{ x0: number; y0: number; x1: number; y1: number } | null>(null);
+	let mqBase = new Set<string>();
+	let mqMoved = false;
+	let mqSuppressClick = false;
+	const MQ_SLOP = 4;
+
+	/** the band in the grid's own coordinates — CLIENT coords are what the gesture
+	 *  tracks (the list scrolls under it), converted only for drawing */
+	const mqRect = $derived.by(() => {
+		if (!mq || !gridEl) return null;
+		const box = gridEl.getBoundingClientRect();
+		return {
+			left: Math.min(mq.x0, mq.x1) - box.left + gridEl.scrollLeft,
+			top: Math.min(mq.y0, mq.y1) - box.top + gridEl.scrollTop,
+			width: Math.abs(mq.x1 - mq.x0),
+			height: Math.abs(mq.y1 - mq.y0)
+		};
+	});
+
+	/** every card the band touches, hit-tested where the cards actually are */
+	function cardsInBand(band: { x0: number; y0: number; x1: number; y1: number }): string[] {
+		const left = Math.min(band.x0, band.x1);
+		const right = Math.max(band.x0, band.x1);
+		const top = Math.min(band.y0, band.y1);
+		const bottom = Math.max(band.y0, band.y1);
+		const hit: string[] = [];
+		for (const el of gridEl?.querySelectorAll('[data-card-id]') ?? []) {
+			const box = (el as HTMLElement).getBoundingClientRect();
+			if (box.right >= left && box.left <= right && box.bottom >= top && box.top <= bottom)
+				hit.push((el as HTMLElement).dataset.cardId ?? '');
+		}
+		return hit.filter(Boolean);
+	}
+
+	function onGridPointerDown(e: PointerEvent) {
+		if (e.pointerType !== 'mouse' || e.button !== 0) return;
+		const target = e.target as HTMLElement;
+		if (target?.closest('.explorer-card, .explorer-folder-card, input, button, textarea')) return;
+		// HAZARD 1: without this, a sweep across the card LABELS starts a native text
+		// drag — after which Chromium delivers dragstart/drag/dragend and NO pointermove
+		// or pointerup at all, so the gesture hangs with its box on screen and its window
+		// listeners attached (the HUD artboard bug, verbatim). `select-none` on the grid
+		// is the other half of that cure.
+		e.preventDefault();
+		gridEl?.focus(); // preventDefault also suppresses the implicit focus
+		mqBase = e.ctrlKey || e.metaKey ? new Set(selectedIds) : new Set();
+		mqMoved = false;
+		mq = { x0: e.clientX, y0: e.clientY, x1: e.clientX, y1: e.clientY };
+		// HAZARD 2: on WINDOW for the duration, so a release outside the grid — or
+		// outside the panel entirely — still ends the gesture.
+		window.addEventListener('pointermove', onMarqueeMove);
+		window.addEventListener('pointerup', onMarqueeUp);
+		window.addEventListener('pointercancel', onMarqueeUp);
+	}
+	function onMarqueeMove(e: PointerEvent) {
+		if (!mq) return;
+		const band = { ...mq, x1: e.clientX, y1: e.clientY };
+		mq = band;
+		if (Math.abs(band.x1 - band.x0) > MQ_SLOP || Math.abs(band.y1 - band.y0) > MQ_SLOP)
+			mqMoved = true;
+		// a plain drag REPLACES the selection, Ctrl+drag ADDS to what was already there
+		if (mqMoved) setSel([...mqBase, ...cardsInBand(band)]);
+	}
+	function onMarqueeUp() {
+		window.removeEventListener('pointermove', onMarqueeMove);
+		window.removeEventListener('pointerup', onMarqueeUp);
+		window.removeEventListener('pointercancel', onMarqueeUp);
+		// HAZARD 3: `gridBackgroundClick` deselects, and a click follows every drag that
+		// began on the background — so a marquee that TRAVELLED would undo itself the
+		// instant it ended (the file's own `tSuppressClick` precedent, one gesture over).
+		if (mqMoved) mqSuppressClick = true;
+		mq = null;
+		mqMoved = false;
+	}
+
 	// 197b: single-click empty grid space clears the selection + closes the ⓘ panel
 	function deselect() {
 		selected = null;
+		setSel([]);
 		inspectedFile.set(null);
 		// keep the panel if the user pinned it (opened via the ⓘ tab) — just clear
 		// the selection; close it only if it auto-opened from a pick (197 note)
@@ -1207,11 +1997,89 @@
 	function gridBackgroundClick(e: MouseEvent) {
 		gridEl?.focus(); // focus the region so keyboard nav works after any grid click
 		if ((e.target as HTMLElement)?.closest('.explorer-card, .explorer-folder-card')) return;
+		// 21-H3 (hazard 3): the click that ENDS a marquee must not clear what it picked
+		if (mqSuppressClick) {
+			mqSuppressClick = false;
+			return;
+		}
 		deselect();
+	}
+	/**
+	 * 21-I4 — DOUBLE-CLICK A SCENE, AND IT OPENS. The right-click menu has offered this
+	 * ("Open here") since 21-F4; the double-click every other card answers to did
+	 * nothing at all, which reads as a broken card rather than as a missing feature.
+	 *
+	 * It is `travelToLevel`, and that is a LOCAL, SILENT scene replace: the replicated
+	 * half of travel is the travel NODE's pulse, so opening a scene out of your own file
+	 * browser broadcasts nothing and moves nobody else. Authoring, not a game move.
+	 *
+	 * THE GUARD, and why it is a three-way. This replaces the world, so an unsaved
+	 * current scene asks first — the DCC standard, and the reason `sceneDirty` exists.
+	 * That flag is READ, never recomputed: 21-G9 keeps it behind a throttle precisely
+	 * because the answer costs a whole-scene serialization. Two consequences worth
+	 * knowing: the verdict can lag a very recent edit by up to `SIGNATURE_THROTTLE_MS`,
+	 * and a scene that has never been NAMED is never "dirty" (there is no version to be
+	 * dirty against) — in both cases the ordinary autosave is what protects the work,
+	 * and travel's own writer-side auto-publish usually catches the first anyway.
+	 */
+	async function openSceneItem(item: any) {
+		// the scene you are standing in. Re-applying the file over your own edits is not
+		// what a double-click means, and it is the one "open" that can only lose work.
+		if ($currentLevel?.hash === item.hash) {
+			showToast(`"${item.name}" is the scene you are already in`);
+			return;
+		}
+		if ($sceneDirty) {
+			const here = $currentLevel?.name ?? 'This scene';
+			const choice = await showChoice({
+				title: `Open "${item.name}"?`,
+				message: `"${here}" has unsaved changes, and opening a scene replaces what is on screen.`,
+				// "Open anyway", NOT "Open without saving": travel's own writer-side
+				// auto-publish (fork 9) runs inside `travelToLevel` whatever is chosen
+				// here, so a named scene normally banks a version on the way out and the
+				// stronger label would be a lie. What "Save and open" adds is the cases
+				// that rule excludes — a viewer, a loose .tpscene, auto-versions switched
+				// off — and a deliberate one rather than an automatic one.
+				choices: [
+					{ value: 'save', label: 'Save and open' },
+					{ value: 'open', label: 'Open anyway', color: 'red' }
+				]
+			});
+			if (!choice) return;
+			if (choice === 'save') {
+				// the ordinary write-back first — it lands the new version BESIDE the one it
+				// supersedes and under the project's own rules. It answers false for the
+				// three cases those rules exclude (a viewer, a loose .tpscene opened from
+				// disk, an unnamed scene), and there an explicit save is what the user just
+				// asked for: it always writes a local item, and for a loose scene it is
+				// exactly the "Save into project" offer of fork 12.
+				const published = await publishCurrentIfChanged({ force: true });
+				if (published) showToast(`Saved a version of "${here}" first`);
+				else await saveSceneAsLevel(here, $activeFolder ?? null);
+			}
+		}
+		// NO name is passed, and that is a fix rather than an omission. `currentLevel.name`
+		// is the MANIFEST KEY — travel-away publishes under it — and an item name carries
+		// the `.tpscene` extension, so handing it over filed every version of "Arena"
+		// under a second scene called "Arena.tpscene": a duplicate card per open, and a
+		// history split in two. `travelToLevel` falls back to the payload's own `name`,
+		// which is the name the scene saved itself under and the key the manifest uses.
+		await travelToLevel(item.hash);
 	}
 	async function openItem(item: any) {
 		if (item.kind === 'pack-folder') {
 			openFolder('pack:' + item.packName);
+			return;
+		}
+		if (item.kind === 'prefab') {
+			// 21-H2: full model parity — double-click opens the POP-OUT preview. The
+			// inline one in Properties stands down while it is open (previewSuspended).
+			openModelPreview({
+				title: item.name,
+				prefabId: item.prefabId,
+				name: item.name,
+				onClose: () => gridEl?.focus()
+			});
 			return;
 		}
 		if (item.packEntry && item.glbUrl) {
@@ -1237,6 +2105,12 @@
 				const backing = $explorerItems.find((i) => i.id === item.itemId);
 				if (backing) inspectItem(backing);
 			}
+			return;
+		}
+		// 21-I4: a SCENE opens. Every other kind here opens a viewer; this one opens a
+		// world, which is why it has a guard and they do not.
+		if (item.kind === 'scene' && !item.packEntry) {
+			await openSceneItem(item);
 			return;
 		}
 		if (item.kind === 'text') {
@@ -1270,7 +2144,7 @@
 			use:focusSelect
 			oninput={(e) => (editing = { ...editing, value: e.currentTarget.value })}
 			onkeydown={editKeydown}
-			onblur={() => (editing = null)}
+			onblur={blurCommit}
 		/>
 		{#if !isValidName(editing.value)}
 			<span class="text-[10px] text-red-400">names can't contain * \ /</span>
@@ -1280,14 +2154,16 @@
 
 <!-- 170: inline rename input sized for a thumbnail card (folders + items) -->
 {#snippet cardEdit()}
+	<!-- `select-text`: the grid is `select-none` (the marquee's text-drag cure), which
+	     would otherwise reach into the one input that lives inside it -->
 	<input
-		class="ui-input w-full py-0 text-center text-[10px] {isValidName(editing.value) ? '' : 'border-red-500'}"
+		class="ui-input w-full select-text py-0 text-center text-[10px] {isValidName(editing.value) ? '' : 'border-red-500'}"
 		value={editing.value}
 		use:focusSelect
 		oninput={(e) => (editing = { ...editing, value: e.currentTarget.value })}
 		onkeydown={editKeydown}
 		onclick={(e) => e.stopPropagation()}
-		onblur={() => (editing = null)}
+		onblur={blurCommit}
 	/>
 {/snippet}
 
@@ -1318,7 +2194,7 @@
 						use:focusSelect
 						oninput={(e) => (projectEdit = e.currentTarget.value)}
 						onkeydown={projectKeydown}
-						onblur={() => (projectEdit = null)}
+						onblur={commitProjectEdit}
 					/>
 				{:else}
 					<button
@@ -1498,13 +2374,16 @@
 		{#snippet main()}
 		<!-- item grid (+ subfolder cards, 106.7); click empty space to deselect (197b) -->
 		<!-- svelte-ignore a11y_click_events_have_key_events a11y_no_noninteractive_element_interactions a11y_no_noninteractive_tabindex a11y_no_static_element_interactions -->
+		<!-- 21-H3: `select-none` is half the cure for the native text drag (see
+		     onGridPointerDown); the inline name inputs opt back in with `select-text`. -->
 		<div
 			bind:this={gridEl}
-			class="relative h-full min-w-0 overflow-y-auto p-1 outline-hidden"
+			class="relative h-full min-w-0 select-none overflow-y-auto p-1 outline-hidden"
 			style="scrollbar-gutter: stable"
 			tabindex="-1"
 			oncontextmenu={gridMenu}
 			onclick={gridBackgroundClick}
+			onpointerdown={onGridPointerDown}
 			onkeydown={gridKeydown}
 			role="region"
 		>
@@ -1561,11 +2440,10 @@
 					{#if !search && $activeFolder !== 'prefabs'}
 						{#each childFolders as folder (folder.id)}
 							<div
+								data-card-id={folder.id}
 								class="explorer-folder-card flex cursor-pointer flex-col items-center gap-1 rounded border p-1.5 {dropFolder === folder.id
 									? 'border-primary-500 bg-primary-500/10'
-									: selected?.kind === 'folder' && selected.folder?.id === folder.id
-										? 'border-primary-600 bg-primary-600/10'
-										: 'border-transparent hover:border-gray-600 hover:bg-gray-700/60'}"
+									: cardClass(selectedIds, null, selected, folder.id)}"
 								role="button"
 								tabindex="0"
 								draggable="true"
@@ -1575,7 +2453,7 @@
 								ondragleave={() => (dropFolder = null)}
 								ondrop={(e) => dropInto(e, folder.id)}
 								oncontextmenu={(e) => folderMenu(e, folder, false)}
-								onclick={() => (singleClickOpen ? openFolder(folder.id) : selectFolder(folder))}
+								onclick={(e) => onFolderCardClick(e, folder)}
 								ondblclick={() => openFolder(folder.id)}
 								onkeydown={(e) => e.key === 'Enter' && openFolder(folder.id)}
 							>
@@ -1592,10 +2470,13 @@
 					{/if}
 					{#each gridItems as item (item.id)}
 						<div
-							class="explorer-card group relative flex cursor-grab flex-col items-center gap-1 rounded border p-1.5 {$inspectedFile === item.id
-								? 'border-primary-600 bg-primary-600/10'
-								: 'border-transparent hover:border-gray-600 hover:bg-gray-700/60'} {openSceneHash &&
-							item.hash === openSceneHash
+							data-card-id={item.id}
+							class="explorer-card group relative flex cursor-grab flex-col items-center gap-1 rounded border p-1.5 {cardClass(
+								selectedIds,
+								$inspectedFile,
+								selected,
+								item.id
+							)} {openSceneHash && item.hash === openSceneHash
 								? 'explorer-open-scene ring-1 ring-emerald-400'
 								: ''}"
 							draggable="true"
@@ -1607,7 +2488,7 @@
 							onpointermove={onCardPointerMove}
 							onpointerup={onCardPointerUp}
 							oncontextmenu={(e) => itemMenu(e, item)}
-							onclick={() => onCardClick(item)}
+							onclick={(e) => onCardClick(e, item)}
 							ondblclick={() => openItem(item)}
 						>
 							{#if openSceneHash && item.hash === openSceneHash}
@@ -1647,7 +2528,7 @@
 									<Icon name={KIND_ICONS[item.kind] ?? 'package'} size={28} />
 								</span>
 							{/if}
-							{#if editing?.mode === 'rename-item' && editing.itemId === item.id}
+							{#if (editing?.mode === 'rename-item' && editing.itemId === item.id) || (editing?.mode === 'rename-prefab' && editing.prefabId === item.prefabId)}
 								{@render cardEdit()}
 							{:else}
 								<span class="w-full overflow-hidden text-ellipsis whitespace-nowrap text-center text-[10px] text-gray-300">
@@ -1657,6 +2538,15 @@
 						</div>
 					{/each}
 				</div>
+			{/if}
+			{#if mqRect}
+				<!-- 21-H3: the band. An absolutely-positioned child of the (already
+				     `relative`) grid, so it scrolls with the cards it is picking. -->
+				<div
+					id="explorer-marquee"
+					class="pointer-events-none absolute z-20 rounded-xs border border-sky-400 bg-sky-400/15"
+					style="left: {mqRect.left}px; top: {mqRect.top}px; width: {mqRect.width}px; height: {mqRect.height}px"
+				></div>
 			{/if}
 			{#if dropActive}
 				<div class="pointer-events-none absolute inset-1 rounded-lg border-2 border-dashed border-primary-500 bg-primary-500/10"></div>
@@ -1699,6 +2589,37 @@
 						{/if}
 						<span class="min-w-0 flex-1 wrap-break-word font-semibold">{selItem.name}</span>
 					</div>
+					{#if selItem.kind === 'prefab'}
+						<!-- 21-H2: a prefab's own facts. Size/Folder/Hash say nothing about it (it
+						     is not a file in a folder), so it gets the numbers that do: what it
+						     holds, and when it was last saved. -->
+						<div id="prefab-facts" class="flex flex-col gap-1">
+							<div class="flex gap-2"><span class="w-14 shrink-0 text-gray-500">Kind</span><span>prefab</span></div>
+							<div class="flex gap-2">
+								<span class="w-14 shrink-0 text-gray-500">Objects</span>
+								<span id="prefab-objects">{selPrefab?.objects ?? 0}</span>
+							</div>
+							<div class="flex gap-2">
+								<span class="w-14 shrink-0 text-gray-500">Mesh</span>
+								<span id="prefab-tris"
+									>{(selPrefab?.tris ?? 0).toLocaleString()} tris · {(selPrefab?.verts ?? 0).toLocaleString()} verts
+									· {selPrefab?.meshes ?? 0} mesh{selPrefab?.meshes === 1 ? '' : 'es'}</span
+								>
+							</div>
+							{#if selPrefab?.createdAt}
+								<div class="flex gap-2">
+									<span class="w-14 shrink-0 text-gray-500">Saved</span>
+									<span id="prefab-saved">{new Date(selPrefab.createdAt).toLocaleString()}</span>
+								</div>
+							{/if}
+							{#if selPrefab?.updatedAt}
+								<div class="flex gap-2">
+									<span class="w-14 shrink-0 text-gray-500">Updated</span>
+									<span id="prefab-updated">{new Date(selPrefab.updatedAt).toLocaleString()}</span>
+								</div>
+							{/if}
+						</div>
+					{:else}
 					<div class="flex flex-col gap-1">
 						<div class="flex gap-2"><span class="w-14 shrink-0 text-gray-500">Kind</span><span>{selItem.kind}</span></div>
 						<div class="flex gap-2"><span class="w-14 shrink-0 text-gray-500">Size</span><span>{fmtSize(selItem.size)}</span></div>
@@ -1723,11 +2644,26 @@
 							<div class="flex gap-2"><span class="w-14 shrink-0 text-gray-500">Details</span><span>{itemDetails}</span></div>
 						{/if}
 					</div>
-					<!-- N4: rotatable inline 3D preview + poly stats (behind the global toggle) -->
-					{#if selItem.kind === 'object' && $enable3dPreview && !selItem.packEntry}
-						<div class="mt-1 overflow-hidden rounded-sm bg-[#0d1117]" style="height: 150px">
+					{/if}
+					<!-- N4: rotatable inline 3D preview + poly stats (behind the global toggle).
+					     21-H2: prefabs render here too (the `prefabId` source), and the whole
+					     block stands down while the POP-OUT window is open — two WebGL contexts
+					     on the same tree is the reported double-click hang. `previewSuspended` is
+					     RUNTIME state; `enable3dPreview` is the user's stored preference and is
+					     never written here (fileWindows.js carries the reasoning). -->
+					{#if (selItem.kind === 'object' || selItem.kind === 'prefab') && $enable3dPreview && !selItem.packEntry && $previewSuspended}
+						<div id="preview-suspended" class="mt-1 rounded-sm border border-dashed border-gray-600 p-2 text-center text-[11px] italic text-gray-400">
+							Showing in its own preview window.
+						</div>
+					{:else if (selItem.kind === 'object' || selItem.kind === 'prefab') && $enable3dPreview && !selItem.packEntry}
+						<div id="inline-preview" class="mt-1 overflow-hidden rounded-sm bg-[#0d1117]" style="height: 150px">
 							{#key selItem.id}
-								<ModelPreview itemId={selItem.id} name={selItem.name} onStats={(s) => (inlineStats = s)} />
+								<ModelPreview
+									itemId={selItem.kind === 'prefab' ? '' : selItem.id}
+									prefabId={selItem.kind === 'prefab' ? selItem.prefabId : ''}
+									name={selItem.name}
+									onStats={(s) => (inlineStats = s)}
+								/>
 							{/key}
 						</div>
 						{#if inlineStats}
@@ -1740,8 +2676,23 @@
 							</div>
 						{/if}
 					{/if}
-					<div class="mt-1 flex gap-2">
-						{#if selItem.packEntry}
+					<div class="mt-1 flex flex-wrap gap-2">
+						{#if selItem.kind === 'prefab'}
+							<!-- 21-H2: the two things you actually do with a prefab, one click away;
+							     the rest live on the card's right-click menu -->
+							<button
+								id="prefab-add"
+								class="ui-button-quiet"
+								onclick={() => {
+									const p = prefabById(selItem.prefabId);
+									if (p) instantiatePrefab(p);
+								}}>Add to scene</button
+							>
+							<button id="prefab-rename" class="ui-button-quiet" onclick={() => startRenamePrefab(selItem)}>Rename</button>
+							{#if $enable3dPreview}
+								<button id="prefab-preview" class="ui-button-quiet" onclick={() => openItem(selItem)}>3D preview</button>
+							{/if}
+						{:else if selItem.packEntry}
 							<button class="ui-button-quiet" onclick={() => openItem(selItem)}>Place in scene</button>
 						{:else}
 							<button class="ui-button-quiet" onclick={() => startRenameItem(selItem)}>Rename</button>
@@ -1780,6 +2731,7 @@
 			<div class="flex flex-col gap-2 p-2 text-xs text-gray-200">
 				<label class="flex items-center gap-2">
 					<input
+						class="tp-check"
 						type="checkbox"
 						checked={singleClickOpen}
 						onchange={(e) => {
@@ -1791,6 +2743,7 @@
 				</label>
 				<label class="flex items-center gap-2">
 					<input
+						class="tp-check"
 						type="checkbox"
 						checked={showBreadcrumb}
 						onchange={(e) => {
@@ -1802,14 +2755,29 @@
 				</label>
 				<label class="flex items-center gap-2" title="Show a rotatable 3D preview for model items in Properties + on open">
 					<input
+						class="tp-check"
 						type="checkbox"
 						checked={$enable3dPreview}
 						onchange={(e) => enable3dPreview.set(e.currentTarget.checked)}
 					/>
 					3D model preview
 				</label>
+				<!-- 21-H3: what a MULTI-selection does when it lands in the viewport -->
+				<label
+					class="flex items-center gap-2"
+					title="Drop several selected cards on the same spot instead of spreading them out"
+				>
+					<input
+						id="explorer-stack-on-drop"
+						type="checkbox"
+						checked={$stackOnDrop}
+						onchange={(e) => stackOnDrop.set(e.currentTarget.checked)}
+					/>
+					Stack multiple drops on one spot
+				</label>
 				<label class="flex items-center gap-2" title="Hide the bundled packs, showing only your imported ones">
 					<input
+						class="tp-check"
 						type="checkbox"
 						checked={hideBuiltinPacks}
 						onchange={(e) => {

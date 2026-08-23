@@ -74,7 +74,6 @@ export function autoVersionsOff() {
  *   byte-unchanged.
  * @typedef {{name: string, scenes: Record<string, SceneEntry>, assets: string[],
  *   changedAt: number}} Manifest  `name` (21-G9) is the project's identity
-
  */
 
 /** @returns {Manifest} */

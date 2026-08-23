@@ -107,9 +107,13 @@ h.run(async () => {
 		window.__stores.explorer.explorerFolders.subscribe((v) => (f = v))();
 		return f.map((x) => x.name);
 	});
-	// 21-G1: the folder is `Scenes` and is only where a save LANDS — discovery is by kind
-	// (scene-folders owns that contract; this is the "a save premakes it" half)
-	h.check(foldersA.includes('Scenes'), `the Scenes folder is premade by the save (${JSON.stringify(foldersA)})`);
+	// 21-H1 (locked answer 6): a save invents NO folder — it lands where the user is
+	// looking, which here is the library root. (`scene-folders` owns that contract in
+	// full; this is the "nothing is premade" half, and it used to assert the opposite.)
+	h.check(
+		!foldersA.includes('Scenes') && foldersA.length === 0,
+		`the save premakes no folder at all (${JSON.stringify(foldersA)})`
+	);
 	const items2 = await levelItemsOf(A);
 	h.check(
 		items2.some((i) => i.name === 'Level One.tpscene'),

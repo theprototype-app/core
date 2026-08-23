@@ -34,10 +34,30 @@
 	// export-settings cog ("Show JSON") since it's rarely used. 21-G8 (fork 11): TP —
 	// the whole PROJECT as one .tp — is the new default for anyone without a stored
 	// preference; a user who picked a format keeps it.
+	//
+	// 21-H1 (locked answer 1): the primary row is `Project | Scene` — the two formats
+	// this app is actually about — and BOTH of the others are optional now. GLTF joined
+	// JSON behind the cog (default OFF): it is an interchange format, not a way to keep
+	// your work, and it was taking a permanent third of a row from the two that are.
+	// An enabled optional format renders on a SECOND ROW rather than widening the first,
+	// so the primary pair never moves as the cog is toggled.
 	const initShowJson = typeof localStorage !== 'undefined' && localStorage.getItem('showJsonFormat') === 'true';
+	const initShowGltf = typeof localStorage !== 'undefined' && localStorage.getItem('showGltfFormat') === 'true';
+	/**
+	 * A STORED format can name one that is no longer on screen — a Save button pointing
+	 * at a control the user cannot see, which is the bug the JSON rule already existed
+	 * to avoid. Generalized here because `gltf` acquired the same property the moment it
+	 * became optional: one function, consulted at boot AND every time a checkbox moves.
+	 */
+	function visibleFormat(f: string, json: boolean, gltf: boolean) {
+		if (f === 'json' && !json) return 'tp';
+		if (f === 'gltf' && !gltf) return 'tp';
+		return f;
+	}
 	const initFormat = typeof localStorage !== 'undefined' ? localStorage.getItem('saveFormat') || 'tp' : 'tp';
-	let saveFormat = $state(initFormat === 'json' && !initShowJson ? 'tpscene' : initFormat);
+	let saveFormat = $state(visibleFormat(initFormat, initShowJson, initShowGltf));
 	let showJson = $state(initShowJson);
+	let showGltf = $state(initShowGltf);
 	let exportSettingsOpen = $state(false);
 	// export-settings popup is anchored BELOW-RIGHT of the cog (so its relation is
 	// clear), clamped to the viewport when there isn't room
@@ -45,7 +65,9 @@
 	function openExportSettings(e: MouseEvent) {
 		const r = (e.currentTarget as HTMLElement).getBoundingClientRect();
 		const w = 256;
-		const h = 240;
+		// 21-H1: one more row (Show GLTF) — the clamp has to know about it.
+		// 21-I5: +1 row, +1 group heading, +1 divider (the .tp version-history checkbox)
+		const h = 360;
 		let left = r.left; // top-left of the popup aligns under the cog, extending right
 		let top = r.bottom + 6;
 		left = Math.max(8, Math.min(left, window.innerWidth - w - 8));
@@ -56,9 +78,25 @@
 	let tpAssets = $state(typeof localStorage !== 'undefined' && localStorage.getItem('tpsceneAssets') !== 'false');
 	let tpPacks = $state(typeof localStorage !== 'undefined' && localStorage.getItem('tpscenePacks') === 'true');
 	let tpFlow = $state(typeof localStorage !== 'undefined' && localStorage.getItem('tpsceneFlow') !== 'false');
+	// 21-I5 (locked answer 2): the PROJECT box is ON by default, because a .tp has carried
+	// its scene history since 21-G3 and flipping that off silently would make an existing
+	// behaviour vanish — and it gates machinery with its own proper import.
+	//
+	// There is no SCENE counterpart, and the absence is deliberate. The Save button
+	// exports whatever is in the viewport, which cannot always answer "and its history":
+	// an unnamed or never-travelled scene has no manifest entry, so the box that used to
+	// sit here silently bundled nothing. The Explorer's scene card knows the name and the
+	// history unambiguously, so downloading versions lives on ITS menu instead.
+	let tpProjectVersions = $state(typeof localStorage === 'undefined' || localStorage.getItem('tpProjectVersions') !== 'false');
 	function pickFormat(f: string) {
 		saveFormat = f;
 		localStorage.setItem('saveFormat', f);
+	}
+	/** Called after either cog checkbox moves: if what is selected just went off screen,
+	 * fall back (and PERSIST the fallback — the stored value is what the next boot reads). */
+	function syncFormatVisibility() {
+		const next = visibleFormat(saveFormat, showJson, showGltf);
+		if (next !== saveFormat) pickFormat(next);
 	}
 	// Clearing value (instead of the old {#key} recreate) lets the same file be
 	// re-picked without detaching the input mid-dialog — a detached input's event
@@ -142,16 +180,26 @@
 		<button class="side-row" onclick={() => save(saveFormat)}>
 			<span class="side-ico"><Save size={16} aria-hidden="true" /></span><span class="flex-1 whitespace-nowrap">Save</span>
 		</button>
-		<div class="mb-0.5 mt-0.5 flex gap-1 pl-9 pr-2">
-			<!-- 21-G8 fork 11: [ TP | Scene | GLTF | cog ] — TP saves the WHOLE project -->
-			<button id="format-tp" class="side-seg {saveFormat === 'tp' ? 'on' : ''}" title="Saves the whole project as .tp — the Explorer library, scene history and manifest" onclick={() => pickFormat('tp')}>TP</button>
+		<!-- 21-H1: [ Project | Scene | cog ]. The KEY stays 'tp' and the id stays
+		     #format-tp — the id addresses the format, not the word — but the label reads
+		     "Project", because that is what the file is. -->
+		<div id="format-row" class="mb-0.5 mt-0.5 flex gap-1 pl-9 pr-2">
+			<button id="format-tp" class="side-seg {saveFormat === 'tp' ? 'on' : ''}" title="Saves the whole project as .tp — the Explorer library, scene history and manifest" onclick={() => pickFormat('tp')}>Project</button>
 			<button id="format-tpscene" class="side-seg {saveFormat === 'tpscene' ? 'on' : ''}" title="Saves the open scene as .tpscene" onclick={() => pickFormat('tpscene')}>Scene</button>
-			<button class="side-seg {saveFormat === 'gltf' ? 'on' : ''}" onclick={() => pickFormat('gltf')}>GLTF</button>
-			{#if showJson}
-				<button class="side-seg {saveFormat === 'json' ? 'on' : ''}" onclick={() => pickFormat('json')}>JSON</button>
-			{/if}
 			<button id="export-settings-cog" class="side-seg" title="Export settings" onclick={openExportSettings}><Settings size={16} aria-hidden="true" /></button>
 		</div>
+		<!-- the SECOND row: whichever optional formats the cog has enabled. Absent
+		     entirely when neither is, so nothing here costs a pixel by default. -->
+		{#if showGltf || showJson}
+			<div id="format-row-optional" class="mb-0.5 flex gap-1 pl-9 pr-2">
+				{#if showGltf}
+					<button id="format-gltf" class="side-seg {saveFormat === 'gltf' ? 'on' : ''}" title="Exports the scene as glTF — for other tools, not for keeping your work" onclick={() => pickFormat('gltf')}>GLTF</button>
+				{/if}
+				{#if showJson}
+					<button id="format-json" class="side-seg {saveFormat === 'json' ? 'on' : ''}" title="Saves the scene as raw JSON" onclick={() => pickFormat('json')}>JSON</button>
+				{/if}
+			</div>
+		{/if}
 
 		<div class="side-div"></div>
 
@@ -230,20 +278,31 @@
 		<p class="mb-2 font-semibold">Export settings</p>
 		<p class="mb-1 text-[11px] text-gray-400">Scene (.tpscene) includes:</p>
 		<label class="flex items-center gap-2 py-0.5">
-			<input type="checkbox" checked={tpAssets} onchange={(e: any) => { tpAssets = e.target.checked; localStorage.setItem('tpsceneAssets', String(tpAssets)); }} />
+			<input class="tp-check" type="checkbox" checked={tpAssets} onchange={(e: any) => { tpAssets = e.target.checked; localStorage.setItem('tpsceneAssets', String(tpAssets)); }} />
 			Assets (audio, textures, configs)
 		</label>
 		<label class="flex items-center gap-2 py-0.5">
-			<input id="tpscene-packs" type="checkbox" checked={tpPacks} onchange={(e: any) => { tpPacks = e.target.checked; localStorage.setItem('tpscenePacks', String(tpPacks)); }} />
+			<input id="tpscene-packs" class="tp-check" type="checkbox" checked={tpPacks} onchange={(e: any) => { tpPacks = e.target.checked; localStorage.setItem('tpscenePacks', String(tpPacks)); }} />
 			Imported packs
 		</label>
 		<label class="flex items-center gap-2 py-0.5">
-			<input id="tpscene-flow" type="checkbox" checked={tpFlow} onchange={(e: any) => { tpFlow = e.target.checked; localStorage.setItem('tpsceneFlow', String(tpFlow)); }} />
+			<input id="tpscene-flow" class="tp-check" type="checkbox" checked={tpFlow} onchange={(e: any) => { tpFlow = e.target.checked; localStorage.setItem('tpsceneFlow', String(tpFlow)); }} />
 			Flow graph (nodes + edges)
 		</label>
 		<div class="my-2 border-t border-gray-700"></div>
+		<p class="mb-1 text-[11px] text-gray-400">Project (.tp) includes:</p>
 		<label class="flex items-center gap-2 py-0.5">
-			<input type="checkbox" checked={showJson} onchange={(e: any) => { showJson = e.target.checked; localStorage.setItem('showJsonFormat', String(showJson)); if (!showJson && saveFormat === 'json') pickFormat('tpscene'); }} />
+			<input id="tp-project-versions" class="tp-check" type="checkbox" checked={tpProjectVersions} onchange={(e: any) => { tpProjectVersions = e.target.checked; localStorage.setItem('tpProjectVersions', String(tpProjectVersions)); }} />
+			<span title="Every kept version of every scene. Off exports each scene's current version only.">Scene version history</span>
+		</label>
+		<div class="my-2 border-t border-gray-700"></div>
+		<!-- 21-H1: both optional formats, same shape, both OFF by default -->
+		<label class="flex items-center gap-2 py-0.5">
+			<input id="show-gltf-format" class="tp-check" type="checkbox" checked={showGltf} onchange={(e: any) => { showGltf = e.target.checked; localStorage.setItem('showGltfFormat', String(showGltf)); syncFormatVisibility(); }} />
+			Show GLTF format
+		</label>
+		<label class="flex items-center gap-2 py-0.5">
+			<input id="show-json-format" class="tp-check" type="checkbox" checked={showJson} onchange={(e: any) => { showJson = e.target.checked; localStorage.setItem('showJsonFormat', String(showJson)); syncFormatVisibility(); }} />
 			Show JSON format
 		</label>
 		<div class="mt-3 flex justify-end">

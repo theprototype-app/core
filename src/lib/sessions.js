@@ -429,10 +429,47 @@ export async function importSession(json) {
 // ---- session ZIP: session.json + the scene's binary assets (127) ----
 
 /**
+ * 21-I5 — THE HONESTY TOAST, and the ONE half of the bundle that survives its revision.
+ *
+ * The interim 21-I5 build could WRITE a `versions/` section into a `.tpscene` from an
+ * Export Settings checkbox. That option is GONE: `saveTpScene` exports whatever is in
+ * the viewport, which cannot always answer "and its history" — an unnamed or
+ * never-travelled scene has no manifest entry to look one up in, so the box silently
+ * produced nothing. Per-scene DOWNLOADS in the Explorer replaced it, where the scene
+ * card makes the name and the history unambiguous.
+ *
+ * **NOTHING IN THE APP WRITES `versions/` ANY MORE**, and nothing ever read it back
+ * (the export-only ruling: a second door into the library is exactly what would let a
+ * content-addressed item be created from a fat file whose hash is not its content's).
+ * This stays because files produced by that interim build EXIST on people's disks, and
+ * a load that ignored their extra section in silence would be the dishonest half of
+ * what was just removed.
+ * @param {Record<string, Uint8Array>} entries @returns {number} versions in the file
+ */
+function noteBundledVersions(entries) {
+	const n = Object.keys(entries).filter((k) => k.startsWith('versions/')).length;
+	if (!n) return 0;
+	showToast(
+		'This scene file also carries ' + n + ' saved version' + (n === 1 ? '' : 's') +
+			' of the scene. ' + (n === 1 ? 'It is' : 'They are') +
+			' not loaded — unzip the file to open ' + (n === 1 ? 'it' : 'one') + '.'
+	);
+	return n;
+}
+
+/**
  * Build a .zip Uint8Array for a session: session.json + assets/<hash>.<ext>
  * (the 108 scene manifest's audio/config/textures) + an assets/index.json map.
  * Portable — re-importing on a fresh machine restores the assets too.
+ *
+ * A scene's VERSION HISTORY is deliberately not one of the include-options. The interim
+ * 21-I5 build had it as a fourth checkbox and it could not work from here: this function
+ * is handed "whatever is in the viewport", which is not always a named project scene, so
+ * there was frequently no history to look up and the box wrote nothing. Downloading
+ * versions is a per-SCENE action in the Explorer now — see `noteBundledVersions` above.
+ *
  * @param {any} payload
+ * @param {{assets?: boolean, packs?: boolean, flow?: boolean}} [opts]
  */
 export async function exportSessionZip(payload, opts = { assets: true, packs: false, flow: true }) {
 	const { zipSync, strToU8 } = await import('fflate');
@@ -530,6 +567,8 @@ export async function readSessionZip(buffer) {
 		return null;
 	}
 	await restoreZipAssets(entries, strFromU8);
+	// 21-I5: `versions/` is read by NOTHING — say so rather than ignore it silently
+	noteBundledVersions(entries);
 	return payload;
 }
 
@@ -550,6 +589,9 @@ export async function importSessionZip(buffer) {
 	// A6.2: and the module prompt sits right beside it, above the asset/pack loops
 	// for the same reason — a cancelled import must not touch the Explorer either
 	if (!(await confirmModuleRequirements(payload))) return null;
+	// 21-I5: after the confirms (a cancelled import must not talk about the file it did
+	// not read) and before the restore loops, which never touch `versions/`
+	noteBundledVersions(entries);
 	await restoreZipAssets(entries, strFromU8);
 	// B3: restore bundled packs — re-store each item blob (content-hash deduped;
 	// ids can CHANGE, so remap the pack's item ids), then re-register the pack

@@ -226,7 +226,7 @@ export function onNextDirty(fn) {
 function markDirty() {
 	if (!started) return;
 	dirty = true;
-	// 21-G9 + 21-G8 (union): both consumers ride this one funnel — the window title's
+	// 21-G9 + 21-G8 (union): both consumers ride this one funnel — the title's
 	// dirtyPulse counter and the one-shot save-into-project listeners
 	dirtyPulse.update((n) => n + 1);
 	if (dirtyOnce.size)

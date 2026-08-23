@@ -1,7 +1,10 @@
 // 21-F4 — SCENES AS LEVELS. 21-G1 renamed the vocabulary: what this module moves between
-// is a SCENE, and the folder they land in is `Scenes`. The exported function names keep
-// their `level` spelling on purpose — they are load-bearing in saved graphs, the debug
-// hook and every suite, and a rename would be churn for a word.
+// is a SCENE. The exported function names keep their `level` spelling on purpose — they
+// are load-bearing in saved graphs, the debug hook and every suite, and a rename would
+// be churn for a word.
+//
+// 21-H1 (locked answer 6): a save no longer lands in a folder this module INVENTS. It
+// lands in the folder the user is browsing, else at the library ROOT — see targetFolder.
 //
 // A SCENE ASSET is a .tpscene living in the Explorer as an ordinary content-hashed item, which
 // is the whole design: the Explorer already gives us content addressing, thumbnails,
@@ -60,10 +63,12 @@ import {
 } from './projectManifest';
 import { sessionHost } from './connectionState';
 
-/** 21-G1: the folder a SAVED SCENE lands in when there is nowhere else to put it —
- * premade on the first save, and nothing more than that. It is freely renamable and
+/** 21-G1: the name of the conventional scenes folder. It is freely renamable and
  * deletable, because it is NOT how a scene is found: `levelItems()` discovers by KIND
  * (see below), so the folder is a tidy default and never a registry.
+ *
+ * 21-H1: nothing lands here by default any more — only the empty-library bootstrap
+ * premakes it (see `ensureScenesFolder`).
  *
  * Renamed from `Levels` in 21-G1 — the project is not only for games, and "level" is a
  * game word. An existing `Levels` folder keeps working BY CONSTRUCTION: its items are
@@ -112,9 +117,14 @@ export function sceneSignature(payload) {
  * @type {Set<string>} */
 const inFlight = new Set();
 
-/** The `Scenes` folder's id, created at the root on first use. A save that finds an
- * existing one reuses it; a user who renamed or deleted it simply gets a fresh one on
- * the next save, and every scene they already had stays discoverable regardless. */
+/** The `Scenes` folder's id, created at the root on first use. A caller that finds an
+ * existing one reuses it; a user who renamed or deleted it simply gets a fresh one, and
+ * every scene they already had stays discoverable regardless.
+ *
+ * 21-H1: this is no longer where a save LANDS (see `targetFolder`). It survives with
+ * exactly ONE caller — projectFile's "Save a scene" bootstrap, offered when the library
+ * is completely empty — because that path is the one place where inventing a starting
+ * structure is worth more than the never-invent-a-folder rule. */
 export async function ensureScenesFolder() {
 	await loadExplorer();
 	const existing = get(explorerFolders).find(
@@ -130,8 +140,15 @@ export async function ensureScenesFolder() {
  * whatever the user is looking at — and it is honoured only when it is a REAL library
  * folder: the activeFolder store also holds pseudo locations (`prefabs`, `packs`,
  * `pack:<name>`, `scene…`) that hold no items of ours, and a stale id survives a folder
- * being deleted. Anything that fails the existence test falls back to `Scenes`, which is
- * what every caller got before this argument existed.
+ * being deleted.
+ *
+ * 21-H1 (locked answer 6): anything that fails that test now falls back to the library
+ * ROOT — `null` — and NOT to a premade `Scenes` folder. A scene lands where you are
+ * looking, or at the root; the app never invents a folder to put your work in. The one
+ * deliberate exception is the rule-5 BOOTSTRAP (projectFile's "Save a scene" action for
+ * a completely empty library), which is the sole remaining caller of
+ * `ensureScenesFolder` — there, a starting structure beats the purity of this rule
+ * because "the root" is not a place a first-time user recognises.
  * @param {string|null} [folderId] @returns {Promise<string|null>}
  */
 async function targetFolder(folderId) {
@@ -140,7 +157,7 @@ async function targetFolder(folderId) {
 		await loadExplorer();
 		if (get(explorerFolders).some((/** @type {any} */ f) => f.id === id)) return id;
 	}
-	return ensureScenesFolder();
+	return null;
 }
 
 /**
@@ -214,8 +231,8 @@ function levelFileName(name) {
  * workspace (open edit session, selection) is STRIPPED — a level is a place to travel
  * to, not a resume point.
  * @param {string} name
- * @param {string|null} [folderId] 21-G9: land it HERE when it is a real library
- *   folder (the Explorer's active folder); `Scenes` otherwise
+ * @param {string|null} [folderId] 21-G9: land it HERE when it is a real library folder
+ *   (the Explorer's active folder); 21-H1: the library ROOT otherwise
  * @param {{label?: string}} [opts] 21-G7: `label` NAMES this version in the history
  *   panel (the manual "Save version…" path); absent = "Auto"
  * @returns {Promise<{id: string, hash: string, name: string}|null>}
@@ -250,7 +267,6 @@ export async function saveSceneAsLevel(name, folderId = null, opts = {}) {
  * @param {string} name @param {string} label
  */
 export async function saveSceneVersion(name, label) {
-	// the union of 21-G9's folder argument and 21-G7's label put `opts` THIRD
 	return saveSceneAsLevel(name, null, { label: String(label ?? '').trim() });
 }
 
@@ -302,7 +318,12 @@ export async function publishCurrentIfChanged(opts = {}) {
 	delete payload.workspace;
 	const signature = sceneSignature(payload);
 	if (signature === at.signature) return false; // untouched since its hash — no ghost versions
-	const folderId = await ensureScenesFolder();
+	// 21-H1: a NEW VERSION of a scene belongs beside the version it supersedes — the
+	// folder the pointer's item lives in, whatever that is, and the library ROOT when
+	// this machine does not hold those bytes. It used to premake `Scenes`, which is
+	// exactly the invented folder locked answer 6 retires: an automatic write-back is
+	// the last thing that should be moving a user's files around.
+	const folderId = await targetFolder(itemByHash(at.hash)?.folderId ?? null);
 	const bytes = await exportSessionZip(payload, { assets: true, packs: false, flow: true });
 	const item = await addItemFromBytes(
 		bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength),

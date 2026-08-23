@@ -170,8 +170,11 @@ export function moveFolder(id, parentId) {
  * the warning dialog. Prefabs and packs live in their own stores and are untouched.
  */
 export async function clearLibrary() {
-	const doomed = get(explorerItems);
+	// 21-G7 (union): the hidden shelf is part of the library — old scene versions
+	// belong to the project being replaced, so their bytes go too
+	const doomed = [...get(explorerItems), ...get(hiddenItems)];
 	explorerItems.set([]);
+	hiddenItems.set([]);
 	explorerFolders.set([]);
 	activeFolder.set(null);
 	for (const item of doomed) await idbDelete(BLOB_KEY + item.id);

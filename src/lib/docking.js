@@ -1,11 +1,12 @@
 import { get } from 'svelte/store';
-import { inspectorClose, libraryClose, closeMenu } from '../stores/appStore';
+import { inspectorClose, closeMenu } from '../stores/appStore';
 
 // Docking lite (phase 81L). Drag a window near the left/right screen edge to
 // dock it as a full-height panel (--z-drawer tier); drag its header away to
 // float it again. One window per edge (a second drop wiggles the occupant —
-// SPLITS stay in pending/81). With the Inspector/Library drawer open, a
-// right-docked panel offsets inward as a second column.
+// SPLITS stay in pending/81). With the Inspector drawer open, a right-docked
+// panel offsets inward as a second column.
+// 21-H2: the Library drawer it also used to give way to no longer exists.
 
 const EDGE = 44; // px from a screen edge that counts as a dock drop
 const TOP = 64; // below the topbar, like the drawers
@@ -32,7 +33,7 @@ function widthOf(key) {
 }
 
 function drawerOpen() {
-	return get(inspectorClose) === false || get(libraryClose) === false;
+	return get(inspectorClose) === false;
 }
 
 // A LEFT-docked panel starts at x:0, but the app-sidebar floats above it (z-hud >
@@ -209,9 +210,8 @@ export function dockable(node, { key }) {
 	}
 	if (!subscribed) {
 		subscribed = true;
-		// right-docked panels give way to the Inspector/Library drawer
+		// right-docked panels give way to the Inspector drawer
 		inspectorClose.subscribe(() => applyAll());
-		libraryClose.subscribe(() => applyAll());
 		// left dock insets past the sidebar — re-apply next frame too, since the
 		// sidebar mounts AFTER the store fires (so it can be measured)
 		closeMenu.subscribe(() => {

@@ -58,6 +58,25 @@ export async function focusFlowNode(nodeId) {
 }
 // Explorer asset browser (95) — folder hud button toggles it
 export const explorerClose = writable(true);
+/**
+ * 21-H1 (locked answer 5) — the ARM seam for "open the Explorer and start naming a
+ * scene". The Explorer's inline editor is component state inside a panel, so a lib
+ * module (projectFile's empty-library bootstrap) cannot reach it directly; a write-once
+ * store is the seam that needs nothing handed back — the `hudPickArm`/`hudPickResult`
+ * shape, one domain over. The Explorer CONSUMES it (clears it) as it acts, so a stale
+ * request can never re-open an input the next time the panel mounts.
+ *
+ * `{ token, folderId }`: the token makes two consecutive requests distinguishable (two
+ * identical objects are `===` different, but a number bumped per arm is what a `$effect`
+ * can key on); `folderId` is where the save should land, or null for the root.
+ * @type {import('svelte/store').Writable<{token: number, folderId: string|null}|null>}
+ */
+export const explorerSceneSaveArm = writable(null);
+let sceneSaveArmToken = 0;
+/** @param {string|null} folderId */
+export function armExplorerSceneSave(folderId = null) {
+	explorerSceneSaveArm.set({ token: ++sceneSaveArmToken, folderId: folderId ?? null });
+}
 export const objectListClose = writable(true);
 export const chatHidden = writable('hidden');
 // AI assistant (roadmap #10): '' = window open, 'hidden' = closed (mirrors chat).
@@ -326,6 +345,18 @@ export const enable3dPreview = writable(
 );
 enable3dPreview.subscribe((on) => {
 	if (typeof localStorage !== 'undefined') localStorage.setItem('enable3dPreview', String(on));
+});
+
+// 21-H3: dropping a MULTI-selection into the viewport. OFF = the N objects SPREAD in
+// a small square grid at the drop point, which is the default because a drop you can
+// see is the one you meant; ON = every one lands on the same spot, for a deliberate
+// stack. A LOCAL pref like every other Explorer setting — `explorerDrop` reads it and
+// nothing about it goes on the wire (each placement replicates through its own path).
+export const stackOnDrop = writable(
+	typeof localStorage !== 'undefined' && localStorage.getItem('explorerStackOnDrop') === 'true'
+);
+stackOnDrop.subscribe((on) => {
+	if (typeof localStorage !== 'undefined') localStorage.setItem('explorerStackOnDrop', String(on));
 });
 
 // Shift+A quick-add (the cursor-anchored Add popover). Opt-in, persisted; OFF by

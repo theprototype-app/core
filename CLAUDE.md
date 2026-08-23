@@ -1919,6 +1919,43 @@ loadable play content. Everything a user does must be visible to connected peers
   object just turned white and lost its own colour); a glow with no colour of its
   own takes `material.color`. The Inspector had no emissive row at ALL until
   2026-08-17 — nothing in the app set that property except the selection tint.
+- **A PROP READ INSIDE AN `$effect` RE-RUNS IT ON EVERY PARENT RENDER, and for a
+  WebGL component that is fatal.** `ModelPreview` touched its `onStats` prop inside
+  the effect that builds the renderer; every consumer passes an INLINE arrow, which
+  is a new function each render, so any parent re-render tore the renderer down
+  (`forceContextLoss`) and immediately asked the SAME canvas for a new context —
+  which returns **null**, after which three throws `cannot read properties of null
+  (reading 'precision')` FROM INSIDE THE EFFECT and takes the whole svelte flush with
+  it. The visible symptom was unrelated UI failing to mount (the pop-out preview that
+  was opening). Read such a callback through `untrack`, and guard renderer creation.
+  The item source only escaped it by touching the prop after an `await`.
+- **AN INCOMPLETE `node_modules` MOVES THE svelte-check BASELINE AND KILLS THE APP.**
+  A lane worktree missing `@shaderfrog/core` fails import-analysis on
+  `shaderBackends.js`, so the app never boots (every suite dies in setupPage's
+  `waitForFunction`) — and it reads **387/62 instead of 385/62** on BOTH base and
+  branch, so a gate measured there is meaningless in either direction. `npm install`
+  in the worktree and re-measure before trusting any number.
+- **A NAME-BASED MIGRATION MUST BE WRITER-ONLY.** 21-I1 folds duplicate scene cards
+  by NAME, which is a migration of your own library against your own project — and on
+  a JOINER it is wrong twice: ADOPTING would file your unrelated `Arena.tpscene` into
+  the host's history and broadcast it (travel would then load a world nobody in the
+  room has seen), and FOLDING is no safer, because a joiner that has not pulled the
+  host's bytes holds only its OWN copy, so the sweep hides the single file it has —
+  measured, and it left the library with zero cards. A matching filename proves two
+  files sit on one machine under one name; it proves NOTHING across two machines.
+  Local data may never disappear because a remote document reused a name.
+- **A GATE ON BYTES IS NOT A GATE ON THE DOCUMENT.** The `.tp` "scene version history"
+  switch stopped old versions' BYTES from being written while the embedded manifest
+  went on claiming every one of them, so the recipient opened a project whose rows all
+  said "Not held" — the dead-pointer shape the 21-G3 header forbids, and the very thing
+  the folder-scoped export already trimmed its manifest to avoid. When you gate what a
+  file CARRIES, gate what it CLAIMS in the same breath.
+- **A SUITE SECTION THAT SAVES OR ADDS OBJECTS PERTURBS ITS NEIGHBOURS.** A guard
+  inserted mid-file broke four later checks at once: its `/create box` broke a "four
+  objects are open" premise, and its save moved `currentLevel` away from the scene the
+  restore section reasons about. Such a section goes LAST and under its own scene name
+  — a sibling section built its own `Depot` and asserted a single-hash history that a
+  second `Depot` would have poisoned.
 - **MEASURE THE LIMIT BEFORE BUILDING THE WORKAROUND.** The backlog asked for
   chunked meshgeo to lift the 45000-float cap; two peers carried **3,000,000
   floats (12 MB) intact in 4.9 s**, because peerjs already chunks binary itself.

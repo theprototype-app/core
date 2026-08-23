@@ -35,6 +35,11 @@
 	import { keepVersionsSetting } from '$lib/projectManifest';
 	// 21-I5 (locked answer 5): the save-name template — one rule for every download
 	import { saveNameTemplate } from '$lib/saveName';
+	// loose-scenes fix (bug 2a): what an import does with bytes already in the library.
+	// It lives HERE and not in the Explorer's cog because that cog holds view and
+	// interaction prefs, while this governs what importing DOES — a file rule, beside
+	// the other file rules.
+	import { duplicateImportMode } from '$lib/importDuplicates';
 	import { viewPrefs, setViewPrefs, resetViewPrefs, DEFAULT_VIEW_PREFS } from '$lib/viewPrefs';
 	import { showWelcomeOnStart, showWhatsNewNotice, openWelcome, openWhatsNew } from '$lib/whatsNew';
 	import { resetWindowPoses } from '$lib/vrWindowPoses';
@@ -828,6 +833,27 @@
 						versions are always kept. <strong>0 turns auto-versioning off</strong>: leaving a
 						scene stops cutting one behind your back, and only the current version plus your
 						pins keep their bytes — saving a scene and <kbd>Save version…</kbd> still work
+					</SettingRow>
+					<SettingRow name="When importing files already in your library">
+						<svelte:fragment slot="control">
+							<ThemedSelect
+								id="import-duplicate-mode"
+								items={[
+									{ value: 'ask', name: 'Ask' },
+									{ value: 'skip', name: 'Skip them' },
+									{ value: 'copy', name: 'Import as copies' }
+								]}
+								bind:value={$duplicateImportMode}
+							/>
+						</svelte:fragment>
+						<span>
+							Rule for importing same files which already in your library.
+							<strong>Ask</strong> lets you decide file by file. <strong>Skip</strong>
+							keeps what you have and tells you how many it left out.
+							<strong>Import as copies</strong> brings them in as new files beside the
+							originals - scenes get a fresh copy, while identical files of other kinds
+							stay as one
+						</span>
 					</SettingRow>
 					<SettingRow name="Save name">
 						<svelte:fragment slot="control">

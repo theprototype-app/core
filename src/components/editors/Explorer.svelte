@@ -22,6 +22,7 @@
 		moveFolder,
 		moveItem,
 		importFiles,
+		revealItemId,
 		deleteItem,
 		renameItem,
 		isValidName,
@@ -592,6 +593,16 @@
 			showToast('The open scene has no file in this library');
 			return;
 		}
+		await revealItem(item);
+	}
+
+	/**
+	 * The body of the above, taking the ITEM rather than finding it — the same walk is
+	 * what the import-duplicates modal's Reveal asks for, and that asker is a modal at the
+	 * App root which cannot reach any of this component's state.
+	 * @param item the library item to land on
+	 */
+	async function revealItem(item: any) {
 		if (search) search = '';
 		activeFolder.set(item.folderId ?? null);
 		await tick();
@@ -603,6 +614,21 @@
 			.querySelector(`[data-card-id="${item.id}"]`)
 			?.scrollIntoView({ block: 'nearest', inline: 'nearest' });
 	}
+
+	// loose-scenes fix (bug 2a): Reveal, asked for from the import-duplicates modal.
+	// A request store rather than a callback because the asker lives at the App root
+	// and this component may not even be mounted; the id is CLEARED on the way through
+	// so a second Reveal of the same item still fires.
+	$effect(() => {
+		const id = $revealItemId;
+		if (!id) return;
+		untrack(() => {
+			revealItemId.set(null);
+			const item = [...$explorerItems].find((i) => i.id === id);
+			if (item) void revealItem(item);
+			else showToast('That file is no longer in your library');
+		});
+	});
 
 	/**
 	 * 21-G9: the active folder AS A REAL LIBRARY FOLDER, or null. `activeFolder` also
@@ -1833,7 +1859,12 @@
 			if (f.name.toLowerCase().endsWith('.tp')) void importTpAsFolder(f);
 			else rest.push(f);
 		}
-		if (rest.length) importFiles(rest, folder === 'prefabs' ? null : folder);
+		// loose-scenes fix (bug 2a): a DROP is a person importing, so bytes we already
+		// hold get the visible treatment — the setting decides ask / skip / copy. Every
+		// other importFiles caller (the texture pickers, a generated mesh) leaves this
+		// off and silently reuses the item it finds, which is what they want.
+		if (rest.length)
+			importFiles(rest, folder === 'prefabs' ? null : folder, { duplicates: 'ask' });
 	}
 
 	/** 21-G8: route a .tp file to the merge-as-folder import (never OPEN from a drop).

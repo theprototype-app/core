@@ -24,7 +24,7 @@ import { environment } from './environment';
 import { parkAnimatedAtBase } from '$lib/flowRuntime';
 import { stripEditOverlays } from '$lib/editOverlays';
 import { saveFileBase } from '$lib/saveName';
-import { peers, fixLight, loadingFile, showToast, showInfoToast, dismissToastById } from '../stores/appStore';
+import { peers, fixLight, loadingFile, showToast } from '../stores/appStore';
 
 //Access objects Store
 let sceneObjects = $state();
@@ -577,30 +577,13 @@ export async function importFile(file, name, ext, position, extras) {
  * @param {any} payload the session payload that just applied
  */
 async function markOpenedUnsaved(payload) {
-	const { currentLevel, sceneSignature } = await import('./levels');
-	const name =
-		String(payload?.name ?? '').trim() || 'Opened scene';
+	const { currentLevel, sceneSignature, armSaveIntoProject } = await import('./levels');
+	const name = String(payload?.name ?? '').trim() || 'Opened scene';
 	currentLevel.set({ hash: '', name, unsaved: true, signature: sceneSignature(payload) });
-	const { onNextDirty } = await import('./autosave');
-	// arm AFTER the load settles — applying the session storms markDirty, and the
-	// prompt is about the user's first edit, not the load's own store pokes
-	setTimeout(() => {
-		onNextDirty(() => {
-			showInfoToast(
-				'save-into-project',
-				'"' + name + '" is not part of your project yet — your edits live only in the autosave.',
-				[
-					{
-						label: 'Save into project',
-						action: () => {
-							void import('./levels').then((m) => m.saveSceneAsLevel(name));
-							dismissToastById('save-into-project');
-						}
-					}
-				]
-			);
-		});
-	}, 1500);
+	// loose-scenes fix: the offer itself lives in levels.js now, because travel to a
+	// scene file the project does not name reaches the identical state and the two
+	// copies of this prompt would drift
+	await armSaveIntoProject(name);
 }
 
 export async function load(file) {

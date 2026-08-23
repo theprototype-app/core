@@ -29,7 +29,7 @@
 // would close the TDZ cycle (the moduleSDK rule).
 
 import { writable, get } from 'svelte/store';
-import { showToast } from '../stores/appStore';
+import { showToast, showInfoToast, dismissToastById } from '../stores/appStore';
 import {
 	buildSessionPayload,
 	emptySessionPayload,
@@ -60,9 +60,14 @@ import {
 	autoVersionsOff,
 	setVersionLabel,
 	adoptSceneVersions,
-	projectManifest
+	projectManifest,
+	sceneEntry
 } from './projectManifest';
 import { sessionHost } from './connectionState';
+// loose-scenes fix: the prompt is for an EDITOR, so it stands down in play mode (see
+// armSaveIntoProject). sceneStore is a leaf; sceneEntry answers "does the project know
+// this exact file", which is what makes a dragged-in .tpscene loose.
+import { isLocked } from '../stores/sceneStore';
 
 /** 21-G1: the name of the conventional scenes folder. It is freely renamable and
  * deletable, because it is NOT how a scene is found: `levelItems()` discovers by KIND
@@ -235,7 +240,21 @@ export function hideOldVersions(name) {
 	const writer = get(sessionHost) === null;
 	const orphans = writer
 		? [...get(explorerItems), ...get(hiddenItems)]
-				.filter((it) => it.name === fileName && it.hash !== pointer && !known.has(it.hash))
+				.filter(
+					(it) =>
+						it.name === fileName &&
+						it.hash !== pointer &&
+						!known.has(it.hash) &&
+						// loose-scenes fix (bug 1, second half): NOT a file the user imported.
+						// Matching by name is a migration of the app's OWN old saves against the
+						// app's OWN project, and two .tpscene files a user dragged in
+						// independently are not versions of one scene just because they share a
+						// name — folding them hid one of them with no warning, which is the
+						// reported "a file disappeared" half of this bug. The stamp's ABSENCE
+						// means "this app minted it", so the 21-I1 migration is untouched for
+						// every profile that already has duplicates to migrate.
+						!it.imported
+				)
 				.sort(
 					(a, b) => (a.createdAt ?? 0) - (b.createdAt ?? 0) || String(a.hash).localeCompare(b.hash)
 				)
@@ -268,6 +287,46 @@ export async function foldSceneVersions() {
 	let folded = 0;
 	for (const name of Object.keys(get(projectManifest).scenes)) folded += hideOldVersions(name);
 	return folded;
+}
+
+/**
+ * 21-G8 fork 12, EXTRACTED here in the loose-scenes fix so both ways of arriving at a
+ * loose scene share one path. It used to live in fileHandler and serve only "a .tpscene
+ * opened off disk"; travel to a file the project does not name is the same state, and
+ * re-deriving the offer at a second call site is how two of them drift apart.
+ *
+ * Arms a ONE-SHOT: on the user's first real edit, offer to save this scene into the
+ * project. It stands down while PLAYING — a travel node hopping between frozen library
+ * scenes is not somebody authoring, and an info toast about project membership in the
+ * middle of a game is noise with no action behind it.
+ * @param {string} name the scene's name, which is the manifest key it would be saved under
+ * @returns {Promise<void>}
+ */
+export async function armSaveIntoProject(name) {
+	const scene = String(name ?? '').trim();
+	if (!scene) return;
+	if (get(isLocked) === true) return;
+	const { onNextDirty } = await import('./autosave');
+	// arm AFTER the load settles — applying a session storms markDirty, and the prompt is
+	// about the user's first edit, not about the load's own store pokes
+	setTimeout(() => {
+		if (get(isLocked) === true) return;
+		onNextDirty(() => {
+			showInfoToast(
+				'save-into-project',
+				'"' + scene + '" is not part of your project yet — your edits live only in the autosave.',
+				[
+					{
+						label: 'Save into project',
+						action: () => {
+							void saveSceneAsLevel(scene);
+							dismissToastById('save-into-project');
+						}
+					}
+				]
+			);
+		});
+	}, 1500);
 }
 
 /** @param {string} name a scene name, filesystem-safe enough for an item name */
@@ -591,11 +650,33 @@ export async function travelToLevel(hash, name = '') {
 		// …and put it back. The level's own `game` field never applied (game: false).
 		gameStateRestore(carried, false);
 		// the signature of what we LOADED, so an untouched stay here publishes nothing
+		const here = name || payload.name || item.name;
+		// LOOSE-SCENES FIX (bug 1). Every gate in publishCurrentIfChanged asked a question
+		// about US — are we the writer, is auto-versioning on, has the content changed —
+		// and not one asked whether the project has ever heard of this scene. So opening a
+		// .tpscene somebody dragged into the library, editing it and leaving MINTED a
+		// project scene the user never created: publishSceneVersion creates the entry when
+		// it is missing, and the manifest then owns a name it invented.
+		//
+		// A file the project does not name is exactly the case 21-G8 already solved for a
+		// .tpscene opened off DISK, so it takes the same answer: mark it unsaved, and the
+		// existing gates do the rest (travel-away publishes nothing, the first edit offers
+		// to save it in). It was only missed here because opening an ITEM is normally how
+		// you reach a project scene.
+		//
+		// The test is HASH-in-history, not name-in-manifest. An unrelated Arena.tpscene
+		// dragged in beside a project scene called Arena is a different file with a
+		// colliding name, and a name-only test would adopt it into that scene's history.
+		// travelToScene resolves THROUGH the manifest, so its hash is always in there and
+		// tracked travel is unaffected.
+		const tracked = !!sceneEntry(here)?.history?.includes(key);
 		currentLevel.set({
 			hash: key,
-			name: name || payload.name || item.name,
-			signature: sceneSignature(payload)
+			name: here,
+			signature: sceneSignature(payload),
+			...(tracked ? {} : { unsaved: true })
 		});
+		if (!tracked) void armSaveIntoProject(here);
 		return true;
 	} finally {
 		inFlight.delete(key);

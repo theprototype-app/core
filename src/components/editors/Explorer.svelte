@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { Boxes, Download, ExternalLink, Folder, FolderTree, Gift, Globe, House, LoaderCircle, PackageOpen } from '@lucide/svelte';
+	import { Box, Boxes, Download, ExternalLink, Folder, FolderTree, Gift, Globe, House, LoaderCircle, PackageOpen } from '@lucide/svelte';
 	import Icon from '../ui/Icon.svelte';
 	// Explorer (95, tree v2 in 106): dockable asset browser — real file-manager
 	// tree on the left (inline create/rename, expand/collapse, drag re-parent,
@@ -9,7 +9,7 @@
 	import { get } from 'svelte/store';
 	import { untrack } from 'svelte';
 	import { explorerClose, mobileUndockAllowed, explorerSceneSaveArm } from '../../stores/appStore.js';
-	import { showToast, enable3dPreview, stackOnDrop } from '../../stores/appStore.js';
+	import { showToast, enable3dPreview, stackOnDrop, confirmPrefabUpdate } from '../../stores/appStore.js';
 	import {
 		explorerFolders,
 		explorerItems,
@@ -95,9 +95,15 @@
 		removePrefab,
 		renamePrefab,
 		updatePrefab,
+		prefabSnapshot,
+		restorePrefabBytes,
+		savePrefabSelection,
 		exportPrefab
 	} from '$lib/prefabs';
-	import { selectedObject, selectedObjects } from '../../stores/sceneStore.js';
+	// 21-I3: Export ▸ scene (.tpscene) — a scene containing just this prefab. Built from
+	// the EMPTY payload plus this one object, never a capture of the live scene.
+	import { emptySessionPayload, exportSessionZip } from '$lib/sessions';
+	import { selectedObjects } from '../../stores/sceneStore.js';
 	import { sceneAssets } from '$lib/sceneAssets';
 	import { setNodeData } from '$lib/nodesHandler';
 	import { findNodeAnyGraph } from '../../stores/flowStore';
@@ -1368,14 +1374,19 @@
 	// nothing could open — carried export/delete/rename for the same prefabs. The kind is
 	// derived, but a prefab is not: it is a real stored asset, and this is its home.
 
-	/** The current selection as uuids — the SET, with the sticky primary folded in
-	 *  (the `selectedRoots` rule in fileHandler, which is what a prefab save reads). */
-	function selectionUuids(): string[] {
-		const uuids = new Set<string>($selectedObjects ?? []);
-		const primary: any = $selectedObject;
-		if (primary?.uuid) uuids.add(primary.uuid);
-		return [...uuids];
-	}
+	/**
+	 * What is selected RIGHT NOW, for the two prefab entries that write from a selection.
+	 *
+	 * 21-I3: this used to fold in the sticky primary (`$selectedObject`) the way
+	 * fileHandler's `selectedRoots` does. That is wrong for a menu entry that has to
+	 * REFUSE: `deselectObject` clears only the SET — the primary is kept on purpose,
+	 * because the open inspector binds to it and would crash on an empty value — so a
+	 * fold-in answers "something was selected at some point" and never goes back to
+	 * empty. An instant prefab replace off that would overwrite the library from an empty
+	 * viewport with whatever was last clicked. Same finding as 21-G1's recipe menu, one
+	 * domain over: act on the SET, never `selectionUuids`.
+	 */
+	const selectedSet = (): string[] => [...($selectedObjects ?? [])];
 
 	/** A filename stem safe on every OS, matching the old Library download */
 	const fileStem = (name: string) => String(name || 'prefab').replace(/[^\w-]+/g, '_');
@@ -1402,20 +1413,90 @@
 		exportObjectsAsGltf(object, fileStem(prefab.name) + '.gltf');
 	}
 
-	/** Re-save an existing prefab from what is selected. Confirmed, because it replaces
-	 *  bytes that may be the only copy — and refused with the REASON when there is no
-	 *  selection, which is otherwise indistinguishable from a dead menu entry. */
+	/**
+	 * 21-I3 — Export ▸ scene (.tpscene): a SCENE CONTAINING JUST THIS PREFAB, so a prefab
+	 * can be handed to someone who has no import-a-prefab habit and opened like any other
+	 * scene file.
+	 *
+	 * Built from `emptySessionPayload` + this one object's `toJSON()`, never
+	 * `buildSessionPayload` — that captures whatever scene happens to be OPEN (its
+	 * environment, its flow, its HUD, its game), and a prefab export must not smuggle the
+	 * author's current world into the file. For the same reason `assets: false`: the asset
+	 * bundle is derived from the LIVE scene manifest, which has nothing to do with this
+	 * prefab, and a prefab's own textures already ride inside its `toJSON` as data URLs.
+	 */
+	async function downloadPrefabScene(prefab: any) {
+		const object = prefabObject(prefab.id);
+		if (!object) return showToast('This prefab could not be loaded');
+		const payload: any = emptySessionPayload(prefab.name);
+		payload.objects = [object.toJSON()];
+		payload.count = 1;
+		payload.thumbnail = prefab.thumbnail ?? null; // the card's own picture, so the file has one
+		const bytes = await exportSessionZip(payload, { assets: false, packs: false, flow: true });
+		saveBlob(new Blob([bytes], { type: 'application/zip' }), fileStem(prefab.name) + '.tpscene');
+		showToast(`Exported "${prefab.name}" as a scene`);
+	}
+
+	/**
+	 * 21-I3 (locked answer 6) — REPLACE INSTANTLY, REPORT WITH AN UNDO.
+	 *
+	 * The confirm toast this replaces asked a question the user had already answered by
+	 * choosing the menu entry, and it asked it every single time. What made the dialog
+	 * defensible was that the replace could not be taken back; giving the report an Undo
+	 * removes the reason for it.
+	 *
+	 * THE CONSTRAINT that shapes everything here: **that Undo belongs to the toast and
+	 * must never enter the scene history stack.** Ctrl+Z is expected to undo viewport
+	 * changes and nothing else, and a prefab is a LIBRARY edit, not a scene edit — so
+	 * there is no `recordEntry` and no history kind anywhere in this path. The previous
+	 * bytes live in a closure for exactly as long as the toast that offers to put them
+	 * back (prefabs.js `prefabSnapshot` carries the reasoning).
+	 *
+	 * Still refused WITH THE REASON when nothing is selected — that is not a dialog, it
+	 * is the difference between a menu entry that explains itself and a dead one.
+	 */
 	function updatePrefabFromSelection(prefab: any) {
-		const uuids = selectionUuids();
+		// the SET, not `selectionUuids()`: an instant replace off a STICKY primary would
+		// overwrite a prefab from an empty viewport with whatever was last clicked
+		const uuids = selectedSet();
 		if (!uuids.length)
 			return showToast('Select the object (or objects) to save into this prefab first');
+		// the opt-in prompt for people who want to be asked (default OFF)
+		if ($confirmPrefabUpdate)
+			return showToast(
+				`Replace "${prefab.name}" with ${uuids.length === 1 ? 'the selected object' : uuids.length + ' selected objects'}?`,
+				[
+					{ label: 'Update', action: () => void applyPrefabUpdate(prefab, uuids) },
+					{ label: 'Cancel', action: () => {} }
+				]
+			);
+		void applyPrefabUpdate(prefab, uuids);
+	}
+
+	/** @see updatePrefabFromSelection — the replace itself, shared by both routes. */
+	async function applyPrefabUpdate(prefab: any, uuids: string[]) {
+		const before = prefabSnapshot(prefab.id); // captured BEFORE, held in this closure
+		const next = await updatePrefab(prefab.id, uuids, { toast: false });
+		if (!next) return; // updatePrefab already said why (missing object / too large)
 		showToast(
-			`Replace "${prefab.name}" with ${uuids.length === 1 ? 'the selected object' : uuids.length + ' selected objects'}?`,
-			[
-				{ label: 'Update', action: () => void updatePrefab(prefab.id, uuids) },
-				{ label: 'Cancel', action: () => {} }
-			]
+			`Updated "${next.name}" from ${uuids.length === 1 ? 'the selection' : uuids.length + ' selected objects'}`,
+			// `undefined`, never `[]` — showToast treats any array as an action toast, and an
+			// action toast with no buttons is a card the user cannot dismiss by acting on it
+			before ? [{ label: 'Undo', action: () => void undoPrefabUpdate(before, next.name) }] : undefined
 		);
+	}
+
+	async function undoPrefabUpdate(snapshot: any, name: string) {
+		const back = await restorePrefabBytes(snapshot);
+		showToast(back ? `Restored the previous "${back.name}"` : `"${name}" is no longer in your library`);
+	}
+
+	/** 21-I3: the Prefabs grid's own background entry — the one way to MAKE a prefab from
+	 *  inside the view that holds them. Same refusal shape as the update entry. */
+	async function createPrefabFromSelection() {
+		const uuids = selectedSet();
+		if (!uuids.length) return showToast('Select the object (or objects) to save as a prefab first');
+		await savePrefabSelection(uuids);
 	}
 
 	function confirmDeletePrefab(prefab: any) {
@@ -1451,6 +1532,13 @@
 							label: 'prefab (.json)',
 							tooltip: 'This prefab as a file — import it back on any machine',
 							action: () => downloadPrefabJson(prefab)
+						},
+						{
+							// 21-I3: the third format, and the only one this app itself can OPEN —
+							// a scene whose entire content is this prefab
+							label: 'scene (.tpscene)',
+							tooltip: 'A scene containing just this prefab — opens like any other scene file',
+							action: () => void downloadPrefabScene(prefab)
 						}
 					]
 				},
@@ -1572,8 +1660,29 @@
 		if ((e.target as HTMLElement)?.closest('.explorer-card, .explorer-folder-card')) return;
 		const inPacks =
 			$activeFolder === 'packs' || (typeof $activeFolder === 'string' && $activeFolder.startsWith('pack:'));
-		if (!inPacks && ($activeFolder === 'prefabs' || (typeof $activeFolder === 'string' && $activeFolder.startsWith('scene')))) return;
+		const inPrefabs = !inPacks && $activeFolder === 'prefabs';
+		// 21-I3: the Prefabs view gets its OWN small menu. It used to fall into the same
+		// early return as the derived Scene view — but a prefab library is not a derived
+		// view: prefabs are stored things you CREATE, and the one surface that owns them
+		// offered no way to make one. The New-folder / scene / project entries below stay
+		// out, because none of them means anything in a virtual folder.
+		if (!inPacks && !inPrefabs && typeof $activeFolder === 'string' && $activeFolder.startsWith('scene')) return;
 		e.preventDefault();
+		if (inPrefabs) {
+			menu = {
+				x: e.clientX,
+				y: e.clientY,
+				items: [
+					{
+						label: 'Create from selection',
+						icon: 'boxes',
+						tooltip: 'Save the objects selected in the scene as a new prefab',
+						action: () => void createPrefabFromSelection()
+					}
+				]
+			};
+			return;
+		}
 		menu = {
 			x: e.clientX,
 			y: e.clientY,
@@ -2378,6 +2487,7 @@
 		     onGridPointerDown); the inline name inputs opt back in with `select-text`. -->
 		<div
 			bind:this={gridEl}
+			id="explorer-grid"
 			class="relative h-full min-w-0 select-none overflow-y-auto p-1 outline-hidden"
 			style="scrollbar-gutter: stable"
 			tabindex="-1"
@@ -2652,8 +2762,23 @@
 					     RUNTIME state; `enable3dPreview` is the user's stored preference and is
 					     never written here (fileWindows.js carries the reasoning). -->
 					{#if (selItem.kind === 'object' || selItem.kind === 'prefab') && $enable3dPreview && !selItem.packEntry && $previewSuspended}
-						<div id="preview-suspended" class="mt-1 rounded-sm border border-dashed border-gray-600 p-2 text-center text-[11px] italic text-gray-400">
-							Showing in its own preview window.
+						<!-- 21-I3: the STILL, at the live preview's own size, instead of H2's text
+						     note. One live viewport per asset is the DCC-standard answer and it is
+						     what makes the suspension read as a deliberate hand-off rather than a
+						     hole in the panel — the pane keeps its shape, and what it shows is
+						     still this item. The id is unchanged: it is the anchor for "the pane
+						     says where the preview went", which is still exactly what this is. -->
+						<div id="preview-suspended" class="relative mt-1 overflow-hidden rounded-sm bg-[#0d1117]" style="height: 150px">
+							{#if selItem.thumbnail}
+								<img id="preview-suspended-thumb" src={selItem.thumbnail} alt={selItem.name} class="h-full w-full object-contain" />
+							{:else}
+								<div class="flex h-full w-full items-center justify-center text-gray-600">
+									<Box size={40} aria-hidden="true" />
+								</div>
+							{/if}
+							<div class="pointer-events-none absolute inset-x-0 bottom-0 bg-black/60 px-2 py-1 text-center text-[10px] text-gray-300">
+								Previewing in its own window
+							</div>
 						</div>
 					{:else if (selItem.kind === 'object' || selItem.kind === 'prefab') && $enable3dPreview && !selItem.packEntry}
 						<div id="inline-preview" class="mt-1 overflow-hidden rounded-sm bg-[#0d1117]" style="height: 150px">
@@ -2774,6 +2899,23 @@
 						onchange={(e) => stackOnDrop.set(e.currentTarget.checked)}
 					/>
 					Stack multiple drops on one spot
+				</label>
+				<!-- 21-I3 (locked answer 6): "Update from selection" replaces instantly and
+				     offers an Undo. This puts the old prompt back for anyone who wants to be
+				     asked — default OFF, and it lives beside the other Explorer prefs because
+				     that is where the thing it governs lives. -->
+				<label
+					class="flex items-center gap-2"
+					title="Ask before 'Update from selection' replaces a prefab's stored bytes"
+				>
+					<input
+						id="explorer-confirm-prefab-update"
+						class="tp-check"
+						type="checkbox"
+						checked={$confirmPrefabUpdate}
+						onchange={(e) => confirmPrefabUpdate.set(e.currentTarget.checked)}
+					/>
+					Confirm before updating a prefab
 				</label>
 				<label class="flex items-center gap-2" title="Hide the bundled packs, showing only your imported ones">
 					<input

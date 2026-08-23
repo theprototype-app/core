@@ -1,4 +1,4 @@
-import { derived, writable } from 'svelte/store';
+import { derived, get, writable } from 'svelte/store';
 
 // Floating file windows (107): one shared professional code editor window
 // (Explorer text files AND the custom-node definition editor route here) and
@@ -26,9 +26,38 @@ export function openImagePreview(target) {
 /** @type {import('svelte/store').Writable<{title: string, itemId?: string, prefabId?: string, name?: string, onClose?: () => void} | null>} */
 export const modelPreviewTarget = writable(null);
 
-/** @param {{title: string, itemId?: string, prefabId?: string, name?: string, onClose?: () => void}} target */
+/**
+ * 21-I3 — A REPEAT OPEN IS A RAISE, NOT A RE-SET.
+ *
+ * Bumped whenever `openModelPreview` is asked for the source that is ALREADY open. The
+ * window listens and brings itself forward; nothing about the preview itself changes.
+ * A counter rather than a boolean, because two consecutive raises are two events and a
+ * flag would collapse them (and would then need clearing, with an order to get wrong).
+ * @type {import('svelte/store').Writable<number>}
+ */
+export const modelPreviewRaise = writable(0);
+
+/**
+ * Open the pop-out preview — or, when it is already showing this very source, RAISE it.
+ *
+ * THE PROBED FINDING (21-I3): the reported "preview hang" was not a wedge. Clicking
+ * "3D preview" a second time re-set `modelPreviewTarget` to an equal target, so the
+ * `{#key}` did not change, the canvas did not remount and NOTHING MOVED — and a window
+ * sitting behind the Explorer or shoved off-screen is indistinguishable from a dead
+ * button. Comparing the SOURCE (not object identity — every caller builds a fresh
+ * literal) is what separates "open this" from "you already have this open".
+ * @param {{title: string, itemId?: string, prefabId?: string, name?: string, onClose?: () => void}} target
+ */
 export function openModelPreview(target) {
-	modelPreviewTarget.set(target);
+	const current = get(modelPreviewTarget);
+	const sameSource =
+		!!current &&
+		(target.itemId ?? '') === (current.itemId ?? '') &&
+		(target.prefabId ?? '') === (current.prefabId ?? '');
+	// keep the LIVE target (and its onClose, which belongs to whoever opened it) — the
+	// incoming one differs only in the identity of the arrow it carries
+	if (sameSource) modelPreviewRaise.update((n) => n + 1);
+	else modelPreviewTarget.set(target);
 }
 
 /**

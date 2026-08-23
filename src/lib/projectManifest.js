@@ -207,6 +207,50 @@ export function publishSceneVersion(name, hash) {
 }
 
 /**
+ * 21-I1 — ADOPT versions the manifest never recorded. The reported duplicate-scenes bug
+ * has two halves: an item the history does not name stays VISIBLE forever (levels.js
+ * folds it by NAME now), and once folded its bytes would sit on the hidden shelf with no
+ * door — Version history lists the history, and the history had never heard of it. This
+ * is the door.
+ *
+ * Where they go is the whole design. History is APPEND-ONLY and newest-LAST, and the
+ * POINTER — the last element — is what the library shows, what travel-by-name resolves
+ * and what every peer agrees the scene currently IS. A migration may not move it. So an
+ * adopted orphan is filed as an OLDER version: the run is spliced in immediately BEFORE
+ * the pointer, ordered among themselves by the item's `createdAt` (the only ordering
+ * signal an orphan carries), and the pointer stays exactly where it was.
+ *
+ * That is a claim about ORDER, not about time: an orphan minted AFTER the pointer (a
+ * viewer's save, a publish that was refused) still lands before it, because the
+ * alternative is a migration silently changing which scene the project means.
+ *
+ * FORK 3, verbatim from publishSceneVersion: an editor writes the project document, a
+ * viewer never does.
+ * @param {string} name @param {string[]} hashes oldest-first; already-known ones are dropped
+ * @returns {number} how many were adopted
+ */
+export function adoptSceneVersions(name, hashes) {
+	const scene = String(name ?? '').trim();
+	if (!scene) return 0;
+	if (isViewer()) return 0;
+	const m = get(projectManifest);
+	const entry = m.scenes[scene];
+	// no entry, or an entry with no pointer, is not a scene this can file anything under
+	if (!entry || !entry.history.length) return 0;
+	const fresh = [...new Set((hashes ?? []).map(String).filter(Boolean))].filter(
+		(h) => !entry.history.includes(h)
+	);
+	if (!fresh.length) return 0;
+	const before = [...entry.history];
+	const pointer = /** @type {string} */ (before.pop());
+	commitManifest({
+		...m,
+		scenes: { ...m.scenes, [scene]: { ...entry, history: [...before, ...fresh, pointer] } }
+	});
+	return fresh.length;
+}
+
+/**
  * 21-G9: name the project. It rides the manifest, so it replicates, persists to idb
  * and travels inside a .tp for free — there is nothing else to build.
  *

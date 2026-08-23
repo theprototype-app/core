@@ -317,8 +317,131 @@ h.run(async () => {
 		chips.length >= 2 && chips.every((c) => c && c.length),
 		`the peer list SHOWS a scene for every row, not only the store (${JSON.stringify(chips)})`
 	);
+	// --- WATCH IS GATED ON BEING IN THE SAME SCENE ---
+	// Watching attaches your camera to theirs IN THIS WORLD, so a peer standing in
+	// another scene cannot be followed — 21-G5 already made this call for peers in other
+	// rooms, and now that one mesh can hold several scenes it has to hold inside the
+	// session too. Right now A and B are BOTH in cube, so it must be enabled.
+	const watchState = (p) =>
+		p.page.evaluate(() =>
+			[...document.querySelectorAll('button.peer-watch')]
+				.filter((b) => /Watch/i.test(b.textContent ?? ''))
+				.map((b) => ({ disabled: b.disabled, title: b.getAttribute('title') }))
+		);
+	const together = await watchState(A);
+	h.check(
+		together.length === 1 && together[0].disabled === false,
+		`premise: with both peers in one scene, Watch is offered (${JSON.stringify(together)})`
+	);
 	await A.page.evaluate(() => document.querySelector('#peers-trigger')?.click());
 	await A.page.waitForTimeout(300);
+
+	// now put them in different scenes and look again
+	await B.page.evaluate(() => window.__stores.levels.travelToScene('Arena'));
+	await h.eventually(
+		() => scenesOfPeers(A),
+		(m) => Object.values(m).includes('Arena'),
+		'premise: B moved to Arena while A stayed in cube'
+	);
+	await A.page.evaluate(() => document.querySelector('#peers-trigger')?.click());
+	await A.page.waitForTimeout(700);
+	const apart = await watchState(A);
+	h.check(
+		apart.length === 1 && apart[0].disabled === true,
+		`THE RULE: Watch is refused for a peer in another scene (${JSON.stringify(apart)})`
+	);
+	h.check(
+		/Arena/.test(apart[0]?.title ?? '') && /open that scene/i.test(apart[0]?.title ?? ''),
+		`…disabled WITH the reason and what to do about it ("${apart[0]?.title}")`
+	);
+	await A.page.evaluate(() => document.querySelector('#peers-trigger')?.click());
+	await A.page.waitForTimeout(300);
+
+	// and the other half: a peer who travels away WHILE being watched
+	await B.page.evaluate(() => window.__stores.levels.travelToScene('cube'));
+	await h.eventually(
+		() => scenesOfPeers(A),
+		(m) => Object.values(m).includes('cube'),
+		'premise: B is back in cube with A'
+	);
+	const bId = await B.page.evaluate(() => {
+		let pr;
+		window.__stores.peers.subscribe((v) => (pr = v))();
+		return pr?.peer?.id;
+	});
+	await A.page.evaluate((id) => window.__stores.specatorMode.set(id), bId);
+	await A.page.waitForTimeout(400);
+	h.check(
+		(await A.page.evaluate(() => {
+			let v;
+			window.__stores.specatorMode.subscribe((x) => (v = x))();
+			return v;
+		})) === bId,
+		'premise: A is watching B'
+	);
+	await B.page.evaluate(() => window.__stores.levels.travelToScene('Arena'));
+	await h.eventually(
+		() =>
+			A.page.evaluate(() => {
+				let v;
+				window.__stores.specatorMode.subscribe((x) => (v = x))();
+				return v;
+			}),
+		(v) => v === false,
+		'…and watching STOPS by itself when they open another scene, rather than following a camera into a world A does not have'
+	);
+	// --- YOU CANNOT SEE THEM EITHER ---
+	// Watching was the first half; the second is that a peer in another scene has no
+	// business being DRAWN in this one. Same predicate, one renderer.
+	// B is currently in Arena, A in cube (set up just above)
+	const seenApart = await A.page.evaluate(() => {
+		let ud, ps, cl;
+		window.__stores.userdata.subscribe((v) => (ud = v))();
+		window.__stores.peerScenes.peerScenes.subscribe((v) => (ps = v))();
+		window.__stores.levels.currentLevel.subscribe((v) => (cl = v))();
+		const mine = cl?.name ?? '';
+		return (ud ?? [])
+			.map((u) => u[0])
+			.map((id) => ({ id: String(id).slice(0, 6), hidden: !!window.__stores.peerScenes.elsewhereThan(ps, mine, id) }));
+	});
+	h.check(
+		seenApart.some((r) => r.hidden),
+		`a peer in another scene is excluded from the viewport too, not just from Watch (${JSON.stringify(seenApart)})`
+	);
+
+	// --- AND WE STOP STREAMING POSE AT THEM ---
+	// the change-gated camera broadcast is withheld from a peer who cannot use it. The
+	// counterfactual matters here: it must RESUME the moment they arrive, or a peer who
+	// travels in while we stand still would never see us.
+	const withheld = await A.page.evaluate(() => {
+		let ps, cl;
+		window.__stores.peerScenes.peerScenes.subscribe((v) => (ps = v))();
+		window.__stores.levels.currentLevel.subscribe((v) => (cl = v))();
+		const mine = cl?.name ?? '';
+		return Object.keys(ps).filter((id) => !!window.__stores.peerScenes.elsewhereThan(ps, mine, id));
+	});
+	h.check(
+		withheld.length === 1,
+		`pose streams are withheld from the peer in another scene (${withheld.length} peer)`
+	);
+
+	// put them back together for §4, which counts rooms — and prove the arrival re-publish
+	await B.page.evaluate(() => window.__stores.levels.travelToScene('cube'));
+	await h.eventually(
+		() => scenesOfPeers(A),
+		(m) => Object.values(m).includes('cube'),
+		'premise: both peers are in cube again'
+	);
+	h.check(
+		(await A.page.evaluate(() => {
+			let ps, cl;
+			window.__stores.peerScenes.peerScenes.subscribe((v) => (ps = v))();
+			window.__stores.levels.currentLevel.subscribe((v) => (cl = v))();
+			const mine = cl?.name ?? '';
+			return Object.keys(ps).filter((id) => !!window.__stores.peerScenes.elsewhereThan(ps, mine, id)).length;
+		})) === 0,
+		'…and the gate lifts the moment they arrive, so streaming resumes'
+	);
 
 	// =====================================================================
 	// 4. ROOMS ARE DERIVED

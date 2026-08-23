@@ -3221,6 +3221,31 @@ override for e2e — never share 5173 (the user's main-checkout server).
   VR, a 3+ player per-player scramble. Plan: cloud `plans-core/roadmap-21g-projects-
   presence.md` ROUND 3 REVISED.
 - Status (2026-08-21, latest): **ROADMAP 21-G — PROJECTS, CROSS-SCENE PRESENCE,
+- Status (2026-08-22, latest): **21-G ROUND 2 — DCC-STANDARD PROJECTS (G7-G10 + docs)
+  EXECUTED same-day off release/next @6d9b285 (post #164-#166; baseline re-measured
+  pristine 385/62, held at every commit). FOUR PRs OPEN against release/next, NONE
+  merged (awaiting the user's word), landing order #169 (G9 identity: manifest `name`,
+  the sceneIdentity window title with the ONE-serialization-per-session dirty check,
+  the hash-keyed open-scene accent, saves into the active folder) -> #167 (G10 fork 14:
+  inline scene naming + the grid inline card + the roots resizer; window.prompt gone
+  from the save paths) -> #168 (G8 forks 11+12: PROJECT_FORMAT 2 = the WHOLE Explorer
+  in a .tp, the [TP|Scene|GLTF|cog] picker, OPEN-replaces behind a warning vs
+  IMPORT-as-folder, .tpscene opens UNSAVED with the first-edit save-into-project
+  prompt + the travel-away publish gated on the marker) -> #171 (G7 forks 10+13: the
+  hidden version shelf in explorer.js with itemByHash searching both lists,
+  hideOldVersions reconciling BOTH directions incl. unhide-the-pointer, keep-N
+  Settings with 0 gating only the UNASKED cut, manifest labels, VersionHistory.svelte
+  in the Explorer's REAL properties panel — the Inspector 'file' block is DEAD
+  SURFACE, and the restore checkpoint must publish BEFORE the re-append or travel's
+  own publish strands the pointer on it, suite-pinned).** Two merge-tree-measured
+  unions at landing: G10 takes G9's activeLibraryFolder() at the two save call sites;
+  G8+G9 share autosave's markDirty (dirtyPulse + the dirtyOnce one-shots); G7's
+  clearLibrary union adds one hiddenItems line. Suites: scene-identity(51)
+  explorer-inline-input(38) project-open-import(36) scene-versions(68) + project-file
+  updated to OPEN semantics; docs-site projects.md committed there (72d14c7);
+  build-a-game touch-ups ride the parallel round-3 session's uncommitted rewrite.
+  As-built + owed-on-device: cloud `plans-core/roadmap-21g-projects-presence.md`.
+- Status (2026-08-21): **ROADMAP 21-G — PROJECTS, CROSS-SCENE PRESENCE,
   PER-PLAYER PROGRESS: G1-G6 EXECUTED same-day off the 21-F merge (release/next
   @fdfbe39); MERGED 2026-08-22: PRs #164 -> #165 -> #166 to release/next @f126b85 (both lane merges landed CLEAN - G1 was already both branches' base - and the App.svelte hook counts held 164/164). ROUND 2 (G7-G10, DCC-standard projects: hidden version history + panel, the TP|Scene|GLTF menu with open-replaces vs import-furnishes, project/scene identity, inline naming) and ROUND 3 (the collectible NODE + manager toolbox) are PLANNED with locked forks 10-20 in the same plan doc, executing in parallel windows.** The user's four fork
   answers locked in the plan (per-player mode + peer-owned vars; recipes into the

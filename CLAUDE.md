@@ -3200,6 +3200,43 @@ override for e2e — never share 5173 (the user's main-checkout server).
   (open-core: OSS ships only inert hooks — capability gate / auth hook /
   VITE_CLOUD_PLUGIN — cloud repo holds registration/rooms/roles; contract in its
   MAINTAINING.md).
+- Status (2026-08-23): **v1.7.0 RELEASED — "Make a game, keep a project"**.
+  main @a51a3eb (tag `v1.7.0`), release.yml green, GitHub Release published,
+  cloud deployed at `CORE_REF=v1.7.0` (prod version.json 1.7.0/a51a3eb), docs site
+  deployed. THE WHOLE OF ROADMAP 21 plus the loose-scenes batch: 93 feature/fix
+  commits since v1.6.0. Baseline **385/62** and the release.yml gate already matched,
+  so the workflow needed no edit. PRs #178 (fix/loose-scenes -> release/next) and
+  #179 (release/next -> main), both merge-commits.
+  **THE LOOSE-SCENES BATCH** (the last four commits, and the reason to read this):
+  the finding is that **the Explorer library does not replicate AT ALL** — no message
+  carries folders and none carries item rows, while `projectManifest` does. So a peer
+  could TRAVEL to a scene it could not SEE. Fixed in four commits: (1) a scene FILE is
+  not a project member — travel marks a file the manifest does not name `unsaved`
+  (tested by HASH-in-history, never by name), `hideOldVersions` skips an `imported`
+  stamp so independently dragged-in files stop swallowing each other, the
+  duplicate-import modal + the Settings ▸ Files rule, and the one-item-per-hash
+  invariant `importFiles` had been breaking (incl. a thumbnail-decode race, fixed with
+  an in-flight promise per hash); (2) the unsaved-changes guard — "Open here" bypassed
+  it, it read a 2s-THROTTLED verdict so a just-made edit was lost, a scene with no
+  identity was never guarded, a file rename never reached the name the save uses, and a
+  pending inline edit was discarded by the next editor opening; (3) **P2** — derived
+  cards for project scenes this device does not hold (opening one fetches it),
+  `peerScenes.js` on the gamePresence shape (`atscene`, one writer per row, reply on
+  getmodulestate, dropped at all three disconnect sites), rooms DERIVED via
+  `roomsOfSession`, and saving a loose scene ADOPTS its source as version 1; (4) one
+  predicate `elsewhereThan` behind Watch, the preview join and RENDERING — a peer in
+  another scene is not drawn, cannot be watched (disabled WITH the reason), watching
+  stops if they travel away, and `broadcast` withholds pose streams (allowlist
+  `camera`/`vrhands`) with an arrival re-publish because that send is CHANGE-GATED.
+  **ONLY ON EVIDENCE is the rule everywhere**: an absent row or an empty scene on
+  either side never gates, because a joiner stands in the host's content without
+  learning its name. New suites: import-duplicates(65), scene-open-guard(30),
+  scene-rooms(37); four guards proven by BREAKING them. Standing pre-existing reds,
+  A/B'd against base: `explorer-drop` last check, `explorer-files`, `peers-popover`.
+  NEXT: roadmap 22 (cloud `plans-core/roadmap-22-shared-library-sessions.md`) — forks
+  locked (replicate the INDEX per-item opt-in; ONE mesh with scenes as tags;
+  scene-is-primary renaming), and the vocabulary settled: **session = the mesh, room =
+  who is in a scene, PocketBase rooms stay DISCOVERY** — that naming blocks R4.
 - Status (2026-08-22, later): **B7 SPAWNER MERGED; DEVX #18, THE PALETTE RULE AND THE
   COLLECTIBLE TOOLBOX v2 ARE OPEN PRs.** `release/next` @19a8a3c carries R3a (#170) and
   B7 (#172, the spawner — see the architecture entry). OPEN: core **#176** DEVX #18 (the

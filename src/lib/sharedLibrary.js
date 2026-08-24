@@ -114,10 +114,16 @@ function meAsOwner() {
 
 // ---- reads -----------------------------------------------------------------------
 
-/** Is anything in this project shared? Drives the Explorer's local/shared distinction,
- * which is pure noise in a project that has never shared a thing. */
-export function sharedIndexInUse() {
-	const m = get(projectManifest);
+/**
+ * Is anything in this project shared? Drives the Explorer's local/shared distinction,
+ * which is pure noise in a project that has never shared a thing.
+ * @param {any} [manifest] pass `$projectManifest` from a component — a helper reading
+ *   the store through get() registers no svelte dependency (the documented rule), so
+ *   the distinction would appear only on the next unrelated re-render. Omitted, it
+ *   reads the live document, which is what a non-reactive caller wants.
+ */
+export function sharedIndexInUse(manifest) {
+	const m = manifest ?? get(projectManifest);
 	return (m.items ?? []).length > 0 || (m.folders ?? []).length > 0;
 }
 

@@ -396,6 +396,190 @@ h.run(async () => {
 			`item rows keep their HASH identity; an unresolvable placement falls to the root rather than losing the file (${JSON.stringify(remapped.items)})`);
 	}
 
+	// ================================================================================
+	// R2 / R3 / R7 — THE UI. Driven through the REAL context menus and the REAL filter
+	// control, never through the store functions the sections above already cover: a
+	// feature with no entry point is invisible to a suite that supplies its own (the
+	// documented Shader-tab lesson, which shipped 20 green checks over a tab no user
+	// could open).
+
+	// a clean slate for the UI half — the sections above left a tangle of shares
+	// deliberately, and a menu check wants to know exactly what it is right-clicking
+	await A.page.evaluate(async () => {
+		await window.__stores.explorer.clearLibrary();
+		window.__stores.sharedLibrary.publishMine(true);
+	});
+	await A.page.locator('#explorer-slot').click();
+	await A.page.waitForTimeout(600);
+	h.check(await A.page.locator('#explorer-list').isVisible(), 'the Explorer opens from the hud button');
+
+	const uiFile = await addFile(A, 'ui share bytes', 'ui-share.txt');
+	const card = () => A.page.locator('[data-card-id="' + uiFile.id + '"]');
+	await h.eventually(() => card().count(), (n) => n === 1, 'the imported file has a card');
+
+	// ---- 15. Share from the item context menu -------------------------------------
+	await card().click({ button: 'right' });
+	await A.page.waitForTimeout(300);
+	const shareRow = A.page.locator('[role=menu]').getByText('Share', { exact: true }).first();
+	h.check((await shareRow.count()) > 0, 'a local file offers Share in its context menu');
+	await shareRow.click();
+	await h.eventually(
+		() => manifestOf(A),
+		(m) => (m.items ?? []).some((r) => r.hash === uiFile.hash),
+		'pressing Share publishes the row — through the real menu'
+	);
+
+	// the DOT, asserted as a COMPUTED COLOUR rather than a class string: in the
+	// documented tbx-btn case the class was right the whole time while the fill was wrong
+	const dotInfo = await A.page.evaluate((id) => {
+		const el = document.querySelector('[data-card-id="' + id + '"] .explorer-share-dot');
+		return el ? { color: getComputedStyle(el).backgroundColor, title: el.getAttribute('title') } : null;
+	}, uiFile.id);
+	// NOT /^rgb/: tailwind 4 emits oklch(), so the honest claim is "a real, opaque
+	// colour was computed" rather than a guess at the notation the toolchain uses
+	const painted =
+		!!dotInfo &&
+		!!dotInfo.color &&
+		!/transparent/.test(dotInfo.color) &&
+		!/rgba(0, 0, 0, 0)/.test(dotInfo.color);
+	h.check(painted,
+		'a shared card draws a share dot with a real fill (' + JSON.stringify(dotInfo) + ')');
+	h.check(/Shared by you/.test(dotInfo?.title ?? ''), 'and it says what it means');
+
+	// ---- 16. Unshare from the same menu -------------------------------------------
+	await card().click({ button: 'right' });
+	await A.page.waitForTimeout(300);
+	const unshareRow = A.page.locator('[role=menu]').getByText('Unshare', { exact: true }).first();
+	h.check((await unshareRow.count()) > 0, 'a shared file offers Unshare instead');
+	await unshareRow.click();
+	await h.eventually(
+		() => manifestOf(A),
+		(m) => !(m.items ?? []).some((r) => r.hash === uiFile.hash),
+		'and pressing it removes the row'
+	);
+
+	// ---- 17. a PEER's file is not ours to unshare ---------------------------------
+	//
+	// The documented `interactive` family: offering Unshare on a row we do not write
+	// would build a gesture that cannot work. The menu states the owner instead.
+	const peerFile = await addFile(B, 'peer owned bytes', 'from-peer.txt');
+	await B.page.evaluate((id) => window.__stores.sharedLibrary.shareItem(id), peerFile.id);
+	await B.page.evaluate(() => window.__stores.sharedLibrary.publishMine(true));
+	await h.eventually(
+		() => manifestOf(A),
+		(m) => (m.items ?? []).some((r) => r.hash === peerFile.hash),
+		"A receives the peer's row"
+	);
+
+	// ---- 18. R1's card for a shared file whose bytes are NOT here -----------------
+	const remoteSel = '[data-card-id="shared:' + peerFile.hash + '"]';
+	const remoteCard = A.page.locator(remoteSel);
+	await h.eventually(() => remoteCard.count(), (n) => n === 1,
+		'a shared file we do not hold gets a DERIVED card in the grid');
+	const dimmed = await A.page.evaluate((sel) => {
+		const el = document.querySelector(sel);
+		return el ? Number(getComputedStyle(el).opacity) : -1;
+	}, remoteSel);
+	h.check(dimmed > 0 && dimmed < 1, 'and it is DIMMED rather than hidden (opacity ' + dimmed + ')');
+
+	await remoteCard.click({ button: 'right' });
+	await A.page.waitForTimeout(300);
+	const dl = A.page.locator('[role=menu]').getByText('Download from peers', { exact: true }).first();
+	h.check((await dl.count()) > 0, 'its menu offers the one thing that makes sense: Download from peers');
+	await dl.click();
+	// the bytes ride the EXISTING assetfile/getasset path, and the derived card is
+	// replaced by the real item the moment they land
+	await h.eventually(
+		() => itemsOf(A),
+		(items) => items.some((i) => i.hash === peerFile.hash),
+		'clicking it fetches the bytes'
+	);
+	await h.eventually(() => remoteCard.count(), (n) => n === 0,
+		'and the derived card gives way to the real item — no phantom left behind');
+
+	// ...and now that A HOLDS the peer's file, its menu must say who owns it rather than
+	// offering an Unshare that could not work. The claim in section 17 asserted here,
+	// where there is finally a real card to right-click.
+	const adopted = (await itemsOf(A)).find((i) => i.hash === peerFile.hash);
+	h.check(adopted?.share === 'peer', 'A holds it, marked as a peer’s');
+	await A.page.locator('[data-card-id="' + adopted.id + '"]').click({ button: 'right' });
+	await A.page.waitForTimeout(300);
+	const menuText = await A.page.locator('[role=menu]').first().innerText();
+	const firstLine = menuText.split(String.fromCharCode(10))[0];
+	h.check(/Shared by/.test(menuText), 'its menu NAMES the owner (' + JSON.stringify(firstLine) + ')');
+	h.check(!/^Unshare$/m.test(menuText), 'and offers no Unshare — we are not its writer');
+	await A.page.keyboard.press('Escape');
+	await A.page.waitForTimeout(200);
+
+	// ---- 19. Share FOLDER from the folder card menu -------------------------------
+	const uiFolder = await A.page.evaluate(
+		() => window.__stores.explorer.createFolder('UI Textures', null).id
+	);
+	await A.page.waitForTimeout(400);
+	const folderCard = A.page.locator('[data-card-id="' + uiFolder + '"]');
+	await h.eventually(() => folderCard.count(), (n) => n === 1, 'the new folder has a card');
+	await folderCard.click({ button: 'right' });
+	await A.page.waitForTimeout(300);
+	const shareFolderRow = A.page.locator('[role=menu]').getByText('Share folder', { exact: true }).first();
+	h.check((await shareFolderRow.count()) > 0, 'a folder offers Share folder');
+	await shareFolderRow.click();
+	await h.eventually(
+		() => manifestOf(A),
+		(m) => (m.folders ?? []).some((r) => r.id === uiFolder),
+		'and pressing it publishes the folder row'
+	);
+
+	// R3 + the user's rule, through the real import path: a file that lands in a SHARED
+	// folder is shared, with no second gesture
+	const inherited = await addFile(A, 'inherited by the folder', 'inherit.txt', uiFolder);
+	await h.eventually(
+		() => manifestOf(A),
+		(m) => (m.items ?? []).some((r) => r.hash === inherited.hash),
+		'a file imported into a shared folder is shared automatically'
+	);
+
+	// ---- 20. R7: the filter --------------------------------------------------------
+	const filterBtn = A.page.locator('#explorer-filter');
+	h.check((await filterBtn.count()) > 0, 'the filter control exists beside the search box');
+	const gridCount = () => A.page.locator('.explorer-card').count();
+	const before = await gridCount();
+	await filterBtn.click();
+	await A.page.waitForTimeout(300);
+	const localOnly = A.page.locator('[role=menu]').getByText('Local only', { exact: true }).first();
+	h.check((await localOnly.count()) > 0, 'it offers a share-state axis');
+	await localOnly.click();
+	await A.page.waitForTimeout(400);
+	const afterLocal = await gridCount();
+	h.check(afterLocal < before,
+		'"Local only" hides the shared cards (' + before + ' -> ' + afterLocal + ')');
+	// and it is REVERSIBLE from the same control, which is the half a filter gets wrong
+	await filterBtn.click();
+	await A.page.waitForTimeout(300);
+	await A.page.locator('[role=menu]').getByText('Clear filters', { exact: true }).first().click();
+	await A.page.waitForTimeout(400);
+	h.check((await gridCount()) === before, 'Clear filters puts them all back');
+
+	// ---- 21. the batch menu acts on the SET ---------------------------------------
+	const two = await A.page.evaluate(async () => {
+		const e = window.__stores.explorer;
+		const a = await e.addItemFromBytes(new TextEncoder().encode('batch one').buffer, 'b1.txt', null);
+		const b = await e.addItemFromBytes(new TextEncoder().encode('batch two').buffer, 'b2.txt', null);
+		return [a.id, b.id, a.hash, b.hash];
+	});
+	await A.page.waitForTimeout(500);
+	await A.page.locator('[data-card-id="' + two[0] + '"]').click();
+	await A.page.locator('[data-card-id="' + two[1] + '"]').click({ modifiers: ['Control'] });
+	await A.page.locator('[data-card-id="' + two[1] + '"]').click({ button: 'right' });
+	await A.page.waitForTimeout(300);
+	const batchShare = A.page.locator('[role=menu]').getByText('Share 2 items', { exact: true }).first();
+	h.check((await batchShare.count()) > 0, 'a multi-selection offers Share with the COUNT it will honour');
+	await batchShare.click();
+	await h.eventually(
+		() => manifestOf(A),
+		(m) => [two[2], two[3]].every((hash) => (m.items ?? []).some((r) => r.hash === hash)),
+		'and shares them both in one gesture'
+	);
+
 	// ---- 14. no render crash anywhere ---------------------------------------------
 	for (const [label, p] of [
 		['A', A],

@@ -772,7 +772,7 @@ h.run(async () => {
 	const zipBytes = fs.readFileSync(await tp.path());
 	const entries = unzipSync(new Uint8Array(zipBytes));
 	const doc = JSON.parse(strFromU8(entries['project.json']));
-	h.check(!!doc && doc.format === 2, `it is a real .tp (format ${doc?.format})`);
+	h.check(!!doc && doc.format === 3, `it is a real .tp (format ${doc?.format})`);
 	h.check(doc.name === 'Act 1', `the project is named after the folder ("${doc.name}")`);
 
 	// THE COHERENCE INVARIANT

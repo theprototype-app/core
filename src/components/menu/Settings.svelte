@@ -35,7 +35,7 @@
 	import { keepVersionsSetting } from '$lib/projectManifest';
 	// R22 round 2: who may take a file out of the shared library (locked answer: anyone,
 	// with the owner-only rule kept as the second option)
-	import { unshareAuthority } from '$lib/sharedLibrary';
+	import { unshareAuthority, autoShareAll, autoDownload } from '$lib/sharedLibrary';
 	// 21-I5 (locked answer 5): the save-name template — one rule for every download
 	import { saveNameTemplate } from '$lib/saveName';
 	// loose-scenes fix (bug 2a): what an import does with bytes already in the library.
@@ -818,6 +818,42 @@
 						Restore that snapshot automatically at startup instead of asking. Only ever runs when the scene is still empty; a message tells you what was restored
 					</SettingRow>
 					<p class="ui-section-label">Files</p>
+					<SettingRow name="Share every file automatically">
+						<svelte:fragment slot="control">
+							<input
+								id="auto-share-all"
+								class="tp-check"
+								type="checkbox"
+								checked={$autoShareAll}
+								on:change={(e: any) => autoShareAll.set(!!e.target.checked)} />
+						</svelte:fragment>
+						<span>
+							Everything in your Explorer is shared with the session, including files you add
+							later — no Share gesture at all. Off by default, because the whole point of
+							the library being local is that publishing it is a choice. A file you
+							<strong>explicitly unshared</strong> stays unshared: a blanket setting is a
+							preference, and that was a decision. This is yours alone — every peer chooses
+							for themselves, and a peer who has just joined is still asked about the files
+							they brought with them.
+						</span>
+					</SettingRow>
+					<SettingRow name="Download shared files automatically">
+						<svelte:fragment slot="control">
+							<input
+								id="auto-download"
+								class="tp-check"
+								type="checkbox"
+								checked={$autoDownload}
+								on:change={(e: any) => autoDownload.set(!!e.target.checked)} />
+						</svelte:fragment>
+						<span>
+							When somebody shares a file or a folder, fetch it straight away. <strong>On by
+							default</strong>: without it every shared file costs each peer a right-click,
+							which is an extra step per file per person for something they already agreed to
+							by being here. Turn it off on a metered connection or a very large project —
+							shared files still appear, greyed, and download when you open them.
+						</span>
+					</SettingRow>
 					<SettingRow name="Who can unshare a file">
 						<svelte:fragment slot="control">
 							<select

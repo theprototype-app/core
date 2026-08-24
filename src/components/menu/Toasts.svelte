@@ -2,7 +2,7 @@
 	import { Info, UserPlus, Download } from '@lucide/svelte';
     import { cameraPreview, stopCameraPreview, toggleCameraControl, previewLabel } from '$lib/cameraPreview'
     // R22 round 2: the connect-time library offer (see the effect below)
-    import { shareAllLocal, pullAllShared, bulkCounts } from '$lib/sharedLibrary'
+    import { shareAllLocal, pullAllShared, bulkCounts, saveIntoSessionAndAdopt } from '$lib/sharedLibrary'
     import { explorerItems } from '$lib/explorer'
     import { projectManifest } from '$lib/projectManifest'
     import { peers, loading, loadingcount, pendingApprovals, waitingForApproval, userdata, toastStore, fixLight, showSidebar, specatorMode, restorePanels, appNotice, connectDrawerOpen, connectDrawerTab, toastsInDrawerOnly, showInfoToast, dismissToastById } from '../../stores/appStore'
@@ -207,6 +207,8 @@ $effect(() => {
                 ...(counts.local
                     ? [{ label: 'Share all', action: () => { libraryPromptDone = true; const n = shareAllLocal(); showToast(`Sharing ${n} file${n === 1 ? '' : 's'} with peers`); dismissToastById('shared-library-offer'); } }]
                     : []),
+                // the locked answer's second button: park my project, take the session's
+                { label: 'Save into session', action: () => { libraryPromptDone = true; void saveIntoSessionAndAdopt(); dismissToastById('shared-library-offer'); } },
                 ...(counts.missing
                     ? [{ label: 'Download all', action: () => { libraryPromptDone = true; const n = pullAllShared(); showToast(`Fetching ${n} file${n === 1 ? '' : 's'} from peers`); dismissToastById('shared-library-offer'); } }]
                     : []),

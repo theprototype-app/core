@@ -108,6 +108,13 @@ h.run(async () => {
 
 	await h.connect(A, B);
 
+	// R22-R8: AUTO-DOWNLOAD is ON by default now, which invalidates every check below
+	// that describes a peer NOT holding a shared file — the peer fetches it before the
+	// assertion can look. That is the feature working, so the fix is to reach the state
+	// the same way a user would (the setting) rather than through a test-only door.
+	// Section 31 turns it back on, where it is the thing under test.
+	await B.page.evaluate(() => window.__stores.sharedLibrary.autoDownload.set(false));
+
 	// ---- 2. share one item: the row, the owner, the wire ---------------------------
 	await A.page.evaluate((id) => window.__stores.sharedLibrary.shareItem(id), f1.id);
 	await A.page.evaluate(() => window.__stores.sharedLibrary.publishMine(true));
@@ -509,8 +516,15 @@ h.run(async () => {
 		'and the derived card gives way to the real item — no phantom left behind');
 
 	// ...and now that A HOLDS the peer's file, its menu must offer Unshare — the default
+	// the 'peer' MARK is applied by the debounced adoption sweep, not by the arrival of
+	// the bytes — so it lands a couple of hundred milliseconds after the item does. A
+	// synchronous read here measured `null` while the feature was perfect.
+	await h.eventually(
+		() => itemsOf(A),
+		(items) => items.find((i) => i.hash === peerFile.hash)?.share === 'peer',
+		'A holds it, adopted as a shared file it does not own'
+	);
 	const adopted = (await itemsOf(A)).find((i) => i.hash === peerFile.hash);
-	h.check(adopted?.share === 'peer', 'A holds it, marked as a peer’s');
 	await A.page.locator('[data-card-id="' + adopted.id + '"]').click({ button: 'right' });
 	await A.page.waitForTimeout(300);
 	const menuText = await A.page.locator('[role=menu]').first().innerText();
@@ -832,6 +846,240 @@ h.run(async () => {
 		'and the two axes are separated by section labels');
 	await A.page.keyboard.press('Escape');
 	await A.page.waitForTimeout(200);
+
+	// ================================================================================
+	// ROUND 3 — R8: chunked transfer, the ledger, the two settings, and the toggle.
+
+	// ---- 30. the ledger's arithmetic, with no bytes and no peer --------------------
+	//
+	// The aggregate is the thing a progress bar is wrong about, so it is asserted
+	// directly rather than through the UI: a percentage of BYTES and a percentage of
+	// FILES are different claims, and mixing them silently is how a bar goes backwards.
+	// EMPTY IT FIRST. By now the run has moved real files, so the ledger is full of
+	// them — and these checks are about the arithmetic, not about this run. Reading a
+	// percentage out of a shared ledger measured 63% where the maths says 13%, which is
+	// the assertion being wrong rather than the code.
+	await A.page.evaluate(() => window.__stores.transferLedger.transfers.set([]));
+	const ledger = await A.page.evaluate(() => {
+		const tl = window.__stores.transferLedger;
+		const read = () => {
+			let v;
+			tl.transferSummary.subscribe((x) => (v = x))();
+			return v;
+		};
+		const idle = read();
+		const a = tl.beginTransfer({ hash: 'h-a', name: 'a.bin', dir: 'in', size: 1000 });
+		const b = tl.beginTransfer({ hash: 'h-b', name: 'b.bin', dir: 'in', size: 3000 });
+		tl.progressTransfer(a, 500);
+		const mid = read();
+		tl.finishTransfer(a);
+		const afterOne = read();
+		// a transfer with NO known size must flip the whole reading to file counting
+		const c = tl.beginTransfer({ hash: 'h-c', name: 'c.bin', dir: 'in' });
+		const unsized = read();
+		tl.failTransfer(b, 'went quiet');
+		const failed = read();
+		tl.finishTransfer(c);
+		const done = read();
+		tl.clearFinished();
+		return { idle, mid, afterOne, unsized, failed, done };
+	});
+	h.check(ledger.idle.left === 0 && ledger.idle.pct === 0, 'an idle ledger reports nothing in flight');
+	h.check(ledger.mid.byBytes === true && ledger.mid.pct === 13,
+		`progress is a BYTE percentage while every size is known (500/4000 = 13%, got ${ledger.mid.pct})`);
+	h.check(ledger.afterOne.left === 1 && ledger.afterOne.pct === 25,
+		`a finished file stays in the denominator, so the bar does not restart (${ledger.afterOne.pct}%)`);
+	h.check(ledger.unsized.byBytes === false,
+		'one transfer of unknown size flips the whole reading to FILE counting — never a silent mix');
+	h.check(ledger.failed.failed === 1, 'a failure is counted and excluded from the totals');
+	h.check(ledger.done.left === 0, 'and the summary empties when the last one lands');
+
+	// ---- 31. a CHUNKED transfer, end to end ---------------------------------------
+	//
+	// The point of chunking is not throughput (peerjs already chunks internally, and a
+	// single 12 MB message has been measured going through intact) — it is that per-file
+	// progress and an integrity check are impossible without slicing it ourselves.
+	// back ON: from here it is the subject rather than a nuisance
+	await B.page.evaluate(() => window.__stores.sharedLibrary.autoDownload.set(true));
+	await B.page.waitForTimeout(300);
+	const bigHash = await A.page.evaluate(async () => {
+		// deterministic content well over the chunk size, so it MUST be sliced
+		const n = 700 * 1024;
+		const bytes = new Uint8Array(n);
+		for (let i = 0; i < n; i++) bytes[i] = (i * 31 + 7) & 0xff;
+		const item = await window.__stores.explorer.addItemFromBytes(bytes.buffer, 'big.bin', null);
+		window.__stores.sharedLibrary.shareItem(item.id);
+		window.__stores.sharedLibrary.publishMine(true);
+		return { hash: item.hash, size: n };
+	});
+	h.check(bigHash.size > 256 * 1024, `the fixture is bigger than one chunk (${bigHash.size} bytes)`);
+	// auto-download is ON by default, so B should fetch it without being asked
+	await h.eventually(
+		() => itemsOf(B),
+		(items) => items.some((i) => i.hash === bigHash.hash),
+		'AUTO-DOWNLOAD fetches a newly shared file with no gesture from the peer'
+	);
+	const bBlob = await B.page.evaluate(async (hash) => {
+		const item = window.__stores.explorer.itemByHash(hash);
+		const blob = item ? await window.__stores.explorer.itemBlob(item.id) : null;
+		return blob ? blob.size : -1;
+	}, bigHash.hash);
+	h.check(bBlob === bigHash.size,
+		`the reassembled file is byte-for-byte the right SIZE (${bBlob} vs ${bigHash.size})`);
+	// the integrity check is the real guarantee: addItemFromBytes hashes what it stores,
+	// so the item existing under this hash means the bytes reassembled correctly
+	h.check(
+		(await itemsOf(B)).find((i) => i.hash === bigHash.hash)?.hash === bigHash.hash,
+		'and it hashes to the hash we asked for — reassembly is verified, not assumed'
+	);
+	const bLedger = await B.page.evaluate((hash) => {
+		let v;
+		window.__stores.transferLedger.transfers.subscribe((x) => (v = x))();
+		return v.filter((t) => t.hash === hash).map((t) => ({ dir: t.dir, state: t.state, size: t.size }));
+	}, bigHash.hash);
+	h.check(bLedger.some((t) => t.dir === 'in' && t.state === 'done' && t.size === bigHash.size),
+		`the receiver logged it as a finished incoming transfer of the right size (${JSON.stringify(bLedger)})`);
+	const aLedger = await A.page.evaluate((hash) => {
+		let v;
+		window.__stores.transferLedger.transfers.subscribe((x) => (v = x))();
+		return v.filter((t) => t.hash === hash).map((t) => ({ dir: t.dir, state: t.state }));
+	}, bigHash.hash);
+	h.check(aLedger.some((t) => t.dir === 'out' && t.state === 'done'),
+		`and the SENDER logged the outgoing side (${JSON.stringify(aLedger)})`);
+
+	// ---- 32. the share cap moved, because chunking is what pinned it --------------
+	const cap = await A.page.evaluate(() => window.__stores.assetShare.MAX_SHARED_BYTES);
+	h.check(cap === 25 * 1024 * 1024,
+		`the share cap now matches the Explorer's own import limit (${Math.round(cap / 1048576)} MB)`);
+
+	// ---- 33. "download files manually" turns auto-download off -------------------
+	const manual = await B.page.evaluate(async () => {
+		const sl = window.__stores.sharedLibrary;
+		sl.autoDownload.set(false);
+		let v;
+		sl.autoDownload.subscribe((x) => (v = x))();
+		return v;
+	});
+	h.check(manual === false, 'the peer can opt out of automatic downloads');
+	const manualHash = await A.page.evaluate(async () => {
+		const item = await window.__stores.explorer.addItemFromBytes(
+			new TextEncoder().encode('not fetched automatically').buffer,
+			'manual.txt',
+			null
+		);
+		window.__stores.sharedLibrary.shareItem(item.id);
+		window.__stores.sharedLibrary.publishMine(true);
+		return item.hash;
+	});
+	await h.eventually(
+		() => manifestOf(B),
+		(m) => (m.items ?? []).some((r) => r.hash === manualHash),
+		'the row still reaches the peer'
+	);
+	await B.page.waitForTimeout(2000);
+	h.check((await itemsOf(B)).every((i) => i.hash !== manualHash),
+		'...and with auto-download OFF the bytes are NOT fetched — the card stays greyed');
+	// and the manual route still works
+	await B.page.evaluate((hash) => window.__stores.sharedLibrary.pullSharedItem(hash), manualHash);
+	await h.eventually(
+		() => itemsOf(B),
+		(items) => items.some((i) => i.hash === manualHash),
+		'opening it still downloads it'
+	);
+	await B.page.evaluate(() => window.__stores.sharedLibrary.autoDownload.set(true));
+
+	// ---- 34. "share every file automatically" -------------------------------------
+	const autoShared = await A.page.evaluate(async () => {
+		const sl = window.__stores.sharedLibrary;
+		const e = window.__stores.explorer;
+		// a file that is explicitly VETOED must survive the blanket setting
+		const vetoed = await e.addItemFromBytes(new TextEncoder().encode('never share me').buffer, 'veto.txt', null);
+		sl.shareItem(vetoed.id);
+		sl.unshareItem(vetoed.id);
+		sl.autoShareAll.set(true);
+		const fresh = await e.addItemFromBytes(new TextEncoder().encode('auto shared').buffer, 'auto.txt', null);
+		return { vetoed: vetoed.hash, fresh: fresh.hash };
+	});
+	await h.eventually(
+		() => manifestOf(A),
+		(m) => (m.items ?? []).some((r) => r.hash === autoShared.fresh),
+		'with the setting on, a new file is shared with no gesture at all'
+	);
+	h.check(!(await manifestOf(A)).items.some((r) => r.hash === autoShared.vetoed),
+		'but an explicitly UNSHARED file stays unshared — a decision beats a preference');
+	await A.page.evaluate(() => window.__stores.sharedLibrary.autoShareAll.set(false));
+
+	// ---- 35. "Local only" is a TOGGLE, and it reaches folders ---------------------
+	await A.page.evaluate(() => window.__stores.explorer.activeFolder.set(null));
+	await A.page.waitForTimeout(400);
+	await A.page.locator('#explorer-filter').click();
+	await A.page.waitForTimeout(300);
+	const filterRows = await A.page.locator('[role=menu]').first().innerText();
+	h.check(/Local only/.test(filterRows), 'the visibility axis is one row named "Local only"');
+	h.check(!/Shared only/.test(filterRows), 'and "Shared only" is gone — one switch, one question');
+	await A.page.locator('[role=menu]').getByText('Local only', { exact: true }).first().click();
+	await A.page.waitForTimeout(500);
+	const localView = await A.page.evaluate(() => ({
+		cards: [...document.querySelectorAll('.explorer-card')].length,
+		folders: [...document.querySelectorAll('.explorer-folder-card')].length
+	}));
+	const sharedFolderCount = (await foldersOf(A)).filter(
+		(f) => f.parentId === null && (f.share === 'mine' || f.share === 'peer')
+	).length;
+	h.check(localView.folders <= (await foldersOf(A)).filter((f) => f.parentId === null).length,
+		`the folder cards are filtered too (${localView.folders} shown, ${sharedFolderCount} shared at root)`);
+	const anyShared = await A.page.evaluate(() =>
+		[...document.querySelectorAll('.explorer-card .explorer-share-dot')].length
+	);
+	h.check(anyShared === 0, `no SHARED card survives "Local only" (${anyShared} share dots on screen)`);
+	// and it clears
+	await A.page.locator('#explorer-filter').click();
+	await A.page.waitForTimeout(300);
+	await A.page.locator('[role=menu]').getByText('Clear filters', { exact: true }).first().click();
+	await A.page.waitForTimeout(400);
+
+	// ---- 36. the transfer indicator and the Logs pane -----------------------------
+	//
+	// The indicator renders NOTHING when nothing is moving, which is the point of it — so
+	// the check drives a live row rather than looking for a permanent chrome element.
+	// ...and again here: "absent while nothing is in flight" is only a claim about the
+	// component if nothing is, in fact, in flight
+	await A.page.evaluate(() => window.__stores.transferLedger.transfers.set([]));
+	await A.page.waitForTimeout(300);
+	const idleIndicator = await A.page.locator('#explorer-transfers').count();
+	h.check(idleIndicator === 0, 'the transfer indicator is absent while nothing is in flight');
+	await A.page.evaluate(() =>
+		window.__stores.transferLedger.beginTransfer({
+			hash: 'ui-probe',
+			name: 'probe.bin',
+			dir: 'in',
+			size: 2048
+		})
+	);
+	await A.page.waitForTimeout(400);
+	h.check((await A.page.locator('#explorer-transfers').count()) === 1,
+		'and it appears the moment there is something to report');
+	await A.page.locator('#explorer-transfers').click();
+	await A.page.waitForTimeout(300);
+	const popText = await A.page.locator('.tx-popover').first().innerText();
+	h.check(/probe\.bin/.test(popText), `the popover names the file (${JSON.stringify(popText.slice(0, 60))})`);
+	h.check(/%/.test(popText), 'and carries a percentage');
+	await A.page.locator('#explorer-transfers-logs').click();
+	await A.page.waitForTimeout(400);
+	h.check((await A.page.locator('.tx-log').count()) === 1, 'the full Logs pane opens from the popover');
+	const split = await A.page.evaluate(() => {
+		const cards = document.querySelector('.ex-cards');
+		const log = document.querySelector('.ex-log');
+		if (!cards || !log) return null;
+		const a = cards.getBoundingClientRect();
+		const b = log.getBoundingClientRect();
+		return { cardsW: Math.round(a.width), logW: Math.round(b.width), sideBySide: a.right <= b.left + 8 };
+	});
+	h.check(!!split && split.sideBySide && split.logW > 100,
+		`it SPLITS the Explorer rather than covering it (${JSON.stringify(split)})`);
+	const logText = await A.page.locator('.tx-log').first().innerText();
+	h.check(/probe\.bin/.test(logText), 'and the pane lists the row');
+	await A.page.evaluate(() => window.__stores.transferLedger.clearFinished());
 
 	// ---- 14. no render crash anywhere ---------------------------------------------
 	for (const [label, p] of [

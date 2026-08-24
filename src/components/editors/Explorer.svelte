@@ -20,6 +20,7 @@
 		renameFolder,
 		deleteFolder,
 		folderCounts,
+		folderSubtree,
 		moveFolder,
 		moveItem,
 		importFiles,
@@ -91,6 +92,8 @@
 	// 21-G3: the whole project as ONE .tp file (manifest + scenes + assets).
 	import { downloadProject } from '$lib/projectFile';
 	import ModelPreview from './ModelPreview.svelte';
+	// R22-R8: the transfer indicator and the Logs pane, one component in two modes
+	import TransferLog from './TransferLog.svelte';
 	import {
 		packs,
 		openPackItems,
@@ -288,9 +291,18 @@
 	// `search` local.
 	/** empty = every kind. @type {Set<string>} */
 	let kindFilter = $state(new Set<string>());
-	/** '' = any, 'shared' = in the index, 'local' = mine and nobody else's */
-	let shareFilter = $state('');
-	const filtering = $derived(kindFilter.size > 0 || !!shareFilter);
+	/**
+	 * R22-R8 (user): a TOGGLE named "Local only", not a three-way. "Shared only" was the
+	 * weaker half of the pair — the shared files are the ones with a dot, so they are
+	 * already findable, while the local ones are exactly what you cannot pick out of a
+	 * grid. One switch, one question: show me what is NOT in the project yet.
+	 */
+	let localOnly = $state(false);
+
+	/** R22-R8: is the Logs pane showing? LOCAL and session-only — it is a debugging
+	 * view, and one that came back on every reload would be clutter. */
+	let logOpen = $state(false);
+	const filtering = $derived(kindFilter.size > 0 || localOnly);
 
 	/** R22-R2: the share state of a card, and the ONE place the vocabulary is read. A
 	 * derived remote row is shared BY DEFINITION — it is in the index and that is the
@@ -309,11 +321,29 @@
 	 * than being filtered out by it — it has no share state to be wrong about. */
 	function passesFilter(item: any) {
 		if (kindFilter.size && !kindFilter.has(item.kind)) return false;
-		if (shareFilter) {
-			const ownRecord = !item.packEntry && !item.sceneEntry && !item.remoteScene && item.kind !== 'pack-folder';
-			if (!ownRecord) return false;
-			if (shareFilter === 'shared' && !isShared(item)) return false;
-			if (shareFilter === 'local' && isShared(item)) return false;
+		if (localOnly) {
+			// a card with no library record of its own has no share state to be wrong about,
+			// and a REMOTE row is by definition not local — both are out
+			if (!isOwnedItem(item)) return false;
+			if (isShared(item)) return false;
+		}
+		return true;
+	}
+
+	/**
+	 * R22-R8 (user): "make sure local only applies to folders also (and shows only local
+	 * files in those folders)". Two halves, and the second one falls out of `passesFilter`
+	 * already scoping the grid. This is the first: a SHARED folder is not a local thing,
+	 * so it goes. A folder that merely CONTAINS local files stays, or the filter would
+	 * hide the way to reach them.
+	 */
+	function folderPassesFilter(folder: any) {
+		if (!localOnly) return true;
+		if (folder?.share === 'mine' || folder?.share === 'peer') {
+			// ...unless something local is inside it, in which case it is a route rather than
+			// a result, and hiding it would strand the files the filter exists to show
+			const subtree = folderSubtree(folder.id);
+			return $explorerItems.some((i) => subtree.includes(i.folderId ?? '') && !isShared(i));
 		}
 		return true;
 	}
@@ -644,7 +674,10 @@
 	});
 
 	const childFolders = $derived(
-		$explorerFolders.filter((f) => (f.parentId ?? null) === ($activeFolder === 'prefabs' ? '__none__' : ($activeFolder ?? null)))
+		$explorerFolders
+			.filter((f) => (f.parentId ?? null) === ($activeFolder === 'prefabs' ? '__none__' : ($activeFolder ?? null)))
+			// R22-R8: the Local-only filter reaches FOLDERS too, not just their contents
+			.filter(folderPassesFilter)
 	);
 
 	const gridItems = $derived.by(() => {
@@ -2145,22 +2178,19 @@
 		// own `section` label, which is what the rest of the app uses for exactly this
 		items.unshift({ section: 'Type' });
 		items.push({ section: 'Visibility' });
-		for (const [key, label] of [
-			['', 'Any visibility'],
-			['shared', 'Shared only'],
-			['local', 'Local only']
-		] as [string, string][])
-			items.push({
-				label,
-				checked: shareFilter === key,
-				action: () => (shareFilter = key)
-			});
+		items.push({
+			label: 'Local only',
+			checked: localOnly,
+			icon: 'eye-off',
+			tooltip: 'Show only the files nobody else can see yet — folders included',
+			action: () => (localOnly = !localOnly)
+		});
 		if (filtering)
 			items.push({
 				label: 'Clear filters',
 				action: () => {
 					kindFilter = new Set();
-					shareFilter = '';
+					localOnly = false;
 				}
 			});
 		menu = { x: e.clientX, y: e.clientY, items };
@@ -2836,6 +2866,9 @@
 	post-stack's add control off a narrow panel.
 -->
 {#snippet filterChip()}
+	<!-- R22-R8: the transfer indicator sits beside the filter, top-right, and renders
+	     nothing at all when nothing is moving -->
+	<TransferLog bind:open={logOpen} />
 	<button
 		id="explorer-filter"
 		class="ui-button-quiet shrink-0 {filtering ? 'text-primary-400' : ''}"
@@ -3122,7 +3155,15 @@
 			{:else}
 				<!-- fixed-width columns (not 1fr) so cards don't resize/jiggle when the
 				     Properties sidebar toggles main's width -->
-				<div class="grid grid-cols-[repeat(auto-fill,96px)] justify-start gap-1">
+				<!--
+					R22-R8: with the Logs pane open the body becomes two columns — the cards and the
+					log. The split is CSS rather than measured JS: `.ex-split` is a flex row, the log
+					takes a fixed 300px, and at <=640px the cards hide and the log takes the whole
+					drawer ("if limited space, then it takes entire explorer drawer"). No
+					ResizeObserver, and nothing to get wrong on a re-dock.
+				-->
+				<div class="ex-split" class:ex-split-on={logOpen}>
+				<div class="ex-cards grid grid-cols-[repeat(auto-fill,96px)] justify-start gap-1">
 					{#if pendingCard}
 						<!-- 21-G10: name it where it will appear. A placeholder card, not a modal and
 						     not a browser prompt — Esc removes it having created nothing. -->
@@ -3312,6 +3353,10 @@
 							{/if}
 						</div>
 					{/each}
+				</div>
+				{#if logOpen}
+					<div class="ex-log"><TransferLog mode="pane" /></div>
+				{/if}
 				</div>
 			{/if}
 			{#if mqRect}
@@ -3776,3 +3821,41 @@
 		</div>
 	</div>
 {/if}
+
+<style>
+	/*
+		R22-R8 — THE SPLIT. A flex row holding the cards and the Logs pane. Each half keeps
+		its own scroll, and the log takes a FIXED width so the card grid’s auto-fill
+		columns reflow around it rather than the two fighting over the remainder.
+	*/
+	.ex-split {
+		display: block;
+		min-height: 0;
+	}
+	.ex-split-on {
+		display: flex;
+		height: 100%;
+		align-items: stretch;
+		gap: 6px;
+	}
+	.ex-split-on .ex-cards {
+		min-width: 0;
+		flex: 1;
+		align-content: start;
+		overflow-y: auto;
+	}
+	.ex-log {
+		min-height: 0;
+		flex: 0 0 300px;
+	}
+	/* "if limited space, then it takes entire explorer drawer": under this width there
+	   is no room for two columns, so the log becomes the view rather than a sliver */
+	@media (max-width: 640px) {
+		.ex-split-on .ex-cards {
+			display: none;
+		}
+		.ex-log {
+			flex: 1;
+		}
+	}
+</style>

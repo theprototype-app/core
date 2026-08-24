@@ -85,7 +85,14 @@ import {
 	publishSharedIndex,
 	registerSharedIndexListener
 } from './projectManifest';
-import { requestAsset, sendAssetThumb, forgetSharedThumb, loadSharedThumbs } from './assetShare';
+import {
+	requestAsset,
+	sendAssetThumb,
+	forgetSharedThumb,
+	loadSharedThumbs,
+	sweepStalledTransfers,
+	reviveHash
+} from './assetShare';
 import { ownerStamp } from './cloudHooks';
 
 /**
@@ -150,6 +157,10 @@ export function remoteSharedRows(manifest) {
 export function pullSharedItem(hash) {
 	const h = String(hash ?? '').trim();
 	if (!h || itemByHash(h)) return false;
+	// somebody PRESSED this, so a previous failure is not an answer: clear the
+	// gave-up-on-it mark before asking (auto-download does not get this — an automatic
+	// retry loop is exactly what the mark exists to stop)
+	reviveHash(h);
 	pendingPulls.update((s) => new Set([...s, h]));
 	requestAsset(h);
 	return true;
@@ -358,6 +369,53 @@ unshareAuthority.subscribe((v) => {
 	} catch {}
 });
 
+/**
+ * R22-R8 (user) — AUTOMATICALLY SHARE EVERYTHING. Off by default, because the whole
+ * batch rests on "a file is local until somebody says otherwise" and a default that
+ * published your library the moment you connected would make that sentence false.
+ *
+ * With it ON, every file already here and every file created afterwards is shared with
+ * no gesture — but a VETO still holds, because an explicit "not this one" is a decision
+ * and a blanket setting is a preference. Per-peer and LOCAL: "they work with files as
+ * they want" was the instruction, and there is nothing to enforce across the mesh.
+ *
+ * A NEWLY JOINED PEER IS STILL ASKED. That is deliberate and it is the one place this
+ * setting deliberately does not reach: the connect prompt is about a library that
+ * already existed before the session, so answering it for somebody is exactly the kind
+ * of surprise the default protects against.
+ * @type {import('svelte/store').Writable<boolean>} */
+export const autoShareAll = writable(readFlag('shared:autoShareAll', false));
+
+/**
+ * R22-R8 (user) — AUTOMATICALLY DOWNLOAD what peers share. ON by default, and that is
+ * the answer to "is it logical?": without it, every shared file costs each peer a
+ * right-click, which is an extra step per file per person for something they already
+ * agreed to by being in the session. Turning it OFF is the "download files manually"
+ * option, for a metered connection or a huge library.
+ * @type {import('svelte/store').Writable<boolean>} */
+export const autoDownload = writable(readFlag('shared:autoDownload', true));
+
+/** @param {string} key @param {boolean} fallback */
+function readFlag(key, fallback) {
+	try {
+		const raw = localStorage.getItem(key);
+		return raw === null ? fallback : raw === 'true';
+	} catch {
+		return fallback;
+	}
+}
+
+autoShareAll.subscribe((v) => {
+	try {
+		localStorage.setItem('shared:autoShareAll', String(v));
+	} catch {}
+});
+autoDownload.subscribe((v) => {
+	try {
+		localStorage.setItem('shared:autoDownload', String(v));
+	} catch {}
+});
+
 /** May we take this row out of the index? @param {any} row a local record or an index row */
 export function canUnshare(row) {
 	const state = shareStateOf(row);
@@ -550,6 +608,53 @@ export function pullAllShared() {
 	return asked;
 }
 
+/**
+ * R22-R8 (locked answer) — SAVE INTO SESSION: "saves your current project in sessions
+ * and cleans files in explorer, then downloads everything from peers/host".
+ *
+ * The point is CONSISTENCY: stop carrying your own copy of a project and take the
+ * session's, so every peer's Explorer is the same Explorer. The middle step throws away
+ * local files, so the first one saves them into a session that carries the whole library
+ * (`saveSessionWithLibrary`) rather than an ordinary scene snapshot — otherwise the
+ * files a scene does not reference would simply be gone.
+ *
+ * NOTHING IS RE-DOWNLOADED that we would still hold, and that is free rather than
+ * clever: hash-addressing means the pull list is computed AFTER the wipe, so it is
+ * exactly what the session has and this machine does not.
+ *
+ * Behind a confirm, because it is the second destructive file operation in the app and
+ * the first one (`openProject`) set the precedent.
+ * @returns {Promise<{saved: string, cleared: number, pulling: number} | null>}
+ */
+export async function saveIntoSessionAndAdopt() {
+	const { showConfirm } = await import('./confirmDialog');
+	const mine = get(explorerItems).length;
+	const ok = await showConfirm({
+		title: 'Save into session and take the project',
+		message:
+			'Your current scene and all ' +
+			mine +
+			' Explorer file' +
+			(mine === 1 ? '' : 's') +
+			' are saved as a session first, so nothing is lost. Your Explorer is then emptied and refilled from the session — every peer ends up with the same library. Continue?',
+		confirmLabel: 'Save and adopt'
+	});
+	if (!ok) return null;
+	const { saveSessionWithLibrary } = await import('./sessions');
+	const { clearLibrary } = await import('./explorer');
+	const saved = await saveSessionWithLibrary('Before adopting ' + (get(projectManifest).name || 'the session'));
+	if (!saved) {
+		showToast('Could not save a session — nothing was cleared');
+		return null;
+	}
+	await clearLibrary();
+	// the index is UNTOUCHED by the wipe: it is the project's document, not our library,
+	// so every shared row is now a row whose bytes we lack — which is the pull list
+	const pulling = pullAllShared();
+	showToast('Saved "' + saved.name + '" — fetching ' + pulling + ' file' + (pulling === 1 ? '' : 's') + ' from peers');
+	return { saved: saved.name, cleared: mine, pulling };
+}
+
 /** What the connect prompt needs to know: is there anything worth offering?
  * @returns {{local: number, missing: number}} */
 export function bulkCounts() {
@@ -706,6 +811,30 @@ export function applySharedIndex(doc) {
 		(f) => f.share === 'mine' && !docFolders.has(f.id) && !tombed(tombs.folders, f.id)
 	);
 	if (lostItem || lostFolder) publishMine();
+
+	// R22-R8 (user): AUTO-DOWNLOAD. "When I click share, the other peers should
+	// automatically download it — otherwise it adds an extra step for peers to right
+	// click and download." Correct, and it belongs HERE rather than on a message: the
+	// index arriving is the only moment that tells us a file is on offer, and it covers
+	// every route to that state at once — a share, a folder share, a late join, a .tp
+	// open, a peer re-sharing something.
+	//
+	// The queue does the rate limiting (see enqueuePulls), so a folder of two hundred
+	// files does not become two hundred simultaneous requests.
+	if (get(autoDownload)) autoPullMissing();
+}
+
+/** Fetch every shared file this machine lacks, honouring the queue. Silent when there
+ * is nothing to do, which is the common case on every subsequent document. */
+function autoPullMissing() {
+	const rows = remoteSharedRows(get(projectManifest));
+	if (!rows.length) return;
+	// requestAsset, not pullSharedItem: an automatic sweep must respect the dead-hash
+	// mark, or it re-queues an unanswerable file on every index change forever
+	for (const row of rows) {
+		pendingPulls.update((s) => (s.has(row.hash) ? s : new Set([...s, row.hash])));
+		requestAsset(row.hash);
+	}
 }
 
 // ---- inheritance (R3, and the user's rule: a shared folder shares what lands in it)
@@ -750,8 +879,13 @@ function sweepInheritance() {
 			.map((f) => f.id)
 	);
 	const owner = meAsOwner();
+	// R22-R8: `autoShareAll` rides the sweep rather than hooking every import path, for
+	// the same reason folder inheritance does — there are many of those paths and a rule
+	// that only holds on the ones somebody remembered to edit is not a rule.
+	const everything = get(autoShareAll);
+	if (everything) for (const f of get(explorerFolders)) if (!f.share) patchRecord(f.id, { share: 'mine', owner }, 'folder');
 	for (const item of get(explorerItems)) {
-		if (!shared.has(item.folderId ?? '')) continue;
+		if (!everything && !shared.has(item.folderId ?? '')) continue;
 		if (item.share) continue; // 'mine' already, 'peer' theirs, 'no' vetoed
 		patchRecord(item.id, { share: 'mine', owner, wasShared: undefined });
 	}
@@ -863,6 +997,10 @@ export function startSharedLibrary() {
 	if (started) return;
 	started = true;
 	void loadSharedThumbs();
+	// R22-R8: a transfer that goes quiet has to be reaped, or its reassembly buffers and
+	// its queue slot are held forever by a peer that closed the tab. A slow timer, because
+	// the thing it is looking for is measured in tens of seconds.
+	setInterval(sweepStalledTransfers, 5000);
 	explorerItems.subscribe((items) => {
 		settlePulls(items);
 		scheduleSweep();

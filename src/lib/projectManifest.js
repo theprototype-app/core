@@ -72,13 +72,89 @@ export function autoVersionsOff() {
  *   history newest-LAST; the pointer is the last element. `labels` (21-G7) names a
  *   version — absent means every version reads as "Auto", so an older manifest is
  *   byte-unchanged.
+ * @typedef {{id: string, name: string, parentId: string|null, owner?: any, at?: number}} SharedFolder
+ * @typedef {{hash: string, name: string, kind: string, folderId: string|null, owner?: any,
+ *   at?: number}} SharedItem
  * @typedef {{name: string, scenes: Record<string, SceneEntry>, assets: string[],
- *   changedAt: number}} Manifest  `name` (21-G9) is the project's identity
+ *   changedAt: number, folders?: SharedFolder[], items?: SharedItem[]}} Manifest
+ *   `name` (21-G9) is the project's identity; `folders`/`items` (R22-R1) are THE SHARED
+ *   INDEX — see the block comment above normalizeSharedIndex.
  */
 
 /** @returns {Manifest} */
 function defaultManifest() {
 	return { name: '', scenes: {}, assets: [], changedAt: 0 };
+}
+
+/**
+ * R22-R1 — THE SHARED INDEX, normalized.
+ *
+ * WHAT THIS IS. Until R1 the Explorer library did not replicate at ALL: no message
+ * carried folders and none carried item rows, so the project agreed on WHICH SCENES
+ * EXIST and on nothing about where anything lives. These two sections close that, and
+ * they are deliberately the `.tp` FORMAT 2 shape already tested by projectFile.js —
+ * `folders[{id,name,parentId}]` + `items[{hash,name,kind,folderId}]` — promoted from a
+ * file section into the live document. Nothing here is a new format.
+ *
+ * WHAT IT IS NOT. It is not the whole library. A file is LOCAL until somebody shares
+ * it (fork 1, the `objectPermissions.__localOnly` model one domain over), so these
+ * sections carry the SHARED SUBSET only — which is the privacy answer and the size
+ * answer at once: a private file's very name never leaves the machine, and a document
+ * that replicates on every edit does not grow with a library nobody shared.
+ *
+ * TWO IDENTITIES, and they are not the same kind of thing:
+ *   · an ITEM is its content HASH. Two peers holding one file have different local
+ *     record ids and the same hash, so the hash is the only thing a row can be keyed
+ *     by — and it is also why unshare can never destroy a peer's copy (R2).
+ *   · a FOLDER is its `id`, and a shared folder's id becomes NETWORK identity: a peer
+ *     adopting the row creates a local folder with that exact uuid, so every
+ *     `folderId` reference resolves on every machine with no remapping. That is the
+ *     one place this differs from a .tp import, which REMAPS ids precisely because a
+ *     file must not collide with the library it lands in.
+ *
+ * BYTES ARE NOT HERE. They keep riding `assetfile`/`getasset` by content hash — the
+ * push-on-assign, pull-on-demand path from golden rule 9 — so R1 adds no transport. A
+ * row whose bytes this peer lacks renders as a card and pulls when opened, exactly as
+ * a manifest scene already does.
+ *
+ * OMITTED WHEN EMPTY (the `labels` precedent, one field over): a project that shares
+ * nothing serializes byte-identically to a pre-R1 one, which is what makes the whole
+ * batch a no-op until somebody presses Share.
+ * @param {any} rows @param {'folder'|'item'} kind @returns {any[]}
+ */
+function normalizeSharedIndex(rows, kind) {
+	if (!Array.isArray(rows)) return [];
+	/** @type {Map<string, any>} */
+	const byKey = new Map();
+	for (const row of rows) {
+		if (!row || typeof row !== 'object') continue;
+		// the KEY is the identity of the thing, and a row with none is not a row
+		const key = kind === 'item' ? String(row.hash ?? '').trim() : String(row.id ?? '').trim();
+		if (!key) continue;
+		const name = String(row.name ?? '').trim();
+		if (!name) continue;
+		const folderRef = kind === 'item' ? row.folderId : row.parentId;
+		/** @type {any} */
+		// spread FIRST: a newer peer's per-row field must survive a round trip through
+		// this build (the normalizeAnnotation rule, applied per row rather than per doc)
+		const clean = { ...row, name };
+		if (kind === 'item') {
+			clean.hash = key;
+			clean.kind = String(row.kind ?? '').trim() || 'text';
+			clean.folderId = folderRef == null ? null : String(folderRef);
+			delete clean.id; // an item row is keyed by hash; a local record id means nothing here
+		} else {
+			clean.id = key;
+			clean.parentId = folderRef == null ? null : String(folderRef);
+		}
+		const at = Number(row.at);
+		if (Number.isFinite(at) && at > 0) clean.at = at;
+		else delete clean.at;
+		// last row for a key wins, so a document carrying a duplicate collapses rather
+		// than rendering the same file twice
+		byKey.set(key, clean);
+	}
+	return [...byKey.values()];
 }
 
 /**
@@ -120,7 +196,8 @@ export function normalizeManifest(data) {
 		else delete cleanEntry.labels;
 		scenes[clean] = cleanEntry;
 	}
-	return {
+	/** @type {any} */
+	const out = {
 		...data,
 		// 21-G9: the project NAME — the Explorer header's identity, the .tp default
 		// filename and (G8) the import folder name. A plain trimmed string, absent
@@ -130,6 +207,14 @@ export function normalizeManifest(data) {
 		assets: Array.isArray(data.assets) ? [...new Set(data.assets.map(String).filter(Boolean))] : [],
 		changedAt: Number(data.changedAt) || 0
 	};
+	// R22-R1: the shared index. Present only when there IS one — see normalizeSharedIndex
+	const folders = normalizeSharedIndex(data.folders, 'folder');
+	const items = normalizeSharedIndex(data.items, 'item');
+	if (folders.length) out.folders = folders;
+	else delete out.folders;
+	if (items.length) out.items = items;
+	else delete out.items;
+	return out;
 }
 
 /** The live document. @type {import('svelte/store').Writable<Manifest>} */
@@ -152,7 +237,12 @@ export async function loadProjectManifest() {
 	loaded = true;
 	try {
 		const stored = await idbGet(IDB_KEY);
-		if (stored) projectManifest.set(normalizeManifest(stored));
+		if (stored) {
+			projectManifest.set(normalizeManifest(stored));
+			// our own index from last session: the Explorer records carry their own flags,
+			// so this is a no-op reconcile — but a peer's rows we had adopted need re-adopting
+			notifySharedIndex();
+		}
 	} catch {}
 }
 
@@ -310,6 +400,91 @@ export function setVersionLabel(name, hash, label) {
 	return true;
 }
 
+/**
+ * R22-R1 — PUBLISH THE SHARED INDEX. The one write for the two sections, and
+ * deliberately DUMB: it takes the rows it is given and files them. Deciding WHICH rows
+ * (mine, plus the foreign ones this document already carried) belongs to
+ * `sharedLibrary.js`, which can see the Explorer; this module is the leaf that cannot.
+ *
+ * FORK 3, verbatim from publishSceneVersion: an editor writes the project document, a
+ * viewer never does. Refused rather than queued.
+ *
+ * Idempotent on CONTENT, which is what stops the R1 reconcile from becoming a publish
+ * storm: two peers that each re-publish the same converged index write nothing at all,
+ * so the exchange terminates instead of ping-ponging a monotonic stamp forever.
+ * @param {any[]} folders @param {any[]} items
+ * @returns {boolean} did the document change
+ */
+export function publishSharedIndex(folders, items) {
+	if (isViewer()) return false;
+	const m = get(projectManifest);
+	const nextF = normalizeSharedIndex(folders, 'folder');
+	const nextI = normalizeSharedIndex(items, 'item');
+	const same =
+		JSON.stringify(sortedIndex(nextF, 'id')) === JSON.stringify(sortedIndex(m.folders ?? [], 'id')) &&
+		JSON.stringify(sortedIndex(nextI, 'hash')) === JSON.stringify(sortedIndex(m.items ?? [], 'hash'));
+	if (same) return false;
+	commitManifest({ ...m, folders: nextF, items: nextI });
+	return true;
+}
+
+/** A stable ordering for the content compare above — row ORDER is not meaning, so two
+ * indexes differing only in it must compare equal or every receive re-publishes.
+ * @param {any[]} rows @param {string} key */
+function sortedIndex(rows, key) {
+	return [...(rows ?? [])].sort((a, b) => String(a?.[key]).localeCompare(String(b?.[key])));
+}
+
+/** The shared folder rows, or an empty list. @returns {any[]} */
+export function sharedFolderRows() {
+	return get(projectManifest).folders ?? [];
+}
+
+/** The shared item rows, or an empty list. @returns {any[]} */
+export function sharedItemRows() {
+	return get(projectManifest).items ?? [];
+}
+
+/** Is a content hash in the shared index? @param {string} hash @returns {any|null} the row */
+export function sharedRowOf(hash) {
+	const h = String(hash ?? '').trim();
+	if (!h) return null;
+	return (get(projectManifest).items ?? []).find((r) => r.hash === h) ?? null;
+}
+
+/**
+ * R22-R1 — the seam the shared index is APPLIED through. `applyRemoteManifest` runs in
+ * this leaf and the adoption it triggers needs the Explorer (create the folder, look up
+ * the hash, mark the record), so the consumer registers instead: a static edge from here
+ * to sharedLibrary.js would be a cycle straight back into this file.
+ *
+ * The registration/re-apply shape is `registerToneMappingOwner`'s, including its trap —
+ * a register() that re-applies synchronously must sit BELOW every `let` its closure
+ * reads, or the module TDZ-crashes the SSR prerender.
+ * @type {((doc: any) => void) | null} */
+let sharedIndexListener = null;
+/** @param {(doc: any) => void} fn */
+export function registerSharedIndexListener(fn) {
+	sharedIndexListener = fn;
+	try {
+		// re-apply at once: the document may already hold an index (idb load, a manifest
+		// that arrived while this consumer was still being imported)
+		if (manifestInUse()) fn(get(projectManifest));
+	} catch (e) {
+		console.log('shared index apply failed', e);
+	}
+}
+
+/** Fire the seam. Called from every path that INSTALLS a document somebody else wrote
+ * (the wire, a .tp open) — never from our own commit, which the consumer performed. */
+function notifySharedIndex() {
+	try {
+		sharedIndexListener?.(get(projectManifest));
+	} catch (e) {
+		console.log('shared index apply failed', e);
+	}
+}
+
 /** Track an asset the project uses (fork 8: the DISCOVERY list — bytes stay lazy).
  * @param {string[]} hashes */
 export function recordProjectAssets(hashes) {
@@ -387,6 +562,10 @@ export function applyRemoteManifest(data) {
 	if (doc.changedAt < mine.changedAt) return false;
 	projectManifest.set(doc);
 	void persist();
+	// R22-R1: a document somebody else wrote may carry shared rows this machine has not
+	// adopted yet, and may be MISSING rows of ours (two peers sharing inside one
+	// millisecond — whole-document latest-wins drops the loser). The consumer does both.
+	notifySharedIndex();
 	return true;
 }
 
@@ -406,4 +585,6 @@ export function manifestRestore(doc, replicate = false) {
 		return;
 	}
 	commitManifest(normalizeManifest(doc), { replicate });
+	// a .tp open installs somebody else's document, so its index needs adopting too
+	notifySharedIndex();
 }

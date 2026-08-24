@@ -68,8 +68,16 @@ import { ensureScenesFolder, currentLevel } from './levels';
  * bytes hash-deduped across the zip's sections. A format-1 file still reads through
  * the same loops (its missing keys are empty lists — the additive-read rule), and a
  * format-1 READER of a format-2 file still gets what it understands: `scenes/` and
- * `assets/` are written exactly as format 1 wrote them. */
-export const PROJECT_FORMAT = 2;
+ * `assets/` are written exactly as format 1 wrote them.
+ *
+ * FORMAT 3 (R22-R1): the manifest inside `project.json` may now carry THE SHARED INDEX
+ * (`manifest.folders` / `manifest.items` — which peers can see which files). The bytes
+ * and both indexes are unchanged, so why bump at all: an older reader spreads those
+ * unknown manifest keys through verbatim and then PUBLISHES them to its mesh, where
+ * they name folder ids its own import just remapped away — rows nobody can serve. The
+ * gate is exactly the right instrument for that, and `openProject` below remaps the
+ * index rather than carrying the stale ids. */
+export const PROJECT_FORMAT = 3;
 
 /** @param {any} item @returns {string} the item's extension INCLUDING the dot, lowered */
 function extOf(item) {
@@ -560,7 +568,9 @@ function restoreFolderTree(rows, rootId) {
  * @param {{imported?: boolean, duplicates?: string}} [opts] loose-scenes fix: `imported`
  *   stamps provenance on everything written (an IMPORT, never a project-minted save), and
  *   `duplicates: 'ask'` surfaces bytes we already hold instead of deduping in silence
- * @returns {Promise<{scenes: number, assets: number, items: number}>}
+ * @returns {Promise<{scenes: number, assets: number, items: number, remap: Map<string, string>}>}
+ *   `remap` is saved-folder-id -> the fresh local one; R22-R1's shared index is keyed by
+ *   folder id, so the only caller that installs the manifest needs it to fix those rows.
  */
 async function restoreProjectContents(doc, entries, rootId, sceneFolderId, opts = {}) {
 	const remap = restoreFolderTree(doc.folders ?? [], rootId);
@@ -651,7 +661,42 @@ async function restoreProjectContents(doc, entries, rootId, sceneFolderId, opts 
 		scenes++;
 	}
 
-	return { scenes, assets, items };
+	return { scenes, assets, items, remap };
+}
+
+/**
+ * R22-R1: rewrite a file's SHARED INDEX onto the folder ids this machine just minted.
+ * A row whose folder did not survive the restore keeps its file and loses its
+ * placement (folderId null = the library root) rather than being dropped — the whole
+ * point of the index is that somebody said these files may be seen, and a placement we
+ * cannot resolve is no reason to forget that. Item rows are keyed by content HASH, so
+ * they need no remapping at all; only their folder reference does.
+ * @param {any} manifest @param {Map<string, string>} remap @returns {any}
+ */
+function remapSharedIndex(manifest, remap) {
+	if (!manifest || typeof manifest !== 'object') return manifest;
+	const folders = Array.isArray(manifest.folders) ? manifest.folders : null;
+	const items = Array.isArray(manifest.items) ? manifest.items : null;
+	if (!folders && !items) return manifest;
+	const to = (/** @type {any} */ id) => (id == null ? null : (remap.get(String(id)) ?? null));
+	/** @type {any} */
+	const out = { ...manifest };
+	if (folders)
+		out.folders = folders
+			.map((/** @type {any} */ row) => ({ ...row, id: to(row.id), parentId: to(row.parentId) }))
+			// a folder row with no surviving id names nothing at all; its items fall to the root
+			.filter((/** @type {any} */ row) => !!row.id);
+	if (items)
+		out.items = items.map((/** @type {any} */ row) => ({ ...row, folderId: to(row.folderId) }));
+	return out;
+}
+
+/** Test seam for the remap above. It is pure and its inputs (a saved document, a remap
+ * built inside a restore) are both unreachable from outside this module, so the only way
+ * to cover the id rewrite is to hand it the pair directly.
+ * @param {any} manifest @param {Map<string, string>} remap */
+export function __remapSharedIndexForTest(manifest, remap) {
+	return remapSharedIndex(manifest, remap);
 }
 
 /**
@@ -690,7 +735,11 @@ export async function openProject(buffer) {
 	// OPEN wiped the library first, so nothing here can be a duplicate — and its manifest
 	// becomes OURS, so its scene files are project-minted, never imported strangers
 	const counts = await restoreProjectContents(doc, entries, null, null);
-	manifestRestore(doc.manifest, true);
+	// R22-R1: the file's shared index is keyed by the FOLDER IDS the file was written
+	// with, and the restore above minted fresh ones (ids are local identity — a .tp must
+	// never collide with the library it lands in). Carrying them unremapped would adopt
+	// folders that exist nowhere and strand every item row inside them.
+	manifestRestore(remapSharedIndex(doc.manifest, counts.remap), true);
 	// the open scene belongs to no scene of THIS project — a named currentLevel would
 	// let travel-away publish the old world into the new project's history
 	currentLevel.set(null);

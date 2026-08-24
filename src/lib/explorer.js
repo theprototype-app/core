@@ -21,9 +21,30 @@ const INDEX_KEY = 'explorer:index';
 const BLOB_KEY = 'explorer:blob:';
 export const MAX_ITEM_BYTES = 25 * 1024 * 1024;
 
-/** @type {import('svelte/store').Writable<{id: string, name: string, parentId: string | null}[]>} */
+/**
+ * R22-R1 — THE NAMING PASS the plan asked for. Three flags now live on a library
+ * record and they answer three DIFFERENT questions, which is exactly why they read as
+ * confusable and needed settling once:
+ *
+ *   `imported` — PROVENANCE. A person brought these bytes in from outside (21-I1). Says
+ *                nothing about who can see them.
+ *   `share`    — DISTRIBUTION, and the only one that replicates anything:
+ *                  absent  = LOCAL. Nobody else knows this file exists. THE MIGRATION
+ *                            RULE — everything that already existed reads as local for
+ *                            free, which is what makes R1 a no-op until Share is pressed.
+ *                  'mine'  = I publish this row into the project's shared index.
+ *                  'peer'  = the row arrived in the index; somebody else publishes it.
+ *                  'no'    = an explicit VETO. Only meaningful inside a shared folder,
+ *                            where it is what stops the inheritance sweep putting back
+ *                            what the user just unshared.
+ *   `wasShared`— it WAS 'peer' and the row went away. The copy stays (hash-addressing
+ *                means unshare can never reach into a peer's library) and says so.
+ *
+ * `owner` rides beside them: display provenance for a row somebody else published, in
+ * cloudHooks.ownerStamp's three tiers.
+ * @type {import('svelte/store').Writable<{id: string, name: string, parentId: string | null, share?: string, owner?: any, wasShared?: boolean}[]>} */
 export const explorerFolders = writable([]);
-/** @type {import('svelte/store').Writable<{id: string, name: string, kind: string, folderId: string | null, size: number, hash: string, thumbnail: string | null, createdAt: number, imported?: boolean}[]>} */
+/** @type {import('svelte/store').Writable<{id: string, name: string, kind: string, folderId: string | null, size: number, hash: string, thumbnail: string | null, createdAt: number, imported?: boolean, share?: string, owner?: any, wasShared?: boolean}[]>} */
 export const explorerItems = writable([]);
 /**
  * 21-G7 — THE HIDDEN SHELF. Same record shape as `explorerItems`, same idb index
@@ -35,7 +56,9 @@ export const explorerItems = writable([]);
  *
  * Every hash-addressed read (`itemByHash`) therefore searches BOTH lists, which is
  * what keeps every existing call site working on a hidden version with no edit at all.
- * @type {import('svelte/store').Writable<{id: string, name: string, kind: string, folderId: string | null, size: number, hash: string, thumbnail: string | null, createdAt: number, imported?: boolean}[]>}
+ * The record shape is the one `explorerItems` documents — an item MOVES between
+ * the two lists and nothing else about it changes, R22-R1 share flags included.
+ * @type {import('svelte/store').Writable<{id: string, name: string, kind: string, folderId: string | null, size: number, hash: string, thumbnail: string | null, createdAt: number, imported?: boolean, share?: string, owner?: any, wasShared?: boolean}[]>}
  */
 export const hiddenItems = writable([]);
 /** selected folder id, null = library root, 'prefabs' = the virtual prefab folder */
@@ -103,10 +126,26 @@ export function isValidName(name) {
 	return !!name?.trim() && !/[*\\/]/.test(name);
 }
 
-/** @param {string} name @param {string | null=} parentId */
-export function createFolder(name, parentId = null) {
+/**
+ * @param {string} name @param {string | null=} parentId
+ * @param {{id?: string, share?: string, owner?: any}} [meta] R22-R1: a SHARED folder's
+ *   id is network identity — every peer adopting the row must create the folder under
+ *   the SAME uuid so each `folderId` reference resolves everywhere with no remapping.
+ *   (That is the one place this differs from a .tp import, which remaps ids precisely
+ *   because a file must not collide with the library it lands in.) Passing an id that
+ *   is already here is a no-op returning the folder that holds it.
+ */
+export function createFolder(name, parentId = null, meta = {}) {
 	if (!isValidName(name)) return null;
-	const folder = { id: crypto.randomUUID(), name: name.trim(), parentId };
+	const given = String(meta.id ?? '').trim();
+	if (given) {
+		const held = get(explorerFolders).find((f) => f.id === given);
+		if (held) return held;
+	}
+	/** @type {any} */
+	const folder = { id: given || crypto.randomUUID(), name: name.trim(), parentId };
+	if (meta.share) folder.share = meta.share;
+	if (meta.owner) folder.owner = meta.owner;
 	explorerFolders.update((list) => [...list, folder]);
 	persistIndex();
 	return folder;
@@ -179,6 +218,41 @@ export async function clearLibrary() {
 	activeFolder.set(null);
 	for (const item of doomed) await idbDelete(BLOB_KEY + item.id);
 	await persistIndex();
+}
+
+/**
+ * R22-R1: patch fields on a library record. The ONE write path for the share flags,
+ * so `sharedLibrary.js` never reaches into the store shape itself — and undefined in
+ * the patch DELETES the key, which is what keeps 'absent = local' expressible (a
+ * record carrying `share: undefined` is not the same document as one carrying nothing,
+ * and only the second one serializes byte-identically to a pre-R1 index).
+ * @param {string} id @param {Record<string, any>} patch
+ * @param {'item'|'folder'} [which]
+ * @returns {boolean} did anything change
+ */
+export function patchRecord(id, patch, which = 'item') {
+	const store = which === 'folder' ? explorerFolders : explorerItems;
+	let changed = false;
+	store.update((list) =>
+		/** @type {any} */ (list).map((/** @type {any} */ row) => {
+			if (row.id !== id) return row;
+			const next = { ...row };
+			for (const [k, v] of Object.entries(patch)) {
+				if (v === undefined) {
+					if (k in next) {
+						delete next[k];
+						changed = true;
+					}
+				} else if (next[k] !== v) {
+					next[k] = v;
+					changed = true;
+				}
+			}
+			return changed ? next : row;
+		})
+	);
+	if (changed) persistIndex();
+	return changed;
 }
 
 /** @param {string} itemId @param {string | null} folderId */

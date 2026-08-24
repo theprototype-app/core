@@ -22,7 +22,7 @@ import { sessionHost, markPeerJoined, resetSession } from '$lib/connectionState'
 import { canApply, getAuthProvider, dispatchCloudMessage, rolesInfo } from '$lib/cloudHooks';
 import { applyAnnotation, applyAnnotationsSnapshot, sendAnnotations } from '$lib/annotationsHandler';
 import { applyPing } from '$lib/ping';
-import { applyAssetFile, answerAssetRequest, applyAssetThumb, answerAssetThumbRequest, applyAssetStart, applyAssetChunk } from '$lib/assetShare';
+import { applyAssetFile, answerAssetRequest, applyAssetThumb, answerAssetThumbRequest, applyAssetStart, applyAssetChunk, applyAssetMissing } from '$lib/assetShare';
 import { applyRemoteCameraPreview, clearPeerPreview, sendCameraPreviewState } from '$lib/cameraPreview';
 // 21-F3: play-mode PRESENCE, the campreview shape — a tiny per-peer message, a reply
 // riding the getmodulestate request, and a drop on disconnect (golden rule 3).
@@ -625,6 +625,10 @@ export class PeerConnection {
 				} else if(data.type == 'assetfile') {
 					// shared Explorer bytes (97) — dedup by content hash
 					applyAssetFile(data);
+				} else if(data.type == 'assetmissing') {
+					// R22-R8: "I do not have that hash." When every peer has said so the pull is
+					// resolved immediately instead of waiting out a timeout.
+					applyAssetMissing(conn.peer, data);
 				} else if(data.type == 'assetstart') {
 					// R22-R8: a sliced transfer is announced, then its slices arrive. Chunking is
 					// what makes per-file progress and an integrity check possible — peerjs chunks

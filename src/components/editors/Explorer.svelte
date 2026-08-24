@@ -72,7 +72,12 @@
 		pendingPulls,
 		sharedIndexInUse,
 		unshareHash,
-		canUnshare
+		canUnshare,
+		deleteSharedItem,
+		deletedLog,
+		canRestoreDeleted,
+		restoreDeletedItem,
+		purgeDeletedItem
 	} from '$lib/sharedLibrary';
 	// R22 round 2: a shared file's PICTURE travels on its own tiny channel, so a card can
 	// show a thumbnail before anybody downloads the bytes (see assetShare).
@@ -705,6 +710,23 @@
 			return $openPackItems.map((it) => ({ ...it, packEntry: true, id: it.id ?? `pack:${it.packName}:${it.name}` }));
 		}
 		// the Scene manifest (108): a derived, always-shared view — never editable
+		// R22 round 4: THE RECYCLE BIN, a derived view like the Scene manifest — the log is
+		// the truth and these cards are a reading of it, so there is no CRUD to keep in step.
+		if ($activeFolder === 'deleted') {
+			return deletedLog($projectManifest).map((r: any) => ({
+				id: 'deleted:' + r.hash,
+				name: r.name,
+				kind: r.kind || 'text',
+				hash: r.hash,
+				folderId: null,
+				size: 0,
+				thumbnail: null,
+				createdAt: r.at,
+				owner: r.by ?? null,
+				deletedEntry: true,
+				restorable: canRestoreDeleted(r.hash)
+			}));
+		}
 		if (typeof $activeFolder === 'string' && $activeFolder.startsWith('scene')) {
 			const group = $activeFolder.split(':')[1] ?? null;
 			return $sceneAssets
@@ -1964,6 +1986,51 @@
 			prefabMenu(e, item);
 			return;
 		}
+		// R22 round 4: a row in the recycle bin. Restore is offered only when the bytes are
+		// actually here — the documented rule about not offering a gesture that cannot work.
+		if (item.deletedEntry) {
+			const who = ownerLabel(item);
+			menu = {
+				x: e.clientX,
+				y: e.clientY,
+				items: [
+					item.restorable
+						? {
+								label: 'Restore',
+								icon: 'rotate-ccw',
+								tooltip: 'Put it back in the project and share it again',
+								action: () => {
+									restoreDeletedItem(item.hash);
+									showToast('Restored ' + item.name);
+								}
+							}
+						: {
+								label: 'Nobody here holds the bytes',
+								tooltip:
+									'This machine emptied its copy. A peer that still has it can restore it.',
+								action: () => {}
+							},
+					...(item.restorable
+						? [
+								{
+									label: 'Delete permanently',
+									danger: true,
+									tooltip: 'Free the disk on THIS machine. Peers keep their own copies.',
+									action: () => {
+										void purgeDeletedItem(item.hash);
+										showToast(item.name + ' removed from this device');
+									}
+								}
+							]
+						: []),
+					{
+						label: 'Deleted by ' + (who || 'someone') + ' · ' + new Date(item.createdAt).toLocaleString(),
+						action: () => {}
+					}
+				]
+			};
+			return;
+		}
 		if (item.sceneEntry) return; // the Scene manifest IS a derived view — no CRUD
 		// P2a: so is a project scene we do not hold — there is no record to rename or
 		// delete here, only a scene to open. One entry, and it says what it will do.
@@ -2141,7 +2208,21 @@
 					label: 'Rename',
 					action: () => startRenameItem(item)
 				},
-				{ label: 'Delete', danger: true, action: () => deleteItem(item.id) }
+				// R22 round 4: deleting a SHARED file removes it from the project for everyone,
+				// and every peer's copy goes to their recycle bin rather than being destroyed.
+				// A LOCAL file keeps the plain delete — there is nobody else to tell.
+				isShared(item)
+					? {
+							label: 'Delete for everyone',
+							danger: true,
+							tooltip:
+								'Removes it from the project. Every copy moves to Deleted files, where it can be restored.',
+							action: () => {
+								deleteSharedItem(item.id);
+								showToast(item.name + ' deleted for everyone — restore it from Deleted files');
+							}
+						}
+					: { label: 'Delete', danger: true, action: () => deleteItem(item.id) }
 			]
 		};
 	}
@@ -3080,6 +3161,20 @@
 						{#if shownPacks.length === 0}
 							<span class="px-2 py-1 text-[10px] italic text-gray-500" style="padding-left: 22px">No packs</span>
 						{/if}
+					{/if}
+					<!-- R22 round 4: the recycle bin, pinned beside Scene. Hidden while empty:
+					     a bin nobody has put anything in is a row that only takes up space. -->
+					{#if deletedLog($projectManifest).length}
+						<button
+							id="deleted-folder"
+							class="whitespace-nowrap rounded px-2 py-1 text-left {$activeFolder === 'deleted'
+								? 'bg-primary-700 text-white'
+								: 'text-gray-300 hover:bg-gray-700'}"
+							title="Files removed from the project — restore them, or free the disk"
+							onclick={() => openFolder('deleted')}
+							><Icon name="trash-2" size={16} class="mr-1.5 w-4 text-center text-gray-400" aria-hidden="true" />Deleted
+							<span class="text-gray-500">({deletedLog($projectManifest).length})</span></button
+						>
 					{/if}
 					<button
 						id="scene-folder"

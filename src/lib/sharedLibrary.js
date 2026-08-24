@@ -78,7 +78,8 @@ import {
 	createFolder,
 	patchRecord,
 	folderSubtree,
-	itemByHash
+	itemByHash,
+	setItemHidden
 } from './explorer';
 import {
 	projectManifest,
@@ -173,7 +174,7 @@ export function pullSharedItem(hash) {
  * to the shared tree, plus every foreign row the document already carried (rule 1 in
  * the header — a publish of ours may never be the thing that drops somebody else's
  * file).
- * @returns {{folders: any[], items: any[], removed: any}}
+ * @returns {{folders: any[], items: any[], removed: any, deleted: any[]}}
  */
 function projection() {
 	const doc = get(projectManifest);
@@ -292,7 +293,9 @@ function projection() {
 	return {
 		folders: folders.filter((r) => live(r, tombF, 'id')),
 		items: items.filter((r) => live(r, tombI, 'hash')),
-		removed: pruneTombs({ folders: { ...tombF }, items: { ...tombI } }, folders, items)
+		removed: pruneTombs({ folders: { ...tombF }, items: { ...tombI } }, folders, items),
+		// carried through verbatim: an ordinary publish is not a statement about deletions
+		deleted: doc.deleted ?? []
 	};
 }
 
@@ -331,13 +334,13 @@ export function publishMine(now = false) {
 		publishTimer = null;
 	}
 	if (now) {
-		const { folders, items, removed } = projection();
-		return publishSharedIndex(folders, items, removed);
+		const { folders, items, removed, deleted } = projection();
+		return publishSharedIndex(folders, items, removed, deleted);
 	}
 	publishTimer = setTimeout(() => {
 		publishTimer = null;
-		const { folders, items, removed } = projection();
-		publishSharedIndex(folders, items, removed);
+		const { folders, items, removed, deleted } = projection();
+		publishSharedIndex(folders, items, removed, deleted);
 	}, 150);
 	return true;
 }
@@ -444,7 +447,7 @@ function tomb(keys) {
 	// explicitly rather than publishing a stale removal set
 	const liveF = folders.filter((r) => !(r.id in next.folders) || (Number(r.at) || 0) > next.folders[r.id]);
 	const liveI = items.filter((r) => !(r.hash in next.items) || (Number(r.at) || 0) > next.items[r.hash]);
-	publishSharedIndex(liveF, liveI, next);
+	publishSharedIndex(liveF, liveI, next, get(projectManifest).deleted ?? []);
 }
 
 /** Lift a tombstone: a re-share is a decision and must not be vetoed by an old removal.
@@ -468,8 +471,8 @@ function untomb(keys) {
 			changed = true;
 		}
 	if (!changed) return;
-	const { folders, items } = projection();
-	publishSharedIndex(folders, items, next);
+	const { folders, items, deleted } = projection();
+	publishSharedIndex(folders, items, next, deleted);
 }
 
 /**
@@ -664,6 +667,108 @@ export function bulkCounts() {
 	};
 }
 
+/**
+ * R22 round 4 (locked answer) — DELETE REACHES EVERY PEER, AND IS UNDOABLE.
+ *
+ * Deleting a SHARED file is not the same act as unsharing one. Unshare says "stop
+ * offering this" and is explicitly forbidden from touching a peer's copy; delete says
+ * "this is not part of the project", and leaving it sitting in everybody else's library
+ * is exactly the inconsistency this batch exists to close.
+ *
+ * WHAT IT DOES NOT DO IS DESTROY BYTES ON ANOTHER MACHINE. Each peer moves its copy to
+ * the HIDDEN shelf — the same `setItemHidden` that carries a scene's old versions, which
+ * moves a record and never touches its blob — so Restore works from your own disk and
+ * needs nobody's cooperation. "Delete permanently" is a separate, local, deliberate act.
+ *
+ * The LOG is what makes that discoverable: a deletion you cannot see is a deletion you
+ * cannot undo.
+ * @param {string} id a VISIBLE library item id @returns {boolean}
+ */
+export function deleteSharedItem(id) {
+	const item = get(explorerItems).find((i) => i.id === id);
+	if (!item) return false;
+	const doc = get(projectManifest);
+	const log = [...(doc.deleted ?? []).filter((/** @type {any} */ r) => r.hash !== item.hash)];
+	log.push({
+		hash: item.hash,
+		name: item.name,
+		kind: item.kind,
+		at: Date.now(),
+		by: meAsOwner()
+	});
+	// off the visible shelf, bytes intact
+	setItemHidden(item.id, true);
+	patchRecord(item.id, { share: 'no', owner: undefined, wasShared: undefined });
+	// ...and out of the index for everybody, through the tombstone that already exists
+	const { folders, items } = projection();
+	const tombs = {
+		items: { ...((doc.removed ?? {}).items ?? {}), [item.hash]: Date.now() },
+		folders: { ...((doc.removed ?? {}).folders ?? {}) }
+	};
+	publishSharedIndex(
+		folders,
+		items.filter((/** @type {any} */ r) => r.hash !== item.hash),
+		tombs,
+		log
+	);
+	return true;
+}
+
+/** The deleted log, newest first — what the Explorer's Deleted view lists.
+ * @param {any} [manifest] pass `$projectManifest` from a component (the reactivity rule)
+ * @returns {any[]} */
+export function deletedLog(manifest) {
+	const m = manifest ?? get(projectManifest);
+	return [...(m.deleted ?? [])].reverse();
+}
+
+/** Do we still hold the bytes of a deleted file? Restore is only offered when we do —
+ * see the header: a button that cannot work is worse than no button.
+ * @param {string} hash */
+export function canRestoreDeleted(hash) {
+	return !!itemByHash(hash);
+}
+
+/**
+ * Put a deleted file back: on the visible shelf, out of the log, and shared again — it
+ * was a shared file when it was deleted, so restoring it as a private one would be a
+ * different act wearing the same word.
+ * @param {string} hash @returns {boolean}
+ */
+export function restoreDeletedItem(hash) {
+	const h = String(hash ?? '').trim();
+	const item = itemByHash(h);
+	if (!item) return false;
+	setItemHidden(item.id, false);
+	const doc = get(projectManifest);
+	const log = (doc.deleted ?? []).filter((/** @type {any} */ r) => r.hash !== h);
+	patchRecord(item.id, { share: 'mine', owner: meAsOwner(), wasShared: undefined });
+	// lift the tombstone too, or the row we are about to publish is filtered straight out
+	const tombs = {
+		items: { ...((doc.removed ?? {}).items ?? {}) },
+		folders: { ...((doc.removed ?? {}).folders ?? {}) }
+	};
+	delete tombs.items[h];
+	const { folders, items } = projection();
+	publishSharedIndex(folders, items, tombs, log);
+	sendAssetThumb(h);
+	return true;
+}
+
+/**
+ * Reclaim the disk. LOCAL and deliberate: the recycle bin exists so a delete is
+ * reversible, and emptying it is the one moment somebody has actually said they want the
+ * bytes gone. It leaves the log entry, because "this was deleted" stays true.
+ * @param {string} hash @returns {Promise<boolean>}
+ */
+export async function purgeDeletedItem(hash) {
+	const item = itemByHash(String(hash ?? '').trim());
+	if (!item) return false;
+	const { deleteItem } = await import('./explorer');
+	await deleteItem(item.id);
+	return true;
+}
+
 /** Is this record shared, and by whom? @param {any} row
  * @returns {{shared: boolean, mine: boolean, owner: any}} */
 export function shareStateOf(row) {
@@ -779,6 +884,16 @@ export function applySharedIndex(doc) {
 			: null;
 		if ((item.folderId ?? null) !== dest) patch.folderId = dest;
 		patchRecord(item.id, patch);
+	}
+
+	// R22 round 4: a DELETION somebody else performed. Our copy goes to the hidden shelf
+	// — bytes intact, so Restore works from this machine alone — rather than being
+	// destroyed, which is the difference between a recycle bin and a remote wipe.
+	for (const row of doc?.deleted ?? []) {
+		const held = get(explorerItems).find((i) => i.hash === row.hash);
+		if (!held) continue;
+		setItemHidden(held.id, true);
+		patchRecord(held.id, { share: 'no', owner: undefined, wasShared: undefined });
 	}
 
 	// 3. what left the index

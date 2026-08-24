@@ -142,15 +142,24 @@ export async function applyAssetFile(data) {
  * @param {string} peerId @param {any} data
  */
 export async function answerAssetRequest(peerId, data) {
-	const item = itemByHash(data?.hash);
-	if (!item) return; // another peer may hold it
 	/** @type {any} */
 	const peer = get(peers);
 	const conn = peer?.connections?.[peerId];
 	if (!conn?.open) return;
-	const blob = await itemBlob(item.id);
-	if (!blob || blob.size > MAX_SHARED_BYTES) return;
-	await sendSliced(conn, item, blob, peerId);
+	const item = itemByHash(data?.hash);
+	const blob = item ? await itemBlob(item.id) : null;
+	// R22-R8 (round 4): SAY NO. Silence used to be the only answer for a hash we do not
+	// hold, so the asker had to discover it with a timer — and could not tell "nobody
+	// has this" from "the one peer who has it is slow". One tiny message removes the
+	// guess entirely.
+	if (!blob || blob.size > MAX_SHARED_BYTES) {
+		conn.send({ type: 'assetmissing', hash: String(data?.hash ?? '') });
+		return;
+	}
+	// ...and QUEUE the send: the cap belongs on outgoing bytes, which is the only
+	// scarce thing here, rather than on the asker's questions
+	sendQueue.push({ conn, item, blob, peerId });
+	pumpSendQueue();
 }
 
 // ---- R22 round 2: THUMBNAILS TRAVEL --------------------------------------------
@@ -345,18 +354,37 @@ const DEAD_MS = 45000;
 /** keep the DataChannel buffer under this before queueing another slice */
 const BUFFER_HIGH = 4 * 1024 * 1024;
 
-/** how many files we pull at once. A folder share can name two hundred, and two hundred
- * simultaneous requests is a way to make every one of them slow. */
-const MAX_CONCURRENT_PULLS = 3;
+/**
+ * R22-R8 (round 4) — TWO CAPS, BECAUSE THERE ARE TWO SCARCE THINGS, and conflating them
+ * is what caused the starvation bug.
+ *
+ * A REQUEST is about forty bytes. Capping requests to limit bandwidth was always aiming
+ * at the wrong object: it meant a hash nobody could answer occupied one of three slots
+ * until a timer expired, so three dead hashes stopped every real download behind them.
+ * Requests are now unlimited — asking two hundred questions at once costs 8 KB.
+ *
+ * What is actually scarce is a SENDER's outgoing bandwidth, so the cap moved to where
+ * the bytes are: `answerAssetRequest` queues, and at most SEND_CONCURRENCY files stream
+ * at a time. That is also the only place it can work — a receiver cannot cap what a
+ * sender chooses to push at it.
+ */
+const SEND_CONCURRENCY = 3;
 
 /** hash -> reassembly state @type {Map<string, {name: string, size: number, chunks: number,
  *  parts: (Uint8Array|null)[], have: number, bytes: number, tx: string, at: number}>} */
 const incoming = new Map();
 
-/** hashes queued for pulling but not yet asked for @type {string[]} */
-let pullQueue = [];
-/** hashes we have asked for and not yet resolved @type {Map<string, string>} hash -> tx id */
+/**
+ * Hashes we have asked for and not yet resolved. `waiting` is the set of peers that have
+ * neither sent the file nor said they lack it — when it EMPTIES, every peer has answered
+ * "no" and the pull is dead in milliseconds rather than on a six-second guess.
+ * @type {Map<string, {tx: string, waiting: Set<string>}>} */
 const pullsInFlight = new Map();
+
+/** outgoing sends waiting for a slot @type {{conn: any, item: any, blob: Blob, peerId: string}[]} */
+let sendQueue = [];
+/** how many `sendSliced` calls are running right now */
+let sending = 0;
 
 /** Wait for the send buffer to drain enough. Resolves immediately when the channel does
  * not expose one (a stubbed conn in a test, a future transport).
@@ -485,7 +513,8 @@ export function sweepStalledTransfers() {
 			pendingRequests.delete(hash);
 			settlePull(hash);
 		}
-	for (const [hash, tx] of [...pullsInFlight]) {
+	for (const [hash, state] of [...pullsInFlight]) {
+		const tx = state.tx;
 		const row = get(transfers).find((t) => t.id === tx);
 		// 'queued' means the request went out and not one byte came back, so REQUEST_MS
 		// applies; a row that reached 'active' is mid-transfer and gets the stall window
@@ -499,29 +528,58 @@ export function sweepStalledTransfers() {
 	for (const [hash, at] of [...deadHashes]) if (now - at > DEAD_MS) deadHashes.delete(hash);
 }
 
-/** One pull resolved (or died) — let the next in the queue go. @param {string} hash */
+/** One pull resolved (or died). @param {string} hash */
 function settlePull(hash) {
 	pullsInFlight.delete(hash);
-	pumpPullQueue();
 }
 
-/** Ask for as many queued hashes as the concurrency cap allows. */
-function pumpPullQueue() {
+/** Ask every open peer for one hash. No cap: see SEND_CONCURRENCY. @param {string} hash */
+function askFor(hash) {
 	/** @type {any} */
 	const peer = get(peers);
-	if (!peer) return;
-	while (pullQueue.length && pullsInFlight.size < MAX_CONCURRENT_PULLS) {
-		const hash = /** @type {string} */ (pullQueue.shift());
-		if (itemByHash(hash) || pullsInFlight.has(hash)) continue;
-		const item = sharedRowFor(hash);
-		const tx = beginTransfer({
-			hash,
-			name: item?.name ?? hash,
-			dir: 'in',
-			size: Number(item?.size) || 0
+	if (!peer || pullsInFlight.has(hash) || itemByHash(hash)) return;
+	const open = Object.entries(peer.connections ?? {}).filter(
+		([, c]) => /** @type {any} */ (c)?.open
+	);
+	if (!open.length) return;
+	const row = sharedRowFor(hash);
+	const tx = beginTransfer({
+		hash,
+		name: row?.name ?? hash,
+		dir: 'in',
+		size: Number(row?.size) || 0
+	});
+	pullsInFlight.set(hash, { tx, waiting: new Set(open.map(([id]) => id)) });
+	for (const [, conn] of open) /** @type {any} */ (conn).send({ type: 'getasset', hash });
+}
+
+/**
+ * A peer says it does not hold a hash. When the LAST one says so the pull is over, and
+ * we know it rather than waiting to find out — which is the difference between a file
+ * that is genuinely gone and one whose only holder is slow.
+ * @param {string} peerId @param {any} data
+ */
+export function applyAssetMissing(peerId, data) {
+	const hash = String(data?.hash ?? '').trim();
+	const state = hash ? pullsInFlight.get(hash) : null;
+	if (!state) return;
+	state.waiting.delete(String(peerId));
+	if (state.waiting.size) return; // somebody may still answer
+	failTransfer(state.tx, 'no peer has this file');
+	pendingRequests.delete(hash);
+	deadHashes.set(hash, Date.now());
+	settlePull(hash);
+}
+
+/** Run queued sends up to the cap. @returns {void} */
+function pumpSendQueue() {
+	while (sending < SEND_CONCURRENCY && sendQueue.length) {
+		const job = /** @type {any} */ (sendQueue.shift());
+		sending++;
+		void sendSliced(job.conn, job.item, job.blob, job.peerId).finally(() => {
+			sending--;
+			pumpSendQueue();
 		});
-		pullsInFlight.set(hash, tx);
-		peer.send({ type: 'getasset', hash });
 	}
 }
 
@@ -537,12 +595,11 @@ function sharedRowFor(hash) {
  * into two hundred simultaneous requests. @param {string} hash */
 export function enqueuePull(hash) {
 	const h = String(hash ?? '').trim();
-	if (!h || itemByHash(h) || pullsInFlight.has(h) || pullQueue.includes(h)) return false;
+	if (!h || itemByHash(h) || pullsInFlight.has(h)) return false;
 	// a hash we recently gave up on stays out of the queue, or auto-download re-queues it
 	// on every index change and the loop occupies the slot it is starving
 	if (deadHashes.has(h)) return false;
-	pullQueue.push(h);
-	pumpPullQueue();
+	askFor(h);
 	return true;
 }
 
@@ -553,7 +610,7 @@ export function reviveHash(hash) {
 	pendingRequests.delete(String(hash ?? '').trim());
 }
 
-/** How many pulls are waiting or running — the popover's "files left". */
+/** How many pulls are outstanding — the popover's "files left". */
 export function pullBacklog() {
-	return pullQueue.length + pullsInFlight.size;
+	return pullsInFlight.size;
 }

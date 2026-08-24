@@ -113,7 +113,12 @@ h.run(async () => {
 	// assertion can look. That is the feature working, so the fix is to reach the state
 	// the same way a user would (the setting) rather than through a test-only door.
 	// Section 31 turns it back on, where it is the thing under test.
-	await B.page.evaluate(() => window.__stores.sharedLibrary.autoDownload.set(false));
+	//
+	// BOTH peers: round 4 made the pull structural (a request no longer waits for a queue
+	// slot), which made auto-download fast enough to beat the observation on A as well —
+	// the derived card was gone before the check could look at it.
+	for (const peer of [A, B])
+		await peer.page.evaluate(() => window.__stores.sharedLibrary.autoDownload.set(false));
 
 	// ---- 2. share one item: the row, the owner, the wire ---------------------------
 	await A.page.evaluate((id) => window.__stores.sharedLibrary.shareItem(id), f1.id);
@@ -900,7 +905,8 @@ h.run(async () => {
 	// single 12 MB message has been measured going through intact) — it is that per-file
 	// progress and an integrity check are impossible without slicing it ourselves.
 	// back ON: from here it is the subject rather than a nuisance
-	await B.page.evaluate(() => window.__stores.sharedLibrary.autoDownload.set(true));
+	for (const peer of [A, B])
+		await peer.page.evaluate(() => window.__stores.sharedLibrary.autoDownload.set(true));
 	await B.page.waitForTimeout(300);
 	const bigHash = await A.page.evaluate(async () => {
 		// deterministic content well over the chunk size, so it MUST be sliced
@@ -1080,6 +1086,186 @@ h.run(async () => {
 	const logText = await A.page.locator('.tx-log').first().innerText();
 	h.check(/probe\.bin/.test(logText), 'and the pane lists the row');
 	await A.page.evaluate(() => window.__stores.transferLedger.clearFinished());
+
+	// ================================================================================
+	// ROUND 4 — the R8 starvation fix made structural, and delete-for-everyone.
+
+	// ---- 37. a dead hash resolves by ANSWER, not by timer -------------------------
+	//
+	// The first fix was a 6s fuse plus a dead-hash mark, which worked and left the app
+	// unable to tell "nobody has this" from "the one peer who has it is slow". A peer that
+	// lacks a hash now says so, and when the LAST one says so the pull is over.
+	const t0 = Date.now();
+	await B.page.evaluate(() => window.__stores.sharedLibrary.pullSharedItem('deadbeef'.repeat(8)));
+	await h.eventually(
+		() =>
+			B.page.evaluate(() => {
+				let v;
+				window.__stores.transferLedger.transfers.subscribe((x) => (v = x))();
+				return v.filter((t) => t.hash === 'deadbeef'.repeat(8)).map((t) => t.state);
+			}),
+		(states) => states.includes('failed'),
+		'a hash nobody holds fails instead of hanging'
+	);
+	const deadMs = Date.now() - t0;
+	// the OLD behaviour was a 6000ms fuse; anything near that means the negative reply is
+	// not being used and the timer is doing the work
+	h.check(deadMs < 4000, `and it resolves by REPLY rather than by timeout (${deadMs}ms, fuse is 6000ms)`);
+
+	// ---- 38. ...and a dead hash blocks nothing behind it --------------------------
+	//
+	// THE STARVATION BUG, asserted directly: requests are unlimited now (they are ~40
+	// bytes), and the cap moved to the SENDER's outgoing bytes, which is the only scarce
+	// thing. Ask for several files nobody has, then a real one, and the real one must not
+	// wait for them.
+	await B.page.evaluate(() => {
+		const sl = window.__stores.sharedLibrary;
+		for (let i = 0; i < 6; i++) sl.pullSharedItem(('face' + i).padEnd(64, '0'));
+	});
+	const realFile = await A.page.evaluate(async () => {
+		const item = await window.__stores.explorer.addItemFromBytes(
+			new TextEncoder().encode('behind the dead ones').buffer,
+			'notblocked.txt',
+			null
+		);
+		window.__stores.sharedLibrary.shareItem(item.id);
+		window.__stores.sharedLibrary.publishMine(true);
+		return item.hash;
+	});
+	const t1 = Date.now();
+	await h.eventually(
+		() => itemsOf(B),
+		(items) => items.some((i) => i.hash === realFile),
+		'a real download runs while six unanswerable pulls are outstanding'
+	);
+	const throughMs = Date.now() - t1;
+	h.check(throughMs < 5000,
+		`and it is not queued behind them (${throughMs}ms — the old cap would have held it for the full fuse)`);
+
+	// ---- 39. DELETE reaches every peer, and never destroys their bytes ------------
+	const victimFile = await A.page.evaluate(async () => {
+		const item = await window.__stores.explorer.addItemFromBytes(
+			new TextEncoder().encode('this one gets deleted').buffer,
+			'doomed.txt',
+			null
+		);
+		window.__stores.sharedLibrary.shareItem(item.id);
+		window.__stores.sharedLibrary.publishMine(true);
+		return { id: item.id, hash: item.hash };
+	});
+	await h.eventually(
+		() => itemsOf(B),
+		(items) => items.some((i) => i.hash === victimFile.hash),
+		'the peer downloads it'
+	);
+
+	await A.page.evaluate((id) => window.__stores.sharedLibrary.deleteSharedItem(id), victimFile.id);
+	await h.eventually(
+		() => manifestOf(B),
+		(m) => (m.deleted ?? []).some((r) => r.hash === victimFile.hash),
+		'deleting a shared file writes a DELETED LOG entry every peer receives'
+	);
+	await h.eventually(
+		() => itemsOf(B),
+		(items) => items.every((i) => i.hash !== victimFile.hash),
+		"...and the peer's card goes away"
+	);
+	// THE GUARANTEE: the bytes are still on the peer's disk, on the hidden shelf
+	const stillHeld = await B.page.evaluate(async (hash) => {
+		const item = window.__stores.explorer.itemByHash(hash);
+		const blob = item ? await window.__stores.explorer.itemBlob(item.id) : null;
+		return { held: !!item, bytes: blob ? blob.size : -1 };
+	}, victimFile.hash);
+	h.check(stillHeld.held && stillHeld.bytes > 0,
+		`but the BYTES are untouched — a delete is a recycle bin, not a remote wipe (${JSON.stringify(stillHeld)})`);
+	h.check(
+		await B.page.evaluate((hash) => window.__stores.sharedLibrary.canRestoreDeleted(hash), victimFile.hash),
+		'so the peer can restore it from its own disk, with nobody else involved'
+	);
+	const logRow = (await manifestOf(B)).deleted.find((r) => r.hash === victimFile.hash);
+	h.check(!!logRow?.by?.id && logRow.name === 'doomed.txt' && logRow.at > 0,
+		`the log says what, who and when (${JSON.stringify(logRow)})`);
+
+	// ---- 40. RESTORE puts it back for everyone -----------------------------------
+	await B.page.evaluate((hash) => window.__stores.sharedLibrary.restoreDeletedItem(hash), victimFile.hash);
+	await h.eventually(
+		() => manifestOf(A),
+		(m) =>
+			(m.items ?? []).some((r) => r.hash === victimFile.hash) &&
+			!(m.deleted ?? []).some((r) => r.hash === victimFile.hash),
+		'restoring re-publishes the row AND clears the log entry'
+	);
+	await h.eventually(
+		() => itemsOf(B),
+		(items) => items.find((i) => i.hash === victimFile.hash)?.share === 'mine',
+		'the restorer becomes its publisher — it was shared when it was deleted'
+	);
+	// the tombstone has to be lifted too, or the row we just published is filtered out
+	h.check(!(await manifestOf(A)).removed?.items?.[victimFile.hash],
+		'and the tombstone is lifted, so the restored row survives the next publish');
+
+	// ---- 41. the Deleted view, driven through the real UI -------------------------
+	const gone = await A.page.evaluate(async () => {
+		const item = await window.__stores.explorer.addItemFromBytes(
+			new TextEncoder().encode('for the recycle bin view').buffer,
+			'binview.txt',
+			null
+		);
+		const sl = window.__stores.sharedLibrary;
+		sl.shareItem(item.id);
+		sl.publishMine(true);
+		sl.deleteSharedItem(item.id);
+		return item.hash;
+	});
+	await A.page.waitForTimeout(700);
+	h.check((await A.page.locator('#deleted-folder').count()) === 1,
+		'a Deleted row appears in the tree once something is in the bin');
+	await A.page.locator('#deleted-folder').click();
+	await A.page.waitForTimeout(500);
+	const binCard = A.page.locator('[data-card-id="deleted:' + gone + '"]');
+	h.check((await binCard.count()) === 1, 'the deleted file is listed there');
+	await binCard.click({ button: 'right' });
+	await A.page.waitForTimeout(300);
+	const binMenu = await A.page.locator('[role=menu]').first().innerText();
+	h.check(/Restore/.test(binMenu), 'with a Restore that works, because the bytes are still here');
+	h.check(/Delete permanently/.test(binMenu), 'and a permanent delete for reclaiming the disk');
+	h.check(/Deleted by/.test(binMenu), 'and it names who deleted it and when');
+	await A.page.locator('[role=menu]').getByText('Restore', { exact: true }).first().click();
+	await h.eventually(
+		() => manifestOf(A),
+		(m) => !(m.deleted ?? []).some((r) => r.hash === gone),
+		'Restore from the menu empties it out of the bin'
+	);
+	await A.page.evaluate(() => window.__stores.explorer.activeFolder.set(null));
+	await A.page.waitForTimeout(300);
+
+	// ---- 42. a LOCAL file keeps the plain delete ---------------------------------
+	//
+	// There is nobody to tell, so "Delete for everyone" would be a claim about an audience
+	// that does not exist.
+	// in its OWN folder, so the card renders first — top-left of an otherwise empty grid.
+	// By this point the root holds a couple of dozen cards, and the last one lands under the
+	// Controls HUD in the bottom-right, where playwright correctly refuses to click it
+	// (measured: a `Rotate (2)` toolbar button intercepting the press).
+	const localFile = await A.page.evaluate(async () => {
+		const e = window.__stores.explorer;
+		const folder = e.createFolder('Local corner', null);
+		const item = await e.addItemFromBytes(
+			new TextEncoder().encode('mine alone').buffer,
+			'localonly.txt',
+			folder.id
+		);
+		e.activeFolder.set(folder.id);
+		return item.id;
+	});
+	await A.page.waitForTimeout(700);
+	await A.page.locator('[data-card-id="' + localFile + '"]').click({ button: 'right' });
+	await A.page.waitForTimeout(300);
+	const localMenu = await A.page.locator('[role=menu]').first().innerText();
+	h.check(/^Delete$/m.test(localMenu) && !/Delete for everyone/.test(localMenu),
+		'a local file offers a plain Delete, not one that claims to reach peers');
+	await A.page.keyboard.press('Escape');
+	await A.page.waitForTimeout(200);
 
 	// ---- 14. no render crash anywhere ---------------------------------------------
 	for (const [label, p] of [

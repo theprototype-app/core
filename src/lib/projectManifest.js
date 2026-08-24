@@ -77,7 +77,8 @@ export function autoVersionsOff() {
  *   at?: number}} SharedItem
  * @typedef {{name: string, scenes: Record<string, SceneEntry>, assets: string[],
  *   changedAt: number, folders?: SharedFolder[], items?: SharedItem[],
- *   removed?: {items: Record<string, number>, folders: Record<string, number>}}} Manifest
+ *   removed?: {items: Record<string, number>, folders: Record<string, number>},
+ *   deleted?: {hash: string, name: string, kind: string, at: number, by?: any}[]}} Manifest
  *   `name` (21-G9) is the project's identity; `folders`/`items` (R22-R1) are THE SHARED
  *   INDEX — see the block comment above normalizeSharedIndex.
  */
@@ -157,6 +158,32 @@ function normalizeSharedIndex(rows, kind) {
 	}
 	return [...byKey.values()];
 }
+
+/**
+ * R22 round 4 — THE DELETED LOG. A tombstone says "this is not in the project any more";
+ * this says WHAT was removed, by whom and when, so there is something to restore FROM.
+ * Deleting a shared file removes it for everyone, and a destructive action that reaches
+ * other people's machines needs an undo that is visible rather than implied.
+ *
+ * Capped, newest last: it is a log, not an archive, and an unbounded array inside a
+ * document that replicates whole would grow without limit.
+ * @param {any} rows @returns {any[]} */
+function normalizeDeleted(rows) {
+	if (!Array.isArray(rows)) return [];
+	/** @type {Map<string, any>} */
+	const byHash = new Map();
+	for (const row of rows) {
+		const hash = String(row?.hash ?? '').trim();
+		const at = Number(row?.at);
+		if (!hash || !Number.isFinite(at) || at <= 0) continue;
+		// last entry for a hash wins: deleting, restoring and deleting again is one story
+		byHash.set(hash, { ...row, hash, name: String(row.name ?? hash), kind: String(row.kind ?? 'text'), at });
+	}
+	return [...byHash.values()].sort((a, b) => a.at - b.at).slice(-DELETED_LOG_CAP);
+}
+
+/** how many deletions the log remembers */
+export const DELETED_LOG_CAP = 200;
 
 /** R22 round 2: a tombstone map, with every stamp coerced to a positive number. A key
  * with no usable stamp is dropped rather than kept as a permanent veto nobody can lift.
@@ -241,6 +268,9 @@ export function normalizeManifest(data) {
 	const removed = normalizeTombs(data.removed);
 	if (Object.keys(removed.items).length || Object.keys(removed.folders).length) out.removed = removed;
 	else delete out.removed;
+	const deleted = normalizeDeleted(data.deleted);
+	if (deleted.length) out.deleted = deleted;
+	else delete out.deleted;
 	return out;
 }
 
@@ -441,20 +471,23 @@ export function setVersionLabel(name, hash, label) {
  * so the exchange terminates instead of ping-ponging a monotonic stamp forever.
  * @param {any[]} folders @param {any[]} items
  * @param {any} [removed] the tombstone map; omitted keeps the document's own
+ * @param {any} [deleted] the deleted log; omitted keeps the document's own
  * @returns {boolean} did the document change
  */
-export function publishSharedIndex(folders, items, removed) {
+export function publishSharedIndex(folders, items, removed, deleted) {
 	if (isViewer()) return false;
 	const m = get(projectManifest);
 	const nextF = normalizeSharedIndex(folders, 'folder');
 	const nextI = normalizeSharedIndex(items, 'item');
 	const nextR = normalizeTombs(removed ?? m.removed);
+	const nextD = normalizeDeleted(deleted ?? m.deleted);
 	const same =
 		JSON.stringify(sortedIndex(nextF, 'id')) === JSON.stringify(sortedIndex(m.folders ?? [], 'id')) &&
 		JSON.stringify(sortedIndex(nextI, 'hash')) === JSON.stringify(sortedIndex(m.items ?? [], 'hash')) &&
-		JSON.stringify(nextR) === JSON.stringify(normalizeTombs(m.removed));
+		JSON.stringify(nextR) === JSON.stringify(normalizeTombs(m.removed)) &&
+		JSON.stringify(nextD) === JSON.stringify(normalizeDeleted(m.deleted));
 	if (same) return false;
-	commitManifest({ ...m, folders: nextF, items: nextI, removed: nextR });
+	commitManifest({ ...m, folders: nextF, items: nextI, removed: nextR, deleted: nextD });
 	return true;
 }
 

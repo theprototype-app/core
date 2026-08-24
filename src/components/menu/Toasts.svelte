@@ -1,6 +1,10 @@
 <script lang="ts">
 	import { Info, UserPlus, Download } from '@lucide/svelte';
     import { cameraPreview, stopCameraPreview, toggleCameraControl, previewLabel } from '$lib/cameraPreview'
+    // R22 round 2: the connect-time library offer (see the effect below)
+    import { shareAllLocal, pullAllShared, bulkCounts } from '$lib/sharedLibrary'
+    import { explorerItems } from '$lib/explorer'
+    import { projectManifest } from '$lib/projectManifest'
     import { peers, loading, loadingcount, pendingApprovals, waitingForApproval, userdata, toastStore, fixLight, showSidebar, specatorMode, restorePanels, appNotice, connectDrawerOpen, connectDrawerTab, toastsInDrawerOnly, showInfoToast, dismissToastById } from '../../stores/appStore'
     import { restoreAvailable, restoreSnapshot, dismissRestore } from '$lib/autosave'
     import { cancelOutboundRequest } from '$lib/peerApproval'
@@ -160,6 +164,10 @@ function autoDismiss(node: any, toast: any) {
 // <Toast> blocks — which is why they looked nothing like the other cards and
 // never appeared in the drawer's Toasts tab. They are STATE-DRIVEN, so mirror
 // each source store into a sticky INFO entry and pull it when the source clears.
+// once answered, do not ask again this session: the prompt is a nudge, and one that
+// came back every time a file landed would be an interruption instead
+let libraryPromptDone = false;
+
 $effect(() => {
     const snap = $restoreAvailable;
     if (snap)
@@ -174,6 +182,41 @@ $effect(() => {
         );
     else dismissToastById('restore-session');
 });
+// R22 round 2 (user): WHAT ABOUT THE FILES ALREADY IN MY EXPLORER? Connecting to a
+// session with a library full of local files used to say nothing at all — they simply
+// stayed invisible to everyone, which is correct behaviour and a terrible first
+// impression. So the moment a session exists and there is something to offer, ask.
+//
+// One sticky INFO card, the restore-prompt shape, with the two halves of the union:
+// publish mine, and fetch theirs. Ignoring it leaves everything exactly as it is —
+// local files stay local, shared files stay greyed until somebody wants them.
+$effect(() => {
+    const connected = ($peers?.openedPeers?.length ?? 0) > 0;
+    // read the stores so the effect re-runs as the library and the index change
+    void $explorerItems;
+    void $projectManifest;
+    const counts = connected ? bulkCounts() : { local: 0, missing: 0 };
+    const parts = [];
+    if (counts.local) parts.push(`${counts.local} file${counts.local === 1 ? '' : 's'} only on this device`);
+    if (counts.missing) parts.push(`${counts.missing} shared file${counts.missing === 1 ? '' : 's'} not downloaded`);
+    if (connected && parts.length && !libraryPromptDone)
+        showInfoToast(
+            'shared-library-offer',
+            parts.join(' \u00b7 ') + '.',
+            [
+                ...(counts.local
+                    ? [{ label: 'Share all', action: () => { libraryPromptDone = true; const n = shareAllLocal(); showToast(`Sharing ${n} file${n === 1 ? '' : 's'} with peers`); dismissToastById('shared-library-offer'); } }]
+                    : []),
+                ...(counts.missing
+                    ? [{ label: 'Download all', action: () => { libraryPromptDone = true; const n = pullAllShared(); showToast(`Fetching ${n} file${n === 1 ? '' : 's'} from peers`); dismissToastById('shared-library-offer'); } }]
+                    : []),
+                { label: 'Not now', action: () => { libraryPromptDone = true; dismissToastById('shared-library-offer'); } }
+            ],
+            () => { libraryPromptDone = true; }
+        );
+    else dismissToastById('shared-library-offer');
+});
+
 $effect(() => {
     const notice = $appNotice;
     const seen = typeof localStorage !== 'undefined' && !!localStorage.getItem('hasSeenDisclaimer');

@@ -69,8 +69,13 @@
 		remoteSharedRows,
 		pullSharedItem,
 		pendingPulls,
-		sharedIndexInUse
+		sharedIndexInUse,
+		unshareHash,
+		canUnshare
 	} from '$lib/sharedLibrary';
+	// R22 round 2: a shared file's PICTURE travels on its own tiny channel, so a card can
+	// show a thumbnail before anybody downloads the bytes (see assetShare).
+	import { sharedThumbs, requestAssetThumb } from '$lib/assetShare';
 	import {
 		projectManifest,
 		staleSceneHash,
@@ -326,6 +331,43 @@
 		return o.name || 'peer ' + String(o.id ?? '').slice(0, 4);
 	}
 
+	/**
+	 * R22 round 2 (user) — THE MUTED TREATMENT, in one place because it lands on four
+	 * different things: a file's icon, a file's thumbnail, a folder's icon and a name. A
+	 * local file is not broken or absent, so this is a TINT and a fade rather than a
+	 * different colour — the same reading the remote `.tpscene` cards already had.
+	 *
+	 * Only while `sharingOn`: in a project that has never shared anything there is no
+	 * distinction to draw, and muting everything would cost legibility for no information.
+	 */
+	function mutedItem(item: any) {
+		return sharingOn && isOwnedItem(item) && !isShared(item);
+	}
+	/** the same question for a folder (no `kind`, so no isOwnedItem) */
+	function mutedFolder(folder: any) {
+		return sharingOn && folder?.share !== 'mine' && folder?.share !== 'peer';
+	}
+	/** a thumbnail cannot be recoloured, so it is desaturated and faded instead */
+	const MUTED_IMG = 'opacity-50 saturate-50';
+	/** an icon is a glyph in currentColor, so it just goes quiet */
+	const MUTED_ICON = 'text-gray-600';
+
+	/**
+	 * R22 round 2 (user): the PICTURE for a card. A file we hold renders its own
+	 * thumbnail; a shared file we do NOT hold renders the one its owner pushed over the
+	 * thumbnail channel, and asks for it if it has not arrived. Requesting from inside a
+	 * getter is safe: `requestAssetThumb` carries the one-ask-per-session guard, so a grid
+	 * of fifty remote cards asks fifty times once and never again.
+	 */
+	function thumbFor(item: any) {
+		if (item?.thumbnail) return item.thumbnail;
+		if (!item?.hash) return null;
+		const cached = $sharedThumbs[item.hash];
+		if (cached) return cached;
+		if (item.remoteItem || item.remoteScene) requestAssetThumb(item.hash);
+		return null;
+	}
+
 	/** The tooltip a card's share dot carries. */
 	function shareTitle(item: any) {
 		const who = ownerLabel(item);
@@ -574,6 +616,9 @@
 		prefab: 'Prefabs',
 		scene: 'Scenes'
 	};
+	/** R22-R7: the filter's fixed order. Every kind the Explorer can hold, so the menu is
+	 * a statement about the app rather than about this library's current contents. */
+	const FILTER_KINDS = ['image', 'object', 'audio', 'text', 'scene', 'prefab'];
 	const KIND_COLORS: Record<string, string> = {
 		image: 'ico-image',
 		audio: 'ico-audio',
@@ -1910,6 +1955,20 @@
 							if (pullSharedItem(item.hash)) showToast('Fetching ' + item.name + ' from peers…');
 						}
 					},
+					...(canUnshare(item)
+						? [
+								{
+									label: 'Unshare',
+									icon: 'eye-off',
+									tooltip:
+										'Take it out of the project. You do not hold this file, so there is nothing here to lose.',
+									action: () => {
+										unshareHash(item.hash);
+										showToast(item.name + ' is no longer shared');
+									}
+								}
+							]
+						: []),
 					{ label: 'Properties', action: () => showProperties({ kind: 'item', item }) }
 				]
 			};
@@ -1994,15 +2053,33 @@
 				// R22-R2: SHARE / UNSHARE, the objectPermissions vocabulary one domain over.
 				// A file a PEER shares gets neither: we are not its writer, and an Unshare that
 				// silently did nothing would be worse than no entry at all.
+				// R22 round 2 (locked answer): ANYONE may unshare — a project's library belongs
+				// to the project, not to whoever happened to press the button first. The old
+				// owner-only rule survives as a setting, so this asks `canUnshare` rather than
+				// testing ownership itself. When it refuses, the row still NAMES the owner,
+				// because "you cannot" is only useful with "they can".
 				...(shareOf(item) === 'peer'
 					? [
-							{
-								label: 'Shared by ' + (ownerLabel(item) || 'a peer'),
-								icon: 'users',
-								tooltip:
-									'Only whoever shared a file can stop sharing it. Your copy stays either way.',
-								action: () => {}
-							}
+							canUnshare(item)
+								? {
+										label: 'Unshare',
+										icon: 'eye-off',
+										tooltip:
+											'Take it out of the project for everyone. Owner: ' +
+											(ownerLabel(item) || 'unknown') +
+											'. Nobody loses the copy they already have.',
+										action: () => {
+											unshareItem(item.id);
+											showToast(item.name + ' is no longer shared');
+										}
+									}
+								: {
+										label: 'Owner: ' + (ownerLabel(item) || 'a peer'),
+										icon: 'users',
+										tooltip:
+											'Settings has this project set so only the owner may unshare. Your copy stays either way.',
+										action: () => {}
+									}
 						]
 					: [
 							shareOf(item) === 'mine'
@@ -2045,7 +2122,12 @@
 	function filterMenu(e: MouseEvent) {
 		e.preventDefault();
 		e.stopPropagation();
-		const kinds = [...new Set($explorerItems.map((i) => i.kind))].sort();
+		// R22 round 2 (user): EVERY category, not only the ones the library happens to hold.
+		// The first version listed present kinds on the reasoning that an absent one can only
+		// produce an empty grid — but a filter is also how you learn what the app sorts files
+		// INTO, and three of the six were missing from a fresh library, which reads as a bug
+		// rather than as a tidy-up. Fixed order, so the menu does not reshuffle as files land.
+		const kinds = FILTER_KINDS;
 		const toggleKind = (k: string) => {
 			const next = new Set(kindFilter);
 			if (next.has(k)) next.delete(k);
@@ -2059,7 +2141,10 @@
 			checked: kindFilter.has(k),
 			action: () => toggleKind(k)
 		}));
-		if (!items.length) items.push({ label: 'Nothing in this library yet', action: () => {} });
+		// two axes answering two different questions, so they get a divider: ContextMenu's
+		// own `section` label, which is what the rest of the app uses for exactly this
+		items.unshift({ section: 'Type' });
+		items.push({ section: 'Visibility' });
 		for (const [key, label] of [
 			['', 'Any visibility'],
 			['shared', 'Shared only'],
@@ -3086,11 +3171,19 @@
 											: 'Shared' + (ownerLabel(folder) ? ' by ' + ownerLabel(folder) : '') + ' — a peer offered this folder'}
 									></span>
 								{/if}
-								<span class="ico-folder flex h-14 w-14 items-center justify-center"><Folder size={32} aria-hidden="true" /></span>
+								<!-- R22 round 2 (user): an unshared folder is quiet too — the ICON, not
+								     just the name, because the icon is what the eye lands on in a grid. -->
+								<span
+									class="flex h-14 w-14 items-center justify-center {mutedFolder(folder)
+										? MUTED_ICON
+										: 'ico-folder'}"><Folder size={32} aria-hidden="true" /></span
+								>
 								{#if editing?.mode === 'rename' && editing.inGrid && editing.folderId === folder.id}
 									{@render cardEdit()}
 								{:else}
-									<span class="w-full overflow-hidden text-ellipsis whitespace-nowrap text-center text-[10px] text-gray-300">
+									<span
+										class="w-full overflow-hidden text-ellipsis whitespace-nowrap text-center text-[10px] {mutedFolder(folder) ? 'text-gray-500' : 'text-gray-300'}"
+									>
 										{folder.name}
 									</span>
 								{/if}
@@ -3186,10 +3279,21 @@
 								{:else}
 									<span class="flex h-14 w-14 items-center justify-center rounded-sm bg-gray-700 {KIND_COLORS[item.kind] ?? 'text-gray-400'}"><Icon name={KIND_ICONS[item.kind] ?? 'package'} size={28} /></span>
 								{/if}
-							{:else if item.thumbnail}
-								<img src={item.thumbnail} alt={item.name} class="h-14 w-14 rounded-sm object-cover" />
+							{:else if thumbFor(item)}
+								<!-- R22: the picture may be the item's OWN thumbnail or one a peer pushed
+							     for a file we have not downloaded. Muted for a local file, so the
+							     shared/local distinction reads on the artwork and not only on a dot. -->
+								<img
+									src={thumbFor(item)}
+									alt={item.name}
+									class="h-14 w-14 rounded-sm object-cover {mutedItem(item) ? MUTED_IMG : ''}"
+								/>
 							{:else}
-								<span class="flex h-14 w-14 items-center justify-center rounded-sm bg-gray-700 {KIND_COLORS[item.kind] ?? 'text-gray-400'}">
+								<span
+									class="flex h-14 w-14 items-center justify-center rounded-sm bg-gray-700 {mutedItem(item)
+										? MUTED_ICON
+										: (KIND_COLORS[item.kind] ?? 'text-gray-400')}"
+								>
 									<Icon name={KIND_ICONS[item.kind] ?? 'package'} size={28} />
 								</span>
 							{/if}
@@ -3200,7 +3304,7 @@
 							     while `sharingOn` — muting every name in a project that has never shared
 							     anything would say nothing and cost legibility everywhere. -->
 								<span
-									class="w-full overflow-hidden text-ellipsis whitespace-nowrap text-center text-[10px] {sharingOn && isOwnedItem(item) && !isShared(item) ? 'text-gray-500' : 'text-gray-300'}"
+									class="w-full overflow-hidden text-ellipsis whitespace-nowrap text-center text-[10px] {mutedItem(item) ? 'text-gray-500' : 'text-gray-300'}"
 									title={item.name + ' — ' + shareTitle(item)}
 								>
 									{item.name}
@@ -3297,6 +3401,34 @@
 						<div class="flex gap-2">
 							<span class="w-14 shrink-0 text-gray-500">Folder</span>
 							<span class="min-w-0 truncate" title={itemFolderPath}>{itemFolderPath}</span>
+						</div>
+						<!--
+							R22 round 2 (user) — OWNER. "Owner" rather than "Created by" or "Author", on
+							the DCC convention: Perforce, ShotGrid and ftrack all use owner for the person
+							RESPONSIBLE for an asset, and keep created-by for provenance — which is
+							exactly the distinction that matters here, because nothing in this app can say
+							who MADE a file, only who put it into the project. The checkmark is the point
+							of the third tier: it appears only when a cloud plugin vouched for an account.
+						-->
+						<div class="flex gap-2">
+							<span class="w-14 shrink-0 text-gray-500">Owner</span>
+							<span class="min-w-0 truncate" title={shareTitle(selItem)}>
+								{ownerLabel(selItem) || 'You'}
+							</span>
+						</div>
+						<div class="flex gap-2">
+							<span class="w-14 shrink-0 text-gray-500">Sharing</span>
+							<span class="min-w-0 truncate">
+								{selItem.remoteItem
+									? 'Shared \u2014 not downloaded'
+									: shareOf(selItem) === 'mine'
+										? 'Shared by you'
+										: shareOf(selItem) === 'peer'
+											? 'Shared'
+											: selItem.wasShared
+												? 'No longer shared'
+												: 'Local only'}
+							</span>
 						</div>
 						{#if selItem.createdAt}
 							<div class="flex gap-2">

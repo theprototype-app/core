@@ -76,7 +76,8 @@ export function autoVersionsOff() {
  * @typedef {{hash: string, name: string, kind: string, folderId: string|null, owner?: any,
  *   at?: number}} SharedItem
  * @typedef {{name: string, scenes: Record<string, SceneEntry>, assets: string[],
- *   changedAt: number, folders?: SharedFolder[], items?: SharedItem[]}} Manifest
+ *   changedAt: number, folders?: SharedFolder[], items?: SharedItem[],
+ *   removed?: {items: Record<string, number>, folders: Record<string, number>}}} Manifest
  *   `name` (21-G9) is the project's identity; `folders`/`items` (R22-R1) are THE SHARED
  *   INDEX — see the block comment above normalizeSharedIndex.
  */
@@ -157,6 +158,24 @@ function normalizeSharedIndex(rows, kind) {
 	return [...byKey.values()];
 }
 
+/** R22 round 2: a tombstone map, with every stamp coerced to a positive number. A key
+ * with no usable stamp is dropped rather than kept as a permanent veto nobody can lift.
+ * @param {any} data @returns {{items: Record<string, number>, folders: Record<string, number>}} */
+function normalizeTombs(data) {
+	/** @type {any} */
+	const out = { items: {}, folders: {} };
+	for (const half of ['items', 'folders']) {
+		const raw = data?.[half];
+		if (!raw || typeof raw !== 'object') continue;
+		for (const [key, at] of Object.entries(raw)) {
+			const k = String(key).trim();
+			const n = Number(at);
+			if (k && Number.isFinite(n) && n > 0) out[half][k] = n;
+		}
+	}
+	return out;
+}
+
 /**
  * ONE normalize at every boundary (wire, idb, .tp import). Unknown top-level fields
  * are PRESERVED verbatim (the normalizeAnnotation rule) so a newer peer's manifest
@@ -214,6 +233,14 @@ export function normalizeManifest(data) {
 	else delete out.folders;
 	if (items.length) out.items = items;
 	else delete out.items;
+	// R22 round 2: TOMBSTONES. `{items: {hash: at}, folders: {id: at}}` — a removal
+	// somebody MEANT, which is what lets any peer unshare (not only whoever published the
+	// row) without the publisher's reconcile resurrecting it on the next write. Omitted
+	// when empty, like the two indexes, so a project that has never unshared anything
+	// still serializes exactly as it did.
+	const removed = normalizeTombs(data.removed);
+	if (Object.keys(removed.items).length || Object.keys(removed.folders).length) out.removed = removed;
+	else delete out.removed;
 	return out;
 }
 
@@ -413,18 +440,21 @@ export function setVersionLabel(name, hash, label) {
  * storm: two peers that each re-publish the same converged index write nothing at all,
  * so the exchange terminates instead of ping-ponging a monotonic stamp forever.
  * @param {any[]} folders @param {any[]} items
+ * @param {any} [removed] the tombstone map; omitted keeps the document's own
  * @returns {boolean} did the document change
  */
-export function publishSharedIndex(folders, items) {
+export function publishSharedIndex(folders, items, removed) {
 	if (isViewer()) return false;
 	const m = get(projectManifest);
 	const nextF = normalizeSharedIndex(folders, 'folder');
 	const nextI = normalizeSharedIndex(items, 'item');
+	const nextR = normalizeTombs(removed ?? m.removed);
 	const same =
 		JSON.stringify(sortedIndex(nextF, 'id')) === JSON.stringify(sortedIndex(m.folders ?? [], 'id')) &&
-		JSON.stringify(sortedIndex(nextI, 'hash')) === JSON.stringify(sortedIndex(m.items ?? [], 'hash'));
+		JSON.stringify(sortedIndex(nextI, 'hash')) === JSON.stringify(sortedIndex(m.items ?? [], 'hash')) &&
+		JSON.stringify(nextR) === JSON.stringify(normalizeTombs(m.removed));
 	if (same) return false;
-	commitManifest({ ...m, folders: nextF, items: nextI });
+	commitManifest({ ...m, folders: nextF, items: nextI, removed: nextR });
 	return true;
 }
 

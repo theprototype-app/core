@@ -33,6 +33,9 @@
 	import { autosaveEnabled, autoRestoreEnabled, clearSavedSession } from '$lib/autosave';
 	// 21-G7: how many past versions of each scene keep their bytes on this machine (0 = off)
 	import { keepVersionsSetting } from '$lib/projectManifest';
+	// R22 round 2: who may take a file out of the shared library (locked answer: anyone,
+	// with the owner-only rule kept as the second option)
+	import { unshareAuthority } from '$lib/sharedLibrary';
 	// 21-I5 (locked answer 5): the save-name template — one rule for every download
 	import { saveNameTemplate } from '$lib/saveName';
 	// loose-scenes fix (bug 2a): what an import does with bytes already in the library.
@@ -815,6 +818,28 @@
 						Restore that snapshot automatically at startup instead of asking. Only ever runs when the scene is still empty; a message tells you what was restored
 					</SettingRow>
 					<p class="ui-section-label">Files</p>
+					<SettingRow name="Who can unshare a file">
+						<svelte:fragment slot="control">
+							<select
+								id="unshare-authority"
+								class="rounded-sm bg-gray-700 px-1 py-0.5 text-xs text-white"
+								value={$unshareAuthority}
+								on:change={(e: any) =>
+									unshareAuthority.set(e.target.value === 'owner' ? 'owner' : 'anyone')}>
+								<option value="anyone">Anyone in the session</option>
+								<option value="owner">Only whoever shared it</option>
+							</select>
+						</svelte:fragment>
+						<span>
+							A shared file is part of the project, so by default any editor can take it
+							out again — the same way anyone can delete an object. Choose
+							<strong>Only whoever shared it</strong> for a session where one person owns the
+							library and the rest are guests. Either way, <strong>nobody ever loses a copy
+							they already downloaded</strong> — unsharing removes the offer, never the file.
+							This is a preference for <em>this machine's menus</em>, not a rule the session
+							enforces.
+						</span>
+					</SettingRow>
 					<SettingRow name="Keep versions per scene">
 						<svelte:fragment slot="control">
 							<input

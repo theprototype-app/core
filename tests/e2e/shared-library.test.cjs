@@ -168,9 +168,12 @@ h.run(async () => {
 
 	// ---- 5. a shared FOLDER: subtree, contents, and the clamp -----------------------
 	//
-	// PLACEMENT IS CLAMPED, NOT CASCADED: sharing a folder must not hand peers the names
-	// of the folders above it. A shared row whose parent is not shared publishes with a
-	// null parent and lands at the peer's root.
+	// PLACEMENT CASCADES (locked answer, round 2). Sharing a folder publishes its
+	// ANCESTORS as well, so every peer rebuilds the same tree — "all peers have project
+	// folder consistency" was the deciding requirement. The first version CLAMPED (a
+	// shared folder whose parent was private landed at the peer's root), which is what
+	// made a shared folder look as though its contents had not arrived: they had, one
+	// level up from where the author was looking.
 	const tree = await A.page.evaluate(() => {
 		const e = window.__stores.explorer;
 		const priv = e.createFolder('Private', null);
@@ -186,10 +189,16 @@ h.run(async () => {
 	const texRow = mA2.folders.find((r) => r.id === tree.tex);
 	const subRow = mA2.folders.find((r) => r.id === tree.sub);
 	h.check(!!texRow && !!subRow, `the SUBTREE is shared, not just the folder (${mA2.folders.length} rows)`);
-	h.check(texRow.parentId === null,
-		`a shared folder inside a LOCAL one publishes with a null parent — the private name never leaves (${texRow.parentId})`);
+	h.check(texRow.parentId === tree.priv,
+		`a shared folder keeps its real parent — the chain is published, not flattened (${texRow.parentId})`);
 	h.check(subRow.parentId === tree.tex, 'a subfolder keeps its parent, which is shared too');
-	h.check(!mA2.folders.some((r) => r.id === tree.priv), 'the private ancestor is NOT published');
+	const privRow = mA2.folders.find((r) => r.id === tree.priv);
+	h.check(!!privRow && privRow.parentId === null,
+		'and the private ANCESTOR rides along as placement, so no folderId can dangle');
+	// NOTE the trade the locked answer accepts: an ancestor's NAME does travel. It is
+	// published as placement only — it is not marked shared here and holds no files of
+	// its own on the wire — but a peer can read it.
+	h.check(mA2.folders.length >= 3, `three rows: the shared folder, its child and its parent (${mA2.folders.length})`);
 	h.check(mA2.items.some((r) => r.hash === f2.hash) && mA2.items.some((r) => r.hash === f3.hash),
 		'the contents of a shared folder are shared, at every depth');
 
@@ -206,8 +215,8 @@ h.run(async () => {
 		'the peer adopts both folders under their NETWORK ids'
 	);
 	const bTree = await foldersOf(B);
-	h.check(bTree.find((f) => f.id === tree.tex)?.parentId === null,
-		'the adopted folder lands at the root, as its clamped row said');
+	h.check(bTree.find((f) => f.id === tree.tex)?.parentId === tree.priv,
+		'the adopted folder sits under the same parent it does here — one tree, every peer');
 	h.check(bTree.find((f) => f.id === tree.sub)?.parentId === tree.tex,
 		'and the subfolder is adopted INSIDE it — the shared tree survives the trip');
 	h.check(bTree.find((f) => f.id === tree.tex)?.share === 'peer',
@@ -458,10 +467,12 @@ h.run(async () => {
 		'and pressing it removes the row'
 	);
 
-	// ---- 17. a PEER's file is not ours to unshare ---------------------------------
+	// ---- 17. a PEER's file: ANYONE may unshare it (locked answer, round 2) --------
 	//
-	// The documented `interactive` family: offering Unshare on a row we do not write
-	// would build a gesture that cannot work. The menu states the owner instead.
+	// The first version offered the owner's name and no button, on the reasoning that a
+	// gesture which cannot work should not be offered. The locked answer is that a
+	// project's library belongs to the project: anyone may take a file out, the removal
+	// sticks (a tombstone, see section 24), and the owner-only rule survives as a setting.
 	const peerFile = await addFile(B, 'peer owned bytes', 'from-peer.txt');
 	await B.page.evaluate((id) => window.__stores.sharedLibrary.shareItem(id), peerFile.id);
 	await B.page.evaluate(() => window.__stores.sharedLibrary.publishMine(true));
@@ -497,17 +508,16 @@ h.run(async () => {
 	await h.eventually(() => remoteCard.count(), (n) => n === 0,
 		'and the derived card gives way to the real item — no phantom left behind');
 
-	// ...and now that A HOLDS the peer's file, its menu must say who owns it rather than
-	// offering an Unshare that could not work. The claim in section 17 asserted here,
-	// where there is finally a real card to right-click.
+	// ...and now that A HOLDS the peer's file, its menu must offer Unshare — the default
 	const adopted = (await itemsOf(A)).find((i) => i.hash === peerFile.hash);
 	h.check(adopted?.share === 'peer', 'A holds it, marked as a peer’s');
 	await A.page.locator('[data-card-id="' + adopted.id + '"]').click({ button: 'right' });
 	await A.page.waitForTimeout(300);
 	const menuText = await A.page.locator('[role=menu]').first().innerText();
-	const firstLine = menuText.split(String.fromCharCode(10))[0];
-	h.check(/Shared by/.test(menuText), 'its menu NAMES the owner (' + JSON.stringify(firstLine) + ')');
-	h.check(!/^Unshare$/m.test(menuText), 'and offers no Unshare — we are not its writer');
+	h.check(/^Unshare$/m.test(menuText),
+		'a peer’s file offers Unshare too — anyone may take a file out of the project');
+	// ...and with the owner-only setting on, the row NAMES the owner instead of offering
+	// a button that would be refused (section 25 covers the predicate itself)
 	await A.page.keyboard.press('Escape');
 	await A.page.waitForTimeout(200);
 
@@ -579,6 +589,249 @@ h.run(async () => {
 		(m) => [two[2], two[3]].every((hash) => (m.items ?? []).some((r) => r.hash === hash)),
 		'and shares them both in one gesture'
 	);
+
+	// ================================================================================
+	// ROUND 2 — the locked answers and the reported bugs.
+
+	// ---- 22. THE REPORTED BUG: a MOVE must reach peers -----------------------------
+	//
+	// Reported as two things — "cannot drag files into folders" and "a shared folder's
+	// contents do not appear" — and it was one fault: the sweep published only when it had
+	// MARKED something, so moving an already-shared file changed the local record and
+	// nothing on the wire. Measured before the fix: the row still read folderId null after
+	// the file had visibly moved.
+	const mv = await A.page.evaluate(async () => {
+		const e = window.__stores.explorer;
+		const f = e.createFolder('Moved Into', null);
+		const i = await e.addItemFromBytes(new TextEncoder().encode('move me').buffer, 'move.txt', null);
+		window.__stores.sharedLibrary.shareItem(i.id);
+		window.__stores.sharedLibrary.publishMine(true);
+		return { folderId: f.id, itemId: i.id, hash: i.hash };
+	});
+	await h.eventually(
+		() => manifestOf(A),
+		(m) => (m.items ?? []).some((r) => r.hash === mv.hash),
+		'the file is shared at the root'
+	);
+	await A.page.evaluate((x) => window.__stores.explorer.moveItem(x.itemId, x.folderId), mv);
+	await h.eventually(
+		() => manifestOf(A),
+		(m) => (m.items ?? []).find((r) => r.hash === mv.hash)?.folderId === mv.folderId,
+		'MOVING a shared file republishes its placement — with no share gesture at all'
+	);
+	await h.eventually(
+		() => manifestOf(B),
+		(m) => (m.items ?? []).find((r) => r.hash === mv.hash)?.folderId === mv.folderId,
+		'...and the peer agrees about the tree'
+	);
+
+	// ---- 23. CASCADE replaces the clamp (locked answer) ----------------------------
+	//
+	// Sharing a folder inside a private one now publishes the ANCESTORS, so every peer
+	// sees the same tree. The old clamp put it at the peer's root, which is what made a
+	// shared folder look like it had arrived without its contents — they were one level up
+	// from where the author was looking.
+	const casc = await A.page.evaluate(async () => {
+		const e = window.__stores.explorer;
+		const outer = e.createFolder('Outer', null);
+		const inner = e.createFolder('Inner', outer.id);
+		const leaf = e.createFolder('Leaf', inner.id);
+		const i = await e.addItemFromBytes(new TextEncoder().encode('deep cascade').buffer, 'deep.txt', leaf.id);
+		window.__stores.sharedLibrary.shareFolder(leaf.id);
+		window.__stores.sharedLibrary.publishMine(true);
+		return { outer: outer.id, inner: inner.id, leaf: leaf.id, hash: i.hash };
+	});
+	await h.eventually(
+		() => manifestOf(A),
+		(m) => ['outer', 'inner', 'leaf'].every((k) => (m.folders ?? []).some((r) => r.id === casc[k])),
+		'sharing a nested folder publishes its whole ANCESTOR CHAIN'
+	);
+	const cascDoc = await manifestOf(A);
+	h.check(
+		cascDoc.folders.find((r) => r.id === casc.leaf)?.parentId === casc.inner &&
+			cascDoc.folders.find((r) => r.id === casc.inner)?.parentId === casc.outer &&
+			cascDoc.folders.find((r) => r.id === casc.outer)?.parentId === null,
+		'and the chain keeps its real shape rather than being flattened'
+	);
+	await h.eventually(
+		() => foldersOf(B),
+		(fs) => {
+			const leaf = fs.find((f) => f.id === casc.leaf);
+			const inner = fs.find((f) => f.id === casc.inner);
+			return leaf?.parentId === casc.inner && inner?.parentId === casc.outer;
+		},
+		'the peer rebuilds the SAME tree — project folder consistency'
+	);
+
+	// ---- 24. ANYONE may unshare (locked answer), and it STICKS ---------------------
+	//
+	// This is what the tombstone is for. Without one, the publisher's reconcile notices
+	// its own row missing and puts it straight back, and the two peers take turns forever.
+	const authority = await B.page.evaluate(() => {
+		let v;
+		window.__stores.sharedLibrary.unshareAuthority.subscribe((x) => (v = x))();
+		return v;
+	});
+	h.check(authority === 'anyone', `the default is that anyone may unshare (${authority})`);
+
+	const victim = await A.page.evaluate(async () => {
+		const i = await window.__stores.explorer.addItemFromBytes(
+			new TextEncoder().encode('unshared by the other peer').buffer,
+			'theirs.txt',
+			null
+		);
+		window.__stores.sharedLibrary.shareItem(i.id);
+		window.__stores.sharedLibrary.publishMine(true);
+		return { id: i.id, hash: i.hash };
+	});
+	await h.eventually(
+		() => manifestOf(B),
+		(m) => (m.items ?? []).some((r) => r.hash === victim.hash),
+		"B receives A's row"
+	);
+	// B does not hold the bytes, so there is no local record — the tombstone is the whole
+	// of the removal
+	await B.page.evaluate((hash) => window.__stores.sharedLibrary.unshareHash(hash), victim.hash);
+	await h.eventually(
+		() => manifestOf(A),
+		(m) => !(m.items ?? []).some((r) => r.hash === victim.hash),
+		"a peer who does NOT own the file can unshare it, and the owner's document loses the row"
+	);
+	// THE GUARD: it must not come back. A's reconcile sees its own 'mine' row missing and
+	// would republish it, which is precisely the tug-of-war the tombstone exists to stop.
+	await A.page.waitForTimeout(2500);
+	const stillGone = await manifestOf(A);
+	h.check(!(stillGone.items ?? []).some((r) => r.hash === victim.hash),
+		'and it STAYS gone — the reconcile does not resurrect a deliberate removal');
+	h.check(!!stillGone.removed?.items?.[victim.hash], 'a tombstone records it');
+	const ownerSide = (await itemsOf(A)).find((i) => i.hash === victim.hash);
+	h.check(ownerSide?.share === 'no' && ownerSide?.wasShared === true,
+		`the owner's own record honours it and keeps the file (${JSON.stringify(ownerSide?.share)})`);
+	const blobKept = await A.page.evaluate(async (hash) => {
+		const item = window.__stores.explorer.itemByHash(hash);
+		const blob = item ? await window.__stores.explorer.itemBlob(item.id) : null;
+		return blob ? blob.size : -1;
+	}, victim.hash);
+	h.check(blobKept > 0, `and the bytes are untouched (${blobKept} bytes)`);
+
+	// re-sharing LIFTS the tombstone — a removal must not be a one-way door
+	await A.page.evaluate((id) => window.__stores.sharedLibrary.shareItem(id), victim.id);
+	await A.page.evaluate(() => window.__stores.sharedLibrary.publishMine(true));
+	await h.eventually(
+		() => manifestOf(A),
+		(m) => (m.items ?? []).some((r) => r.hash === victim.hash) && !m.removed?.items?.[victim.hash],
+		're-sharing publishes it again AND lifts the tombstone'
+	);
+
+	// ---- 25. the owner-only option still works ------------------------------------
+	const gated = await B.page.evaluate((hash) => {
+		const sl = window.__stores.sharedLibrary;
+		sl.unshareAuthority.set('owner');
+		const row = { hash, share: 'peer', owner: { id: 'somebody-else' } };
+		const refused = sl.canUnshare(row);
+		sl.unshareAuthority.set('anyone');
+		const allowed = sl.canUnshare(row);
+		return { refused, allowed };
+	}, victim.hash);
+	h.check(gated.refused === false && gated.allowed === true,
+		`the setting gates the offer both ways (${JSON.stringify(gated)})`);
+
+	// ---- 26. no empty `Shared` folder ---------------------------------------------
+	//
+	// It used to be created the first time any byte arrived, and R1's adoption then moved
+	// the file to its row's folder — leaving an empty folder behind for good.
+	const sharedFolders = (await foldersOf(B)).filter((f) => f.name === 'Shared');
+	const emptyShared = await B.page.evaluate(() => {
+		let folders, items;
+		window.__stores.explorer.explorerFolders.subscribe((v) => (folders = v))();
+		window.__stores.explorer.explorerItems.subscribe((v) => (items = v))();
+		return folders
+			.filter((f) => f.name === 'Shared')
+			.map((f) => items.filter((i) => i.folderId === f.id).length);
+	});
+	h.check(!emptyShared.some((n) => n === 0),
+		`no EMPTY 'Shared' folder was invented (${sharedFolders.length} such folders, contents ${JSON.stringify(emptyShared)})`);
+
+	// ---- 27. THUMBNAILS TRAVEL ----------------------------------------------------
+	//
+	// A shared file used to show an icon until you downloaded it, because a thumbnail is
+	// derived from bytes the peer does not have. It now rides its own tiny channel rather
+	// than the manifest, which re-replicates in full on every share.
+	const PNG =
+		'iVBORw0KGgoAAAANSUhEUgAAAAgAAAAICAYAAADED76LAAAAKklEQVR4nGP8z8Dwn4EIwESMolGF+BUyMjAwMDIQBMQrJKgUvzt/EnIhAJTfBhFVsHRAAAAAAElFTkSuQmCC';
+	const pic = await A.page.evaluate(async (b64) => {
+		const bytes = Uint8Array.from(atob(b64), (c) => c.charCodeAt(0));
+		const item = await window.__stores.explorer.addItemFromBytes(bytes.buffer, 'shared-pic.png', null);
+		return { id: item.id, hash: item.hash, thumb: !!item.thumbnail };
+	}, PNG);
+	h.check(pic.thumb, 'the sender rendered a thumbnail for its own image');
+	await A.page.evaluate((id) => window.__stores.sharedLibrary.shareItem(id), pic.id);
+	await A.page.evaluate(() => window.__stores.sharedLibrary.publishMine(true));
+	// B must NOT hold the bytes for this to prove anything
+	h.check((await itemsOf(B)).every((i) => i.hash !== pic.hash), 'the peer does not hold the image');
+	await h.eventually(
+		() =>
+			B.page.evaluate(() => {
+				let v;
+				window.__stores.assetShare.sharedThumbs.subscribe((x) => (v = x))();
+				return Object.keys(v);
+			}),
+		(keys) => keys.includes(pic.hash),
+		'the PICTURE arrives without the file — pushed on share'
+	);
+	const thumbVal = await B.page.evaluate((hash) => {
+		let v;
+		window.__stores.assetShare.sharedThumbs.subscribe((x) => (v = x))();
+		return (v[hash] ?? '').slice(0, 22);
+	}, pic.hash);
+	h.check(thumbVal.startsWith('data:image/'),
+		`and it is an inline image, never arbitrary markup (${thumbVal})`);
+
+	// the REQUEST path too: a joiner that missed the push asks for it
+	const asked = await B.page.evaluate((hash) => {
+		const as = window.__stores.assetShare;
+		// clear the cache so the request path is the only way it can come back
+		as.forgetSharedThumb(hash);
+		as.requestAssetThumb(hash);
+		return true;
+	}, pic.hash);
+	h.check(asked, 'a peer can ASK for a thumbnail it does not have');
+	await h.eventually(
+		() =>
+			B.page.evaluate(() => {
+				let v;
+				window.__stores.assetShare.sharedThumbs.subscribe((x) => (v = x))();
+				return Object.keys(v);
+			}),
+		(keys) => keys.includes(pic.hash),
+		'...and it is answered over the same hash-addressed channel'
+	);
+
+	// ---- 28. the bulk actions the connect prompt offers ---------------------------
+	const counts = await A.page.evaluate(() => window.__stores.sharedLibrary.bulkCounts());
+	h.check(typeof counts.local === 'number' && typeof counts.missing === 'number',
+		`bulkCounts answers both halves of the union (${JSON.stringify(counts)})`);
+	const bulk = await B.page.evaluate(() => {
+		const before = window.__stores.sharedLibrary.bulkCounts();
+		const asked = window.__stores.sharedLibrary.pullAllShared();
+		return { before, asked };
+	});
+	h.check(bulk.asked === bulk.before.missing,
+		`Download all asks for exactly the files it lacks — hash dedupe means nothing redundant (${JSON.stringify(bulk)})`);
+
+	// ---- 29. the FILTER lists every category, and separates the two axes ----------
+	await A.page.locator('#explorer-filter').click();
+	await A.page.waitForTimeout(300);
+	const filterText = await A.page.locator('[role=menu]').first().innerText();
+	for (const label of ['Images', 'Audio', '3D models', 'Text and config', 'Scenes', 'Prefabs'])
+		h.check(filterText.includes(label), `the filter offers "${label}" whatever the library holds`);
+	// case-INSENSITIVE: `.ctx-section` is `text-transform: uppercase`, and innerText
+	// reports the transformed text (textContent would not) — so the first version of
+	// this check was testing the stylesheet's casing, not whether the labels exist
+	h.check(/type/i.test(filterText) && /visibility/i.test(filterText),
+		'and the two axes are separated by section labels');
+	await A.page.keyboard.press('Escape');
+	await A.page.waitForTimeout(200);
 
 	// ---- 14. no render crash anywhere ---------------------------------------------
 	for (const [label, p] of [

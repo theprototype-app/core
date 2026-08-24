@@ -85,7 +85,7 @@ import {
 	publishSharedIndex,
 	registerSharedIndexListener
 } from './projectManifest';
-import { requestAsset } from './assetShare';
+import { requestAsset, sendAssetThumb, forgetSharedThumb, loadSharedThumbs } from './assetShare';
 import { ownerStamp } from './cloudHooks';
 
 /**
@@ -162,7 +162,7 @@ export function pullSharedItem(hash) {
  * to the shared tree, plus every foreign row the document already carried (rule 1 in
  * the header — a publish of ours may never be the thing that drops somebody else's
  * file).
- * @returns {{folders: any[], items: any[]}}
+ * @returns {{folders: any[], items: any[], removed: any}}
  */
 function projection() {
 	const doc = get(projectManifest);
@@ -188,29 +188,54 @@ function projection() {
 		return { ...row, at: now };
 	};
 
-	const mineFolders = get(explorerFolders).filter((f) => f.share === 'mine');
-	const sharedFolderIds = new Set(mineFolders.map((f) => f.id));
-	// a peer's shared folder is a legitimate parent for one of ours: the tree the row
-	// graph describes is the union of everybody's, not just what we published
-	for (const row of doc.folders ?? []) if (row?.id) sharedFolderIds.add(row.id);
+	// PLACEMENT CASCADES (locked answer, R22 round 2). Sharing a folder publishes its
+	// ANCESTORS too, so every peer sees the same tree you do — "all peers have project
+	// folder consistency" was the deciding requirement, and the alternative (clamping a
+	// shared folder to the root when its parent is private) produced exactly the
+	// complaint that a shared folder's contents seemed not to arrive: they had, one level
+	// up from where the author was looking.
+	//
+	// The ancestors are published as PLACEMENT ONLY. A folder that is shared merely to
+	// carry a path is not marked shared locally and holds no files of its own on the wire
+	// — its own contents are published one by one as they are shared, which is the second
+	// half of the same answer ("if I create new files in unshared folders, they also
+	// should be shared individually").
+	const allFolders = get(explorerFolders);
+	const byId = new Map(allFolders.map((f) => [f.id, f]));
+	const mineFolders = allFolders.filter((f) => f.share === 'mine');
+	const mineItems = get(explorerItems).filter((i) => i.share === 'mine');
 
-	/** placement a peer can actually resolve: null unless the parent is shared too */
-	const clamp = (/** @type {string|null|undefined} */ id) =>
-		id && sharedFolderIds.has(id) ? id : null;
+	/** every folder id we must publish: the ones we shared, plus the ancestor chain of
+	 * each of those AND of every shared item, so no `folderId` can dangle. */
+	/** @type {Set<string>} */
+	const needed = new Set();
+	const addChain = (/** @type {string|null|undefined} */ id) => {
+		let at = id ?? null;
+		// a bounded walk: a cyclic tree is impossible through moveFolder, but a corrupted
+		// index must not hang the projection
+		for (let i = 0; at && i < 64; i++) {
+			if (needed.has(at)) break;
+			needed.add(at);
+			at = byId.get(at)?.parentId ?? null;
+		}
+	};
+	for (const f of mineFolders) addChain(f.id);
+	for (const i of mineItems) addChain(i.folderId);
 
 	/** @type {any[]} */
-	const folders = mineFolders.map((f) =>
-		stamp({ id: f.id, name: f.name, parentId: clamp(f.parentId), owner }, 'id')
-	);
-	/** @type {any[]} */
-	const items = get(explorerItems)
-		.filter((i) => i.share === 'mine')
-		.map((i) =>
-			stamp(
-				{ hash: i.hash, name: i.name, kind: i.kind, folderId: clamp(i.folderId), owner },
-				'hash'
-			)
+	const folders = [...needed]
+		.map((id) => byId.get(id))
+		.filter(Boolean)
+		.map((/** @type {any} */ f) =>
+			stamp({ id: f.id, name: f.name, parentId: f.parentId ?? null, owner }, 'id')
 		);
+	/** @type {any[]} */
+	const items = mineItems.map((i) =>
+		stamp(
+			{ hash: i.hash, name: i.name, kind: i.kind, folderId: i.folderId ?? null, owner },
+			'hash'
+		)
+	);
 
 	// CARRYING THE FOREIGN ROWS, and the one rule that makes unshare possible at all.
 	//
@@ -237,7 +262,47 @@ function projection() {
 		if (!held || held.share === 'peer') items.push(row);
 	}
 
-	return { folders, items };
+	// THE TOMBSTONES have the last word, and they are what makes "anyone may unshare"
+	// safe. Without them, removal is only authoritative from the peer that published the
+	// row — the owner's reconcile would resurrect anybody else's removal on its next
+	// publish, and the two of them would take turns forever. A tombstone is a removal
+	// somebody MEANT, so it beats a carried-forward row and it beats the reconcile.
+	//
+	// A re-share writes a row with a newer `at` and DELETES the tombstone (see shareItem),
+	// so this is not a one-way door.
+	/** @type {any} */
+	const removed = doc.removed ?? {};
+	const tombF = removed.folders ?? {};
+	const tombI = removed.items ?? {};
+	const live = (/** @type {any} */ row, /** @type {any} */ tombs, /** @type {string} */ key) => {
+		const at = Number(tombs[row[key]]);
+		return !Number.isFinite(at) || (Number(row.at) || 0) > at;
+	};
+	return {
+		folders: folders.filter((r) => live(r, tombF, 'id')),
+		items: items.filter((r) => live(r, tombI, 'hash')),
+		removed: pruneTombs({ folders: { ...tombF }, items: { ...tombI } }, folders, items)
+	};
+}
+
+/**
+ * Drop a tombstone the live rows have already overruled — a key whose row carries a
+ * NEWER stamp has been deliberately re-shared, so the tombstone is spent. That bounds
+ * growth to "files unshared and not shared again", which is small and self-cleaning; the
+ * alternative is a lifetime policy, which is the thing `hudDocs` warns tombstones drag
+ * in behind them.
+ * @param {any} tombs @param {any[]} folders @param {any[]} items
+ */
+function pruneTombs(tombs, folders, items) {
+	for (const row of folders) {
+		const at = Number(tombs.folders[row.id]);
+		if (Number.isFinite(at) && (Number(row.at) || 0) > at) delete tombs.folders[row.id];
+	}
+	for (const row of items) {
+		const at = Number(tombs.items[row.hash]);
+		if (Number.isFinite(at) && (Number(row.at) || 0) > at) delete tombs.items[row.hash];
+	}
+	return tombs;
 }
 
 /** @type {any} */
@@ -255,18 +320,99 @@ export function publishMine(now = false) {
 		publishTimer = null;
 	}
 	if (now) {
-		const { folders, items } = projection();
-		return publishSharedIndex(folders, items);
+		const { folders, items, removed } = projection();
+		return publishSharedIndex(folders, items, removed);
 	}
 	publishTimer = setTimeout(() => {
 		publishTimer = null;
-		const { folders, items } = projection();
-		publishSharedIndex(folders, items);
+		const { folders, items, removed } = projection();
+		publishSharedIndex(folders, items, removed);
 	}, 150);
 	return true;
 }
 
 // ---- share / unshare (R2) --------------------------------------------------------
+
+/**
+ * R22 round 2 — WHO MAY UNSHARE. Locked answer: **anyone**, because a project's library
+ * is the project's, not a collection of private claims. The shipped owner-only rule
+ * survives as the second option, since a session with an author and guests may want it.
+ *
+ * LOCAL, not replicated, and deliberately: it decides what OUR menu offers, and the wire
+ * enforces nothing either way (a tombstone from any peer is honoured by every peer). A
+ * replicated policy would imply an enforcement this layer does not have.
+ * @type {import('svelte/store').Writable<'anyone' | 'owner'>} */
+export const unshareAuthority = writable(readAuthority());
+
+function readAuthority() {
+	try {
+		return localStorage.getItem('shared:unshareAuthority') === 'owner' ? 'owner' : 'anyone';
+	} catch {
+		return 'anyone';
+	}
+}
+
+unshareAuthority.subscribe((v) => {
+	try {
+		localStorage.setItem('shared:unshareAuthority', v);
+	} catch {}
+});
+
+/** May we take this row out of the index? @param {any} row a local record or an index row */
+export function canUnshare(row) {
+	const state = shareStateOf(row);
+	if (!state.shared && !row?.remoteItem) return false;
+	if (get(unshareAuthority) === 'anyone') return true;
+	return state.mine || row?.owner?.id === myPeerId();
+}
+
+/**
+ * Write a TOMBSTONE. This — not the absence of a row from our projection — is what makes
+ * a removal stick when anybody may perform one: the publisher's reconcile would
+ * otherwise notice its own row missing and put it straight back, forever.
+ * @param {{items?: string[], folders?: string[]}} keys
+ */
+function tomb(keys) {
+	const doc = get(projectManifest);
+	/** @type {any} */
+	const prev = doc.removed ?? {};
+	const at = Date.now();
+	/** @type {any} */
+	const next = { items: { ...(prev.items ?? {}) }, folders: { ...(prev.folders ?? {}) } };
+	for (const hash of keys.items ?? []) next.items[hash] = at;
+	for (const id of keys.folders ?? []) next.folders[id] = at;
+	const { folders, items } = projection();
+	// the projection filters against the CURRENT document, so hand it the new tombstones
+	// explicitly rather than publishing a stale removal set
+	const liveF = folders.filter((r) => !(r.id in next.folders) || (Number(r.at) || 0) > next.folders[r.id]);
+	const liveI = items.filter((r) => !(r.hash in next.items) || (Number(r.at) || 0) > next.items[r.hash]);
+	publishSharedIndex(liveF, liveI, next);
+}
+
+/** Lift a tombstone: a re-share is a decision and must not be vetoed by an old removal.
+ * @param {{items?: string[], folders?: string[]}} keys */
+function untomb(keys) {
+	const doc = get(projectManifest);
+	/** @type {any} */
+	const prev = doc.removed ?? {};
+	if (!prev.items && !prev.folders) return;
+	/** @type {any} */
+	const next = { items: { ...(prev.items ?? {}) }, folders: { ...(prev.folders ?? {}) } };
+	let changed = false;
+	for (const hash of keys.items ?? [])
+		if (hash in next.items) {
+			delete next.items[hash];
+			changed = true;
+		}
+	for (const id of keys.folders ?? [])
+		if (id in next.folders) {
+			delete next.folders[id];
+			changed = true;
+		}
+	if (!changed) return;
+	const { folders, items } = projection();
+	publishSharedIndex(folders, items, next);
+}
 
 /**
  * Share one library item. Idempotent, and it clears any earlier VETO — pressing Share
@@ -277,6 +423,10 @@ export function shareItem(id) {
 	const item = get(explorerItems).find((i) => i.id === id);
 	if (!item) return false;
 	patchRecord(id, { share: 'mine', owner: meAsOwner(), wasShared: undefined });
+	untomb({ items: [item.hash] });
+	// push the PICTURE too, so a peer's card has something to show before it decides
+	// whether to download the file at all
+	sendAssetThumb(item.hash);
 	publishMine();
 	return true;
 }
@@ -294,8 +444,23 @@ export function shareItem(id) {
 export function unshareItem(id) {
 	const item = get(explorerItems).find((i) => i.id === id);
 	if (!item) return false;
+	// the VETO is still what stops the inheritance sweep re-sharing it a moment later;
+	// the TOMBSTONE is what makes the removal reach peers even when we are not the row's
+	// publisher (round 2: anyone may unshare)
 	patchRecord(id, { share: 'no', owner: undefined, wasShared: undefined });
-	publishMine();
+	tomb({ items: [item.hash] });
+	return true;
+}
+
+/**
+ * R22 round 2: unshare a row we do NOT hold the bytes for — the derived remote card.
+ * There is no local record to veto, so the tombstone is the whole of it.
+ * @param {string} hash @returns {boolean}
+ */
+export function unshareHash(hash) {
+	const h = String(hash ?? '').trim();
+	if (!h) return false;
+	tomb({ items: [h] });
 	return true;
 }
 
@@ -318,6 +483,9 @@ export function shareFolder(id) {
 		// overturn a decision the user made about one file
 		if (ids.includes(item.folderId ?? '') && item.share !== 'no' && item.share !== 'peer')
 			patchRecord(item.id, { share: 'mine', owner, wasShared: undefined });
+	const broughtIn = get(explorerItems).filter((i) => ids.includes(i.folderId ?? ''));
+	untomb({ folders: ids, items: broughtIn.map((i) => i.hash) });
+	for (const i of broughtIn) sendAssetThumb(i.hash);
 	publishMine();
 	return true;
 }
@@ -333,11 +501,62 @@ export function unshareFolder(id) {
 	if (!ids.length) return false;
 	for (const fid of ids)
 		patchRecord(fid, { share: undefined, owner: undefined, wasShared: undefined }, 'folder');
-	for (const item of get(explorerItems))
-		if (ids.includes(item.folderId ?? '') && item.share === 'mine')
+	// the files inside take the VETO rather than merely being cleared: the folder is no
+	// longer shared, so nothing would re-share them — but a user who re-shares the FOLDER
+	// later means the folder, and a bare clear would silently re-share every file in it
+	const inside = get(explorerItems).filter((i) => ids.includes(i.folderId ?? ''));
+	for (const item of inside)
+		if (item.share === 'mine')
 			patchRecord(item.id, { share: undefined, owner: undefined, wasShared: undefined });
-	publishMine();
+	tomb({ folders: ids, items: inside.map((i) => i.hash) });
 	return true;
+}
+
+/**
+ * R22 round 2 (user) — THE TWO BULK ACTIONS, offered together on connect because they
+ * are two halves of one wish: "make this session's library the union of what we all
+ * have".
+ *
+ * `shareAllLocal` publishes everything this machine holds and has not decided against.
+ * A VETO is honoured, because a bulk action must not quietly overturn a per-file
+ * decision — that is the same reasoning the inheritance sweep already follows.
+ * @returns {number} how many were newly shared
+ */
+export function shareAllLocal() {
+	const owner = meAsOwner();
+	const fresh = get(explorerItems).filter((i) => !i.share);
+	for (const item of fresh) {
+		patchRecord(item.id, { share: 'mine', owner, wasShared: undefined });
+		sendAssetThumb(item.hash);
+	}
+	// folders come too, or the files land at the peers' root and the tree is lost
+	for (const folder of get(explorerFolders)) if (!folder.share) patchRecord(folder.id, { share: 'mine', owner }, 'folder');
+	if (fresh.length) untomb({ items: fresh.map((i) => i.hash) });
+	publishMine(true);
+	return fresh.length;
+}
+
+/**
+ * ...and `pullAllShared` fetches every shared file this machine lacks. NO REDUNDANT
+ * DOWNLOAD is free rather than clever: `remoteSharedRows` is by definition the rows
+ * whose content hash we do not hold, so a file we already have — under any name, in any
+ * folder, however it got here — is simply not in the list.
+ * @returns {number} how many pulls were started
+ */
+export function pullAllShared() {
+	const rows = remoteSharedRows(get(projectManifest));
+	let asked = 0;
+	for (const row of rows) if (pullSharedItem(row.hash)) asked++;
+	return asked;
+}
+
+/** What the connect prompt needs to know: is there anything worth offering?
+ * @returns {{local: number, missing: number}} */
+export function bulkCounts() {
+	return {
+		local: get(explorerItems).filter((i) => !i.share).length,
+		missing: remoteSharedRows(get(projectManifest)).length
+	};
 }
 
 /** Is this record shared, and by whom? @param {any} row
@@ -371,8 +590,28 @@ export function shareStateOf(row) {
  * @param {any} doc
  */
 export function applySharedIndex(doc) {
-	const folderRows = doc?.folders ?? [];
-	const itemRows = doc?.items ?? [];
+	// a TOMBSTONED row is not a row. A document may legitimately carry both for a moment
+	// (a removal racing a carry-forward), and the removal wins — see the projection.
+	/** @type {any} */
+	const tombAll = doc?.removed ?? {};
+	const notTombed = (/** @type {any} */ row, /** @type {string} */ key, /** @type {any} */ map) => {
+		const at = Number(map?.[row[key]]);
+		return !Number.isFinite(at) || (Number(row.at) || 0) > at;
+	};
+	const folderRows = (doc?.folders ?? []).filter((/** @type {any} */ r) =>
+		notTombed(r, 'id', tombAll.folders)
+	);
+	const itemRows = (doc?.items ?? []).filter((/** @type {any} */ r) =>
+		notTombed(r, 'hash', tombAll.items)
+	);
+	// OUR OWN row being tombstoned means somebody else unshared our file. Honour it: drop
+	// the mark so we stop republishing, and keep the file (nothing here ever deletes bytes).
+	for (const item of get(explorerItems))
+		if (item.share === 'mine' && Number.isFinite(Number(tombAll.items?.[item.hash])))
+			patchRecord(item.id, { share: 'no', owner: undefined, wasShared: true });
+	for (const folder of get(explorerFolders))
+		if (folder.share === 'mine' && Number.isFinite(Number(tombAll.folders?.[folder.id])))
+			patchRecord(folder.id, { share: undefined, owner: undefined, wasShared: true }, 'folder');
 
 	// 1. folders, parents first. Bounded passes rather than a topological sort: the
 	// graph is tiny, and a cyclic or orphaned row must land SOMEWHERE rather than
@@ -453,8 +692,19 @@ export function applySharedIndex(doc) {
 	// THE RECONCILE: is anything of OURS missing from the document somebody just wrote?
 	const docHashes = new Set(itemRows.map((/** @type {any} */ r) => r.hash));
 	const docFolders = new Set(folderRows.map((/** @type {any} */ r) => r.id));
-	const lostItem = get(explorerItems).some((i) => i.share === 'mine' && !docHashes.has(i.hash));
-	const lostFolder = get(explorerFolders).some((f) => f.share === 'mine' && !docFolders.has(f.id));
+	// ...but NEVER against a tombstone. A row of ours that is missing because somebody
+	// DELIBERATELY removed it is not a lost race, and re-publishing it is how the
+	// publisher and the remover would take turns forever (round 2: anyone may unshare).
+	/** @type {any} */
+	const tombs = doc?.removed ?? {};
+	const tombed = (/** @type {any} */ map, /** @type {string} */ key) =>
+		Number.isFinite(Number(map?.[key]));
+	const lostItem = get(explorerItems).some(
+		(i) => i.share === 'mine' && !docHashes.has(i.hash) && !tombed(tombs.items, i.hash)
+	);
+	const lostFolder = get(explorerFolders).some(
+		(f) => f.share === 'mine' && !docFolders.has(f.id) && !tombed(tombs.folders, f.id)
+	);
 	if (lostItem || lostFolder) publishMine();
 }
 
@@ -499,15 +749,24 @@ function sweepInheritance() {
 			.filter((f) => f.share === 'mine')
 			.map((f) => f.id)
 	);
-	if (!shared.size) return;
 	const owner = meAsOwner();
-	let marked = 0;
 	for (const item of get(explorerItems)) {
 		if (!shared.has(item.folderId ?? '')) continue;
 		if (item.share) continue; // 'mine' already, 'peer' theirs, 'no' vetoed
-		if (patchRecord(item.id, { share: 'mine', owner, wasShared: undefined })) marked++;
+		patchRecord(item.id, { share: 'mine', owner, wasShared: undefined });
 	}
-	if (marked) publishMine();
+	// THE REPORTED BUG, and it read as two separate ones — "cannot drag files into
+	// folders" and "a shared folder's contents do not appear". Both were the same fault:
+	// this used to publish ONLY when it had marked something new, so dragging an
+	// ALREADY-shared file into a folder changed the local record, changed nothing on the
+	// wire, and left every peer holding the old placement. Measured: the row still read
+	// `folderId: null` after the file had visibly moved.
+	//
+	// So publish on ANY library change. It costs nothing when nothing moved, because
+	// `publishSharedIndex` is idempotent on content — the same property the reconcile
+	// already depends on — and it is what makes the locked answer true: "moving a file
+	// also moves it for peers, so all peers have project folder consistency".
+	publishMine();
 }
 
 function scheduleSweep() {
@@ -544,6 +803,9 @@ function settlePulls(items) {
 		if (held.has(h)) {
 			next.delete(h);
 			changed = true;
+			// the file is here, so its OWN thumbnail is the better one — two sources of
+			// truth for one card is how they drift
+			forgetSharedThumb(h);
 		}
 	if (changed) pendingPulls.set(next);
 }
@@ -600,6 +862,7 @@ let started = false;
 export function startSharedLibrary() {
 	if (started) return;
 	started = true;
+	void loadSharedThumbs();
 	explorerItems.subscribe((items) => {
 		settlePulls(items);
 		scheduleSweep();

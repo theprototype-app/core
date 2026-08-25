@@ -1282,7 +1282,61 @@ your files). Two-peer verification is required for anything touching replication
 VR features: cover the extracted math/state headlessly (computeMoveOffset,
 computeTeleportArc pattern) and note that on-device feel is the user's manual check.
 
-## Roadmap 22 — the shared library (`shared-library`, 196 checks, two peers)
+## Roadmap 22 round 10 — `peer-ice-config` (10) and `explorer-drag-fixes` (7)
+
+- **A TWO-PEER FAILURE THAT `PEER_CONFIG` "FIXES" IS NOT ALWAYS SIGNALING FLAKINESS.**
+  Round 9 hit exactly that on localhost, re-ran with PEER_CONFIG, went green and filed it
+  as transient. It was a real bug: the env config carried a TURN entry with an empty
+  credential, and Chromium THROWS constructing the RTCPeerConnection rather than degrading,
+  so signaling worked (peer ids appeared) and every data channel died. PEER_CONFIG hid it
+  because mode `custom` with blank TURN fields uses peerjs's own defaults. When the
+  documented re-run makes a two-peer red disappear, note WHAT differs between the two
+  configs before calling it environmental.
+- **THE BROWSER CAN BE THE ORACLE.** `peer-ice-config` does not assert on the shape of
+  our ICE array — it hands the options the app would use to a real `new
+  RTCPeerConnection(...)` and asserts it constructs. That is the exact failure the user
+  saw, it cannot pass vacuously, and restoring the old gate turns three checks red with
+  the browser's own `InvalidAccessError`. Prefer a real API call over a shape assertion
+  whenever the API is what rejected you.
+- **A suite that runs against a `.app` hostname cannot see a localhost-only branch.**
+  `peerServer`'s default mode asked `isLocalDev` first, so every suite took the other
+  path. If a report only reproduces on a dev server, check whether the code branches on
+  `location.hostname` before assuming the diff is at fault.
+- **Synthesized HTML5 drag needs one `DataTransfer` across all three events.** Build it
+  once and pass it to `dragstart`, `dragover` and `drop` on the real elements; the payload
+  the app wrote is then readable back out of it, which is how `explorer-drag-fixes` proves
+  the whole selection travelled rather than inferring it from the result.
+- **A drop-band position check needs the scroll as its premise.** Assert the grid really
+  is scrolled (`scrollTop > 100`) before asserting the band is inside the visible box —
+  otherwise the check passes trivially at the top, which is the state the bug looks fine in.
+
+## Roadmap 22 — the Explorer views (`explorer-views`, 71 checks)
+
+Round 9's suite: the list view, its per-view columns and sort, and the bin (grouping,
+sort-by-date, and the purge). Lessons that generalise:
+
+- **Read both halves of a toggle at the SAME moment.** The armed-colour check first read
+  Thumbnails while it was armed and List after switching — comparing the accent with
+  itself, so it could never fail. Read the armed one and the idle one together.
+- **A class with no CSS can still be load-bearing**, and finding out costs a red check
+  that looks like a broken feature: a list row that did not carry `.explorer-card` was
+  BACKGROUND to `#explorer-grid`'s three handlers, so the click selected it and
+  `gridBackgroundClick` deselected it in the same gesture.
+- **A right-click for the grid BACKGROUND menu has three ways to miss**: the Controls HUD
+  intercepts the middle-bottom, the header row has its own menu, and a position past the
+  grid's own height resolves to `<html>` ("element intercepts pointer events" for an
+  element that is merely elsewhere). Aim below the last row, clear of the HUD, inside the
+  measured box.
+- **A bin fixture must stamp its own owner ids.** `meAsOwner` records whatever `peer.id`
+  holds, so a suite seeding deletions milliseconds after load records UNATTRIBUTED rows —
+  a real state, with its own section, but not the one a grouping check is about.
+- **The counterfactual belongs IN the test when the bug was a DEPENDENCY, not a value.**
+  For the purge, both the old and the new reading return `false` once the bytes are gone —
+  the fault was that the old one sat in a derived nothing re-ran. So the suite computes
+  both in-page and asserts they agree, and the real guards are the OBSERVABLE ones (the
+  row dims; the menu stops offering Restore).
+
+## Roadmap 22 — the shared library (`shared-library`, 194 checks, two peers)
 
 One suite covers the whole batch: the document, both identities, adoption, the pull,
 the concurrent-share reconcile, tombstones, delete/restore, the chunk protocol, the

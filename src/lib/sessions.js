@@ -89,6 +89,28 @@ function renderSceneThumbnail(group) {
 	}
 }
 
+/**
+ * R22 round 9: HOW BIG IS THIS ENTRY. Two halves measured differently because they are
+ * stored differently — the library's files are real Blobs (idb structured-clones them, so
+ * `.size` is the truth) while everything else is JSON, whose size has to be encoded to be
+ * known. Reported as one number, because the user is asking about disk and not about our
+ * storage layout.
+ *
+ * An ESTIMATE, and labelled as one in the UI: idb's own overhead is not observable from
+ * here. It is measured per payload at load, which is affordable because `loadSessions`
+ * already reads every payload in full.
+ * @param {any} payload @returns {number}
+ */
+function payloadBytes(payload) {
+	let bytes = 0;
+	try {
+		const { library, ...rest } = payload ?? {};
+		for (const row of library?.items ?? []) bytes += Number(row?.blob?.size) || 0;
+		bytes += new TextEncoder().encode(JSON.stringify(rest)).length;
+	} catch {}
+	return bytes;
+}
+
 /** @param {any} payload */
 function metaOf(payload) {
 	return {
@@ -96,7 +118,13 @@ function metaOf(payload) {
 		name: payload.name,
 		createdAt: payload.createdAt,
 		count: payload.count,
-		thumbnail: payload.thumbnail
+		thumbnail: payload.thumbnail,
+		// R22 round 9: the PROJECT/SCENE distinction is not a new field to store — a project
+		// entry is one that carries a library, which is exactly what `saveSessionWithLibrary`
+		// adds. Derived, so every session ever saved answers correctly with no migration.
+		hasLibrary: !!payload.library,
+		libraryCount: payload.library?.items?.length ?? 0,
+		bytes: payloadBytes(payload)
 	};
 }
 

@@ -1536,7 +1536,8 @@
 								items={[
 									{ value: 'default', name: HAS_SELF_HOSTED ? 'Default (self-hosted + fallback)' : 'Default (public cloud)' },
 									{ value: 'public', name: 'Public PeerJS cloud' },
-									{ value: 'custom', name: 'Custom server' }
+									{ value: 'custom', name: 'Custom server' },
+									{ value: 'local', name: 'Local dev (localhost:9001)' }
 								]}
 								value={$peerServerConfig.mode}
 								onchange={(v) => setPeerMode(v)}
@@ -1544,7 +1545,7 @@
 						</svelte:fragment>
 						Where peers discover each other.
 						{#if HAS_SELF_HOSTED}Default uses <span class="font-mono">{SELF_HOSTED_HOST}</span> and falls back to the public PeerJS cloud if it's unreachable.{:else}Default is the public PeerJS cloud.{/if}
-						Custom pins your own server (no fallback). Takes effect on reload.
+						Custom pins your own server (no fallback). Local dev is the <span class="font-mono">npm run peer</span> server on this machine — R22 round 9 made it an explicit choice, because a configured <span class="font-mono">.env</span> host now wins on localhost instead of being overridden by the hostname. Takes effect on reload.
 					</SettingRow>
 					{#if $peerServerConfig.mode === 'custom'}
 						<SettingRow name="Server host">

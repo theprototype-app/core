@@ -1,6 +1,6 @@
 import { get, writable } from 'svelte/store';
 import { peers, showToast } from '../stores/appStore';
-import { explorerFolders, itemBlob, itemByHash, addItemFromBytes, createFolder, hashBytes } from './explorer';
+import { explorerFolders, explorerItems, itemBlob, itemByHash, addItemFromBytes, hashBytes } from './explorer';
 import { projectManifest } from './projectManifest';
 import { idbGet, idbPut } from './idb';
 import {
@@ -27,24 +27,9 @@ import {
  */
 export const MAX_SHARED_BYTES = 25 * 1024 * 1024;
 
-/**
- * R22 round 2 — DO NOT CREATE A FOLDER NOBODY ASKED FOR. This used to run on every
- * arriving asset, so a `Shared` folder appeared the first time any byte landed — and
- * since R1 the adoption then MOVES that file to the placement its index row names,
- * leaving an empty folder behind for good. An empty folder the user did not make is
- * noise, and the standard is to create a location only when something goes in it.
- *
- * So: reuse one if it is already there, and otherwise create it ONLY when this asset
- * genuinely has nowhere else to go — which is the pre-R1 case that still exists (a node
- * texture, a hand model, a pack push: bytes the project uses that no shared index row
- * mentions).
- * @param {boolean} create may we mint it?
- */
-function sharedFolderId(create) {
-	const existing = get(explorerFolders).find((f) => f.name === 'Shared' && !f.parentId);
-	if (existing) return existing.id;
-	return create ? (createFolder('Shared', null)?.id ?? null) : null;
-}
+// R22 round 9: `sharedFolderId` is GONE, along with the last thing in the app that could
+// create a `Shared` folder. Round 2 narrowed it to "only when the asset has nowhere else
+// to go"; round 9 removed the nowhere — see `destinationFor` below.
 
 /**
  * Where should arriving bytes land? The shared index has the answer whenever the file is
@@ -67,7 +52,54 @@ function destinationFor(hash) {
 		// folder, because a shared file has a home the project agrees on
 		return folder?.id ?? null;
 	}
-	return sharedFolderId(true);
+	// R22 round 9 — THE REPORTED STRAY `Shared` FOLDER, and the second half of its cure.
+	//
+	// This fallback was the ONLY thing in the app that created that folder, and by round 4
+	// it had outlived its reason: every shared file carries placement, cascade publishes
+	// the ancestors, so a row's own folder is always resolvable. What still arrives with no
+	// row is a SCENE ASSET pushed by `sceneMusic` / `shaderTextures` / `hudImages` /
+	// `handModels` / the LUT — bytes the scene needs, pushed on assign and again on the
+	// handshake, which is why the folder reappeared around connect time. `markSharedForScene`
+	// (below) gives those a row, so this line is now only reached by a hash nothing on the
+	// wire describes.
+	//
+	// It lands at the library ROOT. "Shared" is a meaningful, replicated word in this batch
+	// — a share flag, two dot colours, a filter — and a folder wearing it that carries none
+	// of that is the kind of thing a user reads as a bug, which is exactly what happened.
+	return null;
+}
+
+/**
+ * R22 round 9: a file whose BYTES we are pushing is part of the project by definition, so
+ * it gets an index row. Called from `sendAsset`, which is the one path every scene-asset
+ * push goes through (a texture assigned to a shader, the scene's music, a HUD image, a
+ * hand model, a colour LUT).
+ *
+ * Sharing the NAME is strictly less exposure than sharing the bytes, and the bytes have
+ * already gone — so this cannot leak anything the push did not. It also makes the receiver
+ * able to FILE the arriving file, which is what the stray `Shared` folder was standing in
+ * for. An explicit unshare still wins: `markSharedForScene` refuses a record whose `share`
+ * is already set either way, so a file somebody deliberately unshared is not re-shared by
+ * the scene continuing to reference it.
+ *
+ * A DYNAMIC import, because sharedLibrary imports THIS module — a static edge would close
+ * the cycle (the documented moduleSDK rule).
+ * @param {string} hash
+ */
+async function markSharedForScene(hash) {
+	try {
+		const item = itemByHash(hash);
+		// only a record with NO decision on it: absent = local and never asked about
+		if (!item || item.share) return;
+		// ...and only a VISIBLE one. `itemByHash` searches the hidden shelf too, where a
+		// record is either an old scene version or a file somebody deleted for everyone —
+		// and `shareItem` clears the deleted-log entry, so marking one of those would
+		// un-delete a file because the scene still happens to reference it.
+		if (!get(explorerItems).some((i) => i.id === item.id)) return;
+		/** @type {any} */
+		const mod = await import('./sharedLibrary');
+		mod.shareItem?.(item.id);
+	} catch {}
 }
 
 /** Push an item's bytes to every peer @param {string} hash */
@@ -85,6 +117,8 @@ export async function sendAsset(hash) {
 	/** @type {any} */
 	const peer = get(peers);
 	if (!item || !peer) return;
+	// give it a row BEFORE the bytes travel, so the receiver can file it (see above)
+	await markSharedForScene(hash);
 	const blob = await itemBlob(item.id);
 	if (!blob) return;
 	if (blob.size > MAX_SHARED_BYTES) {

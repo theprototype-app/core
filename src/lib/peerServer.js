@@ -42,16 +42,55 @@ function splitUrls(s) {
 		.filter(Boolean);
 }
 
-/** Build RTCIceServer[] from a config shape (env or custom). @param {any} c */
+/**
+ * Build RTCIceServer[] from a config shape (env or custom).
+ *
+ * R22 round 10, AND IT IS WORSE THAN A MISCONFIGURATION: a TURN entry needs BOTH a
+ * username and a credential, because Chromium does not degrade when one is missing — it
+ * THROWS constructing the RTCPeerConnection:
+ *
+ *   InvalidAccessError: Failed to construct 'RTCPeerConnection':
+ *   ICE server parsing failed: TURN server with empty username or password
+ *
+ * That kills EVERY data connection while signaling carries on working, so the app hands
+ * you a peer id and then silently never connects to anybody — reported as "I get a peerID
+ * but no connect toasts". The old gate asked for the username ONLY and then wrote
+ * `credential: c.turnCredential || ''`, i.e. it went out of its way to emit the exact
+ * shape that throws.
+ *
+ * Reachable two ways: this machine's `.env` has VITE_TURN_USERNAME set and
+ * VITE_TURN_CREDENTIAL empty (round 9 made the env config apply on localhost, which is
+ * what exposed it), and ANY user who fills a TURN url + username in Settings and leaves
+ * the password blank gets a completely dead app with a console-only error.
+ *
+ * A half-configured TURN server is not a TURN server, so it is DROPPED — and said out
+ * loud, because losing relay candidates changes what can connect through a NAT.
+ * @param {any} c
+ */
 function iceServers(c) {
 	const list = [];
 	const stun = splitUrls(c.stunUrls);
 	if (stun.length) list.push({ urls: stun });
 	const turn = splitUrls(c.turnUrls);
-	if (turn.length && c.turnUsername) {
-		list.push({ urls: turn, username: c.turnUsername, credential: c.turnCredential || '' });
+	if (turn.length) {
+		const user = String(c.turnUsername ?? '').trim();
+		const secret = String(c.turnCredential ?? '').trim();
+		if (user && secret) list.push({ urls: turn, username: user, credential: secret });
+		else warnBadTurn(user ? 'credential' : secret ? 'username' : 'username and credential');
 	}
 	return list;
+}
+
+let warnedBadTurn = false;
+/** Say it ONCE per session: a dropped TURN server is not obvious, and it changes which
+ * peers can reach each other. @param {string} missing */
+function warnBadTurn(missing) {
+	if (warnedBadTurn) return;
+	warnedBadTurn = true;
+	console.warn(
+		`peer server: a TURN server is configured with no ${missing}, so it was dropped. ` +
+			'Direct and STUN connections still work; peers behind a strict NAT may not.'
+	);
 }
 
 /** Build a `new Peer(id, options)` options object from a server config shape. @param {any} c */

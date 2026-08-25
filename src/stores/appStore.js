@@ -610,7 +610,9 @@ export function clearToast(toast) {
  * blocks never did.
  * @param {string} id stable key (also dedupes re-adds)
  * @param {string} text
- * @param {{label: string, action: () => void}[]=} actions
+ * @param {{label: string, action: () => void, keepOpen?: boolean}[]=} actions R22
+ *   round 7: `keepOpen` leaves the card up after the press, which is what an INLINE
+ *   CONFIRM needs — a button that arms a second press must not close the card it arms
  * @param {(() => void)=} onDismiss side effect for the ✕ (e.g. persist "seen")
  * @param {boolean=} noClose 15-P2: a genuine FORK renders no ✕ at all — a
  *   dismiss that silently picks one branch is the auto-decide trap in

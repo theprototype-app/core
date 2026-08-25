@@ -423,6 +423,20 @@ autoDownload.subscribe((v) => {
 });
 
 /**
+ * R22 round 7 (user) — SKIP THE CONFIRMATION. Off by default, because a delete that
+ * reaches other people's machines should be asked about once. On, for somebody clearing
+ * out a library who does not want twenty dialogs — which is only reasonable BECAUSE the
+ * recycle bin exists, so the two settings are related and sit together.
+ * @type {import('svelte/store').Writable<boolean>} */
+export const deleteWithoutConfirm = writable(readFlag('shared:deleteNoConfirm', false));
+
+deleteWithoutConfirm.subscribe((v) => {
+	try {
+		localStorage.setItem('shared:deleteNoConfirm', String(v));
+	} catch {}
+});
+
+/**
  * R22 round 5 (user) — THE RECYCLE BIN IS OPTIONAL, and it does not survive a reload
  * unless you say so.
  *
@@ -529,6 +543,10 @@ export function shareItem(id) {
 	if (!item) return false;
 	patchRecord(id, { share: 'mine', owner: meAsOwner(), wasShared: undefined });
 	untomb({ items: [item.hash] });
+	// ...and clear it out of the DELETED log. Sharing a file is putting it back, so a
+	// deletion recorded against that hash is spent — otherwise the next sweep hides the
+	// file you just shared (the reported bug).
+	clearDeletedEntry(item.hash);
 	// push the PICTURE too, so a peer's card has something to show before it decides
 	// whether to download the file at all
 	sendAssetThumb(item.hash);
@@ -656,8 +674,8 @@ export function pullAllShared() {
 }
 
 /**
- * R22-R8 (locked answer) — SAVE INTO SESSION: "saves your current project in sessions
- * and cleans files in explorer, then downloads everything from peers/host".
+ * R22-R8 / round 7 — STASH INTO SESSIONS (the name the user settled on: "stash" says it
+ * is put away and retrievable, where "save" only says it is written down).
  *
  * The point is CONSISTENCY: stop carrying your own copy of a project and take the
  * session's, so every peer's Explorer is the same Explorer. The middle step throws away
@@ -673,20 +691,11 @@ export function pullAllShared() {
  * the first one (`openProject`) set the precedent.
  * @returns {Promise<{saved: string, cleared: number, pulling: number} | null>}
  */
-export async function saveIntoSessionAndAdopt() {
-	const { showConfirm } = await import('./confirmDialog');
+export async function stashIntoSessions() {
+	// NO CONFIRM HERE any more (round 7): the caller arms itself — the toast's button
+	// becomes the question and the second press is the answer. A modal that repeats a
+	// question the user has already been asked is how the old flow read as confusing.
 	const mine = get(explorerItems).length;
-	const ok = await showConfirm({
-		title: 'Save into session and take the project',
-		message:
-			'Your current scene and all ' +
-			mine +
-			' Explorer file' +
-			(mine === 1 ? '' : 's') +
-			' are saved as a session first, so nothing is lost. Your Explorer is then emptied and refilled from the session — every peer ends up with the same library. Continue?',
-		confirmLabel: 'Save and adopt'
-	});
-	if (!ok) return null;
 	const { saveSessionWithLibrary } = await import('./sessions');
 	const { clearLibrary } = await import('./explorer');
 	const saved = await saveSessionWithLibrary('Before adopting ' + (get(projectManifest).name || 'the session'));
@@ -755,6 +764,37 @@ export function bulkCounts() {
  * cannot undo.
  * @param {string} id a VISIBLE library item id @returns {boolean}
  */
+/**
+ * R22 round 7 (user) — LOG A DELETION FOR ANYTHING, not only a shared library file.
+ * A prefab removed by mistake is exactly as annoying as a texture removed by mistake,
+ * and the bin already knows how to hold a record with a name, a kind and a thumbnail.
+ *
+ * Prefabs are LOCAL, so there is nothing to tombstone and nothing to tell peers: the
+ * entry is a record for this machine, and Restore hands the prefab back from the same
+ * bytes it was always stored in.
+ * @param {{hash: string, name: string, kind: string, thumb?: string|null}} spec
+ */
+export function logLocalDeletion(spec) {
+	const hash = String(spec?.hash ?? '').trim();
+	if (!hash) return false;
+	const doc = get(projectManifest);
+	const log = [...(doc.deleted ?? []).filter((/** @type {any} */ r) => r.hash !== hash)];
+	log.push({
+		hash,
+		name: String(spec.name ?? hash),
+		kind: String(spec.kind ?? 'text'),
+		at: Date.now(),
+		by: meAsOwner(),
+		localOnly: true,
+		...(spec.thumb ? { thumb: spec.thumb } : {})
+	});
+	noteApplied(hash);
+	const { folders, items, removed } = projection();
+	publishSharedIndex(folders, items, removed, log);
+	return true;
+}
+
+/** @param {string} id a VISIBLE library item id @returns {boolean} */
 export function deleteSharedItem(id) {
 	const item = get(explorerItems).find((i) => i.id === id);
 	if (!item) return false;
@@ -765,7 +805,10 @@ export function deleteSharedItem(id) {
 		name: item.name,
 		kind: item.kind,
 		at: Date.now(),
-		by: meAsOwner()
+		by: meAsOwner(),
+		// R22 round 7: keep the PICTURE. It cannot be re-derived once the bytes are
+		// reclaimed, so a bin full of generic icons is what you get by not recording it.
+		...(item.thumbnail ? { thumb: item.thumbnail } : {})
 	});
 	// off the visible shelf, bytes intact — unless the bin is switched off, in which case
 	// the user has already said they do not want a second chance at this
@@ -785,6 +828,47 @@ export function deleteSharedItem(id) {
 		log
 	);
 	return true;
+}
+
+/** Drop one hash out of the deleted log (and out of the applied set), leaving the rest
+ * of the document alone. @param {string} hash */
+export function clearDeletedEntry(hash) {
+	const h = String(hash ?? '').trim();
+	if (!h) return false;
+	forgetApplied(h);
+	const doc = get(projectManifest);
+	const log = doc.deleted ?? [];
+	if (!log.some((/** @type {any} */ r) => r.hash === h)) return false;
+	const { folders, items, removed } = projection();
+	publishSharedIndex(
+		folders,
+		items,
+		removed,
+		log.filter((/** @type {any} */ r) => r.hash !== h)
+	);
+	return true;
+}
+
+/** R22 round 7: empty the whole bin — the Deleted section's own context menu. Local
+ * bytes AND the log, because "empty the bin" is a statement about both. */
+export async function emptyDeletedLog() {
+	const log = get(projectManifest).deleted ?? [];
+	if (!log.length) return 0;
+	for (const row of log) {
+		await purgeDeletedItem(row.hash);
+		forgetApplied(row.hash);
+	}
+	const { folders, items, removed } = projection();
+	publishSharedIndex(folders, items, removed, []);
+	return log.length;
+}
+
+/** R22 round 7: the DELETED log carries the thumbnail now, so a card in the bin looks
+ * like the file it was. It is a picture we already rendered — re-deriving it after the
+ * bytes are reclaimed is impossible, which is exactly why it has to be recorded at
+ * delete time. @param {any} row @returns {string|null} */
+export function deletedThumb(row) {
+	return row?.thumb ?? null;
 }
 
 /** The deleted log, newest first — what the Explorer's Deleted view lists.
@@ -813,6 +897,7 @@ export function restoreDeletedItem(hash) {
 	const item = itemByHash(h);
 	if (!item) return false;
 	setItemHidden(item.id, false);
+	forgetApplied(h);
 	const doc = get(projectManifest);
 	const log = (doc.deleted ?? []).filter((/** @type {any} */ r) => r.hash !== h);
 	patchRecord(item.id, { share: 'mine', owner: meAsOwner(), wasShared: undefined });
@@ -837,7 +922,9 @@ export function restoreDeletedItem(hash) {
 export async function purgeDeletedItem(hash) {
 	const item = itemByHash(String(hash ?? '').trim());
 	if (!item) return false;
-	const { deleteItem } = await import('./explorer');
+/** @type {any} */
+	const mod = await import('./explorer');
+	const deleteItem = mod.deleteItem;
 	await deleteItem(item.id);
 	return true;
 }
@@ -962,12 +1049,24 @@ export function applySharedIndex(doc) {
 	// R22 round 4: a DELETION somebody else performed. Our copy goes to the hidden shelf
 	// — bytes intact, so Restore works from this machine alone — rather than being
 	// destroyed, which is the difference between a recycle bin and a remote wipe.
+	// ONCE PER ROW, and this is the reported "clicking Share made the file disappear".
+	// The loop ran on EVERY library sweep over the WHOLE log, and the log persists in idb
+	// — so any file whose hash had ever been deleted was re-hidden the instant anything
+	// touched the library, including re-importing it and pressing Share. A delete is an
+	// EVENT to apply once, not a standing instruction.
 	for (const row of doc?.deleted ?? []) {
+		if (appliedDeletes.has(row.hash)) continue;
 		const held = get(explorerItems).find((i) => i.hash === row.hash);
-		if (!held) continue;
+		if (!held) {
+			// nothing here to hide, but the event is still seen — otherwise it fires later,
+			// against a copy the user has since put back
+			noteApplied(row.hash);
+			continue;
+		}
 		if (get(recycleBinEnabled)) setItemHidden(held.id, true);
 		else void import('./explorer').then((m) => m.deleteItem(held.id));
 		patchRecord(held.id, { share: 'no', owner: undefined, wasShared: undefined });
+		noteApplied(row.hash);
 	}
 
 	// 3. what left the index
@@ -1027,6 +1126,38 @@ function autoPullMissing() {
 }
 
 // ---- inheritance (R3, and the user's rule: a shared folder shares what lands in it)
+
+/**
+ * Deletions we have already acted on. PERSISTED, because the log lives in the manifest
+ * and the manifest survives a reload: without this, every boot replays every deletion
+ * the project has ever recorded against whatever happens to be in the library now.
+ * @type {Set<string>} */
+const appliedDeletes = new Set(readApplied());
+
+function readApplied() {
+	try {
+		return JSON.parse(localStorage.getItem('shared:appliedDeletes') ?? '[]');
+	} catch {
+		return [];
+	}
+}
+
+/** @param {string} hash */
+function noteApplied(hash) {
+	appliedDeletes.add(hash);
+	try {
+		// bounded: the log itself is capped at 200, so this cannot outgrow it by much
+		localStorage.setItem('shared:appliedDeletes', JSON.stringify([...appliedDeletes].slice(-400)));
+	} catch {}
+}
+
+/** A file is being put BACK, so the deletion that removed it is spent. @param {string} hash */
+function forgetApplied(hash) {
+	if (!appliedDeletes.delete(hash)) return;
+	try {
+		localStorage.setItem('shared:appliedDeletes', JSON.stringify([...appliedDeletes]));
+	} catch {}
+}
 
 /** the placement+flags we last swept, so an unrelated store write does no work */
 let sweptKey = '';

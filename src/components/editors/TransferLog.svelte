@@ -339,6 +339,10 @@
 <style>
 	.tx-wrap {
 		position: relative;
+		/* R22 round 7: WindowShell's own chrome (the collapse handle, the resize grip)
+		   sits at z-index 20, so the pill and its popover were under "Hide folder tree".
+		   A header control has to win against panel furniture. */
+		z-index: 30;
 	}
 	.tx-pill {
 		display: inline-flex;

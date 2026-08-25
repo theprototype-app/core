@@ -40,7 +40,8 @@
 		autoShareAll,
 		autoDownload,
 		recycleBinEnabled,
-		keepRecycleBin
+		keepRecycleBin,
+		deleteWithoutConfirm
 	} from '$lib/sharedLibrary';
 	// 21-I5 (locked answer 5): the save-name template — one rule for every download
 	import { saveNameTemplate } from '$lib/saveName';
@@ -1085,6 +1086,21 @@
 							keeps its own copy in <strong>Deleted files</strong> where it can be restored.
 							Turn this off and a delete is immediate on <em>this</em> machine — peers still
 							get their own bin, because their copy is theirs.
+						</span>
+					</SettingRow>
+					<SettingRow name="Delete without asking">
+						<svelte:fragment slot="control">
+							<input
+								id="delete-no-confirm"
+								class="tp-check"
+								type="checkbox"
+								checked={$deleteWithoutConfirm}
+								on:change={(e: any) => deleteWithoutConfirm.set(!!e.target.checked)} />
+						</svelte:fragment>
+						<span>
+							Skip the confirmation when deleting files and folders. Reasonable only
+							<em>because</em> the recycle bin exists — with the bin also off, a delete is
+							immediate and final, which is why these two sit together.
 						</span>
 					</SettingRow>
 					<SettingRow name="Keep deleted files after a reload">

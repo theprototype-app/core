@@ -31,6 +31,7 @@
 		itemBlob,
 		itemByHash,
 		inspectedFile,
+		setItemHidden,
 		updateItemBytes,
 		parseObjectFile
 	} from '$lib/explorer';
@@ -52,7 +53,7 @@
 	// points at", behind a throttle, because the answer costs a whole-scene
 	// serialization. This READS that flag and never recomputes it.
 	import { sceneDirty, recomputeSceneDirty } from '$lib/sceneIdentity';
-	import { showChoice } from '$lib/confirmDialog';
+	import { showChoice, showConfirm } from '$lib/confirmDialog';
 	import VersionHistory from './VersionHistory.svelte';
 	// 21-G2: the "update available" dot on old scene versions. The manifest store is
 	// passed as the reactive dependency — a helper reading through get() registers none
@@ -77,7 +78,11 @@
 		deletedLog,
 		canRestoreDeleted,
 		restoreDeletedItem,
-		purgeDeletedItem
+		purgeDeletedItem,
+		emptyDeletedLog,
+		deletedThumb,
+		logLocalDeletion,
+		deleteWithoutConfirm
 	} from '$lib/sharedLibrary';
 	// R22 round 2: a shared file's PICTURE travels on its own tiny channel, so a card can
 	// show a thumbnail before anybody downloads the bytes (see assetShare).
@@ -745,8 +750,10 @@
 				hash: r.hash,
 				folderId: null,
 				size: 0,
-				thumbnail: null,
 				createdAt: r.at,
+				// R22 round 7: the picture was recorded when the file was deleted, because once
+				// the bytes are reclaimed it can never be derived again
+				thumbnail: deletedThumb(r),
 				owner: r.by ?? null,
 				deletedEntry: true,
 				restorable: canRestoreDeleted(r.hash)
@@ -925,6 +932,9 @@
 		const a = $activeFolder;
 		if (a === 'prefabs') return [{ label: 'Prefabs', id: 'prefabs' as string | null }];
 		if (a === 'packs') return [{ label: 'Packs', id: 'packs' as string | null }];
+		// R22 round 7: the bin is its own place, so the breadcrumb has to say so — it read
+		// "Library", which is exactly where these files are not
+		if (a === 'deleted') return [{ label: 'Deleted', id: 'deleted' as string | null }];
 		if (typeof a === 'string' && a.startsWith('pack:')) {
 			const p = packByName(a.slice(5));
 			return [
@@ -1198,6 +1208,18 @@
 		if (editing) void commitEdit();
 	}
 	function startCreate(parentId: string | null, inGrid = false) {
+		// R22 round 7 (user): pressing New folder again must not COMMIT the pending one and
+		// open another — that is how you end up with "New folder", "New folder (2)"… from
+		// a double-press. An edit already open for the same place is the same intent, so
+		// keep it and put the caret back in it.
+		if (editing?.mode === 'create' && editing.parentId === parentId && editing.inGrid === inGrid) {
+			queueMicrotask(() => {
+				const el = document.querySelector<HTMLInputElement>('#explorer-new-card input, .explorer-edit-input');
+				el?.focus();
+				el?.select();
+			});
+			return;
+		}
 		settlePendingEdit();
 		if (parentId) {
 			const next = new Set(expanded);
@@ -1983,7 +2005,7 @@
 				},
 				{ label: 'Properties', action: () => showProperties({ kind: 'item', item }) },
 				{ label: 'Rename', action: () => startRenamePrefab(item) },
-				{ label: 'Delete', danger: true, action: () => confirmDeletePrefab(prefab) }
+				{ label: 'Delete', danger: true, action: () => void deletePrefabToBin(prefab) }
 			]
 		};
 	}
@@ -2247,7 +2269,12 @@
 								showToast(item.name + ' deleted for everyone — restore it from Deleted files');
 							}
 						}
-					: { label: 'Delete', danger: true, action: () => deleteItem(item.id) }
+					: {
+							label: 'Delete',
+							danger: true,
+							tooltip: 'Moves it to Deleted, where you can restore it',
+							action: () => void deleteLocalItem(item)
+						}
 			]
 		};
 	}
@@ -2258,6 +2285,93 @@
 	 * EXTENSIONS table: a filter offering `Audio` in a project with no sounds in it is a
 	 * row that can only ever produce an empty grid.
 	 */
+	/**
+	 * R22 round 7 (user) — DELETING MY OWN FILE GOES TO THE BIN TOO, and it asks INSIDE
+	 * the Explorer rather than throwing a toast. A toast for a question is the wrong
+	 * shape: it appears somewhere else on screen, it can be missed, and it cannot block.
+	 * `showConfirm` is the app's modal and it is what every other destructive file action
+	 * already uses (folder delete, Open project).
+	 */
+	async function deleteLocalItem(item: any) {
+		if (!$deleteWithoutConfirm) {
+			const ok = await showConfirm({
+				title: 'Delete \u201c' + item.name + '\u201d',
+				message:
+					'It moves to Deleted, where you can restore it or free the disk. Nobody else has this file, so nobody else is affected.',
+				confirmLabel: 'Delete'
+			});
+			if (!ok) return;
+		}
+		logLocalDeletion({ hash: item.hash, name: item.name, kind: item.kind, thumb: item.thumbnail });
+		setItemHidden(item.id, true);
+		showToast(item.name + ' moved to Deleted');
+	}
+
+	/** ...and a PREFAB, which is local by nature and was simply gone before. */
+	async function deletePrefabToBin(prefab: any) {
+		if (!$deleteWithoutConfirm) {
+			const ok = await showConfirm({
+				title: 'Delete prefab \u201c' + (prefab?.name ?? '') + '\u201d',
+				message: 'It moves to Deleted, where you can restore it.',
+				confirmLabel: 'Delete'
+			});
+			if (!ok) return;
+		}
+		// a prefab's identity is its id, not a content hash — prefix it so the two can
+		// never collide in one log
+		logLocalDeletion({
+			hash: 'prefab:' + prefab.id,
+			name: prefab.name ?? 'Prefab',
+			kind: 'prefab',
+			thumb: prefab.thumbnail ?? null
+		});
+		removePrefab(prefab.id);
+		showToast((prefab.name ?? 'Prefab') + ' moved to Deleted');
+	}
+
+	/** R22 round 7: emptying the bin is destructive and LOCAL, so it confirms and says
+	 * which of those two it is — peers keep their own copies either way. */
+	async function emptyBin() {
+		const n = deletedLog($projectManifest).length;
+		if (!n) return;
+		const ok = await showConfirm({
+			title: 'Empty Deleted',
+			message:
+				'Reclaim the disk for ' +
+				n +
+				' deleted file' +
+				(n === 1 ? '' : 's') +
+				' and clear the record. This machine only — every peer keeps its own bin, and nothing already restored is affected.',
+			confirmLabel: 'Empty'
+		});
+		if (!ok) return;
+		const gone = await emptyDeletedLog();
+		showToast('Emptied ' + gone + ' file' + (gone === 1 ? '' : 's') + ' from Deleted');
+	}
+
+	/** the Deleted tree row's own menu */
+	function deletedRowMenu(e: MouseEvent) {
+		e.preventDefault();
+		const n = deletedLog($projectManifest).length;
+		menu = {
+			x: e.clientX,
+			y: e.clientY,
+			items: [
+				{ label: 'Open', action: () => openFolder('deleted') },
+				...(n
+					? [
+							{
+								label: 'Empty Deleted (' + n + ')',
+								danger: true,
+								icon: 'trash-2',
+								action: () => void emptyBin()
+							}
+						]
+					: [])
+			]
+		};
+	}
+
 	function filterMenu(e: MouseEvent) {
 		e.preventDefault();
 		e.stopPropagation();
@@ -2304,6 +2418,29 @@
 
 	function gridMenu(e: MouseEvent) {
 		if ((e.target as HTMLElement)?.closest('.explorer-card, .explorer-folder-card')) return;
+		// R22 round 7: the bin is not a folder you put things in, so New folder / Save scene
+		// are meaningless here. What IS meaningful is emptying it.
+		if ($activeFolder === 'deleted') {
+			e.preventDefault();
+			const n = deletedLog($projectManifest).length;
+			menu = {
+				x: e.clientX,
+				y: e.clientY,
+				items: n
+					? [
+							{
+								label: 'Empty Deleted (' + n + ')',
+								danger: true,
+								icon: 'trash-2',
+								tooltip:
+									'Reclaim the disk on THIS machine and clear the record. Peers keep their own bins.',
+								action: () => void emptyBin()
+							}
+						]
+					: [{ label: 'The bin is empty', action: () => {} }]
+			};
+			return;
+		}
 		const inPacks =
 			$activeFolder === 'packs' || (typeof $activeFolder === 'string' && $activeFolder.startsWith('pack:'));
 		const inPrefabs = !inPacks && $activeFolder === 'prefabs';
@@ -3188,20 +3325,6 @@
 							<span class="px-2 py-1 text-[10px] italic text-gray-500" style="padding-left: 22px">No packs</span>
 						{/if}
 					{/if}
-					<!-- R22 round 4: the recycle bin, pinned beside Scene. Hidden while empty:
-					     a bin nobody has put anything in is a row that only takes up space. -->
-					{#if deletedLog($projectManifest).length}
-						<button
-							id="deleted-folder"
-							class="whitespace-nowrap rounded px-2 py-1 text-left {$activeFolder === 'deleted'
-								? 'bg-primary-700 text-white'
-								: 'text-gray-300 hover:bg-gray-700'}"
-							title="Files removed from the project — restore them, or free the disk"
-							onclick={() => openFolder('deleted')}
-							><Icon name="trash-2" size={16} class="mr-1.5 w-4 text-center text-gray-400" aria-hidden="true" />Deleted
-							<span class="text-gray-500">({deletedLog($projectManifest).length})</span></button
-						>
-					{/if}
 					<button
 						id="scene-folder"
 						class="whitespace-nowrap rounded px-2 py-1 text-left {$activeFolder === 'scene'
@@ -3222,6 +3345,22 @@
 							<Folder size={16} class="ico-folder mr-1.5 w-4 text-center" aria-hidden="true" />{sub} ({$sceneAssets.filter((a) => a.group === sub).length})
 						</button>
 					{/each}
+					{/if}
+					<!-- R22 round 7: the bin sits BELOW Scene. It is the least-used pinned row,
+					     and a destructive place belongs under the things you reach for rather
+					     than above them. Still hidden while empty. -->
+					{#if deletedLog($projectManifest).length}
+						<button
+							id="deleted-folder"
+							class="whitespace-nowrap rounded px-2 py-1 text-left {$activeFolder === 'deleted'
+								? 'bg-primary-700 text-white'
+								: 'text-gray-300 hover:bg-gray-700'}"
+							title="Files removed from the project — restore them, or free the disk"
+							onclick={() => openFolder('deleted')}
+							oncontextmenu={deletedRowMenu}
+							><Icon name="trash-2" size={16} class="mr-1.5 w-4 text-center text-gray-400" aria-hidden="true" />Deleted
+							<span class="text-gray-500">({deletedLog($projectManifest).length})</span></button
+						>
 					{/if}
 				</div>
 			</div>

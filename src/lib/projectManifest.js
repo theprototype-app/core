@@ -78,7 +78,8 @@ export function autoVersionsOff() {
  * @typedef {{name: string, scenes: Record<string, SceneEntry>, assets: string[],
  *   changedAt: number, folders?: SharedFolder[], items?: SharedItem[],
  *   removed?: {items: Record<string, number>, folders: Record<string, number>},
- *   deleted?: {hash: string, name: string, kind: string, at: number, by?: any}[]}} Manifest
+ *   deleted?: {hash: string, name: string, kind: string, at: number, by?: any,
+ *     thumb?: string, localOnly?: boolean}[]}} Manifest
  *   `name` (21-G9) is the project's identity; `folders`/`items` (R22-R1) are THE SHARED
  *   INDEX — see the block comment above normalizeSharedIndex.
  */

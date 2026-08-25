@@ -123,12 +123,15 @@ export async function applyAssetFile(data) {
 		raw instanceof ArrayBuffer ? raw : raw.buffer.slice(raw.byteOffset, raw.byteOffset + raw.byteLength);
 	// R22-R8: the single-shot path still gets a ledger row, so a small file and an older
 	// peer's whole-file answer both appear in the log rather than arriving invisibly
-	const tx = beginTransfer({
-		hash: data.hash,
-		name: data.name ?? 'shared-asset',
-		dir: 'in',
-		size: buffer.byteLength
-	});
+	// ...and the same on the single-shot path, for the same reason
+	const tx =
+		pullsInFlight.get(data.hash)?.tx ??
+		beginTransfer({
+			hash: data.hash,
+			name: data.name ?? 'shared-asset',
+			dir: 'in',
+			size: buffer.byteLength
+		});
 	activateTransfer(tx, buffer.byteLength);
 	await addItemFromBytes(buffer, data.name ?? 'shared-asset', destinationFor(data.hash));
 	finishTransfer(tx);
@@ -446,7 +449,11 @@ export function applyAssetStart(data) {
 		// stalled, so take the newer one rather than interleaving two sets of slices
 		failTransfer(held.tx, 'restarted by the sender');
 	}
-	const tx = beginTransfer({ hash, name, dir: 'in', size });
+	// REUSE THE PULL'S ROW. A pull and the transfer that answers it are ONE thing to a
+	// person watching a progress bar, and opening a second row left the first stuck at
+	// 'queued' forever — which is why two shared files reported "2 files, 50%" with both
+	// already downloaded. A row is only minted here for an UNSOLICITED push.
+	const tx = pullsInFlight.get(hash)?.tx ?? beginTransfer({ hash, name, dir: 'in', size });
 	incoming.set(hash, {
 		name,
 		size,
@@ -498,6 +505,12 @@ export async function applyAssetChunk(data) {
 	}
 	pendingRequests.delete(hash);
 	deadHashes.delete(hash);
+	unavailableHashes.update((u) => {
+		if (!u.has(hash)) return u;
+		const next = new Set(u);
+		next.delete(hash);
+		return next;
+	});
 	await addItemFromBytes(whole.buffer, state.name, destinationFor(hash));
 	finishTransfer(state.tx);
 	settlePull(hash);
@@ -522,6 +535,7 @@ export function sweepStalledTransfers() {
 			failTransfer(tx, 'nobody answered');
 			pendingRequests.delete(hash);
 			deadHashes.set(hash, now);
+			markUnavailable(hash);
 			settlePull(hash);
 		}
 	}
@@ -530,7 +544,15 @@ export function sweepStalledTransfers() {
 
 /** One pull resolved (or died). @param {string} hash */
 function settlePull(hash) {
+	const state = pullsInFlight.get(hash);
 	pullsInFlight.delete(hash);
+	// belt and braces: if the row somehow survived (a path that stored the bytes without
+	// going through finishTransfer), close it here rather than leaving the summary
+	// permanently one file short of done
+	if (state) {
+		const row = get(transfers).find((t) => t.id === state.tx);
+		if (row && (row.state === 'queued' || row.state === 'active')) finishTransfer(state.tx);
+	}
 }
 
 /** Ask every open peer for one hash. No cap: see SEND_CONCURRENCY. @param {string} hash */
@@ -568,7 +590,45 @@ export function applyAssetMissing(peerId, data) {
 	failTransfer(state.tx, 'no peer has this file');
 	pendingRequests.delete(hash);
 	deadHashes.set(hash, Date.now());
+	markUnavailable(hash);
 	settlePull(hash);
+}
+
+/**
+ * R22 round 5 — WHAT IF THE ONLY PEER WHO HAD IT LEFT?
+ *
+ * The real answer is REDUNDANCY, and it already ships: auto-download is on by default,
+ * so every peer holds every shared file and one leaving costs nothing. This is the
+ * fallback for when it does not hold — a manual-download session, or a peer that left
+ * before anybody fetched.
+ *
+ * There is nothing clever to do: nobody has the bytes. What the app CAN do is stop
+ * pretending. An unavailable hash is recorded so the card can say so instead of looking
+ * like a download that never finishes, and the mark is cleared whenever a NEW PEER
+ * ARRIVES — they may be carrying it, and a session that never retries would keep telling
+ * you a file is gone while the person holding it sits in the room.
+ * @type {import('svelte/store').Writable<Set<string>>} */
+export const unavailableHashes = writable(new Set());
+
+/** @param {string} hash */
+function markUnavailable(hash) {
+	unavailableHashes.update((s) => (s.has(hash) ? s : new Set([...s, hash])));
+}
+
+/**
+ * A peer joined (or rejoined). Everything we had given up on is worth one more ask —
+ * this is the ONLY automatic retry, and it is triggered by new evidence rather than by a
+ * timer, which is the difference between a retry and a loop.
+ */
+export function retryUnavailable() {
+	const dead = [...get(unavailableHashes)];
+	if (!dead.length) return 0;
+	unavailableHashes.set(new Set());
+	for (const hash of dead) {
+		deadHashes.delete(hash);
+		pendingRequests.delete(hash);
+	}
+	return dead.length;
 }
 
 /** Run queued sends up to the cap. @returns {void} */

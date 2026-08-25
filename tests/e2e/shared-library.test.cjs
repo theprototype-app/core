@@ -1267,6 +1267,215 @@ h.run(async () => {
 	await A.page.keyboard.press('Escape');
 	await A.page.waitForTimeout(200);
 
+	// ================================================================================
+	// ROUND 5 — two reported bugs, the unreachable-file case, and the bin's settings.
+
+	// ---- 43. BUG 2: one file, ONE ledger row -------------------------------------
+	//
+	// Reported: share two files, and the receiving peer sticks at "Downloading 2 files,
+	// 50%" with BOTH already downloaded and duplicate rows queued in the log. The pull
+	// opened a row and the transfer that answered it opened another, so every download
+	// left an unresolved 'queued' row behind — and the summary counted it forever.
+	await A.page.evaluate(() => window.__stores.transferLedger.transfers.set([]));
+	await B.page.evaluate(() => window.__stores.transferLedger.transfers.set([]));
+	const pair = await A.page.evaluate(async () => {
+		const e = window.__stores.explorer;
+		const sl = window.__stores.sharedLibrary;
+		const a = await e.addItemFromBytes(new TextEncoder().encode('pair one').buffer, 'pair1.txt', null);
+		const b = await e.addItemFromBytes(new TextEncoder().encode('pair two').buffer, 'pair2.txt', null);
+		sl.shareItem(a.id);
+		sl.shareItem(b.id);
+		sl.publishMine(true);
+		return [a.hash, b.hash];
+	});
+	await h.eventually(
+		() => itemsOf(B),
+		(items) => pair.every((hash) => items.some((i) => i.hash === hash)),
+		'the peer downloads both shared files'
+	);
+	// THE BUG, asserted: no row may be left behind, and the summary must reach zero
+	await h.eventually(
+		() =>
+			B.page.evaluate(() => {
+				let v;
+				window.__stores.transferLedger.transferSummary.subscribe((x) => (v = x))();
+				return v;
+			}),
+		(sum) => sum.left === 0,
+		'the transfer summary EMPTIES when the downloads finish — no phantom 50%'
+	);
+	const rowsPerHash = await B.page.evaluate((hashes) => {
+		let v;
+		window.__stores.transferLedger.transfers.subscribe((x) => (v = x))();
+		return hashes.map((hash) => v.filter((t) => t.hash === hash && t.dir === 'in').map((t) => t.state));
+	}, pair);
+	h.check(
+		rowsPerHash.every((states) => states.length === 1 && states[0] === 'done'),
+		`exactly ONE finished row per downloaded file, not two (${JSON.stringify(rowsPerHash)})`
+	);
+
+	// ---- 44. BUG 1: the tint applies to the FIRST file in a session ---------------
+	//
+	// Reported: connect two peers, drop one file — it is not greyed, though nobody else
+	// can see it. Drop more and they are. The distinction used to wait for something in
+	// the project to be shared; in a session the question exists from the first file.
+	await A.page.evaluate(async () => {
+		await window.__stores.explorer.clearLibrary();
+		window.__stores.sharedLibrary.publishMine(true);
+	});
+	await A.page.evaluate(() => window.__stores.explorer.activeFolder.set(null));
+	await A.page.waitForTimeout(700);
+	const firstFile = await addFile(A, 'the very first one', 'first.txt');
+	await h.eventually(
+		() => A.page.locator('[data-card-id="' + firstFile.id + '"]').count(),
+		(n) => n === 1,
+		'the first file has a card'
+	);
+	const firstTint = await A.page.evaluate((id) => {
+		const card = document.querySelector('[data-card-id="' + id + '"]');
+		const label = card?.querySelector('span:last-of-type');
+		const icon = card?.querySelector('span.rounded-sm');
+		return {
+			label: label ? getComputedStyle(label).color : '',
+			icon: icon ? getComputedStyle(icon).color : ''
+		};
+	}, firstFile.id);
+	// muted is text-gray-500/600; unmuted is text-gray-300. Compare against the SECOND
+	// file rather than pinning a literal: what matters is that the FIRST one is not
+	// treated differently from the ones after it.
+	const secondFile = await addFile(A, 'and the second', 'second.txt');
+	await A.page.waitForTimeout(600);
+	const secondTint = await A.page.evaluate((id) => {
+		const card = document.querySelector('[data-card-id="' + id + '"]');
+		const label = card?.querySelector('span:last-of-type');
+		return label ? getComputedStyle(label).color : '';
+	}, secondFile.id);
+	h.check(!!firstTint.label && firstTint.label === secondTint,
+		`the FIRST file is muted exactly like the ones after it (${firstTint.label} vs ${secondTint})`);
+	h.check(
+		await A.page.evaluate(() => {
+			let v;
+			window.__stores.peers.subscribe((x) => (v = x))();
+			// a SET: `.length` on one is undefined, which is what this check caught
+			return (v?.openedPeers?.size ?? 0) > 0;
+		}),
+		'...and the reason is that there is a peer to be distinguished from'
+	);
+
+	// ---- 45. a file NOBODY here holds says so -------------------------------------
+	//
+	// The honest answer to "the only peer who had it left". Redundancy is the real fix
+	// and it already ships (auto-download is on by default, so everybody holds
+	// everything), but a manual session can still reach this, and a card that looks like
+	// a download which never finishes is worse than one that admits the file is gone.
+	const orphanHash = 'c0ffee'.padEnd(64, '1');
+	await B.page.evaluate(async (hash) => {
+		// forge an index row for bytes nobody has, which is exactly the state a departed
+		// peer leaves behind
+		const pm = window.__stores.projectManifest;
+		let m;
+		pm.projectManifest.subscribe((v) => (m = v))();
+		pm.publishSharedIndex(
+			m.folders ?? [],
+			[...(m.items ?? []), { hash, name: 'orphan.txt', kind: 'text', folderId: null, at: Date.now() }],
+			m.removed,
+			m.deleted
+		);
+	}, orphanHash);
+	await A.page.evaluate((hash) => window.__stores.sharedLibrary.pullSharedItem(hash), orphanHash);
+	await h.eventually(
+		() =>
+			A.page.evaluate(() => {
+				let v;
+				window.__stores.assetShare.unavailableHashes.subscribe((x) => (v = x))();
+				return [...v];
+			}),
+		(list) => list.includes(orphanHash),
+		'a hash no peer holds is recorded as UNAVAILABLE rather than pending forever'
+	);
+	// and a NEW PEER is new evidence: everything given up on is worth one more ask
+	const revived = await A.page.evaluate(() => window.__stores.assetShare.retryUnavailable());
+	h.check(revived >= 1, `an arriving peer revives what we gave up on (${revived} hashes)`);
+	h.check(
+		(await A.page.evaluate(() => {
+			let v;
+			window.__stores.assetShare.unavailableHashes.subscribe((x) => (v = x))();
+			return [...v];
+		})).length === 0,
+		'...and the unavailable list is cleared so the retry can actually happen'
+	);
+
+	// ---- 46. the recycle bin's two settings --------------------------------------
+	const binPrefs = await A.page.evaluate(() => {
+		const sl = window.__stores.sharedLibrary;
+		let bin, keep;
+		sl.recycleBinEnabled.subscribe((v) => (bin = v))();
+		sl.keepRecycleBin.subscribe((v) => (keep = v))();
+		return { bin, keep };
+	});
+	h.check(binPrefs.bin === true, 'the recycle bin is ON by default — a delete reaches peers, so it must be reversible');
+	h.check(binPrefs.keep === false, 'and it does NOT survive a reload by default: a safety net, not storage');
+
+	// the bin OFF means a delete is immediate here
+	const immediate = await A.page.evaluate(async () => {
+		const sl = window.__stores.sharedLibrary;
+		const e = window.__stores.explorer;
+		sl.recycleBinEnabled.set(false);
+		const item = await e.addItemFromBytes(new TextEncoder().encode('no second chance').buffer, 'nobin.txt', null);
+		sl.shareItem(item.id);
+		sl.publishMine(true);
+		sl.deleteSharedItem(item.id);
+		return item.hash;
+	});
+	await h.eventually(
+		() => A.page.evaluate((hash) => !window.__stores.explorer.itemByHash(hash), immediate),
+		(gone) => gone === true,
+		'with the bin off the bytes go straight away'
+	);
+	h.check(
+		await A.page.evaluate((hash) => (
+			(() => {
+				let m;
+				window.__stores.projectManifest.projectManifest.subscribe((v) => (m = v))();
+				return (m.deleted ?? []).some((r) => r.hash === hash);
+			})()
+		), immediate),
+		'...but the LOG entry still exists — "this was deleted" stays true whatever the setting'
+	);
+	await A.page.evaluate(() => window.__stores.sharedLibrary.recycleBinEnabled.set(true));
+
+	// emptying on load reclaims bytes and leaves the log alone
+	const reclaimed = await A.page.evaluate(async () => {
+		const sl = window.__stores.sharedLibrary;
+		const e = window.__stores.explorer;
+		const item = await e.addItemFromBytes(new TextEncoder().encode('reclaim me').buffer, 'reclaim.txt', null);
+		sl.shareItem(item.id);
+		sl.publishMine(true);
+		sl.deleteSharedItem(item.id);
+		await new Promise((r) => setTimeout(r, 400));
+		const beforeHeld = !!e.itemByHash(item.hash);
+		const n = await sl.emptyRecycleBinOnLoad();
+		let m;
+		window.__stores.projectManifest.projectManifest.subscribe((v) => (m = v))();
+		return {
+			beforeHeld,
+			n,
+			afterHeld: !!e.itemByHash(item.hash),
+			logKept: (m.deleted ?? []).some((r) => r.hash === item.hash)
+		};
+	});
+	h.check(reclaimed.beforeHeld && !reclaimed.afterHeld,
+		`emptying the bin reclaims the bytes (${JSON.stringify(reclaimed)})`);
+	h.check(reclaimed.logKept, 'and leaves the deleted LOG alone — it is project data, not local bytes');
+
+	// ---- 47. Settings: the file rows live in their own Explorer section -----------
+	await A.page.evaluate(() => window.__stores.settingsOpen?.set?.(true));
+	await A.page.waitForTimeout(400);
+	const hasExplorerSection = await A.page.evaluate(() =>
+		[...document.querySelectorAll('h2')].some((h) => (h.textContent || '').trim() === 'Explorer')
+	);
+	h.check(hasExplorerSection, 'Settings has an Explorer section of its own');
+
 	// ---- 14. no render crash anywhere ---------------------------------------------
 	for (const [label, p] of [
 		['A', A],

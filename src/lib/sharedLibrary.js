@@ -92,7 +92,8 @@ import {
 	forgetSharedThumb,
 	loadSharedThumbs,
 	sweepStalledTransfers,
-	reviveHash
+	reviveHash,
+	retryUnavailable
 } from './assetShare';
 import { ownerStamp } from './cloudHooks';
 
@@ -419,6 +420,47 @@ autoDownload.subscribe((v) => {
 	} catch {}
 });
 
+/**
+ * R22 round 5 (user) — THE RECYCLE BIN IS OPTIONAL, and it does not survive a reload
+ * unless you say so.
+ *
+ * The bin exists so a delete that reaches other people is reversible. It is still a
+ * pile of bytes you asked to be rid of, so the DEFAULT is that it is emptied on the
+ * next load: the log entry stays ("this was deleted" remains true, and it replicates),
+ * and only the local blob is reclaimed. Turning the bin off entirely makes a delete
+ * immediate here — peers still get their own bin, because their copy is theirs.
+ * @type {import('svelte/store').Writable<boolean>} */
+export const recycleBinEnabled = writable(readFlag('shared:recycleBin', true));
+/** Keep deleted files on disk across a reload. OFF by default — see above.
+ * @type {import('svelte/store').Writable<boolean>} */
+export const keepRecycleBin = writable(readFlag('shared:keepRecycleBin', false));
+
+recycleBinEnabled.subscribe((v) => {
+	try {
+		localStorage.setItem('shared:recycleBin', String(v));
+	} catch {}
+});
+keepRecycleBin.subscribe((v) => {
+	try {
+		localStorage.setItem('shared:keepRecycleBin', String(v));
+	} catch {}
+});
+
+/**
+ * Empty the bin at startup unless it is being kept. LOCAL BYTES ONLY: the deleted LOG
+ * is project data and is left completely alone, so the history of what was removed
+ * survives and a peer who kept its own copy can still restore.
+ * @returns {Promise<number>} how many blobs were reclaimed
+ */
+export async function emptyRecycleBinOnLoad() {
+	if (get(keepRecycleBin)) return 0;
+	const log = get(projectManifest).deleted ?? [];
+	if (!log.length) return 0;
+	let n = 0;
+	for (const row of log) if (await purgeDeletedItem(row.hash)) n++;
+	return n;
+}
+
 /** May we take this row out of the index? @param {any} row a local record or an index row */
 export function canUnshare(row) {
 	const state = shareStateOf(row);
@@ -696,8 +738,10 @@ export function deleteSharedItem(id) {
 		at: Date.now(),
 		by: meAsOwner()
 	});
-	// off the visible shelf, bytes intact
-	setItemHidden(item.id, true);
+	// off the visible shelf, bytes intact — unless the bin is switched off, in which case
+	// the user has already said they do not want a second chance at this
+	if (get(recycleBinEnabled)) setItemHidden(item.id, true);
+	else void import('./explorer').then((m) => m.deleteItem(item.id));
 	patchRecord(item.id, { share: 'no', owner: undefined, wasShared: undefined });
 	// ...and out of the index for everybody, through the tombstone that already exists
 	const { folders, items } = projection();
@@ -892,7 +936,8 @@ export function applySharedIndex(doc) {
 	for (const row of doc?.deleted ?? []) {
 		const held = get(explorerItems).find((i) => i.hash === row.hash);
 		if (!held) continue;
-		setItemHidden(held.id, true);
+		if (get(recycleBinEnabled)) setItemHidden(held.id, true);
+		else void import('./explorer').then((m) => m.deleteItem(held.id));
 		patchRecord(held.id, { share: 'no', owner: undefined, wasShared: undefined });
 	}
 
@@ -1112,10 +1157,25 @@ export function startSharedLibrary() {
 	if (started) return;
 	started = true;
 	void loadSharedThumbs();
+	// R22 round 5: the bin is emptied on load unless it is being kept. After the manifest
+	// has settled, because the LOG is what names what to reclaim.
+	setTimeout(() => void emptyRecycleBinOnLoad(), 2500);
 	// R22-R8: a transfer that goes quiet has to be reaped, or its reassembly buffers and
 	// its queue slot are held forever by a peer that closed the tab. A slow timer, because
 	// the thing it is looking for is measured in tens of seconds.
 	setInterval(sweepStalledTransfers, 5000);
+	// R22 round 5: a NEW PEER is new evidence, so everything we gave up on is worth one
+	// more ask. Triggered by an arrival rather than a timer — which is the difference
+	// between a retry and a loop — and it is the only automatic retry in the module.
+	let lastPeerCount = 0;
+	peers.subscribe((p) => {
+		const n = /** @type {any} */ (p)?.openedPeers?.size ?? 0;
+		if (n > lastPeerCount) {
+			const revived = retryUnavailable();
+			if (revived && get(autoDownload)) autoPullMissing();
+		}
+		lastPeerCount = n;
+	});
 	explorerItems.subscribe((items) => {
 		settlePulls(items);
 		scheduleSweep();

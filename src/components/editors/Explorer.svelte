@@ -8,7 +8,7 @@
 	// editor as notebook tabs (bottomDock.js); undocks into a floating window.
 	import { get } from 'svelte/store';
 	import { tick, untrack } from 'svelte';
-	import { explorerClose, mobileUndockAllowed, explorerSceneSaveArm } from '../../stores/appStore.js';
+	import { explorerClose, mobileUndockAllowed, explorerSceneSaveArm, peers } from '../../stores/appStore.js';
 	import { showToast, enable3dPreview, stackOnDrop, confirmPrefabUpdate } from '../../stores/appStore.js';
 	import {
 		explorerFolders,
@@ -81,7 +81,7 @@
 	} from '$lib/sharedLibrary';
 	// R22 round 2: a shared file's PICTURE travels on its own tiny channel, so a card can
 	// show a thumbnail before anybody downloads the bytes (see assetShare).
-	import { sharedThumbs, requestAssetThumb } from '$lib/assetShare';
+	import { sharedThumbs, requestAssetThumb, unavailableHashes } from '$lib/assetShare';
 	import {
 		projectManifest,
 		staleSceneHash,
@@ -355,7 +355,23 @@
 
 	/** R22-R2: is the local/shared distinction worth drawing at all? In a project that
 	 * has never shared a thing, muting every card would be pure noise. */
-	const sharingOn = $derived(sharedIndexInUse($projectManifest) || filtering);
+	/**
+	 * R22 round 5 — WHEN IS THE LOCAL/SHARED DISTINCTION WORTH DRAWING?
+	 *
+	 * Whenever there is somebody to be distinguished FROM. The first rule was "once
+	 * something in this project is shared", which produced the reported oddity: connect,
+	 * drop one file, and it is not greyed — but drop a second after anything at all has
+	 * been shared and both are. The question a session makes urgent is "can my peers see
+	 * this?", and that question exists from the first file.
+	 *
+	 * Still off in a SOLO library, where every file is local and muting all of them says
+	 * nothing while costing legibility everywhere.
+	 */
+	const sharingOn = $derived(
+		// `openedPeers` is a SET, so this is `.size` — `.length` is undefined on one, which
+		// is a silent always-false and exactly the bug this rule was written to fix
+		($peers?.openedPeers?.size ?? 0) > 0 || sharedIndexInUse($projectManifest) || filtering
+	);
 
 	/** The owner of a shared row, in cloudHooks' three tiers. The checkmark is the whole
 	 * point of the third one: only a plugin-vouched account earns it. */
@@ -406,6 +422,15 @@
 	/** The tooltip a card's share dot carries. */
 	function shareTitle(item: any) {
 		const who = ownerLabel(item);
+		// R22 round 5: nobody in this session holds the bytes. Say so — a card that looks
+		// like a download which never finishes is worse than one that admits the file is
+		// out of reach, and this clears itself the moment a new peer arrives.
+		if (item?.remoteItem && $unavailableHashes.has(item.hash))
+			return (
+				'Nobody here has this file' +
+				(who ? ' \u2014 ' + who + ' shared it and has left' : '') +
+				'. It will be fetched if they come back.'
+			);
 		if (item?.remoteItem)
 			return 'Shared' + (who ? ' by ' + who : '') + ' — not on this device yet. Open it to download it.';
 		if (shareOf(item) === 'mine') return 'Shared by you — peers can see and download this';
@@ -3372,7 +3397,7 @@
 						     `$pendingPulls` is the only thing that distinguishes "not here" from "on
 						     its way", which is what stops the card reading as dead when clicked. -->
 							<span
-								class="explorer-remote-dot absolute right-1 top-1 h-2.5 w-2.5 rounded-full {$pendingPulls.has(item.hash) ? 'animate-pulse bg-amber-400' : 'bg-sky-400'}"
+								class="explorer-remote-dot absolute right-1 top-1 h-2.5 w-2.5 rounded-full {$unavailableHashes.has(item.hash) ? 'bg-red-400' : $pendingPulls.has(item.hash) ? 'animate-pulse bg-amber-400' : 'bg-sky-400'}"
 								title={$pendingPulls.has(item.hash) ? 'Downloading from peers…' : shareTitle(item)}
 							></span>
 						{:else if sharingOn && isShared(item)}

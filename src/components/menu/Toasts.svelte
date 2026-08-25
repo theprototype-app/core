@@ -191,7 +191,8 @@ $effect(() => {
 // publish mine, and fetch theirs. Ignoring it leaves everything exactly as it is —
 // local files stay local, shared files stay greyed until somebody wants them.
 $effect(() => {
-    const connected = ($peers?.openedPeers?.length ?? 0) > 0;
+    // a SET, not an array (peerHandler) — `.length` here meant the prompt never showed
+    const connected = ($peers?.openedPeers?.size ?? 0) > 0;
     // read the stores so the effect re-runs as the library and the index change
     void $explorerItems;
     void $projectManifest;

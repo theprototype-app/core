@@ -70,3 +70,38 @@
     white-space: nowrap;
   }
 }
+/*
+  R22 round 9 — THE SEGMENTED CONTROL. The app had none outside ToolboxWindow's
+  `.tbx-seg`, which is styled by the toolbox shell it lives in and so cannot be reused;
+  two places wanted one in the same round (the Explorer's Thumbnails|List toggle and the
+  Sessions Scenes|Projects filter), which is the point at which it stops being local.
+
+  Not a Tailwind utility NAME — redeclaring one of those in global CSS silently beats
+  every layered utility in the app, which is the documented `.hidden` disaster.
+
+  The armed half is driven by `aria-pressed`, so the styling and the accessibility tree
+  cannot disagree, and a test asserts the COMPUTED colour rather than a class string.
+*/
+@utility tp-seg {
+  display: inline-flex;
+  overflow: hidden;
+  border: 1px solid var(--border, #374151);
+  border-radius: 4px;
+}
+
+@utility tp-seg-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  padding: 2px 6px;
+  font-size: 11px;
+  color: #9ca3af;
+  &:hover {
+    color: #e5e7eb;
+  }
+  &[aria-pressed='true'] {
+    background: var(--accent, #3b82f6);
+    color: #fff;
+  }
+}

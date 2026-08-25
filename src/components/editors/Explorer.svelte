@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { Box, Boxes, Download, ExternalLink, Folder, FolderTree, Gift, Globe, House, LoaderCircle, PackageOpen } from '@lucide/svelte';
+	import { Box, Boxes, Download, ExternalLink, Folder, FolderTree, Gift, Globe, House, LayoutGrid, List, LoaderCircle, PackageOpen } from '@lucide/svelte';
 	import Icon from '../ui/Icon.svelte';
 	// Explorer (95, tree v2 in 106): dockable asset browser — real file-manager
 	// tree on the left (inline create/rename, expand/collapse, drag re-parent,
@@ -76,7 +76,6 @@
 		canUnshare,
 		deleteSharedItem,
 		deletedLog,
-		canRestoreDeleted,
 		restoreDeletedItem,
 		purgeDeletedItem,
 		emptyDeletedLog,
@@ -87,6 +86,20 @@
 	// R22 round 2: a shared file's PICTURE travels on its own tiny channel, so a card can
 	// show a thumbnail before anybody downloads the bytes (see assetShare).
 	import { sharedThumbs, requestAssetThumb, unavailableHashes } from '$lib/assetShare';
+	// R22 round 9: THUMBNAILS OR A LIST. The comparator and the column model live in a
+	// pure leaf ($lib/explorerView): the MODE is global, columns and sort are per view.
+	import {
+		explorerViewMode,
+		explorerColumns,
+		explorerSort,
+		explorerDeletedGroup,
+		columnsFor,
+		columnVisible,
+		toggleColumn,
+		sortBy,
+		sortEntries,
+		groupByDeleter
+	} from '$lib/explorerView';
 	import {
 		projectManifest,
 		staleSceneHash,
@@ -384,6 +397,9 @@
 		const o = item?.owner;
 		if (!o) return '';
 		if (o.account) return o.account + ' ✓';
+		// R22 round 9: with no name AND no id there is nobody to name — the old fallback
+		// produced a bare "peer", which reads as a label rather than as the gap it is
+		if (!o.name && !o.id) return '';
 		return o.name || 'peer ' + String(o.id ?? '').slice(0, 4);
 	}
 
@@ -743,6 +759,15 @@
 		// R22 round 4: THE RECYCLE BIN, a derived view like the Scene manifest — the log is
 		// the truth and these cards are a reading of it, so there is no CRUD to keep in step.
 		if ($activeFolder === 'deleted') {
+			// R22 round 9, THE REPORTED BUG ("Delete permanently does not remove the file").
+			// The purge always worked — it freed the blob and dropped the record — but this
+			// branch asked `canRestoreDeleted`, which reaches the two shelves through `get()`,
+			// so it registered NO dependency on them (the documented reactivity rule). The
+			// derived re-ran only when the MANIFEST changed, and a purge deliberately leaves
+			// the log alone — so the card and its menu stayed byte-identical, still offering a
+			// Restore that could no longer work. Nothing observable changed, which is exactly
+			// what "it does not remove the file" describes. Read the shelves HERE instead.
+			const heldBytes = new Set([...$explorerItems, ...$hiddenItems].map((i) => i.hash));
 			return deletedLog($projectManifest).map((r: any) => ({
 				id: 'deleted:' + r.hash,
 				name: r.name,
@@ -756,7 +781,7 @@
 				thumbnail: deletedThumb(r),
 				owner: r.by ?? null,
 				deletedEntry: true,
-				restorable: canRestoreDeleted(r.hash)
+				restorable: heldBytes.has(r.hash)
 			}));
 		}
 		if (typeof $activeFolder === 'string' && $activeFolder.startsWith('scene')) {
@@ -1009,20 +1034,186 @@
 		if (bytes == null || isNaN(bytes)) return '—';
 		if (bytes < 1024) return bytes + ' B';
 		if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB';
-		return (bytes / 1024 / 1024).toFixed(1) + ' MB';
+		// R22 round 9: a GB tier, because the storage estimate reads a whole browser QUOTA
+		// and "10240.1 MB" is a number nobody parses at a glance
+		if (bytes < 1024 * 1024 * 1024) return (bytes / 1024 / 1024).toFixed(1) + ' MB';
+		return (bytes / 1024 / 1024 / 1024).toFixed(1) + ' GB';
 	}
+
+	// ---- R22 round 9: THE LIST VIEW ---------------------------------------------------
+	/**
+	 * WHICH COLUMN SET AND SORT THIS VIEW USES. Two views, not one — see $lib/explorerView
+	 * for why a bin and a library cannot share a column set. Declared ABOVE everything that
+	 * reads it: a `$derived` referenced by an earlier one is a use-before-declaration, the
+	 * same family as the module-level TDZ trap one scope out.
+	 */
+	const listView = $derived($activeFolder === 'deleted' ? 'deleted' : 'library');
+	/** a date a column can hold: short, sortable-looking, and locale-correct */
+	function fmtDate(t: number) {
+		if (!t) return '—';
+		const d = new Date(t);
+		return d.toLocaleDateString() + ' ' + d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+	}
+	/**
+	 * What one cell SHOWS. The pure leaf answers what a cell sorts BY; this answers what
+	 * it reads as, and the two are deliberately different functions — sorting on a
+	 * formatted date string would order March before February.
+	 */
+	function cellText(row: any, key: string): string {
+		if (row.kind === 'folder')
+			return key === 'kind' ? 'Folder' : key === 'name' ? row.folder?.name : '—';
+		const item = row.item;
+		switch (key) {
+			case 'kind':
+				return String(item?.kind ?? '—');
+			case 'size':
+				// a row we do not hold has no size to report, and a zero would read as an empty
+				// file rather than as an unknown one
+				return item?.remoteItem || item?.remoteScene || item?.deletedEntry
+					? '—'
+					: fmtSize(item?.size);
+			case 'added':
+			case 'deletedAt':
+				return fmtDate(Number(item?.createdAt) || 0);
+			case 'owner':
+			case 'deletedBy':
+				// MY OWN row reads "Me", matching the group header one control over. `ownerLabel`
+				// falls back to 'peer ' + the first four characters of an id, which offline is
+				// the empty string — so a solo user's own deletions all read a bare "peer".
+				if (!item?.owner?.id) return ownerLabel(item) || '—';
+				return String(item.owner.id) === String($peers?.peer?.id ?? '')
+					? 'Me'
+					: ownerLabel(item) || '—';
+			default:
+				return String(item?.name ?? '');
+		}
+	}
+	/** the columns actually drawn, in their canonical order */
+	const shownColumns = $derived(
+		columnsFor(listView).filter((c: any) => columnVisible(listView, c.key, $explorerColumns))
+	);
+	/**
+	 * Right-click the header: which columns show. One entry per column with a checkmark,
+	 * the `checked` item style the Grid/Snapping menus established — and NAME is offered
+	 * as a disabled row rather than omitted, so the list is complete and it says why.
+	 */
+	function columnMenu(e: MouseEvent) {
+		e.preventDefault();
+		e.stopPropagation();
+		menu = {
+			x: e.clientX,
+			y: e.clientY,
+			items: columnsFor(listView).map((c: any) =>
+				c.always
+					? {
+							label: c.label,
+							checked: true,
+							tooltip: 'A row has to be identifiable — this column cannot be hidden',
+							action: () => {}
+						}
+					: {
+							label: c.label,
+							checked: columnVisible(listView, c.key, $explorerColumns),
+							action: () => toggleColumn(listView, c.key)
+						}
+			)
+		};
+	}
+	/**
+	 * `navigator.storage.estimate()` in the header — how much of this origin's quota the
+	 * library is using. Sampled rather than watched: there is no event for it, and the
+	 * number moves only when bytes are written, so the library's own store is the signal.
+	 * Absent on a browser that does not implement it, which is why it renders nothing at
+	 * all rather than a zero.
+	 */
+	let storage: { used: number; quota: number } | null = $state(null);
+	/** the tooltip, as a function so the markup stays readable */
+	function storageTitle(s: { used: number; quota: number }) {
+		return (
+			'Browser storage for this app: ' +
+			fmtSize(s.used) +
+			' used of ' +
+			fmtSize(s.quota) +
+			' granted. That covers everything this origin stores, not the library alone.'
+		);
+	}
+	async function sampleStorage() {
+		try {
+			const est = await navigator.storage?.estimate?.();
+			if (est && typeof est.usage === 'number')
+				storage = { used: est.usage ?? 0, quota: est.quota ?? 0 };
+		} catch {}
+	}
+	$effect(() => {
+		// the library changing is the only thing that moves the number
+		void $explorerItems;
+		void $hiddenItems;
+		untrack(() => void sampleStorage());
+	});
 
 	// 197: keyboard navigation in the grid (focused region) — arrows move the
 	// selection, Enter opens, Backspace goes up a level, Esc closes the window.
 	let gridEl: any = $state(null);
-	const gridEntries = $derived([
-		...(!search &&
-		$activeFolder !== 'prefabs' &&
-		!(typeof $activeFolder === 'string' && $activeFolder.startsWith('scene'))
-			? childFolders.map((f: any) => ({ kind: 'folder', folder: f }))
-			: []),
-		...gridItems.map((it: any) => ({ kind: 'item', item: it }))
-	]);
+	/**
+	 * The grid's rows in VISUAL ORDER, and the one array everything downstream reads:
+	 * Shift-ranges, the arrow keys, Ctrl+A/I and the marquee all derive their order from
+	 * here. Sorting HERE rather than in the list markup is what keeps those four agreeing
+	 * with what is on screen — a list sorted only where it is drawn would leave a
+	 * Shift-range selecting cards from two rows away.
+	 *
+	 * The sort applies in LIST MODE ONLY: the thumbnail grid has never had a sort control,
+	 * so leaving its order alone keeps it byte-identical to before this existed.
+	 */
+	const gridEntries = $derived.by(() => {
+		const base = [
+			...(!search &&
+			$activeFolder !== 'prefabs' &&
+			!(typeof $activeFolder === 'string' && $activeFolder.startsWith('scene'))
+				? childFolders.map((f: any) => ({ kind: 'folder', folder: f }))
+				: []),
+			...gridItems.map((it: any) => ({ kind: 'item', item: it }))
+		];
+		if ($explorerViewMode !== 'list') return base;
+		// project each entry onto the flat shape the pure comparator reads, sort, then hand
+		// back the ORIGINAL entries — the leaf never learns the Explorer's two-kind wrapper
+		const rows = base.map((e: any) =>
+			e.kind === 'folder'
+				? { folder: true, id: e.folder.id, name: e.folder.name, kind: 'folder', entry: e }
+				: {
+						folder: false,
+						id: e.item.id,
+						name: e.item.name,
+						kind: e.item.kind,
+						size: e.item.size,
+						createdAt: e.item.createdAt,
+						owner: e.item.owner,
+						entry: e
+					}
+		);
+		const sort = $explorerSort[listView] ?? { key: 'name', dir: 1 };
+		return sortEntries(rows, sort, { ownerLabel }).map((r: any) => r.entry);
+	});
+	/**
+	 * The bin, grouped by whoever deleted each row. Rendered as collapsible SECTIONS
+	 * rather than navigable folders: a bin is read by comparing (who threw what away),
+	 * and a folder you have to walk into and back out of to compare is the one shape that
+	 * makes that harder. Nothing is minted — there is no folder record and no CRUD, the
+	 * same reasoning the bin's cards already follow.
+	 */
+	const deletedGroups = $derived.by(() => {
+		if (listView !== 'deleted' || $explorerDeletedGroup !== 'deleter') return null;
+		const rows = gridEntries.filter((e: any) => e.kind === 'item').map((e: any) => e.item);
+		// read the id off the STORE, not through a sharedLibrary helper: a get() inside a
+		// helper registers no dependency, so the groups would not re-label when the mesh
+		// comes up (the documented reactivity rule)
+		return groupByDeleter(rows, { ownerLabel, myId: $peers?.peer?.id ?? '' });
+	});
+	let collapsedGroups = $state(new Set<string>());
+	function toggleGroup(id: string) {
+		const next = new Set(collapsedGroups);
+		next.has(id) ? next.delete(id) : next.add(id);
+		collapsedGroups = next;
+	}
 
 	// ---- 21-H3: MULTI-SELECT ---------------------------------------------------------
 	// `selected` (the single anchor) is UNCHANGED: it still drives the Properties pane,
@@ -2312,7 +2503,13 @@
 		if (!$deleteWithoutConfirm) {
 			const ok = await showConfirm({
 				title: 'Delete prefab \u201c' + (prefab?.name ?? '') + '\u201d',
-				message: 'It moves to Deleted, where you can restore it.',
+				// R22 round 9: it says "a record of it" because that is all that survives. A
+				// prefab has no hidden shelf — `removePrefab` drops the record and
+				// `canRestoreDeleted` asks the two ITEM shelves, so a binned prefab can never be
+				// restored and the old wording promised exactly the button the bin then refuses
+				// to offer. See the round-9 report: making it true needs a prefab shelf.
+				message:
+					'The prefab is removed. A record of it stays in Deleted, but a prefab cannot be restored from there yet.',
 				confirmLabel: 'Delete'
 			});
 			if (!ok) return;
@@ -2349,6 +2546,47 @@
 		showToast('Emptied ' + gone + ' file' + (gone === 1 ? '' : 's') + ' from Deleted');
 	}
 
+	/**
+	 * R22 round 9: the two VIEW controls the bin owns, shared by its tree row and its own
+	 * background menu. Group-by is a `checked` PAIR rather than one toggle, because "off"
+	 * is a choice here and a lone checked row leaves you guessing what unchecking gives
+	 * you; sort-by-date is offered as the two directions for the same reason.
+	 */
+	function deletedViewItems() {
+		const sort = $explorerSort['deleted'] ?? { key: 'deletedAt', dir: -1 };
+		const byDate = sort.key === 'deletedAt';
+		return [
+			{ section: 'Group' },
+			{
+				label: 'No grouping',
+				checked: $explorerDeletedGroup === 'none',
+				action: () => explorerDeletedGroup.set('none')
+			},
+			{
+				label: 'By who deleted it',
+				checked: $explorerDeletedGroup === 'deleter',
+				tooltip: 'One section per person, yours first',
+				action: () => explorerDeletedGroup.set('deleter')
+			},
+			{ section: 'Sort' },
+			{
+				label: 'Newest deleted first',
+				checked: byDate && sort.dir === -1,
+				action: () => explorerSort.update((a) => ({ ...a, deleted: { key: 'deletedAt', dir: -1 } }))
+			},
+			{
+				label: 'Oldest deleted first',
+				checked: byDate && sort.dir === 1,
+				action: () => explorerSort.update((a) => ({ ...a, deleted: { key: 'deletedAt', dir: 1 } }))
+			},
+			{
+				label: 'By name',
+				checked: sort.key === 'name',
+				action: () => explorerSort.update((a) => ({ ...a, deleted: { key: 'name', dir: 1 } }))
+			}
+		];
+	}
+
 	/** the Deleted tree row's own menu */
 	function deletedRowMenu(e: MouseEvent) {
 		e.preventDefault();
@@ -2358,8 +2596,10 @@
 			y: e.clientY,
 			items: [
 				{ label: 'Open', action: () => openFolder('deleted') },
+				...deletedViewItems(),
 				...(n
 					? [
+							{ section: 'Disk' },
 							{
 								label: 'Empty Deleted (' + n + ')',
 								danger: true,
@@ -2426,8 +2666,12 @@
 			menu = {
 				x: e.clientX,
 				y: e.clientY,
+				// R22 round 9: group and sort belong HERE as well as on the tree row — this is the
+				// surface you are looking at when you decide you want them
 				items: n
 					? [
+							...deletedViewItems(),
+							{ section: 'Disk' },
 							{
 								label: 'Empty Deleted (' + n + ')',
 								danger: true,
@@ -3124,6 +3368,209 @@
 	<TransferLog bind:open={logOpen} />
 {/snippet}
 
+<!--
+	R22 round 9: THUMBNAILS | LIST. A SEGMENTED control rather than a menu entry, for the
+	reason the toolbox contract already gives: this is a mode you flip often and want to
+	see the state of at a glance, and burying a frequently-used two-state switch behind two
+	clicks costs more than the 52px it takes. Icon-only, so it survives the narrow header.
+-->
+{#snippet viewChip()}
+	<div class="tp-seg shrink-0" role="group" aria-label="View mode">
+		<button
+			id="explorer-view-thumbnails"
+			class="tp-seg-btn"
+			aria-pressed={$explorerViewMode === 'thumbnails'}
+			title="Thumbnails"
+			aria-label="Thumbnails"
+			onclick={() => explorerViewMode.set('thumbnails')}><LayoutGrid size={14} aria-hidden="true" /></button
+		>
+		<button
+			id="explorer-view-list"
+			class="tp-seg-btn"
+			aria-pressed={$explorerViewMode === 'list'}
+			title="List — sortable columns; right-click the header to choose them"
+			aria-label="List"
+			onclick={() => explorerViewMode.set('list')}><List size={14} aria-hidden="true" /></button
+		>
+	</div>
+{/snippet}
+
+<!--
+	R22 round 9: HOW FULL IS THE DISK. `navigator.storage.estimate()` is a quota for the
+	whole ORIGIN and not for the library alone, which is why it reads "used / quota" rather
+	than claiming the library is responsible for all of it. Nothing renders where the
+	browser does not implement it — a zero would be a claim, an absence is the truth.
+-->
+{#snippet storageChip()}
+	{#if storage}
+		<span
+			id="explorer-storage"
+			class="shrink-0 whitespace-nowrap text-[10px] text-gray-500"
+			title={storageTitle(storage)}>{fmtSize(storage.used)} / {fmtSize(storage.quota)}</span
+		>
+	{/if}
+{/snippet}
+
+<!--
+	R22 round 9: ONE ROW OF THE LIST. Deliberately rendered here rather than in a separate
+	component: a card and a row share nine handlers, six helpers and the inline-rename
+	snippet, so a component would need thirty props to say the same thing — and the two
+	would then drift on the next behaviour added to either. Every interaction below is the
+	SAME function the card calls, so drag, touch-drag, the context menus, multi-select and
+	double-click-to-open are the same behaviour by construction and not by imitation.
+-->
+{#snippet listRow(entry: any)}
+	{@const isFolder = entry.kind === 'folder'}
+	{@const item = entry.item}
+	{@const folder = entry.folder}
+	{@const id = isFolder ? folder.id : item.id}
+	<!--
+		`explorer-card` / `explorer-folder-card` are BEHAVIOURAL markers, not styling —
+		nothing in any stylesheet matches them. Three handlers on #explorer-grid ask
+		`closest('.explorer-card, .explorer-folder-card')` to tell a card from the
+		background, so without them a row WAS background: a plain click selected it and
+		`gridBackgroundClick` immediately deselected it, a press started a marquee on top
+		of it, and a right-click opened the item menu only to have the background one
+		replace it. A row IS a card in this view.
+	-->
+	<tr
+		data-card-id={id}
+		class="ex-row {isFolder ? 'explorer-folder-card' : 'explorer-card'} {cardClass(selectedIds, $inspectedFile, selected, id)} {!isFolder &&
+		openSceneHash &&
+		item.hash === openSceneHash
+			? 'explorer-open-scene'
+			: ''} {!isFolder && (item.remoteScene || item.remoteItem || (item.deletedEntry && !item.restorable)) ? 'explorer-remote opacity-60' : ''} {dropFolder ===
+			id && isFolder
+			? 'ex-row-drop'
+			: ''}"
+		draggable="true"
+		title={isFolder ? folder.name : item.name}
+		style:touch-action={tDragging ? 'none' : 'pan-y'}
+		ondragstart={(e) =>
+			isFolder
+				? e.dataTransfer?.setData('application/x-explorer-folder', JSON.stringify({ id: folder.id }))
+				: onItemDragStart(e, item)}
+		ondragover={(e) => isFolder && dragOverInto(e, folder.id)}
+		ondragleave={() => isFolder && (dropFolder = null)}
+		ondrop={(e) => isFolder && dropInto(e, folder.id)}
+		onpointerdown={(e) => !isFolder && onCardPointerDown(e, item)}
+		onpointermove={(e) => !isFolder && onCardPointerMove(e)}
+		onpointerup={(e) => !isFolder && onCardPointerUp(e)}
+		oncontextmenu={(e) => (isFolder ? folderMenu(e, folder, false) : itemMenu(e, item))}
+		onclick={(e) => (isFolder ? onFolderCardClick(e, folder) : onCardClick(e, item))}
+		ondblclick={() => (isFolder ? openFolder(folder.id) : openItem(item))}
+	>
+		{#each shownColumns as col (col.key)}
+			<td class="ex-cell {col.numeric ? 'text-right tabular-nums' : ''}" style:width={col.width}>
+				{#if col.key === 'name'}
+					<span class="flex min-w-0 items-center gap-1.5">
+						{#if isFolder}
+							<span class="shrink-0 {mutedFolder(folder) ? MUTED_ICON : 'ico-folder'}"
+								><Folder size={14} aria-hidden="true" /></span
+							>
+						{:else if thumbFor(item)}
+							<img
+								src={thumbFor(item)}
+								alt=""
+								class="h-4 w-4 shrink-0 rounded-sm object-cover {mutedItem(item) ? MUTED_IMG : ''}"
+							/>
+						{:else}
+							<span
+								class="shrink-0 {mutedItem(item) ? MUTED_ICON : (KIND_COLORS[item.kind] ?? 'text-gray-400')}"
+								><Icon name={KIND_ICONS[item.kind] ?? 'package'} size={14} /></span
+							>
+						{/if}
+						{#if (editing?.mode === 'rename' && editing.inGrid && editing.folderId === id) || (editing?.mode === 'rename-item' && editing.itemId === id) || (editing?.mode === 'rename-prefab' && editing.prefabId === item?.prefabId)}
+							{@render cardEdit()}
+						{:else}
+							<span
+								class="min-w-0 flex-1 overflow-hidden text-ellipsis whitespace-nowrap {(
+									isFolder ? mutedFolder(folder) : mutedItem(item)
+								)
+									? 'text-gray-500'
+									: 'text-gray-300'}">{isFolder ? folder.name : item.name}</span
+							>
+						{/if}
+						<!-- the same status the card carries in its corners, folded into ONE inline dot:
+						     a row has no corners, and four possible dots on one line is noise. The
+						     precedence is the card's own, top to bottom. -->
+						{#if !isFolder}
+							{#if openSceneHash && item.hash === openSceneHash}
+								<span class="ex-dot bg-emerald-400" title="The scene you have open"></span>
+							{:else if item.remoteScene}
+								<span
+									class="ex-dot bg-sky-400"
+									title="In this project, not on this device yet — open it to download it"
+								></span>
+							{:else if item.remoteItem}
+								<span
+									class="ex-dot {$unavailableHashes.has(item.hash)
+										? 'bg-red-400'
+										: $pendingPulls.has(item.hash)
+											? 'animate-pulse bg-amber-400'
+											: 'bg-sky-400'}"
+									title={$pendingPulls.has(item.hash) ? 'Downloading from peers…' : shareTitle(item)}
+								></span>
+							{:else if sharingOn && isShared(item)}
+								<span
+									class="ex-dot {shareOf(item) === 'mine' ? 'bg-teal-400' : 'bg-sky-400'}"
+									title={shareTitle(item)}
+								></span>
+							{:else if sharingOn && item.wasShared}
+								<span class="ex-dot border border-gray-500" title={shareTitle(item)}></span>
+							{/if}
+							{#if item.kind === 'scene' && !item.remoteScene && staleScene($projectManifest, item.hash)}
+								<span
+									class="ex-dot bg-amber-400"
+									title={'An update of "' +
+										staleScene($projectManifest, item.hash) +
+										'" exists — this file is an older version'}
+								></span>
+							{/if}
+						{:else if sharingOn && (folder.share === 'mine' || folder.share === 'peer')}
+							<span
+								class="ex-dot {folder.share === 'mine' ? 'bg-teal-400' : 'bg-sky-400'}"
+								title={folder.share === 'mine'
+									? 'Shared by you — peers see this folder, and anything you add to it'
+									: 'Shared — a peer offered this folder'}
+							></span>
+						{/if}
+					</span>
+				{:else}
+					<span class="overflow-hidden text-ellipsis whitespace-nowrap text-gray-400"
+						>{cellText(entry, col.key)}</span
+					>
+				{/if}
+			</td>
+		{/each}
+	</tr>
+{/snippet}
+
+<!-- R22 round 9: the column header. Click sorts, right-click chooses columns. -->
+{#snippet listHead()}
+	<thead>
+		<tr id="explorer-list-head" class="ex-head" oncontextmenu={(e) => columnMenu(e)}>
+			{#each shownColumns as col (col.key)}
+				<th class="ex-th {col.numeric ? 'text-right' : ''}" style:width={col.width}>
+					<button
+						class="ex-th-btn"
+						data-col={col.key}
+						title={'Sort by ' + col.label.toLowerCase()}
+						onclick={() => sortBy(listView, col.key)}
+					>
+						{col.label}<!--
+							the indicator sits on the ACTIVE column only, so "which column is this
+							sorted by" is answerable without reading a preference
+						-->{#if ($explorerSort[listView] ?? {}).key === col.key}<span class="ex-sort"
+								>{($explorerSort[listView] ?? {}).dir === -1 ? '▾' : '▴'}</span
+							>{/if}
+					</button>
+				</th>
+			{/each}
+		</tr>
+	</thead>
+{/snippet}
+
 {#snippet identityChip()}
 	<!-- 21-I2 (locked answer 4): WHO AM I, compact and beside the search box —
 	     Project ▸ Scene ●. It RETIRES 21-G9's own row, which spent a whole line
@@ -3423,6 +3870,63 @@
 					ResizeObserver, and nothing to get wrong on a re-dock.
 				-->
 				<div class="ex-split" class:ex-split-on={logOpen}>
+				{#if $explorerViewMode === 'list'}
+					<!--
+						R22 round 9: THE LIST. A real <table>, because that is what a sortable grid of
+						columns IS — the header/row relationship comes with it, and so does column
+						width agreement between the head and every row, which a flexbox imitation has
+						to keep in step by hand.
+					-->
+					<div class="ex-list">
+						{#if pendingCard}
+							<!-- 21-G10: name it where it will appear, in this view too — a placeholder
+							     that only exists in one of two layouts is a trap. -->
+							<div id="explorer-new-card" class="ex-new flex items-center gap-1.5">
+								<span class={pendingCard === 'create' ? 'ico-folder' : 'text-gray-400'}>
+									{#if pendingCard === 'create'}
+										<Folder size={14} aria-hidden="true" />
+									{:else}
+										<Icon name={KIND_ICONS.scene} size={14} />
+									{/if}
+								</span>
+								{@render cardEdit()}
+							</div>
+						{/if}
+						<table class="ex-table">
+							{@render listHead()}
+							{#if deletedGroups}
+								<!-- grouped bin: one SECTION per deleter, collapsible. The rows inside a
+								     section are the same rows in the same order the sort produced. -->
+								{#each deletedGroups as group (group.id)}
+									<tbody>
+										<tr class="ex-group">
+											<td colspan={shownColumns.length}>
+												<button class="ex-group-btn" onclick={() => toggleGroup(group.id)}>
+													<span class="ex-group-caret">{collapsedGroups.has(group.id) ? '▸' : '▾'}</span>
+													{group.name}<span class="ex-group-n">{group.rows.length}</span>
+												</button>
+											</td>
+										</tr>
+										{#if !collapsedGroups.has(group.id)}
+											{#each group.rows as row (row.id)}
+												{@render listRow({ kind: 'item', item: row })}
+											{/each}
+										{/if}
+									</tbody>
+								{/each}
+							{:else}
+								<tbody>
+									{#each gridEntries as entry (entry.kind === 'folder' ? 'f:' + entry.folder.id : 'i:' + entry.item.id)}
+										{@render listRow(entry)}
+									{/each}
+								</tbody>
+							{/if}
+						</table>
+						{#if !gridEntries.length && !pendingCard}
+							<p class="px-2 py-3 text-[11px] text-gray-500">Nothing here.</p>
+						{/if}
+					</div>
+				{:else}
 				<div class="ex-cards grid grid-cols-[repeat(auto-fill,96px)] justify-start gap-1">
 					{#if pendingCard}
 						<!-- 21-G10: name it where it will appear. A placeholder card, not a modal and
@@ -3501,7 +4005,7 @@
 								item.id
 							)} {openSceneHash && item.hash === openSceneHash
 								? 'explorer-open-scene ring-1 ring-emerald-400'
-								: ''} {item.remoteScene || item.remoteItem ? 'explorer-remote opacity-60' : ''}"
+								: ''} {item.remoteScene || item.remoteItem || (item.deletedEntry && !item.restorable) ? 'explorer-remote opacity-60' : ''}"
 							draggable="true"
 							role="listitem"
 							title={item.name}
@@ -3614,6 +4118,7 @@
 						</div>
 					{/each}
 				</div>
+				{/if}
 				{#if logOpen}
 					<div class="ex-log"><TransferLog mode="pane" bind:open={logOpen} /></div>
 				{/if}
@@ -3979,6 +4484,8 @@
 					bind:value={search}
 				/>
 				{@render filterChip()}
+				{@render viewChip()}
+				{@render storageChip()}
 				{@render identityChip()}
 				<button
 					id="explorer-undock"
@@ -4020,6 +4527,8 @@
 					bind:value={search}
 				/>
 				{@render filterChip()}
+				{@render viewChip()}
+				{@render storageChip()}
 				{@render identityChip()}
 				<button id="explorer-dock" class="ui-button-quiet shrink-0" title="Dock to the bottom" onclick={() => setDocked(true)}>
 					⇩ Dock
@@ -4098,7 +4607,8 @@
 		align-items: stretch;
 		gap: 6px;
 	}
-	.ex-split-on .ex-cards {
+	.ex-split-on .ex-cards,
+	.ex-split-on .ex-list {
 		min-width: 0;
 		flex: 1;
 		align-content: start;
@@ -4108,10 +4618,123 @@
 		min-height: 0;
 		flex: 0 0 300px;
 	}
+
+	/*
+		R22 round 9 — THE LIST VIEW.
+
+		The surface is owned EXPLICITLY (`var(--surface, ...)`) wherever a header row has to
+		sit over scrolling content: the documented `ui-panel` trap is that an `@apply`-built
+		utility is compiled onto the class, so a theme's `.bg-gray-800` remap never reaches
+		it and the row would stay dark in every theme but one. A sticky header over a
+		transparent background shows the rows sliding under it, so this one cannot be left
+		to inherit.
+	*/
+	.ex-list {
+		min-width: 0;
+		overflow: auto;
+	}
+	.ex-table {
+		width: 100%;
+		border-collapse: collapse;
+		font-size: 11px;
+		table-layout: fixed;
+	}
+	.ex-head {
+		position: sticky;
+		top: 0;
+		z-index: 1;
+	}
+	.ex-th {
+		background: var(--surface, #1f2937);
+		border-bottom: 1px solid var(--border, #374151);
+		padding: 0;
+		text-align: left;
+		font-weight: 600;
+		white-space: nowrap;
+	}
+	.ex-th.text-right .ex-th-btn {
+		justify-content: flex-end;
+	}
+	.ex-th-btn {
+		display: flex;
+		width: 100%;
+		align-items: center;
+		gap: 3px;
+		padding: 3px 6px;
+		color: #9ca3af;
+		text-align: inherit;
+	}
+	.ex-th-btn:hover {
+		color: #e5e7eb;
+	}
+	.ex-sort {
+		font-size: 9px;
+		line-height: 1;
+		color: var(--accent, #3b82f6);
+	}
+	.ex-row {
+		cursor: pointer;
+		border-left: 2px solid transparent;
+	}
+	/* the selection tints come from `cardClass`, which paints a BORDER on a card; on a
+	   row the border would draw a box round every cell, so only the background is wanted */
+	.ex-row {
+		border-top: 0;
+		border-right: 0;
+		border-bottom: 0;
+	}
+	.ex-row-drop {
+		outline: 1px solid var(--accent, #3b82f6);
+		outline-offset: -1px;
+	}
+	.ex-cell {
+		max-width: 0;
+		overflow: hidden;
+		padding: 2px 6px;
+		white-space: nowrap;
+	}
+	.ex-dot {
+		flex: 0 0 auto;
+		height: 7px;
+		width: 7px;
+		border-radius: 9999px;
+	}
+	.ex-group td {
+		padding: 0;
+	}
+	.ex-group-btn {
+		display: flex;
+		width: 100%;
+		align-items: center;
+		gap: 4px;
+		padding: 3px 6px;
+		background: color-mix(in srgb, var(--surface, #1f2937) 70%, transparent);
+		font-size: 10px;
+		font-weight: 600;
+		letter-spacing: 0.02em;
+		color: #d1d5db;
+		text-transform: uppercase;
+	}
+	.ex-group-caret {
+		width: 8px;
+		color: #9ca3af;
+	}
+	.ex-group-n {
+		color: #6b7280;
+		font-weight: 400;
+	}
+	.ex-new {
+		padding: 2px 6px;
+	}
+
+	/* the view toggle uses the shared `tp-seg` / `tp-seg-btn` utilities — the Sessions
+	   filter wanted the same control in the same round, which is when it stopped being
+	   local (see ui.utilities.css) */
 	/* "if limited space, then it takes entire explorer drawer": under this width there
 	   is no room for two columns, so the log becomes the view rather than a sliver */
 	@media (max-width: 640px) {
-		.ex-split-on .ex-cards {
+		.ex-split-on .ex-cards,
+		.ex-split-on .ex-list {
 			display: none;
 		}
 		.ex-log {

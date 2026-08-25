@@ -1,6 +1,14 @@
 <script lang="ts">
 	import { Info, UserPlus, Download } from '@lucide/svelte';
     import { cameraPreview, stopCameraPreview, toggleCameraControl, previewLabel } from '$lib/cameraPreview'
+    // R22 round 2: the connect-time library offer (see the effect below)
+    import { shareAllLocal, pullAllShared, bulkCounts, stashIntoSessions } from '$lib/sharedLibrary'
+    // R22 round 7: the offer is for a peer who JOINED somebody — the host's library
+    // already is the session's, so there is nothing of anybody else's to adopt
+    import { sessionHost } from '$lib/connectionState'
+    import { autoDownload } from '$lib/sharedLibrary'
+    import { explorerItems } from '$lib/explorer'
+    import { projectManifest } from '$lib/projectManifest'
     import { peers, loading, loadingcount, pendingApprovals, waitingForApproval, userdata, toastStore, fixLight, showSidebar, specatorMode, restorePanels, appNotice, connectDrawerOpen, connectDrawerTab, toastsInDrawerOnly, showInfoToast, dismissToastById } from '../../stores/appStore'
     import { restoreAvailable, restoreSnapshot, dismissRestore } from '$lib/autosave'
     import { cancelOutboundRequest } from '$lib/peerApproval'
@@ -160,6 +168,12 @@ function autoDismiss(node: any, toast: any) {
 // <Toast> blocks — which is why they looked nothing like the other cards and
 // never appeared in the drawer's Toasts tab. They are STATE-DRIVEN, so mirror
 // each source store into a sticky INFO entry and pull it when the source clears.
+// once answered, do not ask again this session: the prompt is a nudge, and one that
+// came back every time a file landed would be an interruption instead
+let libraryPromptDone = false;
+// the inline confirm for the one destructive choice: first press arms it, second acts
+let stashArmed = $state(false);
+
 $effect(() => {
     const snap = $restoreAvailable;
     if (snap)
@@ -174,6 +188,65 @@ $effect(() => {
         );
     else dismissToastById('restore-session');
 });
+// R22 round 2 (user): WHAT ABOUT THE FILES ALREADY IN MY EXPLORER? Connecting to a
+// session with a library full of local files used to say nothing at all — they simply
+// stayed invisible to everyone, which is correct behaviour and a terrible first
+// impression. So the moment a session exists and there is something to offer, ask.
+//
+// One sticky INFO card, the restore-prompt shape, with the two halves of the union:
+// publish mine, and fetch theirs. Ignoring it leaves everything exactly as it is —
+// local files stay local, shared files stay greyed until somebody wants them.
+$effect(() => {
+    // a SET, not an array (peerHandler) — `.length` here meant the prompt never showed
+    // a SET, not an array (peerHandler) — `.length` here meant the prompt never showed
+    // ...and only for a JOINER: `sessionHost` is null when we are the host, and a host
+    // has nothing to adopt because the project is already theirs
+    const connected = ($peers?.openedPeers?.size ?? 0) > 0 && !!$sessionHost;
+    // read the stores so the effect re-runs as the library and the index change
+    void $explorerItems;
+    void $projectManifest;
+    const counts = connected ? bulkCounts() : { local: 0, missing: 0 };
+    const parts = [];
+    if (counts.local) parts.push(`${counts.local} file${counts.local === 1 ? '' : 's'} only on this device`);
+    // R22 round 8: only worth mentioning when the app is NOT already fetching them.
+    // With auto-download on (the default) this line describes a job in progress, and a
+    // button for it would be a button for something already happening.
+    if (counts.missing && !$autoDownload)
+        parts.push(`${counts.missing} shared file${counts.missing === 1 ? '' : 's'} not downloaded`);
+    // R22 round 7 (locked answer): NO SECOND DIALOG. Each button does one thing and says
+    // what it costs; the destructive one confirms IN PLACE (its label becomes the
+    // question) rather than opening a modal that asks it again. Only "Not now" dismisses
+    // the toast — picking an action dismisses it because the action happened, which is
+    // the timing bug in the modal version: Cancel closed the toast it came from.
+    if (connected && parts.length && !libraryPromptDone)
+        showInfoToast(
+            'shared-library-offer',
+            parts.join(' \u00b7 ') + '.',
+            [
+                ...(counts.local
+                    ? [{ label: 'Share mine', action: () => { libraryPromptDone = true; const n = shareAllLocal(); showToast(`Sharing ${n} file${n === 1 ? '' : 's'} with peers`); dismissToastById('shared-library-offer'); } }]
+                    : []),
+                ...(counts.missing && !$autoDownload
+                    ? [{ label: 'Download theirs', action: () => { libraryPromptDone = true; const n = pullAllShared(); showToast(`Fetching ${n} file${n === 1 ? '' : 's'} from peers`); dismissToastById('shared-library-offer'); } }]
+                    : []),
+                // R22 round 8: both of these are about YOUR files, so neither belongs on a
+                // card that is only telling you about somebody else's. With nothing of your
+                // own there is nothing to stash and nothing to decline — the card's own
+                // dismiss is enough.
+                ...(counts.local
+                    ? [
+                          stashArmed
+                              ? { label: 'Really replace my library?', action: () => { libraryPromptDone = true; void stashIntoSessions(); dismissToastById('shared-library-offer'); } }
+                              : { label: 'Stash mine', keepOpen: true, action: () => { stashArmed = true; } },
+                          { label: 'Not now', action: () => { libraryPromptDone = true; dismissToastById('shared-library-offer'); } }
+                      ]
+                    : [])
+            ],
+            () => { libraryPromptDone = true; }
+        );
+    else dismissToastById('shared-library-offer');
+});
+
 $effect(() => {
     const notice = $appNotice;
     const seen = typeof localStorage !== 'undefined' && !!localStorage.getItem('hasSeenDisclaimer');
@@ -387,7 +460,17 @@ style="z-index: var(--z-toast-low); pointer-events: none;"
             {#if typeof toast !== 'string' && toast.actions?.length}
                 <div class="tp-toast-actions">
                     {#each toast.actions as entry}
-                        <button class="tp-toast-action" onclick={() => { entry.action(); dismiss(toast); }}>{entry.label}</button>
+						<!-- R22 round 7: `keepOpen` is what makes an INLINE CONFIRM possible. Every
+						     action used to dismiss the toast, so a button that arms a second press
+						     closed the very card it was arming — which is the timing complaint the
+						     modal version had, one layer down. -->
+						<button
+							class="tp-toast-action"
+							onclick={() => {
+								entry.action();
+								if (!entry.keepOpen) dismiss(toast);
+							}}>{entry.label}</button
+						>
                     {/each}
                 </div>
             {/if}

@@ -22,7 +22,7 @@ import { sessionHost, markPeerJoined, resetSession } from '$lib/connectionState'
 import { canApply, getAuthProvider, dispatchCloudMessage, rolesInfo } from '$lib/cloudHooks';
 import { applyAnnotation, applyAnnotationsSnapshot, sendAnnotations } from '$lib/annotationsHandler';
 import { applyPing } from '$lib/ping';
-import { applyAssetFile, answerAssetRequest } from '$lib/assetShare';
+import { applyAssetFile, answerAssetRequest, applyAssetThumb, answerAssetThumbRequest, applyAssetStart, applyAssetChunk, applyAssetMissing } from '$lib/assetShare';
 import { applyRemoteCameraPreview, clearPeerPreview, sendCameraPreviewState } from '$lib/cameraPreview';
 // 21-F3: play-mode PRESENCE, the campreview shape — a tiny per-peer message, a reply
 // riding the getmodulestate request, and a drop on disconnect (golden rule 3).
@@ -625,10 +625,28 @@ export class PeerConnection {
 				} else if(data.type == 'assetfile') {
 					// shared Explorer bytes (97) — dedup by content hash
 					applyAssetFile(data);
+				} else if(data.type == 'assetmissing') {
+					// R22-R8: "I do not have that hash." When every peer has said so the pull is
+					// resolved immediately instead of waiting out a timeout.
+					applyAssetMissing(conn.peer, data);
+				} else if(data.type == 'assetstart') {
+					// R22-R8: a sliced transfer is announced, then its slices arrive. Chunking is
+					// what makes per-file progress and an integrity check possible — peerjs chunks
+					// internally but tells us nothing about it.
+					applyAssetStart(data);
+				} else if(data.type == 'assetchunk') {
+					applyAssetChunk(data);
+				} else if(data.type == 'assetthumb') {
+					// R22: the PICTURE of a hash, not the file — so a shared file a peer has not
+					// downloaded still shows a thumbnail on its card
+					applyAssetThumb(data);
 				} else if(data.type == 'getasset') {
 					// a peer is missing a hash we may hold — answer over our
-					// stable outgoing connection to them
-					answerAssetRequest(conn.peer, data);
+					// stable outgoing connection to them.
+					// R22: `thumb` is an ADDITIVE flag asking for the thumbnail INSTEAD of the
+					// bytes; an older peer never sets it and is unaffected.
+					if (data.thumb) answerAssetThumbRequest(conn.peer, data);
+					else answerAssetRequest(conn.peer, data);
 				} else if(data.type == 'module') {
 					applyModuleMessage(data);
 				} else if(data.type == 'modules') {

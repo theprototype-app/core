@@ -1281,3 +1281,33 @@ Feature suite green (+ any suites your UI changes touched) + `npm run build` pas
 your files). Two-peer verification is required for anything touching replication.
 VR features: cover the extracted math/state headlessly (computeMoveOffset,
 computeTeleportArc pattern) and note that on-device feel is the user's manual check.
+
+## Roadmap 22 — the shared library (`shared-library`, 196 checks, two peers)
+
+One suite covers the whole batch: the document, both identities, adoption, the pull,
+the concurrent-share reconcile, tombstones, delete/restore, the chunk protocol, the
+ledger arithmetic and the whole UI half through REAL context menus. Lessons that
+generalise:
+
+- **A default that makes the app act faster invalidates every check written for the
+  slower world.** Auto-download (on by default) fetches a shared file before an
+  assertion can observe "the peer does not hold it" — three checks, then three more
+  after the pull became structural. The fix is to reach the old state the way a USER
+  would (park the setting), never a test-only door.
+- **A ledger/aggregate check needs an EMPTY ledger.** Reading a percentage out of a
+  ledger full of the run's own real transfers measured 63% where the maths says 13%.
+- **An async MARK lands after the thing it marks.** The `'peer'` adoption flag is
+  applied by a debounced sweep, so a synchronous read right after the item appears
+  measured `null` while the feature was perfect. `h.eventually` on the mark.
+- **A modal left open shields every later click** — `settingsOpen` cost a 30s timeout
+  several sections later, reported as an Accordion header intercepting the press.
+- **A toggle-shaped affordance must be opened idempotently.** Clicking "Show full log"
+  blindly CLOSED what an earlier section had opened. Check for the pane first.
+- **A card in a grid of two dozen lands under the Controls HUD.** Give a card you
+  intend to click its own folder so it renders top-left, clear of the chrome.
+- **`openedPeers` is a Set** — `.length` is undefined, so a "connected" premise built
+  on it is silently always false.
+- **A `$bindable` prop is only two-way for the caller that BINDS it.** A component
+  rendered twice (an indicator and a pane) with `bind:` on only one instance leaves the
+  other writing a local copy — its close button did nothing, and no store read could
+  have shown it. Assert the OBSERVABLE outcome (the pane is gone), not the prop.

@@ -8,7 +8,7 @@
 	// editor as notebook tabs (bottomDock.js); undocks into a floating window.
 	import { get } from 'svelte/store';
 	import { tick, untrack } from 'svelte';
-	import { explorerClose, mobileUndockAllowed, explorerSceneSaveArm } from '../../stores/appStore.js';
+	import { explorerClose, mobileUndockAllowed, explorerSceneSaveArm, peers } from '../../stores/appStore.js';
 	import { showToast, enable3dPreview, stackOnDrop, confirmPrefabUpdate } from '../../stores/appStore.js';
 	import {
 		explorerFolders,
@@ -20,6 +20,7 @@
 		renameFolder,
 		deleteFolder,
 		folderCounts,
+		folderSubtree,
 		moveFolder,
 		moveItem,
 		importFiles,
@@ -30,6 +31,7 @@
 		itemBlob,
 		itemByHash,
 		inspectedFile,
+		setItemHidden,
 		updateItemBytes,
 		parseObjectFile
 	} from '$lib/explorer';
@@ -51,11 +53,40 @@
 	// points at", behind a throttle, because the answer costs a whole-scene
 	// serialization. This READS that flag and never recomputes it.
 	import { sceneDirty, recomputeSceneDirty } from '$lib/sceneIdentity';
-	import { showChoice } from '$lib/confirmDialog';
+	import { showChoice, showConfirm } from '$lib/confirmDialog';
 	import VersionHistory from './VersionHistory.svelte';
 	// 21-G2: the "update available" dot on old scene versions. The manifest store is
 	// passed as the reactive dependency — a helper reading through get() registers none
 	// (the documented rule), so the badge would otherwise never appear live.
+	// R22-R1/R2: the shared library — Share/Unshare, the adoption marks, and the rows
+	// whose bytes are not on this device. `remoteSharedRows`/`sharedIndexInUse` take the
+	// manifest as an argument on purpose: a helper reading a store through get()
+	// registers no svelte dependency (the documented rule), so the badges would never
+	// appear live.
+	import {
+		shareItem,
+		unshareItem,
+		shareFolder,
+		unshareFolder,
+		remoteSharedRows,
+		pullSharedItem,
+		pendingPulls,
+		sharedIndexInUse,
+		unshareHash,
+		canUnshare,
+		deleteSharedItem,
+		deletedLog,
+		canRestoreDeleted,
+		restoreDeletedItem,
+		purgeDeletedItem,
+		emptyDeletedLog,
+		deletedThumb,
+		logLocalDeletion,
+		deleteWithoutConfirm
+	} from '$lib/sharedLibrary';
+	// R22 round 2: a shared file's PICTURE travels on its own tiny channel, so a card can
+	// show a thumbnail before anybody downloads the bytes (see assetShare).
+	import { sharedThumbs, requestAssetThumb, unavailableHashes } from '$lib/assetShare';
 	import {
 		projectManifest,
 		staleSceneHash,
@@ -71,6 +102,8 @@
 	// 21-G3: the whole project as ONE .tp file (manifest + scenes + assets).
 	import { downloadProject } from '$lib/projectFile';
 	import ModelPreview from './ModelPreview.svelte';
+	// R22-R8: the transfer indicator and the Logs pane, one component in two modes
+	import TransferLog from './TransferLog.svelte';
 	import {
 		packs,
 		openPackItems,
@@ -255,6 +288,161 @@
 
 	// --- content state ---
 	let search = $state('');
+
+	// ---- R22-R7: FILTERS -----------------------------------------------------------
+	//
+	// Two axes, because they answer two different questions a library gets asked: WHAT
+	// IS IT (kind) and WHO CAN SEE IT (share state). The kind half has no dependency on
+	// anything in this batch; the share half only means something once R1 exists.
+	//
+	// LOCAL COMPONENT STATE, not a store and not a saved pref: a filter is a thing you
+	// do for a minute while looking for something, and one that survived a reload would
+	// hide files from a user who had forgotten setting it — the same reasoning that keeps
+	// `search` local.
+	/** empty = every kind. @type {Set<string>} */
+	let kindFilter = $state(new Set<string>());
+	/**
+	 * R22-R8 (user): a TOGGLE named "Local only", not a three-way. "Shared only" was the
+	 * weaker half of the pair — the shared files are the ones with a dot, so they are
+	 * already findable, while the local ones are exactly what you cannot pick out of a
+	 * grid. One switch, one question: show me what is NOT in the project yet.
+	 */
+	let localOnly = $state(false);
+
+	/** R22-R8: is the Logs pane showing? LOCAL and session-only — it is a debugging
+	 * view, and one that came back on every reload would be clutter. */
+	let logOpen = $state(false);
+	const filtering = $derived(kindFilter.size > 0 || localOnly);
+
+	/** R22-R2: the share state of a card, and the ONE place the vocabulary is read. A
+	 * derived remote row is shared BY DEFINITION — it is in the index and that is the
+	 * only reason we know about it. */
+	function shareOf(item: any) {
+		if (item?.remoteItem) return 'peer';
+		return item?.share ?? '';
+	}
+	const isShared = (item: any) => {
+		const v = shareOf(item);
+		return v === 'mine' || v === 'peer';
+	};
+
+	/** Applied to the assembled grid list. A card with no library record of its own (a
+	 * pack entry, a scene asset, a project scene) is exempt from the SHARE axis rather
+	 * than being filtered out by it — it has no share state to be wrong about. */
+	function passesFilter(item: any) {
+		if (kindFilter.size && !kindFilter.has(item.kind)) return false;
+		if (localOnly) {
+			// a card with no library record of its own has no share state to be wrong about,
+			// and a REMOTE row is by definition not local — both are out
+			if (!isOwnedItem(item)) return false;
+			if (isShared(item)) return false;
+		}
+		return true;
+	}
+
+	/**
+	 * R22-R8 (user): "make sure local only applies to folders also (and shows only local
+	 * files in those folders)". Two halves, and the second one falls out of `passesFilter`
+	 * already scoping the grid. This is the first: a SHARED folder is not a local thing,
+	 * so it goes. A folder that merely CONTAINS local files stays, or the filter would
+	 * hide the way to reach them.
+	 */
+	function folderPassesFilter(folder: any) {
+		if (!localOnly) return true;
+		if (folder?.share === 'mine' || folder?.share === 'peer') {
+			// ...unless something local is inside it, in which case it is a route rather than
+			// a result, and hiding it would strand the files the filter exists to show
+			const subtree = folderSubtree(folder.id);
+			return $explorerItems.some((i) => subtree.includes(i.folderId ?? '') && !isShared(i));
+		}
+		return true;
+	}
+
+	/** R22-R2: is the local/shared distinction worth drawing at all? In a project that
+	 * has never shared a thing, muting every card would be pure noise. */
+	/**
+	 * R22 round 5 — WHEN IS THE LOCAL/SHARED DISTINCTION WORTH DRAWING?
+	 *
+	 * Whenever there is somebody to be distinguished FROM. The first rule was "once
+	 * something in this project is shared", which produced the reported oddity: connect,
+	 * drop one file, and it is not greyed — but drop a second after anything at all has
+	 * been shared and both are. The question a session makes urgent is "can my peers see
+	 * this?", and that question exists from the first file.
+	 *
+	 * Still off in a SOLO library, where every file is local and muting all of them says
+	 * nothing while costing legibility everywhere.
+	 */
+	const sharingOn = $derived(
+		// `openedPeers` is a SET, so this is `.size` — `.length` is undefined on one, which
+		// is a silent always-false and exactly the bug this rule was written to fix
+		($peers?.openedPeers?.size ?? 0) > 0 || sharedIndexInUse($projectManifest) || filtering
+	);
+
+	/** The owner of a shared row, in cloudHooks' three tiers. The checkmark is the whole
+	 * point of the third one: only a plugin-vouched account earns it. */
+	function ownerLabel(item: any) {
+		const o = item?.owner;
+		if (!o) return '';
+		if (o.account) return o.account + ' ✓';
+		return o.name || 'peer ' + String(o.id ?? '').slice(0, 4);
+	}
+
+	/**
+	 * R22 round 2 (user) — THE MUTED TREATMENT, in one place because it lands on four
+	 * different things: a file's icon, a file's thumbnail, a folder's icon and a name. A
+	 * local file is not broken or absent, so this is a TINT and a fade rather than a
+	 * different colour — the same reading the remote `.tpscene` cards already had.
+	 *
+	 * Only while `sharingOn`: in a project that has never shared anything there is no
+	 * distinction to draw, and muting everything would cost legibility for no information.
+	 */
+	function mutedItem(item: any) {
+		return sharingOn && isOwnedItem(item) && !isShared(item);
+	}
+	/** the same question for a folder (no `kind`, so no isOwnedItem) */
+	function mutedFolder(folder: any) {
+		return sharingOn && folder?.share !== 'mine' && folder?.share !== 'peer';
+	}
+	/** a thumbnail cannot be recoloured, so it is desaturated and faded instead */
+	const MUTED_IMG = 'opacity-50 saturate-50';
+	/** an icon is a glyph in currentColor, so it just goes quiet */
+	const MUTED_ICON = 'text-gray-600';
+
+	/**
+	 * R22 round 2 (user): the PICTURE for a card. A file we hold renders its own
+	 * thumbnail; a shared file we do NOT hold renders the one its owner pushed over the
+	 * thumbnail channel, and asks for it if it has not arrived. Requesting from inside a
+	 * getter is safe: `requestAssetThumb` carries the one-ask-per-session guard, so a grid
+	 * of fifty remote cards asks fifty times once and never again.
+	 */
+	function thumbFor(item: any) {
+		if (item?.thumbnail) return item.thumbnail;
+		if (!item?.hash) return null;
+		const cached = $sharedThumbs[item.hash];
+		if (cached) return cached;
+		if (item.remoteItem || item.remoteScene) requestAssetThumb(item.hash);
+		return null;
+	}
+
+	/** The tooltip a card's share dot carries. */
+	function shareTitle(item: any) {
+		const who = ownerLabel(item);
+		// R22 round 5: nobody in this session holds the bytes. Say so — a card that looks
+		// like a download which never finishes is worse than one that admits the file is
+		// out of reach, and this clears itself the moment a new peer arrives.
+		if (item?.remoteItem && $unavailableHashes.has(item.hash))
+			return (
+				'Nobody here has this file' +
+				(who ? ' \u2014 ' + who + ' shared it and has left' : '') +
+				'. It will be fetched if they come back.'
+			);
+		if (item?.remoteItem)
+			return 'Shared' + (who ? ' by ' + who : '') + ' — not on this device yet. Open it to download it.';
+		if (shareOf(item) === 'mine') return 'Shared by you — peers can see and download this';
+		if (shareOf(item) === 'peer') return 'Shared' + (who ? ' by ' + who : '') + ' — you have a copy';
+		if (item?.wasShared) return 'No longer shared — your copy is still here';
+		return 'Local — only on this device';
+	}
 	let dropActive = $state(false);
 	let menu: any = $state(null); // {x, y, items}
 	/** highlighted drop target while dragging: folder id | 'root' | null (106.4) */
@@ -483,6 +671,19 @@
 		scene: 'map' // 21-F4: a level (.tpscene)
 	};
 	// semantic icon colors (ui.css classes over the --icon-* theme tokens)
+	/** R22-R7: what a kind is CALLED in the filter. The store values are internal
+	 * (`object` is a 3D model, `text` covers configs), so the raw key is not a label. */
+	const KIND_LABELS: Record<string, string> = {
+		image: 'Images',
+		audio: 'Audio',
+		text: 'Text and config',
+		object: '3D models',
+		prefab: 'Prefabs',
+		scene: 'Scenes'
+	};
+	/** R22-R7: the filter's fixed order. Every kind the Explorer can hold, so the menu is
+	 * a statement about the app rather than about this library's current contents. */
+	const FILTER_KINDS = ['image', 'object', 'audio', 'text', 'scene', 'prefab'];
 	const KIND_COLORS: Record<string, string> = {
 		image: 'ico-image',
 		audio: 'ico-audio',
@@ -508,7 +709,10 @@
 	});
 
 	const childFolders = $derived(
-		$explorerFolders.filter((f) => (f.parentId ?? null) === ($activeFolder === 'prefabs' ? '__none__' : ($activeFolder ?? null)))
+		$explorerFolders
+			.filter((f) => (f.parentId ?? null) === ($activeFolder === 'prefabs' ? '__none__' : ($activeFolder ?? null)))
+			// R22-R8: the Local-only filter reaches FOLDERS too, not just their contents
+			.filter(folderPassesFilter)
 	);
 
 	const gridItems = $derived.by(() => {
@@ -536,6 +740,25 @@
 			return $openPackItems.map((it) => ({ ...it, packEntry: true, id: it.id ?? `pack:${it.packName}:${it.name}` }));
 		}
 		// the Scene manifest (108): a derived, always-shared view — never editable
+		// R22 round 4: THE RECYCLE BIN, a derived view like the Scene manifest — the log is
+		// the truth and these cards are a reading of it, so there is no CRUD to keep in step.
+		if ($activeFolder === 'deleted') {
+			return deletedLog($projectManifest).map((r: any) => ({
+				id: 'deleted:' + r.hash,
+				name: r.name,
+				kind: r.kind || 'text',
+				hash: r.hash,
+				folderId: null,
+				size: 0,
+				createdAt: r.at,
+				// R22 round 7: the picture was recorded when the file was deleted, because once
+				// the bytes are reclaimed it can never be derived again
+				thumbnail: deletedThumb(r),
+				owner: r.by ?? null,
+				deletedEntry: true,
+				restorable: canRestoreDeleted(r.hash)
+			}));
+		}
 		if (typeof $activeFolder === 'string' && $activeFolder.startsWith('scene')) {
 			const group = $activeFolder.split(':')[1] ?? null;
 			return $sceneAssets
@@ -577,10 +800,34 @@
 				// put this card in a menu written for a different thing.
 				remoteScene: true
 			}));
+		// R22-R1: THE SHARED ROWS WHOSE BYTES ARE NOT HERE. Same idea as `missing` above and
+		// deliberately the same shape — an index row is not a library record, so writing one
+		// would leave a phantom card behind the moment its owner unshared it. Unlike a
+		// project scene these DO have a folder, because the row carries placement, so they
+		// appear inside the shared folder they belong to.
+		const remoteShared = remoteSharedRows($projectManifest)
+			.filter((r: any) => !missing.some((m) => m.hash === r.hash))
+			.filter((r: any) => (q ? r.name.toLowerCase().includes(q) : (r.folderId ?? null) === ($activeFolder ?? null)))
+			.sort((a: any, b: any) => String(a.name).localeCompare(String(b.name)))
+			.map((r: any) => ({
+				id: 'shared:' + r.hash,
+				name: r.name,
+				kind: r.kind || 'text',
+				hash: r.hash,
+				folderId: r.folderId ?? null,
+				size: 0,
+				thumbnail: null,
+				createdAt: 0,
+				owner: r.owner ?? null,
+				// its own marker rather than a reuse of `remoteScene`: that one means a project
+				// SCENE the manifest names, and its menu is written for travelling there
+				remoteItem: true
+			}));
 		// they belong to the PROJECT rather than to a folder, so they show at the library
 		// root (and in any search) — never inside a folder they were never placed in
 		const atRoot = !q && ($activeFolder ?? null) === null;
-		return atRoot || q ? [...scoped, ...missing] : scoped;
+		const all = atRoot || q ? [...scoped, ...missing, ...remoteShared] : [...scoped, ...remoteShared];
+		return all.filter(passesFilter);
 	});
 
 	// ---- 21-G9: IDENTITY (who am I / where am I), above the LOCATION crumbs -----------
@@ -685,6 +932,9 @@
 		const a = $activeFolder;
 		if (a === 'prefabs') return [{ label: 'Prefabs', id: 'prefabs' as string | null }];
 		if (a === 'packs') return [{ label: 'Packs', id: 'packs' as string | null }];
+		// R22 round 7: the bin is its own place, so the breadcrumb has to say so — it read
+		// "Library", which is exactly where these files are not
+		if (a === 'deleted') return [{ label: 'Deleted', id: 'deleted' as string | null }];
 		if (typeof a === 'string' && a.startsWith('pack:')) {
 			const p = packByName(a.slice(5));
 			return [
@@ -958,6 +1208,18 @@
 		if (editing) void commitEdit();
 	}
 	function startCreate(parentId: string | null, inGrid = false) {
+		// R22 round 7 (user): pressing New folder again must not COMMIT the pending one and
+		// open another — that is how you end up with "New folder", "New folder (2)"… from
+		// a double-press. An edit already open for the same place is the same intent, so
+		// keep it and put the caret back in it.
+		if (editing?.mode === 'create' && editing.parentId === parentId && editing.inGrid === inGrid) {
+			queueMicrotask(() => {
+				const el = document.querySelector<HTMLInputElement>('#explorer-new-card input, .explorer-edit-input');
+				el?.focus();
+				el?.select();
+			});
+			return;
+		}
 		settlePendingEdit();
 		if (parentId) {
 			const next = new Set(expanded);
@@ -1177,6 +1439,42 @@
 			x: e.clientX,
 			y: e.clientY,
 			items: [
+				// R22-R2: A FOLDER IS THE UNIT OF INTENT. Sharing one shares its subtree and its
+				// contents, and — the rule the user asked for — anything dropped into it LATER.
+				// Only the peer who shared a folder can stop sharing it, so a peer's folder gets
+				// a statement rather than a button that could not work.
+				...(folder.share === 'peer'
+					? [
+							{
+								label: 'Shared by ' + (ownerLabel(folder) || 'a peer'),
+								icon: 'users',
+								tooltip: 'Only whoever shared this folder can stop sharing it',
+								action: () => {}
+							}
+						]
+					: [
+							folder.share === 'mine'
+								? {
+										label: 'Unshare folder',
+										icon: 'eye-off',
+										tooltip:
+											'Stop offering this folder and its files to peers. Copies they already have stay theirs.',
+										action: () => {
+											unshareFolder(folder.id);
+											showToast(folder.name + ' is no longer shared');
+										}
+									}
+								: {
+										label: 'Share folder',
+										icon: 'users',
+										tooltip:
+											'Peers see this folder and its files, and anything you add to it later',
+										action: () => {
+											shareFolder(folder.id);
+											showToast('Sharing ' + folder.name + ' with peers');
+										}
+									}
+						]),
 				{ label: 'Properties', action: () => showProperties({ kind: 'folder', folder }) },
 				// 170: "New subfolder" only makes sense in the tree; the thumbnail grid drops it
 				...(inTree ? [{ label: 'New subfolder', action: () => startCreate(folder.id) }] : []),
@@ -1238,7 +1536,15 @@
 
 	/** a real, deletable library thing: a stored item, a prefab, or a folder */
 	const isOwnedItem = (item: any) =>
-		!!item && !item.packEntry && !item.sceneEntry && !item.remoteScene && item.kind !== 'pack-folder';
+		!!item &&
+		!item.packEntry &&
+		!item.sceneEntry &&
+		!item.remoteScene &&
+		// R22-R1: a shared row whose bytes are not here has no local record either — it is
+		// a card built from the index, so every batch op (download, delete, GLTF export)
+		// would be addressing an id that does not exist
+		!item.remoteItem &&
+		item.kind !== 'pack-folder';
 
 	/** what the selection breaks down into, once and for every batch entry point */
 	function selectionParts() {
@@ -1477,6 +1783,37 @@
 				tooltip: 'One .gltf file containing every selected prefab and 3D object',
 				action: () => void exportSelectionGltf()
 			});
+		// R22-R2: the SET, and only the members we are actually the writer for. Counting
+		// them separately is what lets the two entries state a number the press will
+		// honour — offering "Share 6" over a selection containing three of a peer's files
+		// would be a lie in the label rather than a silent partial action.
+		const parts = selectionParts();
+		const shareable = parts.items.filter((i: any) => shareOf(i) !== 'mine' && shareOf(i) !== 'peer');
+		const unshareable = parts.items.filter((i: any) => shareOf(i) === 'mine');
+		const shareableFolders = parts.folders.filter((f: any) => f.share !== 'mine' && f.share !== 'peer');
+		const unshareableFolders = parts.folders.filter((f: any) => f.share === 'mine');
+		if (shareable.length || shareableFolders.length)
+			items.push({
+				label: 'Share ' + plural(shareable.length + shareableFolders.length, 'item'),
+				icon: 'users',
+				tooltip: 'Let peers in this session see and download them',
+				action: () => {
+					for (const f of shareableFolders) shareFolder(f.id);
+					for (const i of shareable) shareItem(i.id);
+					showToast('Sharing ' + plural(shareable.length + shareableFolders.length, 'item') + ' with peers');
+				}
+			});
+		if (unshareable.length || unshareableFolders.length)
+			items.push({
+				label: 'Unshare ' + plural(unshareable.length + unshareableFolders.length, 'item'),
+				icon: 'eye-off',
+				tooltip: 'Stop offering them. Copies peers already downloaded stay theirs.',
+				action: () => {
+					for (const f of unshareableFolders) unshareFolder(f.id);
+					for (const i of unshareable) unshareItem(i.id);
+					showToast(plural(unshareable.length + unshareableFolders.length, 'item') + ' no longer shared');
+				}
+			});
 		if (counts.deletable)
 			items.push({
 				label: `Delete ${plural(counts.deletable, 'item')}`,
@@ -1668,7 +2005,7 @@
 				},
 				{ label: 'Properties', action: () => showProperties({ kind: 'item', item }) },
 				{ label: 'Rename', action: () => startRenamePrefab(item) },
-				{ label: 'Delete', danger: true, action: () => confirmDeletePrefab(prefab) }
+				{ label: 'Delete', danger: true, action: () => void deletePrefabToBin(prefab) }
 			]
 		};
 	}
@@ -1696,9 +2033,94 @@
 			prefabMenu(e, item);
 			return;
 		}
+		// R22 round 4: a row in the recycle bin. Restore is offered only when the bytes are
+		// actually here — the documented rule about not offering a gesture that cannot work.
+		if (item.deletedEntry) {
+			const who = ownerLabel(item);
+			menu = {
+				x: e.clientX,
+				y: e.clientY,
+				items: [
+					item.restorable
+						? {
+								label: 'Restore',
+								icon: 'rotate-ccw',
+								tooltip: 'Put it back in the project and share it again',
+								action: () => {
+									restoreDeletedItem(item.hash);
+									showToast('Restored ' + item.name);
+								}
+							}
+						: {
+								label: 'Nobody here holds the bytes',
+								tooltip:
+									'This machine emptied its copy. A peer that still has it can restore it.',
+								action: () => {}
+							},
+					...(item.restorable
+						? [
+								{
+									label: 'Delete permanently',
+									danger: true,
+									tooltip: 'Free the disk on THIS machine. Peers keep their own copies.',
+									action: () => {
+										void purgeDeletedItem(item.hash);
+										showToast(item.name + ' removed from this device');
+									}
+								}
+							]
+						: []),
+					{
+						label: 'Deleted by ' + (who || 'someone') + ' · ' + new Date(item.createdAt).toLocaleString(),
+						action: () => {}
+					}
+				]
+			};
+			return;
+		}
 		if (item.sceneEntry) return; // the Scene manifest IS a derived view — no CRUD
 		// P2a: so is a project scene we do not hold — there is no record to rename or
 		// delete here, only a scene to open. One entry, and it says what it will do.
+		// R22-R1: a shared file whose bytes are not on this device. Same reasoning as the
+		// project scene below — there is no record to rename or delete, only bytes to
+		// fetch — and the two are kept apart because a scene's one entry TRAVELS there
+		// while this one only downloads.
+		if (item.remoteItem) {
+			const who = ownerLabel(item);
+			menu = {
+				x: e.clientX,
+				y: e.clientY,
+				items: [
+					{
+						label: 'Download from peers',
+						icon: 'download',
+						tooltip:
+							'Shared' +
+							(who ? ' by ' + who : '') +
+							' — the bytes are not here yet. This asks the mesh for them.',
+						action: () => {
+							if (pullSharedItem(item.hash)) showToast('Fetching ' + item.name + ' from peers…');
+						}
+					},
+					...(canUnshare(item)
+						? [
+								{
+									label: 'Unshare',
+									icon: 'eye-off',
+									tooltip:
+										'Take it out of the project. You do not hold this file, so there is nothing here to lose.',
+									action: () => {
+										unshareHash(item.hash);
+										showToast(item.name + ' is no longer shared');
+									}
+								}
+							]
+						: []),
+					{ label: 'Properties', action: () => showProperties({ kind: 'item', item }) }
+				]
+			};
+			return;
+		}
 		if (item.remoteScene) {
 			menu = {
 				x: e.clientX,
@@ -1775,19 +2197,250 @@
 				// It moved INTO the Version history panel: its subject IS that history, the row
 				// sat one line under Download and read as a second Download, and the panel is
 				// where the version count it acts on is already shown.
+				// R22-R2: SHARE / UNSHARE, the objectPermissions vocabulary one domain over.
+				// A file a PEER shares gets neither: we are not its writer, and an Unshare that
+				// silently did nothing would be worse than no entry at all.
+				// R22 round 2 (locked answer): ANYONE may unshare — a project's library belongs
+				// to the project, not to whoever happened to press the button first. The old
+				// owner-only rule survives as a setting, so this asks `canUnshare` rather than
+				// testing ownership itself. When it refuses, the row still NAMES the owner,
+				// because "you cannot" is only useful with "they can".
+				...(shareOf(item) === 'peer'
+					? [
+							canUnshare(item)
+								? {
+										label: 'Unshare',
+										icon: 'eye-off',
+										tooltip:
+											'Take it out of the project for everyone. Owner: ' +
+											(ownerLabel(item) || 'unknown') +
+											'. Nobody loses the copy they already have.',
+										action: () => {
+											unshareItem(item.id);
+											showToast(item.name + ' is no longer shared');
+										}
+									}
+								: {
+										label: 'Owner: ' + (ownerLabel(item) || 'a peer'),
+										icon: 'users',
+										tooltip:
+											'Settings has this project set so only the owner may unshare. Your copy stays either way.',
+										action: () => {}
+									}
+						]
+					: [
+							shareOf(item) === 'mine'
+								? {
+										label: 'Unshare',
+										icon: 'eye-off',
+										tooltip:
+											'Stop offering this to peers. Copies they already downloaded stay theirs.',
+										action: () => {
+											unshareItem(item.id);
+											showToast(item.name + ' is no longer shared');
+										}
+									}
+								: {
+										label: 'Share',
+										icon: 'users',
+										tooltip: 'Let peers in this session see and download this file',
+										action: () => {
+											shareItem(item.id);
+											showToast('Sharing ' + item.name + ' with peers');
+										}
+									}
+						]),
 				{ label: 'Properties', action: () => showProperties({ kind: 'item', item }) },
 				{
 					label: 'Rename',
 					action: () => startRenameItem(item)
 				},
-				{ label: 'Delete', danger: true, action: () => deleteItem(item.id) }
+				// R22 round 4: deleting a SHARED file removes it from the project for everyone,
+				// and every peer's copy goes to their recycle bin rather than being destroyed.
+				// A LOCAL file keeps the plain delete — there is nobody else to tell.
+				isShared(item)
+					? {
+							label: 'Delete for everyone',
+							danger: true,
+							tooltip:
+								'Removes it from the project. Every copy moves to Deleted files, where it can be restored.',
+							action: () => {
+								deleteSharedItem(item.id);
+								showToast(item.name + ' deleted for everyone — restore it from Deleted files');
+							}
+						}
+					: {
+							label: 'Delete',
+							danger: true,
+							tooltip: 'Moves it to Deleted, where you can restore it',
+							action: () => void deleteLocalItem(item)
+						}
 			]
 		};
 	}
 
 	// right-click on the grid background = new folder HERE (106.7)
+	/**
+	 * R22-R7. Kinds come from what the library ACTUALLY HOLDS rather than from the full
+	 * EXTENSIONS table: a filter offering `Audio` in a project with no sounds in it is a
+	 * row that can only ever produce an empty grid.
+	 */
+	/**
+	 * R22 round 7 (user) — DELETING MY OWN FILE GOES TO THE BIN TOO, and it asks INSIDE
+	 * the Explorer rather than throwing a toast. A toast for a question is the wrong
+	 * shape: it appears somewhere else on screen, it can be missed, and it cannot block.
+	 * `showConfirm` is the app's modal and it is what every other destructive file action
+	 * already uses (folder delete, Open project).
+	 */
+	async function deleteLocalItem(item: any) {
+		if (!$deleteWithoutConfirm) {
+			const ok = await showConfirm({
+				title: 'Delete \u201c' + item.name + '\u201d',
+				message:
+					'It moves to Deleted, where you can restore it or free the disk. Nobody else has this file, so nobody else is affected.',
+				confirmLabel: 'Delete'
+			});
+			if (!ok) return;
+		}
+		logLocalDeletion({ hash: item.hash, name: item.name, kind: item.kind, thumb: item.thumbnail });
+		setItemHidden(item.id, true);
+		showToast(item.name + ' moved to Deleted');
+	}
+
+	/** ...and a PREFAB, which is local by nature and was simply gone before. */
+	async function deletePrefabToBin(prefab: any) {
+		if (!$deleteWithoutConfirm) {
+			const ok = await showConfirm({
+				title: 'Delete prefab \u201c' + (prefab?.name ?? '') + '\u201d',
+				message: 'It moves to Deleted, where you can restore it.',
+				confirmLabel: 'Delete'
+			});
+			if (!ok) return;
+		}
+		// a prefab's identity is its id, not a content hash — prefix it so the two can
+		// never collide in one log
+		logLocalDeletion({
+			hash: 'prefab:' + prefab.id,
+			name: prefab.name ?? 'Prefab',
+			kind: 'prefab',
+			thumb: prefab.thumbnail ?? null
+		});
+		removePrefab(prefab.id);
+		showToast((prefab.name ?? 'Prefab') + ' moved to Deleted');
+	}
+
+	/** R22 round 7: emptying the bin is destructive and LOCAL, so it confirms and says
+	 * which of those two it is — peers keep their own copies either way. */
+	async function emptyBin() {
+		const n = deletedLog($projectManifest).length;
+		if (!n) return;
+		const ok = await showConfirm({
+			title: 'Empty Deleted',
+			message:
+				'Reclaim the disk for ' +
+				n +
+				' deleted file' +
+				(n === 1 ? '' : 's') +
+				' and clear the record. This machine only — every peer keeps its own bin, and nothing already restored is affected.',
+			confirmLabel: 'Empty'
+		});
+		if (!ok) return;
+		const gone = await emptyDeletedLog();
+		showToast('Emptied ' + gone + ' file' + (gone === 1 ? '' : 's') + ' from Deleted');
+	}
+
+	/** the Deleted tree row's own menu */
+	function deletedRowMenu(e: MouseEvent) {
+		e.preventDefault();
+		const n = deletedLog($projectManifest).length;
+		menu = {
+			x: e.clientX,
+			y: e.clientY,
+			items: [
+				{ label: 'Open', action: () => openFolder('deleted') },
+				...(n
+					? [
+							{
+								label: 'Empty Deleted (' + n + ')',
+								danger: true,
+								icon: 'trash-2',
+								action: () => void emptyBin()
+							}
+						]
+					: [])
+			]
+		};
+	}
+
+	function filterMenu(e: MouseEvent) {
+		e.preventDefault();
+		e.stopPropagation();
+		// R22 round 2 (user): EVERY category, not only the ones the library happens to hold.
+		// The first version listed present kinds on the reasoning that an absent one can only
+		// produce an empty grid — but a filter is also how you learn what the app sorts files
+		// INTO, and three of the six were missing from a fresh library, which reads as a bug
+		// rather than as a tidy-up. Fixed order, so the menu does not reshuffle as files land.
+		const kinds = FILTER_KINDS;
+		const toggleKind = (k: string) => {
+			const next = new Set(kindFilter);
+			if (next.has(k)) next.delete(k);
+			else next.add(k);
+			// REPLACE the Set — an in-place mutation gives svelte no signal (the documented
+			// rule this component already follows for `selectedIds`)
+			kindFilter = next;
+		};
+		const items: any[] = kinds.map((k) => ({
+			label: KIND_LABELS[k] ?? k,
+			checked: kindFilter.has(k),
+			action: () => toggleKind(k)
+		}));
+		// two axes answering two different questions, so they get a divider: ContextMenu's
+		// own `section` label, which is what the rest of the app uses for exactly this
+		items.unshift({ section: 'Type' });
+		items.push({ section: 'Visibility' });
+		items.push({
+			label: 'Local only',
+			checked: localOnly,
+			icon: 'eye-off',
+			tooltip: 'Show only the files nobody else can see yet — folders included',
+			action: () => (localOnly = !localOnly)
+		});
+		if (filtering)
+			items.push({
+				label: 'Clear filters',
+				action: () => {
+					kindFilter = new Set();
+					localOnly = false;
+				}
+			});
+		menu = { x: e.clientX, y: e.clientY, items };
+	}
+
 	function gridMenu(e: MouseEvent) {
 		if ((e.target as HTMLElement)?.closest('.explorer-card, .explorer-folder-card')) return;
+		// R22 round 7: the bin is not a folder you put things in, so New folder / Save scene
+		// are meaningless here. What IS meaningful is emptying it.
+		if ($activeFolder === 'deleted') {
+			e.preventDefault();
+			const n = deletedLog($projectManifest).length;
+			menu = {
+				x: e.clientX,
+				y: e.clientY,
+				items: n
+					? [
+							{
+								label: 'Empty Deleted (' + n + ')',
+								danger: true,
+								icon: 'trash-2',
+								tooltip:
+									'Reclaim the disk on THIS machine and clear the record. Peers keep their own bins.',
+								action: () => void emptyBin()
+							}
+						]
+					: [{ label: 'The bin is empty', action: () => {} }]
+			};
+			return;
+		}
 		const inPacks =
 			$activeFolder === 'packs' || (typeof $activeFolder === 'string' && $activeFolder.startsWith('pack:'));
 		const inPrefabs = !inPacks && $activeFolder === 'prefabs';
@@ -2340,6 +2993,14 @@
 		await travelToLevel(item.hash);
 	}
 	async function openItem(item: any) {
+		// R22-R1: opening a shared file we do not hold means FETCHING it. There is nothing
+		// else a double-click could sensibly do — the card exists because the index says the
+		// file does, and the bytes are one ask away.
+		if (item.remoteItem) {
+			if (pullSharedItem(item.hash)) showToast('Fetching ' + item.name + ' from peers…');
+			else showToast(item.name + ' is already here');
+			return;
+		}
 		if (item.kind === 'pack-folder') {
 			openFolder('pack:' + item.packName);
 			return;
@@ -2438,6 +3099,29 @@
 		onclick={(e) => e.stopPropagation()}
 		onblur={blurCommit}
 	/>
+{/snippet}
+
+<!--
+	R22-R7: THE FILTER. One snippet rendered in both headers (docked and undocked never
+	both mount), beside the search box because it narrows the same question a different
+	way. The shared ContextMenu rather than a ThemedSelect: the kind list grows, and a
+	select cannot shrink below its longest option — the documented trap that pushed the
+	post-stack's add control off a narrow panel.
+-->
+{#snippet filterChip()}
+	<button
+		id="explorer-filter"
+		class="ui-button-quiet shrink-0 {filtering ? 'text-primary-400' : ''}"
+		title={filtering
+			? 'Filtering — click to change or clear'
+			: 'Filter by type, and by who can see it'}
+		aria-label="Filter files"
+		onclick={(e) => filterMenu(e)}>☷{filtering ? ' •' : ''}</button
+	>
+	<!-- R22 round 6: AFTER the filter, and always visible. An indicator that comes and
+	     goes reflows the header and trains nobody where to look; a permanent one has to
+	     be honest in every state instead — see the four in TransferLog. -->
+	<TransferLog bind:open={logOpen} />
 {/snippet}
 
 {#snippet identityChip()}
@@ -2662,6 +3346,22 @@
 						</button>
 					{/each}
 					{/if}
+					<!-- R22 round 7: the bin sits BELOW Scene. It is the least-used pinned row,
+					     and a destructive place belongs under the things you reach for rather
+					     than above them. Still hidden while empty. -->
+					{#if deletedLog($projectManifest).length}
+						<button
+							id="deleted-folder"
+							class="whitespace-nowrap rounded px-2 py-1 text-left {$activeFolder === 'deleted'
+								? 'bg-primary-700 text-white'
+								: 'text-gray-300 hover:bg-gray-700'}"
+							title="Files removed from the project — restore them, or free the disk"
+							onclick={() => openFolder('deleted')}
+							oncontextmenu={deletedRowMenu}
+							><Icon name="trash-2" size={16} class="mr-1.5 w-4 text-center text-gray-400" aria-hidden="true" />Deleted
+							<span class="text-gray-500">({deletedLog($projectManifest).length})</span></button
+						>
+					{/if}
 				</div>
 			</div>
 		</div>
@@ -2715,7 +3415,15 @@
 			{:else}
 				<!-- fixed-width columns (not 1fr) so cards don't resize/jiggle when the
 				     Properties sidebar toggles main's width -->
-				<div class="grid grid-cols-[repeat(auto-fill,96px)] justify-start gap-1">
+				<!--
+					R22-R8: with the Logs pane open the body becomes two columns — the cards and the
+					log. The split is CSS rather than measured JS: `.ex-split` is a flex row, the log
+					takes a fixed 300px, and at <=640px the cards hide and the log takes the whole
+					drawer ("if limited space, then it takes entire explorer drawer"). No
+					ResizeObserver, and nothing to get wrong on a re-dock.
+				-->
+				<div class="ex-split" class:ex-split-on={logOpen}>
+				<div class="ex-cards grid grid-cols-[repeat(auto-fill,96px)] justify-start gap-1">
 					{#if pendingCard}
 						<!-- 21-G10: name it where it will appear. A placeholder card, not a modal and
 						     not a browser prompt — Esc removes it having created nothing. -->
@@ -2737,7 +3445,7 @@
 						{#each childFolders as folder (folder.id)}
 							<div
 								data-card-id={folder.id}
-								class="explorer-folder-card flex cursor-pointer flex-col items-center gap-1 rounded border p-1.5 {dropFolder === folder.id
+								class="explorer-folder-card relative flex cursor-pointer flex-col items-center gap-1 rounded border p-1.5 {dropFolder === folder.id
 									? 'border-primary-500 bg-primary-500/10'
 									: cardClass(selectedIds, null, selected, folder.id)}"
 								role="button"
@@ -2753,11 +3461,30 @@
 								ondblclick={() => openFolder(folder.id)}
 								onkeydown={(e) => e.key === 'Enter' && openFolder(folder.id)}
 							>
-								<span class="ico-folder flex h-14 w-14 items-center justify-center"><Folder size={32} aria-hidden="true" /></span>
+								{#if sharingOn && (folder.share === 'mine' || folder.share === 'peer')}
+									<!-- R22-R2: a SHARED folder, same two colours as an item's dot. It matters
+									     more here than on a file, because a shared folder also shares whatever
+									     you drop into it later. -->
+									<span
+										class="explorer-share-dot absolute bottom-1 left-1 h-2 w-2 rounded-full {folder.share === 'mine' ? 'bg-teal-400' : 'bg-sky-400'}"
+										title={folder.share === 'mine'
+											? 'Shared by you — peers see this folder, and anything you add to it'
+											: 'Shared' + (ownerLabel(folder) ? ' by ' + ownerLabel(folder) : '') + ' — a peer offered this folder'}
+									></span>
+								{/if}
+								<!-- R22 round 2 (user): an unshared folder is quiet too — the ICON, not
+								     just the name, because the icon is what the eye lands on in a grid. -->
+								<span
+									class="flex h-14 w-14 items-center justify-center {mutedFolder(folder)
+										? MUTED_ICON
+										: 'ico-folder'}"><Folder size={32} aria-hidden="true" /></span
+								>
 								{#if editing?.mode === 'rename' && editing.inGrid && editing.folderId === folder.id}
 									{@render cardEdit()}
 								{:else}
-									<span class="w-full overflow-hidden text-ellipsis whitespace-nowrap text-center text-[10px] text-gray-300">
+									<span
+										class="w-full overflow-hidden text-ellipsis whitespace-nowrap text-center text-[10px] {mutedFolder(folder) ? 'text-gray-500' : 'text-gray-300'}"
+									>
 										{folder.name}
 									</span>
 								{/if}
@@ -2774,7 +3501,7 @@
 								item.id
 							)} {openSceneHash && item.hash === openSceneHash
 								? 'explorer-open-scene ring-1 ring-emerald-400'
-								: ''} {item.remoteScene ? 'explorer-remote opacity-60' : ''}"
+								: ''} {item.remoteScene || item.remoteItem ? 'explorer-remote opacity-60' : ''}"
 							draggable="true"
 							role="listitem"
 							title={item.name}
@@ -2803,6 +3530,34 @@
 								title="In this project, not on this device yet — open it to download it"
 							></span>
 						{/if}
+						{#if item.remoteItem}
+							<!-- R22-R1: a SHARED file whose bytes are not on this device. Same treatment
+						     as a project scene one branch up, and for the same reason: the session
+						     agrees it exists, so hiding it would be a worse lie than dimming it.
+						     `$pendingPulls` is the only thing that distinguishes "not here" from "on
+						     its way", which is what stops the card reading as dead when clicked. -->
+							<span
+								class="explorer-remote-dot absolute right-1 top-1 h-2.5 w-2.5 rounded-full {$unavailableHashes.has(item.hash) ? 'bg-red-400' : $pendingPulls.has(item.hash) ? 'animate-pulse bg-amber-400' : 'bg-sky-400'}"
+								title={$pendingPulls.has(item.hash) ? 'Downloading from peers…' : shareTitle(item)}
+							></span>
+						{:else if sharingOn && isShared(item)}
+							<!-- R22-R2: WHO CAN SEE THIS. Teal = shared by you, sky = a peer's. Bottom
+						     LEFT because both top corners are taken (the open scene; the remote/stale
+						     pair), and drawn only once something in the project is actually shared —
+						     in a solo project the distinction is pure noise. -->
+							<span
+								class="explorer-share-dot absolute bottom-1 left-1 h-2 w-2 rounded-full {shareOf(item) === 'mine' ? 'bg-teal-400' : 'bg-sky-400'}"
+								title={shareTitle(item)}
+							></span>
+						{:else if sharingOn && item.wasShared}
+							<!-- R22-R2: a copy whose owner stopped sharing it. Hash-addressing means we
+						     never lost the file, and this says so rather than leaving it looking
+						     identical to something that was never shared at all. -->
+							<span
+								class="explorer-unshared-dot absolute bottom-1 left-1 h-2 w-2 rounded-full border border-gray-500"
+								title={shareTitle(item)}
+							></span>
+						{/if}
 						{#if item.kind === 'scene' && !item.remoteScene && staleScene($projectManifest, item.hash)}
 								<!-- 21-G2: this file is an OLD version — the project's pointer for its
 								     scene moved past it. The manifest keeps every hash, so it still
@@ -2825,22 +3580,43 @@
 								{:else}
 									<span class="flex h-14 w-14 items-center justify-center rounded-sm bg-gray-700 {KIND_COLORS[item.kind] ?? 'text-gray-400'}"><Icon name={KIND_ICONS[item.kind] ?? 'package'} size={28} /></span>
 								{/if}
-							{:else if item.thumbnail}
-								<img src={item.thumbnail} alt={item.name} class="h-14 w-14 rounded-sm object-cover" />
+							{:else if thumbFor(item)}
+								<!-- R22: the picture may be the item's OWN thumbnail or one a peer pushed
+							     for a file we have not downloaded. Muted for a local file, so the
+							     shared/local distinction reads on the artwork and not only on a dot. -->
+								<img
+									src={thumbFor(item)}
+									alt={item.name}
+									class="h-14 w-14 rounded-sm object-cover {mutedItem(item) ? MUTED_IMG : ''}"
+								/>
 							{:else}
-								<span class="flex h-14 w-14 items-center justify-center rounded-sm bg-gray-700 {KIND_COLORS[item.kind] ?? 'text-gray-400'}">
+								<span
+									class="flex h-14 w-14 items-center justify-center rounded-sm bg-gray-700 {mutedItem(item)
+										? MUTED_ICON
+										: (KIND_COLORS[item.kind] ?? 'text-gray-400')}"
+								>
 									<Icon name={KIND_ICONS[item.kind] ?? 'package'} size={28} />
 								</span>
 							{/if}
 							{#if (editing?.mode === 'rename-item' && editing.itemId === item.id) || (editing?.mode === 'rename-prefab' && editing.prefabId === item.prefabId)}
 								{@render cardEdit()}
 							{:else}
-								<span class="w-full overflow-hidden text-ellipsis whitespace-nowrap text-center text-[10px] text-gray-300">
+								<!-- R22-R2: the plan asks for local items in a distinct colour. Drawn only
+							     while `sharingOn` — muting every name in a project that has never shared
+							     anything would say nothing and cost legibility everywhere. -->
+								<span
+									class="w-full overflow-hidden text-ellipsis whitespace-nowrap text-center text-[10px] {mutedItem(item) ? 'text-gray-500' : 'text-gray-300'}"
+									title={item.name + ' — ' + shareTitle(item)}
+								>
 									{item.name}
 								</span>
 							{/if}
 						</div>
 					{/each}
+				</div>
+				{#if logOpen}
+					<div class="ex-log"><TransferLog mode="pane" bind:open={logOpen} /></div>
+				{/if}
 				</div>
 			{/if}
 			{#if mqRect}
@@ -2930,6 +3706,34 @@
 						<div class="flex gap-2">
 							<span class="w-14 shrink-0 text-gray-500">Folder</span>
 							<span class="min-w-0 truncate" title={itemFolderPath}>{itemFolderPath}</span>
+						</div>
+						<!--
+							R22 round 2 (user) — OWNER. "Owner" rather than "Created by" or "Author", on
+							the DCC convention: Perforce, ShotGrid and ftrack all use owner for the person
+							RESPONSIBLE for an asset, and keep created-by for provenance — which is
+							exactly the distinction that matters here, because nothing in this app can say
+							who MADE a file, only who put it into the project. The checkmark is the point
+							of the third tier: it appears only when a cloud plugin vouched for an account.
+						-->
+						<div class="flex gap-2">
+							<span class="w-14 shrink-0 text-gray-500">Owner</span>
+							<span class="min-w-0 truncate" title={shareTitle(selItem)}>
+								{ownerLabel(selItem) || 'You'}
+							</span>
+						</div>
+						<div class="flex gap-2">
+							<span class="w-14 shrink-0 text-gray-500">Sharing</span>
+							<span class="min-w-0 truncate">
+								{selItem.remoteItem
+									? 'Shared \u2014 not downloaded'
+									: shareOf(selItem) === 'mine'
+										? 'Shared by you'
+										: shareOf(selItem) === 'peer'
+											? 'Shared'
+											: selItem.wasShared
+												? 'No longer shared'
+												: 'Local only'}
+							</span>
 						</div>
 						{#if selItem.createdAt}
 							<div class="flex gap-2">
@@ -3174,6 +3978,7 @@
 					placeholder="Search assets…"
 					bind:value={search}
 				/>
+				{@render filterChip()}
 				{@render identityChip()}
 				<button
 					id="explorer-undock"
@@ -3214,6 +4019,7 @@
 					placeholder="Search assets…"
 					bind:value={search}
 				/>
+				{@render filterChip()}
 				{@render identityChip()}
 				<button id="explorer-dock" class="ui-button-quiet shrink-0" title="Dock to the bottom" onclick={() => setDocked(true)}>
 					⇩ Dock
@@ -3275,3 +4081,41 @@
 		</div>
 	</div>
 {/if}
+
+<style>
+	/*
+		R22-R8 — THE SPLIT. A flex row holding the cards and the Logs pane. Each half keeps
+		its own scroll, and the log takes a FIXED width so the card grid’s auto-fill
+		columns reflow around it rather than the two fighting over the remainder.
+	*/
+	.ex-split {
+		display: block;
+		min-height: 0;
+	}
+	.ex-split-on {
+		display: flex;
+		height: 100%;
+		align-items: stretch;
+		gap: 6px;
+	}
+	.ex-split-on .ex-cards {
+		min-width: 0;
+		flex: 1;
+		align-content: start;
+		overflow-y: auto;
+	}
+	.ex-log {
+		min-height: 0;
+		flex: 0 0 300px;
+	}
+	/* "if limited space, then it takes entire explorer drawer": under this width there
+	   is no room for two columns, so the log becomes the view rather than a sliver */
+	@media (max-width: 640px) {
+		.ex-split-on .ex-cards {
+			display: none;
+		}
+		.ex-log {
+			flex: 1;
+		}
+	}
+</style>

@@ -248,6 +248,66 @@ async function persistSession(payload) {
 	return payload;
 }
 
+/**
+ * R22-R8 (locked answer) — SAVE THE PROJECT, THEN ADOPT THE HOST'S.
+ *
+ * "Save into session" saves the current project into sessions, CLEARS the Explorer and
+ * downloads everything from the peers. The middle step is destructive, so the first one
+ * has to be complete: an ordinary session payload is a SCENE snapshot and carries only
+ * the assets that scene references, which means clearing the library afterwards would
+ * throw away every file the scene does not happen to use.
+ *
+ * So this payload carries the LIBRARY as well — folders, item records and their bytes,
+ * as real Blobs, which idb structured-clones for free. It rides BESIDE the scene the way
+ * `animated` original bytes already do (the documented rule: anything the scene
+ * serializer cannot round-trip travels beside the snapshot, not inside it).
+ *
+ * Additive: a session without the key restores exactly as it always did.
+ * @param {string} name @returns {Promise<any>}
+ */
+export async function saveSessionWithLibrary(name) {
+	const { explorerFolders, explorerItems, itemBlob } = await import('./explorer');
+	const base = buildSessionPayload(name);
+	if (!base) return null;
+	/** @type {any[]} */
+	const items = [];
+	for (const item of get(explorerItems)) {
+		const blob = await itemBlob(item.id);
+		if (!blob) continue; // an index row whose bytes are gone carries nothing
+		items.push({ name: item.name, kind: item.kind, folderId: item.folderId, hash: item.hash, blob });
+	}
+	/** @type {any} */
+	const payload = base;
+	payload.library = {
+		folders: get(explorerFolders).map((f) => ({ id: f.id, name: f.name, parentId: f.parentId })),
+		items
+	};
+	const saved = await persistSession(payload);
+	if (saved) showToast('Session saved: ' + saved.name + ' (with ' + items.length + ' library file' + (items.length === 1 ? '' : 's') + ')');
+	return saved;
+}
+
+/**
+ * Put a saved session's library back. Called from the session RESTORE path; a payload
+ * with no `library` key is a pre-R8 session and takes this as a no-op.
+ * @param {any} payload @returns {Promise<number>} how many files were restored
+ */
+export async function restoreSessionLibrary(payload) {
+	const lib = payload?.library;
+	if (!lib) return 0;
+	const { createFolder, addItemFromBytes } = await import('./explorer');
+	for (const f of lib.folders ?? []) createFolder(String(f.name ?? 'Folder'), f.parentId ?? null, { id: f.id });
+	let n = 0;
+	for (const row of lib.items ?? []) {
+		try {
+			const buffer = await row.blob.arrayBuffer();
+			await addItemFromBytes(buffer, row.name, row.folderId ?? null);
+			n++;
+		} catch {}
+	}
+	return n;
+}
+
 /** Snapshot the current scene into a named session @param {string} name */
 export async function saveSession(name) {
 	const payload = await persistSession(buildSessionPayload(name));
@@ -754,6 +814,15 @@ export async function applySession(payload, opts = {}) {
 	const { backup = true, replicate = true, game = true, workspace = true } = opts;
 	const group = get(objectsGroup);
 	if (backup && group?.children.length) await saveSession('Backup before "' + payload.name + '"');
+	// R22-R8: a session saved by "Save into session" carries the whole Explorer library
+	// beside the scene, because that gesture EMPTIES the library and the save is the only
+	// thing standing between the user and losing it. Restoring it is hash-deduped, so a
+	// file already here is not written twice; a payload with no `library` key is every
+	// session written before R8 and takes this as a no-op.
+	if (payload?.library) {
+		const restored = await restoreSessionLibrary(payload);
+		if (restored) showToast('Restored ' + restored + ' library file' + (restored === 1 ? '' : 's'));
+	}
 	if (replicate) sceneCommand('/clear all'); // replicated clear (objects + module content)
 	else clearSceneLocal();
 	/** @type {any} */

@@ -1662,6 +1662,23 @@ h.run(async () => {
 	await A.page.waitForTimeout(200);
 	await A.page.evaluate(() => window.__stores.transferLedger.transfers.set([]));
 
+	// ---- 53. the log pane closes from its OWN ✕ ----------------------------------
+	//
+	// It did nothing: the pane instance was rendered WITHOUT `bind:open`, so writing the
+	// prop mutated that component's local copy and the Explorer never heard about it. A
+	// $bindable prop is only two-way for the caller that actually binds it.
+	if ((await A.page.locator('.tx-log').count()) === 0) {
+		await A.page.locator('#explorer-transfers').click();
+		await A.page.waitForTimeout(250);
+		await A.page.locator('#explorer-transfers-logs').click();
+		await A.page.waitForTimeout(400);
+	}
+	h.check((await A.page.locator('.tx-log').count()) === 1, 'the log pane is open to close');
+	await A.page.locator('#explorer-transfers-hide').click();
+	await A.page.waitForTimeout(400);
+	h.check((await A.page.locator('.tx-log').count()) === 0,
+		'its own ✕ closes it — the pane owns a way out that does not live in another popover');
+
 	// ---- 14. no render crash anywhere ---------------------------------------------
 	for (const [label, p] of [
 		['A', A],

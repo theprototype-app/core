@@ -1307,3 +1307,7 @@ generalise:
   intend to click its own folder so it renders top-left, clear of the chrome.
 - **`openedPeers` is a Set** — `.length` is undefined, so a "connected" premise built
   on it is silently always false.
+- **A `$bindable` prop is only two-way for the caller that BINDS it.** A component
+  rendered twice (an indicator and a pane) with `bind:` on only one instance leaves the
+  other writing a local copy — its close button did nothing, and no store read could
+  have shown it. Assert the OBSERVABLE outcome (the pane is gone), not the prop.

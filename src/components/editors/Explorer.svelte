@@ -3615,7 +3615,7 @@
 					{/each}
 				</div>
 				{#if logOpen}
-					<div class="ex-log"><TransferLog mode="pane" /></div>
+					<div class="ex-log"><TransferLog mode="pane" bind:open={logOpen} /></div>
 				{/if}
 				</div>
 			{/if}

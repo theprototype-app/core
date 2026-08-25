@@ -1046,14 +1046,14 @@ h.run(async () => {
 
 	// ---- 36. the transfer indicator and the Logs pane -----------------------------
 	//
-	// The indicator renders NOTHING when nothing is moving, which is the point of it — so
-	// the check drives a live row rather than looking for a permanent chrome element.
-	// ...and again here: "absent while nothing is in flight" is only a claim about the
-	// component if nothing is, in fact, in flight
+	// ROUND 6 flipped this: the indicator is ALWAYS visible now. An element that comes and
+	// goes reflows the header and trains nobody where to look, so it stays and has to be
+	// honest in every state instead (section 49 covers the four). What is asserted here is
+	// the popover and the split pane.
 	await A.page.evaluate(() => window.__stores.transferLedger.transfers.set([]));
 	await A.page.waitForTimeout(300);
-	const idleIndicator = await A.page.locator('#explorer-transfers').count();
-	h.check(idleIndicator === 0, 'the transfer indicator is absent while nothing is in flight');
+	h.check((await A.page.locator('#explorer-transfers').count()) === 1,
+		'the transfer indicator is present even with nothing in flight');
 	await A.page.evaluate(() =>
 		window.__stores.transferLedger.beginTransfer({
 			hash: 'ui-probe',
@@ -1063,8 +1063,8 @@ h.run(async () => {
 		})
 	);
 	await A.page.waitForTimeout(400);
-	h.check((await A.page.locator('#explorer-transfers').count()) === 1,
-		'and it appears the moment there is something to report');
+	h.check(/Downloading/.test((await A.page.locator('#explorer-transfers').getAttribute('aria-label')) ?? ''),
+		'and it reports the work the moment there is some');
 	await A.page.locator('#explorer-transfers').click();
 	await A.page.waitForTimeout(300);
 	const popText = await A.page.locator('.tx-popover').first().innerText();
@@ -1475,6 +1475,192 @@ h.run(async () => {
 		[...document.querySelectorAll('h2')].some((h) => (h.textContent || '').trim() === 'Explorer')
 	);
 	h.check(hasExplorerSection, 'Settings has an Explorer section of its own');
+	// CLOSE IT. A modal left open is a full-viewport click shield for everything after it
+	// — measured as a 30s timeout on the next press, with an Accordion header reported as
+	// the intercepting element.
+	await A.page.evaluate(() => window.__stores.settingsOpen?.set?.(null));
+	await A.page.waitForTimeout(400);
+
+	// ================================================================================
+	// ROUND 6 — the transfer indicator redesigned.
+
+	// ---- 48. the BATCH, which is what makes a percentage mean anything ------------
+	//
+	// Counting every row the ledger holds means the fiftieth download of a session reads
+	// 50/51 = 98% before it has moved a byte, and the bar effectively stops. A batch opens
+	// when work starts from rest, so a new run always begins at 0 — which is also why
+	// connecting to a new host needs no reset.
+	const batching = await A.page.evaluate(async () => {
+		const tl = window.__stores.transferLedger;
+		tl.transfers.set([]);
+		const read = () => {
+			let v;
+			tl.transferSummary.subscribe((x) => (v = x))();
+			return v;
+		};
+		// batch 1: two files, both finish
+		const a = tl.beginTransfer({ hash: 'b1a', name: 'a', dir: 'in', size: 100 });
+		const b = tl.beginTransfer({ hash: 'b1b', name: 'b', dir: 'in', size: 100 });
+		tl.finishTransfer(a);
+		tl.finishTransfer(b);
+		const settled = read();
+		// batch 2: one new file from rest — it must NOT inherit batch 1's denominator
+		const c = tl.beginTransfer({ hash: 'b2a', name: 'c', dir: 'in', size: 100 });
+		const fresh = read();
+		tl.progressTransfer(c, 50);
+		const half = read();
+		tl.finishTransfer(c);
+		return { settled, fresh, half };
+	});
+	h.check(batching.settled.pct === 100, `a finished batch reads 100%, not zero (${batching.settled.pct}%)`);
+	h.check(batching.fresh.inBatch === 1 && batching.fresh.pct === 0,
+		`a NEW batch starts at 0% and counts only itself (${JSON.stringify(batching.fresh)})`);
+	h.check(batching.half.pct === 50,
+		`...so its halfway point is 50%, not 83% (${batching.half.pct}%) — the bug a global count causes`);
+
+	// ---- 49. the four states -------------------------------------------------------
+	const states = await A.page.evaluate(() => {
+		const tl = window.__stores.transferLedger;
+		const s = (summary, connected) => tl.indicatorState(summary, connected);
+		return {
+			offline: s({ left: 0, failed: 0 }, false),
+			idle: s({ left: 0, failed: 0 }, true),
+			active: s({ left: 2, failed: 0 }, true),
+			failed: s({ left: 0, failed: 1 }, true),
+			// working beats complaining: something is happening, and that is the more useful
+			// thing to report while it is
+			busyWithFailures: s({ left: 1, failed: 3 }, true)
+		};
+	});
+	h.check(
+		states.offline === 'offline' &&
+			states.idle === 'idle' &&
+			states.active === 'active' &&
+			states.failed === 'failed',
+		`the four states resolve as expected (${JSON.stringify(states)})`
+	);
+	h.check(states.busyWithFailures === 'active',
+		'work in progress outranks a past failure — the indicator reports what is happening now');
+
+	// ---- 50. always visible, no chevron, after the filter -------------------------
+	await A.page.evaluate(() => window.__stores.transferLedger.transfers.set([]));
+	await A.page.waitForTimeout(400);
+	const pill = A.page.locator('#explorer-transfers');
+	h.check((await pill.count()) === 1, 'the indicator is present with nothing in flight');
+	const chrome = await A.page.evaluate(() => {
+		const filter = document.querySelector('#explorer-filter');
+		const tx = document.querySelector('#explorer-transfers');
+		if (!filter || !tx) return null;
+		const f = filter.getBoundingClientRect();
+		const t = tx.getBoundingClientRect();
+		return {
+			afterFilter: t.left >= f.right - 2,
+			text: (tx.textContent || '').trim(),
+			label: tx.getAttribute('aria-label') ?? ''
+		};
+	});
+	h.check(!!chrome && chrome.afterFilter, `it sits AFTER the filter button (${JSON.stringify(chrome)})`);
+	h.check(!/⌄|▾|▼/.test(chrome?.text ?? ''), 'and carries no chevron — the pill IS the button');
+	h.check(/peers|Up to date/i.test(chrome?.label ?? ''),
+		`with an idle state that says something true (${JSON.stringify(chrome?.label)})`);
+
+	// the popover opens and reports the idle/offline case rather than a bare 0%
+	await pill.click();
+	await A.page.waitForTimeout(300);
+	const idlePop = await A.page.locator('.tx-popover').first().innerText();
+	h.check(/Up to date|Not connected/.test(idlePop),
+		`the popover is honest when nothing is moving (${JSON.stringify(idlePop.split('\n')[0])})`);
+	await A.page.locator('.tx-backdrop').first().click({ position: { x: 5, y: 5 } });
+	await A.page.waitForTimeout(200);
+
+	// ---- 51. "+N more" is a CONTROL ------------------------------------------------
+	await A.page.evaluate(() => {
+		const tl = window.__stores.transferLedger;
+		tl.transfers.set([]);
+		for (let i = 0; i < 7; i++)
+			tl.activateTransfer(
+				tl.beginTransfer({ hash: 'many' + i, name: 'many' + i + '.bin', dir: 'in', size: 1000 }),
+				1000
+			);
+	});
+	await A.page.waitForTimeout(400);
+	await A.page.locator('#explorer-transfers').click();
+	await A.page.waitForTimeout(300);
+	const moreBtn = A.page.locator('#explorer-transfers-more');
+	h.check((await moreBtn.count()) === 1, 'a long list offers "+N more"');
+	const beforeRows = await A.page.locator('.tx-pop-row').count();
+	await moreBtn.click();
+	await A.page.waitForTimeout(300);
+	const afterRows = await A.page.locator('.tx-pop-row').count();
+	h.check(afterRows > beforeRows,
+		`clicking it EXPANDS the list rather than being a caption (${beforeRows} -> ${afterRows})`);
+	h.check(/Show less/.test(await moreBtn.innerText()), 'and it turns into the way back');
+	await A.page.locator('.tx-backdrop').first().click({ position: { x: 5, y: 5 } });
+	await A.page.waitForTimeout(200);
+
+	// ---- 52. per-row actions, and RETRY that actually retries ---------------------
+	await A.page.evaluate(() => window.__stores.transferLedger.transfers.set([]));
+	const retryHash = 'facade'.padEnd(64, '7');
+	await A.page.evaluate((hash) => {
+		const tl = window.__stores.transferLedger;
+		const id = tl.beginTransfer({ hash, name: 'retryme.bin', dir: 'in', size: 500 });
+		tl.failTransfer(id, 'no peer has this file');
+	}, retryHash);
+	await A.page.waitForTimeout(400);
+	// the pill goes to the failed state and offers a bulk retry
+	const failLabel = await A.page.locator('#explorer-transfers').getAttribute('aria-label');
+	h.check(/did not finish/.test(failLabel ?? ''),
+		`a failure keeps the indicator visible and says so (${JSON.stringify(failLabel)})`);
+	await A.page.locator('#explorer-transfers').click();
+	await A.page.waitForTimeout(300);
+	h.check((await A.page.locator('#explorer-transfers-retry').count()) === 1,
+		'the popover offers "Retry N failed" — a failure you cannot retry is just a complaint');
+	await A.page.locator('.tx-backdrop').first().click({ position: { x: 5, y: 5 } });
+	await A.page.waitForTimeout(200);
+
+	// ...and the per-row menu in the log
+	await A.page.evaluate(() => window.__stores.transferLedger.transfers.set([]));
+	await A.page.evaluate((hash) => {
+		const tl = window.__stores.transferLedger;
+		const id = tl.beginTransfer({ hash, name: 'rowmenu.bin', dir: 'in', size: 500 });
+		tl.failTransfer(id, 'nobody answered');
+	}, retryHash);
+	await A.page.waitForTimeout(300);
+	// the pane may already be open from section 36 — `logOpen` is a TOGGLE, and clicking
+	// it blindly closes what an earlier section left open
+	if ((await A.page.locator('.tx-log').count()) === 0) {
+		await A.page.locator('#explorer-transfers').click();
+		await A.page.waitForTimeout(250);
+		await A.page.locator('#explorer-transfers-logs').click();
+		await A.page.waitForTimeout(400);
+	}
+	h.check((await A.page.locator('.tx-log').count()) === 1, 'the log pane is open');
+	await A.page.locator('.tx-row-more').first().click();
+	await A.page.waitForTimeout(300);
+	const rowMenuText = await A.page.locator('[role=menu]').first().innerText();
+	h.check(/Retry/.test(rowMenuText), 'a failed row offers Retry');
+	h.check(/Remove from log/.test(rowMenuText), 'and a way to drop the row');
+	h.check(/nobody answered/i.test(rowMenuText),
+		`and the REASON it failed — the one thing a toast cannot carry (${JSON.stringify(rowMenuText)})`);
+	await A.page.keyboard.press('Escape');
+	await A.page.waitForTimeout(200);
+
+	// a QUEUED incoming row offers Cancel, and an OUTGOING one does not: cancelling
+	// somebody else's download from this side would hand them a failure they cannot act on
+	await A.page.evaluate(() => {
+		const tl = window.__stores.transferLedger;
+		tl.transfers.set([]);
+		tl.activateTransfer(tl.beginTransfer({ hash: 'out1', name: 'sending.bin', dir: 'out', size: 900 }), 900);
+	});
+	await A.page.waitForTimeout(400);
+	await A.page.locator('.tx-row-more').first().click();
+	await A.page.waitForTimeout(300);
+	const outMenu = await A.page.locator('[role=menu]').first().innerText();
+	h.check(!/Cancel/.test(outMenu),
+		`an OUTGOING transfer offers no Cancel (${JSON.stringify(outMenu.replace(/\n/g, ' | '))})`);
+	await A.page.keyboard.press('Escape');
+	await A.page.waitForTimeout(200);
+	await A.page.evaluate(() => window.__stores.transferLedger.transfers.set([]));
 
 	// ---- 14. no render crash anywhere ---------------------------------------------
 	for (const [label, p] of [

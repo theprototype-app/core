@@ -1,148 +1,274 @@
 <script lang="ts">
-	// R22-R8 — THE TRANSFER SURFACES: a top-right indicator with its popover, and the
-	// LOGS pane. Both are pure VIEWS over `transferLedger`, which is why they cannot
-	// disagree about a number: there is one derived summary and one row list, and neither
-	// of them is recomputed here.
+	// R22-R8 / round 6 — THE TRANSFER SURFACES: an always-visible indicator with its
+	// popover, and the LOGS pane. Both are pure VIEWS over `transferLedger`, so they
+	// cannot disagree about a number — one derived summary, one row list, nothing
+	// recomputed here.
 	//
-	// TWO COMPONENTS IN ONE FILE because they are one feature and they share the
-	// formatting: `{@render indicator()}` goes in the Explorer's header, `{@render
-	// logPane()}` in whichever half of the window is showing it. Snippets rather than two
-	// files, for the same reason `identityChip` is a snippet — the caller decides where.
+	// ROUND 6 REDESIGN, and the reasoning behind each answer:
+	//
+	// ALWAYS VISIBLE, NO CHEVRON. An indicator that comes and goes makes the header reflow
+	// and trains nobody where to look; a permanent one has to be honest in every state
+	// instead. The chevron went because the pill IS the button — a disclosure arrow on a
+	// control whose whole body opens the same thing is decoration.
+	//
+	// FOUR STATES, the sync-indicator convention (Dropbox, Drive, every git client), which
+	// is also the answer to "what should it show when not connected?":
+	//   offline — no peers. NOT an error and it must not look like one: nothing is wrong
+	//             with a solo project, so it is the quietest of the four.
+	//   idle    — connected, nothing moving. "Up to date" is a real thing to say.
+	//   active  — n files and a percentage.
+	//   failed  — something did not arrive, and it stays visible until dealt with.
+	//
+	// HISTORY IS KEPT, NOT RESET ON CONNECT. A transfer is a fact about what this machine
+	// did, and wiping it because a new peer appeared would destroy the record exactly when
+	// somebody is most likely to want it. What IS scoped is the percentage — see `batch` in
+	// transferLedger — so a new host's first download opens its own batch and reads 0%
+	// without a reset, and without the old rows distorting it.
+	//
+	// PER-ROW ACTIONS behind a three-dot menu, because a failed download you cannot retry
+	// is just a complaint. Retry lifts every give-up mark at once (see `retryPull`); Cancel
+	// is offered for INCOMING only, since cancelling an outgoing stream would hand a peer a
+	// download that simply stops.
 	import Icon from '../ui/Icon.svelte';
+	import ContextMenu from '../ContextMenu.svelte';
+	import { peers, showToast } from '../../stores/appStore';
+	import { revealItem, itemByHash } from '$lib/explorer';
 	import {
 		transfers,
 		transferSummary,
 		transferPct,
 		fmtBytes,
-		clearFinished
+		clearFinished,
+		removeTransfer,
+		indicatorState
 	} from '$lib/transferLedger';
+	import { retryDownload, retryDownloads, cancelDownload } from '$lib/sharedLibrary';
 
-	/**
-	 * `mode` exists because the two halves belong in different places: the indicator in
-	 * the Explorer's header, the pane in its body. One component either way, so the
-	 * formatting and the ledger reads cannot drift between them.
-	 */
 	let {
 		mode = 'indicator',
 		open = $bindable(false)
 	}: { mode?: 'indicator' | 'pane'; open?: boolean } = $props();
 
-	/** the popover, which is a different thing from the pane: a glance, not a log */
+	/** the popover: a glance, which is a different thing from the log */
 	let peek = $state(false);
+	/** "+N more" is a control, not a caption — this is what it toggles */
+	let showAll = $state(false);
+	/** the three-dot menu, its own instance so the Explorer's is untouched */
+	let menu: any = $state(null);
 
-	// newest first — a log you have to scroll to the bottom of is a log you do not read
+	// newest first — a log you must scroll to the bottom of is a log nobody reads
 	const rows = $derived([...$transfers].reverse());
 	const live = $derived(rows.filter((t) => t.state === 'queued' || t.state === 'active'));
 	const past = $derived(rows.filter((t) => t.state === 'done' || t.state === 'failed'));
+	const failedIn = $derived(rows.filter((t) => t.state === 'failed' && t.dir === 'in'));
 
-	const STATE_ICON: Record<string, string> = {
-		queued: 'clock',
+	const connected = $derived(($peers?.openedPeers?.size ?? 0) > 0);
+	// NOT named `state`: a local of that name makes every `$state` rune parse as a STORE
+	// reference (the $ prefix), and svelte-check reports it as used-before-declaration
+	const pill = $derived(indicatorState($transferSummary, connected));
+
+	/**
+	 * A short DONE pulse once the last transfer lands. Worth the timer: the difference
+	 * between "it finished" and "it was never running" is the most reassuring thing a sync
+	 * indicator says, and without it a completed batch looks identical to an idle one the
+	 * instant it ends.
+	 */
+	let justDone = $state(false);
+	let doneTimer: any = null;
+	let wasLive = 0;
+	$effect(() => {
+		const n = $transferSummary.left;
+		const bad = $transferSummary.failed;
+		if (wasLive > 0 && n === 0 && bad === 0) {
+			justDone = true;
+			clearTimeout(doneTimer);
+			doneTimer = setTimeout(() => (justDone = false), 4000);
+		}
+		wasLive = n;
+	});
+
+	const PILL: Record<string, string> = {
+		offline: 'tx-off',
+		idle: 'tx-idle',
+		active: 'tx-on',
+		failed: 'tx-bad'
+	};
+	const ICON: Record<string, string> = {
+		offline: 'cloud-off',
+		idle: 'check',
 		active: 'arrow-down-to-line',
-		done: 'check',
 		failed: 'triangle-alert'
 	};
-	const STATE_COLOR: Record<string, string> = {
-		queued: 'text-gray-500',
-		active: 'text-primary-400',
-		done: 'text-teal-400',
-		failed: 'text-red-400'
-	};
+
+	/** what the pill says, in as few characters as the header can spare */
+	const label = $derived.by(() => {
+		if (pill === 'active') return `${$transferSummary.left} · ${$transferSummary.pct}%`;
+		if (pill === 'failed') return String($transferSummary.failed);
+		// NO text for the done pulse: the check icon and the teal border already carry it,
+		// and a label that appears for four seconds and vanishes RESIZES the pill twice —
+		// a flicker in the header, and an element that is never 'stable' to click while it
+		// happens (playwright refused the press for the full 30s timeout).
+		return '';
+	});
+
+	const title = $derived.by(() => {
+		if (pill === 'active')
+			return `${$transferSummary.dir === 'out' ? 'Sending' : 'Downloading'} ${$transferSummary.left} file${$transferSummary.left === 1 ? '' : 's'} — ${$transferSummary.pct}%`;
+		if (pill === 'failed')
+			return `${$transferSummary.failed} transfer${$transferSummary.failed === 1 ? '' : 's'} did not finish — click for detail`;
+		if (pill === 'offline') return 'No peers — files stay on this device';
+		return 'Up to date — nothing is transferring';
+	});
+
+	function rowMenu(e: MouseEvent, t: any) {
+		e.preventDefault();
+		e.stopPropagation();
+		const items: any[] = [];
+		if (t.state === 'failed' && t.dir === 'in')
+			items.push({
+				label: 'Retry',
+				icon: 'rotate-ccw',
+				tooltip: 'Ask the session again — a retry clears every reason we gave up on it',
+				action: () => {
+					if (retryDownload(t.hash)) showToast('Retrying ' + t.name);
+					else showToast('No peer is connected to ask');
+				}
+			});
+		if ((t.state === 'queued' || t.state === 'active') && t.dir === 'in')
+			items.push({
+				label: 'Cancel',
+				icon: 'x',
+				tooltip: 'Stop waiting for this file',
+				action: () => {
+					cancelDownload(t.hash);
+					showToast('Cancelled ' + t.name);
+				}
+			});
+		if (t.state === 'done' && t.dir === 'in') {
+			const held = itemByHash(t.hash);
+			if (held)
+				items.push({
+					label: 'Show in Explorer',
+					icon: 'folder',
+					action: () => revealItem(held.id)
+				});
+		}
+		items.push({ label: 'Remove from log', action: () => removeTransfer(t.id) });
+		// the REASON, as a quiet section label rather than a row that looks pressable
+		if (t.error) items.push({ section: t.error });
+		menu = { x: e.clientX, y: e.clientY, items };
+	}
 </script>
 
 {#snippet indicator()}
 	<!--
-		The always-visible half. It renders NOTHING when nothing is moving and there is no
-		failure to report — an indicator that is always there stops being an indicator, and
-		this one has to earn its place in a header that is already tight.
+		Always rendered. `min-width` stops the header reflowing as the percentage changes
+		width — the small thing that makes a live indicator feel stable. `aria-live`
+		announces completion without stealing focus.
 	-->
-	{#if $transferSummary.left > 0 || $transferSummary.failed > 0}
-		<div class="tx-wrap shrink-0">
-			<button
-				id="explorer-transfers"
-				class="tx-pill"
-				class:tx-pill-fail={$transferSummary.left === 0 && $transferSummary.failed > 0}
-				title={$transferSummary.left
-					? `${$transferSummary.left} transfer${$transferSummary.left === 1 ? '' : 's'} in flight — click for detail`
-					: `${$transferSummary.failed} transfer${$transferSummary.failed === 1 ? '' : 's'} failed`}
-				aria-label="Transfers"
-				onclick={() => (peek = !peek)}
-			>
-				<Icon
-					name={$transferSummary.dir === 'out' ? 'arrow-up-from-line' : 'arrow-down-to-line'}
-					size={12}
-					aria-hidden="true"
-				/>
-				{#if $transferSummary.left}
-					<span class="tx-count">{$transferSummary.left}</span>
-					<span class="tx-pct">{$transferSummary.pct}%</span>
-				{:else}
-					<span class="tx-count">{$transferSummary.failed}</span>
-				{/if}
-				<span class="tx-chev" class:tx-chev-open={peek}>⌄</span>
-			</button>
-			{#if peek}
-				<!-- an outside press closes it. `pointerdown` and not `click`, because a menu
-				     opened by a press is closed by the next press (the documented backdrop rule) -->
-				<button class="tx-backdrop" aria-label="Close transfers" onpointerdown={() => (peek = false)}
-				></button>
-				<div class="tx-popover" role="status">
-					<div class="tx-pop-head">
-						<span>
-							{#if $transferSummary.left}
-								{$transferSummary.dir === 'out' ? 'Sending' : 'Downloading'}
-								{$transferSummary.left} file{$transferSummary.left === 1 ? '' : 's'}
-							{:else}
-								Nothing in flight
-							{/if}
-						</span>
-						<span class="tx-pop-pct">{$transferSummary.pct}%</span>
-					</div>
-					<div class="tx-bar"><div class="tx-bar-fill" style:width="{$transferSummary.pct}%"></div></div>
-					<!-- `byBytes` is not decoration: a percentage of FILES and a percentage of
-					     BYTES are different claims, and saying which one this is costs one line -->
-					<div class="tx-pop-note">
-						{$transferSummary.byBytes ? 'by size' : 'by file count'}
-						{#if $transferSummary.failed}
-							· <span class="text-red-400">{$transferSummary.failed} failed</span>
+	<div class="tx-wrap shrink-0">
+		<button
+			id="explorer-transfers"
+			class="tx-pill {PILL[pill]}"
+			class:tx-fresh={justDone && pill === 'idle'}
+			{title}
+			aria-label={title}
+			onclick={() => (peek = !peek)}
+		>
+			<Icon
+				name={justDone && pill === 'idle' ? 'check' : ICON[pill]}
+				size={12}
+				aria-hidden="true"
+			/>
+			{#if label}<span class="tx-label">{label}</span>{/if}
+		</button>
+		<span class="tx-sr" aria-live="polite">{title}</span>
+		{#if peek}
+			<!-- closes on an outside PRESS, not a click: a menu opened by a press is closed by
+			     the next press (the documented backdrop rule) -->
+			<button class="tx-backdrop" aria-label="Close transfers" onpointerdown={() => (peek = false)}
+			></button>
+			<div class="tx-popover" role="status">
+				<div class="tx-pop-head">
+					<span>
+						{#if pill === 'active'}
+							{$transferSummary.dir === 'out' ? 'Sending' : 'Downloading'}
+							{$transferSummary.doneInBatch} of {$transferSummary.inBatch}
+						{:else if pill === 'failed'}
+							{$transferSummary.failed} did not finish
+						{:else if pill === 'offline'}
+							Not connected
+						{:else}
+							Up to date
 						{/if}
-					</div>
-					{#each live.slice(0, 4) as t (t.id)}
-						<div class="tx-pop-row">
-							<span class="tx-pop-name" title={t.name}>{t.name}</span>
-							<span class="tx-pop-sub">
-								{#if t.size}{transferPct(t)}%{:else}…{/if}
-							</span>
-						</div>
-					{/each}
-					{#if live.length > 4}
-						<div class="tx-pop-note">+{live.length - 4} more</div>
-					{/if}
-					<button
-						id="explorer-transfers-logs"
-						class="tx-pop-link"
-						onclick={() => {
-							open = !open;
-							peek = false;
-						}}>{open ? 'Hide' : 'Show'} full log</button
-					>
+					</span>
+					{#if pill === 'active'}<span class="tx-pop-pct">{$transferSummary.pct}%</span>{/if}
 				</div>
-			{/if}
-		</div>
-	{/if}
+				{#if pill === 'active'}
+					<div class="tx-bar"><div class="tx-bar-fill" style:width="{$transferSummary.pct}%"></div></div>
+					<!-- `byBytes` is not decoration: a percentage of FILES and one of BYTES are
+					     different claims, and saying which one costs a single line -->
+					<div class="tx-pop-note">{$transferSummary.byBytes ? 'by size' : 'by file count'}</div>
+				{:else if pill === 'offline'}
+					<div class="tx-pop-note">
+						Nothing leaves this device until you connect. Files you share then become
+						available to your peers.
+					</div>
+				{:else if pill === 'idle'}
+					<div class="tx-pop-note">
+						{past.length
+							? past.length + ' transfer' + (past.length === 1 ? '' : 's') + ' this session'
+							: 'Nothing has transferred yet'}
+					</div>
+				{/if}
+
+				{#each showAll ? live : live.slice(0, 4) as t (t.id)}
+					<div class="tx-pop-row">
+						<span class="tx-pop-name" title={t.name}>{t.name}</span>
+						<span class="tx-pop-sub">{t.size ? transferPct(t) + '%' : '…'}</span>
+					</div>
+				{/each}
+				{#if live.length > 4}
+					<!-- a CONTROL, not a caption -->
+					<button id="explorer-transfers-more" class="tx-pop-link" onclick={() => (showAll = !showAll)}>
+						{showAll ? 'Show less' : '+' + (live.length - 4) + ' more'}
+					</button>
+				{/if}
+
+				{#if $transferSummary.retryable > 0}
+					<button
+						id="explorer-transfers-retry"
+						class="tx-pop-action"
+						onclick={() => {
+							const n = retryDownloads(failedIn.map((t) => t.hash));
+							showToast(
+								n ? 'Retrying ' + n + ' file' + (n === 1 ? '' : 's') : 'No peer is connected to ask'
+							);
+						}}>Retry {$transferSummary.retryable} failed</button
+					>
+				{/if}
+				<button
+					id="explorer-transfers-logs"
+					class="tx-pop-link"
+					onclick={() => {
+						open = !open;
+						peek = false;
+					}}>{open ? 'Hide' : 'Show'} full log</button
+				>
+			</div>
+		{/if}
+	</div>
 {/snippet}
 
 {#snippet logPane()}
 	<!--
-		The "advanced view for nerds and to debug", in the words of the request. Every row
-		the ledger holds, live ones first, with the state, the direction, the size and the
-		reason a failure failed — which is the one thing a toast can never carry.
+		The advanced view: every row the ledger holds, live first, with state, direction,
+		size, and the REASON a failure failed — the one thing a toast can never carry.
 	-->
 	<div class="tx-log">
 		<div class="tx-log-head">
 			<span class="tx-log-title">Transfers</span>
-			<span class="tx-log-sub">
-				{live.length} live · {past.length} finished
-			</span>
+			<span class="tx-log-sub">{live.length} live · {past.length} finished</span>
 			<button class="ui-button-quiet ml-auto" title="Clear the finished rows" onclick={clearFinished}
 				>Clear</button
 			>
@@ -150,14 +276,25 @@
 		<div class="tx-log-body">
 			{#if !rows.length}
 				<p class="tx-log-empty">
-					Nothing has moved yet. Files appear here as they are sent or downloaded — including
-					the ones the app fetches on its own.
+					{connected
+						? 'Nothing has moved yet. Files appear here as they are sent or downloaded — including the ones the app fetches on its own.'
+						: 'Not connected. Transfers appear here once you are in a session with somebody.'}
 				</p>
 			{:else}
 				{#each rows as t (t.id)}
 					<div class="tx-row" class:tx-row-fail={t.state === 'failed'}>
-						<span class="tx-row-icon {STATE_COLOR[t.state] ?? ''}">
-							<Icon name={STATE_ICON[t.state] ?? 'circle'} size={12} aria-hidden="true" />
+						<span class="tx-row-icon tx-s-{t.state}">
+							<Icon
+								name={t.state === 'done'
+									? 'check'
+									: t.state === 'failed'
+										? 'triangle-alert'
+										: t.state === 'active'
+											? 'arrow-down-to-line'
+											: 'clock'}
+								size={12}
+								aria-hidden="true"
+							/>
 						</span>
 						<span class="tx-row-dir" title={t.dir === 'in' ? 'Downloading' : 'Sending'}
 							>{t.dir === 'in' ? '↓' : '↑'}</span
@@ -168,11 +305,17 @@
 							{#if t.state === 'active' && t.size}
 								{transferPct(t)}%
 							{:else if t.state === 'failed'}
-								<span class="text-red-400" title={t.error}>{t.error ?? 'failed'}</span>
+								<span class="tx-err" title={t.error}>{t.error ?? 'failed'}</span>
 							{:else}
 								{t.state}
 							{/if}
 						</span>
+						<button
+							class="tx-row-more"
+							title="Actions"
+							aria-label="Transfer actions"
+							onclick={(e) => rowMenu(e, t)}>⋯</button
+						>
 						{#if t.state === 'active' && t.size}
 							<div class="tx-row-bar"><div class="tx-row-fill" style:width="{transferPct(t)}%"></div></div>
 						{/if}
@@ -189,54 +332,66 @@
 	{@render indicator()}
 {/if}
 
+{#if menu}
+	<ContextMenu x={menu.x} y={menu.y} items={menu.items} onclose={() => (menu = null)} />
+{/if}
+
 <style>
 	.tx-wrap {
 		position: relative;
 	}
 	.tx-pill {
 		display: inline-flex;
+		min-width: 26px;
 		align-items: center;
+		justify-content: center;
 		gap: 3px;
 		border-radius: 4px;
-		border: 1px solid rgb(56 189 248 / 0.35);
-		background: rgb(56 189 248 / 0.12);
+		border: 1px solid transparent;
 		padding: 1px 5px;
 		font-size: 10.5px;
-		color: rgb(186 230 253);
 		white-space: nowrap;
 	}
-	.tx-pill:hover {
-		background: rgb(56 189 248 / 0.22);
+	.tx-label {
+		font-variant-numeric: tabular-nums;
+		font-weight: 600;
 	}
-	.tx-pill-fail {
-		border-color: rgb(248 113 113 / 0.45);
+	/* the four states. OFFLINE is the quietest on purpose — a solo project is not a
+	   problem, and colouring it like one would be the indicator crying wolf. */
+	.tx-off {
+		border-color: rgb(75 85 99 / 0.5);
+		color: rgb(107 114 128);
+	}
+	.tx-idle {
+		border-color: rgb(75 85 99 / 0.5);
+		color: rgb(148 163 184);
+	}
+	.tx-on {
+		border-color: rgb(56 189 248 / 0.45);
+		background: rgb(56 189 248 / 0.14);
+		color: rgb(186 230 253);
+	}
+	.tx-bad {
+		border-color: rgb(248 113 113 / 0.5);
 		background: rgb(248 113 113 / 0.12);
 		color: rgb(254 202 202);
 	}
-	.tx-count {
-		font-weight: 600;
+	.tx-fresh {
+		border-color: rgb(45 212 191 / 0.5);
+		color: rgb(153 246 228);
 	}
-	.tx-pct {
-		opacity: 0.8;
-		font-variant-numeric: tabular-nums;
+	.tx-pill:hover {
+		background: rgb(148 163 184 / 0.16);
 	}
-	.tx-chev {
-		font-size: 9px;
-		line-height: 1;
-		transition: transform 120ms;
-	}
-	.tx-chev-open {
-		transform: rotate(180deg);
-	}
-	/* the popover sits INSIDE .tx-wrap (position: relative), so it needs no portal and
-	   cannot be mis-anchored by a page scale — the floating-ui drift trap, avoided by
-	   not using floating-ui for a thing that only ever hangs off one button */
+	/* the popover lives INSIDE .tx-wrap, so it needs no portal and cannot be mis-anchored
+	   by a page scale — the floating-ui drift trap, avoided by not using floating-ui for
+	   something that only ever hangs off one button */
 	.tx-popover {
 		position: absolute;
 		right: 0;
 		top: calc(100% + 4px);
 		z-index: 2;
-		width: 216px;
+		width: 224px;
 		border-radius: 6px;
 		border: 1px solid var(--panel-border, rgb(75 85 99));
 		background: var(--surface, #1f2937);
@@ -277,6 +432,7 @@
 	}
 	.tx-pop-note {
 		font-size: 9.5px;
+		line-height: 1.35;
 		color: rgb(148 163 184);
 	}
 	.tx-pop-row {
@@ -297,16 +453,23 @@
 		font-variant-numeric: tabular-nums;
 		color: rgb(148 163 184);
 	}
-	.tx-pop-link {
+	.tx-pop-link,
+	.tx-pop-action {
 		margin-top: 6px;
 		width: 100%;
 		border-top: 1px solid rgb(75 85 99 / 0.5);
 		padding-top: 5px;
 		font-size: 10px;
-		color: rgb(125 211 252);
 		text-align: left;
 	}
-	.tx-pop-link:hover {
+	.tx-pop-link {
+		color: rgb(125 211 252);
+	}
+	.tx-pop-action {
+		color: rgb(254 202 202);
+	}
+	.tx-pop-link:hover,
+	.tx-pop-action:hover {
 		text-decoration: underline;
 	}
 
@@ -342,11 +505,12 @@
 		padding: 10px;
 		font-size: 10.5px;
 		font-style: italic;
+		line-height: 1.4;
 		color: rgb(107 114 128);
 	}
 	.tx-row {
 		display: grid;
-		grid-template-columns: 14px 10px 1fr auto auto;
+		grid-template-columns: 14px 10px 1fr auto auto 16px;
 		align-items: center;
 		gap: 5px;
 		padding: 2px 6px;
@@ -363,6 +527,21 @@
 		display: flex;
 		justify-content: center;
 	}
+	.tx-s-queued {
+		color: rgb(107 114 128);
+	}
+	.tx-s-active {
+		color: rgb(56 189 248);
+	}
+	.tx-s-done {
+		color: rgb(45 212 191);
+	}
+	.tx-s-failed {
+		color: rgb(248 113 113);
+	}
+	.tx-err {
+		color: rgb(248 113 113);
+	}
 	.tx-row-dir {
 		color: rgb(148 163 184);
 	}
@@ -377,6 +556,13 @@
 		font-variant-numeric: tabular-nums;
 		color: rgb(148 163 184);
 	}
+	.tx-row-more {
+		color: rgb(107 114 128);
+		line-height: 1;
+	}
+	.tx-row-more:hover {
+		color: rgb(229 231 235);
+	}
 	.tx-row-bar {
 		grid-column: 1 / -1;
 		height: 2px;
@@ -388,5 +574,16 @@
 		height: 100%;
 		background: rgb(56 189 248);
 		transition: width 160ms linear;
+	}
+	.tx-sr {
+		position: absolute;
+		width: 1px;
+		height: 1px;
+		padding: 0;
+		margin: -1px;
+		overflow: hidden;
+		clip: rect(0, 0, 0, 0);
+		white-space: nowrap;
+		border-width: 0;
 	}
 </style>

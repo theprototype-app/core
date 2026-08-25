@@ -2972,9 +2972,6 @@
 	post-stack's add control off a narrow panel.
 -->
 {#snippet filterChip()}
-	<!-- R22-R8: the transfer indicator sits beside the filter, top-right, and renders
-	     nothing at all when nothing is moving -->
-	<TransferLog bind:open={logOpen} />
 	<button
 		id="explorer-filter"
 		class="ui-button-quiet shrink-0 {filtering ? 'text-primary-400' : ''}"
@@ -2984,6 +2981,10 @@
 		aria-label="Filter files"
 		onclick={(e) => filterMenu(e)}>☷{filtering ? ' •' : ''}</button
 	>
+	<!-- R22 round 6: AFTER the filter, and always visible. An indicator that comes and
+	     goes reflows the header and trains nobody where to look; a permanent one has to
+	     be honest in every state instead — see the four in TransferLog. -->
+	<TransferLog bind:open={logOpen} />
 {/snippet}
 
 {#snippet identityChip()}

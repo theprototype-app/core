@@ -93,7 +93,9 @@ import {
 	loadSharedThumbs,
 	sweepStalledTransfers,
 	reviveHash,
-	retryUnavailable
+	retryUnavailable,
+	retryPull,
+	cancelPull
 } from './assetShare';
 import { ownerStamp } from './cloudHooks';
 
@@ -698,6 +700,33 @@ export async function saveIntoSessionAndAdopt() {
 	const pulling = pullAllShared();
 	showToast('Saved "' + saved.name + '" — fetching ' + pulling + ' file' + (pulling === 1 ? '' : 's') + ' from peers');
 	return { saved: saved.name, cleared: mine, pulling };
+}
+
+/** R22 round 6: retry one failed download. @param {string} hash */
+export function retryDownload(hash) {
+	const h = String(hash ?? '').trim();
+	if (!h) return false;
+	pendingPulls.update((s) => (s.has(h) ? s : new Set([...s, h])));
+	return retryPull(h);
+}
+
+/** R22 round 6: retry every failed download in one press. @param {string[]} hashes */
+export function retryDownloads(hashes) {
+	let n = 0;
+	for (const hash of hashes ?? []) if (retryDownload(hash)) n++;
+	return n;
+}
+
+/** R22 round 6: stop waiting for one. @param {string} hash */
+export function cancelDownload(hash) {
+	const h = String(hash ?? '').trim();
+	pendingPulls.update((s) => {
+		if (!s.has(h)) return s;
+		const next = new Set(s);
+		next.delete(h);
+		return next;
+	});
+	return cancelPull(h);
 }
 
 /** What the connect prompt needs to know: is there anything worth offering?

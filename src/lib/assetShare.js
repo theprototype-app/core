@@ -670,6 +670,65 @@ export function reviveHash(hash) {
 	pendingRequests.delete(String(hash ?? '').trim());
 }
 
+/**
+ * R22 round 6 — RETRY ONE FAILED PULL. The user pressed it, so every reason we had for
+ * giving up is void: the dead-hash mark, the one-ask-per-session guard and the
+ * unavailable flag all lift together. Anything less and the button would do nothing,
+ * which is the failure mode a retry button exists to avoid.
+ * @param {string} hash @returns {boolean} was a fresh ask sent
+ */
+export function retryPull(hash) {
+	const h = String(hash ?? '').trim();
+	if (!h || itemByHash(h)) return false;
+	deadHashes.delete(h);
+	pendingRequests.delete(h);
+	unavailableHashes.update((u) => {
+		if (!u.has(h)) return u;
+		const next = new Set(u);
+		next.delete(h);
+		return next;
+	});
+	pullsInFlight.delete(h);
+	askFor(h);
+	return pullsInFlight.has(h);
+}
+
+/**
+ * Stop waiting for one. INCOMING only, and deliberately: an outgoing stream is somebody
+ * else's download, and cancelling it from this side would leave them with a file that
+ * simply stops — a failure they cannot act on and did not ask for. A queued OUTGOING
+ * send has not started, so that one can go.
+ * @param {string} hash @returns {boolean}
+ */
+export function cancelPull(hash) {
+	const h = String(hash ?? '').trim();
+	if (!h) return false;
+	let stopped = false;
+	// mid-reassembly: free the buffers
+	const partial = incoming.get(h);
+	if (partial) {
+		incoming.delete(h);
+		failTransfer(partial.tx, 'cancelled');
+		stopped = true;
+	}
+	const waiting = pullsInFlight.get(h);
+	if (waiting) {
+		failTransfer(waiting.tx, 'cancelled');
+		stopped = true;
+	}
+	pendingRequests.delete(h);
+	settlePull(h);
+	// a cancel is a decision, so it also stops auto-download re-asking on the next index
+	// change — otherwise the file would come straight back and the button would read as
+	// broken. An explicit retry lifts it.
+	deadHashes.set(h, Date.now());
+	// ...and drop it from the outgoing queue if we had not started sending yet
+	const before = sendQueue.length;
+	sendQueue = sendQueue.filter((j) => j.item?.hash !== h);
+	if (sendQueue.length !== before) stopped = true;
+	return stopped;
+}
+
 /** How many pulls are outstanding — the popover's "files left". */
 export function pullBacklog() {
 	return pullsInFlight.size;

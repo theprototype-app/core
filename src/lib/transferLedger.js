@@ -35,7 +35,8 @@ import { writable, derived, get } from 'svelte/store';
  *   peer: string,
  *   at: number,
  *   endedAt?: number,
- *   error?: string
+ *   error?: string,
+ *   batch: number
  * }} Transfer
  */
 
@@ -47,6 +48,21 @@ export const HISTORY_CAP = 200;
 export const transfers = writable([]);
 
 let seq = 0;
+
+/**
+ * R22 round 6 — THE BATCH, and why the aggregate needs one.
+ *
+ * A "4 of 12 · 61%" is a claim about THIS piece of work. Counting every row the ledger
+ * holds means the fiftieth download of a session reads 50/51 = 98% before it has
+ * transferred a byte, and the bar effectively stops moving — the classic mistake in a
+ * progress aggregate, and the reason every download manager scopes its summary.
+ *
+ * A batch opens when work starts and NOTHING is already in flight, and it simply ends
+ * when everything in it settles. That also answers "should it reset when I connect to a
+ * new host?" — no reset is needed, because a new host's first download opens its own
+ * batch. The LOG keeps everything; only the percentage is scoped.
+ */
+let batch = 0;
 
 /**
  * Open a row. Returns its id — the caller keeps it and reports against it, which is what
@@ -68,9 +84,15 @@ export function beginTransfer(spec) {
 		done: 0,
 		state: 'queued',
 		peer: String(spec.peer ?? ''),
-		at: Date.now()
+		at: Date.now(),
+		batch: 0
 	};
-	transfers.update((list) => trim([...list, row]));
+	transfers.update((list) => {
+		// a new batch whenever work starts from rest
+		if (!list.some((t) => t.state === 'queued' || t.state === 'active')) batch++;
+		row.batch = batch;
+		return trim([...list, row]);
+	});
 	return id;
 }
 
@@ -146,37 +168,69 @@ export function clearFinished() {
  *   — so `byBytes` says which one you are reading.
  *
  * Derived rather than computed on demand so the popover and the pane cannot disagree.
- * @type {import('svelte/store').Readable<{active: number, left: number, total: number,
- *   pct: number, byBytes: boolean, failed: number, dir: 'in'|'out'|'both'|null}>}
+ * @type {import('svelte/store').Readable<{active: number, left: number,
+ *   doneInBatch: number, inBatch: number, total: number, pct: number, byBytes: boolean,
+ *   failed: number, retryable: number, dir: 'in'|'out'|'both'|null}>}
  */
 export const transferSummary = derived(transfers, ($t) => {
 	const live = $t.filter((x) => x.state === 'queued' || x.state === 'active');
-	const failed = $t.filter((x) => x.state === 'failed').length;
-	if (!live.length) return { active: 0, left: 0, total: 0, pct: 0, byBytes: true, failed, dir: null };
-	// the whole BATCH, so the bar does not restart at every file: every non-failed row,
-	// finished ones included, which is what keeps a 12-file pull reading 4/12 rather than
-	// 1/1 twelve times over
-	const relevant = $t.filter((x) => x.state !== 'failed');
-	const byBytes = relevant.every((x) => x.size > 0);
-	const total = byBytes ? relevant.reduce((n, x) => n + x.size, 0) : relevant.length;
+	const failed = $t.filter((x) => x.state === 'failed');
+	// SCOPED TO THE CURRENT BATCH — see the `batch` comment above. When nothing is live
+	// the batch is whatever finished last, so a just-completed run still reads 100%
+	// rather than snapping back to zero.
+	const current = live.length ? Math.max(...live.map((x) => x.batch)) : batch;
+	const mine = $t.filter((x) => x.batch === current && x.state !== 'failed');
+	const byBytes = mine.length > 0 && mine.every((x) => x.size > 0);
+	const total = byBytes ? mine.reduce((n, x) => n + x.size, 0) : mine.length;
 	const done = byBytes
-		? relevant.reduce((n, x) => n + Math.min(x.done, x.size), 0)
-		: relevant.filter((x) => x.state === 'done').length;
+		? mine.reduce((n, x) => n + Math.min(x.done, x.size), 0)
+		: mine.filter((x) => x.state === 'done').length;
 	const ins = live.filter((x) => x.dir === 'in').length;
 	const outs = live.length - ins;
-	/** @type {'in'|'out'|'both'} */
-	const dir = ins && outs ? 'both' : ins ? 'in' : 'out';
+	/** @type {'in'|'out'|'both'|null} */
+	const dir = !live.length ? null : ins && outs ? 'both' : ins ? 'in' : 'out';
 	return {
 		active: live.filter((x) => x.state === 'active').length,
 		left: live.length,
+		doneInBatch: mine.filter((x) => x.state === 'done').length,
+		inBatch: mine.length,
 		total,
 		pct: total > 0 ? Math.min(100, Math.round((done / total) * 100)) : 0,
 		byBytes,
-		failed,
+		failed: failed.length,
+		retryable: failed.filter((x) => x.dir === 'in').length,
 		dir
 	};
 });
 
+/**
+ * R22 round 6 — THE INDICATOR'S STATE, in one place so the pill, its colour and its
+ * label cannot disagree. The four are the sync-indicator convention (Dropbox, Drive,
+ * every git client): OFFLINE, WORKING, PROBLEM, IDLE.
+ *
+ * `offline` is not an error and must not look like one — nothing is wrong with a solo
+ * project, so it is the quietest of the four.
+ * @param {any} summary @param {boolean} connected
+ * @returns {'offline'|'active'|'failed'|'idle'}
+ */
+export function indicatorState(summary, connected) {
+	if (summary.left > 0) return 'active';
+	if (summary.failed > 0) return 'failed';
+	if (!connected) return 'offline';
+	return 'idle';
+}
+
+/** Drop one row from the log. @param {string} id */
+export function removeTransfer(id) {
+	transfers.update((list) => list.filter((t) => t.id !== id));
+}
+
+/** Every row in the batch the summary is currently reporting on. @param {Transfer[]} list */
+export function currentBatchRows(list) {
+	const live = list.filter((x) => x.state === 'queued' || x.state === 'active');
+	const current = live.length ? Math.max(...live.map((x) => x.batch)) : batch;
+	return list.filter((x) => x.batch === current);
+}
 /** A percentage for ONE row. @param {Transfer} t @returns {number} */
 export function transferPct(t) {
 	if (!t) return 0;

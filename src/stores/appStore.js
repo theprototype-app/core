@@ -620,8 +620,16 @@ export function clearToast(toast) {
  */
 export function showInfoToast(id, text, actions, onDismiss, noClose) {
   toastStore.update((list) => {
-    if (list.some((entry) => entry && entry.id === id)) return list; // already up
-    return [...list, { id, text, actions: actions ?? [], kind: 'info', sticky: true, onDismiss, noClose: !!noClose }];
+    const row = { id, text, actions: actions ?? [], kind: 'info', sticky: true, onDismiss, noClose: !!noClose };
+    // R22 round 8: UPDATE IN PLACE rather than returning early. These cards are mirrors
+    // of state, so a card that can never change its own text or buttons cannot carry an
+    // inline confirm — the first press armed the flag, the effect re-ran, and the label
+    // stayed put, which is exactly "the button does nothing".
+    const at = list.findIndex((entry) => entry && entry.id === id);
+    if (at === -1) return [...list, row];
+    const next = [...list];
+    next[at] = row;
+    return next;
   });
 }
 

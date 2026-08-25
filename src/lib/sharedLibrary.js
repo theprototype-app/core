@@ -98,6 +98,7 @@ import {
 	cancelPull
 } from './assetShare';
 import { ownerStamp } from './cloudHooks';
+import { transfers, removeTransfer } from './transferLedger';
 
 /**
  * Hashes we have ASKED the mesh for and not yet received. A remote card with nothing to
@@ -715,6 +716,11 @@ export async function stashIntoSessions() {
 export function retryDownload(hash) {
 	const h = String(hash ?? '').trim();
 	if (!h) return false;
+	// R22 round 8: DROP THE FAILED ROW FIRST. `askFor` opens a fresh one, so a retry that
+	// left the old one in place doubled the log every press — and the summary counted both,
+	// which is the reported "retry doubles the items to retry".
+	for (const row of get(transfers))
+		if (row.hash === h && row.state === 'failed') removeTransfer(row.id);
 	pendingPulls.update((s) => (s.has(h) ? s : new Set([...s, h])));
 	return retryPull(h);
 }

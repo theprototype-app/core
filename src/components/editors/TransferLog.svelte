@@ -272,6 +272,15 @@
 			<button class="ui-button-quiet ml-auto" title="Clear the finished rows" onclick={clearFinished}
 				>Clear</button
 			>
+			<!-- R22 round 8: a pane you can only close from inside another popover is a pane
+			     people leave open -->
+			<button
+				id="explorer-transfers-hide"
+				class="ui-button-quiet"
+				title="Hide the full log"
+				aria-label="Hide the full log"
+				onclick={() => (open = false)}>✕</button
+			>
 		</div>
 		<div class="tx-log-body">
 			{#if !rows.length}
@@ -396,6 +405,10 @@
 		top: calc(100% + 4px);
 		z-index: 2;
 		width: 224px;
+		/* R22 round 8: never past the bottom of the window — scroll instead. `--dw-top` is
+		   the chrome offset the window system already publishes, so this needs no measuring. */
+		max-height: calc(100vh - var(--dw-top, 64px) - 24px);
+		overflow-y: auto;
 		border-radius: 6px;
 		border: 1px solid var(--panel-border, rgb(75 85 99));
 		background: var(--surface, #1f2937);

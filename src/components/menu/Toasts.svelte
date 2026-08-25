@@ -6,6 +6,7 @@
     // R22 round 7: the offer is for a peer who JOINED somebody — the host's library
     // already is the session's, so there is nothing of anybody else's to adopt
     import { sessionHost } from '$lib/connectionState'
+    import { autoDownload } from '$lib/sharedLibrary'
     import { explorerItems } from '$lib/explorer'
     import { projectManifest } from '$lib/projectManifest'
     import { peers, loading, loadingcount, pendingApprovals, waitingForApproval, userdata, toastStore, fixLight, showSidebar, specatorMode, restorePanels, appNotice, connectDrawerOpen, connectDrawerTab, toastsInDrawerOnly, showInfoToast, dismissToastById } from '../../stores/appStore'
@@ -207,7 +208,11 @@ $effect(() => {
     const counts = connected ? bulkCounts() : { local: 0, missing: 0 };
     const parts = [];
     if (counts.local) parts.push(`${counts.local} file${counts.local === 1 ? '' : 's'} only on this device`);
-    if (counts.missing) parts.push(`${counts.missing} shared file${counts.missing === 1 ? '' : 's'} not downloaded`);
+    // R22 round 8: only worth mentioning when the app is NOT already fetching them.
+    // With auto-download on (the default) this line describes a job in progress, and a
+    // button for it would be a button for something already happening.
+    if (counts.missing && !$autoDownload)
+        parts.push(`${counts.missing} shared file${counts.missing === 1 ? '' : 's'} not downloaded`);
     // R22 round 7 (locked answer): NO SECOND DIALOG. Each button does one thing and says
     // what it costs; the destructive one confirms IN PLACE (its label becomes the
     // question) rather than opening a modal that asks it again. Only "Not now" dismisses
@@ -221,13 +226,21 @@ $effect(() => {
                 ...(counts.local
                     ? [{ label: 'Share mine', action: () => { libraryPromptDone = true; const n = shareAllLocal(); showToast(`Sharing ${n} file${n === 1 ? '' : 's'} with peers`); dismissToastById('shared-library-offer'); } }]
                     : []),
-                ...(counts.missing
+                ...(counts.missing && !$autoDownload
                     ? [{ label: 'Download theirs', action: () => { libraryPromptDone = true; const n = pullAllShared(); showToast(`Fetching ${n} file${n === 1 ? '' : 's'} from peers`); dismissToastById('shared-library-offer'); } }]
                     : []),
-                stashArmed
-                    ? { label: 'Really replace my library?', action: () => { libraryPromptDone = true; void stashIntoSessions(); dismissToastById('shared-library-offer'); } }
-                    : { label: 'Stash mine & take theirs', keepOpen: true, action: () => { stashArmed = true; } },
-                { label: 'Not now', action: () => { libraryPromptDone = true; dismissToastById('shared-library-offer'); } }
+                // R22 round 8: both of these are about YOUR files, so neither belongs on a
+                // card that is only telling you about somebody else's. With nothing of your
+                // own there is nothing to stash and nothing to decline — the card's own
+                // dismiss is enough.
+                ...(counts.local
+                    ? [
+                          stashArmed
+                              ? { label: 'Really replace my library?', action: () => { libraryPromptDone = true; void stashIntoSessions(); dismissToastById('shared-library-offer'); } }
+                              : { label: 'Stash mine', keepOpen: true, action: () => { stashArmed = true; } },
+                          { label: 'Not now', action: () => { libraryPromptDone = true; dismissToastById('shared-library-offer'); } }
+                      ]
+                    : [])
             ],
             () => { libraryPromptDone = true; }
         );

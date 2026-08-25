@@ -3,7 +3,7 @@ import { writable, get } from 'svelte/store';
 /**
  * Peer signaling-server selection + ICE (STUN/TURN) config.
  *
- * Three modes:
+ * Four modes:
  *  - 'default' : use the self-hosted server baked in at build time (VITE_PEER_*),
  *                and FALL BACK to the public PeerJS cloud if it can't be reached.
  *                If no self-hosted server is configured, this is just the public cloud.
@@ -12,6 +12,23 @@ import { writable, get } from 'svelte/store';
  *  - 'custom'  : the user's own server from the Settings fields. NO fallback — if the
  *                user pins a server, we honour it and surface errors instead of silently
  *                using someone else's infra.
+ *  - 'local'   : the local-dev server on localhost:9001 (`npm run peer`), chosen
+ *                DELIBERATELY. R22 round 9 — see below.
+ *
+ * R22 round 9, THE REPORTED BUG: a local `vite dev` reported "local dev /
+ * localhost:9001/peerjs" even with `VITE_PEER_HOST=peerjs.theprototype.app` in `.env`.
+ * It was NOT a stored mode beating ENV, as suspected — it was a HOSTNAME SNIFF beating
+ * both. `default` mode asked `isLocalDev` (the hostname does not end in .io/.app) BEFORE
+ * it looked at the env host, so on localhost the env was never consulted at all. That is
+ * also why the e2e suite never saw it: it runs against `theprototype.app:5173`, which
+ * ends in .app and takes the self-hosted branch.
+ *
+ * THE RULE NOW: an env host is an EXPLICIT statement and wins; the hostname sniff is a
+ * fallback for a checkout with no `.env` at all, which is what it was really for. A dev
+ * who wants the localhost server picks 'local' in Settings, so reaching it is a decision
+ * rather than a side effect of which port you happen to be serving from. Production is
+ * unaffected either way — there the hostname ends in .app AND an env host is configured,
+ * so both the old and the new rule choose self-hosted.
  *
  * The self-hosted values live in `.env` (gitignored); Vite inlines VITE_* at build time.
  * See .env.example.
@@ -79,7 +96,7 @@ const LS_KEY = 'peerServerConfig';
 
 function defaults() {
 	return {
-		/** @type {'default'|'public'|'custom'} */
+		/** @type {'default'|'public'|'custom'|'local'} */
 		mode: 'default',
 		custom: {
 			host: '',
@@ -259,6 +276,17 @@ export function describePeerServer(ctx = {}) {
 	const cfg = get(peerServerConfig);
 	if (cfg.mode === 'public') return publicCloud();
 
+	// R22 round 9: the local-dev server, chosen on purpose
+	if (cfg.mode === 'local')
+		return {
+			kind: /** @type {PeerServerKind} */ ('local'),
+			label: 'local dev',
+			host: LOCAL_DEV_OPTIONS.host,
+			port: LOCAL_DEV_OPTIONS.port,
+			path: '/peerjs',
+			didFallback: false
+		};
+
 	if (cfg.mode === 'custom') {
 		const c = cfg.custom || {};
 		if (!c.host) return publicCloud(); // misconfigured -> public
@@ -272,8 +300,11 @@ export function describePeerServer(ctx = {}) {
 		};
 	}
 
-	// default mode
-	if (isLocalDev) {
+	// default mode. An ENV HOST WINS over the hostname sniff (see the header): a
+	// configured `.env` is a statement about which server this checkout talks to, and it
+	// used to be discarded on any host not ending in .io/.app — i.e. on every local dev
+	// server, which is exactly where `.env` is read from.
+	if (!HAS_SELF_HOSTED && isLocalDev) {
 		return {
 			kind: 'local',
 			label: 'local dev',
@@ -327,14 +358,18 @@ export function resolvePeerOptions(ctx = {}) {
 
 	if (cfg.mode === 'public') return { options: undefined, canFallback: false };
 
+	// R22 round 9: the local-dev server, chosen on purpose. No fallback — somebody who
+	// asked for localhost does not want to land silently in a public room.
+	if (cfg.mode === 'local') return { options: LOCAL_DEV_OPTIONS, canFallback: false };
+
 	if (cfg.mode === 'custom') {
 		const c = cfg.custom || {};
 		if (!c.host) return { options: undefined, canFallback: false }; // misconfigured -> public, no fallback
 		return { options: serverOptions(c), canFallback: false };
 	}
 
-	// default
-	if (isLocalDev) return { options: LOCAL_DEV_OPTIONS, canFallback: false };
+	// default — the env host wins over the hostname sniff, mirroring describePeerServer
+	if (!HAS_SELF_HOSTED && isLocalDev) return { options: LOCAL_DEV_OPTIONS, canFallback: false };
 	if (HAS_SELF_HOSTED) return { options: serverOptions(ENV), canFallback: true };
 	return { options: undefined, canFallback: false };
 }

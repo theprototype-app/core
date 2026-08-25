@@ -9,6 +9,14 @@
     import { autoDownload } from '$lib/sharedLibrary'
     import { explorerItems } from '$lib/explorer'
     import { projectManifest } from '$lib/projectManifest'
+    // R22 round 9: the offer has to know whether the OPEN SCENE is worth saving before it
+    // talks about files. `recomputeSceneDirty` is the SYNCHRONOUS verdict — `$sceneDirty`
+    // is throttled by design (recomputing costs a whole-scene serialization), which is
+    // right for a title bar and wrong for a prompt that is deciding what to say.
+    import { sceneDirty, recomputeSceneDirty } from '$lib/sceneIdentity'
+    // open the Explorer BEFORE arming: the save card is drawn by the Explorer's own effect,
+    // so arming a panel that is not mounted arms nothing
+    import { armExplorerSceneSave, explorerClose } from '../../stores/appStore'
     import { peers, loading, loadingcount, pendingApprovals, waitingForApproval, userdata, toastStore, fixLight, showSidebar, specatorMode, restorePanels, appNotice, connectDrawerOpen, connectDrawerTab, toastsInDrawerOnly, showInfoToast, dismissToastById } from '../../stores/appStore'
     import { restoreAvailable, restoreSnapshot, dismissRestore } from '$lib/autosave'
     import { cancelOutboundRequest } from '$lib/peerApproval'
@@ -206,7 +214,24 @@ $effect(() => {
     void $explorerItems;
     void $projectManifest;
     const counts = connected ? bulkCounts() : { local: 0, missing: 0 };
+    // R22 round 9 (reported): the offer said "1 file" for a scene the user had not saved,
+    // which is true and useless — the one file was a `.tpscene` from an earlier save, and
+    // sharing it would hand peers a STALE version of what is on screen. Two questions,
+    // asked in the right order: is there work here that is not written down, and only then
+    // are there files to share.
+    //
+    // `worldEmpty` is what stops this from nagging: with nothing in the scene and nothing
+    // in the library there is no offer to make at all, which is the other half of the
+    // report ("do not prompt").
+    void $sceneDirty; // the store is the SIGNAL; the verdict below is the synchronous truth
+    void $currentLevel;
+    const worldEmpty = !(($objectsGroup?.children?.length ?? 0) > 0);
+    const unsavedScene = connected && !worldEmpty && (!$currentLevel?.name || recomputeSceneDirty());
     const parts = [];
+    if (unsavedScene)
+        parts.push($currentLevel?.name
+            ? `“${$currentLevel.name}” has unsaved changes`
+            : 'this scene has never been saved');
     if (counts.local) parts.push(`${counts.local} file${counts.local === 1 ? '' : 's'} only on this device`);
     // R22 round 8: only worth mentioning when the app is NOT already fetching them.
     // With auto-download on (the default) this line describes a job in progress, and a
@@ -223,6 +248,12 @@ $effect(() => {
             'shared-library-offer',
             parts.join(' \u00b7 ') + '.',
             [
+                // R22 round 9: the SAVE comes first when there is unsaved work — sharing a stale
+                // file is the failure this was reported as. It arms the Explorer's own inline
+                // save card (the no-prompt rename convention) rather than inventing a name.
+                ...(unsavedScene
+                    ? [{ label: 'Save the scene…', action: () => { libraryPromptDone = true; explorerClose.set(false); armExplorerSceneSave(null); dismissToastById('shared-library-offer'); } }]
+                    : []),
                 ...(counts.local
                     ? [{ label: 'Share mine', action: () => { libraryPromptDone = true; const n = shareAllLocal(); showToast(`Sharing ${n} file${n === 1 ? '' : 's'} with peers`); dismissToastById('shared-library-offer'); } }]
                     : []),
@@ -237,9 +268,13 @@ $effect(() => {
                     ? [
                           stashArmed
                               ? { label: 'Really replace my library?', action: () => { libraryPromptDone = true; void stashIntoSessions(); dismissToastById('shared-library-offer'); } }
-                              : { label: 'Stash mine', keepOpen: true, action: () => { stashArmed = true; } },
-                          { label: 'Not now', action: () => { libraryPromptDone = true; dismissToastById('shared-library-offer'); } }
+                              : { label: 'Stash mine', keepOpen: true, action: () => { stashArmed = true; } }
                       ]
+                    : []),
+                // "Not now" belongs to any card that asked for something, not only to one about
+                // your files — an offer to save the scene is equally declinable
+                ...(counts.local || unsavedScene
+                    ? [{ label: 'Not now', action: () => { libraryPromptDone = true; dismissToastById('shared-library-offer'); } }]
                     : [])
             ],
             () => { libraryPromptDone = true; }

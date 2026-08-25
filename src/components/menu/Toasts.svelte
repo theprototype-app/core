@@ -223,10 +223,18 @@ $effect(() => {
     // `worldEmpty` is what stops this from nagging: with nothing in the scene and nothing
     // in the library there is no offer to make at all, which is the other half of the
     // report ("do not prompt").
-    void $sceneDirty; // the store is the SIGNAL; the verdict below is the synchronous truth
     void $currentLevel;
     const worldEmpty = !(($objectsGroup?.children?.length ?? 0) > 0);
-    const unsavedScene = connected && !worldEmpty && (!$currentLevel?.name || recomputeSceneDirty());
+    // `libraryPromptDone` FIRST, and `$sceneDirty` before the recompute: the synchronous
+    // verdict costs a whole-scene serialization, and this effect re-runs on every manifest
+    // change — which during active sharing is often. Once the user has answered the card
+    // there is nothing to decide, and while the throttled store already says dirty there is
+    // nothing to find out.
+    const unsavedScene =
+        connected &&
+        !worldEmpty &&
+        !libraryPromptDone &&
+        (!$currentLevel?.name || $sceneDirty || recomputeSceneDirty());
     const parts = [];
     if (unsavedScene)
         parts.push($currentLevel?.name

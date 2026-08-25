@@ -1,6 +1,6 @@
 import { get, writable } from 'svelte/store';
 import { peers, showToast } from '../stores/appStore';
-import { explorerFolders, itemBlob, itemByHash, addItemFromBytes, hashBytes } from './explorer';
+import { explorerFolders, explorerItems, itemBlob, itemByHash, addItemFromBytes, hashBytes } from './explorer';
 import { projectManifest } from './projectManifest';
 import { idbGet, idbPut } from './idb';
 import {
@@ -91,6 +91,11 @@ async function markSharedForScene(hash) {
 		const item = itemByHash(hash);
 		// only a record with NO decision on it: absent = local and never asked about
 		if (!item || item.share) return;
+		// ...and only a VISIBLE one. `itemByHash` searches the hidden shelf too, where a
+		// record is either an old scene version or a file somebody deleted for everyone —
+		// and `shareItem` clears the deleted-log entry, so marking one of those would
+		// un-delete a file because the scene still happens to reference it.
+		if (!get(explorerItems).some((i) => i.id === item.id)) return;
 		/** @type {any} */
 		const mod = await import('./sharedLibrary');
 		mod.shareItem?.(item.id);

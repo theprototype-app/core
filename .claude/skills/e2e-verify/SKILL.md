@@ -1282,6 +1282,34 @@ your files). Two-peer verification is required for anything touching replication
 VR features: cover the extracted math/state headlessly (computeMoveOffset,
 computeTeleportArc pattern) and note that on-device feel is the user's manual check.
 
+## Roadmap 22 round 10 — `peer-ice-config` (10) and `explorer-drag-fixes` (7)
+
+- **A TWO-PEER FAILURE THAT `PEER_CONFIG` "FIXES" IS NOT ALWAYS SIGNALING FLAKINESS.**
+  Round 9 hit exactly that on localhost, re-ran with PEER_CONFIG, went green and filed it
+  as transient. It was a real bug: the env config carried a TURN entry with an empty
+  credential, and Chromium THROWS constructing the RTCPeerConnection rather than degrading,
+  so signaling worked (peer ids appeared) and every data channel died. PEER_CONFIG hid it
+  because mode `custom` with blank TURN fields uses peerjs's own defaults. When the
+  documented re-run makes a two-peer red disappear, note WHAT differs between the two
+  configs before calling it environmental.
+- **THE BROWSER CAN BE THE ORACLE.** `peer-ice-config` does not assert on the shape of
+  our ICE array — it hands the options the app would use to a real `new
+  RTCPeerConnection(...)` and asserts it constructs. That is the exact failure the user
+  saw, it cannot pass vacuously, and restoring the old gate turns three checks red with
+  the browser's own `InvalidAccessError`. Prefer a real API call over a shape assertion
+  whenever the API is what rejected you.
+- **A suite that runs against a `.app` hostname cannot see a localhost-only branch.**
+  `peerServer`'s default mode asked `isLocalDev` first, so every suite took the other
+  path. If a report only reproduces on a dev server, check whether the code branches on
+  `location.hostname` before assuming the diff is at fault.
+- **Synthesized HTML5 drag needs one `DataTransfer` across all three events.** Build it
+  once and pass it to `dragstart`, `dragover` and `drop` on the real elements; the payload
+  the app wrote is then readable back out of it, which is how `explorer-drag-fixes` proves
+  the whole selection travelled rather than inferring it from the result.
+- **A drop-band position check needs the scroll as its premise.** Assert the grid really
+  is scrolled (`scrollTop > 100`) before asserting the band is inside the visible box —
+  otherwise the check passes trivially at the top, which is the state the bug looks fine in.
+
 ## Roadmap 22 — the Explorer views (`explorer-views`, 71 checks)
 
 Round 9's suite: the list view, its per-view columns and sort, and the bin (grouping,

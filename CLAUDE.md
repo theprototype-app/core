@@ -1544,6 +1544,35 @@ loadable play content. Everything a user does must be visible to connected peers
 
 ## Hard-won gotchas (do not rediscover)
 
+- **AN INVALID ICE SERVER DOES NOT DEGRADE — IT THROWS, AND TAKES ALL CONNECTIVITY WITH
+  IT.** A TURN entry with an empty username or credential makes Chromium refuse the
+  RTCPeerConnection outright (`InvalidAccessError: ICE server parsing failed`), so
+  SIGNALING KEEPS WORKING — a peer id arrives, the Connect pill looks healthy — and no
+  data channel can ever open to anybody. Reported as "I get a peerID but no connect
+  toasts". `iceServers()` gated on the username alone and wrote `credential:
+  c.turnCredential || ''`, i.e. it emitted the exact shape that throws; it now requires
+  BOTH halves, drops a partial entry (keeping STUN) and says so once. Reachable through
+  the Settings TURN fields by any user, not just from a half-filled `.env`.
+- **A REGRESSION CAN BE A LATENT DEFECT FINALLY REACHING THE LIGHT.** The change that
+  "caused" the above (round 9 making an env host win on localhost) was correct and stayed;
+  what it did was route localhost through a branch that had never run with this `.env`.
+  Before reverting, ask whether the change exposed rather than created the fault — and
+  whether the exposed path is reachable another way. And note the e2e suite could not have
+  caught it: it runs against a `.app` hostname, and the branch was gated on
+  `location.hostname`.
+- **A DRAG PAYLOAD CAN CARRY MORE THAN THE DROP READS.** `dragPayloadFor` has attached the
+  whole multi-selection as `items` since 21-H3 for the VIEWPORT drop, while `dropInto`
+  moved `payload.id` only — so "move these five files" existed on the wire and was thrown
+  away on arrival, reported as "only the latest clicked is moved". When one consumer of a
+  payload grows a field, grep the other consumers.
+- **`absolute inset-0` INSIDE A SCROLLER PINS TO THE CONTENT, NOT THE VIEWPORT.** The
+  Explorer's drop highlight is a child of `#explorer-grid` (`overflow-y: auto`), so
+  scrolled 800px down it drew 800px above the visible area. The MARQUEE in the same
+  container is absolute for the opposite reason — it must scroll with the cards it picks —
+  so the two cannot share a rule. Offset by `scrollTop` with the visible height; do NOT
+  reach for `position: fixed`, which is measured against any transformed or
+  backdrop-filtered ancestor.
+
 - **A CLASS WITH NO CSS CAN STILL BE LOAD-BEARING.** `.explorer-card` /
   `.explorer-folder-card` match nothing in any stylesheet — they are how three handlers on
   `#explorer-grid` tell a card from the background (`closest('.explorer-card, …')`). The

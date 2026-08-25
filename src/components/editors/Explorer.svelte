@@ -361,11 +361,20 @@
 	 * hide the way to reach them.
 	 */
 	function folderPassesFilter(folder: any) {
+		// R22 round 10 (user): "should not show folders where no filtered items exist". It IS
+		const subtree = folderSubtree(folder.id);
+		// the standard — a filter narrows to what you asked for, and a folder you can open
+		// only to find it empty is a dead end the filter itself created. Applied at ANY DEPTH,
+		// so a match three folders down keeps the whole route to it visible: hiding an
+		// ancestor would strand exactly the file the filter exists to show.
+		if (kindFilter.size) {
+			const inside = $explorerItems.filter((i) => subtree.includes(i.folderId ?? ''));
+			if (!inside.some((i) => passesFilter(i))) return false;
+		}
 		if (!localOnly) return true;
 		if (folder?.share === 'mine' || folder?.share === 'peer') {
 			// ...unless something local is inside it, in which case it is a route rather than
 			// a result, and hiding it would strand the files the filter exists to show
-			const subtree = folderSubtree(folder.id);
 			return $explorerItems.some((i) => subtree.includes(i.folderId ?? '') && !isShared(i));
 		}
 		return true;
@@ -460,6 +469,15 @@
 		return 'Local — only on this device';
 	}
 	let dropActive = $state(false);
+	// R22 round 10: where the drop band goes — the scroller's own offset and visible
+	// height, re-read on every dragover so a drag that also scrolls stays correct
+	let dropBandTop = $state(4);
+	let dropBandH = $state(0);
+	function markDropActive() {
+		dropActive = true;
+		dropBandTop = (gridEl?.scrollTop ?? 0) + 4;
+		dropBandH = Math.max(0, (gridEl?.clientHeight ?? 0) - 8);
+	}
 	let menu: any = $state(null); // {x, y, items}
 	/** highlighted drop target while dragging: folder id | 'root' | null (106.4) */
 	let dropFolder: string | 'root' | null = $state(null);
@@ -1601,15 +1619,43 @@
 		const types = e.dataTransfer?.types ?? [];
 		return types.includes('application/x-explorer-item') || types.includes('application/x-explorer-folder');
 	}
+	/**
+	 * R22 round 10, THE REPORTED BUG: "when I ctrl click some selected files I should be
+	 * able to move them within explorer... for now only the latest clicked is moved".
+	 *
+	 * The drag ALREADY carried the whole selection — `dragPayloadFor` has attached an
+	 * `items` array since 21-H3, because the VIEWPORT drop needs it to place N objects. This
+	 * function simply never read it: it moved `payload.id` and nothing else. So the feature
+	 * existed on the wire and was dropped on arrival.
+	 *
+	 * A MIXED selection moves too, folders included, which is why both drag starts publish
+	 * the same `folders`/`items` block: dragging any member of a set means the set.
+	 * @param {DragEvent} e @param {string | null} target
+	 */
 	function dropInto(e: DragEvent, target: string | null) {
 		const payload = payloadOf(e);
 		dropFolder = null;
 		if (!payload) return;
 		e.preventDefault();
 		e.stopPropagation();
-		if (payload.type === 'folder') {
-			if (!moveFolder(payload.id, target)) showToast("A folder can't move into its own subtree");
-		} else if (!payload.prefabId) moveItem(payload.id, target);
+		// a PREFAB card carries no library record, so there is nothing to re-file
+		const items = (payload.items?.length ? payload.items : payload.type === 'item' ? [payload] : [])
+			.filter((p: any) => p && !p.prefabId && p.id)
+			.map((p: any) => p.id);
+		const folders = payload.folders?.length
+			? payload.folders
+			: payload.type === 'folder'
+				? [payload.id]
+				: [];
+		let refused = 0;
+		for (const id of folders) if (!moveFolder(id, target)) refused++;
+		for (const id of items) moveItem(id, target);
+		if (refused)
+			showToast(
+				refused === 1 && folders.length === 1
+					? "A folder can't move into its own subtree"
+					: `${refused} folder${refused === 1 ? '' : 's'} could not move into their own subtree`
+			);
 	}
 	function dragOverInto(e: DragEvent, target: string | 'root' | null) {
 		if (!canAccept(e)) return;
@@ -2878,7 +2924,32 @@
 		const carried = selectedEntries()
 			.filter((entry: any) => entry.kind === 'item')
 			.map((entry: any) => itemDragPayload(entry.item));
-		return carried.length > 1 ? { ...base, items: carried } : base;
+		// R22 round 10: the FOLDERS in the same selection travel with it, so an
+		// Explorer-internal move re-files everything the user picked rather than the items
+		// only. The viewport drop ignores the key, which is why this is additive.
+		const folders = selectedFolderIds();
+		const out: any = carried.length > 1 ? { ...base, items: carried } : { ...base };
+		if (folders.length) out.folders = folders;
+		return out;
+	}
+	/** every FOLDER id in the current multi-selection (empty unless there is a real set) */
+	function selectedFolderIds(): string[] {
+		if (selectedIds.size < 2) return [];
+		return selectedEntries()
+			.filter((entry: any) => entry.kind === 'folder')
+			.map((entry: any) => entry.folder.id);
+	}
+	/** the payload a FOLDER card drags, carrying its selection the same way an item does */
+	function folderDragPayload(folder: any) {
+		const out: any = { id: folder.id };
+		if (!selectedIds.has(folder.id) || selectedIds.size < 2) return out;
+		const folders = selectedFolderIds();
+		if (folders.length > 1) out.folders = folders;
+		const items = selectedEntries()
+			.filter((entry: any) => entry.kind === 'item')
+			.map((entry: any) => itemDragPayload(entry.item));
+		if (items.length) out.items = items;
+		return out;
 	}
 	function onItemDragStart(e: DragEvent, item: any) {
 		// 96 consumes these payloads (viewport placement / texture drop). N6: a
@@ -3448,7 +3519,7 @@
 		style:touch-action={tDragging ? 'none' : 'pan-y'}
 		ondragstart={(e) =>
 			isFolder
-				? e.dataTransfer?.setData('application/x-explorer-folder', JSON.stringify({ id: folder.id }))
+				? e.dataTransfer?.setData('application/x-explorer-folder', JSON.stringify(folderDragPayload(folder)))
 				: onItemDragStart(e, item)}
 		ondragover={(e) => isFolder && dragOverInto(e, folder.id)}
 		ondragleave={() => isFolder && (dropFolder = null)}
@@ -3695,7 +3766,7 @@
 								: 'text-gray-300 hover:bg-gray-700'} {dropFolder === row.folder.id ? 'outline-solid outline-2 outline-primary-500' : ''}"
 							draggable="true"
 							ondragstart={(e) =>
-								e.dataTransfer?.setData('application/x-explorer-folder', JSON.stringify({ id: row.folder.id }))}
+								e.dataTransfer?.setData('application/x-explorer-folder', JSON.stringify(folderDragPayload(row.folder)))}
 							oncontextmenu={(e) => folderMenu(e, row.folder)}
 							onclick={() => openFolder(row.folder.id)}
 							ondblclick={() => toggleExpand(row.folder.id)}
@@ -3956,7 +4027,7 @@
 								tabindex="0"
 								draggable="true"
 								ondragstart={(e) =>
-									e.dataTransfer?.setData('application/x-explorer-folder', JSON.stringify({ id: folder.id }))}
+									e.dataTransfer?.setData('application/x-explorer-folder', JSON.stringify(folderDragPayload(folder)))}
 								ondragover={(e) => dragOverInto(e, folder.id)}
 								ondragleave={() => (dropFolder = null)}
 								ondrop={(e) => dropInto(e, folder.id)}
@@ -4134,7 +4205,23 @@
 				></div>
 			{/if}
 			{#if dropActive}
-				<div class="pointer-events-none absolute inset-1 rounded-lg border-2 border-dashed border-primary-500 bg-primary-500/10"></div>
+				<!--
+					R22 round 10, REPORTED: with the grid scrolled down, this band stayed at the
+					top. It is an absolutely-positioned child of #explorer-grid, which is the
+					SCROLLER — so `inset-1` pins it to the top of the CONTENT, not of the visible
+					area, and at 800px down it is drawn 800px above what you can see.
+
+					The marquee above is absolute for the OPPOSITE reason (it must scroll with the
+					cards it is picking), so the two cannot share a rule. Offsetting by scrollTop
+					and taking the visible height keeps this one in view without `position: fixed`,
+					which would be measured against any transformed or backdrop-filtered ancestor
+					(the documented containing-block trap).
+				-->
+				<div
+					id="explorer-drop-band"
+					class="pointer-events-none absolute left-1 right-1 z-20 rounded-lg border-2 border-dashed border-primary-500 bg-primary-500/10"
+					style="top: {dropBandTop}px; height: {dropBandH}px"
+				></div>
 			{/if}
 		</div>
 		{/snippet}
@@ -4460,7 +4547,7 @@
 			ondragover={(e) => {
 				if (canAccept(e)) return;
 				e.preventDefault();
-				dropActive = true;
+				markDropActive();
 			}}
 			ondragleave={() => (dropActive = false)}
 			ondrop={onDrop}
@@ -4512,7 +4599,7 @@
 			ondragover={(e) => {
 				if (canAccept(e)) return;
 				e.preventDefault();
-				dropActive = true;
+				markDropActive();
 			}}
 			ondragleave={() => (dropActive = false)}
 			ondrop={onDrop}

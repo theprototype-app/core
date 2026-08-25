@@ -1282,7 +1282,33 @@ your files). Two-peer verification is required for anything touching replication
 VR features: cover the extracted math/state headlessly (computeMoveOffset,
 computeTeleportArc pattern) and note that on-device feel is the user's manual check.
 
-## Roadmap 22 — the shared library (`shared-library`, 196 checks, two peers)
+## Roadmap 22 — the Explorer views (`explorer-views`, 71 checks)
+
+Round 9's suite: the list view, its per-view columns and sort, and the bin (grouping,
+sort-by-date, and the purge). Lessons that generalise:
+
+- **Read both halves of a toggle at the SAME moment.** The armed-colour check first read
+  Thumbnails while it was armed and List after switching — comparing the accent with
+  itself, so it could never fail. Read the armed one and the idle one together.
+- **A class with no CSS can still be load-bearing**, and finding out costs a red check
+  that looks like a broken feature: a list row that did not carry `.explorer-card` was
+  BACKGROUND to `#explorer-grid`'s three handlers, so the click selected it and
+  `gridBackgroundClick` deselected it in the same gesture.
+- **A right-click for the grid BACKGROUND menu has three ways to miss**: the Controls HUD
+  intercepts the middle-bottom, the header row has its own menu, and a position past the
+  grid's own height resolves to `<html>` ("element intercepts pointer events" for an
+  element that is merely elsewhere). Aim below the last row, clear of the HUD, inside the
+  measured box.
+- **A bin fixture must stamp its own owner ids.** `meAsOwner` records whatever `peer.id`
+  holds, so a suite seeding deletions milliseconds after load records UNATTRIBUTED rows —
+  a real state, with its own section, but not the one a grouping check is about.
+- **The counterfactual belongs IN the test when the bug was a DEPENDENCY, not a value.**
+  For the purge, both the old and the new reading return `false` once the bytes are gone —
+  the fault was that the old one sat in a derived nothing re-ran. So the suite computes
+  both in-page and asserts they agree, and the real guards are the OBSERVABLE ones (the
+  row dims; the menu stops offering Restore).
+
+## Roadmap 22 — the shared library (`shared-library`, 194 checks, two peers)
 
 One suite covers the whole batch: the document, both identities, adoption, the pull,
 the concurrent-share reconcile, tombstones, delete/restore, the chunk protocol, the

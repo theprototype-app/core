@@ -194,6 +194,14 @@ export const vrStatsOpen = writable(
 // scene background/fog go transparent so the room shows through; the
 // replicated environment state is untouched
 export const passthroughActive = writable(false);
+// CO4: the ONE derivation feeding that signal — a session composites over the
+// real world when its environmentBlendMode is not 'opaque' ('alpha-blend' on
+// camera passthrough, 'additive' on see-through glasses). Pure and exported so
+// Scene's session-start handler and the headless suite share the same rule.
+/** @param {any} session @returns {boolean} */
+export function sessionCompositesOverRoom(session) {
+	return !!session && session.environmentBlendMode !== 'opaque';
+}
 // selection keeps working but the transform gizmo must NOT attach (sculpt mode:
 // a visible gizmo invites accidental terrain moves mid-stroke). Lives in this
 // leaf store so objectActions can gate on it without importing terrainSculpt

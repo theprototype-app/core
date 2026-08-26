@@ -8,7 +8,7 @@
 	import { peers, username, userdata, specatorMode, avatarConfig, viewportMenu, objectContextMenu, viewportMenuOpener, addMenu, addMenuOpener, showToast, multiSelectMode } from '../stores/appStore';
 	import { get } from 'svelte/store';
 	import { vrPostEnabled } from '$lib/viewportOverrides';
-	import { isLocked, editorCam, isVRMode, globalScene, objectsGroup, showGrid, TControls, selectedObject, selectedObjects, lockedObjects, marqueeRect, worldRig, vrOverride, specators, globalCamera, globalRenderer, orbitControls, passthroughActive, vrObjectsPanelOpen, vrPaletteOpen, vrPropsPanelOpen, vrPrefabsPanelOpen, vrChatPanelOpen, vrEditMenuOpen, vrSnapMenuOpen, vrSettingsPanelOpen, vrApprovePanelOpen, vrToolMode, viewMode } from '../stores/sceneStore';
+	import { isLocked, editorCam, isVRMode, globalScene, objectsGroup, showGrid, TControls, selectedObject, selectedObjects, lockedObjects, marqueeRect, worldRig, vrOverride, specators, globalCamera, globalRenderer, orbitControls, passthroughActive, sessionCompositesOverRoom, vrObjectsPanelOpen, vrPaletteOpen, vrPropsPanelOpen, vrPrefabsPanelOpen, vrChatPanelOpen, vrEditMenuOpen, vrSnapMenuOpen, vrSettingsPanelOpen, vrApprovePanelOpen, vrToolMode, viewMode } from '../stores/sceneStore';
 	import {
 		selectObject,
 		deselectObject,
@@ -1365,7 +1365,9 @@
 
 	<CameraPreview />
 
-	<Grid showGrid={$showGrid && $viewMode !== 'wireframe'} />
+	<!-- CO4: no virtual ground in AR — the grid stands down over passthrough
+	     (LOCAL: showGrid itself is untouched, so it returns on session end) -->
+	<Grid showGrid={$showGrid && $viewMode !== 'wireframe' && !$passthroughActive} />
 
 	<MeasureOverlay />
 
@@ -1418,7 +1420,7 @@ position={[0, 2, 3]}
 	onsessionstart={() => {
 		// passthrough (90): AR sessions blend with the room — drop the local sky
 		const session = renderer.xr.getSession();
-		passthroughActive.set(!!session && session.environmentBlendMode !== 'opaque');
+		passthroughActive.set(sessionCompositesOverRoom(session));
 		// B2.1: request the preferred refresh rate (auto = highest supported) —
 		// without this the Quest stays at its 90Hz default
 		applyVRFrameRate();

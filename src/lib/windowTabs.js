@@ -62,6 +62,24 @@ function groupOfKey(key) {
 }
 
 /** @param {string} key drop target @param {string} addKey dragged window */
+/** Re-apply the floor — called after the membership changes, since a group that gains a
+ * tab can find itself narrower than its own strip. @param {string} groupId */
+function enforceFloor(groupId) {
+	tabGroups.update((groups) =>
+		groups.map((g) => {
+			if (g.id !== groupId) return g;
+			const floor = groupFloor(g);
+			if (g.rect.width >= floor.w && g.rect.height >= floor.h) return g;
+			return {
+				...g,
+				rect: { ...g.rect, width: Math.max(floor.w, g.rect.width), height: Math.max(floor.h, g.rect.height) }
+			};
+		})
+	);
+}
+
+/** Fold the addKey window into the key window's group, creating the group if needed.
+ * @param {string} key @param {string} addKey */
 export function mergeWindows(key, addKey) {
 	if (key === addKey) return;
 	const target = registry.get(key);
@@ -80,6 +98,8 @@ export function mergeWindows(key, addKey) {
 				: entry
 		)
 	);
+	// a group that GAINS a tab can find itself narrower than its own strip
+	enforceFloor(group.id);
 	applyGroups();
 }
 
@@ -93,7 +113,7 @@ export function removeFromGroup(key, restoreDisplay = true) {
 		groups
 			.map((g) => {
 				if (g.id !== group.id) return g;
-				const members = g.members.filter((m) => m !== key);
+				const members = g.members.filter((/** @type {string} */ m) => m !== key);
 				return { ...g, members, active: g.active === key ? members[0] : g.active };
 			})
 			// a group of one dissolves — the last member gets its header back
@@ -125,11 +145,46 @@ export function activateTab(groupId, key) {
  * dragging any member's grip resizes them all (not just the active tab). Returns
  * false when the window isn't grouped, so the caller keeps its own local resize.
  * @param {string} key @param {number} width @param {number} height */
+/**
+ * R22 ROUND 26 (user): "for grouped window ... I should not be able to make it smaller than
+ * smallest of one of them, so when I switch there are no break of header/window, and should
+ * not be possible to make smaller in width than amount of tabs in tabbed window".
+ *
+ * A GROUP IS ONE BOX SHOWING ONE MEMBER AT A TIME, and that is what makes its floor
+ * different from a lone window's. A size that suits the member on screen can break the one
+ * behind it — and you do not find out until you switch tabs, by which point you have
+ * forgotten what you resized. So the floor is the WORST CASE across the members, not the
+ * one you happen to be looking at.
+ *
+ * The second half is the tab strip itself: a group narrower than its own tabs cannot show
+ * you what is in it, which is the one thing a group exists for. `TAB_MIN` is deliberately
+ * generous per tab — a tab holds a title, and one clipped to three characters is not a
+ * label. It is a FLOOR, not a layout: the strip still truncates long titles at any width.
+ *
+ * clampWinSize is not reused here on purpose. It answers "does this fit ON SCREEN",
+ * which a group needs too, but its minimum is a single constant — the question here is
+ * what these particular members need, which only the group knows.
+ */
+const GROUP_MIN_W = 260;
+const GROUP_MIN_H = 180;
+const TAB_MIN = 96;
+
+/** The smallest this group may be, given how many tabs it has to show. @param {any} group */
+export function groupFloor(group) {
+	const tabs = group?.members?.length ?? 1;
+	// the strip also carries its own padding and the close button on the right
+	return { w: Math.max(GROUP_MIN_W, tabs * TAB_MIN + 56), h: GROUP_MIN_H };
+}
+
+/** @param {string} key @param {number} width @param {number} height */
 export function resizeGroup(key, width, height) {
 	const group = groupOfKey(key);
 	if (!group) return false;
+	const floor = groupFloor(group);
+	const w = Math.max(floor.w, width || 0);
+	const h = Math.max(floor.h, height || 0);
 	tabGroups.update((groups) =>
-		groups.map((g) => (g.id === group.id ? { ...g, rect: { ...g.rect, width, height } } : g))
+		groups.map((g) => (g.id === group.id ? { ...g, rect: { ...g.rect, width: w, height: h } } : g))
 	);
 	applyGroups();
 	return true;

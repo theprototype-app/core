@@ -10,9 +10,29 @@ const byKey = new Map();
 /** bumps whenever the z-order changes, so followers (tab strips) can re-read z */
 export const focusTick = writable(0);
 
+/**
+ * The band is five slots wide (40..44) and must stay under the hud at 45, so with six or
+ * more windows open SOMETHING has to share.
+ *
+ * R22 ROUND 26 — WHICH END SHARES IS THE WHOLE QUESTION. `Math.min(index, 4)` clamped the
+ * TOP: every window from the fifth-most-recent onwards got 44, so the ones you had just
+ * been using were exactly the ones that could no longer be ordered against each other. A
+ * tie is then broken by DOM order, and a tab strip - rendered from Menu.svelte, after the
+ * windows - wins every one of them, which is a strip drawing through a window in front of
+ * it.
+ *
+ * Counting from the TOP instead keeps the five most recent windows strictly ordered and
+ * lets the DEEP ones share 40, where a tie is invisible: they are all behind everything
+ * that matters. Same five slots, spent on the end you can see.
+ *
+ * (This does not make ties impossible - CSS z-index is an integer, and six windows cannot
+ * have six distinct values in five slots. It makes them impossible where they are
+ * noticeable, which is the most the band allows.)
+ */
 function apply() {
+	const top = order.length - 1;
 	order.forEach((node, index) => {
-		node.style.zIndex = String(40 + Math.min(index, 4));
+		node.style.zIndex = String(40 + Math.max(0, 4 - (top - index)));
 	});
 	focusTick.update((n) => n + 1);
 }

@@ -104,18 +104,77 @@ export function sceneSignature(payload) {
 	const pick = {
 		objects: payload.objects ?? [],
 		animated: payload.animated ?? [],
-		animations: payload.animations ?? {},
-		graphs: payload.graphs ?? {},
-		shaderGraphs: payload.shaderGraphs ?? {},
+		// R22 round 11: every keyed or singleton block below goes through stripStamps —
+		// see it for why, and why objects/animated deliberately do not
+		animations: stripStamps(payload.animations ?? {}),
+		graphs: stripStamps(payload.graphs ?? {}),
+		shaderGraphs: stripStamps(payload.shaderGraphs ?? {}),
 		annotations: payload.annotations ?? [],
 		joints: payload.joints ?? [],
-		post: payload.post ?? null,
-		environment: payload.environment ?? null,
-		physics: payload.physics ?? null,
-		music: payload.music ?? null,
-		hud: payload.hud ?? null
+		post: stripStamps(payload.post ?? null),
+		environment: stripStamps(payload.environment ?? null),
+		physics: stripStamps(payload.physics ?? null),
+		music: stripStamps(payload.music ?? null),
+		hud: stripStamps(payload.hud ?? null)
 	};
 	return JSON.stringify(pick);
+}
+
+/**
+ * R22 round 11 — REPLICATION BOOKKEEPING IS NOT CONTENT, and until this existed the
+ * signature called every freshly loaded scene dirty.
+ *
+ * MEASURED: save a scene with an environment, travel away, travel back, touch nothing —
+ * and sceneSignature differed in exactly one field, `environment`, whose two values were
+ * `{preset:"sunset",exposure:1,customPreset:null,lights:[],changedAt:1787721934690}` and
+ * the identical object stamped 1787721946780. The stamp was the load.
+ *
+ * That is not a bug in the restore. Every latest-wins singleton restores by taking a
+ * FRESH `Date.now()` on purpose — "a restore is an authoritative local write, so it must
+ * WIN over whatever changedAt the file happens to carry", which environment, scenePhysics,
+ * sceneMusic, scenePost, hudDocs and shaderGraph each say in as many words. The bug was on
+ * this side: the stamp answers WHEN a block was last written, and this function asks WHAT
+ * it says.
+ *
+ * TWO USER-VISIBLE SYMPTOMS, one cause. The reported one is the guard in the Explorer's
+ * `openSceneItem`: open a scene, change nothing, double-click another, and it offered to
+ * save work that did not exist. The quieter one is `publishCurrentIfChanged`, whose
+ * SIGNATURE-GATED rule exists precisely so "an idle hop must not mint versions" — with the
+ * stamp inside the signature, every hop through such a scene minted a ghost version.
+ *
+ * WHY IT CANNOT MISS A REAL EDIT: nothing moves `changedAt` on its own. It moves because
+ * something else in the same block moved, and that something is still compared. Writing a
+ * block back to the value it already held is a no-op, and reading it as one is right.
+ *
+ * WHY `objects` AND `animated` ARE LEFT ALONE — the cost rule. This runs over a
+ * whole-scene serialization and those two are the megabytes in it; the blocks that carry
+ * stamps are all small. Deep-copying a mesh's vertex buffer to hunt for a key it cannot
+ * contain is the one thing this function may not afford. An object's `userData` is also
+ * the one place a `changedAt` could legitimately BE content, since a module owns it.
+ */
+const VOLATILE_STAMPS = new Set([
+	// the latest-wins stamp every singleton and keyed document carries
+	'changedAt',
+	// sceneMusic re-bases the loop PHASE to the moment of the load, for the same reason
+	'startedAt'
+]);
+
+/**
+ * A copy of `value` without the keys above, at any depth. Pure.
+ * @param {any} value @returns {any}
+ */
+function stripStamps(value) {
+	if (Array.isArray(value)) return value.map(stripStamps);
+	if (value && typeof value === 'object') {
+		/** @type {any} */
+		const out = {};
+		for (const key of Object.keys(value)) {
+			if (VOLATILE_STAMPS.has(key)) continue;
+			out[key] = stripStamps(value[key]);
+		}
+		return out;
+	}
+	return value;
 }
 
 /** Travels currently waiting on bytes or applying, keyed by hash — a re-stamped trigger

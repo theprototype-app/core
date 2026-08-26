@@ -53,7 +53,7 @@
 	// points at", behind a throttle, because the answer costs a whole-scene
 	// serialization. This READS that flag and never recomputes it.
 	import { sceneDirty, recomputeSceneDirty } from '$lib/sceneIdentity';
-	import { showChoice, showConfirm } from '$lib/confirmDialog';
+	import { showChoice } from '$lib/confirmDialog';
 	import VersionHistory from './VersionHistory.svelte';
 	// 21-G2: the "update available" dot on old scene versions. The manifest store is
 	// passed as the reactive dependency — a helper reading through get() registers none
@@ -469,6 +469,19 @@
 		return 'Local — only on this device';
 	}
 	let dropActive = $state(false);
+	/**
+	 * R22 round 11: a library drag is IN FLIGHT. The Deleted row hides itself while the bin
+	 * is empty (round 7 — a destructive place should not be permanently on screen), which
+	 * would make the very first drag onto it impossible; so it unhides for the duration of
+	 * a drag and goes back to hiding afterwards.
+	 *
+	 * Cleared from `dragend` on WINDOW rather than from five `ondragend` attributes: the
+	 * event fires on the source element and bubbles, and a drag that ends anywhere — over
+	 * the viewport, off the window, cancelled with Esc — has to clear it.
+	 */
+	let libraryDragging = $state(false);
+	/** ...and the Deleted row is under the pointer right now */
+	let binDropActive = $state(false);
 	// R22 round 10: where the drop band goes — the scroller's own offset and visible
 	// height, re-read on every dragover so a drag that also scrolls stays correct
 	let dropBandTop = $state(4);
@@ -1596,15 +1609,90 @@
 		localStorage.setItem('explorerRootsH', String(rootsH));
 	}
 
+	// ---- R22 round 11: THE QUESTION IS ASKED WHERE THE FILES ARE ---------------------
+	/**
+	 * REPORTED: "when right click delete instead of toast confirmation I should have
+	 * confirmation within Explorer (otherwise its confusing to see toast its almost
+	 * invisible for user eye in that case as viewport is above and file operations happen
+	 * inside Explorer)".
+	 *
+	 * BOTH shapes the Explorer used were somewhere else on the screen, and the report names
+	 * the second: `showConfirm` is the app-wide modal (item delete, prefab delete, Empty
+	 * Deleted) and `showToast` with two buttons is the toast stack over the viewport
+	 * (folder delete, batch delete). Five destructive file actions, not one of them answered
+	 * where the files are — and the toast pair is the worse of the two, because it is small,
+	 * it is over the 3D view, and it expires.
+	 *
+	 * This is round 7's rule one surface over: THE BUTTON BECOMES THE QUESTION AND THE
+	 * SECOND PRESS IS THE ANSWER. Here the button is a strip pinned to the top of the grid,
+	 * so the question sits directly above the rows it is about, cannot be missed, and cannot
+	 * be covered by the viewport. It is NOT modal — clicking elsewhere in the Explorer is
+	 * allowed and simply leaves the question standing, which is the honest reading of a
+	 * strip rather than of a dialog.
+	 *
+	 * `deleteWithoutConfirm` still skips it entirely. That setting says "do not ask me", and
+	 * moving WHERE the asking happens must not quietly re-enable it.
+	 */
+	let confirmStrip = $state<{
+		title: string;
+		detail: string;
+		confirmLabel: string;
+		run: () => void;
+	} | null>(null);
+	/**
+	 * Arm the strip. A second arming REPLACES the first — the same rule `showConfirm` has,
+	 * for the same reason: a question the user has already moved on from must not linger
+	 * and then be answered by accident.
+	 */
+	function askInExplorer(spec: { title: string; detail: string; confirmLabel: string; run: () => void }) {
+		confirmStrip = spec;
+	}
+	function confirmStripYes() {
+		const armed = confirmStrip;
+		confirmStrip = null;
+		armed?.run();
+	}
+	function confirmStripNo() {
+		confirmStrip = null;
+	}
+	/** focus the answer, so Enter confirms and Esc has a handler inside the strip to reach */
+	function focusConfirmBtn(node: HTMLElement) {
+		node.focus();
+	}
+
+	/** the bin move a FILE takes — shared by the menu, the strip and the Deleted drop */
+	function binLocalItem(item: any) {
+		logLocalDeletion({ hash: item.hash, name: item.name, kind: item.kind, thumb: item.thumbnail });
+		setItemHidden(item.id, true);
+	}
+	/** ...and a PREFAB, which is local by nature. See deletePrefabToBin for the caveat. */
+	function binPrefab(prefab: any) {
+		// a prefab's identity is its id, not a content hash — prefix it so the two can
+		// never collide in one log
+		logLocalDeletion({
+			hash: 'prefab:' + prefab.id,
+			name: prefab.name ?? 'Prefab',
+			kind: 'prefab',
+			thumb: prefab.thumbnail ?? null
+		});
+		removePrefab(prefab.id);
+	}
+
 	function confirmDeleteFolder(folder: any) {
 		const counts = folderCounts(folder.id);
-		showToast(
-			`Delete "${folder.name}" (${counts.folders} folder${counts.folders === 1 ? '' : 's'}, ${counts.items} item${counts.items === 1 ? '' : 's'})?`,
-			[
-				{ label: 'Delete', action: () => deleteFolder(folder.id) },
-				{ label: 'Cancel', action: () => {} }
-			]
-		);
+		askInExplorer({
+			title: 'Delete "' + folder.name + '"?',
+			// it says DESTROYED because `deleteFolder` reclaims the blobs of everything in the
+			// subtree. That asymmetry with a file delete is exactly why this one keeps asking
+			// even when a drag onto Deleted does not (see dropToBin).
+			detail:
+				plural(counts.folders, 'folder') +
+				' and ' +
+				plural(counts.items, 'item') +
+				' — the files inside are destroyed, not moved to Deleted.',
+			confirmLabel: 'Delete folder',
+			run: () => void deleteFolder(folder.id)
+		});
 	}
 
 	// --- drag & drop (106.4): items AND folders move into folders/root ---
@@ -1820,11 +1908,13 @@
 			subFolders || subItems
 				? ` — with ${plural(subFolders, 'subfolder')} and ${plural(subItems, 'item')} inside`
 				: '';
-		const note = skipped ? ` (${plural(skipped, 'pack/scene card')} will be skipped)` : '';
-		showToast(`Delete ${parts.join(' and ')}${cascade}?${note}`, [
-			{ label: 'Delete', action: () => void runDeleteSelection(folders, items) },
-			{ label: 'Cancel', action: () => {} }
-		]);
+		const note = skipped ? `${plural(skipped, 'pack/scene card')} will be skipped.` : '';
+		askInExplorer({
+			title: `Delete ${parts.join(' and ')}?`,
+			detail: [cascade.replace(/^ — /, ''), note].filter(Boolean).join(' ') || 'This cannot be undone.',
+			confirmLabel: 'Delete',
+			run: () => void runDeleteSelection(folders, items)
+		});
 	}
 	async function runDeleteSelection(folders: any[], items: any[]) {
 		for (const item of items) {
@@ -2523,73 +2613,69 @@
 	 * row that can only ever produce an empty grid.
 	 */
 	/**
-	 * R22 round 7 (user) — DELETING MY OWN FILE GOES TO THE BIN TOO, and it asks INSIDE
-	 * the Explorer rather than throwing a toast. A toast for a question is the wrong
-	 * shape: it appears somewhere else on screen, it can be missed, and it cannot block.
-	 * `showConfirm` is the app's modal and it is what every other destructive file action
-	 * already uses (folder delete, Open project).
+	 * R22 round 7 (user) — DELETING MY OWN FILE GOES TO THE BIN TOO. Round 11 moved the
+	 * question out of the app-wide modal and into the Explorer's own strip; see
+	 * `askInExplorer` for why. `deleteWithoutConfirm` still skips it.
 	 */
-	async function deleteLocalItem(item: any) {
-		if (!$deleteWithoutConfirm) {
-			const ok = await showConfirm({
-				title: 'Delete \u201c' + item.name + '\u201d',
-				message:
-					'It moves to Deleted, where you can restore it or free the disk. Nobody else has this file, so nobody else is affected.',
-				confirmLabel: 'Delete'
-			});
-			if (!ok) return;
-		}
-		logLocalDeletion({ hash: item.hash, name: item.name, kind: item.kind, thumb: item.thumbnail });
-		setItemHidden(item.id, true);
-		showToast(item.name + ' moved to Deleted');
+	function deleteLocalItem(item: any) {
+		const run = () => {
+			binLocalItem(item);
+			showToast(item.name + ' moved to Deleted');
+		};
+		if ($deleteWithoutConfirm) return run();
+		askInExplorer({
+			title: 'Delete \u201c' + item.name + '\u201d?',
+			detail:
+				'It moves to Deleted, where you can restore it or free the disk. Nobody else has this file, so nobody else is affected.',
+			confirmLabel: 'Delete',
+			run
+		});
 	}
 
 	/** ...and a PREFAB, which is local by nature and was simply gone before. */
-	async function deletePrefabToBin(prefab: any) {
-		if (!$deleteWithoutConfirm) {
-			const ok = await showConfirm({
-				title: 'Delete prefab \u201c' + (prefab?.name ?? '') + '\u201d',
-				// R22 round 9: it says "a record of it" because that is all that survives. A
-				// prefab has no hidden shelf — `removePrefab` drops the record and
-				// `canRestoreDeleted` asks the two ITEM shelves, so a binned prefab can never be
-				// restored and the old wording promised exactly the button the bin then refuses
-				// to offer. See the round-9 report: making it true needs a prefab shelf.
-				message:
-					'The prefab is removed. A record of it stays in Deleted, but a prefab cannot be restored from there yet.',
-				confirmLabel: 'Delete'
-			});
-			if (!ok) return;
-		}
-		// a prefab's identity is its id, not a content hash — prefix it so the two can
-		// never collide in one log
-		logLocalDeletion({
-			hash: 'prefab:' + prefab.id,
-			name: prefab.name ?? 'Prefab',
-			kind: 'prefab',
-			thumb: prefab.thumbnail ?? null
+	function deletePrefabToBin(prefab: any) {
+		const run = () => {
+			binPrefab(prefab);
+			showToast((prefab.name ?? 'Prefab') + ' moved to Deleted');
+		};
+		if ($deleteWithoutConfirm) return run();
+		askInExplorer({
+			title: 'Delete prefab \u201c' + (prefab?.name ?? '') + '\u201d?',
+			// R22 round 9: it says "a record of it" because that is all that survives. A
+			// prefab has no hidden shelf — `removePrefab` drops the record and
+			// `canRestoreDeleted` asks the two ITEM shelves, so a binned prefab can never be
+			// restored and the old wording promised exactly the button the bin then refuses
+			// to offer. See the round-9 report: making it true needs a prefab shelf.
+			detail:
+				'The prefab is removed. A record of it stays in Deleted, but a prefab cannot be restored from there yet.',
+			confirmLabel: 'Delete',
+			run
 		});
-		removePrefab(prefab.id);
-		showToast((prefab.name ?? 'Prefab') + ' moved to Deleted');
 	}
 
-	/** R22 round 7: emptying the bin is destructive and LOCAL, so it confirms and says
-	 * which of those two it is — peers keep their own copies either way. */
-	async function emptyBin() {
+	/**
+	 * R22 round 7: emptying the bin is destructive and LOCAL, so it asks and says which of
+	 * those two it is — peers keep their own copies either way.
+	 *
+	 * It asks EVEN WITH `deleteWithoutConfirm` on, and that is deliberate: the setting is
+	 * about a DELETE, which the bin makes reversible, and this is the one act in the
+	 * Explorer that takes the bytes for good.
+	 */
+	function emptyBin() {
 		const n = deletedLog($projectManifest).length;
 		if (!n) return;
-		const ok = await showConfirm({
-			title: 'Empty Deleted',
-			message:
-				'Reclaim the disk for ' +
-				n +
-				' deleted file' +
-				(n === 1 ? '' : 's') +
-				' and clear the record. This machine only — every peer keeps its own bin, and nothing already restored is affected.',
-			confirmLabel: 'Empty'
+		askInExplorer({
+			title: 'Empty Deleted?',
+			detail:
+				'Reclaims the disk for ' +
+				plural(n, 'deleted file') +
+				' and clears the record. This machine only — every peer keeps its own bin, and nothing already restored is affected.',
+			confirmLabel: 'Empty',
+			run: () =>
+				void emptyDeletedLog().then((gone) =>
+					showToast('Emptied ' + plural(gone, 'file') + ' from Deleted')
+				)
 		});
-		if (!ok) return;
-		const gone = await emptyDeletedLog();
-		showToast('Emptied ' + gone + ' file' + (gone === 1 ? '' : 's') + ' from Deleted');
 	}
 
 	/**
@@ -2956,6 +3042,101 @@
 		// default-pack item carries a `url` so the drop can fetch+place it without
 		// first storing it in the Explorer library.
 		e.dataTransfer?.setData('application/x-explorer-item', JSON.stringify(dragPayloadFor(item)));
+		libraryDragging = true;
+	}
+	/** every FOLDER card and row starts its drag here, so the flag has one writer per kind */
+	function onFolderDragStart(e: DragEvent, folder: any) {
+		e.dataTransfer?.setData('application/x-explorer-folder', JSON.stringify(folderDragPayload(folder)));
+		libraryDragging = true;
+	}
+
+	// ---- R22 round 11: DRAG SOMETHING ONTO Deleted ------------------------------------
+	/**
+	 * REPORTED: "should be able to drag to 'Deleted' files and folder from library without
+	 * confirmation".
+	 *
+	 * NO CONFIRM, and the reason it is defensible is that the gesture is its own consent:
+	 * you have to pick the thing up, carry it to a row labelled Deleted, and let go. A
+	 * right-click Delete is one press on a list of similar-looking words, which is why THAT
+	 * one still asks.
+	 *
+	 * It reads `items`/`folders` off the payload rather than re-deriving the selection —
+	 * round 10's rule, and the bug it fixed: the whole multi-selection has travelled on
+	 * every Explorer drag since 21-H3, and a consumer that only reads `payload.id` silently
+	 * acts on the last card clicked.
+	 *
+	 * TWO DELETES, not one, because they are different acts (see DELETE IS NOT UNSHARE):
+	 * a SHARED file goes through `deleteSharedItem`, which tombstones it for the project so
+	 * every peer's copy moves to their own bin; a local one is `logLocalDeletion` +
+	 * `setItemHidden`, which nobody else needs to hear about.
+	 *
+	 * A FOLDER is the interesting case. `deleteFolder` reclaims the blobs of everything in
+	 * the subtree — irreversible, and an irreversible act is exactly what an unconfirmed
+	 * gesture may NOT perform. So a folder dropped here BINS EVERY FILE INSIDE IT first,
+	 * one by one, on the same reversible path a file takes; only the (now empty) folder
+	 * records are removed, and they hold no bytes. The files are cleared of their
+	 * `folderId` on the way, so Restore puts them back at the library root instead of
+	 * inside a folder that no longer exists.
+	 */
+	async function dropToBin(e: DragEvent) {
+		const payload = payloadOf(e);
+		dropFolder = null;
+		binDropActive = false;
+		libraryDragging = false;
+		if (!payload) return;
+		e.preventDefault();
+		e.stopPropagation();
+		const dragged = payload.items?.length ? payload.items : payload.type === 'item' ? [payload] : [];
+		const folderIds: string[] = payload.folders?.length
+			? payload.folders
+			: payload.type === 'folder'
+				? [payload.id]
+				: [];
+		let files = 0;
+		let folders = 0;
+		let skipped = 0;
+		/** one file, whichever shelf it belongs to. `orphan` = its folder is going away. */
+		const binOne = (record: any, orphan = false) => {
+			if (orphan) moveItem(record.id, null);
+			if (isShared(record)) deleteSharedItem(record.id);
+			else binLocalItem(record);
+			files++;
+		};
+		for (const p of dragged) {
+			if (p.prefabId) {
+				const prefab = $prefabs.find((x: any) => x.id === p.prefabId);
+				if (prefab) {
+					binPrefab(prefab);
+					files++;
+				} else skipped++;
+				continue;
+			}
+			const record = $explorerItems.find((i: any) => i.id === p.id);
+			// a pack or scene CARD is a view of something the library does not own
+			if (record) binOne(record);
+			else skipped++;
+		}
+		for (const id of folderIds) {
+			const subtree = folderSubtree(id);
+			for (const record of $explorerItems.filter((i: any) => subtree.includes(i.folderId ?? '')))
+				binOne(record, true);
+			await deleteFolder(id);
+			folders++;
+		}
+		setSel([]);
+		deselect();
+		if (!files && !folders)
+			return showToast(
+				skipped
+					? `Nothing moved — ${plural(skipped, 'card')} here ${skipped === 1 ? 'is a view' : 'are views'} of something else`
+					: 'Nothing to delete'
+			);
+		const parts = [];
+		if (files) parts.push(plural(files, 'file'));
+		if (folders) parts.push(plural(folders, 'folder'));
+		showToast(parts.join(' and ') + ' moved to Deleted', [
+			{ label: 'Open Deleted', action: () => openFolder('deleted') }
+		]);
 	}
 
 	// --- MOBILE drag-to-place (HTML5 DnD is desktop-only). On touch a LONG-PRESS on a
@@ -3383,7 +3564,7 @@
 </script>
 
 
-<svelte:window onresize={fitToViewport} />
+<svelte:window onresize={fitToViewport} ondragend={() => ((libraryDragging = false), (binDropActive = false))} />
 
 {#snippet editRow(depth: number)}
 	<div class="flex flex-col gap-0.5" style="padding-left: {8 + depth * 14}px">
@@ -3517,10 +3698,7 @@
 		draggable="true"
 		title={isFolder ? folder.name : item.name}
 		style:touch-action={tDragging ? 'none' : 'pan-y'}
-		ondragstart={(e) =>
-			isFolder
-				? e.dataTransfer?.setData('application/x-explorer-folder', JSON.stringify(folderDragPayload(folder)))
-				: onItemDragStart(e, item)}
+		ondragstart={(e) => (isFolder ? onFolderDragStart(e, folder) : onItemDragStart(e, item))}
 		ondragover={(e) => isFolder && dragOverInto(e, folder.id)}
 		ondragleave={() => isFolder && (dropFolder = null)}
 		ondrop={(e) => isFolder && dropInto(e, folder.id)}
@@ -3766,7 +3944,7 @@
 								: 'text-gray-300 hover:bg-gray-700'} {dropFolder === row.folder.id ? 'outline-solid outline-2 outline-primary-500' : ''}"
 							draggable="true"
 							ondragstart={(e) =>
-								e.dataTransfer?.setData('application/x-explorer-folder', JSON.stringify(folderDragPayload(row.folder)))}
+								onFolderDragStart(e, row.folder)}
 							oncontextmenu={(e) => folderMenu(e, row.folder)}
 							onclick={() => openFolder(row.folder.id)}
 							ondblclick={() => toggleExpand(row.folder.id)}
@@ -3866,18 +4044,34 @@
 					{/if}
 					<!-- R22 round 7: the bin sits BELOW Scene. It is the least-used pinned row,
 					     and a destructive place belongs under the things you reach for rather
-					     than above them. Still hidden while empty. -->
-					{#if deletedLog($projectManifest).length}
+					     than above them. Still hidden while empty — EXCEPT during a drag (round
+					     11), because a row you cannot see is a row you cannot drop on, and the
+					     very first delete-by-drag is exactly the one that finds the bin empty. -->
+					{#if deletedLog($projectManifest).length || libraryDragging}
 						<button
 							id="deleted-folder"
-							class="whitespace-nowrap rounded px-2 py-1 text-left {$activeFolder === 'deleted'
-								? 'bg-primary-700 text-white'
-								: 'text-gray-300 hover:bg-gray-700'}"
-							title="Files removed from the project — restore them, or free the disk"
+							class="whitespace-nowrap rounded px-2 py-1 text-left {binDropActive
+								? 'bg-red-600/30 text-white ring-1 ring-red-400'
+								: $activeFolder === 'deleted'
+									? 'bg-primary-700 text-white'
+									: 'text-gray-300 hover:bg-gray-700'}"
+							title="Files removed from the project — restore them, or free the disk. Drop files or folders here to delete them."
 							onclick={() => openFolder('deleted')}
 							oncontextmenu={deletedRowMenu}
+							ondragover={(e) => {
+								if (!canAccept(e)) return;
+								e.preventDefault();
+								e.stopPropagation();
+								binDropActive = true;
+							}}
+							ondragleave={() => (binDropActive = false)}
+							ondrop={(e) => void dropToBin(e)}
 							><Icon name="trash-2" size={16} class="mr-1.5 w-4 text-center text-gray-400" aria-hidden="true" />Deleted
-							<span class="text-gray-500">({deletedLog($projectManifest).length})</span></button
+							{#if libraryDragging && !deletedLog($projectManifest).length}
+								<span class="text-gray-500">(drop here)</span>
+							{:else}
+								<span class="text-gray-500">({deletedLog($projectManifest).length})</span>
+							{/if}</button
 						>
 					{/if}
 				</div>
@@ -3901,6 +4095,38 @@
 			onkeydown={gridKeydown}
 			role="region"
 		>
+			<!--
+				R22 round 11 — THE QUESTION, WHERE THE FILES ARE. Sticky at the top of the
+				scrolling grid rather than floating over the viewport; see `askInExplorer`.
+				It stops `click` and `pointerdown` because #explorer-grid answers both — the
+				background click deselects and the press starts a marquee — and answering a
+				question is neither of those. (`onGridPointerDown` already ignores presses
+				inside a `button`, so only the strip's own body needed it.)
+			-->
+			{#if confirmStrip}
+				<!-- svelte-ignore a11y_no_static_element_interactions, a11y_click_events_have_key_events -->
+				<div
+					id="explorer-confirm"
+					class="ex-confirm"
+					onclick={(e) => e.stopPropagation()}
+					onpointerdown={(e) => e.stopPropagation()}
+					onkeydown={(e) => {
+						if (e.key !== 'Escape') return;
+						e.stopPropagation();
+						confirmStripNo();
+					}}
+				>
+					<span class="ex-confirm-icon"><Icon name="trash-2" size={14} /></span>
+					<span class="ex-confirm-text">
+						<span class="ex-confirm-title">{confirmStrip.title}</span>
+						<span class="ex-confirm-detail">{confirmStrip.detail}</span>
+					</span>
+					<button id="explorer-confirm-yes" class="ex-confirm-yes" use:focusConfirmBtn onclick={confirmStripYes}
+						>{confirmStrip.confirmLabel}</button
+					>
+					<button id="explorer-confirm-no" class="ex-confirm-no" onclick={confirmStripNo}>Cancel</button>
+				</div>
+			{/if}
 			{#if !pendingCard && childFolders.length === 0 && gridItems.length === 0}
 				{#if openPack && $openPackLoading}
 					<!-- QW: first open of a pack fetches its item list from the CDN — show a
@@ -4027,7 +4253,7 @@
 								tabindex="0"
 								draggable="true"
 								ondragstart={(e) =>
-									e.dataTransfer?.setData('application/x-explorer-folder', JSON.stringify(folderDragPayload(folder)))}
+									onFolderDragStart(e, folder)}
 								ondragover={(e) => dragOverInto(e, folder.id)}
 								ondragleave={() => (dropFolder = null)}
 								ondrop={(e) => dropInto(e, folder.id)}
@@ -4719,6 +4945,69 @@
 	.ex-list {
 		min-width: 0;
 		overflow: auto;
+	}
+
+	/*
+		R22 round 11 — THE INLINE CONFIRM. It owns its surface for the same reason the list
+		header does (the `ui-panel`/`@apply` trap): it is sticky over scrolling content, so
+		a transparent background would show the cards sliding under the question.
+
+		`z-index: 3` puts it over the list's own sticky header (z 1) and the drop band —
+		while a question is standing it is the thing to read.
+	*/
+	.ex-confirm {
+		position: sticky;
+		top: 0;
+		z-index: 3;
+		display: flex;
+		align-items: center;
+		gap: 8px;
+		margin-bottom: 4px;
+		padding: 6px 8px;
+		border: 1px solid #b91c1c;
+		border-radius: 4px;
+		background: var(--surface, #1f2937);
+		box-shadow: 0 2px 8px rgb(0 0 0 / 35%);
+		font-size: 11px;
+	}
+	.ex-confirm-icon {
+		flex: 0 0 auto;
+		color: #f87171;
+	}
+	.ex-confirm-text {
+		display: flex;
+		min-width: 0;
+		flex: 1;
+		flex-direction: column;
+		line-height: 1.35;
+	}
+	.ex-confirm-title {
+		font-weight: 600;
+		color: #e5e7eb;
+	}
+	.ex-confirm-detail {
+		color: #9ca3af;
+	}
+	.ex-confirm-yes,
+	.ex-confirm-no {
+		flex: 0 0 auto;
+		border-radius: 3px;
+		padding: 3px 10px;
+		font-weight: 600;
+	}
+	.ex-confirm-yes {
+		background: #b91c1c;
+		color: #fff;
+	}
+	.ex-confirm-yes:hover {
+		background: #dc2626;
+	}
+	.ex-confirm-no {
+		border: 1px solid var(--border, #374151);
+		color: #d1d5db;
+	}
+	.ex-confirm-no:hover {
+		background: rgb(255 255 255 / 6%);
 	}
 	.ex-table {
 		width: 100%;

@@ -67,7 +67,7 @@ h.run(async () => {
 		context: { viewport: { width: 1440, height: 900 } },
 		// the bin's own prefs, reached the way a user would rather than through a test door:
 		// deletions must not stop for a confirm, and the bin must survive a reload
-		storage: { 'shared:deleteWithoutConfirm': 'true', 'shared:keepRecycleBin': 'true' }
+		storage: { 'shared:deleteNoConfirm': 'true', 'shared:keepRecycleBin': 'true' }
 	});
 	const page = A.page;
 	await page.waitForFunction(() => !!window.__stores?.explorerView && !!window.__stores?.explorer, null, {

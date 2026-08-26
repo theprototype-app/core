@@ -130,6 +130,47 @@
 		return playing;
 	}
 
+	/**
+	 * R22 ROUND 17 (user): "for audio player also have , . and up/down shortcuts to select
+	 * second to play from (maybe even play when holding, but don't play backwards)".
+	 *
+	 * THE WINDOW OWNS THE KEYBOARD (its listener is in capture phase on the window root —
+	 * the documented rule for keys inside a panel), so the acts are published here and
+	 * bound there. Same split as the animation transport one component over.
+	 *
+	 * A STEP HERE DOES NOT PAUSE, and that is the difference from the animation transport,
+	 * where stepping a frame must pause or you cannot see the frame you stepped to. Sound
+	 * is the opposite: holding "." while it plays IS the fast-forward the user asked for —
+	 * each press jumps a second and the audio keeps running from there. Nothing can play
+	 * backwards, because "." and "," both leave the element playing FORWARD from wherever
+	 * they land; a media element has no reverse and pretending otherwise would mean
+	 * decoding the file backwards by hand.
+	 * @param {number} seconds
+	 */
+	export function nudge(seconds: number) {
+		if (!el || !duration) return;
+		const t = Math.max(0, Math.min(duration, (el.currentTime || 0) + seconds));
+		el.currentTime = t;
+		at = t;
+	}
+	/** @param {number} fraction */
+	export function toFraction(fraction: number) {
+		seekTo(fraction);
+	}
+	export function toggleMute() {
+		muted = !muted;
+	}
+	export function toggleLoop() {
+		loop = !loop;
+	}
+	export function nudgeVolume(by: number) {
+		volume = Math.max(0, Math.min(1, volume + by));
+		if (volume > 0) muted = false;
+	}
+	export function hasAudio() {
+		return duration > 0;
+	}
+
 	function seekTo(fraction: number) {
 		if (!el || !duration) return;
 		const t = Math.max(0, Math.min(duration, fraction * duration));
@@ -173,21 +214,22 @@
 			onerror={() => (error = 'This file could not be played.')}
 		></audio>
 	{/if}
-	<div class="ap-strip">
+	<div class="ap-strip tp-tr-strip">
 		<button
 			id="audio-toggle"
-			class="ap-btn ap-play"
+			class="ap-btn ap-play tp-tr-btn tp-tr-play"
 			title={playing ? 'Pause (Space)' : 'Play (Space)'}
+			data-keys=", . step 1s · up/down 5s · Home/End · 0-9 jump · M mute · L loop"
 			aria-label={playing ? 'Pause' : 'Play'}
 			disabled={!url}
 			onclick={toggle}
 		>
 			{#if playing}<Pause size={16} aria-hidden="true" />{:else}<Play size={16} aria-hidden="true" />{/if}
 		</button>
-		<span class="ap-time" id="audio-at">{formatClock(at)}</span>
+		<span class="ap-time tp-tr-time" id="audio-at">{formatClock(at)}</span>
 		<input
 			id="audio-seek"
-			class="ap-seek"
+			class="ap-seek tp-tr-range tp-tr-seek"
 			type="range"
 			min="0"
 			max="1000"
@@ -200,12 +242,12 @@
 			onchange={onSeekCommit}
 			onpointerup={onSeekCommit}
 		/>
-		<span class="ap-time" id="audio-duration">{formatClock(duration)}</span>
+		<span class="ap-time tp-tr-time" id="audio-duration">{formatClock(duration)}</span>
 		<button
 			id="audio-mute"
-			class="ap-btn"
+			class="ap-btn tp-tr-btn"
 			aria-pressed={muted}
-			title={muted ? 'Unmute' : 'Mute'}
+			title={muted ? 'Unmute (M)' : 'Mute (M)'}
 			aria-label={muted ? 'Unmute' : 'Mute'}
 			onclick={() => (muted = !muted)}
 		>
@@ -213,7 +255,7 @@
 		</button>
 		<input
 			id="audio-volume"
-			class="ap-vol"
+			class="ap-vol tp-tr-range"
 			type="range"
 			min="0"
 			max="100"
@@ -225,9 +267,9 @@
 		{#if !compact}
 			<button
 				id="audio-loop"
-				class="ap-btn {loop ? 'ap-on' : ''}"
+				class="ap-btn tp-tr-btn {loop ? 'ap-on tp-tr-on' : ''}"
 				aria-pressed={loop}
-				title="Loop"
+				title="Loop (L)"
 				aria-label="Loop"
 				onclick={() => (loop = !loop)}
 			>
@@ -249,88 +291,19 @@
 		flex-direction: column;
 		gap: 4px;
 	}
-	.ap-strip {
-		display: flex;
-		height: 30px;
-		flex: 0 0 auto;
-		align-items: center;
-		gap: 6px;
-		border: 1px solid var(--border, #374151);
-		border-radius: 4px;
-		background: var(--surface, #1f2937);
-		padding: 0 8px;
-	}
+	/* R22 round 15: the strip's LOOK is `tp-tr-*` in ui.utilities.css now, shared with the
+	   object preview's animation transport so "same player style" is a promise the code
+	   keeps rather than two copies drifting. What stays here is what is this player's own:
+	   the compact face, the volume slider's width, and the name/error lines. The `ap-*`
+	   class names stay on the markup as hooks — several are load-bearing for the compact
+	   override, and one is what the suite measures the strip's height with. */
 	.ap-compact .ap-strip {
 		height: 26px;
 		gap: 4px;
 		padding: 0 6px;
 	}
-	.ap-btn {
-		display: flex;
-		height: 20px;
-		width: 20px;
-		flex: 0 0 auto;
-		align-items: center;
-		justify-content: center;
-		border-radius: 3px;
-		color: #d1d5db;
-	}
-	.ap-btn:hover {
-		background: rgb(255 255 255 / 8%);
-		color: #fff;
-	}
-	.ap-btn:disabled {
-		opacity: 0.4;
-	}
-	.ap-play {
-		color: var(--accent, #3b82f6);
-	}
-	.ap-on {
-		background: var(--accent, #3b82f6);
-		color: #fff;
-	}
-	.ap-time {
-		flex: 0 0 auto;
-		font-size: 10px;
-		font-variant-numeric: tabular-nums;
-		color: #9ca3af;
-	}
-	/* the seek bar is the one thing that grows; everything beside it is fixed, which is
-	   what keeps the strip the same height in a tall window */
-	.ap-seek {
-		min-width: 0;
-		flex: 1;
-	}
 	.ap-vol {
 		flex: 0 0 56px;
-	}
-	.ap-seek,
-	.ap-vol {
-		height: 4px;
-		appearance: none;
-		border-radius: 2px;
-		background: #4b5563;
-		cursor: pointer;
-	}
-	.ap-seek::-webkit-slider-thumb,
-	.ap-vol::-webkit-slider-thumb {
-		height: 11px;
-		width: 11px;
-		appearance: none;
-		border-radius: 50%;
-		background: var(--accent, #3b82f6);
-	}
-	.ap-seek::-moz-range-thumb,
-	.ap-vol::-moz-range-thumb {
-		height: 11px;
-		width: 11px;
-		border: 0;
-		border-radius: 50%;
-		background: var(--accent, #3b82f6);
-	}
-	.ap-seek:disabled,
-	.ap-vol:disabled {
-		opacity: 0.5;
 	}
 	.ap-name,
 	.ap-error {

@@ -692,6 +692,172 @@ h.run(async () => {
 		'...and the statistics toggle really hides them'
 	);
 
+	// =====================================================================================
+	// R22 ROUND 17 — THE AUDIO TRANSPORT'S KEYS (user)
+	//
+	//   "for audio player also have , . and up/down shortcuts to select second to play from
+	//    (maybe even play when holding, but don't play backwards)"
+	//
+	// The up/down pair is a deliberate departure from the web convention (where it is
+	// volume) and the reasoning is at the binding. Everything else here is what every
+	// player binds: Home/End, 0-9, M, L.
+	// =====================================================================================
+	// A LONGER FIXTURE, because the suite's own tone is a fraction of a second and a
+	// ONE-SECOND step means nothing on it (measured: duration 0, currentTime pinned). Eight
+	// seconds of a quiet sine gives every binding below room to be wrong in.
+	const longSnd = await page.evaluate(async () => {
+		const rate = 8000;
+		const secs = 8;
+		const n = rate * secs;
+		const buf = new ArrayBuffer(44 + n * 2);
+		const view = new DataView(buf);
+		const str = (off, t) => [...t].forEach((c, i) => view.setUint8(off + i, c.charCodeAt(0)));
+		str(0, 'RIFF');
+		view.setUint32(4, 36 + n * 2, true);
+		str(8, 'WAVEfmt ');
+		view.setUint32(16, 16, true);
+		view.setUint16(20, 1, true);
+		view.setUint16(22, 1, true);
+		view.setUint32(24, rate, true);
+		view.setUint32(28, rate * 2, true);
+		view.setUint16(32, 2, true);
+		view.setUint16(34, 16, true);
+		str(36, 'data');
+		view.setUint32(40, n * 2, true);
+		for (let i = 0; i < n; i++) view.setInt16(44 + i * 2, Math.sin(i / 24) * 2000, true);
+		const item = await window.__stores.explorer.addItemFromBytes(buf, 'long-tone.wav', null);
+		return item.id;
+	});
+	await page.waitForTimeout(800);
+	await page.locator('#image-preview-window button[title="Close"]').first().click();
+	await page.waitForTimeout(500);
+	// back to the root, or the card for a just-added item is not on screen to open
+	await page.evaluate(() => window.__stores.explorer.activeFolder.set(null));
+	await page.waitForTimeout(600);
+	await page.locator('[data-card-id="' + longSnd + '"]').dblclick();
+	// WAIT FOR THE METADATA, not for a clock: an <audio> reports no duration until it has
+	// loaded enough of the file, and every binding below is measured in seconds of it
+	await h.eventually(
+		() =>
+			page.evaluate(() => {
+				const el = document.querySelector('#image-preview-window audio');
+				return el && Number.isFinite(el.duration) ? Math.round(el.duration) : 0;
+			}),
+		(d) => d >= 7,
+		'the eight-second tone loads its length',
+		15000
+	);
+	const audioAt = () =>
+		page.evaluate(() => {
+			const el = document.querySelector('#image-preview-window audio');
+			return el ? Number(el.currentTime.toFixed(3)) : null;
+		});
+	const audioState = () =>
+		page.evaluate(() => {
+			const el = document.querySelector('#image-preview-window audio');
+			return el ? { muted: el.muted, loop: el.loop, dur: Number(el.duration) || 0, paused: el.paused } : null;
+		});
+	const st = await audioState();
+	h.check(!!st && st.dur > 0, 'premise: the tone is loaded and has a length (' + JSON.stringify(st) + ')');
+
+	// park it somewhere with room either side, then step
+	await page.evaluate(() => {
+		const el = document.querySelector('#image-preview-window audio');
+		el.currentTime = 3;
+	});
+	await page.locator('#preview-body').click({ position: { x: 20, y: 20 } });
+	await page.waitForTimeout(400);
+	const base = await audioAt();
+	await page.keyboard.press('Period');
+	await page.waitForTimeout(350);
+	const fwd = await audioAt();
+	h.check(
+		fwd !== null && base !== null && fwd > base,
+		'"." moves the playhead forward a second (' + base + ' -> ' + fwd + ')'
+	);
+	await page.keyboard.press('Comma');
+	await page.waitForTimeout(350);
+	const backAgain = await audioAt();
+	h.check(
+		backAgain !== null && Math.abs(backAgain - base) < 0.25,
+		'...and "," brings it back (' + backAgain + ')'
+	);
+	// A STEP HERE DOES NOT PAUSE, unlike the animation transport's — holding "." while it
+	// runs IS the fast-forward the user asked for, and nothing ever plays in reverse
+	// because both keys leave the element playing FORWARD from where they land.
+	await page.keyboard.press('Space');
+	await page.waitForTimeout(400);
+	h.check((await audioState())?.paused === false, 'premise: it is playing');
+	await page.keyboard.press('Period');
+	await page.waitForTimeout(350);
+	h.check(
+		(await audioState())?.paused === false,
+		'stepping while it plays does NOT stop it — that is the fast-forward, and the reason this differs from the frame stepper'
+	);
+	await page.keyboard.press('Comma');
+	await page.waitForTimeout(350);
+	h.check(
+		(await audioState())?.paused === false,
+		'...and stepping BACK keeps it playing forward, never in reverse'
+	);
+	await page.keyboard.press('Space');
+	await page.waitForTimeout(400);
+
+	// the coarser pair
+	const beforeUp = await audioAt();
+	await page.keyboard.press('ArrowUp');
+	await page.waitForTimeout(350);
+	const afterUp = await audioAt();
+	h.check(
+		afterUp !== null && beforeUp !== null && afterUp - beforeUp > 1.5,
+		'up jumps FURTHER than a step does — five seconds against one (' + beforeUp + ' -> ' + afterUp + ')'
+	);
+	// and it must not have walked to the next FILE, which is what left/right do here
+	h.check(
+		(await targetOf(A))?.kind === 'audio',
+		'...and it moved the playhead, not the window — up/down are free here because the file walk is left/right'
+	);
+
+	// Home/End and the digits, which cost nothing and are what every player binds
+	await page.keyboard.press('Home');
+	await page.waitForTimeout(350);
+	h.check((await audioAt()) === 0, 'Home goes to the start');
+	await page.keyboard.press('5');
+	await page.waitForTimeout(350);
+	const half = await audioAt();
+	const dur = (await audioState())?.dur ?? 0;
+	h.check(
+		half !== null && dur > 0 && Math.abs(half / dur - 0.5) < 0.08,
+		'a digit jumps to that tenth of the file (' + half + ' of ' + dur + ')'
+	);
+	await page.keyboard.press('m');
+	await page.waitForTimeout(300);
+	h.check((await audioState())?.muted === true, 'M mutes');
+	await page.keyboard.press('m');
+	await page.waitForTimeout(300);
+	h.check((await audioState())?.muted === false, '...and unmutes');
+	await page.keyboard.press('l');
+	await page.waitForTimeout(300);
+	h.check((await audioState())?.loop === true, 'L loops');
+	await page.keyboard.press('l');
+	await page.waitForTimeout(300);
+	h.check((await audioState())?.loop === false, '...and unloops');
+
+	// ROUND 16's fix reaches this player too: the volume slider is an INPUT, and touching
+	// it used to suppress every shortcut in the window
+	// SCOPED: the Properties pane renders its own compact AudioPlayer, so a bare id can
+	// resolve twice — the ids are duplicated across instances (pre-existing, and harmless
+	// only because neither uses a <label for>).
+	await page.locator('#image-preview-window #audio-volume').click();
+	await page.waitForTimeout(300);
+	const parked = await audioAt();
+	await page.keyboard.press('Period');
+	await page.waitForTimeout(350);
+	h.check(
+		(await audioAt()) > parked,
+		'the shortcuts survive touching the volume slider — a range is a control, not a text field'
+	);
+
 	h.check(
 		(h.pageErrors(A) || []).length === 0,
 		'no page errors (' + (h.pageErrors(A) || []).join(' | ') + ')'

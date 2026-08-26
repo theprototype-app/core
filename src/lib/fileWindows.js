@@ -42,6 +42,26 @@ export function openTextEditor(target) {
  */
 export const previewWindows = writable([]);
 
+/**
+ * R22 ROUND 18 (user): "if clicked cog on both window and then click on Passthrough makes
+ * first window were opened to change this option, this is a bug — also allow cog to be
+ * opened only to show for one window even if I have multiple ones".
+ *
+ * THE BUG AND THE REQUEST HAVE THE SAME FIX, which is why they are one change. Every
+ * preview window renders the same settings pane, so with two cogs open the document held
+ * two elements with `id="preview-passthrough"` — and a `<label for="...">` resolves to the
+ * FIRST match in the document, whatever window it belongs to. Clicking the second window's
+ * label therefore toggled the first window's checkbox. Now that these are per-window
+ * settings (round 14), that mis-aim moves a setting on a window you are not looking at.
+ *
+ * Holding the id of the ONE window whose cog is open fixes both halves: only one pane
+ * exists at a time, so those ids are unique by construction and no label can reach across
+ * windows. The suite asserts that uniqueness directly — the fix rests on the invariant, so
+ * the invariant is the thing to pin.
+ * @type {import('svelte/store').Writable<number|null>}
+ */
+export const openPreviewCog = writable(null);
+
 let previewSeq = 0;
 
 /**

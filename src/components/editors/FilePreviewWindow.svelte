@@ -25,6 +25,7 @@
 	import {
 		previewWindows,
 		previewRaise,
+		openPreviewCog,
 		closePreviewWindow,
 		setPreviewWindow
 	} from '$lib/fileWindows';
@@ -34,6 +35,7 @@
 		previewMultiWindow,
 		previewShowStats,
 		previewAutoRotate,
+		previewAutoPlay,
 		previewFaceOf,
 		previewIdOf,
 		previewPosition,
@@ -44,7 +46,9 @@
 	import { dragWindow } from '$lib/dragWindow';
 	import { focusStack } from '$lib/windowFocus';
 	import ModelPreview from './ModelPreview.svelte';
+	import { get } from 'svelte/store';
 	import AudioPlayer from './AudioPlayer.svelte';
+	import AnimationPlayer from './AnimationPlayer.svelte';
 
 	/**
 	 * R22 round 12 — ONE INSTANCE PER OPEN WINDOW. `winId` addresses this window's entry in
@@ -61,7 +65,12 @@
 	let panning = $state(false);
 	let openedFor: any = null;
 	let winEl: any = $state(null);
-	let cogOpen = $state(false);
+	/**
+	 * R22 round 18 (user): ONE cog open across every window, so the settings pane exists
+	 * once in the document. That is both what was asked for and what fixes the label
+	 * mis-aim — see `openPreviewCog` for why the two are the same change.
+	 */
+	const cogOpen = $derived($openPreviewCog === winId);
 	let player: any = $state(null);
 	let stats: any = $state(null);
 	/**
@@ -102,6 +111,17 @@
 	 */
 	let hintSeen = $state(false);
 
+	/** R22 round 15: what ModelPreview says about this file's animation — null for a still
+	 * one, in which case no transport is drawn and nothing below it moves. */
+	let anim: any = $state(null);
+	/** the ModelPreview instance, for the three transport calls */
+	let model: any = $state(null);
+	/** the transport itself, for the keys — see its note on why the arithmetic lives there */
+	let animPlayer: any = $state(null);
+	/** how much room the transport takes at the foot of the body, so the two readings sit
+	 * above it rather than under it. Zero for a still file, which is most of them. */
+	const transportInset = $derived(anim && anim.duration > 0 ? '42px' : '0px');
+
 	const target = $derived($previewWindows.find((w: any) => w.id === winId) ?? null);
 	const first = $derived(index === 0);
 	/** which face to draw. A target that names no kind is an image — every pre-round-11
@@ -134,10 +154,11 @@
 			winOpacity = 1; // round 14: a new window is opened to be LOOKED at
 			winPassthrough = false;
 			hintSeen = false;
+			anim = null;
 			zoom = 1;
 			panX = 0;
 			panY = 0;
-			cogOpen = false;
+			if ($openPreviewCog === winId) openPreviewCog.set(null);
 			setTimeout(() => winEl?.focus(), 0); // focus so the keys below reach us
 		}
 	});
@@ -150,21 +171,98 @@
 	 */
 	function ownKeys(node: HTMLElement) {
 		const onKey = (e: KeyboardEvent) => {
-			const tag = (e.target as HTMLElement)?.tagName;
-			// a range input owns its own arrows; typing anywhere owns its own keys
-			const inField = tag === 'INPUT' || tag === 'TEXTAREA' || (e.target as HTMLElement)?.isContentEditable;
+			const el = e.target as HTMLElement;
+			const tag = el?.tagName;
+			const type = (el?.getAttribute?.('type') || '').toLowerCase();
+			/**
+			 * R22 ROUND 16 (user): "when clicked on player, then cannot use space to
+			 * play/pause and , . shortcuts".
+			 *
+			 * THE BUG WAS THIS LINE. It read "any INPUT is a field", so the moment you
+			 * touched the transport's own slider — the most natural thing to do in a media
+			 * window — that slider held focus and every shortcut in this window was
+			 * suppressed as though you were typing. A range is a CONTROL, not a text field;
+			 * the two ask completely different things of a keyboard.
+			 *
+			 * So the test is TYPING, narrowly: a text-entry input, a textarea, or a
+			 * contenteditable. A slider, a checkbox or a button is not typing, and a key
+			 * that means something in this window keeps meaning it while one has focus.
+			 */
+			const typing =
+				tag === 'TEXTAREA' ||
+				el?.isContentEditable ||
+				(tag === 'INPUT' && type !== 'range' && type !== 'checkbox' && type !== 'button');
+			/** ...with ONE exception kept deliberately: a focused range still owns the ARROWS,
+			 * because stepping the control under your hand is what those keys do everywhere
+			 * and taking them away to walk to the next FILE would be a nasty surprise. */
+			const onRange = tag === 'INPUT' && type === 'range';
 			const stop = () => {
 				e.preventDefault();
 				e.stopPropagation();
 			};
 			if (e.key === 'Escape') return stop(), close();
 			if (e.key === ' ' || e.code === 'Space') {
-				if (inField) return;
+				if (typing) return;
+				// stopping in CAPTURE also stops the browser activating whichever button in
+				// the strip happens to have focus — otherwise Space would toggle twice and
+				// look like it did nothing
 				stop();
 				if (face === 'audio') player?.toggle?.();
+				else if (face === 'object') animPlayer?.toggle?.();
 				return;
 			}
-			if (inField) return;
+			if (typing) return;
+			if (face === 'object' && (e.key === ',' || e.key === '.')) {
+				if (!animPlayer?.hasClip?.()) return;
+				stop();
+				animPlayer.stepFrame(e.key === '.' ? 1 : -1);
+				return;
+			}
+			// R22 round 16 (user): "would it be good to add shortcut also to auto-rotate and
+			// show statistics?" — yes, and they are the two keys a viewer usually has. R is
+			// this WINDOW's turntable (the same thing a click on the model does, which is why
+			// it is not the pref); I is the info overlay, and that one IS the shared pref,
+			// because hiding chrome everywhere at once is what that switch is for.
+			if (face === 'object' && (e.key === 'r' || e.key === 'R')) {
+				stop();
+				spinning = !spinning;
+				return;
+			}
+			if (face === 'object' && (e.key === 'i' || e.key === 'I')) {
+				stop();
+				previewShowStats.set(!$previewShowStats);
+				return;
+			}
+			/**
+			 * R22 ROUND 17 (user) — THE AUDIO TRANSPORT'S KEYS.
+			 *
+			 * "," / "." move a SECOND, up/down move five. That second pair is a deliberate
+			 * DEPARTURE from the web convention, where up/down is volume (YouTube and most
+			 * players) — the user asked for all four to move the playhead, and in a preview
+			 * window that is the better trade: the volume already has a slider two
+			 * centimetres away and is set once, while finding a moment in a file is the
+			 * whole reason this window is open. The convention is preserved where it costs
+			 * nothing: Home/End, 0-9 for a percentage jump, M for mute and L for loop are
+			 * exactly what every player binds them to.
+			 */
+			if (face === 'audio' && player?.hasAudio?.()) {
+				if (e.key === ',' || e.key === '.') {
+					stop();
+					player.nudge(e.key === '.' ? 1 : -1);
+					return;
+				}
+				if (e.key === 'ArrowUp' || e.key === 'ArrowDown') {
+					stop();
+					player.nudge(e.key === 'ArrowUp' ? 5 : -5);
+					return;
+				}
+				if (e.key === 'Home') return stop(), player.toFraction(0);
+				if (e.key === 'End') return stop(), player.toFraction(0.999);
+				if (e.key === 'm' || e.key === 'M') return stop(), player.toggleMute();
+				if (e.key === 'l' || e.key === 'L') return stop(), player.toggleLoop();
+				if (/^[0-9]$/.test(e.key)) return stop(), player.toFraction(Number(e.key) / 10);
+			}
+			if (onRange) return;
 			if (e.key === 'ArrowLeft') return stop(), step(-1);
 			if (e.key === 'ArrowRight') return stop(), step(1);
 			if (e.key === 'Enter') {
@@ -294,7 +392,7 @@
 		releaseUrl();
 		closePreviewWindow(winId);
 		openedFor = null;
-		cogOpen = false;
+		if (get(openPreviewCog) === winId) openPreviewCog.set(null);
 	}
 
 	const ICONS: any = { image: Image, audio: AudioLines, object: Box, folder: Folder };
@@ -373,7 +471,8 @@
 				aria-pressed={cogOpen}
 				title="Overlay settings"
 				aria-label="Overlay settings"
-				onclick={() => (cogOpen = !cogOpen)}><Settings size={14} aria-hidden="true" /></button
+				onclick={() => openPreviewCog.set(cogOpen ? null : winId)}
+				><Settings size={14} aria-hidden="true" /></button
 			>
 			<button class="ui-button-quiet" title="Close" onclick={close}>✕</button>
 		</div>
@@ -449,7 +548,9 @@
 							onchange={(e) =>
 								previewAutoRotate.set((e.currentTarget as HTMLInputElement).checked)}
 						/>
-						<span class="pv-label pv-grow">Auto-rotate new previews</span>
+						<span class="pv-label pv-grow" title="Press R in a preview to turn THIS window's rotation on or off"
+							>Auto-rotate new previews</span
+						>
 					</label>
 					<!--
 						R22 round 14 (user): "autorotate new previews setting is global, but should
@@ -460,6 +561,23 @@
 						window you were reading from, which is the opposite of what a default is
 						for. The statistics below are deliberately NOT like this — see its note.
 					-->
+					<label class="pv-row pv-check" for="preview-autoplay">
+						<input
+							id="preview-autoplay"
+							class="tp-check"
+							type="checkbox"
+							checked={$previewAutoPlay}
+							onchange={(e) =>
+								previewAutoPlay.set((e.currentTarget as HTMLInputElement).checked)}
+						/>
+						<span class="pv-label pv-grow">Auto-play animations</span>
+					</label>
+					<!--
+						R22 round 15 (user): "in cog I should be able to disable animation auto-play
+						same as for auto-rotate" — so it behaves the same in every respect, the
+						reaching-in included: it seeds a preview as it opens and leaves an open one
+						alone, which is what the transport's own play button is for.
+					-->
 					<label class="pv-row pv-check" for="preview-stats">
 						<input
 							id="preview-stats"
@@ -468,7 +586,7 @@
 							checked={$previewShowStats}
 							onchange={(e) => previewShowStats.set((e.currentTarget as HTMLInputElement).checked)}
 						/>
-						<span class="pv-label pv-grow">Show mesh statistics</span>
+						<span class="pv-label pv-grow" title="Press I in a preview to toggle this">Show mesh statistics</span>
 					</label>
 					<!--
 						...and this one DOES reach every open window, as the user asked and as it
@@ -485,6 +603,7 @@
 			id="preview-body"
 			class="pv-body relative min-h-0 flex-1 overflow-hidden"
 			style="cursor: {face === 'image' && zoom > 1 ? (panning ? 'grabbing' : 'grab') : 'default'}"
+			style:--pv-transport={transportInset}
 			onwheel={onWheel}
 			onpointerdown={(e) => {
 				if (face !== 'image' || zoom <= 1) return;
@@ -526,13 +645,28 @@
 						a place where I will stop rotating" needed no code of its own.
 					-->
 					<ModelPreview
+						bind:this={model}
 						itemId={target.itemId ?? ''}
 						prefabId={target.prefabId ?? ''}
 						name={target.name ?? ''}
 						autoSpin={spinning}
+						autoPlay={$previewAutoPlay}
 						onStats={(s) => (stats = s)}
+						onAnim={(a) => (anim = a)}
 						onToggleSpin={() => (spinning = !spinning)}
 						onInteract={() => (hintSeen = true)}
+					/>
+					<!--
+						R22 round 15 — the animation transport. It renders NOTHING for a still file,
+						so the common case is byte-unchanged; when it does appear the two readings
+						below it move up by its height (`--pv-transport`) rather than being covered.
+					-->
+					<AnimationPlayer
+						bind:this={animPlayer}
+						{anim}
+						onPlay={(on) => model?.setAnimPlaying(on)}
+						onSeek={(t) => model?.seekAnim(t)}
+						onClip={(i) => model?.setAnimClip(i)}
 					/>
 				{/key}
 				<!--
@@ -650,7 +784,7 @@
 
 	.pv-stats {
 		position: absolute;
-		bottom: 0;
+		bottom: var(--pv-transport, 0px);
 		left: 0;
 		right: 0;
 		background: rgb(0 0 0 / 55%);
@@ -665,7 +799,7 @@
 	   switch, so this must never take a click meant for the picture behind it. */
 	.pv-hint {
 		position: absolute;
-		bottom: 20px;
+		bottom: calc(var(--pv-transport, 0px) + 20px);
 		left: 6px;
 		display: flex;
 		align-items: center;

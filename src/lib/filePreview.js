@@ -177,6 +177,68 @@ previewShowStats.subscribe((v) => saveFlag('preview:showStats', v));
 export const previewAutoRotate = writable(readFlag('preview:autoRotate', true));
 previewAutoRotate.subscribe((v) => saveFlag('preview:autoRotate', v));
 
+/**
+ * R22 ROUND 15 (user): "in cog I should be able to disable animation auto-play same as
+ * for auto-rotate" — so it is the same KIND of setting in every respect: a global
+ * default that seeds each preview as it opens and never reaches a window already on
+ * screen. Default ON, because an animated file opened in a preview is almost always
+ * opened to see the animation, and a still first frame looks like a broken import.
+ * @type {import('svelte/store').Writable<boolean>}
+ */
+export const previewAutoPlay = writable(readFlag('preview:autoPlay', true));
+previewAutoPlay.subscribe((v) => saveFlag('preview:autoPlay', v));
+
+/**
+ * FRAMES ARE A UNIT THE FILE DOES NOT CARRY. A glTF clip is keyed in SECONDS at whatever
+ * times its authoring tool wrote, so "how many frames" has no answer until a rate is
+ * chosen — and the only defensible rate is the one the rest of this app already counts
+ * in, the animation editor's `animationFps` (30 unless the user changed it). Reading the
+ * same key is what stops the preview and the timeline disagreeing about frame 40 of the
+ * same file. The UI says the rate out loud for the same reason.
+ * @returns {number}
+ */
+export function previewFps() {
+	if (typeof localStorage === 'undefined') return 30;
+	const raw = Number(localStorage.getItem('animationFps'));
+	return Number.isFinite(raw) && raw >= 1 && raw <= 240 ? Math.round(raw) : 30;
+}
+
+/**
+ * Frames in a clip of `duration` seconds, and the frame a playhead at `t` sits on.
+ *
+ * ONE-BASED for display and never past the count: a 2s clip at 30fps is "60 frames" and
+ * its last instant is frame 60, not 61 and not 0. The count is at LEAST 1 — a
+ * single-pose clip has one frame, and a transport reading "0 frames" over a model that
+ * is visibly moving is worse than a rounding it cannot see.
+ * @param {number} duration @param {number} [fps]
+ */
+export function frameCount(duration, fps = previewFps()) {
+	return Math.max(1, Math.round((Number(duration) || 0) * fps));
+}
+/**
+ * Which frame a playhead at `t` seconds sits on.
+ *
+ * R22 ROUND 18 — THE EPSILON IS LOAD-BEARING, and it is the whole of the reported stall:
+ * "using forward shortcut holding it sometimes hangs after ~150 frames and does not
+ * proceed further ... stops on frame 123 and cannot move forward unless clicked by mouse".
+ *
+ * A step converts a frame to SECONDS (`n / fps`) and the readout converts it back
+ * (`t * fps`), and in binary floating point that round trip is not the identity. Frame 123
+ * at 30fps is 4.1 seconds, and `4.1 * 30` is 122.99999999999999 — so the frame read back
+ * is 123 when 124 was asked for, the next step computes its successor from 123 again, and
+ * the counter is wedged. Every press after that is doing exactly what it was told and
+ * landing in the same place. Reproduced on the user's own 456-frame FBX, stopping dead on
+ * 123 of 456 — not the end of anything, just the first index where the arithmetic slips.
+ *
+ * It went unnoticed on a 60-frame fixture because plenty of small n survive the trip; the
+ * first casualty happens to be past where a short clip ends.
+ * @param {number} t @param {number} duration @param {number} [fps]
+ */
+export function frameAt(t, duration, fps = previewFps()) {
+	const total = frameCount(duration, fps);
+	return Math.min(total, Math.max(1, Math.floor((Number(t) || 0) * fps + 1e-6) + 1));
+}
+
 /** @param {string} key @param {boolean} fallback */
 function readFlag(key, fallback) {
 	if (typeof localStorage === 'undefined') return fallback;

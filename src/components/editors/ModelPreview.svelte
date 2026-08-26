@@ -18,14 +18,19 @@
 		prefabId = '',
 		name = '',
 		autoSpin = true,
+		autoPlay = true,
 		onStats,
 		onToggleSpin,
-		onInteract
+		onInteract,
+		onAnim
 	}: {
 		itemId?: string
 		prefabId?: string
 		name?: string
 		autoSpin?: boolean
+		/** R22 round 15: whether an animated file starts PLAYING. The pref's value at
+		 * opening time; the live state after that belongs to the transport. */
+		autoPlay?: boolean
 		onStats?: (s: any) => void
 		/** the user CLICKED without dragging — the turntable's ONLY on/off switch */
 		onToggleSpin?: () => void
@@ -33,7 +38,29 @@
 		 * prompt until this fires once — see its comment for why that is the standard
 		 * shape rather than a label tied to the turntable's state. */
 		onInteract?: () => void
+		/** R22 round 15: does this file animate, and where is its playhead. `{clips, index,
+		 * duration, playing, time}` on load and on every change; `null` for a still file. */
+		onAnim?: (a: any) => void
 	} = $props()
+
+	/**
+	 * R22 round 15 — the transport handle. The mixer is built inside the render effect
+	 * (it is advanced by that loop's delta and by nothing else), so the three calls the
+	 * window needs are published here and delegate inward. A window holding a preview
+	 * whose model has not loaded yet simply gets no-ops, which is the honest behaviour:
+	 * there is nothing to play.
+	 */
+	let animApi: { play: (on: boolean) => void; seek: (t: number) => void; clip: (i: number) => void } | null =
+		null
+	export function setAnimPlaying(on: boolean) {
+		animApi?.play(on)
+	}
+	export function seekAnim(t: number) {
+		animApi?.seek(t)
+	}
+	export function setAnimClip(i: number) {
+		animApi?.clip(i)
+	}
 
 	/** the live spin flag the render loop reads. A plain `let` on purpose — see the long
 	 * note inside the effect for why reading the PROP there tore the GL context down. */
@@ -71,6 +98,79 @@
 		// item source was accidentally safe because it only touched `onStats` after an
 		// `await`; the prefab source is synchronous and had no such luck.
 		const report = untrack(() => onStats)
+		const reportAnim = untrack(() => onAnim)
+		const startPlaying = untrack(() => autoPlay)
+
+		/**
+		 * R22 ROUND 15 — THE ANIMATION TRANSPORT.
+		 *
+		 * The mixer lives HERE, beside the render loop that has to advance it, rather than
+		 * in the window above: a mixer is driven by a per-frame delta, and the only place
+		 * that owns one is the loop. The window drives it through the three exported calls
+		 * below, which is the same shape `onToggleSpin` already uses — this component owns
+		 * the three.js, the window owns the chrome.
+		 *
+		 * PAUSE IS `action.paused`, NOT "stop updating the mixer". Freezing the mixer looks
+		 * identical while the model is still, and is wrong the moment anything else moves:
+		 * the delta the loop keeps feeding would be swallowed and the pose would jump when
+		 * you resumed. Paused actions hold their time and let the mixer keep ticking.
+		 */
+		let mixer: any = null
+		let action: any = null
+		let clips: any[] = []
+		let clipIndex = 0
+		let animPlaying = false
+		/** the readout is published on a ~15Hz gate. A number written 60 times a second
+		 * flushes svelte 60 times a second for a reading nobody can follow at that rate;
+		 * the browser's own `timeupdate` fires about four. */
+		let lastPublish = 0
+
+		const animState = () => ({
+			clips: clips.map((c: any) => ({ name: c.name || 'Clip', duration: c.duration })),
+			index: clipIndex,
+			duration: clips[clipIndex]?.duration ?? 0,
+			playing: animPlaying,
+			time: action ? action.time : 0
+		})
+		const publishAnim = () => reportAnim?.(clips.length ? animState() : null)
+
+		const useClip = (i: number, play: boolean) => {
+			if (!mixer || !clips[i]) return
+			action?.stop()
+			clipIndex = i
+			action = mixer.clipAction(clips[i])
+			action.reset()
+			action.play()
+			action.paused = !play
+			animPlaying = play
+			mixer.update(0)
+			publishAnim()
+		}
+
+		/** play/pause, reached from the top-level export below. */
+		const playAnim = (on: boolean) => {
+			if (!action) return
+			// a transport asked to play from the very end restarts, or the button does
+			// nothing and looks broken (every video player does this)
+			const d = clips[clipIndex]?.duration ?? 0
+			if (on && d && action.time >= d - 1e-4) action.time = 0
+			action.paused = !on
+			animPlaying = on
+			publishAnim()
+		}
+		/** scrub. The mixer is nudged by ZERO so the pose lands on the new time without any
+		 * time passing — the same trick a timeline scrub uses. */
+		const seekTo = (t: number) => {
+			if (!action || !mixer) return
+			const d = clips[clipIndex]?.duration ?? 0
+			action.time = Math.max(0, Math.min(d, t))
+			mixer.update(0)
+			publishAnim()
+		}
+		const pickClip = (i: number) => useClip(i, animPlaying)
+		// the window drives the transport through this handle, the same way it
+		// already holds the AudioPlayer
+		animApi = { play: playAnim, seek: seekTo, clip: pickClip }
 
 		// R22 round 13 — WHY `autoSpin` IS NOT READ DIRECTLY, and it is the same hazard the
 		// note above describes reached by a different door.
@@ -161,6 +261,15 @@
 			}
 			if (disposed || !obj) return
 			model = obj
+			// the clips ride ON the object (see explorer.js's parse). An FBX carries them
+			// itself; a glTF's are attached there.
+			clips = Array.isArray(obj.animations) ? obj.animations.filter((c: any) => c?.duration > 0) : []
+			if (clips.length) {
+				mixer = new THREE.AnimationMixer(obj)
+				useClip(0, startPlaying)
+			} else {
+				publishAnim()
+			}
 			const box = new THREE.Box3().setFromObject(obj)
 			if (!isFinite(box.min.x)) return
 			const size = Math.max(box.getSize(new THREE.Vector3()).length(), 0.001)
@@ -270,10 +379,24 @@
 		el.addEventListener('contextmenu', (e) => e.preventDefault())
 		window.addEventListener('pointerup', up)
 
+		const clock = new THREE.Clock()
 		const loop = () => {
 			if (disposed) return
 			raf = requestAnimationFrame(loop)
+			const dt = clock.getDelta()
 			if (spinNow && !dragging && model) pivot.rotation.y += 0.005
+			if (mixer) {
+				mixer.update(dt)
+				// the readout, gated — and only while it is actually moving, so a paused
+				// transport costs nothing at all
+				if (animPlaying) {
+					const now = performance.now()
+					if (now - lastPublish > 66) {
+						lastPublish = now
+						publishAnim()
+					}
+				}
+			}
 			renderer.render(scene, camera)
 		}
 		resize()
@@ -283,6 +406,14 @@
 
 		return () => {
 			disposed = true
+			try {
+				action?.stop()
+				mixer?.stopAllAction()
+				if (model) mixer?.uncacheRoot(model)
+			} catch {}
+			mixer = null
+			action = null
+			animApi = null
 			cancelAnimationFrame(raf)
 			ro.disconnect()
 			el.removeEventListener('pointerdown', down)

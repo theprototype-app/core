@@ -93,6 +93,99 @@ loadable play content. Everything a user does must be visible to connected peers
   — a held key re-stamps several times a second). The `spawn` node acts on the stamp edge
   inside the actionSeenAt family; the INITIATOR spawns and peers receive the ordinary
   `duplicate`, so there is no new message type.
+- `src/lib/sharedLibrary.js` + `src/lib/transferLedger.js` + `components/editors/
+  TransferLog.svelte` (ROADMAP 22 — THE EXPLORER LIBRARY REPLICATES AT LAST). The finding
+  the batch rests on: **the library did not replicate AT ALL** — no message carried folders
+  and none carried item rows, so a session agreed on WHICH SCENES EXIST (the manifest) and
+  on nothing about where anything lives. R1 promotes the `.tp` FORMAT 2 shape
+  (`folders[{id,name,parentId}]` + `items[{hash,name,kind,folderId}]`) into the LIVE
+  manifest, both keys OMITTED when empty (the `labels` precedent) so a project that shares
+  nothing is byte-identical to pre-R1. The SHARED SUBSET only — a private file NAME never
+  leaves the machine, and a document that replicates whole on every edit must not grow with
+  a library nobody shared. `PROJECT_FORMAT` 3: the zip is unchanged, but an older reader
+  spreads the new manifest keys through and republishes folder ids its own import remapped
+  away, which is what the gate is for (`remapSharedIndex` on open).
+  · THE FLAG LIVES ON THE LOCAL RECORD, not in the document: `share?: mine|peer|no`
+  (absent = LOCAL, which is the whole migration), plus `owner` and `wasShared`. NAMING:
+  `imported` is PROVENANCE, `share` is DISTRIBUTION, and they are orthogonal.
+  · TWO IDENTITIES: an item is its content HASH; a shared FOLDER id is NETWORK identity (an
+  adopting peer creates it under that exact uuid, so every `folderId` resolves everywhere
+  with no remapping — the one place this differs from a .tp import, which remaps precisely
+  because a file must not collide with the library it lands in).
+  · PLACEMENT CASCADES (locked): sharing a folder publishes its ANCESTORS, so every peer
+  rebuilds the same tree. Clamping was tried first and is what made a shared folder look as
+  though its contents had not arrived — they had, one level up. The trade the answer accepts
+  is that an ancestor NAME travels, as placement only.
+  · THE HARD PART: a whole-document latest-wins singleton with SEVERAL AUTHORS. Two peers
+  pressing Share inside one millisecond each build a document from a view lacking the other
+  row. Rather than per-row stamps (hudDocs argued that down), ONE WRITER PER ROW and the
+  writer is whoever HOLDS the file (the peerVars rule): a publish carries every foreign row
+  VERBATIM so it can never delete somebody else file; unshare is therefore authoritative;
+  and a document missing a row of OURS makes us re-publish. It TERMINATES because
+  `publishSharedIndex` is idempotent on CONTENT — the debounce is batching, not the thing
+  that stops a storm. `at` must therefore be STABLE for an unchanged row.
+  · TOMBSTONES (`manifest.removed`) exist only because ANYONE may unshare (locked): the
+  publisher reconcile would otherwise resurrect anybody else removal forever. Self-pruning
+  — a row whose stamp is newer has been re-shared, so its tombstone is spent, and there is
+  no lifetime policy to invent. `unshareAuthority` keeps the owner-only rule as a LOCAL
+  setting (the wire enforces nothing either way).
+  · DELETE IS NOT UNSHARE. `manifest.deleted` is the LOG (what/who/when/thumbnail, capped
+  200); each peer moves its copy to the HIDDEN shelf rather than destroying bytes, so
+  Restore works from your own disk. Restore must also LIFT the tombstone or the row it
+  republishes is filtered straight out. `recycleBinEnabled` / `keepRecycleBin` /
+  `deleteWithoutConfirm` are LOCAL prefs; emptying reclaims BYTES ONLY, never the log.
+  · BYTES: `assetShare` gained a CHUNK protocol (`assetstart`/`assetchunk`) — peerjs
+  already chunks internally and a 12 MB message goes through intact, so slicing buys
+  nothing for throughput. It buys per-file PROGRESS (peerjs own chunking is invisible), an
+  INTEGRITY check on reassembly (the single-shot path stored a truncated file and served it
+  on), and it un-pinned `MAX_SHARED_BYTES` from 5 MB to the Explorer own 25 MB import cap.
+  Costs three surfaces a single send lacks: backpressure (pace on `bufferedAmount`), partial
+  state (a stalled transfer is reaped) and ordering.
+  · `assetmissing` is the NEGATIVE reply, and TWO CAPS not one: a request is ~40 bytes so
+  requests are unlimited, while the cap sits on the SENDER outgoing bytes — capping requests
+  meant three dead hashes starved every real download behind them.
+  · `transferLedger` is a LEAF (stores + arithmetic, no protocol) so the aggregate maths is
+  testable with no peer and no bytes. The summary is BATCH-scoped: counting every row makes
+  the fiftieth download read 98% before moving a byte. `byBytes` says WHICH kind of
+  percentage you are reading. `indicatorState` is the four-state sync convention
+  (offline/idle/active/failed) and OFFLINE must not look like an error.
+  Plan + as-built: cloud `plans-core/roadmap-22-shared-library-sessions.md` sections 5-8.
+- `src/lib/explorerView.js` (R22 round 9, a LEAF — stores + arithmetic, imports NOTHING
+  from the Explorer): THUMBNAILS OR A SORTABLE LIST, plus the bin's grouping. The column
+  model is DATA (`LIBRARY_COLUMNS` / `DELETED_COLUMNS`, `columnsFor`) and `sortEntries` is
+  a PURE comparator, so the part that is easy to get subtly wrong is testable with no
+  browser (the `transferLedger`/`hudArrange` shape). Everything LOCAL — a view mode is a
+  fact about this screen, so it never replicates, saves or undoes.
+  · **THE MODE IS GLOBAL; COLUMNS AND SORT ARE PER VIEW.** One segmented control in the
+  header must not appear to do nothing when you walk into another folder. Columns cannot
+  be shared: the bin owns two the library has no value for (deleted by / deleted at) and
+  the library owns ones a log row cannot answer — a bin row has NO SIZE (the log records
+  what a file was, not how big it was, and after a purge the number can never be derived)
+  and its "added" date IS its deleted date. `explorerColumns` stores the VISIBLE keys, so
+  a column added later shows by default instead of being suppressed by every saved set.
+  · TWO SORT RULES beyond the obvious: **folders first whatever the sort** (a folder is a
+  place, a file is a thing — interleaving by size makes a tree unnavigable) and a TIE
+  falls back to name then id, INDEPENDENT of direction. `Array.sort` is stable, so an
+  unbroken tie keeps whatever order a five-branch derivation produced, which is not an
+  order two peers looking at one project can agree on.
+  · **THE SORT IS APPLIED IN `gridEntries`**, the ONE array Shift-ranges, the arrow keys,
+  Ctrl+A/I and the marquee all read their order from — sorting only where the rows are
+  drawn leaves a Shift-range picking cards from two rows away. Thumbnails keeps its
+  existing order, so that mode is byte-unchanged.
+  · The rows live in `Explorer.svelte`, deliberately NOT a component: a card and a row
+  share nine handlers, six helpers and the inline-rename snippet, so a component would
+  need thirty props and the two would drift on the next behaviour added to either. Every
+  interaction IS the function the card calls. A `<table>` because a sortable grid of
+  columns is one — the head and every row agree on their widths for free.
+  · THE BIN: `groupByDeleter` renders as collapsible SECTIONS, not navigable folders (a
+  bin is read by COMPARING who threw what away, and a folder you must walk into and back
+  out of to compare is the one shape that makes that harder); nothing is minted, the
+  cards' own no-CRUD rule. "Deleted by me" first, and an UNATTRIBUTED row (empty peer id)
+  gets its own section and sorts LAST. `tp-seg`/`tp-seg-btn` in `ui.utilities.css` are the
+  app's first shared segmented control — ToolboxWindow's `.tbx-seg` is styled by the shell
+  it lives in, so it could not be reused; the armed half is driven by `aria-pressed` so
+  the styling and the accessibility tree cannot disagree.
+  Plan: cloud `plans-core/roadmap-22-shared-library-sessions.md` section 10.
 - `src/lib/objectPermissions.js` (#14, store-only) — viewer object permissions, ONLY
   active when a roles plugin publishes `rolesInfo` (OSS byte-unchanged): `canEditObject`
   (a viewer edits ONLY their own `__localOnly` objects), `markLocalOnly`/`clearLocalOnly`,
@@ -1451,6 +1544,81 @@ loadable play content. Everything a user does must be visible to connected peers
 
 ## Hard-won gotchas (do not rediscover)
 
+- **AN INVALID ICE SERVER DOES NOT DEGRADE — IT THROWS, AND TAKES ALL CONNECTIVITY WITH
+  IT.** A TURN entry with an empty username or credential makes Chromium refuse the
+  RTCPeerConnection outright (`InvalidAccessError: ICE server parsing failed`), so
+  SIGNALING KEEPS WORKING — a peer id arrives, the Connect pill looks healthy — and no
+  data channel can ever open to anybody. Reported as "I get a peerID but no connect
+  toasts". `iceServers()` gated on the username alone and wrote `credential:
+  c.turnCredential || ''`, i.e. it emitted the exact shape that throws; it now requires
+  BOTH halves, drops a partial entry (keeping STUN) and says so once. Reachable through
+  the Settings TURN fields by any user, not just from a half-filled `.env`.
+- **A REGRESSION CAN BE A LATENT DEFECT FINALLY REACHING THE LIGHT.** The change that
+  "caused" the above (round 9 making an env host win on localhost) was correct and stayed;
+  what it did was route localhost through a branch that had never run with this `.env`.
+  Before reverting, ask whether the change exposed rather than created the fault — and
+  whether the exposed path is reachable another way. And note the e2e suite could not have
+  caught it: it runs against a `.app` hostname, and the branch was gated on
+  `location.hostname`.
+- **A DRAG PAYLOAD CAN CARRY MORE THAN THE DROP READS.** `dragPayloadFor` has attached the
+  whole multi-selection as `items` since 21-H3 for the VIEWPORT drop, while `dropInto`
+  moved `payload.id` only — so "move these five files" existed on the wire and was thrown
+  away on arrival, reported as "only the latest clicked is moved". When one consumer of a
+  payload grows a field, grep the other consumers.
+- **`absolute inset-0` INSIDE A SCROLLER PINS TO THE CONTENT, NOT THE VIEWPORT.** The
+  Explorer's drop highlight is a child of `#explorer-grid` (`overflow-y: auto`), so
+  scrolled 800px down it drew 800px above the visible area. The MARQUEE in the same
+  container is absolute for the opposite reason — it must scroll with the cards it picks —
+  so the two cannot share a rule. Offset by `scrollTop` with the visible height; do NOT
+  reach for `position: fixed`, which is measured against any transformed or
+  backdrop-filtered ancestor.
+
+- **A CLASS WITH NO CSS CAN STILL BE LOAD-BEARING.** `.explorer-card` /
+  `.explorer-folder-card` match nothing in any stylesheet — they are how three handlers on
+  `#explorer-grid` tell a card from the background (`closest('.explorer-card, …')`). The
+  R22 list view's bare `<tr>` matched neither, so a click SELECTED a row and
+  `gridBackgroundClick` deselected it in the same gesture, a press started a marquee over
+  it, and its item menu was replaced by the background one — three symptoms, one missing
+  class. Grep a class before assuming it is decoration, and when adding a NEW way to draw
+  an existing thing, carry its behavioural markers.
+- **A `$derived` can track the wrong store and look perfect.** The bin's `restorable` came
+  from `canRestoreDeleted`, which reads the two item shelves through `get()`; the derived
+  around it tracked `$projectManifest`, and a PURGE deliberately leaves the manifest alone.
+  So "Delete permanently" freed the blob and dropped the record — measured — while the card
+  and its menu stayed byte-identical, still offering a Restore that could not work.
+  Reported as "Delete permanently does not remove the file": nothing observable changed.
+  The `get()`-registers-no-dependency rule with a second edge — ask not only "does this
+  helper read a store" but "does the derived track the store this ACTION writes".
+- **A HOSTNAME SNIFF BEAT `.env`, and no suite could see it.** `peerServer`'s default mode
+  asked `isLocalDev` (hostname not ending .io/.app) BEFORE `HAS_SELF_HOSTED`, so on
+  localhost a configured `VITE_PEER_HOST` was never consulted — reported as "Server local
+  dev / localhost:9001" despite `.env`. Invisible to e2e because the suites run against
+  `theprototype.app:5173`, which ends in `.app` and takes the other branch. An explicit env
+  host wins now and the sniff is the no-`.env` fallback; the localhost server is a
+  deliberate fourth MODE. When a heuristic and an explicit setting disagree, check which
+  one the code asks first — and whether your test URL happens to dodge it.
+- **An owner stamp can be EMPTY, and reading it as a peer names nobody.** `meAsOwner`
+  stamps whatever `peer.id` holds, so anything recorded before the mesh assigns one carries
+  an empty id. The bin's first grouping read that as somebody else and rendered a section
+  headed "Deleted by peer" (the `'peer ' + id.slice(0,4)` fallback with nothing to slice).
+  An unattributed row is its own case — not mine, not theirs.
+- **`ContextMenu` documents `checked?` and `ContextMenuItems` renders it as BOLD + a tinted
+  pill, never a tick** (its own comment says why: the accent is a salmon, so tinting the
+  text would sit next to `danger` red). A test must assert the computed style; a probe
+  looking for a glyph reports the feature missing. And its rows are `[role=menuitem]`
+  DIVs — a `button` selector returns [] while the menu is visibly open.
+
+
+  prefix), which svelte-check reports as used-before-declaration.
+- **A build-time env var is inlined into whatever the dev server serves**, so a personal
+  bypass in a gitignored `.env` silently turned a COMMITTED assertion red locally while it
+  would have stayed green in CI. Gate any local override on the debug hook.
+- **A modal left open is a full-viewport click shield**, and the element playwright reports
+  as intercepting is whatever sits under the cursor (an Accordion header, a transform-
+  toolbar button). Close what you open, and when a click times out print
+  `document.elementFromPoint` before reading any handler.
+- **A batch-scoped aggregate is the only honest progress percentage.** Counting every row a
+  ledger holds makes the fiftieth item read 50/51 before it has moved a byte.
 - **THE PALETTE HAS A RULE NOW, and it is two halves.** A user filed "Key Press is in
   Triggers, it should be in Input" — and reading the palette against the socket types the
   catalog already declares showed it was almost perfectly sorted with exactly two nodes
@@ -1919,6 +2087,43 @@ loadable play content. Everything a user does must be visible to connected peers
   object just turned white and lost its own colour); a glow with no colour of its
   own takes `material.color`. The Inspector had no emissive row at ALL until
   2026-08-17 — nothing in the app set that property except the selection tint.
+- **A PROP READ INSIDE AN `$effect` RE-RUNS IT ON EVERY PARENT RENDER, and for a
+  WebGL component that is fatal.** `ModelPreview` touched its `onStats` prop inside
+  the effect that builds the renderer; every consumer passes an INLINE arrow, which
+  is a new function each render, so any parent re-render tore the renderer down
+  (`forceContextLoss`) and immediately asked the SAME canvas for a new context —
+  which returns **null**, after which three throws `cannot read properties of null
+  (reading 'precision')` FROM INSIDE THE EFFECT and takes the whole svelte flush with
+  it. The visible symptom was unrelated UI failing to mount (the pop-out preview that
+  was opening). Read such a callback through `untrack`, and guard renderer creation.
+  The item source only escaped it by touching the prop after an `await`.
+- **AN INCOMPLETE `node_modules` MOVES THE svelte-check BASELINE AND KILLS THE APP.**
+  A lane worktree missing `@shaderfrog/core` fails import-analysis on
+  `shaderBackends.js`, so the app never boots (every suite dies in setupPage's
+  `waitForFunction`) — and it reads **387/62 instead of 385/62** on BOTH base and
+  branch, so a gate measured there is meaningless in either direction. `npm install`
+  in the worktree and re-measure before trusting any number.
+- **A NAME-BASED MIGRATION MUST BE WRITER-ONLY.** 21-I1 folds duplicate scene cards
+  by NAME, which is a migration of your own library against your own project — and on
+  a JOINER it is wrong twice: ADOPTING would file your unrelated `Arena.tpscene` into
+  the host's history and broadcast it (travel would then load a world nobody in the
+  room has seen), and FOLDING is no safer, because a joiner that has not pulled the
+  host's bytes holds only its OWN copy, so the sweep hides the single file it has —
+  measured, and it left the library with zero cards. A matching filename proves two
+  files sit on one machine under one name; it proves NOTHING across two machines.
+  Local data may never disappear because a remote document reused a name.
+- **A GATE ON BYTES IS NOT A GATE ON THE DOCUMENT.** The `.tp` "scene version history"
+  switch stopped old versions' BYTES from being written while the embedded manifest
+  went on claiming every one of them, so the recipient opened a project whose rows all
+  said "Not held" — the dead-pointer shape the 21-G3 header forbids, and the very thing
+  the folder-scoped export already trimmed its manifest to avoid. When you gate what a
+  file CARRIES, gate what it CLAIMS in the same breath.
+- **A SUITE SECTION THAT SAVES OR ADDS OBJECTS PERTURBS ITS NEIGHBOURS.** A guard
+  inserted mid-file broke four later checks at once: its `/create box` broke a "four
+  objects are open" premise, and its save moved `currentLevel` away from the scene the
+  restore section reasons about. Such a section goes LAST and under its own scene name
+  — a sibling section built its own `Depot` and asserted a single-hash history that a
+  second `Depot` would have poisoned.
 - **MEASURE THE LIMIT BEFORE BUILDING THE WORKAROUND.** The backlog asked for
   chunked meshgeo to lift the 45000-float cap; two peers carried **3,000,000
   floats (12 MB) intact in 4.9 s**, because peerjs already chunks binary itself.
@@ -3163,6 +3368,58 @@ override for e2e — never share 5173 (the user's main-checkout server).
   (open-core: OSS ships only inert hooks — capability gate / auth hook /
   VITE_CLOUD_PLUGIN — cloud repo holds registration/rooms/roles; contract in its
   MAINTAINING.md).
+- Status (2026-08-23): **v1.7.0 RELEASED — "Make a game, keep a project"**.
+  main @a51a3eb (tag `v1.7.0`), release.yml green, GitHub Release published,
+  cloud deployed at `CORE_REF=v1.7.0` (prod version.json 1.7.0/a51a3eb), docs site
+  deployed. THE WHOLE OF ROADMAP 21 plus the loose-scenes batch: 93 feature/fix
+  commits since v1.6.0. Baseline **385/62** and the release.yml gate already matched,
+  so the workflow needed no edit. PRs #178 (fix/loose-scenes -> release/next) and
+  #179 (release/next -> main), both merge-commits.
+  **THE LOOSE-SCENES BATCH** (the last four commits, and the reason to read this):
+  the finding is that **the Explorer library does not replicate AT ALL** — no message
+  carries folders and none carries item rows, while `projectManifest` does. So a peer
+  could TRAVEL to a scene it could not SEE. Fixed in four commits: (1) a scene FILE is
+  not a project member — travel marks a file the manifest does not name `unsaved`
+  (tested by HASH-in-history, never by name), `hideOldVersions` skips an `imported`
+  stamp so independently dragged-in files stop swallowing each other, the
+  duplicate-import modal + the Settings ▸ Files rule, and the one-item-per-hash
+  invariant `importFiles` had been breaking (incl. a thumbnail-decode race, fixed with
+  an in-flight promise per hash); (2) the unsaved-changes guard — "Open here" bypassed
+  it, it read a 2s-THROTTLED verdict so a just-made edit was lost, a scene with no
+  identity was never guarded, a file rename never reached the name the save uses, and a
+  pending inline edit was discarded by the next editor opening; (3) **P2** — derived
+  cards for project scenes this device does not hold (opening one fetches it),
+  `peerScenes.js` on the gamePresence shape (`atscene`, one writer per row, reply on
+  getmodulestate, dropped at all three disconnect sites), rooms DERIVED via
+  `roomsOfSession`, and saving a loose scene ADOPTS its source as version 1; (4) one
+  predicate `elsewhereThan` behind Watch, the preview join and RENDERING — a peer in
+  another scene is not drawn, cannot be watched (disabled WITH the reason), watching
+  stops if they travel away, and `broadcast` withholds pose streams (allowlist
+  `camera`/`vrhands`) with an arrival re-publish because that send is CHANGE-GATED.
+  **ONLY ON EVIDENCE is the rule everywhere**: an absent row or an empty scene on
+  either side never gates, because a joiner stands in the host's content without
+  learning its name. New suites: import-duplicates(65), scene-open-guard(30),
+  scene-rooms(37); four guards proven by BREAKING them. Standing pre-existing reds,
+  A/B'd against base: `explorer-drop` last check, `explorer-files`, `peers-popover`.
+  NEXT: roadmap 22 (cloud `plans-core/roadmap-22-shared-library-sessions.md`) — forks
+  locked (replicate the INDEX per-item opt-in; ONE mesh with scenes as tags;
+  scene-is-primary renaming), and the vocabulary settled: **session = the mesh, room =
+  who is in a scene, PocketBase rooms stay DISCOVERY** — that naming blocks R4.
+- Status (2026-08-25): **ROADMAP 22 — THE SHARED EXPLORER LIBRARY. R1/R2/R3/R7 + R8 and
+  four review rounds EXECUTED on `feat/22-shared-library` (lane `theprototype-lane-snap`
+  @5202), 10 commits off release/next @f46d335, NOT PUSHED.** svelte-check **385/62** at
+  every commit; build green; debugStores **171/171/171**. Suite `shared-library` = **196
+  checks, two peers**, with a counterfactual proven per round (reconcile, veto, tombstone,
+  move-publish, slice integrity, recycle bin, batch scoping). Design in the architecture
+  entry. NOT DONE and next: the Explorer LIST VIEW with sortable columns (chosen in-window
+  and honestly not built — it needs a sort model, per-column visibility and persistence,
+  and it is what the Deleted group-by-deleter renders through), the SESSIONS work (a "Save
+  current project" button beside Save-scene, per-entry sizes, a scenes/projects filter,
+  `navigator.storage.estimate()` in the Explorer header), and reported items still open: a
+  local `vite dev` shows "Server local dev / localhost:9001/peerjs" despite `.env`, a stray
+  `Shared` folder on Share-all, "delete permanently" not removing the file, and the
+  one-file/unsaved-scene prompt. Plan + as-built: cloud
+  `plans-core/roadmap-22-shared-library-sessions.md` sections 5-8.
 - Status (2026-08-22, later): **B7 SPAWNER MERGED; DEVX #18, THE PALETTE RULE AND THE
   COLLECTIBLE TOOLBOX v2 ARE OPEN PRs.** `release/next` @19a8a3c carries R3a (#170) and
   B7 (#172, the spawner — see the architecture entry). OPEN: core **#176** DEVX #18 (the
@@ -3221,6 +3478,31 @@ override for e2e — never share 5173 (the user's main-checkout server).
   VR, a 3+ player per-player scramble. Plan: cloud `plans-core/roadmap-21g-projects-
   presence.md` ROUND 3 REVISED.
 - Status (2026-08-21, latest): **ROADMAP 21-G — PROJECTS, CROSS-SCENE PRESENCE,
+- Status (2026-08-22, latest): **21-G ROUND 2 — DCC-STANDARD PROJECTS (G7-G10 + docs)
+  EXECUTED same-day off release/next @6d9b285 (post #164-#166; baseline re-measured
+  pristine 385/62, held at every commit). FOUR PRs OPEN against release/next, NONE
+  merged (awaiting the user's word), landing order #169 (G9 identity: manifest `name`,
+  the sceneIdentity window title with the ONE-serialization-per-session dirty check,
+  the hash-keyed open-scene accent, saves into the active folder) -> #167 (G10 fork 14:
+  inline scene naming + the grid inline card + the roots resizer; window.prompt gone
+  from the save paths) -> #168 (G8 forks 11+12: PROJECT_FORMAT 2 = the WHOLE Explorer
+  in a .tp, the [TP|Scene|GLTF|cog] picker, OPEN-replaces behind a warning vs
+  IMPORT-as-folder, .tpscene opens UNSAVED with the first-edit save-into-project
+  prompt + the travel-away publish gated on the marker) -> #171 (G7 forks 10+13: the
+  hidden version shelf in explorer.js with itemByHash searching both lists,
+  hideOldVersions reconciling BOTH directions incl. unhide-the-pointer, keep-N
+  Settings with 0 gating only the UNASKED cut, manifest labels, VersionHistory.svelte
+  in the Explorer's REAL properties panel — the Inspector 'file' block is DEAD
+  SURFACE, and the restore checkpoint must publish BEFORE the re-append or travel's
+  own publish strands the pointer on it, suite-pinned).** Two merge-tree-measured
+  unions at landing: G10 takes G9's activeLibraryFolder() at the two save call sites;
+  G8+G9 share autosave's markDirty (dirtyPulse + the dirtyOnce one-shots); G7's
+  clearLibrary union adds one hiddenItems line. Suites: scene-identity(51)
+  explorer-inline-input(38) project-open-import(36) scene-versions(68) + project-file
+  updated to OPEN semantics; docs-site projects.md committed there (72d14c7);
+  build-a-game touch-ups ride the parallel round-3 session's uncommitted rewrite.
+  As-built + owed-on-device: cloud `plans-core/roadmap-21g-projects-presence.md`.
+- Status (2026-08-21): **ROADMAP 21-G — PROJECTS, CROSS-SCENE PRESENCE,
   PER-PLAYER PROGRESS: G1-G6 EXECUTED same-day off the 21-F merge (release/next
   @fdfbe39); MERGED 2026-08-22: PRs #164 -> #165 -> #166 to release/next @f126b85 (both lane merges landed CLEAN - G1 was already both branches' base - and the App.svelte hook counts held 164/164). ROUND 2 (G7-G10, DCC-standard projects: hidden version history + panel, the TP|Scene|GLTF menu with open-replaces vs import-furnishes, project/scene identity, inline naming) and ROUND 3 (the collectible NODE + manager toolbox) are PLANNED with locked forks 10-20 in the same plan doc, executing in parallel windows.** The user's four fork
   answers locked in the plan (per-player mode + peer-owned vars; recipes into the

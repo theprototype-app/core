@@ -110,6 +110,13 @@ h.run(async () => {
 		[...document.querySelectorAll('#explorer-list .explorer-card')].map((el) => el.textContent?.trim())
 	);
 	h.check(sceneCards.length === 3, `Scene folder lists the manifest (${sceneCards.length} cards)`);
+	// the group rows are COLLAPSED by default and revealed by a DOUBLE-click (see
+	// `sceneExpanded`, 197). This check used to single-click and then assert they were
+	// visible, which could only pass on a profile where an earlier run had already
+	// expanded them — a latent leak between runs, not a claim about the feature. Drive
+	// the real gesture.
+	await A.page.locator('#scene-folder').dblclick();
+	await A.page.waitForTimeout(400);
 	const subCounts = await A.page.getByText('audio (1)', { exact: false }).isVisible();
 	h.check(subCounts, 'structured subfolders show their counts');
 

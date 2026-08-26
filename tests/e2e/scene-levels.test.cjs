@@ -71,7 +71,6 @@ h.run(async () => {
 	// =====================================================================
 	await A.page.locator('#explorer-slot').click();
 	await A.page.waitForTimeout(600);
-	A.page.once('dialog', (d) => d.accept('UI Level'));
 	await A.page.locator('#explorer-list [role="region"]').first()
 		.click({ button: 'right', position: { x: 200, y: 140 } });
 	await A.page.waitForTimeout(300);
@@ -85,6 +84,12 @@ h.run(async () => {
 		`the grid menu offers both scene entries (${JSON.stringify(rows)})`
 	);
 	await A.page.getByText('Save scene…', { exact: false }).click();
+	// 21-G10 (fork 14): the name is typed INLINE in the grid now — the browser
+	// prompt this used to accept is gone (explorer-inline-input owns that contract)
+	await A.page.waitForTimeout(350);
+	await A.page.keyboard.press('Control+a');
+	await A.page.keyboard.type('UI Level');
+	await A.page.keyboard.press('Enter');
 	await h.eventually(
 		() => levelItemsOf(A),
 		(items) => items.some((i) => i.name.includes('UI Level')),
@@ -102,9 +107,13 @@ h.run(async () => {
 		window.__stores.explorer.explorerFolders.subscribe((v) => (f = v))();
 		return f.map((x) => x.name);
 	});
-	// 21-G1: the folder is `Scenes` and is only where a save LANDS — discovery is by kind
-	// (scene-folders owns that contract; this is the "a save premakes it" half)
-	h.check(foldersA.includes('Scenes'), `the Scenes folder is premade by the save (${JSON.stringify(foldersA)})`);
+	// 21-H1 (locked answer 6): a save invents NO folder — it lands where the user is
+	// looking, which here is the library root. (`scene-folders` owns that contract in
+	// full; this is the "nothing is premade" half, and it used to assert the opposite.)
+	h.check(
+		!foldersA.includes('Scenes') && foldersA.length === 0,
+		`the save premakes no folder at all (${JSON.stringify(foldersA)})`
+	);
 	const items2 = await levelItemsOf(A);
 	h.check(
 		items2.some((i) => i.name === 'Level One.tpscene'),

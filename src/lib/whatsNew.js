@@ -87,6 +87,19 @@ export function closeWelcome() {
 }
 
 /**
+ * Is this page load somebody following an invite? The hash carries the host's peer id
+ * (and, since #14 CN, an optional `~srv` tail). Read defensively: any non-empty hash
+ * that is not a bare `#` means the URL was addressed to somebody.
+ */
+function hasInviteHash() {
+	try {
+		return (window.location.hash ?? '').replace(/^#/, '').trim().length > 0;
+	} catch {
+		return false;
+	}
+}
+
+/**
  * Decide what (if anything) greets the user this boot. Called once from App.svelte.
  * First visit -> welcome overlay, and the current version counts as seen so the
  * update badge can't fire on top of it. Returning user on a new version -> badge +
@@ -95,7 +108,22 @@ export function closeWelcome() {
 export function startWhatsNew() {
 	if (typeof localStorage === 'undefined') return;
 	const firstVisit = !localStorage.getItem(SEEN_WELCOME);
-	const welcomeThisBoot = firstVisit || get(showWelcomeOnStart);
+	// R22 round 7 — DO NOT GREET AN INVITE. A URL with a peer id in its hash is somebody
+	// answering "join me", and the first thing they should see is the session, not an
+	// introduction to the app. The overlay is for a bare open; the version badge and its
+	// toast still work either way, so nothing is lost, only deferred to the next visit.
+	//
+	// VITE_SKIP_WELCOME is the other door, for a local dev server: set it in your own
+	// (gitignored) .env and the overlay never appears. See .env.example.
+	const invited = hasInviteHash();
+	// ...and it is IGNORED under test. A build-time env var is inlined into whatever the
+	// dev server serves, so a personal bypass in a gitignored .env silently changed a
+	// COMMITTED assertion — measured: whats-new went red on my machine and would have
+	// stayed green in CI, which is the worst shape a local override can take. The debug
+	// hook is the one reliable signal that this page is a test.
+	const underTest = !!localStorage.getItem('debugStores');
+	const skipEnv = !underTest && String(import.meta.env.VITE_SKIP_WELCOME ?? '') === 'true';
+	const welcomeThisBoot = !invited && !skipEnv && (firstVisit || get(showWelcomeOnStart));
 	if (welcomeThisBoot) welcomeOpen.set(true);
 	if (firstVisit) {
 		// The welcome overlay IS the announcement — the current version counts as

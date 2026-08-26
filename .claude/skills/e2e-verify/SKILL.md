@@ -31,8 +31,14 @@ The GAME line: `game-state`, `hud-actions`, `logic-nodes`, `collectibles-v2`,
 `{replicate:false}` local pulse, the round-aware `ctx.trigger`, and the counterfactual
 that the migrated collectible pieces are GONE from core. `module-toolbox` covers the
 toolbox seams incl. the `sidebar: false` opt-out and openToolbox/closeToolbox/
-toggleToolbox. The collectible MODULE's own flight lives in the modules repo
-(`tests/module-collectible.test.cjs`, 82 checks, three peers).
+toggleToolbox. **`trigger-log-sync`** (56, three peers) covers DEVX #18 - the handshake
+reply for the trigger log, and the epoch that keeps arriving history readable while making
+it fire nothing; **`flow-spawner`** (43) covers B7, including the byte-identical
+`physicsDebug` PARITY GOLDEN for the createBodyFor extraction (embedded with the recipe to
+redo it - reuse that shape for any future body-construction change); **`palette-groups`**
+(12) asserts the Input-vs-Triggers rule from the socket types the catalog already declares,
+so a misfiled node cannot drift back. The collectible MODULE's own flight lives in the
+modules repo (`tests/module-collectible.test.cjs`, 129 checks, three peers).
 The mesh pro tools each have one: `mesh-edge-gizmo`, `mesh-bevel` (faces), `mesh-vertex-bevel`,
 `mesh-edge-bevel`, `mesh-vertex-slide`, `mesh-proportional`, `mesh-knife`, `mesh-symmetrize`,
 `mesh-bridge-normals`, `mesh-gizmo-modes` (the gizmo across element modes, driven by REAL mouse
@@ -1046,6 +1052,35 @@ drops the P2P session.
   add-menu search-Enter + right-tap, sound-node Play overlap, connect-overlay
   querySelector, scene-music byte-push timing. To PROVE a failure is pre-existing:
   `git stash push -u`, run the suite on HEAD, `git stash pop`.
+- **`explorer-files` (2026-08-22): fails INSIDE A BATCH, passes ALONE.** "the editor is
+  dark ()" then "Ctrl+S saves back" — a fixed 1200 ms wait where it should wait on
+  `.cm-editor`, so a loaded machine misses CodeMirror's lazy load. A/B-proven on an
+  untouched base by three independent runs. `explorer-drop`'s last check is the
+  documented hidden-canvas trap (it aims a synthetic DragEvent at
+  `document.querySelector('canvas')`, which is DungeonMinimap's hidden one) and comes
+  and goes the same way. Neither belongs to your diff; both deserve their own ticket.
+- **A lane worktree with an INCOMPLETE `node_modules` invalidates every number you
+  measure there.** Missing `@shaderfrog/core` breaks import-analysis on
+  `shaderBackends.js`, so the app never boots (every suite dies in setupPage's
+  `waitForFunction`) and svelte-check reads **387/62 instead of 385/62 on BOTH base and
+  branch** — an A/B run there "proves" nothing in either direction. `npm install` in the
+  worktree and re-measure. Same family as the stale-dev-server rule above.
+- **`--noproxy '*'` is REQUIRED for curl on this box**, and lane URLs are
+  `https://localhost:<port>/` — a system proxy swallows loopback requests (they hang,
+  then return nothing, which reads exactly like a dead server), and the
+  `theprototype.app` hosts mapping is commented out.
+- **A suite section that SAVES or ADDS OBJECTS perturbs its neighbours.** One guard
+  inserted mid-file broke four later checks at once: its `/create box` broke a "four
+  objects are open" premise, and its save moved `currentLevel` away from the scene a
+  later restore section reasons about. Put such a section LAST, and give it its own
+  fixture NAME — a sibling section built its own `Depot` and asserted a single-hash
+  history that a second `Depot` would have poisoned.
+- **A counterfactual can fail for a CORRECT implementation — check that first.** The
+  guard for "version files are stamped with their own date, not the export moment" was
+  first written as "no entry is dated near now", which goes red on correct code because
+  the NEWEST version genuinely was saved seconds ago. What the bug actually produces is
+  two entries sharing ONE date, so the check is that the two DIFFER. Measure the quantity
+  the bug changes, never one it merely correlates with.
 - KNOWN failing suites in the localhost env (2026-07-28, proven identical across a
   full old-deps/new-deps baseline comparison — treat as the dirty baseline, not
   regressions): the drag-drop-SIMULATION cluster (explorer-drop, explorer,
@@ -1246,3 +1281,87 @@ Feature suite green (+ any suites your UI changes touched) + `npm run build` pas
 your files). Two-peer verification is required for anything touching replication.
 VR features: cover the extracted math/state headlessly (computeMoveOffset,
 computeTeleportArc pattern) and note that on-device feel is the user's manual check.
+
+## Roadmap 22 round 10 — `peer-ice-config` (10) and `explorer-drag-fixes` (7)
+
+- **A TWO-PEER FAILURE THAT `PEER_CONFIG` "FIXES" IS NOT ALWAYS SIGNALING FLAKINESS.**
+  Round 9 hit exactly that on localhost, re-ran with PEER_CONFIG, went green and filed it
+  as transient. It was a real bug: the env config carried a TURN entry with an empty
+  credential, and Chromium THROWS constructing the RTCPeerConnection rather than degrading,
+  so signaling worked (peer ids appeared) and every data channel died. PEER_CONFIG hid it
+  because mode `custom` with blank TURN fields uses peerjs's own defaults. When the
+  documented re-run makes a two-peer red disappear, note WHAT differs between the two
+  configs before calling it environmental.
+- **THE BROWSER CAN BE THE ORACLE.** `peer-ice-config` does not assert on the shape of
+  our ICE array — it hands the options the app would use to a real `new
+  RTCPeerConnection(...)` and asserts it constructs. That is the exact failure the user
+  saw, it cannot pass vacuously, and restoring the old gate turns three checks red with
+  the browser's own `InvalidAccessError`. Prefer a real API call over a shape assertion
+  whenever the API is what rejected you.
+- **A suite that runs against a `.app` hostname cannot see a localhost-only branch.**
+  `peerServer`'s default mode asked `isLocalDev` first, so every suite took the other
+  path. If a report only reproduces on a dev server, check whether the code branches on
+  `location.hostname` before assuming the diff is at fault.
+- **Synthesized HTML5 drag needs one `DataTransfer` across all three events.** Build it
+  once and pass it to `dragstart`, `dragover` and `drop` on the real elements; the payload
+  the app wrote is then readable back out of it, which is how `explorer-drag-fixes` proves
+  the whole selection travelled rather than inferring it from the result.
+- **A drop-band position check needs the scroll as its premise.** Assert the grid really
+  is scrolled (`scrollTop > 100`) before asserting the band is inside the visible box —
+  otherwise the check passes trivially at the top, which is the state the bug looks fine in.
+
+## Roadmap 22 — the Explorer views (`explorer-views`, 71 checks)
+
+Round 9's suite: the list view, its per-view columns and sort, and the bin (grouping,
+sort-by-date, and the purge). Lessons that generalise:
+
+- **Read both halves of a toggle at the SAME moment.** The armed-colour check first read
+  Thumbnails while it was armed and List after switching — comparing the accent with
+  itself, so it could never fail. Read the armed one and the idle one together.
+- **A class with no CSS can still be load-bearing**, and finding out costs a red check
+  that looks like a broken feature: a list row that did not carry `.explorer-card` was
+  BACKGROUND to `#explorer-grid`'s three handlers, so the click selected it and
+  `gridBackgroundClick` deselected it in the same gesture.
+- **A right-click for the grid BACKGROUND menu has three ways to miss**: the Controls HUD
+  intercepts the middle-bottom, the header row has its own menu, and a position past the
+  grid's own height resolves to `<html>` ("element intercepts pointer events" for an
+  element that is merely elsewhere). Aim below the last row, clear of the HUD, inside the
+  measured box.
+- **A bin fixture must stamp its own owner ids.** `meAsOwner` records whatever `peer.id`
+  holds, so a suite seeding deletions milliseconds after load records UNATTRIBUTED rows —
+  a real state, with its own section, but not the one a grouping check is about.
+- **The counterfactual belongs IN the test when the bug was a DEPENDENCY, not a value.**
+  For the purge, both the old and the new reading return `false` once the bytes are gone —
+  the fault was that the old one sat in a derived nothing re-ran. So the suite computes
+  both in-page and asserts they agree, and the real guards are the OBSERVABLE ones (the
+  row dims; the menu stops offering Restore).
+
+## Roadmap 22 — the shared library (`shared-library`, 194 checks, two peers)
+
+One suite covers the whole batch: the document, both identities, adoption, the pull,
+the concurrent-share reconcile, tombstones, delete/restore, the chunk protocol, the
+ledger arithmetic and the whole UI half through REAL context menus. Lessons that
+generalise:
+
+- **A default that makes the app act faster invalidates every check written for the
+  slower world.** Auto-download (on by default) fetches a shared file before an
+  assertion can observe "the peer does not hold it" — three checks, then three more
+  after the pull became structural. The fix is to reach the old state the way a USER
+  would (park the setting), never a test-only door.
+- **A ledger/aggregate check needs an EMPTY ledger.** Reading a percentage out of a
+  ledger full of the run's own real transfers measured 63% where the maths says 13%.
+- **An async MARK lands after the thing it marks.** The `'peer'` adoption flag is
+  applied by a debounced sweep, so a synchronous read right after the item appears
+  measured `null` while the feature was perfect. `h.eventually` on the mark.
+- **A modal left open shields every later click** — `settingsOpen` cost a 30s timeout
+  several sections later, reported as an Accordion header intercepting the press.
+- **A toggle-shaped affordance must be opened idempotently.** Clicking "Show full log"
+  blindly CLOSED what an earlier section had opened. Check for the pane first.
+- **A card in a grid of two dozen lands under the Controls HUD.** Give a card you
+  intend to click its own folder so it renders top-left, clear of the chrome.
+- **`openedPeers` is a Set** — `.length` is undefined, so a "connected" premise built
+  on it is silently always false.
+- **A `$bindable` prop is only two-way for the caller that BINDS it.** A component
+  rendered twice (an indicator and a pane) with `bind:` on only one instance leaves the
+  other writing a local copy — its close button did nothing, and no store read could
+  have shown it. Assert the OBSERVABLE outcome (the pane is gone), not the prop.

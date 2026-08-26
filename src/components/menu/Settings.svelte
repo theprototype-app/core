@@ -31,6 +31,25 @@
 		removeCustomTheme
 	} from '$lib/themes';
 	import { autosaveEnabled, autoRestoreEnabled, clearSavedSession } from '$lib/autosave';
+	// 21-G7: how many past versions of each scene keep their bytes on this machine (0 = off)
+	import { keepVersionsSetting } from '$lib/projectManifest';
+	// R22 round 2: who may take a file out of the shared library (locked answer: anyone,
+	// with the owner-only rule kept as the second option)
+	import {
+		unshareAuthority,
+		autoShareAll,
+		autoDownload,
+		recycleBinEnabled,
+		keepRecycleBin,
+		deleteWithoutConfirm
+	} from '$lib/sharedLibrary';
+	// 21-I5 (locked answer 5): the save-name template — one rule for every download
+	import { saveNameTemplate } from '$lib/saveName';
+	// loose-scenes fix (bug 2a): what an import does with bytes already in the library.
+	// It lives HERE and not in the Explorer's cog because that cog holds view and
+	// interaction prefs, while this governs what importing DOES — a file rule, beside
+	// the other file rules.
+	import { duplicateImportMode } from '$lib/importDuplicates';
 	import { viewPrefs, setViewPrefs, resetViewPrefs, DEFAULT_VIEW_PREFS } from '$lib/viewPrefs';
 	import { showWelcomeOnStart, showWhatsNewNotice, openWelcome, openWhatsNew } from '$lib/whatsNew';
 	import { resetWindowPoses } from '$lib/vrWindowPoses';
@@ -77,6 +96,7 @@
 	let shortcutsExpanded = false;
 	let aiExpanded = false;
 	let sceneExpanded = false;
+	let explorerExpanded = false;
 	let connectionExpanded = false;
 	let aboutExpanded = false;
 	let vrExpanded = false; // D7: edit-cap toasts deep-link here ('vr')
@@ -378,6 +398,7 @@
 				shortcutsExpanded,
 				aiExpanded,
 				sceneExpanded,
+				explorerExpanded,
 				interfaceExpanded,
 				controlsExpanded,
 				inputExpanded,
@@ -388,6 +409,7 @@
 			shortcutsExpanded = true;
 			aiExpanded = true;
 			sceneExpanded = true;
+			explorerExpanded = true;
 			interfaceExpanded = true;
 			controlsExpanded = true;
 			inputExpanded = true;
@@ -399,6 +421,7 @@
 				shortcutsExpanded,
 				aiExpanded,
 				sceneExpanded,
+				explorerExpanded,
 				interfaceExpanded,
 				controlsExpanded,
 				inputExpanded,
@@ -936,6 +959,178 @@
 						Back to the defaults ({DEFAULT_VIEW_PREFS.wireColor} / {DEFAULT_VIEW_PREFS.outlineColor} / auto). Per-device, never shared
 					</SettingRow>
 				</AccordionItem>
+				<AccordionItem bind:open={explorerExpanded}>
+					{#snippet header()}Explorer{/snippet}
+					<!--
+						R22 round 5 (user): the file settings were rows inside SCENE, which is where
+						they started when there were two of them. There are eleven now and they are
+						about the library rather than the world, so they get the panel they name.
+					-->
+					<SettingRow name="Share every file automatically">
+						<svelte:fragment slot="control">
+							<input
+								id="auto-share-all"
+								class="tp-check"
+								type="checkbox"
+								checked={$autoShareAll}
+								on:change={(e: any) => autoShareAll.set(!!e.target.checked)} />
+						</svelte:fragment>
+						<span>
+							Everything in your Explorer is shared with the session, including files you add
+							later — no Share gesture at all. Off by default, because the whole point of
+							the library being local is that publishing it is a choice. A file you
+							<strong>explicitly unshared</strong> stays unshared: a blanket setting is a
+							preference, and that was a decision. This is yours alone — every peer chooses
+							for themselves, and a peer who has just joined is still asked about the files
+							they brought with them.
+						</span>
+					</SettingRow>
+					<SettingRow name="Download shared files automatically">
+						<svelte:fragment slot="control">
+							<input
+								id="auto-download"
+								class="tp-check"
+								type="checkbox"
+								checked={$autoDownload}
+								on:change={(e: any) => autoDownload.set(!!e.target.checked)} />
+						</svelte:fragment>
+						<span>
+							When somebody shares a file or a folder, fetch it straight away. <strong>On by
+							default</strong>: without it every shared file costs each peer a right-click,
+							which is an extra step per file per person for something they already agreed to
+							by being here. Turn it off on a metered connection or a very large project —
+							shared files still appear, greyed, and download when you open them.
+						</span>
+					</SettingRow>
+					<SettingRow name="Who can unshare a file">
+						<svelte:fragment slot="control">
+							<select
+								id="unshare-authority"
+								class="rounded-sm bg-gray-700 px-1 py-0.5 text-xs text-white"
+								value={$unshareAuthority}
+								on:change={(e: any) =>
+									unshareAuthority.set(e.target.value === 'owner' ? 'owner' : 'anyone')}>
+								<option value="anyone">Anyone in the session</option>
+								<option value="owner">Only whoever shared it</option>
+							</select>
+						</svelte:fragment>
+						<span>
+							A shared file is part of the project, so by default any editor can take it
+							out again — the same way anyone can delete an object. Choose
+							<strong>Only whoever shared it</strong> for a session where one person owns the
+							library and the rest are guests. Either way, <strong>nobody ever loses a copy
+							they already downloaded</strong> — unsharing removes the offer, never the file.
+							This is a preference for <em>this machine's menus</em>, not a rule the session
+							enforces.
+						</span>
+					</SettingRow>
+					<SettingRow name="Keep versions per scene">
+						<svelte:fragment slot="control">
+							<input
+								id="keep-versions"
+								type="number"
+								min="0"
+								max="200"
+								step="1"
+								class="w-20 rounded-sm bg-gray-700 px-1 py-0.5 text-xs text-white"
+								value={$keepVersionsSetting}
+								on:change={(e: any) =>
+									keepVersionsSetting.set(Math.max(0, Math.floor(Number(e.target.value) || 0)))} />
+						</svelte:fragment>
+						How many past versions of each scene keep their bytes on this machine — browse
+						them under <strong>Version history</strong> in a scene file's properties. Pinned
+						versions are always kept. <strong>0 turns auto-versioning off</strong>: leaving a
+						scene stops cutting one behind your back, and only the current version plus your
+						pins keep their bytes — saving a scene and <kbd>Save version…</kbd> still work
+					</SettingRow>
+					<SettingRow name="When importing files already in your library">
+						<svelte:fragment slot="control">
+							<ThemedSelect
+								id="import-duplicate-mode"
+								items={[
+									{ value: 'ask', name: 'Ask' },
+									{ value: 'skip', name: 'Skip them' },
+									{ value: 'copy', name: 'Import as copies' }
+								]}
+								bind:value={$duplicateImportMode}
+							/>
+						</svelte:fragment>
+						<span>
+							Rule for importing same files which already in your library.
+							<strong>Ask</strong> lets you decide file by file. <strong>Skip</strong>
+							keeps what you have and tells you how many it left out.
+							<strong>Import as copies</strong> brings them in as new files beside the
+							originals - scenes get a fresh copy, while identical files of other kinds
+							stay as one
+						</span>
+					</SettingRow>
+					<SettingRow name="Save name">
+						<svelte:fragment slot="control">
+							<input
+								id="save-name-template"
+								type="text"
+								class="w-40 rounded-sm bg-gray-700 px-1 py-0.5 text-xs text-white"
+								value={$saveNameTemplate}
+								on:change={(e: any) => saveNameTemplate.set(String(e.target.value ?? ''))} />
+						</svelte:fragment>
+						<span>
+							What a downloaded scene, project or GLTF file is called. <kbd>[name]</kbd> is
+							the scene's name (the project's, for a <kbd>.tp</kbd>); the date parts are
+							<kbd>[YYYY]</kbd> <kbd>[YY]</kbd> <kbd>[MM]</kbd> <kbd>[DD]</kbd>
+							<kbd>[HH]</kbd> <kbd>[mm]</kbd> <kbd>[ss]</kbd> <kbd>[ms]</kbd>, in UTC — so
+							<kbd>[name]-[DD]-[MM]-[YY]</kbd> gives <strong>Arena-22-08-26</strong>.
+							Something with no name yet falls back to a timestamp, so a save is never
+							nameless
+						</span>
+					</SettingRow>
+					<p class="ui-section-label">Deleted files</p>
+					<SettingRow name="Keep a recycle bin">
+						<svelte:fragment slot="control">
+							<input
+								id="recycle-bin"
+								class="tp-check"
+								type="checkbox"
+								checked={$recycleBinEnabled}
+								on:change={(e: any) => recycleBinEnabled.set(!!e.target.checked)} />
+						</svelte:fragment>
+						<span>
+							Deleting a shared file removes it from the project for everyone, so each peer
+							keeps its own copy in <strong>Deleted files</strong> where it can be restored.
+							Turn this off and a delete is immediate on <em>this</em> machine — peers still
+							get their own bin, because their copy is theirs.
+						</span>
+					</SettingRow>
+					<SettingRow name="Delete without asking">
+						<svelte:fragment slot="control">
+							<input
+								id="delete-no-confirm"
+								class="tp-check"
+								type="checkbox"
+								checked={$deleteWithoutConfirm}
+								on:change={(e: any) => deleteWithoutConfirm.set(!!e.target.checked)} />
+						</svelte:fragment>
+						<span>
+							Skip the confirmation when deleting files and folders. Reasonable only
+							<em>because</em> the recycle bin exists — with the bin also off, a delete is
+							immediate and final, which is why these two sit together.
+						</span>
+					</SettingRow>
+					<SettingRow name="Keep deleted files after a reload">
+						<svelte:fragment slot="control">
+							<input
+								id="keep-recycle-bin"
+								class="tp-check"
+								type="checkbox"
+								checked={$keepRecycleBin}
+								on:change={(e: any) => keepRecycleBin.set(!!e.target.checked)} />
+						</svelte:fragment>
+						<span>
+							Off by default: the bin is a safety net for the minutes after a delete, not
+							storage, so its files are reclaimed the next time you load. The RECORD of what
+							was deleted always survives — only the bytes on this device go.
+						</span>
+					</SettingRow>
+				</AccordionItem>
 				<AccordionItem bind:open={vrExpanded}>
 					{#snippet header()}VR{/snippet}
 					<SettingRow name="VR override">
@@ -1405,11 +1600,11 @@
 									</div>
 								{/if}
 								<label class="flex items-center gap-2 text-[13px] text-gray-300">
-									<input type="checkbox" bind:checked={aiFormStream} />
+									<input class="tp-check" type="checkbox" bind:checked={aiFormStream} />
 									Stream responses
 								</label>
 								<label class="flex items-center gap-2 text-[13px] text-gray-300">
-									<input id="ai-physics-tools" type="checkbox" bind:checked={aiFormPhysics} />
+									<input id="ai-physics-tools" class="tp-check" type="checkbox" bind:checked={aiFormPhysics} />
 									Physics tools (advanced)
 								</label>
 								<span class="text-[11px] leading-snug text-gray-400">
@@ -1524,7 +1719,8 @@
 								items={[
 									{ value: 'default', name: HAS_SELF_HOSTED ? 'Default (self-hosted + fallback)' : 'Default (public cloud)' },
 									{ value: 'public', name: 'Public PeerJS cloud' },
-									{ value: 'custom', name: 'Custom server' }
+									{ value: 'custom', name: 'Custom server' },
+									{ value: 'local', name: 'Local dev (localhost:9001)' }
 								]}
 								value={$peerServerConfig.mode}
 								onchange={(v) => setPeerMode(v)}
@@ -1532,7 +1728,7 @@
 						</svelte:fragment>
 						Where peers discover each other.
 						{#if HAS_SELF_HOSTED}Default uses <span class="font-mono">{SELF_HOSTED_HOST}</span> and falls back to the public PeerJS cloud if it's unreachable.{:else}Default is the public PeerJS cloud.{/if}
-						Custom pins your own server (no fallback). Takes effect on reload.
+						Custom pins your own server (no fallback). Local dev is the <span class="font-mono">npm run peer</span> server on this machine — R22 round 9 made it an explicit choice, because a configured <span class="font-mono">.env</span> host now wins on localhost instead of being overridden by the hostname. Takes effect on reload.
 					</SettingRow>
 					{#if $peerServerConfig.mode === 'custom'}
 						<SettingRow name="Server host">

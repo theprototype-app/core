@@ -3,7 +3,7 @@ import { writable, get } from 'svelte/store';
 /**
  * Peer signaling-server selection + ICE (STUN/TURN) config.
  *
- * Three modes:
+ * Four modes:
  *  - 'default' : use the self-hosted server baked in at build time (VITE_PEER_*),
  *                and FALL BACK to the public PeerJS cloud if it can't be reached.
  *                If no self-hosted server is configured, this is just the public cloud.
@@ -12,6 +12,23 @@ import { writable, get } from 'svelte/store';
  *  - 'custom'  : the user's own server from the Settings fields. NO fallback — if the
  *                user pins a server, we honour it and surface errors instead of silently
  *                using someone else's infra.
+ *  - 'local'   : the local-dev server on localhost:9001 (`npm run peer`), chosen
+ *                DELIBERATELY. R22 round 9 — see below.
+ *
+ * R22 round 9, THE REPORTED BUG: a local `vite dev` reported "local dev /
+ * localhost:9001/peerjs" even with `VITE_PEER_HOST=peerjs.theprototype.app` in `.env`.
+ * It was NOT a stored mode beating ENV, as suspected — it was a HOSTNAME SNIFF beating
+ * both. `default` mode asked `isLocalDev` (the hostname does not end in .io/.app) BEFORE
+ * it looked at the env host, so on localhost the env was never consulted at all. That is
+ * also why the e2e suite never saw it: it runs against `theprototype.app:5173`, which
+ * ends in .app and takes the self-hosted branch.
+ *
+ * THE RULE NOW: an env host is an EXPLICIT statement and wins; the hostname sniff is a
+ * fallback for a checkout with no `.env` at all, which is what it was really for. A dev
+ * who wants the localhost server picks 'local' in Settings, so reaching it is a decision
+ * rather than a side effect of which port you happen to be serving from. Production is
+ * unaffected either way — there the hostname ends in .app AND an env host is configured,
+ * so both the old and the new rule choose self-hosted.
  *
  * The self-hosted values live in `.env` (gitignored); Vite inlines VITE_* at build time.
  * See .env.example.
@@ -25,16 +42,55 @@ function splitUrls(s) {
 		.filter(Boolean);
 }
 
-/** Build RTCIceServer[] from a config shape (env or custom). @param {any} c */
+/**
+ * Build RTCIceServer[] from a config shape (env or custom).
+ *
+ * R22 round 10, AND IT IS WORSE THAN A MISCONFIGURATION: a TURN entry needs BOTH a
+ * username and a credential, because Chromium does not degrade when one is missing — it
+ * THROWS constructing the RTCPeerConnection:
+ *
+ *   InvalidAccessError: Failed to construct 'RTCPeerConnection':
+ *   ICE server parsing failed: TURN server with empty username or password
+ *
+ * That kills EVERY data connection while signaling carries on working, so the app hands
+ * you a peer id and then silently never connects to anybody — reported as "I get a peerID
+ * but no connect toasts". The old gate asked for the username ONLY and then wrote
+ * `credential: c.turnCredential || ''`, i.e. it went out of its way to emit the exact
+ * shape that throws.
+ *
+ * Reachable two ways: this machine's `.env` has VITE_TURN_USERNAME set and
+ * VITE_TURN_CREDENTIAL empty (round 9 made the env config apply on localhost, which is
+ * what exposed it), and ANY user who fills a TURN url + username in Settings and leaves
+ * the password blank gets a completely dead app with a console-only error.
+ *
+ * A half-configured TURN server is not a TURN server, so it is DROPPED — and said out
+ * loud, because losing relay candidates changes what can connect through a NAT.
+ * @param {any} c
+ */
 function iceServers(c) {
 	const list = [];
 	const stun = splitUrls(c.stunUrls);
 	if (stun.length) list.push({ urls: stun });
 	const turn = splitUrls(c.turnUrls);
-	if (turn.length && c.turnUsername) {
-		list.push({ urls: turn, username: c.turnUsername, credential: c.turnCredential || '' });
+	if (turn.length) {
+		const user = String(c.turnUsername ?? '').trim();
+		const secret = String(c.turnCredential ?? '').trim();
+		if (user && secret) list.push({ urls: turn, username: user, credential: secret });
+		else warnBadTurn(user ? 'credential' : secret ? 'username' : 'username and credential');
 	}
 	return list;
+}
+
+let warnedBadTurn = false;
+/** Say it ONCE per session: a dropped TURN server is not obvious, and it changes which
+ * peers can reach each other. @param {string} missing */
+function warnBadTurn(missing) {
+	if (warnedBadTurn) return;
+	warnedBadTurn = true;
+	console.warn(
+		`peer server: a TURN server is configured with no ${missing}, so it was dropped. ` +
+			'Direct and STUN connections still work; peers behind a strict NAT may not.'
+	);
 }
 
 /** Build a `new Peer(id, options)` options object from a server config shape. @param {any} c */
@@ -79,7 +135,7 @@ const LS_KEY = 'peerServerConfig';
 
 function defaults() {
 	return {
-		/** @type {'default'|'public'|'custom'} */
+		/** @type {'default'|'public'|'custom'|'local'} */
 		mode: 'default',
 		custom: {
 			host: '',
@@ -259,6 +315,17 @@ export function describePeerServer(ctx = {}) {
 	const cfg = get(peerServerConfig);
 	if (cfg.mode === 'public') return publicCloud();
 
+	// R22 round 9: the local-dev server, chosen on purpose
+	if (cfg.mode === 'local')
+		return {
+			kind: /** @type {PeerServerKind} */ ('local'),
+			label: 'local dev',
+			host: LOCAL_DEV_OPTIONS.host,
+			port: LOCAL_DEV_OPTIONS.port,
+			path: '/peerjs',
+			didFallback: false
+		};
+
 	if (cfg.mode === 'custom') {
 		const c = cfg.custom || {};
 		if (!c.host) return publicCloud(); // misconfigured -> public
@@ -272,8 +339,11 @@ export function describePeerServer(ctx = {}) {
 		};
 	}
 
-	// default mode
-	if (isLocalDev) {
+	// default mode. An ENV HOST WINS over the hostname sniff (see the header): a
+	// configured `.env` is a statement about which server this checkout talks to, and it
+	// used to be discarded on any host not ending in .io/.app — i.e. on every local dev
+	// server, which is exactly where `.env` is read from.
+	if (!HAS_SELF_HOSTED && isLocalDev) {
 		return {
 			kind: 'local',
 			label: 'local dev',
@@ -327,14 +397,18 @@ export function resolvePeerOptions(ctx = {}) {
 
 	if (cfg.mode === 'public') return { options: undefined, canFallback: false };
 
+	// R22 round 9: the local-dev server, chosen on purpose. No fallback — somebody who
+	// asked for localhost does not want to land silently in a public room.
+	if (cfg.mode === 'local') return { options: LOCAL_DEV_OPTIONS, canFallback: false };
+
 	if (cfg.mode === 'custom') {
 		const c = cfg.custom || {};
 		if (!c.host) return { options: undefined, canFallback: false }; // misconfigured -> public, no fallback
 		return { options: serverOptions(c), canFallback: false };
 	}
 
-	// default
-	if (isLocalDev) return { options: LOCAL_DEV_OPTIONS, canFallback: false };
+	// default — the env host wins over the hostname sniff, mirroring describePeerServer
+	if (!HAS_SELF_HOSTED && isLocalDev) return { options: LOCAL_DEV_OPTIONS, canFallback: false };
 	if (HAS_SELF_HOSTED) return { options: serverOptions(ENV), canFallback: true };
 	return { options: undefined, canFallback: false };
 }

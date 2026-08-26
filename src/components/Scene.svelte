@@ -47,6 +47,7 @@
 	// M9b: the first click of a knife cut, in CSS pixels. This component is lang="ts", so
 	// the annotation is TS syntax — a JSDoc @type cast is ignored here (the documented trap).
 	let knifeFrom: number[] | null = null;
+	import { peerScenes } from '$lib/peerScenes';
 	import { initVRControls, updateVRControls, raycastMenu, raycastPanel, raycastPalette, raycastProps, raycastPrefabs, raycastKeyboard, raycastChat, raycastEdit, raycastSnap, raycastSettings, raycastApprove, placePrefabGhost, vrFaceTrigger, vrVertexTrigger, vrVertexGrabStart, vrVertexGrabEnd, beginStretchSliderDrag, endStretchSliderDrag, executeVRMenuAction, resetWorldRig, onInputSourcesChange, worldToContentPose, boxSelectStart, boxSelectEnd, boxSelectActive, applyVRFrameRate, shouldSendHands, onHandPinchStart, onHandPinchEnd, pinchMenuToggledAt, firePingIfArmed, vrModuleTriggerStart, vrModuleTriggerEnd, vrModuleSelectSwallowed } from '$lib/vrControls';
 	import { vrKeyboardTarget } from '$lib/vrKeyboard';
 	import { measureMode, measureClick } from '$lib/measure';
@@ -121,6 +122,12 @@
 	const scale = spring(0.5);
 	let rotation = 0;
 	let lastCameraPosition = new THREE.Vector3();
+	// P2b THE OTHER HALF OF THE SEND GATE. The camera broadcast is CHANGE-GATED, so a
+	// peer who travels into our scene while we are standing still would never receive a
+	// pose and would simply not see us. Whenever anybody's scene changes, invalidate the
+	// change detector so the next frame re-publishes — a peer that is still elsewhere is
+	// filtered out again by broadcast, so this costs one message per real arrival.
+	peerScenes.subscribe(() => lastCameraPosition.set(1e9, 1e9, 1e9));
 	let lastCameraQuaternion = new THREE.Quaternion();
 
 	// --- VR presence: broadcast controller poses while in a session ---

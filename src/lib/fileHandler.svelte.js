@@ -23,6 +23,7 @@ import { createGltfLoader, registerAnimatedImport, recordAnimatedImport, sendAni
 import { environment } from './environment';
 import { parkAnimatedAtBase } from '$lib/flowRuntime';
 import { stripEditOverlays } from '$lib/editOverlays';
+import { saveFileBase } from '$lib/saveName';
 import { peers, fixLight, loadingFile, showToast } from '../stores/appStore';
 
 //Access objects Store
@@ -41,12 +42,32 @@ peers.subscribe(value => { peer = value });
 let loadingNames = $state();
 loadingFile.subscribe(value => { loadingNames = value });
 
+// 21-I5: which scene is on screen, for the `[name]` token. A PRIMED DYNAMIC import (the
+// moduleSDK idiom) rather than a static one: levels.js imports sessions.js, which sits
+// deep in the history family, and this module already reaches sessions dynamically for
+// exactly that reason. Resolved once at boot, read synchronously afterwards — exportGltf
+// is a callback, not an async function.
+let sceneName = '';
+import('./levels')
+	.then((m) => m.currentLevel.subscribe((/** @type {any} */ at) => { sceneName = at?.name ?? ''; }))
+	.catch(() => {});
+
+/** The name a scene save goes out under: the open scene's, or '' for an unsaved one
+ * (which `saveFileBase` turns into the old timestamp shape). */
+export function currentSceneName() {
+	return sceneName;
+}
+
 // B3: .tpscene export prefs (set from the Sidebar export-settings cog)
 export function tpsceneOptions() {
 	const read = (/** @type {string} */ k, /** @type {boolean} */ dflt) => {
 		const v = typeof localStorage !== 'undefined' ? localStorage.getItem(k) : null;
 		return v === null ? dflt : v === 'true';
 	};
+	// 21-I5 REVISED: there is deliberately no `versions` option here. This path exports
+	// whatever is in the viewport, which is not always a NAMED project scene — so the
+	// checkbox that used to live here could not look a history up and silently bundled
+	// nothing. Downloading versions is a per-scene action in the Explorer instead.
 	return {
 		assets: read('tpsceneAssets', true),
 		packs: read('tpscenePacks', false),
@@ -65,8 +86,9 @@ async function saveTpScene() {
 	a.style.display = 'none';
 	const url = window.URL.createObjectURL(blob);
 	a.href = url;
-	const date = new Date().toISOString().replace(/[T:.Z]/g, '-');
-	a.download = `ThePrototype-${date}UTC.tpscene`;
+	// 21-I5: the scene's NAME still names the file (the save-name template) — that is
+	// the one thing the removed option and this line had in common and it stays
+	a.download = `${saveFileBase(sceneName)}.tpscene`;
 	a.click();
 	window.URL.revokeObjectURL(url);
 }
@@ -86,13 +108,20 @@ function selectedRoots() {
 }
 
 /** Run the GLTFExporter over a root (or array of roots) and download it.
- * @param {string} format @param {any} input */
-function exportGltf(format, input) {
+ * @param {string} format @param {any} input
+ * @param {{filename?: string, onlyVisible?: boolean, shaderNote?: boolean}=} opts
+ *   21-H2 (all three default to the pre-existing behaviour, so every old call site is
+ *   byte-identical): `filename` names the download, `onlyVisible` reaches GLTFExporter,
+ *   `shaderNote:false` suppresses the scene-wide shader warning for a tree that is not
+ *   in the scene. */
+function exportGltf(format, input, opts = {}) {
 	// SH4: glTF has no way to express a node-graph shader, so an exported object
 	// carries its BASE material (parkAnimatedAtBase parks ours) and the graph is left
 	// behind. Say so rather than letting the file look complete — the same honesty as
 	// the animation bake skipping look channels.
-	const shaderDriven = shaderDrivenCount();
+	// `shaderDrivenCount` counts the SCENE's graphs, which says nothing about a detached
+	// tree, so the prefab path opts out rather than warning about somebody else's object.
+	const shaderDriven = opts.shaderNote === false ? 0 : shaderDrivenCount();
 	// saves store animation BASE poses, not the current swing (88)
 	const restore = parkAnimatedAtBase();
 	// 17-D: glTF nodes carry only TRS, so a per-object ORIGIN has to become real
@@ -113,6 +142,10 @@ function exportGltf(format, input) {
 	// with the model. Baked from the LIVE roots (the origin clones have the pivot
 	// folded into their geometry already, and the bake reads the same origin).
 	const animations = roots.flatMap((root) => bakeAnimationsForExport(root));
+	/** @type {any} */
+	const parseOptions = {};
+	if (animations.length) parseOptions.animations = animations;
+	if (opts.onlyVisible === false) parseOptions.onlyVisible = false;
 	const exporter = new GLTFExporter();
 	exporter.parse(
 		payload,
@@ -124,8 +157,10 @@ function exportGltf(format, input) {
 			a.style.display = 'none';
 			const url = window.URL.createObjectURL(blob);
 			a.href = url;
-			const date = new Date().toISOString().replace(/[T:.Z]/g, '-');
-			a.download = `ThePrototype-${date}UTC.${String(format).toLowerCase()}`;
+			// 21-I5: the save-name template names a scene export too; an explicit
+			// `filename` (the prefab path) still wins, since that tree has its own identity
+			a.download =
+				opts.filename || `${saveFileBase(sceneName)}.${String(format).toLowerCase()}`;
 			a.click();
 			window.URL.revokeObjectURL(url);
 			// glTF cannot express a node-graph shader: the file carries each object's
@@ -141,12 +176,38 @@ function exportGltf(format, input) {
 			restore();
 			console.log(error);
 		},
-		animations.length ? { animations } : undefined
+		// THE TRAP: GLTFExporter takes its options as parse()'s FOURTH argument (the
+		// constructor takes none and silently discards them), and `onlyVisible` DEFAULTS
+		// TO TRUE — so anything hidden is missing from the file entirely.
+		// Stays `undefined` when nothing asked for an option, so the old call sites are
+		// byte-identical.
+		Object.keys(parseOptions).length ? parseOptions : undefined
 	);
+}
+
+/**
+ * 21-H2: export an arbitrary object TREE as GLTF — a prefab parsed by `prefabObject`,
+ * which is never in the scene. The seam exists so the prefab path reuses this module's
+ * whole ritual (parkAnimatedAtBase, the `userData.origin` bake on CLONES, the animation
+ * bake) instead of growing a second copy of it that would drift.
+ * `onlyVisible: false` because a prefab captured with a hidden child still contains it —
+ * dropping it silently is the documented GLTFExporter trap.
+ * @param {any} roots one root or an array of them @param {string=} filename
+ * @returns {boolean} false when there was nothing to export
+ */
+export function exportObjectsAsGltf(roots, filename) {
+	const list = (Array.isArray(roots) ? roots : [roots]).filter(Boolean);
+	if (!list.length) return false;
+	exportGltf('gltf', list, { filename, onlyVisible: false, shaderNote: false });
+	return true;
 }
 
 export function save(format) {
 	console.log('Saving...');
+	// 21-G8: TP saves the WHOLE PROJECT (fork 11) — the Explorer, the scene history,
+	// the manifest. downloadProject owes its own honesty toasts (incl. "no project yet").
+	if (format === 'tp')
+		return void import('./projectFile').then((m) => m.downloadProject());
 	if (format === 'tpscene') return void saveTpScene(); // B3: Scene bundle path
 	// L2: glTF has nowhere to put a screen-space post stack, so a GLTF export
 	// silently loses the scene's look. Say so rather than let someone discover it
@@ -507,26 +568,49 @@ export async function importFile(file, name, ext, position, extras) {
 	}
 }
 
+/**
+ * 21-G8 fork 12: a loose .tpscene OPENED from disk is the current scene but not part
+ * of the project — mark it UNSAVED and, on the FIRST real edit, offer to save it in.
+ * Everything is a dynamic import on purpose: fileHandler already sits in the
+ * history-import family (it imports history), and a static levels edge would pull
+ * sessions into this module's static graph for a path only a file dialog reaches.
+ * @param {any} payload the session payload that just applied
+ */
+async function markOpenedUnsaved(payload) {
+	const { currentLevel, sceneSignature, armSaveIntoProject } = await import('./levels');
+	const name = String(payload?.name ?? '').trim() || 'Opened scene';
+	currentLevel.set({ hash: '', name, unsaved: true, signature: sceneSignature(payload) });
+	// loose-scenes fix: the offer itself lives in levels.js now, because travel to a
+	// scene file the project does not name reaches the identical state and the two
+	// copies of this prompt would drift
+	await armSaveIntoProject(name);
+}
+
 export async function load(file) {
 try {
 	// B3: .tpscene bundles restore assets + packs, then apply the session (the
-	// request path confirms/proposes like the Sessions manager Load)
+	// request path confirms/proposes like the Sessions manager Load). 21-G8
+	// fork 12: a .tpscene OPENED here becomes the CURRENT scene, UNSAVED — it is a
+	// loose file, not a member of the project, until the user saves it in.
 	if (file.name?.toLowerCase().endsWith('.tpscene')) {
 		const { importSessionZip, requestLoadSession } = await import('./sessions');
 		const payload = await importSessionZip(await file.arrayBuffer());
 		if (!payload) return; // V4: user declined a newer-format confirm — silent
-		await requestLoadSession(payload.id);
+		const applied = await requestLoadSession(payload.id);
+		// the unsaved marker only makes sense for a load that HAPPENED — with peers
+		// the load is a proposal, and marking a scene we may never load would lie
+		if (applied) await markOpenedUnsaved(payload);
 		return;
 	}
-	// 21-G3: a .tp is the same idea ONE LEVEL UP — a whole PROJECT (manifest +
-	// scenes + assets). It rides this same switch because it is the same
-	// affordance (the Sidebar's Open), and it deliberately loads NOTHING into the
-	// scene: it furnishes the library and installs the manifest, and the user
-	// travels when they are ready. ('.tpscene'.endsWith('.tp') is false, so the
-	// order of these two branches is a readability choice, not a dependency.)
+	// 21-G8 fork 12: a .tp through the Sidebar's Load is OPEN — it REPLACES the
+	// project (warned inside openProject: library + folders + manifest swap; merging
+	// without opening is the Explorer's IMPORT, importProjectAsFolder). It still
+	// loads NOTHING into the scene: the user travels when they are ready.
+	// ('.tpscene'.endsWith('.tp') is false, so the order of these two branches is a
+	// readability choice, not a dependency.)
 	if (file.name?.toLowerCase().endsWith('.tp')) {
-		const { importProject } = await import('./projectFile');
-		await importProject(await file.arrayBuffer());
+		const { openProject } = await import('./projectFile');
+		await openProject(await file.arrayBuffer());
 		return;
 	}
 	const reader = new FileReader();

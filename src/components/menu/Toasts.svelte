@@ -1,6 +1,22 @@
 <script lang="ts">
 	import { Info, UserPlus, Download } from '@lucide/svelte';
     import { cameraPreview, stopCameraPreview, toggleCameraControl, previewLabel } from '$lib/cameraPreview'
+    // R22 round 2: the connect-time library offer (see the effect below)
+    import { shareAllLocal, pullAllShared, bulkCounts, stashIntoSessions } from '$lib/sharedLibrary'
+    // R22 round 7: the offer is for a peer who JOINED somebody — the host's library
+    // already is the session's, so there is nothing of anybody else's to adopt
+    import { sessionHost } from '$lib/connectionState'
+    import { autoDownload } from '$lib/sharedLibrary'
+    import { explorerItems } from '$lib/explorer'
+    import { projectManifest } from '$lib/projectManifest'
+    // R22 round 9: the offer has to know whether the OPEN SCENE is worth saving before it
+    // talks about files. `recomputeSceneDirty` is the SYNCHRONOUS verdict — `$sceneDirty`
+    // is throttled by design (recomputing costs a whole-scene serialization), which is
+    // right for a title bar and wrong for a prompt that is deciding what to say.
+    import { sceneDirty, recomputeSceneDirty } from '$lib/sceneIdentity'
+    // open the Explorer BEFORE arming: the save card is drawn by the Explorer's own effect,
+    // so arming a panel that is not mounted arms nothing
+    import { armExplorerSceneSave, explorerClose } from '../../stores/appStore'
     import { peers, loading, loadingcount, pendingApprovals, waitingForApproval, userdata, toastStore, fixLight, showSidebar, specatorMode, restorePanels, appNotice, connectDrawerOpen, connectDrawerTab, toastsInDrawerOnly, showInfoToast, dismissToastById } from '../../stores/appStore'
     import { restoreAvailable, restoreSnapshot, dismissRestore } from '$lib/autosave'
     import { cancelOutboundRequest } from '$lib/peerApproval'
@@ -9,6 +25,60 @@
 	import { objectsGroup, camSave, globalCamera, globalScene } from '../../stores/sceneStore.js';
 	import { Progressbar, Toast, Button } from 'flowbite-svelte';
     import { fly } from 'svelte/transition';
+    import { untrack } from 'svelte';
+    // P2b: watching follows a peer's camera IN THIS WORLD, so it cannot survive them
+    // opening another scene. Users.svelte gates STARTING one; this is the other half.
+    import { peerScenes } from '$lib/peerScenes';
+    import { currentLevel } from '$lib/levels';
+    import { showToast } from '../../stores/appStore';
+
+    /**
+     * Stop watching and give the camera back. EXTRACTED from the banner button so the
+     * automatic stop below cannot drift from the manual one — there is one teardown.
+     * The avatar lookup is GUARDED now: by the time this runs the peer may have
+     * travelled or left, and the inline version dereferenced it unconditionally.
+     */
+    function exitSpectate() {
+        if (!$specatorMode) return;
+        const dolly = $globalScene?.getObjectByName('dolly');
+        if (dolly) dolly.attach($globalCamera);
+        const avatar = $globalScene?.getObjectByName($specatorMode);
+        if (avatar) avatar.visible = true;
+        $specatorMode = false;
+        // the saved pose is written by `specate`, so the BUTTON always has one. The
+        // automatic stop below can fire in states the button cannot reach (a watch that
+        // began before a reload, a store poked from outside), and restoring a camera we
+        // never saved must be skipped rather than throw inside an $effect.
+        if ($camSave) {
+            $globalCamera.position.copy($camSave.position)
+            $globalCamera.rotation.copy($camSave.rotation)
+            $globalCamera.fov = $camSave.fov
+            $globalCamera.updateProjectionMatrix()
+        }
+        //specating has ended send camera position once to appear for peers
+        $peers.send({ type: 'camera', peerId: $peers.peer.id, position: $globalCamera.position.toArray(), rotation: $globalCamera.rotation.toArray() });
+        $peers.send({ type: 'specator', peerId: $peers.peer.id, watching: 'false' });
+        // bring back the panels hidden when spectating started
+        restorePanels();
+    }
+
+    // …and stop by itself when the peer we are watching opens another scene. ONLY ON
+    // EVIDENCE, the same rule the button uses: an absent row means "we have not been
+    // told", and no name on our side means there is nothing to compare against.
+    $effect(() => {
+        const map = $peerScenes;
+        // `specatorMode` is declared writable(false) but holds a peer-id STRING when it
+        // holds anything — coerce rather than index a boolean
+        const watching = typeof $specatorMode === 'string' ? $specatorMode : '';
+        const ours = $currentLevel?.name ?? '';
+        if (!watching) return;
+        const theirs = map?.[watching]?.scene ?? '';
+        if (!theirs || !ours || theirs === ours) return;
+        untrack(() => {
+            exitSpectate();
+            showToast('Stopped watching — they opened "' + theirs + '"');
+        });
+    });
 
 
 // CN toast routing. The viewport containers are HIDDEN (display:none, not removed —
@@ -106,6 +176,12 @@ function autoDismiss(node: any, toast: any) {
 // <Toast> blocks — which is why they looked nothing like the other cards and
 // never appeared in the drawer's Toasts tab. They are STATE-DRIVEN, so mirror
 // each source store into a sticky INFO entry and pull it when the source clears.
+// once answered, do not ask again this session: the prompt is a nudge, and one that
+// came back every time a file landed would be an interruption instead
+let libraryPromptDone = false;
+// the inline confirm for the one destructive choice: first press arms it, second acts
+let stashArmed = $state(false);
+
 $effect(() => {
     const snap = $restoreAvailable;
     if (snap)
@@ -120,6 +196,100 @@ $effect(() => {
         );
     else dismissToastById('restore-session');
 });
+// R22 round 2 (user): WHAT ABOUT THE FILES ALREADY IN MY EXPLORER? Connecting to a
+// session with a library full of local files used to say nothing at all — they simply
+// stayed invisible to everyone, which is correct behaviour and a terrible first
+// impression. So the moment a session exists and there is something to offer, ask.
+//
+// One sticky INFO card, the restore-prompt shape, with the two halves of the union:
+// publish mine, and fetch theirs. Ignoring it leaves everything exactly as it is —
+// local files stay local, shared files stay greyed until somebody wants them.
+$effect(() => {
+    // a SET, not an array (peerHandler) — `.length` here meant the prompt never showed
+    // a SET, not an array (peerHandler) — `.length` here meant the prompt never showed
+    // ...and only for a JOINER: `sessionHost` is null when we are the host, and a host
+    // has nothing to adopt because the project is already theirs
+    const connected = ($peers?.openedPeers?.size ?? 0) > 0 && !!$sessionHost;
+    // read the stores so the effect re-runs as the library and the index change
+    void $explorerItems;
+    void $projectManifest;
+    const counts = connected ? bulkCounts() : { local: 0, missing: 0 };
+    // R22 round 9 (reported): the offer said "1 file" for a scene the user had not saved,
+    // which is true and useless — the one file was a `.tpscene` from an earlier save, and
+    // sharing it would hand peers a STALE version of what is on screen. Two questions,
+    // asked in the right order: is there work here that is not written down, and only then
+    // are there files to share.
+    //
+    // `worldEmpty` is what stops this from nagging: with nothing in the scene and nothing
+    // in the library there is no offer to make at all, which is the other half of the
+    // report ("do not prompt").
+    void $currentLevel;
+    const worldEmpty = !(($objectsGroup?.children?.length ?? 0) > 0);
+    // `libraryPromptDone` FIRST, and `$sceneDirty` before the recompute: the synchronous
+    // verdict costs a whole-scene serialization, and this effect re-runs on every manifest
+    // change — which during active sharing is often. Once the user has answered the card
+    // there is nothing to decide, and while the throttled store already says dirty there is
+    // nothing to find out.
+    const unsavedScene =
+        connected &&
+        !worldEmpty &&
+        !libraryPromptDone &&
+        (!$currentLevel?.name || $sceneDirty || recomputeSceneDirty());
+    const parts = [];
+    if (unsavedScene)
+        parts.push($currentLevel?.name
+            ? `“${$currentLevel.name}” has unsaved changes`
+            : 'this scene has never been saved');
+    if (counts.local) parts.push(`${counts.local} file${counts.local === 1 ? '' : 's'} only on this device`);
+    // R22 round 8: only worth mentioning when the app is NOT already fetching them.
+    // With auto-download on (the default) this line describes a job in progress, and a
+    // button for it would be a button for something already happening.
+    if (counts.missing && !$autoDownload)
+        parts.push(`${counts.missing} shared file${counts.missing === 1 ? '' : 's'} not downloaded`);
+    // R22 round 7 (locked answer): NO SECOND DIALOG. Each button does one thing and says
+    // what it costs; the destructive one confirms IN PLACE (its label becomes the
+    // question) rather than opening a modal that asks it again. Only "Not now" dismisses
+    // the toast — picking an action dismisses it because the action happened, which is
+    // the timing bug in the modal version: Cancel closed the toast it came from.
+    if (connected && parts.length && !libraryPromptDone)
+        showInfoToast(
+            'shared-library-offer',
+            parts.join(' \u00b7 ') + '.',
+            [
+                // R22 round 9: the SAVE comes first when there is unsaved work — sharing a stale
+                // file is the failure this was reported as. It arms the Explorer's own inline
+                // save card (the no-prompt rename convention) rather than inventing a name.
+                ...(unsavedScene
+                    ? [{ label: 'Save the scene…', action: () => { libraryPromptDone = true; explorerClose.set(false); armExplorerSceneSave(null); dismissToastById('shared-library-offer'); } }]
+                    : []),
+                ...(counts.local
+                    ? [{ label: 'Share mine', action: () => { libraryPromptDone = true; const n = shareAllLocal(); showToast(`Sharing ${n} file${n === 1 ? '' : 's'} with peers`); dismissToastById('shared-library-offer'); } }]
+                    : []),
+                ...(counts.missing && !$autoDownload
+                    ? [{ label: 'Download theirs', action: () => { libraryPromptDone = true; const n = pullAllShared(); showToast(`Fetching ${n} file${n === 1 ? '' : 's'} from peers`); dismissToastById('shared-library-offer'); } }]
+                    : []),
+                // R22 round 8: both of these are about YOUR files, so neither belongs on a
+                // card that is only telling you about somebody else's. With nothing of your
+                // own there is nothing to stash and nothing to decline — the card's own
+                // dismiss is enough.
+                ...(counts.local
+                    ? [
+                          stashArmed
+                              ? { label: 'Really replace my library?', action: () => { libraryPromptDone = true; void stashIntoSessions(); dismissToastById('shared-library-offer'); } }
+                              : { label: 'Stash mine', keepOpen: true, action: () => { stashArmed = true; } }
+                      ]
+                    : []),
+                // "Not now" belongs to any card that asked for something, not only to one about
+                // your files — an offer to save the scene is equally declinable
+                ...(counts.local || unsavedScene
+                    ? [{ label: 'Not now', action: () => { libraryPromptDone = true; dismissToastById('shared-library-offer'); } }]
+                    : [])
+            ],
+            () => { libraryPromptDone = true; }
+        );
+    else dismissToastById('shared-library-offer');
+});
+
 $effect(() => {
     const notice = $appNotice;
     const seen = typeof localStorage !== 'undefined' && !!localStorage.getItem('hasSeenDisclaimer');
@@ -162,24 +332,7 @@ $effect(() => {
             <button
             class="spectator-exit"
             title="Stop watching and return to your own camera"
-            onclick={() => {
-                let dolly = $globalScene.getObjectByName('dolly')
-                dolly.attach($globalCamera)
-                $globalScene.getObjectByName($specatorMode).visible = true
-                $specatorMode = false;
-                $globalCamera.position.copy($camSave.position)
-                $globalCamera.rotation.copy($camSave.rotation)
-                $globalCamera.fov = $camSave.fov
-                $globalCamera.updateProjectionMatrix()
-
-
-                //specating has ended send camera position once to appear for peers
-                $peers.send({ type: 'camera', peerId: $peers.peer.id, position: $globalCamera.position.toArray(), rotation: $globalCamera.rotation.toArray() });
-                $peers.send({ type: 'specator', peerId: $peers.peer.id, watching: 'false' });
-                // $globalCamera.zoom = $camSave.zoom
-                // bring back the panels hidden when spectating started
-                restorePanels();
-            }}
+            onclick={exitSpectate}
             >Exit</button
         >
         </div>
@@ -350,7 +503,17 @@ style="z-index: var(--z-toast-low); pointer-events: none;"
             {#if typeof toast !== 'string' && toast.actions?.length}
                 <div class="tp-toast-actions">
                     {#each toast.actions as entry}
-                        <button class="tp-toast-action" onclick={() => { entry.action(); dismiss(toast); }}>{entry.label}</button>
+						<!-- R22 round 7: `keepOpen` is what makes an INLINE CONFIRM possible. Every
+						     action used to dismiss the toast, so a button that arms a second press
+						     closed the very card it was arming — which is the timing complaint the
+						     modal version had, one layer down. -->
+						<button
+							class="tp-toast-action"
+							onclick={() => {
+								entry.action();
+								if (!entry.keepOpen) dismiss(toast);
+							}}>{entry.label}</button
+						>
                     {/each}
                 </div>
             {/if}

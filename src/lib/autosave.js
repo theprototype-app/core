@@ -49,6 +49,17 @@ export const autoRestoreEnabled = writable(
 /** @type {import('svelte/store').Writable<any>} */
 export const restoreAvailable = writable(null);
 
+/**
+ * 21-G9: a counter bumped on EVERY dirty mark — "something in the scene changed", the
+ * one signal this module already computes for its own debounce. `sceneIdentity` rides
+ * it so the window title's dirty asterisk costs no second set of subscriptions and, more
+ * to the point, no work of its own: it is a bare integer, and its consumer throttles
+ * before it does anything expensive. Deliberately NOT the `dirty` boolean as a store —
+ * a save clears that flag, and the title's question ("does this differ from the version
+ * its NAME points at") is not the same question.
+ */
+export const dirtyPulse = writable(0);
+
 let started = false;
 let dirty = false;
 /** @type {any} */ let debounceTimer = null;
@@ -201,9 +212,30 @@ async function saveSnapshot() {
 	}
 }
 
+/** 21-G8: one-shot listeners for "the scene just got dirtied" — the seam behind the
+ * "Save into your project" prompt after opening a loose .tpscene. Each fires ONCE and
+ * is removed BEFORE it runs (a listener that saves would re-enter markDirty).
+ * @type {Set<() => void>} */
+const dirtyOnce = new Set();
+/** @param {() => void} fn @returns {() => void} unsubscribe */
+export function onNextDirty(fn) {
+	dirtyOnce.add(fn);
+	return () => dirtyOnce.delete(fn);
+}
+
 function markDirty() {
 	if (!started) return;
 	dirty = true;
+	// 21-G9 + 21-G8 (union): both consumers ride this one funnel — the title's
+	// dirtyPulse counter and the one-shot save-into-project listeners
+	dirtyPulse.update((n) => n + 1);
+	if (dirtyOnce.size)
+		for (const fn of [...dirtyOnce]) {
+			dirtyOnce.delete(fn);
+			try {
+				fn();
+			} catch {}
+		}
 	clearTimeout(debounceTimer);
 	debounceTimer = setTimeout(saveSnapshot, DEBOUNCE_MS);
 }

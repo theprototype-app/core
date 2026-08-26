@@ -17,6 +17,7 @@
 		primaryDefaultWidth = 176,
 		secondaryModes = [{ key: 'settings', icon: '⚙', label: 'Settings' }] as Mode[],
 		secondaryDefaultOpen = false,
+		secondaryDefaultWidth = 224,
 		topbar,
 		primary,
 		main,
@@ -28,6 +29,7 @@
 		primaryDefaultWidth?: number
 		secondaryModes?: Mode[]
 		secondaryDefaultOpen?: boolean
+		secondaryDefaultWidth?: number
 		topbar?: Snippet
 		primary?: Snippet
 		main?: Snippet
@@ -56,9 +58,30 @@
 	let side = $state<'left' | 'right'>(LS?.getItem(`ws:${key}:side`) === 'right' ? 'right' : 'left')
 	// svelte-ignore state_referenced_locally
 	let primaryWidth = $state(Number(LS?.getItem(`ws:${key}:primaryWidth`)) || primaryDefaultWidth)
+	// 21-I2: the secondary resizes too (it was a hardcoded 14rem). This is the width the
+	// USER chose and the one that persists; what gets RENDERED is `secondaryEff` below.
+	// svelte-ignore state_referenced_locally
+	let secondaryWidth = $state(Number(LS?.getItem(`ws:${key}:secondaryWidth`)) || secondaryDefaultWidth)
 
 	// the secondary always sits on the opposite edge from the primary (179)
 	let secondarySide = $derived<'left' | 'right'>(side === 'left' ? 'right' : 'left')
+
+	// 18-B, and the reason this is not a constant: a flat cap is how a grip ends up off
+	// screen. This shell lives in a dock the user can shrink to a few hundred pixels, so
+	// the ceiling is MEASURED from the container and re-applied when it shrinks. Chrome =
+	// the primary edge (.ws-edge, 0.5rem) + this panel's own tab column (.ws-tabs, 1rem).
+	const SEC_MIN = 140
+	const MAIN_MIN = 160
+	const CHROME = 8 + 16
+	let rootW = $state(0)
+	let secondaryMax = $derived(
+		Math.max(SEC_MIN, (rootW || 640) - CHROME - (primaryOpen ? primaryWidth : 0) - MAIN_MIN)
+	)
+	// This derived IS the re-clamp: a dock that SHRINKS narrows the panel on the next
+	// frame, with no effect and no write. The pref is kept WHOLE, so widening the dock
+	// again gives the user their width back instead of having eaten it -- which is also
+	// why the clamp is not folded into the stored value.
+	let secondaryEff = $derived(Math.min(secondaryWidth, secondaryMax))
 
 	function togglePrimary() {
 		primaryOpen = !primaryOpen
@@ -119,6 +142,35 @@
 		LS?.setItem(`ws:${key}:primaryWidth`, String(primaryWidth))
 	}
 
+	// 21-I2: the same gesture for the SECONDARY panel. Its grip lives in the tab column,
+	// which already sits on that panel's INNER edge on either side -- so the drag SIGN
+	// flips with `secondarySide`: the panel grows when the pointer moves AWAY from the
+	// window border it hugs (left panel -> rightwards, right panel -> leftwards).
+	let resizingSec = $state(false)
+	function startSecResize(e: PointerEvent) {
+		resizingSec = true
+		;(e.currentTarget as HTMLElement).setPointerCapture(e.pointerId)
+		e.preventDefault()
+	}
+	function doSecResize(e: PointerEvent) {
+		if (!resizingSec) return
+		const dx = secondarySide === 'left' ? e.movementX : -e.movementX
+		// from the RENDERED width, so a drag that starts against the ceiling tracks the
+		// pointer instead of first replaying the pref it was clamped from
+		secondaryWidth = Math.min(Math.max(SEC_MIN, secondaryEff + dx), secondaryMax)
+	}
+	function endSecResize(e: PointerEvent) {
+		if (!resizingSec) return
+		resizingSec = false
+		;(e.currentTarget as HTMLElement).releasePointerCapture?.(e.pointerId)
+		LS?.setItem(`ws:${key}:secondaryWidth`, String(secondaryWidth))
+	}
+	/** dblclick on the grip = back to the default width (the 18-B window rule) */
+	function resetSecondary() {
+		secondaryWidth = secondaryDefaultWidth
+		LS?.removeItem(`ws:${key}:secondaryWidth`)
+	}
+
 	// flex order: primary hugs `side`; edges are constant so they hug the window
 	// border once their panel is gone; main in the middle.
 	let primaryPanelOrder = $derived(side === 'left' ? 0 : 6)
@@ -132,7 +184,7 @@
 	let chevron = $derived((side === 'left') === primaryOpen ? '‹' : '›')
 </script>
 
-<div class="ws-root flex h-full w-full overflow-hidden">
+<div class="ws-root flex h-full w-full overflow-hidden" bind:clientWidth={rootW}>
 	<!-- PRIMARY panel -->
 	{#if primaryOpen}
 		<div class="ws-panel flex h-full shrink-0 flex-col overflow-y-auto" style="order: {primaryPanelOrder}; width: {primaryWidth}px">
@@ -178,10 +230,29 @@
 				onclick={() => clickMode(m.key)}
 			>{m.icon}</button>
 		{/each}
+		<!-- 21-I2: the secondary resize grip. It lives HERE rather than inside the panel
+		     because this column already hugs the panel's inner edge on either side, and a
+		     grip inside a scrolling panel scrolls away from the user. -->
+		{#if secondaryOpen}
+			<!-- svelte-ignore a11y_no_static_element_interactions -->
+			<div
+				class="ws-resize"
+				style="touch-action: none"
+				data-ws-secondary-resize
+				title="Drag to resize · double-click to reset"
+				onpointerdown={startSecResize}
+				onpointermove={doSecResize}
+				onpointerup={endSecResize}
+				ondblclick={resetSecondary}
+			></div>
+		{/if}
 	</div>
 	<!-- SECONDARY panel -->
 	{#if secondaryOpen}
-		<div class="ws-panel ws-panel-secondary flex h-full shrink-0 flex-col overflow-y-auto" style="order: {secondaryPanelOrder}">
+		<div
+			class="ws-panel ws-panel-secondary flex h-full shrink-0 flex-col overflow-y-auto"
+			style="order: {secondaryPanelOrder}; width: {secondaryEff}px"
+		>
 			<div class="ws-panel-head flex shrink-0 items-center gap-1 px-2 py-1">
 				<span class="flex-1 truncate text-xs font-semibold opacity-80">{activeMode?.label}</span>
 				<button class="ws-mini" title="Switch sidebar side" onclick={switchSide} data-ws-switch-side>⇄</button>

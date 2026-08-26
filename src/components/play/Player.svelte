@@ -6,6 +6,11 @@
     import AvatarRig from './AvatarRig.svelte'
     import { playerCam, peerHands, worldRig, peerHandStyle } from '../../stores/sceneStore'
     import { userdata, peers } from '../../stores/appStore'
+    // P2b: a peer standing in ANOTHER scene is looking at a different world, so their
+    // avatar and hands have no business floating in this one. Same evidence rule as
+    // the Watch gate: an unknown or unnamed scene on either side is not evidence.
+    import { peerScenes, elsewhereThan } from '$lib/peerScenes'
+    import { currentLevel } from '$lib/levels'
     import { handBoneSegments, handModelSegments } from '$lib/vrControls'
     import { peerHandModels, handModelCache } from '$lib/handModels'
     import { colocatedPeers, colocatedGhostHands, GHOST_HAND_OPACITY } from '$lib/colocationPresence'
@@ -94,7 +99,7 @@
 
   <T.Group bind:ref={peerFrame}>
   {#each $userdata as user, i}
-    {#if user[0] != $peers.peer.id}
+    {#if user[0] != $peers.peer.id && !elsewhereThan($peerScenes, $currentLevel?.name ?? '', user[0])}
     <!-- {console.log(user)} -->
       {@const colocated = $colocatedPeers.has(user[0])}
       <T.Group>

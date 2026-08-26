@@ -58,6 +58,25 @@ export async function focusFlowNode(nodeId) {
 }
 // Explorer asset browser (95) — folder hud button toggles it
 export const explorerClose = writable(true);
+/**
+ * 21-H1 (locked answer 5) — the ARM seam for "open the Explorer and start naming a
+ * scene". The Explorer's inline editor is component state inside a panel, so a lib
+ * module (projectFile's empty-library bootstrap) cannot reach it directly; a write-once
+ * store is the seam that needs nothing handed back — the `hudPickArm`/`hudPickResult`
+ * shape, one domain over. The Explorer CONSUMES it (clears it) as it acts, so a stale
+ * request can never re-open an input the next time the panel mounts.
+ *
+ * `{ token, folderId }`: the token makes two consecutive requests distinguishable (two
+ * identical objects are `===` different, but a number bumped per arm is what a `$effect`
+ * can key on); `folderId` is where the save should land, or null for the root.
+ * @type {import('svelte/store').Writable<{token: number, folderId: string|null}|null>}
+ */
+export const explorerSceneSaveArm = writable(null);
+let sceneSaveArmToken = 0;
+/** @param {string|null} folderId */
+export function armExplorerSceneSave(folderId = null) {
+	explorerSceneSaveArm.set({ token: ++sceneSaveArmToken, folderId: folderId ?? null });
+}
 export const objectListClose = writable(true);
 export const chatHidden = writable('hidden');
 // AI assistant (roadmap #10): '' = window open, 'hidden' = closed (mirrors chat).
@@ -328,6 +347,30 @@ enable3dPreview.subscribe((on) => {
 	if (typeof localStorage !== 'undefined') localStorage.setItem('enable3dPreview', String(on));
 });
 
+// 21-H3: dropping a MULTI-selection into the viewport. OFF = the N objects SPREAD in
+// a small square grid at the drop point, which is the default because a drop you can
+// see is the one you meant; ON = every one lands on the same spot, for a deliberate
+// stack. A LOCAL pref like every other Explorer setting — `explorerDrop` reads it and
+// nothing about it goes on the wire (each placement replicates through its own path).
+export const stackOnDrop = writable(
+	typeof localStorage !== 'undefined' && localStorage.getItem('explorerStackOnDrop') === 'true'
+);
+stackOnDrop.subscribe((on) => {
+	if (typeof localStorage !== 'undefined') localStorage.setItem('explorerStackOnDrop', String(on));
+});
+
+// 21-I3 (locked answer 6): "Update from selection" REPLACES a prefab's bytes instantly
+// and reports with an Undo toast. This restores the old confirm prompt for people who
+// want to be asked. Default OFF — the whole point of the change is that a replace you
+// can undo does not need a dialog in front of it, and the Undo is the safety net. A
+// LOCAL pref like every other Explorer setting; nothing about it goes on the wire.
+export const confirmPrefabUpdate = writable(
+	typeof localStorage !== 'undefined' && localStorage.getItem('confirmPrefabUpdate') === 'true'
+);
+confirmPrefabUpdate.subscribe((on) => {
+	if (typeof localStorage !== 'undefined') localStorage.setItem('confirmPrefabUpdate', String(on));
+});
+
 // Shift+A quick-add (the cursor-anchored Add popover). Opt-in, persisted; OFF by
 // default — Shift is a camera-strafe modifier in fly mode, so the shortcut only
 // exists for users who ask for it in Settings.
@@ -567,7 +610,9 @@ export function clearToast(toast) {
  * blocks never did.
  * @param {string} id stable key (also dedupes re-adds)
  * @param {string} text
- * @param {{label: string, action: () => void}[]=} actions
+ * @param {{label: string, action: () => void, keepOpen?: boolean}[]=} actions R22
+ *   round 7: `keepOpen` leaves the card up after the press, which is what an INLINE
+ *   CONFIRM needs — a button that arms a second press must not close the card it arms
  * @param {(() => void)=} onDismiss side effect for the ✕ (e.g. persist "seen")
  * @param {boolean=} noClose 15-P2: a genuine FORK renders no ✕ at all — a
  *   dismiss that silently picks one branch is the auto-decide trap in
@@ -575,8 +620,16 @@ export function clearToast(toast) {
  */
 export function showInfoToast(id, text, actions, onDismiss, noClose) {
   toastStore.update((list) => {
-    if (list.some((entry) => entry && entry.id === id)) return list; // already up
-    return [...list, { id, text, actions: actions ?? [], kind: 'info', sticky: true, onDismiss, noClose: !!noClose }];
+    const row = { id, text, actions: actions ?? [], kind: 'info', sticky: true, onDismiss, noClose: !!noClose };
+    // R22 round 8: UPDATE IN PLACE rather than returning early. These cards are mirrors
+    // of state, so a card that can never change its own text or buttons cannot carry an
+    // inline confirm — the first press armed the flag, the effect re-ran, and the label
+    // stayed put, which is exactly "the button does nothing".
+    const at = list.findIndex((entry) => entry && entry.id === id);
+    if (at === -1) return [...list, row];
+    const next = [...list];
+    next[at] = row;
+    return next;
   });
 }
 

@@ -242,6 +242,26 @@ loadable play content. Everything a user does must be visible to connected peers
   `#image-preview-window` — four suites and every caller address them, the 21-G1 ruling
   (the user-visible word changes, the identifiers already written down do not). Only the
   COMPONENT file was renamed, so a reader looking for the audio player finds it.
+  · **R22 ROUND 12 — MULTIPLE WINDOWS, AND THE 3D FACE.** `previewWindows` (in fileWindows)
+  is the truth and `imagePreviewTarget` survives as a SETTABLE custom store over the newest
+  entry, which is what keeps every caller and those four suites working; the pref
+  (`previewMultiWindow`, LOCAL, OFF) decides whether a second open REPLACES or ADDS. Two
+  rules make adding livable: the same source RAISES rather than duplicating (`previewRaise`
+  — the 21-I3 modelPreviewRaise ruling verbatim) and a new window CASCADES, or they all
+  land on the one saved rect and only the top is findable. The FIRST window keeps the DOM
+  id and the `imagePreviewWin` dragWindow key; the rest are `-<n>` and `:<n>`, and every
+  one carries `data-preview-id`.
+  · A library OBJECT double-clicks into this window now (not `ModelPreviewWindow`), with
+  `previewShowStats` (ON) surfacing ModelPreview's tris/verts/meshes and `previewAutoRotate`
+  (ON) driving its `autoSpin`. The "stops where I stop rotating" half needed NO code:
+  ModelPreview's drag is pointer-CAPTURED with no inertia, so the spin was the only thing
+  carrying it on. `ModelPreviewWindow` survives for the PREFAB shelf's own 3D preview — a
+  prefab is not a library file and has no place in a folder walk — and `previewSuspended`
+  now also stands the Properties inline preview down for an object shown here, which is
+  the same two-contexts-one-asset hang 21-H2 hit.
+  · The cog OVERLAYS the body (absolute, under its own cog) instead of shoving it down,
+  and the opacity fades the WHOLE WINDOW — see the two gotchas, which are the same mistake
+  made twice.
 - `src/lib/saveAs.js` (R22 round 11) — "SAVE AS…", AND WHAT A PREFAB IS MADE OF. A prefab
   was a JSON snapshot in IndexedDB, not a file, so "prefab (.glb)" had nothing to mean.
   **A PREFAB RECORD MAY NOW CARRY A `format` AND THE FILE'S OWN `bytes`**, with the
@@ -1452,6 +1472,20 @@ loadable play content. Everything a user does must be visible to connected peers
   fflate; #9: the SAME bundle is the first-class **.tpscene** format — `exportSessionZip`
   takes `{assets,packs,flow}` include-opts, adds a `packs/` section; `fileHandler` saves/
   loads it, Sidebar Files = [GLTF | Scene | ⚙cog].
+  **R22 round 12** (the manager becomes a file browser): `sessionLibraryTree` (the saved
+  `library.folders` laid out as indented rows — the structure was ALWAYS saved and simply
+  never drawn) + `importSessionFiles` (chosen files and whole folders into the CURRENT
+  library, MERGING BY PATH: `restoreSessionLibrary` recreates saved ids because it is
+  putting a library BACK, while taking two files out of somebody's project is a merge into
+  one that already exists). **AND THE MEASURED BUG**: `exportSessionZip` wrote
+  `JSON.stringify(payload)`, and a project's `library.items[].blob` is a Blob — which
+  stringifies to `{}`, so every download of a project entry arrived with its files GONE,
+  silently, since R8. The blobs are real zip entries under `library/` now and session.json
+  carries an INDEX; `restoreLibraryBlobs` is the read half, wired into both
+  `readSessionZip` and `importSessionZip`. Downloads are `.tpscene` (the format this app
+  reopens) and `.json` is kept; there is deliberately NO `.tp` from here — that is
+  projectFile's format, written from the LIVE stores, and a second writer of one format is
+  what that file's own comments warn against.
   **R22 round 11**: `buildSelectionPayload` (a .tpscene of a SUBTREE — see saveAs),
   `sessionFileList`/`sessionFilePayload` (the manager's picker is TWO levels now: the
   FILES in a saved entry, then the objects inside whichever is a scene — a scene-only
@@ -1654,6 +1688,45 @@ loadable play content. Everything a user does must be visible to connected peers
 
 ## Hard-won gotchas (do not rediscover)
 
+- **FADING A CHILD AGAINST ITS OWN OPAQUE PARENT CAN ONLY DARKEN IT.** The preview
+  window's opacity was put on the BODY, which sits on an opaque `.ui-panel` — so there was
+  never anything behind it to show, and the reported symptom was exactly that ("opacity
+  should show what is behind window, not just make it darker"). An overlay's fade belongs
+  to the WHOLE WINDOW, and every opaque layer under the content has to give way with it;
+  the header keeps its own surface, or a faint window is one you cannot find the handle
+  of. The test lesson is the same shape as the click-through one below: read the
+  COMPOSITED backgrounds, never the CSS opacity of the layer you happened to style.
+- **CLICK-THROUGH AND FADING ARE THE SAME MISTAKE TWICE**, and both leave a check green.
+  `pointer-events: none` on the content leaves a transparent HOLE with the panel still
+  behind it, so the click still lands on the window while
+  `getComputedStyle(body).pointerEvents` reads a convincing `none`. Put both on the ROOT
+  and opt the header, any settings pane and the resize grip back IN.
+- **A SVELTE ACTION WITH NO PARAMETER NEVER HAS ITS `update` CALLED**, so anything it
+  writes is written once on mount and never again — a volume fader and a mute button that
+  were dead controls looking perfectly alive, with nothing in the class string, the markup
+  or svelte-check to say otherwise. Drive live values from an `$effect`; keep the action
+  for one-shot mount work. (Round 12 note: reading a prop inside a rAF LOOP is the
+  opposite and is correct — the closure runs outside the tracking scope, so it sees the
+  current value with no dependency, which is why toggling `ModelPreview`'s `autoSpin` does
+  not tear its WebGL context down.)
+- **A CLICK ON A BUTTON IS NOT A CLICK ON THE ROW.** Adding selection to a row whose
+  buttons already do things makes every one of those buttons ALSO change the selection on
+  its way past — and where one of them closes the surface (Load, which replaces the scene
+  and shuts the dialog), it does so on the way out, which is impossible to attribute.
+  Guard the row handler with `closest('button, input, a, label')`, the rule the Explorer's
+  card handlers already keep.
+- **A DIALOG LEFT OPEN SHIELDS EVERY LATER CLICK, and moving a panel INTO a dialog makes
+  that everybody's problem.** Round 12 turned the Sessions picker from an inline block
+  into its own dialog, and three later sections of a passing suite began timing out on
+  clicks that had nothing to do with it. Close it explicitly. And note ESCAPE NEEDS FOCUS
+  INSIDE: after a button that had focus unmounts, focus falls to `<body>` and the
+  keypress reaches no dialog's handler at all — click the real Close instead, and test
+  Escape where focus is still in.
+- **A NON-MODAL `<dialog>` CARRIES NO `role` ATTRIBUTE.** Every app modal here is
+  `modal={false}` (`dialog.show()`) so the chrome above `--z-modal` stays clickable, and
+  only the truly-modal `ConfirmModal` gets `aria-modal`. So `[role="dialog"]` matches
+  NOTHING — a probe written that way reports an empty page and reads as a broken feature.
+  Query the `dialog` element.
 - **REPLICATION BOOKKEEPING IS NOT CONTENT, AND A CONTENT SIGNATURE THAT INCLUDES IT
   CALLS EVERY LOADED SCENE DIRTY.** `sceneSignature` compared each block's latest-wins
   `changedAt`, and every singleton restore re-stamps that with a fresh `Date.now()` ON
@@ -3558,6 +3631,46 @@ override for e2e — never share 5173 (the user's main-checkout server).
   (open-core: OSS ships only inert hooks — capability gate / auth hook /
   VITE_CLOUD_PLUGIN — cloud repo holds registration/rooms/roles; contract in its
   MAINTAINING.md).
+- Status (2026-08-26, later): **ROADMAP 22 ROUND 12 — PREVIEW-WINDOW MATURITY + THE
+  SESSIONS MANAGER AS A FILE BROWSER. Both phases EXECUTED on `feat/22-round12` (same
+  worktree, port 5203, branched off `feat/22-round11`), two commits, NOT pushed and NOT
+  PR'd.** Baseline **385/62** after each; build green with the server down; one guard per
+  phase proven by BREAKING the code. `cefc68e` A (the preview window) · `72e2650` B (the
+  Sessions manager). Suites GROWN rather than multiplied: `file-preview` 44 -> 71,
+  `sessions-packs` 32 -> 61, `explorer-delete-confirm` 39 -> 45, `save-as-formats` 30 -> 34.
+  · PHASE A: the delete strip offers a **File settings** button (the `settingsSection` deep
+  link existed and the Explorer section was one line short of being in its map); opacity
+  fades the WHOLE window; the cog overlays; **multiple windows** behind a LOCAL pref; a 3D
+  object opens in the shared window with its statistics and an auto-rotate toggle; a
+  prefab's kind reads `prefab (.glb)` / `(.tpscene)`.
+  · PHASE B: the picker is its own NON-MODAL dialog, per-kind (a scene entry says "Import
+  objects" and skips a file level holding one row); the saved folder STRUCTURE is drawn and
+  a folder can be ticked whole; list and thumbnail views, multiselect in both; multiselect
+  + a confirmed delete over the entries (`deleteSession` never asked, not even for one);
+  a click SELECTS and a double click RENAMES, agreeing with the grid and the Explorer.
+  · **THE BUG THIS ROUND FOUND, and it is the one worth remembering**: `exportSessionZip`
+  JSON-stringified the payload, so a PROJECT entry's `library.items[].blob` became `{}` —
+  every download of a project has arrived with its files gone, silently, since R8.
+  Measured by round-trip: `withBytes 5 -> 0` with the old write restored.
+  · FOUR MORE found while covering: a svelte action with no parameter never has `update`
+  called (a dead volume fader that looked alive); `Number(v) || 1` read a slider's zero as
+  absent; a folder nested under a ticked folder did not read as picked; and a click on any
+  button in a session row also selected it — Load did so on its way out of the dialog.
+  · THREE EXISTING CHECKS CORRECTED IN PLACE rather than worked around, each because the
+  behaviour they asserted is the behaviour the user asked to change: `file-preview`'s
+  round-11 opacity check asserted the bug, `prefab-explorer`'s "double-click opens the
+  pop-out" asserted the old routing, and `sessions-packs`' round-11 file list predates the
+  library tree.
+  · DESIGN DECISIONS I OWNED: no `.tp` download from a session entry (projectFile writes
+  that format from the LIVE stores, and a second writer of one format is what its own
+  comments warn against — the reason it was wanted is now true of the `.tpscene` bundle);
+  `ModelPreviewWindow` kept for prefabs only; and the `.tp` IMPORT name rule left as 21-I's
+  (filename wins there, deliberately) rather than overridden by this round's.
+  · PRE-EXISTING REDS, unchanged: `packs-drop` (3/3 on pristine release/next) and
+  `explorer-files` (A/B'd against the round-11 tip).
+  · **OWED**: the user's on-device pass — the two windows side by side as a real modelling
+  reference, the picker's feel, and all of it in NON-DARK themes.
+  · The round's brief is `docs/round-12-brief.md` (gitignored scratch).
 - Status (2026-08-26): **ROADMAP 22 ROUND 11 — THE EXPLORER/PREVIEW/SESSIONS BATCH.
   All five phases EXECUTED on `feat/22-round11` (worktree `../theprototype-lane-r11`,
   port 5203, branched off `origin/release/next` @c714f68). FIVE commits, one per phase,

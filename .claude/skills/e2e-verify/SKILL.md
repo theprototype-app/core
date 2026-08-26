@@ -1291,6 +1291,43 @@ your files). Two-peer verification is required for anything touching replication
 VR features: cover the extracted math/state headlessly (computeMoveOffset,
 computeTeleportArc pattern) and note that on-device feel is the user's manual check.
 
+## Roadmap 22 round 12 — preview windows and the sessions picker
+
+Suites GROWN, not multiplied: `file-preview` (71), `sessions-packs` (61),
+`explorer-delete-confirm` (45), `save-as-formats` (34). Lessons that generalise:
+
+- **THE CHECK THAT PASSES OVER THE BUG IS THE ONE THAT READS THE PROPERTY YOU STYLED.**
+  Twice in one phase: `getComputedStyle(body).pointerEvents` reads a convincing `none`
+  while the click still lands on the panel behind the hole, and `opacity` on the body
+  reads 0.4 while nothing behind the window shows through. Both are answered by asking
+  the OUTCOME instead — what does `elementFromPoint` name, what are the composited
+  backgrounds — and both round-11 checks had to be CORRECTED rather than worked around,
+  because they asserted the implementation that was the bug.
+- **MOVING A PANEL INTO A DIALOG MAKES IT EVERYBODY'S PROBLEM.** Turning the sessions
+  picker into its own dialog broke three later sections of a passing suite with click
+  timeouts that named unrelated elements. Close it explicitly between sections. And
+  ESCAPE NEEDS FOCUS INSIDE the dialog: after the button that had focus unmounts, focus
+  falls to `<body>` and the keypress reaches no handler — click the real Close, and test
+  Escape only where focus is still in.
+- **A NON-MODAL `<dialog>` HAS NO `role` ATTRIBUTE.** `[role="dialog"]` matches nothing in
+  this app except `ConfirmModal`, so a probe written that way reports an empty page and
+  reads as a broken feature. Query `dialog[open]`.
+- **PLAYWRIGHT CLICKS THE CENTRE, and a dense row's centre is a button.** Once a row is
+  selectable AND carries actions, `row.click()` lands on whichever action sits in the
+  middle — here Load, which replaced the scene and closed the dialog, making everything
+  after it fail for reasons that looked unrelated. Aim at a neutral child, and give the
+  row handler the `closest('button, input, a, label')` guard it needs anyway.
+- **A FIXTURE HAS TO CONTAIN THE SHAPE THE FEATURE IS ABOUT.** "I do not see folder
+  structure" cannot be tested against a fixture with one flat folder: the depth assertion
+  had nothing to compare. Add the nesting, and assert the PROPERTY (three distinct
+  indents, the deepest two levels in) rather than three specific rows, which the sort
+  order can reshuffle.
+- **A ROUND-TRIP IS THE ONLY HONEST TEST OF A SERIALIZER.** The measured bug (a Blob
+  stringifies to `{}`, so every project download lost its files) is invisible to any
+  check that reads the payload or counts the rows — both sides count 5. Write it, read it
+  back, and assert the BYTES survived: `withBytes 5` against `5 -> 0` with the old write
+  restored.
+
 ## Roadmap 22 round 11 — the Explorer/preview/sessions batch
 
 Five suites, one per phase: `explorer-delete-confirm` (39), `explorer-columns` (41),

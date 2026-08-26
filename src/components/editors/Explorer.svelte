@@ -33,6 +33,8 @@
 		inspectedFile,
 		setItemHidden,
 		updateItemBytes,
+		addItemFromBytes,
+		patchRecord,
 		parseObjectFile
 	} from '$lib/explorer';
 	import {
@@ -42,6 +44,9 @@
 		openModelPreview,
 		previewSuspended
 	} from '$lib/fileWindows';
+	// R22 round 11: a prefab may BE a file now — see $lib/saveAs for what each format keeps.
+	import * as THREE from 'three';
+	import { prefabFormatOf, prefabFileName, saveBytes } from '$lib/saveAs';
 	// R22 round 11: the preview window's arrows walk THIS folder, in the order THIS grid is
 	// showing it — a question only the Explorer can answer (filters, search, view mode,
 	// sort), so it is published rather than derived over there. The noteMarkers shape.
@@ -165,6 +170,7 @@
 		prefabSnapshot,
 		restorePrefabBytes,
 		savePrefabSelection,
+		addPrefabRecord,
 		exportPrefab
 	} from '$lib/prefabs';
 	// 21-I3: Export ▸ scene (.tpscene) — a scene containing just this prefab. Built from
@@ -1881,8 +1887,15 @@
 		if (!payload) return;
 		e.preventDefault();
 		e.stopPropagation();
-		// a PREFAB card carries no library record, so there is nothing to re-file
-		const items = (payload.items?.length ? payload.items : payload.type === 'item' ? [payload] : [])
+		const dragged = payload.items?.length ? payload.items : payload.type === 'item' ? [payload] : [];
+		// R22 round 11: a PREFAB card used to be dropped on the floor here — it carries no
+		// library record, so there was nothing to re-file. There is now: a prefab that IS a
+		// .glb or a .tpscene becomes a library item OF THAT FORMAT, bytes untouched.
+		for (const p of dragged.filter((p: any) => p?.prefabId)) {
+			const prefab = prefabById(p.prefabId);
+			if (prefab) void prefabToLibrary(prefab, target);
+		}
+		const items = dragged
 			.filter((p: any) => p && !p.prefabId && p.id)
 			.map((p: any) => p.id);
 		const folders = payload.folders?.length
@@ -2461,6 +2474,21 @@
 					label: 'Export',
 					icon: 'arrow-down-to-line', // Icon.svelte's MAP falls back to a plain Box for an unknown name
 					children: [
+						// R22 round 11: a prefab SAVED as a .glb or a .tpscene hands its own bytes
+						// back rather than being re-exported. Offered FIRST and only when there are
+						// bytes to offer — for a snapshot prefab the three rows below are still the
+						// only answer, and an always-present row that sometimes cannot work is the
+						// shape this codebase keeps refusing.
+						...(prefabFormatOf(prefab) !== 'snapshot' && prefab.bytes
+							? [
+									{
+										label: 'The original file (.' + prefabFormatOf(prefab) + ')',
+										tooltip:
+											'The exact bytes this prefab was saved from — nothing is converted or re-exported',
+										action: () => saveBytes(prefab.bytes, prefabFileName(prefab))
+									}
+								]
+							: []),
 						{
 							label: 'GLTF',
 							tooltip: 'A .gltf model file other tools can open',
@@ -3233,6 +3261,94 @@
 	 * `folderId` on the way, so Restore puts them back at the library root instead of
 	 * inside a folder that no longer exists.
 	 */
+	/**
+	 * R22 round 11 (user): "for dragging to Library and back: 3d objects automatically
+	 * placed as existing format (.glb/.gltf), .tpscene are placed as .tpscene (with
+	 * thumbnail). This solves converting dilemma, we do not need to convert anything."
+	 *
+	 * NOTHING IS CONVERTED, in either direction. A prefab that IS a .glb becomes a .glb
+	 * library item; a prefab that IS a .tpscene becomes a .tpscene, thumbnail included. A
+	 * SNAPSHOT prefab has no file to be — it is a three.js serialization and always was —
+	 * so it declines and says so, which is honest rather than inventing a format for it.
+	 * @param {any} prefab @param {string | null} folderId
+	 */
+	async function prefabToLibrary(prefab: any, folderId: string | null) {
+		const format = prefabFormatOf(prefab);
+		if (format === 'snapshot' || !prefab.bytes)
+			return showToast(
+				'"' + prefab.name + '" is a snapshot prefab, not a file — re-save it with Save as… ▸ Prefab (.glb) or (.tpscene) to move it into the Library'
+			);
+		const item = await addItemFromBytes(prefab.bytes, prefabFileName(prefab), folderId);
+		if (!item) return showToast('Could not store "' + prefab.name + '"');
+		// the picture travels with it: a .tpscene has no thumbnail an importer could derive
+		if (prefab.thumbnail) patchRecord(item.id, { thumbnail: prefab.thumbnail });
+		showToast('"' + prefab.name + '" is in the Library as a .' + format);
+		return item;
+	}
+
+	/**
+	 * ...and back. A library file dropped on the Prefabs row becomes a prefab OF THAT
+	 * FORMAT — its bytes are kept verbatim and a snapshot is built beside them so the card
+	 * has a picture and the drag-into-the-viewport still lands where you let go.
+	 * @param {any} record a library item
+	 */
+	async function libraryToPrefab(record: any) {
+		const format = record.kind === 'scene' ? 'tpscene' : 'glb';
+		if (record.kind !== 'scene' && record.kind !== 'object')
+			return showToast('Only 3D objects and scene files can become prefabs (' + record.name + ' is ' + record.kind + ')');
+		const blob = await itemBlob(record.id);
+		if (!blob) return showToast('The bytes for "' + record.name + '" are not on this device');
+		const bytes = await blob.arrayBuffer();
+		let element: any = null;
+		try {
+			if (format === 'glb') {
+				const object = await parseObjectFile(bytes, record.name.split('.').pop()?.toLowerCase() ?? 'glb');
+				element = object?.toJSON() ?? null;
+			} else {
+				// a .tpscene's objects, wrapped in a holder so ONE prefab is one card
+				const { readSessionZip } = await import('$lib/sessions');
+				const payload = await readSessionZip(bytes);
+				const holder = new THREE.Group();
+				holder.name = record.name.replace(/\.tpscene$/i, '');
+				for (const el of payload?.objects ?? []) {
+					try {
+						holder.add(new THREE.ObjectLoader().parse(el));
+					} catch {}
+				}
+				element = holder.children.length ? holder.toJSON() : null;
+			}
+		} catch {
+			element = null;
+		}
+		if (!element) return showToast('"' + record.name + '" could not be read as a prefab');
+		const entry = await addPrefabRecord({
+			name: record.name.replace(/\.[^.]+$/, ''),
+			element,
+			thumbnail: record.thumbnail ?? undefined,
+			format,
+			bytes
+		});
+		if (entry) showToast('"' + entry.name + '" is a prefab, still a .' + format);
+		return entry;
+	}
+
+	/** the Prefabs row's drop: every dragged LIBRARY file becomes a prefab in its own format */
+	async function dropToPrefabs(e: DragEvent) {
+		const payload = payloadOf(e);
+		dropFolder = null;
+		libraryDragging = false;
+		if (!payload) return;
+		e.preventDefault();
+		e.stopPropagation();
+		const dragged = payload.items?.length ? payload.items : payload.type === 'item' ? [payload] : [];
+		const records = dragged
+			.filter((p: any) => p && !p.prefabId && p.id)
+			.map((p: any) => $explorerItems.find((i: any) => i.id === p.id))
+			.filter(Boolean);
+		if (!records.length) return showToast('Drop a 3D object or a scene file here to make a prefab');
+		for (const record of records) await libraryToPrefab(record);
+	}
+
 	async function dropToBin(e: DragEvent) {
 		const payload = payloadOf(e);
 		dropFolder = null;
@@ -4111,6 +4227,7 @@
 			<!-- scrollable folder list; the roots below stay pinned to the bottom -->
 			<div class="flex min-h-0 flex-1 flex-col gap-0.5 overflow-x-auto overflow-y-auto p-1">
 			<button
+				id="explorer-root-row"
 				class="whitespace-nowrap rounded px-2 py-1 text-left {$activeFolder === null && !search
 					? 'bg-primary-700 text-white'
 					: 'text-gray-300 hover:bg-gray-700'} {dropFolder === 'root' ? 'outline-solid outline-2 outline-primary-500' : ''}"
@@ -4190,9 +4307,20 @@
 				<div id="explorer-roots" class="flex flex-col gap-0.5 overflow-y-auto" style="max-height: {rootsH}px">
 					<button
 						id="prefabs-folder"
-						class="whitespace-nowrap rounded px-2 py-1 text-left {$activeFolder === 'prefabs'
-							? 'bg-primary-700 text-white'
-							: 'text-gray-300 hover:bg-gray-700'}"
+						class="whitespace-nowrap rounded px-2 py-1 text-left {dropFolder === 'prefabs'
+							? 'bg-primary-500/20 ring-1 ring-primary-400 text-white'
+							: $activeFolder === 'prefabs'
+								? 'bg-primary-700 text-white'
+								: 'text-gray-300 hover:bg-gray-700'}"
+						title="Your prefab library. Drop a 3D object or a scene file here to make one — it keeps its own format."
+						ondragover={(e) => {
+							if (!canAccept(e)) return;
+							e.preventDefault();
+							e.stopPropagation();
+							dropFolder = 'prefabs';
+						}}
+						ondragleave={() => (dropFolder = null)}
+						ondrop={(e) => void dropToPrefabs(e)}
 						onclick={() => openFolder('prefabs')}><Boxes size={16} class="ico-prefab mr-1.5 w-4 text-center" aria-hidden="true" />Prefabs</button
 					>
 					<button

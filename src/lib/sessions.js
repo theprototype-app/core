@@ -235,6 +235,87 @@ export function buildSessionPayload(name) {
 }
 
 /**
+ * R22 round 11 — A .tpscene OF A SELECTION, not of the world.
+ *
+ * The user picked the formats themselves: "prefab (.glb), prefab (.tpscene) — tooltip
+ * when hovering that it includes animations/object-graph-nodes/shaders/etc". This is what
+ * makes that sentence true, and it is a DIFFERENT ACT from buildSessionPayload rather
+ * than an option on it. Two reasons to keep them apart: buildSessionPayload is on the
+ * hot path that decides "has this scene changed" (sceneSignature, round 11 phase 1) and
+ * an `only` flag there is one branch away from a wrong verdict; and what a selection
+ * MEANS is different — a subtree, not a world.
+ *
+ * SO WHAT TRAVELS: the objects, their authored clips, their object flow graphs, their
+ * shader graphs, and the joints whose BOTH ends are in the set. What does not: the
+ * environment, the look, the gravity, the music, the HUD and the game shell. Those are
+ * facts about a world, and a prefab dropped into somebody else's scene has no business
+ * changing their sky. The menu's tooltip says both halves out loud.
+ *
+ * Every snapshot already takes a `pruneMissing` predicate for exactly this shape of
+ * question, so the filtering is theirs and not a second copy here.
+ * @param {string} name @param {string[]} uuids top-level objects
+ * @returns {any} a payload readSessionZip/importObjects understand
+ */
+export function buildSelectionPayload(name, uuids) {
+	const group = get(objectsGroup);
+	const roots = (uuids ?? []).filter(Boolean);
+	/** every uuid in the selected SUBTREES — a document may be keyed by a child */
+	const inSet = new Set();
+	for (const uuid of roots) {
+		const object = group?.getObjectByProperty('uuid', uuid);
+		object?.traverse?.((/** @type {any} */ node) => inSet.add(node.uuid));
+	}
+	const missing = (/** @type {string} */ id) => !inSet.has(id);
+	const restore = parkAnimatedAtBase();
+	const animatedUuids = animatedImportUuids(group);
+	try {
+		const objects = roots
+			.map((uuid) => group?.getObjectByProperty('uuid', uuid))
+			.filter((/** @type {any} */ object) => object && !animatedUuids.includes(object.uuid) && !isTransient(object))
+			.map((/** @type {any} */ object) => object.toJSON());
+		const clips = animationsSnapshot();
+		/** @type {any} */
+		const animations = {};
+		for (const [uuid, set] of Object.entries(clips ?? {})) if (inSet.has(uuid)) animations[uuid] = set;
+		return {
+			id: crypto.randomUUID(),
+			name: name || 'Selection',
+			createdAt: Date.now(),
+			format: SESSION_FORMAT,
+			appVersion: APP_VERSION,
+			count: objects.length,
+			thumbnail: null,
+			objects,
+			// a rigged import replicates as its ORIGINAL bytes, so it rides the same way here
+			animated: animatedImportsSnapshot(group).filter((/** @type {any} */ record) => inSet.has(record.uuid)),
+			animations,
+			// THE SCENE GRAPH IS NOT PART OF A SELECTION, and `pruneMissing` cannot say so:
+			// it asks "is this graph's OBJECT still here", and the scene graph has no object,
+			// so it survives every predicate. Measured while building the counterfactual —
+			// the payload came out holding `{scene, <the box>}`, which would have travelled
+			// the author's whole scene logic inside a prefab.
+			graphs: Object.fromEntries(
+				Object.entries(serializeGraphs(serializeNode, serializeEdge, { pruneMissing: missing })).filter(
+					([key]) => key !== SCENE_GRAPH
+				)
+			),
+			nodes: [],
+			edges: [],
+			shaderGraphs: shaderGraphsSnapshot({ pruneMissing: missing }),
+			annotations: annotationsSnapshot().filter((/** @type {any} */ note) => inSet.has(note.objectUuid)),
+			// a joint with one end outside the set would arrive attached to nothing
+			joints: jointsSnapshot().filter((/** @type {any} */ joint) => inSet.has(joint.a) && inSet.has(joint.b)),
+			post: null,
+			hud: null,
+			game: null,
+			camera: null
+		};
+	} finally {
+		restore();
+	}
+}
+
+/**
  * 21-F4: a payload with NOTHING in it — what "New scene…" saves as a fresh level asset.
  * The same shape buildSessionPayload writes, minus every capture: an empty level must not
  * inherit whatever scene happens to be open when it is created.

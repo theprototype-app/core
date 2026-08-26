@@ -9,6 +9,7 @@
 	import { get } from 'svelte/store';
 	import { tick, untrack } from 'svelte';
 	import { explorerClose, mobileUndockAllowed, explorerSceneSaveArm, peers } from '../../stores/appStore.js';
+	import { settingsOpen, settingsSection } from '../../stores/appStore.js';
 	import { showToast, enable3dPreview, stackOnDrop, confirmPrefabUpdate } from '../../stores/appStore.js';
 	import {
 		explorerFolders,
@@ -1123,7 +1124,7 @@
 		const item = row.item;
 		switch (key) {
 			case 'kind':
-				return String(item?.kind ?? '—');
+				return kindLabel(item);
 			case 'size':
 				// a row we do not hold has no size to report, and a zero would read as an empty
 				// file rather than as an unknown one
@@ -1146,6 +1147,24 @@
 				return String(item?.name ?? '');
 		}
 	}
+	/**
+	 * R22 round 12 (user): "kind prefab should show in brackets filetype (.tpscene/.glb
+	 * etc)". Round 11 gave a prefab a FORMAT, so "prefab" alone stopped being the whole
+	 * answer — two cards reading `prefab` can now be a three.js snapshot and a .glb, which
+	 * behave differently when you drag them to the Library or download them.
+	 *
+	 * A snapshot prefab reads plain `prefab`, with no invented extension: it is not a file,
+	 * which is exactly what `prefabToLibrary` refuses on.
+	 * @param {any} item @returns {string}
+	 */
+	function kindLabel(item: any): string {
+		const kind = String(item?.kind ?? '—');
+		if (kind !== 'prefab') return kind;
+		const prefab = item.prefabId ? prefabById(item.prefabId) : null;
+		const format = prefab ? prefabFormatOf(prefab) : 'snapshot';
+		return format === 'snapshot' ? kind : kind + ' (.' + format + ')';
+	}
+
 	/**
 	 * The columns actually drawn — the user's order, filtered to the visible set. The
 	 * canonical declaration order is the FALLBACK now rather than the rule; see
@@ -1818,6 +1837,20 @@
 		confirmLabel: string;
 		run: () => void;
 	} | null>(null);
+	/**
+	 * R22 round 12 (user): "for delete add Settings button after tooltip 'It moves to
+	 * Deleted...' which will open app settings modal with Files accordion expanded".
+	 *
+	 * The question mentions the bin and the "do not ask me again" switch, and both live in
+	 * Settings ▸ Explorer — so the strip offers the way there rather than describing it.
+	 * `settingsSection` is the app's existing deep-link seam (Settings.svelte maps it onto
+	 * its accordions); the Explorer section was simply never in that map.
+	 */
+	function openFileSettings() {
+		confirmStrip = null;
+		settingsSection.set('explorer');
+		settingsOpen.set(true);
+	}
 	/**
 	 * Arm the strip. A second arming REPLACES the first — the same rule `showConfirm` has,
 	 * for the same reason: a question the user has already moved on from must not linger
@@ -3923,9 +3956,22 @@
 				onClose: () => gridEl?.focus()
 			});
 		} else if (item.kind === 'object' && !item.packEntry) {
-			// P1: double-click an object item ALWAYS opens the preview popup (the
-			// enable3dPreview toggle only gates the inline Properties preview)
-			openModelPreview({ title: item.name, itemId: item.id, name: item.name, onClose: () => gridEl?.focus() });
+			// R22 round 12 (user): "double click on 3d objects should open same preview as
+			// when opening image". ONE window for every kind, so the arrows walk from a
+			// texture to a model to a sound without a mode change — and the statistics the
+			// old pop-out showed come with it (`previewShowStats`, on by default), because
+			// adding a switch is no reason to take something away.
+			//
+			// `ModelPreviewWindow` survives for the PREFAB shelf's own "3D preview" button: a
+			// prefab is not a library file, it has no place in a folder walk, and 20-odd
+			// checks in prefab-explorer address that window by name.
+			openFilePreview({
+				title: item.name,
+				kind: 'object',
+				itemId: item.id,
+				name: item.name,
+				onClose: () => gridEl?.focus()
+			});
 		}
 	}
 </script>
@@ -4546,6 +4592,12 @@
 						>{confirmStrip.confirmLabel}</button
 					>
 					<button id="explorer-confirm-no" class="ex-confirm-no" onclick={confirmStripNo}>Cancel</button>
+					<button
+						id="explorer-confirm-settings"
+						class="ex-confirm-settings"
+						title="Open the file settings — the recycle bin, and whether deleting asks at all"
+						onclick={openFileSettings}>File settings</button
+					>
 				</div>
 			{/if}
 			{#if !pendingCard && childFolders.length === 0 && gridItems.length === 0}
@@ -5445,6 +5497,17 @@
 	}
 	.ex-confirm-no:hover {
 		background: rgb(255 255 255 / 6%);
+	}
+	/* the way OUT of being asked, offered beside the question rather than described in it */
+	.ex-confirm-settings {
+		flex: 0 0 auto;
+		border-radius: 3px;
+		padding: 3px 8px;
+		color: #9ca3af;
+		text-decoration: underline;
+	}
+	.ex-confirm-settings:hover {
+		color: #e5e7eb;
 	}
 	.ex-table {
 		width: 100%;

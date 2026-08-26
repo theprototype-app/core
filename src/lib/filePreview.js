@@ -156,6 +156,57 @@ previewOpacity.subscribe((v) => {
 });
 
 /**
+ * R22 round 12 (user): "add in cog (allow multiple windows) - so when clicking on another
+ * file in explorer it opens new window rather replacing current one".
+ *
+ * OFF by default, which is today's behaviour: one window that re-points. On, a second
+ * open ADDS a window — the file manager's "open in new window", and the reason somebody
+ * wants it is comparing two files side by side, which one re-pointing window cannot do.
+ * @type {import('svelte/store').Writable<boolean>}
+ */
+export const previewMultiWindow = writable(readFlag('preview:multiWindow', false));
+previewMultiWindow.subscribe((v) => saveFlag('preview:multiWindow', v));
+
+/**
+ * R22 round 12 (user): "keep tris/verts/meshes statistics, also add it into cog as
+ * option". ON by default — it was always shown beside the old pop-out, so hiding it by
+ * default would be taking something away in the name of adding a switch.
+ * @type {import('svelte/store').Writable<boolean>}
+ */
+export const previewShowStats = writable(readFlag('preview:showStats', true));
+previewShowStats.subscribe((v) => saveFlag('preview:showStats', v));
+
+/**
+ * R22 round 12 (user): "add into cog menu option auto-rotate (enabled by default) for
+ * objects, so when disabled I can rotate object as I want and it will stop at a place
+ * where I will stop rotating".
+ *
+ * The STOPPING half needs no code: `ModelPreview`'s drag is pointer-CAPTURED, applies
+ * `movementX` directly and has no inertia, so it already rests exactly where the pointer
+ * released — the spin was the only thing carrying it on. And the prop is read inside the
+ * rAF loop rather than in the effect body, so toggling it takes effect on the next frame
+ * WITHOUT re-running the effect (which would tear the WebGL context down and rebuild it —
+ * the documented 21-H2 hazard in that file).
+ * @type {import('svelte/store').Writable<boolean>}
+ */
+export const previewAutoRotate = writable(readFlag('preview:autoRotate', true));
+previewAutoRotate.subscribe((v) => saveFlag('preview:autoRotate', v));
+
+/** @param {string} key @param {boolean} fallback */
+function readFlag(key, fallback) {
+	if (typeof localStorage === 'undefined') return fallback;
+	const raw = localStorage.getItem(key);
+	return raw === null ? fallback : raw === 'true';
+}
+/** @param {string} key @param {boolean} value */
+function saveFlag(key, value) {
+	if (typeof localStorage === 'undefined') return;
+	try {
+		localStorage.setItem(key, String(value));
+	} catch {}
+}
+
+/**
  * mm:ss for a transport readout. Seconds only — a preview of an eight-minute track is
  * still eight minutes, and hours have no place in a strip this size.
  * @param {number} seconds @returns {string}

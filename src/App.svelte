@@ -17,6 +17,7 @@
   import Explorer from './components/editors/Explorer.svelte'
   import TextEditorWindow from './components/editors/TextEditorWindow.svelte'
   import FilePreviewWindow from './components/editors/FilePreviewWindow.svelte'
+  import { previewWindows } from './lib/fileWindows'
   import ModelPreviewWindow from './components/editors/ModelPreviewWindow.svelte'
   import DungeonMinimap from './components/play/DungeonMinimap.svelte'
   import PlayReticle from './components/play/PlayReticle.svelte'
@@ -355,7 +356,11 @@
 <HudEditor />
 <Explorer />
 <TextEditorWindow />
-<FilePreviewWindow />
+<!-- R22 round 12: ONE INSTANCE PER OPEN PREVIEW. With the multi-window pref off the list
+     never holds more than one, so this renders exactly what it always did. -->
+{#each $previewWindows as w, i (w.id)}
+  <FilePreviewWindow winId={w.id} index={i} />
+{/each}
 <ModelPreviewWindow />
 {/if}
 <Menu />

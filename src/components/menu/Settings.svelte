@@ -356,6 +356,10 @@
 		interfaceExpanded = $settingsSection === 'interface';
 		controlsExpanded = $settingsSection === 'controls';
 		inputExpanded = $settingsSection === 'input';
+		// R22 round 12: the file settings were reachable by deep link in every sense EXCEPT
+		// this line — the section existed, the store existed, and nothing mapped one onto
+		// the other. The delete strip's "File settings" button is the first caller.
+		explorerExpanded = $settingsSection === 'explorer';
 	} else if ($settingsOpen === false) {
 		restorePanels();
 		$settingsSection = null;

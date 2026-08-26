@@ -460,6 +460,63 @@ h.run(async () => {
 		'and the file is back on the visible shelf'
 	);
 
+	// ---- 10. R22 ROUND 12: the way OUT of being asked ---------------------------------
+	// "for delete add Settings button after tooltip 'It moves to Deleted...' which will open
+	// app settings modal with Files accordion expanded". The strip's detail talks about the
+	// bin and about being asked at all, and BOTH of those are switches in Settings - so it
+	// offers the way there instead of describing it.
+	await page.evaluate(() => window.__stores.explorer.activeFolder.set(null));
+	await page.waitForTimeout(500);
+	const freshIds = await seedFiles(A, ['settings-probe.txt']);
+	await page.waitForTimeout(600);
+	await cardMenu(A, freshIds[0]);
+	await page.getByRole('menuitem', { name: /^Delete$/ }).click();
+	await page.waitForTimeout(400);
+	h.check(!!(await stripOf(A)), 'premise: the strip is armed');
+	h.check(
+		(await page.locator('#explorer-confirm-settings').count()) === 1,
+		'the strip offers a File settings button beside the question'
+	);
+	await page.locator('#explorer-confirm-settings').click();
+	await page.waitForTimeout(900);
+	const opened = await page.evaluate(() => {
+		let open, section;
+		window.__stores.settingsOpen.subscribe((v) => (open = v))();
+		window.__stores.settingsSection.subscribe((v) => (section = v))();
+		// which accordion is actually EXPANDED, read from the DOM rather than from the store
+		// that asked for it - the store being right while the panel stays shut is the bug
+		// this deep link existed-but-did-nothing form of, until round 12 wired the last line
+		// A NON-MODAL <dialog> CARRIES NO EXPLICIT role, so '[role="dialog"]' matches nothing
+		// here — this app's modals are deliberately non-modal (dialog.show()) so the chrome
+		// above --z-modal stays clickable, and only the truly-modal ConfirmModal gets the
+		// aria-modal attribute the z-index remap keys on. Query the ELEMENT.
+		const heads = [...document.querySelectorAll('dialog[open] button')]
+			.filter((b) => /^(Explorer|Files)$/.test((b.textContent || '').trim()));
+		return {
+			open,
+			section,
+			expanded: heads.some((b) => b.getAttribute('aria-expanded') === 'true'),
+			// the switches the strip's own words are about
+			hasRecycle: !!document.querySelector('dialog[open]')?.textContent?.match(/recycle bin/i)
+		};
+	});
+	h.check(opened.open === true, 'it opens the Settings modal');
+	h.check(
+		opened.section === 'explorer',
+		'...through the app deep-link seam, not a second concept (' + opened.section + ')'
+	);
+	h.check(
+		opened.expanded,
+		'...with the file section EXPANDED - the line that was missing from the seam'
+	);
+	h.check(
+		opened.hasRecycle,
+		'...and it really is the section holding the switches the strip talks about'
+	);
+	h.check((await stripOf(A)) === null, 'the question is dismissed on the way - it is answered in Settings now');
+	await page.evaluate(() => window.__stores.settingsOpen.set(false));
+	await page.waitForTimeout(600);
+
 	h.check(
 		(h.pageErrors(A) || []).length === 0,
 		'no page errors (' + (h.pageErrors(A) || []).join(' | ') + ')'

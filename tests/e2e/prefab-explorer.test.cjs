@@ -637,16 +637,27 @@ h.run(async () => {
 		'premise: a model item has an inline preview too'
 	);
 	await modelCard.dblclick();
-	await A.page.waitForTimeout(900);
+	await A.page.waitForTimeout(1200);
+	// R22 ROUND 12 CHANGED WHICH WINDOW THIS IS, deliberately: "double click on 3d objects
+	// should open same preview as when opening image". A library OBJECT now opens the one
+	// FILE PREVIEW window every other kind opens, so the arrows walk from a texture to a
+	// model to a sound with no mode change - and it brings the tris/verts/meshes line the
+	// pop-out used to own. ModelPreviewWindow survives for the PREFAB shelf's own
+	// "3D preview" button (asserted elsewhere in this suite): a prefab is not a library
+	// file and has no place in a folder walk.
 	h.check(
-		await A.page.locator('#model-preview-window').isVisible(),
-		'model item: double-click opens the pop-out'
+		await A.page.locator('#image-preview-window').isVisible(),
+		'model item: double-click opens the shared file preview (round 12)'
+	);
+	h.check(
+		(await A.page.locator('#model-preview-window').count()) === 0,
+		'...and no longer the separate model pop-out'
 	);
 	h.check(
 		(await A.page.locator('#inline-preview').count()) === 0,
 		'model item: the inline preview stands down too (the hang was never prefab-specific)'
 	);
-	await A.page.locator('#model-preview-window button[title="Close"]').click();
+	await A.page.locator('#image-preview-window button[title="Close"]').click();
 	await A.page.waitForTimeout(700);
 	h.check(
 		await A.page.locator('#inline-preview canvas').isVisible(),

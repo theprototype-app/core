@@ -222,14 +222,20 @@ h.run(async () => {
 	await page.locator('#preview-opacity').fill('40');
 	await page.locator('#preview-opacity').dispatchEvent('input');
 	await page.waitForTimeout(400);
-	const faded = await page.evaluate(() =>
-		Number(getComputedStyle(document.querySelector('#preview-body')).opacity)
+	// R22 ROUND 12 CORRECTED THIS CHECK. It read the BODY's opacity, which is where round
+	// 11 put the fade — and that was the bug the user reported ("opacity should show what
+	// is behind window, not just make it darker"): fading a child against its own opaque
+	// parent can only darken it. The fade belongs to the WHOLE WINDOW now, so the body
+	// reads 1 and the window reads the setting. Section 10 owns the full story; this keeps
+	// the round-11 flow honest rather than asserting an implementation that was wrong.
+	const faded = await page.evaluate(() => ({
+		win: Number(getComputedStyle(document.querySelector('#image-preview-window')).opacity),
+		body: Number(getComputedStyle(document.querySelector('#preview-body')).opacity)
+	}));
+	h.check(
+		Math.abs(faded.win - 0.4) < 0.03 && faded.body === 1,
+		`the WINDOW fades, not the body against its own panel (${JSON.stringify(faded)})`
 	);
-	h.check(Math.abs(faded - 0.4) < 0.03, `the CONTENT fades (${faded})`);
-	const chromeSolid = await page.evaluate(() =>
-		Number(getComputedStyle(document.querySelector('#image-preview-window .ui-panel-header')).opacity)
-	);
-	h.check(chromeSolid === 1, `…while the header is untouched by the opacity setting (${chromeSolid})`);
 
 	// PASSTHROUGH: the body stops taking clicks, the header keeps them
 	await page.locator('#preview-passthrough').check();
@@ -436,6 +442,211 @@ h.run(async () => {
 	h.check(
 		(await page.locator('#preview-body canvas').count()) === 1,
 		'…and it really is a live preview canvas, not a thumbnail'
+	);
+
+	// ---- 9. R22 ROUND 12: the cog OVERLAYS, it does not shove -------------------------
+	// "pressing cog should overlay on image rather than moving it". The picture must not
+	// move when you open the settings you opened in order to adjust it.
+	if (await page.locator('#preview-settings').count()) {
+		await page.locator('#preview-cog').first().click();
+		await page.waitForTimeout(300);
+	}
+	const bodyBefore = await page.evaluate(() =>
+		Math.round(document.querySelector('#preview-body').getBoundingClientRect().top)
+	);
+	await page.locator('#preview-cog').first().click();
+	await page.waitForTimeout(400);
+	const overlay = await page.evaluate(() => {
+		const body = document.querySelector('#preview-body').getBoundingClientRect();
+		const panel = document.querySelector('#preview-settings').getBoundingClientRect();
+		const win = document.querySelector('#image-preview-window').getBoundingClientRect();
+		return {
+			bodyTop: Math.round(body.top),
+			panelRight: Math.round(panel.right),
+			windowRight: Math.round(win.right),
+			position: getComputedStyle(document.querySelector('#preview-settings')).position
+		};
+	});
+	h.check(
+		overlay.bodyTop === bodyBefore,
+		'the picture does NOT move when the settings open (' + bodyBefore + ' -> ' + overlay.bodyTop + ')'
+	);
+	h.check(
+		overlay.position === 'absolute' && overlay.windowRight - overlay.panelRight < 24,
+		'...because the panel is laid OVER the window, under its own cog (' + JSON.stringify(overlay) + ')'
+	);
+
+	// ---- 10. OPACITY SHOWS WHAT IS BEHIND, rather than darkening ----------------------
+	// "opacity should show what is behind window, not just make it darker". Round 11 faded
+	// the BODY against its own opaque parent, which can only darken it - there was never
+	// anything behind it to show. Read the COMPOSITED backgrounds, not the CSS value.
+	const solid = await page.evaluate(() => {
+		const win = document.querySelector('#image-preview-window');
+		return {
+			winOpacity: Number(getComputedStyle(win).opacity),
+			winBg: getComputedStyle(win).backgroundColor,
+			bodyBg: getComputedStyle(document.querySelector('#preview-body')).backgroundColor
+		};
+	});
+	h.check(
+		solid.winOpacity === 1 && !/rgba\(0, 0, 0, 0\)/.test(solid.winBg),
+		'premise: at full strength the window is opaque (' + JSON.stringify(solid) + ')'
+	);
+	await page.locator('#preview-opacity').fill('40');
+	await page.locator('#preview-opacity').dispatchEvent('input');
+	await page.waitForTimeout(400);
+	const faded2 = await page.evaluate(() => {
+		const win = document.querySelector('#image-preview-window');
+		const head = win.querySelector('.ui-panel-header');
+		return {
+			winOpacity: Number(getComputedStyle(win).opacity),
+			winBg: getComputedStyle(win).backgroundColor,
+			bodyBg: getComputedStyle(document.querySelector('#preview-body')).backgroundColor,
+			headBg: getComputedStyle(head).backgroundColor
+		};
+	});
+	h.check(
+		Math.abs(faded2.winOpacity - 0.4) < 0.03,
+		'the WHOLE WINDOW fades, so the scene is its backdrop (' + faded2.winOpacity + ')'
+	);
+	h.check(
+		/rgba\(0, 0, 0, 0\)|transparent/.test(faded2.winBg) &&
+			/rgba\(0, 0, 0, 0\)|transparent/.test(faded2.bodyBg),
+		'...and BOTH opaque layers under the picture give way (' + faded2.winBg + ' / ' + faded2.bodyBg + ')'
+	);
+	h.check(
+		!/rgba\(0, 0, 0, 0\)/.test(faded2.headBg),
+		'...while the header keeps its surface, or a faint window has no handle (' + faded2.headBg + ')'
+	);
+	await page.evaluate(() => window.__stores.filePreview.previewOpacity.set(1));
+	await page.locator('#preview-cog').first().click();
+	await page.waitForTimeout(300);
+
+	// ---- 11. MULTIPLE WINDOWS ---------------------------------------------------------
+	const winList = () =>
+		page.evaluate(() => {
+			let v;
+			window.__stores.fileWindows.previewWindows.subscribe((x) => (v = x))();
+			return v.map((w) => ({ id: w.id, kind: w.kind || 'image', title: w.title }));
+		});
+	h.check(
+		(await page.evaluate(() => localStorage.getItem('preview:multiWindow'))) !== 'true',
+		'premise: the pref is OFF by default - one window that re-points, exactly as before'
+	);
+	await page.evaluate(() => window.__stores.explorer.activeFolder.set(null));
+	await page.waitForTimeout(500);
+	await page.locator('[data-card-id="' + seeded.img + '"]').dblclick();
+	await page.waitForTimeout(800);
+	await page.locator('[data-card-id="' + seeded.snd + '"]').dblclick();
+	await page.waitForTimeout(800);
+	const singleMode = await winList();
+	h.check(
+		singleMode.length === 1 && singleMode[0].kind === 'audio',
+		'with the pref off a second open RE-POINTS the one window (' + JSON.stringify(singleMode) + ')'
+	);
+
+	await page.evaluate(() => window.__stores.filePreview.previewMultiWindow.set(true));
+	await page.locator('[data-card-id="' + seeded.img + '"]').dblclick();
+	await page.waitForTimeout(900);
+	const multi = await winList();
+	h.check(
+		multi.length === 2,
+		'with it on, a second open ADDS a window (' + JSON.stringify(multi) + ')'
+	);
+	const domIds = await page.evaluate(() =>
+		[...document.querySelectorAll('[data-preview-id]')].map((el) => el.id)
+	);
+	h.check(
+		domIds.length === 2 && domIds[0] === 'image-preview-window',
+		'...each with its own element, and the FIRST keeps the id four suites address (' +
+			JSON.stringify(domIds) +
+			')'
+	);
+	// THE POINT of two windows is comparing two files, so they must not sit on one rect
+	const rects = await page.evaluate(() =>
+		[...document.querySelectorAll('[data-preview-id]')].map((el) => {
+			const r = el.getBoundingClientRect();
+			return { x: Math.round(r.left), y: Math.round(r.top) };
+		})
+	);
+	h.check(
+		rects[0].x !== rects[1].x || rects[0].y !== rects[1].y,
+		'...and the new one CASCADES rather than landing on the saved rect (' + JSON.stringify(rects) + ')'
+	);
+	// asking for one that is already open RAISES it rather than minting a third
+	await page.locator('[data-card-id="' + seeded.img + '"]').dblclick();
+	await page.waitForTimeout(800);
+	h.check(
+		(await winList()).length === 2,
+		'a repeat open is a RAISE, not a duplicate (the 21-I3 ruling, one window over)'
+	);
+	// closing one leaves the other alone
+	await page.locator('[data-preview-id] button[title="Close"]').last().click();
+	await page.waitForTimeout(600);
+	h.check((await winList()).length === 1, 'closing one window closes ONLY that one');
+	await page.evaluate(() => window.__stores.filePreview.previewMultiWindow.set(false));
+
+	// ---- 12. A 3D OBJECT OPENS IN THE SAME WINDOW, with its statistics ----------------
+	// "double click on 3d objects should open same preview as when opening image (but also
+	// keep tris/verts/meshes statistics ... add into cog menu option auto-rotate)"
+	const glbId = await page.evaluate(async () => {
+		const s = window.__stores;
+		const mesh = new s.THREE.Mesh(new s.THREE.BoxGeometry(1, 1, 1), new s.THREE.MeshStandardMaterial());
+		const glb = await new Promise((res, rej) =>
+			new s.GLTFExporterModule.GLTFExporter().parse(mesh, (r) => res(r), (e) => rej(e), { binary: true })
+		);
+		return (await s.explorer.addItemFromBytes(glb, 'a-box.glb', null)).id;
+	});
+	await page.waitForTimeout(900);
+	await page.locator('[data-card-id="' + glbId + '"]').dblclick();
+	await page.waitForTimeout(1500);
+	const objWin = await winList();
+	h.check(
+		objWin.length === 1 && objWin[0].kind === 'object',
+		'a 3D object opens in the SAME preview window as an image (' + JSON.stringify(objWin) + ')'
+	);
+	h.check(
+		(await page.locator('#model-preview-window').count()) === 0,
+		'...and NOT in the separate pop-out it used to open'
+	);
+	await h.eventually(
+		() => page.locator('#preview-stats-line').textContent().catch(() => ''),
+		(t) => /12 tris/.test(t || ''),
+		'the tris/verts/meshes statistics came with it',
+		15000
+	);
+	await page.locator('#preview-cog').first().click();
+	await page.waitForTimeout(400);
+	const objRows = await page.evaluate(() =>
+		[...document.querySelectorAll('#preview-settings label')].map((l) => l.textContent.replace(/\s+/g, ' ').trim())
+	);
+	h.check(
+		objRows.some((t) => /Auto-rotate/.test(t)) && objRows.some((t) => /statistics/.test(t)),
+		'the cog offers auto-rotate and the statistics toggle for an object (' + JSON.stringify(objRows) + ')'
+	);
+	h.check(
+		(await page.evaluate(() => localStorage.getItem('preview:autoRotate'))) !== 'false',
+		'auto-rotate is ON by default, as asked'
+	);
+	// THE HAZARD: ModelPreview reads autoSpin inside its rAF loop rather than in the effect
+	// body, so a toggle must NOT tear the WebGL context down and rebuild it (its own 21-H2
+	// note). Same canvas, same size, after the flip.
+	const canvasBefore = await page.evaluate(() => document.querySelector('#preview-body canvas')?.width);
+	await page.locator('#preview-autorotate').uncheck();
+	await page.waitForTimeout(900);
+	const canvasAfter = await page.evaluate(() => ({
+		n: document.querySelectorAll('#preview-body canvas').length,
+		w: document.querySelector('#preview-body canvas')?.width
+	}));
+	h.check(
+		canvasAfter.n === 1 && canvasAfter.w === canvasBefore,
+		'toggling auto-rotate does not rebuild the GL context (' + canvasBefore + ' -> ' + JSON.stringify(canvasAfter) + ')'
+	);
+	await page.locator('#preview-stats').uncheck();
+	await page.waitForTimeout(500);
+	h.check(
+		(await page.locator('#preview-stats-line').count()) === 0,
+		'...and the statistics toggle really hides them'
 	);
 
 	h.check(

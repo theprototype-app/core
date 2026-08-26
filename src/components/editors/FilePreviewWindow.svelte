@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { AudioLines, Box, ChevronLeft, ChevronRight, CornerLeftUp, Folder, Image, Settings } from '@lucide/svelte';
+	import { untrack } from 'svelte';
 	// R22 round 11 — WAS ImagePreviewWindow, and it is the FILE preview now: image, audio
 	// or 3D, with arrows that walk the folder you are looking at.
 	//
@@ -11,11 +12,19 @@
 	//
 	// Original brief (107): wheel/± zoom 10%–800%, drag to pan while zoomed, zoom in the
 	// header. All of that is still here, and still image-only.
-	import { imagePreviewTarget } from '$lib/fileWindows';
+	import {
+		previewWindows,
+		previewRaise,
+		closePreviewWindow,
+		setPreviewWindow
+	} from '$lib/fileWindows';
 	import {
 		previewSiblings,
 		previewOpacity,
 		previewPassthrough,
+		previewMultiWindow,
+		previewShowStats,
+		previewAutoRotate,
 		previewFaceOf,
 		previewIdOf,
 		previewPosition,
@@ -28,6 +37,15 @@
 	import ModelPreview from './ModelPreview.svelte';
 	import AudioPlayer from './AudioPlayer.svelte';
 
+	/**
+	 * R22 round 12 — ONE INSTANCE PER OPEN WINDOW. `winId` addresses this window's entry in
+	 * `previewWindows`; `index` is its place in the stack, which decides its DOM id and its
+	 * saved rect. The FIRST window keeps the id and the dragWindow key it has always had
+	 * (`#image-preview-window` / `imagePreviewWin`) so four suites, every caller and the
+	 * remembered position all keep working — the 21-G1 rule.
+	 */
+	let { winId = 0, index = 0 }: { winId?: number; index?: number } = $props();
+
 	let zoom = $state(1);
 	let panX = $state(0);
 	let panY = $state(0);
@@ -36,8 +54,10 @@
 	let winEl: any = $state(null);
 	let cogOpen = $state(false);
 	let player: any = $state(null);
+	let stats: any = $state(null);
 
-	const target = $derived($imagePreviewTarget);
+	const target = $derived($previewWindows.find((w: any) => w.id === winId) ?? null);
+	const first = $derived(index === 0);
 	/** which face to draw. A target that names no kind is an image — every pre-round-11
 	 * caller passes a plain `{title, url}` and must keep working unchanged. */
 	const face = $derived(target ? (target.kind ?? 'image') : null);
@@ -53,10 +73,17 @@
 	);
 	const upAvailable = $derived(typeof $activeFolder === 'string' && !$activeFolder.includes(':'));
 
+	// asked for again while already open: come forward, change nothing (21-I3's ruling)
 	$effect(() => {
-		const t = $imagePreviewTarget;
+		void $previewRaise;
+		if (winEl) untrack(() => winEl.focus?.());
+	});
+
+	$effect(() => {
+		const t = target;
 		if (t && t !== openedFor) {
 			openedFor = t;
+			stats = null;
 			zoom = 1;
 			panX = 0;
 			panY = 0;
@@ -118,7 +145,7 @@
 		const keep = target?.onClose;
 		releaseUrl();
 		if (kind === 'folder') {
-			imagePreviewTarget.set({
+			setPreviewWindow(winId, {
 				title: entry.folder.name,
 				kind: 'folder',
 				folderId: entry.folder.id,
@@ -138,7 +165,7 @@
 			const blob = item.dataUrl ? null : await itemBlob(item.id);
 			url = item.dataUrl || (blob ? URL.createObjectURL(blob) : '');
 		}
-		imagePreviewTarget.set({
+		setPreviewWindow(winId, {
 			title: item.name,
 			kind,
 			itemId: item.kind === 'prefab' ? '' : item.id,
@@ -210,13 +237,12 @@
 	}
 
 	function releaseUrl() {
-		const t = $imagePreviewTarget;
-		if (t?.url && String(t.url).startsWith('blob:')) URL.revokeObjectURL(t.url);
+		if (target?.url && String(target.url).startsWith('blob:')) URL.revokeObjectURL(target.url);
 	}
 	function close() {
-		$imagePreviewTarget?.onClose?.(); // 218: let the opener (Explorer) refocus
+		target?.onClose?.(); // 218: let the opener (Explorer) refocus
 		releaseUrl();
-		imagePreviewTarget.set(null);
+		closePreviewWindow(winId);
 		openedFor = null;
 		cogOpen = false;
 	}
@@ -234,12 +260,19 @@
 	-->
 	<!-- svelte-ignore a11y_no_static_element_interactions -->
 	<div
-		id="image-preview-window"
+		id={first ? 'image-preview-window' : 'image-preview-window-' + index}
+		data-preview-id={winId}
 		bind:this={winEl}
 		tabindex="-1"
 		class="ui-panel fixed flex flex-col overflow-hidden outline-hidden"
 		class:pv-through={$previewPassthrough}
-		use:dragWindow={{ key: 'imagePreviewWin', defaultRect: { left: 300, top: 130 }, resizable: true }}
+		class:pv-faded={$previewOpacity < 1}
+		style:--pv-opacity={$previewOpacity}
+		use:dragWindow={{
+			key: first ? 'imagePreviewWin' : 'imagePreviewWin:' + index,
+			defaultRect: { left: 300 + index * 28, top: 130 + index * 28 },
+			resizable: true
+		}}
 		use:focusStack
 		use:ownKeys
 		style="z-index: var(--z-window); width: 520px; height: 420px"
@@ -300,6 +333,11 @@
 				A PANEL, not a ContextMenu: an opacity setting is a slider, and the shared menu
 				renders rows. It lives inside the window rather than portaled, because it is
 				about this window and has nowhere else to be.
+
+				R22 round 12 (user): "pressing cog should overlay on image rather than moving
+				it". It was a flex SIBLING of the body, so opening it shoved the picture down
+				and every measurement of the thing you opened it to adjust moved with it. It is
+				absolutely positioned over the body now, anchored under the cog.
 			-->
 			<div id="preview-settings" class="pv-settings">
 				<label class="pv-row" for="preview-opacity">
@@ -329,6 +367,36 @@
 					Clicks reach the scene underneath; the header stays live so you can still move this
 					window and switch it back.
 				</p>
+				<label class="pv-row pv-check" for="preview-multi">
+					<input
+						id="preview-multi"
+						type="checkbox"
+						checked={$previewMultiWindow}
+						onchange={(e) => previewMultiWindow.set((e.currentTarget as HTMLInputElement).checked)}
+					/>
+					<span class="pv-label pv-grow">Allow multiple windows</span>
+				</label>
+				<p class="pv-note">Opening another file adds a window instead of re-pointing this one.</p>
+				{#if face === 'object'}
+					<label class="pv-row pv-check" for="preview-autorotate">
+						<input
+							id="preview-autorotate"
+							type="checkbox"
+							checked={$previewAutoRotate}
+							onchange={(e) => previewAutoRotate.set((e.currentTarget as HTMLInputElement).checked)}
+						/>
+						<span class="pv-label pv-grow">Auto-rotate</span>
+					</label>
+					<label class="pv-row pv-check" for="preview-stats">
+						<input
+							id="preview-stats"
+							type="checkbox"
+							checked={$previewShowStats}
+							onchange={(e) => previewShowStats.set((e.currentTarget as HTMLInputElement).checked)}
+						/>
+						<span class="pv-label pv-grow">Show mesh statistics</span>
+					</label>
+				{/if}
 			</div>
 		{/if}
 
@@ -336,7 +404,7 @@
 		<div
 			id="preview-body"
 			class="pv-body relative min-h-0 flex-1 overflow-hidden"
-			style="cursor: {face === 'image' && zoom > 1 ? (panning ? 'grabbing' : 'grab') : 'default'}; opacity: {$previewOpacity}"
+			style="cursor: {face === 'image' && zoom > 1 ? (panning ? 'grabbing' : 'grab') : 'default'}"
 			onwheel={onWheel}
 			onpointerdown={(e) => {
 				if (face !== 'image' || zoom <= 1) return;
@@ -370,8 +438,27 @@
 				</div>
 			{:else if face === 'object'}
 				{#key target.itemId + '|' + (target.prefabId ?? '')}
-					<ModelPreview itemId={target.itemId ?? ''} prefabId={target.prefabId ?? ''} name={target.name ?? ''} />
+					<!--
+						`autoSpin` is read inside ModelPreview's rAF loop rather than in its effect
+						body, so toggling it takes effect on the next FRAME without tearing the
+						WebGL context down and rebuilding it (that file's documented 21-H2 hazard).
+						Its drag is pointer-CAPTURED with no inertia, which is why "it will stop at
+						a place where I will stop rotating" needed no code of its own.
+					-->
+					<ModelPreview
+						itemId={target.itemId ?? ''}
+						prefabId={target.prefabId ?? ''}
+						name={target.name ?? ''}
+						autoSpin={$previewAutoRotate}
+						onStats={(s) => (stats = s)}
+					/>
 				{/key}
+				{#if $previewShowStats && stats}
+					<div id="preview-stats-line" class="pv-stats">
+						{stats.tris.toLocaleString()} tris · {stats.verts.toLocaleString()} verts · {stats.meshes}
+						mesh{stats.meshes === 1 ? '' : 'es'}
+					</div>
+				{/if}
 			{:else if face === 'folder'}
 				<div class="pv-folder">
 					<Folder size={44} aria-hidden="true" />
@@ -394,6 +481,41 @@
 	}
 	.pv-body {
 		background: #0d1117;
+	}
+	/*
+		R22 round 12 (user): "opacity should show what is behind window, not just make it
+		darker".
+
+		THE BUG: round 11 put `opacity` on the BODY, whose own background is opaque and
+		which sits on an opaque `.ui-panel`. Fading a child against its own opaque parent
+		can only ever darken it — there was never anything behind it to show. So the fade
+		belongs to the WHOLE WINDOW, and the two opaque layers underneath have to give way
+		with it: the panel's background and the body's both go transparent, which is what
+		leaves the scene as the backdrop.
+
+		The header keeps its own surface at full strength, or a faint window is one you
+		cannot find the handle of.
+	*/
+	.pv-faded {
+		opacity: var(--pv-opacity, 1);
+		background: transparent;
+	}
+	.pv-faded .pv-body {
+		background: transparent;
+	}
+	.pv-faded .ui-panel-header {
+		background: var(--surface, #1f2937);
+	}
+	.pv-stats {
+		position: absolute;
+		bottom: 0;
+		left: 0;
+		right: 0;
+		background: rgb(0 0 0 / 55%);
+		padding: 2px 6px;
+		text-align: center;
+		font-size: 10px;
+		color: #d1d5db;
 	}
 	/*
 		CLICK-THROUGH. The ROOT, not the body — and that distinction cost a red check.
@@ -420,14 +542,29 @@
 	.pv-cog-on {
 		color: var(--accent, #3b82f6);
 	}
+	/*
+		R22 round 12: it OVERLAYS the body instead of pushing it down. Absolute against the
+		window (`.ui-panel` is `position: fixed`, so it is the containing block), pinned to
+		the right under the cog it belongs to, and scrollable in case a future kind adds rows
+		to a short window.
+	*/
 	.pv-settings {
+		position: absolute;
+		right: 6px;
+		top: 30px;
+		z-index: 4;
 		display: flex;
+		width: 230px;
+		max-height: calc(100% - 40px);
 		flex-direction: column;
 		gap: 4px;
-		border-bottom: 1px solid var(--border, #374151);
+		overflow-y: auto;
+		border: 1px solid var(--border, #374151);
+		border-radius: 4px;
 		background: var(--surface, #1f2937);
 		padding: 6px 8px;
 		font-size: 11px;
+		box-shadow: 0 6px 18px rgb(0 0 0 / 45%);
 	}
 	.pv-row {
 		display: flex;

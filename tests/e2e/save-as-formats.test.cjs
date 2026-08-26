@@ -392,6 +392,44 @@ h.run(async () => {
 		`a snapshot prefab has no file to be, and says so rather than inventing one (${JSON.stringify(declined)})`
 	);
 
+	// ---- 8. R22 ROUND 12: a prefab's kind says WHICH FILE it is -----------------------
+	// "kind prefab should show in brackets filetype (.tpscene/.glb etc)". Round 11 gave a
+	// prefab a format, so 'prefab' alone stopped being the whole answer - two cards reading
+	// the same word can be a three.js snapshot and a .glb, which behave differently when
+	// dragged to the Library or downloaded.
+	await page.evaluate(() => {
+		window.__stores.explorerView.explorerViewMode.set('list');
+		window.__stores.explorer.activeFolder.set('prefabs');
+	});
+	await page.waitForTimeout(900);
+	const kinds = await page.evaluate(() =>
+		[...document.querySelectorAll('#explorer-list-head th[data-col]')].map((th) => th.getAttribute('data-col'))
+	);
+	h.check(kinds.includes('kind'), 'premise: the list is showing a Type column (' + JSON.stringify(kinds) + ')');
+	const rows = await page.evaluate(() =>
+		[...document.querySelectorAll('#explorer-list .ex-row')].map((r) => ({
+			name: r.querySelector('td[data-col="name"]')?.innerText.trim(),
+			kind: r.querySelector('td[data-col="kind"]')?.innerText.trim()
+		}))
+	);
+	const glbRow = rows.find((r) => /GlbPrefab/.test(r.name || ''));
+	const tpRow = rows.find((r) => /ScenePrefab/.test(r.name || ''));
+	const snapRow = rows.find((r) => r.kind === 'prefab');
+	h.check(
+		glbRow && glbRow.kind === 'prefab (.glb)',
+		'a .glb prefab says so in brackets (' + JSON.stringify(glbRow) + ')'
+	);
+	h.check(
+		tpRow && tpRow.kind === 'prefab (.tpscene)',
+		'...and a .tpscene one says that (' + JSON.stringify(tpRow) + ')'
+	);
+	h.check(
+		!!snapRow,
+		'...while a SNAPSHOT prefab reads plain prefab, with no invented extension - it is not a file, which is exactly what prefabToLibrary refuses on (' +
+			JSON.stringify(snapRow) +
+			')'
+	);
+
 	h.check(
 		(h.pageErrors(A) || []).length === 0,
 		'no page errors (' + (h.pageErrors(A) || []).join(' | ') + ')'

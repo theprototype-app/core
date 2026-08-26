@@ -30,8 +30,7 @@
 	} from '$lib/fileWindows';
 	import {
 		previewSiblings,
-		previewOpacity,
-		previewPassthrough,
+
 		previewMultiWindow,
 		previewShowStats,
 		previewAutoRotate,
@@ -75,6 +74,34 @@
 	 */
 	let spinning = $state(true);
 
+	/**
+	 * R22 ROUND 14 (user): "passthrough and opacity is per window setting and should be
+	 * disabled when new window opened with 100%". They were persisted prefs; they are this
+	 * window's state now and reset with every new target. See filePreview.js for why these
+	 * two moved and the other two did not.
+	 */
+	let winOpacity = $state(1);
+	let winPassthrough = $state(false);
+
+	/**
+	 * Whether this window has been USED yet — the gate on the gesture prompt below.
+	 *
+	 * THE STANDARD, which is worth stating because the first version got it wrong: a line
+	 * like "click to auto-rotate · drag to turn" is ONBOARDING, not a status readout. Every
+	 * 3D viewer that ships one treats it that way — `<model-viewer>`'s interaction prompt
+	 * appears while the viewer sits untouched and is dismissed by the first gesture,
+	 * Sketchfab overlays one on load that the first drag clears. None of them bring it back
+	 * afterwards, because a prompt that returns is telling a user something they have
+	 * already proved they know.
+	 *
+	 * Round 13 tied it to the turntable being STOPPED, which made it a status light: it
+	 * blinked on and off with every click, in the corner, forever. It is dismissed by the
+	 * first press or wheel in this window now and does not come back — and because any
+	 * change of state IS an interaction, its wording can read live off the state without
+	 * ever being able to flicker.
+	 */
+	let hintSeen = $state(false);
+
 	const target = $derived($previewWindows.find((w: any) => w.id === winId) ?? null);
 	const first = $derived(index === 0);
 	/** which face to draw. A target that names no kind is an image — every pre-round-11
@@ -104,6 +131,9 @@
 			openedFor = t;
 			stats = null;
 			spinning = untrack(() => $previewAutoRotate); // the default, at opening time
+			winOpacity = 1; // round 14: a new window is opened to be LOOKED at
+			winPassthrough = false;
+			hintSeen = false;
 			zoom = 1;
 			panX = 0;
 			panY = 0;
@@ -285,9 +315,9 @@
 		bind:this={winEl}
 		tabindex="-1"
 		class="ui-panel fixed flex flex-col overflow-hidden outline-hidden"
-		class:pv-through={$previewPassthrough}
-		class:pv-faded={$previewOpacity < 1}
-		style:--pv-opacity={$previewOpacity}
+		class:pv-through={winPassthrough}
+		class:pv-faded={winOpacity < 1}
+		style:--pv-opacity={winOpacity}
 		use:dragWindow={{
 			key: first ? 'imagePreviewWin' : 'imagePreviewWin:' + index,
 			defaultRect: { left: 300 + index * 28, top: 130 + index * 28 },
@@ -360,6 +390,13 @@
 				absolutely positioned over the body now, anchored under the cog.
 			-->
 			<div id="preview-settings" class="pv-settings">
+				<!--
+					R22 round 14: the cog holds settings of TWO scopes now, so it says which is
+					which. Without the headings the same panel silently means "here" for its top
+					half and "everywhere" for its bottom half, and the only way to find out is to
+					open a second window and compare.
+				-->
+				<p class="pv-scope">This window</p>
 				<label class="pv-row" for="preview-opacity">
 					<span class="pv-label">Opacity</span>
 					<input
@@ -368,19 +405,21 @@
 						min="15"
 						max="100"
 						step="5"
-						value={Math.round($previewOpacity * 100)}
+						value={Math.round(winOpacity * 100)}
 						oninput={(e) =>
-							previewOpacity.set(clampPreviewOpacity(Number((e.currentTarget as HTMLInputElement).value) / 100))}
+							(winOpacity = clampPreviewOpacity(
+								Number((e.currentTarget as HTMLInputElement).value) / 100
+							))}
 					/>
-					<span class="pv-value">{Math.round($previewOpacity * 100)}%</span>
+					<span class="pv-value">{Math.round(winOpacity * 100)}%</span>
 				</label>
 				<label class="pv-row pv-check" for="preview-passthrough">
 					<input
 						id="preview-passthrough"
 						class="tp-check"
 						type="checkbox"
-						checked={$previewPassthrough}
-						onchange={(e) => previewPassthrough.set((e.currentTarget as HTMLInputElement).checked)}
+						checked={winPassthrough}
+						onchange={(e) => (winPassthrough = (e.currentTarget as HTMLInputElement).checked)}
 					/>
 					<span class="pv-label pv-grow">Passthrough</span>
 				</label>
@@ -388,6 +427,7 @@
 					Clicks reach the scene underneath; the header stays live so you can still move this
 					window and switch it back.
 				</p>
+				<p class="pv-scope">All previews</p>
 				<label class="pv-row pv-check" for="preview-multi">
 					<input
 						id="preview-multi"
@@ -406,14 +446,20 @@
 							class="tp-check"
 							type="checkbox"
 							checked={$previewAutoRotate}
-							onchange={(e) => {
-								const on = (e.currentTarget as HTMLInputElement).checked;
-								previewAutoRotate.set(on);
-								spinning = on;
-							}}
+							onchange={(e) =>
+								previewAutoRotate.set((e.currentTarget as HTMLInputElement).checked)}
 						/>
 						<span class="pv-label pv-grow">Auto-rotate new previews</span>
 					</label>
+					<!--
+						R22 round 14 (user): "autorotate new previews setting is global, but should
+						not affect already opened windows". It used to write `spinning` as well, on
+						the reasoning that a setting you can watch do nothing is a dead control —
+						but the label already says NEW previews, and the model itself is the switch
+						for this one, a click away. Reaching in was the surprise: it stopped a
+						window you were reading from, which is the opposite of what a default is
+						for. The statistics below are deliberately NOT like this — see its note.
+					-->
 					<label class="pv-row pv-check" for="preview-stats">
 						<input
 							id="preview-stats"
@@ -424,6 +470,12 @@
 						/>
 						<span class="pv-label pv-grow">Show mesh statistics</span>
 					</label>
+					<!--
+						...and this one DOES reach every open window, as the user asked and as it
+						already did. The two are not inconsistent: the turntable is a per-window
+						MOTION you can start with a click, while the reading is chrome, and hiding
+						chrome everywhere at once is the whole point of the switch.
+					-->
 				{/if}
 			</div>
 		{/if}
@@ -480,6 +532,7 @@
 						autoSpin={spinning}
 						onStats={(s) => (stats = s)}
 						onToggleSpin={() => (spinning = !spinning)}
+						onInteract={() => (hintSeen = true)}
 					/>
 				{/key}
 				<!--
@@ -489,7 +542,7 @@
 					over the scene, and chrome is the first thing in the way of that — so the
 					reading gets out of the way on its own rather than needing a second switch.
 				-->
-				{#if $previewShowStats && stats && $previewOpacity >= 1}
+				{#if $previewShowStats && stats && winOpacity >= 1}
 					<div id="preview-stats-line" class="pv-stats">
 						{stats.tris.toLocaleString()} tris · {stats.verts.toLocaleString()} verts · {stats.meshes}
 						mesh{stats.meshes === 1 ? '' : 'es'}
@@ -505,12 +558,27 @@
 					So this is a HINT again rather than a control, and it says which gesture is
 					which — the corner label the old pop-out had, with the pan and zoom added.
 				-->
-				<!-- ONLY WHILE IT IS STILL (user): a tip is guidance you need when nothing is
-				     happening. Over a turning model it is just something else moving. -->
-				{#if !spinning && $previewOpacity >= 1}
+				<!--
+					AN INTERACTION PROMPT, not a status light. R22 round 14 — see `hintSeen` for the
+					standard it now follows and what round 13 had it doing instead.
+
+					THREE gates, and each answers a different question:
+					· `!hintSeen` — have you used this window yet? A prompt is for before you have.
+					· `$previewShowStats` — the user's own rule, and a good one: "if user disabled
+					  show mesh statistics I know that user already clicked on cog and is quite
+					  familiar with the app". Turning off the reading is a competence signal, so
+					  the teaching goes with it. It also means one switch quiets the corner
+					  entirely, which is what somebody using this as a reference wants.
+					· `winOpacity >= 1` — a faded window is a reference laid over the scene, and
+					  chrome is the first thing in the way of one.
+
+					The wording reads LIVE off the turntable and still cannot flicker, because the
+					only way to change that state is a click, and a click dismisses this.
+				-->
+				{#if !hintSeen && $previewShowStats && winOpacity >= 1}
 					<span class="pv-hint" aria-hidden="true">
 						<RotateCw size={12} />
-						Click to auto-rotate · drag to turn
+						{spinning ? 'Click to stop' : 'Click to auto-rotate'} · drag to turn · scroll to zoom
 					</span>
 				{/if}
 			{:else if face === 'folder'}
@@ -565,6 +633,21 @@
 	}
 	/* the mesh facts, along the VERY bottom (user: the two were swapped) — the reading is
 	   the thing you keep coming back to, so it gets the edge, and the tip sits above it */
+	/* the cog's two scopes. Quiet — a heading that shouts is worse than none, and there
+	   are only ever two of them. */
+	.pv-scope {
+		margin: 0.35rem 0 0.1rem;
+		font-size: 0.62rem;
+		font-weight: 600;
+		letter-spacing: 0.06em;
+		text-transform: uppercase;
+		color: var(--text-muted, #9ca3af);
+		opacity: 0.85;
+	}
+	.pv-scope:first-child {
+		margin-top: 0;
+	}
+
 	.pv-stats {
 		position: absolute;
 		bottom: 0;

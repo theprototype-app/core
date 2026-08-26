@@ -275,16 +275,36 @@ h.run(async () => {
 		/rgba\(0, 0, 0, 0\)|transparent/.test(through.bodyBg),
 		`the panel behind the picture goes transparent, or it is not an overlay (${through.bodyBg})`
 	);
-	// and it is a LOCAL pref, so it is still on next time
-	await page.locator('#preview-passthrough').uncheck();
-	await page.waitForTimeout(300);
-	const storedOff = await page.evaluate(() => localStorage.getItem('preview:passthrough'));
-	h.check(storedOff === 'false', `the toggle is remembered (${storedOff})`);
+	// R22 ROUND 14 (user): "passthrough and opacity is per window setting and should be
+	// disabled when new window opened with 100%". This check asserted the OPPOSITE until
+	// now — that the toggle was remembered — so it is inverted rather than added to. The
+	// ruling is a good one: these two describe how a window sits over the SCENE, and the
+	// next thing you open is usually opened to be looked at. A preview that arrives
+	// click-through, with the control that explains it behind a cog, reads as broken.
+	const storedPass = await page.evaluate(() => localStorage.getItem('preview:passthrough'));
+	h.check(
+		storedPass === null,
+		`passthrough is NOT persisted any more — it is this window's state (${storedPass})`
+	);
+	// ...and the proof that matters is behavioural: leave it ON, then open a preview afresh.
+	// (Closing and reopening THE SAME file, rather than opening another: a .txt goes to the
+	// text editor, not here, so it would have measured the old window still standing.)
 	await page.locator('#preview-cog').click();
+	await page.waitForTimeout(300);
+	await page.locator('#image-preview-window button[title="Close"]').click();
+	await page.waitForTimeout(500);
+	await page.locator(`[data-card-id="${seeded.img}"]`).dblclick();
+	await page.waitForTimeout(900);
+	const carried = await page.evaluate(() => {
+		const win = document.querySelector('#image-preview-window');
+		return win ? win.className.includes('pv-through') : null;
+	});
+	h.check(carried === false, 'a window taking a NEW target comes back solid, not click-through');
+	await page.locator('#preview-cog').first().click();
 	await page.waitForTimeout(300);
 
 	// ---- 6. the audio player ------------------------------------------------------------
-	await page.evaluate(() => window.__stores.filePreview.previewOpacity.set(1));
+	// (no opacity reset needed since round 14 — taking a new target resets it)
 	// reach it the way a user does
 	await page.locator('#image-preview-window button[title="Close"]').click();
 	await page.waitForTimeout(400);
@@ -540,7 +560,8 @@ h.run(async () => {
 		!/rgba\(0, 0, 0, 0\)/.test(faded2.headBg),
 		'...and the header keeps its surface, or a faint window has no handle (' + faded2.headBg + ')'
 	);
-	await page.evaluate(() => window.__stores.filePreview.previewOpacity.set(1));
+	// and the same ruling for the opacity: it goes back to full on the next target, which
+	// section 11 opens. Nothing to reset here.
 	await page.locator('#preview-cog').first().click();
 	await page.waitForTimeout(300);
 

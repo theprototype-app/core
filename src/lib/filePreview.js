@@ -99,16 +99,6 @@ export function previewPosition(entries, id) {
  */
 export const previewSiblings = writable({ folderId: null, parentId: null, entries: [] });
 
-const PASS_KEY = 'preview:passthrough';
-const OPACITY_KEY = 'preview:opacity';
-
-/** @param {string} key @param {number} fallback */
-function loadNumber(key, fallback) {
-	if (typeof localStorage === 'undefined') return fallback;
-	const raw = Number(localStorage.getItem(key));
-	return Number.isFinite(raw) && raw > 0 ? clampPreviewOpacity(raw) : fallback;
-}
-
 /**
  * Opacity below this and the window is a ghost you cannot find again.
  *
@@ -133,27 +123,22 @@ export function clampPreviewOpacity(v) {
  * "can I still work under it" and "how loud is it". Wanting one without the other is the
  * normal case in both directions — a faint reference you still want to zoom, or a
  * full-strength overlay you must be able to click past.
- * @type {import('svelte/store').Writable<boolean>}
+ *
+ * R22 ROUND 14 (user): "passthrough and opacity is per window setting and should be
+ * disabled when new window opened with 100%". BOTH LEFT THIS FILE — they are neither
+ * stores nor persisted any more, they are `$state` on the window component, reset every
+ * time a window takes a new target.
+ *
+ * THE REASON THEY ARE THE TWO THAT MOVED, while auto-rotate and the stats stayed: these
+ * two describe HOW THIS WINDOW SITS OVER THE SCENE, which is a fact about one window's
+ * job at one moment — a faded, click-through reference pinned beside the model you are
+ * building. Remembering that is actively wrong: the next thing you open is usually
+ * opened to be LOOKED at, and a preview that arrives at 15% and swallows no clicks reads
+ * as broken, with the control that explains it hidden behind a cog. The other two are
+ * preferences about how you like previews to behave, which is exactly what a pref is.
+ *
+ * A pref you would not want restored is not a pref. It is this window's state.
  */
-export const previewPassthrough = writable(
-	typeof localStorage !== 'undefined' && localStorage.getItem(PASS_KEY) === 'true'
-);
-previewPassthrough.subscribe((v) => {
-	if (typeof localStorage === 'undefined') return;
-	try {
-		localStorage.setItem(PASS_KEY, String(v));
-	} catch {}
-});
-
-/** How strongly the CONTENT is drawn. LOCAL, like every other fact about this screen.
- * @type {import('svelte/store').Writable<number>} */
-export const previewOpacity = writable(loadNumber(OPACITY_KEY, 1));
-previewOpacity.subscribe((v) => {
-	if (typeof localStorage === 'undefined') return;
-	try {
-		localStorage.setItem(OPACITY_KEY, String(v));
-	} catch {}
-});
 
 /**
  * R22 round 12 (user): "add in cog (allow multiple windows) - so when clicking on another

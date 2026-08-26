@@ -40,9 +40,9 @@ h.run(async () => {
 		const f = window.__stores.filePreview;
 		f.previewAutoRotate.set(true);
 		f.previewShowStats.set(true);
-		f.previewOpacity.set(1);
 		f.previewMultiWindow.set(false);
-		f.previewPassthrough.set(false);
+		// round 14: opacity and passthrough are no longer stores — they are the window's own
+		// state and start clean with every target, which §5 and §8 assert.
 	});
 
 	// a TORUS KNOT rather than a box: it fills the frame from every angle, so "did the
@@ -73,6 +73,42 @@ h.run(async () => {
 		(await page.locator('#preview-body canvas').count()) === 1,
 		'premise: a 3D object opens in the shared preview window'
 	);
+	// ---- the PROMPT's placement, read while this window is still untouched -------------
+	const promptGeom = await page.evaluate(() => {
+		const b = document.querySelector('#preview-body').getBoundingClientRect();
+		const stat = document.querySelector('#preview-stats-line')?.getBoundingClientRect();
+		const tip = document.querySelector('.pv-hint');
+		if (!stat || !tip) return null;
+		const t = tip.getBoundingClientRect();
+		return {
+			statAtBottom: b.bottom - stat.bottom < 4,
+			statSpans: stat.width > b.width * 0.8,
+			tipAbove: t.bottom <= stat.top + 1,
+			tipLeft: t.left - b.left < 40,
+			tipEvents: getComputedStyle(tip).pointerEvents,
+			tipText: (tip.textContent || '').replace(/\s+/g, ' ').trim()
+		};
+	});
+	h.check(
+		!!promptGeom && promptGeom.statAtBottom && promptGeom.statSpans,
+		'the mesh facts run along the very bottom (' + JSON.stringify(promptGeom) + ')'
+	);
+	h.check(
+		!!promptGeom && promptGeom.tipAbove && promptGeom.tipLeft,
+		'...and the prompt sits ABOVE them on the left — the two were swapped at the user’s ask'
+	);
+	h.check(
+		!!promptGeom && promptGeom.tipEvents === 'none',
+		'...and it takes no clicks, because the MODEL is the switch'
+	);
+	// it teaches the whole control set, not just the one gesture it is named after
+	h.check(
+		!!promptGeom && /drag to turn/i.test(promptGeom.tipText) && /zoom/i.test(promptGeom.tipText),
+		'...and it names drag AND scroll, which is what an onboarding prompt is for (' +
+			(promptGeom?.tipText ?? '') +
+			')'
+	);
+
 	const spin1 = await frame();
 	await page.waitForTimeout(800);
 	const spin2 = await frame();
@@ -139,59 +175,56 @@ h.run(async () => {
 	await page.waitForTimeout(800);
 	h.check(stopped === (await frame()), '...while a click stops it, resting where it was');
 
-	// ---- 4. the two corner readings ----------------------------------------------------
-	const corners = await page.evaluate(() => {
-		const b = document.querySelector('#preview-body').getBoundingClientRect();
-		const stat = document.querySelector('#preview-stats-line')?.getBoundingClientRect();
-		const tip = document.querySelector('.pv-hint')?.getBoundingClientRect();
-		if (!stat || !tip) return null;
-		return {
-			statAtBottom: b.bottom - stat.bottom < 4,
-			statSpans: stat.width > b.width * 0.8,
-			tipAbove: tip.bottom <= stat.top + 1,
-			tipLeft: tip.left - b.left < 40,
-			tipEvents: getComputedStyle(document.querySelector('.pv-hint')).pointerEvents
-		};
-	});
+	// ---- 4. the reading stays; the prompt has done its job ------------------------------
 	h.check(
-		!!corners && corners.statAtBottom && corners.statSpans,
-		'the mesh facts run along the very bottom (' + JSON.stringify(corners) + ')'
+		(await page.locator('#preview-stats-line').count()) === 1,
+		'the reading is still there after all that — it is chrome, not a prompt'
 	);
-	h.check(
-		!!corners && corners.tipAbove && corners.tipLeft,
-		'...and the tip sits ABOVE them on the left — the two were swapped at the user’s ask'
-	);
-	h.check(
-		!!corners && corners.tipEvents === 'none',
-		'...and the tip takes no clicks, because the MODEL is the switch'
-	);
-	// the tip is guidance for when nothing is happening, so it goes while it spins
-	await page.mouse.click(cx, cy);
-	await page.waitForTimeout(700);
+	// R22 ROUND 14 — THE TIP IS AN INTERACTION PROMPT, NOT A STATUS LIGHT, which is the
+	// standard every 3D viewer that ships one follows (`<model-viewer>`'s interaction prompt
+	// is dismissed by the first gesture; Sketchfab's load overlay by the first drag). Round
+	// 13 tied it to the turntable being stopped, so it blinked on and off with every click
+	// forever. It is gone after the first use of THIS window and does not come back.
+	//
+	// The section above has already clicked and dragged several times, so by here it must be
+	// gone — that IS the check, and it is why this cannot sit earlier in the file.
 	h.check(
 		(await page.locator('.pv-hint').count()) === 0,
-		'the tip disappears while the model is turning'
+		'the prompt is gone once the window has been used, and does not come back with the state'
 	);
-	await page.mouse.click(cx, cy);
-	await page.waitForTimeout(700);
-	h.check((await page.locator('.pv-hint').count()) === 1, '...and comes back when it stops');
 
 	// ---- 5. both readings get out of the way of a faded window --------------------------
 	// A faded window is being used as a REFERENCE over the scene, and chrome is the first
 	// thing in the way of one.
-	await page.evaluate(() => window.__stores.filePreview.previewOpacity.set(0.4));
+	// through the REAL slider, because round 14 removed the store it used to drive - and
+	// that is the better check anyway: the control and the effect, not a back door.
+	await page.locator('#preview-cog').first().click();
+	await page.waitForTimeout(400);
+	await page.locator('#preview-opacity').fill('40');
+	await page.locator('#preview-opacity').dispatchEvent('input');
 	await page.waitForTimeout(600);
 	h.check(
-		(await page.locator('#preview-stats-line').count()) === 0 &&
-			(await page.locator('.pv-hint').count()) === 0,
-		'below full opacity BOTH the facts and the tip get out of the way'
+		(await page.locator('#preview-stats-line').count()) === 0,
+		'below full opacity the reading gets out of the way on its own'
 	);
-	await page.evaluate(() => window.__stores.filePreview.previewOpacity.set(1));
+	const scopes = await page.evaluate(() =>
+		[...document.querySelectorAll('#preview-settings .pv-scope')].map((p) => p.textContent?.trim())
+	);
+	h.check(
+		scopes.length === 2 && /this window/i.test(scopes[0] || '') && /all previews/i.test(scopes[1] || ''),
+		'the cog says which scope each half has, or the same panel silently means two things (' +
+			JSON.stringify(scopes) +
+			')'
+	);
+	await page.locator('#preview-opacity').fill('100');
+	await page.locator('#preview-opacity').dispatchEvent('input');
 	await page.waitForTimeout(600);
 	h.check(
 		(await page.locator('#preview-stats-line').count()) === 1,
-		'...and they come back at 100%'
+		'...and it comes back at 100%'
 	);
+	await page.locator('#preview-cog').first().click();
+	await page.waitForTimeout(300);
 
 	// ---- 6. PAN AND ZOOM ----------------------------------------------------------------
 	// the standard DCC set: left orbits, middle or Shift+left pans, the wheel dollies, and
@@ -250,12 +283,37 @@ h.run(async () => {
 			JSON.stringify(themed) +
 			')'
 	);
+	// R22 ROUND 14 (user): "autorotate new previews setting is global, but should not
+	// affect already opened windows". Start THIS one turning first, or "it did not change"
+	// is not observable — the section before leaves it stopped.
+	await page.locator('#preview-cog').first().click();
+	await page.waitForTimeout(300);
+	await page.mouse.click(cx, cy);
+	await page.waitForTimeout(900);
+	const pre1 = await frame();
+	await page.waitForTimeout(800);
+	const pre2 = await frame();
+	h.check(pre1 !== pre2 && pre2.length > DRAWN, 'premise: this window is turning before the pref is touched');
+
+	await page.locator('#preview-cog').first().click();
+	await page.waitForTimeout(400);
 	await page.locator('#preview-autorotate').uncheck();
-	await page.waitForTimeout(500);
+	await page.waitForTimeout(700);
 	h.check(
 		(await page.evaluate(() => localStorage.getItem('preview:autoRotate'))) === 'false',
 		'unticking it stores the DEFAULT for previews opened from now on'
 	);
+	const post1 = await frame();
+	await page.waitForTimeout(800);
+	h.check(
+		post1 !== (await frame()),
+		'...and the window you are READING does not stop — the label says NEW previews, and the model is this one’s switch'
+	);
+	// take the opacity off full too, so the reopen below can show BOTH per-window values
+	// coming back clean
+	await page.locator('#preview-opacity').fill('40');
+	await page.locator('#preview-opacity').dispatchEvent('input');
+	await page.waitForTimeout(400);
 	if (await page.locator('#preview-settings').count()) {
 		await page.locator('#preview-cog').first().click();
 		await page.waitForTimeout(300);
@@ -275,6 +333,30 @@ h.run(async () => {
 	h.check(
 		fresh1 === fresh2,
 		'a preview opened with the default OFF does not spin — which is what makes it a default'
+	);
+	// ...while the two PER-WINDOW settings came back clean, which is the other half of
+	// round 14: a pref you would not want restored is not a pref, it is window state.
+	const reopened = await page.evaluate(() => {
+		const win = document.querySelector('#image-preview-window');
+		const body = document.querySelector('#preview-body');
+		return {
+			through: win ? win.className.includes('pv-through') : null,
+			faded: win ? win.className.includes('pv-faded') : null,
+			bodyOpacity: body ? Number(getComputedStyle(body).opacity) : null
+		};
+	});
+	h.check(
+		reopened.faded === false && reopened.bodyOpacity === 1,
+		'the OPACITY is back at full on the new target, though it was left at 40% (' +
+			JSON.stringify(reopened) +
+			')'
+	);
+	h.check(reopened.through === false, '...and passthrough is off, as a window opened to be looked at should be');
+	// and the prompt is offered again to a FRESH window - it teaches per window, it just
+	// never nags within one
+	h.check(
+		(await page.locator('.pv-hint').count()) === 1,
+		'a fresh window offers the gesture prompt again — dismissal is per window, not forever'
 	);
 
 	h.check(

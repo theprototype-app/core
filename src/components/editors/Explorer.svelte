@@ -376,13 +376,33 @@
 	 * descendants — the documented transform/backdrop-filter trap by another door, and this
 	 * header hosts popovers.
 	 */
-	let headerNarrow = $state(false);
+	let headerW = $state(1000);
 	function headerWidth(node: HTMLElement) {
-		const ro = new ResizeObserver(() => (headerNarrow = node.clientWidth < 700));
+		const ro = new ResizeObserver(() => (headerW = node.clientWidth));
 		ro.observe(node);
-		headerNarrow = node.clientWidth < 700;
+		headerW = node.clientWidth;
 		return { destroy: () => ro.disconnect() };
 	}
+	const headerNarrow = $derived(headerW < 700);
+	/**
+	 * R22 ROUND 25 (user): "same for explorer undocked header if no space (dock button and X
+	 * button should be always visible), you may hide 'Explorer' text keeping only its Lucide
+	 * icon and hide 'search assets…' box, hide project name".
+	 *
+	 * The same ranking the preview window has, and for the same reason: when a row
+	 * overflows, what falls off the end is whatever is LAST in the markup — here the dock
+	 * button and the close. Both are the only way out of the state you are in, so they are
+	 * the two that must never go, and everything else earns its place ahead of them.
+	 *
+	 * The order is the user's and it is the right one. The search box is the biggest single
+	 * item and the least urgent (the grid is right there). The word "Explorer" goes next,
+	 * keeping the icon — a titled window you are already looking at does not need to say its
+	 * own name. The project chip is last to go because it answers "which project am I in",
+	 * which is worth more than the rest of the chrome.
+	 */
+	const hideSearch = $derived(headerW < 520);
+	const hideLabel = $derived(headerW < 420);
+	const hideIdentity = $derived(headerW < 340);
 	const filtering = $derived(kindFilter.size > 0 || localOnly);
 
 	/** R22-R2: the share state of a card, and the ONE place the vocabulary is read. A
@@ -4307,6 +4327,7 @@
 {/snippet}
 
 {#snippet identityChip()}
+	{#if !hideIdentity}
 	<!-- 21-I2 (locked answer 4): WHO AM I, compact and beside the search box —
 	     Project ▸ Scene ●. It RETIRES 21-G9's own row, which spent a whole line
 	     of a bottom dock on two words. The LOCATION crumbs inside the shell stay exactly
@@ -4358,6 +4379,7 @@
 			{/if}
 		{/if}
 	</div>
+	{/if}
 {/snippet}
 
 {#snippet content()}
@@ -5361,13 +5383,19 @@
 			role="region"
 		>
 			<div class="ui-panel-header move-handle shrink-0 cursor-move select-none py-1.5" use:headerWidth>
-				<span class="shrink-0"><FolderTree size={16} class="mr-1" aria-hidden="true" />Explorer</span>
-				<input
-					id="explorer-search"
-					class="ui-input w-44 shrink-0 py-0.5 font-normal"
-					placeholder="Search assets…"
-					bind:value={search}
-				/>
+				<span class="shrink-0" title="Explorer"
+					><FolderTree size={16} class={hideLabel ? '' : 'mr-1'} aria-hidden="true" />{hideLabel
+						? ''
+						: 'Explorer'}</span
+				>
+				{#if !hideSearch}
+					<input
+						id="explorer-search"
+						class="ui-input w-44 shrink-0 py-0.5 font-normal"
+						placeholder="Search assets…"
+						bind:value={search}
+					/>
+				{/if}
 				{@render filterChip()}
 				{@render viewChip()}
 				{@render logChip()}

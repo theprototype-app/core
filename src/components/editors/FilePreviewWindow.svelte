@@ -145,10 +145,24 @@
 		headerW = node.clientWidth;
 		return { destroy: () => ro.disconnect() };
 	}
-	/** two steps, because the pieces are not worth the same: the extras go first and the
-	 * title holds on until there is genuinely no room for it. */
-	const hideExtras = $derived(headerW < 340);
-	const hideTitle = $derived(headerW < 260);
+	/**
+	 * THREE steps, because the pieces are not worth the same — and the order is the whole
+	 * point. R22 ROUND 25 (user): "there is still a size when X is not seen but 100%, - and
+	 * + are visible; hide them before X disappears".
+	 *
+	 * That is the failure mode a ranking exists to prevent: the row overflows, and what
+	 * falls off the end is whatever happens to be LAST in the markup — which is the close
+	 * button. So the expendable pieces have to leave early enough that the row still fits,
+	 * and the zoom trio is the most expendable thing here: the wheel zooms, a double-click
+	 * resets, and neither needs a button.
+	 *
+	 * Widths measured against what the row must always hold — three walk buttons, the
+	 * counter, the cog and the close (~160px) — so each threshold leaves room for the tier
+	 * below it rather than being a round number.
+	 */
+	const hideZoom = $derived(headerW < 380);
+	const hideExtras = $derived(headerW < 320);
+	const hideTitle = $derived(headerW < 250);
 	/**
 	 * R22 ROUND 21 (user): "for animated objects show statistic below player, same as sounds
 	 * have filename below player".
@@ -550,7 +564,7 @@
 				{/key}{target.title}</span
 			>
 			<span class="flex-1"></span>
-			{#if face === 'image' && !hideExtras}
+			{#if face === 'image' && !hideZoom}
 				<span id="image-zoom" class="text-xs text-gray-400">{Math.round(zoom * 100)}%</span>
 				<button class="ui-button-quiet" title="Zoom out" onclick={() => (zoom = clamp(zoom * 0.8))}>−</button>
 				<button class="ui-button-quiet" title="Zoom in" onclick={() => (zoom = clamp(zoom * 1.25))}>＋</button>

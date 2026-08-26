@@ -404,6 +404,27 @@
 	const OBJ_WIN_MIN = { minW: 250, minH: 200 };
 	const OBJ_WIN_DEFAULT = { w: 300, h: 250 };
 
+	/**
+	 * R22 ROUND 25 (user): "same for object list window, probably smallest size just should
+	 * show lucide icon and hide 'Objects' text".
+	 *
+	 * The same ranking the preview and the Explorer headers now have, and the same reason
+	 * for measuring rather than asking the viewport: this window is resized by its own grip
+	 * and can be narrow on a wide screen. When the row overflows, what falls off the end is
+	 * whatever is LAST in the markup — here the close button — so the expendable pieces have
+	 * to leave first. The search box is the biggest and least urgent; the word "Objects" is
+	 * next, and the icon stays because a window still needs to say what it is at a glance.
+	 */
+	let objHeaderW = $state(1000);
+	function objHeaderWidth(node: HTMLElement) {
+		const ro = new ResizeObserver(() => (objHeaderW = node.clientWidth));
+		ro.observe(node);
+		objHeaderW = node.clientWidth;
+		return { destroy: () => ro.disconnect() };
+	}
+	const objHideSearch = $derived(objHeaderW < 260);
+	const objHideLabel = $derived(objHeaderW < 190);
+
 	function dragMe(node) {
 		// 80.1: proper resize (start-size captured, clamped) + persisted rect
 		let saved: any = null;
@@ -728,6 +749,7 @@
 	<div
 		role="list"
 		class="ui-panel-header move-handle shrink-0 cursor-move select-none rounded-tl-lg rounded-tr-lg py-1.5"
+		use:objHeaderWidth
 		on:dragover={(e) => { if (e.dataTransfer?.types.includes('application/x-object-uuid')) { e.preventDefault(); e.dataTransfer.dropEffect = 'move'; } }}
 		on:drop={(e) => {
 			const uuid = e.dataTransfer?.getData('application/x-object-uuid');
@@ -738,16 +760,22 @@
 			else moveObjectToGroup(uuid, 'root');
 		}}
 	>
-		<span>☰ Objects</span>
-		<input
-			id="object-search"
-			class="ui-input w-36 py-0.5 font-normal normal-case tracking-normal"
-			placeholder="Search objects…"
-			value={searchTerm}
-			on:pointerdown={(e) => e.stopPropagation()}
-			on:input={(e) => (searchTerm = e.currentTarget.value)}
-			on:keydown={(e) => { if (e.key === 'Escape') { searchTerm = ''; e.currentTarget.blur(); } }}
-		/>
+		<span class="flex shrink-0 items-center" title="Objects"
+			><List size={16} class={objHideLabel ? '' : 'mr-1'} aria-hidden="true" />{objHideLabel
+				? ''
+				: 'Objects'}</span
+		>
+		{#if !objHideSearch}
+			<input
+				id="object-search"
+				class="ui-input w-36 py-0.5 font-normal normal-case tracking-normal"
+				placeholder="Search objects…"
+				value={searchTerm}
+				on:pointerdown={(e) => e.stopPropagation()}
+				on:input={(e) => (searchTerm = e.currentTarget.value)}
+				on:keydown={(e) => { if (e.key === 'Escape') { searchTerm = ''; e.currentTarget.blur(); } }}
+			/>
+		{/if}
 		<span class="flex-1"></span>
 		<button class="ui-button-quiet" title="Close (O)" on:click={() => objectListClose.set(true)}>✕</button>
 	</div>

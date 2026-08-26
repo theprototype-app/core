@@ -24,7 +24,6 @@
 	import ContextMenu from '../ContextMenu.svelte';
 	import MobileAddButton from './MobileAddButton.svelte';
 	import AiHudButton from './AiHudButton.svelte';
-	import ArEnterButton from './ArEnterButton.svelte';
 	import SimControls from './SimControls.svelte';
 	import { focusStack, raiseWindow, isTopWindow } from '$lib/windowFocus';
 	import { tabbable, groupRectOf, moveGroupOf, resizeGroup } from '$lib/windowTabs';
@@ -683,10 +682,6 @@
 <!-- A2: AI assistant button, bottom-left below the "+" (own component, onclick) -->
 <AiHudButton />
 
-<!-- CO4: explicit Enter AR beside the play button — renders only when the device
-     reports immersive-ar support (own component, onclick) -->
-<ArEnterButton />
-
 <!-- physics transport (P-A): play / pause / stop / reset, above the chat toggle -->
 <SimControls />
 
@@ -705,7 +700,21 @@
 		checkPlay();
 	}}
 >
-	<Play size={24} class="ml-0.5 text-white" fill="currentColor" aria-hidden="true" />
+	<!-- CO4b: ONE entry point. The play FAB already starts play mode on desktop and a
+	     VR session in a headset, and `$vrPassthrough` decides which KIND of session
+	     that is (#vrButton below swaps VRButton for an immersive-ar XRButton) — so
+	     the honest thing is to say so ON this button rather than to grow a second
+	     one beside it. Two letters under the triangle: the action is unchanged, the
+	     destination is labelled. The pref is only readable on the NEXT entry, which
+	     is exactly what a label on the thing you are about to press communicates. -->
+	{#if $vrPassthrough}
+		<span class="flex flex-col items-center justify-center leading-none">
+			<Play size={19} class="ml-0.5 text-white" fill="currentColor" aria-hidden="true" />
+			<span class="mt-px text-[9px] font-bold tracking-wide text-white">AR</span>
+		</span>
+	{:else}
+		<Play size={24} class="ml-0.5 text-white" fill="currentColor" aria-hidden="true" />
+	{/if}
 </p>
 
 <div class="hidden" id="vrButton">

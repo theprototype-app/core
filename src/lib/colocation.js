@@ -442,13 +442,139 @@ export function applyRoomAlignment() {
 	const alignment = get(roomAlignment);
 	const rig = get(worldRig);
 	if (!alignment || !rig) return null;
-	const next = composeRigTransform(alignment, effectiveRoomAnchor());
+	// CO7: the rig is posed from the base PLUS this device's fine-tune correction.
+	// The correction lives outside `roomAlignment` on purpose — see the nudge block
+	// above: folding it in would let CO3's next drift compare ease it away.
+	const posed = nudgeAlignment(alignment, get(roomNudge));
+	const next = composeRigTransform(posed, effectiveRoomAnchor());
 	if (!next) return null;
 	rig.position.fromArray(next.pos);
 	rig.quaternion.fromArray(next.quat);
 	rig.scale.set(1, 1, 1);
 	rig.updateMatrixWorld(true);
 	return next;
+}
+
+/* -------------------------------------------------------------------------- */
+/* CO7 — the FINE-TUNE NUDGE                                                  */
+/* -------------------------------------------------------------------------- */
+//
+// The ritual lands within a centimetre or two (CO0 measured 0.014 m), and a
+// centimetre is visible when a virtual box is meant to sit ON a real table corner.
+// So after calibrating, a user nudges their own view until the content lines up
+// with what their eyes see.
+//
+// WHOSE ERROR IS IT. The nudge corrects M (this device's alignment), never K (the
+// replicated anchor), and that follows from where the error comes from: each device
+// sampled the agreed point with its own hand and its own tracking, so each carries
+// its OWN offset from the physical truth. A shared correction would fix one
+// person's view by breaking the other's. Moving the scene FOR EVERYONE is a
+// different operation with a different meaning, and it already exists — the CO2
+// world-grab, which writes the anchor. Fine-tune is local, per room, persisted per
+// device; two people each nudging toward the same real table corner converge on
+// BETTER agreement than the ritual alone gave them.
+//
+// WHY IT COMPOSES AT RIG-WRITE TIME — the load-bearing decision. CO3's drift eases
+// `roomAlignment` toward the live anchor pose about once a second. If the nudge were
+// folded INTO that stored alignment, the next drift compare would read it as error
+// and ease it away: the user's correction would visibly rot a second after being
+// made. Keeping it OUT of the stored base means drift tracks the anchor exactly as
+// it did before this existed and needs no knowledge of the nudge at all, while
+// `applyRoomAlignment` composes the two on every rig write — so the correction
+// rides on top of every drift correction. Nothing else in the batch changed for it.
+//
+// The nudge is expressed in ROOM axes (fixed at calibration: +X right of the aim,
+// +Y up, -Z along the aim), which is what makes a stored number mean the same thing
+// tomorrow. A STICK push is head-relative on the way IN — push right and it moves
+// right as you see it, wherever you are facing — and `nudgeFromStick` does that
+// conversion, so only canonical room-frame values are ever stored.
+
+/** No correction. Also the shape: metres and radians, room axes. */
+export const NUDGE_ZERO = { dx: 0, dy: 0, dz: 0, dyaw: 0 };
+
+/** A fine-tune is a fine-tune: past this the ritual was wrong, or what you want is
+ * the world-grab (which moves the scene for everyone). */
+export const NUDGE_MAX_M = 0.5;
+export const NUDGE_MAX_YAW = (15 * Math.PI) / 180;
+
+/** This device's correction for the CURRENT room. Local, never replicated, never
+ * saved into a scene — `colocationNudge.js` persists it per room per device.
+ * @type {import('svelte/store').Writable<any>} */
+export const roomNudge = writable(null);
+
+/** @param {any} raw @returns {{dx: number, dy: number, dz: number, dyaw: number}} */
+export function normalizeNudge(raw) {
+	const clamp = (/** @type {number} */ v, /** @type {number} */ lim) =>
+		Math.max(-lim, Math.min(lim, Number.isFinite(v) ? v : 0));
+	return {
+		dx: clamp(Number(raw?.dx), NUDGE_MAX_M),
+		dy: clamp(Number(raw?.dy), NUDGE_MAX_M),
+		dz: clamp(Number(raw?.dz), NUDGE_MAX_M),
+		dyaw: clamp(Number(raw?.dyaw), NUDGE_MAX_YAW)
+	};
+}
+
+/** Is this correction worth storing at all? An exactly-zero nudge is no nudge.
+ * @param {any} n */
+export function nudgeIsZero(n) {
+	if (!n) return true;
+	return !n.dx && !n.dy && !n.dz && !n.dyaw;
+}
+
+/**
+ * base -> base with the correction applied. PURE, and the whole of the maths:
+ * M' = M · N with N = (rotY(dyaw), d) in room axes, so
+ *
+ *     M'(r) = rotY(yaw) · (rotY(dyaw) · r + d) + p
+ *           = rotY(yaw + dyaw) · r + (p + rotY(yaw) · d)
+ *
+ * — the yaws ADD, and the room-frame offset arrives in tracking space rotated by
+ * the base yaw. Yaw-only still holds by construction: there is no path here for
+ * roll or pitch, so a nudge cannot tilt anyone's horizon.
+ * @param {any} base @param {any} nudge
+ * @returns {{px: number, py: number, pz: number, yaw: number}|null}
+ */
+export function nudgeAlignment(base, nudge) {
+	if (!base || typeof base.yaw !== 'number' || !Number.isFinite(base.yaw)) return null;
+	const plain = {
+		px: Number(base.px) || 0,
+		py: Number(base.py) || 0,
+		pz: Number(base.pz) || 0,
+		yaw: base.yaw
+	};
+	if (nudgeIsZero(nudge)) return plain;
+	const n = normalizeNudge(nudge);
+	const d = new THREE.Vector3(n.dx, n.dy, n.dz).applyAxisAngle(UP, plain.yaw);
+	return {
+		px: plain.px + d.x,
+		py: plain.py + d.y,
+		pz: plain.pz + d.z,
+		yaw: plain.yaw + n.dyaw
+	};
+}
+
+/** What the rig is actually posed from: the stored base plus this device's
+ * correction. Any reader asking "where is the room really" wants THIS — not
+ * `roomAlignment`, which is deliberately the un-nudged base so drift can track it. */
+export function effectiveAlignment() {
+	return nudgeAlignment(get(roomAlignment), get(roomNudge));
+}
+
+/**
+ * A stick push, which is head-relative, becomes a room-frame delta. Pushing right
+ * moves the content right AS THE USER SEES IT wherever they are facing, while what
+ * gets stored stays canonical room axes.
+ *
+ * View space has the head looking down -Z with +X to its right, so a (right,
+ * forward) push is the vector (right, 0, -forward); rotating it by the head's yaw
+ * puts it in tracking space and by -baseYaw puts it in room space — one combined
+ * rotation of (headYaw - baseYaw).
+ * @param {number} right @param {number} forward @param {number} headYaw @param {number} baseYaw
+ * @returns {{dx: number, dz: number}}
+ */
+export function nudgeFromStick(right, forward, headYaw, baseYaw) {
+	const v = new THREE.Vector3(right, 0, -forward).applyAxisAngle(UP, headYaw - baseYaw);
+	return { dx: v.x, dz: v.z };
 }
 
 /** Leave colocation: drop this device's alignment and put the rig back to identity
@@ -469,6 +595,8 @@ export function colocationDebug() {
 	const rig = get(worldRig);
 	return {
 		alignment: get(roomAlignment) ? { ...get(roomAlignment) } : null,
+		nudge: get(roomNudge) ? { ...get(roomNudge) } : null,
+		effective: effectiveAlignment(),
 		anchor: get(roomAnchor) ? JSON.parse(JSON.stringify(get(roomAnchor))) : null,
 		roomKey: get(roomKey),
 		rig: rig

@@ -51,6 +51,7 @@ import {
 	yawFromDirection
 } from './colocation';
 import { calibrating, worldGrabActive } from './colocationCalibrate';
+import { forgetNudge } from './colocationNudge';
 import { registerVRFrameHook } from './vrControls';
 import {
 	sessionContext,
@@ -485,7 +486,11 @@ function tickColocationAnchors() {
 export function forgetRoom(key) {
 	const map = { ...get(anchorRecords) };
 	const rec = map[key];
-	if (!rec) return false;
+	// CO7: the fine-tune record is dropped even when there is no ANCHOR record left
+	// to drop — forgetting a room means forgetting everything we knew about it, and
+	// the two records have deliberately separate lifetimes
+	const hadNudge = forgetNudge(key);
+	if (!rec) return hadNudge;
 	delete map[key];
 	saveRecords(map);
 	if (rec.handle) void deleteHandle(sessionContext().session, rec.handle);

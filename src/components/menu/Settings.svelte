@@ -36,6 +36,9 @@
 	import { resetWindowPoses } from '$lib/vrWindowPoses';
 	import { probeFindings, probeRunning, probeSupport, runArProbe, clearProbeState } from '$lib/arProbe';
 	import { roomAlignment } from '$lib/colocation';
+	import { roomNudge, nudgeIsZero, NUDGE_MAX_M } from '$lib/colocation';
+	import { setRoomNudge, resetRoomNudge } from '$lib/colocationNudge';
+	import DragRow from '../ui/DragRow.svelte';
 	import { colocatedGhostHands } from '$lib/colocationPresence';
 	import { colocateHereFromView, stopColocation } from '$lib/colocationCalibrate';
 	import { anchorRecords, forgetRoom, forgetCandidate } from '$lib/colocationAnchors';
@@ -1237,6 +1240,80 @@
 							REMEMBERED per room (a persistent anchor): the next VR/AR session in that room re-aligns
 							with no ritual. <em>Stop</em> keeps that memory; <em>Forget</em> drops it
 					</SettingRow>
+					{#if $roomAlignment}
+						<!-- CO7: the fine-tune. Only offered while colocated — a correction has no
+						     frame to be expressed in otherwise. Room axes: +X right of the aim
+						     direction, +Y up, -Z along it. -->
+						<SettingRow name="Fine-tune" noControl>
+							<div class="flex flex-col gap-1.5">
+								<div class="flex flex-wrap items-center gap-2">
+									<DragRow
+										id="nudge-dx"
+										label="X"
+										value={$roomNudge?.dx ?? 0}
+										unit="length"
+										step={0.002}
+										snap={0.01}
+										decimals={3}
+										min={-NUDGE_MAX_M}
+										max={NUDGE_MAX_M}
+										onchange={(v) => setRoomNudge({ dx: v })}
+									/>
+									<DragRow
+										id="nudge-dy"
+										label="Y"
+										value={$roomNudge?.dy ?? 0}
+										unit="length"
+										step={0.002}
+										snap={0.01}
+										decimals={3}
+										min={-NUDGE_MAX_M}
+										max={NUDGE_MAX_M}
+										onchange={(v) => setRoomNudge({ dy: v })}
+									/>
+									<DragRow
+										id="nudge-dz"
+										label="Z"
+										value={$roomNudge?.dz ?? 0}
+										unit="length"
+										step={0.002}
+										snap={0.01}
+										decimals={3}
+										min={-NUDGE_MAX_M}
+										max={NUDGE_MAX_M}
+										onchange={(v) => setRoomNudge({ dz: v })}
+									/>
+									<DragRow
+										id="nudge-dyaw"
+										label="Yaw"
+										value={($roomNudge?.dyaw ?? 0) * (180 / Math.PI)}
+										unit="angleDeg"
+										step={0.05}
+										snap={0.5}
+										decimals={2}
+										min={-15}
+										max={15}
+										onchange={(v) => setRoomNudge({ dyaw: (v * Math.PI) / 180 })}
+									/>
+									<button
+										id="nudge-reset"
+										class="rounded-sm bg-gray-600 px-2 py-1 text-xs text-white hover:bg-gray-500 disabled:opacity-50"
+										disabled={nudgeIsZero($roomNudge)}
+										on:click={() => resetRoomNudge()}>Reset</button
+									>
+								</div>
+								<span>
+									Nudge the world so it lines up with what you actually see — a box that should
+									sit ON the table corner but hovers a centimetre off it. This is YOURS alone
+									(each headset's calibration has its own small error, so each corrects its
+									own), it is remembered per room, and it survives the automatic drift
+									correction. In VR, arm <em>Fine-tune</em> in the Scene ▸ Colocate radial: the
+									left stick slides the world, the right stick lifts and turns it. To move the
+									scene for <em>everyone</em>, two-grip grab it instead.
+								</span>
+							</div>
+						</SettingRow>
+					{/if}
 					<SettingRow name="Ghost hands">
 						<svelte:fragment slot="control"
 							><Toggle id="colocated-ghost-hands" bind:checked={$colocatedGhostHands} /></svelte:fragment

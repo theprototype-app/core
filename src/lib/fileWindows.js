@@ -12,12 +12,34 @@ export function openTextEditor(target) {
 	textEditorTarget.set(target);
 }
 
-/** @type {import('svelte/store').Writable<{title: string, url: string, onClose?: () => void} | null>} */
+/**
+ * R22 round 11 — THE PREVIEW WINDOW SHOWS MORE THAN AN IMAGE. It now draws an image, an
+ * audio transport, a 3D preview or a folder, and its arrows walk the folder the Explorer
+ * is showing (see $lib/filePreview for the walk and the overlay prefs).
+ *
+ * THE STORE KEEPS ITS NAME, and so does the window's DOM id. Four suites and every
+ * existing caller address them; the 21-G1 ruling covers exactly this case — the
+ * user-visible word changes, the identifiers already written down do not, because
+ * renaming them would be a migration for a word. Only the COMPONENT file was renamed, so
+ * a reader looking for the audio player can find it.
+ *
+ * ADDITIVE: a target with no kind is an image, which is what every pre-round-11 caller passes.
+ * @type {import('svelte/store').Writable<{title: string, url: string, kind?: 'image'|'audio'|'object'|'folder', itemId?: string, prefabId?: string, name?: string, folderId?: string, onClose?: () => void} | null>}
+ */
 export const imagePreviewTarget = writable(null);
 
 /** @param {{title: string, url: string, onClose?: () => void}} target */
 export function openImagePreview(target) {
 	imagePreviewTarget.set(target);
+}
+
+/**
+ * The general opener: a file of any previewable kind. 'openImagePreview' stays as the
+ * image-shaped front door so nothing that already calls it has to change.
+ * @param {{title: string, url?: string, kind?: 'image'|'audio'|'object'|'folder', itemId?: string, prefabId?: string, name?: string, folderId?: string, onClose?: () => void}} target
+ */
+export function openFilePreview(target) {
+	imagePreviewTarget.set({ url: '', ...target });
 }
 
 // N4: 3D model preview window (rotatable canvas + poly stats).

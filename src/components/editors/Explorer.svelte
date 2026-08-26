@@ -35,7 +35,18 @@
 		updateItemBytes,
 		parseObjectFile
 	} from '$lib/explorer';
-	import { openTextEditor, openImagePreview, openModelPreview, previewSuspended } from '$lib/fileWindows';
+	import {
+		openTextEditor,
+		openImagePreview,
+		openFilePreview,
+		openModelPreview,
+		previewSuspended
+	} from '$lib/fileWindows';
+	// R22 round 11: the preview window's arrows walk THIS folder, in the order THIS grid is
+	// showing it — a question only the Explorer can answer (filters, search, view mode,
+	// sort), so it is published rather than derived over there. The noteMarkers shape.
+	import { previewSiblings } from '$lib/filePreview';
+	import AudioPlayer from './AudioPlayer.svelte';
 	// 21-F4: scenes as LEVELS — .tpscene items in a Levels folder, saved from here
 	// 21-G9: `currentLevel` is WHERE WE ARE — the header breadcrumb's scene half and
 	// the accent on the open scene's own card.
@@ -1349,6 +1360,25 @@
 		const sort = $explorerSort[listView] ?? { key: 'name', dir: 1 };
 		return sortEntries(rows, sort, { ownerLabel }).map((r: any) => r.entry);
 	});
+	/**
+	 * R22 round 11 — WHAT THE PREVIEW WINDOW'S ARROWS WALK.
+	 *
+	 * `gridEntries` is the one array the grid is built from, so publishing it is publishing
+	 * exactly what the user can see, in the order they can see it — including the sort, the
+	 * kind filter and the search box. `untrack` on the write keeps this a one-way tap: the
+	 * store is not read here, and an effect that both reads and writes a store is how a
+	 * flush loop starts.
+	 */
+	$effect(() => {
+		const entries = gridEntries;
+		const folderId = $activeFolder;
+		const parentId =
+			typeof folderId === 'string' && !folderId.includes(':')
+				? ($explorerFolders.find((f: any) => f.id === folderId)?.parentId ?? null)
+				: null;
+		untrack(() => previewSiblings.set({ folderId, parentId, entries }));
+	});
+
 	/**
 	 * The bin, grouped by whoever deleted each row. Rendered as collapsible SECTIONS
 	 * rather than navigable folders: a bin is read by comparing (who threw what away),
@@ -3679,7 +3709,28 @@
 			});
 		} else if (item.kind === 'image') {
 			const blob = await itemBlob(item.id);
-			if (blob) openImagePreview({ title: item.name, url: URL.createObjectURL(blob), onClose: () => gridEl?.focus() });
+			if (blob)
+				openFilePreview({
+					title: item.name,
+					kind: 'image',
+					itemId: item.id,
+					name: item.name,
+					url: URL.createObjectURL(blob),
+					onClose: () => gridEl?.focus()
+				});
+		} else if (item.kind === 'audio') {
+			// R22 round 11 (user): "I should be able to double click to open audio preview in a
+			// window". Before this a double-click on a sound merely SELECTED it, which is what
+			// a single click already did — the one card kind in the library that answered
+			// nothing. It opens the same window an image does, with a transport instead of a
+			// picture, so the arrows walk from a texture to a sound without a mode change.
+			openFilePreview({
+				title: item.name,
+				kind: 'audio',
+				itemId: item.id,
+				name: item.name,
+				onClose: () => gridEl?.focus()
+			});
 		} else if (item.kind === 'object' && !item.packEntry) {
 			// P1: double-click an object item ALWAYS opens the preview popup (the
 			// enable3dPreview toggle only gates the inline Properties preview)
@@ -4749,6 +4800,17 @@
 							<div class="pointer-events-none absolute inset-x-0 bottom-0 bg-black/60 px-2 py-1 text-center text-[10px] text-gray-300">
 								Previewing in its own window
 							</div>
+						</div>
+					{:else if selItem.kind === 'audio' && !selItem.packEntry && !selItem.remoteItem}
+						<!-- R22 round 11 (user): "plus same preview in properties as 3d preview for
+						     objects". An object gets a live viewport in this pane; a sound got a
+						     duration in text and no way to hear it. It is the SAME AudioPlayer the
+						     preview window uses, in its compact face, so the two cannot drift —
+						     the ModelPreview precedent one kind over. -->
+						<div id="inline-audio" class="mt-1">
+							{#key selItem.id}
+								<AudioPlayer itemId={selItem.id} name={selItem.name} compact />
+							{/key}
 						</div>
 					{:else if (selItem.kind === 'object' || selItem.kind === 'prefab') && $enable3dPreview && !selItem.packEntry}
 						<div id="inline-preview" class="mt-1 overflow-hidden rounded-sm bg-[#0d1117]" style="height: 150px">

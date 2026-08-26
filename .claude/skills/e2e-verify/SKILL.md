@@ -1291,6 +1291,37 @@ your files). Two-peer verification is required for anything touching replication
 VR features: cover the extracted math/state headlessly (computeMoveOffset,
 computeTeleportArc pattern) and note that on-device feel is the user's manual check.
 
+## Roadmap 22 round 13 — `model-preview-controls` (24), and why it is its own file
+
+- **A LONG SUITE EXHAUSTS WebGL CONTEXTS, AND THE BROWSER DOES NOT SAY SO.** Every
+  `ModelPreview` takes its own context; by the end of `file-preview` a new one is refused,
+  the component returns early, and a CORRECT build reports a blank frame with no page
+  error. Measured: the identical open produced a 75KB frame on a fresh page and 6KB at the
+  end of that suite. A longer wait does not fix it and `freshReload` did not either —
+  splitting the pixel checks into their own file did. Suspect this whenever a pixel check
+  fails late in a suite and passes in isolation.
+- **A RATIO OVER TWO BLANK FRAMES PASSES.** "The frame did not collapse" written as
+  `after > before * 0.5` went green comparing 6364 against 5376 — both blank, because the
+  premise frame was already broken. Give such a check an ABSOLUTE floor as well (a real
+  render of the fixture is ~60-70KB; anything under 20KB is nothing), and put the floor on
+  the PREMISE too.
+- **CHECKING THE ELEMENT IS NOT CHECKING THE RENDER.** A guard that a WebGL toggle "did
+  not rebuild the context" compared `canvas.width` and the element count. Both survive a
+  teardown — only the context dies — so it could never have failed while the bug it was
+  written for sat in front of it. Ask for pixels.
+- **A CANVAS READ IS BLANK WITHOUT `preserveDrawingBuffer`.** `drawImage` off the app's
+  WebGL canvas into a 2D one returns nothing, which reported the model missing in BOTH
+  states and looked like a much worse bug than the real one. Use
+  `locator.screenshot()` — the compositor has the frame even when the drawing buffer does
+  not.
+- **A FIXTURE FOR "DID THE PICTURE CHANGE" NEEDS STRUCTURE FROM EVERY ANGLE.** A box's
+  silhouette repeats every 90 degrees, so a rotation check on one can read "unchanged" at
+  the wrong moment. A torus knot fills the frame from anywhere.
+- **STATE THE ORDER GESTURES LEAVE THINGS IN.** Three checks in a row each toggled the
+  same thing, so an extra "stop it first" click STARTED it and hid the element being
+  measured. When a section is a chain of toggles, assert (or re-derive) the state you are
+  in before measuring, rather than assuming the previous line left it where you think.
+
 ## Roadmap 22 round 12 — preview windows and the sessions picker
 
 Suites GROWN, not multiplied: `file-preview` (71), `sessions-packs` (61),

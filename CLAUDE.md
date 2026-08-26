@@ -259,9 +259,27 @@ loadable play content. Everything a user does must be visible to connected peers
   prefab is not a library file and has no place in a folder walk — and `previewSuspended`
   now also stands the Properties inline preview down for an object shown here, which is
   the same two-contexts-one-asset hang 21-H2 hit.
-  · The cog OVERLAYS the body (absolute, under its own cog) instead of shoving it down,
-  and the opacity fades the WHOLE WINDOW — see the two gotchas, which are the same mistake
-  made twice.
+  · The cog OVERLAYS the body (absolute, under its own cog) instead of shoving it down.
+  · **R22 ROUND 13 — THE MODEL IS THE SWITCH, AND THE VIEW IS NAVIGABLE.** A press that
+  does not TRAVEL toggles the turntable and one that does rotates it (the 4px marquee slop,
+  the same one-control-two-gestures rule the mesh and UV editors keep), so nothing has to
+  be aimed at. **A DRAG ONLY PAUSES IT** and it picks up on release — an earlier pass had
+  dragging switch it off on the reasoning that you had taken over, and the user's rule is
+  better: nudging the model to see the other side must not silently cost you the thing you
+  turned on. Full DCC navigation: left orbits, MIDDLE or Shift+left pans (scaled by
+  distance, so a pan covers the same screen at any zoom), the wheel dollies (CLAMPED, or a
+  trackpad flick loses the model with no way back), double-click goes home.
+  · `previewAutoRotate` is the DEFAULT each preview seeds from as it opens, not the live
+  state — that is per window (`spinning`), which is what lets one window spin while another
+  from the same default does not. The cog still reaches the open window, because a setting
+  you can watch do nothing is a dead control.
+  · The mesh facts run along the very bottom and the gesture tip sits above them on the
+  left; the tip is gone while the model turns (a tip is guidance for when nothing is
+  happening) and BOTH go below full opacity — a faded window is a REFERENCE, and chrome is
+  the first thing in the way of one. `input.tp-check` throughout the cog.
+  · OPACITY, third and final placement: on the CONTENT, with the panel's and the body's
+  backgrounds transparent, so the header and the cog keep their own strength. See the
+  ancestor-opacity gotcha for why no other arrangement can express that.
 - `src/lib/saveAs.js` (R22 round 11) — "SAVE AS…", AND WHAT A PREFAB IS MADE OF. A prefab
   was a JSON snapshot in IndexedDB, not a file, so "prefab (.glb)" had nothing to mean.
   **A PREFAB RECORD MAY NOW CARRY A `format` AND THE FILE'S OWN `bytes`**, with the
@@ -1688,6 +1706,28 @@ loadable play content. Everything a user does must be visible to connected peers
 
 ## Hard-won gotchas (do not rediscover)
 
+- **A FUNCTION CALLED SYNCHRONOUSLY INSIDE AN `$effect` REGISTERS ITS READS AS
+  DEPENDENCIES — even a render loop.** `ModelPreview` defines `loop()` inside its effect
+  and CALLS IT ONCE at the end of the body; that first call reads `autoSpin`, so the effect
+  depended on a prop nobody meant it to, and toggling the checkbox tore the WebGL context
+  down (`forceContextLoss`) then asked the same canvas for a second one, which returns
+  null. Every later frame drew NOTHING. The rule is not "props read in a closure are
+  untracked" — it is "reads that happen during the effect's synchronous run are tracked,
+  wherever the code for them lives". Hold such a value in a plain `let` that a separate
+  one-line `$effect` keeps current (`spinNow`), so the render effect depends on nothing.
+  MEASURED: a frame of the body went 67088 -> 4468 bytes with the prop read restored.
+- **A CANVAS ELEMENT OUTLIVES ITS CONTEXT, so checking the element proves nothing.** The
+  round-12 guard for the bug above compared `canvas.width` and the element count across a
+  toggle — both survive a teardown, only the CONTEXT dies, so the check could not have
+  failed. Anything that asks "is this still rendering" has to look at PIXELS.
+- **`opacity` ON AN ANCESTOR APPLIES TO ITS WHOLE SUBTREE AND CANNOT BE UNDONE LOWER
+  DOWN.** This decides where a fade may live, and it took the preview window three
+  attempts: on the body against an opaque panel it can only darken (nothing behind it); on
+  the ROOT it works but takes the header and any settings pane with it, and no rule on
+  them can win it back. The answer is the fade on the CONTENT plus transparent backgrounds
+  on every layer beneath it — then the chrome, being a SIBLING of the content rather than
+  a child, keeps its own strength. Any "fade this but not that" needs the two to be
+  siblings before it is expressible at all.
 - **FADING A CHILD AGAINST ITS OWN OPAQUE PARENT CAN ONLY DARKEN IT.** The preview
   window's opacity was put on the BODY, which sits on an opaque `.ui-panel` — so there was
   never anything behind it to show, and the reported symptom was exactly that ("opacity
@@ -3631,6 +3671,33 @@ override for e2e — never share 5173 (the user's main-checkout server).
   (open-core: OSS ships only inert hooks — capability gate / auth hook /
   VITE_CLOUD_PLUGIN — cloud repo holds registration/rooms/roles; contract in its
   MAINTAINING.md).
+- Status (2026-08-26, latest): **ROADMAP 22 ROUND 13 — THE 3D PREVIEW'S CONTROLS.** One
+  commit `938add6` on `feat/22-round12`, NOT pushed. Baseline **385/62**, build green, the
+  guard proven by restoring the bug. New suite `model-preview-controls` (24, 36s);
+  `file-preview` drops to 151s and stays green.
+  · **THE REPORTED BUG WAS REAL AND IS THE ONE TO REMEMBER**: "when auto-rotate is clicked
+  it should stop rotating, now it just stops showing". `loop()` is called SYNCHRONOUSLY at
+  the end of ModelPreview's effect, so its first run read `autoSpin` inside the tracking
+  scope — the effect depended on it and every toggle tore the WebGL context down. Measured
+  67088 -> 4468 bytes of frame with the read restored. See the gotcha; the general form is
+  "a synchronous call inside an effect registers its reads", not "closures are untracked".
+  · WHAT ROUND 12 GOT WRONG ABOUT IT: its guard compared `canvas.width` and the element
+  count, both of which survive a context teardown. The check could not have failed.
+  · The interaction model, after three user corrections: the MODEL is the switch (a press
+  that does not travel toggles, one that travels rotates), a DRAG ONLY PAUSES the turntable
+  and it resumes on release, and the cog is the DEFAULT new previews seed from. Full DCC
+  navigation (orbit / middle- or Shift-pan / wheel dolly / double-click home), pan scaled
+  by distance and zoom clamped.
+  · The mesh facts along the very bottom, the tip above them, both gone below full opacity;
+  `input.tp-check` in the cog and the sessions picker.
+  · OPACITY moved for the third and last time — see the ancestor-opacity gotcha, which is
+  the CSS fact that makes "the header and cog must not fade" expressible only when they are
+  siblings of the content rather than children.
+  · SUITE SPLIT: pixel work is its own file now, because each ModelPreview takes a WebGL
+  context and a long suite exhausts them SILENTLY — the same open gave 75KB on a fresh page
+  and 6KB at the end of `file-preview`, with no page error either way. That cost three
+  wrong-looking runs.
+  · **OWED**: the feel of the pan/zoom speeds and the tip's wording in non-dark themes.
 - Status (2026-08-26, later): **ROADMAP 22 ROUND 12 — PREVIEW-WINDOW MATURITY + THE
   SESSIONS MANAGER AS A FILE BROWSER. Both phases EXECUTED on `feat/22-round12` (same
   worktree, port 5203, branched off `feat/22-round11`), two commits, NOT pushed and NOT
@@ -3640,7 +3707,9 @@ override for e2e — never share 5173 (the user's main-checkout server).
   `sessions-packs` 32 -> 61, `explorer-delete-confirm` 39 -> 45, `save-as-formats` 30 -> 34.
   · PHASE A: the delete strip offers a **File settings** button (the `settingsSection` deep
   link existed and the Explorer section was one line short of being in its map); opacity
-  fades the WHOLE window; the cog overlays; **multiple windows** behind a LOCAL pref; a 3D
+  shows what is behind (ROUND 13 MOVED IT AGAIN — see that entry: fading the whole window
+  worked and took the chrome with it, which the user then asked to keep); the cog
+  overlays; **multiple windows** behind a LOCAL pref; a 3D
   object opens in the shared window with its statistics and an auto-rotate toggle; a
   prefab's kind reads `prefab (.glb)` / `(.tpscene)`.
   · PHASE B: the picker is its own NON-MODAL dialog, per-kind (a scene entry says "Import

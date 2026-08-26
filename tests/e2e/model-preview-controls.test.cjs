@@ -185,24 +185,28 @@ h.run(async () => {
 	await page.waitForTimeout(800);
 	h.check(stopped === (await frame()), '...while a click stops it, resting where it was');
 
-	// ---- 4. the prompt has done its job; the reading is a switch away --------------------
-	// R22 ROUND 14 — THE TIP IS AN INTERACTION PROMPT, NOT A STATUS LIGHT, which is the
-	// standard every 3D viewer that ships one follows (`<model-viewer>`'s interaction prompt
-	// is dismissed by the first gesture; Sketchfab's load overlay by the first drag). Round
-	// 13 tied it to the turntable being stopped, so it blinked on and off with every click
-	// forever. It is gone after the first use of THIS window and does not come back.
+	// ---- 4. THE GESTURE LINE PERSISTS (round 21, user) -----------------------------------
 	//
-	// The section above has already clicked and dragged several times, so by here it must be
-	// gone — that IS the check, and it is why this cannot sit earlier in the file.
+	//   "if statistics disabled keep 'Click to stop' displayed below even if clicked (same
+	//    for just objects)"
+	//
+	// Round 14 made it an onboarding prompt dismissed by the first gesture, on the standard
+	// every 3D viewer follows. That was right for what the line WAS; round 19 changed what
+	// it is — one of two things a permanent row can hold, the other being the mesh facts.
+	// A row that empties itself after your first click looks broken, and this line has a
+	// second job a prompt does not: it reports whether the turntable is running.
+	//
+	// The section above clicked and dragged several times, so this is the check.
 	h.check(
-		(await page.locator('.pv-hint').count()) === 0,
-		'the prompt is gone once the window has been used, and does not come back with the state'
+		(await page.locator('.pv-hint').count()) === 1,
+		'the gesture line is STILL there after the window has been clicked and dragged'
 	);
-	// ...and the corner is empty, which is correct: the prompt is spent and the reading was
-	// never asked for. Switching it on is what puts something back there.
+	const wording = await page.evaluate(
+		() => document.querySelector('.pv-hint')?.textContent?.replace(/\s+/g, ' ').trim() ?? ''
+	);
 	h.check(
-		(await page.locator('#preview-stats-line').count()) === 0,
-		'nothing else moved into the corner behind it'
+		/click to auto-rotate/i.test(wording),
+		'...and it reports the turntable is STOPPED, which is the state §3 left it in (' + wording + ')'
 	);
 
 	// ---- 5. the reading gets out of the way of a faded window ----------------------------
@@ -372,11 +376,11 @@ h.run(async () => {
 	h.check(reopened.through === false, '...and passthrough is off, as a window opened to be looked at should be');
 	// and the prompt is offered again to a FRESH window - it teaches per window, it just
 	// never nags within one
-	// the statistics were switched on in §5, and the two share a row — so the prompt is
-	// only offered again once the reading is out of the way, which is round 19's whole rule
+	// the statistics were switched on in §5, and the two share a row — so the line only
+	// returns once the reading is out of the way, which is round 19's whole rule
 	h.check(
 		(await page.locator('.pv-hint').count()) === 0,
-		'with the statistics on, a fresh window shows THOSE and not the prompt'
+		'with the statistics on, a fresh window shows THOSE and not the gesture line'
 	);
 	await page.locator('#preview-cog').first().click();
 	await page.waitForTimeout(400);
@@ -386,7 +390,7 @@ h.run(async () => {
 	await page.waitForTimeout(300);
 	h.check(
 		(await page.locator('.pv-hint').count()) === 1,
-		'...and switching them off hands the row back to the prompt, on a window that has not been used'
+		'...and switching them off hands the row back to the gesture line'
 	);
 
 	h.check(

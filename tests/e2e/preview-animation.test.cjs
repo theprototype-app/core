@@ -280,19 +280,29 @@ h.run(async () => {
 	await page.locator('[data-card-id="' + made.id + '"]').dblclick();
 	await page.waitForTimeout(2200);
 	const stacked = await page.evaluate(() => {
+		const body = document.querySelector('#preview-body')?.getBoundingClientRect();
 		const strip = document.querySelector('.an-root')?.getBoundingClientRect();
 		const stats = document.querySelector('#preview-stats-line')?.getBoundingClientRect();
-		if (!strip || !stats) return null;
+		if (!strip || !stats || !body) return null;
 		return {
-			statsAbove: stats.bottom <= strip.top + 1,
+			statsBelow: stats.top >= strip.bottom - 1,
+			statsAtBottom: body.bottom - stats.bottom < 6,
 			hint: document.querySelectorAll('.pv-hint').length
 		};
 	});
+	// R22 ROUND 21 (user): "for animated objects show statistic below player, same as sounds
+	// have filename below player". The stack INVERTED — round 15 lifted the reading above
+	// the transport, and the sound player has always put its filename under its strip. A
+	// reading is a caption for what you are looking at, and a caption goes beneath.
 	h.check(
-		!!stacked && stacked.statsAbove,
-		'with a transport present the mesh facts move UP above it rather than under it (' +
+		!!stacked && stacked.statsBelow,
+		'the mesh facts sit UNDER the transport, the way a sound’s filename sits under its strip (' +
 			JSON.stringify(stacked) +
 			')'
+	);
+	h.check(
+		!!stacked && stacked.statsAtBottom,
+		'...at the very bottom of the body, with the transport clearing them'
 	);
 	// R22 ROUND 19: the prompt and the facts are ALTERNATIVES for that row now, so with the
 	// statistics on there is no prompt to stack — and the row they share is the one that
@@ -654,6 +664,169 @@ h.run(async () => {
 		'clicking the label changes exactly ONE window (' + JSON.stringify({ before: throughBefore, after: throughAfter }) + ')'
 	);
 	await page.evaluate(() => window.__stores.filePreview.previewMultiWindow.set(false));
+
+	// ---- 15. A FADED WINDOW PUTS ITS PLAYER AWAY (round 22, user) -------------------------
+	//
+	//   "changing opacity should hide the player"
+	//
+	// A faded window is a reference laid over the scene, and the transport is the largest
+	// piece of chrome on it. The two readings already stood down for that reason; leaving
+	// the player up made them look like an oversight rather than a rule.
+	await page.evaluate(() => window.__stores.filePreview.previewMultiWindow.set(false));
+	await page.locator('#image-preview-window button[title="Close"]').first().click();
+	await page.waitForTimeout(600);
+	await page.locator('[data-card-id="' + made.id + '"]').dblclick();
+	await page.waitForTimeout(2400);
+	h.check((await page.locator('.an-root').count()) === 1, 'premise: an animated file has its transport');
+	const wasPlaying = (await readout(A)).playing;
+	await page.locator('#preview-cog').first().click();
+	await page.waitForTimeout(400);
+	await page.locator('#preview-opacity').fill('40');
+	await page.locator('#preview-opacity').dispatchEvent('input');
+	await page.waitForTimeout(600);
+	h.check((await page.locator('.an-root').count()) === 0, 'fading the window puts the transport away too');
+	// the KEYBOARD still reaches it, so nothing is lost but the box
+	await page.locator('#preview-cog').first().click();
+	await page.waitForTimeout(300);
+	await page.locator('#preview-body').click({ position: { x: 20, y: 20 } });
+	await page.keyboard.press('Space');
+	await page.waitForTimeout(600);
+	h.check(
+		(await page.locator('.an-root').count()) === 0,
+		'...and it stays away while the keyboard drives it'
+	);
+	h.check(
+		(await readout(A)).playing !== wasPlaying,
+		'...which really did play or pause it, with the box hidden (' + wasPlaying + ' -> ' + (await readout(A)).playing + ')'
+	);
+	await page.locator('#preview-cog').first().click();
+	await page.waitForTimeout(300);
+	await page.locator('#preview-opacity').fill('100');
+	await page.locator('#preview-opacity').dispatchEvent('input');
+	await page.waitForTimeout(600);
+	h.check((await page.locator('.an-root').count()) === 1, 'and full strength brings it back');
+
+	// ---- 16. THE OPACITY IS LOCKED WHERE IT MEANS NOTHING (round 22, user) -----------------
+	//
+	//   "lock opacity setting for audio files (it does not makes sense for it or for folder
+	//    to have it)"
+	//
+	// DISABLED WITH THE REASON, never hidden: a control that vanishes for some files teaches
+	// nobody why - the call the Users popover makes for Watch when a peer is elsewhere.
+	const objOpacity = await page.evaluate(() => {
+		const el = document.querySelector('#preview-opacity');
+		return el ? { disabled: el.disabled } : null;
+	});
+	h.check(
+		!!objOpacity && objOpacity.disabled === false,
+		'a MODEL can be faded (' + JSON.stringify(objOpacity) + ')'
+	);
+	await page.locator('#preview-cog').first().click();
+	await page.waitForTimeout(300);
+	const wav = await page.evaluate(async () => {
+		const rate = 8000;
+		const n = rate * 2;
+		const buf = new ArrayBuffer(44 + n * 2);
+		const view = new DataView(buf);
+		const str = (off, t) => [...t].forEach((c, i) => view.setUint8(off + i, c.charCodeAt(0)));
+		str(0, 'RIFF');
+		view.setUint32(4, 36 + n * 2, true);
+		str(8, 'WAVEfmt ');
+		view.setUint32(16, 16, true);
+		view.setUint16(20, 1, true);
+		view.setUint16(22, 1, true);
+		view.setUint32(24, rate, true);
+		view.setUint32(28, rate * 2, true);
+		view.setUint16(32, 2, true);
+		view.setUint16(34, 16, true);
+		str(36, 'data');
+		view.setUint32(40, n * 2, true);
+		for (let i = 0; i < n; i++) view.setInt16(44 + i * 2, Math.sin(i / 18) * 1500, true);
+		return (await window.__stores.explorer.addItemFromBytes(buf, 'lock-tone.wav', null)).id;
+	});
+	await page.waitForTimeout(700);
+	await page.locator('#image-preview-window button[title="Close"]').first().click();
+	await page.waitForTimeout(500);
+	await page.evaluate(() => window.__stores.explorer.activeFolder.set(null));
+	await page.waitForTimeout(500);
+	await page.locator('[data-card-id="' + wav + '"]').dblclick();
+	await page.waitForTimeout(1500);
+	await page.locator('#preview-cog').first().click();
+	await page.waitForTimeout(400);
+	const sndOpacity = await page.evaluate(() => {
+		const el = document.querySelector('#preview-opacity');
+		const notes = [...document.querySelectorAll('#preview-settings .pv-note')].map((n) =>
+			n.textContent.replace(/\s+/g, ' ').trim()
+		);
+		return el ? { present: true, disabled: el.disabled, notes } : { present: false };
+	});
+	h.check(sndOpacity.present, 'the row is still THERE for a sound - disabled, not hidden');
+	h.check(sndOpacity.disabled === true, '...and locked (' + JSON.stringify(sndOpacity.disabled) + ')');
+	h.check(
+		sndOpacity.notes.some((t) => /nothing to see through/i.test(t)),
+		'...with the reason said out loud (' + JSON.stringify(sndOpacity.notes) + ')'
+	);
+	await page.locator('#preview-cog').first().click();
+	await page.waitForTimeout(300);
+
+	// ---- 17. A NARROW HEADER KEEPS THE WALK, THE COG AND THE EXIT (round 23, user) ---------
+	//
+	//   "if window size is small (or resized) without space to show all header text/buttons
+	//    and no space for buttons arrows left/right (with number of total files), cog and X
+	//    should always show, the rest hide"
+	//
+	// Measured on the WINDOW, not the viewport: a floating window is resized by its own grip
+	// and can be 260px wide on a 1440px screen.
+	await page.locator('#image-preview-window button[title="Close"]').first().click();
+	await page.waitForTimeout(500);
+	await page.locator('[data-card-id="' + made.id + '"]').dblclick();
+	await page.waitForTimeout(2200);
+	const shown = () =>
+		page.evaluate(() => {
+			const vis = (id) => {
+				const el = document.getElementById(id);
+				return !!el && el.getBoundingClientRect().width > 0;
+			};
+			const win = document.querySelector('#image-preview-window');
+			return {
+				w: Math.round(win?.getBoundingClientRect().width ?? 0),
+				title: (document.querySelector('.pv-title')?.getBoundingClientRect().width ?? 0) > 0,
+				prev: vis('preview-prev'),
+				place: vis('preview-place'),
+				next: vis('preview-next'),
+				up: vis('preview-up'),
+				cog: vis('preview-cog'),
+				close: !!document.querySelector('#image-preview-window button[title="Close"]')
+			};
+		});
+	const wideHdr = await shown();
+	h.check(
+		wideHdr.title && wideHdr.up,
+		'premise: at full width the header shows everything (' + JSON.stringify(wideHdr) + ')'
+	);
+	const setW = (w) =>
+		page.evaluate((px) => {
+			document.querySelector('#image-preview-window').style.width = px;
+		}, w);
+	await setW('300px');
+	await page.waitForTimeout(700);
+	const midHdr = await shown();
+	h.check(!midHdr.up, 'narrowed, the up-a-folder button goes (Backspace still does it)');
+	h.check(
+		midHdr.prev && midHdr.place && midHdr.next && midHdr.cog && midHdr.close,
+		'...while the walk, the cog and the exit all stay (' + JSON.stringify(midHdr) + ')'
+	);
+	await setW('230px');
+	await page.waitForTimeout(700);
+	const tinyHdr = await shown();
+	h.check(!tinyHdr.title, 'narrower still, the TITLE goes - the window is already showing you the file');
+	h.check(
+		tinyHdr.prev && tinyHdr.place && tinyHdr.next && tinyHdr.cog && tinyHdr.close,
+		'...and the three that must never go are still there (' + JSON.stringify(tinyHdr) + ')'
+	);
+	await setW('520px');
+	await page.waitForTimeout(600);
+	h.check((await shown()).title, 'and widening it brings the title back - it is a fit, not a mode');
 
 	h.check(
 		(h.pageErrors(A) || []).length === 0,

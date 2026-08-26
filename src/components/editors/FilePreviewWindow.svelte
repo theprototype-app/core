@@ -93,23 +93,22 @@
 	let winPassthrough = $state(false);
 
 	/**
-	 * Whether this window has been USED yet — the gate on the gesture prompt below.
+	 * R22 ROUND 21 (user): "if statistics disabled keep 'Click to stop' displayed below even
+	 * if clicked (same for just objects)" — so the gesture line PERSISTS. Round 14 made it
+	 * an onboarding prompt dismissed by the first gesture, on the standard every 3D viewer
+	 * follows (`<model-viewer>`'s interaction prompt, Sketchfab's load overlay); that
+	 * reasoning was sound for what the line was THEN, and round 19 changed what it is.
 	 *
-	 * THE STANDARD, which is worth stating because the first version got it wrong: a line
-	 * like "click to auto-rotate · drag to turn" is ONBOARDING, not a status readout. Every
-	 * 3D viewer that ships one treats it that way — `<model-viewer>`'s interaction prompt
-	 * appears while the viewer sits untouched and is dismissed by the first gesture,
-	 * Sketchfab overlays one on load that the first drag clears. None of them bring it back
-	 * afterwards, because a prompt that returns is telling a user something they have
-	 * already proved they know.
+	 * It is no longer an overlay competing with the picture — it is one of the two things
+	 * that row can hold, the other being the mesh statistics. A row that empties itself
+	 * after your first click is a row that looks broken, and the line has a second job the
+	 * prompt version did not: it says whether the turntable is running, which is a state
+	 * you can otherwise only learn by watching. So it stays, and its wording tracks that
+	 * state.
 	 *
-	 * Round 13 tied it to the turntable being STOPPED, which made it a status light: it
-	 * blinked on and off with every click, in the corner, forever. It is dismissed by the
-	 * first press or wheel in this window now and does not come back — and because any
-	 * change of state IS an interaction, its wording can read live off the state without
-	 * ever being able to flicker.
+	 * (This is why `onInteract` went with it: nothing needs to know the window has been
+	 * used any more.)
 	 */
-	let hintSeen = $state(false);
 
 	/** R22 round 15: what ModelPreview says about this file's animation — null for a still
 	 * one, in which case no transport is drawn and nothing below it moves. */
@@ -118,15 +117,71 @@
 	let model: any = $state(null);
 	/** the transport itself, for the keys — see its note on why the arithmetic lives there */
 	let animPlayer: any = $state(null);
-	/** how much room the transport takes at the foot of the body, so the two readings sit
-	 * above it rather than under it. Zero for a still file, which is most of them. */
-	const transportInset = $derived(anim && anim.duration > 0 ? '42px' : '0px');
+
+	/**
+	 * R22 ROUND 23 (user): "if window size is small (or resized) without space to show all
+	 * header text/buttons ... arrows left/right (with number of total files), cog and X
+	 * should always show, the rest hide".
+	 *
+	 * SO THE HEADER HAS A RANKING NOW, and the user's is the right one:
+	 * · the WALK (‹ 3/12 ›) — where you are and how to move, which is the whole point of a
+	 *   preview you opened from a folder;
+	 * · the COG — the only way to reach this window's own settings;
+	 * · the CLOSE — never take away the exit.
+	 * Everything else goes: the title (the window is showing you the file, and the title is
+	 * on the tooltip), the up-a-folder button (Backspace does it), the image zoom readout
+	 * and its three buttons (the wheel and a double-click do all three).
+	 *
+	 * MEASURED, not a media query, for the reason the Explorer header has the same shape: a
+	 * floating window is resized by its own grip and can be 260px wide on a 1440px screen,
+	 * so the viewport tells you nothing about it. A container query would read the right
+	 * box but brings containment that makes this a containing block for `position: fixed`
+	 * descendants — and this header opens menus.
+	 */
+	let headerW = $state(1000);
+	function headerWidth(node: HTMLElement) {
+		const ro = new ResizeObserver(() => (headerW = node.clientWidth));
+		ro.observe(node);
+		headerW = node.clientWidth;
+		return { destroy: () => ro.disconnect() };
+	}
+	/** two steps, because the pieces are not worth the same: the extras go first and the
+	 * title holds on until there is genuinely no room for it. */
+	const hideExtras = $derived(headerW < 340);
+	const hideTitle = $derived(headerW < 260);
+	/**
+	 * R22 ROUND 21 (user): "for animated objects show statistic below player, same as sounds
+	 * have filename below player".
+	 *
+	 * SO THE STACK INVERTED. Round 15 lifted the reading ABOVE the transport; the sound
+	 * player has always put its filename UNDER its strip, and matching that is right — the
+	 * reading is a caption for what you are looking at, and a caption goes beneath.
+	 *
+	 * It is the TRANSPORT that is offset now, by the height of a reading, and the reading
+	 * itself is simply at the bottom. Zero-ish when the window is faded, because both
+	 * readings stand down there and the strip may as well have the room.
+	 */
+	const readingInset = $derived(winOpacity >= 1 ? '22px' : '6px');
 
 	const target = $derived($previewWindows.find((w: any) => w.id === winId) ?? null);
 	const first = $derived(index === 0);
 	/** which face to draw. A target that names no kind is an image — every pre-round-11
 	 * caller passes a plain `{title, url}` and must keep working unchanged. */
 	const face = $derived(target ? (target.kind ?? 'image') : null);
+	/**
+	 * R22 ROUND 22 (user): "lock opacity setting for audio files (it does not makes sense
+	 * for it or for folder to have it)".
+	 *
+	 * Right, and the reason is worth naming: the opacity exists so a window can become a
+	 * REFERENCE laid over the scene — a picture or a model you keep beside what you are
+	 * building. A sound has nothing to see through and a folder card is a signpost; fading
+	 * either produces a window that is harder to read and no more useful.
+	 *
+	 * DISABLED WITH THE REASON, never hidden: the row is part of the cog's shape, and a
+	 * control that vanishes for some files teaches nobody why. That is the same call the
+	 * Users popover makes for Watch when a peer is in another scene.
+	 */
+	const opacityApplies = $derived(face === 'image' || face === 'object');
 	const walkId = $derived(String(target?.itemId ?? target?.folderId ?? ''));
 	const place = $derived(previewPosition($previewSiblings.entries, walkId));
 	const canPrev = $derived(!!stepPreview($previewSiblings.entries, walkId, -1));
@@ -153,7 +208,6 @@
 			spinning = untrack(() => $previewAutoRotate); // the default, at opening time
 			winOpacity = 1; // round 14: a new window is opened to be LOOKED at
 			winPassthrough = false;
-			hintSeen = false;
 			anim = null;
 			zoom = 1;
 			panX = 0;
@@ -425,13 +479,17 @@
 		use:ownKeys
 		style="z-index: var(--z-window); width: 520px; height: 420px"
 	>
-		<div class="ui-panel-header move-handle shrink-0 cursor-move select-none py-1.5">
-			<span class="pv-title" title={target.title}>
-				{#key face}
-					{@const Ico = ICONS[face ?? 'image'] ?? Image}
-					<Ico size={16} class="mr-1" aria-hidden="true" />
-				{/key}{target.title}</span
-			>
+		<div class="ui-panel-header move-handle shrink-0 cursor-move select-none py-1.5" use:headerWidth>
+			<!--
+				R22 ROUND 24 (user): "arrows should be always at the left side of window, then
+				filename, then percentage of zoom and cog and X button".
+
+				THE WALK COMES FIRST. It is the one group whose position must never move, because
+				it is the control you use repeatedly without looking — stepping through a folder
+				is a rhythm, and a button that shifts under your cursor between presses breaks it.
+				Anchored to the left edge it cannot be moved by anything to its right: not a long
+				filename, not a zoom readout appearing, not the window being resized.
+			-->
 			<!-- the walk: where you are, and the two steps out of it -->
 			<button
 				id="preview-prev"
@@ -441,7 +499,31 @@
 				disabled={!canPrev}
 				onclick={() => step(-1)}><ChevronLeft size={14} aria-hidden="true" /></button
 			>
-			<span id="preview-place" class="text-xs text-gray-400">{place.at || '–'}/{place.of}</span>
+			<!--
+				R22 ROUND 24 (user): "when 9/25 and then show 10/25 files the second arrow slightly
+				moves (make it more professional, so it does not happen, even if there are 999
+				files, what is the best practice for this, apply)".
+
+				TWO THINGS, and both are needed — either alone still moves.
+
+				· `font-variant-numeric: tabular-nums` makes every digit the same width, so 1/25
+				  and 8/25 measure the same. Proportional digits are the default in most UI
+				  fonts and a "1" is visibly narrower than an "8", which is the jitter you get
+				  even without changing digit COUNT.
+				· A reserved WIDTH for the worst case, because tabular digits do not help when
+				  9 becomes 10. The numerator can never exceed the denominator, so the widest
+				  this can ever be is known exactly: as many digits as `of` has, twice, plus the
+				  separator. 999 files reserves "999/999" and nothing after it ever moves.
+
+				Reserving rather than PADDING with spaces ("  9/25") is the other half of the
+				practice: padded text is left-heavy and reads as a typo, while a centred number
+				in a fixed box reads as a counter.
+			-->
+			<span
+				id="preview-place"
+				class="pv-place text-xs text-gray-400"
+				style:min-width="{String(place.of ?? 0).length * 2 + 1}ch">{place.at || '–'}/{place.of}</span
+			>
 			<button
 				id="preview-next"
 				class="ui-button-quiet"
@@ -453,13 +535,22 @@
 			<button
 				id="preview-up"
 				class="ui-button-quiet"
+				class:pv-gone={hideExtras}
 				title="Up one folder (Backspace)"
 				aria-label="Up one folder"
 				disabled={!upAvailable}
 				onclick={() => void goUp()}><CornerLeftUp size={14} aria-hidden="true" /></button
 			>
+			<!-- the title is the FIRST thing to go: the window is already showing you the file,
+			     and the name stays on the tooltip and on the drag handle -->
+			<span class="pv-title" class:pv-gone={hideTitle} title={target.title}>
+				{#key face}
+					{@const Ico = ICONS[face ?? 'image'] ?? Image}
+					<Ico size={16} class="mr-1" aria-hidden="true" />
+				{/key}{target.title}</span
+			>
 			<span class="flex-1"></span>
-			{#if face === 'image'}
+			{#if face === 'image' && !hideExtras}
 				<span id="image-zoom" class="text-xs text-gray-400">{Math.round(zoom * 100)}%</span>
 				<button class="ui-button-quiet" title="Zoom out" onclick={() => (zoom = clamp(zoom * 0.8))}>−</button>
 				<button class="ui-button-quiet" title="Zoom in" onclick={() => (zoom = clamp(zoom * 1.25))}>＋</button>
@@ -496,7 +587,7 @@
 					open a second window and compare.
 				-->
 				<p class="pv-scope">This window</p>
-				<label class="pv-row" for="preview-opacity">
+				<label class="pv-row" for="preview-opacity" class:pv-off={!opacityApplies}>
 					<span class="pv-label">Opacity</span>
 					<input
 						id="preview-opacity"
@@ -504,6 +595,10 @@
 						min="15"
 						max="100"
 						step="5"
+						disabled={!opacityApplies}
+						title={opacityApplies
+							? 'How strongly the picture is drawn'
+							: 'Only for something you can see through — a picture or a model'}
 						value={Math.round(winOpacity * 100)}
 						oninput={(e) =>
 							(winOpacity = clampPreviewOpacity(
@@ -522,6 +617,12 @@
 					/>
 					<span class="pv-label pv-grow">Passthrough</span>
 				</label>
+				{#if !opacityApplies}
+					<p class="pv-note">
+						Fading is for a window you are using as a reference over the scene — a picture or
+						a model. There is nothing to see through here.
+					</p>
+				{/if}
 				<p class="pv-note">
 					Clicks reach the scene underneath; the header stays live so you can still move this
 					window and switch it back.
@@ -603,7 +704,7 @@
 			id="preview-body"
 			class="pv-body relative min-h-0 flex-1 overflow-hidden"
 			style="cursor: {face === 'image' && zoom > 1 ? (panning ? 'grabbing' : 'grab') : 'default'}"
-			style:--pv-transport={transportInset}
+			style:--pv-reading={readingInset}
 			onwheel={onWheel}
 			onpointerdown={(e) => {
 				if (face !== 'image' || zoom <= 1) return;
@@ -654,20 +755,29 @@
 						onStats={(s) => (stats = s)}
 						onAnim={(a) => (anim = a)}
 						onToggleSpin={() => (spinning = !spinning)}
-						onInteract={() => (hintSeen = true)}
 					/>
 					<!--
 						R22 round 15 — the animation transport. It renders NOTHING for a still file,
 						so the common case is byte-unchanged; when it does appear the two readings
-						below it move up by its height (`--pv-transport`) rather than being covered.
+						the reading below it clears it (`--pv-reading`) rather than being covered.
 					-->
-					<AnimationPlayer
-						bind:this={animPlayer}
-						{anim}
+					<!--
+						R22 round 22 (user): "changing opacity should hide the player". A faded window
+						is a reference laid over the scene, and the transport is the largest piece of
+						chrome on it — the two readings already stand down for the same reason, and
+						leaving the player up made them look like an oversight rather than a rule.
+						The keyboard still reaches it (Space, "," and "."), so nothing is lost but the
+						box.
+					-->
+					{#if winOpacity >= 1}
+						<AnimationPlayer
+							bind:this={animPlayer}
+							{anim}
 						onPlay={(on) => model?.setAnimPlaying(on)}
-						onSeek={(t) => model?.seekAnim(t)}
-						onClip={(i) => model?.setAnimClip(i)}
-					/>
+							onSeek={(t) => model?.seekAnim(t)}
+							onClip={(i) => model?.setAnimClip(i)}
+						/>
+					{/if}
 				{/key}
 				<!--
 					The mesh facts, along the bottom as they were.
@@ -693,11 +803,11 @@
 					which — the corner label the old pop-out had, with the pan and zoom added.
 				-->
 				<!--
-					AN INTERACTION PROMPT, not a status light. R22 round 14 — see `hintSeen` for the
-					standard it now follows and what round 13 had it doing instead.
+					THE GESTURE LINE. It says which gesture does what AND whether the turntable is
+					running — a state you can otherwise only learn by watching. It PERSISTS (round
+					21): see the note above the markup for why the round-14 dismissal went.
 
-					THREE gates, and each answers a different question:
-					· `!hintSeen` — have you used this window yet? A prompt is for before you have.
+					TWO gates now, and each answers a different question:
 					· `!$previewShowStats` — R22 ROUND 19, and this REVERSES round 14's rule at the
 					  user's ask. The reasoning then was that switching the reading off is a
 					  competence signal, so the teaching should go with it. The user's rule is
@@ -712,7 +822,7 @@
 					The wording reads LIVE off the turntable and still cannot flicker, because the
 					only way to change that state is a click, and a click dismisses this.
 				-->
-				{#if !hintSeen && !$previewShowStats && winOpacity >= 1}
+				{#if !$previewShowStats && winOpacity >= 1}
 					<span class="pv-hint" aria-hidden="true">
 						<RotateCw size={12} />
 						{spinning ? 'Click to stop' : 'Click to auto-rotate'} · drag to turn · scroll to zoom
@@ -730,13 +840,21 @@
 {/if}
 
 <style>
+	/* round 24: it sits BETWEEN the walk and the right-hand group now, so it may shrink
+	   (and truncate) but never grow — the flex-1 spacer after it is what holds the cog and
+	   the close button against the right edge. */
 	.pv-title {
 		display: flex;
 		min-width: 0;
+		flex: 0 1 auto;
 		align-items: center;
 		overflow: hidden;
 		text-overflow: ellipsis;
 		white-space: nowrap;
+	}
+	.pv-place {
+		text-align: center;
+		font-variant-numeric: tabular-nums;
 	}
 	.pv-body {
 		background: #0d1117;
@@ -772,6 +890,19 @@
 	   the thing you keep coming back to, so it gets the edge, and the tip sits above it */
 	/* the cog's two scopes. Quiet — a heading that shouts is worse than none, and there
 	   are only ever two of them. */
+	/* a row whose control cannot act. Dimmed, not hidden — see `opacityApplies`. */
+	.pv-off .pv-label,
+	.pv-off .pv-value {
+		opacity: 0.45;
+	}
+
+	/* round 23: not `hidden`, which is a Tailwind utility this file must not redeclare (the
+	   documented unlayered-CSS trap) — its own name, and `display: none` so the flex row
+	   reflows around the gap rather than leaving one. */
+	.pv-gone {
+		display: none;
+	}
+
 	.pv-scope {
 		margin: 0.35rem 0 0.1rem;
 		font-size: 0.62rem;
@@ -787,7 +918,7 @@
 
 	.pv-stats {
 		position: absolute;
-		bottom: var(--pv-transport, 0px);
+		bottom: 2px;
 		left: 0;
 		right: 0;
 		background: rgb(0 0 0 / 55%);
@@ -804,7 +935,7 @@
 	   stacked above an empty edge would just be a gap where the numbers used to be */
 	.pv-hint {
 		position: absolute;
-		bottom: var(--pv-transport, 0px);
+		bottom: 2px;
 		left: 6px;
 		display: flex;
 		align-items: center;

@@ -21,7 +21,6 @@
 		autoPlay = true,
 		onStats,
 		onToggleSpin,
-		onInteract,
 		onAnim
 	}: {
 		itemId?: string
@@ -34,10 +33,6 @@
 		onStats?: (s: any) => void
 		/** the user CLICKED without dragging — the turntable's ONLY on/off switch */
 		onToggleSpin?: () => void
-		/** ANY use of the view (press, or wheel). The window above shows an interaction
-		 * prompt until this fires once — see its comment for why that is the standard
-		 * shape rather than a label tied to the turntable's state. */
-		onInteract?: () => void
 		/** R22 round 15: does this file animate, and where is its playhead. `{clips, index,
 		 * duration, playing, time}` on load and on every change; `null` for a still file. */
 		onAnim?: (a: any) => void
@@ -322,7 +317,6 @@
 		let panning = false
 		let travelled = 0
 		const down = (e: PointerEvent) => {
-			untrack(() => onInteract)?.()
 			panning = e.button === 1 || e.shiftKey
 			dragging = true
 			travelled = 0
@@ -360,7 +354,6 @@
 			panning = false
 		}
 		const wheel = (e: WheelEvent) => {
-			untrack(() => onInteract)?.()
 			e.preventDefault()
 			dist = Math.max(modelSize * 0.15, Math.min(modelSize * 8, dist * (e.deltaY > 0 ? 1.12 : 0.89)))
 			placeCamera()

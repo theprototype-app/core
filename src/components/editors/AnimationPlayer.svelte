@@ -206,7 +206,9 @@
 	.an-root {
 		position: absolute;
 		right: 6px;
-		bottom: 6px;
+		/* round 21: the mesh facts (or the gesture line) sit UNDER the transport, the way the
+		   sound player puts its filename under its strip — so the strip clears them */
+		bottom: var(--pv-reading, 6px);
 		left: 6px;
 		z-index: 2;
 	}

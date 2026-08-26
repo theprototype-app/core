@@ -885,6 +885,133 @@ h.run(async () => {
 		'the shortcuts survive touching the volume slider — a range is a control, not a text field'
 	);
 
+	// =====================================================================================
+	// R22 ROUND 24 — THE HEADER'S ORDER, AND A COUNTER THAT DOES NOT MOVE (user)
+	//
+	//   "arrows should be always at the left side of window, then filename, then percentage
+	//    of zoom and cog and X button, also when 9/25 and then show 10/25 files the second
+	//    arrow slightly moves (make it more professional, so it does not happen, even if
+	//    there are 999 files)"
+	// =====================================================================================
+	await page.evaluate(() => window.__stores.explorer.activeFolder.set(null));
+	await page.waitForTimeout(600);
+	// a folder with enough files that the counter crosses from one digit to two
+	// IMAGES, not text files: a .txt opens the text editor rather than the preview, which is
+	// the same trap the passthrough section hit. And each needs DIFFERENT bytes - the library
+	// is content-hash addressed, so twelve identical fixtures would be ONE item.
+	const many = await page.evaluate(
+		async ({ png }) => {
+			const e = window.__stores.explorer;
+			const folder = e.createFolder('Counter', null);
+			const ids = [];
+			for (let i = 0; i < 12; i++) {
+				const buf = new Uint8Array([...png.slice(0, -4), i, i, i, i]).buffer;
+				ids.push((await e.addItemFromBytes(buf, 'shot-' + String(i).padStart(2, '0') + '.png', folder.id)).id);
+			}
+			return { folder: folder.id, ids };
+		},
+		{ png: PNG }
+	);
+	await page.waitForTimeout(900);
+
+	// open the preview on an IMAGE so the zoom readout is in play too
+	await page.locator('[data-card-id="' + seeded.img + '"]').dblclick();
+	await page.waitForTimeout(1200);
+	const headerOrder = await page.evaluate(() => {
+		const win = document.querySelector('#image-preview-window');
+		const x = (sel) => {
+			const el = win?.querySelector(sel);
+			return el ? Math.round(el.getBoundingClientRect().left) : null;
+		};
+		return {
+			prev: x('#preview-prev'),
+			place: x('#preview-place'),
+			next: x('#preview-next'),
+			title: x('.pv-title'),
+			zoom: x('#image-zoom'),
+			cog: x('#preview-cog'),
+			close: x('button[title="Close"]')
+		};
+	});
+	const seq = ['prev', 'place', 'next', 'title', 'zoom', 'cog', 'close'];
+	const missing = seq.filter((k) => headerOrder[k] === null);
+	h.check(missing.length === 0, 'premise: every header piece is rendered (' + JSON.stringify(headerOrder) + ')');
+	h.check(
+		seq.every((k, i) => i === 0 || headerOrder[seq[i - 1]] < headerOrder[k]),
+		'the header reads walk -> filename -> zoom -> cog -> close, left to right (' +
+			JSON.stringify(headerOrder) +
+			')'
+	);
+	// the walk is anchored to the LEFT EDGE, so nothing to its right can shift it
+	const winLeft = await page.evaluate(
+		() => Math.round(document.querySelector('#image-preview-window').getBoundingClientRect().left)
+	);
+	h.check(
+		headerOrder.prev - winLeft < 24,
+		'...with the arrows hard against the left edge (' + (headerOrder.prev - winLeft) + 'px in)'
+	);
+
+	// ---- THE COUNTER HOLDS ITS WIDTH ACROSS A DIGIT CHANGE -----------------------------
+	await page.locator('#image-preview-window button[title="Close"]').first().click();
+	await page.waitForTimeout(500);
+	await page.evaluate((f) => window.__stores.explorer.activeFolder.set(f), many.folder);
+	await page.waitForTimeout(800);
+	await page.locator('[data-card-id="' + many.ids[0] + '"]').dblclick();
+	await page.waitForTimeout(1200);
+	const walkGeom = () =>
+		page.evaluate(() => {
+			const place = document.querySelector('#preview-place');
+			const next = document.querySelector('#preview-next');
+			return {
+				text: place?.textContent?.trim() ?? null,
+				placeW: place ? Math.round(place.getBoundingClientRect().width * 100) / 100 : null,
+				nextX: next ? Math.round(next.getBoundingClientRect().left * 100) / 100 : null,
+				tabular: place ? getComputedStyle(place).fontVariantNumeric : null
+			};
+		});
+	const first = await walkGeom();
+	h.check(
+		/^1\/12$/.test(first.text ?? ''),
+		'premise: a twelve-file folder, opened on the first (' + JSON.stringify(first) + ')'
+	);
+	h.check(
+		/tabular-nums/.test(first.tabular ?? ''),
+		'the counter uses TABULAR figures, so equal digit counts already measure equal'
+	);
+	// walk to 9/12, then the step that adds a digit
+	for (let i = 0; i < 8; i++) {
+		await page.locator('#preview-next').click();
+		await page.waitForTimeout(220);
+	}
+	const nine = await walkGeom();
+	h.check(/^9\/12$/.test(nine.text ?? ''), 'premise: standing on 9/12 (' + nine.text + ')');
+	await page.locator('#preview-next').click();
+	await page.waitForTimeout(400);
+	const ten = await walkGeom();
+	h.check(/^10\/12$/.test(ten.text ?? ''), 'premise: stepped to 10/12 (' + ten.text + ')');
+	// THE CHECK the report is about: the arrow you are clicking must not move under you
+	h.check(
+		Math.abs(ten.nextX - nine.nextX) < 0.5,
+		'the next arrow does NOT move when the count gains a digit (' + nine.nextX + ' -> ' + ten.nextX + ')'
+	);
+	h.check(
+		Math.abs(ten.placeW - nine.placeW) < 0.5,
+		'...because the counter reserved the room its widest value needs (' +
+			nine.placeW +
+			' -> ' +
+			ten.placeW +
+			')'
+	);
+	// and it is not a fixed guess: the reservation follows the folder's own size
+	h.check(
+		ten.placeW > 0 && ten.placeW < 80,
+		'...sized to THIS folder rather than padded for an imaginary one (' + ten.placeW + 'px)'
+	);
+	await page.locator('#image-preview-window button[title="Close"]').first().click();
+	await page.waitForTimeout(400);
+	await page.evaluate(() => window.__stores.explorer.activeFolder.set(null));
+	await page.waitForTimeout(500);
+
 	h.check(
 		(h.pageErrors(A) || []).length === 0,
 		'no page errors (' + (h.pageErrors(A) || []).join(' | ') + ')'

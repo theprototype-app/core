@@ -823,6 +823,7 @@
 									class="picker-row flex cursor-pointer items-center gap-2 rounded-sm px-1 py-0.5 text-sm text-gray-200 hover:bg-gray-700"
 								>
 									<input
+										class="tp-check"
 										type="checkbox"
 										checked={picker.checked.has(entry.index)}
 										onchange={() => togglePick(entry.index)}
@@ -887,7 +888,7 @@
 									title={row.path}
 									style="padding-left: {4 + row.depth * 16}px"
 								>
-									<input type="checkbox" checked={rowPicked(row)} onchange={() => toggleFile(row)} />
+									<input class="tp-check" type="checkbox" checked={rowPicked(row)} onchange={() => toggleFile(row)} />
 									{#if row.thumbnail}
 										<img src={row.thumbnail} alt="" class="h-6 w-8 shrink-0 rounded-sm object-cover" />
 									{:else}

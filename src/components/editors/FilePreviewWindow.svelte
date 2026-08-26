@@ -1,5 +1,15 @@
 <script lang="ts">
-	import { AudioLines, Box, ChevronLeft, ChevronRight, CornerLeftUp, Folder, Image, Settings } from '@lucide/svelte';
+	import {
+		AudioLines,
+		Box,
+		ChevronLeft,
+		ChevronRight,
+		CornerLeftUp,
+		Folder,
+		Image,
+		RotateCw,
+		Settings
+	} from '@lucide/svelte';
 	import { untrack } from 'svelte';
 	// R22 round 11 — WAS ImagePreviewWindow, and it is the FILE preview now: image, audio
 	// or 3D, with arrows that walk the folder you are looking at.
@@ -55,6 +65,15 @@
 	let cogOpen = $state(false);
 	let player: any = $state(null);
 	let stats: any = $state(null);
+	/**
+	 * R22 round 13 (user): "cog auto rotate is a default setting for all objects which
+	 * opens". So the PREF is the default and this is the LIVE state of THIS window — seeded
+	 * from the pref whenever a new target arrives, then diverged by a click on the model or
+	 * by dragging it. Changing the cog still reaches the open window (a setting you can
+	 * watch do nothing is a dead control), but the two are not the same value: that is what
+	 * lets one window spin while another, opened from the same default, does not.
+	 */
+	let spinning = $state(true);
 
 	const target = $derived($previewWindows.find((w: any) => w.id === winId) ?? null);
 	const first = $derived(index === 0);
@@ -84,6 +103,7 @@
 		if (t && t !== openedFor) {
 			openedFor = t;
 			stats = null;
+			spinning = untrack(() => $previewAutoRotate); // the default, at opening time
 			zoom = 1;
 			panX = 0;
 			panY = 0;
@@ -357,6 +377,7 @@
 				<label class="pv-row pv-check" for="preview-passthrough">
 					<input
 						id="preview-passthrough"
+						class="tp-check"
 						type="checkbox"
 						checked={$previewPassthrough}
 						onchange={(e) => previewPassthrough.set((e.currentTarget as HTMLInputElement).checked)}
@@ -370,6 +391,7 @@
 				<label class="pv-row pv-check" for="preview-multi">
 					<input
 						id="preview-multi"
+						class="tp-check"
 						type="checkbox"
 						checked={$previewMultiWindow}
 						onchange={(e) => previewMultiWindow.set((e.currentTarget as HTMLInputElement).checked)}
@@ -381,15 +403,21 @@
 					<label class="pv-row pv-check" for="preview-autorotate">
 						<input
 							id="preview-autorotate"
+							class="tp-check"
 							type="checkbox"
 							checked={$previewAutoRotate}
-							onchange={(e) => previewAutoRotate.set((e.currentTarget as HTMLInputElement).checked)}
+							onchange={(e) => {
+								const on = (e.currentTarget as HTMLInputElement).checked;
+								previewAutoRotate.set(on);
+								spinning = on;
+							}}
 						/>
-						<span class="pv-label pv-grow">Auto-rotate</span>
+						<span class="pv-label pv-grow">Auto-rotate new previews</span>
 					</label>
 					<label class="pv-row pv-check" for="preview-stats">
 						<input
 							id="preview-stats"
+							class="tp-check"
 							type="checkbox"
 							checked={$previewShowStats}
 							onchange={(e) => previewShowStats.set((e.currentTarget as HTMLInputElement).checked)}
@@ -449,15 +477,41 @@
 						itemId={target.itemId ?? ''}
 						prefabId={target.prefabId ?? ''}
 						name={target.name ?? ''}
-						autoSpin={$previewAutoRotate}
+						autoSpin={spinning}
 						onStats={(s) => (stats = s)}
+						onToggleSpin={() => (spinning = !spinning)}
 					/>
 				{/key}
-				{#if $previewShowStats && stats}
+				<!--
+					The mesh facts, along the bottom as they were.
+
+					HIDDEN BELOW FULL OPACITY (user): a faded window is being used as a reference
+					over the scene, and chrome is the first thing in the way of that — so the
+					reading gets out of the way on its own rather than needing a second switch.
+				-->
+				{#if $previewShowStats && stats && $previewOpacity >= 1}
 					<div id="preview-stats-line" class="pv-stats">
 						{stats.tris.toLocaleString()} tris · {stats.verts.toLocaleString()} verts · {stats.meshes}
 						mesh{stats.meshes === 1 ? '' : 'es'}
 					</div>
+				{/if}
+				<!--
+					R22 round 13 (user): "rotate enable/disable by single click (keep ability to
+					rotate)". THE MODEL ITSELF IS THE SWITCH — a press that does not travel toggles
+					the turntable, a press that travels rotates it, and dragging takes it over. One
+					surface, two gestures, told apart by the same 4px slop the marquee uses; nothing
+					has to be aimed at, and the bottom-left corner stays free for the reading below.
+
+					So this is a HINT again rather than a control, and it says which gesture is
+					which — the corner label the old pop-out had, with the pan and zoom added.
+				-->
+				<!-- ONLY WHILE IT IS STILL (user): a tip is guidance you need when nothing is
+				     happening. Over a turning model it is just something else moving. -->
+				{#if !spinning && $previewOpacity >= 1}
+					<span class="pv-hint" aria-hidden="true">
+						<RotateCw size={12} />
+						Click to auto-rotate · drag to turn
+					</span>
 				{/if}
 			{:else if face === 'folder'}
 				<div class="pv-folder">
@@ -483,29 +537,34 @@
 		background: #0d1117;
 	}
 	/*
-		R22 round 12 (user): "opacity should show what is behind window, not just make it
-		darker".
+		R22 rounds 12 and 13 (user): "opacity should show what is behind window, not just make
+		it darker" — then "header and cog toolbar opacity should not change".
 
-		THE BUG: round 11 put `opacity` on the BODY, whose own background is opaque and
-		which sits on an opaque `.ui-panel`. Fading a child against its own opaque parent
-		can only ever darken it — there was never anything behind it to show. So the fade
-		belongs to the WHOLE WINDOW, and the two opaque layers underneath have to give way
-		with it: the panel's background and the body's both go transparent, which is what
-		leaves the scene as the backdrop.
+		THE ORIGINAL BUG (round 11) was `opacity` on the BODY while both the body's own
+		background and the `.ui-panel` behind it stayed opaque: fading a child against its own
+		opaque parent can only darken it, because there is nothing behind it to show.
 
-		The header keeps its own surface at full strength, or a faint window is one you
-		cannot find the handle of.
+		Round 12 answered that by fading the WHOLE WINDOW, which worked and took the chrome
+		with it. THE CSS FACT THAT DECIDES THIS: `opacity` on an ancestor applies to its whole
+		subtree and CANNOT be undone by a descendant — no rule on the header could have kept
+		it solid. So the fade goes back on the BODY, and what makes it work this time is that
+		the two opaque layers under the picture give way: the panel's background AND the
+		body's. The scene ends up as the backdrop, and the header and the settings panel —
+		which are siblings of the body, not children — keep their own surfaces at full
+		strength. A faint window still has a handle you can find and a cog you can read.
 	*/
 	.pv-faded {
-		opacity: var(--pv-opacity, 1);
 		background: transparent;
 	}
 	.pv-faded .pv-body {
+		opacity: var(--pv-opacity, 1);
 		background: transparent;
 	}
 	.pv-faded .ui-panel-header {
 		background: var(--surface, #1f2937);
 	}
+	/* the mesh facts, along the VERY bottom (user: the two were swapped) — the reading is
+	   the thing you keep coming back to, so it gets the edge, and the tip sits above it */
 	.pv-stats {
 		position: absolute;
 		bottom: 0;
@@ -515,7 +574,22 @@
 		padding: 2px 6px;
 		text-align: center;
 		font-size: 10px;
+		font-variant-numeric: tabular-nums;
 		color: #d1d5db;
+		pointer-events: none;
+	}
+	/* ...and the gesture hint under it, bottom left. Not a control: the MODEL is the
+	   switch, so this must never take a click meant for the picture behind it. */
+	.pv-hint {
+		position: absolute;
+		bottom: 20px;
+		left: 6px;
+		display: flex;
+		align-items: center;
+		gap: 4px;
+		font-size: 10px;
+		color: #6b7280;
+		pointer-events: none;
 	}
 	/*
 		CLICK-THROUGH. The ROOT, not the body — and that distinction cost a red check.

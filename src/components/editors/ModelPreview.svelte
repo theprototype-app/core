@@ -18,16 +18,31 @@
 		prefabId = '',
 		name = '',
 		autoSpin = true,
-		onStats
+		onStats,
+		onToggleSpin
 	}: {
 		itemId?: string
 		prefabId?: string
 		name?: string
 		autoSpin?: boolean
 		onStats?: (s: any) => void
+		/** the user CLICKED without dragging — the turntable's ONLY on/off switch */
+		onToggleSpin?: () => void
 	} = $props()
 
+	/** the live spin flag the render loop reads. A plain `let` on purpose — see the long
+	 * note inside the effect for why reading the PROP there tore the GL context down. */
+	// the initial read is deliberate — the $effect below is what keeps it live
+	// svelte-ignore state_referenced_locally
+	let spinNow = autoSpin
+	$effect(() => {
+		spinNow = autoSpin
+	})
+
 	let canvas: HTMLCanvasElement | undefined = $state()
+
+	/** how far a press may travel and still count as a click (the marquee's own slop) */
+	const DRAG_SLOP = 4
 
 	$effect(() => {
 		if (!canvas) return
@@ -51,6 +66,22 @@
 		// item source was accidentally safe because it only touched `onStats` after an
 		// `await`; the prefab source is synchronous and had no such luck.
 		const report = untrack(() => onStats)
+
+		// R22 round 13 — WHY `autoSpin` IS NOT READ DIRECTLY, and it is the same hazard the
+		// note above describes reached by a different door.
+		//
+		// `loop()` is CALLED SYNCHRONOUSLY at the end of this effect body, and that first
+		// call reads `autoSpin` INSIDE the tracking scope — so the effect depends on it, and
+		// toggling the checkbox tore the renderer down (forceContextLoss) and asked the same
+		// canvas for a second context, which returns null. MEASURED: the frames stopped
+		// changing, which looks like the feature working, while the PNG of the body collapsed
+		// from ~68KB to 18KB — the object had stopped being DRAWN. Reported as "when
+		// auto-rotate is clicked it should stop rotating, now it just stops showing".
+		//
+		// So the loop reads a plain `let` that a SEPARATE tiny effect keeps current: no
+		// dependency in the render effect, and the value is still live on the next frame.
+		// (Checking that the canvas element survived was blind to this — the ELEMENT lives
+		// through a teardown; only its context dies.)
 
 		// 21-H2: THIS component clears the stats for a new source, rather than each
 		// consumer clearing them beside its own `{#key}` — the prefab source reports
@@ -76,6 +107,20 @@
 		const camera = new THREE.PerspectiveCamera(40, 1, 0.01, 100)
 		const pivot = new THREE.Group()
 		scene.add(pivot)
+
+		// the view, as three numbers — see the fit below
+		let modelSize = 1
+		let homeDist = 1
+		let tilt = 0
+		let dist = 1
+		let panX = 0
+		let panY = 0
+		/** where the camera is, given the current dist/pan. Pans move the camera AND its
+		 * look-at together, which is what makes the model slide rather than swing. */
+		const placeCamera = () => {
+			camera.position.set(panX, panY + tilt, dist)
+			camera.lookAt(panX, panY, 0)
+		}
 
 		const resize = () => {
 			const w = el.clientWidth || 1
@@ -119,8 +164,18 @@
 			pivot.add(obj)
 			camera.near = size / 100
 			camera.far = size * 10
-			camera.position.set(0, size * 0.12, size * 1.1)
-			camera.lookAt(0, 0, 0)
+			// R22 round 13 (user): "it should be possible to pan and zoom objects". The frame
+			// this fit produces is the HOME view; `placeCamera` re-derives the camera from
+			// {dist, panX, panY} every time one of them moves, and a double-click puts all
+			// three back. Rotation stays on the PIVOT (the model orbits), so the camera only
+			// ever has to answer where it is looking from and at.
+			modelSize = size
+			homeDist = size * 1.1
+			tilt = size * 0.12
+			dist = homeDist
+			panX = 0
+			panY = 0
+			placeCamera()
 			camera.updateProjectionMatrix()
 			// stats
 			let tris = 0
@@ -139,24 +194,79 @@
 			resize()
 		})()
 
+		/**
+		 * THE STANDARD DCC SET, which is what makes it feel like nothing: LEFT drag orbits,
+		 * MIDDLE (or Shift + left) pans, the WHEEL dollies, and a double-click puts the view
+		 * home. Middle is the one every DCC agrees on for pan; Shift+left is the fallback for
+		 * a trackpad with no middle button.
+		 *
+		 * TAKING CONTROL STOPS THE TURNTABLE. Dragging tells `onTakeControl` so the caller
+		 * can switch auto-rotate off — the behaviour every model viewer has, and the one that
+		 * makes "it will stop at a place where I will stop rotating" true without the user
+		 * having to find a checkbox first.
+		 */
+		let panning = false
+		let travelled = 0
 		const down = (e: PointerEvent) => {
+			panning = e.button === 1 || e.shiftKey
 			dragging = true
+			travelled = 0
 			el.setPointerCapture(e.pointerId)
+			if (e.button === 1) e.preventDefault() // middle-drag would autoscroll
 		}
 		const move = (e: PointerEvent) => {
 			if (!dragging) return
+			travelled += Math.abs(e.movementX) + Math.abs(e.movementY)
+			// R22 round 13: a press that TRAVELS is a rotate; a press that does not is the
+			// SWITCH. Same rule the mesh and UV editors keep wherever one control carries two
+			// gestures, and it is what lets the model itself be the on/off without costing
+			// anyone the ability to drag it.
+			//
+			// A DRAG ONLY PAUSES THE TURNTABLE — the `!dragging` term in the loop does that,
+			// and it picks up again on release. An earlier pass had dragging switch it off
+			// for good, on the reasoning that you had "taken over"; the user's rule is better
+			// and simpler: "after rotating manually object if not clicked to disable rotation
+			// it should continue to rotate". One way in, one way out, and nudging the model
+			// to see the other side does not silently cost you the turntable.
+			if (panning) {
+				// scaled by DISTANCE, so a pan covers the same amount of screen at any zoom
+				const k = (dist / Math.max(1, el.clientHeight)) * 1.4
+				panX -= e.movementX * k
+				panY += e.movementY * k
+				placeCamera()
+				return
+			}
 			pivot.rotation.y += e.movementX * 0.01
 			pivot.rotation.x = Math.max(-1.4, Math.min(1.4, pivot.rotation.x + e.movementY * 0.01))
 		}
-		const up = () => (dragging = false)
+		const up = () => {
+			if (dragging && travelled <= DRAG_SLOP && !panning) untrack(() => onToggleSpin)?.()
+			dragging = false
+			panning = false
+		}
+		const wheel = (e: WheelEvent) => {
+			e.preventDefault()
+			dist = Math.max(modelSize * 0.15, Math.min(modelSize * 8, dist * (e.deltaY > 0 ? 1.12 : 0.89)))
+			placeCamera()
+		}
+		const reset = () => {
+			dist = homeDist
+			panX = 0
+			panY = 0
+			pivot.rotation.set(0, 0, 0)
+			placeCamera()
+		}
 		el.addEventListener('pointerdown', down)
 		el.addEventListener('pointermove', move)
+		el.addEventListener('wheel', wheel, { passive: false })
+		el.addEventListener('dblclick', reset)
+		el.addEventListener('contextmenu', (e) => e.preventDefault())
 		window.addEventListener('pointerup', up)
 
 		const loop = () => {
 			if (disposed) return
 			raf = requestAnimationFrame(loop)
-			if (autoSpin && !dragging && model) pivot.rotation.y += 0.005
+			if (spinNow && !dragging && model) pivot.rotation.y += 0.005
 			renderer.render(scene, camera)
 		}
 		resize()
@@ -170,6 +280,8 @@
 			ro.disconnect()
 			el.removeEventListener('pointerdown', down)
 			el.removeEventListener('pointermove', move)
+			el.removeEventListener('wheel', wheel)
+			el.removeEventListener('dblclick', reset)
 			window.removeEventListener('pointerup', up)
 			scene.traverse((o: any) => {
 				o.geometry?.dispose?.()

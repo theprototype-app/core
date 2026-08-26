@@ -222,19 +222,22 @@ h.run(async () => {
 	await page.locator('#preview-opacity').fill('40');
 	await page.locator('#preview-opacity').dispatchEvent('input');
 	await page.waitForTimeout(400);
-	// R22 ROUND 12 CORRECTED THIS CHECK. It read the BODY's opacity, which is where round
-	// 11 put the fade — and that was the bug the user reported ("opacity should show what
-	// is behind window, not just make it darker"): fading a child against its own opaque
-	// parent can only darken it. The fade belongs to the WHOLE WINDOW now, so the body
-	// reads 1 and the window reads the setting. Section 10 owns the full story; this keeps
-	// the round-11 flow honest rather than asserting an implementation that was wrong.
+	// THIS CHECK HAS MOVED TWICE, and where it ended up is the whole design:
+	//   · round 11 faded the BODY against its own opaque panel — which can only darken it,
+	//     because nothing was behind it (the reported bug);
+	//   · round 12 faded the WHOLE WINDOW, which worked and took the chrome with it;
+	//   · round 13 puts it back on the body — and the reason it works this time is that the
+	//     two opaque layers under the picture now give way as well.
+	// The CSS fact that settles it: `opacity` on an ancestor applies to the whole subtree
+	// and CANNOT be undone by a descendant, so a faded ROOT can never have a solid header.
+	// Section 10 owns the full contract.
 	const faded = await page.evaluate(() => ({
 		win: Number(getComputedStyle(document.querySelector('#image-preview-window')).opacity),
 		body: Number(getComputedStyle(document.querySelector('#preview-body')).opacity)
 	}));
 	h.check(
-		Math.abs(faded.win - 0.4) < 0.03 && faded.body === 1,
-		`the WINDOW fades, not the body against its own panel (${JSON.stringify(faded)})`
+		Math.abs(faded.body - 0.4) < 0.03 && faded.win === 1,
+		`the BODY fades while the window itself does not (${JSON.stringify(faded)})`
 	);
 
 	// PASSTHROUGH: the body stops taking clicks, the header keeps them
@@ -498,25 +501,44 @@ h.run(async () => {
 	const faded2 = await page.evaluate(() => {
 		const win = document.querySelector('#image-preview-window');
 		const head = win.querySelector('.ui-panel-header');
+		const body = document.querySelector('#preview-body');
+		const cog = document.querySelector('#preview-settings');
+		const o = (/** @type {any} */ el) => (el ? Number(getComputedStyle(el).opacity) : null);
 		return {
-			winOpacity: Number(getComputedStyle(win).opacity),
+			winOpacity: o(win),
+			bodyOpacity: o(body),
+			headOpacity: o(head),
+			cogOpacity: o(cog),
 			winBg: getComputedStyle(win).backgroundColor,
-			bodyBg: getComputedStyle(document.querySelector('#preview-body')).backgroundColor,
+			bodyBg: getComputedStyle(body).backgroundColor,
 			headBg: getComputedStyle(head).backgroundColor
 		};
 	});
 	h.check(
-		Math.abs(faded2.winOpacity - 0.4) < 0.03,
-		'the WHOLE WINDOW fades, so the scene is its backdrop (' + faded2.winOpacity + ')'
+		Math.abs(faded2.bodyOpacity - 0.4) < 0.03,
+		'the PICTURE fades (' + faded2.bodyOpacity + ')'
 	);
 	h.check(
 		/rgba\(0, 0, 0, 0\)|transparent/.test(faded2.winBg) &&
 			/rgba\(0, 0, 0, 0\)|transparent/.test(faded2.bodyBg),
-		'...and BOTH opaque layers under the picture give way (' + faded2.winBg + ' / ' + faded2.bodyBg + ')'
+		'...and BOTH opaque layers under it give way, so the SCENE is the backdrop rather than the panel (' +
+			faded2.winBg +
+			' / ' +
+			faded2.bodyBg +
+			')'
+	);
+	// R22 round 13 (user): "header and cog toolbar opacity should not change". They are
+	// SIBLINGS of the body, not children, which is the only reason this is expressible at
+	// all — an ancestor's opacity cannot be undone further down.
+	h.check(
+		faded2.winOpacity === 1 && faded2.headOpacity === 1 && faded2.cogOpacity === 1,
+		'...while the header and the cog panel stay at FULL strength (' +
+			JSON.stringify({ win: faded2.winOpacity, header: faded2.headOpacity, cog: faded2.cogOpacity }) +
+			')'
 	);
 	h.check(
 		!/rgba\(0, 0, 0, 0\)/.test(faded2.headBg),
-		'...while the header keeps its surface, or a faint window has no handle (' + faded2.headBg + ')'
+		'...and the header keeps its surface, or a faint window has no handle (' + faded2.headBg + ')'
 	);
 	await page.evaluate(() => window.__stores.filePreview.previewOpacity.set(1));
 	await page.locator('#preview-cog').first().click();

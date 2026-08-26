@@ -1291,6 +1291,35 @@ your files). Two-peer verification is required for anything touching replication
 VR features: cover the extracted math/state headlessly (computeMoveOffset,
 computeTeleportArc pattern) and note that on-device feel is the user's manual check.
 
+## Roadmap 22 rounds 15-18 — `preview-animation` (46)
+
+- **A FIXTURE SHORTER THAN THE FIRST FAILING CASE PROVES NOTHING ABOUT IT.** The frame
+  stepper was covered by a 60-frame clip and shipped a wedge at frame 123 — the first
+  index where `n/fps*fps` rounds down. The regression carries a 180-frame clip for that
+  reason alone. When a bug report names a NUMBER ("stops on frame 123"), the fixture has
+  to be able to reach it.
+- **REPRODUCE WITH THE USER'S OWN FILE BEFORE THEORISING.** A throwaway probe that read
+  `Dancing Twerk.fbx` off disk, injected the bytes and hammered the key found the exact
+  reported frame in one run — after a plausible wrong theory (end-of-clip dead end) had
+  already been fixed and would have been reported as the answer.
+- **`repeat: true` IS THE GESTURE.** Playwright's `keyboard.down` does not auto-repeat, so
+  a held-key report is reproduced by dispatching KeyboardEvents carrying `repeat: true` —
+  which is also what exposes a handler that computes from a value arriving through a
+  callback it can outrun.
+- **A BARE `#id` CAN RESOLVE TWICE.** `#audio-volume` matches the preview window's player
+  AND the Properties pane's compact one; strict mode fails on the second. Scope by an
+  ancestor that identifies the instance (`[data-preview-id]`, `#image-preview-window`).
+- **PLAYWRIGHT'S "STABLE" HEURISTIC CAN REFUSE A PERFECTLY REACHABLE ELEMENT** in a
+  cascade of overlapping windows. Measure the point, assert `elementFromPoint` lands on
+  what you meant, and click with `page.mouse` — the documented pattern, and it also
+  catches the real cause when the aim is genuinely wrong (a raised window's settings pane
+  covering the next window's header, which is correct behaviour).
+- **A "did the pose change" CHECK MUST NOT INCLUDE THE READOUT.** Screenshotting
+  `#preview-body` put the transport's own frame counter in the picture, so two shots of
+  the same pose could never match. Shoot the canvas. And compare with counted pixels
+  (`h.frameDelta`), not byte equality: the mixer reaching t=2.0 by a different route than
+  t=0 differs by a few edge pixels (measured 316 against 135178 for a real move).
+
 ## Roadmap 22 round 13 — `model-preview-controls` (24), and why it is its own file
 
 - **A LONG SUITE EXHAUSTS WebGL CONTEXTS, AND THE BROWSER DOES NOT SAY SO.** Every

@@ -277,6 +277,36 @@ loadable play content. Everything a user does must be visible to connected peers
   left; the tip is gone while the model turns (a tip is guidance for when nothing is
   happening) and BOTH go below full opacity — a faded window is a REFERENCE, and chrome is
   the first thing in the way of one. `input.tp-check` throughout the cog.
+  · **R22 ROUND 15 — THE PREVIEW PLAYS ANIMATIONS** (`AnimationPlayer.svelte` +
+  `previewAutoPlay`/`previewFps`/`frameCount`/`frameAt`). THE FINDING IT RESTS ON is older
+  than the request: `parseObjectFile` returned `gltf.scene` and DROPPED `gltf.animations`,
+  and that is the one parse path the Explorer, its thumbnails and every preview share — so
+  an animated .glb has been arriving in this app inert since the library was written (FBX
+  was unaffected only because FBXLoader hangs its clips on the object itself, which is now
+  what the glTF path does too). The mixer lives in `ModelPreview` beside the render loop
+  that advances it, and the transport is presentation with three callbacks out — the
+  AudioPlayer/ModelPreview split one domain over. PAUSE IS `action.paused`, never "stop
+  updating the mixer": freezing the mixer looks identical while nothing else moves and
+  jumps the pose the moment you resume. FRAMES ARE DERIVED — a glTF clip is keyed in
+  SECONDS, so the count comes from the animation editor's own `animationFps` (the one
+  convention in the app) and the UI names the rate rather than hiding the assumption.
+  Stepping WRAPS, because playback loops. "Same player style" is kept by SHARING THE
+  STYLESHEET (`tp-tr-*` in ui.utilities.css, the `tp-seg`/`tp-check` precedent), not by
+  copying it.
+  · A STEP PAUSES IN THE ANIMATION TRANSPORT AND DOES NOT IN THE AUDIO ONE, deliberately:
+  a frame you cannot see because playback ran past it is not a step, while holding "." on a
+  sound IS the fast-forward that was asked for. Nothing ever plays backwards — both keys
+  leave the element playing FORWARD from where they land.
+  · KEYS (round 16/17): Space plays either transport · `,`/`.` step (a frame, or a second)
+  · `R` this window's turntable, `I` the shared statistics · audio adds up/down for five
+  seconds, Home/End, 0-9 and M/L. The up/down pair is a DEPARTURE from the web convention
+  (volume) taken at the user's ask, and defensible here: the volume has a slider two
+  centimetres away while finding a moment in a file is why the window is open.
+  · **"TYPING" IS NOT "FOCUS IS ON A CONTROL"** — the window's key handler treated every
+  `INPUT` as a text field, so touching the transport's own slider silenced every shortcut
+  in the window. A range, a checkbox and a button are controls; only a text input, a
+  textarea or a contenteditable is typing. The one exception kept on purpose: a focused
+  range still owns the ARROWS.
   · OPACITY, third and final placement: on the CONTENT, with the panel's and the body's
   backgrounds transparent, so the header and the cog keep their own strength. See the
   ancestor-opacity gotcha for why no other arrangement can express that.
@@ -1706,6 +1736,27 @@ loadable play content. Everything a user does must be visible to connected peers
 
 ## Hard-won gotchas (do not rediscover)
 
+- **A FRAME -> SECONDS -> FRAME ROUND TRIP IS NOT THE IDENTITY, and the first casualty is
+  frame 123.** A step converts a frame index to seconds (`n / fps`) and any readout
+  converts it back (`t * fps`); in binary floating point `123 / 30` is 4.1 and `4.1 * 30`
+  is **122.99999999999999**, so the frame read back is one LOWER than the one just
+  written. A stepper that computes its successor from that reading is then wedged: every
+  press does exactly what it was told and lands in the same place. Reported as "holding
+  '.' hangs after ~150 frames", reproduced on the user's own 456-frame FBX stopping dead
+  on 123 of 456 — nowhere near the end of anything. `frameAt` floors with a `1e-6`
+  epsilon. It survived a green suite because a 60-frame fixture ENDS before the first
+  index where the arithmetic slips, which is the general lesson: a fixture shorter than
+  the first failing case proves nothing about it.
+- **DUPLICATE DOM ids ACROSS COMPONENT INSTANCES ARE HARMLESS UNTIL A `<label for>` MEETS
+  THEM.** Every preview window renders the same settings pane, so two open cogs put two
+  `id="preview-passthrough"` elements in the document — and `<label for>` resolves to the
+  FIRST match anywhere on the page, whatever component it belongs to. Clicking the second
+  window's label toggled the FIRST window's setting, which only became visible once those
+  settings became per-window. Two consequences worth carrying: a multi-instance component
+  must either scope its ids or guarantee one instance renders them at a time (the cog is
+  now single-open, which is also what the user wanted), and a bare `#id` in a suite can
+  resolve twice — `#audio-volume` matches the preview window's player AND the Properties
+  pane's, which is a strict-mode failure waiting for whoever writes the next check.
 - **A FUNCTION CALLED SYNCHRONOUSLY INSIDE AN `$effect` REGISTERS ITS READS AS
   DEPENDENCIES — even a render loop.** `ModelPreview` defines `loop()` inside its effect
   and CALLS IT ONCE at the end of the body; that first call reads `autoSpin`, so the effect
@@ -3671,6 +3722,28 @@ override for e2e — never share 5173 (the user's main-checkout server).
   (open-core: OSS ships only inert hooks — capability gate / auth hook /
   VITE_CLOUD_PLUGIN — cloud repo holds registration/rooms/roles; contract in its
   MAINTAINING.md).
+- Status (2026-08-27): **ROADMAP 22 ROUNDS 14-18 — PREVIEW SETTINGS SCOPE, AND THE
+  ANIMATION TRANSPORT.** Two commits on `feat/22-round12`, NOT pushed: `1e0c7ae` (r14) and
+  the r15-18 batch. Baseline **385/62** at every commit, build green, five guards proven by
+  breaking the code. New suite `preview-animation` (46); `file-preview` grew the audio keys.
+  · **R14 — WHICH SETTINGS BELONG TO A WINDOW.** Opacity and passthrough are the WINDOW's
+  and reset per target (they describe how it sits over the scene, and the next thing you
+  open is opened to be looked at); auto-rotate is a default that never reaches an open
+  window; statistics reaches every window, as asked. The cog names its two scopes, or the
+  same panel silently means two things. The gesture prompt became an INTERACTION PROMPT
+  (dismissed by first use, never returning) rather than a status light tied to the
+  turntable — the standard `<model-viewer>` and Sketchfab both follow, and the user asked
+  for the standard over their own guess.
+  · **R15 — the preview plays animations**, resting on a real pre-existing bug: the glTF
+  parse dropped every clip. See the filePreview entry.
+  · **R16/R17 — the keyboard.** "Typing" is not "focus is on a control" (see the gotcha);
+  R/I shortcuts; the audio transport's full key set.
+  · **R18 — two reported bugs, both reproduced first**: the frame/seconds round trip that
+  wedges a held step key on frame 123 (measured on the user's own 456-frame FBX), and
+  duplicate DOM ids letting a `<label for>` in one window move another window's setting.
+  Both in the gotchas.
+  · **OWED**: pan/zoom feel, the transport in non-dark themes, and one judgement to confirm
+  — up/down seeking rather than volume on the audio player.
 - Status (2026-08-26, latest): **ROADMAP 22 ROUND 13 — THE 3D PREVIEW'S CONTROLS.** One
   commit `938add6` on `feat/22-round12`, NOT pushed. Baseline **385/62**, build green, the
   guard proven by restoring the bug. New suite `model-preview-controls` (24, 36s);

@@ -95,6 +95,15 @@ idempotent op leaves later sections nothing to measure.
 Stored mesh topology is `topo-channel` (the partition's wire/undo/save round trips, the
 operators that author it, two-peer delivery and an old-peer message), and
 `mesh-loop-hardening` section 3b is where the twisted-band criterion lives.
+The EXPLORER line is `explorer`, `explorer-views` (round 9's list view and bin),
+`explorer-columns` (round 11: resize, reorder, the sideways scrollbar and the
+`table-layout: fixed` counterfactual), `explorer-drag-fixes`, `explorer-multiselect`,
+`explorer-delete-confirm` (round 11: the inline confirm strip and drop-to-Deleted),
+`shared-library`, `prefab-explorer`, `packs`/`packs-explorer` and `sessions` — with
+`sessions-packs` (round 11) covering the two-level file picker, the sessions list view,
+the thumbnail path and packs you create yourself. `file-preview` covers the preview
+window's four faces, its folder walk and the passthrough overlay; `save-as-formats` covers
+the Save as… catalog and a prefab that carries a format and bytes.
 
 helpers.cjs exports: `launch(options)` (pass
 `{args:[...]}` for fake media), `setupPage(browser, name)` (init script + hydration +
@@ -1281,6 +1290,58 @@ Feature suite green (+ any suites your UI changes touched) + `npm run build` pas
 your files). Two-peer verification is required for anything touching replication.
 VR features: cover the extracted math/state headlessly (computeMoveOffset,
 computeTeleportArc pattern) and note that on-device feel is the user's manual check.
+
+## Roadmap 22 round 11 — the Explorer/preview/sessions batch
+
+Five suites, one per phase: `explorer-delete-confirm` (39), `explorer-columns` (41),
+`file-preview` (44), `save-as-formats` (30), `sessions-packs` (32), plus a section 6 in
+`scene-open-guard` (11). Regression net for anything Explorer: `explorer-views`,
+`explorer-drag-fixes`, `explorer-multiselect`, `explorer`, `prefab-explorer`, `sessions`,
+`packs`. Lessons that generalise:
+
+- **A CHECK CANNOT SEE A LEAK THE FIXTURE DOES NOT CONTAIN.** Tearing the pruning out of
+  a new selection payload left BOTH "the payload holds the SELECTION and nothing else"
+  and "NONE of the world" green — the test scene had no sky, no gravity and no
+  scene-level flow node to exclude. Authoring those three in made the counterfactual bite
+  AND immediately exposed a real leak (the SCENE's own flow graph, which `pruneMissing`
+  cannot drop because it asks about an OBJECT and the scene graph has none). Build the
+  world the guard is meant to exclude BEFORE trusting the guard.
+- **THE LOAD-BEARING CHECK IS THE ONE THAT ASKS WHAT IS UNDERNEATH.** With click-through
+  applied to the body instead of the panel, `getComputedStyle(body).pointerEvents` reads
+  a convincing `none` and the check passes — while `elementFromPoint` in the middle of
+  the content still names the window. Assert the OUTCOME (the click reaches the thing
+  below), never the property that is supposed to produce it.
+- **`h.eventually` RETURNS THE CHECK, NOT THE VALUE.** `const n = await h.eventually(fn,
+  pred, label)` is `undefined`, so a follow-up assertion on `n` reads a phantom. Name the
+  reader, `eventually` on it, then call it again for the value.
+- **A "compact face" CHECK PASSES VACUOUSLY WHEN THE WHOLE COMPONENT IS ABSENT.**
+  `locator('#inline-audio #audio-loop').count() === 0` is true when `#inline-audio` does not
+  exist at all — which is exactly the state the section was failing in. Assert the premise
+  in the same check (`the container exists AND the button does not`).
+- **A CONTENT-HASH LIBRARY GIVES YOU ONE ITEM FOR TWO IDENTICAL FIXTURES.** Seeding a
+  folder with a copy of the root's PNG left the folder EMPTY, and the feature that walks
+  into it read as broken. Vary the bytes. (Same family as the shader suite's "two picks of
+  the same bytes are the same texture".)
+- **A DOUBLE-CLICK ON A TREE ROW ALSO FIRES TWO CLICKS**, so expanding `#packs-folder`
+  navigates into the Packs view and takes the card the next step meant to drag. Expand,
+  then put `activeFolder` back.
+- **A TALLER WINDOW PUTS ITS OWN CONTROLS UNDER THE Controls HUD.** Resizing the preview
+  window to 760px to prove the transport stays slim then made the transport unclickable —
+  Playwright reported `<p title="Rotate (2)"> … intercepts pointer events`. The feature was
+  fine, the aim was not: restore the height before clicking anything low in the window.
+- **SVELTE HAS NOT FLUSHED INSIDE ONE `evaluate`.** A synthesized HTML5 drag whose target
+  only EXISTS once `dragstart` re-rendered (a row that unhides for a drag) must be split
+  into two evaluates with the `DataTransfer` stashed on `window` between them. A real drag
+  never has this problem — the pointer reaches the row many frames after it appeared.
+- **PROVE A "pre-existing red" ON A PRISTINE SERVER, WITH NUMBERS.** `packs-drop` read as
+  2/3 on base and 3/3 on the branch, which looks exactly like one regression. Running the
+  SAME instrumented copy against both (a second worktree on `origin/release/next` with its
+  own port) printed `before=0 after=1` on each and 3/3 on each — the base's extra pass was
+  a flake. A red that differs by one check is worth one more measurement, not a guess.
+- **A SUITE THAT SEEDS A LOCAL PREF MUST NAME THE KEY THE STORE READS.** `explorer-views`
+  seeded `shared:deleteWithoutConfirm` while `deleteWithoutConfirm` reads
+  `shared:deleteNoConfirm` — a dead seed that had never done anything, and which only
+  surfaced when a confirm finally stood in the way. Grep the store for the literal.
 
 ## Roadmap 22 round 10 — `peer-ice-config` (10) and `explorer-drag-fixes` (7)
 

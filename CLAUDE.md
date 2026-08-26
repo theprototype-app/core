@@ -185,7 +185,87 @@ loadable play content. Everything a user does must be visible to connected peers
   app's first shared segmented control — ToolboxWindow's `.tbx-seg` is styled by the shell
   it lives in, so it could not be reused; the armed half is driven by `aria-pressed` so
   the styling and the accessibility tree cannot disagree.
+  · **R22 ROUND 11 — THE HEADER BECOMES A REAL ONE**: `explorerColumnWidths` and
+  `explorerColumnOrder`, both LOCAL and both PER VIEW for the reason above (a width keyed
+  by column name is meaningless across two different column sets). Order is a key ARRAY
+  and an unmentioned column keeps its own index — the append-not-hide rule the visible set
+  already states, which is what decides the fate of a column added in a later release.
+  `orderColumns` PINS NAME FIRST and that is a decision: the name cell is also the row's
+  drag handle, its inline-rename target and where its status dot lives, so it is the row's
+  identity rather than one of its facts (Finder pins it too). `toggleColumn`'s canonical
+  re-sort is now only about MEMBERSHIP; `orderColumns` decides what is drawn.
+  · **THE SPACER CELL, and why a resizable table needs one.** `table-layout: fixed` shares
+  any SURPLUS out across every column that declares a width, so a drag was silently undone
+  by the layout the moment it left room over. MEASURED with the spacer removed: a 72px
+  column renders 129px, dragging it +60 lands at +85, and the NEIGHBOUR moves 136 -> 123.
+  A trailing auto-width cell absorbs the remainder instead, the table's `min-width` is the
+  column sum, and that is what makes `.ex-list` (never the page) scroll sideways. Body
+  cells carry `data-col` so a reader can skip the spacer by construction.
+  · A header press SORTS; a press that TRAVELS reorders — one control, two gestures, the
+  rule the mesh and UV editors keep — and the click that ends a drag is suppressed
+  (the marquee's hazard 3). It is a POINTER gesture, not HTML5 DnD, because the Explorer
+  already uses DnD for cards and a header dragstart would look like one to every drop
+  target. The grip is 7px ON the boundary, double-click FORGETS the width (rather than
+  storing the default, so a later default change still reaches it), and the header menu
+  grows "Reset widths and order" only when there is something to reset.
   Plan: cloud `plans-core/roadmap-22-shared-library-sessions.md` section 10.
+- `src/lib/filePreview.js` + `components/editors/FilePreviewWindow.svelte` +
+  `components/editors/AudioPlayer.svelte` (R22 round 11) — THE PREVIEW WINDOW STOPS BEING
+  AN IMAGE VIEWER. Image, audio, 3D or a folder, with arrows that walk the folder the
+  Explorer is showing. The leaf holds the walk (`previewWalk`/`stepPreview`/
+  `previewPosition`/`previewFaceOf`) and the two overlay prefs; the window is chrome.
+  · **THE SIBLING LIST IS PUBLISHED, NOT DERIVED.** "The files in this folder, in the order
+  you can see" depends on the filters, the search box, the view mode and the sort — a
+  question only the Explorer can answer — so it publishes `previewSiblings` off
+  `gridEntries` (the ONE array the grid is built from) and the window reads it. The
+  `noteMarkers` shape; deriving it twice would be a copy guaranteed to drift.
+  · The walk holds FOLDERS plus previewable files and CLAMPS at the ends — an arrow that
+  wraps to the start is indistinguishable from a dead one. A text file or a `.tpscene` has
+  no face (one opens the code editor, the other replaces the world), so stepping goes past
+  them. Enter walks the EXPLORER into a folder and Backspace back out, and it WAITS for the
+  republish rather than guessing at a delay: the first version used 80ms, measured empty
+  and CLOSED the window it had just walked into.
+  · **PASSTHROUGH STANDS THE PANEL DOWN, NOT THE BODY** (see the gotcha). The header, the
+  settings pane and the resize grip opt back IN, because a click-through header is a window
+  you cannot get rid of. `previewOpacity` is a SEPARATE setting from `previewPassthrough` —
+  "how loud is it" and "can I still work under it" are different questions and wanting one
+  without the other is the normal case in both directions.
+  · `AudioPlayer.svelte` is an `<audio>` ELEMENT, not a Web Audio graph: duration, seeking,
+  buffering and loop are the element's job, where a `AudioBufferSourceNode` would have to
+  decode the whole file before it could say how long it is. SLIM AND WIDE whatever the
+  window's height — the strip is fixed and the space above it is left empty. It is a
+  COMPONENT because the Properties pane wants the same player (the ModelPreview precedent
+  one kind over), and `routeOutput` is the NAMED SEAM the unmerged `feat/22-audio-engine`
+  changes in one line to ride the `sfx` bus. Space plays through a DIRECT capture listener
+  (panel chrome swallows delegated handlers).
+  · THE NAMES: the store is still `imagePreviewTarget` and the DOM id still
+  `#image-preview-window` — four suites and every caller address them, the 21-G1 ruling
+  (the user-visible word changes, the identifiers already written down do not). Only the
+  COMPONENT file was renamed, so a reader looking for the audio player finds it.
+- `src/lib/saveAs.js` (R22 round 11) — "SAVE AS…", AND WHAT A PREFAB IS MADE OF. A prefab
+  was a JSON snapshot in IndexedDB, not a file, so "prefab (.glb)" had nothing to mean.
+  **A PREFAB RECORD MAY NOW CARRY A `format` AND THE FILE'S OWN `bytes`**, with the
+  ObjectLoader snapshot as the DEFAULT — because the user's no-conversion rule ("3d objects
+  automatically placed as existing format, .tpscene are placed as .tpscene") only works if
+  a prefab ALREADY IS one of those formats when it travels.
+  · **THE BYTES RIDE BESIDE THE SNAPSHOT, NEVER INSTEAD OF IT.** The thumbnail, the
+  Properties 3D preview, the facts block, the VR sleeve, drop-at-the-cursor and undo all
+  read `element`, and every one would have gone blank otherwise; `instantiatePrefab` stays
+  synchronous for every format. It is the rule this codebase already keeps for animated
+  rigs and material arrays. The bytes exist for the two things a snapshot cannot do: hand
+  the file back in its own format, and reach the Library without being converted.
+  · `SAVE_AS_FORMATS` is the catalog as DATA (the `buildObjectMenuItems`/`hudActions`
+  shape) so the object menu's `Save as…` submenu renders FROM it and neither can drift.
+  Each tooltip says what its format KEEPS **and what it drops**.
+  · `sessions.buildSelectionPayload` is the .tpscene of a SUBTREE — objects, their clips,
+  their flow graphs, their shader graphs and the joints whose BOTH ends are in the set;
+  NOT the world (sky, look, gravity, music, HUD, game stay with the scene they belong to).
+  Kept SEPARATE from `buildSessionPayload` deliberately: that one is on the hot path that
+  decides "has this scene changed" (sceneSignature) and an `only` flag there is one branch
+  from a wrong verdict. `fileHandler.gltfBytesFor` is the same export ritual handed back as
+  bytes. A .tpscene prefab's DOCUMENTS follow the objects asynchronously, keyed by the uuid
+  map the parse already builds — which is why `buildPrefabElement` gained `keepUuids`
+  (three's `clone()` mints fresh ones, and the documents are keyed by uuid).
 - `src/lib/objectPermissions.js` (#14, store-only) — viewer object permissions, ONLY
   active when a roles plugin publishes `rolesInfo` (OSS byte-unchanged): `canEditObject`
   (a viewer edits ONLY their own `__localOnly` objects), `markLocalOnly`/`clearLocalOnly`,
@@ -627,7 +707,20 @@ loadable play content. Everything a user does must be visible to connected peers
   texturing) + `assetShare` (assetfile/getasset hash push+pull → 'Shared' folder) +
   `packs` (N6: Explorer Packs — libraryList defaults + manifest.json .zip imports,
   normalized; LOCAL library, only PLACED objects replicate; PACKS_BASE off-bundle CDN
-  const; PACKS.md committed format) + `ModelPreview`/`ModelPreviewWindow` (N4: standalone
+  const; PACKS.md committed format. **R22 round 11 — A PACK YOU MAKE YOURSELF**:
+  `createPack`/`addToPack`/`removeFromPack`. It is an "imported" pack with no zip behind
+  it — same record, same shelf, same menu — so nothing downstream learns a fourth kind;
+  the only new thing is that it starts EMPTY and grows by drag. THE NAME IS THE IDENTITY
+  (packByName, itemCache, the installed-list dedupe, the thumb-cache prefix,
+  `activeFolder`'s `pack:<name>`), which is why 21-G1's `renamePack` writes only the
+  TITLE and why `createPack` mints a `user-<slug>` that cannot collide — the typed name
+  is the title. A pack ITEM is a REFERENCE to a library record, exactly as an imported
+  pack's already are, so nothing is copied and no bytes move; a duplicate id is refused,
+  a dropped FOLDER means its whole subtree, and a DEFAULT pack refuses because its
+  contents live on a CDN this machine does not own. `addToPack` re-runs `loadPackItems`
+  when the pack being filled is the one on screen — `openPackItems` is a separate store
+  from the registry, and without that the grid does not grow until you navigate away)
+  + `ModelPreview`/`ModelPreviewWindow` (N4: standalone
   three.js preview canvas + popup, `enable3dPreview`),
   `meshPivot` (PR #134, LEAF — imports THREE + two stores + the `proportional`
   leaf, and NOTHING from meshEdit/faceEdit, which import it): the mesh editor's
@@ -1037,8 +1130,16 @@ loadable play content. Everything a user does must be visible to connected peers
   WRITER-ONLY (`sessionHost === null`; a .tpscene embeds a fresh uuid/createdAt/
   thumbnail per save, so N peers saving identical content would mint N ghost hashes),
   SIGNATURE-GATED (`sceneSignature` = the meaningful payload fields in fixed order,
-  volatiles + the game field excluded — the zip hash cannot tell idle from edited;
-  proven stable across a real load->serialize round trip: idle hops mint NOTHING) and
+  volatiles + the game field excluded — the zip hash cannot tell idle from edited.
+  **R22 ROUND 11 CORRECTS THE "PROVEN STABLE" CLAIM**: it was stable for a bare box and
+  NOT for any scene carrying an environment, physics, music, a look or a HUD — every one
+  of those blocks is a latest-wins singleton whose restore re-stamps `changedAt` ON
+  PURPOSE, and the signature was comparing the stamp along with the content. So an idle
+  hop DID mint a ghost version, and the Explorer's open-scene guard offered to save work
+  that did not exist. `stripStamps` drops `changedAt`/`startedAt` from the small keyed
+  blocks before stringifying; `objects`/`animated` are left alone under the cost rule —
+  they are the megabytes, and a module's `userData` is the one place such a key could
+  legitimately BE content. See the gotcha) and
   NAMED-ONLY (an unnamed scene is not opted in). `travelToScene(name)` resolves the
   manifest pointer AT FIRE TIME — deterministic across peers, which no local folder
   order is; the travel card lists project scenes (latest) and library files (frozen
@@ -1350,7 +1451,16 @@ loadable play content. Everything a user does must be visible to connected peers
   the autosave dirty via `markAnnotationsDirty`), `sessions` (+ .zip export/import bundling scene assets via
   fflate; #9: the SAME bundle is the first-class **.tpscene** format — `exportSessionZip`
   takes `{assets,packs,flow}` include-opts, adds a `packs/` section; `fileHandler` saves/
-  loads it, Sidebar Files = [GLTF | Scene | ⚙cog]), `measure`, `cameraBookmarks`,
+  loads it, Sidebar Files = [GLTF | Scene | ⚙cog].
+  **R22 round 11**: `buildSelectionPayload` (a .tpscene of a SUBTREE — see saveAs),
+  `sessionFileList`/`sessionFilePayload` (the manager's picker is TWO levels now: the
+  FILES in a saved entry, then the objects inside whichever is a scene — a scene-only
+  entry lists the one file it IS rather than an empty list, and a texture is offered but
+  REFUSES with the reason), the saved library rows carry their `thumbnail` (it was always
+  on the record and simply never copied), and `viewportThumbnail` is the new PRIMARY
+  picture path — a fresh frame on the LIVE renderer, read from its canvas, with the
+  offscreen render kept as the VR fallback. See the thumbnail gotcha for why),
+  `measure`, `cameraBookmarks`,
   `editorNavigation`, `lightHelpers`.
 - `src/modules/` — core modules (hello = the smallest complete example, button =
   custom Svelte node UI, pong, vrsleeve = a thin shell over `$lib/vrSleeve` — LOCAL-only, register()
@@ -1544,6 +1654,86 @@ loadable play content. Everything a user does must be visible to connected peers
 
 ## Hard-won gotchas (do not rediscover)
 
+- **REPLICATION BOOKKEEPING IS NOT CONTENT, AND A CONTENT SIGNATURE THAT INCLUDES IT
+  CALLS EVERY LOADED SCENE DIRTY.** `sceneSignature` compared each block's latest-wins
+  `changedAt`, and every singleton restore re-stamps that with a fresh `Date.now()` ON
+  PURPOSE ("a restore is an authoritative local write, so it must WIN over whatever
+  changedAt the file carries" — environment, scenePhysics, sceneMusic, scenePost, hudDocs
+  and shaderGraph each say it in as many words). MEASURED: a scene saved with
+  `{preset:"sunset",…,changedAt:1787721934690}` came back as the identical object stamped
+  1787721946780, one differing field, content untouched. TWO user-visible symptoms from
+  the one cause: the Explorer's open-scene guard offered to save work that did not exist,
+  and `publishCurrentIfChanged` — whose whole SIGNATURE-GATED rule is "an idle hop must
+  not mint versions" — minted one per hop. The fix is on the READING side (`stripStamps`),
+  never the restores. Suspect this for any hash/diff over state that also carries a
+  stamp, and note the general shape: a stamp answers WHEN, a signature asks WHAT.
+- **A CHECK CANNOT SEE A LEAK THE FIXTURE DOES NOT CONTAIN.** Tearing the pruning out of
+  the new selection payload left "the payload holds the SELECTION and nothing else" and
+  "NONE of the world" both GREEN — because the test scene had no sky, no gravity and no
+  scene-level flow node for them to exclude. Authoring those three into the fixture made
+  the counterfactual bite, and it immediately exposed a real leak: `pruneMissing` cannot
+  drop the SCENE's own flow graph, because it asks whether a graph's OBJECT is still here
+  and the scene graph has none — so a prefab would have carried the author's whole scene
+  logic. Build the world the guard is supposed to exclude before trusting the guard.
+- **`table-layout: fixed` SHARES THE SURPLUS OUT, so a column drag is undone by the
+  layout.** Any leftover width is distributed across every column that DECLARES one, so
+  with no slack-absorbing cell a resize silently moves its neighbours and lands nowhere
+  near the pointer. MEASURED with the spacer removed: a 72px column renders 129px,
+  dragging it +60 lands at +85, the neighbour goes 136 -> 123. A trailing auto-width
+  `<th>/<td>` takes the remainder; the table's `min-width` is the column SUM, which is
+  what makes its own container overflow instead of the page.
+- **CLICK-THROUGH MUST STAND THE PANEL DOWN, NOT ITS BODY.** `pointer-events: none` on the
+  content leaves a transparent HOLE with the window still behind it, so a click in the
+  middle of the picture still lands on the window — `elementFromPoint` says so, while
+  `getComputedStyle(body).pointerEvents` reads a perfectly convincing `none`. Put it on the
+  ROOT and opt the header, any settings pane and the resize grip back IN; a click-through
+  header is a window you cannot move, step or switch back. The test lesson is the same
+  shape: "the content is click-through" stays GREEN over the bug, so the load-bearing
+  check is the one that asks what is UNDERNEATH.
+- **A SVELTE ACTION WITH NO PARAMETER NEVER HAS ITS `update` CALLED.** `use:action` runs
+  once on mount and re-runs only when the PARAMETER changes, so `use:routeOutput` writing
+  `node.volume`/`node.muted` in an `update()` wrote them exactly once — a fader and a mute
+  button that were dead controls looking perfectly alive (nothing in the class string, the
+  markup or svelte-check says otherwise). Drive live values from an `$effect`; keep the
+  action for the one-shot mount work. Read the ELEMENT, never the control, to test it.
+- **`Number(v) || 1` READS A SLIDER DRAGGED TO ZERO AS "no value".** An opacity clamp
+  written that way snapped the window back to FULL strength at the exact end of the track
+  the hand was aiming at — the opposite of the gesture. Guard with `Number.isFinite`, and
+  suspect the idiom anywhere 0 is a legal value.
+- **THE OFFSCREEN THUMBNAIL RITUAL HAS TWO SILENT FAILURE MODES, AND ONE OF THEM IS REAL.**
+  `renderSceneThumbnail` built a SECOND WebGL context (browsers cap those) and round-tripped
+  the scene through `new ObjectLoader().parse(group.toJSON())` — which cannot rebuild every
+  geometry a real scene holds. PROVEN, not assumed: put a `WireframeGeometry` in the scene
+  and that parse THROWS, the catch turns it into `null`, and the card falls back to a
+  generic icon. (Round 10's `editOverlays` bug means real scenes HAD those in them.) The
+  primary path is now `viewportThumbnail` — render a fresh frame on the LIVE renderer and
+  read its canvas, which is what the cloud plugin's room thumbnails already do: no second
+  context, no serialization, and it shows what the author is looking at. A fresh render is
+  what makes it work without `preserveDrawingBuffer`. The offscreen render stays as the VR
+  fallback. NOTE the reporting lesson too: the brief's premise ("session saves produce no
+  thumbnail") did NOT reproduce — a box scene saved a 1567-byte webp through the real UI —
+  so the fix was for the SILENCE, not for the mechanism.
+- **`addItemFromBytes` IS CONTENT-HASH ADDRESSED, so a fixture that seeds the same bytes
+  twice seeds ONE item.** A folder given a copy of the root's PNG came out EMPTY, and the
+  Enter-into-a-folder check then read as a broken feature. Vary the bytes. (Same family as
+  the shader suite's "two picks of the same bytes are the same texture", one domain over.)
+- **A DOUBLE-CLICK ON A TREE ROW ALSO FIRES TWO CLICKS.** `#packs-folder` toggles the tree
+  on `ondblclick` and NAVIGATES on `onclick`, so a dblclick to expand it also walks into
+  the Packs view — taking the folder card the next step was about to drag with it. Expand,
+  then go back to where you were.
+- **A WINDOW MADE TALLER PUSHES ITS OWN CONTROLS UNDER THE Controls HUD.** A 760px preview
+  window put its transport strip inside the middle-bottom chrome, and Playwright reported
+  `<p title="Rotate (2)"> … intercepts pointer events` — the feature is fine, the aim is
+  not. The documented "a card in a grid lands under the Controls HUD" trap, one surface
+  over: restore the height (or move the window) before clicking anything low in it.
+- **EVERY SOURCE FILE IN THIS REPO IS CRLF, AND `cat -A` WILL LIE IF YOU POST-PROCESS IT.**
+  A patch written with LF newlines matches NOTHING (the documented #14 file-shape trap) —
+  and `sed -n 'A,Bp' file | cat -A | sed 's/\$$/<EOL>/'` hides the `^M` it was run to
+  reveal, which cost a round of "the anchor is right and still misses". Normalize to LF,
+  patch, write back as CRLF; verify with a NODE read of the raw bytes, never a shell
+  pipeline. And never build a patch script with a bash heredoc when its payload contains
+  backticks — write the script with a file tool, or the template literal terminates early
+  and bash reports an unrelated parse error.
 - **AN INVALID ICE SERVER DOES NOT DEGRADE — IT THROWS, AND TAKES ALL CONNECTIVITY WITH
   IT.** A TURN entry with an empty username or credential makes Chromium refuse the
   RTCPeerConnection outright (`InvalidAccessError: ICE server parsing failed`), so
@@ -3368,6 +3558,48 @@ override for e2e — never share 5173 (the user's main-checkout server).
   (open-core: OSS ships only inert hooks — capability gate / auth hook /
   VITE_CLOUD_PLUGIN — cloud repo holds registration/rooms/roles; contract in its
   MAINTAINING.md).
+- Status (2026-08-26): **ROADMAP 22 ROUND 11 — THE EXPLORER/PREVIEW/SESSIONS BATCH.
+  All five phases EXECUTED on `feat/22-round11` (worktree `../theprototype-lane-r11`,
+  port 5203, branched off `origin/release/next` @c714f68). FIVE commits, one per phase,
+  NOT pushed and NOT PR'd.** Baseline **385/62** after every phase; `npm run build` green
+  with the dev server down each time; one guard per phase proven by BREAKING the code.
+  `111f7dd` P1 (the inline confirm strip + drop-to-Deleted + the untouched-scene guard) ·
+  `90fc50d` P2 (column resize/reorder/horizontal scroll) · `22d67e4` P3 (the file preview
+  window + the audio player) · `24bd086` P4 (Save as… + a prefab that IS a file) ·
+  `7292ac4` P5 (sessions become files, a list view, packs you make). New suites:
+  `explorer-delete-confirm`(39) `explorer-columns`(41) `file-preview`(44)
+  `save-as-formats`(30) `sessions-packs`(32), plus `scene-open-guard` grown by a section 6
+  (11); `explorer-views`/`explorer-multiselect`/`explorer` updated for the new surfaces.
+  · **THE ROOT CAUSE WORTH REMEMBERING** is P1c: the reported "'save & open' modal should
+  not appear if I have made no changes" was `sceneSignature` comparing a replication
+  STAMP as content — see the gotcha, and note it also means every idle travel hop had
+  been minting a ghost scene version.
+  · THREE MORE BUGS THE COUNTERFACTUALS FOUND, none of them the thing under test: the
+  selection payload carried the SCENE's own flow graph (`pruneMissing` cannot exclude it);
+  a svelte action with no parameter never has `update` called, so the audio fader and mute
+  were dead controls that looked alive; and `Number(v) || 1` read an opacity slider's zero
+  as "no value". Two DRIVE-BY fixes: `explorer-views` seeded `shared:deleteWithoutConfirm`
+  where the store reads `shared:deleteNoConfirm` (a dead seed), and the sessions grid and
+  list had drifted tooltips for the same actions.
+  · **THE BRIEF'S THUMBNAIL PREMISE DID NOT REPRODUCE** — measured 1567 bytes of webp
+  through the real UI for both save buttons before any change. What was worth fixing is
+  the SILENCE of the offscreen ritual's two failure modes; the WireframeGeometry one is
+  proven in-suite. See the gotcha.
+  · **DESIGN DECISIONS I OWNED, stated so they are not re-litigated**: a prefab record
+  carries a `format` + `bytes` with the snapshot as default and the bytes BESIDE it (see
+  saveAs); NAME is pinned first in the Explorer's column order; the preview window's
+  component file was renamed while its store and DOM id were not (the 21-G1 rule); and
+  the audio player rides a NAMED ONE-LINE SEAM (`routeOutput`) rather than importing the
+  unmerged `feat/22-audio-engine` — a dynamic import of a module that is not on this
+  branch is a build hazard, not a fallback.
+  · PRE-EXISTING RED, probed on BOTH servers with the counts printed: `packs-drop` fails
+  3/3 identically on pristine release/next (`before=0 after=1` on each). An earlier
+  2-vs-3 reading was a flake in the baseline run, not a regression.
+  · **OWED, because headless cannot judge it**: the confirm strip, the column header and
+  the sessions list in NON-DARK themes; the preview window's passthrough as a real
+  modelling reference over the viewport; the audio player's feel; whether "Reset widths
+  and order" belongs in the header menu; and the `routeOutput` decision once the audio
+  engine lands.
 - Status (2026-08-23): **v1.7.0 RELEASED — "Make a game, keep a project"**.
   main @a51a3eb (tag `v1.7.0`), release.yml green, GitHub Release published,
   cloud deployed at `CORE_REF=v1.7.0` (prod version.json 1.7.0/a51a3eb), docs site

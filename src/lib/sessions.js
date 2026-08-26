@@ -724,8 +724,35 @@ export async function exportSessionZip(payload, opts = { assets: true, packs: fa
 		payload = { ...payload, nodes: [], edges: [], graphs: {} };
 		delete payload.modules;
 	}
+	/**
+	 * R22 round 12 — THE LIBRARY HAS TO TRAVEL AS FILES.
+	 *
+	 * MEASURED BUG, pre-existing since R8: this wrote `JSON.stringify(payload)`, and a
+	 * PROJECT payload's `library.items[].blob` is a Blob — which stringifies to `{}`. So a
+	 * project entry downloaded as a bundle silently arrived with every file gone, and
+	 * nothing anywhere said so. It is the documented rule one layer down: what a serializer
+	 * cannot round-trip rides BESIDE it, keyed so the reader can put it back.
+	 *
+	 * So the blobs become real zip entries under `library/` and session.json carries an
+	 * INDEX in their place. A payload with no library is byte-identical to before.
+	 */
 	/** @type {Record<string, any>} */
-	const files = { 'session.json': strToU8(JSON.stringify(payload)) };
+	const files = {};
+	/** @type {any} */
+	let wire = payload;
+	if (payload?.library?.items?.length) {
+		/** @type {any[]} */
+		const libIndex = [];
+		let n = 0;
+		for (const row of payload.library.items) {
+			if (!row?.blob) continue;
+			const file = 'library/' + n++ + '-' + String(row.name ?? 'file').replace(/[^\w.-]+/g, '_');
+			files[file] = new Uint8Array(await row.blob.arrayBuffer());
+			libIndex.push({ name: row.name, kind: row.kind, folderId: row.folderId ?? null, hash: row.hash, file, ...(row.thumbnail ? { thumbnail: row.thumbnail } : {}) });
+		}
+		wire = { ...payload, library: { folders: payload.library.folders ?? [], items: libIndex } };
+	}
+	files['session.json'] = strToU8(JSON.stringify(wire));
 	/** @type {Array<{hash: string, name: string, kind: string, file: string}>} */
 	const index = [];
 	const seen = new Set();
@@ -762,6 +789,28 @@ export async function exportSessionZip(payload, opts = { assets: true, packs: fa
 		files['packs/index.json'] = strToU8(JSON.stringify({ packs, items: packIndex }));
 	}
 	return zipSync(files, { level: 6 });
+}
+
+/**
+ * R22 round 12: the other half of writing the library out as files. A row whose `file` is
+ * missing from the zip keeps its index entry and simply has no bytes — the same "counted,
+ * never silently dropped" rule a pruned scene hash follows.
+ * @param {any} payload @param {Record<string, any>} entries @returns {Promise<any>}
+ */
+async function restoreLibraryBlobs(payload, entries) {
+	const rows = payload?.library?.items;
+	if (!Array.isArray(rows)) return payload;
+	let restored = 0;
+	for (const row of rows) {
+		const bytes = row?.file ? entries[row.file] : null;
+		if (!bytes) continue;
+		row.blob = new Blob([
+			/** @type {BlobPart} */ (bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength))
+		]);
+		restored++;
+	}
+	if (restored) console.log('session zip: restored ' + restored + ' library file(s)');
+	return payload;
 }
 
 /** The zip's bundled assets into the Explorer (hash-deduped) so sound/texture hashes
@@ -805,6 +854,8 @@ export async function readSessionZip(buffer) {
 		return null;
 	}
 	await restoreZipAssets(entries, strFromU8);
+	// R22 round 12: and the library's own files, which session.json carries only an index of
+	await restoreLibraryBlobs(payload, entries);
 	// 21-I5: `versions/` is read by NOTHING — say so rather than ignore it silently
 	noteBundledVersions(entries);
 	return payload;
@@ -831,6 +882,10 @@ export async function importSessionZip(buffer) {
 	// not read) and before the restore loops, which never touch `versions/`
 	noteBundledVersions(entries);
 	await restoreZipAssets(entries, strFromU8);
+	// R22 round 12: a bundle written by this build carries its library as real files, so
+	// an imported PROJECT entry arrives with its files rather than with `{}` where each
+	// Blob used to be (the measured pre-existing loss).
+	await restoreLibraryBlobs(payload, entries);
 	// B3: restore bundled packs — re-store each item blob (content-hash deduped;
 	// ids can CHANGE, so remap the pack's item ids), then re-register the pack
 	if (entries['packs/index.json']) {
@@ -891,6 +946,126 @@ export function sessionFileList(payload) {
 		bytes: Number(row.blob?.size) || 0
 	}));
 	return [own, ...files];
+}
+
+/**
+ * R22 round 12 (user): "for saved projects when 'import files' clicked I should be able to
+ * multiselect files, or import folders (I do not see folder structure now, but should)".
+ *
+ * THE STRUCTURE WAS ALWAYS SAVED and simply never rendered: `saveSessionWithLibrary`
+ * writes `library.folders = [{id, name, parentId}]` and every item row carries its
+ * `folderId`. This lays them out as INDENTED ROWS — a folder followed by its own files,
+ * depth-first — which is what makes "I do not see folder structure" answerable without a
+ * tree widget: a row IS its place.
+ *
+ * Files at the ROOT come last rather than first, because a project's loose files are the
+ * exception and burying its folders under them reads as no structure at all.
+ * @param {any} payload
+ * @returns {any[]} rows: {key, kind:'folder'|'file', depth, name, path, index?, id?, kindOf?, thumbnail?, bytes?}
+ */
+export function sessionLibraryTree(payload) {
+	const folders = payload?.library?.folders ?? [];
+	const items = payload?.library?.items ?? [];
+	/** @type {any[]} */
+	const rows = [];
+	const childrenOf = (/** @type {any} */ parentId) =>
+		folders
+			.filter((/** @type {any} */ f) => (f.parentId ?? null) === (parentId ?? null))
+			.sort((/** @type {any} */ a2, /** @type {any} */ b2) => String(a2.name).localeCompare(String(b2.name)));
+	const filesIn = (/** @type {any} */ folderId) =>
+		items
+			.map((/** @type {any} */ row, /** @type {number} */ index) => ({ row, index }))
+			.filter((/** @type {any} */ e) => (e.row.folderId ?? null) === (folderId ?? null))
+			.sort((/** @type {any} */ a2, /** @type {any} */ b2) => String(a2.row.name).localeCompare(String(b2.row.name)));
+	/** @param {any} folder @param {number} depth @param {string} path */
+	const walk = (folder, depth, path) => {
+		const here = path + '/' + folder.name;
+		rows.push({ key: 'f:' + folder.id, kind: 'folder', depth, name: folder.name, path: here, id: folder.id });
+		for (const child of childrenOf(folder.id)) walk(child, depth + 1, here);
+		for (const entry of filesIn(folder.id)) rows.push(fileRow(entry, depth + 1, here));
+	};
+	for (const folder of childrenOf(null)) walk(folder, 0, '');
+	for (const entry of filesIn(null)) rows.push(fileRow(entry, 0, ''));
+	return rows;
+}
+
+/** @param {any} entry @param {number} depth @param {string} path */
+function fileRow(entry, depth, path) {
+	return {
+		key: 'i:' + entry.index,
+		kind: 'file',
+		depth,
+		name: entry.row.name,
+		path: path + '/' + entry.row.name,
+		index: entry.index,
+		kindOf: entry.row.kind,
+		thumbnail: entry.row.thumbnail ?? null,
+		bytes: Number(entry.row.blob?.size) || 0
+	};
+}
+
+/**
+ * Bring chosen files out of a saved entry and into the CURRENT library.
+ *
+ * A DIFFERENT ACT from importing objects into the scene, and the reason it needs saying is
+ * that one dialog now offers both: this one writes files and folders into the Explorer,
+ * and `importObjects` puts objects in the world.
+ *
+ * FOLDERS MERGE BY PATH rather than by id. `restoreSessionLibrary` recreates the saved ids
+ * because it is putting a whole library BACK; taking two files out of somebody's project
+ * is a merge into a library that already exists, so a folder called Textures lands in the
+ * Textures you already have instead of a second one wearing a stranger's id.
+ * @param {any} payload
+ * @param {{items?: number[], folders?: string[]}} selection
+ * @returns {Promise<number>} how many files landed
+ */
+export async function importSessionFiles(payload, selection) {
+	const lib = payload?.library;
+	if (!lib) return 0;
+	const { createFolder, addItemFromBytes, explorerFolders } = await import('./explorer');
+	const saved = lib.folders ?? [];
+	const rows = lib.items ?? [];
+	/** every saved folder id under (and including) the picked ones */
+	const subtree = new Set(selection?.folders ?? []);
+	let grew = true;
+	while (grew) {
+		grew = false;
+		for (const f of saved)
+			if (f.parentId && subtree.has(f.parentId) && !subtree.has(f.id)) {
+				subtree.add(f.id);
+				grew = true;
+			}
+	}
+	/** @type {Map<string, string|null>} saved folder id -> the LIVE folder it maps onto */
+	const mapped = new Map();
+	/** @param {string|null|undefined} savedId @returns {string|null} */
+	const ensurePath = (savedId) => {
+		if (!savedId) return null;
+		if (mapped.has(savedId)) return mapped.get(savedId) ?? null;
+		const folder = saved.find((/** @type {any} */ f) => f.id === savedId);
+		if (!folder) return null;
+		const parent = ensurePath(folder.parentId);
+		const existing = get(explorerFolders).find(
+			(/** @type {any} */ f) => f.name === folder.name && (f.parentId ?? null) === parent
+		);
+		const live = existing ?? createFolder(String(folder.name ?? 'Folder'), parent);
+		mapped.set(savedId, live?.id ?? null);
+		return live?.id ?? null;
+	};
+
+	const picked = new Set(selection?.items ?? []);
+	let n = 0;
+	for (let index = 0; index < rows.length; index++) {
+		const row = rows[index];
+		const inFolder = row.folderId && subtree.has(row.folderId);
+		if (!picked.has(index) && !inFolder) continue;
+		try {
+			const buffer = await row.blob.arrayBuffer();
+			await addItemFromBytes(buffer, row.name, ensurePath(row.folderId));
+			n++;
+		} catch {}
+	}
+	return n;
 }
 
 /**

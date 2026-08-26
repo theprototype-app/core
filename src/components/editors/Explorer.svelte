@@ -47,6 +47,9 @@
 	// R22 round 11: a prefab may BE a file now — see $lib/saveAs for what each format keeps.
 	import * as THREE from 'three';
 	import { prefabFormatOf, prefabFileName, saveBytes } from '$lib/saveAs';
+	// R22 round 11: a pack you make yourself — see packs.js for why it is an "imported"
+	// pack with no zip behind it rather than a fourth kind.
+	import { createPack, addToPack } from '$lib/packs';
 	// R22 round 11: the preview window's arrows walk THIS folder, in the order THIS grid is
 	// showing it — a question only the Explorer can answer (filters, search, view mode,
 	// sort), so it is published rather than derived over there. The noteMarkers shape.
@@ -1645,6 +1648,15 @@
 		settlePendingEdit();
 		editing = { mode, value: mode === 'save-scene' ? 'Scene' : 'New scene', inGrid: true };
 	}
+	/**
+	 * R22 round 11 (user): "for packs add right click create pack, so I can set name and
+	 * create items there". The name is typed INLINE, in the grid, like every other thing
+	 * this app makes — never a browser prompt (the no-prompt rename convention).
+	 */
+	function startPackName() {
+		settlePendingEdit();
+		editing = { mode: 'new-pack', value: 'My pack', inGrid: true };
+	}
 	// 21-H1 (locked answer 7): CLICKING AWAY COMMITS. Every inline name in this panel —
 	// scene save/new, folder create, item/folder/pack rename, and the project name —
 	// used to be thrown away by its own blur, which is the opposite of what every file
@@ -1687,6 +1699,11 @@
 		// active folder is a pseudo view or a stale id
 		else if (edit.mode === 'save-scene') await saveSceneAsLevel(edit.value, activeLibraryFolder());
 		else if (edit.mode === 'new-scene') await newLevel(edit.value, activeLibraryFolder());
+		else if (edit.mode === 'new-pack') {
+			const pack = createPack(edit.value);
+			openFolder('pack:' + pack.name);
+			showToast('Pack created: ' + pack.title + ' — drag files here to fill it');
+		}
 		else renameFolder(edit.folderId, edit.value);
 	}
 	function editKeydown(e: KeyboardEvent) {
@@ -1721,6 +1738,7 @@
 		editing &&
 			(editing.mode === 'save-scene' ||
 				editing.mode === 'new-scene' ||
+				editing.mode === 'new-pack' ||
 				(editing.mode === 'create' && editing.inGrid))
 			? (editing.mode as string)
 			: null
@@ -3031,6 +3049,12 @@
 			// P6: the Packs view adds pack-import affordances instead of New folder
 			items: inPacks
 				? [
+						{
+							label: '＋ Create pack…',
+							icon: 'package-open',
+							tooltip: 'An empty pack of your own — drag files from the Library into it',
+							action: startPackName
+						},
 						{ label: '＋ Import pack (.zip)', action: () => packZipInput?.click() },
 						{ label: 'Load pack from URL', action: loadPackFromUrl }
 					]
@@ -3330,6 +3354,57 @@
 		});
 		if (entry) showToast('"' + entry.name + '" is a prefab, still a .' + format);
 		return entry;
+	}
+
+	/**
+	 * R22 round 11 (user): "...so I can set name and create items there, by dragging from
+	 * explorer folders or multiple items".
+	 *
+	 * A pack ITEM is a REFERENCE to a library record, which is exactly what an imported
+	 * pack's items already are — so nothing is copied, no bytes move, and a placed item
+	 * resolves through the path packs have always used. FOLDERS come too, and a dropped
+	 * folder means everything in its SUBTREE: "dragging from explorer folders" is the
+	 * user's own phrasing for the case where you do not want to pick out twenty files.
+	 *
+	 * Only a pack YOU MADE (or imported) can be filled — a default pack is a CDN listing
+	 * whose contents this machine does not own, so adding to it would be a promise the
+	 * next reload breaks.
+	 * @param {DragEvent} e @param {any} pack
+	 */
+	async function dropIntoPack(e: DragEvent, pack: any) {
+		const payload = payloadOf(e);
+		dropFolder = null;
+		libraryDragging = false;
+		if (!payload || !pack) return;
+		e.preventDefault();
+		e.stopPropagation();
+		if (pack.source === 'default')
+			return showToast('"' + pack.title + '" is a built-in pack — create one of your own to fill it');
+		const dragged = payload.items?.length ? payload.items : payload.type === 'item' ? [payload] : [];
+		const folderIds: string[] = payload.folders?.length
+			? payload.folders
+			: payload.type === 'folder'
+				? [payload.id]
+				: [];
+		/** @type {any[]} */
+		const records: any[] = [];
+		for (const p of dragged) {
+			if (p?.prefabId || !p?.id) continue;
+			const record = $explorerItems.find((i: any) => i.id === p.id);
+			if (record) records.push(record);
+		}
+		for (const id of folderIds) {
+			const subtree = folderSubtree(id);
+			for (const record of $explorerItems.filter((i: any) => subtree.includes(i.folderId ?? '')))
+				records.push(record);
+		}
+		if (!records.length) return showToast('Drop library files or folders here to add them to this pack');
+		const added = addToPack(pack.name, records);
+		showToast(
+			added
+				? added + ' file' + (added === 1 ? '' : 's') + ' added to "' + pack.title + '"'
+				: 'Already in "' + pack.title + '"'
+		);
 	}
 
 	/** the Prefabs row's drop: every dragged LIBRARY file becomes a prefab in its own format */
@@ -4338,12 +4413,25 @@
 							{:else}
 							<button
 								data-pack={pack.name}
-								class="whitespace-nowrap rounded px-2 py-1 text-left {$activeFolder === 'pack:' + pack.name
-									? 'bg-primary-700 text-white'
-									: 'text-gray-400 hover:bg-gray-700'}"
+								class="whitespace-nowrap rounded px-2 py-1 text-left {dropFolder === 'pack:' + pack.name
+									? 'bg-primary-500/20 text-white ring-1 ring-primary-400'
+									: $activeFolder === 'pack:' + pack.name
+										? 'bg-primary-700 text-white'
+										: 'text-gray-400 hover:bg-gray-700'}"
 								style="padding-left: 22px"
-								title={pack.license ? pack.title + ' · ' + pack.license : pack.title}
+								title={pack.source === 'default'
+									? (pack.license ? pack.title + ' · ' + pack.license : pack.title) + ' — built in'
+									: (pack.license ? pack.title + ' · ' + pack.license : pack.title) +
+										' — drop library files or folders here to add them'}
 								oncontextmenu={(e) => packRowMenu(e, pack)}
+								ondragover={(e) => {
+									if (!canAccept(e) || pack.source === 'default') return;
+									e.preventDefault();
+									e.stopPropagation();
+									dropFolder = 'pack:' + pack.name;
+								}}
+								ondragleave={() => (dropFolder = null)}
+								ondrop={(e) => void dropIntoPack(e, pack)}
 								onclick={() => openFolder('pack:' + pack.name)}
 							>
 								<PackageOpen size={16} class="mr-1.5 w-4 text-center text-gray-500" aria-hidden="true" />{pack.title}

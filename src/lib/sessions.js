@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { writable, get } from 'svelte/store';
-import { objectsGroup, globalCamera, orbitControls, TControls } from '../stores/sceneStore';
+import { objectsGroup, globalCamera, globalScene, globalRenderer, orbitControls, TControls } from '../stores/sceneStore';
 import { restoreGraphs, clearGraphs, SCENE_GRAPH, allNodes } from '../stores/flowStore';
 import { serializeGraphs, copyGraphFrom } from './flowGraphs';
 import { serializeNode, serializeEdge, sendNodes } from './nodesHandler';
@@ -61,9 +61,67 @@ const MAX_SESSION_BYTES = 50 * 1024 * 1024;
 export const sessions = writable(/** @type {any[]} */ ([]));
 
 /** Small offscreen render of the whole scene group @param {any} group */
+/**
+ * R22 round 11 — THE PICTURE COMES FROM THE VIEWPORT FIRST.
+ *
+ * The report was that saved entries showed the generic archive icon. MEASURED on this
+ * branch, the offscreen path below works: a scene holding one box produced a 1567-byte
+ * webp through the real UI, for both the scene save and the project save. So the
+ * mechanism is not broken — which means the reported nulls came from one of the two ways
+ * it can legitimately return null, and only one of those is acceptable:
+ *
+ *   · an EMPTY scene has nothing to picture, and a null there is honest;
+ *   · anything the offscreen ritual can THROW on is not. It builds a SECOND WebGL context
+ *     (browsers cap those), and it round-trips the whole scene through
+ *     `ObjectLoader().parse(group.toJSON())` — which cannot rebuild every geometry a real
+ *     scene contains (a WireframeGeometry is the documented one). Either failure is caught
+ *     and turns into a silent null, and a silent null is exactly what "it shows the
+ *     archive icon" looks like.
+ *
+ * So the primary path is now the one the cloud plugin's room thumbnails already use and
+ * that has no second context and no serialization at all: render a fresh frame on the
+ * LIVE renderer and read its canvas. It cannot throw on a geometry, it costs no context,
+ * and it shows the scene the way the author is looking at it. The offscreen render stays
+ * as the FALLBACK, for the one case the live path cannot serve (VR, where the canvas
+ * belongs to the headset).
+ *
+ * A fresh render is what makes this work without `preserveDrawingBuffer`: the drawing
+ * buffer is cleared after compositing, so it has to be read in the same tick it is drawn.
+ * @param {number} maxW @returns {string|null} a dataURL, or null
+ */
+function viewportThumbnail(maxW = 256) {
+	/** @type {any} */
+	const renderer = get(globalRenderer);
+	const scene = get(globalScene);
+	const camera = get(globalCamera);
+	if (!renderer || !scene || !camera || renderer.xr?.isPresenting) return null;
+	try {
+		renderer.render(scene, camera);
+		const source = renderer.domElement;
+		const sw = source.width || maxW;
+		const scale = Math.min(1, maxW / sw);
+		const w = Math.max(1, Math.round(sw * scale));
+		const h = Math.max(1, Math.round((source.height || maxW) * scale));
+		const canvas = document.createElement('canvas');
+		canvas.width = w;
+		canvas.height = h;
+		const ctx = canvas.getContext('2d');
+		if (!ctx) return null;
+		ctx.drawImage(source, 0, 0, w, h);
+		return canvas.toDataURL('image/webp', 0.7);
+	} catch (error) {
+		console.log('viewport thumbnail failed', error);
+		return null;
+	}
+}
+
+/** The saved entry's picture. @param {any} group @returns {string|null} */
 function renderSceneThumbnail(group) {
 	try {
 		if (!group || group.children.length === 0) return null;
+		// the live viewport first — see viewportThumbnail for why
+		const live = viewportThumbnail();
+		if (live) return live;
 		const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
 		renderer.setSize(256, 160);
 		const scene = new THREE.Scene();
@@ -383,7 +441,18 @@ export async function saveSessionWithLibrary(name) {
 	for (const item of get(explorerItems)) {
 		const blob = await itemBlob(item.id);
 		if (!blob) continue; // an index row whose bytes are gone carries nothing
-		items.push({ name: item.name, kind: item.kind, folderId: item.folderId, hash: item.hash, blob });
+		// R22 round 11 (user): "would be nice to be able to see thumbnails from project
+		// files". The picture is already on the library record and was simply not copied
+		// across, so a saved project's files had nothing to show. Additive: a project saved
+		// before this carries no `thumbnail` key and falls back to its kind icon.
+		items.push({
+			name: item.name,
+			kind: item.kind,
+			folderId: item.folderId,
+			hash: item.hash,
+			blob,
+			...(item.thumbnail ? { thumbnail: item.thumbnail } : {})
+		});
 	}
 	/** @type {any} */
 	const payload = base;
@@ -791,6 +860,57 @@ export async function importSessionZip(buffer) {
 	// finishImport, NOT importSession — the format was already confirmed above
 	// (importSession would double-confirm)
 	return finishImport(payload);
+}
+
+/**
+ * R22 round 11 (user): "for sessions instead of 'import objects' should be 'import files'
+ * and within files which are scenes I should be able to import objects from there".
+ *
+ * THE FILES IN A SAVED ENTRY, which is a two-level thing and always was — it simply had no
+ * first level. A PROJECT entry carries `library.items`; a SCENE-only entry carries none,
+ * and rather than showing an empty list it shows the one file it IS. So both kinds answer
+ * the same question, and drilling into a scene row is what reaches the old object list.
+ * @param {any} payload @returns {any[]}
+ */
+export function sessionFileList(payload) {
+	/** the entry's OWN scene, always first — it is the file the entry is about */
+	const own = {
+		index: -1,
+		name: (payload?.name ?? 'Scene') + '.tpscene',
+		kind: 'scene',
+		own: true,
+		thumbnail: payload?.thumbnail ?? null,
+		objects: (payload?.objects ?? []).length
+	};
+	const files = (payload?.library?.items ?? []).map((/** @type {any} */ row, /** @type {number} */ index) => ({
+		index,
+		name: row.name,
+		kind: row.kind,
+		own: false,
+		thumbnail: row.thumbnail ?? null,
+		bytes: Number(row.blob?.size) || 0
+	}));
+	return [own, ...files];
+}
+
+/**
+ * The objects inside ONE file of a saved entry. The entry's own scene is already a payload;
+ * a library .tpscene is bytes that have to be read. Anything else has no object list — a
+ * texture is not something you import objects FROM, and saying so is better than an empty
+ * checklist that looks broken.
+ * @param {any} payload @param {any} file a row from sessionFileList
+ * @returns {Promise<{payload: any, entries: any[]} | null>}
+ */
+export async function sessionFilePayload(payload, file) {
+	if (file?.own) return { payload, entries: sessionObjectList(payload) };
+	const row = payload?.library?.items?.[file?.index];
+	if (!row?.blob || row.kind !== 'scene') return null;
+	try {
+		const inner = await readSessionZip(await row.blob.arrayBuffer());
+		return inner ? { payload: inner, entries: sessionObjectList(inner) } : null;
+	} catch {
+		return null;
+	}
 }
 
 /** Top-level entries for the selective-import checklist @param {any} payload */

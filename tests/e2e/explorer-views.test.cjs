@@ -30,7 +30,9 @@ const listRows = (page) =>
 	page.evaluate(() =>
 		[...document.querySelectorAll('.ex-row')].map((r) => ({
 			id: r.getAttribute('data-card-id'),
-			cells: [...r.querySelectorAll('td')].map((td) => td.innerText.trim()),
+			// R22 round 11: `[data-col]` skips the trailing SPACER cell, which carries the
+			// table's leftover width and is not a column (see explorer-columns)
+			cells: [...r.querySelectorAll('td[data-col]')].map((td) => td.innerText.trim()),
 			name: r.querySelector('td')?.innerText.trim() ?? '',
 			dim: (r.getAttribute('class') || '').includes('opacity-60'),
 			selected: (r.getAttribute('class') || '').includes('explorer-selected')
@@ -164,7 +166,7 @@ h.run(async () => {
 	);
 
 	// ---- 3. the columns, the rows and the sort --------------------------------------
-	const head = await page.locator('#explorer-list-head th').allInnerTexts();
+	const head = await page.locator('#explorer-list-head th[data-col]').allInnerTexts();
 	h.check(
 		head.length === 5 && head[0].startsWith('Name') && head[4].startsWith('Owner'),
 		`the library head shows all five columns (${JSON.stringify(head)})`
@@ -188,7 +190,7 @@ h.run(async () => {
 		`clicking Size sorts ascending (${bySize.join(',')})`
 	);
 	h.check(
-		(await page.locator('#explorer-list-head th').nth(2).innerText()).includes('▴'),
+		(await page.locator('#explorer-list-head th[data-col]').nth(2).innerText()).includes('▴'),
 		'the indicator marks the ACTIVE column, ascending'
 	);
 	await page.locator('#explorer-list-head button[data-col="size"]').click();
@@ -200,7 +202,7 @@ h.run(async () => {
 		`clicking it again reverses (${bySizeDesc.join(',')})`
 	);
 	h.check(
-		(await page.locator('#explorer-list-head th').nth(2).innerText()).includes('▾'),
+		(await page.locator('#explorer-list-head th[data-col]').nth(2).innerText()).includes('▾'),
 		'and the indicator flips with it'
 	);
 	h.check(rows[0].cells.includes('Folder'), 'the folder is STILL first, sorted descending by size');
@@ -229,7 +231,7 @@ h.run(async () => {
 	h.check((await menuChecked(page, 'Owner')) === true, 'a visible column reads as checked');
 	await page.getByRole('menuitem', { name: 'Owner', exact: true }).click();
 	await page.waitForTimeout(400);
-	const head2 = await page.locator('#explorer-list-head th').allInnerTexts();
+	const head2 = await page.locator('#explorer-list-head th[data-col]').allInnerTexts();
 	h.check(head2.length === 4 && !head2.some((t) => t.startsWith('Owner')), `Owner is hidden (${head2.length} columns)`);
 	h.check(
 		(await listRows(page))[0].cells.length === 4,
@@ -241,7 +243,7 @@ h.run(async () => {
 	await page.getByRole('menuitem', { name: 'Name', exact: true }).click();
 	await page.waitForTimeout(350);
 	h.check(
-		(await page.locator('#explorer-list-head th').allInnerTexts()).some((t) => t.startsWith('Name')),
+		(await page.locator('#explorer-list-head th[data-col]').allInnerTexts()).some((t) => t.startsWith('Name')),
 		'Name cannot be hidden however hard the menu is pressed'
 	);
 	// put Owner back, so the rest of the suite sees the default view
@@ -339,7 +341,7 @@ h.run(async () => {
 	await page.evaluate(() => window.__stores.explorer.activeFolder.set('deleted'));
 	await page.waitForTimeout(600);
 
-	const binHead = await page.locator('#explorer-list-head th').allInnerTexts();
+	const binHead = await page.locator('#explorer-list-head th[data-col]').allInnerTexts();
 	h.check(
 		binHead.length === 4 && binHead[2].startsWith('Deleted by') && binHead[3].startsWith('Deleted at'),
 		`the bin has its OWN columns, not the library's (${JSON.stringify(binHead)})`

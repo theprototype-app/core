@@ -93,12 +93,19 @@
 		explorerColumns,
 		explorerSort,
 		explorerDeletedGroup,
+		explorerColumnWidths,
+		explorerColumnOrder,
 		columnsFor,
 		columnVisible,
 		toggleColumn,
 		sortBy,
 		sortEntries,
-		groupByDeleter
+		groupByDeleter,
+		orderColumns,
+		widthOf,
+		setColumnWidth,
+		resetColumnWidth,
+		moveColumn
 	} from '$lib/explorerView';
 	import {
 		projectManifest,
@@ -1119,10 +1126,106 @@
 				return String(item?.name ?? '');
 		}
 	}
-	/** the columns actually drawn, in their canonical order */
+	/**
+	 * The columns actually drawn — the user's order, filtered to the visible set. The
+	 * canonical declaration order is the FALLBACK now rather than the rule; see
+	 * `orderColumns`, which also pins NAME first.
+	 */
 	const shownColumns = $derived(
-		columnsFor(listView).filter((c: any) => columnVisible(listView, c.key, $explorerColumns))
+		orderColumns(columnsFor(listView), $explorerColumnOrder[listView]).filter((c: any) =>
+			columnVisible(listView, c.key, $explorerColumns)
+		)
 	);
+	/** each drawn column's width in px, in the same order */
+	const columnPx = $derived(shownColumns.map((c: any) => widthOf(c, $explorerColumnWidths[listView])));
+	/**
+	 * The table's own width. `table-layout: fixed` distributes any SURPLUS across the
+	 * columns that declare a width, which would silently undo every drag — so the table is
+	 * exactly as wide as its columns and a trailing SPACER cell absorbs the remainder.
+	 * When the total exceeds the pane, this `min-width` is what makes `.ex-list` overflow,
+	 * which is the reported "when no space for columns horizontal bar appears". The PAGE
+	 * never scrolls sideways — the scroller is the table's own container.
+	 */
+	const tableMinPx = $derived(columnPx.reduce((sum: number, w: number) => sum + w, 0));
+
+	// ---- R22 round 11: RESIZE ---------------------------------------------------------
+	/** the grip owns the gesture through a pointer CAPTURE, so no window listeners */
+	let colResize = $state<{ key: string; x0: number; w0: number } | null>(null);
+	function colResizeStart(e: PointerEvent, col: any, px: number) {
+		if (e.button !== 0) return;
+		// the grip sits inside the header BUTTON's cell; without this the same press would
+		// also arm a reorder, and the column would follow the pointer as it was resized
+		e.preventDefault();
+		e.stopPropagation();
+		(e.currentTarget as HTMLElement).setPointerCapture?.(e.pointerId);
+		colResize = { key: col.key, x0: e.clientX, w0: px };
+	}
+	function colResizeMove(e: PointerEvent) {
+		if (!colResize) return;
+		setColumnWidth(listView, colResize.key, colResize.w0 + (e.clientX - colResize.x0));
+	}
+	function colResizeEnd(e: PointerEvent) {
+		if (!colResize) return;
+		(e.currentTarget as HTMLElement).releasePointerCapture?.(e.pointerId);
+		colResize = null;
+	}
+
+	// ---- R22 round 11: REORDER --------------------------------------------------------
+	/**
+	 * A press on a header means SORT; a press that TRAVELS means reorder. That is this
+	 * app's rule wherever one control carries two gestures (the mesh and UV editors both
+	 * say it: a press that does not travel keeps the old meaning), and it is why this is a
+	 * pointer gesture rather than HTML5 drag-and-drop — the Explorer already uses HTML5
+	 * DnD for cards, and a header dragstart would look like one to every drop target.
+	 */
+	let colDrag = $state<{ key: string; x: number; over: number; moved: boolean } | null>(null);
+	/** the click that ENDS a reorder must not also sort (the marquee's hazard 3, verbatim) */
+	let colDragSuppressClick = false;
+	function colDragStart(e: PointerEvent, col: any) {
+		if (e.button !== 0 || col.always) return; // NAME is pinned — see orderColumns
+		colDrag = { key: col.key, x: e.clientX, over: -1, moved: false };
+		window.addEventListener('pointermove', colDragMove);
+		window.addEventListener('pointerup', colDragEnd);
+		window.addEventListener('pointercancel', colDragEnd);
+	}
+	function colDragMove(e: PointerEvent) {
+		if (!colDrag) return;
+		if (Math.abs(e.clientX - colDrag.x) > 4) colDrag = { ...colDrag, moved: true };
+		if (!colDrag.moved) return;
+		// which header cell is the pointer over? read the LIVE rects rather than the stored
+		// widths — a resize during the same session would put the two out of step
+		const heads = [...document.querySelectorAll('#explorer-list-head .ex-th[data-col]')];
+		let over = -1;
+		heads.forEach((el, i) => {
+			const box = el.getBoundingClientRect();
+			if (e.clientX >= box.left && e.clientX <= box.right) over = i;
+		});
+		colDrag = { ...colDrag, over };
+	}
+	function colDragEnd() {
+		window.removeEventListener('pointermove', colDragMove);
+		window.removeEventListener('pointerup', colDragEnd);
+		window.removeEventListener('pointercancel', colDragEnd);
+		const drag = colDrag;
+		colDrag = null;
+		if (!drag?.moved) return;
+		colDragSuppressClick = true;
+		if (drag.over >= 0)
+			moveColumn(
+				listView,
+				shownColumns.map((c: any) => c.key),
+				drag.key,
+				drag.over
+			);
+	}
+	/** the header's click, once the reorder has had its say */
+	function colHeaderClick(key: string) {
+		if (colDragSuppressClick) {
+			colDragSuppressClick = false;
+			return;
+		}
+		sortBy(listView, key);
+	}
 	/**
 	 * Right-click the header: which columns show. One entry per column with a checkmark,
 	 * the `checked` item style the Grid/Snapping menus established — and NAME is offered
@@ -1131,23 +1234,45 @@
 	function columnMenu(e: MouseEvent) {
 		e.preventDefault();
 		e.stopPropagation();
+		const custom =
+			Object.keys($explorerColumnWidths[listView] ?? {}).length > 0 ||
+			($explorerColumnOrder[listView] ?? []).length > 0;
 		menu = {
 			x: e.clientX,
 			y: e.clientY,
-			items: columnsFor(listView).map((c: any) =>
-				c.always
-					? {
-							label: c.label,
-							checked: true,
-							tooltip: 'A row has to be identifiable — this column cannot be hidden',
-							action: () => {}
-						}
-					: {
-							label: c.label,
-							checked: columnVisible(listView, c.key, $explorerColumns),
-							action: () => toggleColumn(listView, c.key)
-						}
-			)
+			items: [
+				...columnsFor(listView).map((c: any) =>
+					c.always
+						? {
+								label: c.label,
+								checked: true,
+								tooltip: 'A row has to be identifiable — this column cannot be hidden',
+								action: () => {}
+							}
+						: {
+								label: c.label,
+								checked: columnVisible(listView, c.key, $explorerColumns),
+								action: () => toggleColumn(listView, c.key)
+							}
+				),
+				// R22 round 11: the way back. A width dragged to 48px and an order shuffled by
+				// accident are both easy to reach and, without this, impossible to undo except
+				// by dragging every column back one at a time. Offered only when there IS
+				// something to reset, so an untouched header does not carry a dead row.
+				...(custom
+					? [
+							{ section: 'Layout' },
+							{
+								label: 'Reset widths and order',
+								tooltip: 'Back to the default column layout for this view',
+								action: () => {
+									explorerColumnWidths.update((all) => ({ ...all, [listView]: {} }));
+									explorerColumnOrder.update((all) => ({ ...all, [listView]: [] }));
+								}
+							}
+						]
+					: [])
+			]
 		};
 	}
 	/**
@@ -3709,8 +3834,12 @@
 		onclick={(e) => (isFolder ? onFolderCardClick(e, folder) : onCardClick(e, item))}
 		ondblclick={() => (isFolder ? openFolder(folder.id) : openItem(item))}
 	>
-		{#each shownColumns as col (col.key)}
-			<td class="ex-cell {col.numeric ? 'text-right tabular-nums' : ''}" style:width={col.width}>
+		{#each shownColumns as col, ci (col.key)}
+			<td
+				class="ex-cell {col.numeric ? 'text-right tabular-nums' : ''}"
+				data-col={col.key}
+				style:width="{columnPx[ci]}px"
+			>
 				{#if col.key === 'name'}
 					<span class="flex min-w-0 items-center gap-1.5">
 						{#if isFolder}
@@ -3792,6 +3921,7 @@
 				{/if}
 			</td>
 		{/each}
+		<td class="ex-cell ex-cell-spacer" aria-hidden="true"></td>
 	</tr>
 {/snippet}
 
@@ -3799,13 +3929,22 @@
 {#snippet listHead()}
 	<thead>
 		<tr id="explorer-list-head" class="ex-head" oncontextmenu={(e) => columnMenu(e)}>
-			{#each shownColumns as col (col.key)}
-				<th class="ex-th {col.numeric ? 'text-right' : ''}" style:width={col.width}>
+			{#each shownColumns as col, i (col.key)}
+				<th
+					class="ex-th {col.numeric ? 'text-right' : ''} {colDrag?.moved && colDrag.over === i
+						? 'ex-th-over'
+						: ''} {colDrag?.moved && colDrag.key === col.key ? 'ex-th-dragging' : ''}"
+					data-col={col.key}
+					style:width="{columnPx[i]}px"
+				>
 					<button
 						class="ex-th-btn"
 						data-col={col.key}
-						title={'Sort by ' + col.label.toLowerCase()}
-						onclick={() => sortBy(listView, col.key)}
+						title={col.always
+							? 'Sort by ' + col.label.toLowerCase() + ' — this column stays first'
+							: 'Sort by ' + col.label.toLowerCase() + ' · drag sideways to reorder'}
+						onpointerdown={(e) => colDragStart(e, col)}
+						onclick={() => colHeaderClick(col.key)}
 					>
 						{col.label}<!--
 							the indicator sits on the ACTIVE column only, so "which column is this
@@ -3814,8 +3953,23 @@
 								>{($explorerSort[listView] ?? {}).dir === -1 ? '▾' : '▴'}</span
 							>{/if}
 					</button>
+					<!-- svelte-ignore a11y_no_static_element_interactions -->
+					<div
+						class="ex-grip {colResize?.key === col.key ? 'ex-grip-on' : ''}"
+						data-grip={col.key}
+						title="Drag to resize · double-click to reset"
+						style="touch-action: none"
+						onpointerdown={(e) => colResizeStart(e, col, columnPx[i])}
+						onpointermove={colResizeMove}
+						onpointerup={colResizeEnd}
+						onpointercancel={colResizeEnd}
+						ondblclick={() => resetColumnWidth(listView, col.key)}
+					></div>
 				</th>
 			{/each}
+			<!-- the remainder. `table-layout: fixed` would otherwise share any surplus out
+			     across the sized columns and quietly undo the last drag. -->
+			<th class="ex-th ex-th-spacer" aria-hidden="true"></th>
 		</tr>
 	</thead>
 {/snippet}
@@ -4189,7 +4343,7 @@
 								{@render cardEdit()}
 							</div>
 						{/if}
-						<table class="ex-table">
+						<table class="ex-table" style:min-width="{tableMinPx}px">
 							{@render listHead()}
 							{#if deletedGroups}
 								<!-- grouped bin: one SECTION per deleter, collapsible. The rows inside a
@@ -4197,7 +4351,7 @@
 								{#each deletedGroups as group (group.id)}
 									<tbody>
 										<tr class="ex-group">
-											<td colspan={shownColumns.length}>
+											<td colspan={shownColumns.length + 1}>
 												<button class="ex-group-btn" onclick={() => toggleGroup(group.id)}>
 													<span class="ex-group-caret">{collapsedGroups.has(group.id) ? '▸' : '▾'}</span>
 													{group.name}<span class="ex-group-n">{group.rows.length}</span>
@@ -4927,6 +5081,11 @@
 		align-content: start;
 		overflow-y: auto;
 	}
+	/* R22 round 11: the list's own container is the sideways scroller, here too. The PAGE
+	   may never scroll horizontally (the documented rule), so the overflow stops here. */
+	.ex-split-on .ex-list {
+		overflow-x: auto;
+	}
 	.ex-log {
 		min-height: 0;
 		flex: 0 0 300px;
@@ -5014,6 +5173,51 @@
 		border-collapse: collapse;
 		font-size: 11px;
 		table-layout: fixed;
+	}
+	/*
+		R22 round 11 — RESIZE AND REORDER.
+
+		`.ex-th` becomes the grip's containing block. The grip is 7px wide and sits ON the
+		boundary (half of it over each side) so the target is the line the eye aims at
+		rather than a strip inside one column.
+	*/
+	.ex-th {
+		position: relative;
+	}
+	/* the remainder cell: no width, so fixed layout gives it everything left over */
+	.ex-th-spacer,
+	.ex-cell-spacer {
+		width: auto;
+		padding: 0;
+	}
+	.ex-grip {
+		position: absolute;
+		top: 0;
+		right: -4px;
+		z-index: 2;
+		height: 100%;
+		width: 7px;
+		cursor: col-resize;
+	}
+	.ex-grip::after {
+		content: '';
+		position: absolute;
+		top: 3px;
+		bottom: 3px;
+		left: 3px;
+		width: 1px;
+		background: transparent;
+	}
+	.ex-grip:hover::after,
+	.ex-grip-on::after {
+		background: var(--accent, #3b82f6);
+	}
+	/* the column being carried, and the one it would land on */
+	.ex-th-dragging .ex-th-btn {
+		opacity: 0.45;
+	}
+	.ex-th-over {
+		box-shadow: inset 2px 0 0 var(--accent, #3b82f6);
 	}
 	.ex-head {
 		position: sticky;

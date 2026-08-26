@@ -353,6 +353,36 @@
 	/** R22-R8: is the Logs pane showing? LOCAL and session-only — it is a debugging
 	 * view, and one that came back on every reload would be clutter. */
 	let logOpen = $state(false);
+
+	/**
+	 * R22 ROUND 20 — IS THE HEADER ROW TOO NARROW FOR EVERYTHING IN IT.
+	 *
+	 * The row has a contract that `explorer-header-panels` pins: it must not overflow, the
+	 * search box keeps its width, and the identity chip is the item that gives way by
+	 * truncating its names. Round 11's view toggle (~52px) pushed it past what the chip has
+	 * left to surrender, so the row overflowed — a control that is right at full width
+	 * silently breaking a narrow one.
+	 *
+	 * The storage reading is what yields: it is the only thing up there answering a
+	 * question nobody asked while working, and it is already conditional on the browser
+	 * implementing `storage.estimate()`, so it has no claim on space the working controls
+	 * need. The filter, the view and the transfers all change or report something you are
+	 * doing.
+	 *
+	 * MEASURED, not a media query: the UNDOCKED window is ~700px wide inside a 1280px
+	 * viewport, so a viewport query cannot see the case it exists for (and the suite checks
+	 * exactly that case). A container query would read the right box, but `container-type`
+	 * brings containment that makes the element a containing block for `position: fixed`
+	 * descendants — the documented transform/backdrop-filter trap by another door, and this
+	 * header hosts popovers.
+	 */
+	let headerNarrow = $state(false);
+	function headerWidth(node: HTMLElement) {
+		const ro = new ResizeObserver(() => (headerNarrow = node.clientWidth < 700));
+		ro.observe(node);
+		headerNarrow = node.clientWidth < 700;
+		return { destroy: () => ro.disconnect() };
+	}
 	const filtering = $derived(kindFilter.size > 0 || localOnly);
 
 	/** R22-R2: the share state of a card, and the ONE place the vocabulary is read. A
@@ -4027,9 +4057,23 @@
 		aria-label="Filter files"
 		onclick={(e) => filterMenu(e)}>☷{filtering ? ' •' : ''}</button
 	>
-	<!-- R22 round 6: AFTER the filter, and always visible. An indicator that comes and
-	     goes reflows the header and trains nobody where to look; a permanent one has to
-	     be honest in every state instead — see the four in TransferLog. -->
+{/snippet}
+
+<!--
+	R22 ROUND 20 (user): "it seems to be good to show Filter by type, Thumbnails/List view
+	and then download files box button" — so the transfer log moved OUT of the filter
+	snippet and sits after the view toggle.
+
+	It reads better for a reason worth keeping: the filter and the view are both ways of
+	changing WHAT YOU SEE in the grid below, so they belong beside each other; the log is
+	about bytes moving between machines, a different subject entirely, and it was sitting
+	between the two controls that answer one question.
+
+	R22 round 6, still true: ALWAYS VISIBLE. An indicator that comes and goes reflows the
+	header and trains nobody where to look; a permanent one has to be honest in every state
+	instead — see the four in TransferLog.
+-->
+{#snippet logChip()}
 	<TransferLog bind:open={logOpen} />
 {/snippet}
 
@@ -4067,7 +4111,7 @@
 	browser does not implement it — a zero would be a claim, an absence is the truth.
 -->
 {#snippet storageChip()}
-	{#if storage}
+	{#if storage && !headerNarrow}
 		<span
 			id="explorer-storage"
 			class="shrink-0 whitespace-nowrap text-[10px] text-gray-500"
@@ -5271,7 +5315,7 @@
 				onpointermove={doResize}
 				onpointerup={endResize}
 			></div>
-			<div class="mb-1 flex items-center gap-2">
+			<div class="mb-1 flex items-center gap-2" use:headerWidth>
 				<span class="shrink-0 text-xs font-semibold text-gray-200"><FolderTree size={16} class="mr-1" aria-hidden="true" />Explorer</span>
 				<!-- `shrink-0`: the identity chip beside it is the flex item that gives way -->
 				<input
@@ -5282,6 +5326,7 @@
 				/>
 				{@render filterChip()}
 				{@render viewChip()}
+				{@render logChip()}
 				{@render storageChip()}
 				{@render identityChip()}
 				<button
@@ -5315,7 +5360,7 @@
 			ondrop={onDrop}
 			role="region"
 		>
-			<div class="ui-panel-header move-handle shrink-0 cursor-move select-none py-1.5">
+			<div class="ui-panel-header move-handle shrink-0 cursor-move select-none py-1.5" use:headerWidth>
 				<span class="shrink-0"><FolderTree size={16} class="mr-1" aria-hidden="true" />Explorer</span>
 				<input
 					id="explorer-search"
@@ -5325,6 +5370,7 @@
 				/>
 				{@render filterChip()}
 				{@render viewChip()}
+				{@render logChip()}
 				{@render storageChip()}
 				{@render identityChip()}
 				<button id="explorer-dock" class="ui-button-quiet shrink-0" title="Dock to the bottom" onclick={() => setDocked(true)}>
@@ -5648,6 +5694,21 @@
 		padding: 2px 6px;
 	}
 
+	/*
+	   R22 ROUND 20 — THE HEADER'S NARROW-WIDTH CASUALTY.
+
+	   The header row has a contract, and `explorer-header-panels` pins it: at 520px it must
+	   not overflow, the search box keeps its width, and the IDENTITY CHIP is the item that
+	   gives way by truncating its project and scene names. Round 11's view toggle (~52px)
+	   pushed the row past what the chip has left to surrender, so the row overflowed —
+	   which is how a control that is right at full width silently breaks a narrow one.
+
+	   The storage reading is what yields. It is the only thing up there that answers a
+	   question nobody asked while working — how full the disk is — and it is already
+	   conditional on the browser implementing `storage.estimate()`, so it has no claim on
+	   space the working controls need. The filter, the view and the transfers all change or
+	   report something you are doing.
+	*/
 	/* the view toggle uses the shared `tp-seg` / `tp-seg-btn` utilities — the Sessions
 	   filter wanted the same control in the same round, which is when it stopped being
 	   local (see ui.utilities.css) */

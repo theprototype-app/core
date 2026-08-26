@@ -158,7 +158,7 @@ previewMultiWindow.subscribe((v) => saveFlag('preview:multiWindow', v));
  * default would be taking something away in the name of adding a switch.
  * @type {import('svelte/store').Writable<boolean>}
  */
-export const previewShowStats = writable(readFlag('preview:showStats', true));
+export const previewShowStats = writable(readFlag('preview:showStats', false));
 previewShowStats.subscribe((v) => saveFlag('preview:showStats', v));
 
 /**

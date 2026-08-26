@@ -698,18 +698,21 @@
 
 					THREE gates, and each answers a different question:
 					· `!hintSeen` — have you used this window yet? A prompt is for before you have.
-					· `$previewShowStats` — the user's own rule, and a good one: "if user disabled
-					  show mesh statistics I know that user already clicked on cog and is quite
-					  familiar with the app". Turning off the reading is a competence signal, so
-					  the teaching goes with it. It also means one switch quiets the corner
-					  entirely, which is what somebody using this as a reference wants.
+					· `!$previewShowStats` — R22 ROUND 19, and this REVERSES round 14's rule at the
+					  user's ask. The reasoning then was that switching the reading off is a
+					  competence signal, so the teaching should go with it. The user's rule is
+					  better and simpler: the two are ALTERNATIVES for one corner, so you get the
+					  numbers or you get the gesture, never both and never neither-by-accident.
+					  It also makes the default coherent — the statistics now start OFF, so a
+					  fresh preview greets you with what to DO rather than a triangle count, and
+					  turning them on is what trades that away.
 					· `winOpacity >= 1` — a faded window is a reference laid over the scene, and
 					  chrome is the first thing in the way of one.
 
 					The wording reads LIVE off the turntable and still cannot flicker, because the
 					only way to change that state is a click, and a click dismisses this.
 				-->
-				{#if !hintSeen && $previewShowStats && winOpacity >= 1}
+				{#if !hintSeen && !$previewShowStats && winOpacity >= 1}
 					<span class="pv-hint" aria-hidden="true">
 						<RotateCw size={12} />
 						{spinning ? 'Click to stop' : 'Click to auto-rotate'} · drag to turn · scroll to zoom
@@ -797,9 +800,11 @@
 	}
 	/* ...and the gesture hint under it, bottom left. Not a control: the MODEL is the
 	   switch, so this must never take a click meant for the picture behind it. */
+	/* the reading's row: round 19 made the two mutually exclusive, so leaving the prompt
+	   stacked above an empty edge would just be a gap where the numbers used to be */
 	.pv-hint {
 		position: absolute;
-		bottom: calc(var(--pv-transport, 0px) + 20px);
+		bottom: var(--pv-transport, 0px);
 		left: 6px;
 		display: flex;
 		align-items: center;

@@ -39,7 +39,9 @@ h.run(async () => {
 		await window.__stores.explorer.clearLibrary();
 		const f = window.__stores.filePreview;
 		f.previewAutoRotate.set(true);
-		f.previewShowStats.set(true);
+		// R22 ROUND 19 (user): "by default disable statistics". Left at the real default so
+		// the sections below measure what a user actually opens.
+		f.previewShowStats.set(false);
 		f.previewMultiWindow.set(false);
 		// round 14: opacity and passthrough are no longer stores — they are the window's own
 		// state and start clean with every target, which §5 and §8 assert.
@@ -73,29 +75,37 @@ h.run(async () => {
 		(await page.locator('#preview-body canvas').count()) === 1,
 		'premise: a 3D object opens in the shared preview window'
 	);
-	// ---- the PROMPT's placement, read while this window is still untouched -------------
+	// ---- THE CORNER HOLDS ONE OF TWO THINGS (round 19, user) ---------------------------
+	// "I want 'Click to stop' to appear ... if there are no statistics shown, and by default
+	// disable statistics" — so the mesh facts and the gesture prompt are ALTERNATIVES for one
+	// row, and which you get is the statistics switch. This reverses round 14's rule (where
+	// the prompt went WITH the reading) at the user's ask, and it is the better one: you
+	// always have exactly one thing down there, and a fresh preview greets you with what to
+	// DO rather than a triangle count.
+	//
+	// Read while this window is still untouched, because the prompt dismisses on first use.
 	const promptGeom = await page.evaluate(() => {
 		const b = document.querySelector('#preview-body').getBoundingClientRect();
-		const stat = document.querySelector('#preview-stats-line')?.getBoundingClientRect();
 		const tip = document.querySelector('.pv-hint');
-		if (!stat || !tip) return null;
+		if (!tip) return null;
 		const t = tip.getBoundingClientRect();
 		return {
-			statAtBottom: b.bottom - stat.bottom < 4,
-			statSpans: stat.width > b.width * 0.8,
-			tipAbove: t.bottom <= stat.top + 1,
+			stats: document.querySelectorAll('#preview-stats-line').length,
+			tipAtBottom: b.bottom - t.bottom < 4,
 			tipLeft: t.left - b.left < 40,
 			tipEvents: getComputedStyle(tip).pointerEvents,
 			tipText: (tip.textContent || '').replace(/\s+/g, ' ').trim()
 		};
 	});
 	h.check(
-		!!promptGeom && promptGeom.statAtBottom && promptGeom.statSpans,
-		'the mesh facts run along the very bottom (' + JSON.stringify(promptGeom) + ')'
+		!!promptGeom && promptGeom.stats === 0,
+		'a fresh preview shows no mesh statistics — they are off by default now (' +
+			JSON.stringify(promptGeom) +
+			')'
 	);
 	h.check(
-		!!promptGeom && promptGeom.tipAbove && promptGeom.tipLeft,
-		'...and the prompt sits ABOVE them on the left — the two were swapped at the user’s ask'
+		!!promptGeom && promptGeom.tipAtBottom && promptGeom.tipLeft,
+		'...and the prompt takes the row the numbers would have had, flush at the bottom left'
 	);
 	h.check(
 		!!promptGeom && promptGeom.tipEvents === 'none',
@@ -175,11 +185,7 @@ h.run(async () => {
 	await page.waitForTimeout(800);
 	h.check(stopped === (await frame()), '...while a click stops it, resting where it was');
 
-	// ---- 4. the reading stays; the prompt has done its job ------------------------------
-	h.check(
-		(await page.locator('#preview-stats-line').count()) === 1,
-		'the reading is still there after all that — it is chrome, not a prompt'
-	);
+	// ---- 4. the prompt has done its job; the reading is a switch away --------------------
 	// R22 ROUND 14 — THE TIP IS AN INTERACTION PROMPT, NOT A STATUS LIGHT, which is the
 	// standard every 3D viewer that ships one follows (`<model-viewer>`'s interaction prompt
 	// is dismissed by the first gesture; Sketchfab's load overlay by the first drag). Round
@@ -192,14 +198,26 @@ h.run(async () => {
 		(await page.locator('.pv-hint').count()) === 0,
 		'the prompt is gone once the window has been used, and does not come back with the state'
 	);
+	// ...and the corner is empty, which is correct: the prompt is spent and the reading was
+	// never asked for. Switching it on is what puts something back there.
+	h.check(
+		(await page.locator('#preview-stats-line').count()) === 0,
+		'nothing else moved into the corner behind it'
+	);
 
-	// ---- 5. both readings get out of the way of a faded window --------------------------
+	// ---- 5. the reading gets out of the way of a faded window ----------------------------
 	// A faded window is being used as a REFERENCE over the scene, and chrome is the first
 	// thing in the way of one.
 	// through the REAL slider, because round 14 removed the store it used to drive - and
 	// that is the better check anyway: the control and the effect, not a back door.
 	await page.locator('#preview-cog').first().click();
 	await page.waitForTimeout(400);
+	await page.locator('#preview-stats').check();
+	await page.waitForTimeout(500);
+	h.check(
+		(await page.locator('#preview-stats-line').count()) === 1,
+		'switching the statistics on fills the corner (and this is the section that needs them)'
+	);
 	await page.locator('#preview-opacity').fill('40');
 	await page.locator('#preview-opacity').dispatchEvent('input');
 	await page.waitForTimeout(600);
@@ -354,9 +372,21 @@ h.run(async () => {
 	h.check(reopened.through === false, '...and passthrough is off, as a window opened to be looked at should be');
 	// and the prompt is offered again to a FRESH window - it teaches per window, it just
 	// never nags within one
+	// the statistics were switched on in §5, and the two share a row — so the prompt is
+	// only offered again once the reading is out of the way, which is round 19's whole rule
+	h.check(
+		(await page.locator('.pv-hint').count()) === 0,
+		'with the statistics on, a fresh window shows THOSE and not the prompt'
+	);
+	await page.locator('#preview-cog').first().click();
+	await page.waitForTimeout(400);
+	await page.locator('#preview-stats').uncheck();
+	await page.waitForTimeout(500);
+	await page.locator('#preview-cog').first().click();
+	await page.waitForTimeout(300);
 	h.check(
 		(await page.locator('.pv-hint').count()) === 1,
-		'a fresh window offers the gesture prompt again — dismissal is per window, not forever'
+		'...and switching them off hands the row back to the prompt, on a window that has not been used'
 	);
 
 	h.check(

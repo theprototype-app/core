@@ -49,6 +49,8 @@ h.run(async () => {
 		const f = window.__stores.filePreview;
 		f.previewAutoPlay.set(true);
 		f.previewAutoRotate.set(false); // one moving thing at a time, or "did it move" is ambiguous
+		// round 19 turned these OFF by default; this suite measures them, so it asks. That
+		// also means no gesture prompt here, the two sharing one row.
 		f.previewShowStats.set(true);
 		f.previewMultiWindow.set(false);
 		localStorage.setItem('animationFps', '30');
@@ -280,11 +282,10 @@ h.run(async () => {
 	const stacked = await page.evaluate(() => {
 		const strip = document.querySelector('.an-root')?.getBoundingClientRect();
 		const stats = document.querySelector('#preview-stats-line')?.getBoundingClientRect();
-		const hint = document.querySelector('.pv-hint')?.getBoundingClientRect();
 		if (!strip || !stats) return null;
 		return {
 			statsAbove: stats.bottom <= strip.top + 1,
-			hintAbove: !hint || hint.bottom <= stats.top + 1
+			hint: document.querySelectorAll('.pv-hint').length
 		};
 	});
 	h.check(
@@ -293,7 +294,15 @@ h.run(async () => {
 			JSON.stringify(stacked) +
 			')'
 	);
-	h.check(!!stacked && stacked.hintAbove, '...and the prompt stays above the facts');
+	// R22 ROUND 19: the prompt and the facts are ALTERNATIVES for that row now, so with the
+	// statistics on there is no prompt to stack — and the row they share is the one that
+	// steps over the transport.
+	h.check(
+		!!stacked && stacked.hint === 0,
+		'...and with the statistics on there is no prompt competing for the row (' +
+			JSON.stringify(stacked) +
+			')'
+	);
 
 	// ---- 8. THE COG: auto-play is a DEFAULT, like auto-rotate --------------------------------
 	await page.locator('#preview-cog').first().click();

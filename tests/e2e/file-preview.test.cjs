@@ -652,14 +652,31 @@ h.run(async () => {
 		(await page.locator('#model-preview-window').count()) === 0,
 		'...and NOT in the separate pop-out it used to open'
 	);
-	await h.eventually(
-		() => page.locator('#preview-stats-line').textContent().catch(() => ''),
-		(t) => /12 tris/.test(t || ''),
-		'the tris/verts/meshes statistics came with it',
-		15000
+	// R22 ROUND 19 (user): "by default disable statistics" — so the reading is switched ON
+	// here before it can be measured. What a fresh preview shows instead is the gesture
+	// prompt, which §"the corner" below asserts.
+	h.check(
+		(await page.locator('#preview-stats-line').count()) === 0,
+		'a fresh preview shows NO mesh statistics — they are off by default now'
+	);
+	h.check(
+		(await page.locator('.pv-hint').count()) === 1,
+		'...and the corner carries the gesture prompt in their place'
 	);
 	await page.locator('#preview-cog').first().click();
 	await page.waitForTimeout(400);
+	await page.locator('#preview-stats').check();
+	await page.waitForTimeout(500);
+	await h.eventually(
+		() => page.locator('#preview-stats-line').textContent().catch(() => ''),
+		(t) => /12 tris/.test(t || ''),
+		'switching them on shows tris/verts/meshes',
+		15000
+	);
+	h.check(
+		(await page.locator('.pv-hint').count()) === 0,
+		'...and the prompt gives up the row it was borrowing — one corner, one reading'
+	);
 	const objRows = await page.evaluate(() =>
 		[...document.querySelectorAll('#preview-settings label')].map((l) => l.textContent.replace(/\s+/g, ' ').trim())
 	);
@@ -690,6 +707,16 @@ h.run(async () => {
 	h.check(
 		(await page.locator('#preview-stats-line').count()) === 0,
 		'...and the statistics toggle really hides them'
+	);
+	// they occupy the SAME row, which is the point of making them alternatives
+	const corner = await page.evaluate(() => {
+		const b = document.querySelector('#preview-body')?.getBoundingClientRect();
+		const t = document.querySelector('.pv-hint')?.getBoundingClientRect();
+		return b && t ? Math.round(b.bottom - t.bottom) : null;
+	});
+	h.check(
+		corner !== null && corner < 4,
+		'the prompt sits where the numbers were, flush at the bottom (' + corner + 'px up)'
 	);
 
 	// =====================================================================================

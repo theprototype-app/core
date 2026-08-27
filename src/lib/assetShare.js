@@ -133,16 +133,34 @@ export async function sendAsset(hash) {
 /** @type {Set<string>} hashes already asked for (one ask per session) */
 const pendingRequests = new Set();
 
-/** Pull missing bytes from the mesh, once per hash @param {string} hash */
+/**
+ * Pull missing bytes from the mesh, once per hash.
+ *
+ * R22 round 12 — IT ONLY COUNTS AS AN ASK IF AN ASK WENT OUT. `pendingRequests` used
+ * to be armed BEFORE the queue was consulted, so a call that sent nothing still burned
+ * the one-ask-per-session slot and POISONED the hash for the rest of the session. The
+ * reachable case is not exotic: applying a shared index while no connection is open
+ * (an idb-restored manifest at boot, a .tp open, a document that arrived and was
+ * applied before the mesh settled) runs `autoPullMissing` over every remote row with
+ * zero open peers — after which the connect-edge sweep, the index-arrival sweep and
+ * the user's own Download button all early-returned on `pendingRequests.has(hash)`
+ * and the file could never be fetched again without a reload.
+ *
+ * The invariant is now: a hash is in `pendingRequests` IFF a request left this machine
+ * and has not resolved — which is what every deleter of that set already assumes
+ * (applyAssetFile, chunk completion, applyAssetMissing, the stall sweep, reviveHash).
+ * @param {string} hash @returns {boolean} did a request actually leave
+ */
 export function requestAsset(hash) {
 	/** @type {any} */
 	const peer = get(peers);
-	if (!peer || !hash || pendingRequests.has(hash) || itemByHash(hash)) return;
-	pendingRequests.add(hash);
+	if (!peer || !hash || pendingRequests.has(hash) || itemByHash(hash)) return false;
 	// R22-R8: through the QUEUE, not straight onto the wire. Auto-download can name two
 	// hundred hashes at once (a shared folder), and two hundred simultaneous requests is
 	// how you make every one of them slow.
-	enqueuePull(hash);
+	const sent = enqueuePull(hash);
+	if (sent) pendingRequests.add(hash);
+	return sent;
 }
 
 /** Receive pushed bytes -> Shared folder (content-hash dedup) @param {any} data */
@@ -589,15 +607,23 @@ function settlePull(hash) {
 	}
 }
 
-/** Ask every open peer for one hash. No cap: see SEND_CONCURRENCY. @param {string} hash */
+/**
+ * Ask every open peer for one hash. No cap: see SEND_CONCURRENCY.
+ *
+ * R22 round 12: it REPORTS whether anything left. The ledger row is minted below the
+ * open-connection check on purpose — a row for a request that was never sent is a
+ * spinner nobody can resolve — and the same rule now travels back up to the callers,
+ * so `pendingRequests` and the Explorer's pending-pull marks cannot arm either.
+ * @param {string} hash @returns {boolean} did a request actually leave
+ */
 function askFor(hash) {
 	/** @type {any} */
 	const peer = get(peers);
-	if (!peer || pullsInFlight.has(hash) || itemByHash(hash)) return;
+	if (!peer || pullsInFlight.has(hash) || itemByHash(hash)) return false;
 	const open = Object.entries(peer.connections ?? {}).filter(
 		([, c]) => /** @type {any} */ (c)?.open
 	);
-	if (!open.length) return;
+	if (!open.length) return false;
 	const row = sharedRowFor(hash);
 	const tx = beginTransfer({
 		hash,
@@ -607,6 +633,7 @@ function askFor(hash) {
 	});
 	pullsInFlight.set(hash, { tx, waiting: new Set(open.map(([id]) => id)) });
 	for (const [, conn] of open) /** @type {any} */ (conn).send({ type: 'getasset', hash });
+	return true;
 }
 
 /**
@@ -686,15 +713,17 @@ function sharedRowFor(hash) {
 }
 
 /** Queue a pull. Replaces the bare send in `requestAsset` so a folder share cannot turn
- * into two hundred simultaneous requests. @param {string} hash */
+ * into two hundred simultaneous requests. R22 round 12: the verdict is askFor's, not a
+ * bare `true` — reaching the ask is not the same as sending one, and the difference is
+ * exactly the no-open-connections case the callers must not record.
+ * @param {string} hash @returns {boolean} did a request actually leave */
 export function enqueuePull(hash) {
 	const h = String(hash ?? '').trim();
 	if (!h || itemByHash(h) || pullsInFlight.has(h)) return false;
 	// a hash we recently gave up on stays out of the queue, or auto-download re-queues it
 	// on every index change and the loop occupies the slot it is starving
 	if (deadHashes.has(h)) return false;
-	askFor(h);
-	return true;
+	return askFor(h);
 }
 
 /** Forget that a hash was unanswerable — an explicit user request means try again

@@ -280,10 +280,35 @@ export const projectManifest = writable(defaultManifest());
 
 /** Is there anything in it? A pristine manifest writes no idb key and rides no save.
  * 21-G9: NAMING a project is itself an act of creating one — a user who types a name
- * and reloads must find it there, so the name counts alongside scenes and assets. */
+ * and reloads must find it there, so the name counts alongside scenes and assets.
+ *
+ * R22 round 12 — AND SO DOES SHARING A FILE. This predicate predates the shared index
+ * (R1) and was never widened for it, so a project whose entire content IS a shared
+ * library — files, folders, tombstones, a deletion log, but no name and no saved scene
+ * — read as pristine. One blind spot, three bugs. `persist()` never wrote such a
+ * document to idb, so an index-only project lost its whole library on reload (a latent
+ * data-loss bug nobody had hit yet). `sendProjectManifest` answered a joiner's
+ * `getproject` with SILENCE, so a files-only host never taught an arriving peer that
+ * anything was on offer — which is the reported "shared files never auto-download on
+ * connect", because auto-download hangs off the index arriving and the index never
+ * arrived. And the .tp export/download gates offered nothing to save.
+ *
+ * Everything the document can carry counts, tombstones and the deletion log included:
+ * unsharing a file and deleting one are edits somebody made, and a manifest that
+ * remembers them is not pristine. ONE predicate, deliberately — a second narrow one
+ * would only be the next thing to fall out of step with the shape. */
 export function manifestInUse() {
 	const m = get(projectManifest);
-	return !!m.name || Object.keys(m.scenes).length > 0 || m.assets.length > 0;
+	return (
+		!!m.name ||
+		Object.keys(m.scenes).length > 0 ||
+		m.assets.length > 0 ||
+		!!m.folders?.length ||
+		!!m.items?.length ||
+		Object.keys(m.removed?.items ?? {}).length > 0 ||
+		Object.keys(m.removed?.folders ?? {}).length > 0 ||
+		!!m.deleted?.length
+	);
 }
 
 // ---- persistence -------------------------------------------------------------------

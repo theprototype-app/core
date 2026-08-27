@@ -158,7 +158,11 @@ export function remoteSharedRows(manifest) {
 	return (manifest?.items ?? []).filter((/** @type {any} */ r) => r?.hash && !held.has(r.hash));
 }
 
-/** Ask the mesh for a shared file we do not hold. @param {string} hash */
+/** Ask the mesh for a shared file we do not hold. R22 round 12: the pending mark and
+ * the caller's "Fetching…" toast follow the ASK, not the attempt — with nobody
+ * connected the request cannot leave, and a card that says it is fetching from peers
+ * there is a spinner with nothing behind it.
+ * @param {string} hash @returns {boolean} did a request actually leave */
 export function pullSharedItem(hash) {
 	const h = String(hash ?? '').trim();
 	if (!h || itemByHash(h)) return false;
@@ -166,9 +170,9 @@ export function pullSharedItem(hash) {
 	// gave-up-on-it mark before asking (auto-download does not get this — an automatic
 	// retry loop is exactly what the mark exists to stop)
 	reviveHash(h);
-	pendingPulls.update((s) => new Set([...s, h]));
-	requestAsset(h);
-	return true;
+	const sent = requestAsset(h);
+	if (sent) pendingPulls.update((s) => new Set([...s, h]));
+	return sent;
 }
 
 // ---- the projection ---------------------------------------------------------------
@@ -1124,11 +1128,14 @@ function autoPullMissing() {
 	const rows = remoteSharedRows(get(projectManifest));
 	if (!rows.length) return;
 	// requestAsset, not pullSharedItem: an automatic sweep must respect the dead-hash
-	// mark, or it re-queues an unanswerable file on every index change forever
-	for (const row of rows) {
-		pendingPulls.update((s) => (s.has(row.hash) ? s : new Set([...s, row.hash])));
-		requestAsset(row.hash);
-	}
+	// mark, or it re-queues an unanswerable file on every index change forever.
+	// R22 round 12: the pending mark arms only when the request actually left. This
+	// sweep runs with no connection open more often than it looks (an idb-restored
+	// manifest at boot, a .tp open), and marking those hashes pending drew a permanent
+	// row of downloading cards for files nobody had been asked for.
+	for (const row of rows)
+		if (requestAsset(row.hash))
+			pendingPulls.update((s) => (s.has(row.hash) ? s : new Set([...s, row.hash])));
 }
 
 // ---- inheritance (R3, and the user's rule: a shared folder shares what lands in it)
@@ -1333,12 +1340,27 @@ export function startSharedLibrary() {
 	// R22 round 5: a NEW PEER is new evidence, so everything we gave up on is worth one
 	// more ask. Triggered by an arrival rather than a timer — which is the difference
 	// between a retry and a loop — and it is the only automatic retry in the module.
+	//
+	// R22 round 12 — AND THE SWEEP IS UNCONDITIONAL NOW. The pull used to hang off
+	// `revived`, i.e. it only ran for a session that had already given up on something,
+	// which is never true of a CLEAN FIRST CONNECT: retryUnavailable returns 0 and the
+	// rise edge did nothing at all. Auto-download was therefore relying entirely on an
+	// index ARRIVING to trigger it — and an index does not always arrive. Our own idb
+	// manifest can carry the newer stamp, in which case the incoming document is refused
+	// (latest-wins, correctly) and `applySharedIndex` never runs, so nothing on either
+	// path ever asks for the bytes that the rows in our OWN document name. The rise edge
+	// is the one moment that is true regardless of who won the stamp comparison.
+	//
+	// Cheap enough to do on every arrival: `remoteSharedRows` is empty in the common case
+	// (auto-download means we already hold everything), and `enqueuePull` refuses a hash
+	// that is in flight, already held, or recently dead — so a repeat is a no-op, not a
+	// second request.
 	let lastPeerCount = 0;
 	peers.subscribe((p) => {
 		const n = /** @type {any} */ (p)?.openedPeers?.size ?? 0;
 		if (n > lastPeerCount) {
-			const revived = retryUnavailable();
-			if (revived && get(autoDownload)) autoPullMissing();
+			retryUnavailable();
+			if (get(autoDownload)) autoPullMissing();
 		}
 		lastPeerCount = n;
 	});

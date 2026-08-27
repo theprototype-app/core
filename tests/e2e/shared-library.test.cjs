@@ -1679,10 +1679,235 @@ h.run(async () => {
 	h.check((await A.page.locator('.tx-log').count()) === 0,
 		'its own ✕ closes it — the pane owns a way out that does not live in another popover');
 
+	// ================================================================================
+	// ROUND 12 — AUTO-DOWNLOAD ON CONNECT.
+	//
+	// The reported bug is one sentence — "shared files never download by themselves" —
+	// and it had THREE independent causes, each of which alone is enough to produce it:
+	//
+	//   (i)   a project whose only content is a shared library read as PRISTINE, so its
+	//         host answered a joiner's `getproject` with silence;
+	//   (ii)  nothing pulled on the connect edge — the sweep hung off `retryUnavailable`
+	//         having revived something, which a clean first connect never has;
+	//   (iii) an ask that could not leave (no open connection) still burned the hash's
+	//         one-ask-per-session slot, so every later attempt early-returned.
+	//
+	// A THIRD PEER, deliberately: A and B have been connected since section 2, and every
+	// one of these lives in the moment a connection OPENS.
+
+	const C = await h.setupPage(browser, 'C');
+	await C.page.waitForFunction(
+		() => !!window.__stores?.sharedLibrary && !!window.__stores?.explorer,
+		{ timeout: 30000 }
+	);
+	await C.page.evaluate(() => window.__stores.explorer.loadExplorer());
+	h.check(
+		await C.page.evaluate(() => {
+			let v;
+			window.__stores.sharedLibrary.autoDownload.subscribe((x) => (v = x))();
+			return v;
+		}),
+		'a fresh peer has auto-download ON — the setting was never the thing that was broken'
+	);
+
+	// ---- 54. a project that is ONLY a shared library IS a project ------------------
+	//
+	// `manifestInUse` predates R1 and asked about name/scenes/assets, so a document
+	// carrying nothing but the shared index answered "nothing here". Three readers of
+	// that answer, three bugs: `persist()` never wrote such a document to idb (the whole
+	// index lost on reload), `sendProjectManifest` returned early (the joiner is never
+	// told anything is on offer — cause (i)), and the export gates offered nothing.
+	//
+	// Probed by writing the store DIRECTLY and putting it back: `projectManifest.set`
+	// neither persists nor fires the shared-index seam, so this asks the predicate five
+	// questions without touching the peer C is about to become.
+	const inUse = await C.page.evaluate(() => {
+		const pm = window.__stores.projectManifest;
+		let before;
+		pm.projectManifest.subscribe((v) => (before = v))();
+		const probe = (patch) => {
+			pm.projectManifest.set(pm.normalizeManifest({ changedAt: 1, ...patch }));
+			return pm.manifestInUse();
+		};
+		const out = {
+			pristine: probe({}),
+			folders: probe({ folders: [{ id: 'probe-f', name: 'Probe', parentId: null }] }),
+			items: probe({
+				items: [{ hash: 'a'.repeat(64), name: 'probe.txt', kind: 'text', folderId: null }]
+			}),
+			removed: probe({ removed: { items: { ['b'.repeat(64)]: 5 }, folders: {} } }),
+			deleted: probe({
+				deleted: [{ hash: 'c'.repeat(64), name: 'gone.txt', kind: 'text', at: 5 }]
+			})
+		};
+		pm.projectManifest.set(before);
+		return out;
+	});
+	h.check(inUse.pristine === false, 'a pristine manifest still writes no idb key and rides no save');
+	h.check(
+		inUse.folders && inUse.items,
+		`a shared FOLDER and a shared ITEM each make the document worth keeping (${JSON.stringify(inUse)})`
+	);
+	h.check(
+		inUse.removed && inUse.deleted,
+		'so do a tombstone and a deletion-log row — unsharing a file and deleting one are edits somebody made, and a document that remembers them is not pristine'
+	);
+
+	// Now build the real thing: a peer whose project has NO name, NO scene and NO asset
+	// list, and a library it shares. A's rows go in VERBATIM, which is not decoration —
+	// it means A's reconcile finds nothing of its own missing and never re-publishes, so
+	// a re-publish cannot become a second route by which any of this could travel.
+	const riseFile = await addFile(A, 'the connect edge fetches this', 'riseedge.txt');
+	await A.page.evaluate((id) => {
+		const sl = window.__stores.sharedLibrary;
+		sl.shareItem(id);
+		sl.publishMine(true);
+	}, riseFile.id);
+	const onlyFile = await addFile(C, 'the files-only peer offers this', 'onlyfiles.txt');
+	const mA12 = await manifestOf(A);
+	// applyRemoteManifest, not manifestRestore, for one reason: restore re-stamps through
+	// commitManifest, and this document has to keep a stamp far enough ahead that nothing
+	// A sends for the rest of the run can install here. That is section 56's premise.
+	const seedStamp = Date.now() + 600000;
+	await C.page.evaluate(
+		([base, stamp]) =>
+			window.__stores.projectManifest.applyRemoteManifest({
+				manifest: { ...base, name: '', scenes: {}, assets: [], changedAt: stamp }
+			}),
+		[mA12, seedStamp]
+	);
+	// offline publish: it writes the document and sends to nobody
+	await C.page.evaluate((id) => {
+		const sl = window.__stores.sharedLibrary;
+		sl.shareItem(id);
+		sl.publishMine(true);
+	}, onlyFile.id);
+	const mC12 = await manifestOf(C);
+	h.check(
+		mC12.name === '' && Object.keys(mC12.scenes).length === 0 && mC12.assets.length === 0,
+		`C's project has no name, no scene and no asset list (${JSON.stringify({ name: mC12.name, scenes: Object.keys(mC12.scenes), assets: mC12.assets })})`
+	);
+	h.check(
+		(mC12.items ?? []).some((r) => r.hash === onlyFile.hash),
+		'...and yet it carries a shared index, which is content by any honest reading'
+	);
+	h.check(
+		await C.page.evaluate(() => window.__stores.projectManifest.manifestInUse()),
+		'manifestInUse() agrees, which is the only reason the getproject reply below can happen at all'
+	);
+
+	// ---- 55. an ask that cannot leave records NOTHING ------------------------------
+	//
+	// Cause (iii), probed before a connection exists. `pendingRequests` used to be armed
+	// ahead of the queue, so this call — and, far more importantly, the `autoPullMissing`
+	// that the seeding above just ran over every remote row with zero peers open —
+	// poisoned each hash for the session. Nothing could fetch them afterwards: the
+	// connect-edge sweep, the index-arrival sweep and the user's own Download button all
+	// early-return on `pendingRequests.has(hash)`.
+	const ghostHash = 'ab12cd34'.repeat(8);
+	const askedOffline = await C.page.evaluate(
+		(hash) => window.__stores.assetShare.requestAsset(hash),
+		ghostHash
+	);
+	h.check(
+		askedOffline === false,
+		'requestAsset reports FALSE with nobody connected — it did not send, so it must not claim to have'
+	);
+	const ghostRowsOffline = await C.page.evaluate((hash) => {
+		let v;
+		window.__stores.transferLedger.transfers.subscribe((x) => (v = x))();
+		return v.filter((t) => t.hash === hash).length;
+	}, ghostHash);
+	h.check(
+		ghostRowsOffline === 0,
+		`and it minted no ledger row (${ghostRowsOffline}) — a spinner for a request that never left is one nothing can ever resolve`
+	);
+	h.check(
+		(await itemsOf(C)).every((i) => i.hash !== riseFile.hash),
+		"C does not hold A's file before the connection opens (the premise the next section measures)"
+	);
+
+	await h.connect(C, A);
+
+	// ---- 56. THE CONNECT EDGE PULLS, even when no document can install -------------
+	//
+	// Cause (ii). C's stamp is ahead of everything A will send, so latest-wins refuses
+	// every incoming document — correctly — which means `applySharedIndex` never runs
+	// here and the index-arrival sweep that auto-download used to depend on ENTIRELY can
+	// never fire. The rise edge is the only thing left that can ask.
+	//
+	// COUNTERFACTUAL (measured by hand during development, since the subscriber is a
+	// closure no page script can reach): with `if (revived && get(autoDownload))` put
+	// back in startSharedLibrary, retryUnavailable() returns 0 on a fresh peer, so the
+	// pull never runs and this section times out — riseedge.txt was still absent from C
+	// after the full wait, while section 57 below stayed green, which is exactly the
+	// reported shape: the index is there, the bytes are not.
+	await h.eventually(
+		() => itemsOf(C),
+		(items) => items.some((i) => i.hash === riseFile.hash),
+		'a peer arriving is enough on its own: the bytes are fetched with nobody pressing anything',
+		20000
+	);
+	const mC13 = await manifestOf(C);
+	h.check(
+		mC13.name === '' && mC13.changedAt >= seedStamp,
+		`...and no document installed while that happened — ours is newer, so A's was refused (name ${JSON.stringify(mC13.name)}, stamp +${mC13.changedAt - seedStamp})`
+	);
+
+	// ---- 57. a files-only host ANSWERS getproject ----------------------------------
+	//
+	// Cause (i), end to end. C never broadcasts after connecting (no document installs
+	// here, so nothing calls publishMine), and C's row was published while C was alone —
+	// so the handshake reply is the ONLY way A can learn that onlyfiles.txt exists.
+	// Before the widening `sendProjectManifest` returned early on exactly this document.
+	await h.eventually(
+		() => manifestOf(A),
+		(m) => (m.items ?? []).some((r) => r.hash === onlyFile.hash),
+		"the joiner's getproject is answered — A learns of a file it could hear about no other way"
+	);
+	await h.eventually(
+		() => itemsOf(A),
+		(items) => items.some((i) => i.hash === onlyFile.hash),
+		'...and A downloads it off the back of that index, again with nobody pressing anything',
+		20000
+	);
+
+	// ---- 58. ...and the ghost hash is still askable --------------------------------
+	//
+	// The other half of cause (iii), and the check that stops the fix being "requestAsset
+	// records nothing, ever": the same hash that was refused while offline asks
+	// successfully now, and a second synchronous call is refused — so the one-ask slot IS
+	// armed, by the ask that actually left. Both calls in ONE evaluate, because A answers
+	// `assetmissing` for a hash nobody holds and that clears the slot again.
+	const ghostPair = await C.page.evaluate((hash) => {
+		const first = window.__stores.assetShare.requestAsset(hash);
+		const second = window.__stores.assetShare.requestAsset(hash);
+		return [first, second];
+	}, ghostHash);
+	h.check(
+		ghostPair[0] === true,
+		`the offline attempt left the one-ask slot free, so the hash asks now (${JSON.stringify(ghostPair)})`
+	);
+	h.check(
+		ghostPair[1] === false,
+		'and the ask that DID leave arms it — the invariant is "in pendingRequests iff a request is out and unresolved", not "never recorded"'
+	);
+	await h.eventually(
+		() =>
+			C.page.evaluate((hash) => {
+				let v;
+				window.__stores.transferLedger.transfers.subscribe((x) => (v = x))();
+				return v.filter((t) => t.hash === hash).map((t) => t.state);
+			}, ghostHash),
+		(states) => states.length > 0,
+		'the connected ask minted the ledger row the offline one correctly did not'
+	);
+
 	// ---- 14. no render crash anywhere ---------------------------------------------
 	for (const [label, p] of [
 		['A', A],
-		['B', B]
+		['B', B],
+		['C', C]
 	]) {
 		const errs = h.pageErrors(p);
 		h.check(errs.length === 0, `${label}: no page errors (${errs.slice(0, 2).join(' | ')})`);

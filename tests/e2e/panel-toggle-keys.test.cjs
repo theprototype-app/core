@@ -74,13 +74,15 @@ h.run(async () => {
 	d = await dockState(A.page);
 	h.check(d.visible === 'flow', `1.1 N brings the docked Node editor tab back (visible=${d.visible})`);
 	h.check(d.flowClosed === false, '1.2 N did NOT close it (the old bare store flip would have)');
-	h.check(d.explClosed === true, '1.3 the dock stays exclusive: showing the flow tab closes the docked Explorer');
+	h.check(d.explClosed === false, '1.3 the Explorer stays open behind it — the dock is tabs now, not one exclusive slot');
 
 	// pressing N again, now that the flow dock IS the visible panel, hides it (the
-	// button semantics the dock suites already pin)
+	// button semantics the dock suites already pin). The Explorer is still a docked
+	// tab, so the dock falls back to it rather than going empty.
 	await press(A.page, 'n');
 	d = await dockState(A.page);
-	h.check(d.flowClosed === true && d.visible === null, `1.4 a second N hides the docked Node editor (visible=${d.visible})`);
+	h.check(d.flowClosed === true, '1.4 a second N hides the docked Node editor');
+	h.check(d.visible === 'explorer', `1.5 the dock falls back to the Explorer tab (visible=${d.visible})`);
 
 	// --- 2. N on a FLOATING Node editor buried under the floating Explorer ---
 	await reload(A.page, 'false', 'false');

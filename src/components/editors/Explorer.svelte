@@ -4,8 +4,9 @@
 	// Explorer (95, tree v2 in 106): dockable asset browser — real file-manager
 	// tree on the left (inline create/rename, expand/collapse, drag re-parent,
 	// cascade delete, resizable), thumbnail grid on the right (subfolder cards
-	// + items), drag files in to import. Shares the bottom dock with the Flow
-	// editor as notebook tabs (bottomDock.js); undocks into a floating window.
+	// + items), drag files in to import. It is an ordinary bottom-dock TAB beside
+	// the Flow-family views (bottomDock.js), sharing their strip and their height;
+	// undocks into a floating window.
 	import { get } from 'svelte/store';
 	import { tick, untrack } from 'svelte';
 	import { explorerClose, mobileUndockAllowed, explorerSceneSaveArm, peers } from '../../stores/appStore.js';
@@ -156,12 +157,13 @@
 	import { sceneAssets } from '$lib/sceneAssets';
 	import { setNodeData } from '$lib/nodesHandler';
 	import { findNodeAnyGraph } from '../../stores/flowStore';
-	import { bottomDockActive, visibleDockKey, setDockOccupant } from '$lib/bottomDock';
+	import { bottomDockActive, visibleDockKey, setDockOccupant, dockHeight } from '$lib/bottomDock';
 	import { dragWindow } from '$lib/dragWindow';
 	import { focusStack } from '$lib/windowFocus';
 	import { tabbable, resizeGroup, tabGroups } from '$lib/windowTabs';
 	import { dockable } from '$lib/docking';
 	import ContextMenu from '../ContextMenu.svelte';
+	import DockTabs from '../DockTabs.svelte';
 	import WindowShell from '../shared/WindowShell.svelte';
 	import { clampWinSize, clampResize, anchorOf } from '$lib/windowSize';
 	import { fly } from 'svelte/transition';
@@ -173,7 +175,6 @@
 	const WIN_MIN = { minW: 420, minH: 280 };
 	const WIN_DEFAULT = { w: 720, h: 440 };
 
-	let height = $state(300);
 	let inlineStats: any = $state(null); // N4: poly stats for the Properties inline preview
 	let docked = $state(true);
 	let winW = $state(720);
@@ -187,7 +188,16 @@
 	let shell = $state<any>(null);
 	let selected = $state<any>(null);
 	if (typeof localStorage !== 'undefined') {
-		height = clampH(parseInt(localStorage.getItem('explorerHeight') ?? '300'));
+		// one-shot migration: the Explorer used to keep a docked height of its own
+		// ('explorerHeight'). It is a dock TAB now, so the dock's shared height owns
+		// it — adopt the old value once, then drop the key.
+		try {
+			const legacyH = localStorage.getItem('explorerHeight');
+			if (legacyH) {
+				dockHeight.set(clampH(parseInt(legacyH) || 300));
+				localStorage.removeItem('explorerHeight');
+			}
+		} catch {}
 		docked = localStorage.getItem('explorerDocked') !== 'false';
 		// 18-B: a size saved on a bigger screen must not come back oversized —
 		// that is the state whose resize grip sits off-screen. Fitted BEFORE the
@@ -219,12 +229,11 @@
 		if (v) bottomDockActive.set('explorer'); // re-docking makes it the visible panel
 	}
 
-	// The Explorer is the dock's separate (exclusive) panel — it reports docked+open
-	// (+height for the --bottom-inset) and is visible only when it owns the dock. It is
-	// mutually exclusive with the Flow-family tabs (activating a Flow tab closes it), so
-	// it shows NO tab strip of its own.
+	// A dock tab like any other: report docked+open (+ the SHARED dock height, which
+	// feeds --bottom-inset) so the strip lists it, and render only while it is the
+	// visible tab. Being covered by another tab closes nothing — this stays open.
 	$effect(() => {
-		setDockOccupant('explorer', !$explorerClose && docked, height);
+		setDockOccupant('explorer', !$explorerClose && docked, $dockHeight);
 		return () => setDockOccupant('explorer', false);
 	});
 	const dockVisible = $derived($visibleDockKey === 'explorer');
@@ -235,7 +244,7 @@
 	const effW = $derived(myGroup ? myGroup.rect.width : winW);
 	const effH = $derived(myGroup ? myGroup.rect.height : winH);
 
-	// --- docked: top-edge resize (Flow pattern) ---
+	// --- docked: top-edge resize (shared dock height, persisted by the store) ---
 	let resizing = $state(false);
 	function startResize(e: any) {
 		resizing = true;
@@ -244,13 +253,12 @@
 	}
 	function doResize(e: any) {
 		if (!resizing) return;
-		height = clampH(height - e.movementY);
+		dockHeight.update((h) => clampH(h - e.movementY));
 	}
 	function endResize(e: any) {
 		if (!resizing) return;
 		resizing = false;
 		e.currentTarget.releasePointerCapture?.(e.pointerId);
-		localStorage.setItem('explorerHeight', String(height));
 	}
 
 	// --- undocked: corner resize ---
@@ -4543,7 +4551,7 @@
 			id="explorer-list"
 			transition:fly={{ y: 300, duration: 200 }}
 			class="fixed inset-x-0 bottom-0 bg-white p-2 dark:bg-gray-800 {dockVisible ? '' : 'hidden'}"
-			style="z-index: var(--z-bottom); height: {height}px; border-top: 1px solid rgb(55 65 81 / 0.6)"
+			style="z-index: var(--z-bottom); height: {$dockHeight}px; border-top: 1px solid rgb(55 65 81 / 0.6)"
 			ondragover={(e) => {
 				if (canAccept(e)) return;
 				e.preventDefault();
@@ -4561,6 +4569,7 @@
 				onpointermove={doResize}
 				onpointerup={endResize}
 			></div>
+			<DockTabs />
 			<div class="mb-1 flex items-center gap-2">
 				<span class="shrink-0 text-xs font-semibold text-gray-200"><FolderTree size={16} class="mr-1" aria-hidden="true" />Explorer</span>
 				<!-- `shrink-0`: the identity chip beside it is the flex item that gives way -->
@@ -4581,7 +4590,7 @@
 					onclick={() => setDocked(false)}>⧉</button
 				>
 			</div>
-			<div style="height: {height - 44}px">
+			<div style="height: {$dockHeight - 44}px">
 				{@render content()}
 			</div>
 		</div>

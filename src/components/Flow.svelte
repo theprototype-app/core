@@ -2,7 +2,7 @@
 	// Flow host: the Node editor. DOCKED mode is a Flow-family TAB in the shared bottom
 	// dock (DockTabs strip; shares dockHeight with Flow Code + Animation; only the
 	// visible tab renders). UNDOCKED mode is a floating, resizable window. Both persist.
-	import { flowGraphClose, flowCodeClose, animationClose, uvEditorClose, mobileUndockAllowed, shaderEditorClose, hudEditorClose } from '../stores/appStore.js';
+	import { flowGraphClose, mobileUndockAllowed } from '../stores/appStore.js';
 	import { get } from 'svelte/store';
 	import { onMount } from 'svelte';
 	import { SvelteFlowProvider } from '@xyflow/svelte';
@@ -17,6 +17,7 @@
 	import { clampWinSize, clampResize, anchorOf } from '$lib/windowSize';
 	import { dockable } from '$lib/docking';
 	import { setDockOccupant, dockHeight, visibleDockKey, activateDock } from '$lib/bottomDock';
+	import { dockAddItems } from '$lib/dockMenu';
 	import { fly } from 'svelte/transition';
 
 	const clampH = (h: number) => Math.min(Math.max(h || 320, 200), Math.round(window.innerHeight * 0.8));
@@ -73,15 +74,10 @@
 	const effH = $derived(myGroup ? myGroup.rect.height : winH);
 
 	// Flow "+" (floating window only — docked mode uses the DockTabs strip): open
-	// another Flow-family view. They start docked, so they appear as dock tabs.
+	// another dock view. They start docked, so they appear as dock tabs. Same list the
+	// strip's "+" renders ($lib/dockMenu) — they used to be two copies that drifted.
 	let addMenu: { x: number; y: number } | null = $state(null);
-	const addItems = [
-		{ label: '＋ Flow Code', tooltip: 'Edit the graph as JSON', action: () => { flowCodeClose.set(false); activateDock('flowcode'); } },
-		{ label: '＋ Animation', tooltip: 'Animate the selected object', action: () => { animationClose.set(false); activateDock('animation'); } },
-		{ label: '＋ UV editor', tooltip: 'Edit the selected mesh’s UV map and textures', action: () => { uvEditorClose.set(false); activateDock('uv'); } },
-		{ label: '＋ Shader editor', tooltip: 'Drive this material from a node graph', action: () => { shaderEditorClose.set(false); activateDock('shader'); } },
-		{ label: '＋ HUD editor', tooltip: 'Lay out the on-screen HUD its nodes drive', action: () => { hudEditorClose.set(false); activateDock('hud'); } }
-	];
+	const addItems = dockAddItems();
 	function openAddMenu(e: MouseEvent) {
 		const r = (e.currentTarget as HTMLElement).getBoundingClientRect();
 		addMenu = { x: r.left, y: r.bottom + 4 };

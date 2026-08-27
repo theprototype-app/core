@@ -1,15 +1,20 @@
-import { writable, derived, get } from 'svelte/store';
-import { explorerClose } from '../stores/appStore';
+import { writable, derived } from 'svelte/store';
 
-// Bottom dock (roadmap #9 tail rework): the dock shows exactly ONE panel at a time.
-// The Flow-family — Node editor (flow) / Flow Code (flowcode) / Animation (animation)
-// — are notebook TABS in the dock (DockTabs.svelte); the Explorer is a SEPARATE panel
-// that is MUTUALLY EXCLUSIVE with them: activating any Flow tab closes the Explorer,
-// and the Explorer itself shows no tabs. Each panel reports present(docked+open)+height
-// via setDockOccupant; only the visible one renders (the rest hide). The visible
-// panel's height publishes as --bottom-inset so drawers/edge-docked windows sit above it.
+// Bottom dock: the dock shows exactly ONE panel at a time, and every panel that is
+// docked+open is a notebook TAB in it — the Flow family (Node editor / Flow Code /
+// Animation / UV editor / Shader editor / HUD editor) AND the Explorer alike, one
+// strip rendered by whichever panel is showing (DockTabs.svelte). Nothing here
+// force-closes anything: switching tabs changes only WHICH panel renders, so an
+// Explorer covered by the Node editor stays open as a hidden tab (it used to be
+// closed outright — the dock's two systems collapsed into one in the controls
+// rework). Each panel reports present(docked+open)+height via setDockOccupant; only
+// the visible one renders (the rest hide) and its height publishes as --bottom-inset
+// so drawers/edge-docked windows sit above it.
+// This module imports NO app stores — it is dock bookkeeping and nothing else.
 
 export const FLOW_FAMILY = ['flow', 'flowcode', 'animation', 'uv', 'shader', 'hud'];
+/** every panel that can be a dock tab, in strip order (Node editor first) */
+export const DOCK_FAMILY = [...FLOW_FAMILY, 'explorer'];
 /** @type {Record<string, string>} */
 export const DOCK_TITLES = { flow: 'Node editor', flowcode: 'Flow Code', animation: 'Animation', uv: 'UV editor', shader: 'Shader editor', hud: 'HUD editor', explorer: 'Explorer' };
 
@@ -28,7 +33,7 @@ function clampH(h) {
 	const max = typeof window !== 'undefined' ? Math.round(window.innerHeight * 0.8) : 800;
 	return Math.min(Math.max(h || 320, 160), max);
 }
-/** shared height of the Flow-family dock (the Explorer keeps its own height) */
+/** shared height of the dock — ONE value for every tab, Explorer included */
 export const dockHeight = writable(clampH(parseInt(ls?.getItem('flowDockHeight') ?? '320')));
 dockHeight.subscribe((value) => {
 	try {
@@ -50,9 +55,15 @@ export function setDockOccupant(key, present, height = 0) {
 	});
 }
 
-/** the Flow-family panels currently open+docked, as tabs (Node editor first) */
+/** the Flow-family panels currently open+docked (the Node editor button owns this
+ * group, and the flow-dock suites read it — it is NOT the tab strip) */
 export const flowTabs = derived(dockOccupants, ($o) =>
 	FLOW_FAMILY.filter((k) => $o[k]?.present).map((k) => ({ key: k, title: DOCK_TITLES[k] }))
+);
+
+/** every panel currently open+docked, as the dock's tabs (what DockTabs renders) */
+export const dockTabs = derived(dockOccupants, ($o) =>
+	DOCK_FAMILY.filter((k) => $o[k]?.present).map((k) => ({ key: k, title: DOCK_TITLES[k] }))
 );
 
 /** the single panel that is actually VISIBLE in the dock (null if the dock is empty) */
@@ -69,23 +80,14 @@ export const bottomInset = derived([dockOccupants, visibleDockKey], ([$o, $key])
 );
 
 /**
- * Make `key` the visible dock panel. The Flow-family and the Explorer are mutually
- * exclusive ONLY in the dock — the actual closing of the Explorer happens reactively
- * (see below) when a Flow-family panel becomes the VISIBLE dock panel, so a FLOATING
- * Node editor / Flow Code never closes a docked Explorer.
+ * Make `key` the visible dock panel. Purely a selection: the tab that was showing
+ * stays open and simply stops rendering, so no panel is ever closed by another one
+ * arriving.
  * @param {string} key
  */
 export function activateDock(key) {
 	bottomDockActive.set(key);
 }
-
-// Exclusivity: the dock has ONE slot. Close the Explorer only when a DOCKED Flow-family
-// panel actually becomes the visible dock panel — a floating Node editor never makes a
-// Flow-family key the visible key, so a docked Explorer is left alone (they collide only
-// when BOTH are docked).
-visibleDockKey.subscribe((key) => {
-	if (key && FLOW_FAMILY.includes(key) && get(dockOccupants).explorer?.present) explorerClose.set(true);
-});
 
 // publish the visible dock height as a CSS var so drawers/docked windows adjust (105)
 if (typeof document !== 'undefined') {

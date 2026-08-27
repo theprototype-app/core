@@ -1291,6 +1291,36 @@ your files). Two-peer verification is required for anything touching replication
 VR features: cover the extracted math/state headlessly (computeMoveOffset,
 computeTeleportArc pattern) and note that on-device feel is the user's manual check.
 
+## Roadmap 22 rounds 19-28 — `window-header-ranking` (30), `tab-group-stacking` (17)
+
+- **WHEN THE NUMBERS SAY FINE AND THE REPORT SAYS BROKEN, TAKE THE SCREENSHOT.** The
+  tab-group "header breaks" report survived four clean metrics — `scrollWidth` vs
+  `clientWidth`, header height, flex-wrap, the last button's right edge, and the member
+  header's position against the strip. A `page.screenshot` with a clip round the group
+  showed it in one look: the node editor at 260px with its palette, toolbar and canvas
+  overlapping. Pixels are not only for pixel features.
+- **A CONTROL THAT TOGGLES IS NOT AN OPENER.** `#explorer-slot` toggles the dock, so
+  clicking it blind made a suite pass and fail on alternate runs while nothing about the
+  app changed — the dock's state on load is not something to assume. Read the state, act
+  only if needed.
+- **A FIXTURE CAN QUIETLY CONTAIN THE THING IT IS COMPARING AGAINST.** The first version of
+  the strip-vs-window z check merged the object list INTO the group, so it compared a strip
+  against one of its own members and passed for the wrong reason. When a check is about two
+  things being distinct, assert that they are.
+- **A THIRD TAB RAISES THE FLOOR BY ~96px, WHICH HID THE CASE UNDER TEST.** The user's repro
+  is a TWO-member group; a leftover member from an earlier section made the group wide
+  enough that nothing broke. Count the fixture's members when the thing being measured
+  depends on how many there are.
+- **A HIDDEN ELEMENT MEASURES ZERO**, so a suite that waits for things to settle can miss a
+  transient break entirely — sample immediately after the state change as well. (Here even
+  the 40ms sample came back clean, which is how I learned this was not the user's bug.)
+- **A CHECK THAT PASSES WITH THE FIX REMOVED IS NOT A GUARD.** Two checks here survived
+  their counterfactual, and they are LABELLED as pinning a property rather than deleted —
+  the property is worth having, the claim is not.
+- **CHECK THE LINE ENDINGS OF A FILE YOU CREATED.** The Write tool emits LF while the repo
+  is CRLF, so several `\r\n`-based patches to a new suite matched nothing and reported
+  success. `split('\r\n')` returning one element is the tell.
+
 ## Roadmap 22 rounds 15-18 — `preview-animation` (46)
 
 - **A FIXTURE SHORTER THAN THE FIRST FAILING CASE PROVES NOTHING ABOUT IT.** The frame

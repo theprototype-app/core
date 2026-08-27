@@ -307,6 +307,22 @@ loadable play content. Everything a user does must be visible to connected peers
   in the window. A range, a checkbox and a button are controls; only a text input, a
   textarea or a contenteditable is typing. The one exception kept on purpose: a focused
   range still owns the ARROWS.
+  · **R22 ROUNDS 19-28 — THE CORNER, THE HEADER, AND THE TRANSPORTS.** The corner row holds
+  ONE reading: the mesh facts if the statistics are on, the gesture line if they are not
+  (they default OFF, so a fresh preview greets you with what to DO). The gesture line
+  PERSISTS — round 14 made it an onboarding prompt on the standard every 3D viewer follows,
+  and round 19 changed what the line IS, so a row that empties itself after your first
+  click just looks broken. Both readings sit at the very bottom, UNDER the animation
+  transport the way a sound's filename sits under its strip, and both stand down below full
+  opacity — as does the transport itself, a faded window being a reference.
+  · OPACITY IS LOCKED for sounds and folders (disabled with the reason, the Users-popover
+  rule): fading exists so a window can be a reference over the scene, and a sound has
+  nothing to see through.
+  · THE HEADER HAS A RANKING and its walk is anchored LEFT — see the gotchas for both the
+  overflow rule and the counter that must not move. The order is walk / filename / zoom /
+  cog / close, and the zoom trio leaves first because the wheel and a double-click already
+  do its whole job.
+  · PANNING survives a zoom-out (the stranding gotcha).
   · OPACITY, third and final placement: on the CONTENT, with the panel's and the body's
   backgrounds transparent, so the header and the cog keep their own strength. See the
   ancestor-opacity gotcha for why no other arrangement can express that.
@@ -334,6 +350,14 @@ loadable play content. Everything a user does must be visible to connected peers
   bytes. A .tpscene prefab's DOCUMENTS follow the objects asynchronously, keyed by the uuid
   map the parse already builds — which is why `buildPrefabElement` gained `keepUuids`
   (three's `clone()` mints fresh ones, and the documents are keyed by uuid).
+- **WINDOW CHROME, R22 ROUNDS 20/25/26/28**: the Explorer header reads filter -> view ->
+  transfers (the first two both change what the grid shows; the log is about bytes moving
+  between machines and was interrupting them), and every floating header — the Explorer's,
+  the preview's, the object list's — sheds its expendable pieces on a MEASURED width while
+  keeping the way out. `windowFocus` spends its five-slot z band (40..44, under the hud at
+  45) on the TOP of the stack rather than clamping it, so the windows you have just been
+  using stay strictly ordered and only the deep ones share; `windowTabs.groupFloor` takes
+  the worst case across a group's members. All four are in the gotchas.
 - `src/lib/objectPermissions.js` (#14, store-only) — viewer object permissions, ONLY
   active when a roles plugin publishes `rolesInfo` (OSS byte-unchanged): `canEditObject`
   (a viewer edits ONLY their own `__localOnly` objects), `markLocalOnly`/`clearLocalOnly`,
@@ -1736,6 +1760,42 @@ loadable play content. Everything a user does must be visible to connected peers
 
 ## Hard-won gotchas (do not rediscover)
 
+- **WHEN A FLEX ROW OVERFLOWS, WHAT FALLS OFF THE END IS WHATEVER IS LAST IN THE MARKUP —
+  and in a window header that is the way OUT.** The preview window loses its close button,
+  the floating Explorer its dock AND its close. So a narrow header needs a RANKING, and the
+  test of one is not "does something hide" but "is the exit still there when it does". The
+  ranking that works puts the expendable pieces first (a zoom trio the wheel already does,
+  a search box beside the grid it searches, a window's own name while you are looking at
+  it) and pins the ones you navigate with. MEASURE IT WITH A ResizeObserver, never a media
+  query: a floating window is resized by its own grip and can be 240px wide on a 1440px
+  screen. A container query reads the right box but brings containment that makes the
+  element a containing block for `position: fixed` descendants — the transform/
+  backdrop-filter trap by another door, and these headers host menus.
+- **ZERO IS NOT A WIDTH.** A tab group hides its inactive members with `display: none`, and
+  a hidden element measures 0 — so any layout that reacts to its own measured size sees
+  0px for every member behind a tab and trips every threshold at once. Keep the last real
+  measurement until there is a new one: zero means "not on screen", which is a different
+  fact from "there is no room".
+- **A TAB GROUP'S MINIMUM IS THE WORST CASE ACROSS ITS MEMBERS, not a constant.** A group
+  is ONE box showing one member at a time, so a size that suits the member on screen can
+  wreck the one behind it — and you do not find out until you switch tabs, by which point
+  you have forgotten what you resized. Members declare `minW`/`minH` through `tabbable`
+  and `groupFloor` takes the maximum of those, of what the tab strip needs to show its own
+  tabs, and of the floor below which no window is usable. The node editor declares
+  460x320; at the old flat 260 its palette, toolbar and canvas had nowhere to be.
+- **A GATE THAT DISABLES THE GESTURE THAT WOULD UNDO ITS OWN STATE STRANDS THE USER.**
+  Image panning was gated on `zoom > 1` — sound, since an image smaller than its frame has
+  nothing to pan — but pan to a corner, zoom out, and the picture sits off to one side with
+  the only gesture that could recentre it switched off. Ask whether the state a gate
+  excludes can be REACHED from a state it permits; if it can, the gate has to survive the
+  trip.
+- **A COUNTER THAT GAINS A DIGIT MOVES EVERYTHING AFTER IT, and `tabular-nums` alone does
+  not fix it.** Equal-width digits make 1/25 and 8/25 measure the same; they do nothing
+  when 9 becomes 10. Reserve the width of the WIDEST possible value — for "n of N" the
+  numerator can never exceed the denominator, so it is `String(of).length * 2 + 1` in
+  `ch`. Reserve rather than PAD: padded text is left-heavy and reads as a typo, while a
+  centred number in a fixed box reads as a counter. Measured on the preview's file walk:
+  4.79px of movement without it, under the cursor of the button being clicked.
 - **A FRAME -> SECONDS -> FRAME ROUND TRIP IS NOT THE IDENTITY, and the first casualty is
   frame 123.** A step converts a frame index to seconds (`n / fps`) and any readout
   converts it back (`t * fps`); in binary floating point `123 / 30` is 4.1 and `4.1 * 30`
@@ -3722,6 +3782,29 @@ override for e2e — never share 5173 (the user's main-checkout server).
   (open-core: OSS ships only inert hooks — capability gate / auth hook /
   VITE_CLOUD_PLUGIN — cloud repo holds registration/rooms/roles; contract in its
   MAINTAINING.md).
+- Status (2026-08-27, latest): **ROADMAP 22 ROUNDS 19-28 — THE PREVIEW'S CORNER, WINDOW
+  CHROME, AND TWO TAB-GROUP BUGS.** Six commits on `feat/22-round12`, NOT pushed. Baseline
+  **383/62** (down from 385: typing callbacks while restoring JSDoc my own doc blocks had
+  displaced), build green, guards proven by breaking the code EIGHT times. New suites
+  `window-header-ranking` (30) and `tab-group-stacking` (17).
+  · **R19/R21** the corner holds ONE reading and the gesture line persists — this REVERSED
+  round 14's interaction-prompt rule at the user's ask, and correctly: round 19 changed what
+  the line IS. **R22** a faded window hides its transport, and opacity is locked where it
+  means nothing. **R23/R25** three headers learn what to shed and what never to.
+  **R20** the Explorer header's reading order, plus a REGRESSION it exposed —
+  `explorer-header-panels` had been red since round 11's view toggle outgrew the row.
+  **R24** the walk anchored left, and a counter that does not move. **R26** a tab-group
+  floor + the z band spent on the top of the stack. **R27** panning that cannot strand you,
+  and zero-is-not-a-width. **R28** the floor is the worst case across the MEMBERS.
+  · **THE METHOD NOTE WORTH KEEPING**: the tab-group "header breaks" report took four
+  metrics that all came back clean — no overflow, no wrap, close button present, member
+  header exactly under the strip — before a SCREENSHOT showed the node editor visibly
+  wrecked at 260px. When a report says something breaks and the numbers disagree, take the
+  picture.
+  · **NOT REPRODUCED**: the original stacking report (a group's strip drawing over a window
+  in front of it). The z-order measured correct in every fixture I could build; what I
+  found and fixed by reading is the band saturating at the top, which has the same shape.
+  · **OWED**: all of it on a real pointer, and the new thresholds in non-dark themes.
 - Status (2026-08-27): **ROADMAP 22 ROUNDS 14-18 — PREVIEW SETTINGS SCOPE, AND THE
   ANIMATION TRANSPORT.** Two commits on `feat/22-round12`, NOT pushed: `1e0c7ae` (r14) and
   the r15-18 batch. Baseline **385/62** at every commit, build green, five guards proven by

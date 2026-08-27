@@ -46,6 +46,29 @@ function applyMember(node, rect, visible) {
 	node.style.width = rect.width + 'px';
 	node.style.height = rect.height + 'px';
 	node.style.display = visible ? '' : 'none';
+	/**
+	 * R22 ROUND 29 — WHO OWNS THIS WINDOW'S GEOMETRY, stated on the node itself.
+	 *
+	 * A grouped window is positioned by its GROUP, not by its own dragWindow rect, and
+	 * dragWindow has a rule that fights that: on a hidden -> visible transition it re-clamps
+	 * the window fully on-screen from ITS OWN stored position. A tab switch is exactly that
+	 * transition, so the member being revealed jumped back to wherever it last floated while
+	 * the tab strip stayed on the group rect — the strip visibly detached from the window,
+	 * and the group rect then re-derived from the misplaced member, so switching BACK was
+	 * wrong too. Measured on the user's repro: group at (160,120), Explorer at (160,120),
+	 * node editor at (120,90), its own defaultRect.
+	 *
+	 * A DATA ATTRIBUTE rather than an import: dragWindow already owns this node and reads
+	 * its own DOM, so a flag on the element says "someone else places this" without either
+	 * module learning about the other. windowTabs is the only writer, and it clears the flag
+	 * on every path a window leaves a group by.
+	 */
+	node.dataset.tabMember = '1';
+}
+
+/** A window is placing itself again — see `applyMember`. @param {any} node */
+function releaseMember(node) {
+	if (node?.dataset) delete node.dataset.tabMember;
 }
 
 function applyGroups() {
@@ -110,6 +133,7 @@ export function removeFromGroup(key, restoreDisplay = true) {
 	const group = groupOfKey(key);
 	if (!group) return;
 	const entry = registry.get(key);
+	if (entry) releaseMember(entry.node); // it places itself again from here
 	if (entry && restoreDisplay) entry.node.style.display = '';
 	tabGroups.update((groups) =>
 		groups
@@ -122,6 +146,7 @@ export function removeFromGroup(key, restoreDisplay = true) {
 			.filter((g) => {
 				if (g.members.length >= 2) return true;
 				const last = registry.get(g.members[0]);
+				if (last) releaseMember(last.node); // the last one out is a lone window again
 				if (last) last.node.style.display = '';
 				return false;
 			})
@@ -248,6 +273,7 @@ export function tearOff(key, x, y) {
 	const entry = registry.get(key);
 	removeFromGroup(key);
 	if (entry) {
+		releaseMember(entry.node); // torn off: its own position from now on
 		entry.node.style.left = Math.max(0, x - 100) + 'px';
 		entry.node.style.top = Math.max(0, y - 12) + 'px';
 		entry.node.style.display = '';

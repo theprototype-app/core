@@ -96,10 +96,6 @@ input.tp-check:disabled {
 	/* how much of the bottom the Controls pill + HUD buttons occupy; side drawers
 	   inset ABOVE it on narrow screens (same idea as --bottom-inset for the dock). */
 	--controls-inset: 0px;
-	/* inset for DOCKED Flow/Explorer content — only on a truly folded screen, where the
-	   Controls actually reach the node palette / folder tree. Above ~500px there's room,
-	   so it stays 0 (no wasted strip). */
-	--dock-inset: 0px;
 }
 
 /* The old flowbite z-50/z-40 → --z-modal remap is GONE: flowbite-svelte 1.x renders
@@ -225,13 +221,6 @@ input.tp-check:disabled {
 	   covering them, while Controls stays uncovered (it is z-hud, above the drawer). */
 	:root {
 		--controls-inset: 68px;
-	}
-}
-/* folded screens only: the docked Flow/Explorer content insets above the Controls (which
-   now overlap the palette/tree). Above this width there's room, so no inset. */
-@media (max-width: 500px) {
-	:root {
-		--dock-inset: var(--controls-inset, 0px);
 	}
 }
 /* Touch / limited-width: hide the "undock into a floating window" buttons (Flow,

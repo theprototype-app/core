@@ -65,14 +65,17 @@ export function pipSize(object) {
  * @param {{w: number, h: number}} size
  * @param {{width: number, height: number}} viewport
  * @param {number} [panelWidth] width of an open right-side panel (0 = none)
+ * @param {number} [bottomClearance] height of the open bottom dock (0 = none), so the
+ *   parked window sits ABOVE it — the Controls pill rides above the dock now, and a
+ *   window parked on the viewport bottom would be underneath both.
  */
-export function autoPosition(size, viewport, panelWidth = 0) {
+export function autoPosition(size, viewport, panelWidth = 0, bottomClearance = 0) {
 	// the right edge keeps clear of the round HUD buttons (mic / chat) that live
 	// there, so the parked window never sits under them
 	const right = panelWidth ? MARGIN : HUD_CLEARANCE;
 	return {
 		x: Math.max(MARGIN, viewport.width - size.w - right - panelWidth),
-		y: Math.max(MARGIN, viewport.height - size.h - MARGIN)
+		y: Math.max(MARGIN, viewport.height - size.h - MARGIN - bottomClearance)
 	};
 }
 

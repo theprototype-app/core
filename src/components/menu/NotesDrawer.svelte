@@ -259,7 +259,10 @@
 		right: 0;
 		/* default (Connect centred / not docked): below the profile icon, under the chrome */
 		top: 64px;
-		bottom: max(var(--bottom-inset, 0px), var(--controls-inset, 0px));
+		/* SUM, not max(): the Controls pill rides ABOVE the dock now (the band
+		   [bottom-inset .. +66px]), so clearing the taller of the two no longer clears
+		   both. Identical to the old max() whenever either term is 0. */
+		bottom: calc(var(--bottom-inset, 0px) + var(--controls-inset, 0px));
 		width: min(320px, 92vw);
 		z-index: calc(var(--z-bottom) - 1);
 		border-radius: 0.5rem 0 0 0.5rem;

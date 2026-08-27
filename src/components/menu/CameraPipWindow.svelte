@@ -19,6 +19,7 @@
 		autoPosition,
 		clampPosition
 	} from '$lib/cameraPip';
+	import { bottomInset } from '$lib/bottomDock';
 
 	const object = $derived($pipTarget ? ($objectsGroup?.getObjectByProperty('uuid', $pipTarget) ?? null) : null);
 	const size = $derived(object ? pipSize(object) : { w: 0, h: 0 });
@@ -39,7 +40,7 @@
 	const position = $derived(
 		$pipPosition
 			? clampPosition($pipPosition, size, { width: vw, height: vh })
-			: autoPosition(size, { width: vw, height: vh }, panelWidth)
+			: autoPosition(size, { width: vw, height: vh }, panelWidth, $bottomInset)
 	);
 
 	// publish the rect the renderer draws into (null while hidden)

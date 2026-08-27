@@ -4581,7 +4581,7 @@
 					onclick={() => setDocked(false)}>⧉</button
 				>
 			</div>
-			<div style="height: calc({height - 44}px - var(--dock-inset, 0px))">
+			<div style="height: {height - 44}px">
 				{@render content()}
 			</div>
 		</div>

@@ -21,7 +21,8 @@
 	.colocation-badge {
 		position: fixed;
 		left: 12px;
-		bottom: 12px;
+		/* rides above the bottom dock with the rest of the bottom chrome */
+		bottom: calc(var(--bottom-inset, 0px) + 12px);
 		z-index: var(--z-hud, 45);
 		display: flex;
 		align-items: center;

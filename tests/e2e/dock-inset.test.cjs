@@ -8,6 +8,26 @@ const inset = (page) =>
 		parseInt(getComputedStyle(document.documentElement).getPropertyValue('--bottom-inset') || '0')
 	);
 
+// Phase 1 (controls dock rework): where the bottom chrome sits. The Controls pill and
+// the play FAB anchor on --bottom-inset now, so they RIDE ABOVE the dock instead of
+// covering its last ~60px. (The old --dock-inset model padded the DOCK's content and
+// only did so at <=500px, so every wider screen had the pill over the node palette.)
+const bottomChrome = (page) =>
+	page.evaluate(() => {
+		const fab = document.getElementById('play-button')?.getBoundingClientRect();
+		// the pill is flowbite's BottomNav OUTER div — the rounded bar carrying z-45
+		const pill = document.querySelector('div.rounded-full.z-45')?.getBoundingClientRect();
+		const dock = document.querySelector('#flow-list')?.getBoundingClientRect();
+		return {
+			fabBottom: fab ? Math.round(fab.bottom) : 0,
+			pillBottom: pill ? Math.round(pill.bottom) : 0,
+			dockTop: dock ? Math.round(dock.top) : 0,
+			hasFab: !!fab,
+			hasPill: !!pill,
+			vh: window.innerHeight
+		};
+	});
+
 h.run(async () => {
 	const browser = await h.launch();
 	const A = await h.setupPage(browser, 'A');
@@ -19,6 +39,19 @@ h.run(async () => {
 	await A.page.waitForTimeout(700);
 	const flowH = (await A.page.locator('#flow-list').boundingBox()).height;
 	h.check(Math.abs((await inset(A.page)) - flowH) < 2, `inset follows the dock height (${flowH})`);
+
+	// ...and with the dock open, the bottom chrome sits ABOVE it (measured here, before
+	// the sidebar opens — an open sidebar shields the lower-left corner)
+	const open = await bottomChrome(A.page);
+	h.check(open.hasFab && open.hasPill && open.dockTop > 0, 'pill, FAB and dock are all measurable');
+	h.check(
+		open.fabBottom <= open.dockTop + 2,
+		`play FAB rides above the dock (${open.fabBottom} <= ${open.dockTop})`
+	);
+	h.check(
+		open.pillBottom <= open.dockTop + 2,
+		`Controls pill rides above the dock (${open.pillBottom} <= ${open.dockTop})`
+	);
 
 	// 203: the sidebar now FLOATS ON TOP of the dock (z-hud) instead of ending
 	// above it — it's a compact panel that is never covered by the dock
@@ -80,6 +113,19 @@ h.run(async () => {
 	await A.page.locator('p[title="Node editor (N)"]').click();
 	await A.page.waitForTimeout(500);
 	h.check((await inset(A.page)) === 0, 'inset returns to 0 when the dock closes');
+
+	// ...and the bottom chrome drops back to the viewport bottom (FAB bottom:10px,
+	// pill bottom:16px — the +2 slack absorbs sub-pixel rounding)
+	await A.page.waitForTimeout(400); // the 200ms bottom transition, settled
+	const shut = await bottomChrome(A.page);
+	h.check(
+		shut.vh - shut.fabBottom <= 12,
+		`play FAB returns to the viewport bottom (${shut.vh - shut.fabBottom}px clear)`
+	);
+	h.check(
+		shut.vh - shut.pillBottom <= 18,
+		`Controls pill returns to the viewport bottom (${shut.vh - shut.pillBottom}px clear)`
+	);
 
 	// palette tabs mirror when the palette moves right
 	await A.page.locator('p[title="Node editor (N)"]').click();

@@ -634,11 +634,21 @@
 	});
 </script>
 
+<!-- The pill RIDES ABOVE the bottom dock: `--bottom-inset` is the visible docked
+     Flow/Explorer panel's height (published by $lib/bottomDock), so the pill and the
+     play FAB below sit in the band just above it instead of covering its last ~60px.
+     This replaces the old `--dock-inset` model, which padded the DOCK's content and
+     only did so at <=500px — every wider screen had the pill permanently over the
+     node palette / folder tree. The inline style is load-bearing: flowbite's
+     `application` navType puts `bottom-4` on the outer div as a utility CLASS, and an
+     inline declaration is what beats it (restProps land on that same outer div). 200ms
+     matches the dock's own fly transition, so the two move together. -->
 <BottomNav
 	position="absolute"
 	navType="application"
 	class="h-10 w-max min-w-max shrink-0 bg-white rounded-full dark:bg-gray-700 z-45"
 	classes={{ inner: 'grid-cols-7' }}
+	style="bottom: calc(var(--bottom-inset, 0px) + 16px); transition: bottom 200ms ease"
 >
 	<p class={classActive + ' rounded-l-full'} title="Move (1)" on:click={() => setTransformMode('translate')}>
 		<Move size={18} class={hasSel && $transformMode === 'translate' ? ICON_ON : ICON_OFF} aria-hidden="true" />
@@ -716,7 +726,13 @@
      instead of fighting). clip-path circles the HIT AREA too: the 50px square box
      used to intercept clicks/hovers meant for the Scale / Object-list cells it
      overlaps. fill=currentColor keeps the play triangle SOLID (lucide is
-     stroke-only by default); the 2px nudge is the classic optical centering. -->
+     stroke-only by default); the 2px nudge is the classic optical centering.
+       The transition is ONE inline declaration covering BOTH properties rather than
+     the tailwind `transition-transform duration-100` this used to carry: an inline
+     `transition:` shorthand REPLACES whatever the class set, so adding `bottom` there
+     would have silently wiped the transform transition and killed the hover-scale.
+     Inline owns both — transform keeps its 100ms, bottom rides the dock's 200ms. -->
+
 <p
 	id="play-button"
 	title={willEnterAR
@@ -724,9 +740,9 @@
 		: willEnterXR
 			? 'Enter VR'
 			: 'Play'}
-	class={classActive + ' -translate-x-1/2 rounded-full bg-primary-600 font-medium transition-transform duration-100 hover:scale-110 dark:focus:ring-primary-800'}
-	style="position: absolute; height: 50px; width: 50px; bottom: 10px; z-index: var(--z-hud);
-        display: flex; left: 50%"
+	class={classActive + ' -translate-x-1/2 rounded-full bg-primary-600 font-medium hover:scale-110 dark:focus:ring-primary-800'}
+	style="position: absolute; height: 50px; width: 50px; bottom: calc(var(--bottom-inset, 0px) + 10px); z-index: var(--z-hud);
+        display: flex; left: 50%; transition: transform 100ms, bottom 200ms ease"
 	on:click={() => {
 		checkPlay();
 	}}

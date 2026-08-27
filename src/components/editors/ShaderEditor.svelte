@@ -664,9 +664,6 @@
 		flex: 1;
 		min-height: 0;
 		display: flex;
-		/* docked panels shrink by the Controls HUD footprint on folded screens, so the
-		   canvas is never hidden behind it (the --dock-inset contract) */
-		padding-bottom: var(--dock-inset, 0px);
 	}
 	.shader-side {
 		flex: 0 0 148px;

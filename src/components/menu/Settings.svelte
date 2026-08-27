@@ -53,6 +53,14 @@
 	import { viewPrefs, setViewPrefs, resetViewPrefs, DEFAULT_VIEW_PREFS } from '$lib/viewPrefs';
 	import { showWelcomeOnStart, showWhatsNewNotice, openWelcome, openWhatsNew } from '$lib/whatsNew';
 	import { resetWindowPoses } from '$lib/vrWindowPoses';
+	import { probeFindings, probeRunning, probeSupport, runArProbe, clearProbeState } from '$lib/arProbe';
+	import { roomAlignment } from '$lib/colocation';
+	import { roomNudge, nudgeIsZero, NUDGE_MAX_M } from '$lib/colocation';
+	import { setRoomNudge, resetRoomNudge } from '$lib/colocationNudge';
+	import DragRow from '../ui/DragRow.svelte';
+	import { colocatedGhostHands } from '$lib/colocationPresence';
+	import { colocateHereFromView, stopColocation } from '$lib/colocationCalibrate';
+	import { anchorRecords, forgetRoom, forgetCandidate } from '$lib/colocationAnchors';
 	import { resetWindowLayout } from '$lib/dragWindow';
 	import { shortcuts } from '$lib/shortcuts';
 	import {
@@ -382,6 +390,10 @@
 	/** @type {any} */
 	let savedExpansion: any = null;
 	$: syncSearchExpansion(settingsQuery);
+
+	// CO3: which stored room anchor the Forget button offers — the current room when
+	// aligned (only if it has a record), else the newest record (the LAST room)
+	$: forgetKey = forgetCandidate($anchorRecords, $roomAlignment);
 	/** @param {string} query */
 	function syncSearchExpansion(query: string) {
 		const searching = !!(query || '').trim();
@@ -1341,6 +1353,177 @@
 								}}>Reset positions</button>
 						</svelte:fragment>
 						Grabbed VR menus/panels snap back to their default spots on the controllers (111: hold the other grip on one to re-place it)
+					</SettingRow>
+					<SettingRow name="Colocation probe (dev)">
+						<svelte:fragment slot="control">
+							<span class="sr-stack">
+								<button
+									id="ar-probe-run"
+									class="rounded-sm bg-gray-600 px-2 py-1 text-xs text-white hover:bg-gray-500 disabled:opacity-50"
+									disabled={$probeRunning}
+									on:click={() => {
+										// USER ACTIVATION, and this ORDER is the whole reason for the comment:
+										// probeSupport() is STARTED and deliberately NOT awaited, so runArProbe()
+										// — whose first statement is the requestSession call, with no await
+										// ahead of it — runs in the SAME task as this click. Awaiting the
+										// isSessionSupported pre-checks first would push requestSession into a
+										// later task, which is exactly the shape a runtime refuses with
+										// "requires user activation". Nothing is lost: probeSupport records its
+										// synchronous surface checks before it returns and its two async lines a
+										// moment later, and every finding carries its own step name.
+										probeSupport();
+										runArProbe();
+									}}>{$probeRunning ? 'Probing…' : 'Probe AR capabilities'}</button
+								>
+								<button
+									id="ar-probe-clear"
+									class="rounded-sm bg-gray-600 px-2 py-1 text-xs text-white hover:bg-gray-500 disabled:opacity-50"
+									disabled={$probeRunning}
+									on:click={() => clearProbeState()}>Clear stored anchor</button
+								>
+							</span>
+						</svelte:fragment>
+						<span class="font-semibold">CO0 on-device probe</span> — run this <em>inside the headset</em>: it opens an
+						immersive-ar session, creates an anchor at your feet, persists the handle and reports what the runtime
+						actually supports. Run it once, fully restart the browser, run it again — the second run's
+						<em>restore delta</em> line is the answer. The report survives the session, a reload and a restart{arSupport ===
+						false
+							? '. This device reports no immersive-ar support'
+							: ''}
+					</SettingRow>
+					{#if $probeFindings.length}
+						<SettingRow name="Probe report" noControl>
+							<div class="flex max-h-72 flex-col gap-0.5 overflow-y-auto font-mono text-[11px] leading-snug">
+								{#each $probeFindings as finding, i (i)}
+									<div class="flex gap-1.5">
+										<span class={finding.ok ? 'text-green-400' : 'text-red-400'}>{finding.ok ? '✓' : '✗'}</span>
+										<span class="whitespace-nowrap font-semibold">{finding.step}</span>
+										<span class="min-w-0 break-words text-gray-400">{finding.detail}</span>
+									</div>
+								{/each}
+							</div>
+						</SettingRow>
+					{/if}
+					<SettingRow name="Colocation">
+						<svelte:fragment slot="control">
+							<span class="sr-stack">
+								<button
+									id="colocate-here"
+									class="rounded-sm bg-gray-600 px-2 py-1 text-xs text-white hover:bg-gray-500"
+									on:click={() => colocateHereFromView()}>Colocate here</button
+								>
+								<button
+									id="colocate-stop"
+									class="rounded-sm bg-gray-600 px-2 py-1 text-xs text-white hover:bg-gray-500 disabled:opacity-50"
+									disabled={!$roomAlignment}
+									on:click={() => stopColocation()}>Stop</button
+								>
+								{#if forgetKey}
+									<button
+										id="colocate-forget"
+										class="rounded-sm bg-gray-600 px-2 py-1 text-xs text-white hover:bg-gray-500"
+										title={'Forget the saved room anchor for ' + forgetKey + ' — the next visit needs the ritual again. Stop does NOT forget.'}
+										on:click={() => forgetRoom(forgetKey)}>Forget {forgetKey}</button
+									>
+								{/if}
+							</span>
+						</svelte:fragment>
+						<span class="font-semibold" id="colocation-state"
+							>{$roomAlignment ? 'Colocated · ' + ($roomAlignment.roomKey ?? 'room') : 'Not colocated'}</span
+						>
+						— share one physical room with a co-present peer. <em>Colocate here</em> uses the current
+						viewpoint (both of you stand on the agreed spot facing the agreed way and press it); in VR the
+						radial menu's Scene ▸ Colocate offers the more accurate point + aim ritual. While colocated the
+						world stays 1:1 and a world-grab moves the SHARED room anchor, so your partner sees the scene
+						move too. Expect ~1–3 cm of agreement, not millimetres. A calibration made in-headset is
+							REMEMBERED per room (a persistent anchor): the next VR/AR session in that room re-aligns
+							with no ritual. <em>Stop</em> keeps that memory; <em>Forget</em> drops it
+					</SettingRow>
+					{#if $roomAlignment}
+						<!-- CO7: the fine-tune. Only offered while colocated — a correction has no
+						     frame to be expressed in otherwise. Room axes: +X right of the aim
+						     direction, +Y up, -Z along it. -->
+						<SettingRow name="Fine-tune" noControl>
+							<div class="flex flex-col gap-1.5">
+								<div class="flex flex-wrap items-center gap-2">
+									<DragRow
+										id="nudge-dx"
+										label="X"
+										value={$roomNudge?.dx ?? 0}
+										unit="length"
+										step={0.002}
+										snap={0.01}
+										decimals={3}
+										min={-NUDGE_MAX_M}
+										max={NUDGE_MAX_M}
+										onchange={(v) => setRoomNudge({ dx: v })}
+									/>
+									<DragRow
+										id="nudge-dy"
+										label="Y"
+										value={$roomNudge?.dy ?? 0}
+										unit="length"
+										step={0.002}
+										snap={0.01}
+										decimals={3}
+										min={-NUDGE_MAX_M}
+										max={NUDGE_MAX_M}
+										onchange={(v) => setRoomNudge({ dy: v })}
+									/>
+									<DragRow
+										id="nudge-dz"
+										label="Z"
+										value={$roomNudge?.dz ?? 0}
+										unit="length"
+										step={0.002}
+										snap={0.01}
+										decimals={3}
+										min={-NUDGE_MAX_M}
+										max={NUDGE_MAX_M}
+										onchange={(v) => setRoomNudge({ dz: v })}
+									/>
+									<DragRow
+										id="nudge-dyaw"
+										label="Yaw"
+										value={($roomNudge?.dyaw ?? 0) * (180 / Math.PI)}
+										unit="angleDeg"
+										step={0.05}
+										snap={0.5}
+										decimals={2}
+										min={-15}
+										max={15}
+										onchange={(v) => setRoomNudge({ dyaw: (v * Math.PI) / 180 })}
+									/>
+									<button
+										id="nudge-reset"
+										class="rounded-sm bg-gray-600 px-2 py-1 text-xs text-white hover:bg-gray-500 disabled:opacity-50"
+										disabled={nudgeIsZero($roomNudge)}
+										on:click={() => resetRoomNudge()}>Reset</button
+									>
+								</div>
+								<span>
+									Nudge the world so it lines up with what you actually see — a box that should
+									sit ON the table corner but hovers a centimetre off it. This is YOURS alone
+									(each headset's calibration has its own small error, so each corrects its
+									own), it is remembered per room, and it survives the automatic drift
+									correction. In VR, arm <em>Fine-tune</em> in the Scene ▸ Colocate radial: the
+									left stick slides the world, the right stick lifts and turns it. To move the
+									scene for <em>everyone</em>, two-grip grab it instead.
+								</span>
+							</div>
+						</SettingRow>
+					{/if}
+					<SettingRow name="Ghost hands">
+						<svelte:fragment slot="control"
+							><Toggle id="colocated-ghost-hands" bind:checked={$colocatedGhostHands} /></svelte:fragment
+						>
+						<span
+							>While colocated, a room-mate's avatar body, name label and voice are hidden — you are
+							looking at and listening to the real person. Their HANDS stay, drawn faint, because a
+							controller is how somebody points at a virtual object standing on a real table; turn this
+							off to hide those too. Local preference — it changes nothing for anyone else, and a REMOTE
+							peer always sees and hears you both in full</span
+						>
 					</SettingRow>
 				</AccordionItem>
 				<AccordionItem bind:open={aiExpanded}>

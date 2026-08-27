@@ -47,6 +47,14 @@ import { applyHandModel, handModelState, dropPeerHandModel } from '$lib/handMode
 import { applyRemoteEnvironment, environmentState, envPresetsState, applyRemoteEnvPresets, dropPeerEnvPresets } from '$lib/environment';
 import { applyRemoteMusic, musicState } from '$lib/sceneMusic';
 import { applyRemoteScenePhysics, scenePhysicsState } from '$lib/scenePhysics';
+// CO1: where the physical room's origin sits in content coords. The scenephysics
+// shape — one latest-wins singleton + a getroomanchor reply. The per-device ALIGNMENT
+// that composes with it is deliberately not on the wire at all.
+import { applyRoomAnchorRemote, sendRoomAnchor } from '$lib/colocation';
+// CO5: which physical ROOM a peer is in, if any — the playmode shape (a tiny per-peer
+// message, a reply riding getmodulestate, a drop at every disconnect site). Everything it
+// drives is LOCAL receive-side filtering; nobody stops broadcasting because of it.
+import { applyRemoteColocation, dropPeerColocation, sendColocationState } from '$lib/colocationPresence';
 import { applyRemoteScenePost, scenePostStates, sendScenePost } from '$lib/scenePost';
 import { applyRemoteShaderGraph, applyRemoteShaderGraphDelete, applyRemoteShaderGraphs, sendShaderGraphs } from '$lib/shaderSync';
 import {
@@ -453,6 +461,13 @@ export class PeerConnection {
 					applyRemoteMusic(data);
 				} else if(data.type == 'scenephysics') {
 					applyRemoteScenePhysics(data);
+				} else if(data.type == 'roomanchor') {
+					// CO1: the room anchor, latest-wins on `at`. Applying it never re-poses
+					// the rig here — a peer that is not colocated has no alignment to
+					// compose it with, and one that is re-composes on its own next apply.
+					applyRoomAnchorRemote(data);
+				} else if(data.type == 'getroomanchor') {
+					sendRoomAnchor(data.sender);
 				} else if(data.type == 'manifest') {
 					// 21-G2: the project manifest, latest-wins on changedAt
 					applyRemoteManifest(data);
@@ -568,6 +583,7 @@ export class PeerConnection {
 						dropPeerPlayMode(data.peerId); // 21-F3
 						dropPeerScene(data.peerId); // P2b
 						dropPeerVars(data.peerId); // 21-G4
+						dropPeerColocation(data.peerId); // CO5
 						dropPeerEnvPresets(data.peerId);
 						dropPeerHandModel(data.peerId);
 					}
@@ -658,10 +674,19 @@ export class PeerConnection {
 					sendPlayModeState(); // 21-F3: ...and so does play-mode presence
 					sendMySceneState(); // P2b: ...and where we are standing
 					sendPeerVarsState(); // 21-G4: ...and our own per-player row, if we hold one
+					sendColocationState(); // CO5: ...and our physical room, if we are in one
 				} else if(data.type == 'peervars') {
 					// 21-G4: ONE peer's OWN numbers, whole-map latest-wins. Owner-only writer,
 					// so this applier can never be the thing that clobbers somebody's score.
 					applyRemotePeerVars(data);
+				} else if(data.type == 'colocated') {
+					// CO5: presence only — "X is in physical room K". ADDITIVE: sent only on a
+					// CHANGE and only when there IS a room, so an absent peer (or one on an
+					// older build that never sends it) reads as not colocated, which is what it
+					// is. Applying it hides nothing by itself — the renderers and the voice
+					// chain compare K against OUR OWN key, so a remote peer holding two
+					// colocated rows still sees and hears both of them.
+					applyRemoteColocation(data);
 				} else if(data.type == 'playmode') {
 					// 21-F3: presence only — "X is in play mode". ADDITIVE: the message goes out
 					// only while PLAYING, so an absent peer (or one on an older build that never
@@ -750,6 +775,10 @@ export class PeerConnection {
 		if (getobjects) conn.send({type: 'getjoints', sender: this.peer.id})
 		if (getobjects) conn.send({type: 'getanim', sender: this.peer.id})
 		if (getobjects) conn.send({type: 'getscenepost', sender: this.peer.id})
+		// CO1: a REQUEST rather than a push, because a scene that never colocated must
+		// send nothing at all — `sendRoomAnchor` returns early on a null anchor, so the
+		// handshake of a non-colocated session is byte-identical to what it always was.
+		if (getobjects) conn.send({type: 'getroomanchor', sender: this.peer.id})
 		if (getobjects) conn.send({type: 'getshadergraphs', sender: this.peer.id})
 		if (getobjects) conn.send({type: 'gethuds', sender: this.peer.id})
 		if (getobjects) conn.send({type: 'gethudvalues', sender: this.peer.id})
@@ -985,6 +1014,7 @@ export class PeerConnection {
 		dropPeerPlayMode(peerId); // 21-F3
 		dropPeerScene(peerId); // P2b
 		dropPeerVars(peerId); // 21-G4
+		dropPeerColocation(peerId); // CO5
 		dropPeerEnvPresets(peerId);
 		dropPeerHandModel(peerId);
 		if (relay) this.broadcast({ type: 'disconnected', peerId });
@@ -1018,6 +1048,7 @@ export class PeerConnection {
 				dropPeerPlayMode(peerId); // 21-F3
 				dropPeerScene(peerId); // P2b
 				dropPeerVars(peerId); // 21-G4
+				dropPeerColocation(peerId); // CO5
 				dropPeerEnvPresets(peerId);
 				dropPeerHandModel(peerId);
 			}

@@ -1,7 +1,7 @@
 <script lang="ts">
-	import { Cog, Eye, FolderOpen, List, Maximize2, MessageSquare, Move, Pin, Play, RotateCcw, SquarePen, Sun, Workflow } from '@lucide/svelte';
+	import { Cog, Eye, FolderOpen, List, Maximize2, MessageSquare, Move, Pin, Play, RectangleGoggles, RotateCcw, SquarePen, Sun, Workflow } from '@lucide/svelte';
 	import { BottomNav, Listgroup } from 'flowbite-svelte';
-	import { objectsGroup, TControls, transformMode, isLocked, isVRMode, lockedObjects, globalScene, vrPassthrough, selectedObject, selectedObjects } from '../../stores/sceneStore';
+	import { objectsGroup, TControls, transformMode, isLocked, isVRMode, lockedObjects, globalScene, vrPassthrough, vrOverride, selectedObject, selectedObjects } from '../../stores/sceneStore';
 	import { chatHidden, flowGraphClose, flowCodeClose, animationClose, uvEditorClose, explorerClose, objectListClose, objectContextMenu, renamingObject, advancedMode, showEnvInList, showLocalObjects, shaderEditorClose, hudEditorClose } from '../../stores/appStore.js';
 	import { systemGroupNames } from '$lib/moduleSDK';
 	import { ENV_ROOT } from '$lib/environment';
@@ -118,6 +118,32 @@
 			raiseWindow('objects');
 		}
 	}
+
+	// CO4b: WHAT the play button is about to do, so it can show it. The condition
+	// mirrors `checkPlay`'s own test below — a supported immersive session AND no
+	// desktop override — rather than reading the hidden #vrButton's label, which is
+	// threlte's private text and only exists once its own support probe resolves.
+	// `vrPassthrough` picks WHICH session kind is asked for, so it also picks which
+	// support answer matters.
+	let vrSupported = $state(false);
+	let arSupported = $state(false);
+	// try/catch and not just .catch(): a runtime whose isSessionSupported THROWS
+	// synchronously would otherwise throw during this component's init, and this
+	// component owns the play button — the one control the app cannot lose.
+	try {
+		const xr = typeof navigator === 'undefined' ? null : (navigator as any).xr;
+		xr?.isSessionSupported?.('immersive-vr')
+			?.then((ok: boolean) => (vrSupported = !!ok))
+			?.catch(() => (vrSupported = false));
+		xr?.isSessionSupported?.('immersive-ar')
+			?.then((ok: boolean) => (arSupported = !!ok))
+			?.catch(() => (arSupported = false));
+	} catch {
+		vrSupported = false;
+		arSupported = false;
+	}
+	const willEnterXR = $derived(($vrPassthrough ? arSupported : vrSupported) && !$vrOverride);
+	const willEnterAR = $derived(willEnterXR && $vrPassthrough);
 
 	let allowPlay = true;
 	// 21-F3 REJOIN: a play press that landed inside the exit cooldown, replayed when it
@@ -720,6 +746,11 @@
      stroke-only by default); the 2px nudge is the classic optical centering. -->
 <p
 	id="play-button"
+	title={willEnterAR
+		? 'Enter AR — the scene composites over your room'
+		: willEnterXR
+			? 'Enter VR'
+			: 'Play'}
 	class={classActive + ' -translate-x-1/2 rounded-full bg-primary-600 font-medium transition-transform duration-100 hover:scale-110 dark:focus:ring-primary-800'}
 	style="position: absolute; height: 50px; width: 50px; bottom: 10px; z-index: var(--z-hud);
         display: flex; left: 50%"
@@ -727,7 +758,39 @@
 		checkPlay();
 	}}
 >
-	<Play size={24} class="ml-0.5 text-white" fill="currentColor" aria-hidden="true" />
+	<!-- CO4b: ONE entry point that SHOWS its destination. The FAB already starts play
+	     mode on desktop and an immersive session in a headset, and `$vrPassthrough`
+	     decides which KIND (#vrButton below swaps VRButton for an immersive-ar
+	     XRButton) — so the honest thing is to say so ON this button rather than grow
+	     a second one beside it.
+	       desktop  the play triangle, unchanged
+	       VR       a headset (rectangle-goggles): press this and you are IN there
+	       AR       the same headset with A and R in its two lens halves, and a
+	                slightly bigger glyph to carry them
+	     The visor is ONE path with a nose notch at the bottom centre, so its halves
+	     sit at x 7.5 and 16.5 of the 24-unit box — 31.25% and 68.75% — which is where
+	     the letters are anchored (translate(-50%,-50%) centres them on that point, so
+	     they stay put at any icon size). The overlay is `pointer-events: none` and
+	     unselectable: the circle stays ONE hit target, which #play-button's clip-path
+	     was tuned for. No `ml-0.5` on the goggles — that 2px nudge is optical
+	     centering for a TRIANGLE, and a symmetric visor with it looks off-centre. -->
+	{#if willEnterAR}
+		<span class="pointer-events-none relative inline-flex select-none items-center justify-center">
+			<RectangleGoggles size={30} class="text-white" aria-hidden="true" />
+			<span
+				class="absolute text-[10px] font-bold leading-none text-white"
+				style="left: 29%; top: 50%; transform: translate(-50%, -50%)">A</span
+			>
+			<span
+				class="absolute text-[10px] font-bold leading-none text-white"
+				style="left: 71%; top: 50%; transform: translate(-50%, -50%)">R</span
+			>
+		</span>
+	{:else if willEnterXR}
+		<RectangleGoggles size={26} class="text-white" aria-hidden="true" />
+	{:else}
+		<Play size={24} class="ml-0.5 text-white" fill="currentColor" aria-hidden="true" />
+	{/if}
 </p>
 
 <div class="hidden" id="vrButton">

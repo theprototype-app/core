@@ -9,7 +9,7 @@
 	// undocks into a floating window.
 	import { get } from 'svelte/store';
 	import { tick, untrack } from 'svelte';
-	import { explorerClose, mobileUndockAllowed, explorerSceneSaveArm, peers } from '../../stores/appStore.js';
+	import { explorerClose, mobileUndockAllowed, explorerSceneSaveArm, explorerDockArm, peers } from '../../stores/appStore.js';
 	import { showToast, enable3dPreview, stackOnDrop, confirmPrefabUpdate } from '../../stores/appStore.js';
 	import {
 		explorerFolders,
@@ -228,6 +228,22 @@
 		localStorage.setItem('explorerDocked', String(v));
 		if (v) bottomDockActive.set('explorer'); // re-docking makes it the visible panel
 	}
+
+	// 4b: CONSUME the dock arm. The Controls toolbar's Explorer menu offers "Open as
+	// dock tab" / "Open as floating window", and `docked` above is read from
+	// localStorage exactly ONCE, at mount — so the toolbar writing that flag would be
+	// inert at a live panel and the row would read as a dead button. It asks through
+	// the store instead and `setDocked` (which owns the flag, this branch and the dock
+	// occupancy together) is what acts. Same write-once shape as `explorerSceneSaveArm`.
+	$effect(() => {
+		const arm = $explorerDockArm;
+		if (!arm) return;
+		explorerDockArm.set(null);
+		untrack(() => {
+			if (arm.docked !== docked) setDocked(arm.docked);
+			explorerClose.set(false); // the rows say "Open as …", so open it
+		});
+	});
 
 	// A dock tab like any other: report docked+open (+ the SHARED dock height, which
 	// feeds --bottom-inset) so the strip lists it, and render only while it is the

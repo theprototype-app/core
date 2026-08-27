@@ -68,12 +68,16 @@ h.run(async () => {
 	await A.page.waitForTimeout(350);
 	let rows = await menuRows(A.page);
 	const labels = rows.map((r) => r.label);
-	h.check(rows.length === 3, `the mode menu opens with three entries (${rows.length})`);
+	// 4b: the FAB is a toolbar cell like any other, so its menu carries the shared
+	// Toolbar tail under the modes — Move left / Move right (which walk the WELL the
+	// FAB sits in) / Collapse / Customize. No "Hide button": play is never hideable.
 	h.check(
-		labels.includes('Play (desktop)') &&
-			labels.includes('Enter VR') &&
-			labels.includes('Enter AR passthrough'),
-		`the three modes are offered (${labels.join(' | ')})`
+		labels.slice(0, 3).join(' | ') === 'Play (desktop) | Enter VR | Enter AR passthrough',
+		`the three modes lead the menu (${labels.slice(0, 3).join(' | ')})`
+	);
+	h.check(
+		rows.length === 7 && !labels.includes('Hide button'),
+		`the shared toolbar tail follows, minus Hide button (${labels.slice(3).join(' | ')})`
 	);
 	const section = await A.page.evaluate(
 		() => [...document.querySelectorAll('.ctx-section')].map((el) => el.textContent.trim())
@@ -123,7 +127,7 @@ h.run(async () => {
 		passthrough: localStorage.getItem('vrPassthrough')
 	}));
 	h.check(
-		afterDisabled.rows === 3 && afterDisabled.override === null,
+		afterDisabled.rows === 7 && afterDisabled.override === null,
 		'clicking a disabled mode neither closes the menu nor writes a preference'
 	);
 

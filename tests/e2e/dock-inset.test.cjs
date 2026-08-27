@@ -15,8 +15,10 @@ const inset = (page) =>
 const bottomChrome = (page) =>
 	page.evaluate(() => {
 		const fab = document.getElementById('play-button')?.getBoundingClientRect();
-		// the pill is flowbite's BottomNav OUTER div — the rounded bar carrying z-45
-		const pill = document.querySelector('div.rounded-full.z-45')?.getBoundingClientRect();
+		// 4b: the bar is our own <nav id="controls-pill">. It was flowbite's BottomNav
+		// outer div (matched here as `div.rounded-full.z-45`) until the roster rewrite;
+		// the id is stable where a resolved utility class list is not.
+		const pill = document.querySelector('#controls-pill')?.getBoundingClientRect();
 		const dock = document.querySelector('#flow-list')?.getBoundingClientRect();
 		return {
 			fabBottom: fab ? Math.round(fab.bottom) : 0,

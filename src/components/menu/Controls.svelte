@@ -1,8 +1,8 @@
 <script lang="ts">
-	import { Cog, Eye, FolderOpen, List, Maximize2, MessageSquare, Move, Pin, Play, RectangleGoggles, RotateCcw, SquarePen, Sun, Workflow } from '@lucide/svelte';
-	import { BottomNav, Listgroup } from 'flowbite-svelte';
+	import { ChevronRight, Cog, Eye, FolderOpen, List, Maximize2, MessageSquare, Move, Pin, Play, RectangleGoggles, RotateCcw, SquarePen, Sun, Workflow } from '@lucide/svelte';
+	import { Listgroup } from 'flowbite-svelte';
 	import { objectsGroup, TControls, transformMode, isLocked, lockedObjects, globalScene, vrPassthrough, vrOverride, selectedObject, selectedObjects } from '../../stores/sceneStore';
-	import { chatHidden, flowGraphClose, explorerClose, objectListClose, objectContextMenu, renamingObject, advancedMode, showEnvInList, showLocalObjects } from '../../stores/appStore.js';
+	import { chatHidden, flowGraphClose, explorerClose, objectListClose, objectContextMenu, renamingObject, advancedMode, showEnvInList, showLocalObjects, armExplorerDock } from '../../stores/appStore.js';
 	import { systemGroupNames } from '$lib/moduleSDK';
 	import { ENV_ROOT } from '$lib/environment';
 	import { flyTo } from '$lib/objectActions';
@@ -32,6 +32,7 @@
 	import { visibleDockKey, dockOccupants, FLOW_FAMILY } from '$lib/bottomDock';
 	import { togglePanel } from '$lib/panelToggles';
 	import { requestPlay, willEnterXR, willEnterAR, vrSupported, arSupported } from '$lib/playMode';
+	import { dockAddItems } from '$lib/dockMenu';
 	import { VRButton, XRButton } from '@threlte/xr'
 
 	// A panel is "shown" when it is open AND either the visible dock tab OR floating
@@ -523,6 +524,8 @@
 		const open = (e: MouseEvent) => {
 			e.preventDefault();
 			e.stopPropagation();
+			toolbarMenu = null;
+			customizeMenu = null;
 			playMenu = { x: e.clientX, y: e.clientY };
 		};
 		node.addEventListener('contextmenu', open);
@@ -570,76 +573,499 @@
 					localStorage.setItem('vrPassthrough', 'true');
 					requestPlay();
 				}
-			}
+			},
+			// the FAB is a toolbar cell like any other, so it carries the same tail —
+			// minus "Hide button" (there is no toolbar without a way to press play)
+			...toolbarTail(null)
 		];
 	}
+
+	// ── 4b: THE TOOLBAR IS A ROSTER ─────────────────────────────────────────────
+	// The pill used to be seven hand-written flowbite `BottomNav` cells, so its
+	// CONTENTS were markup: nothing could be reordered, hidden or collapsed without
+	// editing this file. It is a plain <nav> over a DATA roster now — one `{#each}`
+	// template, one registry, one persisted layout record.
+	//
+	// WHY NOT BottomNav: its inner grid column count has to be a JIT-literal
+	// (`classes={{ inner: 'grid-cols-7' }}`), which a variable cell count cannot be,
+	// and restProps land on the OUTER div only. The class strings on the <nav> below
+	// are flowbite's OWN resolved output for `position="absolute" navType="application"`
+	// plus this component's overrides — read off the rendered DOM and baked in as
+	// literals — so the bar keeps the same border, surface, radius and geometry.
+	//
+	// Everything here is LOCAL. A toolbar layout is a fact about THIS screen, so it
+	// never replicates, never enters a save and never lands in undo (`explorerView`'s
+	// rule for a view mode, one domain over).
+	type ControlsLayout = { order: string[]; hidden: string[]; spacerIndex: number; collapsed: boolean };
+	type CellButton = { title: string; slot?: string; icon: any; tint: () => string; run: () => void };
+
+	/** the two PSEUDO-cells: the transparent well the play FAB sits in, and the
+	 *  chevron that brings the bar back once it is collapsed. Neither is a roster
+	 *  entry — you cannot hide the way out of a collapsed toolbar, and play is never
+	 *  hideable. */
+	const SPACER = '__spacer';
+	const EXPAND = '__expand';
+	const DEFAULT_ORDER = ['move', 'rotate', 'scale', 'objects', 'flow', 'explorer'];
+	const DEFAULT_SPACER = 3;
+
+	// The six roster buttons. Every title and every handler is VERBATIM what the
+	// hand-written cells carried: controls-state, controls-transform-tint, dock-inset,
+	// flow-explorer-dock, panel-toggle-keys and ~25 Explorer suites all select on
+	// `p[title="…"]` / `#explorer-slot`, so these strings are load-bearing.
+	// `tint` is a FUNCTION, not a stored string: it is called from the template, so
+	// reading `$transformMode` / the `$derived` flags inside it registers the
+	// dependency in the render effect exactly as the inline expressions used to.
+	const BUTTONS: Record<string, CellButton> = {
+		move: {
+			title: 'Move (1)',
+			icon: Move,
+			tint: () => (hasSel && $transformMode === 'translate' ? ICON_ON : ICON_OFF),
+			run: () => setTransformMode('translate')
+		},
+		rotate: {
+			title: 'Rotate (2)',
+			icon: RotateCcw,
+			tint: () => (hasSel && $transformMode === 'rotate' ? ICON_ON : ICON_OFF),
+			run: () => setTransformMode('rotate')
+		},
+		scale: {
+			title: 'Scale (3)',
+			icon: Maximize2,
+			tint: () => (hasSel && $transformMode === 'scale' ? ICON_ON : ICON_OFF),
+			run: () => setTransformMode('scale')
+		},
+		objects: {
+			title: 'Object list (O)',
+			icon: List,
+			tint: () => (!$objectListClose ? ICON_ON : ICON_OFF),
+			run: () => togglePanel('objects')
+		},
+		flow: {
+			title: 'Node editor (N)',
+			icon: Workflow,
+			tint: () => (flowShown ? ICON_ON : ICON_OFF),
+			run: () => togglePanel('flow')
+		},
+		explorer: {
+			title: 'Explorer',
+			slot: 'explorer-slot',
+			icon: FolderOpen,
+			tint: () => (explorerShown ? ICON_ON : ICON_OFF),
+			run: () => togglePanel('explorer')
+		}
+	};
+
+	function defaultLayout(): ControlsLayout {
+		return { order: [...DEFAULT_ORDER], hidden: [], spacerIndex: DEFAULT_SPACER, collapsed: false };
+	}
+
+	/** Read the persisted layout, SSR-guarded and defensive: a stored record is user
+	 *  data that a later version of this file may not recognise. A button the saved
+	 *  order has never heard of is APPENDED rather than suppressed (`explorerColumns`'
+	 *  rule: store what is hidden, so anything added later shows by default), and an
+	 *  id that no longer exists is dropped so the registry lookup can never miss. */
+	function loadLayout(): ControlsLayout {
+		if (typeof localStorage === 'undefined') return defaultLayout();
+		try {
+			const raw = localStorage.getItem('controlsLayout');
+			if (!raw) return defaultLayout();
+			const saved = JSON.parse(raw) ?? {};
+			const order: string[] = Array.isArray(saved.order)
+				? saved.order.filter((id: any) => DEFAULT_ORDER.includes(id))
+				: [];
+			for (const id of DEFAULT_ORDER) if (!order.includes(id)) order.push(id);
+			const hidden: string[] = Array.isArray(saved.hidden)
+				? saved.hidden.filter((id: any) => order.includes(id))
+				: [];
+			const room = order.filter((id) => !hidden.includes(id)).length;
+			const spacerIndex = Number.isFinite(saved.spacerIndex)
+				? Math.max(0, Math.min(saved.spacerIndex, room))
+				: Math.min(DEFAULT_SPACER, room);
+			return { order, hidden, spacerIndex, collapsed: saved.collapsed === true };
+		} catch {
+			return defaultLayout();
+		}
+	}
+
+	let controlsLayout: ControlsLayout = $state(loadLayout());
+
+	function saveLayout() {
+		try {
+			localStorage.setItem('controlsLayout', JSON.stringify(controlsLayout));
+		} catch {
+			// private mode / storage full — the bar still works for this session
+		}
+	}
+
+	/** The ONE write path. ALWAYS REASSIGNS: `$derived` compares with `===`, so an
+	 *  in-place `order.push(…)` would leave every cell exactly where it was. */
+	function setLayout(patch: Partial<ControlsLayout>) {
+		controlsLayout = { ...controlsLayout, ...patch };
+		saveLayout();
+	}
+
+	function resetLayout() {
+		controlsLayout = defaultLayout();
+		try {
+			localStorage.removeItem('controlsLayout');
+		} catch {
+			// nothing to clear
+		}
+	}
+
+	/** the roster buttons actually ON the bar, in bar order (the spacer is not one) */
+	function shownIds(): string[] {
+		return controlsLayout.order.filter((id) => BUTTONS[id] && !controlsLayout.hidden.includes(id));
+	}
+
+	// The cells the bar renders: the shown buttons with the FAB's well spliced in at
+	// `spacerIndex`. Collapsed, that is the whole bar — the well plus the way out.
+	const visibleCells = $derived.by(() => {
+		const layout = controlsLayout;
+		if (layout.collapsed) return [{ id: SPACER }, { id: EXPAND }];
+		const shown = layout.order.filter((id) => BUTTONS[id] && !layout.hidden.includes(id));
+		const cells = shown.map((id) => ({ id }));
+		cells.splice(Math.max(0, Math.min(layout.spacerIndex, shown.length)), 0, { id: SPACER });
+		return cells;
+	});
+
+	function runCell(id: string) {
+		if (id === EXPAND) {
+			setLayout({ collapsed: false });
+			return;
+		}
+		BUTTONS[id]?.run();
+	}
+
+	// --- rearranging -------------------------------------------------------------
+	// A button moves by SWAPPING with its neighbour in `order`; the spacer never takes
+	// part, which is what "skip over the spacer" means — press Move right on the cell
+	// left of the FAB and it lands on the cell to the FAB's right. `spacerIndex` is an
+	// INSERTION index into the shown list, so a swap leaves it alone; only HIDING or
+	// SHOWING a button changes how many buttons sit to the FAB's left, and those two
+	// adjust it so the FAB stays between the same neighbours.
+	function moveButton(id: string, dir: number) {
+		const shown = shownIds();
+		const target = shown[shown.indexOf(id) + dir];
+		if (!target) return;
+		const order = [...controlsLayout.order];
+		const a = order.indexOf(id);
+		const b = order.indexOf(target);
+		order[a] = target;
+		order[b] = id;
+		setLayout({ order });
+	}
+
+	/** the FAB's own Move left / Move right: the well walks the bar */
+	function moveSpacer(dir: number) {
+		const next = controlsLayout.spacerIndex + dir;
+		if (next < 0 || next > shownIds().length) return;
+		setLayout({ spacerIndex: next });
+	}
+
+	function hideButton(id: string) {
+		const at = shownIds().indexOf(id);
+		const spacerIndex =
+			at > -1 && at < controlsLayout.spacerIndex ? controlsLayout.spacerIndex - 1 : controlsLayout.spacerIndex;
+		setLayout({ hidden: [...controlsLayout.hidden, id], spacerIndex });
+	}
+
+	function showButton(id: string) {
+		const hidden = controlsLayout.hidden.filter((h) => h !== id);
+		const at = controlsLayout.order.filter((o) => BUTTONS[o] && !hidden.includes(o)).indexOf(id);
+		const spacerIndex =
+			at > -1 && at < controlsLayout.spacerIndex ? controlsLayout.spacerIndex + 1 : controlsLayout.spacerIndex;
+		setLayout({ hidden, spacerIndex });
+	}
+
+	// --- the toolbar's own right-click menus --------------------------------------
+	// `cellMenu` generalises 4a's `playModeMenu`: a DIRECT `contextmenu` listener,
+	// because svelte DELEGATES event attributes to the app root and the Controls chrome
+	// is exactly the kind of ancestor that swallows them on the way up. Every cell
+	// opens the same shared ContextMenu, and opening one closes the other two — one
+	// menu on screen at a time.
+	let toolbarMenu: { x: number; y: number; id: string } | null = $state(null);
+	let customizeMenu: { x: number; y: number } | null = $state(null);
+
+	function cellMenu(node: HTMLElement, id: string) {
+		const open = (e: MouseEvent) => {
+			e.preventDefault();
+			e.stopPropagation();
+			playMenu = null;
+			customizeMenu = null;
+			toolbarMenu = { x: e.clientX, y: e.clientY, id };
+		};
+		node.addEventListener('contextmenu', open);
+		return { destroy: () => node.removeEventListener('contextmenu', open) };
+	}
+
+	/** the mode the Explorer is in — panelToggles' own `opensDocked` rule, READ rather
+	 *  than duplicated, so the two rows can say which one is on. `setDocked` keeps this
+	 *  flag in step with the panel, so it is the honest answer either way. */
+	function explorerOpensDocked(): boolean {
+		return typeof localStorage === 'undefined' || localStorage.getItem('explorerDocked') !== 'false';
+	}
+
+	/** Move the Explorer between dock tab and floating window.
+	 *
+	 *  It would be tempting to write `explorerDocked` here and reopen through
+	 *  `togglePanel`, and it is MEASURABLY inert: the panel reads that flag exactly
+	 *  ONCE, at mount, into component-local state, so nothing moves until the next
+	 *  reload — closing and reopening does not help, because the component stays
+	 *  mounted the whole time. The panel owns the mode (flag + render branch + dock
+	 *  occupancy in one function), so we ASK and it acts — the write-once arm store it
+	 *  already uses for the inline scene-save request. */
+	function setExplorerMode(docked: boolean) {
+		armExplorerDock(docked);
+	}
+
+	function openCustomize() {
+		// anchored to the BAR, not the pointer: this menu is about the whole toolbar.
+		// ContextMenu measures itself and clamps into the viewport, so a bar sitting on
+		// the bottom edge gets a menu that opens upward with no arithmetic here.
+		const rect = document.getElementById('controls-pill')?.getBoundingClientRect();
+		customizeMenu = { x: Math.round(rect?.left ?? 8), y: Math.round(rect?.top ?? 8) };
+	}
+
+	/** The tail EVERY toolbar menu carries — the play FAB's mode menu included, which
+	 *  is why `id` may be null: the FAB is not a roster entry, so it is never offered
+	 *  "Hide button" and its Move left / Move right walk the well instead. */
+	function toolbarTail(id: string | null) {
+		const shown = shownIds();
+		// a plain `const` the closures below capture: TS does not carry a narrowing of
+		// a PARAMETER into a nested arrow, so `id!` or a cast would be the alternative
+		const target = id ?? '';
+		const at = target ? shown.indexOf(target) : controlsLayout.spacerIndex;
+		const last = target ? shown.length - 1 : shown.length;
+		const move = (dir: number) => (target ? moveButton(target, dir) : moveSpacer(dir));
+		return [
+			{ section: 'Toolbar' },
+			{
+				label: 'Move left',
+				tooltip: target ? 'Swap with the button on its left' : 'Move the play button one cell left',
+				disabled: at <= 0,
+				action: () => move(-1)
+			},
+			{
+				label: 'Move right',
+				tooltip: target ? 'Swap with the button on its right' : 'Move the play button one cell right',
+				disabled: at < 0 || at >= last,
+				action: () => move(1)
+			},
+			...(target
+				? [
+						{
+							label: 'Hide button',
+							tooltip: 'Take it off the bar — Customize toolbar brings it back',
+							action: () => hideButton(target)
+						}
+					]
+				: []),
+			{
+				label: 'Collapse toolbar',
+				tooltip: 'Shrink the bar down to the play button',
+				action: () => setLayout({ collapsed: true })
+			},
+			{ label: 'Customize toolbar…', tooltip: 'Choose which buttons the bar shows', action: () => openCustomize() }
+		];
+	}
+
+	function cellMenuItems(id: string) {
+		if (id === EXPAND) {
+			return [
+				{ section: 'Toolbar' },
+				{ label: 'Expand toolbar', action: () => setLayout({ collapsed: false }) },
+				{ label: 'Customize toolbar…', action: () => openCustomize() }
+			];
+		}
+		const head: any[] = [];
+		if (id === 'flow') {
+			// the dock's shared "+" list — the same one DockTabs and the floating Node
+			// editor's header render, so a view added there appears here for free
+			head.push(
+				{ section: 'Node editor' },
+				{ label: 'Open Node editor', tooltip: 'Show or hide the graph editor (N)', action: () => togglePanel('flow') },
+				{ section: 'Add a view' },
+				...dockAddItems()
+			);
+		}
+		if (id === 'explorer') {
+			head.push(
+				{ section: 'Explorer' },
+				{
+					label: 'Open as dock tab',
+					checked: explorerOpensDocked(),
+					tooltip: 'Show the library along the bottom, beside the other dock tabs',
+					action: () => setExplorerMode(true)
+				},
+				{
+					label: 'Open as floating window',
+					checked: !explorerOpensDocked(),
+					tooltip: 'Show the library in a window you can move and resize',
+					action: () => setExplorerMode(false)
+				}
+			);
+		}
+		return [...head, ...toolbarTail(id)];
+	}
+
+	function customizeItems() {
+		const ids = [...new Set([...controlsLayout.order, ...DEFAULT_ORDER])].filter((id) => BUTTONS[id]);
+		return [
+			{ section: 'Toolbar buttons' },
+			...ids.map((id) => ({
+				label: BUTTONS[id].title,
+				checked: !controlsLayout.hidden.includes(id),
+				tooltip: controlsLayout.hidden.includes(id) ? 'Put it back on the bar' : 'Take it off the bar',
+				action: () => (controlsLayout.hidden.includes(id) ? showButton(id) : hideButton(id))
+			})),
+			{ section: '' },
+			{ label: 'Reset toolbar', danger: true, tooltip: 'Back to the six default buttons in their default order', action: resetLayout }
+		];
+	}
+
 </script>
 
 <!-- The pill RIDES ABOVE the bottom dock: `--bottom-inset` is the visible docked
-     Flow/Explorer panel's height (published by $lib/bottomDock), so the pill and the
-     play FAB below sit in the band just above it instead of covering its last ~60px.
-     This replaces the old `--dock-inset` model, which padded the DOCK's content and
-     only did so at <=500px — every wider screen had the pill permanently over the
-     node palette / folder tree. The inline style is load-bearing: flowbite's
-     `application` navType puts `bottom-4` on the outer div as a utility CLASS, and an
-     inline declaration is what beats it (restProps land on that same outer div). 200ms
-     matches the dock's own fly transition, so the two move together. -->
-<BottomNav
-	position="absolute"
-	navType="application"
-	class="h-10 w-max min-w-max shrink-0 bg-white rounded-full dark:bg-gray-700 z-45"
-	classes={{ inner: 'grid-cols-7' }}
+     Flow/Explorer panel's height (published by $lib/bottomDock), so the bar and the
+     play FAB inside it sit in the band just above it instead of covering its last
+     ~60px. This replaces the old `--dock-inset` model, which padded the DOCK's
+     content and only did so at <=500px — every wider screen had the pill permanently
+     over the node palette / folder tree. 200ms matches the dock's own fly transition,
+     so the two move together.
+       4b: a plain <nav> over the `visibleCells` roster, no longer flowbite's
+     `BottomNav` (whose inner grid column count must be a JIT literal, which a
+     customizable cell count cannot be). The class list is flowbite's own RESOLVED
+     output for `position="absolute" navType="application"` plus this component's
+     overrides, read off the rendered DOM — same border, surface, radius and 40px
+     height. `bottom-4` stays in it purely as the class the inline style overrides,
+     exactly as before. The cells are `w-10` literals now: the grid's content-sized
+     `fr` columns used to take their width from the spacer, and a flex row has to say
+     it out loud. -->
+<nav
+	id="controls-pill"
+	class="border-gray-200 dark:border-gray-600 absolute max-w-lg -translate-x-1/2 rtl:translate-x-1/2 border bottom-4 start-1/2 h-10 w-max min-w-max shrink-0 bg-white rounded-full dark:bg-gray-700 z-45"
 	style="bottom: calc(var(--bottom-inset, 0px) + 16px); transition: bottom 200ms ease"
 >
-	<p class={classActive + ' rounded-l-full'} title="Move (1)" on:click={() => setTransformMode('translate')}>
-		<Move size={18} class={hasSel && $transformMode === 'translate' ? ICON_ON : ICON_OFF} aria-hidden="true" />
-	</p>
-	<p class={classActive} title="Rotate (2)" on:click={() => setTransformMode('rotate')}>
-		<RotateCcw size={18} class={hasSel && $transformMode === 'rotate' ? ICON_ON : ICON_OFF} aria-hidden="true" />
-	</p>
-
-	<p class={classActive} title="Scale (3)" on:click={() => setTransformMode('scale')}>
-		<Maximize2 size={18} class={hasSel && $transformMode === 'scale' ? ICON_ON : ICON_OFF} aria-hidden="true" />
-	</p>
-	<!-- QW (Controls Option A): transparent SPACER reserving the grid cell under the
-	     floating play button — the old filled square peeked out around the circle.
-	     Hovering either NEIGHBOR paints the spacer too (arbitrary variants below), so
-	     the hover red runs continuously up to the round button instead of leaving
-	     pill-colored notches above/below the circle. -->
-	<!-- the 40px total width is LOAD-BEARING: the grid's fr columns are content-
-	     sized, so this spacer's width is what gives every cell its width (18px
-	     icons alone collapse the whole bar). TWO HALVES so each neighbor's hover
-	     paints only ITS side up to the circle (a full-width paint peeked out red
-	     on the opposite side of the FAB). No transition — the neighbors' own
-	     hover backgrounds are instant, a fade here lagged visibly. -->
-	<div class="flex h-full items-stretch justify-center">
-		<div class="h-full w-5 [p:hover+div>&:first-child]:bg-primary-700"></div>
-		<div class="h-full w-5 [div:has(+p:hover)>&:last-child]:bg-primary-700"></div>
+	<div class="mx-auto flex h-full max-w-lg">
+		{#each visibleCells as cell, i (cell.id)}
+			{#if cell.id === SPACER}
+				<!-- QW (Controls Option A): the transparent WELL the floating play button
+				     sits in — the old filled square peeked out around the circle. Hovering
+				     either NEIGHBOR paints it too (the arbitrary variants below), so the
+				     hover red runs continuously up to the round button instead of leaving
+				     pill-colored notches above/below the circle.
+				       TWO HALVES so each neighbor's hover paints only ITS side up to the
+				     circle (a full-width paint peeked out red on the opposite side of the
+				     FAB). No transition — the neighbors' own hover backgrounds are instant,
+				     a fade here lagged visibly.
+				       4b: the FAB is the well's own THIRD child now (see below), which is
+				     why the right half is addressed as `:nth-child(2)` rather than
+				     `:last-child` — the FAB would otherwise steal that position and the
+				     right-hand hover paint would silently stop appearing. -->
+				<div class="relative flex h-full w-10 items-stretch justify-center">
+					<div
+						class={'h-full w-5 [p:hover+div>&:first-child]:bg-primary-700' + (i === 0 ? ' rounded-l-full' : '')}
+					></div>
+					<div
+						class={'h-full w-5 [div:has(+p:hover)>&:nth-child(2)]:bg-primary-700' +
+							(i === visibleCells.length - 1 ? ' rounded-r-full' : '')}
+					></div>
+					<!-- QW (Controls Option A): the WHOLE button scales on hover anywhere on
+					     it (the centering translate lives in a tailwind class so the two
+					     transforms compose instead of fighting). clip-path circles the HIT
+					     AREA too: the 50px square box used to intercept clicks/hovers meant
+					     for the cells it overlaps. fill=currentColor keeps the play triangle
+					     SOLID (lucide is stroke-only by default); the 2px nudge is the
+					     classic optical centering.
+					       4b: the FAB LIVES IN THE BAR now instead of being an absolutely
+					     positioned sibling with its own `--bottom-inset` arithmetic. It
+					     inherits the pill's ride for free (one anchor, one transition, no
+					     chance of the two drifting apart mid-animation) and it TRACKS THE
+					     WELL, so moving the well moves the play button. `top: -5px` against
+					     the 38px inner row reproduces the old geometry exactly: a 50px
+					     circle 5px proud of the bar's top and 7px below its bottom, which is
+					     the 4px/6px overhang measured against the bordered 40px pill. -->
+					<p
+						id="play-button"
+						title={$willEnterAR
+							? 'Enter AR — the scene composites over your room'
+							: $willEnterXR
+								? 'Enter VR'
+								: 'Play'}
+						class={classActive +
+							' -translate-x-1/2 rounded-full bg-primary-600 font-medium hover:scale-110 dark:focus:ring-primary-800'}
+						style="position: absolute; height: 50px; width: 50px; top: -5px; left: 50%; z-index: var(--z-hud);
+	        display: flex; transition: transform 100ms"
+						on:click={() => {
+							requestPlay();
+						}}
+						use:playModeMenu
+					>
+						<!-- CO4b: ONE entry point that SHOWS its destination. The FAB already
+						     starts play mode on desktop and an immersive session in a headset,
+						     and `$vrPassthrough` decides which KIND (both hidden XR buttons
+						     mount below; `data-aim` says which one a press clicks) — so the
+						     honest thing is to say so ON this button rather than grow a second
+						     one beside it. Right-click picks the mode explicitly.
+						       desktop  the play triangle, unchanged
+						       VR       a headset (rectangle-goggles): press this and you are
+						                IN there
+						       AR       the same headset with A and R in its two lens halves,
+						                and a slightly bigger glyph to carry them
+						     The visor is ONE path with a nose notch at the bottom centre, so
+						     its halves sit at x 7.5 and 16.5 of the 24-unit box — 31.25% and
+						     68.75% — which is where the letters are anchored
+						     (translate(-50%,-50%) centres them on that point, so they stay put
+						     at any icon size). The overlay is `pointer-events: none` and
+						     unselectable: the circle stays ONE hit target, which
+						     #play-button's clip-path was tuned for. No `ml-0.5` on the goggles
+						     — that 2px nudge is optical centering for a TRIANGLE, and a
+						     symmetric visor with it looks off-centre. -->
+						{#if $willEnterAR}
+							<span class="pointer-events-none relative inline-flex select-none items-center justify-center">
+								<RectangleGoggles size={30} class="text-white" aria-hidden="true" />
+								<span
+									class="absolute text-[10px] font-bold leading-none text-white"
+									style="left: 29%; top: 50%; transform: translate(-50%, -50%)">A</span
+								>
+								<span
+									class="absolute text-[10px] font-bold leading-none text-white"
+									style="left: 71%; top: 50%; transform: translate(-50%, -50%)">R</span
+								>
+							</span>
+						{:else if $willEnterXR}
+							<RectangleGoggles size={26} class="text-white" aria-hidden="true" />
+						{:else}
+							<Play size={24} class="ml-0.5 text-white" fill="currentColor" aria-hidden="true" />
+						{/if}
+					</p>
+				</div>
+			{:else}
+				{@const btn = BUTTONS[cell.id]}
+				{@const Glyph = btn ? btn.icon : ChevronRight}
+				<!-- ONE template for every roster button AND for the expand chevron: the six
+				     hand-written cells each carried their own copy of this element, so each
+				     one also carried its own copy of the same three a11y/deprecation
+				     warnings. Keeping the chevron on this template rather than giving it an
+				     element of its own is what stops the collapse affordance adding three
+				     more. -->
+				<p
+					id={btn?.slot}
+					class={classActive +
+						(btn ? ' w-10' : ' w-5') +
+						(i === 0 ? ' rounded-l-full' : '') +
+						(i === visibleCells.length - 1 ? ' rounded-r-full' : '')}
+					title={btn ? btn.title : 'Expand toolbar'}
+					on:click={() => runCell(cell.id)}
+					use:cellMenu={cell.id}
+				>
+					<Glyph size={btn ? 18 : 14} class={btn ? btn.tint() : ICON_OFF} aria-hidden="true" />
+				</p>
+			{/if}
+		{/each}
 	</div>
-
-	<p
-		class={classActive}
-		title="Object list (O)"
-		on:click={() => togglePanel('objects')}
-	>
-		<List size={18} class={!$objectListClose ? ICON_ON : ICON_OFF} aria-hidden="true" />
-	</p>
-	<p
-		class={classActive}
-		title="Node editor (N)"
-		on:click={() => togglePanel('flow')}
-	>
-		<Workflow size={18} class={flowShown ? ICON_ON : ICON_OFF} aria-hidden="true" />
-	</p>
-	<p
-		class={classActive + ' rounded-r-full'}
-		id="explorer-slot"
-		title="Explorer"
-		on:click={() => togglePanel('explorer')}
-	>
-		<FolderOpen size={18} class={explorerShown ? ICON_ON : ICON_OFF} aria-hidden="true" />
-	</p>
-</BottomNav>
+</nav>
 
 <!-- chat toggle lives bottom-right under the mic (93); z under the bottom
      dock so an open flow editor / Explorer covers the stack -->
@@ -661,68 +1087,6 @@
 
 <!-- physics transport (P-A): play / pause / stop / reset, above the chat toggle -->
 <SimControls />
-
-<!-- QW (Controls Option A): the WHOLE button scales on hover anywhere on it (the
-     centering translate lives in a tailwind class so the two transforms compose
-     instead of fighting). clip-path circles the HIT AREA too: the 50px square box
-     used to intercept clicks/hovers meant for the Scale / Object-list cells it
-     overlaps. fill=currentColor keeps the play triangle SOLID (lucide is
-     stroke-only by default); the 2px nudge is the classic optical centering.
-       The transition is ONE inline declaration covering BOTH properties rather than
-     the tailwind `transition-transform duration-100` this used to carry: an inline
-     `transition:` shorthand REPLACES whatever the class set, so adding `bottom` there
-     would have silently wiped the transform transition and killed the hover-scale.
-     Inline owns both — transform keeps its 100ms, bottom rides the dock's 200ms. -->
-
-<p
-	id="play-button"
-	title={$willEnterAR
-		? 'Enter AR — the scene composites over your room'
-		: $willEnterXR
-			? 'Enter VR'
-			: 'Play'}
-	class={classActive + ' -translate-x-1/2 rounded-full bg-primary-600 font-medium hover:scale-110 dark:focus:ring-primary-800'}
-	style="position: absolute; height: 50px; width: 50px; bottom: calc(var(--bottom-inset, 0px) + 10px); z-index: var(--z-hud);
-        display: flex; left: 50%; transition: transform 100ms, bottom 200ms ease"
-	on:click={() => {
-		requestPlay();
-	}}
-	use:playModeMenu
->
-	<!-- CO4b: ONE entry point that SHOWS its destination. The FAB already starts play
-	     mode on desktop and an immersive session in a headset, and `$vrPassthrough`
-	     decides which KIND (both hidden XR buttons mount below; `data-aim` says which
-	     one a press clicks) — so the honest thing is to say so ON this button rather
-	     than grow a second one beside it. Right-click picks the mode explicitly.
-	       desktop  the play triangle, unchanged
-	       VR       a headset (rectangle-goggles): press this and you are IN there
-	       AR       the same headset with A and R in its two lens halves, and a
-	                slightly bigger glyph to carry them
-	     The visor is ONE path with a nose notch at the bottom centre, so its halves
-	     sit at x 7.5 and 16.5 of the 24-unit box — 31.25% and 68.75% — which is where
-	     the letters are anchored (translate(-50%,-50%) centres them on that point, so
-	     they stay put at any icon size). The overlay is `pointer-events: none` and
-	     unselectable: the circle stays ONE hit target, which #play-button's clip-path
-	     was tuned for. No `ml-0.5` on the goggles — that 2px nudge is optical
-	     centering for a TRIANGLE, and a symmetric visor with it looks off-centre. -->
-	{#if $willEnterAR}
-		<span class="pointer-events-none relative inline-flex select-none items-center justify-center">
-			<RectangleGoggles size={30} class="text-white" aria-hidden="true" />
-			<span
-				class="absolute text-[10px] font-bold leading-none text-white"
-				style="left: 29%; top: 50%; transform: translate(-50%, -50%)">A</span
-			>
-			<span
-				class="absolute text-[10px] font-bold leading-none text-white"
-				style="left: 71%; top: 50%; transform: translate(-50%, -50%)">R</span
-			>
-		</span>
-	{:else if $willEnterXR}
-		<RectangleGoggles size={26} class="text-white" aria-hidden="true" />
-	{:else}
-		<Play size={24} class="ml-0.5 text-white" fill="currentColor" aria-hidden="true" />
-	{/if}
-</p>
 
 <!-- BOTH hidden XR buttons mount permanently (4a). They used to swap on
      `{#if $vrPassthrough}` — a reactive REMOUNT, which is fine while the preference
@@ -754,6 +1118,31 @@
 		items={playModeItems()}
 		sizeKey="playmode"
 		on:close={() => (playMenu = null)}
+	/>
+{/if}
+
+<!-- 4b: one toolbar cell's own menu (opened at the pointer by `cellMenu`), and
+     the whole-bar Customize checklist it can open (anchored to the BAR). Each is
+     its own `{#if}` and each opener nulls the other two, so only one is ever
+     mounted; the `sizeKey`s are distinct so the search box remembers a height per
+     KIND of menu rather than sharing one. -->
+{#if toolbarMenu}
+	<ContextMenu
+		x={toolbarMenu.x}
+		y={toolbarMenu.y}
+		items={cellMenuItems(toolbarMenu.id)}
+		sizeKey="toolbarcell"
+		on:close={() => (toolbarMenu = null)}
+	/>
+{/if}
+
+{#if customizeMenu}
+	<ContextMenu
+		x={customizeMenu.x}
+		y={customizeMenu.y}
+		items={customizeItems()}
+		sizeKey="toolbarcustomize"
+		on:close={() => (customizeMenu = null)}
 	/>
 {/if}
 

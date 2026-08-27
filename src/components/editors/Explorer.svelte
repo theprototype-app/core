@@ -4590,7 +4590,7 @@
 			id="explorer-window"
 			class="ui-panel fixed flex flex-col overflow-hidden"
 			use:dragWindow={{ key: 'explorerWin', defaultRect: { left: 160, top: 120 } }}
-			use:focusStack
+			use:focusStack={'explorer'}
 			use:tabbable={{ key: 'explorer', title: 'Explorer', openStore: explorerClose, isOpen: (v) => !v, close: () => explorerClose.set(true) }}
 			use:dockable={{ key: 'explorer' }}
 			style="z-index: var(--z-window)"

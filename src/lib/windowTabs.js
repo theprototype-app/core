@@ -56,8 +56,8 @@ function applyGroups() {
 	persist();
 }
 
-/** @param {string} key */
-function groupOfKey(key) {
+/** The tab group a window belongs to, or null. @param {string} key */
+export function groupOfKey(key) {
 	return get(tabGroups).find((group) => group.members.includes(key)) ?? null;
 }
 

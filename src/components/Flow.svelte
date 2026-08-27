@@ -184,7 +184,7 @@
 			id="flow-window"
 			class="ui-panel fixed flex flex-col overflow-hidden"
 			use:dragWindow={{ key: 'flowWin', defaultRect: { left: 120, top: 90 } }}
-			use:focusStack
+			use:focusStack={'flow'}
 			use:tabbable={{ key: 'flow', title: 'Node editor', openStore: flowGraphClose, isOpen: (v) => !v, close: () => flowGraphClose.set(true) }}
 			use:dockable={{ key: 'flow' }}
 			style="z-index: var(--z-window)"

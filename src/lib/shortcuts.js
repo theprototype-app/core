@@ -2,7 +2,6 @@ import { get } from 'svelte/store';
 import { TControls, isLocked } from '../stores/sceneStore';
 import {
 	flowGraphClose,
-	objectListClose,
 	chatHidden,
 	settingsOpen,
 	anyModalOpen,
@@ -27,6 +26,7 @@ import { editingObject, enterEditMode, exitEditMode } from './meshEdit';
 import { faceEditObject, meshEditHotkeys } from './faceEdit';
 import { recallBookmark } from './cameraBookmarks';
 import { snapTargets } from './snapping';
+import { togglePanel } from './panelToggles';
 import { selectedObject } from '../stores/sceneStore';
 
 // Single source of truth for keyboard shortcuts: the same registry binds the keys
@@ -145,14 +145,16 @@ export const shortcuts = [
 	{
 		keys: 'O',
 		group: 'Panels',
-		label: 'Toggle object list',
-		action: () => objectListClose.update((value) => !value)
+		// the key IS the toolbar button now (one tree in panelToggles): a buried
+		// window is raised first and only closes on the next press
+		label: 'Object list: show / bring to front / hide',
+		action: () => togglePanel('objects')
 	},
 	{
 		keys: 'N',
 		group: 'Panels',
-		label: 'Toggle node editor',
-		action: () => flowGraphClose.update((value) => !value)
+		label: 'Node editor: show / bring to front / hide',
+		action: () => togglePanel('flow')
 	},
 	{
 		keys: 'C',

@@ -2,7 +2,7 @@
 	import { Cog, Eye, FolderOpen, List, Maximize2, MessageSquare, Move, Pin, Play, RectangleGoggles, RotateCcw, SquarePen, Sun, Workflow } from '@lucide/svelte';
 	import { BottomNav, Listgroup } from 'flowbite-svelte';
 	import { objectsGroup, TControls, transformMode, isLocked, isVRMode, lockedObjects, globalScene, vrPassthrough, vrOverride, selectedObject, selectedObjects } from '../../stores/sceneStore';
-	import { chatHidden, flowGraphClose, flowCodeClose, animationClose, uvEditorClose, explorerClose, objectListClose, objectContextMenu, renamingObject, advancedMode, showEnvInList, showLocalObjects, shaderEditorClose, hudEditorClose } from '../../stores/appStore.js';
+	import { chatHidden, flowGraphClose, explorerClose, objectListClose, objectContextMenu, renamingObject, advancedMode, showEnvInList, showLocalObjects } from '../../stores/appStore.js';
 	import { systemGroupNames } from '$lib/moduleSDK';
 	import { ENV_ROOT } from '$lib/environment';
 	import { flyTo } from '$lib/objectActions';
@@ -16,7 +16,7 @@
 	import { sendPing } from '$lib/ping';
 	import { buildObjectMenuItems } from '$lib/objectMenu';
 	import * as THREE from 'three';
-	import { setContext, tick } from 'svelte';
+	import { setContext } from 'svelte';
 	import { writable } from 'svelte/store';
 	import { shareObject } from '$lib/objectPermissions';
 	import Objects from './Objects.svelte';
@@ -25,11 +25,12 @@
 	import MobileAddButton from './MobileAddButton.svelte';
 	import AiHudButton from './AiHudButton.svelte';
 	import SimControls from './SimControls.svelte';
-	import { focusStack, raiseWindow, isTopWindow } from '$lib/windowFocus';
+	import { focusStack } from '$lib/windowFocus';
 	import { tabbable, groupRectOf, moveGroupOf, resizeGroup } from '$lib/windowTabs';
 	import { clampWinSize, clampResize, anchorOf } from '$lib/windowSize';
 	import { dockable } from '$lib/docking';
-	import { visibleDockKey, bottomDockActive, activateDock, dockOccupants, FLOW_FAMILY } from '$lib/bottomDock';
+	import { visibleDockKey, dockOccupants, FLOW_FAMILY } from '$lib/bottomDock';
+	import { togglePanel } from '$lib/panelToggles';
 	import { VRButton, XRButton } from '@threlte/xr'
 
 	// A panel is "shown" when it is open AND either the visible dock tab OR floating
@@ -44,80 +45,12 @@
 	//    touches the docked Flow Code / Animation group.
 	// The icon is lit when a docked flow tab is the visible dock panel OR the Node editor
 	// floating window is shown.
+	// WHAT a click DOES now lives in $lib/panelToggles (`togglePanel`), one decision tree
+	// shared with the O / N keyboard shortcuts; only the icon TINT is decided here.
 	const flowDockVisible = $derived(FLOW_FAMILY.includes($visibleDockKey ?? ''));
 	const flowFloatingShown = $derived(!$flowGraphClose && !$dockOccupants.flow?.present);
 	const flowShown = $derived(flowDockVisible || flowFloatingShown);
 	const explorerShown = $derived(!$explorerClose && ($visibleDockKey === 'explorer' || !$dockOccupants.explorer?.present));
-	// remembers which flow-family views were open when the docked group was hidden
-	let flowDockSnapshot: any = null;
-	function toggleFlow() {
-		const open = !$flowGraphClose;
-		const docked = !!$dockOccupants.flow?.present; // Node editor docked AND open
-		if (open && !docked) {
-			flowGraphClose.set(true); // FLOATING Node editor is shown -> hide only its window
-			return;
-		}
-		if (docked) {
-			if (flowDockVisible) {
-				// docked group is on screen -> hide only the tabs that are actually DOCKED
-				// (leave undocked/floating Flow Code / Animation windows open)
-				flowDockSnapshot = {
-					flow: true,
-					flowcode: !!$dockOccupants.flowcode?.present,
-					animation: !!$dockOccupants.animation?.present,
-					uv: !!$dockOccupants.uv?.present,
-					shader: !!$dockOccupants.shader?.present,
-					// A4: without this line the HUD tab never comes back after play mode
-					hud: !!$dockOccupants.hud?.present
-				};
-				flowGraphClose.set(true);
-				if (flowDockSnapshot.flowcode) flowCodeClose.set(true);
-				if (flowDockSnapshot.animation) animationClose.set(true);
-				if (flowDockSnapshot.uv) uvEditorClose.set(true);
-				if (flowDockSnapshot.shader) shaderEditorClose.set(true);
-				if (flowDockSnapshot.hud) hudEditorClose.set(true);
-			} else {
-				activateDock('flow'); // docked but hidden (Explorer covering) -> bring the dock back
-			}
-			return;
-		}
-		// Node editor is CLOSED -> show it in its last mode
-		const wasDocked = typeof localStorage === 'undefined' || localStorage.getItem('flowDocked') !== 'false';
-		const snap = flowDockSnapshot;
-		if (snap && (snap.flow || snap.flowcode || snap.animation || snap.uv || snap.shader || snap.hud)) {
-			if (snap.flow) flowGraphClose.set(false);
-			if (snap.flowcode) flowCodeClose.set(false);
-			if (snap.animation) animationClose.set(false);
-			if (snap.uv) uvEditorClose.set(false);
-			if (snap.shader) shaderEditorClose.set(false);
-			if (snap.hud) hudEditorClose.set(false);
-			flowDockSnapshot = null;
-			activateDock('flow');
-		} else {
-			flowGraphClose.set(false);
-			if (wasDocked) activateDock('flow'); // docked -> show as the dock tab; floating -> leave the dock alone
-		}
-	}
-	function toggleExplorer() {
-		if (explorerShown) explorerClose.set(true); // shown (docked or floating) -> hide
-		else {
-			explorerClose.set(false); // hidden -> show it in its last mode
-			bottomDockActive.set('explorer'); // if docked, make it the visible panel
-		}
-	}
-	// Object List is a pure floating window. Clicking its button RAISES it to the front
-	// (bring-to-front, as the user "called" it); clicking again while it is already at
-	// the front closes it. Opening a closed one raises it too.
-	function toggleObjectList() {
-		if ($objectListClose) {
-			objectListClose.set(false);
-			tick().then(() => raiseWindow('objects'));
-		} else if (isTopWindow('objects')) {
-			objectListClose.set(true);
-		} else {
-			raiseWindow('objects');
-		}
-	}
 
 	// CO4b: WHAT the play button is about to do, so it can show it. The condition
 	// mirrors `checkPlay`'s own test below — a supported immersive session AND no
@@ -679,14 +612,14 @@
 	<p
 		class={classActive}
 		title="Object list (O)"
-		on:click={toggleObjectList}
+		on:click={() => togglePanel('objects')}
 	>
 		<List size={18} class={!$objectListClose ? ICON_ON : ICON_OFF} aria-hidden="true" />
 	</p>
 	<p
 		class={classActive}
 		title="Node editor (N)"
-		on:click={toggleFlow}
+		on:click={() => togglePanel('flow')}
 	>
 		<Workflow size={18} class={flowShown ? ICON_ON : ICON_OFF} aria-hidden="true" />
 	</p>
@@ -694,7 +627,7 @@
 		class={classActive + ' rounded-r-full'}
 		id="explorer-slot"
 		title="Explorer"
-		on:click={toggleExplorer}
+		on:click={() => togglePanel('explorer')}
 	>
 		<FolderOpen size={18} class={explorerShown ? ICON_ON : ICON_OFF} aria-hidden="true" />
 	</p>

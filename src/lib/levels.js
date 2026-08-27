@@ -786,6 +786,53 @@ export async function travelToLevel(hash, name = '') {
 	}
 }
 
+/**
+ * A1 — ADOPT the scene identity of the peer whose session we joined.
+ *
+ * A joiner who never travelled has `currentLevel === null`, so it publishes
+ * `atscene {scene:''}` and nothing in the app ever teaches it the host's name: both
+ * peer lists say nothing forever, and every scene-aware read answers "no evidence"
+ * about the most ordinary peer in the session. The CONTENT is already on its way down
+ * the handshake — this only names it, which is why it is safe to do unasked.
+ *
+ * THE NAME AND NOTHING ELSE — this is `fileHandler`'s loose-scene shape,
+ * `{hash: '', name, unsaved: true}`, and for the same reason it exists there: named,
+ * on screen, not a member of the project.
+ *
+ * NO HASH. A hash in `currentLevel` means "these are the bytes I loaded", and every
+ * reader treats it that way — `openSceneItem` refuses to re-open the scene you are
+ * already in, `publishCurrentIfChanged` places a new version beside that item. A joiner
+ * loaded no file at all: it is standing in the host's LIVE world, which is that scene's
+ * content plus whatever has happened since. Claiming the host's hash was tried and it
+ * broke exactly the reader above — the Explorer's "Open here (downloads it)" on the
+ * joiner became "you are already in it", so the bytes never arrived and a card that
+ * exists precisely to fetch them could not (scene-rooms, three checks).
+ *
+ * NO SIGNATURE either, one step further down the same argument: a signature says "this
+ * is exactly what that file holds", which we have never compared. Absent, the dirty
+ * check answers false by construction rather than answering wrongly.
+ *
+ * So `unsaved` is unconditional, not derived: without a hash there is nothing to test
+ * against the manifest, and the honest reading of this machine is that it holds no file
+ * for this scene. It also keeps `publishCurrentIfChanged` refusing, which is belt and
+ * braces beside the writer gate (`sessionHost !== null`) a joiner already fails.
+ *
+ * There is therefore NOTHING for the arriving manifest to lift, which is why the fold
+ * sweep at the foot of this file is untouched: `unsaved` here is a fact about this
+ * machine, and a document written by somebody else cannot settle it. It lifts the
+ * ordinary way — travel to the scene, or save it in.
+ * @param {string} name @param {string} [hash] the peer's hash — accepted because the
+ *   caller has it and the next phase's "same scene, same version?" question will want
+ *   it, deliberately not stored (see above)
+ * @returns {boolean} did we take it
+ */
+export function adoptSceneIdentity(name, hash) {
+	const scene = String(name ?? '').trim();
+	if (!scene) return false;
+	currentLevel.set({ hash: '', name: scene, unsaved: true });
+	return true;
+}
+
 // ---- 21-G7: keeping the one-visible-item invariant true -------------------------------
 //
 // Every publish folds its own scene, so this only has to cover the manifests we did NOT

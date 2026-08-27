@@ -83,14 +83,25 @@ export function userData(data) {
     userdata.update((value) => value);
 }
 
+// A1 crash guards. Both halves of this used to assume the peer is in OUR roster and
+// has an avatar mesh in OUR scene, and neither is a safe assumption: `findIndex`
+// answers -1 for a peer we have no row for, and `users[-1][3]` throws out of the
+// message dispatcher, which has no try/catch — so one stray message takes the whole
+// connection handler down. Load-bearing the moment room gating hides a peer standing
+// in another scene: their avatar is legitimately not in the scene, and their watch
+// message must land harmlessly rather than crash the page.
 export function specator(data, specator) {
     if ( specator === 'false') {
         let index = users.findIndex(u => u[0] === data.peerId);
+        if (index < 0) return;
         users[index][3] = null;
         return;
     }
-    scene.getObjectByName(data.peerId).position.set(0, 1000, 0);
+    // park the avatar out of shot only if there IS one
+    const avatar = scene?.getObjectByName(data.peerId);
+    if (avatar) avatar.position.set(0, 1000, 0);
     let index = users.findIndex(u => u[0] === data.peerId);
+    if (index < 0) return;
     users[index][3] = specator;
 }
 
@@ -98,6 +109,9 @@ export function cameraSettings(data) {
     // console.log('peer sent camera settings: ' + data.fov);
     if ( data.fov ) {
         let index = users.findIndex(u => u[0] === data.peerId);
+        // the same guard, same reason: a peer with no roster row here is not one we
+        // can be watching either, so there is nothing to record and nothing to apply
+        if (index < 0) return;
         users[index][4] = data.fov;
         //update camera fov if watching peer camera
         if (specating === data.peerId)

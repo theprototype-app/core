@@ -1425,9 +1425,21 @@ async function stashAndJoin() {
  * Gatekeeper for the handshake state requests. Runs the reply immediately
  * when no choice is needed (empty scene on either side, or already answered);
  * otherwise queues it behind the Share/Stash toast.
- * @param {'objects'|'nodes'} kind @param {string} sender @param {number=} otherCount
+ *
+ * A1 gave it CONTEXT. The decision is unchanged — the same one-shot latch, the same
+ * both-scenes-non-empty gate — but the caller now says who is asking, whether they are
+ * the peer we joined, and which scene they are standing in. The one thing that context
+ * buys today is ADOPTION (below); the scene-aware decision table is a later commit, and
+ * nothing here reads `theirScene` to gate a reply.
+ * @param {'objects'|'nodes'} kind @param {string} sender
+ * @param {{otherCount?: number, theirScene?: string, theirHash?: string, fromHost?: boolean}|number} [opts]
+ *   a bare number is read as `otherCount` — the pre-A1 shape, kept so no call site can
+ *   silently pass a count into a field that ignores it
  */
-export function deferUntilShareChoice(kind, sender, otherCount = 0) {
+export function deferUntilShareChoice(kind, sender, opts = {}) {
+	/** @type {{otherCount?: number, theirScene?: string, theirHash?: string, fromHost?: boolean}} */
+	const context = typeof opts === 'number' ? { otherCount: opts } : opts || {};
+	const { otherCount = 0, theirScene = '', theirHash = '', fromHost = false } = context;
 	const group = get(objectsGroup);
 	const count = group?.children.length ?? 0;
 	if (gate && !gate.done) {
@@ -1438,6 +1450,24 @@ export function deferUntilShareChoice(kind, sender, otherCount = 0) {
 	// joining an existing scene always just receives it
 	if (shareChoiceMade || count === 0 || !otherCount) {
 		if (count > 0) shareChoiceMade = true; // we shared into the space
+		// A1 ADOPTION. We hold NOTHING and the peer we joined is standing in a named
+		// scene, so the world about to arrive down this handshake IS that scene — there
+		// is no other world it could be. Without this a joiner who never travelled keeps
+		// `currentLevel === null` for the whole session: it shows no name, it publishes an
+		// empty `atscene` row, and every scene-aware read on BOTH sides answers "no
+		// evidence" about the most ordinary peer there is.
+		//
+		// Through a DYNAMIC import, because levels.js imports THIS module (applySession)
+		// and a static edge back would close the cycle. Fire-and-forget: a name is
+		// presentation and the objects are the point, so the reply never waits on it.
+		if (count === 0 && fromHost && theirScene) {
+			// the hash goes along because the caller has it, and it is what the next
+			// phase's "same scene, same version?" question will be asked with. Adoption
+			// itself deliberately does not store it — a joiner loaded no file.
+			import('./levels')
+				.then((m) => m.adoptSceneIdentity(theirScene, theirHash))
+				.catch(() => {});
+		}
 		replyTo(kind, sender);
 		return;
 	}

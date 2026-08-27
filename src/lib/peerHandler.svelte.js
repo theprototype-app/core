@@ -28,7 +28,7 @@ import { applyRemoteCameraPreview, clearPeerPreview, sendCameraPreviewState } fr
 // riding the getmodulestate request, and a drop on disconnect (golden rule 3).
 import { applyRemotePlayMode, dropPeerPlayMode, sendPlayModeState } from '$lib/gamePresence';
 // P2b: which SCENE each peer is standing in — the gamePresence shape exactly
-import { applyRemotePeerScene, dropPeerScene, sendMySceneState, peerScenes, myScene, elsewhereThan } from '$lib/peerScenes';
+import { applyRemotePeerScene, dropPeerScene, sendMySceneState, peerScenes, myScene, elsewhereThan, sceneOfPeer } from '$lib/peerScenes';
 // 21-G2: the project manifest — a latest-wins singleton like environment/scenephysics
 import { applyRemoteManifest, sendProjectManifest } from '$lib/projectManifest';
 // 21-G4: PEER-OWNED variables. The same three obligations as the mode above (dispatch,
@@ -547,8 +547,17 @@ export class PeerConnection {
 				} else if(data.type == 'camera') {
 					moveCamera(data);
 				} else if(data.type == 'getobjects') {
-					// share-or-stash (50): the reply may wait for the user's choice
-					deferUntilShareChoice('objects', data.sender, data.count ?? 0);
+					// share-or-stash (50): the reply may wait for the user's choice.
+					// A1: the request carries CONTEXT now — not just how much they hold, but
+					// which scene they are standing in and whether they are the peer we joined.
+					// Their `atscene` row is already fresh: it is the first thing a handshake
+					// sends, and this conn delivers in order.
+					deferUntilShareChoice('objects', data.sender, {
+						otherCount: data.count ?? 0,
+						theirScene: sceneOfPeer(conn.peer),
+						theirHash: get(peerScenes)[conn.peer]?.hash ?? '',
+						fromHost: get(sessionHost) === conn.peer
+					});
 				} else if(data.type == 'objectfile') {
 					applyObjectFile(data);
 				} else if(data.type == 'object') {
@@ -588,7 +597,11 @@ export class PeerConnection {
 						dropPeerHandModel(data.peerId);
 					}
 				} else if(data.type == 'getnodes') {
-					deferUntilShareChoice('nodes', data.sender);
+					deferUntilShareChoice('nodes', data.sender, {
+						theirScene: sceneOfPeer(conn.peer),
+						theirHash: get(peerScenes)[conn.peer]?.hash ?? '',
+						fromHost: get(sessionHost) === conn.peer
+					});
 				} else if(data.type == 'nodes') {
 					applyNodesSnapshot(data.nodes, data.edges, data.graphs);
 				} else if(data.type == 'nodesync') {
@@ -745,6 +758,20 @@ export class PeerConnection {
 		console.log("sending to " + peerId + "  remote " + hosts)
 		let locks = [...locked];
 		if(typeof selected.uuid != 'undefined' && selected.uuid) locks.push([id, selected.uuid]);
+		// A1: WHERE WE ARE, and it goes out AHEAD of everything else. Until now the only
+		// thing that taught a joiner the host's scene name was the `atscene` riding the
+		// `getmodulestate` reply — which lands AFTER this handshake has already decided
+		// what to do with the objects, so every scene-aware read during the one moment
+		// that matters saw no evidence at all. PeerJS conns are ordered and reliable, so
+		// sending it first means the receiver's row for us is fresh before ANY handshake
+		// decision is taken on the far side.
+		//
+		// Both-unnamed stays byte-identical: an empty scene gates nothing (the
+		// only-on-evidence rule), and `sendMySceneState` still answers getmodulestate —
+		// that is the path for a peer on an older build, and the unconditional-reply
+		// contract that module documents.
+		const mine = myScene();
+		conn.send({ type: 'atscene', peerId: this.peer.id, scene: mine?.scene ?? '', hash: mine?.hash ?? '', at: Date.now() });
 		conn.send({type: 'locked', lockeditems: locks})
 		conn.send({type: 'hosts', hosts: hosts})
 		conn.send({type: 'userdata', userdata: users})

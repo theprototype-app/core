@@ -1771,6 +1771,21 @@ loadable play content. Everything a user does must be visible to connected peers
   screen. A container query reads the right box but brings containment that makes the
   element a containing block for `position: fixed` descendants — the transform/
   backdrop-filter trap by another door, and these headers host menus.
+- **A GROUPED WINDOW IS PLACED BY ITS GROUP, AND `dragWindow` HAS TO BE TOLD.** dragWindow
+  re-clamps a window from ITS OWN stored rect on a hidden -> visible transition, and a tab
+  switch is exactly that transition (a group hides inactive members with `display: none`).
+  So the revealed member jumped back to wherever it last floated while the tab strip stayed
+  on the group rect — measured group (160,120), Explorer (160,120), node editor (120,90),
+  its own `defaultRect`. Worse, `applyGroups` re-derives the group rect from the ACTIVE
+  member, so once a misplaced one had been shown, switching BACK moved the strip to ITS
+  position and stranded the other. `applyMember` stamps `data-tab-member` and dragWindow's
+  reveal stands down for it — a data attribute, not an import, since dragWindow already owns
+  that node; windowTabs clears the flag on every path a window leaves a group by, or a
+  torn-off window can never be revealed properly again.
+  THE MEASUREMENT LESSON: four rounds of checks missed this because they all measured the
+  member against ITSELF (does its header overflow, wrap, keep its last button, sit under the
+  strip) — every one of which is true of a window that is simply in the wrong place. Compare
+  the strip to the window it is supposed to be sitting on.
 - **ZERO IS NOT A WIDTH.** A tab group hides its inactive members with `display: none`, and
   a hidden element measures 0 — so any layout that reacts to its own measured size sees
   0px for every member behind a tab and trips every threshold at once. Keep the last real
@@ -3801,6 +3816,10 @@ override for e2e — never share 5173 (the user's main-checkout server).
   header exactly under the strip — before a SCREENSHOT showed the node editor visibly
   wrecked at 260px. When a report says something breaks and the numbers disagree, take the
   picture.
+  · **R29 CLOSED THE ONE THAT KEPT COMING BACK**, on the user's precise repro: the tab
+  strip detaching from its window on a tab switch was `dragWindow` re-placing the revealed
+  member from its own rect (see the gotcha). The earlier "header breaks" reports were this,
+  not the sizes I had been fixing.
   · **NOT REPRODUCED**: the original stacking report (a group's strip drawing over a window
   in front of it). The z-order measured correct in every fixture I could build; what I
   found and fixed by reading is the band saturating at the top, which has the same shape.

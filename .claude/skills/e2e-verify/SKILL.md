@@ -1293,6 +1293,20 @@ computeTeleportArc pattern) and note that on-device feel is the user's manual ch
 
 ## Roadmap 22 rounds 19-28 — `window-header-ranking` (30), `tab-group-stacking` (17)
 
+- **MEASURE THE THING AGAINST WHAT IT IS SUPPOSED TO LINE UP WITH, not against itself.**
+  Four rounds of tab-group checks asked whether a member's header overflowed, wrapped, kept
+  its last button, or sat under the strip — all true of a window that is simply in the wrong
+  PLACE. One comparison of the strip's rect against the active window's rect found it
+  instantly (dx 40, dy 30). When a report says two things do not line up, subtract their
+  rects.
+- **A SUITE THAT LEANS ON LEFTOVER localStorage PASSES ON THE SECOND RUN AND FAILS ON A
+  CLEAN ONE.** `flowDocked` is read at component INIT, so setting it on a live page does
+  nothing — the first version of `tab-group-geometry` only worked because an earlier run had
+  left the flag behind. Set the flag, RELOAD, then drive.
+- **A SUITE'S OWN EARLIER SECTIONS CAN MAKE A LATER ONE UNSTAGEABLE.** `tab-group-stacking`
+  merges, tears and re-merges windows, and by its fifth section it could not put a node
+  editor on screen at all. That is a reason to SPLIT the file, not to fight it — and a
+  three-tab group also raised the floor ~96px, hiding the two-member case under test.
 - **WHEN THE NUMBERS SAY FINE AND THE REPORT SAYS BROKEN, TAKE THE SCREENSHOT.** The
   tab-group "header breaks" report survived four clean metrics — `scrollWidth` vs
   `clientWidth`, header height, flex-wrap, the last button's right edge, and the member

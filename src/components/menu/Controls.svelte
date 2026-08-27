@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { Cog, Eye, FolderOpen, List, Maximize2, MessageSquare, Move, Pin, Play, RectangleGoggles, RotateCcw, SquarePen, Sun, Workflow } from '@lucide/svelte';
 	import { BottomNav, Listgroup } from 'flowbite-svelte';
-	import { objectsGroup, TControls, transformMode, isLocked, isVRMode, lockedObjects, globalScene, vrPassthrough, vrOverride, selectedObject, selectedObjects } from '../../stores/sceneStore';
+	import { objectsGroup, TControls, transformMode, isLocked, lockedObjects, globalScene, vrPassthrough, vrOverride, selectedObject, selectedObjects } from '../../stores/sceneStore';
 	import { chatHidden, flowGraphClose, explorerClose, objectListClose, objectContextMenu, renamingObject, advancedMode, showEnvInList, showLocalObjects } from '../../stores/appStore.js';
 	import { systemGroupNames } from '$lib/moduleSDK';
 	import { ENV_ROOT } from '$lib/environment';
@@ -31,6 +31,7 @@
 	import { dockable } from '$lib/docking';
 	import { visibleDockKey, dockOccupants, FLOW_FAMILY } from '$lib/bottomDock';
 	import { togglePanel } from '$lib/panelToggles';
+	import { requestPlay, willEnterXR, willEnterAR, vrSupported, arSupported } from '$lib/playMode';
 	import { VRButton, XRButton } from '@threlte/xr'
 
 	// A panel is "shown" when it is open AND either the visible dock tab OR floating
@@ -52,40 +53,13 @@
 	const flowShown = $derived(flowDockVisible || flowFloatingShown);
 	const explorerShown = $derived(!$explorerClose && ($visibleDockKey === 'explorer' || !$dockOccupants.explorer?.present));
 
-	// CO4b: WHAT the play button is about to do, so it can show it. The condition
-	// mirrors `checkPlay`'s own test below — a supported immersive session AND no
-	// desktop override — rather than reading the hidden #vrButton's label, which is
-	// threlte's private text and only exists once its own support probe resolves.
-	// `vrPassthrough` picks WHICH session kind is asked for, so it also picks which
-	// support answer matters.
-	let vrSupported = $state(false);
-	let arSupported = $state(false);
-	// try/catch and not just .catch(): a runtime whose isSessionSupported THROWS
-	// synchronously would otherwise throw during this component's init, and this
-	// component owns the play button — the one control the app cannot lose.
-	try {
-		const xr = typeof navigator === 'undefined' ? null : (navigator as any).xr;
-		xr?.isSessionSupported?.('immersive-vr')
-			?.then((ok: boolean) => (vrSupported = !!ok))
-			?.catch(() => (vrSupported = false));
-		xr?.isSessionSupported?.('immersive-ar')
-			?.then((ok: boolean) => (arSupported = !!ok))
-			?.catch(() => (arSupported = false));
-	} catch {
-		vrSupported = false;
-		arSupported = false;
-	}
-	const willEnterXR = $derived(($vrPassthrough ? arSupported : vrSupported) && !$vrOverride);
-	const willEnterAR = $derived(willEnterXR && $vrPassthrough);
-
-	let allowPlay = true;
-	// 21-F3 REJOIN: a play press that landed inside the exit cooldown, replayed when it
-	// expires. The cooldown itself has to stay — it exists because the browser refuses a
-	// pointer-lock request for about a second after a user-initiated Esc — but DROPPING
-	// the press was never part of that: the button simply did nothing, with no feedback,
-	// which is precisely the "I left play and could not get back in" report. Deferring is
-	// the whole fix, and it costs one flag.
-	let playQueued = false;
+	// CO4b: WHAT the play button is about to do, so it can show it — and, since 4a,
+	// what a press DOES. Both now come from $lib/playMode: the support probes, the
+	// desktop/XR decision and the exit cooldown used to be private to this component,
+	// which is how the FAB ended up with two sources for one decision (the glyph read
+	// the `isSessionSupported` probes; the click sniffed threlte's private button
+	// label). The lib is the single truth, and the FAB, the mode menu below and the
+	// coming keyboard shortcut are all just callers of `requestPlay`.
 	let resizing = $state(false);
 	// 132: toolbar icons tint when their panel is open / the transform mode is
 	// active. Move/Rotate/Scale only tint with a real selection. 151: the mode
@@ -528,43 +502,77 @@
 		return buildObjectMenuItems(menu.uuid, { point: menu.point ?? null, locked: menu.locked });
 	}
 
-	function checkPlay() {
-		const vrButton = document.getElementById('vrButton')?.querySelector('button');
-		// 'Enter VR' or 'Enter AR' (passthrough preference, phase 90)
-		if (vrButton?.textContent?.trim().startsWith('Enter') && localStorage.getItem('vrOverride') !== 'true') {
-			$isVRMode = true;
-			vrButton.click();
-		} else {
-			// already in play — a second press is not a re-entry
-			if ($isLocked === true) return;
-			// 21-F3: inside the exit cooldown, REMEMBER the press instead of eating it.
-			// `isLocked === false` is the transient Controls itself writes on the way out
-			// (the effect below settles it to null), so both non-null values land here.
-			if (allowPlay !== true || $isLocked === false) {
-				playQueued = true;
-				return;
-			}
-			if ($isLocked === null) $isLocked = true;
-		}
+	// 4a: the play FAB's RIGHT-CLICK menu — pick the mode and enter it in one gesture.
+	// VR / AR / desktop used to be reachable only through two buried Settings toggles
+	// ("VR override" and "Passthrough"), so the choice lived nowhere near the control
+	// it governs. Each entry writes the preference and then enters, which is why the
+	// dual hidden XR mount below matters: the aimed button is already in the DOM, so
+	// `requestPlay` still calls `requestSession` inside this same user gesture.
+	//
+	// iOS Safari never fires `contextmenu` on a long press (Android does), so this is
+	// an accelerator, not the only door — the Settings toggles stay exactly where they
+	// were and a touch user is never stranded.
+	let playMenu: { x: number; y: number } | null = $state(null);
+
+	// A DIRECT listener, not an `on:contextmenu` directive: svelte DELEGATES event
+	// attributes to the app root, so anything on the way up that swallows the event —
+	// and this FAB sits inside the Controls chrome — silently eats the gesture (the
+	// repo's standing rule for pointer gestures inside panels). It also keeps the
+	// component off the mixed old/new event syntax, which svelte 5 refuses per file.
+	function playModeMenu(node: HTMLElement) {
+		const open = (e: MouseEvent) => {
+			e.preventDefault();
+			e.stopPropagation();
+			playMenu = { x: e.clientX, y: e.clientY };
+		};
+		node.addEventListener('contextmenu', open);
+		return { destroy: () => node.removeEventListener('contextmenu', open) };
 	}
 
-	$effect(() => {
-		//Timeout for pointer lock
-		//on ESC release have delay
-	if ($isLocked === false) {
-		$isLocked = null;
-		allowPlay = false;
-		setTimeout(() => {
-			allowPlay = true;
-			// 21-F3: honour a press made during the cooldown. Through checkPlay, not a
-			// bare store write, so the VR branch and the guards above still decide.
-			if (playQueued) {
-				playQueued = false;
-				checkPlay();
+	function playModeItems() {
+		return [
+			{ section: 'Play as' },
+			{
+				label: 'Play (desktop)',
+				checked: !$willEnterXR,
+				action: () => {
+					// vrOverride is the STRING mirror Settings writes; Scene seeds the store
+					// from localStorage on boot, so both halves have to move together.
+					vrOverride.set(true);
+					localStorage.setItem('vrOverride', 'true');
+					requestPlay();
+				}
+			},
+			{
+				label: 'Enter VR',
+				checked: $willEnterXR && !$vrPassthrough,
+				disabled: !$vrSupported,
+				tooltip: $vrSupported ? 'Immersive VR — the scene replaces your view' : 'No immersive-vr support detected',
+				action: () => {
+					vrOverride.set(false);
+					localStorage.removeItem('vrOverride');
+					vrPassthrough.set(false);
+					localStorage.setItem('vrPassthrough', 'false');
+					requestPlay();
+				}
+			},
+			{
+				label: 'Enter AR passthrough',
+				checked: $willEnterAR,
+				disabled: !$arSupported,
+				tooltip: $arSupported
+					? 'Mixed reality — the scene composites over your room'
+					: 'No immersive-ar (passthrough) support detected',
+				action: () => {
+					vrOverride.set(false);
+					localStorage.removeItem('vrOverride');
+					vrPassthrough.set(true);
+					localStorage.setItem('vrPassthrough', 'true');
+					requestPlay();
+				}
 			}
-		}, 2000)
+		];
 	}
-	});
 </script>
 
 <!-- The pill RIDES ABOVE the bottom dock: `--bottom-inset` is the visible docked
@@ -668,23 +676,24 @@
 
 <p
 	id="play-button"
-	title={willEnterAR
+	title={$willEnterAR
 		? 'Enter AR — the scene composites over your room'
-		: willEnterXR
+		: $willEnterXR
 			? 'Enter VR'
 			: 'Play'}
 	class={classActive + ' -translate-x-1/2 rounded-full bg-primary-600 font-medium hover:scale-110 dark:focus:ring-primary-800'}
 	style="position: absolute; height: 50px; width: 50px; bottom: calc(var(--bottom-inset, 0px) + 10px); z-index: var(--z-hud);
         display: flex; left: 50%; transition: transform 100ms, bottom 200ms ease"
 	on:click={() => {
-		checkPlay();
+		requestPlay();
 	}}
+	use:playModeMenu
 >
 	<!-- CO4b: ONE entry point that SHOWS its destination. The FAB already starts play
 	     mode on desktop and an immersive session in a headset, and `$vrPassthrough`
-	     decides which KIND (#vrButton below swaps VRButton for an immersive-ar
-	     XRButton) — so the honest thing is to say so ON this button rather than grow
-	     a second one beside it.
+	     decides which KIND (both hidden XR buttons mount below; `data-aim` says which
+	     one a press clicks) — so the honest thing is to say so ON this button rather
+	     than grow a second one beside it. Right-click picks the mode explicitly.
 	       desktop  the play triangle, unchanged
 	       VR       a headset (rectangle-goggles): press this and you are IN there
 	       AR       the same headset with A and R in its two lens halves, and a
@@ -696,7 +705,7 @@
 	     unselectable: the circle stays ONE hit target, which #play-button's clip-path
 	     was tuned for. No `ml-0.5` on the goggles — that 2px nudge is optical
 	     centering for a TRIANGLE, and a symmetric visor with it looks off-centre. -->
-	{#if willEnterAR}
+	{#if $willEnterAR}
 		<span class="pointer-events-none relative inline-flex select-none items-center justify-center">
 			<RectangleGoggles size={30} class="text-white" aria-hidden="true" />
 			<span
@@ -708,16 +717,26 @@
 				style="left: 71%; top: 50%; transform: translate(-50%, -50%)">R</span
 			>
 		</span>
-	{:else if willEnterXR}
+	{:else if $willEnterXR}
 		<RectangleGoggles size={26} class="text-white" aria-hidden="true" />
 	{:else}
 		<Play size={24} class="ml-0.5 text-white" fill="currentColor" aria-hidden="true" />
 	{/if}
 </p>
 
-<div class="hidden" id="vrButton">
-	{#if $vrPassthrough}
-		<!-- passthrough (90): same button flow, immersive-ar session -->
+<!-- BOTH hidden XR buttons mount permanently (4a). They used to swap on
+     `{#if $vrPassthrough}` — a reactive REMOUNT, which is fine while the preference
+     only ever changed in Settings, and a race the moment the play FAB's mode menu can
+     flip it and enter in the SAME gesture: svelte's flush is async, so the aimed
+     button would not exist yet when `requestPlay` looked for it, and by the time it
+     did the user activation that `requestSession` needs would be spent. With both
+     mounted the aim is a QUERY, not a mount, and the entry stays gesture-synchronous.
+     `data-aim` says which one a plain press would click — the preference, echoed for
+     anyone (including the suites) who needs to read the decision off the DOM. -->
+<div class="hidden" id="vrButton" data-aim={$vrPassthrough ? 'ar' : 'vr'}>
+	<div id="vrButtonVr"><VRButton /></div>
+	<!-- passthrough (90): same button flow, immersive-ar session -->
+	<div id="vrButtonAr">
 		<XRButton
 			mode="immersive-ar"
 			sessionInit={{
@@ -725,10 +744,18 @@
 				optionalFeatures: ['local-floor', 'bounded-floor', 'anchors', 'hand-tracking', 'plane-detection', 'layers', 'depth-sorted-layers', 'hit-test', 'mesh-detection']
 			}}
 		/>
-	{:else}
-		<VRButton />
-	{/if}
+	</div>
 </div>
+
+{#if playMenu}
+	<ContextMenu
+		x={playMenu.x}
+		y={playMenu.y}
+		items={playModeItems()}
+		sizeKey="playmode"
+		on:close={() => (playMenu = null)}
+	/>
+{/if}
 
 <div id="object-list" class={($objectListClose ? 'hidden' : 'flex') + ' flex-col ui-panel overflow-hidden'} use:dragMe use:focusStack={'objects'}
 	use:tabbable={{ key: 'objects', title: '☰ Objects', openStore: objectListClose, isOpen: (v) => !v, close: () => objectListClose.set(true) }}

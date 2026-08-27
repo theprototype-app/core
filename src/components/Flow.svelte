@@ -180,12 +180,19 @@
 			</div>
 		</div>
 	{:else}
+		<!--
+			R22 round 28: a node editor is a canvas with a palette down one side and a toolbar
+			across the top, and none of that survives a 260px box — see `groupFloor` in
+			windowTabs. Declaring `minW`/`minH` on the tab registration is how a member keeps a
+			GROUP from being shrunk past what it can render, the group being one box for all of
+			them.
+		-->
 		<div
 			id="flow-window"
 			class="ui-panel fixed flex flex-col overflow-hidden"
 			use:dragWindow={{ key: 'flowWin', defaultRect: { left: 120, top: 90 } }}
 			use:focusStack
-			use:tabbable={{ key: 'flow', title: 'Node editor', openStore: flowGraphClose, isOpen: (v) => !v, close: () => flowGraphClose.set(true) }}
+			use:tabbable={{ key: 'flow', title: 'Node editor', openStore: flowGraphClose, isOpen: (v) => !v, close: () => flowGraphClose.set(true), minW: 460, minH: 320 }}
 			use:dockable={{ key: 'flow' }}
 			style="z-index: var(--z-window)"
 			style:width="{effW}px"

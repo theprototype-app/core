@@ -7,7 +7,9 @@ import { writable, get } from 'svelte/store';
 // their open-store, so closing a window through its normal path just removes
 // its tab.
 
-/** @type {Map<string, {node: any, title: string, close?: () => void, unsub?: () => void}>} */
+/** `minW`/`minH` are what a member needs to render — see `groupFloor`; absent means the
+ * shared default is enough.
+ * @type {Map<string, {node: any, title: string, close?: () => void, unsub?: () => void, minW?: number, minH?: number}>} */
 const registry = new Map();
 
 /** [{id, members: string[], active: string, rect: {left, top, width, height}}] */
@@ -169,11 +171,38 @@ const GROUP_MIN_W = 260;
 const GROUP_MIN_H = 180;
 const TAB_MIN = 96;
 
-/** The smallest this group may be, given how many tabs it has to show. @param {any} group */
+/**
+ * The smallest this group may be.
+ *
+ * R22 ROUND 28 — THE FLOOR IS THE WORST CASE ACROSS THE MEMBERS, which is what the user
+ * asked for in the first place ("not smaller than smallest of one of them") and what round
+ * 26 only half-delivered: it used a flat constant, so a group of two could be driven to
+ * 260px whatever was in it. Reproduced from the user's own steps — undock the Explorer,
+ * undock the node editor, stack them, shrink to the floor — and the node editor at 260px
+ * is visibly wrecked: its panels overlap, its own header peeks out above the strip, and
+ * the canvas has nowhere to be. The Explorer survives the same width only because round 25
+ * taught its header to shed things.
+ *
+ * So a member DECLARES what it needs through `tabbable`, and the group takes the maximum.
+ * A window that declares nothing keeps the old constant, which is what every simple panel
+ * wants; the ones that need more are the ones with furniture inside them.
+ *
+ * Three inputs, all of which have to hold at once: what the widest member needs, what the
+ * tab strip needs to show its own tabs, and the floor below which no window is usable.
+ * @param {any} group
+ */
 export function groupFloor(group) {
-	const tabs = group?.members?.length ?? 1;
+	const members = group?.members ?? [];
+	const tabs = members.length || 1;
+	let needW = GROUP_MIN_W;
+	let needH = GROUP_MIN_H;
+	for (const key of members) {
+		const entry = registry.get(key);
+		if (entry?.minW) needW = Math.max(needW, entry.minW);
+		if (entry?.minH) needH = Math.max(needH, entry.minH);
+	}
 	// the strip also carries its own padding and the close button on the right
-	return { w: Math.max(GROUP_MIN_W, tabs * TAB_MIN + 56), h: GROUP_MIN_H };
+	return { w: Math.max(needW, tabs * TAB_MIN + 56), h: needH };
 }
 
 /** @param {string} key @param {number} width @param {number} height */
@@ -250,7 +279,7 @@ export function closeGroup(key) {
 
 function tryRestore() {
 	pendingRestore = pendingRestore.filter((saved) => {
-		const ready = saved.members.every((m) => registry.has(m));
+		const ready = saved.members.every((/** @type {string} */ m) => registry.has(m));
 		if (!ready) return true;
 		tabGroups.update((groups) => [
 			...groups,
@@ -264,10 +293,10 @@ function tryRestore() {
 /**
  * svelte action for a floating window that can join tab groups.
  * @param {any} node
- * @param {{key: string, title: string, openStore?: any, isOpen?: (v: any) => boolean, close?: () => void}} options
+ * @param {{key: string, title: string, openStore?: any, isOpen?: (v: any) => boolean, close?: () => void, minW?: number, minH?: number}} options
  */
-export function tabbable(node, { key, title, openStore, isOpen = (v) => !!v, close }) {
-	registry.set(key, { node, title, close });
+export function tabbable(node, { key, title, openStore, isOpen = (v) => !!v, close, minW, minH }) {
+	registry.set(key, { node, title, close, minW, minH });
 
 	// closing through the window's own path removes the tab
 	let first = true;

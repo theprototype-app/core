@@ -415,11 +415,17 @@
 	 * to leave first. The search box is the biggest and least urgent; the word "Objects" is
 	 * next, and the icon stays because a window still needs to say what it is at a glance.
 	 */
+	// ZERO IS NOT A WIDTH — see FilePreviewWindow's note. This window is tabbable, so it is
+	// one of the ones that gets hidden behind a tab.
 	let objHeaderW = $state(1000);
 	function objHeaderWidth(node: HTMLElement) {
-		const ro = new ResizeObserver(() => (objHeaderW = node.clientWidth));
+		const read = () => {
+			const w = node.clientWidth;
+			if (w > 0) objHeaderW = w;
+		};
+		const ro = new ResizeObserver(read);
 		ro.observe(node);
-		objHeaderW = node.clientWidth;
+		read();
 		return { destroy: () => ro.disconnect() };
 	}
 	const objHideSearch = $derived(objHeaderW < 260);

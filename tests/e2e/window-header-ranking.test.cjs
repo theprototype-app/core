@@ -154,6 +154,75 @@ h.run(async () => {
 		back.title > 0 && back.up > 0 && back.zoom > 0,
 		'widening brings every piece back — a fit, not a mode (' + JSON.stringify(back) + ')'
 	);
+	// ---- ROUND 27: ZOOMING OUT MUST NOT STRAND A PANNED IMAGE (user) -------------------
+	//
+	//   "when zoom out less than 100% image in preview window enable panning, otherwise if
+	//    you move image on a side and zoom out you cannot pan it around unless zoom back"
+	//
+	// The gate was `zoom > 1`, on the reasonable rule that an image smaller than its frame
+	// has nothing to pan. But the two are independent, so it could STRAND you: pan to a
+	// corner, zoom out, and the picture sits off to one side with the gesture that would
+	// fix it switched off. A control you must undo before you can use it is worse than one
+	// that does nothing.
+	const panState = () =>
+		page.evaluate(() => {
+			const img = document.querySelector('#preview-body img');
+			if (!img) return null;
+			const t = getComputedStyle(img).transform;
+			const body = document.querySelector('#preview-body');
+			return { transform: t, cursor: getComputedStyle(body).cursor };
+		});
+	const dragBy = async (dx) => {
+		const b = await page.locator('#preview-body').boundingBox();
+		const cx = b.x + b.width / 2;
+		const cy = b.y + b.height / 2;
+		await page.mouse.move(cx, cy);
+		await page.mouse.down();
+		await page.mouse.move(cx + dx, cy, { steps: 6 });
+		await page.mouse.up();
+		await page.waitForTimeout(400);
+	};
+
+	// zoom IN, pan to one side, then zoom back out past 100% — the reported sequence
+	await page.locator('#image-preview-window button[title="Zoom in"]').click();
+	await page.locator('#image-preview-window button[title="Zoom in"]').click();
+	await page.waitForTimeout(400);
+	await dragBy(90);
+	const panned = await panState();
+	h.check(
+		!!panned && panned.transform !== 'none',
+		'premise: zoomed in and panned to one side (' + JSON.stringify(panned) + ')'
+	);
+	for (let i = 0; i < 4; i++) await page.locator('#image-preview-window button[title="Zoom out"]').click();
+	await page.waitForTimeout(500);
+	const zoomedOut = await panState();
+	h.check(
+		!!zoomedOut && zoomedOut.cursor === 'grab',
+		'below 100% the picture is still grabbable — the gesture that would recentre it is not switched off (' +
+			JSON.stringify(zoomedOut) +
+			')'
+	);
+	const beforeRecover = zoomedOut.transform;
+	await dragBy(-70);
+	const recovered = await panState();
+	h.check(
+		!!recovered && recovered.transform !== beforeRecover,
+		'...and dragging really moves it, so a stranded image can be brought back (' +
+			beforeRecover +
+			' -> ' +
+			recovered.transform +
+			')'
+	);
+	// the one case the old rule got right: dead centre at 1:1 there is nothing to do
+	await page.locator('#image-preview-window button[title="Reset"]').click();
+	await page.waitForTimeout(400);
+	const reset = await panState();
+	h.check(
+		!!reset && reset.cursor === 'default',
+		'...while a 1:1, centred image offers no pan at all — a drag there could only knock it off centre (' +
+			JSON.stringify(reset) +
+			')'
+	);
 	await page.locator(PV + ' button[title="Close"]').click();
 	await page.waitForTimeout(400);
 

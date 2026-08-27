@@ -376,11 +376,18 @@
 	 * descendants — the documented transform/backdrop-filter trap by another door, and this
 	 * header hosts popovers.
 	 */
+	// ZERO IS NOT A WIDTH — see FilePreviewWindow's note: a tab group hides its inactive
+	// members with `display: none`, and a hidden header measured 0, which trips every
+	// threshold at once.
 	let headerW = $state(1000);
 	function headerWidth(node: HTMLElement) {
-		const ro = new ResizeObserver(() => (headerW = node.clientWidth));
+		const read = () => {
+			const w = node.clientWidth;
+			if (w > 0) headerW = w;
+		};
+		const ro = new ResizeObserver(read);
 		ro.observe(node);
-		headerW = node.clientWidth;
+		read();
 		return { destroy: () => ro.disconnect() };
 	}
 	const headerNarrow = $derived(headerW < 700);

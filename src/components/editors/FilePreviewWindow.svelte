@@ -138,11 +138,29 @@
 	 * box but brings containment that makes this a containing block for `position: fixed`
 	 * descendants — and this header opens menus.
 	 */
+	/**
+	 * R22 ROUND 27 (user): "header breaks when switch between tabs for multiwindow" — and it
+	 * was this, a side effect of round 25.
+	 *
+	 * A tab group hides its inactive members with `display: none`, and a hidden element
+	 * measures ZERO. So every member sitting behind a tab reported a 0px header, which trips
+	 * every threshold at once and hides everything the ranking can hide — and that is the
+	 * state it was in the moment its tab was selected again.
+	 *
+	 * A HIDDEN ELEMENT'S WIDTH IS NOT INFORMATION ABOUT HOW MUCH ROOM IT HAS. Zero means
+	 * "not on screen", which is a different fact entirely, so the last real measurement
+	 * stands until there is a new one. Any layout that reacts to a measured size needs this
+	 * the moment something can hide it.
+	 */
 	let headerW = $state(1000);
 	function headerWidth(node: HTMLElement) {
-		const ro = new ResizeObserver(() => (headerW = node.clientWidth));
+		const read = () => {
+			const w = node.clientWidth;
+			if (w > 0) headerW = w;
+		};
+		const ro = new ResizeObserver(read);
 		ro.observe(node);
-		headerW = node.clientWidth;
+		read();
 		return { destroy: () => ro.disconnect() };
 	}
 	/**
@@ -344,6 +362,25 @@
 		node.addEventListener('keydown', onKey, true);
 		return { destroy: () => node.removeEventListener('keydown', onKey, true) };
 	}
+
+	/**
+	 * R22 ROUND 27 (user): "when zoom out less than 100% image in preview window enable
+	 * panning, otherwise if you move image on a side and zoom out you cannot pan it around
+	 * unless zoom back".
+	 *
+	 * The gate was `zoom > 1`, on the reasonable-sounding rule that an image smaller than its
+	 * frame has nothing to pan. But panning and zooming are independent, so that rule can
+	 * STRAND you: pan to a corner, zoom out, and the picture is off to one side with no way
+	 * to bring it back except zooming in again to re-enable the gesture that would fix it.
+	 * A control that has to be undone before it can be used is worse than one that does
+	 * nothing.
+	 *
+	 * So the gate is "is this picture displaced or scaled AT ALL". At exactly 1:1 and
+	 * centred there is genuinely nothing to do, and a drag there would only knock a
+	 * perfectly framed image off centre — which is the case the old rule got right, and the
+	 * only one it did.
+	 */
+	const canPan = $derived(face === 'image' && (zoom !== 1 || panX !== 0 || panY !== 0));
 
 	const clamp = (z: number) => Math.min(Math.max(z, 0.1), 8);
 	function onWheel(e: WheelEvent) {
@@ -717,11 +754,11 @@
 		<div
 			id="preview-body"
 			class="pv-body relative min-h-0 flex-1 overflow-hidden"
-			style="cursor: {face === 'image' && zoom > 1 ? (panning ? 'grabbing' : 'grab') : 'default'}"
+			style="cursor: {canPan ? (panning ? 'grabbing' : 'grab') : 'default'}"
 			style:--pv-reading={readingInset}
 			onwheel={onWheel}
 			onpointerdown={(e) => {
-				if (face !== 'image' || zoom <= 1) return;
+				if (!canPan) return;
 				panning = true;
 				(e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
 			}}

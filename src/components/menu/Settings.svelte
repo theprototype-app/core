@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { Accordion, AccordionItem, Modal, Button, Checkbox, Toggle } from 'flowbite-svelte';
-	import { X } from '@lucide/svelte';
+	import { X, Lock, RotateCcw } from '@lucide/svelte';
 	import ThemedSelect from '../ui/ThemedSelect.svelte';
 	import SettingRow from './SettingRow.svelte';
 	import { showGrid, vrOverride, vrMenuHand, vrSnapAngle, vrMirrorSnapTurn, vrTeleportEnabled, vrSleeveEnabled, vrVertexHold, vrFlying, vrPassthrough, vrMenuHold, vrTargetHz, peerHandStyle } from '../../stores/sceneStore.js';
@@ -62,7 +62,16 @@
 	import { colocateHereFromView, stopColocation } from '$lib/colocationCalibrate';
 	import { anchorRecords, forgetRoom, forgetCandidate } from '$lib/colocationAnchors';
 	import { resetWindowLayout } from '$lib/dragWindow';
-	import { shortcuts } from '$lib/shortcuts';
+	import {
+		shortcuts,
+		comboOf,
+		isRebindable,
+		rebindShortcut,
+		resetShortcut,
+		resetAllShortcuts,
+		setOverride,
+		setShortcutCapture
+	} from '$lib/shortcuts';
 	import {
 		aiEnabled,
 		setAiEnabled,
@@ -94,6 +103,82 @@
 
 	let shortcutGroups = [...new Set(shortcuts.map((s) => s.group))];
 	let shortcutsExpanded = false;
+
+	// --- Phase 5: rebinding ------------------------------------------------
+	// The registry is a plain array, so nothing here re-renders when a combo
+	// moves. `shortcutsVersion` is the redraw signal and the rows sit inside a
+	// {#key} on it. LEGACY-MODE FILE: a plain `let` is reactive on reassignment;
+	// a `$state` here would flip the whole component to runes and break the build.
+	let shortcutsVersion = 0;
+	/** the row currently listening for a combo */
+	let capturingId: string | null = null;
+	/** a refused rebind, offering the swap */
+	let shortcutConflict: { id: string; keys: string; other: any } | null = null;
+	let captureListener: ((e: KeyboardEvent) => void) | null = null;
+
+	function stopCapture() {
+		if (captureListener) window.removeEventListener('keydown', captureListener, true);
+		captureListener = null;
+		capturingId = null;
+		setShortcutCapture(false);
+	}
+
+	function startCapture(id: string) {
+		stopCapture();
+		shortcutConflict = null;
+		capturingId = id;
+		// the registry stands down for the press we are about to record
+		setShortcutCapture(true);
+		captureListener = (e: KeyboardEvent) => {
+			// a bare modifier is the user still BUILDING the combo, not the combo
+			if (e.key === 'Control' || e.key === 'Alt' || e.key === 'Shift' || e.key === 'Meta') return;
+			e.preventDefault();
+			// Capture phase on window, so this is the first listener in the app to see
+			// the press. Stopping it here is what keeps voiceChat's bare-V push-to-talk
+			// (which consults no registry of any kind) from opening the mic while a user
+			// binds V to something, and Escape from closing the dialog underneath us.
+			e.stopPropagation();
+			if (e.key === 'Escape') {
+				stopCapture();
+				shortcutsVersion++;
+				return;
+			}
+			const combo = comboOf(e);
+			const result = rebindShortcut(id, combo);
+			if (!result.ok && result.conflict) shortcutConflict = { id, keys: combo, other: result.conflict };
+			else if (!result.ok) showToast(result.reason || 'That key cannot be bound');
+			else if (result.meshEdit)
+				showToast(combo + ' is also a mesh-edit key, so it will do nothing while an Edit Mesh session is open');
+			stopCapture();
+			shortcutsVersion++;
+		};
+		window.addEventListener('keydown', captureListener, true);
+	}
+
+	/** Take the combo anyway and hand the loser this row's previous keys. Both
+	 * writes go through setOverride, the path that does NOT re-check for a
+	 * conflict — we have already decided. Free the other row FIRST. */
+	function swapConflict() {
+		const c = shortcutConflict;
+		if (!c) return;
+		const mine = shortcuts.find((s) => s.id === c.id);
+		if (mine) setOverride(c.other.id, mine.keys);
+		setOverride(c.id, c.keys);
+		shortcutConflict = null;
+		shortcutsVersion++;
+	}
+
+	function resetOneShortcut(id: string) {
+		resetShortcut(id);
+		shortcutConflict = null;
+		shortcutsVersion++;
+	}
+
+	function resetEveryShortcut() {
+		resetAllShortcuts();
+		shortcutConflict = null;
+		shortcutsVersion++;
+	}
 	let aiExpanded = false;
 	let sceneExpanded = false;
 	let explorerExpanded = false;
@@ -367,6 +452,9 @@
 	} else if ($settingsOpen === false) {
 		restorePanels();
 		$settingsSection = null;
+		// closing mid-capture would leave the registry muted for the whole session
+		stopCapture();
+		shortcutConflict = null;
 	}
 
 	// U-3: filter the (numerous) settings rows by a search query. A `use:` action
@@ -1823,21 +1911,61 @@
 				</AccordionItem>
 				<AccordionItem bind:open={shortcutsExpanded}>
 					{#snippet header()}Shortcuts{/snippet}
-					<!-- 131: borderless multi-column grid; group headers span all columns -->
-					<div id="shortcut-grid" class="grid grid-cols-1 gap-x-8 gap-y-0.5 sm:grid-cols-2 lg:grid-cols-3">
-						{#each shortcutGroups as group}
-							<p class="col-span-full mb-1 mt-3 text-xs font-semibold uppercase text-gray-400">{group}</p>
-							{#each shortcuts.filter((s) => s.group === group) as shortcut}
-								<div class="flex items-center gap-3 py-1">
-									<kbd
-										class="min-w-16 rounded-lg border border-gray-200 bg-gray-100 px-2 py-1 text-center text-xs font-semibold text-gray-800 dark:border-gray-500 dark:bg-gray-600 dark:text-gray-100"
-										>{shortcut.keys}</kbd
-									>
-									<span class="text-sm text-gray-600 dark:text-gray-300">{shortcut.label}</span>
-								</div>
-							{/each}
-						{/each}
+					<!-- Phase 5: the list is also the EDITOR (the Unity Shortcut Manager model)
+					     - click a row's keys and press the combo you want. A row with no action
+					     of its own (fly keys, push-to-talk, the mesh-edit bundles, a module's
+					     declared bindings) is listed for discoverability and locked. -->
+					<div class="mb-1 flex items-center justify-between gap-3">
+						<p class="text-xs text-gray-500 dark:text-gray-400">Click a shortcut's keys to rebind it - Esc cancels.</p>
+						<button
+							id="shortcut-reset-all"
+							class="shrink-0 rounded-sm bg-gray-600 px-2 py-1 text-xs text-white hover:bg-gray-500"
+							on:click={resetEveryShortcut}>Reset all</button>
 					</div>
+					{#key shortcutsVersion}
+						<!-- 131: borderless multi-column grid; group headers span all columns -->
+						<div id="shortcut-grid" class="grid grid-cols-1 gap-x-8 gap-y-0.5 sm:grid-cols-2 lg:grid-cols-3">
+							{#each shortcutGroups as group}
+								<p class="col-span-full mb-1 mt-3 text-xs font-semibold uppercase text-gray-400">{group}</p>
+								{#each shortcuts.filter((s) => s.group === group) as shortcut}
+									<div class="flex flex-col py-1" data-shortcut={shortcut.id}>
+										<div class="flex items-center gap-2">
+											{#if isRebindable(shortcut)}
+												<button
+													class="shortcut-keys min-w-16 rounded-lg border border-gray-200 bg-gray-100 px-2 py-1 text-center text-xs font-semibold text-gray-800 dark:border-gray-500 dark:bg-gray-600 dark:text-gray-100 {capturingId === shortcut.id ? 'bg-amber-100 text-amber-900 dark:bg-amber-600 dark:text-white' : 'hover:border-gray-400 dark:hover:border-gray-300'}"
+													title="Click to rebind"
+													aria-label={'Rebind ' + shortcut.label}
+													on:click={() => startCapture(shortcut.id)}
+													>{capturingId === shortcut.id ? 'Press keys... Esc cancels' : shortcut.keys}</button>
+											{:else}
+												<span class="inline-flex shrink-0 items-center gap-1" title={shortcut.fixedReason || 'listed for reference'}>
+													<kbd class="min-w-16 rounded-lg border border-gray-200 bg-gray-100 px-2 py-1 text-center text-xs font-semibold text-gray-800 dark:border-gray-500 dark:bg-gray-600 dark:text-gray-100">{shortcut.keys}</kbd>
+													<Lock class="h-3 w-3 text-gray-400" aria-hidden="true" />
+												</span>
+											{/if}
+											<span class="text-sm text-gray-600 dark:text-gray-300">{shortcut.label}</span>
+											{#if isRebindable(shortcut) && shortcut.keys !== shortcut.defaultKeys}
+												<button
+													class="shortcut-reset ml-auto shrink-0 rounded-sm p-1 text-gray-400 hover:text-gray-200"
+													title={'Reset to ' + shortcut.defaultKeys}
+													aria-label={'Reset ' + shortcut.label + ' to ' + shortcut.defaultKeys}
+													on:click={() => resetOneShortcut(shortcut.id)}>
+													<RotateCcw class="h-3 w-3" aria-hidden="true" />
+												</button>
+											{/if}
+										</div>
+										{#if shortcutConflict && shortcutConflict.id === shortcut.id}
+											<div class="shortcut-conflict mt-1 flex flex-wrap items-center gap-2 text-xs text-amber-600 dark:text-amber-400">
+												<span><kbd class="font-semibold">{shortcutConflict.keys}</kbd> is bound to {shortcutConflict.other.label}</span>
+												<button class="shortcut-swap rounded-sm bg-gray-600 px-2 py-0.5 text-white hover:bg-gray-500" on:click={swapConflict}>Swap</button>
+												<button class="shortcut-cancel rounded-sm px-2 py-0.5 underline" on:click={() => (shortcutConflict = null)}>Cancel</button>
+											</div>
+										{/if}
+									</div>
+								{/each}
+							{/each}
+						</div>
+					{/key}
 				</AccordionItem>
 				<AccordionItem bind:open={aboutExpanded}>
 					{#snippet header()}About{/snippet}

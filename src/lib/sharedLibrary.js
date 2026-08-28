@@ -825,12 +825,42 @@ export function shareItems(ids) {
  *            about the thing it asked about.
  *  · `stash` is the connect card's destructive option, kept because it is the honest
  *            answer to "I would rather have the session's library than mine".
- * @param {'share' | 'keep' | 'stash'} choice @returns {number} items acted on
+ *
+ * REMEMBER MY CHOICE (round 31, user) — the second parameter is the browser-permission
+ * checkbox, and it is deliberately NOT a "share automatically" toggle. A toggle that only
+ * means share sits beside a Keep local button it contradicts; a remember-my-choice box
+ * modifies WHICHEVER answer is pressed, so both standing rules are reachable from one
+ * surface, the action stays primary (the box never acts on its own), and the preference
+ * can never disagree with the click that carried it.
+ *
+ * `always` is the blanket rule the sweep already implements, so it reaches the files
+ * still sitting local as well as the next one — which is what somebody pressing Share and
+ * asking never to be asked again is agreeing to.
+ *
+ * `stash` TAKES NO RULE. Replacing your library with the session's is a one-off act about
+ * the files you brought, not a policy about the files you will add next: there is no
+ * standing answer it could mean, so the box is ignored on that path rather than guessed at.
+ *
+ * AND THE SETTING SAYS SO OUT LOUD. A preference changed as a side effect of a button is
+ * only honest if it announces itself and names the way back, which is why the consequence
+ * toast lives HERE and not in the Explorer: whoever answers a remembered ask is told,
+ * once, on the same call that wrote it.
+ * @param {'share' | 'keep' | 'stash'} choice
+ * @param {boolean} [remember] make this answer the standing one (`shareNewFiles`)
+ * @returns {number} items acted on
  */
-export function resolveShareAsk(choice) {
+export function resolveShareAsk(choice, remember = false) {
 	const ask = get(pendingShareAsk);
 	if (!ask) return 0;
 	pendingShareAsk.set(null);
+	if (remember && (choice === 'share' || choice === 'keep')) {
+		shareNewFiles.set(choice === 'share' ? 'always' : 'never');
+		showToast(
+			choice === 'share'
+				? 'New files will now be shared automatically — change this in File settings'
+				: 'New files will now be kept local — change this in File settings'
+		);
+	}
 	if (choice === 'stash') {
 		void stashIntoSessions();
 		return ask.items.length;

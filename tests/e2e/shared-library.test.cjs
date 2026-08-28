@@ -2273,6 +2273,206 @@ h.run(async () => {
 	);
 	await A.page.evaluate(() => window.__stores.sharedLibrary.resolveShareAsk('keep'));
 
+	// ================================================================================
+	// ROUND 31 — REMEMBER MY CHOICE.
+	//
+	// The report: "'share your N files with the session?' should have 'automatically share
+	// new files' toggle". Built as the BROWSER-PERMISSION checkbox rather than a share-only
+	// switch, and the difference is the point: one box that applies to whichever button is
+	// pressed reaches BOTH standing rules from one surface, keeps the action primary, and
+	// cannot contradict itself — a box reading "share automatically" sitting next to a Keep
+	// local click is a control arguing with the button beside it.
+
+	/** the remember box as the DOM holds it, or null if the strip is not drawn */
+	const rememberBoxOf = (peer) =>
+		peer.page.evaluate(() => {
+			const el = document.querySelector('#explorer-share-remember');
+			if (!el) return null;
+			return {
+				checked: !!el.checked,
+				label: (el.closest('label')?.textContent ?? '').replace(/\s+/g, ' ').trim(),
+				// the app's ONE themed checkbox, not a raw browser control
+				themed: el.classList.contains('tp-check'),
+				// association: the box lives INSIDE its label, so that text is its accessible name
+				labelled: !!el.closest('label')
+			};
+		});
+
+	const prefOf = (peer) =>
+		peer.page.evaluate(() => {
+			let v;
+			window.__stores.sharedLibrary.shareNewFiles.subscribe((x) => (v = x))();
+			return v;
+		});
+
+	// ---- 68. the box renders on BOTH kinds of ask, unchecked ----------------------
+	//
+	// Unchecked is the only safe default: a preference is a thing you ask for, never a
+	// thing you get for not reading a strip.
+	await resetAsk(A);
+	await addFile(A, 'r31 offers a rule', 'r31-box.txt');
+	await h.eventually(() => askStripOf(A), (v) => !!v, 'a new-file ask to carry the box');
+	const box1 = await rememberBoxOf(A);
+	h.check(box1 !== null, 'the remember box renders on a new-file ask');
+	h.check(box1 && box1.checked === false, `and it starts UNCHECKED (${JSON.stringify(box1?.checked)})`);
+	h.check(
+		box1 && box1.label === 'Do this for new files from now on',
+		`the label says it is about the RULE, not about sharing (${JSON.stringify(box1?.label)})`
+	);
+	h.check(box1 && box1.themed && box1.labelled, 'themed `tp-check`, inside its own label — no naked control, no orphan text');
+	// ...and on the CONNECT card, which is where the destructive third answer lives. Armed
+	// through the store because a second connect edge cannot be manufactured on a peer that
+	// is already connected — the strip is the same component either way, and what is read
+	// here is that the box is not gated on `kind`.
+	await A.page.evaluate(() => {
+		let items;
+		window.__stores.explorer.explorerItems.subscribe((v) => (items = v))();
+		const one = items[0];
+		window.__stores.sharedLibrary.pendingShareAsk.set({
+			kind: 'connect',
+			items: [{ id: one.id, name: one.name, hash: one.hash }]
+		});
+	});
+	await A.page.waitForTimeout(400);
+	const connectBox = await rememberBoxOf(A);
+	h.check(connectBox !== null && connectBox.checked === false, 'it renders on the connect card too, also unchecked');
+	h.check(
+		(await askStripOf(A))?.stash === 'Stash mine',
+		'premise: that really is the connect card, the one with the destructive answer'
+	);
+
+	// ---- 69. checked + Share is a STANDING YES -----------------------------------
+	//
+	// COUNTERFACTUAL, measured: with the `if (remember && ...)` block deleted from
+	// `resolveShareAsk`, the box became decoration — the pref stayed "ask" after a checked
+	// Share, the consequence toast matched 0 times ("(0: null)"), and the file added
+	// afterwards was NOT shared, so section 70's premise fell over behind it: 5 red
+	// ("writes the standing rule", "announced exactly once", "names the way back", "the
+	// NEXT file shares itself", "a question to answer with the other rule"). Restored:
+	// 'always', 1 toast, silence, and all 288 green.
+	await resetAsk(A);
+	const alwaysFile = await addFile(A, 'r31 always', 'r31-always.txt');
+	await h.eventually(() => askStripOf(A), (v) => !!v, 'the question to answer with a rule');
+	await A.page.locator('#explorer-share-remember').check();
+	h.check((await rememberBoxOf(A)).checked === true, 'a real click ticks it');
+	await A.page.locator('#explorer-share-yes').click();
+	await h.eventually(() => prefOf(A), (v) => v === 'always', 'checked + Share writes the standing rule');
+	await h.eventually(
+		() => itemsOf(A),
+		(items) => items.find((i) => i.hash === alwaysFile.hash)?.share === 'mine',
+		'...and the batch it was pressed on is still shared — the box modifies the action, it does not replace it'
+	);
+	const ruleToasts = (await toastsOf(A)).filter((t) => /shared automatically/.test(t));
+	h.check(
+		ruleToasts.length === 1,
+		`the consequence is announced exactly once (${ruleToasts.length}: ${JSON.stringify(ruleToasts[0] ?? null)})`
+	);
+	h.check(
+		/change this in File settings/.test(ruleToasts[0] ?? ''),
+		'...and it names the way back — a setting changed as a side effect must say where to undo it'
+	);
+	// THE RULE IS REAL: the next file shares itself with nothing asked. (`always` is the
+	// blanket sweep, so it also reaches what was already sitting local — the documented
+	// meaning of that value, and what never-ask-me-again buys.)
+	const afterAlways = await addFile(A, 'r31 no question', 'r31-after.txt');
+	await h.eventually(
+		() => itemsOf(A),
+		(items) => items.find((i) => i.hash === afterAlways.hash)?.share === 'mine',
+		'the NEXT file shares itself'
+	);
+	h.check((await askOf(A)) === null, '...with nothing asked');
+	h.check((await askStripOf(A)) === null, '...and no strip drawn');
+
+	// ---- 70. checked + Keep local is a STANDING NO -------------------------------
+	//
+	// The half a share-only toggle cannot reach, and the reason the box is worded as a
+	// memory rather than as an action.
+	await resetAsk(A);
+	const neverFile = await addFile(A, 'r31 never', 'r31-never.txt');
+	await h.eventually(() => askStripOf(A), (v) => !!v, 'a question to answer with the other rule');
+	await A.page.locator('#explorer-share-remember').check();
+	await A.page.locator('#explorer-share-no').click();
+	await h.eventually(() => prefOf(A), (v) => v === 'never', 'checked + Keep local writes the opposite standing rule');
+	const keptToast = (await toastsOf(A)).filter((t) => /kept local/.test(t));
+	h.check(
+		keptToast.length === 1 && /change this in File settings/.test(keptToast[0]),
+		`and says so once, with the way back (${JSON.stringify(keptToast[0] ?? null)})`
+	);
+	// REMEMBERING DOES NOT UPGRADE THE ANSWER. Keep local still writes nothing on the record
+	// (section 61's rule): the standing rule is a preference about the next file, never the
+	// `no` veto on this one.
+	const keptRow = (await itemsOf(A)).find((i) => i.hash === neverFile.hash);
+	h.check(
+		keptRow && keptRow.share === null,
+		`the file itself stays flag-ABSENT (${JSON.stringify(keptRow?.share)}) — the rule is about the future, not a veto on the present`
+	);
+	const afterNever = await addFile(A, 'r31 silent', 'r31-silent.txt');
+	await A.page.waitForTimeout(1600);
+	h.check((await askOf(A)) === null, 'the next file asks nothing');
+	h.check(
+		(await itemsOf(A)).find((i) => i.hash === afterNever.hash)?.share === null,
+		'...and shares nothing either — silence, which is what `never` means'
+	);
+
+	// ---- 71. UNCHECKED is a one-off, and touches no setting ----------------------
+	//
+	// The check that makes the two above mean anything: if the pref moved whatever the box
+	// said, they would be measuring the button rather than the box.
+	await resetAsk(A);
+	const onceFile = await addFile(A, 'r31 just this once', 'r31-once.txt');
+	await h.eventually(() => askStripOf(A), (v) => !!v, 'a question answered the ordinary way');
+	h.check(
+		(await rememberBoxOf(A)).checked === false,
+		'premise: a NEW ask starts the box unticked again, never inheriting the last answer'
+	);
+	await A.page.locator('#explorer-share-yes').click();
+	await h.eventually(
+		() => itemsOf(A),
+		(items) => items.find((i) => i.hash === onceFile.hash)?.share === 'mine',
+		'the file shares'
+	);
+	h.check((await prefOf(A)) === 'ask', `...and the setting is untouched (${await prefOf(A)})`);
+	h.check(
+		(await toastsOf(A)).filter((t) => /shared automatically|kept local/.test(t)).length === 0,
+		'nothing announces a rule, because none was written'
+	);
+
+	// ---- 72. Stash IGNORES the box -----------------------------------------------
+	//
+	// Replacing your library with the session's is a one-off act about the files you
+	// brought, not a policy about the files you will add next — there is no standing answer
+	// it could mean, so the box is ignored rather than guessed at. Run on D, whose library
+	// nothing below reads, because the honest way to show the rule is to take the
+	// destructive path for real with the flag set.
+	await D.page.evaluate(() => {
+		let items;
+		window.__stores.explorer.explorerItems.subscribe((v) => (items = v))();
+		window.__stores.sharedLibrary.shareNewFiles.set('ask');
+		window.__stores.sharedLibrary.pendingShareAsk.set({
+			kind: 'connect',
+			items: items.slice(0, 1).map((i) => ({ id: i.id, name: i.name, hash: i.hash }))
+		});
+	});
+	await D.page.waitForTimeout(300);
+	h.check((await prefOf(D)) === 'ask', 'premise: D is on `ask`, so a rule would be visible if one were written');
+	await D.page.evaluate(() => window.__stores.sharedLibrary.resolveShareAsk('stash', true));
+	// the premise that makes "ignored" non-vacuous: the stash really ran
+	// read the SAVE rather than an empty library: `stashIntoSessions` clears and then
+	// immediately pulls every shared row back, so "no items" is a window, not a state
+	await h.eventually(
+		() => toastsOf(D),
+		(t) => t.some((x) => /^Saved "Before adopting/.test(x)),
+		'the stash really happened — the library was saved into a session first'
+	);
+	h.check(
+		(await prefOf(D)) === 'ask',
+		`and the remembered flag wrote NO rule (${await prefOf(D)}) — a one-off act has no standing answer to remember`
+	);
+
+	// hand the suite back the silence it seeded itself with (line 77): nothing below reads
+	// A's library, but a sticky strip over the grid is not a state to leave a peer in
+	await A.page.evaluate(() => window.__stores.sharedLibrary.shareNewFiles.set('never'));
+
 	// ---- 14. no render crash anywhere ---------------------------------------------
 	for (const [label, p] of [
 		['A', A],

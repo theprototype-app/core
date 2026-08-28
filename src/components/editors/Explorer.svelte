@@ -1944,16 +1944,30 @@
 	 */
 	const shareAsk = $derived($pendingShareAsk);
 	let shareStashArmed = $state(false);
+	/**
+	 * Round 31 (user) — REMEMBER MY CHOICE, and the reason it is one box rather than a
+	 * "share automatically" toggle: it modifies whichever ANSWER is pressed, so Share and
+	 * Keep local each write their own standing rule from one control, and the box can never
+	 * contradict the button it travels with. It also never acts alone — the action stays
+	 * primary and the checkbox is a modifier on it, which is the browser-permission pattern.
+	 */
+	let shareRemember = $state(false);
 	$effect(() => {
 		// a fresh question disarms the destructive button: the second press must always be
 		// an answer to the question that is on screen (the toast's own rule, one surface over)
+		// — and it clears the box for the same reason, since a standing rule must be asked
+		// for about THIS batch and never inherited from the last one
 		void shareAsk;
 		shareStashArmed = false;
+		shareRemember = false;
 	});
 	// lang="ts": a JSDoc @param is IGNORED here (the documented Inspector rule in reverse)
 	function answerShareAsk(choice: 'share' | 'keep' | 'stash') {
 		const n = shareAsk?.items?.length ?? 0;
-		resolveShareAsk(choice);
+		// the consequence toast for a REMEMBERED answer belongs to the store call that writes
+		// the preference, so it fires wherever the ask is answered from; this one is about the
+		// act, not the rule, and the two are different pieces of news
+		resolveShareAsk(choice, shareRemember);
 		if (choice === 'share') showToast(`Sharing ${n} file${n === 1 ? '' : 's'} with the session`);
 	}
 	/** focus the answer, so Enter confirms and Esc has a handler inside the strip to reach */
@@ -4686,6 +4700,25 @@
 								: 'Only shared files are visible to peers — everything else stays on this device.'}
 						</span>
 					</span>
+					<!--
+						ONE box for BOTH standing rules — checked, Share means "always" and Keep local
+						means "never". It sits between the question and the answers because that is the
+						reading order: you decide whether this is a rule, then which way it goes. Stash
+						ignores it (see `resolveShareAsk`) — a one-off act is not a policy.
+					-->
+					<label
+						class="ex-ask-remember"
+						title="Applies to whichever answer you press: Share always, or Keep local never. Change it any time in File settings."
+					>
+						<input
+							id="explorer-share-remember"
+							class="tp-check"
+							type="checkbox"
+							checked={shareRemember}
+							onchange={(e) => (shareRemember = e.currentTarget.checked)}
+						/>
+						Do this for new files from now on
+					</label>
 					<button
 						id="explorer-share-yes"
 						class="ex-confirm-yes ex-ask-yes"
@@ -5636,6 +5669,23 @@
 	*/
 	.ex-confirm--ask {
 		border-color: var(--border, #374151);
+		/* the offer carries one more control than the delete question, so it is the only
+		   strip allowed to wrap — on a narrow panel the remember box drops under the text
+		   with the buttons rather than squeezing the question to nothing */
+		flex-wrap: wrap;
+	}
+	/* a MODIFIER, so it reads quieter than the answers it modifies and never competes
+	   with them for the press */
+	.ex-ask-remember {
+		display: flex;
+		flex: 0 0 auto;
+		align-items: center;
+		gap: 6px;
+		color: #9ca3af;
+		cursor: pointer;
+	}
+	.ex-ask-remember:hover {
+		color: #d1d5db;
 	}
 	.ex-ask-icon {
 		color: #93c5fd;

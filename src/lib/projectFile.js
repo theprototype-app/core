@@ -348,6 +348,159 @@ export async function exportProject(opts = {}) {
 	};
 }
 
+/**
+ * R22 round 13 P1 (user): ".tpscene only available as download for projects, its wrong,
+ * should be .tp (project files) to download."
+ *
+ * They are right, and SessionsManager's own comment recorded why it shipped the other
+ * way: a .tp is written by `exportProject` above, FROM THE LIVE STORES - the manifest, the
+ * Explorer, the version history - so there was nothing that could write one from a SAVED
+ * record, and the bundle button sent a project through the scene writer. The fix is
+ * therefore not a label. It is this writer, the missing one.
+ *
+ * IT TOUCHES NO LIVE STORE, and that is the whole point: a saved project downloaded while
+ * a different scene is on screen must be the project that was SAVED. Everything comes out
+ * of the payload handed in - `payload.library.folders` are the folder rows,
+ * `payload.library.items` are the item rows and their `blob`s are the bytes, and the scene
+ * is the .tpscene this same record already produces through `exportSessionZip`.
+ *
+ * WHY `assets: false` on that inner bundle: `exportSessionZip`'s asset section is derived
+ * from `sceneAssetList()`, which reads the LIVE scene graph. For a saved record that is a
+ * different scene's asset list, and bundling it would be exactly the "read state this
+ * record does not own" that this function exists to avoid. Nothing is lost: a project's
+ * files ARE its library, and they travel as top-level `items/` rows, hash-addressed,
+ * which is where a .tp has carried bytes since 21-G8. (It is also why the UI offers this
+ * for a project and not for a bare scene - see SessionsManager.)
+ *
+ * THE SYNTHESIZED MANIFEST claims exactly one scene with a one-entry history, because
+ * that is all a session record HAS: a session is a snapshot, not a history. Deliberately
+ * ABSENT: `manifest.folders` / `manifest.items`, which are R22-R1's SHARED index - a saved
+ * library row carries no `share` flag, so claiming them as shared would be a fabrication.
+ * Top-level `folders`/`items` is where `restoreProjectContents` reads placement from
+ * anyway, and the omit-when-empty rule (the `labels` precedent) covers the rest.
+ *
+ * @param {any} payload a saved session record, as `getSession` returns it
+ * @returns {Promise<{bytes: Uint8Array, name: string, scenes: number, items: number,
+ *   skippedItems: number} | null>} null = there is nothing usable in the payload
+ */
+export async function exportProjectFromSession(payload) {
+	if (!payload || typeof payload !== 'object') return null;
+	const { zipSync, strToU8 } = await import('fflate');
+	// sessions.js is ALREADY reachable from here (this module imports levels.js, which
+	// imports it), so this edge closes no cycle; it is dynamic for the same reason fflate
+	// is - nothing on this module's own load path needs the zip machinery.
+	const { exportSessionZip } = await import('./sessions');
+
+	const sceneName = String(payload.name ?? '').trim() || 'Untitled scene';
+	/** @type {Record<string, Uint8Array>} */
+	const files = {};
+
+	// THE SCENE - the bundle this record already produces, minus the library.
+	//
+	// STRIPPING IT IS THE POINT, not a shortcut: round 12 taught `exportSessionZip` to write
+	// a project payload's library out as real `library/` entries, so handing it the payload
+	// whole would put every file in this archive TWICE - once inside the scene bundle and
+	// once as an `items/` row - and double the file. In a .tp the PROJECT owns the library
+	// and a `scenes/<hash>.tpscene` is a scene, which is exactly what the entries
+	// `exportProject` writes there are.
+	/** @type {any} */
+	const scenePayload = { ...payload };
+	delete scenePayload.library;
+	const sceneBytes = await exportSessionZip(scenePayload, { assets: false, packs: false, flow: true });
+	// slice the exact bytes before hashing: a VIEW into a larger buffer hashes as the whole
+	// buffer, and then the hash in project.json is not the hash of the file it names
+	const sceneBuffer = /** @type {ArrayBuffer} */ (
+		sceneBytes.buffer.slice(sceneBytes.byteOffset, sceneBytes.byteOffset + sceneBytes.byteLength)
+	);
+	const sceneHash = await hashBytes(sceneBuffer);
+	const sceneFile = 'scenes/' + sceneHash + '.tpscene';
+	files[sceneFile] = sceneBytes;
+	// the row's NAME is what an import writes into the library, and its EXTENSION is what
+	// kindOf reads to call the result a scene rather than an anonymous blob
+	const scenes = [{ hash: sceneHash, name: sceneName + '.tpscene', file: sceneFile }];
+
+	// THE LIBRARY - out of the record, never out of the Explorer
+	const folders = (payload.library?.folders ?? []).map((/** @type {any} */ f) => ({
+		id: String(f?.id ?? ''),
+		name: String(f?.name ?? 'Folder'),
+		parentId: f?.parentId == null ? null : String(f.parentId)
+	}));
+	/** @type {{hash: string, name: string, kind: string, folderId: string | null, file: string}[]} */
+	const items = [];
+	/** @type {Record<string, string>} hash -> the zip path already carrying these bytes */
+	const carried = { [sceneHash]: sceneFile };
+	let skippedItems = 0;
+	for (const row of payload.library?.items ?? []) {
+		/** @type {ArrayBuffer | null} */
+		let buffer = null;
+		try {
+			buffer = row?.blob ? await row.blob.arrayBuffer() : null;
+		} catch {
+			buffer = null;
+		}
+		// a row whose bytes have gone is COUNTED and reported, never silently dropped
+		if (!buffer) {
+			skippedItems++;
+			continue;
+		}
+		const name = String(row?.name ?? 'file');
+		// hashed from the BYTES rather than trusted from the row: a .tp is content-addressed
+		// and the stored hash is the one field here that could be stale
+		const hash = await hashBytes(buffer);
+		let file = carried[hash];
+		if (!file) {
+			file = 'items/' + hash + extOf(row);
+			files[file] = new Uint8Array(buffer);
+			carried[hash] = file;
+		}
+		items.push({
+			hash,
+			name,
+			kind: String(row?.kind ?? kindOf(name) ?? 'text'),
+			folderId: row?.folderId == null ? null : String(row.folderId),
+			file
+		});
+	}
+
+	// normalized at the boundary like every other read of this document, which is also
+	// what drops the keys that would be empty
+	const manifest = normalizeManifest({
+		name: sceneName,
+		scenes: { [sceneName]: { history: [sceneHash], pinned: [] } },
+		assets: [],
+		changedAt: Date.now()
+	});
+
+	files['project.json'] = strToU8(
+		JSON.stringify({
+			format: PROJECT_FORMAT,
+			appVersion: APP_VERSION,
+			createdAt: Date.now(),
+			name: sceneName,
+			manifest,
+			scenes,
+			// v1's asset section: a session record tracks no manifest assets, and the files it
+			// does hold are the `items` rows above
+			assets: [],
+			folders,
+			items,
+			// the four documented counts are honestly ZERO here - this file carries the single
+			// version the record holds, so nothing was pruned and nothing was left out.
+			// `items` is additive (an older reader still sees the four it knows) and it is the
+			// one thing this writer can fail to carry: a library row whose blob has gone.
+			skipped: { scenes: 0, assets: 0, omittedVersions: 0, omittedScenes: 0, items: skippedItems }
+		})
+	);
+
+	return {
+		bytes: zipSync(files, { level: 6 }),
+		name: sceneName,
+		scenes: scenes.length,
+		items: items.length,
+		skippedItems
+	};
+}
+
 /** 21-I5: the .tp half of the export-settings cog. DEFAULT ON (locked answer 2) — a
  * project file has carried its scene history since 21-G3. LOCAL, like every other
  * export preference. */

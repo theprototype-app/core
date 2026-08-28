@@ -584,26 +584,42 @@ h.run(async () => {
 
 	// ---- 10. THE DOWNLOAD FORMATS -----------------------------------------------------
 	// "instead of .json download allow to download session as .tpscene or .tp"
-	const dlRows = await page.evaluate(() =>
-		[...document.querySelectorAll('.session-card')][0]
-			? [...document.querySelectorAll('.session-card')[0].querySelectorAll('button')].map((b) =>
-					(b.textContent || '').trim()
-				)
-			: []
+	//
+	// R22 ROUND 13 P1 moved the fork: the bundle button now matches the ENTRY KIND, so a
+	// PROJECT offers .tp and a SCENE offers .tpscene. `session-download-formats` owns that
+	// behaviour; this keeps round 12's own claims honest against it, per kind, since the
+	// entry list here holds one of each.
+	const dlRowsOf = (label) =>
+		page.evaluate(
+			(label) => {
+				const card = [...document.querySelectorAll('.session-card')].find((c) =>
+					(c.textContent || '').includes(label)
+				);
+				return card
+					? [...card.querySelectorAll('button')].map((b) => (b.textContent || '').trim())
+					: [];
+			},
+			label
+		);
+	const dlProject = await dlRowsOf('Project');
+	const dlScene = await dlRowsOf('Scene');
+	h.check(
+		dlProject.some((t) => /^\.tp$/.test(t)) && dlProject.some((t) => /\.json/.test(t)),
+		'a PROJECT card offers .tp AND keeps .json (' + JSON.stringify(dlProject) + ')'
 	);
 	h.check(
-		dlRows.some((t) => /\.tpscene/.test(t)) && dlRows.some((t) => /\.json/.test(t)),
-		'a card offers .tpscene AND keeps .json (' + JSON.stringify(dlRows) + ')'
+		dlScene.some((t) => /\.tpscene/.test(t)) && dlScene.some((t) => /\.json/.test(t)),
+		'a SCENE card offers .tpscene AND keeps .json (' + JSON.stringify(dlScene) + ')'
 	);
 	h.check(
-		!dlRows.some((t) => /^\.zip$/.test(t)),
+		![...dlProject, ...dlScene].some((t) => /^\.zip$/.test(t)),
 		'...and the .zip that nothing in this app recognised by name is gone'
 	);
 	const [dl] = await Promise.all([
 		page.waitForEvent('download', { timeout: 25000 }),
-		page.locator('.session-card').filter({ hasText: 'Project' }).locator('.session-download-scene').first().click()
+		page.locator('.session-card').filter({ hasText: 'Project' }).locator('.session-download-project').first().click()
 	]);
-	h.check(/\.tpscene$/.test(dl.suggestedFilename()), 'it really downloads one (' + dl.suggestedFilename() + ')');
+	h.check(/\.tp$/.test(dl.suggestedFilename()), 'it really downloads one (' + dl.suggestedFilename() + ')');
 
 	// THE MEASURED BUG: a project bundle used to JSON.stringify a Blob to {} and arrive
 	// with every library file gone, silently. The library travels as real zip entries now.

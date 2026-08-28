@@ -16,7 +16,7 @@
 	import { tabbable, resizeGroup, tabGroups } from '$lib/windowTabs';
 	import { clampWinSize, clampResize, anchorOf } from '$lib/windowSize';
 	import { dockable } from '$lib/docking';
-	import { setDockOccupant, dockHeight, visibleDockKey, activateDock } from '$lib/bottomDock';
+	import { setDockOccupant, dockHeight, visibleDockKey, dockMinimized, activateDock } from '$lib/bottomDock';
 	import { dockAddItems } from '$lib/dockMenu';
 	import { fly } from 'svelte/transition';
 
@@ -89,7 +89,9 @@
 		setDockOccupant('flow', !$flowGraphClose && docked, $dockHeight);
 		return () => setDockOccupant('flow', false);
 	});
-	const dockVisible = $derived($visibleDockKey === 'flow');
+	// W2: a MINIMIZED dock renders nothing while every tab stays open (the occupant
+	// report above is untouched, so the strip comes back with its tabs intact)
+	const dockVisible = $derived($visibleDockKey === 'flow' && !$dockMinimized);
 
 	// --- docked: top-edge resize (shared dock height, persisted by the store) ---
 	let resizing = $state(false);

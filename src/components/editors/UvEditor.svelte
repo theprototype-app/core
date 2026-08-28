@@ -41,7 +41,7 @@
 	import { focusStack } from '$lib/windowFocus';
 	import { tabbable, resizeGroup, tabGroups } from '$lib/windowTabs';
 	import { clampWinSize, clampResize, anchorOf } from '$lib/windowSize';
-	import { setDockOccupant, dockHeight, visibleDockKey, activateDock } from '$lib/bottomDock';
+	import { setDockOccupant, dockHeight, visibleDockKey, dockMinimized, activateDock } from '$lib/bottomDock';
 
 	/** the armed transform modes, in 1/2/3 order */
 	const MODES = /** @type {['move'|'rotate'|'scale', string, string][]} */ ([
@@ -147,7 +147,9 @@
 		setDockOccupant('uv', !$uvEditorClose && docked, $dockHeight);
 		return () => setDockOccupant('uv', false);
 	});
-	const dockVisible = $derived($visibleDockKey === 'uv');
+	// W2: a MINIMIZED dock renders nothing while every tab stays open (the occupant
+	// report above is untouched, so the strip comes back with its tabs intact)
+	const dockVisible = $derived($visibleDockKey === 'uv' && !$dockMinimized);
 
 	// Arming the brush opens the Tool panel, so its colour + size are reachable
 	// without hunting for the tab (WindowShell's showSecondary is exactly this

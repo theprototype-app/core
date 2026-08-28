@@ -10,7 +10,7 @@ import {
 	explorerClose,
 	objectListClose
 } from '../stores/appStore';
-import { activateDock, dockOccupants, visibleDockKey, FLOW_FAMILY } from './bottomDock';
+import { activateDock, dockOccupants, visibleDockKey, dockMinimized, FLOW_FAMILY } from './bottomDock';
 import { raiseWindow, isTopVisibleWindow } from './windowFocus';
 import { groupOfKey, activateTab } from './windowTabs';
 import { revealWindow } from './dragWindow';
@@ -68,6 +68,12 @@ function opensDocked(cfg) {
 
 /** Is this panel the one the dock is actually SHOWING? @param {PanelConfig} cfg */
 function isVisibleInDock(cfg) {
+	// W2: a MINIMIZED dock is showing nothing, whatever `visibleDockKey` names. Without
+	// this line step 4 would read "already on screen" and CLOSE the tab the user was
+	// asking to see — the button/key would dismiss a panel they cannot even find. Saying
+	// no here sends them to `activateDock`, which un-minimizes, so O / N / the toolbar
+	// buttons are the restore affordance a minimized dock has no strip to offer.
+	if (get(dockMinimized)) return false;
 	const visible = get(visibleDockKey) ?? '';
 	// the Node editor button owns the whole docked flow GROUP, so any flow-family
 	// tab being visible counts as "the Node editor's dock is on screen"

@@ -1,4 +1,5 @@
 import {
+	flowGraphClose,
 	flowCodeClose,
 	animationClose,
 	uvEditorClose,
@@ -25,4 +26,27 @@ export function dockAddItems() {
 		{ label: '＋ HUD editor', tooltip: 'Lay out the on-screen HUD its nodes drive', action: () => { hudEditorClose.set(false); activateDock('hud'); } },
 		{ label: '＋ Explorer', tooltip: 'Browse the asset library', action: () => { explorerClose.set(false); activateDock('explorer'); } }
 	];
+}
+
+/**
+ * W2: the dock key -> the store that CLOSES that panel (every one of these is inverted
+ * app-wide: true = closed). It lives here beside the add list, and not in bottomDock.js,
+ * for the reason stated at the top of that module — dock bookkeeping imports no app
+ * stores. The tab strip's ✕ is its only caller today; putting the mapping in one place
+ * is what stops a future closer disagreeing with the "+" entry that opened it.
+ * @type {Record<string, import('svelte/store').Writable<boolean>>}
+ */
+export const DOCK_CLOSERS = {
+	flow: flowGraphClose,
+	flowcode: flowCodeClose,
+	animation: animationClose,
+	uv: uvEditorClose,
+	shader: shaderEditorClose,
+	hud: hudEditorClose,
+	explorer: explorerClose
+};
+
+/** @param {string} key @returns {import('svelte/store').Writable<boolean>|null} */
+export function closeStoreFor(key) {
+	return DOCK_CLOSERS[key] ?? null;
 }

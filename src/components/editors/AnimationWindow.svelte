@@ -45,7 +45,7 @@
 	import { focusStack } from '$lib/windowFocus';
 	import { tabbable, resizeGroup, tabGroups } from '$lib/windowTabs';
 	import { clampWinSize, clampResize, anchorOf } from '$lib/windowSize';
-	import { setDockOccupant, dockHeight, visibleDockKey, activateDock } from '$lib/bottomDock';
+	import { setDockOccupant, dockHeight, visibleDockKey, dockMinimized, activateDock } from '$lib/bottomDock';
 
 	// live-follow the primary selection (keeps a truthy [] before the first select)
 	const target = $derived($selectedObject && $selectedObject.uuid ? $selectedObject : null);
@@ -236,7 +236,9 @@
 		setDockOccupant('animation', !$animationClose && docked, $dockHeight);
 		return () => setDockOccupant('animation', false);
 	});
-	const dockVisible = $derived($visibleDockKey === 'animation');
+	// W2: a MINIMIZED dock renders nothing while every tab stays open (the occupant
+	// report above is untouched, so the strip comes back with its tabs intact)
+	const dockVisible = $derived($visibleDockKey === 'animation' && !$dockMinimized);
 
 	// Switching objects LEAVES the previous one where it was: its playhead, its
 	// pose and its clip all stay put (they live per uuid in `playback`), so coming

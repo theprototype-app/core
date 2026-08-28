@@ -38,7 +38,7 @@
 	} from '$lib/shaderGraph';
 	import { beginShaderGesture, endShaderGesture } from '$lib/shaderSync';
 	import { shaderNodeDefs, shaderNodeDef, SURFACE_NODE } from '$lib/shaderCatalog';
-	import { setDockOccupant, dockHeight, visibleDockKey } from '$lib/bottomDock';
+	import { setDockOccupant, dockHeight, visibleDockKey, dockMinimized } from '$lib/bottomDock';
 	import DockTabs from '../DockTabs.svelte';
 	import ContextMenu from '../ContextMenu.svelte';
 	import ShaderNode from './nodes/ShaderNode.svelte';
@@ -353,7 +353,9 @@
 		setDockOccupant('shader', !$shaderEditorClose, $dockHeight);
 		return () => setDockOccupant('shader', false);
 	});
-	const dockVisible = $derived($visibleDockKey === 'shader');
+	// W2: a MINIMIZED dock renders nothing while every tab stays open (the occupant
+	// report above is untouched, so the strip comes back with its tabs intact)
+	const dockVisible = $derived($visibleDockKey === 'shader' && !$dockMinimized);
 </script>
 
 {#if !$shaderEditorClose && dockVisible}

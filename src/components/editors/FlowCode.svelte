@@ -12,7 +12,7 @@
 	import { dragWindow } from '$lib/dragWindow';
 	import { focusStack } from '$lib/windowFocus';
 	import { tabbable, resizeGroup, tabGroups } from '$lib/windowTabs';
-	import { setDockOccupant, dockHeight, visibleDockKey, activateDock } from '$lib/bottomDock';
+	import { setDockOccupant, dockHeight, visibleDockKey, dockMinimized, activateDock } from '$lib/bottomDock';
 
 	let text = $state('');
 	let error = $state('');
@@ -55,7 +55,9 @@
 		setDockOccupant('flowcode', !$flowCodeClose && docked, $dockHeight);
 		return () => setDockOccupant('flowcode', false);
 	});
-	const dockVisible = $derived($visibleDockKey === 'flowcode');
+	// W2: a MINIMIZED dock renders nothing while every tab stays open (the occupant
+	// report above is untouched, so the strip comes back with its tabs intact)
+	const dockVisible = $derived($visibleDockKey === 'flowcode' && !$dockMinimized);
 
 	function apply() {
 		let parsed;

@@ -157,7 +157,7 @@
 	import { sceneAssets } from '$lib/sceneAssets';
 	import { setNodeData } from '$lib/nodesHandler';
 	import { findNodeAnyGraph } from '../../stores/flowStore';
-	import { bottomDockActive, visibleDockKey, setDockOccupant, dockHeight } from '$lib/bottomDock';
+	import { bottomDockActive, visibleDockKey, dockMinimized, setDockOccupant, dockHeight } from '$lib/bottomDock';
 	import { dragWindow } from '$lib/dragWindow';
 	import { focusStack } from '$lib/windowFocus';
 	import { tabbable, resizeGroup, tabGroups } from '$lib/windowTabs';
@@ -252,7 +252,9 @@
 		setDockOccupant('explorer', !$explorerClose && docked, $dockHeight);
 		return () => setDockOccupant('explorer', false);
 	});
-	const dockVisible = $derived($visibleDockKey === 'explorer');
+	// W2: a MINIMIZED dock renders nothing while every tab stays open (the occupant
+	// report above is untouched, so the strip comes back with its tabs intact)
+	const dockVisible = $derived($visibleDockKey === 'explorer' && !$dockMinimized);
 
 	// tab-grouped windows share one size: show the group's rect so a resize on any
 	// member updates every tab, not just the active one.

@@ -8,27 +8,66 @@ const inset = (page) =>
 		parseInt(getComputedStyle(document.documentElement).getPropertyValue('--bottom-inset') || '0')
 	);
 
-// Phase 1 (controls dock rework): where the bottom chrome sits. The Controls pill and
-// the play FAB anchor on --bottom-inset now, so they RIDE ABOVE the dock instead of
-// covering its last ~60px. (The old --dock-inset model padded the DOCK's content and
-// only did so at <=500px, so every wider screen had the pill over the node palette.)
+// Phase 1 (controls dock rework), revised by W2: where the bottom chrome sits is the
+// user's call now. `floatingToolbar` OFF — THE DEFAULT — leaves the Controls pill and
+// the play FAB in its well pinned to the viewport floor on the bottom-HUD tier, where
+// an open dock covers them exactly as it covers the chat / sim buttons beside them. ON,
+// they anchor on --bottom-inset and RIDE ABOVE the dock instead of covering its last
+// ~60px. (The old --dock-inset model padded the DOCK's content and only did so at
+// <=500px, so every wider screen had the pill over the node palette.)
 const bottomChrome = (page) =>
 	page.evaluate(() => {
-		const fab = document.getElementById('play-button')?.getBoundingClientRect();
+		const fabEl = document.getElementById('play-button');
 		// 4b: the bar is our own <nav id="controls-pill">. It was flowbite's BottomNav
 		// outer div (matched here as `div.rounded-full.z-45`) until the roster rewrite;
 		// the id is stable where a resolved utility class list is not.
-		const pill = document.querySelector('#controls-pill')?.getBoundingClientRect();
-		const dock = document.querySelector('#flow-list')?.getBoundingClientRect();
+		const pillEl = document.querySelector('#controls-pill');
+		const dockEl = document.querySelector('#flow-list');
+		const fab = fabEl?.getBoundingClientRect();
+		const pill = pillEl?.getBoundingClientRect();
+		const dock = dockEl?.getBoundingClientRect();
+		// who actually wins the pixel: a point INSIDE the pill but clear of the play FAB
+		// in the middle of it (the FAB is the pill's own child and answers for itself)
+		let hitIsDock = null;
+		if (pill) {
+			const el = document.elementFromPoint(
+				Math.round(pill.left + 12),
+				Math.round(pill.top + pill.height / 2)
+			);
+			hitIsDock = !!el?.closest('#flow-list');
+		}
+		// the same question for the play FAB, which carries its OWN inline
+		// `z-index: var(--z-hud)`: the pill is positioned WITH a z-index, so it is a
+		// stacking context and its child cannot escape it whatever it asks for. Measured
+		// rather than argued — an inline z that outranked the dock would poke a 50px
+		// circle through an open editor.
+		let fabHitIsDock = null;
+		if (fab) {
+			const el = document.elementFromPoint(
+				Math.round(fab.left + fab.width / 2),
+				Math.round(fab.top + fab.height / 2)
+			);
+			fabHitIsDock = !!el?.closest('#flow-list');
+		}
 		return {
+			fabHitIsDock,
 			fabBottom: fab ? Math.round(fab.bottom) : 0,
 			pillBottom: pill ? Math.round(pill.bottom) : 0,
 			dockTop: dock ? Math.round(dock.top) : 0,
+			pillZ: pillEl ? parseInt(getComputedStyle(pillEl).zIndex || '0') : 0,
+			dockZ: dockEl ? parseInt(getComputedStyle(dockEl).zIndex || '0') : 0,
+			hitIsDock,
 			hasFab: !!fab,
 			hasPill: !!pill,
 			vh: window.innerHeight
 		};
 	});
+
+/** flip the LOCAL floatingToolbar pref — the same store the Settings row binds to */
+const setFloating = async (page, on) => {
+	await page.evaluate((v) => window.__stores.floatingToolbar.set(v), on);
+	await page.waitForTimeout(400); // the 200ms bottom transition, settled
+};
 
 h.run(async () => {
 	const browser = await h.launch();
@@ -42,18 +81,52 @@ h.run(async () => {
 	const flowH = (await A.page.locator('#flow-list').boundingBox()).height;
 	h.check(Math.abs((await inset(A.page)) - flowH) < 2, `inset follows the dock height (${flowH})`);
 
-	// ...and with the dock open, the bottom chrome sits ABOVE it (measured here, before
-	// the sidebar opens — an open sidebar shields the lower-left corner)
+	// ...and with the dock open, the DEFAULT bottom chrome stays on the viewport floor
+	// and the dock covers it (measured here, before the sidebar opens — an open sidebar
+	// shields the lower-left corner)
+	const covered = await bottomChrome(A.page);
+	h.check(
+		covered.hasFab && covered.hasPill && covered.dockTop > 0,
+		'pill, FAB and dock are all measurable'
+	);
+	h.check(
+		covered.vh - covered.pillBottom <= 18,
+		`W2: by default the pill stays on the viewport floor with the dock open (${covered.vh - covered.pillBottom}px clear)`
+	);
+	h.check(
+		covered.pillBottom > covered.dockTop,
+		`...i.e. inside the dock's band, not above it (${covered.pillBottom} > ${covered.dockTop})`
+	);
+	h.check(
+		covered.pillZ < covered.dockZ,
+		`the pill sits UNDER the dock's tier (z ${covered.pillZ} < ${covered.dockZ})`
+	);
+	h.check(covered.hitIsDock === true, 'and the dock owns the pixel over the pill');
+	h.check(
+		covered.fabHitIsDock === true,
+		"...including over the play FAB, whose own z-index cannot escape the pill's stacking context"
+	);
+
+	// with the setting ON, the old ride-up behaviour, unchanged
+	await setFloating(A.page, true);
 	const open = await bottomChrome(A.page);
-	h.check(open.hasFab && open.hasPill && open.dockTop > 0, 'pill, FAB and dock are all measurable');
 	h.check(
 		open.fabBottom <= open.dockTop + 2,
-		`play FAB rides above the dock (${open.fabBottom} <= ${open.dockTop})`
+		`floating toolbar: play FAB rides above the dock (${open.fabBottom} <= ${open.dockTop})`
 	);
 	h.check(
 		open.pillBottom <= open.dockTop + 2,
-		`Controls pill rides above the dock (${open.pillBottom} <= ${open.dockTop})`
+		`floating toolbar: Controls pill rides above the dock (${open.pillBottom} <= ${open.dockTop})`
 	);
+	h.check(
+		open.hitIsDock === false && open.pillZ > open.dockZ,
+		`floating toolbar: the pill wins its own pixel (z ${open.pillZ} > ${open.dockZ})`
+	);
+	// ...and the setting STAYS on for the rest of the suite, deliberately: everything
+	// below drives the Controls toolbar with the dock open, which is precisely what the
+	// default no longer allows — the dock covers those buttons (proven three checks up).
+	// That is the setting's whole purpose, so the sections about insets and edge-docked
+	// windows use it rather than reaching for a test-only door.
 
 	// 203: the sidebar now FLOATS ON TOP of the dock (z-hud) instead of ending
 	// above it — it's a compact panel that is never covered by the dock

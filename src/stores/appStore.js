@@ -537,6 +537,22 @@ if (typeof localStorage !== 'undefined') {
     if (typeof document !== 'undefined') document.documentElement.classList.toggle('allow-undock', !!v);
   });
 }
+/** W2: FLOATING TOOLBAR. With this ON the Controls pill (and the play FAB inside its
+ * well) anchors on `--bottom-inset`, so it rides in the band just above an open bottom
+ * dock — the 0854c3b behaviour. OFF (the DEFAULT, after the on-device pass) the pill is
+ * an ordinary member of the bottom-HUD tier: it stays pinned 16px off the viewport floor
+ * and the dock covers it, exactly like the chat / AI / sim-controls buttons beside it.
+ * LOCAL pref — where one person's toolbar sits is not scene data, so it never replicates
+ * and never rides a workspace snapshot. Persisted. */
+export const floatingToolbar = writable(
+  typeof localStorage !== 'undefined' ? localStorage.getItem('floatingToolbar') === 'true' : false
+);
+if (typeof localStorage !== 'undefined') {
+  floatingToolbar.subscribe((v) => {
+    try { localStorage.setItem('floatingToolbar', v ? 'true' : 'false'); } catch { /* */ }
+  });
+}
+
 /** PINNED: keep the drawer's tab bar (+ status) visible even when the body is
  * collapsed, so it acts as a persistent mini-bar under the pill. Persisted. */
 export const connectDrawerPinned = writable(

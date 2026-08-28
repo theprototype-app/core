@@ -2,7 +2,7 @@
 	import { Cog, Eye, FolderOpen, List, Maximize2, MessageSquare, Move, Pin, Play, RectangleGoggles, RotateCcw, SquarePen, Sun, Workflow } from '@lucide/svelte';
 	import { Listgroup } from 'flowbite-svelte';
 	import { objectsGroup, TControls, transformMode, isLocked, lockedObjects, globalScene, vrPassthrough, vrOverride, selectedObject, selectedObjects } from '../../stores/sceneStore';
-	import { chatHidden, flowGraphClose, explorerClose, objectListClose, objectContextMenu, renamingObject, advancedMode, showEnvInList, showLocalObjects, armExplorerDock } from '../../stores/appStore.js';
+	import { chatHidden, flowGraphClose, explorerClose, objectListClose, objectContextMenu, renamingObject, advancedMode, showEnvInList, showLocalObjects, armExplorerDock, floatingToolbar } from '../../stores/appStore.js';
 	import { systemGroupNames } from '$lib/moduleSDK';
 	import { ENV_ROOT } from '$lib/environment';
 	import { flyTo } from '$lib/objectActions';
@@ -987,15 +987,40 @@
 	 *  by where the call happens to sit */
 	const customizeMenuItems = $derived(customizeItems());
 
+	/* W2: WHERE THE PILL SITS, and it is the user's call (`floatingToolbar`, default OFF).
+	 *   ON  — the 0854c3b behaviour: anchored on `--bottom-inset`, so the bar and the play
+	 *         FAB in its well ride in the band just above an open dock, on the z-45 HUD
+	 *         tier that keeps them clear of it.
+	 *   OFF — the pill is an ordinary member of the BOTTOM-HUD tier: pinned 16px off the
+	 *         viewport floor, and z-30 like `#chat-button` / `#ai-hud-button` /
+	 *         `#sim-controls` beside it, which is to say the dock DELIBERATELY covers it
+	 *         (the same reasoning as the chat button's comment below — an open editor owns
+	 *         the bottom of the screen and the toolbar goes under it).
+	 * ONE derived pair rather than two markup branches: the nav, the roster and the FAB
+	 * inside it are identical in both modes, and a second branch would be a second copy of
+	 * the well to keep in step. The transition stays in BOTH so flipping the setting — and,
+	 * when floating, opening the dock — animates rather than jumping.
+	 * The FAB keeps its own `z-index: var(--z-hud)`: the pill is positioned WITH a z-index,
+	 * so it is a stacking context and its children cannot escape it whatever they ask for.
+	 * That z only orders the FAB against its own siblings in the well. */
+	const pillZClass = $derived($floatingToolbar ? 'z-45' : 'z-30');
+	const pillStyle = $derived(
+		$floatingToolbar
+			? 'bottom: calc(var(--bottom-inset, 0px) + 16px); transition: bottom 200ms ease'
+			: 'bottom: 16px; transition: bottom 200ms ease'
+	);
+
 </script>
 
-<!-- The pill RIDES ABOVE the bottom dock: `--bottom-inset` is the visible docked
-     Flow/Explorer panel's height (published by $lib/bottomDock), so the bar and the
-     play FAB inside it sit in the band just above it instead of covering its last
-     ~60px. This replaces the old `--dock-inset` model, which padded the DOCK's
-     content and only did so at <=500px — every wider screen had the pill permanently
-     over the node palette / folder tree. 200ms matches the dock's own fly transition,
-     so the two move together.
+<!-- WHERE THE PILL SITS is `floatingToolbar`'s call now (Settings ▸ Interface ▸ Windows
+     & chrome, default OFF) — see the derived pair above. With it ON the pill RIDES
+     ABOVE the bottom dock: `--bottom-inset` is the visible docked Flow/Explorer panel's
+     height (published by $lib/bottomDock), so the bar and the play FAB inside it sit in
+     the band just above it instead of covering its last ~60px — which is what the old
+     `--dock-inset` model got wrong, padding the DOCK's content and only at <=500px, so
+     every wider screen had the pill permanently over the node palette / folder tree.
+     OFF the pill stays on the viewport floor and the dock covers it. 200ms matches the
+     dock's own fly transition, so when they do move they move together.
        4b: a plain <nav> over the `visibleCells` roster, no longer flowbite's
      `BottomNav` (whose inner grid column count must be a JIT literal, which a
      customizable cell count cannot be). The class list is flowbite's own RESOLVED
@@ -1007,8 +1032,8 @@
      it out loud. -->
 <nav
 	id="controls-pill"
-	class="border-gray-200 dark:border-gray-600 absolute max-w-lg -translate-x-1/2 rtl:translate-x-1/2 border bottom-4 start-1/2 h-10 w-max min-w-max shrink-0 bg-white rounded-full dark:bg-gray-700 z-45"
-	style="bottom: calc(var(--bottom-inset, 0px) + 16px); transition: bottom 200ms ease"
+	class="border-gray-200 dark:border-gray-600 absolute max-w-lg -translate-x-1/2 rtl:translate-x-1/2 border bottom-4 start-1/2 h-10 w-max min-w-max shrink-0 bg-white rounded-full dark:bg-gray-700 {pillZClass}"
+	style={pillStyle}
 >
 	<div class="mx-auto flex h-full max-w-lg">
 		{#each visibleCells as cell, i (cell.id)}

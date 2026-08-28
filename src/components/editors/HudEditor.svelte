@@ -66,7 +66,7 @@
 	import { focusStack } from '$lib/windowFocus';
 	import { tabbable, resizeGroup, tabGroups } from '$lib/windowTabs';
 	import { clampWinSize, clampResize, anchorOf } from '$lib/windowSize';
-	import { setDockOccupant, dockHeight, visibleDockKey, activateDock } from '$lib/bottomDock';
+	import { setDockOccupant, dockHeight, visibleDockKey, dockMinimized, activateDock } from '$lib/bottomDock';
 
 	// 21-D5: WHICH document is being authored. `hudDocs` was already keyed
 	// `'scene' | objectUuid`, so "attach this HUD to a camera" is simply authoring the
@@ -136,7 +136,9 @@
 		setDockOccupant('hud', !$hudEditorClose && docked, $dockHeight);
 		return () => setDockOccupant('hud', false);
 	});
-	const dockVisible = $derived($visibleDockKey === 'hud');
+	// W2: a MINIMIZED dock renders nothing while every tab stays open (the occupant
+	// report above is untouched, so the strip comes back with its tabs intact)
+	const dockVisible = $derived($visibleDockKey === 'hud' && !$dockMinimized);
 
 	// While the editor is open the artboard shows the screen being EDITED, so the runtime
 	// layer is pointed at it too — otherwise you would lay out one screen and watch

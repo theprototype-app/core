@@ -41,6 +41,18 @@ dockHeight.subscribe((value) => {
 	} catch {}
 });
 
+/**
+ * W2: the dock is MINIMIZED — every tab stays open, nothing renders, and the dock
+ * reserves no space (`bottomInset` reads 0), so the viewport is clear without closing
+ * anybody's work. DELIBERATELY NOT PERSISTED: a minimized dock leaves no trace on
+ * screen (the tab strip lives INSIDE the visible panel, so there is none), and the only
+ * restore affordance is the toolbar's own buttons — a reload therefore brings the dock
+ * back rather than handing someone a lost panel with no visible way to it.
+ * `activateDock` clears it, so every path that asks for a tab (toolbar button, O/N key,
+ * the "+" menu, a panel opening itself) restores the dock as a side effect.
+ */
+export const dockMinimized = writable(false);
+
 /** {key: {present, height}} — docked AND open */
 export const dockOccupants = writable(
 	/** @type {Record<string, {present: boolean, height: number}>} */ ({})
@@ -74,19 +86,24 @@ export const visibleDockKey = derived([dockOccupants, bottomDockActive], ([$o, $
 	return Object.keys($o).find((k) => $o[k]?.present) ?? null;
 });
 
-/** height of the visible docked panel (0 when nothing is docked) */
-export const bottomInset = derived([dockOccupants, visibleDockKey], ([$o, $key]) =>
-	$key && $o[$key]?.present ? $o[$key].height : 0
+/** height of the visible docked panel (0 when nothing is docked, and 0 while the dock
+ * is minimized — a minimized dock draws nothing, so it may not reserve any space) */
+export const bottomInset = derived(
+	[dockOccupants, visibleDockKey, dockMinimized],
+	([$o, $key, $min]) => ($min ? 0 : $key && $o[$key]?.present ? $o[$key].height : 0)
 );
 
 /**
  * Make `key` the visible dock panel. Purely a selection: the tab that was showing
  * stays open and simply stops rendering, so no panel is ever closed by another one
- * arriving.
+ * arriving. Asking for a tab also UN-MINIMIZES the dock: every restore path in the app
+ * (toolbar buttons, the O/N keys through panelToggles, the "+" menu, a panel opening
+ * itself) already funnels through here, so the clear lives in one place.
  * @param {string} key
  */
 export function activateDock(key) {
 	bottomDockActive.set(key);
+	dockMinimized.set(false);
 }
 
 // publish the visible dock height as a CSS var so drawers/docked windows adjust (105)

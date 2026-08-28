@@ -16,6 +16,10 @@
 //   §4  Rooms, DERIVED. A session is the mesh, a scene is the tag, a room is the
 //       grouping; nothing stores one.
 //
+// R22 ROUND 30 B2 grew §3 into the peers popover itself: the count went
+// self-inclusive, an All | Rooms switcher groups the rows by scene, and a peer who is
+// demonstrably elsewhere is offered GO TO where the disabled Watch used to sit.
+//
 // Named `scene-rooms` and not `scene-presence`: that suite already exists and covers
 // 21-G5's CROSS-room bridge through the cloud plugin. This one is same-mesh and must
 // work with no cloud tier at all.
@@ -214,6 +218,15 @@ h.run(async () => {
 		})) === 0,
 		'premise: the joiner holds NO library items of its own'
 	);
+	// R22 round 30 A1: an EMPTY joiner adopts the host’s scene NAME on connect, so B’s
+	// presence row reads Arena before B has opened anything at all. Pinned here as the
+	// BASELINE the rest of the suite reasons from — it is exactly what makes "A can see
+	// B in Arena" satisfiable with no travel, and therefore what §3 has to tighten around.
+	await h.eventually(
+		() => scenesOfPeers(A),
+		(m) => Object.values(m).includes('Arena'),
+		'premise (A1): the joiner adopted the host scene NAME on connect, before opening anything'
+	);
 	await h.eventually(
 		() =>
 			B.page.evaluate(() => {
@@ -289,10 +302,14 @@ h.run(async () => {
 		(v) => v?.name === 'cube',
 		'premise: A is somewhere else, so this is a real difference'
 	);
+	// TIGHTENED for R22 round 30 A1. B adopted the host’s scene NAME the moment it
+	// connected, so "A can see B in Arena" is now satisfiable with no travel at all — it
+	// is a PREMISE, not the fix. What the fix has to show is a row that MOVES: read B
+	// here, then travel it and read the new scene (the check two below).
 	await h.eventually(
 		() => scenesOfPeers(A),
 		(m) => Object.values(m).includes('Arena'),
-		'THE FIX: A can see that B is standing in Arena'
+		'premise: A reads B as standing in Arena (adopted on connect, then really opened)'
 	);
 	await h.eventually(
 		() => scenesOfPeers(B),
@@ -304,7 +321,7 @@ h.run(async () => {
 	await h.eventually(
 		() => scenesOfPeers(A),
 		(m) => Object.values(m).includes('cube') && !Object.values(m).includes('Arena'),
-		'when a peer opens another scene, the change reaches everyone'
+		'THE FIX: when a peer opens another scene, the change reaches everyone'
 	);
 
 	// the peer list SAYS so, not just the store
@@ -316,6 +333,25 @@ h.run(async () => {
 	h.check(
 		chips.length >= 2 && chips.every((c) => c && c.length),
 		`the peer list SHOWS a scene for every row, not only the store (${JSON.stringify(chips)})`
+	);
+	// R22 round 30 B2. The count is SELF-INCLUSIVE in both places — the trigger badge
+	// and this header count the same people, and they disagreed by one.
+	const headline = await A.page.evaluate(() => {
+		const box = document.querySelector('#peers-popover');
+		return {
+			header: box?.querySelector('.ui-section-label')?.textContent?.trim(),
+			flat: box?.querySelector('#peers-view-flat')?.getAttribute('aria-pressed'),
+			goto: box ? box.querySelectorAll('.peer-goto').length : -1
+		};
+	});
+	h.check(
+		headline.header === 'Connected (2)',
+		`the header counts everyone in the session, you included (${headline.header})`
+	);
+	h.check(headline.flat === 'true', `All is the default view (aria-pressed ${headline.flat})`);
+	h.check(
+		headline.goto === 0,
+		`…and with both peers in one scene there is nowhere to go (${headline.goto} Go to)`
 	);
 	// --- WATCH IS GATED ON BEING IN THE SAME SCENE ---
 	// Watching attaches your camera to theirs IN THIS WORLD, so a peer standing in
@@ -345,17 +381,121 @@ h.run(async () => {
 	);
 	await A.page.evaluate(() => document.querySelector('#peers-trigger')?.click());
 	await A.page.waitForTimeout(700);
+	// SUPERSEDED BY R22 ROUND 30 B2, deliberately. This used to assert a DISABLED Watch
+	// carrying the reason — the 21-G5 ruling, which was right while there was nothing
+	// better to offer. There is now: the one thing that works for a peer in another
+	// scene is to GO THERE, so the dead button is replaced rather than explained. The
+	// rule itself is unchanged (Watch may not cross a scene) — only what fills the slot.
 	const apart = await watchState(A);
-	h.check(
-		apart.length === 1 && apart[0].disabled === true,
-		`THE RULE: Watch is refused for a peer in another scene (${JSON.stringify(apart)})`
+	h.check(apart.length === 0, `Watch is not offered for a peer in another scene (${JSON.stringify(apart)})`);
+	const goto = await A.page.evaluate(() =>
+		[...document.querySelectorAll('#peers-popover .peer-goto')].map((b) => ({
+			title: b.getAttribute('title'),
+			text: b.textContent.replace(/\s+/g, ' ').trim(),
+			disabled: b.disabled
+		}))
 	);
 	h.check(
-		/Arena/.test(apart[0]?.title ?? '') && /open that scene/i.test(apart[0]?.title ?? ''),
-		`…disabled WITH the reason and what to do about it ("${apart[0]?.title}")`
+		goto.length === 1 && goto[0].disabled === false,
+		`THE FIX: its slot carries Go to instead (${JSON.stringify(goto)})`
+	);
+	h.check(
+		/Arena/.test(goto[0]?.title ?? '') && /Go to/.test(goto[0]?.text ?? ''),
+		`…naming the scene it would take you to ("${goto[0]?.title}")`
+	);
+
+	// --- THE ROOMS VIEW: the same rows, grouped by the scene each is standing in ---
+	await A.page.evaluate(() => document.querySelector('#peers-view-rooms')?.click());
+	await A.page.waitForTimeout(500);
+	const grouped = await A.page.evaluate(() => {
+		const box = document.querySelector('#peers-popover');
+		const headEls = [...box.querySelectorAll('.peers-room-head')];
+		const els = [...box.querySelectorAll('.peers-room-head, .peers-row')];
+		const sectionOf = (i) => {
+			const start = els.indexOf(headEls[i]);
+			const out = [];
+			for (let k = start + 1; k < els.length && els[k].classList.contains('peers-row'); k++)
+				out.push(els[k]);
+			return out;
+		};
+		return {
+			heads: headEls.map((el) => ({
+				label: el.querySelector('span')?.textContent?.trim(),
+				mine: el.hasAttribute('data-mine')
+			})),
+			mineRows: sectionOf(0).map((r) => r.textContent.replace(/\s+/g, ' ').trim()),
+			theirGoto: sectionOf(1).filter((r) => r.querySelector('.peer-goto')).length,
+			stored: localStorage.getItem('peers:view')
+		};
+	});
+	h.check(
+		JSON.stringify(grouped.heads.map((x) => x.label)) === JSON.stringify(['cube', 'Arena']),
+		`two scenes are two groups, mine first (${JSON.stringify(grouped.heads)})`
+	);
+	h.check(grouped.heads[0].mine === true, '…and mine is the one marked');
+	h.check(
+		grouped.mineRows.length === 1 && /\(you\)/.test(grouped.mineRows[0]),
+		`my room holds exactly me — peerScenes is remote-only, so that row is added by hand (${JSON.stringify(grouped.mineRows)})`
+	);
+	h.check(grouped.theirGoto === 1, `…and the peer under Arena keeps its Go to (${grouped.theirGoto})`);
+	h.check(grouped.stored === 'rooms', `the view is remembered locally (${grouped.stored})`);
+	await A.page.evaluate(() => document.querySelector('#peers-view-flat')?.click());
+	await A.page.waitForTimeout(300);
+	h.check(
+		(await A.page.evaluate(() => document.querySelectorAll('#peers-popover .peers-room-head').length)) === 0,
+		'…and All puts the flat list back'
+	);
+
+	// --- GO TO GOES THROUGH THE GUARD, then travels ---
+	// This replaces the world exactly as opening a scene card does, so it asks the same
+	// question — one guard, two callers. cube is NAMED and carries a signature, so an
+	// edit makes recomputeSceneDirty answer true and the dialog has to appear.
+	await addBox(A);
+	await A.page.waitForTimeout(400);
+	const beforeGoto = (await at(A))?.name;
+	h.check(beforeGoto === 'cube', `premise: A is in cube with an unsaved edit (${beforeGoto})`);
+	await A.page.locator('#peers-popover .peer-goto').first().click();
+	h.check(
+		await answerGuard(A, 'open'),
+		'THE GUARD: Go to asks before replacing the scene on screen, exactly as a scene card does'
+	);
+	await h.eventually(
+		() => at(A),
+		(v) => v?.name === 'Arena',
+		'…and answering it travels to the scene the peer is standing in',
+		30000
+	);
+	// arriving is the whole point: the gate lifts, so Watch comes back and Go to goes
+	await A.page.evaluate(() => document.querySelector('#peers-trigger')?.click());
+	await A.page.waitForTimeout(700);
+	const arrived = await watchState(A);
+	h.check(
+		arrived.length === 1 && arrived[0].disabled === false,
+		`Watch is offered again now we are in their scene (${JSON.stringify(arrived)})`
+	);
+	h.check(
+		(await A.page.evaluate(() => document.querySelectorAll('#peers-popover .peer-goto').length)) === 0,
+		'…and Go to has nothing left to offer'
+	);
+	h.check(
+		(await A.page.evaluate(() => {
+			let ps, cl;
+			window.__stores.peerScenes.peerScenes.subscribe((v) => (ps = v))();
+			window.__stores.levels.currentLevel.subscribe((v) => (cl = v))();
+			const mine = cl?.name ?? '';
+			return Object.keys(ps).filter((id) => !!window.__stores.peerScenes.elsewhereThan(ps, mine, id)).length;
+		})) === 0,
+		'…and the render/stream gate reads nobody as elsewhere, which is what arriving MEANS'
 	);
 	await A.page.evaluate(() => document.querySelector('#peers-trigger')?.click());
 	await A.page.waitForTimeout(300);
+	// put the premise back for the sections below, which reason from A-in-cube
+	await A.page.evaluate(() => window.__stores.levels.travelToScene('cube'));
+	await h.eventually(
+		() => at(A),
+		(v) => v?.name === 'cube',
+		'premise restored: A is back in cube while B stays in Arena'
+	);
 
 	// and the other half: a peer who travels away WHILE being watched
 	await B.page.evaluate(() => window.__stores.levels.travelToScene('cube'));

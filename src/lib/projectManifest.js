@@ -25,7 +25,9 @@
 // bytes serves them.
 
 import { writable, get } from 'svelte/store';
-import { peers } from '../stores/appStore';
+import { peers, showToast, explorerClose } from '../stores/appStore';
+import { showChoice } from './confirmDialog';
+import { sessionHost } from './connectionState';
 import { isViewer } from './objectPermissions';
 import { idbGet, idbPut } from './idb';
 
@@ -339,11 +341,14 @@ async function persist() {
 
 /** The ONE local write: normalize, stamp MONOTONICALLY (several writes can share a
  * millisecond — the documented latest-wins rule), persist, optionally broadcast.
- * @param {Manifest} next @param {{replicate?: boolean}} [opts] */
+ * R22 round 30 C3: `above` is a second FLOOR. A merge commits a document that must
+ * outrank BOTH sides' stamps — ours and the one we just merged in — or the sender's
+ * next copy of its own older document would win the comparison and undo the union.
+ * @param {Manifest} next @param {{replicate?: boolean, above?: number}} [opts] */
 function commitManifest(next, opts = {}) {
 	const before = get(projectManifest);
 	const doc = normalizeManifest(next);
-	doc.changedAt = Math.max(Date.now(), (before.changedAt ?? 0) + 1);
+	doc.changedAt = Math.max(Date.now(), (before.changedAt ?? 0) + 1, (opts.above ?? 0) + 1);
 	projectManifest.set(doc);
 	void persist();
 	if (opts.replicate !== false) {
@@ -639,21 +644,340 @@ export function keepableHashes(name) {
 	return new Set([...recent, ...entry.pinned]);
 }
 
+// ---- R22 round 30 C3 — THE UNION MERGE -----------------------------------------------
+//
+// WHY THIS EXISTS. Until here the receive side was whole-document latest-wins: a newer
+// stamp REPLACED the older document outright. Inside one project that is honest — one
+// active scene, one line of history, nothing to reconcile. Across a MESH it is
+// destruction. A peer arriving with a project of its own and a newer stamp took the
+// host's scene histories with it, and the user's report is the general case: ten joins
+// from ten tabs must not be able to wipe a project's whole record. The ruling, verbatim
+// in intent — connecting MERGES, disconnecting must not destroy (you keep your copy),
+// reconnecting merges again BY HASH, a real divergence is shown rather than silently
+// resolved, and the host is told when one of its pointers moved.
+//
+// THE SHAPE. A scene's `history` is an ordered hash array and ORDER IS THE POINTER: the
+// last element is what the project currently means. So the merge is per scene NAME:
+//   · a name only ONE side holds is carried WHOLE. That single line IS the wipe
+//     protection, and it is why any number of joins can no longer destroy anything.
+//   · equal histories, or one a strict PREFIX of the other, need no judgement. History
+//     is append-only, so a prefix is the honest subset test and the longer line already
+//     contains the shorter one.
+//   · anything else has DIVERGED — a subset that is not a prefix included, because two
+//     lines whose ORDER disagrees were written without seeing each other. The side with
+//     the newer document stamp keeps its tail and its pointer; the loser's NOVEL hashes
+//     are spliced in immediately BEFORE that pointer, in the loser's own relative order.
+//     That is `adoptSceneVersions`' rule and it is here for the same reason: a merge may
+//     ADD history, never silently change which scene the project means.
+// A CLASH is recorded only when BOTH sides held hashes the other lacked. One side merely
+// being behind is not a conflict, it is a catch-up, and a dialog for it would be noise.
+//
+// WHAT IS NOT MERGED, deliberately: the two index sections (`folders`/`items`), their
+// tombstones and the deletion log stay WHOLESALE latest-wins exactly as before —
+// sharedLibrary.js owns their convergence through its own reconcile (one writer per row,
+// idempotent on content), and a second merge rule here would be two mechanisms fighting
+// over one document. Unknown top-level fields keep latest-wins too, which is the
+// normalize rule one layer out.
+
+/**
+ * @typedef {{doc: Manifest, clashes: string[], pointerMoves: string[],
+ *   senderLacks: string[]}} MergeResult
+ *   `clashes` = scenes where both sides had something the other lacked · `pointerMoves`
+ *   = scenes whose pointer moved away from what LOCAL had · `senderLacks` = merged
+ *   content the REMOTE document does not carry, which is the whole reason to answer it.
+ */
+
+/** Is `a` a strict prefix of `b`? Append-only history makes this the subset test.
+ * @param {string[]} a @param {string[]} b */
+function isPrefix(a, b) {
+	return a.length < b.length && a.every((h, i) => b[i] === h);
+}
+
+/** Same list, same order. @param {string[]} a @param {string[]} b */
+function sameList(a, b) {
+	return a.length === b.length && a.every((h, i) => b[i] === h);
+}
+
+/** Set union that keeps an EXISTING array untouched when it already covers the other —
+ * the merged document must be byte-stable in the common case, or the deep compares below
+ * see a difference that is only an ordering and every receive answers itself.
+ * @param {string[]} [a] @param {string[]} [b] @returns {string[]} */
+function unionKeepingOrder(a = [], b = []) {
+	const setA = new Set(a);
+	if (b.every((x) => setA.has(x))) return [...a];
+	const setB = new Set(b);
+	if (a.every((x) => setB.has(x))) return [...b];
+	return [...new Set([...a, ...b])];
+}
+
+/**
+ * Merge ONE scene's two entries. `remoteNewer` decides only the DIVERGED case and the
+ * per-hash label tie — there is no per-entry stamp to ask, and inventing one would be a
+ * migration.
+ * @param {SceneEntry} a ours @param {SceneEntry} b theirs @param {boolean} remoteNewer
+ * @returns {{entry: SceneEntry, clash: boolean}}
+ */
+function mergeSceneEntry(a, b, remoteNewer) {
+	const winner = remoteNewer ? b : a;
+	const loser = remoteNewer ? a : b;
+	/** @type {string[]} */
+	let history;
+	let clash = false;
+	if (sameList(a.history, b.history)) history = [...a.history];
+	else if (isPrefix(a.history, b.history)) history = [...b.history];
+	else if (isPrefix(b.history, a.history)) history = [...a.history];
+	else {
+		const winSet = new Set(winner.history);
+		const loseSet = new Set(loser.history);
+		// deduped: a loser that RE-APPENDED an old version says the same thing twice, and
+		// the winner's line has no place for the repeat
+		const novel = [...new Set(loser.history.filter((h) => !winSet.has(h)))];
+		// a clash is MUTUAL, never one side simply being behind
+		clash = novel.length > 0 && winner.history.some((h) => !loseSet.has(h));
+		const head = [...winner.history];
+		const pointer = /** @type {string} */ (head.pop());
+		history = [...head, ...novel, pointer];
+	}
+	/** @type {any} */
+	const entry = {
+		// spread both, winner LAST: an unknown per-entry field a newer peer added survives
+		// the round trip (the normalizeAnnotation rule, applied per entry)
+		...loser,
+		...winner,
+		history,
+		pinned: unionKeepingOrder(a.pinned, b.pinned),
+		// labels union, winner wins a per-hash tie; normalizeManifest prunes both back to
+		// history membership, so nothing here has to
+		labels: { ...(loser.labels ?? {}), ...(winner.labels ?? {}) }
+	};
+	return { entry, clash };
+}
+
+/** Which merged content the SENDER does not carry — scenes, assets and the project name
+ * only. The index sections are deliberately absent: sharedLibrary's own reconcile is what
+ * republishes a row a peer is missing, and answering for it here would be two writers.
+ * @param {Manifest} merged @param {Manifest} theirs @returns {string[]} */
+function senderLacking(merged, theirs) {
+	/** @type {string[]} */
+	const out = [];
+	for (const [name, entry] of Object.entries(merged.scenes)) {
+		const mine = theirs.scenes[name];
+		if (!mine) {
+			out.push(name);
+			continue;
+		}
+		const pinDiff = entry.pinned.some((h) => !mine.pinned.includes(h));
+		const labDiff = Object.entries(entry.labels ?? {}).some(
+			([h, text]) => (mine.labels ?? {})[h] !== text
+		);
+		if (!sameList(entry.history, mine.history) || pinDiff || labDiff) out.push(name);
+	}
+	if (merged.assets.some((h) => !theirs.assets.includes(h))) out.push('assets');
+	if (merged.name && merged.name !== theirs.name) out.push('name');
+	return out;
+}
+
+/**
+ * THE MERGE. Pure: no store reads, no side effects, both sides normalized on the way in
+ * — which is what makes it a unit the suite can table-drive with no peer and no bytes
+ * (the transferLedger/hudArrange shape).
+ * @param {any} local @param {any} remote @returns {MergeResult}
+ */
+export function mergeManifests(local, remote) {
+	const mine = normalizeManifest(local);
+	const theirs = normalizeManifest(remote);
+	// a TIE goes to the INCOMING side: an ordered DataConnection means an equal stamp
+	// arrived later (the documented latest-wins rule, kept verbatim)
+	const remoteNewer = (theirs.changedAt ?? 0) >= (mine.changedAt ?? 0);
+	const newer = remoteNewer ? theirs : mine;
+	// the BASE is the newer side WHOLE — which is also how the index sections, the
+	// tombstones, the deletion log and any unknown field a future build adds stay
+	// wholesale latest-wins without a line of their own
+	/** @type {any} */
+	const doc = { ...newer };
+	doc.changedAt = Math.max(mine.changedAt ?? 0, theirs.changedAt ?? 0);
+	// an EMPTY name never overwrites a real one; two real ones are a latest-wins field
+	doc.name = mine.name && theirs.name ? newer.name : mine.name || theirs.name;
+	doc.assets = unionKeepingOrder(mine.assets, theirs.assets);
+	/** @type {string[]} */
+	const clashes = [];
+	/** @type {string[]} */
+	const pointerMoves = [];
+	/** @type {Record<string, SceneEntry>} */
+	const scenes = {};
+	for (const name of new Set([...Object.keys(mine.scenes), ...Object.keys(theirs.scenes)])) {
+		const a = mine.scenes[name];
+		const b = theirs.scenes[name];
+		if (!a || !b) {
+			// THE WIPE PROTECTION: a scene only one side knows about is carried whole
+			scenes[name] = /** @type {SceneEntry} */ (a ?? b);
+			continue;
+		}
+		const { entry, clash } = mergeSceneEntry(a, b, remoteNewer);
+		scenes[name] = entry;
+		if (clash) clashes.push(name);
+		// a pointer MOVE is a statement about what we used to think this scene was, so a
+		// name we never held is not one — that is an arrival, not a move
+		if (a.history[a.history.length - 1] !== entry.history[entry.history.length - 1])
+			pointerMoves.push(name);
+	}
+	doc.scenes = scenes;
+	const out = normalizeManifest(doc);
+	return { doc: out, clashes, pointerMoves, senderLacks: senderLacking(out, theirs) };
+}
+
+/** A canonical string for "these two documents mean the same thing". Key ORDER is not
+ * meaning (every write spreads), and neither is the order of the SET-LIKE arrays —
+ * `assets`, `pinned` and the two index sections, which `sortedIndex` already treats that
+ * way. `history` and `deleted` ARE ordered and stay untouched.
+ * @param {any} value @param {string} [key] @returns {string} */
+function stableJson(value, key) {
+	if (Array.isArray(value)) {
+		const parts = value.map((row) => stableJson(row));
+		if (key === 'assets' || key === 'pinned' || key === 'folders' || key === 'items')
+			parts.sort();
+		return '[' + parts.join(',') + ']';
+	}
+	if (value && typeof value === 'object')
+		return (
+			'{' +
+			Object.keys(value)
+				.sort()
+				.map((k) => JSON.stringify(k) + ':' + stableJson(value[k], k))
+				.join(',') +
+			'}'
+		);
+	return JSON.stringify(value ?? null);
+}
+
+/** Same CONTENT? The stamp is excluded by construction — two documents that differ only
+ * in when they were written are the same project. @param {any} a @param {any} b */
+function sameContent(a, b) {
+	return stableJson({ ...a, changedAt: 0 }) === stableJson({ ...b, changedAt: 0 });
+}
+
+// ---- the merge, surfaced -------------------------------------------------------------
+//
+// Session-deduped, because a merge is re-derived on every document that arrives and a
+// dialog per message would be unusable. Both sets are cleared when the last peer goes,
+// so a RECONNECT gets to speak again — which is exactly the moment the user asked to be
+// told about, offline edits meeting each other.
+
+/** @type {Set<string>} scene names we have already shown a divergence for */
+let clashesTold = new Set();
+/** @type {Set<string>} scene names we have already toasted a pointer move for */
+let pointersTold = new Set();
+let hadOpenPeers = false;
+
+/** Are we the session's writer AND is anyone actually here? The pointer notice is for the
+ * HOST — a joiner adopting the host's line is the normal case and needs no toast. */
+function amHostWithPeers() {
+	/** @type {any} */
+	const peer = get(peers);
+	return get(sessionHost) === null && (peer?.openedPeers?.size ?? 0) > 0;
+}
+
+/** @param {string[]} clashes @param {string[]} pointerMoves */
+function surfaceMerge(clashes, pointerMoves) {
+	const freshClashes = clashes.filter((n) => !clashesTold.has(n));
+	if (freshClashes.length) {
+		for (const n of freshClashes) clashesTold.add(n);
+		// fire-and-forget: by the time this shows, the divergence is already RESOLVED (both
+		// lines are in the history). The dialog reports it and offers the door; it gates
+		// nothing, so nothing waits on the answer.
+		void showChoice({
+			title: 'Scene versions diverged',
+			message:
+				freshClashes.join(', ') +
+				" — both lines are kept in each scene's history; the newest save is now current.",
+			choices: [{ value: 'history', label: 'Review versions...' }],
+			cancelLabel: 'OK'
+		}).then((answer) => {
+			if (answer === 'history') explorerClose.set(false);
+		});
+	}
+	const freshMoves = pointerMoves.filter((n) => !pointersTold.has(n));
+	if (freshMoves.length && amHostWithPeers()) {
+		for (const n of freshMoves) pointersTold.add(n);
+		const named = freshMoves
+			.slice(0, 3)
+			.map((n) => '"' + n + '"')
+			.join(', ');
+		showToast(
+			named +
+				" now points at a peer's newer save — earlier versions are kept in Version history"
+		);
+	}
+}
+
+/** The send-back. DEBOUNCED (the publishMine shape) because several documents can land
+ * inside one connect and the answer to all of them is the same union.
+ *
+ * IT TERMINATES, and the argument is content-idempotence rather than the timer: the peer
+ * receiving our union merges it against its own document, finds the result identical to
+ * what we just sent (we already carry everything it had), installs it QUIETLY and has
+ * nothing left to lack — so it does not answer. One round trip, whoever starts it. The
+ * debounce only batches. (The `publishSharedIndex` precedent, one section up.)
+ * @type {any} */
+let sendBackTimer = null;
+function scheduleManifestSendBack() {
+	if (sendBackTimer) return;
+	sendBackTimer = setTimeout(() => {
+		sendBackTimer = null;
+		// FORK 3, verbatim: an editor teaches the room, a viewer never publishes
+		if (isViewer()) return;
+		/** @type {any} */
+		const peer = get(peers);
+		if (peer) peer.send({ type: 'manifest', manifest: get(projectManifest) });
+	}, 150);
+}
+
 // ---- the wire ------------------------------------------------------------------------
 
-/** Receive side: latest-wins on the stamp, STRICTLY older refused (an ordered
- * DataConnection means an equal stamp arrived later — the documented rule).
- * @param {any} data */
+/**
+ * Receive side. R22 round 30 C3: this UNIONS instead of replacing — see the merge block
+ * above for why, and for what stays wholesale latest-wins.
+ *
+ * The only refusal left is a STAMPLESS document, which is not a document. An OLDER one is
+ * merged too, and that is the reconnect case the user described: a peer that edited
+ * offline comes back with a lower stamp and hashes nobody else has, and refusing it would
+ * throw its work away for the sake of a number. When it IS older, every wholesale section
+ * stays ours by the newer-side rule, so all such a document can contribute is history.
+ *
+ * Three outcomes, and only two of them write:
+ *   · the union says nothing new -> return false. No write, no stamp bump, no answer,
+ *     which is what keeps two settled peers quiet.
+ *   · the union IS what they sent -> install it quietly, keeping THEIR stamp. That is the
+ *     old code path exactly, and it is the common case.
+ *   · a genuine union -> commit locally above BOTH stamps, then teach the sender.
+ * @param {any} data
+ */
 export function applyRemoteManifest(data) {
 	const doc = normalizeManifest(data?.manifest);
 	if (!doc.changedAt) return false;
 	const mine = get(projectManifest);
-	if (doc.changedAt < mine.changedAt) return false;
-	projectManifest.set(doc);
-	void persist();
+	const { doc: merged, clashes, pointerMoves, senderLacks } = mergeManifests(mine, doc);
+	surfaceMerge(clashes, pointerMoves);
+	if (sameContent(merged, mine)) return false;
+	if (sameContent(merged, doc)) {
+		// their document already IS the union: keep their stamp so the mesh stays on one
+		// number, which is what makes the common case indistinguishable from the old code
+		projectManifest.set(doc);
+		void persist();
+	} else {
+		// above BOTH: the sender must not be able to win the next comparison with the very
+		// document we just merged in
+		commitManifest(merged, {
+			replicate: false,
+			above: Math.max(mine.changedAt ?? 0, doc.changedAt ?? 0)
+		});
+		if (senderLacks.length) scheduleManifestSendBack();
+	}
 	// R22-R1: a document somebody else wrote may carry shared rows this machine has not
 	// adopted yet, and may be MISSING rows of ours (two peers sharing inside one
-	// millisecond — whole-document latest-wins drops the loser). The consumer does both.
+	// millisecond — the index sections are still whole-document latest-wins). The consumer
+	// does both. Fired on every INSTALL, exactly as before: the no-change branch returns
+	// early because a document identical to ours has nothing to adopt.
 	notifySharedIndex();
 	return true;
 }
@@ -677,3 +1001,16 @@ export function manifestRestore(doc, replicate = false) {
 	// a .tp open installs somebody else's document, so its index needs adopting too
 	notifySharedIndex();
 }
+
+// R22 round 30 C3, LAST in the file on purpose: a module-level subscribe runs
+// SYNCHRONOUSLY at import, so every `let` its callback reads must already be declared
+// (the documented TDZ trap). `peers` ticks on every open and close, so the last peer
+// leaving is the edge that lets the merge notices speak again on the next connect.
+peers.subscribe((p) => {
+	const open = /** @type {any} */ (p)?.openedPeers?.size ?? 0;
+	if (!open && hadOpenPeers) {
+		clashesTold = new Set();
+		pointersTold = new Set();
+	}
+	hadOpenPeers = open > 0;
+});

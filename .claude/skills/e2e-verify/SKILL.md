@@ -1291,6 +1291,33 @@ your files). Two-peer verification is required for anything touching replication
 VR features: cover the extracted math/state headlessly (computeMoveOffset,
 computeTeleportArc pattern) and note that on-device feel is the user's manual check.
 
+## Roadmap 22 round 30 — `scene-isolation` (72), and the rooms battery
+
+- **PROVE A SEND GATE AND A RECEIVE GUARD INDEPENDENTLY.** They look like one mechanism
+  and are two: disarm the RECEIVER (delete the type from its ROOM_SCOPED) and send a
+  real replicated message — nothing arrives, the send gate held; then bypass the sender
+  with a raw per-conn `connections[id].send(...)` — the receive guard held. ROOM_SCOPED
+  is exported MUTABLE precisely so a suite can counterfactual each side in-page.
+- **A SUITE'S CONNECT DIRECTION IS LOAD-BEARING once sends are role-scoped.**
+  `h.connect(B, A)` makes A the session writer; after C4 a JOINER's raw manifest
+  publishes no longer replicate (the feature), so two sections that published from the
+  dialling peer saw nothing travel. Pick who dials by who must be allowed to publish.
+- **TWO AGENTS IN ONE WORKTREE CONFOUND EACH OTHER'S A/Bs.** An agent's scene-rooms
+  baseline aborted mid-run because the parallel agent was reverting its own files under
+  the dev server (HMR churn); the numbers only counted once re-run on a settled tree.
+  When parallelizing, keep file sets disjoint AND treat any A/B run during the other's
+  counterfactual window as invalid.
+- **A SESSION-LIMIT KILL LEAVES THE WORK ON DISK.** Both wave-2 agents died mid-task;
+  `git status` + targeted greps told exactly where each stopped, and resuming the SAME
+  agent (SendMessage) with the tree state spelled out lost nothing. Spell out which
+  in-flight files are NOT theirs, or the resumed agent may "clean up" a peer's work.
+- **PUBLIC-PEERJS SIGNALING FAILURES MIMIC ROOM GATING PRECISELY** (manifest never
+  arrives, peerScenes empty, requestAsset false). Before blaming a gate, re-run with
+  PEER_CONFIG at the self-hosted box — one wave-2 red was exactly this.
+- **THE THREE-BUTTON TOAST IS THE FIRST OF ITS KIND** (Bring/Stash/Stay on one .tp-toast
+  card) — headless cannot judge it at narrow widths or in non-dark themes; it is on the
+  owed-on-device list, not the suite's.
+
 ## Roadmap 22 rounds 19-28 — `window-header-ranking` (30), `tab-group-stacking` (17)
 
 - **MEASURE THE THING AGAINST WHAT IT IS SUPPOSED TO LINE UP WITH, not against itself.**

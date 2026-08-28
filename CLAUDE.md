@@ -358,6 +358,82 @@ loadable play content. Everything a user does must be visible to connected peers
   45) on the TOP of the stack rather than clamping it, so the windows you have just been
   using stay strictly ordered and only the deep ones share; `windowTabs.groupFloor` takes
   the worst case across a group's members. All four are in the gotchas.
+- **ROOMS ARE CONTENT PARTITIONS (R22 round 30, the whole arc)** — `peerScenes.js` grew
+  from presence into the partition: `ROOM_SCOPED` (a mutable Set of 67 message types —
+  object lifecycle/geometry incl. clearscene, flow documents+runtime, every scene
+  singleton, locks, session proposals) is withheld from peers demonstrably elsewhere on
+  the SEND side (peerHandler's broadcast gate = STREAM_TYPES ∪ ROOM_SCOPED), the RECEIVE
+  side (`canApplyByRoom` right after the capability gate — the backstop against older
+  builds and a foreign clearscene) and the REPLY side (nine full-state replies answer
+  `sameRoomOrUnknown` only). MESH-WIDE stays: chat, ALL presence (**atscene may never be
+  gated — it is the gate's own evidence**, and it sits on cloudHooks' ALWAYS_ALLOWED
+  floor for the same reason), peervars, the manifest + ALL asset transfer (the library is
+  cross-room BY DESIGN: travel pulls destination-scene bytes from peers in other rooms),
+  nodedefs, roomanchor, the module channel (SDK `roomScoped` opt-in = recorded
+  follow-up), and every get* REQUEST (the reply side is where rooms are enforced).
+  Only-on-evidence is preserved throughout: an absent row or an unnamed side gates
+  NOTHING.
+  · **THE RE-SYNC that makes the gate safe**: `requestFullState(conn)` factors the
+  handshake burst (atscene first — PeerJS conns are ordered, so the row is fresh before
+  any decision; gettriggers ahead of getnodes, the DEVX#18 order); `travelToLevel` ends
+  by re-requesting full state from every peer in the destination room, so travel-back
+  converges on the LIVE room, not the file. Deliberately NOT wired to
+  currentLevel.subscribe (adoption also writes it, and there the host already sent
+  everything). Locks re-push own-rows-only on a row transitioning INTO my scene
+  (lockRestore concats without dedupe). `requestLoadSession` counts same-room conns only
+  or a gated sessionproposal hangs the proposer. The re-sync's getobjects carries
+  `arriving: true` (additive) or every walk-in pops share-or-stash on the whole room.
+  **getgame was measured INERT and removed**: fork 3's carry semantics re-stamp the
+  traveller's state at Date.now(), so the room's reply always loses — that is the fork
+  working; the measurement lives in requestFullState's JSDoc.
+  · **THE CONNECT CONTRACT** (`deferUntilShareChoice`'s five-row table in sessions.js):
+  an EMPTY joiner adopts the host's scene identity and receives, no ask
+  (`adoptSceneIdentity` in levels — **THE NAME AND NOTHING ELSE**, fileHandler's
+  loose-scene shape `{hash:'', name, unsaved:true}`: a hash in currentLevel means "these
+  are the bytes I loaded" and every reader treats it that way — storing the host's hash
+  was tried and broke the Explorer's "Open here" three ways); a HOST asked by a peer in a
+  different named room withholds SILENTLY; a joiner with work joining a different named
+  room gets THREE options — Bring / Stash & join / **Stay in mine**, which sends NOTHING
+  (not even loading:0 — that would claim a sync completed); unnamed-with-work gets two
+  (no Stay — an unnamed scene cannot be isolated, forced by only-on-evidence); same scene
+  = classic behavior. The once-per-session latch is a per-ROOM verdict map.
+  · The peers popup: Connected (N) INCLUDES you (header AND trigger badge); a tp-seg
+  All|Rooms switcher (`peers:view`, flat default); ONE `peerRow` snippet for both views;
+  grouped view = roomsOfSession's first production caller + "Untitled scene" and
+  "Scene unknown" buckets LAST (Watch stays ENABLED there — only-on-evidence); **"Go to"**
+  (class `peer-goto`, never `peer-watch` — two suites count that class) replaces Watch
+  exactly when `elsewhereThan` says elsewhere: guard → hash-first
+  `travelToLevel(row.hash)` (the exact world they stand in; the manifest pointer can be
+  newer) → 15s race toast at the CALL SITE (never inside resolveLevelItem — the LUT watch
+  rule). The atscene `hash` field got its first consumer here.
+  · `sceneOpenGuard.js` = the unsaved-changes guard as ONE module (`guardSceneReplace`),
+  shared by Explorer's openSceneItem and Go-to; NOT in levels.js (sceneIdentity imports
+  levels — cycle), and the travel NODE deliberately unguarded (replicated gameplay has
+  nobody at a dialog).
+  · **THE MANIFEST**: receive = UNION-MERGE (`mergeManifests`, pure — per-scene histories
+  by hash: prefix takes the longer, diverged splices the loser's novel hashes before the
+  newer side's pointer, the adoptSceneVersions precedent; a scene only one side has is
+  carried WHOLE, which is the wipe protection; clash = both sides novel → ONE modal per
+  connect; the HOST toasts when a remote merge MOVES a pointer). Merge runs EVEN on an
+  older incoming stamp (reconnect); the union commit is stamped ABOVE BOTH sides;
+  send-back only when the SCOPED doc has something the sender lacks (content-idempotent
+  → terminates). Send = SCOPED for a joiner (`outboundManifest` at all three senders):
+  scenes filtered to sessionSceneNames ∪ openedScenes (consent recorded in
+  saveSceneAsLevel/publishCurrentIfChanged/travelToLevel — **BEFORE the write that
+  publishes**, see the gotcha — and by a .tp open; adoption is NOT consent), the private
+  project name withheld unless renamed this session. The LOCAL store and idb keep the
+  FULL manifest; scoping lives at the send boundary only.
+  · **THE LIBRARY'S FIRST CONTACT**: auto-download really runs on connect (manifestInUse
+  counts the whole document incl. tombstones; the peer-rise edge pulls unconditionally;
+  requestAsset only records an ask that actually LEFT — the poisoned-hash fix).
+  `shareNewFiles: 'ask'|'always'|'never'` (default ask) supersedes autoShareAll
+  ('always' is the old ON verbatim; migration reads the old key); the ask is a STORE
+  (`pendingShareAsk` + `resolveShareAsk`) rendered by Explorer as a second
+  `#explorer-confirm`-style strip with the File-settings deep link — a store, not a
+  callback, because a callback is null exactly when the Explorer is closed. Keep-local
+  writes NOTHING (never the 'no' veto). Scenes never arm the strip (manifest.scenes +
+  consent own them). The connect batch asks the HOST too. The offer toast keeps only the
+  unsaved-scene warning + missing-files-when-autoDownload-off.
 - `src/lib/objectPermissions.js` (#14, store-only) — viewer object permissions, ONLY
   active when a roles plugin publishes `rolesInfo` (OSS byte-unchanged): `canEditObject`
   (a viewer edits ONLY their own `__localOnly` objects), `markLocalOnly`/`clearLocalOnly`,
@@ -1760,6 +1836,32 @@ loadable play content. Everything a user does must be visible to connected peers
 
 ## Hard-won gotchas (do not rediscover)
 
+- **CONSENT MUST BE RECORDED BEFORE THE WRITE THAT PUBLISHES IT.** `publishSceneVersion`/
+  `commitManifest` IS the broadcast, so a `noteSceneOpened` placed after it scopes out
+  the very version it was meant to release — and nothing sends again until the next
+  manifest write. Measured: the host's document stayed {Foundry, Forge} after the joiner
+  saved Vault. The general form: when a filter reads a set and the publish is synchronous
+  with the act, the set must be written first.
+- **A HASH IN `currentLevel` MEANS "THESE ARE THE BYTES I LOADED", and adoption must not
+  claim it.** Every reader treats it that way — the Explorer's "Open here" refuses the
+  scene you are already in by hash, `publishCurrentIfChanged` places versions beside that
+  item. A joiner ADOPTING the host's scene identity loaded no file: storing the host's
+  hash made the derived remote-scene card answer "you are already in it", so the bytes
+  could never be fetched (three checks red). Adoption stores the NAME and nothing else —
+  fileHandler's loose-scene shape — and `unsaved` is a fact about THIS MACHINE, which no
+  arriving document can settle.
+- **A RE-SYNC REQUEST IS NOT A JOIN, and the receiver cannot tell unless it is told.**
+  travelling into a room re-requests full state, and a traveller HOLDS objects (the scene
+  file it just loaded) — which reads exactly like two worlds merging, so every walk-in
+  popped share-or-stash on the whole room. The re-sync's getobjects carries
+  `arriving: true` (additive; absent = false): it can only skip a merge question between
+  peers already agreed to be in one room, and records no verdict.
+- **FORK 3'S CARRY SEMANTICS MAKE A PULLED gameState ALWAYS LOSE.** travelToLevel
+  re-asserts the traveller's carried state through gameStateRestore, which re-stamps
+  Date.now() ON PURPOSE — so a getgame added to the arrival re-sync was measured INERT
+  (the room's reply is always strictly older and always refused). That is the fork
+  working, not a gap: the traveller keeps its carried state and the room's NEXT
+  transition reaches it. When adding a puller for latest-wins state, check who re-stamps.
 - **WHEN A FLEX ROW OVERFLOWS, WHAT FALLS OFF THE END IS WHATEVER IS LAST IN THE MARKUP —
   and in a window header that is the way OUT.** The preview window loses its close button,
   the floating Explorer its dock AND its close. So a narrow header needs a RANKING, and the
@@ -3797,6 +3899,35 @@ override for e2e — never share 5173 (the user's main-checkout server).
   (open-core: OSS ships only inert hooks — capability gate / auth hook /
   VITE_CLOUD_PLUGIN — cloud repo holds registration/rooms/roles; contract in its
   MAINTAINING.md).
+- Status (2026-08-28, latest): **ROADMAP 22 ROUND 30 — ROOMS THAT HOLD, AND A LIBRARY THAT
+  INTRODUCES ITSELF.** Eight code commits on `feat/22-round12` (382be38 C1 auto-download ·
+  e98a32d A1 identity+adoption · b8cde82 B1 guard module · 5f4cfc0 B2 the popup+Go-to ·
+  f665f00 A2+A3 the partition+the ask · 92b37c5 C3 union-merge · 44a1bcc C2 the share
+  strip · b3c9a51 C4 scoped publish), NOT pushed. Baseline **383/62** at every commit;
+  guards proven by breaking the code at every phase (the C4 counterfactual reads 8 red
+  whose messages are literally the user's report). Executed by SIX Opus implementation
+  agents on disjoint file sets, the orchestrator reviewing every diff and committing with
+  explicit paths (the 19-A model); two agents died to a session limit mid-wave and were
+  RESUMED in place with the tree state spelled out — nothing lost.
+  · THE ARC: presence became a PARTITION. A joiner learns the room's name in the
+  handshake and adopts it when empty; two named rooms exchange nothing; the connect ask
+  is scene-aware with a real "Stay in mine"; travel re-syncs on arrival; the manifest
+  merges by hash on receive and a joiner's send is scoped to consented scenes; the
+  library auto-downloads on connect and asks below the Library when you add files. Full
+  design + findings: the plan file (playful-zooming-seahorse) and the per-commit
+  messages, which carry the counterfactual numbers.
+  · TWO PLAN DEVIATIONS made on measurement, both in the gotchas: adoption stores the
+  NAME only (the hash claim broke the Explorer's remote-scene card), and getgame was
+  removed from the re-sync burst (fork 3 re-stamps, so the pull is inert by design).
+  · Suites: scene-isolation NEW (72), project-manifest 24 -> 83, shared-library 196 ->
+  ~258, scene-rooms 37 -> 58, peers-popover FIXED (the standing red — the mount gate
+  needed a live conn) 6 -> 19, scene-levels §5 rewritten to the partition contract.
+  · **OWED ON DEVICE**: the three-button Bring/Stash/Stay toast at narrow widths and in
+  non-dark themes; the felt latency of Bring-into; Go-to on a real pointer; the share
+  strip's copy; two browsers in genuinely different scenes doing real work.
+  · **FOLLOW-UPS RECORDED**: voice panners pin a cross-room speaker at their last stance
+  (per-peer panner bypass); the module channel stays mesh-wide (SDK roomScoped opt-in);
+  .peer-goto carries no right-click mute menu while a peer is away.
 - Status (2026-08-27, latest): **ROADMAP 22 ROUNDS 19-28 — THE PREVIEW'S CORNER, WINDOW
   CHROME, AND TWO TAB-GROUP BUGS.** Six commits on `feat/22-round12`, NOT pushed. Baseline
   **383/62** (down from 385: typing callbacks while restoring JSDoc my own doc blocks had

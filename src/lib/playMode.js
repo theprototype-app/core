@@ -1,5 +1,8 @@
 import { derived, get, writable } from 'svelte/store';
 import { isLocked, isVRMode, vrOverride, vrPassthrough } from '../stores/sceneStore';
+// appStore is a LEAF (svelte/store and nothing else — sceneStore already pulls in more
+// than it does), so this does not widen the cycle surface the note below is about.
+import { showToast } from '../stores/appStore';
 
 // THE PLAY STATE MACHINE, lifted out of Controls.svelte so the play FAB, the FAB's
 // right-click mode menu and (next) a keyboard shortcut all press the same button.
@@ -56,21 +59,84 @@ export const willEnterAR = derived(
 	([$xr, $passthrough]) => $xr && !!$passthrough
 );
 
-/* ------------------------------------------------------------------ cooldown --- */
+/* ------------------------------------------------------------------ the exit --- */
 
-// Both flags are declared ABOVE the `isLocked` subscription at the foot of this file,
-// which runs its callback SYNCHRONOUSLY at module evaluation (the module-level
+// W3: THE FIXED WALL IS GONE. There used to be an `allowPlay` flag here holding play
+// shut for a FLAT 2000ms after every exit, because Chromium refuses
+// `requestPointerLock` for about a second after a USER-INITIATED Esc — "The user has
+// exited the lock before this request was completed". Two things were wrong with
+// paying for that here. It is the WRONG LAYER: the refusal belongs to the pointer
+// lock, so the component that asks for the lock is what should cope with it
+// (PointerLockControls retries on refusal now, ~275ms steps for up to 2.5s, and stops
+// the instant the lock lands). And it is the WRONG PRICE: the ~1s refusal only
+// applies to an Esc the USER pressed, so every other exit — a programmatic stop, the
+// menu substate, a HUD button — paid two seconds for a browser rule it was never
+// subject to. Pressing play now enters as fast as the engine allows, which is
+// instant in the common case.
+//
+// The flag below is declared ABOVE the `isLocked` subscription at the foot of this
+// file, which runs its callback SYNCHRONOUSLY at module evaluation (the module-level
 // subscribe rule — a `let` read from below would TDZ-crash the SSR prerender).
 
-/** false while the post-exit re-entry lockout is running */
-let allowPlay = true;
-// 21-F3 REJOIN: a play press that landed inside the exit cooldown, replayed when it
-// expires. The cooldown itself has to stay — it exists because the browser refuses a
-// pointer-lock request for about a second after a user-initiated Esc — but DROPPING
-// the press was never part of that: the button simply did nothing, with no feedback,
-// which is precisely the "I left play and could not get back in" report. Deferring is
-// the whole fix, and it costs one flag.
+// 21-F3 REJOIN, and all that survives of the cooldown: `isLocked === false` is a
+// TRANSIENT that lives until the next macrotask (the settle below), and a press that
+// lands inside that sliver must not be EATEN — the button doing nothing with no
+// feedback is precisely the "I left play and could not get back in" report. It is
+// replayed at the settle instead, which is now the whole of the deferral.
 let playQueued = false;
+
+/* --------------------------------------------------------------- xr recovery --- */
+
+// W3: `isVRMode` is set OPTIMISTICALLY, one line before the click that asks for the
+// session, and that is deliberate — Scene arms the whole VR configuration off this
+// store (it unmounts the transform gizmo and the Outline pass), so it has to be true
+// before the first XR frame, not a beat after it. What was missing is the other half:
+// nothing ever put it BACK. `sessionend` is the only reset in the app, and a
+// requestSession that REJECTS fires no session events at all — threlte's XRButton
+// swallows the rejection into an `onerror` prop no call site passed.
+//
+// Stuck-true is not cosmetic. `openViewportMenuAt` in Scene.svelte refuses while it
+// holds, and that function is the ONE writer of the viewport and object context
+// menus, so right-click, the touch long-press and the mobile "+" all go silently
+// dead — which is the report, verbatim: deny the VR permission and the context menu
+// stops working. Click-select, the gizmo, WASD navigation and focus go with it, and
+// the app still LOOKS normal because `isLocked` was never touched.
+//
+// TWO recoveries, because there are two shapes of failure:
+//   · `xrSessionFailed` is the DIRECT one — Controls hands it to both hidden buttons
+//     as their `onerror`, so a denied permission answers in well under a second.
+//   · the WATCHDOG covers what has no signal at all: XRButton returns SILENTLY
+//     (without calling onerror) when its own support state is not 'supported', and a
+//     click that never reaches a button reports nothing either.
+// Scene's raw `sessionstart` both cancels the watchdog AND asserts `isVRMode` true,
+// which is what makes the timer safe to fire while a permission prompt is still on
+// screen: the reset is only ever undoing a GUESS, and a late accept re-arms VR from
+// the event that actually knows.
+
+const XR_START_TIMEOUT = 6000;
+/** @type {any} */
+let xrWatchdog = null;
+
+function clearXRWatchdog() {
+	if (xrWatchdog) clearTimeout(xrWatchdog);
+	xrWatchdog = null;
+}
+
+/** a session really started — Scene calls this from the renderer's own event */
+export function noteXRSessionStarted() {
+	clearXRWatchdog();
+}
+
+/** the session request failed (or was denied): undo the optimistic mode switch */
+export function xrSessionFailed() {
+	clearXRWatchdog();
+	if (get(isVRMode) !== true) return;
+	isVRMode.set(false);
+	// only the DIRECT path says anything: at the timeout we cannot tell a refusal
+	// from a prompt the user has not answered yet, and a toast claiming failure over
+	// a live permission dialog would be a lie.
+	showToast('Could not start the immersive session. Still in the editor.');
+}
 
 /* ------------------------------------------------------------------ the press -- */
 
@@ -96,16 +162,25 @@ export function requestPlay() {
 		// above decide; this refuses a click that would do the wrong thing.
 		if (aimed && (aimed.textContent ?? '').trim().startsWith('Enter')) {
 			isVRMode.set(true);
+			// W3: arm the safety net BEFORE the click, so a button that returns without
+			// asking for anything is covered too (see the xr recovery note above).
+			clearXRWatchdog();
+			xrWatchdog = setTimeout(() => {
+				xrWatchdog = null;
+				// a real session cancelled this timer; reaching here means none started
+				if (get(isVRMode) === true) isVRMode.set(false);
+			}, XR_START_TIMEOUT);
 			aimed.click();
 			return;
 		}
 	}
 	// already in play — a second press is not a re-entry
 	if (get(isLocked) === true) return;
-	// 21-F3: inside the exit cooldown, REMEMBER the press instead of eating it.
-	// `isLocked === false` is the transient the exit path writes (the subscription below
-	// settles it to null), so both non-null values land here.
-	if (allowPlay !== true || get(isLocked) === false) {
+	// 21-F3: `isLocked === false` is the transient the exit path writes and the
+	// subscription below settles to null on the next macrotask. Setting `true` on top of
+	// it would be read by nobody (the settle would overwrite it), so REMEMBER the press
+	// and let the settle replay it — a wait measured in one macrotask, not in seconds.
+	if (get(isLocked) === false) {
 		playQueued = true;
 		return;
 	}
@@ -118,26 +193,23 @@ export function requestPlay() {
 	if (get(isLocked) === null) isLocked.set(true);
 }
 
-// The exit debounce, formerly Controls' `$effect`. `isLocked === false` is what the
-// exit path writes; it settles to null here and locks re-entry out for two seconds.
+// The exit settle, formerly Controls' `$effect`. `isLocked === false` is what the exit
+// path writes; it becomes null here, on the very next macrotask. Nothing waits any
+// longer than that — see the W3 note above.
 if (typeof window !== 'undefined') {
 	isLocked.subscribe((v) => {
 		if (v !== false) return;
-		allowPlay = false;
 		// NEVER write a store from inside its own subscriber (flush loop) — hop out of
 		// the notification first. It costs one macrotask and no semantics: every reader
 		// of the transient `false` already treats it as "not playing, not ready yet".
 		setTimeout(() => {
 			if (get(isLocked) === false) isLocked.set(null);
-		}, 0);
-		setTimeout(() => {
-			allowPlay = true;
-			// 21-F3: honour a press made during the cooldown. Through `requestPlay`, not a
+			// 21-F3: honour a press made during the transient. Through `requestPlay`, not a
 			// bare store write, so the XR branch and the guards above still decide.
 			if (playQueued) {
 				playQueued = false;
 				requestPlay();
 			}
-		}, 2000);
+		}, 0);
 	});
 }

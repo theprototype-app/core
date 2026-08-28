@@ -31,7 +31,7 @@
 	import { dockable } from '$lib/docking';
 	import { visibleDockKey, dockOccupants, FLOW_FAMILY } from '$lib/bottomDock';
 	import { togglePanel } from '$lib/panelToggles';
-	import { requestPlay, willEnterXR, willEnterAR, vrSupported, arSupported } from '$lib/playMode';
+	import { requestPlay, willEnterXR, willEnterAR, vrSupported, arSupported, xrSessionFailed } from '$lib/playMode';
 	import { dockAddItems } from '$lib/dockMenu';
 	import { VRButton, XRButton } from '@threlte/xr'
 
@@ -1183,11 +1183,16 @@
      `data-aim` says which one a plain press would click — the preference, echoed for
      anyone (including the suites) who needs to read the decision off the DOM. -->
 <div class="hidden" id="vrButton" data-aim={$vrPassthrough ? 'ar' : 'vr'}>
-	<div id="vrButtonVr"><VRButton /></div>
+	<!-- W3: `onerror` is the ONE signal threlte gives for a session request that
+	     REJECTS — a denied permission, no headset, a spent user activation — and it
+	     was going nowhere, so the optimistic `isVRMode = true` in requestPlay stuck
+	     and took the context menus down with it. -->
+	<div id="vrButtonVr"><VRButton onerror={() => xrSessionFailed()} /></div>
 	<!-- passthrough (90): same button flow, immersive-ar session -->
 	<div id="vrButtonAr">
 		<XRButton
 			mode="immersive-ar"
+			onerror={() => xrSessionFailed()}
 			sessionInit={{
 				requiredFeatures: [],
 				optionalFeatures: ['local-floor', 'bounded-floor', 'anchors', 'hand-tracking', 'plane-detection', 'layers', 'depth-sorted-layers', 'hit-test', 'mesh-detection']

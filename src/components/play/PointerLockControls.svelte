@@ -1,5 +1,6 @@
 <script lang="ts">
     import { onDestroy, untrack } from 'svelte'
+    import { get } from 'svelte/store'
     import { Euler, Camera } from 'three'
     import { useThrelte, useParent, useTask } from '@threlte/core'
     import { isLocked, playPointerFree, playerCam, editorCam, globalScene } from '../../stores/sceneStore'
@@ -82,14 +83,64 @@
       })
     })
 
-        $effect(() => {
+    // W3: THE LOCK RETRY. Chromium refuses `requestPointerLock` for roughly a second
+    // after a USER-INITIATED Esc exit ("The user has exited the lock before this
+    // request was completed"), so a play press made straight after Esc used to enter
+    // play mode with no lock and no second attempt. playMode.js paid for that with a
+    // flat 2s wall on the BUTTON, which charged every other exit path for a rule only
+    // Esc is subject to; the refusal lives here, so the answer does too. Attempt
+    // immediately, and on a refusal keep asking on a short beat until the engine
+    // relents — a press right after Esc lands in ~1s worst case and instantly
+    // otherwise.
+    const LOCK_RETRY_STEP = 275
+    const LOCK_RETRY_WINDOW = 2500
+    let lockRetryTimer: any = null
+    // The instant the CURRENT retry window closes, 0 when none is open. This is also
+    // the OWNERSHIP FENCE for `onPointerlockError`, mirroring the `held` flag below:
+    // an error is not addressed to anybody, so we only ever act on one that arrives
+    // inside a window OUR OWN request opened — a module locking document.body and
+    // being refused can never make this component ask for the canvas.
+    let lockRetryUntil = 0
+
+    function cancelLockRetry() {
+      if (lockRetryTimer) clearTimeout(lockRetryTimer)
+      lockRetryTimer = null
+      lockRetryUntil = 0
+    }
+
+    function scheduleLockRetry() {
+      if (lockRetryTimer || Date.now() >= lockRetryUntil) return
+      lockRetryTimer = setTimeout(() => {
+        lockRetryTimer = null
+        requestLock(false)
+      }, LOCK_RETRY_STEP)
+    }
+
+    /**
+     * `first` OPENS the retry window; a retry rides the one already open. Store reads
+     * go through `get` on purpose — this is called from the $isLocked effect, and an
+     * auto-subscription to `$playPointerFree` in here would re-run that effect on every
+     * menu toggle and re-request the lock the menu had just released.
+     */
+    function requestLock(first: boolean) {
+      if (get(isLocked) !== true) return cancelLockRetry()
+      if (get(playPointerFree)) return cancelLockRetry()   // 21-E3: the menu owns the pointer
+      if (document.pointerLockElement === domElement) return cancelLockRetry()
+      // a hidden tab cannot be granted a lock and asking is not free; the next press
+      // opens a fresh window
+      if (document.visibilityState === 'hidden') return cancelLockRetry()
+      if (first) lockRetryUntil = Date.now() + LOCK_RETRY_WINDOW
+      // BOTH failure signals, because both exist in the wild: modern Chromium returns a
+      // PROMISE that rejects, the older signature returns undefined and only fires
+      // `pointerlockerror` on the document. Handling one alone leaves half the engines
+      // with the bug this fixes.
+      const request: any = domElement.requestPointerLock({ unadjustedMovement: true })
+      if (request?.catch) request.catch(() => scheduleLockRetry())
+    }
+
+    $effect(() => {
       if ($isLocked) {
-        // returns a promise in newer Chrome; rejection (headless, unsupported
-        // unadjustedMovement) already surfaces via the pointerlockerror event
-        const request: any = domElement.requestPointerLock({
-          unadjustedMovement: true
-        })
-        request?.catch?.(() => {})
+        requestLock(true)
         // 21-E3: entering play with a menu ALREADY visible (a late joiner whose
         // showWhile-bound menu came with the state) - take the lock and let the menu
         // effect release it; the brief flicker is the honest order of events.
@@ -113,6 +164,9 @@
             }
           }
         })
+      } else {
+        // left play (or the transient on the way out) — nothing to keep asking for
+        cancelLockRetry()
       }
     })
 
@@ -281,6 +335,7 @@
       domElement.ownerDocument.removeEventListener( 'keydown', onKeyDown );
       domElement.ownerDocument.removeEventListener( 'keyup', onKeyUp );
       window.removeEventListener('wheel', onScroll)
+      cancelLockRetry()
     })
 
     function onScroll( event ) {
@@ -401,6 +456,7 @@
     function onPointerlockChange() {
       if (document.pointerLockElement === domElement) {
         held = true
+        cancelLockRetry()   // W3: it landed
         $isLocked = true
         // a menu was already up when the lock landed (entering play with a visible
         // menu): hand the release to the menu effect by keeping the substate the boss
@@ -427,6 +483,14 @@
     }
   
     function onPointerlockError() {
+      // W3: the OLD-SIGNATURE failure signal (no promise to reject). Not addressed to
+      // anybody, so `lockRetryUntil` decides whether it was ours — see requestLock.
+      // A refusal inside our own window is the expected post-Esc case and not worth a
+      // console error; anything else still is.
+      if (Date.now() < lockRetryUntil) {
+        scheduleLockRetry()
+        return
+      }
       console.error('PointerLockControls: Unable to use Pointer Lock API')
     }
   </script>

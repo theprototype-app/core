@@ -29,10 +29,12 @@ h.run(async () => {
 	});
 	h.check(menuBack, 'editor UI restored after Escape');
 
-	// round-trip again after the 2s re-entry guard
-	await A.page.waitForTimeout(2200);
+	// round-trip again. There used to be a 2200ms wait here for a fixed 2s re-entry
+	// guard; W3 removed the guard (the pointer-lock refusal it stood in for is retried
+	// in PointerLockControls instead), so the round trip is immediate — play-reentry
+	// is the suite that MEASURES that, this one just must not re-introduce the wait.
 	await A.page.locator('#play-button').click();
-	await h.eventually(() => lockedState(A.page), (v) => v === true, 'play re-enters after the guard');
+	await h.eventually(() => lockedState(A.page), (v) => v === true, 'play re-enters right away');
 	await A.page.keyboard.press('Escape');
 	await h.eventually(() => lockedState(A.page), (v) => v !== true, 'second Escape works too');
 

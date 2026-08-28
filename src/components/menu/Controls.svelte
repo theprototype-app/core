@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { ChevronRight, Cog, Eye, FolderOpen, List, Maximize2, MessageSquare, Move, Pin, Play, RectangleGoggles, RotateCcw, SquarePen, Sun, Workflow } from '@lucide/svelte';
+	import { Cog, Eye, FolderOpen, List, Maximize2, MessageSquare, Move, Pin, Play, RectangleGoggles, RotateCcw, SquarePen, Sun, Workflow } from '@lucide/svelte';
 	import { Listgroup } from 'flowbite-svelte';
 	import { objectsGroup, TControls, transformMode, isLocked, lockedObjects, globalScene, vrPassthrough, vrOverride, selectedObject, selectedObjects } from '../../stores/sceneStore';
 	import { chatHidden, flowGraphClose, explorerClose, objectListClose, objectContextMenu, renamingObject, advancedMode, showEnvInList, showLocalObjects, armExplorerDock } from '../../stores/appStore.js';
@@ -16,7 +16,7 @@
 	import { sendPing } from '$lib/ping';
 	import { buildObjectMenuItems } from '$lib/objectMenu';
 	import * as THREE from 'three';
-	import { setContext } from 'svelte';
+	import { onMount, setContext } from 'svelte';
 	import { writable } from 'svelte/store';
 	import { shareObject } from '$lib/objectPermissions';
 	import Objects from './Objects.svelte';
@@ -599,12 +599,15 @@
 	type ControlsLayout = { order: string[]; hidden: string[]; spacerIndex: number; collapsed: boolean };
 	type CellButton = { title: string; slot?: string; icon: any; tint: () => string; run: () => void };
 
-	/** the two PSEUDO-cells: the transparent well the play FAB sits in, and the
-	 *  chevron that brings the bar back once it is collapsed. Neither is a roster
-	 *  entry — you cannot hide the way out of a collapsed toolbar, and play is never
-	 *  hideable. */
+	/** the one PSEUDO-cell: the transparent well the play FAB sits in. It is not a
+	 *  roster entry (play is never hideable) but it IS a cell of the row, which is
+	 *  what makes "move one place left" mean the same thing for it and for a button.
+	 *
+	 *  W1 removed its sibling, a chevron cell that used to appear while collapsed:
+	 *  a collapsed bar is the well and nothing else, and the way back out lives in
+	 *  the FAB's own right-click menu (plus Settings' Reset window positions, which
+	 *  is the hatch for iOS Safari, where a long press fires no `contextmenu`). */
 	const SPACER = '__spacer';
-	const EXPAND = '__expand';
 	const DEFAULT_ORDER = ['move', 'rotate', 'scale', 'objects', 'flow', 'explorer'];
 	const DEFAULT_SPACER = 3;
 
@@ -713,54 +716,64 @@
 		}
 	}
 
+	// W1 SAFETY HATCH. Every way back out of a customized toolbar is a right-click, and
+	// iOS Safari fires no `contextmenu` on a long press — so a bar collapsed there (or
+	// on any device, by someone who cannot find the menu again) needs a door that is not
+	// one. Settings' "Reset window positions" already wipes the layout LS keys and runs
+	// the live resetters, which is exactly this job one domain over; `resetWindowLayout`
+	// clears `controlsLayout` and this brings the live bar back with no reload.
+	onMount(() => registerWindowReset(() => resetLayout()));
+
 	/** the roster buttons actually ON the bar, in bar order (the spacer is not one) */
 	function shownIds(): string[] {
 		return controlsLayout.order.filter((id) => BUTTONS[id] && !controlsLayout.hidden.includes(id));
 	}
 
-	// The cells the bar renders: the shown buttons with the FAB's well spliced in at
-	// `spacerIndex`. Collapsed, that is the whole bar — the well plus the way out.
-	const visibleCells = $derived.by(() => {
-		const layout = controlsLayout;
-		if (layout.collapsed) return [{ id: SPACER }, { id: EXPAND }];
-		const shown = layout.order.filter((id) => BUTTONS[id] && !layout.hidden.includes(id));
-		const cells = shown.map((id) => ({ id }));
-		cells.splice(Math.max(0, Math.min(layout.spacerIndex, shown.length)), 0, { id: SPACER });
-		return cells;
-	});
+	/** THE VISUAL ROW — the bar exactly as the user reads it: the shown buttons with
+	 *  the FAB's well spliced in at `spacerIndex`. Every rearrangement is a splice on
+	 *  THIS sequence and the record is derived back from it (below), which is the W1
+	 *  correction: `order` and `spacerIndex` used to be moved independently, so a step
+	 *  across the well moved TWO cells at once ("Move left and right near play just
+	 *  swap items around the play button"). */
+	function visualIds(): string[] {
+		const shown = shownIds();
+		const seq: string[] = [...shown];
+		seq.splice(Math.max(0, Math.min(controlsLayout.spacerIndex, shown.length)), 0, SPACER);
+		return seq;
+	}
+
+	// The cells the bar renders. Collapsed, that is the well ALONE — the play button
+	// is the whole toolbar, and its own menu is the way back.
+	const visibleCells = $derived.by(() =>
+		controlsLayout.collapsed ? [{ id: SPACER }] : visualIds().map((id) => ({ id }))
+	);
 
 	function runCell(id: string) {
-		if (id === EXPAND) {
-			setLayout({ collapsed: false });
-			return;
-		}
 		BUTTONS[id]?.run();
 	}
 
 	// --- rearranging -------------------------------------------------------------
-	// A button moves by SWAPPING with its neighbour in `order`; the spacer never takes
-	// part, which is what "skip over the spacer" means — press Move right on the cell
-	// left of the FAB and it lands on the cell to the FAB's right. `spacerIndex` is an
-	// INSERTION index into the shown list, so a swap leaves it alone; only HIDING or
-	// SHOWING a button changes how many buttons sit to the FAB's left, and those two
-	// adjust it so the FAB stays between the same neighbours.
-	function moveButton(id: string, dir: number) {
-		const shown = shownIds();
-		const target = shown[shown.indexOf(id) + dir];
-		if (!target) return;
+	/** Move one cell — a button or the well itself — exactly ONE visual slot.
+	 *
+	 *  Swapping with the neighbour ON THE VISUAL ROW is what makes crossing the play
+	 *  button a single step: the button and the well trade places, so the button ends
+	 *  up on play's other side and every other cell keeps its slot. The record is then
+	 *  READ OFF the mutated row — the well's index is where the well now is, and the
+	 *  shown buttons are poured back into their slots in `order`, so hidden entries
+	 *  keep their absolute positions and come back where they were left. */
+	function moveCell(id: string, dir: number) {
+		const seq = visualIds();
+		const at = seq.indexOf(id);
+		const to = at + dir;
+		if (at < 0 || to < 0 || to >= seq.length) return;
+		seq[at] = seq[to];
+		seq[to] = id;
+		const shown = seq.filter((cell) => cell !== SPACER);
 		const order = [...controlsLayout.order];
-		const a = order.indexOf(id);
-		const b = order.indexOf(target);
-		order[a] = target;
-		order[b] = id;
-		setLayout({ order });
-	}
-
-	/** the FAB's own Move left / Move right: the well walks the bar */
-	function moveSpacer(dir: number) {
-		const next = controlsLayout.spacerIndex + dir;
-		if (next < 0 || next > shownIds().length) return;
-		setLayout({ spacerIndex: next });
+		let next = 0;
+		for (let i = 0; i < order.length; i++)
+			if (BUTTONS[order[i]] && !controlsLayout.hidden.includes(order[i])) order[i] = shown[next++];
+		setLayout({ order, spacerIndex: seq.indexOf(SPACER) });
 	}
 
 	function hideButton(id: string) {
@@ -831,26 +844,32 @@
 	 *  is why `id` may be null: the FAB is not a roster entry, so it is never offered
 	 *  "Hide button" and its Move left / Move right walk the well instead. */
 	function toolbarTail(id: string | null) {
-		const shown = shownIds();
 		// a plain `const` the closures below capture: TS does not carry a narrowing of
 		// a PARAMETER into a nested arrow, so `id!` or a cast would be the alternative
 		const target = id ?? '';
-		const at = target ? shown.indexOf(target) : controlsLayout.spacerIndex;
-		const last = target ? shown.length - 1 : shown.length;
-		const move = (dir: number) => (target ? moveButton(target, dir) : moveSpacer(dir));
+		// the FAB is the WELL on the visual row, so both kinds of cell ask the same
+		// question of the same sequence — one rule, no second index arithmetic
+		const cell = target || SPACER;
+		const seq = visualIds();
+		const at = seq.indexOf(cell);
+		const collapsed = controlsLayout.collapsed;
 		return [
 			{ section: 'Toolbar' },
 			{
 				label: 'Move left',
-				tooltip: target ? 'Swap with the button on its left' : 'Move the play button one cell left',
-				disabled: at <= 0,
-				action: () => move(-1)
+				tooltip: target
+					? 'One place left — past the play button when it is next'
+					: 'Move the play button one place left',
+				disabled: collapsed || at <= 0,
+				action: () => moveCell(cell, -1)
 			},
 			{
 				label: 'Move right',
-				tooltip: target ? 'Swap with the button on its right' : 'Move the play button one cell right',
-				disabled: at < 0 || at >= last,
-				action: () => move(1)
+				tooltip: target
+					? 'One place right — past the play button when it is next'
+					: 'Move the play button one place right',
+				disabled: collapsed || at < 0 || at >= seq.length - 1,
+				action: () => moveCell(cell, 1)
 			},
 			...(target
 				? [
@@ -861,23 +880,24 @@
 						}
 					]
 				: []),
-			{
-				label: 'Collapse toolbar',
-				tooltip: 'Shrink the bar down to the play button',
-				action: () => setLayout({ collapsed: true })
-			},
+			// W1: the chevron cell is gone, so this row IS the way out of a collapsed
+			// bar — which is why it swaps rather than sitting beside a second entry
+			collapsed
+				? {
+						label: 'Expand toolbar',
+						tooltip: 'Bring the whole bar back',
+						action: () => setLayout({ collapsed: false })
+					}
+				: {
+						label: 'Collapse toolbar',
+						tooltip: 'Shrink the bar down to the play button',
+						action: () => setLayout({ collapsed: true })
+					},
 			{ label: 'Customize toolbar…', tooltip: 'Choose which buttons the bar shows', action: () => openCustomize() }
 		];
 	}
 
 	function cellMenuItems(id: string) {
-		if (id === EXPAND) {
-			return [
-				{ section: 'Toolbar' },
-				{ label: 'Expand toolbar', action: () => setLayout({ collapsed: false }) },
-				{ label: 'Customize toolbar…', action: () => openCustomize() }
-			];
-		}
 		const head: any[] = [];
 		if (id === 'flow') {
 			// the dock's shared "+" list — the same one DockTabs and the floating Node
@@ -909,20 +929,63 @@
 		return [...head, ...toolbarTail(id)];
 	}
 
+	/** The whole-bar checklist. Every row here is `keepOpen` — this menu is a PANE you
+	 *  work through, not a command you pick, and the first version dismissed itself on
+	 *  the first toggle. That only works because the array is DERIVED (below): a row's
+	 *  action writes the layout, the derived rebuilds, and ContextMenu re-renders the
+	 *  same open menu with the new checks, arrows and disabled states.
+	 *
+	 *  Reordering lives on the ROW as a ‹ › pair rather than as menu commands: the row
+	 *  already means "this button", and a per-row control is the only way to say
+	 *  "move THIS one" without the list growing a second entry per button. They move
+	 *  one VISUAL slot, the same rule as the cell menu's Move left / Move right, so a
+	 *  press can walk a button across the play well. */
 	function customizeItems() {
 		const ids = [...new Set([...controlsLayout.order, ...DEFAULT_ORDER])].filter((id) => BUTTONS[id]);
+		const seq = visualIds();
 		return [
 			{ section: 'Toolbar buttons' },
-			...ids.map((id) => ({
-				label: BUTTONS[id].title,
-				checked: !controlsLayout.hidden.includes(id),
-				tooltip: controlsLayout.hidden.includes(id) ? 'Put it back on the bar' : 'Take it off the bar',
-				action: () => (controlsLayout.hidden.includes(id) ? showButton(id) : hideButton(id))
-			})),
+			...ids.map((id) => {
+				const shown = !controlsLayout.hidden.includes(id);
+				const at = seq.indexOf(id);
+				return {
+					label: BUTTONS[id].title,
+					checked: shown,
+					keepOpen: true,
+					tooltip: shown ? 'Take it off the bar' : 'Put it back on the bar',
+					action: () => (shown ? hideButton(id) : showButton(id)),
+					rowActions: [
+						{
+							icon: 'chevron-left',
+							label: `Move ${BUTTONS[id].title} left`,
+							disabled: !shown || at <= 0,
+							run: () => moveCell(id, -1)
+						},
+						{
+							icon: 'chevron-right',
+							label: `Move ${BUTTONS[id].title} right`,
+							disabled: !shown || at < 0 || at >= seq.length - 1,
+							run: () => moveCell(id, 1)
+						}
+					]
+				};
+			}),
 			{ section: '' },
-			{ label: 'Reset toolbar', danger: true, tooltip: 'Back to the six default buttons in their default order', action: resetLayout }
+			{
+				label: 'Reset toolbar',
+				danger: true,
+				keepOpen: true,
+				tooltip: 'Back to the six default buttons in their default order',
+				action: resetLayout
+			}
 		];
 	}
+
+	/** the reactive half of `keepOpen`: passing `customizeItems()` inline would already
+	 *  re-run inside the template's render effect, but the menu's whole point is that
+	 *  the rows track the record, so the dependency is stated here rather than implied
+	 *  by where the call happens to sit */
+	const customizeMenuItems = $derived(customizeItems());
 
 </script>
 
@@ -1043,24 +1106,21 @@
 				</div>
 			{:else}
 				{@const btn = BUTTONS[cell.id]}
-				{@const Glyph = btn ? btn.icon : ChevronRight}
-				<!-- ONE template for every roster button AND for the expand chevron: the six
-				     hand-written cells each carried their own copy of this element, so each
-				     one also carried its own copy of the same three a11y/deprecation
-				     warnings. Keeping the chevron on this template rather than giving it an
-				     element of its own is what stops the collapse affordance adding three
-				     more. -->
+				{@const Glyph = btn.icon}
+				<!-- ONE template for every roster button: the six hand-written cells each
+				     carried their own copy of this element, so each one also carried its own
+				     copy of the same three a11y/deprecation warnings. -->
 				<p
-					id={btn?.slot}
+					id={btn.slot}
 					class={classActive +
-						(btn ? ' w-10' : ' w-5') +
+						' w-10' +
 						(i === 0 ? ' rounded-l-full' : '') +
 						(i === visibleCells.length - 1 ? ' rounded-r-full' : '')}
-					title={btn ? btn.title : 'Expand toolbar'}
+					title={btn.title}
 					on:click={() => runCell(cell.id)}
 					use:cellMenu={cell.id}
 				>
-					<Glyph size={btn ? 18 : 14} class={btn ? btn.tint() : ICON_OFF} aria-hidden="true" />
+					<Glyph size={18} class={btn.tint()} aria-hidden="true" />
 				</p>
 			{/if}
 		{/each}
@@ -1140,7 +1200,7 @@
 	<ContextMenu
 		x={customizeMenu.x}
 		y={customizeMenu.y}
-		items={customizeItems()}
+		items={customizeMenuItems}
 		sizeKey="toolbarcustomize"
 		on:close={() => (customizeMenu = null)}
 	/>

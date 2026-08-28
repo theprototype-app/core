@@ -15,6 +15,18 @@
 	// 16-P3 adds `checked: true` — the ACTIVE choice of a group (bold + accent),
 	// which replaced the old '● ' label prefix.
 	//
+	// W1 adds two more:
+	//   keepOpen: true      the row's action runs and the menu STAYS UP (owned by
+	//                       ContextMenu's `run`, documented there)
+	//   rowActions: [{ icon, label, disabled?, run }]
+	//                       small trailing controls INSIDE the row — the toolbar's
+	//                       Customize list needs a reorder pair beside each button, and
+	//                       a row that both toggles and reorders cannot say that with a
+	//                       label. They are inline CONTROLS, not menu commands: the
+	//                       click never reaches the row (stopPropagation) and never
+	//                       closes the menu, so `keepOpen` does not apply to them.
+	//                       `label` is both the tooltip and the accessible name.
+	//
 	// 16-P1: which submenu is open (`openPath`) and where the keyboard cursor sits
 	// (`navPath` + `highlight`) are owned by ContextMenu — ONE truth shared by mouse
 	// and keyboard. Hover-intent lives here: 120ms to open, 150ms to close.
@@ -187,6 +199,7 @@
 			data-ctx-active={atNav && indexOf.get(item) === highlight}
 			role="menuitem"
 			title={item.tooltip ?? ''}
+			aria-label={item.rowActions ? item.label : undefined}
 			on:mouseenter={() => hoverRow(item, indexOf.get(item) ?? -1)}
 			on:mouseleave={leaveRow}
 			on:click={() => onrun(item)}
@@ -198,6 +211,22 @@
 				<span class="flex-1">{item.label}</span>
 				{#if item.hint}
 					<span class="ctx-hint">{item.hint}</span>
+				{/if}
+				{#if item.rowActions}
+					<span class="ctx-actions">
+						{#each item.rowActions as act}
+							<button
+								type="button"
+								class="ctx-act"
+								title={act.label}
+								aria-label={act.label}
+								disabled={act.disabled}
+								on:click|stopPropagation={() => act.run?.()}
+							>
+								<Icon name={act.icon} size={13} />
+							</button>
+						{/each}
+					</span>
 				{/if}
 			</span>
 		</div>
@@ -268,6 +297,33 @@
 		width: 15px;
 		display: inline-flex;
 		color: rgb(148 163 184);
+	}
+	/* W1: inline controls at the end of a row (the Customize list's reorder pair).
+	   Muted until hovered so the row still reads as its label first. */
+	.ctx-actions {
+		flex: 0 0 auto;
+		display: inline-flex;
+		align-items: center;
+		gap: 2px;
+		margin-left: 10px;
+	}
+	.ctx-act {
+		display: inline-flex;
+		align-items: center;
+		justify-content: center;
+		width: 18px;
+		height: 18px;
+		border-radius: 4px;
+		color: rgb(148 163 184);
+		background: transparent;
+	}
+	.ctx-act:hover:not(:disabled) {
+		color: inherit;
+		background: rgb(148 163 184 / 0.25);
+	}
+	.ctx-act:disabled {
+		opacity: 0.35;
+		cursor: default;
 	}
 	.ctx-hint {
 		flex: 0 0 auto;

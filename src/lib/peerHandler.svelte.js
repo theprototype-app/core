@@ -28,7 +28,7 @@ import { applyRemoteCameraPreview, clearPeerPreview, sendCameraPreviewState } fr
 // riding the getmodulestate request, and a drop on disconnect (golden rule 3).
 import { applyRemotePlayMode, dropPeerPlayMode, sendPlayModeState } from '$lib/gamePresence';
 // P2b: which SCENE each peer is standing in — the gamePresence shape exactly
-import { applyRemotePeerScene, dropPeerScene, sendMySceneState, peerScenes, myScene, elsewhereThan, sceneOfPeer } from '$lib/peerScenes';
+import { applyRemotePeerScene, dropPeerScene, sendMySceneState, peerScenes, myScene, elsewhereThan, sceneOfPeer, ROOM_SCOPED, canApplyByRoom, sameRoomOrUnknown } from '$lib/peerScenes';
 // 21-G2: the project manifest — a latest-wins singleton like environment/scenephysics
 import { applyRemoteManifest, sendProjectManifest } from '$lib/projectManifest';
 // 21-G4: PEER-OWNED variables. The same three obligations as the mode above (dispatch,
@@ -385,6 +385,19 @@ export class PeerConnection {
 				// everything (byte-identical OSS behavior); a cloud plugin's provider
 				// drops disallowed message types from a peer (e.g. a viewer's mutations).
 				if (data && !canApply(conn.peer, data.type)) return;
+				// A2: the ROOM gate. A message describing the content of a scene is not
+				// applied when its sender is demonstrably standing in a different one.
+				//
+				// The SEND side (`broadcast`) already withholds these, so in a mesh of
+				// current builds this is the backstop rather than the mechanism - and a
+				// backstop is exactly what a destructive message deserves: a `clearscene`
+				// from an older peer, or from one whose row we have not yet seen move,
+				// would otherwise wipe a world its author is not looking at.
+				//
+				// Conservative by construction (`canApplyByRoom` -> `elsewhereThan`): an
+				// absent row, or an empty scene on either side, APPLIES. That is today's
+				// behaviour byte for byte.
+				if (data && !canApplyByRoom(conn.peer, data.type)) return;
 				// console.log(data);
 				if(data.type == 'cloud') {
 					// open-core (M1): the cloud plugin's own replicated channel
@@ -441,7 +454,10 @@ export class PeerConnection {
 				} else if(data.type == 'joints') {
 					applyJointsSnapshot(data.joints);
 				} else if(data.type == 'getjoints') {
-					sendJoints(data.sender);
+					// A2: a full-state REPLY is scene CONTENT, so it goes only to somebody in
+					// our room. The REQUEST above stays ungated (asking is never the harm) -
+					// the same line `canApply`'s ALWAYS_ALLOWED floor draws.
+					if (sameRoomOrUnknown(conn.peer)) sendJoints(data.sender);
 				} else if(data.type == 'animdata') {
 					// 17-E: authored keyframes, latest-wins per object
 					applyAnimData(data);
@@ -452,7 +468,7 @@ export class PeerConnection {
 				} else if(data.type == 'animations') {
 					applyAnimationsSnapshot(data);
 				} else if(data.type == 'getanim') {
-					sendAnimations(data.sender);
+					if (sameRoomOrUnknown(conn.peer)) sendAnimations(data.sender);
 				} else if(data.type == 'handmodel') {
 					applyHandModel(data);
 				} else if(data.type == 'environment') {
@@ -478,7 +494,7 @@ export class PeerConnection {
 					// KIND we don't know is kept and skipped at render time, never dropped.
 					applyRemoteScenePost(data);
 				} else if(data.type == 'getscenepost') {
-					sendScenePost(data.sender);
+					if (sameRoomOrUnknown(conn.peer)) sendScenePost(data.sender);
 				} else if(data.type == 'shadergraph') {
 					applyRemoteShaderGraph(data);
 				} else if(data.type == 'shadergraphdelete') {
@@ -486,7 +502,7 @@ export class PeerConnection {
 				} else if(data.type == 'shadergraphs') {
 					applyRemoteShaderGraphs(data);
 				} else if(data.type == 'getshadergraphs') {
-					sendShaderGraphs(data.sender);
+					if (sameRoomOrUnknown(conn.peer)) sendShaderGraphs(data.sender);
 				} else if(data.type == 'hud') {
 					// A2: the authored HUD document, latest-wins on changedAt. An element KIND
 					// we don't know is kept and skipped at render, never dropped. The RUNTIME
@@ -497,7 +513,7 @@ export class PeerConnection {
 				} else if(data.type == 'huds') {
 					applyRemoteHuds(data);
 				} else if(data.type == 'gethuds') {
-					sendHuds(data.sender);
+					if (sameRoomOrUnknown(conn.peer)) sendHuds(data.sender);
 				} else if(data.type == 'hudvalue') {
 					// 21-D4: a SHARED input's value - the one runtime HUD message, because what a
 					// player dragged is the only HUD state a peer cannot derive for itself.
@@ -506,14 +522,14 @@ export class PeerConnection {
 				} else if(data.type == 'hudvalues') {
 					applyRemoteHudValues(data);
 				} else if(data.type == 'gethudvalues') {
-					sendHudValues(data.sender);
+					if (sameRoomOrUnknown(conn.peer)) sendHudValues(data.sender);
 				} else if(data.type == 'game') {
 					// 21-D6: the game state, a latest-wins singleton like scenephysics/music.
 					// Every peer then reacts LOCALLY (screens, the start camera) - the camera
 					// itself is never on the wire.
 					applyRemoteGameState(data);
 				} else if(data.type == 'getgame') {
-					sendGameState(data.sender);
+					if (sameRoomOrUnknown(conn.peer)) sendGameState(data.sender);
 				} else if(data.type == 'envpresets') {
 					applyRemoteEnvPresets(data);
 				} else if(data.type == 'geometry') {
@@ -552,11 +568,18 @@ export class PeerConnection {
 					// which scene they are standing in and whether they are the peer we joined.
 					// Their `atscene` row is already fresh: it is the first thing a handshake
 					// sends, and this conn delivers in order.
+					// A3: …and WHERE WE ARE, which the decision table is written in. It is
+					// passed rather than read, because sessions.js may not import peerScenes
+					// statically (peerScenes -> levels -> sessions closes the cycle) and the
+					// gate has to decide SYNCHRONOUSLY - it either replies or queues, and a
+					// dynamic import is a tick too late for either.
 					deferUntilShareChoice('objects', data.sender, {
 						otherCount: data.count ?? 0,
 						theirScene: sceneOfPeer(conn.peer),
 						theirHash: get(peerScenes)[conn.peer]?.hash ?? '',
-						fromHost: get(sessionHost) === conn.peer
+						fromHost: get(sessionHost) === conn.peer,
+						mineScene: myScene()?.scene ?? '',
+						arriving: !!data.arriving
 					});
 				} else if(data.type == 'objectfile') {
 					applyObjectFile(data);
@@ -600,7 +623,8 @@ export class PeerConnection {
 					deferUntilShareChoice('nodes', data.sender, {
 						theirScene: sceneOfPeer(conn.peer),
 						theirHash: get(peerScenes)[conn.peer]?.hash ?? '',
-						fromHost: get(sessionHost) === conn.peer
+						fromHost: get(sessionHost) === conn.peer,
+						mineScene: myScene()?.scene ?? ''
 					});
 				} else if(data.type == 'nodes') {
 					applyNodesSnapshot(data.nodes, data.edges, data.graphs);
@@ -638,7 +662,7 @@ export class PeerConnection {
 						// user to choose about — the log is runtime state, not their authored
 						// work — and the payload prunes to live nodes, so after a stash we
 						// answer with nothing at all.
-						sendTriggers(data.sender);
+						if (sameRoomOrUnknown(conn.peer)) sendTriggers(data.sender);
 					} else if(data.type == 'triggers') {
 						// merged per node (newer stamp wins), and the merge marks the history
 						// epoch so nothing in it can be ACTED on — see triggerSync
@@ -719,7 +743,7 @@ export class PeerConnection {
 				} else if(data.type == 'annotations') {
 					applyAnnotationsSnapshot(data.annotations);
 				} else if(data.type == 'getannotations') {
-					sendAnnotations(data.sender);
+					if (sameRoomOrUnknown(conn.peer)) sendAnnotations(data.sender);
 				} else if(data.type == 'verts') {
 					applyVerts(data.uuid, data.indices, data.position);
 				} else if(data.type == 'meshgeo') {
@@ -744,6 +768,83 @@ export class PeerConnection {
 		}
 	}
 
+	/**
+	 * A1: WHERE WE ARE, and in the handshake it goes out AHEAD of everything else. Until
+	 * A1 the only thing that taught a joiner the host's scene name was the `atscene`
+	 * riding the `getmodulestate` reply — which lands AFTER the handshake has already
+	 * decided what to do with the objects, so every scene-aware read during the one
+	 * moment that matters saw no evidence at all. PeerJS conns are ordered and reliable,
+	 * so sending it first means the receiver's row for us is fresh before ANY handshake
+	 * decision is taken on the far side.
+	 *
+	 * Both-unnamed stays byte-identical: an empty scene gates nothing (the
+	 * only-on-evidence rule), and `sendMySceneState` still answers getmodulestate — that
+	 * is the path for a peer on an older build, and the unconditional-reply contract that
+	 * module documents.
+	 * @param {any} conn
+	 */
+	sendMyScene(conn) {
+		const mine = myScene();
+		conn.send({ type: 'atscene', peerId: this.peer.id, scene: mine?.scene ?? '', hash: mine?.hash ?? '', at: Date.now() });
+	}
+
+	/**
+	 * A2: THE FULL-STATE BURST, factored out of `sendHandshake` so that ARRIVING in a
+	 * room can ask for exactly what opening a connection asks for. It has to be the same
+	 * burst, not a subset: the room gate withholds every ROOM_SCOPED family while a peer
+	 * is away, so a traveller owes itself all of them on arrival, and a hand-picked list
+	 * would silently rot the day a domain is added (the `scenePostState` lesson - a field
+	 * that hand-lists what it sends drops the next field somebody adds).
+	 *
+	 * ORDER IS PRESERVED VERBATIM from the handshake, and one line of it is load-bearing:
+	 * `gettriggers` AHEAD of `getnodes` (DEVX #18), so a node lands in a COMPLETE trigger
+	 * history rather than history landing on a node that has already been ticking. Core
+	 * does not need it - the epoch and the merge are order-independent - but a CONSUMER
+	 * with a first-sight rule of its own (the collectible module seeds each node's stamp
+	 * without counting) is racy in the other order and correct in this one.
+	 *
+	 * `atscene` LEADS, for the same reason it leads the handshake: the peer we are asking
+	 * has to know we are in its room before it decides whether to answer - its reply side
+	 * is gated by `sameRoomOrUnknown`, so an unrefreshed row would have it withhold the
+	 * very state we just travelled to get.
+	 *
+	 * THERE IS NO `getgame` HERE, and it was tried. The handshake covers the game by a
+	 * PUSH, so a pull looked like the obvious completion of the burst - and it is
+	 * MEASURABLY INERT for the only caller there is. `travelToLevel` re-asserts the
+	 * traveller's CARRIED game state through `gameStateRestore`, which stamps
+	 * `Date.now()` on purpose (21-F4 fork 3, campaign semantics: your progress comes
+	 * with you), so the arriving state is always the newest and the room's reply always
+	 * loses latest-wins. Measured: the traveller read `{state:'menu'}` beside a room
+	 * sitting at `'playing'`, and that is fork 3 working, not a gap. The room's game
+	 * converges the ordinary way - the NEXT transition broadcasts, and the traveller is
+	 * in the room to receive it (scene-isolation section 5 asserts both halves).
+	 * ARRIVING is the one field this burst adds to the handshake's. Without it the
+	 * re-sync pops a share-or-stash prompt on everybody already in the room: a traveller
+	 * asks for objects while HOLDING objects (the scene file it just loaded), which is
+	 * the exact shape `deferUntilShareChoice` reads as two worlds merging. It is not one
+	 * - what the traveller holds is that room's OWN scene - so the flag says so and the
+	 * receiver answers instead of asking. Additive: absent means false, so the handshake
+	 * is byte-identical and an older peer simply asks the question it always asked.
+	 * @param {any} conn @param {{arriving?: boolean}} [opts]
+	 */
+	requestFullState(conn, opts = {}) {
+		this.sendMyScene(conn)
+		conn.send({type: 'getobjects', sender: this.peer.id, count: localSceneCount(), ...(opts.arriving ? { arriving: true } : {})})
+		conn.send({type: 'gettriggers', sender: this.peer.id})
+		conn.send({type: 'getnodes', sender: this.peer.id})
+		conn.send({type: 'getannotations', sender: this.peer.id})
+		conn.send({type: 'getjoints', sender: this.peer.id})
+		conn.send({type: 'getanim', sender: this.peer.id})
+		conn.send({type: 'getscenepost', sender: this.peer.id})
+		// CO1: a REQUEST rather than a push, because a scene that never colocated must
+		// send nothing at all — `sendRoomAnchor` returns early on a null anchor, so the
+		// handshake of a non-colocated session is byte-identical to what it always was.
+		conn.send({type: 'getroomanchor', sender: this.peer.id})
+		conn.send({type: 'getshadergraphs', sender: this.peer.id})
+		conn.send({type: 'gethuds', sender: this.peer.id})
+		conn.send({type: 'gethudvalues', sender: this.peer.id})
+	}
+
 	// Send the initial handshake (locks, known hosts, whitelist, object/node sync requests).
 	// Must only be called once the connection is open — messages sent earlier are dropped by peerjs.
 	/** @param {any} conn @param {string} peerId @param {boolean} getobjects @param {string} id */
@@ -758,20 +859,9 @@ export class PeerConnection {
 		console.log("sending to " + peerId + "  remote " + hosts)
 		let locks = [...locked];
 		if(typeof selected.uuid != 'undefined' && selected.uuid) locks.push([id, selected.uuid]);
-		// A1: WHERE WE ARE, and it goes out AHEAD of everything else. Until now the only
-		// thing that taught a joiner the host's scene name was the `atscene` riding the
-		// `getmodulestate` reply — which lands AFTER this handshake has already decided
-		// what to do with the objects, so every scene-aware read during the one moment
-		// that matters saw no evidence at all. PeerJS conns are ordered and reliable, so
-		// sending it first means the receiver's row for us is fresh before ANY handshake
-		// decision is taken on the far side.
-		//
-		// Both-unnamed stays byte-identical: an empty scene gates nothing (the
-		// only-on-evidence rule), and `sendMySceneState` still answers getmodulestate —
-		// that is the path for a peer on an older build, and the unconditional-reply
-		// contract that module documents.
-		const mine = myScene();
-		conn.send({ type: 'atscene', peerId: this.peer.id, scene: mine?.scene ?? '', hash: mine?.hash ?? '', at: Date.now() });
+		// A1: WHERE WE ARE, ahead of everything else — the reasoning lives on
+		// `sendMyScene`, which A2 shares with the arrival re-sync for the same reason.
+		this.sendMyScene(conn);
 		conn.send({type: 'locked', lockeditems: locks})
 		conn.send({type: 'hosts', hosts: hosts})
 		conn.send({type: 'userdata', userdata: users})
@@ -785,30 +875,7 @@ export class PeerConnection {
 		for (const state of scenePostStates()) conn.send(state)
 		conn.send(handModelState())
 		conn.send(envPresetsState())
-		if (getobjects) conn.send({type: 'getobjects', sender: this.peer.id, count: localSceneCount()})
-		// DEVX #18: the flow TRIGGER LOG - without it a joiner's latches/counters/Once
-		// nodes all read "never happened", so every collected object is back on the
-		// table. Rides the same getobjects gate as getnodes: the log is only meaningful
-		// beside the graph whose node ids it keys into.
-		// AHEAD of getnodes ON PURPOSE, so a node lands in a COMPLETE history rather than
-		// history landing on top of a node that has already been ticking. Nothing in core
-		// needs it - the epoch and the merge are both order-independent, and getnodes can
-		// be deferred behind share-or-stash for minutes anyway - but a CONSUMER with a
-		// first-sight rule of its own (the collectible module seeds each node's stamp
-		// without counting) is racy in the other order and correct in this one.
-		if (getobjects) conn.send({type: 'gettriggers', sender: this.peer.id})
-		if (getobjects) conn.send({type: 'getnodes', sender: this.peer.id})
-		if (getobjects) conn.send({type: 'getannotations', sender: this.peer.id})
-		if (getobjects) conn.send({type: 'getjoints', sender: this.peer.id})
-		if (getobjects) conn.send({type: 'getanim', sender: this.peer.id})
-		if (getobjects) conn.send({type: 'getscenepost', sender: this.peer.id})
-		// CO1: a REQUEST rather than a push, because a scene that never colocated must
-		// send nothing at all — `sendRoomAnchor` returns early on a null anchor, so the
-		// handshake of a non-colocated session is byte-identical to what it always was.
-		if (getobjects) conn.send({type: 'getroomanchor', sender: this.peer.id})
-		if (getobjects) conn.send({type: 'getshadergraphs', sender: this.peer.id})
-		if (getobjects) conn.send({type: 'gethuds', sender: this.peer.id})
-		if (getobjects) conn.send({type: 'gethudvalues', sender: this.peer.id})
+		if (getobjects) this.requestFullState(conn)
 		// singleton PUSH, like environmentState/scenePhysicsState above
 		conn.send(gameStatePayload())
 		// module state is the one PER-PEER payload in the get* family (each peer
@@ -1094,22 +1161,32 @@ export class PeerConnection {
 	// conn can't throw mid-loop and starve the rest of the mesh (172).
 	/** @param {any} payload */
 	broadcast(payload) {
-		// P2b: POSE STREAMS do not cross scenes. A peer standing in another scene cannot
-		// draw our avatar (Player.svelte refuses to) and cannot watch us, so streaming
-		// our camera and hands at them is bytes nobody can use.
+		// TWO REASONS TO WITHHOLD, and they are different arguments about the same peer.
 		//
-		// A DELIBERATELY TINY ALLOWLIST. Everything else on this channel is scene STATE
-		// or protocol, and skipping any of it would desync a peer who travels back — the
-		// saving is not worth reasoning about per message type. These two are pure
-		// presence and are re-derived continuously, so the worst a skip can cost is one
-		// stale frame, and even that is covered by the re-publish in Scene.svelte.
-		const stream = STREAM_TYPES.has(payload?.type);
-		const mine = stream ? (myScene()?.scene ?? '') : '';
-		const where = stream ? get(peerScenes) : {};
+		// P2b, BANDWIDTH: pose streams (`camera`, `vrhands`) are bytes nobody in another
+		// scene can use - Player.svelte refuses to draw that avatar and Watch refuses to
+		// follow it - and they are re-derived continuously, so the worst a skip costs is
+		// one stale frame, covered by Scene.svelte's re-publish.
+		//
+		// A2, CORRECTNESS: `ROOM_SCOPED` is scene CONTENT, and an edit made in one scene
+		// must not land in another. THE OLD COMMENT HERE ARGUED THE OPPOSITE - that
+		// skipping scene state "would desync a peer who travels back", so the allowlist
+		// had to stay deliberately tiny. That argument was correct and is now ANSWERED:
+		// arriving in a room re-asks for full state (`resyncRoomPeers` ->
+		// `requestFullState`, the same burst a fresh conn sends), so what was withheld
+		// while a peer was away is delivered the moment it is back. Without that half
+		// this gate WOULD be a staleness regression - they ship together, and the next
+		// reader must not re-shrink this set on the strength of the sentence it replaced.
+		//
+		// The room test is only-on-evidence (`elsewhereThan`): an absent row or an empty
+		// scene on either side sends, exactly as before.
+		const gated = STREAM_TYPES.has(payload?.type) || ROOM_SCOPED.has(payload?.type);
+		const mine = gated ? (myScene()?.scene ?? '') : '';
+		const where = gated ? get(peerScenes) : {};
 		Object.keys(this.connections).forEach(peerId => {
 			const conn = this.connections[peerId];
 			if (!conn || !conn.open) return;
-			if (stream && elsewhereThan(where, mine, peerId)) return;
+			if (gated && elsewhereThan(where, mine, peerId)) return;
 			try {
 				conn.send(payload);
 			} catch (err) {

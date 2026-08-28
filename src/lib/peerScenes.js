@@ -34,6 +34,7 @@
 
 import { writable, get } from 'svelte/store';
 import { peers } from '../stores/appStore';
+import { lockedObjects, selectedObject } from '../stores/sceneStore';
 import { currentLevel } from './levels';
 
 /** REMOTE peers only, `peerId -> {scene, hash, at}`. An absent peer is one we have not
@@ -106,6 +107,7 @@ export function applyRemotePeerScene(data) {
 	if (!data?.peerId) return false;
 	const scene = String(data.scene ?? '').trim();
 	const at = Number(data.at) || 0;
+	let arrived = false;
 	peerScenes.update((map) => {
 		// an EMPTY scene is recorded, not deleted. "I am in the session's unnamed world"
 		// and "I have never heard from you" are different facts: the first is a room the
@@ -114,9 +116,56 @@ export function applyRemotePeerScene(data) {
 		// latest-wins per sender: an out-of-order duplicate must not move them backwards
 		const held = map[data.peerId];
 		if (held && held.at > at) return map;
+		// A2 ARRIVAL: did this row just walk INTO our room? Read it here, act after the
+		// update returns - never send from inside a store's own update callback.
+		const mine = myScene()?.scene ?? '';
+		arrived = !!mine && scene === mine && (held?.scene ?? '') !== mine;
 		return { ...map, [data.peerId]: { scene, hash: String(data.hash ?? ''), at } };
 	});
+	if (arrived) pushMyLocksTo(data.peerId);
 	return true;
+}
+
+/**
+ * A2 - HAND A PEER ARRIVING IN OUR ROOM OUR OWN LOCKS.
+ *
+ * Locks are handshake state: `sendHandshake` sends the whole table ONCE, when the conn
+ * opens. Room gating makes that moment the wrong one - a peer standing in another scene
+ * is told nothing while it is away, and the lock we took in the meantime would never
+ * reach it, so it could grab an object we are already holding and neither side would
+ * know. `getobjects` and the rest of the get* burst are re-asked on arrival
+ * (`resyncRoomPeers`), but `locked` has no request half at all: it is PUSHED. So we
+ * push it again, at the one moment it can matter.
+ *
+ * OWN ROWS ONLY. `lockRestore` CONCATS what it receives onto what it holds, with no
+ * dedupe and only a filter for rows naming the receiver - so forwarding the foreign rows
+ * `sendHandshake` forwards would duplicate every row the arriving peer already had. It
+ * matters less than it sounds because `lockedObjects` holds REMOTE locks only ("we hold
+ * X" IS "X is our selection"), which is why the filter below normally yields nothing and
+ * the selection row below is the whole payload - but the filter states the rule rather
+ * than relying on that.
+ * @param {string} peerId @returns {boolean} did a message leave
+ */
+function pushMyLocksTo(peerId) {
+	try {
+		/** @type {any} */
+		const peer = get(peers);
+		const conn = peer?.connections?.[peerId];
+		const id = peer?.peer?.id;
+		if (!conn?.open || !id) return false;
+		// mirrors sendHandshake's own construction: the table, then our selection
+		const rows = (get(lockedObjects) ?? []).filter(
+			(/** @type {any} */ row) => Array.isArray(row) && row[0] === id
+		);
+		/** @type {any} */
+		const selected = get(selectedObject);
+		if (selected?.uuid) rows.push([id, selected.uuid]);
+		if (!rows.length) return false;
+		conn.send({ type: 'locked', lockeditems: rows });
+		return true;
+	} catch {
+		return false;
+	}
 }
 
 /** @param {string} peerId */
@@ -182,6 +231,146 @@ export function roomsOfSession(map, mine) {
 	return Object.keys(byScene)
 		.sort()
 		.map((scene) => ({ scene, peerIds: byScene[scene].sort(), mine: scene === mine?.scene }));
+}
+
+// ---- A2: THE ROOM GATE ----------------------------------------------------------
+//
+// P2b made the evidence exist and A1 made it EARLY. This is what the evidence is FOR:
+// an edit made in one scene must not land in another. Before it, "two peers in two
+// scenes" was a presence label over one shared world - a box created in Beta appeared in
+// Arena, a `clearscene` wiped a room its author had left, and a singleton (environment,
+// gravity, the post stack) applied to everybody whatever they were looking at.
+//
+// THE PARTITION RULE, and it is a rule rather than a list: a message is ROOM-SCOPED when
+// it describes the CONTENT OF A SCENE, and MESH-WIDE when it describes the SESSION, the
+// PROJECT or a PERSON. Everything below is that one question asked once per family.
+//
+// ROOM-SCOPED, by family:
+//   object lifecycle & geometry - a scene IS its objects, so every create/move/delete/
+//     geometry write belongs to exactly one of them. `clearscene` is the sharpest case:
+//     it is destructive, it is one message, and ungated it destroys a room its sender is
+//     not standing in.
+//   flow - a graph is authored per scene and travels inside the .tpscene; `nodetrigger`
+//     and `triggers` with it, since a pulse means nothing without the node it keys into.
+//   scene singletons and keyed documents - environment/music/physics/post/shaders/HUD/
+//     game/animation/joints/annotations. Each is "how THIS scene looks or behaves".
+//   coordination - locks and the session proposal. A lock names an object in a scene, and
+//     a proposal to REPLACE the current scene must not reach somebody standing elsewhere.
+//     `ping` is a gesture at a point in a world, so it is the same thing.
+//
+// MESH-WIDE, deliberately, and the reasons are not interchangeable:
+//   CHAT ('sent'/'info') - the session is one conversation. Splitting it by room is how
+//     you make people shout into an empty scene.
+//   ALL PRESENCE ('playmode','campreview','colocated','handmodel','specator',
+//     'cameraSettings','camera','vrhands') - presence is a fact about a PERSON, and the
+//     peer list has to be able to say "they are in Beta" at all. `atscene` above all:
+//     it is THE GATE'S OWN EVIDENCE, so gating it would make the gate decide with the
+//     information it just refused - a peer that travelled away could never be seen to
+//     have arrived back. (The pose STREAMS are separately withheld by `broadcast`'s
+//     STREAM_TYPES - bytes nobody can draw - which is a bandwidth decision, not this one.)
+//   'peervars' - PLAYER-owned numbers. They are carried across a hop by design (campaign
+//     semantics, 21-G4), so scoping them to a room would erase a score on travel.
+//   'manifest'/'getproject' and ALL ASSET TRANSFER ('assetfile','getasset','assetmissing',
+//     'assetstart','assetchunk','assetthumb') - the library is cross-room BY DESIGN.
+//     Travel PULLS the destination scene's bytes from peers who are, by definition,
+//     standing in a different scene from the traveller. Gating these would deadlock the
+//     one operation the gate exists to make safe.
+//   'nodedef'/'nodedefs'/'nodedefdelete'/'getnodedefs' - a project-level node CATALOG,
+//     not scene content: `applySession` does not restore defs, so a def is not part of a
+//     scene document and a scoped one would vanish on travel.
+//   'roomanchor'/'getroomanchor' - the PHYSICAL room. Colocation is about where bodies
+//     are, which no amount of travelling changes.
+//   'module'/'modules'/'modulestate'/'getmodulestate' - a module owns its own state and
+//     no core rule can know whether it is scene-shaped. The honest seam is an opt-in
+//     `roomScoped` flag on `registerStateSync`; until that exists, mesh-wide is the
+//     behaviour every shipped module was written against.
+//   'envpresets' - a PERSON's preset library, keyed by peer, not the scene's sky.
+//   'userdata'/'hosts'/'cloud'/'disconnected' - the session itself.
+//   EVERY get* REQUEST. A request is ~40 bytes and asking is never the harm; the REPLY is
+//   where a room is enforced, which is also where `canApply`'s ALWAYS_ALLOWED floor draws
+//   the same line (`getnodes` is on the floor, `nodes` is not).
+//
+// 'game' IS ROOM-SCOPED, which is the one entry worth defending: a round starting in room
+// X must not flip room Y's editors into play mode. Travellers do not lose it - the game
+// state is CARRIED across a hop in `travelToLevel`, and the arrival re-sync's `getgame`
+// converges whoever was already there.
+//
+// MUTABLE on purpose: a suite deletes an entry to measure the counterfactual, which is
+// the only way to prove a guard is the thing doing the work.
+/** @type {Set<string>} */
+export const ROOM_SCOPED = new Set([
+	// object lifecycle & geometry
+	'create', 'light', 'group', 'object', 'objectfile', 'duplicate', 'delete', 'name',
+	'move', 'throw', 'simulate', 'color', 'objectParameters', 'geometry', 'lighttarget',
+	'verts', 'meshgeo', 'uvpaint', 'uvpaintend', 'splineedit', 'drawlive', 'drawend',
+	'clearscene', 'loading',
+	// flow
+	'nodes', 'nodesync', 'graphcreate', 'graphdelete', 'nodecreate', 'nodemove',
+	'nodedata', 'nodedelete', 'edgecreate', 'edgedelete', 'nodetrigger', 'triggers',
+	'particleburst', 'flowcursor',
+	// scene singletons and keyed documents
+	'environment', 'music', 'scenephysics', 'scenepost', 'shadergraph',
+	'shadergraphdelete', 'shadergraphs', 'hud', 'huddelete', 'huds', 'hudvalue',
+	'hudvalues', 'game', 'animdata', 'animplay', 'animations', 'jointcreate',
+	'jointdelete', 'joints', 'annotation', 'annotations',
+	// coordination
+	'lock', 'locked', 'lockrequest', 'unlock', 'lockdenied', 'sessionproposal',
+	'sessionanswer', 'ping'
+]);
+
+/**
+ * THE ONE PREDICATE, used on both sides of the wire: `broadcast` will not SEND a
+ * room-scoped message to a peer standing elsewhere, and `handleData` will not APPLY one
+ * that arrives anyway (an older build, or a peer whose row we have not seen move yet).
+ *
+ * ONLY ON EVIDENCE, inherited whole from `elsewhereThan`: an absent row and an empty
+ * scene on either side both ALLOW. That is today's behaviour byte for byte, which is what
+ * makes this additive - a session where nobody ever named a scene is untouched.
+ * @param {string} peerId @param {string} type @returns {boolean}
+ */
+export function canApplyByRoom(peerId, type) {
+	if (!ROOM_SCOPED.has(type)) return true;
+	return !elsewhereThan(get(peerScenes), myScene()?.scene ?? '', peerId);
+}
+
+/** The same question without a message: may this peer have our scene state at all?
+ * @param {string} peerId @returns {boolean} */
+export function sameRoomOrUnknown(peerId) {
+	return !elsewhereThan(get(peerScenes), myScene()?.scene ?? '', peerId);
+}
+
+/**
+ * A2 - ARRIVAL RE-SYNC, and it is why the gate is shippable.
+ *
+ * Gating without this would be a staleness regression dressed as isolation: everything
+ * withheld while we stood in another scene is gone for good, so travelling INTO a room
+ * would land us in a world missing every edit made since the handshake. The answer is the
+ * one the app already has - ask for full state, exactly as a fresh conn does - and the
+ * moment to ask is the moment we arrive.
+ *
+ * WE ask, rather than the peers already there pushing: the traveller is the only one who
+ * knows it moved, and a push model would need every peer to watch every row.
+ * @returns {number} how many peers we asked (0 when we are not in a named scene - there
+ *   is no room to arrive in, and nothing was ever withheld)
+ */
+export function resyncRoomPeers() {
+	const mine = myScene()?.scene ?? '';
+	if (!mine) return 0;
+	/** @type {any} */
+	const peer = get(peers);
+	let asked = 0;
+	for (const id of peersInScene(mine)) {
+		const conn = peer?.connections?.[id];
+		if (!conn?.open) continue;
+		try {
+			// ARRIVING: we hold this room's own scene file, not a second world to merge
+			// with theirs - without saying so, every peer already here is asked
+			// share-or-stash about a traveller who brought nothing of their own.
+			peer.requestFullState?.(conn, { arriving: true });
+			asked++;
+		} catch {}
+	}
+	return asked;
 }
 
 // Publish on every move. Declared BELOW everything the callback reads — a module-level

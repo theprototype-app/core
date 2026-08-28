@@ -780,6 +780,24 @@ export async function travelToLevel(hash, name = '') {
 			...(tracked ? {} : { unsaved: true })
 		});
 		if (!tracked) void armSaveIntoProject(here);
+		// A2 - ARRIVAL RE-SYNC. The room gate withholds every scene-scoped message from a
+		// peer standing somewhere else, so the world we have just walked into is missing
+		// whatever happened in it while we were away: the .tpscene we loaded is a
+		// SNAPSHOT, and the live room has moved on. Ask everybody in it for full state,
+		// which is the burst a fresh connection already sends.
+		//
+		// DYNAMIC, because peerScenes imports THIS module (currentLevel) and a static edge
+		// back would close the cycle. Fire-and-forget: the load already happened.
+		//
+		// NOT wired to `currentLevel.subscribe` - which is where it would go if travel
+		// were the only writer, and it is not. Adoption (A1) writes currentLevel too, on a
+		// joiner whose host has ALREADY sent it everything down the handshake; asking
+		// there would double the join transfer for nothing. This is about ARRIVING
+		// somewhere the room has been running without us, which is what travel is.
+		try {
+			const m = await import('./peerScenes');
+			m.resyncRoomPeers();
+		} catch {}
 		return true;
 	} finally {
 		inFlight.delete(key);

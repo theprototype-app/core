@@ -1330,7 +1330,23 @@ export async function requestLoadSession(id) {
 	if (!payload) return false;
 	/** @type {any} */
 	const peer = get(peers);
-	const connected = Object.keys(peer?.connections ?? {});
+	let connected = Object.keys(peer?.connections ?? {});
+	// A2: a session proposal REPLACES the current scene, so it is room-scoped on the
+	// wire - a peer standing in another scene never receives it and can therefore never
+	// accept it. Counting them among the `needed` would hang the proposer forever on
+	// answers the gate ate, and the load would simply never apply. Count our room only.
+	//
+	// DYNAMIC import: peerScenes imports levels which imports THIS module, so a static
+	// edge would close the cycle. Only-on-evidence as everywhere else - an unnamed scene
+	// asks everybody, which is exactly today's behaviour.
+	try {
+		const { peersInScene, myScene } = await import('./peerScenes');
+		const scene = myScene()?.scene ?? '';
+		if (scene) {
+			const here = new Set(peersInScene(scene));
+			connected = connected.filter((id) => here.has(id));
+		}
+	} catch {}
 	if (!connected.length) {
 		await applySession(payload);
 		return true;
@@ -1371,8 +1387,25 @@ export function applySessionProposal(data) {
 // silently publish a scene the user meant to stash; a dismiss-that-shares
 // would be the same trap smaller).
 
-let shareChoiceMade = false;
-/** @type {{senders: {objects: Set<string>, nodes: Set<string>}, payload: any, uuids: string[], done: boolean} | null} */
+/**
+ * A3: THE VERDICT IS PER ROOM, not per app session.
+ *
+ * `shareChoiceMade` was one boolean for the whole run, which was right while there was
+ * one world to join: answer once, and every later joiner flows into the space you already
+ * agreed to share. With scenes it is wrong in both directions - deciding to share into
+ * Arena said nothing about Beta, and deciding to STAY OUT of Arena has to survive every
+ * later request from Arena or the question comes back on the next `getnodes`.
+ *
+ * Keyed by the ASKER'S scene name, and `''` IS a key: it is the session's unnamed world,
+ * which is where the old boolean's semantics live on unchanged - answer once there, and
+ * later unnamed joiners auto-flow.
+ *
+ * A `stayed` verdict is IGNORED once we are standing in that room ourselves: it recorded
+ * "not from over there", and travelling in is the user saying otherwise.
+ * @type {Map<string, 'shared'|'stashed'|'stayed'>}
+ */
+const shareVerdicts = new Map();
+/** @type {{senders: {objects: Set<string>, nodes: Set<string>}, payload: any, uuids: string[], room: string, theirHash: string, done: boolean} | null} */
 let gate = null;
 
 // sendObjects' second param only matters for the null-peerId group path —
@@ -1426,30 +1459,55 @@ async function stashAndJoin() {
  * when no choice is needed (empty scene on either side, or already answered);
  * otherwise queues it behind the Share/Stash toast.
  *
- * A1 gave it CONTEXT. The decision is unchanged — the same one-shot latch, the same
- * both-scenes-non-empty gate — but the caller now says who is asking, whether they are
- * the peer we joined, and which scene they are standing in. The one thing that context
- * buys today is ADOPTION (below); the scene-aware decision table is a later commit, and
- * nothing here reads `theirScene` to gate a reply.
+ * A3 MADE IT SCENE-AWARE. The old question — "share your objects or stash them?" — has
+ * exactly one answer shape because it assumed one world. Once two peers can stand in two
+ * scenes it is the wrong question twice over: it never names the scene the objects would
+ * land in, and it offers no way to decline, so the only route to "leave me where I am"
+ * was to leave the prompt on screen forever and never sync anything again.
+ *
+ * M is OUR scene, T is THEIRS, and the table is five rows:
+ *
+ *   1. we hold NOTHING  ->  reply at once (and adopt T if they are the peer we joined).
+ *      There is no merge to consent to; the world arriving is the only world there is.
+ *   2. M != T and they are NOT the peer we joined  ->  WITHHOLD, silently. This is the
+ *      HOST-SIDE half, and silence is the whole point: nothing of ours is at stake, they
+ *      are the one who wandered off, and asking US about THEIR situation is how you get
+ *      two prompts for one decision. Their side owns the verdict, and when they act on it
+ *      their arrival re-sync collects everything this row refused.
+ *   3. M != T and they ARE the peer we joined  ->  the three-option ask. This is the only
+ *      row where a person is genuinely being asked to leave a scene, so it is the only
+ *      one that offers STAY.
+ *   4. we are UNNAMED and they are named  ->  two options, no Stay. Writing our work into
+ *      a named document deserves the question even when that document is empty — but an
+ *      unnamed scene cannot be ISOLATED (only-on-evidence: an empty scene is not evidence
+ *      of being elsewhere), so a Stay button here would promise a separation the gate
+ *      cannot deliver. Offering it would be a lie in a button.
+ *   5. same room (both named the same, or both unnamed)  ->  exactly today's behaviour:
+ *      both sides non-empty is the classic Share/Stash merge, anything else replies.
+ *
  * @param {'objects'|'nodes'} kind @param {string} sender
- * @param {{otherCount?: number, theirScene?: string, theirHash?: string, fromHost?: boolean}|number} [opts]
+ * @param {{otherCount?: number, theirScene?: string, theirHash?: string, fromHost?: boolean, mineScene?: string, arriving?: boolean}|number} [opts]
  *   a bare number is read as `otherCount` — the pre-A1 shape, kept so no call site can
  *   silently pass a count into a field that ignores it
  */
 export function deferUntilShareChoice(kind, sender, opts = {}) {
-	/** @type {{otherCount?: number, theirScene?: string, theirHash?: string, fromHost?: boolean}} */
+	/** @type {{otherCount?: number, theirScene?: string, theirHash?: string, fromHost?: boolean, mineScene?: string, arriving?: boolean}} */
 	const context = typeof opts === 'number' ? { otherCount: opts } : opts || {};
-	const { otherCount = 0, theirScene = '', theirHash = '', fromHost = false } = context;
+	const { otherCount = 0, theirScene = '', theirHash = '', fromHost = false, mineScene = '', arriving = false } = context;
 	const group = get(objectsGroup);
 	const count = group?.children.length ?? 0;
+	// M and T — the two names the whole table is written in
+	const here = String(mineScene ?? '').trim();
+	const room = String(theirScene ?? '').trim();
+	// DEMONSTRABLY different scenes, `elsewhereThan`'s rule spelled out locally rather
+	// than imported: two names that disagree. An empty one on either side is not evidence.
+	const split = !!here && !!room && here !== room;
 	if (gate && !gate.done) {
 		gate.senders[kind].add(sender); // a dialog is already open — queue behind it
 		return;
 	}
-	// only a merge of two NON-empty scenes needs the question — a fresh viewer
-	// joining an existing scene always just receives it
-	if (shareChoiceMade || count === 0 || !otherCount) {
-		if (count > 0) shareChoiceMade = true; // we shared into the space
+	// ---- ROW 1: we hold nothing ------------------------------------------------
+	if (count === 0) {
 		// A1 ADOPTION. We hold NOTHING and the peer we joined is standing in a named
 		// scene, so the world about to arrive down this handshake IS that scene — there
 		// is no other world it could be. Without this a joiner who never travelled keeps
@@ -1460,7 +1518,7 @@ export function deferUntilShareChoice(kind, sender, opts = {}) {
 		// Through a DYNAMIC import, because levels.js imports THIS module (applySession)
 		// and a static edge back would close the cycle. Fire-and-forget: a name is
 		// presentation and the objects are the point, so the reply never waits on it.
-		if (count === 0 && fromHost && theirScene) {
+		if (fromHost && theirScene) {
 			// the hash goes along because the caller has it, and it is what the next
 			// phase's "same scene, same version?" question will be asked with. Adoption
 			// itself deliberately does not store it — a joiner loaded no file.
@@ -1471,29 +1529,172 @@ export function deferUntilShareChoice(kind, sender, opts = {}) {
 		replyTo(kind, sender);
 		return;
 	}
-	shareChoiceMade = true;
-	gate = {
-		senders: { objects: new Set(), nodes: new Set() },
-		payload: buildSessionPayload('Stashed before joining ' + nameOf(sender) + ' ' + new Date().toLocaleTimeString()),
-		uuids: (group?.children ?? []).map((/** @type {any} */ child) => child.uuid),
-		done: false
+
+	// ---- the standing verdict for THAT room ------------------------------------
+	// Answered once, honoured for every later request out of the same scene — which is
+	// what makes a Stay stick: `getnodes` follows `getobjects` by milliseconds, and a
+	// per-call decision would re-ask the question the user has just answered.
+	const verdict = shareVerdicts.get(room);
+	if (verdict === 'stayed' && split) return; // decided: not from over there
+	if (verdict === 'shared' || verdict === 'stashed') {
+		replyTo(kind, sender);
+		return;
+	}
+
+	// ---- ROW 2: the HOST-SIDE silent withhold ----------------------------------
+	// They are somewhere else and they did not join US, so this is their decision to make
+	// and they are already being asked. Nothing is queued: a queued reply would fire the
+	// moment some unrelated gate resolved, which is precisely the leak this row closes.
+	if (split && !fromHost) return;
+
+	// ---- ARRIVING: they just travelled INTO our room ----------------------------
+	// A traveller loads the room's scene file and then asks for what has happened since
+	// (`resyncRoomPeers`), so it asks while HOLDING objects - which is exactly the shape
+	// every row below reads as "two worlds are merging". It is not: what they hold is OUR
+	// scene, out of OUR project, and asking us to consent to it would put a prompt in
+	// front of everybody in the room every time somebody walked in.
+	//
+	// It is a CLAIM, not a proof, and that is fine: the row above has already established
+	// we are in the same room, and inside one room the only thing this skips is a merge
+	// question whose honest answer is Share. It records NO verdict - nothing was decided.
+	if (arriving) {
+		replyTo(kind, sender);
+		return;
+	}
+
+	const objects = count + ' object' + (count === 1 ? '' : 's');
+	const openGate = () => {
+		gate = {
+			senders: { objects: new Set(), nodes: new Set() },
+			payload: buildSessionPayload('Stashed before joining ' + nameOf(sender) + ' ' + new Date().toLocaleTimeString()),
+			uuids: (group?.children ?? []).map((/** @type {any} */ child) => child.uuid),
+			room,
+			theirHash,
+			done: false
+		};
+		gate.senders[kind].add(sender);
 	};
-	gate.senders[kind].add(sender);
-	// 15-P2: a STICKY prompt with NO ✕ — this decides whether the user's work
-	// merges into the joint space, so nothing may decide it implicitly: the 14s
-	// auto-share could silently publish a scene they meant to stash, and a
-	// dismiss-that-shares would be the same trap smaller. The joiner's handshake
-	// reply simply waits until Share or Stash is clicked.
-	showInfoToast(
-		'share-or-stash',
-		'Share your ' + count + ' object' + (count === 1 ? '' : 's') + ' with ' + nameOf(sender) + ', or stash them to a session first?',
+	// 15-P2, and it still holds with three buttons: a STICKY prompt with NO ✕. This
+	// decides whether the user's work merges into somebody else's scene, so nothing may
+	// decide it implicitly — the 14s auto-share could silently publish a scene they meant
+	// to stash, and a dismiss-that-shares would be the same trap smaller.
+	const ask = (/** @type {string} */ text, /** @type {any[]} */ actions) =>
+		showInfoToast('share-or-stash', text, actions, undefined, true);
+	const bring = {
+		label: 'Bring into "' + room + '"',
+		action: () => {
+			shareVerdicts.set(room, 'shared');
+			dismissToastById('share-or-stash');
+			// ADOPT FIRST, REPLY SECOND, and that order is load-bearing: our reply is
+			// scene CONTENT, and the peer receiving it runs the same room gate we do —
+			// while our `atscene` row over there still names the scene we came from,
+			// every object we send is DROPPED ON ARRIVAL. Adoption publishes the new row
+			// down the same ordered conn, so the reply lands behind it.
+			void joinRoom(room, theirHash, () => resolveGate());
+		}
+	};
+	const stash = {
+		label: 'Stash & join "' + room + '"',
+		action: () => {
+			shareVerdicts.set(room, 'stashed');
+			dismissToastById('share-or-stash');
+			// adopt (and re-sync) BEFORE the stash, not after: `gate.uuids` was captured
+			// when the prompt opened, so the objects arriving from the room we are joining
+			// are not in it and survive the sweep — the stash still takes exactly the work
+			// we brought with us.
+			void joinRoom(room, theirHash, () => void stashAndJoin());
+		}
+	};
+
+	// ---- ROW 3: a real fork — their scene, our work, our call -------------------
+	if (split) {
+		openGate();
+		ask(
+			'Share your ' + objects + ' into "' + room + '", stash them to a session first, or stay in "' + here + '"?',
+			[
+				bring,
+				stash,
+				{
+					label: 'Stay in "' + here + '"',
+					action: () => {
+						shareVerdicts.set(room, 'stayed');
+						dismissToastById('share-or-stash');
+						// SEND NOTHING — not even an empty `loading: 0`. Withholding is the
+						// honest signal here; a zero-length sync would claim we had answered
+						// and had nothing, which is a different and untrue statement.
+						if (gate) gate.done = true;
+						gate = null;
+					}
+				}
+			]
+		);
+		return;
+	}
+
+	// ---- ROW 4: we are unnamed, they are not ------------------------------------
+	if (!here && room) {
+		openGate();
+		ask('Share your ' + objects + ' into "' + room + '", or stash them to a session first?', [bring, stash]);
+		return;
+	}
+
+	// ---- ROW 5: one room — exactly what this gate always did --------------------
+	if (!otherCount) {
+		shareVerdicts.set(room, 'shared'); // we shared into the space
+		replyTo(kind, sender);
+		return;
+	}
+	openGate();
+	ask(
+		'Share your ' + objects + ' with ' + nameOf(sender) + ', or stash them to a session first?',
 		[
-			{ label: 'Share', action: () => resolveGate() },
-			{ label: 'Stash', action: () => stashAndJoin() }
-		],
-		undefined,
-		true
+			{
+				label: 'Share',
+				action: () => {
+					shareVerdicts.set(room, 'shared');
+					resolveGate();
+				}
+			},
+			{
+				label: 'Stash',
+				action: () => {
+					shareVerdicts.set(room, 'stashed');
+					void stashAndJoin();
+				}
+			}
+		]
 	);
+}
+
+/**
+ * A3 — TAKE THE ROOM, THEN DO THE THING THAT HAD TO WAIT FOR IT.
+ *
+ * Adoption is `levels.adoptSceneIdentity` (the NAME and nothing else — see its comment
+ * for why no hash), and writing `currentLevel` is what publishes our new `atscene` row.
+ * `after` runs once that has happened, which matters for anything that SENDS: the room
+ * gate on the far side drops scene content from a peer whose row still names another
+ * scene, so a reply issued a moment early is silently discarded.
+ *
+ * Then the arrival re-sync, for the mirror-image reason: while our row said elsewhere,
+ * every reply THEY owed us was withheld by their own gate, so walking in means asking
+ * again for the state we could not be given.
+ *
+ * Both imports are DYNAMIC: peerScenes -> levels -> sessions is a real cycle, and a
+ * static edge either way TDZ-crashes the SSR prerender.
+ * @param {string} room @param {string} hash @param {() => void} after
+ */
+async function joinRoom(room, hash, after) {
+	try {
+		const m = await import('./levels');
+		m.adoptSceneIdentity(room, hash);
+	} catch {}
+	try {
+		after();
+	} catch {}
+	try {
+		const p = await import('./peerScenes');
+		p.resyncRoomPeers();
+	} catch {}
 }
 
 /** Proposer side: collect answers, apply when everyone accepted @param {any} data */

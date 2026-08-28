@@ -37,7 +37,7 @@
 	// with the owner-only rule kept as the second option)
 	import {
 		unshareAuthority,
-		autoShareAll,
+		shareNewFiles,
 		autoDownload,
 		recycleBinEnabled,
 		keepRecycleBin,
@@ -970,23 +970,28 @@
 						they started when there were two of them. There are eleven now and they are
 						about the library rather than the world, so they get the panel they name.
 					-->
-					<SettingRow name="Share every file automatically">
+					<SettingRow name="When you add files during a session">
 						<svelte:fragment slot="control">
-							<input
-								id="auto-share-all"
-								class="tp-check"
-								type="checkbox"
-								checked={$autoShareAll}
-								on:change={(e: any) => autoShareAll.set(!!e.target.checked)} />
+							<ThemedSelect
+								id="share-new-files"
+								items={[
+									{ value: 'ask', name: 'Ask each time' },
+									{ value: 'always', name: 'Share automatically' },
+									{ value: 'never', name: 'Keep them local' }
+								]}
+								bind:value={$shareNewFiles}
+							/>
 						</svelte:fragment>
 						<span>
-							Everything in your Explorer is shared with the session, including files you add
-							later — no Share gesture at all. Off by default, because the whole point of
-							the library being local is that publishing it is a choice. A file you
-							<strong>explicitly unshared</strong> stays unshared: a blanket setting is a
-							preference, and that was a decision. This is yours alone — every peer chooses
-							for themselves, and a peer who has just joined is still asked about the files
-							they brought with them.
+							A file is local until somebody says otherwise, so this is what happens when you
+							add one while connected. <strong>Ask each time</strong> puts the question in the
+							Explorer, above the files it is about — and asks once about the library you
+							brought with you when a session starts. <strong>Share automatically</strong>
+							publishes everything with no gesture at all. <strong>Keep them local</strong> is
+							silence: nothing is shared and nothing is asked. A file you
+							<strong>explicitly unshared</strong> stays unshared whatever this says — a
+							setting is a preference and that was a decision. This one is yours alone; peers
+							choose for themselves.
 						</span>
 					</SettingRow>
 					<SettingRow name="Download shared files automatically">

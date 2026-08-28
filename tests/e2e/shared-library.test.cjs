@@ -67,6 +67,14 @@ h.run(async () => {
 		});
 		// the Explorer index is idb-backed and lazily loaded; every share read walks it
 		await p.page.evaluate(() => window.__stores.explorer.loadExplorer());
+		// R22 round 30 C2 — SILENCE THE ASK FOR THE BODY OF THIS SUITE. The shipped default
+		// is `ask`, so from the moment A and B connect every import below would arm the
+		// Explorer strip: a sticky row at the top of the grid that swallows clicks and moves
+		// every card down, which is a UI change the sections driving real cards (35, 41, 46,
+		// 52) never agreed to. `never` is a real user setting and it is exactly 'behave as
+		// before C2', so the 212 checks that follow measure what they always measured. The
+		// ask has its own sections at the end, where nothing runs after it.
+		await p.page.evaluate(() => window.__stores.sharedLibrary.shareNewFiles.set('never'));
 	}
 
 	// ---- 1. the document: absent = local, and empty means ABSENT --------------------
@@ -994,7 +1002,11 @@ h.run(async () => {
 	);
 	await B.page.evaluate(() => window.__stores.sharedLibrary.autoDownload.set(true));
 
-	// ---- 34. "share every file automatically" -------------------------------------
+	// ---- 34. `shareNewFiles: always` is the old "share everything" checkbox -------
+	//
+	// R22 round 30 C2 renamed the setting and gave it a third answer. This section is the
+	// `always` branch, which is the old behaviour VERBATIM — including the one thing that
+	// makes a blanket setting safe: a VETO beats it.
 	const autoShared = await A.page.evaluate(async () => {
 		const sl = window.__stores.sharedLibrary;
 		const e = window.__stores.explorer;
@@ -1002,7 +1014,7 @@ h.run(async () => {
 		const vetoed = await e.addItemFromBytes(new TextEncoder().encode('never share me').buffer, 'veto.txt', null);
 		sl.shareItem(vetoed.id);
 		sl.unshareItem(vetoed.id);
-		sl.autoShareAll.set(true);
+		sl.shareNewFiles.set('always');
 		const fresh = await e.addItemFromBytes(new TextEncoder().encode('auto shared').buffer, 'auto.txt', null);
 		return { vetoed: vetoed.hash, fresh: fresh.hash };
 	});
@@ -1013,7 +1025,8 @@ h.run(async () => {
 	);
 	h.check(!(await manifestOf(A)).items.some((r) => r.hash === autoShared.vetoed),
 		'but an explicitly UNSHARED file stays unshared — a decision beats a preference');
-	await A.page.evaluate(() => window.__stores.sharedLibrary.autoShareAll.set(false));
+	await A.page.evaluate(() => window.__stores.sharedLibrary.shareNewFiles.set('never'));
+	// back to the suite-wide baseline set at the top, NOT to the shipped default: see there.
 
 	// ---- 35. "Local only" is a TOGGLE, and it reaches folders ---------------------
 	await A.page.evaluate(() => window.__stores.explorer.activeFolder.set(null));
@@ -1701,6 +1714,8 @@ h.run(async () => {
 		{ timeout: 30000 }
 	);
 	await C.page.evaluate(() => window.__stores.explorer.loadExplorer());
+	// ...and the same silence as A and B above (see the note there)
+	await C.page.evaluate(() => window.__stores.sharedLibrary.shareNewFiles.set('never'));
 	h.check(
 		await C.page.evaluate(() => {
 			let v;
@@ -1829,12 +1844,18 @@ h.run(async () => {
 
 	await h.connect(C, A);
 
-	// ---- 56. THE CONNECT EDGE PULLS, even when no document can install -------------
+	// ---- 56. THE CONNECT EDGE PULLS, whatever the document does -------------------
 	//
-	// Cause (ii). C's stamp is ahead of everything A will send, so latest-wins refuses
-	// every incoming document — correctly — which means `applySharedIndex` never runs
-	// here and the index-arrival sweep that auto-download used to depend on ENTIRELY can
-	// never fire. The rise edge is the only thing left that can ask.
+	// Cause (ii). C's stamp is ahead of everything A will send, so C stays the winning
+	// side of every comparison and `applySharedIndex` cannot install A's index here —
+	// which means the index-arrival sweep that auto-download used to depend on ENTIRELY
+	// can never fire. The rise edge is the only thing left that can ask.
+	//
+	// ROUND 30 C3 UPDATED THE OTHER HALF OF THIS PREMISE: "latest-wins refuses every
+	// incoming document" is no longer true of the manifest. Receive is a UNION MERGE now,
+	// so a newer-but-EMPTY field does not overwrite a populated one — C is nameless and
+	// adopts A's project name while keeping its own stamp and its own index. The stamp is
+	// still what this section turns on, and the pull below is unaffected either way.
 	//
 	// COUNTERFACTUAL (measured by hand during development, since the subscriber is a
 	// closure no page script can reach): with `if (revived && get(autoDownload))` put
@@ -1850,8 +1871,16 @@ h.run(async () => {
 	);
 	const mC13 = await manifestOf(C);
 	h.check(
-		mC13.name === '' && mC13.changedAt >= seedStamp,
-		`...and no document installed while that happened — ours is newer, so A's was refused (name ${JSON.stringify(mC13.name)}, stamp +${mC13.changedAt - seedStamp})`
+		mC13.changedAt >= seedStamp,
+		`C is still the newer side while that happened — its stamp survived the exchange (+${mC13.changedAt - seedStamp})`
+	);
+	h.check(
+		mC13.name === 'R22',
+		`...and the C3 union merge is what a nameless project does with a named one: it ADOPTS the name (${JSON.stringify(mC13.name)}) — empty never overwrites non-empty`
+	);
+	h.check(
+		(mC13.items ?? []).some((r) => r.hash === onlyFile.hash),
+		"...while C's OWN index sections are kept, which is the half a whole-document install would have lost"
 	);
 
 	// ---- 57. a files-only host ANSWERS getproject ----------------------------------
@@ -1902,6 +1931,339 @@ h.run(async () => {
 		(states) => states.length > 0,
 		'the connected ask minted the ledger row the offline one correctly did not'
 	);
+
+	// ================================================================================
+	// ROUND 30 C2 — THE SHARE-NEW-FILES ASK.
+	//
+	// The report: "adding a new file to Explorer or creating a new scene when you are
+	// connected for the first time to host should give a notification below Library (same
+	// as its for deleting items) asking to share files automatically" — plus "there is no
+	// logic in having (share/stash options), make it logical".
+	//
+	// So: the question moves to where the files are (the delete strip's surface), the old
+	// binary checkbox becomes three real answers, and the connect case stops being an
+	// exception the setting deliberately did not reach.
+
+	/** the share strip, or null */
+	const askStripOf = (peer) =>
+		peer.page.evaluate(() => {
+			const el = document.querySelector('#explorer-share-ask');
+			if (!el) return null;
+			return {
+				title: el.querySelector('.ex-confirm-title')?.textContent?.replace(/\s+/g, ' ').trim() ?? '',
+				detail: el.querySelector('.ex-confirm-detail')?.textContent?.replace(/\s+/g, ' ').trim() ?? '',
+				yes: document.querySelector('#explorer-share-yes')?.textContent?.trim() ?? '',
+				no: document.querySelector('#explorer-share-no')?.textContent?.trim() ?? '',
+				stash: document.querySelector('#explorer-share-stash')?.textContent?.trim() ?? null,
+				settings: (document.querySelector('#explorer-share-settings')?.textContent ?? '').trim(),
+				// the DELETE strip must be able to win: both are drawn in the same slot
+				deleteAlso: !!document.querySelector('#explorer-confirm')
+			};
+		});
+
+	/** the standing ask as the STORE holds it — true even with the panel shut */
+	const askOf = (peer) =>
+		peer.page.evaluate(() => {
+			let v;
+			window.__stores.sharedLibrary.pendingShareAsk.subscribe((x) => (v = x))();
+			return v ? { kind: v.kind, names: v.items.map((i) => i.name) } : null;
+		});
+
+	const toastsOf = (peer) =>
+		peer.page.evaluate(() => {
+			let t;
+			window.__stores.toastStore.subscribe((v) => (t = v))();
+			return (t ?? []).map((x) => String(typeof x === 'string' ? x : (x.text ?? x.message ?? '')));
+		});
+
+	/** open the Explorer, answer whatever is standing, and start from a clean question */
+	const resetAsk = async (peer, open = true) => {
+		await peer.page.evaluate(
+			([shouldOpen]) => {
+				window.__stores.explorerClose.set(!shouldOpen);
+				window.__stores.sharedLibrary.shareNewFiles.set('ask');
+				window.__stores.sharedLibrary.resolveShareAsk('keep');
+				window.__stores.toastStore.set([]);
+			},
+			[open]
+		);
+		await peer.page.waitForTimeout(700);
+	};
+
+	// ---- 59. a file added while connected asks, where the files are ----------------
+	//
+	// A and B have been connected since section 2, so this is the "during a session" half
+	// of the report. The wait is deliberate: the detector rides the library sweep, which is
+	// debounced at 200ms — a question that arrived synchronously would mean it had been
+	// hooked onto one import path rather than onto the sweep every path passes through.
+	await resetAsk(A);
+	const askOne = await addFile(A, 'c2 asks about me', 'c2-one.txt');
+	await h.eventually(() => askStripOf(A), (v) => !!v, 'the strip appears in the Explorer');
+	const strip1 = await askStripOf(A);
+	h.check(
+		/^Share “c2-one\.txt” with the session\?$/.test(strip1.title),
+		`it names the file it is about (${JSON.stringify(strip1.title)})`
+	);
+	h.check(
+		strip1.detail === 'Only shared files are visible to peers — everything else stays on this device.',
+		`and says what sharing means (${JSON.stringify(strip1.detail)})`
+	);
+	h.check(strip1.yes === 'Share' && strip1.no === 'Keep local', `one file, so the answer is singular (${strip1.yes} / ${strip1.no})`);
+	h.check(strip1.stash === null, 'no Stash on a mid-session ask — replacing your library is not an answer to "you added a file"');
+	h.check(strip1.settings === 'File settings', 'the way out of being asked sits beside the question, as it does on the delete strip');
+
+	// ---- 60. Share publishes it, and it reaches the peer ---------------------------
+	await A.page.locator('#explorer-share-yes').click();
+	await h.eventually(
+		() => itemsOf(A),
+		(items) => items.find((i) => i.hash === askOne.hash)?.share === 'mine',
+		'answering Share marks the record ours'
+	);
+	await h.eventually(
+		() => manifestOf(B),
+		(m) => (m.items ?? []).some((r) => r.hash === askOne.hash),
+		'...and the row reaches the peer, which is the whole point of the question'
+	);
+	h.check((await askStripOf(A)) === null, 'the strip clears once it has been answered');
+
+	// ---- 61. Keep local writes NOTHING, so a later Share still works ---------------
+	//
+	// THE RULE THIS SECTION EXISTS FOR: declining is not deciding. If "Keep local" wrote
+	// the `no` veto, the inheritance sweep would never touch that file again and a drag
+	// into a shared folder would silently do nothing — the delete strip's Cancel set the
+	// precedent, and this is the same reasoning about the same kind of button.
+	await resetAsk(A);
+	const askKeep = await addFile(A, 'c2 stays home', 'c2-keep.txt');
+	await h.eventually(() => askStripOf(A), (v) => !!v, 'a second file asks its own question');
+	await A.page.locator('#explorer-share-no').click();
+	await A.page.waitForTimeout(900);
+	const kept = (await itemsOf(A)).find((i) => i.hash === askKeep.hash);
+	h.check(
+		kept && kept.share === null,
+		`the record stays flag-ABSENT (${JSON.stringify(kept?.share)}) — "not right now" is not the 'no' veto`
+	);
+	h.check((await askStripOf(A)) === null, 'and the question is gone');
+	// ...and the proof that absent is not vetoed: an ordinary Share still takes
+	await A.page.evaluate((id) => window.__stores.sharedLibrary.shareItem(id), askKeep.id);
+	await h.eventually(
+		() => itemsOf(A),
+		(items) => items.find((i) => i.hash === askKeep.hash)?.share === 'mine',
+		'a declined file can still be shared by hand afterwards — nothing was written down'
+	);
+
+	// ---- 62. a SCENE is never asked about on this surface --------------------------
+	//
+	// Scenes travel through `manifest.scenes` and the project's own consent channel, so an
+	// ask here would be a second question about a file the other one already governs.
+	// COUNTERFACTUAL, measured by hand: with the `kind === 'scene'` clause removed from
+	// `askCandidates`, this section read a standing ask of {kind:"new", names:
+	// ["c2-level.tpscene"]} and the strip title "Share “c2-level.tpscene” with the
+	// session?"; with it in, both read null. 1 -> 0 items.
+	await resetAsk(A);
+	await addFile(A, 'not a real scene, but the KIND is what matters', 'c2-level.tpscene');
+	await A.page.waitForTimeout(1600);
+	const sceneAsk = await askOf(A);
+	h.check(sceneAsk === null, `a .tpscene arms nothing (${JSON.stringify(sceneAsk)})`);
+	h.check((await askStripOf(A)) === null, '...and no strip is drawn for it');
+	// the premise: it really is a scene-kind row, so the clause above is what refused it
+	h.check(
+		(await itemsOf(A)).some((i) => i.name === 'c2-level.tpscene'),
+		'the file IS in the library — the silence is the exclusion, not a failed import'
+	);
+
+	// ---- 63. "File settings" goes to Settings ▸ Explorer ---------------------------
+	await resetAsk(A);
+	await addFile(A, 'c2 settings route', 'c2-settings.txt');
+	await h.eventually(() => askStripOf(A), (v) => !!v, 'a question to offer the way out of');
+	await A.page.locator('#explorer-share-settings').click();
+	await A.page.waitForTimeout(900);
+	const settingsLanded = await A.page.evaluate(() => {
+		let open, section;
+		window.__stores.settingsOpen.subscribe((v) => (open = v))();
+		window.__stores.settingsSection.subscribe((v) => (section = v))();
+		// the pref itself must be reachable once we are there
+		const hasRow = !!document.querySelector('#share-new-files');
+		return { open: !!open, section, hasRow };
+	});
+	h.check(settingsLanded.open && settingsLanded.section === 'explorer',
+		`the strip deep-links into the Explorer settings (${JSON.stringify(settingsLanded)})`);
+	h.check(settingsLanded.hasRow, 'and the three-way pref is the row you land on');
+	// CLOSE IT — a modal left open is a full-viewport click shield for everything after
+	await A.page.evaluate(() => window.__stores.settingsOpen?.set?.(null));
+	await A.page.waitForTimeout(500);
+
+	// ---- 64. with the Explorer SHUT, the ask waits and a toast points at it --------
+	//
+	// The strip is the right place for the question and is also not mounted half the time.
+	// So the toast is a POINTER, not the question: nothing is decided by it, and the ask
+	// stays armed so opening the panel later still shows the strip.
+	await resetAsk(A, false);
+	const askShut = await addFile(A, 'added while the panel was shut', 'c2-shut.txt');
+	await h.eventually(() => askOf(A), (v) => !!v, 'the ask arms with no Explorer on screen');
+	const shutAsk = await askOf(A);
+	h.check(shutAsk.kind === 'new' && shutAsk.names.includes('c2-shut.txt'),
+		`the standing question knows the file (${JSON.stringify(shutAsk)})`);
+	await h.eventually(
+		() => toastsOf(A),
+		(t) => t.some((x) => /open the Explorer to share/.test(x)),
+		'a toast points at the panel that can answer it'
+	);
+	const pointer = (await toastsOf(A)).find((x) => /open the Explorer to share/.test(x));
+	h.check(/^1 file added/.test(pointer), `and it counts the batch (${JSON.stringify(pointer)})`);
+	// the ask SURVIVES the toast: opening the panel is what answers it
+	await A.page.evaluate(() => window.__stores.explorerClose.set(false));
+	await h.eventually(() => askStripOf(A), (v) => !!v, 'opening the Explorer shows the strip that was waiting');
+	h.check(
+		(await askStripOf(A)).title.includes('c2-shut.txt'),
+		'...for the file that arrived while it was shut — the toast decided nothing'
+	);
+	await A.page.evaluate(() => window.__stores.sharedLibrary.resolveShareAsk('keep'));
+
+	// ---- 65. `never` is silence, not a deferred question --------------------------
+	await resetAsk(A);
+	await A.page.evaluate(() => window.__stores.sharedLibrary.shareNewFiles.set('never'));
+	await addFile(A, 'nobody asks about this', 'c2-never.txt');
+	await A.page.waitForTimeout(1600);
+	h.check((await askOf(A)) === null, "`never` asks nothing — a standing answer, not a postponed question");
+	h.check((await askStripOf(A)) === null, '...and draws nothing');
+
+	// ---- 66. the pref MIGRATES, and the connect batch includes the HOST ------------
+	//
+	// Two things one fresh peer can prove, in the order they happen. D boots with the OLD
+	// `shared:autoShareAll` key set, so its first read must land on `always` — a machine
+	// that had the blanket checkbox on must not silently lose it. Then D takes `ask` and
+	// somebody DIALS D, which makes D the HOST: the old connect toast was joiner-only
+	// (`sessionHost` non-null), which was half of "there is no logic in having share/stash",
+	// and a host sitting on a library nobody can see is the same problem from the other end.
+	const D = await h.setupPage(browser, 'D', { storage: { 'shared:autoShareAll': 'true' } });
+	await D.page.waitForFunction(
+		() => !!window.__stores?.sharedLibrary && !!window.__stores?.explorer,
+		{ timeout: 30000 }
+	);
+	const migrated = await D.page.evaluate(() => {
+		let v;
+		window.__stores.sharedLibrary.shareNewFiles.subscribe((x) => (v = x))();
+		return v;
+	});
+	h.check(migrated === 'always', `the old autoShareAll=true reads as 'always' (${migrated})`);
+	await D.page.evaluate(() => window.__stores.explorer.loadExplorer());
+	await D.page.evaluate(() => window.__stores.sharedLibrary.shareNewFiles.set('ask'));
+	await D.page.evaluate(() => window.__stores.explorerClose.set(false));
+	await addFile(D, 'brought with me 1', 'd-one.txt');
+	await addFile(D, 'brought with me 2', 'd-two.txt');
+	await D.page.waitForTimeout(800);
+	h.check(
+		(await askOf(D)) === null,
+		'nothing is asked while D is alone — the question is about a session, and there is none'
+	);
+	// C DIALS D, so D is the HOST of this connection — which is the case the old toast
+	// could never reach. C has to leave its own session first: a connected pill has no
+	// dial input at all (the documented h.connect trap), and C is finished with every
+	// section above it. `leaveSession` closes the conns without destroying the peer, so
+	// C's id stays valid and the pill returns to idle.
+	await C.page.evaluate(() => {
+		let pc;
+		window.__stores.peers.subscribe((v) => (pc = v))();
+		pc.leaveSession();
+	});
+	await C.page.waitForTimeout(2500);
+	h.check(
+		await C.page.locator('input[placeholder="Enter peer ID to connect"]').count() === 1,
+		'premise: leaving the session gives C its dial input back'
+	);
+	await h.connect(C, D);
+	// a generous window: the connect dance can close and reopen the conn (the documented
+	// host-closes-the-joiner's-original-conn step), so D can legitimately see rise, drop and
+	// rise again before it settles — and each drop retracts the question by design.
+	await h.eventually(
+		() => askOf(D),
+		(v) => !!v,
+		"the host is asked about the library it brought",
+		20000
+	);
+	const dAsk = await askOf(D);
+	h.check(
+		dAsk.kind === 'connect' && dAsk.names.includes('d-one.txt') && dAsk.names.includes('d-two.txt'),
+		`and the batch is the pre-session files (${JSON.stringify(dAsk)})`
+	);
+	const dStrip = await askStripOf(D);
+	h.check(
+		/^Share your \d+ files with the session\?$/.test(dStrip.title) && dStrip.yes === 'Share all',
+		`the connect copy is about what you brought (${JSON.stringify(dStrip.title)} / ${dStrip.yes})`
+	);
+	h.check(
+		dStrip.detail === 'They are only on this device — only shared files are visible to peers.',
+		`...and says why it matters (${JSON.stringify(dStrip.detail)})`
+	);
+	h.check(
+		dStrip.stash === 'Stash mine',
+		'the destructive option is offered ONLY here — "take the session\'s library instead" is an answer to "you brought files", never to "you added one"'
+	);
+	// ARM-THEN-CONFIRM, the round 7 ritual: the first press is not the answer
+	await D.page.locator('#explorer-share-stash').click();
+	await D.page.waitForTimeout(400);
+	h.check(
+		(await askStripOf(D))?.stash === 'Really replace my library?',
+		'the first press turns the button into the question rather than acting'
+	);
+	h.check((await askOf(D)) !== null, "...and nothing was resolved by it");
+	// answer it the safe way instead
+	await D.page.locator('#explorer-share-yes').click();
+	await h.eventually(
+		() => itemsOf(D),
+		(items) => items.filter((i) => /^d-(one|two)\.txt$/.test(i.name)).every((i) => i.share === 'mine'),
+		'Share all publishes exactly the files it listed'
+	);
+	await h.eventually(
+		() => manifestOf(C),
+		(m) => (m.items ?? []).some((r) => r.name === 'd-one.txt'),
+		'...and the joiner sees the host\'s library at last'
+	);
+
+	// ---- 67. the DELETE confirm wins the slot, and the offer survives ------------
+	//
+	// Both questions are drawn in the same place. A destructive one the user just asked
+	// for beats an offer the app volunteered — and the offer must SURVIVE, because
+	// `pendingShareAsk` holds until it is answered rather than until it is drawn.
+	await resetAsk(A);
+	const clash = await addFile(A, 'two questions, one slot', 'c2-clash.txt');
+	await h.eventually(() => askStripOf(A), (v) => !!v, 'the offer is standing');
+	// the real delete path: right-click the card, press Delete
+	await A.page.evaluate((cardId) => {
+		const el = document.querySelector(`[data-card-id="${cardId}"]`);
+		const box = el.getBoundingClientRect();
+		el.dispatchEvent(
+			new MouseEvent('contextmenu', {
+				bubbles: true,
+				clientX: Math.round(box.left + 8),
+				clientY: Math.round(box.top + 8)
+			})
+		);
+	}, clash.id);
+	await A.page.waitForTimeout(400);
+	await A.page.getByRole('menuitem', { name: /^Delete$/ }).click();
+	await A.page.waitForTimeout(500);
+	const clashState = await A.page.evaluate(() => ({
+		del: !!document.querySelector('#explorer-confirm'),
+		share: !!document.querySelector('#explorer-share-ask')
+	}));
+	h.check(
+		clashState.del && !clashState.share,
+		`the destructive question takes the slot (${JSON.stringify(clashState)})`
+	);
+	h.check((await askOf(A)) !== null, "...and the offer is still standing in the store");
+	// cancel the delete: the offer comes back, unanswered
+	await A.page.locator('#explorer-confirm-no').click();
+	await h.eventually(
+		() => askStripOf(A),
+		(v) => !!v,
+		'cancelling the delete hands the slot back to the question nothing answered'
+	);
+	h.check(
+		(await askStripOf(A)).title.includes('c2-clash.txt'),
+		'...and it is the same question, about the same file'
+	);
+	await A.page.evaluate(() => window.__stores.sharedLibrary.resolveShareAsk('keep'));
 
 	// ---- 14. no render crash anywhere ---------------------------------------------
 	for (const [label, p] of [

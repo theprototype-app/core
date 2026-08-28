@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { Box, Boxes, Download, ExternalLink, Folder, FolderTree, Gift, Globe, House, LayoutGrid, List, LoaderCircle, PackageOpen } from '@lucide/svelte';
+	import { Box, Boxes, Download, ExternalLink, Folder, FolderTree, Gift, Globe, House, LayoutGrid, List, LoaderCircle, PackageOpen, Share2 } from '@lucide/svelte';
 	import Icon from '../ui/Icon.svelte';
 	// Explorer (95, tree v2 in 106): dockable asset browser — real file-manager
 	// tree on the left (inline create/rename, expand/collapse, drag re-parent,
@@ -103,7 +103,12 @@
 		emptyDeletedLog,
 		deletedThumb,
 		logLocalDeletion,
-		deleteWithoutConfirm
+		deleteWithoutConfirm,
+		// R22 round 30 C2: the share-new-files ask. A STORE rather than a callback, so the
+		// strip below and the toast in Toasts.svelte read the same standing question — see
+		// `pendingShareAsk` for why the detector cannot know which surface is on screen.
+		pendingShareAsk,
+		resolveShareAsk
 	} from '$lib/sharedLibrary';
 	// R22 round 2: a shared file's PICTURE travels on its own tiny channel, so a card can
 	// show a thumbnail before anybody downloads the bytes (see assetShare).
@@ -1925,6 +1930,31 @@
 	}
 	function confirmStripNo() {
 		confirmStrip = null;
+	}
+	/**
+	 * R22 round 30 C2 — THE SHARE ASK, on the same strip as the delete question.
+	 *
+	 * The user asked for it in exactly those terms ("same as its for deleting items"),
+	 * and the reasoning is round 11's: the question belongs above the rows it is about,
+	 * not in a toast over the 3D view that expires while you are looking at your files.
+	 *
+	 * The DELETE confirm wins when both are armed. A destructive question the user just
+	 * asked for beats an offer the app volunteered, and the ask survives underneath it —
+	 * nothing is lost by waiting, because `pendingShareAsk` holds until it is answered.
+	 */
+	const shareAsk = $derived($pendingShareAsk);
+	let shareStashArmed = $state(false);
+	$effect(() => {
+		// a fresh question disarms the destructive button: the second press must always be
+		// an answer to the question that is on screen (the toast's own rule, one surface over)
+		void shareAsk;
+		shareStashArmed = false;
+	});
+	// lang="ts": a JSDoc @param is IGNORED here (the documented Inspector rule in reverse)
+	function answerShareAsk(choice: 'share' | 'keep' | 'stash') {
+		const n = shareAsk?.items?.length ?? 0;
+		resolveShareAsk(choice);
+		if (choice === 'share') showToast(`Sharing ${n} file${n === 1 ? '' : 's'} with the session`);
 	}
 	/** focus the answer, so Enter confirms and Esc has a handler inside the strip to reach */
 	function focusConfirmBtn(node: HTMLElement) {
@@ -4622,6 +4652,77 @@
 						onclick={openFileSettings}>File settings</button
 					>
 				</div>
+			{:else if shareAsk}
+				<!--
+					R22 round 30 C2 — the OFFER, on the delete strip's layout with a neutral
+					modifier: the red belongs to the destructive question, and wearing it here
+					would make sharing a file look like losing one.
+				-->
+				<!-- svelte-ignore a11y_no_static_element_interactions, a11y_click_events_have_key_events -->
+				<div
+					id="explorer-share-ask"
+					class="ex-confirm ex-confirm--ask"
+					onclick={(e) => e.stopPropagation()}
+					onpointerdown={(e) => e.stopPropagation()}
+					onkeydown={(e) => {
+						if (e.key !== 'Escape') return;
+						e.stopPropagation();
+						answerShareAsk('keep');
+					}}
+				>
+					<span class="ex-confirm-icon ex-ask-icon"><Share2 size={14} aria-hidden="true" /></span>
+					<span class="ex-confirm-text">
+						<span class="ex-confirm-title">
+							{#if shareAsk.kind === 'connect'}Share your {shareAsk.items.length} file{shareAsk
+									.items.length === 1
+									? ''
+									: 's'} with the session?{:else if shareAsk.items.length === 1}Share “{shareAsk
+									.items[0].name}” with the session?{:else}Share {shareAsk.items.length} new files with
+								the session?{/if}
+						</span>
+						<span class="ex-confirm-detail">
+							{shareAsk.kind === 'connect'
+								? 'They are only on this device — only shared files are visible to peers.'
+								: 'Only shared files are visible to peers — everything else stays on this device.'}
+						</span>
+					</span>
+					<button
+						id="explorer-share-yes"
+						class="ex-confirm-yes ex-ask-yes"
+						use:focusConfirmBtn
+						onclick={() => answerShareAsk('share')}
+						>{shareAsk.items.length === 1 ? 'Share' : 'Share all'}</button
+					>
+					<button id="explorer-share-no" class="ex-confirm-no" onclick={() => answerShareAsk('keep')}
+						>Keep local</button
+					>
+					{#if shareAsk.kind === 'connect'}
+						<!--
+							The destructive option keeps round 7's ritual: the button becomes the
+							question and the second press is the answer. No modal — this strip IS the
+							place the question is asked.
+						-->
+						<button
+							id="explorer-share-stash"
+							class="ex-confirm-no"
+							title="Save your library into a session, then take the session's files instead"
+							onclick={() => {
+								if (!shareStashArmed) {
+									shareStashArmed = true;
+									return;
+								}
+								resolveShareAsk('stash');
+							}}
+							>{shareStashArmed ? 'Really replace my library?' : 'Stash mine'}</button
+						>
+					{/if}
+					<button
+						id="explorer-share-settings"
+						class="ex-confirm-settings"
+						title="Open the file settings — what happens to files you add during a session"
+						onclick={openFileSettings}>File settings</button
+					>
+				</div>
 			{/if}
 			{#if !pendingCard && childFolders.length === 0 && gridItems.length === 0}
 				{#if openPack && $openPackLoading}
@@ -5528,6 +5629,22 @@
 	}
 	.ex-confirm-no:hover {
 		background: rgb(255 255 255 / 6%);
+	}
+	/*
+		R22 round 30 C2 — the OFFER wears the same layout and a different colour. Red is the
+		destructive question's; an offer to share a file must not read as a warning.
+	*/
+	.ex-confirm--ask {
+		border-color: var(--border, #374151);
+	}
+	.ex-ask-icon {
+		color: #93c5fd;
+	}
+	.ex-ask-yes {
+		background: #1d4ed8;
+	}
+	.ex-ask-yes:hover {
+		background: #2563eb;
 	}
 	/* the way OUT of being asked, offered beside the question rather than described in it */
 	.ex-confirm-settings {

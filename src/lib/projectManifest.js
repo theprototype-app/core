@@ -354,7 +354,8 @@ function commitManifest(next, opts = {}) {
 	if (opts.replicate !== false) {
 		/** @type {any} */
 		const peer = get(peers);
-		if (peer) peer.send({ type: 'manifest', manifest: doc });
+		// R22 round 30 C4: every outbound manifest is SCOPED — see the block above the wire
+		if (peer) peer.send({ type: 'manifest', manifest: outboundManifest(doc) });
 	}
 	return doc;
 }
@@ -443,6 +444,12 @@ export function setProjectName(name) {
 	if (isViewer()) return false;
 	const m = get(projectManifest);
 	if (clean === m.name) return false;
+	// C4: a name given WHILE CONNECTED is a statement about the session's project, so it
+	// rides out; one given in private (or before anyone arrived) is as private as the
+	// scenes under it. The flag is read by outboundManifest and dies with the session —
+	// and it is set BEFORE the write, because commitManifest IS the broadcast, so a flag
+	// raised after it would scope out the very rename it was raised for (measured).
+	if (openPeerCount() > 0) renamedThisSession = true;
 	commitManifest({ ...m, name: clean });
 	return true;
 }
@@ -856,6 +863,120 @@ function sameContent(a, b) {
 	return stableJson({ ...a, changedAt: 0 }) === stableJson({ ...b, changedAt: 0 });
 }
 
+// ---- R22 round 30 C4 — THE OUTBOUND SCOPE --------------------------------------------
+//
+// THE REPORT, verbatim: "when peer connects and does not open his .tpscene it shared".
+//
+// C3 made the RECEIVE side a union, which is what stops one join destroying a project —
+// and it is exactly what makes this the next bug, because a union KEEPS everything it is
+// handed. A joiner arrives carrying its own work: every scene name it ever saved, the
+// version history under each, and the name it gave the whole thing. All of it landed in
+// the host's document and, from there, in every peer's and in every `.tp` any of them
+// exported. Nobody consented to that and nobody was asked.
+//
+// THE RULE, and it is a SEND boundary and nothing else. Receiving stays exactly as C3
+// left it: a document you are handed is a document you keep. What changes is what a
+// JOINER (`sessionHost !== null`) puts on the wire. A host — and a solo user, who is one
+// — publishes its project whole, because inside a session the host's project IS the
+// project. A joiner may send:
+//   · `sessionSceneNames` — every scene NAME that arrived in somebody else's manifest.
+//     Those are the session's own rows and they travel back VERBATIM, which is the
+//     sharedIndex one-writer rule: a peer that drops rows it was taught picks a fight
+//     with the peer that taught them.
+//   · `openedScenes` — scenes this peer deliberately touched HERE: travelled to, saved,
+//     saved a version of, or brought in by OPENING a project. That is the consent, and
+//     every entry is an act a person performed.
+// Everything else stays home. It is still in the LOCAL document, still in idb, still in a
+// `.tp` export — nothing is deleted, it simply does not leave the machine.
+//
+// THE PROJECT NAME rides out only if you RENAMED during the session. A private project's
+// name is as private as its scenes, and a joiner's stale one would otherwise win a
+// latest-wins field against the room's. Scoped out it goes as '', which is SAFE rather
+// than destructive precisely because of C3's merge rule: an empty name never overwrites a
+// real one.
+//
+// WHAT TRAVELS WHOLE, deliberately: `assets` (content hashes, carrying no names), and the
+// shared index sections with their tombstones and the deletion log. Those rows are the
+// ones the user has ALREADY consented to, one at a time, through the Explorer — R1's
+// whole point is that a private file's NAME never enters them — and scoping them again
+// here would break sharedLibrary's reconcile, which depends on a peer carrying foreign
+// rows back.
+//
+// READER AUDIT, because a scope that leaked into a READ would be data loss rather than
+// privacy: every reader takes the LOCAL store and not one of them goes near this
+// function — the remote-scene cards (`manifestSceneNames`), travel (`travelToScene` /
+// `latestSceneHash`), the update dot (`staleSceneHash`), the local prune
+// (`keepableHashes`), Version history (`sceneEntry`) and the `.tp` export
+// (`projectFile`). Nothing loses a row here.
+
+/** Scenes this peer opened, saved or imported THIS session — its consent to publish them.
+ * @type {Set<string>} */
+let openedScenes = new Set();
+/** Scene names somebody else's manifest taught us this session — the session's own rows,
+ * carried back verbatim so our copy can never read as a deletion. @type {Set<string>} */
+let sessionSceneNames = new Set();
+/** Did WE rename the project while connected? Only then does our name ride out. */
+let renamedThisSession = false;
+
+/** How many peers are actually here. The roster is populated at DIAL time, so this is
+ * `openedPeers` and never `userdata.length` — the documented trap. */
+function openPeerCount() {
+	/** @type {any} */
+	const peer = get(peers);
+	return peer?.openedPeers?.size ?? 0;
+}
+
+/**
+ * CONSENT. Called from levels.js (save, save-a-version, travel) and from
+ * `manifestRestore` when a `.tp` OPEN promises to bring the room along.
+ *
+ * Deliberately NOT called by `adoptSceneIdentity`: adopting the host's scene NAME is
+ * something the app does to a joiner unasked, and consent has to be an act the user
+ * performed. It would buy nothing anyway — an adopted name arrived in the host's
+ * manifest, so it is already in `sessionSceneNames`.
+ * @param {string} name
+ */
+export function noteSceneOpened(name) {
+	const scene = String(name ?? '').trim();
+	if (scene) openedScenes.add(scene);
+}
+
+/**
+ * The session ended — the last peer left. The next one starts from nothing, which is what
+ * makes "still private after a reconnect" a rule rather than a one-time accident: a name
+ * learned in ONE room is not public knowledge in the next, and carrying it forward would
+ * walk one room's scene list into another. Wired to the same 0-peer edge sharedLibrary's
+ * `endShareSession` hangs on.
+ */
+export function resetSessionScope() {
+	openedScenes = new Set();
+	sessionSceneNames = new Set();
+	renamedThisSession = false;
+}
+
+/** A received document's scene names are the SESSION's, so they may be carried back. Fed
+ * before the merge branches, so a name the host teaches us in this very message is
+ * already publishable in the send-back that answers it. @param {Manifest} doc */
+function noteSessionScenes(doc) {
+	for (const name of Object.keys(doc.scenes ?? {})) sessionSceneNames.add(name);
+}
+
+/**
+ * THE SEND BOUNDARY: every outbound `manifest` message goes through here, and nothing
+ * else does.
+ * @param {Manifest} doc @returns {Manifest}
+ */
+export function outboundManifest(doc) {
+	// the host — and a solo user, who is one — publishes its project whole
+	if (get(sessionHost) === null) return doc;
+	const allowed = new Set([...sessionSceneNames, ...openedScenes]);
+	/** @type {Record<string, SceneEntry>} */
+	const scenes = {};
+	for (const [name, entry] of Object.entries(doc.scenes ?? {}))
+		if (allowed.has(name)) scenes[name] = entry;
+	return { ...doc, scenes, name: renamedThisSession ? doc.name : '' };
+}
+
 // ---- the merge, surfaced -------------------------------------------------------------
 //
 // Session-deduped, because a merge is re-derived on every document that arrives and a
@@ -872,9 +993,7 @@ let hadOpenPeers = false;
 /** Are we the session's writer AND is anyone actually here? The pointer notice is for the
  * HOST — a joiner adopting the host's line is the normal case and needs no toast. */
 function amHostWithPeers() {
-	/** @type {any} */
-	const peer = get(peers);
-	return get(sessionHost) === null && (peer?.openedPeers?.size ?? 0) > 0;
+	return get(sessionHost) === null && openPeerCount() > 0;
 }
 
 /** @param {string[]} clashes @param {string[]} pointerMoves */
@@ -928,7 +1047,8 @@ function scheduleManifestSendBack() {
 		if (isViewer()) return;
 		/** @type {any} */
 		const peer = get(peers);
-		if (peer) peer.send({ type: 'manifest', manifest: get(projectManifest) });
+		// C4: the answer is scoped like every other send — see outboundManifest
+		if (peer) peer.send({ type: 'manifest', manifest: outboundManifest(get(projectManifest)) });
 	}, 150);
 }
 
@@ -956,7 +1076,10 @@ export function applyRemoteManifest(data) {
 	const doc = normalizeManifest(data?.manifest);
 	if (!doc.changedAt) return false;
 	const mine = get(projectManifest);
-	const { doc: merged, clashes, pointerMoves, senderLacks } = mergeManifests(mine, doc);
+	// C4: the session's own scene names, recorded BEFORE anything branches — a name taught
+	// in this very message is publishable in the send-back that answers it
+	noteSessionScenes(doc);
+	const { doc: merged, clashes, pointerMoves } = mergeManifests(mine, doc);
 	surfaceMerge(clashes, pointerMoves);
 	if (sameContent(merged, mine)) return false;
 	if (sameContent(merged, doc)) {
@@ -971,7 +1094,12 @@ export function applyRemoteManifest(data) {
 			replicate: false,
 			above: Math.max(mine.changedAt ?? 0, doc.changedAt ?? 0)
 		});
-		if (senderLacks.length) scheduleManifestSendBack();
+		// C4: judge the answer on what we can ACTUALLY send. `mergeManifests` reports what
+		// the sender lacks of the FULL union, so a joiner whose only novel content is its
+		// own PRIVATE scenes would answer with a document carrying nothing the sender is
+		// missing — a wasted round trip per connect, and a misleading one to read on the
+		// wire. Asking the SCOPED document is the same question with the scope applied.
+		if (senderLacking(outboundManifest(merged), doc).length) scheduleManifestSendBack();
 	}
 	// R22-R1: a document somebody else wrote may carry shared rows this machine has not
 	// adopted yet, and may be MISSING rows of ours (two peers sharing inside one
@@ -987,7 +1115,8 @@ export function sendProjectManifest(_sender) {
 	if (!manifestInUse()) return;
 	/** @type {any} */
 	const peer = get(peers);
-	if (peer) peer.send({ type: 'manifest', manifest: get(projectManifest) });
+	// C4: a joiner answers the handshake with the SESSION's rows plus what it opened here
+	if (peer) peer.send({ type: 'manifest', manifest: outboundManifest(get(projectManifest)) });
 }
 
 /** Test/import seam. Local by default; a .tp import passes replicate to bring the
@@ -997,7 +1126,18 @@ export function manifestRestore(doc, replicate = false) {
 		projectManifest.set(defaultManifest());
 		return;
 	}
-	commitManifest(normalizeManifest(doc), { replicate });
+	const next = normalizeManifest(doc);
+	// C4 CONSENT. `replicate` is the caller saying "bring the room along" — today that is
+	// exactly one path, a `.tp` OPEN, which is a person at a file dialog choosing to make
+	// this the project. So its scenes are consented, and so is its NAME: without both, the
+	// outbound scope would keep the freshly-opened project to itself and the promise the
+	// flag makes would be a lie. It lives here rather than at the call site because this
+	// is the seam that knows what the document contains.
+	if (replicate) {
+		for (const name of Object.keys(next.scenes)) noteSceneOpened(name);
+		renamedThisSession = true;
+	}
+	commitManifest(next, { replicate });
 	// a .tp open installs somebody else's document, so its index needs adopting too
 	notifySharedIndex();
 }

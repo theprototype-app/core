@@ -739,6 +739,10 @@ export async function openProject(buffer) {
 	// with, and the restore above minted fresh ones (ids are local identity — a .tp must
 	// never collide with the library it lands in). Carrying them unremapped would adopt
 	// folders that exist nowhere and strand every item row inside them.
+	// C4: the `true` is what makes this OPEN consent to publishing the file's scenes and
+	// name — `manifestRestore` marks them, because it is the seam that can see what the
+	// document holds. Without it the outbound scope would keep a joiner's freshly-opened
+	// project to itself, which is the opposite of what "brings the room along" promises.
 	manifestRestore(remapSharedIndex(doc.manifest, counts.remap), true);
 	// the open scene belongs to no scene of THIS project — a named currentLevel would
 	// let travel-away publish the old world into the new project's history

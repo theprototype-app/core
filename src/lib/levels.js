@@ -61,7 +61,8 @@ import {
 	setVersionLabel,
 	adoptSceneVersions,
 	projectManifest,
-	sceneEntry
+	sceneEntry,
+	noteSceneOpened
 } from './projectManifest';
 import { sessionHost } from './connectionState';
 // loose-scenes fix: the prompt is for an EDITOR, so it stands down in play mode (see
@@ -462,6 +463,11 @@ export async function saveSceneAsLevel(name, folderId = null, opts = {}) {
 	currentLevel.set({ hash: item.hash, name: payload.name, signature: sceneSignature(payload) });
 	// 21-G2: a manual save IS a version — the manifest pointer moves with it (refused
 	// for viewers inside publishSceneVersion; the local item exists either way)
+	// C4: saving IS the consent to publish, and it has to be recorded BEFORE the write —
+	// publishSceneVersion commits, and a commit is a broadcast, so consent given after it
+	// scopes out the very version it was meant to release and nothing sends again until
+	// the next manifest write. (Measured: the host's document stayed without the scene.)
+	noteSceneOpened(payload.name);
 	publishSceneVersion(payload.name, item.hash);
 	// ADOPT THE FILE WE CAME FROM. Reported as: open a dragged-in cube.tpscene, rename
 	// it, move something, then save — and a SECOND cube2.tpscene appeared beside the
@@ -588,6 +594,11 @@ export async function publishCurrentIfChanged(opts = {}) {
 		folderId
 	);
 	if (!item) return false;
+	// C4, and BEFORE the publish for the reason saveSceneAsLevel spells out: an
+	// auto-published version is still this peer's own edit to this scene, so it carries
+	// the same consent a manual save does. Belt and braces beside the writer gate above —
+	// only the host reaches here today, and a host publishes whole anyway.
+	noteSceneOpened(at.name);
 	const published = publishSceneVersion(at.name, item.hash);
 	if (published) {
 		// where we ARE is now this hash and this content — so a second call (travel runs
@@ -779,6 +790,10 @@ export async function travelToLevel(hash, name = '') {
 			signature: sceneSignature(payload),
 			...(tracked ? {} : { unsaved: true })
 		});
+		// C4: travelling INTO a scene is opening it, which is the consent that lets this
+		// machine's copy of that scene's history leave it. Keyed by the name the project
+		// files it under, which is the key the scope is keyed by too.
+		noteSceneOpened(here);
 		if (!tracked) void armSaveIntoProject(here);
 		// A2 - ARRIVAL RE-SYNC. The room gate withholds every scene-scoped message from a
 		// peer standing somewhere else, so the world we have just walked into is missing
@@ -847,6 +862,10 @@ export async function travelToLevel(hash, name = '') {
 export function adoptSceneIdentity(name, hash) {
 	const scene = String(name ?? '').trim();
 	if (!scene) return false;
+	// C4: deliberately NO `noteSceneOpened`. Adoption is something the app does to a
+	// joiner unasked, and consent must be an act the user performed — and it would buy
+	// nothing anyway, because the name arrived in the host's manifest and is therefore
+	// already inside `sessionSceneNames`.
 	currentLevel.set({ hash: '', name: scene, unsaved: true });
 	return true;
 }

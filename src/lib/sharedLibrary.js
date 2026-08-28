@@ -84,7 +84,8 @@ import {
 import {
 	projectManifest,
 	publishSharedIndex,
-	registerSharedIndexListener
+	registerSharedIndexListener,
+	resetSessionScope
 } from './projectManifest';
 import {
 	requestAsset,
@@ -1547,7 +1548,13 @@ export function startSharedLibrary() {
 			retryUnavailable();
 			if (get(autoDownload)) autoPullMissing();
 		}
-		if (!n && lastPeerCount) endShareSession();
+		if (!n && lastPeerCount) {
+			endShareSession();
+			// C4: the outbound scope dies with the session too. A scene name learned from one
+			// room is not public knowledge in the next, and a scene opened here was consent
+			// for HERE — so the next connect starts from nothing (projectManifest.js).
+			resetSessionScope();
+		}
 		lastPeerCount = n;
 	});
 	explorerItems.subscribe((items) => {

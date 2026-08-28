@@ -19,7 +19,11 @@ h.run(async () => {
 	const A = await h.setupPage(browser, 'A');
 	const B = await h.setupPage(browser, 'B');
 	for (const p of [A, B]) await p.page.waitForFunction(() => !!window.__stores?.projectManifest, { timeout: 30000 });
-	await h.connect(A, B);
+	// R22 round 30 C4: B DIALS A, so A is the session writer. That matters now — a joiner
+	// publishes only what the session already knows plus what it opened here, so the peer
+	// whose raw publishes drive sections 1-4 has to be the host. B is the joiner, and its
+	// one write below lands on a scene A already taught it, which is what makes it travel.
+	await h.connect(B, A);
 
 	// ---- 1. the write path: publish, pointer, history ------------------------------
 	const w1 = await A.page.evaluate(() => {
@@ -106,9 +110,14 @@ h.run(async () => {
 
 	// ---- 6. a LATE JOINER receives the project through the handshake -----------------
 	const C = await h.setupPage(browser, 'C');
-	// the joiner dials (the 21-F trap) — and dials B: A was freshReload-ed in section 4,
-	// which minted it a NEW peer id, so the id captured at setup no longer answers
-	await h.connect(C, B);
+	// the joiner dials (the 21-F trap) — and dials A, the WRITER (C4: a joiner answers the
+	// handshake with the session's rows, and B's were reset when A's reload dropped the
+	// mesh). A was freshReload-ed in section 4, which minted it a NEW peer id, so the id
+	// captured at setup no longer answers: re-read it.
+	A.id = await A.page.evaluate(
+		() => new Promise((r) => window.__stores.peers.subscribe((p) => r(p?.peer?.id))())
+	);
+	await h.connect(C, A);
 	await h.eventually(
 		() => C.page.evaluate(() => window.__stores?.projectManifest ? window.__stores.projectManifest.latestSceneHash('Tower') : null),
 		(v) => v === 'hash-t13',
@@ -132,7 +141,7 @@ h.run(async () => {
 			window.__stores.objectsGroup.subscribe((v) => (g = v))();
 			return g?.children.length ?? 0;
 		});
-	// C is still connected to B — B is C's host, so C is NOT the writer. Disconnect
+	// C is still connected to A — A is C's host, so C is NOT the writer. Disconnect
 	// first: the auto-save is writer-only and this section needs C writing.
 	await C.page.evaluate(() => {
 		const s = window.__stores;
@@ -433,27 +442,37 @@ h.run(async () => {
 		`COUNTERFACTUAL: under whole-document latest-wins D ends up holding ${JSON.stringify(Object.keys(wouldHold))} — Arena and Pit destroyed by one join`
 	);
 
-	await h.connect(E, D); // the joiner dials the host (the 21-F trap)
-	await h.eventually(
-		() => manifestOf(D),
-		(m) => !!m.scenes.Arena && !!m.scenes.Pit && !!m.scenes.Home,
-		'D keeps BOTH its scenes and gains the joiner\'s — ten such joins can no longer destroy a project'
+	// SECOND COUNTERFACTUAL (round 30 C4), computed the same way from the same two real
+	// documents: with the outbound scope removed — `outboundManifest` returning its
+	// argument — D merges E's WHOLE private document, which is the reported bug.
+	const unscopedDE = await D.page.evaluate(
+		([l, r]) => Object.keys(window.__stores.projectManifest.mergeManifests(l, r).doc.scenes).sort(),
+		[dBefore, eBefore]
 	);
 	h.check(
-		JSON.stringify(await histOf(D, 'Arena')) === '["d-a1","d-a2"]',
-		`...with Arena's history intact and still pointed at d-a2 (${JSON.stringify(await histOf(D, 'Arena'))})`
+		unscopedDE.includes('Home'),
+		`COUNTERFACTUAL: unscoped, D's merge of E's real document holds ${JSON.stringify(unscopedDE)} — the joiner's private scene included`
 	);
+
+	await h.connect(E, D); // the joiner dials the host (the 21-F trap)
+	// RECEIVING is unscoped and always was (C3), so the joiner gains the host's project
+	// whole — which is also the proof the exchange really ran, before the negative below
 	await h.eventually(
 		() => manifestOf(E),
 		(m) => !!m.scenes.Arena && !!m.scenes.Pit && !!m.scenes.Home,
-		'and the union is symmetric: E gains the host\'s scenes and keeps its own'
+		'E gains the host\'s scenes and keeps its own'
 	);
-	// C4 will scope this: a joiner's PRIVATE scenes still travel to the host, because
-	// the manifest is mesh-wide until outbound scoping lands. Asserted as today's honest
-	// behaviour so the change that ends it is visible here.
 	h.check(
-		!!(await manifestOf(D)).scenes.Home,
-		"today the joiner's private scene reaches the host (C4 will scope this outbound)"
+		JSON.stringify(await histOf(D, 'Arena')) === '["d-a1","d-a2"]' &&
+			!!(await manifestOf(D)).scenes.Pit,
+		`D keeps BOTH its scenes, pointed exactly where they were (${JSON.stringify(await histOf(D, 'Arena'))})`
+	);
+	// C4 — FLIPPED. This read "today the joiner's private scene reaches the host (C4 will
+	// scope this outbound)", written to be visible from here when the change that ends it
+	// landed. It has.
+	h.check(
+		!(await manifestOf(D)).scenes.Home,
+		"THE REPORTED BUG IS DEAD: the joiner's private scene never left it — joining teaches the room, it does not publish your library"
 	);
 	h.check(
 		(await dialogOf(D)) === null,
@@ -486,14 +505,24 @@ h.run(async () => {
 		(hs) => JSON.stringify(hs) === '["d-a1","d-a2","d-a3","e-a3"]',
 		'and the send-back converges the other side on the identical line'
 	);
-	const dDialog = await dialogOf(D);
+	// C4 MOVED THIS DIALOG, and the reason is worth reading. The joiner's first push is
+	// scoped down to nothing (the reset wiped the session names and it has opened nothing
+	// here yet), so the HOST's document arrives first, the JOINER is the side that merges
+	// the two lines, and what it then sends back is already reconciled — a strict prefix
+	// extension of what the host holds, which is a catch-up and not a clash. So the peer
+	// whose work diverged is the peer that is told, which is the right person to tell.
+	const eDialog = await dialogOf(E);
 	h.check(
-		!!dDialog &&
-			dDialog.title === 'Scene versions diverged' &&
-			dDialog.message.includes('Arena') &&
-			dDialog.message.includes('both lines are kept') &&
-			dDialog.choices.includes('history'),
-		`the divergence is SHOWN, naming the scene and offering the versions door (${JSON.stringify(dDialog)})`
+		!!eDialog &&
+			eDialog.title === 'Scene versions diverged' &&
+			eDialog.message.includes('Arena') &&
+			eDialog.message.includes('both lines are kept') &&
+			eDialog.choices.includes('history'),
+		`the divergence is SHOWN to the side that resolved it, naming the scene and offering the versions door (${JSON.stringify(eDialog)})`
+	);
+	h.check(
+		(await dialogOf(D)) === null,
+		'and NOT to the host, which received one already-merged line and had nothing to reconcile'
 	);
 	const dNotes = await notesOf(D);
 	h.check(
@@ -515,7 +544,15 @@ h.run(async () => {
 	// =====================================================================
 	await leave(E);
 	await D.page.evaluate(() => window.__stores.projectManifest.publishSceneVersion('Pit', 'd-p2'));
-	await E.page.evaluate(() => window.__stores.projectManifest.publishSceneVersion('Depot', 'e-dep1'));
+	// C4: a scene made offline is PRIVATE until this peer says otherwise, so the thing a
+	// user would actually have done — saving it — is spelled out here. `saveSceneAsLevel`
+	// is the real path and covers it in section 16; this section is about merge mechanics,
+	// so it takes the consent seam directly and section 18 asserts the un-consented case.
+	await E.page.evaluate(() => {
+		const m = window.__stores.projectManifest;
+		m.publishSceneVersion('Depot', 'e-dep1');
+		m.noteSceneOpened('Depot');
+	});
 	await h.connect(E, D);
 	await h.eventually(
 		() => manifestOf(D),
@@ -529,10 +566,13 @@ h.run(async () => {
 	);
 	const dFinal = await manifestOf(D);
 	const eFinal = await manifestOf(E);
+	// C4 changed the SHAPE of this assertion, not its meaning: the two documents are no
+	// longer identical, and the whole difference is E's private Home — which never
+	// travelled and, section 11 having proved that, must still not have.
 	h.check(
-		JSON.stringify(Object.keys(dFinal.scenes).sort()) === '["Arena","Depot","Home","Pit"]' &&
-			JSON.stringify(Object.keys(dFinal.scenes).sort()) === JSON.stringify(Object.keys(eFinal.scenes).sort()),
-		`NOTHING WAS LOST on either side across three connects and two disconnects (${JSON.stringify(Object.keys(dFinal.scenes).sort())})`
+		JSON.stringify(Object.keys(dFinal.scenes).sort()) === '["Arena","Depot","Pit"]' &&
+			JSON.stringify(Object.keys(eFinal.scenes).sort()) === '["Arena","Depot","Home","Pit"]',
+		`NOTHING WAS LOST on either side across three connects and two disconnects, and the one difference is the private scene (D ${JSON.stringify(Object.keys(dFinal.scenes).sort())}, E ${JSON.stringify(Object.keys(eFinal.scenes).sort())})`
 	);
 	h.check(
 		JSON.stringify(dFinal.scenes.Arena.history) === JSON.stringify(eFinal.scenes.Arena.history),
@@ -550,9 +590,183 @@ h.run(async () => {
 	await clearDialog(D);
 	await clearDialog(E);
 
-	for (const p of [A, B, C, D, E]) {
+	// A, B and C have nothing left to say. Collect their errors and CLOSE them: the C4
+	// sections below need two more fresh peers, and seven live pages on a loaded box is
+	// how a suite starts failing for reasons that have nothing to do with the feature.
+	for (const [p, label] of [[A, 'A'], [B, 'B'], [C, 'C']]) {
 		const errs = await h.pageErrors(p);
-		h.check(errs.length === 0, `no page errors (${JSON.stringify(errs)})`);
+		h.check(errs.length === 0, `no page errors on ${label} (${JSON.stringify(errs)})`);
+		await p.ctx.close();
+	}
+
+	// =====================================================================
+	// 14. THE OUTBOUND SCOPE (round 30 C4) — "when peer connects and does not
+	//     open his .tpscene it shared". Two fresh peers, because the whole
+	//     question is what a peer arrives CARRYING.
+	// =====================================================================
+	const F = await h.setupPage(browser, 'F');
+	const G = await h.setupPage(browser, 'G');
+	for (const p of [F, G])
+		await p.page.waitForFunction(() => !!window.__stores?.projectManifest, { timeout: 30000 });
+	const keysOf = async (peer) => Object.keys((await manifestOf(peer)).scenes).sort();
+
+	await F.page.evaluate(() => {
+		const m = window.__stores.projectManifest;
+		m.setProjectName('Studio');
+		m.publishSceneVersion('Foundry', 'f-1');
+	});
+	await F.page.waitForTimeout(200); // G's private document must be the strictly NEWER one
+	// G's PRIVATE project: two scenes it has not opened here, under a name of its own —
+	// the exact shape that used to walk into the room behind the user's back
+	await G.page.evaluate(() => {
+		const m = window.__stores.projectManifest;
+		m.setProjectName('G private');
+		m.publishSceneVersion('Vault', 'g-v1');
+		m.publishSceneVersion('Cellar', 'g-c1');
+	});
+	const fBefore = await manifestOf(F);
+	const gBefore = await manifestOf(G);
+	h.check(
+		gBefore.changedAt > fBefore.changedAt && !!gBefore.scenes.Vault && !!gBefore.scenes.Cellar,
+		`premise: G's private document is the newer one (${gBefore.changedAt - fBefore.changedAt}ms) and holds two scenes F never heard of`
+	);
+	const unscopedFG = await F.page.evaluate(
+		([l, r]) => Object.keys(window.__stores.projectManifest.mergeManifests(l, r).doc.scenes).sort(),
+		[fBefore, gBefore]
+	);
+	h.check(
+		unscopedFG.includes('Vault') && unscopedFG.includes('Cellar'),
+		`COUNTERFACTUAL: with the outbound unscoped, F's merge of G's real document holds ${JSON.stringify(unscopedFG)}`
+	);
+
+	await h.connect(G, F);
+	await h.eventually(
+		() => manifestOf(G),
+		(m) => !!m.scenes.Foundry,
+		'premise: the exchange ran — the joiner has the host\'s scene'
+	);
+	h.check(
+		!(await manifestOf(F)).scenes.Vault && !(await manifestOf(F)).scenes.Cellar,
+		`the joiner's private scenes never reached the host (${JSON.stringify(await keysOf(F))})`
+	);
+	h.check(
+		(await manifestOf(F)).name === 'Studio',
+		`...and neither did its private project NAME — an empty one never overwrites a real one (${(await manifestOf(F)).name})`
+	);
+	h.check(
+		JSON.stringify(await keysOf(G)) === '["Cellar","Foundry","Vault"]',
+		`the joiner still holds them LOCALLY: this is a send boundary, not a delete (${JSON.stringify(await keysOf(G))})`
+	);
+	await G.page.waitForTimeout(400); // the idb write is fire-and-forget
+	const gIdb = await G.page.evaluate(async () => {
+		const rec = await window.__stores.idb.idbGet('project:manifest');
+		return Object.keys(rec?.scenes ?? {}).sort();
+	});
+	h.check(
+		gIdb.includes('Vault') && gIdb.includes('Cellar'),
+		`...and in idb, so a reload comes back with them (${JSON.stringify(gIdb)})`
+	);
+
+	// =====================================================================
+	// 15. THE HOST IS UNSCOPED: inside a session the host's project IS the project
+	// =====================================================================
+	await F.page.evaluate(() => window.__stores.projectManifest.publishSceneVersion('Forge', 'f-forge1'));
+	await h.eventually(
+		() => manifestOf(G),
+		(m) => m.scenes.Forge?.history?.[0] === 'f-forge1',
+		'a scene the HOST makes mid-session reaches the joiner whole — nothing scopes the writer'
+	);
+
+	// =====================================================================
+	// 16. CONSENT: saving a scene is what publishes it — and only that one
+	// =====================================================================
+	const savedVault = await G.page.evaluate(() => window.__stores.levels.saveSceneAsLevel('Vault'));
+	h.check(!!savedVault?.hash, `premise: the joiner SAVED Vault (${savedVault?.hash?.slice(0, 8) ?? 'null'})`);
+	await h.eventually(
+		() => manifestOf(F),
+		(m) => !!m.scenes.Vault,
+		'CONSENT: the real save path publishes the scene — Vault reaches the host'
+	);
+	h.check(
+		JSON.stringify((await manifestOf(F)).scenes.Vault?.history ?? null) ===
+			JSON.stringify(['g-v1', savedVault?.hash]),
+		`...carrying its WHOLE history, the version made in private included (${JSON.stringify((await manifestOf(F)).scenes.Vault?.history ?? null)})`
+	);
+	h.check(
+		!(await manifestOf(F)).scenes.Cellar,
+		`AND ONLY THAT ONE: the scene beside it, untouched, is still private (${JSON.stringify(await keysOf(F))})`
+	);
+
+	// =====================================================================
+	// 17. THE NAME: a joiner who RENAMES mid-session is talking about the room
+	// =====================================================================
+	await G.page.evaluate(() => window.__stores.projectManifest.setProjectName('Studio North'));
+	await h.eventually(
+		() => manifestOf(F),
+		(m) => m.name === 'Studio North',
+		'a rename made WHILE CONNECTED rides out; the one made in private never did'
+	);
+
+	// =====================================================================
+	// 18. THE RESET: disconnect, work offline, come back — still private
+	// =====================================================================
+	await leave(G);
+	await G.page.evaluate(() => window.__stores.projectManifest.publishSceneVersion('Crypt', 'g-crypt1'));
+	await h.connect(G, F);
+	await h.eventually(
+		() => manifestOf(G),
+		(m) => !!m.scenes.Forge && !!m.scenes.Foundry,
+		'premise: the joiner is back in the session'
+	);
+	await G.page.waitForTimeout(1500); // any send-back has a 150ms debounce and a round trip
+	h.check(
+		!(await manifestOf(F)).scenes.Crypt && !(await manifestOf(F)).scenes.Cellar,
+		`THE SCOPE RESET HELD: a reconnect starts from nothing, so a scene made offline is as private as it was (${JSON.stringify(await keysOf(F))})`
+	);
+	h.check(
+		!!(await manifestOf(F)).scenes.Vault && !!(await manifestOf(F)).scenes.Foundry,
+		'...and the re-merge lost nothing: everything consented before the disconnect is still there'
+	);
+	h.check(
+		JSON.stringify(await keysOf(G)) === '["Cellar","Crypt","Forge","Foundry","Vault"]',
+		`the joiner holds the union of both sides, its private scenes included (${JSON.stringify(await keysOf(G))})`
+	);
+
+	// =====================================================================
+	// 19. IMPORT CONSENT: opening a project promises to bring the room along
+	// =====================================================================
+	// Driven through `manifestRestore(doc, true)`, which is the seam `projectFile.openProject`
+	// calls — the whole path minus the file dialog and the destructive-open warning. An OPEN
+	// REPLACES the local project, so G's own scenes go with it here, exactly as they would.
+	await G.page.evaluate(() => {
+		window.__stores.projectManifest.manifestRestore(
+			{
+				name: 'Imported project',
+				scenes: { Imported: { history: ['tp-i1'], pinned: [] } },
+				assets: [],
+				changedAt: Date.now() + 50
+			},
+			true
+		);
+	});
+	await h.eventually(
+		() => manifestOf(F),
+		(m) => m.scenes.Imported?.history?.[0] === 'tp-i1',
+		'IMPORT CONSENT: the scenes of an opened project reach the session — the promise is kept'
+	);
+	await h.eventually(
+		() => manifestOf(F),
+		(m) => m.name === 'Imported project',
+		'...and so does its NAME, for the same reason: opening a project inside a room declares what the project is'
+	);
+	h.check(
+		!(await manifestOf(F)).scenes.Crypt && !(await manifestOf(F)).scenes.Cellar,
+		`...but it consented only to what the FILE carried: the private scenes beside it never travelled (${JSON.stringify(await keysOf(F))})`
+	);
+
+	for (const [p, label] of [[D, 'D'], [E, 'E'], [F, 'F'], [G, 'G']]) {
+		const errs = await h.pageErrors(p);
+		h.check(errs.length === 0, `no page errors on ${label} (${JSON.stringify(errs)})`);
 	}
 	await h.finish(browser);
 });

@@ -1874,9 +1874,17 @@ h.run(async () => {
 		mC13.changedAt >= seedStamp,
 		`C is still the newer side while that happened — its stamp survived the exchange (+${mC13.changedAt - seedStamp})`
 	);
+	// ROUND 30 C4 FLIPPED THIS. C3 left it asserting that C adopts A's project name, and
+	// under a mesh-wide manifest that was right. It is not right any more, and the reason is
+	// the point of C4: A is itself a JOINER here (it dialled B in section 3), and it named
+	// its project at the top of this suite, in private, before anyone had arrived. A private
+	// name is as private as a private scene, so it is scoped out of every send as '' — which
+	// is SAFE rather than destructive exactly because of the C3 rule the old wording named:
+	// empty never overwrites non-empty, so nothing of C's is lost either. A name a joiner
+	// gives WHILE CONNECTED does ride out (project-manifest section 17).
 	h.check(
-		mC13.name === 'R22',
-		`...and the C3 union merge is what a nameless project does with a named one: it ADOPTS the name (${JSON.stringify(mC13.name)}) — empty never overwrites non-empty`
+		mC13.name === '',
+		`...and the joiner's private project NAME stays private: nothing named it here, so C is still nameless (${JSON.stringify(mC13.name)})`
 	);
 	h.check(
 		(mC13.items ?? []).some((r) => r.hash === onlyFile.hash),

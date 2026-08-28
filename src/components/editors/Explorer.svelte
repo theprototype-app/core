@@ -59,21 +59,23 @@
 	// 21-F4: scenes as LEVELS — .tpscene items in a Levels folder, saved from here
 	// 21-G9: `currentLevel` is WHERE WE ARE — the header breadcrumb's scene half and
 	// the accent on the open scene's own card.
-	// 21-I4: double-click OPENS a scene — `publishCurrentIfChanged` is the save half of
-	// the unsaved-changes guard (see `openSceneItem`).
+	// 21-I4: double-click OPENS a scene — the unsaved-changes guard it goes through lives
+	// in `$lib/sceneOpenGuard` (see `openSceneItem`).
 	import {
 		saveSceneAsLevel,
 		newLevel,
 		renameOpenLooseScene,
 		travelToLevel,
-		publishCurrentIfChanged,
 		currentLevel
 	} from '$lib/levels';
-	// 21-I4: 21-G9 already computes "does the open scene differ from the version its name
-	// points at", behind a throttle, because the answer costs a whole-scene
-	// serialization. This READS that flag and never recomputes it.
-	import { sceneDirty, recomputeSceneDirty } from '$lib/sceneIdentity';
-	import { showChoice } from '$lib/confirmDialog';
+	// 21-G9 already computes "does the open scene differ from the version its name points
+	// at", behind a throttle, because the answer costs a whole-scene serialization. This
+	// READS that flag (the header asterisk) and never recomputes it — the one caller that
+	// must have a CURRENT answer is the guard, and it does its own.
+	import { sceneDirty } from '$lib/sceneIdentity';
+	// R22 round 30 B1: the shared unsaved-changes guard, one copy for every authoring
+	// route that replaces the world.
+	import { guardSceneReplace } from '$lib/sceneOpenGuard';
 	import VersionHistory from './VersionHistory.svelte';
 	// 21-G2: the "update available" dot on old scene versions. The manifest store is
 	// passed as the reactive dependency — a helper reading through get() registers none
@@ -180,7 +182,7 @@
 	// 21-I3: Export ▸ scene (.tpscene) — a scene containing just this prefab. Built from
 	// the EMPTY payload plus this one object, never a capture of the live scene.
 	import { emptySessionPayload, exportSessionZip } from '$lib/sessions';
-	import { selectedObjects, objectsGroup } from '../../stores/sceneStore.js';
+	import { selectedObjects } from '../../stores/sceneStore.js';
 	import { sceneAssets } from '$lib/sceneAssets';
 	import { setNodeData } from '$lib/nodesHandler';
 	import { findNodeAnyGraph } from '../../stores/flowStore';
@@ -3850,14 +3852,8 @@
 	 * half of travel is the travel NODE's pulse, so opening a scene out of your own file
 	 * browser broadcasts nothing and moves nobody else. Authoring, not a game move.
 	 *
-	 * THE GUARD, and why it is a three-way. This replaces the world, so an unsaved
-	 * current scene asks first — the DCC standard, and the reason `sceneDirty` exists.
-	 * That flag is READ, never recomputed: 21-G9 keeps it behind a throttle precisely
-	 * because the answer costs a whole-scene serialization. Two consequences worth
-	 * knowing: the verdict can lag a very recent edit by up to `SIGNATURE_THROTTLE_MS`,
-	 * and a scene that has never been NAMED is never "dirty" (there is no version to be
-	 * dirty against) — in both cases the ordinary autosave is what protects the work,
-	 * and travel's own writer-side auto-publish usually catches the first anyway.
+	 * THE GUARD that asks before this replaces the world is `guardSceneReplace` in
+	 * `$lib/sceneOpenGuard` — the reasoning, and why the travel NODE has none, are there.
 	 */
 	async function openSceneItem(item: any) {
 		// the scene you are standing in. Re-applying the file over your own edits is not
@@ -3866,56 +3862,10 @@
 			showToast(`"${item.name}" is the scene you are already in`);
 			return;
 		}
-		// REPORTED (bug 2): this used to read `$sceneDirty` — the THROTTLED verdict,
-		// which 21-G9 deliberately lets lag a very recent edit by up to
-		// SIGNATURE_THROTTLE_MS (2s) because recomputing costs a whole-scene
-		// serialization. That is the right trade for a TITLE BAR and the wrong one
-		// here: edit, immediately double-click another scene, and the guard read a
-		// stale `false`, so no dialog appeared and the work was gone. The one place
-		// the answer must be current is the action that destroys it, so it is
-		// recomputed synchronously; everywhere else keeps the throttle.
-		//
-		// The second half is a scene with NO IDENTITY to be dirty against.
-		// recomputeSceneDirty answers false for it by construction ("nothing to be
-		// dirty AGAINST"), which is honest but leaves the newest, least-saved work in
-		// the app completely unguarded. If there is no identity and the world is not
-		// empty, opening still destroys something, so it asks.
-		const identified =
-			!!$currentLevel?.name && typeof $currentLevel?.signature === 'string';
-		const risky = identified
-			? recomputeSceneDirty()
-			: ($objectsGroup?.children?.length ?? 0) > 0;
-		if (risky) {
-			const here = $currentLevel?.name ?? 'This scene';
-			const choice = await showChoice({
-				title: `Open "${item.name}"?`,
-				message: identified
-					? `"${here}" has unsaved changes, and opening a scene replaces what is on screen.`
-					: 'The scene on screen has never been saved, and opening a scene replaces it.',
-				// "Open anyway", NOT "Open without saving": travel's own writer-side
-				// auto-publish (fork 9) runs inside `travelToLevel` whatever is chosen
-				// here, so a named scene normally banks a version on the way out and the
-				// stronger label would be a lie. What "Save and open" adds is the cases
-				// that rule excludes — a viewer, a loose .tpscene, auto-versions switched
-				// off — and a deliberate one rather than an automatic one.
-				choices: [
-					{ value: 'save', label: 'Save and open' },
-					{ value: 'open', label: 'Open anyway', color: 'red' }
-				]
-			});
-			if (!choice) return;
-			if (choice === 'save') {
-				// the ordinary write-back first — it lands the new version BESIDE the one it
-				// supersedes and under the project's own rules. It answers false for the
-				// three cases those rules exclude (a viewer, a loose .tpscene opened from
-				// disk, an unnamed scene), and there an explicit save is what the user just
-				// asked for: it always writes a local item, and for a loose scene it is
-				// exactly the "Save into project" offer of fork 12.
-				const published = await publishCurrentIfChanged({ force: true });
-				if (published) showToast(`Saved a version of "${here}" first`);
-				else await saveSceneAsLevel(here, $activeFolder ?? null);
-			}
-		}
+		// R22 round 30 B1: THE UNSAVED-CHANGES GUARD lives in `$lib/sceneOpenGuard` — one
+		// copy for both authoring routes into a scene replace (this card, and the peers
+		// popover's "Go to"). Its header carries the reasoning that used to sit here.
+		if (!(await guardSceneReplace(item.name))) return;
 		// NO name is passed, and that is a fix rather than an omission. `currentLevel.name`
 		// is the MANIFEST KEY — travel-away publishes under it — and an item name carries
 		// the `.tpscene` extension, so handing it over filed every version of "Arena"

@@ -165,6 +165,10 @@
 		volumeUpdateBytes,
 		volumeItems
 	} from '$lib/mountedVolumes';
+	// R22 round 13 P2: the header reading opens a breakdown of it. The leaf owns the
+	// open store, so the chip, this view's background menu and Settings all reach one
+	// action with no component owning the state.
+	import { openStorageModal } from '$lib/storageUsage';
 	import {
 		projectManifest,
 		staleSceneHash,
@@ -3811,6 +3815,17 @@
 							tooltip:
 								'Adds a .tp file’s contents to your library as one folder — nothing opens, your project stays',
 							action: () => tpImportInput?.click()
+						},
+						// R22 round 13 P2: the SECOND way into the storage breakdown. The header
+						// chip is the first and it is hidden below 700px, so this row is what keeps
+						// the action reachable on a phone - the same function, not a second one.
+						{ section: 'Disk' },
+						{
+							label: 'Storage used…',
+							icon: 'hard-drive',
+							tooltip:
+								'What is using this device’s storage, and what can be cleaned up',
+							action: openStorageModal
 						}
 					]
 		};
@@ -4798,10 +4813,19 @@
 -->
 {#snippet storageChip()}
 	{#if storage && !headerNarrow}
-		<span
+		<!--
+			R22 round 13 P2: the reading is now the ENTRY POINT to the breakdown, which changes
+			the argument above for letting it disappear below 700px - a control that DOES
+			something cannot only exist on a wide screen. So the same action also has a row in
+			this view's background menu and a row in Settings: three ways in, none of them lost
+			on a phone, and the header still yields the space it always did.
+		-->
+		<button
 			id="explorer-storage"
-			class="shrink-0 whitespace-nowrap text-[10px] text-gray-500"
-			title={storageTitle(storage)}>{fmtSize(storage.used)} / {fmtSize(storage.quota)}</span
+			type="button"
+			class="shrink-0 cursor-pointer whitespace-nowrap text-[10px] text-gray-500 underline decoration-dotted hover:text-gray-300"
+			title={storageTitle(storage) + ' Click for the breakdown.'}
+			onclick={openStorageModal}>{fmtSize(storage.used)} / {fmtSize(storage.quota)}</button
 		>
 	{/if}
 {/snippet}

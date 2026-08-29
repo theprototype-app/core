@@ -517,17 +517,23 @@ h.run(async () => {
 	const itemMenu = await menuRows(A);
 	await closeMenu(page);
 	h.check(
-		itemMenu.includes('Open') && itemMenu.includes('Properties'),
+		itemMenu.includes('Open') &&
+			itemMenu.includes('Properties') &&
+			itemMenu.includes('Copy to Library'),
 		`a mounted file's menu offers what works (${itemMenu.join(' | ')})`
 	);
 	h.check(
-		!itemMenu.includes('Delete') && !itemMenu.includes('Rename') && !itemMenu.some((r) => /^Share/.test(r)),
-		'…and NOT Delete / Rename / Share, every one of which addresses a library record it has none of'
+		itemMenu.includes('Rename') && itemMenu.includes('Remove'),
+		'…including P3b\'s buffered edits'
+	);
+	h.check(
+		!itemMenu.some((r) => /^Share/.test(r)) && !itemMenu.includes('Add to pack'),
+		'…and NOT Share or Add to pack, which address a library record it has none of'
 	);
 
-	// THE GUARD PROVEN BY BREAKING IT (see the report): New folder inside a mount must not
-	// create a LIBRARY folder parented to a 'vol:…' key — that folder is an orphan, drawn
-	// nowhere and reachable by nothing.
+	// THE GUARD PROVEN BY BREAKING IT (see the report): a folder made inside a mount is a
+	// BUFFERED row in the volume, and must never be a LIBRARY folder parented to a 'vol:…'
+	// key — that one is an orphan, drawn nowhere and reachable by nothing.
 	const foldersBefore = await page.evaluate(() => {
 		let v;
 		window.__stores.explorer.explorerFolders.subscribe((x) => (v = x))();
@@ -536,41 +542,51 @@ h.run(async () => {
 	await clearToasts(A);
 	await page.locator('#new-folder').click();
 	await page.waitForTimeout(500);
-	// read the toast HERE: a plain-string toast lives 3s, and the settle dance below costs
-	// more than that on a loaded box (it read empty, which looked like a missing message)
-	const said = (await toasts(A)).join(' ');
-	// THE PENDING EDIT HAS TO BE SETTLED for this to measure anything, and TWICE OVER the
-	// obvious version of the check was vacuous — measured, with the guard removed:
-	//   · pressing the button only opens an inline editor, so nothing is created yet;
-	//   · and with a 'vol:…' parentId NO row in either tree matches the edit, so the input
-	//     is not even rendered and a selector for it finds nothing.
-	// What does happen is worse than a visible mistake: the edit sits there invisibly until
-	// the next `settlePendingEdit` COMMITS it, writing a library folder parented to a
-	// 'vol:…' key — an orphan, drawn nowhere and reachable by nothing. So: leave the mount,
-	// press New folder again (which settles), escape that one, and count the orphans.
-	await page.locator('#explorer-root-row').click();
-	await page.waitForTimeout(400);
-	await page.locator('#new-folder').click();
-	await page.waitForTimeout(500);
-	await page.keyboard.press('Escape');
-	await page.waitForTimeout(500);
+	// THE INLINE EDIT HAS TO BE COMMITTED for this to measure anything: `startCreate` only
+	// opens an editor. With the conversion removed, the edit carries a 'vol:…' parentId, no
+	// row in either tree matches it so nothing is even drawn, and the folder appears in the
+	// LIBRARY the moment anything settles the edit — measured that way (1 orphan).
+	await page.keyboard.press('Enter');
+	await page.waitForTimeout(700);
 	const afterNewFolder = await page.evaluate(() => {
-		let v;
-		window.__stores.explorer.explorerFolders.subscribe((x) => (v = x))();
+		const s2 = window.__stores;
+		let lib;
+		s2.explorer.explorerFolders.subscribe((x) => (lib = x))();
+		let mv;
+		s2.mountedVolumes.mountedVolumes.subscribe((x) => (mv = x))();
+		const vol = mv[0];
 		return {
-			n: v.length,
-			orphans: v.filter((f) => String(f.parentId ?? '').startsWith('vol:')).length
+			n: lib.length,
+			orphans: lib.filter((f) => String(f.parentId ?? '').startsWith('vol:')).length,
+			volFolders: (vol?.folders ?? []).map((f) => f.name),
+			dirty: !!vol?.dirty
 		};
 	});
 	h.check(
-		afterNewFolder.orphans === 0,
-		`New folder inside a mount leaves NO orphan parented to a 'vol:' key (${afterNewFolder.orphans})`
+		afterNewFolder.orphans === 0 && afterNewFolder.n === foldersBefore,
+		`New folder inside a mount touches the LIBRARY not at all — no orphan parented to a 'vol:' key (${afterNewFolder.n} folders, ${afterNewFolder.orphans} orphans)`
 	);
 	h.check(
-		afterNewFolder.n === foldersBefore,
-		`…and creates no library folder at all (${afterNewFolder.n} folders, was ${foldersBefore})`
+		afterNewFolder.volFolders.includes('New folder'),
+		`…it lands in the VOLUME instead (${afterNewFolder.volFolders.join(', ')})`
 	);
-	h.check(/mounted project/i.test(said), `…and says why rather than doing nothing (${said})`);
+	h.check(afterNewFolder.dirty, '…and the mount is dirty, because nothing has reached disk yet');
+	// put it back: later sections compare this volume against its saved record
+	await page.evaluate(async () => {
+		let mv;
+		window.__stores.mountedVolumes.mountedVolumes.subscribe((x) => (mv = x))();
+		await window.__stores.mountedVolumes.refreshVolume(mv[0].id);
+	});
+	await page.waitForTimeout(600);
+	const afterRefresh = await page.evaluate(() => {
+		let mv;
+		window.__stores.mountedVolumes.mountedVolumes.subscribe((x) => (mv = x))();
+		return { dirty: !!mv[0].dirty, folders: (mv[0].folders ?? []).map((f) => f.name).sort() };
+	});
+	h.check(
+		!afterRefresh.dirty && !afterRefresh.folders.includes('New folder'),
+		`Refresh discards the buffer and re-reads the saved project (${afterRefresh.folders.join(', ')})`
+	);
 
 	// ---- 7. several volumes coexist -------------------------------------------------
 	await page.evaluate(async () => {
@@ -698,6 +714,286 @@ h.run(async () => {
 	h.check(
 		gone[0].items.length === 2,
 		`…and its rows are still readable (${gone[0].items.length} files)`
+	);
+
+	// ---- 10. P3b: a clean mount to EDIT ---------------------------------------------
+	// The volume above has had its saved record deleted on purpose, so P3b starts from a
+	// fresh project rather than reasoning about a broken one.
+	await page.evaluate(async () => {
+		const s2 = window.__stores;
+		let mv;
+		s2.mountedVolumes.mountedVolumes.subscribe((x) => (mv = x))();
+		for (const v of mv) await s2.mountedVolumes.unmountVolume(v.id);
+		await s2.explorer.clearLibrary();
+		const enc = (t) => new TextEncoder().encode(t).buffer;
+		const f = s2.explorer.createFolder('Timber', null);
+		await s2.explorer.addItemFromBytes(enc('p'.repeat(220)), 'plank.txt', f.id);
+		await s2.explorer.addItemFromBytes(enc('n'.repeat(310)), 'nails.txt', null);
+	});
+	await page.waitForTimeout(700);
+	await saveProject(A, 'Yard');
+	await mountThroughUi(A, 'Yard');
+	let yard = (await vols(A))[0];
+	h.check(
+		!!yard && yard.name === 'Yard' && !yard.dirty,
+		`a fresh mount starts clean (${yard && yard.name}, dirty=${yard && yard.dirty})`
+	);
+	// the library, and the SAVED RECORD, as they stand before any edit
+	const libBeforeEdit = await librarySnapshot(A);
+	const savedNames = (peer, sessionId) =>
+		peer.page.evaluate(async (id) => {
+			const rec = await window.__stores.idb.idbGet('session:' + id);
+			return (rec?.library?.items ?? []).map((i) => i.name).sort();
+		}, sessionId);
+	const beforeSave = await savedNames(A, yard.sessionId);
+	h.check(
+		beforeSave.join(',') === 'nails.txt,plank.txt',
+		`premise: the saved project holds both files (${beforeSave.join(',')})`
+	);
+
+	// ---- 11. an edit is BUFFERED: dirty, and disk untouched -------------------------
+	await page.evaluate((key) => window.__stores.explorer.activeFolder.set(key), 'vol:' + yard.id);
+	await page.waitForTimeout(600);
+	const target = (await vols(A))[0].itemIds[0];
+	await page.evaluate(async (id) => {
+		const s2 = window.__stores;
+		let mv;
+		s2.mountedVolumes.mountedVolumes.subscribe((x) => (mv = x))();
+		const row = mv[0].items.find((i) => i.id === id);
+		s2.mountedVolumes.volumeRenameItem(mv[0].id, id, 'renamed-' + row.name);
+	}, target);
+	await page.waitForTimeout(600);
+	yard = (await vols(A))[0];
+	h.check(
+		yard.dirty && yard.items.some((nm) => nm.startsWith('renamed-')),
+		`a rename inside the mount is buffered and marks it dirty (${yard.items.join(',')})`
+	);
+	h.check(
+		await page.locator('#mount-save-' + yard.id).isEnabled(),
+		'…the Save button LIGHTS (it is disabled while there is nothing to write)'
+	);
+	h.check(
+		(await librarySnapshot(A)) === libBeforeEdit,
+		'…the live library is untouched by the edit'
+	);
+	h.check(
+		(await savedNames(A, yard.sessionId)).join(',') === beforeSave.join(','),
+		'…and NOTHING has reached the saved project yet'
+	);
+
+	// ---- 12. THE BUFFER SURVIVES A RELOAD (the guard proven by breaking it) ---------
+	await h.freshReload(A);
+	await page.waitForFunction(() => !!window.__stores?.mountedVolumes, null, { timeout: 30000 });
+	await page.evaluate(async () => {
+		await window.__stores.mountedVolumes.loadMountedVolumes();
+		await window.__stores.explorer.loadExplorer();
+	});
+	await page.waitForTimeout(1200);
+	const survived = (await vols(A))[0];
+	h.check(
+		!!survived && survived.items.some((nm) => nm.startsWith('renamed-')),
+		`the BUFFERED edit survives a reload — a reload that discarded it would silently lose work (${survived && survived.items.join(',')})`
+	);
+	h.check(survived.dirty, '…and it still reads as unsaved');
+
+	// ---- 13. SAVE BACK ---------------------------------------------------------------
+	await page.locator('#explorer-slot').click();
+	await page.waitForTimeout(800);
+	const manifestBefore = await sharedIndex(A);
+	await page.locator('#mount-save-' + survived.id).click();
+	await h.eventually(
+		() => savedNames(A, survived.sessionId),
+		(names) => names.some((nm) => nm.startsWith('renamed-')),
+		'Save writes the edit back into the saved project',
+		20000
+	);
+	await h.eventually(
+		() => vols(A),
+		(list) => !list[0].dirty,
+		'the mount stops reading as dirty once it is written',
+		15000
+	);
+	const saved = (await vols(A))[0];
+	h.check(
+		saved.buffered === 0,
+		'…and stops carrying a second copy of the bytes (they are in the session again)'
+	);
+	h.check(
+		(await librarySnapshot(A)) === libBeforeEdit,
+		'SAVE-BACK TOUCHED NO LIVE STORE: the library is still byte-identical'
+	);
+	h.check(
+		(await sharedIndex(A)) === manifestBefore,
+		'…and the project manifest is untouched by it'
+	);
+	const bothStillThere = await savedNames(A, survived.sessionId);
+	h.check(
+		bothStillThere.length === 2,
+		`…and the OTHER file is still in the record — a save is a rewrite, not a replace of what it knows (${bothStillThere.join(',')})`
+	);
+
+	// ---- 14. copy OUT is a real import, hash-deduped --------------------------------
+	// FIXTURE, and it cost a red to learn: a RENAME does not change bytes, so the file in
+	// the mount is content-identical to the one the library already holds — and
+	// `addItemFromBytes` correctly answers with the item it has. The copy-out was working
+	// and the count could not move. Empty the library so the import has something to do.
+	await page.evaluate(async () => {
+		await window.__stores.explorer.clearLibrary();
+	});
+	await page.waitForTimeout(600);
+	await page.evaluate((key) => window.__stores.explorer.activeFolder.set(key), 'vol:' + saved.id);
+	await page.waitForTimeout(700);
+	const copyOut = await page.evaluate(() => {
+		const card = document.querySelector('.ex-cards [data-card-id^="vitem:"]');
+		const dt = new DataTransfer();
+		card.dispatchEvent(new DragEvent('dragstart', { bubbles: true, dataTransfer: dt }));
+		const lib = document.querySelector('#explorer-root-row');
+		lib.dispatchEvent(new DragEvent('dragover', { bubbles: true, dataTransfer: dt }));
+		lib.dispatchEvent(new DragEvent('drop', { bubbles: true, dataTransfer: dt }));
+		return card.getAttribute('data-card-id');
+	});
+	await h.eventually(
+		() =>
+			page.evaluate(() => {
+				let v;
+				window.__stores.explorer.explorerItems.subscribe((x) => (v = x))();
+				return v.map((i) => i.name);
+			}),
+		(names) => names.length === 1,
+		'dragging a mounted file onto Library IMPORTS it',
+		15000
+	);
+	const afterCopyOut = await page.evaluate((id) => {
+		const s2 = window.__stores;
+		let lib;
+		s2.explorer.explorerItems.subscribe((x) => (lib = x))();
+		let mv;
+		s2.mountedVolumes.mountedVolumes.subscribe((x) => (mv = x))();
+		const row = mv[0].items.find((i) => i.id === id);
+		return {
+			libNames: lib.map((i) => i.name).sort(),
+			matchedByHash: lib.filter((i) => i.hash === row.hash).length,
+			stillInVolume: mv[0].items.length,
+			dirty: !!mv[0].dirty
+		};
+	}, copyOut);
+	h.check(
+		afterCopyOut.matchedByHash === 1,
+		`…as a real library item with the SAME content hash (${afterCopyOut.libNames.join(',')})`
+	);
+	h.check(
+		afterCopyOut.stillInVolume === 2 && !afterCopyOut.dirty,
+		'…and copying OUT changes nothing in the mount (it is a copy, not a move)'
+	);
+	// the same bytes again are the same file — the library's own invariant, inherited free
+	await page.evaluate(() => {
+		const card = document.querySelector('.ex-cards [data-card-id^="vitem:"]');
+		const dt = new DataTransfer();
+		card.dispatchEvent(new DragEvent('dragstart', { bubbles: true, dataTransfer: dt }));
+		const lib = document.querySelector('#explorer-root-row');
+		lib.dispatchEvent(new DragEvent('dragover', { bubbles: true, dataTransfer: dt }));
+		lib.dispatchEvent(new DragEvent('drop', { bubbles: true, dataTransfer: dt }));
+	});
+	await page.waitForTimeout(1500);
+	const twiceOut = await page.evaluate(() => {
+		let v;
+		window.__stores.explorer.explorerItems.subscribe((x) => (v = x))();
+		return v.length;
+	});
+	h.check(
+		twiceOut === 1,
+		`copying the same file out twice is ONE item — the one-item-per-hash invariant, inherited rather than re-implemented (${twiceOut})`
+	);
+
+	// ---- 15. copy IN is buffered ----------------------------------------------------
+	// bytes the VOLUME does not hold, for the mirror of the reason above: a volume dedupes
+	// on its own hashes, so copying in something it already has is a no-op by design
+	await page.evaluate(async () => {
+		const enc = (t) => new TextEncoder().encode(t).buffer;
+		await window.__stores.explorer.addItemFromBytes(enc('k'.repeat(455)), 'brick.txt', null);
+	});
+	await page.waitForTimeout(600);
+	await page.locator('#explorer-root-row').click();
+	await page.waitForTimeout(600);
+	const libCard = await page.evaluate(() => {
+		const el = [...document.querySelectorAll('.ex-cards .explorer-card')].find((c) =>
+			(c.innerText ?? '').includes('brick.txt')
+		);
+		return el?.getAttribute('data-card-id') ?? null;
+	});
+	h.check(!!libCard, 'premise: the library file to drag is on screen');
+	await page.evaluate(
+		({ id, vol }) => {
+			const card = document.querySelector('[data-card-id="' + id + '"]');
+			const dt = new DataTransfer();
+			card.dispatchEvent(new DragEvent('dragstart', { bubbles: true, dataTransfer: dt }));
+			const row = document.querySelector('[data-mount="' + vol + '"]');
+			row.dispatchEvent(new DragEvent('dragover', { bubbles: true, dataTransfer: dt }));
+			row.dispatchEvent(new DragEvent('drop', { bubbles: true, dataTransfer: dt }));
+		},
+		{ id: libCard, vol: saved.id }
+	);
+	await h.eventually(
+		() => vols(A),
+		(list) => list[0].items.some((nm) => nm === 'brick.txt'),
+		'dragging a library file onto a mount copies it IN',
+		15000
+	);
+	const afterCopyIn = await vols(A);
+	h.check(
+		afterCopyIn[0].dirty && afterCopyIn[0].buffered === 1,
+		`…buffered, with its bytes carried on the mount record so a reload cannot lose them (${afterCopyIn[0].buffered} buffered)`
+	);
+	h.check(
+		(await savedNames(A, saved.sessionId)).length === 2,
+		'…and nothing has reached the saved project until Save is pressed'
+	);
+	await page.locator('#mount-save-' + saved.id).click();
+	await h.eventually(
+		() => savedNames(A, saved.sessionId),
+		(names) => names.length === 3,
+		'…which then writes all three',
+		20000
+	);
+
+	// ---- 16. unmount with unsaved changes ASKS, and can be cancelled ----------------
+	await page.evaluate(async () => {
+		let mv;
+		window.__stores.mountedVolumes.mountedVolumes.subscribe((x) => (mv = x))();
+		window.__stores.mountedVolumes.volumeRenameItem(mv[0].id, mv[0].items[0].id, 'edited-again.txt');
+	});
+	// A SAVE IS SEVERAL AWAITS LONG, so this rename lands while the one above may still be
+	// finishing — and a save that cleared `dirty` unconditionally would mark it saved when
+	// it is not. Measured exactly that way before `rev` existed: the flag read clean and
+	// the next unmount took the no-confirm path and discarded the edit.
+	await page.waitForTimeout(2000);
+	const dirtyVol = (await vols(A))[0];
+	h.check(
+		dirtyVol.dirty,
+		'an edit made while a save is still finishing STAYS dirty — the save is of the older revision'
+	);
+	await page.locator('#mount-unmount-' + dirtyVol.id).click();
+	await page.waitForTimeout(600);
+	h.check(
+		await page.locator('#explorer-confirm-yes').isVisible(),
+		'unmounting a DIRTY mount asks first — in the Explorer, where the files are'
+	);
+	await page.locator('#explorer-confirm-no').click();
+	await page.waitForTimeout(500);
+	const afterCancel = (await vols(A))[0];
+	h.check(
+		!!afterCancel && afterCancel.dirty,
+		'…and Cancel leaves it mounted WITH its edits (dirty=' + (afterCancel && afterCancel.dirty) + ')'
+	);
+	await page.locator('#mount-unmount-' + dirtyVol.id).click();
+	await page.waitForSelector('#explorer-confirm-yes', { timeout: 15000 });
+	await page.locator('#explorer-confirm-yes').click();
+	await page.waitForTimeout(700);
+	h.check((await vols(A)).length === 0, 'confirming unmounts it');
+	const discarded = await savedNames(A, dirtyVol.sessionId);
+	h.check(
+		!discarded.includes('edited-again.txt'),
+		`…and the discarded edit never reached the saved project (${discarded.join(',')})`
 	);
 
 	await h.finish(browser);

@@ -59,7 +59,7 @@ const STORE_KEY = 'explorer:mounts';
  * @typedef {{id: string, name: string, kind: string, folderId: string | null, hash: string,
  *   size: number, thumbnail: string | null, createdAt: number, blob?: Blob}} VolumeItem
  * @typedef {{id: string, sessionId: string, name: string, folders: VolumeFolder[],
- *   items: VolumeItem[], dirty: boolean, at: number, missing?: boolean}} MountedVolume
+ *   items: VolumeItem[], dirty: boolean, at: number, rev: number, missing?: boolean}} MountedVolume
  */
 
 /**
@@ -127,6 +127,9 @@ function normalizeVolume(v) {
 		folders: Array.isArray(v?.folders) ? v.folders : [],
 		items: Array.isArray(v?.items) ? v.items : [],
 		dirty: !!v?.dirty,
+		// EVERY BUFFERED EDIT BUMPS THIS, and save-back captures it before it starts. See
+		// `saveVolume` for the race it exists to close.
+		rev: Number(v?.rev) || 0,
 		at: Number(v?.at) || Date.now(),
 		...(v?.missing ? { missing: true } : {})
 	};
@@ -294,6 +297,7 @@ export async function mountVolume(sessionId) {
 		folders,
 		items,
 		dirty: false,
+		rev: 0,
 		at: Date.now()
 	};
 	await write((list) => [...list, volume]);
@@ -331,7 +335,15 @@ export async function refreshVolume(id) {
 	await write((list) =>
 		list.map((v) =>
 			v.id === id
-				? { ...v, name: String(payload.name ?? v.name), folders, items, dirty: false, missing: false }
+				? {
+						...v,
+						name: String(payload.name ?? v.name),
+						folders,
+						items,
+						dirty: false,
+						rev: (v.rev ?? 0) + 1,
+						missing: false
+					}
 				: v
 		)
 	);
@@ -392,7 +404,7 @@ function edit(id, fn) {
 		list.map((v) => {
 			if (v.id !== id) return v;
 			touched = true;
-			return { ...fn(v), dirty: true };
+			return { ...fn(v), dirty: true, rev: (v.rev ?? 0) + 1 };
 		})
 	);
 	return touched;
@@ -512,6 +524,34 @@ export function volumeAddBytes(id, file) {
 }
 
 /**
+ * Rewrite one volume file's BYTES (the text editor's Save inside a mount). Buffered like
+ * every other edit: the new Blob rides the mount record until save-back, and the row's
+ * hash moves with it because a volume is hash-addressed inside itself exactly as the
+ * library is.
+ *
+ * The caller hands the hash in rather than this leaf computing it — the same contract
+ * `volumeAddBytes` has, and it keeps the module free of a crypto detour it would only
+ * ever use to repeat what the caller already did.
+ * @param {string} id @param {string} itemId
+ * @param {{buffer: ArrayBuffer, hash: string}} bytes
+ */
+export function volumeUpdateBytes(id, itemId, bytes) {
+	return edit(id, (v) => ({
+		...v,
+		items: v.items.map((i) =>
+			i.id === itemId
+				? {
+						...i,
+						hash: String(bytes.hash ?? i.hash),
+						size: bytes.buffer?.byteLength ?? i.size,
+						blob: new Blob([bytes.buffer])
+					}
+				: i
+		)
+	}));
+}
+
+/**
  * SAVE BACK. Rewrites the source session's `payload.library` with this volume's contents
  * and touches NOTHING ELSE: not the live library, not `projectManifest`, not the scene.
  * The session's own scene snapshot is left exactly as saved — a mount is a view of the
@@ -521,6 +561,12 @@ export function volumeAddBytes(id, file) {
 export async function saveVolume(id) {
 	const volume = volumeById(id);
 	if (!volume) return false;
+	// THE REVISION THIS SAVE IS OF. Writing a volume back is several awaits long (every
+	// row's Blob, then the record, then the session list), and an edit made while that runs
+	// is NOT in the bytes going to disk — so clearing `dirty` afterwards unconditionally
+	// marks that edit saved when it is not, and the mount then unmounts without asking.
+	// Measured as exactly that: a rename made moments after a save read clean.
+	const rev = volume.rev ?? 0;
 	const library = await libraryBlockOf(id);
 	if (!library) return false;
 	const { writeSessionLibrary } = await import('./sessions');
@@ -531,22 +577,24 @@ export async function saveVolume(id) {
 		return false;
 	}
 	// the buffered Blobs are now IN the session, so the mount can go back to resolving
-	// bytes by hash and stop carrying a second copy of them
+	// bytes by hash and stop carrying a second copy of them — but only if nothing was
+	// edited while the save ran (see `rev` above): a volume that moved on is still dirty,
+	// and its buffered bytes are the only copy of what it moved on to.
 	await write((list) =>
-		list.map((v) =>
-			v.id === id
-				? {
-						...v,
-						items: v.items.map((i) => {
-							if (!i.blob) return i;
-							const { blob: _drop, ...rest } = i;
-							return /** @type {VolumeItem} */ (rest);
-						}),
-						dirty: false,
-						at: Date.now()
-					}
-				: v
-		)
+		list.map((v) => {
+			if (v.id !== id) return v;
+			if ((v.rev ?? 0) !== rev) return { ...v, at: Date.now() };
+			return {
+				...v,
+				items: v.items.map((i) => {
+					if (!i.blob) return i;
+					const { blob: _drop, ...rest } = i;
+					return /** @type {VolumeItem} */ (rest);
+				}),
+				dirty: false,
+				at: Date.now()
+			};
+		})
 	);
 	showToast(
 		'Saved "' + volume.name + '" (' + library.items.length + ' file' + (library.items.length === 1 ? '' : 's') + ')'

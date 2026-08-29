@@ -36,7 +36,10 @@
 		updateItemBytes,
 		addItemFromBytes,
 		patchRecord,
-		parseObjectFile
+		parseObjectFile,
+		hashBytes,
+		kindOf,
+		MAX_ITEM_BYTES
 	} from '$lib/explorer';
 	import {
 		openTextEditor,
@@ -149,7 +152,18 @@
 		volumeOf,
 		volumeKey,
 		volumeFolders,
-		volumeBlob
+		volumeBlob,
+		volumeCreateFolder,
+		volumeRenameFolder,
+		volumeRenameItem,
+		volumeMoveItem,
+		volumeMoveFolder,
+		volumeDeleteItem,
+		volumeDeleteFolder,
+		volumeFolderCounts,
+		volumeAddBytes,
+		volumeUpdateBytes,
+		volumeItems
 	} from '$lib/mountedVolumes';
 	import {
 		projectManifest,
@@ -1807,11 +1821,21 @@
 		if (editing) void commitEdit();
 	}
 	function startCreate(parentId: string | null, inGrid = false) {
-		// P3a: a folder inside a mount is a BUFFERED edit, which P3b adds. Until then this
-		// must not fall through — `parentId` would be a 'vol:…' key and the folder it made
-		// would be an orphan in the real library, invisible and unreachable.
-		if (volumeOf(parentId) || (parentId === null && volScope)) {
-			showToast('A mounted project is read-only here — new folders land in your Library');
+		// P3b: inside a mount this is a BUFFERED create. The 'vol:…' key is converted to the
+		// volume's own ids HERE, at the one entry point, because everything downstream —
+		// the edit row's match, commitEdit, the mutator — wants the raw pair. Letting the
+		// key through instead is what would write a library folder parented to a 'vol:…'
+		// id: an orphan, drawn nowhere and reachable by nothing.
+		const inVol = volumeOf(parentId) ?? (parentId === null ? volScope : null);
+		if (inVol) {
+			settlePendingEdit();
+			editing = {
+				mode: 'create',
+				volumeId: inVol.volumeId,
+				parentId: inVol.folderId,
+				value: 'New folder',
+				inGrid
+			};
 			return;
 		}
 		// R22 round 7 (user): pressing New folder again must not COMMIT the pending one and
@@ -1838,12 +1862,28 @@
 	// (it shows in both), whose duplicate focus/blur would tear the edit down instantly
 	function startRename(folder: any, inGrid = false) {
 		settlePendingEdit();
-		editing = { mode: 'rename', folderId: folder.id, parentId: folder.parentId ?? null, value: folder.name, inGrid };
+		// P3b: a volume folder's CARD id is its namespaced key while its own id is the raw
+		// uuid, and the two markup sites that host this input match on the card. `cardId`
+		// carries that; for a library folder the two are the same value, so nothing moves.
+		editing = {
+			mode: 'rename',
+			folderId: folder.volumeId ? folder.folderId : folder.id,
+			cardId: folder.id,
+			...(folder.volumeId ? { volumeId: folder.volumeId } : {}),
+			parentId: folder.parentId ?? null,
+			value: folder.name,
+			inGrid
+		};
 	}
 	// 170: inline item rename (replaces the browser prompt), works in either view
 	function startRenameItem(item: any) {
 		settlePendingEdit();
-		editing = { mode: 'rename-item', itemId: item.id, value: item.name };
+		editing = {
+			mode: 'rename-item',
+			itemId: item.id,
+			...(item.volumeId ? { volumeId: item.volumeId } : {}),
+			value: item.name
+		};
 	}
 	// 21-H2: a PREFAB renames through the SAME inline editor — never window.prompt(),
 	// which is what the deleted Library modal used (fork 14's rule, one surface over).
@@ -1904,6 +1944,15 @@
 		// an in-flight save is one blur away from committing the same name twice
 		const edit = editing;
 		editing = null;
+		// P3b: every buffered edit lands in ONE branch, ahead of the library's own — the
+		// mutators are different functions writing a different store, and nothing below
+		// this line would address a volume correctly.
+		if (edit.volumeId) {
+			if (edit.mode === 'create') volumeCreateFolder(edit.volumeId, edit.value, edit.parentId);
+			else if (edit.mode === 'rename') volumeRenameFolder(edit.volumeId, edit.folderId, edit.value);
+			else if (edit.mode === 'rename-item') volumeRenameItem(edit.volumeId, edit.itemId, edit.value);
+			return;
+		}
 		if (edit.mode === 'create') createFolder(edit.value, edit.parentId);
 		else if (edit.mode === 'rename-item') {
 			renameItem(edit.itemId, edit.value);
@@ -2096,6 +2145,90 @@
 			detail: 'The edits you made here have not been written back to the saved project. Unmounting discards them.',
 			confirmLabel: 'Discard and unmount',
 			run: leave
+		});
+	}
+	/**
+	 * P3b — COPY OUT: a mounted file becomes a LIBRARY file. An ordinary
+	 * `addItemFromBytes` import, hash-deduped like any other, which is the whole reason
+	 * copying out needs no new concept: the bytes are the same bytes, so a library that
+	 * already holds them answers with the item it has.
+	 *
+	 * `imported: true` because the provenance is honest — a person brought these in from
+	 * outside this library, which is what that stamp means (and it is what keeps the
+	 * by-name version fold from swallowing a scene copied out of a mount).
+	 */
+	async function copyOutOfVolume(rows: any[], folderId: string | null) {
+		let copied = 0;
+		let missing = 0;
+		for (const row of rows) {
+			const blob = await volumeBlob(row.volumeId, row.id);
+			if (!blob) {
+				missing++;
+				continue;
+			}
+			await addItemFromBytes(await blob.arrayBuffer(), row.name, folderId, { imported: true });
+			copied++;
+		}
+		if (copied)
+			showToast(
+				plural(copied, 'file') +
+					' copied into your Library' +
+					(missing ? ' (' + missing + ' had no bytes)' : '')
+			);
+		else if (missing) showToast('Those bytes are not in the saved project any more');
+		return copied;
+	}
+	/**
+	 * P3b — COPY IN: a library file becomes a row in the mount's BUFFER, bytes and all, so
+	 * it survives a reload before any save. Deduped on the volume's own hashes, for the
+	 * same reason the library dedupes on its: a volume is hash-addressed inside itself.
+	 */
+	async function copyIntoVolume(volumeId: string, folderId: string | null, ids: string[]) {
+		let copied = 0;
+		for (const id of ids) {
+			const record = $explorerItems.find((i: any) => i.id === id);
+			if (!record) continue;
+			const blob = await itemBlob(record.id);
+			if (!blob) continue;
+			volumeAddBytes(volumeId, {
+				name: record.name,
+				kind: record.kind,
+				hash: record.hash,
+				buffer: await blob.arrayBuffer(),
+				folderId,
+				thumbnail: record.thumbnail ?? null
+			});
+			copied++;
+		}
+		if (copied)
+			showToast(plural(copied, 'file') + ' copied into the mount — press Save to write it back');
+		return copied;
+	}
+	/**
+	 * P3b: remove a file from a mount. NO confirm, deliberately — the edit is BUFFERED, so
+	 * Refresh puts it back and nothing has reached the saved project, which is the very
+	 * thing a confirm exists to protect. A cascade still asks, because it takes many rows
+	 * at once and the count IS the information.
+	 */
+	function deleteVolumeItem(item: any) {
+		volumeDeleteItem(item.volumeId, item.id);
+		setSel([]);
+		showToast(item.name + ' removed from the mount — Refresh undoes it, Save writes it back');
+	}
+	function deleteVolumeFolder(folder: any) {
+		const counts = volumeFolderCounts(folder.volumeId, folder.folderId);
+		askInExplorer({
+			title: 'Remove "' + folder.name + '" from this mount?',
+			detail:
+				plural(counts.folders, 'folder') +
+				' and ' +
+				plural(counts.items, 'file') +
+				' — buffered, so Refresh undoes it and nothing reaches the saved project until you press Save.',
+			confirmLabel: 'Remove',
+			run: () => {
+				volumeDeleteFolder(folder.volumeId, folder.folderId);
+				setSel([]);
+			}
 		});
 	}
 	function mountMenu(e: MouseEvent, vol: any) {
@@ -2318,18 +2451,6 @@
 		if (!payload) return;
 		e.preventDefault();
 		e.stopPropagation();
-		// P3a: a mount is read-only until save-back exists (P3b), and a drop that silently
-		// did nothing would read as a broken target
-		if (volumeOf(target)) {
-			showToast('Copying into a mounted project is not available yet');
-			return;
-		}
-		// P3a: dragging a mounted file OUT is a real import (P3b) — until then, say so
-		// rather than moving a library id the drop does not have
-		if (payload.volumeId || payload.items?.some((r: any) => r?.volumeId)) {
-			showToast('Copying out of a mounted project is not available yet');
-			return;
-		}
 		const dragged = payload.items?.length ? payload.items : payload.type === 'item' ? [payload] : [];
 		// R22 round 11: a PREFAB card used to be dropped on the floor here — it carries no
 		// library record, so there was nothing to re-file. There is now: a prefab that IS a
@@ -2338,20 +2459,65 @@
 			const prefab = prefabById(p.prefabId);
 			if (prefab) void prefabToLibrary(prefab, target);
 		}
-		const items = dragged
-			.filter((p: any) => p && !p.prefabId && p.id)
-			.map((p: any) => p.id);
 		const folders = payload.folders?.length
 			? payload.folders
 			: payload.type === 'folder'
 				? [payload.id]
 				: [];
+		/**
+		 * P3b — ACROSS THE BOUNDARY, and only ONE of the four cases is a move.
+		 *
+		 * Inside one mount a drag re-files the buffer (a move). Between the library and a
+		 * mount it is a COPY in both directions, because they are two different stores with
+		 * two different identities — the library is content-hash addressed and the volume
+		 * keeps its own rows, so "moving" a row from one to the other is not expressible.
+		 * Copying out is a real import; copying in is buffered until Save.
+		 */
+		const targetVol = volumeOf(target);
+		const fromVol = dragged.filter((p: any) => p?.volumeId);
+		if (targetVol) {
+			const vol = targetVol.volumeId;
+			for (const row of fromVol.filter((r: any) => r.volumeId === vol))
+				volumeMoveItem(vol, row.id, targetVol.folderId);
+			let crossed = 0;
+			let cycles = 0;
+			for (const id of folders) {
+				const f = volumeOf(id);
+				// `folderId` is null only for a volume ROOT key, which is never a draggable card
+				if (f?.volumeId === vol && f.folderId) {
+					if (!volumeMoveFolder(vol, f.folderId, targetVol.folderId)) cycles++;
+				} else crossed++;
+			}
+			const libraryIds = dragged
+				.filter((r: any) => r && !r.prefabId && r.id && !r.volumeId)
+				.map((r: any) => r.id);
+			if (libraryIds.length) void copyIntoVolume(vol, targetVol.folderId, libraryIds);
+			if (cycles) showToast("A folder can't move into its own subtree");
+			// a FOLDER cannot be copied across: it would have to mint rows on the other side
+			// and there is no import path for that. Its files can, one drag at a time.
+			if (crossed)
+				showToast(
+					plural(crossed, 'folder') + ' stayed put — drag the FILES across, not the folder'
+				);
+			if (fromVol.some((r: any) => r.volumeId !== vol))
+				showToast('Copy between two mounted projects through your Library');
+			return;
+		}
+		// dropping ONTO the library: a mounted file is copied in (an import), and anything
+		// else in the same drag takes the ordinary move below
+		if (fromVol.length) void copyOutOfVolume(fromVol, target);
+		const items = dragged
+			.filter((p: any) => p && !p.prefabId && p.id && !p.volumeId)
+			.map((p: any) => p.id);
 		let refused = 0;
-		for (const id of folders) if (!moveFolder(id, target)) refused++;
+		const libFolders = folders.filter((id: string) => !volumeOf(id));
+		if (folders.length !== libFolders.length)
+			showToast('A folder in a mounted project stays there — drag its FILES across');
+		for (const id of libFolders) if (!moveFolder(id, target)) refused++;
 		for (const id of items) moveItem(id, target);
 		if (refused)
 			showToast(
-				refused === 1 && folders.length === 1
+				refused === 1 && libFolders.length === 1
 					? "A folder can't move into its own subtree"
 					: `${refused} folder${refused === 1 ? '' : 's'} could not move into their own subtree`
 			);
@@ -2379,10 +2545,20 @@
 				y: e.clientY,
 				items: [
 					{ label: 'Open', icon: 'folder', action: () => openFolder(folder.id) },
+					{ label: 'New folder', icon: 'folder-plus', action: () => startCreate(folder.id, !inTree) },
+					{ label: 'Rename', icon: 'pencil', action: () => startRename(folder, !inTree) },
+					{
+						label: 'Remove',
+						icon: 'trash-2',
+						danger: true,
+						tooltip: 'Buffered — Refresh undoes it, Save writes it back to the saved project',
+						action: () => deleteVolumeFolder(folder)
+					},
+					{ section: 'Mount' },
 					{
 						label: 'Refresh mount',
 						icon: 'refresh-cw',
-						tooltip: 'Re-read this project from disk',
+						tooltip: 'Re-read this project from disk — any unsaved edits here are discarded',
 						action: () => void refreshVolume(folder.volumeId)
 					}
 				]
@@ -3012,8 +3188,23 @@
 				y: e.clientY,
 				items: [
 					{ label: 'Open', icon: 'external-link', action: () => void openItem(item) },
-					{ label: 'Properties', icon: 'info', action: () => showProperties({ kind: 'item', item }) },
-					{ section: (item.volumeName ?? 'Mounted project') + ' — read-only' }
+					{
+						label: 'Copy to Library',
+						icon: 'download',
+						tooltip:
+							'Import these bytes into your own library — deduped by content hash, like any other import',
+						action: () => void copyOutOfVolume([item], activeLibraryFolder())
+					},
+					{ section: item.volumeName ?? 'Mounted project' },
+					{ label: 'Rename', icon: 'pencil', action: () => startRenameItem(item) },
+					{
+						label: 'Remove',
+						icon: 'trash-2',
+						danger: true,
+						tooltip: 'Buffered — Refresh undoes it, Save writes it back to the saved project',
+						action: () => deleteVolumeItem(item)
+					},
+					{ label: 'Properties', icon: 'info', action: () => showProperties({ kind: 'item', item }) }
 				]
 			};
 			return;
@@ -3464,6 +3655,13 @@
 				y: e.clientY,
 				items: [
 					{
+						label: 'New folder',
+						icon: 'folder-plus',
+						tooltip: 'Inside this mounted project — buffered until you press Save',
+						action: () => startCreate($activeFolder ?? null, true)
+					},
+					{ section: vol?.name ?? 'Mounted project' },
+					{
 						label: 'Refresh',
 						icon: 'refresh-cw',
 						tooltip: vol?.dirty
@@ -3481,7 +3679,6 @@
 								}
 							]
 						: []),
-					{ section: vol?.name ?? 'Mounted project' },
 					{
 						label: 'Unmount',
 						icon: 'x',
@@ -3648,10 +3845,12 @@
 		const files = e.dataTransfer?.files;
 		if (!files?.length) return;
 		const folder = $activeFolder;
-		// P3a: importing a file straight into a mounted project needs the buffered write
-		// P3b adds. Refused with the reason, never dropped on the floor.
-		if (volumeOf(folder)) {
-			showToast('Drop files into your Library — a mounted project is read-only here');
+		// P3b: files dropped straight into a mount are a BUFFERED import — the same act as
+		// copying one in from the library, so it goes through the same store and the same
+		// Save. Nothing about the live library is touched on the way.
+		const intoVol = volumeOf(folder);
+		if (intoVol) {
+			void importIntoVolume(files, intoVol);
 			return;
 		}
 		// B1.1: the Packs view accepts ONLY pack .zip files — anything else would
@@ -3682,6 +3881,36 @@
 		// off and silently reuses the item it finds, which is what they want.
 		if (rest.length)
 			importFiles(rest, folder === 'prefabs' ? null : folder, { duplicates: 'ask' });
+	}
+
+	/**
+	 * P3b: dropped files, imported into a mount's buffer. The kind and the 25 MB cap are
+	 * the library's own rules read from the same module — a mount is a project's library,
+	 * so a file this app would refuse there is refused here for the same reason.
+	 */
+	async function importIntoVolume(files: FileList | File[], scope: { volumeId: string; folderId: string | null }) {
+		let added = 0;
+		let skipped = 0;
+		for (const file of [...files]) {
+			const kind = kindOf(file.name);
+			if (!kind || file.size > MAX_ITEM_BYTES) {
+				skipped++;
+				continue;
+			}
+			const buffer = await file.arrayBuffer();
+			volumeAddBytes(scope.volumeId, {
+				name: file.name,
+				kind,
+				hash: await hashBytes(buffer),
+				buffer,
+				folderId: scope.folderId
+			});
+			added++;
+		}
+		if (added)
+			showToast(plural(added, 'file') + ' added to the mount — press Save to write it back');
+		if (skipped)
+			showToast(plural(skipped, 'file') + ' skipped (unsupported, or over the 25 MB limit)');
 	}
 
 	/** 21-G8: route a .tp file to the merge-as-folder import (never OPEN from a drop).
@@ -4331,7 +4560,7 @@
 			openTextEditor({
 				title: item.name + ' — ' + (item.volumeName ?? 'mounted project'),
 				code: await blob.text(),
-				onSave: () => saveVolumeText(item),
+				onSave: (code: string) => void saveVolumeText(item, code),
 				onClose: () => gridEl?.focus()
 			});
 			return;
@@ -4340,9 +4569,12 @@
 			'Copy ' + item.name + ' into your Library to open it (a ' + item.kind + ' viewer reads it from there)'
 		);
 	}
-	/** P3a: a mounted text file opens READ-ONLY. P3b turns this into a buffered write. */
-	function saveVolumeText(item: any) {
-		showToast('Copy ' + item.name + ' into your Library to edit it');
+	/** P3b: editing a mounted text file writes the volume's BUFFER — its hash moves with
+	 *  its bytes, because a volume is hash-addressed inside itself exactly as the library
+	 *  is, and the mount goes dirty until Save writes it back. */
+	async function saveVolumeText(item: any, code: string) {
+		const buffer = new TextEncoder().encode(code).buffer;
+		volumeUpdateBytes(item.volumeId, item.id, { buffer, hash: await hashBytes(buffer) });
 	}
 
 	async function openItem(item: any) {
@@ -4644,7 +4876,7 @@
 								><Icon name={KIND_ICONS[item.kind] ?? 'package'} size={14} /></span
 							>
 						{/if}
-						{#if (editing?.mode === 'rename' && editing.inGrid && editing.folderId === id) || (editing?.mode === 'rename-item' && editing.itemId === id) || (editing?.mode === 'rename-prefab' && editing.prefabId === item?.prefabId)}
+						{#if (editing?.mode === 'rename' && editing.inGrid && (editing.cardId ?? editing.folderId) === id) || (editing?.mode === 'rename-item' && editing.itemId === id) || (editing?.mode === 'rename-prefab' && editing.prefabId === item?.prefabId)}
 							{@render cardEdit()}
 						{:else}
 							<span
@@ -5478,7 +5710,7 @@
 										? MUTED_ICON
 										: 'ico-folder'}"><Folder size={32} aria-hidden="true" /></span
 								>
-								{#if editing?.mode === 'rename' && editing.inGrid && editing.folderId === folder.id}
+								{#if editing?.mode === 'rename' && editing.inGrid && (editing.cardId ?? editing.folderId) === folder.id}
 									{@render cardEdit()}
 								{:else}
 									<span

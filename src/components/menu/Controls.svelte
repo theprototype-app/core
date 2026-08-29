@@ -30,7 +30,7 @@
 	import { tabbable, groupRectOf, moveGroupOf, resizeGroup } from '$lib/windowTabs';
 	import { clampWinSize, clampResize, anchorOf } from '$lib/windowSize';
 	import { dockable } from '$lib/docking';
-	import { visibleDockKey, dockOccupants, FLOW_FAMILY, armDockMode, DOCK_TITLES } from '$lib/bottomDock';
+	import { visibleDockKey, dockOccupants, bottomInset, FLOW_FAMILY, armDockMode, DOCK_TITLES } from '$lib/bottomDock';
 	import { togglePanel } from '$lib/panelToggles';
 	import { requestPlay, willEnterXR, willEnterAR, vrSupported, arSupported, xrSessionFailed } from '$lib/playMode';
 	import { dockAddItems, DOCK_VIEWS } from '$lib/dockMenu';
@@ -1339,14 +1339,27 @@
 
 	// A neighbour that APPEARS is invisible to the observer set (nothing can watch an
 	// element that does not exist yet), and the bar's own width changes with the roster,
-	// and `floatingToolbar` / an opening dock move the bar's ROW — which changes which
+	// and `floatingToolbar` / the dock move the bar's ROW — which changes which
 	// neighbours overlap it at all. All four are re-measured after the render that
 	// caused them (Connect's `tick().then(measureDock)` shape).
+	//
+	// The dock half is `bottomInset` and NOT `visibleDockKey` or `dockMinimized`, because
+	// the honest dependency is whatever the bar's `bottom` resolves FROM: `pillStyle`
+	// reads `--bottom-inset`, which is exactly what `bottomInset` publishes. That one
+	// store closes the whole class in a single line — minimize, restore, close the last
+	// tab, undock it, or switch to a tab of a different height — where naming any of
+	// those closes only its own path. MEASURED on the reported one: parked hard right
+	// with a 320px dock open (track 149..1131, right edge 1272) and then minimized, the
+	// bar dropped back onto the chat/AI row and sat 52px OVER `#chat-button`, because
+	// nothing re-measured; the track it needed was 209..1071. Nothing re-clamps the
+	// STORED fraction here and nothing should: `posX` is a fraction of whatever track is
+	// live, so `pillCentre` re-maps it onto the narrower one for free on the next
+	// measurement (the same reading, after: right edge 1212, clear).
 	$effect(() => {
 		void $showSimControls;
 		void visibleCells;
 		void $floatingToolbar;
-		void $visibleDockKey;
+		void $bottomInset;
 		tick().then(measureTrack);
 	});
 

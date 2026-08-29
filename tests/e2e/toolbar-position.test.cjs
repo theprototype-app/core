@@ -495,5 +495,74 @@ h.run(async () => {
 	await A.page.setViewportSize({ width: 1280, height: 720 });
 	await A.page.waitForTimeout(500);
 
+	// ---- MINIMIZING THE DOCK CHANGES THE BAR'S ROW, so it must re-measure -----------
+	// The bar's `bottom` is `calc(var(--bottom-inset) + 16px)` while it floats, so an
+	// open dock lifts it into a band of its OWN — no corner button shares that row, and
+	// the track is therefore the full width. Minimizing drops `--bottom-inset` to 0 and
+	// the bar back onto the chat/AI row, whose neighbours DO clamp it. Nothing about the
+	// bar itself changed, so neither the ResizeObserver nor the roster notices: without
+	// the `bottomInset` dependency in the measuring effect the bar keeps the wide track's
+	// position and sits ON the chat button until some unrelated change re-measures.
+	// MEASURED with that dependency removed: right edge 1272 against a chat button at
+	// 1220 — 52px of overlap.
+	//
+	// LAST in the file on purpose: it opens a dock and parks the bar at an extreme, so it
+	// would move the ground under any section following it.
+	await dragCellTo(A.page, 'Object list (O)', 640);
+	// Toggled to the state we need rather than clicked once and assumed: the 280px
+	// section above ends on a press that could not move the bar, which is BY DESIGN an
+	// ordinary click on the Explorer cell — so the panel may already be open, and a
+	// single click here would close it.
+	const inset = () =>
+		A.page.evaluate(() =>
+			parseInt(getComputedStyle(document.documentElement).getPropertyValue('--bottom-inset') || '0')
+		);
+	for (let i = 0; i < 3 && (await inset()) < 100; i++) {
+		await A.page.locator('#controls-pill p[title="Explorer"]').click();
+		await A.page.waitForTimeout(800);
+	}
+	let gd = await geom(A.page);
+	const dockInset = await inset();
+	h.check(dockInset > 100, `premise: opening the Explorer dock reserves ${dockInset}px of --bottom-inset`);
+	h.check(
+		overlapped(gd).length === 0 && gd.nb['#chat-button'] && gd.bottom <= gd.nb['#chat-button'].top,
+		`premise: the lifted bar sits ABOVE the corner row (bar bottom ${Math.round(gd.bottom)} <= chat top ${Math.round(gd.nb['#chat-button']?.top ?? 0)})`
+	);
+	await dragCellTo(A.page, 'Object list (O)', gd.vw);
+	gd = await geom(A.page);
+	const liftedRight = gd.right;
+	h.check(
+		liftedRight > (gd.nb['#chat-button']?.left ?? Infinity),
+		`premise: with the dock open it reaches PAST where the chat button sits (${Math.round(liftedRight)} > ${Math.round(gd.nb['#chat-button']?.left ?? 0)}) — a position the corner row would not allow`
+	);
+	await A.page.click('#dock-minimize');
+	await A.page.waitForTimeout(900);
+	gd = await geom(A.page);
+	h.check((await inset()) === 0, 'minimizing the dock drops --bottom-inset to 0');
+	h.check(
+		gd.nb['#chat-button'] && gd.bottom > gd.nb['#chat-button'].top,
+		`...which puts the bar back on the corner row (bar ${Math.round(gd.top)}..${Math.round(gd.bottom)} vs chat ${Math.round(gd.nb['#chat-button']?.top ?? 0)}..${Math.round(gd.nb['#chat-button']?.bottom ?? 0)})`
+	);
+	h.check(
+		overlapped(gd).length === 0,
+		`...and it re-measures on the spot, so it overlaps no corner button (${Math.round(liftedRight)} -> ${Math.round(gd.right)}, chat at ${Math.round(gd.nb['#chat-button']?.left ?? 0)})`
+	);
+	h.check(
+		gd.right <= (gd.nb['#chat-button']?.left ?? 0) && gd.right < liftedRight,
+		`...having given back exactly the ${Math.round(liftedRight - gd.right)}px the narrower row costs`
+	);
+	// the stored fraction is untouched: `posX` is a fraction OF THE LIVE TRACK, so the
+	// re-map is the whole re-clamp — nothing has to rewrite what was saved
+	const dockFrac = await posX(A.page);
+	const dockTrack = await A.page.evaluate(() => window.__toolbarTrack ?? null);
+	h.check(
+		dockFrac != null && dockFrac > 0.99,
+		`the stored fraction is left alone (${dockFrac?.toFixed(3)}) — it is a fraction, legal on either track`
+	);
+	h.check(
+		dockTrack && Math.abs(dockTrack.min + dockFrac * (dockTrack.max - dockTrack.min) - gd.centre) <= 1,
+		`...and the bar is that fraction of the NARROWER track (${Math.round(dockTrack?.min ?? 0)}..${Math.round(dockTrack?.max ?? 0)} -> ${Math.round(gd.centre)})`
+	);
+
 	await h.finish(browser);
 });

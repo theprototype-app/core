@@ -412,7 +412,36 @@ loadable play content. Everything a user does must be visible to connected peers
   rows-4/5 ask copy now says the scene is unsaved and that nothing moves either way
   until answered. The invite auto-dial stays unguarded (a fresh tab IS empty at dial
   time); the dial-to-approval edit window is covered by this gate now, recorded in
-  requestConnect's JSDoc.
+  requestConnect's JSDoc. ROUND 33 closed its singleton gap: environment/music/
+  scenephysics/scenepost/game are PUSH-only (no get*), so what the gate dropped was
+  unrecoverable — `replyTo('objects')` now runs a registered `pushWorldState` seam
+  (peerHandler registers, `registerWorldStatePush` — sessions may not reach those
+  modules) so every consented objects reply re-states them, idempotent on their stamps.
+  · **ROUND 33: THE CONNECT DECISION** — two users both in UNTITLED scenes holding
+  unmerged objects is a state with no use (the user's ruling), so the joiner-side
+  question moved to where it has an answer. The DIAL-TIME ask is GONE (requestConnect
+  dials immediately; settleSceneIdentity deleted; pill and invite link are one path).
+  At APPROVAL, rows 4/5 with `fromHost` + unnamed + work (row 5 only when the far side
+  also holds work — the `!otherCount` fast path is lifted ABOVE the branch so bringing
+  a scratch world to an EMPTY friend still auto-shares) put a blocking MODAL
+  (`askConnectDecision`): Save scene & connect (Explorer inline naming with
+  `consent:false` — saving in order to LEAVE is not C4 publish consent; then sweep,
+  currentLevel→null for row 5 / joinRoom for row 4) · Dismiss changes (the stash
+  machinery, backup named "Dismissed before joining") · Disconnect (Esc/backdrop/the
+  labelled cancel all mean it, said in the copy; sends NOTHING, the Stay rule). An
+  abandoned naming re-offers all three as a sticky toast. NOTHING MOVES UNTIL DECIDED
+  including what we ASK for: sendHandshake withholds the joiner's scene singletons (its
+  fresher stamps would clobber the host's world) and defers
+  requestFullState+getnodedefs (`deferredHandshakes`, delete-on-read via
+  `askDeferredState` at every gate exit — after the decision the request goes out with
+  count 0 and the host's fast path answers unasked); sharedLibrary's auto-download
+  holds behind `pendingConnectDecision` (connectionState). The OLD merge is the
+  `mergeOnConnect` opt-in (connectionState, `connect:mergeOnConnect`, default false,
+  Settings beside the sharing prefs) — ON restores the classic Share/Stash toast
+  verbatim; the rows and gates beneath are untouched either way (the backstop against
+  older builds and bypasses). KNOWN, recorded: the host's handshake singletons land on
+  the joiner BEFORE its gate opens (ordered conn), so Disconnect leaves the host's look
+  applied locally — fixing that means reordering sendHandshake, its own ticket.
   · **THE CONNECT CONTRACT** (`deferUntilShareChoice`'s five-row table in sessions.js):
   an EMPTY joiner adopts the host's scene identity and receives, no ask
   (`adoptSceneIdentity` in levels — **THE NAME AND NOTHING ELSE**, fileHandler's
@@ -3935,7 +3964,24 @@ override for e2e — never share 5173 (the user's main-checkout server).
   (open-core: OSS ships only inert hooks — capability gate / auth hook /
   VITE_CLOUD_PLUGIN — cloud repo holds registration/rooms/roles; contract in its
   MAINTAINING.md).
-- Status (2026-08-29, latest): **ROUND 32 — four reports triaged, three fixed, one ruled**
+- Status (2026-08-29, latest): **ROUND 33 — THE CONNECT DECISION (49984d9, one commit,
+  code + suite migrations together).** The user's redesign of the unnamed-with-work
+  connect: the dial ask is gone, the question moved to host approval as a blocking modal
+  — Save scene & connect / Dismiss changes / Disconnect (every close affordance = the
+  labelled cancel, said in the copy) — nothing moves in EITHER direction until answered
+  (handshake content deferral + the round-32 gate + the auto-download hold), the old
+  Share/Stash merge lives on behind `mergeOnConnect` (default off), and consented object
+  replies re-push the PUSH-only scene singletons (a round-32 gap: the refetch could
+  never ask for the sky). Design detail in the ROUND 33 bullet of the ROOMS entry.
+  Suites: NEW connect-decision (51); share-stash + share-gate-defer park the setting
+  (they are its coverage now); connect-states' R31 block flipped to R33; helpers.connect
+  dropped the dial-ask block; scene-isolation/net-handshake/scene-rooms/resync-converge
+  green. Four counterfactuals red-then-restored (deferral, download hold, consent
+  opt-out, singleton seam). Baseline 363/62 held; build green server-down. OWED on
+  device: the modal at approval on a real pointer (both buttons + Esc meaning
+  Disconnect), the naming handoff mid-connect, the abandoned-naming sticky toast, the
+  Settings row copy, non-dark themes.
+- Status (2026-08-29): **ROUND 32 — four reports triaged, three fixed, one ruled**
   (991fa27 the share-or-stash ask holds BOTH directions — gateHolds drop + resolve-time
   refetch, the unsaved-scene ask copy, the invite dial-window JSDoc; f9dd7f8 the
   diverged-versions dialog names the winner per scene and its Review button LANDS on the

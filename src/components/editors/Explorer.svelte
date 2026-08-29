@@ -626,7 +626,7 @@
 		dropBandTop = (gridEl?.scrollTop ?? 0) + 4;
 		dropBandH = Math.max(0, (gridEl?.clientHeight ?? 0) - 8);
 	}
-	let menu: any = $state(null); // {x, y, items}
+	let menu: any = $state(null); // {x, y, items, maxHeight?}
 	/** highlighted drop target while dragging: folder id | 'root' | null (106.4) */
 	let dropFolder: string | 'root' | null = $state(null);
 	/** inline editor (106.1/2): {mode:'create'|'rename', parentId, folderId?, value} */
@@ -2098,6 +2098,18 @@
 		menu = {
 			x: box ? box.right : e.clientX,
 			y: box ? box.bottom : e.clientY,
+			/**
+			 * R22 round 13 (user): "'mount project...' context when there are too many
+			 * items, should not expand on the entire browser window, make size reasonable
+			 * and we already have scrollbar in case there are many items".
+			 *
+			 * This list is one row per saved project, so it grows with the user’s work and
+			 * the shared menu's own viewport cap is, for it, no cap at all. 360 is not a new
+			 * number: it is `ContextMenu`'s SEARCH_HEIGHT, the height that menu already gives
+			 * a list it knows is long — so typing to filter a long list does not resize the
+			 * menu under the pointer, and the grip that mode offers resizes the same box.
+			 */
+			maxHeight: 360,
 			items: projects.length
 				? [
 						{ section: 'Mount a saved project' },
@@ -2109,7 +2121,8 @@
 								? 'Already mounted'
 								: 'Browse this project’s files here — your open project is not touched',
 							action: () => void doMount(m.id)
-						}))
+						})),
+						...importRow()
 					]
 				: [
 						{
@@ -2117,9 +2130,39 @@
 							tooltip:
 								'Sessions ▸ "Save current project" stores the scene AND every Explorer file — that is what a mount reads',
 							action: () => {}
-						}
+						},
+						...importRow()
 					]
 		};
+	}
+	/**
+	 * R22 round 13 (user): "'mount project...' context should also have import project
+	 * option".
+	 *
+	 * THE EXISTING `.tp` IMPORT, not a new one — `importProjectAsFolder`, the same path
+	 * the burger menu's "Import project as folder (.tp)…" row and a dropped `.tp` file
+	 * already take (`importTpAsFolder`). It is the right one of the two `projectFile`
+	 * offers for THIS menu: `openProject` REPLACES the open project, which is the exact
+	 * thing every row above it promises not to do, while furnishing a folder leaves the
+	 * open project alone.
+	 *
+	 * The tooltip says the part a user would otherwise have to discover: an import does
+	 * NOT become a mount. A mount reads a project SAVED on this machine, and mounting a
+	 * `.tp` straight off disk is a later provider (it needs `showDirectoryPicker`, which
+	 * is Chromium-only) — so the honest route is import, save, then mount, and the row
+	 * says so rather than appearing to have done nothing.
+	 */
+	function importRow() {
+		return [
+			{ section: 'From a file' },
+			{
+				label: 'Import project (.tp)…',
+				icon: 'folder-input',
+				tooltip:
+					'Adds a .tp file’s contents to your Library as one folder. It does not become a mount — save it as a project first and it appears in the list above.',
+				action: () => tpImportInput?.click()
+			}
+		];
 	}
 	async function doMount(sessionId: string) {
 		const vol = await mountVolume(sessionId);
@@ -2137,19 +2180,100 @@
 	 * strip rather than the app modal (round 11's rule: the question belongs where the
 	 * files are). A clean mount is a view — dropping it costs nothing, so asking would be
 	 * noise.
+	 *
+	 * R22 round 13 (user): "it should also navigate user forcefully to that project in
+	 * explorer, so user would see what he dismiss, and logical to have to have option
+	 * 'save and unmount' there and all save/discard/cancel options after complete should
+	 * return user to the folder he were, right? unless I have navigated to some folder
+	 * while this notification is opened".
+	 *
+	 * Four rules, and the last is the whole subtlety:
+	 *
+	 * 1. FORCE the view onto the volume's root before asking. The strip is STICKY at the
+	 *    top of the grid, so once the view is the mount the files in question sit
+	 *    directly underneath the question — which is the point: a warning about work you
+	 *    cannot see is a warning you cannot weigh.
+	 * 2. THREE outcomes. Save and unmount is the PRIMARY — it is the answer that loses
+	 *    nothing and the one Enter takes, so the red is left to Discard. (That flips what
+	 *    `#explorer-confirm-yes` MEANS for this one question, deliberately: on every other
+	 *    strip the primary is the destructive answer because there is no other.)
+	 * 3. Put the user back where the flow found them, whichever outcome they pick.
+	 * 4. UNLESS they walked off while the question stood. The restore fires only while
+	 *    they are still where rule 1 PUT them; anywhere else is a choice of their own,
+	 *    and overriding it would be the same rudeness rule 1 is allowed exactly once.
+	 *
+	 * After a real unmount the volume’s folders cease to exist, so BOTH "where they were"
+	 * and "where they walked to" are re-checked against what is still there — either one
+	 * inside this volume lands on the Library root instead.
 	 */
 	function doUnmount(vol: any) {
+		const cameFrom = $activeFolder;
+		const parked = volumeKey(vol.id);
+		/**
+		 * Rules 3 and 4, in one place because they are one decision. `unmounted` says
+		 * whether the volume is still a place at all.
+		 */
+		const settle = (unmounted: boolean) => {
+			if ($activeFolder !== parked) {
+				// they navigated while the question stood — leave them there, UNLESS "there"
+				// is inside the volume that has just gone (walking into one of its subfolders
+				// is the ordinary way to inspect what you are about to lose)
+				if (unmounted && volumeOf($activeFolder)?.volumeId === vol.id) openFolder(null);
+				return;
+			}
+			let target = cameFrom;
+			if (unmounted && volumeOf(target)?.volumeId === vol.id) target = null;
+			openFolder(placeStillThere(target) ? target : null);
+		};
 		const leave = () => {
 			void unmountVolume(vol.id);
-			if (volScope?.volumeId === vol.id) openFolder(null);
+			settle(true);
 		};
 		if (!vol.dirty) return leave();
+		openFolder(parked); // rule 1
 		askInExplorer({
+			icon: 'hard-drive',
+			safe: true,
+			// the recycle-bin settings have nothing to say about a mount: this question is
+			// not a delete, and there is no "stop asking me" for it
+			noSettings: true,
 			title: 'Unmount “' + vol.name + '” with unsaved changes?',
-			detail: 'The edits you made here have not been written back to the saved project. Unmounting discards them.',
-			confirmLabel: 'Discard and unmount',
-			run: leave
+			detail:
+				'These are its files. Save writes them back into the saved project; discard throws the edits away.',
+			confirmLabel: 'Save and unmount',
+			run: () => {
+				void (async () => {
+					// a save that FAILED (the saved entry is gone) must not be followed by an
+					// unmount — the buffer is then the only copy of the work, so the mount stays
+					// and the user is simply put back
+					if (await saveVolume(vol.id)) leave();
+					else settle(false);
+				})();
+			},
+			altLabel: 'Discard and unmount',
+			alt: leave,
+			cancel: () => settle(false)
 		});
+	}
+	/**
+	 * Is this `activeFolder` value still a place? Only two kinds of value can stop being
+	 * one — a library folder that was deleted, and anything inside a volume that has been
+	 * unmounted. Everything else here is a pinned pseudo root (prefabs / packs /
+	 * pack:<name> / scene / scene:<sub> / deleted), which does not go away. Reads the
+	 * namespace exactly as `goUp` does, and for the same reason: those are the only
+	 * shapes `activeFolder` ever holds.
+	 */
+	function placeStillThere(key: string | null) {
+		if (key == null) return true;
+		const scope = volumeOf(key);
+		if (scope) {
+			const v = $mountedVolumes.find((x: any) => x.id === scope.volumeId);
+			if (!v) return false;
+			return !scope.folderId || v.folders.some((f: any) => f.id === scope.folderId);
+		}
+		if (key === 'prefabs' || key === 'packs' || key === 'deleted') return true;
+		if (key.startsWith('pack:') || key.startsWith('scene')) return true;
+		return $explorerFolders.some((f: any) => f.id === key);
 	}
 	/**
 	 * P3b — COPY OUT: a mounted file becomes a LIBRARY file. An ordinary
@@ -2309,12 +2433,29 @@
 	 * `deleteWithoutConfirm` still skips it entirely. That setting says "do not ask me", and
 	 * moving WHERE the asking happens must not quietly re-enable it.
 	 */
-	let confirmStrip = $state<{
+	/**
+	 * R22 round 13 (user): the strip grew a THIRD outcome, because one question needed
+	 * it — unmounting a mount with unsaved edits is genuinely save / discard / cancel and
+	 * not yes / no. Everything below `run` is OPTIONAL and absent on all five delete
+	 * questions, so those are byte-identical: no alt button, the red primary, the trash
+	 * icon and the File-settings link, exactly as before.
+	 */
+	type ConfirmSpec = {
 		title: string;
 		detail: string;
 		confirmLabel: string;
 		run: () => void;
-	} | null>(null);
+		/** the strip icon; absent = the delete question’s trash can */
+		icon?: string;
+		/** the PRIMARY answer is not the destructive one here, so it must not wear red */
+		safe?: boolean;
+		altLabel?: string;
+		alt?: () => void;
+		/** Cancel is an ANSWER too, once the question has MOVED the user to ask it */
+		cancel?: () => void;
+		noSettings?: boolean;
+	};
+	let confirmStrip = $state<ConfirmSpec | null>(null);
 	/**
 	 * R22 round 12 (user): "for delete add Settings button after tooltip 'It moves to
 	 * Deleted...' which will open app settings modal with Files accordion expanded".
@@ -2334,7 +2475,7 @@
 	 * for the same reason: a question the user has already moved on from must not linger
 	 * and then be answered by accident.
 	 */
-	function askInExplorer(spec: { title: string; detail: string; confirmLabel: string; run: () => void }) {
+	function askInExplorer(spec: ConfirmSpec) {
 		confirmStrip = spec;
 	}
 	function confirmStripYes() {
@@ -2342,8 +2483,18 @@
 		confirmStrip = null;
 		armed?.run();
 	}
-	function confirmStripNo() {
+	/** the second ACT (never the cancel) — present only on a question that has one */
+	function confirmStripAlt() {
+		const armed = confirmStrip;
 		confirmStrip = null;
+		armed?.alt?.();
+	}
+	function confirmStripNo() {
+		const armed = confirmStrip;
+		confirmStrip = null;
+		// clearing the strip is not the whole of cancelling once a question has MOVED the
+		// user in order to ask it — the unmount question owes them the view it took away
+		armed?.cancel?.();
 	}
 	/**
 	 * R22 round 30 C2 — THE SHARE ASK, on the same strip as the delete question.
@@ -5120,9 +5271,32 @@
 			-->
 			<div
 				id="explorer-mounts"
-				class="flex shrink-0 flex-col gap-0.5 overflow-y-auto border-b border-gray-700/60 p-1"
-				style="max-height: 140px"
+				class="flex shrink-0 flex-col gap-0.5 border-b border-gray-700/60 p-1"
 			>
+				<!--
+					R22 round 13 (user): "'mount project...' button should be always on top of
+					mounted projects in Explorer".
+
+					FIRST CHILD, so it is at a fixed place: below the list it moved down every time
+					a project was mounted and back up on every unmount, and past four volumes the list
+					scrolls, which put the way IN below the fold. The 140px ceiling moved WITH that:
+					it belongs to the volume list below, not to the section, so the rows scroll under
+					a button that never moves. `shrink-0` keeps the button its own height when the
+					list is at full stretch.
+				-->
+				<button
+					id="explorer-mount-add"
+					class="shrink-0 whitespace-nowrap rounded-sm border border-dashed border-gray-600 px-2 py-1 text-left text-gray-400 hover:border-gray-400 hover:text-gray-200"
+					title="Browse another saved project's files here, without replacing the one you have open"
+					onclick={openMountPicker}>＋ Mount project…</button
+				>
+				<!-- the volumes, in their OWN scroller: the 140px ceiling belongs to the LIST,
+				     so a long list scrolls under a button that never moves. -->
+				<div
+					id="explorer-mount-list"
+					class="flex min-h-0 flex-col gap-0.5 overflow-y-auto"
+					style="max-height: 140px"
+				>
 				{#each $mountedVolumes as vol (vol.id)}
 					<div class="flex items-center whitespace-nowrap">
 						<button
@@ -5225,12 +5399,7 @@
 						{/if}
 					{/if}
 				{/each}
-				<button
-					id="explorer-mount-add"
-					class="whitespace-nowrap rounded-sm border border-dashed border-gray-600 px-2 py-1 text-left text-gray-400 hover:border-gray-400 hover:text-gray-200"
-					title="Browse another saved project's files here, without replacing the one you have open"
-					onclick={openMountPicker}>＋ Mount project…</button
-				>
+				</div>
 			</div>
 			<!-- scrollable folder list; the roots below stay pinned to the bottom -->
 			<div class="flex min-h-0 flex-1 flex-col gap-0.5 overflow-x-auto overflow-y-auto p-1">
@@ -5470,21 +5639,39 @@
 						confirmStripNo();
 					}}
 				>
-					<span class="ex-confirm-icon"><Icon name="trash-2" size={14} /></span>
+					<span class="ex-confirm-icon {confirmStrip.safe ? 'ex-confirm-icon--safe' : ''}"
+						><Icon name={confirmStrip.icon ?? 'trash-2'} size={14} /></span
+					>
 					<span class="ex-confirm-text">
 						<span class="ex-confirm-title">{confirmStrip.title}</span>
 						<span class="ex-confirm-detail">{confirmStrip.detail}</span>
 					</span>
-					<button id="explorer-confirm-yes" class="ex-confirm-yes" use:focusConfirmBtn onclick={confirmStripYes}
-						>{confirmStrip.confirmLabel}</button
-					>
-					<button id="explorer-confirm-no" class="ex-confirm-no" onclick={confirmStripNo}>Cancel</button>
+					<!--
+						R22 round 13: the PRIMARY is not always the destructive answer. Unmounting a
+						dirty mount asks save / discard / cancel, and the answer that loses nothing
+						is the one that should be focused, wear the calm colour and take Enter — so
+						`safe` moves the red one button to the right, onto the alt.
+					-->
 					<button
-						id="explorer-confirm-settings"
-						class="ex-confirm-settings"
-						title="Open the file settings — the recycle bin, and whether deleting asks at all"
-						onclick={openFileSettings}>File settings</button
+						id="explorer-confirm-yes"
+						class="ex-confirm-yes {confirmStrip.safe ? 'ex-confirm-safe' : ''}"
+						use:focusConfirmBtn
+						onclick={confirmStripYes}>{confirmStrip.confirmLabel}</button
 					>
+					{#if confirmStrip.altLabel}
+						<button id="explorer-confirm-alt" class="ex-confirm-yes" onclick={confirmStripAlt}
+							>{confirmStrip.altLabel}</button
+						>
+					{/if}
+					<button id="explorer-confirm-no" class="ex-confirm-no" onclick={confirmStripNo}>Cancel</button>
+					{#if !confirmStrip.noSettings}
+						<button
+							id="explorer-confirm-settings"
+							class="ex-confirm-settings"
+							title="Open the file settings — the recycle bin, and whether deleting asks at all"
+							onclick={openFileSettings}>File settings</button
+						>
+					{/if}
 				</div>
 			{:else if shareAsk}
 				<!--
@@ -6348,7 +6535,16 @@
 {/if}
 
 {#if menu}
-	<ContextMenu x={menu.x} y={menu.y} items={menu.items} on:close={() => (menu = null)} />
+	<!-- R22 round 13 (user): a menu whose rows are DATA gets a ceiling — see the
+	     `maxHeight` prop. Absent for every other menu here, which keeps them all
+	     byte-identical. -->
+	<ContextMenu
+		x={menu.x}
+		y={menu.y}
+		items={menu.items}
+		maxHeight={menu.maxHeight ?? null}
+		on:close={() => (menu = null)}
+	/>
 {/if}
 
 <!-- mobile touch-drag ghost that follows the finger onto the viewport -->
@@ -6496,6 +6692,23 @@
 	}
 	.ex-confirm-no:hover {
 		background: rgb(255 255 255 / 6%);
+	}
+	/*
+		R22 round 13 — the SAFE primary. Declared AFTER `.ex-confirm-yes` on purpose: both
+		are one class, so source order is what decides, and the same goes for the two
+		`:hover` rules (the documented `.tbx-sel` ordering trap, one component over).
+
+		Amber rather than red for the icon, because amber is what this app already means by
+		"unsaved" — the mount row wears the same colour for its dirty dot and its Save.
+	*/
+	.ex-confirm-safe {
+		background: #1d4ed8;
+	}
+	.ex-confirm-safe:hover {
+		background: #2563eb;
+	}
+	.ex-confirm-icon--safe {
+		color: #fbbf24;
 	}
 	/*
 		R22 round 30 C2 — the OFFER wears the same layout and a different colour. Red is the

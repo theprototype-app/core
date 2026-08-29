@@ -956,7 +956,19 @@ h.run(async () => {
 		20000
 	);
 
-	// ---- 16. unmount with unsaved changes ASKS, and can be cancelled ----------------
+	// ---- 16. unmount with unsaved changes: THREE outcomes, and the view MOVES --------
+	//
+	// R22 round 13 (user): "it should also navigate user forcefully to that project in
+	// explorer, so user would see what he dismiss, and logical to have to have option
+	// 'save and unmount' there and all save/discard/cancel options after complete should
+	// return user to the folder he were, right? unless I have navigated to some folder
+	// while this notification is opened".
+	//
+	// Four things are measured here and the LAST is the one worth breaking the code over:
+	// the restore has an EXCEPTION, and an exception nothing exercises is a comment. The
+	// three destinations a settle can pick (back where you were / left where you walked /
+	// the Library because the place itself has gone) each get their own reading.
+	// ---------------------------------------------------------------------------------
 	await page.evaluate(async () => {
 		let mv;
 		window.__stores.mountedVolumes.mountedVolumes.subscribe((x) => (mv = x))();
@@ -967,38 +979,351 @@ h.run(async () => {
 	// it is not. Measured exactly that way before `rev` existed: the flag read clean and
 	// the next unmount took the no-confirm path and discarded the edit.
 	await page.waitForTimeout(2000);
-	const dirtyVol = (await vols(A))[0];
+	let dirtyVol = (await vols(A))[0];
 	h.check(
 		dirtyVol.dirty,
 		'an edit made while a save is still finishing STAYS dirty — the save is of the older revision'
 	);
-	await page.locator('#mount-unmount-' + dirtyVol.id).click();
-	await page.waitForTimeout(600);
-	h.check(
-		await page.locator('#explorer-confirm-yes').isVisible(),
-		'unmounting a DIRTY mount asks first — in the Explorer, where the files are'
-	);
-	await page.locator('#explorer-confirm-no').click();
+
+	// two places to be. `activeFolder.set` is exactly what `openFolder` does (minus
+	// clearing the search box), and it is how §11 already navigates in this file.
+	const spots = await page.evaluate(() => {
+		const e = window.__stores.explorer;
+		return { away: e.createFolder('Away', null).id, elsewhere: e.createFolder('Elsewhere', null).id };
+	});
+	const goTo = (id) => page.evaluate((f) => window.__stores.explorer.activeFolder.set(f), id);
+	const armUnmount = async (id) => {
+		await page.locator('#mount-unmount-' + id).click();
+		await page.waitForSelector('#explorer-confirm-yes', { timeout: 15000 });
+		await page.waitForTimeout(300);
+	};
+
+	// 16a — the question, its three answers, and the FORCED navigation
+	await goTo(spots.away);
 	await page.waitForTimeout(500);
+	h.check(
+		(await activeFolderOf(A)) === spots.away,
+		'premise: the user is standing in a Library folder, not in the mount'
+	);
+	await armUnmount(dirtyVol.id);
+	h.check(
+		(await activeFolderOf(A)) === `vol:${dirtyVol.id}`,
+		'asking MOVES the view onto the mount — the question is answered while looking at the files it is about'
+	);
+	// view-agnostic on purpose: the grid mode is a REMEMBERED pref, so a card selector
+	// alone would read 0 in list view and this check would report a broken feature
+	const shownRows = await page.evaluate(
+		() => document.querySelectorAll('#explorer-grid [data-card-id^="vitem:"]').length
+	);
+	h.check(
+		shownRows > 0,
+		`…and those files are on screen under the standing question (${shownRows} rows)`
+	);
+	const labels = await page.evaluate(() => ({
+		yes: document.querySelector('#explorer-confirm-yes')?.innerText.trim() ?? null,
+		alt: document.querySelector('#explorer-confirm-alt')?.innerText.trim() ?? null,
+		no: document.querySelector('#explorer-confirm-no')?.innerText.trim() ?? null,
+		settings: document.querySelectorAll('#explorer-confirm-settings').length,
+		// the PRIMARY must not wear the destructive red: it is the answer that loses nothing
+		yesBg: getComputedStyle(document.querySelector('#explorer-confirm-yes')).backgroundColor,
+		altBg: document.querySelector('#explorer-confirm-alt')
+			? getComputedStyle(document.querySelector('#explorer-confirm-alt')).backgroundColor
+			: null
+	}));
+	h.check(
+		labels.yes === 'Save and unmount' && labels.alt === 'Discard and unmount' && labels.no === 'Cancel',
+		`three outcomes, not two (${labels.yes} | ${labels.alt} | ${labels.no})`
+	);
+	// PAIRED with the three labels above, so "no File settings button" cannot pass against
+	// a strip that never rendered
+	h.check(
+		labels.settings === 0,
+		'…and the recycle-bin settings link is absent: this question is not a delete'
+	);
+	// COMPUTED colour, never the class string — the class was never the thing in doubt
+	// (the documented `.tbx-on` lesson: an unlayered rule can beat the class you can see)
+	h.check(
+		labels.altBg === 'rgb(185, 28, 28)' && labels.yesBg !== labels.altBg,
+		`the destructive red is on Discard, not on Save (save=${labels.yesBg}, discard=${labels.altBg})`
+	);
+
+	// 16b — CANCEL returns you to where the flow found you
+	await page.locator('#explorer-confirm-no').click();
+	await page.waitForTimeout(600);
 	const afterCancel = (await vols(A))[0];
 	h.check(
 		!!afterCancel && afterCancel.dirty,
-		'…and Cancel leaves it mounted WITH its edits (dirty=' + (afterCancel && afterCancel.dirty) + ')'
+		'Cancel leaves it mounted WITH its edits (dirty=' + (afterCancel && afterCancel.dirty) + ')'
 	);
-	await page.locator('#mount-unmount-' + dirtyVol.id).click();
-	await page.waitForSelector('#explorer-confirm-yes', { timeout: 15000 });
-	await page.locator('#explorer-confirm-yes').click();
-	await page.waitForTimeout(700);
-	h.check((await vols(A)).length === 0, 'confirming unmounts it');
+	h.check(
+		(await activeFolderOf(A)) === spots.away,
+		'…and puts the view back in the folder the flow took it from'
+	);
+
+	// 16c — THE EXCEPTION: navigate while the question stands and you are LEFT THERE.
+	// This is the guard the round was written around; it is proven by breaking it below.
+	await armUnmount(dirtyVol.id);
+	await goTo(spots.elsewhere);
+	await page.waitForTimeout(400);
+	h.check(
+		await page.locator('#explorer-confirm-yes').isVisible(),
+		'premise: walking away does not dismiss the question — the strip is not modal'
+	);
+	await page.locator('#explorer-confirm-alt').click();
+	await page.waitForTimeout(800);
+	h.check((await vols(A)).length === 0, "Discard and unmount unmounts it");
+	h.check(
+		(await activeFolderOf(A)) === spots.elsewhere,
+		'…and leaves the view where the USER put it, not where the flow found it — a navigation made during the question is a decision'
+	);
 	const discarded = await savedNames(A, dirtyVol.sessionId);
 	h.check(
 		!discarded.includes('edited-again.txt'),
 		`…and the discarded edit never reached the saved project (${discarded.join(',')})`
 	);
 
+	// 16d — SAVE AND UNMOUNT is the outcome that did not exist before: it writes.
+	await page.evaluate((id) => window.__stores.mountedVolumes.mountVolume(id), dirtyVol.sessionId);
+	await h.eventually(() => vols(A), (l) => l.length === 1, 'premise: it is mounted again', 15000);
+	dirtyVol = (await vols(A))[0];
+	await page.evaluate((v) => {
+		let mv;
+		window.__stores.mountedVolumes.mountedVolumes.subscribe((x) => (mv = x))();
+		const rec = mv.find((x) => x.id === v);
+		window.__stores.mountedVolumes.volumeRenameItem(v, rec.items[0].id, 'kept-by-save.txt');
+	}, dirtyVol.id);
+	await page.waitForTimeout(500);
+	await goTo(spots.away);
+	await page.waitForTimeout(400);
+	await armUnmount(dirtyVol.id);
+	await page.locator('#explorer-confirm-yes').click();
+	await h.eventually(
+		() => savedNames(A, dirtyVol.sessionId),
+		(names) => names.includes('kept-by-save.txt'),
+		'Save and unmount WRITES the buffered edit into the saved project',
+		20000
+	);
+	await h.eventually(
+		() => vols(A),
+		(l) => l.length === 0,
+		'…and then unmounts it',
+		15000
+	);
+	h.check(
+		(await activeFolderOf(A)) === spots.away,
+		'…and returns the view to the folder the flow found it in'
+	);
+
+	// 16e — the place you came from can be INSIDE the volume, and after an unmount it is
+	// not a place at all. Walking into one of its subfolders to look at what you are about
+	// to lose is the ordinary thing to do, so this is not a corner case.
+	await page.evaluate((id) => window.__stores.mountedVolumes.mountVolume(id), dirtyVol.sessionId);
+	await h.eventually(() => vols(A), (l) => l.length === 1, 'premise: mounted once more', 15000);
+	const inner = (await vols(A))[0];
+	const innerFolder = await page.evaluate((v) => {
+		let mv;
+		window.__stores.mountedVolumes.mountedVolumes.subscribe((x) => (mv = x))();
+		const rec = mv.find((x) => x.id === v);
+		window.__stores.mountedVolumes.volumeRenameItem(v, rec.items[0].id, 'doomed.txt');
+		return rec.folders[0]?.id ?? null;
+	}, inner.id);
+	h.check(!!innerFolder, 'premise: the mount has a folder to stand in');
+	await page.waitForTimeout(400);
+	await armUnmount(inner.id);
+	await goTo(`vol:${inner.id}:${innerFolder}`);
+	await page.waitForTimeout(400);
+	await page.locator('#explorer-confirm-alt').click();
+	await page.waitForTimeout(900);
+	h.check(
+		(await activeFolderOf(A)) === null,
+		'a view standing INSIDE the volume when it is unmounted lands on the Library, never on a folder that no longer exists (' +
+			JSON.stringify(await activeFolderOf(A)) +
+			')'
+	);
+
+	// ---- 17. the "＋ Mount project…" row is pinned to the TOP of the group -----------
+	// User: "'mount project...' button should be always on top of mounted projects in
+	// Explorer". It used to be the LAST child, so it moved on every mount and unmount and,
+	// past a few volumes, sat below the fold of a scrolling section.
+	// ---------------------------------------------------------------------------------
+	for (const name of ['Yard', 'Depot']) {
+		const meta = await page.evaluate(async (n) => {
+			await window.__stores.sessions.loadSessions();
+			let v;
+			window.__stores.sessions.sessions.subscribe((x) => (v = x))();
+			return (v ?? []).find((m) => m.name === n && m.hasLibrary)?.id ?? null;
+		}, name);
+		if (meta) await page.evaluate((id) => window.__stores.mountedVolumes.mountVolume(id), meta);
+	}
+	await h.eventually(() => vols(A), (l) => l.length === 2, 'premise: two projects are mounted', 20000);
+	await page.waitForTimeout(500);
+	const pinned = await page.evaluate(() => {
+		const section = document.querySelector('#explorer-mounts');
+		const add = document.querySelector('#explorer-mount-add');
+		const rows = [...document.querySelectorAll('[data-mount]')];
+		return {
+			first: section?.firstElementChild === add,
+			addTop: Math.round(add.getBoundingClientRect().top),
+			rowTops: rows.map((r) => Math.round(r.getBoundingClientRect().top)),
+			rows: rows.length,
+			listScrolls: getComputedStyle(document.querySelector('#explorer-mount-list')).overflowY
+		};
+	});
+	h.check(pinned.rows === 2, `premise: both volume rows are drawn (${pinned.rows})`);
+	h.check(pinned.first, 'the add row is the FIRST child of the mounts section');
+	h.check(
+		pinned.rowTops.every((t) => t > pinned.addTop),
+		`…and sits above every mounted project (${pinned.addTop} < ${pinned.rowTops.join(', ')})`
+	);
+	// the SECTION no longer scrolls; the LIST does. That is what keeps the button in place
+	// once the list is longer than its 140px ceiling.
+	h.check(
+		pinned.listScrolls === 'auto',
+		`the volume LIST owns the scroller, so a long list cannot carry the entry point away (${pinned.listScrolls})`
+	);
+
+	// ---- 18. the picker offers the .tp import ---------------------------------------
+	// User: "'mount project...' context should also have import project option". It is the
+	// EXISTING `importProjectAsFolder` path — the one that furnishes a folder and leaves
+	// the open project alone, which is what every row above it promises.
+	// ---------------------------------------------------------------------------------
+	await page.locator('#explorer-mount-add').click();
+	await page.waitForSelector('[role=menuitem]', { timeout: 20000 });
+	await page.waitForTimeout(300);
+	const pickerRows = await menuRows(A);
+	h.check(
+		pickerRows.some((r) => r.startsWith('Yard')),
+		`premise: the picker still lists the projects (${pickerRows.join(' | ')})`
+	);
+	h.check(
+		pickerRows.some((r) => /Import project/i.test(r)),
+		'…and offers Import project (.tp)…'
+	);
+	const sections = await page.evaluate(() =>
+		[...document.querySelectorAll('[role=menu] *')]
+			.map((el) => el.textContent.trim())
+			.filter((t) => t === 'From a file').length
+	);
+	h.check(sections > 0, '…under its own heading, so it does not read as another project to mount');
+	const [chooser] = await Promise.all([
+		page.waitForEvent('filechooser', { timeout: 10000 }),
+		page.locator('[role=menuitem]', { hasText: 'Import project' }).first().click()
+	]);
+	h.check(!!chooser, 'clicking it opens a real file picker — the same one the burger menu opens');
+	const accepts = await page.evaluate(() => {
+		const el = document.querySelector('input[type=file][accept]');
+		return el ? el.getAttribute('accept') : null;
+	});
+	h.check(
+		accepts === '.tp',
+		`…the app’s existing .tp input, not a second one minted for this menu (accept=${accepts})`
+	);
+	await chooser.setFiles([]).catch(() => {});
+	await closeMenu(page);
+
+	// ---- 19. the picker is BOUNDED, however many projects there are ------------------
+	// User: "'mount project...' context when there are too many items, should not expand on
+	// the entire browser window, make size reasonable and we already have scrollbar in case
+	// there are many items".
+	//
+	// Real records, written straight into idb, because `loadSessions` re-reads every
+	// `session:` key on every open — seeding the STORE would be overwritten by the picker's
+	// own first await. They are removed again at the end of the section.
+	//
+	// SIXTEEN, and the number is measured rather than picked: 16 makes the list 533px
+	// tall against a 360px ceiling, which is what the readings below need. It is not more
+	// because `idb.js` opens a fresh connection per `idbGet` and `loadSessions` reads every
+	// record one at a time — MEASURED at ~1.1s per saved project, so 40 of them cost 43
+	// seconds of picker-opening for no extra information. (That cost is the picker's own,
+	// pre-existing and shared with the Sessions manager; it is noted here because it is the
+	// reason this section is bounded.)
+	// ---------------------------------------------------------------------------------
+	const fakeIds = await page.evaluate(async () => {
+		const ids = [];
+		for (let i = 0; i < 16; i++) {
+			const id = 'ceiling-' + i;
+			ids.push(id);
+			await window.__stores.idb.idbPut('session:' + id, {
+				id,
+				name: 'Ceiling ' + i,
+				createdAt: 1000 + i,
+				count: 0,
+				library: { folders: [], items: [] }
+			});
+		}
+		return ids;
+	});
+	await page.locator('#explorer-mount-add').click();
+	// the picker AWAITS a full `loadSessions`, one idb connection per record — see above
+	await page.waitForSelector('[role=menuitem]', { timeout: 120000 });
+	await page.waitForTimeout(600);
+	const bounded = await page.evaluate(() => {
+		const menu = document.querySelector('[role=menu]');
+		const box = menu.getBoundingClientRect();
+		return {
+			rows: menu.querySelectorAll('[role=menuitem]').length,
+			height: Math.round(box.height),
+			bottom: Math.round(box.bottom),
+			scrollH: menu.scrollHeight,
+			clientH: menu.clientHeight,
+			overflow: getComputedStyle(menu).overflowY,
+			vh: window.innerHeight
+		};
+	});
+	h.check(
+		bounded.rows > 14,
+		`premise: the picker really is long now (${bounded.rows} rows)`
+	);
+	h.check(
+		bounded.height <= 360,
+		`…and the menu stops at a readable height instead of filling the window (${bounded.height}px of ${bounded.vh})`
+	);
+	h.check(
+		bounded.scrollH > bounded.clientH && bounded.overflow === 'auto',
+		`…with the scrollbar it already had carrying the rest (${bounded.scrollH} > ${bounded.clientH}, overflow-y ${bounded.overflow})`
+	);
+	h.check(
+		bounded.bottom <= bounded.vh,
+		`…and it still ends inside the viewport (${bounded.bottom} <= ${bounded.vh})`
+	);
+	await closeMenu(page);
+	// THE DIFFERENTIAL, so the reading above cannot be "every menu happens to be short":
+	// the Explorer background menu takes no ceiling and is still allowed the full window.
+	await page.evaluate(() => {
+		const grid = document.querySelector('#explorer-grid');
+		const box = grid.getBoundingClientRect();
+		grid.dispatchEvent(new MouseEvent('contextmenu', {
+			bubbles: true,
+			clientX: Math.round(box.left + 40),
+			clientY: Math.round(box.top + 40)
+		}));
+	});
+	await page.waitForTimeout(500);
+	const uncapped = await page.evaluate(() => {
+		const menu = document.querySelector('[role=menu]');
+		if (!menu) return null;
+		return { max: getComputedStyle(menu).maxHeight, vh: window.innerHeight };
+	});
+	h.check(
+		!!uncapped && Math.round(parseFloat(uncapped.max)) === uncapped.vh - 8,
+		`a menu with no ceiling still gets the viewport one, so the cap is this menu's and not everyone's (${uncapped && uncapped.max})`
+	);
+	await closeMenu(page);
+	await page.evaluate(async (ids) => {
+		for (const id of ids) await window.__stores.idb.idbDelete('session:' + id);
+		await window.__stores.sessions.loadSessions();
+	}, fakeIds);
+	await page.waitForTimeout(600);
+	await page.evaluate(async () => {
+		let mv;
+		window.__stores.mountedVolumes.mountedVolumes.subscribe((x) => (mv = x))();
+		for (const v of mv) await window.__stores.mountedVolumes.unmountVolume(v.id);
+	});
+	await page.waitForTimeout(500);
 
 
-	// ---- 17. MOUNT FROM THE SESSIONS MANAGER ----------------------------------------
+
+	// ---- 20. MOUNT FROM THE SESSIONS MANAGER ----------------------------------------
 	// The user asked for this button beside Load, and the pair IS the feature: Load
 	// REPLACES the open project, Mount ADDS this one beside it. Goes last and saves under
 	// its own names, because a section that saves perturbs every premise above it.

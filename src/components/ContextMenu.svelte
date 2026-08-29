@@ -22,6 +22,19 @@
 	 *  it to — per kind ('viewport', 'nodes', 'object'…), persisted locally. */
 	export let sizeKey: string = 'menu';
 	/**
+	 * R22 round 13 (user): "'mount project...' context when there are too many items,
+	 * should not expand on the entire browser window".
+	 *
+	 * The viewport cap below is a cap in NAME only for a menu whose rows are DATA — one
+	 * per saved project, one per anything — because `vh - 8` is exactly "the whole
+	 * window". A caller that knows its list grows with the user's files passes a
+	 * ceiling here and the scrollbar this menu already has does the rest.
+	 *
+	 * ABSENT for every other caller, and the placement maths below is written so that
+	 * absent is byte-identical to what it did before this prop existed.
+	 */
+	export let maxHeight: number | null = null;
+	/**
 	 * Optional close CALLBACK, alongside the `close` event.
 	 *
 	 * A RUNES-mode consumer cannot listen with `on:close` without earning a
@@ -313,9 +326,15 @@
 			// keeping the top as close to the cursor as possible — no flipping, so the
 			// menu never jumps to the other side of the pointer. A scrollbar appears
 			// only when the content is taller than the window itself.
-			const maxH = vh - 8;
+			const maxH = maxHeight ? Math.min(maxHeight, vh - 8) : vh - 8;
+			// the shift-up decision reads the height the menu will actually HAVE, not its
+			// natural one: a capped menu that shifted up by its uncapped height would leave a
+			// gap under itself. With no cap the two are the same number whenever `natural`
+			// fits, and both branches land on top=4 when it does not — so an uncapped caller
+			// is placed exactly where it was.
+			const shown = Math.min(natural, maxH);
 			let top = y;
-			if (natural > vh - y - 4) top = Math.max(4, vh - natural - 4);
+			if (shown > vh - y - 4) top = Math.max(4, vh - shown - 4);
 			node.style.top = top + 'px';
 			node.style.maxHeight = maxH + 'px';
 			placedTop = top;

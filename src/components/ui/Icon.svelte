@@ -16,11 +16,13 @@
 		FileText,
 		Focus,
 		Folder,
+		FolderInput,
 		Gamepad2,
 		GitBranchPlus,
 		Grid3x3,
 		Group,
 		Hand,
+		HardDrive,
 		Image,
 		Lock,
 		Magnet,
@@ -32,6 +34,8 @@
 		Plus,
 		Radar,
 		Redo2,
+		RefreshCw,
+		Save,
 		Search,
 		SlidersHorizontal,
 		Sparkles,
@@ -41,7 +45,8 @@
 		Undo2,
 		Ungroup,
 		Workflow,
-		Wrench
+		Wrench,
+		X
 	} from '@lucide/svelte';
 
 	// 15-Q (context-menu redesign): the menu item defs carry icon NAMES in data,
@@ -60,11 +65,13 @@
 		'file-text': FileText,
 		focus: Focus,
 		folder: Folder,
+		'folder-input': FolderInput,
 		'gamepad-2': Gamepad2,
 		'git-branch-plus': GitBranchPlus,
 		'grid-3x3': Grid3x3,
 		group: Group,
 		hand: Hand,
+		'hard-drive': HardDrive,
 		image: Image,
 		lock: Lock,
 		magnet: Magnet,
@@ -76,6 +83,8 @@
 		plus: Plus,
 		radar: Radar,
 		'redo-2': Redo2,
+		'refresh-cw': RefreshCw,
+		save: Save,
 		search: Search,
 		'sliders-horizontal': SlidersHorizontal,
 		sparkles: Sparkles,
@@ -85,7 +94,8 @@
 		'undo-2': Undo2,
 		ungroup: Ungroup,
 		workflow: Workflow,
-		wrench: Wrench
+		wrench: Wrench,
+		x: X
 	};
 
 	/** @type {{ name: string, size?: number } & Record<string, any>} */

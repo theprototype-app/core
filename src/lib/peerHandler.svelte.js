@@ -68,7 +68,7 @@ import {
 } from '$lib/hudSync';
 import { applyRemoteGameState, sendGameState, gameStatePayload } from '$lib/gameSync';
 import { applyRemoteTriggers, sendTriggers } from '$lib/triggerSync';
-import { applySessionProposal, applySessionAnswer, deferUntilShareChoice, localSceneCount } from '$lib/sessions';
+import { applySessionProposal, applySessionAnswer, deferUntilShareChoice, localSceneCount, gateHolds } from '$lib/sessions';
 import { applyRemoteGeometry } from '$lib/geometryEdit';
 import { applyLightTarget } from '$lib/lightParams';
 import { applyObjectFile } from '$lib/animatedImports';
@@ -398,6 +398,17 @@ export class PeerConnection {
 				// absent row, or an empty scene on either side, APPLIES. That is today's
 				// behaviour byte for byte.
 				if (data && !canApplyByRoom(conn.peer, data.type)) return;
+				// R22 round 32: THE SHARE-OR-STASH ASK IS SYMMETRIC NOW. It only ever gated
+				// what we SEND, so while our own question sat on screen the other side could
+				// answer Share (or arrive with a latched verdict) and pour its world into ours
+				// — the merge happening before the person was asked to consent to it. A peer
+				// queued behind our gate is withheld exactly as `canApplyByRoom` withholds a
+				// peer standing elsewhere. Nothing is lost: answering re-requests full state
+				// from every queued sender (`resolveGate`), and Stay means it never lands.
+				//
+				// The get* REQUESTS are not in ROOM_SCOPED, deliberately — they are the gate's
+				// own queue mechanism, and dropping them would strand both sides in silence.
+				if (data && ROOM_SCOPED.has(data.type) && gateHolds(conn.peer)) return;
 				// console.log(data);
 				if(data.type == 'cloud') {
 					// open-core (M1): the cloud plugin's own replicated channel
@@ -1180,13 +1191,22 @@ export class PeerConnection {
 		//
 		// The room test is only-on-evidence (`elsewhereThan`): an absent row or an empty
 		// scene on either side sends, exactly as before.
-		const gated = STREAM_TYPES.has(payload?.type) || ROOM_SCOPED.has(payload?.type);
+		//
+		// R22 round 32, THE THIRD REASON: a peer queued behind our own share-or-stash ask.
+		// An edit we make while the merge question is open must not pre-empt its answer —
+		// the whole point of the ask is that our work reaches them when we say so. Nothing
+		// is lost, because the Share reply is a FULL sync of everything we hold. Only
+		// ROOM_SCOPED is withheld: STREAM_TYPES keep flowing, since presence is how the
+		// person deciding can see who they are deciding about.
+		const roomScoped = ROOM_SCOPED.has(payload?.type);
+		const gated = STREAM_TYPES.has(payload?.type) || roomScoped;
 		const mine = gated ? (myScene()?.scene ?? '') : '';
 		const where = gated ? get(peerScenes) : {};
 		Object.keys(this.connections).forEach(peerId => {
 			const conn = this.connections[peerId];
 			if (!conn || !conn.open) return;
 			if (gated && elsewhereThan(where, mine, peerId)) return;
+			if (roomScoped && gateHolds(peerId)) return;
 			try {
 				conn.send(payload);
 			} catch (err) {

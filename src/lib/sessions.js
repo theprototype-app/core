@@ -1424,16 +1424,64 @@ export function localSceneCount() {
 	return get(objectsGroup)?.children.length ?? 0;
 }
 
-function resolveGate() {
+/**
+ * R22 round 32 — IS OUR SHARE-OR-STASH ASK HOLDING THIS PEER?
+ *
+ * The gate was one-directional for its whole life: it queued what we would SEND and said
+ * nothing about what we RECEIVE. So a peer who answered Share first — or who carried a
+ * latched `shareVerdicts` entry from an earlier count-0 reply — poured its scene into ours
+ * while our own question was still on screen, which is the merge happening BEFORE the
+ * person was asked to consent to it. Reported as: open an invite link, edit while waiting
+ * for approval, and the host's untitled world lands on top of your work mid-question.
+ *
+ * peerHandler DROPS `ROOM_SCOPED` content from a peer this returns true for — the same
+ * treatment `canApplyByRoom` gives a peer standing elsewhere — and `resolveGate` re-asks
+ * for full state, so answering loses nothing and Stay means it never lands.
+ *
+ * Cheap on purpose: it runs on every inbound message and the common case has no gate.
+ * @param {string} peerId @returns {boolean}
+ */
+export function gateHolds(peerId) {
+	if (!gate) return false;
+	if (gate.done) return false;
+	return gate.senders.objects.has(peerId) || gate.senders.nodes.has(peerId);
+}
+
+/**
+ * @param {{refetch?: boolean}} [opts] `refetch: false` for the callers that have already
+ *   arranged an arrival re-sync of their own (`joinRoom` ends in `resyncRoomPeers`) —
+ *   asking twice sends the whole burst twice for nothing.
+ */
+function resolveGate(opts = {}) {
 	if (!gate || gate.done) return;
 	gate.done = true;
 	const pending = gate;
 	gate = null;
 	for (const sender of pending.senders.objects) sendObjectsTo(sender);
 	for (const sender of pending.senders.nodes) sendNodes(sender);
+	if (opts.refetch === false) return;
+	// R22 round 32 — ASK BACK. Everything ROOM_SCOPED these peers sent while the question
+	// was open was DROPPED on arrival (`gateHolds` in peerHandler), so answering has to
+	// collect what the asking cost us. It is the arrival re-sync's move minus its flag:
+	// deliberately NO `arriving`, because that flag CLAIMS "what I hold is your own scene"
+	// and would walk straight past the other side's still-open ask. A plain request queues
+	// behind their gate, which is the consent-preserving shape.
+	//
+	// This is the ONLY refetch rows 4 and 5 ever get: their rooms are unnamed, and
+	// `resyncRoomPeers` needs a named scene, so it returns 0 there and covers nothing.
+	/** @type {any} */
+	const peer = get(peers);
+	for (const sender of new Set([...pending.senders.objects, ...pending.senders.nodes])) {
+		const conn = peer?.connections?.[sender];
+		if (!conn?.open) continue;
+		try {
+			peer.requestFullState?.(conn);
+		} catch {}
+	}
 }
 
-async function stashAndJoin() {
+/** @param {{refetch?: boolean}} [opts] forwarded to `resolveGate` — see there */
+async function stashAndJoin(opts = {}) {
 	if (!gate || gate.done) return;
 	const { payload, uuids } = gate;
 	await persistSession(payload);
@@ -1451,7 +1499,7 @@ async function stashAndJoin() {
 	objectsGroup.update((value) => value);
 	clearGraphs(); // H1: stash empties every graph document
 	showToast('Stashed to Sessions: ' + payload.name);
-	resolveGate();
+	resolveGate(opts);
 }
 
 /**
@@ -1563,6 +1611,16 @@ export function deferUntilShareChoice(kind, sender, opts = {}) {
 	}
 
 	const objects = count + ' object' + (count === 1 ? '' : 's');
+	// R22 round 32 — SAY WHAT THE UNNAMED CASE ACTUALLY IS. Rows 4 and 5 are the two that
+	// can be reached with no name on our side, and the person there is being asked to merge
+	// without being told the thing that decides it: an unsaved scene is not a room (an empty
+	// name is no evidence of a split), so their world and the asker's are already counted as
+	// one. The second sentence is the round-32 fix speaking for itself — the ask now holds
+	// BOTH directions, so nothing has moved yet and answering is the only thing that moves it.
+	const unnamed = here ? '' : 'This scene is unsaved, and unsaved scenes all count as one shared room. ';
+	const held = here
+		? ''
+		: ' Nothing of yours leaves this screen, and nothing of theirs arrives, until you answer.';
 	const openGate = () => {
 		gate = {
 			senders: { objects: new Set(), nodes: new Set() },
@@ -1590,7 +1648,11 @@ export function deferUntilShareChoice(kind, sender, opts = {}) {
 			// while our `atscene` row over there still names the scene we came from,
 			// every object we send is DROPPED ON ARRIVAL. Adoption publishes the new row
 			// down the same ordered conn, so the reply lands behind it.
-			void joinRoom(room, theirHash, () => resolveGate());
+			//
+			// NO refetch here: `joinRoom` ends in `resyncRoomPeers`, which asks the whole
+			// destination room for full state with `arriving` set — a strictly better ask
+			// than this one, and asking twice would send the burst twice.
+			void joinRoom(room, theirHash, () => resolveGate({ refetch: false }));
 		}
 	};
 	const stash = {
@@ -1602,7 +1664,9 @@ export function deferUntilShareChoice(kind, sender, opts = {}) {
 			// when the prompt opened, so the objects arriving from the room we are joining
 			// are not in it and survive the sweep — the stash still takes exactly the work
 			// we brought with us.
-			void joinRoom(room, theirHash, () => void stashAndJoin());
+			// `refetch: false` for the same reason Bring passes it — joinRoom's own
+			// `resyncRoomPeers` is the arrival ask, and it is the better one.
+			void joinRoom(room, theirHash, () => void stashAndJoin({ refetch: false }));
 		}
 	};
 
@@ -1634,7 +1698,7 @@ export function deferUntilShareChoice(kind, sender, opts = {}) {
 	// ---- ROW 4: we are unnamed, they are not ------------------------------------
 	if (!here && room) {
 		openGate();
-		ask('Share your ' + objects + ' into "' + room + '", or stash them to a session first?', [bring, stash]);
+		ask(unnamed + 'Share your ' + objects + ' into "' + room + '", or stash them to a session first?' + held, [bring, stash]);
 		return;
 	}
 
@@ -1646,7 +1710,7 @@ export function deferUntilShareChoice(kind, sender, opts = {}) {
 	}
 	openGate();
 	ask(
-		'Share your ' + objects + ' with ' + nameOf(sender) + ', or stash them to a session first?',
+		unnamed + 'Share your ' + objects + ' with ' + nameOf(sender) + ', or stash them to a session first?' + held,
 		[
 			{
 				label: 'Share',

@@ -198,6 +198,14 @@ async function settleSceneIdentity() {
  * signaling-open, i.e. seconds into a fresh tab, where the scene is empty and the guard
  * would have nothing to say anyway.
  *
+ * THAT ASSUMPTION HELD ONLY AT THE DIAL MOMENT, and round 32 is the report that found the
+ * gap: the invited peer edits WHILE WAITING FOR APPROVAL, so by the time the host answers
+ * there is work in a scene the dial guard saw empty. The window between dial and approval
+ * is now covered where it belongs — on the far end of it, by the share-or-stash gate,
+ * which withholds in BOTH directions (`gateHolds` in sessions/peerHandler) so no world
+ * lands until the question is answered. So this guard genuinely only has to be right about
+ * the dial moment, which is the one thing it can be right about.
+ *
  * Async as a consequence of the ask, but the no-question paths still reach `dial` in the
  * SAME TICK: an empty scene never awaits at all, and the peers/signaling guards below
  * stay ahead of every await, so an offline dial still toasts immediately.

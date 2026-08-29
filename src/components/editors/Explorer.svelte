@@ -8,7 +8,7 @@
 	// editor as notebook tabs (bottomDock.js); undocks into a floating window.
 	import { get } from 'svelte/store';
 	import { tick, untrack } from 'svelte';
-	import { explorerClose, mobileUndockAllowed, explorerSceneSaveArm, peers } from '../../stores/appStore.js';
+	import { explorerClose, mobileUndockAllowed, explorerSceneSaveArm, explorerRevealArm, peers } from '../../stores/appStore.js';
 	import { settingsOpen, settingsSection } from '../../stores/appStore.js';
 	import { showToast, enable3dPreview, stackOnDrop, confirmPrefabUpdate } from '../../stores/appStore.js';
 	import {
@@ -1811,6 +1811,39 @@
 		untrack(() => {
 			openFolder(arm.folderId);
 			startSceneName('save-scene');
+		});
+	});
+
+	// R22 round 32: the same write-once shape for "show me this scene's versions". The
+	// divergence dialog knows a scene NAME and the hash that won; only this panel can turn
+	// that into a selected card with its Version history open.
+	//
+	// The hash is a PREFERENCE, not a requirement: the winning version can easily be the
+	// one this machine has not pulled yet, and the history panel is keyed by the scene, so
+	// any held version of it opens the same list. Falling back down the manifest line
+	// (newest held first) is what makes the button land rather than explain itself.
+	$effect(() => {
+		const arm = $explorerRevealArm;
+		if (!arm) return;
+		explorerRevealArm.set(null);
+		untrack(() => {
+			const entry: any = sceneEntry(arm.name);
+			const line: string[] = [...(entry?.history ?? [])].reverse();
+			const wanted = [arm.hash, ...line].filter(Boolean);
+			let item: any = null;
+			for (const hash of wanted) {
+				item = itemByHash(hash);
+				if (item) break;
+			}
+			if (!item) {
+				// nothing to select: the scene is in the project document but its bytes are on
+				// somebody else's disk. Say where they are rather than opening an empty panel.
+				showToast(
+					`No copy of "${arm.name}" here yet — its versions are on a peer. Use "Open here (downloads it)" on its card to fetch one.`
+				);
+				return;
+			}
+			showProperties({ kind: 'item', item });
 		});
 	});
 

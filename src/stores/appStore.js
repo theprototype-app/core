@@ -77,6 +77,23 @@ let sceneSaveArmToken = 0;
 export function armExplorerSceneSave(folderId = null) {
 	explorerSceneSaveArm.set({ token: ++sceneSaveArmToken, folderId: folderId ?? null });
 }
+/**
+ * R22 round 32 — the same seam for "open the Explorer AND show me this scene's version
+ * history". The divergence dialog lives in projectManifest, a LEAF that must not import
+ * a component, so the request travels as a write-once store the Explorer consumes
+ * exactly the way it consumes the save arm above.
+ *
+ * `{ token, name, hash }`: the scene NAME is what the manifest is keyed by and the only
+ * thing that is always resolvable; `hash` is the version the message was ABOUT, which
+ * may be one this machine does not hold — the consumer decides what to do with that.
+ * @type {import('svelte/store').Writable<{token: number, name: string, hash: string}|null>}
+ */
+export const explorerRevealArm = writable(null);
+let revealArmToken = 0;
+/** @param {string} name @param {string} [hash] */
+export function revealExplorerItem(name, hash = '') {
+	explorerRevealArm.set({ token: ++revealArmToken, name, hash: hash ?? '' });
+}
 export const objectListClose = writable(true);
 export const chatHidden = writable('hidden');
 // AI assistant (roadmap #10): '' = window open, 'hidden' = closed (mirrors chat).

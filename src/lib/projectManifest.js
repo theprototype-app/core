@@ -25,7 +25,8 @@
 // bytes serves them.
 
 import { writable, get } from 'svelte/store';
-import { peers, showToast, explorerClose } from '../stores/appStore';
+import { peers, showToast, explorerClose, revealExplorerItem } from '../stores/appStore';
+import { bottomDockActive } from './bottomDock';
 import { showChoice } from './confirmDialog';
 import { sessionHost } from './connectionState';
 import { isViewer } from './objectPermissions';
@@ -687,11 +688,22 @@ export function keepableHashes(name) {
 // normalize rule one layer out.
 
 /**
- * @typedef {{doc: Manifest, clashes: string[], pointerMoves: string[],
- *   senderLacks: string[]}} MergeResult
- *   `clashes` = scenes where both sides had something the other lacked · `pointerMoves`
- *   = scenes whose pointer moved away from what LOCAL had · `senderLacks` = merged
- *   content the REMOTE document does not carry, which is the whole reason to answer it.
+ * @typedef {{remoteWon: boolean, novelLoser: number, tip: string}} ClashDetail
+ *   Which side kept the pointer (`remoteWon`), how many hashes the OTHER side brought
+ *   that the winner's line lacked (`novelLoser`), and the pointer the scene now means
+ *   (`tip`). `remoteWon` is a document-level fact, so every scene in one merge agrees on
+ *   it — it is carried per scene anyway because the thing that reads this is a sentence
+ *   about ONE scene.
+ */
+
+/**
+ * @typedef {{doc: Manifest, clashes: string[], clashDetails: Record<string, ClashDetail>,
+ *   pointerMoves: string[], senderLacks: string[]}} MergeResult
+ *   `clashes` = scenes where both sides had something the other lacked · `clashDetails`
+ *   = the same scenes, keyed, with what a person needs to be TOLD about each (round 32:
+ *   "the newest save is now current" never said WHOSE) · `pointerMoves` = scenes whose
+ *   pointer moved away from what LOCAL had · `senderLacks` = merged content the REMOTE
+ *   document does not carry, which is the whole reason to answer it.
  */
 
 /** Is `a` a strict prefix of `b`? Append-only history makes this the subset test.
@@ -722,7 +734,7 @@ function unionKeepingOrder(a = [], b = []) {
  * per-hash label tie — there is no per-entry stamp to ask, and inventing one would be a
  * migration.
  * @param {SceneEntry} a ours @param {SceneEntry} b theirs @param {boolean} remoteNewer
- * @returns {{entry: SceneEntry, clash: boolean}}
+ * @returns {{entry: SceneEntry, clash: boolean, novelLoser: number}}
  */
 function mergeSceneEntry(a, b, remoteNewer) {
 	const winner = remoteNewer ? b : a;
@@ -730,6 +742,10 @@ function mergeSceneEntry(a, b, remoteNewer) {
 	/** @type {string[]} */
 	let history;
 	let clash = false;
+	// how many of the loser's saves the winner's line did not have. Counted HERE because
+	// this is the only place that knows which side lost; the caller turns it into the
+	// sentence that tells a user what happened to their work.
+	let novelLoser = 0;
 	if (sameList(a.history, b.history)) history = [...a.history];
 	else if (isPrefix(a.history, b.history)) history = [...b.history];
 	else if (isPrefix(b.history, a.history)) history = [...a.history];
@@ -741,6 +757,7 @@ function mergeSceneEntry(a, b, remoteNewer) {
 		const novel = [...new Set(loser.history.filter((h) => !winSet.has(h)))];
 		// a clash is MUTUAL, never one side simply being behind
 		clash = novel.length > 0 && winner.history.some((h) => !loseSet.has(h));
+		novelLoser = novel.length;
 		const head = [...winner.history];
 		const pointer = /** @type {string} */ (head.pop());
 		history = [...head, ...novel, pointer];
@@ -757,7 +774,7 @@ function mergeSceneEntry(a, b, remoteNewer) {
 		// history membership, so nothing here has to
 		labels: { ...(loser.labels ?? {}), ...(winner.labels ?? {}) }
 	};
-	return { entry, clash };
+	return { entry, clash, novelLoser };
 }
 
 /** Which merged content the SENDER does not carry — scenes, assets and the project name
@@ -808,6 +825,8 @@ export function mergeManifests(local, remote) {
 	doc.assets = unionKeepingOrder(mine.assets, theirs.assets);
 	/** @type {string[]} */
 	const clashes = [];
+	/** @type {Record<string, ClashDetail>} */
+	const clashDetails = {};
 	/** @type {string[]} */
 	const pointerMoves = [];
 	/** @type {Record<string, SceneEntry>} */
@@ -820,9 +839,18 @@ export function mergeManifests(local, remote) {
 			scenes[name] = /** @type {SceneEntry} */ (a ?? b);
 			continue;
 		}
-		const { entry, clash } = mergeSceneEntry(a, b, remoteNewer);
+		const { entry, clash, novelLoser } = mergeSceneEntry(a, b, remoteNewer);
 		scenes[name] = entry;
-		if (clash) clashes.push(name);
+		if (clash) {
+			clashes.push(name);
+			// keyed by the SAME names as `clashes` — a detail for a scene that did not clash
+			// would be a report of something nobody needs telling about
+			clashDetails[name] = {
+				remoteWon: remoteNewer,
+				novelLoser,
+				tip: entry.history[entry.history.length - 1]
+			};
+		}
 		// a pointer MOVE is a statement about what we used to think this scene was, so a
 		// name we never held is not one — that is an arrival, not a move
 		if (a.history[a.history.length - 1] !== entry.history[entry.history.length - 1])
@@ -830,7 +858,7 @@ export function mergeManifests(local, remote) {
 	}
 	doc.scenes = scenes;
 	const out = normalizeManifest(doc);
-	return { doc: out, clashes, pointerMoves, senderLacks: senderLacking(out, theirs) };
+	return { doc: out, clashes, clashDetails, pointerMoves, senderLacks: senderLacking(out, theirs) };
 }
 
 /** A canonical string for "these two documents mean the same thing". Key ORDER is not
@@ -996,23 +1024,66 @@ function amHostWithPeers() {
 	return get(sessionHost) === null && openPeerCount() > 0;
 }
 
-/** @param {string[]} clashes @param {string[]} pointerMoves */
-function surfaceMerge(clashes, pointerMoves) {
+/** ONE scene's divergence, in words. R22 round 32: the old copy named the scenes and
+ * then said "the newest save is now current", which is true of every merge and tells the
+ * one person who cares — the one whose save just stopped being current — nothing. The
+ * sentence names the WINNER plainly and, either way, says where the other line went: the
+ * merge is a union, so nothing is ever lost and the copy has to make that obvious rather
+ * than leave it to be feared.
+ * @param {string} name @param {ClashDetail} detail */
+function clashSentence(name, detail) {
+	const n = detail.novelLoser || 1;
+	const saves = n === 1 ? '1 diverging save' : n + ' diverging saves';
+	return detail.remoteWon
+		? `"${name}": their newer save is now current — your ${saves} ${n === 1 ? 'is' : 'are'} kept as ${n === 1 ? 'an earlier version' : 'earlier versions'}.`
+		: `"${name}": your save stays current — their ${saves} ${n === 1 ? 'was' : 'were'} added as ${n === 1 ? 'an earlier version' : 'earlier versions'}.`;
+}
+
+/** @param {string[]} clashes @param {string[]} pointerMoves
+ * @param {Record<string, ClashDetail>} [details] */
+function surfaceMerge(clashes, pointerMoves, details) {
 	const freshClashes = clashes.filter((n) => !clashesTold.has(n));
 	if (freshClashes.length) {
 		for (const n of freshClashes) clashesTold.add(n);
+		// three named, the rest counted — the pointer toast's rule, for the same reason: a
+		// dialog is read, not scrolled
+		const named = freshClashes.slice(0, 3);
+		const lines = named.map((n) =>
+			clashSentence(n, details?.[n] ?? { remoteWon: true, novelLoser: 1, tip: '' })
+		);
+		if (freshClashes.length > named.length)
+			lines.push('...and ' + (freshClashes.length - named.length) + ' more.');
 		// fire-and-forget: by the time this shows, the divergence is already RESOLVED (both
 		// lines are in the history). The dialog reports it and offers the door; it gates
 		// nothing, so nothing waits on the answer.
+		//
+		// ONE BUTTON PER SCENE (capped at the three named): `showChoice` already renders a
+		// row of them — the module-requirement prompt ships four — and a single door
+		// labelled "Review versions..." cannot say WHICH history it opens when two scenes
+		// diverged at once. With one clash, which is the normal case, it reads exactly as
+		// it did before.
 		void showChoice({
 			title: 'Scene versions diverged',
-			message:
-				freshClashes.join(', ') +
-				" — both lines are kept in each scene's history; the newest save is now current.",
-			choices: [{ value: 'history', label: 'Review versions...' }],
+			message: lines.join(' '),
+			// the value is an INDEX, not the scene name: ConfirmModal builds a DOM id out of
+			// it, and a scene name may hold anything a person can type
+			choices: named.map((n, i) => ({
+				value: 'history-' + i,
+				label: named.length > 1 ? `Review "${n}"...` : 'Review versions...'
+			})),
 			cancelLabel: 'OK'
 		}).then((answer) => {
-			if (answer === 'history') explorerClose.set(false);
+			if (!answer?.startsWith('history-')) return;
+			const name = named[Number(answer.slice('history-'.length))];
+			if (!name) return;
+			// LAND somewhere, rather than merely opening the panel: the Explorer, made the
+			// visible dock panel (settleSceneIdentity's ritual — a card behind the Flow tab
+			// is no answer), then the write-once reveal request the panel consumes. The tip
+			// is passed because it is the row the user is looking for; the panel falls back
+			// to the newest version it holds when this machine has no copy of that one.
+			explorerClose.set(false);
+			bottomDockActive.set('explorer');
+			revealExplorerItem(name, details?.[name]?.tip ?? '');
 		});
 	}
 	const freshMoves = pointerMoves.filter((n) => !pointersTold.has(n));
@@ -1079,8 +1150,8 @@ export function applyRemoteManifest(data) {
 	// C4: the session's own scene names, recorded BEFORE anything branches — a name taught
 	// in this very message is publishable in the send-back that answers it
 	noteSessionScenes(doc);
-	const { doc: merged, clashes, pointerMoves } = mergeManifests(mine, doc);
-	surfaceMerge(clashes, pointerMoves);
+	const { doc: merged, clashes, clashDetails, pointerMoves } = mergeManifests(mine, doc);
+	surfaceMerge(clashes, pointerMoves, clashDetails);
 	if (sameContent(merged, mine)) return false;
 	if (sameContent(merged, doc)) {
 		// their document already IS the union: keep their stamp so the mesh stays on one

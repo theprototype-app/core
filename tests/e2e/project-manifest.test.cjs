@@ -234,6 +234,7 @@ h.run(async () => {
 				),
 				doc: out.doc,
 				clashes: out.clashes,
+				clashDetails: out.clashDetails,
 				pointerMoves: out.pointerMoves,
 				senderLacks: out.senderLacks
 			};
@@ -288,6 +289,15 @@ h.run(async () => {
 			JSON.stringify(mDivR.senderLacks) === '["Arena"]',
 		`...and all three reports fire, because both sides held something the other lacked (${JSON.stringify(mDivR)})`
 	);
+	// R22 round 32: WHO WON, and how much of the other line was folded in. The old modal
+	// said "the newest save is now current" without ever saying whose, which is the one
+	// fact the person reading it wants.
+	h.check(
+		mDivR.clashDetails?.Arena?.remoteWon === true &&
+			mDivR.clashDetails.Arena.novelLoser === 1 &&
+			mDivR.clashDetails.Arena.tip === 'a3',
+		`...and the detail names the REMOTE as the winner, counts the one save of ours it kept, and carries the winning pointer (${JSON.stringify(mDivR.clashDetails)})`
+	);
 
 	// DIVERGED, local newer: the same union, OUR pointer — so nothing moved here
 	const mDivL = await merge(
@@ -299,6 +309,12 @@ h.run(async () => {
 			JSON.stringify(mDivL.clashes) === '["Arena"]' &&
 			!mDivL.pointerMoves.length,
 		`diverged the other way: same union, our pointer, no pointer move (${JSON.stringify(mDivL)})`
+	);
+	h.check(
+		mDivL.clashDetails?.Arena?.remoteWon === false &&
+			mDivL.clashDetails.Arena.novelLoser === 1 &&
+			mDivL.clashDetails.Arena.tip === 'a2',
+		`...and the detail flips with it: OURS won, and the tip is our pointer (${JSON.stringify(mDivL.clashDetails)})`
 	);
 
 	// a SUBSET that is not a prefix takes the diverged path (the orders disagree) — but
@@ -312,6 +328,11 @@ h.run(async () => {
 			!mSubset.clashes.length &&
 			!mSubset.pointerMoves.length,
 		`a subset that is not a prefix is diverged but not a clash (${JSON.stringify(mSubset)})`
+	);
+	h.check(
+		Object.keys(mSubset.clashDetails ?? {}).length === 0 &&
+			Object.keys(mPrefix.clashDetails ?? {}).length === 0,
+		'the details are keyed by the SAME scenes as `clashes` — a catch-up produces none'
 	);
 
 	// THE WIPE PROTECTION, as a unit: a name only one side holds is carried whole
@@ -516,9 +537,14 @@ h.run(async () => {
 		!!eDialog &&
 			eDialog.title === 'Scene versions diverged' &&
 			eDialog.message.includes('Arena') &&
-			eDialog.message.includes('both lines are kept') &&
-			eDialog.choices.includes('history'),
+			eDialog.choices.includes('history-0'),
 		`the divergence is SHOWN to the side that resolved it, naming the scene and offering the versions door (${JSON.stringify(eDialog)})`
+	);
+	// R22 round 32: E's OWN save ('e-a3') is the pointer, so the sentence must say so —
+	// the old copy said "the newest save is now current" to both sides alike
+	h.check(
+		!!eDialog && eDialog.message.includes('your save stays current') && eDialog.message.includes('added as an earlier version'),
+		`...and it names the winner: E's own save kept the pointer, D's line was folded in behind it (${eDialog?.message})`
 	);
 	h.check(
 		(await dialogOf(D)) === null,
@@ -763,6 +789,109 @@ h.run(async () => {
 		!(await manifestOf(F)).scenes.Crypt && !(await manifestOf(F)).scenes.Cellar,
 		`...but it consented only to what the FILE carried: the private scenes beside it never travelled (${JSON.stringify(await keysOf(F))})`
 	);
+
+	// =====================================================================
+	// 20. THE DIALOG SAYS WHO WON, AND ITS BUTTON LANDS (round 32 item 3)
+	//
+	// REPORTED: "Scene versions diverged" listed the names and said "the newest save is
+	// now current" — true of every merge, and silent about the one thing the reader wants
+	// to know, which is whether that newest save was theirs. And "Review versions..."
+	// merely opened the Explorer, leaving the user to go and find the scene.
+	//
+	// A FRESH PAGE and no peers: the merge is the same function either way, the dialog is
+	// local, and this section drives a modal and the dock — neither of which the connected
+	// peers above should have to step around.
+	// =====================================================================
+	const H = await h.setupPage(browser, 'H');
+	await H.page.waitForFunction(() => !!window.__stores?.projectManifest, { timeout: 30000 });
+	// ONE REAL save, so the library holds bytes a version panel can show, plus one hash
+	// published on top of it — that pair is what makes the incoming document DIVERGED
+	// rather than a catch-up.
+	const savedArena = await H.page.evaluate(async () => {
+		const rec = await window.__stores.levels.saveSceneAsLevel('Arena');
+		window.__stores.projectManifest.publishSceneVersion('Arena', 'h-local2');
+		return rec?.hash ?? null;
+	});
+	h.check(
+		!!savedArena &&
+			JSON.stringify((await manifestOf(H)).scenes.Arena?.history) ===
+				JSON.stringify([savedArena, 'h-local2']),
+		`premise: a real Arena save on disk, with one more version published over it (${savedArena?.slice(0, 8)})`
+	);
+	// the peer's line: the same first save, then a version of its own, stamped newer — so
+	// THEIRS takes the pointer and ours is folded in behind it
+	await H.page.evaluate(
+		({ first }) =>
+			window.__stores.projectManifest.applyRemoteManifest({
+				manifest: {
+					name: '',
+					scenes: { Arena: { history: [first, 'peer-a2'], pinned: [] } },
+					assets: [],
+					changedAt: Date.now() + 60000
+				}
+			}),
+		{ first: savedArena }
+	);
+	h.check(
+		JSON.stringify((await manifestOf(H)).scenes.Arena?.history) ===
+			JSON.stringify([savedArena, 'h-local2', 'peer-a2']),
+		`premise: the union kept both lines and the peer's save is the pointer (${JSON.stringify((await manifestOf(H)).scenes.Arena?.history)})`
+	);
+	const hDialog = await dialogOf(H);
+	h.check(
+		!!hDialog && hDialog.title === 'Scene versions diverged' && hDialog.message.includes('"Arena"'),
+		`the divergence dialog names the scene (${JSON.stringify(hDialog)})`
+	);
+	// THE FIX: it says WHOSE save is current, and where the other one went
+	h.check(
+		!!hDialog &&
+			hDialog.message.includes('their newer save is now current') &&
+			hDialog.message.includes('kept as an earlier version'),
+		`...and names the winner plainly, with the loser's save accounted for (${hDialog?.message})`
+	);
+	h.check(
+		!!hDialog && !hDialog.message.includes('the newest save is now current'),
+		'the old copy — true of every merge, and an answer to nobody — is gone'
+	);
+	// the DOM, through the real button: one clash, so one door, labelled as it always was
+	const reviewBtn = H.page.locator('#confirm-dialog-history-0');
+	h.check(
+		(await reviewBtn.count()) === 1 && (await reviewBtn.innerText()).includes('Review versions'),
+		`the review door is rendered (${await reviewBtn.count()})`
+	);
+	await reviewBtn.click();
+	await H.page.waitForTimeout(900);
+	const explorerShown = await H.page.evaluate(() => {
+		let closed, panel;
+		window.__stores.explorerClose.subscribe((v) => (closed = v))();
+		window.__stores.bottomDock.bottomDockActive.subscribe((v) => (panel = v))();
+		return { closed, panel };
+	});
+	h.check(
+		explorerShown.closed === false && explorerShown.panel === 'explorer',
+		`Review opens the Explorer AND makes it the visible dock panel (${JSON.stringify(explorerShown)})`
+	);
+	// LANDING, not just opening: the scene's own version history, on screen
+	h.check(await H.page.locator('#version-history').isVisible(), 'the version history is open');
+	const hRows = await H.page.evaluate(() =>
+		[...document.querySelectorAll('#version-history .vh-row')].map((row) => ({
+			hash: row.getAttribute('data-hash'),
+			pointer: row.getAttribute('data-pointer') === '1',
+			text: row.textContent.trim()
+		}))
+	);
+	h.check(
+		hRows.length === 3 && hRows.some((r) => r.hash === savedArena),
+		`...and it is ARENA's history — three rows, the held save among them (${JSON.stringify(hRows.map((r) => r.hash))})`
+	);
+	// the winning hash is one this machine has never held, which is the ordinary case
+	// after a merge: the panel still opens, on the version we DO have
+	h.check(
+		hRows.some((r) => r.hash === 'peer-a2' && r.pointer && r.text.includes('Not held')),
+		`the peer's winning version is listed as the current one, and marked as bytes we do not hold yet (${JSON.stringify(hRows.find((r) => r.pointer))})`
+	);
+	const hErrs = await h.pageErrors(H);
+	h.check(hErrs.length === 0, `no page errors on H (${JSON.stringify(hErrs)})`);
 
 	for (const [p, label] of [[D, 'D'], [E, 'E'], [F, 'F'], [G, 'G']]) {
 		const errs = await h.pageErrors(p);

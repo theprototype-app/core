@@ -1,7 +1,17 @@
 // Phase 50.4: share-or-stash on connect — merging two NON-empty scenes asks
 // each side about its own objects; Share keeps the normal sync, Stash saves a
 // session and joins clean (no deletes broadcast).
+//
+// R22 ROUND 33: this is the CLASSIC merge, and since round 33 it is an OPT-IN. A joiner
+// holding work in an unsaved scene is now put the connect DECISION at the approval
+// (Save scene & connect / Dismiss changes / Disconnect — `connect-decision` owns it)
+// unless `mergeOnConnect` is on. So this suite parks that setting before boot, which
+// makes it the setting's own coverage: the flow below is what the switch buys back.
+// Both pages get it — the joiner is the one `connectDecisionApplies` reads, but a
+// suite that dials in either direction should not depend on which page that is.
 const h = require('./helpers.cjs');
+
+const CLASSIC = { storage: { 'connect:mergeOnConnect': 'true' } };
 
 const objectNames = (page) =>
 	page.evaluate(
@@ -15,8 +25,8 @@ const objectNames = (page) =>
 
 h.run(async () => {
 	const browser = await h.launch();
-	const A = await h.setupPage(browser, 'A');
-	const B = await h.setupPage(browser, 'B');
+	const A = await h.setupPage(browser, 'A', CLASSIC);
+	const B = await h.setupPage(browser, 'B', CLASSIC);
 
 	// both sides own objects BEFORE connecting
 	await A.page.evaluate(async () => {

@@ -69,13 +69,23 @@ export const explorerClose = writable(true);
  * `{ token, folderId }`: the token makes two consecutive requests distinguishable (two
  * identical objects are `===` different, but a number bumped per arm is what a `$effect`
  * can key on); `folderId` is where the save should land, or null for the root.
- * @type {import('svelte/store').Writable<{token: number, folderId: string|null}|null>}
+ *
+ * R22 round 33 adds `consent`: does this save also CONSENT to publishing the scene to the
+ * session (C4's `noteSceneOpened`)? True for every save a person means as a save — which
+ * is why it is only ever false when a caller says so. The connect decision's "Save scene &
+ * connect" saves in order to LEAVE a scene behind, and leaving is not publishing.
+ * @type {import('svelte/store').Writable<{token: number, folderId: string|null,
+ *   consent: boolean}|null>}
  */
 export const explorerSceneSaveArm = writable(null);
 let sceneSaveArmToken = 0;
-/** @param {string|null} folderId */
-export function armExplorerSceneSave(folderId = null) {
-	explorerSceneSaveArm.set({ token: ++sceneSaveArmToken, folderId: folderId ?? null });
+/** @param {string|null} folderId @param {{consent?: boolean}} [opts] */
+export function armExplorerSceneSave(folderId = null, opts = {}) {
+	explorerSceneSaveArm.set({
+		token: ++sceneSaveArmToken,
+		folderId: folderId ?? null,
+		consent: opts.consent !== false
+	});
 }
 /**
  * R22 round 32 — the same seam for "open the Explorer AND show me this scene's version

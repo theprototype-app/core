@@ -68,7 +68,7 @@ import {
 } from '$lib/hudSync';
 import { applyRemoteGameState, sendGameState, gameStatePayload } from '$lib/gameSync';
 import { applyRemoteTriggers, sendTriggers } from '$lib/triggerSync';
-import { applySessionProposal, applySessionAnswer, deferUntilShareChoice, localSceneCount, gateHolds } from '$lib/sessions';
+import { applySessionProposal, applySessionAnswer, deferUntilShareChoice, localSceneCount, gateHolds, registerWorldStatePush, connectDecisionApplies, noteHandshakeDeferred } from '$lib/sessions';
 import { applyRemoteGeometry } from '$lib/geometryEdit';
 import { applyLightTarget } from '$lib/lightParams';
 import { applyObjectFile } from '$lib/animatedImports';
@@ -880,23 +880,50 @@ export class PeerConnection {
 		// V3: app version rides the modules handshake — old peers ignore the extras,
 		// old senders omit them (checkPeerAppVersion is silent on absence)
 		conn.send({type: 'modules', versions: moduleVersions(), appVersion: APP_VERSION, sha: COMMIT_SHA})
-		conn.send(environmentState())
-		conn.send(musicState())
-		conn.send(scenePhysicsState())
-		// L-C: one per post DOCUMENT — the scene look and any camera looks
-		for (const state of scenePostStates()) conn.send(state)
+		// R22 round 33 — NOTHING MOVES UNTIL THE DECISION, INCLUDING WHAT WE ASK FOR.
+		//
+		// When this handshake is the one that will put the connect decision on screen (we
+		// joined THEM, our scene has never been saved, and we are holding work), the CONTENT
+		// half of it waits. Two different leaks, one condition:
+		//
+		//   · the scene SINGLETONS describe a world that is about to be saved-and-left or
+		//     dismissed, and they are latest-wins — a joiner's fresher `changedAt` would
+		//     CLOBBER the host's sky, gravity and game with the look of a world nobody in
+		//     the room ever agreed to receive. Identity is not content, so `handmodel` and
+		//     the preset library still go.
+		//   · `requestFullState` (and `getnodedefs`) is an INVITATION for a world to arrive.
+		//     The share-or-stash gate can drop what a peer sends unasked, but the honest
+		//     thing is not to ask until there is a decision behind the asking.
+		//
+		// The request is DEFERRED, never cancelled: whatever ends the decision issues it
+		// (`askDeferredState` in sessions.js), by which time we hold a saved-and-cleared
+		// scene or nothing at all — so the request goes out with count 0 and the host's own
+		// row-1/row-5 fast path answers it without a question of its own.
+		//
+		// THE DEGENERATE EDGE, and it is safe: a host that never sends `getobjects` opens no
+		// gate here, so no decision is ever put and nothing is exchanged in either direction.
+		// Only a build that would not have asked us anything can reach it.
+		const holdContent = getobjects && connectDecisionApplies(get(sessionHost) === peerId, myScene()?.scene ?? '');
+		if (holdContent) noteHandshakeDeferred(peerId);
+		if (!holdContent) {
+			conn.send(environmentState())
+			conn.send(musicState())
+			conn.send(scenePhysicsState())
+			// L-C: one per post DOCUMENT — the scene look and any camera looks
+			for (const state of scenePostStates()) conn.send(state)
+		}
 		conn.send(handModelState())
 		conn.send(envPresetsState())
-		if (getobjects) this.requestFullState(conn)
+		if (getobjects && !holdContent) this.requestFullState(conn)
 		// singleton PUSH, like environmentState/scenePhysicsState above
-		conn.send(gameStatePayload())
+		if (!holdContent) conn.send(gameStatePayload())
 		// module state is the one PER-PEER payload in the get* family (each peer
 		// answers with its OWN states — e.g. campreview presence), so it can't be
 		// deduped down to the host like the shared-scene requests above (B5)
 		conn.send({type: 'getmodulestate', sender: this.peer.id})
 		// 21-G2: the project manifest (scene histories + asset list) for late joiners
 		conn.send({type: 'getproject', sender: this.peer.id})
-		if (getobjects) conn.send({type: 'getnodedefs', sender: this.peer.id})
+		if (getobjects && !holdContent) conn.send({type: 'getnodedefs', sender: this.peer.id})
 		// join them into the voice mesh if our mic is live
 		voicePeerConnected(peerId);
 	}
@@ -1237,3 +1264,40 @@ export class PeerConnection {
 		this.broadcast(data);
 	}
 }
+
+/**
+ * R22 round 33 — WHAT A CONSENTED OBJECTS REPLY OWES BESIDE THE OBJECTS.
+ *
+ * The five scene singletons below are PUSHED by `sendHandshake` and never requested:
+ * only `scenepost` has a `get*` of its own. So anything the share-or-stash gate DROPS
+ * from them (round 32 holds both directions) is gone for good — `resolveGate`'s refetch
+ * can ask for objects, nodes, annotations, joints, anim, huds and shader graphs, and has
+ * nothing to ask for the sky, the music, the gravity or the game. The peer who answers
+ * the question is left in the stock studio look while the room has a sunset, until
+ * somebody happens to touch a slider.
+ *
+ * Sending them with the reply closes that: an objects reply is "here is my world", and
+ * the world's look is part of it. Every one is latest-wins on its own stamp, so an
+ * ordinary ungated reply just repeats what the handshake said a moment before.
+ *
+ * Straight down the peer's own conn, the way `sendObjects` answers — never `broadcast`,
+ * which would state our look at the whole mesh because one peer asked.
+ *
+ * Registered rather than imported: `sessions.js` is in the history family and may not
+ * reach environment/scenePost/gameSync statically (the `registerToneMappingOwner`
+ * shape). Declared as a function statement, so the registration below is safe wherever
+ * it sits in this file. @param {string} peerId
+ */
+function pushWorldState(peerId) {
+	/** @type {any} */
+	const peer = get(peers);
+	const conn = peer?.connections?.[peerId];
+	if (!conn?.open) return;
+	conn.send(environmentState());
+	conn.send(musicState());
+	conn.send(scenePhysicsState());
+	// L-C: one per post DOCUMENT — the scene look and any camera looks
+	for (const state of scenePostStates()) conn.send(state);
+	conn.send(gameStatePayload());
+}
+registerWorldStatePush(pushWorldState);

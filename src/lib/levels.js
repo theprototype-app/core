@@ -441,8 +441,10 @@ export function levelSceneName(fileName) {
  * @param {string} name
  * @param {string|null} [folderId] 21-G9: land it HERE when it is a real library folder
  *   (the Explorer's active folder); 21-H1: the library ROOT otherwise
- * @param {{label?: string}} [opts] 21-G7: `label` NAMES this version in the history
- *   panel (the manual "Save version…" path); absent = "Auto"
+ * @param {{label?: string, consent?: boolean}} [opts] 21-G7: `label` NAMES this version in
+ *   the history panel (the manual "Save version…" path); absent = "Auto".
+ *   R22 round 33: `consent: false` withholds the C4 publish consent — see below. Absent
+ *   means consent, so every existing caller is byte-identical.
  * @returns {Promise<{id: string, hash: string, name: string}|null>}
  */
 export async function saveSceneAsLevel(name, folderId = null, opts = {}) {
@@ -467,7 +469,14 @@ export async function saveSceneAsLevel(name, folderId = null, opts = {}) {
 	// publishSceneVersion commits, and a commit is a broadcast, so consent given after it
 	// scopes out the very version it was meant to release and nothing sends again until
 	// the next manifest write. (Measured: the host's document stayed without the scene.)
-	noteSceneOpened(payload.name);
+	//
+	// R22 round 33 — WITH ONE EXCEPTION, and it is the exception that proves the rule.
+	// "Save scene & connect" saves in order to LEAVE the scene behind and join somebody
+	// else's world clean. That is not the act of publishing it to the room ("it should not
+	// share any changes unless I choose"), so the connect decision passes `consent: false`
+	// and the name stays out of `outboundManifest`'s scope. The version is still written
+	// locally, and saving it again — deliberately, later — is consent like any other save.
+	if (opts.consent !== false) noteSceneOpened(payload.name);
 	publishSceneVersion(payload.name, item.hash);
 	// ADOPT THE FILE WE CAME FROM. Reported as: open a dragged-in cube.tpscene, rename
 	// it, move something, then save — and a SECOND cube2.tpscene appeared beside the

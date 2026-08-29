@@ -100,6 +100,9 @@ import {
 } from './assetShare';
 import { ownerStamp } from './cloudHooks';
 import { transfers, removeTransfer } from './transferLedger';
+// R22 round 33: automatic downloads WAIT while the joiner is being asked what to do with
+// its own scene. A store-only leaf, so this edge closes nothing.
+import { pendingConnectDecision } from './connectionState';
 
 /**
  * Hashes we have ASKED the mesh for and not yet received. A remote card with nothing to
@@ -1231,7 +1234,44 @@ export function applySharedIndex(doc) {
 	//
 	// The queue does the rate limiting (see enqueuePulls), so a folder of two hundred
 	// files does not become two hundred simultaneous requests.
-	if (get(autoDownload)) autoPullMissing();
+	if (get(autoDownload)) autoPullWhenAllowed();
+}
+
+/**
+ * R22 round 33 — HOLD WHILE A CONNECT DECISION IS OPEN.
+ *
+ * "It should not share or download any changes unless I choose." The connect decision asks
+ * a joiner whether to save its unsaved work or dismiss it, and until that is answered
+ * nothing about the two worlds has been agreed — so a sweep that quietly pulls the host's
+ * library down is the same surprise the decision exists to remove, and `Disconnect` would
+ * leave those files on a machine that never joined anything.
+ *
+ * ASK ONCE, THEN WATCH — never a second attempt that never comes (the LUT rule). ONE watch
+ * covers however many sweeps are held behind it, because `autoPullMissing` is a full
+ * re-scan of the document rather than a queue of individual files.
+ * @type {(() => void) | null} */
+let heldPull = null;
+
+function autoPullWhenAllowed() {
+	if (!get(pendingConnectDecision)) return autoPullMissing();
+	if (heldPull) return;
+	heldPull = pendingConnectDecision.subscribe((pending) => {
+		// the subscribe fires immediately with the CURRENT value, which we have just
+		// established is non-null, so this first call can never release the hold
+		if (pending) return;
+		// deferred a microtask: unsubscribing from inside the callback would reach the
+		// binding before the assignment (the `waitForSceneName` shape)
+		const unsub = heldPull;
+		heldPull = null;
+		queueMicrotask(() => {
+			try {
+				unsub?.();
+			} catch {
+				/* already gone */
+			}
+		});
+		if (get(autoDownload)) autoPullMissing();
+	});
 }
 
 /** Fetch every shared file this machine lacks, honouring the queue. Silent when there
@@ -1576,7 +1616,9 @@ export function startSharedLibrary() {
 			// C2: the FIRST peer opens the share session — the rise from zero, not every rise
 			if (!lastPeerCount) beginShareSession();
 			retryUnavailable();
-			if (get(autoDownload)) autoPullMissing();
+			// R22 round 33: the peer RISE is the very edge a connect decision sits on, so
+			// this is the sweep most likely to be held — see `autoPullWhenAllowed`
+			if (get(autoDownload)) autoPullWhenAllowed();
 		}
 		if (!n && lastPeerCount) {
 			endShareSession();

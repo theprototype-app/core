@@ -19,8 +19,22 @@
 // (scene-isolation §4c's technique), and the receive leg rides `sendObjects`, which writes
 // straight down the conn and never touches `broadcast` at all.
 //
+// R22 ROUND 33 adds §2b and §5, the hole the drop left behind: the scene SINGLETONS
+// (environment / music / scenephysics / game) are PUSH-only, so the refetch that heals
+// everything else has no request to make for them, and a dropped sunset is dropped
+// forever. A consented objects reply carries them now.
+//
+// R22 ROUND 33 also moved the JOINER's question: a peer holding work in an unsaved scene
+// is now put the connect DECISION modal at the approval instead of this toast, unless the
+// classic merge is opted back in. The gate's hold is the SAME hold either way — the modal
+// path's is covered in `connect-decision` — so this suite parks `mergeOnConnect` before
+// boot and keeps proving the two legs through the classic Share/Stash fork, which is the
+// arrangement the counterfactuals below were measured against. Both pages get the setting.
+//
 // Run: APP_URL='https://localhost:5203/' PEER_CONFIG=... npm run e2e -- share-gate-defer
 const h = require('./helpers.cjs');
+
+const CLASSIC = { storage: { 'connect:mergeOnConnect': 'true' } };
 
 const objectNames = (p) =>
 	p.page.evaluate(
@@ -68,6 +82,14 @@ const roomScoped = (p, op, type) =>
 		return set.has(t);
 	}, [op, type]);
 
+/** R22 round 33 — the scene's LOOK, read as the pair that decides latest-wins. */
+const envOf = (p) =>
+	p.page.evaluate(() => {
+		let e;
+		window.__stores.environment.environment.subscribe((v) => (e = v))();
+		return { preset: e?.preset ?? '', changedAt: e?.changedAt ?? 0 };
+	});
+
 const clickToast = (p, label) =>
 	p.page.evaluate((l) => {
 		const btn = [...document.querySelectorAll('.tp-toast-action')].find(
@@ -80,8 +102,8 @@ const clickToast = (p, label) =>
 
 h.run(async () => {
 	const browser = await h.launch();
-	const A = await h.setupPage(browser, 'A');
-	const B = await h.setupPage(browser, 'B');
+	const A = await h.setupPage(browser, 'A', CLASSIC);
+	const B = await h.setupPage(browser, 'B', CLASSIC);
 
 	// =====================================================================
 	// 1. BOTH SIDES HOLD WORK IN AN UNNAMED SCENE, AND BOTH ARE ASKED
@@ -96,8 +118,9 @@ h.run(async () => {
 
 	h.check((await objectCount(A)) === 2 && (await objectCount(B)) === 1, 'premise: A holds 2, B holds 1');
 
-	// h.connect answers the round-31 DIAL ask (Connect anyway) and nothing else — the
-	// share-or-stash fork is the thing under test and stays unanswered.
+	// h.connect answers nothing at all since round 33 (the dial ask is gone) — and with
+	// `mergeOnConnect` parked above, the approval puts the classic share-or-stash fork
+	// rather than the decision modal. That fork is the thing under test and stays unanswered.
 	await h.connect(B, A);
 
 	await h.eventually(
@@ -151,6 +174,27 @@ h.run(async () => {
 	h.check((await roomScoped(B, 'add', 'create')) === true, `B's partition is armed again`);
 
 	// =====================================================================
+	// 2b. R22 ROUND 33 — THE SCENE'S LOOK IS HELD BACK TOO, AND CANNOT BE RE-ASKED
+	// =====================================================================
+	// `environment` is ROOM_SCOPED, so the gate withholds it exactly like an object. The
+	// difference — and the whole reason for the world-state re-push — is that
+	// `resolveGate`'s refetch has NOTHING TO ASK FOR: environment/music/scenephysics/game
+	// are PUSH-only, with no `get*` between them. So this drop is permanent unless the
+	// consented reply carries them.
+	//
+	// The baseline is taken NOW, after A's handshake push has long since landed, so the
+	// check below is about the change made mid-question and not about the handshake.
+	const envBefore = await envOf(B);
+	h.check(envBefore.preset !== 'sunset', `premise: B is not on the sunset look yet (${envBefore.preset})`);
+	await A.page.evaluate(() => window.__stores.environment.setEnvironment('sunset'));
+	await A.page.waitForTimeout(3000);
+	h.check((await envOf(A)).preset === 'sunset', 'premise: A really switched its own look mid-question');
+	h.check(
+		(await envOf(B)).preset === envBefore.preset,
+		`the look changed while the ask is open does not land either (B ${(await envOf(B)).preset})`
+	);
+
+	// =====================================================================
 	// 3. THE RECEIVE SIDE — THE OTHER SIDE ANSWERING IS NOT OUR ANSWER
 	// =====================================================================
 	// A answers Share. Its reply is `sendObjects`, which writes straight down the conn and
@@ -183,6 +227,21 @@ h.run(async () => {
 			b.length === 4 &&
 			['Box', 'Sphere', 'Cylinder'].every((n) => a.some((x) => x === n) && b.some((x) => x === n)),
 		'both sides converge on all four objects — including the edit made mid-question',
+		20000
+	);
+
+	// =====================================================================
+	// 5. R22 ROUND 33 — …AND THE LOOK COMES BACK WITH THE OBJECTS
+	// =====================================================================
+	// Nothing in the refetch burst can ask for `environment`. The only thing that can
+	// deliver A's sunset now is the consented objects reply carrying it
+	// (`registerWorldStatePush` in sessions.js -> `pushWorldState` in peerHandler).
+	// COUNTERFACTUAL: delete the `worldStatePush?.(sender)` line from `replyTo` and B
+	// stays on `studio` here while every object check above still passes.
+	await h.eventually(
+		() => Promise.all([envOf(A), envOf(B)]),
+		([a, b]) => a.preset === 'sunset' && b.preset === 'sunset' && b.changedAt === a.changedAt,
+		'the answered reply carries the scene singletons — B lands on the same sunset, same stamp',
 		20000
 	);
 

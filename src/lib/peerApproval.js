@@ -1,8 +1,5 @@
 import { get } from 'svelte/store';
-import { peers, userdata, pendingApprovals, waitingForApproval, showToast, explorerClose, armExplorerSceneSave } from '../stores/appStore';
-import { objectsGroup } from '../stores/sceneStore';
-import { bottomDockActive } from './bottomDock';
-import { showChoice } from './confirmDialog';
+import { peers, userdata, pendingApprovals, waitingForApproval, showToast } from '../stores/appStore';
 import { sessionHost } from './connectionState';
 
 // Pending-connection approval (211). Kept in its own store-only module so VR
@@ -41,16 +38,21 @@ export function denyPeer(peerId) {
 /**
  * Wait for the scene to acquire a NAME, which is what the Explorer's inline save writes
  * into `currentLevel`. Resolves true the moment one lands, false if the user walks away
- * from the naming — nothing is dialled on a scene that was never saved.
+ * from the naming — nothing proceeds on a scene that was never saved.
  *
  * The subscribe fires immediately with the CURRENT value, which the caller has already
  * established is unnamed, so the first callback can never settle this. The unsubscribe is
  * deferred a microtask anyway, because settling from inside that synchronous first call
  * would reach `unsub` before the assignment.
+ *
+ * R22 round 33 — EXPORTED. The dial-time ask this was written for is gone (see
+ * `requestConnect`), and the naming handoff it implements moved to the far end of the
+ * connection, where `sessions.js` runs it for "Save scene & connect". The machinery is
+ * unchanged; only its caller moved.
  * @param {import('svelte/store').Readable<any>} currentLevel
  * @returns {Promise<boolean>}
  */
-function waitForSceneName(currentLevel) {
+export function waitForSceneName(currentLevel) {
 	return new Promise((resolve) => {
 		/** @type {(() => void) | null} */
 		let unsub = null;
@@ -79,21 +81,6 @@ function waitForSceneName(currentLevel) {
 }
 
 /**
- * `levels` is reached through a DYNAMIC import: this module is deliberately store-only
- * (vrControls reaches it without importing peerHandler — see the header), and levels
- * pulls in the whole sessions/history family, which a static edge would drag in with it.
- *
- * PRIMED, and memoised, for the reason the Inspector primes carveActions: the press that
- * needs it is a button press, and a cold import measured 0.3-0.9s on an idle box and
- * longer on a loaded one — long enough that Connect would feel dead before the question
- * appears. Nothing awaits it here, and the app loads levels at boot anyway.
- * @type {Promise<any> | null}
- */
-let levelsPrimed = null;
-const loadLevels = () => (levelsPrimed ??= import('./levels'));
-if (typeof window !== 'undefined') void loadLevels().catch(() => {});
-
-/**
  * WAIT FOR THE MODAL TO REALLY BE GONE, because closing a <dialog> RESTORES FOCUS to
  * whatever held it before — and ConfirmModal is the app's one truly modal dialog. Arm the
  * naming card before that restore lands and the user is handed a field that looks ready
@@ -106,9 +93,13 @@ if (typeof window !== 'undefined') void loadLevels().catch(() => {});
  * Cancel button is the signal — it is minted by ConfirmModal and by nothing else, so its
  * absence IS "unmounted", and by then close() has already moved the focus. Capped, so a
  * dialog that somehow lingers costs a beat and not the connection.
+ *
+ * R22 round 33 — EXPORTED for the same reason as `waitForSceneName` above: the modal that
+ * hands over to the naming card is the CONNECT DECISION now, and it lives in sessions.js.
+ * The measurement and the reasoning are unchanged.
  * @returns {Promise<void>}
  */
-function modalClosed() {
+export function modalClosed() {
 	return new Promise((resolve) => {
 		if (typeof document === 'undefined') return resolve(undefined);
 		const started = Date.now();
@@ -124,91 +115,31 @@ function modalClosed() {
 }
 
 /**
- * The dial-time question: may we connect from here? See `requestConnect` for why it
- * exists. Returns true for "dial now", false for "the user said no, or is still naming".
- * @returns {Promise<boolean>}
- */
-async function settleSceneIdentity() {
-	const group = /** @type {any} */ (get(objectsGroup));
-	const count = group?.children?.length ?? 0;
-	if (count === 0) return true; // nothing at stake, and adoption will name us
-	/** @type {any} */
-	let levels;
-	try {
-		levels = await loadLevels();
-	} catch {
-		return true; // never let a failed import stop somebody connecting
-	}
-	if (String(get(levels.currentLevel)?.name ?? '').trim()) return true;
-
-	const objects = count + ' object' + (count === 1 ? '' : 's');
-	const answer = await showChoice({
-		title: 'This scene has no name yet',
-		message:
-			'You have ' +
-			objects +
-			' in an unsaved scene. Peers tell worlds apart by scene NAME, so until this one is saved you and everybody you connect to count as one shared room — nobody can be somewhere else.',
-		choices: [
-			{ value: 'save', label: 'Save & connect' },
-			{ value: 'anyway', label: 'Connect anyway' }
-		],
-		cancelLabel: 'Cancel'
-	});
-	if (answer === 'anyway') return true;
-	if (answer !== 'save') return false; // Cancel, Esc, outside-close — dial nothing
-
-	await modalClosed();
-	// The naming is the EXISTING flow, armed the way projectFile's bootstrap arms it:
-	// open the Explorer and make it the VISIBLE dock panel (its comment: "if it is docked,
-	// make it the visible panel" — the card is useless behind the Flow tab), then hand it
-	// the write-once request and let it own the input. Inventing a default name here would
-	// be worse than not asking.
-	explorerClose.set(false);
-	bottomDockActive.set('explorer');
-	armExplorerSceneSave(null);
-	showToast('Name your scene in the Explorer — the connection request goes out as soon as it is saved.');
-	return waitForSceneName(levels.currentLevel);
-}
-
-/**
- * R22 round 31 — RESOLVE THE UNNAMED ROOM BEFORE THE DIAL.
+ * R22 round 33 — THE DIAL ASKS NOTHING. THE DECISION MOVED TO THE APPROVAL.
  *
- * REPORTED: a peer edits an untitled scene, connects to a host standing in a saved one,
- * and both peer lists go on offering Watch as though the two shared a world. Nothing is
- * broken — a room IS a scene NAME, and an unnamed side is no evidence of a split, so
- * only-on-evidence correctly declines to gate. What is missing is that nobody is TOLD:
- * the joiner does not know its scene has no identity, and the host cannot see why the
- * person it is offered Watch on is standing in "Untitled scene".
+ * Round 31 put a question here: dialing with WORK in an UNNAMED scene asked Save & connect
+ * / Connect anyway / Cancel, so that the unresolvable room ("nobody can be somewhere
+ * else") became a named one while there was still a person there to answer. The question
+ * was right and the MOMENT was wrong, in three ways that only showed up in use:
  *
- * The honest fix is not to guess a room. It is to turn the unresolvable case into a named
- * one AT THE ENTRY POINT, while there is still a person there to answer: dialing with WORK
- * in an UNNAMED scene asks first. "Save & connect" names the scene through the Explorer's
- * own inline naming — no name is ever invented here — and dials once the save lands;
- * "Connect anyway" is today's behaviour verbatim, and the far-side share-or-stash ask
- * still catches the merge question it always did; Cancel dials nothing.
+ *   · it asked before there was anything to decide about. A dial is a request; the answer
+ *     may be minutes away, may be a refusal, and until it lands there is no other world.
+ *     Being made to name a scene to ASK is a toll on a door that may not open.
+ *   · "Connect anyway" was an answer to nothing — the merge it waved through is decided on
+ *     the far side, by the share-or-stash gate, seconds later.
+ *   · the invite LINK never came through here at all, so the two ways into a session put
+ *     two different questions. One path now, and it is the same for both.
  *
- * SCOPE, deliberately narrow: unnamed AND holding objects. An empty world dials in
- * silence because ADOPTION will name it (A1); a named scene dials in silence because
- * every room-aware read already works. Both ordinary paths are untouched.
+ * So this dials, and the decision is taken where the facts are known: when the host has
+ * APPROVED and its handshake tells us whose scene we are about to stand in
+ * (`deferUntilShareChoice` in sessions.js — "<name> approved your connection": Save scene
+ * & connect / Dismiss changes / Disconnect). The naming machinery above is unchanged and
+ * is now exported for that caller.
  *
- * WHAT THIS COVERS: the Connect pill and the cloud plugin's "join room"
- * (cloudApi.connectToPeer), which is the whole of `requestConnect`'s caller list. The
- * invite-link auto-dial does NOT come through here — it hand-rolls the same whitelist
- * inside `peer.on('open')` in peerHandler — and is left alone on purpose: it fires at
- * signaling-open, i.e. seconds into a fresh tab, where the scene is empty and the guard
- * would have nothing to say anyway.
- *
- * THAT ASSUMPTION HELD ONLY AT THE DIAL MOMENT, and round 32 is the report that found the
- * gap: the invited peer edits WHILE WAITING FOR APPROVAL, so by the time the host answers
- * there is work in a scene the dial guard saw empty. The window between dial and approval
- * is now covered where it belongs — on the far end of it, by the share-or-stash gate,
- * which withholds in BOTH directions (`gateHolds` in sessions/peerHandler) so no world
- * lands until the question is answered. So this guard genuinely only has to be right about
- * the dial moment, which is the one thing it can be right about.
- *
- * Async as a consequence of the ask, but the no-question paths still reach `dial` in the
- * SAME TICK: an empty scene never awaits at all, and the peers/signaling guards below
- * stay ahead of every await, so an offline dial still toasts immediately.
+ * The peers/signaling guards stay exactly here: an offline dial must still say so
+ * immediately, and it costs nothing to ask before opening a connection that cannot open.
+ * Still `async` so the cloud plugin's `connectToPeer` keeps returning a promise; the body
+ * has no awaits, so every dial happens in the same tick.
  * @param {string} rawId @returns {Promise<void>}
  */
 export async function requestConnect(rawId) {
@@ -218,13 +149,6 @@ export async function requestConnect(rawId) {
 	if (!peer || !peerId) return;
 	if (!peer.peer?.open) {
 		showToast('Not connected to a signaling server yet — try again in a moment.');
-		return;
-	}
-	if (!(await settleSceneIdentity())) return;
-	// naming a scene is a real interaction, so the link is re-read AFTER the ask rather
-	// than trusted across it
-	if (!(/** @type {any} */ (get(peers))?.peer?.open)) {
-		showToast('Lost the signaling link while you were saving — press Connect again.');
 		return;
 	}
 	dial(peerId);

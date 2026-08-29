@@ -123,27 +123,15 @@ async function connect(from, to, settleMs = 9000) {
 	await step(from, 'press Connect', () =>
 		from.page.getByRole('button', { name: 'Connect', exact: true }).click()
 	);
-	// Round 31: dialing with WORK in an UNNAMED scene asks first (Save & connect /
-	// Connect anyway / Cancel). Every suite that calls this helper means "connect me as I
-	// am", which is exactly what Connect anyway says, so answer it with the real button.
+	// R22 round 33 REMOVED the dial-time ask (round 31's "Save & connect / Connect anyway /
+	// Cancel"), and with it the block that used to answer it here. A dialer holding work in
+	// an UNNAMED scene now dials immediately; the question is put at the HOST's APPROVAL
+	// instead, as a blocking modal (#confirm-dialog-save / -dismiss / -cancel).
 	//
-	// Whether to WAIT for it is decided from the same two facts the guard reads, because
-	// the alternative is a blind timeout on every connect in the suite family and the
-	// question does not apply to most of them. When it does apply the wait is generous:
-	// the guard loads `levels` on demand, and a cold dynamic import on a loaded box has
-	// been measured well past a second.
-	const mayAsk = await from.page.evaluate(() => {
-		let g, at;
-		window.__stores.objectsGroup.subscribe((/** @type {any} */ x) => (g = x))();
-		window.__stores.levels?.currentLevel.subscribe((/** @type {any} */ x) => (at = x))();
-		return (g?.children?.length ?? 0) > 0 && !String(at?.name ?? '').trim();
-	});
-	if (mayAsk) {
-		const anyway = from.page.locator('#confirm-dialog-anyway');
-		if (await anyway.waitFor({ state: 'visible', timeout: 8000 }).then(() => true, () => false)) {
-			await step(from, 'answer the unnamed-scene ask', () => anyway.click());
-		}
-	}
+	// That modal is deliberately NOT answered here: which of its three endings a suite wants
+	// is a per-suite decision (connect-decision drives all three by hand), and a suite that
+	// wants the OLD classic share-or-stash merge instead parks the setting that restores it —
+	// `h.setupPage(browser, 'X', { storage: { 'connect:mergeOnConnect': 'true' } })`.
 	await step(to, 'approve the request', () =>
 		to.page.getByRole('button', { name: 'Approve' }).click({ timeout: 30000 })
 	);

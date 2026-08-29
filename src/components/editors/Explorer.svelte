@@ -1727,9 +1727,11 @@
 	// that no theme reaches, that blocks the page while it is up, and whose Escape is
 	// the browser's rather than ours. It always shows in the GRID: both entries live on
 	// the grid background's menu, and the tree has no row to hang a scene name on.
-	function startSceneName(mode: 'save-scene' | 'new-scene') {
+	// R22 round 33: `consent` rides through to `saveSceneAsLevel` — absent (undefined) is
+	// the ordinary save and stays byte-identical; only the connect decision passes false.
+	function startSceneName(mode: 'save-scene' | 'new-scene', consent?: boolean) {
 		settlePendingEdit();
-		editing = { mode, value: mode === 'save-scene' ? 'Scene' : 'New scene', inGrid: true };
+		editing = { mode, value: mode === 'save-scene' ? 'Scene' : 'New scene', inGrid: true, consent };
 	}
 	/**
 	 * R22 round 11 (user): "for packs add right click create pack, so I can set name and
@@ -1780,7 +1782,7 @@
 		else if (edit.mode === 'rename-pack') renamePack(edit.packName, edit.value);
 		// 21-G9 (union): land the scene where the user is looking — Scenes when the
 		// active folder is a pseudo view or a stale id
-		else if (edit.mode === 'save-scene') await saveSceneAsLevel(edit.value, activeLibraryFolder());
+		else if (edit.mode === 'save-scene') await saveSceneAsLevel(edit.value, activeLibraryFolder(), { consent: edit.consent });
 		else if (edit.mode === 'new-scene') await newLevel(edit.value, activeLibraryFolder());
 		else if (edit.mode === 'new-pack') {
 			const pack = createPack(edit.value);
@@ -1810,7 +1812,7 @@
 		explorerSceneSaveArm.set(null);
 		untrack(() => {
 			openFolder(arm.folderId);
-			startSceneName('save-scene');
+			startSceneName('save-scene', arm.consent);
 		});
 	});
 

@@ -136,18 +136,23 @@ h.run(async () => {
 		'CN: cancel unwinds the Enter-dialled request too'
 	);
 
-	// --- round 31: the dial resolves an UNNAMED room -----------------------------
+	// --- round 33: THE DIAL ASKS NOTHING -----------------------------------------
 	//
-	// REPORTED: a peer edits an untitled scene, connects to a host standing in a saved
-	// one, and both peer lists go on offering Watch. That is the room gate working —
-	// a room IS a scene name, and an unnamed side is no evidence of a split — so the fix
-	// is not a cleverer gate: it is asking at the DIAL, while there is still somebody
-	// there to answer. scene-isolation §8 proves the two-peer END STATE; the mechanics
-	// live here, on the pill, where one page and the stub above are enough.
+	// Round 31 put a question AT THE DIAL ("Save & connect / Connect anyway / Cancel")
+	// whenever there was work in an unnamed scene, and held the dial until it was
+	// answered. Round 33 DELIBERATELY REVERSED that: a dial is a request, and being made
+	// to name a scene in order to ASK is a toll on a door that may not open. The question
+	// moved to the HOST's APPROVAL, where the facts are known, as a blocking modal —
+	// `connect-decision` owns all three of its endings.
 	//
-	// COUNTERFACTUAL, measured with `if (!(await settleSceneIdentity())) return;` deleted
-	// from requestConnect: every press below dialled immediately and confirmDialog stayed
-	// null — the three checks that follow are the feature and not the framing.
+	// What is left to prove HERE is the reversal itself, on the pill: the same press that
+	// round 31 held now goes straight out with no dialog of any kind. This block is the
+	// exact inversion of the one it replaces, so it stays falsifiable — restore
+	// `settleSceneIdentity()`'s early return in requestConnect and both checks go red.
+	//
+	// The approval-side modal is NOT asserted here and cannot be: the stub installed above
+	// fakes an OPEN signaling link with a conn that never opens and no peer on the far
+	// end, so nothing this page can do gets the request approved.
 	const dialogNow = () =>
 		A.page.evaluate(() => {
 			let d;
@@ -184,86 +189,27 @@ h.run(async () => {
 	);
 
 	await pressConnect('dddd3');
+	// bounded settle: long enough for the round-31 guard's on-demand `levels` import plus
+	// its dialog to have appeared (it was given 8s and measured well inside 1.5s), so a
+	// dialog that still exists would be seen here.
+	await A.page.waitForTimeout(1500);
 	h.check(
-		await A.page
-			.locator('#confirm-dialog-save')
-			.waitFor({ state: 'visible', timeout: 8000 })
-			.then(() => true, () => false),
-		'R31: dialing with work in an UNNAMED scene asks before it dials'
+		(await dialogNow()) === null,
+		`R33: dialing with work in an UNNAMED scene puts NO question at the dial (${JSON.stringify(await dialogNow())})`
 	);
-	const asked = await dialogNow();
 	h.check(
-		!!asked && asked.choices.join() === 'save,anyway' && /1 object/.test(asked.message),
-		`R31: the question offers Save & connect / Connect anyway and says what is at stake (${JSON.stringify(asked?.choices)})`
+		(await waitingNow()).includes('dddd3') &&
+			(await A.page.locator('.connect-pill').getAttribute('data-state')) === 'pending',
+		`R33: …the request goes straight out instead (${JSON.stringify(await waitingNow())})`
 	);
+
+	await A.page.locator('#cancel-request-button').click();
+	await A.page.waitForTimeout(400);
 	h.check(
 		(await waitingNow()).length === 0 &&
 			(await A.page.locator('.connect-pill').getAttribute('data-state')) === 'idle',
-		'R31: nothing is dialled while the question stands'
+		'R33: and it cancels like any other outbound request'
 	);
-
-	// Cancel spends the press — it does not defer it
-	await A.page.locator('#confirm-dialog-cancel').click();
-	await A.page.waitForTimeout(800);
-	h.check(
-		(await dialogNow()) === null && (await waitingNow()).length === 0,
-		'R31: Cancel closes the question and dials nothing'
-	);
-
-	// Connect anyway is today's behaviour verbatim — the far-side share-or-stash ask
-	// still owns the merge question, which is a different question from the room one
-	await pressConnect('dddd3');
-	await A.page.locator('#confirm-dialog-anyway').waitFor({ state: 'visible', timeout: 8000 });
-	await A.page.locator('#confirm-dialog-anyway').click();
-	await A.page.waitForTimeout(700);
-	h.check((await waitingNow()).includes('dddd3'), 'R31: "Connect anyway" dials exactly as before');
-	await A.page.locator('#cancel-request-button').click();
-	await A.page.waitForTimeout(400);
-
-	// Save & connect: the Explorer's own inline card names it, then the dial goes out on
-	// its own. No name is invented anywhere in this path.
-	await pressConnect('dddd3');
-	await A.page.locator('#confirm-dialog-save').waitFor({ state: 'visible', timeout: 8000 });
-	await A.page.locator('#confirm-dialog-save').click();
-	await A.page.waitForTimeout(1200);
-	const card = await A.page.evaluate(() => {
-		const input = document.querySelector('#explorer-new-card input');
-		let closed;
-		window.__stores.explorerClose.subscribe((/** @type {any} */ v) => (closed = v))();
-		return { open: closed === false, present: !!input, focused: document.activeElement === input };
-	});
-	h.check(
-		card.open && card.present && card.focused,
-		`R31: "Save & connect" opens the Explorer's own FOCUSED naming card (${JSON.stringify(card)})`
-	);
-	h.check((await waitingNow()).length === 0, 'R31: …and still dials nothing — an unnamed save is not a save');
-	await A.page.keyboard.press('Control+a');
-	await A.page.keyboard.type('Hangar');
-	await A.page.keyboard.press('Enter');
-	// a real save of a real scene: measured ~4.5s from Enter to `currentLevel` naming it
-	await h.eventually(
-		() =>
-			A.page.evaluate(() => {
-				let at;
-				window.__stores.levels.currentLevel.subscribe((x) => (at = x))();
-				return at?.name ?? null;
-			}),
-		(n) => n === 'Hangar',
-		'R31: the typed name lands on the open scene',
-		25000
-	);
-	await h.eventually(
-		waitingNow,
-		(w) => w.includes('dddd3'),
-		'R31: THE FIX — the dial goes out on its own once the scene has a name',
-		15000
-	);
-	h.check(
-		(await A.page.evaluate(() => window.__stores.peerScenes.myScene()))?.scene === 'Hangar',
-		'R31: …and by then we have a room to announce, which is the whole point'
-	);
-	await A.page.locator('#cancel-request-button').click();
-	await A.page.waitForTimeout(300);
 
 	// --- invite ~srv param: encode + parse round-trips ---------------------------
 	const param = await A.page.evaluate(() => {

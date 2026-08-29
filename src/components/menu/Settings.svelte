@@ -43,6 +43,9 @@
 		keepRecycleBin,
 		deleteWithoutConfirm
 	} from '$lib/sharedLibrary';
+	// R22 round 33: the classic Share/Stash merge, kept as an opt-in beside the sharing
+	// prefs. It lives in connectionState because it is a fact about CONNECTING.
+	import { mergeOnConnect } from '$lib/connectionState';
 	// 21-I5 (locked answer 5): the save-name template — one rule for every download
 	import { saveNameTemplate } from '$lib/saveName';
 	// loose-scenes fix (bug 2a): what an import does with bytes already in the library.
@@ -1009,6 +1012,24 @@
 							which is an extra step per file per person for something they already agreed to
 							by being here. Turn it off on a metered connection or a very large project —
 							shared files still appear, greyed, and download when you open them.
+						</span>
+					</SettingRow>
+					<SettingRow name="Offer to merge unsaved work on connect">
+						<svelte:fragment slot="control">
+							<input
+								id="merge-on-connect"
+								class="tp-check"
+								type="checkbox"
+								checked={$mergeOnConnect}
+								on:change={(e: any) => mergeOnConnect.set(!!e.target.checked)} />
+						</svelte:fragment>
+						<span>
+							When you connect with work in a scene that was never saved, this app asks you to
+							<strong>save it or dismiss it</strong> — an unsaved scene has no identity, so
+							there is nothing for the other world to merge into. Turn this on to get the
+							older question back instead: <strong>Share</strong> your objects into their
+							world, or <strong>Stash</strong> them to a session first. Per device, and it
+							changes nothing about what the session allows — only which question is put.
 						</span>
 					</SettingRow>
 					<SettingRow name="Who can unshare a file">

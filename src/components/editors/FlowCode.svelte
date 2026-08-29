@@ -14,6 +14,7 @@
 	import { focusStack } from '$lib/windowFocus';
 	import { tabbable, resizeGroup, tabGroups } from '$lib/windowTabs';
 	import { setDockOccupant, dockHeight, visibleDockKey, dockMinimized, activateDock, dockModeArm } from '$lib/bottomDock';
+	import { bottomDockable } from '$lib/bottomDockDrop';
 
 	let text = $state('');
 	let error = $state('');
@@ -188,6 +189,7 @@
 			use:dragWindow={{ key: 'flowCode', defaultRect: { left: 160, top: 120 } }}
 			use:focusStack
 			use:tabbable={{ key: 'flowCode', title: 'Flow Code', openStore: flowCodeClose, isOpen: (v) => !v, close: () => flowCodeClose.set(true) }}
+			use:bottomDockable={{ key: 'flowcode' }}
 			style="z-index: var(--z-window); max-width: 96vw; max-height: 85vh"
 			style:width="{effW}px"
 			style:height="{effH}px"

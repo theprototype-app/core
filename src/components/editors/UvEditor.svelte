@@ -45,6 +45,7 @@
 	import { tabbable, resizeGroup, tabGroups } from '$lib/windowTabs';
 	import { clampWinSize, clampResize, anchorOf } from '$lib/windowSize';
 	import { setDockOccupant, dockHeight, visibleDockKey, dockMinimized, activateDock, dockModeArm } from '$lib/bottomDock';
+	import { bottomDockable } from '$lib/bottomDockDrop';
 
 	/** the armed transform modes, in 1/2/3 order */
 	const MODES = /** @type {['move'|'rotate'|'scale', string, string][]} */ ([
@@ -1952,6 +1953,7 @@
 			use:dragWindow={{ key: 'uv', defaultRect: { left: 220, top: 140 } }}
 			use:focusStack
 			use:tabbable={{ key: 'uv', title: 'UV editor', openStore: uvEditorClose, isOpen: (v) => !v, close: () => uvEditorClose.set(true) }}
+			use:bottomDockable={{ key: 'uv' }}
 			style="z-index: var(--z-window); max-width: 96vw; max-height: 88vh"
 			style:width="{effW}px"
 			style:height="{effH}px"

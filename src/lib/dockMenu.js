@@ -8,7 +8,7 @@ import {
 	explorerClose
 } from '../stores/appStore';
 import { get } from 'svelte/store';
-import { activateDock, armDockMode, dockOccupants, DOCK_TITLES } from './bottomDock';
+import { activateDock, armDockMode, dockOccupants, dockTabs, moveDockTab, DOCK_TITLES } from './bottomDock';
 
 // The dock's "+" add-a-view menu, in ONE place. The docked tab strip
 // (DockTabs.svelte) and the FLOATING Node editor's header "+" (Flow.svelte) each
@@ -57,13 +57,32 @@ export function dockAddItems() {
  * note on that store). The ShaderEditor has NO floating mode — it is the one dock tab
  * with no `docked` flag or window chrome — so it is offered Close alone rather than a
  * row that would silently do nothing.
+ * W7 puts MOVE at the top of the same menu: the drag in the strip is the fast way and
+ * these two rows are the discoverable one, and they are the only way to reorder a tab
+ * on a device with no pointer to drag with. They read the PRESENT tabs, so they step
+ * over a closed view rather than into a gap, and each disables itself at its end of the
+ * strip — a row that can only no-op is worse than a row that says it cannot.
  * @param {string} key
- * @returns {{label: string, tooltip: string, action: () => void, danger?: boolean}[]}
+ * @returns {{label: string, tooltip: string, action: () => void, danger?: boolean, disabled?: boolean}[]}
  */
 export function dockTabItems(key) {
 	const title = DOCK_TITLES[key] ?? 'this view';
-	/** @type {{label: string, tooltip: string, action: () => void, danger?: boolean}[]} */
+	/** @type {{label: string, tooltip: string, action: () => void, danger?: boolean, disabled?: boolean}[]} */
 	const items = [];
+	const present = get(dockTabs).map((t) => t.key);
+	const at = present.indexOf(key);
+	items.push({
+		label: 'Move left',
+		tooltip: `Move ${title} one tab towards the start of the strip`,
+		disabled: at <= 0,
+		action: () => moveDockTab(key, 'left')
+	});
+	items.push({
+		label: 'Move right',
+		tooltip: `Move ${title} one tab towards the end of the strip`,
+		disabled: at < 0 || at >= present.length - 1,
+		action: () => moveDockTab(key, 'right')
+	});
 	if (key !== 'shader')
 		items.push({
 			label: 'Undock into a floating window',

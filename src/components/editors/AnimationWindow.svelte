@@ -49,6 +49,7 @@
 	import { tabbable, resizeGroup, tabGroups } from '$lib/windowTabs';
 	import { clampWinSize, clampResize, anchorOf } from '$lib/windowSize';
 	import { setDockOccupant, dockHeight, visibleDockKey, dockMinimized, activateDock, dockModeArm } from '$lib/bottomDock';
+	import { bottomDockable } from '$lib/bottomDockDrop';
 
 	// live-follow the primary selection (keeps a truthy [] before the first select)
 	const target = $derived($selectedObject && $selectedObject.uuid ? $selectedObject : null);
@@ -2494,6 +2495,7 @@
 			use:dragWindow={{ key: 'animation', defaultRect: { left: 200, top: 120 } }}
 			use:focusStack
 			use:tabbable={{ key: 'animation', title: 'Animation', openStore: animationClose, isOpen: (v) => !v, close: () => animationClose.set(true) }}
+			use:bottomDockable={{ key: 'animation' }}
 			style="z-index: var(--z-window); max-width: 96vw; max-height: 88vh"
 			style:width="{effW}px"
 			style:height="{effH}px"

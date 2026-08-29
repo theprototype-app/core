@@ -17,6 +17,7 @@
 	import { clampWinSize, clampResize, anchorOf } from '$lib/windowSize';
 	import { dockable } from '$lib/docking';
 	import { setDockOccupant, dockHeight, visibleDockKey, dockMinimized, activateDock, dockModeArm } from '$lib/bottomDock';
+	import { bottomDockable } from '$lib/bottomDockDrop';
 	import { dockAddItems } from '$lib/dockMenu';
 	import { fly } from 'svelte/transition';
 
@@ -198,6 +199,7 @@
 			use:dragWindow={{ key: 'flowWin', defaultRect: { left: 120, top: 90 } }}
 			use:focusStack={'flow'}
 			use:tabbable={{ key: 'flow', title: 'Node editor', openStore: flowGraphClose, isOpen: (v) => !v, close: () => flowGraphClose.set(true) }}
+			use:bottomDockable={{ key: 'flow' }}
 			use:dockable={{ key: 'flow' }}
 			style="z-index: var(--z-window)"
 			style:width="{effW}px"

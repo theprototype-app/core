@@ -487,9 +487,13 @@ h.run(async () => {
 	const gotShaderMenu = await rightClickTab('Shader editor');
 	h.check(gotShaderMenu, '8.4b the Shader editor is a tab and right-clicks like the rest');
 	rows = await menuRows();
+	// W7 added Move left / Move right to every tab's menu, and the Shader editor is an
+	// ordinary tab in the strip that reorders like the rest. What stays true — and is what
+	// this check has always been ABOUT — is that it is offered no UNDOCK row: it is the one
+	// dock tab with no floating mode, so that row could only ever do nothing.
 	h.check(
-		rows.length === 1 && rows[0].label === 'Close',
-		`8.4c ...but offers Close ALONE — it has no floating mode to undock into (${rows.map((r) => r.label).join(' | ')})`
+		!rows.some((r) => /undock/i.test(r.label)) && rows.some((r) => r.label === 'Close'),
+		`8.4c ...but offers no UNDOCK — it has no floating mode to undock into (${rows.map((r) => r.label).join(' | ')})`
 	);
 	await closeMenu();
 	await A.page.evaluate(() => window.__stores.shaderEditorClose.set(true));

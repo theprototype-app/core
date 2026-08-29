@@ -158,6 +158,7 @@
 	import { setNodeData } from '$lib/nodesHandler';
 	import { findNodeAnyGraph } from '../../stores/flowStore';
 	import { bottomDockActive, visibleDockKey, dockMinimized, setDockOccupant, dockHeight, dockModeArm } from '$lib/bottomDock';
+	import { bottomDockable } from '$lib/bottomDockDrop';
 	import { dragWindow } from '$lib/dragWindow';
 	import { focusStack } from '$lib/windowFocus';
 	import { tabbable, resizeGroup, tabGroups } from '$lib/windowTabs';
@@ -4626,6 +4627,7 @@
 			use:dragWindow={{ key: 'explorerWin', defaultRect: { left: 160, top: 120 } }}
 			use:focusStack={'explorer'}
 			use:tabbable={{ key: 'explorer', title: 'Explorer', openStore: explorerClose, isOpen: (v) => !v, close: () => explorerClose.set(true) }}
+			use:bottomDockable={{ key: 'explorer' }}
 			use:dockable={{ key: 'explorer' }}
 			style="z-index: var(--z-window)"
 			style:width="{effW}px"

@@ -1,4 +1,4 @@
-import { writable, derived } from 'svelte/store';
+import { writable, derived, get } from 'svelte/store';
 import { viewPrefs } from './viewPrefs';
 
 // Bottom dock: the dock shows exactly ONE panel at a time, and every panel that is
@@ -101,10 +101,101 @@ export const flowTabs = derived(dockOccupants, ($o) =>
 	FLOW_FAMILY.filter((k) => $o[k]?.present).map((k) => ({ key: k, title: DOCK_TITLES[k] }))
 );
 
-/** every panel currently open+docked, as the dock's tabs (what DockTabs renders) */
-export const dockTabs = derived(dockOccupants, ($o) =>
-	DOCK_FAMILY.filter((k) => $o[k]?.present).map((k) => ({ key: k, title: DOCK_TITLES[k] }))
+/**
+ * W7 — THE TAB ORDER IS USER DATA. `DOCK_FAMILY` still declares the order the app
+ * ships with; this list is what the strip actually sorts by once somebody has dragged
+ * a tab or used the tab menu's Move left / Move right. LOCAL and persisted, exactly
+ * like `bottomDockActive`: where a tab sits in the strip is a fact about this screen,
+ * never about the scene, so it neither replicates nor saves.
+ *
+ * The rule that matters is what happens to a key the stored list has never heard of —
+ * a view added in a LATER release, reading an order written by an older one. It is
+ * neither dropped (the strip would lose a tab) nor pushed to the front (the newest
+ * view would barge past an order somebody arranged by hand). `resolveOrder` splices it
+ * in after its nearest DOCK_FAMILY predecessor that is already placed, so it lands
+ * beside the siblings it was designed to sit with and every hand-made position holds.
+ * @type {import('svelte/store').Writable<string[]>}
+ */
+export const dockTabOrder = writable(readTabOrder());
+
+function readTabOrder() {
+	try {
+		const raw = JSON.parse(ls?.getItem('dockTabOrder') ?? 'null');
+		return Array.isArray(raw) ? resolveOrder(raw) : [...DOCK_FAMILY];
+	} catch {
+		return [...DOCK_FAMILY];
+	}
+}
+dockTabOrder.subscribe((value) => {
+	try {
+		ls?.setItem('dockTabOrder', JSON.stringify(value));
+	} catch {}
+});
+
+/**
+ * A stored (possibly partial, possibly stale) order -> the full DOCK_FAMILY order.
+ * Unknown keys are dropped, duplicates collapse, and every family member the list is
+ * missing is spliced in after its nearest already-placed predecessor.
+ * @param {string[]} stored @returns {string[]}
+ */
+export function resolveOrder(stored) {
+	const out = [...new Set((stored ?? []).filter((k) => DOCK_FAMILY.includes(k)))];
+	for (const key of DOCK_FAMILY) {
+		if (out.includes(key)) continue;
+		let at = 0; // no placed predecessor = it belongs at the front (e.g. 'flow')
+		for (let i = DOCK_FAMILY.indexOf(key) - 1; i >= 0; i--) {
+			const p = out.indexOf(DOCK_FAMILY[i]);
+			if (p >= 0) {
+				at = p + 1;
+				break;
+			}
+		}
+		out.splice(at, 0, key);
+	}
+	return out;
+}
+
+/** every panel currently open+docked, as the dock's tabs (what DockTabs renders),
+ * in the user's own order */
+export const dockTabs = derived([dockOccupants, dockTabOrder], ([$o, $order]) =>
+	resolveOrder($order)
+		.filter((k) => $o[k]?.present)
+		.map((k) => ({ key: k, title: DOCK_TITLES[k] }))
 );
+
+/**
+ * Commit a new order for the tabs that are PRESENT. The absent ones keep their own
+ * slots: the present keys re-fill the positions they already occupied, in the order
+ * given. That is what makes a drag mean "put this tab there" rather than "rewrite the
+ * whole list" — a closed Animation tab does not silently migrate because somebody
+ * dragged the Explorer past the UV editor.
+ * @param {string[]} keys the present tabs, in their new order
+ */
+export function reorderDockTabs(keys) {
+	const full = resolveOrder(get(dockTabOrder));
+	const slots = full.map((k, i) => (keys.includes(k) ? i : -1)).filter((i) => i >= 0);
+	if (slots.length !== keys.length) return false; // asked about a tab that isn't present
+	const next = [...full];
+	slots.forEach((slot, n) => (next[slot] = keys[n]));
+	dockTabOrder.set(next);
+	return true;
+}
+
+/**
+ * Move a tab one place left/right among the tabs that are PRESENT — moving past a tab
+ * that is closed is meaningless, so the neighbour is the next VISIBLE one.
+ * @param {string} key @param {'left'|'right'} dir @returns {boolean} did it move
+ */
+export function moveDockTab(key, dir) {
+	const present = get(dockTabs).map((t) => t.key);
+	const i = present.indexOf(key);
+	const j = i + (dir === 'left' ? -1 : 1);
+	if (i < 0 || j < 0 || j >= present.length) return false;
+	const next = [...present];
+	next[i] = present[j];
+	next[j] = key;
+	return reorderDockTabs(next);
+}
 
 /** the single panel that is actually VISIBLE in the dock (null if the dock is empty) */
 export const visibleDockKey = derived([dockOccupants, bottomDockActive], ([$o, $a]) => {

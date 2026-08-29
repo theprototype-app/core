@@ -67,6 +67,7 @@
 	import { tabbable, resizeGroup, tabGroups } from '$lib/windowTabs';
 	import { clampWinSize, clampResize, anchorOf } from '$lib/windowSize';
 	import { setDockOccupant, dockHeight, visibleDockKey, dockMinimized, activateDock, dockModeArm } from '$lib/bottomDock';
+	import { bottomDockable } from '$lib/bottomDockDrop';
 
 	// 21-D5: WHICH document is being authored. `hudDocs` was already keyed
 	// `'scene' | objectUuid`, so "attach this HUD to a camera" is simply authoring the
@@ -1451,6 +1452,7 @@
 			use:dragWindow={{ key: 'hud', defaultRect: { left: 240, top: 150 } }}
 			use:focusStack
 			use:tabbable={{ key: 'hud', title: 'HUD editor', openStore: hudEditorClose, isOpen: (v) => !v, close: () => hudEditorClose.set(true) }}
+			use:bottomDockable={{ key: 'hud' }}
 			style="z-index: var(--z-window); max-width: 96vw; max-height: 88vh"
 			style:width="{effW}px"
 			style:height="{effH}px"

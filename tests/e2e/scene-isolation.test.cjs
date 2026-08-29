@@ -33,6 +33,17 @@
 //   §6  Leaving RE-ARMS the gate, and coming back re-runs the re-sync.
 //   §7  A second empty joiner still adopts — no verdict anybody recorded strands it.
 //
+// Round 31 adds the other end of the same rule, and it is NOT covered here. The gate can
+// only speak about NAMES, so the fix for "my peer has no room" is not a cleverer gate: it
+// is asking at the DIAL, where somebody is still standing there to answer. That guard
+// lives in `requestConnect` and its coverage is in **connect-states** — dialing with WORK
+// in an UNNAMED scene asks (Save & connect / Connect anyway / Cancel), an empty world and
+// a named one dial in silence, and Save & connect drives the Explorer's own naming and
+// dials when the name lands. It needs one page and a stubbed link, and this suite has no
+// room for it: measured at 449-480s against the runner's 480s cap, so a section added
+// here would not fail on its merits, it would be killed. Whatever lands here next should
+// buy its seconds from an existing section.
+//
 // Run: APP_URL='https://localhost:5203/' PEER_CONFIG=... npm run e2e -- scene-isolation
 const h = require('./helpers.cjs');
 

@@ -141,6 +141,31 @@ h.run(async () => {
 		'…and All puts the flat list back'
 	);
 
+	// --- R31: the chip explains the unnamed world it names -----------------------
+	//
+	// REPORTED, from the host's side: "for host it is unclear why he sees a peer in
+	// another untitled room" — the row says "Untitled scene" and still offers Watch, and
+	// both of those are correct (an unnamed side is no evidence of a split, so it is not
+	// another room at all). The chip says so now, in the one place the question is asked.
+	// A peer with a ROW and no name is in the session's unnamed world; a peer with NO row
+	// still renders no chip, which is why one has to be injected here.
+	await A.page.evaluate(() => {
+		window.__stores.peerScenes.peerScenes.set({ p1: { scene: '', hash: '', at: Date.now() } });
+	});
+	await A.page.waitForTimeout(300);
+	const chip = await A.page.evaluate(() => {
+		const row = [...document.querySelectorAll('#peers-popover .peers-row')].find((r) =>
+			/Ann/.test(r.textContent ?? '')
+		);
+		const el = row?.querySelector('.scene-chip');
+		return { text: el?.textContent?.trim() ?? null, title: el?.getAttribute('title') ?? null };
+	});
+	h.check(chip.text === 'Untitled scene', `an unnamed peer's chip still reads plainly (${chip.text})`);
+	h.check(
+		/have not saved a scene/.test(chip.title ?? '') && /one world/.test(chip.title ?? ''),
+		`…and its tooltip says why Watch is still offered ("${chip.title}")`
+	);
+
 	// --- clicking Watch spectates that peer ---
 	const watched = await A.page.evaluate(() => {
 		const btn = document.querySelector('#peers-popover .peer-watch');

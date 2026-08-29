@@ -85,6 +85,186 @@ h.run(async () => {
 	});
 	h.check(resurrect === false, 'CN: the 4s restore retry does not resurrect a cancelled conn');
 
+	// --- Enter in the dial box IS the Connect button -----------------------------
+	// REPORTED: "when I enter peer id and hit enter it should connect (as now I need to
+	// hit tab and then enter)". One field, one obvious commit key.
+	//
+	// COUNTERFACTUAL, measured with the `onkeydown` removed from the Input: the pill
+	// stayed idle and waitingForApproval stayed empty — the keypress went nowhere, which
+	// is the bug as reported. The stub above is still installed, so this runs the real
+	// dial state machine; the scene is EMPTY here, which also proves the round-31 ask
+	// stands down when there is nothing unsaved to ask about.
+	// the box still holds the id the Cancel section typed — clear it, or "empty" is a
+	// premise this suite does not actually have (it dialled ffff1 again and read pending)
+	const dialBox = A.page.locator('input[placeholder="Enter peer ID to connect"]').first();
+	await dialBox.fill('');
+	await dialBox.click();
+	await A.page.keyboard.press('Enter');
+	await A.page.waitForTimeout(300);
+	h.check(
+		(await A.page.locator('.connect-pill').getAttribute('data-state')) === 'idle',
+		'CN: Enter on an EMPTY box does nothing — no dial to nowhere'
+	);
+	await dialBox.fill('eeee2');
+	await A.page.keyboard.press('Enter');
+	await A.page.waitForTimeout(500);
+	h.check(
+		(await A.page.locator('.connect-pill').getAttribute('data-state')) === 'pending',
+		'CN: Enter in the dial box dials — no Tab to the button first'
+	);
+	const dialedByKey = await A.page.evaluate(() => {
+		let v;
+		window.__stores.waitingForApproval.subscribe((x) => (v = x))();
+		return v.map((w) => w[0]);
+	});
+	h.check(
+		dialedByKey.includes('eeee2'),
+		`CN: …and it dialled the id that was typed (${JSON.stringify(dialedByKey)})`
+	);
+	h.check(
+		(await A.page.evaluate(() => {
+			let d;
+			window.__stores.confirmDialog.confirmDialog.subscribe((x) => (d = x))();
+			return d;
+		})) === null,
+		'CN: an EMPTY scene raises no unnamed-scene question on the way out'
+	);
+	await A.page.locator('#cancel-request-button').click();
+	await A.page.waitForTimeout(300);
+	h.check(
+		(await A.page.locator('.connect-pill').getAttribute('data-state')) === 'idle',
+		'CN: cancel unwinds the Enter-dialled request too'
+	);
+
+	// --- round 31: the dial resolves an UNNAMED room -----------------------------
+	//
+	// REPORTED: a peer edits an untitled scene, connects to a host standing in a saved
+	// one, and both peer lists go on offering Watch. That is the room gate working —
+	// a room IS a scene name, and an unnamed side is no evidence of a split — so the fix
+	// is not a cleverer gate: it is asking at the DIAL, while there is still somebody
+	// there to answer. scene-isolation §8 proves the two-peer END STATE; the mechanics
+	// live here, on the pill, where one page and the stub above are enough.
+	//
+	// COUNTERFACTUAL, measured with `if (!(await settleSceneIdentity())) return;` deleted
+	// from requestConnect: every press below dialled immediately and confirmDialog stayed
+	// null — the three checks that follow are the feature and not the framing.
+	const dialogNow = () =>
+		A.page.evaluate(() => {
+			let d;
+			window.__stores.confirmDialog.confirmDialog.subscribe((x) => (d = x))();
+			return d ? { title: d.title, message: d.message, choices: (d.choices ?? []).map((c) => c.value) } : null;
+		});
+	const waitingNow = () =>
+		A.page.evaluate(() => {
+			let w;
+			window.__stores.waitingForApproval.subscribe((x) => (w = x))();
+			return w.map((/** @type {any} */ e) => e[0]);
+		});
+	const pressConnect = async (id) => {
+		await dialBox.fill(id);
+		await A.page.getByRole('button', { name: 'Connect', exact: true }).click();
+	};
+
+	// the scene is still empty here — that is the case the checks above already dialled
+	// through, so give it work and nothing else
+	await A.page.evaluate(async () => {
+		window.__stores.commandsHandler.sceneCommand('/create box');
+		await new Promise((r) => setTimeout(r, 1200));
+		window.__stores.objectActions.deselectObject();
+	});
+	const sceneNow = await A.page.evaluate(() => {
+		let g, at;
+		window.__stores.objectsGroup.subscribe((x) => (g = x))();
+		window.__stores.levels.currentLevel.subscribe((x) => (at = x))();
+		return { objects: g?.children.length ?? 0, name: at?.name ?? null };
+	});
+	h.check(
+		sceneNow.objects === 1 && sceneNow.name === null,
+		`premise: work in a scene with no identity at all (${JSON.stringify(sceneNow)})`
+	);
+
+	await pressConnect('dddd3');
+	h.check(
+		await A.page
+			.locator('#confirm-dialog-save')
+			.waitFor({ state: 'visible', timeout: 8000 })
+			.then(() => true, () => false),
+		'R31: dialing with work in an UNNAMED scene asks before it dials'
+	);
+	const asked = await dialogNow();
+	h.check(
+		!!asked && asked.choices.join() === 'save,anyway' && /1 object/.test(asked.message),
+		`R31: the question offers Save & connect / Connect anyway and says what is at stake (${JSON.stringify(asked?.choices)})`
+	);
+	h.check(
+		(await waitingNow()).length === 0 &&
+			(await A.page.locator('.connect-pill').getAttribute('data-state')) === 'idle',
+		'R31: nothing is dialled while the question stands'
+	);
+
+	// Cancel spends the press — it does not defer it
+	await A.page.locator('#confirm-dialog-cancel').click();
+	await A.page.waitForTimeout(800);
+	h.check(
+		(await dialogNow()) === null && (await waitingNow()).length === 0,
+		'R31: Cancel closes the question and dials nothing'
+	);
+
+	// Connect anyway is today's behaviour verbatim — the far-side share-or-stash ask
+	// still owns the merge question, which is a different question from the room one
+	await pressConnect('dddd3');
+	await A.page.locator('#confirm-dialog-anyway').waitFor({ state: 'visible', timeout: 8000 });
+	await A.page.locator('#confirm-dialog-anyway').click();
+	await A.page.waitForTimeout(700);
+	h.check((await waitingNow()).includes('dddd3'), 'R31: "Connect anyway" dials exactly as before');
+	await A.page.locator('#cancel-request-button').click();
+	await A.page.waitForTimeout(400);
+
+	// Save & connect: the Explorer's own inline card names it, then the dial goes out on
+	// its own. No name is invented anywhere in this path.
+	await pressConnect('dddd3');
+	await A.page.locator('#confirm-dialog-save').waitFor({ state: 'visible', timeout: 8000 });
+	await A.page.locator('#confirm-dialog-save').click();
+	await A.page.waitForTimeout(1200);
+	const card = await A.page.evaluate(() => {
+		const input = document.querySelector('#explorer-new-card input');
+		let closed;
+		window.__stores.explorerClose.subscribe((/** @type {any} */ v) => (closed = v))();
+		return { open: closed === false, present: !!input, focused: document.activeElement === input };
+	});
+	h.check(
+		card.open && card.present && card.focused,
+		`R31: "Save & connect" opens the Explorer's own FOCUSED naming card (${JSON.stringify(card)})`
+	);
+	h.check((await waitingNow()).length === 0, 'R31: …and still dials nothing — an unnamed save is not a save');
+	await A.page.keyboard.press('Control+a');
+	await A.page.keyboard.type('Hangar');
+	await A.page.keyboard.press('Enter');
+	// a real save of a real scene: measured ~4.5s from Enter to `currentLevel` naming it
+	await h.eventually(
+		() =>
+			A.page.evaluate(() => {
+				let at;
+				window.__stores.levels.currentLevel.subscribe((x) => (at = x))();
+				return at?.name ?? null;
+			}),
+		(n) => n === 'Hangar',
+		'R31: the typed name lands on the open scene',
+		25000
+	);
+	await h.eventually(
+		waitingNow,
+		(w) => w.includes('dddd3'),
+		'R31: THE FIX — the dial goes out on its own once the scene has a name',
+		15000
+	);
+	h.check(
+		(await A.page.evaluate(() => window.__stores.peerScenes.myScene()))?.scene === 'Hangar',
+		'R31: …and by then we have a room to announce, which is the whole point'
+	);
+	await A.page.locator('#cancel-request-button').click();
+	await A.page.waitForTimeout(300);
+
 	// --- invite ~srv param: encode + parse round-trips ---------------------------
 	const param = await A.page.evaluate(() => {
 		const ps = window.__stores.peerServer;

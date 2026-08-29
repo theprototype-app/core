@@ -458,7 +458,11 @@
 					<span
 						class="scene-chip"
 						class:scene-chip-here={sceneName === ($currentLevel?.name ?? null)}
-						title={self ? 'The scene you have open' : 'In ' + sceneName}>{sceneName}</span
+						title={self
+							? 'The scene you have open'
+							: sceneName === UNNAMED
+								? 'They have not saved a scene — you share one world until they do.'
+								: 'In ' + sceneName}>{sceneName}</span
 					>
 				{/if}
 				{#if user[3]}<span class="text-amber-300">▸ {shortId(user[3])}</span>{/if}

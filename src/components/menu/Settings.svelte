@@ -742,6 +742,19 @@
 						<svelte:fragment slot="control"><Checkbox bind:checked={$objectSearchEnabled} /></svelte:fragment>
 						Add a "Search objects…" entry to the viewport right-click menu — find a scene object and fly the camera to it
 					</SettingRow>
+					<p class="ui-section-label">Viewport</p>
+					<SettingRow name="Dock resizes the viewport">
+						<svelte:fragment slot="control">
+							<Toggle
+								id="dock-pushes-viewport"
+								checked={$viewPrefs.dockPushesViewport}
+								onchange={(e) => setViewPrefs({ dockPushesViewport: e.currentTarget.checked })}
+							/>
+						</svelte:fragment>
+						On, the 3D view ends where an open bottom panel begins — the way every editor lays out
+						its viewport, so nothing you are working on sits behind the Node editor or the
+						Explorer. Off, the view stays full-window and the panel is drawn over it
+					</SettingRow>
 				</AccordionItem>
 				<AccordionItem bind:open={controlsExpanded}>
 					{#snippet header()}Controls{/snippet}

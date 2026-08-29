@@ -176,18 +176,34 @@ async function eventually(fn, predicate, label, timeout = 10000) {
 	check(false, label);
 }
 
-/** Screen pixel of a world point on that page's camera. @param {number[]} world */
+/**
+ * Screen pixel of a world point on that page's camera.
+ *
+ * W9: measured against the CANVAS, not the window, and offset by where the canvas
+ * sits — the bottom dock RESIZES the viewport now, so with a panel open the two
+ * differ by the dock's height and every click aimed by this helper would miss by
+ * that much. Identical to the old arithmetic whenever the canvas fills the window,
+ * which is every suite that never opens the dock.
+ * @param {number[]} world
+ */
 function projectPoint(page, world) {
 	return page.evaluate(
 		(world) =>
 			new Promise((resolve) => {
 				window.__stores.globalScene.subscribe((scene) => {
 					window.__stores.globalCamera.subscribe((camera) => {
-						const v = scene.position.clone().set(world[0], world[1], world[2]).project(camera);
-						resolve({
-							x: (v.x * 0.5 + 0.5) * window.innerWidth,
-							y: (-v.y * 0.5 + 0.5) * window.innerHeight
-						});
+						window.__stores.globalRenderer.subscribe((renderer) => {
+							const rect = renderer?.domElement?.getBoundingClientRect?.();
+							const box =
+								rect && rect.width > 0 && rect.height > 0
+									? rect
+									: { left: 0, top: 0, width: window.innerWidth, height: window.innerHeight };
+							const v = scene.position.clone().set(world[0], world[1], world[2]).project(camera);
+							resolve({
+								x: box.left + (v.x * 0.5 + 0.5) * box.width,
+								y: box.top + (-v.y * 0.5 + 0.5) * box.height
+							});
+						})();
 					})();
 				})();
 			}),

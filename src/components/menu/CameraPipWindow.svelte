@@ -19,7 +19,7 @@
 		autoPosition,
 		clampPosition
 	} from '$lib/cameraPip';
-	import { bottomInset } from '$lib/bottomDock';
+	import { viewportInset } from '$lib/bottomDock';
 
 	const object = $derived($pipTarget ? ($objectsGroup?.getObjectByProperty('uuid', $pipTarget) ?? null) : null);
 	const size = $derived(object ? pipSize(object) : { w: 0, h: 0 });
@@ -37,10 +37,23 @@
 		panelWidth = !$inspectorClose && rect && rect.width < vw * 0.6 ? rect.width : 0;
 	});
 
+	/**
+	 * W9: every position is measured against the CANVAS, not the window. The picture
+	 * inside this frame is drawn by the renderer into `pipRect` read as canvas pixels
+	 * (`glRect` counts y from the canvas BOTTOM), so a frame dragged into the dock band
+	 * would produce a negative gl y and simply stop drawing — the clamp is what makes
+	 * that unreachable, and the auto-park then clears the dock with no separate
+	 * clearance argument.
+	 *
+	 * The canvas is anchored at the window's top-left (App.svelte insets only its
+	 * bottom), so canvas coordinates and the `position: fixed` frame's own left/top are
+	 * the same numbers; only the HEIGHT differs, which is exactly what the clamp needs.
+	 */
+	const canvasH = $derived(Math.max(0, vh - $viewportInset));
 	const position = $derived(
 		$pipPosition
-			? clampPosition($pipPosition, size, { width: vw, height: vh })
-			: autoPosition(size, { width: vw, height: vh }, panelWidth, $bottomInset)
+			? clampPosition($pipPosition, size, { width: vw, height: canvasH })
+			: autoPosition(size, { width: vw, height: canvasH }, panelWidth)
 	);
 
 	// publish the rect the renderer draws into (null while hidden)
@@ -84,7 +97,7 @@
 			clampPosition(
 				{ x: origin.x + (event.clientX - startX), y: origin.y + (event.clientY - startY) },
 				size,
-				{ width: vw, height: vh }
+				{ width: vw, height: canvasH }
 			)
 		);
 		event.preventDefault();

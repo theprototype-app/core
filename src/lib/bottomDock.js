@@ -1,4 +1,5 @@
 import { writable, derived } from 'svelte/store';
+import { viewPrefs } from './viewPrefs';
 
 // Bottom dock: the dock shows exactly ONE panel at a time, and every panel that is
 // docked+open is a notebook TAB in it — the Flow family (Node editor / Flow Code /
@@ -118,6 +119,21 @@ export const visibleDockKey = derived([dockOccupants, bottomDockActive], ([$o, $
 export const bottomInset = derived(
 	[dockOccupants, visibleDockKey, dockMinimized],
 	([$o, $key, $min]) => ($min ? 0 : $key && $o[$key]?.present ? $o[$key].height : 0)
+);
+
+/**
+ * W9 — the height the VIEWPORT gives up to the dock: `bottomInset` when the dock
+ * RESIZES the viewport (the default) and 0 when it merely overlays a full-window
+ * canvas. The store twin of App.svelte's `.viewport-inset` rule, so the canvas and the
+ * chrome measured against it (the framing guide's letterbox, the camera PiP's rect)
+ * cannot end up disagreeing about where the viewport ends.
+ *
+ * The `viewPrefs` import is the one exception to the no-app-stores note at the top: it
+ * is a pure localStorage leaf (svelte/store only), and one shared derived beats the
+ * same two-line rule copied into each consumer.
+ */
+export const viewportInset = derived([bottomInset, viewPrefs], ([$inset, $prefs]) =>
+	$prefs?.dockPushesViewport ? $inset : 0
 );
 
 /**

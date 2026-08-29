@@ -6,18 +6,19 @@
 	// Shown on touch/narrow screens; the reflow media query (ui.css) lifts it +
 	// the chat/mic stack above the centred Controls pill.
 	import { viewportMenuOpener } from '../../stores/appStore.js';
+	import { canvasCenter } from '$lib/canvasRect';
 	function add() {
 		// Raycast a new object into the MIDDLE of the view (the button carries no
 		// pointer location), but open the menu anchored to the button itself so it
 		// appears right next to it (place() flips it up off the bottom edge).
+		//
+		// W9: the middle of the VIEWPORT, not of the window — with the bottom dock open
+		// those differ by half the dock's height, so the object landed below the centre
+		// of what you were looking at. The menu's own anchor stays in window space: it
+		// is chrome, positioned against the button.
 		const r = document.getElementById('mobile-add-button')?.getBoundingClientRect();
-		$viewportMenuOpener?.(
-			window.innerWidth / 2,
-			window.innerHeight / 2,
-			true,
-			r?.left ?? 16,
-			r?.top ?? window.innerHeight - 60
-		);
+		const centre = canvasCenter();
+		$viewportMenuOpener?.(centre.x, centre.y, true, r?.left ?? 16, r?.top ?? window.innerHeight - 60);
 	}
 </script>
 

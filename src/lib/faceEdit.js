@@ -22,6 +22,9 @@ import {
 } from './meshTopology';
 // 18-A: LOCAL viewport line colours (store-only module, imports nothing — no cycle)
 import { viewPrefs, editWireOverride } from './viewPrefs';
+// W9: where the viewport is. A leaf (svelte/store + sceneStore), so it adds no edge
+// out of the history-cycle family this module belongs to.
+import { canvasRect } from './canvasRect';
 // The size ceilings, and the measurement behind them. Another import-nothing leaf.
 import { MAX_SNAPSHOT, previewReplicable, tooLargeMessage } from './meshBudget';
 import { editOverlaysParked } from './editOverlays';
@@ -3979,8 +3982,11 @@ export function knifeCut(from, to) {
 	if (!faceEdited) return false;
 	const camera = get(globalCamera);
 	if (!camera) return false;
-	const width = typeof window !== 'undefined' ? window.innerWidth : 1280;
-	const height = typeof window !== 'undefined' ? window.innerHeight : 800;
+	// W9: the cut line arrives in CLIENT pixels, so the mesh has to be projected into
+	// the same space — against the CANVAS, offset by where it sits. With the bottom
+	// dock open a window-sized projection puts the mesh and the line in two different
+	// spaces and the cut lands somewhere else entirely.
+	const rect = canvasRect();
 	if (Math.hypot(to[0] - from[0], to[1] - from[1]) < 4) {
 		showToast('Knife: drag a line across the mesh — that cut was too short');
 		return false;
@@ -3997,7 +4003,13 @@ export function knifeCut(from, to) {
 		// what the perspective correction needs (1 for an orthographic camera)
 		const view = world.clone().applyMatrix4(camera.matrixWorldInverse);
 		const w = camera.isOrthographicCamera ? 1 : Math.max(-view.z, 1e-6);
-		return { px: [((ndc.x + 1) / 2) * width, ((1 - ndc.y) / 2) * height], w };
+		return {
+			px: [
+				rect.left + ((ndc.x + 1) / 2) * rect.width,
+				rect.top + ((1 - ndc.y) / 2) * rect.height
+			],
+			w
+		};
 	};
 	/** @type {Map<string, {px: number[], w: number, point: any}>} */
 	const projected = new Map();

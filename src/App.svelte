@@ -75,6 +75,9 @@
   import { initModules, disabledModules } from '$lib/moduleSDK'
   import { coreModules } from './modules/index.js'
   import ModulesManager from './components/menu/ModulesManager.svelte'
+  // W9: the pref that decides whether the bottom dock RESIZES the viewport (default)
+  // or overlays it. A local view preference — see the .viewport style below.
+  import { viewPrefs } from '$lib/viewPrefs'
 
   // before children mount: node components/effects must exist when the
   // flow editor and runtime first look them up
@@ -403,6 +406,34 @@
      new tier: it beats the camera PiP and loses to modal/toast/menu. -->
 <HudLayer />
 
-<Canvas>
-  <Scene />
-</Canvas>
+<!-- W9: THE VIEWPORT IS A LAYOUT REGION.
+     threlte's Canvas fills its parent (`width/height: 100%`) and sizes the renderer
+     from a ResizeObserver on that parent, so shrinking this wrapper is the whole
+     mechanism: the drawing buffer, the camera aspect, the composer and N8AO all
+     follow from threlte's own resize task, once per frame.
+     `bottom` is the open dock's height, which is what makes the dock a REGION (the
+     DCC behaviour: the canvas ends where the panel begins) instead of an overlay
+     drawn on top of a full-window canvas. No `z-index` — a stacking context here
+     would trap the PiP frame and the framing guide; the dock's --z-bottom (35)
+     already sits above the canvas at the default 0. No `transition` either: each
+     step reallocates the composer's render targets, so animating the inset turns one
+     realloc into one per frame. -->
+<div class="viewport" class:viewport-inset={$viewPrefs.dockPushesViewport}>
+  <Canvas>
+    <Scene />
+  </Canvas>
+</div>
+
+<style>
+  .viewport {
+    position: absolute;
+    left: 0;
+    right: 0;
+    top: 0;
+    bottom: 0;
+  }
+  /* the pref OFF keeps the pre-W9 behaviour: a full-window canvas the dock covers */
+  .viewport-inset {
+    bottom: var(--bottom-inset, 0px);
+  }
+</style>

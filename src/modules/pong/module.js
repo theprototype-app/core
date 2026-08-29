@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import { get } from 'svelte/store';
 import { globalCamera } from '../../stores/sceneStore';
 import { userdata } from '../../stores/appStore';
+import { ndcFromClient } from '../../lib/canvasRect';
 
 // Two-player pong on a table. Claim a paddle by clicking it (first two
 // peers); your paddle follows your pointer over the table plane (~20/s
@@ -176,13 +177,12 @@ function onPointerMove(event) {
 	if (now - lastPaddleSent < 50) return;
 	const camera = get(globalCamera);
 	if (!camera) return;
-	raycaster.setFromCamera(
-		new THREE.Vector2(
-			(event.clientX / window.innerWidth) * 2 - 1,
-			-(event.clientY / window.innerHeight) * 2 + 1
-		),
-		camera
-	);
+	// W9: against the canvas, not the window — with the bottom dock reserving space the
+	// paddle trailed the pointer by a constant offset. pong is a CORE module and already
+	// reaches into sceneStore/appStore directly; a packaged user module would go through
+	// `api.pointerRay()`, which carries the same fix.
+	const ndc = ndcFromClient(event.clientX, event.clientY);
+	raycaster.setFromCamera(new THREE.Vector2(ndc.x, ndc.y), camera);
 	if (!raycaster.ray.intersectPlane(tablePlane, planeHit)) return;
 	lastPaddleSent = now;
 	setPaddleZ(side, planeHit.z);

@@ -10,6 +10,7 @@ import { setObjectTexture } from './materialsHandler';
 import { topLevelObjectOf } from './objectActions';
 import { sceneHits, hitWorldNormal } from './scenePick';
 import { snapTargets } from './snapping';
+import { ndcFromClient } from './canvasRect';
 
 // Explorer -> scene drops (96): place objects/prefabs at the pointed spot,
 // texture the mesh under the cursor with a dropped image. Everything goes
@@ -31,11 +32,11 @@ export function dropTarget(clientX, clientY) {
 	/** @type {any} */
 	const camera = get(globalCamera);
 	if (!camera) return { point: null, object: null, normal: null };
-	const ndc = new THREE.Vector2(
-		(clientX / window.innerWidth) * 2 - 1,
-		-(clientY / window.innerHeight) * 2 + 1
-	);
-	raycaster.setFromCamera(ndc, camera);
+	// W9: against the CANVAS, not the window — with the bottom dock open the two differ
+	// by the dock's height, and a drop would land that far below the cursor. Correct in
+	// both modes: an un-inset canvas measures exactly the window.
+	const point = ndcFromClient(clientX, clientY);
+	raycaster.setFromCamera(new THREE.Vector2(point.x, point.y), camera);
 	const hits = sceneHits(raycaster);
 	if (hits[0])
 		return {

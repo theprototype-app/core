@@ -8,6 +8,12 @@ import { writable } from 'svelte/store';
 // `editWireColor` keeps an 'auto' setting because the mesh-edit overlay CHOOSES its
 // colour from the material's luminance (a fixed blue vanished on light materials).
 // Overriding that is a preference; losing it would be a regression.
+//
+// W9 added `dockPushesViewport`, which is not a colour but is the same KIND of thing:
+// how THIS screen draws the viewport, decided per device, stored locally, and of no
+// interest to any peer. Deliberately not in appStore — a layout preference has no
+// business in the panel-state store, and the key is additive, so the documented
+// unknown-keys-fall-back-to-defaults rule migrates every existing payload for free.
 
 const KEY = 'viewPrefs';
 
@@ -17,7 +23,14 @@ export const DEFAULT_VIEW_PREFS = {
 	/** selection outline (both the visible and the see-through edges) */
 	outlineColor: '#353535',
 	/** Edit Mesh overlay: 'auto' = pick from the material's luminance, else a hex */
-	editWireColor: 'auto'
+	editWireColor: 'auto',
+	/**
+	 * W9 — does the bottom dock RESIZE the viewport (true, the DCC behaviour every
+	 * editor uses: the canvas ends where the dock begins) or OVERLAY it (false, what
+	 * this app did before: a full-window canvas with the dock drawn on top of it).
+	 * Default true.
+	 */
+	dockPushesViewport: true
 };
 
 function load() {

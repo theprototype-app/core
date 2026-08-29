@@ -263,13 +263,24 @@ h.run(async () => {
 
 	// ---- 5. the two views keep their own layout -----------------------------------------
 	// the bin needs a ROW: an empty view renders the "nothing here" branch instead of the
-	// table, so a header check against it would have nothing to read
-	await page.evaluate(() => {
+	// table, so a header check against it would have nothing to read.
+	//
+	// R22 round 13: and that row now needs REAL BYTES on a shelf. The bin lists what it
+	// can restore; a bare log entry with no file behind it is a record and belongs to the
+	// Deleted LOG, so the old fixture would leave this view empty and the header unreadable.
+	await page.evaluate(async () => {
+		const e = window.__stores.explorer;
+		const it = await e.addItemFromBytes(
+			new TextEncoder().encode('binned').buffer,
+			'binned.txt',
+			null
+		);
 		window.__stores.sharedLibrary.logLocalDeletion({
-			hash: 'col-fixture-hash',
+			hash: it.hash,
 			name: 'binned.txt',
 			kind: 'text'
 		});
+		e.setItemHidden(it.id, true);
 		window.__stores.explorer.activeFolder.set('deleted');
 	});
 	await page.waitForTimeout(700);

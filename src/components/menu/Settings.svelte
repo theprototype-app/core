@@ -41,6 +41,7 @@
 		autoDownload,
 		recycleBinEnabled,
 		keepRecycleBin,
+		deletedLogEnabled,
 		deleteWithoutConfirm
 	} from '$lib/sharedLibrary';
 	// R22 round 13 P2: the storage breakdown, reachable from where somebody looks for it
@@ -1137,8 +1138,28 @@
 						</svelte:fragment>
 						<span>
 							Off by default: the bin is a safety net for the minutes after a delete, not
-							storage, so its files are reclaimed the next time you load. The RECORD of what
-							was deleted always survives — only the bytes on this device go.
+							storage, so its files are reclaimed the next time you load. The file then
+							leaves <strong>Deleted</strong> for the <strong>Deleted log</strong> beside
+							it — the record survives, only the bytes on this device go.
+						</span>
+					</SettingRow>
+					<SettingRow name="Deleted files log">
+						<svelte:fragment slot="control">
+							<input
+								id="deleted-log"
+								class="tp-check"
+								type="checkbox"
+								checked={$deletedLogEnabled}
+								on:change={(e: any) => deletedLogEnabled.set(!!e.target.checked)} />
+						</svelte:fragment>
+						<span>
+							Keep a record of what was deleted from this project — the name, who removed
+							it, when, and the thumbnail taken at the time — in a
+							<strong>Deleted log</strong> beside the bin. On by default. Turning it off
+							hides the log here and stops writing a record for a delete that keeps no
+							file; it does not erase what is already there, because the record belongs to
+							the project and every peer holds the same one. To erase it, open
+							<strong>Deleted</strong> and empty it.
 						</span>
 					</SettingRow>
 					<p class="ui-section-label">Disk</p>

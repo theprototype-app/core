@@ -105,6 +105,10 @@
 		purgeDeletedItem,
 		emptyDeletedLog,
 		deletedThumb,
+		// R22 round 13: the bin lists what it can put back; the LOG is the record beside it.
+		// One array, two readings — see partitionDeleted.
+		partitionDeleted,
+		deletedLogEnabled,
 		logLocalDeletion,
 		deleteWithoutConfirm,
 		// R22 round 30 C2: the share-new-files ask. A STORE rather than a callback, so the
@@ -989,7 +993,7 @@
 		// the Scene manifest (108): a derived, always-shared view — never editable
 		// R22 round 4: THE RECYCLE BIN, a derived view like the Scene manifest — the log is
 		// the truth and these cards are a reading of it, so there is no CRUD to keep in step.
-		if ($activeFolder === 'deleted') {
+		if ($activeFolder === 'deleted' || $activeFolder === 'deletedlog') {
 			// R22 round 9, THE REPORTED BUG ("Delete permanently does not remove the file").
 			// The purge always worked — it freed the blob and dropped the record — but this
 			// branch asked `canRestoreDeleted`, which reaches the two shelves through `get()`,
@@ -998,8 +1002,13 @@
 			// the log alone — so the card and its menu stayed byte-identical, still offering a
 			// Restore that could no longer work. Nothing observable changed, which is exactly
 			// what "it does not remove the file" describes. Read the shelves HERE instead.
+			// R22 round 13 — THE SECOND HALF OF THE SAME REPORT. Round 9 made the purge
+			// OBSERVABLE (the row dimmed, the menu stopped offering a Restore that could not
+			// work); the user's answer was that a bin should not go on listing a file it cannot
+			// put back at all. So the bin is the rows whose bytes are HERE, and everything that
+			// outlived its bytes belongs to the log beside it — same array, two readings.
 			const heldBytes = new Set([...$explorerItems, ...$hiddenItems].map((i) => i.hash));
-			return deletedLog($projectManifest).map((r: any) => ({
+			const cards = deletedLog($projectManifest).map((r: any) => ({
 				id: 'deleted:' + r.hash,
 				name: r.name,
 				kind: r.kind || 'text',
@@ -1014,6 +1023,10 @@
 				deletedEntry: true,
 				restorable: heldBytes.has(r.hash)
 			}));
+			// the LOG is the whole record, newest first — a deletion whose bytes are still here
+			// is a deletion that happened, and hiding it would make the log disagree with the
+			// count on its own row. The BIN is the half it can act on.
+			return $activeFolder === 'deletedlog' ? cards : partitionDeleted(cards, heldBytes).bin;
 		}
 		if (typeof $activeFolder === 'string' && $activeFolder.startsWith('scene')) {
 			const group = $activeFolder.split(':')[1] ?? null;
@@ -1179,6 +1192,10 @@
 	function activeLibraryFolder(): string | null {
 		const a = $activeFolder;
 		if (typeof a !== 'string' || !a) return null;
+		// R22 round 13: the two DELETED views belong here as well. They were missing, which
+		// was only unreachable rather than harmless — neither view offers Save scene, so
+		// nothing could ask; a scene written with folderId 'deleted' would be an orphan.
+		if (a === 'deleted' || a === 'deletedlog') return null;
 		if (a === 'prefabs' || a === 'packs' || a.startsWith('pack:') || a.startsWith('scene')) return null;
 		// P3: a MOUNT is not a place in this library either — a scene saved while browsing
 		// one must not be written with a folderId no library folder holds (which is an
@@ -1211,6 +1228,7 @@
 		// R22 round 7: the bin is its own place, so the breadcrumb has to say so — it read
 		// "Library", which is exactly where these files are not
 		if (a === 'deleted') return [{ label: 'Deleted', id: 'deleted' as string | null }];
+		if (a === 'deletedlog') return [{ label: 'Deleted log', id: 'deletedlog' as string | null }];
 		if (typeof a === 'string' && a.startsWith('pack:')) {
 			const p = packByName(a.slice(5));
 			return [
@@ -1311,7 +1329,16 @@
 	 * reads it: a `$derived` referenced by an earlier one is a use-before-declaration, the
 	 * same family as the module-level TDZ trap one scope out.
 	 */
-	const listView = $derived($activeFolder === 'deleted' ? 'deleted' : 'library');
+	/**
+	 * R22 round 13: THE LOG SHARES THE BIN'S VIEW KEY, deliberately. Its columns are the
+	 * same four — name, type, deleted by, deleted at — because a log row and a bin row
+	 * ARE the same row read twice; a third key would need a default in four per-view
+	 * stores (visible set, sort, widths, order) to produce an identical header, and would
+	 * then make a width dragged in one view mean nothing in the other.
+	 */
+	const listView = $derived(
+		$activeFolder === 'deleted' || $activeFolder === 'deletedlog' ? 'deleted' : 'library'
+	);
 	/** a date a column can hold: short, sortable-looking, and locale-correct */
 	function fmtDate(t: number) {
 		if (!t) return '—';
@@ -1613,6 +1640,22 @@
 	});
 
 	/**
+	 * R22 round 13: THE TWO COUNTS THE ROOTS SHOW. The bin counts what it can put back,
+	 * the log counts the whole record — so "Deleted (2) / Deleted log (5)" says at a
+	 * glance what the old single dimmed list never did.
+	 *
+	 * The held set is read from the STORES here, not through `canRestoreDeleted`: a helper
+	 * that reaches them with `get()` registers no dependency, so these would never re-run
+	 * on a purge (round 9's bug, verbatim).
+	 */
+	const deletedRows = $derived(deletedLog($projectManifest));
+	const deletedHeld = $derived(new Set([...$explorerItems, ...$hiddenItems].map((i: any) => i.hash)));
+	const binCount = $derived(partitionDeleted(deletedRows, deletedHeld).bin.length);
+	const logCount = $derived(deletedRows.length);
+	/** the log root is a preference, and an empty record is nothing to show */
+	const showDeletedLog = $derived($deletedLogEnabled && logCount > 0);
+
+	/**
 	 * The bin, grouped by whoever deleted each row. Rendered as collapsible SECTIONS
 	 * rather than navigable folders: a bin is read by comparing (who threw what away),
 	 * and a folder you have to walk into and back out of to compare is the one shape that
@@ -1766,6 +1809,7 @@
 			return openFolder(volumeKey(volScope.volumeId, f?.parentId ?? null));
 		}
 		if (typeof a === 'string' && a.startsWith('pack:')) return openFolder('packs'); // P4
+		if (a === 'deleted' || a === 'deletedlog') return openFolder(null);
 		if (a === 'prefabs' || a === 'packs' || (typeof a === 'string' && a.startsWith('scene')))
 			return openFolder(null);
 		const f = $explorerFolders.find((x: any) => x.id === a);
@@ -3645,7 +3689,7 @@
 	function deletePrefabToBin(prefab: any) {
 		const run = () => {
 			binPrefab(prefab);
-			showToast((prefab.name ?? 'Prefab') + ' moved to Deleted');
+			showToast((prefab.name ?? 'Prefab') + ' moved to the Deleted log');
 		};
 		if ($deleteWithoutConfirm) return run();
 		askInExplorer({
@@ -3656,7 +3700,7 @@
 			// restored and the old wording promised exactly the button the bin then refuses
 			// to offer. See the round-9 report: making it true needs a prefab shelf.
 			detail:
-				'The prefab is removed. A record of it stays in Deleted, but a prefab cannot be restored from there yet.',
+				'The prefab is removed. A record of it stays in the Deleted log, but a prefab cannot be restored from there yet.',
 			confirmLabel: 'Delete',
 			run
 		});
@@ -3728,10 +3772,42 @@
 		];
 	}
 
+	/**
+	 * R22 round 13: what the LOG offers. Open, the same view controls (its rows are the
+	 * bin's rows read a second way, so grouping and sort mean the same thing), and the
+	 * one destructive act — which is `emptyBin`, not a second one: "clear the record" and
+	 * "reclaim the disk" are the same gesture on one array, and its dialog already says
+	 * both halves out loud.
+	 */
+	function deletedLogRowMenu(e: MouseEvent) {
+		e.preventDefault();
+		menu = {
+			x: e.clientX,
+			y: e.clientY,
+			items: [
+				{ label: 'Open', action: () => openFolder('deletedlog') },
+				...deletedViewItems(),
+				...(logCount
+					? [
+							{ section: 'Record' },
+							{
+								label: 'Clear the log (' + logCount + ')',
+								danger: true,
+								icon: 'trash-2',
+								tooltip:
+									'Forgets what was deleted AND empties the bin on THIS machine. Peers keep their own record.',
+								action: () => void emptyBin()
+							}
+						]
+					: [])
+			]
+		};
+	}
+
 	/** the Deleted tree row's own menu */
 	function deletedRowMenu(e: MouseEvent) {
 		e.preventDefault();
-		const n = deletedLog($projectManifest).length;
+		const n = binCount;
 		menu = {
 			x: e.clientX,
 			y: e.clientY,
@@ -3847,9 +3923,31 @@
 		}
 		// R22 round 7: the bin is not a folder you put things in, so New folder / Save scene
 		// are meaningless here. What IS meaningful is emptying it.
+		if ($activeFolder === 'deletedlog') {
+			e.preventDefault();
+			menu = {
+				x: e.clientX,
+				y: e.clientY,
+				items: logCount
+					? [
+							...deletedViewItems(),
+							{ section: 'Record' },
+							{
+								label: 'Clear the log (' + logCount + ')',
+								danger: true,
+								icon: 'trash-2',
+								tooltip:
+									'Forgets what was deleted AND empties the bin on THIS machine. Peers keep their own record.',
+								action: () => void emptyBin()
+							}
+						]
+					: [{ label: 'Nothing has been deleted yet', action: () => {} }]
+			};
+			return;
+		}
 		if ($activeFolder === 'deleted') {
 			e.preventDefault();
-			const n = deletedLog($projectManifest).length;
+			const n = binCount;
 			menu = {
 				x: e.clientX,
 				y: e.clientY,
@@ -5570,7 +5668,7 @@
 					     than above them. Still hidden while empty — EXCEPT during a drag (round
 					     11), because a row you cannot see is a row you cannot drop on, and the
 					     very first delete-by-drag is exactly the one that finds the bin empty. -->
-					{#if deletedLog($projectManifest).length || libraryDragging}
+					{#if binCount || libraryDragging}
 						<button
 							id="deleted-folder"
 							class="whitespace-nowrap rounded px-2 py-1 text-left {binDropActive
@@ -5590,11 +5688,30 @@
 							ondragleave={() => (binDropActive = false)}
 							ondrop={(e) => void dropToBin(e)}
 							><Icon name="trash-2" size={16} class="mr-1.5 w-4 text-center text-gray-400" aria-hidden="true" />Deleted
-							{#if libraryDragging && !deletedLog($projectManifest).length}
+							{#if libraryDragging && !binCount}
 								<span class="text-gray-500">(drop here)</span>
 							{:else}
-								<span class="text-gray-500">({deletedLog($projectManifest).length})</span>
+								<span class="text-gray-500">({binCount})</span>
 							{/if}</button
+						>
+					{/if}
+					<!-- R22 round 13 (user): "maybe next to deleted have a Deleted log button".
+					     THE RECORD, beside the bin and in its style — what was removed, by whom,
+					     when, with the thumbnail taken at delete time. It holds the rows the bin
+					     used to grey out and go on listing, plus the ones it can still restore.
+					     Not a drop target: you delete INTO a bin, you do not delete into a record. -->
+					{#if showDeletedLog}
+						<button
+							id="deleted-log-folder"
+							class="whitespace-nowrap rounded px-2 py-1 text-left {$activeFolder ===
+							'deletedlog'
+								? 'bg-primary-700 text-white'
+								: 'text-gray-300 hover:bg-gray-700'}"
+							title="What has been deleted from this project, and by whom. Files whose bytes are still here can be restored; the rest are a record."
+							onclick={() => openFolder('deletedlog')}
+							oncontextmenu={deletedLogRowMenu}
+							><Icon name="file-text" size={16} class="mr-1.5 w-4 text-center text-gray-400" aria-hidden="true" />Deleted log
+							<span class="text-gray-500">({logCount})</span></button
 						>
 					{/if}
 				</div>

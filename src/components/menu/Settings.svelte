@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { Accordion, AccordionItem, Modal, Button, Checkbox, Toggle } from 'flowbite-svelte';
-	import { X } from '@lucide/svelte';
+	import { HardDrive, X } from '@lucide/svelte';
 	import ThemedSelect from '../ui/ThemedSelect.svelte';
 	import SettingRow from './SettingRow.svelte';
 	import { showGrid, vrOverride, vrMenuHand, vrSnapAngle, vrMirrorSnapTurn, vrTeleportEnabled, vrSleeveEnabled, vrVertexHold, vrFlying, vrPassthrough, vrMenuHold, vrTargetHz, peerHandStyle } from '../../stores/sceneStore.js';
@@ -43,6 +43,8 @@
 		keepRecycleBin,
 		deleteWithoutConfirm
 	} from '$lib/sharedLibrary';
+	// R22 round 13 P2: the storage breakdown, reachable from where somebody looks for it
+	import { openStorageModal } from '$lib/storageUsage';
 	// 21-I5 (locked answer 5): the save-name template — one rule for every download
 	import { saveNameTemplate } from '$lib/saveName';
 	// loose-scenes fix (bug 2a): what an import does with bytes already in the library.
@@ -1137,6 +1139,29 @@
 							Off by default: the bin is a safety net for the minutes after a delete, not
 							storage, so its files are reclaimed the next time you load. The RECORD of what
 							was deleted always survives — only the bytes on this device go.
+						</span>
+					</SettingRow>
+					<p class="ui-section-label">Disk</p>
+					<!--
+						R22 round 13 P2: the THIRD entry point to the storage breakdown. The Explorer
+						header chip is the first, its background menu the second — and the chip yields
+						below a 700px header, so the action needs a home that a narrow screen keeps.
+						Settings is also where somebody goes LOOKING for it, which the two Explorer
+						surfaces cannot claim.
+					-->
+					<SettingRow name="Storage used">
+						<svelte:fragment slot="control">
+							<Button id="settings-storage" size="xs" color="alternative" onclick={openStorageModal}>
+								<HardDrive size={14} class="mr-1" aria-hidden="true" />Show breakdown
+							</Button>
+						</svelte:fragment>
+						<span>
+							What is using this device’s storage — your library files, saved scenes and
+							projects, old scene versions, the recycle bin and the caches — with a tick beside
+							each one so you can reclaim what you no longer want. Every number is an
+							<em>estimate</em>: the browser reports one figure for everything this app
+							stores, so the breakdown adds ours up and says what is left over. Nothing here
+							touches your peers — their copies are theirs.
 						</span>
 					</SettingRow>
 				</AccordionItem>

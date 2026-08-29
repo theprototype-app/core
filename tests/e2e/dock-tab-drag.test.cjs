@@ -362,8 +362,14 @@ h.run(async () => {
 					y,
 					clear: !!top && !!top.closest('.move-handle'),
 					// name whatever IS covering it — a grab that lands on the wrong element
-					// reads exactly like a dead feature, so the failure has to say why
-					blocker: top ? (top.id || top.className?.toString?.() || top.tagName).slice(0, 60) : 'nothing'
+					// reads exactly like a dead feature, so the failure has to say why.
+					// `getAttribute('class')`, never `.className`: on an SVG that property is
+					// an SVGAnimatedString, which stringifies to "[object SVGAnimatedString]"
+					// and names nothing — and a lucide icon is exactly what covers this spot
+					// when the floating toolbar rides over a window (measured).
+					blocker: top
+						? (top.id || top.getAttribute?.('class') || top.tagName || '').slice(0, 60)
+						: 'nothing'
 				};
 			}, id);
 			if (at?.clear) return { x: at.x, y: at.y };
@@ -421,7 +427,15 @@ h.run(async () => {
 	// UV editor's empty-state panel, which is what `lastBlocker` is for).
 	from = await headerAt(A.page, '#flow-window');
 	h.check(!!from, `8.0a premise: the Node editor header is grabbable (blocked by: ${lastBlocker})`);
-	await drag(A.page, from, { x: 640, y: 120 });
+	// PARKED LEFT OF CENTRE, and that x is load-bearing. This section grows the band to
+	// 560px, and the floating toolbar — ON by default since W8a — anchors on
+	// `--bottom-inset`, so a 560px dock lifts the bar off the floor to y=104..144 while
+	// `toolbarAlwaysOnTop` puts it at z 45, over this window's 43. MEASURED: parked at
+	// the screen centre the Node editor's header sat exactly under the bar and the grab
+	// below landed on a lucide <path>, which reads as a dead feature. The bar is centred
+	// and 282px wide (x 499..781), so 400 is clear of it at every dock height, still
+	// above the band (160) for 8.1c, and still on screen for a ~760px window.
+	await drag(A.page, from, { x: 400, y: 120 });
 	await A.page.evaluate(() => window.__stores.bottomDock.armDockMode('uv', false));
 	await A.page.waitForTimeout(900);
 	// GROW THE BAND UP TO THE WINDOW rather than pushing the window down into the band.

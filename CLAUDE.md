@@ -386,6 +386,33 @@ loadable play content. Everything a user does must be visible to connected peers
   **getgame was measured INERT and removed**: fork 3's carry semantics re-stamp the
   traveller's state at Date.now(), so the room's reply always loses — that is the fork
   working; the measurement lives in requestFullState's JSDoc.
+  · **ROUND 32: THE ARRIVING REPLY HEALS** — every object applier dedupes by uuid, so
+  "double-application is safe" was also "existing objects never converge": a traveller
+  who loaded a stale .tpscene kept the file's poses forever while the room moved on. The
+  reply to an `arriving` request carries `override: true` on every group/object/
+  objectfile message (conditional spread — ordinary replies byte-identical), and the
+  appliers REPLACE in place: createObject in both paths (gizmo detach first, tolerant of
+  a missing target; the GLTF path used to ADD A DUPLICATE — an unbraced if ran the
+  group-attach block unconditionally), createGroup (which had NO dedupe at all — now
+  unconditional, override also updates name+pose, never a re-parent), applyObjectFile
+  (transform/name/anim only, never a re-parse). The standing-VERDICT short-circuit
+  forwards the flag when the request was arriving — a verdict decides WHETHER we answer,
+  not HOW, and without it every travel BACK into an answered room degraded to add-only.
+  Deletions still do not converge (the reply is not authoritative about absence —
+  recorded follow-up). Nodes needed nothing: mergeGraphSnapshot already updates in place.
+  · **ROUND 32: THE ASK HOLDS BOTH DIRECTIONS** — the share-or-stash gate queued only
+  what we SEND, so whoever answered first (or held a latched verdict) poured its scene
+  into the other side mid-question. `gateHolds(peerId)` (sessions) marks a peer queued
+  behind our open ask; peerHandler DROPS its ROOM_SCOPED content (right after
+  canApplyByRoom) and `broadcast` withholds ROOM_SCOPED payloads to it (STREAM_TYPES
+  keep flowing). Answering REFETCHES full state from every queued sender in resolveGate
+  — deliberately WITHOUT `arriving`, which would walk past the other side's still-open
+  ask; rows 3/4 pass refetch:false (joinRoom already ends in resyncRoomPeers), rows 4/5
+  are unnamed so this is the only refetch they can get, and Stay refetches nothing. The
+  rows-4/5 ask copy now says the scene is unsaved and that nothing moves either way
+  until answered. The invite auto-dial stays unguarded (a fresh tab IS empty at dial
+  time); the dial-to-approval edit window is covered by this gate now, recorded in
+  requestConnect's JSDoc.
   · **THE CONNECT CONTRACT** (`deferUntilShareChoice`'s five-row table in sessions.js):
   an EMPTY joiner adopts the host's scene identity and receives, no ask
   (`adoptSceneIdentity` in levels — **THE NAME AND NOTHING ELSE**, fileHandler's
@@ -3908,7 +3935,31 @@ override for e2e — never share 5173 (the user's main-checkout server).
   (open-core: OSS ships only inert hooks — capability gate / auth hook /
   VITE_CLOUD_PLUGIN — cloud repo holds registration/rooms/roles; contract in its
   MAINTAINING.md).
-- Status (2026-08-29, latest): **ROUND 31 — three reported fixes on top of round 30**
+- Status (2026-08-29, latest): **ROUND 32 — four reports triaged, three fixed, one ruled**
+  (991fa27 the share-or-stash ask holds BOTH directions — gateHolds drop + resolve-time
+  refetch, the unsaved-scene ask copy, the invite dial-window JSDoc; f9dd7f8 the
+  diverged-versions dialog names the winner per scene and its Review button LANDS on the
+  Explorer's Version history via the write-once explorerRevealArm; 0fdaa88 the arrival
+  re-sync HEALS — arriving replies carry override:true, the three appliers replace in
+  place, createGroup gains the dedupe it never had). Item 1 was reproduced with wire
+  spies first: decision inputs were already read fresh at reply time (both sides asked)
+  — the real hole was the receive direction, so fix (a) from the brief, refined to
+  drop+refetch. Item 2 ruled KEEP the ask, fix the copy (auto-merge declined — the ask
+  is what protects the joiner's work). Item 4 ruled NO — __localOnly is per-object and
+  gates broadcasts absolutely, while withheld-ness is a scene-by-peer RELATION uniform
+  across the whole list (a "Local objects" section would contain every object, i.e. a
+  banner); the surfaces are the ask itself (its copy now says nothing moves until
+  answered) and the peers popup's rooms view. New suites share-gate-defer (18) and
+  resync-converge (29); project-manifest 83 -> 98. Counterfactuals proven per guard
+  (both gate directions, the winner sentence, the override heal, the group dedupe).
+  **BASELINE RATCHETED 383/62 -> 363/62**: JSDoc on createObject/sendObjects/sendObject/
+  createGroup removed 20 pre-existing implicit-anys plus a stray-4th-argument error that
+  had been reported all along. Build green with the server down. Follow-ups recorded:
+  deletions do not converge on arrival; a heal replaces the THREE object (receiver-side
+  direct refs re-resolve by uuid). OWED on device: the two-direction hold felt on a real
+  pointer (edit while the ask is open, then answer), the diverged-versions dialog copy,
+  Review landing with 2+ clashed scenes, plus the round-30/31 list below.
+- Status (2026-08-29): **ROUND 31 — three reported fixes on top of round 30**
   (c38704e the share-ask REMEMBER-MY-CHOICE checkbox: one box, applies to whichever
   button you press, Share->always / Keep->never, consequence toast with the File-settings
   way back — NOTE 'always' is wider than the label, the pre-existing blanket rule, and a

@@ -1836,6 +1836,15 @@ loadable play content. Everything a user does must be visible to connected peers
 
 ## Hard-won gotchas (do not rediscover)
 
+- **ConfirmModal RESTORES FOCUS AFTER the thing you open next mounts.** Chain "answer the
+  app's one truly modal dialog, then open an input" and the input looks ready while every
+  keystroke goes to the restored focus target. Wait for the modal's own button to LEAVE
+  THE DOM before arming the next surface — never a timer (300ms won idle and lost inside
+  the full suite). Found wiring Save-&-connect's naming flow after showChoice.
+- **A SUITE THAT PASSES WITH SECONDS OF HEADROOM AGAINST THE 480s RUNNER CAP IS A COIN.**
+  scene-isolation measured 449/469/479/480s with one more section in — the last run was
+  killed AT the cap. Move the section to a cheaper suite (connect-states got the dial-ask
+  mechanics on the one-page stub) rather than trimming waits to sneak under.
 - **CONSENT MUST BE RECORDED BEFORE THE WRITE THAT PUBLISHES IT.** `publishSceneVersion`/
   `commitManifest` IS the broadcast, so a `noteSceneOpened` placed after it scopes out
   the very version it was meant to release — and nothing sends again until the next
@@ -3899,7 +3908,18 @@ override for e2e — never share 5173 (the user's main-checkout server).
   (open-core: OSS ships only inert hooks — capability gate / auth hook /
   VITE_CLOUD_PLUGIN — cloud repo holds registration/rooms/roles; contract in its
   MAINTAINING.md).
-- Status (2026-08-28, latest): **ROADMAP 22 ROUND 30 — ROOMS THAT HOLD, AND A LIBRARY THAT
+- Status (2026-08-29, latest): **ROUND 31 — three reported fixes on top of round 30**
+  (c38704e the share-ask REMEMBER-MY-CHOICE checkbox: one box, applies to whichever
+  button you press, Share->always / Keep->never, consequence toast with the File-settings
+  way back — NOTE 'always' is wider than the label, the pre-existing blanket rule, and a
+  narrower newOnly value is the recorded alternative; 0766417 SAVE & CONNECT at the dial
+  — unnamed-with-work asks Save & connect / Connect anyway / Cancel, the Untitled chip
+  explains "you share one world until they do", invite auto-dial deliberately unguarded
+  (fires in a fresh empty tab), h.connect answers the ask with the real button only when
+  the guard's own two facts say it can apply — plus ENTER connects in the dial box).
+  Baseline 383/62; build green; counterfactuals per fix. OWED on device: the dial ask +
+  naming handoff feel, the remember checkbox beside Stash on the connect strip.
+- Status (2026-08-28): **ROADMAP 22 ROUND 30 — ROOMS THAT HOLD, AND A LIBRARY THAT
   INTRODUCES ITSELF.** Eight code commits on `feat/22-round12` (382be38 C1 auto-download ·
   e98a32d A1 identity+adoption · b8cde82 B1 guard module · 5f4cfc0 B2 the popup+Go-to ·
   f665f00 A2+A3 the partition+the ask · 92b37c5 C3 union-merge · 44a1bcc C2 the share

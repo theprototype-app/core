@@ -1141,6 +1141,46 @@ h.run(async () => {
 			')'
 	);
 
+	// 16f — A PINNED PSEUDO ROOT is somewhere you can be standing when you press ✕, and
+	// the list of them GROWS. The first `placeStillThere` enumerated them the way `goUp`
+	// does; `deletedlog` was pinned by another lane the same day and merged textually
+	// clean, after which cancelling an unmount from that row dumped you at the Library.
+	// Every root the tree pins is checked here, so the next one to arrive is covered by
+	// construction rather than by somebody remembering.
+	const roots = ['prefabs', 'packs', 'scene', 'scene:textures', 'deleted', 'deletedlog'];
+	await page.evaluate((id) => window.__stores.mountedVolumes.mountVolume(id), dirtyVol.sessionId);
+	await h.eventually(() => vols(A), (l) => l.length === 1, 'premise: mounted for the roots pass', 15000);
+	const rootVol = (await vols(A))[0];
+	await page.evaluate((v) => {
+		let mv;
+		window.__stores.mountedVolumes.mountedVolumes.subscribe((x) => (mv = x))();
+		const rec = mv.find((x) => x.id === v);
+		window.__stores.mountedVolumes.volumeRenameItem(v, rec.items[0].id, 'roots.txt');
+	}, rootVol.id);
+	await page.waitForTimeout(400);
+	const restored = [];
+	for (const root of roots) {
+		await goTo(root);
+		await page.waitForTimeout(250);
+		await armUnmount(rootVol.id);
+		await page.locator('#explorer-confirm-no').click();
+		await page.waitForTimeout(400);
+		restored.push(root + (((await activeFolderOf(A)) === root) ? ':ok' : ':LOST'));
+	}
+	h.check(
+		restored.every((r) => r.endsWith(':ok')),
+		'Cancel returns you to EVERY pinned root, not only the ones an enumeration remembered (' +
+			restored.join(', ') + ')'
+	);
+	await page.evaluate(async () => {
+		let mv;
+		window.__stores.mountedVolumes.mountedVolumes.subscribe((x) => (mv = x))();
+		for (const v of mv) await window.__stores.mountedVolumes.unmountVolume(v.id);
+	});
+	await page.waitForTimeout(400);
+	await goTo(null);
+	await page.waitForTimeout(300);
+
 	// ---- 17. the "＋ Mount project…" row is pinned to the TOP of the group -----------
 	// User: "'mount project...' button should be always on top of mounted projects in
 	// Explorer". It used to be the LAST child, so it moved on every mount and unmount and,

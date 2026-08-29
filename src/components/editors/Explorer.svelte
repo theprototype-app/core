@@ -2302,11 +2302,19 @@
 	/**
 	 * Is this `activeFolder` value still a place? Only two kinds of value can stop being
 	 * one — a library folder that was deleted, and anything inside a volume that has been
-	 * unmounted. Everything else here is a pinned pseudo root (prefabs / packs /
-	 * pack:<name> / scene / scene:<sub> / deleted), which does not go away. Reads the
-	 * namespace exactly as `goUp` does, and for the same reason: those are the only
-	 * shapes `activeFolder` ever holds.
+	 * unmounted. Everything else is a pinned pseudo root (prefabs / packs / pack:<name> /
+	 * scene / scene:<sub> / deleted / deletedlog), and those do not go away.
+	 *
+	 * IT TESTS THE SHAPE RATHER THAN LISTING THE ROOTS, and that is not a style choice.
+	 * The first version enumerated them the way `goUp` does — and `deletedlog` arrived from
+	 * another lane the same day, merged textually clean, and left this answering "gone" for
+	 * a root the user can be standing in: cancel an unmount from the Deleted log and you
+	 * were dumped at the Library instead of put back. A library folder is a uuid
+	 * (`createFolder` mints one, and an adopted shared folder carries a network uuid), so
+	 * "not uuid-shaped and not a `vol:` key" IS the pseudo-root test, and it cannot go
+	 * stale the next time somebody pins a row.
 	 */
+	const LIBRARY_FOLDER_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 	function placeStillThere(key: string | null) {
 		if (key == null) return true;
 		const scope = volumeOf(key);
@@ -2315,8 +2323,7 @@
 			if (!v) return false;
 			return !scope.folderId || v.folders.some((f: any) => f.id === scope.folderId);
 		}
-		if (key === 'prefabs' || key === 'packs' || key === 'deleted') return true;
-		if (key.startsWith('pack:') || key.startsWith('scene')) return true;
+		if (!LIBRARY_FOLDER_ID.test(key)) return true;
 		return $explorerFolders.some((f: any) => f.id === key);
 	}
 	/**

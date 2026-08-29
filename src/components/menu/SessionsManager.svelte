@@ -346,16 +346,22 @@
 	 * format, and the old `.session.zip` was the same bytes under a name nothing else in the
 	 * app recognises.
 	 *
-	 * WHY THERE IS NO .tp: that is projectFile's format, written by `exportProject` FROM THE
-	 * LIVE STORES (the manifest, the Explorer, the version history). Writing one from a
-	 * SAVED payload would be a second writer of one format, which that file's own comments
-	 * warn against — and the reason it was wanted, "a file carrying the whole project", is
-	 * now true of the bundle: round 12 made the library travel as real files inside it. It
-	 * used to stringify a Blob to `{}` and lose every one, silently.
+	 * R22 ROUND 13 P1 (user): ".tpscene only available as download for projects, its wrong,
+	 * should be .tp (project files) to download." Round 12 said here that there was no .tp
+	 * because `exportProject` reads the LIVE stores, and that was a real constraint and the
+	 * wrong conclusion: the answer was the missing writer, not the wrong label. So a PROJECT
+	 * entry downloads as `.tp` through `exportProjectFromSession`, which builds one out of
+	 * the saved record alone, and a SCENE entry keeps `.tpscene` — which it is, by
+	 * construction.
+	 *
+	 * A project's `.tpscene` is NOT offered any more, and nothing is lost by that: the .tp
+	 * carries that exact bundle as `scenes/<hash>.tpscene` inside it, byte for byte, so it
+	 * is one unzip away. Offering both would have meant a third button per row or a per-entry
+	 * cog menu this dialog does not have — new chrome for a file you already have.
 	 *
 	 * `.json` is KEPT, as the user allowed: it is the only human-readable form, it is what a
 	 * bug report can carry, and dropping it would take something away to add something.
-	 * @param {any} meta @param {'scene'|'json'} [format]
+	 * @param {any} meta @param {'scene'|'project'|'json'} [format]
 	 */
 	async function downloadSession(meta, format = 'scene') {
 		const payload = await getSession(meta.id);
@@ -363,6 +369,23 @@
 		const safe = String(meta.name).replace(/[^\w-]+/g, '_');
 		if (format === 'json') {
 			saveBlob(new Blob([exportSession(payload)], { type: 'application/json' }), safe + '.session.json');
+			return;
+		}
+		if (format === 'project') {
+			// dynamic, like the .tp IMPORT below it: this dialog reaches projectFile only when
+			// a user presses one of these two buttons
+			const { exportProjectFromSession } = await import('$lib/projectFile');
+			const out = await exportProjectFromSession(payload);
+			if (!out) return;
+			saveBlob(new Blob([/** @type {BlobPart} */ (out.bytes)], { type: 'application/zip' }), safe + '.tp');
+			// the FILENAME rule is this SURFACE's, not projectFile's: both download buttons on a
+			// row name the file after the entry, and one surface gets one rule
+			if (out.skippedItems)
+				showToast(
+					'Project downloaded — ' + out.skippedItems + ' library file' +
+						(out.skippedItems === 1 ? '' : 's') +
+						' had no stored bytes and could not be carried.'
+				);
 			return;
 		}
 		const bytes = await exportSessionZip(payload);
@@ -636,11 +659,24 @@
 								onclick={() => openPicker(meta)}
 								>⤵ {meta.hasLibrary ? 'Import files…' : 'Import objects…'}</button
 							>
-							<button
-								class="ui-button-quiet session-download-scene"
-								title="Download as .tpscene — the bundle this app can open again, with its assets and (for a project) its library files"
-								onclick={() => downloadSession(meta)}>.tpscene</button
-							>
+							<!--
+								R22 round 13 P1: a PROJECT downloads as a project file and a SCENE as a scene
+								file. One button either way — the entry already says which it is, and the
+								format that matches it is the only one worth a click.
+							-->
+							{#if meta.hasLibrary}
+								<button
+									class="ui-button-quiet session-download-project"
+									title="Download as .tp — the whole project: this scene plus its library files and folders, in the format this app opens as a project"
+									onclick={() => downloadSession(meta, 'project')}>.tp</button
+								>
+							{:else}
+								<button
+									class="ui-button-quiet session-download-scene"
+									title="Download as .tpscene — the scene bundle this app can open again, with the assets it uses"
+									onclick={() => downloadSession(meta)}>.tpscene</button
+								>
+							{/if}
 							<button
 								class="ui-button-quiet session-download-json"
 								title="Download as JSON — readable, and what a bug report can carry"
@@ -722,7 +758,11 @@
 									onclick={() => { requestLoadSession(meta.id); sessionsOpen.set(false); }}>▶ Load</button>
 								<button class="ui-button-quiet session-import" title={meta.hasLibrary ? "Browse this entry's files, and pick objects out of any scene in it" : 'Pick objects from this scene to add to the one on screen'}
 									onclick={() => openPicker(meta)}>⤵ {meta.hasLibrary ? 'Import files…' : 'Import objects…'}</button>
-								<button class="ui-button-quiet session-download-scene" title="Download as .tpscene — the bundle this app can open again, with its assets and (for a project) its library files" onclick={() => downloadSession(meta)}><Download size={16} class="mr-1" aria-hidden="true" />.tpscene</button>
+								{#if meta.hasLibrary}
+									<button class="ui-button-quiet session-download-project" title="Download as .tp — the whole project: this scene plus its library files and folders, in the format this app opens as a project" onclick={() => downloadSession(meta, 'project')}><Download size={16} class="mr-1" aria-hidden="true" />.tp</button>
+								{:else}
+									<button class="ui-button-quiet session-download-scene" title="Download as .tpscene — the scene bundle this app can open again, with the assets it uses" onclick={() => downloadSession(meta)}><Download size={16} class="mr-1" aria-hidden="true" />.tpscene</button>
+								{/if}
 								<button class="ui-button-quiet session-download-json" title="Download as JSON — readable, and what a bug report can carry" onclick={() => downloadSession(meta, 'json')}><Download size={16} class="mr-1" aria-hidden="true" />.json</button>
 								<button class="ui-button-quiet hover:bg-red-700" title="Delete"
 									onclick={() => confirmDelete([meta])}>✕</button>

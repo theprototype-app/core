@@ -1,7 +1,11 @@
 // W2: the bottom dock's own chrome, which lives in the tab strip beside the "+".
-//   ✕  closes the ACTIVE tab only — the one the strip is drawn on. Whatever else is
-//      docked survives and `visibleDockKey`'s fallback promotes it; closing the last
-//      tab empties the dock, so nothing reserves any inset.
+//   ✕  W6 REMOVED it from the strip: pinned at the window's right edge it read as
+//      "close the dock" while it only ever closed the one tab on screen. Closing a
+//      docked view is the TAB's own right-click menu now (which can also reach a tab
+//      that is not showing); a floating panel keeps its header ✕. The BEHAVIOUR that
+//      button had is unchanged and still asserted below, only driven through that
+//      menu: whatever else is docked survives and `visibleDockKey`'s fallback promotes
+//      it, and closing the last tab empties the dock so nothing reserves any inset.
 //   –  MINIMIZES the whole dock: every tab stays open and reports itself as an
 //      occupant, nothing renders, and the inset goes to 0. It is deliberately not
 //      persisted and there is no strip left to restore from, so the restore path is
@@ -11,7 +15,18 @@
 //      red — measured).
 // Plus the W2 setting itself, driven through the REAL Settings row: with the toolbar
 // floating, the pill anchors on --bottom-inset again.
+//
+// W6 adds the two things that regressed on device and could not be seen from a store
+// read: the strip's BAND HEIGHT (section 8 — W5's icon buttons had no `text-xs`, so
+// their 24px line-height stretched every text tab from 22px to 34px) and the dock's
+// TOP-EDGE RESIZE (section 9 — that 34px band, hung at `-top-6`, reached 10px INSIDE
+// the panel and swallowed the drag hot-zone whole, so the dock could not be resized
+// anywhere the strip covered).
 const h = require('./helpers.cjs');
+
+/** the visible docked panel — ids repeat across hidden panels, so every read scopes here */
+const VISIBLE_PANEL =
+	'#flow-list, #explorer-list, #flow-code-dock, #uv-dock, #shader-editor, #hud-dock, #animation-dock';
 
 const dockState = (page) =>
 	page.evaluate(() => {
@@ -74,6 +89,37 @@ const pillVsDock = (page) =>
 /** click one of the strip's own buttons (the strip renders inside the visible panel) */
 const clickStrip = (page, id) => page.evaluate((s) => document.querySelector(s).click(), id);
 
+/** W6: close a docked view the way the strip's ✕ used to — the TAB's right-click menu.
+ * A REAL right-click, because `contextmenu` is what a long press fires too, and the
+ * menu rows are [role=menuitem] DIVs, never buttons. */
+async function closeTabViaMenu(page, label) {
+	const at = await page.evaluate(
+		([sel, lbl]) => {
+			const panel = [...document.querySelectorAll(sel)].find((el) => !el.classList.contains('hidden'));
+			const tab = [...(panel?.querySelectorAll('.tab-note') ?? [])].find(
+				(el) => el.textContent.trim() === lbl
+			);
+			if (!tab) return null;
+			const r = tab.getBoundingClientRect();
+			return { x: Math.round(r.x + r.width / 2), y: Math.round(r.y + r.height / 2) };
+		},
+		[VISIBLE_PANEL, label]
+	);
+	if (!at) return false;
+	await page.mouse.click(at.x, at.y, { button: 'right' });
+	await page.waitForTimeout(350);
+	const hit = await page.evaluate(() => {
+		const row = [...document.querySelectorAll('[role=menuitem]')].find((e) =>
+			/^close$/i.test(e.textContent.trim())
+		);
+		if (!row) return false;
+		row.click();
+		return true;
+	});
+	await page.waitForTimeout(600);
+	return hit;
+}
+
 // a REAL key press with focus on the body, never a text field (panel-toggle-keys' idiom)
 const press = async (page, key) => {
 	await page.evaluate(() => document.activeElement instanceof HTMLElement && document.activeElement.blur());
@@ -110,25 +156,22 @@ h.run(async () => {
 		d.strip.includes('Node editor') && d.strip.includes('Explorer'),
 		`0.2 the strip names both tabs (${d.strip.join('|')})`
 	);
-	h.check(d.hasMinBtn && d.hasCloseBtn, '0.3 the strip carries the minimize and close-tab buttons');
+	h.check(d.hasMinBtn, '0.3 the strip carries the minimize button');
+	// W6: and NOT the ✕ any more — it read as "close the dock" at the window's edge
+	h.check(!d.hasCloseBtn, '0.3b ...and the strip-level close-tab ✕ is gone');
 	h.check(
 		d.minimized === false && d.inset > 0,
 		`0.4 the dock starts open and reserves its height (inset=${d.inset})`
 	);
 	const titles = await A.page.evaluate(() => ({
-		min: document.querySelector('#dock-minimize')?.title,
-		close: document.querySelector('#dock-close-tab')?.title
+		min: document.querySelector('#dock-minimize')?.title
 	}));
-	h.check(
-		titles.min === 'Minimize the dock' && titles.close === 'Close this tab',
-		`0.5 both buttons say what they do (${titles.min} / ${titles.close})`
-	);
+	h.check(titles.min === 'Minimize the dock', `0.5 the button says what it does (${titles.min})`);
 
-	// --- 1. ✕ closes the ACTIVE tab only ---
-	await clickStrip(A.page, '#dock-close-tab');
-	await A.page.waitForTimeout(600);
+	// --- 1. closing the ACTIVE tab (via the tab menu) closes only that tab ---
+	h.check(await closeTabViaMenu(A.page, 'Node editor'), '1.0 the tab menu offers Close on the visible tab');
 	d = await dockState(A.page);
-	h.check(d.flowClosed === true, '1.1 the close button closed the ACTIVE tab (the Node editor)');
+	h.check(d.flowClosed === true, '1.1 the tab menu closed the ACTIVE tab (the Node editor)');
 	h.check(d.explClosed === false, '1.2 ...and left the Explorer open');
 	h.check(
 		d.visible === 'explorer' && d.rendered.includes('explorer-list'),
@@ -229,10 +272,12 @@ h.run(async () => {
 		d.tabs.length === 2,
 		`5.0 premise: two tabs are still open going in (${d.tabs.join(',')})`
 	);
-	await clickStrip(A.page, '#dock-close-tab');
-	await A.page.waitForTimeout(600);
-	await clickStrip(A.page, '#dock-close-tab');
-	await A.page.waitForTimeout(700);
+	// through the tab menu, on whichever tab is showing at the time
+	let showing = (await dockState(A.page)).strip.find((t) => t !== '');
+	await closeTabViaMenu(A.page, showing);
+	showing = (await dockState(A.page)).strip.find((t) => t !== '');
+	await closeTabViaMenu(A.page, showing);
+	await A.page.waitForTimeout(500);
 	d = await dockState(A.page);
 	h.check(d.tabs.length === 0, `5.1 every tab is closed (${d.tabs.join(',') || 'none'})`);
 	h.check(d.rendered.length === 0, '5.2 nothing renders in the dock');
@@ -280,7 +325,6 @@ h.run(async () => {
 		// the first TAB in the visible panel's strip, to compare bands against
 		const tab = panel?.querySelector('.tab-note');
 		const min = r('#dock-minimize');
-		const close = r('#dock-close-tab');
 		const add = r('#dock-add-view');
 		const svgIn = (sel) => !!panel?.querySelector(sel + ' svg');
 		return {
@@ -290,25 +334,23 @@ h.run(async () => {
 			tabLeft: tab ? Math.round(tab.getBoundingClientRect().left) : -1,
 			minTop: min ? Math.round(min.top) : -1,
 			minLeft: min ? Math.round(min.left) : -1,
-			closeRight: close ? Math.round(close.right) : -1,
 			minRight: min ? Math.round(min.right) : -1,
 			addRight: add ? Math.round(add.right) : -1,
-			icons: { add: svgIn('#dock-add-view'), min: svgIn('#dock-minimize'), close: svgIn('#dock-close-tab') },
+			icons: { add: svgIn('#dock-add-view'), min: svgIn('#dock-minimize') },
 			// the chrome buttons are icon-only now, so they must SAY what they are
 			labels: {
 				add: panel?.querySelector('#dock-add-view')?.getAttribute('aria-label'),
-				min: panel?.querySelector('#dock-minimize')?.getAttribute('aria-label'),
-				close: panel?.querySelector('#dock-close-tab')?.getAttribute('aria-label')
+				min: panel?.querySelector('#dock-minimize')?.getAttribute('aria-label')
 			}
 		};
 	});
 	h.check(
-		geom.closeRight > 0 && geom.vw - geom.closeRight <= 20,
-		`6.1 the chrome cluster is pinned to the window's right edge (${geom.closeRight} vs ${geom.vw})`
+		geom.minRight > 0 && geom.vw - geom.minRight <= 20,
+		`6.1 the chrome cluster is pinned to the window's right edge (${geom.minRight} vs ${geom.vw})`
 	);
 	h.check(
-		geom.minRight < geom.closeRight,
-		`6.2 ...in the order – then ✕ (minimize right edge ${geom.minRight} < close ${geom.closeRight})`
+		geom.minLeft > geom.addRight,
+		`6.2 ...and stands clear of the tab group (chrome starts ${geom.minLeft}, ＋ ends ${geom.addRight})`
 	);
 	h.check(
 		Math.abs(geom.minTop - geom.tabTop) <= 2,
@@ -319,12 +361,12 @@ h.run(async () => {
 		`6.4 the tabs and the ＋ stay left of it, so nothing underlaps (＋ ends ${geom.addRight}, chrome starts ${geom.minLeft})`
 	);
 	h.check(
-		geom.icons.add && geom.icons.min && geom.icons.close,
-		`6.5 all three chrome buttons render a lucide svg (${JSON.stringify(geom.icons)})`
+		geom.icons.add && geom.icons.min,
+		`6.5 both chrome buttons render a lucide svg (${JSON.stringify(geom.icons)})`
 	);
 	h.check(
-		!!geom.labels.add && !!geom.labels.min && !!geom.labels.close,
-		`6.6 ...and being icon-only, each carries an aria-label (${geom.labels.min} / ${geom.labels.close})`
+		!!geom.labels.add && !!geom.labels.min,
+		`6.6 ...and being icon-only, each carries an aria-label (${geom.labels.add} / ${geom.labels.min})`
 	);
 
 	// --- 7. the ＋ menu offers only views that are NOT already docked ---
@@ -407,8 +449,9 @@ h.run(async () => {
 		`8.0 premise: both tabs open, the Node editor showing (visible=${d.visible} tabs=${d.tabs.join(',')})`
 	);
 
-	// the Explorer is a HIDDEN tab right now — the strip's own ✕ can only reach the
-	// visible one, so this menu is the only way to it
+	// the Explorer is a HIDDEN tab right now — since W6 removed the strip's ✕ this menu
+	// is the ONLY way to close a docked view, and the only way to reach one that is not
+	// showing (the ✕ could never do that half)
 	const gotExplorerMenu = await rightClickTab('Explorer');
 	h.check(gotExplorerMenu, '8.1 right-clicking a tab opens a menu (the Explorer tab, which is not showing)');
 	rows = await menuRows();
@@ -482,6 +525,138 @@ h.run(async () => {
 	await A.page.evaluate(() => {
 		localStorage.setItem('flowDocked', 'true');
 		window.__stores.bottomDock.armDockMode('flow', true);
+	});
+	await A.page.waitForTimeout(500);
+
+	// =====================================================================
+	// W6. The band's HEIGHT, and the dock resize that height had buried.
+	// =====================================================================
+	await A.page.evaluate(() => {
+		const s = window.__stores;
+		s.flowGraphClose.set(false);
+		s.explorerClose.set(false);
+		s.bottomDock.activateDock('flow');
+	});
+	await A.page.waitForTimeout(800);
+
+	/** the strip's geometry, read from the panel that is actually showing */
+	const band = (page) =>
+		page.evaluate((sel) => {
+			const panel = [...document.querySelectorAll(sel)].find((el) => !el.classList.contains('hidden'));
+			if (!panel) return null;
+			const pr = panel.getBoundingClientRect();
+			const btns = [...panel.querySelectorAll('.tab-note')].map((el) => ({
+				label: el.textContent.trim() || el.id,
+				h: Math.round(el.getBoundingClientRect().height * 100) / 100,
+				w: Math.round(el.getBoundingClientRect().width * 100) / 100
+			}));
+			const cueEl = panel.querySelector('.resize-cue');
+			const cue = cueEl ? cueEl.getBoundingClientRect() : null;
+			// what a pointer aimed at the panel's top edge actually lands on, across its
+			// whole width — the tab group, the ＋ and the chrome cluster all live in this
+			// band, and before W6 they ate the drag everywhere they sat
+			const xs = [6, 60, 200, Math.round(pr.width / 2), Math.round(pr.width) - 130, Math.round(pr.width) - 60, Math.round(pr.width) - 6];
+			const onCue = xs.filter((x) => {
+				const el = document.elementFromPoint(x, Math.round(pr.top + 1));
+				return el && el.classList && el.classList.contains('resize-cue');
+			});
+			return {
+				btns,
+				maxH: Math.max(...btns.map((b) => b.h)),
+				widest: Math.max(...btns.map((b) => b.w)),
+				nodeTabW: btns.find((b) => b.label === 'Node editor')?.w ?? -1,
+				cueZ: cueEl ? getComputedStyle(cueEl).zIndex : null,
+				xsTried: xs.length,
+				onCue: onCue.length
+			};
+		}, VISIBLE_PANEL);
+
+	let b = await band(A.page);
+	// 22px is the metric the tabs shipped with before this branch (measured on
+	// 739f9df^) and the one the user asked for back. W5's icon buttons carried no
+	// `text-xs`, so a 24px line-height plus pt-1.5/pb-1 made them 34px, and a flex row
+	// stretches its items — every text tab inherited it. Pin the NUMBER: a future
+	// member that quietly grows the band shows up here rather than on someone's screen.
+	h.check(b.maxH === 22, `9.1 every strip button is 22px tall — one slim band (max=${b.maxH})`);
+	h.check(
+		b.btns.every((x) => x.h === b.maxH),
+		`9.2 ...tabs and chrome icons alike (${b.btns.map((x) => `${x.label}:${x.h}`).join(' ')})`
+	);
+	// the tab WIDTH never changed on this branch; pin it so a padding edit is visible
+	h.check(
+		b.nodeTabW > 90 && b.nodeTabW <= 100,
+		`9.3 a 'Node editor' tab stays ~98px wide (${b.nodeTabW})`
+	);
+	// the band hangs at -top-6 (24px). At 22px it ends 2px ABOVE the panel; at 34px it
+	// reached 10px inside it, which is what buried the hot-zone.
+	h.check(b.maxH <= 24, `9.4 ...so the band cannot reach past its own -top-6 slot (${b.maxH} <= 24)`);
+
+	// --- 10. the top-edge resize, at every x across the panel ---
+	h.check(b.cueZ === '30', `10.1 the resize hot-zone sits ABOVE the strip's z-20 (z=${b.cueZ})`);
+	h.check(
+		b.onCue === b.xsTried,
+		`10.2 the top edge answers with the hot-zone at every x, chrome cluster included (${b.onCue}/${b.xsTried})`
+	);
+
+	/** a REAL mouse drag on the visible panel's top edge, at its horizontal middle —
+	 * the exact spot the strip covered */
+	const dragTopEdge = async (page, dy) => {
+		const at = await page.evaluate((sel) => {
+			const panel = [...document.querySelectorAll(sel)].find((el) => !el.classList.contains('hidden'));
+			return { top: Math.round(panel.getBoundingClientRect().top), x: Math.round(window.innerWidth / 2) };
+		}, VISIBLE_PANEL);
+		await page.mouse.move(at.x, at.top);
+		await page.mouse.down();
+		await page.mouse.move(at.x, at.top + dy, { steps: 12 });
+		await page.mouse.up();
+		await page.waitForTimeout(400);
+	};
+	const dockH = (page) =>
+		page.evaluate((sel) => {
+			let hgt;
+			window.__stores.bottomDock.dockHeight.subscribe((v) => (hgt = v))();
+			const panel = [...document.querySelectorAll(sel)].find((el) => !el.classList.contains('hidden'));
+			return {
+				hgt,
+				inset: getComputedStyle(document.documentElement).getPropertyValue('--bottom-inset').trim(),
+				ls: localStorage.getItem('flowDockHeight'),
+				panelH: panel ? Math.round(panel.getBoundingClientRect().height) : -1
+			};
+		}, VISIBLE_PANEL);
+
+	const h0 = await dockH(A.page);
+	await dragTopEdge(A.page, -60);
+	const h1 = await dockH(A.page);
+	h.check(h1.hgt === h0.hgt + 60, `10.3 dragging the top edge UP grows the dock (${h0.hgt} -> ${h1.hgt})`);
+	h.check(
+		h1.inset === `${h1.hgt}px` && h1.panelH === h1.hgt,
+		`10.4 ...and the panel and --bottom-inset follow it (panel=${h1.panelH}, inset=${h1.inset})`
+	);
+	await dragTopEdge(A.page, 40);
+	const h2 = await dockH(A.page);
+	h.check(h2.hgt === h1.hgt - 40, `10.5 ...and dragging DOWN shrinks it again (${h1.hgt} -> ${h2.hgt})`);
+	h.check(h2.ls === String(h2.hgt), `10.6 the height persists (flowDockHeight=${h2.ls})`);
+
+	// the shared height is the DOCK's, so every tab resizes it — including the Shader
+	// editor, the one panel that never carried a hot-zone at all until W6
+	for (const key of ['explorer', 'shader']) {
+		await A.page.evaluate((k) => {
+			const s = window.__stores;
+			if (k === 'shader') s.shaderEditorClose.set(false);
+			s.bottomDock.activateDock(k);
+		}, key);
+		await A.page.waitForTimeout(700);
+		const before = await dockH(A.page);
+		await dragTopEdge(A.page, -45);
+		const after = await dockH(A.page);
+		h.check(
+			after.hgt === before.hgt + 45,
+			`10.7 the ${key} tab resizes the shared dock the same way (${before.hgt} -> ${after.hgt})`
+		);
+	}
+	await A.page.evaluate(() => {
+		window.__stores.shaderEditorClose.set(true);
+		window.__stores.bottomDock.activateDock('flow');
 	});
 	await A.page.waitForTimeout(500);
 

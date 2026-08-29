@@ -4583,7 +4583,7 @@
 			role="region"
 		>
 			<div
-				class="resize-cue absolute -top-1 left-0 right-0 z-10 h-2 cursor-ns-resize"
+				class="resize-cue absolute -top-1 left-0 right-0 z-30 h-2 cursor-ns-resize hover:bg-primary-600/30"
 				style="touch-action: none"
 				title="Drag to resize"
 				onpointerdown={startResize}
@@ -4593,7 +4593,11 @@
 			<DockTabs />
 			<div class="mb-1 flex items-center gap-2">
 				<span class="shrink-0 text-xs font-semibold text-gray-200"><FolderTree size={16} class="mr-1" aria-hidden="true" />Explorer</span>
-				<!-- `shrink-0`: the identity chip beside it is the flex item that gives way -->
+				<!-- `shrink-0`: the identity chip beside it is the flex item that gives way.
+				     W6 deliberately left this row's LAYOUT alone — its narrow-width behaviour
+				     is explorer-header-panels' own measured contract, and the docked chrome
+				     matches Flow's exactly (undock only, no ✕: a docked view is closed from
+				     its TAB's right-click menu). -->
 				<input
 					id="explorer-search"
 					class="ui-input w-48 shrink-0 py-0.5"
@@ -4637,20 +4641,36 @@
 		>
 			<div class="ui-panel-header move-handle shrink-0 cursor-move select-none py-1.5">
 				<span class="shrink-0"><FolderTree size={16} class="mr-1" aria-hidden="true" />Explorer</span>
-				<input
-					id="explorer-search"
-					class="ui-input w-44 shrink-0 py-0.5 font-normal"
-					placeholder="Search assets…"
-					bind:value={search}
-				/>
-				{@render filterChip()}
-				{@render viewChip()}
-				{@render storageChip()}
-				{@render identityChip()}
+				<!-- W6: the header's overflow lives HERE. The ✕ was never missing — every
+				     item ahead of it was `shrink-0`, so the row's minimum width (~730px)
+				     exceeded the window's own 420px minimum and the two trailing buttons
+				     were pushed OUT of an `overflow-hidden` window: measured at winW 420,
+				     the ✕ sat at x=743 against a right edge of 580, unhittable. That is the
+				     "the Explorer has no close button" report. Clipping the search + chips
+				     instead keeps Dock and ✕ inside the window at every width. -->
+				<div class="flex min-w-0 flex-1 items-center gap-2 overflow-hidden">
+					<input
+						id="explorer-search"
+						class="ui-input w-44 shrink-0 py-0.5 font-normal"
+						placeholder="Search assets…"
+						bind:value={search}
+					/>
+					{@render filterChip()}
+					{@render viewChip()}
+					{@render storageChip()}
+					{@render identityChip()}
+				</div>
 				<button id="explorer-dock" class="ui-button-quiet shrink-0" title="Dock to the bottom" onclick={() => setDocked(true)}>
 					⇩ Dock
 				</button>
-				<button class="ui-button-quiet" title="Close" onclick={() => explorerClose.set(true)}>✕</button>
+				<!-- the id + aria-label its siblings' close buttons lack, so a suite can pin it -->
+				<button
+					id="explorer-close"
+					class="ui-button-quiet shrink-0"
+					title="Close"
+					aria-label="Close the Explorer"
+					onclick={() => explorerClose.set(true)}>✕</button
+				>
 			</div>
 			<div class="min-h-0 flex-1 p-1">
 				{@render content()}

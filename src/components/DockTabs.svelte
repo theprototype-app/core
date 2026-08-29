@@ -19,11 +19,21 @@
 	//
 	// W5 also gave a TAB its own context menu (right-click; a long press on Android
 	// fires `contextmenu` natively). It acts on the tab you clicked, which is the half
-	// the strip could not do before — the ✕ can only ever reach the VISIBLE tab.
-	import { dockTabs, bottomDockActive, visibleDockKey, activateDock, dockMinimized } from '$lib/bottomDock';
-	import { dockAddItems, dockTabItems, closeStoreFor } from '$lib/dockMenu';
+	// the strip could not do before, and since W6 it is the ONLY way the strip closes
+	// anything: W5's right-cluster ✕ read as "close the dock" and was removed. Closing
+	// a view is the panel's own header ✕ (floating) or this menu (docked).
+	//
+	// W6 also pinned the BAND HEIGHT. Every button here is `h-5.5` (22px) on purpose:
+	// W5's icon buttons carried no `text-xs`, so their 24px line-height plus `pt-1.5
+	// pb-1` made them 34px, and a flex row stretches its items — so every text tab
+	// inherited that height (measured 22 -> 34). That both fattened the strip and, at
+	// `-top-6`, dropped its bottom edge 10px INSIDE the panel, burying the top-edge
+	// resize hot-zone. An explicit height on each button is what keeps one member from
+	// ever setting the band's height again.
+	import { dockTabs, bottomDockActive, activateDock, dockMinimized } from '$lib/bottomDock';
+	import { dockAddItems, dockTabItems } from '$lib/dockMenu';
 	import ContextMenu from './ContextMenu.svelte';
-	import { Plus, Minus, X } from '@lucide/svelte';
+	import { Plus, PanelBottom } from '@lucide/svelte';
 
 	let addMenu = $state(/** @type {{x:number,y:number}|null} */ (null));
 	// Rebuilt per OPEN, not once at init: the list drops views that are already docked,
@@ -42,20 +52,12 @@
 		tabMenu = { x: e.clientX, y: e.clientY, items: dockTabItems(key) };
 	}
 
-	/** Close the tab the dock is SHOWING — `visibleDockKey`, not `bottomDockActive`:
-	 * when the active tab is closed/undocked the dock falls back to another present
-	 * panel, and the strip is drawn by whichever one is actually rendering. Closing it
-	 * lets that same fallback promote the next tab; closing the last one empties the
-	 * dock (no occupant -> no inset). */
-	function closeActive() {
-		closeStoreFor($visibleDockKey ?? '')?.set(true);
-	}
 </script>
 
 <div class="absolute -top-6 left-3 right-24 z-20 flex gap-0.5 overflow-x-auto">
 	{#each $dockTabs as tab (tab.key)}
 		<button
-			class="tab-note shrink-0 px-4 pb-0.5 pt-1 text-xs font-semibold {$bottomDockActive === tab.key
+			class="tab-note h-5.5 shrink-0 px-4 pb-0.5 pt-1 text-xs font-semibold {$bottomDockActive === tab.key
 				? 'bg-gray-700 text-white'
 				: 'bg-gray-900/70 text-gray-400 hover:text-gray-200'}"
 			oncontextmenu={(e) => openTabMenu(e, tab.key)}
@@ -64,7 +66,7 @@
 	{/each}
 	<button
 		id="dock-add-view"
-		class="tab-note shrink-0 bg-gray-900/70 px-3 pb-1 pt-1.5 text-gray-300 hover:text-white"
+		class="tab-note flex h-5.5 shrink-0 items-center justify-center bg-gray-900/70 px-3 text-gray-300 hover:text-white"
 		title="Add a view (Flow Code, Animation, UV editor, Shader editor, HUD editor, Explorer)"
 		aria-label="Add a view to the dock"
 		onclick={openAdd}><Plus size={14} aria-hidden="true" /></button
@@ -75,17 +77,10 @@
 <div class="absolute -top-6 right-3 z-20 flex gap-0.5">
 	<button
 		id="dock-minimize"
-		class="tab-note bg-gray-900/70 px-3 pb-1 pt-1.5 text-gray-300 hover:text-white"
+		class="tab-note flex h-5.5 items-center justify-center bg-gray-900/70 px-3 text-gray-300 hover:text-white"
 		title="Minimize the dock"
 		aria-label="Minimize the dock"
-		onclick={() => dockMinimized.set(true)}><Minus size={14} aria-hidden="true" /></button
-	>
-	<button
-		id="dock-close-tab"
-		class="tab-note bg-gray-900/70 px-3 pb-1 pt-1.5 text-gray-300 hover:text-white"
-		title="Close this tab"
-		aria-label="Close this tab"
-		onclick={closeActive}><X size={14} aria-hidden="true" /></button
+		onclick={() => dockMinimized.set(true)}><PanelBottom size={14} aria-hidden="true" /></button
 	>
 </div>
 

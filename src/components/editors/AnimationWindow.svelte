@@ -2467,7 +2467,7 @@
 			style="z-index: var(--z-bottom); height: {$dockHeight}px; border-top: 1px solid rgb(55 65 81 / 0.6)"
 		>
 			<div
-				class="resize-cue absolute -top-1 left-0 right-0 z-10 h-2 cursor-ns-resize"
+				class="resize-cue absolute -top-1 left-0 right-0 z-30 h-2 cursor-ns-resize hover:bg-primary-600/30"
 				style="touch-action: none"
 				title="Drag to resize"
 				onpointerdown={startResize}

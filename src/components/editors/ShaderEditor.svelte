@@ -356,10 +356,44 @@
 	// W2: a MINIMIZED dock renders nothing while every tab stays open (the occupant
 	// report above is untouched, so the strip comes back with its tabs intact)
 	const dockVisible = $derived($visibleDockKey === 'shader' && !$dockMinimized);
+
+	// W6: the top-edge dock resize, which this panel ALONE never had — its six siblings
+	// have carried it since the dock existed, so the shared height silently froze
+	// whenever the Shader editor was the tab on screen. Same handlers, same shared
+	// `dockHeight`, same clamp (FlowCode is the reference), so the seven behave
+	// identically. No floating mode here, so there is no corner grip to pair it with.
+	const clampH = (/** @type {number} */ h) =>
+		Math.min(Math.max(h || 320, 200), Math.round(window.innerHeight * 0.8));
+	let resizing = $state(false);
+	function startResize(/** @type {any} */ e) {
+		resizing = true;
+		e.currentTarget.setPointerCapture(e.pointerId);
+		e.preventDefault();
+	}
+	function doResize(/** @type {any} */ e) {
+		if (resizing) dockHeight.update((h) => clampH(h - e.movementY));
+	}
+	function endResize(/** @type {any} */ e) {
+		if (resizing) {
+			resizing = false;
+			e.currentTarget.releasePointerCapture?.(e.pointerId);
+		}
+	}
 </script>
 
 {#if !$shaderEditorClose && dockVisible}
 	<div id="shader-editor" class="shader-editor ui-panel" style:height={$dockHeight + 'px'}>
+		<!-- top-edge resize hot zone (above the tab strip's z-20, so the band can never
+		     swallow the drag) -->
+		<!-- svelte-ignore a11y_no_static_element_interactions -->
+		<div
+			class="resize-cue absolute -top-1 left-0 right-0 z-30 h-2 cursor-ns-resize hover:bg-primary-600/30"
+			style="touch-action: none"
+			title="Drag to resize"
+			onpointerdown={startResize}
+			onpointermove={doResize}
+			onpointerup={endResize}
+		></div>
 		<div class="shader-topbar">
 			<DockTabs />
 			<span class="shader-scope" id="shader-scope">{scopeLabel}</span>

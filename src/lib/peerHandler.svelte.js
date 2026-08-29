@@ -434,7 +434,8 @@ export class PeerConnection {
 				} else if(data.type == 'light') {
 					createLight(data.command, data.uuid);
 				} else if(data.type == 'group') {
-					createGroup(data.command, data.uuid, data.group, data.name, data.groupparent, data.pos, data.rot, data.scale);
+					// `override` (R22 round 32) rides an ARRIVAL HEAL only — see sendObject
+					createGroup(data.command, data.uuid, data.group, data.name, data.groupparent, data.pos, data.rot, data.scale, data.override);
 				} else if(data.type == 'name') {
 					changeName(data.uuid, data.name);
 				} else if(data.type == 'move') {

@@ -1412,9 +1412,15 @@ let gate = null;
 // the handshake reply has always called it with the sender alone
 const sendObjectsTo = /** @type {any} */ (sendObjects);
 
-/** @param {'objects'|'nodes'} kind @param {string} sender */
-function replyTo(kind, sender) {
-	if (kind === 'objects') sendObjectsTo(sender);
+/**
+ * @param {'objects'|'nodes'} kind @param {string} sender
+ * @param {{override?: boolean}} [opts] forwarded to `sendObjects` — see the ARRIVING row
+ *   below for the one caller that sets it. The NODES half needs no flag: a nodes reply
+ *   lands in `applyNodesSnapshot`, whose `mergeGraphSnapshot` already updates a node it
+ *   already holds in place, so graphs converge without one.
+ */
+function replyTo(kind, sender, opts = {}) {
+	if (kind === 'objects') sendObjectsTo(sender, undefined, opts);
 	else sendNodes(sender);
 }
 
@@ -1585,7 +1591,13 @@ export function deferUntilShareChoice(kind, sender, opts = {}) {
 	const verdict = shareVerdicts.get(room);
 	if (verdict === 'stayed' && split) return; // decided: not from over there
 	if (verdict === 'shared' || verdict === 'stashed') {
-		replyTo(kind, sender);
+		// R22 round 32 — A STANDING VERDICT DECIDED *WHETHER* WE ANSWER, NOT *HOW*. This
+		// short-circuit sits ABOVE the ARRIVING row below, so without the flag here an
+		// arrival heal degrades silently to the old add-only reply for any room we have
+		// already answered once — which is every travel BACK into a room we agreed to share
+		// with, the case the arrival re-sync exists for. The verdict is consent to send this
+		// peer our scene; sending it as a heal is the same bytes with one more field.
+		replyTo(kind, sender, arriving ? { override: true } : {});
 		return;
 	}
 
@@ -1605,8 +1617,17 @@ export function deferUntilShareChoice(kind, sender, opts = {}) {
 	// It is a CLAIM, not a proof, and that is fine: the row above has already established
 	// we are in the same room, and inside one room the only thing this skips is a merge
 	// question whose honest answer is Share. It records NO verdict - nothing was decided.
+	//
+	// R22 round 32 - AND IT IS THE ONE REPLY THAT MAY OVERWRITE. `createObject` DEDUPES BY
+	// UUID, so the plain reply only ever ADDS what the traveller is missing: a box both
+	// sides hold keeps the pose the .tpscene was saved with, forever, and the two peers
+	// stand in one room looking at different worlds. Every other row is a MERGE of two
+	// authored worlds, where overwriting somebody's object would be the wrong answer -
+	// but this row has already decided the traveller is holding a snapshot of OUR scene,
+	// and the live room is what it came to catch up with. `override` is additive on the
+	// wire and only reaches builds that sent `arriving` in the first place.
 	if (arriving) {
-		replyTo(kind, sender);
+		replyTo(kind, sender, { override: true });
 		return;
 	}
 

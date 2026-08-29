@@ -8,13 +8,18 @@ const inset = (page) =>
 		parseInt(getComputedStyle(document.documentElement).getPropertyValue('--bottom-inset') || '0')
 	);
 
-// Phase 1 (controls dock rework), revised by W2: where the bottom chrome sits is the
-// user's call now. `floatingToolbar` OFF — THE DEFAULT — leaves the Controls pill and
-// the play FAB in its well pinned to the viewport floor on the bottom-HUD tier, where
-// an open dock covers them exactly as it covers the chat / sim buttons beside them. ON,
-// they anchor on --bottom-inset and RIDE ABOVE the dock instead of covering its last
-// ~60px. (The old --dock-inset model padded the DOCK's content and only did so at
-// <=500px, so every wider screen had the pill over the node palette.)
+// Phase 1 (controls dock rework), revised by W2 and again by W8a: where the bottom
+// chrome sits is the user's call, and `floatingToolbar` is ON BY DEFAULT again after the
+// on-device pass. ON — THE DEFAULT — the Controls pill and the play FAB in its well
+// anchor on --bottom-inset and RIDE ABOVE the dock instead of covering its last ~60px.
+// (The old --dock-inset model padded the DOCK's content and only did so at <=500px, so
+// every wider screen had the pill over the node palette.) OFF, they stay pinned to the
+// viewport floor on the bottom-HUD tier and an open dock passes over that band, exactly
+// as it does over the chat / sim buttons beside them.
+//   W8a also removed the `bottom` TRANSITION from both modes: the bar sliding as a dock
+// opens read as distracting rather than as continuity, so it changes rows in the same
+// frame the inset does. That is asserted two ways below — the computed property list,
+// and the position being final one frame after a flip.
 const bottomChrome = (page) =>
 	page.evaluate(() => {
 		const fabEl = document.getElementById('play-button');
@@ -66,7 +71,29 @@ const bottomChrome = (page) =>
 /** flip the LOCAL floatingToolbar pref — the same store the Settings row binds to */
 const setFloating = async (page, on) => {
 	await page.evaluate((v) => window.__stores.floatingToolbar.set(v), on);
-	await page.waitForTimeout(400); // the 200ms bottom transition, settled
+	await page.waitForTimeout(400);
+};
+
+/** ...and the same flip driven through the REAL Settings row, so the covered mode is
+ *  asserted the way a user reaches it rather than through a store nobody can click.
+ *  flowbite's Toggle keeps its real input `sr-only` under a painted track, so a
+ *  POSITIONAL click lands on whatever overlays that spot — click the control itself,
+ *  which fires the native click+change svelte's bind listens for (dock-chrome's idiom). */
+const setFloatingViaSettings = async (page, on) => {
+	await page.evaluate(() => window.__stores.settingsOpen.set(true));
+	await page.waitForTimeout(500);
+	await page.getByText('Interface', { exact: true }).first().click();
+	await page.waitForTimeout(400);
+	const row = page.locator('.setting-row').filter({ hasText: 'Floating toolbar' }).first();
+	const toggle = row.locator('input[type="checkbox"]');
+	// counted BEFORE the modal closes — a locator counted afterwards finds nothing,
+	// which reads as "the row does not exist" rather than "the row has gone away"
+	const found = { rows: await row.count(), toggles: await toggle.count(), was: await toggle.isChecked() };
+	if (found.was !== on) await toggle.evaluate((el) => el.click());
+	await page.waitForTimeout(400);
+	await page.evaluate(() => window.__stores.settingsOpen.set(false));
+	await page.waitForTimeout(500);
+	return found;
 };
 
 h.run(async () => {
@@ -81,17 +108,89 @@ h.run(async () => {
 	const flowH = (await A.page.locator('#flow-list').boundingBox()).height;
 	h.check(Math.abs((await inset(A.page)) - flowH) < 2, `inset follows the dock height (${flowH})`);
 
-	// ...and with the dock open, the DEFAULT bottom chrome stays on the viewport floor
-	// and the dock covers it (measured here, before the sidebar opens — an open sidebar
-	// shields the lower-left corner)
-	const covered = await bottomChrome(A.page);
+	// ...and with the dock open, THE DEFAULT bottom chrome RIDES ABOVE it (measured here,
+	// before the sidebar opens — an open sidebar shields the lower-left corner)
+	const open = await bottomChrome(A.page);
 	h.check(
-		covered.hasFab && covered.hasPill && covered.dockTop > 0,
+		open.hasFab && open.hasPill && open.dockTop > 0,
 		'pill, FAB and dock are all measurable'
 	);
 	h.check(
+		open.fabBottom <= open.dockTop + 2,
+		`W8a: by default the play FAB rides above the dock (${open.fabBottom} <= ${open.dockTop})`
+	);
+	h.check(
+		open.pillBottom <= open.dockTop + 2,
+		`...and so does the Controls pill (${open.pillBottom} <= ${open.dockTop})`
+	);
+	h.check(
+		open.hitIsDock === false && open.pillZ > open.dockZ,
+		`...winning its own pixel (z ${open.pillZ} > ${open.dockZ})`
+	);
+
+	// NO `bottom` transition. The property list alone cannot say so: with no
+	// `transition` declared at all, `transitionProperty` computes to the INITIAL value
+	// `all` — which looks like "everything animates" and means the opposite, because
+	// the duration that goes with it is 0s. The pair is the honest reading.
+	const trans = await A.page.evaluate(() => {
+		const el = document.getElementById('controls-pill');
+		if (!el) return null;
+		const cs = getComputedStyle(el);
+		return { prop: cs.transitionProperty, dur: cs.transitionDuration };
+	});
+	const animatesBottom =
+		!!trans &&
+		trans.prop
+			.split(',')
+			.map((p, i) => ({
+				p: p.trim(),
+				d: (trans.dur.split(',')[i] ?? trans.dur.split(',')[0] ?? '0s').trim()
+			}))
+			.some(({ p, d }) => (p === 'bottom' || p === 'all') && parseFloat(d) > 0);
+	h.check(
+		!animatesBottom,
+		`W8a: the pill animates no 'bottom' transition (property "${trans?.prop}", duration "${trans?.dur}")`
+	);
+	// ...and demonstrated: one frame after the mode flips, the bar is ALREADY in its
+	// final row. A 200ms slide would still be mid-flight at 120ms.
+	await setFloating(A.page, false);
+	await setFloating(A.page, true);
+	await A.page.evaluate(() => window.__stores.floatingToolbar.set(false));
+	await A.page.waitForTimeout(400);
+	const floorBottom = (await bottomChrome(A.page)).pillBottom;
+	await A.page.evaluate(() => window.__stores.floatingToolbar.set(true));
+	await A.page.waitForTimeout(120);
+	const early = (await bottomChrome(A.page)).pillBottom;
+	await A.page.waitForTimeout(700);
+	const settled = (await bottomChrome(A.page)).pillBottom;
+	h.check(
+		floorBottom !== settled,
+		`premise: the two modes really do put the bar in different rows (${floorBottom} vs ${settled})`
+	);
+	h.check(
+		early === settled,
+		`...and it arrives in one step, not over 200ms (120ms: ${early}, settled: ${settled})`
+	);
+
+	// THE COVERED MODE, reached the way a user reaches it — the real Settings row.
+	// It takes BOTH prefs since W8a, and that split is the point: "Floating toolbar"
+	// decides which ROW the bar sits in, "Toolbar always on top" decides who wins the
+	// pixel. Off + on-top ON is a legitimate combination of its own (the bar sits on the
+	// floor and the dock passes BEHIND it); the dock only covers it when both are off.
+	const rowInfo = await setFloatingViaSettings(A.page, false);
+	h.check(rowInfo.rows === 1 && rowInfo.toggles === 1, 'Settings ▸ Interface has a "Floating toolbar" row with a real toggle');
+	h.check(rowInfo.was === true, '...which reads ON by default');
+	const floorOnly = await bottomChrome(A.page);
+	h.check(
+		floorOnly.pillBottom > floorOnly.dockTop && floorOnly.pillZ > floorOnly.dockZ,
+		`geometry alone drops the bar into the dock's band but keeps its tier (z ${floorOnly.pillZ} > ${floorOnly.dockZ})`
+	);
+	await A.page.evaluate(() => window.__stores.toolbarAlwaysOnTop.set(false));
+	await A.page.waitForTimeout(400);
+	const covered = await bottomChrome(A.page);
+	h.check(
 		covered.vh - covered.pillBottom <= 18,
-		`W2: by default the pill stays on the viewport floor with the dock open (${covered.vh - covered.pillBottom}px clear)`
+		`switched off, the pill stays on the viewport floor with the dock open (${covered.vh - covered.pillBottom}px clear)`
 	);
 	h.check(
 		covered.pillBottom > covered.dockTop,
@@ -106,27 +205,10 @@ h.run(async () => {
 		covered.fabHitIsDock === true,
 		"...including over the play FAB, whose own z-index cannot escape the pill's stacking context"
 	);
-
-	// with the setting ON, the old ride-up behaviour, unchanged
+	// back to the defaults for the rest of the suite, which drives the Controls toolbar
+	// with the dock open — precisely what the covered mode does not allow
+	await A.page.evaluate(() => window.__stores.toolbarAlwaysOnTop.set(true));
 	await setFloating(A.page, true);
-	const open = await bottomChrome(A.page);
-	h.check(
-		open.fabBottom <= open.dockTop + 2,
-		`floating toolbar: play FAB rides above the dock (${open.fabBottom} <= ${open.dockTop})`
-	);
-	h.check(
-		open.pillBottom <= open.dockTop + 2,
-		`floating toolbar: Controls pill rides above the dock (${open.pillBottom} <= ${open.dockTop})`
-	);
-	h.check(
-		open.hitIsDock === false && open.pillZ > open.dockZ,
-		`floating toolbar: the pill wins its own pixel (z ${open.pillZ} > ${open.dockZ})`
-	);
-	// ...and the setting STAYS on for the rest of the suite, deliberately: everything
-	// below drives the Controls toolbar with the dock open, which is precisely what the
-	// default no longer allows — the dock covers those buttons (proven three checks up).
-	// That is the setting's whole purpose, so the sections about insets and edge-docked
-	// windows use it rather than reaching for a test-only door.
 
 	// 203: the sidebar now FLOATS ON TOP of the dock (z-hud) instead of ending
 	// above it — it's a compact panel that is never covered by the dock

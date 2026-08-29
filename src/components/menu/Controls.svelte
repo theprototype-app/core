@@ -1,8 +1,8 @@
 <script lang="ts">
-	import { Cog, Eye, FolderOpen, List, Maximize2, MessageSquare, Move, Pin, Play, RectangleGoggles, RotateCcw, SquarePen, Sun, Workflow } from '@lucide/svelte';
+	import { Clapperboard, Code, Cog, Eye, FolderOpen, Grid2x2, List, Maximize2, MessageSquare, Monitor, Move, Palette, Pin, Play, RectangleGoggles, RotateCcw, SquarePen, Sun, Workflow } from '@lucide/svelte';
 	import { Listgroup } from 'flowbite-svelte';
 	import { objectsGroup, TControls, transformMode, isLocked, lockedObjects, globalScene, vrPassthrough, vrOverride, selectedObject, selectedObjects } from '../../stores/sceneStore';
-	import { chatHidden, flowGraphClose, explorerClose, objectListClose, objectContextMenu, renamingObject, advancedMode, showEnvInList, showLocalObjects, floatingToolbar } from '../../stores/appStore.js';
+	import { chatHidden, flowGraphClose, flowCodeClose, animationClose, uvEditorClose, shaderEditorClose, hudEditorClose, explorerClose, objectListClose, objectContextMenu, renamingObject, advancedMode, showEnvInList, showLocalObjects, floatingToolbar, toolbarAlwaysOnTop, showSimControls } from '../../stores/appStore.js';
 	import { systemGroupNames } from '$lib/moduleSDK';
 	import { ENV_ROOT } from '$lib/environment';
 	import { flyTo } from '$lib/objectActions';
@@ -16,7 +16,8 @@
 	import { sendPing } from '$lib/ping';
 	import { buildObjectMenuItems } from '$lib/objectMenu';
 	import * as THREE from 'three';
-	import { onMount, setContext } from 'svelte';
+	import { onMount, setContext, tick } from 'svelte';
+	import { createGesture } from '$lib/modalGrab';
 	import { writable } from 'svelte/store';
 	import { shareObject } from '$lib/objectPermissions';
 	import Objects from './Objects.svelte';
@@ -29,10 +30,10 @@
 	import { tabbable, groupRectOf, moveGroupOf, resizeGroup } from '$lib/windowTabs';
 	import { clampWinSize, clampResize, anchorOf } from '$lib/windowSize';
 	import { dockable } from '$lib/docking';
-	import { visibleDockKey, dockOccupants, FLOW_FAMILY, armDockMode } from '$lib/bottomDock';
+	import { visibleDockKey, dockOccupants, FLOW_FAMILY, armDockMode, DOCK_TITLES } from '$lib/bottomDock';
 	import { togglePanel } from '$lib/panelToggles';
 	import { requestPlay, willEnterXR, willEnterAR, vrSupported, arSupported, xrSessionFailed } from '$lib/playMode';
-	import { dockAddItems } from '$lib/dockMenu';
+	import { dockAddItems, DOCK_VIEWS } from '$lib/dockMenu';
 	import { VRButton, XRButton } from '@threlte/xr'
 
 	// A panel is "shown" when it is open AND either the visible dock tab OR floating
@@ -52,7 +53,31 @@
 	const flowDockVisible = $derived(FLOW_FAMILY.includes($visibleDockKey ?? ''));
 	const flowFloatingShown = $derived(!$flowGraphClose && !$dockOccupants.flow?.present);
 	const flowShown = $derived(flowDockVisible || flowFloatingShown);
-	const explorerShown = $derived(!$explorerClose && ($visibleDockKey === 'explorer' || !$dockOccupants.explorer?.present));
+	// W8b: the Explorer's rule, generalised to every dock view the roster can carry —
+	// OPEN, and either the visible dock tab or not in the dock at all (i.e. floating).
+	// It used to be one hand-written line for the Explorer alone, and five more copies
+	// is exactly how five buttons end up disagreeing about what "shown" means. Every
+	// close-store is read INSIDE the derived, which is what registers the dependency:
+	// a plain map built outside it would go stale (the `get()`-registers-nothing rule).
+	// The Node editor keeps its own two lines above — its button owns the whole docked
+	// FLOW FAMILY, so any family tab counts as "its dock is on screen", which is a rule
+	// none of the others has.
+	const panelShown: Record<string, boolean> = $derived.by(() => {
+		const visible = $visibleDockKey ?? '';
+		const occupants = $dockOccupants;
+		const closed: Record<string, boolean> = {
+			flowcode: $flowCodeClose,
+			animation: $animationClose,
+			uv: $uvEditorClose,
+			shader: $shaderEditorClose,
+			hud: $hudEditorClose,
+			explorer: $explorerClose
+		};
+		const out: Record<string, boolean> = {};
+		for (const key of Object.keys(closed))
+			out[key] = !closed[key] && (visible === key || !occupants[key]?.present);
+		return out;
+	});
 
 	// CO4b: WHAT the play button is about to do, so it can show it — and, since 4a,
 	// what a press DOES. Both now come from $lib/playMode: the support probes, the
@@ -526,6 +551,7 @@
 			e.stopPropagation();
 			toolbarMenu = null;
 			customizeMenu = null;
+			lastMenuAt = { x: e.clientX, y: e.clientY };
 			playMenu = { x: e.clientX, y: e.clientY };
 		};
 		node.addEventListener('contextmenu', open);
@@ -596,7 +622,20 @@
 	// Everything here is LOCAL. A toolbar layout is a fact about THIS screen, so it
 	// never replicates, never enters a save and never lands in undo (`explorerView`'s
 	// rule for a view mode, one domain over).
-	type ControlsLayout = { order: string[]; hidden: string[]; spacerIndex: number; collapsed: boolean };
+	/** W8a adds `posX`: WHERE ALONG THE BOTTOM EDGE the bar sits, as a FRACTION of the
+	 *  usable track (0 = hard left, 1 = hard right), `null` = the canonical centre.
+	 *  A fraction and not a pixel offset, because a bar parked 500px right of centre on
+	 *  a 2560px monitor is off the screen on the laptop the same profile opens next.
+	 *  It rides IN the layout record rather than in a key of its own, which is what
+	 *  makes `resetLayout()` and Settings' "Reset window positions" (whose wipe already
+	 *  names `controlsLayout`) cover the position with no second thing to remember. */
+	type ControlsLayout = {
+		order: string[];
+		hidden: string[];
+		spacerIndex: number;
+		collapsed: boolean;
+		posX: number | null;
+	};
 	type CellButton = { title: string; slot?: string; icon: any; tint: () => string; run: () => void };
 
 	/** the one PSEUDO-cell: the transparent well the play FAB sits in. It is not a
@@ -610,6 +649,37 @@
 	const SPACER = '__spacer';
 	const DEFAULT_ORDER = ['move', 'rotate', 'scale', 'objects', 'flow', 'explorer'];
 	const DEFAULT_SPACER = 3;
+
+	/** W8b: the roster is bigger than the bar. `DEFAULT_ORDER` is what a fresh profile
+	 *  puts ON the bar and has NOT changed — the same six ids, the same order, the same
+	 *  well index — while `BUTTONS` now also holds the five remaining dock views as
+	 *  OPTIONAL entries: listed in Customize unchecked, absent from the bar until asked
+	 *  for. An id is on the bar iff it is in `order` and not in `hidden`, so an optional
+	 *  button is simply one that starts in neither, and a profile that never opens
+	 *  Customize is byte-identical to before this existed.
+	 *
+	 *  They come from `DOCK_VIEWS`, the same list the dock's "+" menu renders, minus the
+	 *  Explorer (already a default button) — so the roster and the "+" cannot disagree
+	 *  about which views exist. Titles come from `DOCK_TITLES`, the dock's own names, so
+	 *  a button and its tab read the same word. */
+	const OPTIONAL_VIEWS = DOCK_VIEWS.filter((view) => view.key !== 'explorer').map((view) => view.key);
+
+	/** the glyph for each optional view. Chosen from a rendered 18px sheet against the
+	 *  six already on the bar, not from the names — which is what caught the one real
+	 *  collision: `layout-dashboard` (the obvious HUD glyph) and `grid-2x2` (the obvious
+	 *  UV one) are both a square quartered into four boxes and are indistinguishable at
+	 *  this size, so the HUD takes a `monitor` — a screen, which is literally what a HUD
+	 *  is drawn on. `code` beats `file-code` because a page silhouette sits next to the
+	 *  Explorer's folder and its inner chevrons are illegible at 18px, while `</>` is
+	 *  unmistakable; `clapperboard` beats `film`, whose plain rectangle muddles against
+	 *  every other boxy glyph; `palette` says materials where `sparkles` says nothing. */
+	const VIEW_ICONS: Record<string, any> = {
+		flowcode: Code,
+		animation: Clapperboard,
+		uv: Grid2x2,
+		shader: Palette,
+		hud: Monitor
+	};
 
 	// The six roster buttons. Every title and every handler is VERBATIM what the
 	// hand-written cells carried: controls-state, controls-transform-tint, dock-inset,
@@ -653,13 +723,29 @@
 			title: 'Explorer',
 			slot: 'explorer-slot',
 			icon: FolderOpen,
-			tint: () => (explorerShown ? ICON_ON : ICON_OFF),
+			tint: () => (panelShown.explorer ? ICON_ON : ICON_OFF),
 			run: () => togglePanel('explorer')
-		}
+		},
+		// W8b: the five remaining dock views, built from ONE list rather than written
+		// out. Each is the ordinary panel decision tree — `togglePanel` opens it in the
+		// mode it was last in, activates it when another tab covers it, and hides it
+		// when it is the one on screen — which is the whole reason these are worth
+		// having as buttons: the "+" list can only ever open them.
+		...Object.fromEntries(
+			OPTIONAL_VIEWS.map((key) => [
+				key,
+				{
+					title: DOCK_TITLES[key] ?? key,
+					icon: VIEW_ICONS[key],
+					tint: () => (panelShown[key] ? ICON_ON : ICON_OFF),
+					run: () => togglePanel(key)
+				} as CellButton
+			])
+		)
 	};
 
 	function defaultLayout(): ControlsLayout {
-		return { order: [...DEFAULT_ORDER], hidden: [], spacerIndex: DEFAULT_SPACER, collapsed: false };
+		return { order: [...DEFAULT_ORDER], hidden: [], spacerIndex: DEFAULT_SPACER, collapsed: false, posX: null };
 	}
 
 	/** Read the persisted layout, SSR-guarded and defensive: a stored record is user
@@ -673,8 +759,17 @@
 			const raw = localStorage.getItem('controlsLayout');
 			if (!raw) return defaultLayout();
 			const saved = JSON.parse(raw) ?? {};
+			// W8b: kept ids are the ones the REGISTRY knows, not the ones the DEFAULT order
+			// lists — that older test dropped every optional view on the next reload, so a
+			// button enabled from Customize came back gone. A missing DEFAULT id is still
+			// appended (a button added to the app later shows by default, `explorerColumns`'
+			// rule); an OPTIONAL id absent from the record is absent from the bar, which is
+			// what makes it opt-in. Duplicates are dropped — `order` is a set of positions,
+			// and a hand-edited or half-migrated record must not render one button twice.
 			const order: string[] = Array.isArray(saved.order)
-				? saved.order.filter((id: any) => DEFAULT_ORDER.includes(id))
+				? saved.order.filter(
+						(id: any, at: number) => BUTTONS[id] && saved.order.indexOf(id) === at
+					)
 				: [];
 			for (const id of DEFAULT_ORDER) if (!order.includes(id)) order.push(id);
 			const hidden: string[] = Array.isArray(saved.hidden)
@@ -684,7 +779,13 @@
 			const spacerIndex = Number.isFinite(saved.spacerIndex)
 				? Math.max(0, Math.min(saved.spacerIndex, room))
 				: Math.min(DEFAULT_SPACER, room);
-			return { order, hidden, spacerIndex, collapsed: saved.collapsed === true };
+			// a stored fraction is clamped rather than trusted: 0..1 is the whole domain,
+			// and anything else (a hand-edited key, an older shape) reads as "centred"
+			const posX =
+				typeof saved.posX === 'number' && Number.isFinite(saved.posX)
+					? Math.max(0, Math.min(1, saved.posX))
+					: null;
+			return { order, hidden, spacerIndex, collapsed: saved.collapsed === true, posX };
 		} catch {
 			return defaultLayout();
 		}
@@ -748,6 +849,10 @@
 		controlsLayout.collapsed ? [{ id: SPACER }] : visualIds().map((id) => ({ id }))
 	);
 
+	/** A cell press. It needs no "was that a drag?" guard of its own: a move that ends
+	 *  here has already armed `swallowNextClick`, so this handler is simply not reached
+	 *  for the click a gesture produced. ONE mechanism, at the window, covering every
+	 *  cell and the play FAB alike. */
 	function runCell(id: string) {
 		BUTTONS[id]?.run();
 	}
@@ -783,12 +888,38 @@
 		setLayout({ hidden: [...controlsLayout.hidden, id], spacerIndex });
 	}
 
+	/** Put a button on the bar. W8b: an OPTIONAL view has never been in `order` at all,
+	 *  so it is APPENDED — the far right end, past the play well, which is where a new
+	 *  thing belongs and where the arrows can walk it from. A DEFAULT button that was
+	 *  hidden keeps its slot in `order` and returns to exactly where it was left. */
 	function showButton(id: string) {
+		if (!BUTTONS[id]) return;
 		const hidden = controlsLayout.hidden.filter((h) => h !== id);
-		const at = controlsLayout.order.filter((o) => BUTTONS[o] && !hidden.includes(o)).indexOf(id);
+		const order = controlsLayout.order.includes(id)
+			? controlsLayout.order
+			: [...controlsLayout.order, id];
+		const at = order.filter((o) => BUTTONS[o] && !hidden.includes(o)).indexOf(id);
 		const spacerIndex =
 			at > -1 && at < controlsLayout.spacerIndex ? controlsLayout.spacerIndex + 1 : controlsLayout.spacerIndex;
-		setLayout({ hidden, spacerIndex });
+		setLayout({ order, hidden, spacerIndex });
+	}
+
+	/** W8b — SWAP: put `toId` in `fromId`'s exact slot and take `fromId` off the bar.
+	 *
+	 *  The bar keeps its shape (same number of cells, same well position, every other
+	 *  cell untouched), which is the whole point: a user who wants the Animation tab a
+	 *  press away trades the button they never use for it, rather than growing the bar
+	 *  and then having to move things. `fromId` leaves `order` ENTIRELY rather than
+	 *  going into `hidden`, so it comes back on offer in every "Swap with" list and in
+	 *  Customize; `toId` is lifted out of wherever it sat first, so a button that was
+	 *  merely hidden cannot end up in `order` twice. */
+	function swapCell(fromId: string, toId: string) {
+		if (!BUTTONS[toId] || fromId === toId) return;
+		const order = controlsLayout.order.filter((o) => o !== toId);
+		const at = order.indexOf(fromId);
+		if (at < 0) return;
+		order[at] = toId;
+		setLayout({ order, hidden: controlsLayout.hidden.filter((h) => h !== toId && h !== fromId) });
 	}
 
 	// --- the toolbar's own right-click menus --------------------------------------
@@ -806,6 +937,7 @@
 			e.stopPropagation();
 			playMenu = null;
 			customizeMenu = null;
+			lastMenuAt = { x: e.clientX, y: e.clientY };
 			toolbarMenu = { x: e.clientX, y: e.clientY, id };
 		};
 		node.addEventListener('contextmenu', open);
@@ -841,6 +973,9 @@
 		// the bottom edge gets a menu that opens upward with no arithmetic here.
 		const rect = document.getElementById('controls-pill')?.getBoundingClientRect();
 		customizeMenu = { x: Math.round(rect?.left ?? 8), y: Math.round(rect?.top ?? 8) };
+		// an armed move opened from HERE takes the bar's own corner as its origin —
+		// `lastMenuAt` is only ever the point the user's gesture last named
+		lastMenuAt = { x: customizeMenu.x, y: customizeMenu.y };
 	}
 
 	/** The tail EVERY toolbar menu carries — the play FAB's mode menu included, which
@@ -883,6 +1018,23 @@
 						}
 					]
 				: []),
+			// W8a: the same move a drag performs, for whoever got here by long press or
+			// by keyboard. Disabled — with the reason — when the track is too narrow to
+			// hold the bar anywhere but the middle, which is the phone case.
+			{
+				label: 'Move toolbar',
+				tooltip: track.ok
+					? 'Slide the bar along the bottom — click to place it, arrows nudge, Escape puts it back'
+					: 'The screen has no room to move the bar — it stays centred',
+				disabled: !track.ok,
+				action: () => armMoveToolbar()
+			},
+			{
+				label: 'Reset toolbar position',
+				tooltip: 'Put the bar back in the middle',
+				disabled: controlsLayout.posX == null,
+				action: () => setLayout({ posX: null })
+			},
 			// W1: the chevron cell is gone, so this row IS the way out of a collapsed
 			// bar — which is why it swaps rather than sitting beside a second entry
 			collapsed
@@ -929,7 +1081,40 @@
 				}
 			);
 		}
+		// W8b: SWAP WITH ▸ — trade this cell for any roster button that is not on the bar.
+		// It is the fast way to get a one-press button for a dock view: the alternative
+		// is Customize, tick the view, then walk it across the bar with the arrows. The
+		// bar keeps its shape, so nothing else moves and the well stays put.
+		//
+		// The list is built from the same `DOCK_VIEWS` the "+" menu renders (through
+		// `BUTTONS`), so the two can never offer different sets. The transforms take part
+		// as both sources and targets: a cell is a cell, Customize already treats all
+		// seven identically, and a user who never rotates anything should be able to
+		// trade Rotate for the Animation tab — excluding them would leave a Rotate cell
+		// with a submenu that is always empty, which is worse than a menu that works.
+		head.push({ section: 'This button' }, { label: 'Swap with', children: swapItems(id) });
 		return [...head, ...toolbarTail(id)];
+	}
+
+	/** the swap targets: every roster button that is not currently a cell of the bar */
+	function swapItems(id: string) {
+		const seq = visualIds();
+		const offBar = [...DEFAULT_ORDER, ...OPTIONAL_VIEWS].filter(
+			(key) => BUTTONS[key] && !seq.includes(key)
+		);
+		if (!offBar.length)
+			return [
+				{
+					label: 'Every button is on the bar',
+					tooltip: 'There is nothing left to swap in — hide one first',
+					disabled: true
+				}
+			];
+		return offBar.map((key) => ({
+			label: BUTTONS[key].title,
+			tooltip: `Put ${BUTTONS[key].title} in this slot and take ${BUTTONS[id].title} off the bar`,
+			action: () => swapCell(id, key)
+		}));
 	}
 
 	/** The whole-bar checklist. Every row here is `keepOpen` — this menu is a PANE you
@@ -944,37 +1129,106 @@
 	 *  one VISUAL slot, the same rule as the cell menu's Move left / Move right, so a
 	 *  press can walk a button across the play well. */
 	function customizeItems() {
-		const ids = [...new Set([...controlsLayout.order, ...DEFAULT_ORDER])].filter((id) => BUTTONS[id]);
+		// W8b: THE LIST *IS* THE BAR, read top to bottom — the play well included, as a
+		// row of its own. Three measured faults came out of the old shape, which listed
+		// `controlsLayout.order` (the STORAGE order, hidden entries interleaved) while a
+		// move only ever swapped SHOWN buttons:
+		//   · a move leapfrogged any hidden row lying between the two, so one press
+		//     travelled two or more rows and the ticks appeared to scramble around the
+		//     unticked one — the reported "keep enabled ... there is a mess"
+		//   · pressing an arrow whose neighbour was the WELL rewrote only `spacerIndex`,
+		//     so the list did not change at all and the press looked dead
+		//   · the rows re-sorted under a stationary pointer, so a second press at the
+		//     same pixel grabbed the button that had just taken the slot and undid the
+		//     first — the two ping-ponged forever and nothing could be walked anywhere
+		// Rows now mirror `visualIds()` exactly, so ONE press is ALWAYS one row, in the
+		// direction pressed, and the row travels with its own DOM node (ContextMenuItems
+		// keys on `key`), which keeps it focused for a repeat press.
+		//
+		// UP IS LEFT. The list is vertical and the bar is horizontal, so the arrows are
+		// ▲/▼ — what a stacked list means — and up is toward the LEFT end of the bar,
+		// which is the end the first row shows. Every tooltip says so out loud.
 		const seq = visualIds();
+		const offBar = [...DEFAULT_ORDER, ...OPTIONAL_VIEWS].filter(
+			(id) => BUTTONS[id] && !seq.includes(id)
+		);
+		/** the reorder pair for a row that is ON the bar */
+		const arrows = (id: string, at: number, title: string) => [
+			{
+				icon: 'chevron-up',
+				label: `Move ${title} up`,
+				disabled: at <= 0,
+				run: () => moveCell(id, -1)
+			},
+			{
+				icon: 'chevron-down',
+				label: `Move ${title} down`,
+				disabled: at < 0 || at >= seq.length - 1,
+				run: () => moveCell(id, 1)
+			}
+		];
 		return [
-			{ section: 'Toolbar buttons' },
-			...ids.map((id) => {
-				const shown = !controlsLayout.hidden.includes(id);
-				const at = seq.indexOf(id);
+			{ section: 'On the bar' },
+			...seq.map((id, at) => {
+				if (id === SPACER)
+					// the well earns a row because it is a cell of the bar and the list claims
+					// to mirror the bar. It also gives the play button a reorder control that
+					// only its own right-click menu used to offer. No toggle: there is no
+					// toolbar without a way to press play, so the row says so and does nothing.
+					return {
+						key: SPACER,
+						label: 'Play',
+						checked: true,
+						keepOpen: true,
+						tooltip: 'The play button is always on the bar — it can be moved, never removed',
+						rowActions: arrows(SPACER, at, 'Play')
+					};
 				return {
+					key: id,
 					label: BUTTONS[id].title,
-					checked: shown,
+					checked: true,
 					keepOpen: true,
-					tooltip: shown ? 'Take it off the bar' : 'Put it back on the bar',
-					action: () => (shown ? hideButton(id) : showButton(id)),
-					rowActions: [
-						{
-							icon: 'chevron-left',
-							label: `Move ${BUTTONS[id].title} left`,
-							disabled: !shown || at <= 0,
-							run: () => moveCell(id, -1)
-						},
-						{
-							icon: 'chevron-right',
-							label: `Move ${BUTTONS[id].title} right`,
-							disabled: !shown || at < 0 || at >= seq.length - 1,
-							run: () => moveCell(id, 1)
-						}
-					]
+					tooltip: 'Take it off the bar',
+					action: () => hideButton(id),
+					rowActions: arrows(id, at, BUTTONS[id].title)
 				};
 			}),
+			// Everything the roster knows that is not on the bar — the buttons hidden from
+			// the six defaults AND the optional dock views, which is what makes those
+			// discoverable at all. A row here has no place in the bar yet, so it has no
+			// direction to move in: its arrows are greyed and say why rather than being
+			// absent, which would make the two halves of the list look like different
+			// kinds of row.
+			...(offBar.length
+				? [
+						{ section: 'Not on the bar' },
+						...offBar.map((id) => ({
+							key: id,
+							label: BUTTONS[id].title,
+							checked: false,
+							keepOpen: true,
+							tooltip: 'Put it on the bar',
+							action: () => showButton(id),
+							rowActions: [
+								{
+									icon: 'chevron-up',
+									label: `Move ${BUTTONS[id].title} up`,
+									tooltip: 'Not on the bar — there is nowhere to move it',
+									disabled: true
+								},
+								{
+									icon: 'chevron-down',
+									label: `Move ${BUTTONS[id].title} down`,
+									tooltip: 'Not on the bar — there is nowhere to move it',
+									disabled: true
+								}
+							]
+						}))
+					]
+				: []),
 			{ section: '' },
 			{
+				key: '__reset',
 				label: 'Reset toolbar',
 				danger: true,
 				keepOpen: true,
@@ -990,40 +1244,321 @@
 	 *  by where the call happens to sit */
 	const customizeMenuItems = $derived(customizeItems());
 
-	/* W2: WHERE THE PILL SITS, and it is the user's call (`floatingToolbar`, default OFF).
-	 *   ON  — the 0854c3b behaviour: anchored on `--bottom-inset`, so the bar and the play
-	 *         FAB in its well ride in the band just above an open dock, on the z-45 HUD
-	 *         tier that keeps them clear of it.
-	 *   OFF — the pill is an ordinary member of the BOTTOM-HUD tier: pinned 16px off the
-	 *         viewport floor, and z-30 like `#chat-button` / `#ai-hud-button` /
-	 *         `#sim-controls` beside it, which is to say the dock DELIBERATELY covers it
-	 *         (the same reasoning as the chat button's comment below — an open editor owns
-	 *         the bottom of the screen and the toolbar goes under it).
-	 * ONE derived pair rather than two markup branches: the nav, the roster and the FAB
-	 * inside it are identical in both modes, and a second branch would be a second copy of
-	 * the well to keep in step. The transition stays in BOTH so flipping the setting — and,
-	 * when floating, opening the dock — animates rather than jumping.
-	 * The FAB keeps its own `z-index: var(--z-hud)`: the pill is positioned WITH a z-index,
-	 * so it is a stacking context and its children cannot escape it whatever they ask for.
-	 * That z only orders the FAB against its own siblings in the well. */
-	const pillZClass = $derived($floatingToolbar ? 'z-45' : 'z-30');
+	// ── W8a: THE BAR MOVES ─────────────────────────────────────────────────────────
+	/** The corner HUD clusters the bar may not slide under. MEASURED, never assumed:
+	 *  their positions differ by breakpoint (ui.css lifts chat/AI to bottom:74px and the
+	 *  mic / "+" to 122px at <=600px, precisely so they clear this bar) and three of the
+	 *  five are conditional — `#sim-controls` is an opt-in setting, `#mic-button` belongs
+	 *  to VoiceChat and any of them can be absent in a stripped build. Connect's
+	 *  `measureDock()` is the same shape one domain over. */
+	const TOOLBAR_NEIGHBOURS = ['#ai-hud-button', '#mobile-add-button', '#chat-button', '#mic-button', '#sim-controls'];
+	const EDGE_MARGIN = 8; // breathing room against a neighbour and against the viewport
+	const SNAP_PX = 24; // how near the middle still counts as the middle
+	const DRAG_SLOP = 6; // travel that turns a press into a move
+
+	/** the reachable band for the bar's CENTRE, in client px. `ok` is false when the
+	 *  track is narrower than the bar itself (a phone with the buttons beside it): there
+	 *  is then no position to choose, so the bar centres and the move gesture stands
+	 *  down rather than offering a drag that cannot go anywhere. */
+	let track = $state({ min: 0, max: 0, mid: 0, ok: false });
+	/** the live centre while a gesture runs; null the rest of the time, so the stored
+	 *  fraction is the only source once it ends */
+	let dragCentre: number | null = $state(null);
+	let movingBar = $state(false);
+	/** where the menu that armed a modal move was opened — the origin its pointer
+	 *  offsets are measured from, since a menu action carries no event of its own */
+	let lastMenuAt = { x: 0, y: 0 };
+	let armNudge = 0;
+	let trackRO: ResizeObserver | null = null;
+	let observedKey = '';
+
+	/** Re-derive the track from the LIVE DOM. Every number here is read, none is coded:
+	 *  a breakpoint constant would have to be kept in step with ui.css, and it could not
+	 *  know whether the sim transport is switched on. */
+	function measureTrack() {
+		if (typeof window === 'undefined') return;
+		const nav = document.getElementById('controls-pill');
+		if (!nav) return;
+		const pill = nav.getBoundingClientRect();
+		if (!pill.width) return;
+		const vw = window.innerWidth;
+		let left = EDGE_MARGIN;
+		let right = vw - EDGE_MARGIN;
+		const found: HTMLElement[] = [];
+		for (const sel of TOOLBAR_NEIGHBOURS) {
+			const el = document.querySelector<HTMLElement>(sel);
+			if (!el) continue;
+			found.push(el);
+			const r = el.getBoundingClientRect();
+			if (!r.width || !r.height) continue; // in the DOM but not rendered
+			// ONLY a neighbour whose vertical band overlaps the bar's can be in the way,
+			// and that one rule is why the <=600px lift needs no breakpoint of its own
+			// here: at that width chat / AI / mic / "+" have moved ABOVE this row, so
+			// they stop clamping and the bar gets the full width — measured, not coded.
+			if (r.bottom <= pill.top || r.top >= pill.bottom) continue;
+			if ((r.left + r.right) / 2 < vw / 2) left = Math.max(left, r.right + EDGE_MARGIN);
+			else right = Math.min(right, r.left - EDGE_MARGIN);
+		}
+		const half = pill.width / 2;
+		const min = left + half;
+		const max = right - half;
+		const ok = max - min >= 1;
+		const next = { min, max, mid: ok ? Math.max(min, Math.min(max, vw / 2)) : vw / 2, ok };
+		// REASSIGNED, never mutated: `$derived` compares with ===. Guarded on the values
+		// so a ResizeObserver callback can never write its way into a second callback.
+		if (next.min !== track.min || next.max !== track.max || next.mid !== track.mid || next.ok !== track.ok)
+			track = next;
+		// the debug seam (`__outlineDebug` / `__flowViewport` precedent): what the bar
+		// COMPUTED, beside what a suite can see for itself in the rendered rects. It is
+		// what turned "the armed move commits 21px off" from a guess into one reading.
+		if (typeof window !== 'undefined')
+			(window as any).__toolbarTrack = { ...track, centre: pillCentre, posX: controlsLayout.posX };
+		// re-observe only when the SET of neighbours changed — `observe()` fires an
+		// initial callback per element, so re-attaching on every measurement would spin
+		const key = found.map((el) => el.id).join(',');
+		if (trackRO && key !== observedKey) {
+			observedKey = key;
+			trackRO.disconnect();
+			trackRO.observe(nav); // the bar's own width changes when cells hide/collapse
+			for (const el of found) trackRO.observe(el);
+		}
+	}
+
+	onMount(() => {
+		if (typeof ResizeObserver !== 'undefined') trackRO = new ResizeObserver(() => measureTrack());
+		measureTrack();
+		window.addEventListener('resize', measureTrack);
+		window.addEventListener('keydown', onArmedKey, true);
+		return () => {
+			window.removeEventListener('resize', measureTrack);
+			window.removeEventListener('keydown', onArmedKey, true);
+			trackRO?.disconnect();
+			trackRO = null;
+		};
+	});
+
+	// A neighbour that APPEARS is invisible to the observer set (nothing can watch an
+	// element that does not exist yet), and the bar's own width changes with the roster,
+	// and `floatingToolbar` / an opening dock move the bar's ROW — which changes which
+	// neighbours overlap it at all. All four are re-measured after the render that
+	// caused them (Connect's `tick().then(measureDock)` shape).
+	$effect(() => {
+		void $showSimControls;
+		void visibleCells;
+		void $floatingToolbar;
+		void $visibleDockKey;
+		tick().then(measureTrack);
+	});
+
+	/** the bar's centre in px: a live gesture wins, else the stored fraction mapped onto
+	 *  the CURRENT track, else the canonical middle */
+	const pillCentre = $derived.by(() => {
+		if (dragCentre != null) return dragCentre;
+		if (!track.ok || controlsLayout.posX == null) return track.mid;
+		return track.min + controlsLayout.posX * (track.max - track.min);
+	});
+
+	/** Eat exactly the one click a finished move is about to produce, in CAPTURE on the
+	 *  window so it never reaches the cell it landed on — a flag the handlers check
+	 *  cannot do this job, because `click` arrives in a LATER task than the `pointerup`
+	 *  that would clear the flag, and clearing it any later would eat the user's next
+	 *  real press. The timer is the release valve for a gesture that produces no click
+	 *  at all (Enter, or a pointer that left the window). */
+	function swallowNextClick() {
+		if (typeof window === 'undefined') return;
+		let timer = 0;
+		const eat = (e: MouseEvent) => {
+			e.stopPropagation();
+			e.preventDefault();
+			window.removeEventListener('click', eat, true);
+			clearTimeout(timer);
+		};
+		window.addEventListener('click', eat, true);
+		timer = window.setTimeout(() => window.removeEventListener('click', eat, true), 700);
+	}
+
+	function clampCentre(c: number, t: { min: number; max: number; mid: number }) {
+		const v = Math.max(t.min, Math.min(t.max, c));
+		// the middle is magnetic, so the canonical position is always reachable by feel
+		// and not only through the menu
+		return Math.abs(v - t.mid) <= SNAP_PX ? t.mid : v;
+	}
+
+	/** The move itself, on the SHARED gesture engine. `modalGrab` is exactly the
+	 *  confirm/cancel drag this needs — it owns the origin, the snapshot, the window
+	 *  listeners and the commit-or-revert contract — and its MODAL mode is what makes
+	 *  the armed "Move toolbar" four lines rather than a second engine.
+	 *
+	 *  What it does NOT cover, and what `swallowNextClick` is for: its capture-phase
+	 *  pointerdown stops the committing press from opening a FRESH GESTURE, which is
+	 *  all its own comment claims. The `click` the browser dispatches afterwards is a
+	 *  different event and reaches the cell underneath regardless. */
+	const toolbarGrab = createGesture({
+		snapshot: () => {
+			measureTrack();
+			if (!track.ok) return null; // no room to choose — refuse, and the press stays a click
+			return { centre: pillCentre, track: { ...track } };
+		},
+		start: () => {
+			armNudge = 0;
+		},
+		// ABSOLUTE from the snapshot every move, never incremental — and the track is
+		// FROZEN in it, because the bar's position is what the clamp is measured against
+		apply: (ctx) => {
+			dragCentre = clampCentre(ctx.snapshot.centre + ctx.dx + armNudge, ctx.snapshot.track);
+		},
+		revert: () => {
+			dragCentre = null; // back to whatever is stored
+		},
+		end: (ctx, kept) => {
+			const c = dragCentre;
+			dragCentre = null;
+			armNudge = 0;
+			// A gesture that PLACED the bar owes one swallowed click. Both halves need it
+			// and for the same reason: the press that ends a move is over a toolbar cell
+			// (a drag ends wherever it ends; an armed move is committed by clicking, and
+			// the bar is under the pointer BY DESIGN) and neither `preventDefault` nor
+			// `stopPropagation` on a pointer event stops the `click` the browser
+			// dispatches afterwards — they are different events. MEASURED: without this,
+			// committing an armed move over the Node editor cell opened the dock, which
+			// moved the bar 24px as the track widened under it. A revert (Escape) arms
+			// nothing, since no click is coming.
+			if (kept) swallowNextClick();
+			if (!kept || c == null) return;
+			const t = ctx.snapshot.track;
+			const span = t.max - t.min;
+			// snapped to the middle -> store the DEFAULT rather than the fraction that
+			// happens to land there, so the bar re-centres on the next screen too.
+			// CLAMPED, because the track is frozen for the gesture and the live one may
+			// have moved under it (a window resize mid-drag): a fraction outside 0..1
+			// would render outside the track it is read against.
+			const frac = span > 0 ? Math.max(0, Math.min(1, (c - t.min) / span)) : null;
+			setLayout({ posX: c === t.mid ? null : frac });
+		},
+		onActive: (active) => {
+			movingBar = active;
+		}
+	});
+
+	/** THE MOVE GESTURE. A press anywhere on the bar starts a CANDIDATE; it becomes a
+	 *  move only once the pointer has travelled `DRAG_SLOP`, and a press that never
+	 *  travels stays an ordinary click.
+	 *
+	 *  The discrimination is MOVEMENT and never a timer, which is the whole design: a
+	 *  finger held still has to remain the browser's long press, because that is what
+	 *  raises the `contextmenu` every cell menu in this file lives on. A "held 300ms =
+	 *  drag" rule would eat all of them on Android. For the same reason nothing is
+	 *  preventDefault-ed on the pointerdown — that alone can suppress a long press — only
+	 *  from the move that crosses the threshold, where the gesture is already decided.
+	 *
+	 *  Direct listeners in an action, the repo's rule for pointer gestures inside panel
+	 *  chrome: svelte DELEGATES event attributes to the app root, and this chrome is
+	 *  exactly the kind of ancestor that swallows them on the way up. */
+	function toolbarDrag(node: HTMLElement) {
+		let from: { x: number; y: number } | null = null;
+		let press: PointerEvent | null = null;
+		const done = () => {
+			from = null;
+			press = null;
+			window.removeEventListener('pointermove', onMove);
+			window.removeEventListener('pointerup', done);
+			window.removeEventListener('pointercancel', done);
+		};
+		const onMove = (e: PointerEvent) => {
+			if (!from || !press) return;
+			if (Math.abs(e.clientX - from.x) + Math.abs(e.clientY - from.y) < DRAG_SLOP) return;
+			e.preventDefault();
+			// hand over with the ORIGINAL press as the origin, so the bar does not jump
+			// by the slop it took to decide
+			const opened = toolbarGrab.begin(press);
+			done();
+			if (!opened) return; // no track to move along — the press stays a click
+			toolbarGrab.move(e);
+		};
+		const onDown = (e: PointerEvent) => {
+			// the play FAB is the one control an accidental drag must not grab: a 50px
+			// circle is the way into play mode and it is what a thumb aims at
+			if (e.button !== 0 || (e.target as Element)?.closest?.('#play-button')) return;
+			if (toolbarGrab.active()) return; // an armed move already owns the bar
+			from = { x: e.clientX, y: e.clientY };
+			press = e;
+			window.addEventListener('pointermove', onMove);
+			window.addEventListener('pointerup', done);
+			window.addEventListener('pointercancel', done);
+		};
+		node.addEventListener('pointerdown', onDown);
+		return {
+			destroy() {
+				done();
+				node.removeEventListener('pointerdown', onDown);
+			}
+		};
+	}
+
+	/** "Move toolbar", from any toolbar menu: the same gesture with no button held, for
+	 *  whoever reached the bar by keyboard or long press rather than by dragging it. */
+	function armMoveToolbar() {
+		toolbarGrab.begin({ clientX: lastMenuAt.x, clientY: lastMenuAt.y } as any, { modal: true });
+	}
+
+	/** the arrows, while an armed move is running. `modalGrab` owns Escape and Enter and
+	 *  ignores every other key, so this only has to add the nudge — in CAPTURE, so the
+	 *  editor's own arrow bindings never see it. */
+	function onArmedKey(e: KeyboardEvent) {
+		if (!toolbarGrab.active() || !toolbarGrab.isModal()) return;
+		const step = e.key === 'ArrowLeft' ? -1 : e.key === 'ArrowRight' ? 1 : 0;
+		if (!step) return;
+		e.preventDefault();
+		e.stopPropagation();
+		armNudge += step * (e.shiftKey ? 10 : 1);
+		toolbarGrab.refresh();
+	}
+
+	/* WHERE THE PILL SITS, and WHO WINS THE PIXEL — two independent prefs since W8a,
+	 * because they are two questions and one flag could only answer them together:
+	 *   floating ON  + on top ON  (the DEFAULT) — the bar lifts onto `--bottom-inset`
+	 *       when a dock opens and paints over the dock and over floating windows.
+	 *   floating ON  + on top OFF — the bar still lifts clear of the dock, but a window
+	 *       dragged over it covers it: it moves out of the way rather than fighting.
+	 *   floating OFF + on top ON  — the bar stays on the viewport floor and still owns
+	 *       its pixels, so an open dock passes BEHIND it.
+	 *   floating OFF + on top OFF — the W2 behaviour: an ordinary member of the
+	 *       bottom-HUD tier, z-30 like `#chat-button` / `#ai-hud-button` beside it, and
+	 *       an open editor owns the bottom of the screen and covers it.
+	 * ONE derived pair rather than markup branches: the nav, the roster and the FAB
+	 * inside it are identical in every combination.
+	 * NO `transition: bottom` any more (W8a, on the user's read): the bar sliding as a
+	 * dock opens or as the setting flips read as distracting rather than as continuity,
+	 * so it moves in the same frame the inset does. The FAB keeps its own
+	 * `transition: transform` for the hover scale, which is a different property and a
+	 * different gesture.
+	 * The FAB also keeps its own `z-index: var(--z-hud)`: the pill is positioned WITH a
+	 * z-index, so it is a stacking context and its children cannot escape it whatever
+	 * they ask for. That z only orders the FAB against its own siblings in the well.
+	 * `left` is emitted only once the track has been MEASURED — before that (SSR, the
+	 * first paint) the `start-1/2` class is the honest answer. */
+	const pillZClass = $derived($toolbarAlwaysOnTop ? 'z-45' : 'z-30');
 	const pillStyle = $derived(
-		$floatingToolbar
-			? 'bottom: calc(var(--bottom-inset, 0px) + 16px); transition: bottom 200ms ease'
-			: 'bottom: 16px; transition: bottom 200ms ease'
+		($floatingToolbar ? 'bottom: calc(var(--bottom-inset, 0px) + 16px);' : 'bottom: 16px;') +
+			(track.mid > 0 ? ` left: ${Math.round(pillCentre)}px;` : '') +
+			' touch-action: none;' +
+			(movingBar ? ' cursor: grabbing;' : '')
 	);
 
 </script>
 
-<!-- WHERE THE PILL SITS is `floatingToolbar`'s call now (Settings ▸ Interface ▸ Windows
-     & chrome, default OFF) — see the derived pair above. With it ON the pill RIDES
+<!-- WHERE THE PILL SITS is `floatingToolbar`'s call (Settings ▸ Interface ▸ Windows
+     & chrome, default ON since W8a) — see the derived pair above. With it ON the pill RIDES
      ABOVE the bottom dock: `--bottom-inset` is the visible docked Flow/Explorer panel's
      height (published by $lib/bottomDock), so the bar and the play FAB inside it sit in
      the band just above it instead of covering its last ~60px — which is what the old
      `--dock-inset` model got wrong, padding the DOCK's content and only at <=500px, so
      every wider screen had the pill permanently over the node palette / folder tree.
-     OFF the pill stays on the viewport floor and the dock covers it. 200ms matches the
-     dock's own fly transition, so when they do move they move together.
+     OFF the pill stays on the viewport floor; whether the dock then COVERS it is the
+     separate `toolbarAlwaysOnTop` pref's call (see the four combinations above).
+       W8a: the bar is also MOVABLE along this edge (`use:toolbarDrag` + the `left` in
+     `pillStyle`) and there is no `bottom` transition any more — it changes rows in the
+     same frame the inset does.
        4b: a plain <nav> over the `visibleCells` roster, no longer flowbite's
      `BottomNav` (whose inner grid column count must be a JIT literal, which a
      customizable cell count cannot be). The class list is flowbite's own RESOLVED
@@ -1037,6 +1572,7 @@
 	id="controls-pill"
 	class="border-gray-200 dark:border-gray-600 absolute max-w-lg -translate-x-1/2 rtl:translate-x-1/2 border bottom-4 start-1/2 h-10 w-max min-w-max shrink-0 bg-white rounded-full dark:bg-gray-700 {pillZClass}"
 	style={pillStyle}
+	use:toolbarDrag
 >
 	<div class="mx-auto flex h-full max-w-lg">
 		{#each visibleCells as cell, i (cell.id)}

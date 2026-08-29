@@ -35,21 +35,50 @@ import { revealWindow } from './dragWindow';
 // markup branch with no floating window at all, so its `tabbable` action is
 // destroyed and `removeFromGroup` has already run (Flow.svelte / Explorer.svelte).
 
-/** @typedef {{ key: string, openStore: any, dragKey: string | null, dockedLs: string | null }} PanelConfig */
+/** @typedef {{ key: string, openStore: any, dragKey: string | null, dockedLs: string | null, dockOnly?: boolean }} PanelConfig */
 
 /**
- * The three panels the Controls toolbar owns. `openStore` is inverted (true =
- * closed) throughout the app. `dragKey` is the dragWindow key of the FLOATING
- * window (null for the object list, which uses Controls' own `dragMe` and
- * therefore has no dragWindow revealer). `dockedLs` is the localStorage flag
- * remembering the panel's last mode (null = floating-only).
+ * EVERY panel a toolbar button or a shortcut can ask for. `openStore` is inverted
+ * (true = closed) throughout the app. `dragKey` is the dragWindow key of the FLOATING
+ * window (null when there is no floating window to reveal). `dockedLs` is the
+ * localStorage flag remembering the panel's last mode.
+ *
+ * W8b widened this map from three entries to all eight. The tree below was ALREADY the
+ * whole decision — closed / tab group / floating / docked — it just had nothing but the
+ * Node editor, the Explorer and the object list wired into it, so the five other dock
+ * views could only be reached through the "+" list, which always opens them docked and
+ * can never hide one again. ONE tree for every panel, whatever opens it, is the point:
+ * a roster button for the Animation tab now behaves exactly as the Node editor button
+ * does, including the raise-a-buried-window rule and the mode memory.
+ *
+ * THREE SHAPES, not two:
+ *   dockedLs set   remembers a mode, can be either (flow, flowcode, animation, uv,
+ *                  hud, explorer)
+ *   dockedLs null  floating-only — there is no dock tab at all (objects)
+ *   dockOnly       DOCK-only. The ShaderEditor is the one view with no `docked` flag,
+ *                  no dragWindow and no window chrome; it registers its dock occupancy
+ *                  unconditionally. Saying so HERE is what stops the tree pretending it
+ *                  can float: without the flag it reads as floating-only, tries to
+ *                  raise a window that does not exist, and the button does nothing.
+ *                  `dockMenu.dockTabItems` already withholds "Undock" for the same
+ *                  reason — this is that fact, stated once more where the opening
+ *                  decision is made.
  * @type {Record<string, PanelConfig>}
  */
 const PANELS = {
 	flow: { key: 'flow', openStore: flowGraphClose, dragKey: 'flowWin', dockedLs: 'flowDocked' },
+	flowcode: { key: 'flowcode', openStore: flowCodeClose, dragKey: 'flowCode', dockedLs: 'flowCodeDocked' },
+	animation: { key: 'animation', openStore: animationClose, dragKey: 'animation', dockedLs: 'animationDocked' },
+	uv: { key: 'uv', openStore: uvEditorClose, dragKey: 'uv', dockedLs: 'uvDocked' },
+	shader: { key: 'shader', openStore: shaderEditorClose, dragKey: null, dockedLs: null, dockOnly: true },
+	hud: { key: 'hud', openStore: hudEditorClose, dragKey: 'hud', dockedLs: 'hudDocked' },
 	explorer: { key: 'explorer', openStore: explorerClose, dragKey: 'explorerWin', dockedLs: 'explorerDocked' },
 	objects: { key: 'objects', openStore: objectListClose, dragKey: null, dockedLs: null }
 };
+
+/** every key `togglePanel` understands, so a caller building a list of buttons cannot
+ *  offer one for a panel this tree has no entry for */
+export const TOGGLEABLE = Object.keys(PANELS);
 
 // remembers which flow-family views were open when the docked group was hidden
 /** @type {any} */
@@ -62,6 +91,7 @@ function isDockedPresent(key) {
 
 /** Would opening this panel put it in the dock? @param {PanelConfig} cfg */
 function opensDocked(cfg) {
+	if (cfg.dockOnly) return true; // the dock is the ONLY place it can be
 	if (!cfg.dockedLs) return false; // floating-only panel
 	return typeof localStorage === 'undefined' || localStorage.getItem(cfg.dockedLs) !== 'false';
 }
@@ -143,6 +173,17 @@ export function togglePanel(key) {
 	// 1. closed -> open in its last mode
 	if (get(cfg.openStore)) {
 		openInLastMode(cfg);
+		return;
+	}
+
+	// A DOCK-ONLY panel has exactly two live states — the visible tab, or a tab behind
+	// another — so it skips steps 2 and 3 entirely. Reaching them would raise a window
+	// that does not exist and the press would silently do nothing. Checked BEFORE the
+	// occupancy test, because occupancy is registered by the panel's own $effect and is
+	// therefore one flush behind a store that has just opened it.
+	if (cfg.dockOnly) {
+		if (!isVisibleInDock(cfg)) activateDock(key);
+		else cfg.openStore.set(true);
 		return;
 	}
 

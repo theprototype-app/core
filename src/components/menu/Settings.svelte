@@ -5,7 +5,7 @@
 	import SettingRow from './SettingRow.svelte';
 	import { showGrid, vrOverride, vrMenuHand, vrSnapAngle, vrMirrorSnapTurn, vrTeleportEnabled, vrSleeveEnabled, vrVertexHold, vrFlying, vrPassthrough, vrMenuHold, vrTargetHz, peerHandStyle } from '../../stores/sceneStore.js';
 	import { applyVRFrameRate } from '$lib/vrControls';
-	import { settingsOpen, settingsSection, hidePanels, restorePanels, advancedMode, showEnvInList, objectSearchEnabled, showSimControls, showToast, showRoomsButton, toastsInDrawerOnly, mobileUndockAllowed, enableShiftAdd, noteDoubleClickToOpen, duplicateCarriesAnimation, duplicateCarriesFlow, duplicateCarriesShader, touchTools, floatingToolbar } from '../../stores/appStore.js';
+	import { settingsOpen, settingsSection, hidePanels, restorePanels, advancedMode, showEnvInList, objectSearchEnabled, showSimControls, showToast, showRoomsButton, toastsInDrawerOnly, mobileUndockAllowed, enableShiftAdd, noteDoubleClickToOpen, duplicateCarriesAnimation, duplicateCarriesFlow, duplicateCarriesShader, touchTools, floatingToolbar, toolbarAlwaysOnTop } from '../../stores/appStore.js';
 	import { trackpadMode, allowBrowserZoom, reversePan, panEnabled, pinchZoomEnabled } from '$lib/trackpadNav';
 	import { gamepadPrefs, setGamepadPrefs, DEADZONE_RANGE, SENSITIVITY_RANGE } from '$lib/gamepadPrefs';
 	import { drawerSlot, cloudPluginInfo } from '$lib/cloudHooks';
@@ -713,7 +713,11 @@
 					{/if}
 					<SettingRow name="Floating toolbar">
 						<svelte:fragment slot="control"><Toggle bind:checked={$floatingToolbar} /></svelte:fragment>
-						The bottom toolbar rides above the docked panel instead of being covered by it. Off (the default) it stays on the viewport floor, like the chat and simulation buttons beside it — an open Node editor or Explorer covers it
+						The bottom toolbar lifts above the docked Node editor or Explorer when one opens, so it never sits over their content (the default). Off, it stays down on the viewport floor beside the chat and simulation buttons — whether an open panel then covers it is "Toolbar always on top" below
+					</SettingRow>
+					<SettingRow name="Toolbar always on top">
+						<svelte:fragment slot="control"><Toggle bind:checked={$toolbarAlwaysOnTop} /></svelte:fragment>
+						The bottom toolbar paints over the docked panels and over floating windows, so it is always reachable (the default). Off, a window or an open panel covers it instead — turn this off if you would rather the toolbar got out of the way. Drag the toolbar itself to slide it left or right, or right-click it for "Move toolbar"
 					</SettingRow>
 					<SettingRow name="Window positions">
 						<svelte:fragment slot="control">

@@ -9,6 +9,18 @@
     import { resolvePlaySettings } from '$lib/playSettings'
     import { inputClaims, getGamepadAxes } from '$lib/inputRuntime'
     import { gamepadPrefs } from '$lib/gamepadPrefs'
+    import { coarsePointer } from '$lib/inputDevice'
+    // W4: the touch play controls. A phone had no input path here at all — no pointer
+    // lock, no keyboard, no Escape — so the overlay publishes a virtual stick and a look
+    // drag, and this component consumes them at the two places it already consumes the
+    // pad and the mouse. No second movement pipeline: walk mode, the grounded pin, the
+    // dungeon slide and both gates at the top of the task apply to a thumb for free.
+    import {
+      TOUCH_LOOK_RADIANS_PER_PX,
+      touchMove,
+      touchLookSpeed,
+      drainTouchLook
+    } from '$lib/touchControls'
     // 21-E6: the character controller as nodes. A NULL charControl means no
     // charcontroller node exists in any graph, and every branch below then falls
     // through to the code that was always here — that is the parity contract, which is
@@ -56,6 +68,26 @@
     const onChange = () => {
       invalidate()
     }
+
+    // W4: a touch-first device HAS NO POINTER TO LOCK. Chromium on Android answers
+    // `requestPointerLock` with a refusal, which the W3 retry then re-asks nine times
+    // over its 2.5s window before giving up with a console error — nine requests for a
+    // capability the device does not have. The touch overlay is the input path there,
+    // so every lock request stands down. Read ONCE: a device does not grow a mouse
+    // mid-session, and matchMedia is unavailable during the SSR prerender.
+    const noPointerLock = coarsePointer()
+
+    // W4: ONE place the yaw/pitch write lives. It was three near-identical copies (the
+    // mouse, the pad in walk mode, the pad while flying) with the same clamp spelled
+    // out each time; the touch look is the fourth consumer and the reason to fold them.
+    // Callers own the RATE — a stick is radians per second, a drag is radians per pixel.
+    const applyLook = (rig: any, dYaw: number, dPitch: number) => {
+      _euler.setFromQuaternion(rig.quaternion)
+      _euler.y -= dYaw
+      _euler.x -= dPitch
+      _euler.x = Math.max(_PI_2 - maxPolarAngle, Math.min(_PI_2 - minPolarAngle, _euler.x))
+      rig.quaternion.setFromEuler(_euler)
+    }
   
     // 21-E3: THE MENU SUBSTATE. Edge-triggered on purpose (a `wasFree` local), so the
     // play-entry effect below stays exactly as it was. Rising edge: zero the movement
@@ -75,7 +107,7 @@
           if (document.pointerLockElement === domElement) document.exitPointerLock()
         } else if (!free && wasFree) {
           wasFree = false
-          if ($isLocked === true && document.pointerLockElement !== domElement) {
+          if (!noPointerLock && $isLocked === true && document.pointerLockElement !== domElement) {
             const again: any = domElement.requestPointerLock({ unadjustedMovement: true })
             again?.catch?.(() => {})
           }
@@ -123,6 +155,7 @@
      * menu toggle and re-request the lock the menu had just released.
      */
     function requestLock(first: boolean) {
+      if (noPointerLock) return cancelLockRetry()   // W4: nothing to lock on a touch device
       if (get(isLocked) !== true) return cancelLockRetry()
       if (get(playPointerFree)) return cancelLockRetry()   // 21-E3: the menu owns the pointer
       if (document.pointerLockElement === domElement) return cancelLockRetry()
@@ -179,6 +212,22 @@
       // no focusables, so nothing claims, and the pause must hold anyway.
       if ($playPointerFree) return
 
+      // W4: THE TOUCH LOOK, applied here and not in the overlay so every camera write in
+      // play mode stays in this component (and inherits its pitch clamp). A drag is a
+      // DISPLACEMENT like a mouse move — radians per PIXEL, never delta-scaled the way a
+      // stick is — and it is DRAINED rather than sampled, or the last swipe would keep
+      // turning forever. Above the walk return, so it applies in both modes; the rig is
+      // the same object either way.
+      const lookRig: any = $cameraParent
+      if (lookRig && $isLocked === true) {
+        const look = drainTouchLook()
+        if (look.dx || look.dy) {
+          const rate = TOUCH_LOOK_RADIANS_PER_PX * pointerSpeed * $touchLookSpeed
+          applyLook(lookRig, look.dx * rate, look.dy * rate)
+          onChange()
+        }
+      }
+
       // 21-E6: what the graph declared, and the speed actually in force. With no
       // controller node `ctrl` is null and `speed` is this component's own moveSpeed,
       // so the whole block below is byte-for-byte the old behaviour.
@@ -198,8 +247,11 @@
         if (walker && $isLocked) {
           const prefs = $gamepadPrefs
           const pad = prefs.enabled ? getGamepadAxes() : { lx: 0, ly: 0, rx: 0, ry: 0 }
-          const mX = prefs.swapSticks ? pad.rx : pad.lx
-          const mY = prefs.swapSticks ? pad.ry : pad.ly
+          // W4: the touch stick is a SECOND virtual pad — same -1..1 rate, same signs —
+          // so it folds into the same two numbers rather than growing a third walk input.
+          const touch = $touchMove
+          const mX = (prefs.swapSticks ? pad.rx : pad.lx) || touch.x
+          const mY = (prefs.swapSticks ? pad.ry : pad.ly) || touch.y
           const padWalkInput = {
             forward: moveState.forward || (mY < -0.01 ? 1 : 0),
             backward: moveState.backward || (mY > 0.01 ? 1 : 0),
@@ -211,11 +263,7 @@
           const lY = prefs.swapSticks ? pad.ly : pad.ry
           if (lX || lY) {
             const rate = PAD_LOOK_RATE * pointerSpeed * prefs.lookSensitivity * delta
-            _euler.setFromQuaternion(walker.quaternion)
-            _euler.y -= lX * rate
-            _euler.x -= (prefs.invertY ? -lY : lY) * rate
-            _euler.x = Math.max(_PI_2 - maxPolarAngle, Math.min(_PI_2 - minPolarAngle, _euler.x))
-            walker.quaternion.setFromEuler(_euler)
+            applyLook(walker, lX * rate, (prefs.invertY ? -lY : lY) * rate)
             onChange()
           }
         }
@@ -254,12 +302,17 @@
       // Placed BEFORE the grounded pin and the dungeon slide below, so stick movement
       // inherits eye height and wall collision without a second implementation.
       const padPrefs = $gamepadPrefs
-      if (padPrefs.enabled && $isLocked === true && $cameraParent) {
+      // W4: the pad's master switch gates THE PAD, never the touch stick — which is why
+      // the enabled test moved off this `if` and onto the snapshot below. A phone has no
+      // gamepad prefs to go and find, and switching the pad off in Settings must not
+      // take the only movement control on the device with it.
+      if ($isLocked === true && $cameraParent) {
         // the deadzone is already applied in the snapshot - that one is the DEVICE's dead
         // centre (Settings > Input), not a game threshold
-        const pad = getGamepadAxes()
-        const moveX = padPrefs.swapSticks ? pad.rx : pad.lx
-        const moveY = padPrefs.swapSticks ? pad.ry : pad.ly
+        const pad = padPrefs.enabled ? getGamepadAxes() : { lx: 0, ly: 0, rx: 0, ry: 0 }
+        const touch = $touchMove
+        const moveX = (padPrefs.swapSticks ? pad.rx : pad.lx) || touch.x
+        const moveY = (padPrefs.swapSticks ? pad.ry : pad.ly) || touch.y
         const lookX = padPrefs.swapSticks ? pad.lx : pad.rx
         const lookY = padPrefs.swapSticks ? pad.ly : pad.ry
         if (moveX || moveY) {
@@ -272,12 +325,8 @@
         }
         if (lookX || lookY) {
           const rate = PAD_LOOK_RATE * pointerSpeed * padPrefs.lookSensitivity * delta
-          _euler.setFromQuaternion($cameraParent.quaternion)
-          _euler.y -= lookX * rate
           // push the stick UP (negative) to look UP, the console default; invertY flips it
-          _euler.x -= (padPrefs.invertY ? -lookY : lookY) * rate
-          _euler.x = Math.max(_PI_2 - maxPolarAngle, Math.min(_PI_2 - minPolarAngle, _euler.x))
-          $cameraParent.quaternion.setFromEuler(_euler)
+          applyLook($cameraParent, lookX * rate, (padPrefs.invertY ? -lookY : lookY) * rate)
         }
         if (moveX || moveY || lookX || lookY) onChange()
       }
@@ -423,16 +472,9 @@
       if (!$cameraParent) return
   
       const { movementX, movementY } = event
-  
-      _euler.setFromQuaternion($cameraParent.quaternion)
-  
-      _euler.y -= movementX * 0.002 * pointerSpeed
-      _euler.x -= movementY * 0.002 * pointerSpeed
-  
-      _euler.x = Math.max(_PI_2 - maxPolarAngle, Math.min(_PI_2 - minPolarAngle, _euler.x))
-  
-      $cameraParent.quaternion.setFromEuler(_euler)
-  
+
+      applyLook($cameraParent, movementX * 0.002 * pointerSpeed, movementY * 0.002 * pointerSpeed)
+
       onChange()
     }
   
@@ -476,6 +518,7 @@
     // IS a gesture, so recapture there. (Chromium allows the gesture-free re-lock after
     // a programmatic exit, so this stays idle.)
     function onCanvasPointerDown() {
+      if (noPointerLock) return   // W4: a touch tap is the look/interact gesture, not a re-lock
       if ($isLocked === true && !$playPointerFree && document.pointerLockElement !== domElement) {
         const again: any = domElement.requestPointerLock({ unadjustedMovement: true })
         again?.catch?.(() => {})

@@ -85,6 +85,75 @@ export const willEnterAR = derived(
 // replayed at the settle instead, which is now the whole of the deferral.
 let playQueued = false;
 
+/**
+ * THE CANONICAL EXIT. Leaving play is two different acts depending on who holds the
+ * pointer: with a lock held the exit IS releasing it (the `pointerlockchange` handler
+ * in PointerLockControls turns that into `isLocked = false`), and with no lock — the
+ * E3 menu substate, and every touch device, where there is no pointer to lock — the
+ * store write is the whole of it.
+ *
+ * That pair is what the Escape branch in PointerLockControls has always done; this is
+ * the same decision reachable by anything that is not a keystroke (the touch ✕, the
+ * Android back button, and a HUD quit button when one is authored). PLC keeps its own
+ * copy on purpose: it is a `lang="ts"` file whose `isLocked` writes are part of the
+ * 385 baseline, so rewriting them belongs to the annotation change that fixes the
+ * store's type, not to this one.
+ */
+export function exitPlay() {
+	if (get(isLocked) !== true) return;
+	if (typeof document !== 'undefined' && document.pointerLockElement) document.exitPointerLock();
+	else isLocked.set(false);
+}
+
+/* ------------------------------------------------------ the back button (W4) --- */
+
+// A phone has no Escape key, so the hardware Back button has to be a way out of play
+// mode — and left alone it does the one thing a player never means by it: leaves the
+// app, mid-game, losing the session. Entering play pushes ONE marker onto the history
+// stack; a popstate while that marker is ours spends it on an exit instead; and any
+// OTHER way out takes the marker back off, so the user's next real Back is theirs.
+//
+// Deliberately universal rather than gated on `(pointer: coarse)`. The browser's Back
+// button and a trackpad's back-swipe exist on the desktop too, and "Back threw me out
+// of the app while I was playing" is the same surprise there — while on a device with
+// no history to go back to, pushing and popping our own entry is invisible.
+//
+// It is safe to pop because the marker is ALWAYS the top entry when we hold one: this
+// app keeps no state in the URL and nothing else in it calls pushState (grep), so
+// there is no router to fight and nothing of the user's can be underneath ours. The
+// flag is the whole guard — see `consumePlayMarker` for the double-pop it prevents.
+let backMarker = false;
+
+function pushPlayMarker() {
+	if (backMarker || typeof history === 'undefined') return;
+	try {
+		// the SAME url with a state object: no navigation, nothing for a router to
+		// resolve, and `history.state.tpPlay` is a readable answer to "is the marker up?"
+		history.pushState({ tpPlay: true }, '');
+		backMarker = true;
+	} catch {
+		/* a sandboxed frame can refuse pushState; play simply keeps its normal exits */
+	}
+}
+
+function consumePlayMarker() {
+	if (!backMarker || typeof history === 'undefined') return;
+	// cleared BEFORE the pop, because popping fires a popstate of our own — the handler
+	// below then reads "not ours" and does nothing. Without this the exit that a Back
+	// press just caused would pop a SECOND entry, i.e. the user's real previous page.
+	backMarker = false;
+	try {
+		history.back();
+	} catch {
+		/* nothing to go back to; the marker is spent either way */
+	}
+}
+
+/** was the marker pushed? (test/debug view — the state object is the user-visible half) */
+export function playBackMarker() {
+	return backMarker;
+}
+
 /* --------------------------------------------------------------- xr recovery --- */
 
 // W3: `isVRMode` is set OPTIMISTICALLY, one line before the click that asks for the
@@ -197,7 +266,23 @@ export function requestPlay() {
 // path writes; it becomes null here, on the very next macrotask. Nothing waits any
 // longer than that — see the W3 note above.
 if (typeof window !== 'undefined') {
+	// W4: a Back press is only ours while the marker is up, and it is only up while
+	// playing. Anything else — a genuine navigation, a popstate from another page's
+	// entry — falls straight through and behaves as it always did.
+	window.addEventListener('popstate', () => {
+		if (!backMarker) return;
+		backMarker = false;
+		exitPlay();
+	});
+
 	isLocked.subscribe((v) => {
+		// W4: the marker follows the state, not the button, so every entry gets one and
+		// every exit spends one — Escape, the ✕, a HUD quit, a peer-driven stop. This
+		// runs synchronously at module evaluation with the initial `null`, which is a
+		// consume of a marker nobody pushed: a no-op by the flag.
+		if (v === true) pushPlayMarker();
+		else consumePlayMarker();
+
 		if (v !== false) return;
 		// NEVER write a store from inside its own subscriber (flush loop) — hop out of
 		// the notification first. It costs one macrotask and no semantics: every reader

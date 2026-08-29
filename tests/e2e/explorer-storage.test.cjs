@@ -469,6 +469,63 @@ h.run(async () => {
 		'the list is GROUPED — "saves sessions, scenes etc." is a request for categories'
 	);
 
+	// ---- 6a. COLLAPSED BY DEFAULT, AND THE HEAD READS AS A HEAD -----------------------
+	// Flat, a group's title sat in the same visual register as its own rows and the list
+	// read as one long run of items with headings mixed into it. Every check below opens
+	// through the REAL chevron: a fold is a view state, so a suite that poked a store
+	// could not tell a working control from a working store.
+	const foldState = () =>
+		page.evaluate(() => {
+			const g = document.querySelector('[data-storage-group="library"]');
+			if (!g) return null;
+			const head = g.querySelector('.storage-group-head');
+			const name = g.querySelector('.storage-group-name');
+			const row = g.querySelector('.storage-row');
+			return {
+				open: g.getAttribute('data-open'),
+				body: !!g.querySelector('.storage-group-body'),
+				rows: g.querySelectorAll('.storage-row').length,
+				expanded: g.querySelector('.storage-group-toggle')?.getAttribute('aria-expanded'),
+				headBg: head ? getComputedStyle(head).backgroundColor : null,
+				cardBg: getComputedStyle(g).backgroundColor,
+				nameWeight: name ? Number(getComputedStyle(name).fontWeight) : -1,
+				rowWeight: row ? Number(getComputedStyle(row).fontWeight) : -1,
+				headH: head ? Math.round(head.getBoundingClientRect().height) : -1,
+				groupH: Math.round(g.getBoundingClientRect().height)
+			};
+		});
+	const f0 = await foldState();
+	h.check(!!f0, 'premise: the Library group is on screen');
+	h.check(f0.open === 'false' && !f0.body, 'every group starts COLLAPSED');
+	h.check(f0.rows === 0, '...so none of its rows are rendered yet (' + f0.rows + ')');
+	h.check(f0.expanded === 'false', '...and the toggle says so to a screen reader');
+	h.check(
+		Math.abs(f0.groupH - f0.headH) <= 3,
+		'a shut group is exactly its one head line (' + f0.groupH + 'px card vs ' + f0.headH + 'px head)'
+	);
+	// the head must not sit in the same register as its rows — assert the COMPUTED colour
+	h.check(
+		!!f0.headBg && f0.headBg !== f0.cardBg && !/, 0\)$/.test(f0.headBg),
+		'the head owns its own surface, a step off the card (' + f0.headBg + ' vs ' + f0.cardBg + ')'
+	);
+	h.check(f0.nameWeight >= 700, '...and its name carries header weight (' + f0.nameWeight + ')');
+	await page.locator('#storage-group-toggle-library').click();
+	await page.waitForTimeout(350);
+	const f1 = await foldState();
+	h.check(f1.open === 'true' && f1.body, 'the chevron expands it');
+	h.check(f1.rows === 3, '...and the rows appear (' + f1.rows + ')');
+	h.check(
+		f1.nameWeight > f1.rowWeight && f1.rowWeight > 0,
+		'the head still outweighs its rows once open (' + f1.nameWeight + ' vs ' + f1.rowWeight + ')'
+	);
+	// the refused-row checks below read INSIDE the structure group, so open that too
+	h.check(
+		(await page.locator('#storage-group-toggle-structure').count()) === 1,
+		'premise: the Project structure group is on screen'
+	);
+	await page.locator('#storage-group-toggle-structure').click();
+	await page.waitForTimeout(350);
+
 	// THEMED checkboxes: assert the COMPUTED colour, never the class string. flowbite
 	// paints the checked state with `background-color: currentColor !important`, so the
 	// fill rides `color` — a right-looking class was the whole bug last time.
@@ -553,6 +610,73 @@ h.run(async () => {
 		'...and counts what is ticked (' + g0.library.rows + ' rows)'
 	);
 
+	// ---- 6b. A SELECTION SURVIVES A SCAN THAT CHANGES NOTHING -------------------------
+	// THE RECLAIM-ENABLEMENT GUARD, and the reported bug in one line. The invalidation
+	// used to be keyed on `scan.at` — a fresh clock reading on EVERY scan — so any scan
+	// emptied `picked`, and `openStorageModal` ALWAYS starts one while the panel is
+	// already interactive on the previous reading. MEASURED: ticks vanished and Reclaim
+	// went back to disabled over a row list identical to the one they were made against.
+	// It is keyed on the ROWS now: an id the new scan still lists stays ticked.
+	const atBefore = await page.evaluate(() => {
+		let sc;
+		window.__stores.storageUsage.storageScan.subscribe((v) => (sc = v))();
+		return sc?.at ?? 0;
+	});
+	await page.evaluate(() => void window.__stores.storageUsage.scanStorage());
+	await h.eventually(
+		() =>
+			page.evaluate(() => {
+				let sc;
+				window.__stores.storageUsage.storageScan.subscribe((v) => (sc = v))();
+				return sc?.at ?? 0;
+			}),
+		(at) => at !== atBefore,
+		'premise: a SECOND scan completed over the same rows',
+		20000
+	);
+	await page.waitForTimeout(600);
+	const g2 = await groupState();
+	h.check(
+		g2.library.rows === g0.library.rows,
+		'premise: that scan changed nothing — same rows (' + g2.library.rows + ')'
+	);
+	h.check(
+		g2.library.checked === g0.library.rows,
+		'a re-scan that changes nothing KEEPS the ticks (' + g2.library.checked + ' of ' + g0.library.rows + ')'
+	);
+	h.check(!g2.reclaimDisabled, '...so Reclaim stays ENABLED — the reported bug');
+
+	// ---- 6b2. COLLAPSING IS NOT DESELECTING -------------------------------------------
+	await page.locator('#storage-group-toggle-library').click();
+	await page.waitForTimeout(350);
+	const folded = await page.evaluate(() => {
+		const g = document.querySelector('[data-storage-group="library"]');
+		return {
+			open: g?.getAttribute('data-open'),
+			rowsInDom: g?.querySelectorAll('.storage-row').length ?? -1,
+			headTick: !!g?.querySelector('.storage-group-tick input')?.checked,
+			picked: Number(g?.querySelector('.storage-group-count')?.getAttribute('data-picked') ?? -1),
+			footer: (document.querySelector('#storage-selection')?.innerText ?? '').trim(),
+			reclaimDisabled: !!document.querySelector('#storage-reclaim')?.disabled
+		};
+	});
+	h.check(
+		folded.open === 'false' && folded.rowsInDom === 0,
+		'premise: the ticked group is folded away again'
+	);
+	h.check(folded.headTick, 'the select-all tick stays ticked while collapsed');
+	h.check(
+		folded.picked === g0.library.rows,
+		'...and the head says how many are selected behind the fold (' + folded.picked + ')'
+	);
+	h.check(!folded.reclaimDisabled, 'a folded selection still counts — Reclaim stays enabled');
+	h.check(
+		folded.footer.includes(String(g0.library.rows)),
+		'...and the footer still counts them (' + folded.footer + ')'
+	);
+	await page.locator('#storage-group-toggle-library').click();
+	await page.waitForTimeout(350);
+
 	// the act goes through ConfirmModal — the one truly modal dialog, for the one
 	// blocking decision in this feature
 	await page.locator('#storage-reclaim').click();
@@ -601,6 +725,56 @@ h.run(async () => {
 			}),
 		(n) => n === 0,
 		'...and the panel re-scans itself, so the rows really disappear from it',
+		20000
+	);
+
+	// ---- 6c. A DISABLED CONTROL IS NOT A BLOCKED ONE ----------------------------------
+	// flowbite's Button theme paints its disabled variant `cursor-not-allowed opacity-50`
+	// (buttons/theme.js). The grey is the honest half and the reported "blocked" cursor is
+	// not: Rescan while a scan is already running, and Reclaim while nothing is ticked,
+	// are both "not yet" rather than "refused". Read the COMPUTED cursor — the class
+	// string carries the utility either way, and an unlayered rule is what beats it.
+	const reclaimCursor = await page.evaluate(() => {
+		const b = document.querySelector('#storage-reclaim');
+		return b ? { disabled: !!b.disabled, cursor: getComputedStyle(b).cursor } : null;
+	});
+	h.check(
+		!!reclaimCursor && reclaimCursor.disabled,
+		'premise: with nothing ticked, Reclaim is disabled (and stays that way)'
+	);
+	h.check(
+		!!reclaimCursor && reclaimCursor.cursor === 'default',
+		'...and it shows a neutral cursor, not "blocked" (' + (reclaimCursor || {}).cursor + ')'
+	);
+	await page.locator('#storage-rescan').click();
+	await page
+		.waitForFunction(() => !!document.querySelector('#storage-rescan')?.disabled, null, {
+			timeout: 10000
+		})
+		.catch(() => {});
+	const rescanCursor = await page.evaluate(() => {
+		const b = document.querySelector('#storage-rescan');
+		return b
+			? { disabled: !!b.disabled, cursor: getComputedStyle(b).cursor, label: (b.innerText || '').trim() }
+			: null;
+	});
+	h.check(
+		!!rescanCursor && rescanCursor.disabled,
+		'premise: Rescan disables itself while the scan it started runs (' + (rescanCursor || {}).label + ')'
+	);
+	h.check(
+		!!rescanCursor && rescanCursor.cursor === 'default',
+		'a disabled Rescan shows a neutral cursor, not "blocked" (' + (rescanCursor || {}).cursor + ')'
+	);
+	await h.eventually(
+		() =>
+			page.evaluate(() => {
+				let v;
+				window.__stores.storageUsage.storageScanning.subscribe((x) => (v = x))();
+				return v;
+			}),
+		(v) => v === false,
+		'...and it comes back once the scan finishes',
 		20000
 	);
 

@@ -17,8 +17,9 @@
 	// per-category select-all can exist. Every group carries ONE sentence saying what
 	// deleting it costs, because that is the question somebody freeing space is actually
 	// asking and it cannot be inferred from a byte count.
+	import { untrack } from 'svelte';
 	import { Modal, Button } from 'flowbite-svelte';
-	import { HardDrive, RefreshCw, Trash2, Info } from '@lucide/svelte';
+	import { HardDrive, RefreshCw, Trash2, Info, ChevronRight } from '@lucide/svelte';
 	import { showConfirm } from '$lib/confirmDialog';
 	import { showToast } from '../../stores/appStore';
 	import {
@@ -33,10 +34,15 @@
 
 	/** the row ids ticked for removal @type {Set<string>} */
 	let picked = $state(new Set());
-	/** the scan those ticks were taken against — a fresh scan clears them, because a tick
-	 * is a statement about a row that may no longer exist */
+	/** the scan those ticks were RECONCILED against — see the effect below */
 	let pickedAt = $state(0);
 	let busy = $state(false);
+	/** which category keys are EXPANDED. Collapsed is the default, and the set starts
+	 * empty rather than being seeded from anything: a group's fold is a fact about this
+	 * screen right now, so it is neither persisted nor replicated (the `explorerView`
+	 * rule) — and a remembered expansion would quietly undo "collapsed by default".
+	 * @type {Set<string>} */
+	let expanded = $state(new Set());
 
 	const scan = $derived($storageScan);
 	/** categories with something in them — an empty group is noise, and its `note` has
@@ -46,15 +52,32 @@
 	const pickedRows = $derived(allRows.filter((/** @type {any} */ r) => picked.has(r.id)));
 	const freeable = $derived(selectionBytes(pickedRows));
 
-	// a new scan invalidates the selection. `$effect` rather than a check inside the
-	// toggles: the scan can also change from underneath us (the reclaim re-scans), and
-	// carrying ticks across it would offer to delete rows that are already gone.
+	// A NEW SCAN RECONCILES THE SELECTION — IT DOES NOT WIPE IT. The first version keyed
+	// the invalidation on `scan.at`, a fresh `Date.now()` on EVERY scan, and emptied
+	// `picked` whenever it moved. That is right for the rows a reclaim removed and wrong
+	// for everything else, because `openStorageModal` ALWAYS starts a scan and the panel
+	// is interactive on the previous reading while it runs: MEASURED, a tick made in that
+	// window was silently dropped the moment the scan landed — the ticks disappeared and
+	// Reclaim went back to disabled, over a row list that had not changed by a single
+	// entry. On a big store that window is seconds long, which is the reported "Reclaim is
+	// not enabled when items are selected".
+	//
+	// The original intent survives intact — a tick is a statement about a row that may no
+	// longer exist — it is just enforced against the ROWS rather than against a clock: an
+	// id the new scan still lists stays ticked, one it does not is dropped. `picked` is
+	// read through `untrack` because this effect WRITES it; tracking it here would re-run
+	// the effect on every tick for a comparison that can only ever be a no-op.
 	$effect(() => {
 		const at = scan?.at ?? 0;
-		if (at !== pickedAt) {
-			pickedAt = at;
-			picked = new Set();
-		}
+		const live = new Set(allRows.map((/** @type {any} */ r) => r.id));
+		if (at === pickedAt) return;
+		pickedAt = at;
+		untrack(() => {
+			/** @type {Set<string>} */
+			const kept = new Set();
+			for (const id of picked) if (live.has(id)) kept.add(id);
+			if (kept.size !== picked.size) picked = kept;
+		});
 	});
 
 	/** @param {string} id */
@@ -85,6 +108,28 @@
 		if (allPicked(cat)) for (const r of p) next.delete(r.id);
 		else for (const r of p) next.add(r.id);
 		picked = next;
+	}
+
+	/** how many rows of this group are ticked — the collapsed group's own readout, so a
+	 * selection cannot hide behind a fold @param {any} cat */
+	function pickedIn(cat) {
+		return cat.rows.filter((/** @type {any} */ r) => picked.has(r.id)).length;
+	}
+
+	/** @param {string} key */
+	function isOpen(key) {
+		return expanded.has(key);
+	}
+
+	/** COLLAPSING IS A VIEW STATE, NEVER A SELECTION STATE. Nothing here touches `picked`,
+	 * and `pickedRows` derives from the SCAN rather than from what is on screen — so a
+	 * group ticked and then folded away stays ticked and still counts.
+	 * @param {string} key */
+	function toggleOpen(key) {
+		const next = new Set(expanded);
+		if (next.has(key)) next.delete(key);
+		else next.add(key);
+		expanded = next;
 	}
 
 	function toggleEverything() {
@@ -199,8 +244,23 @@
 				</button>
 			</div>
 
+			<!--
+				COLLAPSED BY DEFAULT, and the head reads as a head. Flat, every group's title
+				sat in the same register as its own rows, so the list read as one long run of
+				items with headings mixed into it. The head keeps its own surface, its own
+				weight and a rule under it while open; the note and the rows live INSIDE the
+				fold, so a shut group is exactly one line.
+
+				NOT `ToolboxSection`: that one renders no wrapper element because its parent is
+				a grid and every child has to stay a grid item — a reason that does not apply to
+				this bordered card — and its whole head IS a <button>, which cannot contain the
+				select-all checkbox this head has to carry. So the fold is hand-rolled: the
+				chevron/label is the button, the tick sits beside it, and the tick keeps
+				working while the group is shut.
+			-->
 			{#each groups as cat (cat.key)}
-				<div class="storage-group" data-storage-group={cat.key}>
+				{@const picks = pickedIn(cat)}
+				<div class="storage-group" data-storage-group={cat.key} data-open={isOpen(cat.key)}>
 					<div class="storage-group-head">
 						<label class="storage-group-tick" title={pickableOf(cat).length ? 'Select all in this group' : 'Nothing in this group can be removed'}>
 							<input
@@ -212,10 +272,26 @@
 								checked={allPicked(cat)}
 								onchange={() => toggleCategory(cat)} />
 						</label>
-						<span class="storage-group-name">{cat.label}</span>
-						<span class="storage-group-count">{cat.rows.length}</span>
+						<button
+							type="button"
+							class="storage-group-toggle"
+							id={'storage-group-toggle-' + cat.key}
+							aria-expanded={isOpen(cat.key)}
+							aria-controls={'storage-group-body-' + cat.key}
+							onclick={() => toggleOpen(cat.key)}
+						>
+							<ChevronRight size={12} class="storage-group-chev" aria-hidden="true" />
+							<span class="storage-group-name">{cat.label}</span>
+							<span class="storage-group-count" data-picked={picks}
+								>{cat.rows.length}{#if picks}<span class="storage-group-picked"
+										>&nbsp;· {picks} selected</span
+									>{/if}</span
+							>
+						</button>
 						<span class="storage-group-bytes" data-bytes={cat.bytes}>{fmtBytes(cat.bytes)}</span>
 					</div>
+					{#if isOpen(cat.key)}
+					<div id={'storage-group-body-' + cat.key} class="storage-group-body">
 					<p class="storage-group-note">{cat.note}</p>
 					<ul class="storage-rows">
 						{#each cat.rows as row (row.id)}
@@ -246,6 +322,8 @@
 							</li>
 						{/each}
 					</ul>
+					</div>
+					{/if}
 				</div>
 			{/each}
 		{:else if scan}
@@ -295,6 +373,20 @@
 		height: 100%;
 		background: var(--accent, #2563eb);
 	}
+	/* A NOT-YET IS NOT A BLOCKED. flowbite's Button theme paints its disabled variant
+	   `cursor-not-allowed opacity-50` (buttons/theme.js), so both of this panel's
+	   disabled states rendered the "blocked" cursor: Rescan while a scan is already
+	   running, and Reclaim while nothing is ticked. Neither is a refusal — one is "this is
+	   already happening", the other is "there is nothing to do yet" — and the greyed look
+	   already says so, which is the part the user kept. `.tp-check:disabled` in ui.css
+	   settled on `cursor: default` for the same reason; this follows it.
+	   `:global` because a flowbite <Button> renders its <button> in its OWN scope, so a
+	   plain scoped selector never lands on it; and an UNLAYERED rule beats a Tailwind
+	   utility whatever the specificity, which is why one line is enough. */
+	:global(#storage-rescan:disabled),
+	:global(#storage-reclaim:disabled) {
+		cursor: default;
+	}
 	.storage-link {
 		font-size: 0.7rem;
 		text-decoration: underline;
@@ -310,33 +402,71 @@
 		border-radius: 6px;
 		background: var(--surface-2, #111827);
 	}
+	/* THE HEAD IS A HEAD. Its own surface (one step off the card's), a heavier name and a
+	   rule under it while open — without those three it sat in the same visual register as
+	   the rows below it and the list read as one flat run. */
 	.storage-group-head {
 		display: flex;
 		align-items: center;
 		gap: 0.5rem;
-		padding: 0.35rem 0.5rem 0.1rem;
+		padding: 0.4rem 0.5rem;
 		font-size: 0.78rem;
 		color: var(--text, #e5e7eb);
+		background: var(--surface-3, #1f2937);
+		border-radius: 5px 5px 0 0;
+	}
+	.storage-group[data-open='true'] .storage-group-head {
+		border-bottom: 1px solid var(--border, #374151);
 	}
 	.storage-group-tick {
 		display: flex;
 		align-items: center;
 		cursor: pointer;
 	}
+	.storage-group-toggle {
+		flex: 1 1 auto;
+		min-width: 0;
+		display: flex;
+		align-items: center;
+		gap: 0.4rem;
+		padding: 0;
+		background: none;
+		border: none;
+		color: inherit;
+		font: inherit;
+		text-align: left;
+		cursor: pointer;
+	}
+	/* a `class` handed to a lucide component lands on the CHILD-scope <svg>, so the
+	   rotation has to be :global — the documented icon trap */
+	.storage-group-toggle :global(.storage-group-chev) {
+		flex: 0 0 auto;
+		transition: transform 0.12s ease;
+		color: var(--text-dim, #9ca3af);
+	}
+	.storage-group[data-open='true'] .storage-group-toggle :global(.storage-group-chev) {
+		transform: rotate(90deg);
+	}
 	.storage-group-name {
-		font-weight: 600;
+		font-weight: 700;
+		letter-spacing: 0.01em;
 	}
 	.storage-group-count {
 		flex: 1 1 auto;
 		color: var(--text-dim, #9ca3af);
 		font-size: 0.7rem;
+		font-weight: 400;
+	}
+	/* a selection must not be able to hide behind a fold */
+	.storage-group-picked {
+		color: var(--accent, #2563eb);
 	}
 	.storage-group-bytes {
 		flex: 0 0 auto;
 		font-variant-numeric: tabular-nums;
 	}
 	.storage-group-note {
-		padding: 0 0.5rem 0.35rem 1.9rem;
+		padding: 0.35rem 0.5rem 0.35rem 1.9rem;
 		font-size: 0.68rem;
 		line-height: 1.35;
 		color: var(--text-dim, #9ca3af);

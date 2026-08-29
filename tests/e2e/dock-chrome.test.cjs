@@ -246,5 +246,244 @@ h.run(async () => {
 	});
 	h.check(pillHome >= 0 && pillHome <= 18, `5.4 the pill is on the viewport floor (${pillHome}px clear)`);
 
+	// =====================================================================
+	// W5. The strip splits in two: TABS + "＋" on the left, the dock's own chrome
+	// pinned to the RIGHT edge of the window; the three chrome buttons become lucide
+	// icons; the "＋" list drops what is already docked; and a TAB gets its own
+	// right-click menu, which is the first way to reach a tab that is not showing.
+	// =====================================================================
+
+	/** reopen a known state: flow + Explorer docked, the Node editor showing */
+	const openBoth = async () => {
+		await A.page.evaluate(() => {
+			const s = window.__stores;
+			s.flowGraphClose.set(false);
+			s.explorerClose.set(false);
+			s.bottomDock.activateDock('flow');
+		});
+		await A.page.waitForTimeout(700);
+	};
+	await openBoth();
+
+	// --- 6. the right-pinned chrome cluster ---
+	const geom = await A.page.evaluate(() => {
+		const panel = [...document.querySelectorAll('#flow-list, #explorer-list')].find(
+			(el) => !el.classList.contains('hidden')
+		);
+		// EVERY docked panel renders a strip (they hide with a class, they do not
+		// unmount), so these ids repeat across the app — scope every read to the panel
+		// that is actually showing, or a display:none copy answers with a zero rect.
+		const r = (sel) => {
+			const el = panel?.querySelector(sel);
+			return el ? el.getBoundingClientRect() : null;
+		};
+		// the first TAB in the visible panel's strip, to compare bands against
+		const tab = panel?.querySelector('.tab-note');
+		const min = r('#dock-minimize');
+		const close = r('#dock-close-tab');
+		const add = r('#dock-add-view');
+		const svgIn = (sel) => !!panel?.querySelector(sel + ' svg');
+		return {
+			vw: window.innerWidth,
+			panelRight: panel ? Math.round(panel.getBoundingClientRect().right) : -1,
+			tabTop: tab ? Math.round(tab.getBoundingClientRect().top) : -1,
+			tabLeft: tab ? Math.round(tab.getBoundingClientRect().left) : -1,
+			minTop: min ? Math.round(min.top) : -1,
+			minLeft: min ? Math.round(min.left) : -1,
+			closeRight: close ? Math.round(close.right) : -1,
+			minRight: min ? Math.round(min.right) : -1,
+			addRight: add ? Math.round(add.right) : -1,
+			icons: { add: svgIn('#dock-add-view'), min: svgIn('#dock-minimize'), close: svgIn('#dock-close-tab') },
+			// the chrome buttons are icon-only now, so they must SAY what they are
+			labels: {
+				add: panel?.querySelector('#dock-add-view')?.getAttribute('aria-label'),
+				min: panel?.querySelector('#dock-minimize')?.getAttribute('aria-label'),
+				close: panel?.querySelector('#dock-close-tab')?.getAttribute('aria-label')
+			}
+		};
+	});
+	h.check(
+		geom.closeRight > 0 && geom.vw - geom.closeRight <= 20,
+		`6.1 the chrome cluster is pinned to the window's right edge (${geom.closeRight} vs ${geom.vw})`
+	);
+	h.check(
+		geom.minRight < geom.closeRight,
+		`6.2 ...in the order – then ✕ (minimize right edge ${geom.minRight} < close ${geom.closeRight})`
+	);
+	h.check(
+		Math.abs(geom.minTop - geom.tabTop) <= 2,
+		`6.3 ...on the SAME vertical band as the tabs (tabs ${geom.tabTop}, chrome ${geom.minTop})`
+	);
+	h.check(
+		geom.addRight < geom.minLeft && geom.tabLeft < geom.minLeft,
+		`6.4 the tabs and the ＋ stay left of it, so nothing underlaps (＋ ends ${geom.addRight}, chrome starts ${geom.minLeft})`
+	);
+	h.check(
+		geom.icons.add && geom.icons.min && geom.icons.close,
+		`6.5 all three chrome buttons render a lucide svg (${JSON.stringify(geom.icons)})`
+	);
+	h.check(
+		!!geom.labels.add && !!geom.labels.min && !!geom.labels.close,
+		`6.6 ...and being icon-only, each carries an aria-label (${geom.labels.min} / ${geom.labels.close})`
+	);
+
+	// --- 7. the ＋ menu offers only views that are NOT already docked ---
+	/** a REAL click on the ＋ of the panel that is showing (the id repeats per panel) */
+	const clickAdd = async () => {
+		const at = await A.page.evaluate(() => {
+			const panel = [...document.querySelectorAll('#flow-list, #explorer-list')].find(
+				(el) => !el.classList.contains('hidden')
+			);
+			const b = panel?.querySelector('#dock-add-view');
+			if (!b) return null;
+			const r = b.getBoundingClientRect();
+			return { x: Math.round(r.left + r.width / 2), y: Math.round(r.top + r.height / 2) };
+		});
+		if (!at) throw new Error('no ＋ button in the visible dock panel');
+		await A.page.mouse.click(at.x, at.y);
+	};
+
+	/** open a menu and read its rows (ContextMenu rows are [role=menuitem] DIVs) */
+	const menuRows = () =>
+		A.page.evaluate(() =>
+			[...document.querySelectorAll('[role="menuitem"]')].map((el) => ({
+				label: el.textContent.trim(),
+				disabled: el.getAttribute('aria-disabled') === 'true' || el.classList.contains('ctx-disabled')
+			}))
+		);
+	const closeMenu = async () => {
+		await A.page.keyboard.press('Escape');
+		await A.page.waitForTimeout(250);
+	};
+
+	await clickAdd();
+	await A.page.waitForTimeout(400);
+	let rows = await menuRows();
+	h.check(rows.length === 5, `7.1 with flow + Explorer docked the ＋ menu lists 5 views (${rows.length})`);
+	h.check(
+		!rows.some((r) => /Explorer/.test(r.label)) && !rows.some((r) => /Node editor/.test(r.label)),
+		`7.2 ...and neither of the two already in the dock (${rows.map((r) => r.label).join(' | ')})`
+	);
+	await closeMenu();
+
+	// add one more tab and the list shrinks again — the filter is live, not a fixed list
+	await A.page.evaluate(() => {
+		window.__stores.flowCodeClose.set(false);
+		window.__stores.bottomDock.activateDock('flow');
+	});
+	await A.page.waitForTimeout(600);
+	await clickAdd();
+	await A.page.waitForTimeout(400);
+	rows = await menuRows();
+	h.check(
+		rows.length === 4 && !rows.some((r) => /Flow Code/.test(r.label)),
+		`7.3 docking Flow Code drops it from the list too (${rows.length}: ${rows.map((r) => r.label).join(' | ')})`
+	);
+	await closeMenu();
+	await A.page.evaluate(() => window.__stores.flowCodeClose.set(true));
+	await A.page.waitForTimeout(500);
+
+	// --- 8. a TAB's own context menu ---
+	/** right-click the strip tab whose label is `title`, in the VISIBLE panel */
+	const rightClickTab = async (title) => {
+		const box = await A.page.evaluate((title) => {
+			const panel = [...document.querySelectorAll('#flow-list, #explorer-list')].find(
+				(el) => !el.classList.contains('hidden')
+			);
+			const tab = [...panel.querySelectorAll('.tab-note')].find((b) => b.textContent.trim() === title);
+			if (!tab) return null;
+			const r = tab.getBoundingClientRect();
+			return { x: Math.round(r.left + r.width / 2), y: Math.round(r.top + r.height / 2) };
+		}, title);
+		if (!box) return false;
+		await A.page.mouse.click(box.x, box.y, { button: 'right' });
+		await A.page.waitForTimeout(400);
+		return true;
+	};
+
+	d = await dockState(A.page);
+	h.check(
+		d.visible === 'flow' && d.tabs.join(',') === 'explorer,flow',
+		`8.0 premise: both tabs open, the Node editor showing (visible=${d.visible} tabs=${d.tabs.join(',')})`
+	);
+
+	// the Explorer is a HIDDEN tab right now — the strip's own ✕ can only reach the
+	// visible one, so this menu is the only way to it
+	const gotExplorerMenu = await rightClickTab('Explorer');
+	h.check(gotExplorerMenu, '8.1 right-clicking a tab opens a menu (the Explorer tab, which is not showing)');
+	rows = await menuRows();
+	h.check(
+		rows.some((r) => /Undock/.test(r.label)) && rows.some((r) => r.label === 'Close'),
+		`8.2 ...offering Undock and Close (${rows.map((r) => r.label).join(' | ')})`
+	);
+	await A.page.evaluate(() =>
+		[...document.querySelectorAll('[role="menuitem"]')].find((el) => el.textContent.trim() === 'Close').click()
+	);
+	await A.page.waitForTimeout(600);
+	d = await dockState(A.page);
+	h.check(
+		d.explClosed === true && d.flowClosed === false,
+		`8.3 Close acts on the tab that was CLICKED, not on the visible one (explorer closed=${d.explClosed}, flow closed=${d.flowClosed})`
+	);
+	h.check(
+		d.visible === 'flow' && d.inset > 0,
+		`8.4 ...and the dock carries on with the surviving tab (visible=${d.visible})`
+	);
+
+	// The Shader editor is the ONE dock tab with no floating mode at all — no `docked`
+	// flag, no window chrome, no Undock button of its own — so its menu is Close ALONE
+	// rather than a row that would silently do nothing. (Its component IS mounted while
+	// hidden, like every other tab: only its MARKUP is {#if}-gated, which is how it
+	// reports itself as an occupant. The missing row is about the absent floating mode,
+	// not about the component being away.)
+	await A.page.evaluate(() => {
+		window.__stores.shaderEditorClose.set(false);
+		window.__stores.bottomDock.activateDock('flow');
+	});
+	await A.page.waitForTimeout(700);
+	const gotShaderMenu = await rightClickTab('Shader editor');
+	h.check(gotShaderMenu, '8.4b the Shader editor is a tab and right-clicks like the rest');
+	rows = await menuRows();
+	h.check(
+		rows.length === 1 && rows[0].label === 'Close',
+		`8.4c ...but offers Close ALONE — it has no floating mode to undock into (${rows.map((r) => r.label).join(' | ')})`
+	);
+	await closeMenu();
+	await A.page.evaluate(() => window.__stores.shaderEditorClose.set(true));
+	await A.page.waitForTimeout(500);
+
+	// Undock the VISIBLE tab: the arm reaches the panel and its own setDocked runs
+	const floatingBefore = await A.page.evaluate(() => !!document.querySelector('#flow-window'));
+	h.check(!floatingBefore, '8.5 premise: the Node editor has no floating window yet');
+	await rightClickTab('Node editor');
+	await A.page.evaluate(() =>
+		[...document.querySelectorAll('[role="menuitem"]')].find((el) => /Undock/.test(el.textContent)).click()
+	);
+	await A.page.waitForTimeout(800);
+	const undocked = await A.page.evaluate(() => {
+		let occ;
+		window.__stores.bottomDock.dockOccupants.subscribe((v) => (occ = v))();
+		let closed;
+		window.__stores.flowGraphClose.subscribe((v) => (closed = v))();
+		return {
+			floating: !!document.querySelector('#flow-window'),
+			present: !!occ.flow?.present,
+			closed,
+			ls: localStorage.getItem('flowDocked')
+		};
+	});
+	h.check(undocked.floating, '8.6 Undock produced the floating Node editor window');
+	h.check(
+		!undocked.present && undocked.closed === false,
+		`8.7 ...it left the dock without closing (docked occupant=${undocked.present}, closed=${undocked.closed})`
+	);
+	h.check(undocked.ls === 'false', `8.8 ...and the panel persisted its own mode (flowDocked=${undocked.ls})`);
+	// leave the lane as we found it
+	await A.page.evaluate(() => {
+		localStorage.setItem('flowDocked', 'true');
+		window.__stores.bottomDock.armDockMode('flow', true);
+	});
+	await A.page.waitForTimeout(500);
+
 	await h.finish(browser);
 });

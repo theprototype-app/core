@@ -9,7 +9,7 @@
 	// undocks into a floating window.
 	import { get } from 'svelte/store';
 	import { tick, untrack } from 'svelte';
-	import { explorerClose, mobileUndockAllowed, explorerSceneSaveArm, explorerDockArm, peers } from '../../stores/appStore.js';
+	import { explorerClose, mobileUndockAllowed, explorerSceneSaveArm, peers } from '../../stores/appStore.js';
 	import { showToast, enable3dPreview, stackOnDrop, confirmPrefabUpdate } from '../../stores/appStore.js';
 	import {
 		explorerFolders,
@@ -157,7 +157,7 @@
 	import { sceneAssets } from '$lib/sceneAssets';
 	import { setNodeData } from '$lib/nodesHandler';
 	import { findNodeAnyGraph } from '../../stores/flowStore';
-	import { bottomDockActive, visibleDockKey, dockMinimized, setDockOccupant, dockHeight } from '$lib/bottomDock';
+	import { bottomDockActive, visibleDockKey, dockMinimized, setDockOccupant, dockHeight, dockModeArm } from '$lib/bottomDock';
 	import { dragWindow } from '$lib/dragWindow';
 	import { focusStack } from '$lib/windowFocus';
 	import { tabbable, resizeGroup, tabGroups } from '$lib/windowTabs';
@@ -235,10 +235,13 @@
 	// inert at a live panel and the row would read as a dead button. It asks through
 	// the store instead and `setDocked` (which owns the flag, this branch and the dock
 	// occupancy together) is what acts. Same write-once shape as `explorerSceneSaveArm`.
+	// W5: the seam is GENERAL now (`dockModeArm`, keyed by dock key) so the tab strip's
+	// own context menu can undock any tab; the Explorer-only `explorerDockArm` it used
+	// to own is gone, and the Controls menu asks through this one.
 	$effect(() => {
-		const arm = $explorerDockArm;
-		if (!arm) return;
-		explorerDockArm.set(null);
+		const arm = $dockModeArm;
+		if (!arm || arm.key !== 'explorer') return;
+		dockModeArm.set(null);
 		untrack(() => {
 			if (arm.docked !== docked) setDocked(arm.docked);
 			explorerClose.set(false); // the rows say "Open as …", so open it

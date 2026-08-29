@@ -31,6 +31,9 @@
 	} from '$lib/uvEditor';
 	// the timeline's gesture engine: snapshot, re-apply the total, commit or revert once
 	import { createGesture } from '$lib/modalGrab';
+	// W5: the BINDING for this editor's grab key lives in the shortcut registry (an
+	// `external` row), so Settings can move it; the key itself is answered here.
+	import { comboOf, bindingOf } from '$lib/shortcuts';
 	import ContextMenu from '../ContextMenu.svelte';
 	// read-only: the Edit Mesh pick is what scopes the UV view (UV5)
 	import { faceEditSelectedTris, faceEditObject, triangleCount } from '$lib/faceEdit';
@@ -41,7 +44,7 @@
 	import { focusStack } from '$lib/windowFocus';
 	import { tabbable, resizeGroup, tabGroups } from '$lib/windowTabs';
 	import { clampWinSize, clampResize, anchorOf } from '$lib/windowSize';
-	import { setDockOccupant, dockHeight, visibleDockKey, dockMinimized, activateDock } from '$lib/bottomDock';
+	import { setDockOccupant, dockHeight, visibleDockKey, dockMinimized, activateDock, dockModeArm } from '$lib/bottomDock';
 
 	/** the armed transform modes, in 1/2/3 order */
 	const MODES = /** @type {['move'|'rotate'|'scale', string, string][]} */ ([
@@ -139,6 +142,20 @@
 		localStorage.setItem('uvDocked', String(v));
 		if (v) activateDock('uv');
 	}
+
+	// W5: consume the shared dock-mode arm — the tab strip's right-click menu asks
+	// through it (the Explorer has had this exact effect since 4b). `docked` is read
+	// from localStorage ONCE at mount, so writing that flag from outside is inert;
+	// `setDocked` owns the mode and is what has to run. Cleared as it is acted on.
+	$effect(() => {
+		const arm = $dockModeArm;
+		if (!arm || arm.key !== 'uv') return;
+		dockModeArm.set(null);
+		untrack(() => {
+			if (arm.docked !== docked) setDocked(arm.docked);
+			uvEditorClose.set(false);
+		});
+	});
 
 	const myGroup = $derived($tabGroups.find((g) => g.members.includes('uv')) ?? null);
 	const effW = $derived(myGroup ? myGroup.rect.width : winW);
@@ -1021,6 +1038,18 @@
 			e.preventDefault();
 			e.stopPropagation();
 		};
+		// W5: Blender's G arms Move — the same key the gizmo and the timeline take, and
+		// all three can have it because this handler runs in CAPTURE phase on the wrap
+		// and stops the event, so the global registry never sees the press (which is
+		// exactly what `scope: 'uv'` records over there). The COMBO is asked of the
+		// registry rather than written as a letter here, so rebinding the row in
+		// Settings really moves the key. Tested first, so the binding is authoritative
+		// whatever the user moves it onto.
+		if (comboOf(e) === bindingOf('uv.grab')) {
+			claim();
+			armXform('move');
+			return;
+		}
 		if (!ctrl && !e.altKey && (e.key === '1' || e.key === '2' || e.key === '3')) {
 			claim();
 			armXform(e.key === '1' ? 'move' : e.key === '2' ? 'rotate' : 'scale');

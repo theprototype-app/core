@@ -3,6 +3,7 @@
 	// tab in the bottom dock (Apply + Reload buttons in its toolbar); UNDOCKED mode is a
 	// floating, resizable window. Apply parses the text and REPLACES the graph locally +
 	// broadcasts so peers converge.
+	import { untrack } from 'svelte';
 	import { get } from 'svelte/store';
 	import CodeEditor from './CodeEditor.svelte';
 	import { flowNodes, flowEdges } from '../../stores/flowStore';
@@ -12,7 +13,7 @@
 	import { dragWindow } from '$lib/dragWindow';
 	import { focusStack } from '$lib/windowFocus';
 	import { tabbable, resizeGroup, tabGroups } from '$lib/windowTabs';
-	import { setDockOccupant, dockHeight, visibleDockKey, dockMinimized, activateDock } from '$lib/bottomDock';
+	import { setDockOccupant, dockHeight, visibleDockKey, dockMinimized, activateDock, dockModeArm } from '$lib/bottomDock';
 
 	let text = $state('');
 	let error = $state('');
@@ -29,6 +30,20 @@
 		localStorage.setItem('flowCodeDocked', String(v));
 		if (v) activateDock('flowcode');
 	}
+
+	// W5: consume the shared dock-mode arm — the tab strip's right-click menu asks
+	// through it (the Explorer has had this exact effect since 4b). `docked` is read
+	// from localStorage ONCE at mount, so writing that flag from outside is inert;
+	// `setDocked` owns the mode and is what has to run. Cleared as it is acted on.
+	$effect(() => {
+		const arm = $dockModeArm;
+		if (!arm || arm.key !== 'flowcode') return;
+		dockModeArm.set(null);
+		untrack(() => {
+			if (arm.docked !== docked) setDocked(arm.docked);
+			flowCodeClose.set(false);
+		});
+	});
 
 	// when tab-grouped, ALL members share one size — display the group's rect so a
 	// resize on any member shows on every tab (not just the active one).

@@ -4,7 +4,7 @@
 	// visible tab renders). UNDOCKED mode is a floating, resizable window. Both persist.
 	import { flowGraphClose, mobileUndockAllowed } from '../stores/appStore.js';
 	import { get } from 'svelte/store';
-	import { onMount } from 'svelte';
+	import { onMount, untrack } from 'svelte';
 	import { SvelteFlowProvider } from '@xyflow/svelte';
 	import ContextMenu from './ContextMenu.svelte';
 	import Nodes from './editors/Nodes.svelte';
@@ -16,7 +16,7 @@
 	import { tabbable, resizeGroup, tabGroups } from '$lib/windowTabs';
 	import { clampWinSize, clampResize, anchorOf } from '$lib/windowSize';
 	import { dockable } from '$lib/docking';
-	import { setDockOccupant, dockHeight, visibleDockKey, dockMinimized, activateDock } from '$lib/bottomDock';
+	import { setDockOccupant, dockHeight, visibleDockKey, dockMinimized, activateDock, dockModeArm } from '$lib/bottomDock';
 	import { dockAddItems } from '$lib/dockMenu';
 	import { fly } from 'svelte/transition';
 
@@ -66,6 +66,20 @@
 		localStorage.setItem('flowDocked', String(v));
 		if (v) activateDock('flow'); // re-docking makes it the visible tab
 	}
+
+	// W5: consume the shared dock-mode arm — the tab strip's right-click menu asks
+	// through it (the Explorer has had this exact effect since 4b). `docked` is read
+	// from localStorage ONCE at mount, so writing that flag from outside is inert;
+	// `setDocked` owns the mode and is what has to run. Cleared as it is acted on.
+	$effect(() => {
+		const arm = $dockModeArm;
+		if (!arm || arm.key !== 'flow') return;
+		dockModeArm.set(null);
+		untrack(() => {
+			if (arm.docked !== docked) setDocked(arm.docked);
+			flowGraphClose.set(false);
+		});
+	});
 
 	// tab-grouped windows share one size: show the group's rect so a resize on any
 	// member updates every tab, not just the active one.

@@ -2,7 +2,7 @@
 	import { Cog, Eye, FolderOpen, List, Maximize2, MessageSquare, Move, Pin, Play, RectangleGoggles, RotateCcw, SquarePen, Sun, Workflow } from '@lucide/svelte';
 	import { Listgroup } from 'flowbite-svelte';
 	import { objectsGroup, TControls, transformMode, isLocked, lockedObjects, globalScene, vrPassthrough, vrOverride, selectedObject, selectedObjects } from '../../stores/sceneStore';
-	import { chatHidden, flowGraphClose, explorerClose, objectListClose, objectContextMenu, renamingObject, advancedMode, showEnvInList, showLocalObjects, armExplorerDock, floatingToolbar } from '../../stores/appStore.js';
+	import { chatHidden, flowGraphClose, explorerClose, objectListClose, objectContextMenu, renamingObject, advancedMode, showEnvInList, showLocalObjects, floatingToolbar } from '../../stores/appStore.js';
 	import { systemGroupNames } from '$lib/moduleSDK';
 	import { ENV_ROOT } from '$lib/environment';
 	import { flyTo } from '$lib/objectActions';
@@ -29,7 +29,7 @@
 	import { tabbable, groupRectOf, moveGroupOf, resizeGroup } from '$lib/windowTabs';
 	import { clampWinSize, clampResize, anchorOf } from '$lib/windowSize';
 	import { dockable } from '$lib/docking';
-	import { visibleDockKey, dockOccupants, FLOW_FAMILY } from '$lib/bottomDock';
+	import { visibleDockKey, dockOccupants, FLOW_FAMILY, armDockMode } from '$lib/bottomDock';
 	import { togglePanel } from '$lib/panelToggles';
 	import { requestPlay, willEnterXR, willEnterAR, vrSupported, arSupported, xrSessionFailed } from '$lib/playMode';
 	import { dockAddItems } from '$lib/dockMenu';
@@ -827,9 +827,12 @@
 	 *  reload — closing and reopening does not help, because the component stays
 	 *  mounted the whole time. The panel owns the mode (flag + render branch + dock
 	 *  occupancy in one function), so we ASK and it acts — the write-once arm store it
-	 *  already uses for the inline scene-save request. */
+	 *  already uses for the inline scene-save request.
+	 *
+	 *  W5: that arm is `dockModeArm` now — the same seam keyed by DOCK KEY, so the tab
+	 *  strip's context menu can undock any tab through it. This row just names its own. */
 	function setExplorerMode(docked: boolean) {
-		armExplorerDock(docked);
+		armDockMode('explorer', docked);
 	}
 
 	function openCustomize() {

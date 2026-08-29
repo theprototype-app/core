@@ -55,14 +55,43 @@ import { selectedObject } from '../stores/sceneStore';
  *   action?: () => void,
  *   when?: () => boolean,
  *   fixed?: boolean,
- *   fixedReason?: string
+ *   fixedReason?: string,
+ *   external?: boolean,
+ *   scope?: string
  * }} Shortcut
  */
 
 /** What a caller may hand registerShortcut — `id` is derived when absent.
  * @typedef {{ id?: string, keys: string, group: string, label: string,
  *   action?: () => void, when?: () => boolean,
- *   fixed?: boolean, fixedReason?: string }} ShortcutInput */
+ *   fixed?: boolean, fixedReason?: string,
+ *   external?: boolean, scope?: string }} ShortcutInput */
+
+/*
+ * W5 adds two things to the shape above, and they are NOT the same thing.
+ *
+ * `external: true` — the combo is REBINDABLE here and executed somewhere else. Some
+ * commands may only fire inside one editor's focus scope (the UV editor and the
+ * animation timeline both claim keys in a CAPTURE-phase listener on their own pane,
+ * because panel chrome swallows the delegated form and because their digits are taken
+ * twice over app-wide). Such a command cannot be a registry `action` — the registry's
+ * window listener has no idea where the focus is — but its BINDING still belongs in
+ * one place, or Settings shows a key the user cannot change. So the registry owns the
+ * combo, `handleKeydown` skips the row (it has no action), and the owning editor asks
+ * `bindingOf(id)` what it should answer to. That is the distinction `isRebindable` was
+ * built to draw and did not yet: `fixed` = a display label, `external` = a real combo
+ * with an owner elsewhere.
+ *
+ * `scope` — WHERE a combo means something. Absent = global (the window listener).
+ * Two rows COLLIDE only when their scopes are equal, so:
+ *   · global vs global      -> conflict (the old, and only, behaviour)
+ *   · same scope vs itself  -> conflict (two UV commands cannot both be G)
+ *   · scoped vs global      -> fine    (the editor's capture handler stops the event
+ *                                       before the registry ever sees it)
+ *   · scope A vs scope B    -> fine    (two editors, never focused at once)
+ * That is what lets Move-the-gizmo, arm-Move-in-UV and arm-Move-in-the-timeline all
+ * default to G, which is the whole point of the key.
+ */
 
 /**
  * Delete the viewport selection from the keyboard (154). The node editor owns
@@ -116,6 +145,38 @@ export const shortcuts = [
 		group: 'Transform',
 		label: 'Scale',
 		action: () => setTransformMode('scale')
+	},
+	{
+		// W5: Blender's G. A second name for Move, because that is the muscle memory
+		// people arrive with — 1 keeps working and neither is the "real" one.
+		//
+		// G is in MESH_EDIT_KEYS, so while a live mesh session holds its hotkeys the
+		// registry stands down for this key and G stays the session's grab. That is
+		// correct and deliberate: inside a mesh edit, G means grab the ELEMENTS.
+		id: 'transform.grab',
+		keys: 'G',
+		group: 'Transform',
+		label: 'Move (grab) — same as 1',
+		action: () => setTransformMode('translate')
+	},
+	{
+		// External + scoped: the UV editor arms this itself, from its own capture-phase
+		// keydown, so it can only ever fire while that canvas holds focus. Listed and
+		// rebindable here so the binding lives in ONE place.
+		id: 'uv.grab',
+		keys: 'G',
+		group: 'UV editor',
+		label: 'Arm Move (in the UV editor)',
+		external: true,
+		scope: 'uv'
+	},
+	{
+		id: 'animation.grab',
+		keys: 'G',
+		group: 'Animation',
+		label: 'Arm Move (in the timeline)',
+		external: true,
+		scope: 'animation'
 	},
 	{
 		id: 'movement.fly',
@@ -483,12 +544,32 @@ export function unregisterShortcutGroup(group) {
 	}
 }
 
-/** May this entry be rebound at all? Display-only rows (`fixed`) and rows with no
- * action of their own — a module's declared bindings, which the module reads
- * straight off the keyboard — are listed for discoverability and nothing more.
+/** May this entry be rebound at all?
+ *
+ * `fixed` rows are display LABELS ('W A S D', 'V (hold)') and never combos, so nothing
+ * can be bound onto them. Otherwise a row needs an OWNER for the key: either an action
+ * of its own, or `external: true` — which says the combo is real and somebody else runs
+ * it (see the note at the top). A module's declared binding, which the module reads
+ * straight off the keyboard with no combo of ours, has neither and stays listed for
+ * discoverability alone.
  * @param {Shortcut} s */
 export function isRebindable(s) {
-	return !!s && !s.fixed && typeof s.action === 'function';
+	return !!s && !s.fixed && (typeof s.action === 'function' || s.external === true);
+}
+
+/**
+ * The combo `id` currently answers to, overrides included — the read half of an
+ * `external` row. An editor that owns its own keydown asks this instead of hard-coding
+ * a letter, so rebinding the row in Settings actually moves the key.
+ * @param {string} id @returns {string|null}
+ */
+export function bindingOf(id) {
+	return shortcuts.find((s) => s.id === id)?.keys ?? null;
+}
+
+/** Where a row's combo means something; absent = global. @param {string=} id */
+function scopeOf(id) {
+	return shortcuts.find((s) => s.id === id)?.scope ?? null;
 }
 
 /**
@@ -499,12 +580,21 @@ export function isRebindable(s) {
  * warning — MESH_EDIT_KEYS is a list of literal COMBOS, so the stand-down below
  * keeps working for a rebound combo too, and the key simply does nothing while a
  * mesh session is open. Worth saying out loud, never worth blocking.
+ *
+ * W5: the search is SCOPED. Only rows that can hear the same press collide — see the
+ * scope rule at the top of the file. `scope` is taken from the row being rebound
+ * unless a caller states one, so the existing `conflictOf(combo, id)` call site keeps
+ * meaning what it always did.
  * @param {string} keys
  * @param {string} [excludeId]
+ * @param {string|null} [scope]
  * @returns {{ shortcut: Shortcut | null, meshEdit: boolean }}
  */
-export function conflictOf(keys, excludeId) {
-	const other = shortcuts.find((s) => s.id !== excludeId && isRebindable(s) && s.keys === keys);
+export function conflictOf(keys, excludeId, scope) {
+	const mine = scope === undefined ? scopeOf(excludeId) : scope;
+	const other = shortcuts.find(
+		(s) => s.id !== excludeId && isRebindable(s) && s.keys === keys && (s.scope ?? null) === (mine ?? null)
+	);
 	return { shortcut: other ?? null, meshEdit: MESH_EDIT_KEYS.includes(keys) };
 }
 
@@ -653,7 +743,12 @@ function handleKeydown(event) {
 		get(meshEditHotkeys)
 	)
 		return;
-	const shortcut = shortcuts.find((s) => s.keys === combo);
+	// `external` rows are somebody else's key (an editor's own capture handler runs
+	// them) and are skipped EXPLICITLY, not merely by having no action: they share
+	// combos with global rows on purpose — G is Move here and Arm Move in two editors
+	// — and a bare `find` on `keys` could return one of them and shadow the real
+	// command depending on where it happened to sit in the array.
+	const shortcut = shortcuts.find((s) => s.keys === combo && !s.external);
 	if (!shortcut || !shortcut.action) return;
 	// 15-B6: app modals are non-modal <dialog>s, so the page behind them is NOT
 	// inert and these window handlers still fire — every modal now mutes them

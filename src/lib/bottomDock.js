@@ -53,6 +53,33 @@ dockHeight.subscribe((value) => {
  */
 export const dockMinimized = writable(false);
 
+/**
+ * W5: ASK a panel to become a dock tab / a floating window.
+ *
+ * Every panel's `docked` flag is component-local `$state`, read from localStorage
+ * exactly ONCE at mount — so writing that key from outside is MEASURABLY inert at a
+ * live panel and the caller's row reads as a dead button. The panel's own `setDocked`
+ * owns the mode (the flag, the render branch and the dock occupancy move together),
+ * so an outside caller asks and the owner acts. That seam already existed for the
+ * Explorer alone (`explorerDockArm` in appStore); this is the same shape GENERALISED
+ * to every DOCK_FAMILY member, which is what lets the tab strip's own context menu
+ * undock whichever tab was right-clicked — including one that is not currently the
+ * visible panel, since a hidden tab hides with a class and stays mounted.
+ *
+ * Write-once: a consumer clears it as it acts, and the `token` makes two identical
+ * asks in a row two distinct events.
+ *
+ * It lives HERE and not in appStore because it is dock bookkeeping and holds no app
+ * state (see the no-app-stores note at the top of this module).
+ * @type {import('svelte/store').Writable<{token: number, key: string, docked: boolean}|null>}
+ */
+export const dockModeArm = writable(null);
+let dockArmToken = 0;
+/** @param {string} key @param {boolean} docked */
+export function armDockMode(key, docked) {
+	dockModeArm.set({ token: ++dockArmToken, key, docked: !!docked });
+}
+
 /** {key: {present, height}} — docked AND open */
 export const dockOccupants = writable(
 	/** @type {Record<string, {present: boolean, height: number}>} */ ({})

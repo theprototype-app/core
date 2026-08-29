@@ -77,24 +77,10 @@ let sceneSaveArmToken = 0;
 export function armExplorerSceneSave(folderId = null) {
 	explorerSceneSaveArm.set({ token: ++sceneSaveArmToken, folderId: folderId ?? null });
 }
-/**
- * 4b — the SAME arm seam for "open the Explorer as a dock tab / as a floating window",
- * which the Controls toolbar's Explorer menu offers.
- *
- * Why this and not a `localStorage.setItem('explorerDocked', …)` from the toolbar: that
- * flag is read ONCE, at mount, into component-local `$state` — so writing it at a live
- * Explorer changes nothing until the next reload, and the menu row would look like a
- * dead button. `setDocked` inside the panel is what actually owns the mode (the flag,
- * the render branch AND the dock occupancy move together), so the toolbar ASKS and the
- * owner acts. Consumed (cleared) as it is acted on, like its sibling above.
- * @type {import('svelte/store').Writable<{token: number, docked: boolean}|null>}
- */
-export const explorerDockArm = writable(null);
-let dockArmToken = 0;
-/** @param {boolean} docked */
-export function armExplorerDock(docked) {
-	explorerDockArm.set({ token: ++dockArmToken, docked: !!docked });
-}
+// 4b had an Explorer-ONLY twin of the arm above ("open the Explorer as a dock tab / as
+// a floating window", from the Controls toolbar). W5 generalised it to every dock tab —
+// the tab strip's context menu can undock any of them — and it moved in with the rest of
+// the dock bookkeeping: `dockModeArm` / `armDockMode(key, docked)` in $lib/bottomDock.
 export const objectListClose = writable(true);
 export const chatHidden = writable('hidden');
 // AI assistant (roadmap #10): '' = window open, 'hidden' = closed (mirrors chat).

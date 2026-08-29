@@ -6,6 +6,10 @@
 	// rename, export/import and delete.
 	import { Modal, Button } from 'flowbite-svelte';
 	import { sessionsOpen, hidePanels, restorePanels, showToast } from '../../stores/appStore.js';
+	// R22 round 13: MOUNT is not Load. Load replaces the whole project; mounting adds this
+	// saved project to the Explorer as a root of its own, above Library, leaving whatever is
+	// open untouched. Only a PROJECT has a library to mount, so a scene is not offered one.
+	import { mountedVolumes, mountVolume } from '$lib/mountedVolumes';
 	import {
 		sessions,
 		loadSessions,
@@ -119,6 +123,9 @@
 	$: shownSessions = $sessions.filter((/** @type {any} */ m) =>
 		kindFilter === 'all' ? true : kindFilter === 'project' ? m.hasLibrary : !m.hasLibrary
 	);
+	/** sessionIds already mounted, so the row can say so instead of refusing on click */
+	let mountedIds = new Set();
+	$: mountedIds = new Set($mountedVolumes.map((/** @type {any} */ v) => v.sessionId));
 	$: shownBytes = shownSessions.reduce(
 		(/** @type {number} */ sum, /** @type {any} */ m) => sum + (Number(m.bytes) || 0),
 		0
@@ -651,6 +658,17 @@
 									sessionsOpen.set(false);
 								}}>▶ Load</button
 							>
+							{#if meta.hasLibrary}
+								<button
+									class="ui-button-quiet session-mount"
+									disabled={mountedIds.has(meta.id)}
+									title={mountedIds.has(meta.id)
+										? 'Already mounted — it is above Library in the Explorer'
+										: "Add this project's files to the Explorer as a root of its own, above Library. The scene on screen is not touched."}
+									onclick={() => void mountVolume(meta.id)}
+									>⧉ {mountedIds.has(meta.id) ? 'Mounted' : 'Mount'}</button
+								>
+							{/if}
 							<button
 								class="ui-button-quiet session-import"
 								title={meta.hasLibrary
@@ -756,6 +774,11 @@
 							<div class="flex flex-wrap gap-1">
 								<button class="ui-button-quiet session-load" title="Replace the scene with this entry (peers must accept)"
 									onclick={() => { requestLoadSession(meta.id); sessionsOpen.set(false); }}>▶ Load</button>
+								{#if meta.hasLibrary}
+									<button class="ui-button-quiet session-mount" disabled={mountedIds.has(meta.id)}
+										title={mountedIds.has(meta.id) ? 'Already mounted — it is above Library in the Explorer' : "Add this project's files to the Explorer as a root of its own, above Library. The scene on screen is not touched."}
+										onclick={() => void mountVolume(meta.id)}>⧉ {mountedIds.has(meta.id) ? 'Mounted' : 'Mount'}</button>
+								{/if}
 								<button class="ui-button-quiet session-import" title={meta.hasLibrary ? "Browse this entry's files, and pick objects out of any scene in it" : 'Pick objects from this scene to add to the one on screen'}
 									onclick={() => openPicker(meta)}>⤵ {meta.hasLibrary ? 'Import files…' : 'Import objects…'}</button>
 								{#if meta.hasLibrary}

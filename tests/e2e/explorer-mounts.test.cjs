@@ -996,5 +996,101 @@ h.run(async () => {
 		`…and the discarded edit never reached the saved project (${discarded.join(',')})`
 	);
 
+
+
+	// ---- 17. MOUNT FROM THE SESSIONS MANAGER ----------------------------------------
+	// The user asked for this button beside Load, and the pair IS the feature: Load
+	// REPLACES the open project, Mount ADDS this one beside it. Goes last and saves under
+	// its own names, because a section that saves perturbs every premise above it.
+	// Re-uses librarySnapshot rather than a second reader, so "untouched" means here
+	// exactly what it means in section 1.
+	// ---------------------------------------------------------------------------------
+	const sBefore = await librarySnapshot(A);
+	const savedNamesNow = () =>
+		page.evaluate(() => {
+			let v;
+			window.__stores.sessions.sessions.subscribe((x) => (v = x))();
+			return (v ?? []).map((m) => m.name);
+		});
+
+	await saveProject(A, 'Wharf');
+	// a SCENE entry as well, so "who is offered a Mount" can be read off the two kinds.
+	// Same shape as saveProject, waiting on the STORE rather than a fixed sleep - a save
+	// that silently did not happen would otherwise show up later as a missing row.
+	await page.evaluate(() => window.__stores.sessionsOpen.set(true));
+	await page.waitForTimeout(900);
+	await page.locator('#session-save').click();
+	await page.waitForTimeout(400);
+	await page.locator('#session-save-name').fill('PlainScene');
+	await page.locator('#session-save-confirm').click();
+	await h.eventually(
+		savedNamesNow,
+		(names) => names.includes('PlainScene'),
+		'premise: a plain SCENE entry is saved too',
+		25000
+	);
+
+	// the view is a remembered pref and only LIST rows carry .session-row - a grid card
+	// is .session-card alone, so pin the view rather than inherit whichever one a
+	// previous section left behind
+	await page.evaluate(() => window.__stores.sessionsOpen.set(true));
+	await page.waitForTimeout(700);
+	await page.locator('#session-view-list').click();
+	await page.waitForTimeout(500);
+
+	const wharfRow = page.locator('.session-row').filter({ hasText: 'Wharf' }).first();
+	const sceneRow = page.locator('.session-row').filter({ hasText: 'PlainScene' }).first();
+	await wharfRow.waitFor({ state: 'visible', timeout: 15000 }).catch(() => {});
+	h.check(await wharfRow.isVisible(), 'premise: the saved project has a row in the manager');
+	h.check(await sceneRow.isVisible(), 'premise: the saved scene has one too');
+
+	const mountBtn = wharfRow.locator('.session-mount');
+	h.check(await mountBtn.isVisible(), 'a PROJECT row offers Mount beside Load');
+
+	// paired in ONE verdict on purpose: a count of 0 is also what a row that never
+	// rendered returns, so the absence only means anything beside the Load that IS there
+	const sceneMounts = await sceneRow.locator('.session-mount').count();
+	const sceneLoads = await sceneRow.locator('.session-load').count();
+	h.check(
+		sceneMounts === 0 && sceneLoads === 1,
+		'a SCENE row keeps Load and is offered NO Mount - it has no library, so the offer is ABSENT rather than refusing on click (load=' +
+			sceneLoads +
+			', mount=' +
+			sceneMounts +
+			')'
+	);
+
+	await mountBtn.click();
+	// mountVolume awaits the idb load, the session read and the write - wait on the
+	// THING, not on a guess at how long three awaits take on a loaded box
+	await h.eventually(
+		() => vols(A),
+		(list) => list.length === 1 && list[0].name === 'Wharf',
+		'clicking Mount mounts it',
+		20000
+	);
+
+	h.check(
+		await wharfRow.isVisible(),
+		'...and the manager stays OPEN, because mounting is additive - Load closes it, Mount does not'
+	);
+	const mountLabel = (await mountBtn.textContent()) || '';
+	h.check(
+		mountLabel.includes('Mounted') && (await mountBtn.isDisabled()),
+		'...the row reads Mounted and is disabled, rather than offering a click that would refuse (' +
+			mountLabel.trim() +
+			')'
+	);
+
+	const sAfter = await librarySnapshot(A);
+	h.check(
+		sAfter === sBefore,
+		'...and the open library is untouched - a mount is not a load (' +
+			(sAfter === sBefore ? 'identical' : 'CHANGED') +
+			')'
+	);
+	await page.evaluate(() => window.__stores.sessionsOpen.set(false));
+	await page.waitForTimeout(400);
+
 	await h.finish(browser);
 });

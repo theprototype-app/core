@@ -43,6 +43,9 @@
 		clampPreviewOpacity
 	} from '$lib/filePreview';
 	import { activeFolder, explorerFolders, itemBlob } from '$lib/explorer';
+	// R22 round 13 P3: the arrows may walk into a MOUNTED project's folder, whose files are
+	// not in the library's blob store — `volumeBlob` reads them from the saved payload.
+	import { volumeOf, volumeFolders, volumeKey, volumeBlob } from '$lib/mountedVolumes';
 	import { dragWindow } from '$lib/dragWindow';
 	import { focusStack } from '$lib/windowFocus';
 	import ModelPreview from './ModelPreview.svelte';
@@ -218,13 +221,30 @@
 	const place = $derived(previewPosition($previewSiblings.entries, walkId));
 	const canPrev = $derived(!!stepPreview($previewSiblings.entries, walkId, -1));
 	const canNext = $derived(!!stepPreview($previewSiblings.entries, walkId, 1));
-	/** the folder ABOVE the one being browsed — Backspace's destination */
-	const parentId = $derived(
-		typeof $activeFolder === 'string' && !$activeFolder.includes(':')
+	/**
+	 * The folder ABOVE the one being browsed — Backspace's destination.
+	 *
+	 * The bare `!includes(':')` test reads every namespaced location as "no parent", which
+	 * is correct for prefabs / packs / scene (they have none) and wrong for a MOUNT, whose
+	 * folders form a real tree. So the volume scope answers first, in the same namespaced
+	 * key the Explorer navigates by.
+	 */
+	const volHere = $derived(volumeOf($activeFolder));
+	const parentId = $derived.by(() => {
+		if (volHere)
+			return volHere.folderId
+				? volumeKey(
+						volHere.volumeId,
+						volumeFolders(volHere.volumeId).find((f: any) => f.id === volHere.folderId)?.parentId ?? null
+					)
+				: null;
+		return typeof $activeFolder === 'string' && !$activeFolder.includes(':')
 			? ($explorerFolders.find((f: any) => f.id === $activeFolder)?.parentId ?? null)
-			: null
+			: null;
+	});
+	const upAvailable = $derived(
+		!!volHere?.folderId || (typeof $activeFolder === 'string' && !$activeFolder.includes(':'))
 	);
-	const upAvailable = $derived(typeof $activeFolder === 'string' && !$activeFolder.includes(':'));
 
 	// asked for again while already open: come forward, change nothing (21-I3's ruling)
 	$effect(() => {
@@ -415,7 +435,11 @@
 		if (kind === 'image') {
 			// a row whose bytes are not on this device shows nothing rather than a broken
 			// image — the card already says so, and stepping past it is the sane answer
-			const blob = item.dataUrl ? null : await itemBlob(item.id);
+			const blob = item.dataUrl
+				? null
+				: item.volumeItem
+					? await volumeBlob(item.volumeId, item.id)
+					: await itemBlob(item.id);
 			url = item.dataUrl || (blob ? URL.createObjectURL(blob) : '');
 		}
 		setPreviewWindow(winId, {

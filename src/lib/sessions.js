@@ -514,6 +514,30 @@ export async function renameSession(id, name) {
 	await loadSessions();
 }
 
+/**
+ * R22 round 13 P3b — SAVE A MOUNTED VOLUME BACK.
+ *
+ * Replace one saved record’s library block in place. The counterpart of
+ * `saveSessionWithLibrary`, and deliberately NOT a variant of it: that one BUILDS a
+ * payload from the live stores, while this one takes rows a mounted volume has been
+ * editing and touches no live store at all — not the Explorer, not `projectManifest`,
+ * not the scene. The record’s own scene snapshot is left exactly as it was saved.
+ *
+ * It lives here rather than as an idb reach from `mountedVolumes` because the key prefix
+ * and the list refresh are this module’s business: a saved entry’s file COUNT is part of
+ * its meta, so the card must be re-read or it goes on claiming the old number.
+ * @param {string} id @param {{folders: any[], items: any[]}} library
+ * @returns {Promise<boolean>} false when the record is gone
+ */
+export async function writeSessionLibrary(id, library) {
+	const payload = await idbGet(KEY + id);
+	if (!payload) return false;
+	payload.library = { folders: library?.folders ?? [], items: library?.items ?? [] };
+	await idbPut(KEY + id, payload);
+	await loadSessions();
+	return true;
+}
+
 /** JSON string for a .session.json download @param {any} payload */
 export function exportSession(payload) {
 	return JSON.stringify(payload);

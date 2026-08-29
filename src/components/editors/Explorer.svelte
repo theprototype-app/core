@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { Box, Boxes, Download, ExternalLink, Folder, FolderTree, Gift, Globe, House, LayoutGrid, List, LoaderCircle, PackageOpen, Share2 } from '@lucide/svelte';
+	import { Box, Boxes, Download, ExternalLink, Folder, FolderTree, Gift, Globe, HardDrive, House, LayoutGrid, List, LoaderCircle, PackageOpen, RefreshCw, Save, Share2, X } from '@lucide/svelte';
 	import Icon from '../ui/Icon.svelte';
 	// Explorer (95, tree v2 in 106): dockable asset browser — real file-manager
 	// tree on the left (inline create/rename, expand/collapse, drag re-parent,
@@ -134,6 +134,23 @@
 		resetColumnWidth,
 		moveColumn
 	} from '$lib/explorerView';
+	// R22 round 13 P3: MOUNTED PROJECT VOLUMES — other saved projects browsed as roots of
+	// their own, above Library. The namespace ('vol:<id>[:<folderId>]') is threaded through
+	// ONE derived scope below (`volScope`) rather than sprinkled as startsWith checks; the
+	// leaf carries the reasoning, including why none of this can reach the shared index.
+	import {
+		mountedVolumes,
+		loadMountedVolumes,
+		mountVolume,
+		unmountVolume,
+		refreshVolume,
+		revalidateVolumes,
+		saveVolume,
+		volumeOf,
+		volumeKey,
+		volumeFolders,
+		volumeBlob
+	} from '$lib/mountedVolumes';
 	import {
 		projectManifest,
 		staleSceneHash,
@@ -186,7 +203,9 @@
 	} from '$lib/prefabs';
 	// 21-I3: Export ▸ scene (.tpscene) — a scene containing just this prefab. Built from
 	// the EMPTY payload plus this one object, never a capture of the live scene.
-	import { emptySessionPayload, exportSessionZip } from '$lib/sessions';
+	// R22 round 13 P3: `sessions` is read for the Mount picker (which saved entries are
+	// PROJECTS) and to notice a mounted volume whose source record has been deleted.
+	import { emptySessionPayload, exportSessionZip, sessions, loadSessions } from '$lib/sessions';
 	import { selectedObjects } from '../../stores/sceneStore.js';
 	import { sceneAssets } from '$lib/sceneAssets';
 	import { setNodeData } from '$lib/nodesHandler';
@@ -247,6 +266,7 @@
 		docked = true;
 	loadExplorer();
 	loadPrefabs();
+	loadMountedVolumes();
 
 	function setDocked(v: boolean) {
 		docked = v;
@@ -437,6 +457,11 @@
 	function passesFilter(item: any) {
 		if (kindFilter.size && !kindFilter.has(item.kind)) return false;
 		if (localOnly) {
+			// R22 round 13 P3: a mounted file is local BY CONSTRUCTION — it is a file on this
+			// machine that no peer can reach, which is exactly what this filter asks for. It
+			// takes the early yes because the share axis below reads a library record it has
+			// none of (isOwnedItem excludes it, so the next line would empty every mount).
+			if (item.volumeItem) return true;
 			// a card with no library record of its own has no share state to be wrong about,
 			// and a REMOTE row is by definition not local — both are out
 			if (!isOwnedItem(item)) return false;
@@ -832,6 +857,48 @@
 		scene: 'ico-prefab' // 21-F4: levels share the prefab tint
 	};
 
+	// ---- R22 round 13 P3: WHERE AM I, when it is not the library ----------------------
+	/**
+	 * THE MOUNT SCOPE, and the only `vol:` test in this component. Declared ABOVE every
+	 * derived that reads it — a `$derived` referenced by an earlier one is a
+	 * use-before-declaration (the same family as the module-level TDZ trap), which is the
+	 * rule `listView` states for itself further down.
+	 *
+	 * Threading one scope rather than sprinkling `startsWith('vol:')` is what keeps the
+	 * eleven read paths that must learn the namespace honest: each asks "am I in a mount,
+	 * and which folder of it", and the parse lives in the leaf where it is testable.
+	 */
+	const volScope = $derived(volumeOf($activeFolder));
+	/** the mounted volume RECORD for the current scope, or null. Reads the store directly
+	 *  so the grid re-renders on a buffered edit — `volumeById` reaches it through get(),
+	 *  which registers no dependency (the documented rule). */
+	const volume = $derived(
+		volScope ? ($mountedVolumes.find((v: any) => v.id === volScope.volumeId) ?? null) : null
+	);
+	/** a volume folder as a GRID/TREE row. Its `id` is the namespaced key, not the bare
+	 *  folder uuid, for a reason that bites immediately: a project saved from THIS machine
+	 *  carries the library's own folder uuids verbatim, so a bare id would make one drag
+	 *  highlight two rows and one selection ambiguous. The raw id rides as `folderId`. */
+	const volFolderRow = (vol: any, f: any): any => ({
+		id: volumeKey(vol.id, f.id),
+		volumeId: vol.id,
+		folderId: f.id,
+		name: f.name,
+		parentId: f.parentId ?? null
+	});
+	/** the kind filter, applied to a volume's own subtree (the library's `folderPassesFilter`
+	 *  walks `explorerItems`, which holds nothing of a mount). The share axis has no meaning
+	 *  here — a mount is local by construction — so `localOnly` never hides a mounted row. */
+	function volFolderPasses(vol: any, folder: any) {
+		if (!kindFilter.size) return true;
+		const subtree = [folder.folderId];
+		for (let i = 0; i < subtree.length; i++)
+			for (const f of vol.folders) if (f.parentId === subtree[i]) subtree.push(f.id);
+		return vol.items.some(
+			(i: any) => subtree.includes(i.folderId ?? '') && kindFilter.has(i.kind)
+		);
+	}
+
 	// folders as a flat indented tree, respecting expansion (106.6)
 	const folderTree = $derived.by(() => {
 		const list = $explorerFolders;
@@ -847,14 +914,37 @@
 		return out;
 	});
 
-	const childFolders = $derived(
-		$explorerFolders
+	const childFolders = $derived.by((): any[] => {
+		// P3: inside a mount the subfolders come from the VOLUME, and nothing about the
+		// library is read at all
+		if (volScope)
+			return volume
+				? volume.folders
+						.filter((f: any) => (f.parentId ?? null) === volScope.folderId)
+						.map((f: any) => volFolderRow(volume, f))
+						.filter((f: any) => volFolderPasses(volume, f))
+				: [];
+		return $explorerFolders
 			.filter((f) => (f.parentId ?? null) === ($activeFolder === 'prefabs' ? '__none__' : ($activeFolder ?? null)))
 			// R22-R8: the Local-only filter reaches FOLDERS too, not just their contents
-			.filter(folderPassesFilter)
-	);
+			.filter(folderPassesFilter);
+	});
 
 	const gridItems = $derived.by(() => {
+		// P3: A MOUNTED PROJECT'S FILES. First branch, and deliberately the whole of it —
+		// none of the five library sources below (items, prefabs, packs, the manifest's
+		// missing scenes, the shared index's remote rows) means anything inside a mount, and
+		// mixing any of them in would put a card from THIS project into a view of another.
+		if (volScope) {
+			if (!volume) return [];
+			const q = search.trim().toLowerCase();
+			const rows = q
+				? volume.items.filter((i: any) => i.name.toLowerCase().includes(q))
+				: volume.items.filter((i: any) => (i.folderId ?? null) === volScope.folderId);
+			return rows
+				.map((i: any) => ({ ...i, volumeId: volume.id, volumeName: volume.name, volumeItem: true }))
+				.filter(passesFilter);
+		}
 		if ($activeFolder === 'prefabs')
 			return $prefabs.map((p) => ({
 				id: 'prefab:' + p.id,
@@ -1072,12 +1162,32 @@
 		const a = $activeFolder;
 		if (typeof a !== 'string' || !a) return null;
 		if (a === 'prefabs' || a === 'packs' || a.startsWith('pack:') || a.startsWith('scene')) return null;
+		// P3: a MOUNT is not a place in this library either — a scene saved while browsing
+		// one must not be written with a folderId no library folder holds (which is an
+		// orphan: invisible, and in the Scenes folder's case unreachable)
+		if (volumeOf(a)) return null;
 		return a;
 	}
 
 	// 197d: breadcrumb trail for the current location (click a crumb to navigate)
 	const crumbs = $derived.by(() => {
 		const a = $activeFolder;
+		// P3: a mount's trail starts at the mount, never at "Library" — that is precisely
+		// where these files are not (the bin's own lesson, one root over)
+		if (volScope) {
+			const out = [
+				{ label: volume?.name ?? 'Mounted project', id: volumeKey(volScope.volumeId) as string | null }
+			];
+			const rows = volume?.folders ?? [];
+			const chain: any[] = [];
+			let cur: any = rows.find((f: any) => f.id === volScope.folderId);
+			while (cur) {
+				chain.unshift(cur);
+				cur = cur.parentId ? rows.find((f: any) => f.id === cur.parentId) : undefined;
+			}
+			for (const f of chain) out.push({ label: f.name, id: volumeKey(volScope.volumeId, f.id) });
+			return out;
+		}
 		if (a === 'prefabs') return [{ label: 'Prefabs', id: 'prefabs' as string | null }];
 		if (a === 'packs') return [{ label: 'Packs', id: 'packs' as string | null }];
 		// R22 round 7: the bin is its own place, so the breadcrumb has to say so — it read
@@ -1115,6 +1225,19 @@
 	const itemFolderPath = $derived.by(() => {
 		if (!selItem) return '';
 		const parts: string[] = [];
+		// P3: a mounted file's path is inside its own project, and saying "Library" would
+		// name the one place it is not
+		if (selItem.volumeItem) {
+			const rows = volumeFolders(selItem.volumeId);
+			let at: any = selItem.folderId ?? null;
+			while (at) {
+				const f = rows.find((x: any) => x.id === at);
+				if (!f) break;
+				parts.unshift(f.name);
+				at = f.parentId ?? null;
+			}
+			return (selItem.volumeName ?? 'Mounted project') + (parts.length ? ' / ' + parts.join(' / ') : '');
+		}
 		let parent: any = selItem.folderId ?? null;
 		while (parent) {
 			const f = $explorerFolders.find((x: any) => x.id === parent);
@@ -1617,6 +1740,13 @@
 	function goUp() {
 		const a = $activeFolder;
 		if (a == null) return;
+		// P3: up out of a mount's subfolder walks the VOLUME's tree; up from its root leaves
+		// for the Library, which is what every other pinned root here does
+		if (volScope) {
+			if (!volScope.folderId) return openFolder(null);
+			const f = volumeFolders(volScope.volumeId).find((x: any) => x.id === volScope.folderId);
+			return openFolder(volumeKey(volScope.volumeId, f?.parentId ?? null));
+		}
 		if (typeof a === 'string' && a.startsWith('pack:')) return openFolder('packs'); // P4
 		if (a === 'prefabs' || a === 'packs' || (typeof a === 'string' && a.startsWith('scene')))
 			return openFolder(null);
@@ -1677,6 +1807,13 @@
 		if (editing) void commitEdit();
 	}
 	function startCreate(parentId: string | null, inGrid = false) {
+		// P3a: a folder inside a mount is a BUFFERED edit, which P3b adds. Until then this
+		// must not fall through — `parentId` would be a 'vol:…' key and the folder it made
+		// would be an orphan in the real library, invisible and unreachable.
+		if (volumeOf(parentId) || (parentId === null && volScope)) {
+			showToast('A mounted project is read-only here — new folders land in your Library');
+			return;
+		}
 		// R22 round 7 (user): pressing New folder again must not COMMIT the pending one and
 		// open another — that is how you end up with "New folder", "New folder (2)"… from
 		// a double-press. An edit already open for the same place is the same intent, so
@@ -1871,6 +2008,146 @@
 		localStorage.setItem('explorerRootsH', String(rootsH));
 	}
 
+	// ---- R22 round 13 P3: THE MOUNTS SECTION -----------------------------------------
+	/**
+	 * A volume's folder tree, flat and indented, reusing the LIBRARY tree's own expansion
+	 * set — a volume folder's expansion key is its namespaced `volumeKey`, so it persists
+	 * to localStorage with everything else and no second store had to be invented.
+	 */
+	function mountTree(vol: any) {
+		const out: { folder: any; depth: number; hasChildren: boolean }[] = [];
+		const walk = (parentId: string | null, depth: number) => {
+			for (const f of vol.folders.filter((x: any) => (x.parentId ?? null) === parentId)) {
+				const row = volFolderRow(vol, f);
+				out.push({ folder: row, depth, hasChildren: vol.folders.some((c: any) => c.parentId === f.id) });
+				if (expanded.has(row.id)) walk(f.id, depth + 1);
+			}
+		};
+		walk(null, 0);
+		return out;
+	}
+	/**
+	 * WHICH SAVED ENTRIES CAN BE MOUNTED: the ones carrying a library, which is what makes
+	 * an entry a PROJECT (`meta.hasLibrary` — derived, so every session ever saved answers
+	 * correctly). A scene has no files to browse, and offering one would produce an empty
+	 * root with no way to say why.
+	 *
+	 * `loadSessions` first: the store is filled by the Sessions manager, which the user may
+	 * never have opened this session, and a picker that is empty for that reason reads as
+	 * "you have no projects".
+	 */
+	async function openMountPicker(e: MouseEvent) {
+		const el = e.currentTarget as HTMLElement;
+		await loadSessions();
+		const box = el?.getBoundingClientRect();
+		const projects = ($sessions ?? []).filter((m: any) => m.hasLibrary);
+		const mountedIds = new Set($mountedVolumes.map((v: any) => v.sessionId));
+		menu = {
+			x: box ? box.right : e.clientX,
+			y: box ? box.bottom : e.clientY,
+			items: projects.length
+				? [
+						{ section: 'Mount a saved project' },
+						...projects.map((m: any) => ({
+							label: m.name + '  (' + plural(m.libraryCount ?? 0, 'file') + ')',
+							icon: 'hard-drive',
+							checked: mountedIds.has(m.id),
+							tooltip: mountedIds.has(m.id)
+								? 'Already mounted'
+								: 'Browse this project’s files here — your open project is not touched',
+							action: () => void doMount(m.id)
+						}))
+					]
+				: [
+						{
+							label: 'No saved projects yet',
+							tooltip:
+								'Sessions ▸ "Save current project" stores the scene AND every Explorer file — that is what a mount reads',
+							action: () => {}
+						}
+					]
+		};
+	}
+	async function doMount(sessionId: string) {
+		const vol = await mountVolume(sessionId);
+		if (!vol) return;
+		// open it, and expand it in the tree: a root you mounted and cannot see is a
+		// button that appears to have done nothing
+		const next = new Set(expanded);
+		next.add(volumeKey(vol.id));
+		expanded = next;
+		localStorage.setItem('explorerExpanded', JSON.stringify([...next]));
+		openFolder(volumeKey(vol.id));
+	}
+	/**
+	 * Unmount. THE CONFIRM IS THE DIRTY CASE ONLY, and it is asked in the Explorer's own
+	 * strip rather than the app modal (round 11's rule: the question belongs where the
+	 * files are). A clean mount is a view — dropping it costs nothing, so asking would be
+	 * noise.
+	 */
+	function doUnmount(vol: any) {
+		const leave = () => {
+			void unmountVolume(vol.id);
+			if (volScope?.volumeId === vol.id) openFolder(null);
+		};
+		if (!vol.dirty) return leave();
+		askInExplorer({
+			title: 'Unmount “' + vol.name + '” with unsaved changes?',
+			detail: 'The edits you made here have not been written back to the saved project. Unmounting discards them.',
+			confirmLabel: 'Discard and unmount',
+			run: leave
+		});
+	}
+	function mountMenu(e: MouseEvent, vol: any) {
+		e.preventDefault();
+		e.stopPropagation();
+		menu = {
+			x: e.clientX,
+			y: e.clientY,
+			items: [
+				{ label: 'Open', icon: 'folder', action: () => openFolder(volumeKey(vol.id)) },
+				{
+					label: 'Refresh',
+					icon: 'refresh-cw',
+					tooltip: vol.dirty
+						? 'Re-read this project from disk — YOUR UNSAVED EDITS HERE ARE DISCARDED'
+						: 'Re-read this project from disk',
+					action: () => void refreshVolume(vol.id)
+				},
+				...(vol.dirty
+					? [
+							{
+								label: 'Save changes',
+								icon: 'save',
+								tooltip: 'Write these files back into the saved project',
+								action: () => void saveVolume(vol.id)
+							}
+						]
+					: []),
+				{ section: 'Mount' },
+				{
+					label: 'Unmount',
+					icon: 'x',
+					danger: vol.dirty,
+					tooltip: 'Stop showing this project here. The saved project is not deleted.',
+					action: () => doUnmount(vol)
+				}
+			]
+		};
+	}
+	/**
+	 * fork 3: the source of a mount is a session record, and the Sessions manager can
+	 * delete it. Re-checking when that store TICKS is the whole of "how does it notice a
+	 * change" — the source is IndexedDB, which this app owns, so there are no change events
+	 * to miss and nothing to poll.
+	 */
+	$effect(() => {
+		const list = $sessions;
+		if (!$mountedVolumes.length) return;
+		untrack(() => void revalidateVolumes());
+		void list;
+	});
+
 	// ---- R22 round 11: THE QUESTION IS ASKED WHERE THE FILES ARE ---------------------
 	/**
 	 * REPORTED: "when right click delete instead of toast confirmation I should have
@@ -2041,6 +2318,18 @@
 		if (!payload) return;
 		e.preventDefault();
 		e.stopPropagation();
+		// P3a: a mount is read-only until save-back exists (P3b), and a drop that silently
+		// did nothing would read as a broken target
+		if (volumeOf(target)) {
+			showToast('Copying into a mounted project is not available yet');
+			return;
+		}
+		// P3a: dragging a mounted file OUT is a real import (P3b) — until then, say so
+		// rather than moving a library id the drop does not have
+		if (payload.volumeId || payload.items?.some((r: any) => r?.volumeId)) {
+			showToast('Copying out of a mounted project is not available yet');
+			return;
+		}
 		const dragged = payload.items?.length ? payload.items : payload.type === 'item' ? [payload] : [];
 		// R22 round 11: a PREFAB card used to be dropped on the floor here — it carries no
 		// library record, so there was nothing to re-file. There is now: a prefab that IS a
@@ -2081,6 +2370,24 @@
 		if (!inTree) {
 			if (!selectedIds.has(folder.id)) setSel([folder.id]);
 			if (selectedIds.size > 1) return batchMenu(e);
+		}
+		// P3: a folder INSIDE a mount. Share / Unshare / Export / Delete all read the
+		// library's own tree, so the mount gets the two entries that mean something here.
+		if (folder.volumeId) {
+			menu = {
+				x: e.clientX,
+				y: e.clientY,
+				items: [
+					{ label: 'Open', icon: 'folder', action: () => openFolder(folder.id) },
+					{
+						label: 'Refresh mount',
+						icon: 'refresh-cw',
+						tooltip: 'Re-read this project from disk',
+						action: () => void refreshVolume(folder.volumeId)
+					}
+				]
+			};
+			return;
 		}
 		menu = {
 			x: e.clientX,
@@ -2191,6 +2498,10 @@
 		// a card built from the index, so every batch op (download, delete, GLTF export)
 		// would be addressing an id that does not exist
 		!item.remoteItem &&
+		// R22 round 13 P3: a MOUNTED file has no library record either — it lives in another
+		// project's saved payload. Same reasoning as the shared row above: every batch op
+		// (download, delete, GLTF export) would address an id `explorerItems` does not hold.
+		!item.volumeItem &&
 		item.kind !== 'pack-folder';
 
 	/** what the selection breaks down into, once and for every batch entry point */
@@ -2692,6 +3003,21 @@
 			if (pack) packRowMenu(e, pack);
 			return;
 		}
+		// P3: a file in a MOUNTED project. Its own menu, for the reason every branch here
+		// has one: Rename / Delete / Share / Download all address a library record it has
+		// none of, and Properties is the only one of them that would have worked.
+		if (item.volumeItem) {
+			menu = {
+				x: e.clientX,
+				y: e.clientY,
+				items: [
+					{ label: 'Open', icon: 'external-link', action: () => void openItem(item) },
+					{ label: 'Properties', icon: 'info', action: () => showProperties({ kind: 'item', item }) },
+					{ section: (item.volumeName ?? 'Mounted project') + ' — read-only' }
+				]
+			};
+			return;
+		}
 		// 21-H2: a PREFAB has its own menu — it is a stored asset, not a derived view.
 		if (item.kind === 'prefab') {
 			prefabMenu(e, item);
@@ -3127,6 +3453,46 @@
 
 	function gridMenu(e: MouseEvent) {
 		if ((e.target as HTMLElement)?.closest('.explorer-card, .explorer-folder-card')) return;
+		// P3: inside a MOUNT the background menu is about the mount. New folder / Save scene
+		// / Export project all act on the open project, which is exactly what a mount must
+		// not touch — so they stay out and the three mount verbs take their place.
+		if (volScope) {
+			e.preventDefault();
+			const vol = volume;
+			menu = {
+				x: e.clientX,
+				y: e.clientY,
+				items: [
+					{
+						label: 'Refresh',
+						icon: 'refresh-cw',
+						tooltip: vol?.dirty
+							? 'Re-read this project from disk — YOUR UNSAVED EDITS HERE ARE DISCARDED'
+							: 'Re-read this project from disk',
+						action: () => void refreshVolume(volScope.volumeId)
+					},
+					...(vol?.dirty
+						? [
+								{
+									label: 'Save changes',
+									icon: 'save',
+									tooltip: 'Write these files back into the saved project',
+									action: () => void saveVolume(volScope.volumeId)
+								}
+							]
+						: []),
+					{ section: vol?.name ?? 'Mounted project' },
+					{
+						label: 'Unmount',
+						icon: 'x',
+						danger: !!vol?.dirty,
+						tooltip: 'Stop showing this project here. The saved project is not deleted.',
+						action: () => vol && doUnmount(vol)
+					}
+				]
+			};
+			return;
+		}
 		// R22 round 7: the bin is not a folder you put things in, so New folder / Save scene
 		// are meaningless here. What IS meaningful is emptying it.
 		if ($activeFolder === 'deleted') {
@@ -3282,6 +3648,12 @@
 		const files = e.dataTransfer?.files;
 		if (!files?.length) return;
 		const folder = $activeFolder;
+		// P3a: importing a file straight into a mounted project needs the buffered write
+		// P3b adds. Refused with the reason, never dropped on the floor.
+		if (volumeOf(folder)) {
+			showToast('Drop files into your Library — a mounted project is read-only here');
+			return;
+		}
 		// B1.1: the Packs view accepts ONLY pack .zip files — anything else would
 		// import with a bogus folderId and orphan (invisible). Mirror the Import path.
 		if (folder === 'packs' || (typeof folder === 'string' && folder.startsWith('pack:'))) {
@@ -3332,6 +3704,9 @@
 
 	function itemDragPayload(item: any) {
 		return {
+			// P3: which MOUNT this row came from, absent for a library file. The drop reads
+			// it to decide between a move (within one library) and a copy (across a boundary)
+			...(item.volumeId ? { volumeId: item.volumeId, hash: item.hash, size: item.size } : {}),
 			id: item.id ?? null,
 			kind: item.kind,
 			name: item.name,
@@ -3767,6 +4142,13 @@
 			if (backing) inspectItem(backing);
 			return;
 		}
+		// P3: a MOUNTED file selects and shows its properties, but claims no
+		// `inspectedFile` — that id addresses the library, which holds no record for it
+		if (item.volumeItem) {
+			inspectedFile.set(null);
+			selected = { kind: 'item', item };
+			return;
+		}
 		inspectedFile.set(item.id);
 		selected = { kind: 'item', item };
 	}
@@ -3918,7 +4300,58 @@
 		// which is the name the scene saved itself under and the key the manifest uses.
 		await travelToLevel(item.hash);
 	}
+	/**
+	 * P3: open a file that lives in a MOUNTED project. Its bytes come from the saved
+	 * payload (or, once copied in, from the mount's own buffer) — never from
+	 * `explorer:blob:<id>`, which holds nothing for it.
+	 *
+	 * Image and text open here; audio and 3D are DISABLED WITH THE REASON rather than
+	 * silently doing nothing, because their viewers resolve their own bytes by library id
+	 * (`AudioPlayer`, `ModelPreview`) and a mounted file has no library id to resolve.
+	 * Copying it into the Library is one drag away and makes every viewer work.
+	 */
+	async function openVolumeItem(item: any) {
+		const blob = await volumeBlob(item.volumeId, item.id);
+		if (!blob) {
+			showToast(item.name + ' is not in the saved project any more');
+			return;
+		}
+		if (item.kind === 'image') {
+			openFilePreview({
+				title: item.name,
+				kind: 'image',
+				itemId: item.id,
+				name: item.name,
+				url: URL.createObjectURL(blob),
+				onClose: () => gridEl?.focus()
+			});
+			return;
+		}
+		if (item.kind === 'text') {
+			openTextEditor({
+				title: item.name + ' — ' + (item.volumeName ?? 'mounted project'),
+				code: await blob.text(),
+				onSave: () => saveVolumeText(item),
+				onClose: () => gridEl?.focus()
+			});
+			return;
+		}
+		showToast(
+			'Copy ' + item.name + ' into your Library to open it (a ' + item.kind + ' viewer reads it from there)'
+		);
+	}
+	/** P3a: a mounted text file opens READ-ONLY. P3b turns this into a buffered write. */
+	function saveVolumeText(item: any) {
+		showToast('Copy ' + item.name + ' into your Library to edit it');
+	}
+
 	async function openItem(item: any) {
+		// P3: a file in a mounted project — its own opener, because its bytes are not in
+		// the library's blob store
+		if (item.volumeItem) {
+			await openVolumeItem(item);
+			return;
+		}
 		// R22-R1: opening a shared file we do not hold means FETCHING it. There is nothing
 		// else a double-click could sensibly do — the card exists because the index says the
 		// file does, and the bytes are one ask away.
@@ -4226,7 +4659,12 @@
 						     a row has no corners, and four possible dots on one line is noise. The
 						     precedence is the card's own, top to bottom. -->
 						{#if !isFolder}
-							{#if openSceneHash && item.hash === openSceneHash}
+							{#if item.volumeItem}
+								<span
+									class="ex-dot explorer-mount-dot bg-indigo-400"
+									title={'In the mounted project “' + (item.volumeName ?? '') + '” — not in your library'}
+								></span>
+							{:else if openSceneHash && item.hash === openSceneHash}
 								<span class="ex-dot bg-emerald-400" title="The scene you have open"></span>
 							{:else if item.remoteScene}
 								<span
@@ -4398,7 +4836,7 @@
 			     search box. What is left is the LOCATION trail — which folder am I in —
 			     which is a different question and keeps its own ⚙ toggle. -->
 			{#if showBreadcrumb}
-				<div class="flex items-center gap-0.5 overflow-x-auto whitespace-nowrap border-b border-gray-700/60 px-2 py-1 text-[11px] text-gray-300">
+				<div id="explorer-crumbs" class="flex items-center gap-0.5 overflow-x-auto whitespace-nowrap border-b border-gray-700/60 px-2 py-1 text-[11px] text-gray-300">
 					{#each crumbs as c, i (c.id ?? 'root')}
 						{#if i > 0}<span class="px-0.5 text-gray-600">/</span>{/if}
 						<button
@@ -4412,6 +4850,132 @@
 		{#snippet primary()}
 		<!-- folder tree (106.6); width/collapse/side owned by WindowShell (197) -->
 		<div id="explorer-tree" class="flex h-full flex-col text-xs" bind:clientHeight={treeColH}>
+			<!--
+				R22 round 13 P3: MOUNTED PROJECTS, above Library and pinned there.
+
+				"it would likely be better to be able to mount/unmount multiple projects and have
+				 them above 'Library' with save icon and x icon, so current open project memory is
+				 not affected."
+
+				Above rather than beside the read-only roots at the bottom, because a mount is a
+				place you WORK in: it holds real files, it can be edited, and it is the only root
+				here whose contents belong to a different project. Pinned (its own scroller) so a
+				long library tree cannot scroll the thing you mounted out of view.
+			-->
+			<div
+				id="explorer-mounts"
+				class="flex shrink-0 flex-col gap-0.5 overflow-y-auto border-b border-gray-700/60 p-1"
+				style="max-height: 140px"
+			>
+				{#each $mountedVolumes as vol (vol.id)}
+					<div class="flex items-center whitespace-nowrap">
+						<button
+							class="w-4 shrink-0 text-gray-500"
+							aria-label={expanded.has(volumeKey(vol.id)) ? 'Collapse' : 'Expand'}
+							onclick={() => toggleExpand(volumeKey(vol.id))}
+							>{vol.folders.length ? (expanded.has(volumeKey(vol.id)) ? '▾' : '▸') : ''}</button
+						>
+						<button
+							data-mount={vol.id}
+							class="min-w-0 flex-1 truncate rounded px-1.5 py-1 text-left {volScope?.volumeId === vol.id
+								? 'bg-primary-700 text-white'
+								: 'text-gray-300 hover:bg-gray-700'} {dropFolder === volumeKey(vol.id)
+								? 'outline-solid outline-2 outline-primary-500'
+								: ''}"
+							title={(vol.missing
+								? 'The saved project behind this mount is gone — these rows are what was read before it went'
+								: 'A saved project, browsed from here. Your open project is not affected.') +
+								(vol.dirty ? ' — unsaved changes' : '')}
+							oncontextmenu={(e) => mountMenu(e, vol)}
+							ondragover={(e) => dragOverInto(e, volumeKey(vol.id))}
+							ondragleave={() => (dropFolder = null)}
+							ondrop={(e) => dropInto(e, volumeKey(vol.id))}
+							onclick={() => openFolder(volumeKey(vol.id))}
+						>
+							<HardDrive
+								size={16}
+								class="mr-1.5 w-4 text-center {vol.missing ? 'text-amber-400' : 'text-indigo-300'}"
+								aria-hidden="true"
+							/>{vol.name}{#if vol.dirty}<span class="mount-dirty text-amber-400" title="Unsaved changes"
+									>&nbsp;•</span
+								>{/if}
+						</button>
+						<!-- the two icons the ask names. Save is LIT only while dirty: a mount with
+						     nothing to write is not a save waiting to happen. -->
+						<button
+							id={'mount-save-' + vol.id}
+							class="shrink-0 rounded px-1 py-1 {vol.dirty
+								? 'text-amber-300 hover:bg-gray-700'
+								: 'cursor-default text-gray-600'}"
+							disabled={!vol.dirty}
+							aria-label={'Save ' + vol.name}
+							title={vol.dirty
+								? 'Write these files back into the saved project'
+								: 'No unsaved changes'}
+							onclick={() => void saveVolume(vol.id)}><Save size={14} aria-hidden="true" /></button
+						>
+						<button
+							id={'mount-unmount-' + vol.id}
+							class="shrink-0 rounded px-1 py-1 text-gray-400 hover:bg-gray-700 hover:text-gray-200"
+							aria-label={'Unmount ' + vol.name}
+							title="Stop showing this project here — the saved project is not deleted"
+							onclick={() => doUnmount(vol)}><X size={14} aria-hidden="true" /></button
+						>
+					</div>
+					{#if expanded.has(volumeKey(vol.id))}
+						{#each mountTree(vol) as row (row.folder.id)}
+							{#if editing?.mode === 'rename' && !editing.inGrid && editing.volumeId === vol.id && editing.folderId === row.folder.folderId}
+								{@render editRow(row.depth + 1)}
+							{:else}
+								<div
+									class="flex items-center whitespace-nowrap"
+									style="padding-left: {16 + row.depth * 14}px"
+									role="treeitem"
+									aria-selected={$activeFolder === row.folder.id}
+									tabindex="-1"
+									ondragover={(e) => dragOverInto(e, row.folder.id)}
+									ondragleave={() => (dropFolder = null)}
+									ondrop={(e) => dropInto(e, row.folder.id)}
+								>
+									<button
+										class="w-4 shrink-0 text-gray-500"
+										aria-label={row.hasChildren ? 'Expand or collapse' : 'No subfolders'}
+										onclick={() => toggleExpand(row.folder.id)}
+										>{row.hasChildren ? (expanded.has(row.folder.id) ? '▾' : '▸') : ''}</button
+									>
+									<button
+										data-vol-folder={row.folder.id}
+										class="flex-1 truncate rounded px-1.5 py-1 text-left {$activeFolder === row.folder.id
+											? 'bg-primary-700 text-white'
+											: 'text-gray-300 hover:bg-gray-700'} {dropFolder === row.folder.id
+											? 'outline-solid outline-2 outline-primary-500'
+											: ''}"
+										draggable="true"
+										ondragstart={(e) => onFolderDragStart(e, row.folder)}
+										oncontextmenu={(e) => folderMenu(e, row.folder)}
+										onclick={() => openFolder(row.folder.id)}
+									>
+										<Folder size={16} class="ico-folder mr-1.5 w-4 text-center" aria-hidden="true" />{row
+											.folder.name}
+									</button>
+								</div>
+							{/if}
+							{#if editing?.mode === 'create' && !editing.inGrid && editing.volumeId === vol.id && editing.parentId === row.folder.folderId}
+								{@render editRow(row.depth + 2)}
+							{/if}
+						{/each}
+						{#if editing?.mode === 'create' && !editing.inGrid && editing.volumeId === vol.id && editing.parentId === null}
+							{@render editRow(1)}
+						{/if}
+					{/if}
+				{/each}
+				<button
+					id="explorer-mount-add"
+					class="whitespace-nowrap rounded-sm border border-dashed border-gray-600 px-2 py-1 text-left text-gray-400 hover:border-gray-400 hover:text-gray-200"
+					title="Browse another saved project's files here, without replacing the one you have open"
+					onclick={openMountPicker}>＋ Mount project…</button
+				>
+			</div>
 			<!-- scrollable folder list; the roots below stay pinned to the bottom -->
 			<div class="flex min-h-0 flex-1 flex-col gap-0.5 overflow-x-auto overflow-y-auto p-1">
 			<button
@@ -4779,7 +5343,11 @@
 					</div>
 				{:else}
 				<p class="p-4 text-center text-xs italic text-gray-500">
-					{$activeFolder === 'prefabs'
+					{volScope
+						? volume?.missing
+							? 'The saved project behind this mount is gone — unmount it, or save it back to store it again.'
+							: 'This folder of the mounted project is empty.'
+						: $activeFolder === 'prefabs'
 						? 'No prefabs yet — right-click an object and Save as prefab.'
 						: $activeFolder === 'packs' ? 'No packs. Right-click here to import a pack (.zip) or load one from a URL.'
 						: typeof $activeFolder === 'string' && $activeFolder.startsWith('pack:') ? 'This pack has no items.'
@@ -4951,6 +5519,16 @@
 								<span
 									class="explorer-open-dot absolute left-1 top-1 h-2.5 w-2.5 rounded-full bg-emerald-400"
 									title="The scene you have open"
+								></span>
+							{/if}
+							{#if item.volumeItem}
+								<!-- P3: THIS FILE LIVES IN A MOUNTED PROJECT, not in your library. Said on
+								     the card because every other signal here (share dots, the stale-version
+								     dot, the open-scene ring) describes a library record, and a row that
+								     looks like one but answers no library operation is the confusing case. -->
+								<span
+									class="explorer-mount-dot absolute right-1 top-1 h-2.5 w-2.5 rounded-full bg-indigo-400"
+									title={'In the mounted project “' + (item.volumeName ?? '') + '” — not in your library'}
 								></span>
 							{/if}
 							{#if item.remoteScene}

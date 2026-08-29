@@ -495,6 +495,42 @@ keepRecycleBin.subscribe((v) => {
 });
 
 /**
+ * R22 round 13 (user) — THE DELETED FILES LOG, and why it is its OWN switch.
+ *
+ * "Deleting items from recycle bin should remove from there, not just put as grey, but
+ * keep the log with thumbnails ... and they should be kept only if it is enabled in app
+ * settings". Right on every count: a permanent delete freed the blob and LEFT the row,
+ * so the bin went on listing a file it could no longer restore, dimmed. That reads as a
+ * delete that half-worked.
+ *
+ * THE SPLIT NEEDED NO NEW DATA. `manifest.deleted` was already two things wearing one
+ * name: rows whose BYTES ARE STILL HERE (the recycle bin — restorable, and the whole
+ * point of the bin) and rows that outlived their bytes (the record — what, who, when,
+ * and the picture). `partitionDeleted` names the two, the Explorer draws one view per
+ * side, and the purge is unchanged on the wire.
+ *
+ * DEFAULT ON, because the log exists today: OFF is the opt-out, not a new feature.
+ *
+ * OFF HIDES; IT NEVER CLEARS. The array replicates whole and latest-wins, so pruning it
+ * from a LOCAL preference would delete other people's record — and worse, a peer's row
+ * is what makes that peer's own hidden copy visible and restorable, so pruning would
+ * strand bytes on machines that still hold them. There is also a timing trap: the bin
+ * is emptied on every load by default, so a prune-on-toggle would take the whole
+ * history for good the next time the app started, from a checkbox. Clearing is already
+ * available as a deliberate, confirmed act — `emptyDeletedLog`, "Empty Deleted" — which
+ * is where a destructive decision belongs. Hiding is reversible; clearing is not.
+ *
+ * What it DOES stop is recording history that nothing else needs: see `deleteSharedItem`.
+ * @type {import('svelte/store').Writable<boolean>} */
+export const deletedLogEnabled = writable(readFlag('shared:deletedLog', true));
+
+deletedLogEnabled.subscribe((v) => {
+	try {
+		localStorage.setItem('shared:deletedLog', String(v));
+	} catch {}
+});
+
+/**
  * Empty the bin at startup unless it is being kept. LOCAL BYTES ONLY: the deleted LOG
  * is project data and is left completely alone, so the history of what was removed
  * survives and a peer who kept its own copy can still restore.
@@ -921,17 +957,25 @@ export function deleteSharedItem(id) {
 	const item = get(explorerItems).find((i) => i.id === id);
 	if (!item) return false;
 	const doc = get(projectManifest);
+	// R22 round 13: THE ONE PLACE "stop recording" can mean something. With the bin off
+	// the bytes go immediately, so the row it would write is not a bin entry at all — it
+	// is pure history, and with the log off nobody asked for history. With the bin ON the
+	// row IS the bin entry and must be written whatever this preference says, or the file
+	// goes to the hidden shelf with nothing pointing at it. Deliberately not extended to
+	// rows already in the document: see the deletedLogEnabled header.
+	const keepRow = get(recycleBinEnabled) || get(deletedLogEnabled);
 	const log = [...(doc.deleted ?? []).filter((/** @type {any} */ r) => r.hash !== item.hash)];
-	log.push({
-		hash: item.hash,
-		name: item.name,
-		kind: item.kind,
-		at: Date.now(),
-		by: meAsOwner(),
-		// R22 round 7: keep the PICTURE. It cannot be re-derived once the bytes are
-		// reclaimed, so a bin full of generic icons is what you get by not recording it.
-		...(item.thumbnail ? { thumb: item.thumbnail } : {})
-	});
+	if (keepRow)
+		log.push({
+			hash: item.hash,
+			name: item.name,
+			kind: item.kind,
+			at: Date.now(),
+			by: meAsOwner(),
+			// R22 round 7: keep the PICTURE. It cannot be re-derived once the bytes are
+			// reclaimed, so a bin full of generic icons is what you get by not recording it.
+			...(item.thumbnail ? { thumb: item.thumbnail } : {})
+		});
 	// off the visible shelf, bytes intact — unless the bin is switched off, in which case
 	// the user has already said they do not want a second chance at this
 	if (get(recycleBinEnabled)) setItemHidden(item.id, true);
@@ -999,6 +1043,29 @@ export function deletedThumb(row) {
 export function deletedLog(manifest) {
 	const m = manifest ?? get(projectManifest);
 	return [...(m.deleted ?? [])].reverse();
+}
+
+/**
+ * R22 round 13: THE TWO HALVES THE LOG HAS ALWAYS HELD. A row whose bytes are still on
+ * one of this machine's two shelves is a RECYCLE BIN entry — restorable, which is the
+ * whole reason the bin exists. A row that outlived its bytes is a RECORD: what, who,
+ * when, and the picture that can never be re-derived.
+ *
+ * PURE, and it takes the held set as an argument rather than reaching for it: the
+ * shelves are stores, and a helper that reads them with `get()` registers no
+ * dependency — which is precisely the bug round 9 fixed one layer up, where a purge
+ * changed nothing observable because the derived around it never re-ran.
+ *
+ * @param {any[]} rows the log, in whatever order the caller wants back
+ * @param {Set<string>|string[]} held every hash this device still holds bytes for
+ * @returns {{bin: any[], spent: any[]}}
+ */
+export function partitionDeleted(rows, held) {
+	const has = held instanceof Set ? held : new Set(held ?? []);
+	/** @type {any[]} */ const bin = [];
+	/** @type {any[]} */ const spent = [];
+	for (const row of rows ?? []) (has.has(row?.hash) ? bin : spent).push(row);
+	return { bin, spent };
 }
 
 /** Do we still hold the bytes of a deleted file? Restore is only offered when we do —

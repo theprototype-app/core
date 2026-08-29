@@ -28,18 +28,55 @@ import { activateDock, armDockMode, dockOccupants, DOCK_TITLES } from './bottomD
 // is also the FLOATING Node editor's own "+", where offering to open a second copy of
 // itself is nonsense. N / the toolbar button is its way back.
 
+/**
+ * W8b: the views this menu can open, as PLAIN DATA — no labels, no actions, no
+ * filtering. It was a literal inside `dockAddItems` until the toolbar grew a roster
+ * offering the same views as optional BUTTONS and a "Swap with" submenu offering them
+ * as REPLACEMENTS: three consumers, and a list written out three times is a list that
+ * disagrees with itself on the next view added. All three build their own rows from
+ * THIS, so a view added here reaches every surface at once.
+ *
+ * The TITLE is deliberately not here: `DOCK_TITLES` in bottomDock.js has been the name
+ * of a dock view since the tab strip was written, and a second copy would be one more
+ * thing to drift. This carries only what that map cannot — the one-line description.
+ *
+ * The Node editor stays absent, exactly as before: this list is also the FLOATING Node
+ * editor's own "+", where offering to open a second copy of itself is nonsense. (The
+ * toolbar roster names it separately — there it is a first-class button, not an
+ * "add a view" row.)
+ * @type {{key: string, tooltip: string}[]}
+ */
+export const DOCK_VIEWS = [
+	{ key: 'flowcode', tooltip: 'Edit the graph as JSON' },
+	{ key: 'animation', tooltip: 'Animate the selected object' },
+	{ key: 'uv', tooltip: 'Edit the selected mesh’s UV map and textures' },
+	{ key: 'shader', tooltip: 'Drive this material from a node graph' },
+	{ key: 'hud', tooltip: 'Lay out the on-screen HUD its nodes drive' },
+	{ key: 'explorer', tooltip: 'Browse the asset library' }
+];
+
+/** what the "+" row itself does: open the panel DOCKED and show it. Kept beside the
+ *  list rather than in it, because the toolbar's consumers do not want this — a roster
+ *  button goes through `togglePanel`, which can also hide the panel again.
+ *  @type {Record<string, () => void>} */
+const OPENERS = {
+	flowcode: () => { flowCodeClose.set(false); activateDock('flowcode'); },
+	animation: () => { animationClose.set(false); activateDock('animation'); },
+	uv: () => { uvEditorClose.set(false); activateDock('uv'); },
+	shader: () => { shaderEditorClose.set(false); activateDock('shader'); },
+	hud: () => { hudEditorClose.set(false); activateDock('hud'); },
+	explorer: () => { explorerClose.set(false); activateDock('explorer'); }
+};
+
 /** @returns {{label: string, tooltip: string, action?: () => void, disabled?: boolean}[]} */
 export function dockAddItems() {
 	const occupied = get(dockOccupants);
-	const all = [
-		{ key: 'flowcode', label: '＋ Flow Code', tooltip: 'Edit the graph as JSON', action: () => { flowCodeClose.set(false); activateDock('flowcode'); } },
-		{ key: 'animation', label: '＋ Animation', tooltip: 'Animate the selected object', action: () => { animationClose.set(false); activateDock('animation'); } },
-		{ key: 'uv', label: '＋ UV editor', tooltip: 'Edit the selected mesh’s UV map and textures', action: () => { uvEditorClose.set(false); activateDock('uv'); } },
-		{ key: 'shader', label: '＋ Shader editor', tooltip: 'Drive this material from a node graph', action: () => { shaderEditorClose.set(false); activateDock('shader'); } },
-		{ key: 'hud', label: '＋ HUD editor', tooltip: 'Lay out the on-screen HUD its nodes drive', action: () => { hudEditorClose.set(false); activateDock('hud'); } },
-		{ key: 'explorer', label: '＋ Explorer', tooltip: 'Browse the asset library', action: () => { explorerClose.set(false); activateDock('explorer'); } }
-	];
-	const free = all.filter((item) => !occupied[item.key]?.present);
+	const free = DOCK_VIEWS.filter((view) => !occupied[view.key]?.present).map((view) => ({
+		key: view.key,
+		label: `＋ ${DOCK_TITLES[view.key] ?? view.key}`,
+		tooltip: view.tooltip,
+		action: OPENERS[view.key]
+	}));
 	if (!free.length)
 		return [{ label: 'All views are docked', tooltip: 'Every view this menu can open is already a tab', disabled: true }];
 	return free;

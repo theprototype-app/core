@@ -1,8 +1,8 @@
 <script lang="ts">
-	import { Cog, Eye, FolderOpen, List, Maximize2, MessageSquare, Move, Pin, Play, RectangleGoggles, RotateCcw, SquarePen, Sun, Workflow } from '@lucide/svelte';
+	import { Clapperboard, Code, Cog, Eye, FolderOpen, Grid2x2, List, Maximize2, MessageSquare, Monitor, Move, Palette, Pin, Play, RectangleGoggles, RotateCcw, SquarePen, Sun, Workflow } from '@lucide/svelte';
 	import { Listgroup } from 'flowbite-svelte';
 	import { objectsGroup, TControls, transformMode, isLocked, lockedObjects, globalScene, vrPassthrough, vrOverride, selectedObject, selectedObjects } from '../../stores/sceneStore';
-	import { chatHidden, flowGraphClose, explorerClose, objectListClose, objectContextMenu, renamingObject, advancedMode, showEnvInList, showLocalObjects, floatingToolbar, toolbarAlwaysOnTop, showSimControls } from '../../stores/appStore.js';
+	import { chatHidden, flowGraphClose, flowCodeClose, animationClose, uvEditorClose, shaderEditorClose, hudEditorClose, explorerClose, objectListClose, objectContextMenu, renamingObject, advancedMode, showEnvInList, showLocalObjects, floatingToolbar, toolbarAlwaysOnTop, showSimControls } from '../../stores/appStore.js';
 	import { systemGroupNames } from '$lib/moduleSDK';
 	import { ENV_ROOT } from '$lib/environment';
 	import { flyTo } from '$lib/objectActions';
@@ -30,10 +30,10 @@
 	import { tabbable, groupRectOf, moveGroupOf, resizeGroup } from '$lib/windowTabs';
 	import { clampWinSize, clampResize, anchorOf } from '$lib/windowSize';
 	import { dockable } from '$lib/docking';
-	import { visibleDockKey, dockOccupants, FLOW_FAMILY, armDockMode } from '$lib/bottomDock';
+	import { visibleDockKey, dockOccupants, FLOW_FAMILY, armDockMode, DOCK_TITLES } from '$lib/bottomDock';
 	import { togglePanel } from '$lib/panelToggles';
 	import { requestPlay, willEnterXR, willEnterAR, vrSupported, arSupported, xrSessionFailed } from '$lib/playMode';
-	import { dockAddItems } from '$lib/dockMenu';
+	import { dockAddItems, DOCK_VIEWS } from '$lib/dockMenu';
 	import { VRButton, XRButton } from '@threlte/xr'
 
 	// A panel is "shown" when it is open AND either the visible dock tab OR floating
@@ -53,7 +53,31 @@
 	const flowDockVisible = $derived(FLOW_FAMILY.includes($visibleDockKey ?? ''));
 	const flowFloatingShown = $derived(!$flowGraphClose && !$dockOccupants.flow?.present);
 	const flowShown = $derived(flowDockVisible || flowFloatingShown);
-	const explorerShown = $derived(!$explorerClose && ($visibleDockKey === 'explorer' || !$dockOccupants.explorer?.present));
+	// W8b: the Explorer's rule, generalised to every dock view the roster can carry —
+	// OPEN, and either the visible dock tab or not in the dock at all (i.e. floating).
+	// It used to be one hand-written line for the Explorer alone, and five more copies
+	// is exactly how five buttons end up disagreeing about what "shown" means. Every
+	// close-store is read INSIDE the derived, which is what registers the dependency:
+	// a plain map built outside it would go stale (the `get()`-registers-nothing rule).
+	// The Node editor keeps its own two lines above — its button owns the whole docked
+	// FLOW FAMILY, so any family tab counts as "its dock is on screen", which is a rule
+	// none of the others has.
+	const panelShown: Record<string, boolean> = $derived.by(() => {
+		const visible = $visibleDockKey ?? '';
+		const occupants = $dockOccupants;
+		const closed: Record<string, boolean> = {
+			flowcode: $flowCodeClose,
+			animation: $animationClose,
+			uv: $uvEditorClose,
+			shader: $shaderEditorClose,
+			hud: $hudEditorClose,
+			explorer: $explorerClose
+		};
+		const out: Record<string, boolean> = {};
+		for (const key of Object.keys(closed))
+			out[key] = !closed[key] && (visible === key || !occupants[key]?.present);
+		return out;
+	});
 
 	// CO4b: WHAT the play button is about to do, so it can show it — and, since 4a,
 	// what a press DOES. Both now come from $lib/playMode: the support probes, the
@@ -626,6 +650,37 @@
 	const DEFAULT_ORDER = ['move', 'rotate', 'scale', 'objects', 'flow', 'explorer'];
 	const DEFAULT_SPACER = 3;
 
+	/** W8b: the roster is bigger than the bar. `DEFAULT_ORDER` is what a fresh profile
+	 *  puts ON the bar and has NOT changed — the same six ids, the same order, the same
+	 *  well index — while `BUTTONS` now also holds the five remaining dock views as
+	 *  OPTIONAL entries: listed in Customize unchecked, absent from the bar until asked
+	 *  for. An id is on the bar iff it is in `order` and not in `hidden`, so an optional
+	 *  button is simply one that starts in neither, and a profile that never opens
+	 *  Customize is byte-identical to before this existed.
+	 *
+	 *  They come from `DOCK_VIEWS`, the same list the dock's "+" menu renders, minus the
+	 *  Explorer (already a default button) — so the roster and the "+" cannot disagree
+	 *  about which views exist. Titles come from `DOCK_TITLES`, the dock's own names, so
+	 *  a button and its tab read the same word. */
+	const OPTIONAL_VIEWS = DOCK_VIEWS.filter((view) => view.key !== 'explorer').map((view) => view.key);
+
+	/** the glyph for each optional view. Chosen from a rendered 18px sheet against the
+	 *  six already on the bar, not from the names — which is what caught the one real
+	 *  collision: `layout-dashboard` (the obvious HUD glyph) and `grid-2x2` (the obvious
+	 *  UV one) are both a square quartered into four boxes and are indistinguishable at
+	 *  this size, so the HUD takes a `monitor` — a screen, which is literally what a HUD
+	 *  is drawn on. `code` beats `file-code` because a page silhouette sits next to the
+	 *  Explorer's folder and its inner chevrons are illegible at 18px, while `</>` is
+	 *  unmistakable; `clapperboard` beats `film`, whose plain rectangle muddles against
+	 *  every other boxy glyph; `palette` says materials where `sparkles` says nothing. */
+	const VIEW_ICONS: Record<string, any> = {
+		flowcode: Code,
+		animation: Clapperboard,
+		uv: Grid2x2,
+		shader: Palette,
+		hud: Monitor
+	};
+
 	// The six roster buttons. Every title and every handler is VERBATIM what the
 	// hand-written cells carried: controls-state, controls-transform-tint, dock-inset,
 	// flow-explorer-dock, panel-toggle-keys and ~25 Explorer suites all select on
@@ -668,9 +723,25 @@
 			title: 'Explorer',
 			slot: 'explorer-slot',
 			icon: FolderOpen,
-			tint: () => (explorerShown ? ICON_ON : ICON_OFF),
+			tint: () => (panelShown.explorer ? ICON_ON : ICON_OFF),
 			run: () => togglePanel('explorer')
-		}
+		},
+		// W8b: the five remaining dock views, built from ONE list rather than written
+		// out. Each is the ordinary panel decision tree — `togglePanel` opens it in the
+		// mode it was last in, activates it when another tab covers it, and hides it
+		// when it is the one on screen — which is the whole reason these are worth
+		// having as buttons: the "+" list can only ever open them.
+		...Object.fromEntries(
+			OPTIONAL_VIEWS.map((key) => [
+				key,
+				{
+					title: DOCK_TITLES[key] ?? key,
+					icon: VIEW_ICONS[key],
+					tint: () => (panelShown[key] ? ICON_ON : ICON_OFF),
+					run: () => togglePanel(key)
+				} as CellButton
+			])
+		)
 	};
 
 	function defaultLayout(): ControlsLayout {
@@ -688,8 +759,17 @@
 			const raw = localStorage.getItem('controlsLayout');
 			if (!raw) return defaultLayout();
 			const saved = JSON.parse(raw) ?? {};
+			// W8b: kept ids are the ones the REGISTRY knows, not the ones the DEFAULT order
+			// lists — that older test dropped every optional view on the next reload, so a
+			// button enabled from Customize came back gone. A missing DEFAULT id is still
+			// appended (a button added to the app later shows by default, `explorerColumns`'
+			// rule); an OPTIONAL id absent from the record is absent from the bar, which is
+			// what makes it opt-in. Duplicates are dropped — `order` is a set of positions,
+			// and a hand-edited or half-migrated record must not render one button twice.
 			const order: string[] = Array.isArray(saved.order)
-				? saved.order.filter((id: any) => DEFAULT_ORDER.includes(id))
+				? saved.order.filter(
+						(id: any, at: number) => BUTTONS[id] && saved.order.indexOf(id) === at
+					)
 				: [];
 			for (const id of DEFAULT_ORDER) if (!order.includes(id)) order.push(id);
 			const hidden: string[] = Array.isArray(saved.hidden)
@@ -808,12 +888,38 @@
 		setLayout({ hidden: [...controlsLayout.hidden, id], spacerIndex });
 	}
 
+	/** Put a button on the bar. W8b: an OPTIONAL view has never been in `order` at all,
+	 *  so it is APPENDED — the far right end, past the play well, which is where a new
+	 *  thing belongs and where the arrows can walk it from. A DEFAULT button that was
+	 *  hidden keeps its slot in `order` and returns to exactly where it was left. */
 	function showButton(id: string) {
+		if (!BUTTONS[id]) return;
 		const hidden = controlsLayout.hidden.filter((h) => h !== id);
-		const at = controlsLayout.order.filter((o) => BUTTONS[o] && !hidden.includes(o)).indexOf(id);
+		const order = controlsLayout.order.includes(id)
+			? controlsLayout.order
+			: [...controlsLayout.order, id];
+		const at = order.filter((o) => BUTTONS[o] && !hidden.includes(o)).indexOf(id);
 		const spacerIndex =
 			at > -1 && at < controlsLayout.spacerIndex ? controlsLayout.spacerIndex + 1 : controlsLayout.spacerIndex;
-		setLayout({ hidden, spacerIndex });
+		setLayout({ order, hidden, spacerIndex });
+	}
+
+	/** W8b — SWAP: put `toId` in `fromId`'s exact slot and take `fromId` off the bar.
+	 *
+	 *  The bar keeps its shape (same number of cells, same well position, every other
+	 *  cell untouched), which is the whole point: a user who wants the Animation tab a
+	 *  press away trades the button they never use for it, rather than growing the bar
+	 *  and then having to move things. `fromId` leaves `order` ENTIRELY rather than
+	 *  going into `hidden`, so it comes back on offer in every "Swap with" list and in
+	 *  Customize; `toId` is lifted out of wherever it sat first, so a button that was
+	 *  merely hidden cannot end up in `order` twice. */
+	function swapCell(fromId: string, toId: string) {
+		if (!BUTTONS[toId] || fromId === toId) return;
+		const order = controlsLayout.order.filter((o) => o !== toId);
+		const at = order.indexOf(fromId);
+		if (at < 0) return;
+		order[at] = toId;
+		setLayout({ order, hidden: controlsLayout.hidden.filter((h) => h !== toId && h !== fromId) });
 	}
 
 	// --- the toolbar's own right-click menus --------------------------------------
@@ -975,7 +1081,40 @@
 				}
 			);
 		}
+		// W8b: SWAP WITH ▸ — trade this cell for any roster button that is not on the bar.
+		// It is the fast way to get a one-press button for a dock view: the alternative
+		// is Customize, tick the view, then walk it across the bar with the arrows. The
+		// bar keeps its shape, so nothing else moves and the well stays put.
+		//
+		// The list is built from the same `DOCK_VIEWS` the "+" menu renders (through
+		// `BUTTONS`), so the two can never offer different sets. The transforms take part
+		// as both sources and targets: a cell is a cell, Customize already treats all
+		// seven identically, and a user who never rotates anything should be able to
+		// trade Rotate for the Animation tab — excluding them would leave a Rotate cell
+		// with a submenu that is always empty, which is worse than a menu that works.
+		head.push({ section: 'This button' }, { label: 'Swap with', children: swapItems(id) });
 		return [...head, ...toolbarTail(id)];
+	}
+
+	/** the swap targets: every roster button that is not currently a cell of the bar */
+	function swapItems(id: string) {
+		const seq = visualIds();
+		const offBar = [...DEFAULT_ORDER, ...OPTIONAL_VIEWS].filter(
+			(key) => BUTTONS[key] && !seq.includes(key)
+		);
+		if (!offBar.length)
+			return [
+				{
+					label: 'Every button is on the bar',
+					tooltip: 'There is nothing left to swap in — hide one first',
+					disabled: true
+				}
+			];
+		return offBar.map((key) => ({
+			label: BUTTONS[key].title,
+			tooltip: `Put ${BUTTONS[key].title} in this slot and take ${BUTTONS[id].title} off the bar`,
+			action: () => swapCell(id, key)
+		}));
 	}
 
 	/** The whole-bar checklist. Every row here is `keepOpen` — this menu is a PANE you
@@ -990,37 +1129,106 @@
 	 *  one VISUAL slot, the same rule as the cell menu's Move left / Move right, so a
 	 *  press can walk a button across the play well. */
 	function customizeItems() {
-		const ids = [...new Set([...controlsLayout.order, ...DEFAULT_ORDER])].filter((id) => BUTTONS[id]);
+		// W8b: THE LIST *IS* THE BAR, read top to bottom — the play well included, as a
+		// row of its own. Three measured faults came out of the old shape, which listed
+		// `controlsLayout.order` (the STORAGE order, hidden entries interleaved) while a
+		// move only ever swapped SHOWN buttons:
+		//   · a move leapfrogged any hidden row lying between the two, so one press
+		//     travelled two or more rows and the ticks appeared to scramble around the
+		//     unticked one — the reported "keep enabled ... there is a mess"
+		//   · pressing an arrow whose neighbour was the WELL rewrote only `spacerIndex`,
+		//     so the list did not change at all and the press looked dead
+		//   · the rows re-sorted under a stationary pointer, so a second press at the
+		//     same pixel grabbed the button that had just taken the slot and undid the
+		//     first — the two ping-ponged forever and nothing could be walked anywhere
+		// Rows now mirror `visualIds()` exactly, so ONE press is ALWAYS one row, in the
+		// direction pressed, and the row travels with its own DOM node (ContextMenuItems
+		// keys on `key`), which keeps it focused for a repeat press.
+		//
+		// UP IS LEFT. The list is vertical and the bar is horizontal, so the arrows are
+		// ▲/▼ — what a stacked list means — and up is toward the LEFT end of the bar,
+		// which is the end the first row shows. Every tooltip says so out loud.
 		const seq = visualIds();
+		const offBar = [...DEFAULT_ORDER, ...OPTIONAL_VIEWS].filter(
+			(id) => BUTTONS[id] && !seq.includes(id)
+		);
+		/** the reorder pair for a row that is ON the bar */
+		const arrows = (id: string, at: number, title: string) => [
+			{
+				icon: 'chevron-up',
+				label: `Move ${title} up`,
+				disabled: at <= 0,
+				run: () => moveCell(id, -1)
+			},
+			{
+				icon: 'chevron-down',
+				label: `Move ${title} down`,
+				disabled: at < 0 || at >= seq.length - 1,
+				run: () => moveCell(id, 1)
+			}
+		];
 		return [
-			{ section: 'Toolbar buttons' },
-			...ids.map((id) => {
-				const shown = !controlsLayout.hidden.includes(id);
-				const at = seq.indexOf(id);
+			{ section: 'On the bar' },
+			...seq.map((id, at) => {
+				if (id === SPACER)
+					// the well earns a row because it is a cell of the bar and the list claims
+					// to mirror the bar. It also gives the play button a reorder control that
+					// only its own right-click menu used to offer. No toggle: there is no
+					// toolbar without a way to press play, so the row says so and does nothing.
+					return {
+						key: SPACER,
+						label: 'Play',
+						checked: true,
+						keepOpen: true,
+						tooltip: 'The play button is always on the bar — it can be moved, never removed',
+						rowActions: arrows(SPACER, at, 'Play')
+					};
 				return {
+					key: id,
 					label: BUTTONS[id].title,
-					checked: shown,
+					checked: true,
 					keepOpen: true,
-					tooltip: shown ? 'Take it off the bar' : 'Put it back on the bar',
-					action: () => (shown ? hideButton(id) : showButton(id)),
-					rowActions: [
-						{
-							icon: 'chevron-left',
-							label: `Move ${BUTTONS[id].title} left`,
-							disabled: !shown || at <= 0,
-							run: () => moveCell(id, -1)
-						},
-						{
-							icon: 'chevron-right',
-							label: `Move ${BUTTONS[id].title} right`,
-							disabled: !shown || at < 0 || at >= seq.length - 1,
-							run: () => moveCell(id, 1)
-						}
-					]
+					tooltip: 'Take it off the bar',
+					action: () => hideButton(id),
+					rowActions: arrows(id, at, BUTTONS[id].title)
 				};
 			}),
+			// Everything the roster knows that is not on the bar — the buttons hidden from
+			// the six defaults AND the optional dock views, which is what makes those
+			// discoverable at all. A row here has no place in the bar yet, so it has no
+			// direction to move in: its arrows are greyed and say why rather than being
+			// absent, which would make the two halves of the list look like different
+			// kinds of row.
+			...(offBar.length
+				? [
+						{ section: 'Not on the bar' },
+						...offBar.map((id) => ({
+							key: id,
+							label: BUTTONS[id].title,
+							checked: false,
+							keepOpen: true,
+							tooltip: 'Put it on the bar',
+							action: () => showButton(id),
+							rowActions: [
+								{
+									icon: 'chevron-up',
+									label: `Move ${BUTTONS[id].title} up`,
+									tooltip: 'Not on the bar — there is nowhere to move it',
+									disabled: true
+								},
+								{
+									icon: 'chevron-down',
+									label: `Move ${BUTTONS[id].title} down`,
+									tooltip: 'Not on the bar — there is nowhere to move it',
+									disabled: true
+								}
+							]
+						}))
+					]
+				: []),
 			{ section: '' },
 			{
+				key: '__reset',
 				label: 'Reset toolbar',
 				danger: true,
 				keepOpen: true,

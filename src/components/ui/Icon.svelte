@@ -10,6 +10,12 @@
 		Boxes,
 		Brush,
 		Camera,
+		// W8b: `MAP[name] ?? Box` means an unmapped name renders a SQUARE, silently —
+		// which is what the toolbar's reorder controls had been drawing since they
+		// shipped, two identical boxes where a direction was meant to be. Any name a
+		// menu passes has to exist here.
+		ChevronDown,
+		ChevronUp,
 		Combine,
 		Copy,
 		Eye,
@@ -54,6 +60,8 @@
 		boxes: Boxes,
 		brush: Brush,
 		camera: Camera,
+		'chevron-down': ChevronDown,
+		'chevron-up': ChevronUp,
 		combine: Combine,
 		copy: Copy,
 		eye: Eye,

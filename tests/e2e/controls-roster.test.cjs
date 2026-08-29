@@ -425,6 +425,65 @@ h.run(async () => {
 	);
 	h.check((await layout(A.page)) === null, 'and it clears the stored layout record');
 
+	// ---- W8a: the tail every toolbar menu carries grew two rows ---------------------
+	// They sit in the SHARED tail, so the play FAB carries them too — which is the one
+	// that matters, since a collapsed bar is the FAB and nothing else.
+	await cellMenu(A.page, 'Move (1)');
+	let tail = await rows(A.page);
+	h.check(
+		tail.some((r) => r.label === 'Move toolbar'),
+		'a cell menu offers Move toolbar'
+	);
+	h.check(
+		tail.some((r) => r.label === 'Reset toolbar position' && r.disabled),
+		'...and Reset toolbar position, disabled while the bar has never been moved'
+	);
+	await closeMenus(A.page);
+	await fabMenu(A.page);
+	tail = await rows(A.page);
+	h.check(
+		tail.some((r) => r.label === 'Move toolbar') && tail.some((r) => r.label === 'Reset toolbar position'),
+		'...and the play FAB carries both rows too (one shared tail)'
+	);
+	await closeMenus(A.page);
+
+	// ---- W8a: "Toolbar always on top" is about Z, not geometry -----------------------
+	// The two prefs are independent: `floatingToolbar` decides whether the bar LIFTS when
+	// a dock opens, this one decides who wins the pixel. With it OFF the bar drops to the
+	// drawer tier, where a FLOATING WINDOW covers it — a case the geometry pref cannot
+	// express at all, since a window is not the dock.
+	const zOf = (sel) =>
+		A.page.evaluate((s) => {
+			const el = document.querySelector(s);
+			return el ? parseInt(getComputedStyle(el).zIndex || '0') : null;
+		}, sel);
+	await A.page.locator('p[title="Object list (O)"]').click();
+	await A.page.waitForTimeout(500);
+	const listZ = await zOf('#object-list');
+	h.check(
+		typeof listZ === 'number' && listZ >= 40,
+		`premise: a floating window sits on the window tier (z ${listZ})`
+	);
+	let pillZ = await zOf('#controls-pill');
+	h.check(pillZ > listZ, `on by default, the toolbar beats a floating window (z ${pillZ} > ${listZ})`);
+	await A.page.evaluate(() => window.__stores.toolbarAlwaysOnTop.set(false));
+	await A.page.waitForTimeout(400);
+	pillZ = await zOf('#controls-pill');
+	h.check(pillZ < listZ, `switched off, the window beats the toolbar instead (z ${pillZ} < ${listZ})`);
+	// ...and it is genuinely independent of the geometry pref: the bar still anchors on
+	// the dock inset, which is the other pref's job
+	const geomStill = await A.page.evaluate(
+		() => document.getElementById('controls-pill')?.getAttribute('style') ?? ''
+	);
+	h.check(
+		geomStill.includes('--bottom-inset'),
+		'...while still anchoring on --bottom-inset, so the two prefs are independent'
+	);
+	await A.page.evaluate(() => window.__stores.toolbarAlwaysOnTop.set(true));
+	await A.page.waitForTimeout(300);
+	await A.page.locator('p[title="Object list (O)"]').click();
+	await A.page.waitForTimeout(300);
+
 	h.check(h.pageErrors(A).length === 0, `the page threw nothing (${h.pageErrors(A).join(' / ')})`);
 	await h.finish(browser);
 });

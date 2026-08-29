@@ -193,10 +193,12 @@ h.run(async () => {
 	// --- 4. the Floating toolbar setting, through the REAL Settings row ---
 	await A.page.evaluate(() => window.__stores.bottomDock.activateDock('flow'));
 	await A.page.waitForTimeout(400);
+	// W8a reversed the default — the toolbar FLOATS out of the box now — so this
+	// section switches it OFF through the row and asserts the covered mode instead
 	let p = await pillVsDock(A.page);
 	h.check(
-		p.floating === false && p.pillBottom > p.dockTop,
-		`4.1 premise: the toolbar is NOT floating and sits inside the dock's band (${p.pillBottom} > ${p.dockTop})`
+		p.floating === true && p.pillBottom <= p.dockTop + 2,
+		`4.1 premise: by default the toolbar floats above the dock (${p.pillBottom} <= ${p.dockTop})`
 	);
 	await A.page.evaluate(() => window.__stores.settingsOpen.set(true));
 	await A.page.waitForTimeout(500);
@@ -215,12 +217,12 @@ h.run(async () => {
 	await A.page.evaluate(() => window.__stores.settingsOpen.set(false));
 	await A.page.waitForTimeout(600);
 	p = await pillVsDock(A.page);
-	h.check(p.floating === true, '4.4 the row wrote the pref');
+	h.check(p.floating === false, '4.4 the row wrote the pref');
 	h.check(
-		p.pillBottom <= p.dockTop + 2,
-		`4.5 ...and the pill now rides above the dock (${p.pillBottom} <= ${p.dockTop})`
+		p.pillBottom > p.dockTop,
+		`4.5 ...and the pill drops into the dock's band, where the dock covers it (${p.pillBottom} > ${p.dockTop})`
 	);
-	await A.page.evaluate(() => window.__stores.floatingToolbar.set(false));
+	await A.page.evaluate(() => window.__stores.floatingToolbar.set(true));
 	await A.page.waitForTimeout(400);
 
 	// --- 5. closing the LAST tab empties the dock ---

@@ -69,14 +69,15 @@ h.run(async () => {
 	let rows = await menuRows(A.page);
 	const labels = rows.map((r) => r.label);
 	// 4b: the FAB is a toolbar cell like any other, so its menu carries the shared
-	// Toolbar tail under the modes — Move left / Move right (which walk the WELL the
-	// FAB sits in) / Collapse / Customize. No "Hide button": play is never hideable.
+	// Toolbar tail under the modes — Move left / Move right (which walk the WELL the FAB
+	// sits in) / Move toolbar / Reset toolbar position (both W8a) / Collapse / Customize.
+	// No "Hide button": play is never hideable. Nine rows = three modes + six tail rows.
 	h.check(
 		labels.slice(0, 3).join(' | ') === 'Play (desktop) | Enter VR | Enter AR passthrough',
 		`the three modes lead the menu (${labels.slice(0, 3).join(' | ')})`
 	);
 	h.check(
-		rows.length === 7 && !labels.includes('Hide button'),
+		rows.length === 9 && !labels.includes('Hide button'),
 		`the shared toolbar tail follows, minus Hide button (${labels.slice(3).join(' | ')})`
 	);
 	const section = await A.page.evaluate(
@@ -127,7 +128,7 @@ h.run(async () => {
 		passthrough: localStorage.getItem('vrPassthrough')
 	}));
 	h.check(
-		afterDisabled.rows === 7 && afterDisabled.override === null,
+		afterDisabled.rows === 9 && afterDisabled.override === null,
 		'clicking a disabled mode neither closes the menu nor writes a preference'
 	);
 

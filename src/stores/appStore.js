@@ -523,19 +523,46 @@ if (typeof localStorage !== 'undefined') {
     if (typeof document !== 'undefined') document.documentElement.classList.toggle('allow-undock', !!v);
   });
 }
-/** W2: FLOATING TOOLBAR. With this ON the Controls pill (and the play FAB inside its
- * well) anchors on `--bottom-inset`, so it rides in the band just above an open bottom
- * dock — the 0854c3b behaviour. OFF (the DEFAULT, after the on-device pass) the pill is
- * an ordinary member of the bottom-HUD tier: it stays pinned 16px off the viewport floor
- * and the dock covers it, exactly like the chat / AI / sim-controls buttons beside it.
- * LOCAL pref — where one person's toolbar sits is not scene data, so it never replicates
- * and never rides a workspace snapshot. Persisted. */
+/** W2: FLOATING TOOLBAR — GEOMETRY. With this ON the Controls pill (and the play FAB
+ * inside its well) anchors on `--bottom-inset`, so it rides in the band just above an
+ * open bottom dock. OFF, the pill stays pinned 16px off the viewport floor and an open
+ * dock passes over that band, exactly like the chat / AI / sim-controls buttons beside
+ * it. LOCAL pref — where one person's toolbar sits is not scene data, so it never
+ * replicates and never rides a workspace snapshot. Persisted.
+ *
+ * W8a FLIPPED THE DEFAULT BACK TO ON, which is a change to the STORED SHAPE and not
+ * just to the seed: the reader has to become `!== 'false'` rather than `=== 'true'`, or
+ * every existing user — who has a literal `'false'` on disk from the moment the pref
+ * shipped default-off, because the subscriber writes on the first flush — would be
+ * pinned OFF forever with no way to tell that from never having chosen. Absent = ON. */
 export const floatingToolbar = writable(
-  typeof localStorage !== 'undefined' ? localStorage.getItem('floatingToolbar') === 'true' : false
+  typeof localStorage !== 'undefined' ? localStorage.getItem('floatingToolbar') !== 'false' : true
 );
 if (typeof localStorage !== 'undefined') {
   floatingToolbar.subscribe((v) => {
     try { localStorage.setItem('floatingToolbar', v ? 'true' : 'false'); } catch { /* */ }
+  });
+}
+
+/** W8a: TOOLBAR ALWAYS ON TOP — Z-ORDER, and deliberately a SECOND pref rather than a
+ * second meaning for `floatingToolbar`. That one answers "where does the bar SIT"
+ * (does it lift onto `--bottom-inset` when a dock opens); this one answers "who wins
+ * the pixel" (does the bar paint over the panels or under them). They were one flag
+ * until the on-device pass, which is why a user who wanted the bar to lift also had to
+ * accept it painting over every floating window.
+ *   ON (default) — `--z-hud` (45): above the dock (35) AND above floating windows (40).
+ *   OFF          — `--z-drawer` (30): windows and the dock cover it.
+ * They compose, and the combination worth naming is floating OFF + this ON: the bar
+ * stays on the viewport floor and an opening dock passes BEHIND it. Only with BOTH off
+ * does the dock cover the bar.
+ * LOCAL, persisted, absent = ON — read as `!== 'false'`, the same shape as its
+ * neighbour above, so the two default-on prefs are written one way. */
+export const toolbarAlwaysOnTop = writable(
+  typeof localStorage !== 'undefined' ? localStorage.getItem('toolbarAlwaysOnTop') !== 'false' : true
+);
+if (typeof localStorage !== 'undefined') {
+  toolbarAlwaysOnTop.subscribe((v) => {
+    try { localStorage.setItem('toolbarAlwaysOnTop', v ? 'true' : 'false'); } catch { /* */ }
   });
 }
 

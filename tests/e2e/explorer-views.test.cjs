@@ -380,14 +380,76 @@ h.run(async () => {
 	}, target.id.replace('deleted:', ''));
 	h.check(!gone.found && gone.blob === null, 'the purge freed the record and the blob');
 
+	// ROUND 13 FLIPS THIS. Round 9 made the purge OBSERVABLE — the row dimmed in place and
+	// its menu stopped offering a Restore that could not work — and the user's answer was
+	// that a bin should not go on listing a file it cannot put back AT ALL: "deleting items
+	// from recycle bin should remove from there, not just put as grey". So the row LEAVES
+	// the bin and the record of it lives in the Deleted log beside it. The round-9 checks
+	// are INVERTED rather than deleted: if the row ever comes back to the bin, this fails.
 	rows = await listRows(page);
-	h.check(rows.length === 3, 'the row STAYS — "this was deleted" is still true, so the log keeps it');
+	h.check(
+		rows.length === 2,
+		`the purged row LEAVES the bin — a bin lists what it can restore (${rows.length})`
+	);
+	h.check(
+		!rows.some((r) => r.name.replace(/\s+/g, '') === targetName),
+		`and it is that row that went (${rows.map((r) => r.name.replace(/\s+/g, '')).join(',')})`
+	);
+	h.check(rows.every((r) => !r.dim), 'nothing left in the bin is dimmed — every row can be restored');
+
+	// THE COUNTERFACTUAL for THIS round, computed in-page: the UNPARTITIONED reading (what
+	// the bin drew before) still returns all three, so the two answers genuinely differ and
+	// the checks above cannot pass with the split removed.
+	const split = await page.evaluate(() => {
+		const sl = window.__stores.sharedLibrary;
+		let m, vis, hid;
+		window.__stores.projectManifest.projectManifest.subscribe((x) => (m = x))();
+		window.__stores.explorer.explorerItems.subscribe((x) => (vis = x))();
+		window.__stores.explorer.hiddenItems.subscribe((x) => (hid = x))();
+		const all = sl.deletedLog(m);
+		const held = new Set([...vis, ...hid].map((i) => i.hash));
+		const { bin, spent } = sl.partitionDeleted(all, held);
+		return { all: all.length, bin: bin.length, spent: spent.length };
+	});
+	h.check(
+		split.all === 3 && split.bin === 2 && split.spent === 1,
+		`one array, two readings: ${split.bin} restorable + ${split.spent} spent = ${split.all} recorded`
+	);
+
+	// ---- 7b. THE DELETED LOG: the record the bin stopped carrying -------------------
+	const rootCounts = await page.evaluate(() => ({
+		bin: document.querySelector('#deleted-folder')?.innerText.replace(/\s+/g, ' ').trim() ?? null,
+		log: document.querySelector('#deleted-log-folder')?.innerText.replace(/\s+/g, ' ').trim() ?? null
+	}));
+	h.check(
+		rootCounts.bin === 'Deleted (2)',
+		`the bin root counts what it can restore (${rootCounts.bin})`
+	);
+	h.check(
+		rootCounts.log === 'Deleted log (3)',
+		`and the log root counts the whole record, beside it (${rootCounts.log})`
+	);
+	// through the REAL root row, not the store — a view with no way in is invisible to a
+	// suite that supplies its own entry point
+	await page.locator('#deleted-log-folder').click();
+	await page.waitForTimeout(700);
+	const crumbLabel = await page.evaluate(() =>
+		[...document.querySelectorAll('#explorer-crumbs button, .ex-crumb')]
+			.map((b) => b.textContent.trim())
+			.join(' / ')
+	);
+	h.check(/Deleted log/.test(crumbLabel), `the log is its own place, and says so (${crumbLabel})`);
+	const logHead = await page.locator('#explorer-list-head th[data-col]').allInnerTexts();
+	h.check(
+		JSON.stringify(logHead.map((t) => t.split('\n')[0])) ===
+			JSON.stringify(binHead.map((t) => t.split('\n')[0])),
+		`the log SHARES the bin's columns — the same row read twice (${JSON.stringify(logHead)})`
+	);
+	rows = await listRows(page);
+	h.check(rows.length === 3, `every deletion is in the log, restorable or not (${rows.length})`);
 	const purgedRow = rows.find((r) => r.name.replace(/\s+/g, '') === targetName);
-	// THE FIX. Before it, `restorable` came from a helper reading its stores through
-	// `get()`, so this derived never re-ran on a purge: the row looked identical and its
-	// menu still offered a Restore that could not work. Nothing observable changed, which
-	// is exactly the report.
-	h.check(!!purgedRow?.dim, 'the purged row is now DIMMED, so the purge is observable at all');
+	h.check(!!purgedRow, 'including the one the bin let go — the record outlives the bytes');
+	h.check(!!purgedRow?.dim, 'and it is DIMMED there, because nothing here can put it back');
 	h.check(
 		rows.filter((r) => r.dim).length === 1,
 		`and only that one (${rows.filter((r) => r.dim).length})`
@@ -428,6 +490,9 @@ h.run(async () => {
 	);
 
 	// ---- 8. group by deleter, and sort by deleted date ------------------------------
+	// IN THE LOG, deliberately: after the purge the bin holds two rows by ONE deleter, and
+	// the record is where comparing who threw what away is the point. The two views SHARE
+	// these prefs on purpose — a log row and a bin row are the same row read twice.
 	// reached from the section's own background menu, clear of the Controls HUD and below
 	// the rows (the header row has its own menu)
 	await page.locator('#explorer-grid').click({ button: 'right', position: { x: 1000, y: 170 } });
@@ -515,6 +580,117 @@ h.run(async () => {
 	h.check(
 		Array.isArray(restored.cols.library) && restored.cols.library.includes('owner'),
 		'and the column sets'
+	);
+
+	// ---- 10. THE SETTING: "kept only if it is enabled in app settings" ---------------
+	// LAST, because it clears the library and writes preferences — the documented rule that
+	// a section which saves or adds perturbs its neighbours.
+	const pref = (name, on) =>
+		page.evaluate(
+			([n, v]) => window.__stores.sharedLibrary[n].set(v),
+			[name, on]
+		);
+	// the reload above closed the panel and dropped the loaded index — reopen both the way
+	// the earlier sections did, or every DOM read below finds nothing and passes vacuously
+	await page.evaluate(() => window.__stores.explorer.loadExplorer());
+	await page.waitForTimeout(400);
+	await page.locator('#explorer-slot').click();
+	await page.waitForTimeout(800);
+	await page.evaluate(async () => {
+		const e = window.__stores.explorer;
+		await e.clearLibrary();
+		window.__stores.projectManifest.projectManifest.update((doc) => ({ ...doc, deleted: [] }));
+	});
+	await page.waitForTimeout(400);
+	// two deletions with the log ON: one that keeps its bytes, one that does not
+	const seededLog = await page.evaluate(async () => {
+		const e = window.__stores.explorer;
+		const sl = window.__stores.sharedLibrary;
+		const enc = (t) => new TextEncoder().encode(t).buffer;
+		const keep = await e.addItemFromBytes(enc('keep me'), 'keeper.txt', null);
+		sl.logLocalDeletion({ hash: keep.hash, name: 'keeper.txt', kind: 'text', thumb: null });
+		e.setItemHidden(keep.id, true);
+		const spent = await e.addItemFromBytes(enc('spend me'), 'spent.txt', null);
+		sl.logLocalDeletion({ hash: spent.hash, name: 'spent.txt', kind: 'text', thumb: null });
+		e.setItemHidden(spent.id, true);
+		await sl.purgeDeletedItem(spent.hash);
+		return { keep: keep.hash, spent: spent.hash };
+	});
+	await page.waitForTimeout(700);
+	const withLog = await page.evaluate(() => ({
+		bin: !!document.querySelector('#deleted-folder'),
+		log: document.querySelector('#deleted-log-folder')?.innerText.replace(/\s+/g, ' ').trim() ?? null
+	}));
+	h.check(
+		withLog.bin && withLog.log === 'Deleted log (2)',
+		`premise: one restorable file in the bin and both in the log (${withLog.log})`
+	);
+
+	await pref('deletedLogEnabled', false);
+	await page.waitForTimeout(500);
+	const off = await page.evaluate(() => {
+		let m;
+		window.__stores.projectManifest.projectManifest.subscribe((x) => (m = x))();
+		return {
+			logRow: !!document.querySelector('#deleted-log-folder'),
+			binRow: document.querySelector('#deleted-folder')?.innerText.replace(/\s+/g, ' ').trim() ?? null,
+			recorded: (m.deleted ?? []).length
+		};
+	});
+	h.check(!off.logRow, 'turning the log OFF takes the Deleted log root away');
+	h.check(
+		off.binRow === 'Deleted (1)',
+		`and leaves the bin exactly as it was — it is a record switch, not a bin switch (${off.binRow})`
+	);
+	// HIDE, NEVER CLEAR. The array replicates whole and latest-wins, so a LOCAL preference
+	// that pruned it would delete other peers' record — and a peer's row is what makes that
+	// peer's own hidden copy restorable, so pruning would strand bytes on machines that
+	// still hold them. Clearing stays the deliberate, confirmed Empty Deleted.
+	h.check(
+		off.recorded === 2,
+		`the record itself is UNTOUCHED — a preference may not destroy project data (${off.recorded} rows)`
+	);
+	await pref('deletedLogEnabled', true);
+	await page.waitForTimeout(500);
+	const backOn = await page.evaluate(
+		() => document.querySelector('#deleted-log-folder')?.innerText.replace(/\s+/g, ' ').trim() ?? null
+	);
+	h.check(backOn === 'Deleted log (2)', `so turning it back on returns everything (${backOn})`);
+
+	// ...and the one place OFF really does stop recording: with the recycle bin ALSO off the
+	// bytes go immediately, so the row would be pure history and none is written. With the
+	// bin ON the row IS the bin entry and must be written whatever this preference says.
+	const recording = await page.evaluate(async () => {
+		const e = window.__stores.explorer;
+		const sl = window.__stores.sharedLibrary;
+		const enc = (t) => new TextEncoder().encode(t).buffer;
+		const read = () => {
+			let m;
+			window.__stores.projectManifest.projectManifest.subscribe((x) => (m = x))();
+			return (m.deleted ?? []).length;
+		};
+		const before = read();
+		sl.recycleBinEnabled.set(false);
+		sl.deletedLogEnabled.set(false);
+		const a = await e.addItemFromBytes(enc('no trace'), 'no-trace.txt', null);
+		sl.deleteSharedItem(a.id);
+		await new Promise((r) => setTimeout(r, 300));
+		const bothOff = read();
+		sl.recycleBinEnabled.set(true);
+		const b = await e.addItemFromBytes(enc('bin me'), 'bin-me.txt', null);
+		sl.deleteSharedItem(b.id);
+		await new Promise((r) => setTimeout(r, 300));
+		const binOnly = read();
+		sl.deletedLogEnabled.set(true);
+		return { before, bothOff, binOnly };
+	});
+	h.check(
+		recording.bothOff === recording.before,
+		`with the bin AND the log off a delete records nothing (${recording.before} -> ${recording.bothOff})`
+	);
+	h.check(
+		recording.binOnly === recording.before + 1,
+		`but with the bin on the row is written anyway — it IS the bin entry (${recording.binOnly})`
 	);
 
 	h.check((h.pageErrors(A) || []).length === 0, `no page errors (${(h.pageErrors(A) || []).join(' | ')})`);

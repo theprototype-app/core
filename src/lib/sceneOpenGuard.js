@@ -26,10 +26,11 @@
 import { get } from 'svelte/store';
 import { showToast } from '../stores/appStore';
 import { objectsGroup } from '../stores/sceneStore';
-import { currentLevel, publishCurrentIfChanged, saveSceneAsLevel } from './levels';
+import { currentLevel, publishCurrentIfChanged, saveSceneAsLevel, travelToLevel, travelToScene } from './levels';
 import { recomputeSceneDirty } from './sceneIdentity';
 import { showChoice } from './confirmDialog';
 import { activeFolder } from './explorer';
+import { peerScenes } from './peerScenes';
 
 /**
  * Ask before replacing the open scene, and honour the answer.
@@ -90,9 +91,51 @@ export async function guardSceneReplace(targetLabel) {
 		// fallback is carried VERBATIM from the Explorer: it is the name the file is saved
 		// under, which is odd, and changing it here would be a redesign smuggled into a
 		// move. Left as it was, deliberately.
+		// R22 round 35: a PRIVATE scene reaches the `else` branch (publishCurrentIfChanged
+		// refuses one, as it refuses a loose file), and `saveSceneAsLevel` carries the flag
+		// forward rather than publishing — a privacy promise may not be broken as a side
+		// effect of the dialog you get for opening something else.
 		const published = await publishCurrentIfChanged({ force: true });
 		if (published) showToast(`Saved a version of "${here}" first`);
 		else await saveSceneAsLevel(here, get(activeFolder) ?? null);
 	}
+	return true;
+}
+
+/**
+ * R22 round 35 — GO TO THE SCENE A PEER IS STANDING IN, extracted from the peers popup so
+ * the grant toast ("they shared it — Go to") runs the SAME guarded path rather than a
+ * second copy of it. The guard is the reason: two callers, one copy.
+ *
+ * HASH FIRST, name as the fallback. The row carries the exact hash they loaded, which is
+ * the world in front of them; `travelToScene` resolves the NAME through the manifest
+ * pointer, which can be NEWER than the version they are looking at.
+ *
+ * THE TIMEOUT WRAPS THE CALL SITE, never `resolveLevelItem`: travel WATCHES for the bytes
+ * by design (the LUT rule) and must keep watching — this only stops the UI pretending
+ * nothing happened while that fetch runs, and says as much.
+ * @param {string} peerId
+ * @param {() => void} [onGo] run after the guard is answered and before travel starts —
+ *   the popup closes itself here, so cancelling leaves the list exactly where it was
+ * @returns {Promise<boolean>} did we start travelling
+ */
+export async function travelToPeerScene(peerId, onGo) {
+	/** @type {any} */
+	const row = get(peerScenes)[peerId];
+	const scene = row?.scene ?? '';
+	if (!scene) return false;
+	if (!(await guardSceneReplace(scene))) return false;
+	try {
+		onGo?.();
+	} catch {}
+	const travel = row.hash ? travelToLevel(row.hash, scene) : travelToScene(scene);
+	const landed = await Promise.race([
+		travel,
+		new Promise((r) => setTimeout(() => r(null), 15000))
+	]);
+	if (landed === null)
+		showToast(
+			'Could not fetch "' + scene + '" from your peers yet — it will still open if the bytes arrive.'
+		);
 	return true;
 }

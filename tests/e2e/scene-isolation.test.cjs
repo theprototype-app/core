@@ -33,6 +33,23 @@
 //   §6  Leaving RE-ARMS the gate, and coming back re-runs the re-sync.
 //   §7  A second empty joiner still adopts — no verdict anybody recorded strands it.
 //
+// Round 31 added the other end of the same rule, and ROUND 33 MOVED IT: the gate can only
+// speak about NAMES, so the fix for "my peer has no room" was to ask at the DIAL — but a
+// dial is a request, and being made to name a scene in order to ASK is a toll on a door
+// that may not open. `requestConnect` asks nothing now; the question is put at the HOST's
+// APPROVAL as a blocking modal (Save scene & connect / Dismiss changes / Disconnect), and
+// its coverage is **connect-decision** (all three endings) plus **connect-states**, which
+// keeps the pill-side reversal — a dial with work in an unnamed scene goes straight out.
+// Neither belongs here: they need one page and a stubbed link, and this suite has no room
+// for them anyway, measured at 449-480s against the runner's 480s cap, so a section added
+// here would not fail on its merits, it would be killed. Whatever lands here next should
+// buy its seconds from an existing section.
+//
+// §2 below is unaffected by that move in every assertion it makes: its joiner D holds work
+// in an unnamed scene, so it now takes the decision modal rather than the row-4 toast, and
+// what §2 reads is that NO NAME IS ADOPTED — true while the modal stands, and D is only
+// ever driven through `evaluate` and then closed.
+//
 // Run: APP_URL='https://localhost:5203/' PEER_CONFIG=... npm run e2e -- scene-isolation
 const h = require('./helpers.cjs');
 

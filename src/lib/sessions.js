@@ -15,7 +15,24 @@ import {
 } from './animatedImports';
 import { animationsSnapshot, animationsRestore, copyAnimationsFrom } from './animationPreview';
 import { shaderGraphsSnapshot, shaderGraphsRestore, copyShaderGraphFrom } from './shaderGraph';
-import { peers, showToast, showInfoToast, dismissToastById, modulesOpen } from '../stores/appStore';
+import {
+	peers,
+	showToast,
+	showInfoToast,
+	dismissToastById,
+	modulesOpen,
+	// R22 round 33: "Save scene & connect" hands over to the Explorer's own inline naming
+	explorerClose,
+	armExplorerSceneSave
+} from '../stores/appStore';
+import { bottomDockActive } from './bottomDock';
+// R22 round 33 — both are store-only leaves (svelte/store + localStorage), so this edge
+// closes nothing: `mergeOnConnect` chooses which question the gate puts, and
+// `pendingConnectDecision` is what sharedLibrary holds its downloads behind.
+import { mergeOnConnect, pendingConnectDecision } from './connectionState';
+// R22 round 33 — the naming handoff, unchanged, moved from the dial to the approval. This
+// module's static imports are appStore/connectionState only, so there is no way back here.
+import { waitForSceneName, modalClosed } from './peerApproval';
 import { recordObjectPresence } from './history';
 import { annotationsSnapshot, annotationsRestore } from './autosave';
 // #20 P5: selection + any open edit session ride the file; PANEL LAYOUT does not (that
@@ -1436,10 +1453,52 @@ let gate = null;
 // the handshake reply has always called it with the sender alone
 const sendObjectsTo = /** @type {any} */ (sendObjects);
 
-/** @param {'objects'|'nodes'} kind @param {string} sender */
-function replyTo(kind, sender) {
-	if (kind === 'objects') sendObjectsTo(sender);
-	else sendNodes(sender);
+/**
+ * R22 round 33 — THE SINGLETONS A GATED REPLY OWES, and the seam that can send them.
+ *
+ * `environment` / `music` / `scenephysics` / `scenepost` / `game` are PUSH-only: the
+ * handshake states them once and — apart from scenepost — there is no `get*` request for
+ * any of them. Round 32 made the share-or-stash ask hold BOTH directions, which means
+ * those pushes are DROPPED while a question is open, and `resolveGate`'s refetch cannot
+ * ask for what has no request: the peer who answers sits in the stock studio sky while
+ * the room has a sunset, until its author happens to touch a slider. Round 33's connect
+ * decision makes that worse rather than better, because dismissing your own world is
+ * exactly the case where the room's look is the only look there is.
+ *
+ * An objects reply is "here is my world", and the sky is part of the world — so the reply
+ * re-states them. Latest-wins stamps make it idempotent, so an ordinary (ungated) reply
+ * only repeats what the handshake already said a moment earlier.
+ *
+ * A REGISTRATION SEAM rather than an import, the `registerToneMappingOwner` shape: this
+ * module sits in the history family and must not reach environment/scenePost/gameSync,
+ * while peerHandler already holds all five and is the module that pushes them.
+ * @type {((peerId: string) => void) | null}
+ */
+let worldStatePush = null;
+
+/** @param {(peerId: string) => void} fn */
+export function registerWorldStatePush(fn) {
+	worldStatePush = fn;
+}
+
+/**
+ * @param {'objects'|'nodes'} kind @param {string} sender
+ * @param {{override?: boolean}} [opts] forwarded to `sendObjects` — see the ARRIVING row
+ *   below for the one caller that sets it. The NODES half needs no flag: a nodes reply
+ *   lands in `applyNodesSnapshot`, whose `mergeGraphSnapshot` already updates a node it
+ *   already holds in place, so graphs converge without one.
+ */
+function replyTo(kind, sender, opts = {}) {
+	if (kind === 'objects') {
+		// the scene singletons ride the objects half only — a nodes reply is the flow
+		// document and says nothing about the world's look (see registerWorldStatePush)
+		try {
+			worldStatePush?.(sender);
+		} catch {
+			/* a look that failed to send must never cost the objects */
+		}
+		sendObjectsTo(sender, undefined, opts);
+	} else sendNodes(sender);
 }
 
 /** How many objects we own — rides on the handshake getobjects request so the
@@ -1448,34 +1507,151 @@ export function localSceneCount() {
 	return get(objectsGroup)?.children.length ?? 0;
 }
 
-function resolveGate() {
+/**
+ * R22 round 32 — IS OUR SHARE-OR-STASH ASK HOLDING THIS PEER?
+ *
+ * The gate was one-directional for its whole life: it queued what we would SEND and said
+ * nothing about what we RECEIVE. So a peer who answered Share first — or who carried a
+ * latched `shareVerdicts` entry from an earlier count-0 reply — poured its scene into ours
+ * while our own question was still on screen, which is the merge happening BEFORE the
+ * person was asked to consent to it. Reported as: open an invite link, edit while waiting
+ * for approval, and the host's untitled world lands on top of your work mid-question.
+ *
+ * peerHandler DROPS `ROOM_SCOPED` content from a peer this returns true for — the same
+ * treatment `canApplyByRoom` gives a peer standing elsewhere — and `resolveGate` re-asks
+ * for full state, so answering loses nothing and Stay means it never lands.
+ *
+ * Cheap on purpose: it runs on every inbound message and the common case has no gate.
+ * @param {string} peerId @returns {boolean}
+ */
+export function gateHolds(peerId) {
+	if (!gate) return false;
+	if (gate.done) return false;
+	return gate.senders.objects.has(peerId) || gate.senders.nodes.has(peerId);
+}
+
+/**
+ * R22 round 33 — PEERS WHOSE HANDSHAKE CONTENT HALF WE WITHHELD.
+ *
+ * When the connect decision is going to be put, our own handshake sends its mesh-wide half
+ * and stops (`sendHandshake` in peerHandler): no scene singletons, no `requestFullState`,
+ * no `getnodedefs`. That is what makes "nothing moves until you decide" true of the
+ * direction the gate cannot reach — the gate withholds what a peer SENDS us and what WE
+ * send them, but a request we make is an invitation for a world to arrive.
+ *
+ * The request is not cancelled, it is DEFERRED: whatever ends the decision issues it, by
+ * which time we hold either a saved-and-cleared scene or nothing at all, and the host's
+ * own fast path answers a count-0 request without ever being asked a question.
+ * @type {Set<string>}
+ */
+const deferredHandshakes = new Set();
+
+/** peerHandler tells us it withheld its content half from this peer. @param {string} peerId */
+export function noteHandshakeDeferred(peerId) {
+	deferredHandshakes.add(peerId);
+}
+
+/**
+ * Ask a peer for the half our own handshake did not ask for. Delete-on-read: a deferral is
+ * spent the moment it is honoured, and a peer we never deferred to is a no-op — which is
+ * why this can sit on every path out of the gate.
+ * @param {string} peerId
+ * @param {boolean} [full] also re-request full state; `false` for callers that have
+ *   arranged an arrival re-sync of their own (`joinRoom` ends in `resyncRoomPeers`)
+ * @returns {boolean} did it fire
+ */
+function askDeferredState(peerId, full = true) {
+	if (!deferredHandshakes.delete(peerId)) return false;
+	/** @type {any} */
+	const peer = get(peers);
+	const conn = peer?.connections?.[peerId];
+	if (!conn?.open) return false;
+	try {
+		if (full) peer.requestFullState?.(conn);
+		// `getnodedefs` rides the withheld half and is NOT part of `requestFullState`, so
+		// the round-32 refetch below cannot stand in for it
+		conn.send({ type: 'getnodedefs', sender: peer.peer?.id });
+	} catch {}
+	return true;
+}
+
+/**
+ * @param {{refetch?: boolean}} [opts] `refetch: false` for the callers that have already
+ *   arranged an arrival re-sync of their own (`joinRoom` ends in `resyncRoomPeers`) —
+ *   asking twice sends the whole burst twice for nothing.
+ */
+function resolveGate(opts = {}) {
 	if (!gate || gate.done) return;
 	gate.done = true;
 	const pending = gate;
 	gate = null;
-	for (const sender of pending.senders.objects) sendObjectsTo(sender);
+	for (const sender of pending.senders.objects) replyTo('objects', sender);
 	for (const sender of pending.senders.nodes) sendNodes(sender);
+	const every = new Set([...pending.senders.objects, ...pending.senders.nodes]);
+	if (opts.refetch === false) {
+		// still owed the withheld `getnodedefs` — the arrival re-sync covers everything
+		// `requestFullState` covers and nothing this one adds
+		for (const sender of every) askDeferredState(sender, false);
+		return;
+	}
+	// R22 round 32 — ASK BACK. Everything ROOM_SCOPED these peers sent while the question
+	// was open was DROPPED on arrival (`gateHolds` in peerHandler), so answering has to
+	// collect what the asking cost us. It is the arrival re-sync's move minus its flag:
+	// deliberately NO `arriving`, because that flag CLAIMS "what I hold is your own scene"
+	// and would walk straight past the other side's still-open ask. A plain request queues
+	// behind their gate, which is the consent-preserving shape.
+	//
+	// This is the ONLY refetch rows 4 and 5 ever get: their rooms are unnamed, and
+	// `resyncRoomPeers` needs a named scene, so it returns 0 there and covers nothing.
+	/** @type {any} */
+	const peer = get(peers);
+	for (const sender of every) {
+		// R22 round 33: a DEFERRED peer's ask is the same burst plus the withheld
+		// `getnodedefs`, so it stands in for this one entirely
+		if (askDeferredState(sender)) continue;
+		const conn = peer?.connections?.[sender];
+		if (!conn?.open) continue;
+		try {
+			peer.requestFullState?.(conn);
+		} catch {}
+	}
 }
 
-async function stashAndJoin() {
-	if (!gate || gate.done) return;
-	const { payload, uuids } = gate;
-	await persistSession(payload);
-	// drop OUR pre-connect objects locally WITHOUT broadcasting deletes —
-	// anything that already arrived from the peer stays untouched
+/**
+ * R22 round 33 — DROP THE WORK THE GATE CAPTURED, locally and silently.
+ *
+ * Extracted from `stashAndJoin` because the connect decision's two answers both end here
+ * and only one of them writes a session first: Dismiss banks a backup, Save has already
+ * written the whole world into a library scene and would only be duplicating it.
+ *
+ * `gate.uuids` was captured when the question opened, so anything that arrived from the
+ * peer since is NOT in it and survives — the sweep takes exactly the work we brought.
+ */
+function sweepGateWork() {
+	if (!gate) return;
 	const group = get(objectsGroup);
 	/** @type {any} */
 	const controls = get(TControls);
-	for (const uuid of uuids) {
+	for (const uuid of gate.uuids) {
 		const object = group?.getObjectByProperty('uuid', uuid);
 		if (!object) continue;
 		if (controls?.object?.uuid === uuid) controls.detach();
 		object.parent?.remove(object);
 	}
 	objectsGroup.update((value) => value);
-	clearGraphs(); // H1: stash empties every graph document
+	clearGraphs(); // H1: a cleared scene empties every graph document
+}
+
+/** @param {{refetch?: boolean}} [opts] forwarded to `resolveGate` — see there */
+async function stashAndJoin(opts = {}) {
+	if (!gate || gate.done) return;
+	const { payload } = gate;
+	await persistSession(payload);
+	// drop OUR pre-connect objects locally WITHOUT broadcasting deletes —
+	// anything that already arrived from the peer stays untouched
+	sweepGateWork();
 	showToast('Stashed to Sessions: ' + payload.name);
-	resolveGate();
+	resolveGate(opts);
 }
 
 /**
@@ -1551,6 +1727,9 @@ export function deferUntilShareChoice(kind, sender, opts = {}) {
 				.catch(() => {});
 		}
 		replyTo(kind, sender);
+		// R22 round 33: no decision is coming (we hold nothing to decide about), so
+		// whatever our own handshake withheld is owed now. A no-op unless it withheld.
+		askDeferredState(sender);
 		return;
 	}
 
@@ -1561,7 +1740,14 @@ export function deferUntilShareChoice(kind, sender, opts = {}) {
 	const verdict = shareVerdicts.get(room);
 	if (verdict === 'stayed' && split) return; // decided: not from over there
 	if (verdict === 'shared' || verdict === 'stashed') {
-		replyTo(kind, sender);
+		// R22 round 32 — A STANDING VERDICT DECIDED *WHETHER* WE ANSWER, NOT *HOW*. This
+		// short-circuit sits ABOVE the ARRIVING row below, so without the flag here an
+		// arrival heal degrades silently to the old add-only reply for any room we have
+		// already answered once — which is every travel BACK into a room we agreed to share
+		// with, the case the arrival re-sync exists for. The verdict is consent to send this
+		// peer our scene; sending it as a heal is the same bytes with one more field.
+		replyTo(kind, sender, arriving ? { override: true } : {});
+		askDeferredState(sender); // R22 round 33 — answered already, so nothing is deferred
 		return;
 	}
 
@@ -1581,16 +1767,40 @@ export function deferUntilShareChoice(kind, sender, opts = {}) {
 	// It is a CLAIM, not a proof, and that is fine: the row above has already established
 	// we are in the same room, and inside one room the only thing this skips is a merge
 	// question whose honest answer is Share. It records NO verdict - nothing was decided.
+	//
+	// R22 round 32 - AND IT IS THE ONE REPLY THAT MAY OVERWRITE. `createObject` DEDUPES BY
+	// UUID, so the plain reply only ever ADDS what the traveller is missing: a box both
+	// sides hold keeps the pose the .tpscene was saved with, forever, and the two peers
+	// stand in one room looking at different worlds. Every other row is a MERGE of two
+	// authored worlds, where overwriting somebody's object would be the wrong answer -
+	// but this row has already decided the traveller is holding a snapshot of OUR scene,
+	// and the live room is what it came to catch up with. `override` is additive on the
+	// wire and only reaches builds that sent `arriving` in the first place.
 	if (arriving) {
-		replyTo(kind, sender);
+		replyTo(kind, sender, { override: true });
+		askDeferredState(sender); // R22 round 33 — a traveller is not a decision either
 		return;
 	}
 
 	const objects = count + ' object' + (count === 1 ? '' : 's');
-	const openGate = () => {
+	// R22 round 32 — SAY WHAT THE UNNAMED CASE ACTUALLY IS. Rows 4 and 5 are the two that
+	// can be reached with no name on our side, and the person there is being asked to merge
+	// without being told the thing that decides it: an unsaved scene is not a room (an empty
+	// name is no evidence of a split), so their world and the asker's are already counted as
+	// one. The second sentence is the round-32 fix speaking for itself — the ask now holds
+	// BOTH directions, so nothing has moved yet and answering is the only thing that moves it.
+	const unnamed = here ? '' : 'This scene is unsaved, and unsaved scenes all count as one shared room. ';
+	const held = here
+		? ''
+		: ' Nothing of yours leaves this screen, and nothing of theirs arrives, until you answer.';
+	// R22 round 33: the BACKUP'S NAME is the caller's, because the two questions bank it
+	// for different reasons — a Stash is work you meant to keep separate, a Dismiss is work
+	// you said goodbye to and may still want back. The payload is built HERE either way,
+	// when the question opens, so it holds what you brought and nothing that arrives after.
+	const openGate = (/** @type {string} */ backupName) => {
 		gate = {
 			senders: { objects: new Set(), nodes: new Set() },
-			payload: buildSessionPayload('Stashed before joining ' + nameOf(sender) + ' ' + new Date().toLocaleTimeString()),
+			payload: buildSessionPayload(backupName + ' ' + nameOf(sender) + ' ' + new Date().toLocaleTimeString()),
 			uuids: (group?.children ?? []).map((/** @type {any} */ child) => child.uuid),
 			room,
 			theirHash,
@@ -1614,7 +1824,11 @@ export function deferUntilShareChoice(kind, sender, opts = {}) {
 			// while our `atscene` row over there still names the scene we came from,
 			// every object we send is DROPPED ON ARRIVAL. Adoption publishes the new row
 			// down the same ordered conn, so the reply lands behind it.
-			void joinRoom(room, theirHash, () => resolveGate());
+			//
+			// NO refetch here: `joinRoom` ends in `resyncRoomPeers`, which asks the whole
+			// destination room for full state with `arriving` set — a strictly better ask
+			// than this one, and asking twice would send the burst twice.
+			void joinRoom(room, theirHash, () => resolveGate({ refetch: false }));
 		}
 	};
 	const stash = {
@@ -1626,13 +1840,15 @@ export function deferUntilShareChoice(kind, sender, opts = {}) {
 			// when the prompt opened, so the objects arriving from the room we are joining
 			// are not in it and survive the sweep — the stash still takes exactly the work
 			// we brought with us.
-			void joinRoom(room, theirHash, () => void stashAndJoin());
+			// `refetch: false` for the same reason Bring passes it — joinRoom's own
+			// `resyncRoomPeers` is the arrival ask, and it is the better one.
+			void joinRoom(room, theirHash, () => void stashAndJoin({ refetch: false }));
 		}
 	};
 
 	// ---- ROW 3: a real fork — their scene, our work, our call -------------------
 	if (split) {
-		openGate();
+		openGate('Stashed before joining');
 		ask(
 			'Share your ' + objects + ' into "' + room + '", stash them to a session first, or stay in "' + here + '"?',
 			[
@@ -1655,10 +1871,46 @@ export function deferUntilShareChoice(kind, sender, opts = {}) {
 		return;
 	}
 
+	// ---- ROW 5 FAST PATH: they hold nothing ------------------------------------
+	// LIFTED ABOVE the connect decision, and deliberately: taking your scratch world to a
+	// friend who has nothing is the flow this whole feature must not break. There is no
+	// merge, so there is nothing to decide. Row 4 gets no such shortcut — writing your work
+	// into a NAMED document deserves the question even when that document is empty, which
+	// is the rule row 4 has always been written on.
+	if (!room && !otherCount) {
+		shareVerdicts.set(room, 'shared'); // we shared into the space
+		replyTo(kind, sender);
+		askDeferredState(sender); // R22 round 33 — no decision is coming
+		return;
+	}
+
+	// ---- R22 ROUND 33: THE CONNECT DECISION ------------------------------------
+	// Rows 4 and 5, but only when the asker is the peer we JOINED and only when our own
+	// scene has never been saved. Two people both holding unmerged objects in untitled
+	// scenes is a state with no use, so the question with an answer replaces the question
+	// without one: your work has no identity to be merged INTO, so save it or let it go —
+	// and if neither, this connection was a mistake and should end.
+	//
+	// A MODAL (`showChoice` -> ConfirmModal, the app's one truly modal dialog) rather than
+	// the sticky toast the other rows use, because unlike them it can END THE SESSION, and
+	// a dialog whose ✕ disconnects may not be something you click past by accident. Every
+	// way out — the labelled button, Esc, the backdrop — resolves through the same cancel
+	// path, which is why the copy says so out loud.
+	//
+	// Everything else in this table is untouched: row 1's adoption, row 2's silent
+	// withhold, row 3's three options, the arriving branch, both verdict short-circuits and
+	// the HOST-side row 5 (`fromHost` false) all read exactly as they did. They are the
+	// backstop against a peer on an older build, and against this branch being bypassed.
+	if (connectDecisionApplies(fromHost, here)) {
+		openGate('Dismissed before joining');
+		void askConnectDecision(sender, room, theirHash, count);
+		return;
+	}
+
 	// ---- ROW 4: we are unnamed, they are not ------------------------------------
 	if (!here && room) {
-		openGate();
-		ask('Share your ' + objects + ' into "' + room + '", or stash them to a session first?', [bring, stash]);
+		openGate('Stashed before joining');
+		ask(unnamed + 'Share your ' + objects + ' into "' + room + '", or stash them to a session first?' + held, [bring, stash]);
 		return;
 	}
 
@@ -1666,11 +1918,12 @@ export function deferUntilShareChoice(kind, sender, opts = {}) {
 	if (!otherCount) {
 		shareVerdicts.set(room, 'shared'); // we shared into the space
 		replyTo(kind, sender);
+		askDeferredState(sender); // R22 round 33 — no decision is coming
 		return;
 	}
-	openGate();
+	openGate('Stashed before joining');
 	ask(
-		'Share your ' + objects + ' with ' + nameOf(sender) + ', or stash them to a session first?',
+		unnamed + 'Share your ' + objects + ' with ' + nameOf(sender) + ', or stash them to a session first?' + held,
 		[
 			{
 				label: 'Share',
@@ -1688,6 +1941,214 @@ export function deferUntilShareChoice(kind, sender, opts = {}) {
 			}
 		]
 	);
+}
+
+// ---- R22 round 33: the connect decision ------------------------------------------------
+
+/**
+ * IS THE CONNECT DECISION THE QUESTION FOR THIS PEER? Two callers, and they must agree or
+ * the deferral and the dialog fall out of step: `deferUntilShareChoice` below, and
+ * `sendHandshake` in peerHandler, which withholds its content half on the strength of it.
+ *
+ * The one thing peerHandler cannot know at handshake time is the other side's object
+ * COUNT, which is why the row-5 fast path is a separate test at the call site: an empty
+ * peer never asks anything, so a handshake deferred for one is released the moment its
+ * `getobjects` arrives and takes the fast path.
+ * @param {boolean} fromHost is this the peer whose session we joined
+ * @param {string} here our own scene name — '' when it has never been saved
+ * @returns {boolean}
+ */
+export function connectDecisionApplies(fromHost, here) {
+	if (!fromHost) return false; // a peer that joined US decides nothing about our scene
+	if (get(mergeOnConnect)) return false; // opted back into the classic Share/Stash merge
+	if (String(here ?? '').trim()) return false; // a named scene has an identity to merge into
+	return localSceneCount() > 0; // and nothing at stake means nothing to ask
+}
+
+/** The decision is over, however it ended. Clearing this is what releases sharedLibrary's
+ * held auto-download. @returns {void} */
+function finishDecision() {
+	pendingConnectDecision.set(null);
+}
+
+/**
+ * THE QUESTION ITSELF. Opened by the gate above, resolved into one of three endings that
+ * all leave the world in a state somebody chose.
+ * @param {string} sender @param {string} room @param {string} theirHash @param {number} count
+ */
+async function askConnectDecision(sender, room, theirHash, count) {
+	const mine = gate; // the gate this question owns — see the staleness test below
+	pendingConnectDecision.set({ peerId: sender });
+	const objects = count + ' object' + (count === 1 ? '' : 's');
+	const theirs = room ? '"' + room + '"' : 'their scene';
+	const answer = await showChoice({
+		title: nameOf(sender) + ' approved your connection',
+		message:
+			'You have ' +
+			objects +
+			' in a scene that was never saved. Peers tell worlds apart by scene name, so an unsaved one cannot be a room of its own — joining puts your work into ' +
+			theirs +
+			'. Save this scene to your library and join clean, or dismiss your changes — a backup goes to Sessions, so nothing is lost either way. Closing this dialog disconnects instead, and leaves your scene exactly as it is.',
+		choices: [
+			{ value: 'save', label: 'Save scene & connect' },
+			{ value: 'dismiss', label: 'Dismiss changes' }
+		],
+		// EVERY way out means the same thing. ConfirmModal resolves Esc, the backdrop and
+		// this button through one cancel path, so making them differ is not on offer — and
+		// the least surprising thing they can all mean is the one the copy names.
+		cancelLabel: 'Disconnect'
+	});
+	// the connection can die while a dialog is up (the host leaves, the link drops), and
+	// `showChoice` also resolves a dialog that a SECOND dialog replaced
+	if (gate !== mine || !gate || gate.done) return finishDecision();
+	if (answer === 'save') return void saveAndJoin(sender, room, theirHash);
+	if (answer === 'dismiss') return void dismissAndJoin(sender, room, theirHash);
+	disconnectFromDecision(sender);
+}
+
+/**
+ * DISMISS: the stash machinery with a different name on the backup. Records NO verdict —
+ * after the sweep we hold nothing, and row 1 answers everything from here.
+ * @param {string} sender @param {string} room @param {string} theirHash
+ */
+async function dismissAndJoin(sender, room, theirHash) {
+	if (!gate || gate.done) return finishDecision();
+	const payload = gate.payload;
+	await persistSession(payload);
+	const done = () => {
+		sweepGateWork();
+		showToast('Your changes were dismissed. A backup is in Sessions: ' + payload.name);
+		finishDecision();
+	};
+	if (room) {
+		// row 4 — TAKE THE ROOM FIRST, for the reason Bring/Stash spell out: our reply is
+		// scene content, and while our `atscene` row over there still names another scene
+		// every object we send is dropped on arrival. `refetch: false` because joinRoom
+		// ends in `resyncRoomPeers`, which is the better ask.
+		await joinRoom(room, theirHash, () => {
+			done();
+			resolveGate({ refetch: false });
+		});
+		return;
+	}
+	done();
+	resolveGate();
+}
+
+/**
+ * SAVE: hand over to the Explorer's own inline naming — the round-31 handoff, moved here
+ * whole — and finish the join once a name lands.
+ *
+ * The save is the ONE place this differs from an ordinary one: it must not record the C4
+ * publish consent. Saving a scene in order to LEAVE it is not the act of publishing it to
+ * the room ("it should not share any changes unless I choose"), so the arm carries
+ * `consent: false` all the way to `saveSceneAsLevel`, whose `noteSceneOpened` is the
+ * single thing that widens the outbound manifest scope.
+ * @param {string} sender @param {string} room @param {string} theirHash
+ */
+async function saveAndJoin(sender, room, theirHash) {
+	if (!gate || gate.done) return finishDecision();
+	// WAIT FOR THE MODAL TO REALLY BE GONE: closing a <dialog> restores focus to whatever
+	// held it, and arming the naming card before that lands hands the user a field that
+	// looks ready and swallows every keystroke (peerApproval measured it).
+	await modalClosed();
+	// armed the way projectFile's bootstrap arms it: open the Explorer, make it the VISIBLE
+	// dock panel (the card is useless behind the Flow tab), then hand it the write-once
+	// request and let it own the input. Inventing a name here would be worse than asking.
+	explorerClose.set(false);
+	bottomDockActive.set('explorer');
+	armExplorerSceneSave(null, { consent: false });
+	showToast('Name your scene in the Explorer — you join as soon as it is saved.');
+	/** @type {any} */
+	let levels = null;
+	try {
+		levels = await import('./levels');
+	} catch {
+		/* the naming cannot happen without it — fall through to the offer below */
+	}
+	const named = levels ? await waitForSceneName(levels.currentLevel) : false;
+	if (!gate || gate.done) return finishDecision(); // torn down while they were typing
+	if (!named) {
+		// ABANDONED. The gate is still holding both directions, so the decision has not
+		// been dropped — it has to be reachable again, and a sticky info toast with the
+		// same three answers is the share-or-stash shape for exactly that.
+		offerDecisionAgain(sender, room, theirHash);
+		return;
+	}
+	// the save wrote the whole world into a library scene, so the live copy has a home to
+	// come back from. No second backup: `stashAndJoin`'s session would be the same bytes.
+	sweepGateWork();
+	showToast('Scene saved. Joining ' + nameOf(sender) + ' with a clean scene.');
+	if (room) {
+		await joinRoom(room, theirHash, () => {
+			finishDecision();
+			resolveGate({ refetch: false });
+		});
+		return;
+	}
+	// ROW 5 — LET THE SAVED NAME GO. `saveSceneAsLevel` writes it into `currentLevel`, and
+	// that publishes an `atscene` row: standing in the host's unnamed world while claiming
+	// to be in "Mine" is a lie every room-aware read would then believe, and the bytes that
+	// name describes are not the ones on screen. The projectFile OPEN precedent.
+	levels.currentLevel.set(null);
+	finishDecision();
+	resolveGate();
+}
+
+/**
+ * The naming was abandoned. The question stands, so put it back where it can be answered.
+ * @param {string} sender @param {string} room @param {string} theirHash
+ */
+function offerDecisionAgain(sender, room, theirHash) {
+	showInfoToast(
+		'connect-decision',
+		'Your scene was not saved, so nothing has moved either way yet. ' +
+			nameOf(sender) +
+			' is connected and waiting.',
+		[
+			{
+				label: 'Save scene & connect',
+				action: () => {
+					dismissToastById('connect-decision');
+					void saveAndJoin(sender, room, theirHash);
+				}
+			},
+			{
+				label: 'Dismiss changes',
+				action: () => {
+					dismissToastById('connect-decision');
+					void dismissAndJoin(sender, room, theirHash);
+				}
+			},
+			{
+				label: 'Disconnect',
+				action: () => {
+					dismissToastById('connect-decision');
+					disconnectFromDecision(sender);
+				}
+			}
+		],
+		undefined,
+		true
+	);
+}
+
+/**
+ * DISCONNECT: drop the gate the way Stay drops it — SEND NOTHING, not even an empty
+ * `loading: 0`, which would claim we had answered and had nothing — and then leave the
+ * session through the same call the Connect pill's own Disconnect makes.
+ * @param {string} sender
+ */
+function disconnectFromDecision(sender) {
+	const who = nameOf(sender); // read BEFORE leaving: the roster is what names a peer
+	if (gate) gate.done = true;
+	gate = null;
+	deferredHandshakes.delete(sender);
+	finishDecision();
+	try {
+		/** @type {any} */ (get(peers))?.leaveSession?.();
+	} catch {}
+	showToast('Disconnected from ' + who + ' — your scene is unchanged. Connect again any time.');
 }
 
 /**

@@ -123,6 +123,15 @@ async function connect(from, to, settleMs = 9000) {
 	await step(from, 'press Connect', () =>
 		from.page.getByRole('button', { name: 'Connect', exact: true }).click()
 	);
+	// R22 round 33 REMOVED the dial-time ask (round 31's "Save & connect / Connect anyway /
+	// Cancel"), and with it the block that used to answer it here. A dialer holding work in
+	// an UNNAMED scene now dials immediately; the question is put at the HOST's APPROVAL
+	// instead, as a blocking modal (#confirm-dialog-save / -dismiss / -cancel).
+	//
+	// That modal is deliberately NOT answered here: which of its three endings a suite wants
+	// is a per-suite decision (connect-decision drives all three by hand), and a suite that
+	// wants the OLD classic share-or-stash merge instead parks the setting that restores it —
+	// `h.setupPage(browser, 'X', { storage: { 'connect:mergeOnConnect': 'true' } })`.
 	await step(to, 'approve the request', () =>
 		to.page.getByRole('button', { name: 'Approve' }).click({ timeout: 30000 })
 	);

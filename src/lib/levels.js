@@ -29,7 +29,10 @@
 // would close the TDZ cycle (the moduleSDK rule).
 
 import { writable, get } from 'svelte/store';
-import { showToast, showInfoToast, dismissToastById } from '../stores/appStore';
+import { showToast, showInfoToast, dismissToastById, peers } from '../stores/appStore';
+// R22 round 34: the adopt message names the peer who saved. `sessions.js` — which this
+// module already imports — imports lockControl too, so this closes no new edge.
+import { nameOf } from './lockControl';
 import {
 	buildSessionPayload,
 	emptySessionPayload,
@@ -62,7 +65,12 @@ import {
 	adoptSceneVersions,
 	projectManifest,
 	sceneEntry,
-	noteSceneOpened
+	noteSceneOpened,
+	// R22 round 35: privacy's WIRE half — the outbound manifest withholds a scene marked
+	// here, which is the only thing that makes the promise true for a HOST (it publishes
+	// its project whole, so withholding consent alone would buy it nothing).
+	setScenePrivateHere,
+	sendProjectManifest
 } from './projectManifest';
 import { sessionHost } from './connectionState';
 // loose-scenes fix: the prompt is for an EDITOR, so it stands down in play mode (see
@@ -88,7 +96,11 @@ export const SCENES_FOLDER = 'Scenes';
  * `signature` is the content identity the auto-save compares against (see sceneSignature).
  * 21-G8 fork 12: `unsaved` marks a loose .tpscene OPENED from disk — named, on screen,
  * but NOT a member of the project until the user saves it in.
- * @type {import('svelte/store').Writable<{hash: string, name: string, signature?: string, unsaved?: boolean} | null>} */
+ * R22 round 35: `private` marks a scene the user opened with "Edit privately" — its NAME
+ * never leaves this machine and no scene content crosses in either direction. It rides
+ * HERE rather than in a store of its own so that every later writer of this record clears
+ * it by construction: travelling elsewhere, or `set(null)`, is leaving the private scene.
+ * @type {import('svelte/store').Writable<{hash: string, name: string, signature?: string, unsaved?: boolean, private?: boolean} | null>} */
 export const currentLevel = writable(null);
 
 /**
@@ -441,8 +453,10 @@ export function levelSceneName(fileName) {
  * @param {string} name
  * @param {string|null} [folderId] 21-G9: land it HERE when it is a real library folder
  *   (the Explorer's active folder); 21-H1: the library ROOT otherwise
- * @param {{label?: string}} [opts] 21-G7: `label` NAMES this version in the history
- *   panel (the manual "Save version…" path); absent = "Auto"
+ * @param {{label?: string, consent?: boolean}} [opts] 21-G7: `label` NAMES this version in
+ *   the history panel (the manual "Save version…" path); absent = "Auto".
+ *   R22 round 33: `consent: false` withholds the C4 publish consent — see below. Absent
+ *   means consent, so every existing caller is byte-identical.
  * @returns {Promise<{id: string, hash: string, name: string}|null>}
  */
 export async function saveSceneAsLevel(name, folderId = null, opts = {}) {
@@ -460,14 +474,42 @@ export async function saveSceneAsLevel(name, folderId = null, opts = {}) {
 	// become a project scene, and its source file is the only record of what it looked
 	// like before this save. Captured here because currentLevel.set below destroys it.
 	const cameFrom = get(currentLevel);
-	currentLevel.set({ hash: item.hash, name: payload.name, signature: sceneSignature(payload) });
+	// R22 ROUND 35 — A SAVE IS NOT A PUBLISH WHILE THE SCENE IS PRIVATE, and this is the one
+	// `currentLevel` writer that deliberately CARRIES the flag forward rather than clearing
+	// it. Every other writer clearing it is right: travelling elsewhere is leaving. Saving is
+	// not. "Edit privately" promises the scene stays on this machine until the user says
+	// otherwise, and the routes into this function include the unsaved-changes guard's own
+	// "Save and open" — so a save that published would break the promise as a SIDE EFFECT of
+	// an unrelated dialog, which is the worst way for a privacy rule to fail.
+	//
+	// It survives a rename (Save as) too, and marks the NEW name private: the same argument,
+	// since the session has never heard of that name either. Leaving private mode is the
+	// explicit act — Share with the session, granting access, or travelling away.
+	const staysPrivate = cameFrom?.private === true;
+	if (staysPrivate) setScenePrivateHere(payload.name, true);
+	currentLevel.set({
+		hash: item.hash,
+		name: payload.name,
+		signature: sceneSignature(payload),
+		...(staysPrivate ? { private: true } : {})
+	});
 	// 21-G2: a manual save IS a version — the manifest pointer moves with it (refused
 	// for viewers inside publishSceneVersion; the local item exists either way)
 	// C4: saving IS the consent to publish, and it has to be recorded BEFORE the write —
 	// publishSceneVersion commits, and a commit is a broadcast, so consent given after it
 	// scopes out the very version it was meant to release and nothing sends again until
 	// the next manifest write. (Measured: the host's document stayed without the scene.)
-	noteSceneOpened(payload.name);
+	//
+	// R22 round 33 — WITH ONE EXCEPTION, and it is the exception that proves the rule.
+	// "Save scene & connect" saves in order to LEAVE the scene behind and join somebody
+	// else's world clean. That is not the act of publishing it to the room ("it should not
+	// share any changes unless I choose"), so the connect decision passes `consent: false`
+	// and the name stays out of `outboundManifest`'s scope. The version is still written
+	// locally, and saving it again — deliberately, later — is consent like any other save.
+	// R22 round 35: `staysPrivate` is the third way to decline consent, and it declines it
+	// for the same reason the two above do — the version is still written LOCALLY, and the
+	// manifest mark keeps its name out of every outbound document until the user shares.
+	if (opts.consent !== false && !staysPrivate) noteSceneOpened(payload.name);
 	publishSceneVersion(payload.name, item.hash);
 	// ADOPT THE FILE WE CAME FROM. Reported as: open a dragged-in cube.tpscene, rename
 	// it, move something, then save — and a SECOND cube2.tpscene appeared beside the
@@ -488,7 +530,13 @@ export async function saveSceneAsLevel(name, folderId = null, opts = {}) {
 	// 21-G7: one visible card per scene name — the pointer we just wrote
 	hideOldVersions(payload.name);
 	pruneSceneVersions(payload.name);
-	showToast('Scene saved: ' + payload.name + ' (' + (payload.count ?? 0) + ' objects)');
+	// R22 round 34 — A SAVE NAMES THE ROOM. Last, after the manifest publish above: a peer
+	// that takes the name and goes looking for the scene must find its history already
+	// there, and PeerJS conns are ordered, so "after" here is "after" over there too.
+	const announced = await announceSceneName(cameFrom, payload.name, item.hash, opts);
+	showToast(
+		'Scene saved: ' + payload.name + ' (' + (payload.count ?? 0) + ' objects)' + announced.note
+	);
 	return item;
 }
 
@@ -564,6 +612,12 @@ export async function publishCurrentIfChanged(opts = {}) {
 	// uninvited. The user was offered "Save into project" on their first edit; until
 	// they take it, this scene has the protection an unnamed scene has (the autosave).
 	if (at.unsaved) return false;
+	// R22 round 35: a PRIVATE scene gets the protection an unsaved one has, and for the same
+	// reason one line up — this is an AUTOMATIC publish, and automatic is exactly what a
+	// scene the user has declared private may not be. It calls `noteSceneOpened` below, so
+	// without this a private HOST travelling away would consent to its own secret. The
+	// ordinary autosave still protects the work.
+	if (at.private) return false;
 	if (get(sessionHost) !== null) return false; // not the writer
 	if (!opts.force && autoVersionsOff()) return false; // fork 10: auto-versions off
 	/** @type {any} */
@@ -730,9 +784,13 @@ function resolveLevelItem(hash) {
  * the load. `gameStateRestore` stamps a fresh changedAt on purpose — each peer stamps
  * its own, the content is identical, and latest-wins converges.
  * @param {string} hash @param {string} [name] display name for the toast/store
+ * @param {{private?: boolean}} [opts] R22 round 35: open it PRIVATELY — no C4 consent, no
+ *   "save into project" nag, no arrival re-sync, and the record carries the flag that
+ *   isolates it. Absent means today's behaviour byte for byte, which is what keeps the
+ *   travel NODE and every other caller untouched.
  * @returns {Promise<boolean>} did a load happen
  */
-export async function travelToLevel(hash, name = '') {
+export async function travelToLevel(hash, name = '', opts = {}) {
 	const key = String(hash ?? '').trim();
 	if (!key) return false;
 	if (inFlight.has(key)) return false;
@@ -784,17 +842,31 @@ export async function travelToLevel(hash, name = '') {
 		// travelToScene resolves THROUGH the manifest, so its hash is always in there and
 		// tracked travel is unaffected.
 		const tracked = !!sceneEntry(here)?.history?.includes(key);
+		// R22 round 35: PRIVATE. The flag is written WITH the record rather than after it, so
+		// the `currentLevel.subscribe` that publishes our `atscene` row sees one write and
+		// publishes the private shape once — a two-step would broadcast the NAME first and
+		// take it back a tick later, which is a leak with a stack trace.
+		const secret = opts.private === true;
 		currentLevel.set({
 			hash: key,
 			name: here,
 			signature: sceneSignature(payload),
-			...(tracked ? {} : { unsaved: true })
+			...(tracked ? {} : { unsaved: true }),
+			...(secret ? { private: true } : {})
 		});
 		// C4: travelling INTO a scene is opening it, which is the consent that lets this
 		// machine's copy of that scene's history leave it. Keyed by the name the project
 		// files it under, which is the key the scope is keyed by too.
-		noteSceneOpened(here);
-		if (!tracked) void armSaveIntoProject(here);
+		//
+		// R22 round 35 — AND THAT IS EXACTLY WHAT "Edit privately" DECLINES. Round 33's
+		// `consent: false` on the save path is the same act one door over: consent is an act
+		// a person performs, and this person has just declined it. The manifest MARK is the
+		// other half, and it is the half that covers a host (which publishes whole).
+		if (secret) setScenePrivateHere(here, true);
+		else noteSceneOpened(here);
+		// …and the "save this into your project" prompt is an invitation to publish, so
+		// arming it here would nag a decision the user has just made
+		if (!tracked && !secret) void armSaveIntoProject(here);
 		// A2 - ARRIVAL RE-SYNC. The room gate withholds every scene-scoped message from a
 		// peer standing somewhere else, so the world we have just walked into is missing
 		// whatever happened in it while we were away: the .tpscene we loaded is a
@@ -868,6 +940,169 @@ export function adoptSceneIdentity(name, hash) {
 	// already inside `sessionSceneNames`.
 	currentLevel.set({ hash: '', name: scene, unsaved: true });
 	return true;
+}
+
+// ---- R22 round 34: A SAVE NAMES THE ROOM ---------------------------------------------
+//
+// REPORTED: two peers edit ONE untitled world together; one of them saves it in the
+// Library; from that moment the peers popup shows them in two different scenes, Watch
+// reads wrong, and the identity has diverged from the content. Nothing was broken about
+// the CONTENT — `currentLevel` is LOCAL by design, an unnamed side is never evidence of
+// "elsewhere" (the only-on-evidence rule), so edits kept flowing exactly as before. What
+// diverged was the NAME: only the saver's copy learned it.
+//
+// A1 already solved the joiner's half of this — `adoptSceneIdentity` names an empty
+// joiner from the host's handshake. This is the same act at the other end of the session:
+// the world acquires a name while everybody is standing in it, so everybody takes it.
+//
+// ONE SMALL MESSAGE, and it earns its keep by joining `ROOM_SCOPED`, which is the whole
+// reason it is a type of its own rather than a field on something else. That membership
+// buys, with no code here at all: withheld on SEND from a peer demonstrably elsewhere
+// (`broadcast`), dropped on RECEIVE from one (`canApplyByRoom`), and dropped from a peer
+// held behind an open share-or-stash / connect decision (`gateHolds`). A save made in
+// one room can therefore never rename another.
+
+/**
+ * Tell the room what it is now called — when this save is the one that NAMED it.
+ *
+ * THREE GATES, and each excludes a real case rather than a hypothetical one:
+ *   · the world was UNNAMED before this save. A re-save of an already-named scene changes
+ *     no name (the manifest pointer machinery owns versions), and `newLevel` opens
+ *     nothing, so neither has anything to announce.
+ *   · CONSENT was recorded. Round 33's "Save scene & connect" passes `consent: false`: it
+ *     saves in order to LEAVE this world behind and join somebody else's clean, so
+ *     renaming everybody's scene on the way out is precisely what that button promises not
+ *     to do. A private-by-intent save must not name a room.
+ *   · somebody is HERE to hear it — an open conn we have no evidence is somewhere else,
+ *     which is the same test `broadcast` will apply to the message itself, so this count
+ *     is exactly its audience.
+ * @param {{name?: string} | null} cameFrom `currentLevel` as it was BEFORE the save
+ * @param {string} name @param {string} hash
+ * @param {{consent?: boolean}} opts
+ * @returns {Promise<{told: number, note: string}>} `note` is the save toast's suffix
+ */
+async function announceSceneName(cameFrom, name, hash, opts) {
+	const wasUnnamed = !String(cameFrom?.name ?? '').trim();
+	const shared = opts.consent !== false;
+	const here = await roommatePeers();
+	if (!here.length || !shared) return { told: 0, note: '' };
+	// the note is about SHARING and not about naming, so it rides every consented save
+	// made with company — a re-save publishes this version to the room just the same
+	const note = ' — shared with this session.';
+	if (!wasUnnamed) return { told: 0, note };
+	try {
+		/** @type {any} */
+		const peer = get(peers);
+		peer.send({ type: 'sceneadopt', name, hash, peerId: peer.peer.id, at: Date.now() });
+	} catch {
+		return { told: 0, note };
+	}
+	return { told: here.length, note };
+}
+
+/**
+ * The peers we can reach in OUR room: every open conn minus anybody demonstrably
+ * elsewhere. `elsewhereThan` is the same predicate `broadcast` filters with, so this is
+ * the audience of a room-scoped message, counted before one is sent.
+ *
+ * DYNAMIC import, the shape `travelToLevel`'s arrival re-sync already uses here:
+ * `peerScenes` imports THIS module (currentLevel) and a static edge back would close the
+ * cycle — and its module body subscribes at eval, which is where that bites.
+ * @returns {Promise<string[]>}
+ */
+async function roommatePeers() {
+	try {
+		/** @type {any} */
+		const peer = get(peers);
+		if (!peer?.peer?.id) return [];
+		const conns = peer.connections ?? {};
+		const open = Object.keys(conns).filter((id) => conns[id]?.open);
+		if (!open.length) return [];
+		const m = await import('./peerScenes');
+		// R22 round 35: while WE are private nobody is in our room BY DEFINITION, so the
+		// audience is empty — which also stops the save toast claiming a scene was "shared
+		// with this session" when the whole point of the save was that it was not.
+		if (m.amPrivate()) return [];
+		const map = get(m.peerScenes);
+		const mine = m.myScene()?.scene ?? '';
+		return open.filter((id) => !m.elsewhereThan(map, mine, id));
+	} catch {
+		return [];
+	}
+}
+
+/**
+ * THE OTHER END: a peer saved the world we are standing in, so it has a name now.
+ *
+ * TWO GATES:
+ *   (a) OUR OWN SCENE IS UNNAMED. A named scene is either a different room — in which case
+ *       their save is none of our business — or this identity already, which makes a
+ *       repeat message a no-op; so this is the idempotence guard too. An `unsaved: true`
+ *       loose scene HAS a name and is therefore NOT unnamed: it is a file this machine
+ *       opened, and a stranger's save does not get to re-label it.
+ *   (b) the sender is in our room. Redundant by construction — `sceneadopt` is
+ *       ROOM_SCOPED, so `canApplyByRoom` has already dropped this message from a peer
+ *       standing elsewhere — and kept anyway as the backstop against a build that does not
+ *       gate on send, which is the same reason the receive-side gate exists at all.
+ *
+ * THE NAME AND NOTHING ELSE, hash included: `adoptSceneIdentity` spells out why claiming
+ * somebody else's hash broke the Explorer's "Open here". And adoption is NOT consent, so
+ * nothing here widens `outboundManifest`'s scope — see that function's own note.
+ * @param {any} data @returns {Promise<boolean>} did we take the name
+ */
+export async function applyRemoteSceneAdopt(data) {
+	const scene = String(data?.name ?? '').trim();
+	const from = String(data?.peerId ?? '');
+	if (!scene) return false;
+	if (String(get(currentLevel)?.name ?? '').trim()) return false;
+	try {
+		const m = await import('./peerScenes');
+		if (from && !m.sameRoomOrUnknown(from)) return false;
+	} catch {}
+	if (!adoptSceneIdentity(scene, String(data?.hash ?? ''))) return false;
+	showToast(nameOf(from) + ' saved this scene as "' + scene + '"');
+	return true;
+}
+
+// ---- R22 round 35: THE ONE WAY OUT OF PRIVATE MODE -----------------------------------
+
+/**
+ * SHARE THE PRIVATE SCENE WITH THE SESSION — the exit path, and deliberately the ONLY one
+ * that publishes. Both routes to it (the "Share scene" button on an access request, and
+ * the popup's own Share) come through here, because the ORDER of these five steps is the
+ * whole correctness of the thing and a second copy would get one of them wrong:
+ *
+ *   1. the WIRE mark comes off first, so anything the steps below send is already allowed
+ *      to carry the name (`outboundManifest` reads that set on every send).
+ *   2. CONSENT, recorded BEFORE the write that publishes it — the C4 rule this file states
+ *      twice already, for the same measured reason: a commit is a broadcast, and consent
+ *      given after one scopes out the very document it was meant to release.
+ *   3. the RECORD, whose write is what publishes our real `atscene` row (the module-level
+ *      subscribe in peerScenes) — so from here on the popup can offer Go to.
+ *   4. the MANIFEST, pushed rather than waited for. The scene's history exists locally
+ *      (it was saved before it was opened), and the send-back only fires when a document
+ *      ARRIVES, so without this the room learns the history at the next unrelated write.
+ *      A scene with no entry at all — a loose .tpscene — is fine: Go to travels HASH-first.
+ *   5. the arrival re-sync, for what the room withheld while we were away.
+ * @returns {Promise<{scene: string, hash: string} | null>} null when we were not private
+ */
+export async function sharePrivateScene() {
+	const at = get(currentLevel);
+	if (at?.private !== true) return null;
+	const scene = String(at.name ?? '').trim();
+	setScenePrivateHere(scene, false);
+	noteSceneOpened(scene);
+	const next = { ...at };
+	delete next.private;
+	currentLevel.set(next);
+	try {
+		sendProjectManifest('');
+	} catch {}
+	try {
+		const m = await import('./peerScenes');
+		m.resyncRoomPeers();
+	} catch {}
+	return { scene, hash: String(at.hash ?? '') };
 }
 
 // ---- 21-G7: keeping the one-visible-item invariant true -------------------------------

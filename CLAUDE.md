@@ -386,6 +386,102 @@ loadable play content. Everything a user does must be visible to connected peers
   **getgame was measured INERT and removed**: fork 3's carry semantics re-stamp the
   traveller's state at Date.now(), so the room's reply always loses — that is the fork
   working; the measurement lives in requestFullState's JSDoc.
+  · **ROUND 32: THE ARRIVING REPLY HEALS** — every object applier dedupes by uuid, so
+  "double-application is safe" was also "existing objects never converge": a traveller
+  who loaded a stale .tpscene kept the file's poses forever while the room moved on. The
+  reply to an `arriving` request carries `override: true` on every group/object/
+  objectfile message (conditional spread — ordinary replies byte-identical), and the
+  appliers REPLACE in place: createObject in both paths (gizmo detach first, tolerant of
+  a missing target; the GLTF path used to ADD A DUPLICATE — an unbraced if ran the
+  group-attach block unconditionally), createGroup (which had NO dedupe at all — now
+  unconditional, override also updates name+pose, never a re-parent), applyObjectFile
+  (transform/name/anim only, never a re-parse). The standing-VERDICT short-circuit
+  forwards the flag when the request was arriving — a verdict decides WHETHER we answer,
+  not HOW, and without it every travel BACK into an answered room degraded to add-only.
+  Deletions still do not converge (the reply is not authoritative about absence —
+  recorded follow-up). Nodes needed nothing: mergeGraphSnapshot already updates in place.
+  · **ROUND 32: THE ASK HOLDS BOTH DIRECTIONS** — the share-or-stash gate queued only
+  what we SEND, so whoever answered first (or held a latched verdict) poured its scene
+  into the other side mid-question. `gateHolds(peerId)` (sessions) marks a peer queued
+  behind our open ask; peerHandler DROPS its ROOM_SCOPED content (right after
+  canApplyByRoom) and `broadcast` withholds ROOM_SCOPED payloads to it (STREAM_TYPES
+  keep flowing). Answering REFETCHES full state from every queued sender in resolveGate
+  — deliberately WITHOUT `arriving`, which would walk past the other side's still-open
+  ask; rows 3/4 pass refetch:false (joinRoom already ends in resyncRoomPeers), rows 4/5
+  are unnamed so this is the only refetch they can get, and Stay refetches nothing. The
+  rows-4/5 ask copy now says the scene is unsaved and that nothing moves either way
+  until answered. The invite auto-dial stays unguarded (a fresh tab IS empty at dial
+  time); the dial-to-approval edit window is covered by this gate now, recorded in
+  requestConnect's JSDoc. ROUND 33 closed its singleton gap: environment/music/
+  scenephysics/scenepost/game are PUSH-only (no get*), so what the gate dropped was
+  unrecoverable — `replyTo('objects')` now runs a registered `pushWorldState` seam
+  (peerHandler registers, `registerWorldStatePush` — sessions may not reach those
+  modules) so every consented objects reply re-states them, idempotent on their stamps.
+  · **ROUND 33: THE CONNECT DECISION** — two users both in UNTITLED scenes holding
+  unmerged objects is a state with no use (the user's ruling), so the joiner-side
+  question moved to where it has an answer. The DIAL-TIME ask is GONE (requestConnect
+  dials immediately; settleSceneIdentity deleted; pill and invite link are one path).
+  At APPROVAL, rows 4/5 with `fromHost` + unnamed + work (row 5 only when the far side
+  also holds work — the `!otherCount` fast path is lifted ABOVE the branch so bringing
+  a scratch world to an EMPTY friend still auto-shares) put a blocking MODAL
+  (`askConnectDecision`): Save scene & connect (Explorer inline naming with
+  `consent:false` — saving in order to LEAVE is not C4 publish consent; then sweep,
+  currentLevel→null for row 5 / joinRoom for row 4) · Dismiss changes (the stash
+  machinery, backup named "Dismissed before joining") · Disconnect (Esc/backdrop/the
+  labelled cancel all mean it, said in the copy; sends NOTHING, the Stay rule). An
+  abandoned naming re-offers all three as a sticky toast. NOTHING MOVES UNTIL DECIDED
+  including what we ASK for: sendHandshake withholds the joiner's scene singletons (its
+  fresher stamps would clobber the host's world) and defers
+  requestFullState+getnodedefs (`deferredHandshakes`, delete-on-read via
+  `askDeferredState` at every gate exit — after the decision the request goes out with
+  count 0 and the host's fast path answers unasked); sharedLibrary's auto-download
+  holds behind `pendingConnectDecision` (connectionState). The OLD merge is the
+  `mergeOnConnect` opt-in (connectionState, `connect:mergeOnConnect`, default false,
+  Settings beside the sharing prefs) — ON restores the classic Share/Stash toast
+  verbatim; the rows and gates beneath are untouched either way (the backstop against
+  older builds and bypasses). KNOWN, recorded: the host's handshake singletons land on
+  the joiner BEFORE its gate opens (ordered conn), so Disconnect leaves the host's look
+  applied locally — fixing that means reordering sendHandshake, its own ticket.
+  · **ROUND 34: A SAVE NAMES THE ROOM** — `saveSceneAsLevel` broadcasts `sceneadopt`
+  {name, hash} when a consented save NAMES a previously-unnamed world with a roommate
+  present (never for re-saves, `newLevel`, or round-33's `consent:false` saves — a save
+  made in order to LEAVE must not rename anybody's world). `sceneadopt` is in ROOM_SCOPED
+  (the one member about a scene's IDENTITY: atscene REPORTS an identity, this CONFERS
+  one), so elsewhere/gate-held peers never adopt; the applier (levels, beside
+  adoptSceneIdentity) takes it only when our own scene is UNNAMED (also the idempotence
+  guard; an `unsaved` loose scene has a name and is not re-labelled) + sameRoomOrUnknown
+  as the older-build backstop. Adoption stays name-only and is NOT consent. The save
+  toast gains " — shared with this session." on any consented save with a roommate.
+  · **ROUND 35: PRIVATE SCENES** — opening an UNSHARED local scene with peers connected
+  asks Share with the session / Edit privately / Cancel (`askScenePrivacy` in the new
+  `scenePrivacy.js`; `sceneNameShared` in projectManifest decides; the travel NODE never
+  asks). Private = `private: true` ON `currentLevel` (every later writer clears it by
+  construction; the audited exception: a save of the private scene itself PRESERVES it —
+  the open-guard's "Save and open" must not publish as a side effect).
+  `mySceneWire()` is the ONE atscene builder: private publishes `{scene:'', hash:'',
+  private:true}` — THE NAME AND HASH NEVER LEAVE THE MACHINE, and the flag is the
+  positive evidence an empty row lacks (`elsewhereThan` answers the PRIVATE_SCENE
+  sentinel with no `mine` needed; `privacySplit` covers the half no map read can see —
+  WE are private). `sameRoomOrUnknown` folded + privacy buys canApplyByRoom, the nine
+  full-state replies and sceneadopt for free; `broadcast` gains the self-private
+  ROOM_SCOPED withhold (streams/chat keep flowing — private is not offline);
+  sendHandshake withholds singletons + the full-state ask + the direct `locked` send;
+  getobjects/getnodes are withheld on privacySplit BEFORE the share-or-stash table
+  (which is written in NAMES and would read a private empty row as the shared world);
+  `outboundManifest` drops `privateScenes` in BOTH branches (the host branch is what
+  makes the promise true — a host publishes whole). The popup: "In a private scene"
+  group LAST, Watch disabled with the reason, no Go-to, a Request access button; while
+  YOU are private, a strip under the Connected header offers Share with session +
+  Rejoin session. `sceneaccess` (request|grant|deny) is deliberately MESH-WIDE — the
+  one message whose whole job is to cross the divide, carrying no name and no content;
+  the private peer's sticky ask says sharing shares with EVERYONE; `sharePrivateScene`
+  is the ONE exit (lift the mark, consent, publish the real row, PUSH the manifest —
+  the send-back only fires on an arriving document); the grant card's Go to reuses the
+  guarded `travelToPeerScene` (extracted into sceneOpenGuard). Rejoin: guarded, travel
+  to the session's named room when one exists, else clear + null + publish '' +
+  requestFullState from every reachable peer (the row-1 shape — what makes an UNTITLED
+  session world rejoinable). Follow-ups: approve-while-private UX; private mode does
+  not survive a reload; sceneaccess sits off the ALWAYS_ALLOWED floor.
   · **THE CONNECT CONTRACT** (`deferUntilShareChoice`'s five-row table in sessions.js):
   an EMPTY joiner adopts the host's scene identity and receives, no ask
   (`adoptSceneIdentity` in levels — **THE NAME AND NOTHING ELSE**, fileHandler's
@@ -1836,6 +1932,15 @@ loadable play content. Everything a user does must be visible to connected peers
 
 ## Hard-won gotchas (do not rediscover)
 
+- **ConfirmModal RESTORES FOCUS AFTER the thing you open next mounts.** Chain "answer the
+  app's one truly modal dialog, then open an input" and the input looks ready while every
+  keystroke goes to the restored focus target. Wait for the modal's own button to LEAVE
+  THE DOM before arming the next surface — never a timer (300ms won idle and lost inside
+  the full suite). Found wiring Save-&-connect's naming flow after showChoice.
+- **A SUITE THAT PASSES WITH SECONDS OF HEADROOM AGAINST THE 480s RUNNER CAP IS A COIN.**
+  scene-isolation measured 449/469/479/480s with one more section in — the last run was
+  killed AT the cap. Move the section to a cheaper suite (connect-states got the dial-ask
+  mechanics on the one-page stub) rather than trimming waits to sneak under.
 - **CONSENT MUST BE RECORDED BEFORE THE WRITE THAT PUBLISHES IT.** `publishSceneVersion`/
   `commitManifest` IS the broadcast, so a `noteSceneOpened` placed after it scopes out
   the very version it was meant to release — and nothing sends again until the next
@@ -3899,7 +4004,76 @@ override for e2e — never share 5173 (the user's main-checkout server).
   (open-core: OSS ships only inert hooks — capability gate / auth hook /
   VITE_CLOUD_PLUGIN — cloud repo holds registration/rooms/roles; contract in its
   MAINTAINING.md).
-- Status (2026-08-28, latest): **ROADMAP 22 ROUND 30 — ROOMS THAT HOLD, AND A LIBRARY THAT
+- Status (2026-08-30, latest): **ROUNDS 34+35 — A SAVE NAMES THE ROOM, AND PRIVATE
+  SCENES** (ec02a94 + ec745af; design detail in the two new ROOMS-entry bullets). The
+  user's two reports: (1) a peer saving the shared untitled world left the host untitled
+  — identity diverged from content, popup showed two scenes for one world; fixed by the
+  `sceneadopt` broadcast (auto-adopt + toast, the user's chosen fork; the saver's toast
+  notes " — shared with this session", no modal). (2) opening your OWN unshared scene
+  file mid-session leaked the name via consent + atscene + Go-to; fixed by the
+  Share/Edit-privately/Cancel ask, the `private:true` presence state (name and hash
+  never leave the machine, both-direction isolation via the existing gates), the "In a
+  private scene" popup group with disabled Watch + Request access (grant shares with
+  EVERYONE, said in the ask; deny is polite), and Rejoin session that works for an
+  untitled world. Suites scene-adopt (28) + private-scene (51); counterfactuals per
+  guard incl. a WIRE SPY that separates the send gate from the receive backstop; the
+  r34 counterfactual reproduced the report verbatim (two peers, one world, two rooms).
+  Baseline 363/62 at both commits; builds green server-down. OWED on device: the adopt
+  toast pair on a real save, the private-open modal + the popup group/strip/Request
+  access flow end to end, Rejoin on both named and untitled sessions, non-dark themes.
+- Status (2026-08-29): **ROUND 33 — THE CONNECT DECISION (49984d9, one commit,
+  code + suite migrations together).** The user's redesign of the unnamed-with-work
+  connect: the dial ask is gone, the question moved to host approval as a blocking modal
+  — Save scene & connect / Dismiss changes / Disconnect (every close affordance = the
+  labelled cancel, said in the copy) — nothing moves in EITHER direction until answered
+  (handshake content deferral + the round-32 gate + the auto-download hold), the old
+  Share/Stash merge lives on behind `mergeOnConnect` (default off), and consented object
+  replies re-push the PUSH-only scene singletons (a round-32 gap: the refetch could
+  never ask for the sky). Design detail in the ROUND 33 bullet of the ROOMS entry.
+  Suites: NEW connect-decision (51); share-stash + share-gate-defer park the setting
+  (they are its coverage now); connect-states' R31 block flipped to R33; helpers.connect
+  dropped the dial-ask block; scene-isolation/net-handshake/scene-rooms/resync-converge
+  green. Four counterfactuals red-then-restored (deferral, download hold, consent
+  opt-out, singleton seam). Baseline 363/62 held; build green server-down. OWED on
+  device: the modal at approval on a real pointer (both buttons + Esc meaning
+  Disconnect), the naming handoff mid-connect, the abandoned-naming sticky toast, the
+  Settings row copy, non-dark themes.
+- Status (2026-08-29): **ROUND 32 — four reports triaged, three fixed, one ruled**
+  (991fa27 the share-or-stash ask holds BOTH directions — gateHolds drop + resolve-time
+  refetch, the unsaved-scene ask copy, the invite dial-window JSDoc; f9dd7f8 the
+  diverged-versions dialog names the winner per scene and its Review button LANDS on the
+  Explorer's Version history via the write-once explorerRevealArm; 0fdaa88 the arrival
+  re-sync HEALS — arriving replies carry override:true, the three appliers replace in
+  place, createGroup gains the dedupe it never had). Item 1 was reproduced with wire
+  spies first: decision inputs were already read fresh at reply time (both sides asked)
+  — the real hole was the receive direction, so fix (a) from the brief, refined to
+  drop+refetch. Item 2 ruled KEEP the ask, fix the copy (auto-merge declined — the ask
+  is what protects the joiner's work). Item 4 ruled NO — __localOnly is per-object and
+  gates broadcasts absolutely, while withheld-ness is a scene-by-peer RELATION uniform
+  across the whole list (a "Local objects" section would contain every object, i.e. a
+  banner); the surfaces are the ask itself (its copy now says nothing moves until
+  answered) and the peers popup's rooms view. New suites share-gate-defer (18) and
+  resync-converge (29); project-manifest 83 -> 98. Counterfactuals proven per guard
+  (both gate directions, the winner sentence, the override heal, the group dedupe).
+  **BASELINE RATCHETED 383/62 -> 363/62**: JSDoc on createObject/sendObjects/sendObject/
+  createGroup removed 20 pre-existing implicit-anys plus a stray-4th-argument error that
+  had been reported all along. Build green with the server down. Follow-ups recorded:
+  deletions do not converge on arrival; a heal replaces the THREE object (receiver-side
+  direct refs re-resolve by uuid). OWED on device: the two-direction hold felt on a real
+  pointer (edit while the ask is open, then answer), the diverged-versions dialog copy,
+  Review landing with 2+ clashed scenes, plus the round-30/31 list below.
+- Status (2026-08-29): **ROUND 31 — three reported fixes on top of round 30**
+  (c38704e the share-ask REMEMBER-MY-CHOICE checkbox: one box, applies to whichever
+  button you press, Share->always / Keep->never, consequence toast with the File-settings
+  way back — NOTE 'always' is wider than the label, the pre-existing blanket rule, and a
+  narrower newOnly value is the recorded alternative; 0766417 SAVE & CONNECT at the dial
+  — unnamed-with-work asks Save & connect / Connect anyway / Cancel, the Untitled chip
+  explains "you share one world until they do", invite auto-dial deliberately unguarded
+  (fires in a fresh empty tab), h.connect answers the ask with the real button only when
+  the guard's own two facts say it can apply — plus ENTER connects in the dial box).
+  Baseline 383/62; build green; counterfactuals per fix. OWED on device: the dial ask +
+  naming handoff feel, the remember checkbox beside Stash on the connect strip.
+- Status (2026-08-28): **ROADMAP 22 ROUND 30 — ROOMS THAT HOLD, AND A LIBRARY THAT
   INTRODUCES ITSELF.** Eight code commits on `feat/22-round12` (382be38 C1 auto-download ·
   e98a32d A1 identity+adoption · b8cde82 B1 guard module · 5f4cfc0 B2 the popup+Go-to ·
   f665f00 A2+A3 the partition+the ask · 92b37c5 C3 union-merge · 44a1bcc C2 the share

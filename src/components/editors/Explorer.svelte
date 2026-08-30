@@ -8,7 +8,7 @@
 	// editor as notebook tabs (bottomDock.js); undocks into a floating window.
 	import { get } from 'svelte/store';
 	import { tick, untrack } from 'svelte';
-	import { explorerClose, mobileUndockAllowed, explorerSceneSaveArm, peers } from '../../stores/appStore.js';
+	import { explorerClose, mobileUndockAllowed, explorerSceneSaveArm, explorerRevealArm, peers } from '../../stores/appStore.js';
 	import { settingsOpen, settingsSection } from '../../stores/appStore.js';
 	import { showToast, enable3dPreview, stackOnDrop, confirmPrefabUpdate } from '../../stores/appStore.js';
 	import {
@@ -69,8 +69,13 @@
 		newLevel,
 		renameOpenLooseScene,
 		travelToLevel,
+		levelSceneName,
 		currentLevel
 	} from '$lib/levels';
+	// R22 round 35: opening a scene the session has never seen asks whether to share it or
+	// edit it privately. It answers itself (share) when nobody is connected or the session
+	// already knows the scene, so this costs a solo user nothing.
+	import { askScenePrivacy } from '$lib/scenePrivacy';
 	// 21-G9 already computes "does the open scene differ from the version its name points
 	// at", behind a throttle, because the answer costs a whole-scene serialization. This
 	// READS that flag (the header asterisk) and never recomputes it — the one caller that
@@ -1952,9 +1957,11 @@
 	// that no theme reaches, that blocks the page while it is up, and whose Escape is
 	// the browser's rather than ours. It always shows in the GRID: both entries live on
 	// the grid background's menu, and the tree has no row to hang a scene name on.
-	function startSceneName(mode: 'save-scene' | 'new-scene') {
+	// R22 round 33: `consent` rides through to `saveSceneAsLevel` — absent (undefined) is
+	// the ordinary save and stays byte-identical; only the connect decision passes false.
+	function startSceneName(mode: 'save-scene' | 'new-scene', consent?: boolean) {
 		settlePendingEdit();
-		editing = { mode, value: mode === 'save-scene' ? 'Scene' : 'New scene', inGrid: true };
+		editing = { mode, value: mode === 'save-scene' ? 'Scene' : 'New scene', inGrid: true, consent };
 	}
 	/**
 	 * R22 round 11 (user): "for packs add right click create pack, so I can set name and
@@ -2014,7 +2021,7 @@
 		else if (edit.mode === 'rename-pack') renamePack(edit.packName, edit.value);
 		// 21-G9 (union): land the scene where the user is looking — Scenes when the
 		// active folder is a pseudo view or a stale id
-		else if (edit.mode === 'save-scene') await saveSceneAsLevel(edit.value, activeLibraryFolder());
+		else if (edit.mode === 'save-scene') await saveSceneAsLevel(edit.value, activeLibraryFolder(), { consent: edit.consent });
 		else if (edit.mode === 'new-scene') await newLevel(edit.value, activeLibraryFolder());
 		else if (edit.mode === 'new-pack') {
 			const pack = createPack(edit.value);
@@ -2044,7 +2051,40 @@
 		explorerSceneSaveArm.set(null);
 		untrack(() => {
 			openFolder(arm.folderId);
-			startSceneName('save-scene');
+			startSceneName('save-scene', arm.consent);
+		});
+	});
+
+	// R22 round 32: the same write-once shape for "show me this scene's versions". The
+	// divergence dialog knows a scene NAME and the hash that won; only this panel can turn
+	// that into a selected card with its Version history open.
+	//
+	// The hash is a PREFERENCE, not a requirement: the winning version can easily be the
+	// one this machine has not pulled yet, and the history panel is keyed by the scene, so
+	// any held version of it opens the same list. Falling back down the manifest line
+	// (newest held first) is what makes the button land rather than explain itself.
+	$effect(() => {
+		const arm = $explorerRevealArm;
+		if (!arm) return;
+		explorerRevealArm.set(null);
+		untrack(() => {
+			const entry: any = sceneEntry(arm.name);
+			const line: string[] = [...(entry?.history ?? [])].reverse();
+			const wanted = [arm.hash, ...line].filter(Boolean);
+			let item: any = null;
+			for (const hash of wanted) {
+				item = itemByHash(hash);
+				if (item) break;
+			}
+			if (!item) {
+				// nothing to select: the scene is in the project document but its bytes are on
+				// somebody else's disk. Say where they are rather than opening an empty panel.
+				showToast(
+					`No copy of "${arm.name}" here yet — its versions are on a peer. Use "Open here (downloads it)" on its card to fetch one.`
+				);
+				return;
+			}
+			showProperties({ kind: 'item', item });
 		});
 	});
 
@@ -4792,13 +4832,20 @@
 		// copy for both authoring routes into a scene replace (this card, and the peers
 		// popover's "Go to"). Its header carries the reasoning that used to sit here.
 		if (!(await guardSceneReplace(item.name))) return;
+		// R22 round 35 — SHARE IT, OR EDIT IT PRIVATELY? Asked ONLY when there are peers and
+		// only for a scene the session has never heard of; `askScenePrivacy` answers 'share'
+		// itself in every other case, so a solo user's double-click is unchanged. This is the
+		// AUTHORING seam (both Explorer routes come through here) and deliberately not the
+		// travel node — a replicated pulse has nobody at a dialog.
+		const mode = await askScenePrivacy(levelSceneName(item.name));
+		if (!mode) return;
 		// NO name is passed, and that is a fix rather than an omission. `currentLevel.name`
 		// is the MANIFEST KEY — travel-away publishes under it — and an item name carries
 		// the `.tpscene` extension, so handing it over filed every version of "Arena"
 		// under a second scene called "Arena.tpscene": a duplicate card per open, and a
 		// history split in two. `travelToLevel` falls back to the payload's own `name`,
 		// which is the name the scene saved itself under and the key the manifest uses.
-		await travelToLevel(item.hash);
+		await travelToLevel(item.hash, '', { private: mode === 'private' });
 	}
 	/**
 	 * P3: open a file that lives in a MOUNTED project. Its bytes come from the saved

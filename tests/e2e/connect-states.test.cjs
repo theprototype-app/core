@@ -85,6 +85,132 @@ h.run(async () => {
 	});
 	h.check(resurrect === false, 'CN: the 4s restore retry does not resurrect a cancelled conn');
 
+	// --- Enter in the dial box IS the Connect button -----------------------------
+	// REPORTED: "when I enter peer id and hit enter it should connect (as now I need to
+	// hit tab and then enter)". One field, one obvious commit key.
+	//
+	// COUNTERFACTUAL, measured with the `onkeydown` removed from the Input: the pill
+	// stayed idle and waitingForApproval stayed empty — the keypress went nowhere, which
+	// is the bug as reported. The stub above is still installed, so this runs the real
+	// dial state machine; the scene is EMPTY here, which also proves the round-31 ask
+	// stands down when there is nothing unsaved to ask about.
+	// the box still holds the id the Cancel section typed — clear it, or "empty" is a
+	// premise this suite does not actually have (it dialled ffff1 again and read pending)
+	const dialBox = A.page.locator('input[placeholder="Enter peer ID to connect"]').first();
+	await dialBox.fill('');
+	await dialBox.click();
+	await A.page.keyboard.press('Enter');
+	await A.page.waitForTimeout(300);
+	h.check(
+		(await A.page.locator('.connect-pill').getAttribute('data-state')) === 'idle',
+		'CN: Enter on an EMPTY box does nothing — no dial to nowhere'
+	);
+	await dialBox.fill('eeee2');
+	await A.page.keyboard.press('Enter');
+	await A.page.waitForTimeout(500);
+	h.check(
+		(await A.page.locator('.connect-pill').getAttribute('data-state')) === 'pending',
+		'CN: Enter in the dial box dials — no Tab to the button first'
+	);
+	const dialedByKey = await A.page.evaluate(() => {
+		let v;
+		window.__stores.waitingForApproval.subscribe((x) => (v = x))();
+		return v.map((w) => w[0]);
+	});
+	h.check(
+		dialedByKey.includes('eeee2'),
+		`CN: …and it dialled the id that was typed (${JSON.stringify(dialedByKey)})`
+	);
+	h.check(
+		(await A.page.evaluate(() => {
+			let d;
+			window.__stores.confirmDialog.confirmDialog.subscribe((x) => (d = x))();
+			return d;
+		})) === null,
+		'CN: an EMPTY scene raises no unnamed-scene question on the way out'
+	);
+	await A.page.locator('#cancel-request-button').click();
+	await A.page.waitForTimeout(300);
+	h.check(
+		(await A.page.locator('.connect-pill').getAttribute('data-state')) === 'idle',
+		'CN: cancel unwinds the Enter-dialled request too'
+	);
+
+	// --- round 33: THE DIAL ASKS NOTHING -----------------------------------------
+	//
+	// Round 31 put a question AT THE DIAL ("Save & connect / Connect anyway / Cancel")
+	// whenever there was work in an unnamed scene, and held the dial until it was
+	// answered. Round 33 DELIBERATELY REVERSED that: a dial is a request, and being made
+	// to name a scene in order to ASK is a toll on a door that may not open. The question
+	// moved to the HOST's APPROVAL, where the facts are known, as a blocking modal —
+	// `connect-decision` owns all three of its endings.
+	//
+	// What is left to prove HERE is the reversal itself, on the pill: the same press that
+	// round 31 held now goes straight out with no dialog of any kind. This block is the
+	// exact inversion of the one it replaces, so it stays falsifiable — restore
+	// `settleSceneIdentity()`'s early return in requestConnect and both checks go red.
+	//
+	// The approval-side modal is NOT asserted here and cannot be: the stub installed above
+	// fakes an OPEN signaling link with a conn that never opens and no peer on the far
+	// end, so nothing this page can do gets the request approved.
+	const dialogNow = () =>
+		A.page.evaluate(() => {
+			let d;
+			window.__stores.confirmDialog.confirmDialog.subscribe((x) => (d = x))();
+			return d ? { title: d.title, message: d.message, choices: (d.choices ?? []).map((c) => c.value) } : null;
+		});
+	const waitingNow = () =>
+		A.page.evaluate(() => {
+			let w;
+			window.__stores.waitingForApproval.subscribe((x) => (w = x))();
+			return w.map((/** @type {any} */ e) => e[0]);
+		});
+	const pressConnect = async (id) => {
+		await dialBox.fill(id);
+		await A.page.getByRole('button', { name: 'Connect', exact: true }).click();
+	};
+
+	// the scene is still empty here — that is the case the checks above already dialled
+	// through, so give it work and nothing else
+	await A.page.evaluate(async () => {
+		window.__stores.commandsHandler.sceneCommand('/create box');
+		await new Promise((r) => setTimeout(r, 1200));
+		window.__stores.objectActions.deselectObject();
+	});
+	const sceneNow = await A.page.evaluate(() => {
+		let g, at;
+		window.__stores.objectsGroup.subscribe((x) => (g = x))();
+		window.__stores.levels.currentLevel.subscribe((x) => (at = x))();
+		return { objects: g?.children.length ?? 0, name: at?.name ?? null };
+	});
+	h.check(
+		sceneNow.objects === 1 && sceneNow.name === null,
+		`premise: work in a scene with no identity at all (${JSON.stringify(sceneNow)})`
+	);
+
+	await pressConnect('dddd3');
+	// bounded settle: long enough for the round-31 guard's on-demand `levels` import plus
+	// its dialog to have appeared (it was given 8s and measured well inside 1.5s), so a
+	// dialog that still exists would be seen here.
+	await A.page.waitForTimeout(1500);
+	h.check(
+		(await dialogNow()) === null,
+		`R33: dialing with work in an UNNAMED scene puts NO question at the dial (${JSON.stringify(await dialogNow())})`
+	);
+	h.check(
+		(await waitingNow()).includes('dddd3') &&
+			(await A.page.locator('.connect-pill').getAttribute('data-state')) === 'pending',
+		`R33: …the request goes straight out instead (${JSON.stringify(await waitingNow())})`
+	);
+
+	await A.page.locator('#cancel-request-button').click();
+	await A.page.waitForTimeout(400);
+	h.check(
+		(await waitingNow()).length === 0 &&
+			(await A.page.locator('.connect-pill').getAttribute('data-state')) === 'idle',
+		'R33: and it cancels like any other outbound request'
+	);
+
 	// --- invite ~srv param: encode + parse round-trips ---------------------------
 	const param = await A.page.evaluate(() => {
 		const ps = window.__stores.peerServer;

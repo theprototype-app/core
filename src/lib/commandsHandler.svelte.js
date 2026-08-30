@@ -484,6 +484,22 @@ export async function deleteObject(uuid) {
 }
 
 
+/**
+ * R22 round 32 — WHAT `override` MEANS, in both paths.
+ *
+ * The default is DEDUPE BY UUID: an object we already hold is left exactly as it is, which
+ * is what makes a re-sent handshake harmless. It is also why a re-sync could never HEAL
+ * anything — the arrival re-sync added the objects the traveller was missing and left every
+ * shared uuid pinned to whatever pose the .tpscene was saved with, so two peers stood in
+ * one room looking at two worlds and nothing on the wire could ever close the gap.
+ *
+ * `override` says "replace the one you have with this one". Two senders predate this and
+ * both aim it at a target they know exists (Inspector's light resend, environment's preset
+ * light); the third is the arrival heal, which aims it at a whole scene and therefore MUST
+ * tolerate a uuid we do not hold — an override for an unknown object is just a create.
+ * @param {any} object @param {string[]|null} uuid @param {boolean} [override]
+ * @param {string} [groupuuid] @param {number[]} [pos] @param {number[]} [rot] @param {number[]} [scale]
+ */
 export async function createObject(object, uuid, override, groupuuid, pos, rot, scale) {
     let parent;
     if (uuid == null) {
@@ -491,12 +507,17 @@ export async function createObject(object, uuid, override, groupuuid, pos, rot, 
     // an incoming object can only carry a STALE edit wireframe (a peer on an
     // older build, or a scene saved with a session open) — never a live one
     stripEditOverlays(mesh);
-    if (override) {
-        let overrideObject = sceneObjects.getObjectByProperty('uuid', mesh.uuid)
-        parent = overrideObject.parent
-        parent.remove(overrideObject);
+    let existing = override ? sceneObjects.getObjectByProperty('uuid', mesh.uuid) : null;
+    if (existing) {
+        // replace IN PLACE, under the same parent. The gizmo has to let go first or it
+        // keeps steering an object that is no longer in the scene (deleteObject's rule).
+        if (controls?.object?.uuid === existing.uuid) controls.detach();
+        parent = existing.parent ?? sceneObjects;
+        parent.remove(existing);
         parent.add(mesh)
-    } else if (sceneObjects.getObjectByProperty('uuid', mesh.uuid) == null || override) {
+    } else if (sceneObjects.getObjectByProperty('uuid', mesh.uuid) == null) {
+        // …and an override for something we never had falls through to here. It used to
+        // read `overrideObject.parent` unconditionally and THROW on null.
         let group = sceneObjects.getObjectByProperty('uuid', groupuuid)
         if (group) group.add(mesh)
         else sceneObjects.add(mesh);
@@ -512,8 +533,17 @@ export async function createObject(object, uuid, override, groupuuid, pos, rot, 
           let mesh = object.clone()
           mesh.uuid = uuid[index]
           object.uuid = uuid[index]
-          if (sceneObjects.getObjectByProperty('uuid', mesh.uuid) == null || override)
-            sceneObjects.add(mesh)
+          const existing = sceneObjects.getObjectByProperty('uuid', mesh.uuid)
+          if (existing) {
+              // NEVER a second copy of one uuid. The old shape added conditionally and
+              // then ran the `groupuuid` block unconditionally (the indentation lies —
+              // there are no braces), so an override ADDED the fresh mesh beside the old
+              // one, and even a plain re-send attached a duplicate into the group.
+              if (!override) return;
+              if (controls?.object?.uuid === existing.uuid) controls.detach();
+              existing.parent?.remove(existing);
+          }
+          sceneObjects.add(mesh)
             if (groupuuid){
                 let group = sceneObjects.getObjectByProperty('uuid', groupuuid)
                 if (group) group.attach(mesh)
@@ -527,6 +557,13 @@ export async function createObject(object, uuid, override, groupuuid, pos, rot, 
                     mesh.rotation.set(rot[0], rot[1], rot[2]);
                     mesh.scale.set(scale[0], scale[1], scale[2]);
                 }
+            } else if (override && pos && rot && scale) {
+                // a heal of a TOP-LEVEL mesh: the exported bytes carry the sender's pose,
+                // but the message says it in numbers and this is the one path that exists
+                // to converge a pose — say it with the numbers.
+                mesh.position.set(pos[0], pos[1], pos[2]);
+                mesh.rotation.set(rot[0], rot[1], rot[2]);
+                mesh.scale.set(scale[0], scale[1], scale[2]);
             }
         });
     }
@@ -537,8 +574,14 @@ export async function createObject(object, uuid, override, groupuuid, pos, rot, 
 /**
  * Sends all objects in the scene to the given peer.
  * @param {string} peerId - The ID of the peer to send the objects to.
+ * @param {any} [element] - subtree to send (the null-peerId group path); absent = the whole scene
+ * @param {{override?: boolean}} [opts] - R22 round 32: `override` marks this send as an
+ *   ARRIVAL HEAL, so the receiver REPLACES the objects it already holds instead of
+ *   deduping them away. Set by exactly one caller (the `arriving` row of
+ *   `deferUntilShareChoice`); absent everywhere else, and when absent every message this
+ *   walk emits is byte-identical to what it always sent.
  */
-export function sendObjects(peerId, element) {
+export function sendObjects(peerId, element, opts = {}) {
     let conn; let groupid;
     if (peerId === null) {
         groupid = element.uuid;
@@ -546,7 +589,8 @@ export function sendObjects(peerId, element) {
         conn.send({type: 'group', name: element.name, uuid: element.uuid, groupparent: null,
             pos: element.position.toArray(),
             rot: element.rotation.toArray(),
-            scale: element.scale.toArray()
+            scale: element.scale.toArray(),
+            ...(opts.override ? { override: true } : {})
         });
     }
     else
@@ -567,7 +611,7 @@ export function sendObjects(peerId, element) {
         // every transform synchronously, so restore right after.
         const restore = parkAnimatedAtBase();
         try {
-            sendObject(conn, element, groupid);
+            sendObject(conn, element, groupid, opts);
         } finally {
             restore();
         }
@@ -601,7 +645,15 @@ function multiMaterialSyncable(element) {
     return true;
 }
 
-export function sendObject(conn, element, groupuuid) {
+/**
+ * @param {any} conn @param {any} element @param {string|undefined} groupuuid
+ * @param {{override?: boolean}} [opts] see `sendObjects` — threaded through EVERY
+ *   recursive call, because a subtree of an arrival heal is still an arrival heal.
+ */
+export function sendObject(conn, element, groupuuid, opts = {}) {
+    // spread into every outgoing message: present only for an arrival heal, so an
+    // ordinary handshake reply stays byte-identical (the `labels`-when-empty precedent)
+    const heal = opts.override ? { override: true } : {};
     let objects = [];
     let test = new THREE.Vector3();
     if (typeof element !== 'undefined') {
@@ -615,7 +667,7 @@ export function sendObject(conn, element, groupuuid) {
         if (element.userData && element.userData.__localOnly) return;
         if (hasAnimatedImport(element.uuid)) {
             // rigs travel as their original file bytes, one message
-            sendAnimatedImport(conn, element);
+            sendAnimatedImport(conn, element, opts);
         } else if (element.type == "Group") {
             if (element.parent.parent.parent !== null) {
                 groupuuid = element.parent.uuid
@@ -629,9 +681,13 @@ export function sendObject(conn, element, groupuuid) {
                 groupparent: groupuuid,
                 pos: test.toArray(),
                 rot: element.rotation.toArray(),
-                scale: element.scale.toArray()
+                scale: element.scale.toArray(),
+                ...heal
             });
-            sendObject(conn, element, element.uuid, groupuuid);
+            // the 4th argument used to be a stray `groupuuid` that the 3-parameter
+            // signature silently dropped — it is `opts` now, which is what a recursion
+            // into a subtree of an arrival heal has to carry
+            sendObject(conn, element, element.uuid, opts);
         } else if (element.type.endsWith('Light')) {
             element.getWorldPosition(test);
             groupuuid = element.parent.uuid
@@ -642,7 +698,8 @@ export function sendObject(conn, element, groupuuid) {
                 groupuuid: groupuuid,
                 pos: test.toArray(),
                 rot: element.rotation.toArray(),
-                scale: element.scale.toArray()
+                scale: element.scale.toArray(),
+                ...heal
             });
         } else if (element.children.length > 0) {
             //send only this object without children
@@ -659,9 +716,10 @@ export function sendObject(conn, element, groupuuid) {
                 groupuuid: groupuuid,
                 pos: test.toArray(),
                 rot: element.rotation.toArray(),
-                scale: element.scale.toArray()
+                scale: element.scale.toArray(),
+                ...heal
             });
-            sendObject(conn, element, element.uuid);
+            sendObject(conn, element, element.uuid, opts);
         } else if (multiMaterialSyncable(element)) {
             // A MATERIAL ARRAY cannot survive the GLTF round trip: the exporter
             // splits geometry.groups into one primitive per material and the loader
@@ -677,7 +735,8 @@ export function sendObject(conn, element, groupuuid) {
                 groupuuid: groupuuid,
                 pos: element.position.toArray(),
                 rot: element.rotation.toArray(),
-                scale: element.scale.toArray()
+                scale: element.scale.toArray(),
+                ...heal
             });
         } else {
             // capture the transform NOW (synchronously, while animated objects
@@ -696,7 +755,8 @@ export function sendObject(conn, element, groupuuid) {
                         groupuuid: groupuuid,
                         pos: pos,
                         rot: rot,
-                        scale: scale
+                        scale: scale,
+                        ...heal
                     });
                 },
                 function (error) {

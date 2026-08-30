@@ -960,3 +960,141 @@ export async function importProjectAsFolder(buffer, opts = {}) {
 	);
 	return counts;
 }
+
+/**
+ * R22 round 13 (user), from the Sessions modal: "When add .tp file using 'import session
+ * file' button from Sessions modal should just add another item in Sessions 'projects',
+ * same as when importing .tpscene, fix it as now it imports it as a folder inside projets
+ * Library (for this I have another button and it already works: within Library anywhere I
+ * can right click and select 'Import project as folder')".
+ *
+ * THE INVERSE OF `exportProjectFromSession`, and the shapes line up on purpose: that one
+ * writes a saved record out as `project.json` + `scenes/<hash>.tpscene` + `items/`, this
+ * one reads those three back into a record. The round trip through the pair is the case
+ * this is built for and the one the suite pins.
+ *
+ * WHY A THIRD READER beside `openProject` and `importProjectAsFolder`: both of those write
+ * into the LIVE Explorer — one replaces it, one furnishes it — and neither can answer "put
+ * this file in my Sessions list", which is why the .tp arrived as a library FOLDER and the
+ * list the user went looking in stayed empty. This one writes ONE saved record and touches
+ * no live store at all, which is also what makes it the right call from the Explorer's
+ * mount picker: a mount reads a SAVED record, so importing FOR a mount has to produce one.
+ * The right-click "Import project as folder" is untouched and still means what it says.
+ *
+ * WHICH SCENE BECOMES THE RECORD'S. A session record is a SNAPSHOT and holds exactly one
+ * scene; a .tp may carry several, and several versions of each. The manifest already
+ * answers it — the pointer of the scene the document is NAMED after, else the first scene
+ * it lists — and nothing is lost by the choice: every other scene in the file is an
+ * ordinary library row and comes back as a `.tpscene` FILE inside the record's library,
+ * which is exactly what it is inside a real project.
+ *
+ * WHAT IT READS FOR THE LIBRARY is the file's own `items` rows, then the v1 stragglers
+ * (`assets`, and any `scenes` row no item row already carried) — the three loops
+ * `restoreProjectContents` runs, into an array instead of into the Explorer. The chosen
+ * scene is skipped THERE only when the file does not claim it as a library row itself: a
+ * file written by `exportProject` does claim it, because in that project the scene really
+ * is a library file, and a file written by `exportProjectFromSession` does not.
+ *
+ * Deliberately NOT read: the bytes inside the chosen scene bundle. `restoreProjectContents`
+ * does not reach into a `.tpscene` either — a project's bytes live in the .tp's own
+ * sections, and the bundle keeps its assets for whoever opens it.
+ * @param {ArrayBuffer} buffer
+ * @param {{fileName?: string}} [opts] the NAME rule is 21-I's, verbatim: the filename you
+ *   picked off a disk wins, because that is what you will look for afterwards; the
+ *   document's own name is the fallback for a caller with no filename to offer
+ * @returns {Promise<any|null>} the saved session payload (it carries `.id`, which is what
+ *   `mountVolume` takes), or null — not a project file, or a declined confirm
+ */
+export async function importProjectAsSession(buffer, opts = {}) {
+	const read = await readProjectFile(buffer);
+	if (!read) return null;
+	const { entries, doc } = read;
+	if (!(await confirmProjectFormat(doc))) return null;
+	const { unzipSync, strFromU8 } = await import('fflate');
+	const { emptySessionPayload, importSessionPayload } = await import('./sessions');
+
+	/** the exact bytes of one zip entry — a VIEW into fflate's shared buffer hashes as the
+	 * whole buffer, which is the assetShare rule and the one that silently corrupts ids */
+	const exactly = (/** @type {Uint8Array} */ view) =>
+		/** @type {ArrayBuffer} */ (view.buffer.slice(view.byteOffset, view.byteOffset + view.byteLength));
+
+	const manifest = normalizeManifest(doc.manifest);
+	const names = Object.keys(manifest.scenes ?? {});
+	const primary = names.includes(String(manifest.name ?? '')) ? String(manifest.name) : names[0];
+	const history = primary ? (manifest.scenes[primary]?.history ?? []) : [];
+	const pointer = history[history.length - 1] ?? null;
+	const sceneRows = Array.isArray(doc.scenes) ? doc.scenes : [];
+	const sceneRow = sceneRows.find((/** @type {any} */ r) => r.hash === pointer) ?? sceneRows[0] ?? null;
+
+	const fromFile = String(opts.fileName ?? '')
+		.replace(/\.tp$/i, '')
+		.trim();
+	const name = fromFile || String(doc.name ?? '').trim() || 'Imported project';
+
+	/** @type {any} */
+	let payload = null;
+	const sceneBytes = sceneRow ? entries[sceneRow.file] : null;
+	if (sceneBytes) {
+		try {
+			const inner = unzipSync(sceneBytes);
+			const json = inner['session.json'];
+			if (json) payload = JSON.parse(strFromU8(json));
+		} catch {
+			payload = null;
+		}
+	}
+	// a file with no readable scene still becomes a PROJECT entry — its library is the
+	// point, and an empty payload says "no scene" honestly instead of failing the import
+	if (!payload || !Array.isArray(payload.objects)) payload = emptySessionPayload(name);
+	payload.name = name;
+
+	/** @type {{name: string, kind: string, folderId: string|null, hash: string, blob: Blob}[]} */
+	const items = [];
+	/** @type {Set<string>} content hashes already in `items` */
+	const carried = new Set();
+	/** @param {any} row @param {string} fallbackName */
+	const take = async (row, fallbackName) => {
+		const raw = entries[row?.file];
+		if (!raw) return;
+		const bytes = exactly(raw);
+		// hashed from the BYTES rather than trusted from the row: a .tp is content-addressed
+		// and the stored hash is the one field here that could be stale
+		const hash = await hashBytes(bytes);
+		if (carried.has(hash)) return;
+		const itemName = String(row?.name ?? fallbackName);
+		items.push({
+			name: itemName,
+			kind: String(row?.kind ?? kindOf(itemName) ?? 'text'),
+			folderId: row?.folderId == null ? null : String(row.folderId),
+			hash,
+			blob: new Blob([bytes])
+		});
+		carried.add(hash);
+	};
+
+	for (const row of doc.items ?? []) await take(row, 'file');
+	for (const row of doc.assets ?? []) await take(row, String(row?.hash ?? 'asset'));
+	for (const row of sceneRows) {
+		// the chosen scene IS the record's payload; it joins the library only when the file
+		// itself claims it as a library row, which the items loop above has already done
+		if (sceneRow && row.file === sceneRow.file) continue;
+		await take(row, String(row?.hash ?? 'scene') + '.tpscene');
+	}
+
+	payload.library = {
+		folders: (doc.folders ?? []).map((/** @type {any} */ f) => ({
+			id: String(f?.id ?? crypto.randomUUID()),
+			name: String(f?.name ?? 'Folder'),
+			parentId: f?.parentId == null ? null : String(f.parentId)
+		})),
+		items
+	};
+
+	const saved = await importSessionPayload(payload);
+	if (saved)
+		showToast(
+			'"' + saved.name + '" is in Sessions now — a project with ' + items.length + ' file' +
+				(items.length === 1 ? '' : 's') + '. Your library and manifest are untouched.'
+		);
+	return saved;
+}

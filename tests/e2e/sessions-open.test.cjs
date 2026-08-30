@@ -316,6 +316,63 @@ h.run(async () => {
 		`…with the project's own files back in the Explorer (${JSON.stringify(await libraryOf(A))})`
 	);
 
+	// ---- 5. A .tp CHOSEN HERE BECOMES A SESSIONS ENTRY, not a library folder ---------
+	// The bytes come from `exportProjectFromSession`, so this is the round trip through
+	// the writer/reader pair: download a project out of this list, hand it back to the
+	// list's own Import button, and get the project back.
+	await openSessions(A);
+	const depotId = (await metas(A)).find((m) => m.name === 'Depot')?.id;
+	h.check(!!depotId, 'premise: the Depot entry is still there to export');
+	const b64 = await page.evaluate(async (id) => {
+		const payload = await window.__stores.sessions.getSession(id);
+		const out = await window.__stores.projectFile.exportProjectFromSession(payload);
+		if (!out) return null;
+		// CHUNKED on the page side: String.fromCharCode(...bytes) over a whole zip
+		// overflows the argument stack, which reads as a mysteriously empty export
+		let s = '';
+		const b = out.bytes;
+		for (let i = 0; i < b.length; i += 8192) s += String.fromCharCode(...b.subarray(i, i + 8192));
+		return btoa(s);
+	}, depotId);
+	h.check(!!b64 && b64.length > 200, `premise: a .tp was written out of the saved record (${b64?.length} b64 chars)`);
+
+	const foldersBefore = await foldersOf(A);
+	await page.locator('#session-import-file').setInputFiles({
+		name: 'Harbour.tp',
+		mimeType: 'application/zip',
+		buffer: Buffer.from(b64, 'base64')
+	});
+	await h.eventually(
+		() => metas(A),
+		(list) => list.some((m) => m.name === 'Harbour' && m.lib),
+		'a .tp imported HERE lands as a project entry in this list',
+		20000
+	);
+	const harbour = (await metas(A)).find((m) => m.name === 'Harbour');
+	h.check(
+		harbour?.files === 1,
+		`…carrying the project's library, not just its scene (${harbour?.files} file)`
+	);
+	h.check(
+		harbour?.name === 'Harbour',
+		'…named after the FILE you picked, which is 21-I’s rule for a .tp'
+	);
+	// THE OTHER HALF, and the reason this was reported: it must NOT become a folder. An
+	// absence check needs its presence half, and the entry above is it.
+	const foldersAfter = await foldersOf(A);
+	h.check(
+		!foldersAfter.includes('Harbour') && foldersAfter.length === foldersBefore.length,
+		`…and NOT as a folder in the Library, which is the other button's job (${JSON.stringify(foldersAfter)})`
+	);
+	// it opens like any other project entry — which is the whole point of it being one
+	const reopened = await pressOpen(A, 'Harbour');
+	h.check(
+		reopened.next?.title === 'Open project "Harbour"?',
+		`the imported entry behaves as a project (${reopened.next?.title})`
+	);
+	await answer(A, false);
+	await page.waitForTimeout(600);
+
 	await page.evaluate(() => window.__stores.sessionsOpen.set(false));
 	await page.waitForTimeout(300);
 

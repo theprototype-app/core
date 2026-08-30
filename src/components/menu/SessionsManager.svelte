@@ -553,6 +553,18 @@
 	 * project's library files too. .tp is projectFile's own format with a different shape
 	 * inside, so it goes to ITS importer, which keeps the V4 format dialog: an import is
 	 * one person at a file dialog, which is exactly where a question can be answered.
+	 *
+	 * R22 ROUND 13 (user): "should just add another item in Sessions 'projects', same as
+	 * when importing .tpscene ... now it imports it as a folder inside projets Library (for
+	 * this I have another button and it already works: within Library anywhere I can right
+	 * click and select 'Import project as folder')".
+	 *
+	 * They are right, and the old routing was answering a question this button did not ask.
+	 * A file dialog opened from the SESSIONS manager is asking for a Sessions entry; the
+	 * Library's own right-click already covers the other intent, and it is untouched. So
+	 * the .tp branch goes to `importProjectAsSession` — `exportProjectFromSession`'s
+	 * inverse, which writes ONE saved record and no live library at all — and both formats
+	 * now end the same way: a new row in this list.
 	 * @param {any} event
 	 */
 	async function importSessionFile(event) {
@@ -562,8 +574,8 @@
 		const stem = file.name.replace(/\.[^.]+$/, '');
 		try {
 			if (name.endsWith('.tp')) {
-				const { importProjectAsFolder } = await import('$lib/projectFile');
-				await importProjectAsFolder(await file.arrayBuffer(), { fileName: file.name });
+				const { importProjectAsSession } = await import('$lib/projectFile');
+				await importProjectAsSession(await file.arrayBuffer(), { fileName: file.name });
 			} else if (name.endsWith('.zip') || name.endsWith('.tpscene')) {
 				// 127: a .zip restores its bundled assets into the Explorer first
 				const payload = await importSessionZip(await file.arrayBuffer());

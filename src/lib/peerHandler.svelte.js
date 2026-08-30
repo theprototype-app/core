@@ -28,7 +28,7 @@ import { applyRemoteCameraPreview, clearPeerPreview, sendCameraPreviewState } fr
 // riding the getmodulestate request, and a drop on disconnect (golden rule 3).
 import { applyRemotePlayMode, dropPeerPlayMode, sendPlayModeState } from '$lib/gamePresence';
 // P2b: which SCENE each peer is standing in — the gamePresence shape exactly
-import { applyRemotePeerScene, dropPeerScene, sendMySceneState, peerScenes, myScene, elsewhereThan, sceneOfPeer, ROOM_SCOPED, canApplyByRoom, sameRoomOrUnknown } from '$lib/peerScenes';
+import { applyRemotePeerScene, dropPeerScene, sendMySceneState, peerScenes, myScene, mySceneWire, amPrivate, privacySplit, elsewhereThan, sceneOfPeer, ROOM_SCOPED, canApplyByRoom, sameRoomOrUnknown } from '$lib/peerScenes';
 // 21-G2: the project manifest — a latest-wins singleton like environment/scenephysics
 import { applyRemoteManifest, sendProjectManifest } from '$lib/projectManifest';
 // 21-G4: PEER-OWNED variables. The same three obligations as the mode above (dispatch,
@@ -574,6 +574,16 @@ export class PeerConnection {
 					cameraSettings(data, data.vrmode);
 				} else if(data.type == 'camera') {
 					moveCamera(data);
+				} else if(data.type == 'sceneaccess') {
+					// R22 round 35: "may I see your private scene?" / "yes" / "no". DELIBERATELY
+					// NOT ROOM_SCOPED — see the note in peerScenes' MESH-WIDE list: a private
+					// peer is elsewhere from everybody by construction, so a scoped request
+					// could never reach the one person able to answer it.
+					//
+					// DYNAMIC, the `sceneadopt` precedent one case below: scenePrivacy sits on
+					// top of levels.js, and this dispatcher has never had a static edge into
+					// that subtree.
+					import('$lib/scenePrivacy').then((m) => m.applySceneAccess(conn.peer, data)).catch(() => {});
 				} else if(data.type == 'getobjects') {
 					// share-or-stash (50): the reply may wait for the user's choice.
 					// A1: the request carries CONTEXT now — not just how much they hold, but
@@ -585,6 +595,14 @@ export class PeerConnection {
 					// statically (peerScenes -> levels -> sessions closes the cycle) and the
 					// gate has to decide SYNCHRONOUSLY - it either replies or queues, and a
 					// dynamic import is a tick too late for either.
+					//
+					// R22 round 35: the two full-state requests that do NOT go through
+					// `sameRoomOrUnknown` — they go through the share-or-stash table instead,
+					// which is written in scene NAMES and reads a private peer's empty one as
+					// the session's unnamed world. A privacy split is decided here, before the
+					// table, and it withholds SILENTLY: it is the same shape as the table's own
+					// row 2, and there is nothing for either side to be asked about.
+					if (privacySplit(conn.peer)) return;
 					deferUntilShareChoice('objects', data.sender, {
 						otherCount: data.count ?? 0,
 						theirScene: sceneOfPeer(conn.peer),
@@ -632,6 +650,7 @@ export class PeerConnection {
 						dropPeerHandModel(data.peerId);
 					}
 				} else if(data.type == 'getnodes') {
+					if (privacySplit(conn.peer)) return; // R22 round 35, as `getobjects` above
 					deferUntilShareChoice('nodes', data.sender, {
 						theirScene: sceneOfPeer(conn.peer),
 						theirHash: get(peerScenes)[conn.peer]?.hash ?? '',
@@ -809,8 +828,11 @@ export class PeerConnection {
 	 * @param {any} conn
 	 */
 	sendMyScene(conn) {
-		const mine = myScene();
-		conn.send({ type: 'atscene', peerId: this.peer.id, scene: mine?.scene ?? '', hash: mine?.hash ?? '', at: Date.now() });
+		// R22 round 35: `mySceneWire` is the ONE builder of this row — while we are editing a
+		// scene privately it answers `{scene:'', hash:'', private:true}`, so the very first
+		// message of a handshake is where the name stops. Reading `myScene()` here (which is
+		// the SCREEN's answer, name and all) would leak it to every peer that ever connects.
+		conn.send({ type: 'atscene', peerId: this.peer.id, ...mySceneWire(), at: Date.now() });
 	}
 
 	/**
@@ -887,7 +909,13 @@ export class PeerConnection {
 		// A1: WHERE WE ARE, ahead of everything else — the reasoning lives on
 		// `sendMyScene`, which A2 shares with the arrival re-sync for the same reason.
 		this.sendMyScene(conn);
-		conn.send({type: 'locked', lockeditems: locks})
+		// R22 round 35: `locked` is ROOM_SCOPED and this is a DIRECT send, so the broadcast
+		// gate never sees it — a private peer would hand a stranger the uuids it is holding in
+		// a scene that stranger cannot see. Our own table is stale while private anyway (every
+		// incoming lock is dropped by the room gate), so forwarding it would be wrong twice.
+		// `hostsPrivate` is read once here and reused by the content hold further down.
+		const hostsPrivate = amPrivate();
+		if (!hostsPrivate) conn.send({type: 'locked', lockeditems: locks})
 		conn.send({type: 'hosts', hosts: hosts})
 		conn.send({type: 'userdata', userdata: users})
 		// V3: app version rides the modules handshake — old peers ignore the extras,
@@ -916,8 +944,18 @@ export class PeerConnection {
 		// THE DEGENERATE EDGE, and it is safe: a host that never sends `getobjects` opens no
 		// gate here, so no decision is ever put and nothing is exchanged in either direction.
 		// Only a build that would not have asked us anything can reach it.
-		const holdContent = getobjects && connectDecisionApplies(get(sessionHost) === peerId, myScene()?.scene ?? '');
-		if (holdContent) noteHandshakeDeferred(peerId);
+		//
+		// R22 ROUND 35 — AND THE SAME WITHHOLDING FOR A PRIVATE SCENE, for a different
+		// reason. These singletons are ROOM_SCOPED types sent straight down the conn, so
+		// `broadcast`'s gate never sees them: a peer connecting while we edit privately would
+		// receive our private scene's sky, gravity, music, look and game state. The request
+		// half goes with it — asking for a world every gate will make us drop is bytes for
+		// nothing. It is NOT `noteHandshakeDeferred`, which promises a request at the end of a
+		// DECISION: there is no decision here, and the ask comes back the moment we share or
+		// rejoin (both end in a full-state re-sync of their own).
+		const secret = hostsPrivate;
+		const holdContent = secret || (getobjects && connectDecisionApplies(get(sessionHost) === peerId, myScene()?.scene ?? ''));
+		if (holdContent && !secret) noteHandshakeDeferred(peerId);
 		if (!holdContent) {
 			conn.send(environmentState())
 			conn.send(musicState())
@@ -1239,13 +1277,24 @@ export class PeerConnection {
 		// is lost, because the Share reply is a FULL sync of everything we hold. Only
 		// ROOM_SCOPED is withheld: STREAM_TYPES keep flowing, since presence is how the
 		// person deciding can see who they are deciding about.
+		//
+		// R22 ROUND 35, THE FOURTH: WE are editing a scene privately. The three tests above
+		// all read the OTHER peer's row, and none of them can see this one — while private our
+		// own name is a secret we are keeping, so `mine` is the empty string and an empty
+		// `mine` gates NOTHING by the only-on-evidence rule. That is precisely the hole a
+		// private scene would fall through: every edit would reach a room that cannot see the
+		// scene it is being made in. ROOM_SCOPED only, exactly as the gate above: the pose
+		// STREAMS keep flowing (private is not offline, and the far side draws nothing anyway
+		// — its own `elsewhereThan` reads our private row as elsewhere).
 		const roomScoped = ROOM_SCOPED.has(payload?.type);
 		const gated = STREAM_TYPES.has(payload?.type) || roomScoped;
 		const mine = gated ? (myScene()?.scene ?? '') : '';
 		const where = gated ? get(peerScenes) : {};
+		const secret = roomScoped && amPrivate();
 		Object.keys(this.connections).forEach(peerId => {
 			const conn = this.connections[peerId];
 			if (!conn || !conn.open) return;
+			if (secret) return;
 			if (gated && elsewhereThan(where, mine, peerId)) return;
 			if (roomScoped && gateHolds(peerId)) return;
 			try {

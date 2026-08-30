@@ -66,8 +66,13 @@
 		newLevel,
 		renameOpenLooseScene,
 		travelToLevel,
+		levelSceneName,
 		currentLevel
 	} from '$lib/levels';
+	// R22 round 35: opening a scene the session has never seen asks whether to share it or
+	// edit it privately. It answers itself (share) when nobody is connected or the session
+	// already knows the scene, so this costs a solo user nothing.
+	import { askScenePrivacy } from '$lib/scenePrivacy';
 	// 21-G9 already computes "does the open scene differ from the version its name points
 	// at", behind a throttle, because the answer costs a whole-scene serialization. This
 	// READS that flag (the header asterisk) and never recomputes it — the one caller that
@@ -3945,13 +3950,20 @@
 		// copy for both authoring routes into a scene replace (this card, and the peers
 		// popover's "Go to"). Its header carries the reasoning that used to sit here.
 		if (!(await guardSceneReplace(item.name))) return;
+		// R22 round 35 — SHARE IT, OR EDIT IT PRIVATELY? Asked ONLY when there are peers and
+		// only for a scene the session has never heard of; `askScenePrivacy` answers 'share'
+		// itself in every other case, so a solo user's double-click is unchanged. This is the
+		// AUTHORING seam (both Explorer routes come through here) and deliberately not the
+		// travel node — a replicated pulse has nobody at a dialog.
+		const mode = await askScenePrivacy(levelSceneName(item.name));
+		if (!mode) return;
 		// NO name is passed, and that is a fix rather than an omission. `currentLevel.name`
 		// is the MANIFEST KEY — travel-away publishes under it — and an item name carries
 		// the `.tpscene` extension, so handing it over filed every version of "Arena"
 		// under a second scene called "Arena.tpscene": a duplicate card per open, and a
 		// history split in two. `travelToLevel` falls back to the payload's own `name`,
 		// which is the name the scene saved itself under and the key the manifest uses.
-		await travelToLevel(item.hash);
+		await travelToLevel(item.hash, '', { private: mode === 'private' });
 	}
 	async function openItem(item: any) {
 		// R22-R1: opening a shared file we do not hold means FETCHING it. There is nothing

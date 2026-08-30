@@ -37,19 +37,62 @@ import { peers } from '../stores/appStore';
 import { lockedObjects, selectedObject } from '../stores/sceneStore';
 import { currentLevel } from './levels';
 
-/** REMOTE peers only, `peerId -> {scene, hash, at}`. An absent peer is one we have not
- * heard from — never "in no scene", which is a different and unknowable thing.
- * @type {import('svelte/store').Writable<Record<string, {scene: string, hash: string, at: number}>>} */
+/** REMOTE peers only, `peerId -> {scene, hash, at, private?}`. An absent peer is one we
+ * have not heard from — never "in no scene", which is a different and unknowable thing.
+ * R22 round 35: `private` is ADDITIVE and only ever present when TRUE — a peer editing a
+ * scene of its own that the session has never seen, whose NAME never left its machine.
+ * @type {import('svelte/store').Writable<Record<string, {scene: string, hash: string, at: number, private?: boolean}>>} */
 export const peerScenes = writable({});
 
 /** Where WE are, in the shape that goes on the wire. `null` when we are not standing in
  * a named scene at all, which is the common case in a fresh session and is exactly the
- * message we decline to send. @returns {{scene: string, hash: string} | null} */
+ * message we decline to send.
+ *
+ * THE REAL NAME, privacy included — this is what OUR OWN screen reads (the peers popup's
+ * own row, the rooms grouping, the share-or-stash table's `mineScene`). What goes on the
+ * WIRE is `mySceneWire`, and the difference between the two is the whole of round 35.
+ * @returns {{scene: string, hash: string} | null} */
 export function myScene() {
 	const at = get(currentLevel);
 	const scene = String(at?.name ?? '').trim();
 	if (!scene) return null;
 	return { scene, hash: String(at?.hash ?? '') };
+}
+
+/**
+ * R22 ROUND 35 — ARE WE EDITING A SCENE PRIVATELY?
+ *
+ * REPORTED: a peer in a session opens one of their OWN scene files that the session has
+ * never seen, and the app publishes it three ways at once — the C4 consent widens the
+ * outbound manifest, the `atscene` row hands everybody the name, and the peers popup then
+ * offers "Go to", which PULLS THE BYTES. There was no way to say "this one is mine".
+ *
+ * The flag rides on `currentLevel` (`private: true`), which is what makes every later
+ * writer of that store do the right thing without knowing this feature exists: TRAVEL
+ * elsewhere writes a fresh record and privacy is gone, `currentLevel.set(null)` the same.
+ * The one writer that deliberately PRESERVES it is `saveSceneAsLevel` on the very scene
+ * we are being private about — see its own note for why a save may not be a publish.
+ * @returns {boolean}
+ */
+export function amPrivate() {
+	return get(currentLevel)?.private === true;
+}
+
+/**
+ * WHAT `atscene` SAYS ABOUT US — the one place the outbound row is built, shared by the
+ * change publisher below, the handshake's `sendMyScene` and the `getmodulestate` reply.
+ *
+ * While private it is `{scene:'', hash:'', private:true}`: THE NAME NEVER LEAVES THE
+ * MACHINE, and neither does the hash (a hash is a pull request waiting to happen — it is
+ * what "Go to" travels by). An empty scene alone would be a LIE of a useful kind and a
+ * hole of a fatal one: unnamed is the session's shared world by the only-on-evidence rule,
+ * so it would gate nothing at all. The flag is the evidence, and it is positive.
+ * @returns {{scene: string, hash: string, private?: boolean}}
+ */
+export function mySceneWire() {
+	if (amPrivate()) return { scene: '', hash: '', private: true };
+	const where = myScene();
+	return { scene: where?.scene ?? '', hash: where?.hash ?? '' };
 }
 
 // ---- outbound -------------------------------------------------------------------
@@ -59,7 +102,7 @@ export function myScene() {
  * publishes NOTHING (the `sentMode` rule, one module over). @type {string} */
 let sent = '';
 
-/** @param {{scene: string, hash: string} | null} where */
+/** @param {{scene: string, hash: string, private?: boolean}} where */
 function broadcast(where) {
 	/** @type {any} */
 	const peer = get(peers);
@@ -67,8 +110,10 @@ function broadcast(where) {
 	peer.send({
 		type: 'atscene',
 		peerId: peer.peer.id,
-		scene: where?.scene ?? '',
-		hash: where?.hash ?? '',
+		// R22 round 35: `mySceneWire` is the ONE builder — spread it rather than picking
+		// fields off it, so the `private` flag cannot be dropped by this hand-list (the
+		// `scenePostState` lesson: a field that hand-lists what it sends drops the next one)
+		...where,
 		// a monotonic-enough stamp: this is latest-wins per SENDER and only that sender
 		// ever writes the row, so a plain clock is sufficient and ordering across peers
 		// is never compared
@@ -78,8 +123,12 @@ function broadcast(where) {
 
 /** Publish where we are when it CHANGES. @param {boolean} [force] send even if unchanged */
 export function publishMyScene(force = false) {
-	const where = myScene();
-	const key = where ? where.scene + '\u0000' + where.hash : '';
+	const where = mySceneWire();
+	// R22 round 35: the key is the WIRE row, privacy included. Going private while standing
+	// in the same scene changes nothing about `myScene()` and everything about what we are
+	// telling people, so a key built from the name alone would stay silent at the one moment
+	// that matters most - and an empty PRIVATE row keys identically to the unnamed one.
+	const key = where.private ? '\u0000private' : where.scene ? where.scene + '\u0000' + where.hash : '';
 	if (!force && key === sent) return false;
 	sent = key;
 	broadcast(where);
@@ -97,7 +146,7 @@ export function publishMyScene(force = false) {
  * anything at all. So we announce the empty state too, and the reader keeps the row.
  */
 export function sendMySceneState() {
-	broadcast(myScene());
+	broadcast(mySceneWire());
 }
 
 // ---- inbound --------------------------------------------------------------------
@@ -118,9 +167,22 @@ export function applyRemotePeerScene(data) {
 		if (held && held.at > at) return map;
 		// A2 ARRIVAL: did this row just walk INTO our room? Read it here, act after the
 		// update returns - never send from inside a store's own update callback.
-		const mine = myScene()?.scene ?? '';
+		// R22 round 35: never while WE are private — there is no room of ours to arrive in,
+		// and pushing our locks would name objects in a scene nobody else can see.
+		const mine = amPrivate() ? '' : myScene()?.scene ?? '';
 		arrived = !!mine && scene === mine && (held?.scene ?? '') !== mine;
-		return { ...map, [data.peerId]: { scene, hash: String(data.hash ?? ''), at } };
+		return {
+			...map,
+			// R22 round 35: `private` is stored ONLY when true, so every non-private row keeps
+			// the exact shape this map has always held — and a peer on an older build, which
+			// never sends the field, reads as not private, which is what it is.
+			[data.peerId]: {
+				scene,
+				hash: String(data.hash ?? ''),
+				at,
+				...(data.private ? { private: true } : {})
+			}
+		};
 	});
 	if (arrived) pushMyLocksTo(data.peerId);
 	return true;
@@ -180,6 +242,12 @@ export function dropPeerScene(peerId) {
 
 // ---- reading --------------------------------------------------------------------
 
+/** What `elsewhereThan` answers for a peer in a private scene. Never a scene NAME — there
+ * is none to give, which is the point — so it is written to read as an explanation if it
+ * ever reaches a screen by accident. Declared ABOVE its reader, the module-level TDZ rule
+ * this file's foot already obeys. */
+export const PRIVATE_SCENE = '(private)';
+
 /**
  * IS THIS PEER DEMONSTRABLY SOMEWHERE ELSE? The one rule behind every gate — Watch,
  * the camera-preview join, and whether we draw them at all.
@@ -189,12 +257,41 @@ export function dropPeerScene(peerId) {
  * unnamed world — and a joiner whose objects arrived over the handshake is standing in
  * the host's content without ever learning its name, so treating that as "elsewhere"
  * would hide the most ordinary peer there is.
- * @param {Record<string, {scene: string}>} map @param {string} mine @param {string} peerId
+ *
+ * R22 ROUND 35 — A PRIVATE ROW IS ELSEWHERE FROM EVERYBODY, and it does not need `mine` to
+ * say so. That is not a break in the only-on-evidence rule but the sharpest case of it: a
+ * private peer states positively that it is in a scene of its own, which is exactly the
+ * evidence an empty row lacks. The answer is a SENTINEL rather than a name because there is
+ * no name to give — callers that render this string must branch on the row's own `private`
+ * flag first (the peers popup does), and every caller that reads it as a BOOLEAN — the two
+ * gates below, `broadcast`, Player.svelte, `roommatePeers` — gets the whole feature free.
+ * @param {Record<string, {scene: string, private?: boolean}>} map
+ * @param {string} mine @param {string} peerId
  * @returns {string} their scene when they are demonstrably elsewhere, else empty
  */
 export function elsewhereThan(map, mine, peerId) {
-	const theirs = map?.[peerId]?.scene ?? '';
+	const row = map?.[peerId];
+	if (row?.private) return PRIVATE_SCENE;
+	const theirs = row?.scene ?? '';
 	return theirs && mine && theirs !== mine ? theirs : '';
+}
+
+/** Is THIS peer editing privately? @param {string} peerId @returns {boolean} */
+export function isPeerPrivate(peerId) {
+	return get(peerScenes)[peerId]?.private === true;
+}
+
+/**
+ * IS A PRIVATE SCENE STANDING BETWEEN US AND THIS PEER, in either direction?
+ *
+ * Both halves matter and they are different facts: THEY are private (their row says so) or
+ * WE are (our `currentLevel` says so, and no row of ours exists to consult). The second is
+ * the one an `elsewhereThan` over the map can never see — while we are private our OWN name
+ * is a secret we are keeping, so the map is not where the answer lives.
+ * @param {string} peerId @returns {boolean}
+ */
+export function privacySplit(peerId) {
+	return amPrivate() || isPeerPrivate(peerId);
 }
 
 /** @param {string} peerId @returns {string} '' when we have not heard from them */
@@ -289,6 +386,11 @@ export function roomsOfSession(map, mine) {
 //     no core rule can know whether it is scene-shaped. The honest seam is an opt-in
 //     `roomScoped` flag on `registerStateSync`; until that exists, mesh-wide is the
 //     behaviour every shipped module was written against.
+//   'sceneaccess' (R22 round 35) - THE ONE MESSAGE WHOSE WHOLE JOB IS TO CROSS THE DIVIDE.
+//     "May I see your private scene?" / "yes, here it is" / "no". Scoping it would make it
+//     the only request in the app that can never reach the person who can answer it, since
+//     a private peer is by construction elsewhere from everybody. It carries no scene
+//     CONTENT and no name: a request is a peer id, a grant is a promise to publish.
 //   'envpresets' - a PERSON's preset library, keyed by peer, not the scene's sky.
 //   'userdata'/'hosts'/'cloud'/'disconnected' - the session itself.
 //   EVERY get* REQUEST. A request is ~40 bytes and asking is never the harm; the REPLY is
@@ -335,12 +437,21 @@ export const ROOM_SCOPED = new Set([
  */
 export function canApplyByRoom(peerId, type) {
 	if (!ROOM_SCOPED.has(type)) return true;
-	return !elsewhereThan(get(peerScenes), myScene()?.scene ?? '', peerId);
+	return sameRoomOrUnknown(peerId);
 }
 
-/** The same question without a message: may this peer have our scene state at all?
+/**
+ * The same question without a message: may this peer have our scene state at all?
+ *
+ * R22 round 35 folded the two into one body (they were the same line twice) and gave both
+ * the privacy half: while WE are private this answers FALSE for everybody, which is what
+ * isolates a private scene from a session whose rows are mostly unnamed — an unnamed `mine`
+ * gates nothing at all by the only-on-evidence rule, and that is exactly the hole a private
+ * scene would otherwise fall through. It also buys the nine full-state replies, every one
+ * of which is guarded by this predicate and no other.
  * @param {string} peerId @returns {boolean} */
 export function sameRoomOrUnknown(peerId) {
+	if (privacySplit(peerId)) return false;
 	return !elsewhereThan(get(peerScenes), myScene()?.scene ?? '', peerId);
 }
 
@@ -359,6 +470,10 @@ export function sameRoomOrUnknown(peerId) {
  *   is no room to arrive in, and nothing was ever withheld)
  */
 export function resyncRoomPeers() {
+	// R22 round 35: a private scene is not a room. Asking would be harmless — every reply
+	// is gated by the same predicate on the far side — but it would be an ask for a world
+	// we have just said we do not want, and answering costs the room a full-state burst.
+	if (amPrivate()) return 0;
 	const mine = myScene()?.scene ?? '';
 	if (!mine) return 0;
 	/** @type {any} */

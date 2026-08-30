@@ -945,6 +945,45 @@ let openedScenes = new Set();
 let sessionSceneNames = new Set();
 /** Did WE rename the project while connected? Only then does our name ride out. */
 let renamedThisSession = false;
+/**
+ * R22 ROUND 35 — SCENES THIS PEER IS EDITING PRIVATELY. A name in here is withheld from
+ * every outbound manifest, and it OVERRIDES consent in both directions.
+ *
+ * It has to be a set of its own rather than "absent from `openedScenes`", for the case
+ * that matters most: a HOST publishes its project WHOLE (the rule two functions down), so
+ * for the person most likely to be hosting, withholding consent buys nothing at all and
+ * the promise "the name never leaves this machine" would be a joiner-only half-truth.
+ *
+ * `currentLevel.private` remains the source of truth about the SCREEN — this is a note
+ * about the WIRE, written by the same two acts that set and clear that flag (the private
+ * open, and `sharePrivateScene`), which is what keeps the two from drifting.
+ * @type {Set<string>} */
+let privateScenes = new Set();
+
+/** Mark (or unmark) a scene as private to this machine for the rest of the session.
+ * @param {string} name @param {boolean} on */
+export function setScenePrivateHere(name, on) {
+	const scene = String(name ?? '').trim();
+	if (!scene) return;
+	if (on) privateScenes.add(scene);
+	else privateScenes.delete(scene);
+}
+
+/**
+ * WOULD OPENING THIS SCENE TELL THE SESSION SOMETHING IT DOES NOT ALREADY KNOW?
+ *
+ * The question the private-open ask is built on, and it is deliberately about the NAME and
+ * not about the bytes: a scene the session has already been told about (its name arrived in
+ * somebody's manifest, or we consented to publish it here) cannot be made private again by
+ * opening it, so asking would be theatre. A scene we have marked private is NOT shared,
+ * whatever else is true of it.
+ * @param {string} name @returns {boolean}
+ */
+export function sceneNameShared(name) {
+	const scene = String(name ?? '').trim();
+	if (!scene || privateScenes.has(scene)) return false;
+	return sessionSceneNames.has(scene) || openedScenes.has(scene);
+}
 
 /** How many peers are actually here. The roster is populated at DIAL time, so this is
  * `openedPeers` and never `userdata.length` — the documented trap. */
@@ -980,6 +1019,10 @@ export function resetSessionScope() {
 	openedScenes = new Set();
 	sessionSceneNames = new Set();
 	renamedThisSession = false;
+	// R22 round 35: privacy is a fact about THIS session too. With nobody here there is
+	// nothing to be private FROM, and the next connect re-asks the question the moment the
+	// user opens something the new room has never seen.
+	privateScenes = new Set();
 }
 
 /** A received document's scene names are the SESSION's, so they may be carried back. Fed
@@ -995,14 +1038,28 @@ function noteSessionScenes(doc) {
  * @param {Manifest} doc @returns {Manifest}
  */
 export function outboundManifest(doc) {
+	// R22 round 35: a PRIVATE scene is withheld from both branches, and it is the host's
+	// branch that makes it necessary — "publishes its project whole" would otherwise hand
+	// the room the name and the whole version history of the file the user has just said is
+	// theirs. Withholding a scene is safe by C3's own merge rule (a scene only one side has
+	// is carried WHOLE, so an omission can never read as a deletion over there).
+	const hidden = privateScenes;
+	const drop = (/** @type {Record<string, SceneEntry>} */ scenes) => {
+		if (!hidden.size) return scenes;
+		/** @type {Record<string, SceneEntry>} */
+		const out = {};
+		for (const [name, entry] of Object.entries(scenes ?? {})) if (!hidden.has(name)) out[name] = entry;
+		return out;
+	};
 	// the host — and a solo user, who is one — publishes its project whole
-	if (get(sessionHost) === null) return doc;
+	if (get(sessionHost) === null)
+		return hidden.size ? { ...doc, scenes: drop(doc.scenes ?? {}) } : doc;
 	const allowed = new Set([...sessionSceneNames, ...openedScenes]);
 	/** @type {Record<string, SceneEntry>} */
 	const scenes = {};
 	for (const [name, entry] of Object.entries(doc.scenes ?? {}))
 		if (allowed.has(name)) scenes[name] = entry;
-	return { ...doc, scenes, name: renamedThisSession ? doc.name : '' };
+	return { ...doc, scenes: drop(scenes), name: renamedThisSession ? doc.name : '' };
 }
 
 // ---- the merge, surfaced -------------------------------------------------------------

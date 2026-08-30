@@ -24,10 +24,30 @@ function persist() {
 	} catch {}
 }
 
+/**
+ * Keys this store has RENAMED, applied to every restored group. Flow Code registered
+ * as 'flowCode' while every module that addresses windowTabs from the outside
+ * (`panelToggles`, `bottomDockable`, `headerTargetAt`) passes the DOCK key 'flowcode',
+ * so the two never met; aligning them without this map would strand any group already
+ * saved under the old spelling — `tryRestore` waits for a member that can no longer
+ * register, so the group would sit in `pendingRestore` for ever and the user's Flow
+ * Code tab would simply never come back.
+ * @type {Record<string, string>}
+ */
+const KEY_ALIASES = { flowCode: 'flowcode' };
+/** @param {string} key */
+const migrateKey = (key) => KEY_ALIASES[key] ?? key;
+
 /** @type {any[]} groups waiting for their members to register+open again */
 let pendingRestore = [];
 try {
-	pendingRestore = JSON.parse(localStorage.getItem('windowTabGroups') ?? '[]');
+	pendingRestore = JSON.parse(localStorage.getItem('windowTabGroups') ?? '[]').map(
+		(/** @type {any} */ saved) => ({
+			...saved,
+			members: (saved.members ?? []).map(migrateKey),
+			active: migrateKey(saved.active)
+		})
+	);
 } catch {}
 
 /** @param {any} node */

@@ -762,23 +762,32 @@ h.run(async () => {
 	);
 	await closeMenus(A.page);
 
-	// ---- ONE TREE FOR EVERY PANEL, INCLUDING THE DOCK-ONLY ONE -----------------------
-	// The ShaderEditor is the single view with no `docked` flag, no dragWindow and no
-	// window chrome. Without `dockOnly` the tree reads it as floating-only and tries to
-	// raise a window that does not exist, so the button does nothing at all.
+	// ---- ONE TREE FOR EVERY PANEL, THE SHADER EDITOR INCLUDED ------------------------
+	// This section used to read "including the DOCK-ONLY one": the Shader editor was the
+	// single view with no `docked` flag, no dragWindow and no window chrome, so
+	// `panelToggles` carried a `dockOnly` shape for it alone and `dockMenu` withheld
+	// Undock. The other lane gave it a real floating window, and BOTH exceptions were
+	// deleted with it — so the premise this section asserted no longer exists, and the
+	// checks only stayed green because `shaderDocked` still defaults to docked.
+	//
+	// What is worth pinning now is that it is an ORDINARY two-mode panel: the same tree,
+	// the same two presses, in whichever mode it is in. The floating half of that cycle
+	// (open -> bury -> raise -> hide through the roster button, which is what needs its
+	// `focusStack={'shader'}` key) is driven in floating-window-focus alongside the four
+	// windows this lane keyed; here it is the DOCKED half.
 	await resetAll();
 	await openCustomize();
 	await pick(A.page, 'Shader editor');
 	await closeMenus(A.page);
 	await A.page.locator('#controls-pill p[title="Shader editor"]').click();
-	await h.eventually(dockKey, (k) => k === 'shader', 'the dock-only Shader editor opens DOCKED');
+	await h.eventually(dockKey, (k) => k === 'shader', 'the Shader editor opens DOCKED, its remembered mode');
 	h.check(
 		await A.page.evaluate(() => {
 			let occ = {};
 			window.__stores.bottomDock.dockOccupants.subscribe((v) => (occ = v))();
 			return !!occ.shader?.present;
 		}),
-		'...as a dock OCCUPANT — there is no floating mode for it to have tried'
+		'...as a dock OCCUPANT, so the tree took its docked branch'
 	);
 	await A.page.locator('#controls-pill p[title="Shader editor"]').click();
 	await h.eventually(
@@ -789,8 +798,14 @@ h.run(async () => {
 				return v;
 			}),
 		(v) => v === true,
-		'...and a second press closes it — a dock-only panel has exactly two states'
+		'...and a second press hides it — the visible dock tab closes, like any other panel'
 	);
+	// That the exception is really GONE rather than merely unused is proven where it can
+	// be driven through the UI: shader-window undocks it from the tab menu and docks it
+	// back by header drag, and floating-window-focus runs the raise/hide cycle against
+	// its floating window. Both modules are private to the app, so probing them from here
+	// would mean widening the debugStores hook for one assertion — the positional
+	// destructure whose mis-folds this repo has already paid for twice.
 	await resetAll();
 
 	h.check(h.pageErrors(A).length === 0, `the page threw nothing (${h.pageErrors(A).join(' / ')})`);

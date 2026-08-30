@@ -19,16 +19,25 @@
 //    window the only one at 44. Section 2 is that, through a real mouse.
 const h = require('./helpers.cjs');
 
-/** the four windows W8b gave buttons to but never keyed, plus the two that worked */
+/**
+ * The four windows W8b gave buttons to but never keyed, plus the two that worked — and
+ * since the merge the SHADER editor, the EIGHTH floating window, which arrived from the
+ * other lane. It is not a footnote here: this suite's whole thesis is a rule about the
+ * SIZE of the stack ("everything from the fifth window up collapses onto 44"), so a
+ * suite that measures seven understates the very band it exists to police. That lane
+ * keys its window `focusStack={'shader'}`, so it belongs in the same loop as the four
+ * this one keyed — and until the merge nothing had ever driven that combination.
+ */
 const VIEWS = [
 	{ key: 'flowcode', title: 'Flow Code', sel: '#flow-code-window', store: 'flowCodeClose' },
 	{ key: 'animation', title: 'Animation', sel: '#animation-window', store: 'animationClose' },
 	{ key: 'uv', title: 'UV editor', sel: '#uv-window', store: 'uvEditorClose' },
+	{ key: 'shader', title: 'Shader editor', sel: '#shader-window', store: 'shaderEditorClose' },
 	{ key: 'hud', title: 'HUD editor', sel: '#hud-window', store: 'hudEditorClose' }
 ];
 
 const ALL_SEL =
-	'#flow-window,#flow-code-window,#animation-window,#uv-window,#hud-window,#explorer-window,#object-list';
+	'#flow-window,#flow-code-window,#animation-window,#uv-window,#shader-window,#hud-window,#explorer-window,#object-list';
 
 /** every floating window that is actually on screen, with its z, top-most last */
 const shown = (page) =>
@@ -58,12 +67,12 @@ h.run(async () => {
 
 	// every dock view opens FLOATING, and the four optional roster buttons are on the bar
 	await page.evaluate(() => {
-		for (const k of ['flowDocked', 'flowCodeDocked', 'animationDocked', 'uvDocked', 'hudDocked', 'explorerDocked'])
+		for (const k of ['flowDocked', 'flowCodeDocked', 'animationDocked', 'uvDocked', 'shaderDocked', 'hudDocked', 'explorerDocked'])
 			localStorage.setItem(k, 'false');
 		localStorage.setItem(
 			'controlsLayout',
 			JSON.stringify({
-				order: ['move', 'rotate', 'scale', 'objects', 'flow', 'explorer', 'flowcode', 'animation', 'uv', 'hud'],
+				order: ['move', 'rotate', 'scale', 'objects', 'flow', 'explorer', 'flowcode', 'animation', 'uv', 'shader', 'hud'],
 				hidden: [],
 				spacerIndex: 3,
 				collapsed: false,
@@ -80,7 +89,7 @@ h.run(async () => {
 	);
 	h.check(
 		VIEWS.every((v) => bar.includes(v.title)),
-		`0.0 premise: all four optional buttons are on the bar (${bar.join(' | ')})`
+		`0.0 premise: every optional roster button is on the bar, the Shader editor included (${bar.join(' | ')})`
 	);
 
 	// ---- 1. each newly-keyed window: open+raise / raise-when-buried / hide ----------
@@ -136,6 +145,7 @@ h.run(async () => {
 		s.flowGraphClose.set(false);
 		s.hudEditorClose.set(false);
 		s.uvEditorClose.set(false);
+		s.shaderEditorClose.set(false);
 		s.animationClose.set(false);
 		s.flowCodeClose.set(false);
 	});
@@ -143,11 +153,25 @@ h.run(async () => {
 
 	let list = await shown(page);
 	h.check(list.length >= 4, `2.0 premise: several floating windows are open at once (${list.length})`);
+	// THE GUARANTEE IS AT THE TOP, and only at the top. The band is 40..44 — five slots —
+	// so "every z is distinct" is not a property of the ranking, it is an accident of
+	// opening exactly five windows, which is what this suite used to do. Adding the
+	// shader made six and the bottom two correctly met the 40 FLOOR that windowFocus
+	// documents ("windows past the fifth share the 40 floor... at the end of the stack
+	// nobody is looking at"). What the fix actually promises, and all click-to-front
+	// needs, is that whatever you press ends up STRICTLY above everything else.
+	const top = list[list.length - 1];
 	h.check(
-		new Set(list.map((w) => w.z)).size === list.length,
-		`2.1 every one has a DISTINCT z — five used to share 44, which is why a click could not win (${list
+		top.z === 44 && list.filter((w) => w.z === 44).length === 1,
+		`2.1 the top-most window is UNIQUELY 44 — five used to share it, which is why a click could not win (${list
 			.map((w) => `${w.id}:${w.z}`)
 			.join(' ')})`
+	);
+	h.check(
+		list.every((w, i) => i === 0 || w.z >= list[i - 1].z) && list[0].z >= 40,
+		`2.1b ...and the whole stack stays inside the 40..44 band, under the HUD at 45 (${list
+			.map((w) => w.z)
+			.join(',')})`
 	);
 
 	// the lowest window, a point on it that is genuinely exposed, and a point where it
@@ -230,7 +254,7 @@ h.run(async () => {
 		await page.waitForTimeout(350);
 		const focused = await page.evaluate(() => {
 			const a = document.activeElement;
-			return { tag: a?.tagName ?? 'none', inWin: !!a?.closest('#flow-window,#flow-code-window,#animation-window,#uv-window,#hud-window,#explorer-window,#object-list') };
+			return { tag: a?.tagName ?? 'none', inWin: !!a?.closest('#flow-window,#flow-code-window,#animation-window,#uv-window,#shader-window,#hud-window,#explorer-window,#object-list') };
 		});
 		h.check(
 			focused.tag === 'INPUT' && focused.inWin,
@@ -238,6 +262,85 @@ h.run(async () => {
 		);
 	} else {
 		h.check(true, '3.0 (no eligible text field on screen to probe — skipped)');
+	}
+
+	// ---- 3b. THE DOCK KEY (T) MUST NOT DISTURB THE FLOATING STACK ------------------
+	// The other lane's `toggleDock` minimizes and restores the bottom dock. The dock is
+	// its own tier (`--z-bottom`, 35) and these windows are the 40..44 band, so the two
+	// have no business touching — but `apply()` re-ranks the WHOLE order on every
+	// register/destroy, and a panel changing mode is exactly a destroy. Worth pinning
+	// rather than assuming: the failure it would produce (a click-to-front that stops
+	// working after you minimize the dock once) is the kind nobody files as a dock bug.
+	const zMap = async () => Object.fromEntries((await shown(page)).map((w) => [w.id, w.z]));
+	const pressT = async () => {
+		await page.evaluate(() => document.activeElement instanceof HTMLElement && document.activeElement.blur());
+		await page.keyboard.press('t');
+		await page.waitForTimeout(550);
+	};
+	const dockMin = () =>
+		page.evaluate(() => {
+			let v;
+			window.__stores.bottomDock.dockMinimized.subscribe((x) => (v = x))();
+			return v;
+		});
+
+	// Every panel here is FLOATING, so the dock is EMPTY — and T's third state docks the
+	// last-active view rather than reading as broken. That is the two lanes meeting: a
+	// window LEAVES the floating stack, and `apply()` re-ranks what is left. Assert that
+	// deliberately instead of being surprised by it, then test the minimize cycle from a
+	// dock that actually holds something (which is the only state that can minimize).
+	const beforeDock = await zMap();
+	await pressT();
+	const afterDock = await zMap();
+	h.check(
+		(await dockMin()) === false && Object.keys(afterDock).length === Object.keys(beforeDock).length - 1,
+		`3b.0 T on an EMPTY dock docks one view, so it leaves the floating stack (${Object.keys(beforeDock).length} -> ${Object.keys(afterDock).length} floating)`
+	);
+	h.check(
+		Object.values(afterDock).filter((z) => z === 44).length === 1,
+		`3b.0b ...and the windows left behind re-rank with a single top (${JSON.stringify(afterDock)})`
+	);
+
+	await pressT();
+	const minimized = await dockMin();
+	const duringT = await zMap();
+	h.check(minimized === true, `3b.1a with the dock populated, T minimizes it (dockMinimized=${minimized})`);
+	h.check(
+		JSON.stringify(duringT) === JSON.stringify(afterDock),
+		`3b.1 ...and leaves every floating z untouched — the dock is its own tier (${JSON.stringify(duringT)})`
+	);
+
+	await pressT();
+	const afterT = await zMap();
+	h.check((await dockMin()) === false, '3b.2a T brings the dock back');
+	h.check(
+		JSON.stringify(afterT) === JSON.stringify(afterDock),
+		`3b.2 ...and restoring it disturbs the floating z no more than minimizing did (${JSON.stringify(afterT)})`
+	);
+
+	// and click-to-front still works AFTER the dock has been toggled — the property that
+	// would actually be lost if a re-rank had gone wrong while the dock came and went
+	const lowId = (await shown(page))[0].id;
+	const spot = await page.evaluate((id) => {
+		const w = document.getElementById(id);
+		const r = w.getBoundingClientRect();
+		for (let y = r.top + 6; y < r.bottom - 6; y += 12)
+			for (let x = r.left + 6; x < r.right - 6; x += 12)
+				if (document.elementFromPoint(x, y)?.closest('#' + id)) return { x: Math.round(x), y: Math.round(y) };
+		return null;
+	}, lowId);
+	if (spot) {
+		await page.mouse.click(spot.x, spot.y);
+		await page.waitForTimeout(400);
+		const list3 = await shown(page);
+		h.check(
+			list3[list3.length - 1].id === lowId,
+			`3b.3 click-to-front still raises the lowest window after a dock round trip (${lowId} -> ${list3
+				.map((w) => `${w.id}:${w.z}`)
+				.join(' ')})`
+		);
+	} else {
+		h.check(false, '3b.3 no exposed pixel on the lowest window to press');
 	}
 
 	h.check(h.pageErrors(A).length === 0, `4.0 the page threw nothing (${h.pageErrors(A).join(' / ')})`);

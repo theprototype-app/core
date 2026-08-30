@@ -78,8 +78,13 @@ const isCoarse = () =>
 
 /**
  * svelte action: dragging this floating window's header into the bottom band docks it.
- * @param {any} node @param {{key: string}} options `key` is the DOCK key (bottomDock's,
- *   which is not always windowTabs' — Flow Code is 'flowcode' here and 'flowCode' there)
+ * @param {any} node @param {{key: string}} options `key` is the DOCK key, which is ALSO
+ *   windowTabs' key — this note used to record that Flow Code was 'flowcode' here and
+ *   'flowCode' there, and that divergence was not a quirk but a defect: both
+ *   `groupOfKey` and `headerTargetAt` below are handed this key, so under the old
+ *   spelling the group guard never fired and the hit test never excluded FlowCode's own
+ *   header — which, since a header drag keeps the pointer on that very header, meant
+ *   `wants()` was false on every move and Flow Code could not be docked by drag at all.
  */
 export function bottomDockable(node, { key }) {
 	if (isCoarse() || !DOCK_FAMILY.includes(key)) return { destroy() {} };

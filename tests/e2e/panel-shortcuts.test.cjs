@@ -378,5 +378,131 @@ h.run(async () => {
 	);
 	await A.page.evaluate(() => window.__stores.settingsOpen.set(false));
 
+	// ------------------- 9. Alt+F reaches a GROUPED Flow Code (the key alignment)
+	// `togglePanel` step 2 — "open, but a sibling tab is showing" — asks windowTabs
+	// `groupOfKey(key)` with the DOCK key. Flow Code registered its `tabbable` under
+	// 'flowCode' while every caller passes 'flowcode', so that branch could never fire
+	// for it: Alt+F on a buried Flow Code tab fell through to the floating branch, which
+	// raised a node the group still held at display:none, and nothing on screen moved.
+	// Two more callers were reading the same miss — `bottomDockable`'s "a tab group drags
+	// as one" guard and the SELF-exclusion in `headerTargetAt` — so this section is the
+	// coverage that one capital had no chance of failing.
+	//
+	// It goes LAST because it undocks a panel and reloads twice.
+	await clearDock(A.page);
+	await A.page.evaluate(() => {
+		localStorage.setItem('flowCodeDocked', 'false');
+		localStorage.removeItem('windowTabGroups');
+	});
+	await A.page.reload({ waitUntil: 'domcontentloaded' });
+	await A.page.waitForFunction(() => window.__stores && !!window.__stores.bottomDock, { timeout: 30000 });
+	await A.page.evaluate(() => {
+		window.__stores.objectListClose.set(false);
+		window.__stores.flowCodeClose.set(false);
+	});
+	await A.page.waitForTimeout(800);
+
+	// the real drag-merge: Flow Code's header onto the object list's header
+	const grouped = await A.page.evaluate(async () => {
+		const ol = document.getElementById('object-list');
+		const fc = document.getElementById('flow-code-window');
+		if (!ol || !fc) return { ok: false };
+		const olr = ol.getBoundingClientRect();
+		const handle = fc.querySelector('.move-handle');
+		const fr = handle.getBoundingClientRect();
+		const ev = (t, type, x, y) =>
+			t.dispatchEvent(new PointerEvent(type, { bubbles: true, clientX: x, clientY: y, pointerId: 11 }));
+		ev(handle, 'pointerdown', fr.left + 40, fr.top + 8);
+		ev(window, 'pointermove', olr.left + olr.width / 2, olr.top + 10);
+		ev(window, 'pointerup', olr.left + olr.width / 2, olr.top + 10);
+		await new Promise((r) => setTimeout(r, 350));
+		return { ok: true, strip: !!document.querySelector('.tab-strip') };
+	});
+	h.check(grouped.ok && grouped.strip, '9.1 premise: Flow Code and the object list merge into one tab group');
+
+	// windowTabs PERSISTS its member keys, so the spelling is readable rather than inferred
+	const savedKeys = await A.page.evaluate(() => {
+		try {
+			return JSON.parse(localStorage.getItem('windowTabGroups') ?? '[]')[0]?.members ?? [];
+		} catch {
+			return [];
+		}
+	});
+	h.check(
+		savedKeys.includes('flowcode') && !savedKeys.includes('flowCode'),
+		`9.2 Flow Code registers under the DOCK key, so every caller can address it (${JSON.stringify(savedKeys)})`
+	);
+
+	// Bury it: make the OTHER member the active tab, so Alt+F has real work to do. A REAL
+	// mouse press, because the strip switches on pointerdown+pointerup (it has to tell a
+	// click from a tear-off drag) — `.click()` fires neither and is silently inert here.
+	const tabAt = await A.page.evaluate(() => {
+		const strip = document.querySelector('.tab-strip');
+		const tab = [...(strip?.querySelectorAll('[role="tab"]') ?? [])].find((b) =>
+			/Objects/i.test(b.textContent ?? '')
+		);
+		if (!tab) return null;
+		const r = tab.getBoundingClientRect();
+		return { x: Math.round(r.left + r.width / 2), y: Math.round(r.top + r.height / 2) };
+	});
+	h.check(!!tabAt, '9.3a premise: the strip draws a tab for the object list');
+	if (tabAt) await A.page.mouse.click(tabAt.x, tabAt.y);
+	await A.page.waitForTimeout(450);
+	const buried = await A.page.evaluate(() => {
+		const fc = document.getElementById('flow-code-window');
+		return { hidden: !!fc && getComputedStyle(fc).display === 'none' };
+	});
+	h.check(buried.hidden, '9.3 premise: Flow Code is the INACTIVE tab now (display:none)');
+
+	await press(A.page, 'Alt+f');
+	const called = await A.page.evaluate(() => {
+		const fc = document.getElementById('flow-code-window');
+		let saved = [];
+		try {
+			saved = JSON.parse(localStorage.getItem('windowTabGroups') ?? '[]');
+		} catch {}
+		return {
+			shown: !!fc && getComputedStyle(fc).display !== 'none' && fc.getBoundingClientRect().width > 0,
+			active: saved[0]?.active ?? null
+		};
+	});
+	h.check(called.shown, '9.4 Alt+F ACTIVATES the buried tab instead of raising a hidden node');
+	h.check(called.active === 'flowcode', `9.5 ...and the group records it as the active tab (${called.active})`);
+
+	// the migration: a group saved under the OLD spelling must still come back. Without
+	// it `tryRestore` waits for a member that can never register again, so the group sits
+	// in `pendingRestore` for ever and the user's tabs are silently gone.
+	await A.page.evaluate(() => {
+		const rect = { left: 200, top: 140, width: 520, height: 360 };
+		localStorage.setItem(
+			'windowTabGroups',
+			JSON.stringify([{ id: 'tg1', members: ['objects', 'flowCode'], active: 'flowCode', rect }])
+		);
+	});
+	await A.page.reload({ waitUntil: 'domcontentloaded' });
+	await A.page.waitForFunction(() => window.__stores && !!window.__stores.bottomDock, { timeout: 30000 });
+	await A.page.evaluate(() => {
+		window.__stores.objectListClose.set(false);
+		window.__stores.flowCodeClose.set(false);
+	});
+	await A.page.waitForTimeout(900);
+	const restored = await A.page.evaluate(() => {
+		let saved = [];
+		try {
+			saved = JSON.parse(localStorage.getItem('windowTabGroups') ?? '[]');
+		} catch {}
+		return {
+			strip: !!document.querySelector('.tab-strip'),
+			members: saved[0]?.members ?? [],
+			active: saved[0]?.active ?? null
+		};
+	});
+	h.check(restored.strip, '9.6 a group saved under the OLD key spelling still restores its tab strip');
+	h.check(
+		restored.members.includes('flowcode') && !restored.members.includes('flowCode'),
+		`9.7 ...migrated to the new spelling, so it can never strand again (${JSON.stringify(restored.members)})`
+	);
+	h.check(restored.active === 'flowcode', `9.8 ...and the saved ACTIVE member migrates too (${restored.active})`);
+
 	await h.finish(browser);
 });

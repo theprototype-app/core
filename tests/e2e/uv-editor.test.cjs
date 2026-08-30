@@ -82,21 +82,44 @@ h.run(async () => {
 	});
 	h.check(dockShown, 'the UV editor is the visible dock panel after activateDock');
 
-	// the "+" menu offers it (both copies of addItems must carry the entry — the
-	// dock strip's and the floating Node editor header's)
+	// The "+" menu offers it (both copies of addItems must carry the entry — the dock
+	// strip's and the floating Node editor header's).
+	//
+	// TWO things were wrong with the old form and they hid each other. It found the
+	// button by the literal '＋', which is a lucide <Plus> icon with no text now, so the
+	// click was a no-op; and it then searched every `button` on the page, which matched
+	// the dock strip's own "UV editor" TAB — so an inert click still read green. With
+	// both fixed it went red for a THIRD, real reason: the menu deliberately drops what
+	// is already docked, and the setup above docks the UV editor. So ask from a state
+	// where the entry can legitimately appear — closed — then put it back.
+	await A.page.evaluate(() => window.__stores.uvEditorClose.set(true));
+	await A.page.waitForTimeout(450);
 	const plusItems = await A.page.evaluate(async () => {
-		const plus = [...document.querySelectorAll('.tab-note')].find((b) => b.textContent.trim() === '＋');
+		const plus = [...document.querySelectorAll('#dock-add-view')].find(
+			(b) => b.getBoundingClientRect().width > 0
+		);
 		plus?.click();
-		await new Promise((r) => setTimeout(r, 250));
-		return [...document.querySelectorAll('.ctx-item, [role="menuitem"], button')]
+		await new Promise((r) => setTimeout(r, 300));
+		return [...document.querySelectorAll('[role="menu"] [role="menuitem"], [role="menu"] .ctx-item')]
 			.map((b) => b.textContent.trim())
 			.filter((t) => t.includes('UV editor'));
 	});
-	h.check(plusItems.length > 0, `the dock "+" menu offers UV editor (${plusItems.join('|')})`);
+	h.check(plusItems.length > 0, `the dock "+" menu offers UV editor when it is not docked (${plusItems.join('|')})`);
 	await A.page.keyboard.press('Escape');
 	await A.page.waitForTimeout(200);
+	await A.page.evaluate(() => {
+		window.__stores.uvEditorClose.set(false);
+		window.__stores.bottomDock.activateDock('uv');
+	});
+	await A.page.waitForTimeout(500);
 
-	// the Explorer is mutually exclusive with the Flow family in the dock
+	// THE DOCK IS A TAB STRIP NOW, not a single slot. This used to assert that showing a
+	// Flow-family view CLOSED a docked Explorer, which was true when the two could not
+	// share the dock; `739f9df [feat] the explorer is a bottom-dock tab` made the Explorer
+	// an ordinary tab and `activateDock` stopped closing anything — it sets the active key
+	// and un-minimizes, nothing more. dock-float-exclusivity states the replacement rule
+	// outright ("docking the Node editor does NOT close the Explorer any more"), so this
+	// line had been asserting the opposite of the branch's own covered behaviour.
 	await A.page.evaluate(() => {
 		window.__stores.explorerClose.set(false);
 		window.__stores.bottomDock.activateDock('explorer');
@@ -104,10 +127,25 @@ h.run(async () => {
 	await A.page.waitForTimeout(400);
 	await A.page.evaluate(() => window.__stores.bottomDock.activateDock('uv'));
 	await A.page.waitForTimeout(400);
-	const explorerClosed = await A.page.evaluate(
-		() => new Promise((r) => window.__stores.explorerClose.subscribe((v) => r(v))())
+	const coexist = await A.page.evaluate(async () => {
+		const s = window.__stores;
+		const read = (st) => new Promise((r) => st.subscribe((v) => r(v))());
+		return {
+			explorerClosed: await read(s.explorerClose),
+			visible: await read(s.bottomDock.visibleDockKey),
+			present: Object.keys(await read(s.bottomDock.dockOccupants)).filter(
+				(k) => k === 'uv' || k === 'explorer'
+			)
+		};
+	});
+	h.check(
+		coexist.visible === 'uv',
+		`activating the UV tab makes it the visible dock panel (visible=${coexist.visible})`
 	);
-	h.check(explorerClosed, 'activating the UV tab closes a docked Explorer (dock exclusivity)');
+	h.check(
+		coexist.explorerClosed === false,
+		'...and the Explorer stays OPEN behind it as a dock tab — the dock is a tab strip, not one slot'
+	);
 
 	// ---------- the canvas ----------
 	const canvas = await A.page.evaluate(() => {

@@ -91,9 +91,11 @@ export function dockAddItems() {
  * ever reach the visible tab, and a hidden tab had no affordance at all.
  *
  * Undocking asks through `armDockMode` because the panel owns its own mode (see the
- * note on that store). The ShaderEditor has NO floating mode — it is the one dock tab
- * with no `docked` flag or window chrome — so it is offered Close alone rather than a
- * row that would silently do nothing.
+ * note on that store). It is offered for EVERY tab now: the Shader editor was the one
+ * view with no floating mode — no `docked` flag, no window chrome and nothing to consume
+ * the arm — so this row was withheld for it rather than shipping a button that could
+ * only do nothing. It has both modes since the controls rework, so the exception went
+ * with it.
  * W7 puts MOVE at the top of the same menu: the drag in the strip is the fast way and
  * these two rows are the discoverable one, and they are the only way to reorder a tab
  * on a device with no pointer to drag with. They read the PRESENT tabs, so they step
@@ -120,12 +122,11 @@ export function dockTabItems(key) {
 		disabled: at < 0 || at >= present.length - 1,
 		action: () => moveDockTab(key, 'right')
 	});
-	if (key !== 'shader')
-		items.push({
-			label: 'Undock into a floating window',
-			tooltip: `Take ${title} out of the dock`,
-			action: () => armDockMode(key, false)
-		});
+	items.push({
+		label: 'Undock into a floating window',
+		tooltip: `Take ${title} out of the dock`,
+		action: () => armDockMode(key, false)
+	});
 	items.push({
 		label: 'Close',
 		tooltip: `Close ${title} (it leaves the dock; nothing else is touched)`,

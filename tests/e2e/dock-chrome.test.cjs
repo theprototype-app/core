@@ -475,12 +475,17 @@ h.run(async () => {
 		`8.4 ...and the dock carries on with the surviving tab (visible=${d.visible})`
 	);
 
-	// The Shader editor is the ONE dock tab with no floating mode at all — no `docked`
-	// flag, no window chrome, no Undock button of its own — so its menu is Close ALONE
-	// rather than a row that would silently do nothing. (Its component IS mounted while
-	// hidden, like every other tab: only its MARKUP is {#if}-gated, which is how it
-	// reports itself as an occupant. The missing row is about the absent floating mode,
-	// not about the component being away.)
+	// THE SHADER EDITOR'S EXCEPTION IS GONE, and this check is flipped in the same
+	// commit that removes it.
+	//
+	// It used to be the ONE dock tab with no floating mode — no `docked` flag, no window
+	// chrome, nothing to consume `armDockMode` — so `dockTabItems` withheld the Undock
+	// row rather than shipping one that could only do nothing, and this assertion pinned
+	// that. It has UvEditor's docked/floating split now, so its menu is its siblings'
+	// menu exactly, and a withheld row would be the bug. (`shader-window` owns the
+	// behaviour end to end; what belongs HERE is that the tab strip treats all seven
+	// alike.) Its component IS mounted while hidden, like every other tab: only its
+	// MARKUP is {#if}-gated, which is how it reports itself as an occupant.
 	await A.page.evaluate(() => {
 		window.__stores.shaderEditorClose.set(false);
 		window.__stores.bottomDock.activateDock('flow');
@@ -489,13 +494,9 @@ h.run(async () => {
 	const gotShaderMenu = await rightClickTab('Shader editor');
 	h.check(gotShaderMenu, '8.4b the Shader editor is a tab and right-clicks like the rest');
 	rows = await menuRows();
-	// W7 added Move left / Move right to every tab's menu, and the Shader editor is an
-	// ordinary tab in the strip that reorders like the rest. What stays true — and is what
-	// this check has always been ABOUT — is that it is offered no UNDOCK row: it is the one
-	// dock tab with no floating mode, so that row could only ever do nothing.
 	h.check(
-		!rows.some((r) => /undock/i.test(r.label)) && rows.some((r) => r.label === 'Close'),
-		`8.4c ...but offers no UNDOCK — it has no floating mode to undock into (${rows.map((r) => r.label).join(' | ')})`
+		rows.some((r) => /undock/i.test(r.label)) && rows.some((r) => r.label === 'Close'),
+		`8.4c ...and offers Undock like every other tab, the exception having gone with the missing floating mode (${rows.map((r) => r.label).join(' | ')})`
 	);
 	await closeMenu();
 	await A.page.evaluate(() => window.__stores.shaderEditorClose.set(true));

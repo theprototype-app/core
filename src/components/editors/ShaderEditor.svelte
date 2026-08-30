@@ -13,6 +13,7 @@
 	// `shaderGraphs` is the Nodes.svelte shape — SvelteFlow 1.x binds PLAIN $state.raw
 	// arrays, not stores, so the two are mirrored both ways behind a re-entrancy guard.
 	import { untrack } from 'svelte';
+	import { get } from 'svelte/store';
 	import { Info, Settings, Trash2 } from '@lucide/svelte';
 	import {
 		SvelteFlow,
@@ -26,7 +27,7 @@
 	import '@xyflow/svelte/dist/style.css';
 	import '../../styles/flow.css';
 	import { selectedObjects, objectsGroup } from '../../stores/sceneStore';
-	import { shaderEditorClose, showToast } from '../../stores/appStore.js';
+	import { shaderEditorClose, showToast, mobileUndockAllowed } from '../../stores/appStore.js';
 	import {
 		shaderGraphs,
 		shaderErrors,
@@ -38,7 +39,19 @@
 	} from '$lib/shaderGraph';
 	import { beginShaderGesture, endShaderGesture } from '$lib/shaderSync';
 	import { shaderNodeDefs, shaderNodeDef, SURFACE_NODE } from '$lib/shaderCatalog';
-	import { setDockOccupant, dockHeight, visibleDockKey, dockMinimized } from '$lib/bottomDock';
+	import {
+		setDockOccupant,
+		dockHeight,
+		visibleDockKey,
+		dockMinimized,
+		activateDock,
+		dockModeArm
+	} from '$lib/bottomDock';
+	import { bottomDockable } from '$lib/bottomDockDrop';
+	import { dragWindow } from '$lib/dragWindow';
+	import { focusStack } from '$lib/windowFocus';
+	import { tabbable, resizeGroup, tabGroups } from '$lib/windowTabs';
+	import { clampWinSize, clampResize, anchorOf } from '$lib/windowSize';
 	import DockTabs from '../DockTabs.svelte';
 	import ContextMenu from '../ContextMenu.svelte';
 	import ShaderNode from './nodes/ShaderNode.svelte';
@@ -348,9 +361,69 @@
 		});
 	}
 
-	// dock presence
+	// ---- docked vs floating -----------------------------------------------------
+	// UvEditor's split verbatim. This editor was the ONE dock view with no floating
+	// mode at all — no `docked` flag, no window chrome, and an occupancy report that
+	// never asked the question — which two other modules then had to code around
+	// (`panelToggles`' `dockOnly` and `dockMenu` withholding Undock). Both of those
+	// exceptions are gone with this block; the seventh view now behaves like its six
+	// siblings and nothing has to know it is special.
+	let docked = $state(true);
+	const WIN_MIN = { minW: 380, minH: 280 };
+	const WIN_DEFAULT = { w: 720, h: 480 };
+	let winW = $state(720);
+	let winH = $state(480);
+	if (typeof localStorage !== 'undefined') {
+		docked = localStorage.getItem('shaderDocked') !== 'false';
+		// 18-B: a size saved on a bigger screen must not come back oversized. Fitted
+		// BEFORE the assignment so nothing reads $state during init.
+		const savedWin = clampWinSize(
+			parseInt(localStorage.getItem('shaderWinW') ?? '720') || 720,
+			parseInt(localStorage.getItem('shaderWinH') ?? '480') || 480,
+			WIN_MIN
+		);
+		winW = savedWin.w;
+		winH = savedWin.h;
+	}
+	// touch / limited-width: keep the editor docked (no room to float; undock hidden),
+	// unless the user opted into undocking on touch (Settings > Allow undocking)
+	if (
+		typeof window !== 'undefined' &&
+		window.matchMedia?.('(pointer: coarse)').matches &&
+		!get(mobileUndockAllowed)
+	)
+		docked = true;
+
+	function setDocked(/** @type {boolean} */ v) {
+		docked = v;
+		localStorage.setItem('shaderDocked', String(v));
+		if (v) activateDock('shader'); // re-docking makes it the visible tab
+	}
+
+	// W5: consume the shared dock-mode arm — the tab strip's right-click menu and its
+	// drag-a-tab-out both ask through it, and `docked` above is read from localStorage
+	// exactly ONCE at mount, so writing that flag from outside is inert; `setDocked`
+	// owns the mode and is what has to run. Cleared as it is acted on. THIS is the seam
+	// that makes "Undock" reach this view at all — the row was withheld until now
+	// precisely because there was nothing here to consume the ask.
 	$effect(() => {
-		setDockOccupant('shader', !$shaderEditorClose, $dockHeight);
+		const arm = $dockModeArm;
+		if (!arm || arm.key !== 'shader') return;
+		dockModeArm.set(null);
+		untrack(() => {
+			if (arm.docked !== docked) setDocked(arm.docked);
+			shaderEditorClose.set(false);
+		});
+	});
+
+	const myGroup = $derived($tabGroups.find((g) => g.members.includes('shader')) ?? null);
+	const effW = $derived(myGroup ? myGroup.rect.width : winW);
+	const effH = $derived(myGroup ? myGroup.rect.height : winH);
+
+	// dock presence — `docked` is part of the question now: a floating Shader editor is
+	// open and is NOT a dock tab, and reporting it as one leaves a phantom in the strip.
+	$effect(() => {
+		setDockOccupant('shader', !$shaderEditorClose && docked, $dockHeight);
 		return () => setDockOccupant('shader', false);
 	});
 	// W2: a MINIMIZED dock renders nothing while every tab stays open (the occupant
@@ -361,10 +434,12 @@
 	// have carried it since the dock existed, so the shared height silently froze
 	// whenever the Shader editor was the tab on screen. Same handlers, same shared
 	// `dockHeight`, same clamp (FlowCode is the reference), so the seven behave
-	// identically. No floating mode here, so there is no corner grip to pair it with.
+	// identically. It now pairs with a corner grip in the floating mode, exactly as the
+	// siblings do — the top edge sizes the shared dock, the corner sizes this window.
 	const clampH = (/** @type {number} */ h) =>
 		Math.min(Math.max(h || 320, 200), Math.round(window.innerHeight * 0.8));
 	let resizing = $state(false);
+	let winResizing = $state(false);
 	function startResize(/** @type {any} */ e) {
 		resizing = true;
 		e.currentTarget.setPointerCapture(e.pointerId);
@@ -379,46 +454,78 @@
 			e.currentTarget.releasePointerCapture?.(e.pointerId);
 		}
 	}
+	function startWinResize(/** @type {any} */ e) {
+		winResizing = true;
+		e.currentTarget.setPointerCapture(e.pointerId);
+		e.preventDefault();
+		e.stopPropagation();
+	}
+	function doWinResize(/** @type {any} */ e) {
+		if (!winResizing) return;
+		const baseW = myGroup ? myGroup.rect.width : winW;
+		const baseH = myGroup ? myGroup.rect.height : winH;
+		const at = anchorOf(e.currentTarget.parentElement);
+		const fit = clampResize(baseW + e.movementX, baseH + e.movementY, at.left, at.top, WIN_MIN);
+		winW = fit.w;
+		winH = fit.h;
+		resizeGroup('shader', winW, winH);
+	}
+	function endWinResize(/** @type {any} */ e) {
+		if (!winResizing) return;
+		winResizing = false;
+		e.currentTarget.releasePointerCapture?.(e.pointerId);
+		saveWinSize();
+	}
+	function saveWinSize() {
+		localStorage.setItem('shaderWinW', String(winW));
+		localStorage.setItem('shaderWinH', String(winH));
+	}
+	function resetWinSize() {
+		const fit = clampWinSize(WIN_DEFAULT.w, WIN_DEFAULT.h, WIN_MIN);
+		winW = fit.w;
+		winH = fit.h;
+		resizeGroup('shader', winW, winH);
+		saveWinSize();
+	}
+	// 18-B: a window bigger than the screen can never be shrunk again, so re-fit on
+	// every viewport change rather than only at load
+	function fitToViewport() {
+		const fit = clampWinSize(winW, winH, WIN_MIN);
+		if (fit.w === winW && fit.h === winH) return;
+		winW = fit.w;
+		winH = fit.h;
+		resizeGroup('shader', winW, winH);
+	}
 </script>
 
-{#if !$shaderEditorClose && dockVisible}
-	<div id="shader-editor" class="shader-editor ui-panel" style:height={$dockHeight + 'px'}>
-		<!-- top-edge resize hot zone (above the tab strip's z-20, so the band can never
-		     swallow the drag) -->
-		<!-- svelte-ignore a11y_no_static_element_interactions -->
-		<div
-			class="resize-cue absolute -top-1 left-0 right-0 z-30 h-2 cursor-ns-resize hover:bg-primary-600/30"
-			style="touch-action: none"
-			title="Drag to resize"
-			onpointerdown={startResize}
-			onpointermove={doResize}
-			onpointerup={endResize}
-		></div>
-		<div class="shader-topbar">
-			<DockTabs />
-			<span class="shader-scope" id="shader-scope">{scopeLabel}</span>
-			<div class="shader-actions">
-				{#if doc}
-					<button
-						class="ui-button-quiet"
-						id="shader-remove"
-						title="Remove this shader graph and restore the material"
-						aria-label="Remove this shader graph"
-						onclick={removeGraph}
-					>
-						<Trash2 size={14} aria-hidden="true" />
-					</button>
-				{/if}
-				<button
-					class="ui-button-quiet"
-					title="Close"
-					aria-label="Close the shader editor"
-					onclick={() => shaderEditorClose.set(true)}>✕</button
-				>
-			</div>
-		</div>
+<svelte:window onresize={fitToViewport} />
 
-		{#if errors.length}
+<!-- The two chrome buttons every mode shows, as ONE snippet: the docked strip and the
+     floating header differ ONLY in the mode button between them, and writing the pair
+     out twice is how the two headers drift on the next button either gains. -->
+{#snippet actions()}
+	{#if doc}
+		<button
+			class="ui-button-quiet"
+			id="shader-remove"
+			title="Remove this shader graph and restore the material"
+			aria-label="Remove this shader graph"
+			onclick={removeGraph}
+		>
+			<Trash2 size={14} aria-hidden="true" />
+		</button>
+	{/if}
+	<button
+		class="ui-button-quiet"
+		id="shader-close"
+		title="Close"
+		aria-label="Close the shader editor"
+		onclick={() => shaderEditorClose.set(true)}>✕</button
+	>
+{/snippet}
+
+{#snippet body()}
+	{#if errors.length}
 			<div class="shader-errors" id="shader-errors">
 				{#each errors as message, i (i)}<div>{message}</div>{/each}
 			</div>
@@ -651,6 +758,83 @@
 				</div>
 			{/if}
 		</div>
+{/snippet}
+
+<!-- The seventh dock view finally has both modes. The DOCKED branch keeps the render
+     condition it always had (present only while it is the visible tab) and simply adds
+     `docked`; the FLOATING branch is UvEditor's window verbatim — dragWindow, a KEYED
+     focusStack, tabbable, bottomDockable and a corner grip. -->
+{#if !$shaderEditorClose && docked && dockVisible}
+	<div id="shader-editor" class="shader-editor ui-panel" style:height={$dockHeight + 'px'}>
+		<!-- top-edge resize hot zone (above the tab strip's z-20, so the band can never
+		     swallow the drag) -->
+		<!-- svelte-ignore a11y_no_static_element_interactions -->
+		<div
+			class="resize-cue absolute -top-1 left-0 right-0 z-30 h-2 cursor-ns-resize hover:bg-primary-600/30"
+			style="touch-action: none"
+			title="Drag to resize"
+			onpointerdown={startResize}
+			onpointermove={doResize}
+			onpointerup={endResize}
+		></div>
+		<div class="shader-topbar">
+			<DockTabs />
+			<span class="shader-scope" id="shader-scope">{scopeLabel}</span>
+			<div class="shader-actions">
+				<button
+					class="ui-button-quiet"
+					id="shader-undock"
+					title="Undock into a floating window"
+					aria-label="Undock the shader editor"
+					onclick={() => setDocked(false)}>⧉</button
+				>
+				{@render actions()}
+			</div>
+		</div>
+		{@render body()}
+	</div>
+{:else if !$shaderEditorClose && !docked}
+	<div
+		id="shader-window"
+		class="ui-panel fixed flex flex-col overflow-hidden"
+		use:dragWindow={{ key: 'shader', defaultRect: { left: 240, top: 150 } }}
+		use:focusStack={'shader'}
+		use:tabbable={{
+			key: 'shader',
+			title: 'Shader editor',
+			openStore: shaderEditorClose,
+			isOpen: (/** @type {boolean} */ v) => !v,
+			close: () => shaderEditorClose.set(true)
+		}}
+		use:bottomDockable={{ key: 'shader' }}
+		style="z-index: var(--z-window); max-width: 96vw; max-height: 88vh"
+		style:width="{effW}px"
+		style:height="{effH}px"
+	>
+		<div class="ui-panel-header move-handle shrink-0 cursor-move select-none py-1.5">
+			<span>Shader editor</span>
+			<span class="shader-scope" id="shader-scope">{scopeLabel}</span>
+			<span class="flex-1"></span>
+			<button
+				class="ui-button-quiet"
+				id="shader-dock"
+				title="Dock to the bottom"
+				aria-label="Dock the shader editor"
+				onclick={() => setDocked(true)}>⇩ Dock</button
+			>
+			{@render actions()}
+		</div>
+		{@render body()}
+		<!-- svelte-ignore a11y_no_static_element_interactions -->
+		<div
+			class="resize-cue absolute bottom-0 right-0 z-10 h-3.5 w-3.5 cursor-se-resize rounded-tl bg-gray-500/40"
+			style="touch-action: none"
+			title="Drag to resize · double-click to reset size"
+			onpointerdown={startWinResize}
+			onpointermove={doWinResize}
+			onpointerup={endWinResize}
+			ondblclick={resetWinSize}
+		></div>
 	</div>
 {/if}
 

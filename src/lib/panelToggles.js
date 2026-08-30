@@ -10,7 +10,15 @@ import {
 	explorerClose,
 	objectListClose
 } from '../stores/appStore';
-import { activateDock, dockOccupants, visibleDockKey, dockMinimized, FLOW_FAMILY } from './bottomDock';
+import {
+	activateDock,
+	armDockMode,
+	bottomDockActive,
+	dockOccupants,
+	visibleDockKey,
+	dockMinimized,
+	FLOW_FAMILY
+} from './bottomDock';
 import { raiseWindow, isTopVisibleWindow } from './windowFocus';
 import { groupOfKey, activateTab } from './windowTabs';
 import { revealWindow } from './dragWindow';
@@ -35,7 +43,7 @@ import { revealWindow } from './dragWindow';
 // markup branch with no floating window at all, so its `tabbable` action is
 // destroyed and `removeFromGroup` has already run (Flow.svelte / Explorer.svelte).
 
-/** @typedef {{ key: string, openStore: any, dragKey: string | null, dockedLs: string | null, dockOnly?: boolean }} PanelConfig */
+/** @typedef {{ key: string, openStore: any, dragKey: string | null, dockedLs: string | null }} PanelConfig */
 
 /**
  * EVERY panel a toolbar button or a shortcut can ask for. `openStore` is inverted
@@ -51,18 +59,16 @@ import { revealWindow } from './dragWindow';
  * a roster button for the Animation tab now behaves exactly as the Node editor button
  * does, including the raise-a-buried-window rule and the mode memory.
  *
- * THREE SHAPES, not two:
+ * TWO SHAPES:
  *   dockedLs set   remembers a mode, can be either (flow, flowcode, animation, uv,
- *                  hud, explorer)
+ *                  shader, hud, explorer)
  *   dockedLs null  floating-only — there is no dock tab at all (objects)
- *   dockOnly       DOCK-only. The ShaderEditor is the one view with no `docked` flag,
- *                  no dragWindow and no window chrome; it registers its dock occupancy
- *                  unconditionally. Saying so HERE is what stops the tree pretending it
- *                  can float: without the flag it reads as floating-only, tries to
- *                  raise a window that does not exist, and the button does nothing.
- *                  `dockMenu.dockTabItems` already withholds "Undock" for the same
- *                  reason — this is that fact, stated once more where the opening
- *                  decision is made.
+ *
+ * There was a THIRD, `dockOnly`, for the Shader editor alone: it was the one view with
+ * no `docked` flag, no dragWindow and no window chrome, so it registered its dock
+ * occupancy unconditionally and the tree had to be told it could never float. It has
+ * both modes now, so the shape is gone from here and the matching "Undock" exception is
+ * gone from `dockMenu.dockTabItems`.
  * @type {Record<string, PanelConfig>}
  */
 const PANELS = {
@@ -70,7 +76,7 @@ const PANELS = {
 	flowcode: { key: 'flowcode', openStore: flowCodeClose, dragKey: 'flowCode', dockedLs: 'flowCodeDocked' },
 	animation: { key: 'animation', openStore: animationClose, dragKey: 'animation', dockedLs: 'animationDocked' },
 	uv: { key: 'uv', openStore: uvEditorClose, dragKey: 'uv', dockedLs: 'uvDocked' },
-	shader: { key: 'shader', openStore: shaderEditorClose, dragKey: null, dockedLs: null, dockOnly: true },
+	shader: { key: 'shader', openStore: shaderEditorClose, dragKey: 'shader', dockedLs: 'shaderDocked' },
 	hud: { key: 'hud', openStore: hudEditorClose, dragKey: 'hud', dockedLs: 'hudDocked' },
 	explorer: { key: 'explorer', openStore: explorerClose, dragKey: 'explorerWin', dockedLs: 'explorerDocked' },
 	objects: { key: 'objects', openStore: objectListClose, dragKey: null, dockedLs: null }
@@ -91,7 +97,6 @@ function isDockedPresent(key) {
 
 /** Would opening this panel put it in the dock? @param {PanelConfig} cfg */
 function opensDocked(cfg) {
-	if (cfg.dockOnly) return true; // the dock is the ONLY place it can be
 	if (!cfg.dockedLs) return false; // floating-only panel
 	return typeof localStorage === 'undefined' || localStorage.getItem(cfg.dockedLs) !== 'false';
 }
@@ -176,17 +181,6 @@ export function togglePanel(key) {
 		return;
 	}
 
-	// A DOCK-ONLY panel has exactly two live states — the visible tab, or a tab behind
-	// another — so it skips steps 2 and 3 entirely. Reaching them would raise a window
-	// that does not exist and the press would silently do nothing. Checked BEFORE the
-	// occupancy test, because occupancy is registered by the panel's own $effect and is
-	// therefore one flush behind a store that has just opened it.
-	if (cfg.dockOnly) {
-		if (!isVisibleInDock(cfg)) activateDock(key);
-		else cfg.openStore.set(true);
-		return;
-	}
-
 	if (!isDockedPresent(key)) {
 		// 2. open + a member of a tab group that is showing a SIBLING tab
 		const group = groupOfKey(key);
@@ -209,4 +203,59 @@ export function togglePanel(key) {
 	}
 	if (cfg.key === 'flow') hideDockedFlowFamily();
 	else cfg.openStore.set(true);
+}
+
+/**
+ * THE DOCK ITSELF, as one key (T). `togglePanel` answers for a NAMED view; this one
+ * answers for the strip that holds them, which had no keyboard affordance at all.
+ *
+ * Three states, and the third is the reason it is not a one-line `dockMinimized`
+ * flip:
+ *
+ *   showing        -> minimize. Every tab stays open and the viewport clears.
+ *   minimized      -> bring it back. `dockMinimized` is deliberately NOT persisted and
+ *                     a minimized dock draws no strip, so this key (and the toolbar
+ *                     buttons) are the ONLY way back — it must work from every state.
+ *   nothing docked -> open the last-active view DOCKED, so the key still does
+ *                     something from a clean state instead of reading as broken.
+ *
+ * The empty case asks through `armDockMode` rather than writing the panel's
+ * localStorage flag: a panel's `docked` is component-local `$state` read ONCE at mount,
+ * so an outside write is measurably inert at a live panel (the note on that store).
+ * That also means T genuinely DOCKS a view whose remembered mode is floating, which is
+ * what "show the dock" has to mean when the dock is empty because everything floated
+ * out of it.
+ */
+export function toggleDock() {
+	const showing = get(visibleDockKey);
+	if (get(dockMinimized)) {
+		// A minimized dock with nothing left in it would come back EMPTY — indis-
+		// tinguishable from the key doing nothing — so that falls through to the open
+		// path below (`activateDock` clears the minimize on its way).
+		if (showing) {
+			dockMinimized.set(false);
+			return;
+		}
+	} else if (showing) {
+		dockMinimized.set(true);
+		return;
+	}
+	openDockView(lastDockView());
+}
+
+/** The view T brings back when the dock is empty: whichever tab was last active, and
+ * the Node editor when that names a view this tree has never heard of (a key written by
+ * an older or newer release, or one that has since left DOCK_FAMILY). */
+function lastDockView() {
+	const key = get(bottomDockActive);
+	return PANELS[key] && key !== 'objects' ? key : 'flow';
+}
+
+/** Open one view AS A DOCK TAB, whatever mode it last remembered. @param {string} key */
+function openDockView(key) {
+	const cfg = PANELS[key];
+	if (!cfg) return;
+	armDockMode(key, true); // the panel owns its own mode — ask, never write the flag
+	cfg.openStore.set(false);
+	activateDock(key);
 }

@@ -1143,6 +1143,16 @@
 	 * away — and `activeFolder.set` notifies even when the id is unchanged, so the
 	 * already-here case needs the same wait.
 	 */
+	/** Save the open scene under the name it already has - the same act Ctrl+S performs
+	 * and the same two arguments `sceneOpenGuard` passes when it saves before opening
+	 * something else. Only reachable while `$sceneDirty`, so there is no clean branch
+	 * here: the button is disabled instead, which is also what greys it. */
+	async function saveOpenScene() {
+		const name = $currentLevel?.name;
+		if (!name) return;
+		const saved = await saveSceneAsLevel(name, activeLibraryFolder());
+		showToast(saved ? 'Saved "' + name + '"' : 'Could not save "' + name + '"');
+	}
 	async function revealOpenScene() {
 		const hash = openSceneHash;
 		if (!hash) return;
@@ -5365,6 +5375,28 @@
 				class="min-w-0 truncate rounded-sm px-1 py-0.5 text-white hover:bg-gray-700"
 				title={'The scene you have open: ' + $currentLevel.name + ' — click to find its file'}
 				onclick={revealOpenScene}>{$currentLevel.name}</button
+			>
+			<!--
+				R22 round 13 (user): "before this yellow dot should have lucid save icon, its
+				standard, right? the icon should be gray if nothing to save". It is, so the
+				icon is ALWAYS drawn beside an open scene and only its colour moves - a
+				control that appears only when there is work to do is a control nobody learns
+				where to find.
+
+				It is a BUTTON, not decoration: a save affordance beside the thing it saves is
+				what makes the icon standard, and it runs the SAME action Ctrl+S runs
+				(shortcuts.js, 'Save scene'), so the key and the button cannot drift apart.
+				Disabled while clean, which is also what greys it - no second colour rule.
+			-->
+			<button
+				id="explorer-save-scene"
+				class="shrink-0 rounded-sm p-0.5 {$sceneDirty ? 'text-amber-400 hover:bg-gray-700' : 'text-gray-500'}"
+				disabled={!$sceneDirty}
+				title={$sceneDirty
+					? 'Save "' + $currentLevel.name + '" (Ctrl+S)'
+					: 'Nothing to save - this scene matches the version its name points at'}
+				aria-label={$sceneDirty ? 'Save scene' : 'Nothing to save'}
+				onclick={saveOpenScene}><Save size={12} aria-hidden="true" /></button
 			>
 			{#if $sceneDirty}
 				<!-- the same signal the window title's asterisk uses (sceneIdentity.js) -->

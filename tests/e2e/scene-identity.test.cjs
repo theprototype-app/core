@@ -514,6 +514,105 @@ h.run(async () => {
 		'and the title comes back with the project but NO scene — where you were is local by design'
 	);
 
+
+	// ---- 9. SAVE THE OPEN SCENE: the icon, and what Ctrl+S means -------------------
+	// User: "Ctrl+S now saves session, instead it should save current open scene, right?"
+	// and "before this yellow dot should have lucid save icon, its standard, right? the
+	// icon should be gray if nothing to save". Both yes. Ctrl+S used to call
+	// saveSession('Session ' + timestamp), which mints a NEW entry every press - so ten
+	// presses left ten sessions and the scene was still unsaved. The icon and the key run
+	// the same action, which is why they are asserted together.
+	const dirtyOf = (p) =>
+		p.page.evaluate(() => {
+			let v;
+			window.__stores.sceneIdentity.sceneDirty.subscribe((x) => (v = x))();
+			return !!v;
+		});
+	const sessionCount = (p) =>
+		p.page.evaluate(() => {
+			let v;
+			window.__stores.sessions.sessions.subscribe((x) => (v = x))();
+			return (v ?? []).length;
+		});
+	const versionsOf = (p, name) =>
+		p.page.evaluate((n) => {
+			let m;
+			window.__stores.projectManifest.projectManifest.subscribe((x) => (m = x))();
+			return (m?.scenes?.[n]?.history ?? []).length;
+		}, name);
+
+	await A.page.evaluate(() => window.__stores.levels.saveSceneAsLevel('Keep'));
+	await h.eventually(() => levelOf(A), (l) => l?.name === 'Keep', 'premise: a named scene is open');
+	await h.eventually(() => dirtyOf(A), (d) => d === false, 'premise: it is CLEAN right after a save', 12000);
+	// the chip only exists while the Explorer is mounted, and section 4 opened it with a
+	// CLICK - a toggle, so it cannot be re-used here without knowing the current state.
+	// Drive the same store seam the app uses (startSceneSaveBootstrap) instead.
+	await A.page.evaluate(() => {
+		window.__stores.explorerClose.set(false);
+		window.__stores.bottomDock.bottomDockActive.set('explorer');
+	});
+	await A.page.waitForTimeout(700);
+	h.check((await A.page.locator('#explorer-scene').count()) === 1, 'premise: the identity chip is on screen');
+
+	const saveBtn = A.page.locator('#explorer-save-scene');
+	h.check((await saveBtn.count()) === 1, 'the identity chip carries a save icon beside the open scene');
+	const cleanLook = await A.page.evaluate(() => {
+		const b = document.querySelector('#explorer-save-scene');
+		return { disabled: b.disabled, color: getComputedStyle(b).color };
+	});
+	// computed colour, never the class string - the documented rule for this codebase
+	h.check(
+		cleanLook.disabled === true,
+		'…disabled while there is nothing to save (' + cleanLook.disabled + ')'
+	);
+	h.check(
+		cleanLook.color !== '' && !/\b(251|245),\s*(191|158)/.test(cleanLook.color),
+		'…and GREY rather than the amber it wears when dirty (' + cleanLook.color + ')'
+	);
+	h.check(
+		(await A.page.locator('#explorer-dirty').count()) === 0,
+		'…with no dot, because the dot means unsaved and there is nothing unsaved'
+	);
+
+	await A.page.evaluate(() => window.__stores.commandsHandler.sceneCommand('/create cone'));
+	await h.eventually(() => dirtyOf(A), (d) => d === true, 'an edit makes the scene dirty', 15000);
+	const dirtyLook = await A.page.evaluate(() => {
+		const b = document.querySelector('#explorer-save-scene');
+		return { disabled: b.disabled, color: getComputedStyle(b).color };
+	});
+	h.check(
+		dirtyLook.disabled === false && dirtyLook.color !== cleanLook.color,
+		'…the icon enables and changes colour, so the state is readable without the tooltip (' +
+			cleanLook.color + ' -> ' + dirtyLook.color + ')'
+	);
+	h.check((await A.page.locator('#explorer-dirty').count()) === 1, '…and the dot joins it');
+
+	const beforeClick = await versionsOf(A, 'Keep');
+	await saveBtn.click();
+	await h.eventually(() => dirtyOf(A), (d) => d === false, 'clicking the icon saves the open scene', 20000);
+	h.check(
+		(await versionsOf(A, 'Keep')) === beforeClick + 1,
+		'…as a new VERSION of the scene it names (' + beforeClick + ' -> ' + (await versionsOf(A, 'Keep')) + ')'
+	);
+
+	// Ctrl+S: the same act, and NOT a new session entry - which is the reported bug
+	await A.page.evaluate(() => window.__stores.commandsHandler.sceneCommand('/create torus'));
+	await h.eventually(() => dirtyOf(A), (d) => d === true, 'premise: dirty again for the key', 15000);
+	const sessionsBefore = await sessionCount(A);
+	const versionsBefore = await versionsOf(A, 'Keep');
+	await A.page.locator('canvas').first().click({ position: { x: 5, y: 5 } }).catch(() => {});
+	await A.page.keyboard.press('Control+s');
+	await h.eventually(() => dirtyOf(A), (d) => d === false, 'Ctrl+S saves the open SCENE', 20000);
+	h.check(
+		(await versionsOf(A, 'Keep')) === versionsBefore + 1,
+		'…as another version of it (' + versionsBefore + ' -> ' + (await versionsOf(A, 'Keep')) + ')'
+	);
+	h.check(
+		(await sessionCount(A)) === sessionsBefore,
+		'…and mints NO session entry, which is what it used to do on every press (' +
+			sessionsBefore + ' -> ' + (await sessionCount(A)) + ')'
+	);
+
 	const errs = await h.pageErrors(A);
 	h.check(errs.length === 0, `no page errors (${JSON.stringify(errs)})`);
 	await h.finish(browser);

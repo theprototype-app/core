@@ -10,7 +10,9 @@ import {
 	specatorMode,
 	aiPromptBarOpen,
 	showToast,
-	showSimControls
+	showSimControls,
+	armExplorerSceneSave,
+	explorerClose
 } from '../stores/appStore';
 import { aiReady } from './ai/providers';
 import {
@@ -189,11 +191,38 @@ export const shortcuts = [
 	{
 		keys: 'Ctrl+S',
 		group: 'Scene',
-		label: 'Save session',
-		action: () =>
-			import('./sessions').then(({ saveSession }) =>
-				saveSession('Session ' + new Date().toLocaleString())
-			)
+		label: 'Save scene',
+		/**
+		 * User report: "Ctrl+S now saves session, instead it should save current open
+		 * scene, right?" - yes. It used to call `saveSession('Session ' + timestamp)`,
+		 * which mints a BRAND NEW timestamped entry on every press: a snapshot-the-app
+		 * gesture wearing the standard save-my-document key, so ten presses left ten
+		 * sessions and the scene you were editing was still unsaved.
+		 *
+		 * Named scene -> a new VERSION of it, which is what `sceneOpenGuard` already does
+		 * with the same two arguments when it saves before opening something else. It is
+		 * reached by dynamic import for the reason the old entry was: `levels` is in the
+		 * history family and a static edge from here closes the cycle.
+		 *
+		 * UNNAMED scene -> Save As, the universal meaning of Save on a document that has
+		 * no name. `armExplorerSceneSave` is the existing write-once ARM seam the Toasts
+		 * offer and `startSceneSaveBootstrap` both use; it opens the Explorer's own inline
+		 * naming rather than inventing a name the user never chose.
+		 */
+		action: async () => {
+			const [{ currentLevel, saveSceneAsLevel }, { activeFolder }] = await Promise.all([
+				import('./levels'),
+				import('./explorer')
+			]);
+			const name = get(currentLevel)?.name;
+			if (!name) {
+				explorerClose.set(false);
+				armExplorerSceneSave(null);
+				return;
+			}
+			const saved = await saveSceneAsLevel(name, get(activeFolder) ?? null);
+			showToast(saved ? 'Saved "' + name + '"' : 'Could not save "' + name + '"');
+		}
 	},
 	{
 		keys: 'Ctrl+Z',

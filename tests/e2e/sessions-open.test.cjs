@@ -30,6 +30,75 @@ const openSessions = async (p) => {
 	await p.page.waitForTimeout(900);
 };
 
+/** whatever ConfirmModal is showing — the boolean form and the choices form both */
+const dialog = (p) =>
+	p.page.evaluate(() => {
+		let d;
+		window.__stores.confirmDialog.confirmDialog.subscribe((v) => (d = v))();
+		return d
+			? {
+					title: d.title,
+					message: d.message,
+					confirm: d.confirmLabel,
+					choices: (d.choices ?? []).map((/** @type {any} */ c) => c.value)
+				}
+			: null;
+	});
+/** answer it: false = cancel (a choices dialog resolves null), a string = that choice */
+const answer = (p, value) =>
+	p.page.evaluate((v) => window.__stores.confirmDialog.resolveConfirm(v), value);
+
+/** where the app thinks it is — the identity chip and the window title both read this */
+const level = (p) =>
+	p.page.evaluate(() => {
+		let v;
+		window.__stores.levels.currentLevel.subscribe((x) => (v = x))();
+		return v ?? null;
+	});
+
+const libraryOf = (p) =>
+	p.page.evaluate(() => {
+		let v;
+		window.__stores.explorer.explorerItems.subscribe((x) => (v = x))();
+		return (v ?? []).map((i) => i.name);
+	});
+
+const foldersOf = (p) =>
+	p.page.evaluate(() => {
+		let v;
+		window.__stores.explorer.explorerFolders.subscribe((x) => (v = x))();
+		return (v ?? []).map((f) => f.name);
+	});
+
+async function openExplorer(p) {
+	const open = await p.page.evaluate(
+		() => !!document.querySelector('#explorer-list') || !!document.querySelector('#explorer-window')
+	);
+	if (!open) await p.page.locator('#explorer-slot').click();
+	await p.page.waitForTimeout(900);
+}
+
+/**
+ * Press Open on one row and settle. The SCENE guard may or may not speak first — after a
+ * load the world either matches the payload it came from or does not — so this answers it
+ * when it is there and reports which happened, rather than assuming a verdict that depends
+ * on a whole-scene serialization.
+ */
+async function pressOpen(p, name) {
+	await p.page.locator('#session-view-list').click();
+	await p.page.waitForTimeout(400);
+	const row = p.page.locator('#session-list .session-row').filter({ hasText: name }).first();
+	await row.locator('.session-load').click();
+	await p.page.waitForTimeout(700);
+	const first = await dialog(p);
+	if (first && (first.choices ?? []).length) {
+		await answer(p, 'open');
+		await p.page.waitForTimeout(600);
+		return { guard: first, next: await dialog(p) };
+	}
+	return { guard: null, next: first };
+}
+
 h.run(async () => {
 	const browser = await h.launch();
 	const A = await h.setupPage(browser, 'A', { context: { viewport: { width: 1440, height: 900 } } });
@@ -143,6 +212,109 @@ h.run(async () => {
 		`Mount lost its ⧉ and kept its word (${JSON.stringify(mount.project)})`
 	);
 	h.check(mount.scene === 0, 'a SCENE entry is still offered no Mount at all');
+
+	// ---- 2. "Open", AND THE GUARD IT NOW GOES THROUGH --------------------------------
+	// Load replaced the world in silence. Open asks the same question the Explorer's own
+	// scene card asks, through the same `sceneOpenGuard` — one copy, three callers.
+	await page.locator('#session-view-list').click();
+	await page.waitForTimeout(500);
+	const label = await page.evaluate(() =>
+		document.querySelector('#session-list .session-load')?.textContent?.trim()
+	);
+	h.check(label === 'Open', `the button says Open, not Load (${label})`);
+
+	// the scene on screen has never been saved and is not empty, so a replace risks it
+	const wharf = page.locator('#session-list .session-row').filter({ hasText: 'Wharf' }).first();
+	await wharf.locator('.session-load').click();
+	await page.waitForTimeout(700);
+	const asked = await dialog(A);
+	h.check(asked?.title === 'Open "Wharf"?', `it asks before replacing the world (${asked?.title})`);
+	h.check(
+		(asked?.choices ?? []).join(',') === 'save,open',
+		`…and it is the guard's own dialog, not a second copy of the question (${JSON.stringify(asked?.choices)})`
+	);
+	h.check(
+		/never been saved/.test(asked?.message ?? ''),
+		`…which knows this scene has no identity to be dirty against (${(asked?.message ?? '').slice(0, 48)})`
+	);
+
+	// CANCEL means nothing happened, and the manager is still where it was
+	await answer(A, false);
+	await page.waitForTimeout(900);
+	const cancelled = await page.evaluate(() => {
+		let open;
+		window.__stores.sessionsOpen.subscribe((v) => (open = v))();
+		return open;
+	});
+	h.check(cancelled === true, 'cancelling leaves the manager open, exactly where it was');
+	h.check((await level(A)) === null, 'and nothing was loaded');
+
+	// ---- 3. THE MARKER: opened from Sessions, not from the library --------------------
+	await wharf.locator('.session-load').click();
+	await page.waitForTimeout(700);
+	await answer(A, 'open');
+	// WAIT ON THE THING, never a fixed sleep: applySession stashes a "Backup before …"
+	// entry first, which is a whole-scene serialization plus a rendered thumbnail
+	await h.eventually(
+		() => level(A),
+		(v) => v?.name === 'Wharf (from Sessions)',
+		'the scene identity names it and says where it came from',
+		20000
+	);
+	const at = await level(A);
+	h.check(
+		at?.hash === '' && at?.unsaved === true,
+		`…as a loose scene: no hash, not a member of the project (${JSON.stringify({ hash: at?.hash, unsaved: at?.unsaved })})`
+	);
+	h.check(
+		typeof at?.signature === 'string' && at.signature.length > 10,
+		'…carrying the payload’s own content signature, so the dirty dot means something'
+	);
+	const title = await page.evaluate(() => document.title);
+	h.check(/^Wharf \(from Sessions\) - /.test(title), `the window title says the same thing (${title})`);
+	await openExplorer(A);
+	const chip = await page.evaluate(() => document.querySelector('#explorer-scene')?.textContent?.trim());
+	h.check(
+		chip === 'Wharf (from Sessions)',
+		`and so does the Explorer's identity chip, beside the project name (${chip})`
+	);
+
+	// ---- 4. A PROJECT IS A DIFFERENT OPEN, and it warns on its own terms --------------
+	await openSessions(A);
+	const depot = await pressOpen(A, 'Depot');
+	h.check(
+		depot.next?.title === 'Open project "Depot"?',
+		`a project entry warns before it replaces anything (${depot.next?.title})`
+	);
+	h.check(
+		/replaces the scene on screen/.test(depot.next?.message ?? '') &&
+			/1 saved file/.test(depot.next?.message ?? ''),
+		`…saying what it will do to the scene AND to the Explorer (${(depot.next?.message ?? '').slice(0, 70)})`
+	);
+	h.check(
+		depot.next?.confirm === 'Open project' && !/leave the session/i.test(depot.next?.message ?? ''),
+		`with nobody connected it says nothing about leaving one (${depot.next?.confirm})`
+	);
+	await answer(A, false);
+	await page.waitForTimeout(900);
+	h.check(
+		(await level(A))?.name === 'Wharf (from Sessions)',
+		'cancelling a project open leaves the open scene alone'
+	);
+
+	const again = await pressOpen(A, 'Depot');
+	h.check(!!again.next, 'premise: the warning is asked again on a second press');
+	await answer(A, true);
+	await h.eventually(
+		() => level(A),
+		(v) => v?.name === 'Depot (from Sessions)',
+		'accepting opens it, and the identity follows',
+		20000
+	);
+	h.check(
+		(await libraryOf(A)).includes('readme.txt'),
+		`…with the project's own files back in the Explorer (${JSON.stringify(await libraryOf(A))})`
+	);
 
 	await page.evaluate(() => window.__stores.sessionsOpen.set(false));
 	await page.waitForTimeout(300);

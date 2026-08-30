@@ -11,7 +11,13 @@
 	// load (proposal when peers are connected), selective object import,
 	// rename, export/import and delete.
 	import { Modal, Button } from 'flowbite-svelte';
-	import { sessionsOpen, hidePanels, restorePanels, showToast } from '../../stores/appStore.js';
+	import { peers, sessionsOpen, hidePanels, restorePanels, showToast } from '../../stores/appStore.js';
+	// R22 round 13 (user): "Instead of 'Load' for items put 'Open'". Once this button says
+	// what the Explorer's scene card says, it has to MEAN what that one means — so it asks
+	// the same unsaved-changes question through the SAME guard. `sceneOpenGuard` exists
+	// because a guard with two copies is a guard with one bug; this is its third caller.
+	import { guardSceneReplace } from '$lib/sceneOpenGuard';
+	import { currentLevel, sceneSignature } from '$lib/levels';
 	// R22 round 13: MOUNT is not Load. Load replaces the whole project; mounting adds this
 	// saved project to the Explorer as a root of its own, above Library, leaving whatever is
 	// open untouched. Only a PROJECT has a library to mount, so a scene is not offered one.
@@ -218,6 +224,126 @@
 		const name = renameValue.trim();
 		if (renamingId && name) renameSession(renamingId, name);
 		renamingId = null;
+	}
+
+	/**
+	 * R22 round 13 (user): "Instead of 'Load' for items put 'Open'".
+	 *
+	 * The WORD was the smaller half. "Open" is what the Explorer calls this act on a
+	 * `.tpscene` card, and two buttons that say the same thing have to mean the same thing
+	 * — so this goes through `guardSceneReplace`, the ONE copy of the unsaved-changes
+	 * question, where Load replaced the world in silence.
+	 *
+	 * And a row is one of two kinds, so Open is two acts:
+	 *   · a SCENE entry replaces what is on screen — the .tpscene route, verbatim;
+	 *   · a PROJECT entry brings a whole library back with it and, with peers connected,
+	 *     is a swap nobody else can follow — see `openProjectEntry`.
+	 *
+	 * THE DIALOG CLOSES ONLY AFTER THE GUARD IS ANSWERED, so cancelling leaves the manager
+	 * exactly as it was (`travelToPeerScene`'s rule for its own popup, and the reason its
+	 * `onGo` exists).
+	 * @param {any} meta
+	 */
+	async function openEntry(meta) {
+		if (meta.hasLibrary) return openProjectEntry(meta);
+		if (!(await guardSceneReplace(meta.name))) return;
+		sessionsOpen.set(false);
+		const applied = await requestLoadSession(meta.id);
+		if (applied) await markOpenedFromSessions(meta);
+	}
+
+	/**
+	 * R22 round 13 (user): opening a project "REPLACES the whole current project", so it
+	 * warns first and "disconnect[s] any connected peer" before replacing.
+	 *
+	 * ONE QUESTION EACH, NOT TWO OF THE SAME. `guardSceneReplace` above is silent unless
+	 * there is unsaved work, so the ordinary case asks exactly once — and when it does
+	 * speak, the two are different questions ("save this scene first?" and "replace the
+	 * project and leave the room?"), which is why they are not folded into one sentence.
+	 * There is no confirm to EXTEND here: `projectFile.openProject` has one, but that is
+	 * the `.tp`-from-disk route and this path never touches it.
+	 *
+	 * THE DISCONNECT IS THE CONNECT PILL'S OWN — `peers.leaveSession()`, the same call
+	 * Disconnect makes and `disconnectFromDecision` makes, never a second teardown (it
+	 * keeps the signaling registration, so the invite id survives).
+	 *
+	 * IT RUNS BEFORE THE LOAD, for a reason beyond politeness: `requestLoadSession` becomes
+	 * a PROPOSAL whenever anyone is connected, and a proposal is the wrong shape for this —
+	 * the others would be voting on a library swap that only happens on this machine. With
+	 * the room left, the very same call applies immediately.
+	 * @param {any} meta
+	 */
+	async function openProjectEntry(meta) {
+		if (!(await guardSceneReplace(meta.name))) return;
+		/** @type {any} */
+		const peer = $peers;
+		// CONNECTED is `openedPeers`, never `userdata.length` — the roster is populated at
+		// DIAL time, so a pending request would count as a peer (the documented trap)
+		const room = peer?.openedPeers?.size ?? 0;
+		const files = meta.libraryCount ?? 0;
+		const ok = await showConfirm({
+			title: 'Open project "' + meta.name + '"?',
+			message:
+				'This replaces the scene on screen and brings ' +
+				files +
+				' saved file' +
+				(files === 1 ? '' : 's') +
+				' back into the Explorer, beside whatever is already there.' +
+				(room
+					? ' You will leave the session first — ' +
+						room +
+						' connected peer' +
+						(room === 1 ? '' : 's') +
+						' cannot follow a project swap, and a proposal they could only decline is not the question.'
+					: ''),
+			confirmLabel: room ? 'Leave and open' : 'Open project'
+		});
+		if (!ok) return;
+		sessionsOpen.set(false);
+		if (room) {
+			try {
+				peer.leaveSession?.();
+			} catch {}
+			showToast('Left the session — opening "' + meta.name + '"');
+		}
+		const applied = await requestLoadSession(meta.id);
+		if (applied) await markOpenedFromSessions(meta);
+	}
+
+	/**
+	 * R22 round 13 (user): after opening from here the scene identity must name THIS scene,
+	 * "marked as recovered from Sessions rather than from the library".
+	 *
+	 * `fileHandler.markOpenedUnsaved`'s shape — `{hash: '', name, unsaved: true}` — because
+	 * it is the same fact: named, on screen, and not a member of the project. There is no
+	 * hash and there must not be one: a hash in `currentLevel` means "these are the bytes I
+	 * loaded", which every reader treats literally, and a session record is not a library
+	 * file. `unsaved` then keeps `publishCurrentIfChanged` refusing, which is right — a
+	 * snapshot is not a version of a project scene.
+	 *
+	 * THE MARKER RIDES IN THE NAME, deliberately. The identity chip renders
+	 * `currentLevel.name` verbatim and there is no provenance field beside it, so
+	 * " (from Sessions)" is the one form that makes the chip, the window title and the
+	 * scene row a peer sees all say the same thing. It is safe there: `sceneSignature`
+	 * excludes the name, so the dirty dot is unaffected by it. (Brackets were the user's
+	 * own suggestion; the words are "from Sessions" rather than "session", because in this
+	 * app a SESSION is also the peer mesh and the surface this came from is the modal.)
+	 *
+	 * ONLY FOR A LOAD THAT HAPPENED. With peers the load is a PROPOSAL, and naming a scene
+	 * we may never load would lie — `requestLoadSession` returns that verdict for exactly
+	 * this caller. It is also what keeps the marker off the wire: only the presser runs
+	 * this, so a room that accepts a proposal cannot split into two names.
+	 * @param {any} meta
+	 */
+	async function markOpenedFromSessions(meta) {
+		const payload = await getSession(meta.id);
+		const name = String(meta.name ?? '').trim() || 'Opened scene';
+		currentLevel.set({
+			hash: '',
+			name: name + ' (from Sessions)',
+			unsaved: true,
+			...(payload ? { signature: sceneSignature(payload) } : {})
+		});
 	}
 
 	/**
@@ -658,11 +784,11 @@
 						<div class="flex shrink-0 gap-1">
 							<button
 								class="ui-button-quiet session-load inline-flex items-center gap-1"
-								title="Replace the scene with this entry (peers must accept)"
-								onclick={() => {
-									requestLoadSession(meta.id);
-									sessionsOpen.set(false);
-								}}><FolderOpen size={16} aria-hidden="true" />Load</button
+								title={meta.hasLibrary
+									? "Open this project: the scene comes back and so do its files, and you leave the session first"
+									: 'Open this scene — it replaces the scene on screen (peers must accept)'}
+								onclick={() => void openEntry(meta)}
+								><FolderOpen size={16} aria-hidden="true" />Open</button
 							>
 							{#if meta.hasLibrary}
 								<button
@@ -787,8 +913,9 @@
 								>
 							</p>
 							<div class="flex flex-wrap gap-1">
-								<button class="ui-button-quiet session-load inline-flex items-center gap-1" title="Replace the scene with this entry (peers must accept)"
-									onclick={() => { requestLoadSession(meta.id); sessionsOpen.set(false); }}><FolderOpen size={16} aria-hidden="true" />Load</button>
+								<button class="ui-button-quiet session-load inline-flex items-center gap-1"
+									title={meta.hasLibrary ? "Open this project: the scene comes back and so do its files, and you leave the session first" : 'Open this scene — it replaces the scene on screen (peers must accept)'}
+									onclick={() => void openEntry(meta)}><FolderOpen size={16} aria-hidden="true" />Open</button>
 								{#if meta.hasLibrary}
 									<button class="ui-button-quiet session-mount inline-flex items-center gap-1" disabled={mountedIds.has(meta.id)}
 										title={mountedIds.has(meta.id) ? 'Already mounted — it is above Library in the Explorer' : "Add this project's files to the Explorer as a root of its own, above Library. The scene on screen is not touched."}

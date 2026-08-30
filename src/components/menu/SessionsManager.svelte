@@ -1,5 +1,11 @@
 <script>
-	import { Archive, Download, LayoutGrid, List, Save, Upload } from '@lucide/svelte';
+	// R22 round 13 (user): "change emojis ▶,⤵ to Lucid icons inside modal". The whole ROW
+	// goes, not the two named glyphs: ⧉ on Mount and ✕ on Delete are the same family, and
+	// leaving either behind would make one button in a row of six read as a different kind
+	// of control. Icons inherit `currentColor` (never a hardcoded gray), 16px inline — the
+	// app's own rule — and the buttons became `inline-flex` so a glyph and its word sit on
+	// one centre line rather than on a text baseline.
+	import { Archive, Download, FolderOpen, HardDrive, Import, LayoutGrid, List, Save, Upload, X } from '@lucide/svelte';
 	import Icon from '../ui/Icon.svelte';
 	// Sessions manager (phase 50): thumbnail grid of saved sessions with
 	// load (proposal when peers are connected), selective object import,
@@ -651,31 +657,35 @@
 						<span class="shrink-0 text-[10px] text-gray-500">{stamp(meta.createdAt)}</span>
 						<div class="flex shrink-0 gap-1">
 							<button
-								class="ui-button-quiet session-load"
+								class="ui-button-quiet session-load inline-flex items-center gap-1"
 								title="Replace the scene with this entry (peers must accept)"
 								onclick={() => {
 									requestLoadSession(meta.id);
 									sessionsOpen.set(false);
-								}}>▶ Load</button
+								}}><FolderOpen size={16} aria-hidden="true" />Load</button
 							>
 							{#if meta.hasLibrary}
 								<button
-									class="ui-button-quiet session-mount"
+									class="ui-button-quiet session-mount inline-flex items-center gap-1"
 									disabled={mountedIds.has(meta.id)}
 									title={mountedIds.has(meta.id)
 										? 'Already mounted — it is above Library in the Explorer'
 										: "Add this project's files to the Explorer as a root of its own, above Library. The scene on screen is not touched."}
 									onclick={() => void mountVolume(meta.id)}
-									>⧉ {mountedIds.has(meta.id) ? 'Mounted' : 'Mount'}</button
+									><HardDrive size={16} aria-hidden="true" />{mountedIds.has(meta.id)
+										? 'Mounted'
+										: 'Mount'}</button
 								>
 							{/if}
 							<button
-								class="ui-button-quiet session-import"
+								class="ui-button-quiet session-import inline-flex items-center gap-1"
 								title={meta.hasLibrary
 									? "Browse this entry's files, and pick objects out of any scene in it"
 									: 'Pick objects from this scene to add to the one on screen'}
 								onclick={() => openPicker(meta)}
-								>⤵ {meta.hasLibrary ? 'Import files…' : 'Import objects…'}</button
+								><Import size={16} aria-hidden="true" />{meta.hasLibrary
+									? 'Import files…'
+									: 'Import objects…'}</button
 							>
 							<!--
 								R22 round 13 P1: a PROJECT downloads as a project file and a SCENE as a scene
@@ -700,7 +710,12 @@
 								title="Download as JSON — readable, and what a bug report can carry"
 								onclick={() => downloadSession(meta, 'json')}>.json</button
 							>
-							<button class="ui-button-quiet hover:bg-red-700" title="Delete" onclick={() => confirmDelete([meta])}>✕</button>
+							<button
+								class="ui-button-quiet inline-flex items-center hover:bg-red-700"
+								title="Delete"
+								aria-label="Delete"
+								onclick={() => confirmDelete([meta])}><X size={16} aria-hidden="true" /></button
+							>
 						</div>
 					</div>
 				{/each}
@@ -772,23 +787,23 @@
 								>
 							</p>
 							<div class="flex flex-wrap gap-1">
-								<button class="ui-button-quiet session-load" title="Replace the scene with this entry (peers must accept)"
-									onclick={() => { requestLoadSession(meta.id); sessionsOpen.set(false); }}>▶ Load</button>
+								<button class="ui-button-quiet session-load inline-flex items-center gap-1" title="Replace the scene with this entry (peers must accept)"
+									onclick={() => { requestLoadSession(meta.id); sessionsOpen.set(false); }}><FolderOpen size={16} aria-hidden="true" />Load</button>
 								{#if meta.hasLibrary}
-									<button class="ui-button-quiet session-mount" disabled={mountedIds.has(meta.id)}
+									<button class="ui-button-quiet session-mount inline-flex items-center gap-1" disabled={mountedIds.has(meta.id)}
 										title={mountedIds.has(meta.id) ? 'Already mounted — it is above Library in the Explorer' : "Add this project's files to the Explorer as a root of its own, above Library. The scene on screen is not touched."}
-										onclick={() => void mountVolume(meta.id)}>⧉ {mountedIds.has(meta.id) ? 'Mounted' : 'Mount'}</button>
+										onclick={() => void mountVolume(meta.id)}><HardDrive size={16} aria-hidden="true" />{mountedIds.has(meta.id) ? 'Mounted' : 'Mount'}</button>
 								{/if}
-								<button class="ui-button-quiet session-import" title={meta.hasLibrary ? "Browse this entry's files, and pick objects out of any scene in it" : 'Pick objects from this scene to add to the one on screen'}
-									onclick={() => openPicker(meta)}>⤵ {meta.hasLibrary ? 'Import files…' : 'Import objects…'}</button>
+								<button class="ui-button-quiet session-import inline-flex items-center gap-1" title={meta.hasLibrary ? "Browse this entry's files, and pick objects out of any scene in it" : 'Pick objects from this scene to add to the one on screen'}
+									onclick={() => openPicker(meta)}><Import size={16} aria-hidden="true" />{meta.hasLibrary ? 'Import files…' : 'Import objects…'}</button>
 								{#if meta.hasLibrary}
-									<button class="ui-button-quiet session-download-project" title="Download as .tp — the whole project: this scene plus its library files and folders, in the format this app opens as a project" onclick={() => downloadSession(meta, 'project')}><Download size={16} class="mr-1" aria-hidden="true" />.tp</button>
+									<button class="ui-button-quiet session-download-project inline-flex items-center gap-1" title="Download as .tp — the whole project: this scene plus its library files and folders, in the format this app opens as a project" onclick={() => downloadSession(meta, 'project')}><Download size={16} aria-hidden="true" />.tp</button>
 								{:else}
-									<button class="ui-button-quiet session-download-scene" title="Download as .tpscene — the scene bundle this app can open again, with the assets it uses" onclick={() => downloadSession(meta)}><Download size={16} class="mr-1" aria-hidden="true" />.tpscene</button>
+									<button class="ui-button-quiet session-download-scene inline-flex items-center gap-1" title="Download as .tpscene — the scene bundle this app can open again, with the assets it uses" onclick={() => downloadSession(meta)}><Download size={16} aria-hidden="true" />.tpscene</button>
 								{/if}
-								<button class="ui-button-quiet session-download-json" title="Download as JSON — readable, and what a bug report can carry" onclick={() => downloadSession(meta, 'json')}><Download size={16} class="mr-1" aria-hidden="true" />.json</button>
-								<button class="ui-button-quiet hover:bg-red-700" title="Delete"
-									onclick={() => confirmDelete([meta])}>✕</button>
+								<button class="ui-button-quiet session-download-json inline-flex items-center gap-1" title="Download as JSON — readable, and what a bug report can carry" onclick={() => downloadSession(meta, 'json')}><Download size={16} aria-hidden="true" />.json</button>
+								<button class="ui-button-quiet inline-flex items-center hover:bg-red-700" title="Delete" aria-label="Delete"
+									onclick={() => confirmDelete([meta])}><X size={16} aria-hidden="true" /></button>
 							</div>
 						</div>
 					</div>

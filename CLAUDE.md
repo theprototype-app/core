@@ -442,6 +442,46 @@ loadable play content. Everything a user does must be visible to connected peers
   older builds and bypasses). KNOWN, recorded: the host's handshake singletons land on
   the joiner BEFORE its gate opens (ordered conn), so Disconnect leaves the host's look
   applied locally — fixing that means reordering sendHandshake, its own ticket.
+  · **ROUND 34: A SAVE NAMES THE ROOM** — `saveSceneAsLevel` broadcasts `sceneadopt`
+  {name, hash} when a consented save NAMES a previously-unnamed world with a roommate
+  present (never for re-saves, `newLevel`, or round-33's `consent:false` saves — a save
+  made in order to LEAVE must not rename anybody's world). `sceneadopt` is in ROOM_SCOPED
+  (the one member about a scene's IDENTITY: atscene REPORTS an identity, this CONFERS
+  one), so elsewhere/gate-held peers never adopt; the applier (levels, beside
+  adoptSceneIdentity) takes it only when our own scene is UNNAMED (also the idempotence
+  guard; an `unsaved` loose scene has a name and is not re-labelled) + sameRoomOrUnknown
+  as the older-build backstop. Adoption stays name-only and is NOT consent. The save
+  toast gains " — shared with this session." on any consented save with a roommate.
+  · **ROUND 35: PRIVATE SCENES** — opening an UNSHARED local scene with peers connected
+  asks Share with the session / Edit privately / Cancel (`askScenePrivacy` in the new
+  `scenePrivacy.js`; `sceneNameShared` in projectManifest decides; the travel NODE never
+  asks). Private = `private: true` ON `currentLevel` (every later writer clears it by
+  construction; the audited exception: a save of the private scene itself PRESERVES it —
+  the open-guard's "Save and open" must not publish as a side effect).
+  `mySceneWire()` is the ONE atscene builder: private publishes `{scene:'', hash:'',
+  private:true}` — THE NAME AND HASH NEVER LEAVE THE MACHINE, and the flag is the
+  positive evidence an empty row lacks (`elsewhereThan` answers the PRIVATE_SCENE
+  sentinel with no `mine` needed; `privacySplit` covers the half no map read can see —
+  WE are private). `sameRoomOrUnknown` folded + privacy buys canApplyByRoom, the nine
+  full-state replies and sceneadopt for free; `broadcast` gains the self-private
+  ROOM_SCOPED withhold (streams/chat keep flowing — private is not offline);
+  sendHandshake withholds singletons + the full-state ask + the direct `locked` send;
+  getobjects/getnodes are withheld on privacySplit BEFORE the share-or-stash table
+  (which is written in NAMES and would read a private empty row as the shared world);
+  `outboundManifest` drops `privateScenes` in BOTH branches (the host branch is what
+  makes the promise true — a host publishes whole). The popup: "In a private scene"
+  group LAST, Watch disabled with the reason, no Go-to, a Request access button; while
+  YOU are private, a strip under the Connected header offers Share with session +
+  Rejoin session. `sceneaccess` (request|grant|deny) is deliberately MESH-WIDE — the
+  one message whose whole job is to cross the divide, carrying no name and no content;
+  the private peer's sticky ask says sharing shares with EVERYONE; `sharePrivateScene`
+  is the ONE exit (lift the mark, consent, publish the real row, PUSH the manifest —
+  the send-back only fires on an arriving document); the grant card's Go to reuses the
+  guarded `travelToPeerScene` (extracted into sceneOpenGuard). Rejoin: guarded, travel
+  to the session's named room when one exists, else clear + null + publish '' +
+  requestFullState from every reachable peer (the row-1 shape — what makes an UNTITLED
+  session world rejoinable). Follow-ups: approve-while-private UX; private mode does
+  not survive a reload; sceneaccess sits off the ALWAYS_ALLOWED floor.
   · **THE CONNECT CONTRACT** (`deferUntilShareChoice`'s five-row table in sessions.js):
   an EMPTY joiner adopts the host's scene identity and receives, no ask
   (`adoptSceneIdentity` in levels — **THE NAME AND NOTHING ELSE**, fileHandler's
@@ -3964,7 +4004,24 @@ override for e2e — never share 5173 (the user's main-checkout server).
   (open-core: OSS ships only inert hooks — capability gate / auth hook /
   VITE_CLOUD_PLUGIN — cloud repo holds registration/rooms/roles; contract in its
   MAINTAINING.md).
-- Status (2026-08-29, latest): **ROUND 33 — THE CONNECT DECISION (49984d9, one commit,
+- Status (2026-08-30, latest): **ROUNDS 34+35 — A SAVE NAMES THE ROOM, AND PRIVATE
+  SCENES** (ec02a94 + ec745af; design detail in the two new ROOMS-entry bullets). The
+  user's two reports: (1) a peer saving the shared untitled world left the host untitled
+  — identity diverged from content, popup showed two scenes for one world; fixed by the
+  `sceneadopt` broadcast (auto-adopt + toast, the user's chosen fork; the saver's toast
+  notes " — shared with this session", no modal). (2) opening your OWN unshared scene
+  file mid-session leaked the name via consent + atscene + Go-to; fixed by the
+  Share/Edit-privately/Cancel ask, the `private:true` presence state (name and hash
+  never leave the machine, both-direction isolation via the existing gates), the "In a
+  private scene" popup group with disabled Watch + Request access (grant shares with
+  EVERYONE, said in the ask; deny is polite), and Rejoin session that works for an
+  untitled world. Suites scene-adopt (28) + private-scene (51); counterfactuals per
+  guard incl. a WIRE SPY that separates the send gate from the receive backstop; the
+  r34 counterfactual reproduced the report verbatim (two peers, one world, two rooms).
+  Baseline 363/62 at both commits; builds green server-down. OWED on device: the adopt
+  toast pair on a real save, the private-open modal + the popup group/strip/Request
+  access flow end to end, Rejoin on both named and untitled sessions, non-dark themes.
+- Status (2026-08-29): **ROUND 33 — THE CONNECT DECISION (49984d9, one commit,
   code + suite migrations together).** The user's redesign of the unnamed-with-work
   connect: the dial ask is gone, the question moved to host approval as a blocking modal
   — Save scene & connect / Dismiss changes / Disconnect (every close affordance = the

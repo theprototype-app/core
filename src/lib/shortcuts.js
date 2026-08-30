@@ -26,7 +26,7 @@ import { editingObject, enterEditMode, exitEditMode } from './meshEdit';
 import { faceEditObject, meshEditHotkeys } from './faceEdit';
 import { recallBookmark } from './cameraBookmarks';
 import { snapTargets } from './snapping';
-import { togglePanel } from './panelToggles';
+import { togglePanel, toggleDock } from './panelToggles';
 // Phase 5: the play FAB's own entry point. playMode.js imports sceneStore +
 // svelte/store ONLY (it says so at the top of the file, and that is deliberate),
 // so this static edge adds nothing to shortcuts' subtree — which matters, because
@@ -279,6 +279,84 @@ export const shortcuts = [
 		group: 'Panels',
 		label: 'Node editor: show / bring to front / hide',
 		action: () => togglePanel('flow')
+	},
+	/*
+	 * A SHORTCUT FOR EVERY TOOLBAR TOOL, and the scheme is worth stating once.
+	 *
+	 * The two bare keys that already existed (O, N) keep their letters; the dock itself
+	 * takes bare T; every other panel takes `Alt+` its initial. A BINDING NAMES THE TOOL,
+	 * NEVER A TOOLBAR SLOT — Alt+A opens the Animation editor wherever it sits in the
+	 * roster, and even when it is not on the toolbar at all, which is the whole reason
+	 * these are registry rows and not indices into the button strip.
+	 *
+	 * WHY `Alt+`, AND WHY THE MODIFIER MUST NOT BE "TIDIED AWAY": three of the six
+	 * letters — E (extrude), F (create face) and S (scale) — are bare MESH_EDIT_KEYS, so
+	 * a bare row on any of them would silently do nothing for as long as a mesh session
+	 * is open, because `handleKeydown` stands the WHOLE registry down for those combos.
+	 * MESH_EDIT_KEYS holds literal COMBO STRINGS, and 'Alt+E' is a different string from
+	 * 'E', so the prefixed rows are unaffected and keep working inside a session.
+	 * (A, U and H are free bare — measured — but taking the modifier off only those
+	 * three would mean a user has to remember WHICH half of one scheme needs Alt, which
+	 * is a worse rule than one that is always true. `conflictOf` reports the collision as
+	 * its `meshEdit` half if anybody tries it.) Measured before these rows were added:
+	 * all seven combos free, `{shortcut: null, meshEdit: false}` each, and no row in the
+	 * registry — `fixed` display rows included — displayed any of them.
+	 *
+	 * Every row is an ordinary rebindable entry: a user who wants bare F for Flow Code
+	 * may have it, and is warned about the mesh-session stand-down when they ask.
+	 */
+	{
+		id: 'panels.dock',
+		keys: 'T',
+		group: 'Panels',
+		// the tool dock: the strip that holds the Node editor, Explorer, Flow Code,
+		// Animation, UV, Shader and HUD tabs. Minimizing leaves every tab open, and
+		// since a minimized dock draws nothing at all, this key is one of the only
+		// two ways back (the toolbar buttons are the other).
+		label: 'Tool dock: show / hide (Node editor, Explorer, Animation, UV, Shader, HUD…)',
+		action: () => toggleDock()
+	},
+	{
+		id: 'panels.explorer',
+		keys: 'Alt+E',
+		group: 'Panels',
+		label: 'Explorer: show / bring to front / hide',
+		action: () => togglePanel('explorer')
+	},
+	{
+		id: 'panels.flow-code',
+		keys: 'Alt+F',
+		group: 'Panels',
+		label: 'Flow Code: show / bring to front / hide',
+		action: () => togglePanel('flowcode')
+	},
+	{
+		id: 'panels.animation',
+		keys: 'Alt+A',
+		group: 'Panels',
+		label: 'Animation: show / bring to front / hide',
+		action: () => togglePanel('animation')
+	},
+	{
+		id: 'panels.uv-editor',
+		keys: 'Alt+U',
+		group: 'Panels',
+		label: 'UV editor: show / bring to front / hide',
+		action: () => togglePanel('uv')
+	},
+	{
+		id: 'panels.shader-editor',
+		keys: 'Alt+S',
+		group: 'Panels',
+		label: 'Shader editor: show / bring to front / hide',
+		action: () => togglePanel('shader')
+	},
+	{
+		id: 'panels.hud-editor',
+		keys: 'Alt+H',
+		group: 'Panels',
+		label: 'HUD editor: show / bring to front / hide',
+		action: () => togglePanel('hud')
 	},
 	{
 		id: 'panels.chat',

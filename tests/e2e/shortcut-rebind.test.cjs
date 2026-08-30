@@ -108,7 +108,14 @@ h.run(async () => {
 	);
 	h.check(enterOwners.length === 1 && enterOwners[0] === 'scene.play', `1.7 nothing else answers to Ctrl+Enter (${enterOwners.join(',')})`);
 
-	// comboOf can spell Alt now — it could not before this phase, so no default uses it
+	// comboOf can spell Alt, which it could not before Phase 5.
+	//
+	// 1.10 RECORDED the fact that nothing shipped USED it — true when written, and
+	// deliberately not true any more: the panels batch spends that space on
+	// `Alt+`<initial> for the six dock views that had no binding at all. The property
+	// the assertion was really protecting is the one kept below — nothing that existed
+	// BEFORE Alt was expressible has silently acquired it, so every pre-existing combo
+	// is still byte-identical. (`panel-shortcuts` owns the new rows.)
 	const alt = await A.page.evaluate(() => {
 		const r = window.__stores.shortcutsRegistry;
 		const mk = (o) => r.comboOf(Object.assign({ key: 'k', code: 'KeyK', ctrlKey: false, altKey: false, shiftKey: false, metaKey: false }, o));
@@ -116,12 +123,15 @@ h.run(async () => {
 			plain: mk({}),
 			altOnly: mk({ altKey: true }),
 			all: mk({ ctrlKey: true, altKey: true, shiftKey: true }),
-			defaultsUsingAlt: r.shortcuts.filter((s) => String(s.defaultKeys).includes('Alt+')).length
+			altDefaults: r.shortcuts.filter((s) => String(s.defaultKeys).includes('Alt+')).map((s) => s.id)
 		};
 	});
 	h.check(alt.plain === 'K' && alt.altOnly === 'Alt+K', `1.8 comboOf spells Alt (${alt.plain} / ${alt.altOnly})`);
 	h.check(alt.all === 'Ctrl+Alt+Shift+K', `1.9 canonical modifier order is Ctrl+Alt+Shift (${alt.all})`);
-	h.check(alt.defaultsUsingAlt === 0, '1.10 no shipped default uses Alt, so every existing combo is byte-identical');
+	h.check(
+		alt.altDefaults.every((id) => id.startsWith('panels.')),
+		`1.10 only the Panels batch spends Alt — every older combo is byte-identical (${alt.altDefaults.join(',') || 'none'})`
+	);
 
 	// ------------------------------------------------- 2. rebind through the UI
 	await openSettings(A.page);

@@ -2493,7 +2493,7 @@
 			use:noNativeMenu
 			class="ui-panel fixed flex flex-col overflow-hidden"
 			use:dragWindow={{ key: 'animation', defaultRect: { left: 200, top: 120 } }}
-			use:focusStack
+			use:focusStack={'animation'}
 			use:tabbable={{ key: 'animation', title: 'Animation', openStore: animationClose, isOpen: (v) => !v, close: () => animationClose.set(true) }}
 			use:bottomDockable={{ key: 'animation' }}
 			style="z-index: var(--z-window); max-width: 96vw; max-height: 88vh"

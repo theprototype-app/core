@@ -187,7 +187,7 @@
 			id="flow-code-window"
 			class="ui-panel fixed flex flex-col overflow-hidden"
 			use:dragWindow={{ key: 'flowCode', defaultRect: { left: 160, top: 120 } }}
-			use:focusStack
+			use:focusStack={'flowcode'}
 			use:tabbable={{ key: 'flowCode', title: 'Flow Code', openStore: flowCodeClose, isOpen: (v) => !v, close: () => flowCodeClose.set(true) }}
 			use:bottomDockable={{ key: 'flowcode' }}
 			style="z-index: var(--z-window); max-width: 96vw; max-height: 85vh"

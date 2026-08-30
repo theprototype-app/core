@@ -1951,7 +1951,7 @@
 			id="uv-window"
 			class="ui-panel fixed flex flex-col overflow-hidden"
 			use:dragWindow={{ key: 'uv', defaultRect: { left: 220, top: 140 } }}
-			use:focusStack
+			use:focusStack={'uv'}
 			use:tabbable={{ key: 'uv', title: 'UV editor', openStore: uvEditorClose, isOpen: (v) => !v, close: () => uvEditorClose.set(true) }}
 			use:bottomDockable={{ key: 'uv' }}
 			style="z-index: var(--z-window); max-width: 96vw; max-height: 88vh"

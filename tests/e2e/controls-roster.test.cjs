@@ -371,11 +371,42 @@ h.run(async () => {
 	);
 
 	// ---- the two panel-specific menus ----------------------------------------------
+	// The Node editor cell used to carry the dock's shared "+" list as an "Add a view"
+	// section — six ＋ rows in front of the two rows this menu exists for. It is gone
+	// from HERE and only from here: adding a view is something you do TO the dock, and
+	// both buttons that own that gesture sit on the dock itself.
 	await cellMenu(A.page, 'Node editor (N)');
 	menu = await rows(A.page);
 	h.check(
-		menu.some((r) => r.label === 'Open Node editor') && menu.some((r) => r.label.includes('Flow Code')),
-		`the Node editor cell offers Open + the dock's shared "+" list (${menu.length} rows)`
+		menu.some((r) => r.label === 'Open Node editor'),
+		`the Node editor cell offers Open (${menu.length} rows)`
+	);
+	h.check(
+		!menu.some((r) => r.label.includes('＋')) && !menu.some((r) => r.label.includes('Flow Code')),
+		`and NO "Add a view" rows any more (${menu.map((r) => r.label).join(' | ')})`
+	);
+	h.check(
+		menu.some((r) => r.label.includes('Swap with')),
+		'while "Swap with" — one of the two rows it exists for — stays'
+	);
+	await closeMenus(A.page);
+
+	// ...and the LIST itself is untouched: the dock tab strip's own ＋ still offers it.
+	// Removing a CONSUMER must not remove the feature, so both halves are asserted here.
+	await A.page.evaluate(() => {
+		const s = window.__stores;
+		s.flowGraphClose.set(false);
+		s.bottomDock.activateDock('flow');
+	});
+	await A.page.waitForTimeout(800);
+	await A.page.evaluate(() => document.querySelector('#dock-add-view')?.click());
+	await A.page.waitForTimeout(500);
+	const stripAdd = await A.page.evaluate(() =>
+		[...document.querySelectorAll('[role="menu"] [role="menuitem"]')].map((el) => (el.textContent ?? '').trim())
+	);
+	h.check(
+		stripAdd.some((t) => t.includes('Flow Code')),
+		`the dock strip's ＋ still offers the add list (${stripAdd.join(' | ') || 'none'})`
 	);
 	await closeMenus(A.page);
 

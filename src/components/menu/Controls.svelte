@@ -33,7 +33,7 @@
 	import { visibleDockKey, dockOccupants, bottomInset, FLOW_FAMILY, armDockMode, DOCK_TITLES } from '$lib/bottomDock';
 	import { togglePanel } from '$lib/panelToggles';
 	import { requestPlay, willEnterXR, willEnterAR, vrSupported, arSupported, xrSessionFailed } from '$lib/playMode';
-	import { dockAddItems, DOCK_VIEWS } from '$lib/dockMenu';
+	import { DOCK_VIEWS } from '$lib/dockMenu';
 	import { VRButton, XRButton } from '@threlte/xr'
 
 	// A panel is "shown" when it is open AND either the visible dock tab OR floating
@@ -1055,13 +1055,16 @@
 	function cellMenuItems(id: string) {
 		const head: any[] = [];
 		if (id === 'flow') {
-			// the dock's shared "+" list — the same one DockTabs and the floating Node
-			// editor's header render, so a view added there appears here for free
+			// This used to carry the dock's shared "+" list (`dockAddItems`) as an
+			// "Add a view" section. It is GONE from here, and ONLY from here — the list
+			// itself is unchanged and still renders in the two places that own the
+			// gesture: the docked tab strip's ＋ and the floating Node editor header's ＋.
+			// Adding a view is something you do TO the dock, and both of those buttons
+			// sit on the dock; a third copy hanging off a toolbar cell's right-click menu
+			// put six rows of noise in front of the two rows this menu exists for.
 			head.push(
 				{ section: 'Node editor' },
-				{ label: 'Open Node editor', tooltip: 'Show or hide the graph editor (N)', action: () => togglePanel('flow') },
-				{ section: 'Add a view' },
-				...dockAddItems()
+				{ label: 'Open Node editor', tooltip: 'Show or hide the graph editor (N)', action: () => togglePanel('flow') }
 			);
 		}
 		if (id === 'explorer') {

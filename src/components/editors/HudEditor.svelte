@@ -1450,7 +1450,7 @@
 			id="hud-window"
 			class="ui-panel fixed flex flex-col overflow-hidden"
 			use:dragWindow={{ key: 'hud', defaultRect: { left: 240, top: 150 } }}
-			use:focusStack
+			use:focusStack={'hud'}
 			use:tabbable={{ key: 'hud', title: 'HUD editor', openStore: hudEditorClose, isOpen: (v) => !v, close: () => hudEditorClose.set(true) }}
 			use:bottomDockable={{ key: 'hud' }}
 			style="z-index: var(--z-window); max-width: 96vw; max-height: 88vh"

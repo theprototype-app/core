@@ -745,6 +745,19 @@ export class PeerConnection {
 					// P2b: which scene a peer is in. Latest-wins per SENDER, and only that
 					// sender ever writes its own row, so the map cannot race.
 					applyRemotePeerScene(data);
+				} else if(data.type == 'sceneadopt') {
+					// R22 round 34: a peer SAVED the unnamed world we are all standing in, so
+					// the world has a name now and everybody in it takes it. ROOM_SCOPED, so
+					// both gates above have already had their say (elsewhere, and queued
+					// behind our own open ask); the applier adds the unnamed-only rule and
+					// repeats the room test for an older sender that does not gate on send.
+					//
+					// DYNAMIC, and the only dynamic import in this dispatcher: levels.js pulls
+					// the whole sessions/explorer subtree in behind it and nothing here has
+					// ever had a static edge into it. The module is already resolved in
+					// practice (App.svelte's debug hook imports it at boot), and a message
+					// that arrives before it is not one anybody is waiting on.
+					import('$lib/levels').then((m) => m.applyRemoteSceneAdopt(data)).catch(() => {});
 				} else if(data.type == 'modulestate') {
 					applyModuleStates(data.states);
 				} else if(data.type == 'campreview') {

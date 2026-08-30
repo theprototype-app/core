@@ -256,7 +256,12 @@ export function roomsOfSession(map, mine) {
 //     game/animation/joints/annotations. Each is "how THIS scene looks or behaves".
 //   coordination - locks and the session proposal. A lock names an object in a scene, and
 //     a proposal to REPLACE the current scene must not reach somebody standing elsewhere.
-//     `ping` is a gesture at a point in a world, so it is the same thing.
+//     `ping` is a gesture at a point in a world, so it is the same thing. R22 round 34's
+//     `sceneadopt` ("I saved the world we are standing in, and it is called X") is the
+//     sharpest case after clearscene: it renames a room, so it must reach exactly the room
+//     it was saved in. Note this is the one ROOM_SCOPED type that is ABOUT a scene's
+//     identity rather than its contents - `atscene` stays mesh-wide because it REPORTS an
+//     identity somebody already has, while this one CONFERS one.
 //
 // MESH-WIDE, deliberately, and the reasons are not interchangeable:
 //   CHAT ('sent'/'info') - the session is one conversation. Splitting it by room is how
@@ -315,7 +320,7 @@ export const ROOM_SCOPED = new Set([
 	'jointdelete', 'joints', 'annotation', 'annotations',
 	// coordination
 	'lock', 'locked', 'lockrequest', 'unlock', 'lockdenied', 'sessionproposal',
-	'sessionanswer', 'ping'
+	'sessionanswer', 'ping', 'sceneadopt'
 ]);
 
 /**

@@ -29,7 +29,10 @@
 // would close the TDZ cycle (the moduleSDK rule).
 
 import { writable, get } from 'svelte/store';
-import { showToast, showInfoToast, dismissToastById } from '../stores/appStore';
+import { showToast, showInfoToast, dismissToastById, peers } from '../stores/appStore';
+// R22 round 34: the adopt message names the peer who saved. `sessions.js` — which this
+// module already imports — imports lockControl too, so this closes no new edge.
+import { nameOf } from './lockControl';
 import {
 	buildSessionPayload,
 	emptySessionPayload,
@@ -497,7 +500,13 @@ export async function saveSceneAsLevel(name, folderId = null, opts = {}) {
 	// 21-G7: one visible card per scene name — the pointer we just wrote
 	hideOldVersions(payload.name);
 	pruneSceneVersions(payload.name);
-	showToast('Scene saved: ' + payload.name + ' (' + (payload.count ?? 0) + ' objects)');
+	// R22 round 34 — A SAVE NAMES THE ROOM. Last, after the manifest publish above: a peer
+	// that takes the name and goes looking for the scene must find its history already
+	// there, and PeerJS conns are ordered, so "after" here is "after" over there too.
+	const announced = await announceSceneName(cameFrom, payload.name, item.hash, opts);
+	showToast(
+		'Scene saved: ' + payload.name + ' (' + (payload.count ?? 0) + ' objects)' + announced.note
+	);
 	return item;
 }
 
@@ -876,6 +885,124 @@ export function adoptSceneIdentity(name, hash) {
 	// nothing anyway, because the name arrived in the host's manifest and is therefore
 	// already inside `sessionSceneNames`.
 	currentLevel.set({ hash: '', name: scene, unsaved: true });
+	return true;
+}
+
+// ---- R22 round 34: A SAVE NAMES THE ROOM ---------------------------------------------
+//
+// REPORTED: two peers edit ONE untitled world together; one of them saves it in the
+// Library; from that moment the peers popup shows them in two different scenes, Watch
+// reads wrong, and the identity has diverged from the content. Nothing was broken about
+// the CONTENT — `currentLevel` is LOCAL by design, an unnamed side is never evidence of
+// "elsewhere" (the only-on-evidence rule), so edits kept flowing exactly as before. What
+// diverged was the NAME: only the saver's copy learned it.
+//
+// A1 already solved the joiner's half of this — `adoptSceneIdentity` names an empty
+// joiner from the host's handshake. This is the same act at the other end of the session:
+// the world acquires a name while everybody is standing in it, so everybody takes it.
+//
+// ONE SMALL MESSAGE, and it earns its keep by joining `ROOM_SCOPED`, which is the whole
+// reason it is a type of its own rather than a field on something else. That membership
+// buys, with no code here at all: withheld on SEND from a peer demonstrably elsewhere
+// (`broadcast`), dropped on RECEIVE from one (`canApplyByRoom`), and dropped from a peer
+// held behind an open share-or-stash / connect decision (`gateHolds`). A save made in
+// one room can therefore never rename another.
+
+/**
+ * Tell the room what it is now called — when this save is the one that NAMED it.
+ *
+ * THREE GATES, and each excludes a real case rather than a hypothetical one:
+ *   · the world was UNNAMED before this save. A re-save of an already-named scene changes
+ *     no name (the manifest pointer machinery owns versions), and `newLevel` opens
+ *     nothing, so neither has anything to announce.
+ *   · CONSENT was recorded. Round 33's "Save scene & connect" passes `consent: false`: it
+ *     saves in order to LEAVE this world behind and join somebody else's clean, so
+ *     renaming everybody's scene on the way out is precisely what that button promises not
+ *     to do. A private-by-intent save must not name a room.
+ *   · somebody is HERE to hear it — an open conn we have no evidence is somewhere else,
+ *     which is the same test `broadcast` will apply to the message itself, so this count
+ *     is exactly its audience.
+ * @param {{name?: string} | null} cameFrom `currentLevel` as it was BEFORE the save
+ * @param {string} name @param {string} hash
+ * @param {{consent?: boolean}} opts
+ * @returns {Promise<{told: number, note: string}>} `note` is the save toast's suffix
+ */
+async function announceSceneName(cameFrom, name, hash, opts) {
+	const wasUnnamed = !String(cameFrom?.name ?? '').trim();
+	const shared = opts.consent !== false;
+	const here = await roommatePeers();
+	if (!here.length || !shared) return { told: 0, note: '' };
+	// the note is about SHARING and not about naming, so it rides every consented save
+	// made with company — a re-save publishes this version to the room just the same
+	const note = ' — shared with this session.';
+	if (!wasUnnamed) return { told: 0, note };
+	try {
+		/** @type {any} */
+		const peer = get(peers);
+		peer.send({ type: 'sceneadopt', name, hash, peerId: peer.peer.id, at: Date.now() });
+	} catch {
+		return { told: 0, note };
+	}
+	return { told: here.length, note };
+}
+
+/**
+ * The peers we can reach in OUR room: every open conn minus anybody demonstrably
+ * elsewhere. `elsewhereThan` is the same predicate `broadcast` filters with, so this is
+ * the audience of a room-scoped message, counted before one is sent.
+ *
+ * DYNAMIC import, the shape `travelToLevel`'s arrival re-sync already uses here:
+ * `peerScenes` imports THIS module (currentLevel) and a static edge back would close the
+ * cycle — and its module body subscribes at eval, which is where that bites.
+ * @returns {Promise<string[]>}
+ */
+async function roommatePeers() {
+	try {
+		/** @type {any} */
+		const peer = get(peers);
+		if (!peer?.peer?.id) return [];
+		const conns = peer.connections ?? {};
+		const open = Object.keys(conns).filter((id) => conns[id]?.open);
+		if (!open.length) return [];
+		const m = await import('./peerScenes');
+		const map = get(m.peerScenes);
+		const mine = m.myScene()?.scene ?? '';
+		return open.filter((id) => !m.elsewhereThan(map, mine, id));
+	} catch {
+		return [];
+	}
+}
+
+/**
+ * THE OTHER END: a peer saved the world we are standing in, so it has a name now.
+ *
+ * TWO GATES:
+ *   (a) OUR OWN SCENE IS UNNAMED. A named scene is either a different room — in which case
+ *       their save is none of our business — or this identity already, which makes a
+ *       repeat message a no-op; so this is the idempotence guard too. An `unsaved: true`
+ *       loose scene HAS a name and is therefore NOT unnamed: it is a file this machine
+ *       opened, and a stranger's save does not get to re-label it.
+ *   (b) the sender is in our room. Redundant by construction — `sceneadopt` is
+ *       ROOM_SCOPED, so `canApplyByRoom` has already dropped this message from a peer
+ *       standing elsewhere — and kept anyway as the backstop against a build that does not
+ *       gate on send, which is the same reason the receive-side gate exists at all.
+ *
+ * THE NAME AND NOTHING ELSE, hash included: `adoptSceneIdentity` spells out why claiming
+ * somebody else's hash broke the Explorer's "Open here". And adoption is NOT consent, so
+ * nothing here widens `outboundManifest`'s scope — see that function's own note.
+ * @param {any} data @returns {Promise<boolean>} did we take the name
+ */
+export async function applyRemoteSceneAdopt(data) {
+	const scene = String(data?.name ?? '').trim();
+	const from = String(data?.peerId ?? '');
+	if (!scene) return false;
+	if (String(get(currentLevel)?.name ?? '').trim()) return false;
+	try {
+		const m = await import('./peerScenes');
+		if (from && !m.sameRoomOrUnknown(from)) return false;
+	} catch {}
+	if (!adoptSceneIdentity(scene, String(data?.hash ?? ''))) return false;
+	showToast(nameOf(from) + ' saved this scene as "' + scene + '"');
 	return true;
 }
 

@@ -586,16 +586,31 @@ h.run(async () => {
 	await clickCard(page, 'echo.obj', ['Control']);
 	await page.keyboard.press('Delete');
 	await page.waitForTimeout(400);
-	const confirmToasts = (await toastTexts(page)).filter((t) => /^Delete /.test(t));
+	// R22 round 11: the batch confirm moved out of the toast stack and into the Explorer's
+	// own strip (see explorer-delete-confirm) — the reported "toast confirmation" was this
+	// one and the folder delete. Still ONE question for the whole batch.
+	const confirmStrip = await page.evaluate(() => {
+		const el = document.querySelector('#explorer-confirm');
+		return el
+			? {
+					n: document.querySelectorAll('#explorer-confirm').length,
+					title: el.querySelector('.ex-confirm-title')?.textContent?.trim() ?? ''
+				}
+			: null;
+	});
 	h.check(
-		confirmToasts.length === 1,
-		`ONE confirm for the whole batch, not one per card (${confirmToasts.length}: ${confirmToasts.join(' | ')})`
+		!!confirmStrip && confirmStrip.n === 1,
+		`ONE confirm for the whole batch, not one per card (${JSON.stringify(confirmStrip)})`
 	);
 	h.check(
-		/2 items/.test(confirmToasts[0] ?? '') && /1 folder/.test(confirmToasts[0] ?? ''),
-		`the confirm names what it will take (${confirmToasts[0]})`
+		!(await toastTexts(page)).some((t) => /^Delete /.test(t)),
+		'and it is not a toast over the viewport any more'
 	);
-	await page.getByRole('button', { name: 'Delete', exact: true }).click();
+	h.check(
+		/2 items/.test(confirmStrip?.title ?? '') && /1 folder/.test(confirmStrip?.title ?? ''),
+		`the confirm names what it will take (${confirmStrip?.title})`
+	);
+	await page.locator('#explorer-confirm-yes').click();
 	// wait on the THING, not on a number: the batch awaits an idb blob delete AND a
 	// whole-index rewrite per entry, which on a loaded box outran a flat 900ms sleep
 	// while the feature was perfectly correct

@@ -30,6 +30,12 @@ const ALWAYS_ALLOWED = new Set([
 	'getmodulestate',
 	'getnodedefs',
 	'getjoints',
+	// A1/A2: WHERE A PEER IS STANDING. On the floor because it is the ROOM GATE'S OWN
+	// EVIDENCE - a plugin that gated `atscene` would silently switch off scene adoption
+	// AND every room gate built on it (`canApplyByRoom` reads no evidence, so it allows
+	// everything), i.e. it would relax the gate by tightening one message. It is presence
+	// besides, which is this floor's own family.
+	'atscene',
 	// DEVX #18: the flow trigger log. On the floor beside `getnodes` for the same reason
 	// the list gives — answering a full-state REQUEST is how a peer ever syncs, and this
 	// one decides whether a joiner sees a collected world or a reset one. The `triggers`

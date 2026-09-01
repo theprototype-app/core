@@ -18,6 +18,14 @@
 //       the first one's typed value away silently.
 //   §5  The download affordances: an icon on Download, and the all-versions archive
 //       moved out of the item menu into the Version history header.
+//   §6  R22 ROUND 11. "'save & open' modal should not appear if I have made no changes".
+//       It appeared for EVERY scene carrying an environment (or physics, or music, or a
+//       look, or a HUD): those blocks are latest-wins singletons, every one of them
+//       re-stamps `changedAt` on restore ON PURPOSE, and `sceneSignature` was comparing
+//       the stamp along with the content — so the scene you had just opened, untouched,
+//       read as dirty. Same cause, second symptom: `publishCurrentIfChanged` is
+//       SIGNATURE-GATED precisely so an idle hop mints no versions, and it minted one
+//       per hop.
 //
 // Run: APP_URL='https://localhost:5202/' npm run e2e -- scene-open-guard
 const h = require('./helpers.cjs');
@@ -419,6 +427,106 @@ h.run(async () => {
 	h.check(
 		/\.zip$/.test(dl.suggestedFilename()),
 		`the button still downloads the versions zip (${dl.suggestedFilename()})`
+	);
+
+	// =====================================================================
+	// 6. R22 ROUND 11 — AN UNTOUCHED SCENE IS NOT DIRTY
+	// =====================================================================
+	await closeMenu(A);
+	await wipe(A);
+	// the fixture is the reported one: a scene with an ENVIRONMENT. A bare box has no
+	// stamped block in its payload at all, so it could never have shown the bug — which
+	// is exactly why every earlier section here stayed green over it.
+	await addBox(A);
+	await A.page.evaluate(async () => {
+		window.__stores.environment.setEnvironment('sunset');
+		await new Promise((r) => setTimeout(r, 900));
+	});
+	const lit = await seedScene(A, 'Lit');
+	h.check(!!lit?.hash, 'premise: a saved scene carrying an environment');
+	const stampedBlocks = await A.page.evaluate(() => {
+		const s = window.__stores;
+		const payload = s.sessions.buildSessionPayload('Lit');
+		return Object.keys(payload).filter(
+			(k) => payload[k] && typeof payload[k] === 'object' && 'changedAt' in payload[k]
+		);
+	});
+	h.check(
+		stampedBlocks.includes('environment'),
+		`premise: its payload really carries a stamped block (${JSON.stringify(stampedBlocks)})`
+	);
+
+	// go somewhere else and come straight back — the load is the thing that re-stamps
+	await addBox(A);
+	const other = await seedScene(A, 'Other');
+	h.check(!!other?.hash, 'premise: a second scene to hop to');
+	await A.page.evaluate((hash) => window.__stores.levels.travelToLevel(hash), lit.hash);
+	await A.page.waitForTimeout(2500);
+	h.check((await at(A))?.name === 'Lit', 'premise: we are standing in Lit, freshly loaded and untouched');
+
+	const verdict = await A.page.evaluate(() => {
+		const s = window.__stores;
+		let cl;
+		s.levels.currentLevel.subscribe((x) => (cl = x))();
+		const payload = s.sessions.buildSessionPayload(cl.name);
+		const now = s.levels.sceneSignature(payload);
+		// the COUNTERFACTUAL, computed in-page: the old signature was this same pick with
+		// the stamps left in, so compare the two readings rather than trusting one
+		const KEYS = ['objects','animated','animations','graphs','shaderGraphs','annotations','joints','post','environment','physics','music','hud'];
+		const raw = JSON.stringify(Object.fromEntries(KEYS.map((k) => [k, payload[k] ?? null])));
+		return { clean: now === cl.signature, rawLen: raw.length, dirty: s.sceneIdentity.recomputeSceneDirty() };
+	});
+	h.check(
+		verdict.clean,
+		'THE FIX: an untouched scene signs the same both sides of a load->serialize round trip'
+	);
+	h.check(verdict.dirty === false, '…so it does not read as dirty');
+
+	// and the guard therefore stays quiet
+	await A.page.evaluate(() => window.__stores.confirmDialog.resolveConfirm(false));
+	await A.page.waitForTimeout(200);
+	await card(A, 'Other.tpscene').dblclick();
+	await A.page.waitForTimeout(2600);
+	h.check(
+		(await dialogOf(A)) === null,
+		'opening another scene with nothing changed asks NOTHING'
+	);
+	h.check((await at(A))?.name === 'Other', '…and simply opens it');
+
+	// a REAL edit must still be caught — the fix may not buy its quiet by going blind
+	await addBox(A);
+	await A.page.waitForTimeout(400);
+	await card(A, 'Lit.tpscene').dblclick();
+	await h.eventually(
+		() => dialogOf(A),
+		(d) => !!d && /Lit\.tpscene/.test(d.title ?? ''),
+		'…while a real edit is still guarded'
+	);
+	await answerDialog(A, false);
+	await A.page.waitForTimeout(700);
+
+	// THE SECOND SYMPTOM: an idle hop must mint no version
+	await A.page.evaluate((hash) => window.__stores.levels.travelToLevel(hash), lit.hash);
+	await A.page.waitForTimeout(2500);
+	const histBefore = await A.page.evaluate(() => {
+		let m;
+		window.__stores.projectManifest.projectManifest.subscribe((x) => (m = x))();
+		return (m.scenes?.Lit?.history ?? []).length;
+	});
+	h.check(histBefore >= 1, `premise: Lit has a version history (${histBefore})`);
+	// hop away and back, touching nothing
+	await A.page.evaluate((hash) => window.__stores.levels.travelToLevel(hash), other.hash);
+	await A.page.waitForTimeout(2500);
+	await A.page.evaluate((hash) => window.__stores.levels.travelToLevel(hash), lit.hash);
+	await A.page.waitForTimeout(2500);
+	const histAfter = await A.page.evaluate(() => {
+		let m;
+		window.__stores.projectManifest.projectManifest.subscribe((x) => (m = x))();
+		return (m.scenes?.Lit?.history ?? []).length;
+	});
+	h.check(
+		histAfter === histBefore,
+		`an IDLE hop mints no ghost version — the rule publishCurrentIfChanged states (${histBefore} -> ${histAfter})`
 	);
 
 	h.check((await h.pageErrors(A)).length === 0, `no page errors (${JSON.stringify(await h.pageErrors(A))})`);

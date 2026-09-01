@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { Accordion, AccordionItem, Modal, Button, Checkbox, Toggle } from 'flowbite-svelte';
-	import { X, Lock, RotateCcw } from '@lucide/svelte';
+	import { HardDrive, Lock, RotateCcw, X } from '@lucide/svelte';
 	import ThemedSelect from '../ui/ThemedSelect.svelte';
 	import SettingRow from './SettingRow.svelte';
 	import { showGrid, vrOverride, vrMenuHand, vrSnapAngle, vrMirrorSnapTurn, vrTeleportEnabled, vrSleeveEnabled, vrVertexHold, vrFlying, vrPassthrough, vrMenuHold, vrTargetHz, peerHandStyle } from '../../stores/sceneStore.js';
@@ -37,12 +37,18 @@
 	// with the owner-only rule kept as the second option)
 	import {
 		unshareAuthority,
-		autoShareAll,
+		shareNewFiles,
 		autoDownload,
 		recycleBinEnabled,
 		keepRecycleBin,
+		deletedLogEnabled,
 		deleteWithoutConfirm
 	} from '$lib/sharedLibrary';
+	// R22 round 13 P2: the storage breakdown, reachable from where somebody looks for it
+	import { openStorageModal } from '$lib/storageUsage';
+	// R22 round 33: the classic Share/Stash merge, kept as an opt-in beside the sharing
+	// prefs. It lives in connectionState because it is a fact about CONNECTING.
+	import { mergeOnConnect } from '$lib/connectionState';
 	// 21-I5 (locked answer 5): the save-name template — one rule for every download
 	import { saveNameTemplate } from '$lib/saveName';
 	// loose-scenes fix (bug 2a): what an import does with bytes already in the library.
@@ -449,6 +455,10 @@
 		interfaceExpanded = $settingsSection === 'interface';
 		controlsExpanded = $settingsSection === 'controls';
 		inputExpanded = $settingsSection === 'input';
+		// R22 round 12: the file settings were reachable by deep link in every sense EXCEPT
+		// this line — the section existed, the store existed, and nothing mapped one onto
+		// the other. The delete strip's "File settings" button is the first caller.
+		explorerExpanded = $settingsSection === 'explorer';
 	} else if ($settingsOpen === false) {
 		restorePanels();
 		$settingsSection = null;
@@ -1075,23 +1085,28 @@
 						they started when there were two of them. There are eleven now and they are
 						about the library rather than the world, so they get the panel they name.
 					-->
-					<SettingRow name="Share every file automatically">
+					<SettingRow name="When you add files during a session">
 						<svelte:fragment slot="control">
-							<input
-								id="auto-share-all"
-								class="tp-check"
-								type="checkbox"
-								checked={$autoShareAll}
-								on:change={(e: any) => autoShareAll.set(!!e.target.checked)} />
+							<ThemedSelect
+								id="share-new-files"
+								items={[
+									{ value: 'ask', name: 'Ask each time' },
+									{ value: 'always', name: 'Share automatically' },
+									{ value: 'never', name: 'Keep them local' }
+								]}
+								bind:value={$shareNewFiles}
+							/>
 						</svelte:fragment>
 						<span>
-							Everything in your Explorer is shared with the session, including files you add
-							later — no Share gesture at all. Off by default, because the whole point of
-							the library being local is that publishing it is a choice. A file you
-							<strong>explicitly unshared</strong> stays unshared: a blanket setting is a
-							preference, and that was a decision. This is yours alone — every peer chooses
-							for themselves, and a peer who has just joined is still asked about the files
-							they brought with them.
+							A file is local until somebody says otherwise, so this is what happens when you
+							add one while connected. <strong>Ask each time</strong> puts the question in the
+							Explorer, above the files it is about — and asks once about the library you
+							brought with you when a session starts. <strong>Share automatically</strong>
+							publishes everything with no gesture at all. <strong>Keep them local</strong> is
+							silence: nothing is shared and nothing is asked. A file you
+							<strong>explicitly unshared</strong> stays unshared whatever this says — a
+							setting is a preference and that was a decision. This one is yours alone; peers
+							choose for themselves.
 						</span>
 					</SettingRow>
 					<SettingRow name="Download shared files automatically">
@@ -1109,6 +1124,24 @@
 							which is an extra step per file per person for something they already agreed to
 							by being here. Turn it off on a metered connection or a very large project —
 							shared files still appear, greyed, and download when you open them.
+						</span>
+					</SettingRow>
+					<SettingRow name="Offer to merge unsaved work on connect">
+						<svelte:fragment slot="control">
+							<input
+								id="merge-on-connect"
+								class="tp-check"
+								type="checkbox"
+								checked={$mergeOnConnect}
+								on:change={(e: any) => mergeOnConnect.set(!!e.target.checked)} />
+						</svelte:fragment>
+						<span>
+							When you connect with work in a scene that was never saved, this app asks you to
+							<strong>save it or dismiss it</strong> — an unsaved scene has no identity, so
+							there is nothing for the other world to merge into. Turn this on to get the
+							older question back instead: <strong>Share</strong> your objects into their
+							world, or <strong>Stash</strong> them to a session first. Per device, and it
+							changes nothing about what the session allows — only which question is put.
 						</span>
 					</SettingRow>
 					<SettingRow name="Who can unshare a file">
@@ -1235,8 +1268,51 @@
 						</svelte:fragment>
 						<span>
 							Off by default: the bin is a safety net for the minutes after a delete, not
-							storage, so its files are reclaimed the next time you load. The RECORD of what
-							was deleted always survives — only the bytes on this device go.
+							storage, so its files are reclaimed the next time you load. The file then
+							leaves <strong>Deleted</strong> for the <strong>Deleted log</strong> beside
+							it — the record survives, only the bytes on this device go.
+						</span>
+					</SettingRow>
+					<SettingRow name="Deleted files log">
+						<svelte:fragment slot="control">
+							<input
+								id="deleted-log"
+								class="tp-check"
+								type="checkbox"
+								checked={$deletedLogEnabled}
+								on:change={(e: any) => deletedLogEnabled.set(!!e.target.checked)} />
+						</svelte:fragment>
+						<span>
+							Keep a record of what was deleted from this project — the name, who removed
+							it, when, and the thumbnail taken at the time — in a
+							<strong>Deleted log</strong> beside the bin. On by default. Turning it off
+							hides the log here and stops writing a record for a delete that keeps no
+							file; it does not erase what is already there, because the record belongs to
+							the project and every peer holds the same one. To erase it, open
+							<strong>Deleted</strong> and empty it.
+						</span>
+					</SettingRow>
+					<p class="ui-section-label">Disk</p>
+					<!--
+						R22 round 13 P2: the THIRD entry point to the storage breakdown. The Explorer
+						header chip is the first, its background menu the second — and the chip yields
+						below a 700px header, so the action needs a home that a narrow screen keeps.
+						Settings is also where somebody goes LOOKING for it, which the two Explorer
+						surfaces cannot claim.
+					-->
+					<SettingRow name="Storage used">
+						<svelte:fragment slot="control">
+							<Button id="settings-storage" size="xs" color="alternative" onclick={openStorageModal}>
+								<HardDrive size={14} class="mr-1" aria-hidden="true" />Show breakdown
+							</Button>
+						</svelte:fragment>
+						<span>
+							What is using this device’s storage — your library files, saved scenes and
+							projects, old scene versions, the recycle bin and the caches — with a tick beside
+							each one so you can reclaim what you no longer want. Every number is an
+							<em>estimate</em>: the browser reports one figure for everything this app
+							stores, so the breakdown adds ours up and says what is left over. Nothing here
+							touches your peers — their copies are theirs.
 						</span>
 					</SettingRow>
 				</AccordionItem>

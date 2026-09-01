@@ -95,6 +95,15 @@ idempotent op leaves later sections nothing to measure.
 Stored mesh topology is `topo-channel` (the partition's wire/undo/save round trips, the
 operators that author it, two-peer delivery and an old-peer message), and
 `mesh-loop-hardening` section 3b is where the twisted-band criterion lives.
+The EXPLORER line is `explorer`, `explorer-views` (round 9's list view and bin),
+`explorer-columns` (round 11: resize, reorder, the sideways scrollbar and the
+`table-layout: fixed` counterfactual), `explorer-drag-fixes`, `explorer-multiselect`,
+`explorer-delete-confirm` (round 11: the inline confirm strip and drop-to-Deleted),
+`shared-library`, `prefab-explorer`, `packs`/`packs-explorer` and `sessions` — with
+`sessions-packs` (round 11) covering the two-level file picker, the sessions list view,
+the thumbnail path and packs you create yourself. `file-preview` covers the preview
+window's four faces, its folder walk and the passthrough overlay; `save-as-formats` covers
+the Save as… catalog and a prefab that carries a format and bytes.
 
 helpers.cjs exports: `launch(options)` (pass
 `{args:[...]}` for fake media), `setupPage(browser, name)` (init script + hydration +
@@ -1281,6 +1290,226 @@ Feature suite green (+ any suites your UI changes touched) + `npm run build` pas
 your files). Two-peer verification is required for anything touching replication.
 VR features: cover the extracted math/state headlessly (computeMoveOffset,
 computeTeleportArc pattern) and note that on-device feel is the user's manual check.
+
+## Roadmap 22 round 30 — `scene-isolation` (72), and the rooms battery
+
+- **PROVE A SEND GATE AND A RECEIVE GUARD INDEPENDENTLY.** They look like one mechanism
+  and are two: disarm the RECEIVER (delete the type from its ROOM_SCOPED) and send a
+  real replicated message — nothing arrives, the send gate held; then bypass the sender
+  with a raw per-conn `connections[id].send(...)` — the receive guard held. ROOM_SCOPED
+  is exported MUTABLE precisely so a suite can counterfactual each side in-page.
+- **A SUITE'S CONNECT DIRECTION IS LOAD-BEARING once sends are role-scoped.**
+  `h.connect(B, A)` makes A the session writer; after C4 a JOINER's raw manifest
+  publishes no longer replicate (the feature), so two sections that published from the
+  dialling peer saw nothing travel. Pick who dials by who must be allowed to publish.
+- **TWO AGENTS IN ONE WORKTREE CONFOUND EACH OTHER'S A/Bs.** An agent's scene-rooms
+  baseline aborted mid-run because the parallel agent was reverting its own files under
+  the dev server (HMR churn); the numbers only counted once re-run on a settled tree.
+  When parallelizing, keep file sets disjoint AND treat any A/B run during the other's
+  counterfactual window as invalid.
+- **A SESSION-LIMIT KILL LEAVES THE WORK ON DISK.** Both wave-2 agents died mid-task;
+  `git status` + targeted greps told exactly where each stopped, and resuming the SAME
+  agent (SendMessage) with the tree state spelled out lost nothing. Spell out which
+  in-flight files are NOT theirs, or the resumed agent may "clean up" a peer's work.
+- **PUBLIC-PEERJS SIGNALING FAILURES MIMIC ROOM GATING PRECISELY** (manifest never
+  arrives, peerScenes empty, requestAsset false). Before blaming a gate, re-run with
+  PEER_CONFIG at the self-hosted box — one wave-2 red was exactly this.
+- **THE THREE-BUTTON TOAST IS THE FIRST OF ITS KIND** (Bring/Stash/Stay on one .tp-toast
+  card) — headless cannot judge it at narrow widths or in non-dark themes; it is on the
+  owed-on-device list, not the suite's.
+
+## Roadmap 22 rounds 19-28 — `window-header-ranking` (30), `tab-group-stacking` (17)
+
+- **MEASURE THE THING AGAINST WHAT IT IS SUPPOSED TO LINE UP WITH, not against itself.**
+  Four rounds of tab-group checks asked whether a member's header overflowed, wrapped, kept
+  its last button, or sat under the strip — all true of a window that is simply in the wrong
+  PLACE. One comparison of the strip's rect against the active window's rect found it
+  instantly (dx 40, dy 30). When a report says two things do not line up, subtract their
+  rects.
+- **A SUITE THAT LEANS ON LEFTOVER localStorage PASSES ON THE SECOND RUN AND FAILS ON A
+  CLEAN ONE.** `flowDocked` is read at component INIT, so setting it on a live page does
+  nothing — the first version of `tab-group-geometry` only worked because an earlier run had
+  left the flag behind. Set the flag, RELOAD, then drive.
+- **A SUITE'S OWN EARLIER SECTIONS CAN MAKE A LATER ONE UNSTAGEABLE.** `tab-group-stacking`
+  merges, tears and re-merges windows, and by its fifth section it could not put a node
+  editor on screen at all. That is a reason to SPLIT the file, not to fight it — and a
+  three-tab group also raised the floor ~96px, hiding the two-member case under test.
+- **WHEN THE NUMBERS SAY FINE AND THE REPORT SAYS BROKEN, TAKE THE SCREENSHOT.** The
+  tab-group "header breaks" report survived four clean metrics — `scrollWidth` vs
+  `clientWidth`, header height, flex-wrap, the last button's right edge, and the member
+  header's position against the strip. A `page.screenshot` with a clip round the group
+  showed it in one look: the node editor at 260px with its palette, toolbar and canvas
+  overlapping. Pixels are not only for pixel features.
+- **A CONTROL THAT TOGGLES IS NOT AN OPENER.** `#explorer-slot` toggles the dock, so
+  clicking it blind made a suite pass and fail on alternate runs while nothing about the
+  app changed — the dock's state on load is not something to assume. Read the state, act
+  only if needed.
+- **A FIXTURE CAN QUIETLY CONTAIN THE THING IT IS COMPARING AGAINST.** The first version of
+  the strip-vs-window z check merged the object list INTO the group, so it compared a strip
+  against one of its own members and passed for the wrong reason. When a check is about two
+  things being distinct, assert that they are.
+- **A THIRD TAB RAISES THE FLOOR BY ~96px, WHICH HID THE CASE UNDER TEST.** The user's repro
+  is a TWO-member group; a leftover member from an earlier section made the group wide
+  enough that nothing broke. Count the fixture's members when the thing being measured
+  depends on how many there are.
+- **A HIDDEN ELEMENT MEASURES ZERO**, so a suite that waits for things to settle can miss a
+  transient break entirely — sample immediately after the state change as well. (Here even
+  the 40ms sample came back clean, which is how I learned this was not the user's bug.)
+- **A CHECK THAT PASSES WITH THE FIX REMOVED IS NOT A GUARD.** Two checks here survived
+  their counterfactual, and they are LABELLED as pinning a property rather than deleted —
+  the property is worth having, the claim is not.
+- **CHECK THE LINE ENDINGS OF A FILE YOU CREATED.** The Write tool emits LF while the repo
+  is CRLF, so several `\r\n`-based patches to a new suite matched nothing and reported
+  success. `split('\r\n')` returning one element is the tell.
+
+## Roadmap 22 rounds 15-18 — `preview-animation` (46)
+
+- **A FIXTURE SHORTER THAN THE FIRST FAILING CASE PROVES NOTHING ABOUT IT.** The frame
+  stepper was covered by a 60-frame clip and shipped a wedge at frame 123 — the first
+  index where `n/fps*fps` rounds down. The regression carries a 180-frame clip for that
+  reason alone. When a bug report names a NUMBER ("stops on frame 123"), the fixture has
+  to be able to reach it.
+- **REPRODUCE WITH THE USER'S OWN FILE BEFORE THEORISING.** A throwaway probe that read
+  `Dancing Twerk.fbx` off disk, injected the bytes and hammered the key found the exact
+  reported frame in one run — after a plausible wrong theory (end-of-clip dead end) had
+  already been fixed and would have been reported as the answer.
+- **`repeat: true` IS THE GESTURE.** Playwright's `keyboard.down` does not auto-repeat, so
+  a held-key report is reproduced by dispatching KeyboardEvents carrying `repeat: true` —
+  which is also what exposes a handler that computes from a value arriving through a
+  callback it can outrun.
+- **A BARE `#id` CAN RESOLVE TWICE.** `#audio-volume` matches the preview window's player
+  AND the Properties pane's compact one; strict mode fails on the second. Scope by an
+  ancestor that identifies the instance (`[data-preview-id]`, `#image-preview-window`).
+- **PLAYWRIGHT'S "STABLE" HEURISTIC CAN REFUSE A PERFECTLY REACHABLE ELEMENT** in a
+  cascade of overlapping windows. Measure the point, assert `elementFromPoint` lands on
+  what you meant, and click with `page.mouse` — the documented pattern, and it also
+  catches the real cause when the aim is genuinely wrong (a raised window's settings pane
+  covering the next window's header, which is correct behaviour).
+- **A "did the pose change" CHECK MUST NOT INCLUDE THE READOUT.** Screenshotting
+  `#preview-body` put the transport's own frame counter in the picture, so two shots of
+  the same pose could never match. Shoot the canvas. And compare with counted pixels
+  (`h.frameDelta`), not byte equality: the mixer reaching t=2.0 by a different route than
+  t=0 differs by a few edge pixels (measured 316 against 135178 for a real move).
+
+## Roadmap 22 round 13 — `model-preview-controls` (24), and why it is its own file
+
+- **A LONG SUITE EXHAUSTS WebGL CONTEXTS, AND THE BROWSER DOES NOT SAY SO.** Every
+  `ModelPreview` takes its own context; by the end of `file-preview` a new one is refused,
+  the component returns early, and a CORRECT build reports a blank frame with no page
+  error. Measured: the identical open produced a 75KB frame on a fresh page and 6KB at the
+  end of that suite. A longer wait does not fix it and `freshReload` did not either —
+  splitting the pixel checks into their own file did. Suspect this whenever a pixel check
+  fails late in a suite and passes in isolation.
+- **A RATIO OVER TWO BLANK FRAMES PASSES.** "The frame did not collapse" written as
+  `after > before * 0.5` went green comparing 6364 against 5376 — both blank, because the
+  premise frame was already broken. Give such a check an ABSOLUTE floor as well (a real
+  render of the fixture is ~60-70KB; anything under 20KB is nothing), and put the floor on
+  the PREMISE too.
+- **CHECKING THE ELEMENT IS NOT CHECKING THE RENDER.** A guard that a WebGL toggle "did
+  not rebuild the context" compared `canvas.width` and the element count. Both survive a
+  teardown — only the context dies — so it could never have failed while the bug it was
+  written for sat in front of it. Ask for pixels.
+- **A CANVAS READ IS BLANK WITHOUT `preserveDrawingBuffer`.** `drawImage` off the app's
+  WebGL canvas into a 2D one returns nothing, which reported the model missing in BOTH
+  states and looked like a much worse bug than the real one. Use
+  `locator.screenshot()` — the compositor has the frame even when the drawing buffer does
+  not.
+- **A FIXTURE FOR "DID THE PICTURE CHANGE" NEEDS STRUCTURE FROM EVERY ANGLE.** A box's
+  silhouette repeats every 90 degrees, so a rotation check on one can read "unchanged" at
+  the wrong moment. A torus knot fills the frame from anywhere.
+- **STATE THE ORDER GESTURES LEAVE THINGS IN.** Three checks in a row each toggled the
+  same thing, so an extra "stop it first" click STARTED it and hid the element being
+  measured. When a section is a chain of toggles, assert (or re-derive) the state you are
+  in before measuring, rather than assuming the previous line left it where you think.
+
+## Roadmap 22 round 12 — preview windows and the sessions picker
+
+Suites GROWN, not multiplied: `file-preview` (71), `sessions-packs` (61),
+`explorer-delete-confirm` (45), `save-as-formats` (34). Lessons that generalise:
+
+- **THE CHECK THAT PASSES OVER THE BUG IS THE ONE THAT READS THE PROPERTY YOU STYLED.**
+  Twice in one phase: `getComputedStyle(body).pointerEvents` reads a convincing `none`
+  while the click still lands on the panel behind the hole, and `opacity` on the body
+  reads 0.4 while nothing behind the window shows through. Both are answered by asking
+  the OUTCOME instead — what does `elementFromPoint` name, what are the composited
+  backgrounds — and both round-11 checks had to be CORRECTED rather than worked around,
+  because they asserted the implementation that was the bug.
+- **MOVING A PANEL INTO A DIALOG MAKES IT EVERYBODY'S PROBLEM.** Turning the sessions
+  picker into its own dialog broke three later sections of a passing suite with click
+  timeouts that named unrelated elements. Close it explicitly between sections. And
+  ESCAPE NEEDS FOCUS INSIDE the dialog: after the button that had focus unmounts, focus
+  falls to `<body>` and the keypress reaches no handler — click the real Close, and test
+  Escape only where focus is still in.
+- **A NON-MODAL `<dialog>` HAS NO `role` ATTRIBUTE.** `[role="dialog"]` matches nothing in
+  this app except `ConfirmModal`, so a probe written that way reports an empty page and
+  reads as a broken feature. Query `dialog[open]`.
+- **PLAYWRIGHT CLICKS THE CENTRE, and a dense row's centre is a button.** Once a row is
+  selectable AND carries actions, `row.click()` lands on whichever action sits in the
+  middle — here Load, which replaced the scene and closed the dialog, making everything
+  after it fail for reasons that looked unrelated. Aim at a neutral child, and give the
+  row handler the `closest('button, input, a, label')` guard it needs anyway.
+- **A FIXTURE HAS TO CONTAIN THE SHAPE THE FEATURE IS ABOUT.** "I do not see folder
+  structure" cannot be tested against a fixture with one flat folder: the depth assertion
+  had nothing to compare. Add the nesting, and assert the PROPERTY (three distinct
+  indents, the deepest two levels in) rather than three specific rows, which the sort
+  order can reshuffle.
+- **A ROUND-TRIP IS THE ONLY HONEST TEST OF A SERIALIZER.** The measured bug (a Blob
+  stringifies to `{}`, so every project download lost its files) is invisible to any
+  check that reads the payload or counts the rows — both sides count 5. Write it, read it
+  back, and assert the BYTES survived: `withBytes 5` against `5 -> 0` with the old write
+  restored.
+
+## Roadmap 22 round 11 — the Explorer/preview/sessions batch
+
+Five suites, one per phase: `explorer-delete-confirm` (39), `explorer-columns` (41),
+`file-preview` (44), `save-as-formats` (30), `sessions-packs` (32), plus a section 6 in
+`scene-open-guard` (11). Regression net for anything Explorer: `explorer-views`,
+`explorer-drag-fixes`, `explorer-multiselect`, `explorer`, `prefab-explorer`, `sessions`,
+`packs`. Lessons that generalise:
+
+- **A CHECK CANNOT SEE A LEAK THE FIXTURE DOES NOT CONTAIN.** Tearing the pruning out of
+  a new selection payload left BOTH "the payload holds the SELECTION and nothing else"
+  and "NONE of the world" green — the test scene had no sky, no gravity and no
+  scene-level flow node to exclude. Authoring those three in made the counterfactual bite
+  AND immediately exposed a real leak (the SCENE's own flow graph, which `pruneMissing`
+  cannot drop because it asks about an OBJECT and the scene graph has none). Build the
+  world the guard is meant to exclude BEFORE trusting the guard.
+- **THE LOAD-BEARING CHECK IS THE ONE THAT ASKS WHAT IS UNDERNEATH.** With click-through
+  applied to the body instead of the panel, `getComputedStyle(body).pointerEvents` reads
+  a convincing `none` and the check passes — while `elementFromPoint` in the middle of
+  the content still names the window. Assert the OUTCOME (the click reaches the thing
+  below), never the property that is supposed to produce it.
+- **`h.eventually` RETURNS THE CHECK, NOT THE VALUE.** `const n = await h.eventually(fn,
+  pred, label)` is `undefined`, so a follow-up assertion on `n` reads a phantom. Name the
+  reader, `eventually` on it, then call it again for the value.
+- **A "compact face" CHECK PASSES VACUOUSLY WHEN THE WHOLE COMPONENT IS ABSENT.**
+  `locator('#inline-audio #audio-loop').count() === 0` is true when `#inline-audio` does not
+  exist at all — which is exactly the state the section was failing in. Assert the premise
+  in the same check (`the container exists AND the button does not`).
+- **A CONTENT-HASH LIBRARY GIVES YOU ONE ITEM FOR TWO IDENTICAL FIXTURES.** Seeding a
+  folder with a copy of the root's PNG left the folder EMPTY, and the feature that walks
+  into it read as broken. Vary the bytes. (Same family as the shader suite's "two picks of
+  the same bytes are the same texture".)
+- **A DOUBLE-CLICK ON A TREE ROW ALSO FIRES TWO CLICKS**, so expanding `#packs-folder`
+  navigates into the Packs view and takes the card the next step meant to drag. Expand,
+  then put `activeFolder` back.
+- **A TALLER WINDOW PUTS ITS OWN CONTROLS UNDER THE Controls HUD.** Resizing the preview
+  window to 760px to prove the transport stays slim then made the transport unclickable —
+  Playwright reported `<p title="Rotate (2)"> … intercepts pointer events`. The feature was
+  fine, the aim was not: restore the height before clicking anything low in the window.
+- **SVELTE HAS NOT FLUSHED INSIDE ONE `evaluate`.** A synthesized HTML5 drag whose target
+  only EXISTS once `dragstart` re-rendered (a row that unhides for a drag) must be split
+  into two evaluates with the `DataTransfer` stashed on `window` between them. A real drag
+  never has this problem — the pointer reaches the row many frames after it appeared.
+- **PROVE A "pre-existing red" ON A PRISTINE SERVER, WITH NUMBERS.** `packs-drop` read as
+  2/3 on base and 3/3 on the branch, which looks exactly like one regression. Running the
+  SAME instrumented copy against both (a second worktree on `origin/release/next` with its
+  own port) printed `before=0 after=1` on each and 3/3 on each — the base's extra pass was
+  a flake. A red that differs by one check is worth one more measurement, not a guess.
+- **A SUITE THAT SEEDS A LOCAL PREF MUST NAME THE KEY THE STORE READS.** `explorer-views`
+  seeded `shared:deleteWithoutConfirm` while `deleteWithoutConfirm` reads
+  `shared:deleteNoConfirm` — a dead seed that had never done anything, and which only
+  surfaced when a confirm finally stood in the way. Grep the store for the literal.
 
 ## Roadmap 22 round 10 — `peer-ice-config` (10) and `explorer-drag-fixes` (7)
 

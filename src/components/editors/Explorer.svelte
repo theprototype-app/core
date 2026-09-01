@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { Box, Boxes, Download, ExternalLink, Folder, FolderTree, Gift, Globe, House, LayoutGrid, List, LoaderCircle, PackageOpen } from '@lucide/svelte';
+	import { Box, Boxes, Download, ExternalLink, Folder, FolderTree, Gift, Globe, HardDrive, House, LayoutGrid, List, LoaderCircle, PackageOpen, RefreshCw, Save, Share2, X } from '@lucide/svelte';
 	import Icon from '../ui/Icon.svelte';
 	// Explorer (95, tree v2 in 106): dockable asset browser — real file-manager
 	// tree on the left (inline create/rename, expand/collapse, drag re-parent,
@@ -9,7 +9,8 @@
 	// undocks into a floating window.
 	import { get } from 'svelte/store';
 	import { tick, untrack } from 'svelte';
-	import { explorerClose, mobileUndockAllowed, explorerSceneSaveArm, peers } from '../../stores/appStore.js';
+	import { explorerClose, mobileUndockAllowed, explorerSceneSaveArm, explorerRevealArm, peers } from '../../stores/appStore.js';
+	import { settingsOpen, settingsSection } from '../../stores/appStore.js';
 	import { showToast, enable3dPreview, stackOnDrop, confirmPrefabUpdate } from '../../stores/appStore.js';
 	import {
 		explorerFolders,
@@ -34,27 +35,56 @@
 		inspectedFile,
 		setItemHidden,
 		updateItemBytes,
-		parseObjectFile
+		addItemFromBytes,
+		patchRecord,
+		parseObjectFile,
+		hashBytes,
+		kindOf,
+		MAX_ITEM_BYTES
 	} from '$lib/explorer';
-	import { openTextEditor, openImagePreview, openModelPreview, previewSuspended } from '$lib/fileWindows';
+	import {
+		openTextEditor,
+		openImagePreview,
+		openFilePreview,
+		openModelPreview,
+		previewSuspended
+	} from '$lib/fileWindows';
+	// R22 round 11: a prefab may BE a file now — see $lib/saveAs for what each format keeps.
+	import * as THREE from 'three';
+	import { prefabFormatOf, prefabFileName, saveBytes } from '$lib/saveAs';
+	// R22 round 11: a pack you make yourself — see packs.js for why it is an "imported"
+	// pack with no zip behind it rather than a fourth kind.
+	import { createPack, addToPack } from '$lib/packs';
+	// R22 round 11: the preview window's arrows walk THIS folder, in the order THIS grid is
+	// showing it — a question only the Explorer can answer (filters, search, view mode,
+	// sort), so it is published rather than derived over there. The noteMarkers shape.
+	import { previewSiblings } from '$lib/filePreview';
+	import AudioPlayer from './AudioPlayer.svelte';
 	// 21-F4: scenes as LEVELS — .tpscene items in a Levels folder, saved from here
 	// 21-G9: `currentLevel` is WHERE WE ARE — the header breadcrumb's scene half and
 	// the accent on the open scene's own card.
-	// 21-I4: double-click OPENS a scene — `publishCurrentIfChanged` is the save half of
-	// the unsaved-changes guard (see `openSceneItem`).
+	// 21-I4: double-click OPENS a scene — the unsaved-changes guard it goes through lives
+	// in `$lib/sceneOpenGuard` (see `openSceneItem`).
 	import {
 		saveSceneAsLevel,
 		newLevel,
 		renameOpenLooseScene,
 		travelToLevel,
-		publishCurrentIfChanged,
+		levelSceneName,
 		currentLevel
 	} from '$lib/levels';
-	// 21-I4: 21-G9 already computes "does the open scene differ from the version its name
-	// points at", behind a throttle, because the answer costs a whole-scene
-	// serialization. This READS that flag and never recomputes it.
-	import { sceneDirty, recomputeSceneDirty } from '$lib/sceneIdentity';
-	import { showChoice, showConfirm } from '$lib/confirmDialog';
+	// R22 round 35: opening a scene the session has never seen asks whether to share it or
+	// edit it privately. It answers itself (share) when nobody is connected or the session
+	// already knows the scene, so this costs a solo user nothing.
+	import { askScenePrivacy } from '$lib/scenePrivacy';
+	// 21-G9 already computes "does the open scene differ from the version its name points
+	// at", behind a throttle, because the answer costs a whole-scene serialization. This
+	// READS that flag (the header asterisk) and never recomputes it — the one caller that
+	// must have a CURRENT answer is the guard, and it does its own.
+	import { sceneDirty } from '$lib/sceneIdentity';
+	// R22 round 30 B1: the shared unsaved-changes guard, one copy for every authoring
+	// route that replaces the world.
+	import { guardSceneReplace } from '$lib/sceneOpenGuard';
 	import VersionHistory from './VersionHistory.svelte';
 	// 21-G2: the "update available" dot on old scene versions. The manifest store is
 	// passed as the reactive dependency — a helper reading through get() registers none
@@ -81,8 +111,17 @@
 		purgeDeletedItem,
 		emptyDeletedLog,
 		deletedThumb,
+		// R22 round 13: the bin lists what it can put back; the LOG is the record beside it.
+		// One array, two readings — see partitionDeleted.
+		partitionDeleted,
+		deletedLogEnabled,
 		logLocalDeletion,
-		deleteWithoutConfirm
+		deleteWithoutConfirm,
+		// R22 round 30 C2: the share-new-files ask. A STORE rather than a callback, so the
+		// strip below and the toast in Toasts.svelte read the same standing question — see
+		// `pendingShareAsk` for why the detector cannot know which surface is on screen.
+		pendingShareAsk,
+		resolveShareAsk
 	} from '$lib/sharedLibrary';
 	// R22 round 2: a shared file's PICTURE travels on its own tiny channel, so a card can
 	// show a thumbnail before anybody downloads the bytes (see assetShare).
@@ -94,13 +133,52 @@
 		explorerColumns,
 		explorerSort,
 		explorerDeletedGroup,
+		explorerColumnWidths,
+		explorerColumnOrder,
 		columnsFor,
 		columnVisible,
 		toggleColumn,
 		sortBy,
 		sortEntries,
-		groupByDeleter
+		groupByDeleter,
+		orderColumns,
+		widthOf,
+		setColumnWidth,
+		resetColumnWidth,
+		moveColumn
 	} from '$lib/explorerView';
+	// R22 round 13 P3: MOUNTED PROJECT VOLUMES — other saved projects browsed as roots of
+	// their own, above Library. The namespace ('vol:<id>[:<folderId>]') is threaded through
+	// ONE derived scope below (`volScope`) rather than sprinkled as startsWith checks; the
+	// leaf carries the reasoning, including why none of this can reach the shared index.
+	import {
+		mountedVolumes,
+		loadMountedVolumes,
+		mountVolume,
+		unmountVolume,
+		refreshVolume,
+		revalidateVolumes,
+		saveVolume,
+		volumeOf,
+		volumeKey,
+		volumeFolders,
+		volumeBlob,
+		volumeCreateFolder,
+		volumeRenameFolder,
+		volumeRenameItem,
+		volumeMoveItem,
+		volumeMoveFolder,
+		volumeDeleteItem,
+		volumeDeleteFolder,
+		volumeFolderCounts,
+		volumeAddBytes,
+		volumeUpdateBytes,
+		volumeItems
+	} from '$lib/mountedVolumes';
+	// R22 round 13 P2: the header reading opens a breakdown of it. The leaf owns the
+	// open store, so the chip, this view's background menu and Settings all reach one
+	// action with no component owning the state.
+	import { openStorageModal } from '$lib/storageUsage';
 	import {
 		projectManifest,
 		staleSceneHash,
@@ -148,12 +226,15 @@
 		prefabSnapshot,
 		restorePrefabBytes,
 		savePrefabSelection,
+		addPrefabRecord,
 		exportPrefab
 	} from '$lib/prefabs';
 	// 21-I3: Export ▸ scene (.tpscene) — a scene containing just this prefab. Built from
 	// the EMPTY payload plus this one object, never a capture of the live scene.
-	import { emptySessionPayload, exportSessionZip } from '$lib/sessions';
-	import { selectedObjects, objectsGroup } from '../../stores/sceneStore.js';
+	// R22 round 13 P3: `sessions` is read for the Mount picker (which saved entries are
+	// PROJECTS) and to notice a mounted volume whose source record has been deleted.
+	import { emptySessionPayload, exportSessionZip, sessions, loadSessions } from '$lib/sessions';
+	import { selectedObjects } from '../../stores/sceneStore.js';
 	import { sceneAssets } from '$lib/sceneAssets';
 	import { setNodeData } from '$lib/nodesHandler';
 	import { findNodeAnyGraph } from '../../stores/flowStore';
@@ -223,6 +304,7 @@
 		docked = true;
 	loadExplorer();
 	loadPrefabs();
+	loadMountedVolumes();
 
 	function setDocked(v: boolean) {
 		docked = v;
@@ -355,6 +437,63 @@
 	/** R22-R8: is the Logs pane showing? LOCAL and session-only — it is a debugging
 	 * view, and one that came back on every reload would be clutter. */
 	let logOpen = $state(false);
+
+	/**
+	 * R22 ROUND 20 — IS THE HEADER ROW TOO NARROW FOR EVERYTHING IN IT.
+	 *
+	 * The row has a contract that `explorer-header-panels` pins: it must not overflow, the
+	 * search box keeps its width, and the identity chip is the item that gives way by
+	 * truncating its names. Round 11's view toggle (~52px) pushed it past what the chip has
+	 * left to surrender, so the row overflowed — a control that is right at full width
+	 * silently breaking a narrow one.
+	 *
+	 * The storage reading is what yields: it is the only thing up there answering a
+	 * question nobody asked while working, and it is already conditional on the browser
+	 * implementing `storage.estimate()`, so it has no claim on space the working controls
+	 * need. The filter, the view and the transfers all change or report something you are
+	 * doing.
+	 *
+	 * MEASURED, not a media query: the UNDOCKED window is ~700px wide inside a 1280px
+	 * viewport, so a viewport query cannot see the case it exists for (and the suite checks
+	 * exactly that case). A container query would read the right box, but `container-type`
+	 * brings containment that makes the element a containing block for `position: fixed`
+	 * descendants — the documented transform/backdrop-filter trap by another door, and this
+	 * header hosts popovers.
+	 */
+	// ZERO IS NOT A WIDTH — see FilePreviewWindow's note: a tab group hides its inactive
+	// members with `display: none`, and a hidden header measured 0, which trips every
+	// threshold at once.
+	let headerW = $state(1000);
+	function headerWidth(node: HTMLElement) {
+		const read = () => {
+			const w = node.clientWidth;
+			if (w > 0) headerW = w;
+		};
+		const ro = new ResizeObserver(read);
+		ro.observe(node);
+		read();
+		return { destroy: () => ro.disconnect() };
+	}
+	const headerNarrow = $derived(headerW < 700);
+	/**
+	 * R22 ROUND 25 (user): "same for explorer undocked header if no space (dock button and X
+	 * button should be always visible), you may hide 'Explorer' text keeping only its Lucide
+	 * icon and hide 'search assets…' box, hide project name".
+	 *
+	 * The same ranking the preview window has, and for the same reason: when a row
+	 * overflows, what falls off the end is whatever is LAST in the markup — here the dock
+	 * button and the close. Both are the only way out of the state you are in, so they are
+	 * the two that must never go, and everything else earns its place ahead of them.
+	 *
+	 * The order is the user's and it is the right one. The search box is the biggest single
+	 * item and the least urgent (the grid is right there). The word "Explorer" goes next,
+	 * keeping the icon — a titled window you are already looking at does not need to say its
+	 * own name. The project chip is last to go because it answers "which project am I in",
+	 * which is worth more than the rest of the chrome.
+	 */
+	const hideSearch = $derived(headerW < 520);
+	const hideLabel = $derived(headerW < 420);
+	const hideIdentity = $derived(headerW < 340);
 	const filtering = $derived(kindFilter.size > 0 || localOnly);
 
 	/** R22-R2: the share state of a card, and the ONE place the vocabulary is read. A
@@ -375,6 +514,11 @@
 	function passesFilter(item: any) {
 		if (kindFilter.size && !kindFilter.has(item.kind)) return false;
 		if (localOnly) {
+			// R22 round 13 P3: a mounted file is local BY CONSTRUCTION — it is a file on this
+			// machine that no peer can reach, which is exactly what this filter asks for. It
+			// takes the early yes because the share axis below reads a library record it has
+			// none of (isOwnedItem excludes it, so the next line would empty every mount).
+			if (item.volumeItem) return true;
 			// a card with no library record of its own has no share state to be wrong about,
 			// and a REMOTE row is by definition not local — both are out
 			if (!isOwnedItem(item)) return false;
@@ -499,6 +643,19 @@
 		return 'Local — only on this device';
 	}
 	let dropActive = $state(false);
+	/**
+	 * R22 round 11: a library drag is IN FLIGHT. The Deleted row hides itself while the bin
+	 * is empty (round 7 — a destructive place should not be permanently on screen), which
+	 * would make the very first drag onto it impossible; so it unhides for the duration of
+	 * a drag and goes back to hiding afterwards.
+	 *
+	 * Cleared from `dragend` on WINDOW rather than from five `ondragend` attributes: the
+	 * event fires on the source element and bubbles, and a drag that ends anywhere — over
+	 * the viewport, off the window, cancelled with Esc — has to clear it.
+	 */
+	let libraryDragging = $state(false);
+	/** ...and the Deleted row is under the pointer right now */
+	let binDropActive = $state(false);
 	// R22 round 10: where the drop band goes — the scroller's own offset and visible
 	// height, re-read on every dragover so a drag that also scrolls stays correct
 	let dropBandTop = $state(4);
@@ -508,7 +665,7 @@
 		dropBandTop = (gridEl?.scrollTop ?? 0) + 4;
 		dropBandH = Math.max(0, (gridEl?.clientHeight ?? 0) - 8);
 	}
-	let menu: any = $state(null); // {x, y, items}
+	let menu: any = $state(null); // {x, y, items, maxHeight?}
 	/** highlighted drop target while dragging: folder id | 'root' | null (106.4) */
 	let dropFolder: string | 'root' | null = $state(null);
 	/** inline editor (106.1/2): {mode:'create'|'rename', parentId, folderId?, value} */
@@ -757,6 +914,48 @@
 		scene: 'ico-prefab' // 21-F4: levels share the prefab tint
 	};
 
+	// ---- R22 round 13 P3: WHERE AM I, when it is not the library ----------------------
+	/**
+	 * THE MOUNT SCOPE, and the only `vol:` test in this component. Declared ABOVE every
+	 * derived that reads it — a `$derived` referenced by an earlier one is a
+	 * use-before-declaration (the same family as the module-level TDZ trap), which is the
+	 * rule `listView` states for itself further down.
+	 *
+	 * Threading one scope rather than sprinkling `startsWith('vol:')` is what keeps the
+	 * eleven read paths that must learn the namespace honest: each asks "am I in a mount,
+	 * and which folder of it", and the parse lives in the leaf where it is testable.
+	 */
+	const volScope = $derived(volumeOf($activeFolder));
+	/** the mounted volume RECORD for the current scope, or null. Reads the store directly
+	 *  so the grid re-renders on a buffered edit — `volumeById` reaches it through get(),
+	 *  which registers no dependency (the documented rule). */
+	const volume = $derived(
+		volScope ? ($mountedVolumes.find((v: any) => v.id === volScope.volumeId) ?? null) : null
+	);
+	/** a volume folder as a GRID/TREE row. Its `id` is the namespaced key, not the bare
+	 *  folder uuid, for a reason that bites immediately: a project saved from THIS machine
+	 *  carries the library's own folder uuids verbatim, so a bare id would make one drag
+	 *  highlight two rows and one selection ambiguous. The raw id rides as `folderId`. */
+	const volFolderRow = (vol: any, f: any): any => ({
+		id: volumeKey(vol.id, f.id),
+		volumeId: vol.id,
+		folderId: f.id,
+		name: f.name,
+		parentId: f.parentId ?? null
+	});
+	/** the kind filter, applied to a volume's own subtree (the library's `folderPassesFilter`
+	 *  walks `explorerItems`, which holds nothing of a mount). The share axis has no meaning
+	 *  here — a mount is local by construction — so `localOnly` never hides a mounted row. */
+	function volFolderPasses(vol: any, folder: any) {
+		if (!kindFilter.size) return true;
+		const subtree = [folder.folderId];
+		for (let i = 0; i < subtree.length; i++)
+			for (const f of vol.folders) if (f.parentId === subtree[i]) subtree.push(f.id);
+		return vol.items.some(
+			(i: any) => subtree.includes(i.folderId ?? '') && kindFilter.has(i.kind)
+		);
+	}
+
 	// folders as a flat indented tree, respecting expansion (106.6)
 	const folderTree = $derived.by(() => {
 		const list = $explorerFolders;
@@ -772,14 +971,37 @@
 		return out;
 	});
 
-	const childFolders = $derived(
-		$explorerFolders
+	const childFolders = $derived.by((): any[] => {
+		// P3: inside a mount the subfolders come from the VOLUME, and nothing about the
+		// library is read at all
+		if (volScope)
+			return volume
+				? volume.folders
+						.filter((f: any) => (f.parentId ?? null) === volScope.folderId)
+						.map((f: any) => volFolderRow(volume, f))
+						.filter((f: any) => volFolderPasses(volume, f))
+				: [];
+		return $explorerFolders
 			.filter((f) => (f.parentId ?? null) === ($activeFolder === 'prefabs' ? '__none__' : ($activeFolder ?? null)))
 			// R22-R8: the Local-only filter reaches FOLDERS too, not just their contents
-			.filter(folderPassesFilter)
-	);
+			.filter(folderPassesFilter);
+	});
 
 	const gridItems = $derived.by(() => {
+		// P3: A MOUNTED PROJECT'S FILES. First branch, and deliberately the whole of it —
+		// none of the five library sources below (items, prefabs, packs, the manifest's
+		// missing scenes, the shared index's remote rows) means anything inside a mount, and
+		// mixing any of them in would put a card from THIS project into a view of another.
+		if (volScope) {
+			if (!volume) return [];
+			const q = search.trim().toLowerCase();
+			const rows = q
+				? volume.items.filter((i: any) => i.name.toLowerCase().includes(q))
+				: volume.items.filter((i: any) => (i.folderId ?? null) === volScope.folderId);
+			return rows
+				.map((i: any) => ({ ...i, volumeId: volume.id, volumeName: volume.name, volumeItem: true }))
+				.filter(passesFilter);
+		}
 		if ($activeFolder === 'prefabs')
 			return $prefabs.map((p) => ({
 				id: 'prefab:' + p.id,
@@ -806,7 +1028,7 @@
 		// the Scene manifest (108): a derived, always-shared view — never editable
 		// R22 round 4: THE RECYCLE BIN, a derived view like the Scene manifest — the log is
 		// the truth and these cards are a reading of it, so there is no CRUD to keep in step.
-		if ($activeFolder === 'deleted') {
+		if ($activeFolder === 'deleted' || $activeFolder === 'deletedlog') {
 			// R22 round 9, THE REPORTED BUG ("Delete permanently does not remove the file").
 			// The purge always worked — it freed the blob and dropped the record — but this
 			// branch asked `canRestoreDeleted`, which reaches the two shelves through `get()`,
@@ -815,8 +1037,13 @@
 			// the log alone — so the card and its menu stayed byte-identical, still offering a
 			// Restore that could no longer work. Nothing observable changed, which is exactly
 			// what "it does not remove the file" describes. Read the shelves HERE instead.
+			// R22 round 13 — THE SECOND HALF OF THE SAME REPORT. Round 9 made the purge
+			// OBSERVABLE (the row dimmed, the menu stopped offering a Restore that could not
+			// work); the user's answer was that a bin should not go on listing a file it cannot
+			// put back at all. So the bin is the rows whose bytes are HERE, and everything that
+			// outlived its bytes belongs to the log beside it — same array, two readings.
 			const heldBytes = new Set([...$explorerItems, ...$hiddenItems].map((i) => i.hash));
-			return deletedLog($projectManifest).map((r: any) => ({
+			const cards = deletedLog($projectManifest).map((r: any) => ({
 				id: 'deleted:' + r.hash,
 				name: r.name,
 				kind: r.kind || 'text',
@@ -831,6 +1058,10 @@
 				deletedEntry: true,
 				restorable: heldBytes.has(r.hash)
 			}));
+			// the LOG is the whole record, newest first — a deletion whose bytes are still here
+			// is a deletion that happened, and hiding it would make the log disagree with the
+			// count on its own row. The BIN is the half it can act on.
+			return $activeFolder === 'deletedlog' ? cards : partitionDeleted(cards, heldBytes).bin;
 		}
 		if (typeof $activeFolder === 'string' && $activeFolder.startsWith('scene')) {
 			const group = $activeFolder.split(':')[1] ?? null;
@@ -942,6 +1173,16 @@
 	 * away — and `activeFolder.set` notifies even when the id is unchanged, so the
 	 * already-here case needs the same wait.
 	 */
+	/** Save the open scene under the name it already has - the same act Ctrl+S performs
+	 * and the same two arguments `sceneOpenGuard` passes when it saves before opening
+	 * something else. Only reachable while `$sceneDirty`, so there is no clean branch
+	 * here: the button is disabled instead, which is also what greys it. */
+	async function saveOpenScene() {
+		const name = $currentLevel?.name;
+		if (!name) return;
+		const saved = await saveSceneAsLevel(name, activeLibraryFolder());
+		showToast(saved ? 'Saved "' + name + '"' : 'Could not save "' + name + '"');
+	}
 	async function revealOpenScene() {
 		const hash = openSceneHash;
 		if (!hash) return;
@@ -996,18 +1237,50 @@
 	function activeLibraryFolder(): string | null {
 		const a = $activeFolder;
 		if (typeof a !== 'string' || !a) return null;
+		// R22 round 13: the two DELETED views belong here as well. They were missing, which
+		// was only unreachable rather than harmless — neither view offers Save scene, so
+		// nothing could ask; a scene written with folderId 'deleted' would be an orphan.
+		if (a === 'deleted' || a === 'deletedlog') return null;
 		if (a === 'prefabs' || a === 'packs' || a.startsWith('pack:') || a.startsWith('scene')) return null;
+		// P3: a MOUNT is not a place in this library either — a scene saved while browsing
+		// one must not be written with a folderId no library folder holds (which is an
+		// orphan: invisible, and in the Scenes folder's case unreachable)
+		if (volumeOf(a)) return null;
 		return a;
 	}
 
 	// 197d: breadcrumb trail for the current location (click a crumb to navigate)
 	const crumbs = $derived.by(() => {
 		const a = $activeFolder;
+		// P3: a mount's trail starts at the mount, never at "Library" — that is precisely
+		// where these files are not (the bin's own lesson, one root over)
+		if (volScope) {
+			const out = [
+				{ label: volume?.name ?? 'Mounted project', id: volumeKey(volScope.volumeId) as string | null }
+			];
+			const rows = volume?.folders ?? [];
+			const chain: any[] = [];
+			let cur: any = rows.find((f: any) => f.id === volScope.folderId);
+			while (cur) {
+				chain.unshift(cur);
+				cur = cur.parentId ? rows.find((f: any) => f.id === cur.parentId) : undefined;
+			}
+			for (const f of chain) out.push({ label: f.name, id: volumeKey(volScope.volumeId, f.id) });
+			return out;
+		}
 		if (a === 'prefabs') return [{ label: 'Prefabs', id: 'prefabs' as string | null }];
 		if (a === 'packs') return [{ label: 'Packs', id: 'packs' as string | null }];
 		// R22 round 7: the bin is its own place, so the breadcrumb has to say so — it read
 		// "Library", which is exactly where these files are not
 		if (a === 'deleted') return [{ label: 'Deleted', id: 'deleted' as string | null }];
+			// ...and round 13 makes the log a place INSIDE it rather than a second root beside
+		// it, which a trail can say for free: "Deleted / Log", with the first crumb walking
+		// back to the bin.
+		if (a === 'deletedlog')
+			return [
+				{ label: 'Deleted', id: 'deleted' as string | null },
+				{ label: 'Log', id: 'deletedlog' as string | null }
+			];
 		if (typeof a === 'string' && a.startsWith('pack:')) {
 			const p = packByName(a.slice(5));
 			return [
@@ -1040,6 +1313,19 @@
 	const itemFolderPath = $derived.by(() => {
 		if (!selItem) return '';
 		const parts: string[] = [];
+		// P3: a mounted file's path is inside its own project, and saying "Library" would
+		// name the one place it is not
+		if (selItem.volumeItem) {
+			const rows = volumeFolders(selItem.volumeId);
+			let at: any = selItem.folderId ?? null;
+			while (at) {
+				const f = rows.find((x: any) => x.id === at);
+				if (!f) break;
+				parts.unshift(f.name);
+				at = f.parentId ?? null;
+			}
+			return (selItem.volumeName ?? 'Mounted project') + (parts.length ? ' / ' + parts.join(' / ') : '');
+		}
 		let parent: any = selItem.folderId ?? null;
 		while (parent) {
 			const f = $explorerFolders.find((x: any) => x.id === parent);
@@ -1095,7 +1381,16 @@
 	 * reads it: a `$derived` referenced by an earlier one is a use-before-declaration, the
 	 * same family as the module-level TDZ trap one scope out.
 	 */
-	const listView = $derived($activeFolder === 'deleted' ? 'deleted' : 'library');
+	/**
+	 * R22 round 13: THE LOG SHARES THE BIN'S VIEW KEY, deliberately. Its columns are the
+	 * same four — name, type, deleted by, deleted at — because a log row and a bin row
+	 * ARE the same row read twice; a third key would need a default in four per-view
+	 * stores (visible set, sort, widths, order) to produce an identical header, and would
+	 * then make a width dragged in one view mean nothing in the other.
+	 */
+	const listView = $derived(
+		$activeFolder === 'deleted' || $activeFolder === 'deletedlog' ? 'deleted' : 'library'
+	);
 	/** a date a column can hold: short, sortable-looking, and locale-correct */
 	function fmtDate(t: number) {
 		if (!t) return '—';
@@ -1113,7 +1408,7 @@
 		const item = row.item;
 		switch (key) {
 			case 'kind':
-				return String(item?.kind ?? '—');
+				return kindLabel(item);
 			case 'size':
 				// a row we do not hold has no size to report, and a zero would read as an empty
 				// file rather than as an unknown one
@@ -1136,10 +1431,124 @@
 				return String(item?.name ?? '');
 		}
 	}
-	/** the columns actually drawn, in their canonical order */
+	/**
+	 * R22 round 12 (user): "kind prefab should show in brackets filetype (.tpscene/.glb
+	 * etc)". Round 11 gave a prefab a FORMAT, so "prefab" alone stopped being the whole
+	 * answer — two cards reading `prefab` can now be a three.js snapshot and a .glb, which
+	 * behave differently when you drag them to the Library or download them.
+	 *
+	 * A snapshot prefab reads plain `prefab`, with no invented extension: it is not a file,
+	 * which is exactly what `prefabToLibrary` refuses on.
+	 * @param {any} item @returns {string}
+	 */
+	function kindLabel(item: any): string {
+		const kind = String(item?.kind ?? '—');
+		if (kind !== 'prefab') return kind;
+		const prefab = item.prefabId ? prefabById(item.prefabId) : null;
+		const format = prefab ? prefabFormatOf(prefab) : 'snapshot';
+		return format === 'snapshot' ? kind : kind + ' (.' + format + ')';
+	}
+
+	/**
+	 * The columns actually drawn — the user's order, filtered to the visible set. The
+	 * canonical declaration order is the FALLBACK now rather than the rule; see
+	 * `orderColumns`, which also pins NAME first.
+	 */
 	const shownColumns = $derived(
-		columnsFor(listView).filter((c: any) => columnVisible(listView, c.key, $explorerColumns))
+		orderColumns(columnsFor(listView), $explorerColumnOrder[listView]).filter((c: any) =>
+			columnVisible(listView, c.key, $explorerColumns)
+		)
 	);
+	/** each drawn column's width in px, in the same order */
+	const columnPx = $derived(shownColumns.map((c: any) => widthOf(c, $explorerColumnWidths[listView])));
+	/**
+	 * The table's own width. `table-layout: fixed` distributes any SURPLUS across the
+	 * columns that declare a width, which would silently undo every drag — so the table is
+	 * exactly as wide as its columns and a trailing SPACER cell absorbs the remainder.
+	 * When the total exceeds the pane, this `min-width` is what makes `.ex-list` overflow,
+	 * which is the reported "when no space for columns horizontal bar appears". The PAGE
+	 * never scrolls sideways — the scroller is the table's own container.
+	 */
+	const tableMinPx = $derived(columnPx.reduce((sum: number, w: number) => sum + w, 0));
+
+	// ---- R22 round 11: RESIZE ---------------------------------------------------------
+	/** the grip owns the gesture through a pointer CAPTURE, so no window listeners */
+	let colResize = $state<{ key: string; x0: number; w0: number } | null>(null);
+	function colResizeStart(e: PointerEvent, col: any, px: number) {
+		if (e.button !== 0) return;
+		// the grip sits inside the header BUTTON's cell; without this the same press would
+		// also arm a reorder, and the column would follow the pointer as it was resized
+		e.preventDefault();
+		e.stopPropagation();
+		(e.currentTarget as HTMLElement).setPointerCapture?.(e.pointerId);
+		colResize = { key: col.key, x0: e.clientX, w0: px };
+	}
+	function colResizeMove(e: PointerEvent) {
+		if (!colResize) return;
+		setColumnWidth(listView, colResize.key, colResize.w0 + (e.clientX - colResize.x0));
+	}
+	function colResizeEnd(e: PointerEvent) {
+		if (!colResize) return;
+		(e.currentTarget as HTMLElement).releasePointerCapture?.(e.pointerId);
+		colResize = null;
+	}
+
+	// ---- R22 round 11: REORDER --------------------------------------------------------
+	/**
+	 * A press on a header means SORT; a press that TRAVELS means reorder. That is this
+	 * app's rule wherever one control carries two gestures (the mesh and UV editors both
+	 * say it: a press that does not travel keeps the old meaning), and it is why this is a
+	 * pointer gesture rather than HTML5 drag-and-drop — the Explorer already uses HTML5
+	 * DnD for cards, and a header dragstart would look like one to every drop target.
+	 */
+	let colDrag = $state<{ key: string; x: number; over: number; moved: boolean } | null>(null);
+	/** the click that ENDS a reorder must not also sort (the marquee's hazard 3, verbatim) */
+	let colDragSuppressClick = false;
+	function colDragStart(e: PointerEvent, col: any) {
+		if (e.button !== 0 || col.always) return; // NAME is pinned — see orderColumns
+		colDrag = { key: col.key, x: e.clientX, over: -1, moved: false };
+		window.addEventListener('pointermove', colDragMove);
+		window.addEventListener('pointerup', colDragEnd);
+		window.addEventListener('pointercancel', colDragEnd);
+	}
+	function colDragMove(e: PointerEvent) {
+		if (!colDrag) return;
+		if (Math.abs(e.clientX - colDrag.x) > 4) colDrag = { ...colDrag, moved: true };
+		if (!colDrag.moved) return;
+		// which header cell is the pointer over? read the LIVE rects rather than the stored
+		// widths — a resize during the same session would put the two out of step
+		const heads = [...document.querySelectorAll('#explorer-list-head .ex-th[data-col]')];
+		let over = -1;
+		heads.forEach((el, i) => {
+			const box = el.getBoundingClientRect();
+			if (e.clientX >= box.left && e.clientX <= box.right) over = i;
+		});
+		colDrag = { ...colDrag, over };
+	}
+	function colDragEnd() {
+		window.removeEventListener('pointermove', colDragMove);
+		window.removeEventListener('pointerup', colDragEnd);
+		window.removeEventListener('pointercancel', colDragEnd);
+		const drag = colDrag;
+		colDrag = null;
+		if (!drag?.moved) return;
+		colDragSuppressClick = true;
+		if (drag.over >= 0)
+			moveColumn(
+				listView,
+				shownColumns.map((c: any) => c.key),
+				drag.key,
+				drag.over
+			);
+	}
+	/** the header's click, once the reorder has had its say */
+	function colHeaderClick(key: string) {
+		if (colDragSuppressClick) {
+			colDragSuppressClick = false;
+			return;
+		}
+		sortBy(listView, key);
+	}
 	/**
 	 * Right-click the header: which columns show. One entry per column with a checkmark,
 	 * the `checked` item style the Grid/Snapping menus established — and NAME is offered
@@ -1148,23 +1557,45 @@
 	function columnMenu(e: MouseEvent) {
 		e.preventDefault();
 		e.stopPropagation();
+		const custom =
+			Object.keys($explorerColumnWidths[listView] ?? {}).length > 0 ||
+			($explorerColumnOrder[listView] ?? []).length > 0;
 		menu = {
 			x: e.clientX,
 			y: e.clientY,
-			items: columnsFor(listView).map((c: any) =>
-				c.always
-					? {
-							label: c.label,
-							checked: true,
-							tooltip: 'A row has to be identifiable — this column cannot be hidden',
-							action: () => {}
-						}
-					: {
-							label: c.label,
-							checked: columnVisible(listView, c.key, $explorerColumns),
-							action: () => toggleColumn(listView, c.key)
-						}
-			)
+			items: [
+				...columnsFor(listView).map((c: any) =>
+					c.always
+						? {
+								label: c.label,
+								checked: true,
+								tooltip: 'A row has to be identifiable — this column cannot be hidden',
+								action: () => {}
+							}
+						: {
+								label: c.label,
+								checked: columnVisible(listView, c.key, $explorerColumns),
+								action: () => toggleColumn(listView, c.key)
+							}
+				),
+				// R22 round 11: the way back. A width dragged to 48px and an order shuffled by
+				// accident are both easy to reach and, without this, impossible to undo except
+				// by dragging every column back one at a time. Offered only when there IS
+				// something to reset, so an untouched header does not carry a dead row.
+				...(custom
+					? [
+							{ section: 'Layout' },
+							{
+								label: 'Reset widths and order',
+								tooltip: 'Back to the default column layout for this view',
+								action: () => {
+									explorerColumnWidths.update((all) => ({ ...all, [listView]: {} }));
+									explorerColumnOrder.update((all) => ({ ...all, [listView]: [] }));
+								}
+							}
+						]
+					: [])
+			]
 		};
 	}
 	/**
@@ -1241,6 +1672,80 @@
 		const sort = $explorerSort[listView] ?? { key: 'name', dir: 1 };
 		return sortEntries(rows, sort, { ownerLabel }).map((r: any) => r.entry);
 	});
+	/**
+	 * R22 round 11 — WHAT THE PREVIEW WINDOW'S ARROWS WALK.
+	 *
+	 * `gridEntries` is the one array the grid is built from, so publishing it is publishing
+	 * exactly what the user can see, in the order they can see it — including the sort, the
+	 * kind filter and the search box. `untrack` on the write keeps this a one-way tap: the
+	 * store is not read here, and an effect that both reads and writes a store is how a
+	 * flush loop starts.
+	 */
+	$effect(() => {
+		const entries = gridEntries;
+		const folderId = $activeFolder;
+		const parentId =
+			typeof folderId === 'string' && !folderId.includes(':')
+				? ($explorerFolders.find((f: any) => f.id === folderId)?.parentId ?? null)
+				: null;
+		untrack(() => previewSiblings.set({ folderId, parentId, entries }));
+	});
+
+	/**
+	 * R22 round 13: THE TWO COUNTS THE ROOTS SHOW. The bin counts what it can put back,
+	 * the log counts the whole record — so "Deleted (2) / Deleted log (5)" says at a
+	 * glance what the old single dimmed list never did.
+	 *
+	 * The held set is read from the STORES here, not through `canRestoreDeleted`: a helper
+	 * that reaches them with `get()` registers no dependency, so these would never re-run
+	 * on a purge (round 9's bug, verbatim).
+	 */
+	const deletedRows = $derived(deletedLog($projectManifest));
+	const deletedHeld = $derived(new Set([...$explorerItems, ...$hiddenItems].map((i: any) => i.hash)));
+	const binCount = $derived(partitionDeleted(deletedRows, deletedHeld).bin.length);
+	const logCount = $derived(deletedRows.length);
+	/**
+	 * R22 round 13 (user): "'Deleted log' button should be somewhere within 'Deleted' ...
+	 * having it in two different elements within tree style left section could be confusing
+	 * for users, as technically it belongs to the same".
+	 *
+	 * Right: they are ONE PLACE read two ways - `partitionDeleted` splits one array, and
+	 * two sibling tree roots claimed two places for it. So the tree keeps ONE root and the
+	 * split moves INSIDE, onto a segmented control at the top of the view (`#explorer-bin-tabs`).
+	 *
+	 * `deletedlog` STAYS A NAVIGABLE FOLDER ID rather than becoming a view flag. It is
+	 * somewhere you can be standing, be returned to (`placeStillThere` after a cancelled
+	 * unmount) and be deep-linked into, and a flag is none of those - only the way IN
+	 * changed. The whole point of round 13's pinned-roots guard is that this list grows.
+	 *
+	 * THE ROOT'S COUNT IS NOW THE SIZE OF THE PLACE, not of the bin. With the log on, the
+	 * place holds every recorded deletion; with it off, the place is the bin and nothing
+	 * else. The old "Deleted (2) / Deleted log (5)" glance moves one click in, onto the tabs
+	 * that carry both numbers - and the alternative was worse, because
+	 * `emptyRecycleBinOnLoad` empties the bin on most starts, so a root labelled with the
+	 * BIN count would read "Deleted (0)" over a record of five and nobody would open it.
+	 */
+	const deletedRootCount = $derived($deletedLogEnabled ? logCount : binCount);
+	/**
+	 * ...which is also why the root's VISIBILITY follows that number and not `binCount`.
+	 * Hiding it on an empty bin used to be safe because the log had a root of its own; with
+	 * one root it would take the record away on every start that auto-empties the bin.
+	 * (Still shown during a drag: a row you cannot see is a row you cannot drop on.)
+	 */
+	const showDeletedRoot = $derived(deletedRootCount > 0 || libraryDragging);
+	/** the log half of the tabs is a PREFERENCE, so it disables with the reason rather than
+	 * vanishing - the Watch-and-say-why convention. An empty record is still a real view
+	 * ("nothing has been deleted yet"), so emptiness does not disable it. */
+	const logAvailable = $derived($deletedLogEnabled);
+	const inDeletedView = $derived($activeFolder === 'deleted' || $activeFolder === 'deletedlog');
+	/**
+	 * ...and you cannot be left standing in a view the tabs say is switched off. One-way and
+	 * narrow on purpose: the log going off sends you to the bin, and nothing sends you back.
+	 */
+	$effect(() => {
+		if (!$deletedLogEnabled && $activeFolder === 'deletedlog') untrack(() => openFolder('deleted'));
+	});
+
 	/**
 	 * The bin, grouped by whoever deleted each row. Rendered as collapsible SECTIONS
 	 * rather than navigable folders: a bin is read by comparing (who threw what away),
@@ -1387,7 +1892,15 @@
 	function goUp() {
 		const a = $activeFolder;
 		if (a == null) return;
+		// P3: up out of a mount's subfolder walks the VOLUME's tree; up from its root leaves
+		// for the Library, which is what every other pinned root here does
+		if (volScope) {
+			if (!volScope.folderId) return openFolder(null);
+			const f = volumeFolders(volScope.volumeId).find((x: any) => x.id === volScope.folderId);
+			return openFolder(volumeKey(volScope.volumeId, f?.parentId ?? null));
+		}
 		if (typeof a === 'string' && a.startsWith('pack:')) return openFolder('packs'); // P4
+		if (a === 'deleted' || a === 'deletedlog') return openFolder(null);
 		if (a === 'prefabs' || a === 'packs' || (typeof a === 'string' && a.startsWith('scene')))
 			return openFolder(null);
 		const f = $explorerFolders.find((x: any) => x.id === a);
@@ -1447,6 +1960,23 @@
 		if (editing) void commitEdit();
 	}
 	function startCreate(parentId: string | null, inGrid = false) {
+		// P3b: inside a mount this is a BUFFERED create. The 'vol:…' key is converted to the
+		// volume's own ids HERE, at the one entry point, because everything downstream —
+		// the edit row's match, commitEdit, the mutator — wants the raw pair. Letting the
+		// key through instead is what would write a library folder parented to a 'vol:…'
+		// id: an orphan, drawn nowhere and reachable by nothing.
+		const inVol = volumeOf(parentId) ?? (parentId === null ? volScope : null);
+		if (inVol) {
+			settlePendingEdit();
+			editing = {
+				mode: 'create',
+				volumeId: inVol.volumeId,
+				parentId: inVol.folderId,
+				value: 'New folder',
+				inGrid
+			};
+			return;
+		}
 		// R22 round 7 (user): pressing New folder again must not COMMIT the pending one and
 		// open another — that is how you end up with "New folder", "New folder (2)"… from
 		// a double-press. An edit already open for the same place is the same intent, so
@@ -1471,12 +2001,28 @@
 	// (it shows in both), whose duplicate focus/blur would tear the edit down instantly
 	function startRename(folder: any, inGrid = false) {
 		settlePendingEdit();
-		editing = { mode: 'rename', folderId: folder.id, parentId: folder.parentId ?? null, value: folder.name, inGrid };
+		// P3b: a volume folder's CARD id is its namespaced key while its own id is the raw
+		// uuid, and the two markup sites that host this input match on the card. `cardId`
+		// carries that; for a library folder the two are the same value, so nothing moves.
+		editing = {
+			mode: 'rename',
+			folderId: folder.volumeId ? folder.folderId : folder.id,
+			cardId: folder.id,
+			...(folder.volumeId ? { volumeId: folder.volumeId } : {}),
+			parentId: folder.parentId ?? null,
+			value: folder.name,
+			inGrid
+		};
 	}
 	// 170: inline item rename (replaces the browser prompt), works in either view
 	function startRenameItem(item: any) {
 		settlePendingEdit();
-		editing = { mode: 'rename-item', itemId: item.id, value: item.name };
+		editing = {
+			mode: 'rename-item',
+			itemId: item.id,
+			...(item.volumeId ? { volumeId: item.volumeId } : {}),
+			value: item.name
+		};
 	}
 	// 21-H2: a PREFAB renames through the SAME inline editor — never window.prompt(),
 	// which is what the deleted Library modal used (fork 14's rule, one surface over).
@@ -1497,9 +2043,20 @@
 	// that no theme reaches, that blocks the page while it is up, and whose Escape is
 	// the browser's rather than ours. It always shows in the GRID: both entries live on
 	// the grid background's menu, and the tree has no row to hang a scene name on.
-	function startSceneName(mode: 'save-scene' | 'new-scene') {
+	// R22 round 33: `consent` rides through to `saveSceneAsLevel` — absent (undefined) is
+	// the ordinary save and stays byte-identical; only the connect decision passes false.
+	function startSceneName(mode: 'save-scene' | 'new-scene', consent?: boolean) {
 		settlePendingEdit();
-		editing = { mode, value: mode === 'save-scene' ? 'Scene' : 'New scene', inGrid: true };
+		editing = { mode, value: mode === 'save-scene' ? 'Scene' : 'New scene', inGrid: true, consent };
+	}
+	/**
+	 * R22 round 11 (user): "for packs add right click create pack, so I can set name and
+	 * create items there". The name is typed INLINE, in the grid, like every other thing
+	 * this app makes — never a browser prompt (the no-prompt rename convention).
+	 */
+	function startPackName() {
+		settlePendingEdit();
+		editing = { mode: 'new-pack', value: 'My pack', inGrid: true };
 	}
 	// 21-H1 (locked answer 7): CLICKING AWAY COMMITS. Every inline name in this panel —
 	// scene save/new, folder create, item/folder/pack rename, and the project name —
@@ -1528,6 +2085,15 @@
 		// an in-flight save is one blur away from committing the same name twice
 		const edit = editing;
 		editing = null;
+		// P3b: every buffered edit lands in ONE branch, ahead of the library's own — the
+		// mutators are different functions writing a different store, and nothing below
+		// this line would address a volume correctly.
+		if (edit.volumeId) {
+			if (edit.mode === 'create') volumeCreateFolder(edit.volumeId, edit.value, edit.parentId);
+			else if (edit.mode === 'rename') volumeRenameFolder(edit.volumeId, edit.folderId, edit.value);
+			else if (edit.mode === 'rename-item') volumeRenameItem(edit.volumeId, edit.itemId, edit.value);
+			return;
+		}
 		if (edit.mode === 'create') createFolder(edit.value, edit.parentId);
 		else if (edit.mode === 'rename-item') {
 			renameItem(edit.itemId, edit.value);
@@ -1541,8 +2107,13 @@
 		else if (edit.mode === 'rename-pack') renamePack(edit.packName, edit.value);
 		// 21-G9 (union): land the scene where the user is looking — Scenes when the
 		// active folder is a pseudo view or a stale id
-		else if (edit.mode === 'save-scene') await saveSceneAsLevel(edit.value, activeLibraryFolder());
+		else if (edit.mode === 'save-scene') await saveSceneAsLevel(edit.value, activeLibraryFolder(), { consent: edit.consent });
 		else if (edit.mode === 'new-scene') await newLevel(edit.value, activeLibraryFolder());
+		else if (edit.mode === 'new-pack') {
+			const pack = createPack(edit.value);
+			openFolder('pack:' + pack.name);
+			showToast('Pack created: ' + pack.title + ' — drag files here to fill it');
+		}
 		else renameFolder(edit.folderId, edit.value);
 	}
 	function editKeydown(e: KeyboardEvent) {
@@ -1566,7 +2137,40 @@
 		explorerSceneSaveArm.set(null);
 		untrack(() => {
 			openFolder(arm.folderId);
-			startSceneName('save-scene');
+			startSceneName('save-scene', arm.consent);
+		});
+	});
+
+	// R22 round 32: the same write-once shape for "show me this scene's versions". The
+	// divergence dialog knows a scene NAME and the hash that won; only this panel can turn
+	// that into a selected card with its Version history open.
+	//
+	// The hash is a PREFERENCE, not a requirement: the winning version can easily be the
+	// one this machine has not pulled yet, and the history panel is keyed by the scene, so
+	// any held version of it opens the same list. Falling back down the manifest line
+	// (newest held first) is what makes the button land rather than explain itself.
+	$effect(() => {
+		const arm = $explorerRevealArm;
+		if (!arm) return;
+		explorerRevealArm.set(null);
+		untrack(() => {
+			const entry: any = sceneEntry(arm.name);
+			const line: string[] = [...(entry?.history ?? [])].reverse();
+			const wanted = [arm.hash, ...line].filter(Boolean);
+			let item: any = null;
+			for (const hash of wanted) {
+				item = itemByHash(hash);
+				if (item) break;
+			}
+			if (!item) {
+				// nothing to select: the scene is in the project document but its bytes are on
+				// somebody else's disk. Say where they are rather than opening an empty panel.
+				showToast(
+					`No copy of "${arm.name}" here yet — its versions are on a peer. Use "Open here (downloads it)" on its card to fetch one.`
+				);
+				return;
+			}
+			showProperties({ kind: 'item', item });
 		});
 	});
 
@@ -1577,6 +2181,7 @@
 		editing &&
 			(editing.mode === 'save-scene' ||
 				editing.mode === 'new-scene' ||
+				editing.mode === 'new-pack' ||
 				(editing.mode === 'create' && editing.inGrid))
 			? (editing.mode as string)
 			: null
@@ -1626,15 +2231,552 @@
 		localStorage.setItem('explorerRootsH', String(rootsH));
 	}
 
+	// ---- R22 round 13 P3: THE MOUNTS SECTION -----------------------------------------
+	/**
+	 * A volume's folder tree, flat and indented, reusing the LIBRARY tree's own expansion
+	 * set — a volume folder's expansion key is its namespaced `volumeKey`, so it persists
+	 * to localStorage with everything else and no second store had to be invented.
+	 */
+	function mountTree(vol: any) {
+		const out: { folder: any; depth: number; hasChildren: boolean }[] = [];
+		const walk = (parentId: string | null, depth: number) => {
+			for (const f of vol.folders.filter((x: any) => (x.parentId ?? null) === parentId)) {
+				const row = volFolderRow(vol, f);
+				out.push({ folder: row, depth, hasChildren: vol.folders.some((c: any) => c.parentId === f.id) });
+				if (expanded.has(row.id)) walk(f.id, depth + 1);
+			}
+		};
+		walk(null, 0);
+		return out;
+	}
+	/**
+	 * WHICH SAVED ENTRIES CAN BE MOUNTED: the ones carrying a library, which is what makes
+	 * an entry a PROJECT (`meta.hasLibrary` — derived, so every session ever saved answers
+	 * correctly). A scene has no files to browse, and offering one would produce an empty
+	 * root with no way to say why.
+	 *
+	 * `loadSessions` first: the store is filled by the Sessions manager, which the user may
+	 * never have opened this session, and a picker that is empty for that reason reads as
+	 * "you have no projects".
+	 */
+	async function openMountPicker(e: MouseEvent) {
+		const el = e.currentTarget as HTMLElement;
+		await loadSessions();
+		const box = el?.getBoundingClientRect();
+		const projects = ($sessions ?? []).filter((m: any) => m.hasLibrary);
+		const mountedIds = new Set($mountedVolumes.map((v: any) => v.sessionId));
+		menu = {
+			x: box ? box.right : e.clientX,
+			y: box ? box.bottom : e.clientY,
+			/**
+			 * R22 round 13 (user): "'mount project...' context when there are too many
+			 * items, should not expand on the entire browser window, make size reasonable
+			 * and we already have scrollbar in case there are many items".
+			 *
+			 * This list is one row per saved project, so it grows with the user’s work and
+			 * the shared menu's own viewport cap is, for it, no cap at all. 360 is not a new
+			 * number: it is `ContextMenu`'s SEARCH_HEIGHT, the height that menu already gives
+			 * a list it knows is long — so typing to filter a long list does not resize the
+			 * menu under the pointer, and the grip that mode offers resizes the same box.
+			 */
+			maxHeight: 360,
+			items: projects.length
+				? [
+						{ section: 'Mount a saved project' },
+						...projects.map((m: any) => ({
+							label: m.name + '  (' + plural(m.libraryCount ?? 0, 'file') + ')',
+							icon: 'hard-drive',
+							checked: mountedIds.has(m.id),
+							tooltip: mountedIds.has(m.id)
+								? 'Already mounted'
+								: 'Browse this project’s files here — your open project is not touched',
+							action: () => void doMount(m.id)
+						})),
+						...importRow()
+					]
+				: [
+						{
+							label: 'No saved projects yet',
+							tooltip:
+								'Sessions ▸ "Save current project" stores the scene AND every Explorer file — that is what a mount reads',
+							action: () => {}
+						},
+						...importRow()
+					]
+		};
+	}
+	/**
+	 * R22 round 13 (user): "'mount project...' context should also have import project
+	 * option".
+	 *
+	 * R22 ROUND 13, SECOND ASK (user): "import session file, when chosen in '+ Mount
+	 * project...' Explorer button, it should automatically also mount this session file,
+	 * not just import (do not change 'Import project (.tp)…' text in context menu)".
+	 *
+	 * The first version routed to `importProjectAsFolder` and told the user, in a tooltip,
+	 * to go and do the other two steps themselves — import, save as a project, then come
+	 * back and mount. That was honest about a gap rather than closing it, and the gap was
+	 * real: `mountVolume` takes a SESSION ID, so there was nothing to mount a loose file
+	 * as. The answer is the missing writer, not the tooltip: `importProjectAsSession`
+	 * reads a .tp into ONE saved record (round 13's Sessions fix) and that record is
+	 * exactly what a mount reads. Import, then mount, then walk into it.
+	 *
+	 * IT DOES NOT ALSO FURNISH THE LIBRARY, and that is the user's own division: the
+	 * Library's right-click "Import project as folder" exists for that intent and is
+	 * untouched — `tpImportInput` and `onImportTpFile` are not on this path at all.
+	 * Doing both would put every byte in two places and leave "which copy am I editing?"
+	 * as an open question, when a mount already IS that project's files, editable and
+	 * saveable back.
+	 *
+	 * THE LABEL IS FROZEN by the ask; the tooltip is not, and it now says what happens.
+	 */
+	function importRow() {
+		return [
+			{ section: 'From a file' },
+			{
+				label: 'Import project (.tp)…',
+				icon: 'folder-input',
+				tooltip:
+					'Reads a .tp file into your saved projects and mounts it here straight away. Your open project, its Library and its manifest are untouched.',
+				action: () => tpMountInput?.click()
+			}
+		];
+	}
+	/**
+	 * The mount picker's OWN file input — see `importRow`. A second input rather than a
+	 * flag on the shared one, because the shared one's job ("merge this .tp into my
+	 * Library as a folder") must stay byte-identical: two intents, two inputs, and no
+	 * branch in the middle where they could drift.
+	 */
+	let tpMountInput: HTMLInputElement | undefined = $state();
+	async function onImportTpMount(e: Event) {
+		const input = e.currentTarget as HTMLInputElement; // capture BEFORE any await
+		const file = input?.files?.[0];
+		if (file) {
+			const { importProjectAsSession } = await import('$lib/projectFile');
+			const saved = await importProjectAsSession(await file.arrayBuffer(), { fileName: file.name });
+			// a declined format confirm resolves null, and a mount of nothing is not a
+			// silent failure to invent — the importer has already said why
+			if (saved?.id) await doMount(saved.id);
+		}
+		if (input) input.value = '';
+	}
+	async function doMount(sessionId: string) {
+		const vol = await mountVolume(sessionId);
+		if (!vol) return;
+		// open it, and expand it in the tree: a root you mounted and cannot see is a
+		// button that appears to have done nothing
+		const next = new Set(expanded);
+		next.add(volumeKey(vol.id));
+		expanded = next;
+		localStorage.setItem('explorerExpanded', JSON.stringify([...next]));
+		openFolder(volumeKey(vol.id));
+	}
+	/**
+	 * Unmount. THE CONFIRM IS THE DIRTY CASE ONLY, and it is asked in the Explorer's own
+	 * strip rather than the app modal (round 11's rule: the question belongs where the
+	 * files are). A clean mount is a view — dropping it costs nothing, so asking would be
+	 * noise.
+	 *
+	 * R22 round 13 (user): "it should also navigate user forcefully to that project in
+	 * explorer, so user would see what he dismiss, and logical to have to have option
+	 * 'save and unmount' there and all save/discard/cancel options after complete should
+	 * return user to the folder he were, right? unless I have navigated to some folder
+	 * while this notification is opened".
+	 *
+	 * Four rules, and the last is the whole subtlety:
+	 *
+	 * 1. FORCE the view onto the volume's root before asking. The strip is STICKY at the
+	 *    top of the grid, so once the view is the mount the files in question sit
+	 *    directly underneath the question — which is the point: a warning about work you
+	 *    cannot see is a warning you cannot weigh.
+	 * 2. THREE outcomes. Save and unmount is the PRIMARY — it is the answer that loses
+	 *    nothing and the one Enter takes, so the red is left to Discard. (That flips what
+	 *    `#explorer-confirm-yes` MEANS for this one question, deliberately: on every other
+	 *    strip the primary is the destructive answer because there is no other.)
+	 * 3. Put the user back where the flow found them, whichever outcome they pick.
+	 * 4. UNLESS they walked off while the question stood. The restore fires only while
+	 *    they are still where rule 1 PUT them; anywhere else is a choice of their own,
+	 *    and overriding it would be the same rudeness rule 1 is allowed exactly once.
+	 *
+	 * After a real unmount the volume’s folders cease to exist, so BOTH "where they were"
+	 * and "where they walked to" are re-checked against what is still there — either one
+	 * inside this volume lands on the Library root instead.
+	 */
+	function doUnmount(vol: any) {
+		const cameFrom = $activeFolder;
+		const parked = volumeKey(vol.id);
+		/**
+		 * Rules 3 and 4, in one place because they are one decision. `unmounted` says
+		 * whether the volume is still a place at all.
+		 */
+		const settle = (unmounted: boolean) => {
+			if ($activeFolder !== parked) {
+				// they navigated while the question stood — leave them there, UNLESS "there"
+				// is inside the volume that has just gone (walking into one of its subfolders
+				// is the ordinary way to inspect what you are about to lose)
+				if (unmounted && volumeOf($activeFolder)?.volumeId === vol.id) openFolder(null);
+				return;
+			}
+			let target = cameFrom;
+			if (unmounted && volumeOf(target)?.volumeId === vol.id) target = null;
+			openFolder(placeStillThere(target) ? target : null);
+		};
+		const leave = () => {
+			void unmountVolume(vol.id);
+			settle(true);
+		};
+		if (!vol.dirty) return leave();
+		openFolder(parked); // rule 1
+		askInExplorer({
+			icon: 'hard-drive',
+			safe: true,
+			// the recycle-bin settings have nothing to say about a mount: this question is
+			// not a delete, and there is no "stop asking me" for it
+			noSettings: true,
+			title: 'Unmount “' + vol.name + '” with unsaved changes?',
+			detail:
+				'These are its files. Save writes them back into the saved project; discard throws the edits away.',
+			confirmLabel: 'Save and unmount',
+			run: () => {
+				void (async () => {
+					// a save that FAILED (the saved entry is gone) must not be followed by an
+					// unmount — the buffer is then the only copy of the work, so the mount stays
+					// and the user is simply put back
+					if (await saveVolume(vol.id)) leave();
+					else settle(false);
+				})();
+			},
+			altLabel: 'Discard and unmount',
+			alt: leave,
+			cancel: () => settle(false)
+		});
+	}
+	/**
+	 * Is this `activeFolder` value still a place? Only two kinds of value can stop being
+	 * one — a library folder that was deleted, and anything inside a volume that has been
+	 * unmounted. Everything else is a pinned pseudo root (prefabs / packs / pack:<name> /
+	 * scene / scene:<sub> / deleted / deletedlog), and those do not go away.
+	 *
+	 * IT TESTS THE SHAPE RATHER THAN LISTING THE ROOTS, and that is not a style choice.
+	 * The first version enumerated them the way `goUp` does — and `deletedlog` arrived from
+	 * another lane the same day, merged textually clean, and left this answering "gone" for
+	 * a root the user can be standing in: cancel an unmount from the Deleted log and you
+	 * were dumped at the Library instead of put back. A library folder is a uuid
+	 * (`createFolder` mints one, and an adopted shared folder carries a network uuid), so
+	 * "not uuid-shaped and not a `vol:` key" IS the pseudo-root test, and it cannot go
+	 * stale the next time somebody pins a row.
+	 */
+	const LIBRARY_FOLDER_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+	function placeStillThere(key: string | null) {
+		if (key == null) return true;
+		const scope = volumeOf(key);
+		if (scope) {
+			const v = $mountedVolumes.find((x: any) => x.id === scope.volumeId);
+			if (!v) return false;
+			return !scope.folderId || v.folders.some((f: any) => f.id === scope.folderId);
+		}
+		if (!LIBRARY_FOLDER_ID.test(key)) return true;
+		return $explorerFolders.some((f: any) => f.id === key);
+	}
+	/**
+	 * P3b — COPY OUT: a mounted file becomes a LIBRARY file. An ordinary
+	 * `addItemFromBytes` import, hash-deduped like any other, which is the whole reason
+	 * copying out needs no new concept: the bytes are the same bytes, so a library that
+	 * already holds them answers with the item it has.
+	 *
+	 * `imported: true` because the provenance is honest — a person brought these in from
+	 * outside this library, which is what that stamp means (and it is what keeps the
+	 * by-name version fold from swallowing a scene copied out of a mount).
+	 */
+	async function copyOutOfVolume(rows: any[], folderId: string | null) {
+		let copied = 0;
+		let missing = 0;
+		for (const row of rows) {
+			const blob = await volumeBlob(row.volumeId, row.id);
+			if (!blob) {
+				missing++;
+				continue;
+			}
+			await addItemFromBytes(await blob.arrayBuffer(), row.name, folderId, { imported: true });
+			copied++;
+		}
+		if (copied)
+			showToast(
+				plural(copied, 'file') +
+					' copied into your Library' +
+					(missing ? ' (' + missing + ' had no bytes)' : '')
+			);
+		else if (missing) showToast('Those bytes are not in the saved project any more');
+		return copied;
+	}
+	/**
+	 * P3b — COPY IN: a library file becomes a row in the mount's BUFFER, bytes and all, so
+	 * it survives a reload before any save. Deduped on the volume's own hashes, for the
+	 * same reason the library dedupes on its: a volume is hash-addressed inside itself.
+	 */
+	async function copyIntoVolume(volumeId: string, folderId: string | null, ids: string[]) {
+		let copied = 0;
+		for (const id of ids) {
+			const record = $explorerItems.find((i: any) => i.id === id);
+			if (!record) continue;
+			const blob = await itemBlob(record.id);
+			if (!blob) continue;
+			volumeAddBytes(volumeId, {
+				name: record.name,
+				kind: record.kind,
+				hash: record.hash,
+				buffer: await blob.arrayBuffer(),
+				folderId,
+				thumbnail: record.thumbnail ?? null
+			});
+			copied++;
+		}
+		if (copied)
+			showToast(plural(copied, 'file') + ' copied into the mount — press Save to write it back');
+		return copied;
+	}
+	/**
+	 * P3b: remove a file from a mount. NO confirm, deliberately — the edit is BUFFERED, so
+	 * Refresh puts it back and nothing has reached the saved project, which is the very
+	 * thing a confirm exists to protect. A cascade still asks, because it takes many rows
+	 * at once and the count IS the information.
+	 */
+	function deleteVolumeItem(item: any) {
+		volumeDeleteItem(item.volumeId, item.id);
+		setSel([]);
+		showToast(item.name + ' removed from the mount — Refresh undoes it, Save writes it back');
+	}
+	function deleteVolumeFolder(folder: any) {
+		const counts = volumeFolderCounts(folder.volumeId, folder.folderId);
+		askInExplorer({
+			title: 'Remove "' + folder.name + '" from this mount?',
+			detail:
+				plural(counts.folders, 'folder') +
+				' and ' +
+				plural(counts.items, 'file') +
+				' — buffered, so Refresh undoes it and nothing reaches the saved project until you press Save.',
+			confirmLabel: 'Remove',
+			run: () => {
+				volumeDeleteFolder(folder.volumeId, folder.folderId);
+				setSel([]);
+			}
+		});
+	}
+	function mountMenu(e: MouseEvent, vol: any) {
+		e.preventDefault();
+		e.stopPropagation();
+		menu = {
+			x: e.clientX,
+			y: e.clientY,
+			items: [
+				{ label: 'Open', icon: 'folder', action: () => openFolder(volumeKey(vol.id)) },
+				{
+					label: 'Refresh',
+					icon: 'refresh-cw',
+					tooltip: vol.dirty
+						? 'Re-read this project from disk — YOUR UNSAVED EDITS HERE ARE DISCARDED'
+						: 'Re-read this project from disk',
+					action: () => void refreshVolume(vol.id)
+				},
+				...(vol.dirty
+					? [
+							{
+								label: 'Save changes',
+								icon: 'save',
+								tooltip: 'Write these files back into the saved project',
+								action: () => void saveVolume(vol.id)
+							}
+						]
+					: []),
+				{ section: 'Mount' },
+				{
+					label: 'Unmount',
+					icon: 'x',
+					danger: vol.dirty,
+					tooltip: 'Stop showing this project here. The saved project is not deleted.',
+					action: () => doUnmount(vol)
+				}
+			]
+		};
+	}
+	/**
+	 * fork 3: the source of a mount is a session record, and the Sessions manager can
+	 * delete it. Re-checking when that store TICKS is the whole of "how does it notice a
+	 * change" — the source is IndexedDB, which this app owns, so there are no change events
+	 * to miss and nothing to poll.
+	 */
+	$effect(() => {
+		const list = $sessions;
+		if (!$mountedVolumes.length) return;
+		untrack(() => void revalidateVolumes());
+		void list;
+	});
+
+	// ---- R22 round 11: THE QUESTION IS ASKED WHERE THE FILES ARE ---------------------
+	/**
+	 * REPORTED: "when right click delete instead of toast confirmation I should have
+	 * confirmation within Explorer (otherwise its confusing to see toast its almost
+	 * invisible for user eye in that case as viewport is above and file operations happen
+	 * inside Explorer)".
+	 *
+	 * BOTH shapes the Explorer used were somewhere else on the screen, and the report names
+	 * the second: `showConfirm` is the app-wide modal (item delete, prefab delete, Empty
+	 * Deleted) and `showToast` with two buttons is the toast stack over the viewport
+	 * (folder delete, batch delete). Five destructive file actions, not one of them answered
+	 * where the files are — and the toast pair is the worse of the two, because it is small,
+	 * it is over the 3D view, and it expires.
+	 *
+	 * This is round 7's rule one surface over: THE BUTTON BECOMES THE QUESTION AND THE
+	 * SECOND PRESS IS THE ANSWER. Here the button is a strip pinned to the top of the grid,
+	 * so the question sits directly above the rows it is about, cannot be missed, and cannot
+	 * be covered by the viewport. It is NOT modal — clicking elsewhere in the Explorer is
+	 * allowed and simply leaves the question standing, which is the honest reading of a
+	 * strip rather than of a dialog.
+	 *
+	 * `deleteWithoutConfirm` still skips it entirely. That setting says "do not ask me", and
+	 * moving WHERE the asking happens must not quietly re-enable it.
+	 */
+	/**
+	 * R22 round 13 (user): the strip grew a THIRD outcome, because one question needed
+	 * it — unmounting a mount with unsaved edits is genuinely save / discard / cancel and
+	 * not yes / no. Everything below `run` is OPTIONAL and absent on all five delete
+	 * questions, so those are byte-identical: no alt button, the red primary, the trash
+	 * icon and the File-settings link, exactly as before.
+	 */
+	type ConfirmSpec = {
+		title: string;
+		detail: string;
+		confirmLabel: string;
+		run: () => void;
+		/** the strip icon; absent = the delete question’s trash can */
+		icon?: string;
+		/** the PRIMARY answer is not the destructive one here, so it must not wear red */
+		safe?: boolean;
+		altLabel?: string;
+		alt?: () => void;
+		/** Cancel is an ANSWER too, once the question has MOVED the user to ask it */
+		cancel?: () => void;
+		noSettings?: boolean;
+	};
+	let confirmStrip = $state<ConfirmSpec | null>(null);
+	/**
+	 * R22 round 12 (user): "for delete add Settings button after tooltip 'It moves to
+	 * Deleted...' which will open app settings modal with Files accordion expanded".
+	 *
+	 * The question mentions the bin and the "do not ask me again" switch, and both live in
+	 * Settings ▸ Explorer — so the strip offers the way there rather than describing it.
+	 * `settingsSection` is the app's existing deep-link seam (Settings.svelte maps it onto
+	 * its accordions); the Explorer section was simply never in that map.
+	 */
+	function openFileSettings() {
+		confirmStrip = null;
+		settingsSection.set('explorer');
+		settingsOpen.set(true);
+	}
+	/**
+	 * Arm the strip. A second arming REPLACES the first — the same rule `showConfirm` has,
+	 * for the same reason: a question the user has already moved on from must not linger
+	 * and then be answered by accident.
+	 */
+	function askInExplorer(spec: ConfirmSpec) {
+		confirmStrip = spec;
+	}
+	function confirmStripYes() {
+		const armed = confirmStrip;
+		confirmStrip = null;
+		armed?.run();
+	}
+	/** the second ACT (never the cancel) — present only on a question that has one */
+	function confirmStripAlt() {
+		const armed = confirmStrip;
+		confirmStrip = null;
+		armed?.alt?.();
+	}
+	function confirmStripNo() {
+		const armed = confirmStrip;
+		confirmStrip = null;
+		// clearing the strip is not the whole of cancelling once a question has MOVED the
+		// user in order to ask it — the unmount question owes them the view it took away
+		armed?.cancel?.();
+	}
+	/**
+	 * R22 round 30 C2 — THE SHARE ASK, on the same strip as the delete question.
+	 *
+	 * The user asked for it in exactly those terms ("same as its for deleting items"),
+	 * and the reasoning is round 11's: the question belongs above the rows it is about,
+	 * not in a toast over the 3D view that expires while you are looking at your files.
+	 *
+	 * The DELETE confirm wins when both are armed. A destructive question the user just
+	 * asked for beats an offer the app volunteered, and the ask survives underneath it —
+	 * nothing is lost by waiting, because `pendingShareAsk` holds until it is answered.
+	 */
+	const shareAsk = $derived($pendingShareAsk);
+	let shareStashArmed = $state(false);
+	/**
+	 * Round 31 (user) — REMEMBER MY CHOICE, and the reason it is one box rather than a
+	 * "share automatically" toggle: it modifies whichever ANSWER is pressed, so Share and
+	 * Keep local each write their own standing rule from one control, and the box can never
+	 * contradict the button it travels with. It also never acts alone — the action stays
+	 * primary and the checkbox is a modifier on it, which is the browser-permission pattern.
+	 */
+	let shareRemember = $state(false);
+	$effect(() => {
+		// a fresh question disarms the destructive button: the second press must always be
+		// an answer to the question that is on screen (the toast's own rule, one surface over)
+		// — and it clears the box for the same reason, since a standing rule must be asked
+		// for about THIS batch and never inherited from the last one
+		void shareAsk;
+		shareStashArmed = false;
+		shareRemember = false;
+	});
+	// lang="ts": a JSDoc @param is IGNORED here (the documented Inspector rule in reverse)
+	function answerShareAsk(choice: 'share' | 'keep' | 'stash') {
+		const n = shareAsk?.items?.length ?? 0;
+		// the consequence toast for a REMEMBERED answer belongs to the store call that writes
+		// the preference, so it fires wherever the ask is answered from; this one is about the
+		// act, not the rule, and the two are different pieces of news
+		resolveShareAsk(choice, shareRemember);
+		if (choice === 'share') showToast(`Sharing ${n} file${n === 1 ? '' : 's'} with the session`);
+	}
+	/** focus the answer, so Enter confirms and Esc has a handler inside the strip to reach */
+	function focusConfirmBtn(node: HTMLElement) {
+		node.focus();
+	}
+
+	/** the bin move a FILE takes — shared by the menu, the strip and the Deleted drop */
+	function binLocalItem(item: any) {
+		logLocalDeletion({ hash: item.hash, name: item.name, kind: item.kind, thumb: item.thumbnail });
+		setItemHidden(item.id, true);
+	}
+	/** ...and a PREFAB, which is local by nature. See deletePrefabToBin for the caveat. */
+	function binPrefab(prefab: any) {
+		// a prefab's identity is its id, not a content hash — prefix it so the two can
+		// never collide in one log
+		logLocalDeletion({
+			hash: 'prefab:' + prefab.id,
+			name: prefab.name ?? 'Prefab',
+			kind: 'prefab',
+			thumb: prefab.thumbnail ?? null
+		});
+		removePrefab(prefab.id);
+	}
+
 	function confirmDeleteFolder(folder: any) {
 		const counts = folderCounts(folder.id);
-		showToast(
-			`Delete "${folder.name}" (${counts.folders} folder${counts.folders === 1 ? '' : 's'}, ${counts.items} item${counts.items === 1 ? '' : 's'})?`,
-			[
-				{ label: 'Delete', action: () => deleteFolder(folder.id) },
-				{ label: 'Cancel', action: () => {} }
-			]
-		);
+		askInExplorer({
+			title: 'Delete "' + folder.name + '"?',
+			// it says DESTROYED because `deleteFolder` reclaims the blobs of everything in the
+			// subtree. That asymmetry with a file delete is exactly why this one keeps asking
+			// even when a drag onto Deleted does not (see dropToBin).
+			detail:
+				plural(counts.folders, 'folder') +
+				' and ' +
+				plural(counts.items, 'item') +
+				' — the files inside are destroyed, not moved to Deleted.',
+			confirmLabel: 'Delete folder',
+			run: () => void deleteFolder(folder.id)
+		});
 	}
 
 	// --- drag & drop (106.4): items AND folders move into folders/root ---
@@ -1668,21 +2810,73 @@
 		if (!payload) return;
 		e.preventDefault();
 		e.stopPropagation();
-		// a PREFAB card carries no library record, so there is nothing to re-file
-		const items = (payload.items?.length ? payload.items : payload.type === 'item' ? [payload] : [])
-			.filter((p: any) => p && !p.prefabId && p.id)
-			.map((p: any) => p.id);
+		const dragged = payload.items?.length ? payload.items : payload.type === 'item' ? [payload] : [];
+		// R22 round 11: a PREFAB card used to be dropped on the floor here — it carries no
+		// library record, so there was nothing to re-file. There is now: a prefab that IS a
+		// .glb or a .tpscene becomes a library item OF THAT FORMAT, bytes untouched.
+		for (const p of dragged.filter((p: any) => p?.prefabId)) {
+			const prefab = prefabById(p.prefabId);
+			if (prefab) void prefabToLibrary(prefab, target);
+		}
 		const folders = payload.folders?.length
 			? payload.folders
 			: payload.type === 'folder'
 				? [payload.id]
 				: [];
+		/**
+		 * P3b — ACROSS THE BOUNDARY, and only ONE of the four cases is a move.
+		 *
+		 * Inside one mount a drag re-files the buffer (a move). Between the library and a
+		 * mount it is a COPY in both directions, because they are two different stores with
+		 * two different identities — the library is content-hash addressed and the volume
+		 * keeps its own rows, so "moving" a row from one to the other is not expressible.
+		 * Copying out is a real import; copying in is buffered until Save.
+		 */
+		const targetVol = volumeOf(target);
+		const fromVol = dragged.filter((p: any) => p?.volumeId);
+		if (targetVol) {
+			const vol = targetVol.volumeId;
+			for (const row of fromVol.filter((r: any) => r.volumeId === vol))
+				volumeMoveItem(vol, row.id, targetVol.folderId);
+			let crossed = 0;
+			let cycles = 0;
+			for (const id of folders) {
+				const f = volumeOf(id);
+				// `folderId` is null only for a volume ROOT key, which is never a draggable card
+				if (f?.volumeId === vol && f.folderId) {
+					if (!volumeMoveFolder(vol, f.folderId, targetVol.folderId)) cycles++;
+				} else crossed++;
+			}
+			const libraryIds = dragged
+				.filter((r: any) => r && !r.prefabId && r.id && !r.volumeId)
+				.map((r: any) => r.id);
+			if (libraryIds.length) void copyIntoVolume(vol, targetVol.folderId, libraryIds);
+			if (cycles) showToast("A folder can't move into its own subtree");
+			// a FOLDER cannot be copied across: it would have to mint rows on the other side
+			// and there is no import path for that. Its files can, one drag at a time.
+			if (crossed)
+				showToast(
+					plural(crossed, 'folder') + ' stayed put — drag the FILES across, not the folder'
+				);
+			if (fromVol.some((r: any) => r.volumeId !== vol))
+				showToast('Copy between two mounted projects through your Library');
+			return;
+		}
+		// dropping ONTO the library: a mounted file is copied in (an import), and anything
+		// else in the same drag takes the ordinary move below
+		if (fromVol.length) void copyOutOfVolume(fromVol, target);
+		const items = dragged
+			.filter((p: any) => p && !p.prefabId && p.id && !p.volumeId)
+			.map((p: any) => p.id);
 		let refused = 0;
-		for (const id of folders) if (!moveFolder(id, target)) refused++;
+		const libFolders = folders.filter((id: string) => !volumeOf(id));
+		if (folders.length !== libFolders.length)
+			showToast('A folder in a mounted project stays there — drag its FILES across');
+		for (const id of libFolders) if (!moveFolder(id, target)) refused++;
 		for (const id of items) moveItem(id, target);
 		if (refused)
 			showToast(
-				refused === 1 && folders.length === 1
+				refused === 1 && libFolders.length === 1
 					? "A folder can't move into its own subtree"
 					: `${refused} folder${refused === 1 ? '' : 's'} could not move into their own subtree`
 			);
@@ -1701,6 +2895,34 @@
 		if (!inTree) {
 			if (!selectedIds.has(folder.id)) setSel([folder.id]);
 			if (selectedIds.size > 1) return batchMenu(e);
+		}
+		// P3: a folder INSIDE a mount. Share / Unshare / Export / Delete all read the
+		// library's own tree, so the mount gets the two entries that mean something here.
+		if (folder.volumeId) {
+			menu = {
+				x: e.clientX,
+				y: e.clientY,
+				items: [
+					{ label: 'Open', icon: 'folder', action: () => openFolder(folder.id) },
+					{ label: 'New folder', icon: 'folder-plus', action: () => startCreate(folder.id, !inTree) },
+					{ label: 'Rename', icon: 'pencil', action: () => startRename(folder, !inTree) },
+					{
+						label: 'Remove',
+						icon: 'trash-2',
+						danger: true,
+						tooltip: 'Buffered — Refresh undoes it, Save writes it back to the saved project',
+						action: () => deleteVolumeFolder(folder)
+					},
+					{ section: 'Mount' },
+					{
+						label: 'Refresh mount',
+						icon: 'refresh-cw',
+						tooltip: 'Re-read this project from disk — any unsaved edits here are discarded',
+						action: () => void refreshVolume(folder.volumeId)
+					}
+				]
+			};
+			return;
 		}
 		menu = {
 			x: e.clientX,
@@ -1811,6 +3033,10 @@
 		// a card built from the index, so every batch op (download, delete, GLTF export)
 		// would be addressing an id that does not exist
 		!item.remoteItem &&
+		// R22 round 13 P3: a MOUNTED file has no library record either — it lives in another
+		// project's saved payload. Same reasoning as the shared row above: every batch op
+		// (download, delete, GLTF export) would address an id `explorerItems` does not hold.
+		!item.volumeItem &&
 		item.kind !== 'pack-folder';
 
 	/** what the selection breaks down into, once and for every batch entry point */
@@ -1850,11 +3076,13 @@
 			subFolders || subItems
 				? ` — with ${plural(subFolders, 'subfolder')} and ${plural(subItems, 'item')} inside`
 				: '';
-		const note = skipped ? ` (${plural(skipped, 'pack/scene card')} will be skipped)` : '';
-		showToast(`Delete ${parts.join(' and ')}${cascade}?${note}`, [
-			{ label: 'Delete', action: () => void runDeleteSelection(folders, items) },
-			{ label: 'Cancel', action: () => {} }
-		]);
+		const note = skipped ? `${plural(skipped, 'pack/scene card')} will be skipped.` : '';
+		askInExplorer({
+			title: `Delete ${parts.join(' and ')}?`,
+			detail: [cascade.replace(/^ — /, ''), note].filter(Boolean).join(' ') || 'This cannot be undone.',
+			confirmLabel: 'Delete',
+			run: () => void runDeleteSelection(folders, items)
+		});
 	}
 	async function runDeleteSelection(folders: any[], items: any[]) {
 		for (const item of items) {
@@ -2246,6 +3474,21 @@
 					label: 'Export',
 					icon: 'arrow-down-to-line', // Icon.svelte's MAP falls back to a plain Box for an unknown name
 					children: [
+						// R22 round 11: a prefab SAVED as a .glb or a .tpscene hands its own bytes
+						// back rather than being re-exported. Offered FIRST and only when there are
+						// bytes to offer — for a snapshot prefab the three rows below are still the
+						// only answer, and an always-present row that sometimes cannot work is the
+						// shape this codebase keeps refusing.
+						...(prefabFormatOf(prefab) !== 'snapshot' && prefab.bytes
+							? [
+									{
+										label: 'The original file (.' + prefabFormatOf(prefab) + ')',
+										tooltip:
+											'The exact bytes this prefab was saved from — nothing is converted or re-exported',
+										action: () => saveBytes(prefab.bytes, prefabFileName(prefab))
+									}
+								]
+							: []),
 						{
 							label: 'GLTF',
 							tooltip: 'A .gltf model file other tools can open',
@@ -2293,6 +3536,36 @@
 		if (item.kind === 'pack-folder') {
 			const pack = packByName(item.packName);
 			if (pack) packRowMenu(e, pack);
+			return;
+		}
+		// P3: a file in a MOUNTED project. Its own menu, for the reason every branch here
+		// has one: Rename / Delete / Share / Download all address a library record it has
+		// none of, and Properties is the only one of them that would have worked.
+		if (item.volumeItem) {
+			menu = {
+				x: e.clientX,
+				y: e.clientY,
+				items: [
+					{ label: 'Open', icon: 'external-link', action: () => void openItem(item) },
+					{
+						label: 'Copy to Library',
+						icon: 'download',
+						tooltip:
+							'Import these bytes into your own library — deduped by content hash, like any other import',
+						action: () => void copyOutOfVolume([item], activeLibraryFolder())
+					},
+					{ section: item.volumeName ?? 'Mounted project' },
+					{ label: 'Rename', icon: 'pencil', action: () => startRenameItem(item) },
+					{
+						label: 'Remove',
+						icon: 'trash-2',
+						danger: true,
+						tooltip: 'Buffered — Refresh undoes it, Save writes it back to the saved project',
+						action: () => deleteVolumeItem(item)
+					},
+					{ label: 'Properties', icon: 'info', action: () => showProperties({ kind: 'item', item }) }
+				]
+			};
 			return;
 		}
 		// 21-H2: a PREFAB has its own menu — it is a stored asset, not a derived view.
@@ -2553,73 +3826,69 @@
 	 * row that can only ever produce an empty grid.
 	 */
 	/**
-	 * R22 round 7 (user) — DELETING MY OWN FILE GOES TO THE BIN TOO, and it asks INSIDE
-	 * the Explorer rather than throwing a toast. A toast for a question is the wrong
-	 * shape: it appears somewhere else on screen, it can be missed, and it cannot block.
-	 * `showConfirm` is the app's modal and it is what every other destructive file action
-	 * already uses (folder delete, Open project).
+	 * R22 round 7 (user) — DELETING MY OWN FILE GOES TO THE BIN TOO. Round 11 moved the
+	 * question out of the app-wide modal and into the Explorer's own strip; see
+	 * `askInExplorer` for why. `deleteWithoutConfirm` still skips it.
 	 */
-	async function deleteLocalItem(item: any) {
-		if (!$deleteWithoutConfirm) {
-			const ok = await showConfirm({
-				title: 'Delete \u201c' + item.name + '\u201d',
-				message:
-					'It moves to Deleted, where you can restore it or free the disk. Nobody else has this file, so nobody else is affected.',
-				confirmLabel: 'Delete'
-			});
-			if (!ok) return;
-		}
-		logLocalDeletion({ hash: item.hash, name: item.name, kind: item.kind, thumb: item.thumbnail });
-		setItemHidden(item.id, true);
-		showToast(item.name + ' moved to Deleted');
+	function deleteLocalItem(item: any) {
+		const run = () => {
+			binLocalItem(item);
+			showToast(item.name + ' moved to Deleted');
+		};
+		if ($deleteWithoutConfirm) return run();
+		askInExplorer({
+			title: 'Delete \u201c' + item.name + '\u201d?',
+			detail:
+				'It moves to Deleted, where you can restore it or free the disk. Nobody else has this file, so nobody else is affected.',
+			confirmLabel: 'Delete',
+			run
+		});
 	}
 
 	/** ...and a PREFAB, which is local by nature and was simply gone before. */
-	async function deletePrefabToBin(prefab: any) {
-		if (!$deleteWithoutConfirm) {
-			const ok = await showConfirm({
-				title: 'Delete prefab \u201c' + (prefab?.name ?? '') + '\u201d',
-				// R22 round 9: it says "a record of it" because that is all that survives. A
-				// prefab has no hidden shelf — `removePrefab` drops the record and
-				// `canRestoreDeleted` asks the two ITEM shelves, so a binned prefab can never be
-				// restored and the old wording promised exactly the button the bin then refuses
-				// to offer. See the round-9 report: making it true needs a prefab shelf.
-				message:
-					'The prefab is removed. A record of it stays in Deleted, but a prefab cannot be restored from there yet.',
-				confirmLabel: 'Delete'
-			});
-			if (!ok) return;
-		}
-		// a prefab's identity is its id, not a content hash — prefix it so the two can
-		// never collide in one log
-		logLocalDeletion({
-			hash: 'prefab:' + prefab.id,
-			name: prefab.name ?? 'Prefab',
-			kind: 'prefab',
-			thumb: prefab.thumbnail ?? null
+	function deletePrefabToBin(prefab: any) {
+		const run = () => {
+			binPrefab(prefab);
+			showToast((prefab.name ?? 'Prefab') + ' moved to the Deleted log');
+		};
+		if ($deleteWithoutConfirm) return run();
+		askInExplorer({
+			title: 'Delete prefab \u201c' + (prefab?.name ?? '') + '\u201d?',
+			// R22 round 9: it says "a record of it" because that is all that survives. A
+			// prefab has no hidden shelf — `removePrefab` drops the record and
+			// `canRestoreDeleted` asks the two ITEM shelves, so a binned prefab can never be
+			// restored and the old wording promised exactly the button the bin then refuses
+			// to offer. See the round-9 report: making it true needs a prefab shelf.
+			detail:
+				'The prefab is removed. A record of it stays in the Deleted log, but a prefab cannot be restored from there yet.',
+			confirmLabel: 'Delete',
+			run
 		});
-		removePrefab(prefab.id);
-		showToast((prefab.name ?? 'Prefab') + ' moved to Deleted');
 	}
 
-	/** R22 round 7: emptying the bin is destructive and LOCAL, so it confirms and says
-	 * which of those two it is — peers keep their own copies either way. */
-	async function emptyBin() {
+	/**
+	 * R22 round 7: emptying the bin is destructive and LOCAL, so it asks and says which of
+	 * those two it is — peers keep their own copies either way.
+	 *
+	 * It asks EVEN WITH `deleteWithoutConfirm` on, and that is deliberate: the setting is
+	 * about a DELETE, which the bin makes reversible, and this is the one act in the
+	 * Explorer that takes the bytes for good.
+	 */
+	function emptyBin() {
 		const n = deletedLog($projectManifest).length;
 		if (!n) return;
-		const ok = await showConfirm({
-			title: 'Empty Deleted',
-			message:
-				'Reclaim the disk for ' +
-				n +
-				' deleted file' +
-				(n === 1 ? '' : 's') +
-				' and clear the record. This machine only — every peer keeps its own bin, and nothing already restored is affected.',
-			confirmLabel: 'Empty'
+		askInExplorer({
+			title: 'Empty Deleted?',
+			detail:
+				'Reclaims the disk for ' +
+				plural(n, 'deleted file') +
+				' and clears the record. This machine only — every peer keeps its own bin, and nothing already restored is affected.',
+			confirmLabel: 'Empty',
+			run: () =>
+				void emptyDeletedLog().then((gone) =>
+					showToast('Emptied ' + plural(gone, 'file') + ' from Deleted')
+				)
 		});
-		if (!ok) return;
-		const gone = await emptyDeletedLog();
-		showToast('Emptied ' + gone + ' file' + (gone === 1 ? '' : 's') + ' from Deleted');
 	}
 
 	/**
@@ -2663,10 +3932,40 @@
 		];
 	}
 
+	/**
+	 * R22 round 13: what the LOG offers — the same view controls (its rows are the bin's
+	 * rows read a second way, so grouping and sort mean the same thing), and the one
+	 * destructive act, which is `emptyBin` rather than a second one: "clear the record" and
+	 * "reclaim the disk" are the same gesture on one array, and its dialog already says both
+	 * halves out loud.
+	 *
+	 * The log's own TREE ROW is gone (it is a tab inside Deleted now), so this list is
+	 * reached the way every other view's is: the grid's background menu, in the view the
+	 * tab opens. There was never a second thing on it worth a second surface.
+	 */
+	function deletedLogMenuItems() {
+		return [
+			...deletedViewItems(),
+			...(logCount
+				? [
+						{ section: 'Record' },
+						{
+							label: 'Clear the log (' + logCount + ')',
+							danger: true,
+							icon: 'trash-2',
+							tooltip:
+								'Forgets what was deleted AND empties the bin on THIS machine. Peers keep their own record.',
+							action: () => void emptyBin()
+						}
+					]
+				: [])
+		];
+	}
+
 	/** the Deleted tree row's own menu */
 	function deletedRowMenu(e: MouseEvent) {
 		e.preventDefault();
-		const n = deletedLog($projectManifest).length;
+		const n = binCount;
 		menu = {
 			x: e.clientX,
 			y: e.clientY,
@@ -2734,11 +4033,68 @@
 
 	function gridMenu(e: MouseEvent) {
 		if ((e.target as HTMLElement)?.closest('.explorer-card, .explorer-folder-card')) return;
+		// P3: inside a MOUNT the background menu is about the mount. New folder / Save scene
+		// / Export project all act on the open project, which is exactly what a mount must
+		// not touch — so they stay out and the three mount verbs take their place.
+		if (volScope) {
+			e.preventDefault();
+			const vol = volume;
+			menu = {
+				x: e.clientX,
+				y: e.clientY,
+				items: [
+					{
+						label: 'New folder',
+						icon: 'folder-plus',
+						tooltip: 'Inside this mounted project — buffered until you press Save',
+						action: () => startCreate($activeFolder ?? null, true)
+					},
+					{ section: vol?.name ?? 'Mounted project' },
+					{
+						label: 'Refresh',
+						icon: 'refresh-cw',
+						tooltip: vol?.dirty
+							? 'Re-read this project from disk — YOUR UNSAVED EDITS HERE ARE DISCARDED'
+							: 'Re-read this project from disk',
+						action: () => void refreshVolume(volScope.volumeId)
+					},
+					...(vol?.dirty
+						? [
+								{
+									label: 'Save changes',
+									icon: 'save',
+									tooltip: 'Write these files back into the saved project',
+									action: () => void saveVolume(volScope.volumeId)
+								}
+							]
+						: []),
+					{
+						label: 'Unmount',
+						icon: 'x',
+						danger: !!vol?.dirty,
+						tooltip: 'Stop showing this project here. The saved project is not deleted.',
+						action: () => vol && doUnmount(vol)
+					}
+				]
+			};
+			return;
+		}
 		// R22 round 7: the bin is not a folder you put things in, so New folder / Save scene
 		// are meaningless here. What IS meaningful is emptying it.
+		if ($activeFolder === 'deletedlog') {
+			e.preventDefault();
+			menu = {
+				x: e.clientX,
+				y: e.clientY,
+				items: logCount
+					? deletedLogMenuItems()
+					: [{ label: 'Nothing has been deleted yet', action: () => {} }]
+			};
+			return;
+		}
 		if ($activeFolder === 'deleted') {
 			e.preventDefault();
-			const n = deletedLog($projectManifest).length;
+			const n = binCount;
 			menu = {
 				x: e.clientX,
 				y: e.clientY,
@@ -2792,6 +4148,12 @@
 			// P6: the Packs view adds pack-import affordances instead of New folder
 			items: inPacks
 				? [
+						{
+							label: '＋ Create pack…',
+							icon: 'package-open',
+							tooltip: 'An empty pack of your own — drag files from the Library into it',
+							action: startPackName
+						},
 						{ label: '＋ Import pack (.zip)', action: () => packZipInput?.click() },
 						{ label: 'Load pack from URL', action: loadPackFromUrl }
 					]
@@ -2849,6 +4211,17 @@
 							tooltip:
 								'Adds a .tp file’s contents to your library as one folder — nothing opens, your project stays',
 							action: () => tpImportInput?.click()
+						},
+						// R22 round 13 P2: the SECOND way into the storage breakdown. The header
+						// chip is the first and it is hidden below 700px, so this row is what keeps
+						// the action reachable on a phone - the same function, not a second one.
+						{ section: 'Disk' },
+						{
+							label: 'Storage used…',
+							icon: 'hard-drive',
+							tooltip:
+								'What is using this device’s storage, and what can be cleaned up',
+							action: openStorageModal
 						}
 					]
 		};
@@ -2883,6 +4256,14 @@
 		const files = e.dataTransfer?.files;
 		if (!files?.length) return;
 		const folder = $activeFolder;
+		// P3b: files dropped straight into a mount are a BUFFERED import — the same act as
+		// copying one in from the library, so it goes through the same store and the same
+		// Save. Nothing about the live library is touched on the way.
+		const intoVol = volumeOf(folder);
+		if (intoVol) {
+			void importIntoVolume(files, intoVol);
+			return;
+		}
 		// B1.1: the Packs view accepts ONLY pack .zip files — anything else would
 		// import with a bogus folderId and orphan (invisible). Mirror the Import path.
 		if (folder === 'packs' || (typeof folder === 'string' && folder.startsWith('pack:'))) {
@@ -2913,6 +4294,36 @@
 			importFiles(rest, folder === 'prefabs' ? null : folder, { duplicates: 'ask' });
 	}
 
+	/**
+	 * P3b: dropped files, imported into a mount's buffer. The kind and the 25 MB cap are
+	 * the library's own rules read from the same module — a mount is a project's library,
+	 * so a file this app would refuse there is refused here for the same reason.
+	 */
+	async function importIntoVolume(files: FileList | File[], scope: { volumeId: string; folderId: string | null }) {
+		let added = 0;
+		let skipped = 0;
+		for (const file of [...files]) {
+			const kind = kindOf(file.name);
+			if (!kind || file.size > MAX_ITEM_BYTES) {
+				skipped++;
+				continue;
+			}
+			const buffer = await file.arrayBuffer();
+			volumeAddBytes(scope.volumeId, {
+				name: file.name,
+				kind,
+				hash: await hashBytes(buffer),
+				buffer,
+				folderId: scope.folderId
+			});
+			added++;
+		}
+		if (added)
+			showToast(plural(added, 'file') + ' added to the mount — press Save to write it back');
+		if (skipped)
+			showToast(plural(skipped, 'file') + ' skipped (unsupported, or over the 25 MB limit)');
+	}
+
 	/** 21-G8: route a .tp file to the merge-as-folder import (never OPEN from a drop).
 	 *  21-I (user): it lands WHERE THE COMMAND WAS STARTED, in a folder named after the
 	 *  FILE. Both facts are read HERE — "where I am" belongs to this component, and the
@@ -2933,6 +4344,9 @@
 
 	function itemDragPayload(item: any) {
 		return {
+			// P3: which MOUNT this row came from, absent for a library file. The drop reads
+			// it to decide between a move (within one library) and a copy (across a boundary)
+			...(item.volumeId ? { volumeId: item.volumeId, hash: item.hash, size: item.size } : {}),
 			id: item.id ?? null,
 			kind: item.kind,
 			name: item.name,
@@ -2986,6 +4400,240 @@
 		// default-pack item carries a `url` so the drop can fetch+place it without
 		// first storing it in the Explorer library.
 		e.dataTransfer?.setData('application/x-explorer-item', JSON.stringify(dragPayloadFor(item)));
+		libraryDragging = true;
+	}
+	/** every FOLDER card and row starts its drag here, so the flag has one writer per kind */
+	function onFolderDragStart(e: DragEvent, folder: any) {
+		e.dataTransfer?.setData('application/x-explorer-folder', JSON.stringify(folderDragPayload(folder)));
+		libraryDragging = true;
+	}
+
+	// ---- R22 round 11: DRAG SOMETHING ONTO Deleted ------------------------------------
+	/**
+	 * REPORTED: "should be able to drag to 'Deleted' files and folder from library without
+	 * confirmation".
+	 *
+	 * NO CONFIRM, and the reason it is defensible is that the gesture is its own consent:
+	 * you have to pick the thing up, carry it to a row labelled Deleted, and let go. A
+	 * right-click Delete is one press on a list of similar-looking words, which is why THAT
+	 * one still asks.
+	 *
+	 * It reads `items`/`folders` off the payload rather than re-deriving the selection —
+	 * round 10's rule, and the bug it fixed: the whole multi-selection has travelled on
+	 * every Explorer drag since 21-H3, and a consumer that only reads `payload.id` silently
+	 * acts on the last card clicked.
+	 *
+	 * TWO DELETES, not one, because they are different acts (see DELETE IS NOT UNSHARE):
+	 * a SHARED file goes through `deleteSharedItem`, which tombstones it for the project so
+	 * every peer's copy moves to their own bin; a local one is `logLocalDeletion` +
+	 * `setItemHidden`, which nobody else needs to hear about.
+	 *
+	 * A FOLDER is the interesting case. `deleteFolder` reclaims the blobs of everything in
+	 * the subtree — irreversible, and an irreversible act is exactly what an unconfirmed
+	 * gesture may NOT perform. So a folder dropped here BINS EVERY FILE INSIDE IT first,
+	 * one by one, on the same reversible path a file takes; only the (now empty) folder
+	 * records are removed, and they hold no bytes. The files are cleared of their
+	 * `folderId` on the way, so Restore puts them back at the library root instead of
+	 * inside a folder that no longer exists.
+	 */
+	/**
+	 * R22 round 11 (user): "for dragging to Library and back: 3d objects automatically
+	 * placed as existing format (.glb/.gltf), .tpscene are placed as .tpscene (with
+	 * thumbnail). This solves converting dilemma, we do not need to convert anything."
+	 *
+	 * NOTHING IS CONVERTED, in either direction. A prefab that IS a .glb becomes a .glb
+	 * library item; a prefab that IS a .tpscene becomes a .tpscene, thumbnail included. A
+	 * SNAPSHOT prefab has no file to be — it is a three.js serialization and always was —
+	 * so it declines and says so, which is honest rather than inventing a format for it.
+	 * @param {any} prefab @param {string | null} folderId
+	 */
+	async function prefabToLibrary(prefab: any, folderId: string | null) {
+		const format = prefabFormatOf(prefab);
+		if (format === 'snapshot' || !prefab.bytes)
+			return showToast(
+				'"' + prefab.name + '" is a snapshot prefab, not a file — re-save it with Save as… ▸ Prefab (.glb) or (.tpscene) to move it into the Library'
+			);
+		const item = await addItemFromBytes(prefab.bytes, prefabFileName(prefab), folderId);
+		if (!item) return showToast('Could not store "' + prefab.name + '"');
+		// the picture travels with it: a .tpscene has no thumbnail an importer could derive
+		if (prefab.thumbnail) patchRecord(item.id, { thumbnail: prefab.thumbnail });
+		showToast('"' + prefab.name + '" is in the Library as a .' + format);
+		return item;
+	}
+
+	/**
+	 * ...and back. A library file dropped on the Prefabs row becomes a prefab OF THAT
+	 * FORMAT — its bytes are kept verbatim and a snapshot is built beside them so the card
+	 * has a picture and the drag-into-the-viewport still lands where you let go.
+	 * @param {any} record a library item
+	 */
+	async function libraryToPrefab(record: any) {
+		const format = record.kind === 'scene' ? 'tpscene' : 'glb';
+		if (record.kind !== 'scene' && record.kind !== 'object')
+			return showToast('Only 3D objects and scene files can become prefabs (' + record.name + ' is ' + record.kind + ')');
+		const blob = await itemBlob(record.id);
+		if (!blob) return showToast('The bytes for "' + record.name + '" are not on this device');
+		const bytes = await blob.arrayBuffer();
+		let element: any = null;
+		try {
+			if (format === 'glb') {
+				const object = await parseObjectFile(bytes, record.name.split('.').pop()?.toLowerCase() ?? 'glb');
+				element = object?.toJSON() ?? null;
+			} else {
+				// a .tpscene's objects, wrapped in a holder so ONE prefab is one card
+				const { readSessionZip } = await import('$lib/sessions');
+				const payload = await readSessionZip(bytes);
+				const holder = new THREE.Group();
+				holder.name = record.name.replace(/\.tpscene$/i, '');
+				for (const el of payload?.objects ?? []) {
+					try {
+						holder.add(new THREE.ObjectLoader().parse(el));
+					} catch {}
+				}
+				element = holder.children.length ? holder.toJSON() : null;
+			}
+		} catch {
+			element = null;
+		}
+		if (!element) return showToast('"' + record.name + '" could not be read as a prefab');
+		const entry = await addPrefabRecord({
+			name: record.name.replace(/\.[^.]+$/, ''),
+			element,
+			thumbnail: record.thumbnail ?? undefined,
+			format,
+			bytes
+		});
+		if (entry) showToast('"' + entry.name + '" is a prefab, still a .' + format);
+		return entry;
+	}
+
+	/**
+	 * R22 round 11 (user): "...so I can set name and create items there, by dragging from
+	 * explorer folders or multiple items".
+	 *
+	 * A pack ITEM is a REFERENCE to a library record, which is exactly what an imported
+	 * pack's items already are — so nothing is copied, no bytes move, and a placed item
+	 * resolves through the path packs have always used. FOLDERS come too, and a dropped
+	 * folder means everything in its SUBTREE: "dragging from explorer folders" is the
+	 * user's own phrasing for the case where you do not want to pick out twenty files.
+	 *
+	 * Only a pack YOU MADE (or imported) can be filled — a default pack is a CDN listing
+	 * whose contents this machine does not own, so adding to it would be a promise the
+	 * next reload breaks.
+	 * @param {DragEvent} e @param {any} pack
+	 */
+	async function dropIntoPack(e: DragEvent, pack: any) {
+		const payload = payloadOf(e);
+		dropFolder = null;
+		libraryDragging = false;
+		if (!payload || !pack) return;
+		e.preventDefault();
+		e.stopPropagation();
+		if (pack.source === 'default')
+			return showToast('"' + pack.title + '" is a built-in pack — create one of your own to fill it');
+		const dragged = payload.items?.length ? payload.items : payload.type === 'item' ? [payload] : [];
+		const folderIds: string[] = payload.folders?.length
+			? payload.folders
+			: payload.type === 'folder'
+				? [payload.id]
+				: [];
+		/** @type {any[]} */
+		const records: any[] = [];
+		for (const p of dragged) {
+			if (p?.prefabId || !p?.id) continue;
+			const record = $explorerItems.find((i: any) => i.id === p.id);
+			if (record) records.push(record);
+		}
+		for (const id of folderIds) {
+			const subtree = folderSubtree(id);
+			for (const record of $explorerItems.filter((i: any) => subtree.includes(i.folderId ?? '')))
+				records.push(record);
+		}
+		if (!records.length) return showToast('Drop library files or folders here to add them to this pack');
+		const added = addToPack(pack.name, records);
+		showToast(
+			added
+				? added + ' file' + (added === 1 ? '' : 's') + ' added to "' + pack.title + '"'
+				: 'Already in "' + pack.title + '"'
+		);
+	}
+
+	/** the Prefabs row's drop: every dragged LIBRARY file becomes a prefab in its own format */
+	async function dropToPrefabs(e: DragEvent) {
+		const payload = payloadOf(e);
+		dropFolder = null;
+		libraryDragging = false;
+		if (!payload) return;
+		e.preventDefault();
+		e.stopPropagation();
+		const dragged = payload.items?.length ? payload.items : payload.type === 'item' ? [payload] : [];
+		const records = dragged
+			.filter((p: any) => p && !p.prefabId && p.id)
+			.map((p: any) => $explorerItems.find((i: any) => i.id === p.id))
+			.filter(Boolean);
+		if (!records.length) return showToast('Drop a 3D object or a scene file here to make a prefab');
+		for (const record of records) await libraryToPrefab(record);
+	}
+
+	async function dropToBin(e: DragEvent) {
+		const payload = payloadOf(e);
+		dropFolder = null;
+		binDropActive = false;
+		libraryDragging = false;
+		if (!payload) return;
+		e.preventDefault();
+		e.stopPropagation();
+		const dragged = payload.items?.length ? payload.items : payload.type === 'item' ? [payload] : [];
+		const folderIds: string[] = payload.folders?.length
+			? payload.folders
+			: payload.type === 'folder'
+				? [payload.id]
+				: [];
+		let files = 0;
+		let folders = 0;
+		let skipped = 0;
+		/** one file, whichever shelf it belongs to. `orphan` = its folder is going away. */
+		const binOne = (record: any, orphan = false) => {
+			if (orphan) moveItem(record.id, null);
+			if (isShared(record)) deleteSharedItem(record.id);
+			else binLocalItem(record);
+			files++;
+		};
+		for (const p of dragged) {
+			if (p.prefabId) {
+				const prefab = $prefabs.find((x: any) => x.id === p.prefabId);
+				if (prefab) {
+					binPrefab(prefab);
+					files++;
+				} else skipped++;
+				continue;
+			}
+			const record = $explorerItems.find((i: any) => i.id === p.id);
+			// a pack or scene CARD is a view of something the library does not own
+			if (record) binOne(record);
+			else skipped++;
+		}
+		for (const id of folderIds) {
+			const subtree = folderSubtree(id);
+			for (const record of $explorerItems.filter((i: any) => subtree.includes(i.folderId ?? '')))
+				binOne(record, true);
+			await deleteFolder(id);
+			folders++;
+		}
+		setSel([]);
+		deselect();
+		if (!files && !folders)
+			return showToast(
+				skipped
+					? `Nothing moved — ${plural(skipped, 'card')} here ${skipped === 1 ? 'is a view' : 'are views'} of something else`
+					: 'Nothing to delete'
+			);
+		const parts = [];
+		if (files) parts.push(plural(files, 'file'));
+		if (folders) parts.push(plural(folders, 'folder'));
+		showToast(parts.join(' and ') + ' moved to Deleted', [
+			{ label: 'Open Deleted', action: () => openFolder('deleted') }
+		]);
 	}
 
 	// --- MOBILE drag-to-place (HTML5 DnD is desktop-only). On touch a LONG-PRESS on a
@@ -3134,6 +4782,13 @@
 			if (backing) inspectItem(backing);
 			return;
 		}
+		// P3: a MOUNTED file selects and shows its properties, but claims no
+		// `inspectedFile` — that id addresses the library, which holds no record for it
+		if (item.volumeItem) {
+			inspectedFile.set(null);
+			selected = { kind: 'item', item };
+			return;
+		}
 		inspectedFile.set(item.id);
 		selected = { kind: 'item', item };
 	}
@@ -3263,14 +4918,8 @@
 	 * half of travel is the travel NODE's pulse, so opening a scene out of your own file
 	 * browser broadcasts nothing and moves nobody else. Authoring, not a game move.
 	 *
-	 * THE GUARD, and why it is a three-way. This replaces the world, so an unsaved
-	 * current scene asks first — the DCC standard, and the reason `sceneDirty` exists.
-	 * That flag is READ, never recomputed: 21-G9 keeps it behind a throttle precisely
-	 * because the answer costs a whole-scene serialization. Two consequences worth
-	 * knowing: the verdict can lag a very recent edit by up to `SIGNATURE_THROTTLE_MS`,
-	 * and a scene that has never been NAMED is never "dirty" (there is no version to be
-	 * dirty against) — in both cases the ordinary autosave is what protects the work,
-	 * and travel's own writer-side auto-publish usually catches the first anyway.
+	 * THE GUARD that asks before this replaces the world is `guardSceneReplace` in
+	 * `$lib/sceneOpenGuard` — the reasoning, and why the travel NODE has none, are there.
 	 */
 	async function openSceneItem(item: any) {
 		// the scene you are standing in. Re-applying the file over your own edits is not
@@ -3279,65 +4928,80 @@
 			showToast(`"${item.name}" is the scene you are already in`);
 			return;
 		}
-		// REPORTED (bug 2): this used to read `$sceneDirty` — the THROTTLED verdict,
-		// which 21-G9 deliberately lets lag a very recent edit by up to
-		// SIGNATURE_THROTTLE_MS (2s) because recomputing costs a whole-scene
-		// serialization. That is the right trade for a TITLE BAR and the wrong one
-		// here: edit, immediately double-click another scene, and the guard read a
-		// stale `false`, so no dialog appeared and the work was gone. The one place
-		// the answer must be current is the action that destroys it, so it is
-		// recomputed synchronously; everywhere else keeps the throttle.
-		//
-		// The second half is a scene with NO IDENTITY to be dirty against.
-		// recomputeSceneDirty answers false for it by construction ("nothing to be
-		// dirty AGAINST"), which is honest but leaves the newest, least-saved work in
-		// the app completely unguarded. If there is no identity and the world is not
-		// empty, opening still destroys something, so it asks.
-		const identified =
-			!!$currentLevel?.name && typeof $currentLevel?.signature === 'string';
-		const risky = identified
-			? recomputeSceneDirty()
-			: ($objectsGroup?.children?.length ?? 0) > 0;
-		if (risky) {
-			const here = $currentLevel?.name ?? 'This scene';
-			const choice = await showChoice({
-				title: `Open "${item.name}"?`,
-				message: identified
-					? `"${here}" has unsaved changes, and opening a scene replaces what is on screen.`
-					: 'The scene on screen has never been saved, and opening a scene replaces it.',
-				// "Open anyway", NOT "Open without saving": travel's own writer-side
-				// auto-publish (fork 9) runs inside `travelToLevel` whatever is chosen
-				// here, so a named scene normally banks a version on the way out and the
-				// stronger label would be a lie. What "Save and open" adds is the cases
-				// that rule excludes — a viewer, a loose .tpscene, auto-versions switched
-				// off — and a deliberate one rather than an automatic one.
-				choices: [
-					{ value: 'save', label: 'Save and open' },
-					{ value: 'open', label: 'Open anyway', color: 'red' }
-				]
-			});
-			if (!choice) return;
-			if (choice === 'save') {
-				// the ordinary write-back first — it lands the new version BESIDE the one it
-				// supersedes and under the project's own rules. It answers false for the
-				// three cases those rules exclude (a viewer, a loose .tpscene opened from
-				// disk, an unnamed scene), and there an explicit save is what the user just
-				// asked for: it always writes a local item, and for a loose scene it is
-				// exactly the "Save into project" offer of fork 12.
-				const published = await publishCurrentIfChanged({ force: true });
-				if (published) showToast(`Saved a version of "${here}" first`);
-				else await saveSceneAsLevel(here, $activeFolder ?? null);
-			}
-		}
+		// R22 round 30 B1: THE UNSAVED-CHANGES GUARD lives in `$lib/sceneOpenGuard` — one
+		// copy for both authoring routes into a scene replace (this card, and the peers
+		// popover's "Go to"). Its header carries the reasoning that used to sit here.
+		if (!(await guardSceneReplace(item.name))) return;
+		// R22 round 35 — SHARE IT, OR EDIT IT PRIVATELY? Asked ONLY when there are peers and
+		// only for a scene the session has never heard of; `askScenePrivacy` answers 'share'
+		// itself in every other case, so a solo user's double-click is unchanged. This is the
+		// AUTHORING seam (both Explorer routes come through here) and deliberately not the
+		// travel node — a replicated pulse has nobody at a dialog.
+		const mode = await askScenePrivacy(levelSceneName(item.name));
+		if (!mode) return;
 		// NO name is passed, and that is a fix rather than an omission. `currentLevel.name`
 		// is the MANIFEST KEY — travel-away publishes under it — and an item name carries
 		// the `.tpscene` extension, so handing it over filed every version of "Arena"
 		// under a second scene called "Arena.tpscene": a duplicate card per open, and a
 		// history split in two. `travelToLevel` falls back to the payload's own `name`,
 		// which is the name the scene saved itself under and the key the manifest uses.
-		await travelToLevel(item.hash);
+		await travelToLevel(item.hash, '', { private: mode === 'private' });
 	}
+	/**
+	 * P3: open a file that lives in a MOUNTED project. Its bytes come from the saved
+	 * payload (or, once copied in, from the mount's own buffer) — never from
+	 * `explorer:blob:<id>`, which holds nothing for it.
+	 *
+	 * Image and text open here; audio and 3D are DISABLED WITH THE REASON rather than
+	 * silently doing nothing, because their viewers resolve their own bytes by library id
+	 * (`AudioPlayer`, `ModelPreview`) and a mounted file has no library id to resolve.
+	 * Copying it into the Library is one drag away and makes every viewer work.
+	 */
+	async function openVolumeItem(item: any) {
+		const blob = await volumeBlob(item.volumeId, item.id);
+		if (!blob) {
+			showToast(item.name + ' is not in the saved project any more');
+			return;
+		}
+		if (item.kind === 'image') {
+			openFilePreview({
+				title: item.name,
+				kind: 'image',
+				itemId: item.id,
+				name: item.name,
+				url: URL.createObjectURL(blob),
+				onClose: () => gridEl?.focus()
+			});
+			return;
+		}
+		if (item.kind === 'text') {
+			openTextEditor({
+				title: item.name + ' — ' + (item.volumeName ?? 'mounted project'),
+				code: await blob.text(),
+				onSave: (code: string) => void saveVolumeText(item, code),
+				onClose: () => gridEl?.focus()
+			});
+			return;
+		}
+		showToast(
+			'Copy ' + item.name + ' into your Library to open it (a ' + item.kind + ' viewer reads it from there)'
+		);
+	}
+	/** P3b: editing a mounted text file writes the volume's BUFFER — its hash moves with
+	 *  its bytes, because a volume is hash-addressed inside itself exactly as the library
+	 *  is, and the mount goes dirty until Save writes it back. */
+	async function saveVolumeText(item: any, code: string) {
+		const buffer = new TextEncoder().encode(code).buffer;
+		volumeUpdateBytes(item.volumeId, item.id, { buffer, hash: await hashBytes(buffer) });
+	}
+
 	async function openItem(item: any) {
+		// P3: a file in a mounted project — its own opener, because its bytes are not in
+		// the library's blob store
+		if (item.volumeItem) {
+			await openVolumeItem(item);
+			return;
+		}
 		// R22-R1: opening a shared file we do not hold means FETCHING it. There is nothing
 		// else a double-click could sensibly do — the card exists because the index says the
 		// file does, and the bytes are one ask away.
@@ -3403,17 +5067,51 @@
 			});
 		} else if (item.kind === 'image') {
 			const blob = await itemBlob(item.id);
-			if (blob) openImagePreview({ title: item.name, url: URL.createObjectURL(blob), onClose: () => gridEl?.focus() });
+			if (blob)
+				openFilePreview({
+					title: item.name,
+					kind: 'image',
+					itemId: item.id,
+					name: item.name,
+					url: URL.createObjectURL(blob),
+					onClose: () => gridEl?.focus()
+				});
+		} else if (item.kind === 'audio') {
+			// R22 round 11 (user): "I should be able to double click to open audio preview in a
+			// window". Before this a double-click on a sound merely SELECTED it, which is what
+			// a single click already did — the one card kind in the library that answered
+			// nothing. It opens the same window an image does, with a transport instead of a
+			// picture, so the arrows walk from a texture to a sound without a mode change.
+			openFilePreview({
+				title: item.name,
+				kind: 'audio',
+				itemId: item.id,
+				name: item.name,
+				onClose: () => gridEl?.focus()
+			});
 		} else if (item.kind === 'object' && !item.packEntry) {
-			// P1: double-click an object item ALWAYS opens the preview popup (the
-			// enable3dPreview toggle only gates the inline Properties preview)
-			openModelPreview({ title: item.name, itemId: item.id, name: item.name, onClose: () => gridEl?.focus() });
+			// R22 round 12 (user): "double click on 3d objects should open same preview as
+			// when opening image". ONE window for every kind, so the arrows walk from a
+			// texture to a model to a sound without a mode change — and the statistics the
+			// old pop-out showed come with it (`previewShowStats`, on by default), because
+			// adding a switch is no reason to take something away.
+			//
+			// `ModelPreviewWindow` survives for the PREFAB shelf's own "3D preview" button: a
+			// prefab is not a library file, it has no place in a folder walk, and 20-odd
+			// checks in prefab-explorer address that window by name.
+			openFilePreview({
+				title: item.name,
+				kind: 'object',
+				itemId: item.id,
+				name: item.name,
+				onClose: () => gridEl?.focus()
+			});
 		}
 	}
 </script>
 
 
-<svelte:window onresize={fitToViewport} />
+<svelte:window onresize={fitToViewport} ondragend={() => ((libraryDragging = false), (binDropActive = false))} />
 
 {#snippet editRow(depth: number)}
 	<div class="flex flex-col gap-0.5" style="padding-left: {8 + depth * 14}px">
@@ -3463,9 +5161,23 @@
 		aria-label="Filter files"
 		onclick={(e) => filterMenu(e)}>☷{filtering ? ' •' : ''}</button
 	>
-	<!-- R22 round 6: AFTER the filter, and always visible. An indicator that comes and
-	     goes reflows the header and trains nobody where to look; a permanent one has to
-	     be honest in every state instead — see the four in TransferLog. -->
+{/snippet}
+
+<!--
+	R22 ROUND 20 (user): "it seems to be good to show Filter by type, Thumbnails/List view
+	and then download files box button" — so the transfer log moved OUT of the filter
+	snippet and sits after the view toggle.
+
+	It reads better for a reason worth keeping: the filter and the view are both ways of
+	changing WHAT YOU SEE in the grid below, so they belong beside each other; the log is
+	about bytes moving between machines, a different subject entirely, and it was sitting
+	between the two controls that answer one question.
+
+	R22 round 6, still true: ALWAYS VISIBLE. An indicator that comes and goes reflows the
+	header and trains nobody where to look; a permanent one has to be honest in every state
+	instead — see the four in TransferLog.
+-->
+{#snippet logChip()}
 	<TransferLog bind:open={logOpen} />
 {/snippet}
 
@@ -3503,11 +5215,20 @@
 	browser does not implement it — a zero would be a claim, an absence is the truth.
 -->
 {#snippet storageChip()}
-	{#if storage}
-		<span
+	{#if storage && !headerNarrow}
+		<!--
+			R22 round 13 P2: the reading is now the ENTRY POINT to the breakdown, which changes
+			the argument above for letting it disappear below 700px - a control that DOES
+			something cannot only exist on a wide screen. So the same action also has a row in
+			this view's background menu and a row in Settings: three ways in, none of them lost
+			on a phone, and the header still yields the space it always did.
+		-->
+		<button
 			id="explorer-storage"
-			class="shrink-0 whitespace-nowrap text-[10px] text-gray-500"
-			title={storageTitle(storage)}>{fmtSize(storage.used)} / {fmtSize(storage.quota)}</span
+			type="button"
+			class="shrink-0 cursor-pointer whitespace-nowrap text-[10px] text-gray-500 underline decoration-dotted hover:text-gray-300"
+			title={storageTitle(storage) + ' Click for the breakdown.'}
+			onclick={openStorageModal}>{fmtSize(storage.used)} / {fmtSize(storage.quota)}</button
 		>
 	{/if}
 {/snippet}
@@ -3547,10 +5268,7 @@
 		draggable="true"
 		title={isFolder ? folder.name : item.name}
 		style:touch-action={tDragging ? 'none' : 'pan-y'}
-		ondragstart={(e) =>
-			isFolder
-				? e.dataTransfer?.setData('application/x-explorer-folder', JSON.stringify(folderDragPayload(folder)))
-				: onItemDragStart(e, item)}
+		ondragstart={(e) => (isFolder ? onFolderDragStart(e, folder) : onItemDragStart(e, item))}
 		ondragover={(e) => isFolder && dragOverInto(e, folder.id)}
 		ondragleave={() => isFolder && (dropFolder = null)}
 		ondrop={(e) => isFolder && dropInto(e, folder.id)}
@@ -3561,8 +5279,12 @@
 		onclick={(e) => (isFolder ? onFolderCardClick(e, folder) : onCardClick(e, item))}
 		ondblclick={() => (isFolder ? openFolder(folder.id) : openItem(item))}
 	>
-		{#each shownColumns as col (col.key)}
-			<td class="ex-cell {col.numeric ? 'text-right tabular-nums' : ''}" style:width={col.width}>
+		{#each shownColumns as col, ci (col.key)}
+			<td
+				class="ex-cell {col.numeric ? 'text-right tabular-nums' : ''}"
+				data-col={col.key}
+				style:width="{columnPx[ci]}px"
+			>
 				{#if col.key === 'name'}
 					<span class="flex min-w-0 items-center gap-1.5">
 						{#if isFolder}
@@ -3581,7 +5303,7 @@
 								><Icon name={KIND_ICONS[item.kind] ?? 'package'} size={14} /></span
 							>
 						{/if}
-						{#if (editing?.mode === 'rename' && editing.inGrid && editing.folderId === id) || (editing?.mode === 'rename-item' && editing.itemId === id) || (editing?.mode === 'rename-prefab' && editing.prefabId === item?.prefabId)}
+						{#if (editing?.mode === 'rename' && editing.inGrid && (editing.cardId ?? editing.folderId) === id) || (editing?.mode === 'rename-item' && editing.itemId === id) || (editing?.mode === 'rename-prefab' && editing.prefabId === item?.prefabId)}
 							{@render cardEdit()}
 						{:else}
 							<span
@@ -3596,7 +5318,12 @@
 						     a row has no corners, and four possible dots on one line is noise. The
 						     precedence is the card's own, top to bottom. -->
 						{#if !isFolder}
-							{#if openSceneHash && item.hash === openSceneHash}
+							{#if item.volumeItem}
+								<span
+									class="ex-dot explorer-mount-dot bg-indigo-400"
+									title={'In the mounted project “' + (item.volumeName ?? '') + '” — not in your library'}
+								></span>
+							{:else if openSceneHash && item.hash === openSceneHash}
 								<span class="ex-dot bg-emerald-400" title="The scene you have open"></span>
 							{:else if item.remoteScene}
 								<span
@@ -3644,6 +5371,7 @@
 				{/if}
 			</td>
 		{/each}
+		<td class="ex-cell ex-cell-spacer" aria-hidden="true"></td>
 	</tr>
 {/snippet}
 
@@ -3651,13 +5379,22 @@
 {#snippet listHead()}
 	<thead>
 		<tr id="explorer-list-head" class="ex-head" oncontextmenu={(e) => columnMenu(e)}>
-			{#each shownColumns as col (col.key)}
-				<th class="ex-th {col.numeric ? 'text-right' : ''}" style:width={col.width}>
+			{#each shownColumns as col, i (col.key)}
+				<th
+					class="ex-th {col.numeric ? 'text-right' : ''} {colDrag?.moved && colDrag.over === i
+						? 'ex-th-over'
+						: ''} {colDrag?.moved && colDrag.key === col.key ? 'ex-th-dragging' : ''}"
+					data-col={col.key}
+					style:width="{columnPx[i]}px"
+				>
 					<button
 						class="ex-th-btn"
 						data-col={col.key}
-						title={'Sort by ' + col.label.toLowerCase()}
-						onclick={() => sortBy(listView, col.key)}
+						title={col.always
+							? 'Sort by ' + col.label.toLowerCase() + ' — this column stays first'
+							: 'Sort by ' + col.label.toLowerCase() + ' · drag sideways to reorder'}
+						onpointerdown={(e) => colDragStart(e, col)}
+						onclick={() => colHeaderClick(col.key)}
 					>
 						{col.label}<!--
 							the indicator sits on the ACTIVE column only, so "which column is this
@@ -3666,13 +5403,29 @@
 								>{($explorerSort[listView] ?? {}).dir === -1 ? '▾' : '▴'}</span
 							>{/if}
 					</button>
+					<!-- svelte-ignore a11y_no_static_element_interactions -->
+					<div
+						class="ex-grip {colResize?.key === col.key ? 'ex-grip-on' : ''}"
+						data-grip={col.key}
+						title="Drag to resize · double-click to reset"
+						style="touch-action: none"
+						onpointerdown={(e) => colResizeStart(e, col, columnPx[i])}
+						onpointermove={colResizeMove}
+						onpointerup={colResizeEnd}
+						onpointercancel={colResizeEnd}
+						ondblclick={() => resetColumnWidth(listView, col.key)}
+					></div>
 				</th>
 			{/each}
+			<!-- the remainder. `table-layout: fixed` would otherwise share any surplus out
+			     across the sized columns and quietly undo the last drag. -->
+			<th class="ex-th ex-th-spacer" aria-hidden="true"></th>
 		</tr>
 	</thead>
 {/snippet}
 
 {#snippet identityChip()}
+	{#if !hideIdentity}
 	<!-- 21-I2 (locked answer 4): WHO AM I, compact and beside the search box —
 	     Project ▸ Scene ●. It RETIRES 21-G9's own row, which spent a whole line
 	     of a bottom dock on two words. The LOCATION crumbs inside the shell stay exactly
@@ -3713,6 +5466,28 @@
 				title={'The scene you have open: ' + $currentLevel.name + ' — click to find its file'}
 				onclick={revealOpenScene}>{$currentLevel.name}</button
 			>
+			<!--
+				R22 round 13 (user): "before this yellow dot should have lucid save icon, its
+				standard, right? the icon should be gray if nothing to save". It is, so the
+				icon is ALWAYS drawn beside an open scene and only its colour moves - a
+				control that appears only when there is work to do is a control nobody learns
+				where to find.
+
+				It is a BUTTON, not decoration: a save affordance beside the thing it saves is
+				what makes the icon standard, and it runs the SAME action Ctrl+S runs
+				(shortcuts.js, 'Save scene'), so the key and the button cannot drift apart.
+				Disabled while clean, which is also what greys it - no second colour rule.
+			-->
+			<button
+				id="explorer-save-scene"
+				class="shrink-0 rounded-sm p-0.5 {$sceneDirty ? 'text-amber-400 hover:bg-gray-700' : 'text-gray-500'}"
+				disabled={!$sceneDirty}
+				title={$sceneDirty
+					? 'Save "' + $currentLevel.name + '" (Ctrl+S)'
+					: 'Nothing to save - this scene matches the version its name points at'}
+				aria-label={$sceneDirty ? 'Save scene' : 'Nothing to save'}
+				onclick={saveOpenScene}><Save size={12} aria-hidden="true" /></button
+			>
 			{#if $sceneDirty}
 				<!-- the same signal the window title's asterisk uses (sceneIdentity.js) -->
 				<span
@@ -3724,6 +5499,7 @@
 			{/if}
 		{/if}
 	</div>
+	{/if}
 {/snippet}
 
 {#snippet content()}
@@ -3741,7 +5517,7 @@
 			     search box. What is left is the LOCATION trail — which folder am I in —
 			     which is a different question and keeps its own ⚙ toggle. -->
 			{#if showBreadcrumb}
-				<div class="flex items-center gap-0.5 overflow-x-auto whitespace-nowrap border-b border-gray-700/60 px-2 py-1 text-[11px] text-gray-300">
+				<div id="explorer-crumbs" class="flex items-center gap-0.5 overflow-x-auto whitespace-nowrap border-b border-gray-700/60 px-2 py-1 text-[11px] text-gray-300">
 					{#each crumbs as c, i (c.id ?? 'root')}
 						{#if i > 0}<span class="px-0.5 text-gray-600">/</span>{/if}
 						<button
@@ -3755,9 +5531,154 @@
 		{#snippet primary()}
 		<!-- folder tree (106.6); width/collapse/side owned by WindowShell (197) -->
 		<div id="explorer-tree" class="flex h-full flex-col text-xs" bind:clientHeight={treeColH}>
+			<!--
+				R22 round 13 P3: MOUNTED PROJECTS, above Library and pinned there.
+
+				"it would likely be better to be able to mount/unmount multiple projects and have
+				 them above 'Library' with save icon and x icon, so current open project memory is
+				 not affected."
+
+				Above rather than beside the read-only roots at the bottom, because a mount is a
+				place you WORK in: it holds real files, it can be edited, and it is the only root
+				here whose contents belong to a different project. Pinned (its own scroller) so a
+				long library tree cannot scroll the thing you mounted out of view.
+			-->
+			<div
+				id="explorer-mounts"
+				class="flex shrink-0 flex-col gap-0.5 border-b border-gray-700/60 p-1"
+			>
+				<!--
+					R22 round 13 (user): "'mount project...' button should be always on top of
+					mounted projects in Explorer".
+
+					FIRST CHILD, so it is at a fixed place: below the list it moved down every time
+					a project was mounted and back up on every unmount, and past four volumes the list
+					scrolls, which put the way IN below the fold. The 140px ceiling moved WITH that:
+					it belongs to the volume list below, not to the section, so the rows scroll under
+					a button that never moves. `shrink-0` keeps the button its own height when the
+					list is at full stretch.
+				-->
+				<button
+					id="explorer-mount-add"
+					class="shrink-0 whitespace-nowrap rounded-sm border border-dashed border-gray-600 px-2 py-1 text-left text-gray-400 hover:border-gray-400 hover:text-gray-200"
+					title="Browse another saved project's files here, without replacing the one you have open"
+					onclick={openMountPicker}>＋ Mount project…</button
+				>
+				<!-- the volumes, in their OWN scroller: the 140px ceiling belongs to the LIST,
+				     so a long list scrolls under a button that never moves. -->
+				<div
+					id="explorer-mount-list"
+					class="flex min-h-0 flex-col gap-0.5 overflow-y-auto"
+					style="max-height: 140px"
+				>
+				{#each $mountedVolumes as vol (vol.id)}
+					<div class="flex items-center whitespace-nowrap">
+						<button
+							class="w-4 shrink-0 text-gray-500"
+							aria-label={expanded.has(volumeKey(vol.id)) ? 'Collapse' : 'Expand'}
+							onclick={() => toggleExpand(volumeKey(vol.id))}
+							>{vol.folders.length ? (expanded.has(volumeKey(vol.id)) ? '▾' : '▸') : ''}</button
+						>
+						<button
+							data-mount={vol.id}
+							class="min-w-0 flex-1 truncate rounded px-1.5 py-1 text-left {volScope?.volumeId === vol.id
+								? 'bg-primary-700 text-white'
+								: 'text-gray-300 hover:bg-gray-700'} {dropFolder === volumeKey(vol.id)
+								? 'outline-solid outline-2 outline-primary-500'
+								: ''}"
+							title={(vol.missing
+								? 'The saved project behind this mount is gone — these rows are what was read before it went'
+								: 'A saved project, browsed from here. Your open project is not affected.') +
+								(vol.dirty ? ' — unsaved changes' : '')}
+							oncontextmenu={(e) => mountMenu(e, vol)}
+							ondragover={(e) => dragOverInto(e, volumeKey(vol.id))}
+							ondragleave={() => (dropFolder = null)}
+							ondrop={(e) => dropInto(e, volumeKey(vol.id))}
+							onclick={() => openFolder(volumeKey(vol.id))}
+						>
+							<HardDrive
+								size={16}
+								class="mr-1.5 w-4 text-center {vol.missing ? 'text-amber-400' : 'text-indigo-300'}"
+								aria-hidden="true"
+							/>{vol.name}{#if vol.dirty}<span class="mount-dirty text-amber-400" title="Unsaved changes"
+									>&nbsp;•</span
+								>{/if}
+						</button>
+						<!-- the two icons the ask names. Save is LIT only while dirty: a mount with
+						     nothing to write is not a save waiting to happen. -->
+						<button
+							id={'mount-save-' + vol.id}
+							class="shrink-0 rounded px-1 py-1 {vol.dirty
+								? 'text-amber-300 hover:bg-gray-700'
+								: 'cursor-default text-gray-600'}"
+							disabled={!vol.dirty}
+							aria-label={'Save ' + vol.name}
+							title={vol.dirty
+								? 'Write these files back into the saved project'
+								: 'No unsaved changes'}
+							onclick={() => void saveVolume(vol.id)}><Save size={14} aria-hidden="true" /></button
+						>
+						<button
+							id={'mount-unmount-' + vol.id}
+							class="shrink-0 rounded px-1 py-1 text-gray-400 hover:bg-gray-700 hover:text-gray-200"
+							aria-label={'Unmount ' + vol.name}
+							title="Stop showing this project here — the saved project is not deleted"
+							onclick={() => doUnmount(vol)}><X size={14} aria-hidden="true" /></button
+						>
+					</div>
+					{#if expanded.has(volumeKey(vol.id))}
+						{#each mountTree(vol) as row (row.folder.id)}
+							{#if editing?.mode === 'rename' && !editing.inGrid && editing.volumeId === vol.id && editing.folderId === row.folder.folderId}
+								{@render editRow(row.depth + 1)}
+							{:else}
+								<div
+									class="flex items-center whitespace-nowrap"
+									style="padding-left: {16 + row.depth * 14}px"
+									role="treeitem"
+									aria-selected={$activeFolder === row.folder.id}
+									tabindex="-1"
+									ondragover={(e) => dragOverInto(e, row.folder.id)}
+									ondragleave={() => (dropFolder = null)}
+									ondrop={(e) => dropInto(e, row.folder.id)}
+								>
+									<button
+										class="w-4 shrink-0 text-gray-500"
+										aria-label={row.hasChildren ? 'Expand or collapse' : 'No subfolders'}
+										onclick={() => toggleExpand(row.folder.id)}
+										>{row.hasChildren ? (expanded.has(row.folder.id) ? '▾' : '▸') : ''}</button
+									>
+									<button
+										data-vol-folder={row.folder.id}
+										class="flex-1 truncate rounded px-1.5 py-1 text-left {$activeFolder === row.folder.id
+											? 'bg-primary-700 text-white'
+											: 'text-gray-300 hover:bg-gray-700'} {dropFolder === row.folder.id
+											? 'outline-solid outline-2 outline-primary-500'
+											: ''}"
+										draggable="true"
+										ondragstart={(e) => onFolderDragStart(e, row.folder)}
+										oncontextmenu={(e) => folderMenu(e, row.folder)}
+										onclick={() => openFolder(row.folder.id)}
+									>
+										<Folder size={16} class="ico-folder mr-1.5 w-4 text-center" aria-hidden="true" />{row
+											.folder.name}
+									</button>
+								</div>
+							{/if}
+							{#if editing?.mode === 'create' && !editing.inGrid && editing.volumeId === vol.id && editing.parentId === row.folder.folderId}
+								{@render editRow(row.depth + 2)}
+							{/if}
+						{/each}
+						{#if editing?.mode === 'create' && !editing.inGrid && editing.volumeId === vol.id && editing.parentId === null}
+							{@render editRow(1)}
+						{/if}
+					{/if}
+				{/each}
+				</div>
+			</div>
 			<!-- scrollable folder list; the roots below stay pinned to the bottom -->
 			<div class="flex min-h-0 flex-1 flex-col gap-0.5 overflow-x-auto overflow-y-auto p-1">
 			<button
+				id="explorer-root-row"
 				class="whitespace-nowrap rounded px-2 py-1 text-left {$activeFolder === null && !search
 					? 'bg-primary-700 text-white'
 					: 'text-gray-300 hover:bg-gray-700'} {dropFolder === 'root' ? 'outline-solid outline-2 outline-primary-500' : ''}"
@@ -3796,7 +5717,7 @@
 								: 'text-gray-300 hover:bg-gray-700'} {dropFolder === row.folder.id ? 'outline-solid outline-2 outline-primary-500' : ''}"
 							draggable="true"
 							ondragstart={(e) =>
-								e.dataTransfer?.setData('application/x-explorer-folder', JSON.stringify(folderDragPayload(row.folder)))}
+								onFolderDragStart(e, row.folder)}
 							oncontextmenu={(e) => folderMenu(e, row.folder)}
 							onclick={() => openFolder(row.folder.id)}
 							ondblclick={() => toggleExpand(row.folder.id)}
@@ -3837,9 +5758,20 @@
 				<div id="explorer-roots" class="flex flex-col gap-0.5 overflow-y-auto" style="max-height: {rootsH}px">
 					<button
 						id="prefabs-folder"
-						class="whitespace-nowrap rounded px-2 py-1 text-left {$activeFolder === 'prefabs'
-							? 'bg-primary-700 text-white'
-							: 'text-gray-300 hover:bg-gray-700'}"
+						class="whitespace-nowrap rounded px-2 py-1 text-left {dropFolder === 'prefabs'
+							? 'bg-primary-500/20 ring-1 ring-primary-400 text-white'
+							: $activeFolder === 'prefabs'
+								? 'bg-primary-700 text-white'
+								: 'text-gray-300 hover:bg-gray-700'}"
+						title="Your prefab library. Drop a 3D object or a scene file here to make one — it keeps its own format."
+						ondragover={(e) => {
+							if (!canAccept(e)) return;
+							e.preventDefault();
+							e.stopPropagation();
+							dropFolder = 'prefabs';
+						}}
+						ondragleave={() => (dropFolder = null)}
+						ondrop={(e) => void dropToPrefabs(e)}
 						onclick={() => openFolder('prefabs')}><Boxes size={16} class="ico-prefab mr-1.5 w-4 text-center" aria-hidden="true" />Prefabs</button
 					>
 					<button
@@ -3857,12 +5789,25 @@
 							{:else}
 							<button
 								data-pack={pack.name}
-								class="whitespace-nowrap rounded px-2 py-1 text-left {$activeFolder === 'pack:' + pack.name
-									? 'bg-primary-700 text-white'
-									: 'text-gray-400 hover:bg-gray-700'}"
+								class="whitespace-nowrap rounded px-2 py-1 text-left {dropFolder === 'pack:' + pack.name
+									? 'bg-primary-500/20 text-white ring-1 ring-primary-400'
+									: $activeFolder === 'pack:' + pack.name
+										? 'bg-primary-700 text-white'
+										: 'text-gray-400 hover:bg-gray-700'}"
 								style="padding-left: 22px"
-								title={pack.license ? pack.title + ' · ' + pack.license : pack.title}
+								title={pack.source === 'default'
+									? (pack.license ? pack.title + ' · ' + pack.license : pack.title) + ' — built in'
+									: (pack.license ? pack.title + ' · ' + pack.license : pack.title) +
+										' — drop library files or folders here to add them'}
 								oncontextmenu={(e) => packRowMenu(e, pack)}
+								ondragover={(e) => {
+									if (!canAccept(e) || pack.source === 'default') return;
+									e.preventDefault();
+									e.stopPropagation();
+									dropFolder = 'pack:' + pack.name;
+								}}
+								ondragleave={() => (dropFolder = null)}
+								ondrop={(e) => void dropIntoPack(e, pack)}
 								onclick={() => openFolder('pack:' + pack.name)}
 							>
 								<PackageOpen size={16} class="mr-1.5 w-4 text-center text-gray-500" aria-hidden="true" />{pack.title}
@@ -3896,18 +5841,47 @@
 					{/if}
 					<!-- R22 round 7: the bin sits BELOW Scene. It is the least-used pinned row,
 					     and a destructive place belongs under the things you reach for rather
-					     than above them. Still hidden while empty. -->
-					{#if deletedLog($projectManifest).length}
+					     than above them. Still hidden while empty — EXCEPT during a drag (round
+					     11), because a row you cannot see is a row you cannot drop on, and the
+					     very first delete-by-drag is exactly the one that finds the bin empty.
+
+					     R22 round 13 (user): ONE ROOT NOW. The Deleted log used to be a second
+					     root beside this one, which claimed two places in the tree for what
+					     `partitionDeleted` proves is one array read twice; the split moved onto
+					     the tabs at the top of the view. So the count and the gate below are the
+					     size of the PLACE (`deletedRootCount` / `showDeletedRoot`), not of the
+					     bin — see the comment on those. -->
+					{#if showDeletedRoot}
 						<button
 							id="deleted-folder"
-							class="whitespace-nowrap rounded px-2 py-1 text-left {$activeFolder === 'deleted'
-								? 'bg-primary-700 text-white'
-								: 'text-gray-300 hover:bg-gray-700'}"
-							title="Files removed from the project — restore them, or free the disk"
+							class="whitespace-nowrap rounded px-2 py-1 text-left {binDropActive
+								? 'bg-red-600/30 text-white ring-1 ring-red-400'
+								: $activeFolder === 'deleted'
+									? 'bg-primary-700 text-white'
+									: 'text-gray-300 hover:bg-gray-700'}"
+							title={($deletedLogEnabled && logCount !== binCount
+								? logCount +
+									' deleted, of which ' +
+									binCount +
+									' can still be restored. '
+								: '') +
+								'Files removed from the project — restore them, or free the disk. Drop files or folders here to delete them.'}
 							onclick={() => openFolder('deleted')}
 							oncontextmenu={deletedRowMenu}
+							ondragover={(e) => {
+								if (!canAccept(e)) return;
+								e.preventDefault();
+								e.stopPropagation();
+								binDropActive = true;
+							}}
+							ondragleave={() => (binDropActive = false)}
+							ondrop={(e) => void dropToBin(e)}
 							><Icon name="trash-2" size={16} class="mr-1.5 w-4 text-center text-gray-400" aria-hidden="true" />Deleted
-							<span class="text-gray-500">({deletedLog($projectManifest).length})</span></button
+							{#if libraryDragging && !deletedRootCount}
+								<span class="text-gray-500">(drop here)</span>
+							{:else}
+								<span class="text-gray-500">({deletedRootCount})</span>
+							{/if}</button
 						>
 					{/if}
 				</div>
@@ -3931,6 +5905,215 @@
 			onkeydown={gridKeydown}
 			role="region"
 		>
+			<!--
+				R22 round 11 — THE QUESTION, WHERE THE FILES ARE. Sticky at the top of the
+				scrolling grid rather than floating over the viewport; see `askInExplorer`.
+				It stops `click` and `pointerdown` because #explorer-grid answers both — the
+				background click deselects and the press starts a marquee — and answering a
+				question is neither of those. (`onGridPointerDown` already ignores presses
+				inside a `button`, so only the strip's own body needed it.)
+			-->
+			{#if confirmStrip}
+				<!-- svelte-ignore a11y_no_static_element_interactions, a11y_click_events_have_key_events -->
+				<div
+					id="explorer-confirm"
+					class="ex-confirm"
+					onclick={(e) => e.stopPropagation()}
+					onpointerdown={(e) => e.stopPropagation()}
+					onkeydown={(e) => {
+						if (e.key !== 'Escape') return;
+						e.stopPropagation();
+						confirmStripNo();
+					}}
+				>
+					<span class="ex-confirm-icon {confirmStrip.safe ? 'ex-confirm-icon--safe' : ''}"
+						><Icon name={confirmStrip.icon ?? 'trash-2'} size={14} /></span
+					>
+					<span class="ex-confirm-text">
+						<span class="ex-confirm-title">{confirmStrip.title}</span>
+						<span class="ex-confirm-detail">{confirmStrip.detail}</span>
+					</span>
+					<!--
+						R22 round 13: the PRIMARY is not always the destructive answer. Unmounting a
+						dirty mount asks save / discard / cancel, and the answer that loses nothing
+						is the one that should be focused, wear the calm colour and take Enter — so
+						`safe` moves the red one button to the right, onto the alt.
+					-->
+					<button
+						id="explorer-confirm-yes"
+						class="ex-confirm-yes {confirmStrip.safe ? 'ex-confirm-safe' : ''}"
+						use:focusConfirmBtn
+						onclick={confirmStripYes}>{confirmStrip.confirmLabel}</button
+					>
+					{#if confirmStrip.altLabel}
+						<button id="explorer-confirm-alt" class="ex-confirm-yes" onclick={confirmStripAlt}
+							>{confirmStrip.altLabel}</button
+						>
+					{/if}
+					<button id="explorer-confirm-no" class="ex-confirm-no" onclick={confirmStripNo}>Cancel</button>
+					{#if !confirmStrip.noSettings}
+						<button
+							id="explorer-confirm-settings"
+							class="ex-confirm-settings"
+							title="Open the file settings — the recycle bin, and whether deleting asks at all"
+							onclick={openFileSettings}>File settings</button
+						>
+					{/if}
+				</div>
+			{:else if shareAsk}
+				<!--
+					R22 round 30 C2 — the OFFER, on the delete strip's layout with a neutral
+					modifier: the red belongs to the destructive question, and wearing it here
+					would make sharing a file look like losing one.
+				-->
+				<!-- svelte-ignore a11y_no_static_element_interactions, a11y_click_events_have_key_events -->
+				<div
+					id="explorer-share-ask"
+					class="ex-confirm ex-confirm--ask"
+					onclick={(e) => e.stopPropagation()}
+					onpointerdown={(e) => e.stopPropagation()}
+					onkeydown={(e) => {
+						if (e.key !== 'Escape') return;
+						e.stopPropagation();
+						answerShareAsk('keep');
+					}}
+				>
+					<span class="ex-confirm-icon ex-ask-icon"><Share2 size={14} aria-hidden="true" /></span>
+					<span class="ex-confirm-text">
+						<span class="ex-confirm-title">
+							{#if shareAsk.kind === 'connect'}Share your {shareAsk.items.length} file{shareAsk
+									.items.length === 1
+									? ''
+									: 's'} with the session?{:else if shareAsk.items.length === 1}Share “{shareAsk
+									.items[0].name}” with the session?{:else}Share {shareAsk.items.length} new files with
+								the session?{/if}
+						</span>
+						<span class="ex-confirm-detail">
+							{shareAsk.kind === 'connect'
+								? 'They are only on this device — only shared files are visible to peers.'
+								: 'Only shared files are visible to peers — everything else stays on this device.'}
+						</span>
+					</span>
+					<!--
+						ONE box for BOTH standing rules — checked, Share means "always" and Keep local
+						means "never". It sits between the question and the answers because that is the
+						reading order: you decide whether this is a rule, then which way it goes. Stash
+						ignores it (see `resolveShareAsk`) — a one-off act is not a policy.
+					-->
+					<label
+						class="ex-ask-remember"
+						title="Applies to whichever answer you press: Share always, or Keep local never. Change it any time in File settings."
+					>
+						<input
+							id="explorer-share-remember"
+							class="tp-check"
+							type="checkbox"
+							checked={shareRemember}
+							onchange={(e) => (shareRemember = e.currentTarget.checked)}
+						/>
+						Do this for new files from now on
+					</label>
+					<button
+						id="explorer-share-yes"
+						class="ex-confirm-yes ex-ask-yes"
+						use:focusConfirmBtn
+						onclick={() => answerShareAsk('share')}
+						>{shareAsk.items.length === 1 ? 'Share' : 'Share all'}</button
+					>
+					<button id="explorer-share-no" class="ex-confirm-no" onclick={() => answerShareAsk('keep')}
+						>Keep local</button
+					>
+					{#if shareAsk.kind === 'connect'}
+						<!--
+							The destructive option keeps round 7's ritual: the button becomes the
+							question and the second press is the answer. No modal — this strip IS the
+							place the question is asked.
+						-->
+						<button
+							id="explorer-share-stash"
+							class="ex-confirm-no"
+							title="Save your library into a session, then take the session's files instead"
+							onclick={() => {
+								if (!shareStashArmed) {
+									shareStashArmed = true;
+									return;
+								}
+								resolveShareAsk('stash');
+							}}
+							>{shareStashArmed ? 'Really replace my library?' : 'Stash mine'}</button
+						>
+					{/if}
+					<button
+						id="explorer-share-settings"
+						class="ex-confirm-settings"
+						title="Open the file settings — what happens to files you add during a session"
+						onclick={openFileSettings}>File settings</button
+					>
+				</div>
+			{/if}
+			<!--
+				R22 round 13 (user): "'Deleted log' button should be somewhere within 'Deleted'
+				(maybe as tab or a checkbox to toggle log view) when opened in Explorer ... I like
+				Lucid icon, could be used as just a button to toggle it".
+
+				THE TWO READINGS OF ONE ARRAY, as a segmented control at the top of the view they
+				switch between. `tp-seg` because that is the app's own answer to "a mode you flip
+				often and want to see the state of at a glance" (Thumbnails|List, one header up),
+				and `aria-pressed` drives the armed paint so the styling and the accessibility
+				tree cannot disagree.
+
+				HERE rather than in the header chips: the chips apply to every view, and a control
+				that only means something in one place must not reflow the header of all the
+				others. Here rather than on the breadcrumb: the breadcrumb is HIDEABLE
+				(`showBreadcrumb`), and the only way into the log must not be behind a preference
+				— which is most of what was wrong with putting it in the tree.
+
+				It keeps the counts the two roots used to carry, so the glance survives the move,
+				and it stops `click`/`pointerdown` for the confirm strip's reason: #explorer-grid
+				answers both (deselect, and start a marquee) and choosing a view is neither.
+			-->
+			{#if inDeletedView}
+				<!-- svelte-ignore a11y_no_static_element_interactions, a11y_click_events_have_key_events -->
+				<div
+					id="explorer-bin-tabs"
+					class="ex-bin-tabs"
+					onclick={(e) => e.stopPropagation()}
+					onpointerdown={(e) => e.stopPropagation()}
+				>
+					<div class="tp-seg" role="group" aria-label="Deleted view">
+						<button
+							id="deleted-tab-bin"
+							class="tp-seg-btn"
+							aria-pressed={$activeFolder === 'deleted'}
+							title="What can be put back: the deletions whose bytes are still on this machine."
+							onclick={() => openFolder('deleted')}
+							><Icon name="trash-2" size={14} aria-hidden="true" />Bin ({binCount})</button
+						>
+						<button
+							id="deleted-tab-log"
+							class="tp-seg-btn"
+							aria-pressed={$activeFolder === 'deletedlog'}
+							disabled={!logAvailable}
+							title={logAvailable
+								? 'The whole record: what was removed, by whom and when — including the files whose bytes are gone.'
+								: 'The deleted files log is switched off in File settings, so there is no record to show.'}
+							onclick={() => openFolder('deletedlog')}
+							><Icon name="file-text" size={14} aria-hidden="true" />Log ({logCount})</button
+						>
+					</div>
+					<!-- disabled WITH the reason, and the reason is RENDERED rather than left in a
+					     tooltip — the storage panel's refused rows settled that one. It is also the
+					     way back on: the button opens the setting that turned it off. -->
+					{#if !logAvailable}
+						<button
+							id="deleted-log-off"
+							class="ex-bin-note"
+							title="Open the file settings — the recycle bin, and whether deletions are recorded at all"
+							onclick={openFileSettings}>Log off — File settings</button
+						>
+					{/if}
+				</div>
+			{/if}
 			{#if !pendingCard && childFolders.length === 0 && gridItems.length === 0}
 				{#if openPack && $openPackLoading}
 					<!-- QW: first open of a pack fetches its item list from the CDN — show a
@@ -3953,7 +6136,11 @@
 					</div>
 				{:else}
 				<p class="p-4 text-center text-xs italic text-gray-500">
-					{$activeFolder === 'prefabs'
+					{volScope
+						? volume?.missing
+							? 'The saved project behind this mount is gone — unmount it, or save it back to store it again.'
+							: 'This folder of the mounted project is empty.'
+						: $activeFolder === 'prefabs'
 						? 'No prefabs yet — right-click an object and Save as prefab.'
 						: $activeFolder === 'packs' ? 'No packs. Right-click here to import a pack (.zip) or load one from a URL.'
 						: typeof $activeFolder === 'string' && $activeFolder.startsWith('pack:') ? 'This pack has no items.'
@@ -3993,7 +6180,7 @@
 								{@render cardEdit()}
 							</div>
 						{/if}
-						<table class="ex-table">
+						<table class="ex-table" style:min-width="{tableMinPx}px">
 							{@render listHead()}
 							{#if deletedGroups}
 								<!-- grouped bin: one SECTION per deleter, collapsible. The rows inside a
@@ -4001,7 +6188,7 @@
 								{#each deletedGroups as group (group.id)}
 									<tbody>
 										<tr class="ex-group">
-											<td colspan={shownColumns.length}>
+											<td colspan={shownColumns.length + 1}>
 												<button class="ex-group-btn" onclick={() => toggleGroup(group.id)}>
 													<span class="ex-group-caret">{collapsedGroups.has(group.id) ? '▸' : '▾'}</span>
 													{group.name}<span class="ex-group-n">{group.rows.length}</span>
@@ -4057,7 +6244,7 @@
 								tabindex="0"
 								draggable="true"
 								ondragstart={(e) =>
-									e.dataTransfer?.setData('application/x-explorer-folder', JSON.stringify(folderDragPayload(folder)))}
+									onFolderDragStart(e, folder)}
 								ondragover={(e) => dragOverInto(e, folder.id)}
 								ondragleave={() => (dropFolder = null)}
 								ondrop={(e) => dropInto(e, folder.id)}
@@ -4084,7 +6271,7 @@
 										? MUTED_ICON
 										: 'ico-folder'}"><Folder size={32} aria-hidden="true" /></span
 								>
-								{#if editing?.mode === 'rename' && editing.inGrid && editing.folderId === folder.id}
+								{#if editing?.mode === 'rename' && editing.inGrid && (editing.cardId ?? editing.folderId) === folder.id}
 									{@render cardEdit()}
 								{:else}
 									<span
@@ -4125,6 +6312,16 @@
 								<span
 									class="explorer-open-dot absolute left-1 top-1 h-2.5 w-2.5 rounded-full bg-emerald-400"
 									title="The scene you have open"
+								></span>
+							{/if}
+							{#if item.volumeItem}
+								<!-- P3: THIS FILE LIVES IN A MOUNTED PROJECT, not in your library. Said on
+								     the card because every other signal here (share dots, the stale-version
+								     dot, the open-scene ring) describes a library record, and a row that
+								     looks like one but answers no library operation is the confusing case. -->
+								<span
+									class="explorer-mount-dot absolute right-1 top-1 h-2.5 w-2.5 rounded-full bg-indigo-400"
+									title={'In the mounted project “' + (item.volumeName ?? '') + '” — not in your library'}
 								></span>
 							{/if}
 							{#if item.remoteScene}
@@ -4400,6 +6597,17 @@
 								Previewing in its own window
 							</div>
 						</div>
+					{:else if selItem.kind === 'audio' && !selItem.packEntry && !selItem.remoteItem}
+						<!-- R22 round 11 (user): "plus same preview in properties as 3d preview for
+						     objects". An object gets a live viewport in this pane; a sound got a
+						     duration in text and no way to hear it. It is the SAME AudioPlayer the
+						     preview window uses, in its compact face, so the two cannot drift —
+						     the ModelPreview precedent one kind over. -->
+						<div id="inline-audio" class="mt-1">
+							{#key selItem.id}
+								<AudioPlayer itemId={selItem.id} name={selItem.name} compact />
+							{/key}
+						</div>
 					{:else if (selItem.kind === 'object' || selItem.kind === 'prefab') && $enable3dPreview && !selItem.packEntry}
 						<div id="inline-preview" class="mt-1 overflow-hidden rounded-sm bg-[#0d1117]" style="height: 150px">
 							{#key selItem.id}
@@ -4568,6 +6776,9 @@
 	<!-- 21-G8: the "Import project as folder (.tp)…" picker — mounted whenever the
 	     Explorer is open (the menu entry that clicks it can open from any view) -->
 	<input bind:this={tpImportInput} type="file" accept=".tp" class="hidden" onchange={onImportTpFile} />
+	<!-- R22 round 13: the MOUNT picker's own .tp picker — a different intent (import into
+	     Sessions, then mount) and therefore a different input; see `importRow` -->
+	<input bind:this={tpMountInput} type="file" accept=".tp" class="hidden" onchange={onImportTpMount} />
 	{#if docked}
 		<div
 			id="explorer-list"
@@ -4592,7 +6803,7 @@
 				onpointerup={endResize}
 			></div>
 			<DockTabs />
-			<div class="mb-1 flex items-center gap-2">
+			<div class="mb-1 flex items-center gap-2" use:headerWidth>
 				<span class="shrink-0 text-xs font-semibold text-gray-200"><FolderTree size={16} class="mr-1" aria-hidden="true" />Explorer</span>
 				<!-- `shrink-0`: the identity chip beside it is the flex item that gives way.
 				     W6 deliberately left this row's LAYOUT alone — its narrow-width behaviour
@@ -4607,6 +6818,7 @@
 				/>
 				{@render filterChip()}
 				{@render viewChip()}
+				{@render logChip()}
 				{@render storageChip()}
 				{@render identityChip()}
 				<button
@@ -4641,8 +6853,12 @@
 			ondrop={onDrop}
 			role="region"
 		>
-			<div class="ui-panel-header move-handle shrink-0 cursor-move select-none py-1.5">
-				<span class="shrink-0"><FolderTree size={16} class="mr-1" aria-hidden="true" />Explorer</span>
+			<div class="ui-panel-header move-handle shrink-0 cursor-move select-none py-1.5" use:headerWidth>
+				<span class="shrink-0" title="Explorer"
+					><FolderTree size={16} class={hideLabel ? '' : 'mr-1'} aria-hidden="true" />{hideLabel
+						? ''
+						: 'Explorer'}</span
+				>
 				<!-- W6: the header's overflow lives HERE. The ✕ was never missing — every
 				     item ahead of it was `shrink-0`, so the row's minimum width (~730px)
 				     exceeded the window's own 420px minimum and the two trailing buttons
@@ -4651,14 +6867,17 @@
 				     "the Explorer has no close button" report. Clipping the search + chips
 				     instead keeps Dock and ✕ inside the window at every width. -->
 				<div class="flex min-w-0 flex-1 items-center gap-2 overflow-hidden">
+				{#if !hideSearch}
 					<input
 						id="explorer-search"
 						class="ui-input w-44 shrink-0 py-0.5 font-normal"
 						placeholder="Search assets…"
 						bind:value={search}
 					/>
+				{/if}
 					{@render filterChip()}
 					{@render viewChip()}
+					{@render logChip()}
 					{@render storageChip()}
 					{@render identityChip()}
 				</div>
@@ -4691,7 +6910,16 @@
 {/if}
 
 {#if menu}
-	<ContextMenu x={menu.x} y={menu.y} items={menu.items} on:close={() => (menu = null)} />
+	<!-- R22 round 13 (user): a menu whose rows are DATA gets a ceiling — see the
+	     `maxHeight` prop. Absent for every other menu here, which keeps them all
+	     byte-identical. -->
+	<ContextMenu
+		x={menu.x}
+		y={menu.y}
+		items={menu.items}
+		maxHeight={menu.maxHeight ?? null}
+		on:close={() => (menu = null)}
+	/>
 {/if}
 
 <!-- mobile touch-drag ghost that follows the finger onto the viewport -->
@@ -4753,6 +6981,11 @@
 		align-content: start;
 		overflow-y: auto;
 	}
+	/* R22 round 11: the list's own container is the sideways scroller, here too. The PAGE
+	   may never scroll horizontally (the documented rule), so the overflow stops here. */
+	.ex-split-on .ex-list {
+		overflow-x: auto;
+	}
 	.ex-log {
 		min-height: 0;
 		flex: 0 0 300px;
@@ -4772,11 +7005,207 @@
 		min-width: 0;
 		overflow: auto;
 	}
+
+	/*
+		R22 round 11 — THE INLINE CONFIRM. It owns its surface for the same reason the list
+		header does (the `ui-panel`/`@apply` trap): it is sticky over scrolling content, so
+		a transparent background would show the cards sliding under the question.
+
+		`z-index: 3` puts it over the list's own sticky header (z 1) and the drop band —
+		while a question is standing it is the thing to read.
+	*/
+	.ex-confirm {
+		position: sticky;
+		top: 0;
+		z-index: 3;
+		display: flex;
+		align-items: center;
+		gap: 8px;
+		margin-bottom: 4px;
+		padding: 6px 8px;
+		border: 1px solid #b91c1c;
+		border-radius: 4px;
+		background: var(--surface, #1f2937);
+		box-shadow: 0 2px 8px rgb(0 0 0 / 35%);
+		font-size: 11px;
+	}
+	.ex-confirm-icon {
+		flex: 0 0 auto;
+		color: #f87171;
+	}
+	.ex-confirm-text {
+		display: flex;
+		min-width: 0;
+		flex: 1;
+		flex-direction: column;
+		line-height: 1.35;
+	}
+	.ex-confirm-title {
+		font-weight: 600;
+		color: #e5e7eb;
+	}
+	.ex-confirm-detail {
+		color: #9ca3af;
+	}
+	.ex-confirm-yes,
+	.ex-confirm-no {
+		flex: 0 0 auto;
+		border-radius: 3px;
+		padding: 3px 10px;
+		font-weight: 600;
+	}
+	.ex-confirm-yes {
+		background: #b91c1c;
+		color: #fff;
+	}
+	.ex-confirm-yes:hover {
+		background: #dc2626;
+	}
+	.ex-confirm-no {
+		border: 1px solid var(--border, #374151);
+		color: #d1d5db;
+	}
+	.ex-confirm-no:hover {
+		background: rgb(255 255 255 / 6%);
+	}
+	/*
+		R22 round 13 — the SAFE primary. Declared AFTER `.ex-confirm-yes` on purpose: both
+		are one class, so source order is what decides, and the same goes for the two
+		`:hover` rules (the documented `.tbx-sel` ordering trap, one component over).
+
+		Amber rather than red for the icon, because amber is what this app already means by
+		"unsaved" — the mount row wears the same colour for its dirty dot and its Save.
+	*/
+	.ex-confirm-safe {
+		background: #1d4ed8;
+	}
+	.ex-confirm-safe:hover {
+		background: #2563eb;
+	}
+	.ex-confirm-icon--safe {
+		color: #fbbf24;
+	}
+	/*
+		R22 round 30 C2 — the OFFER wears the same layout and a different colour. Red is the
+		destructive question's; an offer to share a file must not read as a warning.
+	*/
+	.ex-confirm--ask {
+		border-color: var(--border, #374151);
+		/* the offer carries one more control than the delete question, so it is the only
+		   strip allowed to wrap — on a narrow panel the remember box drops under the text
+		   with the buttons rather than squeezing the question to nothing */
+		flex-wrap: wrap;
+	}
+	/* a MODIFIER, so it reads quieter than the answers it modifies and never competes
+	   with them for the press */
+	.ex-ask-remember {
+		display: flex;
+		flex: 0 0 auto;
+		align-items: center;
+		gap: 6px;
+		color: #9ca3af;
+		cursor: pointer;
+	}
+	.ex-ask-remember:hover {
+		color: #d1d5db;
+	}
+	.ex-ask-icon {
+		color: #93c5fd;
+	}
+	.ex-ask-yes {
+		background: #1d4ed8;
+	}
+	.ex-ask-yes:hover {
+		background: #2563eb;
+	}
+	/* the way OUT of being asked, offered beside the question rather than described in it */
+	.ex-confirm-settings {
+		flex: 0 0 auto;
+		border-radius: 3px;
+		padding: 3px 8px;
+		color: #9ca3af;
+		text-decoration: underline;
+	}
+	.ex-confirm-settings:hover {
+		color: #e5e7eb;
+	}
+	/* R22 round 13: BIN | LOG, the two readings of one array. Sticky at the top of the
+	   scrolling grid, on the confirm strip's model — but with no surface and no border of
+	   its own, because it is a view SWITCH and not a question: the `tp-seg` control is the
+	   only thing that should read as chrome here. `z-index` is one below the confirm strip
+	   so an armed question always sits over it. */
+	.ex-bin-tabs {
+		position: sticky;
+		top: 0;
+		z-index: 2;
+		display: flex;
+		align-items: center;
+		gap: 8px;
+		margin-bottom: 4px;
+		padding: 2px 2px 4px;
+		background: var(--surface, #1f2937);
+	}
+	.ex-bin-note {
+		flex: 0 0 auto;
+		border-radius: 3px;
+		padding: 2px 6px;
+		color: #9ca3af;
+		font-size: 10px;
+		text-decoration: underline;
+	}
+	.ex-bin-note:hover {
+		color: #e5e7eb;
+	}
 	.ex-table {
 		width: 100%;
 		border-collapse: collapse;
 		font-size: 11px;
 		table-layout: fixed;
+	}
+	/*
+		R22 round 11 — RESIZE AND REORDER.
+
+		`.ex-th` becomes the grip's containing block. The grip is 7px wide and sits ON the
+		boundary (half of it over each side) so the target is the line the eye aims at
+		rather than a strip inside one column.
+	*/
+	.ex-th {
+		position: relative;
+	}
+	/* the remainder cell: no width, so fixed layout gives it everything left over */
+	.ex-th-spacer,
+	.ex-cell-spacer {
+		width: auto;
+		padding: 0;
+	}
+	.ex-grip {
+		position: absolute;
+		top: 0;
+		right: -4px;
+		z-index: 2;
+		height: 100%;
+		width: 7px;
+		cursor: col-resize;
+	}
+	.ex-grip::after {
+		content: '';
+		position: absolute;
+		top: 3px;
+		bottom: 3px;
+		left: 3px;
+		width: 1px;
+		background: transparent;
+	}
+	.ex-grip:hover::after,
+	.ex-grip-on::after {
+		background: var(--accent, #3b82f6);
+	}
+	/* the column being carried, and the one it would land on */
+	.ex-th-dragging .ex-th-btn {
+		opacity: 0.45;
+	}
+	.ex-th-over {
+		box-shadow: inset 2px 0 0 var(--accent, #3b82f6);
 	}
 	.ex-head {
 		position: sticky;
@@ -4866,6 +7295,21 @@
 		padding: 2px 6px;
 	}
 
+	/*
+	   R22 ROUND 20 — THE HEADER'S NARROW-WIDTH CASUALTY.
+
+	   The header row has a contract, and `explorer-header-panels` pins it: at 520px it must
+	   not overflow, the search box keeps its width, and the IDENTITY CHIP is the item that
+	   gives way by truncating its project and scene names. Round 11's view toggle (~52px)
+	   pushed the row past what the chip has left to surrender, so the row overflowed —
+	   which is how a control that is right at full width silently breaks a narrow one.
+
+	   The storage reading is what yields. It is the only thing up there that answers a
+	   question nobody asked while working — how full the disk is — and it is already
+	   conditional on the browser implementing `storage.estimate()`, so it has no claim on
+	   space the working controls need. The filter, the view and the transfers all change or
+	   report something you are doing.
+	*/
 	/* the view toggle uses the shared `tp-seg` / `tp-seg-btn` utilities — the Sessions
 	   filter wanted the same control in the same round, which is when it stopped being
 	   local (see ui.utilities.css) */

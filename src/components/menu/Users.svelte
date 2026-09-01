@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { cameraPreviews, joinPeerPreview, previewLabel } from '$lib/cameraPreview';
-	import { Check, ChevronDown, Eye, Glasses, StickyNote, VolumeX, Camera } from '@lucide/svelte';
+	import { ArrowRight, Check, ChevronDown, Eye, Glasses, StickyNote, VolumeX, Camera } from '@lucide/svelte';
 	import * as THREE from 'three';
 	import { onMount, untrack } from 'svelte';
 	import {
@@ -34,8 +34,19 @@
 	// P2b: WHICH SCENE each peer is standing in. Reported as "if a peer opens another
 	// scene, peers would not see where he is" — the roster said present and nothing
 	// said where. Our own row reads `currentLevel` directly; peers read the map.
-	import { peerScenes, elsewhereThan } from '$lib/peerScenes';
+	// R22 round 30 B2: `roomsOfSession` is the DERIVED grouping the Rooms view renders —
+	// a session is the mesh, a scene is the tag, a room is who is standing in one.
+	import { peerScenes, elsewhereThan, roomsOfSession } from '$lib/peerScenes';
+	// travel, for "Go to": by HASH when the row carries one (the exact world they are
+	// looking at), by NAME as the fallback.
 	import { currentLevel } from '$lib/levels';
+	// …behind the same unsaved-changes guard the Explorer's own open goes through. One
+	// copy, two callers — a guard with two copies is a guard with one bug. R22 round 35
+	// moved the whole Go-to body in there, because the grant toast needs the same path.
+	import { travelToPeerScene } from '$lib/sceneOpenGuard';
+	// R22 round 35: a peer editing a scene of its own — nothing to watch and nowhere to go,
+	// so the row offers the one thing that can work, which is to ASK.
+	import { requestSceneAccess, sceneAccessAsked, rejoinSession, shareWithSession } from '$lib/scenePrivacy';
 
 	/**
 	 * WHY WATCH IS GATED. Watching a peer attaches your camera to theirs — in THIS
@@ -63,11 +74,20 @@
 	 * on an older build, and inventing a location for them would be a guess.
 	 */
 	const UNNAMED = 'Untitled scene';
+	/** R22 round 35: a private peer's row carries no name — there is nothing to say but WHAT
+	 * it is. Our own private scene keeps its name (this is our screen) with the state added,
+	 * because the whole point is that we can see what nobody else can. */
+	const PRIVATE_CHIP = 'Private scene';
 	function chipFor(map: any, mine: any, peerId: string, self: boolean): string {
-		if (self) return mine?.name || UNNAMED;
+		if (self) return mine?.private ? (mine?.name || UNNAMED) + ' (private)' : mine?.name || UNNAMED;
 		const row = map?.[peerId];
+		if (row?.private) return PRIVATE_CHIP;
 		return row ? row.scene || UNNAMED : '';
 	}
+	/** Is THIS row a peer editing privately? Takes the map as an ARGUMENT so the read is
+	 * tracked where the template calls it (the modeOf rule). */
+	const privateRow = (map: any, peerId: string, self: boolean): boolean =>
+		!self && map?.[peerId]?.private === true;
 	import { gameState } from '$lib/gameState';
 	import { sessionHost } from '$lib/connectionState';
 	import { mutedPeers, toggleMutePeer } from '$lib/voiceChat';
@@ -154,6 +174,166 @@
 			(room) => room && room.id !== $scenePresence?.myRoomId && (room.members?.length ?? 0) > 0
 		)
 	);
+
+	// --- R22 round 30 B2: ALL or ROOMS -------------------------------------------
+	/**
+	 * WHICH VIEW. LOCAL and remembered: how you read the peer list is a fact about this
+	 * screen, so it never replicates and never saves — and a view you have to re-pick
+	 * every time the popover opens is a view you stop using. Flat by default: grouping
+	 * says nothing at all until a session actually holds more than one scene.
+	 */
+	let peersView = $state(ls('peers:view') === 'rooms' ? 'rooms' : 'flat');
+	/** @param {string} v */
+	function setPeersView(v: string) {
+		peersView = v;
+		try { localStorage.setItem('peers:view', v); } catch {}
+	}
+	/** WHO AM I in the roster. The flat list has always taken index 0 as self (userdata
+	 * is built that way), so the fallback is not a guess — it is the same rule, reached
+	 * for only while the peer id has not settled. */
+	const selfId = $derived($peers?.peer?.id || ($userdata as any[])?.[0]?.[0] || '');
+	/**
+	 * THE ROOMS. `roomsOfSession` does the grouping and is REMOTE-ONLY — peerScenes never
+	 * holds us — so our own roster row is prepended to our own room by hand. Two buckets
+	 * it cannot produce sit beside it, and both exist because "we have not been told" and
+	 * "they are in the unnamed world" are different facts:
+	 *
+	 *   · UNTITLED — a row that says scene '' is a real room: the session's unnamed world,
+	 *     which is where everybody starts and where a joiner stands until somebody saves.
+	 *   · SCENE UNKNOWN — a roster peer with NO row at all is on an older build. It goes
+	 *     LAST because it describes our ignorance rather than their place, and Watch stays
+	 *     ENABLED inside it: only-on-evidence, the same rule the chip and the gate follow.
+	 *
+	 * Rows are looked up in `$userdata` and an id the roster does not carry is skipped —
+	 * the peer list may only draw peers the roster knows about.
+	 */
+	const peerGroups = $derived.by(() => {
+		const map: any = $peerScenes ?? {};
+		const roster: any[] = ($userdata as any[]) ?? [];
+		const rowOf = (id: string) => roster.find((u) => u[0] === id);
+		// R22 round 35: while WE are private our scene is not a ROOM — nobody can be in it and
+		// nobody can be told its name, so it must not become a group of its own here. We sit in
+		// the private bucket at the foot of the list instead, which is what everybody else's
+		// screen shows about us.
+		const iAmPrivate = $currentLevel?.private === true;
+		const mineScene = iAmPrivate ? '' : $currentLevel?.name ?? '';
+		const seen = new Set<string>();
+		const take = (id: string) => {
+			const r = rowOf(id);
+			if (r) seen.add(id);
+			return r;
+		};
+		const mine = () => {
+			const me = rowOf(selfId);
+			if (me) seen.add(selfId);
+			return me ? [me] : [];
+		};
+		const body: any[] = [];
+		for (const room of roomsOfSession(map, mineScene ? { scene: mineScene } : null)) {
+			const users = [...(room.mine ? mine() : []), ...room.peerIds.map(take).filter(Boolean)];
+			if (!users.length) continue;
+			body.push({
+				key: 'scene:' + room.scene,
+				label: room.scene,
+				mine: room.mine,
+				title: 'Standing in ' + room.scene,
+				users
+			});
+		}
+		const untitled = [
+			...(mineScene || iAmPrivate ? [] : mine()),
+			// a PRIVATE row also says scene '' on the wire — deliberately, that is the whole
+			// design — so the untitled bucket has to exclude it or a private peer would read as
+			// standing in the session's shared world, which is the opposite of true
+			...Object.keys(map).filter((id) => !map[id]?.scene && !map[id]?.private).map(take).filter(Boolean)
+		];
+		if (untitled.length)
+			body.push({
+				key: 'untitled',
+				label: UNNAMED,
+				mine: !mineScene,
+				title: 'The session\u2019s unnamed world — nobody has saved a scene yet',
+				users: untitled
+			});
+		// mine first: "which room am I in" is the first thing the list has to answer.
+		// Array.sort is stable, so everything else keeps roomsOfSession’s own order.
+		body.sort((a, b) => (a.mine === b.mine ? 0 : a.mine ? -1 : 1));
+		// R22 round 35: PRIVATE SCENES, collected before `unknown` so their rows count as seen
+		// (they are known — what is unknown is only the NAME, which is the point). The group
+		// itself is pushed LAST, after the ignorance bucket: these people are deliberately
+		// outside every room, so putting them anywhere above would sort a decision above a
+		// location. `mine: false` even when we are in it — "your room" is not what a private
+		// scene is, and the strip in the header is where our own state is spoken to.
+		const privateUsers = [
+			...(iAmPrivate ? mine() : []),
+			...Object.keys(map).filter((id) => map[id]?.private).map(take).filter(Boolean)
+		];
+		const unknown = roster.filter((u) => !seen.has(u[0]));
+		if (unknown.length)
+			body.push({
+				key: 'unknown',
+				label: 'Scene unknown',
+				mine: false,
+				title: 'They have not said which scene they are in — an older build',
+				users: unknown
+			});
+		if (privateUsers.length)
+			body.push({
+				key: 'private',
+				label: 'In a private scene',
+				mine: false,
+				title:
+					'A scene of their own that this session has never seen — its name never leaves their machine, and nothing they edit crosses over',
+				users: privateUsers
+			});
+		return body;
+	});
+	/**
+	 * GO TO: open the scene this peer is standing in — the thing Watch cannot do.
+	 *
+	 * HASH FIRST, name as the fallback. The row carries the exact hash they loaded, which
+	 * is the world in front of them; `travelToScene` resolves the NAME through the
+	 * manifest pointer, which can be NEWER than the version they are looking at (and
+	 * toasts "no scene called…" for a loose scene the project has never heard of).
+	 * Arriving in a different version of the right name is not arriving where they are.
+	 *
+	 * The guard runs BEFORE the popover closes: cancelling has to leave the list exactly
+	 * where it was, and the confirm dialog is top-layer, so it paints above the popover
+	 * either way.
+	 *
+	 * THE TIMEOUT WRAPS THE CALL SITE, never `resolveLevelItem`. Travel WATCHES for the
+	 * bytes by design (the LUT rule) and must keep watching — a peer may be standing in a
+	 * scene whose file has not reached us yet. This only stops the UI pretending nothing
+	 * happened while that fetch runs, and says as much.
+	 *
+	 * R22 round 35 MOVED the body into `sceneOpenGuard` (`travelToPeerScene`), because the
+	 * "they shared it" toast has to land in exactly the same place through exactly the same
+	 * guard — the second copy this component's own header warns about. What stays here is
+	 * the one thing that is this component's: closing the popover, and only once the guard
+	 * has been answered, so cancelling leaves the list where it was.
+	 * @param {string} peerId
+	 */
+	function goToScene(peerId: string) {
+		void travelToPeerScene(peerId, () => (peersOpen = false));
+	}
+
+	/** R22 round 35: ask a private peer to share. One press per peer — the store remembers,
+	 * so the button cannot be hammered into a silence it cannot explain. */
+	function askForScene(peerId: string) {
+		requestSceneAccess(peerId);
+	}
+	/** Leave private mode and stand where the session is. The unsaved-changes guard runs
+	 * INSIDE `rejoinSession`, so the popover stays put until it is answered. */
+	function doRejoin() {
+		void rejoinSession().then((ok) => {
+			if (ok) peersOpen = false;
+		});
+	}
+	/** …or stay here and let everybody in. The scene keeps its name and its file; what
+	 * changes is that the session may now see both. */
+	function doShareScene() {
+		void shareWithSession();
+	}
 
 	// --- 21-F3: play-mode presence + the admin reset -------------------------------
 	/** A chip only appears when it SAYS something: a peer who is PLAYING, or — while a
@@ -282,6 +462,153 @@
 	 }
 </script>
 
+<!--
+	ONE ROW, TWO VIEWS. The flat list and the Rooms grouping draw the same peer — the
+	avatar, the id, the mode/scene chips, the role control, Watch or Go to — so the row
+	is a snippet rather than a second copy that drifts on the next thing added to either.
+
+	`self` replaces the old `i === 0`: index 0 IS us in the flat roster, but a grouped
+	row sits wherever its room is, so the caller has to say. `showScene` is off in the
+	Rooms view for the same reason a filename is not repeated inside its own folder —
+	the header already names the scene.
+-->
+{#snippet peerRow(user: any, self: boolean, showScene: boolean)}
+	<div
+		class="peers-row flex items-center gap-2 rounded px-1.5 py-1 {$specatorMode === user[0]
+			? 'bg-primary-800/60'
+			: 'hover:bg-gray-700/60'}"
+	>
+		<Avatar src={user[2]} class="h-8 w-8 shrink-0 rounded-full" />
+		<div class="min-w-0 flex-1">
+			<div class="flex items-center gap-1 truncate text-sm text-gray-100">
+				<span class="truncate" title={user[1] || 'Peer'}>{user[1] || 'Peer'}</span>
+				{#if self}<span class="text-[10px] text-primary-300">(you)</span>{/if}
+			</div>
+			<div class="flex items-center gap-1.5 text-[10px] text-gray-400">
+				<span class="truncate">{shortId(user[0])}</span>
+				{#if $mutedPeers.includes(user[0])}<span title="Muted"><VolumeX size={16} aria-hidden="true" /></span>{/if}
+				{#if $peerHands[user[0]]?.active}<span title="In VR"><Glasses size={16} aria-hidden="true" /></span>{/if}
+				<!-- 21-F3: play-mode presence. `{@const}` may only be the IMMEDIATE
+					 child of a block, so the mode is resolved in the `{#if}` and
+					 named inside it. -->
+				{#if modeOf($peerPlayModes, $isLocked, user[0], self) === 'playing' || roundRunning}
+					{@const pmode = modeOf($peerPlayModes, $isLocked, user[0], self)}
+					<span
+						class="mode-chip"
+						data-mode={pmode}
+						title={pmode === 'playing' ? 'In play mode' : 'In the editor, not playing'}>{pmode}</span
+					>
+				{/if}
+				<!-- P2b: where this peer is. Absent means we have not been told — which is
+				     not the same as "nowhere", so it renders nothing rather than guessing.
+				     `{@const}` may only be the IMMEDIATE child of a block, so the expression is
+				     repeated in the `{#if}` and named inside it — the mode chip above does the
+				     same, for the same reason. -->
+				{#if showScene && chipFor($peerScenes, $currentLevel, user[0], self)}
+					{@const sceneName = chipFor($peerScenes, $currentLevel, user[0], self)}
+					<span
+						class="scene-chip"
+						class:scene-chip-here={sceneName === ($currentLevel?.name ?? null)}
+						title={self
+							? 'The scene you have open'
+							: sceneName === UNNAMED
+								? 'They have not saved a scene — you share one world until they do.'
+								: 'In ' + sceneName}>{sceneName}</span
+					>
+				{/if}
+				{#if user[3]}<span class="text-amber-300">▸ {shortId(user[3])}</span>{/if}
+				{#if !self && $peerQuality[user[0]]}
+					{@const q = $peerQuality[user[0]]}
+					<span
+						title={q.rtt != null ? `${Math.round(q.rtt)} ms round-trip` : 'measuring…'}
+						style="color: {qColor(q.level)}">●{q.rtt != null ? ` ${Math.round(q.rtt)}ms` : ''}</span
+					>
+					{#if q.relayed}<span class="text-orange-300" title="Relayed through a TURN server">relayed</span>{/if}
+				{/if}
+			</div>
+		</div>
+		{#if ri}
+			{#if self}
+				<span class="role-badge" data-role={ri.myRole} title="Your role">{ri.myRole}</span>
+			{:else if ri.amAdmin}
+				<button type="button" class="role-badge role-btn" data-role={ri.roleOf(user[0])} aria-haspopup="listbox" aria-expanded={roleMenuFor === user[0]} title="Change role" onclick={(e) => toggleRoleMenu(e, user[0])}>{ri.roleOf(user[0])}<ChevronDown size={10} class="role-caret" aria-hidden="true" /></button>
+			{:else}
+				<span class="role-badge" data-role={ri.roleOf(user[0])}>{ri.roleOf(user[0])}</span>
+			{/if}
+		{/if}
+		{#if !self && $cameraPreviews[user[0]] && !watchBlockedBy($peerScenes, $currentLevel?.name ?? '', user[0])}
+			<!-- 16-P5: this peer is looking through a scene camera — you can join.
+			     P2b: not across scenes — the camera MARKER lives in their scene, so
+			     there would be nothing here to look through. -->
+			<button
+				class="peer-watch peer-preview shrink-0 rounded px-2 py-0.5 text-xs bg-gray-600 text-gray-100 hover:bg-gray-500"
+				title={`Previewing ${previewLabel($cameraPreviews[user[0]])} — click to look through it too`}
+				onclick={() => { joinPeerPreview(user[0]); peersOpen = false; }}
+			>
+				<Camera size={14} class="mr-1" aria-hidden="true" />{previewLabel($cameraPreviews[user[0]])}
+			</button>
+		{/if}
+		{#if !self}
+			{@const away = watchBlockedBy($peerScenes, $currentLevel?.name ?? '', user[0])}
+			{#if privateRow($peerScenes, user[0], self)}
+				<!-- R22 round 35: a peer in a scene of its own. Watch cannot reach them and
+					 neither can Go to — there is no name and no hash to travel by, which is the
+					 whole point — so the disabled-WITH-THE-REASON treatment comes back (the
+					 21-G5 ruling) beside the one action that CAN work: asking. -->
+				<button
+					class="peer-watch shrink-0 rounded bg-gray-700 px-2 py-0.5 text-xs text-gray-500"
+					disabled
+					title="Editing a private scene — you cannot watch a world you do not have"
+				>
+					<Eye size={16} class="mr-1" aria-hidden="true" />Watch
+				</button>
+				<button
+					class="peer-request shrink-0 rounded px-2 py-0.5 text-xs {$sceneAccessAsked.includes(user[0])
+						? 'bg-gray-700 text-gray-500'
+						: 'bg-gray-600 text-gray-100 hover:bg-gray-500'}"
+					disabled={$sceneAccessAsked.includes(user[0])}
+					title={$sceneAccessAsked.includes(user[0])
+						? 'Asked — they decide'
+						: 'Ask them to share this scene with the session'}
+					onclick={() => askForScene(user[0])}
+				>
+					{$sceneAccessAsked.includes(user[0]) ? 'Requested…' : 'Request access'}
+				</button>
+			{:else if away}
+				<!-- R22 round 30 B2: they are demonstrably in ANOTHER SCENE, so Watch cannot
+					 reach them — it would attach your camera to a world you do not have
+					 loaded. The disabled button said so and left you to find that scene
+					 yourself; this offers the one thing that DOES work, which is to go there. -->
+				<button
+					class="peer-goto shrink-0 rounded bg-gray-600 px-2 py-0.5 text-xs text-gray-100 hover:bg-gray-500"
+					title={'In ' + away + ' — travel to their scene'}
+					onclick={() => goToScene(user[0])}
+				>
+					<ArrowRight size={14} class="mr-1" aria-hidden="true" />Go to
+				</button>
+			{:else}
+				<button
+					class="peer-watch shrink-0 rounded px-2 py-0.5 text-xs {away
+						? 'bg-gray-700 text-gray-500'
+						: $specatorMode === user[0]
+							? 'bg-primary-600 text-white'
+							: 'bg-gray-600 text-gray-100 hover:bg-gray-500'}"
+					disabled={!!away}
+					title={away
+						? 'In ' + away + ' — open that scene to watch them'
+						: $specatorMode === user[0]
+							? 'Watching (exit from the banner)'
+							: 'Watch this peer'}
+					onclick={() => { specate(user[0]); peersOpen = false; }}
+					oncontextmenu={(e) => openMuteMenu(e, user[0])}
+				>
+					<Eye size={16} class="mr-1" aria-hidden="true" />{$specatorMode === user[0] ? 'Watching' : 'Watch'}
+				</button>
+			{/if}
+		{/if}
+	</div>
+{/snippet}
+
 <!-- when Connect docks to a full-width top bar, drop this corner chrome below it (plus
 	 its tab strip when pinned) so nothing overlaps — connectBarHeight is the bar's height -->
 <div class="top-right-chrome" style="position: fixed; right: 0px; z-index: 997; top: {$connectDocked ? $connectBarHeight + 'px' : '0px'};">
@@ -318,108 +645,82 @@
 					<Avatar stacked src={user[2]} class="h-7 w-7 rounded-full border-2 border-gray-800" />
 				{/each}
 			</div>
-			<span class="pr-1 text-xs font-semibold text-gray-200">{$userdata.length - 1}</span>
+			<span class="pr-1 text-xs font-semibold text-gray-200">{$userdata.length}</span>
 		</button>
 
 		{#if peersOpen}
 			<div class="fixed inset-0" style="z-index: 996;" role="presentation" onclick={() => { peersOpen = false; roleMenuFor = null; }}></div>
 			<div id="peers-popover" class="ui-panel absolute right-0 top-11 w-72 p-2" style="z-index: 998; {$connectDocked ? `position: fixed; top: ${$connectBarHeight + 44}px; right: 8px; left: auto; max-width: calc(100vw - 16px);` : ''}">
-				<p class="ui-section-label">Connected ({$userdata.length - 1})</p>
-				<div class="peers-scroll">
-				{#each $userdata as user, i (user[0])}
-					<div
-						class="peers-row flex items-center gap-2 rounded px-1.5 py-1 {$specatorMode === user[0]
-							? 'bg-primary-800/60'
-							: 'hover:bg-gray-700/60'}"
-					>
-						<Avatar src={user[2]} class="h-8 w-8 shrink-0 rounded-full" />
-						<div class="min-w-0 flex-1">
-							<div class="flex items-center gap-1 truncate text-sm text-gray-100">
-								<span class="truncate" title={user[1] || 'Peer'}>{user[1] || 'Peer'}</span>
-								{#if i === 0}<span class="text-[10px] text-primary-300">(you)</span>{/if}
-							</div>
-							<div class="flex items-center gap-1.5 text-[10px] text-gray-400">
-								<span class="truncate">{shortId(user[0])}</span>
-								{#if $mutedPeers.includes(user[0])}<span title="Muted"><VolumeX size={16} aria-hidden="true" /></span>{/if}
-								{#if $peerHands[user[0]]?.active}<span title="In VR"><Glasses size={16} aria-hidden="true" /></span>{/if}
-								<!-- 21-F3: play-mode presence. `{@const}` may only be the IMMEDIATE
-									 child of a block, so the mode is resolved in the `{#if}` and
-									 named inside it. -->
-								{#if modeOf($peerPlayModes, $isLocked, user[0], i === 0) === 'playing' || roundRunning}
-									{@const pmode = modeOf($peerPlayModes, $isLocked, user[0], i === 0)}
-									<span
-										class="mode-chip"
-										data-mode={pmode}
-										title={pmode === 'playing' ? 'In play mode' : 'In the editor, not playing'}>{pmode}</span
-									>
-								{/if}
-								<!-- P2b: where this peer is. Absent means we have not been told — which is
-								     not the same as "nowhere", so it renders nothing rather than guessing.
-								     `{@const}` may only be the IMMEDIATE child of a block, so the expression is
-								     repeated in the `{#if}` and named inside it — the mode chip above does the
-								     same, for the same reason. -->
-								{#if chipFor($peerScenes, $currentLevel, user[0], i === 0)}
-									{@const sceneName = chipFor($peerScenes, $currentLevel, user[0], i === 0)}
-									<span
-										class="scene-chip"
-										class:scene-chip-here={sceneName === ($currentLevel?.name ?? null)}
-										title={i === 0 ? 'The scene you have open' : 'In ' + sceneName}>{sceneName}</span
-									>
-								{/if}
-								{#if user[3]}<span class="text-amber-300">▸ {shortId(user[3])}</span>{/if}
-								{#if i > 0 && $peerQuality[user[0]]}
-									{@const q = $peerQuality[user[0]]}
-									<span
-										title={q.rtt != null ? `${Math.round(q.rtt)} ms round-trip` : 'measuring…'}
-										style="color: {qColor(q.level)}">●{q.rtt != null ? ` ${Math.round(q.rtt)}ms` : ''}</span
-									>
-									{#if q.relayed}<span class="text-orange-300" title="Relayed through a TURN server">relayed</span>{/if}
-								{/if}
-							</div>
-						</div>
-						{#if ri}
-							{#if i === 0}
-								<span class="role-badge" data-role={ri.myRole} title="Your role">{ri.myRole}</span>
-							{:else if ri.amAdmin}
-								<button type="button" class="role-badge role-btn" data-role={ri.roleOf(user[0])} aria-haspopup="listbox" aria-expanded={roleMenuFor === user[0]} title="Change role" onclick={(e) => toggleRoleMenu(e, user[0])}>{ri.roleOf(user[0])}<ChevronDown size={10} class="role-caret" aria-hidden="true" /></button>
-							{:else}
-								<span class="role-badge" data-role={ri.roleOf(user[0])}>{ri.roleOf(user[0])}</span>
-							{/if}
-						{/if}
-						{#if i > 0 && $cameraPreviews[user[0]] && !watchBlockedBy($peerScenes, $currentLevel?.name ?? '', user[0])}
-							<!-- 16-P5: this peer is looking through a scene camera — you can join.
-							     P2b: not across scenes — the camera MARKER lives in their scene, so
-							     there would be nothing here to look through. -->
-							<button
-								class="peer-watch peer-preview shrink-0 rounded px-2 py-0.5 text-xs bg-gray-600 text-gray-100 hover:bg-gray-500"
-								title={`Previewing ${previewLabel($cameraPreviews[user[0]])} — click to look through it too`}
-								onclick={() => { joinPeerPreview(user[0]); peersOpen = false; }}
-							>
-								<Camera size={14} class="mr-1" aria-hidden="true" />{previewLabel($cameraPreviews[user[0]])}
-							</button>
-						{/if}
-						{#if i > 0}
-							{@const away = watchBlockedBy($peerScenes, $currentLevel?.name ?? '', user[0])}
-							<button
-								class="peer-watch shrink-0 rounded px-2 py-0.5 text-xs {away
-									? 'bg-gray-700 text-gray-500'
-									: $specatorMode === user[0]
-										? 'bg-primary-600 text-white'
-										: 'bg-gray-600 text-gray-100 hover:bg-gray-500'}"
-								disabled={!!away}
-								title={away
-									? 'In ' + away + ' — open that scene to watch them'
-									: $specatorMode === user[0]
-										? 'Watching (exit from the banner)'
-										: 'Watch this peer'}
-								onclick={() => { specate(user[0]); peersOpen = false; }}
-								oncontextmenu={(e) => openMuteMenu(e, user[0])}
-							>
-								<Eye size={16} class="mr-1" aria-hidden="true" />{$specatorMode === user[0] ? 'Watching' : 'Watch'}
-							</button>
-						{/if}
+				<div class="mb-1 flex items-center justify-between gap-2">
+					<!-- SELF-INCLUSIVE, in both places. The trigger badge and this line count the
+						 same thing and disagreed by one: the badge said 4 while the list drew 5
+						 rows. "Connected" is the people in the session, and you are one of them. -->
+					<p class="ui-section-label">Connected ({$userdata.length})</p>
+					<!-- R22 round 30 B2: ALL or ROOMS. One mesh can hold several scenes now, so
+						 "who is here" and "who is WHERE" became two questions; this answers the
+						 second. The armed half is `aria-pressed`, so the styling and the
+						 accessibility tree cannot disagree (the tp-seg contract). -->
+					<div class="tp-seg" role="group" aria-label="Peers view">
+						<button
+							id="peers-view-flat"
+							class="tp-seg-btn"
+							aria-pressed={peersView === 'flat'}
+							title="Every peer in one list"
+							onclick={() => setPeersView('flat')}>All</button
+						>
+						<button
+							id="peers-view-rooms"
+							class="tp-seg-btn"
+							aria-pressed={peersView === 'rooms'}
+							title="Grouped by the scene each peer is standing in"
+							onclick={() => setPeersView('rooms')}>Rooms</button
+						>
 					</div>
-				{/each}
+				</div>
+				<!-- R22 round 35: OUR OWN private state, said once at the top rather than as a
+					 badge on our row — it is a fact about this whole list (nobody in it can see
+					 what we are editing), and it is where the two ways out belong. Share keeps
+					 us here and lets everybody in; Rejoin takes us to them. -->
+				{#if $currentLevel?.private}
+					<div id="peers-private-note" class="peers-private-note">
+						<span class="truncate"
+							>Editing <b>{$currentLevel.name}</b> privately — nobody here can see it.</span
+						>
+						<div class="peers-private-actions">
+							<button
+								id="peers-share-scene"
+								class="peers-private-btn"
+								title="Share this scene with everyone in the session — its name, and the world in it"
+								onclick={doShareScene}>Share with session</button
+							>
+							<button
+								id="peers-rejoin"
+								class="peers-private-btn"
+								title="Leave this scene and stand where the session is"
+								onclick={doRejoin}>Rejoin session</button
+							>
+						</div>
+					</div>
+				{/if}
+				<div class="peers-scroll">
+				{#if peersView === 'rooms'}
+					{#each peerGroups as group (group.key)}
+						<!-- an inert header, not a folder: a room is where somebody is standing and
+							 there is nothing to walk into — the flat list is one press away. -->
+						<div class="peers-room-head" data-mine={group.mine ? 'true' : null} title={group.title}>
+							<span class="truncate">{group.label}</span>
+							<span class="peers-room-count">({group.users.length})</span>
+							{#if group.mine}<span class="peers-room-mine">— your room</span>{/if}
+						</div>
+						{#each group.users as user (user[0])}
+							{@render peerRow(user, user[0] === selfId, false)}
+						{/each}
+					{/each}
+				{:else}
+					{#each $userdata as user, i (user[0])}
+						{@render peerRow(user, i === 0, true)}
+					{/each}
+				{/if}
 				</div>
 				<!-- 21-F3: the ADMIN half of "the game resets only when everyone has left
 					 play, or an admin resets it". Offered only when there is a game to
@@ -707,6 +1008,19 @@
 	   the scene YOU have open, which is the one comparison the list is read for. */
 	.scene-chip { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 9px; padding: 0 6px; border-radius: 9999px; line-height: 1.5; color: #cbd5e1; background: rgb(148 163 184 / 0.14); border: 1px solid rgb(148 163 184 / 0.3); }
 	.scene-chip-here { color: #93c5fd; background: rgb(59 130 246 / 0.16); border-color: rgb(59 130 246 / 0.35); }
+	/* R22 round 30 B2: the Rooms view’s group headers. Inert on purpose — a room is
+	   where somebody is standing, not a place you walk into, so there is nothing to
+	   click; the flat list is one press away. */
+	/* R22 round 35: the private-scene strip. Quieter than a toast and louder than a chip —
+	   it is a standing state, not an event, so it sits under the header for as long as it
+	   is true. The buttons are the peers list's own flat style (reset-game-btn's shape). */
+	.peers-private-note { display: flex; flex-direction: column; gap: 5px; margin: 2px 0 4px; padding: 6px 7px; border-radius: 8px; border: 1px solid rgb(59 130 246 / 0.35); background: rgb(59 130 246 / 0.12); color: #dbeafe; font-size: 11px; line-height: 1.4; }
+	.peers-private-actions { display: flex; gap: 6px; }
+	.peers-private-btn { flex: 1 1 auto; padding: 3px 8px; border-radius: 6px; border: 1px solid rgb(255 255 255 / 0.16); background: transparent; color: #e5e7eb; font-size: 11px; cursor: pointer; }
+	.peers-private-btn:hover { background: rgb(255 255 255 / 0.09); }
+	.peers-room-head { display: flex; align-items: baseline; gap: 5px; padding: 7px 6px 2px; font-size: 9px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; color: #9ca3af; }
+	.peers-room-head[data-mine] { color: #93c5fd; }
+	.peers-room-count, .peers-room-mine { flex: 0 0 auto; color: #6b7280; font-weight: 500; letter-spacing: 0; text-transform: none; }
 	.reset-game-btn { width: 100%; padding: 5px 8px; border-radius: 7px; border: 1px solid rgb(255 255 255 / 0.12); background: transparent; color: #e5e7eb; font-size: 11px; text-align: left; cursor: pointer; }
 	.reset-game-btn:hover:not(:disabled) { background: rgb(255 255 255 / 0.09); }
 	.reset-game-btn:disabled { opacity: 0.45; cursor: not-allowed; }

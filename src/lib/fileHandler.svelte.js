@@ -186,6 +186,64 @@ function exportGltf(format, input, opts = {}) {
 }
 
 /**
+ * R22 round 11 — THE SAME EXPORT, HANDED BACK AS BYTES instead of downloaded.
+ *
+ * "Save as… prefab (.glb)" needs the file itself, not a click on an anchor. It reuses
+ * this module's whole ritual through `exportGltf`'s own preparation — parkAnimatedAtBase,
+ * the `userData.origin` bake on CLONES, the authored-clip bake — because a second copy of
+ * that ritual is how an export path drifts from the one people actually use.
+ *
+ * `binary` picks .glb (an ArrayBuffer) over .gltf (JSON text). Both keep
+ * `onlyVisible: false`: a selection containing something hidden LOCALLY still contains
+ * it, and dropping it silently is the documented GLTFExporter trap (options are parse()'s
+ * FOURTH argument, and onlyVisible defaults to TRUE).
+ * @param {any} roots one root or an array of them
+ * @param {{binary?: boolean}} [opts]
+ * @returns {Promise<ArrayBuffer|null>}
+ */
+export function gltfBytesFor(roots, opts = {}) {
+	const list = (Array.isArray(roots) ? roots : [roots]).filter(Boolean);
+	if (!list.length) return Promise.resolve(null);
+	const restore = parkAnimatedAtBase();
+	let carriesOrigin = false;
+	for (const root of list)
+		root?.traverse?.((/** @type {any} */ object) => {
+			if (originOf(object)) carriesOrigin = true;
+		});
+	const payload = carriesOrigin ? list.map((root) => bakeOriginForExport(root.clone(true))) : list;
+	const animations = list.flatMap((root) => bakeAnimationsForExport(root));
+	/** @type {any} */
+	const parseOptions = { onlyVisible: false, binary: !!opts.binary };
+	if (animations.length) parseOptions.animations = animations;
+	return new Promise((resolve) => {
+		try {
+			new GLTFExporter().parse(
+				payload,
+				(/** @type {any} */ result) => {
+					restore();
+					// binary hands back an ArrayBuffer; JSON hands back an object
+					resolve(
+						result instanceof ArrayBuffer
+							? result
+							: new TextEncoder().encode(JSON.stringify(result)).buffer
+					);
+				},
+				(/** @type {any} */ error) => {
+					restore();
+					console.log(error);
+					resolve(null);
+				},
+				parseOptions
+			);
+		} catch (error) {
+			restore();
+			console.log(error);
+			resolve(null);
+		}
+	});
+}
+
+/**
  * 21-H2: export an arbitrary object TREE as GLTF — a prefab parsed by `prefabObject`,
  * which is never in the scene. The seam exists so the prefab path reuses this module's
  * whole ritual (parkAnimatedAtBase, the `userData.origin` bake on CLONES, the animation

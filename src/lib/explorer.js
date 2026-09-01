@@ -341,6 +341,14 @@ export async function parseObjectFile(buffer, ext) {
 	const gltf = await new Promise((resolve, reject) =>
 		new GLTFLoader().parse(buffer, '', resolve, reject)
 	);
+	// R22 ROUND 15: CARRY THE CLIPS. GLTFLoader hands back `{scene, animations}` as two
+	// separate fields, so returning the scene alone silently dropped every animation in
+	// the file — and this is the ONE parse path the Explorer, its thumbnails and the
+	// preview all go through, so an animated GLB has been arriving here inert. Hanging
+	// them on the object is three's own convention (its examples do exactly this) and it
+	// is what FBXLoader already does unprompted, which is why FBX was the only format
+	// where animation data survived the trip.
+	gltf.scene.animations = gltf.animations ?? [];
 	return gltf.scene;
 }
 

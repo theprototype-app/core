@@ -43,9 +43,9 @@ jobs:
             ERRORS=$(echo "$LINE" | awk '{print $2}')
             WARNINGS=$(echo "$LINE" | awk '{print $5}')
           fi
-          echo "svelte-check: $ERRORS errors / $WARNINGS warnings (baseline 384/47)"
+          echo "svelte-check: $ERRORS errors / $WARNINGS warnings (baseline 362/47)"
           if [ -z "$ERRORS" ]; then echo "could not parse svelte-check output"; exit 1; fi
-          if [ "$ERRORS" -gt 384 ] || [ "$WARNINGS" -gt 47 ]; then
+          if [ "$ERRORS" -gt 362 ] || [ "$WARNINGS" -gt 47 ]; then
             echo "baseline exceeded"; exit 1
           fi
       - name: zip the build

@@ -84,7 +84,8 @@ import {
 import {
 	projectManifest,
 	publishSharedIndex,
-	registerSharedIndexListener
+	registerSharedIndexListener,
+	resetSessionScope
 } from './projectManifest';
 import {
 	requestAsset,
@@ -99,6 +100,9 @@ import {
 } from './assetShare';
 import { ownerStamp } from './cloudHooks';
 import { transfers, removeTransfer } from './transferLedger';
+// R22 round 33: automatic downloads WAIT while the joiner is being asked what to do with
+// its own scene. A store-only leaf, so this edge closes nothing.
+import { pendingConnectDecision } from './connectionState';
 
 /**
  * Hashes we have ASKED the mesh for and not yet received. A remote card with nothing to
@@ -158,7 +162,11 @@ export function remoteSharedRows(manifest) {
 	return (manifest?.items ?? []).filter((/** @type {any} */ r) => r?.hash && !held.has(r.hash));
 }
 
-/** Ask the mesh for a shared file we do not hold. @param {string} hash */
+/** Ask the mesh for a shared file we do not hold. R22 round 12: the pending mark and
+ * the caller's "Fetching…" toast follow the ASK, not the attempt — with nobody
+ * connected the request cannot leave, and a card that says it is fetching from peers
+ * there is a spinner with nothing behind it.
+ * @param {string} hash @returns {boolean} did a request actually leave */
 export function pullSharedItem(hash) {
 	const h = String(hash ?? '').trim();
 	if (!h || itemByHash(h)) return false;
@@ -166,9 +174,9 @@ export function pullSharedItem(hash) {
 	// gave-up-on-it mark before asking (auto-download does not get this — an automatic
 	// retry loop is exactly what the mark exists to stop)
 	reviveHash(h);
-	pendingPulls.update((s) => new Set([...s, h]));
-	requestAsset(h);
-	return true;
+	const sent = requestAsset(h);
+	if (sent) pendingPulls.update((s) => new Set([...s, h]));
+	return sent;
 }
 
 // ---- the projection ---------------------------------------------------------------
@@ -377,21 +385,47 @@ unshareAuthority.subscribe((v) => {
 });
 
 /**
- * R22-R8 (user) — AUTOMATICALLY SHARE EVERYTHING. Off by default, because the whole
- * batch rests on "a file is local until somebody says otherwise" and a default that
- * published your library the moment you connected would make that sentence false.
+ * R22 round 30 C2 (user) — WHAT HAPPENS TO A FILE YOU ADD DURING A SESSION.
  *
- * With it ON, every file already here and every file created afterwards is shared with
- * no gesture — but a VETO still holds, because an explicit "not this one" is a decision
- * and a blanket setting is a preference. Per-peer and LOCAL: "they work with files as
- * they want" was the instruction, and there is nothing to enforce across the mesh.
+ * This supersedes `autoShareAll`, whose own doc named the gap it now closes: it had
+ * TWO answers where the question has three. Ticked, it published everything the moment
+ * it was ticked, which is more than "share what I add next"; unticked, a file added
+ * mid-session was simply invisible to everyone and nothing said so — which is correct
+ * behaviour and reads as the feature being broken. THE MISSING MIDDLE IS THE DEFAULT:
+ * ask, once, where the files are.
  *
- * A NEWLY JOINED PEER IS STILL ASKED. That is deliberate and it is the one place this
- * setting deliberately does not reach: the connect prompt is about a library that
- * already existed before the session, so answering it for somebody is exactly the kind
- * of surprise the default protects against.
- * @type {import('svelte/store').Writable<boolean>} */
-export const autoShareAll = writable(readFlag('shared:autoShareAll', false));
+ *  · `ask`    — the Explorer strip (`pendingShareAsk`) puts the question above the rows
+ *               it is about. Ignoring it leaves the file local, which is the old
+ *               behaviour, so the default costs nobody anything.
+ *  · `always` — the blanket setting `autoShareAll` used to be, VERBATIM: the
+ *               inheritance sweep marks every folder and every unvetoed file.
+ *  · `never`  — silent. Not the same as `ask` ignored: it is a standing answer, so
+ *               nothing is ever asked again.
+ *
+ * A VETO still holds in every mode, because an explicit "not this one" is a decision
+ * and a setting is a preference. LOCAL and per-peer: "they work with files as they
+ * want" was the instruction, and the wire enforces nothing either way.
+ *
+ * THE CONNECT CASE IS NO LONGER AN EXCEPTION. The old text carved it out ("a newly
+ * joined peer is still asked") because the only alternative was publishing a library
+ * that predates the session behind the user's back. With a real ask that carve-out
+ * disappears: `ask` asks about the pre-session files too, on the host as well as the
+ * joiner — the old toast offered it to joiners only, which was half the complaint.
+ * @type {import('svelte/store').Writable<'ask' | 'always' | 'never'>} */
+export const shareNewFiles = writable(readShareNewFiles());
+
+/** The read is also the MIGRATION: a machine that had the old checkbox on means
+ * `always`, and one that had it off means the new default rather than `never` — off
+ * was "do not publish everything", never "do not ask me". */
+function readShareNewFiles() {
+	try {
+		const raw = localStorage.getItem('shared:shareNewFiles');
+		if (raw === 'ask' || raw === 'always' || raw === 'never') return raw;
+		return localStorage.getItem('shared:autoShareAll') === 'true' ? 'always' : 'ask';
+	} catch {
+		return 'ask';
+	}
+}
 
 /**
  * R22-R8 (user) — AUTOMATICALLY DOWNLOAD what peers share. ON by default, and that is
@@ -412,9 +446,9 @@ function readFlag(key, fallback) {
 	}
 }
 
-autoShareAll.subscribe((v) => {
+shareNewFiles.subscribe((v) => {
 	try {
-		localStorage.setItem('shared:autoShareAll', String(v));
+		localStorage.setItem('shared:shareNewFiles', v);
 	} catch {}
 });
 autoDownload.subscribe((v) => {
@@ -460,6 +494,42 @@ recycleBinEnabled.subscribe((v) => {
 keepRecycleBin.subscribe((v) => {
 	try {
 		localStorage.setItem('shared:keepRecycleBin', String(v));
+	} catch {}
+});
+
+/**
+ * R22 round 13 (user) — THE DELETED FILES LOG, and why it is its OWN switch.
+ *
+ * "Deleting items from recycle bin should remove from there, not just put as grey, but
+ * keep the log with thumbnails ... and they should be kept only if it is enabled in app
+ * settings". Right on every count: a permanent delete freed the blob and LEFT the row,
+ * so the bin went on listing a file it could no longer restore, dimmed. That reads as a
+ * delete that half-worked.
+ *
+ * THE SPLIT NEEDED NO NEW DATA. `manifest.deleted` was already two things wearing one
+ * name: rows whose BYTES ARE STILL HERE (the recycle bin — restorable, and the whole
+ * point of the bin) and rows that outlived their bytes (the record — what, who, when,
+ * and the picture). `partitionDeleted` names the two, the Explorer draws one view per
+ * side, and the purge is unchanged on the wire.
+ *
+ * DEFAULT ON, because the log exists today: OFF is the opt-out, not a new feature.
+ *
+ * OFF HIDES; IT NEVER CLEARS. The array replicates whole and latest-wins, so pruning it
+ * from a LOCAL preference would delete other people's record — and worse, a peer's row
+ * is what makes that peer's own hidden copy visible and restorable, so pruning would
+ * strand bytes on machines that still hold them. There is also a timing trap: the bin
+ * is emptied on every load by default, so a prune-on-toggle would take the whole
+ * history for good the next time the app started, from a checkbox. Clearing is already
+ * available as a deliberate, confirmed act — `emptyDeletedLog`, "Empty Deleted" — which
+ * is where a destructive decision belongs. Hiding is reversible; clearing is not.
+ *
+ * What it DOES stop is recording history that nothing else needs: see `deleteSharedItem`.
+ * @type {import('svelte/store').Writable<boolean>} */
+export const deletedLogEnabled = writable(readFlag('shared:deletedLog', true));
+
+deletedLogEnabled.subscribe((v) => {
+	try {
+		localStorage.setItem('shared:deletedLog', String(v));
 	} catch {}
 });
 
@@ -754,6 +824,91 @@ export function bulkCounts() {
 }
 
 /**
+ * R22 round 30 C2 — THE ASK IS A STORE, NOT A CALLBACK.
+ *
+ * The detector lives here (it rides the sweep, which is where every import path already
+ * converges) and the question is drawn by the Explorer, which is a different module and
+ * may not even be mounted. A callback would make this module depend on which surface is
+ * on screen; a store lets BOTH consumers read it — the strip when the Explorer is open,
+ * and a toast pointing at the Explorer when it is not.
+ *
+ * `kind` is what the copy turns on: `new` is "you just added these", `connect` is "you
+ * brought these with you". The list is the resolution unit — answering answers all of it.
+ * @type {import('svelte/store').Writable<{kind: 'new' | 'connect', items: {id: string, name: string, hash: string}[]} | null>}
+ */
+export const pendingShareAsk = writable(null);
+
+/**
+ * Share exactly these items. NOT `shareAllLocal`, which is the bulk action and takes
+ * every unshared file plus every folder — an ask about three files must publish three
+ * files. The ancestor folders come anyway, because `projection()` walks the chain of
+ * every shared item's `folderId` (the locked placement cascade), so nothing is lost by
+ * not naming them here.
+ * @param {string[]} ids @returns {number} how many were newly shared
+ */
+export function shareItems(ids) {
+	let n = 0;
+	for (const id of ids ?? []) if (shareItem(id)) n++;
+	if (n) publishMine(true);
+	return n;
+}
+
+/**
+ * Answer the standing ask. THREE answers, and the middle one is the important one:
+ *
+ *  · `share` publishes the listed items.
+ *  · `keep`  DISMISSES AND WRITES NOTHING. The records stay flag-ABSENT rather than
+ *            taking the `no` veto — "not right now" is not "not ever", so a later folder
+ *            move, an inheritance sweep or a plain Share gesture still works. The delete
+ *            strip's Cancel set that precedent: declining a question is not a decision
+ *            about the thing it asked about.
+ *  · `stash` is the connect card's destructive option, kept because it is the honest
+ *            answer to "I would rather have the session's library than mine".
+ *
+ * REMEMBER MY CHOICE (round 31, user) — the second parameter is the browser-permission
+ * checkbox, and it is deliberately NOT a "share automatically" toggle. A toggle that only
+ * means share sits beside a Keep local button it contradicts; a remember-my-choice box
+ * modifies WHICHEVER answer is pressed, so both standing rules are reachable from one
+ * surface, the action stays primary (the box never acts on its own), and the preference
+ * can never disagree with the click that carried it.
+ *
+ * `always` is the blanket rule the sweep already implements, so it reaches the files
+ * still sitting local as well as the next one — which is what somebody pressing Share and
+ * asking never to be asked again is agreeing to.
+ *
+ * `stash` TAKES NO RULE. Replacing your library with the session's is a one-off act about
+ * the files you brought, not a policy about the files you will add next: there is no
+ * standing answer it could mean, so the box is ignored on that path rather than guessed at.
+ *
+ * AND THE SETTING SAYS SO OUT LOUD. A preference changed as a side effect of a button is
+ * only honest if it announces itself and names the way back, which is why the consequence
+ * toast lives HERE and not in the Explorer: whoever answers a remembered ask is told,
+ * once, on the same call that wrote it.
+ * @param {'share' | 'keep' | 'stash'} choice
+ * @param {boolean} [remember] make this answer the standing one (`shareNewFiles`)
+ * @returns {number} items acted on
+ */
+export function resolveShareAsk(choice, remember = false) {
+	const ask = get(pendingShareAsk);
+	if (!ask) return 0;
+	pendingShareAsk.set(null);
+	if (remember && (choice === 'share' || choice === 'keep')) {
+		shareNewFiles.set(choice === 'share' ? 'always' : 'never');
+		showToast(
+			choice === 'share'
+				? 'New files will now be shared automatically — change this in File settings'
+				: 'New files will now be kept local — change this in File settings'
+		);
+	}
+	if (choice === 'stash') {
+		void stashIntoSessions();
+		return ask.items.length;
+	}
+	if (choice !== 'share') return 0;
+	return shareItems(ask.items.map((i) => i.id));
+}
+
+/**
  * R22 round 4 (locked answer) — DELETE REACHES EVERY PEER, AND IS UNDOABLE.
  *
  * Deleting a SHARED file is not the same act as unsharing one. Unshare says "stop
@@ -805,17 +960,25 @@ export function deleteSharedItem(id) {
 	const item = get(explorerItems).find((i) => i.id === id);
 	if (!item) return false;
 	const doc = get(projectManifest);
+	// R22 round 13: THE ONE PLACE "stop recording" can mean something. With the bin off
+	// the bytes go immediately, so the row it would write is not a bin entry at all — it
+	// is pure history, and with the log off nobody asked for history. With the bin ON the
+	// row IS the bin entry and must be written whatever this preference says, or the file
+	// goes to the hidden shelf with nothing pointing at it. Deliberately not extended to
+	// rows already in the document: see the deletedLogEnabled header.
+	const keepRow = get(recycleBinEnabled) || get(deletedLogEnabled);
 	const log = [...(doc.deleted ?? []).filter((/** @type {any} */ r) => r.hash !== item.hash)];
-	log.push({
-		hash: item.hash,
-		name: item.name,
-		kind: item.kind,
-		at: Date.now(),
-		by: meAsOwner(),
-		// R22 round 7: keep the PICTURE. It cannot be re-derived once the bytes are
-		// reclaimed, so a bin full of generic icons is what you get by not recording it.
-		...(item.thumbnail ? { thumb: item.thumbnail } : {})
-	});
+	if (keepRow)
+		log.push({
+			hash: item.hash,
+			name: item.name,
+			kind: item.kind,
+			at: Date.now(),
+			by: meAsOwner(),
+			// R22 round 7: keep the PICTURE. It cannot be re-derived once the bytes are
+			// reclaimed, so a bin full of generic icons is what you get by not recording it.
+			...(item.thumbnail ? { thumb: item.thumbnail } : {})
+		});
 	// off the visible shelf, bytes intact — unless the bin is switched off, in which case
 	// the user has already said they do not want a second chance at this
 	if (get(recycleBinEnabled)) setItemHidden(item.id, true);
@@ -883,6 +1046,29 @@ export function deletedThumb(row) {
 export function deletedLog(manifest) {
 	const m = manifest ?? get(projectManifest);
 	return [...(m.deleted ?? [])].reverse();
+}
+
+/**
+ * R22 round 13: THE TWO HALVES THE LOG HAS ALWAYS HELD. A row whose bytes are still on
+ * one of this machine's two shelves is a RECYCLE BIN entry — restorable, which is the
+ * whole reason the bin exists. A row that outlived its bytes is a RECORD: what, who,
+ * when, and the picture that can never be re-derived.
+ *
+ * PURE, and it takes the held set as an argument rather than reaching for it: the
+ * shelves are stores, and a helper that reads them with `get()` registers no
+ * dependency — which is precisely the bug round 9 fixed one layer up, where a purge
+ * changed nothing observable because the derived around it never re-ran.
+ *
+ * @param {any[]} rows the log, in whatever order the caller wants back
+ * @param {Set<string>|string[]} held every hash this device still holds bytes for
+ * @returns {{bin: any[], spent: any[]}}
+ */
+export function partitionDeleted(rows, held) {
+	const has = held instanceof Set ? held : new Set(held ?? []);
+	/** @type {any[]} */ const bin = [];
+	/** @type {any[]} */ const spent = [];
+	for (const row of rows ?? []) (has.has(row?.hash) ? bin : spent).push(row);
+	return { bin, spent };
 }
 
 /** Do we still hold the bytes of a deleted file? Restore is only offered when we do —
@@ -1115,7 +1301,44 @@ export function applySharedIndex(doc) {
 	//
 	// The queue does the rate limiting (see enqueuePulls), so a folder of two hundred
 	// files does not become two hundred simultaneous requests.
-	if (get(autoDownload)) autoPullMissing();
+	if (get(autoDownload)) autoPullWhenAllowed();
+}
+
+/**
+ * R22 round 33 — HOLD WHILE A CONNECT DECISION IS OPEN.
+ *
+ * "It should not share or download any changes unless I choose." The connect decision asks
+ * a joiner whether to save its unsaved work or dismiss it, and until that is answered
+ * nothing about the two worlds has been agreed — so a sweep that quietly pulls the host's
+ * library down is the same surprise the decision exists to remove, and `Disconnect` would
+ * leave those files on a machine that never joined anything.
+ *
+ * ASK ONCE, THEN WATCH — never a second attempt that never comes (the LUT rule). ONE watch
+ * covers however many sweeps are held behind it, because `autoPullMissing` is a full
+ * re-scan of the document rather than a queue of individual files.
+ * @type {(() => void) | null} */
+let heldPull = null;
+
+function autoPullWhenAllowed() {
+	if (!get(pendingConnectDecision)) return autoPullMissing();
+	if (heldPull) return;
+	heldPull = pendingConnectDecision.subscribe((pending) => {
+		// the subscribe fires immediately with the CURRENT value, which we have just
+		// established is non-null, so this first call can never release the hold
+		if (pending) return;
+		// deferred a microtask: unsubscribing from inside the callback would reach the
+		// binding before the assignment (the `waitForSceneName` shape)
+		const unsub = heldPull;
+		heldPull = null;
+		queueMicrotask(() => {
+			try {
+				unsub?.();
+			} catch {
+				/* already gone */
+			}
+		});
+		if (get(autoDownload)) autoPullMissing();
+	});
 }
 
 /** Fetch every shared file this machine lacks, honouring the queue. Silent when there
@@ -1124,11 +1347,14 @@ function autoPullMissing() {
 	const rows = remoteSharedRows(get(projectManifest));
 	if (!rows.length) return;
 	// requestAsset, not pullSharedItem: an automatic sweep must respect the dead-hash
-	// mark, or it re-queues an unanswerable file on every index change forever
-	for (const row of rows) {
-		pendingPulls.update((s) => (s.has(row.hash) ? s : new Set([...s, row.hash])));
-		requestAsset(row.hash);
-	}
+	// mark, or it re-queues an unanswerable file on every index change forever.
+	// R22 round 12: the pending mark arms only when the request actually left. This
+	// sweep runs with no connection open more often than it looks (an idb-restored
+	// manifest at boot, a .tp open), and marking those hashes pending drew a permanent
+	// row of downloading cards for files nobody had been asked for.
+	for (const row of rows)
+		if (requestAsset(row.hash))
+			pendingPulls.update((s) => (s.has(row.hash) ? s : new Set([...s, row.hash])));
 }
 
 // ---- inheritance (R3, and the user's rule: a shared folder shares what lands in it)
@@ -1205,10 +1431,12 @@ function sweepInheritance() {
 			.map((f) => f.id)
 	);
 	const owner = meAsOwner();
-	// R22-R8: `autoShareAll` rides the sweep rather than hooking every import path, for
-	// the same reason folder inheritance does — there are many of those paths and a rule
-	// that only holds on the ones somebody remembered to edit is not a rule.
-	const everything = get(autoShareAll);
+	// R22-R8: the blanket setting rides the sweep rather than hooking every import path,
+	// for the same reason folder inheritance does — there are many of those paths and a
+	// rule that only holds on the ones somebody remembered to edit is not a rule. Round 30
+	// C2 renamed it: `always` is this branch, `never` is silence, and `ask` is the strip
+	// armed by `detectNewShares` below.
+	const everything = get(shareNewFiles) === 'always';
 	if (everything) for (const f of get(explorerFolders)) if (!f.share) patchRecord(f.id, { share: 'mine', owner }, 'folder');
 	for (const item of get(explorerItems)) {
 		if (!everything && !shared.has(item.folderId ?? '')) continue;
@@ -1227,6 +1455,105 @@ function sweepInheritance() {
 	// already depends on — and it is what makes the locked answer true: "moving a file
 	// also moves it for peers, so all peers have project folder consistency".
 	publishMine();
+}
+
+// ---- R22 round 30 C2: the share-new-files ask --------------------------------
+//
+// The user's report: "adding a new file to Explorer or creating a new scene when you are
+// connected for the first time to host should give a notification below Library asking to
+// share files automatically". So the trigger is a file appearing WHILE A SESSION IS OPEN
+// — which is a fact about the library, and the library already has one place where every
+// import path converges: the debounced sweep. Hooking `importFiles`/`addItemFromBytes`/a
+// pack/a save/a drop one at a time is the rule-that-only-holds-where-somebody-remembered
+// trap the inheritance sweep's own comment warns about.
+
+/** When this session began. 0 while disconnected, which is also the "do not ask" gate. */
+let connectedSince = 0;
+/** Ids the library already held. REFRESHED WHOLESALE while disconnected, so an idb load
+ * — which arrives item by item long after boot — can never read as "added just now".
+ * @type {Set<string>} */
+let seenItemIds = new Set();
+/** Hashes already offered this session: an ask declined is not re-asked five seconds
+ * later by the next unrelated import. Cleared when the session ends. @type {Set<string>} */
+let askedHashes = new Set();
+
+/**
+ * Which of these are worth asking about at all. Every clause is a case where the answer
+ * is already decided or belongs to somebody else.
+ * @param {any[]} all
+ */
+function askCandidates(all) {
+	const rows = new Set((get(projectManifest).items ?? []).map((r) => r.hash));
+	const pend = get(pendingPulls);
+	const sharedFolders = new Set(
+		get(explorerFolders)
+			.filter((f) => f.share === 'mine')
+			.map((f) => f.id)
+	);
+	return all.filter((i) => {
+		if (i.share) return false; // decided: ours, theirs, or vetoed
+		// A SCENE IS NOT ASKED ABOUT HERE. Scenes travel through `manifest.scenes` and the
+		// project's own consent channel (adoption + the open guard), so a second question on
+		// this surface would be about a file the other one already governs — and answering
+		// "share" would publish a row beside the one the manifest is already publishing.
+		if (i.kind === 'scene') return false;
+		if (rows.has(i.hash)) return false; // a peer's file that landed on this machine
+		if (pend.has(i.hash)) return false; // ...or one still on its way here
+		if (sharedFolders.has(i.folderId ?? '')) return false; // inheritance owns these
+		if (askedHashes.has(i.hash)) return false;
+		return true;
+	});
+}
+
+/** Arm, or APPEND to what is already standing — a connect batch still unanswered when a
+ * file lands is one question, not two, so the standing `kind` (and its copy) wins.
+ * @param {'new' | 'connect'} kind @param {any[]} items */
+function armShareAsk(kind, items) {
+	const rows = items.map((i) => ({ id: i.id, name: i.name, hash: i.hash }));
+	for (const r of rows) askedHashes.add(r.hash);
+	pendingShareAsk.update((cur) => {
+		if (!cur) return { kind, items: rows };
+		const have = new Set(cur.items.map((r) => r.id));
+		return { kind: cur.kind, items: [...cur.items, ...rows.filter((r) => !have.has(r.id))] };
+	});
+}
+
+/** The detector proper, called from the sweep AFTER adoption and inheritance have run —
+ * a file that is about to be marked by either of those is not a file to ask about. */
+function detectNewShares() {
+	const all = get(explorerItems);
+	// CREATED SINCE WE CONNECTED, and both halves are needed: `seenItemIds` catches a file
+	// that appears without a plausible timestamp (a restore, a merge), while `createdAt`
+	// catches the opposite — an idb library that finishes loading after the session opened,
+	// where every item is unseen and none of them is new.
+	const fresh =
+		connectedSince && get(shareNewFiles) === 'ask'
+			? askCandidates(
+					all.filter((i) => !seenItemIds.has(i.id) && (Number(i.createdAt) || 0) >= connectedSince)
+				)
+			: [];
+	seenItemIds = new Set(all.map((i) => i.id));
+	if (fresh.length) armShareAsk('new', fresh);
+}
+
+/** The 0 -> >0 peer edge: a session exists, so the pre-session library becomes askable.
+ * The HOST is included, deliberately — the old connect toast was joiner-only, and a host
+ * sitting on a library nobody can see is the same problem seen from the other end. */
+function beginShareSession() {
+	connectedSince = Date.now();
+	seenItemIds = new Set(get(explorerItems).map((i) => i.id));
+	askedHashes = new Set();
+	if (get(shareNewFiles) !== 'ask') return;
+	const mine = askCandidates(get(explorerItems));
+	if (mine.length) armShareAsk('connect', mine);
+}
+
+/** ...and the last peer leaving retracts it. A question about a session is meaningless
+ * once there is no session, and leaving it on screen invites an answer that does nothing. */
+function endShareSession() {
+	connectedSince = 0;
+	askedHashes = new Set();
+	pendingShareAsk.set(null);
 }
 
 function scheduleSweep() {
@@ -1249,6 +1576,7 @@ function scheduleSweep() {
 		// folders would be claimed as ours to publish
 		adoptHeld();
 		sweepInheritance();
+		detectNewShares();
 	}, 200);
 }
 
@@ -1333,12 +1661,38 @@ export function startSharedLibrary() {
 	// R22 round 5: a NEW PEER is new evidence, so everything we gave up on is worth one
 	// more ask. Triggered by an arrival rather than a timer — which is the difference
 	// between a retry and a loop — and it is the only automatic retry in the module.
+	//
+	// R22 round 12 — AND THE SWEEP IS UNCONDITIONAL NOW. The pull used to hang off
+	// `revived`, i.e. it only ran for a session that had already given up on something,
+	// which is never true of a CLEAN FIRST CONNECT: retryUnavailable returns 0 and the
+	// rise edge did nothing at all. Auto-download was therefore relying entirely on an
+	// index ARRIVING to trigger it — and an index does not always arrive. Our own idb
+	// manifest can carry the newer stamp, in which case the incoming document is refused
+	// (latest-wins, correctly) and `applySharedIndex` never runs, so nothing on either
+	// path ever asks for the bytes that the rows in our OWN document name. The rise edge
+	// is the one moment that is true regardless of who won the stamp comparison.
+	//
+	// Cheap enough to do on every arrival: `remoteSharedRows` is empty in the common case
+	// (auto-download means we already hold everything), and `enqueuePull` refuses a hash
+	// that is in flight, already held, or recently dead — so a repeat is a no-op, not a
+	// second request.
 	let lastPeerCount = 0;
 	peers.subscribe((p) => {
 		const n = /** @type {any} */ (p)?.openedPeers?.size ?? 0;
 		if (n > lastPeerCount) {
-			const revived = retryUnavailable();
-			if (revived && get(autoDownload)) autoPullMissing();
+			// C2: the FIRST peer opens the share session — the rise from zero, not every rise
+			if (!lastPeerCount) beginShareSession();
+			retryUnavailable();
+			// R22 round 33: the peer RISE is the very edge a connect decision sits on, so
+			// this is the sweep most likely to be held — see `autoPullWhenAllowed`
+			if (get(autoDownload)) autoPullWhenAllowed();
+		}
+		if (!n && lastPeerCount) {
+			endShareSession();
+			// C4: the outbound scope dies with the session too. A scene name learned from one
+			// room is not public knowledge in the next, and a scene opened here was consent
+			// for HERE — so the next connect starts from nothing (projectManifest.js).
+			resetSessionScope();
 		}
 		lastPeerCount = n;
 	});

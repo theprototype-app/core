@@ -31,7 +31,11 @@ import { writable, get } from 'svelte/store';
  * @type {ExplorerColumn[]}
  */
 export const LIBRARY_COLUMNS = [
-	{ key: 'name', label: 'Name', always: true },
+	// R22 round 11: NAME carries a width like every other column now. It used to be the
+	// only one without, so `table-layout: fixed` handed it whatever was left — which is
+	// exactly the behaviour a resize grip cannot coexist with (drag another column and
+	// this one silently absorbs the difference). The remainder is a SPACER cell's job.
+	{ key: 'name', label: 'Name', always: true, width: '220px' },
 	{ key: 'kind', label: 'Type', width: '72px' },
 	{ key: 'size', label: 'Size', numeric: true, width: '76px' },
 	{ key: 'added', label: 'Added', numeric: true, width: '104px' },
@@ -45,7 +49,7 @@ export const LIBRARY_COLUMNS = [
  * @type {ExplorerColumn[]}
  */
 export const DELETED_COLUMNS = [
-	{ key: 'name', label: 'Name', always: true },
+	{ key: 'name', label: 'Name', always: true, width: '220px' },
 	{ key: 'kind', label: 'Type', width: '72px' },
 	{ key: 'deletedBy', label: 'Deleted by', width: '116px' },
 	{ key: 'deletedAt', label: 'Deleted at', numeric: true, width: '124px' }
@@ -147,6 +151,134 @@ explorerDeletedGroup.subscribe((v) => {
 	} catch {}
 });
 
+const WIDTH_KEY = 'explorer:columnWidths';
+const ORDER_KEY = 'explorer:columnOrder';
+
+/** the narrowest a column may be dragged, and the widest. A column under ~48px shows no
+ * text at all, and one over 600px is a scrollbar with a header on it. */
+export const MIN_COLUMN_W = 48;
+export const MAX_COLUMN_W = 600;
+
+/**
+ * R22 round 11 (user): "should allow ajust size of columns and drag order".
+ *
+ * PER VIEW, like the visible set and the sort, and for the same reason the leaf's header
+ * gives: the bin and the library do not share a column set, so they cannot share widths
+ * keyed by column name either — "Deleted at" is not "Added" and a width dragged on one is
+ * meaningless on the other.
+ *
+ * Stored as `{view: {key: px}}` and SPARSE: a column with no entry uses the width it
+ * declares above, so a column whose default changes in a later release moves for everyone
+ * who never dragged it.
+ * @type {import('svelte/store').Writable<Record<string, Record<string, number>>>}
+ */
+export const explorerColumnWidths = writable(load(WIDTH_KEY, { library: {}, deleted: {} }));
+explorerColumnWidths.subscribe((v) => save(WIDTH_KEY, v));
+
+/**
+ * The user's column ORDER, per view, as a key array.
+ *
+ * A key array rather than an index map, and APPEND-not-hide for anything it does not
+ * mention — the same rule `explorerColumns` states for the visible set, and it is the rule
+ * that decides what happens to a column added in a later release: it appears, at the end,
+ * rather than being silently suppressed by every saved pref in existence.
+ * @type {import('svelte/store').Writable<Record<string, string[]>>}
+ */
+export const explorerColumnOrder = writable(load(ORDER_KEY, { library: [], deleted: [] }));
+explorerColumnOrder.subscribe((v) => save(ORDER_KEY, v));
+
+/**
+ * Apply a stored order to a canonical column list. PURE.
+ *
+ * NAME IS PINNED FIRST and cannot be dragged away from the left edge. That is a decision,
+ * not a limitation: the name cell is also the row's drag handle, its inline-rename target
+ * and where its status dot lives, so it is the row's identity rather than one of its
+ * facts — which is why Finder pins it too. Every other column is free.
+ *
+ * @param {ExplorerColumn[]} cols the canonical list, in declaration order
+ * @param {string[]} [order] the stored key order; anything missing keeps its canonical
+ *   place relative to the columns that ARE named
+ * @returns {ExplorerColumn[]} a new array
+ */
+export function orderColumns(cols, order) {
+	const list = cols ?? [];
+	const wanted = (order ?? []).filter((k) => list.some((c) => c.key === k));
+	if (!wanted.length) return [...list];
+	const named = wanted.map((k) => list.find((c) => c.key === k)).filter(Boolean);
+	// unknown to the pref (a column added since it was saved) keeps its canonical index,
+	// which is what "appended rather than hidden" means when the addition is in the middle
+	const rest = list.filter((c) => !wanted.includes(c.key));
+	/** @type {any[]} */
+	const out = [];
+	let n = 0;
+	for (const col of list) {
+		if (rest.includes(col)) out.push(col);
+		else out.push(named[n++]);
+	}
+	// ...then the pin. A stored order from a build that allowed it, or a hand-edited
+	// localStorage, must not be able to strand the identity column in the middle.
+	const nameAt = out.findIndex((c) => c.always);
+	if (nameAt > 0) out.unshift(out.splice(nameAt, 1)[0]);
+	return out;
+}
+
+/**
+ * How wide one column is drawn, in px. Falls back to its declared width, then to a
+ * readable default for a column that declares none.
+ * @param {ExplorerColumn} col
+ * @param {Record<string, number>} [stored] this view's width map
+ * @returns {number}
+ */
+export function widthOf(col, stored) {
+	const px = stored?.[col?.key ?? ''];
+	if (Number.isFinite(px)) return clampColumnWidth(/** @type {number} */ (px));
+	const declared = parseInt(String(col?.width ?? ''), 10);
+	return Number.isFinite(declared) ? declared : 120;
+}
+
+/** @param {number} px */
+export function clampColumnWidth(px) {
+	return Math.max(MIN_COLUMN_W, Math.min(MAX_COLUMN_W, Math.round(px)));
+}
+
+/** Store one width. @param {string} view @param {string} key @param {number} px */
+export function setColumnWidth(view, key, px) {
+	explorerColumnWidths.update((all) => ({
+		...all,
+		[view]: { ...(all[view] ?? {}), [key]: clampColumnWidth(px) }
+	}));
+}
+
+/** Forget one width, so the column goes back to its declared default (double-click on a
+ * grip — this app's established meaning for that gesture). @param {string} view @param {string} key */
+export function resetColumnWidth(view, key) {
+	explorerColumnWidths.update((all) => {
+		const next = { ...(all[view] ?? {}) };
+		delete next[key];
+		return { ...all, [view]: next };
+	});
+}
+
+/**
+ * Move `key` so it sits at `index` in the CURRENT visible order. Refuses to move NAME and
+ * refuses to put anything before it (see orderColumns).
+ * @param {string} view @param {string[]} current the keys as they are drawn right now
+ * @param {string} key @param {number} index
+ */
+export function moveColumn(view, current, key, index) {
+	const list = (current ?? []).filter(Boolean);
+	const from = list.indexOf(key);
+	if (from < 0) return;
+	const pinned = list[0] === 'name' ? 1 : 0;
+	if (from < pinned) return;
+	const to = Math.max(pinned, Math.min(list.length - 1, index));
+	if (to === from) return;
+	const next = [...list];
+	next.splice(from, 1);
+	next.splice(to, 0, key);
+	explorerColumnOrder.update((all) => ({ ...all, [view]: next }));
+}
+
 /**
  * Is this column showing? NAME can never be hidden.
  * @param {string} view @param {string} key
@@ -169,7 +301,10 @@ export function toggleColumn(view, key) {
 	explorerColumns.update((all) => {
 		const current = all[view] ?? columnsFor(view).map((c) => c.key);
 		const next = current.includes(key) ? current.filter((k) => k !== key) : [...current, key];
-		// keep the canonical order, so the header never depends on click history
+		// R22 round 11: this keeps the stored SET canonical, which is now only about
+		// membership — `orderColumns` decides what the header actually shows, so re-showing
+		// a column returns it to wherever the user's order puts it rather than to its
+		// declaration index.
 		const ordered = columnsFor(view)
 			.map((c) => c.key)
 			.filter((k) => next.includes(k));

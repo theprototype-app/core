@@ -240,10 +240,20 @@ export function transferPct(t) {
 	return Math.min(100, Math.round((t.done / t.size) * 100));
 }
 
-/** Human bytes, matching the Explorer's own formatting. @param {number} n */
+/** Human bytes, matching the Explorer's own formatting. R22 round 13 P2 gave it the GB
+ * tier it was missing: a transfer never reaches one (the share cap is 25 MB), but the
+ * storage breakdown reads a whole-origin QUOTA, and "10240 MB" is a number nobody parses
+ * at a glance. This is the app's one EXPORTED byte formatter, which is why the breakdown
+ * uses it instead of becoming a fifth copy. @param {number} n @returns {string} */
 export function fmtBytes(n) {
-	const b = Number(n) || 0;
-	if (b < 1024) return b + ' B';
-	if (b < 1024 * 1024) return (b / 1024).toFixed(b < 10240 ? 1 : 0) + ' KB';
-	return (b / (1024 * 1024)).toFixed(b < 10 * 1024 * 1024 ? 1 : 0) + ' MB';
+	const raw = Number(n) || 0;
+	// a SIGN, not a recursive call: reading its own return type through the recursion is
+	// an implicit-any that counts against the svelte-check baseline. The breakdown's
+	// unaccounted figure is deliberately unclamped, so a negative reading is real.
+	const sign = raw < 0 ? '-' : '';
+	const b = Math.abs(raw);
+	if (b < 1024) return sign + b + ' B';
+	if (b < 1024 * 1024) return sign + (b / 1024).toFixed(b < 10240 ? 1 : 0) + ' KB';
+	if (b < 1024 * 1024 * 1024) return sign + (b / (1024 * 1024)).toFixed(b < 10 * 1024 * 1024 ? 1 : 0) + ' MB';
+	return sign + (b / (1024 * 1024 * 1024)).toFixed(1) + ' GB';
 }

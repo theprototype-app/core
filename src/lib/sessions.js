@@ -705,6 +705,30 @@ export async function importSession(json) {
 	return finishImport(payload);
 }
 
+/**
+ * R22 round 13 — STORE A PAYLOAD BUILT OUT OF A FILE THIS MODULE CANNOT READ.
+ *
+ * `importSession` (a .session.json) and `importSessionZip` (a .tpscene) each parse their
+ * own format and then do the same three things: confirm the scene format, confirm the
+ * modules, write a fresh slot. `projectFile.importProjectAsSession` reads a THIRD format
+ * whose shape belongs to that module, and needs exactly that ending. Exporting the ENDING
+ * rather than teaching this module about `.tp` keeps the format knowledge where the format
+ * is — the same line `exportProjectFromSession` draws from the other side.
+ *
+ * The confirms are not redundant just because the caller already asked about the PROJECT
+ * format: `project.json` and the `session.json` inside its scene bundle carry different
+ * version numbers, and a newer SCENE inside a readable project is precisely the case that
+ * would otherwise land in silence.
+ * @param {any} payload @returns {Promise<any|null>} the saved record, or null when a
+ *   confirm was declined (a silent no-op for the caller, never an error)
+ */
+export async function importSessionPayload(payload) {
+	if (!payload || typeof payload !== 'object') return null;
+	if (!(await confirmSessionFormat(payload))) return null;
+	if (!(await confirmModuleRequirements(payload))) return null;
+	return finishImport(payload);
+}
+
 // ---- session ZIP: session.json + the scene's binary assets (127) ----
 
 /**

@@ -16,12 +16,19 @@
 	// what the Explorer's scene card says, it has to MEAN what that one means — so it asks
 	// the same unsaved-changes question through the SAME guard. `sceneOpenGuard` exists
 	// because a guard with two copies is a guard with one bug; this is its third caller.
-	import { guardSceneReplace } from '$lib/sceneOpenGuard';
+	import { guardSceneReplace, sceneAtRisk } from '$lib/sceneOpenGuard';
 	import { currentLevel, sceneSignature } from '$lib/levels';
 	// R22 round 13: MOUNT is not Load. Load replaces the whole project; mounting adds this
 	// saved project to the Explorer as a root of its own, above Library, leaving whatever is
 	// open untouched. Only a PROJECT has a library to mount, so a scene is not offered one.
 	import { mountedVolumes, mountVolume } from '$lib/mountedVolumes';
+	// R22 round 13 (user's verdict on the flagged fork): a project Open REPLACES - the
+	// Explorer becomes exactly the opened project, the contract openProject already
+	// keeps for a .tp from disk. clearLibrary is the same wipe that path uses, and the
+	// manifest is reset WITH it, because a manifest naming scenes whose files were just
+	// wiped is the dead-pointer shape the 21-G3 header forbids.
+	import { clearLibrary } from '$lib/explorer';
+	import { manifestRestore, normalizeManifest } from '$lib/projectManifest';
 	import {
 		sessions,
 		loadSessions,
@@ -274,7 +281,11 @@
 	 * @param {any} meta
 	 */
 	async function openProjectEntry(meta) {
-		if (!(await guardSceneReplace(meta.name))) return;
+		// Deliberately NOT guardSceneReplace: its Save option writes the scene INTO the
+		// library this open is about to WIPE - a save destroyed moments later is a lie.
+		// The unsaved-changes fact rides in the one confirm below instead, and the honest
+		// escape hatch is this manager's own Save project button, whose entry SURVIVES
+		// the replace (a session is its own idb record, never a library file).
 		/** @type {any} */
 		const peer = $peers;
 		// CONNECTED is `openedPeers`, never `userdata.length` — the roster is populated at
@@ -284,11 +295,14 @@
 		const ok = await showConfirm({
 			title: 'Open project "' + meta.name + '"?',
 			message:
-				'This replaces the scene on screen and brings ' +
+				'This replaces the scene on screen, and the Explorer becomes exactly this project - its ' +
 				files +
 				' saved file' +
 				(files === 1 ? '' : 's') +
-				' back into the Explorer, beside whatever is already there.' +
+				'. What is in the Explorer now is removed first.' +
+				(sceneAtRisk()
+					? ' Unsaved changes to the scene on screen are lost too - Cancel and press Save project here first to keep them.'
+					: '') +
 				(room
 					? ' You will leave the session first — ' +
 						room +
@@ -306,6 +320,13 @@
 			} catch {}
 			showToast('Left the session — opening "' + meta.name + '"');
 		}
+		// the record is read BEFORE the wipe: a missing entry must abort while the
+		// library is still intact, or a dead row costs the user their files
+		if (!(await getSession(meta.id))) return showToast('That saved entry is no longer here');
+		await clearLibrary();
+		// replicate: false - the room was just left, and a fresh manifest named after
+		// the opened project is what the replace MEANS
+		manifestRestore(normalizeManifest({ name: String(meta.name ?? '') }), false);
 		const applied = await requestLoadSession(meta.id);
 		if (applied) await markOpenedFromSessions(meta);
 	}

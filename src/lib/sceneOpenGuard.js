@@ -33,6 +33,22 @@ import { activeFolder } from './explorer';
 import { peerScenes } from './peerScenes';
 
 /**
+ * Is there work on screen that replacing the scene would destroy? The PREDICATE half of
+ * guardSceneReplace, exported on its own for the one caller that must not run the guard:
+ * a project Open wipes the library, so the guard's Save option would write into the very
+ * store about to be cleared - that caller folds this answer into its own confirm instead.
+ * Two deliberate choices ride in here and must not be re-derived by callers:
+ * recomputeSceneDirty() SYNCHRONOUSLY (the throttled sceneDirty store lags a fresh edit
+ * by up to 2s - the documented lost-work bug), and an UNNAMED scene with content counts
+ * (nothing to be dirty against, but opening still destroys it).
+ */
+export function sceneAtRisk() {
+	const at = get(currentLevel);
+	const identified = !!at?.name && typeof at?.signature === 'string';
+	return identified ? recomputeSceneDirty() : (get(objectsGroup)?.children?.length ?? 0) > 0;
+}
+
+/**
  * Ask before replacing the open scene, and honour the answer.
  *
  * @param {string} targetLabel what the caller is about to open — a file name, a scene
@@ -41,6 +57,7 @@ import { peerScenes } from './peerScenes';
  * @returns {Promise<boolean>} true = go ahead (nothing at risk, "Open anyway", or the
  *   save has already been written), false = the user cancelled and nothing was touched.
  */
+
 export async function guardSceneReplace(targetLabel) {
 	const at = get(currentLevel);
 	// REPORTED (bug 2): this used to read `$sceneDirty` — the THROTTLED verdict, which
@@ -56,9 +73,7 @@ export async function guardSceneReplace(targetLabel) {
 	// but leaves the newest, least-saved work in the app completely unguarded. If there is
 	// no identity and the world is not empty, opening still destroys something, so it asks.
 	const identified = !!at?.name && typeof at?.signature === 'string';
-	const risky = identified
-		? recomputeSceneDirty()
-		: (get(objectsGroup)?.children?.length ?? 0) > 0;
+	const risky = sceneAtRisk();
 	if (!risky) return true;
 
 	const here = at?.name ?? 'This scene';

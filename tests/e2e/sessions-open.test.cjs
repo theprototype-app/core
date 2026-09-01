@@ -310,6 +310,17 @@ h.run(async () => {
 		'cancelling a project open leaves the open scene alone'
 	);
 
+	// the REPLACE proof (the user's verdict on the flagged fork): a file that predates
+	// the open must be GONE afterwards, not merged in beside the project's own. Without
+	// this seed the section could not tell replace from merge - every file it checked
+	// for was in BOTH answers.
+	await page.evaluate(async () => {
+		const bytes = new TextEncoder().encode('left behind before the open');
+		await window.__stores.explorer.addItemFromBytes(bytes.buffer, 'stray-before-open.txt', null);
+	});
+	await page.waitForTimeout(400);
+	h.check((await libraryOf(A)).includes('stray-before-open.txt'), 'premise: a stray file is in the library before the open');
+
 	const again = await pressOpen(A, 'Depot');
 	h.check(!!again.next, 'premise: the warning is asked again on a second press');
 	await answer(A, true);
@@ -322,6 +333,19 @@ h.run(async () => {
 	h.check(
 		(await libraryOf(A)).includes('readme.txt'),
 		`…with the project's own files back in the Explorer (${JSON.stringify(await libraryOf(A))})`
+	);
+	h.check(
+		!(await libraryOf(A)).includes('stray-before-open.txt'),
+		'...and the stray file is GONE - the Explorer became exactly the opened project, replace not merge'
+	);
+	const manifestName = await page.evaluate(() => {
+		let m;
+		window.__stores.projectManifest.projectManifest.subscribe((x) => (m = x))();
+		return m?.name ?? '';
+	});
+	h.check(
+		manifestName === 'Depot',
+		`...and the manifest was RESET to the opened project, not left naming wiped files (${manifestName})`
 	);
 
 	// ---- 5. A .tp CHOSEN HERE BECOMES A SESSIONS ENTRY, not a library folder ---------

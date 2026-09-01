@@ -102,15 +102,15 @@ h.run(async () => {
 		.locator('.session-load')
 		.click();
 	await A.page.waitForTimeout(800);
-	// the scene guard speaks first — A's world is unnamed and not empty
-	const guard = await dialog(A);
-	h.check(
-		(guard?.choices ?? []).join(',') === 'save,open',
-		`the unsaved-changes guard runs first, as for any open (${JSON.stringify(guard?.choices)})`
-	);
-	await answer(A, 'open');
-	await A.page.waitForTimeout(700);
+	// The user's replace verdict RETIRED the separate guard here: its Save option wrote
+	// the scene into the library this open now WIPES, a save destroyed moments later.
+	// ONE confirm carries both halves - the unsaved-changes fact and the leave - and the
+	// escape hatch it names (Save project) produces an entry that SURVIVES the replace.
 	const warn = await dialog(A);
+	h.check(
+		/unsaved changes/i.test(warn?.message ?? '') && /save project/i.test(warn?.message ?? ''),
+		`the ONE confirm carries the unsaved-changes fact and names the escape hatch (${(warn?.message ?? '').slice(0, 90)})`
+	);
 	h.check(warn?.title === 'Open project "Depot"?', `then the project warning (${warn?.title})`);
 	h.check(
 		/leave the session first/i.test(warn?.message ?? '') && /1 connected peer\b/.test(warn?.message ?? ''),

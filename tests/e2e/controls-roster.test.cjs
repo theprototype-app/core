@@ -433,6 +433,12 @@ h.run(async () => {
 		(v) => v === true,
 		'and the panel really is the FLOATING window now, not just a flag nobody read'
 	);
+	// close it: with always-on-top OFF by default the floating window genuinely COVERS
+	// the play FAB (z 40+ over the pill's 30 — the behaviour the user asked for), so
+	// the next section's right-click on the FAB would be intercepted, exactly as a real
+	// pointer would be. The window was only ever this section's evidence.
+	await A.page.evaluate(() => window.__stores.explorerClose.set(true));
+	await A.page.waitForTimeout(300);
 
 	// ---- W1: the safety hatch — Settings' Reset window positions ---------------------
 	// Every door back out of a customized toolbar is a right-click, and iOS Safari
@@ -504,11 +510,39 @@ h.run(async () => {
 		`premise: a floating window sits on the window tier (z ${listZ})`
 	);
 	let pillZ = await zOf('#controls-pill');
-	h.check(pillZ > listZ, `on by default, the toolbar beats a floating window (z ${pillZ} > ${listZ})`);
-	await A.page.evaluate(() => window.__stores.toolbarAlwaysOnTop.set(false));
+	// OFF by default since the third on-device pass: a floating window dragged over the
+	// bar covers it, and always-on-top is the opt-in
+	h.check(pillZ < listZ, `off by default, a floating window beats the toolbar (z ${pillZ} < ${listZ})`);
+	// the pref is one right-click away now: the toolbar tail carries a checked
+	// "Always on top" row wired to the same store as the Settings row
+	await A.page.locator('p[title="Object list (O)"]').click({ button: 'right' });
+	await A.page.waitForTimeout(300);
+	const onTopRow = A.page.locator('[role=menuitem]', { hasText: 'Always on top' });
+	h.check((await onTopRow.count()) === 1, 'the cell menu carries an "Always on top" row');
+	await onTopRow.click();
 	await A.page.waitForTimeout(400);
 	pillZ = await zOf('#controls-pill');
-	h.check(pillZ < listZ, `switched off, the window beats the toolbar instead (z ${pillZ} < ${listZ})`);
+	h.check(pillZ > listZ, `clicking it flips the pref live (z ${pillZ} > ${listZ})`);
+	const persisted = await A.page.evaluate(() => localStorage.getItem('toolbarOnTop'));
+	h.check(persisted === 'true', `...and persists under the RENAMED key (toolbarOnTop=${persisted})`);
+	// the rename is load-bearing: the old key holds a subscriber-written 'true' on
+	// every machine that ran the branch, which was never a choice — a stale value
+	// there must NOT resurrect the old default
+	await A.page.evaluate(() => {
+		localStorage.setItem('toolbarAlwaysOnTop', 'true');
+		localStorage.removeItem('toolbarOnTop');
+	});
+	await h.freshReload(A);
+	await A.page.waitForTimeout(700);
+	const afterReload = await A.page.evaluate(() => {
+		let v;
+		window.__stores.toolbarAlwaysOnTop.subscribe((x) => (v = x))();
+		return v;
+	});
+	h.check(
+		afterReload === false,
+		'a stale value under the OLD key is ignored — absent new key means OFF'
+	);
 	// ...and it is genuinely independent of the geometry pref: the bar still anchors on
 	// the dock inset, which is the other pref's job
 	const geomStill = await A.page.evaluate(
@@ -518,10 +552,8 @@ h.run(async () => {
 		geomStill.includes('--bottom-inset'),
 		'...while still anchoring on --bottom-inset, so the two prefs are independent'
 	);
-	await A.page.evaluate(() => window.__stores.toolbarAlwaysOnTop.set(true));
-	await A.page.waitForTimeout(300);
-	await A.page.locator('p[title="Object list (O)"]').click();
-	await A.page.waitForTimeout(300);
+	// (no closing click needed: the fresh reload above left the object list closed,
+	// which is the state the old flow ended in)
 
 	// ═══ W8b ═══════════════════════════════════════════════════════════════════════
 	// Three user reports, one theme: the roster was too rigid. The bar can only hold the

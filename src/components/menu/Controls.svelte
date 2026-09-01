@@ -1035,6 +1035,17 @@
 				disabled: controlsLayout.posX == null,
 				action: () => setLayout({ posX: null })
 			},
+			// the z-order pref, surfaced where the toolbar itself is (the Settings row
+			// stays; this is the same store, so the two can never disagree). Checked at
+			// menu-open is enough — the row closes the menu, so it never shows stale.
+			{
+				label: 'Always on top',
+				tooltip: $toolbarAlwaysOnTop
+					? 'The bar paints over the dock and floating windows — click to let them cover it'
+					: 'Floating windows and the dock cover the bar (the default) — click to keep it on top',
+				checked: $toolbarAlwaysOnTop,
+				action: () => toolbarAlwaysOnTop.update((v) => !v)
+			},
 			// W1: the chevron cell is gone, so this row IS the way out of a collapsed
 			// bar — which is why it swaps rather than sitting beside a second entry
 			collapsed
@@ -1532,10 +1543,11 @@
 
 	/* WHERE THE PILL SITS, and WHO WINS THE PIXEL — two independent prefs since W8a,
 	 * because they are two questions and one flag could only answer them together:
-	 *   floating ON  + on top ON  (the DEFAULT) — the bar lifts onto `--bottom-inset`
-	 *       when a dock opens and paints over the dock and over floating windows.
-	 *   floating ON  + on top OFF — the bar still lifts clear of the dock, but a window
-	 *       dragged over it covers it: it moves out of the way rather than fighting.
+	 *   floating ON  + on top ON  — the bar lifts onto `--bottom-inset` when a dock
+	 *       opens and paints over the dock and over floating windows.
+	 *   floating ON  + on top OFF (the DEFAULT since the third on-device pass) — the
+	 *       bar still lifts clear of the dock, but a window dragged over it covers it:
+	 *       it moves out of the way rather than fighting.
 	 *   floating OFF + on top ON  — the bar stays on the viewport floor and still owns
 	 *       its pixels, so an open dock passes BEHIND it.
 	 *   floating OFF + on top OFF — the W2 behaviour: an ordinary member of the

@@ -123,9 +123,13 @@ h.run(async () => {
 		open.pillBottom <= open.dockTop + 2,
 		`...and so does the Controls pill (${open.pillBottom} <= ${open.dockTop})`
 	);
+	// The default z is BELOW the dock's tier now (on-top defaults OFF since the third
+	// on-device pass) — the pill still owns its pixel, but by GEOMETRY (it rides above
+	// the dock's band, so the two never overlap), not by z. The z claim moved to the
+	// always-on-top section below.
 	h.check(
-		open.hitIsDock === false && open.pillZ > open.dockZ,
-		`...winning its own pixel (z ${open.pillZ} > ${open.dockZ})`
+		open.hitIsDock === false && open.pillZ < open.dockZ,
+		`...owning its pixel by geometry while sitting on the lower tier (z ${open.pillZ} < ${open.dockZ})`
 	);
 
 	// NO `bottom` transition. The property list alone cannot say so: with no
@@ -180,17 +184,19 @@ h.run(async () => {
 	const rowInfo = await setFloatingViaSettings(A.page, false);
 	h.check(rowInfo.rows === 1 && rowInfo.toggles === 1, 'Settings ▸ Interface has a "Floating toolbar" row with a real toggle');
 	h.check(rowInfo.was === true, '...which reads ON by default');
-	const floorOnly = await bottomChrome(A.page);
-	h.check(
-		floorOnly.pillBottom > floorOnly.dockTop && floorOnly.pillZ > floorOnly.dockZ,
-		`geometry alone drops the bar into the dock's band but keeps its tier (z ${floorOnly.pillZ} > ${floorOnly.dockZ})`
-	);
-	await A.page.evaluate(() => window.__stores.toolbarAlwaysOnTop.set(false));
+	// with on-top at ITS default (OFF since the third on-device pass), floating OFF is
+	// already the fully covered mode — no second store write needed, which is the point
+	const onTopDefault = await A.page.evaluate(() => {
+		let v;
+		window.__stores.toolbarAlwaysOnTop.subscribe((x) => (v = x))();
+		return v;
+	});
+	h.check(onTopDefault === false, 'premise: "Toolbar always on top" reads OFF by default');
 	await A.page.waitForTimeout(400);
 	const covered = await bottomChrome(A.page);
 	h.check(
 		covered.vh - covered.pillBottom <= 18,
-		`switched off, the pill stays on the viewport floor with the dock open (${covered.vh - covered.pillBottom}px clear)`
+		`floating off, the pill stays on the viewport floor with the dock open (${covered.vh - covered.pillBottom}px clear)`
 	);
 	h.check(
 		covered.pillBottom > covered.dockTop,
@@ -198,16 +204,27 @@ h.run(async () => {
 	);
 	h.check(
 		covered.pillZ < covered.dockZ,
-		`the pill sits UNDER the dock's tier (z ${covered.pillZ} < ${covered.dockZ})`
+		`the pill sits UNDER the dock's tier by default (z ${covered.pillZ} < ${covered.dockZ})`
 	);
 	h.check(covered.hitIsDock === true, 'and the dock owns the pixel over the pill');
 	h.check(
 		covered.fabHitIsDock === true,
 		"...including over the play FAB, whose own z-index cannot escape the pill's stacking context"
 	);
-	// back to the defaults for the rest of the suite, which drives the Controls toolbar
-	// with the dock open — precisely what the covered mode does not allow
+	// the OTHER half of the split: on-top ON with floating still OFF — the bar stays
+	// on the floor and the dock passes BEHIND it (the combination the two-pref design
+	// exists to make expressible)
 	await A.page.evaluate(() => window.__stores.toolbarAlwaysOnTop.set(true));
+	await A.page.waitForTimeout(400);
+	const floorOnTop = await bottomChrome(A.page);
+	h.check(
+		floorOnTop.pillBottom > floorOnTop.dockTop && floorOnTop.pillZ > floorOnTop.dockZ,
+		`on-top ON keeps the floor row but wins the pixel (z ${floorOnTop.pillZ} > ${floorOnTop.dockZ})`
+	);
+	h.check(floorOnTop.hitIsDock === false, '...so the dock passes behind the bar');
+	// back to the defaults for the rest of the suite, which drives the Controls toolbar
+	// with the dock open — the floating bar rides above the band, so nothing covers it
+	await A.page.evaluate(() => window.__stores.toolbarAlwaysOnTop.set(false));
 	await setFloating(A.page, true);
 
 	// 203: the sidebar now FLOATS ON TOP of the dock (z-hud) instead of ending

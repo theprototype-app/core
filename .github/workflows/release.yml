@@ -26,7 +26,10 @@ jobs:
       # 388 when #20 annotated Scene's marqueeStart, which was three implicit-anys)
       # -> 387 when 21-D retired the HUD datalist plumbing, taking one with it)
       # -> 386 with the per-camera looks round, -> 385 when 21-E consolidated
-      # PointerLockControls' camera swap into one effect)
+      # PointerLockControls' camera swap into one effect
+      # -> 384/47 with the controls/dock rework: warnings 62 -> 47 when the six
+      # hand-written pill cells became one {#each} template, errors -1 net from the
+      # applyLook fold in PointerLockControls)
       - name: svelte-check baseline gate
         run: |
           npm run check 2>&1 | tee check.log || true
@@ -40,9 +43,9 @@ jobs:
             ERRORS=$(echo "$LINE" | awk '{print $2}')
             WARNINGS=$(echo "$LINE" | awk '{print $5}')
           fi
-          echo "svelte-check: $ERRORS errors / $WARNINGS warnings (baseline 385/62)"
+          echo "svelte-check: $ERRORS errors / $WARNINGS warnings (baseline 384/47)"
           if [ -z "$ERRORS" ]; then echo "could not parse svelte-check output"; exit 1; fi
-          if [ "$ERRORS" -gt 385 ] || [ "$WARNINGS" -gt 62 ]; then
+          if [ "$ERRORS" -gt 384 ] || [ "$WARNINGS" -gt 47 ]; then
             echo "baseline exceeded"; exit 1
           fi
       - name: zip the build

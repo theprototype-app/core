@@ -550,19 +550,26 @@ if (typeof localStorage !== 'undefined') {
  * the pixel" (does the bar paint over the panels or under them). They were one flag
  * until the on-device pass, which is why a user who wanted the bar to lift also had to
  * accept it painting over every floating window.
- *   ON (default) — `--z-hud` (45): above the dock (35) AND above floating windows (40).
- *   OFF          — `--z-drawer` (30): windows and the dock cover it.
- * They compose, and the combination worth naming is floating OFF + this ON: the bar
- * stays on the viewport floor and an opening dock passes BEHIND it. Only with BOTH off
- * does the dock cover the bar.
- * LOCAL, persisted, absent = ON — read as `!== 'false'`, the same shape as its
- * neighbour above, so the two default-on prefs are written one way. */
+ *   ON           — `--z-hud` (45): above the dock (35) AND above floating windows (40).
+ *   OFF (default) — `--z-drawer` (30): windows and the dock cover it.
+ * They compose. The DEFAULT combination is floating ON + this OFF: the bar lifts clear
+ * of an opening dock (so the two rarely overlap at all), but a floating window dragged
+ * over it covers it — the bar moves out of the way rather than fighting. Turning this
+ * ON is one right-click away (the toolbar tail carries an "Always on top" row) as well
+ * as a Settings row.
+ * LOCAL, persisted, absent = OFF — read as `=== 'true'`. THE KEY IS RENAMED
+ * (`toolbarOnTop`, was `toolbarAlwaysOnTop`) because the default flipped OFF after the
+ * subscriber below had already written a literal 'true' onto every machine that ran
+ * the branch — a value the FIRST FLUSH wrote, not a choice anyone made. Reading the
+ * old key would pin those machines ON with no way to tell that from having chosen; a
+ * fresh key makes absent mean "never chose" again. The pref never shipped in a tagged
+ * release, so there is nothing real to migrate. */
 export const toolbarAlwaysOnTop = writable(
-  typeof localStorage !== 'undefined' ? localStorage.getItem('toolbarAlwaysOnTop') !== 'false' : true
+  typeof localStorage !== 'undefined' ? localStorage.getItem('toolbarOnTop') === 'true' : false
 );
 if (typeof localStorage !== 'undefined') {
   toolbarAlwaysOnTop.subscribe((v) => {
-    try { localStorage.setItem('toolbarAlwaysOnTop', v ? 'true' : 'false'); } catch { /* */ }
+    try { localStorage.setItem('toolbarOnTop', v ? 'true' : 'false'); } catch { /* */ }
   });
 }
 

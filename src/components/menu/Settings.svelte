@@ -717,7 +717,7 @@
 					</SettingRow>
 					<SettingRow name="Toolbar always on top">
 						<svelte:fragment slot="control"><Toggle bind:checked={$toolbarAlwaysOnTop} /></svelte:fragment>
-						The bottom toolbar paints over the docked panels and over floating windows, so it is always reachable (the default). Off, a window or an open panel covers it instead — turn this off if you would rather the toolbar got out of the way. Drag the toolbar itself to slide it left or right, or right-click it for "Move toolbar"
+						The bottom toolbar paints over the docked panels and over floating windows, so it is always reachable. Off (the default), a window or an open panel covers it instead — the toolbar gets out of the way. Also in the toolbar's own right-click menu; drag the bar itself to slide it left or right
 					</SettingRow>
 					<SettingRow name="Window positions">
 						<svelte:fragment slot="control">

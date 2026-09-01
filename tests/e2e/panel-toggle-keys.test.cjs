@@ -178,5 +178,73 @@ h.run(async () => {
 		'5.1 N still closes it — a window hidden behind nothing is on top, whatever the raw stack order says'
 	);
 
+
+	// --- 8. A MODIFIED PRESS IS A COMMAND, NEVER MOVEMENT --------------------------
+	// User: "Alt+E alt+a open/close window, but it also affects WASD (camera moves)".
+	// The #183 shortcuts are Alt-aware and editorNavigation's keydown guard checked
+	// Ctrl and Meta but not Alt, so one press toggled the panel AND flew the camera.
+	// The PTT lesson in test form: a brief keystroke cannot be caught by a settled
+	// read - HOLD the combo, because movement accumulates per frame.
+	const camPos = () =>
+		A.page.evaluate(() => {
+			let c;
+			window.__stores.globalCamera.subscribe((x) => (c = x))();
+			return c ? [c.position.x, c.position.y, c.position.z] : null;
+		});
+	const hold = async (combo, ms) => {
+		await A.page.evaluate(() => document.activeElement instanceof HTMLElement && document.activeElement.blur());
+		const parts = combo.split('+');
+		for (const k of parts) await A.page.keyboard.down(k);
+		await A.page.waitForTimeout(ms);
+		for (const k of parts.reverse()) await A.page.keyboard.up(k);
+		await A.page.waitForTimeout(250);
+	};
+	const dist = (a, b) => Math.hypot(a[0] - b[0], a[1] - b[1], a[2] - b[2]);
+
+	// the control leg first: the probe must be able to SEE movement, or the checks
+	// below pass with the camera dead (the check-that-cannot-fail rule)
+	const p0 = await camPos();
+	h.check(!!p0, 'premise: the editor camera is readable');
+	await hold('e', 600);
+	const p1 = await camPos();
+	h.check(dist(p0, p1) > 0.01, 'control: a BARE e still flies the camera (' + dist(p0, p1).toFixed(3) + ')');
+
+	const explBefore = await dockState(A.page);
+	const p2 = await camPos();
+	await hold('Alt+e', 700);
+	const p3 = await camPos();
+	const explAfter = await dockState(A.page);
+	h.check(
+		dist(p2, p3) < 1e-6,
+		'holding Alt+E moves the camera not at all (' + dist(p2, p3).toFixed(6) + ')'
+	);
+	h.check(
+		explBefore.explClosed !== explAfter.explClosed,
+		'...while the Explorer still toggled - the press was seen, only movement refused (' +
+			explBefore.explClosed + ' -> ' + explAfter.explClosed + ')'
+	);
+
+	const p4 = await camPos();
+	await hold('Alt+a', 700);
+	const p5 = await camPos();
+	h.check(
+		dist(p4, p5) < 1e-6,
+		'holding Alt+A moves the camera not at all (' + dist(p4, p5).toFixed(6) + ')'
+	);
+	// releasing Alt BEFORE the letter must not strand the key as movement either
+	await A.page.evaluate(() => document.activeElement instanceof HTMLElement && document.activeElement.blur());
+	await A.page.keyboard.down('Alt');
+	await A.page.keyboard.down('e');
+	await A.page.keyboard.up('Alt');
+	await A.page.keyboard.up('e');
+	await A.page.waitForTimeout(200);
+	const p6 = await camPos();
+	await A.page.waitForTimeout(600);
+	const p7 = await camPos();
+	h.check(
+		dist(p6, p7) < 1e-6,
+		'releasing Alt before the letter strands nothing - the camera stays put (' + dist(p6, p7).toFixed(6) + ')'
+	);
+
 	await h.finish(browser);
 });

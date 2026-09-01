@@ -728,15 +728,24 @@ h.run(async () => {
 		20000
 	);
 
-	// ---- 6c. A DISABLED CONTROL IS NOT A BLOCKED ONE ----------------------------------
+	// ---- 6c. A DISABLED CONTROL IS NOT A BLOCKED ONE, AND AN ENABLED ONE IS NEITHER ---
 	// flowbite's Button theme paints its disabled variant `cursor-not-allowed opacity-50`
-	// (buttons/theme.js). The grey is the honest half and the reported "blocked" cursor is
-	// not: Rescan while a scan is already running, and Reclaim while nothing is ticked,
-	// are both "not yet" rather than "refused". Read the COMPUTED cursor — the class
-	// string carries the utility either way, and an unlayered rule is what beats it.
+	// (buttons/theme.js:140) and NEVER TAKES IT OFF: `Button.svelte:34` destructures
+	// `const { base, ... } = $derived(button({ ..., disabled: isDisabled }))`, and a
+	// destructuring declaration evaluates its object once, so the class string is frozen at
+	// whatever the button mounted as. The `disabled` ATTRIBUTE beside it is a separate,
+	// genuinely reactive derived. Both buttons here are born disabled - the modal opens with
+	// a scan running and nothing ticked - so both wore the blocked cursor and the fade
+	// permanently, in every state, which is the two reports read as one bug.
+	//
+	// So every check below reads the COMPUTED style, never the class string: the class
+	// string is wrong in both directions and would report the feature working while it was
+	// broken. The rules key off `:disabled` / `:not(:disabled)`, the half that is reactive.
 	const reclaimCursor = await page.evaluate(() => {
 		const b = document.querySelector('#storage-reclaim');
-		return b ? { disabled: !!b.disabled, cursor: getComputedStyle(b).cursor } : null;
+		return b
+			? { disabled: !!b.disabled, cursor: getComputedStyle(b).cursor, opacity: getComputedStyle(b).opacity }
+			: null;
 	});
 	h.check(
 		!!reclaimCursor && reclaimCursor.disabled,
@@ -746,6 +755,80 @@ h.run(async () => {
 		!!reclaimCursor && reclaimCursor.cursor === 'default',
 		'...and it shows a neutral cursor, not "blocked" (' + (reclaimCursor || {}).cursor + ')'
 	);
+	// ...but the FADE stays on Reclaim, and that is the half the user kept: "there is
+	// nothing to do yet" is a real state and this button has no label change to say it.
+	h.check(
+		!!reclaimCursor && Number(reclaimCursor.opacity) < 0.9,
+		'...while the GREY stays - nothing ticked is a real state, and the grey is what says so (' +
+			(reclaimCursor || {}).opacity +
+			')'
+	);
+
+	// ---- 6c2. AND IT COMES BACK IN FULL THE MOMENT SOMETHING IS TICKED ----------------
+	// The user's words were "when any checkbox in modal selected remove opacity-50". With a
+	// selection the button is ENABLED, so flowbite paints no disabled variant and there is
+	// nothing to remove - which means this check is really an assertion about the SELECTION
+	// surviving to the button. That is the shape of the bug this round already found once
+	// (a landing scan emptied `picked` under it), so the guard is worth its two lines.
+	// 6b reclaimed the whole Library group, so the panel is currently down to rows it
+	// REFUSES - seed one back and re-scan, or the premise below is vacuously false and the
+	// check that follows would be reading a button nothing could ever enable.
+	await page.evaluate(async () => {
+		const e = window.__stores.explorer;
+		await e.addItemFromBytes(new TextEncoder().encode('opacity probe').buffer, 'opacity-probe.txt', null);
+		await window.__stores.storageUsage.scanStorage();
+	});
+	await page.waitForTimeout(600);
+	const pickables = await page.evaluate(() => {
+		let sc;
+		window.__stores.storageUsage.storageScan.subscribe((v) => (sc = v))();
+		return (sc?.categories ?? []).flatMap((c) => c.rows).filter((r) => r.removable).length;
+	});
+	h.check(pickables > 0, 'premise: something in the panel can be ticked again (' + pickables + ')');
+	await page.locator('#storage-select-all').click();
+	await page.waitForTimeout(400);
+	const reclaimPicked = await page.evaluate(() => {
+		const b = document.querySelector('#storage-reclaim');
+		return b
+			? { disabled: !!b.disabled, opacity: getComputedStyle(b).opacity, cursor: getComputedStyle(b).cursor }
+			: null;
+	});
+	h.check(
+		!!reclaimPicked && !reclaimPicked.disabled,
+		'ticking anything ENABLES Reclaim - the selection reaches the button'
+	);
+	h.check(
+		!!reclaimPicked && reclaimPicked.opacity === '1',
+		'...and it renders at full strength, with no leftover fade (' + (reclaimPicked || {}).opacity + ')'
+	);
+	h.check(
+		!!reclaimPicked && reclaimPicked.cursor === 'pointer',
+		'...and offers a pointer, not the blocked cursor it was born wearing (' +
+			(reclaimPicked || {}).cursor +
+			')'
+	);
+	// THE COUNTERFACTUAL, measured in-page: the CLASS STRING still says disabled on both
+	// buttons in every state. That is the bug these three checks stand on, and it is also
+	// why none of them may assert a class.
+	const staleClasses = await page.evaluate(() => {
+		const cls = (id) => document.querySelector(id)?.className ?? '';
+		return {
+			reclaim: /opacity-50/.test(cls('#storage-reclaim')) && /cursor-not-allowed/.test(cls('#storage-reclaim')),
+			rescan: /opacity-50/.test(cls('#storage-rescan')) && /cursor-not-allowed/.test(cls('#storage-rescan'))
+		};
+	});
+	h.check(
+		staleClasses.reclaim && staleClasses.rescan,
+		'...while the CLASS STRING on both still says disabled - flowbite freezes it at mount, ' +
+			'so a class assertion here would read the feature as broken'
+	);
+	await page.locator('#storage-select-all').click();
+	await page.waitForTimeout(350);
+	h.check(
+		await page.evaluate(() => !!document.querySelector('#storage-reclaim')?.disabled),
+		'...and un-ticking puts it back, so the two states really are different'
+	);
+
 	await page.locator('#storage-rescan').click();
 	await page
 		.waitForFunction(() => !!document.querySelector('#storage-rescan')?.disabled, null, {
@@ -755,7 +838,12 @@ h.run(async () => {
 	const rescanCursor = await page.evaluate(() => {
 		const b = document.querySelector('#storage-rescan');
 		return b
-			? { disabled: !!b.disabled, cursor: getComputedStyle(b).cursor, label: (b.innerText || '').trim() }
+			? {
+					disabled: !!b.disabled,
+					cursor: getComputedStyle(b).cursor,
+					opacity: getComputedStyle(b).opacity,
+					label: (b.innerText || '').trim()
+				}
 			: null;
 	});
 	h.check(
@@ -765,6 +853,15 @@ h.run(async () => {
 	h.check(
 		!!rescanCursor && rescanCursor.cursor === 'default',
 		'a disabled Rescan shows a neutral cursor, not "blocked" (' + (rescanCursor || {}).cursor + ')'
+	);
+	// ...AND NO FADE AT ALL, which is where Rescan parts company with Reclaim. It is
+	// disabled only because the thing it does is ALREADY HAPPENING, and it says that in its
+	// own label; a fade on top of that repeats it in the vocabulary of refusal.
+	h.check(
+		!!rescanCursor && rescanCursor.opacity === '1',
+		'...and it is not faded either - "Reading..." already says why it is disabled (' +
+			(rescanCursor || {}).opacity +
+			')'
 	);
 	await h.eventually(
 		() =>
@@ -776,6 +873,22 @@ h.run(async () => {
 		(v) => v === false,
 		'...and it comes back once the scan finishes',
 		20000
+	);
+	await page.waitForTimeout(400);
+	const rescanLive = await page.evaluate(() => {
+		const b = document.querySelector('#storage-rescan');
+		return b
+			? { disabled: !!b.disabled, cursor: getComputedStyle(b).cursor, opacity: getComputedStyle(b).opacity }
+			: null;
+	});
+	h.check(!!rescanLive && !rescanLive.disabled, 'premise: Rescan is live again');
+	h.check(
+		!!rescanLive && rescanLive.cursor === 'pointer' && rescanLive.opacity === '1',
+		'...and a LIVE Rescan looks live - pointer, full strength (' +
+			(rescanLive || {}).cursor +
+			', ' +
+			(rescanLive || {}).opacity +
+			')'
 	);
 
 	// ---- 7. three entry points --------------------------------------------------------

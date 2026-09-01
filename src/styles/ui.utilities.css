@@ -104,6 +104,22 @@
     background: var(--accent, #3b82f6);
     color: #fff;
   }
+  /*
+    R22 round 13: a HALF that is switched off. The Explorer's Bin|Log control is the first
+    consumer — the deleted-files log is a preference, so its half disables rather than
+    disappearing, and the app's convention is to disable WITH the reason (which the
+    consumer renders beside the control; this only has to make the state legible).
+
+    `default`, not `not-allowed`: the same reading the Storage panel settled on one domain
+    over — a control that is off is not a control that is refusing you.
+  */
+  &:disabled {
+    cursor: default;
+    opacity: 0.45;
+  }
+  &:disabled:hover {
+    color: #9ca3af;
+  }
 }
 
 /* ---------------------------------------------------------------------------

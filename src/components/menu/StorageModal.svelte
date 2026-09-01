@@ -373,19 +373,61 @@
 		height: 100%;
 		background: var(--accent, #2563eb);
 	}
-	/* A NOT-YET IS NOT A BLOCKED. flowbite's Button theme paints its disabled variant
-	   `cursor-not-allowed opacity-50` (buttons/theme.js), so both of this panel's
-	   disabled states rendered the "blocked" cursor: Rescan while a scan is already
-	   running, and Reclaim while nothing is ticked. Neither is a refusal — one is "this is
-	   already happening", the other is "there is nothing to do yet" — and the greyed look
-	   already says so, which is the part the user kept. `.tp-check:disabled` in ui.css
-	   settled on `cursor: default` for the same reason; this follows it.
+	/* THE PAINT MUST FOLLOW `:disabled`, BECAUSE THE CLASS STRING DOES NOT.
+
+	   The first pass here read the symptom right and the cause wrong. flowbite's Button
+	   theme does paint its disabled variant `cursor-not-allowed opacity-50`
+	   (buttons/theme.js:140) - but the real defect is that it never takes it OFF again.
+	   `Button.svelte:34` reads
+
+	       const { base, ... } = $derived(button({ ..., disabled: isDisabled, ... }));
+
+	   and a DESTRUCTURING declaration evaluates its object once, so `base` is frozen with
+	   whatever `disabled` happened to be at mount. The element's own `disabled={isDisabled}`
+	   is a separate, genuinely reactive `$derived` - so the ATTRIBUTE tracks the state and
+	   the CLASS STRING never moves.
+
+	   Both of this panel's buttons are born disabled: the modal opens with a scan already
+	   running (Rescan) and with nothing ticked (Reclaim). So both wore the blocked cursor
+	   and the 50% fade PERMANENTLY. MEASURED, before this rule: with an item ticked and no
+	   scan running, Reclaim reported `{disabled:false, opacity:'0.5', cursor:'not-allowed'}`
+	   and Rescan the same - which is precisely the two reports ("remove .cursor-not-allowed",
+	   "when any checkbox in modal selected remove opacity-50"). They are ONE bug, and the
+	   round-13 `:disabled { cursor: default }` rule had fixed the only state in which that
+	   class was telling the truth.
+
+	   So the rules key off `:disabled` and `:not(:disabled)`, which is the half that is
+	   reactive, rather than trying to correct a string that cannot change:
+
+	     enabled          -> pointer, full strength. It is a live control; it must look it.
+	     Rescan disabled  -> neutral cursor, FULL STRENGTH. It is disabled because the thing
+	                         it does is already happening, and its own label says so
+	                         ("Reading..."); a fade would repeat that in the vocabulary of
+	                         refusal, which is what the blocked cursor was doing.
+	     Reclaim disabled -> neutral cursor, and the fade STAYS. "Nothing is ticked yet" is a
+	                         real state with no label to carry it, and the grey is what says
+	                         so. This is the line the user drew: off Rescan outright, off
+	                         Reclaim only once something is selected.
+
 	   `:global` because a flowbite <Button> renders its <button> in its OWN scope, so a
-	   plain scoped selector never lands on it; and an UNLAYERED rule beats a Tailwind
-	   utility whatever the specificity, which is why one line is enough. */
+	   plain scoped selector never lands on it; UNLAYERED, because that beats a Tailwind
+	   utility whatever the specificity. `.tp-check:disabled` in ui.css settled on
+	   `cursor: default` for a disabled control for the same reason, and this follows it.
+
+	   Scoped to these two ids on purpose. The flowbite defect is app-wide - every <Button>
+	   whose `disabled` prop can change is wearing a stale class string somewhere - but that
+	   is a survey and a shared cure, not something to guess at from inside one panel. */
 	:global(#storage-rescan:disabled),
 	:global(#storage-reclaim:disabled) {
 		cursor: default;
+	}
+	:global(#storage-rescan:disabled) {
+		opacity: 1;
+	}
+	:global(#storage-rescan:not(:disabled)),
+	:global(#storage-reclaim:not(:disabled)) {
+		cursor: pointer;
+		opacity: 1;
 	}
 	.storage-link {
 		font-size: 0.7rem;

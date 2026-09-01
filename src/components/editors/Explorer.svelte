@@ -1243,7 +1243,14 @@
 		// R22 round 7: the bin is its own place, so the breadcrumb has to say so — it read
 		// "Library", which is exactly where these files are not
 		if (a === 'deleted') return [{ label: 'Deleted', id: 'deleted' as string | null }];
-		if (a === 'deletedlog') return [{ label: 'Deleted log', id: 'deletedlog' as string | null }];
+			// ...and round 13 makes the log a place INSIDE it rather than a second root beside
+		// it, which a trail can say for free: "Deleted / Log", with the first crumb walking
+		// back to the bin.
+		if (a === 'deletedlog')
+			return [
+				{ label: 'Deleted', id: 'deleted' as string | null },
+				{ label: 'Log', id: 'deletedlog' as string | null }
+			];
 		if (typeof a === 'string' && a.startsWith('pack:')) {
 			const p = packByName(a.slice(5));
 			return [
@@ -1667,8 +1674,47 @@
 	const deletedHeld = $derived(new Set([...$explorerItems, ...$hiddenItems].map((i: any) => i.hash)));
 	const binCount = $derived(partitionDeleted(deletedRows, deletedHeld).bin.length);
 	const logCount = $derived(deletedRows.length);
-	/** the log root is a preference, and an empty record is nothing to show */
-	const showDeletedLog = $derived($deletedLogEnabled && logCount > 0);
+	/**
+	 * R22 round 13 (user): "'Deleted log' button should be somewhere within 'Deleted' ...
+	 * having it in two different elements within tree style left section could be confusing
+	 * for users, as technically it belongs to the same".
+	 *
+	 * Right: they are ONE PLACE read two ways - `partitionDeleted` splits one array, and
+	 * two sibling tree roots claimed two places for it. So the tree keeps ONE root and the
+	 * split moves INSIDE, onto a segmented control at the top of the view (`#explorer-bin-tabs`).
+	 *
+	 * `deletedlog` STAYS A NAVIGABLE FOLDER ID rather than becoming a view flag. It is
+	 * somewhere you can be standing, be returned to (`placeStillThere` after a cancelled
+	 * unmount) and be deep-linked into, and a flag is none of those - only the way IN
+	 * changed. The whole point of round 13's pinned-roots guard is that this list grows.
+	 *
+	 * THE ROOT'S COUNT IS NOW THE SIZE OF THE PLACE, not of the bin. With the log on, the
+	 * place holds every recorded deletion; with it off, the place is the bin and nothing
+	 * else. The old "Deleted (2) / Deleted log (5)" glance moves one click in, onto the tabs
+	 * that carry both numbers - and the alternative was worse, because
+	 * `emptyRecycleBinOnLoad` empties the bin on most starts, so a root labelled with the
+	 * BIN count would read "Deleted (0)" over a record of five and nobody would open it.
+	 */
+	const deletedRootCount = $derived($deletedLogEnabled ? logCount : binCount);
+	/**
+	 * ...which is also why the root's VISIBILITY follows that number and not `binCount`.
+	 * Hiding it on an empty bin used to be safe because the log had a root of its own; with
+	 * one root it would take the record away on every start that auto-empties the bin.
+	 * (Still shown during a drag: a row you cannot see is a row you cannot drop on.)
+	 */
+	const showDeletedRoot = $derived(deletedRootCount > 0 || libraryDragging);
+	/** the log half of the tabs is a PREFERENCE, so it disables with the reason rather than
+	 * vanishing - the Watch-and-say-why convention. An empty record is still a real view
+	 * ("nothing has been deleted yet"), so emptiness does not disable it. */
+	const logAvailable = $derived($deletedLogEnabled);
+	const inDeletedView = $derived($activeFolder === 'deleted' || $activeFolder === 'deletedlog');
+	/**
+	 * ...and you cannot be left standing in a view the tabs say is switched off. One-way and
+	 * narrow on purpose: the log going off sends you to the bin, and nothing sends you back.
+	 */
+	$effect(() => {
+		if (!$deletedLogEnabled && $activeFolder === 'deletedlog') untrack(() => openFolder('deleted'));
+	});
 
 	/**
 	 * The bin, grouped by whoever deleted each row. Rendered as collapsible SECTIONS
@@ -3830,35 +3876,33 @@
 	}
 
 	/**
-	 * R22 round 13: what the LOG offers. Open, the same view controls (its rows are the
-	 * bin's rows read a second way, so grouping and sort mean the same thing), and the
-	 * one destructive act — which is `emptyBin`, not a second one: "clear the record" and
-	 * "reclaim the disk" are the same gesture on one array, and its dialog already says
-	 * both halves out loud.
+	 * R22 round 13: what the LOG offers — the same view controls (its rows are the bin's
+	 * rows read a second way, so grouping and sort mean the same thing), and the one
+	 * destructive act, which is `emptyBin` rather than a second one: "clear the record" and
+	 * "reclaim the disk" are the same gesture on one array, and its dialog already says both
+	 * halves out loud.
+	 *
+	 * The log's own TREE ROW is gone (it is a tab inside Deleted now), so this list is
+	 * reached the way every other view's is: the grid's background menu, in the view the
+	 * tab opens. There was never a second thing on it worth a second surface.
 	 */
-	function deletedLogRowMenu(e: MouseEvent) {
-		e.preventDefault();
-		menu = {
-			x: e.clientX,
-			y: e.clientY,
-			items: [
-				{ label: 'Open', action: () => openFolder('deletedlog') },
-				...deletedViewItems(),
-				...(logCount
-					? [
-							{ section: 'Record' },
-							{
-								label: 'Clear the log (' + logCount + ')',
-								danger: true,
-								icon: 'trash-2',
-								tooltip:
-									'Forgets what was deleted AND empties the bin on THIS machine. Peers keep their own record.',
-								action: () => void emptyBin()
-							}
-						]
-					: [])
-			]
-		};
+	function deletedLogMenuItems() {
+		return [
+			...deletedViewItems(),
+			...(logCount
+				? [
+						{ section: 'Record' },
+						{
+							label: 'Clear the log (' + logCount + ')',
+							danger: true,
+							icon: 'trash-2',
+							tooltip:
+								'Forgets what was deleted AND empties the bin on THIS machine. Peers keep their own record.',
+							action: () => void emptyBin()
+						}
+					]
+				: [])
+		];
 	}
 
 	/** the Deleted tree row's own menu */
@@ -3986,18 +4030,7 @@
 				x: e.clientX,
 				y: e.clientY,
 				items: logCount
-					? [
-							...deletedViewItems(),
-							{ section: 'Record' },
-							{
-								label: 'Clear the log (' + logCount + ')',
-								danger: true,
-								icon: 'trash-2',
-								tooltip:
-									'Forgets what was deleted AND empties the bin on THIS machine. Peers keep their own record.',
-								action: () => void emptyBin()
-							}
-						]
+					? deletedLogMenuItems()
 					: [{ label: 'Nothing has been deleted yet', action: () => {} }]
 			};
 			return;
@@ -5753,8 +5786,15 @@
 					     and a destructive place belongs under the things you reach for rather
 					     than above them. Still hidden while empty — EXCEPT during a drag (round
 					     11), because a row you cannot see is a row you cannot drop on, and the
-					     very first delete-by-drag is exactly the one that finds the bin empty. -->
-					{#if binCount || libraryDragging}
+					     very first delete-by-drag is exactly the one that finds the bin empty.
+
+					     R22 round 13 (user): ONE ROOT NOW. The Deleted log used to be a second
+					     root beside this one, which claimed two places in the tree for what
+					     `partitionDeleted` proves is one array read twice; the split moved onto
+					     the tabs at the top of the view. So the count and the gate below are the
+					     size of the PLACE (`deletedRootCount` / `showDeletedRoot`), not of the
+					     bin — see the comment on those. -->
+					{#if showDeletedRoot}
 						<button
 							id="deleted-folder"
 							class="whitespace-nowrap rounded px-2 py-1 text-left {binDropActive
@@ -5762,7 +5802,13 @@
 								: $activeFolder === 'deleted'
 									? 'bg-primary-700 text-white'
 									: 'text-gray-300 hover:bg-gray-700'}"
-							title="Files removed from the project — restore them, or free the disk. Drop files or folders here to delete them."
+							title={($deletedLogEnabled && logCount !== binCount
+								? logCount +
+									' deleted, of which ' +
+									binCount +
+									' can still be restored. '
+								: '') +
+								'Files removed from the project — restore them, or free the disk. Drop files or folders here to delete them.'}
 							onclick={() => openFolder('deleted')}
 							oncontextmenu={deletedRowMenu}
 							ondragover={(e) => {
@@ -5774,30 +5820,11 @@
 							ondragleave={() => (binDropActive = false)}
 							ondrop={(e) => void dropToBin(e)}
 							><Icon name="trash-2" size={16} class="mr-1.5 w-4 text-center text-gray-400" aria-hidden="true" />Deleted
-							{#if libraryDragging && !binCount}
+							{#if libraryDragging && !deletedRootCount}
 								<span class="text-gray-500">(drop here)</span>
 							{:else}
-								<span class="text-gray-500">({binCount})</span>
+								<span class="text-gray-500">({deletedRootCount})</span>
 							{/if}</button
-						>
-					{/if}
-					<!-- R22 round 13 (user): "maybe next to deleted have a Deleted log button".
-					     THE RECORD, beside the bin and in its style — what was removed, by whom,
-					     when, with the thumbnail taken at delete time. It holds the rows the bin
-					     used to grey out and go on listing, plus the ones it can still restore.
-					     Not a drop target: you delete INTO a bin, you do not delete into a record. -->
-					{#if showDeletedLog}
-						<button
-							id="deleted-log-folder"
-							class="whitespace-nowrap rounded px-2 py-1 text-left {$activeFolder ===
-							'deletedlog'
-								? 'bg-primary-700 text-white'
-								: 'text-gray-300 hover:bg-gray-700'}"
-							title="What has been deleted from this project, and by whom. Files whose bytes are still here can be restored; the rest are a record."
-							onclick={() => openFolder('deletedlog')}
-							oncontextmenu={deletedLogRowMenu}
-							><Icon name="file-text" size={16} class="mr-1.5 w-4 text-center text-gray-400" aria-hidden="true" />Deleted log
-							<span class="text-gray-500">({logCount})</span></button
 						>
 					{/if}
 				</div>
@@ -5965,6 +5992,69 @@
 						title="Open the file settings — what happens to files you add during a session"
 						onclick={openFileSettings}>File settings</button
 					>
+				</div>
+			{/if}
+			<!--
+				R22 round 13 (user): "'Deleted log' button should be somewhere within 'Deleted'
+				(maybe as tab or a checkbox to toggle log view) when opened in Explorer ... I like
+				Lucid icon, could be used as just a button to toggle it".
+
+				THE TWO READINGS OF ONE ARRAY, as a segmented control at the top of the view they
+				switch between. `tp-seg` because that is the app's own answer to "a mode you flip
+				often and want to see the state of at a glance" (Thumbnails|List, one header up),
+				and `aria-pressed` drives the armed paint so the styling and the accessibility
+				tree cannot disagree.
+
+				HERE rather than in the header chips: the chips apply to every view, and a control
+				that only means something in one place must not reflow the header of all the
+				others. Here rather than on the breadcrumb: the breadcrumb is HIDEABLE
+				(`showBreadcrumb`), and the only way into the log must not be behind a preference
+				— which is most of what was wrong with putting it in the tree.
+
+				It keeps the counts the two roots used to carry, so the glance survives the move,
+				and it stops `click`/`pointerdown` for the confirm strip's reason: #explorer-grid
+				answers both (deselect, and start a marquee) and choosing a view is neither.
+			-->
+			{#if inDeletedView}
+				<!-- svelte-ignore a11y_no_static_element_interactions, a11y_click_events_have_key_events -->
+				<div
+					id="explorer-bin-tabs"
+					class="ex-bin-tabs"
+					onclick={(e) => e.stopPropagation()}
+					onpointerdown={(e) => e.stopPropagation()}
+				>
+					<div class="tp-seg" role="group" aria-label="Deleted view">
+						<button
+							id="deleted-tab-bin"
+							class="tp-seg-btn"
+							aria-pressed={$activeFolder === 'deleted'}
+							title="What can be put back: the deletions whose bytes are still on this machine."
+							onclick={() => openFolder('deleted')}
+							><Icon name="trash-2" size={14} aria-hidden="true" />Bin ({binCount})</button
+						>
+						<button
+							id="deleted-tab-log"
+							class="tp-seg-btn"
+							aria-pressed={$activeFolder === 'deletedlog'}
+							disabled={!logAvailable}
+							title={logAvailable
+								? 'The whole record: what was removed, by whom and when — including the files whose bytes are gone.'
+								: 'The deleted files log is switched off in File settings, so there is no record to show.'}
+							onclick={() => openFolder('deletedlog')}
+							><Icon name="file-text" size={14} aria-hidden="true" />Log ({logCount})</button
+						>
+					</div>
+					<!-- disabled WITH the reason, and the reason is RENDERED rather than left in a
+					     tooltip — the storage panel's refused rows settled that one. It is also the
+					     way back on: the button opens the setting that turned it off. -->
+					{#if !logAvailable}
+						<button
+							id="deleted-log-off"
+							class="ex-bin-note"
+							title="Open the file settings — the recycle bin, and whether deletions are recorded at all"
+							onclick={openFileSettings}>Log off — File settings</button
+						>
+					{/if}
 				</div>
 			{/if}
 			{#if !pendingCard && childFolders.length === 0 && gridItems.length === 0}
@@ -6955,6 +7045,33 @@
 		text-decoration: underline;
 	}
 	.ex-confirm-settings:hover {
+		color: #e5e7eb;
+	}
+	/* R22 round 13: BIN | LOG, the two readings of one array. Sticky at the top of the
+	   scrolling grid, on the confirm strip's model — but with no surface and no border of
+	   its own, because it is a view SWITCH and not a question: the `tp-seg` control is the
+	   only thing that should read as chrome here. `z-index` is one below the confirm strip
+	   so an armed question always sits over it. */
+	.ex-bin-tabs {
+		position: sticky;
+		top: 0;
+		z-index: 2;
+		display: flex;
+		align-items: center;
+		gap: 8px;
+		margin-bottom: 4px;
+		padding: 2px 2px 4px;
+		background: var(--surface, #1f2937);
+	}
+	.ex-bin-note {
+		flex: 0 0 auto;
+		border-radius: 3px;
+		padding: 2px 6px;
+		color: #9ca3af;
+		font-size: 10px;
+		text-decoration: underline;
+	}
+	.ex-bin-note:hover {
 		color: #e5e7eb;
 	}
 	.ex-table {

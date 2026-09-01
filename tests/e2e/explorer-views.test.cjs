@@ -417,28 +417,67 @@ h.run(async () => {
 	);
 
 	// ---- 7b. THE DELETED LOG: the record the bin stopped carrying -------------------
+	// ROUND 13 (user) MOVED THE WAY IN. The log had a tree root of its OWN beside the bin's,
+	// which claimed two places for what `partitionDeleted` proves is one array read twice;
+	// it is a TAB inside the Deleted view now, and the tree keeps one root whose count is
+	// the size of the PLACE. The `deletedlog` folder id is untouched - only the way in
+	// changed - which is what keeps it deep-linkable, keeps `placeStillThere` able to put
+	// you back on it, and keeps the pinned-roots guard in explorer-mounts-edit honest.
 	const rootCounts = await page.evaluate(() => ({
 		bin: document.querySelector('#deleted-folder')?.innerText.replace(/\s+/g, ' ').trim() ?? null,
-		log: document.querySelector('#deleted-log-folder')?.innerText.replace(/\s+/g, ' ').trim() ?? null
+		logRoot: !!document.querySelector('#deleted-log-folder')
 	}));
 	h.check(
-		rootCounts.bin === 'Deleted (2)',
-		`the bin root counts what it can restore (${rootCounts.bin})`
+		!rootCounts.logRoot,
+		'the log has NO tree root of its own any more - one subject, one place in the tree'
 	);
 	h.check(
-		rootCounts.log === 'Deleted log (3)',
-		`and the log root counts the whole record, beside it (${rootCounts.log})`
+		rootCounts.bin === 'Deleted (3)',
+		`and the one root counts the whole place, not just the restorable half (${rootCounts.bin})`
 	);
-	// through the REAL root row, not the store — a view with no way in is invisible to a
-	// suite that supplies its own entry point
-	await page.locator('#deleted-log-folder').click();
+	// through the REAL tab, not the store — a view with no way in is invisible to a suite
+	// that supplies its own entry point
+	const tabsBefore = await page.evaluate(() => {
+		const t = (id) => {
+			const b = document.querySelector(id);
+			return b
+				? { text: b.innerText.replace(/\s+/g, ' ').trim(), on: b.getAttribute('aria-pressed') }
+				: null;
+		};
+		return {
+			strip: !!document.querySelector('#explorer-bin-tabs'),
+			bin: t('#deleted-tab-bin'),
+			log: t('#deleted-tab-log')
+		};
+	});
+	h.check(tabsBefore.strip, 'the Deleted view carries the Bin | Log switch instead');
+	h.check(
+		tabsBefore.bin?.text === 'Bin (2)' && tabsBefore.log?.text === 'Log (3)',
+		`...and the two counts the roots used to carry survive the move (${tabsBefore.bin?.text} / ${tabsBefore.log?.text})`
+	);
+	h.check(
+		tabsBefore.bin?.on === 'true' && tabsBefore.log?.on === 'false',
+		'...with the half you are standing in armed through aria-pressed'
+	);
+	await page.locator('#deleted-tab-log').click();
 	await page.waitForTimeout(700);
+	h.check(
+		(await page.evaluate(() => {
+			let a;
+			window.__stores.explorer.activeFolder.subscribe((v) => (a = v))();
+			return a;
+		})) === 'deletedlog',
+		'the tab NAVIGATES - `deletedlog` is still a place, not a view flag'
+	);
 	const crumbLabel = await page.evaluate(() =>
 		[...document.querySelectorAll('#explorer-crumbs button, .ex-crumb')]
 			.map((b) => b.textContent.trim())
 			.join(' / ')
 	);
-	h.check(/Deleted log/.test(crumbLabel), `the log is its own place, and says so (${crumbLabel})`);
+	h.check(
+		/Deleted \/ Log/.test(crumbLabel),
+		`and the trail says the log is INSIDE Deleted rather than beside it (${crumbLabel})`
+	);
 	const logHead = await page.locator('#explorer-list-head th[data-col]').allInnerTexts();
 	h.check(
 		JSON.stringify(logHead.map((t) => t.split('\n')[0])) ===
@@ -618,29 +657,74 @@ h.run(async () => {
 	});
 	await page.waitForTimeout(700);
 	const withLog = await page.evaluate(() => ({
-		bin: !!document.querySelector('#deleted-folder'),
-		log: document.querySelector('#deleted-log-folder')?.innerText.replace(/\s+/g, ' ').trim() ?? null
+		root: document.querySelector('#deleted-folder')?.innerText.replace(/\s+/g, ' ').trim() ?? null,
+		logRoot: !!document.querySelector('#deleted-log-folder')
 	}));
 	h.check(
-		withLog.bin && withLog.log === 'Deleted log (2)',
-		`premise: one restorable file in the bin and both in the log (${withLog.log})`
+		withLog.root === 'Deleted (2)' && !withLog.logRoot,
+		`premise: one root, counting the whole place - one restorable file and both recorded (${withLog.root})`
 	);
+	// stand IN the view, on the LOG half, because that is where the preference is now
+	// visible and it is also the state the rule below has to answer for
+	await page.locator('#deleted-folder').click();
+	await page.waitForTimeout(600);
+	const tabsOn = await page.evaluate(() => {
+		const t = (id) => {
+			const b = document.querySelector(id);
+			return b
+				? {
+						text: b.innerText.replace(/\s+/g, ' ').trim(),
+						disabled: !!b.disabled,
+						opacity: getComputedStyle(b).opacity
+					}
+				: null;
+		};
+		return { bin: t('#deleted-tab-bin'), log: t('#deleted-tab-log'), off: !!document.querySelector('#deleted-log-off') };
+	});
+	h.check(
+		tabsOn.bin?.text === 'Bin (1)' && tabsOn.log?.text === 'Log (2)',
+		`the tabs carry the split the two roots used to (${tabsOn.bin?.text} / ${tabsOn.log?.text})`
+	);
+	h.check(!tabsOn.log?.disabled && !tabsOn.off, '...and with the log ON there is nothing to explain');
+	await page.locator('#deleted-tab-log').click();
+	await page.waitForTimeout(500);
 
 	await pref('deletedLogEnabled', false);
-	await page.waitForTimeout(500);
+	await page.waitForTimeout(700);
 	const off = await page.evaluate(() => {
-		let m;
+		let m, a;
 		window.__stores.projectManifest.projectManifest.subscribe((x) => (m = x))();
+		window.__stores.explorer.activeFolder.subscribe((x) => (a = x))();
+		const b = document.querySelector('#deleted-tab-log');
 		return {
-			logRow: !!document.querySelector('#deleted-log-folder'),
-			binRow: document.querySelector('#deleted-folder')?.innerText.replace(/\s+/g, ' ').trim() ?? null,
+			logRoot: !!document.querySelector('#deleted-log-folder'),
+			logTab: b ? { disabled: !!b.disabled, opacity: getComputedStyle(b).opacity } : null,
+			reason: (document.querySelector('#deleted-log-off')?.innerText ?? '').trim(),
+			where: a,
+			root: document.querySelector('#deleted-folder')?.innerText.replace(/\s+/g, ' ').trim() ?? null,
 			recorded: (m.deleted ?? []).length
 		};
 	});
-	h.check(!off.logRow, 'turning the log OFF takes the Deleted log root away');
+	h.check(!off.logRoot, 'turning the log OFF still takes no tree root away - there was only ever one');
+	// DISABLED WITH THE REASON, the app's convention (Watch, the AO chip) - and the reason
+	// is RENDERED, not left in a tooltip, which is the storage panel's own ruling one
+	// domain over. Read the COMPUTED opacity: a class string is not evidence.
 	h.check(
-		off.binRow === 'Deleted (1)',
-		`and leaves the bin exactly as it was — it is a record switch, not a bin switch (${off.binRow})`
+		!!off.logTab && off.logTab.disabled && Number(off.logTab.opacity) < 0.9,
+		`...it disables the Log half instead, and it looks disabled (${off.logTab && off.logTab.opacity})`
+	);
+	h.check(
+		/File settings/.test(off.reason),
+		`...with the reason on screen and a way to undo it (${off.reason || 'nothing rendered'})`
+	);
+	// ...and you cannot be left standing in a view the tabs say is switched off
+	h.check(
+		off.where === 'deleted',
+		`...and a viewer standing in the log is returned to the bin, never stranded (${JSON.stringify(off.where)})`
+	);
+	h.check(
+		off.root === 'Deleted (1)',
+		`the root falls back to the bin's own count - with no record, the place IS the bin (${off.root})`
 	);
 	// HIDE, NEVER CLEAR. The array replicates whole and latest-wins, so a LOCAL preference
 	// that pruned it would delete other peers' record — and a peer's row is what makes that
@@ -651,11 +735,63 @@ h.run(async () => {
 		`the record itself is UNTOUCHED — a preference may not destroy project data (${off.recorded} rows)`
 	);
 	await pref('deletedLogEnabled', true);
-	await page.waitForTimeout(500);
-	const backOn = await page.evaluate(
-		() => document.querySelector('#deleted-log-folder')?.innerText.replace(/\s+/g, ' ').trim() ?? null
+	await page.waitForTimeout(600);
+	await page.locator('#deleted-tab-log').click();
+	await page.waitForTimeout(600);
+	const backOn = await page.evaluate(() => {
+		let a;
+		window.__stores.explorer.activeFolder.subscribe((x) => (a = x))();
+		return {
+			where: a,
+			root: document.querySelector('#deleted-folder')?.innerText.replace(/\s+/g, ' ').trim() ?? null,
+			log: document.querySelector('#deleted-tab-log')?.innerText.replace(/\s+/g, ' ').trim() ?? null,
+			rows: document.querySelectorAll('#explorer-grid [data-card-id]').length
+		};
+	});
+	h.check(
+		backOn.root === 'Deleted (2)' && backOn.log === 'Log (2)',
+		`so turning it back on returns everything (${backOn.root} / ${backOn.log})`
 	);
-	h.check(backOn === 'Deleted log (2)', `so turning it back on returns everything (${backOn})`);
+	h.check(
+		backOn.where === 'deletedlog' && backOn.rows === 2,
+		`...and the half that was refused a moment ago opens on the whole record (${backOn.rows} rows)`
+	);
+	await page.locator('#deleted-tab-bin').click();
+	await page.waitForTimeout(400);
+
+	// ---- 10b. AN EMPTY BIN MUST NOT TAKE THE RECORD WITH IT --------------------------
+	// The regression one root could have shipped, and the reason `showDeletedRoot` counts
+	// the PLACE. The bin row used to hide itself while empty, which was safe only because
+	// the log had a root of its own beside it - and `emptyRecycleBinOnLoad` empties the bin
+	// on most starts, so a gate on `binCount` would take the whole record off the tree on
+	// the very startup a user is most likely to go looking for it.
+	await page.evaluate(
+		(hash) => window.__stores.sharedLibrary.purgeDeletedItem(hash),
+		seededLog.keep
+	);
+	await page.waitForTimeout(800);
+	const emptyBin = await page.evaluate(() => {
+		let m;
+		window.__stores.projectManifest.projectManifest.subscribe((x) => (m = x))();
+		return {
+			root: document.querySelector('#deleted-folder')?.innerText.replace(/\s+/g, ' ').trim() ?? null,
+			bin: document.querySelector('#deleted-tab-bin')?.innerText.replace(/\s+/g, ' ').trim() ?? null,
+			log: document.querySelector('#deleted-tab-log')?.innerText.replace(/\s+/g, ' ').trim() ?? null,
+			recorded: (m.deleted ?? []).length
+		};
+	});
+	h.check(
+		emptyBin.bin === 'Bin (0)' && emptyBin.recorded === 2,
+		`premise: nothing left to restore, and both deletions still recorded (${emptyBin.bin}, ${emptyBin.recorded} rows)`
+	);
+	h.check(
+		emptyBin.root === 'Deleted (2)',
+		`the root STAYS, counting the record it still holds (${emptyBin.root || 'gone from the tree'})`
+	);
+	h.check(
+		emptyBin.log === 'Log (2)',
+		`...so the record is still one click away, with an empty bin beside it (${emptyBin.log})`
+	);
 
 	// ...and the one place OFF really does stop recording: with the recycle bin ALSO off the
 	// bytes go immediately, so the row would be pure history and none is written. With the

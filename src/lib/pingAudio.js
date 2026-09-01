@@ -39,6 +39,8 @@ export function playPing(sound = 'ding', pos = null) {
 		return;
 	}
 	if (ctx.state === 'suspended') ctx.resume().catch(() => {});
+	// AudioNode, not GainNode: a spatialised ping reassigns this to the PannerNode
+	/** @type {AudioNode} */
 	let dest = bus('sfx');
 	if (pos && get(spatialVoice)) {
 		const panner = ctx.createPanner();

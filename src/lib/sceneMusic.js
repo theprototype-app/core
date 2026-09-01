@@ -1,6 +1,6 @@
 import { writable, get } from 'svelte/store';
 import { peers } from '../stores/appStore';
-import { ensureAudioContext, bus } from './audioEngine';
+import { ensureAudioContext } from './voiceChat';
 import { itemByHash, itemBlob } from './explorer';
 import { requestAsset, sendAsset } from './assetShare';
 
@@ -92,7 +92,7 @@ function startSource(state) {
 	stopSource();
 	if (!gain) {
 		gain = context.createGain();
-		gain.connect(bus('music'));
+		gain.connect(context.destination);
 	}
 	gain.gain.value = effectiveGain();
 	const src = context.createBufferSource();

@@ -40,12 +40,16 @@
 	import ContextMenu from '../ContextMenu.svelte';
 	import DockTabs from '../DockTabs.svelte';
 	import { createGesture } from '$lib/modalGrab';
+	// W5: the BINDING for this pane's grab key lives in the shortcut registry (an
+	// `external` row), so Settings can move it; the key itself is answered here.
+	import { comboOf, bindingOf } from '$lib/shortcuts';
 	import { dragWindow } from '$lib/dragWindow';
 	import DragRow from '../ui/DragRow.svelte';
 	import { focusStack } from '$lib/windowFocus';
 	import { tabbable, resizeGroup, tabGroups } from '$lib/windowTabs';
 	import { clampWinSize, clampResize, anchorOf } from '$lib/windowSize';
-	import { setDockOccupant, dockHeight, visibleDockKey, activateDock } from '$lib/bottomDock';
+	import { setDockOccupant, dockHeight, visibleDockKey, dockMinimized, activateDock, dockModeArm } from '$lib/bottomDock';
+	import { bottomDockable } from '$lib/bottomDockDrop';
 
 	// live-follow the primary selection (keeps a truthy [] before the first select)
 	const target = $derived($selectedObject && $selectedObject.uuid ? $selectedObject : null);
@@ -227,6 +231,20 @@
 		if (v) activateDock('animation');
 	}
 
+	// W5: consume the shared dock-mode arm — the tab strip's right-click menu asks
+	// through it (the Explorer has had this exact effect since 4b). `docked` is read
+	// from localStorage ONCE at mount, so writing that flag from outside is inert;
+	// `setDocked` owns the mode and is what has to run. Cleared as it is acted on.
+	$effect(() => {
+		const arm = $dockModeArm;
+		if (!arm || arm.key !== 'animation') return;
+		dockModeArm.set(null);
+		untrack(() => {
+			if (arm.docked !== docked) setDocked(arm.docked);
+			animationClose.set(false);
+		});
+	});
+
 	// tab-grouped windows share one size: show the group's rect so a resize on any
 	// member updates every tab, not just the active one.
 	const myGroup = $derived($tabGroups.find((g) => g.members.includes('animation')) ?? null);
@@ -236,7 +254,9 @@
 		setDockOccupant('animation', !$animationClose && docked, $dockHeight);
 		return () => setDockOccupant('animation', false);
 	});
-	const dockVisible = $derived($visibleDockKey === 'animation');
+	// W2: a MINIMIZED dock renders nothing while every tab stays open (the occupant
+	// report above is untouched, so the strip comes back with its tabs intact)
+	const dockVisible = $derived($visibleDockKey === 'animation' && !$dockMinimized);
 
 	// Switching objects LEAVES the previous one where it was: its playhead, its
 	// pose and its clip all stay put (they live per uuid in `playback`), so coming
@@ -519,7 +539,10 @@
 		/** @type {any} */ (window).__animationDebug = {
 			selKeys: () => selKeys.map(([id, i]) => id + ':' + i),
 			marqueeMode: () => marqMode,
-			markerCount: () => clipMarkers.length
+			markerCount: () => clipMarkers.length,
+			// W5: the armed transform is component state too, and the G row is the one
+			// thing about it a check has no store for
+			xform: () => xform
 		};
 		return () => delete /** @type {any} */ (window).__animationDebug;
 	});
@@ -1113,6 +1136,8 @@
 	 *   Ctrl+Space     add the key at the playhead to the selection
 	 *   Esc            drop the selection (or cancel a grab)
 	 *   1 / 2          arm Move / Scale
+	 *   G              arm Move (Blender's grab; the combo is the `animation.grab` row
+	 *                  in the shortcut registry, so Settings can move it)
 	 *   Shift+arrows   transform the selection: ←/→ in time, ↑/↓ in value
 	 *   Del            remove the selection
 	 * @param {HTMLElement} node
@@ -1131,6 +1156,17 @@
 			const mult = e.ctrlKey || e.metaKey ? 10 : e.shiftKey ? 100 : 1;
 			const arrow = { ArrowLeft: [-1, 0], ArrowRight: [1, 0], ArrowUp: [0, 1], ArrowDown: [0, -1] }[e.key];
 
+			// W5: Blender's G arms Move. The same key is Move on the gizmo and Arm Move
+			// in the UV editor; all three coexist because this handler claims (and stops)
+			// the press while the plot holds focus, which is what `scope: 'animation'`
+			// records in the registry. The COMBO comes from the registry so the Settings
+			// row really moves the key; tested before the other commands so the binding
+			// is authoritative wherever the user puts it.
+			if (comboOf(e) === bindingOf('animation.grab')) {
+				claim(e);
+				xform = 'move';
+				return;
+			}
 			if (e.key === 'Delete' || e.key === 'Backspace') {
 				if (!selKeys.length) return;
 				claim(e);
@@ -2432,7 +2468,7 @@
 			style="z-index: var(--z-bottom); height: {$dockHeight}px; border-top: 1px solid rgb(55 65 81 / 0.6)"
 		>
 			<div
-				class="resize-cue absolute -top-1 left-0 right-0 z-10 h-2 cursor-ns-resize"
+				class="resize-cue absolute -top-1 left-0 right-0 z-30 h-2 cursor-ns-resize hover:bg-primary-600/30"
 				style="touch-action: none"
 				title="Drag to resize"
 				onpointerdown={startResize}
@@ -2457,8 +2493,9 @@
 			use:noNativeMenu
 			class="ui-panel fixed flex flex-col overflow-hidden"
 			use:dragWindow={{ key: 'animation', defaultRect: { left: 200, top: 120 } }}
-			use:focusStack
+			use:focusStack={'animation'}
 			use:tabbable={{ key: 'animation', title: 'Animation', openStore: animationClose, isOpen: (v) => !v, close: () => animationClose.set(true) }}
+			use:bottomDockable={{ key: 'animation' }}
 			style="z-index: var(--z-window); max-width: 96vw; max-height: 88vh"
 			style:width="{effW}px"
 			style:height="{effH}px"

@@ -1,7 +1,9 @@
-// Dock exclusivity refinement: the Explorer and the Flow-family share ONE dock slot,
-// so activating a DOCKED Node editor closes the Explorer. But when the Node editor is
-// FLOATING (undocked) it does not compete for the dock, so clicking it must NOT close
-// a docked Explorer. Closing only happens when BOTH are docked.
+// Docked vs floating, phase 3: the dock has ONE slot but no exclusivity — panels
+// coexist as tabs. A FLOATING Node editor does not compete for the dock at all, so
+// clicking it leaves a docked Explorer alone; and DOCKING it does not close the
+// Explorer either any more (it just becomes the visible tab, with the Explorer one
+// tab over). This suite pins both halves, since the second one used to be the
+// force-close.
 const h = require('./helpers.cjs');
 
 h.run(async () => {
@@ -44,7 +46,7 @@ h.run(async () => {
 	h.check(before.flowOn && before.explOn, 'the floating Node editor AND the docked Explorer icons are both highlighted');
 
 	// click Node editor -> the floating flow HIDES (show/hide), the docked Explorer is
-	// left alone (the key fix: a floating flow never closes the Explorer)
+	// left alone (a floating flow never touches the dock)
 	await A.page.evaluate(() => document.querySelector('p[title="Node editor (N)"]').click());
 	await A.page.waitForTimeout(300);
 	const afterClick = await A.page.evaluate(() => {
@@ -57,19 +59,47 @@ h.run(async () => {
 	h.check(afterClick.explorerClosed === false, 'clicking Node editor with a FLOATING flow does NOT close the docked Explorer');
 	h.check(afterClick.flowClosed === true, 'clicking a shown floating Node editor hides it (show/hide)');
 
-	// contrast: re-open the Node editor and DOCK it -> now both compete, Explorer closes
+	// re-open the Node editor and DOCK it -> both are docked now, and they COEXIST as
+	// tabs: the flow tab shows, the Explorer stays open one tab over
 	await A.page.evaluate(() => window.__stores.flowGraphClose.set(false));
 	await A.page.waitForTimeout(250);
 	await A.page.evaluate(() => document.getElementById('flow-dock')?.click());
 	await A.page.waitForTimeout(500);
 	const afterDock = await A.page.evaluate(() => {
 		const s = window.__stores;
-		let ec, k;
+		let ec, k, occ;
 		s.explorerClose.subscribe((v) => (ec = v))();
 		s.bottomDock.visibleDockKey.subscribe((v) => (k = v))();
-		return { explorerClosed: ec, visible: k };
+		s.bottomDock.dockOccupants.subscribe((v) => (occ = v))();
+		const box = [...document.querySelectorAll('#flow-list, #explorer-list')].find((el) => !el.classList.contains('hidden'));
+		return {
+			explorerClosed: ec,
+			visible: k,
+			present: Object.keys(occ).filter((x) => occ[x]?.present).sort(),
+			strip: box ? [...box.querySelectorAll('.tab-note')].map((b) => b.textContent.trim()).filter(Boolean) : []
+		};
 	});
-	h.check(afterDock.explorerClosed === true && afterDock.visible === 'flow', `docking the Node editor (both docked) closes the Explorer (visible=${afterDock.visible})`);
+	h.check(afterDock.visible === 'flow', `docking the Node editor makes it the visible dock tab (visible=${afterDock.visible})`);
+	h.check(afterDock.explorerClosed === false, 'docking the Node editor does NOT close the Explorer any more');
+	h.check(
+		afterDock.present.join(',') === 'explorer,flow' && afterDock.strip.includes('Explorer'),
+		`both are dock tabs and the strip says so (${afterDock.strip.join('|')})`
+	);
+
+	// and the Explorer tab brings it straight back, with the flow still open
+	await A.page.evaluate(() => {
+		const box = [...document.querySelectorAll('#flow-list, #explorer-list')].find((el) => !el.classList.contains('hidden'));
+		[...box.querySelectorAll('.tab-note')].find((b) => b.textContent.trim() === 'Explorer').click();
+	});
+	await A.page.waitForTimeout(300);
+	const back = await A.page.evaluate(() => {
+		const s = window.__stores;
+		let k, fc;
+		s.bottomDock.visibleDockKey.subscribe((v) => (k = v))();
+		s.flowGraphClose.subscribe((v) => (fc = v))();
+		return { visible: k, flowClosed: fc };
+	});
+	h.check(back.visible === 'explorer' && back.flowClosed === false, `the Explorer tab shows it again, Node editor still open (visible=${back.visible})`);
 
 	await h.finish(browser);
 });

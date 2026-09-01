@@ -7,10 +7,14 @@
 //
 // THE ASSERTIONS THAT CARRY THE PHASE, so a later reader knows which ones to keep:
 //
-//  * §2  the play button pressed INSIDE the 2s exit cooldown enters play anyway. The
-//        premise check (it did NOT enter immediately) is what stops this passing
-//        vacuously — with the fix removed the press is simply eaten and the store sits
-//        at null forever.
+//  * §2  leave play mid-round, change your mind, press play: you get back in, and the
+//        round you left is still there. W3 rewrote HOW: 21-F3 deferred that press
+//        past a fixed 2s exit cooldown, and there is no cooldown any more (the
+//        pointer-lock refusal it stood in for is retried inside PointerLockControls
+//        instead), so the press lands at once. The old premise check — "it did NOT
+//        enter immediately" — was guarding against a vacuous pass and is now itself
+//        unreachable; the latency is MEASURED in play-reentry, and what this section
+//        keeps is the half only it can see: the mid-round state converges on re-entry.
 //  * §3  `abandonWrites` on each peer. A latest-wins singleton cannot show WHO bumped
 //        it, so counting the writes per peer is the only way to assert "exactly one
 //        peer wrote it, and it was the host".
@@ -20,7 +24,7 @@
 //        "simplified" it back. (R3a moved the `collectcount` NODE into the collectible
 //        module; the latch semantics it read are core, and §5 reads them directly.)
 //
-// TIMING: `h.GPU_ARGS`, because §2 races a 2s cooldown and §3 waits out a real 10s
+// TIMING: `h.GPU_ARGS`, because §3 waits out a real 10s
 // window — a software-rendered page runs at ~2.5 fps and every per-frame path with it.
 //
 // Run: $env:APP_URL='https://localhost:5200/'; PEER_CONFIG=...; npm run e2e -- game-presence
@@ -72,8 +76,9 @@ const wipe = async (peers) => {
 			window.__stores.isLocked.set(false);
 			window.__stores.gamePresence.resetGamePresence();
 		});
-	// let Controls settle `false` back to null and the 2s cooldown expire, so a later
-	// section's timing measurement starts from a known state
+	// let the exit settle `false` back to null, so a later section's timing
+	// measurement starts from a known state (the 2s cooldown this also waited out is
+	// gone — W3; the generous wait is now just a settle)
 	await peers[0].page.waitForTimeout(2600);
 	for (const p of peers) await p.page.evaluate(() => window.__stores.isLocked.set(null));
 	await peers[0].page.waitForTimeout(600);
@@ -239,7 +244,7 @@ h.run(async () => {
 	// background process this section wants to race).
 	await setState(A, 'menu');
 	for (const p of [A, B]) await p.page.evaluate(() => window.__stores.gamePresence.resetGamePresence());
-	await A.page.waitForTimeout(2600); // let §1's exit cooldown expire first
+	await A.page.waitForTimeout(2600); // let §1's exit settle fully first
 	await A.page.evaluate(() => window.__stores.isLocked.set(null));
 	const [gem] = await makeBoxes(A, 1);
 	await recipe(A, [gem], { variable: 'gems' });
@@ -271,26 +276,36 @@ h.run(async () => {
 	await A.page.waitForTimeout(400); // well inside the 2s cooldown
 	h.check((await playStore(A)) === null, 'premise: the exit settled the store to null');
 	await pressPlay(A);
-	await A.page.waitForTimeout(400);
-	const duringCooldown = await playStore(A);
-	h.check(
-		duringCooldown === null,
-		`premise: the press landed INSIDE the exit cooldown, so nothing happened yet (${duringCooldown}) — without this the check below cannot fail`
-	);
+	// W3: no cooldown to sit out any more, so there is no "nothing happened yet"
+	// premise to take — the press enters play at once. play-reentry measures that;
+	// what this section is for is the state below, which only a mid-round rejoin can
+	// show. The property the user reported is unchanged: leave mid-round, change your
+	// mind, press play, and you are back in the round you left.
 	await h.eventually(
 		() => playStore(A),
 		(v) => v === true,
-		'THE FIX: the deferred press enters play when the cooldown expires (it used to be silently dropped)',
+		'REJOIN: pressing play after leaving mid-round puts you back in play',
 		5000
 	);
 
-	// mid-round state converged on re-entry
-	const visible = await A.page.evaluate((id) => {
-		let group;
-		window.__stores.objectsGroup.subscribe((v) => (group = v))();
-		return group?.getObjectByProperty('uuid', id)?.visible ?? null;
-	}, gem);
-	h.check(visible === false, `and the gem is still collected on re-entry (visible=${visible})`);
+	// mid-round state converged on re-entry. The wait is LOAD-BEARING and W3 is what
+	// made that visible: the recipe's Visibility node is `whilePlaying`, so it drops out
+	// of the effect set the moment you leave play and the restore loop hands the gem
+	// back — it is re-hidden by the first flow TICK after re-entry, not by the entry
+	// itself. This used to be sampled a poll-interval late by accident (entry took ~2s,
+	// so `eventually`'s last poll was well after it); now that re-entry is instant the
+	// read has to wait for the tick on purpose, or it catches the restored gem.
+	await h.eventually(
+		() =>
+			A.page.evaluate((id) => {
+				let group;
+				window.__stores.objectsGroup.subscribe((v) => (group = v))();
+				return group?.getObjectByProperty('uuid', id)?.visible ?? null;
+			}, gem),
+		(v) => v === false,
+		'and the gem is still collected on re-entry',
+		4000
+	);
 	await h.eventually(() => modesOf(B), (m) => m[A.id] === 'playing', 'B sees A back in play');
 
 	// ...and the HUD lands on the playing screen with no wiring, through showWhile

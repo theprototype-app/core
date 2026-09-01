@@ -15,9 +15,36 @@
 	// 16-P3 adds `checked: true` — the ACTIVE choice of a group (bold + accent),
 	// which replaced the old '● ' label prefix.
 	//
+	// W1 adds two more:
+	//   keepOpen: true      the row's action runs and the menu STAYS UP (owned by
+	//                       ContextMenu's `run`, documented there)
+	//   rowActions: [{ icon, label, tooltip?, disabled?, run }]
+	//                       small trailing controls INSIDE the row — the toolbar's
+	//                       Customize list needs a reorder pair beside each button, and
+	//                       a row that both toggles and reorders cannot say that with a
+	//                       label. They are inline CONTROLS, not menu commands: the
+	//                       click never reaches the row (stopPropagation) and never
+	//                       closes the menu, so `keepOpen` does not apply to them.
+	//                       `label` is both the tooltip and the accessible name.
+	//
+	// W8b adds one:
+	//   key: 'move'         a STABLE identity for a row in a list that REORDERS itself.
+	//                       The each block below is keyed on it, so when a `keepOpen`
+	//                       action rewrites the array into a new order svelte MOVES each
+	//                       row's DOM node instead of rewriting the labels in place. That
+	//                       is what makes a per-row reorder control usable: the button
+	//                       you just pressed travels with its row, stays focused, and a
+	//                       second press walks the same item another slot. Without it the
+	//                       node stays put, the row under your finger becomes a DIFFERENT
+	//                       item, and pressing again undoes what you just did.
+	//                       Optional and namespaced against the index fallback, so every
+	//                       menu that passes no key is keyed by position — byte-identical
+	//                       to the unkeyed block this replaces.
+	//
 	// 16-P1: which submenu is open (`openPath`) and where the keyboard cursor sits
 	// (`navPath` + `highlight`) are owned by ContextMenu — ONE truth shared by mouse
 	// and keyboard. Hover-intent lives here: 120ms to open, 150ms to close.
+	import { tick } from 'svelte';
 	import Icon from './ui/Icon.svelte';
 	export let items: any[] = [];
 	export let onrun: (item: any) => void;
@@ -36,6 +63,26 @@
 
 	let openTimer: any = null;
 	let closeTimer: any = null;
+
+	/** W8b: run a row's inline control and KEEP THE KEYBOARD ON IT.
+	 *
+	 *  A reorder control rewrites the list it lives in, and the keyed each block then
+	 *  RELOCATES this row's node to its new slot — which Chromium treats as a blur, so
+	 *  the control you just pressed silently stops being focused and a repeat press has
+	 *  nowhere to go. The node survives (that is what the key buys); only the focus does
+	 *  not. Re-focusing it by its own accessible NAME is what makes "press again to move
+	 *  it again" true for the keyboard as well as the mouse — the label names the BUTTON,
+	 *  so it follows the item wherever the move put it, and a control that has become
+	 *  disabled at an end of the list is simply not re-focused. */
+	async function runRowAction(act: any, host: HTMLElement) {
+		act.run?.();
+		await tick();
+		const root = host.closest('[role="menu"]') ?? document;
+		const again = root.querySelector<HTMLButtonElement>(
+			`button.ctx-act[aria-label="${String(act.label).replace(/"/g, '\\"')}"]`
+		);
+		if (again && !again.disabled) again.focus({ preventScroll: true });
+	}
 
 	/** the child submenu open at THIS level (null = none) */
 	$: openChild = openPath.length > path.length ? openPath[path.length] : null;
@@ -113,7 +160,7 @@
 	const disabledClass = 'cursor-default px-3 py-1.5 text-gray-400 dark:text-gray-500 whitespace-nowrap';
 </script>
 
-{#each items as item}
+{#each items as item, rowAt (item?.key != null ? 'k:' + item.key : 'i:' + rowAt)}
 	{#if item.header}
 		<!-- 15-Q: target strip — WHAT this menu acts on (kills the counted-label
 		     ambiguity); locked state lives here instead of scattered tooltips -->
@@ -187,6 +234,7 @@
 			data-ctx-active={atNav && indexOf.get(item) === highlight}
 			role="menuitem"
 			title={item.tooltip ?? ''}
+			aria-label={item.rowActions ? item.label : undefined}
 			on:mouseenter={() => hoverRow(item, indexOf.get(item) ?? -1)}
 			on:mouseleave={leaveRow}
 			on:click={() => onrun(item)}
@@ -198,6 +246,22 @@
 				<span class="flex-1">{item.label}</span>
 				{#if item.hint}
 					<span class="ctx-hint">{item.hint}</span>
+				{/if}
+				{#if item.rowActions}
+					<span class="ctx-actions">
+						{#each item.rowActions as act}
+							<button
+								type="button"
+								class="ctx-act"
+								title={act.tooltip ?? act.label}
+								aria-label={act.label}
+								disabled={act.disabled}
+								on:click|stopPropagation={(e) => runRowAction(act, e.currentTarget)}
+							>
+								<Icon name={act.icon} size={13} />
+							</button>
+						{/each}
+					</span>
 				{/if}
 			</span>
 		</div>
@@ -268,6 +332,33 @@
 		width: 15px;
 		display: inline-flex;
 		color: rgb(148 163 184);
+	}
+	/* W1: inline controls at the end of a row (the Customize list's reorder pair).
+	   Muted until hovered so the row still reads as its label first. */
+	.ctx-actions {
+		flex: 0 0 auto;
+		display: inline-flex;
+		align-items: center;
+		gap: 2px;
+		margin-left: 10px;
+	}
+	.ctx-act {
+		display: inline-flex;
+		align-items: center;
+		justify-content: center;
+		width: 18px;
+		height: 18px;
+		border-radius: 4px;
+		color: rgb(148 163 184);
+		background: transparent;
+	}
+	.ctx-act:hover:not(:disabled) {
+		color: inherit;
+		background: rgb(148 163 184 / 0.25);
+	}
+	.ctx-act:disabled {
+		opacity: 0.35;
+		cursor: default;
 	}
 	.ctx-hint {
 		flex: 0 0 auto;

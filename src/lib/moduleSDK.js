@@ -34,6 +34,7 @@ import { roundCutoff, roundUnderway, gameVar, setGameVar } from './gameState';
 import { setPeerVar, myPeerVar, leaderboardRows } from './peerVars';
 import { createFlowNode, createFlowEdge, serializeNode, serializeEdge, setNodeData as sendNodeData } from './nodesHandler';
 import { APP_VERSION } from './version.js';
+import { ndcFromClient } from './canvasRect';
 
 // Module SDK v1 — in-repo modules under src/modules/<name>/ register through
 // the api object passed to their register(api). See MODULES.md for the guide.
@@ -161,21 +162,28 @@ if (typeof window !== 'undefined') {
 // Desktop: the mouse over the viewport (tracked window-wide in NDC, same math
 // as Scene.svelte's selection raycast). VR: the pointer hand's controller ray
 // (vrControls, resolved by handedness). A FRESH Raycaster every call.
-const pointerNdc = { x: 0, y: 0, seen: false };
+//
+// W9: the listener records CLIENT pixels and the conversion to NDC happens at ray
+// time, against the canvas. Converting on the way in would freeze the viewport's
+// geometry into the stored value, and the viewport can change with the pointer
+// perfectly still — opening the bottom dock shrinks it — leaving the last-known ray
+// pointing at a viewport that no longer exists.
+const pointerClient = { x: 0, y: 0, seen: false };
 if (typeof window !== 'undefined') {
 	window.addEventListener('pointermove', (event) => {
-		pointerNdc.x = (event.clientX / window.innerWidth) * 2 - 1;
-		pointerNdc.y = -(event.clientY / window.innerHeight) * 2 + 1;
-		pointerNdc.seen = true;
+		pointerClient.x = event.clientX;
+		pointerClient.y = event.clientY;
+		pointerClient.seen = true;
 	});
 }
 function pointerRayNow() {
 	if (get(isVRMode)) return vrControlsRef?.pointerHandRay?.() ?? null;
 	/** @type {any} */
 	const camera = get(globalCamera);
-	if (!camera || !pointerNdc.seen) return null;
+	if (!camera || !pointerClient.seen) return null;
 	const fresh = new THREE.Raycaster();
-	fresh.setFromCamera(new THREE.Vector2(pointerNdc.x, pointerNdc.y), camera);
+	const ndc = ndcFromClient(pointerClient.x, pointerClient.y);
+	fresh.setFromCamera(new THREE.Vector2(ndc.x, ndc.y), camera);
 	return fresh;
 }
 /** exported for tests (__stores.moduleSDK.pointerRayNow) */

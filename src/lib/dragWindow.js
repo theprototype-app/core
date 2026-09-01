@@ -35,12 +35,16 @@ export function revealWindow(key) {
 	return true;
 }
 
-/** Clear every persisted floating-window position + re-lay live windows (169). */
+/** Clear every persisted floating-window position + re-lay live windows (169).
+ *  W1 folded `controlsLayout` in: a toolbar customized into a corner — collapsed, or
+ *  with its buttons hidden — is only reachable again through a right-click menu, and
+ *  iOS Safari fires no `contextmenu`. This is the app's existing "put my chrome back"
+ *  button, so it is the honest hatch rather than a second one. */
 export function resetWindowLayout() {
 	if (typeof localStorage !== 'undefined') {
 		for (const key of Object.keys(localStorage))
 			if (key.startsWith('win:')) localStorage.removeItem(key);
-		['objectListRect', 'explorerWinW', 'explorerWinH', 'explorerHeight', 'explorerTreeW', 'uvWinW', 'uvWinH'].forEach((k) =>
+		['objectListRect', 'explorerWinW', 'explorerWinH', 'explorerHeight', 'explorerTreeW', 'uvWinW', 'uvWinH', 'controlsLayout'].forEach((k) =>
 			localStorage.removeItem(k)
 		);
 	}

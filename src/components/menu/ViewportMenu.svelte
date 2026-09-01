@@ -15,6 +15,7 @@
 	import { buildObjectMenuItems } from '$lib/objectMenu';
 	import { sendPing } from '$lib/ping';
 	import { moduleToolboxes, openToolboxes, buildToolboxItems } from '$lib/moduleToolboxes';
+	import { togglePanel } from '$lib/panelToggles';
 
 	// Scene.svelte routes right-TAPS here (77): empty viewport → this menu with
 	// the clicked ground point; an object under the cursor → its own context
@@ -146,6 +147,18 @@
 			label: 'Tools',
 			icon: 'wrench',
 			children: [
+				// W1: the node editor had exactly one door outside the keyboard — the
+				// toolbar button — which a customized bar can now hide. Tools is where a
+				// user looks for an editor, and `togglePanel` is the SAME decision tree
+				// the N key and that button already call, so the three can never disagree
+				// about what "open the node editor" means in the current dock mode.
+				{
+					label: 'Node editor',
+					icon: 'workflow',
+					hint: 'N',
+					tooltip: 'Show or hide the graph editor',
+					action: () => togglePanel('flow')
+				},
 				{
 					label: 'Draw mode',
 					checked: $drawMode,

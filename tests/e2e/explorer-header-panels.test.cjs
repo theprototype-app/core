@@ -90,7 +90,12 @@ const chipOf = (peer) =>
 const headerGeom = (peer) =>
 	peer.page.evaluate(() => {
 		const search = document.querySelector('#explorer-search');
-		const row = search?.parentElement;
+		// the HEADER ROW, not merely the search box's parent: W6 wrapped the FLOATING
+		// header's search + chips in a clipping middle so its Dock/✕ buttons can never be
+		// pushed out of an `overflow-hidden` window, and a bare `parentElement` probe
+		// would quietly start measuring that wrapper instead of the row these sections
+		// are about. The docked header has no `.ui-panel-header`, so it falls back.
+		const row = search?.closest('.ui-panel-header') ?? search?.parentElement;
 		const chip = document.querySelector('#explorer-identity');
 		const proj = document.querySelector('#explorer-project');
 		const scene = document.querySelector('#explorer-scene');
@@ -573,6 +578,78 @@ h.run(async () => {
 		!!fg.chip && !fg.rowOverflows && fg.chip.right <= fg.row.right + 1,
 		`…under the same no-overflow rule (chip ${fg.chip?.right | 0} <= row ${fg.row?.right | 0})`
 	);
+
+	// --- W6: the floating window's ✕, which was reported MISSING ---
+	// It was never missing. Every item ahead of it in the header is `shrink-0`, so the
+	// row's minimum width (~730px) exceeds the window's OWN minimum (WIN_MIN 420) and
+	// the two trailing buttons were pushed straight out of an `overflow-hidden` window:
+	// measured at 420px wide, the ✕ sat at x=743 against a right edge of 580 — present
+	// in the DOM, invisible and unclickable on screen. So the check is not "does it
+	// exist" but "can it be hit", and it is driven at the width where it could not be.
+	// Two things have to be cleared before a hit test means anything here, and both were
+	// MEASURED rather than guessed (elementFromPoint named them). Section 5 left the
+	// VIEWPORT at 520px, and a window wider than the viewport puts its own right edge off
+	// screen, where elementFromPoint answers null. And the app's toast stack is centred
+	// over exactly this band — at a narrow window the ✕ lands under a live toast, which
+	// reads as "covered" while nothing about the window is wrong. Dismiss them the way a
+	// user would, through each toast's own ✕.
+	await A.page.setViewportSize({ width: 1280, height: 720 });
+	await A.page.waitForTimeout(500);
+	await A.page.evaluate(() => {
+		document.querySelectorAll('.tp-toast-x').forEach((b) => b.click());
+	});
+	await A.page.waitForTimeout(500);
+	const closeAt = (page) =>
+		page.evaluate(() => {
+			const win = document.querySelector('#explorer-window');
+			const b = document.querySelector('#explorer-close');
+			if (!win || !b) return { missing: true };
+			const wr = win.getBoundingClientRect();
+			const r = b.getBoundingClientRect();
+			return {
+				winW: Math.round(wr.width),
+				inside: r.right <= wr.right + 0.5 && r.left >= wr.left - 0.5 && r.width > 6,
+				hitSelf: document.elementFromPoint(Math.round(r.x + r.width / 2), Math.round(r.y + r.height / 2)) === b,
+				aria: b.getAttribute('aria-label'),
+				title: b.title
+			};
+		});
+	let ca = await closeAt(A.page);
+	h.check(!ca.missing, 'W6.1 the floating Explorer has a ✕ close button (#explorer-close)');
+	h.check(
+		ca.aria === 'Close the Explorer' && ca.title === 'Close',
+		`W6.2 ...icon-only, so it carries an aria-label (${ca.aria} / ${ca.title})`
+	);
+	h.check(ca.inside && ca.hitSelf, `W6.3 ...and it is hittable at the default width (${ca.winW}px)`);
+	// shrink to the window's own minimum — the width the report was made at
+	await A.page.evaluate(() => {
+		const win = document.querySelector('#explorer-window');
+		if (win) win.style.width = '420px';
+	});
+	await A.page.waitForTimeout(350);
+	ca = await closeAt(A.page);
+	h.check(
+		ca.inside && ca.hitSelf,
+		`W6.4 ...and STILL hittable at the 420px minimum, where it used to be pushed off the window (inside=${ca.inside} hit=${ca.hitSelf})`
+	);
+	// it does what it says
+	await A.page.evaluate(() => document.querySelector('#explorer-close').click());
+	await A.page.waitForTimeout(500);
+	const closedIt = await A.page.evaluate(() => {
+		let v;
+		window.__stores.explorerClose.subscribe((x) => (v = x))();
+		return { closed: v, gone: !document.querySelector('#explorer-window') };
+	});
+	h.check(
+		closedIt.closed === true && closedIt.gone,
+		`W6.5 ...and clicking it closes the Explorer (${JSON.stringify(closedIt)})`
+	);
+	await A.page.evaluate(() => {
+		window.__stores.explorerClose.set(false);
+		const win = document.querySelector('#explorer-window');
+		if (win) win.style.width = '';
+	});
+	await A.page.waitForTimeout(600);
 
 	// =====================================================================
 	// 10. NOTHING CRASHED

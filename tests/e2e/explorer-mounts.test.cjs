@@ -889,9 +889,14 @@ h.run(async () => {
 	);
 
 	// ---- 18. the picker offers the .tp import ---------------------------------------
-	// User: "'mount project...' context should also have import project option". It is the
-	// EXISTING `importProjectAsFolder` path — the one that furnishes a folder and leaves
-	// the open project alone, which is what every row above it promises.
+	// User: "'mount project...' context should also have import project option", and then:
+	// "it should automatically also mount this session file, not just import (do not change
+	// 'Import project (.tp)…' text in context menu)". So the row is no longer the
+	// furnish-a-folder path: it reads the file into a saved PROJECT (importProjectAsSession)
+	// and mounts that, which is the only thing a mount can read. THIS section still owns the
+	// picker's SHAPE — the row exists, under its own heading, and opens a real .tp-only file
+	// picker; the outcome (imported, mounted, walked into, Library untouched) is
+	// `sessions-open` §6, where the bytes to feed it exist.
 	// ---------------------------------------------------------------------------------
 	await page.locator('#explorer-mount-add').click();
 	await page.waitForSelector('[role=menuitem]', { timeout: 20000 });
@@ -915,15 +920,12 @@ h.run(async () => {
 		page.waitForEvent('filechooser', { timeout: 10000 }),
 		page.locator('[role=menuitem]', { hasText: 'Import project' }).first().click()
 	]);
-	h.check(!!chooser, 'clicking it opens a real file picker — the same one the burger menu opens');
-	const accepts = await page.evaluate(() => {
-		const el = document.querySelector('input[type=file][accept]');
-		return el ? el.getAttribute('accept') : null;
-	});
-	h.check(
-		accepts === '.tp',
-		`…the app’s existing .tp input, not a second one minted for this menu (accept=${accepts})`
-	);
+	h.check(!!chooser, 'clicking it opens a real file picker');
+	// read the input the ROW opened, not the first one in the document: the mount picker has
+	// its own now (its intent differs from the Library's merge-as-folder), and a query that
+	// finds either would answer the same for both
+	const accepts = await chooser.element().getAttribute('accept');
+	h.check(accepts === '.tp', `…which takes .tp files and nothing else (accept=${accepts})`);
 	await chooser.setFiles([]).catch(() => {});
 	await closeMenu(page);
 

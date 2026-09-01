@@ -2223,18 +2223,26 @@
 	 * R22 round 13 (user): "'mount project...' context should also have import project
 	 * option".
 	 *
-	 * THE EXISTING `.tp` IMPORT, not a new one — `importProjectAsFolder`, the same path
-	 * the burger menu's "Import project as folder (.tp)…" row and a dropped `.tp` file
-	 * already take (`importTpAsFolder`). It is the right one of the two `projectFile`
-	 * offers for THIS menu: `openProject` REPLACES the open project, which is the exact
-	 * thing every row above it promises not to do, while furnishing a folder leaves the
-	 * open project alone.
+	 * R22 ROUND 13, SECOND ASK (user): "import session file, when chosen in '+ Mount
+	 * project...' Explorer button, it should automatically also mount this session file,
+	 * not just import (do not change 'Import project (.tp)…' text in context menu)".
 	 *
-	 * The tooltip says the part a user would otherwise have to discover: an import does
-	 * NOT become a mount. A mount reads a project SAVED on this machine, and mounting a
-	 * `.tp` straight off disk is a later provider (it needs `showDirectoryPicker`, which
-	 * is Chromium-only) — so the honest route is import, save, then mount, and the row
-	 * says so rather than appearing to have done nothing.
+	 * The first version routed to `importProjectAsFolder` and told the user, in a tooltip,
+	 * to go and do the other two steps themselves — import, save as a project, then come
+	 * back and mount. That was honest about a gap rather than closing it, and the gap was
+	 * real: `mountVolume` takes a SESSION ID, so there was nothing to mount a loose file
+	 * as. The answer is the missing writer, not the tooltip: `importProjectAsSession`
+	 * reads a .tp into ONE saved record (round 13's Sessions fix) and that record is
+	 * exactly what a mount reads. Import, then mount, then walk into it.
+	 *
+	 * IT DOES NOT ALSO FURNISH THE LIBRARY, and that is the user's own division: the
+	 * Library's right-click "Import project as folder" exists for that intent and is
+	 * untouched — `tpImportInput` and `onImportTpFile` are not on this path at all.
+	 * Doing both would put every byte in two places and leave "which copy am I editing?"
+	 * as an open question, when a mount already IS that project's files, editable and
+	 * saveable back.
+	 *
+	 * THE LABEL IS FROZEN by the ask; the tooltip is not, and it now says what happens.
 	 */
 	function importRow() {
 		return [
@@ -2243,10 +2251,29 @@
 				label: 'Import project (.tp)…',
 				icon: 'folder-input',
 				tooltip:
-					'Adds a .tp file’s contents to your Library as one folder. It does not become a mount — save it as a project first and it appears in the list above.',
-				action: () => tpImportInput?.click()
+					'Reads a .tp file into your saved projects and mounts it here straight away. Your open project, its Library and its manifest are untouched.',
+				action: () => tpMountInput?.click()
 			}
 		];
+	}
+	/**
+	 * The mount picker's OWN file input — see `importRow`. A second input rather than a
+	 * flag on the shared one, because the shared one's job ("merge this .tp into my
+	 * Library as a folder") must stay byte-identical: two intents, two inputs, and no
+	 * branch in the middle where they could drift.
+	 */
+	let tpMountInput: HTMLInputElement | undefined = $state();
+	async function onImportTpMount(e: Event) {
+		const input = e.currentTarget as HTMLInputElement; // capture BEFORE any await
+		const file = input?.files?.[0];
+		if (file) {
+			const { importProjectAsSession } = await import('$lib/projectFile');
+			const saved = await importProjectAsSession(await file.arrayBuffer(), { fileName: file.name });
+			// a declined format confirm resolves null, and a mount of nothing is not a
+			// silent failure to invent — the importer has already said why
+			if (saved?.id) await doMount(saved.id);
+		}
+		if (input) input.value = '';
 	}
 	async function doMount(sessionId: string) {
 		const vol = await mountVolume(sessionId);
@@ -6597,6 +6624,9 @@
 	<!-- 21-G8: the "Import project as folder (.tp)…" picker — mounted whenever the
 	     Explorer is open (the menu entry that clicks it can open from any view) -->
 	<input bind:this={tpImportInput} type="file" accept=".tp" class="hidden" onchange={onImportTpFile} />
+	<!-- R22 round 13: the MOUNT picker's own .tp picker — a different intent (import into
+	     Sessions, then mount) and therefore a different input; see `importRow` -->
+	<input bind:this={tpMountInput} type="file" accept=".tp" class="hidden" onchange={onImportTpMount} />
 	{#if docked}
 		<div
 			id="explorer-list"

@@ -63,6 +63,14 @@ const libraryOf = (p) =>
 		return (v ?? []).map((i) => i.name);
 	});
 
+/** the mounted roots, as the Explorer draws them above Library */
+const volsOf = (p) =>
+	p.page.evaluate(() => {
+		let v;
+		window.__stores.mountedVolumes.mountedVolumes.subscribe((x) => (v = x))();
+		return (v ?? []).map((r) => ({ id: r.id, sessionId: r.sessionId, name: r.name, items: (r.items ?? []).length }));
+	});
+
 const foldersOf = (p) =>
 	p.page.evaluate(() => {
 		let v;
@@ -374,7 +382,79 @@ h.run(async () => {
 	await page.waitForTimeout(600);
 
 	await page.evaluate(() => window.__stores.sessionsOpen.set(false));
+	await page.waitForTimeout(900);
+
+	// ---- 6. THE MOUNT PICKER'S IMPORT ROW MOUNTS WHAT IT IMPORTS ---------------------
+	// "it should automatically also mount this session file, not just import (do not change
+	// 'Import project (.tp)…' text in context menu)". The label is therefore asserted
+	// EXACTLY, and the behaviour behind it is the round-13 Sessions importer plus a mount.
+	await openExplorer(A);
+	const foldersBeforeMount = await foldersOf(A);
+	const volsBefore = await volsOf(A);
+	await page.locator('#explorer-mount-add').click();
+	await page.waitForSelector('[role=menuitem]', { timeout: 20000 });
 	await page.waitForTimeout(300);
+	const pickerRows = await page.evaluate(() =>
+		[...document.querySelectorAll('[role=menuitem]')].map((el) => el.innerText.trim()).filter(Boolean)
+	);
+	h.check(
+		pickerRows.some((r) => r === 'Import project (.tp)…'),
+		`the row's text is untouched, exactly as asked (${JSON.stringify(pickerRows.filter((r) => /Import/.test(r)))})`
+	);
+	const [chooser] = await Promise.all([
+		page.waitForEvent('filechooser', { timeout: 15000 }),
+		page.locator('[role=menuitem]', { hasText: 'Import project' }).first().click()
+	]);
+	h.check(!!chooser, 'clicking it still opens a real file picker');
+	await chooser.setFiles({
+		name: 'Wharfside.tp',
+		mimeType: 'application/zip',
+		buffer: Buffer.from(b64, 'base64')
+	});
+	await h.eventually(
+		() => metas(A),
+		(list) => list.some((m) => m.name === 'Wharfside' && m.lib),
+		'the file is imported as a saved PROJECT — which is what a mount can read',
+		25000
+	);
+	await h.eventually(
+		() => volsOf(A),
+		(list) => list.some((v) => v.name === 'Wharfside'),
+		'…and it is MOUNTED straight away, with no second gesture',
+		25000
+	);
+	const volsAfter = await volsOf(A);
+	const entry = (await metas(A)).find((m) => m.name === 'Wharfside');
+	const vol = volsAfter.find((v) => v.name === 'Wharfside');
+	h.check(
+		vol?.sessionId === entry?.id,
+		'…and the mount reads the entry that was just written, not some other one'
+	);
+	h.check(
+		volsAfter.length === volsBefore.length + 1,
+		`exactly one new root appeared (${volsBefore.length} -> ${volsAfter.length})`
+	);
+	// a root you mounted and cannot see is a button that appears to have done nothing.
+	// WAIT ON IT: the volume lands in the store inside `mountVolume`, and the walk-in is the
+	// line after it — reading once can win that race by a tick
+	await h.eventually(
+		() =>
+			page.evaluate(() => {
+				let v;
+				window.__stores.explorer.activeFolder.subscribe((x) => (v = x))();
+				return v ?? null;
+			}),
+		(v) => typeof v === 'string' && v.startsWith('vol:'),
+		'…and the Explorer walks you into it',
+		15000
+	);
+	// THE LIBRARY IS UNTOUCHED: furnishing a folder is the other button's job, and doing
+	// both would put every byte in two places
+	const foldersAfterMount = await foldersOf(A);
+	h.check(
+		!foldersAfterMount.includes('Wharfside') && foldersAfterMount.length === foldersBeforeMount.length,
+		`…without furnishing the Library behind your back (${JSON.stringify(foldersAfterMount)})`
+	);
 
 	await h.finish(browser);
 });

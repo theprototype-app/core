@@ -1064,7 +1064,15 @@ loadable play content. Everything a user does must be visible to connected peers
   Multi-slot objects are REFUSED, the switchMaterialType precedent. UI:
   `components/editors/ShaderEditor.svelte` (a FLOW_FAMILY dock tab, its own xyflow
   instance so flowGraphs/nodesync stay byte-untouched; scope follows the SELECTION
-  like the node editor's flow graphs, so there is no scope control) +
+  like the node editor's flow graphs, so there is no scope control. It was the ONE
+  dock view with NO FLOATING MODE at all — no `docked` flag, no dragWindow, no window
+  chrome — and TWO other modules carried an exception for that fact (`panelToggles`'
+  `dockOnly` shape, and `dockMenu.dockTabItems` withholding "Undock" rather than
+  shipping a row that could only do nothing). It has UvEditor's docked/floating split
+  now — `shaderDocked` + `#shader-window` with dragWindow / a KEYED focusStack /
+  tabbable / bottomDockable / a corner grip, plus the `dockModeArm` consumer that is
+  what makes Undock and drag-a-tab-out reach it — so both exceptions are gone and the
+  seven dock views behave identically) +
   `ShaderSidebar.svelte` + `nodes/ShaderNode.svelte` (ONE generic node for the whole
   catalog) + `nodes/ShaderTexturePicker.svelte` (a file input that imports into the
   Explorer, an Explorer drag-drop target, thumbnail, clear, and a "waiting for peer"

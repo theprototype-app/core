@@ -31,8 +31,12 @@ h.run(async () => {
 	// open the Node editor dock first, so its tab strip (with the "+") is on screen
 	await page.locator('p[title="Node editor (N)"]').click();
 	await page.waitForTimeout(1400);
+	// BY ID, not by its glyph — the button renders a lucide <Plus> SVG now and has no
+	// text to match. The id repeats per docked panel, so take the one actually drawn.
 	const plus = await page.evaluate(() => {
-		const btn = [...document.querySelectorAll('button')].find((b) => (b.textContent ?? '').trim() === '＋');
+		const btn = [...document.querySelectorAll('#dock-add-view')].find(
+			(b) => b.getBoundingClientRect().width > 0
+		);
 		if (!btn) return null;
 		const r = btn.getBoundingClientRect();
 		return { x: Math.round(r.x + r.width / 2), y: Math.round(r.y + r.height / 2) };

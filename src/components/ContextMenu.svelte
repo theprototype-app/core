@@ -6,7 +6,17 @@
 	import { autofocusOk, typeToFocus } from '$lib/inputDevice';
 
 	// Generic context menu. items: [{ label, action?, disabled?, tooltip?, danger?,
-	// icon?, hint?, checked?, children?: items[] } | { section } | { header }]
+	// icon?, hint?, checked?, keepOpen?, rowActions?, children?: items[] } |
+	// { section } | { header }]
+	//
+	// W1: `keepOpen: true` runs the action and LEAVES THE MENU UP — opt-in per item,
+	// so every other menu in the app closes on a click exactly as before. It exists for
+	// a menu that is a CHECKLIST rather than a command list (the toolbar's Customize
+	// pane): toggling one button's visibility used to dismiss the list you were working
+	// through. Outside click and Escape still close. The item array is a prop, so a
+	// consumer that wants the rows to show the state it just wrote must pass a REACTIVE
+	// array (Controls derives its Customize items from the layout record) — re-rendering
+	// in place keeps the menu's position and scroll, because the node is never replaced.
 	// Submenus (any depth) open on hover, marked with ▸. Flips up/left near screen edges.
 	//
 	// 15-Q: dense menus grew a TYPE-TO-FILTER row (flattened command-palette matches).
@@ -66,6 +76,7 @@
 			return;
 		}
 		item.action?.();
+		if (item.keepOpen) return;
 		dispatch('close');
 	}
 

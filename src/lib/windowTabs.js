@@ -26,10 +26,30 @@ function persist() {
 	} catch {}
 }
 
+/**
+ * Keys this store has RENAMED, applied to every restored group. Flow Code registered
+ * as 'flowCode' while every module that addresses windowTabs from the outside
+ * (`panelToggles`, `bottomDockable`, `headerTargetAt`) passes the DOCK key 'flowcode',
+ * so the two never met; aligning them without this map would strand any group already
+ * saved under the old spelling — `tryRestore` waits for a member that can no longer
+ * register, so the group would sit in `pendingRestore` for ever and the user's Flow
+ * Code tab would simply never come back.
+ * @type {Record<string, string>}
+ */
+const KEY_ALIASES = { flowCode: 'flowcode' };
+/** @param {string} key */
+const migrateKey = (key) => KEY_ALIASES[key] ?? key;
+
 /** @type {any[]} groups waiting for their members to register+open again */
 let pendingRestore = [];
 try {
-	pendingRestore = JSON.parse(localStorage.getItem('windowTabGroups') ?? '[]');
+	pendingRestore = JSON.parse(localStorage.getItem('windowTabGroups') ?? '[]').map(
+		(/** @type {any} */ saved) => ({
+			...saved,
+			members: (saved.members ?? []).map(migrateKey),
+			active: migrateKey(saved.active)
+		})
+	);
 } catch {}
 
 /** @param {any} node */
@@ -81,8 +101,8 @@ function applyGroups() {
 	persist();
 }
 
-/** @param {string} key */
-function groupOfKey(key) {
+/** The tab group a window belongs to, or null. @param {string} key */
+export function groupOfKey(key) {
 	return get(tabGroups).find((group) => group.members.includes(key)) ?? null;
 }
 
@@ -280,6 +300,27 @@ export function tearOff(key, x, y) {
 	}
 }
 
+/**
+ * The window whose HEADER is under (x, y) — the merge hit test, lifted out of
+ * `tabbable`'s closure in W7 so it can be ONE test rather than one per window. It is
+ * also the top of the drop PRECEDENCE order: a header is a small, deliberate target, so
+ * the bottom-dock band stands down wherever this answers (see bottomDockDrop.js).
+ * @param {number} x @param {number} y @param {string=} excludeKey the window being dragged
+ * @returns {string|null}
+ */
+export function headerTargetAt(x, y, excludeKey) {
+	for (const [otherKey, other] of registry) {
+		if (otherKey === excludeKey) continue;
+		if (other.node.dataset?.docked) continue; // docked windows don't tab (81L)
+		if (!other.node.isConnected || other.node.style.display === 'none') continue;
+		if (other.node.offsetParent === null && getComputedStyle(other.node).position !== 'fixed') continue;
+		const r = other.node.getBoundingClientRect();
+		if (r.width === 0) continue;
+		if (x >= r.left && x <= r.right && y >= r.top && y <= r.top + 36) return otherKey;
+	}
+	return null;
+}
+
 /** @param {string} key */
 export function titleOf(key) {
 	return registry.get(key)?.title ?? key;
@@ -341,19 +382,9 @@ export function tabbable(node, { key, title, openStore, isOpen = (v) => !!v, clo
 	// drag-merge: dropping this window's header onto another window's header
 	let draggingHeader = false;
 	/** @type {any} */ let mergeTarget = null;
-	/** the window whose HEADER is under (x, y) — the merge hit test */
-	const targetAt = (/** @type {number} */ x, /** @type {number} */ y) => {
-		for (const [otherKey, other] of registry) {
-			if (otherKey === key) continue;
-			if (other.node.dataset?.docked) continue; // docked windows don't tab (81L)
-			if (!other.node.isConnected || other.node.style.display === 'none') continue;
-			if (other.node.offsetParent === null && getComputedStyle(other.node).position !== 'fixed') continue;
-			const r = other.node.getBoundingClientRect();
-			if (r.width === 0) continue;
-			if (x >= r.left && x <= r.right && y >= r.top && y <= r.top + 36) return otherKey;
-		}
-		return null;
-	};
+	/** the window whose HEADER is under (x, y) — the merge hit test (W7 lifted the body
+	 * to module scope so the bottom-dock band can consult the very same rule) */
+	const targetAt = (/** @type {number} */ x, /** @type {number} */ y) => headerTargetAt(x, y, key);
 	const setMergeTarget = (/** @type {string | null} */ otherKey) => {
 		const next = otherKey ? registry.get(otherKey)?.node : null;
 		if (next === mergeTarget) return;

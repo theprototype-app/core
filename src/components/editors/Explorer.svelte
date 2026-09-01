@@ -4,8 +4,9 @@
 	// Explorer (95, tree v2 in 106): dockable asset browser — real file-manager
 	// tree on the left (inline create/rename, expand/collapse, drag re-parent,
 	// cascade delete, resizable), thumbnail grid on the right (subfolder cards
-	// + items), drag files in to import. Shares the bottom dock with the Flow
-	// editor as notebook tabs (bottomDock.js); undocks into a floating window.
+	// + items), drag files in to import. It is an ordinary bottom-dock TAB beside
+	// the Flow-family views (bottomDock.js), sharing their strip and their height;
+	// undocks into a floating window.
 	import { get } from 'svelte/store';
 	import { tick, untrack } from 'svelte';
 	import { explorerClose, mobileUndockAllowed, explorerSceneSaveArm, explorerRevealArm, peers } from '../../stores/appStore.js';
@@ -237,12 +238,14 @@
 	import { sceneAssets } from '$lib/sceneAssets';
 	import { setNodeData } from '$lib/nodesHandler';
 	import { findNodeAnyGraph } from '../../stores/flowStore';
-	import { bottomDockActive, visibleDockKey, setDockOccupant } from '$lib/bottomDock';
+	import { bottomDockActive, visibleDockKey, dockMinimized, setDockOccupant, dockHeight, dockModeArm } from '$lib/bottomDock';
+	import { bottomDockable } from '$lib/bottomDockDrop';
 	import { dragWindow } from '$lib/dragWindow';
 	import { focusStack } from '$lib/windowFocus';
 	import { tabbable, resizeGroup, tabGroups } from '$lib/windowTabs';
 	import { dockable } from '$lib/docking';
 	import ContextMenu from '../ContextMenu.svelte';
+	import DockTabs from '../DockTabs.svelte';
 	import WindowShell from '../shared/WindowShell.svelte';
 	import { clampWinSize, clampResize, anchorOf } from '$lib/windowSize';
 	import { fly } from 'svelte/transition';
@@ -254,7 +257,6 @@
 	const WIN_MIN = { minW: 420, minH: 280 };
 	const WIN_DEFAULT = { w: 720, h: 440 };
 
-	let height = $state(300);
 	let inlineStats: any = $state(null); // N4: poly stats for the Properties inline preview
 	let docked = $state(true);
 	let winW = $state(720);
@@ -268,7 +270,16 @@
 	let shell = $state<any>(null);
 	let selected = $state<any>(null);
 	if (typeof localStorage !== 'undefined') {
-		height = clampH(parseInt(localStorage.getItem('explorerHeight') ?? '300'));
+		// one-shot migration: the Explorer used to keep a docked height of its own
+		// ('explorerHeight'). It is a dock TAB now, so the dock's shared height owns
+		// it — adopt the old value once, then drop the key.
+		try {
+			const legacyH = localStorage.getItem('explorerHeight');
+			if (legacyH) {
+				dockHeight.set(clampH(parseInt(legacyH) || 300));
+				localStorage.removeItem('explorerHeight');
+			}
+		} catch {}
 		docked = localStorage.getItem('explorerDocked') !== 'false';
 		// 18-B: a size saved on a bigger screen must not come back oversized —
 		// that is the state whose resize grip sits off-screen. Fitted BEFORE the
@@ -301,15 +312,35 @@
 		if (v) bottomDockActive.set('explorer'); // re-docking makes it the visible panel
 	}
 
-	// The Explorer is the dock's separate (exclusive) panel — it reports docked+open
-	// (+height for the --bottom-inset) and is visible only when it owns the dock. It is
-	// mutually exclusive with the Flow-family tabs (activating a Flow tab closes it), so
-	// it shows NO tab strip of its own.
+	// 4b: CONSUME the dock arm. The Controls toolbar's Explorer menu offers "Open as
+	// dock tab" / "Open as floating window", and `docked` above is read from
+	// localStorage exactly ONCE, at mount — so the toolbar writing that flag would be
+	// inert at a live panel and the row would read as a dead button. It asks through
+	// the store instead and `setDocked` (which owns the flag, this branch and the dock
+	// occupancy together) is what acts. Same write-once shape as `explorerSceneSaveArm`.
+	// W5: the seam is GENERAL now (`dockModeArm`, keyed by dock key) so the tab strip's
+	// own context menu can undock any tab; the Explorer-only `explorerDockArm` it used
+	// to own is gone, and the Controls menu asks through this one.
 	$effect(() => {
-		setDockOccupant('explorer', !$explorerClose && docked, height);
+		const arm = $dockModeArm;
+		if (!arm || arm.key !== 'explorer') return;
+		dockModeArm.set(null);
+		untrack(() => {
+			if (arm.docked !== docked) setDocked(arm.docked);
+			explorerClose.set(false); // the rows say "Open as …", so open it
+		});
+	});
+
+	// A dock tab like any other: report docked+open (+ the SHARED dock height, which
+	// feeds --bottom-inset) so the strip lists it, and render only while it is the
+	// visible tab. Being covered by another tab closes nothing — this stays open.
+	$effect(() => {
+		setDockOccupant('explorer', !$explorerClose && docked, $dockHeight);
 		return () => setDockOccupant('explorer', false);
 	});
-	const dockVisible = $derived($visibleDockKey === 'explorer');
+	// W2: a MINIMIZED dock renders nothing while every tab stays open (the occupant
+	// report above is untouched, so the strip comes back with its tabs intact)
+	const dockVisible = $derived($visibleDockKey === 'explorer' && !$dockMinimized);
 
 	// tab-grouped windows share one size: show the group's rect so a resize on any
 	// member updates every tab, not just the active one.
@@ -317,7 +348,7 @@
 	const effW = $derived(myGroup ? myGroup.rect.width : winW);
 	const effH = $derived(myGroup ? myGroup.rect.height : winH);
 
-	// --- docked: top-edge resize (Flow pattern) ---
+	// --- docked: top-edge resize (shared dock height, persisted by the store) ---
 	let resizing = $state(false);
 	function startResize(e: any) {
 		resizing = true;
@@ -326,13 +357,12 @@
 	}
 	function doResize(e: any) {
 		if (!resizing) return;
-		height = clampH(height - e.movementY);
+		dockHeight.update((h) => clampH(h - e.movementY));
 	}
 	function endResize(e: any) {
 		if (!resizing) return;
 		resizing = false;
 		e.currentTarget.releasePointerCapture?.(e.pointerId);
-		localStorage.setItem('explorerHeight', String(height));
 	}
 
 	// --- undocked: corner resize ---
@@ -6754,7 +6784,7 @@
 			id="explorer-list"
 			transition:fly={{ y: 300, duration: 200 }}
 			class="fixed inset-x-0 bottom-0 bg-white p-2 dark:bg-gray-800 {dockVisible ? '' : 'hidden'}"
-			style="z-index: var(--z-bottom); height: {height}px; border-top: 1px solid rgb(55 65 81 / 0.6)"
+			style="z-index: var(--z-bottom); height: {$dockHeight}px; border-top: 1px solid rgb(55 65 81 / 0.6)"
 			ondragover={(e) => {
 				if (canAccept(e)) return;
 				e.preventDefault();
@@ -6765,16 +6795,21 @@
 			role="region"
 		>
 			<div
-				class="resize-cue absolute -top-1 left-0 right-0 z-10 h-2 cursor-ns-resize"
+				class="resize-cue absolute -top-1 left-0 right-0 z-30 h-2 cursor-ns-resize hover:bg-primary-600/30"
 				style="touch-action: none"
 				title="Drag to resize"
 				onpointerdown={startResize}
 				onpointermove={doResize}
 				onpointerup={endResize}
 			></div>
+			<DockTabs />
 			<div class="mb-1 flex items-center gap-2" use:headerWidth>
 				<span class="shrink-0 text-xs font-semibold text-gray-200"><FolderTree size={16} class="mr-1" aria-hidden="true" />Explorer</span>
-				<!-- `shrink-0`: the identity chip beside it is the flex item that gives way -->
+				<!-- `shrink-0`: the identity chip beside it is the flex item that gives way.
+				     W6 deliberately left this row's LAYOUT alone — its narrow-width behaviour
+				     is explorer-header-panels' own measured contract, and the docked chrome
+				     matches Flow's exactly (undock only, no ✕: a docked view is closed from
+				     its TAB's right-click menu). -->
 				<input
 					id="explorer-search"
 					class="ui-input w-48 shrink-0 py-0.5"
@@ -6793,7 +6828,7 @@
 					onclick={() => setDocked(false)}>⧉</button
 				>
 			</div>
-			<div style="height: calc({height - 44}px - var(--dock-inset, 0px))">
+			<div style="height: {$dockHeight - 44}px">
 				{@render content()}
 			</div>
 		</div>
@@ -6802,8 +6837,9 @@
 			id="explorer-window"
 			class="ui-panel fixed flex flex-col overflow-hidden"
 			use:dragWindow={{ key: 'explorerWin', defaultRect: { left: 160, top: 120 } }}
-			use:focusStack
+			use:focusStack={'explorer'}
 			use:tabbable={{ key: 'explorer', title: 'Explorer', openStore: explorerClose, isOpen: (v) => !v, close: () => explorerClose.set(true) }}
+			use:bottomDockable={{ key: 'explorer' }}
 			use:dockable={{ key: 'explorer' }}
 			style="z-index: var(--z-window)"
 			style:width="{effW}px"
@@ -6823,6 +6859,14 @@
 						? ''
 						: 'Explorer'}</span
 				>
+				<!-- W6: the header's overflow lives HERE. The ✕ was never missing — every
+				     item ahead of it was `shrink-0`, so the row's minimum width (~730px)
+				     exceeded the window's own 420px minimum and the two trailing buttons
+				     were pushed OUT of an `overflow-hidden` window: measured at winW 420,
+				     the ✕ sat at x=743 against a right edge of 580, unhittable. That is the
+				     "the Explorer has no close button" report. Clipping the search + chips
+				     instead keeps Dock and ✕ inside the window at every width. -->
+				<div class="flex min-w-0 flex-1 items-center gap-2 overflow-hidden">
 				{#if !hideSearch}
 					<input
 						id="explorer-search"
@@ -6831,15 +6875,23 @@
 						bind:value={search}
 					/>
 				{/if}
-				{@render filterChip()}
-				{@render viewChip()}
-				{@render logChip()}
-				{@render storageChip()}
-				{@render identityChip()}
+					{@render filterChip()}
+					{@render viewChip()}
+					{@render logChip()}
+					{@render storageChip()}
+					{@render identityChip()}
+				</div>
 				<button id="explorer-dock" class="ui-button-quiet shrink-0" title="Dock to the bottom" onclick={() => setDocked(true)}>
 					⇩ Dock
 				</button>
-				<button class="ui-button-quiet" title="Close" onclick={() => explorerClose.set(true)}>✕</button>
+				<!-- the id + aria-label its siblings' close buttons lack, so a suite can pin it -->
+				<button
+					id="explorer-close"
+					class="ui-button-quiet shrink-0"
+					title="Close"
+					aria-label="Close the Explorer"
+					onclick={() => explorerClose.set(true)}>✕</button
+				>
 			</div>
 			<div class="min-h-0 flex-1 p-1">
 				{@render content()}

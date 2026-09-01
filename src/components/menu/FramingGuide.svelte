@@ -7,6 +7,7 @@
 	import { cameraPreview } from '$lib/cameraPreview';
 	import { objectsGroup } from '../../stores/sceneStore';
 	import { cameraSpec, aspectRatio } from '$lib/cameraObjects';
+	import { viewportInset } from '$lib/bottomDock';
 
 	const object = $derived(
 		$cameraPreview ? ($objectsGroup?.getObjectByProperty('uuid', $cameraPreview.uuid) ?? null) : null
@@ -16,24 +17,31 @@
 
 	let vw = $state(0);
 	let vh = $state(0);
+	// W9: the letterbox masks the bars the RENDERER leaves, and the renderer draws into
+	// the canvas — so both the aspect comparison and the box itself are measured against
+	// the canvas, which is the window minus whatever the bottom dock took. Measuring
+	// against the window sized the bars for an aspect nothing was rendered at, and the
+	// guide covered the dock as well.
+	const height = $derived(Math.max(0, vh - $viewportInset));
 	const bars = $derived.by(() => {
-		if (!ratio || !vw || !vh) return null;
-		const viewport = vw / vh;
+		if (!ratio || !vw || !height) return null;
+		const viewport = vw / height;
 		if (Math.abs(viewport - ratio) < 0.01) return null;
 		// too WIDE a window -> vertical bars; too tall -> horizontal bars
 		if (viewport > ratio) {
-			const frame = vh * ratio;
+			const frame = height * ratio;
 			return { side: 'x', size: Math.max(0, (vw - frame) / 2) };
 		}
 		const frame = vw / ratio;
-		return { side: 'y', size: Math.max(0, (vh - frame) / 2) };
+		return { side: 'y', size: Math.max(0, (height - frame) / 2) };
 	});
 </script>
 
 <svelte:window bind:innerWidth={vw} bind:innerHeight={vh} />
 
 {#if bars}
-	<div class="guide" aria-hidden="true">
+	<!-- the box IS the canvas: full window, less the space the dock took (W9) -->
+	<div class="guide" style="bottom: {$viewportInset}px" aria-hidden="true">
 		{#if bars.side === 'x'}
 			<div class="bar" style="left: 0; top: 0; bottom: 0; width: {bars.size}px"></div>
 			<div class="bar" style="right: 0; top: 0; bottom: 0; width: {bars.size}px"></div>
@@ -47,7 +55,10 @@
 <style>
 	.guide {
 		position: fixed;
-		inset: 0;
+		/* `bottom` is set inline from the dock inset, so `inset: 0` would fight it */
+		top: 0;
+		left: 0;
+		right: 0;
 		pointer-events: none;
 		/* above the viewport, below every panel/HUD */
 		z-index: 1;

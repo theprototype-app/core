@@ -22,6 +22,7 @@
 	} from '$lib/objectActions';
 	// 85: what a double-click does (a LOCAL pref; store-only leaf, no cycle)
 	import { doubleClickAction } from '$lib/selectionPrefs';
+	import { noteXRSessionStarted } from '$lib/playMode';
 	import { recordTransform } from '$lib/history';
 	import { suspendAnimation, resumeAnimation, pumpFlowTick } from '$lib/flowRuntime';
 	import { holdBody, releaseBody } from '$lib/physics';
@@ -533,6 +534,14 @@
 		const onSourcesChange = () => onInputSourcesChange();
 		const onSessionStart = () => {
 			renderer.xr.getSession()?.addEventListener('inputsourceschange', onSourcesChange);
+			// W3: the AUTHORITATIVE half of the VR flag. playMode sets it optimistically
+			// one line before the click (the VR configuration has to be armed before the
+			// first XR frame) and arms a watchdog to undo that GUESS if no session ever
+			// starts. This is the event that proves one did, so it cancels the watchdog
+			// and asserts the flag. Asserting rather than trusting the guess is what lets
+			// a session accepted AFTER the watchdog already fired still come up in VR.
+			noteXRSessionStarted();
+			$isVRMode = true;
 		};
 		renderer.xr.addEventListener('sessionstart', onSessionStart);
 

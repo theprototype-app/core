@@ -104,6 +104,10 @@ let revealArmToken = 0;
 export function revealExplorerItem(name, hash = '') {
 	explorerRevealArm.set({ token: ++revealArmToken, name, hash: hash ?? '' });
 }
+// 4b had an Explorer-ONLY twin of the arm above ("open the Explorer as a dock tab / as
+// a floating window", from the Controls toolbar). W5 generalised it to every dock tab —
+// the tab strip's context menu can undock any of them — and it moved in with the rest of
+// the dock bookkeeping: `dockModeArm` / `armDockMode(key, docked)` in $lib/bottomDock.
 export const objectListClose = writable(true);
 export const chatHidden = writable('hidden');
 // AI assistant (roadmap #10): '' = window open, 'hidden' = closed (mirrors chat).
@@ -546,6 +550,56 @@ if (typeof localStorage !== 'undefined') {
     if (typeof document !== 'undefined') document.documentElement.classList.toggle('allow-undock', !!v);
   });
 }
+/** W2: FLOATING TOOLBAR — GEOMETRY. With this ON the Controls pill (and the play FAB
+ * inside its well) anchors on `--bottom-inset`, so it rides in the band just above an
+ * open bottom dock. OFF, the pill stays pinned 16px off the viewport floor and an open
+ * dock passes over that band, exactly like the chat / AI / sim-controls buttons beside
+ * it. LOCAL pref — where one person's toolbar sits is not scene data, so it never
+ * replicates and never rides a workspace snapshot. Persisted.
+ *
+ * W8a FLIPPED THE DEFAULT BACK TO ON, which is a change to the STORED SHAPE and not
+ * just to the seed: the reader has to become `!== 'false'` rather than `=== 'true'`, or
+ * every existing user — who has a literal `'false'` on disk from the moment the pref
+ * shipped default-off, because the subscriber writes on the first flush — would be
+ * pinned OFF forever with no way to tell that from never having chosen. Absent = ON. */
+export const floatingToolbar = writable(
+  typeof localStorage !== 'undefined' ? localStorage.getItem('floatingToolbar') !== 'false' : true
+);
+if (typeof localStorage !== 'undefined') {
+  floatingToolbar.subscribe((v) => {
+    try { localStorage.setItem('floatingToolbar', v ? 'true' : 'false'); } catch { /* */ }
+  });
+}
+
+/** W8a: TOOLBAR ALWAYS ON TOP — Z-ORDER, and deliberately a SECOND pref rather than a
+ * second meaning for `floatingToolbar`. That one answers "where does the bar SIT"
+ * (does it lift onto `--bottom-inset` when a dock opens); this one answers "who wins
+ * the pixel" (does the bar paint over the panels or under them). They were one flag
+ * until the on-device pass, which is why a user who wanted the bar to lift also had to
+ * accept it painting over every floating window.
+ *   ON           — `--z-hud` (45): above the dock (35) AND above floating windows (40).
+ *   OFF (default) — `--z-drawer` (30): windows and the dock cover it.
+ * They compose. The DEFAULT combination is floating ON + this OFF: the bar lifts clear
+ * of an opening dock (so the two rarely overlap at all), but a floating window dragged
+ * over it covers it — the bar moves out of the way rather than fighting. Turning this
+ * ON is one right-click away (the toolbar tail carries an "Always on top" row) as well
+ * as a Settings row.
+ * LOCAL, persisted, absent = OFF — read as `=== 'true'`. THE KEY IS RENAMED
+ * (`toolbarOnTop`, was `toolbarAlwaysOnTop`) because the default flipped OFF after the
+ * subscriber below had already written a literal 'true' onto every machine that ran
+ * the branch — a value the FIRST FLUSH wrote, not a choice anyone made. Reading the
+ * old key would pin those machines ON with no way to tell that from having chosen; a
+ * fresh key makes absent mean "never chose" again. The pref never shipped in a tagged
+ * release, so there is nothing real to migrate. */
+export const toolbarAlwaysOnTop = writable(
+  typeof localStorage !== 'undefined' ? localStorage.getItem('toolbarOnTop') === 'true' : false
+);
+if (typeof localStorage !== 'undefined') {
+  toolbarAlwaysOnTop.subscribe((v) => {
+    try { localStorage.setItem('toolbarOnTop', v ? 'true' : 'false'); } catch { /* */ }
+  });
+}
+
 /** PINNED: keep the drawer's tab bar (+ status) visible even when the body is
  * collapsed, so it acts as a persistent mini-bar under the pill. Persisted. */
 export const connectDrawerPinned = writable(

@@ -150,7 +150,7 @@ h.run(async () => {
 	// ---------------------------------------------------------------- section 2
 	console.log('\n=== 2. add / enable / remove through the UI ===');
 
-	await page.evaluate(() => window.__stores.scenePost.scenePost.set({ enabled: true, effects: [], changedAt: 1 }));
+	await page.evaluate(() => window.__stores.scenePost.postStacks.set({ scene: { enabled: true, effects: [], changedAt: 1 } }));
 	await page.waitForTimeout(400);
 	h.check(
 		await page.evaluate(() => !document.querySelector('#post-stack') && !!document.querySelector('#post-add')),
@@ -238,7 +238,7 @@ h.run(async () => {
 
 	await page.evaluate(() => {
 		const post = window.__stores.scenePost;
-		post.scenePost.set({ enabled: true, effects: [], changedAt: 1 });
+		post.postStacks.set({ scene: { enabled: true, effects: [], changedAt: 1 } });
 		post.addPostEffect('test-tint');
 		post.addPostEffect('ao');
 		post.addPostEffect('test-plain');
@@ -316,7 +316,7 @@ h.run(async () => {
 
 	await page.evaluate(() => {
 		const post = window.__stores.scenePost;
-		post.scenePost.set({ enabled: true, effects: [], changedAt: 1 });
+		post.postStacks.set({ scene: { enabled: true, effects: [], changedAt: 1 } });
 		post.addPostEffect('test-tint');
 	});
 	await page.waitForTimeout(500);
@@ -410,7 +410,7 @@ h.run(async () => {
 	const counts = await page.evaluate(async () => {
 		const post = window.__stores.scenePost;
 		const read = () => document.querySelector('#post-counts')?.textContent?.replace(/\s+/g, ' ').trim() ?? '';
-		post.scenePost.set({ enabled: true, effects: [], changedAt: 1 });
+		post.postStacks.set({ scene: { enabled: true, effects: [], changedAt: 1 } });
 		await new Promise((r) => setTimeout(r, 300));
 		const empty = read();
 		// three Effects in a row: three entries, ONE pass
@@ -449,10 +449,12 @@ h.run(async () => {
 
 	const unknown = await page.evaluate(async () => {
 		const post = window.__stores.scenePost;
-		post.scenePost.set({
-			enabled: true,
-			effects: [{ id: 'u1', kind: 'from-the-future', params: { mystery: 1 } }],
-			changedAt: 2
+		post.postStacks.set({
+			scene: {
+				enabled: true,
+				effects: [{ id: 'u1', kind: 'from-the-future', params: { mystery: 1 } }],
+				changedAt: 2
+			}
 		});
 		await new Promise((r) => setTimeout(r, 400));
 		const row = document.querySelector('#post-row-u1');

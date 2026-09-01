@@ -2,7 +2,7 @@
 import * as THREE from 'three';
 import { get } from 'svelte/store';
 import { globalCamera, selectedObject } from '../stores/sceneStore';
-import { peers, showToast, toastStore } from '../stores/appStore';
+import { peers, showToast, toastStore, stackOnDrop } from '../stores/appStore';
 import { explorerItems, itemBlob } from './explorer';
 import { prefabs, instantiatePrefab } from './prefabs';
 import { importFile } from './fileHandler.svelte';
@@ -10,6 +10,7 @@ import { setObjectTexture } from './materialsHandler';
 import { topLevelObjectOf } from './objectActions';
 import { sceneHits, hitWorldNormal } from './scenePick';
 import { snapTargets } from './snapping';
+import { ndcFromClient } from './canvasRect';
 
 // Explorer -> scene drops (96): place objects/prefabs at the pointed spot,
 // texture the mesh under the cursor with a dropped image. Everything goes
@@ -31,11 +32,11 @@ export function dropTarget(clientX, clientY) {
 	/** @type {any} */
 	const camera = get(globalCamera);
 	if (!camera) return { point: null, object: null, normal: null };
-	const ndc = new THREE.Vector2(
-		(clientX / window.innerWidth) * 2 - 1,
-		-(clientY / window.innerHeight) * 2 + 1
-	);
-	raycaster.setFromCamera(ndc, camera);
+	// W9: against the CANVAS, not the window — with the bottom dock open the two differ
+	// by the dock's height, and a drop would land that far below the cursor. Correct in
+	// both modes: an un-inset canvas measures exactly the window.
+	const point = ndcFromClient(clientX, clientY);
+	raycaster.setFromCamera(new THREE.Vector2(point.x, point.y), camera);
 	const hits = sceneHits(raycaster);
 	if (hits[0])
 		return {
@@ -123,12 +124,61 @@ export function holdLoadingToast(name) {
 }
 
 /**
+ * 21-H3: how far apart N cards land when ONE drag carries a whole selection.
+ * A constant rather than a measured bounding box: the objects a drop creates do not
+ * exist yet (a prefab is instantiated here, a model is parsed asynchronously by
+ * `importFile`), so there is nothing to measure at the moment the layout is decided.
+ */
+const SPREAD_STEP = 1.5;
+
+/**
+ * The i-th slot of a small SQUARE grid centred on the drop point, in world XZ.
+ * Deterministic and order-stable, so the same drag always lays out the same way.
+ * @param {number[]} point @param {number} i @param {number} count
+ * @returns {number[]}
+ */
+function spreadPoint(point, i, count) {
+	const cols = Math.max(1, Math.ceil(Math.sqrt(count)));
+	const rows = Math.max(1, Math.ceil(count / cols));
+	const col = i % cols;
+	const row = Math.floor(i / cols);
+	return [
+		point[0] + (col - (cols - 1) / 2) * SPREAD_STEP,
+		point[1],
+		point[2] + (row - (rows - 1) / 2) * SPREAD_STEP
+	];
+}
+
+/**
  * Handle a viewport drop of an Explorer card.
- * @param {{id?: string, kind: string, name: string, prefabId?: string | null, url?: string | null}} payload
+ *
+ * 21-H3: the payload may carry an `items` ARRAY — the whole Explorer selection behind
+ * the card that was actually dragged. A SINGLE drag keeps exactly its old top-level
+ * shape, so this is the only consumer that had to learn anything. The raycast happens
+ * ONCE and every item is placed relative to that one point: raycasting per item would
+ * ask the scene where to put an object while the previous ones were still arriving.
+ * @param {{id?: string, kind: string, name: string, prefabId?: string | null, url?: string | null, items?: any[]}} payload
  * @param {number} clientX @param {number} clientY
  */
 export async function dropExplorerItem(payload, clientX, clientY) {
 	const target = dropTarget(clientX, clientY);
+	const many = Array.isArray(payload?.items) && payload.items.length > 1 ? payload.items : null;
+	if (!many) return placeExplorerPayload(payload, target);
+	const stack = get(stackOnDrop);
+	for (let i = 0; i < many.length; i++) {
+		const point =
+			stack || !target.point ? target.point : spreadPoint(target.point, i, many.length);
+		await placeExplorerPayload(many[i], { ...target, point });
+	}
+}
+
+/**
+ * Place ONE payload at an already-resolved drop target (21-H3 split this out of
+ * `dropExplorerItem` unchanged so the multi path could reuse the single one verbatim).
+ * @param {any} payload
+ * @param {{point: number[] | null, object: any, normal: number[] | null}} target
+ */
+async function placeExplorerPayload(payload, target) {
 	if (payload.prefabId) {
 		const prefab = get(prefabs).find((entry) => entry.id === payload.prefabId);
 		if (!prefab) return;

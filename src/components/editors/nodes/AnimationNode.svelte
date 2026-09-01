@@ -40,6 +40,15 @@
 		if (v === undefined || v === null) return '…';
 		if (typeof v === 'number') return (+v).toFixed(2);
 		if (Array.isArray(v)) return v.map((n) => (+n).toFixed(1)).join(', ');
+		// 21-E4: a multi-output source (Sequence, the objectflow shape) publishes a
+		// HANDLE MAP — name whichever handles are live, or String() renders the
+		// unmistakable "[object Object]" into the wired-value readout
+		if (typeof v === 'object' && v.__handles)
+			return (
+				Object.keys(v.__handles)
+					.filter((k) => v.__handles[k])
+					.join(' ') || '—'
+			);
 		return String(v);
 	}
 </script>
@@ -81,7 +90,7 @@
 						<Socket kind="target" nodeType={data.type} position={Position.Left} id={param.key} style="top: 10px;" />
 					{/if}
 					<span class="flex justify-between">
-						<span>{param.key}</span>
+						<span title={param.key}>{param.label ?? param.key}</span>
 						{#if param.kind === 'range' && !wiredSource(param.key)}
 							<span>{data[param.key] ?? spec.defaults[param.key]}</span>
 						{/if}
@@ -135,5 +144,20 @@
 				</label>
 			{/each}
 		{/if}
+		{#if spec?.note}
+			<!-- B7: the one line a socket label cannot carry. Same purpose (and look) as
+			     HudNode's hand-rolled per-peer notice, but declared in the catalog so a
+			     node does not need a card of its own just to say its one important thing. -->
+			<span class="node-note">{spec.note}</span>
+		{/if}
 	</div>
 </NodeWrapper>
+
+<style>
+	.node-note {
+		margin-top: 2px;
+		font-size: 9px;
+		line-height: 1.25;
+		color: #9ca3af;
+	}
+</style>

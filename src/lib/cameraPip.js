@@ -62,8 +62,13 @@ export function pipSize(object) {
 /**
  * Where to park the window when the user hasn't dragged it: bottom-right, but
  * LEFT of an open side panel so the two never overlap.
+ *
+ * W9: `viewport` is the CANVAS, not the window, so a parked window clears the bottom
+ * dock for free. It used to take a `bottomClearance` argument for exactly that —
+ * redundant once the caller measures the right box, and a second way to say one thing
+ * is a second way to get it wrong.
  * @param {{w: number, h: number}} size
- * @param {{width: number, height: number}} viewport
+ * @param {{width: number, height: number}} viewport the CANVAS, in CSS pixels
  * @param {number} [panelWidth] width of an open right-side panel (0 = none)
  */
 export function autoPosition(size, viewport, panelWidth = 0) {
@@ -76,9 +81,13 @@ export function autoPosition(size, viewport, panelWidth = 0) {
 	};
 }
 
-/** Keep a dragged window fully on screen.
+/**
+ * Keep a dragged window fully inside the VIEWPORT (W9: the CANVAS, not the window).
+ * That is what stops a frame being dragged down over the dock, where its picture
+ * silently vanishes — `glRect` measures y from the canvas BOTTOM, so a rect below the
+ * canvas yields a negative gl y and the scissored viewport draws nothing at all.
  * @param {{x: number, y: number}} pos @param {{w: number, h: number}} size
- * @param {{width: number, height: number}} viewport */
+ * @param {{width: number, height: number}} viewport the CANVAS, in CSS pixels */
 export function clampPosition(pos, size, viewport) {
 	return {
 		x: Math.min(Math.max(0, pos.x), Math.max(0, viewport.width - size.w)),

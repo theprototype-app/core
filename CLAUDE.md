@@ -46,6 +46,146 @@ loadable play content. Everything a user does must be visible to connected peers
   role controls + gates viewer actions) + `setRolesInfo`; `sessionHost()` accessor;
   `captureThumbnail(maxW)` (renders a fresh frame + reads the canvas synchronously →
   downscaled JPEG blob, null in VR — for cloud room thumbnails).
+- `src/lib/triggerSync.js` (DEVX #18, the gameSync/hudSync shape — data in the leaf
+  store, wire out here, NO history kind because the log is RUNTIME state): the flow
+  TRIGGER LOG finally has a handshake reply. `flowTriggers` is what every stateful node
+  derives from (latch set/reset, once, counter, random's reroll seed, a module's
+  `ctx.trigger`) and `sendHandshake` asked eleven domains for full state and nothing for
+  it, while nodesync's hash compare covers the GRAPH — so a joiner started empty and saw
+  every collected object back on the table. `gettriggers` is on the ALWAYS_ALLOWED floor
+  (the getnodes precedent: a request is floor, its reply is content and stays gateable);
+  the payload is PRUNED to nodes that still exist (applyNodeTrigger never prunes, so the
+  log accumulates every deleted id — and the prune is also what stops us answering with
+  a scene we just STASHED); MEASURED at 559 bytes for a whole played round, so a plain
+  object is right and golden rule 6's raw-bytes rule (about ~40k-element arrays) does not
+  apply. THE MERGE: per node the entry with the newer `lastT` wins, ties keep ours, and
+  the count travels WITH the stamp — right for Counter (re-stamps per bump), Latch
+  set/reset (count zeroed, state in the stamp), Once (0-or-1 same instant) and random
+  (ignores it). Exactly ONE thing stays approximate: a Latch's TOGGLE parity, already
+  documented as re-basing on the next set/reset. **ARRIVING HISTORY MUST FIRE NOTHING**,
+  and that is ONE number (`triggerHistoryAt`, 0 unless a restore happens) folded into the
+  shared `staleTrigger` so every action family inherits it, plus three explicit calls
+  where no cutoff exists (hudscreen/hudset/hudrows predate the shared one). Why the epoch
+  and not just `actionSeenAt`: a joiner's nodes take their cutoff on the first tick, but a
+  peer that LOADED THE SCENE AND SAT IN THE EDITOR before dialling has nodes first-seen at
+  load time, so a pulse made in between is NEWER than the cutoff and would act.
+  `updateDerivedPulses` is the one place a restored log could desync the NUMBERS (a joiner
+  re-derives every past Delay/Once moment and pushes it into a Counter that already
+  carries the bump) — it seeds the dedupe key and refuses, while a moment still in the
+  FUTURE completes normally. No `handleDisconnected` cleanup, deliberately: the log is
+  keyed by NODE, not peer.
+- `src/lib/spawner.js` + `src/lib/transientObjects.js` (21-B B7): mid-sim body creation,
+  which did not exist at all before — `startSimulation` walked `group.children` once, so
+  an object created during a run was INERT. `createBodyFor` was extracted VERBATIM and is
+  shared with `physicsAddBody` (the block encodes world-aligned starts with initialQuat
+  compensating, hull-at-origin vs primitive-at-AABB-centre, sleep-off, and
+  animated-becomes-kinematic — four conventions a second copy would drift on, which is
+  why the extraction was gated on a byte-identical `physicsDebug` parity check).
+  `transientObjects` is the LEAF holding `userData.transient` and, in ONE place, all four
+  paths per-object state travels on: the wire (an additive field on the existing
+  `duplicate`), sessions, autosave (a park/restore ritual — the GLTF export has no
+  per-child filter and hiding instead would lean on `onlyVisible`, the documented trap in
+  reverse) and undo (nothing recorded). The sweep runs BEFORE stopSimulation's
+  beforeStates loop, or the copies land in the transformSet undo entry and broadcast a
+  `move` for an object that no longer exists. CAPS are enforced in the spawner and not
+  trusted to node params: per-node maxAlive 32, a GLOBAL 200 across every spawner, 20 per
+  fire, and a 100ms floor under the authored interval (a trigger EDGE is not a rate limit
+  — a held key re-stamps several times a second). The `spawn` node acts on the stamp edge
+  inside the actionSeenAt family; the INITIATOR spawns and peers receive the ordinary
+  `duplicate`, so there is no new message type.
+- `src/lib/sharedLibrary.js` + `src/lib/transferLedger.js` + `components/editors/
+  TransferLog.svelte` (ROADMAP 22 — THE EXPLORER LIBRARY REPLICATES AT LAST). The finding
+  the batch rests on: **the library did not replicate AT ALL** — no message carried folders
+  and none carried item rows, so a session agreed on WHICH SCENES EXIST (the manifest) and
+  on nothing about where anything lives. R1 promotes the `.tp` FORMAT 2 shape
+  (`folders[{id,name,parentId}]` + `items[{hash,name,kind,folderId}]`) into the LIVE
+  manifest, both keys OMITTED when empty (the `labels` precedent) so a project that shares
+  nothing is byte-identical to pre-R1. The SHARED SUBSET only — a private file NAME never
+  leaves the machine, and a document that replicates whole on every edit must not grow with
+  a library nobody shared. `PROJECT_FORMAT` 3: the zip is unchanged, but an older reader
+  spreads the new manifest keys through and republishes folder ids its own import remapped
+  away, which is what the gate is for (`remapSharedIndex` on open).
+  · THE FLAG LIVES ON THE LOCAL RECORD, not in the document: `share?: mine|peer|no`
+  (absent = LOCAL, which is the whole migration), plus `owner` and `wasShared`. NAMING:
+  `imported` is PROVENANCE, `share` is DISTRIBUTION, and they are orthogonal.
+  · TWO IDENTITIES: an item is its content HASH; a shared FOLDER id is NETWORK identity (an
+  adopting peer creates it under that exact uuid, so every `folderId` resolves everywhere
+  with no remapping — the one place this differs from a .tp import, which remaps precisely
+  because a file must not collide with the library it lands in).
+  · PLACEMENT CASCADES (locked): sharing a folder publishes its ANCESTORS, so every peer
+  rebuilds the same tree. Clamping was tried first and is what made a shared folder look as
+  though its contents had not arrived — they had, one level up. The trade the answer accepts
+  is that an ancestor NAME travels, as placement only.
+  · THE HARD PART: a whole-document latest-wins singleton with SEVERAL AUTHORS. Two peers
+  pressing Share inside one millisecond each build a document from a view lacking the other
+  row. Rather than per-row stamps (hudDocs argued that down), ONE WRITER PER ROW and the
+  writer is whoever HOLDS the file (the peerVars rule): a publish carries every foreign row
+  VERBATIM so it can never delete somebody else file; unshare is therefore authoritative;
+  and a document missing a row of OURS makes us re-publish. It TERMINATES because
+  `publishSharedIndex` is idempotent on CONTENT — the debounce is batching, not the thing
+  that stops a storm. `at` must therefore be STABLE for an unchanged row.
+  · TOMBSTONES (`manifest.removed`) exist only because ANYONE may unshare (locked): the
+  publisher reconcile would otherwise resurrect anybody else removal forever. Self-pruning
+  — a row whose stamp is newer has been re-shared, so its tombstone is spent, and there is
+  no lifetime policy to invent. `unshareAuthority` keeps the owner-only rule as a LOCAL
+  setting (the wire enforces nothing either way).
+  · DELETE IS NOT UNSHARE. `manifest.deleted` is the LOG (what/who/when/thumbnail, capped
+  200); each peer moves its copy to the HIDDEN shelf rather than destroying bytes, so
+  Restore works from your own disk. Restore must also LIFT the tombstone or the row it
+  republishes is filtered straight out. `recycleBinEnabled` / `keepRecycleBin` /
+  `deleteWithoutConfirm` are LOCAL prefs; emptying reclaims BYTES ONLY, never the log.
+  · BYTES: `assetShare` gained a CHUNK protocol (`assetstart`/`assetchunk`) — peerjs
+  already chunks internally and a 12 MB message goes through intact, so slicing buys
+  nothing for throughput. It buys per-file PROGRESS (peerjs own chunking is invisible), an
+  INTEGRITY check on reassembly (the single-shot path stored a truncated file and served it
+  on), and it un-pinned `MAX_SHARED_BYTES` from 5 MB to the Explorer own 25 MB import cap.
+  Costs three surfaces a single send lacks: backpressure (pace on `bufferedAmount`), partial
+  state (a stalled transfer is reaped) and ordering.
+  · `assetmissing` is the NEGATIVE reply, and TWO CAPS not one: a request is ~40 bytes so
+  requests are unlimited, while the cap sits on the SENDER outgoing bytes — capping requests
+  meant three dead hashes starved every real download behind them.
+  · `transferLedger` is a LEAF (stores + arithmetic, no protocol) so the aggregate maths is
+  testable with no peer and no bytes. The summary is BATCH-scoped: counting every row makes
+  the fiftieth download read 98% before moving a byte. `byBytes` says WHICH kind of
+  percentage you are reading. `indicatorState` is the four-state sync convention
+  (offline/idle/active/failed) and OFFLINE must not look like an error.
+  Plan + as-built: cloud `plans-core/roadmap-22-shared-library-sessions.md` sections 5-8.
+- `src/lib/explorerView.js` (R22 round 9, a LEAF — stores + arithmetic, imports NOTHING
+  from the Explorer): THUMBNAILS OR A SORTABLE LIST, plus the bin's grouping. The column
+  model is DATA (`LIBRARY_COLUMNS` / `DELETED_COLUMNS`, `columnsFor`) and `sortEntries` is
+  a PURE comparator, so the part that is easy to get subtly wrong is testable with no
+  browser (the `transferLedger`/`hudArrange` shape). Everything LOCAL — a view mode is a
+  fact about this screen, so it never replicates, saves or undoes.
+  · **THE MODE IS GLOBAL; COLUMNS AND SORT ARE PER VIEW.** One segmented control in the
+  header must not appear to do nothing when you walk into another folder. Columns cannot
+  be shared: the bin owns two the library has no value for (deleted by / deleted at) and
+  the library owns ones a log row cannot answer — a bin row has NO SIZE (the log records
+  what a file was, not how big it was, and after a purge the number can never be derived)
+  and its "added" date IS its deleted date. `explorerColumns` stores the VISIBLE keys, so
+  a column added later shows by default instead of being suppressed by every saved set.
+  · TWO SORT RULES beyond the obvious: **folders first whatever the sort** (a folder is a
+  place, a file is a thing — interleaving by size makes a tree unnavigable) and a TIE
+  falls back to name then id, INDEPENDENT of direction. `Array.sort` is stable, so an
+  unbroken tie keeps whatever order a five-branch derivation produced, which is not an
+  order two peers looking at one project can agree on.
+  · **THE SORT IS APPLIED IN `gridEntries`**, the ONE array Shift-ranges, the arrow keys,
+  Ctrl+A/I and the marquee all read their order from — sorting only where the rows are
+  drawn leaves a Shift-range picking cards from two rows away. Thumbnails keeps its
+  existing order, so that mode is byte-unchanged.
+  · The rows live in `Explorer.svelte`, deliberately NOT a component: a card and a row
+  share nine handlers, six helpers and the inline-rename snippet, so a component would
+  need thirty props and the two would drift on the next behaviour added to either. Every
+  interaction IS the function the card calls. A `<table>` because a sortable grid of
+  columns is one — the head and every row agree on their widths for free.
+  · THE BIN: `groupByDeleter` renders as collapsible SECTIONS, not navigable folders (a
+  bin is read by COMPARING who threw what away, and a folder you must walk into and back
+  out of to compare is the one shape that makes that harder); nothing is minted, the
+  cards' own no-CRUD rule. "Deleted by me" first, and an UNATTRIBUTED row (empty peer id)
+  gets its own section and sorts LAST. `tp-seg`/`tp-seg-btn` in `ui.utilities.css` are the
+  app's first shared segmented control — ToolboxWindow's `.tbx-seg` is styled by the shell
+  it lives in, so it could not be reused; the armed half is driven by `aria-pressed` so
+  the styling and the accessibility tree cannot disagree.
+  Plan: cloud `plans-core/roadmap-22-shared-library-sessions.md` section 10.
 - `src/lib/objectPermissions.js` (#14, store-only) — viewer object permissions, ONLY
   active when a roles plugin publishes `rolesInfo` (OSS byte-unchanged): `canEditObject`
   (a viewer edits ONLY their own `__localOnly` objects), `markLocalOnly`/`clearLocalOnly`,
@@ -267,9 +407,19 @@ loadable play content. Everything a user does must be visible to connected peers
   not exist anywhere: MeshEditPopup/SculptToolbar are rendered by a consumer's own
   `{#if}` over state their SESSION stores already own, so a sessionless toolbox had
   nowhere to keep open/closed — and those two are deliberately NOT moved onto it.
-  `buildToolboxItems` is the ONE builder the sidebar's Modules section and the viewport
-  menu share (the `buildObjectMenuItems` precedent); a toolbox is LOCAL, hidden in Play
-  mode unless it passes `playMode: true`,
+  `buildToolboxItems(list, open, surface)` is the ONE builder the sidebar's Modules
+  section and the viewport menu share (the `buildObjectMenuItems` precedent), and the
+  SURFACE argument is why the filter lives there rather than in Sidebar's markup: R3a
+  added `sidebar: false`, so a toolbox belonging to a WORKFLOW (the collectible manager)
+  keeps its viewport-menu row and drops the permanent burger-menu one — the burger menu
+  is the app's own chrome and a row there is a standing claim on it (the 21-C3 Road-menu
+  ruling, one surface over). Absent = listed, so every shipped module is byte-unchanged.
+  A toolbox is LOCAL, hidden in Play mode unless it passes `playMode: true`; R3a also
+  added the OPEN half — `api.openToolbox/closeToolbox/toggleToolbox` take the id
+  `registerToolbox` returns, which had been documented as "open/close it with this"
+  since A5 with nothing able to do it (the `api.hud.rows` family). `openToolbox` also
+  DISMISSES the Modules manager, the one chrome that can cover a toolbox — pair it with
+  `registerMenu`, which renders a button on the module's own card,
   `physics` (#12 rework: rapier steps as a flowRuntime **post-tick hook** —
   flow poses → kinematic targets → step → write-back; fixed-timestep accumulator
   (1/60, ≤8 substeps) so sim time tracks REAL time under throttled rAF; flow-animated
@@ -355,7 +505,21 @@ loadable play content. Everything a user does must be visible to connected peers
   wireframe = scene.overrideMaterial, never per-material; L1-L5 removed the
   short-lived `custom` mode — a stored value reads as `shaded` — and `postSupported`
   is the AO capability gate generalised to every fullscreen pass),
-  `scenePost` (L1-L5 THE SCENE POST STACK: the replicated latest-wins singleton on
+  `scenePost` (L1-L5 + L-C THE SCENE POST STACK. **KEYED `'scene' | cameraUuid`** since
+  L-C, the flowGraphs/shaderGraphs/hudDocs shape — `hudDocs` predicted this exact
+  migration and named the post stack as the thing that would need it. A look ATTACHES
+  to a camera by being keyed to its uuid; no new concept, the same way a HUD attaches.
+  `scenePost` survives as a READ-ONLY derived view of the scene document (~20 readers),
+  and every mutator takes the key LAST with a default, so pre-L-C call sites are
+  untouched. `composeLook` APPENDS a camera document to the scene's — what HudLayer
+  does with HUDs — with the camera's effects running AFTER, since a grade on the hero
+  camera should grade the finished house look; `mode: 'replace'` is for the camera that
+  is deliberately not the house look. `mode` lives ON the document so it replicates,
+  saves and undoes with it. `lookOverride` is a SEPARATE per-peer runtime store
+  (`hudScreenOverride`'s shape) that the `setlook` node writes: a game must never flip
+  `enabled` INSIDE an authored document, or a runtime state becomes authored state the
+  next edit broadcasts. Which camera is "active" comes from `cameraPreview.uuid`, the
+  same source HudLayer uses. The original singleton was:
   the `scenePhysics` precedent — `{enabled, effects:[{id,kind,enabled,params}],
   changedAt}` with ONE `normalizeScenePost` at every store boundary — plus the
   `registerPostEffect` kind REGISTRY and the pure `planPostStack`. A deliberate LEAF
@@ -543,7 +707,15 @@ loadable play content. Everything a user does must be visible to connected peers
   Multi-slot objects are REFUSED, the switchMaterialType precedent. UI:
   `components/editors/ShaderEditor.svelte` (a FLOW_FAMILY dock tab, its own xyflow
   instance so flowGraphs/nodesync stay byte-untouched; scope follows the SELECTION
-  like the node editor's flow graphs, so there is no scope control) +
+  like the node editor's flow graphs, so there is no scope control. It was the ONE
+  dock view with NO FLOATING MODE at all — no `docked` flag, no dragWindow, no window
+  chrome — and TWO other modules carried an exception for that fact (`panelToggles`'
+  `dockOnly` shape, and `dockMenu.dockTabItems` withholding "Undock" rather than
+  shipping a row that could only do nothing). It has UvEditor's docked/floating split
+  now — `shaderDocked` + `#shader-window` with dragWindow / a KEYED focusStack /
+  tabbable / bottomDockable / a corner grip, plus the `dockModeArm` consumer that is
+  what makes Undock and drag-a-tab-out reach it — so both exceptions are gone and the
+  seven dock views behave identically) +
   `ShaderSidebar.svelte` + `nodes/ShaderNode.svelte` (ONE generic node for the whole
   catalog) + `nodes/ShaderTexturePicker.svelte` (a file input that imports into the
   Explorer, an Explorer drag-drop target, thumbnail, clear, and a "waiting for peer"
@@ -701,6 +873,210 @@ loadable play content. Everything a user does must be visible to connected peers
   (`viewportOverrides` gains a `hud` key — its first real `renderLayer` caller — with
   `hudPreviewInViewport` as the eye toggle). Plan + as-built: cloud
   `plans-core/pending/21-d-hud-interaction-game-shell.md`.
+  **21-E — GAME HARDENING** (roadmap 21-E, all eight phases): the layer between "the
+  pieces exist" and "press Play and a game works". E1/E2 made the HUD editor WYSIWYG
+  (content at 1:1 inside a transform-scaled stage — it used to scale boxes and not
+  text; drag-drop finally had a consumer; adds land at the cursor; the layer drops to
+  z 38 while authoring so it cannot cover windows) and the screen model sane (nullable
+  `active` so "only when asked" is real; `hudDocKeyFor(graphId)` = own doc if it
+  EXISTS else scene, which un-strands every object graph; `hudViewportDrag.js` =
+  right-drag an element in the live viewport, found by RECT because a
+  pointer-events:none box is invisible to elementsFromPoint). **E3 THE MENU INPUT
+  MODE**: `playPointerFree` in sceneStore is a SUBSTATE of `isLocked === true` with
+  ONE WRITER (HudLayer — any visible screen with `input: 'menu'` while playing);
+  PLC releases the lock WITHOUT the exit path (the held-branch returns early on
+  pointerFree), the camera FOLLOWS `$isLocked` through one $effect (the old two
+  camera.set calls lived in onPointerlockChange, which never fires on a menu-substate
+  exit), moveState zeroes on menu-open AND the keydown listener is gated (the claim
+  gates the TASK, not the listener — a held W used to resume the instant a menu
+  closed), onMouseMove gained the `pointerLockElement !== domElement` ownership gate
+  it always needed, and Esc EXITS PLAY even with a menu open (Esc is not an
+  activation-triggering event, so Esc-driven re-lock can be refused; games author a
+  Resume button). `inputClaims` are REFCOUNTED (counts; contract byte-identical).
+  keypress gained `edge: down|up|held` — up is the falling edge hold-to-show needed;
+  the ~5/s held re-stamp skips `up` nodes. PAUSE PAUSES and is a GAME RULE (shared):
+  physics via simPaused, flow EFFECTS via a pause-folded `effectTime` (a spin holds
+  still and resumes with NO jump), flow/HUD/game nodes keep ticking so menus work,
+  `gameElapsed` excludes banked+live pause spans carried IN the replicated singleton
+  (pausedAt/pausedMs). Local per-peer pause deliberately does not exist: the world is
+  a shared simulation. **E4 the logic nodes**: `latch` (set/reset PURE off the stamp
+  log, toggle parity via the counter precedent, set/reset CLEARS parity so the halves
+  compose), `delay`/`sequence` (fully pure: moment = stamp + offset, WITHHELD until it
+  passes or stamp-edge consumers fire instantly; a cycle never fires), `once` (rearm
+  DELETES the entry — a restamp reads as a fresh pulse), counter `reset` input,
+  4-way `select`, `sound` trigger input. THE SEAM: event consumers split into PULL
+  (triggerStampFor/value reads) and PUSH (counter/latch/once inside applyNodeTrigger)
+  — `updateDerivedPulses` bridges them with replicate:false or delay→counter is a
+  silent no-op. **E5 gamepad**: polling rides runTick (works in VR via pumpFlowTick),
+  `gamepadPrefs.js` leaf (button/axis tables + rescaled deadzone), gamepadbutton/
+  gamepadaxis nodes on the keypress model (axis = LOCAL value, peers read 0), the
+  default left-move/right-look mapping behind the same claims/pointerFree gates,
+  D-pad+A drive the HUD ring through the onInput channel, Settings ▸ Input. **E6 the
+  character controller**: `charController.js` leaf — `charControl` null = NO
+  controller = the built-in behavior BYTE-IDENTICAL (the parity contract, asserted at
+  0.0%); walk mode hands Y to `tickWalker` with THREE-TIER ground resolution (rapier
+  KinematicCharacterController capsule when a sim RUNS — never a scene collider; the
+  dungeon raster; the ground plane), jump edge-triggered in the leaf; nodes
+  charcontroller/possessnode/camerafollow/movespeed/moveinput; the wheel writes
+  THROUGH `playMoveSpeed` while a controller is active so graphs can read/set speed.
+  **E7 HUD content**: hudlist authorable three ways (pane rowsText, the `hudrows`
+  node on stamp edges — rows DERIVE per peer, no message — and `api.hud.rows` with
+  journalled restore) + `api.peerNames()` (DEVX #15's name half); dropdown options
+  drivable via an optional `options` input on hudset; `hudRichText.js` renders a
+  token tree through {#each} so a hostile string is never markup;
+  `api.registerHudElement` (module kinds, cloudMount shape + {update,destroy}) and a
+  user-scripted `custom` kind (code in the document, the script-node trust model,
+  error chip on throw); the game pack (minimap = a top-down 2D PLOT, not a render
+  target; iconrow/progressradial/hotbar/damageflash off a `pulse` runtime channel) +
+  the menu pack (keyhint/tabs/scrollpanel/confirm with declared subPress sub-ids);
+  style presets applied as ONE gesture. **E8**: the action catalog reaches
+  playanim/sound/particles/impulse/reset-counter/toggle-visibility (chain actions),
+  the objectMenu "Make collectible" recipe (onclick→latch→not→visibility + setvariable
+  add, ONE flownodes entry per object), and the docs-site `build-a-game.md`
+  walkthrough. Plan + as-built: cloud `plans-core/roadmap-21e-game-hardening.md`.
+  **21-F — LEVELS, COLLECTIBLES v2, HUD EDITOR POLISH** (roadmap 21-F): `levels.js` —
+  a SCENE ASSET is an ordinary content-hashed .tpscene in the Explorer. **21-G1 renamed
+  the folder to `Scenes` and DEMOTED it**: `SCENES_FOLDER`/`ensureScenesFolder` premake it
+  on the first save and that is all it is, because `levelItems()` discovers BY KIND (every
+  item of kind 'scene', wherever it lives) with NO folder filter at all — so the folder
+  renames, moves and deletes freely, a scene dragged into any folder still counts, and a
+  PNG sitting inside `Scenes` is no longer offered as a travel destination. An existing
+  `Levels` folder keeps working by construction. The exported names keep their `level`
+  spelling (saveSceneAsLevel/newLevel/travelToLevel/levelItems/currentLevel) and the travel
+  node's DATA keys stay `level`/`levelName` — both are in saved graphs and on the wire, so
+  renaming them would be a migration for a word; the USER-VISIBLE copy is "scene"
+  everywhere (Explorer's Save scene… / New scene… / Open here, the node card, the debug
+  pill). `saveSceneAsLevel` strips the workspace,
+  `newLevel` captures NOTHING, and `travelToLevel` is a LOCAL SILENT scene replace:
+  the replicated trigger IS the netcode, so `applySession` gained
+  `{backup, replicate, game, workspace}` opts (every default byte-identical) — no
+  backup stash per hop, nothing sent (N peers broadcasting the same scene at each
+  other otherwise), the file's `game` EXCLUDED and the live state re-asserted after
+  the load (fork 3, campaign semantics; collectible latches are per-scene FREE
+  because the latch nodes live in the level's own graph). A missing hash pulls via
+  assetfile/getasset and WATCHES until the bytes land (the LUT rule); levels.js is
+  reached from flowRuntime via PRIMED import only (sessions is history-family). The
+  `travel` node acts on the stamp edge INSIDE the actionSeenAt family (a fresh node
+  adopting a stale stamp would load a level on connect); a double-fire is
+  SELF-LIMITING — the load replaces the graph containing the firing node.
+  `allplayers` = the group-travel gate: each player answers the wired condition for
+  THEMSELVES, the verdict rides the `playmode` presence message ADDITIVELY
+  (latest-wins per peer, dropped with the mode), and every peer derives "everyone in
+  play says yes" from the same replicated map, firing LOCALLY on the rising edge (the
+  ongamestate pattern) — editor peers are spectators and do not count, nobody playing
+  is not ready. `gamePresence.js` (F3, the campreview shape — NOT the userdata
+  roster, which is a whole-array whitelist): `playmode` sent ONLY while playing
+  (absent = editor, older peers unaffected), the late-joiner reply rides
+  getmodulestate, drops at all three disconnect sites; the ABANDON WATCH (arms per
+  round only once a real player was witnessed, one forward-only `lastPlayingAt`,
+  HOST-only writer — `sessionHost === null`) is what makes "the game resets only when
+  everyone has left play" real; `canResetGame` = admins under `rolesInfo`, else the
+  host or anyone alone (inert without a plugin); REJOIN = a play press inside the 2s
+  exit cooldown is QUEUED and replayed through checkPlay (it used to be silently
+  eaten). COLLECTIBLES v2 (F2): the recipe stamps `whilePlaying` on its Visibility
+  node — a marked node is DROPPED from the effect set outside
+  `isLocked === true && roundUnderway()`, so the restore loop hands the object back
+  and FORGETS it (manual visibility wins; the reported collect→Esc→invisible bug) —
+  and `perRound` on Latch/Once, derived from `roundCutoff()` (null = shell unused /
+  the round's `startedAt` while playing-or-paused / Infinity in menu-or-over). THE
+  CUTOFF HAS A PULL AND A PUSH RULE: reads honour Infinity (a latch reads
+  un-collected in menu — the locked fork) but `applyNodeTrigger`'s re-arm and
+  parity-zero act on a FINITE cutoff only. Respawn is BUILT into the graph — a Delay
+  off the CLICK (never the Once: rearm DELETES the entry a Once-sourced Delay
+  re-derives its moment from) → latch.reset + once.rearm. Groups = every child MESH,
+  ONE flownodes entry per group. **EVERYTHING COLLECTIBLE-SHAPED IN THIS PARAGRAPH LEFT
+  CORE IN R3a** — the recipe (`gameRecipes`/`recipeDialog`/CollectibleDialog), the
+  `collectcount` node and its chain WALK, `collectibleCountsFor`, the hudActions
+  "showleft" entry and the debug pill's counts line all live in the collectible MODULE
+  now (see the R3a status entry); what stayed is every PRIMITIVE they stood on —
+  perRound/whilePlaying, roundCutoff's two rules, replicatesPulse, peerVars — which is
+  the whole point of the split. The 7-node chain survives as a TEST FIXTURE
+  (`helpers.makeCollectibleChains`), because those primitives still need covering. The
+  `debug` HUD kind keeps its pill —
+  a collapsed pill (state/round/elapsed/vars/per-player mode chips/module lines/fps,
+  click-to-expand LOCAL, a 500ms sampler because half its sources have no store
+  signal). F1: `hudArrange.js` (imports NOTHING) — 9 align/distribute/equalize ops
+  as DATA over ABSOLUTE stage rects, written back through each element's OWN anchor
+  (`offsetsFrom`, size first in the same patch), each op ONE hud gesture; the
+  select/marquee tool pair (a MODE, not a modifier — a plain drag already means
+  deselect); the artboard context menu's Add submenu categorized from the SAME
+  `paletteGroups()` the palette renders. F5: `minimapDotColor` = ONE exported colour
+  rule (SELF = the theme accent resolved to a literal, every OTHER peer =
+  `peerColor(id)` — the old code fell back to a hardcoded green self while peers
+  drew the id hash, so two screens disagreed about one person) + `showFacing`
+  heading wedges (`facingAngle` = one atan2(z, x): canvas +y IS world +z). F7
+  (cross-scene presence on the rooms layer) deliberately slipped to 21-G. Plan +
+  as-built: cloud `plans-core/roadmap-21f-levels-and-polish.md`.
+  **21-G1 — SCENES NOT LEVELS; RECIPE RE-HOMING** (see the levels entry above for the
+  discovery change). Three more pieces. (1) **The object menu's `Game ▸` submenu is
+  GONE** — its only entries were the two collectible recipes, and they moved to the NODE
+  EDITOR's Game category via `gameRecipes.recipeMenuItems()`, injected by `Nodes.svelte`
+  into the PANE menu (never `nodeCatalog`, whose list the palette renders as DRAGGABLE
+  NODE CARDS — a recipe is an action) under its own `Recipes` section rule. It acts on
+  the `selectedObjects` SET, never `selectionUuids()`: the sticky-primary fallback would
+  offer the recipe over an empty viewport. THE TRAP IT FORCED: the editor's scope FOLLOWS
+  the selection, so having something selected — the state the recipe is FOR — puts the
+  editor on that object's empty flow, whose `#flow-empty-state` overlay covered the pane;
+  it forwards `oncontextmenu` to the pane menu now (an explanation is not a modal, and
+  `addNode` already created the object's flow implicitly from there). The removal follows
+  21-C3's Road-menu ruling: this project is not only for games. (2) An Explorer item's
+  menu gained **Download** (every library kind, `Download (.tpscene)` for a scene;
+  fileHandler's anchor+objectURL path, excluded for pack-view cards which have no stored
+  blob), and a PACK CARD in the Packs grid now routes to the pack menu instead of falling
+  through to item CRUD on an id that does not exist. (3) **Pack rename**: the reported
+  "the Audio Essentials folder can't be renamed" was never the folder — that library
+  folder always renamed (measured) — it was the PACK ROW beside it, which had no rename
+  at all. `packs.renamePack` writes the display TITLE only (`name` is the identity for
+  packByName / itemCache / the installed-list dedupe / thumb-cache prefix /
+  `activeFolder`'s `pack:<name>` / the default-row shadowing), through a LOCAL
+  `packTitles` override map applied in `loadPacks` — a DEFAULT pack's title is rebuilt
+  from the index on every load, so an in-list edit would silently revert on reload.
+  Suite: `scene-folders` (44).
+  **21-G2..G5 — PROJECTS, PER-PLAYER PROGRESS, CROSS-SCENE PRESENCE.**
+  `projectManifest.js` (G2a, a LEAF: stores + idb + isViewer/peers) = THE ONE MUTABLE
+  THING IN A PROJECT: `{scenes: {name -> {history[], pinned[]}}, assets[], changedAt}`,
+  latest-wins on a monotonic stamp, ONE normalize (unknown fields preserved), the
+  `manifest` message + `getproject` handshake reply, idb-persisted so a solo project
+  survives reload. History is APPEND-ONLY and restore-previous RE-APPENDS (the pointer
+  moves back, nothing is destroyed); `staleSceneHash` = the Explorer's amber update
+  dot; `keepableHashes` = newest 10 + pinned (pruning is LOCAL BYTES, never history);
+  editors publish, viewers never (inert without a plugin). G2b, THE REPORTED
+  disappearing-object BUG: travel-away AUTO-PUBLISHES the departing scene —
+  WRITER-ONLY (`sessionHost === null`; a .tpscene embeds a fresh uuid/createdAt/
+  thumbnail per save, so N peers saving identical content would mint N ghost hashes),
+  SIGNATURE-GATED (`sceneSignature` = the meaningful payload fields in fixed order,
+  volatiles + the game field excluded — the zip hash cannot tell idle from edited;
+  proven stable across a real load->serialize round trip: idle hops mint NOTHING) and
+  NAMED-ONLY (an unnamed scene is not opted in). `travelToScene(name)` resolves the
+  manifest pointer AT FIRE TIME — deterministic across peers, which no local folder
+  order is; the travel card lists project scenes (latest) and library files (frozen
+  hash) as two optgroups making two different promises. `projectFile.js` (G3):
+  the `.tp` = project.json (PROJECT_FORMAT 1, V4-gated with a DIALOG — an import is
+  one person at a file dialog, unlike travel) + scenes/<hash>.tpscene (kept versions)
+  + assets; a pruned hash stays in history and is COUNTED, never silently dropped;
+  import furnishes the library + manifest and LOADS NOTHING. `peerVars.js` (G4, a
+  leaf): PEER-OWNED variables — `peervars {peerId, vars, at}`, whole-map, OWNER-ONLY
+  writer (immune to the setvariable-add race by construction: one writer per row),
+  monotonic per-sender stamp, getmodulestate reply, dropped only on DISCONNECT (a row
+  survives its owner's Esc — a different lifetime from playmode, so a different
+  message); NO automatic round reset (vars already outlive rounds; a game authors
+  `On Game State -> Set Variable scope:player set 0`, each peer zeroing its OWN row).
+  `perPlayer` chains: ONE helper (`replicatesPulse`) gates every fire* site, so a
+  marked click stays in this peer's log and latch/visibility/count are per-peer free
+  — the gem hides only for its collector. `setvariable` gains `scope: shared|player`;
+  `peervariable` (mine/sum/max/peer) + the `leaderboard` sink node (derived rows,
+  roster names, deterministic id tie-break); hudActions gains the `writes` role.
+  G5 (F7): `cloudHooks.scenePresence` — the rolesInfo bridge one domain over; the
+  rooms plugin publishes the project's OTHER rooms `{id, name, scene, hostPeerId,
+  members: [{peerId, name, mode}]}` + an `invite` transport; Users renders per-room
+  groups with mode chips, Watch DISABLED with the reason (it cannot reach outside the
+  mesh), Invite only when the plugin provides it — and the popover host now ALSO
+  opens on cross-scene presence alone (being alone in your scene is when "where is
+  everyone" matters). cloudApi v2.4: setScenePresence/currentScene/playModes/
+  peerRoster. Plugin half (cloud repo): rooms records carry {scene, members, invites}
+  (PB fields in pocketbase-setup.md), a 30s presence POLL, invites riding MY room
+  record (self-expiring ~2min; Join = connectToPeer — the ordinary join sync lands
+  them in the scene). Plan: cloud `plans-core/roadmap-21g-projects-presence.md`.
   `editOverlays` (PR #133, imports NOTHING): park/strip for the edit WIREFRAME,
   which is a LineSegments CHILD of the edited mesh and therefore inside the
   serialized tree — a save taken mid-session wrote it into the file as a
@@ -1176,6 +1552,170 @@ loadable play content. Everything a user does must be visible to connected peers
 
 ## Hard-won gotchas (do not rediscover)
 
+- **AN INVALID ICE SERVER DOES NOT DEGRADE — IT THROWS, AND TAKES ALL CONNECTIVITY WITH
+  IT.** A TURN entry with an empty username or credential makes Chromium refuse the
+  RTCPeerConnection outright (`InvalidAccessError: ICE server parsing failed`), so
+  SIGNALING KEEPS WORKING — a peer id arrives, the Connect pill looks healthy — and no
+  data channel can ever open to anybody. Reported as "I get a peerID but no connect
+  toasts". `iceServers()` gated on the username alone and wrote `credential:
+  c.turnCredential || ''`, i.e. it emitted the exact shape that throws; it now requires
+  BOTH halves, drops a partial entry (keeping STUN) and says so once. Reachable through
+  the Settings TURN fields by any user, not just from a half-filled `.env`.
+- **A REGRESSION CAN BE A LATENT DEFECT FINALLY REACHING THE LIGHT.** The change that
+  "caused" the above (round 9 making an env host win on localhost) was correct and stayed;
+  what it did was route localhost through a branch that had never run with this `.env`.
+  Before reverting, ask whether the change exposed rather than created the fault — and
+  whether the exposed path is reachable another way. And note the e2e suite could not have
+  caught it: it runs against a `.app` hostname, and the branch was gated on
+  `location.hostname`.
+- **A DRAG PAYLOAD CAN CARRY MORE THAN THE DROP READS.** `dragPayloadFor` has attached the
+  whole multi-selection as `items` since 21-H3 for the VIEWPORT drop, while `dropInto`
+  moved `payload.id` only — so "move these five files" existed on the wire and was thrown
+  away on arrival, reported as "only the latest clicked is moved". When one consumer of a
+  payload grows a field, grep the other consumers.
+- **`absolute inset-0` INSIDE A SCROLLER PINS TO THE CONTENT, NOT THE VIEWPORT.** The
+  Explorer's drop highlight is a child of `#explorer-grid` (`overflow-y: auto`), so
+  scrolled 800px down it drew 800px above the visible area. The MARQUEE in the same
+  container is absolute for the opposite reason — it must scroll with the cards it picks —
+  so the two cannot share a rule. Offset by `scrollTop` with the visible height; do NOT
+  reach for `position: fixed`, which is measured against any transformed or
+  backdrop-filtered ancestor.
+
+- **A CLASS WITH NO CSS CAN STILL BE LOAD-BEARING.** `.explorer-card` /
+  `.explorer-folder-card` match nothing in any stylesheet — they are how three handlers on
+  `#explorer-grid` tell a card from the background (`closest('.explorer-card, …')`). The
+  R22 list view's bare `<tr>` matched neither, so a click SELECTED a row and
+  `gridBackgroundClick` deselected it in the same gesture, a press started a marquee over
+  it, and its item menu was replaced by the background one — three symptoms, one missing
+  class. Grep a class before assuming it is decoration, and when adding a NEW way to draw
+  an existing thing, carry its behavioural markers.
+- **A `$derived` can track the wrong store and look perfect.** The bin's `restorable` came
+  from `canRestoreDeleted`, which reads the two item shelves through `get()`; the derived
+  around it tracked `$projectManifest`, and a PURGE deliberately leaves the manifest alone.
+  So "Delete permanently" freed the blob and dropped the record — measured — while the card
+  and its menu stayed byte-identical, still offering a Restore that could not work.
+  Reported as "Delete permanently does not remove the file": nothing observable changed.
+  The `get()`-registers-no-dependency rule with a second edge — ask not only "does this
+  helper read a store" but "does the derived track the store this ACTION writes".
+- **A HOSTNAME SNIFF BEAT `.env`, and no suite could see it.** `peerServer`'s default mode
+  asked `isLocalDev` (hostname not ending .io/.app) BEFORE `HAS_SELF_HOSTED`, so on
+  localhost a configured `VITE_PEER_HOST` was never consulted — reported as "Server local
+  dev / localhost:9001" despite `.env`. Invisible to e2e because the suites run against
+  `theprototype.app:5173`, which ends in `.app` and takes the other branch. An explicit env
+  host wins now and the sniff is the no-`.env` fallback; the localhost server is a
+  deliberate fourth MODE. When a heuristic and an explicit setting disagree, check which
+  one the code asks first — and whether your test URL happens to dodge it.
+- **An owner stamp can be EMPTY, and reading it as a peer names nobody.** `meAsOwner`
+  stamps whatever `peer.id` holds, so anything recorded before the mesh assigns one carries
+  an empty id. The bin's first grouping read that as somebody else and rendered a section
+  headed "Deleted by peer" (the `'peer ' + id.slice(0,4)` fallback with nothing to slice).
+  An unattributed row is its own case — not mine, not theirs.
+- **`ContextMenu` documents `checked?` and `ContextMenuItems` renders it as BOLD + a tinted
+  pill, never a tick** (its own comment says why: the accent is a salmon, so tinting the
+  text would sit next to `danger` red). A test must assert the computed style; a probe
+  looking for a glyph reports the feature missing. And its rows are `[role=menuitem]`
+  DIVs — a `button` selector returns [] while the menu is visibly open.
+
+
+  prefix), which svelte-check reports as used-before-declaration.
+- **A build-time env var is inlined into whatever the dev server serves**, so a personal
+  bypass in a gitignored `.env` silently turned a COMMITTED assertion red locally while it
+  would have stayed green in CI. Gate any local override on the debug hook.
+- **A modal left open is a full-viewport click shield**, and the element playwright reports
+  as intercepting is whatever sits under the cursor (an Accordion header, a transform-
+  toolbar button). Close what you open, and when a click times out print
+  `document.elementFromPoint` before reading any handler.
+- **A batch-scoped aggregate is the only honest progress percentage.** Counting every row a
+  ledger holds makes the fiftieth item read 50/51 before it has moved a byte.
+- **THE PALETTE HAS A RULE NOW, and it is two halves.** A user filed "Key Press is in
+  Triggers, it should be in Input" — and reading the palette against the socket types the
+  catalog already declares showed it was almost perfectly sorted with exactly two nodes
+  on the wrong side, NEITHER of them the one reported: `gamepadbutton` (an `event` among
+  Input's value widgets) and `counter` (a `number` with pulse/reset INPUTS among the event
+  sources). **Input holds no `event` outputs; Triggers holds only SOURCES (nothing with
+  declared inputs).** `gamepadaxis` proves those are the right halves — it outputs a
+  number, so a pure value/event rule would keep it in Input, but a stick is the player's
+  thumb and it belongs with its button. DOMAIN groups (Physics, HUD, Game, Animation…) are
+  organised by subject and legitimately hold both kinds, so the rule governs only the two
+  generic buckets. `palette-groups` asserts it from the declarations, so it cannot drift
+  back; a group is palette-only (the row plus the card accent), so a move changes no wire,
+  saved graph or message.
+- **A PORT CAN BE SHADOWED BY A LANE THAT DID NOT ASK FOR IT.** `vite dev --port N` without
+  `--strictPort` takes N+1 when N is busy, so a second lane started later can end up
+  answering on the port you MEANT to give a third — and the suite then verifies committed
+  HEAD with none of your edits, which is the "mid-session HMR lies" family with a cleaner
+  cause and no HMR involved. Two lanes in this session both had it (5185 answered from the
+  5184 lane; the real server was on 5186). Before trusting a lane server, curl one of YOUR
+  new symbols from it, and map ports to pids with `netstat -ano | grep :PORT` rather than
+  assuming the number you passed is the number it bound.
+- **KILLING A BACKGROUND `npm run dev` DOES NOT KILL VITE.** `TaskStop` reaped npm and left
+  the vite CHILD listening, so the port still answered 200 and the `npm run build` that
+  followed ran against a live server — the never-build-under-a-dev-server trap, entered by
+  way of a kill that looked successful. Find the pid with netstat and `taskkill //PID n
+  //F`; a 200 after a kill means the child outlived its parent.
+- **A CHECK THAT PINS A LITERAL PINS A SECOND, SILENT PREMISE.** Flipping the collectible
+  suite's DEVX #18 limitation to its counterfactual, an asserted `=== 1` went red because
+  the true collected count depends on what earlier sections left behind and on where the
+  round clock is — nothing to do with the feature. Assert the PROPERTY (the joiner agrees
+  with the HOST) and read the reference value at run time. The same pass produced the
+  sibling lesson: a "shared collect" check picked a gem an earlier section had put on
+  `scope: player`, where the pulse staying local IS the feature — so select the fixture by
+  reading its state, never by guessing which one it is.
+- **A MODULE THAT COUNTS ON A STAMP EDGE MUST HAVE ITS OWN FIRST-SIGHT RULE.** The moment
+  core learned to hand a joiner the trigger log, the collectible module's seed (which
+  recorded whatever stamp it saw first) became a bug: on a joiner the seed happens while
+  the log is still EMPTY, history lands a moment later, and the next sweep reads a stamp
+  where there was none and banks a point per already-collected object. Record WHEN you
+  first saw the node and treat anything older as history — `actionSeenAt`'s rule,
+  module-side. Any consumer deriving state from stamps inherits this the day the log
+  starts arriving.
+- **A SURFACE WHOSE OWN DOCS PROMISE AN API THAT DOES NOT EXIST.** `registerToolbox` has
+  returned its id documented as "open/close it with this" since A5, and nothing could
+  open it — the first module to want a button of its own (the collectible manager) found
+  the gap. Same family as `api.hud.rows`, whose element summary advertised an API that
+  had to be built to make the sentence true, and as the sidebar Modules section moduleSDK
+  claimed before it existed. When writing a JSDoc promise about a RETURNED handle, grep
+  for the thing that consumes it before shipping the sentence.
+- **KILLING THE npm TASK DOES NOT KILL VITE.** `TaskStop` on a backgrounded
+  `npm run dev` reaped npm and left the vite CHILD listening — so the port still
+  answered 200, and the `npm run build` that followed ran against a live server (the
+  documented never-build-under-a-dev-server trap, entered by way of a kill that looked
+  successful). Confirm with `netstat -ano | grep :PORT` and `taskkill //PID n //F`
+  before trusting that a lane server is down; a 200 after a kill means the child
+  outlived its parent, not that the kill failed to register.
+- **A CHECK CANNOT DRIVE A UI THAT ONLY EXISTS FOR REAL RECORDS.** The Modules manager
+  renders cards for CORE modules and installed USER records, so an inline
+  `initModules` test module has no card and `getByRole('button')` waits 30s for a
+  button that cannot exist. The generic seam is asserted in core against the registered
+  menu ENTRY's own action (the same function the card calls); the REAL DOM click lives
+  in the module repo's flight, where the module is genuinely installed. Split the
+  coverage at the seam, not at the click.
+- **A NEW NODE TYPE HAS TWO REGISTRIES, AND ONLY ONE COMPLAINS.** `nodeCatalog` fills
+  the palette; `CORE_NODE_TYPES` in `Nodes.svelte` maps a type to its CARD, and its
+  fallback for an unrecognised type is `UnknownNode` — "This node comes from a module
+  that isn't installed". Add to one and not the other and a node dragged out of the
+  CORE palette tells the user to go and install something. `flow-unknown-node` now
+  asserts the WHOLE catalog resolves to a real card, which costs the same line as
+  checking one type and covers every node added from here on.
+- **A field that HAND-LISTS what it sends will drop the next field somebody adds.**
+  `scenePostState` listed `{enabled, effects, changedAt}`, so a camera document's
+  `mode` never left the machine: the peer got the effects and COMPOSED them when the
+  author had asked for `replace`. It spreads the document now — the same reason every
+  `normalize*` spreads, one layer out.
+- **A helper that reads stores with `get()` registers NO svelte dependency.** Swapping
+  an `$effect`'s `$postStacks[...]` for a tidy `resolvedDoc()` call silently stopped
+  the composer chain re-running, so setting a camera to `replace` rendered nothing
+  new. If an effect must react to a store a helper reads internally, touch the store
+  in the effect (`void $store;`) and say why.
+- **A per-camera or per-viewpoint feature does nothing until that viewpoint is ACTIVE,
+  and that silence looks like a broken feature.** A camera's look only composes while
+  `cameraPreview.uuid` is that camera — which in play mode is null unless a
+  `setcamera` node put you there. Any node that targets such a document should say so
+  ON THE CARD; two silent no-ops (a switch that is already on, and a target that is
+  not active) are indistinguishable from a dead wire.
+- **Never run `npm run build` while the lane's `vite dev` watches the same worktree** —
+  it rewrites `.svelte-kit/output` under the server and kills it; the next ten suites
+  report `ERR_CONNECTION_REFUSED`, which reads as a mass regression.
 - **A HELD body's `lastWritten` is stale by definition, so every release must
   refresh it.** The write-back skips a held body, so `lastWritten` still
   describes the pose it had when it was GRABBED — and the deviation detector
@@ -1236,6 +1776,81 @@ loadable play content. Everything a user does must be visible to connected peers
   joining mid-game had the box and not the camera, so it could not follow the game to it
   (measured: `"cameras": 0` -> `1`). A hidden object must replicate; the receiver simply
   shows it.
+- **A fresh trigger-edge action node ADOPTS a stale stamp and fires on creation.**
+  Wire an On Click that was pulsed a minute ago into a fresh Set Game State and the
+  game starts the moment the edge connects (measured: menu→playing on connect; a fresh
+  Impulse on a still-high pulse threw the box). Every action family now refuses a
+  stamp OLDER than the node through ONE shared map (`actionSeenAt` in flowRuntime) —
+  when adding a trigger-edge family, register in it. The over-aggressive version is
+  as wrong as the bug: refuse-everything swallows a just-built HUD binding's first
+  press (proven red on hud-actions).
+- **A count cannot converge for a late joiner; a stamp can.** random's reroll seed
+  read a local count → a joiner's rolls ran N behind FOREVER ([651721, 651721,
+  186302]); seeding from the replicated stamp converges every peer on the next reroll.
+  The general rule for derived-from-triggers state: prefer stamp comparisons (latch
+  set/reset) over counters (latch toggle parity) wherever expressible — the suite
+  pins which property each node has.
+- **Two lanes can each be correct and compose wrong.** E6's walk mode returned from
+  useTask ABOVE E5's gamepad mapping, so after a textually clean auto-merge a pad
+  could not walk in the very mode built for pads. Both suites stayed green — only
+  reading the merged control flow caught it. After any auto-merge of two features in
+  ONE function, re-read the merged ORDER, not the diffs.
+- **A registry that renders {#each} rows must assert key uniqueness over itself.**
+  `progressradial` listed a style field its TEXT_STYLE base already carried →
+  duplicate {#each} key → svelte THROWS and the whole properties pane died (the
+  animation-window crash family). The hud-content suite asserts the invariant across
+  the registry so no future kind can reintroduce it.
+- **`/create box` re-seats the object after the call returns AND stamps
+  `userData.physics = {mode:'dynamic', mass:1}`** — a test fixture using one as a
+  "floor" watches it fall, which reads exactly like the feature under test being
+  broken. Park it kinematic/static or move it after the re-seat settles.
+- **A peer cannot approve a connection request while in play mode** — the Approve
+  button renders but the click times out. Approve first, then enter play.
+- **The debugStores destructure is POSITIONAL.** A missing binding does not fail - it
+  SHIFTS every later one onto the wrong module, mis-wiring dozens of namespaces
+  silently. Fold new entries into all THREE tails at the same index and assert the
+  import/destructure counts equal (the assertion caught a mis-fold twice in 21-G).
+- **A derived cutoff consulted on both the READ and the MUTATE side needs TWO rules.**
+  21-F2's round cutoff returns Infinity in menu/over so latches READ as un-collected
+  there (the locked fork) — but `applyNodeTrigger`'s re-arm honoured it too, so in menu
+  a spent perRound Once re-armed on EVERY click and banked the variable unboundedly
+  (surfaced as a 1-in-3 suite flake: a stale singleton racing a wipe). "We are not in a
+  round" is a statement about how stamps read, never a licence to mutate: the push side
+  acts on a FINITE cutoff (a real new round) only.
+- **Never source a Delay from a node whose consumption DELETES the log entry.** A Delay
+  has no state — `stampOfSource` re-derives its fire moment from its trigger's stamp on
+  every read — and a Once's `rearm` deletes the Once's entry. A respawn chain wired
+  Delay-from-Once therefore erased its own trigger at the instant it fired: the gem
+  counted twice and never came back. Source from the CLICK, whose entry persists (and a
+  re-click during the wait then restarts the timer instead of stacking a return).
+- **A stamp minted between a node's arrival on a peer and that peer's NEXT TICK is
+  refused as stale.** `actionSeenAt` records first-seen at TICK time, so a suite that
+  waits for the peer to hold the graph and pulses immediately loses the race (measured:
+  stamp 21618.485 vs seenAt 21618.489 — a 4ms refusal, and the guard then CONSUMES the
+  stamp). Settle ~600ms after the hold-premise before pulsing; a human press comes
+  seconds after wiring, so the guard is doing its 21-E job. Related travel property:
+  a double-fire is self-limiting because the load REPLACES the graph containing the
+  firing node.
+- **A layout artboard full of TEXT needs `user-select: none`.** Dragging across the HUD
+  artboard selected the labels it swept, and the NEXT press over that selection started
+  a native HTML5 text DRAG — after which Chromium delivers dragstart/drag/dragend and
+  NO pointermove or pointerup, so the gesture hung with its box on screen and its
+  window listeners attached (Escape never reached it either). `user-select: none` on
+  the board + preventDefault on the gesture's pointerdown.
+- **A canvas `fillStyle` cannot take a `var()` chain, so a colour rule split between
+  DOM and canvas WILL drift.** The minimap's self dot fell back to a hardcoded green
+  whenever the authored colour was a token (always), while every other screen drew that
+  peer as `hsl(hash(id))` — two screens, two answers for one person. Resolve tokens to
+  literals where the canvas is (`getComputedStyle` on the root) and export ONE rule
+  both dot paths call (`minimapDotColor`).
+- **`h.connect(from, to)` dials FROM the first arg — and a connected peer's pill has no
+  dial input.** A late joiner must dial the host (`h.connect(C, A)`), or the fill times
+  out on the disabled "Connected to <host>" input.
+- **`setvariable` `add` is a per-peer read-modify-write** — every peer computes
+  `current + 1` off its own tick, so two peers with skewed flow ticks can bank one
+  pickup twice (F3 measured gems=2 for a single click). PRE-EXISTING (21-D6's
+  accumulator); assert the WORLD (hidden/collected), not the score, until it gets an
+  authoritative writer or per-stamp dedupe.
 - **A LATCH guarding an idempotent call must be set on SUCCESS, never on intent.**
   `startCameraPreview` builds a camera FROM the marker object and REFUSES when there is
   none, which is the normal case for a LATE JOINER (state arrives before the scene).
@@ -1480,6 +2095,43 @@ loadable play content. Everything a user does must be visible to connected peers
   object just turned white and lost its own colour); a glow with no colour of its
   own takes `material.color`. The Inspector had no emissive row at ALL until
   2026-08-17 — nothing in the app set that property except the selection tint.
+- **A PROP READ INSIDE AN `$effect` RE-RUNS IT ON EVERY PARENT RENDER, and for a
+  WebGL component that is fatal.** `ModelPreview` touched its `onStats` prop inside
+  the effect that builds the renderer; every consumer passes an INLINE arrow, which
+  is a new function each render, so any parent re-render tore the renderer down
+  (`forceContextLoss`) and immediately asked the SAME canvas for a new context —
+  which returns **null**, after which three throws `cannot read properties of null
+  (reading 'precision')` FROM INSIDE THE EFFECT and takes the whole svelte flush with
+  it. The visible symptom was unrelated UI failing to mount (the pop-out preview that
+  was opening). Read such a callback through `untrack`, and guard renderer creation.
+  The item source only escaped it by touching the prop after an `await`.
+- **AN INCOMPLETE `node_modules` MOVES THE svelte-check BASELINE AND KILLS THE APP.**
+  A lane worktree missing `@shaderfrog/core` fails import-analysis on
+  `shaderBackends.js`, so the app never boots (every suite dies in setupPage's
+  `waitForFunction`) — and it reads **387/62 instead of 385/62** on BOTH base and
+  branch, so a gate measured there is meaningless in either direction. `npm install`
+  in the worktree and re-measure before trusting any number.
+- **A NAME-BASED MIGRATION MUST BE WRITER-ONLY.** 21-I1 folds duplicate scene cards
+  by NAME, which is a migration of your own library against your own project — and on
+  a JOINER it is wrong twice: ADOPTING would file your unrelated `Arena.tpscene` into
+  the host's history and broadcast it (travel would then load a world nobody in the
+  room has seen), and FOLDING is no safer, because a joiner that has not pulled the
+  host's bytes holds only its OWN copy, so the sweep hides the single file it has —
+  measured, and it left the library with zero cards. A matching filename proves two
+  files sit on one machine under one name; it proves NOTHING across two machines.
+  Local data may never disappear because a remote document reused a name.
+- **A GATE ON BYTES IS NOT A GATE ON THE DOCUMENT.** The `.tp` "scene version history"
+  switch stopped old versions' BYTES from being written while the embedded manifest
+  went on claiming every one of them, so the recipient opened a project whose rows all
+  said "Not held" — the dead-pointer shape the 21-G3 header forbids, and the very thing
+  the folder-scoped export already trimmed its manifest to avoid. When you gate what a
+  file CARRIES, gate what it CLAIMS in the same breath.
+- **A SUITE SECTION THAT SAVES OR ADDS OBJECTS PERTURBS ITS NEIGHBOURS.** A guard
+  inserted mid-file broke four later checks at once: its `/create box` broke a "four
+  objects are open" premise, and its save moved `currentLevel` away from the scene the
+  restore section reasons about. Such a section goes LAST and under its own scene name
+  — a sibling section built its own `Depot` and asserted a single-hash history that a
+  second `Depot` would have poisoned.
 - **MEASURE THE LIMIT BEFORE BUILDING THE WORKAROUND.** The backlog asked for
   chunked meshgeo to lift the 45000-float cap; two peers carried **3,000,000
   floats (12 MB) intact in 4.9 s**, because peerjs already chunks binary itself.
@@ -1895,7 +2547,7 @@ loadable play content. Everything a user does must be visible to connected peers
 - **Backticks inside a double-quoted bash string are COMMAND SUBSTITUTION** and
   silently eat the identifiers (mangled a commit message and CLAUDE.md prose
   three times in one session). Same cure as the PowerShell/emoji rule: write a
-  scratch `.cjs` and run it with node for any text containing backticks.
+  scratch `.cjs` and run it with node for any text containing backticks. COMMIT MESSAGES GO THROUGH A FILE (git commit -F), always - inline multi-line messages ate backticked words twice in one day.
 - **flowbite `Button disabled` styling can go stale until the component
   remounts** — reported three times as a blocked cursor with the field filled,
   cured by closing and reopening the modal, and NEVER reproducible headlessly.
@@ -1915,9 +2567,10 @@ loadable play content. Everything a user does must be visible to connected peers
   (in-place-mutated) THREE object never propagates — return a fresh SNAPSHOT object
   per poke (the Inspector `material` derived is the reference; adding the store as a
   dependency alone does NOT fix it). svelte-check
-  baseline is **387 errors / 62 warnings** (2026-08-18, MEASURED on release/next after the
-  21-D merge — retiring the HUD datalist plumbing took a pre-existing implicit-any with it;
-  the release.yml gate moved with it; 419 -> 417 B5 -> 391 when 17-A
+  baseline is **385 errors / 62 warnings** (2026-08-21, MEASURED on release/next after the
+  21-E merge — consolidating PointerLockControls' two camera.set calls into one
+  camera-follows-isLocked effect removed a pre-existing error, and the per-camera-looks
+  round removed another; the release.yml gate moved with it; 419 -> 417 B5 -> 391 when 17-A
   moved the demo modules out -> 388 when #20 annotated Scene's `marqueeStart`, which was
   three implicit-anys) — hold it, and RATCHET IT DOWN when a change legitimately removes
   errors; the release.yml gate hardcodes the same numbers and must move with it. Svelte 5.5x added `state_referenced_locally` (intentional one-time
@@ -2723,6 +3376,222 @@ override for e2e — never share 5173 (the user's main-checkout server).
   (open-core: OSS ships only inert hooks — capability gate / auth hook /
   VITE_CLOUD_PLUGIN — cloud repo holds registration/rooms/roles; contract in its
   MAINTAINING.md).
+- Status (2026-08-23): **v1.7.0 RELEASED — "Make a game, keep a project"**.
+  main @a51a3eb (tag `v1.7.0`), release.yml green, GitHub Release published,
+  cloud deployed at `CORE_REF=v1.7.0` (prod version.json 1.7.0/a51a3eb), docs site
+  deployed. THE WHOLE OF ROADMAP 21 plus the loose-scenes batch: 93 feature/fix
+  commits since v1.6.0. Baseline **385/62** and the release.yml gate already matched,
+  so the workflow needed no edit. PRs #178 (fix/loose-scenes -> release/next) and
+  #179 (release/next -> main), both merge-commits.
+  **THE LOOSE-SCENES BATCH** (the last four commits, and the reason to read this):
+  the finding is that **the Explorer library does not replicate AT ALL** — no message
+  carries folders and none carries item rows, while `projectManifest` does. So a peer
+  could TRAVEL to a scene it could not SEE. Fixed in four commits: (1) a scene FILE is
+  not a project member — travel marks a file the manifest does not name `unsaved`
+  (tested by HASH-in-history, never by name), `hideOldVersions` skips an `imported`
+  stamp so independently dragged-in files stop swallowing each other, the
+  duplicate-import modal + the Settings ▸ Files rule, and the one-item-per-hash
+  invariant `importFiles` had been breaking (incl. a thumbnail-decode race, fixed with
+  an in-flight promise per hash); (2) the unsaved-changes guard — "Open here" bypassed
+  it, it read a 2s-THROTTLED verdict so a just-made edit was lost, a scene with no
+  identity was never guarded, a file rename never reached the name the save uses, and a
+  pending inline edit was discarded by the next editor opening; (3) **P2** — derived
+  cards for project scenes this device does not hold (opening one fetches it),
+  `peerScenes.js` on the gamePresence shape (`atscene`, one writer per row, reply on
+  getmodulestate, dropped at all three disconnect sites), rooms DERIVED via
+  `roomsOfSession`, and saving a loose scene ADOPTS its source as version 1; (4) one
+  predicate `elsewhereThan` behind Watch, the preview join and RENDERING — a peer in
+  another scene is not drawn, cannot be watched (disabled WITH the reason), watching
+  stops if they travel away, and `broadcast` withholds pose streams (allowlist
+  `camera`/`vrhands`) with an arrival re-publish because that send is CHANGE-GATED.
+  **ONLY ON EVIDENCE is the rule everywhere**: an absent row or an empty scene on
+  either side never gates, because a joiner stands in the host's content without
+  learning its name. New suites: import-duplicates(65), scene-open-guard(30),
+  scene-rooms(37); four guards proven by BREAKING them. Standing pre-existing reds,
+  A/B'd against base: `explorer-drop` last check, `explorer-files`, `peers-popover`.
+  NEXT: roadmap 22 (cloud `plans-core/roadmap-22-shared-library-sessions.md`) — forks
+  locked (replicate the INDEX per-item opt-in; ONE mesh with scenes as tags;
+  scene-is-primary renaming), and the vocabulary settled: **session = the mesh, room =
+  who is in a scene, PocketBase rooms stay DISCOVERY** — that naming blocks R4.
+- Status (2026-08-25): **ROADMAP 22 — THE SHARED EXPLORER LIBRARY. R1/R2/R3/R7 + R8 and
+  four review rounds EXECUTED on `feat/22-shared-library` (lane `theprototype-lane-snap`
+  @5202), 10 commits off release/next @f46d335, NOT PUSHED.** svelte-check **385/62** at
+  every commit; build green; debugStores **171/171/171**. Suite `shared-library` = **196
+  checks, two peers**, with a counterfactual proven per round (reconcile, veto, tombstone,
+  move-publish, slice integrity, recycle bin, batch scoping). Design in the architecture
+  entry. NOT DONE and next: the Explorer LIST VIEW with sortable columns (chosen in-window
+  and honestly not built — it needs a sort model, per-column visibility and persistence,
+  and it is what the Deleted group-by-deleter renders through), the SESSIONS work (a "Save
+  current project" button beside Save-scene, per-entry sizes, a scenes/projects filter,
+  `navigator.storage.estimate()` in the Explorer header), and reported items still open: a
+  local `vite dev` shows "Server local dev / localhost:9001/peerjs" despite `.env`, a stray
+  `Shared` folder on Share-all, "delete permanently" not removing the file, and the
+  one-file/unsaved-scene prompt. Plan + as-built: cloud
+  `plans-core/roadmap-22-shared-library-sessions.md` sections 5-8.
+- Status (2026-08-22, later): **B7 SPAWNER MERGED; DEVX #18, THE PALETTE RULE AND THE
+  COLLECTIBLE TOOLBOX v2 ARE OPEN PRs.** `release/next` @19a8a3c carries R3a (#170) and
+  B7 (#172, the spawner — see the architecture entry). OPEN: core **#176** DEVX #18 (the
+  trigger-log handshake reply; `trigger-log-sync` 56 checks on three peers, three guards
+  proven by breaking the code, and `logic-nodes` §12 flipped in-commit because it
+  RECORDED the limitation), core **fix/palette-groups** (the two-half palette rule +
+  `palette-groups` 12 checks + `flowSockets.inputHandles`), and modules
+  **feat/collectible-toolbox-v2** (collapsible groups with group-wide trigger/scope and
+  a disabled-and-refused em-dash for mixed values, one-line rows, plus the first-sight
+  fix DEVX #18 forced — `module-collectible` 78 -> 125). **LANDING ORDER: #176 before the
+  module branch**, whose suite now asserts the joiner converges. Baseline 385/62
+  throughout. Docs: `nodes/spawn.md` + the build-a-game collectible rewrite pushed to the
+  docs repo (the pending Splines/terrain/controls edits there belong to 21-C and were
+  left alone). NEW PENDING PLANS: `health-damage-and-wave-survival.md` (both are
+  MECHANICS, so both are modules; the fork is who owns a number several peers can lower,
+  and wave survival's whole size question is whether a module can author a core `spawn`
+  node through `api.flow.addNodes` and pulse it) and `sdk-polish-module-authoring.md`
+  (DEVX #16/#17, a batch setNodeData held pending evidence, and a recorded ruling that
+  `api.spawn` should NOT exist). B8 Towers deliberately NOT started — the user verifies
+  this batch first. MEASURED and worth keeping: a bulk group edit over 20 collectibles is
+  2.8ms and 20 `nodedata` messages (autosave.markDirty is debounced, so a synchronous
+  loop pays ONE serialize), so no batch seam is needed for performance — but
+  `setNodeData` records no undo entry, so one press can touch sixty nodes with no way
+  back, which is the real reason to want the batch.
+- Status (2026-08-22, latest): **21-G ROUND 3 — COLLECTIBLES v3 IS A MODULE. R3a (core
+  seams + the extraction) and R3b (the module) BOTH SHIPPED**: core PR #170 on
+  `feat/sdk-game-seams` (`6e994d1` the seams + migration, `78899d2` the toolbox
+  follow-ups) and modules PR #1 on `feat/collectible`. Baseline **385/62** at every
+  commit; build green. THE RULING, worth not re-litigating: **framework stays in core,
+  mechanics become modules** — nothing collectible had SHIPPED, so extraction was cheap
+  then and dearer later, and the SDK seams it forced are good for every module author
+  (the 17-A playbook). What LEFT: gameRecipes/recipeDialog/CollectibleDialog, the
+  `collectcount` node + its chain walk, hudActions' "showleft", the debug pill's counts
+  line + its `variable` field, and the node editor's pane-menu recipe injection. What
+  STAYED: every primitive they stood on. New SDK surface + the `trigger` ctx are in the
+  Module SDK section; the toolbox pair (`sidebar: false` + openToolbox/closeToolbox/
+  toggleToolbox) is in the moduleToolboxes entry. Suites: NEW `sdk-game-seams` (40, two
+  peers) covering every seam incl. the counterfactual that the migrated pieces are GONE;
+  `module-toolbox` grown to 46; `helpers.makeCollectibleChains` is the 7-node chain as a
+  FIXTURE, and collectibles-v2 (70) / game-loop-v2 (63) / v3 (27) / v4 (18) /
+  game-presence (62) / peer-variables (72) / scene-folders (38) were rewired onto it,
+  their recipe-UI sections flipped to assert the migration and their collectcount
+  readings derived from latch `flowValues` (FILTER those ids against the live graph — a
+  wipe or a scene swap must drop them). Module side: ONE `collectible` node
+  (variable/scope/trigger click|touch/radius/respawn/hide + perRound + whilePlaying),
+  touch = per-peer self-proximity, stamp-edge counting that SEEDS-WITHOUT-COUNTING on
+  first sight, `collectiblecount` reading BOTH the module shape and legacy chains, the
+  manager toolbox (rows/live counts/inline edits/make-selection-collectible), and NO
+  `registerStateSync` because every bit of state was already replicated — suite
+  `module-collectible` 82 checks on the real zip across three peers incl. the late
+  joiner. **DEVX #18, the one core follow-up worth doing: the flow TRIGGER LOG has no
+  handshake reply**, so a peer joining mid-round sees collected objects back on the
+  table — pre-existing (the 21-F recipe stood on the same stamps), asserted in the
+  module suite so a core `gettriggers`/`triggers` pair would flip it loudly. OWED
+  on-device: the manager in non-dark themes and as a <=640px sheet, touch radius feel in
+  VR, a 3+ player per-player scramble. Plan: cloud `plans-core/roadmap-21g-projects-
+  presence.md` ROUND 3 REVISED.
+- Status (2026-08-21, latest): **ROADMAP 21-G — PROJECTS, CROSS-SCENE PRESENCE,
+- Status (2026-08-22, latest): **21-G ROUND 2 — DCC-STANDARD PROJECTS (G7-G10 + docs)
+  EXECUTED same-day off release/next @6d9b285 (post #164-#166; baseline re-measured
+  pristine 385/62, held at every commit). FOUR PRs OPEN against release/next, NONE
+  merged (awaiting the user's word), landing order #169 (G9 identity: manifest `name`,
+  the sceneIdentity window title with the ONE-serialization-per-session dirty check,
+  the hash-keyed open-scene accent, saves into the active folder) -> #167 (G10 fork 14:
+  inline scene naming + the grid inline card + the roots resizer; window.prompt gone
+  from the save paths) -> #168 (G8 forks 11+12: PROJECT_FORMAT 2 = the WHOLE Explorer
+  in a .tp, the [TP|Scene|GLTF|cog] picker, OPEN-replaces behind a warning vs
+  IMPORT-as-folder, .tpscene opens UNSAVED with the first-edit save-into-project
+  prompt + the travel-away publish gated on the marker) -> #171 (G7 forks 10+13: the
+  hidden version shelf in explorer.js with itemByHash searching both lists,
+  hideOldVersions reconciling BOTH directions incl. unhide-the-pointer, keep-N
+  Settings with 0 gating only the UNASKED cut, manifest labels, VersionHistory.svelte
+  in the Explorer's REAL properties panel — the Inspector 'file' block is DEAD
+  SURFACE, and the restore checkpoint must publish BEFORE the re-append or travel's
+  own publish strands the pointer on it, suite-pinned).** Two merge-tree-measured
+  unions at landing: G10 takes G9's activeLibraryFolder() at the two save call sites;
+  G8+G9 share autosave's markDirty (dirtyPulse + the dirtyOnce one-shots); G7's
+  clearLibrary union adds one hiddenItems line. Suites: scene-identity(51)
+  explorer-inline-input(38) project-open-import(36) scene-versions(68) + project-file
+  updated to OPEN semantics; docs-site projects.md committed there (72d14c7);
+  build-a-game touch-ups ride the parallel round-3 session's uncommitted rewrite.
+  As-built + owed-on-device: cloud `plans-core/roadmap-21g-projects-presence.md`.
+- Status (2026-08-21): **ROADMAP 21-G — PROJECTS, CROSS-SCENE PRESENCE,
+  PER-PLAYER PROGRESS: G1-G6 EXECUTED same-day off the 21-F merge (release/next
+  @fdfbe39); MERGED 2026-08-22: PRs #164 -> #165 -> #166 to release/next @f126b85 (both lane merges landed CLEAN - G1 was already both branches' base - and the App.svelte hook counts held 164/164). ROUND 2 (G7-G10, DCC-standard projects: hidden version history + panel, the TP|Scene|GLTF menu with open-replaces vs import-furnishes, project/scene identity, inline naming) and ROUND 3 (the collectible NODE + manager toolbox) are PLANNED with locked forks 10-20 in the same plan doc, executing in parallel windows.** The user's four fork
+  answers locked in the plan (per-player mode + peer-owned vars; recipes into the
+  node editor's Game category with the object Game submenu REMOVED; the folder is
+  `Scenes` with kind-based discovery; file sharing stays manifest-scoped). Lanes:
+  **feat/21g-editor** (G1 `554128c`, Opus — Scenes rename, Download, the pack-ROW
+  rename root cause, recipe re-homing incl. the empty-flow-overlay contextmenu
+  forward, + a pre-existing fix: `hudrows` missing from CORE_NODE_TYPES, red on
+  release/next) · **feat/21g-manifest** (G2a `06fec6c` the manifest core · G2b the
+  travel-away auto-save/travel-by-name/update dot/prune — THE REPORTED
+  disappearing-object bug dead, idle hops mint nothing · G3 `a0e2455` the .tp file,
+  Opus · G5-core `38277b4` + peerRoster — the scenePresence bridge · G6 game-loop-v4)
+  · **feat/21g-peervars** (G4 `f5934d7`, Opus — peerVars/perPlayer/leaderboard),
+  merged into the manifest lane (peerHandler + App.svelte unions; the count
+  assertion caught a POSITIONAL miss — the destructure is positional, a missing
+  binding shifts every later one). Cloud repo: the rooms plugin publishes
+  {scene, members, invites} + the 30s presence poll (`bd95237`); **USER must add PB
+  fields rooms.scene/members/invites** (pocketbase-setup.md). Suites:
+  project-manifest(26) project-file(48) peer-variables(74) scene-folders(44)
+  scene-presence(11) game-loop-v4(18, first-run green). Baseline 385/62 at every
+  commit. KNOWN: the setvariable-add race flaked collectibles-v2 once (75/76,
+  76/76 twice on re-run) — the standing ticket; G4's peer-owned rows are the fix
+  for the per-player case. OWED on-device: the project round-trip feel, cross-scene
+  presence + invites on real cloud rooms (after the PB fields land), a 3+ player
+  leaderboard, the Scenes/Download/recipe UI in non-dark themes. Plan + as-built:
+  cloud `plans-core/roadmap-21g-projects-presence.md`.
+- Status (2026-08-21, later): **ROADMAP 21-F — LEVELS, COLLECTIBLES v2, HUD EDITOR
+  POLISH: F1-F6 EXECUTED across three lanes; F7 (cross-scene presence on the rooms
+  layer) deliberately slipped to 21-G per the plan.** Baseline re-measured 385/62 on a
+  pristine worktree at c44f84f before anything started (the gate was already
+  ratcheted), and held at EVERY commit. Lanes off c44f84f: **L-A
+  `feat/21f-hud-editor`** (F1 `6096a25` the toolbar/marquee/arrange + F5 `60cee2e` the
+  minimap colour rule + facing) · **L-B `feat/21f-collectibles`** (F2 `7aea87e`
+  collectibles v2 + F3 `1bab3a2` counts/presence/rejoin/admin-reset) · **L-C
+  `feat/21f-levels`** off F2's commit (F4a `05600d1` the level assets + local travel ·
+  the two lane merges with the App.svelte debugStores UNION — the count assertion
+  CAUGHT a mis-fold, 160/161, exactly what it exists for · F4b `c8060af` the travel
+  node / allplayers / debug element · F6 `f4cc0f9` the game-loop-v3 acceptance).
+  Suites: hud-editor-tools(57) collectibles-v2(76) game-presence(66) scene-levels(41)
+  game-loop-v3(26) + hud-content grown to 160; re-run green around every touch:
+  hud-editor family(143), hud-kinds(40), hud-actions(65), logic-nodes, game-state,
+  game-loop-v2(63), session-scene-data(27), workspace-restore(20). REVIEW-LOOP FINDS,
+  each fixed before its commit: the Infinity push/pull cutoff split (a 1-in-3 flake
+  root-caused to a real unbounded-banking bug), the Delay-sourced-from-Once respawn
+  trap (a red suite found it), the artboard native text-drag hang, the minimap's
+  hardcoded-green self dot, the eaten rejoin press, and the 4ms stale-stamp suite
+  race (the guard was RIGHT — the suite settles now). The must-not-regress fixture
+  (collect → Esc → visible again + object-list hide works) is collectibles-v2 section
+  1, proven by breaking the gate. KNOWN pre-existing, ticket-worthy: `setvariable`
+  `add` is a per-peer read-modify-write (see the gotcha). PRs open against
+  release/next, landing order L-A → L-B (App.svelte union at landing) → L-C; NOT
+  merged without the user's word. OWED, because headless cannot judge it: the guide's
+  playthrough incl. travel on real peers, minimap colours on three-plus peers, the
+  debug element and the new toolbar/dialog in non-dark themes, the marquee's feel on
+  a real pointer, and the confirmation that "equalize takes the FIRST pick's size" is
+  the right reference. Plan + as-built: cloud
+  `plans-core/roadmap-21f-levels-and-polish.md`.
+- Status (2026-08-21): **ROADMAP 21-E — GAME HARDENING, ALL EIGHT PHASES EXECUTED AND
+  MERGED — PRs #158/#159/#160 to `release/next` @2d8af51.** Baseline **385/62** measured
+  on the merged head; the release.yml gate ratcheted with it. Each lane PR took a
+  release/next merge before landing; the PLC conflict resolved ONCE and reused (a
+  `git checkout feat/21e-content -- PointerLockControls.svelte` — the same three-way
+  resolution, not a second attempt at it). Built
+  across three stacked lanes off release/next @9be9ecd (post #156/#157; baseline
+  re-measured 386/62 there — consolidating PLC's camera
+  swap removed a pre-existing error). Lanes: `feat/21e-editor` (E1 9f2a9c9 + E2
+  1c7e156) → `feat/21e-input-menu` (E3 b46e477 + E5 395b646) → `feat/21e-content`
+  (merge c27d214 + E7 ea46a7d + E8); parallel `feat/21e-logic-nodes` (E4 5f302e7 +
+  22ef9c1) → `feat/21e-controller` (E6 a297118 + the stamp guard 5fb18e2), merged
+  into content. THE MERGE captured a composition gap both suites missed (walk-vs-pad,
+  now a gotcha). Suites: hud-editor-wysiwyg(51) hud-screen-model(46)
+  play-menu-mode(32) logic-nodes(77) gamepad-input(61) char-controller(58)
+  hud-content(132) + extended hud-actions/game-state/flow-physics-actions/
+  hud-play-keyboard and the game-loop-v2 acceptance. Review-loop finds fixed along
+  the way: the DEAD keypress key-down handler (DEVX #8 family), random.reroll
+  (count→stamp seed), the stale-stamp adoption family, three E7 bugs (duplicate
+  {#each} key downing the pane; loadedModules naming race; number-coercion on text
+  channels). OWED: the user's on-device pass per docs-site `build-a-game.md`'s
+  "what to feel for" list (re-lock in Chromium+Firefox, real gamepad, pack kinds in
+  non-dark themes, jump-vs-menu precedence under a real lock).
+
 - Status (2026-08-19): **ROADMAP #21-A IS COMPLETE — A6+A7 (PR #152) and A8 (PR #153)
   merged to `release/next` @f289f79**, closing the batch #149/#150 opened. Both phases were
   already IMPLEMENTED on their lanes when this session went looking, so the work was
@@ -3011,6 +3880,23 @@ override for e2e — never share 5173 (the user's main-checkout server).
   as-built + the parked lap spec for C8), a "flatten into all terrains" pass for the
   Race ring, and the parametric-vs-carved decision for the Race template, which the
   measurement above answers but the user has not yet ruled on.
+- Status (2026-08-19): **PER-CAMERA LOOKS — branch `feat/camera-looks` (lane
+  `../theprototype-lane-post` @ port 5198) off release/next @1cbfeec, 3 commits, NOT
+  pushed.** `b3de92e` keyed the post documents so a look can belong to a camera (see
+  the `scenePost` entry); `8f93e49` added the **Set Look** node; `a9391fe` fixed it
+  announcing itself as a missing module (the two-registry gotcha above). Suite
+  `camera-looks` (41 checks: keyed documents, composition following the active camera,
+  append/replace, undo keyed to its own document, a REAL .tpscene zip round trip, two
+  peers, the node, and the two user reports as regression tests). **Baseline on this release/next is 386/62, NOT 391** — release.yml gates
+  `-gt 387`. Roadmap 21 had already shipped several things this plan listed as future
+  work: `postBackends.js`, `api.registerPostEffect`, `api.registerPostBackend`, the
+  composer running in PLAY mode, and `viewportOverrides` gaining a `hud` key (the
+  "add a key, not a concept" design used as intended). L6's only contact point is
+  confirmed: `FLOW_FAMILY` is `['flow','flowcode','animation','uv','shader']`, so the
+  post domain appends `'post'` plus a DockTabs entry. OWED: the user's feel pass, a
+  decision on the Set Look design fork (see below), CLAUDE-adjacent docs-site pages,
+  and a node that drives an effect PARAM per frame — which needs a live `applyParams`
+  seam per kind first (the `applyLocal` shape), or the composer rebuilds 60x/s.
 - Status (2026-08-18): **SCENE LOOK / POST-PROCESSING — branch `feat/scene-post-stack`
   (lane `../theprototype-lane-post` @ port 5198), 8 commits, release/next merged in
   CLEAN, baseline 391/62 at every commit, NOT PR'd.** Plan: cloud
@@ -3868,6 +4754,37 @@ target socket at all; `registerToolbox({id, title, mount, playMode?, shortcut?})
 real UI surface over ToolboxWindow (see the moduleToolboxes entry). `NodeParam.kind`
 also gained `'text'`, which writes on COMMIT (change/blur) and never on `input`,
 because a node edit replicates the WHOLE node.
+**R3a additions — THE GAME SEAMS** (roadmap 21-G round 3; collectibles v3 is a MODULE,
+so core's job is seams plus the 17-A extraction ritual): `api.game.{roundCutoff,
+roundUnderway, playActive, getVar, setVar}` (the round reads perRound content gates on
++ the shared game variable); `api.peerVars.{setMine, mine, all}` (peer-owned rows, ONE
+writer per row BY CONSTRUCTION — this api only ever writes YOUR row, which is what makes
+per-player counting immune to the shared-add race); `fireNodeTrigger(type, match,
+{replicate:false})` (the per-player LOCAL pulse, stated by the CALLER because a module
+spells its scope its own way and `replicatesPulse` only knows `perPlayer`);
+`api.playerPosition()` (the viewer camera as [x,y,z] — a touch trigger's self-proximity
+read, no sim involved); `api.selectObject`/`selectedUuids` (the SET, never the sticky
+primary); `api.flow.{nodes, edges, nodeValue, triggerStamp, setNodeData, addNodes}` —
+graph reads are DETERMINISTIC because the graph is replicated (treat them as replicated
+state, the value-node rule), `nodeValue` is how a module reads a CORE Latch's
+round-aware state instead of reimplementing it, and `addNodes` is the recipe path
+verbatim (nodecreate/edgecreate per item + ONE `flownodes` undo entry + canonical
+handle-qualified edge ids); `api.hud.registerDebugLine(fn)` + `registerAction(entry)`
+(the debug pill's line and a hudActions catalog entry, both held in the
+`moduleHudKinds` LEAF because hudActions reaches the history family and moduleSDK may
+not import it — moduleSDK writes the leaf, hudActions reads it, the moduleToolboxes
+rule). **THE ONE THAT MAKES THE REST WORK**: module effect AND value ctx now carry
+`trigger: {stamp, age} | null` — the node's OWN trigger-log entry ALREADY folded
+through the round rules in CORE (`moduleTriggerInfo`/`freshStamp`), so a module stamps
+`perRound` on its node data and never does round arithmetic; `whilePlaying` likewise
+generalised from the Visibility node to ANY effect node, so a module that hides an
+object inherits the restore-loop hand-back (manual visibility wins outside play) rather
+than reimplementing the 21-F2 fix wrong. FRAMEWORK STAYS, MECHANICS LEAVE — that is the
+line, and it is the industry's (Unreal ships GameMode/GameState/PlayerState in the
+engine and pickups in the marketplace): a Game-category node stays core if it is SHELL
+(state, round, time, variables, per-player rows) and becomes a module if it encodes a
+MECHANIC's shape. `collectcount` was the one node in that group that knew a content
+shape, and it is gone.
 A module KIND that must agree across peers derives from the replicated object
 NAME, never locally-set userData (essentials + car). User modules (zip/URL via the
 manager) must be self-contained — no imports; guide in `MODULES.md` + the public

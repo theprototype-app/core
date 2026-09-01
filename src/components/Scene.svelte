@@ -8,7 +8,7 @@
 	import { peers, username, userdata, specatorMode, avatarConfig, viewportMenu, objectContextMenu, viewportMenuOpener, addMenu, addMenuOpener, showToast, multiSelectMode } from '../stores/appStore';
 	import { get } from 'svelte/store';
 	import { vrPostEnabled } from '$lib/viewportOverrides';
-	import { isLocked, editorCam, isVRMode, globalScene, objectsGroup, showGrid, TControls, selectedObject, selectedObjects, lockedObjects, marqueeRect, worldRig, vrOverride, specators, globalCamera, globalRenderer, orbitControls, passthroughActive, vrObjectsPanelOpen, vrPaletteOpen, vrPropsPanelOpen, vrPrefabsPanelOpen, vrChatPanelOpen, vrEditMenuOpen, vrSnapMenuOpen, vrSettingsPanelOpen, vrApprovePanelOpen, vrToolMode, viewMode } from '../stores/sceneStore';
+	import { isLocked, editorCam, isVRMode, globalScene, objectsGroup, showGrid, TControls, selectedObject, selectedObjects, lockedObjects, marqueeRect, worldRig, vrOverride, specators, globalCamera, globalRenderer, orbitControls, passthroughActive, sessionCompositesOverRoom, vrObjectsPanelOpen, vrPaletteOpen, vrPropsPanelOpen, vrPrefabsPanelOpen, vrChatPanelOpen, vrEditMenuOpen, vrSnapMenuOpen, vrSettingsPanelOpen, vrApprovePanelOpen, vrToolMode, viewMode } from '../stores/sceneStore';
 	import {
 		selectObject,
 		deselectObject,
@@ -22,6 +22,7 @@
 	} from '$lib/objectActions';
 	// 85: what a double-click does (a LOCAL pref; store-only leaf, no cycle)
 	import { doubleClickAction } from '$lib/selectionPrefs';
+	import { noteXRSessionStarted } from '$lib/playMode';
 	import { recordTransform } from '$lib/history';
 	import { suspendAnimation, resumeAnimation, pumpFlowTick } from '$lib/flowRuntime';
 	import { holdBody, releaseBody } from '$lib/physics';
@@ -47,6 +48,7 @@
 	// M9b: the first click of a knife cut, in CSS pixels. This component is lang="ts", so
 	// the annotation is TS syntax — a JSDoc @type cast is ignored here (the documented trap).
 	let knifeFrom: number[] | null = null;
+	import { peerScenes } from '$lib/peerScenes';
 	import { initVRControls, updateVRControls, raycastMenu, raycastPanel, raycastPalette, raycastProps, raycastPrefabs, raycastKeyboard, raycastChat, raycastEdit, raycastSnap, raycastSettings, raycastApprove, placePrefabGhost, vrFaceTrigger, vrVertexTrigger, vrVertexGrabStart, vrVertexGrabEnd, beginStretchSliderDrag, endStretchSliderDrag, executeVRMenuAction, resetWorldRig, onInputSourcesChange, worldToContentPose, boxSelectStart, boxSelectEnd, boxSelectActive, applyVRFrameRate, shouldSendHands, onHandPinchStart, onHandPinchEnd, pinchMenuToggledAt, firePingIfArmed, vrModuleTriggerStart, vrModuleTriggerEnd, vrModuleSelectSwallowed } from '$lib/vrControls';
 	import { vrKeyboardTarget } from '$lib/vrKeyboard';
 	import { measureMode, measureClick } from '$lib/measure';
@@ -121,6 +123,12 @@
 	const scale = spring(0.5);
 	let rotation = 0;
 	let lastCameraPosition = new THREE.Vector3();
+	// P2b THE OTHER HALF OF THE SEND GATE. The camera broadcast is CHANGE-GATED, so a
+	// peer who travels into our scene while we are standing still would never receive a
+	// pose and would simply not see us. Whenever anybody's scene changes, invalidate the
+	// change detector so the next frame re-publishes — a peer that is still elsewhere is
+	// filtered out again by broadcast, so this costs one message per real arrival.
+	peerScenes.subscribe(() => lastCameraPosition.set(1e9, 1e9, 1e9));
 	let lastCameraQuaternion = new THREE.Quaternion();
 
 	// --- VR presence: broadcast controller poses while in a session ---
@@ -526,6 +534,14 @@
 		const onSourcesChange = () => onInputSourcesChange();
 		const onSessionStart = () => {
 			renderer.xr.getSession()?.addEventListener('inputsourceschange', onSourcesChange);
+			// W3: the AUTHORITATIVE half of the VR flag. playMode sets it optimistically
+			// one line before the click (the VR configuration has to be armed before the
+			// first XR frame) and arms a watchdog to undo that GUESS if no session ever
+			// starts. This is the event that proves one did, so it cancels the watchdog
+			// and asserts the flag. Asserting rather than trusting the guess is what lets
+			// a session accepted AFTER the watchdog already fired still come up in VR.
+			noteXRSessionStarted();
+			$isVRMode = true;
 		};
 		renderer.xr.addEventListener('sessionstart', onSessionStart);
 
@@ -1358,7 +1374,9 @@
 
 	<CameraPreview />
 
-	<Grid showGrid={$showGrid && $viewMode !== 'wireframe'} />
+	<!-- CO4: no virtual ground in AR — the grid stands down over passthrough
+	     (LOCAL: showGrid itself is untouched, so it returns on session end) -->
+	<Grid showGrid={$showGrid && $viewMode !== 'wireframe' && !$passthroughActive} />
 
 	<MeasureOverlay />
 
@@ -1411,7 +1429,7 @@ position={[0, 2, 3]}
 	onsessionstart={() => {
 		// passthrough (90): AR sessions blend with the room — drop the local sky
 		const session = renderer.xr.getSession();
-		passthroughActive.set(!!session && session.environmentBlendMode !== 'opaque');
+		passthroughActive.set(sessionCompositesOverRoom(session));
 		// B2.1: request the preferred refresh rate (auto = highest supported) —
 		// without this the Quest stays at its 90Hz default
 		applyVRFrameRate();

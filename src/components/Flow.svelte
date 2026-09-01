@@ -2,9 +2,9 @@
 	// Flow host: the Node editor. DOCKED mode is a Flow-family TAB in the shared bottom
 	// dock (DockTabs strip; shares dockHeight with Flow Code + Animation; only the
 	// visible tab renders). UNDOCKED mode is a floating, resizable window. Both persist.
-	import { flowGraphClose, flowCodeClose, animationClose, uvEditorClose, mobileUndockAllowed, shaderEditorClose, hudEditorClose } from '../stores/appStore.js';
+	import { flowGraphClose, mobileUndockAllowed } from '../stores/appStore.js';
 	import { get } from 'svelte/store';
-	import { onMount } from 'svelte';
+	import { onMount, untrack } from 'svelte';
 	import { SvelteFlowProvider } from '@xyflow/svelte';
 	import ContextMenu from './ContextMenu.svelte';
 	import Nodes from './editors/Nodes.svelte';
@@ -16,7 +16,9 @@
 	import { tabbable, resizeGroup, tabGroups } from '$lib/windowTabs';
 	import { clampWinSize, clampResize, anchorOf } from '$lib/windowSize';
 	import { dockable } from '$lib/docking';
-	import { setDockOccupant, dockHeight, visibleDockKey, activateDock } from '$lib/bottomDock';
+	import { setDockOccupant, dockHeight, visibleDockKey, dockMinimized, activateDock, dockModeArm } from '$lib/bottomDock';
+	import { bottomDockable } from '$lib/bottomDockDrop';
+	import { dockAddItems } from '$lib/dockMenu';
 	import { fly } from 'svelte/transition';
 
 	const clampH = (h: number) => Math.min(Math.max(h || 320, 200), Math.round(window.innerHeight * 0.8));
@@ -66,6 +68,20 @@
 		if (v) activateDock('flow'); // re-docking makes it the visible tab
 	}
 
+	// W5: consume the shared dock-mode arm — the tab strip's right-click menu asks
+	// through it (the Explorer has had this exact effect since 4b). `docked` is read
+	// from localStorage ONCE at mount, so writing that flag from outside is inert;
+	// `setDocked` owns the mode and is what has to run. Cleared as it is acted on.
+	$effect(() => {
+		const arm = $dockModeArm;
+		if (!arm || arm.key !== 'flow') return;
+		dockModeArm.set(null);
+		untrack(() => {
+			if (arm.docked !== docked) setDocked(arm.docked);
+			flowGraphClose.set(false);
+		});
+	});
+
 	// tab-grouped windows share one size: show the group's rect so a resize on any
 	// member updates every tab, not just the active one.
 	const myGroup = $derived($tabGroups.find((g: any) => g.members.includes('flow')) ?? null);
@@ -73,15 +89,10 @@
 	const effH = $derived(myGroup ? myGroup.rect.height : winH);
 
 	// Flow "+" (floating window only — docked mode uses the DockTabs strip): open
-	// another Flow-family view. They start docked, so they appear as dock tabs.
+	// another dock view. They start docked, so they appear as dock tabs. Same list the
+	// strip's "+" renders ($lib/dockMenu) — they used to be two copies that drifted.
 	let addMenu: { x: number; y: number } | null = $state(null);
-	const addItems = [
-		{ label: '＋ Flow Code', tooltip: 'Edit the graph as JSON', action: () => { flowCodeClose.set(false); activateDock('flowcode'); } },
-		{ label: '＋ Animation', tooltip: 'Animate the selected object', action: () => { animationClose.set(false); activateDock('animation'); } },
-		{ label: '＋ UV editor', tooltip: 'Edit the selected mesh’s UV map and textures', action: () => { uvEditorClose.set(false); activateDock('uv'); } },
-		{ label: '＋ Shader editor', tooltip: 'Drive this material from a node graph', action: () => { shaderEditorClose.set(false); activateDock('shader'); } },
-		{ label: '＋ HUD editor', tooltip: 'Lay out the on-screen HUD its nodes drive', action: () => { hudEditorClose.set(false); activateDock('hud'); } }
-	];
+	const addItems = dockAddItems();
 	function openAddMenu(e: MouseEvent) {
 		const r = (e.currentTarget as HTMLElement).getBoundingClientRect();
 		addMenu = { x: r.left, y: r.bottom + 4 };
@@ -93,7 +104,9 @@
 		setDockOccupant('flow', !$flowGraphClose && docked, $dockHeight);
 		return () => setDockOccupant('flow', false);
 	});
-	const dockVisible = $derived($visibleDockKey === 'flow');
+	// W2: a MINIMIZED dock renders nothing while every tab stays open (the occupant
+	// report above is untouched, so the strip comes back with its tabs intact)
+	const dockVisible = $derived($visibleDockKey === 'flow' && !$dockMinimized);
 
 	// --- docked: top-edge resize (shared dock height, persisted by the store) ---
 	let resizing = $state(false);
@@ -159,7 +172,7 @@
 		>
 			<!-- top-edge resize hot zone -->
 			<div
-				class="resize-cue absolute -top-1 left-0 right-0 z-10 h-2 cursor-ns-resize"
+				class="resize-cue absolute -top-1 left-0 right-0 z-30 h-2 cursor-ns-resize hover:bg-primary-600/30"
 				style="touch-action: none"
 				title="Drag to resize"
 				onpointerdown={startResize}
@@ -173,7 +186,7 @@
 				title="Undock into a floating window"
 				onclick={() => setDocked(false)}>⧉</button
 			>
-			<div style="height: calc({$dockHeight - 16}px - {paletteOpen ? 'var(--dock-inset, 0px)' : '0px'})">
+			<div style="height: {$dockHeight - 16}px">
 				<SvelteFlowProvider>
 					<Nodes bind:paletteOpen />
 				</SvelteFlowProvider>
@@ -184,8 +197,9 @@
 			id="flow-window"
 			class="ui-panel fixed flex flex-col overflow-hidden"
 			use:dragWindow={{ key: 'flowWin', defaultRect: { left: 120, top: 90 } }}
-			use:focusStack
+			use:focusStack={'flow'}
 			use:tabbable={{ key: 'flow', title: 'Node editor', openStore: flowGraphClose, isOpen: (v) => !v, close: () => flowGraphClose.set(true) }}
+			use:bottomDockable={{ key: 'flow' }}
 			use:dockable={{ key: 'flow' }}
 			style="z-index: var(--z-window)"
 			style:width="{effW}px"

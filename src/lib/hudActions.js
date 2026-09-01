@@ -23,14 +23,41 @@
 
 import { get } from 'svelte/store';
 import { peers } from '../stores/appStore';
+// 21-E8: a chain action can end in an Object Selector, and the object it should name is
+// the one the user has in front of them. The SET is authoritative (never the sticky
+// `selectedObject`), and sceneStore is store-only, so this closes no cycle.
+import { selectedObjects } from '../stores/sceneStore';
 import { SCENE_GRAPH, flowGraphs, allNodes, allEdges } from '../stores/flowStore';
 import { createFlowNode, createFlowEdge, serializeNode, serializeEdge } from './nodesHandler';
 import { recordFlowNodesEntry } from './flowGraphs';
 import { findNodeSpec } from './nodeCatalog';
 import { isInteractiveKind, isValuedKind } from './hudKinds';
+// R3a: module-contributed catalog entries live in the moduleHudKinds LEAF (this module
+// reaches nodesHandler/flowGraphs — the history family — so moduleSDK cannot import it;
+// the leaf is where both sides can meet, the moduleToolboxes rule)
+import { moduleHudActionList } from './moduleHudKinds';
 
 /** The HUD node types that READ an element (a display binding), by element kind. */
-const DISPLAY_NODE = { text: 'hudtext', bar: 'hudbar', timer: 'hudtimer', list: 'hudlist' };
+// 21-E7.6: the PACK kinds map onto the SAME four display nodes rather than earning nodes
+// of their own — an icon row, a radial and a hotbar are all 'a number between min and max'
+// (a HUD Bar node), and rich text, a key hint and a scroll panel are all 'a string' (a HUD
+// Text node). Without these entries the Actions section offered a pack element NOTHING,
+// which is the same 'the loop exists and is undiscoverable' problem 21-D7 was built to fix.
+const DISPLAY_NODE = {
+	text: 'hudtext',
+	bar: 'hudbar',
+	timer: 'hudtimer',
+	list: 'hudlist',
+	iconrow: 'hudbar',
+	progressradial: 'hudbar',
+	hotbar: 'hudbar',
+	richtext: 'hudtext',
+	keyhint: 'hudtext',
+	scrollpanel: 'hudtext',
+	// a custom or module element reads its whole runtime, and `text` is the channel every
+	// value source already reaches, so HUD Text is the honest default there too
+	custom: 'hudtext'
+};
 
 /** The HUD node type that a press comes FROM. */
 const PRESS_NODE = 'hudbutton';
@@ -45,15 +72,24 @@ const PRESSABLE = ['button', 'toggle'];
 const VALUE_NODE = 'hudinput';
 
 /** Every HUD node type that names an element, so a scan knows what to look at. */
-export const HUD_BOUND_TYPES = [PRESS_NODE, VALUE_NODE, 'hudset', 'hudtext', 'hudbar', 'hudtimer', 'hudlist', 'hudscreen'];
+// 21-E7.1: `hudrows` names an element too, so the artboard's wired badge must see it — a
+// list filled by a HUD Rows node would otherwise read as dead at a glance.
+// 21-G4: `leaderboard` names one too — and it is the only WRITER a list may have that is
+// not edge-driven, so a board with no HUD List node beside it must still read as wired.
+export const HUD_BOUND_TYPES = [PRESS_NODE, VALUE_NODE, 'hudset', 'hudtext', 'hudbar', 'hudtimer', 'hudlist', 'hudrows', 'hudscreen', 'leaderboard'];
+
+/** 21-G4: the kinds a `role: 'writes'` action is offered for. A LIST is the only element
+ * whose content is rows, and a scoreboard is rows. */
+const ROWED = ['list'];
 
 /**
  * @typedef {{
  *   key: string, label: string, group: string, hint?: string,
- *   role: 'press' | 'drives' | 'value',
+ *   role: 'press' | 'drives' | 'value' | 'writes',
  *   node: string, data?: Record<string, any>,
  *   handle?: string,
- *   via?: { node: string, data?: Record<string, any>, handle: string }
+ *   via?: { node: string, data?: Record<string, any>, handle: string },
+ *   chain?: { node: string, data?: Record<string, any>, handle?: string }[]
  * }} HudActionDef
  */
 
@@ -72,18 +108,77 @@ export const HUD_ACTIONS = [
 	{ key: 'resume', label: 'Resume', group: 'Game', role: 'press', node: 'setgamestate', data: { state: 'playing' }, handle: 'trigger' },
 	{ key: 'gameover', label: 'End the game', group: 'Game', role: 'press', node: 'setgamestate', data: { state: 'over' }, handle: 'trigger' },
 	{ key: 'menu', label: 'Back to the menu', group: 'Game', role: 'press', node: 'setgamestate', data: { state: 'menu' }, handle: 'trigger' },
+	// 21-F3: the FULL reset. Not a duplicate of "Back to the menu": it also zeroes the
+	// round clock, and it goes through the very `resetGame()` the Users popover's admin
+	// entry calls, so the two ways a game is reset are one function.
+	{ key: 'resetgame', label: 'Reset the game', group: 'Game', role: 'press', node: 'setgamestate', data: { state: 'menu', reset: true }, handle: 'trigger', hint: 'Back to the menu AND the round clock to zero — collectibles read un-collected again.' },
 	{ key: 'setvar', label: 'Set a variable', group: 'Game', role: 'press', node: 'setvariable', data: { name: 'score', op: 'add', value: 1 }, handle: 'trigger', hint: 'Add to, subtract from or set a shared number.' },
+	// 21-F4: LEVEL COMPLETE — travel to a level. The destination is the AUTHOR'S PICK
+	// on the Travel card, deliberately not a "next by folder order": the Explorer
+	// library is LOCAL, so two peers can hold different orders and a computed "next"
+	// would send them to different levels. A hash in the replicated graph is the only
+	// shared truth about where "next" is.
+	{ key: 'travel', label: 'Level complete — travel to a level', group: 'Game', role: 'press', node: 'travel', handle: 'trigger', hint: 'Everyone travels together, the game state carries — pick the destination on the Travel card.' },
 	{ key: 'camera', label: 'Look through a camera', group: 'Camera', role: 'press', node: 'setcamera', handle: 'trigger', hint: 'Moves each peer`s own view — nothing is sent, the press already was.' },
 	{ key: 'showscreen', label: 'Show a HUD screen', group: 'HUD', role: 'press', node: 'hudscreen', data: { action: 'show' }, handle: 'trigger' },
 	{ key: 'hidescreen', label: 'Hide a HUD screen', group: 'HUD', role: 'press', node: 'hudscreen', data: { action: 'hide' }, handle: 'trigger' },
 	{ key: 'togglescreen', label: 'Toggle a HUD screen', group: 'HUD', role: 'press', node: 'hudscreen', data: { action: 'toggle' }, handle: 'trigger' },
 	{ key: 'count', label: 'Count the presses', group: 'Scene', role: 'press', node: 'counter', data: { step: 1, op: 'up' }, handle: 'pulse', hint: 'A Counter you can then show in a HUD Text.' },
+	// 21-E8: the actions a GAME wants, now that the nodes behind them exist. Each one is
+	// still just a node and an edge - the catalog stays a curated shortlist over the same
+	// palette - but these are the verbs a menu or a HUD button reaches for first, and every
+	// one of them was two trips through the node editor before.
+	{ key: 'playanim', label: 'Play an animation', group: 'Scene', role: 'press', node: 'playanim', data: { action: 'toggle', speed: 1 }, handle: 'trigger', hint: 'Toggle plays the clip and plays it BACKWARDS to close - wire an Object Selector or put it in the object\u2019s own graph.' },
+	// E4 gave Sound a `trigger` input, which is the whole reason play-a-sound-on-press was
+	// not authorable by ANY means before: the node had `playing`, a continuous state, and
+	// nothing to pulse.
+	{ key: 'sound', label: 'Play a sound', group: 'Scene', role: 'press', node: 'sound', data: {}, handle: 'trigger', hint: 'One shot per press (E4 gave sound a trigger input).' },
+	// `mode: 'burst'` is NOT decoration: particleRuntime fires a trigger only for an
+	// emitter that is not continuous (`cfg.mode !== 'continuous' && cfg.trigger`), and the
+	// `sparkles` preset this node is seeded from IS continuous - so the catalog default
+	// would have built a 'Fire particles' binding that can never fire, which is exactly the
+	// failure PRESSABLE exists to prevent one domain over.
+	{ key: 'particles', label: 'Fire particles', group: 'Scene', role: 'press', node: 'particle', data: { mode: 'burst' }, handle: 'trigger' },
+	{ key: 'impulse', label: 'Apply an impulse', group: 'Scene', role: 'press', node: 'impulse', data: { mode: 'impulse', space: 'world' }, handle: 'trigger', hint: 'Needs a running physics sim and a wired target object.' },
+	{ key: 'resetcounter', label: 'Reset a counter', group: 'Game', role: 'press', node: 'counter', data: { op: 'up', step: 1 }, handle: 'reset', hint: 'Zeroes the counter this press reaches - round 2 starts clean.' },
+	// the one CHAIN action in the catalog, and the reason chains exist at all: 'hide it, and
+	// show it again next press' is not ONE node. Every trigger in this app is a ~0.3s pulse,
+	// so a Latch is what makes the state PERSIST after that pulse has expired - which is
+	// exactly what E4 added it for.
+	{
+		key: 'togglevis',
+		label: "Toggle an object's visibility",
+		group: 'Scene',
+		role: 'press',
+		node: '',
+		chain: [
+			// `initial: true` = VISIBLE before the first press, which is two things at once:
+			// it makes the hint literally true (press to hide, press to show) and it stops
+			// ASSIGNING the action from hiding the object on the spot, which is what the
+			// node's own default would have done the moment the chain existed.
+			{ node: 'latch', handle: 'toggle', data: { initial: true } },
+			{ node: 'visibility', handle: 'on' },
+			// no handle: an Object Selector takes the UNNAMED target handle (its `_default`
+			// socket), which is what every effect node in the app already wires into
+			{ node: 'objectselector' }
+		],
+		hint: 'Uses a Latch, so the state persists - press to hide, press to show.'
+	},
 
 	// --- what DRIVES a display element -------------------------------------------
 	{ key: 'showvar', label: 'Show a variable', group: 'Data', role: 'drives', node: '', via: { node: 'getvariable', data: { name: 'score' }, handle: 'value' }, hint: 'A shared number — a score, lives, a level.' },
 	{ key: 'showtime', label: 'Show the round time', group: 'Data', role: 'drives', node: '', via: { node: 'gametime', data: { read: 'remaining', length: 60 }, handle: 'value' }, hint: 'Derived from the shared start stamp, so every peer agrees.' },
 	{ key: 'showcount', label: 'Show a counter', group: 'Data', role: 'drives', node: '', via: { node: 'counter', data: { step: 1, op: 'up' }, handle: 'value' }, hint: 'Wire anything that pulses into the Counter to make it a score.' },
+	// 21-F3's "Show collectibles left" MOVED to the collectible module (R3a): its via-node
+	// was `collectcount`, which moved with the chain shape. A module contributes catalog
+	// entries through `api.hud.registerAction` (merged in `actionsForKind` below).
 	{ key: 'showplain', label: 'Just show text', group: 'Data', role: 'drives', node: '', hint: 'A HUD Text node with no source, so a graph can drive it later.' },
+	// 21-G4: THE LEADERBOARD, and it needed a fourth role. Every 'drives' action wires a
+	// value source into a display node's `value` handle, and a list has no such handle —
+	// a list is WRITTEN INTO by id (the socket system has no arrays). So `writes` creates
+	// ONE node that names the element and fills it, which is what `hudrows` already does
+	// on an edge and what a scoreboard does continuously.
+	{ key: 'leaderboard', label: 'Show a leaderboard', group: 'Data', role: 'writes', node: 'leaderboard', data: { variable: 'laps', order: 'desc' }, hint: 'One row per player, from their own per-player variable — derived on every peer, so nothing is sent.' },
 
 	// --- 21-D4: what an INPUT's value can do -------------------------------------
 	// These create the SOURCE node and stop there, deliberately. A slider's value is
@@ -96,13 +191,27 @@ export const HUD_ACTIONS = [
 	{ key: 'readtext', label: 'Read its text', group: 'Data', role: 'value', node: '', data: { read: 'text' }, hint: 'The typed text, for a name or a room code.' }
 ];
 
+/** The catalog plus whatever modules registered (R3a — `api.hud.registerAction`, held
+ * in the moduleHudKinds leaf because this module reaches the history family).
+ * @returns {HudActionDef[]} */
+function fullCatalog() {
+	const moduleActions = /** @type {HudActionDef[]} */ (moduleHudActionList());
+	return moduleActions.length ? [...HUD_ACTIONS, ...moduleActions] : HUD_ACTIONS;
+}
+
 /** @param {string} kind @returns {HudActionDef[]} */
 export function actionsForKind(kind) {
 	const wantsPress = PRESSABLE.includes(kind) && isInteractiveKind(kind);
 	const displayNode = /** @type {any} */ (DISPLAY_NODE)[kind];
 	const valued = isValuedKind(kind);
-	return HUD_ACTIONS.filter((a) =>
-		a.role === 'press' ? wantsPress : a.role === 'value' ? valued : !!displayNode
+	return fullCatalog().filter((a) =>
+		a.role === 'press'
+			? wantsPress
+			: a.role === 'value'
+				? valued
+				: a.role === 'writes'
+					? ROWED.includes(kind)
+					: !!displayNode
 	);
 }
 
@@ -128,20 +237,74 @@ function sceneGraph() {
 }
 
 /** A short human sentence for one action node, so the list reads like the thing it does
- * rather than like a node type. @param {any} node */
-export function describeNode(node) {
+ * rather than like a node type.
+ *
+ * 21-E8: `handle` is the TARGET handle the edge landed on, and it exists for ONE reason -
+ * a Counter reached through `reset` does the OPPOSITE of a Counter reached through
+ * `pulse`, and the row called both of them "Count it". Everything else here reads the
+ * same whichever socket fed it, so nothing else consults it; absent = the old wording.
+ * @param {any} node @param {string|null} [handle] */
+export function describeNode(node, handle = null) {
 	const d = node?.data ?? {};
 	switch (node?.type) {
+		case 'hudrows':
+			// 21-E7.1
+			return (d.op === 'clear' ? 'Clear the rows of ' : d.op === 'set' ? 'Set the rows of ' : 'Add a row to ') + (d.element || 'an element');
 		case 'setgamestate':
+			// 21-F3: a full reset does something a state change does not, so it must not
+			// read as "Set game state -> menu" (the Counter reset/pulse lesson, verbatim)
+			if (d.reset) return 'Reset the game';
 			return 'Set game state → ' + (d.state ?? 'playing') + (d.outcome ? ' (' + d.outcome + ')' : '');
 		case 'setcamera':
 			return 'Look through a camera' + (d.camera ? '' : ' (none picked)');
 		case 'setvariable':
-			return (d.op === 'add' ? 'Add to' : d.op === 'subtract' ? 'Subtract from' : 'Set') + ' “' + (d.name ?? '') + '”';
+			// 21-G4: WHOSE number it writes is the difference between a score and a
+			// scoreboard row, so the row has to say it (the Counter reset/pulse lesson)
+			return (
+				(d.op === 'add' ? 'Add to' : d.op === 'subtract' ? 'Subtract from' : 'Set') +
+				' “' +
+				(d.name ?? '') +
+				'”' +
+				(d.scope === 'player' ? ' (this player’s own)' : '')
+			);
+		case 'peervariable':
+			return (
+				'Player variable “' +
+				(d.name ?? '') +
+				'” (' +
+				(d.read === 'sum' ? 'everyone’s total' : d.read === 'max' ? 'the highest' : d.read === 'peer' ? 'one peer' : 'mine') +
+				')'
+			);
+		case 'leaderboard':
+			return 'Leaderboard of “' + (d.variable ?? '') + '”';
 		case 'hudscreen':
-			return (d.action ?? 'show') + ' screen “' + (d.screen ?? '') + '”';
+			// 21-E8: `hide` names no screen (it drops this peer’s override, whatever it is), so
+			// the row said 'hide screen “”' - empty quotes reading as an unfinished field.
+			return (d.action ?? 'show') === 'hide' && !d.screen
+				? 'Hide the current screen'
+				: (d.action ?? 'show') + ' screen “' + (d.screen ?? '') + '”';
 		case 'counter':
-			return 'Count it';
+			return handle === 'reset' ? 'Reset counter' : 'Count it';
+		// 21-E8: the game verbs. Each says what HAPPENS, not which node does it - a row
+		// reading 'Play Animation' would just be the palette label with extra steps.
+		case 'playanim':
+			return 'Play animation (' + (d.action ?? 'toggle') + ')';
+		case 'sound':
+			return 'Play a sound';
+		case 'particle':
+			return 'Fire particles';
+		case 'impulse':
+			return 'Apply an impulse';
+		case 'latch':
+			return 'Latch (persistent on/off)';
+		case 'visibility':
+			return 'Show/hide an object';
+		case 'delay':
+			return 'After ' + (d.seconds ?? 1) + 's';
+		case 'sequence':
+			return 'Step sequence';
+		case 'once':
+			return 'Only once';
 		case 'getvariable':
 			return 'Variable “' + (d.name ?? '') + '”';
 		case 'gametime':
@@ -159,7 +322,9 @@ export function describeNode(node) {
 		case 'hudset':
 			return 'Sets it to ' + (d.value ?? 0);
 		default:
-			return findNodeSpec(node?.type)?.label ?? String(node?.type ?? 'node');
+			// R3a: a MODULE node has no case here and no core spec — its own label (the
+			// palette card's) is the honest description
+			return findNodeSpec(node?.type)?.label ?? d.label ?? String(node?.type ?? 'node');
 	}
 }
 
@@ -198,7 +363,8 @@ export function bindingsFor(elementId) {
 					role,
 					hudNodeId: node.id,
 					actionNodeId: target?.id ?? null,
-					label: target ? describeNode(target) : 'a deleted node',
+					// the HANDLE, not just the node: a Counter on `reset` is not a Counter on `pulse`
+					label: target ? describeNode(target, edge.targetHandle ?? null) : 'a deleted node',
 					source: ''
 				});
 			}
@@ -278,7 +444,7 @@ function makeEdge(source, target, handle) {
  * @returns {{ok: boolean, reason?: string, nodes: any[]}}
  */
 export function addBinding(elementId, actionKey) {
-	const action = HUD_ACTIONS.find((a) => a.key === actionKey);
+	const action = fullCatalog().find((a) => a.key === actionKey);
 	if (!action || !elementId) return { ok: false, reason: 'unknown action', nodes: [] };
 	const { nodes } = sceneGraph();
 	/** @type {any} */
@@ -304,6 +470,14 @@ export function addBinding(elementId, actionKey) {
 		);
 		if (existing) return { ok: false, reason: 'that value is already read', nodes: [] };
 		created.push(makeNode(VALUE_NODE, baseX, baseY, { element: elementId, ...action.data }));
+	} else if (action.role === 'writes') {
+		// ONE writer per (element, node type) — a second Leaderboard on the same list would
+		// be two derivations racing to own the same rows every tick
+		const existing = nodes.find(
+			(n) => n.type === action.node && String(n.data?.element ?? '') === String(elementId)
+		);
+		if (existing) return { ok: false, reason: 'that element already has one', nodes: [] };
+		created.push(makeNode(action.node, baseX, baseY, { element: elementId, ...action.data }));
 	} else if (action.role === 'press') {
 		// reuse the element's EXISTING press node when it has one — a second `hudbutton` on
 		// the same element would fire the action twice
@@ -312,9 +486,39 @@ export function addBinding(elementId, actionKey) {
 			press = makeNode(PRESS_NODE, baseX, baseY, { element: elementId });
 			created.push(press);
 		}
-		const actionNode = makeNode(action.node, baseX + 220, baseY, action.data);
-		created.push(actionNode);
-		createdEdges.push(makeEdge(press, actionNode, action.handle));
+		if (action.chain?.length) {
+			// 21-E8: a CHAIN action. Some verbs are genuinely more than one node (hide-and-show
+			// needs a Latch to hold the state and an Object Selector to say WHOSE), and building
+			// them by hand is precisely the trip through the node editor this pane exists to
+			// remove. It rides the SAME path as a single-node action from here on - one
+			// recordFlowNodesEntry, one broadcast batch, one undo step - so a chain is a longer
+			// binding and not a new concept. A single-node action never enters this branch, so
+			// every existing key is byte-identical.
+			let prev = press;
+			let col = 1;
+			for (const step of action.chain) {
+				/** @type {Record<string, any>} */
+				const data = { ...(step.data ?? {}) };
+				// an Object Selector the def did not pin takes the CURRENT selection: the action
+				// means "this object", the HUD editor has no scene-object picker of its own, and
+				// the selection is what the user has in front of them. With nothing selected it
+				// keeps the spec default ('-None-'), so the chain is built and inert rather than
+				// refused - the node card is then the one obvious place to name a target.
+				if (step.node === 'objectselector' && !data.selected) {
+					const picked = get(selectedObjects)[0];
+					if (picked) data.selected = picked;
+				}
+				const node = makeNode(step.node, baseX + col * 220, baseY, data);
+				created.push(node);
+				createdEdges.push(makeEdge(prev, node, step.handle));
+				prev = node;
+				col++;
+			}
+		} else {
+			const actionNode = makeNode(action.node, baseX + 220, baseY, action.data);
+			created.push(actionNode);
+			createdEdges.push(makeEdge(press, actionNode, action.handle));
+		}
 	} else {
 		const displayType = /** @type {any} */ (DISPLAY_NODE)[String(action.role === 'drives' ? currentKindOf(elementId) : '')] ?? 'hudtext';
 		let display = nodes.find((n) => n.type === displayType && String(n.data?.element ?? '') === String(elementId));

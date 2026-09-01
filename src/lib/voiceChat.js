@@ -2,6 +2,10 @@ import { writable, get } from 'svelte/store';
 import { userdata, showToast } from '../stores/appStore';
 import { isLocked } from '../stores/sceneStore';
 import { ensureAudioContext as engineContext, bus, updateListener, resumeAudio } from './audioEngine';
+// CO5: a peer standing in the same physical room is heard through the AIR — the WebRTC
+// copy arrives ~50ms later and reads as an echo of the person in front of you. Muted
+// LOCALLY with a gain (see the colo stage below); nothing about what we transmit changes.
+import { colocatedPeers, isColocatedWith } from './colocationPresence';
 
 // Voice chat over the existing peerjs mesh (MediaConnection).
 // - mic toggle transmits continuously; while OFF, holding V is push-to-talk
@@ -55,18 +59,35 @@ function trackCall(call, direction) {
 	call.on('error', () => cleanupCall(call.peer, direction));
 }
 
-// --- spatial audio: stream -> panner (HRTF) -> gain (per-peer mute) -> out.
+// --- spatial audio: stream -> panner (HRTF) -> gain (per-peer mute) -> colo
+// (CO5 colocation mute) -> out.
 // The hidden <audio> element stays attached at volume 0: Chrome only pumps
 // WebRTC audio into WebAudio while a media element consumes the stream.
-/** @type {Record<string, {source: any, panner: any, gain: any}>} */
+//
+// CO5: WHY A SECOND GAIN NODE rather than a factor folded into the first. The two
+// silences have different owners and different lifetimes — `mutedPeers` is a decision I
+// made about a person, colocation is a fact about a room — and the `mutedPeers`
+// subscriber below writes its gain ABSOLUTELY (`? 0 : 1`), so a mute toggle anywhere in
+// the session would restore a colocated peer to full volume. Two nodes make the states
+// independent by construction and multiply for free, which is what WebAudio gains do.
+/** @type {Record<string, {source: any, panner: any, gain: any, colo: any}>} */
 const spatialChains = {};
 
-/** @param {string} peerId @param {MediaStream} stream */
+/**
+ * The colocation target for one peer: 0 while we share a physical room with them, 1
+ * otherwise. Exported so the decision can be read without an audio graph.
+ * @param {string} peerId @returns {number}
+ */
+export function colocationGainFor(peerId) {
+	return isColocatedWith(peerId) ? 0 : 1;
+}
+
+/** @param {string} peerId @param {MediaStream} [stream] */
 function buildSpatialChain(peerId, stream) {
 	if (spatialChains[peerId]) return;
 	try {
 		const audioContext = engineContext();
-		const source = audioContext.createMediaStreamSource(stream);
+		const source = stream ? audioContext.createMediaStreamSource(stream) : null;
 		const panner = audioContext.createPanner();
 		panner.panningModel = 'HRTF';
 		panner.distanceModel = 'inverse';
@@ -75,8 +96,16 @@ function buildSpatialChain(peerId, stream) {
 		panner.rolloffFactor = 1;
 		const gain = audioContext.createGain();
 		gain.gain.value = get(mutedPeers).includes(peerId) ? 0 : 1;
-		source.connect(panner).connect(gain).connect(bus('voice'));
-		spatialChains[peerId] = { source, panner, gain };
+		// CO5: the colocation stage. Set at CONSTRUCTION too, not only from the
+		// subscriber — a late joiner's chain is built long after we became colocated, and
+		// a chain that starts at 1 would let one packet of the person beside us through.
+		const colo = audioContext.createGain();
+		colo.gain.value = colocationGainFor(peerId);
+		if (source) source.connect(panner);
+		// #22 A1: the VOICE bus, not the raw destination — voices are one submix among
+		// four, which is what lets anything mix them.
+		panner.connect(gain).connect(colo).connect(bus('voice'));
+		spatialChains[peerId] = { source, panner, gain, colo };
 	} catch (error) {
 		console.log('spatial chain failed', error);
 	}
@@ -87,11 +116,55 @@ function dropSpatialChain(peerId) {
 	const chain = spatialChains[peerId];
 	if (!chain) return;
 	try {
-		chain.source.disconnect();
+		chain.source?.disconnect();
 		chain.panner.disconnect();
 		chain.gain.disconnect();
+		chain.colo.disconnect();
 	} catch {}
 	delete spatialChains[peerId];
+}
+
+/**
+ * CO5: re-apply the colocation stage to every LIVE chain. Called whenever the colocated
+ * set changes, which is the half that matters — a chain built before the ritual, or
+ * before a partner's key arrived, must go quiet without being rebuilt.
+ *
+ * GAIN, NEVER TEARDOWN, and that is the locked fork: the call, the stream and the
+ * analyser all stay up, so leaving the room (or the partner leaving it) restores the
+ * voice on the very next assignment with no renegotiation, no permission prompt and no
+ * gap. Dropping the chain would also drop the speaking indicator, and re-establishing a
+ * MediaConnection takes seconds.
+ */
+export function applyColocationGains() {
+	Object.entries(spatialChains).forEach(([peerId, chain]) => {
+		chain.colo.gain.value = colocationGainFor(peerId);
+	});
+}
+
+/** Per-peer voice gain state — the mute stage, the colocation stage, and the product
+ * that is actually audible. The suite reads this; so can a UI. */
+export function voiceGainDebug() {
+	/** @type {Record<string, {mute: number, colo: number, effective: number, target: number}>} */
+	const out = {};
+	Object.entries(spatialChains).forEach(([peerId, chain]) => {
+		const mute = chain.gain.gain.value;
+		const colo = chain.colo.gain.value;
+		out[peerId] = { mute, colo, effective: mute * colo, target: colocationGainFor(peerId) };
+	});
+	return out;
+}
+
+/**
+ * TEST SEAM: build a chain with no MediaStream. Headless has no microphone and no peer
+ * audio, so there is otherwise nothing for the colocation stage to act on — this creates
+ * the REAL nodes through the REAL builder (panner + both gains, wired to the
+ * destination) with only the source omitted, so the suite exercises
+ * `applyColocationGains` rather than a mock of it.
+ * @param {string} peerId
+ */
+export function debugAddSpatialChain(peerId) {
+	buildSpatialChain(peerId);
+	return !!spatialChains[peerId];
 }
 
 /** Peer ids with an active spatial chain + their panner positions (tests/UI) */
@@ -307,6 +380,11 @@ mutedPeers.subscribe((list) => {
 		chain.gain.gain.value = list.includes(peerId) ? 0 : 1;
 	});
 });
+// CO5: and in line with the colocated set. This must react for ALREADY-CONNECTED voice
+// peers, not only at chain construction — the ritual normally runs minutes into a
+// session, and a partner's key can arrive after their audio did. Reads only; never
+// writes a store from inside a subscriber.
+colocatedPeers.subscribe(() => applyColocationGains());
 spatialVoice.subscribe((on) => {
 	if (typeof localStorage !== 'undefined') localStorage.setItem('spatialVoice', String(on));
 	if (on) Object.entries(get(remoteStreams)).forEach(([peerId, stream]) => buildSpatialChain(peerId, stream));

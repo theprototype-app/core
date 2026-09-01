@@ -6,6 +6,14 @@
 import { get } from 'svelte/store';
 import { moduleNodeGroups } from './moduleSDK';
 import { particlePreset } from './particlePresets';
+// 21-E1.8: the four game states were spelled out here TWICE and once more in
+// GameCameraNode, while `gameState` exported GAME_STATES that nobody imported. It is a
+// LEAF (svelte/store only), so importing it closes no cycle.
+import { GAME_STATES } from './gameState';
+// 21-E5: the pad's button names + axis keys live in gamepadPrefs, a true LEAF (only
+// svelte/store). Reaching them through inputRuntime instead would close a cycle:
+// inputRuntime imports shortcuts, which reaches history.
+import { GAMEPAD_BUTTONS, GAMEPAD_AXES } from './gamepadPrefs';
 
 /**
  * A1: `kind: 'text'` is a free-text param. It writes on COMMIT (change/blur),
@@ -15,8 +23,17 @@ import { particlePreset } from './particlePresets';
  * 21-B B6: `inputs` declares NAMED target sockets (trigger, force, target…) and
  * `inputLabels` gives one a friendlier label than its wire name. A spec with
  * `inputs` renders its sockets as labelled ROWS instead of by pixel offset.
- * @typedef {{ key: string, kind: 'range' | 'select' | 'toggle' | 'text', min?: number, max?: number, step?: number, options?: string[], placeholder?: string, maxLength?: number }} NodeParam
- * @typedef {{ type: string, label: string, defaults: Record<string, any>, params?: NodeParam[], inputs?: string[], inputLabels?: Record<string, string> }} NodeSpec
+ * 21-F2: `label` is optional and the KEY is still the default, because a key like
+ * `initial` or `invert` reads perfectly well on a card. It exists for the ones that do
+ * not — a flag whose meaning is a sentence ("reset each round") cannot be a camelCase
+ * identifier without becoming a riddle.
+ * 21-B B7: `note` is one line of prose the CARD renders under its rows. It exists for the
+ * facts a socket label cannot carry and that get filed as bugs otherwise — "my peer does
+ * not see it", "my copies vanished when I stopped the sim". HudNode had hand-rolled
+ * exactly this for `hudscreen`; a spec field means the next such node needs no card of
+ * its own to say its one important thing.
+ * @typedef {{ key: string, kind: 'range' | 'select' | 'toggle' | 'text', label?: string, min?: number, max?: number, step?: number, options?: string[], placeholder?: string, maxLength?: number }} NodeParam
+ * @typedef {{ type: string, label: string, defaults: Record<string, any>, params?: NodeParam[], inputs?: string[], inputLabels?: Record<string, string>, note?: string }} NodeSpec
  */
 
 /** @type {{ group: string, items: NodeSpec[] }[]} */
@@ -59,6 +76,37 @@ export const nodeCatalog = [
 				inputs: ['target'],
 				inputLabels: { target: 'target object' },
 				params: [{ key: 'read', kind: 'select', options: ['top', 'bottom', 'height', 'y', 'speed'] }]
+			},
+			// 21-B B7: THE SPAWNER. Copies of a template object, with real bodies — the
+			// thing that could not exist before, because startSimulation walked the scene
+			// exactly once and anything created during a run was inert.
+			{
+				type: 'spawn',
+				label: 'Spawn',
+				defaults: {
+					x: 0,
+					y: 3,
+					z: 0,
+					count: 1,
+					maxAlive: 32,
+					interval: 0,
+					spread: 0.5
+				},
+				inputs: ['trigger', 'at', 'source'],
+				inputLabels: {
+					at: 'at — offset from the template (wire a Vector 3)',
+					source: 'template — the object copies are made from'
+				},
+				// `count`/`maxAlive` are CLAMPED again in spawner.js (20 and 200): a param is
+				// an authored value, never a limit — a peer's edited node arrives as data.
+				params: [
+					{ key: 'count', kind: 'range', min: 1, max: 20, step: 1, label: 'copies per fire' },
+					{ key: 'maxAlive', kind: 'range', min: 1, max: 200, step: 1, label: 'max alive' },
+					{ key: 'interval', kind: 'range', min: 0, max: 10, step: 0.1, label: 'min seconds between' },
+					{ key: 'spread', kind: 'range', min: 0, max: 5, step: 0.1 }
+				],
+				// the two things that WILL be reported otherwise
+				note: 'Copies exist only while the simulation runs — never saved. The host spawns; every peer receives the copy.'
 			}
 		]
 	},
@@ -85,8 +133,13 @@ export const nodeCatalog = [
 				label: 'Set Game State',
 				defaults: { state: 'playing', outcome: '' },
 				params: [
-					{ key: 'state', kind: 'select', options: ['menu', 'playing', 'paused', 'over'] },
-					{ key: 'outcome', kind: 'text', placeholder: 'won / lost', maxLength: 40 }
+					{ key: 'state', kind: 'select', options: [...GAME_STATES] },
+					{ key: 'outcome', kind: 'text', placeholder: 'won / lost', maxLength: 40 },
+					// 21-F3: the FULL reset (back to the menu AND the round clock zeroed) —
+					// the same `resetGame()` the Users popover's admin entry calls, so the
+					// button and the node cannot drift. Absent by default, so every node
+					// authored before this behaves exactly as it did.
+					{ key: 'reset', kind: 'toggle', label: 'full reset' }
 				]
 			},
 			// the event half: pulses when the game ENTERS (or leaves) a state, so screens and
@@ -96,27 +149,63 @@ export const nodeCatalog = [
 				label: 'On Game State',
 				defaults: { state: 'playing', edge: 'enter', pulse: 0.3 },
 				params: [
-					{ key: 'state', kind: 'select', options: ['menu', 'playing', 'paused', 'over'] },
+					{ key: 'state', kind: 'select', options: [...GAME_STATES] },
 					{ key: 'edge', kind: 'select', options: ['enter', 'exit'] }
 				]
 			},
 			// LOCAL on every peer, from a replicated trigger — the house rule. A peer's node
 			// must never move another peer's camera, so each one decides for itself and the
 			// views converge because the TRIGGER replicated, not the camera.
-			{ type: 'setcamera', label: 'Set Active Camera', defaults: { camera: '', restore: false } },
+			// 21-E1.8: `restore` was declared here and READ NOWHERE — the runtime only ever
+			// looks at `camera`. A default nothing consumes is a promise the node cannot keep,
+			// and `gamestart` already covers "put every peer back on the game camera".
+			{ type: 'setcamera', label: 'Set Active Camera', defaults: { camera: '' } },
+			// L-C: switch a LOOK on or off. The camera input picks WHOSE look (empty = the
+			// scene's); the switch is a per-peer runtime override, not an edit to the
+			// authored document, so it needs no message of its own — the trigger already
+			// replicated, the hudScreenOverride rule.
+			// `activate` defaults TRUE because that is what the name promises and what the
+			// first user wired it expecting: R -> that camera, with its grade. A camera look
+			// only composes while you are LOOKING THROUGH that camera, so a node that sets
+			// the look without moving the view is silent — measured, and reported.
+			{ type: 'setlook', label: 'Set Look', defaults: { camera: '', on: true, activate: true } },
 			// "which camera does the game start from" — placed in the SCENE graph. Every peer
 			// acts on it when the state enters `playing`, including a late joiner, which is
 			// what makes it the answer rather than a one-shot button action.
 			{ type: 'gamestart', label: 'Game Start', defaults: { camera: '', state: 'playing' } },
+			// 21-F4: SCENE TRAVEL. Acts on the trigger's STAMP EDGE like Set Game State;
+			// every peer loads the scene ITSELF (a peer missing the bytes pulls them
+			// first), the game state CARRIES across the hop, and the scene is picked by
+			// Explorer content HASH — its own card (TravelNode) lists every .tpscene in
+			// the library (21-G1: discovery is by KIND, never by which folder it sits in).
+			// The DATA keys stay `level`/`levelName`: they are on the wire and in saved
+			// graphs, and renaming them would be a migration for a word.
+			{ type: 'travel', label: 'Travel to scene', defaults: { level: '', levelName: '' } },
+			// 21-F4: the group-travel gate. Wire a condition each PLAYER answers for
+			// themselves ("I am at the portal"); the node fires once EVERY peer in play
+			// answers yes. Editor peers are spectators and do not count.
+			{
+				type: 'allplayers',
+				label: 'All Players',
+				defaults: { pulse: 0.3 },
+				inputs: ['condition'],
+				inputLabels: { condition: 'condition - each player answers for themselves' }
+			},
 			// variables: the shared numbers a game keeps (score, lives, difficulty). They
 			// ride the same singleton, so there is one latest-wins rule for all game state.
+			// 21-G4: ...and `scope` says WHOSE number. 'shared' is the game singleton this
+			// node has always written; 'player' writes THIS peer's own row, which no other
+			// peer can write — the immunity to the documented `add` read-modify-write race.
+			// An absent scope reads as 'shared', so every node saved before this is
+			// unchanged in meaning.
 			{
 				type: 'setvariable',
 				label: 'Set Variable',
-				defaults: { name: 'score', value: 0, op: 'set' },
+				defaults: { name: 'score', value: 0, op: 'set', scope: 'shared' },
 				params: [
 					{ key: 'name', kind: 'text', placeholder: 'score', maxLength: 40 },
-					{ key: 'op', kind: 'select', options: ['set', 'add', 'subtract'] }
+					{ key: 'op', kind: 'select', options: ['set', 'add', 'subtract'] },
+					{ key: 'scope', kind: 'select', options: ['shared', 'player'] }
 				]
 			},
 			{
@@ -134,6 +223,113 @@ export const nodeCatalog = [
 					{ key: 'read', kind: 'select', options: ['elapsed', 'remaining', 'round', 'playing'] },
 					{ key: 'length', kind: 'range', min: 1, max: 3600, step: 1 }
 				]
+			},
+			// 21-G4: the PER-PLAYER read. `mine` is my own number — the one reading in this
+			// whole group that is ALLOWED to differ per peer, which is the point of it —
+			// `sum` is the team total, `max` is who is winning, and `peer` names one row.
+			{
+				type: 'peervariable',
+				label: 'Player Variable',
+				defaults: { name: 'laps', read: 'mine', peer: '', fallback: 0 },
+				params: [
+					{ key: 'name', kind: 'text', placeholder: 'laps', maxLength: 40 },
+					{ key: 'read', kind: 'select', options: ['mine', 'sum', 'max', 'peer'] },
+					{ key: 'peer', kind: 'text', placeholder: 'peer id (read: peer)', maxLength: 64 }
+				]
+			},
+			// 21-F3's `collectcount` ("Collectibles") MOVED to the collectible module in
+			// R3a — it was the palette's one card that knew the recipe's chain shape, and
+			// the module's own count node replaces it (install it from Modules ▸ Browse).
+		]
+	},
+	{
+		// 21-E6: THE CHARACTER CONTROLLER, as nodes. Play mode shipped ONE movement
+		// model — fly, WASD, scroll to change speed — hardcoded in
+		// PointerLockControls, so a game could not have a walker, could not have a
+		// jump, and could not read or write its own speed from a graph.
+		//
+		// THE PARITY CONTRACT gates the whole group: with NO Character Controller node
+		// in any graph, `charControl` stays null and PointerLockControls runs the code
+		// it always ran. The default is therefore reproducible with nodes — a
+		// Character Controller on `fly` at speed 0.1 IS the default — which is both the
+		// regression fixture and the "recreate today's camera with nodes" exercise.
+		group: 'Character',
+		items: [
+			// ONE card for the movement model. Deliberately a DECLARATION rather than an
+			// action: it is not triggered, it is simply PRESENT, and the newest one in
+			// the scene wins (with a toast when there is more than one — the
+			// playSettings.playPublishers precedent).
+			{
+				type: 'charcontroller',
+				label: 'Character Controller',
+				defaults: { mode: 'fly', speed: 0.1, jumpHeight: 1.2, eyeHeight: 1.7, gravity: true },
+				// `inputs: []` is not an oversight: an EMPTY list still opts this card into
+				// the B6 labelled-row socket layout, so each range param owns the handle in
+				// its own row. With `inputs` absent the sockets are placed by pixel offset
+				// instead, which drifts away from its labels the moment a select or a
+				// toggle sits between two ranges — and this card has both.
+				inputs: [],
+				params: [
+					{ key: 'mode', kind: 'select', options: ['fly', 'walk'] },
+					// per-FRAME units: this IS PointerLockControls' own moveSpeed, the number
+					// the scroll wheel has always adjusted, and 0.1 is what parity pins it to
+					{ key: 'speed', kind: 'range', min: 0.01, max: 1, step: 0.01 },
+					// metres — jump and eye height describe the WORLD, not the input
+					{ key: 'jumpHeight', kind: 'range', min: 0, max: 5, step: 0.1 },
+					{ key: 'eyeHeight', kind: 'range', min: 0.2, max: 3, step: 0.05 },
+					{ key: 'gravity', kind: 'toggle' }
+				]
+			},
+			// the player's own WASD as a VALUE, so it can drive anything a number can.
+			// LOCAL by nature: every peer reads ITS OWN keys, which is why it has no card
+			// params at all — there is nothing to author.
+			{ type: 'moveinput', label: 'Move Input', defaults: {} },
+			// possess.js as a node pair on one card. `release` is its own event input
+			// rather than a second node, because a release with no matching possession is
+			// harmless and one card keeps the pairing visible.
+			{
+				type: 'possessnode',
+				label: 'Possess Object',
+				defaults: { camera: 'chase', speed: 4, turnSpeed: 2.5, eyeHeight: 1.7, mouseLook: false },
+				inputs: ['trigger', 'release', 'target'],
+				inputLabels: {
+					trigger: 'trigger - take control',
+					release: 'release - hand it back',
+					target: 'target object'
+				},
+				params: [
+					{ key: 'camera', kind: 'select', options: ['chase', 'orbit', 'first', 'none'] },
+					{ key: 'speed', kind: 'range', min: 0.1, max: 30, step: 0.1 },
+					{ key: 'turnSpeed', kind: 'range', min: 0.1, max: 10, step: 0.1 },
+					{ key: 'eyeHeight', kind: 'range', min: 0.2, max: 3, step: 0.05 },
+					{ key: 'mouseLook', kind: 'toggle' }
+				]
+			},
+			// the camera half of possess WITHOUT the movement half — something else owns
+			// the object's transform (the sim, a clip, a peer) and we only fly behind it.
+			// No framing knobs: the chase offset is possess's SHARED one, so a distance
+			// slider here would silently re-frame the car module's camera too.
+			{
+				type: 'camerafollow',
+				label: 'Camera Follow',
+				defaults: {},
+				inputs: ['trigger', 'stop', 'target'],
+				inputLabels: {
+					trigger: 'trigger - start following',
+					stop: 'stop - let go',
+					target: 'target object'
+				}
+			},
+			// read AND write the movement speed, which is what closes the user's named
+			// ask: keypress -> movespeed(set) is "buttons adjust flying speed", and the
+			// scroll wheel writes the same store while a controller is active.
+			{
+				type: 'movespeed',
+				label: 'Move Speed',
+				defaults: { value: 0.1 },
+				inputs: ['set'],
+				inputLabels: { set: 'set - write the speed' },
+				params: [{ key: 'value', kind: 'range', min: 0.01, max: 1, step: 0.01 }]
 			}
 		]
 	},
@@ -200,8 +396,9 @@ export const nodeCatalog = [
 				]
 			},
 			// A LIST is an element WRITTEN INTO by id, never a value that flows: the
-			// socket system has no arrays, and every game wants a leaderboard. A module
-			// pushes rows through hudRows(); this node names the element and its title.
+			// socket system has no arrays, and every game wants a leaderboard. This node
+			// names the element and its title; HUD Rows below fills it, as does the
+			// element's own authored row list and `api.hud.rows`.
 			{
 				type: 'hudlist',
 				label: 'HUD List',
@@ -209,6 +406,41 @@ export const nodeCatalog = [
 				params: [
 					{ key: 'title', kind: 'text', placeholder: 'optional title', maxLength: 80 },
 					{ key: 'rows', kind: 'range', min: 1, max: 20, step: 1 }
+				]
+			},
+			// 21-E7.1: the WRITER for a list. Set replaces the rows, Append adds one, Clear
+			// empties it - all on the trigger's EDGE, because appending per frame would add
+			// the same row sixty times a second.
+			//
+			// NOTHING IS SENT. The trigger stamp is already replicated and `text` is resolved
+			// from the already-replicated graph, so every peer runs the same ops in the same
+			// order and holds the same rows - the Counter argument. (A peer who joins later
+			// never saw those edges, so rebuild from state with Set if that matters.)
+			{
+				type: 'hudrows',
+				label: 'HUD Rows',
+				defaults: { element: '', op: 'append', text: '' },
+				params: [
+					{ key: 'op', kind: 'select', options: ['set', 'append', 'clear'] },
+					{ key: 'text', kind: 'text', placeholder: 'the row', maxLength: 120 }
+				]
+			},
+			// 21-G4: THE LEADERBOARD, and it is the DERIVED counterpart to HUD Rows above.
+			// That node is edge-driven because appending per frame is a memory leak; a
+			// scoreboard has no events at all — it is a pure function of every peer's own
+			// row plus the roster, both already replicated — so it runs every tick, writes
+			// on CHANGE, and is right for a late joiner who witnessed no edges. `{name}`,
+			// `{v}` and `{rank}` are the format tokens.
+			{
+				type: 'leaderboard',
+				label: 'Leaderboard',
+				defaults: { element: '', variable: 'laps', order: 'desc', format: '{name} — {v}', decimals: 0, limit: 10 },
+				params: [
+					{ key: 'variable', kind: 'text', placeholder: 'laps', maxLength: 40 },
+					{ key: 'order', kind: 'select', options: ['desc', 'asc'] },
+					{ key: 'format', kind: 'text', placeholder: '{name} — {v}', maxLength: 80 },
+					{ key: 'decimals', kind: 'range', min: 0, max: 3, step: 1 },
+					{ key: 'limit', kind: 'range', min: 1, max: 20, step: 1 }
 				]
 			},
 			// 21-D4: the INPUT pair. Everything else in this group WRITES to the HUD;
@@ -229,6 +461,11 @@ export const nodeCatalog = [
 			// the other direction: a graph MOVES a control (a Reset button putting the
 			// volume back, a difficulty the host sets). Effect in, so it fires on a
 			// trigger edge rather than every frame.
+			// 21-E7.2: it also carries the OPTIONS channel. Wire a list into `options` and it
+			// REPLACES the dropdown's authored one live - which is how 'the peers in this
+			// room' or 'the difficulties this scene ships' become a menu. Deliberately not a
+			// node param: with nothing wired the handle resolves to undefined, nothing is
+			// published, and the authored list stays in charge byte-for-byte.
 			{
 				type: 'hudset',
 				label: 'HUD Set Input',
@@ -257,7 +494,78 @@ export const nodeCatalog = [
 			{ type: 'gate', label: 'Gate', defaults: { op: 'and', a: false, b: false } },
 			// 4.6: loop-closers from the NODES.md audit
 			{ type: 'maprange', label: 'Map Range', defaults: { inMin: 0, inMax: 1, outMin: 0, outMax: 1, clamp: true, a: 0 } },
+			// 4.6 -> 21-E4: Select grew N-WAY. a/b keep their handle ids, so every saved
+			// 2-input graph is byte-identical (see the clamp note in evalNodeBody).
 			{ type: 'select', label: 'Select', defaults: { index: 0, a: 0, b: 0 } },
+			// --- 21-E4: the logic a game LOOP is made of. Every trigger in this app is a
+			// ~0.3s pulse and, before these, NOTHING turned a pulse into persistent state:
+			// `counter` was the only stateful node and its op was a param, not an input. That
+			// one gap blocked hide-on-collect, hold-to-show, one-shot doors and cooldowns at
+			// the same time.
+			//
+			// THE UNBLOCK: a pulse becomes a boolean that HOLDS. Deterministic with no new
+			// message - `set`/`reset` compare the replicated trigger STAMPS every peer
+			// already has (most recent wins), which is strictly better than counting for a
+			// late joiner: it converges on the very next pulse of either kind. `toggle` is
+			// the one half that cannot be pure (a stamp is not a count) and takes the
+			// counter precedent instead - counted in applyNodeTrigger, which every peer runs
+			// from the same replicated stamp.
+			{
+				type: 'latch',
+				label: 'Latch',
+				defaults: { initial: false },
+				inputs: ['set', 'reset', 'toggle'],
+				inputLabels: { set: 'set - turn on', reset: 'reset - turn off', toggle: 'toggle - flip' },
+				// 21-F2: `perRound` is the collectible RESET, opt-in per node. With it on, a
+				// set/reset stamp from a previous round did not happen, so the latch falls
+				// back to `initial` — which is how a collected gem comes back when the round
+				// bumps or the game returns to its menu, with no reset edge to draw and
+				// nothing sent. Off by default: a Latch in a graph with no game must not
+				// change behaviour because somebody pressed Start.
+				params: [
+					{ key: 'initial', kind: 'toggle' },
+					{ key: 'perRound', kind: 'toggle', label: 'reset each round' }
+				]
+			},
+			// "3 seconds after the door opens, close it", and every cooldown. PURE: the
+			// output fires at stamp + seconds, which each peer reaches on its own clock from
+			// the one shared stamp, so nothing is scheduled and nothing is sent.
+			{
+				type: 'delay',
+				label: 'Delay',
+				defaults: { seconds: 1, pulse: 0.3 },
+				inputs: ['trigger', 'cancel'],
+				inputLabels: { trigger: 'trigger', cancel: 'cancel - drop a pending pulse' },
+				params: [{ key: 'seconds', kind: 'range', min: 0, max: 60, step: 0.1 }]
+			},
+			// chained steps off ONE pulse. Four fixed outputs, each at its CUMULATIVE offset
+			// from the input stamp - derived exactly like Delay, so a step is a pure
+			// function of (stamp, params, synced time). Its own card: four source handles.
+			{
+				type: 'sequence',
+				label: 'Sequence',
+				defaults: { delay1: 0, delay2: 0.5, delay3: 0.5, delay4: 0.5, pulse: 0.3 },
+				inputs: ['trigger']
+			},
+			// one-shot doors, first-visit triggers. The FIRST stamp is not derivable from a
+			// trigger log that keeps only the LAST one, so this is the counter precedent:
+			// applyNodeTrigger freezes the first stamp on the node's own entry and `rearm`
+			// clears it.
+			{
+				type: 'once',
+				label: 'Once',
+				defaults: { pulse: 0.3 },
+				inputs: ['trigger', 'rearm'],
+				inputLabels: { trigger: 'trigger', rearm: 'rearm - allow it again' },
+				// 21-F2: the Latch's flag, same rule — a Once frozen in a previous round
+				// reads as armed again, so a collectible counts once PER ROUND
+				params: [{ key: 'perRound', kind: 'toggle', label: 'reset each round' }]
+			},
+			// 21-E5-era placement fix (2026-08-22): a Counter is not a trigger, it COUNTS
+			// them — it is the only node in the old Triggers group with inputs of its own
+			// (pulse/reset) and it outputs a number, so it belongs with the other stateful
+			// logic (Latch/Delay/Sequence/Once) rather than among the event SOURCES.
+			{ type: 'counter', label: 'Counter', defaults: { op: 'up', step: 1 } },
 			// 134: loops, timers, sensors + object actions (all deterministic)
 			{ type: 'loop', label: 'Loop', defaults: { from: 0, to: 1, rate: 1, mode: 'wrap' } },
 			{ type: 'timer', label: 'Timer', defaults: { delay: 1, a: 0 } },
@@ -280,7 +588,18 @@ export const nodeCatalog = [
 			// H3: keyboard trigger — LOCAL key presses replicate as trigger pulses
 			// (golden rule: never stream local state); held keys re-pulse so the
 			// output stays high while held
-			{ type: 'keypress', label: 'Key Press', defaults: { code: 'KeyR', pulse: 0.3 } },
+			// 21-E3: `edge` picks WHICH moment fires. 'down' is the original pulse (held
+			// keys re-pulse, so the output stays high while held - byte-identical for
+			// every saved graph, absent = down). 'up' is the missing falling edge, the
+			// other half of hold-to-show ("keypress(down) -> show, keypress(up) -> hide").
+			// 'held' reads as a steady 1 while the key is down WITHOUT a toggle fighting
+			// the re-stamp - the re-stamp stays its implementation, so it costs no wire.
+			{
+				type: 'keypress',
+				label: 'Key Press',
+				defaults: { code: 'KeyR', pulse: 0.3, edge: 'down' },
+				params: [{ key: 'edge', kind: 'select', options: ['down', 'up', 'held'] }]
+			},
 			// PFX-C: fires when the physics sim lands this object on the ground /
 			// another object (initiator-detected, replicated trigger stamp)
 			{
@@ -300,7 +619,38 @@ export const nodeCatalog = [
 				defaults: { pulse: 0.3, seconds: 0.5 },
 				params: [{ key: 'seconds', kind: 'range', min: 0.1, max: 5, step: 0.1 }]
 			},
-			{ type: 'counter', label: 'Counter', defaults: { op: 'up', step: 1 } }
+			// 21-E5 THE GAMEPAD, moved here from Input (2026-08-22): both are things arriving
+			// from OUTSIDE the graph — the player’s thumb — which is what this group means, and
+			// what Input does NOT: everything left there is a value the AUTHOR dials or the app
+			// computes. A pad button is the Key Press model verbatim (edges replicate as trigger
+			// stamps, the held level is derived per peer), so a pad press drives a game exactly
+			// the way a key does with no new message type. A DEFAULT MAPPING is already on (left
+			// stick moves, right stick looks, d-pad + A drive the HUD ring), so these nodes are
+			// for a game that wants its OWN bindings; E6's controller nodes override the default.
+			{
+				type: 'gamepadbutton',
+				label: 'Gamepad Button',
+				defaults: { button: 'GamepadA', pulse: 0.3, edge: 'down' },
+				params: [
+					{ key: 'button', kind: 'select', options: GAMEPAD_BUTTONS },
+					{ key: 'edge', kind: 'select', options: ['down', 'up', 'held'] }
+				]
+			},
+			// a stick is LOCAL: every peer reads its OWN pad, so this node evaluates to a
+			// different number on each of them BY DESIGN (never streamed — golden rule 8).
+			// `deadzone` here is the GAME's threshold on top of the device's dead centre in
+			// Settings ▸ Input, hence the 0 default: one deadzone unless you ask for two.
+			{
+				type: 'gamepadaxis',
+				label: 'Gamepad Axis',
+				defaults: { axis: 'lx', deadzone: 0, invert: false, scale: 1 },
+				params: [
+					{ key: 'axis', kind: 'select', options: GAMEPAD_AXES },
+					{ key: 'deadzone', kind: 'range', min: 0, max: 0.9, step: 0.05 },
+					{ key: 'scale', kind: 'range', min: -4, max: 4, step: 0.1 },
+					{ key: 'invert', kind: 'toggle' }
+				]
+			}
 		]
 	},
 	{

@@ -37,6 +37,8 @@ export const GAME_STATES = ['menu', 'playing', 'paused', 'over'];
  *   state: string,
  *   round: number,
  *   startedAt: number,
+ *   pausedAt: number,
+ *   pausedMs: number,
  *   outcome: string,
  *   vars: Record<string, any>,
  *   changedAt: number
@@ -44,7 +46,7 @@ export const GAME_STATES = ['menu', 'playing', 'paused', 'over'];
  */
 
 /** @type {GameState} */
-const DEFAULT = { state: 'menu', round: 0, startedAt: 0, outcome: '', vars: {}, changedAt: 0 };
+const DEFAULT = { state: 'menu', round: 0, startedAt: 0, pausedAt: 0, pausedMs: 0, outcome: '', vars: {}, changedAt: 0 };
 
 /** @type {import('svelte/store').Writable<GameState>} */
 export const gameState = writable({ ...DEFAULT });
@@ -68,6 +70,12 @@ export function normalizeGameState(data) {
 		state: typeof data?.state === 'string' && data.state ? data.state : 'menu',
 		round: num(data?.round, 0),
 		startedAt: num(data?.startedAt, 0),
+		// 21-E3: pause ACCOUNTING rides the replicated singleton, so every peer and a
+		// late joiner agree on the same round clock. `pausedAt` is the live pause's
+		// start stamp (0 = not paused), `pausedMs` the accumulated spans of the round.
+		// Absent on an old payload = 0 = no pause ever, byte-identical.
+		pausedAt: num(data?.pausedAt, 0),
+		pausedMs: num(data?.pausedMs, 0),
 		outcome: typeof data?.outcome === 'string' ? data.outcome : '',
 		vars: data?.vars && typeof data.vars === 'object' ? { ...data.vars } : {},
 		changedAt: num(data?.changedAt, 0)
@@ -134,8 +142,22 @@ export function setGameState(state, opts = {}) {
 	/** @type {Partial<GameState>} */
 	const patch = { state, outcome: opts.outcome ?? (state === 'over' ? before.outcome : '') };
 	if (state === 'playing' && entering) {
-		patch.startedAt = Date.now();
-		patch.round = opts.round ?? before.round + 1;
+		// resuming FROM a pause keeps the round and its startedAt; a fresh start (from
+		// menu/over) re-stamps and bumps the round. The pause span is banked either way.
+		if (before.state === 'paused') {
+			patch.pausedMs = before.pausedMs + (before.pausedAt ? Date.now() - before.pausedAt : 0);
+			patch.pausedAt = 0;
+		} else {
+			patch.startedAt = Date.now();
+			patch.round = opts.round ?? before.round + 1;
+			patch.pausedAt = 0;
+			patch.pausedMs = 0;
+		}
+	}
+	if (state === 'paused' && entering) patch.pausedAt = Date.now();
+	if (state !== 'paused' && state !== 'playing' && entering) {
+		// leaving the round entirely closes any live pause span
+		patch.pausedAt = 0;
 	}
 	return commitGameState(patch);
 }
@@ -143,8 +165,60 @@ export function setGameState(state, opts = {}) {
 /** Seconds since the current round started, off the shared stamp so every peer agrees.
  * 0 when nothing has started. */
 export function gameElapsed() {
-	const { startedAt } = get(gameState);
-	return startedAt ? Math.max(0, (Date.now() - startedAt) / 1000) : 0;
+	// 21-E3: paused time does not count. The banked spans plus the LIVE span (a pause
+	// still open) both come off, so a timer HUD freezes while paused instead of
+	// counting through - which it measurably did.
+	const { startedAt, pausedAt, pausedMs } = get(gameState);
+	if (!startedAt) return 0;
+	const live = pausedAt ? Date.now() - pausedAt : 0;
+	return Math.max(0, (Date.now() - startedAt - pausedMs - live) / 1000);
+}
+
+// ---- 21-F2: what "a round" means to everything derived from it -------------------
+
+/**
+ * Has this scene's game shell ever been USED? A scene that never presses Start sits in
+ * the DEFAULT `menu` with round 0 forever, and 21-E8's collectibles worked there on play
+ * mode alone — so both rules below defer entirely to play mode until a round exists.
+ * @param {GameState} g
+ */
+function shellInUse(g) {
+	return (g.round ?? 0) > 0 || (g.startedAt ?? 0) > 0;
+}
+
+/**
+ * 21-F2: is a ROUND underway right now? `paused` counts — pause is a shared game RULE
+ * (21-E3) and the world holds its state through it — and a shell nobody has started
+ * answers true, which is what keeps a Start-button-less scene behaving as it did.
+ */
+export function roundUnderway() {
+	const g = get(gameState);
+	if (!shellInUse(g)) return true;
+	return g.state === 'playing' || g.state === 'paused';
+}
+
+/**
+ * 21-F2 THE RESET RULE, DERIVED rather than wired. A round-scoped node (a collectible's
+ * Latch and Once) treats every trigger stamp OLDER than this as never having happened:
+ *
+ *   null       no cutoff — the shell is not in use, so nothing is round-scoped
+ *   a stamp    the current round's `startedAt`: a NEW round un-collects everything
+ *   Infinity   menu / over — we are not in a round at all, so nothing before now counts.
+ *              That is the "reset on return to menu" half of the same one rule.
+ *
+ * WHY DERIVED, and not a hidden reset edge or an imperative clear: both of those need
+ * SOMEBODY to run them, so whoever pressed Start would have to broadcast a reset and a
+ * late joiner would witness nothing at all. This reads the replicated singleton every
+ * peer already agrees on, which means two peers cannot disagree and a joiner is right on
+ * arrival. It also keeps latch/once PURE (E4): they gain one more replicated INPUT, not
+ * a state of their own.
+ * @returns {number|null} an epoch ms stamp, `Infinity`, or null
+ */
+export function roundCutoff() {
+	const g = get(gameState);
+	if (!shellInUse(g)) return null;
+	if (g.state === 'playing' || g.state === 'paused') return g.startedAt || null;
+	return Infinity;
 }
 
 /** @param {string} name @param {any} value */

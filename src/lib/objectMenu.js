@@ -352,6 +352,16 @@ export function buildObjectMenuItems(uuid, opts = {}) {
 					: [])
 			]
 		},
+		// 21-G1: THE GAME SUBMENU IS GONE FROM HERE. It held exactly the two collectible
+		// recipe entries, and they have moved to the NODE EDITOR's Game category, where a
+		// recipe belongs: what it builds IS a flow graph, and the object menu is the wrong
+		// place to teach that. The spline precedent decided it — 21-C3 pulled the lap gates
+		// out of core for making every spline in every scene sprout a Road menu for the
+		// benefit of one game. This project is not only for games, so a game recipe does
+		// not get a permanent shelf on every object's right-click.
+		//
+		// R3a moved the recipe again — into the collectible MODULE, whose manager toolbox
+		// owns it now (Modules ▸ Browse). Core keeps no collectible entry point at all.
 		{
 			label: (muted ? 'Enable flow effects' : 'Disable flow effects') + suffix,
 			icon: 'workflow',

@@ -78,7 +78,7 @@ h.run(async () => {
 							futureField: 'from a newer build',
 							elements: [
 								...s.elements,
-								{ id: 'future-1', kind: 'minimap', label: 'Map', someNewProp: 42, anchor: 'bottom-left' }
+								{ id: 'future-1', kind: 'holotable', label: 'Map', someNewProp: 42, anchor: 'bottom-left' }
 							]
 						}
 					: s
@@ -93,11 +93,11 @@ h.run(async () => {
 			screenExtra: back.screens[0].futureField,
 			// a bad anchor is CLAMPED (a rendering decision), unlike a kind
 			clampedAnchor: H.normalizeHudElement({ anchor: 'nowhere' }).anchor,
-			renderable: window.__stores.hudDocs.HUD_KINDS.includes('minimap')
+			renderable: window.__stores.hudDocs.HUD_KINDS.includes('holotable')
 		};
 	});
 	h.check(unknown.kept, 'an element of an UNKNOWN kind is preserved verbatim, never deleted');
-	h.check(unknown.kind === 'minimap', `its kind is kept as authored (${unknown.kind})`);
+	h.check(unknown.kind === 'holotable', `its kind is kept as authored (${unknown.kind})`);
 	h.check(unknown.extraProp === 42, `and so is a property we have never heard of (${unknown.extraProp})`);
 	h.check(unknown.screenExtra === 'from a newer build', 'a spread preserves unknown SCREEN fields too');
 	h.check(!unknown.renderable, 'it is not in HUD_KINDS, so the layer skips it at RENDER — a rendering decision');
@@ -138,6 +138,7 @@ h.run(async () => {
 			position: cs.position,
 			pointerEvents: cs.pointerEvents,
 			zIndex: cs.zIndex,
+			authoring: el.getAttribute('data-authoring'),
 			hudVar,
 			slots
 		};
@@ -148,12 +149,28 @@ h.run(async () => {
 		layer.pointerEvents === 'none',
 		`and pointer-events: none, so the viewport keeps every click (${layer.pointerEvents})`
 	);
+	// 21-E1.5: the tier is unchanged IN PLAY and one step DOWN while authoring. The
+	// original assertion was made in the editor, where the layer painted over every
+	// floating window and its interactive kinds swallowed their clicks — so this check
+	// was asserting the bug. Both halves are pinned now.
 	h.check(
-		layer.zIndex === layer.hudVar && layer.hudVar === '45',
-		`it lives at --z-hud with NO new tier (z=${layer.zIndex}, --z-hud=${layer.hudVar})`
+		layer.hudVar === '45' && layer.zIndex === '38' && layer.authoring === 'true',
+		`while authoring it sits below --z-window (z=${layer.zIndex}, --z-hud=${layer.hudVar})`
 	);
+	// and the 21-A rule itself, which must NOT have moved: in play it is --z-hud, above
+	// the camera PiP and below modal/toast/menu
+	const playZ = await page.evaluate(async () => {
+		window.__stores.isLocked.set(true);
+		await new Promise((r) => setTimeout(r, 800));
+		const el = document.querySelector('#hud-layer');
+		const z = el ? getComputedStyle(el).zIndex : null;
+		window.__stores.isLocked.set(null);
+		await new Promise((r) => setTimeout(r, 600));
+		return z;
+	});
+	h.check(playZ === '45', `and in PLAY it is --z-hud with NO new tier (z=${playZ})`);
 	h.check(
-		layer.slots.includes('text') && !layer.slots.includes('minimap'),
+		layer.slots.includes('text') && !layer.slots.includes('holotable'),
 		`known kinds render and the unknown one is skipped (${JSON.stringify(layer.slots)})`
 	);
 

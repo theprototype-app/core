@@ -1,4 +1,4 @@
-import { writable } from 'svelte/store';
+import { writable, get } from 'svelte/store';
 
 /**
  * Open-core extension points (roadmap #13 batch M1). These seams are INERT in the
@@ -29,7 +29,13 @@ const ALWAYS_ALLOWED = new Set([
 	'getannotations',
 	'getmodulestate',
 	'getnodedefs',
-	'getjoints'
+	'getjoints',
+	// DEVX #18: the flow trigger log. On the floor beside `getnodes` for the same reason
+	// the list gives — answering a full-state REQUEST is how a peer ever syncs, and this
+	// one decides whether a joiner sees a collected world or a reset one. The `triggers`
+	// REPLY is deliberately NOT here: a reply is content, and every other domain leaves
+	// its content gateable (`getnodes` is on the floor, `nodes` is not).
+	'gettriggers'
 ]);
 
 /** @type {((peerId: string, msgType: string) => boolean) | null} */
@@ -154,3 +160,60 @@ export const CLOUD_HOOKS_VERSION = 2;
  * Settings ▸ About renders it as a "Cloud plugin x.y.z" row. Null without a plugin.
  * @type {import('svelte/store').Writable<{name: string, version: string} | null>} */
 export const cloudPluginInfo = writable(null);
+
+/**
+ * 21-G5 (F7): CROSS-SCENE PRESENCE, the rolesInfo-bridge shape one domain over. The
+ * rooms plugin publishes who is in the project's OTHER rooms/scenes and core renders
+ * it in the Users popover — chips, a Watch that says WHY it cannot reach them (a peer
+ * outside your mesh is unreachable by design), and an Invite whose transport belongs
+ * entirely to the plugin. NULL without a plugin, and every reader treats null as
+ * "render nothing" — the OSS build is byte-identical (the open-core rule).
+ *
+ * Shape (loose on purpose; core reads defensively):
+ *   { myRoomId: string|null,
+ *     rooms: [{ id, name, scene, hostPeerId, members: [{peerId, name, mode}] }],
+ *     invite?: (peerId, room) => void }
+ * @type {import('svelte/store').Writable<any>} */
+export const scenePresence = writable(null);
+
+/**
+ * R22-R1: WHO OWNS A SHARED FILE, the `rolesInfo` bridge shape one domain over. A
+ * shared-library row carries an owner so the Explorer can say who put it there, and
+ * "who" has three tiers the app can actually distinguish:
+ *
+ *   · the peer ID          — always available, and all an anonymous peer has
+ *   · a nickname           — `userdata` slot 1, already replicated, still unverified
+ *   · an ACCOUNT username  — only a logged-in user has one, and only the cloud plugin
+ *     knows it, which is why this is a bridge and not a store core writes
+ *
+ * The third tier is the one that earns a checkmark: core renders it as verified
+ * because an authenticated plugin vouched for it, and renders nothing at all without
+ * a plugin. NULL is the OSS state and every reader treats it as "no account" — never
+ * as "not logged in", which is a claim core is in no position to make.
+ *
+ * Shape (loose on purpose; core reads defensively):
+ *   { username: string, verified?: boolean }
+ * @type {import('svelte/store').Writable<any>} */
+export const cloudIdentity = writable(null);
+
+/** Plugin seam for the above (cloudApi). Passing null clears it — a logout must be
+ * able to take the checkmark back. @param {any} info */
+export function setCloudIdentity(info) {
+	cloudIdentity.set(info && typeof info === 'object' && info.username ? info : null);
+}
+
+/**
+ * R22-R1: the owner stamp for a row WE publish. Three tiers, best first, and the
+ * `account` key is present ONLY when a plugin vouched for one — its absence is what
+ * makes the Explorer's checkmark mean something.
+ * @param {string} peerId @param {string} name
+ * @returns {{id: string, name: string, account?: string}}
+ */
+export function ownerStamp(peerId, name) {
+	const id = String(peerId ?? '');
+	const who = get(cloudIdentity);
+	/** @type {any} */
+	const out = { id, name: String(name ?? '') };
+	if (who?.username) out.account = String(who.username);
+	return out;
+}

@@ -1,11 +1,13 @@
 import { get } from 'svelte/store';
-import { inspectorClose, libraryClose, closeMenu } from '../stores/appStore';
+import { inspectorClose, closeMenu } from '../stores/appStore';
+import { bottomDockWouldTake } from './bottomDockDrop';
 
 // Docking lite (phase 81L). Drag a window near the left/right screen edge to
 // dock it as a full-height panel (--z-drawer tier); drag its header away to
 // float it again. One window per edge (a second drop wiggles the occupant —
-// SPLITS stay in pending/81). With the Inspector/Library drawer open, a
-// right-docked panel offsets inward as a second column.
+// SPLITS stay in pending/81). With the Inspector drawer open, a right-docked
+// panel offsets inward as a second column.
+// 21-H2: the Library drawer it also used to give way to no longer exists.
 
 const EDGE = 44; // px from a screen edge that counts as a dock drop
 const TOP = 64; // below the topbar, like the drawers
@@ -32,7 +34,7 @@ function widthOf(key) {
 }
 
 function drawerOpen() {
-	return get(inspectorClose) === false || get(libraryClose) === false;
+	return get(inspectorClose) === false;
 }
 
 // A LEFT-docked panel starts at x:0, but the app-sidebar floats above it (z-hud >
@@ -209,9 +211,8 @@ export function dockable(node, { key }) {
 	}
 	if (!subscribed) {
 		subscribed = true;
-		// right-docked panels give way to the Inspector/Library drawer
+		// right-docked panels give way to the Inspector drawer
 		inspectorClose.subscribe(() => applyAll());
-		libraryClose.subscribe(() => applyAll());
 		// left dock insets past the sidebar — re-apply next frame too, since the
 		// sidebar mounts AFTER the store fires (so it can be measured)
 		closeMenu.subscribe(() => {
@@ -248,18 +249,31 @@ export function dockable(node, { key }) {
 		}
 		dragging = true;
 	};
+	// W7 PRECEDENCE: the bottom-dock band beats an edge. The bottom-left corner is in
+	// both reaches at once, and a DOCK_FAMILY window dropped there means "put it in the
+	// dock" — the model the user was aiming at — not "make it a full-height side panel
+	// that happens to start below the dock". Asking here rather than there keeps the
+	// decision on the side that has to yield.
+	/** @param {any} e @returns {'left'|'right'|null} */
+	const edgeAt = (e) => {
+		// ...but only where the dock would really take THIS window. Yielding the band
+		// unconditionally hands the bottom of both side edges to a dock that cannot
+		// accept a non-DOCK_FAMILY panel, so the drop does nothing at all.
+		if (bottomDockWouldTake(key, e.clientY)) return null;
+		return e.clientX < EDGE ? 'left' : e.clientX > window.innerWidth - EDGE ? 'right' : null;
+	};
 	/** @param {any} e */
 	const move = (e) => {
 		if (!dragging) return;
-		showZone(e.clientX < EDGE ? 'left' : e.clientX > window.innerWidth - EDGE ? 'right' : null);
+		showZone(edgeAt(e));
 	};
 	/** @param {any} e */
 	const up = (e) => {
 		if (!dragging) return;
 		dragging = false;
 		showZone(null);
-		if (e.clientX < EDGE) dock(key, 'left');
-		else if (e.clientX > window.innerWidth - EDGE) dock(key, 'right');
+		const side = edgeAt(e);
+		if (side) dock(key, side);
 	};
 	node.addEventListener('pointerdown', down, true); // capture: beats dragWindow while docked
 	window.addEventListener('pointermove', move);

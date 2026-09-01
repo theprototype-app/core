@@ -16,12 +16,35 @@ export function registerWindowReset(fn) {
 	return () => resetters.delete(fn);
 }
 
-/** Clear every persisted floating-window position + re-lay live windows (169). */
+// 21-I3: the same "snap it fully back on-screen" the IntersectionObserver below performs
+// on a hidden -> visible transition, exposed by KEY for a window that never went hidden.
+// The reveal rule only fires on that transition, so asking an ALREADY-OPEN window to come
+// back does nothing — which is exactly the case a repeat "3D preview" click is: the window
+// is open, possibly shoved off-screen or behind the panel, and re-setting its target moves
+// nothing. Reusing the action's own `clamp(true)` keeps one copy of that geometry.
+/** @type {Map<string, () => void>} */
+const revealers = new Map();
+
+/** Pull a live window fully back on-screen. @param {string} key @returns {boolean} was it live */
+export function revealWindow(key) {
+	const fn = revealers.get(key);
+	if (!fn) return false;
+	try {
+		fn();
+	} catch {}
+	return true;
+}
+
+/** Clear every persisted floating-window position + re-lay live windows (169).
+ *  W1 folded `controlsLayout` in: a toolbar customized into a corner — collapsed, or
+ *  with its buttons hidden — is only reachable again through a right-click menu, and
+ *  iOS Safari fires no `contextmenu`. This is the app's existing "put my chrome back"
+ *  button, so it is the honest hatch rather than a second one. */
 export function resetWindowLayout() {
 	if (typeof localStorage !== 'undefined') {
 		for (const key of Object.keys(localStorage))
 			if (key.startsWith('win:')) localStorage.removeItem(key);
-		['objectListRect', 'explorerWinW', 'explorerWinH', 'explorerHeight', 'explorerTreeW', 'uvWinW', 'uvWinH'].forEach((k) =>
+		['objectListRect', 'explorerWinW', 'explorerWinH', 'explorerHeight', 'explorerTreeW', 'uvWinW', 'uvWinH', 'controlsLayout'].forEach((k) =>
 			localStorage.removeItem(k)
 		);
 	}
@@ -223,6 +246,19 @@ export function dragWindow(node, { key, defaultRect = {}, resizable = false, axi
 	}
 	const unregisterReset = registerWindowReset(resetToDefault);
 
+	// 21-I3: the keyed reveal (see revealWindow above). Deliberately does NOT save() —
+	// same reasoning as the IntersectionObserver reveal: bringing a window back is a
+	// DISPLAY decision, and persisting it would overwrite the user's parked spot.
+	const reveal = () => {
+		if (typeof rect.left !== 'number' || typeof rect.top !== 'number') {
+			resolveDefaults();
+			return;
+		}
+		clamp(true);
+		apply();
+	};
+	revealers.set(key, reveal);
+
 	let dragging = false;
 
 	/** @param {any} e */
@@ -347,6 +383,9 @@ export function dragWindow(node, { key, defaultRect = {}, resizable = false, axi
 	return {
 		destroy() {
 			unregisterReset();
+			// only if it is still OURS — a remount can register the new node before the old
+			// one tears down, and deleting blindly would strand the live window
+			if (revealers.get(key) === reveal) revealers.delete(key);
 			io?.disconnect();
 			sizeWatch?.disconnect();
 			window.removeEventListener('resize', onWindowResize);

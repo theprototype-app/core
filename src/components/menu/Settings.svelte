@@ -1,12 +1,13 @@
 <script lang="ts">
 	import { Accordion, AccordionItem, Modal, Button, Checkbox, Toggle } from 'flowbite-svelte';
-	import { X } from '@lucide/svelte';
+	import { X, Lock, RotateCcw } from '@lucide/svelte';
 	import ThemedSelect from '../ui/ThemedSelect.svelte';
 	import SettingRow from './SettingRow.svelte';
 	import { showGrid, vrOverride, vrMenuHand, vrSnapAngle, vrMirrorSnapTurn, vrTeleportEnabled, vrSleeveEnabled, vrVertexHold, vrFlying, vrPassthrough, vrMenuHold, vrTargetHz, peerHandStyle } from '../../stores/sceneStore.js';
 	import { applyVRFrameRate } from '$lib/vrControls';
-	import { settingsOpen, settingsSection, hidePanels, restorePanels, advancedMode, showEnvInList, objectSearchEnabled, showSimControls, showToast, showRoomsButton, toastsInDrawerOnly, mobileUndockAllowed, enableShiftAdd, noteDoubleClickToOpen, duplicateCarriesAnimation, duplicateCarriesFlow, duplicateCarriesShader, touchTools } from '../../stores/appStore.js';
+	import { settingsOpen, settingsSection, hidePanels, restorePanels, advancedMode, showEnvInList, objectSearchEnabled, showSimControls, showToast, showRoomsButton, toastsInDrawerOnly, mobileUndockAllowed, enableShiftAdd, noteDoubleClickToOpen, duplicateCarriesAnimation, duplicateCarriesFlow, duplicateCarriesShader, touchTools, floatingToolbar, toolbarAlwaysOnTop } from '../../stores/appStore.js';
 	import { trackpadMode, allowBrowserZoom, reversePan, panEnabled, pinchZoomEnabled } from '$lib/trackpadNav';
+	import { gamepadPrefs, setGamepadPrefs, DEADZONE_RANGE, SENSITIVITY_RANGE } from '$lib/gamepadPrefs';
 	import { drawerSlot, cloudPluginInfo } from '$lib/cloudHooks';
 	import { versionString } from '$lib/version.js';
 	const appVersionString = versionString();
@@ -30,11 +31,47 @@
 		removeCustomTheme
 	} from '$lib/themes';
 	import { autosaveEnabled, autoRestoreEnabled, clearSavedSession } from '$lib/autosave';
+	// 21-G7: how many past versions of each scene keep their bytes on this machine (0 = off)
+	import { keepVersionsSetting } from '$lib/projectManifest';
+	// R22 round 2: who may take a file out of the shared library (locked answer: anyone,
+	// with the owner-only rule kept as the second option)
+	import {
+		unshareAuthority,
+		autoShareAll,
+		autoDownload,
+		recycleBinEnabled,
+		keepRecycleBin,
+		deleteWithoutConfirm
+	} from '$lib/sharedLibrary';
+	// 21-I5 (locked answer 5): the save-name template — one rule for every download
+	import { saveNameTemplate } from '$lib/saveName';
+	// loose-scenes fix (bug 2a): what an import does with bytes already in the library.
+	// It lives HERE and not in the Explorer's cog because that cog holds view and
+	// interaction prefs, while this governs what importing DOES — a file rule, beside
+	// the other file rules.
+	import { duplicateImportMode } from '$lib/importDuplicates';
 	import { viewPrefs, setViewPrefs, resetViewPrefs, DEFAULT_VIEW_PREFS } from '$lib/viewPrefs';
 	import { showWelcomeOnStart, showWhatsNewNotice, openWelcome, openWhatsNew } from '$lib/whatsNew';
 	import { resetWindowPoses } from '$lib/vrWindowPoses';
+	import { probeFindings, probeRunning, probeSupport, runArProbe, clearProbeState } from '$lib/arProbe';
+	import { roomAlignment } from '$lib/colocation';
+	import { roomNudge, nudgeIsZero, NUDGE_MAX_M } from '$lib/colocation';
+	import { setRoomNudge, resetRoomNudge } from '$lib/colocationNudge';
+	import DragRow from '../ui/DragRow.svelte';
+	import { colocatedGhostHands } from '$lib/colocationPresence';
+	import { colocateHereFromView, stopColocation } from '$lib/colocationCalibrate';
+	import { anchorRecords, forgetRoom, forgetCandidate } from '$lib/colocationAnchors';
 	import { resetWindowLayout } from '$lib/dragWindow';
-	import { shortcuts } from '$lib/shortcuts';
+	import {
+		shortcuts,
+		comboOf,
+		isRebindable,
+		rebindShortcut,
+		resetShortcut,
+		resetAllShortcuts,
+		setOverride,
+		setShortcutCapture
+	} from '$lib/shortcuts';
 	import {
 		aiEnabled,
 		setAiEnabled,
@@ -66,13 +103,91 @@
 
 	let shortcutGroups = [...new Set(shortcuts.map((s) => s.group))];
 	let shortcutsExpanded = false;
+
+	// --- Phase 5: rebinding ------------------------------------------------
+	// The registry is a plain array, so nothing here re-renders when a combo
+	// moves. `shortcutsVersion` is the redraw signal and the rows sit inside a
+	// {#key} on it. LEGACY-MODE FILE: a plain `let` is reactive on reassignment;
+	// a `$state` here would flip the whole component to runes and break the build.
+	let shortcutsVersion = 0;
+	/** the row currently listening for a combo */
+	let capturingId: string | null = null;
+	/** a refused rebind, offering the swap */
+	let shortcutConflict: { id: string; keys: string; other: any } | null = null;
+	let captureListener: ((e: KeyboardEvent) => void) | null = null;
+
+	function stopCapture() {
+		if (captureListener) window.removeEventListener('keydown', captureListener, true);
+		captureListener = null;
+		capturingId = null;
+		setShortcutCapture(false);
+	}
+
+	function startCapture(id: string) {
+		stopCapture();
+		shortcutConflict = null;
+		capturingId = id;
+		// the registry stands down for the press we are about to record
+		setShortcutCapture(true);
+		captureListener = (e: KeyboardEvent) => {
+			// a bare modifier is the user still BUILDING the combo, not the combo
+			if (e.key === 'Control' || e.key === 'Alt' || e.key === 'Shift' || e.key === 'Meta') return;
+			e.preventDefault();
+			// Capture phase on window, so this is the first listener in the app to see
+			// the press. Stopping it here is what keeps voiceChat's bare-V push-to-talk
+			// (which consults no registry of any kind) from opening the mic while a user
+			// binds V to something, and Escape from closing the dialog underneath us.
+			e.stopPropagation();
+			if (e.key === 'Escape') {
+				stopCapture();
+				shortcutsVersion++;
+				return;
+			}
+			const combo = comboOf(e);
+			const result = rebindShortcut(id, combo);
+			if (!result.ok && result.conflict) shortcutConflict = { id, keys: combo, other: result.conflict };
+			else if (!result.ok) showToast(result.reason || 'That key cannot be bound');
+			else if (result.meshEdit)
+				showToast(combo + ' is also a mesh-edit key, so it will do nothing while an Edit Mesh session is open');
+			stopCapture();
+			shortcutsVersion++;
+		};
+		window.addEventListener('keydown', captureListener, true);
+	}
+
+	/** Take the combo anyway and hand the loser this row's previous keys. Both
+	 * writes go through setOverride, the path that does NOT re-check for a
+	 * conflict — we have already decided. Free the other row FIRST. */
+	function swapConflict() {
+		const c = shortcutConflict;
+		if (!c) return;
+		const mine = shortcuts.find((s) => s.id === c.id);
+		if (mine) setOverride(c.other.id, mine.keys);
+		setOverride(c.id, c.keys);
+		shortcutConflict = null;
+		shortcutsVersion++;
+	}
+
+	function resetOneShortcut(id: string) {
+		resetShortcut(id);
+		shortcutConflict = null;
+		shortcutsVersion++;
+	}
+
+	function resetEveryShortcut() {
+		resetAllShortcuts();
+		shortcutConflict = null;
+		shortcutsVersion++;
+	}
 	let aiExpanded = false;
 	let sceneExpanded = false;
+	let explorerExpanded = false;
 	let connectionExpanded = false;
 	let aboutExpanded = false;
 	let vrExpanded = false; // D7: edit-cap toasts deep-link here ('vr')
 	let interfaceExpanded = false;
 	let controlsExpanded = false;
+	let inputExpanded = false; // 21-E5: gamepad (the shortcuts-registry precedent: LOCAL prefs)
 
 	// D7: sanitize a cap edit — an empty/garbage field falls back to the default
 	function setCap(store: any, raw: string, fallback: number) {
@@ -333,9 +448,13 @@
 		vrExpanded = $settingsSection === 'vr';
 		interfaceExpanded = $settingsSection === 'interface';
 		controlsExpanded = $settingsSection === 'controls';
+		inputExpanded = $settingsSection === 'input';
 	} else if ($settingsOpen === false) {
 		restorePanels();
 		$settingsSection = null;
+		// closing mid-capture would leave the registry muted for the whole session
+		stopCapture();
+		shortcutConflict = null;
 	}
 
 	// U-3: filter the (numerous) settings rows by a search query. A `use:` action
@@ -355,6 +474,10 @@
 	/** @type {any} */
 	let savedExpansion: any = null;
 	$: syncSearchExpansion(settingsQuery);
+
+	// CO3: which stored room anchor the Forget button offers — the current room when
+	// aligned (only if it has a record), else the newest record (the LAST room)
+	$: forgetKey = forgetCandidate($anchorRecords, $roomAlignment);
 	/** @param {string} query */
 	function syncSearchExpansion(query: string) {
 		const searching = !!(query || '').trim();
@@ -363,8 +486,10 @@
 				shortcutsExpanded,
 				aiExpanded,
 				sceneExpanded,
+				explorerExpanded,
 				interfaceExpanded,
 				controlsExpanded,
+				inputExpanded,
 				connectionExpanded,
 				vrExpanded,
 				aboutExpanded
@@ -372,8 +497,10 @@
 			shortcutsExpanded = true;
 			aiExpanded = true;
 			sceneExpanded = true;
+			explorerExpanded = true;
 			interfaceExpanded = true;
 			controlsExpanded = true;
+			inputExpanded = true;
 			connectionExpanded = true;
 			vrExpanded = true;
 			aboutExpanded = true;
@@ -382,8 +509,10 @@
 				shortcutsExpanded,
 				aiExpanded,
 				sceneExpanded,
+				explorerExpanded,
 				interfaceExpanded,
 				controlsExpanded,
+				inputExpanded,
 				connectionExpanded,
 				vrExpanded,
 				aboutExpanded
@@ -582,6 +711,14 @@
 							Show the "Rooms" shortcut in the Connect bar. Off makes the bar cleaner — you can still open rooms from the connection info drawer (the chevron) ▸ Rooms tab
 						</SettingRow>
 					{/if}
+					<SettingRow name="Floating toolbar">
+						<svelte:fragment slot="control"><Toggle bind:checked={$floatingToolbar} /></svelte:fragment>
+						The bottom toolbar lifts above the docked Node editor or Explorer when one opens, so it never sits over their content (the default). Off, it stays down on the viewport floor beside the chat and simulation buttons — whether an open panel then covers it is "Toolbar always on top" below
+					</SettingRow>
+					<SettingRow name="Toolbar always on top">
+						<svelte:fragment slot="control"><Toggle bind:checked={$toolbarAlwaysOnTop} /></svelte:fragment>
+						The bottom toolbar paints over the docked panels and over floating windows, so it is always reachable. Off (the default), a window or an open panel covers it instead — the toolbar gets out of the way. Also in the toolbar's own right-click menu; drag the bar itself to slide it left or right
+					</SettingRow>
 					<SettingRow name="Window positions">
 						<svelte:fragment slot="control">
 							<button id="reset-windows" class="rounded-sm bg-gray-600 px-2 py-1 text-xs text-white hover:bg-gray-500" on:click={() => { resetWindowLayout(); showToast('Window positions reset'); }}>Reset</button>
@@ -608,6 +745,19 @@
 					<SettingRow name="Object search in menu">
 						<svelte:fragment slot="control"><Checkbox bind:checked={$objectSearchEnabled} /></svelte:fragment>
 						Add a "Search objects…" entry to the viewport right-click menu — find a scene object and fly the camera to it
+					</SettingRow>
+					<p class="ui-section-label">Viewport</p>
+					<SettingRow name="Dock resizes the viewport">
+						<svelte:fragment slot="control">
+							<Toggle
+								id="dock-pushes-viewport"
+								checked={$viewPrefs.dockPushesViewport}
+								onchange={(e) => setViewPrefs({ dockPushesViewport: e.currentTarget.checked })}
+							/>
+						</svelte:fragment>
+						On, the 3D view ends where an open bottom panel begins — the way every editor lays out
+						its viewport, so nothing you are working on sits behind the Node editor or the
+						Explorer. Off, the view stays full-window and the panel is drawn over it
 					</SettingRow>
 				</AccordionItem>
 				<AccordionItem bind:open={controlsExpanded}>
@@ -654,6 +804,73 @@
 					<SettingRow name="Allow browser pinch zoom">
 						<svelte:fragment slot="control"><Toggle bind:checked={$allowBrowserZoom} /></svelte:fragment>
 						Accessibility: let pinch / Ctrl+scroll zoom the whole PAGE again (off keeps pinch as an app gesture and stops accidental page zoom over panels, on desktop and mobile)
+					</SettingRow>
+				</AccordionItem>
+				<AccordionItem bind:open={inputExpanded}>
+					{#snippet header()}Input{/snippet}
+					<p class="ui-section-label">Gamepad</p>
+					<!-- 21-E5: LOCAL prefs (the shortcuts-registry / viewPrefs precedent) - never
+					     replicated and never saved into a scene. Which stick I hold in which hand is a
+					     fact about MY hardware. What they configure is the DEFAULT mapping, i.e. the
+					     no-nodes case; a game that binds its own controls overrides it. -->
+					<SettingRow name="Gamepad">
+						<svelte:fragment slot="control">
+							<Toggle
+								id="gamepad-enabled"
+								checked={$gamepadPrefs.enabled}
+								onchange={(e) => setGamepadPrefs({ enabled: e.currentTarget.checked })} />
+						</svelte:fragment>
+						<span>A connected controller drives the game with no setup: the left stick walks, the right stick looks, and the d-pad + <strong>A</strong> work a HUD menu. Off ignores the pad entirely</span>
+					</SettingRow>
+					<SettingRow name="Swap sticks">
+						<svelte:fragment slot="control">
+							<Toggle
+								id="gamepad-swap"
+								checked={$gamepadPrefs.swapSticks}
+								onchange={(e) => setGamepadPrefs({ swapSticks: e.currentTarget.checked })} />
+						</svelte:fragment>
+						<span>Move with the RIGHT stick and look with the left — the southpaw layout</span>
+					</SettingRow>
+					<SettingRow name="Invert look Y">
+						<svelte:fragment slot="control">
+							<Toggle
+								id="gamepad-invert-y"
+								checked={$gamepadPrefs.invertY}
+								onchange={(e) => setGamepadPrefs({ invertY: e.currentTarget.checked })} />
+						</svelte:fragment>
+						<span>Push the look stick up to look DOWN (the flight-stick convention)</span>
+					</SettingRow>
+					<SettingRow name="Stick deadzone">
+						<svelte:fragment slot="control">
+							<input
+								id="gamepad-deadzone"
+								type="number"
+								min={DEADZONE_RANGE.min}
+								max={DEADZONE_RANGE.max}
+								step="0.01"
+								class="w-20 rounded-sm bg-gray-700 px-1 py-0.5 text-xs text-white"
+								value={$gamepadPrefs.deadzone}
+								on:change={(e: any) => setGamepadPrefs({ deadzone: parseFloat(e.target.value) })} />
+						</svelte:fragment>
+						<span>How far a stick may drift at rest before it counts as pushed ({DEADZONE_RANGE.min}–{DEADZONE_RANGE.max}). Raise it if the camera creeps with your hands off the pad; the range beyond it is rescaled, so nothing jumps</span>
+					</SettingRow>
+					<SettingRow name="Look sensitivity">
+						<svelte:fragment slot="control">
+							<input
+								id="gamepad-sensitivity"
+								type="number"
+								min={SENSITIVITY_RANGE.min}
+								max={SENSITIVITY_RANGE.max}
+								step="0.1"
+								class="w-20 rounded-sm bg-gray-700 px-1 py-0.5 text-xs text-white"
+								value={$gamepadPrefs.lookSensitivity}
+								on:change={(e: any) => setGamepadPrefs({ lookSensitivity: parseFloat(e.target.value) })} />
+						</svelte:fragment>
+						<span>How fast the look stick turns ({SENSITIVITY_RANGE.min}–{SENSITIVITY_RANGE.max}×). Mouse look has its own speed and is unaffected</span>
+					</SettingRow>
+					<p class="ui-section-label">Bindings</p>
+					<SettingRow name="Per-game controls" noControl={true}>
+						<span>A scene can bind the pad itself with the <strong>Gamepad Button</strong> and <strong>Gamepad Axis</strong> nodes in the node editor (Input group) — button presses replicate like a key press, while a stick value stays local to the player holding it. Module bindings are listed under Shortcuts</span>
 					</SettingRow>
 				</AccordionItem>
 				<AccordionItem bind:open={sceneExpanded}>
@@ -849,6 +1066,178 @@
 							>Reset</button>
 						</svelte:fragment>
 						Back to the defaults ({DEFAULT_VIEW_PREFS.wireColor} / {DEFAULT_VIEW_PREFS.outlineColor} / auto). Per-device, never shared
+					</SettingRow>
+				</AccordionItem>
+				<AccordionItem bind:open={explorerExpanded}>
+					{#snippet header()}Explorer{/snippet}
+					<!--
+						R22 round 5 (user): the file settings were rows inside SCENE, which is where
+						they started when there were two of them. There are eleven now and they are
+						about the library rather than the world, so they get the panel they name.
+					-->
+					<SettingRow name="Share every file automatically">
+						<svelte:fragment slot="control">
+							<input
+								id="auto-share-all"
+								class="tp-check"
+								type="checkbox"
+								checked={$autoShareAll}
+								on:change={(e: any) => autoShareAll.set(!!e.target.checked)} />
+						</svelte:fragment>
+						<span>
+							Everything in your Explorer is shared with the session, including files you add
+							later — no Share gesture at all. Off by default, because the whole point of
+							the library being local is that publishing it is a choice. A file you
+							<strong>explicitly unshared</strong> stays unshared: a blanket setting is a
+							preference, and that was a decision. This is yours alone — every peer chooses
+							for themselves, and a peer who has just joined is still asked about the files
+							they brought with them.
+						</span>
+					</SettingRow>
+					<SettingRow name="Download shared files automatically">
+						<svelte:fragment slot="control">
+							<input
+								id="auto-download"
+								class="tp-check"
+								type="checkbox"
+								checked={$autoDownload}
+								on:change={(e: any) => autoDownload.set(!!e.target.checked)} />
+						</svelte:fragment>
+						<span>
+							When somebody shares a file or a folder, fetch it straight away. <strong>On by
+							default</strong>: without it every shared file costs each peer a right-click,
+							which is an extra step per file per person for something they already agreed to
+							by being here. Turn it off on a metered connection or a very large project —
+							shared files still appear, greyed, and download when you open them.
+						</span>
+					</SettingRow>
+					<SettingRow name="Who can unshare a file">
+						<svelte:fragment slot="control">
+							<select
+								id="unshare-authority"
+								class="rounded-sm bg-gray-700 px-1 py-0.5 text-xs text-white"
+								value={$unshareAuthority}
+								on:change={(e: any) =>
+									unshareAuthority.set(e.target.value === 'owner' ? 'owner' : 'anyone')}>
+								<option value="anyone">Anyone in the session</option>
+								<option value="owner">Only whoever shared it</option>
+							</select>
+						</svelte:fragment>
+						<span>
+							A shared file is part of the project, so by default any editor can take it
+							out again — the same way anyone can delete an object. Choose
+							<strong>Only whoever shared it</strong> for a session where one person owns the
+							library and the rest are guests. Either way, <strong>nobody ever loses a copy
+							they already downloaded</strong> — unsharing removes the offer, never the file.
+							This is a preference for <em>this machine's menus</em>, not a rule the session
+							enforces.
+						</span>
+					</SettingRow>
+					<SettingRow name="Keep versions per scene">
+						<svelte:fragment slot="control">
+							<input
+								id="keep-versions"
+								type="number"
+								min="0"
+								max="200"
+								step="1"
+								class="w-20 rounded-sm bg-gray-700 px-1 py-0.5 text-xs text-white"
+								value={$keepVersionsSetting}
+								on:change={(e: any) =>
+									keepVersionsSetting.set(Math.max(0, Math.floor(Number(e.target.value) || 0)))} />
+						</svelte:fragment>
+						How many past versions of each scene keep their bytes on this machine — browse
+						them under <strong>Version history</strong> in a scene file's properties. Pinned
+						versions are always kept. <strong>0 turns auto-versioning off</strong>: leaving a
+						scene stops cutting one behind your back, and only the current version plus your
+						pins keep their bytes — saving a scene and <kbd>Save version…</kbd> still work
+					</SettingRow>
+					<SettingRow name="When importing files already in your library">
+						<svelte:fragment slot="control">
+							<ThemedSelect
+								id="import-duplicate-mode"
+								items={[
+									{ value: 'ask', name: 'Ask' },
+									{ value: 'skip', name: 'Skip them' },
+									{ value: 'copy', name: 'Import as copies' }
+								]}
+								bind:value={$duplicateImportMode}
+							/>
+						</svelte:fragment>
+						<span>
+							Rule for importing same files which already in your library.
+							<strong>Ask</strong> lets you decide file by file. <strong>Skip</strong>
+							keeps what you have and tells you how many it left out.
+							<strong>Import as copies</strong> brings them in as new files beside the
+							originals - scenes get a fresh copy, while identical files of other kinds
+							stay as one
+						</span>
+					</SettingRow>
+					<SettingRow name="Save name">
+						<svelte:fragment slot="control">
+							<input
+								id="save-name-template"
+								type="text"
+								class="w-40 rounded-sm bg-gray-700 px-1 py-0.5 text-xs text-white"
+								value={$saveNameTemplate}
+								on:change={(e: any) => saveNameTemplate.set(String(e.target.value ?? ''))} />
+						</svelte:fragment>
+						<span>
+							What a downloaded scene, project or GLTF file is called. <kbd>[name]</kbd> is
+							the scene's name (the project's, for a <kbd>.tp</kbd>); the date parts are
+							<kbd>[YYYY]</kbd> <kbd>[YY]</kbd> <kbd>[MM]</kbd> <kbd>[DD]</kbd>
+							<kbd>[HH]</kbd> <kbd>[mm]</kbd> <kbd>[ss]</kbd> <kbd>[ms]</kbd>, in UTC — so
+							<kbd>[name]-[DD]-[MM]-[YY]</kbd> gives <strong>Arena-22-08-26</strong>.
+							Something with no name yet falls back to a timestamp, so a save is never
+							nameless
+						</span>
+					</SettingRow>
+					<p class="ui-section-label">Deleted files</p>
+					<SettingRow name="Keep a recycle bin">
+						<svelte:fragment slot="control">
+							<input
+								id="recycle-bin"
+								class="tp-check"
+								type="checkbox"
+								checked={$recycleBinEnabled}
+								on:change={(e: any) => recycleBinEnabled.set(!!e.target.checked)} />
+						</svelte:fragment>
+						<span>
+							Deleting a shared file removes it from the project for everyone, so each peer
+							keeps its own copy in <strong>Deleted files</strong> where it can be restored.
+							Turn this off and a delete is immediate on <em>this</em> machine — peers still
+							get their own bin, because their copy is theirs.
+						</span>
+					</SettingRow>
+					<SettingRow name="Delete without asking">
+						<svelte:fragment slot="control">
+							<input
+								id="delete-no-confirm"
+								class="tp-check"
+								type="checkbox"
+								checked={$deleteWithoutConfirm}
+								on:change={(e: any) => deleteWithoutConfirm.set(!!e.target.checked)} />
+						</svelte:fragment>
+						<span>
+							Skip the confirmation when deleting files and folders. Reasonable only
+							<em>because</em> the recycle bin exists — with the bin also off, a delete is
+							immediate and final, which is why these two sit together.
+						</span>
+					</SettingRow>
+					<SettingRow name="Keep deleted files after a reload">
+						<svelte:fragment slot="control">
+							<input
+								id="keep-recycle-bin"
+								class="tp-check"
+								type="checkbox"
+								checked={$keepRecycleBin}
+								on:change={(e: any) => keepRecycleBin.set(!!e.target.checked)} />
+						</svelte:fragment>
+						<span>
+							Off by default: the bin is a safety net for the minutes after a delete, not
+							storage, so its files are reclaimed the next time you load. The RECORD of what
+							was deleted always survives — only the bytes on this device go.
+						</span>
 					</SettingRow>
 				</AccordionItem>
 				<AccordionItem bind:open={vrExpanded}>
@@ -1070,6 +1459,177 @@
 						</svelte:fragment>
 						Grabbed VR menus/panels snap back to their default spots on the controllers (111: hold the other grip on one to re-place it)
 					</SettingRow>
+					<SettingRow name="Colocation probe (dev)">
+						<svelte:fragment slot="control">
+							<span class="sr-stack">
+								<button
+									id="ar-probe-run"
+									class="rounded-sm bg-gray-600 px-2 py-1 text-xs text-white hover:bg-gray-500 disabled:opacity-50"
+									disabled={$probeRunning}
+									on:click={() => {
+										// USER ACTIVATION, and this ORDER is the whole reason for the comment:
+										// probeSupport() is STARTED and deliberately NOT awaited, so runArProbe()
+										// — whose first statement is the requestSession call, with no await
+										// ahead of it — runs in the SAME task as this click. Awaiting the
+										// isSessionSupported pre-checks first would push requestSession into a
+										// later task, which is exactly the shape a runtime refuses with
+										// "requires user activation". Nothing is lost: probeSupport records its
+										// synchronous surface checks before it returns and its two async lines a
+										// moment later, and every finding carries its own step name.
+										probeSupport();
+										runArProbe();
+									}}>{$probeRunning ? 'Probing…' : 'Probe AR capabilities'}</button
+								>
+								<button
+									id="ar-probe-clear"
+									class="rounded-sm bg-gray-600 px-2 py-1 text-xs text-white hover:bg-gray-500 disabled:opacity-50"
+									disabled={$probeRunning}
+									on:click={() => clearProbeState()}>Clear stored anchor</button
+								>
+							</span>
+						</svelte:fragment>
+						<span class="font-semibold">CO0 on-device probe</span> — run this <em>inside the headset</em>: it opens an
+						immersive-ar session, creates an anchor at your feet, persists the handle and reports what the runtime
+						actually supports. Run it once, fully restart the browser, run it again — the second run's
+						<em>restore delta</em> line is the answer. The report survives the session, a reload and a restart{arSupport ===
+						false
+							? '. This device reports no immersive-ar support'
+							: ''}
+					</SettingRow>
+					{#if $probeFindings.length}
+						<SettingRow name="Probe report" noControl>
+							<div class="flex max-h-72 flex-col gap-0.5 overflow-y-auto font-mono text-[11px] leading-snug">
+								{#each $probeFindings as finding, i (i)}
+									<div class="flex gap-1.5">
+										<span class={finding.ok ? 'text-green-400' : 'text-red-400'}>{finding.ok ? '✓' : '✗'}</span>
+										<span class="whitespace-nowrap font-semibold">{finding.step}</span>
+										<span class="min-w-0 break-words text-gray-400">{finding.detail}</span>
+									</div>
+								{/each}
+							</div>
+						</SettingRow>
+					{/if}
+					<SettingRow name="Colocation">
+						<svelte:fragment slot="control">
+							<span class="sr-stack">
+								<button
+									id="colocate-here"
+									class="rounded-sm bg-gray-600 px-2 py-1 text-xs text-white hover:bg-gray-500"
+									on:click={() => colocateHereFromView()}>Colocate here</button
+								>
+								<button
+									id="colocate-stop"
+									class="rounded-sm bg-gray-600 px-2 py-1 text-xs text-white hover:bg-gray-500 disabled:opacity-50"
+									disabled={!$roomAlignment}
+									on:click={() => stopColocation()}>Stop</button
+								>
+								{#if forgetKey}
+									<button
+										id="colocate-forget"
+										class="rounded-sm bg-gray-600 px-2 py-1 text-xs text-white hover:bg-gray-500"
+										title={'Forget the saved room anchor for ' + forgetKey + ' — the next visit needs the ritual again. Stop does NOT forget.'}
+										on:click={() => forgetRoom(forgetKey)}>Forget {forgetKey}</button
+									>
+								{/if}
+							</span>
+						</svelte:fragment>
+						<span class="font-semibold" id="colocation-state"
+							>{$roomAlignment ? 'Colocated · ' + ($roomAlignment.roomKey ?? 'room') : 'Not colocated'}</span
+						>
+						— share one physical room with a co-present peer. <em>Colocate here</em> uses the current
+						viewpoint (both of you stand on the agreed spot facing the agreed way and press it); in VR the
+						radial menu's Scene ▸ Colocate offers the more accurate point + aim ritual. While colocated the
+						world stays 1:1 and a world-grab moves the SHARED room anchor, so your partner sees the scene
+						move too. Expect ~1–3 cm of agreement, not millimetres. A calibration made in-headset is
+							REMEMBERED per room (a persistent anchor): the next VR/AR session in that room re-aligns
+							with no ritual. <em>Stop</em> keeps that memory; <em>Forget</em> drops it
+					</SettingRow>
+					{#if $roomAlignment}
+						<!-- CO7: the fine-tune. Only offered while colocated — a correction has no
+						     frame to be expressed in otherwise. Room axes: +X right of the aim
+						     direction, +Y up, -Z along it. -->
+						<SettingRow name="Fine-tune" noControl>
+							<div class="flex flex-col gap-1.5">
+								<div class="flex flex-wrap items-center gap-2">
+									<DragRow
+										id="nudge-dx"
+										label="X"
+										value={$roomNudge?.dx ?? 0}
+										unit="length"
+										step={0.002}
+										snap={0.01}
+										decimals={3}
+										min={-NUDGE_MAX_M}
+										max={NUDGE_MAX_M}
+										onchange={(v) => setRoomNudge({ dx: v })}
+									/>
+									<DragRow
+										id="nudge-dy"
+										label="Y"
+										value={$roomNudge?.dy ?? 0}
+										unit="length"
+										step={0.002}
+										snap={0.01}
+										decimals={3}
+										min={-NUDGE_MAX_M}
+										max={NUDGE_MAX_M}
+										onchange={(v) => setRoomNudge({ dy: v })}
+									/>
+									<DragRow
+										id="nudge-dz"
+										label="Z"
+										value={$roomNudge?.dz ?? 0}
+										unit="length"
+										step={0.002}
+										snap={0.01}
+										decimals={3}
+										min={-NUDGE_MAX_M}
+										max={NUDGE_MAX_M}
+										onchange={(v) => setRoomNudge({ dz: v })}
+									/>
+									<DragRow
+										id="nudge-dyaw"
+										label="Yaw"
+										value={($roomNudge?.dyaw ?? 0) * (180 / Math.PI)}
+										unit="angleDeg"
+										step={0.05}
+										snap={0.5}
+										decimals={2}
+										min={-15}
+										max={15}
+										onchange={(v) => setRoomNudge({ dyaw: (v * Math.PI) / 180 })}
+									/>
+									<button
+										id="nudge-reset"
+										class="rounded-sm bg-gray-600 px-2 py-1 text-xs text-white hover:bg-gray-500 disabled:opacity-50"
+										disabled={nudgeIsZero($roomNudge)}
+										on:click={() => resetRoomNudge()}>Reset</button
+									>
+								</div>
+								<span>
+									Nudge the world so it lines up with what you actually see — a box that should
+									sit ON the table corner but hovers a centimetre off it. This is YOURS alone
+									(each headset's calibration has its own small error, so each corrects its
+									own), it is remembered per room, and it survives the automatic drift
+									correction. In VR, arm <em>Fine-tune</em> in the Scene ▸ Colocate radial: the
+									left stick slides the world, the right stick lifts and turns it. To move the
+									scene for <em>everyone</em>, two-grip grab it instead.
+								</span>
+							</div>
+						</SettingRow>
+					{/if}
+					<SettingRow name="Ghost hands">
+						<svelte:fragment slot="control"
+							><Toggle id="colocated-ghost-hands" bind:checked={$colocatedGhostHands} /></svelte:fragment
+						>
+						<span
+							>While colocated, a room-mate's avatar body, name label and voice are hidden — you are
+							looking at and listening to the real person. Their HANDS stay, drawn faint, because a
+							controller is how somebody points at a virtual object standing on a real table; turn this
+							off to hide those too. Local preference — it changes nothing for anyone else, and a REMOTE
+							peer always sees and hears you both in full</span
+						>
+					</SettingRow>
 				</AccordionItem>
 				<AccordionItem bind:open={aiExpanded}>
 					{#snippet header()}AI{/snippet}
@@ -1149,11 +1709,11 @@
 									</div>
 								{/if}
 								<label class="flex items-center gap-2 text-[13px] text-gray-300">
-									<input type="checkbox" bind:checked={aiFormStream} />
+									<input class="tp-check" type="checkbox" bind:checked={aiFormStream} />
 									Stream responses
 								</label>
 								<label class="flex items-center gap-2 text-[13px] text-gray-300">
-									<input id="ai-physics-tools" type="checkbox" bind:checked={aiFormPhysics} />
+									<input id="ai-physics-tools" class="tp-check" type="checkbox" bind:checked={aiFormPhysics} />
 									Physics tools (advanced)
 								</label>
 								<span class="text-[11px] leading-snug text-gray-400">
@@ -1268,7 +1828,8 @@
 								items={[
 									{ value: 'default', name: HAS_SELF_HOSTED ? 'Default (self-hosted + fallback)' : 'Default (public cloud)' },
 									{ value: 'public', name: 'Public PeerJS cloud' },
-									{ value: 'custom', name: 'Custom server' }
+									{ value: 'custom', name: 'Custom server' },
+									{ value: 'local', name: 'Local dev (localhost:9001)' }
 								]}
 								value={$peerServerConfig.mode}
 								onchange={(v) => setPeerMode(v)}
@@ -1276,7 +1837,7 @@
 						</svelte:fragment>
 						Where peers discover each other.
 						{#if HAS_SELF_HOSTED}Default uses <span class="font-mono">{SELF_HOSTED_HOST}</span> and falls back to the public PeerJS cloud if it's unreachable.{:else}Default is the public PeerJS cloud.{/if}
-						Custom pins your own server (no fallback). Takes effect on reload.
+						Custom pins your own server (no fallback). Local dev is the <span class="font-mono">npm run peer</span> server on this machine — R22 round 9 made it an explicit choice, because a configured <span class="font-mono">.env</span> host now wins on localhost instead of being overridden by the hostname. Takes effect on reload.
 					</SettingRow>
 					{#if $peerServerConfig.mode === 'custom'}
 						<SettingRow name="Server host">
@@ -1371,21 +1932,61 @@
 				</AccordionItem>
 				<AccordionItem bind:open={shortcutsExpanded}>
 					{#snippet header()}Shortcuts{/snippet}
-					<!-- 131: borderless multi-column grid; group headers span all columns -->
-					<div id="shortcut-grid" class="grid grid-cols-1 gap-x-8 gap-y-0.5 sm:grid-cols-2 lg:grid-cols-3">
-						{#each shortcutGroups as group}
-							<p class="col-span-full mb-1 mt-3 text-xs font-semibold uppercase text-gray-400">{group}</p>
-							{#each shortcuts.filter((s) => s.group === group) as shortcut}
-								<div class="flex items-center gap-3 py-1">
-									<kbd
-										class="min-w-16 rounded-lg border border-gray-200 bg-gray-100 px-2 py-1 text-center text-xs font-semibold text-gray-800 dark:border-gray-500 dark:bg-gray-600 dark:text-gray-100"
-										>{shortcut.keys}</kbd
-									>
-									<span class="text-sm text-gray-600 dark:text-gray-300">{shortcut.label}</span>
-								</div>
-							{/each}
-						{/each}
+					<!-- Phase 5: the list is also the EDITOR (the Unity Shortcut Manager model)
+					     - click a row's keys and press the combo you want. A row with no action
+					     of its own (fly keys, push-to-talk, the mesh-edit bundles, a module's
+					     declared bindings) is listed for discoverability and locked. -->
+					<div class="mb-1 flex items-center justify-between gap-3">
+						<p class="text-xs text-gray-500 dark:text-gray-400">Click a shortcut's keys to rebind it - Esc cancels.</p>
+						<button
+							id="shortcut-reset-all"
+							class="shrink-0 rounded-sm bg-gray-600 px-2 py-1 text-xs text-white hover:bg-gray-500"
+							on:click={resetEveryShortcut}>Reset all</button>
 					</div>
+					{#key shortcutsVersion}
+						<!-- 131: borderless multi-column grid; group headers span all columns -->
+						<div id="shortcut-grid" class="grid grid-cols-1 gap-x-8 gap-y-0.5 sm:grid-cols-2 lg:grid-cols-3">
+							{#each shortcutGroups as group}
+								<p class="col-span-full mb-1 mt-3 text-xs font-semibold uppercase text-gray-400">{group}</p>
+								{#each shortcuts.filter((s) => s.group === group) as shortcut}
+									<div class="flex flex-col py-1" data-shortcut={shortcut.id}>
+										<div class="flex items-center gap-2">
+											{#if isRebindable(shortcut)}
+												<button
+													class="shortcut-keys min-w-16 rounded-lg border border-gray-200 bg-gray-100 px-2 py-1 text-center text-xs font-semibold text-gray-800 dark:border-gray-500 dark:bg-gray-600 dark:text-gray-100 {capturingId === shortcut.id ? 'bg-amber-100 text-amber-900 dark:bg-amber-600 dark:text-white' : 'hover:border-gray-400 dark:hover:border-gray-300'}"
+													title="Click to rebind"
+													aria-label={'Rebind ' + shortcut.label}
+													on:click={() => startCapture(shortcut.id)}
+													>{capturingId === shortcut.id ? 'Press keys... Esc cancels' : shortcut.keys}</button>
+											{:else}
+												<span class="inline-flex shrink-0 items-center gap-1" title={shortcut.fixedReason || 'listed for reference'}>
+													<kbd class="min-w-16 rounded-lg border border-gray-200 bg-gray-100 px-2 py-1 text-center text-xs font-semibold text-gray-800 dark:border-gray-500 dark:bg-gray-600 dark:text-gray-100">{shortcut.keys}</kbd>
+													<Lock class="h-3 w-3 text-gray-400" aria-hidden="true" />
+												</span>
+											{/if}
+											<span class="text-sm text-gray-600 dark:text-gray-300">{shortcut.label}</span>
+											{#if isRebindable(shortcut) && shortcut.keys !== shortcut.defaultKeys}
+												<button
+													class="shortcut-reset ml-auto shrink-0 rounded-sm p-1 text-gray-400 hover:text-gray-200"
+													title={'Reset to ' + shortcut.defaultKeys}
+													aria-label={'Reset ' + shortcut.label + ' to ' + shortcut.defaultKeys}
+													on:click={() => resetOneShortcut(shortcut.id)}>
+													<RotateCcw class="h-3 w-3" aria-hidden="true" />
+												</button>
+											{/if}
+										</div>
+										{#if shortcutConflict && shortcutConflict.id === shortcut.id}
+											<div class="shortcut-conflict mt-1 flex flex-wrap items-center gap-2 text-xs text-amber-600 dark:text-amber-400">
+												<span><kbd class="font-semibold">{shortcutConflict.keys}</kbd> is bound to {shortcutConflict.other.label}</span>
+												<button class="shortcut-swap rounded-sm bg-gray-600 px-2 py-0.5 text-white hover:bg-gray-500" on:click={swapConflict}>Swap</button>
+												<button class="shortcut-cancel rounded-sm px-2 py-0.5 underline" on:click={() => (shortcutConflict = null)}>Cancel</button>
+											</div>
+										{/if}
+									</div>
+								{/each}
+							{/each}
+						</div>
+					{/key}
 				</AccordionItem>
 				<AccordionItem bind:open={aboutExpanded}>
 					{#snippet header()}About{/snippet}

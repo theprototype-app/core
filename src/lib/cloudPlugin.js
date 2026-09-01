@@ -1,5 +1,5 @@
 import { get } from 'svelte/store';
-import { showToast, appNotice, peers, cloudIdentity } from '../stores/appStore';
+import { showToast, appNotice, peers, cloudIdentity, userdata } from '../stores/appStore';
 import { globalScene, globalCamera, globalRenderer } from '../stores/sceneStore';
 import { requestConnect } from './peerApproval';
 import { sessionHost } from './connectionState';
@@ -13,9 +13,15 @@ import {
 	profileSlot,
 	drawerSlot,
 	rolesInfo,
+	scenePresence,
 	CLOUD_HOOKS_VERSION,
 	cloudPluginInfo
 } from './cloudHooks';
+// 21-G5 (F7): the two reads a rooms roster wants — which scene this session is in,
+// and who is playing. Both leaves (levels reaches sessions, but nothing on the
+// cloudPlugin path is in history's import subtree — App alone imports this module).
+import { currentLevel } from './levels';
+import { myPlayMode, peerPlayModes } from './gamePresence';
 
 /**
  * Open-core plugin loader (roadmap #13 batch M1). At boot, if a cloud plugin URL is
@@ -132,6 +138,21 @@ function makeCloudApi() {
 		/** publish the live roles so core can render per-peer role controls + gate
 		 *  viewer actions (2026-07-25). Pass null to clear. */
 		setRolesInfo: (/** @type {any} */ info) => rolesInfo.set(info || null),
+
+		// --- 21-G5 (F7): cross-scene presence, v2.4 --------------------------------
+		/** publish who is in the project's OTHER rooms/scenes (the rolesInfo bridge
+		 *  shape — see cloudHooks.scenePresence for the document). Null clears. */
+		setScenePresence: (/** @type {any} */ data) => scenePresence.set(data || null),
+		/** the scene THIS session is in (the manifest name set by save/travel), or
+		 *  null before the project machinery is used — what a room's heartbeat
+		 *  publishes as its `scene` */
+		currentScene: () => get(currentLevel)?.name ?? null,
+		/** who is playing: my own mode plus every peer's (absent = editor) — what a
+		 *  room's heartbeat publishes as its members' `mode` chips */
+		playModes: () => ({ mine: myPlayMode(), peers: { ...get(peerPlayModes) } }),
+		/** the display roster `[[peerId, name], …]` (self first, the userdata shape) —
+		 *  what a room's heartbeat publishes as its members' names */
+		peerRoster: () => (/** @type {any[]} */ (get(userdata)) ?? []).map((u) => [u[0], u[1] || '']),
 		/** capture a downscaled JPEG Blob of the current viewport (room thumbnails) —
 		 *  renders a fresh frame then reads the canvas synchronously so it works without
 		 *  preserveDrawingBuffer. Returns null in VR / before the renderer exists. v2.2 */

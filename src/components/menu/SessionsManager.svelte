@@ -9,6 +9,7 @@
 		sessions,
 		loadSessions,
 		saveSession,
+		saveSessionWithLibrary,
 		getSession,
 		deleteSession,
 		renameSession,
@@ -39,6 +40,34 @@
 	// no-prompt rename. Legacy-mode file: plain lets, never $state.
 	let saving = false;
 	let saveName = '';
+	// R22 round 9: LEGACY MODE, so `$:` and plain lets — introducing one `$state` here
+	// would flip the whole file to runes and break its `$:` block (the documented rule).
+	/** which button opened the name field — 'scene' or 'project' */
+	let saveKind = 'scene';
+	/**
+	 * ONE LIST WITH A BADGE (the locked answer), so this narrows rather than splitting —
+	 * the templates filter's shape. 'all' | 'scene' | 'project'.
+	 */
+	let kindFilter = 'all';
+	/** @type {any[]} */
+	let shownSessions = [];
+	/** the total across what is SHOWN, so the number answers the list you are looking at */
+	let shownBytes = 0;
+	$: shownSessions = $sessions.filter((/** @type {any} */ m) =>
+		kindFilter === 'all' ? true : kindFilter === 'project' ? m.hasLibrary : !m.hasLibrary
+	);
+	$: shownBytes = shownSessions.reduce(
+		(/** @type {number} */ sum, /** @type {any} */ m) => sum + (Number(m.bytes) || 0),
+		0
+	);
+	/** @param {number} bytes */
+	function fmtBytes(bytes) {
+		if (!bytes || isNaN(bytes)) return '—';
+		if (bytes < 1024) return bytes + ' B';
+		if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB';
+		if (bytes < 1024 * 1024 * 1024) return (bytes / 1024 / 1024).toFixed(1) + ' MB';
+		return (bytes / 1024 / 1024 / 1024).toFixed(1) + ' GB';
+	}
 	/** @type {string|null} */
 	let renamingId = null;
 	let renameValue = '';
@@ -50,14 +79,27 @@
 		node.select();
 	}
 
-	function beginSave() {
-		saveName = 'Session ' + new Date().toLocaleDateString();
+	/**
+	 * R22 round 9 — TWO BUTTONS, AND NOTHING INFERRED. `saveSessionWithLibrary` has existed
+	 * since R8 and had no caller: the difference between a scene snapshot and a project
+	 * save is whether the Explorer's files come with it, and that is a decision only the
+	 * person pressing the button can make. Guessing it from "does the library have files"
+	 * would make one press mean two different things on two different days.
+	 *
+	 * `withLibrary` rides on the same inline name field rather than a second one — the name
+	 * is the same question either way.
+	 * @param {boolean} withLibrary
+	 */
+	function beginSave(withLibrary = false) {
+		saveKind = withLibrary ? 'project' : 'scene';
+		saveName = (withLibrary ? 'Project ' : 'Session ') + new Date().toLocaleDateString();
 		saving = true;
 	}
 	function confirmSave() {
 		const name = saveName.trim();
 		if (!name) return;
-		saveSession(name);
+		if (saveKind === 'project') void saveSessionWithLibrary(name);
+		else saveSession(name);
 		saving = false;
 	}
 	/** @param {any} meta */
@@ -173,13 +215,26 @@
 						else if (e.key === 'Escape') saving = false;
 					}}
 				/>
+				<!-- say WHICH of the two saves this name is for: one field serves both buttons -->
+				<span id="session-save-kind" class="text-[10px] uppercase tracking-wide text-gray-400"
+					>{saveKind === 'project' ? 'project + library' : 'scene only'}</span
+				>
 				<Button id="session-save-confirm" size="xs" disabled={!saveName.trim()} onclick={confirmSave}>
 					<Save size={16} class="mr-1" aria-hidden="true" />Save
 				</Button>
 				<Button size="xs" color="alternative" onclick={() => (saving = false)}>Cancel</Button>
 			{:else}
-				<Button id="session-save" size="xs" onclick={beginSave}
+				<Button id="session-save" size="xs" onclick={() => beginSave(false)}
 					><Save size={16} class="mr-1" aria-hidden="true" />Save current scene</Button
+				>
+				<!-- R22 round 9: the project save. Beside the scene one and never inferred from it. -->
+				<Button
+					id="session-save-project"
+					size="xs"
+					color="alternative"
+					title="The scene AND every file in the Explorer — folders, records and their bytes"
+					onclick={() => beginSave(true)}
+					><Save size={16} class="mr-1" aria-hidden="true" />Save current project</Button
 				>
 			{/if}
 			<Button size="xs" color="alternative" onclick={() => document.getElementById('session-import-file')?.click()}>
@@ -190,6 +245,30 @@
 				Loading with peers connected asks everyone first; a backup session is stashed before any replace.
 			</span>
 		</div>
+
+		{#if $sessions.length}
+			<!--
+				R22 round 9: the filter and the total, on one line above the grid. The total is of
+				WHAT IS SHOWN rather than of everything stored, so filtering to Projects answers
+				"how much are my projects costing me" instead of repeating a number that does not
+				match the cards underneath it.
+			-->
+			<div class="mb-2 flex flex-wrap items-center gap-2 text-xs text-gray-400">
+				<div class="tp-seg" role="group" aria-label="Filter sessions">
+					{#each [{ v: 'all', l: 'All' }, { v: 'scene', l: 'Scenes' }, { v: 'project', l: 'Projects' }] as opt (opt.v)}
+						<button
+							id={'session-filter-' + opt.v}
+							class="tp-seg-btn"
+							aria-pressed={kindFilter === opt.v}
+							onclick={() => (kindFilter = opt.v)}>{opt.l}</button
+						>
+					{/each}
+				</div>
+				<span id="session-total"
+					>{shownSessions.length} of {$sessions.length} · about {fmtBytes(shownBytes)}</span
+				>
+			</div>
+		{/if}
 
 		{#if picker}
 			<div class="mb-3 rounded-lg border border-gray-600 p-2">
@@ -228,7 +307,7 @@
 			</p>
 		{:else}
 			<div class="grid grid-cols-2 gap-3 md:grid-cols-3">
-				{#each $sessions as meta (meta.id)}
+				{#each shownSessions as meta (meta.id)}
 					<div class="session-card flex flex-col overflow-hidden rounded-lg border border-gray-700/60 bg-gray-800/70">
 						{#if meta.thumbnail}
 							<img src={meta.thumbnail} alt={meta.name} class="h-24 w-full object-cover" />
@@ -261,6 +340,30 @@
 							{/if}
 							<p class="text-[10px] text-gray-400">
 								{meta.count} object{meta.count === 1 ? '' : 's'} · {stamp(meta.createdAt)}
+							</p>
+							<!--
+								R22 round 9: WHAT KIND OF ENTRY IS THIS, and what does it cost. A project
+								badge is derived from the payload carrying a library — nothing new is stored,
+								so every session saved before this release is labelled correctly too.
+							-->
+							<p class="session-meta flex items-center gap-1.5 text-[10px]">
+								{#if meta.hasLibrary}
+									<span
+										class="session-badge rounded-sm bg-teal-500/20 px-1 py-px font-semibold text-teal-300"
+										title={'The scene AND ' + meta.libraryCount + ' library file' + (meta.libraryCount === 1 ? '' : 's')}
+										>Project</span
+									>
+									<span class="text-gray-500">{meta.libraryCount} file{meta.libraryCount === 1 ? '' : 's'}</span>
+								{:else}
+									<span
+										class="session-badge rounded-sm bg-gray-600/40 px-1 py-px font-semibold text-gray-300"
+										title="The scene only — the Explorer's files are not in this entry"
+										>Scene</span
+									>
+								{/if}
+								<span class="session-size text-gray-500" title="Approximate — idb's own overhead is not measurable from here"
+									>{fmtBytes(meta.bytes)}</span
+								>
 							</p>
 							<div class="flex flex-wrap gap-1">
 								<button class="ui-button-quiet session-load" title="Replace the scene with this session (peers must accept)"

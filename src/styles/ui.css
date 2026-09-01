@@ -26,6 +26,45 @@ svg.lucide {
 .ico-prefab { color: var(--icon-prefab); }
 .ico-danger { color: var(--icon-danger); }
 
+/* 21-H1 — THE THEMED CHECKBOX (`.tp-check`), ONE class for every raw
+   `<input type="checkbox">` in the app's popups and modals. The toolbox solved this
+   already for its own window (`.tbx-check` in ToolboxWindow.svelte); everything
+   outside it still rendered the browser/flowbite default, so the export cog's boxes
+   were flowbite blue while the whole palette was orange.
+
+   THE TRAP, and the reason the fill rides `color`: flowbite's plugin puts
+   `appearance: none` on every `[type='checkbox']` (so `accent-color` alone is a no-op)
+   and paints the checked state with `background-color: currentColor !important` —
+   which NO background-color of ours can beat, at any specificity, in any layer.
+   Driving `color` makes the checked box the theme accent everywhere. `accent-color` is
+   kept for the case where something removes the appearance override; then the native
+   control paints itself correctly instead of falling back to the OS blue.
+
+   The selector is `input.tp-check` (0,1,1) on purpose: `[type='checkbox']` is 0,1,0,
+   so the extra element beats it whatever order the plugin's own rules land in.
+   Verify a change here by reading the COMPUTED colour, never the class string — in the
+   toolbox case the class string was right the whole time. */
+input.tp-check {
+	flex: 0 0 auto;
+	width: 14px;
+	height: 14px;
+	margin: 0;
+	border: 1px solid var(--border, #4b5563);
+	border-radius: 3px;
+	background-color: var(--surface-2, #374151);
+	color: var(--accent, var(--color-primary-600, #2563eb));
+	accent-color: var(--accent, var(--color-primary-600, #2563eb));
+	cursor: pointer;
+}
+input.tp-check:focus-visible {
+	outline: 2px solid var(--accent, var(--color-primary-600, #2563eb));
+	outline-offset: 1px;
+}
+input.tp-check:disabled {
+	opacity: 0.45;
+	cursor: default;
+}
+
 :root {
 	/* z-tiers — every layered component maps to ONE of these (phase 68).
 	   viewport: three.js canvas
@@ -57,10 +96,6 @@ svg.lucide {
 	/* how much of the bottom the Controls pill + HUD buttons occupy; side drawers
 	   inset ABOVE it on narrow screens (same idea as --bottom-inset for the dock). */
 	--controls-inset: 0px;
-	/* inset for DOCKED Flow/Explorer content — only on a truly folded screen, where the
-	   Controls actually reach the node palette / folder tree. Above ~500px there's room,
-	   so it stays 0 (no wasted strip). */
-	--dock-inset: 0px;
 }
 
 /* The old flowbite z-50/z-40 → --z-modal remap is GONE: flowbite-svelte 1.x renders
@@ -186,13 +221,6 @@ svg.lucide {
 	   covering them, while Controls stays uncovered (it is z-hud, above the drawer). */
 	:root {
 		--controls-inset: 68px;
-	}
-}
-/* folded screens only: the docked Flow/Explorer content insets above the Controls (which
-   now overlap the palette/tree). Above this width there's room, so no inset. */
-@media (max-width: 500px) {
-	:root {
-		--dock-inset: var(--controls-inset, 0px);
 	}
 }
 /* Touch / limited-width: hide the "undock into a floating window" buttons (Flow,

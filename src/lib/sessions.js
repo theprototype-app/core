@@ -6,6 +6,8 @@ import { serializeGraphs, copyGraphFrom } from './flowGraphs';
 import { serializeNode, serializeEdge, sendNodes } from './nodesHandler';
 import { parkAnimatedAtBase } from './flowRuntime';
 import { stripEditOverlays } from './editOverlays';
+// B7: a spawner's copies exist only while the world runs — never in a scene file
+import { isTransient } from './transientObjects';
 import {
 	animatedImportUuids,
 	animatedImportsSnapshot,
@@ -39,7 +41,7 @@ import { disabledModules } from './moduleSDK';
 import { findNodeSpec } from './nodeCatalog';
 import { hudDocsSnapshot, hudDocsRestore } from './hudDocs';
 import { gameStateSnapshot, gameStateRestore } from './gameState';
-import { sceneCommand, sendObjects } from './commandsHandler.svelte';
+import { sceneCommand, sendObjects, clearSceneLocal } from './commandsHandler.svelte';
 import { nameOf } from './lockControl';
 import { idbGet, idbPut, idbDelete, idbKeys } from './idb';
 import { showConfirm, showChoice } from './confirmDialog';
@@ -87,6 +89,28 @@ function renderSceneThumbnail(group) {
 	}
 }
 
+/**
+ * R22 round 9: HOW BIG IS THIS ENTRY. Two halves measured differently because they are
+ * stored differently — the library's files are real Blobs (idb structured-clones them, so
+ * `.size` is the truth) while everything else is JSON, whose size has to be encoded to be
+ * known. Reported as one number, because the user is asking about disk and not about our
+ * storage layout.
+ *
+ * An ESTIMATE, and labelled as one in the UI: idb's own overhead is not observable from
+ * here. It is measured per payload at load, which is affordable because `loadSessions`
+ * already reads every payload in full.
+ * @param {any} payload @returns {number}
+ */
+function payloadBytes(payload) {
+	let bytes = 0;
+	try {
+		const { library, ...rest } = payload ?? {};
+		for (const row of library?.items ?? []) bytes += Number(row?.blob?.size) || 0;
+		bytes += new TextEncoder().encode(JSON.stringify(rest)).length;
+	} catch {}
+	return bytes;
+}
+
 /** @param {any} payload */
 function metaOf(payload) {
 	return {
@@ -94,7 +118,13 @@ function metaOf(payload) {
 		name: payload.name,
 		createdAt: payload.createdAt,
 		count: payload.count,
-		thumbnail: payload.thumbnail
+		thumbnail: payload.thumbnail,
+		// R22 round 9: the PROJECT/SCENE distinction is not a new field to store — a project
+		// entry is one that carries a library, which is exactly what `saveSessionWithLibrary`
+		// adds. Derived, so every session ever saved answers correctly with no migration.
+		hasLibrary: !!payload.library,
+		libraryCount: payload.library?.items?.length ?? 0,
+		bytes: payloadBytes(payload)
 	};
 }
 
@@ -141,13 +171,16 @@ export function buildSessionPayload(name) {
 			// appVersion is display-only provenance
 			format: SESSION_FORMAT,
 			appVersion: APP_VERSION,
-			count: group?.children.length ?? 0,
+			count: (group?.children ?? []).filter((/** @type {any} */ child) => !isTransient(child)).length,
 			thumbnail: renderSceneThumbnail(group),
 			// animated imports are saved as their ORIGINAL bytes below instead:
 				// toJSON carries no AnimationClip and mangles rigs, so a saved scene
 				// used to come back with dead, static models
+				// B7: and a TRANSIENT object is not saved at all — it exists only while the
+				// simulation runs, so saving mid-run would bake a spawner's crates into the
+				// scene file as permanent content
 				objects: (group?.children ?? [])
-					.filter((/** @type {any} */ child) => !animatedUuids.includes(child.uuid))
+					.filter((/** @type {any} */ child) => !animatedUuids.includes(child.uuid) && !isTransient(child))
 					.map((/** @type {any} */ child) => child.toJSON()),
 				animated: animatedImportsSnapshot(group),
 				// authored movement tracks (the Animation window) were never saved
@@ -201,6 +234,37 @@ export function buildSessionPayload(name) {
 	}
 }
 
+/**
+ * 21-F4: a payload with NOTHING in it — what "New scene…" saves as a fresh level asset.
+ * The same shape buildSessionPayload writes, minus every capture: an empty level must not
+ * inherit whatever scene happens to be open when it is created.
+ * @param {string} name
+ */
+export function emptySessionPayload(name) {
+	return {
+		id: crypto.randomUUID(),
+		name: name || 'New level',
+		createdAt: Date.now(),
+		format: SESSION_FORMAT,
+		appVersion: APP_VERSION,
+		count: 0,
+		thumbnail: null,
+		objects: [],
+		animated: [],
+		animations: {},
+		graphs: {},
+		nodes: [],
+		edges: [],
+		shaderGraphs: {},
+		annotations: [],
+		joints: [],
+		post: null,
+		hud: null,
+		game: null,
+		camera: null
+	};
+}
+
 /** Persist a payload as a slot @param {any} payload */
 async function persistSession(payload) {
 	if (JSON.stringify(payload).length > MAX_SESSION_BYTES) {
@@ -210,6 +274,66 @@ async function persistSession(payload) {
 	await idbPut(KEY + payload.id, payload);
 	await loadSessions();
 	return payload;
+}
+
+/**
+ * R22-R8 (locked answer) — SAVE THE PROJECT, THEN ADOPT THE HOST'S.
+ *
+ * "Save into session" saves the current project into sessions, CLEARS the Explorer and
+ * downloads everything from the peers. The middle step is destructive, so the first one
+ * has to be complete: an ordinary session payload is a SCENE snapshot and carries only
+ * the assets that scene references, which means clearing the library afterwards would
+ * throw away every file the scene does not happen to use.
+ *
+ * So this payload carries the LIBRARY as well — folders, item records and their bytes,
+ * as real Blobs, which idb structured-clones for free. It rides BESIDE the scene the way
+ * `animated` original bytes already do (the documented rule: anything the scene
+ * serializer cannot round-trip travels beside the snapshot, not inside it).
+ *
+ * Additive: a session without the key restores exactly as it always did.
+ * @param {string} name @returns {Promise<any>}
+ */
+export async function saveSessionWithLibrary(name) {
+	const { explorerFolders, explorerItems, itemBlob } = await import('./explorer');
+	const base = buildSessionPayload(name);
+	if (!base) return null;
+	/** @type {any[]} */
+	const items = [];
+	for (const item of get(explorerItems)) {
+		const blob = await itemBlob(item.id);
+		if (!blob) continue; // an index row whose bytes are gone carries nothing
+		items.push({ name: item.name, kind: item.kind, folderId: item.folderId, hash: item.hash, blob });
+	}
+	/** @type {any} */
+	const payload = base;
+	payload.library = {
+		folders: get(explorerFolders).map((f) => ({ id: f.id, name: f.name, parentId: f.parentId })),
+		items
+	};
+	const saved = await persistSession(payload);
+	if (saved) showToast('Session saved: ' + saved.name + ' (with ' + items.length + ' library file' + (items.length === 1 ? '' : 's') + ')');
+	return saved;
+}
+
+/**
+ * Put a saved session's library back. Called from the session RESTORE path; a payload
+ * with no `library` key is a pre-R8 session and takes this as a no-op.
+ * @param {any} payload @returns {Promise<number>} how many files were restored
+ */
+export async function restoreSessionLibrary(payload) {
+	const lib = payload?.library;
+	if (!lib) return 0;
+	const { createFolder, addItemFromBytes } = await import('./explorer');
+	for (const f of lib.folders ?? []) createFolder(String(f.name ?? 'Folder'), f.parentId ?? null, { id: f.id });
+	let n = 0;
+	for (const row of lib.items ?? []) {
+		try {
+			const buffer = await row.blob.arrayBuffer();
+			await addItemFromBytes(buffer, row.name, row.folderId ?? null);
+			n++;
+		} catch {}
+	}
+	return n;
 }
 
 /** Snapshot the current scene into a named session @param {string} name */
@@ -393,10 +517,47 @@ export async function importSession(json) {
 // ---- session ZIP: session.json + the scene's binary assets (127) ----
 
 /**
+ * 21-I5 — THE HONESTY TOAST, and the ONE half of the bundle that survives its revision.
+ *
+ * The interim 21-I5 build could WRITE a `versions/` section into a `.tpscene` from an
+ * Export Settings checkbox. That option is GONE: `saveTpScene` exports whatever is in
+ * the viewport, which cannot always answer "and its history" — an unnamed or
+ * never-travelled scene has no manifest entry to look one up in, so the box silently
+ * produced nothing. Per-scene DOWNLOADS in the Explorer replaced it, where the scene
+ * card makes the name and the history unambiguous.
+ *
+ * **NOTHING IN THE APP WRITES `versions/` ANY MORE**, and nothing ever read it back
+ * (the export-only ruling: a second door into the library is exactly what would let a
+ * content-addressed item be created from a fat file whose hash is not its content's).
+ * This stays because files produced by that interim build EXIST on people's disks, and
+ * a load that ignored their extra section in silence would be the dishonest half of
+ * what was just removed.
+ * @param {Record<string, Uint8Array>} entries @returns {number} versions in the file
+ */
+function noteBundledVersions(entries) {
+	const n = Object.keys(entries).filter((k) => k.startsWith('versions/')).length;
+	if (!n) return 0;
+	showToast(
+		'This scene file also carries ' + n + ' saved version' + (n === 1 ? '' : 's') +
+			' of the scene. ' + (n === 1 ? 'It is' : 'They are') +
+			' not loaded — unzip the file to open ' + (n === 1 ? 'it' : 'one') + '.'
+	);
+	return n;
+}
+
+/**
  * Build a .zip Uint8Array for a session: session.json + assets/<hash>.<ext>
  * (the 108 scene manifest's audio/config/textures) + an assets/index.json map.
  * Portable — re-importing on a fresh machine restores the assets too.
+ *
+ * A scene's VERSION HISTORY is deliberately not one of the include-options. The interim
+ * 21-I5 build had it as a fourth checkbox and it could not work from here: this function
+ * is handed "whatever is in the viewport", which is not always a named project scene, so
+ * there was frequently no history to look up and the box wrote nothing. Downloading
+ * versions is a per-SCENE action in the Explorer now — see `noteBundledVersions` above.
+ *
  * @param {any} payload
+ * @param {{assets?: boolean, packs?: boolean, flow?: boolean}} [opts]
  */
 export async function exportSessionZip(payload, opts = { assets: true, packs: false, flow: true }) {
 	const { zipSync, strToU8 } = await import('fflate');
@@ -453,6 +614,52 @@ export async function exportSessionZip(payload, opts = { assets: true, packs: fa
 	return zipSync(files, { level: 6 });
 }
 
+/** The zip's bundled assets into the Explorer (hash-deduped) so sound/texture hashes
+ * resolve. Shared by importSessionZip and 21-F4's readSessionZip.
+ * @param {Record<string, Uint8Array>} entries @param {(bytes: Uint8Array) => string} strFromU8 */
+async function restoreZipAssets(entries, strFromU8) {
+	let index = [];
+	try {
+		if (entries['assets/index.json']) index = JSON.parse(strFromU8(entries['assets/index.json']));
+	} catch {
+		index = [];
+	}
+	if (!index.length) return;
+	const { applyAssetFile } = await import('./assetShare');
+	for (const entry of index) {
+		const bytes = entries[entry.file];
+		if (!bytes) continue;
+		// pass the Uint8Array VIEW — applyAssetFile slices byteOffset..length
+		// so fflate's shared buffers don't corrupt the content hash
+		await applyAssetFile({ hash: entry.hash, name: entry.name, buffer: bytes });
+	}
+}
+
+/**
+ * 21-F4: read a session zip WITHOUT importing it — no slot written, no dialogs. LEVEL
+ * TRAVEL runs on every peer at once off a replicated trigger, so a confirm dialog has
+ * nobody to answer it and a cancel could not be honoured anyway (the others already
+ * left). A NEWER format is REFUSED with a toast instead of asked about; assets are
+ * restored (hash-deduped) so the level's textures and sounds resolve.
+ * @param {ArrayBuffer} buffer @returns {Promise<any|null>} the payload, or null
+ */
+export async function readSessionZip(buffer) {
+	const { unzipSync, strFromU8 } = await import('fflate');
+	const entries = unzipSync(new Uint8Array(buffer));
+	const sessionBytes = entries['session.json'];
+	if (!sessionBytes) return null;
+	const payload = parseSessionJson(strFromU8(sessionBytes));
+	const format = Number(payload?.format ?? 0);
+	if (!payload || format > SESSION_FORMAT) {
+		showToast('This level needs a newer app version (format ' + format + ' > ' + SESSION_FORMAT + ')');
+		return null;
+	}
+	await restoreZipAssets(entries, strFromU8);
+	// 21-I5: `versions/` is read by NOTHING — say so rather than ignore it silently
+	noteBundledVersions(entries);
+	return payload;
+}
+
 /**
  * Import a session .zip: restore its bundled assets into the Explorer (Shared,
  * hash-deduped) FIRST so sound/texture hashes resolve, then the session.json.
@@ -470,22 +677,10 @@ export async function importSessionZip(buffer) {
 	// A6.2: and the module prompt sits right beside it, above the asset/pack loops
 	// for the same reason — a cancelled import must not touch the Explorer either
 	if (!(await confirmModuleRequirements(payload))) return null;
-	let index = [];
-	try {
-		if (entries['assets/index.json']) index = JSON.parse(strFromU8(entries['assets/index.json']));
-	} catch {
-		index = [];
-	}
-	if (index.length) {
-		const { applyAssetFile } = await import('./assetShare');
-		for (const entry of index) {
-			const bytes = entries[entry.file];
-			if (!bytes) continue;
-			// pass the Uint8Array VIEW — applyAssetFile slices byteOffset..length
-			// so fflate's shared buffers don't corrupt the content hash
-			await applyAssetFile({ hash: entry.hash, name: entry.name, buffer: bytes });
-		}
-	}
+	// 21-I5: after the confirms (a cancelled import must not talk about the file it did
+	// not read) and before the restore loops, which never touch `versions/`
+	noteBundledVersions(entries);
+	await restoreZipAssets(entries, strFromU8);
 	// B3: restore bundled packs — re-store each item blob (content-hash deduped;
 	// ids can CHANGE, so remap the pack's item ids), then re-register the pack
 	if (entries['packs/index.json']) {
@@ -627,11 +822,37 @@ function reportUnknownNodes(payload) {
 }
 
 /** Replace the scene with a session (safety-stash first). Replicates through
- * the normal clearscene/object/node messages. @param {any} payload */
-export async function applySession(payload) {
+ * the normal clearscene/object/node messages.
+ *
+ * 21-F4 opts, every default preserving today's behaviour byte-identically:
+ *   backup     false skips the safety-stash session — LEVEL TRAVEL runs this on every
+ *              peer at once, and N peers each stashing a backup per hop is noise
+ *   replicate  false applies LOCALLY with nothing sent — the deterministic model: a
+ *              travel trigger already replicated, so EVERY peer runs this itself, and
+ *              a replicating apply would be N peers broadcasting the same scene at
+ *              each other (clear storms included)
+ *   game       false EXCLUDES payload.game — fork 3: game state CARRIES across scene
+ *              travel, so the traveller re-asserts the live state after the load
+ *   workspace  false skips the edit-resume — a level hop mid-game must not reopen the
+ *              author's mesh-edit session
+ * @param {any} payload
+ * @param {{backup?: boolean, replicate?: boolean, game?: boolean, workspace?: boolean}} [opts]
+ */
+export async function applySession(payload, opts = {}) {
+	const { backup = true, replicate = true, game = true, workspace = true } = opts;
 	const group = get(objectsGroup);
-	if (group?.children.length) await saveSession('Backup before "' + payload.name + '"');
-	sceneCommand('/clear all'); // replicated clear (objects + module content)
+	if (backup && group?.children.length) await saveSession('Backup before "' + payload.name + '"');
+	// R22-R8: a session saved by "Save into session" carries the whole Explorer library
+	// beside the scene, because that gesture EMPTIES the library and the save is the only
+	// thing standing between the user and losing it. Restoring it is hash-deduped, so a
+	// file already here is not written twice; a payload with no `library` key is every
+	// session written before R8 and takes this as a no-op.
+	if (payload?.library) {
+		const restored = await restoreSessionLibrary(payload);
+		if (restored) showToast('Restored ' + restored + ' library file' + (restored === 1 ? '' : 's'));
+	}
+	if (replicate) sceneCommand('/clear all'); // replicated clear (objects + module content)
+	else clearSceneLocal();
 	/** @type {any} */
 	const peer = get(peers);
 	for (const element of payload.objects ?? []) {
@@ -648,15 +869,15 @@ export async function applySession(payload) {
 		// on the way in; the peers do the same in `createObject`.
 		stripEditOverlays(object);
 		group.add(object); // keep original uuids — every peer converges on them
-		if (peer) peer.send({ type: 'object', element });
+		if (replicate && peer) peer.send({ type: 'object', element });
 	}
 	objectsGroup.update((value) => value);
 	// animated imports come back from their original bytes (mixers rebuilt, peers
 	// reparse the same file) and authored tracks from the payload
-	await animatedImportsRestore(payload.animated ?? []);
+	await animatedImportsRestore(payload.animated ?? [], replicate);
 	// replicate: a loaded scene's movements reach the peers already in the room,
 	// the way each restored joint is re-broadcast below
-	animationsRestore(payload.animations ?? {}, true);
+	animationsRestore(payload.animations ?? {}, replicate);
 	// H1: new format restores EVERY graph document; legacy payloads carry the
 	// scene graph only. One 'nodes' snapshot replicates the whole map.
 	const graphsPayload =
@@ -667,7 +888,7 @@ export async function applySession(payload) {
 				: null;
 	if (graphsPayload) {
 		restoreGraphs(graphsPayload);
-		if (peer)
+		if (replicate && peer)
 			peer.send({
 				type: 'nodes',
 				graphs: graphsPayload,
@@ -676,24 +897,26 @@ export async function applySession(payload) {
 			});
 	}
 	// a scene LOAD replaces the world, so replace the documents too
-	shaderGraphsRestore(payload.shaderGraphs ?? {}, true);
+	shaderGraphsRestore(payload.shaderGraphs ?? {}, replicate);
 	annotationsRestore(payload.annotations ?? []);
 	// P-B: joints restore locally + replicate each def (receivers only apply)
 	jointsRestore(payload.joints ?? []);
 	// the look replicates on restore too, so loading a scene into a live room
 	// brings its art direction along (the jointsRestore precedent below)
-	scenePostRestore(payload.post, true);
+	scenePostRestore(payload.post, replicate);
 	// A6.1: and so do the sky, the gravity and the music — a game template that
 	// loaded into the room's own sky and gravity was the reason this phase exists.
 	// Each is a no-op when the field is absent (= the scene wants the defaults).
-	environmentRestore(payload.environment, true);
-	scenePhysicsRestore(payload.physics, true);
-	musicRestore(payload.music, true);
+	environmentRestore(payload.environment, replicate);
+	scenePhysicsRestore(payload.physics, replicate);
+	musicRestore(payload.music, replicate);
 	// and the HUD with it: loading a game scene into a live room must bring its overlay
-	hudDocsRestore(payload.hud ?? null, true, true);
-	// and the game with it: loading a game scene into a live room must bring its state
-	gameStateRestore(payload.game ?? null, true);
-	if (peer) for (const joint of payload.joints ?? []) peer.send({ type: 'jointcreate', joint });
+	hudDocsRestore(payload.hud ?? null, true, replicate);
+	// and the game with it: loading a game scene into a live room must bring its state.
+	// 21-F4 fork 3: LEVEL TRAVEL passes game:false — state/round/vars CARRY across the
+	// hop (campaign semantics), so the traveller re-asserts the live state after this.
+	if (game) gameStateRestore(payload.game ?? null, replicate);
+	if (replicate && peer) for (const joint of payload.joints ?? []) peer.send({ type: 'jointcreate', joint });
 	/** @type {any} */
 	const camera = get(globalCamera);
 	/** @type {any} */
@@ -707,7 +930,7 @@ export async function applySession(payload) {
 	}
 	// P5: last, once the objects exist and the camera is parked — a selection applied
 	// before the tree is populated selects nothing, and a session entry needs its object
-	if (payload.workspace) applyEditResume(payload.workspace);
+	if (workspace && payload.workspace) applyEditResume(payload.workspace);
 	// A6.4: ONE Notification Center entry naming the unrenderable nodes, because the
 	// flow editor's badge is invisible when the dock is closed — which it is for most
 	// players loading a game. Runs after restoreGraphs, so the count is the real one.
@@ -721,16 +944,20 @@ export async function applySession(payload) {
 let pendingProposal = null;
 
 /** Load a session — solo applies immediately, with peers it becomes a proposal
- * every connected peer must accept. @param {string} id */
+ * every connected peer must accept.
+ * @param {string} id
+ * @returns {Promise<boolean>} true when the load APPLIED NOW (solo path); false when
+ *   it became a proposal (or the session was missing) — 21-G8's "opened as the
+ *   current scene, unsaved" marker only makes sense for a load that actually happened */
 export async function requestLoadSession(id) {
 	const payload = await getSession(id);
-	if (!payload) return;
+	if (!payload) return false;
 	/** @type {any} */
 	const peer = get(peers);
 	const connected = Object.keys(peer?.connections ?? {});
 	if (!connected.length) {
 		await applySession(payload);
-		return;
+		return true;
 	}
 	pendingProposal = { payload, accepts: new Set(), needed: connected };
 	peer.send({
@@ -740,6 +967,7 @@ export async function requestLoadSession(id) {
 		from: peer.peer.id
 	});
 	showToast('Asked ' + connected.length + ' peer' + (connected.length === 1 ? '' : 's') + ' to load "' + payload.name + '"…');
+	return false;
 }
 
 /** Receiver side: Accept/Decline toast @param {any} data */

@@ -225,11 +225,15 @@
 	// side drawers live on the --z-drawer tier (68); chat floats on its own now.
 	// bottom rises above the docked Flow/Explorer height (105) AND the Controls pill/
 	// HUD footprint on narrow screens (--controls-inset) so neither covers the drawer.
+	// The two are SUMMED, not max()'d: the Controls pill no longer sits on the viewport
+	// bottom — it rides ABOVE the dock, occupying the band [bottom-inset .. +66px] — so
+	// the taller of the two no longer clears both. The sum is identical to the old
+	// max() whenever either term is 0, which is every case that existed before.
 	// z sits just above the bottom HUD buttons (mic/chat/+ are at --z-drawer=30) so the
 	// settings drawer is never covered by the mic on the bottom-right, but stays BELOW
 	// the dock (--z-bottom=35) and floating windows.
 	const drawerStyle =
-		'bottom: max(var(--bottom-inset, 0px), var(--controls-inset, 0px)); z-index: calc(var(--z-bottom) - 1); height: auto';
+		'bottom: calc(var(--bottom-inset, 0px) + var(--controls-inset, 0px)); z-index: calc(var(--z-bottom) - 1); height: auto';
 
 	// Round the drawer's bottom-LEFT corner when it floats ABOVE the bottom (a docked
 	// Flow/Explorer, or the narrow Controls inset, leave a gap below it). When it sits

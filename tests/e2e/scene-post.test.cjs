@@ -303,7 +303,7 @@ h.run(async () => {
 
 	await page.evaluate(() => {
 		// a fresh stack for the pixel work, and something to shade
-		window.__stores.scenePost.scenePost.set({ enabled: true, effects: [], changedAt: 1 });
+		window.__stores.scenePost.postStacks.set({ scene: { enabled: true, effects: [], changedAt: 1 } });
 		window.__stores.commandsHandler.sceneCommand('/create box');
 		window.__stores.viewMode.set('shaded');
 	});
@@ -348,7 +348,7 @@ h.run(async () => {
 
 	// a full-frame effect through the stack in `custom`
 	await page.evaluate(() => {
-		window.__stores.scenePost.scenePost.set({ enabled: true, effects: [], changedAt: 2 });
+		window.__stores.scenePost.postStacks.set({ scene: { enabled: true, effects: [], changedAt: 2 } });
 		window.__stores.scenePost.addPostEffect('test-fill');
 		window.__stores.viewMode.set('shaded');
 	});
@@ -422,7 +422,7 @@ h.run(async () => {
 		const post = window.__stores.scenePost;
 		window.__stores.viewMode.set('shaded');
 		window.__stores.viewportOverrides.setRenderLayer('post', true);
-		post.scenePost.set({ enabled: true, effects: [], changedAt: 30 });
+		post.postStacks.set({ scene: { enabled: true, effects: [], changedAt: 30 } });
 		post.addPostEffect('test-noop');
 		await new Promise((r) => setTimeout(r, 1000));
 		return window.__postDebug();
@@ -473,7 +473,7 @@ h.run(async () => {
 		const sent = [];
 		peers.set({ ...original, send: (message) => sent.push(message) });
 		try {
-			post.scenePost.set({ enabled: true, effects: [], changedAt: 1 });
+			post.postStacks.set({ scene: { enabled: true, effects: [], changedAt: 1 } });
 			const id = post.addPostEffect('ao');
 			const intensity = () => {
 				let value = -1;
@@ -559,7 +559,7 @@ h.run(async () => {
 	// (three pages is the practical ceiling on a loaded box)
 	await page.evaluate(() => {
 		const post = window.__stores.scenePost;
-		post.scenePost.set({ enabled: true, effects: [], changedAt: 1 });
+		post.postStacks.set({ scene: { enabled: true, effects: [], changedAt: 1 } });
 		const id = post.addPostEffect('ao');
 		post.setPostEffectParams(id, { intensity: 3.75, aoRadius: 2.25 });
 	});
@@ -697,7 +697,7 @@ h.run(async () => {
 	const answered = await B.page.evaluate(async () => {
 		let peer = null;
 		window.__stores.peers.subscribe((p) => (peer = p))();
-		window.__stores.scenePost.scenePost.set({ enabled: true, effects: [], changedAt: 1 });
+		window.__stores.scenePost.postStacks.set({ scene: { enabled: true, effects: [], changedAt: 1 } });
 		let id = '';
 		window.__stores.peers.subscribe((p) => (id = p?.peer?.id))();
 		peer.send({ type: 'getscenepost', sender: id });
@@ -718,13 +718,13 @@ h.run(async () => {
 	const sessionRound = await page.evaluate(async () => {
 		const post = window.__stores.scenePost;
 		const sessions = window.__stores.sessions;
-		post.scenePost.set({ enabled: true, effects: [], changedAt: 5 });
+		post.postStacks.set({ scene: { enabled: true, effects: [], changedAt: 5 } });
 		const id = post.addPostEffect('ao');
 		post.setPostEffectParams(id, { intensity: 6.25 });
 		post.addPostEffect('from-the-future'); // an unknown kind must be SAVED too
 		const payload = sessions.buildSessionPayload('post-stack test');
 		// wipe the live stack, then restore from the payload
-		post.scenePost.set({ enabled: true, effects: [], changedAt: 6 });
+		post.postStacks.set({ scene: { enabled: true, effects: [], changedAt: 6 } });
 		post.scenePostRestore(payload.post);
 		let state = null;
 		post.scenePost.subscribe((s) => (state = s))();
@@ -746,7 +746,7 @@ h.run(async () => {
 
 	const emptyPayload = await page.evaluate(() => {
 		const post = window.__stores.scenePost;
-		post.scenePost.set({ enabled: true, effects: [], changedAt: 7 });
+		post.postStacks.set({ scene: { enabled: true, effects: [], changedAt: 7 } });
 		return window.__stores.sessions.buildSessionPayload('no look').post;
 	});
 	h.check(emptyPayload === null, '8.3 a scene with no look adds no field (an older build sees nothing new)');
@@ -755,7 +755,7 @@ h.run(async () => {
 	// so assert the SHAPE: the exact kinds, and the params, off a restored snapshot.
 	await page.evaluate(async () => {
 		const post = window.__stores.scenePost;
-		post.scenePost.set({ enabled: true, effects: [], changedAt: 8 });
+		post.postStacks.set({ scene: { enabled: true, effects: [], changedAt: 8 } });
 		const id = post.addPostEffect('ao');
 		post.setPostEffectParams(id, { intensity: 4.5, aoRadius: 3.5 });
 		post.addPostEffect('test-fill'); // becomes UNKNOWN after the reload
@@ -836,7 +836,7 @@ h.run(async () => {
 	console.log('\n=== 9. AO parameters + tone mapping ===');
 
 	await page.evaluate(async () => {
-		window.__stores.scenePost.scenePost.set({ enabled: true, effects: [], changedAt: 20 });
+		window.__stores.scenePost.postStacks.set({ scene: { enabled: true, effects: [], changedAt: 20 } });
 		window.__stores.viewMode.set('shaded-ao');
 		await new Promise((r) => setTimeout(r, 900));
 	});
@@ -852,7 +852,7 @@ h.run(async () => {
 	// the params reach the PASS, which is the only place they live
 	const aoTuned = await page.evaluate(async () => {
 		const post = window.__stores.scenePost;
-		post.scenePost.set({ enabled: true, effects: [], changedAt: 21 });
+		post.postStacks.set({ scene: { enabled: true, effects: [], changedAt: 21 } });
 		const id = post.addPostEffect('ao');
 		post.setPostEffectParams(id, { aoRadius: 4.25, intensity: 0.75, distanceFalloff: 2.5 });
 		window.__stores.viewMode.set('shaded');
@@ -911,7 +911,7 @@ h.run(async () => {
 	}));
 	const tone = await page.evaluate(async () => {
 		const post = window.__stores.scenePost;
-		post.scenePost.set({ enabled: true, effects: [], changedAt: 22 });
+		post.postStacks.set({ scene: { enabled: true, effects: [], changedAt: 22 } });
 		window.__stores.viewMode.set('shaded');
 		await new Promise((r) => setTimeout(r, 900));
 		const before = window.__postDebug();
@@ -949,7 +949,7 @@ h.run(async () => {
 	const clip9 = await h.centeredClip(A, [0, 0, 0], 360);
 	const staged = await page.evaluate(async () => {
 		const post = window.__stores.scenePost;
-		post.scenePost.set({ enabled: true, effects: [], changedAt: 23 });
+		post.postStacks.set({ scene: { enabled: true, effects: [], changedAt: 23 } });
 		window.__stores.commandsHandler.sceneCommand('/create sphere');
 		window.__stores.viewMode.set('shaded');
 		await new Promise((r) => setTimeout(r, 1600));
@@ -995,7 +995,7 @@ h.run(async () => {
 			effectDelta.max
 	);
 	await page.evaluate(() => {
-		window.__stores.scenePost.scenePost.set({ enabled: true, effects: [], changedAt: 24 });
+		window.__stores.scenePost.postStacks.set({ scene: { enabled: true, effects: [], changedAt: 24 } });
 	});
 
 	// A TOUCH DEVICE gets the scene's look too. That is a deliberate reversal: the

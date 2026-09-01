@@ -92,7 +92,43 @@ const NODE_TYPE_ALIASES = /** @type {Record<string, string>} */ ({
 	stopanimation: 'playanim',
 	animate: 'playanim',
 	opendoor: 'playanim',
-	door: 'playanim'
+	door: 'playanim',
+	// 21-E4: the logic nodes. The four TYPES need no listing here - aiNodeTypes is
+	// derived from nodeCatalog, so adding them to the catalog put them in the enum -
+	// but a small model reaches for these four by FUNCTION rather than by name more
+	// than for anything else in the palette ("wait 3 seconds", "remember that it was
+	// collected"), so the near-misses are worth mapping home.
+	//
+	// Note the KEY SHAPE: normalizeNodeType flattens whitespace/underscores/hyphens
+	// out of the model's word before the lookup, so only FLATTENED keys can ever
+	// match (the `play_animation` style entries above are dead weight, kept as-is).
+	// And nothing here may shadow a real catalog type, which wins on the line before:
+	// `toggle` (the Input node), `timer` (the delay LINE) and `switcher` are
+	// deliberately absent for that reason - a model saying "toggle" means the input.
+	flipflop: 'latch',
+	hold: 'latch',
+	flag: 'latch',
+	memory: 'latch',
+	remember: 'latch',
+	sticky: 'latch',
+	togglestate: 'latch',
+	wait: 'delay',
+	sleep: 'delay',
+	timeout: 'delay',
+	cooldown: 'delay',
+	after: 'delay',
+	defer: 'delay',
+	steps: 'sequence',
+	chain: 'sequence',
+	stagger: 'sequence',
+	sequencer: 'sequence',
+	cascade: 'sequence',
+	oneshot: 'once',
+	firstonly: 'once',
+	onlyonce: 'once',
+	triggeronce: 'once',
+	firsttime: 'once',
+	single: 'once'
 });
 
 /**

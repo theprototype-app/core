@@ -29,6 +29,17 @@ export const worldRig = writable(null);
 /** @type {import('svelte/store').Writable<any>} */
 export const backgroundColor = writable('#ffffff');
 export const isLocked = writable(null);
+
+/**
+ * 21-E3: 'in play, pointer free' - the MENU SUBSTATE of `isLocked === true`, never
+ * meaningful otherwise. True while a visible HUD screen with `input: 'menu'` has
+ * released the pointer so the player can click it; the camera stays the player cam
+ * and `isLocked` is NEVER written by the menu loop, which is what keeps the exit
+ * debounce (Controls' false -> null + the 2s allowPlay lockout) structurally
+ * unreachable from opening a menu. SINGLE WRITER: HudLayer. Everyone else reads.
+ * @type {import("svelte/store").Writable<boolean>}
+ */
+export const playPointerFree = writable(false);
 export const isVRMode = writable(false);
 export const vrOverride = writable(false);
 export const playerCam = writable(false);
@@ -183,6 +194,14 @@ export const vrStatsOpen = writable(
 // scene background/fog go transparent so the room shows through; the
 // replicated environment state is untouched
 export const passthroughActive = writable(false);
+// CO4: the ONE derivation feeding that signal — a session composites over the
+// real world when its environmentBlendMode is not 'opaque' ('alpha-blend' on
+// camera passthrough, 'additive' on see-through glasses). Pure and exported so
+// Scene's session-start handler and the headless suite share the same rule.
+/** @param {any} session @returns {boolean} */
+export function sessionCompositesOverRoom(session) {
+	return !!session && session.environmentBlendMode !== 'opaque';
+}
 // selection keeps working but the transform gizmo must NOT attach (sculpt mode:
 // a visible gizmo invites accidental terrain moves mid-stroke). Lives in this
 // leaf store so objectActions can gate on it without importing terrainSculpt

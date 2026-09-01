@@ -4,6 +4,10 @@
   import Scene from './components/Scene.svelte'
   import Menu from './components/Menu.svelte'
   import ConfirmModal from './components/menu/ConfirmModal.svelte'
+  // loose-scenes fix (bug 2a): importing something you already have. Importing this
+  // module is ALSO what registers explorer.js's duplicate-resolver seam, which is why
+  // the whole feature turns on here rather than inside the leaf.
+  import ImportDuplicatesModal from './components/menu/ImportDuplicatesModal.svelte'
   import Flow from './components/Flow.svelte'
   import FlowCode from './components/editors/FlowCode.svelte'
   import AnimationWindow from './components/editors/AnimationWindow.svelte'
@@ -16,6 +20,7 @@
   import ModelPreviewWindow from './components/editors/ModelPreviewWindow.svelte'
   import DungeonMinimap from './components/play/DungeonMinimap.svelte'
   import PlayReticle from './components/play/PlayReticle.svelte'
+  import TouchPlayControls from './components/play/TouchPlayControls.svelte'
   import DrawToolbar from './components/menu/DrawToolbar.svelte'
   import SculptToolbar from './components/menu/SculptToolbar.svelte'
   import SplineToolbar from './components/menu/SplineToolbar.svelte'
@@ -35,6 +40,10 @@
   import { startShadowDefaults } from '$lib/shadowDefaults'
   import { startViewMode } from '$lib/viewMode'
   import { startInputRuntime } from '$lib/inputRuntime'
+  // 21-E2.4: right-drag a HUD element in the viewport. Installed here rather than from
+  // HudLayer because it is a window-CAPTURE gesture that must exist whether or not the
+  // layer is currently mounted — the `startInputRuntime` shape, idempotent.
+  import { startHudViewportDrag } from '$lib/hudViewportDrag'
   import { startPossess } from '$lib/possess'
   import { startHandModels } from '$lib/handModels'
   import { startAutosave } from '$lib/autosave'
@@ -49,6 +58,15 @@
   import { startHudSync } from '$lib/hudSync'
   import { startHudImages } from '$lib/hudImages'
   import { startGameSync } from '$lib/gameSync'
+  import { startGamePresence } from '$lib/gamePresence'
+  import { startColocationCalibration } from '$lib/colocationCalibrate'
+  import { startColocationPresence } from '$lib/colocationPresence'
+  import { startColocationAnchors } from '$lib/colocationAnchors'
+  import { startColocationNudge } from '$lib/colocationNudge'
+  import ColocationBadge from './components/menu/ColocationBadge.svelte'
+  import { loadProjectManifest } from '$lib/projectManifest'
+  import { startSharedLibrary } from '$lib/sharedLibrary'
+  import { startSceneIdentity } from '$lib/sceneIdentity'
   import HudLayer from './components/hud/HudLayer.svelte'
   import HudEditor from './components/editors/HudEditor.svelte'
   import { importFile, load } from '$lib/fileHandler.svelte'
@@ -57,6 +75,9 @@
   import { initModules, disabledModules } from '$lib/moduleSDK'
   import { coreModules } from './modules/index.js'
   import ModulesManager from './components/menu/ModulesManager.svelte'
+  // W9: the pref that decides whether the bottom dock RESIZES the viewport (default)
+  // or overlays it. A local view preference — see the .viewport style below.
+  import { viewPrefs } from '$lib/viewPrefs'
 
   // before children mount: node components/effects must exist when the
   // flow editor and runtime first look them up
@@ -77,6 +98,7 @@
     startShadowDefaults()
     startViewMode()
     startInputRuntime()
+    startHudViewportDrag()
     startPossess()
     startHandModels()
     loadUserModules()
@@ -102,6 +124,29 @@
     startHudSync()
     startHudImages()
     startGameSync()
+    // 21-F3: publish our play mode when it changes, and watch for an abandoned round
+    startGamePresence()
+    // CO2: the colocation calibration ritual — VR radial entries, trigger hooks,
+    // markers, locomotion suppression and the colocated world-grab divert
+    startColocationCalibration()
+    // CO5: publish which physical ROOM we are in when it changes, so a co-present peer
+    // can stop rendering our avatar and stop playing our voice (their side, locally)
+    startColocationPresence()
+    // CO3: persist a calibration as an XRAnchor per room; restore it on the next XR
+    // session (zero ritual) and follow the anchor's refined pose while presenting
+    startColocationAnchors()
+    startColocationNudge()
+    // 21-G2: the local project (scene histories + asset list) survives a reload
+    // 21-G7: and once it is in, fold every scene's older versions onto the hidden shelf —
+    // the migration for a library built before G7 (which minted a card per save) and the
+    // one-visible-item invariant for every project that arrives afterwards
+    loadProjectManifest().then(() => import('$lib/levels').then((m) => m.foldSceneVersions()))
+    // 21-G9: the window title says where you are — "Scene* - Project - theprototype".
+    // The dirty asterisk rides autosave's own change signal, throttled: the check
+    // serializes the whole scene, so it may never run per keystroke (see the module).
+    startSceneIdentity()
+    // R22-R1: the shared Explorer index — adopt what peers published, reconcile ours
+    startSharedLibrary()
     // #20 P5: deliberately NOTHING to start here. A plain reload comes up in the DEFAULT
     // state — all windows closed — and the layout is restored only by an explicit
     // Restore, by the auto-restore setting, or by loading a file, because it rides the
@@ -259,9 +304,39 @@
         import('./lib/splineTool'),
         import('./lib/splineEdit'),
         import('./lib/terrainCarve'),
-        import('./lib/flattenActions')
-      ]).then(([sceneStore, appStore, flowStore, meshEdit, vrControls, autosave, voiceChat, audioEngineLib, annotationsHandler, flowRuntime, history, materialsHandler, objectActions, commandsHandler, moduleSDK, drawModeLib, pathCapture, lockControl, prefabsLib, physics, jointsLib, possessLib, handModelsLib, terrainSculptLib, userModulesLib, environmentLib, sceneMusicLib, animatedImports, fileHandler, fileWindowsLib, sceneBounds, cameraClip, ping, sessionsLib, geometryEdit, lightParams, shadowDefaultsLib, paletteLib, viewModeLib, inputRuntimeLib, shortcutsLib, themesLib, vrRadialMenu, vrPaletteLib, vrWindowPosesLib, vrKeyboardLib, faceEditLib, meshToolParamsLib, avatarModelLib, explorerLib, bottomDock, explorerDrop, assetShare, soundRuntime, dungeonPlay, sceneAssetsLib, THREE, GLTFExporterModule, snappingLib, flowSocketsLib, networkQualityLib, packsLib, customNodesLib, nodesHandlerLib, nodeCatalogLib, objectMenuLib, animationPreviewLib, aiProvidersLib, aiToolsLib, aiAssistantLib, meshProvidersLib, meshJobsLib, flowGraphsLib, objectFlowLib, peerServerLib, cloudHooksLib, cloudPluginLib, connectionStateLib, peerApprovalLib, particleRuntimeLib, particleActionsLib, particlePresetsLib, versionLib, whatsNewLib, confirmDialogLib, scenePhysicsLib, playInteractLib, moveSmoothingLib, playSettingsLib, colliderSpecLib, colliderHelpersLib, colliderEditLib, editSessionLib, trackpadNavLib, vrSleeveLib, gridSettingsLib, viewPrefsLib, cameraBookmarksLib, cameraObjectsLib, cameraHelpersLib, onionSkinLib, cameraPreviewLib, addObjectsLib, cameraPipLib, inputDeviceLib, sceneTemplatesLib, bvhPickingLib, multiTransformLib, objectOriginLib, moduleGalleryLib, uvEditorLib, uvUnwrapLib, meshTopologyLib, meshBudgetLib, proportionalLib, proportionalRingLib, scenePickLib, snapEngineLib, meshPivotLib, selectionPrefsLib, editOverlaysLib, objectPermissionsLib, scenePostLib, postEffectsLib, viewportOverridesLib, postprocessingModule, shaderBackendsLib, shaderGraphLib, shaderSyncLib, shaderTexturesLib, shaderCatalogLib, unitsLib, postBackendsLib, workspaceLib, editResumeLib, moduleRequirementsLib, hudDocsLib, hudSyncLib, idbLib, hudKindsLib, hudImagesLib, gameStateLib, gameSyncLib, hudActionsLib, moduleNodeIOLib, moduleToolboxesLib, splineTubeLib, splineToolLib, splineEditLib, terrainCarveLib, flattenActionsLib]) => {
-        window.__stores = { ...sceneStore, ...appStore, ...flowStore, meshEdit, vrControls, autosave, voiceChat, audioEngine: audioEngineLib, annotationsHandler, flowRuntime, history, materialsHandler, objectActions, commandsHandler, moduleSDK, drawMode: drawModeLib, pathCapture, lockControl, prefabs: prefabsLib, physics, joints: jointsLib, possess: possessLib, handModels: handModelsLib, terrainSculpt: terrainSculptLib, userModules: userModulesLib, environment: environmentLib, sceneMusic: sceneMusicLib, animatedImports, fileHandler, fileWindows: fileWindowsLib, sceneBounds, cameraClip, ping, sessions: sessionsLib, geometryEdit, lightParams, shadowDefaults: shadowDefaultsLib, palette: paletteLib, viewModeCtl: viewModeLib, inputRuntime: inputRuntimeLib, shortcutsRegistry: shortcutsLib, themes: themesLib, vrRadialMenu, vrPalette: vrPaletteLib, vrWindowPoses: vrWindowPosesLib, vrKeyboard: vrKeyboardLib, faceEdit: faceEditLib, meshToolParams: meshToolParamsLib, avatarModel: avatarModelLib, explorer: explorerLib, bottomDock, explorerDrop, assetShare, soundRuntime, dungeonPlay, sceneAssets: sceneAssetsLib, THREE, GLTFExporterModule, snapping: snappingLib, flowSockets: flowSocketsLib, networkQuality: networkQualityLib, packs: packsLib, customNodes: customNodesLib, nodesHandler: nodesHandlerLib, nodeCatalog: nodeCatalogLib, objectMenu: objectMenuLib, animationPreview: animationPreviewLib, aiProviders: aiProvidersLib, aiTools: aiToolsLib, aiAssistant: aiAssistantLib, meshProviders: meshProvidersLib, meshJobs: meshJobsLib, flowGraphsCtl: flowGraphsLib, objectFlow: objectFlowLib, peerServer: peerServerLib, cloudHooks: cloudHooksLib, cloudPlugin: cloudPluginLib, connectionState: connectionStateLib, peerApproval: peerApprovalLib, particleRuntime: particleRuntimeLib, particleActions: particleActionsLib, particlePresets: particlePresetsLib, version: versionLib, whatsNew: whatsNewLib, confirmDialog: confirmDialogLib, scenePhysics: scenePhysicsLib, playInteract: playInteractLib, moveSmoothing: moveSmoothingLib, playSettings: playSettingsLib, colliderSpec: colliderSpecLib, colliderHelpers: colliderHelpersLib, colliderEdit: colliderEditLib, editSession: editSessionLib, trackpadNav: trackpadNavLib, vrSleeve: vrSleeveLib, gridSettings: gridSettingsLib, viewPrefs: viewPrefsLib, cameraBookmarks: cameraBookmarksLib, cameraObjects: cameraObjectsLib, cameraHelpers: cameraHelpersLib, onionSkin: onionSkinLib, cameraPreview: cameraPreviewLib, addObjects: addObjectsLib, cameraPip: cameraPipLib, inputDevice: inputDeviceLib, sceneTemplates: sceneTemplatesLib, bvhPicking: bvhPickingLib, multiTransform: multiTransformLib, objectOrigin: objectOriginLib, moduleGallery: moduleGalleryLib, uvEditor: uvEditorLib, uvUnwrap: uvUnwrapLib, meshTopology: meshTopologyLib, meshBudget: meshBudgetLib, proportional: proportionalLib, proportionalRing: proportionalRingLib, scenePick: scenePickLib, snapEngine: snapEngineLib, meshPivot: meshPivotLib, selectionPrefs: selectionPrefsLib, editOverlays: editOverlaysLib, objectPermissions: objectPermissionsLib, scenePost: scenePostLib, postEffects: postEffectsLib, viewportOverrides: viewportOverridesLib, postprocessing: postprocessingModule, shaderBackends: shaderBackendsLib, shaderGraph: shaderGraphLib, shaderSync: shaderSyncLib, shaderTextures: shaderTexturesLib, shaderCatalog: shaderCatalogLib, units: unitsLib, postBackends: postBackendsLib, workspace: workspaceLib, editResume: editResumeLib, moduleRequirements: moduleRequirementsLib, hudDocs: hudDocsLib, hudSync: hudSyncLib, idb: idbLib, hudKinds: hudKindsLib, hudImages: hudImagesLib, gameState: gameStateLib, gameSync: gameSyncLib, hudActions: hudActionsLib, moduleNodeIO: moduleNodeIOLib, moduleToolboxes: moduleToolboxesLib, splineTube: splineTubeLib, splineTool: splineToolLib, splineEdit: splineEditLib, terrainCarve: terrainCarveLib, flattenActions: flattenActionsLib }
+        import('./lib/flattenActions'),
+        import('./lib/hudViewportDrag'),
+        import('./lib/gamepadPrefs'),
+        import('./lib/charController'),
+        import('./lib/hudRichText'),
+        import('./lib/moduleHudKinds'),
+        import('./lib/hudMinimap'),
+        import('./lib/hudArrange'),
+        import('./lib/gamePresence'),
+        import('./lib/levels'),
+        import('./lib/peerVars'),
+        import('./lib/projectManifest'),
+        import('./lib/projectFile'),
+        import('./lib/transientObjects'),
+        import('./lib/spawner'),
+        import('./lib/triggerSync'),
+        import('./lib/saveName'),
+        import('./lib/sceneIdentity'),
+        import('./lib/importDuplicates'),
+        import('./lib/peerScenes'),
+        import('./lib/sharedLibrary'),
+        import('./lib/transferLedger'),
+        import('./lib/explorerView'),
+        import('./lib/colocation'),
+        import('./lib/colocationCalibrate'),
+        import('./lib/colocationPresence'),
+        import('./lib/xrAnchors'),
+        import('./lib/colocationAnchors'),
+        import('./lib/colocationNudge'),
+        import('./lib/touchControls'),
+        import('./lib/playMode')
+      ]).then(([sceneStore, appStore, flowStore, meshEdit, vrControls, autosave, voiceChat, audioEngineLib, annotationsHandler, flowRuntime, history, materialsHandler, objectActions, commandsHandler, moduleSDK, drawModeLib, pathCapture, lockControl, prefabsLib, physics, jointsLib, possessLib, handModelsLib, terrainSculptLib, userModulesLib, environmentLib, sceneMusicLib, animatedImports, fileHandler, fileWindowsLib, sceneBounds, cameraClip, ping, sessionsLib, geometryEdit, lightParams, shadowDefaultsLib, paletteLib, viewModeLib, inputRuntimeLib, shortcutsLib, themesLib, vrRadialMenu, vrPaletteLib, vrWindowPosesLib, vrKeyboardLib, faceEditLib, meshToolParamsLib, avatarModelLib, explorerLib, bottomDock, explorerDrop, assetShare, soundRuntime, dungeonPlay, sceneAssetsLib, THREE, GLTFExporterModule, snappingLib, flowSocketsLib, networkQualityLib, packsLib, customNodesLib, nodesHandlerLib, nodeCatalogLib, objectMenuLib, animationPreviewLib, aiProvidersLib, aiToolsLib, aiAssistantLib, meshProvidersLib, meshJobsLib, flowGraphsLib, objectFlowLib, peerServerLib, cloudHooksLib, cloudPluginLib, connectionStateLib, peerApprovalLib, particleRuntimeLib, particleActionsLib, particlePresetsLib, versionLib, whatsNewLib, confirmDialogLib, scenePhysicsLib, playInteractLib, moveSmoothingLib, playSettingsLib, colliderSpecLib, colliderHelpersLib, colliderEditLib, editSessionLib, trackpadNavLib, vrSleeveLib, gridSettingsLib, viewPrefsLib, cameraBookmarksLib, cameraObjectsLib, cameraHelpersLib, onionSkinLib, cameraPreviewLib, addObjectsLib, cameraPipLib, inputDeviceLib, sceneTemplatesLib, bvhPickingLib, multiTransformLib, objectOriginLib, moduleGalleryLib, uvEditorLib, uvUnwrapLib, meshTopologyLib, meshBudgetLib, proportionalLib, proportionalRingLib, scenePickLib, snapEngineLib, meshPivotLib, selectionPrefsLib, editOverlaysLib, objectPermissionsLib, scenePostLib, postEffectsLib, viewportOverridesLib, postprocessingModule, shaderBackendsLib, shaderGraphLib, shaderSyncLib, shaderTexturesLib, shaderCatalogLib, unitsLib, postBackendsLib, workspaceLib, editResumeLib, moduleRequirementsLib, hudDocsLib, hudSyncLib, idbLib, hudKindsLib, hudImagesLib, gameStateLib, gameSyncLib, hudActionsLib, moduleNodeIOLib, moduleToolboxesLib, splineTubeLib, splineToolLib, splineEditLib, terrainCarveLib, flattenActionsLib, hudViewportDragLib, gamepadPrefsLib, charControllerLib, hudRichTextLib, moduleHudKindsLib, hudMinimapLib, hudArrangeLib, gamePresenceLib, levelsLib, peerVarsLib, projectManifestLib, projectFileLib, transientObjectsLib, spawnerLib, triggerSyncLib, saveNameLib, sceneIdentityLib, importDuplicatesLib, peerScenesLib, sharedLibraryLib, transferLedgerLib, explorerViewLib, colocationLib, colocationCalibrateLib, colocationPresenceLib, xrAnchorsLib, colocationAnchorsLib, colocationNudgeLib, touchControlsLib, playModeLib]) => {
+        window.__stores = { ...sceneStore, ...appStore, ...flowStore, meshEdit, vrControls, autosave, voiceChat, audioEngine: audioEngineLib, annotationsHandler, flowRuntime, history, materialsHandler, objectActions, commandsHandler, moduleSDK, drawMode: drawModeLib, pathCapture, lockControl, prefabs: prefabsLib, physics, joints: jointsLib, possess: possessLib, handModels: handModelsLib, terrainSculpt: terrainSculptLib, userModules: userModulesLib, environment: environmentLib, sceneMusic: sceneMusicLib, animatedImports, fileHandler, fileWindows: fileWindowsLib, sceneBounds, cameraClip, ping, sessions: sessionsLib, geometryEdit, lightParams, shadowDefaults: shadowDefaultsLib, palette: paletteLib, viewModeCtl: viewModeLib, inputRuntime: inputRuntimeLib, shortcutsRegistry: shortcutsLib, themes: themesLib, vrRadialMenu, vrPalette: vrPaletteLib, vrWindowPoses: vrWindowPosesLib, vrKeyboard: vrKeyboardLib, faceEdit: faceEditLib, meshToolParams: meshToolParamsLib, avatarModel: avatarModelLib, explorer: explorerLib, bottomDock, explorerDrop, assetShare, soundRuntime, dungeonPlay, sceneAssets: sceneAssetsLib, THREE, GLTFExporterModule, snapping: snappingLib, flowSockets: flowSocketsLib, networkQuality: networkQualityLib, packs: packsLib, customNodes: customNodesLib, nodesHandler: nodesHandlerLib, nodeCatalog: nodeCatalogLib, objectMenu: objectMenuLib, animationPreview: animationPreviewLib, aiProviders: aiProvidersLib, aiTools: aiToolsLib, aiAssistant: aiAssistantLib, meshProviders: meshProvidersLib, meshJobs: meshJobsLib, flowGraphsCtl: flowGraphsLib, objectFlow: objectFlowLib, peerServer: peerServerLib, cloudHooks: cloudHooksLib, cloudPlugin: cloudPluginLib, connectionState: connectionStateLib, peerApproval: peerApprovalLib, particleRuntime: particleRuntimeLib, particleActions: particleActionsLib, particlePresets: particlePresetsLib, version: versionLib, whatsNew: whatsNewLib, confirmDialog: confirmDialogLib, scenePhysics: scenePhysicsLib, playInteract: playInteractLib, moveSmoothing: moveSmoothingLib, playSettings: playSettingsLib, colliderSpec: colliderSpecLib, colliderHelpers: colliderHelpersLib, colliderEdit: colliderEditLib, editSession: editSessionLib, trackpadNav: trackpadNavLib, vrSleeve: vrSleeveLib, gridSettings: gridSettingsLib, viewPrefs: viewPrefsLib, cameraBookmarks: cameraBookmarksLib, cameraObjects: cameraObjectsLib, cameraHelpers: cameraHelpersLib, onionSkin: onionSkinLib, cameraPreview: cameraPreviewLib, addObjects: addObjectsLib, cameraPip: cameraPipLib, inputDevice: inputDeviceLib, sceneTemplates: sceneTemplatesLib, bvhPicking: bvhPickingLib, multiTransform: multiTransformLib, objectOrigin: objectOriginLib, moduleGallery: moduleGalleryLib, uvEditor: uvEditorLib, uvUnwrap: uvUnwrapLib, meshTopology: meshTopologyLib, meshBudget: meshBudgetLib, proportional: proportionalLib, proportionalRing: proportionalRingLib, scenePick: scenePickLib, snapEngine: snapEngineLib, meshPivot: meshPivotLib, selectionPrefs: selectionPrefsLib, editOverlays: editOverlaysLib, objectPermissions: objectPermissionsLib, scenePost: scenePostLib, postEffects: postEffectsLib, viewportOverrides: viewportOverridesLib, postprocessing: postprocessingModule, shaderBackends: shaderBackendsLib, shaderGraph: shaderGraphLib, shaderSync: shaderSyncLib, shaderTextures: shaderTexturesLib, shaderCatalog: shaderCatalogLib, units: unitsLib, postBackends: postBackendsLib, workspace: workspaceLib, editResume: editResumeLib, moduleRequirements: moduleRequirementsLib, hudDocs: hudDocsLib, hudSync: hudSyncLib, idb: idbLib, hudKinds: hudKindsLib, hudImages: hudImagesLib, gameState: gameStateLib, gameSync: gameSyncLib, hudActions: hudActionsLib, moduleNodeIO: moduleNodeIOLib, moduleToolboxes: moduleToolboxesLib, splineTube: splineTubeLib, splineTool: splineToolLib, splineEdit: splineEditLib, terrainCarve: terrainCarveLib, flattenActions: flattenActionsLib, hudViewportDrag: hudViewportDragLib, gamepadPrefs: gamepadPrefsLib, charController: charControllerLib, hudRichText: hudRichTextLib, moduleHudKinds: moduleHudKindsLib, hudMinimap: hudMinimapLib, hudArrange: hudArrangeLib, gamePresence: gamePresenceLib, levels: levelsLib, peerVars: peerVarsLib, projectManifest: projectManifestLib, projectFile: projectFileLib, transientObjects: transientObjectsLib, spawner: spawnerLib, triggerSync: triggerSyncLib, saveName: saveNameLib, sceneIdentity: sceneIdentityLib, importDuplicates: importDuplicatesLib, peerScenes: peerScenesLib, sharedLibrary: sharedLibraryLib, transferLedger: transferLedgerLib, explorerView: explorerViewLib, colocation: colocationLib, colocationCalibrate: colocationCalibrateLib, colocationPresence: colocationPresenceLib, xrAnchors: xrAnchorsLib, colocationAnchors: colocationAnchorsLib, colocationNudge: colocationNudgeLib, touchControls: touchControlsLib, playMode: playModeLib }
       })
     }
   })
@@ -311,6 +386,7 @@
 {/if}
 <Menu />
 <ConfirmModal />
+<ImportDuplicatesModal />
 <DrawToolbar />
 <SculptToolbar />
 <SplineToolbar />
@@ -320,11 +396,45 @@
 <ModulesManager />
 <DungeonMinimap />
 <PlayReticle />
+<!-- W4: the touch play controls (virtual stick, look drag, exit). Beside PlayReticle
+     and outside the {#if !$isLocked} block for the same reason: they exist ONLY while
+     playing, which is exactly where that block draws nothing. -->
+<TouchPlayControls />
+<!-- CO2: the colocated badge — outside the isLocked gate, colocation survives play mode -->
+<ColocationBadge />
 <!-- A2: the HUD renders in PLAY mode, so it sits outside the {#if !$isLocked} block
      above (a game HUD that dies when you press play is no HUD at all). --z-hud, no
      new tier: it beats the camera PiP and loses to modal/toast/menu. -->
 <HudLayer />
 
-<Canvas>
-  <Scene />
-</Canvas>
+<!-- W9: THE VIEWPORT IS A LAYOUT REGION.
+     threlte's Canvas fills its parent (`width/height: 100%`) and sizes the renderer
+     from a ResizeObserver on that parent, so shrinking this wrapper is the whole
+     mechanism: the drawing buffer, the camera aspect, the composer and N8AO all
+     follow from threlte's own resize task, once per frame.
+     `bottom` is the open dock's height, which is what makes the dock a REGION (the
+     DCC behaviour: the canvas ends where the panel begins) instead of an overlay
+     drawn on top of a full-window canvas. No `z-index` — a stacking context here
+     would trap the PiP frame and the framing guide; the dock's --z-bottom (35)
+     already sits above the canvas at the default 0. No `transition` either: each
+     step reallocates the composer's render targets, so animating the inset turns one
+     realloc into one per frame. -->
+<div class="viewport" class:viewport-inset={$viewPrefs.dockPushesViewport}>
+  <Canvas>
+    <Scene />
+  </Canvas>
+</div>
+
+<style>
+  .viewport {
+    position: absolute;
+    left: 0;
+    right: 0;
+    top: 0;
+    bottom: 0;
+  }
+  /* the pref OFF keeps the pre-W9 behaviour: a full-window canvas the dock covers */
+  .viewport-inset {
+    bottom: var(--bottom-inset, 0px);
+  }
+</style>

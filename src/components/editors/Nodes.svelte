@@ -28,6 +28,9 @@
 	import AnimationNode from './nodes/AnimationNode.svelte';
 	import HudNode from './nodes/HudNode.svelte';
 	import GameCameraNode from './nodes/GameCameraNode.svelte';
+	import TravelNode from './nodes/TravelNode.svelte';
+	import SequenceNode from './nodes/SequenceNode.svelte';
+	import MoveInputNode from './nodes/MoveInputNode.svelte';
 	import ScriptNode from './nodes/ScriptNode.svelte';
 	import MapRangeNode from './nodes/MapRangeNode.svelte';
 	import SelectNode from './nodes/SelectNode.svelte';
@@ -52,6 +55,7 @@
 	import FlowIONode from './nodes/FlowIONode.svelte';
 	import ObjectFlowNode from './nodes/ObjectFlowNode.svelte';
 	import KeyPressNode from './nodes/KeyPressNode.svelte';
+	import GamepadNode from './nodes/GamepadNode.svelte';
 	import PlayAnimNode from './nodes/PlayAnimNode.svelte';
 	import AnimStateNode from './nodes/AnimStateNode.svelte';
 	import UnknownNode from './nodes/UnknownNode.svelte';
@@ -154,11 +158,18 @@
 		impulse: AnimationNode, // B6
 		setvelocity: AnimationNode, // B6
 		joint: AnimationNode, // B6
+		// B7: spec-driven (named input rows, four ranges, and the catalog `note`). A new
+		// node type has TWO registries and only one of them complains — a `spawn` in the
+		// catalog and not here renders as UnknownNode ("install the module that ships it").
+		spawn: AnimationNode,
 		counter: CounterNode,
 		flowinput: FlowIONode,
 		flowoutput: FlowIONode,
 		objectflow: ObjectFlowNode,
 		keypress: KeyPressNode,
+		// 21-E5: ONE card for the pad group (the HudNode precedent)
+		gamepadbutton: GamepadNode,
+		gamepadaxis: GamepadNode,
 		playanim: PlayAnimNode, // 17-E A5
 		animfinished: OnClickNode, // 17-E: a pulse when a clip ends
 		animmarker: OnClickNode, // 17-E F5: a pulse at a named point in a clip
@@ -171,16 +182,44 @@
 		hudtimer: HudNode,
 		hudlist: HudNode,
 		hudinput: HudNode,
+		// 21-G1 fix, PRE-EXISTING since 21-E7 (ea46a7d): `hudrows` reached `nodeCatalog`
+		// and never this map, so a node dragged out of the CORE HUD palette rendered as
+		// UnknownNode — "this node comes from a module that isn't installed". Exactly the
+		// two-registry gotcha, and `flow-unknown-node` was red on release/next for it.
+		hudrows: HudNode,
 		hudset: HudNode,
+		// 21-G4: the derived scoreboard names an element like every other HUD node
+		leaderboard: HudNode,
 		// 21-D6: the game shell. AnimationNode renders them from their catalog params;
-		// setcamera/gamestart get their own card for the camera picker (see GameNode).
+		// setcamera/gamestart/setlook get their own card for the camera picker.
 		setgamestate: AnimationNode,
 		ongamestate: AnimationNode,
 		setvariable: AnimationNode,
 		getvariable: AnimationNode,
 		gametime: AnimationNode,
+		// 21-F3's `collectcount` card MOVED to the collectible module (R3a) — an old
+		// scene's node renders as UnknownNode until the module is installed, honestly
+		// 21-G4: the per-player read, same shape
+		peervariable: AnimationNode,
 		setcamera: GameCameraNode,
 		gamestart: GameCameraNode,
+		setlook: GameCameraNode,
+		// 21-F4: travel gets its own card for the level picker; allplayers is spec-driven
+		travel: TravelNode,
+		allplayers: AnimationNode,
+		// 21-E4: the logic a game loop is made of. All spec-driven except Sequence,
+		// which is the only one with several OUTPUTS and so needs its own four rows.
+		latch: AnimationNode,
+		delay: AnimationNode,
+		once: AnimationNode,
+		sequence: SequenceNode,
+		// 21-E6: the character controller. All spec-driven except Move Input, which is
+		// the only one with several OUTPUTS and so needs its own labelled rows.
+		charcontroller: AnimationNode,
+		possessnode: AnimationNode,
+		camerafollow: AnimationNode,
+		movespeed: AnimationNode,
+		moveinput: MoveInputNode,
 	};
 
 	// module node types default to the spec-driven AnimationNode unless the
@@ -546,6 +585,9 @@
 				// anywhere in the menu does the same thing (the filter input is always
 				// focused), so this row is just the discoverable way in.
 				{ label: 'Search nodes…', revealFilter: true },
+				// 21-G1 put the collectible RECIPE under the Game group here; R3a moved it to
+				// the collectible module, whose manager toolbox owns "make selection
+				// collectible" now (Modules ▸ Browse) — so every group renders plain node rows
 				...[...nodeCatalog, ...$moduleNodeGroups].map((group) => ({
 					label: group.group,
 					children: group.items.map((item) => ({
@@ -710,11 +752,18 @@
 			{/if}
 		</div>
 
-		<!-- H1: empty state — the selected object has no flow document yet -->
+		<!-- H1: empty state — the selected object has no flow document yet.
+		     21-G1: it covers the pane, so a RIGHT-CLICK has to be forwarded or the pane
+		     menu is unreachable in exactly the state where an object is selected — which
+		     is the state the collectible recipe is FOR. (`addNode` already creates the
+		     object's flow implicitly from here, for the palette; this gives the menu the
+		     same courtesy.) An explanation must not behave like a modal. -->
 		{#if activeId !== SCENE_GRAPH && !hasActiveGraph}
+			<!-- svelte-ignore a11y_no_static_element_interactions -->
 			<div
 				id="flow-empty-state"
 				class="absolute inset-0 z-5 flex flex-col items-center justify-center gap-3 bg-gray-900/60 backdrop-blur-[2px]"
+				oncontextmenu={(event) => onPaneContextMenu({ event })}
 			>
 				<p class="text-sm text-gray-300">
 					<span class="font-semibold text-gray-100">{activeOwnerName}</span> has no flow yet

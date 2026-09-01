@@ -24,6 +24,21 @@ cap), `uv-live-faces` (live paint preview + face scoping), `uv-texture-params`
 (sampler state + the orientation arbiter), `uv-slots` + `uv-slots-persist` (UV4
 slots, live and across a reload), plus `mesh-grab-uv` and `object-sync` — the first
 coverage this repo has of the gizmo-grab uv path and of the late-joiner object sync.
+The GAME line: `game-state`, `hud-actions`, `logic-nodes`, `collectibles-v2`,
+`peer-variables`, `game-presence`, `scene-levels`, `project-manifest`, `project-file`,
+`scene-folders` and the `game-loop-v2/v3/v4` acceptance suites, plus (R3a)
+`sdk-game-seams` — the module-facing seams api.game/peerVars/flow/playerPosition, the
+`{replicate:false}` local pulse, the round-aware `ctx.trigger`, and the counterfactual
+that the migrated collectible pieces are GONE from core. `module-toolbox` covers the
+toolbox seams incl. the `sidebar: false` opt-out and openToolbox/closeToolbox/
+toggleToolbox. **`trigger-log-sync`** (56, three peers) covers DEVX #18 - the handshake
+reply for the trigger log, and the epoch that keeps arriving history readable while making
+it fire nothing; **`flow-spawner`** (43) covers B7, including the byte-identical
+`physicsDebug` PARITY GOLDEN for the createBodyFor extraction (embedded with the recipe to
+redo it - reuse that shape for any future body-construction change); **`palette-groups`**
+(12) asserts the Input-vs-Triggers rule from the socket types the catalog already declares,
+so a misfiled node cannot drift back. The collectible MODULE's own flight lives in the
+modules repo (`tests/module-collectible.test.cjs`, 129 checks, three peers).
 The mesh pro tools each have one: `mesh-edge-gizmo`, `mesh-bevel` (faces), `mesh-vertex-bevel`,
 `mesh-edge-bevel`, `mesh-vertex-slide`, `mesh-proportional`, `mesh-knife`, `mesh-symmetrize`,
 `mesh-bridge-normals`, `mesh-gizmo-modes` (the gizmo across element modes, driven by REAL mouse
@@ -107,6 +122,27 @@ while one runs (HMR reloads the pages mid-test — see "HMR churn makes runs LIE
 
 ## Assertion discipline (a check that cannot fail is not a check)
 
+- **A REPRO THAT DOES NOT REPRODUCE gives the most confidently wrong answer there is.**
+  Rebuilding a user's "pressing R does nothing" graph, the Key Press node was seeded
+  with `key: 'r'` — its field is `code: 'KeyR'` — so it never pulsed and the probe
+  reported "the node never fires". One field wrong turned a UX problem into a phantom
+  runtime bug. Before believing a repro, assert the FIRST link fired (here: the
+  trigger stamp / the override map), not just the last effect.
+- **Distinguish "did not fire" from "fired and did nothing".** They have completely
+  different fixes, and only one of them is a bug. The cheap way is to read the
+  smallest piece of state the action writes — the override map showed the node firing
+  perfectly while the screen stayed identical, which pointed straight at the design
+  rather than the wiring.
+- **Opening the Flow pane needs the REAL opener**: `p[title="Node editor (N)"]`.
+  `bottomDock.activateDock('flow')` alone leaves `.svelte-flow` unmounted, so a
+  pane-geometry or node-card check silently has nothing to look at. And the pane's
+  scope FOLLOWS THE SELECTION — creating an object selects it, so a suite that seeds
+  the SCENE graph then opens the pane sees that object's object-flow instead.
+  Deselect first.
+- **`centeredClip` falls back to the viewport centre** because a world point BEHIND the
+  active camera projects non-finite, and NaN survives a Math.min/max clamp —
+  Playwright then rejects the clip as "empty or outside the resulting image", which
+  reads as a broken feature rather than a bad measurement.
 PIXEL features have their own helpers now: `grabFrame`/`centeredClip`/`frameDelta`/
 `framePixelsOffColor` (screenshot -> back INTO the page -> 2D canvas -> RGBA, compared
 in the page so only metrics cross the bridge). Four rules came out of building them:
@@ -702,6 +738,51 @@ await h.installModule(B, 'dungeon');   // EVERY peer — see below
 - flowbite `Toggle` renders an **sr-only** checkbox: click the wrapping
   `label`, and give the toggle an id when a card carries more than one.
 
+**Two ways a lane server lies about which code it serves, both hit in one session.**
+`vite dev --port N` has no `--strictPort`, so a lane started while N is busy silently
+binds N+1 — and a later lane can then answer on the port you meant for a third. A suite
+pointed at it verifies committed HEAD with none of the edits under test. Separately,
+`TaskStop` on a backgrounded `npm run dev` reaps npm and leaves the vite CHILD listening,
+so the port answers 200 after a "successful" kill and the build that follows runs against
+a live server. Before trusting a lane: `netstat -ano | grep :PORT` to map port -> pid, and
+`curl -sk https://localhost:PORT/src/lib/<file>.js | grep <your new symbol>` to prove it
+serves YOUR code. Kill with `taskkill //PID n //F`.
+
+**Flipping a check that RECORDED a limitation is where wrong premises hide.** When core
+fixed DEVX #18, three collectible checks had to invert — and the first attempt went red
+for reasons unrelated to the feature: an asserted `=== 1` collided with whatever earlier
+sections had left collected and with where the round clock was, and a "shared collect"
+check picked a gem an earlier section had put on `scope: player`, where the pulse staying
+local IS the feature. Two rules came out of it: assert the PROPERTY (the joiner agrees
+with the HOST) and read the reference value at run time rather than pinning a literal, and
+SELECT a fixture by reading its state rather than by guessing which one it is. Flip, never
+delete — a deleted section is a silent regression, an inverted one fails loudly if the
+limitation comes back.
+
+**R3a: a MECHANIC that leaves core takes its suite coverage with it, and the split is
+not at the click.** When collectibles v3 became a module, the collectible RECIPE went
+with it — but the chain it built stood on core PRIMITIVES (perRound/whilePlaying/
+perPlayer/respawn) that still need covering, so the 7-node builder survives as
+`h.makeCollectibleChains(peer, uuids, opts)` in helpers.cjs: same nodes, same
+handle-qualified edge ids, ONE `flownodes` entry per batch, returning the old
+`{built, skipped, variable, respawn, perPlayer, entries}` plus `chains[].ids` so a
+check can read latch state straight out of `flowValues`. Three rules learned doing it:
+
+- **Derive counts from the LATCHES, and filter their ids against the LIVE graph.** With
+  `collectcount` gone, total/collected/left comes from each chain's Latch value — and a
+  `wipe()` or a scene TRAVEL must drop those chains from the total, or a later section
+  inflates. game-presence/peer-variables/game-loop-v3 all do the filter.
+- **Flip a removed UI to its COUNTERFACTUAL rather than deleting the section.** The old
+  recipe-menu/dialog checks now assert core exposes no `gameRecipes`/`recipeDialog` and
+  that `addBinding(el, 'showleft')` answers `{ok:false, reason:'unknown action'}`. A
+  deleted section is a silent regression; an inverted one fails loudly if the thing
+  comes back.
+- **Assert the module-facing seam in CORE, the real click in the MODULE repo.** The
+  Modules manager renders cards only for core modules and installed USER records, so an
+  inline `initModules` module has NO card — a `getByRole('button')` for its
+  `registerMenu` entry waits the full 30s. Core drives the registered entry's own
+  action (the same function the card calls); the module's own flight clicks the button.
+
 For a module with no committed suite, drive it through the REAL install path in a
 scratch script, then assert its scene-root group / behavior, and simulate a
 PEER's ops via `__stores.moduleSDK.applyModuleMessage({type:'module', moduleId,
@@ -768,6 +849,23 @@ drops the P2P session.
 
 ## Known flakes / traps
 
+- **A trigger-edge action suite must SETTLE between "the peer holds the node" and the
+  pulse** (21-F4). `actionSeenAt` records a node's first-seen at TICK time, so a stamp
+  minted in the gap between the nodecreate landing and the peer's next tick is refused
+  as stale AND consumed (measured: stamp 21618.485 vs seenAt 21618.489 — a 4ms race).
+  Wait for the hold-premise, then `waitForTimeout(600)` before pulsing; a human press
+  comes seconds after wiring, so the guard is correct and the suite adapts.
+- **`h.connect(from, to)` dials FROM the first argument — and a connected peer's pill
+  has no dial input** (it becomes the disabled "Connected to <host>" box). A late
+  joiner must dial the host: `h.connect(C, A)`, never `h.connect(A, C)` — the wrong
+  direction surfaces as `connect: could not fill the peer id`.
+- **Who is the session host in a suite**: `h.connect(A, B)` has A dial and B approve,
+  so B holds `sessionHost === null` — B is the writer/admin for anything host-gated
+  (the abandon watch, Reset game). Assert gates against the right peer.
+- **The shared game singleton can race a test's wipe** (21-F2's 1-in-3 flake): a stale
+  `game` message landing after a reset changes what later checks MEAN. Pin the
+  game-state premise (assert or explicitly set it) before any section whose
+  assertions depend on it — the racing write must not be able to reinterpret them.
 - **An assertion whose deadline is a `waitForTimeout` asserts the SCHEDULER as much
   as the feature — and that is what a "flaky suite" almost always turns out to be.**
   Every standing red cleared before the 1.5.0 tag (PR #142) was this one shape: a
@@ -892,6 +990,43 @@ drops the P2P session.
   SWALLOWS it, so the message silently never leaves. Send raw bytes instead
   (`new Float32Array(arr).buffer`) and normalize on receive (meshgeo/terrain do this).
   If a big payload "never arrives" in a test, suspect this before the network.
+- **A capability headless does not have is asserted by SPYing the browser API, not
+  by skipping.** Pointer lock never engages in headless (requestPointerLock rejects,
+  pointerlockchange never fires), so 21-E3 patched `HTMLCanvasElement.prototype
+  .requestPointerLock` and `document.exitPointerLock` to COUNT calls: the machine is
+  then asserted by its ATTEMPTS plus its store transitions. Two traps inside that:
+  spy the PROTOTYPE, never `querySelector("canvas")` (DungeonMinimap renders a hidden
+  canvas first — the grabFrame trap), and do not assert a call that cannot happen
+  (with no lock ever HELD, a correct machine must NOT call exitPointerLock — the
+  first version of that check asserted the opposite and went red on working code).
+  Same recipe for gamepads: `Object.defineProperty(navigator, "getGamepads", …)`
+  returning a fake pad the test mutates.
+- **A svelte store emits its CURRENT value on subscribe**, so a log that means "what
+  happened during the cycle" must subscribe AFTER the state that starts it. 21-E3's
+  "isLocked never left true" check read `["null","true"]` and failed on correct code
+  because the subscribe itself replayed the pre-play value.
+- **A tolerance must be sized to the BUG, not to the noise.** The "resume does not
+  jump the pause gap" check first used 0.35 rad, which 200ms of legitimate motion
+  already exceeds; the bug it guards replays the whole ~1.5s span (~3 rad). Pick the
+  band from the failure magnitude, then confirm a correct run sits well inside it.
+- **A contract with two halves needs both pinned.** 21-E3 made Tab drive the HUD ring
+  ONLY under a held lock; the suite asserts bare Tab does NOT cycle AND that it does
+  with `document.pointerLockElement` stubbed to the renderer canvas. Pinning one half
+  lets the other regress silently.
+- **Clean a shared fixture on EVERY peer.** `flowNodes.set([])` does not broadcast, so
+  nodesync sees the emptier peer and pulls the graph BACK a few seconds later — a
+  section that wiped only peer A found C's old nodes reappearing mid-run (and with a
+  guard removed, that alone reproduced the bug the section was built to test, from a
+  route it never set up). Wipe every peer, push after each write, and assert the node
+  list as a premise.
+- **A held key keeps acting.** A `down`-edge keypress re-stamps ~3/s while held, so a
+  synthesized keydown never released keeps re-applying its action (one un-released
+  KeyP overwrote a Resume AND the game ending). Release what you press.
+- **`/create box` re-seats the object after the call returns and stamps
+  `userData.physics = {mode:"dynamic", mass:1}`** — a box used as a "floor" falls,
+  which reads exactly like the feature under test being broken.
+- **A peer cannot approve a connection request while in play mode** — the Approve
+  button renders and the click times out. Approve first, then press play.
 - **The definitive worktree A/B, when a red might be yours.** `git stash` is unsafe
   in this repo (see the never-stash-pop rule) and the same-server A/B lies. Instead:
   `git worktree add ../theprototype-ab origin/release/next --detach`, `npm install`,
@@ -917,6 +1052,35 @@ drops the P2P session.
   add-menu search-Enter + right-tap, sound-node Play overlap, connect-overlay
   querySelector, scene-music byte-push timing. To PROVE a failure is pre-existing:
   `git stash push -u`, run the suite on HEAD, `git stash pop`.
+- **`explorer-files` (2026-08-22): fails INSIDE A BATCH, passes ALONE.** "the editor is
+  dark ()" then "Ctrl+S saves back" — a fixed 1200 ms wait where it should wait on
+  `.cm-editor`, so a loaded machine misses CodeMirror's lazy load. A/B-proven on an
+  untouched base by three independent runs. `explorer-drop`'s last check is the
+  documented hidden-canvas trap (it aims a synthetic DragEvent at
+  `document.querySelector('canvas')`, which is DungeonMinimap's hidden one) and comes
+  and goes the same way. Neither belongs to your diff; both deserve their own ticket.
+- **A lane worktree with an INCOMPLETE `node_modules` invalidates every number you
+  measure there.** Missing `@shaderfrog/core` breaks import-analysis on
+  `shaderBackends.js`, so the app never boots (every suite dies in setupPage's
+  `waitForFunction`) and svelte-check reads **387/62 instead of 385/62 on BOTH base and
+  branch** — an A/B run there "proves" nothing in either direction. `npm install` in the
+  worktree and re-measure. Same family as the stale-dev-server rule above.
+- **`--noproxy '*'` is REQUIRED for curl on this box**, and lane URLs are
+  `https://localhost:<port>/` — a system proxy swallows loopback requests (they hang,
+  then return nothing, which reads exactly like a dead server), and the
+  `theprototype.app` hosts mapping is commented out.
+- **A suite section that SAVES or ADDS OBJECTS perturbs its neighbours.** One guard
+  inserted mid-file broke four later checks at once: its `/create box` broke a "four
+  objects are open" premise, and its save moved `currentLevel` away from the scene a
+  later restore section reasons about. Put such a section LAST, and give it its own
+  fixture NAME — a sibling section built its own `Depot` and asserted a single-hash
+  history that a second `Depot` would have poisoned.
+- **A counterfactual can fail for a CORRECT implementation — check that first.** The
+  guard for "version files are stamped with their own date, not the export moment" was
+  first written as "no entry is dated near now", which goes red on correct code because
+  the NEWEST version genuinely was saved seconds ago. What the bug actually produces is
+  two entries sharing ONE date, so the check is that the two DIFFER. Measure the quantity
+  the bug changes, never one it merely correlates with.
 - KNOWN failing suites in the localhost env (2026-07-28, proven identical across a
   full old-deps/new-deps baseline comparison — treat as the dirty baseline, not
   regressions): the drag-drop-SIMULATION cluster (explorer-drop, explorer,
@@ -1117,3 +1281,87 @@ Feature suite green (+ any suites your UI changes touched) + `npm run build` pas
 your files). Two-peer verification is required for anything touching replication.
 VR features: cover the extracted math/state headlessly (computeMoveOffset,
 computeTeleportArc pattern) and note that on-device feel is the user's manual check.
+
+## Roadmap 22 round 10 — `peer-ice-config` (10) and `explorer-drag-fixes` (7)
+
+- **A TWO-PEER FAILURE THAT `PEER_CONFIG` "FIXES" IS NOT ALWAYS SIGNALING FLAKINESS.**
+  Round 9 hit exactly that on localhost, re-ran with PEER_CONFIG, went green and filed it
+  as transient. It was a real bug: the env config carried a TURN entry with an empty
+  credential, and Chromium THROWS constructing the RTCPeerConnection rather than degrading,
+  so signaling worked (peer ids appeared) and every data channel died. PEER_CONFIG hid it
+  because mode `custom` with blank TURN fields uses peerjs's own defaults. When the
+  documented re-run makes a two-peer red disappear, note WHAT differs between the two
+  configs before calling it environmental.
+- **THE BROWSER CAN BE THE ORACLE.** `peer-ice-config` does not assert on the shape of
+  our ICE array — it hands the options the app would use to a real `new
+  RTCPeerConnection(...)` and asserts it constructs. That is the exact failure the user
+  saw, it cannot pass vacuously, and restoring the old gate turns three checks red with
+  the browser's own `InvalidAccessError`. Prefer a real API call over a shape assertion
+  whenever the API is what rejected you.
+- **A suite that runs against a `.app` hostname cannot see a localhost-only branch.**
+  `peerServer`'s default mode asked `isLocalDev` first, so every suite took the other
+  path. If a report only reproduces on a dev server, check whether the code branches on
+  `location.hostname` before assuming the diff is at fault.
+- **Synthesized HTML5 drag needs one `DataTransfer` across all three events.** Build it
+  once and pass it to `dragstart`, `dragover` and `drop` on the real elements; the payload
+  the app wrote is then readable back out of it, which is how `explorer-drag-fixes` proves
+  the whole selection travelled rather than inferring it from the result.
+- **A drop-band position check needs the scroll as its premise.** Assert the grid really
+  is scrolled (`scrollTop > 100`) before asserting the band is inside the visible box —
+  otherwise the check passes trivially at the top, which is the state the bug looks fine in.
+
+## Roadmap 22 — the Explorer views (`explorer-views`, 71 checks)
+
+Round 9's suite: the list view, its per-view columns and sort, and the bin (grouping,
+sort-by-date, and the purge). Lessons that generalise:
+
+- **Read both halves of a toggle at the SAME moment.** The armed-colour check first read
+  Thumbnails while it was armed and List after switching — comparing the accent with
+  itself, so it could never fail. Read the armed one and the idle one together.
+- **A class with no CSS can still be load-bearing**, and finding out costs a red check
+  that looks like a broken feature: a list row that did not carry `.explorer-card` was
+  BACKGROUND to `#explorer-grid`'s three handlers, so the click selected it and
+  `gridBackgroundClick` deselected it in the same gesture.
+- **A right-click for the grid BACKGROUND menu has three ways to miss**: the Controls HUD
+  intercepts the middle-bottom, the header row has its own menu, and a position past the
+  grid's own height resolves to `<html>` ("element intercepts pointer events" for an
+  element that is merely elsewhere). Aim below the last row, clear of the HUD, inside the
+  measured box.
+- **A bin fixture must stamp its own owner ids.** `meAsOwner` records whatever `peer.id`
+  holds, so a suite seeding deletions milliseconds after load records UNATTRIBUTED rows —
+  a real state, with its own section, but not the one a grouping check is about.
+- **The counterfactual belongs IN the test when the bug was a DEPENDENCY, not a value.**
+  For the purge, both the old and the new reading return `false` once the bytes are gone —
+  the fault was that the old one sat in a derived nothing re-ran. So the suite computes
+  both in-page and asserts they agree, and the real guards are the OBSERVABLE ones (the
+  row dims; the menu stops offering Restore).
+
+## Roadmap 22 — the shared library (`shared-library`, 194 checks, two peers)
+
+One suite covers the whole batch: the document, both identities, adoption, the pull,
+the concurrent-share reconcile, tombstones, delete/restore, the chunk protocol, the
+ledger arithmetic and the whole UI half through REAL context menus. Lessons that
+generalise:
+
+- **A default that makes the app act faster invalidates every check written for the
+  slower world.** Auto-download (on by default) fetches a shared file before an
+  assertion can observe "the peer does not hold it" — three checks, then three more
+  after the pull became structural. The fix is to reach the old state the way a USER
+  would (park the setting), never a test-only door.
+- **A ledger/aggregate check needs an EMPTY ledger.** Reading a percentage out of a
+  ledger full of the run's own real transfers measured 63% where the maths says 13%.
+- **An async MARK lands after the thing it marks.** The `'peer'` adoption flag is
+  applied by a debounced sweep, so a synchronous read right after the item appears
+  measured `null` while the feature was perfect. `h.eventually` on the mark.
+- **A modal left open shields every later click** — `settingsOpen` cost a 30s timeout
+  several sections later, reported as an Accordion header intercepting the press.
+- **A toggle-shaped affordance must be opened idempotently.** Clicking "Show full log"
+  blindly CLOSED what an earlier section had opened. Check for the pane first.
+- **A card in a grid of two dozen lands under the Controls HUD.** Give a card you
+  intend to click its own folder so it renders top-left, clear of the chrome.
+- **`openedPeers` is a Set** — `.length` is undefined, so a "connected" premise built
+  on it is silently always false.
+- **A `$bindable` prop is only two-way for the caller that BINDS it.** A component
+  rendered twice (an indicator and a pane) with `bind:` on only one instance leaves the
+  other writing a local copy — its close button did nothing, and no store read could
+  have shown it. Assert the OBSERVABLE outcome (the pane is gone), not the prop.

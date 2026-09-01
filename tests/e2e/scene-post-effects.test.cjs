@@ -28,7 +28,7 @@ async function onlyEffect(page, kind, params) {
 	return page.evaluate(
 		async ({ kind, params }) => {
 			const post = window.__stores.scenePost;
-			post.scenePost.set({ enabled: true, effects: [], changedAt: Date.now() });
+			post.postStacks.set({ scene: { enabled: true, effects: [], changedAt: Date.now() } });
 			const id = post.addPostEffect(kind);
 			if (params) post.setPostEffectParams(id, params);
 			window.__stores.viewMode.set('custom');
@@ -145,7 +145,7 @@ h.run(async () => {
 
 	const merged = await page.evaluate(async () => {
 		const post = window.__stores.scenePost;
-		post.scenePost.set({ enabled: true, effects: [], changedAt: Date.now() });
+		post.postStacks.set({ scene: { enabled: true, effects: [], changedAt: Date.now() } });
 		for (const kind of [
 			'huesaturation',
 			'brightnesscontrast',
@@ -184,7 +184,7 @@ h.run(async () => {
 	// library's own effect attributes, so record what it actually does.
 	const withSmaa = await page.evaluate(async () => {
 		const post = window.__stores.scenePost;
-		post.scenePost.set({ enabled: true, effects: [], changedAt: Date.now() });
+		post.postStacks.set({ scene: { enabled: true, effects: [], changedAt: Date.now() } });
 		post.addPostEffect('huesaturation');
 		post.addPostEffect('smaa');
 		post.addPostEffect('vignette');
@@ -214,7 +214,7 @@ h.run(async () => {
 	// drive the real UI picker, which is also what PUSHES the bytes
 	await page.evaluate(async () => {
 		const post = window.__stores.scenePost;
-		post.scenePost.set({ enabled: true, effects: [], changedAt: Date.now() });
+		post.postStacks.set({ scene: { enabled: true, effects: [], changedAt: Date.now() } });
 		post.addPostEffect('lut');
 		window.__stores.viewMode.set('custom');
 		window.__stores.inspectorKind.set('scene');

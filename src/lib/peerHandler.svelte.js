@@ -22,8 +22,19 @@ import { sessionHost, markPeerJoined, resetSession } from '$lib/connectionState'
 import { canApply, getAuthProvider, dispatchCloudMessage, rolesInfo } from '$lib/cloudHooks';
 import { applyAnnotation, applyAnnotationsSnapshot, sendAnnotations } from '$lib/annotationsHandler';
 import { applyPing } from '$lib/ping';
-import { applyAssetFile, answerAssetRequest } from '$lib/assetShare';
+import { applyAssetFile, answerAssetRequest, applyAssetThumb, answerAssetThumbRequest, applyAssetStart, applyAssetChunk, applyAssetMissing } from '$lib/assetShare';
 import { applyRemoteCameraPreview, clearPeerPreview, sendCameraPreviewState } from '$lib/cameraPreview';
+// 21-F3: play-mode PRESENCE, the campreview shape — a tiny per-peer message, a reply
+// riding the getmodulestate request, and a drop on disconnect (golden rule 3).
+import { applyRemotePlayMode, dropPeerPlayMode, sendPlayModeState } from '$lib/gamePresence';
+// P2b: which SCENE each peer is standing in — the gamePresence shape exactly
+import { applyRemotePeerScene, dropPeerScene, sendMySceneState, peerScenes, myScene, elsewhereThan } from '$lib/peerScenes';
+// 21-G2: the project manifest — a latest-wins singleton like environment/scenephysics
+import { applyRemoteManifest, sendProjectManifest } from '$lib/projectManifest';
+// 21-G4: PEER-OWNED variables. The same three obligations as the mode above (dispatch,
+// late-joiner reply, drop on disconnect) and a DIFFERENT lifetime on purpose — a row
+// survives its owner leaving PLAY and is dropped only when they leave the SESSION.
+import { applyRemotePeerVars, dropPeerVars, sendPeerVarsState } from '$lib/peerVars';
 import { applyModuleMessage, moduleVersions, checkModuleVersions, checkPeerAppVersion, sendModuleStates, applyModuleStates } from '$lib/moduleSDK';
 import { APP_VERSION, COMMIT_SHA } from '$lib/version.js';
 import { applyLockRequest, applyUnlock, applyLockDenied } from '$lib/lockControl';
@@ -36,7 +47,15 @@ import { applyHandModel, handModelState, dropPeerHandModel } from '$lib/handMode
 import { applyRemoteEnvironment, environmentState, envPresetsState, applyRemoteEnvPresets, dropPeerEnvPresets } from '$lib/environment';
 import { applyRemoteMusic, musicState } from '$lib/sceneMusic';
 import { applyRemoteScenePhysics, scenePhysicsState } from '$lib/scenePhysics';
-import { applyRemoteScenePost, scenePostState, sendScenePost } from '$lib/scenePost';
+// CO1: where the physical room's origin sits in content coords. The scenephysics
+// shape — one latest-wins singleton + a getroomanchor reply. The per-device ALIGNMENT
+// that composes with it is deliberately not on the wire at all.
+import { applyRoomAnchorRemote, sendRoomAnchor } from '$lib/colocation';
+// CO5: which physical ROOM a peer is in, if any — the playmode shape (a tiny per-peer
+// message, a reply riding getmodulestate, a drop at every disconnect site). Everything it
+// drives is LOCAL receive-side filtering; nobody stops broadcasting because of it.
+import { applyRemoteColocation, dropPeerColocation, sendColocationState } from '$lib/colocationPresence';
+import { applyRemoteScenePost, scenePostStates, sendScenePost } from '$lib/scenePost';
 import { applyRemoteShaderGraph, applyRemoteShaderGraphDelete, applyRemoteShaderGraphs, sendShaderGraphs } from '$lib/shaderSync';
 import {
 	applyRemoteHud,
@@ -48,6 +67,7 @@ import {
 	sendHudValues
 } from '$lib/hudSync';
 import { applyRemoteGameState, sendGameState, gameStatePayload } from '$lib/gameSync';
+import { applyRemoteTriggers, sendTriggers } from '$lib/triggerSync';
 import { applySessionProposal, applySessionAnswer, deferUntilShareChoice, localSceneCount } from '$lib/sessions';
 import { applyRemoteGeometry } from '$lib/geometryEdit';
 import { applyLightTarget } from '$lib/lightParams';
@@ -87,6 +107,10 @@ selectedObject.subscribe(value => { selected = value });
 let users = $state();
 userdata.subscribe(value => { users = value });
 
+
+/** P2b: the only messages `broadcast` will withhold from a peer in another scene.
+ * Pure presence, re-sent continuously, useless to somebody in a different world. */
+const STREAM_TYPES = new Set(['camera', 'vrhands']);
 
 export class PeerConnection {
 	constructor(id, updateIdFn) {
@@ -437,6 +461,18 @@ export class PeerConnection {
 					applyRemoteMusic(data);
 				} else if(data.type == 'scenephysics') {
 					applyRemoteScenePhysics(data);
+				} else if(data.type == 'roomanchor') {
+					// CO1: the room anchor, latest-wins on `at`. Applying it never re-poses
+					// the rig here — a peer that is not colocated has no alignment to
+					// compose it with, and one that is re-composes on its own next apply.
+					applyRoomAnchorRemote(data);
+				} else if(data.type == 'getroomanchor') {
+					sendRoomAnchor(data.sender);
+				} else if(data.type == 'manifest') {
+					// 21-G2: the project manifest, latest-wins on changedAt
+					applyRemoteManifest(data);
+				} else if(data.type == 'getproject') {
+					sendProjectManifest(data.sender);
 				} else if(data.type == 'scenepost') {
 					// L1/L2: the authored post stack, latest-wins on changedAt. An effect
 					// KIND we don't know is kept and skipped at render time, never dropped.
@@ -520,7 +556,8 @@ export class PeerConnection {
 				} else if(data.type == 'objectParameters') {
 					objectParameters(data);
 				} else if(data.type == 'duplicate') {
-					applyRemoteDuplicate(data.sourceUuid, data.uuids, data.name, data.pos);
+					// B7: `transient` is additive — absent for every ordinary duplicate
+					applyRemoteDuplicate(data.sourceUuid, data.uuids, data.name, data.pos, data.transient);
 				} else if(data.type == 'clearscene') {
 					applyClearScene(data.peerId);
 				} else if(data.type == 'delete') {
@@ -543,6 +580,10 @@ export class PeerConnection {
 						// Honoring these evicted live peers meshwide during formation (B5).
 					} else {
 						handleDisconnected(data.peerId);
+						dropPeerPlayMode(data.peerId); // 21-F3
+						dropPeerScene(data.peerId); // P2b
+						dropPeerVars(data.peerId); // 21-G4
+						dropPeerColocation(data.peerId); // CO5
 						dropPeerEnvPresets(data.peerId);
 						dropPeerHandModel(data.peerId);
 					}
@@ -578,6 +619,17 @@ export class PeerConnection {
 					deleteFlowEdges(data.ids, data.graphId);
 				} else if(data.type == 'nodetrigger') {
 						applyNodeTrigger(data.id, data.t, false); // 134: shared-timestamp pulse
+					} else if(data.type == 'gettriggers') {
+						// DEVX #18: the trigger LOG for a late joiner. Deliberately NOT behind
+						// share-or-stash like getobjects/getnodes: there is nothing here for a
+						// user to choose about — the log is runtime state, not their authored
+						// work — and the payload prunes to live nodes, so after a stash we
+						// answer with nothing at all.
+						sendTriggers(data.sender);
+					} else if(data.type == 'triggers') {
+						// merged per node (newer stamp wins), and the merge marks the history
+						// epoch so nothing in it can be ACTED on — see triggerSync
+						applyRemoteTriggers(data);
 					} else if(data.type == 'particleburst') {
 						// PFX-A: shared-timestamp burst — every peer seeds the identical
 						// particle burst from t (no re-broadcast)
@@ -589,10 +641,28 @@ export class PeerConnection {
 				} else if(data.type == 'assetfile') {
 					// shared Explorer bytes (97) — dedup by content hash
 					applyAssetFile(data);
+				} else if(data.type == 'assetmissing') {
+					// R22-R8: "I do not have that hash." When every peer has said so the pull is
+					// resolved immediately instead of waiting out a timeout.
+					applyAssetMissing(conn.peer, data);
+				} else if(data.type == 'assetstart') {
+					// R22-R8: a sliced transfer is announced, then its slices arrive. Chunking is
+					// what makes per-file progress and an integrity check possible — peerjs chunks
+					// internally but tells us nothing about it.
+					applyAssetStart(data);
+				} else if(data.type == 'assetchunk') {
+					applyAssetChunk(data);
+				} else if(data.type == 'assetthumb') {
+					// R22: the PICTURE of a hash, not the file — so a shared file a peer has not
+					// downloaded still shows a thumbnail on its card
+					applyAssetThumb(data);
 				} else if(data.type == 'getasset') {
 					// a peer is missing a hash we may hold — answer over our
-					// stable outgoing connection to them
-					answerAssetRequest(conn.peer, data);
+					// stable outgoing connection to them.
+					// R22: `thumb` is an ADDITIVE flag asking for the thumbnail INSTEAD of the
+					// bytes; an older peer never sets it and is unaffected.
+					if (data.thumb) answerAssetThumbRequest(conn.peer, data);
+					else answerAssetRequest(conn.peer, data);
 				} else if(data.type == 'module') {
 					applyModuleMessage(data);
 				} else if(data.type == 'modules') {
@@ -601,6 +671,31 @@ export class PeerConnection {
 				} else if(data.type == 'getmodulestate') {
 					sendModuleStates(data.sender);
 					sendCameraPreviewState(); // 16-P5: ride the same late-joiner request
+					sendPlayModeState(); // 21-F3: ...and so does play-mode presence
+					sendMySceneState(); // P2b: ...and where we are standing
+					sendPeerVarsState(); // 21-G4: ...and our own per-player row, if we hold one
+					sendColocationState(); // CO5: ...and our physical room, if we are in one
+				} else if(data.type == 'peervars') {
+					// 21-G4: ONE peer's OWN numbers, whole-map latest-wins. Owner-only writer,
+					// so this applier can never be the thing that clobbers somebody's score.
+					applyRemotePeerVars(data);
+				} else if(data.type == 'colocated') {
+					// CO5: presence only — "X is in physical room K". ADDITIVE: sent only on a
+					// CHANGE and only when there IS a room, so an absent peer (or one on an
+					// older build that never sends it) reads as not colocated, which is what it
+					// is. Applying it hides nothing by itself — the renderers and the voice
+					// chain compare K against OUR OWN key, so a remote peer holding two
+					// colocated rows still sees and hears both of them.
+					applyRemoteColocation(data);
+				} else if(data.type == 'playmode') {
+					// 21-F3: presence only — "X is in play mode". ADDITIVE: the message goes out
+					// only while PLAYING, so an absent peer (or one on an older build that never
+					// sends it) reads as an editor, which is what it is.
+					applyRemotePlayMode(data);
+				} else if(data.type == 'atscene') {
+					// P2b: which scene a peer is in. Latest-wins per SENDER, and only that
+					// sender ever writes its own row, so the map cannot race.
+					applyRemotePeerScene(data);
 				} else if(data.type == 'modulestate') {
 					applyModuleStates(data.states);
 				} else if(data.type == 'campreview') {
@@ -659,15 +754,31 @@ export class PeerConnection {
 		conn.send(environmentState())
 		conn.send(musicState())
 		conn.send(scenePhysicsState())
-		conn.send(scenePostState())
+		// L-C: one per post DOCUMENT — the scene look and any camera looks
+		for (const state of scenePostStates()) conn.send(state)
 		conn.send(handModelState())
 		conn.send(envPresetsState())
 		if (getobjects) conn.send({type: 'getobjects', sender: this.peer.id, count: localSceneCount()})
+		// DEVX #18: the flow TRIGGER LOG - without it a joiner's latches/counters/Once
+		// nodes all read "never happened", so every collected object is back on the
+		// table. Rides the same getobjects gate as getnodes: the log is only meaningful
+		// beside the graph whose node ids it keys into.
+		// AHEAD of getnodes ON PURPOSE, so a node lands in a COMPLETE history rather than
+		// history landing on top of a node that has already been ticking. Nothing in core
+		// needs it - the epoch and the merge are both order-independent, and getnodes can
+		// be deferred behind share-or-stash for minutes anyway - but a CONSUMER with a
+		// first-sight rule of its own (the collectible module seeds each node's stamp
+		// without counting) is racy in the other order and correct in this one.
+		if (getobjects) conn.send({type: 'gettriggers', sender: this.peer.id})
 		if (getobjects) conn.send({type: 'getnodes', sender: this.peer.id})
 		if (getobjects) conn.send({type: 'getannotations', sender: this.peer.id})
 		if (getobjects) conn.send({type: 'getjoints', sender: this.peer.id})
 		if (getobjects) conn.send({type: 'getanim', sender: this.peer.id})
 		if (getobjects) conn.send({type: 'getscenepost', sender: this.peer.id})
+		// CO1: a REQUEST rather than a push, because a scene that never colocated must
+		// send nothing at all — `sendRoomAnchor` returns early on a null anchor, so the
+		// handshake of a non-colocated session is byte-identical to what it always was.
+		if (getobjects) conn.send({type: 'getroomanchor', sender: this.peer.id})
 		if (getobjects) conn.send({type: 'getshadergraphs', sender: this.peer.id})
 		if (getobjects) conn.send({type: 'gethuds', sender: this.peer.id})
 		if (getobjects) conn.send({type: 'gethudvalues', sender: this.peer.id})
@@ -677,6 +788,8 @@ export class PeerConnection {
 		// answers with its OWN states — e.g. campreview presence), so it can't be
 		// deduped down to the host like the shared-scene requests above (B5)
 		conn.send({type: 'getmodulestate', sender: this.peer.id})
+		// 21-G2: the project manifest (scene histories + asset list) for late joiners
+		conn.send({type: 'getproject', sender: this.peer.id})
 		if (getobjects) conn.send({type: 'getnodedefs', sender: this.peer.id})
 		// join them into the voice mesh if our mic is live
 		voicePeerConnected(peerId);
@@ -898,6 +1011,10 @@ export class PeerConnection {
 		this.openedPeers.delete(peerId);
 		handleDisconnected(peerId);
 		clearPeerPreview(peerId); // 16-P5
+		dropPeerPlayMode(peerId); // 21-F3
+		dropPeerScene(peerId); // P2b
+		dropPeerVars(peerId); // 21-G4
+		dropPeerColocation(peerId); // CO5
 		dropPeerEnvPresets(peerId);
 		dropPeerHandModel(peerId);
 		if (relay) this.broadcast({ type: 'disconnected', peerId });
@@ -928,6 +1045,10 @@ export class PeerConnection {
 				this.openedPeers.delete(peerId);
 				handleDisconnected(peerId);
 				clearPeerPreview(peerId); // 16-P5
+				dropPeerPlayMode(peerId); // 21-F3
+				dropPeerScene(peerId); // P2b
+				dropPeerVars(peerId); // 21-G4
+				dropPeerColocation(peerId); // CO5
 				dropPeerEnvPresets(peerId);
 				dropPeerHandModel(peerId);
 			}
@@ -946,9 +1067,22 @@ export class PeerConnection {
 	// conn can't throw mid-loop and starve the rest of the mesh (172).
 	/** @param {any} payload */
 	broadcast(payload) {
+		// P2b: POSE STREAMS do not cross scenes. A peer standing in another scene cannot
+		// draw our avatar (Player.svelte refuses to) and cannot watch us, so streaming
+		// our camera and hands at them is bytes nobody can use.
+		//
+		// A DELIBERATELY TINY ALLOWLIST. Everything else on this channel is scene STATE
+		// or protocol, and skipping any of it would desync a peer who travels back — the
+		// saving is not worth reasoning about per message type. These two are pure
+		// presence and are re-derived continuously, so the worst a skip can cost is one
+		// stale frame, and even that is covered by the re-publish in Scene.svelte.
+		const stream = STREAM_TYPES.has(payload?.type);
+		const mine = stream ? (myScene()?.scene ?? '') : '';
+		const where = stream ? get(peerScenes) : {};
 		Object.keys(this.connections).forEach(peerId => {
 			const conn = this.connections[peerId];
 			if (!conn || !conn.open) return;
+			if (stream && elsewhereThan(where, mine, peerId)) return;
 			try {
 				conn.send(payload);
 			} catch (err) {

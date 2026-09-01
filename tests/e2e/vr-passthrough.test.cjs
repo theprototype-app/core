@@ -9,11 +9,22 @@ h.run(async () => {
 	const browser = await h.launch();
 	const A = await h.setupPage(browser, 'A');
 
-	const buttonLabel = () =>
-		A.page.evaluate(() => document.querySelector('#vrButton button')?.textContent?.trim() ?? '');
+	// 4a: BOTH hidden XR buttons mount permanently (they used to swap on the
+	// preference, a remount that races a same-gesture mode pick), so a label no longer
+	// says which mode is aimed — `#vrButton[data-aim]` does. The labels still prove
+	// each button asks for the session KIND it is supposed to ask for.
+	const labelOf = (sel) =>
+		A.page.evaluate((s) => document.querySelector(s)?.textContent?.trim() ?? '', sel);
+	const aim = () =>
+		A.page.evaluate(() => document.getElementById('vrButton')?.dataset.aim ?? '');
 
-	let label = await buttonLabel();
-	h.check(label.includes('VR'), `hidden button requests immersive-vr by default (${label})`);
+	const vrLabel = await labelOf('#vrButtonVr button');
+	const arLabel = await labelOf('#vrButtonAr button');
+	h.check(
+		vrLabel.includes('VR') && arLabel.includes('AR'),
+		`both hidden buttons are mounted, one per mode (vr:"${vrLabel}" ar:"${arLabel}")`
+	);
+	h.check((await aim()) === 'vr', 'immersive-vr is aimed by default');
 
 	// the quick-menu tile flips the preference (real VR user path)
 	await A.page.evaluate(() => window.__stores.vrControls.executeVRMenuAction('settings:passthrough')); // 187: moved into the VR settings panel
@@ -22,8 +33,11 @@ h.run(async () => {
 	h.check(toastShown, 'tile toggle explains it applies next session');
 	const persisted = await A.page.evaluate(() => localStorage.getItem('vrPassthrough'));
 	h.check(persisted === 'true', 'preference persisted');
-	label = await buttonLabel();
-	h.check(label.includes('AR'), `button now requests immersive-ar (${label})`);
+	h.check((await aim()) === 'ar', 'the aim moves to immersive-ar');
+	h.check(
+		(await labelOf('#vrButtonAr button')).includes('AR'),
+		'the aimed button is the immersive-ar one'
+	);
 
 	// passthroughActive is a LOCAL view mode: sky+fog lift, env state untouched
 	const envBefore = await A.page.evaluate(
@@ -91,14 +105,17 @@ h.run(async () => {
 	// survives a reload (localStorage-backed store + button swap)
 	await A.page.reload();
 	await A.page.waitForTimeout(2500);
-	label = await buttonLabel();
+	const aimAfterReload = await aim();
 	const still = await A.page.evaluate(
 		() =>
 			new Promise((resolve) => {
 				window.__stores.vrPassthrough.subscribe((v) => resolve(v))();
 			})
 	);
-	h.check(still === true && label.includes('AR'), `passthrough preference survives reload (${label})`);
+	h.check(
+		still === true && aimAfterReload === 'ar',
+		`passthrough preference survives reload (aim=${aimAfterReload})`
+	);
 
 	await h.finish(browser);
 });

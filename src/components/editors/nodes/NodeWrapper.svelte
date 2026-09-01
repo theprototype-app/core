@@ -20,6 +20,7 @@
 		Triggers: '#facc15', // yellow
 		HUD: '#f0abfc', // A3: pink-violet, distinct from Effects' purple
 		Game: '#34d399', // 21-D6: emerald — the game shell
+		Character: '#fbbf24', // 21-E6: amber — the player's own movement
 		// 'Object Flow' was MISSING, so flowinput/flowoutput/objectflow fell through to
 		// the module-node gray and read as third-party cards. Fixed while adding HUD.
 		'Object Flow': '#818cf8' // indigo

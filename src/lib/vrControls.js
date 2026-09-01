@@ -431,6 +431,32 @@ export function registerVRFrameHook(fn) {
 		if (i >= 0) vrFrameHooks.splice(i, 1);
 	};
 }
+/** @type {{active?: () => boolean, apply?: (grab: {start: {a: number[], b: number[]}, now: {a: number[], b: number[]}, rig0: any}) => boolean}[]} */
+const worldGrabDiverts = [];
+/** CO2: a hook may take over the WORLD gestures. `apply` receives the live two-grip
+ * grab (start/now hand positions + the rig's start state) each frame and returns true
+ * to CONSUME it — colocation diverts the gesture into the replicated roomAnchor
+ * instead of bending the local rig. `active` answers "does a divert currently claim
+ * the world?", which is what stops the single-grip world PAN from starting: the pan
+ * offsets the XR reference space, a rig-free way to silently break a colocated
+ * alignment. @param {{active?: any, apply?: any}} hooks @returns {() => void} */
+export function registerWorldGrabDivert(hooks) {
+	worldGrabDiverts.push(hooks);
+	return () => {
+		const i = worldGrabDiverts.indexOf(hooks);
+		if (i >= 0) worldGrabDiverts.splice(i, 1);
+	};
+}
+/** @returns {boolean} */
+function worldGestureDiverted() {
+	return worldGrabDiverts.some((h) => {
+		try {
+			return !!h.active?.();
+		} catch {
+			return false;
+		}
+	});
+}
 
 /** D5: the floating panel groups a beam may terminate on — only the OPEN
  * ones (same gating as their raycast* pickers) */
@@ -1763,11 +1789,21 @@ function updateWorldGrab() {
 	if (!rig || !worldGrab) return;
 	const a = renderer.xr.getController(0).getWorldPosition(new THREE.Vector3());
 	const b = renderer.xr.getController(1).getWorldPosition(tempVector);
-	const next = computeWorldGrabTransform(
-		{ a: worldGrab.a0.toArray(), b: worldGrab.b0.toArray() },
-		{ a: a.toArray(), b: b.toArray() },
-		worldGrab.rig0
-	);
+	const live = {
+		start: { a: worldGrab.a0.toArray(), b: worldGrab.b0.toArray() },
+		now: { a: a.toArray(), b: b.toArray() },
+		rig0: worldGrab.rig0
+	};
+	// CO2: a registered divert (colocation) may consume the gesture wholesale —
+	// the colocated grab writes the replicated roomAnchor instead of this rig
+	for (const hooks of worldGrabDiverts) {
+		try {
+			if (hooks.apply?.(live)) return;
+		} catch (error) {
+			console.log('world-grab divert failed', error);
+		}
+	}
+	const next = computeWorldGrabTransform(live.start, live.now, worldGrab.rig0);
 	rig.position.fromArray(next.pos);
 	rig.quaternion.fromArray(next.quat);
 	rig.scale.setScalar(next.scale);
@@ -2180,8 +2216,10 @@ function onSqueezeStart(index) {
 			return;
 		}
 		// gripping air with the RIGHT hand pans the world with the controller
+		// (CO2: not while a divert claims the world — the pan offsets the XR
+		// reference space, which would silently break a colocated alignment)
 		const handedness = renderer.xr.getController(index)?.userData?.handedness ?? null;
-		if (handedness === 'right')
+		if (handedness === 'right' && !worldGestureDiverted())
 			worldPan = { index, prev: renderer.xr.getController(index).getWorldPosition(new THREE.Vector3()) };
 		return;
 	}
@@ -2266,7 +2304,7 @@ function onSqueezeEnd(index) {
 		const other = index === 0 ? 1 : 0;
 		if (emptyAirSqueeze[other]) {
 			const handedness = renderer.xr.getController(other)?.userData?.handedness ?? null;
-			if (handedness === 'right')
+			if (handedness === 'right' && !worldGestureDiverted())
 				worldPan = { index: other, prev: renderer.xr.getController(other).getWorldPosition(new THREE.Vector3()) };
 		}
 		return;

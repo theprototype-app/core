@@ -53,6 +53,9 @@ import { showProportionalRingAt, hideProportionalRing } from './proportionalRing
 // 19-A P7b: the vertex slide's clamp toggle — meshToolParams is a svelte/store
 // leaf, so this closes no cycle
 import { slideClamp } from './meshToolParams';
+// W9: where the viewport is. A leaf (svelte/store + sceneStore) — no new edge out of
+// the history-cycle family this module belongs to.
+import { canvasRect } from './canvasRect';
 // the custom transform PIVOT (local pref). Another leaf: meshPivot imports THREE
 // + the two stores + proportional, and nothing from here or faceEdit.
 import {
@@ -159,7 +162,11 @@ function adaptiveScaleAt(worldPoint) {
 	if (!camera) return 0;
 	const base = baseRadius();
 	if (base <= 0) return 0;
-	const height = typeof window !== 'undefined' ? window.innerHeight : 800;
+	// W9: the CANVAS height, not the window's. This converts a PIXEL size into a world
+	// size through the camera's vertical field of view, and that fov spans the canvas —
+	// so with a 320px dock open on a 720px window every handle drew 720/400 = 1.8x too
+	// large, and the error grows with the dock.
+	const height = canvasRect().height;
 	const px = APPARENT_PX * get(vertexHandleScale);
 	let world;
 	if (camera.isOrthographicCamera) {

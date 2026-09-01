@@ -44,7 +44,7 @@
 		"@codemirror/lang-javascript": "^6.2.5",
 		"@dimforge/rapier3d-compat": "^0.19.3",
 		"@lucide/svelte": "^1.30.0",
-		"@shaderfrog/core": "^3.2.0",
+		"@shaderfrog/core": "^4.0.2",
 		"@shaderfrog/glsl-parser": "^7.0.1",
 		"@threlte/core": "^8.5.16",
 		"@threlte/extras": "^9.21.0",

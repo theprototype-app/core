@@ -3798,7 +3798,7 @@
 										}
 									}
 								: {
-										label: 'Share',
+										label: 'Share with peers',
 										icon: 'share-2',
 										tooltip: 'Let peers in this session see and download this file',
 										action: () => {

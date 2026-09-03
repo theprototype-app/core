@@ -2965,10 +2965,10 @@
 										}
 									}
 						]),
-				{ label: 'Properties', action: () => showProperties({ kind: 'folder', folder }) },
+				{ label: 'Properties', icon: 'info', action: () => showProperties({ kind: 'folder', folder }) },
 				// 170: "New subfolder" only makes sense in the tree; the thumbnail grid drops it
-				...(inTree ? [{ label: 'New subfolder', action: () => startCreate(folder.id) }] : []),
-				{ label: 'Rename', action: () => startRename(folder, !inTree) },
+				...(inTree ? [{ label: 'New subfolder', icon: 'folder-plus', action: () => startCreate(folder.id) }] : []),
+				{ label: 'Rename', icon: 'pencil', action: () => startRename(folder, !inTree) },
 				// 21-I4 (locked answer 3): the folder's SUBTREE as a project file. The
 				// folder becomes that project's root and gives it its name, so what comes
 				// back out of an import is this folder, not a folder inside a folder.
@@ -2979,7 +2979,7 @@
 						'This folder and everything under it as a project file — its scenes, their version history and the assets they use',
 					action: () => downloadProject({ folderId: folder.id })
 				},
-				{ label: 'Delete folder', danger: true, action: () => confirmDeleteFolder(folder) }
+				{ label: 'Delete folder', icon: 'trash-2', danger: true, action: () => confirmDeleteFolder(folder) }
 			]
 		};
 	}
@@ -3276,6 +3276,7 @@
 		if (counts.models)
 			items.push({
 				label: `Export ${plural(counts.models, 'object')} as GLTF`,
+				icon: 'box',
 				tooltip: 'One .gltf file containing every selected prefab and 3D object',
 				action: () => void exportSelectionGltf()
 			});
@@ -3313,10 +3314,11 @@
 		if (counts.deletable)
 			items.push({
 				label: `Delete ${plural(counts.deletable, 'item')}`,
+				icon: 'trash-2',
 				danger: true,
 				action: deleteSelection
 			});
-		items.push({ label: `Clear selection (${n})`, action: () => setSel([]) });
+		items.push({ label: `Clear selection (${n})`, icon: 'x', action: () => setSel([]) });
 		menu = { x: e.clientX, y: e.clientY, items };
 	}
 
@@ -3514,9 +3516,9 @@
 					tooltip: 'Re-save this prefab from the objects selected in the scene',
 					action: () => updatePrefabFromSelection(prefab)
 				},
-				{ label: 'Properties', action: () => showProperties({ kind: 'item', item }) },
-				{ label: 'Rename', action: () => startRenamePrefab(item) },
-				{ label: 'Delete', danger: true, action: () => void deletePrefabToBin(prefab) }
+				{ label: 'Properties', icon: 'info', action: () => showProperties({ kind: 'item', item }) },
+				{ label: 'Rename', icon: 'pencil', action: () => startRenamePrefab(item) },
+				{ label: 'Delete', icon: 'trash-2', danger: true, action: () => void deletePrefabToBin(prefab) }
 			]
 		};
 	}
@@ -3613,6 +3615,7 @@
 						? [
 								{
 									label: 'Delete permanently',
+									icon: 'trash-2',
 									danger: true,
 									tooltip: 'Free the disk on THIS machine. Peers keep their own copies.',
 									action: () => {
@@ -3668,7 +3671,7 @@
 								}
 							]
 						: []),
-					{ label: 'Properties', action: () => showProperties({ kind: 'item', item }) }
+					{ label: 'Properties', icon: 'info', action: () => showProperties({ kind: 'item', item }) }
 				]
 			};
 			return;
@@ -3698,6 +3701,7 @@
 					? [
 							{
 								label: 'Open here (this screen)',
+								icon: 'external-link',
 								tooltip: 'Load this scene locally — use a Travel node to move every player together',
 								// 21-I4: the same fix as `openSceneItem` — the FILE name is not
 								// the scene name, and `currentLevel.name` is the manifest key.
@@ -3721,6 +3725,7 @@
 					? [
 							{
 								label: 'Copy contents',
+								icon: 'copy',
 								tooltip: 'Copy the file text to the clipboard (96)',
 								action: async () => {
 									const blob = await itemBlob(item.id);
@@ -3794,7 +3799,7 @@
 									}
 								: {
 										label: 'Share',
-										icon: 'users',
+										icon: 'share-2',
 										tooltip: 'Let peers in this session see and download this file',
 										action: () => {
 											shareItem(item.id);
@@ -3802,9 +3807,10 @@
 										}
 									}
 						]),
-				{ label: 'Properties', action: () => showProperties({ kind: 'item', item }) },
+				{ label: 'Properties', icon: 'info', action: () => showProperties({ kind: 'item', item }) },
 				{
 					label: 'Rename',
+					icon: 'pencil',
 					action: () => startRenameItem(item)
 				},
 				// R22 round 4: deleting a SHARED file removes it from the project for everyone,
@@ -3813,6 +3819,7 @@
 				isShared(item)
 					? {
 							label: 'Delete for everyone',
+							icon: 'trash-2',
 							danger: true,
 							tooltip:
 								'Removes it from the project. Every copy moves to Deleted files, where it can be restored.',
@@ -3823,6 +3830,7 @@
 						}
 					: {
 							label: 'Delete',
+							icon: 'trash-2',
 							danger: true,
 							tooltip: 'Moves it to Deleted, where you can restore it',
 							action: () => void deleteLocalItem(item)
@@ -4166,17 +4174,18 @@
 							tooltip: 'An empty pack of your own — drag files from the Library into it',
 							action: startPackName
 						},
-						{ label: '＋ Import pack (.zip)', action: () => packZipInput?.click() },
-						{ label: 'Load pack from URL', action: loadPackFromUrl }
+						{ label: '＋ Import pack (.zip)', icon: 'package', action: () => packZipInput?.click() },
+						{ label: 'Load pack from URL', icon: 'globe', action: loadPackFromUrl }
 					]
 				: [
-						{ label: 'New folder', action: () => startCreate($activeFolder ?? null, true) },
+						{ label: 'New folder', icon: 'folder-plus', action: () => startCreate($activeFolder ?? null, true) },
 						// 21-F4: a saved scene is an ordinary content-hashed .tpscene item —
 						// a Travel node loads it by hash. 21-G1: the `Scenes` folder is only
 						// where a save LANDS; discovery is BY KIND, so that folder can be
 						// renamed, moved or deleted without stranding a single scene.
 						{
 							label: 'Save scene…',
+							icon: 'save',
 							tooltip: 'Save this scene as a .tpscene asset a Travel node can load',
 							// 21-G10 fork 14: the name is typed INLINE (commitEdit lands it in
 							// the active folder — the G9 half of this union)
@@ -4184,6 +4193,7 @@
 						},
 						{
 							label: 'New scene…',
+							icon: 'file-plus',
 							tooltip: 'An EMPTY scene asset — it captures nothing from what is open',
 							action: () => startSceneName('new-scene')
 						},
@@ -4203,6 +4213,7 @@
 							? [
 									{
 										label: 'Export folder as .tp',
+										icon: 'arrow-down-to-line',
 										tooltip:
 											'This folder and everything under it as a project file — its scenes, their version history and the assets they use',
 										action: () => downloadProject({ folderId: $activeFolder })
@@ -4212,6 +4223,7 @@
 								? [
 										{
 											label: 'Export project (.tp)',
+											icon: 'arrow-down-to-line',
 											tooltip:
 												'The project manifest, every scene version still stored here, and the assets it uses — as one file',
 											action: () => downloadProject()
@@ -4220,6 +4232,7 @@
 								: []),
 						{
 							label: 'Import project as folder (.tp)…',
+							icon: 'folder-input',
 							tooltip:
 								'Adds a .tp file’s contents to your library as one folder — nothing opens, your project stays',
 							action: () => tpImportInput?.click()

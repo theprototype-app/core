@@ -66,6 +66,16 @@ function buildBuses() {
 	limiter.release.value = 0.25;
 	masterGain.connect(limiter);
 	limiter.connect(ctx.destination);
+	// a suspended-then-resumed context moves currentTime differently from the wall
+	// clock, so the clock filter below starts over rather than trusting stale pairs
+	ctx.addEventListener?.('statechange', () => {
+		clockPairs.length = 0;
+		primeAudioClock();
+	});
+	primeAudioClock();
+	// the engine's own sampler: one cheap read per 25 ms for the life of the context,
+	// so the clock filter is warm for whoever asks first (see the clock section)
+	if (typeof setInterval !== 'undefined') setInterval(sampleAudioClock, 25);
 	for (const name of BUS_NAMES) {
 		const gain = ctx.createGain();
 		gain.gain.value = 1;
@@ -95,24 +105,87 @@ export function resumeAudio() {
 }
 
 // ---- the clock ---------------------------------------------------------------
+//
+// `ctx.currentTime` is NOT a continuous clock as seen from the main thread. MEASURED
+// 2026-09-03 (headless Chromium, 48 kHz): it advances in steps of 10.67 ms — 512
+// frames, the device callback, `baseLatency` exactly — never per 128-frame quantum,
+// so `currentTime - performance.now()/1000` is a sawtooth 12 ms tall
+// (`getOutputTimestamp()` is the same shape, 7 ms tall). A2's first scheduler
+// build mapped each beat through a single raw read and consecutive beats landed up
+// to 5.3 ms apart from where they belonged — audible jitter on a drum machine.
+//
+// The filter: keep the last CLOCK_WINDOW_MS of (performance.now, offset) pairs and
+// take the MAXIMUM. The offset is highest the instant after currentTime steps —
+// that is the one moment the two clocks are read "fresh" — and decays until the
+// next step, so the max over a window that sees several steps is the true
+// correspondence to within the sampling phase. (A dense 1 ms dump over three runs
+// showed the per-100 ms peak stable within +-0.7 ms and no spikes, so the max is
+// unbiased and a percentile would only add a bias and an order-statistic wobble.)
+//
+// THE WINDOW MUST BE WARM BEFORE ANYONE ASKS, which is why the engine runs its OWN
+// 25 ms sampler from the moment the context exists (25 mod 10.67 walks the phase;
+// a 1 ms burst primes it on creation and on resume). The first build sampled only
+// from the scheduler's ticks, so the first mapping after a quiet spell went through
+// a window holding ONE stale sample at a random phase — beat 0 landed anywhere from
+// 0 to 10.67 ms off beat 1, and the suite read 3.5 / 8.9 / 3.3 / 6.8 / 4.7 ms across
+// five runs. Warm, the same check reads under 1.5 ms. 2 s is long enough to hold
+// ~80 phases and far too short for two crystal oscillators to drift apart (ppm).
+
+const CLOCK_WINDOW_MS = 2000;
+/** @type {{t: number, off: number}[]} */
+const clockPairs = [];
+
+/**
+ * Take one (performance.now, currentTime) pair into the clock filter. Cheap; the
+ * scheduler calls it every tick, and `audioTimeFor` calls it on every use. Returns
+ * the performance.now() it read.
+ */
+export function sampleAudioClock() {
+	const ctx = ensureAudioContext();
+	const t = performance.now();
+	clockPairs.push({ t, off: ctx.currentTime - t / 1000 });
+	while (clockPairs.length && clockPairs[0].t < t - CLOCK_WINDOW_MS) clockPairs.shift();
+	return t;
+}
+
+/**
+ * Fill the window FAST: one sample per millisecond for a little over one device
+ * callback, so the max is within ~1 ms of the true correspondence before anything
+ * is scheduled. Without this the first mapping after the context is created goes
+ * through a one-sample window at a random phase — measured: beat 0 landed up to
+ * 5.3 ms off beat 1 on a cold filter, and fine once the ticks had filled it.
+ * Called on context creation, on resume, and when the scheduler starts.
+ */
+export function primeAudioClock() {
+	if (typeof setTimeout === 'undefined') return;
+	for (let i = 0; i < 14; i++) setTimeout(sampleAudioClock, i);
+}
+
+/** The filtered audio-minus-performance offset, in seconds. */
+function audioClockOffset() {
+	sampleAudioClock();
+	let best = -Infinity;
+	for (const pair of clockPairs) if (pair.off > best) best = pair.off;
+	return best;
+}
 
 /**
  * Map a WALL-CLOCK stamp (a `Date.now()` value, which is what every replicated
  * message carries) onto this context's `currentTime`, so a "play at beat 4"
  * message can become an `osc.start(t)`.
  *
- * Re-derived on EVERY call rather than cached as an offset. A cached offset drifts
- * — the audio clock and the system clock are different oscillators — and the cache
- * would then need periodic re-estimation with all the staleness that implies. Two
- * reads in one expression cost nothing and cannot drift.
+ * Through the clock filter above, so two stamps a beat apart map to audio times a
+ * beat apart to within a render quantum. NOT a long-lived cached offset —
+ * that would drift, the two clocks being different oscillators — but a 2 s
+ * window over which drift is nil and the device-callback sawtooth averages out.
  *
  * A stamp already in the past returns a time already gone, which WebAudio treats
  * as "start now"; that is the correct behaviour for a late-arriving note.
  * @param {number} wallMs @returns {number}
  */
 export function audioTimeFor(wallMs) {
-	const ctx = ensureAudioContext();
-	return ctx.currentTime + (wallMs - Date.now()) / 1000;
+	const off = audioClockOffset();
+	return off + (performance.now() + (wallMs - Date.now())) / 1000;
 }
 
 /** This context's own clock. @returns {number} */

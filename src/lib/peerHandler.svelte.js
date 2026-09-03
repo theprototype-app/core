@@ -56,6 +56,9 @@ import { applyRoomAnchorRemote, sendRoomAnchor } from '$lib/colocation';
 // drives is LOCAL receive-side filtering; nobody stops broadcasting because of it.
 import { applyRemoteColocation, dropPeerColocation, sendColocationState } from '$lib/colocationPresence';
 import { applyRemoteScenePost, scenePostStates, sendScenePost } from '$lib/scenePost';
+// 23-A2: the musical transport (a latest-wins singleton like scenephysics) and the
+// peer clock-offset estimate it carries alongside
+import { applyRemoteTransport, transportState, sendTransport, answerClockPing, applyClockPong, startClockSync } from '$lib/musicClock';
 import { applyRemoteShaderGraph, applyRemoteShaderGraphDelete, applyRemoteShaderGraphs, sendShaderGraphs } from '$lib/shaderSync';
 import {
 	applyRemoteHud,
@@ -479,6 +482,18 @@ export class PeerConnection {
 					applyRemoteScenePost(data);
 				} else if(data.type == 'getscenepost') {
 					sendScenePost(data.sender);
+				} else if(data.type == 'transport') {
+					// 23-A2: the musical transport, latest-wins on changedAt (the scenephysics
+					// shape). Every peer then derives the beat LOCALLY from the shared startedAt.
+					applyRemoteTransport(data);
+				} else if(data.type == 'gettransport') {
+					sendTransport(data.sender);
+				} else if(data.type == 'clockping') {
+					// 23-A2: the peer clock-offset round trip. Answered over the stable OUTGOING
+					// conn to the sender (golden rule 9), this conn only as the fallback.
+					answerClockPing(data, conn);
+				} else if(data.type == 'clockpong') {
+					applyClockPong(data);
 				} else if(data.type == 'shadergraph') {
 					applyRemoteShaderGraph(data);
 				} else if(data.type == 'shadergraphdelete') {
@@ -754,6 +769,8 @@ export class PeerConnection {
 		conn.send(environmentState())
 		conn.send(musicState())
 		conn.send(scenePhysicsState())
+		// 23-A2: the musical transport, a singleton PUSH like the line above
+		conn.send(transportState())
 		// L-C: one per post DOCUMENT — the scene look and any camera looks
 		for (const state of scenePostStates()) conn.send(state)
 		conn.send(handModelState())
@@ -793,6 +810,9 @@ export class PeerConnection {
 		if (getobjects) conn.send({type: 'getnodedefs', sender: this.peer.id})
 		// join them into the voice mesh if our mic is live
 		voicePeerConnected(peerId);
+		// 23-A2: start estimating their clock's offset from ours — here because this is
+		// the one place the conn is known to be OPEN (golden rule 2)
+		startClockSync(peerId);
 	}
 
 	connectToPeer(peerId, getobjects = true, id = this.peer.id) {

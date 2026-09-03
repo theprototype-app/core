@@ -32,6 +32,9 @@ import { scenePostSnapshot, scenePostRestore } from './scenePost';
 import { environmentSnapshot, environmentRestore } from './environment';
 import { scenePhysicsSnapshot, scenePhysicsRestore } from './scenePhysics';
 import { musicSnapshot, musicRestore } from './sceneMusic';
+// 23-A2: the musical transport, on the same terms as physics/music — null at the
+// default, omitted rather than written, restart-from-now when it was playing
+import { transportSnapshot, transportRestore } from './musicClock';
 import {
 	moduleRequirements,
 	classifyRequirements,
@@ -161,6 +164,7 @@ export function buildSessionPayload(name) {
 	const env = environmentSnapshot();
 	const gravity = scenePhysicsSnapshot();
 	const track = musicSnapshot();
+	const clock = transportSnapshot();
 	const mods = moduleRequirements();
 	try {
 		return {
@@ -211,6 +215,7 @@ export function buildSessionPayload(name) {
 			...(env ? { environment: env } : {}),
 			...(gravity ? { physics: gravity } : {}),
 			...(track ? { music: track } : {}),
+			...(clock ? { transport: clock } : {}),
 			// A6.2: {id, version} — the handshake's shape, so there is one shape for
 			// "which modules" in the whole system.
 			...(mods.length ? { modules: mods } : {}),
@@ -910,6 +915,9 @@ export async function applySession(payload, opts = {}) {
 	environmentRestore(payload.environment, replicate);
 	scenePhysicsRestore(payload.physics, replicate);
 	musicRestore(payload.music, replicate);
+	// 23-A2: and the transport — absent means the default (stopped, 120), and a saved
+	// PLAYING transport restarts from beat 0 now so every peer shares the phase
+	transportRestore(payload.transport, replicate);
 	// and the HUD with it: loading a game scene into a live room must bring its overlay
 	hudDocsRestore(payload.hud ?? null, true, replicate);
 	// and the game with it: loading a game scene into a live room must bring its state.

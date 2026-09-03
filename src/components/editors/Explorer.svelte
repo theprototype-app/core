@@ -2196,16 +2196,75 @@
 	// column and never a constant — a flat cap is how a grip ends up off-screen on a
 	// short dock (18-B).
 	const ROOTS_MIN = 56;
-	const ROOTS_RESERVE = 120; // the folder list + the New folder button keep this much
 	let treeColH = $state(0);
 	let rootsResizing = $state(false);
 	let rootsH = $state(
 		(typeof localStorage !== 'undefined' && parseInt(localStorage.getItem('explorerRootsH') ?? '')) ||
 			160
 	);
-	const rootsMax = $derived(Math.max(ROOTS_MIN, (treeColH || 320) - ROOTS_RESERVE));
-	// re-clamp whenever the column SHRINKS (dock resize, undock, or a height stored on a
-	// taller pane): a size that was legal before must not strand the grip off the bottom
+
+	/*
+	 * R22 (user): "when I have mounted multiple projects (on some clicked and expanded tree
+	 *  view) and also expanded 'Scene' ... the Library becomes impossible to see, even when
+	 *  I try to adjust vertical slider ... so I have to adjust dock window size ... likely
+	 *  just a rule that dissalows Library to fully dissapear."
+	 *
+	 * THE MEASUREMENT, on a 256px tree column with three mounts expanded and Scene expanded:
+	 * the mounts section took 177px (its list carried an ABSOLUTE 140px ceiling that knew
+	 * nothing about the column it lives in) and the bottom took 185, so the middle Library
+	 * list — `flex-1 min-h-0` between two `shrink-0` ends — collapsed to 8px and the column
+	 * overflowed its own height by 114. Dragging the roots grip all the way DOWN reclaimed
+	 * 80 of those and the middle stayed at 8: the grip can only give back what the ROOTS
+	 * took, and here the mounts had eaten the room.
+	 *
+	 * So neither pinned end may be sized by a constant any more: BOTH ceilings are expressed
+	 * against the measured column, and between them they leave the middle `LIBRARY_MIN`.
+	 * A second slider was the other option and is worse — the middle already scrolls, so a
+	 * ceiling on the ends costs nothing but a scrollbar on a handful of fixed rows, while a
+	 * second grip would be one more thing to find when the thing you wanted was never to
+	 * have to look for it.
+	 *
+	 * The two constants are chrome, not policy — MEASURED at 37 and 49 and rounded UP, so
+	 * the reserve errs toward the Library, which is what the rule is for.
+	 */
+	const LIBRARY_MIN = 96; // the Library row plus ~3 folder rows: visible AND usable
+	const MOUNTS_CHROME = 40; // the pinned "＋ Mount project…" row and the section padding
+	const ROOTS_CHROME = 50; // "＋ New folder", the grip and the section padding
+	const MOUNT_LIST_CAP = 140; // round 13's ceiling, now the UPPER bound rather than the only one
+	const MOUNT_LIST_MIN = 28; // one row: a column too short for the rule still reaches its mounts
+
+	/**
+	 * The mounts list's ceiling. Derived from `treeColH` ALONE — never from the section it
+	 * sits in — because a child measured from its parent must not be able to size that
+	 * parent, and this cap is what the parent's height is made of.
+	 */
+	const mountListMax = $derived(
+		Math.min(
+			MOUNT_LIST_CAP,
+			Math.max(
+				MOUNT_LIST_MIN,
+				(treeColH || 320) - LIBRARY_MIN - MOUNTS_CHROME - ROOTS_CHROME - ROOTS_MIN
+			)
+		)
+	);
+	/** the mounts section as RENDERED. One way only: it feeds the roots ceiling below and
+	 *  nothing feeds back into it, so there is no loop to unwind. */
+	let mountsH = $state(0);
+	/**
+	 * The roots ceiling, and the reason the grip works now: it is what the column has left
+	 * once the mounts have taken their share and the Library has been given its floor. So a
+	 * mount being expanded, a project being mounted, or the dock being shortened all
+	 * re-derive it — and the re-clamp below then pulls a too-tall `rootsH` down with it.
+	 */
+	const rootsMax = $derived(
+		Math.max(
+			ROOTS_MIN,
+			(treeColH || 320) - (mountsH || MOUNTS_CHROME) - LIBRARY_MIN - ROOTS_CHROME
+		)
+	);
+	// re-clamp whenever the room SHRINKS (dock resize, undock, a project mounted or expanded,
+	// or a height stored on a taller pane): a size that was legal before must not strand the
+	// grip off the bottom — or, since the mounts started counting, squeeze out the Library
 	$effect(() => {
 		const max = rootsMax;
 		if (rootsH > max) rootsH = max;
@@ -5629,6 +5688,7 @@
 			<div
 				id="explorer-mounts"
 				class="flex shrink-0 flex-col gap-0.5 border-b border-gray-700/60 p-1"
+				bind:clientHeight={mountsH}
 			>
 				<!--
 					R22 round 13 (user): "'mount project...' button should be always on top of
@@ -5647,12 +5707,15 @@
 					title="Browse another saved project's files here, without replacing the one you have open"
 					onclick={openMountPicker}>＋ Mount project…</button
 				>
-				<!-- the volumes, in their OWN scroller: the 140px ceiling belongs to the LIST,
-				     so a long list scrolls under a button that never moves. -->
+				<!-- the volumes, in their OWN scroller: the ceiling belongs to the LIST, so a
+				     long list scrolls under a button that never moves. It is `mountListMax`
+				     rather than a flat 140 since the Library-floor rule — see LIBRARY_MIN:
+				     140 was fine for one mount and, at three expanded, was 55% of a short
+				     column all by itself. -->
 				<div
 					id="explorer-mount-list"
 					class="flex min-h-0 flex-col gap-0.5 overflow-y-auto"
-					style="max-height: 140px"
+					style="max-height: {mountListMax}px"
 				>
 				{#each $mountedVolumes as vol (vol.id)}
 					<div class="flex items-center whitespace-nowrap">
@@ -5758,8 +5821,14 @@
 				{/each}
 				</div>
 			</div>
-			<!-- scrollable folder list; the roots below stay pinned to the bottom -->
-			<div class="flex min-h-0 flex-1 flex-col gap-0.5 overflow-x-auto overflow-y-auto p-1">
+			<!-- scrollable folder list; the roots below stay pinned to the bottom. It is the
+			     MIDDLE of the column, so it is what the two pinned ends' ceilings protect
+			     (LIBRARY_MIN) — and it carries an id because a rule about its height is only
+			     as good as something's ability to measure it. -->
+			<div
+				id="explorer-folder-list"
+				class="flex min-h-0 flex-1 flex-col gap-0.5 overflow-x-auto overflow-y-auto p-1"
+			>
 			<button
 				id="explorer-root-row"
 				class="whitespace-nowrap rounded px-2 py-1 text-left {$activeFolder === null && !search

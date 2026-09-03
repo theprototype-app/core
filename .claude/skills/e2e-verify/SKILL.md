@@ -1459,6 +1459,51 @@ Suites GROWN, not multiplied: `file-preview` (71), `sessions-packs` (61),
   back, and assert the BYTES survived: `withBytes 5` against `5 -> 0` with the old write
   restored.
 
+## Roadmap 22 round 13 — mounts, storage, sessions Open (and the harness itself)
+
+- **The runner kills a suite at 8 minutes** (`run.cjs:26`), SILENTLY: no FAIL line, the
+  summary reads "N suites in 480s" and the axe fell mid-check. Time the suite uncapped
+  before believing the red (explorer-mounts read 117-PASS-then-dead when it was really
+  137/137 in 708s). SPLIT on measured per-section runtime; never raise the shared budget.
+  `npm run e2e -- explorer-mounts` matches BOTH split files (`explorer-mounts.test` +
+  `explorer-mounts-edit`) — use the full filename stem for one.
+- **Never pipe a run through grep.** It destroys the `FAIL <check>` lines that tell a
+  dying suite from a disagreeing check — the summary says FAILED with no detail anywhere.
+  Redirect to a file; grep the file.
+- **A saturated box lies in both directions**: a 4-suite net at 8774s produced two
+  "failures" that passed serially in 96s/106s. Re-run any red SERIALLY before reporting;
+  treat an implausible duration as itself a reason to re-run. (67 chrome.exe processes on
+  this box were the USER'S OWN browser — check `Get-Process chrome | Group-Object Path`
+  before killing anything.)
+- **Vite watches `tests/`** — editing or deleting ANY test file while a suite is in
+  flight kills the run with `<vite-error-overlay> intercepts pointer events`. This also
+  means an ORCHESTRATOR must not edit the worktree while a suite runs in it (an agent's
+  comment-only edit took a run down at §16c with no error text).
+- **A fresh worktree has no `certs/`** (gitignored): vite serves plain HTTP, every https
+  curl reads 000, and it looks exactly like a dead server. Copy `localhost.crt`/`.key`
+  from another checkout first.
+- **SessionsManager hooks**: only LIST rows carry `.session-row` (grid cards are
+  `.session-card` alone) and the view is a REMEMBERED pref — pin `#session-view-list`
+  before locating rows. Fixed sleeps around `mountVolume` lose (it is three awaits deep;
+  `h.eventually` on the volume list). An absence check (`count() === 0`) must be PAIRED
+  with a presence check on the same element or it passes against a row that never
+  rendered — this shipped once and was caught by the grid/list view split.
+- **Store paths on the debug hook**: `bottomDockActive` is NAMESPACED
+  (`__stores.bottomDock.bottomDockActive`), not spread like appStore's exports. The
+  Explorer identity chip (`#explorer-scene`, `#explorer-save-scene`) exists only while
+  the Explorer is MOUNTED — drive `explorerClose` + `bottomDock.bottomDockActive`, never
+  a click on `#explorer-slot` (a toggle whose current state you do not know).
+- **Movement checks HOLD keys, never tap** — movement accumulates per frame, so a settled
+  read after `keyboard.press` sees nothing. And run a CONTROL LEG first (bare `e` MUST
+  move the camera) or the "moves not at all" zeros pass with the camera dead.
+- **A discriminating seed is what separates replace from merge**: every file the
+  project-open section checked for existed in BOTH answers until it seeded a stray file
+  first and asserted it GONE. When two behaviours differ only in what they do to
+  pre-existing state, the test must create that state.
+- **h.section() does not exist** — sections are numbered comments. A suite section that
+  saves/mounts goes LAST under its own fixture names (the standing rule, re-proven twice
+  this round).
+
 ## Roadmap 22 round 11 — the Explorer/preview/sessions batch
 
 Five suites, one per phase: `explorer-delete-confirm` (39), `explorer-columns` (41),

@@ -361,6 +361,24 @@ export async function foldSceneVersions() {
 	return folded;
 }
 
+// REPORTED (release check): the toast "stays even when I do open another scene". Two
+// leaks made that true: `onNextDirty` RETURNS an unsubscribe nobody kept, so every open
+// stacked another armed one-shot (each firing later with ITS scene name); and once
+// shown, a sticky info toast lives until `dismissToastById` - which only the button
+// pressed. The app's own convention (the Toasts.svelte mirrors) is that a sticky
+// prompt REFLECTS state and dismisses when the state stops being true. So: a new arm
+// SUPERSEDES the old one (disarm + dismiss), and a shown toast watches `currentLevel`
+// and goes the moment the open scene is no longer the unsaved scene it describes -
+// another open, a save into the project, a project open clearing the level.
+let disarmSaveIntoProject = /** @type {null | (() => void)} */ (null);
+let unwatchSaveIntoProject = /** @type {null | (() => void)} */ (null);
+let saveIntoProjectArmToken = 0;
+/** Is the save-into-project one-shot ARMED right now? Read-only, for the debug hook:
+ * the arm is a 1.5s timer, so a suite that edits after a FLAT wait races it under
+ * load - the documented wait-on-the-thing rule needs a thing to wait on. */
+export function saveIntoProjectArmed() {
+	return !!disarmSaveIntoProject;
+}
 /**
  * 21-G8 fork 12, EXTRACTED here in the loose-scenes fix so both ways of arriving at a
  * loose scene share one path. It used to live in fileHandler and serve only "a .tpscene
@@ -376,14 +394,31 @@ export async function foldSceneVersions() {
  */
 export async function armSaveIntoProject(name) {
 	const scene = String(name ?? '').trim();
+	// every open lands here before anything is armed for it, so this is the one spot
+	// that can retire whatever the PREVIOUS open left behind - armed or already shown
+	disarmSaveIntoProject?.();
+	disarmSaveIntoProject = null;
+	unwatchSaveIntoProject?.();
+	unwatchSaveIntoProject = null;
+	dismissToastById('save-into-project');
+	const token = ++saveIntoProjectArmToken;
 	if (!scene) return;
 	if (get(isLocked) === true) return;
 	const { onNextDirty } = await import('./autosave');
 	// arm AFTER the load settles — applying a session storms markDirty, and the prompt is
 	// about the user's first edit, not about the load's own store pokes
 	setTimeout(() => {
+		// a second open inside this window already superseded us
+		if (token !== saveIntoProjectArmToken) return;
 		if (get(isLocked) === true) return;
-		onNextDirty(() => {
+		disarmSaveIntoProject = onNextDirty(() => {
+			disarmSaveIntoProject = null;
+			if (token !== saveIntoProjectArmToken) return;
+			// travel does not come through armSaveIntoProject, so an armed one-shot can
+			// outlive the scene that armed it and fire on the FIRST edit somewhere else -
+			// about a scene no longer open. Show only what is true right now.
+			const at = get(currentLevel);
+			if (at?.name !== scene || !at?.unsaved) return;
 			showInfoToast(
 				'save-into-project',
 				'"' + scene + '" is not part of your project yet — your edits live only in the autosave.',
@@ -397,6 +432,15 @@ export async function armSaveIntoProject(name) {
 					}
 				]
 			);
+			// the mirror half. Inside a function, not at module eval, so the TDZ rule for
+			// module-level subscribes does not apply; the synchronous first call sees the
+			// scene still open and does nothing.
+			unwatchSaveIntoProject = currentLevel.subscribe((at) => {
+				if (at?.name === scene && at?.unsaved) return;
+				dismissToastById('save-into-project');
+				unwatchSaveIntoProject?.();
+				unwatchSaveIntoProject = null;
+			});
 		});
 	}, 1500);
 }

@@ -882,7 +882,9 @@ h.run(async () => {
 		`…and sits above every mounted project (${pinned.addTop} < ${pinned.rowTops.join(', ')})`
 	);
 	// the SECTION no longer scrolls; the LIST does. That is what keeps the button in place
-	// once the list is longer than its 140px ceiling.
+	// once the list is longer than its ceiling — `mountListMax`, which is 140 on a roomy
+	// column and less on a short one so the Library below keeps its floor
+	// (`explorer-tree-floor` owns that rule).
 	h.check(
 		pinned.listScrolls === 'auto',
 		`the volume LIST owns the scroller, so a long list cannot carry the entry point away (${pinned.listScrolls})`

@@ -449,7 +449,7 @@ h.run(async () => {
 	// ---- 15. Share from the item context menu -------------------------------------
 	await card().click({ button: 'right' });
 	await A.page.waitForTimeout(300);
-	const shareRow = A.page.locator('[role=menu]').getByText('Share', { exact: true }).first();
+	const shareRow = A.page.locator('[role=menu]').getByText('Share with peers', { exact: true }).first();
 	h.check((await shareRow.count()) > 0, 'a local file offers Share in its context menu');
 	await shareRow.click();
 	await h.eventually(

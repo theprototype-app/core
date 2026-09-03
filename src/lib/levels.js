@@ -373,6 +373,12 @@ export async function foldSceneVersions() {
 let disarmSaveIntoProject = /** @type {null | (() => void)} */ (null);
 let unwatchSaveIntoProject = /** @type {null | (() => void)} */ (null);
 let saveIntoProjectArmToken = 0;
+/** Is the save-into-project one-shot ARMED right now? Read-only, for the debug hook:
+ * the arm is a 1.5s timer, so a suite that edits after a FLAT wait races it under
+ * load - the documented wait-on-the-thing rule needs a thing to wait on. */
+export function saveIntoProjectArmed() {
+	return !!disarmSaveIntoProject;
+}
 /**
  * 21-G8 fork 12, EXTRACTED here in the loose-scenes fix so both ways of arriving at a
  * loose scene share one path. It used to live in fileHandler and serve only "a .tpscene

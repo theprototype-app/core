@@ -845,8 +845,6 @@ h.run(async () => {
 		window.__stores.mountedVolumes.mountedVolumes.subscribe((x) => (mv = x))();
 		for (const v of mv) await window.__stores.mountedVolumes.unmountVolume(v.id);
 	});
-	await page.waitForTimeout(600);
-
 	// ---- 17. the "＋ Mount project…" row is pinned to the TOP of the group -----------
 	// User: "'mount project...' button should be always on top of mounted projects in
 	// Explorer". It used to be the LAST child, so it moved on every mount and unmount and,
@@ -1247,7 +1245,15 @@ h.run(async () => {
 	// --- ...but it CAN be saved -------------------------------------------------------
 	// the loose-scene treatment in full: the offer is armed 1.5s after the load and fires
 	// on the FIRST real edit, which is how a user meets it.
-	await page.waitForTimeout(2200);
+	// wait on the THING: the offer is a one-shot armed by a 1.5s timer, and a flat wait
+	// raced it under batch load (composed-run flake, verdict-probed: the logic was right,
+	// the timer simply had not fired when the edit landed)
+	await h.eventually(
+		() => page.evaluate(() => window.__stores.levels.saveIntoProjectArmed()),
+		(v) => v === true,
+		'premise: the save-into-project one-shot is armed',
+		15000
+	);
 	await clearToasts(A);
 	await page.evaluate(() => window.__stores.commandsHandler.sceneCommand('/create cylinder'));
 	await h.eventually(

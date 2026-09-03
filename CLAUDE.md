@@ -150,6 +150,48 @@ loadable play content. Everything a user does must be visible to connected peers
   percentage you are reading. `indicatorState` is the four-state sync convention
   (offline/idle/active/failed) and OFFLINE must not look like an error.
   Plan + as-built: cloud `plans-core/roadmap-22-shared-library-sessions.md` sections 5-8.
+- `src/lib/mountedVolumes.js` (R22 round 13, a LEAF: svelte/store + idb + toast; `sessions`
+  by dynamic import; `explorer.js` must NEVER import it) — MOUNTED PROJECT VOLUMES: saved
+  projects browsed as roots of their own ABOVE Library. Store
+  `[{id, sessionId, name, folders, items, dirty, rev, at, missing?}]` persisted under ONE
+  idb key so mounts AND their buffered edits survive a reload. Namespace
+  `'vol:<id>[:<folderId>]'` threaded through ONE derived scope in Explorer.svelte, never
+  sprinkled startsWith. LOCAL BY CONSTRUCTION: volumes live outside `explorerItems`, so
+  `publishSharedIndex`/`itemByHash`/prefab refs keep their invariants for free (suite-
+  asserted, not believed). Edits are BUFFERED (rename/move/delete/copy-in set `dirty`);
+  `saveVolume` rewrites the session record's `payload.library` via `writeSessionLibrary`
+  and compares `rev` so an edit made DURING the save stays dirty. Copy OUT = ordinary
+  `addItemFromBytes` (hash-deduped); a whole FOLDER cannot cross the boundary. Dirty
+  unmount navigates you TO the volume, offers Save and unmount (PRIMARY, takes Enter -
+  deliberate inversion of the strip's destructive-primary rule) / Discard / Cancel, then
+  returns you unless you navigated meanwhile; `placeStillThere` decides "is this key still
+  a place" BY SHAPE (uuid = library folder, else pseudo-root). A mounted SCENE opens into
+  the viewport through fileHandler's `openScenePayload` (the loose-.tpscene path made ONE
+  exported flow, guard first, unsaved-but-saveable identity, NO name suffix - the name is
+  the key a later save files under); other kinds still ask to be copied into the Library.
+  Entry points: `#explorer-mounts` (add row pinned TOP, own scroller), `.session-mount`
+  beside Open in the Sessions manager, and the picker's `Import project (.tp)...` which
+  imports AND mounts through `importProjectAsSession`. Disk-folder mounting is a LATER
+  provider behind the same namespace (`showDirectoryPicker` is Chromium-only and
+  undrivable by Playwright - project mounts live in idb, which is why they came first).
+- `src/lib/storageUsage.js` + `components/menu/StorageModal.svelte` (R22 round 13, a
+  LEAF) — WHAT IS USING THE DISK. The whole app has ONE flat idb store, so the scan is
+  `idbKeys()` + prefix classification; `explorer:blob:*` splits by shelf (Library files /
+  Hidden versions / recycle-bin membership via `deletedLog`), `session:*` by
+  `payload.library` (scenes/projects). THE SCAN NEVER READS BLOBS (`item.size` mirrors
+  `blob.size`; reading them pulled 25MB/file into memory to learn a number in the index)
+  and every idb read is BOUNDED (`safeGet` - `idb.js` settles only on the request's own
+  onsuccess/onerror, so an aborted transaction leaves a promise pending FOREVER; the real
+  fix, settling on the transaction's onabort too, is still owed in idb.js). Reclaim goes
+  through each owning module's OWN deleter, never a raw idbDelete; `explorer:index`,
+  `project:manifest` and any hash in `keepableHashes()` are refused BY THE LEAF with the
+  reason rendered (the tick is a courtesy, `reclaimRow` is the rule). Selection reconciles
+  against ROWS across a rescan, never a clock. Three entry points: the header chip, the
+  Explorer background menu, Settings > Explorer. `deletedLogEnabled` (LOCAL, default ON)
+  gates the Deleted LOG - a Bin|Log `tp-seg` toggle INSIDE the Deleted view (the bin holds
+  what it can restore, the log holds the record; OFF hides, never clears - `manifest.
+  deleted` replicates whole, so a local pref that pruned it would delete other people's
+  record and strand restorable bytes).
 - `src/lib/explorerView.js` (R22 round 9, a LEAF — stores + arithmetic, imports NOTHING
   from the Explorer): THUMBNAILS OR A SORTABLE LIST, plus the bin's grouping. The column
   model is DATA (`LIBRARY_COLUMNS` / `DELETED_COLUMNS`, `columnsFor`) and `sortEntries` is
@@ -1939,6 +1981,70 @@ loadable play content. Everything a user does must be visible to connected peers
    a viewer's bytes; peers also drop gated types via `canApply`.
 
 ## Hard-won gotchas (do not rediscover)
+
+- **flowbite-svelte's `Button` FREEZES its class string at mount.** `Button.svelte:34` reads
+  the theme through a DESTRUCTURING `$derived` declaration, which evaluates its object ONCE
+  — so a button BORN disabled wears `cursor-not-allowed opacity-50` forever, even after its
+  `disabled` prop genuinely flips off (the element attribute is a separate, reactive
+  derived, which is why it still ENABLES while still LOOKING refused). Both storage-modal
+  buttons were born disabled (the modal opens mid-scan, nothing ticked), so two user
+  reports were ONE bug. Key any state-dependent paint off `:disabled`/`:not(:disabled)`,
+  the reactive half. Every `<Button>` whose `disabled` can change is affected — app-wide
+  survey still owed.
+- **An INVALIDATION KEY must name the thing whose change should invalidate.** The storage
+  modal's selection was wiped by an `$effect` comparing `scan.at` — a fresh `Date.now()`
+  written by EVERY scan, including scans whose row list came back byte-identical. Since
+  the panel stays interactive on the previous reading while a scan runs (seconds, on a big
+  store), any tick made in that window was silently discarded — "Reclaim never enables".
+  Reconcile against the ROWS (keep ids the new reading still lists), never against a clock.
+- **TWO LANES CAN EACH BE CORRECT AND COMPOSE WRONG — the enumerated-roots edition.**
+  `placeStillThere` (mounts lane) listed the pinned pseudo-roots by name; the bin lane
+  pinned a NEW root (`deletedlog`) the same day; git merged both textually clean and the
+  list was one name short — cancelling an unmount from the Deleted log dumped you at the
+  Library. It tests the SHAPE now (a library folder id is a uuid, so "not uuid-shaped and
+  not a `vol:` key" IS the pseudo-root test) and the guard walks EVERY pinned root so the
+  next one is covered by construction. Neither branch's suite could see this; only the
+  merged head could — run the battery on the MERGE, not just the branches.
+- **A guard that saves INTO a store the guarded action then WIPES is a lie.** A project
+  Open replaces the whole library, and `guardSceneReplace`'s Save option writes the scene
+  into that library — destroyed moments later. Such a path must fold the unsaved-changes
+  fact into its own confirm and point at an escape hatch that SURVIVES (Save project: a
+  session is its own idb record, never a library file). And use `sceneAtRisk()`
+  (sceneOpenGuard) for the predicate, never `$sceneDirty` — the store is throttled 2s and
+  misses the unnamed-with-content case; the first draft of the fix reproduced the exact
+  documented lost-work bug by reading the store.
+- **A movement keydown guard must include ALT.** editorNavigation guarded ctrl/meta only,
+  and the #183 shortcuts are Alt-aware — so Alt+E toggled a panel AND flew the camera
+  (KEYS = w,a,s,d,q,e; measured 2.5-3.0 units per held combo). A modified press is a
+  COMMAND, never movement. The KEYUP stays unguarded (the Ctrl+V push-to-talk rule:
+  guarding it strands a key held down when the modifier arrives mid-hold).
+- **e2e: the runner kills a suite at 8 minutes** (`tests/e2e/run.cjs:26`), SILENTLY — no
+  FAIL line, "N suites in 480s", the axe simply falls mid-check. explorer-mounts read as
+  a mysterious red at 117 PASS when uncapped it was 137/137 in 708s. SPLIT the suite on
+  measured per-section runtime (never raise the shared budget — it hides the next suite to
+  outgrow it). Note `npm run e2e -- explorer-mounts` matches BOTH split files; use
+  `explorer-mounts.test` for one. Related: NEVER pipe a suite run through grep — it
+  destroys the `FAIL <check>` lines that distinguish a dying suite from a disagreeing
+  check; redirect to a file and grep the file. And a 4-suite net taking 8774s is a
+  SATURATION reading, not a result (the same suite passed in 96s serially).
+- **SessionsManager test hooks**: only LIST rows carry `.session-row` (a grid card is
+  `.session-card` alone) and the view is a REMEMBERED pref — PIN it with
+  `#session-view-list` before locating rows. An absence check (`count() === 0`) must be
+  PAIRED with a presence check on the same element or it passes green against a row that
+  never rendered. `bottomDockActive` lives NAMESPACED on the debug hook
+  (`__stores.bottomDock.*`), not spread like appStore. The Explorer identity chip exists
+  only while the Explorer is MOUNTED, and suites open it with a CLICK (a toggle) — drive
+  `explorerClose` + `bottomDockActive` instead.
+- **Vite watches `tests/`** — deleting or editing any test file while a suite is in
+  flight takes the run down with `<vite-error-overlay> intercepts pointer events`. A
+  fresh worktree has NO `certs/` (gitignored): vite serves plain HTTP and every https
+  fetch reads 000, which looks exactly like a dead server — copy localhost.crt/.key
+  from another checkout. The session SCRATCHPAD is shared across parallel agents in one
+  session — use lane-unique filenames or one overwrites another mid-run.
+- **A mount SAVE is several awaits long, so an edit made DURING one is not in the bytes
+  being written** — clearing `dirty` unconditionally marks it saved. Volumes carry a
+  `rev`; the save captures it and only clears `dirty` when nothing moved underneath
+  (the held-body `lastWritten` rule, one store over).
 
 - **ConfirmModal RESTORES FOCUS AFTER the thing you open next mounts.** Chain "answer the
   app's one truly modal dialog, then open an input" and the input looks ready while every
@@ -4307,6 +4413,33 @@ override for e2e — never share 5173 (the user's main-checkout server).
   locked (replicate the INDEX per-item opt-in; ONE mesh with scenes as tags;
   scene-is-primary renaming), and the vocabulary settled: **session = the mesh, room =
   who is in a scene, PocketBase rooms stay DISCOVERY** — that naming blocks R4.
+- Status (2026-09-02): **R22 ROUND 13 SHIPPED — PRs #186 and #188 MERGED to release/next
+  @ e832670; baseline 362 errors / 47 warnings, release.yml gate ratcheted to match.**
+  #186 (76 commits) carried: mounted project volumes (the architecture entry above),
+  the storage breakdown modal, a project downloading as .tp (`exportProjectFromSession`)
+  and importing back as a Sessions entry (`importProjectAsSession`), Open-not-Load in the
+  Sessions manager (scene -> sceneOpenGuard + a "(from Sessions)" name marker; project ->
+  ONE confirm + `peers.leaveSession()` BEFORE the load + TRUE REPLACE: clearLibrary +
+  fresh manifest, the record read before the wipe, guardSceneReplace deliberately NOT run
+  on that path — see the guard-saves-into-wiped-store gotcha), the bin/log split with the
+  Bin|Log toggle, Ctrl+S saving the SCENE (versioned; Save-As via `armExplorerSceneSave`
+  when unnamed) with the always-drawn save icon, the Alt+E/A movement-guard fix, r11's
+  rounds 32-35, and the #183 merge (5 union conflicts; debugStores asserted 186/186/186).
+  #188 carried the on-device fix pack: dock tabs in DOCKING order (`noteDockOrder`;
+  undock forgets the slot, a plain close keeps it; shipped-family stored orders read as
+  unset), N answering for the Node editor TAB alone (the flow-family sweep in
+  panelToggles DELETED — no per-panel branches remain), the dock "+" DOCKING a floating
+  view (routes through `armDockMode`; the row reads "Dock X"), and a mounted SCENE
+  opening into the viewport (`openScenePayload`, one flow two callers; new suite
+  explorer-mount-open-peers). Suites this round: explorer-mounts.test + explorer-mounts-
+  edit (split — see the 8-minute-budget gotcha), explorer-storage, session-download-
+  formats, sessions-open + sessions-open-peers, explorer-mount-open-peers, plus dock-tab-
+  drag/flow-dock-toggle rewritten onto the new contracts. OWED, its own rounds: the .tp
+  load/save FREEZE (sync main-thread work — ONE idb connection per record at ~1.1s per
+  saved project in `loadSessions`, inline zip/hash; unblock first, then progress through
+  transferLedger), the app-wide flowbite frozen-disabled-paint survey, idb.js settling on
+  the transaction's onabort, and the dock-inset suite's logo-menu leak. Plan + full
+  as-built: cloud `plans-core/roadmap-22-round13-mounts-storage.md`.
 - Status (2026-08-25): **ROADMAP 22 — THE SHARED EXPLORER LIBRARY. R1/R2/R3/R7 + R8 and
   four review rounds EXECUTED on `feat/22-shared-library` (lane `theprototype-lane-snap`
   @5202), 10 commits off release/next @f46d335, NOT PUSHED.** svelte-check **385/62** at

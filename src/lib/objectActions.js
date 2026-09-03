@@ -541,6 +541,14 @@ registerHistoryKind('props', (entry, state) => {
 		if (peer)
 			peer.send({ type: 'objectParameters', parameter: 'camera', uuid: entry.uuid, camera: state.camera });
 	}
+	if ('device' in state) {
+		// 23-A3: a device's document rides the same kind; the audioDevices reconcile
+		// rebuilds/re-params the subgraph from the poke below
+		if (state.device) object.userData.device = state.device;
+		else delete object.userData.device;
+		if (peer)
+			peer.send({ type: 'objectParameters', parameter: 'device', uuid: entry.uuid, device: state.device });
+	}
 	if ('origin' in state) {
 		// 17-D: the per-object transform origin (pivot offset) is scene data, so
 		// moving it is undoable and replicated like any other userData write

@@ -59,6 +59,7 @@ import { applyRemoteScenePost, scenePostStates, sendScenePost } from '$lib/scene
 // 23-A2: the musical transport (a latest-wins singleton like scenephysics) and the
 // peer clock-offset estimate it carries alongside
 import { applyRemoteTransport, transportState, sendTransport, answerClockPing, applyClockPong, startClockSync } from '$lib/musicClock';
+import { applyRemoteDeviceNote } from '$lib/audioDevices';
 import { applyRemoteShaderGraph, applyRemoteShaderGraphDelete, applyRemoteShaderGraphs, sendShaderGraphs } from '$lib/shaderSync';
 import {
 	applyRemoteHud,
@@ -494,6 +495,10 @@ export class PeerConnection {
 					answerClockPing(data, conn);
 				} else if(data.type == 'clockpong') {
 					applyClockPong(data);
+				} else if(data.type == 'devicenote') {
+					// 23-A3: a note on a device object, stamped on the sender's wall clock and
+					// synthesized HERE (the deterministic-events model, golden rule 8)
+					applyRemoteDeviceNote(data);
 				} else if(data.type == 'shadergraph') {
 					applyRemoteShaderGraph(data);
 				} else if(data.type == 'shadergraphdelete') {

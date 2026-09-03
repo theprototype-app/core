@@ -10,6 +10,7 @@ import { physicsPeerDisconnected, physicsShapeChanged } from '$lib/physics'
 import { dropPeerCursor } from '$lib/nodesHandler'
 import { dropPeerQuality } from '$lib/networkQuality'
 import { dropPeerClock } from '$lib/musicClock'
+import { applyRemoteDevice } from '$lib/audioDevices'
 import { sessionHost, dropPeerJoined } from '$lib/connectionState'
 import { environment } from '$lib/environment'
 import { hasAnimatedImport, sendAnimatedImport, setAnimationState, dropAllAnimatedImports } from '$lib/animatedImports'
@@ -442,6 +443,10 @@ export async function objectParameters(data) {
             else delete mesh.userData.particles;
             objectsGroup.update((value) => value);
         }
+    } else if (data.parameter == 'device') {
+        // 23-A3: userData.device is a device object's whole configuration ({kind,
+        // params}); the runtime rebuilds its WebAudio subgraph from it. null = removed.
+        applyRemoteDevice(data);
     } else if (data.parameter == 'camera') {
         // 16-P5: userData.camera holds a camera OBJECT's lens + framing settings
         // (the marker is a normal mesh; the preview camera and the frustum viz are

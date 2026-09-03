@@ -504,5 +504,52 @@ h.run(async () => {
 		'the prompt dismissed itself after the save'
 	);
 
+
+	// ---- the prompt DISMISSES when the scene it describes is no longer open ----------
+	// REPORTED (release check): "even when I do open another scene this toast stays".
+	// Two leaks: onNextDirty's unsubscribe was never kept (every open stacked another
+	// armed one-shot), and a shown sticky toast had no watcher for its condition ENDING.
+	// This section drives the exact report: prompt up -> open another scene -> gone,
+	// and then proves the STALE ARM cannot fire either (an edit in the other scene
+	// raises nothing about the one that armed).
+	await E.page.evaluate(async (b64) => {
+		const bin = atob(b64);
+		const bytes = new Uint8Array(bin.length);
+		for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+		const file = new File([bytes], 'LooseScene.tpscene', { type: 'application/zip' });
+		await window.__stores.fileHandler.load(file);
+	}, looseB64);
+	await h.eventually(
+		() => currentLevelOf(E),
+		(at) => at?.name === 'LooseScene' && at?.unsaved === true,
+		'premise: the loose scene is open (unsaved) once more'
+	);
+	await E.page.waitForTimeout(1800);
+	await makeBox(E);
+	await h.eventually(
+		() => toastsOf(E),
+		(t) => t.some((x) => x.id === 'save-into-project'),
+		'premise: the prompt is up'
+	);
+	await E.page.evaluate((hash) => window.__stores.levels.travelToLevel(hash, 'Home'), homeHash);
+	await h.eventually(
+		() => currentLevelOf(E),
+		(at) => at?.name === 'Home',
+		'premise: another scene is open now'
+	);
+	await h.eventually(
+		() => toastsOf(E),
+		(t) => !t.some((x) => x.id === 'save-into-project'),
+		'the prompt DISMISSED itself - it describes the open scene, and that scene left'
+	);
+	// the stale-arm half: an edit here must not raise a prompt about LooseScene
+	await E.page.waitForTimeout(1800);
+	await makeBox(E);
+	await E.page.waitForTimeout(1200);
+	h.check(
+		!(await toastsOf(E)).some((x) => x.id === 'save-into-project'),
+		'an edit in the OTHER scene raises nothing - the armed one-shot did not outlive its scene'
+	);
+
 	await h.finish(browser);
 });

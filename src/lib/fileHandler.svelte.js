@@ -632,6 +632,15 @@ export async function importFile(file, name, ext, position, extras) {
  * Everything is a dynamic import on purpose: fileHandler already sits in the
  * history-import family (it imports history), and a static levels edge would pull
  * sessions into this module's static graph for a path only a file dialog reaches.
+ *
+ * R22 round 14 — AND THE NAME TRAVELS BARE, which is a decision and not an omission. The
+ * Sessions manager's twin (`markOpenedFromSessions`) appends " (from Sessions)" because
+ * the only name it has is a SNAPSHOT SLOT's label and there is no provenance field beside
+ * the identity chip. A .tpscene — off disk, or out of a mounted project — carries the
+ * scene's OWN name, and `currentLevel.name` is the manifest key `armSaveIntoProject` then
+ * saves under: decorating it would file the scene into the project as
+ * "Arena (from Yard)". A real name that saves correctly beats a hint about where the
+ * bytes were read from, which the Explorer is already showing.
  * @param {any} payload the session payload that just applied
  */
 async function markOpenedUnsaved(payload) {
@@ -644,6 +653,32 @@ async function markOpenedUnsaved(payload) {
 	await armSaveIntoProject(name);
 }
 
+/**
+ * R22 round 14 — OPEN A PARSED .tpscene PAYLOAD AS A LOOSE SCENE: apply it, and if the
+ * apply HAPPENED, mark the identity unsaved. This is the flow the `.tpscene` branch of
+ * `load()` has always run inline; it is exported because a second caller arrived that has
+ * to run the same one — a scene inside a MOUNTED project, whose bytes sit in another
+ * project's saved record rather than on a disk the file dialog can reach ("why cannot
+ * open a scene from mounted project?").
+ *
+ * The two callers differ ONLY in where the payload came from — `importSessionZip` for a
+ * file the user picked out of a dialog, `readSessionZip` for a volume's bytes — and
+ * everything after that is identical, which is exactly why it may not be copied: whether
+ * the load applied or became a proposal, and whether the scene is then named on screen,
+ * have to stay one decision.
+ * @param {any} payload a session payload (`readSessionZip` / `importSessionZip`)
+ * @returns {Promise<boolean>} did the load APPLY now (false = it became a peer proposal)
+ */
+export async function openScenePayload(payload) {
+	if (!payload) return false;
+	const { requestLoadPayload } = await import('./sessions');
+	const applied = await requestLoadPayload(payload);
+	// the unsaved marker only makes sense for a load that HAPPENED — with peers the load
+	// is a proposal, and marking a scene we may never load would lie
+	if (applied) await markOpenedUnsaved(payload);
+	return applied;
+}
+
 export async function load(file) {
 try {
 	// B3: .tpscene bundles restore assets + packs, then apply the session (the
@@ -651,13 +686,10 @@ try {
 	// fork 12: a .tpscene OPENED here becomes the CURRENT scene, UNSAVED — it is a
 	// loose file, not a member of the project, until the user saves it in.
 	if (file.name?.toLowerCase().endsWith('.tpscene')) {
-		const { importSessionZip, requestLoadSession } = await import('./sessions');
+		const { importSessionZip } = await import('./sessions');
 		const payload = await importSessionZip(await file.arrayBuffer());
 		if (!payload) return; // V4: user declined a newer-format confirm — silent
-		const applied = await requestLoadSession(payload.id);
-		// the unsaved marker only makes sense for a load that HAPPENED — with peers
-		// the load is a proposal, and marking a scene we may never load would lie
-		if (applied) await markOpenedUnsaved(payload);
+		await openScenePayload(payload);
 		return;
 	}
 	// 21-G8 fork 12: a .tp through the Sidebar's Load is OPEN — it REPLACES the

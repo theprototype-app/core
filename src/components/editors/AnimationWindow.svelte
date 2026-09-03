@@ -48,7 +48,7 @@
 	import { focusStack } from '$lib/windowFocus';
 	import { tabbable, resizeGroup, tabGroups } from '$lib/windowTabs';
 	import { clampWinSize, clampResize, anchorOf } from '$lib/windowSize';
-	import { setDockOccupant, dockHeight, visibleDockKey, dockMinimized, activateDock, dockModeArm } from '$lib/bottomDock';
+	import { setDockOccupant, dockHeight, visibleDockKey, dockMinimized, activateDock, dockModeArm, forgetDockTab } from '$lib/bottomDock';
 	import { bottomDockable } from '$lib/bottomDockDrop';
 
 	// live-follow the primary selection (keeps a truthy [] before the first select)
@@ -229,6 +229,7 @@
 		docked = v;
 		localStorage.setItem('animationDocked', String(v));
 		if (v) activateDock('animation');
+		else forgetDockTab('animation'); // an undock gives up its slot, so re-docking is a fresh add at the end of the strip
 	}
 
 	// W5: consume the shared dock-mode arm — the tab strip's right-click menu asks

@@ -16,8 +16,7 @@ import {
 	bottomDockActive,
 	dockOccupants,
 	visibleDockKey,
-	dockMinimized,
-	FLOW_FAMILY
+	dockMinimized
 } from './bottomDock';
 import { raiseWindow, isTopVisibleWindow } from './windowFocus';
 import { groupOfKey, activateTab } from './windowTabs';
@@ -33,11 +32,23 @@ import { revealWindow } from './dragWindow';
 //   2. OPEN, tab group   -> not the active tab? activate it and raise.
 //   3. OPEN, floating    -> already the top VISIBLE window? close it. Otherwise
 //                           raise it: a buried window is "called", not dismissed.
-//   4. OPEN, docked      -> the visible dock panel? hide it. Otherwise make it
+//   4. OPEN, docked      -> the visible dock TAB? close that tab. Otherwise make it
 //                           the visible dock tab.
 //
 // Only step 3's raise-before-close is new; everything else is the behaviour the
 // three old handlers already had, moved here so the keys inherit it.
+//
+// ONE KEY, ONE TAB. Step 4 used to be a per-panel exception for the Node editor: N
+// owned the whole docked FLOW FAMILY, so `isVisibleInDock('flow')` answered yes when
+// any of Flow Code / Animation / UV / Shader / HUD was showing and the hide closed
+// every one of them (snapshotted, to be restored by the next N). Reported as "N should
+// not close other tabs — for some reason only the Explorer stays", which is exactly
+// what a flow-family sweep leaves behind. The group gesture was written when the dock
+// held ONE panel at a time and a family member could only be reached by hiding its
+// siblings; the dock has been a tab strip since #183, and T is the gesture for the
+// strip as a whole. So the family case, its snapshot and the restore are gone: every
+// key answers for its OWN tab and nothing else, which is also what makes this a tree
+// with no per-panel branches left in it.
 //
 // Steps 2 and 4 can never both apply: a bottom-docked panel renders a DIFFERENT
 // markup branch with no floating window at all, so its `tabbable` action is
@@ -86,10 +97,6 @@ const PANELS = {
  *  offer one for a panel this tree has no entry for */
 export const TOGGLEABLE = Object.keys(PANELS);
 
-// remembers which flow-family views were open when the docked group was hidden
-/** @type {any} */
-let flowDockSnapshot = null;
-
 /** docked AND open (that is what dockOccupants.present means) @param {string} key */
 function isDockedPresent(key) {
 	return !!get(dockOccupants)[key]?.present;
@@ -109,51 +116,11 @@ function isVisibleInDock(cfg) {
 	// no here sends them to `activateDock`, which un-minimizes, so O / N / the toolbar
 	// buttons are the restore affordance a minimized dock has no strip to offer.
 	if (get(dockMinimized)) return false;
-	const visible = get(visibleDockKey) ?? '';
-	// the Node editor button owns the whole docked flow GROUP, so any flow-family
-	// tab being visible counts as "the Node editor's dock is on screen"
-	return cfg.key === 'flow' ? FLOW_FAMILY.includes(visible) : visible === cfg.key;
-}
-
-/** Step 1 for the Node editor: bring back the docked group we hid. @returns {boolean} did it restore */
-function restoreFlowSnapshot() {
-	const snap = flowDockSnapshot;
-	if (!snap || !(snap.flow || snap.flowcode || snap.animation || snap.uv || snap.shader || snap.hud)) return false;
-	if (snap.flow) flowGraphClose.set(false);
-	if (snap.flowcode) flowCodeClose.set(false);
-	if (snap.animation) animationClose.set(false);
-	if (snap.uv) uvEditorClose.set(false);
-	if (snap.shader) shaderEditorClose.set(false);
-	if (snap.hud) hudEditorClose.set(false);
-	flowDockSnapshot = null;
-	activateDock('flow');
-	return true;
-}
-
-/** Step 4 for the Node editor: hide only the tabs that are actually DOCKED
- * (leave undocked/floating Flow Code / Animation windows open). */
-function hideDockedFlowFamily() {
-	const occupants = get(dockOccupants);
-	flowDockSnapshot = {
-		flow: true,
-		flowcode: !!occupants.flowcode?.present,
-		animation: !!occupants.animation?.present,
-		uv: !!occupants.uv?.present,
-		shader: !!occupants.shader?.present,
-		// A4: without this line the HUD tab never comes back after play mode
-		hud: !!occupants.hud?.present
-	};
-	flowGraphClose.set(true);
-	if (flowDockSnapshot.flowcode) flowCodeClose.set(true);
-	if (flowDockSnapshot.animation) animationClose.set(true);
-	if (flowDockSnapshot.uv) uvEditorClose.set(true);
-	if (flowDockSnapshot.shader) shaderEditorClose.set(true);
-	if (flowDockSnapshot.hud) hudEditorClose.set(true);
+	return get(visibleDockKey) === cfg.key;
 }
 
 /** Step 1: open a closed panel in the mode it was last in. @param {PanelConfig} cfg */
 function openInLastMode(cfg) {
-	if (cfg.key === 'flow' && restoreFlowSnapshot()) return;
 	cfg.openStore.set(false);
 	if (opensDocked(cfg)) {
 		activateDock(cfg.key); // docked -> show as the dock tab
@@ -196,13 +163,14 @@ export function togglePanel(key) {
 		return;
 	}
 
-	// 4. open + docked
+	// 4. open + docked. Closing this ONE tab; every other tab in the strip stays open
+	// and `visibleDockKey`'s fallback promotes whichever is next, so the dock only goes
+	// away when this was its last tab.
 	if (!isVisibleInDock(cfg)) {
 		activateDock(key); // docked but hidden (another tab covering) -> bring it back
 		return;
 	}
-	if (cfg.key === 'flow') hideDockedFlowFamily();
-	else cfg.openStore.set(true);
+	cfg.openStore.set(true);
 }
 
 /**

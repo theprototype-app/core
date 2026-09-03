@@ -210,7 +210,7 @@
 		rememberThumb,
 		openPackLoading
 	} from '$lib/packs';
-	import { importFile, exportObjectsAsGltf } from '$lib/fileHandler.svelte';
+	import { importFile, exportObjectsAsGltf, openScenePayload } from '$lib/fileHandler.svelte';
 	// 21-H2: the Explorer is the prefab HOME (the Library modal is gone), so it owns
 	// their whole CRUD — add, export both ways, update, rename, properties, delete.
 	import {
@@ -238,7 +238,7 @@
 	import { sceneAssets } from '$lib/sceneAssets';
 	import { setNodeData } from '$lib/nodesHandler';
 	import { findNodeAnyGraph } from '../../stores/flowStore';
-	import { bottomDockActive, visibleDockKey, dockMinimized, setDockOccupant, dockHeight, dockModeArm } from '$lib/bottomDock';
+	import { bottomDockActive, visibleDockKey, dockMinimized, setDockOccupant, dockHeight, dockModeArm, forgetDockTab } from '$lib/bottomDock';
 	import { bottomDockable } from '$lib/bottomDockDrop';
 	import { dragWindow } from '$lib/dragWindow';
 	import { focusStack } from '$lib/windowFocus';
@@ -310,6 +310,7 @@
 		docked = v;
 		localStorage.setItem('explorerDocked', String(v));
 		if (v) bottomDockActive.set('explorer'); // re-docking makes it the visible panel
+		else forgetDockTab('explorer'); // an undock gives up its slot, so re-docking is a fresh add at the end of the strip
 	}
 
 	// 4b: CONSUME the dock arm. The Controls toolbar's Explorer menu offers "Open as
@@ -3546,7 +3547,18 @@
 				x: e.clientX,
 				y: e.clientY,
 				items: [
-					{ label: 'Open', icon: 'external-link', action: () => void openItem(item) },
+					// R22 round 14: a SCENE says what opening it does, because what it does is
+					// replace the world — the library card's entry has worn that label since
+					// 21-F4 and a mounted scene now takes the identical route.
+					item.kind === 'scene'
+						? {
+								label: 'Open here (this screen)',
+								icon: 'external-link',
+								tooltip:
+									'Load this scene into the viewport. It stays outside your Library until you save it in.',
+								action: () => void openItem(item)
+							}
+						: { label: 'Open', icon: 'external-link', action: () => void openItem(item) },
 					{
 						label: 'Copy to Library',
 						icon: 'download',
@@ -4952,15 +4964,29 @@
 	 * payload (or, once copied in, from the mount's own buffer) — never from
 	 * `explorer:blob:<id>`, which holds nothing for it.
 	 *
-	 * Image and text open here; audio and 3D are DISABLED WITH THE REASON rather than
-	 * silently doing nothing, because their viewers resolve their own bytes by library id
-	 * (`AudioPlayer`, `ModelPreview`) and a mounted file has no library id to resolve.
-	 * Copying it into the Library is one drag away and makes every viewer work.
+	 * Image, text and — since R22 round 14 — SCENES open here; audio and 3D are DISABLED
+	 * WITH THE REASON rather than silently doing nothing, because their viewers resolve
+	 * their own bytes by library id (`AudioPlayer`, `ModelPreview`) and a mounted file has
+	 * no library id to resolve. Copying it into the Library is one drag away and makes
+	 * every viewer work.
 	 */
 	async function openVolumeItem(item: any) {
 		const blob = await volumeBlob(item.volumeId, item.id);
 		if (!blob) {
 			showToast(item.name + ' is not in the saved project any more');
+			return;
+		}
+		// R22 round 14 (user): "why cannot open a scene from mounted project? ... wouldn't
+		// it be simple to load this scene into viewport in same way as untitled scene opens
+		// ... its not stored in library, but can be saved. IF its simple to implement it
+		// also should ask to save current changes in viewport in case they are not saved."
+		//
+		// It IS simple, because the machinery is the LOOSE-FILE path a .tpscene dragged in
+		// off disk already takes: guard, parse, apply, and mark the identity unsaved. The
+		// refusal below was the leftover of the read-only round, and it was refusing the one
+		// kind whose viewer is the whole app.
+		if (item.kind === 'scene') {
+			await openVolumeScene(item, blob);
 			return;
 		}
 		if (item.kind === 'image') {
@@ -4986,6 +5012,50 @@
 		showToast(
 			'Copy ' + item.name + ' into your Library to open it (a ' + item.kind + ' viewer reads it from there)'
 		);
+	}
+	/**
+	 * R22 round 14 — A SCENE INSIDE A MOUNTED PROJECT OPENS INTO THE VIEWPORT.
+	 *
+	 * Three deliberate differences from `openSceneItem`, the library card's opener, and
+	 * every one of them follows from the same fact: a mounted file's bytes exist ONLY on
+	 * this machine (the mount's own header: "a mount is a view of a file on THIS machine;
+	 * a peer has no access to it").
+	 *
+	 *  · NOT `travelToLevel`. Travel is addressed by content HASH and resolves through the
+	 *    library (pulling from a peer when the bytes are missing) — a volume row is in
+	 *    neither, so there is nothing for it to resolve. The bytes come from `volumeBlob`
+	 *    and are parsed here.
+	 *  · NOT a local, silent apply. Travel replicates through the travel NODE's pulse, and
+	 *    peers re-read the file for themselves; they CANNOT do that for a mounted file, so
+	 *    the ordinary session apply — which sends the objects — is the only shape in which
+	 *    a peer can follow. That is `openScenePayload`, the same path a .tpscene opened off
+	 *    disk takes, proposal and all.
+	 *  · NO privacy prompt. `askScenePrivacy` asks whether a scene the session has never
+	 *    heard of should be published to it; this one is marked `unsaved`, so
+	 *    `publishCurrentIfChanged` refuses on its own and there is nothing to consent to —
+	 *    which is why the disk-file route does not ask either.
+	 *
+	 * The guard runs AFTER the bytes are in hand (`openVolumeItem` resolved them), so a
+	 * file whose saved record has gone says so instead of asking a question about work it
+	 * was never going to replace.
+	 */
+	async function openVolumeScene(item: any, blob: Blob) {
+		if (!(await guardSceneReplace(item.name))) return;
+		const { readSessionZip } = await import('$lib/sessions');
+		let payload: any = null;
+		try {
+			// refuses a NEWER format with its own toast and answers null — the same read
+			// travel performs, and the same reason it is `readSessionZip` and not
+			// `importSessionZip`: opening a file must not mint a saved entry beside it
+			payload = await readSessionZip(await blob.arrayBuffer());
+		} catch {
+			payload = null;
+		}
+		if (!payload) {
+			showToast('"' + item.name + '" could not be read as a scene');
+			return;
+		}
+		await openScenePayload(payload);
 	}
 	/** P3b: editing a mounted text file writes the volume's BUFFER — its hash moves with
 	 *  its bytes, because a volume is hash-addressed inside itself exactly as the library

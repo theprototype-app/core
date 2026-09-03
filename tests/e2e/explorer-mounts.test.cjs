@@ -1030,5 +1030,317 @@ h.run(async () => {
 	});
 	await page.waitForTimeout(500);
 
+	// =====================================================================
+	// 21. R22 round 14 — A SCENE IN A MOUNT OPENS INTO THE VIEWPORT
+	// =====================================================================
+	//   "why cannot open a scene from mounted project? Receiving this toast 'Copy N into
+	//    your Library to open it'... wouldn't it be simple to load this scene into
+	//    viewport in same way as untitled scene opens... and its not stored in library,
+	//    but can be saved. IF its simple to implement it also should ask to save current
+	//    changes in viewport in case they are not saved"
+	//
+	// The whole of this section rests on ONE premise it establishes first and never lets
+	// go of: the scene it opens is in the volume and NOT in the library. That is what
+	// makes the reading meaningful — the library card's opener (`travelToLevel`) is
+	// addressed by content hash and resolves through `explorerItems`, so if the file were
+	// in there as well, every check below would pass with the feature ripped out.
+	//
+	// It runs LAST, and under its own project and scene names, because it replaces the
+	// world several times over and moves `currentLevel`: the documented rule that a
+	// section which saves or adds objects perturbs its neighbours.
+	const worldNames = (p) =>
+		p.page.evaluate(() => {
+			let g;
+			window.__stores.objectsGroup.subscribe((x) => (g = x))();
+			return (g?.children ?? []).map((c) => c.name || c.type).sort();
+		});
+	const at = (p) =>
+		p.page.evaluate(() => {
+			let v;
+			window.__stores.levels.currentLevel.subscribe((x) => (v = x))();
+			return v;
+		});
+	const dialogOf = (p) =>
+		p.page.evaluate(() => {
+			let d;
+			window.__stores.confirmDialog.confirmDialog.subscribe((x) => (d = x))();
+			return d && { title: d.title, choices: (d.choices ?? []).map((c) => c.label) };
+		});
+	const answerDialog = (p, value) =>
+		p.page.evaluate((v) => window.__stores.confirmDialog.resolveConfirm(v), value);
+	const volCard = (p, name) =>
+		p.page.locator('.ex-cards .explorer-card').filter({ hasText: name }).first();
+
+	// a clean slate, then a real scene worth opening and one file of another kind beside it
+	await page.evaluate(async () => {
+		const s = window.__stores;
+		let g;
+		s.objectsGroup.subscribe((x) => (g = x))();
+		const uuids = (g?.children ?? []).map((c) => c.uuid);
+		if (uuids.length) s.objectActions.deleteObjectsByUuid(uuids);
+		await s.explorer.clearLibrary();
+		s.projectManifest.manifestRestore({ scenes: {}, assets: [], changedAt: 1 }, false);
+		s.levels.currentLevel.set(null);
+	});
+	await page.waitForTimeout(700);
+	const vaultNames = await page.evaluate(async () => {
+		const s = window.__stores;
+		s.commandsHandler.sceneCommand('/create box');
+		await new Promise((r) => setTimeout(r, 1300));
+		s.commandsHandler.sceneCommand('/create sphere');
+		await new Promise((r) => setTimeout(r, 1300));
+		s.objectActions.deselectObject();
+		const enc = (t) => new TextEncoder().encode(t).buffer;
+		await s.explorer.addItemFromBytes(enc('ID3'.repeat(120)), 'chime.mp3', null);
+		await s.levels.saveSceneAsLevel('Vault', null);
+		let g;
+		s.objectsGroup.subscribe((x) => (g = x))();
+		return (g?.children ?? []).map((c) => c.name || c.type).sort();
+	});
+	await page.waitForTimeout(900);
+	h.check(vaultNames.length === 2, `premise: "Vault" is a real scene of two objects (${vaultNames.join(', ')})`);
+	// "Save into session" COPIES the library into the record and leaves it standing (a
+	// measured correction to this section's first draft, which assumed the save emptied
+	// it) — so the live copy is cleared here by hand. That is what leaves the mount
+	// holding the only copy of the scene, which the premise below turns on.
+	await saveProject(A, 'Cellar');
+	await page.evaluate(() => window.__stores.explorer.clearLibrary());
+	await page.waitForTimeout(700);
+	await mountThroughUi(A, 'Cellar');
+	const cellar = (await vols(A)).find((v) => v.name === 'Cellar');
+	h.check(
+		!!cellar && cellar.items.includes('Vault.tpscene') && cellar.items.includes('chime.mp3'),
+		`premise: the mount holds the scene and a file of another kind (${cellar && cellar.items.join(', ')})`
+	);
+	const vaultRow = await page.evaluate((volId) => {
+		const rows = window.__stores.mountedVolumes.volumeItems(volId);
+		const row = rows.find((r) => r.name === 'Vault.tpscene');
+		return row && { id: row.id, hash: row.hash, kind: row.kind };
+	}, cellar.id);
+	const audioKind = await page.evaluate((volId) => {
+		const row = window.__stores.mountedVolumes.volumeItems(volId).find((r) => r.name === 'chime.mp3');
+		return row && row.kind;
+	}, cellar.id);
+	h.check(vaultRow?.kind === 'scene', `premise: the row's kind really is 'scene' (${vaultRow?.kind})`);
+	h.check(audioKind === 'audio', `premise: and the other file is not (${audioKind})`);
+	// THE PREMISE THE WHOLE SECTION STANDS ON
+	const inLibrary = (p, hash) =>
+		p.page.evaluate((h2) => {
+			let items;
+			window.__stores.explorer.explorerItems.subscribe((x) => (items = x))();
+			return (items ?? []).some((i) => i.hash === h2) || !!window.__stores.explorer.itemByHash(h2);
+		}, hash);
+	h.check(
+		!(await inLibrary(A, vaultRow.hash)),
+		'premise: the scene is in the MOUNT and not in the library — so nothing here can be travel-by-hash in disguise'
+	);
+
+	await page.evaluate((key) => window.__stores.explorer.activeFolder.set(key), 'vol:' + cellar.id);
+	await page.waitForTimeout(700);
+
+	// --- it opens ---------------------------------------------------------------------
+	// nothing on screen and no identity, so `sceneAtRisk` is false and the guard steps
+	// aside: this measures the OPEN on its own, before the guard gets its own checks.
+	await page.evaluate(async () => {
+		const s = window.__stores;
+		let g;
+		s.objectsGroup.subscribe((x) => (g = x))();
+		const uuids = (g?.children ?? []).map((c) => c.uuid);
+		if (uuids.length) s.objectActions.deleteObjectsByUuid(uuids);
+		s.levels.currentLevel.set(null);
+	});
+	await page.waitForTimeout(700);
+	h.check(
+		(await worldNames(A)).length === 0 && (await at(A)) === null,
+		'premise: an empty world with no identity — nothing for the guard to protect'
+	);
+	await clearToasts(A);
+	const libBeforeOpen = await librarySnapshot(A);
+	await volCard(A, 'Vault.tpscene').dblclick();
+	await h.eventually(
+		() => worldNames(A),
+		(n) => n.length === vaultNames.length,
+		'THE FIX: a scene in a mounted project opens into the viewport',
+		25000
+	);
+	h.check(
+		JSON.stringify(await worldNames(A)) === JSON.stringify(vaultNames),
+		`…carrying the objects the file was saved with (${(await worldNames(A)).join(', ')})`
+	);
+	// the objects land while `applySession` is still running, so the identity is written a
+	// beat AFTER the world is full — waited for rather than read at the first sight of a
+	// box (which is what the first draft did, and it read `undefined` every time)
+	await h.eventually(
+		() => at(A),
+		(v) => !!v,
+		'…and the scene gets an identity once the apply finishes',
+		20000
+	);
+	const opened = await at(A);
+	h.check(
+		opened?.name === 'Vault',
+		`the identity names the SCENE, not the file — and with no "(from …)" decoration, because that name is the manifest key a later save files under (${opened?.name})`
+	);
+	h.check(
+		opened?.hash === '' && opened?.unsaved === true,
+		`…and it reads UNSAVED with no hash: on screen, not a member of the project (hash="${opened?.hash}", unsaved=${opened?.unsaved})`
+	);
+	h.check(
+		!(await inLibrary(A, vaultRow.hash)) && (await librarySnapshot(A)) === libBeforeOpen,
+		'…and opening copied NOTHING into the library to make it work'
+	);
+	h.check(
+		!(await toasts(A)).some((t) => /Copy .* into your Library/.test(t)),
+		'the read-only refusal is gone for a scene'
+	);
+	const cellarAfter = (await vols(A)).find((v) => v.id === cellar.id);
+	h.check(
+		!!cellarAfter && !cellarAfter.dirty && cellarAfter.items.length === cellar.items.length,
+		'…and the mount itself is untouched — reading a file out of it is not an edit'
+	);
+
+	// --- the user's second ask: it asks about unsaved work first -----------------------
+	await page.evaluate(() => window.__stores.commandsHandler.sceneCommand('/create cone'));
+	await page.waitForTimeout(1400);
+	await page.evaluate(() => window.__stores.objectActions.deselectObject());
+	await page.waitForTimeout(300);
+	const beforeGuard = await worldNames(A);
+	const identBefore = JSON.stringify(await at(A));
+	h.check(beforeGuard.length === vaultNames.length + 1, `premise: real unsaved work on screen (${beforeGuard.join(', ')})`);
+	await volCard(A, 'Vault.tpscene').dblclick();
+	await h.eventually(
+		() => dialogOf(A),
+		(d) => !!d && /Vault\.tpscene/.test(d.title ?? ''),
+		'THE SECOND ASK: opening it asks about the unsaved scene on screen first',
+		15000
+	);
+	const guardDialog = await dialogOf(A);
+	h.check(
+		JSON.stringify(guardDialog?.choices) === JSON.stringify(['Save and open', 'Open anyway']),
+		`…with the same two-way every other scene open gives (${JSON.stringify(guardDialog?.choices)})`
+	);
+	await answerDialog(A, false);
+	await page.waitForTimeout(1200);
+	h.check(
+		JSON.stringify(await worldNames(A)) === JSON.stringify(beforeGuard),
+		'Cancel leaves the world exactly as it was'
+	);
+	h.check(JSON.stringify(await at(A)) === identBefore, '…and the scene identity with it');
+	const cellarCancel = (await vols(A)).find((v) => v.id === cellar.id);
+	h.check(
+		!!cellarCancel && !cellarCancel.dirty && cellarCancel.items.length === cellar.items.length,
+		'…and the mount, which a cancelled open must not have touched either'
+	);
+
+	await volCard(A, 'Vault.tpscene').dblclick();
+	await h.eventually(() => dialogOf(A), (d) => !!d, 'premise: it asks again', 15000);
+	await answerDialog(A, 'open');
+	await h.eventually(
+		() => worldNames(A),
+		(n) => JSON.stringify(n) === JSON.stringify(vaultNames),
+		'"Open anyway" opens it, and the work it warned about is gone',
+		25000
+	);
+
+	// --- ...but it CAN be saved -------------------------------------------------------
+	// the loose-scene treatment in full: the offer is armed 1.5s after the load and fires
+	// on the FIRST real edit, which is how a user meets it.
+	await page.waitForTimeout(2200);
+	await clearToasts(A);
+	await page.evaluate(() => window.__stores.commandsHandler.sceneCommand('/create cylinder'));
+	await h.eventually(
+		() => toasts(A),
+		(t) => t.some((x) => /not part of your project yet/.test(x)),
+		'a first edit offers to save it into the project — the same treatment a .tpscene opened off disk gets',
+		20000
+	);
+	const saved = await page.evaluate(async () => {
+		const s = window.__stores;
+		let now;
+		s.levels.currentLevel.subscribe((x) => (now = x))();
+		// exactly what the toast's own button calls
+		await s.levels.saveSceneAsLevel(now.name, null);
+		let items;
+		s.explorer.explorerItems.subscribe((x) => (items = x))();
+		let after;
+		s.levels.currentLevel.subscribe((x) => (after = x))();
+		let man;
+		s.projectManifest.projectManifest.subscribe((x) => (man = x))();
+		return {
+			names: (items ?? []).map((i) => i.name),
+			after,
+			scenes: Object.keys(man?.scenes ?? {})
+		};
+	});
+	h.check(
+		saved.names.includes('Vault.tpscene'),
+		`saving it afterwards writes a real library file (${saved.names.join(', ')})`
+	);
+	h.check(
+		!saved.after?.unsaved && !!saved.after?.hash,
+		`…and the identity stops being unsaved, with the bytes it was saved as (unsaved=${saved.after?.unsaved})`
+	);
+	h.check(
+		saved.scenes.includes('Vault'),
+		`…filed in the project under the scene's own name, undecorated (${saved.scenes.join(', ')})`
+	);
+
+	// --- and every OTHER kind keeps the toast ------------------------------------------
+	// PAIRED WITH A PRESENCE CHECK: an absence check on its own passes against a row that
+	// never rendered, which is the one way this could read green while the grid is empty.
+	await page.evaluate((key) => window.__stores.explorer.activeFolder.set(key), 'vol:' + cellar.id);
+	await page.waitForTimeout(700);
+	h.check(
+		(await volCard(A, 'chime.mp3').count()) === 1,
+		'premise: the audio row really is on screen in the mount'
+	);
+	await clearToasts(A);
+	const worldBeforeAudio = await worldNames(A);
+	const identBeforeAudio = JSON.stringify(await at(A));
+	await volCard(A, 'chime.mp3').dblclick();
+	// `openVolumeItem` resolves the bytes FIRST — `volumeBlob` reads the whole saved
+	// project out of idb, blobs included — so the refusal arrives well after any fixed
+	// sleep would have read an empty toast stack (measured: it did)
+	await h.eventually(
+		() => toasts(A),
+		(t) => t.some((x) => /Copy chime\.mp3 into your Library to open it/.test(x)),
+		'a NON-scene kind keeps the copy-into-library refusal, wording unchanged',
+		20000
+	);
+	const audioToasts = await toasts(A);
+	h.check(
+		audioToasts.some((t) => /a audio viewer reads it from there/.test(t)),
+		`…naming the viewer that does read from there (${audioToasts.join(' | ')})`
+	);
+	h.check(
+		JSON.stringify(await worldNames(A)) === JSON.stringify(worldBeforeAudio) &&
+			JSON.stringify(await at(A)) === identBeforeAudio,
+		'…and it replaces nothing — only a scene opens a world'
+	);
+	// the menu says so too: the label a scene wears is the library card's own
+	await volCard(A, 'Vault.tpscene').click({ button: 'right' });
+	await page.waitForTimeout(600);
+	const sceneMenu = await menuRows(A);
+	await closeMenu(page);
+	h.check(
+		sceneMenu.some((r) => /Open here \(this screen\)/.test(r)),
+		`a mounted scene's menu says what opening it does (${sceneMenu.join(' | ')})`
+	);
+	await volCard(A, 'chime.mp3').click({ button: 'right' });
+	await page.waitForTimeout(600);
+	const audioMenu = await menuRows(A);
+	await closeMenu(page);
+	h.check(
+		audioMenu.includes('Open') && !audioMenu.some((r) => /Open here/.test(r)),
+		`…and every other kind keeps the plain one (${audioMenu.join(' | ')})`
+	);
+
+	await page.evaluate(async () => {
+		let mv;
+		window.__stores.mountedVolumes.mountedVolumes.subscribe((x) => (mv = x))();
+		for (const v of mv) await window.__stores.mountedVolumes.unmountVolume(v.id);
+	});
+	await page.waitForTimeout(400);
+
 	await h.finish(browser);
 });

@@ -1393,6 +1393,26 @@ let pendingProposal = null;
 export async function requestLoadSession(id) {
 	const payload = await getSession(id);
 	if (!payload) return false;
+	return requestLoadPayload(payload);
+}
+
+/**
+ * R22 round 14 — the same request, for a caller that already HOLDS the payload and has no
+ * saved slot to read it out of. A scene inside a MOUNTED project is exactly that: its
+ * bytes live in another project's saved record, so `readSessionZip` hands the payload
+ * straight over and there is no id `getSession` could resolve.
+ *
+ * The split is a split and nothing more — `requestLoadSession` is now this function with
+ * an idb read in front of it, so the solo apply, the room-scoped proposal and the
+ * did-it-apply verdict are ONE copy shared by every route into a scene replace. Minting a
+ * session slot just to reach this code would have been the alternative, and it would put
+ * a saved entry the user never asked for in the Sessions manager on every open.
+ * @param {any} payload
+ * @returns {Promise<boolean>} true when the load APPLIED NOW, false when it became a
+ *   proposal (or there was nothing to load)
+ */
+export async function requestLoadPayload(payload) {
+	if (!payload) return false;
 	/** @type {any} */
 	const peer = get(peers);
 	let connected = Object.keys(peer?.connections ?? {});

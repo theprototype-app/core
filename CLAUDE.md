@@ -251,6 +251,90 @@ loadable play content. Everything a user does must be visible to connected peers
   storing the default, so a later default change still reaches it), and the header menu
   grows "Reset widths and order" only when there is something to reset.
   Plan: cloud `plans-core/roadmap-22-shared-library-sessions.md` section 10.
+- **R22 ROUND 36 — DELETED KEEPS ITS STRUCTURE** (`sharedLibrary.js` bin section +
+  `explorerView.js` + `Explorer.svelte`'s bin; plan + as-built: cloud
+  `plans-core/pending/22-deleted-folders.md`). THE FINDING: `explorer.deleteFolder` DESTROYED
+  locally and wrote NO tombstone and NO log row, so a peer on `shareNewFiles: always` stripped
+  the departed rows to `wasShared`, claimed them as `mine`, republished — and the deleter
+  adopted its own folder back and auto-downloaded its own files ("deleting a folder recreates
+  it"). Delete now goes through ONE path and it is the bin's: `deleteItemsToBin` /
+  `deleteFolderToBin` write a log ROW per file AND per folder, the TOMBSTONE, and the APPLIED
+  mark, in one publish. `explorer.deleteFolder` (the destroyer) survives for `clearLibrary`-
+  class callers only; `removeFolderRecords` is the records-only half a bin move and a peer's
+  applier need.
+  · THE LOG GREW TWO FIELDS AND ONE ROW KIND, nothing else on the wire: every row carries
+  `folderId` (its parent AT DELETION TIME; absent = an old row) and `path` (ancestor names,
+  a DISPLAY FALLBACK for a folder gone from both the library and the log — the thumbnail's
+  argument); a FOLDER ROW is `hash: 'folder:' + id, kind: 'folder'` (the `'prefab:'`
+  precedent) whose `folderId` is its parent. Same key, same cap, same latest-wins array.
+  · THE BIN IS A TREE (`buildDeletedTree`, PURE, takes `$explorerFolders` as an argument for
+  the get()-registers-nothing rule): a node is a DELETED FOLDER (a row — restorable, may be
+  empty) or a GHOST (still in the Library, but deleted rows point at it — somebody walked in
+  and deleted the contents; a place, not a thing to restore). Resolution log row → live
+  folder → unresolvable; an unresolvable ancestor ends the chain at the root. `activeFolder`
+  walks INTO it (`'deleted:<id>'`), cards are `deletedfolder:<id>`; `'deletedlog'` is an
+  ALIAS now (turns `explorerBinShowSpent` on, lands in `'deleted'`) — round 13's "the log is
+  a place" ruling reversed, because a checked menu entry + an icon button IS a view flag and
+  a navigable bin would otherwise need a parallel `deletedlog:<id>` namespace. Two LOCAL
+  prefs: `explorerBinLayout` (tree | plain) and `explorerBinShowSpent`; the Bin|Log strip
+  (which cost a row of grid height) is gone, replaced by `#deleted-log-toggle` at the right
+  end of the breadcrumb plus the same toggle as a checked menu entry, so the breadcrumb being
+  hideable hides no way in. `DELETED_COLUMNS` gained `location`, and `explorer:columnsSeen`
+  is what finally makes "a column added later shows by default" TRUE (visible-keys alone
+  cannot tell "added later" from "hidden on purpose").
+  · RESTORE PUTS THINGS BACK WHERE THEY WERE, recreating the way there (`ensureRestoreTarget`):
+  live folder → use it; else the log's folder rows are recreated upward under the SAME ids
+  (network identity, so every peer's `folderId` resolves with no remapping), `mine` unless
+  `localOnly`, their rows consumed, tombstones lifted; else the root. A `localOnly` row
+  restores LOCAL (it used to be marked `mine` — restoring a private deletion SHARED it).
+  `restoreDeletedFolder` takes the node, its folder rows and every HELD item under it; spent
+  rows stay in the log pointing at the now-live folders (they show under ghosts).
+  `purgeDeletedFolder` reclaims bytes under a node and drops only folder rows with no item
+  rows at all — a folder that held something keeps its row so its files have somewhere to be
+  listed. `partitionDeleted`: a folder row is in the BIN when a held item is under it OR it
+  has no item rows at all; without the second clause the default empty-on-load left a bin of
+  empty folders every start.
+  · THE PEER SIDE, two rules in `applySharedIndex`: (1b) a LIVE row for a hash we hold HIDDEN
+  with `share: 'no'` and its deletion in `appliedDeletes` is a RESTORE — un-hide it, then the
+  ordinary adoption ("restored files do not appear for peers": step 2 found the hidden copy
+  and never un-hid it, and its log row was gone, so it was invisible everywhere); the
+  three-way condition keeps a hidden old scene version (21-G7) from surfacing because a peer
+  shared the same bytes. (2) folder rows are applied AFTER the item rows of the same document
+  (`appliedDeletes` keyed `'folder:'+id`): nothing visible left in the subtree → the folder
+  RECORDS go (no blob touched, hidden items keep their `folderId`); something left (a local
+  file the deleter could not see) → the folder STAYS marked `share: 'no', wasShared: true`,
+  which the `always` sweep skips and `projection()`'s ancestor cascade STOPS AT (carrying it
+  as an ancestor would republish it with a fresh stamp that beats the tombstone — the
+  resurrection this batch exists to stop). `shareFolder` and a restore into it lift it.
+  · TWO LATENT BUGS FOUND ON THE WAY: `patchRecord` writes `explorerItems` ONLY, so the
+  shipped hide-then-patch order in `deleteSharedItem` and the applier was a silent no-op —
+  every deleted copy sat on the hidden shelf still marked `peer` (the projection carried its
+  row forward verbatim). Patch first, then hide. And `deleteSharedItem` now `noteApplied`s
+  its own hash instead of waiting for a sweep to notice "nothing here to hide".
+  · WORDING: the spent-row label "Nobody here holds the bytes" read as a fact about the
+  session; the record is THIS machine's (rows whose bytes were reclaimed HERE, unknowable for
+  a peer) so it is "Cleaned up on this device". The share-ask box "Do this for new files from
+  now on" under-described `always` (it reaches every file still local too) → "Apply to all my
+  files, now and from now on"; behaviour unchanged by ruling. The private-scene Users row
+  drops its permanently-grey Watch — 21-G5's disabled-with-the-reason is for a control that
+  will work again; this one never can until they share, and Request access beside it is how
+  you ask.
+  · RESTORE BY DRAG: a bin item or a real deleted folder node dropped on a Library folder
+  card, a tree folder row or the Library root restores it THERE (`restoreDeletedItem(hash,
+  {into})` / `restoreDeletedFolder(id, {into})` — the gesture is the answer to the question
+  Restore would otherwise decide); a ghost node is not draggable. "Plain list without
+  folders" is a checked toggle beside "Show cleaned-up files" (off = the tree).
+  · `sceneNameShared` (projectManifest) now also reads the SHARED INDEX: a `.tpscene` that
+  rode `manifest.items` (shareNewFiles `always`, a hand share, `sendAsset`) is a name every
+  peer already holds, so opening it must not offer "Edit privately" — the reported "files
+  were shared to peers and appeared in their Library, but opening still shows Edit
+  privately". Read off the local document so the leaf grows no Explorer edge.
+  · Suite `deleted-folders` (two peers) measures the COUNTERFACTUAL: with `always` armed on
+  the peer, 3.5 s after the folder delete the deleter has no folder, no visible file, an
+  empty index and nothing being pulled. KNOWN AND LEFT: `localOnly` rows travel in
+  `manifest.deleted` like every row (a local file's NAME reaches peers on deletion, since
+  round 7 — a private log would strand this machine's bin when a peer's document wins), and
+  hidden old versions of a deleted-for-everyone scene stay on the shelf indefinitely.
 - `src/lib/filePreview.js` + `components/editors/FilePreviewWindow.svelte` +
   `components/editors/AudioPlayer.svelte` (R22 round 11) — THE PREVIEW WINDOW STOPS BEING
   AN IMAGE VIEWER. Image, audio, 3D or a folder, with arrows that walk the folder the
@@ -4413,6 +4497,31 @@ override for e2e — never share 5173 (the user's main-checkout server).
   locked (replicate the INDEX per-item opt-in; ONE mesh with scenes as tags;
   scene-is-primary renaming), and the vocabulary settled: **session = the mesh, room =
   who is in a scene, PocketBase rooms stay DISCOVERY** — that naming blocks R4.
+- Status (2026-09-03): **R22 ROUND 36 — DELETED KEEPS ITS STRUCTURE, on lane `core-lane-bin`
+  (branch `fix/22-deleted-folders` off release/next @26190af, port 5205), COMMITTED, NOT
+  PUSHED.** Folder rows + `folderId`/`path` in `manifest.deleted`; the bin as a navigable
+  TREE (`deleted:<id>`, `deletedfolder:<id>` cards, ghost nodes for live folders) with a
+  Plain-list layout; restore-where-it-was recreating the folder chain under the SAME ids;
+  peers un-hiding restored copies (1b); folder deletes tombstoned + applied-once so an
+  `always`-sharing peer cannot resurrect them (the counterfactual MEASURED: 3.5 s after the
+  delete the deleter holds no folder, no visible file, an empty index, nothing pulling);
+  the Bin|Log strip replaced by `#deleted-log-toggle` at the breadcrumb's right end + the
+  checked menu entry "Show cleaned-up files"; "Nobody here holds the bytes" → "Cleaned up on
+  this device"; the share-ask box → "Apply to all my files, now and from now on"; the
+  private-scene Users row shows Request access alone. Two latent bugs fixed on the way
+  (patch-after-hide was a no-op; `deleteSharedItem` never marked its own hash applied).
+  Same-day follow-ups: "Plain list without folders" as a checked toggle beside "Show
+  cleaned-up files" (one View section, no Folder-structure entry); DRAG OUT OF DELETED onto a
+  Library folder card / tree row / root restores THERE (`restoreDroppedFromBin` claims the
+  drop first in `dropInto`; `binDragging` keeps the Deleted row from arming; ghosts are not
+  draggable); and `sceneNameShared` reading the shared index so a scene every peer already
+  holds is not offered "Edit privately". Suites: NEW `deleted-folders` 98 (two peers) ·
+  `explorer-views` 114 · `explorer-delete-confirm` 54 · `explorer-multiselect` 63 ·
+  `explorer-storage` 116 · `explorer-mounts-edit` 49 · `private-scene` 55 · `peers-popover`
+  21 · `explorer-drop` 9 · `shared-library` 270/18 against a pristine-base 271/17 on the same box (the 17 are the chunked-transfer sections — the 700 KB fixture never reassembles here, `size -1` — and everything downstream of a peer holding bytes; the one extra is the SENDER ledger reading `active` instead of `done` in that same dead transfer). Three lane runs died at `h.connect` first; an instrumented copy and four probes connected every time, so that was the signaling box, not the code. svelte-check **362/47 unchanged**; build green. Architecture entry
+  above; plan + as-built: cloud `plans-core/pending/22-deleted-folders.md`. OWED: the
+  on-device pass in non-dark themes (folder-card dimming, the ghost tint, the `history`
+  glyph, the Location column's 160px).
 - Status (2026-09-02): **R22 ROUND 13 SHIPPED — PRs #186 and #188 MERGED to release/next
   @ e832670; baseline 362 errors / 47 warnings, release.yml gate ratcheted to match.**
   #186 (76 commits) carried: mounted project volumes (the architecture entry above),

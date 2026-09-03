@@ -553,15 +553,12 @@
 			{#if privateRow($peerScenes, user[0], self)}
 				<!-- R22 round 35: a peer in a scene of its own. Watch cannot reach them and
 					 neither can Go to — there is no name and no hash to travel by, which is the
-					 whole point — so the disabled-WITH-THE-REASON treatment comes back (the
-					 21-G5 ruling) beside the one action that CAN work: asking. -->
-				<button
-					class="peer-watch shrink-0 rounded bg-gray-700 px-2 py-0.5 text-xs text-gray-500"
-					disabled
-					title="Editing a private scene — you cannot watch a world you do not have"
-				>
-					<Eye size={16} class="mr-1" aria-hidden="true" />Watch
-				</button>
+					 whole point. R22 (Deleted keeps its structure, user): the disabled Watch that
+					 used to sit here is GONE. The disabled-with-the-reason rule (21-G5) is for a
+					 control that will work again once something changes; in this row Watch can
+					 never work — the peer has to share the scene first, and the button that
+					 asks them to is the one beside it — so a permanently grey Watch was a second
+					 button saying nothing. Request access takes its place. -->
 				<button
 					class="peer-request shrink-0 rounded px-2 py-0.5 text-xs {$sceneAccessAsked.includes(user[0])
 						? 'bg-gray-700 text-gray-500'

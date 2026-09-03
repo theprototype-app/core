@@ -51,6 +51,11 @@ export const LIBRARY_COLUMNS = [
 export const DELETED_COLUMNS = [
 	{ key: 'name', label: 'Name', always: true, width: '220px' },
 	{ key: 'kind', label: 'Type', width: '72px' },
+	// R22 round 36: WHERE IT WAS. The bin is a tree now, so a row's location is the one
+	// fact the flat "Plain list" layout would otherwise throw away — and it is also the
+	// only column that can still say something for a row whose folder is long gone (the
+	// row carries `path` for exactly that case).
+	{ key: 'location', label: 'Location', width: '160px' },
 	{ key: 'deletedBy', label: 'Deleted by', width: '116px' },
 	{ key: 'deletedAt', label: 'Deleted at', numeric: true, width: '124px' }
 ];
@@ -104,19 +109,75 @@ explorerViewMode.subscribe((v) => {
 	} catch {}
 });
 
+const SEEN_KEY = 'explorer:columnsSeen';
+
+/**
+ * The columns that EXISTED when the visible set was last written.
+ *
+ * R22 round 36 — THE APPEND-NOT-HIDE RULE WAS ONLY HALF TRUE, and this is the missing
+ * half. `explorerColumns` stores the VISIBLE keys, which makes "added later" and "hidden
+ * on purpose" the same observation: both are simply absent from the stored array. So the
+ * doc below promised a new column would show by default and every existing install would
+ * in fact have suppressed it — measured on `location`, which no saved set can mention.
+ *
+ * Recording what was KNOWN at save time separates the two, once and for every future
+ * column: absent from the visible set but present in the seen set means the user hid it,
+ * absent from BOTH means it did not exist yet, so it is appended.
+ * @type {Record<string, string[]>}
+ */
+const PRE_SEEN = {
+	// what shipped before the seen set existed. An install upgrading from before it has
+	// no record at all, and reading that as "nothing was ever seen" would re-show every
+	// column the user had deliberately hidden.
+	library: ['name', 'kind', 'size', 'added', 'owner'],
+	deleted: ['name', 'kind', 'deletedBy', 'deletedAt']
+};
+
+/** Append every column this build has that the stored set was never offered.
+ * @param {Record<string, string[]>} sets @returns {Record<string, string[]>} */
+function appendNewColumns(sets) {
+	const seen = load(SEEN_KEY, PRE_SEEN);
+	/** @type {Record<string, string[]>} */
+	const next = { ...sets };
+	for (const view of ['library', 'deleted']) {
+		const stored = next[view];
+		if (!Array.isArray(stored)) continue;
+		const known = new Set(seen[view] ?? PRE_SEEN[view] ?? []);
+		const fresh = columnsFor(view)
+			.map((c) => c.key)
+			.filter((k) => !known.has(k) && !stored.includes(k));
+		if (!fresh.length) continue;
+		// keep the stored array canonical (declaration order), the shape `toggleColumn`
+		// maintains — the drawn order is `orderColumns`' business, not this one's
+		const wanted = new Set([...stored, ...fresh]);
+		next[view] = columnsFor(view)
+			.map((c) => c.key)
+			.filter((k) => wanted.has(k));
+	}
+	return next;
+}
+
 /**
  * Which columns are visible, per view. Stored as the VISIBLE keys rather than the hidden
  * ones so a column added in a later release shows by default instead of being silently
- * suppressed by every existing install's saved set.
+ * suppressed by every existing install's saved set — see `appendNewColumns`, which is
+ * what actually makes that sentence true.
  * @type {import('svelte/store').Writable<Record<string, string[]>>}
  */
 export const explorerColumns = writable(
-	load(COLS_KEY, {
-		library: LIBRARY_COLUMNS.map((c) => c.key),
-		deleted: DELETED_COLUMNS.map((c) => c.key)
-	})
+	appendNewColumns(
+		load(COLS_KEY, {
+			library: LIBRARY_COLUMNS.map((c) => c.key),
+			deleted: DELETED_COLUMNS.map((c) => c.key)
+		})
+	)
 );
-explorerColumns.subscribe((v) => save(COLS_KEY, v));
+explorerColumns.subscribe((v) => {
+	save(COLS_KEY, v);
+	// the seen set is written BESIDE the visible one and always holds this build's whole
+	// canonical list, so the next release's new column is the only thing missing from it
+	save(SEEN_KEY, { library: LIBRARY_COLUMNS.map((c) => c.key), deleted: DELETED_COLUMNS.map((c) => c.key) });
+});
 
 /**
  * The sort, per view. `dir` is 1 ascending / -1 descending. The bin defaults to newest
@@ -148,6 +209,53 @@ explorerDeletedGroup.subscribe((v) => {
 	if (typeof localStorage === 'undefined') return;
 	try {
 		localStorage.setItem(GROUP_KEY, v);
+	} catch {}
+});
+
+const BIN_LAYOUT_KEY = 'explorer:binLayout';
+const BIN_SPENT_KEY = 'explorer:binShowSpent';
+
+/**
+ * R22 round 36 — HOW THE BIN IS DRAWN. `tree` shows every row under the folder it was
+ * deleted from (the structure the log now records); `plain` is the flat list the bin has
+ * always been, kept because "what did I delete lately" is a real question that a tree
+ * answers worse than a list does.
+ *
+ * A VIEW FLAG rather than a place: `activeFolder` walks INTO the tree (`deleted:<id>`),
+ * so layout has to be orthogonal to where you are standing or walking into a node would
+ * have to mean something different in each mode.
+ * @type {import('svelte/store').Writable<'tree'|'plain'>}
+ */
+export const explorerBinLayout = writable(
+	/** @type {'tree'|'plain'} */ (
+		typeof localStorage !== 'undefined' && localStorage.getItem(BIN_LAYOUT_KEY) === 'plain'
+			? 'plain'
+			: 'tree'
+	)
+);
+explorerBinLayout.subscribe((v) => {
+	if (typeof localStorage === 'undefined') return;
+	try {
+		localStorage.setItem(BIN_LAYOUT_KEY, v);
+	} catch {}
+});
+
+/**
+ * Show the rows whose BYTES are gone from this device ("cleaned up") beside the ones that
+ * can still be put back. OFF by default: the common reason to open Deleted is to undo
+ * something, and a row that cannot be restored from here is noise in front of that.
+ *
+ * Round 13 made the two halves separate PLACES (a Bin/Log tab strip); this makes them one
+ * place and a toggle, which is what the user asked for and what stops the strip costing a
+ * row of grid height. @type {import('svelte/store').Writable<boolean>}
+ */
+export const explorerBinShowSpent = writable(
+	typeof localStorage !== 'undefined' && localStorage.getItem(BIN_SPENT_KEY) === 'true'
+);
+explorerBinShowSpent.subscribe((v) => {
+	if (typeof localStorage === 'undefined') return;
+	try {
+		localStorage.setItem(BIN_SPENT_KEY, String(v));
 	} catch {}
 });
 
@@ -343,6 +451,11 @@ export function valueFor(row, key, ctx = {}) {
 			return String(row?.name ?? '').toLowerCase();
 		case 'kind':
 			return String(row?.kind ?? '').toLowerCase();
+		// R22 round 36: the location TEXT the caller already resolved (`buildDeletedTree`'s
+		// `locationOf`), not the raw `folderId` — sorting on a uuid while showing a path is
+		// the same indefensible split the owner column's comment describes.
+		case 'location':
+			return String(row?.location ?? '').toLowerCase();
 		case 'size':
 			return Number(row?.size) || 0;
 		case 'added':

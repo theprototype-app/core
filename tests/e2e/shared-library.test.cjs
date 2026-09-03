@@ -2316,8 +2316,8 @@ h.run(async () => {
 	h.check(box1 !== null, 'the remember box renders on a new-file ask');
 	h.check(box1 && box1.checked === false, `and it starts UNCHECKED (${JSON.stringify(box1?.checked)})`);
 	h.check(
-		box1 && box1.label === 'Do this for new files from now on',
-		`the label says it is about the RULE, not about sharing (${JSON.stringify(box1?.label)})`
+		box1 && box1.label === 'Apply to all my files, now and from now on',
+		`the label says it is about the RULE and its REACH — \`always\` shares every file still local, not only the next one (${JSON.stringify(box1?.label)})`
 	);
 	h.check(box1 && box1.themed && box1.labelled, 'themed `tp-check`, inside its own label — no naked control, no orphan text');
 	// ...and on the CONNECT card, which is where the destructive third answer lives. Armed

@@ -20,9 +20,16 @@
 		loadExplorer,
 		createFolder,
 		renameFolder,
-		deleteFolder,
+		// R22 round 36 ("Deleted keeps its structure"): `deleteFolder` — the DESTROYER —
+		// is no longer imported here. Every library folder the Explorer deletes now goes
+		// through `deleteFolderToBin`, which is reversible and tells the peers; the
+		// destroyer stays in the leaf for `clearLibrary`-class callers and for the
+		// mounted-volume path, which has its own `deleteVolumeFolder`.
 		folderCounts,
 		folderSubtree,
+		// ...and the NAMES on the way to a folder, so a bin row can say where it was even
+		// after the folder itself is gone (`logLocalDeletion` records the path).
+		folderPath,
 		moveFolder,
 		moveItem,
 		importFiles,
@@ -114,6 +121,18 @@
 		// R22 round 13: the bin lists what it can put back; the LOG is the record beside it.
 		// One array, two readings — see partitionDeleted.
 		partitionDeleted,
+		// R22 round 36 — DELETED KEEPS ITS STRUCTURE. The log grew a `folderId` and a
+		// folder ROW kind, so the bin is a tree read out of the rows' original locations
+		// (`buildDeletedTree`, pure) and every delete goes through the two bin functions
+		// rather than through the destroyer. `isFolderRow`/`folderRowId` are the one place
+		// the `'folder:'` key prefix is decoded.
+		isFolderRow,
+		folderRowId,
+		buildDeletedTree,
+		deleteItemsToBin,
+		deleteFolderToBin,
+		restoreDeletedFolder,
+		purgeDeletedFolder,
 		deletedLogEnabled,
 		logLocalDeletion,
 		deleteWithoutConfirm,
@@ -133,6 +152,11 @@
 		explorerColumns,
 		explorerSort,
 		explorerDeletedGroup,
+		// R22 round 36: the bin's two LOCAL view prefs. Tree or flat, and whether the rows
+		// whose bytes are already gone are shown beside the ones that can still be put back
+		// (round 13's Bin|Log tabs, re-read as the view flag they always were).
+		explorerBinLayout,
+		explorerBinShowSpent,
 		explorerColumnWidths,
 		explorerColumnOrder,
 		columnsFor,
@@ -655,6 +679,15 @@
 	 * the viewport, off the window, cancelled with Esc — has to clear it.
 	 */
 	let libraryDragging = $state(false);
+	/**
+	 * R22 round 36: ...and its MIRROR — a drag that started IN the bin. The two are
+	 * exclusive by construction (one drag, one origin), and a separate flag rather than a
+	 * three-state one because every existing consumer of `libraryDragging` asks a question
+	 * about the Deleted ROW, which a bin drag must answer with "no": the row may not offer
+	 * itself as a target for something already in it, and a `dragover` can only read
+	 * `dataTransfer.types`, never the payload, so the origin has to be remembered.
+	 */
+	let binDragging = $state(false);
 	/** ...and the Deleted row is under the pointer right now */
 	let binDropActive = $state(false);
 	// R22 round 10: where the drop band goes — the scroller's own offset and visible
@@ -972,6 +1005,121 @@
 		return out;
 	});
 
+	// ---- R22 round 36: THE BIN IS A TREE ---------------------------------------------
+	/**
+	 * WHERE IN DELETED AM I. `'deleted'` is the bin's root and `'deleted:<folderId>'` is a
+	 * node inside it — one scope derived once, the `volScope` precedent, rather than the
+	 * `=== 'deleted' || === 'deletedlog'` pair that was spelled out in eleven places and
+	 * had to be found in all eleven every time the namespace grew.
+	 *
+	 * `'deletedlog'` is still answered here because the store can hold it (a saved value, a
+	 * deep link, an older suite); `openFolder` rewrites it to `'deleted'` + the spent
+	 * toggle, so it never survives a navigation.
+	 */
+	const binScope = $derived.by((): { inBin: boolean; folderId: string | null } => {
+		const a = $activeFolder;
+		if (a === 'deleted' || a === 'deletedlog') return { inBin: true, folderId: null };
+		if (typeof a === 'string' && a.startsWith('deleted:'))
+			return { inBin: true, folderId: a.slice('deleted:'.length) || null };
+		return { inBin: false, folderId: null };
+	});
+	/**
+	 * The log, the held set and the tree read off it.
+	 *
+	 * DECLARED HERE, above everything that reads them, for the reason `listView` is:
+	 * a `$derived` referenced by an earlier one is a use-before-declaration.
+	 *
+	 * The held set is read from the STORES, never through a sharedLibrary helper: a helper
+	 * that reaches the shelves with `get()` registers no dependency, so a purge would leave
+	 * every derivation below byte-identical (round 9's bug, verbatim). `buildDeletedTree`
+	 * takes `$explorerFolders` as an ARGUMENT for the same reason — a folder that still
+	 * exists is a GHOST node in the bin, and the store has to be the dependency.
+	 */
+	const deletedRows = $derived(deletedLog($projectManifest));
+	const deletedHeld = $derived(new Set([...$explorerItems, ...$hiddenItems].map((i: any) => i.hash)));
+	const deletedTree = $derived(buildDeletedTree(deletedRows, $explorerFolders));
+	/** the rows this view is showing at all: the bin, or the whole record when the
+	 *  cleaned-up toggle is on (those extra rows are dimmed and offer no Restore). */
+	const binRows = $derived(
+		$explorerBinShowSpent
+			? deletedRows
+			: partitionDeleted(deletedRows, deletedHeld, $explorerFolders).bin
+	);
+	const binVisibleHashes = $derived(new Set(binRows.map((r: any) => r.hash)));
+	/**
+	 * The FOLDER NODES of the node you are standing in. Plain layout offers none — that is
+	 * the whole of what "plain" means here, and it is why navigation into a node is not
+	 * offered there either.
+	 *
+	 * A real deleted folder shows when its own row is visible; a GHOST (a folder still in
+	 * the Library that holds deleted files) has no row of its own, so it shows when
+	 * anything under it does. Without that second rule the default empty-on-load bin would
+	 * draw a ghost for every folder anybody ever deleted out of.
+	 */
+	const binFolderNodes = $derived.by((): any[] => {
+		if (!binScope.inBin || $explorerBinLayout !== 'tree') return [];
+		const kids = deletedTree.children.get(binScope.folderId) ?? { folders: [], items: [] };
+		return kids.folders
+			.filter((node: any) => {
+				if (!node.ghost) return binVisibleHashes.has(node.row?.hash);
+				const under = deletedTree.descendants(node.id);
+				return (
+					under.items.some((r: any) => binVisibleHashes.has(r.hash)) ||
+					under.folders.some((n: any) => n.row && binVisibleHashes.has(n.row.hash))
+				);
+			})
+			.map((node: any) => ({
+				// the card id namespace the whole view addresses these by. It is NOT a library
+				// folder id, and every handler that could write to one checks the prefix.
+				id: 'deletedfolder:' + node.id,
+				nodeId: node.id,
+				name: node.name,
+				parentId: node.parentId ?? null,
+				deletedNode: true,
+				ghost: node.ghost,
+				row: node.row ?? null
+			}));
+	});
+	/** ...and the ITEM rows beside them: this node's own in tree layout, every row in the
+	 *  library flat in plain layout (where the Location column is what carries the place). */
+	const binItemCards = $derived.by((): any[] => {
+		if (!binScope.inBin) return [];
+		const rows =
+			$explorerBinLayout === 'tree'
+				? (deletedTree.children.get(binScope.folderId) ?? { folders: [], items: [] }).items.filter(
+						(r: any) => binVisibleHashes.has(r.hash)
+					)
+				: binRows.filter((r: any) => !isFolderRow(r));
+		return rows.map((r: any) => ({
+			id: 'deleted:' + r.hash,
+			name: r.name,
+			kind: r.kind || 'text',
+			hash: r.hash,
+			// the parent AT DELETION TIME, which is what Restore puts it back into
+			folderId: r.folderId ?? null,
+			location: deletedTree.locationOf(r),
+			size: 0,
+			createdAt: r.at,
+			// R22 round 7: the picture was recorded when the file was deleted, because once
+			// the bytes are reclaimed it can never be derived again
+			thumbnail: deletedThumb(r),
+			owner: r.by ?? null,
+			deletedEntry: true,
+			restorable: deletedHeld.has(r.hash)
+		}));
+	});
+	/** the ancestor chain of a bin NODE as text ("A / B"), for the Location column and the
+	 *  node menus. Empty string at the bin root, which reads as "the Library". */
+	function binNodePath(nodeId: string | null): string {
+		const parts: string[] = [];
+		let cur: any = nodeId ? deletedTree.nodes.get(nodeId) : null;
+		while (cur) {
+			parts.unshift(cur.name);
+			cur = cur.parentId ? deletedTree.nodes.get(cur.parentId) : null;
+		}
+		return parts.join(' / ');
+	}
+
 	const childFolders = $derived.by((): any[] => {
 		// P3: inside a mount the subfolders come from the VOLUME, and nothing about the
 		// library is read at all
@@ -982,6 +1130,10 @@
 						.map((f: any) => volFolderRow(volume, f))
 						.filter((f: any) => volFolderPasses(volume, f))
 				: [];
+		// R22 round 36: the bin's folder cards come from the deleted TREE, not the library.
+		// They ride this derivation so that the grid, the list, the sort ("folders first"),
+		// the Shift-range and the arrow keys all see them without a second code path.
+		if (binScope.inBin) return binFolderNodes;
 		return $explorerFolders
 			.filter((f) => (f.parentId ?? null) === ($activeFolder === 'prefabs' ? '__none__' : ($activeFolder ?? null)))
 			// R22-R8: the Local-only filter reaches FOLDERS too, not just their contents
@@ -1029,41 +1181,14 @@
 		// the Scene manifest (108): a derived, always-shared view — never editable
 		// R22 round 4: THE RECYCLE BIN, a derived view like the Scene manifest — the log is
 		// the truth and these cards are a reading of it, so there is no CRUD to keep in step.
-		if ($activeFolder === 'deleted' || $activeFolder === 'deletedlog') {
-			// R22 round 9, THE REPORTED BUG ("Delete permanently does not remove the file").
-			// The purge always worked — it freed the blob and dropped the record — but this
-			// branch asked `canRestoreDeleted`, which reaches the two shelves through `get()`,
-			// so it registered NO dependency on them (the documented reactivity rule). The
-			// derived re-ran only when the MANIFEST changed, and a purge deliberately leaves
-			// the log alone — so the card and its menu stayed byte-identical, still offering a
-			// Restore that could no longer work. Nothing observable changed, which is exactly
-			// what "it does not remove the file" describes. Read the shelves HERE instead.
-			// R22 round 13 — THE SECOND HALF OF THE SAME REPORT. Round 9 made the purge
-			// OBSERVABLE (the row dimmed, the menu stopped offering a Restore that could not
-			// work); the user's answer was that a bin should not go on listing a file it cannot
-			// put back at all. So the bin is the rows whose bytes are HERE, and everything that
-			// outlived its bytes belongs to the log beside it — same array, two readings.
-			const heldBytes = new Set([...$explorerItems, ...$hiddenItems].map((i) => i.hash));
-			const cards = deletedLog($projectManifest).map((r: any) => ({
-				id: 'deleted:' + r.hash,
-				name: r.name,
-				kind: r.kind || 'text',
-				hash: r.hash,
-				folderId: null,
-				size: 0,
-				createdAt: r.at,
-				// R22 round 7: the picture was recorded when the file was deleted, because once
-				// the bytes are reclaimed it can never be derived again
-				thumbnail: deletedThumb(r),
-				owner: r.by ?? null,
-				deletedEntry: true,
-				restorable: heldBytes.has(r.hash)
-			}));
-			// the LOG is the whole record, newest first — a deletion whose bytes are still here
-			// is a deletion that happened, and hiding it would make the log disagree with the
-			// count on its own row. The BIN is the half it can act on.
-			return $activeFolder === 'deletedlog' ? cards : partitionDeleted(cards, heldBytes).bin;
-		}
+		//
+		// R22 round 9 / 13 left their marks on the shape (`restorable` read off the SHELVES
+		// rather than through a get()-helper, and the bin being the half of the array whose
+		// bytes are still here). Round 22 moved the whole derivation UP to `binItemCards`,
+		// beside the tree it is now read out of — the cards of one NODE in tree layout, every
+		// row flat in plain layout — because `childFolders` needs the same tree and a
+		// derivation cannot be declared after the one that reads it.
+		if (binScope.inBin) return binItemCards;
 		if (typeof $activeFolder === 'string' && $activeFolder.startsWith('scene')) {
 			const group = $activeFolder.split(':')[1] ?? null;
 			return $sceneAssets
@@ -1241,7 +1366,9 @@
 		// R22 round 13: the two DELETED views belong here as well. They were missing, which
 		// was only unreachable rather than harmless — neither view offers Save scene, so
 		// nothing could ask; a scene written with folderId 'deleted' would be an orphan.
-		if (a === 'deleted' || a === 'deletedlog') return null;
+		// R22 round 36: and a bin NODE is not a place either — the folder it names has been
+		// deleted, so writing a scene into it would mint an orphan with a plausible id.
+		if (binScope.inBin) return null;
 		if (a === 'prefabs' || a === 'packs' || a.startsWith('pack:') || a.startsWith('scene')) return null;
 		// P3: a MOUNT is not a place in this library either — a scene saved while browsing
 		// one must not be written with a folderId no library folder holds (which is an
@@ -1272,16 +1399,23 @@
 		if (a === 'prefabs') return [{ label: 'Prefabs', id: 'prefabs' as string | null }];
 		if (a === 'packs') return [{ label: 'Packs', id: 'packs' as string | null }];
 		// R22 round 7: the bin is its own place, so the breadcrumb has to say so — it read
-		// "Library", which is exactly where these files are not
-		if (a === 'deleted') return [{ label: 'Deleted', id: 'deleted' as string | null }];
-			// ...and round 13 makes the log a place INSIDE it rather than a second root beside
-		// it, which a trail can say for free: "Deleted / Log", with the first crumb walking
-		// back to the bin.
-		if (a === 'deletedlog')
-			return [
-				{ label: 'Deleted', id: 'deleted' as string | null },
-				{ label: 'Log', id: 'deletedlog' as string | null }
-			];
+		// "Library", which is exactly where these files are not.
+		//
+		// R22 round 36: ...and now it is a TREE, so the trail walks it exactly as the library's
+		// does — "Deleted / A / B". Round 13's "Deleted / Log" is gone with the tabs: the
+		// cleaned-up rows are a view FLAG over whatever node you are standing in, and a flag
+		// that appeared as a crumb would claim to be somewhere you can walk into.
+		if (binScope.inBin) {
+			const out = [{ label: 'Deleted', id: 'deleted' as string | null }];
+			const chain: any[] = [];
+			let cur: any = binScope.folderId ? deletedTree.nodes.get(binScope.folderId) : null;
+			while (cur) {
+				chain.unshift(cur);
+				cur = cur.parentId ? deletedTree.nodes.get(cur.parentId) : null;
+			}
+			for (const n of chain) out.push({ label: n.name, id: 'deleted:' + n.id });
+			return out;
+		}
 		if (typeof a === 'string' && a.startsWith('pack:')) {
 			const p = packByName(a.slice(5));
 			return [
@@ -1389,9 +1523,7 @@
 	 * stores (visible set, sort, widths, order) to produce an identical header, and would
 	 * then make a width dragged in one view mean nothing in the other.
 	 */
-	const listView = $derived(
-		$activeFolder === 'deleted' || $activeFolder === 'deletedlog' ? 'deleted' : 'library'
-	);
+	const listView = $derived(binScope.inBin ? 'deleted' : 'library');
 	/** a date a column can hold: short, sortable-looking, and locale-correct */
 	function fmtDate(t: number) {
 		if (!t) return '—';
@@ -1404,10 +1536,22 @@
 	 * formatted date string would order March before February.
 	 */
 	function cellText(row: any, key: string): string {
-		if (row.kind === 'folder')
-			return key === 'kind' ? 'Folder' : key === 'name' ? row.folder?.name : '—';
+		if (row.kind === 'folder') {
+			if (key === 'name') return row.folder?.name;
+			if (key === 'kind') return 'Folder';
+			// R22 round 36: a bin folder row answers WHERE IT WAS, the same question the column
+			// asks of the files beside it — a column that is blank for half the rows in a view
+			// reads as missing data rather than as "not applicable".
+			if (key === 'location' && row.folder?.deletedNode)
+				return binNodePath(row.folder.parentId) || '—';
+			return '—';
+		}
 		const item = row.item;
 		switch (key) {
+			case 'location':
+				// where the file was when it was deleted. Empty IS the library root, and the
+				// em dash says that rather than pretending the answer is unknown.
+				return String(item?.location ?? '') || '—';
 			case 'kind':
 				return kindLabel(item);
 			case 'size':
@@ -1701,9 +1845,7 @@
 	 * that reaches them with `get()` registers no dependency, so these would never re-run
 	 * on a purge (round 9's bug, verbatim).
 	 */
-	const deletedRows = $derived(deletedLog($projectManifest));
-	const deletedHeld = $derived(new Set([...$explorerItems, ...$hiddenItems].map((i: any) => i.hash)));
-	const binCount = $derived(partitionDeleted(deletedRows, deletedHeld).bin.length);
+	const binCount = $derived(partitionDeleted(deletedRows, deletedHeld, $explorerFolders).bin.length);
 	const logCount = $derived(deletedRows.length);
 	/**
 	 * R22 round 13 (user): "'Deleted log' button should be somewhere within 'Deleted' ...
@@ -1711,20 +1853,22 @@
 	 * for users, as technically it belongs to the same".
 	 *
 	 * Right: they are ONE PLACE read two ways - `partitionDeleted` splits one array, and
-	 * two sibling tree roots claimed two places for it. So the tree keeps ONE root and the
-	 * split moves INSIDE, onto a segmented control at the top of the view (`#explorer-bin-tabs`).
+	 * two sibling tree roots claimed two places for it. So the tree keeps ONE root.
 	 *
-	 * `deletedlog` STAYS A NAVIGABLE FOLDER ID rather than becoming a view flag. It is
-	 * somewhere you can be standing, be returned to (`placeStillThere` after a cancelled
-	 * unmount) and be deep-linked into, and a flag is none of those - only the way IN
-	 * changed. The whole point of round 13's pinned-roots guard is that this list grows.
+	 * R22 round 36 REVERSES the other half of round 13, deliberately. The split moved onto
+	 * a segmented Bin|Log control INSIDE the view, on the reasoning that `deletedlog` was
+	 * "somewhere you can be standing" — but the user asked for the cleaned-up rows as a
+	 * CHECKED MENU ITEM and an icon button, and that is a view flag by nature. A navigable
+	 * log would also have needed a parallel `deletedlog:<id>` namespace beside every
+	 * `deleted:<id>` the tree now mints, for two readings of one array. So the flag is
+	 * `explorerBinShowSpent`, `deletedlog` survives as an ALIAS that turns it on
+	 * (`openFolder`), and the pinned-roots guard keeps its meaning.
 	 *
-	 * THE ROOT'S COUNT IS NOW THE SIZE OF THE PLACE, not of the bin. With the log on, the
-	 * place holds every recorded deletion; with it off, the place is the bin and nothing
-	 * else. The old "Deleted (2) / Deleted log (5)" glance moves one click in, onto the tabs
-	 * that carry both numbers - and the alternative was worse, because
-	 * `emptyRecycleBinOnLoad` empties the bin on most starts, so a root labelled with the
-	 * BIN count would read "Deleted (0)" over a record of five and nobody would open it.
+	 * THE ROOT'S COUNT IS THE SIZE OF THE PLACE, not of the bin. With the log on, the place
+	 * holds every recorded deletion; with it off, the place is the bin and nothing else. The
+	 * alternative was worse, because `emptyRecycleBinOnLoad` empties the bin on most starts,
+	 * so a root labelled with the BIN count would read "Deleted (0)" over a record of five
+	 * and nobody would open it.
 	 */
 	const deletedRootCount = $derived($deletedLogEnabled ? logCount : binCount);
 	/**
@@ -1734,17 +1878,15 @@
 	 * (Still shown during a drag: a row you cannot see is a row you cannot drop on.)
 	 */
 	const showDeletedRoot = $derived(deletedRootCount > 0 || libraryDragging);
-	/** the log half of the tabs is a PREFERENCE, so it disables with the reason rather than
-	 * vanishing - the Watch-and-say-why convention. An empty record is still a real view
-	 * ("nothing has been deleted yet"), so emptiness does not disable it. */
-	const logAvailable = $derived($deletedLogEnabled);
-	const inDeletedView = $derived($activeFolder === 'deleted' || $activeFolder === 'deletedlog');
+	const inDeletedView = $derived(binScope.inBin);
 	/**
-	 * ...and you cannot be left standing in a view the tabs say is switched off. One-way and
-	 * narrow on purpose: the log going off sends you to the bin, and nothing sends you back.
+	 * ...and you cannot be left LOOKING at a record the settings say is switched off. Round
+	 * 13 bounced you out of the `deletedlog` FOLDER; with the log as a flag there is nowhere
+	 * to bounce to, so the flag itself is forced down. One-way and narrow on purpose: the
+	 * log going off hides the spent rows, and nothing turns them back on for you.
 	 */
 	$effect(() => {
-		if (!$deletedLogEnabled && $activeFolder === 'deletedlog') untrack(() => openFolder('deleted'));
+		if (!$deletedLogEnabled) untrack(() => explorerBinShowSpent.set(false));
 	});
 
 	/**
@@ -1901,7 +2043,13 @@
 			return openFolder(volumeKey(volScope.volumeId, f?.parentId ?? null));
 		}
 		if (typeof a === 'string' && a.startsWith('pack:')) return openFolder('packs'); // P4
-		if (a === 'deleted' || a === 'deletedlog') return openFolder(null);
+		// R22 round 36: up inside the bin walks the DELETED tree — the library's own rule, one
+		// root over. Up from the bin root leaves for the Library, as every pinned root does.
+		if (binScope.inBin) {
+			if (!binScope.folderId) return openFolder(null);
+			const node = deletedTree.nodes.get(binScope.folderId);
+			return openFolder(node?.parentId ? 'deleted:' + node.parentId : 'deleted');
+		}
 		if (a === 'prefabs' || a === 'packs' || (typeof a === 'string' && a.startsWith('scene')))
 			return openFolder(null);
 		const f = $explorerFolders.find((x: any) => x.id === a);
@@ -2480,7 +2628,13 @@
 			}
 			let target = cameFrom;
 			if (unmounted && volumeOf(target)?.volumeId === vol.id) target = null;
-			openFolder(placeStillThere(target) ? target : null);
+			// R22 round 36: PUT THEM BACK, do not re-navigate. `openFolder` normalises the
+			// `deletedlog` ALIAS onto `deleted`, which is right for somebody GOING somewhere
+			// and wrong here — this restores the value they were standing on, and answering a
+			// question about an unrelated mount may not quietly rewrite where they were.
+			// `search` is already clear (rule 1's `openFolder(parked)` cleared it).
+			const back = placeStillThere(target) ? target : null;
+			activeFolder.set(back);
 		};
 		const leave = () => {
 			void unmountVolume(vol.id);
@@ -2536,6 +2690,11 @@
 			if (!v) return false;
 			return !scope.folderId || v.folders.some((f: any) => f.id === scope.folderId);
 		}
+		// R22 round 36: a bin NODE is the second kind of key that can stop being a place —
+		// the folder row it names leaves the log the moment somebody restores or purges it.
+		// It is checked BEFORE the uuid shape test, because `deleted:<uuid>` is not a library
+		// folder and answering it against `$explorerFolders` would say "gone" for every ghost.
+		if (key.startsWith('deleted:')) return deletedTree.nodes.has(key.slice('deleted:'.length));
 		if (!LIBRARY_FOLDER_ID.test(key)) return true;
 		return $explorerFolders.some((f: any) => f.id === key);
 	}
@@ -2806,7 +2965,19 @@
 
 	/** the bin move a FILE takes — shared by the menu, the strip and the Deleted drop */
 	function binLocalItem(item: any) {
-		logLocalDeletion({ hash: item.hash, name: item.name, kind: item.kind, thumb: item.thumbnail });
+		// R22 round 36: WHERE IT WAS travels with the row. `folderId` is what Restore puts it
+		// back into (the id is network identity for a shared folder, so it resolves on every
+		// peer); `path` is the NAMES, the display fallback for when that id resolves to
+		// nothing — the folder purged from both the library and the log, or evicted by the
+		// cap. Same argument as the thumbnail: it cannot be re-derived later.
+		logLocalDeletion({
+			hash: item.hash,
+			name: item.name,
+			kind: item.kind,
+			thumb: item.thumbnail,
+			folderId: item.folderId ?? null,
+			path: folderPath(item.folderId)
+		});
 		setItemHidden(item.id, true);
 	}
 	/** ...and a PREFAB, which is local by nature. See deletePrefabToBin for the caveat. */
@@ -2826,16 +2997,25 @@
 		const counts = folderCounts(folder.id);
 		askInExplorer({
 			title: 'Delete "' + folder.name + '"?',
-			// it says DESTROYED because `deleteFolder` reclaims the blobs of everything in the
-			// subtree. That asymmetry with a file delete is exactly why this one keeps asking
-			// even when a drag onto Deleted does not (see dropToBin).
+			// R22 round 36: it no longer says DESTROYED, because nothing is. The old wording was
+			// honest about `deleteFolder`, which reclaimed every blob in the subtree and wrote no
+			// tombstone and no log row — which is also why a peer with "share new files: always"
+			// adopted the deleter's own folder straight back. `deleteFolderToBin` moves the
+			// subtree to Deleted with its shape intact and tells the project, so the sentence can
+			// promise a restore and the third clause is now the important half.
 			detail:
 				plural(counts.folders, 'folder') +
 				' and ' +
-				plural(counts.items, 'item') +
-				' — the files inside are destroyed, not moved to Deleted.',
+				plural(counts.items, 'file') +
+				' move to Deleted, where the folder can be restored with its structure.' +
+				" Peers' copies move to their Deleted too.",
 			confirmLabel: 'Delete folder',
-			run: () => void deleteFolder(folder.id)
+			run: () => {
+				deleteFolderToBin(folder.id);
+				showToast('\u201c' + folder.name + '\u201d moved to Deleted', [
+					{ label: 'Open Deleted', action: () => openFolder('deleted') }
+				]);
+			}
 		});
 	}
 
@@ -2852,6 +3032,114 @@
 		return types.includes('application/x-explorer-item') || types.includes('application/x-explorer-folder');
 	}
 	/**
+	 * R22 round 36 — WHAT A DRAG OUT OF DELETED CARRIES. The bin's cards keep their own id
+	 * namespaces (`deleted:<hash>` for a row, `deletedfolder:<id>` for a node), so a payload
+	 * that came from there is recognisable by prefix alone and needs no second DnD system:
+	 * the drag start, the payload shape, `payloadOf` and every `dropInto` target are the
+	 * ones the library already uses. The prefixes are decoded in exactly TWO places, this
+	 * one and `openFolder`.
+	 * @param {any} payload @returns {{hashes: string[], nodes: string[]}}
+	 */
+	function binPayloadIds(payload: any): { hashes: string[]; nodes: string[] } {
+		const dragged = payload?.items?.length
+			? payload.items
+			: payload?.type === 'item'
+				? [payload]
+				: [];
+		const folderIds: string[] = payload?.folders?.length
+			? payload.folders
+			: payload?.type === 'folder' && payload.id
+				? [payload.id]
+				: [];
+		const hashes = dragged
+			.map((p: any) => String(p?.id ?? ''))
+			.filter((id: string) => id.startsWith('deleted:'))
+			.map((id: string) => id.slice('deleted:'.length))
+			.filter(Boolean);
+		const nodes = folderIds
+			.map((id: any) => String(id ?? ''))
+			.filter((id: string) => id.startsWith('deletedfolder:'))
+			.map((id: string) => id.slice('deletedfolder:'.length))
+			.filter(Boolean);
+		return { hashes, nodes };
+	}
+
+	/**
+	 * R22 round 36 (user) — DRAG IT OUT OF DELETED TO PUT IT BACK SOMEWHERE ELSE.
+	 *
+	 * Restore already knows where a row WAS and recreates the way there; this gesture is
+	 * the answer to the question that decision otherwise makes FOR you. Dropping a bin card
+	 * on a Library folder says "not there, HERE" — and it is the same act, through the same
+	 * function, with the destination stated (`{ into }`) instead of derived, which is why
+	 * nothing about the recorded location had to change to allow it.
+	 *
+	 * It runs BEFORE the ordinary move path and returns true to claim the drop, because
+	 * every consumer below looks its ids up in `$explorerItems` / `$explorerFolders` — a
+	 * hash and a deleted folder id are in neither, so the move would have found nothing and
+	 * said nothing, which is exactly how this gesture used to fail.
+	 *
+	 * @param {any} payload @param {string | null} target the LIBRARY folder, null = the root
+	 * @returns {boolean} true when the drop was a restore and is finished
+	 */
+	function restoreDroppedFromBin(payload: any, target: string | null): boolean {
+		const { hashes, nodes } = binPayloadIds(payload);
+		if (!hashes.length && !nodes.length) return false;
+		// P3's boundary: a mount is another project's saved payload, and a restore writes a
+		// record into THIS library. Refusing with the reason beats moving it somewhere else.
+		if (volumeOf(target)) {
+			showToast('Restore puts files back in your Library — a mounted project is a different one');
+			return true;
+		}
+		const into = target ?? null;
+		const where = into
+			? ($explorerFolders.find((f: any) => f.id === into)?.name ?? 'the Library')
+			: 'the Library';
+		let files = 0;
+		let folders = 0;
+		let ghosts = 0;
+		const names: string[] = [];
+		for (const id of nodes) {
+			const node = deletedTree.nodes.get(id);
+			if (!node) continue;
+			if (node.ghost) {
+				ghosts++;
+				continue;
+			}
+			const back = restoreDeletedFolder(id, { into });
+			folders += back.folders;
+			files += back.files;
+			if (back.folders || back.files) names.push(node.name);
+		}
+		for (const hash of hashes) {
+			const row = deletedRows.find((r: any) => r.hash === hash);
+			if (restoreDeletedItem(hash, { into })) {
+				files++;
+				names.push(String(row?.name ?? 'file'));
+			}
+		}
+		setSel([]);
+		deselect();
+		if (ghosts && !files && !folders)
+			return (
+				showToast(
+					'That folder is still in your Library — what is deleted are the files under it, so drag those'
+				),
+				true
+			);
+		if (!files && !folders) return showToast('Nothing there could be put back'), true;
+		const what =
+			names.length === 1
+				? '\u201c' + names[0] + '\u201d'
+				: [folders && plural(folders, 'folder'), files && plural(files, 'file')]
+						.filter(Boolean)
+						.join(' and ');
+		showToast('Restored ' + what + ' into ' + where, [
+			{ label: 'Open', action: () => openFolder(into) }
+		]);
+		return true;
+	}
+
+	/**
 	 * R22 round 10, THE REPORTED BUG: "when I ctrl click some selected files I should be
 	 * able to move them within explorer... for now only the latest clicked is moved".
 	 *
@@ -2865,11 +3153,15 @@
 	 * @param {DragEvent} e @param {string | null} target
 	 */
 	function dropInto(e: DragEvent, target: string | null) {
+		if (typeof target === 'string' && target.startsWith('deletedfolder:')) return; // see dragOverInto
 		const payload = payloadOf(e);
 		dropFolder = null;
 		if (!payload) return;
 		e.preventDefault();
 		e.stopPropagation();
+		// R22 round 36: FIRST, because a bin card's id is in neither of the two stores every
+		// branch below reads — see `restoreDroppedFromBin`.
+		if (restoreDroppedFromBin(payload, target)) return;
 		const dragged = payload.items?.length ? payload.items : payload.type === 'item' ? [payload] : [];
 		// R22 round 11: a PREFAB card used to be dropped on the floor here — it carries no
 		// library record, so there was nothing to re-file. There is now: a prefab that IS a
@@ -2942,6 +3234,9 @@
 			);
 	}
 	function dragOverInto(e: DragEvent, target: string | 'root' | null) {
+		// R22 round 36: a bin folder node is not a drop target. It is a record of a folder
+		// that is gone, so "move it in here" has nothing to write to.
+		if (typeof target === 'string' && target.startsWith('deletedfolder:')) return;
 		if (!canAccept(e)) return;
 		e.preventDefault();
 		e.stopPropagation();
@@ -2950,6 +3245,11 @@
 
 	function folderMenu(e: MouseEvent, folder: any, inTree = true) {
 		e.preventDefault();
+		// R22 round 36: a bin NODE reaches this the way every other folder card does (it rides
+		// `childFolders`, so the grid, the sort and the keyboard see it for free) — and then
+		// gets its own list, because Share / Rename / Delete all address a library folder it
+		// is precisely the record of NOT having.
+		if (folder?.deletedNode) return deletedFolderMenu(e, folder);
 		// 21-H3: the grid's folder cards join the selection like any other card (the TREE
 		// row is a different surface — it is a navigator, and it always means one folder)
 		if (!inTree) {
@@ -3097,12 +3397,18 @@
 		// project's saved payload. Same reasoning as the shared row above: every batch op
 		// (download, delete, GLTF export) would address an id `explorerItems` does not hold.
 		!item.volumeItem &&
+		// R22 round 36: ...and a BIN card is a reading of the log, not a record. Its id is
+		// `deleted:<hash>`, which `explorerItems` has never held — so every batch op here was
+		// addressing nothing, silently. The bin's own menus are where its rows are acted on.
+		!item.deletedEntry &&
 		item.kind !== 'pack-folder';
 
 	/** what the selection breaks down into, once and for every batch entry point */
 	function selectionParts() {
 		const entries = selectedEntries();
-		const folders = entries.filter((e: any) => e.kind === 'folder').map((e: any) => e.folder);
+		const folders = entries
+			.filter((e: any) => e.kind === 'folder' && !e.folder?.deletedNode)
+			.map((e: any) => e.folder);
 		const items = entries
 			.filter((e: any) => e.kind === 'item' && isOwnedItem(e.item))
 			.map((e: any) => e.item);
@@ -3132,9 +3438,11 @@
 		const parts: string[] = [];
 		if (items.length) parts.push(plural(items.length, 'item'));
 		if (folders.length) parts.push(plural(folders.length, 'folder'));
+		// R22 round 36: the cascade says where the inside GOES, because it goes somewhere now.
+		// `folderCounts` still supplies the numbers, so the sentence and the act cannot drift.
 		const cascade =
 			subFolders || subItems
-				? ` — with ${plural(subFolders, 'subfolder')} and ${plural(subItems, 'item')} inside`
+				? ` — with ${plural(subFolders, 'subfolder')} and ${plural(subItems, 'file')} inside, all moving to Deleted where they can be restored`
 				: '';
 		const note = skipped ? `${plural(skipped, 'pack/scene card')} will be skipped.` : '';
 		askInExplorer({
@@ -3144,12 +3452,19 @@
 			run: () => void runDeleteSelection(folders, items)
 		});
 	}
+	/**
+	 * R22 round 36: a batch delete takes THE BIN'S PATH, like every other delete in the
+	 * Explorer now. A prefab keeps its own removal (it is local by nature and has no hidden
+	 * shelf); library files go through ONE `deleteItemsToBin` call rather than N, because
+	 * each one used to be a separate publish of the whole shared index; a folder goes
+	 * through `deleteFolderToBin`, which keeps the subtree's shape in the log.
+	 */
 	async function runDeleteSelection(folders: any[], items: any[]) {
-		for (const item of items) {
-			if (item.kind === 'prefab') await removePrefab(item.prefabId);
-			else await deleteItem(item.id);
-		}
-		for (const folder of folders) await deleteFolder(folder.id);
+		const prefabs = items.filter((i: any) => i.kind === 'prefab');
+		const files = items.filter((i: any) => i.kind !== 'prefab');
+		for (const item of prefabs) await removePrefab(item.prefabId);
+		if (files.length) deleteItemsToBin(files.map((i: any) => i.id));
+		for (const folder of folders) deleteFolderToBin(folder.id);
 		setSel([]);
 		deselect();
 	}
@@ -3658,16 +3973,23 @@
 						? {
 								label: 'Restore',
 								icon: 'rotate-ccw',
-								tooltip: 'Put it back in the project and share it again',
+								// R22 round 36: it says WHERE. Restore puts a file back in the folder it was
+								// deleted from — recreating that folder if it has to — so the tooltip that
+								// only promised "the project" was under-describing the act by a whole tree.
+								tooltip: item.location
+									? 'Put it back in ' + item.location
+									: 'Put it back in the Library',
 								action: () => {
 									restoreDeletedItem(item.hash);
 									showToast('Restored ' + item.name);
 								}
 							}
 						: {
-								label: 'Nobody here holds the bytes',
+								// ...and this one said something it cannot know. Whether a PEER still holds
+								// the bytes is unknowable from here; what this machine knows is what IT did.
+								label: 'Cleaned up on this device',
 								tooltip:
-									'This machine emptied its copy. A peer that still has it can restore it.',
+									'The bytes were freed from Deleted on this machine, so it cannot be restored from here. A peer who still has it in their Deleted can restore it.',
 								action: () => {}
 							},
 					...(item.restorable
@@ -3687,7 +4009,11 @@
 					{
 						label: 'Deleted by ' + (who || 'someone') + ' · ' + new Date(item.createdAt).toLocaleString(),
 						action: () => {}
-					}
+					},
+					// ...and WHERE it was, which in plain layout is the only thing on screen that
+					// says it at all. Omitted at the library root: "Location: " with nothing after
+					// it reads as missing data rather than as the root.
+					...(item.location ? [{ label: 'Location: ' + item.location, action: () => {} }] : [])
 				]
 			};
 			return;
@@ -3971,15 +4297,47 @@
 	}
 
 	/**
-	 * R22 round 9: the two VIEW controls the bin owns, shared by its tree row and its own
+	 * R22 round 9: the VIEW controls the bin owns, shared by its tree row and its own
 	 * background menu. Group-by is a `checked` PAIR rather than one toggle, because "off"
 	 * is a choice here and a lone checked row leaves you guessing what unchecking gives
 	 * you; sort-by-date is offered as the two directions for the same reason.
+	 *
+	 * R22 round 36 puts LAYOUT at the top and folds in what used to be the second half of
+	 * the Bin|Log tabs. Both were asked for as menu entries — "maybe as tab or a checkbox to
+	 * toggle log view" — and a checked entry is the shape that survives the breadcrumb being
+	 * hideable: the icon toggle beside the crumbs is the fast way, this is the way that is
+	 * always there. ONE list for the tree row, the background and the bin's own menus, so
+	 * the three surfaces cannot drift.
 	 */
 	function deletedViewItems() {
 		const sort = $explorerSort['deleted'] ?? { key: 'deletedAt', dir: -1 };
 		const byDate = sort.key === 'deletedAt';
+		const n = binCount;
 		return [
+			// R22 round 36 (user): ONE section, TWO TOGGLES, and the layout pair became one of
+			// them. The checked PAIR was the round-9 group-by reasoning applied where it does
+			// not hold: "off" is not a choice here, it is the DEFAULT — the bin is a tree,
+			// and a flat list is the departure from it. A pair also read as two competing
+			// modes beside a lone flag, when both rows are the same kind of thing: a switch
+			// on how this one view is drawn.
+			{ section: 'View' },
+			{
+				label: 'Plain list without folders',
+				checked: $explorerBinLayout === 'plain',
+				tooltip: 'Every deleted file in one flat list, with a Location column saying where it was',
+				action: () => explorerBinLayout.set($explorerBinLayout === 'plain' ? 'tree' : 'plain')
+			},
+			{
+				label: 'Show cleaned-up files',
+				checked: $explorerBinShowSpent,
+				// disabled WITH the reason rather than hidden — the Watch-and-say-why convention.
+				// With the log off there is no record to show, and that is a setting, not a state.
+				disabled: !$deletedLogEnabled,
+				tooltip: $deletedLogEnabled
+					? 'Also list the deletions whose bytes are already gone from this device'
+					: 'Switched off in File settings',
+				action: () => explorerBinShowSpent.update((v: boolean) => !v)
+			},
 			{ section: 'Group' },
 			{
 				label: 'No grouping',
@@ -4007,27 +4365,24 @@
 				label: 'By name',
 				checked: sort.key === 'name',
 				action: () => explorerSort.update((a) => ({ ...a, deleted: { key: 'name', dir: 1 } }))
-			}
-		];
-	}
-
-	/**
-	 * R22 round 13: what the LOG offers — the same view controls (its rows are the bin's
-	 * rows read a second way, so grouping and sort mean the same thing), and the one
-	 * destructive act, which is `emptyBin` rather than a second one: "clear the record" and
-	 * "reclaim the disk" are the same gesture on one array, and its dialog already says both
-	 * halves out loud.
-	 *
-	 * The log's own TREE ROW is gone (it is a tab inside Deleted now), so this list is
-	 * reached the way every other view's is: the grid's background menu, in the view the
-	 * tab opens. There was never a second thing on it worth a second surface.
-	 */
-	function deletedLogMenuItems() {
-		return [
-			...deletedViewItems(),
-			...(logCount
+			},
+			...(n || (logCount && $explorerBinShowSpent) ? [{ section: 'Disk' }] : []),
+			...(n
 				? [
-						{ section: 'Record' },
+						{
+							label: 'Empty Deleted (' + n + ')',
+							danger: true,
+							icon: 'trash-2',
+							tooltip:
+								'Reclaim the disk on THIS machine and clear the record. Peers keep their own bins.',
+							action: () => void emptyBin()
+						}
+					]
+				: []),
+			// the record's own act, offered only where the record is on screen: clearing a log
+			// you cannot see is the kind of destructive surprise a bin exists to avoid.
+			...(logCount && $explorerBinShowSpent
+				? [
 						{
 							label: 'Clear the log (' + logCount + ')',
 							danger: true,
@@ -4041,28 +4396,77 @@
 		];
 	}
 
-	/** the Deleted tree row's own menu */
-	function deletedRowMenu(e: MouseEvent) {
+	/**
+	 * R22 round 36: a FOLDER NODE in the bin. No rename, no share, no drag and no drop — it
+	 * is a record of a place, not a place, which is why every one of those would address a
+	 * folder id the library no longer has.
+	 *
+	 * `Delete permanently` appears only when something under the node is HELD here: a purge
+	 * reclaims BYTES, and offering it over a subtree whose bytes are already gone is the
+	 * gesture-that-cannot-work the bin's own rule forbids. A GHOST still offers Restore —
+	 * it restores what is under it, which is the only thing there was to restore.
+	 */
+	function deletedFolderMenu(e: MouseEvent, node: any) {
 		e.preventDefault();
-		const n = binCount;
+		e.stopPropagation();
+		const under = deletedTree.descendants(node.nodeId);
+		const heldUnder = under.items.filter((r: any) => deletedHeld.has(r.hash)).length;
+		const counts =
+			plural(under.folders.length, 'folder') + ' and ' + plural(under.items.length, 'file');
+		const who = node.row ? ownerLabel({ owner: node.row.by ?? null }) : '';
 		menu = {
 			x: e.clientX,
 			y: e.clientY,
 			items: [
-				{ label: 'Open', action: () => openFolder('deleted') },
-				...deletedViewItems(),
-				...(n
+				{ label: 'Open', icon: 'folder', action: () => openFolder('deleted:' + node.nodeId) },
+				{
+					label: 'Restore folder (' + counts + ')',
+					icon: 'rotate-ccw',
+					tooltip:
+						'Puts back the folder and everything in it that this machine still holds, where it was',
+					action: () => {
+						const back = restoreDeletedFolder(node.nodeId);
+						showToast(
+							'Restored ' + node.name + ' — ' + plural(back.files, 'file') + ' put back'
+						);
+					}
+				},
+				...(heldUnder
 					? [
-							{ section: 'Disk' },
 							{
-								label: 'Empty Deleted (' + n + ')',
-								danger: true,
+								label: 'Delete permanently (' + heldUnder + ')',
 								icon: 'trash-2',
-								action: () => void emptyBin()
+								danger: true,
+								tooltip:
+									'Free the disk on THIS machine for everything inside. Peers keep their own copies.',
+								action: () => {
+									void purgeDeletedFolder(node.nodeId).then((gone: number) =>
+										showToast('Freed ' + plural(gone, 'file') + ' from this device')
+									);
+								}
 							}
 						]
-					: [])
+					: []),
+				{
+					label: node.ghost
+						? 'Still in Library — holds deleted files'
+						: 'Deleted by ' +
+							(who || 'someone') +
+							' · ' +
+							new Date(Number(node.row?.at) || 0).toLocaleString(),
+					action: () => {}
+				}
 			]
+		};
+	}
+
+	/** the Deleted tree row's own menu */
+	function deletedRowMenu(e: MouseEvent) {
+		e.preventDefault();
+		menu = {
+			x: e.clientX,
+			y: e.clientY,
+			items: [{ label: 'Open', action: () => openFolder('deleted') }, ...deletedViewItems()]
 		};
 	}
 
@@ -4159,41 +4563,18 @@
 			return;
 		}
 		// R22 round 7: the bin is not a folder you put things in, so New folder / Save scene
-		// are meaningless here. What IS meaningful is emptying it.
-		if ($activeFolder === 'deletedlog') {
+		// are meaningless here. What IS meaningful is how it is READ and what it can empty.
+		//
+		// R22 round 36: ONE branch for the whole bin — root and node alike — and one item
+		// list, because the layout / spent / group / sort choices mean the same thing wherever
+		// you are standing in it. They are offered over an EMPTY bin too: "how do I read this"
+		// is the question you have when the view surprises you, and the old
+		// "The bin is empty" dead end was the one state in which it could not be answered.
+		if (binScope.inBin) {
 			e.preventDefault();
-			menu = {
-				x: e.clientX,
-				y: e.clientY,
-				items: logCount
-					? deletedLogMenuItems()
-					: [{ label: 'Nothing has been deleted yet', action: () => {} }]
-			};
-			return;
-		}
-		if ($activeFolder === 'deleted') {
-			e.preventDefault();
-			const n = binCount;
-			menu = {
-				x: e.clientX,
-				y: e.clientY,
-				// R22 round 9: group and sort belong HERE as well as on the tree row — this is the
-				// surface you are looking at when you decide you want them
-				items: n
-					? [
-							...deletedViewItems(),
-							{ section: 'Disk' },
-							{
-								label: 'Empty Deleted (' + n + ')',
-								danger: true,
-								icon: 'trash-2',
-								tooltip:
-									'Reclaim the disk on THIS machine and clear the record. Peers keep their own bins.',
-								action: () => void emptyBin()
-							}
-						]
-					: [{ label: 'The bin is empty', action: () => {} }]
-			};
+			// R22 round 9: group and sort belong HERE as well as on the tree row — this is the
+			// surface you are looking at when you decide you want them
+			menu = { x: e.clientX, y: e.clientY, items: deletedViewItems() };
 			return;
 		}
 		const inPacks =
@@ -4484,10 +4865,26 @@
 		// default-pack item carries a `url` so the drop can fetch+place it without
 		// first storing it in the Explorer library.
 		e.dataTransfer?.setData('application/x-explorer-item', JSON.stringify(dragPayloadFor(item)));
-		libraryDragging = true;
+		// R22 round 36: a card picked up IN the bin is a RESTORE in flight, not a library
+		// drag — the two flags are what keep the Deleted row from offering itself as a
+		// target for a row it already holds.
+		if (item?.deletedEntry) binDragging = true;
+		else libraryDragging = true;
 	}
 	/** every FOLDER card and row starts its drag here, so the flag has one writer per kind */
 	function onFolderDragStart(e: DragEvent, folder: any) {
+		if (folder?.deletedNode) {
+			// R22 round 36: a REAL deleted folder drags out to be put back somewhere; a GHOST
+			// is a folder that still exists in the Library, so there is nothing to restore and
+			// no id a drop could write — it is a place the bin draws, not a thing it holds.
+			if (folder.ghost || !folder.row) return e.preventDefault();
+			e.dataTransfer?.setData(
+				'application/x-explorer-folder',
+				JSON.stringify(folderDragPayload(folder))
+			);
+			binDragging = true;
+			return;
+		}
 		e.dataTransfer?.setData('application/x-explorer-folder', JSON.stringify(folderDragPayload(folder)));
 		libraryDragging = true;
 	}
@@ -4508,17 +4905,18 @@
 	 * acts on the last card clicked.
 	 *
 	 * TWO DELETES, not one, because they are different acts (see DELETE IS NOT UNSHARE):
-	 * a SHARED file goes through `deleteSharedItem`, which tombstones it for the project so
-	 * every peer's copy moves to their own bin; a local one is `logLocalDeletion` +
-	 * `setItemHidden`, which nobody else needs to hear about.
+	 * a SHARED file is tombstoned for the project so every peer's copy moves to their own
+	 * bin; a local one only writes a row and hides itself, which nobody else needs to hear
+	 * about. R22 round 36 folds both into `deleteItemsToBin`, which applies the per-item
+	 * rule and publishes ONCE — this loop used to publish the whole shared index per file.
 	 *
-	 * A FOLDER is the interesting case. `deleteFolder` reclaims the blobs of everything in
-	 * the subtree — irreversible, and an irreversible act is exactly what an unconfirmed
-	 * gesture may NOT perform. So a folder dropped here BINS EVERY FILE INSIDE IT first,
-	 * one by one, on the same reversible path a file takes; only the (now empty) folder
-	 * records are removed, and they hold no bytes. The files are cleared of their
-	 * `folderId` on the way, so Restore puts them back at the library root instead of
-	 * inside a folder that no longer exists.
+	 * A FOLDER was the interesting case, and round 36 is where it stops being one. This
+	 * used to bin every file inside and then call `deleteFolder` on the emptied shell,
+	 * CLEARING each file's `folderId` on the way so Restore landed it at the library root —
+	 * which is precisely the reported bug: the structure was thrown away by the delete, not
+	 * lost by the restore. `deleteFolderToBin` records a folder row per folder in the
+	 * subtree and keeps every item's `folderId`, so THE LOCATION IS THE POINT: the bin shows
+	 * the shape you deleted and Restore recreates the way back.
 	 */
 	/**
 	 * R22 round 11 (user): "for dragging to Library and back: 3d objects automatically
@@ -4667,6 +5065,16 @@
 		if (!payload) return;
 		e.preventDefault();
 		e.stopPropagation();
+		// R22 round 36: a card dragged OUT of the bin and dropped back on it has nothing to
+		// delete — it is already here. Say which gesture does what instead of silently
+		// re-binning rows whose ids `$explorerItems` has never held.
+		{
+			const { hashes, nodes } = binPayloadIds(payload);
+			if (hashes.length || nodes.length)
+				return showToast(
+					'Already in Deleted — drop it on a Library folder to put it back there'
+				);
+		}
 		const dragged = payload.items?.length ? payload.items : payload.type === 'item' ? [payload] : [];
 		const folderIds: string[] = payload.folders?.length
 			? payload.folders
@@ -4676,13 +5084,7 @@
 		let files = 0;
 		let folders = 0;
 		let skipped = 0;
-		/** one file, whichever shelf it belongs to. `orphan` = its folder is going away. */
-		const binOne = (record: any, orphan = false) => {
-			if (orphan) moveItem(record.id, null);
-			if (isShared(record)) deleteSharedItem(record.id);
-			else binLocalItem(record);
-			files++;
-		};
+		const binIds: string[] = [];
 		for (const p of dragged) {
 			if (p.prefabId) {
 				const prefab = $prefabs.find((x: any) => x.id === p.prefabId);
@@ -4694,14 +5096,13 @@
 			}
 			const record = $explorerItems.find((i: any) => i.id === p.id);
 			// a pack or scene CARD is a view of something the library does not own
-			if (record) binOne(record);
+			if (record) binIds.push(record.id);
 			else skipped++;
 		}
+		if (binIds.length) files += deleteItemsToBin(binIds);
 		for (const id of folderIds) {
-			const subtree = folderSubtree(id);
-			for (const record of $explorerItems.filter((i: any) => subtree.includes(i.folderId ?? '')))
-				binOne(record, true);
-			await deleteFolder(id);
+			const moved = deleteFolderToBin(id);
+			files += moved.files;
 			folders++;
 		}
 		setSel([]);
@@ -4889,6 +5290,22 @@
 	}
 	function openFolder(id: string | null) {
 		search = '';
+		// R22 round 36: `deletedlog` is an ALIAS now, not a place. Round 13 made the log a
+		// navigable folder id so it could be deep-linked and returned to; round 36 makes the
+		// same reading a view FLAG over the bin (see `deletedRootCount`). Answering the old id
+		// here is what keeps every one of those entry points — the pinned-roots guard, a saved
+		// `activeFolder`, an older suite — landing somewhere that shows what it asked for.
+		if (id === 'deletedlog') {
+			explorerBinShowSpent.set(true);
+			activeFolder.set('deleted');
+			return;
+		}
+		// ...and a bin folder CARD carries the card-id namespace, not the location one, so the
+		// nine handlers that call `openFolder(folder.id)` need no branch of their own.
+		if (typeof id === 'string' && id.startsWith('deletedfolder:')) {
+			activeFolder.set('deleted:' + id.slice('deletedfolder:'.length));
+			return;
+		}
 		activeFolder.set(id);
 	}
 	// ---- 21-H3: the MARQUEE ----------------------------------------------------------
@@ -5253,7 +5670,10 @@
 </script>
 
 
-<svelte:window onresize={fitToViewport} ondragend={() => ((libraryDragging = false), (binDropActive = false))} />
+<svelte:window
+	onresize={fitToViewport}
+	ondragend={() => ((libraryDragging = false), (binDragging = false), (binDropActive = false))}
+/>
 
 {#snippet editRow(depth: number)}
 	<div class="flex flex-col gap-0.5" style="padding-left: {8 + depth * 14}px">
@@ -5399,7 +5819,9 @@
 	-->
 	<tr
 		data-card-id={id}
-		class="ex-row {isFolder ? 'explorer-folder-card' : 'explorer-card'} {cardClass(selectedIds, $inspectedFile, selected, id)} {!isFolder &&
+		class="ex-row {isFolder ? 'explorer-folder-card' : 'explorer-card'} {isFolder && folder.deletedNode
+			? 'ex-deleted-node'
+			: ''} {isFolder && folder.ghost ? 'ex-deleted-ghost' : ''} {cardClass(selectedIds, $inspectedFile, selected, id)} {!isFolder &&
 		openSceneHash &&
 		item.hash === openSceneHash
 			? 'explorer-open-scene'
@@ -5407,8 +5829,12 @@
 			id && isFolder
 			? 'ex-row-drop'
 			: ''}"
-		draggable="true"
-		title={isFolder ? folder.name : item.name}
+		draggable={!(isFolder && folder.deletedNode && (folder.ghost || !folder.row))}
+		title={isFolder
+			? folder.ghost
+				? 'Still in Library — holds deleted files'
+				: folder.name
+			: item.name}
 		style:touch-action={tDragging ? 'none' : 'pan-y'}
 		ondragstart={(e) => (isFolder ? onFolderDragStart(e, folder) : onItemDragStart(e, item))}
 		ondragover={(e) => isFolder && dragOverInto(e, folder.id)}
@@ -5667,6 +6093,39 @@
 							onclick={() => openFolder(c.id)}>{c.label}</button
 						>
 					{/each}
+					<!--
+						R22 round 36 (user): "I like Lucid icon, could be used as just a button to toggle
+						it". Round 13 read that as a Bin|Log tab strip, which cost the grid a whole row of
+						height and put a scrollbar on the view it introduced. An icon on the END of the
+						breadcrumb row costs NOTHING: the row exists, it is already one line tall, and
+						`ml-auto` puts the toggle where a view control belongs — opposite the location.
+
+						The breadcrumb is HIDEABLE, which is what sank this idea in round 13: the only way
+						into the log must not sit behind a preference. It is not the only way in now — the
+						same flag is a checked entry in the bin's background menu and on its tree row
+						(`deletedViewItems`), which is a surface no preference can hide.
+
+						`aria-pressed` drives the armed paint so the styling and the accessibility tree
+						cannot disagree, and the counts the two tabs used to carry survive in its title.
+					-->
+					{#if inDeletedView}
+						<button
+							id="deleted-log-toggle"
+							class="ex-crumb-toggle"
+							aria-pressed={$explorerBinShowSpent}
+							aria-label="Show cleaned-up files"
+							disabled={!$deletedLogEnabled}
+							title={$deletedLogEnabled
+								? 'Show cleaned-up files — the record of deletions whose bytes are gone from this device (' +
+									binCount +
+									' of ' +
+									logCount +
+									' can be put back)'
+								: 'The deleted files log is switched off in File settings'}
+							onclick={() => explorerBinShowSpent.update((v: boolean) => !v)}
+							><Icon name="history" size={13} aria-hidden="true" /></button
+						>
+					{/if}
 				</div>
 			{/if}
 		{/snippet}
@@ -6008,7 +6467,7 @@
 							id="deleted-folder"
 							class="whitespace-nowrap rounded px-2 py-1 text-left {binDropActive
 								? 'bg-red-600/30 text-white ring-1 ring-red-400'
-								: $activeFolder === 'deleted'
+								: binScope.inBin
 									? 'bg-primary-700 text-white'
 									: 'text-gray-300 hover:bg-gray-700'}"
 							title={($deletedLogEnabled && logCount !== binCount
@@ -6021,7 +6480,8 @@
 							onclick={() => openFolder('deleted')}
 							oncontextmenu={deletedRowMenu}
 							ondragover={(e) => {
-								if (!canAccept(e)) return;
+								// R22 round 36: not for something already in here — see `binDragging`
+								if (binDragging || !canAccept(e)) return;
 								e.preventDefault();
 								e.stopPropagation();
 								binDropActive = true;
@@ -6154,7 +6614,7 @@
 					-->
 					<label
 						class="ex-ask-remember"
-						title="Applies to whichever answer you press: Share always, or Keep local never. Change it any time in File settings."
+						title="Share: every file on this device is shared now, and every file you add later. Keep local: nothing is shared automatically and you are not asked again. Change it any time in File settings."
 					>
 						<input
 							id="explorer-share-remember"
@@ -6163,7 +6623,7 @@
 							checked={shareRemember}
 							onchange={(e) => (shareRemember = e.currentTarget.checked)}
 						/>
-						Do this for new files from now on
+						Apply to all my files, now and from now on
 					</label>
 					<button
 						id="explorer-share-yes"
@@ -6204,68 +6664,13 @@
 				</div>
 			{/if}
 			<!--
-				R22 round 13 (user): "'Deleted log' button should be somewhere within 'Deleted'
-				(maybe as tab or a checkbox to toggle log view) when opened in Explorer ... I like
-				Lucid icon, could be used as just a button to toggle it".
-
-				THE TWO READINGS OF ONE ARRAY, as a segmented control at the top of the view they
-				switch between. `tp-seg` because that is the app's own answer to "a mode you flip
-				often and want to see the state of at a glance" (Thumbnails|List, one header up),
-				and `aria-pressed` drives the armed paint so the styling and the accessibility
-				tree cannot disagree.
-
-				HERE rather than in the header chips: the chips apply to every view, and a control
-				that only means something in one place must not reflow the header of all the
-				others. Here rather than on the breadcrumb: the breadcrumb is HIDEABLE
-				(`showBreadcrumb`), and the only way into the log must not be behind a preference
-				— which is most of what was wrong with putting it in the tree.
-
-				It keeps the counts the two roots used to carry, so the glance survives the move,
-				and it stops `click`/`pointerdown` for the confirm strip's reason: #explorer-grid
-				answers both (deselect, and start a marquee) and choosing a view is neither.
+				R22 round 13's `#explorer-bin-tabs` strip is GONE (round 36). Reported: "Bin/Log
+				toggle adds a scrollbar" — the strip sat inside the grid column and cost it a row of
+				height, which a view that is mostly a list can least afford. The two readings it
+				switched between are one flag now (`explorerBinShowSpent`), and the flag lives where
+				a view control costs nothing: the breadcrumb row above, and a checked entry in the
+				bin's own menus. See `deletedRootCount` for why the navigable-log ruling was reversed.
 			-->
-			{#if inDeletedView}
-				<!-- svelte-ignore a11y_no_static_element_interactions, a11y_click_events_have_key_events -->
-				<div
-					id="explorer-bin-tabs"
-					class="ex-bin-tabs"
-					onclick={(e) => e.stopPropagation()}
-					onpointerdown={(e) => e.stopPropagation()}
-				>
-					<div class="tp-seg" role="group" aria-label="Deleted view">
-						<button
-							id="deleted-tab-bin"
-							class="tp-seg-btn"
-							aria-pressed={$activeFolder === 'deleted'}
-							title="What can be put back: the deletions whose bytes are still on this machine."
-							onclick={() => openFolder('deleted')}
-							><Icon name="trash-2" size={14} aria-hidden="true" />Bin ({binCount})</button
-						>
-						<button
-							id="deleted-tab-log"
-							class="tp-seg-btn"
-							aria-pressed={$activeFolder === 'deletedlog'}
-							disabled={!logAvailable}
-							title={logAvailable
-								? 'The whole record: what was removed, by whom and when — including the files whose bytes are gone.'
-								: 'The deleted files log is switched off in File settings, so there is no record to show.'}
-							onclick={() => openFolder('deletedlog')}
-							><Icon name="file-text" size={14} aria-hidden="true" />Log ({logCount})</button
-						>
-					</div>
-					<!-- disabled WITH the reason, and the reason is RENDERED rather than left in a
-					     tooltip — the storage panel's refused rows settled that one. It is also the
-					     way back on: the button opens the setting that turned it off. -->
-					{#if !logAvailable}
-						<button
-							id="deleted-log-off"
-							class="ex-bin-note"
-							title="Open the file settings — the recycle bin, and whether deletions are recorded at all"
-							onclick={openFileSettings}>Log off — File settings</button
-						>
-					{/if}
-				</div>
-			{/if}
 			{#if !pendingCard && childFolders.length === 0 && gridItems.length === 0}
 				{#if openPack && $openPackLoading}
 					<!-- QW: first open of a pack fetches its item list from the CDN — show a
@@ -6336,7 +6741,20 @@
 							{@render listHead()}
 							{#if deletedGroups}
 								<!-- grouped bin: one SECTION per deleter, collapsible. The rows inside a
-								     section are the same rows in the same order the sort produced. -->
+								     section are the same rows in the same order the sort produced.
+
+								     R22 round 36: the FOLDER NODES sit above the sections, ungrouped. A node
+								     is a place, and a place has no single deleter to file it under — the
+								     files inside it may have been thrown away by three different people. So
+								     grouping keeps meaning exactly what it meant (compare who threw what
+								     away) over the rows it can answer for, and "folders first" survives. -->
+								{#if binFolderNodes.length}
+									<tbody>
+										{#each gridEntries.filter((e: any) => e.kind === 'folder') as entry (entry.folder.id)}
+											{@render listRow(entry)}
+										{/each}
+									</tbody>
+								{/if}
 								{#each deletedGroups as group (group.id)}
 									<tbody>
 										<tr class="ex-group">
@@ -6391,10 +6809,13 @@
 								data-card-id={folder.id}
 								class="explorer-folder-card relative flex cursor-pointer flex-col items-center gap-1 rounded border p-1.5 {dropFolder === folder.id
 									? 'border-primary-500 bg-primary-500/10'
-									: cardClass(selectedIds, null, selected, folder.id)}"
+									: cardClass(selectedIds, null, selected, folder.id)} {folder.deletedNode
+									? 'ex-deleted-node'
+									: ''} {folder.ghost ? 'ex-deleted-ghost' : ''}"
+								title={folder.ghost ? 'Still in Library — holds deleted files' : folder.name}
 								role="button"
 								tabindex="0"
-								draggable="true"
+								draggable={!(folder.deletedNode && (folder.ghost || !folder.row))}
 								ondragstart={(e) =>
 									onFolderDragStart(e, folder)}
 								ondragover={(e) => dragOverInto(e, folder.id)}
@@ -7281,32 +7702,41 @@
 	.ex-confirm-settings:hover {
 		color: #e5e7eb;
 	}
-	/* R22 round 13: BIN | LOG, the two readings of one array. Sticky at the top of the
-	   scrolling grid, on the confirm strip's model — but with no surface and no border of
-	   its own, because it is a view SWITCH and not a question: the `tp-seg` control is the
-	   only thing that should read as chrome here. `z-index` is one below the confirm strip
-	   so an armed question always sits over it. */
-	.ex-bin-tabs {
-		position: sticky;
-		top: 0;
-		z-index: 2;
-		display: flex;
-		align-items: center;
-		gap: 8px;
-		margin-bottom: 4px;
-		padding: 2px 2px 4px;
-		background: var(--surface, #1f2937);
-	}
-	.ex-bin-note {
+	/* R22 round 36: the cleaned-up toggle, at the END of the breadcrumb row. `margin-left:
+	   auto` is the whole layout — the row is a flex line that already exists and already has
+	   its height, which is the entire reason this replaced round 13's sticky strip (that one
+	   cost the grid a row and put a scrollbar on the view). `flex: 0 0 auto` so a long trail
+	   scrolls under it rather than squeezing it. */
+	.ex-crumb-toggle {
 		flex: 0 0 auto;
+		margin-left: auto;
+		display: inline-flex;
+		align-items: center;
 		border-radius: 3px;
-		padding: 2px 6px;
+		padding: 2px 4px;
 		color: #9ca3af;
-		font-size: 10px;
-		text-decoration: underline;
 	}
-	.ex-bin-note:hover {
+	.ex-crumb-toggle:hover:not(:disabled) {
+		background: rgba(55, 65, 81, 0.9);
 		color: #e5e7eb;
+	}
+	/* armed through aria-pressed, so the paint and the accessibility tree cannot disagree */
+	.ex-crumb-toggle[aria-pressed='true'] {
+		background: rgba(59, 130, 246, 0.25);
+		color: #fff;
+	}
+	.ex-crumb-toggle:disabled {
+		opacity: 0.4;
+		cursor: not-allowed;
+	}
+	/* a bin folder NODE. Dimmed because it is a record of a place rather than a place; a
+	   GHOST (still in the Library, holding deleted files) dimmer still, because it is the
+	   one node here that is not itself deleted. */
+	.ex-deleted-node {
+		opacity: 0.75;
+	}
+	.ex-deleted-ghost {
+		opacity: 0.5;
 	}
 	.ex-table {
 		width: 100%;

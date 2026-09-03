@@ -17,7 +17,7 @@
 //                      where they are decided.
 //   2. PRIVATE         the name reaches NOTHING on the far side: not the presence row, not
 //                      the manifest, not the library, not a toast. The popup groups them
-//                      last, disables Watch with the reason and offers Request access.
+//                      last, drops Watch (it could never work there) and offers Request access.
 //   3. ISOLATION       both directions, while chat still crosses. Private is not offline.
 //   4. REQUEST ACCESS  ask → Keep private → ask again → Share scene → the name, the history
 //                      and the Go to all arrive at once.
@@ -321,11 +321,12 @@ h.run(async () => {
 		grouped.last === 'In a private scene',
 		`the popup gives them a group of their own, LAST (${JSON.stringify(grouped.heads)})`
 	);
+	// R22 (Deleted keeps its structure, user): NO Watch button in this row at all. It
+	// could never work here — the peer has to share the scene first, and the button that
+	// asks them to is right beside where it sat — so a permanently grey Watch was noise.
 	h.check(
-		grouped.watch.length === 1 &&
-			grouped.watch[0].disabled === true &&
-			/private/i.test(grouped.watch[0].title ?? ''),
-		`Watch is disabled WITH the reason — never hidden (${JSON.stringify(grouped.watch)})`
+		grouped.watch.length === 0,
+		`no Watch in the private row — it could never work, so Request access stands alone (${JSON.stringify(grouped.watch)})`
 	);
 	h.check(
 		grouped.goto === 0,

@@ -238,7 +238,7 @@
 	import { sceneAssets } from '$lib/sceneAssets';
 	import { setNodeData } from '$lib/nodesHandler';
 	import { findNodeAnyGraph } from '../../stores/flowStore';
-	import { bottomDockActive, visibleDockKey, dockMinimized, setDockOccupant, dockHeight, dockModeArm } from '$lib/bottomDock';
+	import { bottomDockActive, visibleDockKey, dockMinimized, setDockOccupant, dockHeight, dockModeArm, forgetDockTab } from '$lib/bottomDock';
 	import { bottomDockable } from '$lib/bottomDockDrop';
 	import { dragWindow } from '$lib/dragWindow';
 	import { focusStack } from '$lib/windowFocus';
@@ -310,6 +310,7 @@
 		docked = v;
 		localStorage.setItem('explorerDocked', String(v));
 		if (v) bottomDockActive.set('explorer'); // re-docking makes it the visible panel
+		else forgetDockTab('explorer'); // an undock gives up its slot, so re-docking is a fresh add at the end of the strip
 	}
 
 	// 4b: CONSUME the dock arm. The Controls toolbar's Explorer menu offers "Open as

@@ -1,8 +1,11 @@
 // W7 — THE DOCK'S GESTURE HALF. Four capabilities, one gesture model:
 //
-//  1. the tab ORDER is user data (`dockTabOrder`, LOCAL + persisted). `DOCK_FAMILY`
-//     is now only the order the app SHIPS with, and a key the stored list has never
-//     seen is spliced in beside its siblings rather than dropped or pushed to the front.
+//  1. the tab ORDER is user data (`dockTabOrder`, LOCAL + persisted), and it is DOCKING
+//     ORDER: a view joins the strip at the END when it is docked and keeps that place
+//     until somebody moves it. `DOCK_FAMILY` is only the order this module declares its
+//     views in. (Reported: "tabs should add in the order I add them" — the list used to
+//     be seeded with the whole family, so every key was already placed and the strip
+//     sorted by the shipped order whatever you opened first.)
 //  2. the tab's right-click menu gained Move left / Move right, each disabled at its
 //     end of the strip. That is also the TOUCH path — the drag stands down on a coarse
 //     pointer, where a horizontal drag inside a 22px strip is the strip's own scroll.
@@ -117,13 +120,101 @@ h.run(async () => {
 	const browser = await h.launch();
 	const A = await h.setupPage(browser, 'A');
 
-	// --- 0. premise: three views docked, the strip order is the shipped one ---
+	// --- 0. THE STRIP IS IN THE ORDER THE VIEWS WERE DOCKED ---
+	// Opened ONE AT A TIME, and deliberately in an order the shipped family list would
+	// contradict: DOCK_FAMILY has the UV editor BEFORE the Explorer, so a strip reading
+	// flow,explorer,uv can only have come from the order they were added in.
 	await A.page.evaluate(() => {
 		localStorage.removeItem('dockTabOrder');
 		localStorage.setItem('flowDocked', 'true');
 		localStorage.setItem('explorerDocked', 'true');
 		localStorage.setItem('uvDocked', 'true');
 	});
+	await A.page.reload({ waitUntil: 'domcontentloaded' });
+	await A.page.waitForFunction(() => window.__stores && !!window.__stores.bottomDock, { timeout: 30000 });
+	const open = async (store) => {
+		await A.page.evaluate((s) => window.__stores[s].set(false), store);
+		await A.page.waitForTimeout(700);
+	};
+	await open('flowGraphClose');
+	await open('explorerClose');
+	await open('uvEditorClose');
+	await A.page.evaluate(() => window.__stores.bottomDock.activateDock('flow'));
+	await A.page.waitForTimeout(500);
+
+	let d = await state(A.page);
+	h.check(
+		d.present.join(',') === 'explorer,flow,uv',
+		`0.1 premise: three views are docked (${d.present.join(',')})`
+	);
+	h.check(
+		d.strip.join(',') === 'flow,explorer,uv',
+		`0.2 the strip is in the order they were DOCKED, not the shipped family order (${d.strip.join(',')})`
+	);
+	h.check(d.visible === 'flow', `0.3 the Node editor is showing (${d.visible})`);
+	h.check(
+		d.stored?.join(',') === 'flow,explorer,uv',
+		`0.4 ...and that is what persists — the docking order and nothing else (${JSON.stringify(d.stored)})`
+	);
+
+	// --- 1. the order model itself ---
+	// `resolveOrder` SANITIZES a stored list and adds nothing: a key it has never heard
+	// of belongs at the end of the strip, which is `noteDockOrder`'s job, not this one.
+	const resolved = await A.page.evaluate(() => {
+		const b = window.__stores.bottomDock;
+		return {
+			// a stored order written before 'hud' and 'uv' existed
+			partial: b.resolveOrder(['explorer', 'flow']),
+			dirty: b.resolveOrder(['nope', 'flow', 'flow', 'explorer']),
+			empty: b.resolveOrder([])
+		};
+	});
+	h.check(
+		resolved.partial.join(',') === 'explorer,flow',
+		`1.1 a partial stored order is kept verbatim — every position it DID state (${resolved.partial.join(',')})`
+	);
+	h.check(
+		resolved.partial.length === 2,
+		`1.2 ...and nothing is invented for the keys it never saw; they join at the end when they DOCK (${resolved.partial.length})`
+	);
+	h.check(
+		resolved.dirty.join(',') === 'flow,explorer',
+		`1.3 duplicates collapse and an unknown key is dropped (${resolved.dirty.join(',')})`
+	);
+	h.check(resolved.empty.length === 0, `1.4 an empty stored order stays empty (${JSON.stringify(resolved.empty)})`);
+
+	// the MIGRATION: the old model wrote the whole shipped family out whether or not
+	// anybody had arranged anything, so that exact list has to read as "unset" — else
+	// every existing install keeps all seven keys placed and the reported bug with them.
+	const migrated = await A.page.evaluate(async () => {
+		const family = window.__stores.bottomDock.DOCK_FAMILY;
+		localStorage.setItem('dockTabOrder', JSON.stringify(family));
+		return { family };
+	});
+	await A.page.reload({ waitUntil: 'domcontentloaded' });
+	await A.page.waitForFunction(() => window.__stores && !!window.__stores.bottomDock, { timeout: 30000 });
+	const afterMigration = await A.page.evaluate(() => {
+		let order;
+		window.__stores.bottomDock.dockTabOrder.subscribe((v) => (order = v))();
+		return order;
+	});
+	h.check(
+		afterMigration.length === 0,
+		`1.5 a stored order that IS the shipped list (${migrated.family.length} keys) reads as unset (${JSON.stringify(afterMigration)})`
+	);
+	// ...and a HAND-MADE order is not touched by that migration
+	await A.page.evaluate(() => localStorage.setItem('dockTabOrder', JSON.stringify(['explorer', 'flow'])));
+	await A.page.reload({ waitUntil: 'domcontentloaded' });
+	await A.page.waitForFunction(() => window.__stores && !!window.__stores.bottomDock, { timeout: 30000 });
+	const kept = await A.page.evaluate(() => {
+		let order;
+		window.__stores.bottomDock.dockTabOrder.subscribe((v) => (order = v))();
+		return order;
+	});
+	h.check(kept.join(',') === 'explorer,flow', `1.6 ...but any other stored order survives verbatim (${kept.join(',')})`);
+
+	// back to the docking order this file goes on to drag around
+	await A.page.evaluate(() => localStorage.setItem('dockTabOrder', JSON.stringify(['flow', 'explorer', 'uv'])));
 	await A.page.reload({ waitUntil: 'domcontentloaded' });
 	await A.page.waitForFunction(() => window.__stores && !!window.__stores.bottomDock, { timeout: 30000 });
 	await A.page.evaluate(() => {
@@ -133,55 +224,11 @@ h.run(async () => {
 		s.uvEditorClose.set(false);
 		s.bottomDock.activateDock('flow');
 	});
-	await A.page.waitForTimeout(900);
-
-	let d = await state(A.page);
+	await A.page.waitForTimeout(1200);
+	d = await state(A.page);
 	h.check(
-		d.present.join(',') === 'explorer,flow,uv',
-		`0.1 premise: three views are docked (${d.present.join(',')})`
-	);
-	h.check(
-		d.strip.join(',') === 'flow,uv,explorer',
-		`0.2 the strip is in DOCK_FAMILY order to start (${d.strip.join(',')})`
-	);
-	h.check(d.visible === 'flow', `0.3 the Node editor is showing (${d.visible})`);
-	// the store persists its RESOLVED value on subscribe (bottomDockActive's own
-	// precedent), so "untouched" is the shipped order written out, not an absent key —
-	// which is also what heals a partial list left by an older release, once.
-	h.check(
-		d.stored?.join(',') === 'flow,flowcode,animation,uv,shader,hud,explorer',
-		`0.4 untouched, the persisted order IS the shipped one (${JSON.stringify(d.stored)})`
-	);
-
-	// --- 1. the order model itself (resolveOrder's promise about an unknown key) ---
-	const resolved = await A.page.evaluate(() => {
-		const r = window.__stores.bottomDock.resolveOrder;
-		return {
-			// a stored order that predates 'hud' and 'uv' entirely
-			partial: r(['explorer', 'flow']),
-			// junk and duplicates
-			dirty: r(['nope', 'flow', 'flow', 'explorer']),
-			empty: r([])
-		};
-	});
-	// the stored list put Explorer FIRST and Node editor second — a hand-made order, and
-	// both positions have to survive being merged with five keys the list never saw
-	h.check(
-		resolved.partial[0] === 'explorer' && resolved.partial[1] === 'flow',
-		`1.1 a partial stored order keeps every position it DID state (${resolved.partial.join(',')})`
-	);
-	h.check(
-		resolved.partial.length === 7 &&
-			resolved.partial.slice(2).join(',') === 'flowcode,animation,uv,shader,hud',
-		`1.2 ...and the keys it never heard of come back beside their siblings, in family order, not at the front (${resolved.partial.join(',')})`
-	);
-	h.check(
-		resolved.dirty.filter((k) => k === 'flow').length === 1 && !resolved.dirty.includes('nope'),
-		`1.3 duplicates collapse and an unknown key is dropped (${resolved.dirty.join(',')})`
-	);
-	h.check(
-		resolved.empty.join(',') === 'flow,flowcode,animation,uv,shader,hud,explorer',
-		`1.4 an empty stored order resolves to the shipped one (${resolved.empty.join(',')})`
+		d.strip.join(',') === 'flow,explorer,uv' && d.visible === 'flow',
+		`1.7 the order SURVIVES A RELOAD — a panel reporting itself docked again keeps its slot (${d.strip.join(',')})`
 	);
 
 	// --- 2. DRAG a tab across its neighbour — it reorders, and it persists ---
@@ -192,11 +239,11 @@ h.run(async () => {
 	await drag(A.page, flowTab, { x: uvTab.right - 2, y: uvTab.y });
 	d = await state(A.page);
 	h.check(
-		d.strip.join(',') === 'uv,flow,explorer',
+		d.strip.join(',') === 'explorer,uv,flow',
 		`2.1 dragging the Node editor past the UV editor reorders the strip (${d.strip.join(',')})`
 	);
 	h.check(
-		d.tabs.join(',') === 'uv,flow,explorer',
+		d.tabs.join(',') === 'explorer,uv,flow',
 		`2.2 ...and dockTabs agrees, so it is the store and not just the markup (${d.tabs.join(',')})`
 	);
 	h.check(
@@ -219,7 +266,7 @@ h.run(async () => {
 	await A.page.waitForTimeout(1200);
 	d = await state(A.page);
 	h.check(
-		d.strip.join(',') === 'uv,flow,explorer',
+		d.strip.join(',') === 'explorer,uv,flow',
 		`2.5 the order SURVIVES A RELOAD (${d.strip.join(',')})`
 	);
 
@@ -233,7 +280,7 @@ h.run(async () => {
 	d = await state(A.page);
 	h.check(d.visible === 'explorer', `3.1 a plain click still activates the tab (${d.visible})`);
 	h.check(
-		d.strip.join(',') === 'uv,flow,explorer',
+		d.strip.join(',') === 'explorer,uv,flow',
 		`3.2 ...and moved nothing (${d.strip.join(',')})`
 	);
 	// now a real drag, then a click again — the suppression must expire
@@ -242,7 +289,7 @@ h.run(async () => {
 	await drag(A.page, flowTab, { x: uvTab.left + 2, y: uvTab.y });
 	d = await state(A.page);
 	h.check(
-		d.strip.join(',') === 'flow,uv,explorer',
+		d.strip.join(',') === 'explorer,flow,uv',
 		`3.3 the drag back reorders again (${d.strip.join(',')})`
 	);
 	h.check(
@@ -271,14 +318,15 @@ h.run(async () => {
 		`3.6 a click that wobbles 3px is still a CLICK, not a drag (${d.visible})`
 	);
 	h.check(
-		d.strip.join(',') === 'flow,uv,explorer',
+		d.strip.join(',') === 'explorer,flow,uv',
 		`3.7 ...and it moved nothing (${d.strip.join(',')})`
 	);
 	await A.page.evaluate(() => window.__stores.bottomDock.activateDock('flow'));
 	await A.page.waitForTimeout(400);
 
 	// --- 4. the menu's Move rows agree with the drag, and disable at the ends ---
-	let rows = await tabMenuRows(A.page, 'flow');
+	// (the strip is explorer,flow,uv here, so the Explorer is the LEFTMOST tab)
+	let rows = await tabMenuRows(A.page, 'explorer');
 	h.check(
 		rows.some((r) => r.label === 'Move left') && rows.some((r) => r.label === 'Move right'),
 		`4.1 the tab menu offers both Move rows (${rows.map((r) => r.label).join('|')})`
@@ -294,12 +342,12 @@ h.run(async () => {
 	h.check(await clickMenuRow(A.page, 'Move right'), '4.4 Move right runs');
 	d = await state(A.page);
 	h.check(
-		d.strip.join(',') === 'uv,flow,explorer',
-		`4.5 ...and lands the tab exactly where the drag did (${d.strip.join(',')})`
+		d.strip.join(',') === 'flow,explorer,uv',
+		`4.5 ...and lands the tab exactly where a drag would (${d.strip.join(',')})`
 	);
 	await closeMenus(A.page);
 
-	rows = await tabMenuRows(A.page, 'explorer');
+	rows = await tabMenuRows(A.page, 'uv');
 	h.check(
 		rows.find((r) => r.label === 'Move right')?.disabled === true,
 		'4.6 Move right is DISABLED on the rightmost tab'
@@ -310,10 +358,10 @@ h.run(async () => {
 	);
 	await closeMenus(A.page);
 	// put it back for the sections below
-	h.check(!!(await tabMenuRows(A.page, 'flow')), '4.8 premise: the menu opens on the Node editor');
+	h.check(!!(await tabMenuRows(A.page, 'explorer')), '4.8 premise: the menu opens on the Explorer');
 	await clickMenuRow(A.page, 'Move left');
 	d = await state(A.page);
-	h.check(d.strip.join(',') === 'flow,uv,explorer', `4.9 Move left is its mirror (${d.strip.join(',')})`);
+	h.check(d.strip.join(',') === 'explorer,flow,uv', `4.9 Move left is its mirror (${d.strip.join(',')})`);
 	await closeMenus(A.page);
 
 	// --- 5. drag a tab OUT of the strip — it undocks ---
@@ -331,6 +379,12 @@ h.run(async () => {
 	h.check(
 		!d.strip.includes('flow') && d.strip.length === 2,
 		`5.3 ...and it left the strip (${d.strip.join(',')})`
+	);
+	// UNDOCK gives up the slot as well, which is what makes the re-dock in section 6 a
+	// fresh add. (A CLOSE deliberately does not — see the note on `dockTabOrder`.)
+	h.check(
+		Array.isArray(d.stored) && !d.stored.includes('flow'),
+		`5.5 ...and gave up its place in the order, not just its tab (${JSON.stringify(d.stored)})`
 	);
 	h.check(
 		d.visible === 'uv' || d.visible === 'explorer',
@@ -393,6 +447,10 @@ h.run(async () => {
 	h.check(d.visible === 'flow', `6.2 ...and makes it the visible tab (${d.visible})`);
 	h.check(!d.flowWindow, '6.3 ...and the floating window is gone');
 	h.check(d.strip.includes('flow'), `6.4 ...and it is back in the strip (${d.strip.join(',')})`);
+	h.check(
+		d.strip[d.strip.length - 1] === 'flow',
+		`6.5 ...at the END: re-docking an undocked view is a fresh add, not a return to its old slot (${d.strip.join(',')})`
+	);
 
 	// --- 7. the band does not steal an ordinary drag ---
 	await A.page.evaluate(() => window.__stores.bottomDock.armDockMode('flow', false));

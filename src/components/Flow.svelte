@@ -16,7 +16,7 @@
 	import { tabbable, resizeGroup, tabGroups } from '$lib/windowTabs';
 	import { clampWinSize, clampResize, anchorOf } from '$lib/windowSize';
 	import { dockable } from '$lib/docking';
-	import { setDockOccupant, dockHeight, visibleDockKey, dockMinimized, activateDock, dockModeArm } from '$lib/bottomDock';
+	import { setDockOccupant, dockHeight, visibleDockKey, dockMinimized, activateDock, dockModeArm, forgetDockTab } from '$lib/bottomDock';
 	import { bottomDockable } from '$lib/bottomDockDrop';
 	import { dockAddItems } from '$lib/dockMenu';
 	import { fly } from 'svelte/transition';
@@ -66,6 +66,7 @@
 		docked = v;
 		localStorage.setItem('flowDocked', String(v));
 		if (v) activateDock('flow'); // re-docking makes it the visible tab
+		else forgetDockTab('flow'); // an undock gives up its slot, so re-docking is a fresh add at the end of the strip
 	}
 
 	// W5: consume the shared dock-mode arm — the tab strip's right-click menu asks

@@ -1224,6 +1224,42 @@ export async function emptyDeletedLog() {
 	return log.length;
 }
 
+/**
+ * R22 round 36 (user) — "CLEAR THE LOG" CLEARS THE LOG, and nothing else.
+ *
+ * It used to run `emptyDeletedLog`, which reclaims every byte in the bin as well; round 13
+ * had folded the two into one gesture on the reasoning that both act on one array. The
+ * user's reading is the right one: the LOG is the half whose bytes are already gone from
+ * this device (the cleaned-up records), the BIN is what can still be put back, and a menu
+ * entry called "Clear the log" that also empties the bin is a delete wearing a bookkeeping
+ * label. So this drops exactly the rows `partitionDeleted` calls spent HERE — item rows
+ * with no bytes on either shelf, folder rows whose files are all gone — and leaves every
+ * restorable row where it is. `emptyDeletedLog` stays the destructive act, under the
+ * "Empty Deleted" name that says so.
+ *
+ * REPLICATED, like every write to this array: a spent row of ours may still be a bin row
+ * on a peer that kept the bytes, and their copy stays on their hidden shelf (reclaimable
+ * from the storage panel) rather than being surfaced or destroyed on the strength of a
+ * message — the same trade `emptyDeletedLog` has always made, on a narrower set.
+ * @returns {number} how many records were forgotten
+ */
+export function clearDeletedRecords() {
+	const log = get(projectManifest).deleted ?? [];
+	if (!log.length) return 0;
+	const { spent } = partitionDeleted(log, heldHashes(), get(explorerFolders));
+	if (!spent.length) return 0;
+	const gone = new Set(spent.map((/** @type {any} */ r) => r.hash));
+	for (const h of gone) forgetApplied(h);
+	const { folders, items, removed } = projection();
+	publishSharedIndex(
+		folders,
+		items,
+		removed,
+		log.filter((/** @type {any} */ r) => !gone.has(r.hash))
+	);
+	return gone.size;
+}
+
 /** R22 round 7: the DELETED log carries the thumbnail now, so a card in the bin looks
  * like the file it was. It is a picture we already rendered — re-deriving it after the
  * bytes are reclaimed is impossible, which is exactly why it has to be recorded at

@@ -587,6 +587,41 @@ h.run(async () => {
 		`partitionDeleted now reads the whole log as spent (${s3e.bin} bin / ${s3e.spent} spent)`
 	);
 
+	// ---- 3f. "Clear the log" forgets the cleaned-up records and NOTHING ELSE ---------------
+	//
+	// Reported: clearing the log removed every deleted file. It ran `emptyDeletedLog`, the
+	// bin's own destructive act. Staged on the five spent rows above plus ONE fresh deletion
+	// whose bytes are still here: the five go, the one stays, and it can still be put back.
+	const s3f = await ev(async () => {
+		const { S, bytes, settle } = window.__t;
+		const E = S.explorer, L = S.sharedLibrary;
+		const keep = await E.addItemFromBytes(bytes('still-restorable'), 'keep-me.txt', null);
+		await settle(300);
+		L.deleteItemsToBin([keep.id]);
+		await settle(300);
+		const before = window.__t.log().length;
+		const gone = L.clearDeletedRecords();
+		await settle(300);
+		const after = window.__t.log();
+		return {
+			before,
+			gone,
+			after: after.map((r) => r.hash),
+			keepHash: keep.hash,
+			restorable: L.canRestoreDeleted(keep.hash),
+			bytesKept: window.__t.held().has(keep.hash)
+		};
+	});
+	h.check(s3f.before === 6 && s3f.gone === 5, `five spent rows forgotten out of six (${s3f.gone} of ${s3f.before})`);
+	h.check(
+		s3f.after.length === 1 && s3f.after[0] === s3f.keepHash,
+		`the one row whose bytes are still here SURVIVES (${s3f.after.length} left)`
+	);
+	h.check(
+		s3f.restorable && s3f.bytesKept,
+		`...and it is still restorable — clearing the log took no bytes (restorable ${s3f.restorable}, held ${s3f.bytesKept})`
+	);
+
 	// ---- 4. THE BIN VIEW, driven through the real UI --------------------------------------
 	//
 	// Single page, no peer needed: the tree, the walk-in, the menus and the toggle are all
@@ -1012,6 +1047,12 @@ h.run(async () => {
 	// third drop target and it cannot be staged from the bin's own grid (one view at a
 	// time), so the payload the bin card really writes is captured and handed to the card's
 	// own handler — which is the point: it is an ordinary Explorer item payload.
+	// ghosted.txt was deleted from INSIDE Vault, which is still live, so in the tree layout
+	// this section runs in it sits UNDER the Vault ghost node, not at the bin root: walk in,
+	// and WAIT for the card rather than reading it in the same tick as the re-render (both
+	// measured: null at the root, then a timeout waiting there)
+	await page.evaluate((id) => window.__stores.explorer.activeFolder.set('deleted:' + id), dnd.vault);
+	await page.locator('[data-card-id="deleted:' + dnd.ghosted + '"]').first().waitFor({ timeout: 8000 });
 	const carried = await ev((d) => {
 		const dt = new DataTransfer();
 		document

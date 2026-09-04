@@ -319,16 +319,21 @@ loadable play content. Everything a user does must be visible to connected peers
   drops its permanently-grey Watch — 21-G5's disabled-with-the-reason is for a control that
   will work again; this one never can until they share, and Request access beside it is how
   you ask.
+  · "CLEAR THE LOG" CLEARS THE LOG (`clearDeletedRecords`): only the rows spent HERE go —
+  item rows with no bytes on either shelf, folder rows whose files are all gone — and every
+  restorable row stays; it used to run `emptyDeletedLog`, the bin's destructive act, which
+  keeps the "Empty Deleted" name that says so.
   · RESTORE BY DRAG: a bin item or a real deleted folder node dropped on a Library folder
   card, a tree folder row or the Library root restores it THERE (`restoreDeletedItem(hash,
   {into})` / `restoreDeletedFolder(id, {into})` — the gesture is the answer to the question
   Restore would otherwise decide); a ghost node is not draggable. "Plain list without
   folders" is a checked toggle beside "Show cleaned-up files" (off = the tree).
-  · `sceneNameShared` (projectManifest) now also reads the SHARED INDEX: a `.tpscene` that
-  rode `manifest.items` (shareNewFiles `always`, a hand share, `sendAsset`) is a name every
-  peer already holds, so opening it must not offer "Edit privately" — the reported "files
-  were shared to peers and appeared in their Library, but opening still shows Edit
-  privately". Read off the local document so the leaf grows no Explorer edge.
+  · `sceneNameShared` (projectManifest) ALSO READS THE SHARED INDEX — the user's rule: "if
+  the file is shared, you open it and anyone can join from peers; if the file is not shared,
+  you get the prompt to edit privately or share". A `.tpscene` that rode `manifest.items`
+  opens as a ROOM with no ask; the ask is for a file that never left the machine. (Ruled,
+  reverted and re-applied the same day once the wording was checked with the user — the
+  first reading of the report had inverted it.)
   · Suite `deleted-folders` (two peers) measures the COUNTERFACTUAL: with `always` armed on
   the peer, 3.5 s after the folder delete the deleter has no folder, no visible file, an
   empty index and nothing being pulled. KNOWN AND LEFT: `localOnly` rows travel in
@@ -4514,8 +4519,9 @@ override for e2e — never share 5173 (the user's main-checkout server).
   cleaned-up files" (one View section, no Folder-structure entry); DRAG OUT OF DELETED onto a
   Library folder card / tree row / root restores THERE (`restoreDroppedFromBin` claims the
   drop first in `dropInto`; `binDragging` keeps the Deleted row from arming; ghosts are not
-  draggable); and `sceneNameShared` reading the shared index so a scene every peer already
-  holds is not offered "Edit privately". Suites: NEW `deleted-folders` 98 (two peers) ·
+  draggable); and `sceneNameShared` reading the shared index — a shared scene FILE opens as a joinable
+  room with no ask, an unshared one asks Share / Edit privately (checked with the user).
+  Suites: NEW `deleted-folders` 126 (two peers) ·
   `explorer-views` 114 · `explorer-delete-confirm` 54 · `explorer-multiselect` 63 ·
   `explorer-storage` 116 · `explorer-mounts-edit` 49 · `private-scene` 55 · `peers-popover`
   21 · `explorer-drop` 9 · `shared-library` 270/18 against a pristine-base 271/17 on the same box (the 17 are the chunked-transfer sections — the 700 KB fixture never reassembles here, `size -1` — and everything downstream of a peer holding bytes; the one extra is the SENDER ledger reading `active` instead of `done` in that same dead transfer). Three lane runs died at `h.connect` first; an instrumented copy and four probes connected every time, so that was the signaling box, not the code. svelte-check **362/47 unchanged**; build green. Architecture entry

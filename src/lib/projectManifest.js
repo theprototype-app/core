@@ -994,15 +994,15 @@ export function sceneNameShared(name) {
 	const scene = String(name ?? '').trim();
 	if (!scene || privateScenes.has(scene)) return false;
 	if (sessionSceneNames.has(scene) || openedScenes.has(scene)) return true;
-	// R22 round 36 (user): THE FILE MAY ALREADY BE OUT THERE. A scene saved while
-	// `shareNewFiles` is `always` (or shared by hand, or pushed by `sendAsset`) rides the
-	// SHARED INDEX as an ordinary kind-'scene' item — every peer already holds the
-	// .tpscene, under its name, in their Library. Asking "edit privately?" on opening it
-	// then promised a privacy the name had already left the machine without; the reported
-	// "files were shared to peers and appeared in their Library, but opening still shows
-	// Edit privately". The index is a name the session KNOWS, so it answers here exactly as
-	// a manifest scene row does. Read off the local document (which is also where our own
-	// `mine` rows land, debounce aside), so this leaf grows no edge into the Explorer.
+	// R22 round 36 (user) — THE RULE, in the user's words: "if the file is shared, then you
+	// open it and anyone can join from peers; if the scene is not shared (a file), then you
+	// should have a prompt to edit it privately or share." So a `.tpscene` that rode the
+	// SHARED INDEX (shareNewFiles `always`, a hand share, `sendAsset`) is a scene the session
+	// already knows: opening it opens a ROOM peers can travel to, with no question asked. The
+	// ask is for a file that has never left this machine — the only case where "privately"
+	// still has something to protect. Read off the local document (our own `mine` rows land
+	// there too, debounce aside), so this leaf grows no edge into the Explorer. Reverted and
+	// re-applied the same day after the reading was checked with the user.
 	return (get(projectManifest).items ?? []).some(
 		(/** @type {any} */ r) =>
 			r?.kind === 'scene' &&

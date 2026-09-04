@@ -117,6 +117,7 @@
 		restoreDeletedItem,
 		purgeDeletedItem,
 		emptyDeletedLog,
+		clearDeletedRecords,
 		deletedThumb,
 		// R22 round 13: the bin lists what it can put back; the LOG is the record beside it.
 		// One array, two readings — see partitionDeleted.
@@ -1847,6 +1848,8 @@
 	 */
 	const binCount = $derived(partitionDeleted(deletedRows, deletedHeld, $explorerFolders).bin.length);
 	const logCount = $derived(deletedRows.length);
+	/** the cleaned-up records: what "Clear the log" forgets and nothing more (round 36) */
+	const spentCount = $derived(Math.max(0, logCount - binCount));
 	/**
 	 * R22 round 13 (user): "'Deleted log' button should be somewhere within 'Deleted' ...
 	 * having it in two different elements within tree style left section could be confusing
@@ -4296,6 +4299,24 @@
 		});
 	}
 
+	/** R22 round 36 (user): forget the cleaned-up records only — see `clearDeletedRecords`. */
+	function clearLog() {
+		const n = spentCount;
+		if (!n) return;
+		askInExplorer({
+			title: 'Clear the log?',
+			detail:
+				'Forgets ' +
+				plural(n, 'cleaned-up record') +
+				' — deletions whose bytes are already gone from this device. Files still in Deleted stay restorable, and peers keep their own record.',
+			confirmLabel: 'Clear',
+			run: () => {
+				const gone = clearDeletedRecords();
+				showToast('Cleared ' + plural(gone, 'record') + ' from the log');
+			}
+		});
+	}
+
 	/**
 	 * R22 round 9: the VIEW controls the bin owns, shared by its tree row and its own
 	 * background menu. Group-by is a `checked` PAIR rather than one toggle, because "off"
@@ -4381,15 +4402,18 @@
 				: []),
 			// the record's own act, offered only where the record is on screen: clearing a log
 			// you cannot see is the kind of destructive surprise a bin exists to avoid.
-			...(logCount && $explorerBinShowSpent
+			// R22 round 36 (user): it clears the LOG — the cleaned-up records — and leaves every
+			// file still in Deleted restorable. It used to run `emptyBin`, which took the bytes
+			// too; that act keeps the "Empty Deleted" name above, where the word says so.
+			...(spentCount && $explorerBinShowSpent
 				? [
 						{
-							label: 'Clear the log (' + logCount + ')',
+							label: 'Clear the log (' + spentCount + ')',
 							danger: true,
 							icon: 'trash-2',
 							tooltip:
-								'Forgets what was deleted AND empties the bin on THIS machine. Peers keep their own record.',
-							action: () => void emptyBin()
+								'Forgets the deletions whose bytes are already gone from this device. Files still in Deleted stay restorable; peers keep their own record.',
+							action: () => void clearLog()
 						}
 					]
 				: [])

@@ -1223,6 +1223,10 @@ function makeApi(moduleId, moduleName = moduleId) {
 			device: (uuid) => audioDevicesRef?.deviceOf(audioDevicesRef.findDeviceObject(uuid)) ?? null,
 			/** write a device's params (merge; replicated; one undo step) @param {string} uuid @param {Record<string, any>} params */
 			setParams: (uuid, params) => audioDevicesRef?.setDeviceFor(uuid, { params }) ?? null,
+			/** 23-C4: a live-gesture PREVIEW of params - replicated, applied, NO history entry.
+			 * Scrub with this (throttled), then commit once with setParams: the knob/toolbox
+			 * pattern, and the only way a scrub is one undo step. @param {string} uuid @param {Record<string, any>} params */
+			previewParams: (uuid, params) => audioDevicesRef?.previewDeviceParams?.(uuid, params, { broadcast: true }) ?? null,
 			/** play a note on a device — locally through its onNote and to every peer as a
 			 * stamped message @param {string} uuid @param {{note?: number, velocity?: number, at?: number}} [note] */
 			note: (uuid, note) => audioDevicesRef?.noteDevice(uuid, note) ?? null,

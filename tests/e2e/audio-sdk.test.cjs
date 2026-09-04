@@ -193,6 +193,22 @@ h.run(async () => {
 	await page.waitForTimeout(200);
 	const declined = await inPage(page, 'return { drops: window.__drops.length, toast: (() => { let t; s.toastStore.subscribe((v) => (t = v))(); return t.slice(arg).map((x) => String(x?.message ?? x)).join(" | "); })() }', toastsBefore);
 	h.check(declined.drops === 2 && /where they plug in/.test(declined.toast), '8.4 a drop the handler declines falls through to the old toast (' + JSON.stringify(declined.toast) + ')');
+	console.log('\n=== 9. api.audio.previewParams: a live gesture, replicated, no history (23-C4) ===');
+	const undoLen = (/** @type {any} */ p) => p.evaluate(() => { let n = 0; window.__stores.history.undoStack.subscribe((v) => (n = v.length))(); return n; });
+	const B = await h.setupPage(browser, 'B');
+	await h.connect(B, A);
+	await h.eventually(() => inPage(B.page, 'return !!ad.findDeviceObject(arg)', dropDev.uuid), (v) => v === true, '9.0 (premise) B holds the device object from the handshake');
+	const undoP = await undoLen(page);
+	await inPage(page, "window.__sdkApi.audio.previewParams(arg, { freq: 777 }); return true", dropDev.uuid);
+	await page.waitForTimeout(150);
+	const previewed = await inPage(page, 'return { freq: ad.deviceOf(ad.findDeviceObject(arg))?.params.freq, undo: (() => { let n = 0; s.history.undoStack.subscribe((v) => (n = v.length))(); return n; })() }', dropDev.uuid);
+	h.check(previewed.freq === 777 && previewed.undo === undoP, '9.1 a preview applies locally with NO undo entry (' + previewed.freq + ', undo ' + undoP + ' -> ' + previewed.undo + ')');
+	await h.eventually(() => inPage(B.page, 'return ad.deviceOf(ad.findDeviceObject(arg))?.params.freq ?? null', dropDev.uuid), (v) => v === 777, '9.2 and it replicated to B');
+	await inPage(page, "window.__sdkApi.audio.setParams(arg, { freq: 780 }); return true", dropDev.uuid);
+	await page.waitForTimeout(150);
+	const committed = await undoLen(page);
+	h.check(committed === undoP + 1, '9.3 the commit after the scrub is ONE undo entry (' + undoP + ' -> ' + committed + ')');
+
 	await inPage(page, "s.moduleSDK.deactivateModule('sdktest')");
 	await inPage(page, "await s.explorerDrop.dropExplorerItem({ id: 'drop-audio', kind: 'audio', name: 'kick.wav' }, arg.x, arg.y); return true", at);
 	await page.waitForTimeout(200);

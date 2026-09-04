@@ -545,6 +545,9 @@ api.audio.captureMic();                // Promise<MediaStream>: the RAW mic, a s
 const item = await api.audio.record({ maxSeconds: 8 }); // a take -> Explorer item (content-hashed,
                                        // shared to peers); null when refused BEFORE it starts
 api.audio.stopRecording();             // end the take early
+const dest = api.audio.context().createMediaStreamDestination(); // bounce a NODE instead:
+myInputGain.connect(dest);             // a looper records what is patched into it
+await api.audio.record({ maxSeconds: 8, stream: dest.stream, name: 'loop' });
 // declare what a kind references by hash so the Scene manifest (and a .tpscene export)
 // carries the bytes: `assets(params) -> [{hash, name}]` on the registerAudioDevice spec
 api.audio.device(uuid);                             // {kind, params} or null

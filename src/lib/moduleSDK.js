@@ -1245,7 +1245,8 @@ function makeApi(moduleId, moduleName = moduleId) {
 			captureMic: (constraints) => import('./micCapture').then((m) => m.captureMicStream(constraints)),
 			/** record a take from the raw mic into the Explorer and share it by hash; resolves to
 			 * the item, or null when refused BEFORE starting (over the visible cap, over the share
-			 * limit, no recorder). @param {{maxSeconds?: number, name?: string}} [opts] */
+			 * limit, no recorder). `opts.stream` bounces THAT stream instead of the mic (a
+			 * MediaStreamAudioDestinationNode's, for a looper). @param {{maxSeconds?: number, name?: string, stream?: MediaStream}} [opts] */
 			record: (opts) => import('./micCapture').then((m) => m.startRecording(opts)),
 			/** end the running take (the record() promise resolves with the item) */
 			stopRecording: () => import('./micCapture').then((m) => m.stopRecording()),

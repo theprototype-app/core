@@ -95,7 +95,9 @@ let take = null;
  * Explorer item when the take ends (stopRecording, or the cap) - or to null when it was
  * REFUSED before starting: a length over the cap, a size the share limit would reject, no
  * recorder in this browser, or one already running.
- * @param {{maxSeconds?: number, name?: string}} [opts]
+ * `opts.stream` records THAT stream instead of the mic - a looper hands over a
+ * MediaStreamAudioDestinationNode's stream to bounce whatever is patched into it.
+ * @param {{maxSeconds?: number, name?: string, stream?: MediaStream}} [opts]
  * @returns {Promise<any>}
  */
 export async function startRecording(opts = {}) {
@@ -120,7 +122,7 @@ export async function startRecording(opts = {}) {
 	/** @type {MediaStream} */
 	let stream;
 	try {
-		stream = await captureMicStream();
+		stream = opts.stream ?? (await captureMicStream());
 	} catch (error) {
 		console.log('mic denied', error);
 		showToast('Microphone permission denied');

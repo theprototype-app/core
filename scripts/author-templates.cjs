@@ -30,7 +30,11 @@ const URL = process.env.APP_URL || 'https://localhost:5174/';
 // C5.3: game thumbnails need the game's own module loaded. Reuse the packed zips from
 // the sibling modules checkout rather than reimplementing the manager drive (the
 // tests/e2e helpers.cjs installModule approach).
-const MODULES_REPO = path.resolve(__dirname, '../../theprototype.app-modules');
+// 23-D3: MODULES_REPO=<dir> overrides the sibling path (a lane box keeps the checkout under
+// another name); --only <slug> builds ONE def and leaves the bundled seed alone
+const MODULES_REPO = process.env.MODULES_REPO ? path.resolve(process.env.MODULES_REPO) : path.resolve(__dirname, '../../theprototype.app-modules');
+const onlyFlag = process.argv.indexOf('--only');
+const ONLY = onlyFlag !== -1 ? process.argv[onlyFlag + 1] : null;
 function moduleZipPath(id) {
 	return path.join(MODULES_REPO, id + '.zip');
 }
@@ -146,6 +150,43 @@ const DEFS = [
 			{ type: 'box', name: 'House roof', color: 0x9a4632, size: [3.3, 0.5, 2.5], pos: [3.6, 2.05, 1.5], rot: [0, 0, 0.06] },
 			{ type: 'box', name: 'Jetty', color: 0x8a6f52, size: [1.2, 0.25, 5], pos: [-1.5, 0.12, 8.5] }
 		]
+	},
+	{
+		// 23-D3: the Jam Room - the fastest answer to "what is this app": a piano into a
+		// speaker, the beat lab (transport, drum machine, sampler pads), a pedal chain into a
+		// mixer, all cabled. Built from the modules' own menus, so the template is always what
+		// those modules make; the modules it needs ride the index row AND the payload (the
+		// device-kind requirement signal derives them from the objects).
+		kind: 'game',
+		slug: 'jam-room',
+		title: 'Jam Room',
+		description: 'A piano into a speaker, a beat lab (transport, drum machine, sampler pads) and a pedal chain into a mixer - all cabled. Press Play on the transport, paint the grid, plug things in.',
+		license: 'CC0-1.0',
+		author: 'theprototype',
+		tags: ['music', 'vr'],
+		installModules: ['music-lab', 'music-fx'],
+		modules: [{ id: 'music-lab', version: '0.2.0' }, { id: 'music-fx', version: '0.1.0' }],
+		objects: [{ type: 'box', name: 'Floor', color: 0x2b2f36, size: [9, 0.3, 7], pos: [1.2, -0.15, -2.4] }],
+		// a semicircle facing the spawn at the origin; both speakers turned to face the listener
+		layout: [
+			{ kind: 'mod-music-lab-transport', pos: [-2.6, 0.5, -1.8] },
+			{ kind: 'mod-music-lab-piano', pos: [-1.3, 0, -2.4] },
+			{ kind: 'mod-music-lab-drums', pos: [0.3, 0.8, -2.8] },
+			{ kind: 'mod-music-lab-sampler', pos: [1.5, 0.8, -2.8] },
+			{ kind: 'mod-music-lab-speaker', index: 0, pos: [-1.0, 0.35, -4.4], yaw: Math.PI },
+			{ kind: 'mod-music-lab-speaker', index: 1, pos: [1.6, 0.35, -4.4], yaw: Math.PI },
+			{ kind: 'mod-music-fx-mixer', pos: [3.2, 0.8, -2.6] },
+			{ kind: 'mod-music-fx-filter', pos: [2.4, 0.5, -0.9] },
+			{ kind: 'mod-music-fx-distortion', pos: [3.0, 0.5, -0.9] },
+			{ kind: 'mod-music-fx-bitcrush', pos: [3.6, 0.5, -0.9] },
+			{ kind: 'mod-music-fx-delay', pos: [4.2, 0.5, -0.9] },
+			{ kind: 'mod-music-fx-reverb', pos: [4.8, 0.5, -0.9] }
+		],
+		generate: [
+			{ menu: 'Music Lab: piano + speaker', moduleId: 'music-lab', waitMs: 1500 },
+			{ menu: 'Music Lab: beat lab', moduleId: 'music-lab', waitMs: 1500 },
+			{ menu: 'Music FX: demo chain', moduleId: 'music-fx', waitMs: 2000 }
+		]
 	}
 ];
 
@@ -169,6 +210,7 @@ const DEFS = [
 	/** @type {Record<string, {entry: any, bytes: Buffer, thumb: Buffer|null}>} */
 	const built = {};
 	for (const def of DEFS) {
+		if (ONLY && def.slug !== ONLY) continue;
 		// C5.3: a game thumbnail wants the GAME, not a grey box — install its module and
 		// run its generator first. Skipped (with a warning, never a failure) when the
 		// sibling modules checkout has no zips, the helpers.cjs installModule contract.
@@ -264,24 +306,47 @@ const DEFS = [
 			// seams, because modules use both: a scene COMMAND (registerPrimitive-style),
 			// or a registered manager MENU action, which is how untangle and dungeon-realms
 			// expose "generate/restart" (api.registerMenu).
-			if (d.generate) {
-				if (typeof d.generate === 'string') s.commandsHandler.sceneCommand(d.generate);
-				else if (d.generate.menu) {
+			// 23-D3: `generate` may be ONE action or a SEQUENCE of them (a room built from several
+			// module menus), each a command string or {menu, moduleId}, waited in turn
+			const steps = Array.isArray(d.generate) ? d.generate : d.generate ? [d.generate] : [];
+			for (const step of steps) {
+				if (typeof step === 'string') s.commandsHandler.sceneCommand(step);
+				else if (step.menu) {
 					/** @type {any} */ let items;
 					s.moduleSDK.moduleMenuItems.subscribe((/** @type {any} */ v) => (items = v))();
 					const hit = items.find(
-						(/** @type {any} */ it) =>
-							it.label === d.generate.menu && (!d.generate.moduleId || it.moduleId === d.generate.moduleId)
+						(/** @type {any} */ it) => it.label === step.menu && (!step.moduleId || it.moduleId === step.moduleId)
 					);
 					if (hit) hit.action();
-					else throw new Error('no module menu action named "' + d.generate.menu + '"');
+					else throw new Error('no module menu action named "' + step.menu + '"');
 				}
-				await new Promise((r) => setTimeout(r, d.generateWaitMs ?? 2500));
+				await new Promise((r) => setTimeout(r, step.waitMs ?? d.generateWaitMs ?? 2500));
 				s.objectsGroup.update((v) => v);
 				await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
 			}
 
 			// export through the REAL .tpscene path (no session slot needed)
+			// 23-D3: `layout` places what the menus generated - each entry names a device KIND,
+			// the n-th object of that kind (default the first), a position and an optional yaw -
+			// so a room built from several menus is arranged, not piled where each menu drops
+			// its devices
+			if (Array.isArray(d.layout)) {
+				const seen = {};
+				const devices = [];
+				group.traverse((o) => { if (o.userData?.device?.kind) devices.push(o); });
+				for (const entry of d.layout) {
+					const n = entry.index ?? 0;
+					const matches = devices.filter((o) => o.userData.device.kind === entry.kind);
+					const target = matches[n];
+					if (!target) throw new Error('layout: no device #' + n + ' of kind ' + entry.kind);
+					target.position.set(entry.pos[0], entry.pos[1], entry.pos[2]);
+					if (typeof entry.yaw === 'number') target.rotation.set(0, entry.yaw, 0);
+					target.updateMatrix();
+					seen[entry.kind] = n;
+				}
+				s.objectsGroup.update((v) => v);
+				await new Promise((r) => setTimeout(r, 300));
+			}
 			const payload = s.sessions.buildSessionPayload(d.title);
 			const bytes = await s.sessions.exportSessionZip(payload, { assets: false, packs: false, flow: true });
 
@@ -360,6 +425,7 @@ const DEFS = [
 	// bundled seed: templates only, app-origin paths (examples + GAMES stay remote-only
 	// — a game needs a module download, so bundling one offline promises what it cannot
 	// deliver)
+	if (!ONLY) {
 	fs.mkdirSync(STATIC_OUT, { recursive: true });
 	const seedTemplates = DEFS.filter((d) => d.kind === 'template').map((d) => ({
 		...writeDef(STATIC_OUT, d),
@@ -371,6 +437,7 @@ const DEFS = [
 		JSON.stringify({ version: 1, templates: seedTemplates, examples: [] }, null, '\t') + '\n'
 	);
 	console.log(`bundled seed -> ${STATIC_OUT} (${seedTemplates.length} templates)`);
+	}
 
 	// scenes-repo working copy: full tree, repo-relative paths
 	if (REPO_OUT) {
@@ -378,6 +445,7 @@ const DEFS = [
 		// reader can tell "a v2 index with no games yet" from "a v1 index".
 		const index = { version: 2, templates: [], examples: [], games: [] };
 		for (const def of DEFS) {
+			if (!built[def.slug]) continue;
 			const section =
 				def.kind === 'template' ? 'templates' : def.kind === 'game' ? 'games' : 'examples';
 			const row = writeDef(path.join(REPO_OUT, section), def);

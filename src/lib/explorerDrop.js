@@ -19,6 +19,12 @@ import { ndcFromClient } from './canvasRect';
 
 const raycaster = new THREE.Raycaster();
 
+// 23-C2: module drop handlers live in moduleSDK; primed dynamic import, the same cycle
+// guard the other module-facing paths use
+/** @type {any} */
+let sdkRef = null;
+import('./moduleSDK').then((m) => (sdkRef = m));
+
 /**
  * Raycast the drop coordinates: `{point, object, normal}` — object is null over
  * empty ground; point is null when aiming at the sky. `normal` is the world
@@ -26,12 +32,13 @@ const raycaster = new THREE.Raycaster();
  * face normal on a mesh, `[0, 1, 0]` on the ground plane, null when aiming at
  * the sky or when the hit carries no face data.
  * @param {number} clientX @param {number} clientY
- * @returns {{point: number[] | null, object: any, normal: number[] | null}}
+ * `hit` is the EXACT mesh under the drop (23-C2, for module drop handlers), null when nothing.
+ * @returns {{point: number[] | null, object: any, normal: number[] | null, hit?: any}}
  */
 export function dropTarget(clientX, clientY) {
 	/** @type {any} */
 	const camera = get(globalCamera);
-	if (!camera) return { point: null, object: null, normal: null };
+	if (!camera) return { point: null, object: null, normal: null, hit: null };
 	// W9: against the CANVAS, not the window — with the bottom dock open the two differ
 	// by the dock's height, and a drop would land that far below the cursor. Correct in
 	// both modes: an un-inset canvas measures exactly the window.
@@ -42,15 +49,16 @@ export function dropTarget(clientX, clientY) {
 		return {
 			point: hits[0].point.toArray(),
 			object: topLevelObjectOf(hits[0].object),
-			normal: hitWorldNormal(hits[0])?.toArray() ?? null
+			normal: hitWorldNormal(hits[0])?.toArray() ?? null,
+			hit: hits[0].object
 		};
 	const planePoint = new THREE.Vector3();
 	const onGround = raycaster.ray.intersectPlane(
 		new THREE.Plane(new THREE.Vector3(0, 1, 0), 0),
 		planePoint
 	);
-	if (!onGround) return { point: null, object: null, normal: null };
-	return { point: planePoint.toArray(), object: null, normal: [0, 1, 0] };
+	if (!onGround) return { point: null, object: null, normal: null, hit: null };
+	return { point: planePoint.toArray(), object: null, normal: [0, 1, 0], hit: null };
 }
 
 const _dropUp = new THREE.Vector3(0, 1, 0);
@@ -176,7 +184,7 @@ export async function dropExplorerItem(payload, clientX, clientY) {
  * Place ONE payload at an already-resolved drop target (21-H3 split this out of
  * `dropExplorerItem` unchanged so the multi path could reuse the single one verbatim).
  * @param {any} payload
- * @param {{point: number[] | null, object: any, normal: number[] | null}} target
+ * @param {{point: number[] | null, object: any, normal: number[] | null, hit?: any}} target
  */
 async function placeExplorerPayload(payload, target) {
 	if (payload.prefabId) {
@@ -223,6 +231,18 @@ async function placeExplorerPayload(payload, target) {
 		}
 		await applyExplorerImage(target.object.uuid, { id: item.id });
 	} else {
+		// 23-C2: a module object may TAKE an audio/text item (a sampler pad takes a sample) -
+		// the handler gets the exact mesh under the drop; the first to return true owns it
+		const handlers = sdkRef?.moduleDropHandlers ?? [];
+		const hit = target.hit ?? target.object;
+		const brief = { id: item.id, name: item.name, kind: item.kind, hash: item.hash };
+		for (const fn of handlers) {
+			try {
+				if (hit && fn(hit, brief, target)) return;
+			} catch (e) {
+				console.log('module drop handler failed', e);
+			}
+		}
 		showToast('Audio/text items are used where they plug in (sound nodes, scripts)');
 	}
 }

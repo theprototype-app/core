@@ -63,6 +63,12 @@ export const moduleEffects = {};
 export const moduleNodeComponents = {};
 /** @type {((object: any) => boolean)[]} */
 export const moduleClickHandlers = [];
+/** 23-C2: Explorer drops onto a module object - `fn(hit, item, target)`: `hit` is the exact
+ * mesh under the drop, `item` `{id, name, kind, hash}`, `target` the resolved drop target;
+ * return true to consume it (a sampler pad taking a sample). Same lifecycle as
+ * moduleClickHandlers: registered by modules, cleared with them.
+ * @type {((hit: any, item: {id: string, name: string, kind: string, hash: string}, target: any) => boolean)[]} */
+export const moduleDropHandlers = [];
 /** @type {((time: number) => void)[]} */
 export const moduleFrameTasks = [];
 /** @type {string[]} scene-root group names that receive viewport clicks */
@@ -399,6 +405,17 @@ function makeApi(moduleId, moduleName = moduleId) {
 		registerClickHandler(fn) {
 			moduleClickHandlers.push(fn);
 			onDispose(() => arrayRemove(moduleClickHandlers, fn));
+		},
+		/**
+		 * 23-C2: an Explorer item dropped ON a scene object - audio and text items, the ones
+		 * core has no placement for. `fn(hit, item, target)` gets the exact mesh under the
+		 * drop, the item `{id, name, kind, hash}` (feed `hash` to `api.audio.sample`) and the
+		 * resolved target; return true to consume the drop.
+		 * @param {(hit: any, item: {id: string, name: string, kind: string, hash: string}, target: any) => boolean} fn
+		 */
+		registerDropHandler(fn) {
+			moduleDropHandlers.push(fn);
+			onDispose(() => arrayRemove(moduleDropHandlers, fn));
 		},
 		/** Runs every frame with the synced time (seconds) @param {(time: number) => void} fn */
 		registerFrameTask(fn) {

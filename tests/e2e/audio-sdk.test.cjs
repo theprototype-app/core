@@ -175,6 +175,29 @@ h.run(async () => {
 	const race = await inPage(page, "const m = { id: 'sdkrace', name: 'Race', version: '1', register(api) { api.registerAudioDevice({ kind: 'x', label: 'X', build: () => ({ dispose() {} }) }); } }; s.moduleSDK.initModules([m]); s.moduleSDK.deactivateModule('sdkrace'); await new Promise((r) => setTimeout(r, 500)); return ad.devicesDebug().kinds.includes('mod-sdkrace-x')");
 	h.check(race === false, '7.3 a registration followed by an immediate teardown leaves no kind behind (the late-registration guard)');
 
+	console.log('\n=== 8. Explorer drops onto a module object (23-C2 registerDropHandler) ===');
+	// a module takes an AUDIO item dropped on its mesh; core has no placement for those, so
+	// without a handler the drop is the old toast. The handler sees the exact mesh under the
+	// drop and the item's content hash (what api.audio.sample wants).
+	await inPage(page, "window.__drops = []; window.__sdkApi.registerDropHandler((hit, item, target) => { window.__drops.push({ hit: hit?.uuid ?? null, name: hit?.name ?? '', kind: item.kind, hash: item.hash, top: target?.object?.uuid ?? null }); return item.kind === 'audio'; }); s.explorer.explorerItems.update((list) => [...list, { id: 'drop-audio', name: 'kick.wav', kind: 'audio', folderId: null, size: 3, hash: 'hash-kick', thumbnail: null }, { id: 'drop-text', name: 'notes.txt', kind: 'text', folderId: null, size: 3, hash: 'hash-text', thumbnail: null }]); return true");
+	const dropDev = await inPage(page, "const o = await window.__sdkApi.audio.addDevice('osc', { position: [0, 0.6, 0] }); await new Promise((r) => setTimeout(r, 300)); return { uuid: o.uuid, world: o.getWorldPosition(new s.THREE.Vector3()).toArray() }");
+	const at = await h.projectPoint(page, dropDev.world);
+	const toastsBefore = await inPage(page, 'let t; s.toastStore.subscribe((v) => (t = v))(); return t.length');
+	await inPage(page, "await s.explorerDrop.dropExplorerItem({ id: 'drop-audio', kind: 'audio', name: 'kick.wav' }, arg.x, arg.y); return true", at);
+	await page.waitForTimeout(200);
+	const took = await inPage(page, 'return { drops: window.__drops, toast: (() => { let t; s.toastStore.subscribe((v) => (t = v))(); return t.slice(arg).map((x) => String(x?.message ?? x)).join(" | "); })() }', toastsBefore);
+	h.check(took.drops.length === 1 && took.drops[0].kind === 'audio' && took.drops[0].hash === 'hash-kick', '8.1 the handler got the audio item with its content hash (' + JSON.stringify(took.drops[0] ?? null) + ')');
+	h.check(took.drops[0]?.top === dropDev.uuid && !!took.drops[0]?.hit, '8.2 and the exact mesh under the drop, with the device as the top-level target');
+	h.check(!/where they plug in/.test(took.toast), '8.3 a consumed drop shows no \'used where they plug in\' toast (' + JSON.stringify(took.toast) + ')');
+	await inPage(page, "await s.explorerDrop.dropExplorerItem({ id: 'drop-text', kind: 'text', name: 'notes.txt' }, arg.x, arg.y); return true", at);
+	await page.waitForTimeout(200);
+	const declined = await inPage(page, 'return { drops: window.__drops.length, toast: (() => { let t; s.toastStore.subscribe((v) => (t = v))(); return t.slice(arg).map((x) => String(x?.message ?? x)).join(" | "); })() }', toastsBefore);
+	h.check(declined.drops === 2 && /where they plug in/.test(declined.toast), '8.4 a drop the handler declines falls through to the old toast (' + JSON.stringify(declined.toast) + ')');
 	await inPage(page, "s.moduleSDK.deactivateModule('sdktest')");
+	await inPage(page, "await s.explorerDrop.dropExplorerItem({ id: 'drop-audio', kind: 'audio', name: 'kick.wav' }, arg.x, arg.y); return true", at);
+	await page.waitForTimeout(200);
+	const gone = await inPage(page, 'return window.__drops.length');
+	h.check(gone === 2, '8.5 the handler is gone with its module (' + gone + ')');
+
 	await h.finish(browser);
 });

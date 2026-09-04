@@ -239,6 +239,14 @@ api.registerFrameTask((time) => { /* runs every frame, synced time */ });
 // click handlers only see the replicated objects root by default; if your
 // module adds its own group at the scene root, register it for clicks:
 api.registerInteractiveGroup('pong-module');
+
+// an Explorer AUDIO/TEXT item dropped on one of your meshes (23-C2): take it or not.
+// `hit` is the exact mesh under the drop, `item.hash` feeds api.audio.sample(hash).
+api.registerDropHandler((hit, item, target) => {
+	if (item.kind !== 'audio' || !hit.userData.pad) return false;
+	api.audio.setParams(deviceOf(hit).uuid, { ['pad' + hit.userData.pad]: item.hash });
+	return true;                     // consumed
+});
 ```
 
 ### Toolboxes: a real UI surface (A5)

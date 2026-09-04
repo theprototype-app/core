@@ -475,6 +475,66 @@ api.possessModes; // this build's camera modes — feature-detect 'first' here
 api.possess(uuid, { camera: 'first', eyeHeight: 1.7, mouseLook: true });
 ```
 
+### Audio devices (23-A5)
+
+An instrument, an effect or a speaker is a DEVICE: an object carrying
+`userData.device = {kind, params}`, with a WebAudio subgraph the engine builds for it.
+Your module supplies the kind; core supplies the object, the replication, undo, saving,
+the cables and the clock.
+
+```js
+const kind = await api.registerAudioDevice({
+	kind: 'piano',                     // namespaced to mod-<moduleId>-piano
+	label: 'Piano', icon: '🎹', group: 'Keys',
+	ports: { in: [], out: [{ id: 'out', kind: 'audio' }] },   // 'audio' | 'cv' | 'midi'
+	params: [{ key: 'level', kind: 'range', min: 0, max: 1, step: 0.01, default: 0.8 }],
+	build(ctx, node, params) {         // ctx = the SHARED AudioContext; runs per object
+		const out = ctx.createGain();
+		out.gain.value = params.level;
+		return { output: out, out, dispose() { out.disconnect(); } };
+	},
+	onParam(h, key, value) { if (key === 'level') h.out.gain.value = value; },
+	onNote(h, { note, velocity, at }) {              // at = a WALL-CLOCK stamp
+		const v = api.audio.voice({ freq: 440 * 2 ** ((note - 69) / 12), gain: velocity * 0.5, destination: h.out });
+		const t = api.audio.timeFor(at);              // never Date.now() maths of your own
+		v.start(t); v.stop(t + 0.5);
+	},
+	mesh: (THREE) => new THREE.Mesh(new THREE.BoxGeometry(1, 0.2, 0.4), new THREE.MeshStandardMaterial({ color: '#222' }))
+});
+
+api.audio.addDevice('piano', { position: [0, 1, 0] }); // also in the viewport Add menu > Devices
+```
+
+- `params` render in the Inspector and the toolbox; every write replicates and undoes.
+  Keep `onParam` cheap and `build` pure: a peer WITHOUT your module holds the same
+  object as an inert placeholder with its document intact, and rebuilds it the moment
+  your module registers.
+- Children of your mesh named `port:<id>` are where cables attach.
+- Sound goes NOWHERE until cabled: a speaker device connects its `input` to
+  `api.audio.bus('instruments')`; `api.audio.cable({from: {uuid, port}, to: {uuid, port}})`
+  plugs one in.
+
+```js
+api.audio.voice({ freq: 220, type: 'sawtooth', filter: { freq: 900 } }); // {output, start(t), stop(t), dispose()}
+api.audio.voice({ buffer, loop: true, destination: 'instruments' });      // a sample voice
+await api.audio.sample(hash);          // decoded AudioBuffer for an Explorer content hash,
+                                       // pulled from a peer if missing (null after 30 s)
+api.audio.bus('sfx');                  // a bus to connect to
+api.audio.context();                   // the shared AudioContext — never make your own
+api.audio.transport();                 // {bpm, beat, bar, step, phase, playing, loopBeats, swing}
+api.audio.play(); api.audio.play(false); api.audio.setBpm(100); // the SHARED transport
+const cancel = api.audio.schedule(0, ({ beat, at }) => hit(at), { every: 1 }); // a metronome:
+                                       // called ~100 ms EARLY with the exact audio time;
+                                       // start voices at `at`; cancelled at teardown
+api.audio.note(uuid, { note: 64, velocity: 0.8 }); // replicated; every peer synthesizes it
+api.audio.setParams(uuid, { level: 0.5 });          // one undo step, replicated
+api.audio.device(uuid);                             // {kind, params} or null
+```
+
+The rule behind `schedule` and `onNote`: **anything scheduled on the transport must be a
+pure function of its arguments.** Every peer runs the same pattern from the same
+`startedAt`; an impure callback desyncs silently, per peer, with no error anywhere.
+
 ### Misc
 
 ```js

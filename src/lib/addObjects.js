@@ -7,6 +7,12 @@ import { meshGenReady } from './ai/meshProviders';
 import { addParticlesPreset } from './particleActions';
 import { PARTICLE_PRESETS } from './particlePresets';
 
+// 23-A5: device kinds (core's and every module's, one registry) as an Add-menu group.
+// PRIMED dynamic import: audioDevices reaches history, and a static edge from a
+// menu builder into that family is how the SSR prerender TDZ-crashes.
+/** @type {any} */ let devicesRef = null;
+import('./audioDevices').then((m) => (devicesRef = m));
+
 // Spawning for the viewport Add menu (77): run the replicated create command,
 // then land the new object at the clicked ground point (groups keep their
 // default spot) — the position rides the normal `move` message.
@@ -35,6 +41,24 @@ export function spawnAtPoint(command, point) {
 	return object;
 }
 
+/** The Devices group(s) of the Add menu, from the registry. @param {() => number[] | null} pointOf */
+function deviceMenuGroups(pointOf) {
+	const catalog = devicesRef?.deviceCatalog?.() ?? [];
+	if (!catalog.length) return [];
+	/** @type {Record<string, any[]>} */
+	const groups = {};
+	for (const spec of catalog) {
+		const name = spec.group && spec.group !== 'devices' ? 'Devices: ' + spec.group : 'Devices';
+		(groups[name] ??= []).push({
+			label: spec.label || spec.kind,
+			tooltip: 'Place a ' + (spec.label || spec.kind) + ' device',
+			kind: spec.kind,
+			action: () => devicesRef.addDevice(spec.kind, { position: pointOf() })
+		});
+	}
+	return Object.entries(groups).map(([label, children]) => ({ label, children }));
+}
+
 /** Nested `Add ▸` children for the viewport menu @param {() => number[] | null} pointOf */
 export function buildAddChildren(pointOf) {
 	return [
@@ -46,6 +70,10 @@ export function buildAddChildren(pointOf) {
 			}))
 		})),
 		{ label: 'Group', tooltip: 'Create an empty group', action: () => spawnAtPoint('/group New', null) },
+		// 23-A5: instruments and effects. Built from the registry at menu-open time, so a
+		// module registering (or going away) needs no menu plumbing of its own. A device is
+		// created through addDevice (a replicated toJSON), never through /create.
+		...deviceMenuGroups(pointOf),
 		// PFX-A: standalone emitters — a small marker sphere carries the config
 		// (userData.particles rides object sync / GLTF extras, so it replicates
 		// and saves like any object)

@@ -61,6 +61,40 @@ async function loadBuffer(entry, hash) {
 	entry.decoding = false;
 }
 
+/** decoded buffers by content hash, shared by every api.audio.sample caller */
+/** @type {Map<string, AudioBuffer>} */
+const sampleCache = new Map();
+
+/**
+ * 23-A5: a decoded AudioBuffer for an Explorer CONTENT HASH — `api.audio.sample`.
+ * The SAME path `loadBuffer` walks, made awaitable: `itemByHash` -> `requestAsset` on
+ * a miss (the content-hash pull, golden rule 9) -> `itemBlob` -> `decodeAudioData`,
+ * including the retry while the pull is in flight. A MISSING hash is never a failure —
+ * the bytes may be one peer away — so it keeps asking until `timeoutMs` and resolves
+ * null; only a decode throw rejects. Decoded buffers are cached per hash.
+ * @param {string} hash @param {{timeoutMs?: number}} [opts]
+ * @returns {Promise<AudioBuffer|null>}
+ */
+export async function sampleBuffer(hash, opts = {}) {
+	if (typeof hash !== 'string' || !hash) return null;
+	const cached = sampleCache.get(hash);
+	if (cached) return cached;
+	const deadline = Date.now() + (opts.timeoutMs ?? 30000);
+	let item = itemByHash(hash);
+	if (!item) requestAsset(hash);
+	while (!item) {
+		if (Date.now() > deadline) return null;
+		await new Promise((r) => setTimeout(r, 500)); // the pull lands as an Explorer item later
+		item = itemByHash(hash);
+	}
+	const blob = await itemBlob(item.id);
+	const ctx = context();
+	if (!blob || !ctx) return null;
+	const buffer = await ctx.decodeAudioData(await blob.arrayBuffer()); // a throw here IS a failure
+	sampleCache.set(hash, buffer);
+	return buffer;
+}
+
 /** Build the gain -> HRTF panner chain once per entry. @param {any} entry @param {any} data */
 function ensureChain(entry, data) {
 	const ctx = context();

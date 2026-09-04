@@ -134,6 +134,11 @@ function removeSceneRootGroup(name) {
 /** @type {any} */ let jointsRef = null;
 /** @type {any} */ let objectActionsRef = null;
 /** @type {any} */ let pingAudioRef = null;
+/** @type {any} */ let audioEngineRef = null;
+/** @type {any} */ let musicClockRef = null;
+/** @type {any} */ let audioDevicesRef = null;
+/** @type {any} */ let audioPatchRef = null;
+/** @type {any} */ let soundRuntimeRef = null;
 /** 21-E7.1: primed for api.hud.rows — a fresh import().then() per push drops the first
  * seconds of them (the DEVX #8 family). @type {any} */
 let flowRuntimeRef = null;
@@ -153,6 +158,13 @@ if (typeof window !== 'undefined') {
 	import('./joints').then((m) => (jointsRef = m));
 	import('./objectActions').then((m) => (objectActionsRef = m));
 	import('./pingAudio').then((m) => (pingAudioRef = m));
+	// 23-A5: the audio stack — engine (a leaf, but kept dynamic with its siblings so the
+	// four resolve together), clock, devices, patch, and the sample loader
+	import('./audioEngine').then((m) => (audioEngineRef = m));
+	import('./musicClock').then((m) => (musicClockRef = m));
+	import('./audioDevices').then((m) => (audioDevicesRef = m));
+	import('./audioPatch').then((m) => (audioPatchRef = m));
+	import('./soundRuntime').then((m) => (soundRuntimeRef = m));
 	import('./flowRuntime').then((m) => (flowRuntimeRef = m));
 	import('./flowGraphs').then((m) => (flowGraphsRef = m));
 	import('./nodeCatalog').then((m) => (nodeCatalogRef = m));
@@ -214,6 +226,13 @@ function makeApi(moduleId, moduleName = moduleId) {
 	/** list elements this module has pushed rows into, so teardown clears exactly those and
 	 * one disposer is journalled per element rather than one per push @type {Set<string>} */
 	const hudRowsOwned = new Set();
+	/** 23-A5: events this module scheduled on the transport, cancelled at teardown so a
+	 * disabled drum machine stops drumming @type {Set<() => void>} */
+	const scheduledCancels = new Set();
+	onDispose(() => {
+		scheduledCancels.forEach((cancel) => cancel());
+		scheduledCancels.clear();
+	});
 	onDispose(() => {
 		claimedScopes.forEach((scope) => import('./inputRuntime').then((m) => m.releaseInput(scope)));
 		claimedScopes.clear();
@@ -1095,6 +1114,106 @@ function makeApi(moduleId, moduleName = moduleId) {
 			// built-in rather than silently keeping a stale material
 			onDispose(() => import('./shaderGraph').then((m) => m.fallBackFromBackend(full, label)));
 			return job;
+		},
+
+		/**
+		 * 23-A5: supply an AUDIO DEVICE kind — an instrument, an effect, a speaker — the
+		 * audioDevices spec `{kind, label, icon, group, ports, params, build(ctx, node,
+		 * params), onParam, onNote, mesh, toolbox}` (see audioDevices.js). The kind is
+		 * NAMESPACED `mod-<moduleId>-<kind>`; it appears in the viewport Add menu under
+		 * Devices, and objects carrying it build the moment it registers. A peer without
+		 * your module (or a scene opened after it is disabled) holds those objects as inert
+		 * placeholders with their document intact — the fallback belongs to the registry.
+		 *
+		 * The disposer is recorded SYNCHRONOUSLY and a late registration undoes itself if
+		 * teardown already ran (the registerPostEffect lesson); a NEW registration is never
+		 * removed by an OLD teardown (the registry guards by identity).
+		 *
+		 * RESOLVES TO THE NAMESPACED KIND — await it, then `api.audio.addDevice(kind)`.
+		 * @param {any} spec
+		 * @returns {Promise<string>}
+		 */
+		registerAudioDevice: (spec) => {
+			if (!spec || typeof spec.kind !== 'string' || !spec.kind) throw new Error('registerAudioDevice: a spec needs a kind');
+			const full = `mod-${moduleId}-${spec.kind}`;
+			let off = /** @type {(() => void)|null} */ (null);
+			let disposed = false;
+			onDispose(() => {
+				disposed = true;
+				if (off) off();
+			});
+			const install = (/** @type {any} */ m) => {
+				const disposer = m.registerAudioDevice({ ...spec, kind: full, group: spec.group ?? moduleName });
+				off = disposer;
+				if (disposed) disposer();
+				return full;
+			};
+			// ALWAYS through the import, never a synchronous install when the ref happens to be
+			// primed: the guard above is only load-bearing on the async path, and one code path
+			// is one thing to prove (the registerPostEffect shape, whose suite proved it)
+			return import('./audioDevices').then(install);
+		},
+
+		/**
+		 * 23-A5: the audio engine, the musical clock and the patch, for a device's own
+		 * code. Everything here is reached through primed dynamic imports and is a no-op
+		 * (null / false) for the few frames before they resolve at boot.
+		 */
+		audio: {
+			/** an engine voice: `sampleVoice` when `opts.buffer` is set, else `oscVoice` —
+			 * `{output, start(at), stop(at), dispose()}`; connect `output` where you want
+			 * it heard, or pass `destination` (a node or a bus name). @param {any} [opts] */
+			voice: (opts = {}) => (opts.buffer ? audioEngineRef?.sampleVoice(opts) : audioEngineRef?.oscVoice(opts)) ?? null,
+			/** a named bus (music / sfx / voice / instruments) to connect a source to,
+			 * instead of `ctx.destination` @param {string} [name] */
+			bus: (name = 'instruments') => audioEngineRef?.bus(name) ?? null,
+			/** the shared AudioContext (create your nodes on THIS one, never `new AudioContext()`) */
+			context: () => audioEngineRef?.ensureAudioContext() ?? null,
+			/** a decoded AudioBuffer for an Explorer CONTENT HASH, pulled from a peer when
+			 * missing; null after `timeoutMs` (default 30 s) if nobody has the bytes; rejects
+			 * only when the bytes will not decode. @param {string} hash @param {{timeoutMs?: number}} [opts] */
+			sample: (hash, opts) => (soundRuntimeRef ? soundRuntimeRef.sampleBuffer(hash, opts) : import('./soundRuntime').then((m) => m.sampleBuffer(hash, opts))),
+			/** the audio-clock time of a wall-clock stamp (a replicated `at`) — hand it to
+			 * `voice.start(t)` @param {number} wallMs */
+			timeFor: (wallMs) => audioEngineRef?.audioTimeFor(wallMs) ?? 0,
+			/**
+			 * schedule through the look-ahead scheduler: `fn({beat, at, late, bpm, bar})` is
+			 * called up to 100 ms EARLY with the exact audio time — start voices at `at`,
+			 * never at call time. `opts.every` repeats every N beats. fn MUST be a pure
+			 * function of its arguments (every peer runs it against the same transport).
+			 * Returns a cancel; everything still scheduled is cancelled at teardown.
+			 * @param {number} beat @param {(e: any) => void} fn @param {{every?: number, swing?: boolean}} [opts]
+			 */
+			schedule: (beat, fn, opts) => {
+				if (!musicClockRef) return () => {};
+				const cancel = musicClockRef.schedule(beat, fn, opts);
+				scheduledCancels.add(cancel);
+				return () => {
+					scheduledCancels.delete(cancel);
+					cancel();
+				};
+			},
+			/** the transport now: `{bpm, beat, bar, step, phase, playing, loopBeats, swing}` */
+			transport: () => musicClockRef?.transportNow() ?? { bpm: 120, beat: 0, bar: 0, step: 0, phase: 0, playing: false, loopBeats: 16, swing: 0 },
+			/** press Play / Stop on the shared transport (replicated) @param {boolean} [playing] */
+			play: (playing = true) => (playing ? musicClockRef?.playTransport() : musicClockRef?.stopTransport()),
+			/** set the shared tempo (replicated; the beat you are on stays the beat you are on) @param {number} bpm */
+			setBpm: (bpm) => musicClockRef?.setBpm(bpm),
+			/** create a device object of a kind YOU registered (`'osc'` -> `mod-<you>-osc`),
+			 * or of any full kind id; replicated, undoable @param {string} kind @param {any} [opts] */
+			addDevice: (kind, opts) => audioDevicesRef?.addDevice(kind.startsWith('mod-') || audioDevicesRef.deviceSpec(kind) ? kind : `mod-${moduleId}-${kind}`, opts) ?? null,
+			/** a device object's document `{kind, params}` or null @param {string} uuid */
+			device: (uuid) => audioDevicesRef?.deviceOf(audioDevicesRef.findDeviceObject(uuid)) ?? null,
+			/** write a device's params (merge; replicated; one undo step) @param {string} uuid @param {Record<string, any>} params */
+			setParams: (uuid, params) => audioDevicesRef?.setDeviceFor(uuid, { params }) ?? null,
+			/** play a note on a device — locally through its onNote and to every peer as a
+			 * stamped message @param {string} uuid @param {{note?: number, velocity?: number, at?: number}} [note] */
+			note: (uuid, note) => audioDevicesRef?.noteDevice(uuid, note) ?? null,
+			/** plug a cable between two device ports (replicated; one undo step); returns
+			 * the cable id @param {{from: {uuid: string, port?: string}, to: {uuid: string, port?: string}, gain?: number}} spec */
+			cable: (spec) => audioPatchRef?.addCable(spec) ?? null,
+			/** unplug a cable @param {string} id */
+			uncable: (id) => audioPatchRef?.removeCable(id)
 		},
 
 		/**

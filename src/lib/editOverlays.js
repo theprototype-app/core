@@ -37,7 +37,7 @@ export function editOverlaysParked() {
 }
 
 /** @param {any} node */
-function isEditOverlay(node) {
+export function isEditOverlay(node) {
 	if (!node?.isLineSegments || typeof node.name !== 'string') return false;
 	// `edit-overlay`, plus the `edit-overlay_1` shape the name uniquifier makes
 	// when a second one lands on the same object. NOT `edge-edit-overlay` /

@@ -19,6 +19,7 @@ import { scenePost, scenePostSnapshot, scenePostRestore } from './scenePost';
 import { environment, environmentSnapshot, environmentRestore } from './environment';
 import { scenePhysicsState_, scenePhysicsSnapshot, scenePhysicsRestore } from './scenePhysics';
 import { transport, transportSnapshot, transportRestore } from './musicClock';
+import { patch, patchSnapshot, patchRestore } from './audioPatch';
 import { hudDocs, hudDocsSnapshot, hudDocsRestore } from './hudDocs';
 import { gameState, gameStateSnapshot, gameStateRestore } from './gameState';
 import { peers, showToast, showInfoToast } from '../stores/appStore';
@@ -189,6 +190,8 @@ async function saveSnapshot() {
 		// authored data with nowhere else to live). Whether it was PLAYING does not
 		// survive the reload — see the restore below and the MUSIC note above.
 		transport: transportSnapshot(),
+		// 23-A4: the cables, keyed by the object uuids the __uuid stamp above restores
+		patch: patchSnapshot(),
 		// A2: a HUD is screen-space scene data with nowhere in a GLTF to live, so it
 		// rides beside the snapshot for the same reason the post stack does. NOTE the
 		// GLTF re-uuid trap: an OBJECT-keyed document would orphan on every reload and
@@ -403,6 +406,7 @@ async function applyRestore(snapshot) {
 		// resume:false — a reload must not start the beat lab on its own, the same
 		// reasoning that keeps MUSIC out of this snapshot entirely
 		transportRestore(snapshot.transport, true, { resume: false });
+		patchRestore(snapshot.patch, true);
 		// same reasoning: replicate, so a restore into a live room brings the HUD too
 		hudDocsRestore(snapshot.hud, true, true);
 		gameStateRestore(snapshot.game, true);
@@ -492,6 +496,7 @@ export function startAutosave() {
 	environment.subscribe(() => markDirty());
 	scenePhysicsState_.subscribe(() => markDirty());
 	transport.subscribe(() => markDirty()); // 23-A2
+	patch.subscribe(() => markDirty()); // 23-A4
 	// A2: and once more — authoring a HUD touches no object, so without this the
 	// document would sit in the snapshot with nothing ever triggering one being
 	// written (the scenePost lesson, and the notes-disappear-on-reload one before it)

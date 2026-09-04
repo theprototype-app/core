@@ -113,7 +113,12 @@ export function sceneSignature(payload) {
 		environment: payload.environment ?? null,
 		physics: payload.physics ?? null,
 		music: payload.music ?? null,
-		hud: payload.hud ?? null
+		hud: payload.hud ?? null,
+		// 23-A2/A4: the transport and the patch are scene data too — a tempo or a cable
+		// is a change worth a save. MERGE NOTE: release/next wraps every block here in
+		// stripStamps (R22 round 11); these two must be wrapped the same way there.
+		transport: payload.transport ?? null,
+		patch: payload.patch ?? null
 	};
 	return JSON.stringify(pick);
 }

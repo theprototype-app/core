@@ -60,6 +60,7 @@
 	import { startColliderHelpers, updateColliderHelpers } from '$lib/colliderHelpers';
 	import { startCameraHelpers, updateCameraHelpers } from '$lib/cameraHelpers';
 	import { updateOnionSkin } from '$lib/onionSkin';
+	import { startCables, updateCables } from '$lib/audioPatch';
 	import { updateTinyMarkers } from '$lib/tinyMarkers';
 	import { cameraPreview, activeOrbit, setOrbitEnabled } from '$lib/cameraPreview';
 	import CameraPreview from './CameraPreview.svelte';
@@ -308,6 +309,7 @@
 		updateColliderHelpers(); // CL-A A7: collider proxies follow their objects
 		updateSnapAnchor(); // 19-B P3: the picked snap-anchor marker follows its object
 		updateCameraHelpers(); // 16-P5: camera-object frustums follow their markers
+		updateCables(); // 23-A4: patch cables follow their plugs; the routing diff runs here too
 		updateOnionSkin(); // 17-E F6: ghosts at the neighbouring keys (local, off by default)
 		updateTinyMarkers(); // R2: a dot to aim at when an object has no size left
 		if (!renderer.xr.isPresenting) updateEditorNavigation(delta, camera.current, $activeOrbit);
@@ -466,6 +468,7 @@
 		startLightHelpers();
 		startColliderHelpers();
 		startCameraHelpers();
+		startCables(); // 23-A4
 		startEditorNavigation();
 		startSnapEngine(); // 19-B: wires the element-snap candidate marker
 		// #20 P5: hand editResume the LIVE session modules. It imports nothing itself

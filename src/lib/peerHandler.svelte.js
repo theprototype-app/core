@@ -60,6 +60,8 @@ import { applyRemoteScenePost, scenePostStates, sendScenePost } from '$lib/scene
 // peer clock-offset estimate it carries alongside
 import { applyRemoteTransport, transportState, sendTransport, answerClockPing, applyClockPong, startClockSync } from '$lib/musicClock';
 import { applyRemoteDeviceNote } from '$lib/audioDevices';
+// 23-A4: the patch (cables between device ports), a latest-wins singleton
+import { applyRemotePatch, patchState, sendPatch } from '$lib/audioPatch';
 import { applyRemoteShaderGraph, applyRemoteShaderGraphDelete, applyRemoteShaderGraphs, sendShaderGraphs } from '$lib/shaderSync';
 import {
 	applyRemoteHud,
@@ -495,6 +497,12 @@ export class PeerConnection {
 					answerClockPing(data, conn);
 				} else if(data.type == 'clockpong') {
 					applyClockPong(data);
+				} else if(data.type == 'patch') {
+					// 23-A4: the routing document, latest-wins on changedAt. Orphan cables ride
+					// along and simply do not route until their object exists here.
+					applyRemotePatch(data);
+				} else if(data.type == 'getpatch') {
+					sendPatch(data.sender);
 				} else if(data.type == 'devicenote') {
 					// 23-A3: a note on a device object, stamped on the sender's wall clock and
 					// synthesized HERE (the deterministic-events model, golden rule 8)
@@ -776,6 +784,8 @@ export class PeerConnection {
 		conn.send(scenePhysicsState())
 		// 23-A2: the musical transport, a singleton PUSH like the line above
 		conn.send(transportState())
+		// 23-A4: the patch, the same singleton PUSH
+		conn.send(patchState())
 		// L-C: one per post DOCUMENT — the scene look and any camera looks
 		for (const state of scenePostStates()) conn.send(state)
 		conn.send(handModelState())

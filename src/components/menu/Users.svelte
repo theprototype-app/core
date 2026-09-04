@@ -36,7 +36,12 @@
 	// said where. Our own row reads `currentLevel` directly; peers read the map.
 	// R22 round 30 B2: `roomsOfSession` is the DERIVED grouping the Rooms view renders —
 	// a session is the mesh, a scene is the tag, a room is who is standing in one.
-	import { peerScenes, elsewhereThan, roomsOfSession } from '$lib/peerScenes';
+	// R22 round 36 (rooms): `UNNAMED_ROOM` is the answer for a peer standing in the
+	// session's world — a place with no name, so the row offers Join rather than Go to.
+	// `roomOf`/`roomCtx` are the SAME pure resolver the gates use, which is what keeps the
+	// untitled bucket below (which this component builds itself) from disagreeing with
+	// `roomsOfSession` about where a quiet peer is standing.
+	import { peerScenes, elsewhereThan, roomsOfSession, UNNAMED_ROOM, roomOf, roomCtx } from '$lib/peerScenes';
 	// travel, for "Go to": by HASH when the row carries one (the exact world they are
 	// looking at), by NAME as the fallback.
 	import { currentLevel } from '$lib/levels';
@@ -46,7 +51,7 @@
 	import { travelToPeerScene } from '$lib/sceneOpenGuard';
 	// R22 round 35: a peer editing a scene of its own — nothing to watch and nowhere to go,
 	// so the row offers the one thing that can work, which is to ASK.
-	import { requestSceneAccess, sceneAccessAsked, rejoinSession, shareWithSession } from '$lib/scenePrivacy';
+	import { requestSceneAccess, sceneAccessAsked, rejoinSession, joinSessionWorld, shareWithSession } from '$lib/scenePrivacy';
 
 	/**
 	 * WHY WATCH IS GATED. Watching a peer attaches your camera to theirs — in THIS
@@ -58,10 +63,15 @@
 	 * different scenes, the same rule has to hold inside the session.
 	 *
 	 * ONLY ON EVIDENCE. An absent row means "we have not been told", which is not the
-	 * same as "somewhere else" — a peer on an older build never sends one. And if WE
-	 * are not in a named scene there is nothing to compare against. Both unknowns
-	 * leave Watch enabled: refusing on a guess would break a working feature for
-	 * anybody whose scene simply has no name yet.
+	 * same as "somewhere else" — a peer on an older build never sends one, and that one
+	 * unknown still leaves Watch enabled: refusing on a guess would break a working
+	 * feature for anybody on an older build.
+	 *
+	 * R22 ROUND 36 (rooms) TOOK THE SECOND UNKNOWN AWAY, and it was never an unknown: "we
+	 * are not in a named scene" means we are standing in the SESSION'S world, which is a
+	 * room with the host's identity. So a peer in a named scene of their own IS elsewhere
+	 * from an unnamed us, Watch is refused with the reason, and the row offers the thing
+	 * that works instead.
 	 * @returns {string} their scene when they are demonstrably elsewhere, else empty
 	 */
 	const watchBlockedBy = elsewhereThan;
@@ -217,6 +227,14 @@
 		// screen shows about us.
 		const iAmPrivate = $currentLevel?.private === true;
 		const mineScene = iAmPrivate ? '' : $currentLevel?.name ?? '';
+		// R22 round 36 (rooms): one resolver, two consumers. `roomsOfSession` groups the
+		// REMOTE rows through this same context, and the untitled bucket below asks
+		// `roomOf` about each leftover row rather than testing `!row.scene` — which is how
+		// the two are kept from disagreeing about an unnamed peer standing in a host's
+		// named room (it belongs in that room's group, not in a bucket of its own).
+		const host = $sessionHost;
+		const ctx = roomCtx(map, host, mineScene);
+		const myRoom = iAmPrivate ? null : roomOf({ scene: mineScene }, ctx) ?? '';
 		const seen = new Set<string>();
 		const take = (id: string) => {
 			const r = rowOf(id);
@@ -229,7 +247,7 @@
 			return me ? [me] : [];
 		};
 		const body: any[] = [];
-		for (const room of roomsOfSession(map, mineScene ? { scene: mineScene } : null)) {
+		for (const room of roomsOfSession(map, iAmPrivate ? null : { scene: mineScene }, host)) {
 			const users = [...(room.mine ? mine() : []), ...room.peerIds.map(take).filter(Boolean)];
 			if (!users.length) continue;
 			body.push({
@@ -241,17 +259,22 @@
 			});
 		}
 		const untitled = [
-			...(mineScene || iAmPrivate ? [] : mine()),
+			...(myRoom === '' ? mine() : []),
 			// a PRIVATE row also says scene '' on the wire — deliberately, that is the whole
 			// design — so the untitled bucket has to exclude it or a private peer would read as
-			// standing in the session's shared world, which is the opposite of true
-			...Object.keys(map).filter((id) => !map[id]?.scene && !map[id]?.private).map(take).filter(Boolean)
+			// standing in the session's shared world, which is the opposite of true.
+			// R22 round 36 (rooms): and a row that RESOLVES into the host's named room has
+			// already been listed there, so the test is the resolved room, not the raw name.
+			...Object.keys(map)
+				.filter((id) => !map[id]?.private && roomOf(map[id], ctx) === '')
+				.map(take)
+				.filter(Boolean)
 		];
 		if (untitled.length)
 			body.push({
 				key: 'untitled',
 				label: UNNAMED,
-				mine: !mineScene,
+				mine: myRoom === '',
 				title: 'The session\u2019s unnamed world — nobody has saved a scene yet',
 				users: untitled
 			});
@@ -321,6 +344,15 @@
 	 * so the button cannot be hammered into a silence it cannot explain. */
 	function askForScene(peerId: string) {
 		requestSceneAccess(peerId);
+	}
+	/** R22 round 36 (rooms): the row's **Join** — leave the named scene we are standing in
+	 * and take the session's own world, which is where the peer this button sits beside is.
+	 * Same body as Rejoin (`rejoinSession`), same guard, and the popover stays put until the
+	 * guard is answered; only the destination is pinned, because this button names a place. */
+	function doJoinWorld() {
+		void joinSessionWorld().then((ok) => {
+			if (ok) peersOpen = false;
+		});
 	}
 	/** Leave private mode and stand where the session is. The unsaved-changes guard runs
 	 * INSIDE `rejoinSession`, so the popover stays put until it is answered. */
@@ -536,7 +568,7 @@
 				<span class="role-badge" data-role={ri.roleOf(user[0])}>{ri.roleOf(user[0])}</span>
 			{/if}
 		{/if}
-		{#if !self && $cameraPreviews[user[0]] && !watchBlockedBy($peerScenes, $currentLevel?.name ?? '', user[0])}
+		{#if !self && $cameraPreviews[user[0]] && !watchBlockedBy($peerScenes, $currentLevel?.name ?? '', user[0], $sessionHost)}
 			<!-- 16-P5: this peer is looking through a scene camera — you can join.
 			     P2b: not across scenes — the camera MARKER lives in their scene, so
 			     there would be nothing here to look through. -->
@@ -549,19 +581,19 @@
 			</button>
 		{/if}
 		{#if !self}
-			{@const away = watchBlockedBy($peerScenes, $currentLevel?.name ?? '', user[0])}
+			<!-- R22 round 36 (rooms): `$sessionHost` is PASSED, not read through get() — it is
+				 what resolves the session's unnamed world to a room, and a component that read
+				 it any other way would stop re-rendering when the host changed. -->
+			{@const away = watchBlockedBy($peerScenes, $currentLevel?.name ?? '', user[0], $sessionHost)}
 			{#if privateRow($peerScenes, user[0], self)}
 				<!-- R22 round 35: a peer in a scene of its own. Watch cannot reach them and
 					 neither can Go to — there is no name and no hash to travel by, which is the
-					 whole point — so the disabled-WITH-THE-REASON treatment comes back (the
-					 21-G5 ruling) beside the one action that CAN work: asking. -->
-				<button
-					class="peer-watch shrink-0 rounded bg-gray-700 px-2 py-0.5 text-xs text-gray-500"
-					disabled
-					title="Editing a private scene — you cannot watch a world you do not have"
-				>
-					<Eye size={16} class="mr-1" aria-hidden="true" />Watch
-				</button>
+					 whole point. R22 (Deleted keeps its structure, user): the disabled Watch that
+					 used to sit here is GONE. The disabled-with-the-reason rule (21-G5) is for a
+					 control that will work again once something changes; in this row Watch can
+					 never work — the peer has to share the scene first, and the button that
+					 asks them to is the one beside it — so a permanently grey Watch was a second
+					 button saying nothing. Request access takes its place. -->
 				<button
 					class="peer-request shrink-0 rounded px-2 py-0.5 text-xs {$sceneAccessAsked.includes(user[0])
 						? 'bg-gray-700 text-gray-500'
@@ -573,6 +605,20 @@
 					onclick={() => askForScene(user[0])}
 				>
 					{$sceneAccessAsked.includes(user[0]) ? 'Requested…' : 'Request access'}
+				</button>
+			{:else if away === UNNAMED_ROOM}
+				<!-- R22 round 36 (rooms): they are in the SESSION'S OWN WORLD and we are not.
+					 Go to cannot reach it — it travels by hash and by name, and this room has
+					 neither, which is precisely what made it invisible to the gate until now.
+					 Join is the `rejoinSession` path generalised beyond privacy: leave the
+					 named scene, take the session's world back, and ask the peers standing in
+					 it for what it holds. -->
+				<button
+					class="peer-join shrink-0 rounded bg-gray-600 px-2 py-0.5 text-xs text-gray-100 hover:bg-gray-500"
+					title="In the session's world — go back there"
+					onclick={() => doJoinWorld()}
+				>
+					<ArrowRight size={14} class="mr-1" aria-hidden="true" />Join
 				</button>
 			{:else if away}
 				<!-- R22 round 30 B2: they are demonstrably in ANOTHER SCENE, so Watch cannot

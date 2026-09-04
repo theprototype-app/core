@@ -275,11 +275,21 @@ h.run(async () => {
 		!!folderStrip && /Doomed/.test(folderStrip.title),
 		'deleting a FOLDER asks in the strip, not in a toast (' + (folderStrip ? folderStrip.title : 'n/a') + ')'
 	);
+	// R22 round 36 REVERSES the old wording, and the behaviour under it. It used to say
+	// DESTROYED, honestly, because `deleteFolder` reclaimed every blob in the subtree — the
+	// asymmetry with a file delete that kept this confirm asking. `deleteFolderToBin` moves
+	// the subtree to Deleted with its SHAPE intact, so the sentence can promise a restore,
+	// and the peer clause is now the important half (a folder delete that told the project
+	// nothing is what let a peer's "always" sweep adopt the folder straight back).
 	h.check(
-		!!folderStrip && /destroyed/.test(folderStrip.detail),
-		'and it says the files inside are DESTROYED — the asymmetry that keeps this one asking (' +
+		!!folderStrip && /move to Deleted/.test(folderStrip.detail) && !/destroyed/i.test(folderStrip.detail),
+		'and it says the files inside MOVE to Deleted, not that they are destroyed (' +
 			(folderStrip ? folderStrip.detail : 'n/a') +
 			')'
+	);
+	h.check(
+		!!folderStrip && /restored with its structure/.test(folderStrip.detail) && /Peers' copies/.test(folderStrip.detail),
+		'...naming both the structure that survives and what happens on every peer'
 	);
 	h.check(
 		!(await toastTexts(A)).some((t) => /^Delete "/.test(t)),
@@ -441,9 +451,26 @@ h.run(async () => {
 		!!bytesKept && bytesKept.canRestore,
 		'their BYTES survive, so the drop is reversible (' + JSON.stringify(bytesKept) + ')'
 	);
+	// R22 round 36 INVERTS this one, and it is the whole round in one check. The drop used
+	// to CLEAR each file's `folderId` on the way to the bin, so Restore landed it at the
+	// library root — the structure was thrown away by the DELETE, not lost by the restore,
+	// which is exactly what "a deleted folder does not move to Deleted" described. The id
+	// stays now, and `deleteFolderToBin` writes a folder row beside it so the way back can
+	// be recreated even when the folder itself is gone from the library.
 	h.check(
-		!!bytesKept && (bytesKept.folderId ?? null) === null,
-		'and they lost their folderId, so Restore puts them at the root instead of inside a folder that no longer exists'
+		!!bytesKept && bytesKept.folderId === folderIds.doomed,
+		`and they KEEP their folderId, so Restore can put them back where they were (${JSON.stringify(bytesKept)})`
+	);
+	const folderRow = await page.evaluate((id) => {
+		let m;
+		window.__stores.projectManifest.projectManifest.subscribe((x) => (m = x))();
+		const rows = window.__stores.sharedLibrary.deletedLog(m);
+		const row = rows.find((r) => r.hash === 'folder:' + id);
+		return row ? { name: row.name, kind: row.kind, folderId: row.folderId ?? null } : null;
+	}, folderIds.doomed);
+	h.check(
+		!!folderRow && folderRow.kind === 'folder' && folderRow.name === 'Doomed',
+		`...and the FOLDER itself has a row in the log, which is what the bin draws as a folder (${JSON.stringify(folderRow)})`
 	);
 
 	// ---- 9. restore really works from a dropped file ---------------------------------

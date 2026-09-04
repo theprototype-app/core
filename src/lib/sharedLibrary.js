@@ -78,6 +78,9 @@ import {
 	createFolder,
 	patchRecord,
 	folderSubtree,
+	folderPath,
+	removeFolderRecords,
+	moveItem,
 	itemByHash,
 	setItemHidden
 } from './explorer';
@@ -239,6 +242,14 @@ function projection() {
 		// index must not hang the projection
 		for (let i = 0; at && i < 64; i++) {
 			if (needed.has(at)) break;
+			// R22 round 36 — THE CASCADE STOPS AT A DELETED PLACE. `share: 'no'` on a FOLDER
+			// means somebody deleted it and this machine kept the record because it holds a
+			// local file the deleter could not see (applySharedIndex). Carrying it along as
+			// an ancestor would republish it with a FRESH stamp, which beats the deleter's
+			// tombstone — the resurrection this whole batch exists to stop. A file inside it
+			// still publishes; its `folderId` simply dangles, and a peer roots a row whose
+			// folder it does not have (step 2, "placement we cannot honour").
+			if (byId.get(at)?.share === 'no') break;
 			needed.add(at);
 			at = byId.get(at)?.parentId ?? null;
 		}
@@ -933,7 +944,10 @@ export function resolveShareAsk(choice, remember = false) {
  * Prefabs are LOCAL, so there is nothing to tombstone and nothing to tell peers: the
  * entry is a record for this machine, and Restore hands the prefab back from the same
  * bytes it was always stored in.
- * @param {{hash: string, name: string, kind: string, thumb?: string|null}} spec
+ * @param {{hash: string, name: string, kind: string, thumb?: string|null,
+ *   folderId?: string|null, path?: string[]}} spec R22 round 36: `folderId` and `path`
+ *   are WHERE IT WAS, so Restore can put it back there. Both optional — a prefab has no
+ *   library folder, and an omitted `folderId` reads as the root.
  */
 export function logLocalDeletion(spec) {
 	const hash = String(spec?.hash ?? '').trim();
@@ -947,6 +961,8 @@ export function logLocalDeletion(spec) {
 		at: Date.now(),
 		by: meAsOwner(),
 		localOnly: true,
+		...(spec.folderId === undefined ? {} : { folderId: spec.folderId ?? null }),
+		...(spec.path?.length ? { path: spec.path } : {}),
 		...(spec.thumb ? { thumb: spec.thumb } : {})
 	});
 	noteApplied(hash);
@@ -975,15 +991,30 @@ export function deleteSharedItem(id) {
 			kind: item.kind,
 			at: Date.now(),
 			by: meAsOwner(),
+			// R22 round 36: WHERE IT WAS, so Restore can put it back rather than dropping
+			// it at the root — and the names beside it, because the folder may be gone by
+			// the time anybody looks
+			folderId: item.folderId ?? null,
+			path: folderPath(item.folderId),
 			// R22 round 7: keep the PICTURE. It cannot be re-derived once the bytes are
 			// reclaimed, so a bin full of generic icons is what you get by not recording it.
 			...(item.thumbnail ? { thumb: item.thumbnail } : {})
 		});
+	// THE PATCH GOES FIRST, and this is a bug fix rather than a tidy-up: `patchRecord`
+	// writes into `explorerItems` only, so patching a record that `setItemHidden` has
+	// already moved to the hidden shelf silently did NOTHING. The deleted copy therefore
+	// kept `share: 'peer'`, which meant the projection went on carrying the row forward
+	// verbatim (see the foreign-row rule) and the restore rule in `applySharedIndex` —
+	// hidden AND `share: 'no'` AND applied — could never match on the deleter's own machine.
+	patchRecord(item.id, { share: 'no', owner: undefined, wasShared: undefined });
 	// off the visible shelf, bytes intact — unless the bin is switched off, in which case
 	// the user has already said they do not want a second chance at this
 	if (get(recycleBinEnabled)) setItemHidden(item.id, true);
 	else void import('./explorer').then((m) => m.deleteItem(item.id));
-	patchRecord(item.id, { share: 'no', owner: undefined, wasShared: undefined });
+	// ...and OUR OWN applied-set is right immediately. Without this the row we just wrote
+	// is a deletion we have not "seen", so the next sweep applies it against the copy —
+	// harmless today, and the thing that would re-hide a file restored a second later.
+	noteApplied(item.hash);
 	// ...and out of the index for everybody, through the tombstone that already exists
 	const { folders, items } = projection();
 	const tombs = {
@@ -997,6 +1028,165 @@ export function deleteSharedItem(id) {
 		log
 	);
 	return true;
+}
+
+// ---- R22 round 36: DELETE GOES THROUGH ONE PATH, AND IT IS THE BIN'S ---------------
+//
+// The report this closes: "deleting a folder recreates it, and its files, when a peer has
+// share-new-files: always". `explorer.deleteFolder` DESTROYS locally and writes no
+// tombstone and no log row, so the peer went on holding the folder as `peer` and the files
+// as `peer`; the rows leaving the index stripped those marks to `wasShared`, the `always`
+// sweep claimed everything unshared as `mine` and republished — and the deleter adopted
+// its own folder back and auto-downloaded its own files. Nothing anywhere was ever told
+// that a deletion had happened, which is the whole of it.
+//
+// So both bulk deletes below write the same three things the single-item path writes: the
+// LOG ROW (what, who, when, where), the TOMBSTONE (so the removal beats the reconcile) and
+// the APPLIED mark (so we do not re-apply our own deletion). ONE publish each, because a
+// folder of forty files is one act.
+
+/** The per-item half, shared by both entry points below. Mutates `log`/`tombs` and returns
+ * the item so the caller can filter its hash out of the published rows.
+ * @param {any} item a VISIBLE library record @param {any[]} log @param {any} tombs
+ * @param {number} at @param {any} by @param {boolean} keepRow */
+function binOneItem(item, log, tombs, at, by, keepRow) {
+	// SHARED vs LOCAL is the only branch: a shared file needs a tombstone so it leaves
+	// every peer's index, a local one has nothing to tell anybody and takes `localOnly`
+	// so Restore knows to put it back LOCAL rather than publishing it (round 36's fourth
+	// report — restoring a local deletion used to share it).
+	const shared = item.share === 'mine' || item.share === 'peer';
+	const i = log.findIndex((/** @type {any} */ r) => r.hash === item.hash);
+	if (i >= 0) log.splice(i, 1);
+	if (keepRow)
+		log.push({
+			hash: item.hash,
+			name: item.name,
+			kind: item.kind,
+			at,
+			by,
+			folderId: item.folderId ?? null,
+			path: folderPath(item.folderId),
+			...(shared ? {} : { localOnly: true }),
+			...(item.thumbnail ? { thumb: item.thumbnail } : {})
+		});
+	// the patch before the hide — see the note in `deleteSharedItem`
+	if (shared) patchRecord(item.id, { share: 'no', owner: undefined, wasShared: undefined });
+	if (get(recycleBinEnabled)) setItemHidden(item.id, true);
+	else void import('./explorer').then((m) => m.deleteItem(item.id));
+	if (shared) tombs.items[item.hash] = at;
+	noteApplied(item.hash);
+	return item;
+}
+
+/** The tombstone map to build on, as a fresh copy of the document's. @param {any} doc */
+function tombsOf(doc) {
+	return {
+		items: { ...((doc.removed ?? {}).items ?? {}) },
+		folders: { ...((doc.removed ?? {}).folders ?? {}) }
+	};
+}
+
+/**
+ * Move library items to Deleted — the ONE delete path the Explorer offers, whether that
+ * is one card, a marquee selection or a drop onto the bin.
+ *
+ * A ROW IS WRITTEN ONLY IF THERE IS SOMEWHERE FOR IT TO GO: with the recycle bin OFF the
+ * bytes are gone immediately, and with the log OFF as well nobody asked for history — the
+ * same `keepRow` reading `deleteSharedItem` has always used, applied to local files too.
+ * @param {string[]} ids VISIBLE library item ids @returns {number} how many went
+ */
+export function deleteItemsToBin(ids) {
+	const visible = get(explorerItems);
+	const targets = (ids ?? [])
+		.map((id) => visible.find((i) => i.id === id))
+		.filter(/** @returns {v is any} */ (v) => !!v);
+	if (!targets.length) return 0;
+	const doc = get(projectManifest);
+	const keepRow = get(recycleBinEnabled) || get(deletedLogEnabled);
+	const log = [...(doc.deleted ?? [])];
+	const tombs = tombsOf(doc);
+	const at = Date.now();
+	const by = meAsOwner();
+	const gone = new Set();
+	for (const item of targets) {
+		binOneItem(item, log, tombs, at, by, keepRow);
+		gone.add(item.hash);
+	}
+	const { folders, items } = projection();
+	publishSharedIndex(
+		folders,
+		items.filter((/** @type {any} */ r) => !gone.has(r.hash)),
+		tombs,
+		log
+	);
+	return targets.length;
+}
+
+/**
+ * Move a FOLDER to Deleted: the folder, its subfolders, and every visible file inside —
+ * each file through exactly the rule above, KEEPING its `folderId` so the tree can be
+ * rebuilt on the way back.
+ *
+ * WHAT IT DOES NOT TOUCH: bytes, and the hidden shelf. An old scene version living inside
+ * the folder keeps its record and its `folderId`, so restoring the folder finds it again;
+ * `removeFolderRecords` takes the PLACES and nothing else, which is what separates this
+ * from `explorer.deleteFolder` (still there, for `clearLibrary`-class callers).
+ * @param {string} id @returns {{folders: number, files: number}}
+ */
+export function deleteFolderToBin(id) {
+	const ids = folderSubtree(String(id ?? '').trim());
+	const byId = new Map(get(explorerFolders).map((f) => [f.id, f]));
+	if (!ids.length || !byId.has(ids[0])) return { folders: 0, files: 0 };
+	const inside = new Set(ids);
+	const doc = get(projectManifest);
+	const keepRow = get(recycleBinEnabled) || get(deletedLogEnabled);
+	const log = [...(doc.deleted ?? [])];
+	const tombs = tombsOf(doc);
+	const at = Date.now();
+	const by = meAsOwner();
+	// THE ITEMS FIRST, while the folder records still exist: `folderPath` reads the live
+	// tree, so a row written after the removal would carry an empty path — and the path is
+	// the only thing left once the log row itself is evicted by the cap.
+	const targets = get(explorerItems).filter((i) => inside.has(i.folderId ?? ''));
+	const gone = new Set();
+	for (const item of targets) {
+		binOneItem(item, log, tombs, at, by, keepRow);
+		gone.add(item.hash);
+	}
+	for (const fid of ids) {
+		const folder = byId.get(fid);
+		if (!folder) continue;
+		const shared = folder.share === 'mine' || folder.share === 'peer';
+		const i = log.findIndex((/** @type {any} */ r) => r.hash === folderRowKey(fid));
+		if (i >= 0) log.splice(i, 1);
+		if (keepRow)
+			log.push({
+				hash: folderRowKey(fid),
+				name: folder.name,
+				kind: 'folder',
+				at,
+				by,
+				// a folder row's own `folderId` is its PARENT — the row IS the folder
+				folderId: folder.parentId ?? null,
+				path: folderPath(folder.parentId),
+				...(shared ? {} : { localOnly: true })
+			});
+		if (shared) tombs.folders[fid] = at;
+		noteApplied(folderRowKey(fid));
+	}
+	removeFolderRecords(ids);
+	const { folders, items } = projection();
+	// the projection carries a FOREIGN row forward verbatim, and a folder we have just
+	// stopped holding now looks foreign — so the doomed ids are filtered here explicitly
+	// rather than trusted to the tombstone, which the projection matched against the OLD
+	// document (the same shape `deleteSharedItem` uses for its one hash)
+	publishSharedIndex(
+		folders.filter((/** @type {any} */ r) => !inside.has(r.id)),
+		items.filter((/** @type {any} */ r) => !gone.has(r.hash)),
+		tombs,
+		log
+	);
+	return { folders: ids.length, files: targets.length };
 }
 
 /** Drop one hash out of the deleted log (and out of the applied set), leaving the rest
@@ -1019,7 +1209,9 @@ export function clearDeletedEntry(hash) {
 }
 
 /** R22 round 7: empty the whole bin — the Deleted section's own context menu. Local
- * bytes AND the log, because "empty the bin" is a statement about both. */
+ * bytes AND the log, because "empty the bin" is a statement about both. R22 round 36:
+ * FOLDER ROWS GO TOO and need no special case — `purgeDeletedItem` finds no item for a
+ * `'folder:'` hash and does nothing, and the publish of `[]` takes the whole array. */
 export async function emptyDeletedLog() {
 	const log = get(projectManifest).deleted ?? [];
 	if (!log.length) return 0;
@@ -1030,6 +1222,42 @@ export async function emptyDeletedLog() {
 	const { folders, items, removed } = projection();
 	publishSharedIndex(folders, items, removed, []);
 	return log.length;
+}
+
+/**
+ * R22 round 36 (user) — "CLEAR THE LOG" CLEARS THE LOG, and nothing else.
+ *
+ * It used to run `emptyDeletedLog`, which reclaims every byte in the bin as well; round 13
+ * had folded the two into one gesture on the reasoning that both act on one array. The
+ * user's reading is the right one: the LOG is the half whose bytes are already gone from
+ * this device (the cleaned-up records), the BIN is what can still be put back, and a menu
+ * entry called "Clear the log" that also empties the bin is a delete wearing a bookkeeping
+ * label. So this drops exactly the rows `partitionDeleted` calls spent HERE — item rows
+ * with no bytes on either shelf, folder rows whose files are all gone — and leaves every
+ * restorable row where it is. `emptyDeletedLog` stays the destructive act, under the
+ * "Empty Deleted" name that says so.
+ *
+ * REPLICATED, like every write to this array: a spent row of ours may still be a bin row
+ * on a peer that kept the bytes, and their copy stays on their hidden shelf (reclaimable
+ * from the storage panel) rather than being surfaced or destroyed on the strength of a
+ * message — the same trade `emptyDeletedLog` has always made, on a narrower set.
+ * @returns {number} how many records were forgotten
+ */
+export function clearDeletedRecords() {
+	const log = get(projectManifest).deleted ?? [];
+	if (!log.length) return 0;
+	const { spent } = partitionDeleted(log, heldHashes(), get(explorerFolders));
+	if (!spent.length) return 0;
+	const gone = new Set(spent.map((/** @type {any} */ r) => r.hash));
+	for (const h of gone) forgetApplied(h);
+	const { folders, items, removed } = projection();
+	publishSharedIndex(
+		folders,
+		items,
+		removed,
+		log.filter((/** @type {any} */ r) => !gone.has(r.hash))
+	);
+	return gone.size;
 }
 
 /** R22 round 7: the DELETED log carries the thumbnail now, so a card in the bin looks
@@ -1048,6 +1276,195 @@ export function deletedLog(manifest) {
 	return [...(m.deleted ?? [])].reverse();
 }
 
+// ---- R22 round 36: the bin keeps its structure -----------------------------------
+//
+// THE LOG GREW ONE ROW KIND AND TWO FIELDS (plan 1.1) and nothing else changed on the
+// wire. A FOLDER ROW is `hash: 'folder:' + id`, which follows the `'prefab:'` precedent
+// so one latest-wins array keeps on being keyed by one field; every row (folder or item)
+// carries the `folderId` it lived under AT DELETION TIME plus a `path` of ancestor names
+// as a display fallback.
+//
+// A folder id is NETWORK IDENTITY for a shared folder (R22-R1), which is the whole
+// reason this works across peers: the restorer may no longer hold the folder, but the
+// log does, and recreating it under the SAME uuid makes every other row's `folderId`
+// resolve on both machines with no remapping.
+
+const FOLDER_ROW = 'folder:';
+
+/** Is this log row a deleted FOLDER rather than a deleted file? Both halves are checked
+ * because either one alone is guessable: a file could be named `folder:x` and a hand-
+ * written row could carry the prefix with no kind. @param {any} row */
+export function isFolderRow(row) {
+	return row?.kind === 'folder' && String(row?.hash ?? '').startsWith(FOLDER_ROW);
+}
+
+/** The folder id a folder row stands for. @param {any} row @returns {string|null} */
+export function folderRowId(row) {
+	const hash = String(row?.hash ?? '');
+	if (!hash.startsWith(FOLDER_ROW)) return null;
+	return hash.slice(FOLDER_ROW.length) || null;
+}
+
+/** The log key a folder id takes. @param {string} id @returns {string} */
+export function folderRowKey(id) {
+	return FOLDER_ROW + String(id ?? '');
+}
+
+/**
+ * @typedef {{id: string, name: string, parentId: string|null, row: any, ghost: boolean}} DeletedNode
+ */
+
+/**
+ * THE BIN IS A TREE, read from the rows' own recorded locations (plan 1.2).
+ *
+ * A node is one of two things, and the difference is visible rather than structural:
+ *
+ *  · a DELETED FOLDER — a folder row in the log. Restorable as a folder, and it may be
+ *    empty (a folder deleted with nothing in it is still a thing you can put back).
+ *  · a GHOST — a folder that is STILL IN THE LIBRARY but has deleted rows pointing at it,
+ *    because somebody walked into it and deleted its contents. It is a place, not a thing
+ *    to restore, and it is named from the live record.
+ *
+ * RESOLUTION ORDER for a `folderId` is log row → live folder → unresolvable, and the log
+ * wins deliberately: a peer that KEPT the folder record (because it held a local file the
+ * deleter could not see, see applySharedIndex) must still draw the deletion the deleter
+ * meant. An unresolvable ancestor ENDS THE CHAIN — whatever hangs under it is shown at the
+ * bin root — and an item whose own `folderId` resolves to nothing shows at the root with
+ * its recorded `path` as the location text.
+ *
+ * PURE, and it takes the live folders as an argument rather than reading the store: the
+ * documented `get()`-registers-no-dependency rule, which is exactly the trap round 9's
+ * purge fell into one layer up. It is also what makes the whole shape suite-testable with
+ * no browser.
+ *
+ * @param {any[]} rows the log, in any order
+ * @param {any[]} liveFolders `explorerFolders` — pass `[]` for a pure structural read
+ * @returns {{children: Map<string|null, {folders: DeletedNode[], items: any[]}>,
+ *   nodes: Map<string, DeletedNode>, locationOf: (row: any) => string,
+ *   descendants: (id: string) => {folders: DeletedNode[], items: any[]}}}
+ */
+export function buildDeletedTree(rows, liveFolders) {
+	const log = rows ?? [];
+	/** @type {Map<string, any>} */
+	const rowFor = new Map();
+	for (const row of log) {
+		const id = isFolderRow(row) ? folderRowId(row) : null;
+		if (id) rowFor.set(id, row);
+	}
+	const liveById = new Map((liveFolders ?? []).map((/** @type {any} */ f) => [f.id, f]));
+
+	/** @type {Map<string, DeletedNode>} */
+	const nodes = new Map();
+
+	/**
+	 * Materialise a node and every ancestor it can still reach. GHOSTS ARE CREATED ONLY
+	 * WHERE SOMETHING HANGS UNDER THEM, which falls out of only ever being called for an
+	 * id a row actually names (or an ancestor of one).
+	 * @param {string|null|undefined} fid @returns {DeletedNode|null}
+	 */
+	const ensure = (fid) => {
+		let at = fid ?? null;
+		/** @type {DeletedNode|null} */
+		let first = null;
+		// bounded, like every parent walk in this codebase: a corrupt tree (a cycle, a
+		// hand-edited manifest) must not hang the bin. `nodes.has` also breaks a cycle on
+		// its second visit, so 64 is the belt to that brace.
+		for (let i = 0; at && i < 64; i++) {
+			const seen = nodes.get(at);
+			if (seen) return first ?? seen;
+			const row = rowFor.get(at);
+			const live = row ? null : liveById.get(at);
+			if (!row && !live) break; // unresolvable — the chain ends here
+			/** @type {DeletedNode} */
+			const node = {
+				id: at,
+				name: String((row ?? live)?.name ?? ''),
+				parentId: (row ? (row.folderId ?? null) : (live?.parentId ?? null)) || null,
+				row: row ?? null,
+				ghost: !row
+			};
+			nodes.set(at, node);
+			first = first ?? node;
+			at = node.parentId;
+		}
+		return first ?? nodes.get(String(fid ?? '')) ?? null;
+	};
+
+	for (const row of log) ensure(isFolderRow(row) ? folderRowId(row) : row?.folderId);
+
+	/** Where a node hangs: its parent, or the ROOT when the parent resolved to nothing.
+	 * @param {DeletedNode} node @returns {string|null} */
+	const parentOf = (node) => (node.parentId && nodes.has(node.parentId) ? node.parentId : null);
+
+	/** @type {Map<string|null, {folders: DeletedNode[], items: any[]}>} */
+	const children = new Map();
+	/** @param {string|null} key */
+	const bucket = (key) => {
+		let slot = children.get(key);
+		if (!slot) children.set(key, (slot = { folders: [], items: [] }));
+		return slot;
+	};
+	bucket(null);
+	for (const node of nodes.values()) {
+		bucket(node.id);
+		bucket(parentOf(node)).folders.push(node);
+	}
+	// FOLDER ROWS ARE NOT ITEMS of anything — they ARE the nodes, and listing them twice
+	// is how a folder would offer both "Restore folder" and "Restore file" on one row.
+	for (const row of log) {
+		if (isFolderRow(row)) continue;
+		const fid = row?.folderId ?? null;
+		bucket(fid && nodes.has(fid) ? fid : null).items.push(row);
+	}
+
+	/** @param {any} row @returns {string} */
+	const locationOf = (row) => {
+		const fid = row?.folderId ?? null;
+		if (!fid) return '';
+		const node = nodes.get(fid);
+		// the recorded path is the ONLY thing left when the folder is gone from both the
+		// library and the log — it cannot be re-derived, which is why it is written down
+		if (!node) return Array.isArray(row?.path) ? row.path.join(' / ') : '';
+		/** @type {string[]} */
+		const names = [];
+		/** @type {DeletedNode|null} */
+		let at = node;
+		for (let i = 0; at && i < 64; i++) {
+			names.push(at.name);
+			const up = parentOf(at);
+			at = up ? (nodes.get(up) ?? null) : null;
+		}
+		return names.reverse().join(' / ');
+	};
+
+	/** The WHOLE subtree under a node — folders and items, however deep.
+	 * @param {string} id @returns {{folders: DeletedNode[], items: any[]}} */
+	const descendants = (id) => {
+		/** @type {DeletedNode[]} */
+		const folders = [];
+		/** @type {any[]} */
+		const items = [];
+		/** @type {Set<string>} */
+		const seen = new Set();
+		const queue = [String(id ?? '')];
+		while (queue.length) {
+			const at = queue.shift();
+			if (!at || seen.has(at)) continue; // a cycle visits each node once, then stops
+			seen.add(at);
+			const slot = children.get(at);
+			if (!slot) continue;
+			items.push(...slot.items);
+			for (const child of slot.folders) {
+				folders.push(child);
+				queue.push(child.id);
+			}
+		}
+		return { folders, items };
+	};
+
+	return { children, nodes, locationOf, descendants };
+}
+
 /**
  * R22 round 13: THE TWO HALVES THE LOG HAS ALWAYS HELD. A row whose bytes are still on
  * one of this machine's two shelves is a RECYCLE BIN entry — restorable, which is the
@@ -1059,15 +1476,37 @@ export function deletedLog(manifest) {
  * dependency — which is precisely the bug round 9 fixed one layer up, where a purge
  * changed nothing observable because the derived around it never re-ran.
  *
+ * R22 round 36 — AND A FOLDER ROW HAS NO BYTES, so the question has to be asked about
+ * what is UNDER it. A folder is in the bin when it still holds something restorable OR
+ * when it holds no item rows at all. The second clause is not a nicety: the recycle bin
+ * is emptied on every load by default, so without it every start would leave a bin made
+ * entirely of empty folders that could never be put back — and a folder deleted empty has
+ * nothing but a name to reclaim in the first place.
+ *
  * @param {any[]} rows the log, in whatever order the caller wants back
  * @param {Set<string>|string[]} held every hash this device still holds bytes for
+ * @param {any[]} [liveFolders] `explorerFolders`, so an item sitting in a GHOST folder
+ *   nested inside a deleted one is still counted under it. Omitted, the classification is
+ *   purely structural — which is what a suite driving this with no library wants.
  * @returns {{bin: any[], spent: any[]}}
  */
-export function partitionDeleted(rows, held) {
+export function partitionDeleted(rows, held, liveFolders) {
 	const has = held instanceof Set ? held : new Set(held ?? []);
 	/** @type {any[]} */ const bin = [];
 	/** @type {any[]} */ const spent = [];
-	for (const row of rows ?? []) (has.has(row?.hash) ? bin : spent).push(row);
+	// built ONCE for the whole log rather than per folder row: the walk is the expensive
+	// half and the answer is the same for every row in one call
+	const tree = buildDeletedTree(rows ?? [], liveFolders ?? []);
+	for (const row of rows ?? []) {
+		if (!isFolderRow(row)) {
+			(has.has(row?.hash) ? bin : spent).push(row);
+			continue;
+		}
+		const id = folderRowId(row);
+		const inside = id ? tree.descendants(id).items : [];
+		const restorable = !inside.length || inside.some((/** @type {any} */ r) => has.has(r.hash));
+		(restorable ? bin : spent).push(row);
+	}
 	return { bin, spent };
 }
 
@@ -1079,30 +1518,215 @@ export function canRestoreDeleted(hash) {
 }
 
 /**
- * Put a deleted file back: on the visible shelf, out of the log, and shared again — it
- * was a shared file when it was deleted, so restoring it as a private one would be a
- * different act wearing the same word.
- * @param {string} hash @returns {boolean}
+ * R22 round 36 — RESTORE RECREATES THE WAY BACK (plan 1.3).
+ *
+ * Every desktop bin does this (Windows recreates missing parents, macOS "Put Back" too),
+ * and here it is the only answer that survives two peers: the restorer may not hold the
+ * folder any more — a peer whose whole folder record was removed when it applied the
+ * deletion — but the LOG does, and a folder id is network identity, so recreating it under
+ * the same uuid puts the file back in the same place on every machine at once.
+ *
+ * Walks the chain from `fid` upward, PARENTS FIRST, stopping at the first ancestor that is
+ * already live (which becomes the anchor) or that the log cannot name (which means the
+ * root). Each recreated folder is `mine` unless its row was `localOnly`, its row is
+ * consumed and its tombstone lifted.
+ * @param {string|null|undefined} fid @param {any[]} log @param {any} tombs
+ * @param {Set<string>} consumed rows to drop from the log, filled in as we go
+ * @returns {string|null} the folder the caller should land in — null = the library root
  */
-export function restoreDeletedItem(hash) {
-	const h = String(hash ?? '').trim();
-	const item = itemByHash(h);
-	if (!item) return false;
-	setItemHidden(item.id, false);
-	forgetApplied(h);
-	const doc = get(projectManifest);
-	const log = (doc.deleted ?? []).filter((/** @type {any} */ r) => r.hash !== h);
-	patchRecord(item.id, { share: 'mine', owner: meAsOwner(), wasShared: undefined });
-	// lift the tombstone too, or the row we are about to publish is filtered straight out
-	const tombs = {
-		items: { ...((doc.removed ?? {}).items ?? {}) },
-		folders: { ...((doc.removed ?? {}).folders ?? {}) }
+function ensureRestoreTarget(fid, log, tombs, consumed) {
+	const want = fid ?? null;
+	if (!want) return null;
+	/**
+	 * A folder that is live again — recreated just now, or one a peer KEPT because it held
+	 * a local file the deleter could not see — has a row still calling it deleted, and that
+	 * row is spent: it is a place things are being put back into. `shareItem`'s
+	 * `clearDeletedEntry` makes the same argument one act over.
+	 * @param {string} id
+	 */
+	const reclaim = (id) => {
+		const row = log.find((/** @type {any} */ r) => r.hash === folderRowKey(id));
+		if (!row) return;
+		consumed.add(row.hash);
+		forgetApplied(row.hash);
+		if (row.localOnly) return;
+		// a LOCAL folder was never in the index, so it has no tombstone to lift
+		delete tombs.folders[id];
+		const held = get(explorerFolders).find((f) => f.id === id);
+		// ...and lift the `share: 'no'` the deletion left on a kept folder, or the place we
+		// are restoring into is one no peer is allowed to see. Never over a 'peer' mark:
+		// somebody else is that row's writer.
+		if (held && held.share !== 'mine' && held.share !== 'peer')
+			patchRecord(id, { share: 'mine', owner: meAsOwner(), wasShared: undefined }, 'folder');
 	};
-	delete tombs.items[h];
-	const { folders, items } = projection();
-	publishSharedIndex(folders, items, tombs, log);
-	sendAssetThumb(h);
+	if (get(explorerFolders).some((f) => f.id === want)) {
+		reclaim(want);
+		return want;
+	}
+	/** @type {any[]} */
+	const chain = [];
+	let at = want;
+	// bounded, and it also terminates a cycle: a row whose parent chain loops stops after
+	// 64 hops and whatever it built so far lands under the root
+	for (let i = 0; at && i < 64; i++) {
+		if (get(explorerFolders).some((f) => f.id === at)) break; // a live ancestor: the anchor
+		const row = log.find((/** @type {any} */ r) => r.hash === folderRowKey(at));
+		if (!row) break; // the log cannot name it either — the chain ends
+		chain.push(row);
+		at = row.folderId ?? null;
+	}
+	if (!chain.length) return null; // nothing to recreate and nothing live: the root
+	for (const row of chain.reverse()) {
+		const id = folderRowId(row);
+		if (!id) continue;
+		const parent =
+			row.folderId && get(explorerFolders).some((f) => f.id === row.folderId) ? row.folderId : null;
+		createFolder(
+			row.name,
+			parent,
+			row.localOnly ? { id } : { id, share: 'mine', owner: meAsOwner() }
+		);
+		reclaim(id);
+	}
+	return want;
+}
+
+/**
+ * Put ONE file back where it was. The shared half of both restore entry points, so the
+ * per-item rules cannot drift between "restore this file" and "restore this folder".
+ * @param {any} row the log row @param {any[]} log @param {any} tombs
+ * @param {Set<string>} consumed
+ * @param {string|null} [into] R22 round 36 (user): a DRAG out of Deleted onto a Library
+ *   folder (or its root, `null`) says WHERE explicitly, and that beats the recorded
+ *   location — the gesture is the answer to the question Restore would otherwise decide.
+ *   `undefined` = not given, put it back where it was. A folder that is not live here
+ *   falls back to the root rather than to the recorded place, because the user pointed.
+ * @returns {boolean}
+ */
+function restoreOneItem(row, log, tombs, consumed, into) {
+	const item = itemByHash(String(row?.hash ?? '').trim());
+	if (!item) return false;
+	// AN OLD ROW HAS NO `folderId` AT ALL, and that is not the same as `folderId: null`.
+	// The hidden record kept its own placement while it sat there, so a row that never
+	// recorded one leaves the item exactly where it is; an explicit null means the root.
+	const target =
+		into !== undefined
+			? into && get(explorerFolders).some((f) => f.id === into)
+				? into
+				: null
+			: row && 'folderId' in row
+				? ensureRestoreTarget(row.folderId ?? null, log, tombs, consumed)
+				: get(explorerFolders).some((f) => f.id === item.folderId)
+					? item.folderId
+					: null;
+	setItemHidden(item.id, false);
+	forgetApplied(item.hash);
+	// A `localOnly` ROW RESTORES LOCAL. Marking it `mine` was the reported "restoring a
+	// local deletion shares it": restore puts a file back as it was, and a file nobody
+	// ever shared was not shared.
+	if (row?.localOnly) patchRecord(item.id, { share: undefined, owner: undefined, wasShared: undefined });
+	else {
+		patchRecord(item.id, { share: 'mine', owner: meAsOwner(), wasShared: undefined });
+		// lift the tombstone, or the row we are about to publish is filtered straight out
+		delete tombs.items[item.hash];
+	}
+	moveItem(item.id, target ?? null);
+	consumed.add(item.hash);
+	// the picture, so a peer's card has something to show before it decides to download —
+	// but only for a file that is going back into the index at all
+	if (!row?.localOnly) sendAssetThumb(item.hash);
 	return true;
+}
+
+/**
+ * Put a deleted file back: on the visible shelf, IN THE FOLDER IT CAME FROM (recreating
+ * the way there if it has to), out of the log, and shared again — unless it was never
+ * shared, in which case it comes back local.
+ * @param {string} hash
+ * @param {{into?: string|null}} [opts] `into` = an explicit destination folder id (null =
+ *   the library root) from a drag out of Deleted; omitted = where it was
+ * @returns {boolean}
+ */
+export function restoreDeletedItem(hash, opts = {}) {
+	const h = String(hash ?? '').trim();
+	if (!itemByHash(h)) return false;
+	const doc = get(projectManifest);
+	const log = doc.deleted ?? [];
+	const row = log.find((/** @type {any} */ r) => r.hash === h) ?? { hash: h };
+	const tombs = tombsOf(doc);
+	/** @type {Set<string>} */
+	const consumed = new Set();
+	if (!restoreOneItem(row, log, tombs, consumed, 'into' in opts ? opts.into ?? null : undefined))
+		return false;
+	const { folders, items } = projection();
+	publishSharedIndex(
+		folders,
+		items,
+		tombs,
+		log.filter((/** @type {any} */ r) => !consumed.has(r.hash))
+	);
+	return true;
+}
+
+/**
+ * Put a whole FOLDER back: the node itself, every descendant folder row, and every item
+ * row under it whose bytes are still here.
+ *
+ * A GHOST NODE OFFERS THIS TOO, and it costs nothing to allow: the folder is already in
+ * the library, so `ensureRestoreTarget` recreates nothing and the call means "put back
+ * what is under this place", which is exactly what somebody pressing it on a ghost wants.
+ *
+ * ROWS WHOSE BYTES ARE GONE HERE STAY IN THE LOG, pointing at the now-live folders — a
+ * peer may still hold them and still restore them, and they show under what is now a
+ * ghost. Emptying reclaims bytes; it never takes the record.
+ * R22 round 36 (user): `into` — a DRAG of a deleted folder onto a Library folder (or the
+ * root, `null`) re-parents the folder THERE instead of recreating the way to where it was:
+ * the node's own record is created directly under the destination and its subtree hangs
+ * off it as recorded. Ignored for a GHOST (the folder is live; only its contents are being
+ * put back, and they go into it) and when the destination is not a live folder here.
+ * @param {string} id @param {{into?: string|null}} [opts]
+ * @returns {{folders: number, files: number}}
+ */
+export function restoreDeletedFolder(id, opts = {}) {
+	const fid = String(id ?? '').trim();
+	if (!fid) return { folders: 0, files: 0 };
+	const doc = get(projectManifest);
+	const log = doc.deleted ?? [];
+	const tree = buildDeletedTree(log, get(explorerFolders));
+	const node = tree.nodes.get(fid);
+	if (!node) return { folders: 0, files: 0 };
+	const tombs = tombsOf(doc);
+	/** @type {Set<string>} */
+	const consumed = new Set();
+	const into = 'into' in opts ? (opts.into ?? null) : undefined;
+	if (into !== undefined && node.row && !get(explorerFolders).some((f) => f.id === fid)) {
+		// re-parented by the gesture: the node is minted under the destination and the chain
+		// above it is left alone (its rows stay — those places are still deleted)
+		const parent = into && get(explorerFolders).some((f) => f.id === into) ? into : null;
+		createFolder(
+			node.row.name,
+			parent,
+			node.row.localOnly ? { id: fid } : { id: fid, share: 'mine', owner: meAsOwner() }
+		);
+	}
+	ensureRestoreTarget(fid, log, tombs, consumed);
+	let folderCount = node.row ? 1 : 0;
+	const kids = tree.descendants(fid);
+	for (const child of kids.folders) {
+		if (!child.row) continue; // a ghost is already in the library
+		ensureRestoreTarget(child.id, log, tombs, consumed);
+		folderCount++;
+	}
+	let files = 0;
+	for (const row of kids.items) if (restoreOneItem(row, log, tombs, consumed)) files++;
+	const { folders, items } = projection();
+	publishSharedIndex(
+		folders,
+		items,
+		tombs,
+		log.filter((/** @type {any} */ r) => !consumed.has(r.hash))
+	);
+	return { folders: folderCount, files };
 }
 
 /**
@@ -1119,6 +1743,46 @@ export async function purgeDeletedItem(hash) {
 	const deleteItem = mod.deleteItem;
 	await deleteItem(item.id);
 	return true;
+}
+
+/**
+ * R22 round 36 — "Delete permanently" on a folder NODE: reclaim every held item under it,
+ * however deep.
+ *
+ * WHAT IT DROPS FROM THE LOG is only the folder rows with NO item rows under them at all.
+ * A folder that HELD something keeps its row, because the rows of the files it held keep
+ * theirs — emptying reclaims BYTES, never the record (round 13's ruling), and a folder row
+ * whose children are still listed is what gives those children a place to be listed under.
+ * A folder deleted empty has nothing but a name to reclaim, so its row is the only thing
+ * this can free and it goes.
+ * @param {string} id @returns {Promise<number>} items whose bytes were reclaimed
+ */
+export async function purgeDeletedFolder(id) {
+	const fid = String(id ?? '').trim();
+	if (!fid) return 0;
+	// the tree is read BEFORE the purge and used throughout: purging leaves every item row
+	// in place (that is the ruling), so the shape cannot change under us — and reading it
+	// afterwards would count the same rows anyway
+	const before = get(projectManifest).deleted ?? [];
+	const tree = buildDeletedTree(before, get(explorerFolders));
+	const node = tree.nodes.get(fid);
+	if (!node) return 0;
+	const kids = tree.descendants(fid);
+	let reclaimed = 0;
+	for (const row of kids.items) if (await purgeDeletedItem(row.hash)) reclaimed++;
+	/** @type {Set<string>} */
+	const doomed = new Set();
+	for (const folder of [node, ...kids.folders]) {
+		if (!folder.row) continue; // a ghost has no row to drop
+		if (tree.descendants(folder.id).items.length) continue;
+		doomed.add(folder.row.hash);
+		forgetApplied(folder.row.hash);
+	}
+	const doc = get(projectManifest);
+	const log = (doc.deleted ?? []).filter((/** @type {any} */ r) => !doomed.has(r.hash));
+	const { folders, items, removed } = projection();
+	publishSharedIndex(folders, items, removed, log);
+	return reclaimed;
 }
 
 /** Is this record shared, and by whom? @param {any} row
@@ -1221,6 +1885,27 @@ export function applySharedIndex(doc) {
 		pending = again;
 	}
 
+	// 1b. R22 round 36 — A LIVE ROW FOR SOMETHING WE HOLD HIDDEN AND DELETED IS A RESTORE.
+	//
+	// The reported "restored files do not appear for peers": the peer's copy sits on the
+	// HIDDEN shelf, step 2 below finds it (`itemByHash` searches both shelves), marks it
+	// `peer` and never un-hides it — and its log row is gone, because the restorer removed
+	// it, so it is not in the peer's bin either. Invisible everywhere.
+	//
+	// THE CONDITION IS THREE-WAY on purpose. Hidden alone is not enough: the shelf also
+	// carries a scene's old versions (21-G7), and one of those must never be surfaced just
+	// because a peer happened to share the same bytes. Hidden AND `share: 'no'` AND a
+	// deletion we applied is the state only a delete-for-everyone can produce.
+	for (const row of itemRows) {
+		if (!appliedDeletes.has(row.hash)) continue;
+		const held = itemByHash(row.hash);
+		if (!held || held.share !== 'no') continue;
+		if (get(explorerItems).some((i) => i.id === held.id)) continue; // already visible
+		setItemHidden(held.id, false);
+		forgetApplied(row.hash);
+		// step 2 does the rest: the `peer` mark and the placement the row asks for
+	}
+
 	// 2. items we hold
 	const rowByHash = new Map(itemRows.map((/** @type {any} */ r) => [r.hash, r]));
 	for (const row of itemRows) {
@@ -1247,6 +1932,10 @@ export function applySharedIndex(doc) {
 	// touched the library, including re-importing it and pressing Share. A delete is an
 	// EVENT to apply once, not a standing instruction.
 	for (const row of doc?.deleted ?? []) {
+		// FOLDER ROWS ARE APPLIED AFTER EVERY ITEM ROW of the same document (see below):
+		// "is anything left in this folder" can only be answered once the items that were
+		// deleted alongside it have gone
+		if (isFolderRow(row)) continue;
 		if (appliedDeletes.has(row.hash)) continue;
 		const held = get(explorerItems).find((i) => i.hash === row.hash);
 		if (!held) {
@@ -1255,9 +1944,39 @@ export function applySharedIndex(doc) {
 			noteApplied(row.hash);
 			continue;
 		}
+		// the PATCH BEFORE the hide: `patchRecord` writes into `explorerItems` only, so
+		// patching a record `setItemHidden` has already moved does nothing at all — which
+		// left every applied deletion sitting on the hidden shelf still marked `peer`, and
+		// the restore rule above (hidden AND `share: 'no'` AND applied) unable to fire
+		patchRecord(held.id, { share: 'no', owner: undefined, wasShared: undefined });
 		if (get(recycleBinEnabled)) setItemHidden(held.id, true);
 		else void import('./explorer').then((m) => m.deleteItem(held.id));
-		patchRecord(held.id, { share: 'no', owner: undefined, wasShared: undefined });
+		noteApplied(row.hash);
+	}
+
+	// R22 round 36 — AND THE FOLDER ROWS, once per row like an item row (`appliedDeletes`
+	// keyed `'folder:' + id`).
+	//
+	// TWO ENDINGS, and the second one is why this cannot simply mirror the item rule. If
+	// nothing VISIBLE is left in the subtree, the folder RECORDS go — records only: no blob
+	// is touched and the hidden items inside keep their `folderId`, which is what lets the
+	// bin draw the tree and Restore rebuild it. But if something IS left — a local file the
+	// deleter could never see — destroying the folder would take a place that still has
+	// contents, so the folder STAYS and is marked `share: 'no', wasShared: true`: the
+	// `always` sweep skips it (it only claims folders with no flag at all) and the
+	// projection stops carrying it, so the deletion still sticks for everyone else.
+	// `shareFolder` lifts that by hand, and so does a restore into it.
+	for (const row of doc?.deleted ?? []) {
+		if (!isFolderRow(row) || appliedDeletes.has(row.hash)) continue;
+		const fid = folderRowId(row);
+		const held = fid ? get(explorerFolders).find((f) => f.id === fid) : null;
+		if (fid && held) {
+			const subtree = folderSubtree(fid);
+			const left = get(explorerItems).some((i) => subtree.includes(i.folderId ?? ''));
+			if (!left) removeFolderRecords(subtree);
+			else patchRecord(fid, { share: 'no', owner: undefined, wasShared: true }, 'folder');
+		}
+		// seen either way, exactly like an item row we hold nothing for
 		noteApplied(row.hash);
 	}
 

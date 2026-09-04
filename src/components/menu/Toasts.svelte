@@ -28,7 +28,7 @@
     import { untrack } from 'svelte';
     // P2b: watching follows a peer's camera IN THIS WORLD, so it cannot survive them
     // opening another scene. Users.svelte gates STARTING one; this is the other half.
-    import { peerScenes } from '$lib/peerScenes';
+    import { peerScenes, elsewhereThan } from '$lib/peerScenes';
     import { currentLevel } from '$lib/levels';
     import { showToast } from '../../stores/appStore';
 
@@ -65,6 +65,13 @@
     // …and stop by itself when the peer we are watching opens another scene. ONLY ON
     // EVIDENCE, the same rule the button uses: an absent row means "we have not been
     // told", and no name on our side means there is nothing to compare against.
+    //
+    // R22 ROUND 36 (rooms): the test is `elsewhereThan` itself now, with the HOST passed,
+    // rather than a hand-written "both named and different". It was the same only-on-
+    // evidence rule spelled out a third time, and it inherited the same hole: a peer
+    // walking out of the session's world into a scene of their own left us watching a
+    // camera in a world we do not have. The one unknown that still allows is an ABSENT
+    // row — an older build — which the predicate keeps.
     $effect(() => {
         const map = $peerScenes;
         // `specatorMode` is declared writable(false) but holds a peer-id STRING when it
@@ -72,11 +79,14 @@
         const watching = typeof $specatorMode === 'string' ? $specatorMode : '';
         const ours = $currentLevel?.name ?? '';
         if (!watching) return;
+        const away = elsewhereThan(map, ours, watching, $sessionHost);
+        if (!away) return;
+        // the sentinels are places, not names: a private peer and the session's own world
+        // both read as somewhere we cannot follow, and neither has a scene to name.
         const theirs = map?.[watching]?.scene ?? '';
-        if (!theirs || !ours || theirs === ours) return;
         untrack(() => {
             exitSpectate();
-            showToast('Stopped watching — they opened "' + theirs + '"');
+            showToast(theirs ? 'Stopped watching — they opened "' + theirs + '"' : 'Stopped watching — they left this scene');
         });
     });
 

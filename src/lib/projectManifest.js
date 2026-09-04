@@ -82,7 +82,18 @@ export function autoVersionsOff() {
  *   changedAt: number, folders?: SharedFolder[], items?: SharedItem[],
  *   removed?: {items: Record<string, number>, folders: Record<string, number>},
  *   deleted?: {hash: string, name: string, kind: string, at: number, by?: any,
- *     thumb?: string, localOnly?: boolean}[]}} Manifest
+ *     thumb?: string, localOnly?: boolean, folderId?: string|null, path?: string[]}[]}} Manifest
+ *   R22 round 36 — THE DELETED LOG GREW TWO FIELDS AND ONE ROW KIND, and nothing else on
+ *   the wire. `folderId` is where the row lived AT DELETION TIME (null = the library root,
+ *   ABSENT = an old row, which reads as the root); `path` is the ancestor NAMES root-first
+ *   and is a DISPLAY FALLBACK ONLY, used when `folderId` resolves to nothing at all —
+ *   a name whose folder is gone from both the library and the log cannot be re-derived,
+ *   which is the thumbnail's own argument one field over.
+ *   A FOLDER ROW is `hash: 'folder:' + folderId` with `kind: 'folder'` (the `'prefab:'`
+ *   precedent, so one array keeps one key) and its `folderId` is its PARENT. A shared
+ *   folder's id is network identity (R22-R1), so a peer's row resolves to the same place
+ *   everywhere. `normalizeDeleted` needs no special casing: it keys on `hash`, coerces
+ *   `name`/`kind`/`at` and passes every other field through untouched.
  *   `name` (21-G9) is the project's identity; `folders`/`items` (R22-R1) are THE SHARED
  *   INDEX — see the block comment above normalizeSharedIndex.
  */
@@ -982,7 +993,23 @@ export function setScenePrivateHere(name, on) {
 export function sceneNameShared(name) {
 	const scene = String(name ?? '').trim();
 	if (!scene || privateScenes.has(scene)) return false;
-	return sessionSceneNames.has(scene) || openedScenes.has(scene);
+	if (sessionSceneNames.has(scene) || openedScenes.has(scene)) return true;
+	// R22 round 36 (user) — THE RULE, in the user's words: "if the file is shared, then you
+	// open it and anyone can join from peers; if the scene is not shared (a file), then you
+	// should have a prompt to edit it privately or share." So a `.tpscene` that rode the
+	// SHARED INDEX (shareNewFiles `always`, a hand share, `sendAsset`) is a scene the session
+	// already knows: opening it opens a ROOM peers can travel to, with no question asked. The
+	// ask is for a file that has never left this machine — the only case where "privately"
+	// still has something to protect. Read off the local document (our own `mine` rows land
+	// there too, debounce aside), so this leaf grows no edge into the Explorer. Reverted and
+	// re-applied the same day after the reading was checked with the user.
+	return (get(projectManifest).items ?? []).some(
+		(/** @type {any} */ r) =>
+			r?.kind === 'scene' &&
+			String(r.name ?? '')
+				.trim()
+				.replace(/\.tpscene$/i, '') === scene
+	);
 }
 
 /** How many peers are actually here. The roster is populated at DIAL time, so this is

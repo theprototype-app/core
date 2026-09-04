@@ -17,7 +17,7 @@
 //                      where they are decided.
 //   2. PRIVATE         the name reaches NOTHING on the far side: not the presence row, not
 //                      the manifest, not the library, not a toast. The popup groups them
-//                      last, disables Watch with the reason and offers Request access.
+//                      last, drops Watch (it could never work there) and offers Request access.
 //   3. ISOLATION       both directions, while chat still crosses. Private is not offline.
 //   4. REQUEST ACCESS  ask → Keep private → ask again → Share scene → the name, the history
 //                      and the Go to all arrive at once.
@@ -321,11 +321,12 @@ h.run(async () => {
 		grouped.last === 'In a private scene',
 		`the popup gives them a group of their own, LAST (${JSON.stringify(grouped.heads)})`
 	);
+	// R22 (Deleted keeps its structure, user): NO Watch button in this row at all. It
+	// could never work here — the peer has to share the scene first, and the button that
+	// asks them to is right beside where it sat — so a permanently grey Watch was noise.
 	h.check(
-		grouped.watch.length === 1 &&
-			grouped.watch[0].disabled === true &&
-			/private/i.test(grouped.watch[0].title ?? ''),
-		`Watch is disabled WITH the reason — never hidden (${JSON.stringify(grouped.watch)})`
+		grouped.watch.length === 0,
+		`no Watch in the private row — it could never work, so Request access stands alone (${JSON.stringify(grouped.watch)})`
 	);
 	h.check(
 		grouped.goto === 0,
@@ -527,14 +528,18 @@ h.run(async () => {
 		(all) => all.includes(SCENE),
 		'…and the popup names the scene it was told about'
 	);
-	// NO `.peer-goto` here, and that is only-on-evidence rather than a gap: A is itself in
-	// the UNNAMED world, and an unnamed side is never evidence of a split, so the popup
-	// offers Watch exactly as it did before B ever went private. The route A has been given
-	// is the card above, which knows something the rows do not — that this scene was shared
-	// WITH THEM.
+	// R22 ROUND 36 (rooms) FLIPPED THIS CHECK, and the old label is worth keeping to say
+	// why: it read "NO `.peer-goto` here, and that is only-on-evidence rather than a gap: A
+	// is itself in the UNNAMED world, and an unnamed side is never evidence of a split." That
+	// sentence WAS the bug — with A unnamed and B standing in a named scene, the two gates
+	// read one room and every edit crossed the moment B shared (measured: both worlds went
+	// from 1 object to 3). The session's unnamed world is a ROOM now, with the host's
+	// identity, so A is demonstrably elsewhere from B and the row offers the thing that
+	// works. The grant card above is still the better route — it knows this scene was shared
+	// WITH THEM — but the row is no longer silent about the split.
 	h.check(
-		(await A.page.evaluate(() => document.querySelectorAll('#peers-popover .peer-goto').length)) === 0,
-		'…while the ROW keeps its ordinary offer, because an unnamed peer is nobody’s elsewhere'
+		(await A.page.evaluate(() => document.querySelectorAll('#peers-popover .peer-goto').length)) === 1,
+		`…and the ROW offers Go to as well now, because an unnamed host IS somebody's elsewhere (${await A.page.evaluate(() => document.querySelectorAll('#peers-popover .peer-goto').length)} button)`
 	);
 	await closePopover(A);
 

@@ -36,6 +36,10 @@ import { writable, get } from 'svelte/store';
 import { peers } from '../stores/appStore';
 import { lockedObjects, selectedObject } from '../stores/sceneStore';
 import { currentLevel } from './levels';
+// R22 round 36 (rooms): WHOSE world the unnamed room IS. A store-only leaf (the
+// `peerApproval` precedent), so importing it closes no cycle — and it is the one fact
+// the resolver below cannot derive from the rows themselves.
+import { sessionHost } from './connectionState';
 
 /** REMOTE peers only, `peerId -> {scene, hash, at, private?}`. An absent peer is one we
  * have not heard from — never "in no scene", which is a different and unknowable thing.
@@ -249,31 +253,143 @@ export function dropPeerScene(peerId) {
 export const PRIVATE_SCENE = '(private)';
 
 /**
+ * R22 ROUND 36 (rooms) — WHAT `elsewhereThan` ANSWERS FOR A PEER IN THE UNNAMED ROOM.
+ *
+ * There is no scene NAME to give — that is what unnamed means — but there is now a ROOM,
+ * so the answer can no longer be the empty string that used to mean "not elsewhere". It is
+ * written to read as a place, because the peers popover renders it straight into "In ___",
+ * and the popover BRANCHES on it: an elsewhere with a name gets Go to (travel by hash),
+ * this one gets Join (there is nothing to travel to — the session's world is what everybody
+ * who saved nothing is standing in).
+ */
+export const UNNAMED_ROOM = '(the session)';
+
+/**
+ * R22 ROUND 36 (rooms) — AND ITS LABEL FOR THE SHARE-OR-STASH TABLE, which is a different
+ * job from the sentinel above and must not be the same string.
+ *
+ * That table is written in scene NAMES and reads `''` as "no evidence" in three places (its
+ * split test, its row-5 fast path, its verdict key). Handing it a room means handing it
+ * something non-empty for the unnamed room too, or a split it can see would read as no
+ * split at all. The leading space keeps it out of the namespace of anything a person can
+ * type into the save dialog (`saveSceneAsLevel` trims), which is what makes it safe as a
+ * Map key beside real names.
+ *
+ * IT MUST NEVER REACH A SCREEN. `deferUntilShareChoice` maps it back to a display phrase
+ * ("the session's world") and to `''` wherever it means a scene to travel to — see the
+ * table's own note.
+ */
+export const UNNAMED_ROOM_TOKEN = ' unnamed';
+
+/**
+ * R22 ROUND 36 (rooms) — RESOLVE ONE ROW TO A ROOM. The whole fix, as a pure function.
+ *
+ * THE FINDING: the room gate was ONLY-ON-EVIDENCE, and an EMPTY scene was not evidence —
+ * two rows were "elsewhere" from each other only when BOTH named a scene and the names
+ * differed. That rule was written for one case (a joiner adopts the host's content over the
+ * handshake without ever learning its name) and it is right there. It is wrong the moment a
+ * session holds a named room AND an unnamed one at once, which is exactly what a private
+ * share produces: the sharer's row becomes `{scene:'Secret'}` while the host, who never
+ * saved anything, still says `''`. Both gates then read the pair as one room and every edit
+ * either side made landed in the other's world.
+ *
+ * THE RULE, and it is four lines because a room is four facts:
+ *   P     -> `PRIVATE_SCENE`, a room of its own that equals nothing (round 35, unchanged).
+ *   N(S)  -> S.
+ *   U     -> THE HOST'S ROOM: the host's named scene when we know it, our own when we ARE
+ *            the host, else `''` — the plain unnamed world.
+ *   absent-> `null`, NO EVIDENCE. An older build never sends a row, and inventing a room
+ *            for it would gate a peer that cannot defend itself. Callers ALLOW on null.
+ *
+ * WHY THE HOST and not "the majority" or "the first named scene": a joiner's U means "I
+ * took what the host sent me", and only the host's row can say what that was. It is also
+ * deterministic on every peer of a star, which a vote is not, and it degrades to round 35's
+ * behaviour exactly when the host is unnamed or gone.
+ *
+ * PURE, and that is not decoration: it is what lets a component pass `$peerScenes` and
+ * `$sessionHost` and stay reactive, and what lets the truth-table suite drive all forty-odd
+ * cells of section 1.2 on ONE page with no session at all.
+ * @param {{scene?: string, private?: boolean} | null | undefined} row the peer's `atscene`
+ * @param {{hostRow?: {scene?: string, private?: boolean} | null, hostIsMe?: boolean, myRow?: {scene?: string} | null}} [ctx]
+ *   from `roomCtx` — the host's own row, whether the host is US, and our own row
+ * @returns {string | null} the room, `''` for the unnamed one, `null` for no evidence
+ */
+export function roomOf(row, ctx = {}) {
+	if (!row) return null;
+	if (row.private) return PRIVATE_SCENE;
+	const named = String(row.scene ?? '').trim();
+	if (named) return named;
+	// UNNAMED: the session's world, whose identity is the host's. Ours when we host —
+	// never recursion, because our own name is a string we already hold.
+	if (ctx.hostIsMe) return String(ctx.myRow?.scene ?? '').trim();
+	const host = ctx.hostRow;
+	// a PRIVATE host is in no room anybody can join, so the unnamed world it left behind is
+	// the plain one — the same answer as a host we have never heard from.
+	if (host && !host.private) return String(host.scene ?? '').trim();
+	return '';
+}
+
+/**
+ * The three facts `roomOf` needs, built once per read. Exported because the peers popover
+ * resolves a whole map with it and must do so the same way the gates do — two copies of
+ * this arithmetic is two answers to "which room is that peer in".
+ * @param {Record<string, any>} map @param {string | null | undefined} host `sessionHost`:
+ *   the peer whose session we joined, or null when we host (or are alone)
+ * @param {string} mine our own scene name, '' when unnamed (and '' while private, which is
+ *   what every caller of ours already passes — see `privacySplit` for why the map cannot
+ *   answer that half)
+ */
+export function roomCtx(map, host, mine) {
+	return {
+		hostRow: host ? map?.[host] ?? null : null,
+		hostIsMe: !host,
+		myRow: { scene: String(mine ?? '').trim() }
+	};
+}
+
+/**
  * IS THIS PEER DEMONSTRABLY SOMEWHERE ELSE? The one rule behind every gate — Watch,
  * the camera-preview join, and whether we draw them at all.
  *
- * ONLY ON EVIDENCE, and the two unknowns are deliberately NOT evidence. An absent row
- * means a peer on an older build. An EMPTY scene on either side means the session's
- * unnamed world — and a joiner whose objects arrived over the handshake is standing in
- * the host's content without ever learning its name, so treating that as "elsewhere"
- * would hide the most ordinary peer there is.
+ * ROOMS, since round 36: both sides are resolved through `roomOf` and compared, so the
+ * session's unnamed world is a ROOM WITH AN IDENTITY rather than a wildcard. What survives
+ * from round 35 unchanged: an ABSENT row is still no evidence (an older build allows), a
+ * PRIVATE row is still elsewhere from everybody without needing `mine`, and a joiner that
+ * adopted the host's content over the handshake still reads as being in the host's room
+ * whether or not it ever learned the name — that case is now the RULE rather than the
+ * accident that the empty string gated nothing.
  *
- * R22 ROUND 35 — A PRIVATE ROW IS ELSEWHERE FROM EVERYBODY, and it does not need `mine` to
- * say so. That is not a break in the only-on-evidence rule but the sharpest case of it: a
- * private peer states positively that it is in a scene of its own, which is exactly the
- * evidence an empty row lacks. The answer is a SENTINEL rather than a name because there is
- * no name to give — callers that render this string must branch on the row's own `private`
- * flag first (the peers popup does), and every caller that reads it as a BOOLEAN — the two
- * gates below, `broadcast`, Player.svelte, `roommatePeers` — gets the whole feature free.
+ * THE ANSWER IS A STRING, and it has three shapes: a scene NAME (they are in a named room),
+ * `PRIVATE_SCENE` (a room of their own), and `UNNAMED_ROOM` (the session's world, which has
+ * no name to give). Every caller that reads it as a BOOLEAN — the two gates, `broadcast`,
+ * Player.svelte, `roommatePeers` — gets the whole feature free; the two that RENDER it must
+ * branch on the sentinels first, which the popover does.
+ *
+ * `host` IS A PARAMETER AND NOT A `get()`, for the reason the whole function is pure: a
+ * component passing `$sessionHost` stays reactive, and a helper reading through `get()`
+ * registers no dependency. OMITTING IT IS A DIFFERENT QUESTION and answers round 35's:
+ * only-on-evidence, where an empty scene on either side never gates. That is deliberate
+ * compatibility for a caller written before rooms existed (there are none left in this
+ * tree — every one passes the host now), and `null` is NOT the same thing as omitting: null
+ * says "we are the host", which resolves the unnamed room to OUR room.
  * @param {Record<string, {scene: string, private?: boolean}>} map
  * @param {string} mine @param {string} peerId
- * @returns {string} their scene when they are demonstrably elsewhere, else empty
+ * @param {string | null} [host] `get(sessionHost)`, or `$sessionHost` in a component
+ * @returns {string} their room when they are demonstrably elsewhere, else empty
  */
-export function elsewhereThan(map, mine, peerId) {
+export function elsewhereThan(map, mine, peerId, host) {
 	const row = map?.[peerId];
 	if (row?.private) return PRIVATE_SCENE;
-	const theirs = row?.scene ?? '';
-	return theirs && mine && theirs !== mine ? theirs : '';
+	const theirs = String(row?.scene ?? '').trim();
+	const here = String(mine ?? '').trim();
+	if (host === undefined) return theirs && here && theirs !== here ? theirs : '';
+	if (!row) return ''; // no evidence, and no room resolution can manufacture any
+	const ctx = roomCtx(map, host, here);
+	const theirRoom = roomOf(row, ctx);
+	if (theirRoom === roomOf({ scene: here }, ctx)) return '';
+	// elsewhere. A named room answers with its name; the unnamed one has none, so it
+	// answers with the sentinel the popover branches on.
+	return theirRoom || UNNAMED_ROOM;
 }
 
 /** Is THIS peer editing privately? @param {string} peerId @returns {boolean} */
@@ -299,12 +415,49 @@ export function sceneOfPeer(peerId) {
 	return get(peerScenes)[peerId]?.scene ?? '';
 }
 
+/**
+ * R22 ROUND 36 (rooms) — THE ROOM LABELS THE SHARE-OR-STASH TABLE IS HANDED.
+ *
+ * That table decides whether two worlds are merging, and until round 36 it was handed two
+ * scene NAMES and read `''` as "no evidence of a split" — the same only-on-evidence rule
+ * the gates used, and wrong in the same place: a peer standing in the session's unnamed
+ * world beside a peer in a named one is a SPLIT, and its row 4 said out loud that it could
+ * not offer Stay there because the gate could not deliver one. The gate can now, so the
+ * table is handed ROOMS instead of names and row 4 folds into rows 2/3.
+ *
+ * Two labels, one token: the unnamed room answers `UNNAMED_ROOM_TOKEN` so the table's
+ * `split` test sees two different NON-EMPTY rooms, while an ABSENT row still answers `''`
+ * — no evidence, allow, exactly as before. The table maps the token back for display and
+ * for "which scene do I travel to"; it must never be shown to a person.
+ * @returns {string} our own room, as a label
+ */
+export function myRoomLabel() {
+	const mine = amPrivate() ? '' : myScene()?.scene ?? '';
+	const ctx = roomCtx(get(peerScenes), get(sessionHost), mine);
+	return roomOf({ scene: mine }, ctx) || UNNAMED_ROOM_TOKEN;
+}
+
+/** …and theirs. `''` for a peer we have never heard from — the one answer that still means
+ * "no evidence" rather than a place. @param {string} peerId @returns {string} */
+export function roomLabelOf(peerId) {
+	const map = get(peerScenes);
+	const row = map?.[peerId];
+	if (!row) return '';
+	const mine = amPrivate() ? '' : myScene()?.scene ?? '';
+	return roomOf(row, roomCtx(map, get(sessionHost), mine)) || UNNAMED_ROOM_TOKEN;
+}
+
 /** Every peer id we believe is standing in `scene`, US EXCLUDED. @param {string} scene */
 export function peersInScene(scene) {
 	const want = String(scene ?? '').trim();
 	if (!want) return [];
 	const map = get(peerScenes);
-	return Object.keys(map).filter((id) => map[id].scene === want);
+	// R22 round 36 (rooms): RESOLVED, so an unnamed peer counts as being in the host's room
+	// when that room is this one. Reading `row.scene` alone would leave the arrival re-sync
+	// asking nobody in the ordinary session — a host that saved a scene while everybody
+	// else stayed unnamed, which is where every session that ever names anything begins.
+	const ctx = roomCtx(map, get(sessionHost), amPrivate() ? '' : myScene()?.scene ?? '');
+	return Object.keys(map).filter((id) => roomOf(map[id], ctx) === want);
 }
 
 /**
@@ -312,22 +465,40 @@ export function peersInScene(scene) {
  * nothing stores one: the session is the mesh, the scene is the tag, and this is the
  * grouping. Our own scene is included and marked, because "which room am I in" is the
  * first thing the list has to answer.
- * @param {Record<string, {scene: string}>} map pass `$peerScenes` so a caller in a
+ * @param {Record<string, {scene: string, private?: boolean}>} map pass `$peerScenes` so a caller in a
  *   component stays reactive (a helper reading through get() registers no dependency)
- * @param {{scene: string} | null} mine
+ * @param {{scene: string} | null} mine null when we are in no room of our own — while
+ *   PRIVATE, above all: a private scene is not a room and must not become a group
+ * @param {string | null} [host] `$sessionHost`. OMITTED is round 35's grouping (a row is
+ *   its own `scene` and nothing else), kept for the two single-page suites that call this
+ *   with two arguments — the same compatibility rule `elsewhereThan` states.
  * @returns {{scene: string, peerIds: string[], mine: boolean}[]}
  */
-export function roomsOfSession(map, mine) {
+export function roomsOfSession(map, mine, host) {
+	const here = String(mine?.scene ?? '').trim();
+	const ctx = roomCtx(map ?? {}, host, here);
+	// R22 round 36 (rooms): a row resolves, so an UNNAMED peer is listed under the host's
+	// named room instead of the untitled bucket — which is the same move `peersInScene`
+	// makes, and it has to be, or the popover would show a room the gate does not agree
+	// exists. Users.svelte builds the untitled bucket ITSELF (this function is remote-only
+	// and cannot speak for us), so it resolves each leftover row with the very same
+	// `roomOf`/`roomCtx` pair rather than testing `!row.scene` — the two agree by
+	// construction, not by coincidence.
+	const resolve = (/** @type {any} */ row) =>
+		host === undefined ? String(row?.scene ?? '').trim() : roomOf(row, ctx) ?? '';
 	/** @type {Record<string, string[]>} */
 	const byScene = {};
 	for (const [id, row] of Object.entries(map ?? {})) {
-		if (!row?.scene) continue;
-		(byScene[row.scene] ??= []).push(id);
+		if (!row || row.private) continue;
+		const room = resolve(row);
+		if (!room || room === PRIVATE_SCENE) continue;
+		(byScene[room] ??= []).push(id);
 	}
-	if (mine?.scene) byScene[mine.scene] ??= [];
+	const myRoom = mine ? (host === undefined ? here : roomOf({ scene: here }, ctx) ?? '') : '';
+	if (myRoom) byScene[myRoom] ??= [];
 	return Object.keys(byScene)
 		.sort()
-		.map((scene) => ({ scene, peerIds: byScene[scene].sort(), mine: scene === mine?.scene }));
+		.map((scene) => ({ scene, peerIds: byScene[scene].sort(), mine: !!myRoom && scene === myRoom }));
 }
 
 // ---- A2: THE ROOM GATE ----------------------------------------------------------
@@ -452,7 +623,7 @@ export function canApplyByRoom(peerId, type) {
  * @param {string} peerId @returns {boolean} */
 export function sameRoomOrUnknown(peerId) {
 	if (privacySplit(peerId)) return false;
-	return !elsewhereThan(get(peerScenes), myScene()?.scene ?? '', peerId);
+	return !elsewhereThan(get(peerScenes), myScene()?.scene ?? '', peerId, get(sessionHost));
 }
 
 /**

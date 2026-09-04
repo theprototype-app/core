@@ -119,7 +119,12 @@ h.run(async () => {
 	);
 	h.check(pure.inputUntouched === 'i1,f1,i2,i3', 'sortEntries does not mutate its input');
 	h.check(pure.libCols === 'name,kind,size,added,owner', `the library's columns (${pure.libCols})`);
-	h.check(pure.binCols === 'name,kind,deletedBy,deletedAt', `the bin's own columns (${pure.binCols})`);
+	// R22 round 36 slots `location` in after Type: the bin is a tree now, and a flat
+	// "Plain list" layout would otherwise throw away the one fact the tree exists to show.
+	h.check(
+		pure.binCols === 'name,kind,location,deletedBy,deletedAt',
+		`the bin's own columns (${pure.binCols})`
+	);
 	h.check(pure.nameAlways, 'Name is the column that cannot be hidden');
 
 	// ---- 2. the toggle --------------------------------------------------------------
@@ -343,24 +348,41 @@ h.run(async () => {
 
 	const binHead = await page.locator('#explorer-list-head th[data-col]').allInnerTexts();
 	h.check(
-		binHead.length === 4 && binHead[2].startsWith('Deleted by') && binHead[3].startsWith('Deleted at'),
+		binHead.some((t) => t.startsWith('Deleted by')) && binHead.some((t) => t.startsWith('Deleted at')),
 		`the bin has its OWN columns, not the library's (${JSON.stringify(binHead)})`
+	);
+	// R22 round 36 adds LOCATION, and it arrives by the append-not-hide rule rather than by
+	// anybody clearing their saved column set: `explorerColumns` stores the VISIBLE keys, so
+	// a column added in a later release shows by default instead of being suppressed for
+	// every user who ever opened this view.
+	h.check(
+		binHead.some((t) => t.startsWith('Location')),
+		`...including where the file was when it was deleted (${JSON.stringify(binHead)})`
 	);
 	h.check(
 		!binHead.some((t) => t.startsWith('Size')),
 		'and no Size column, because the log records what a file WAS and not how big it was'
 	);
-	h.check(binHead[3].includes('▾'), 'the bin defaults to newest-deleted-first');
+	h.check(
+		binHead.find((t) => t.startsWith('Deleted at'))?.includes('▾'),
+		'the bin defaults to newest-deleted-first'
+	);
 	rows = await listRows(page);
 	h.check(rows.length === 3, `three bin rows (${rows.length})`);
+	// index 3: R22 round 36 put LOCATION between Type and Deleted by (the canonical order,
+	// which `orderColumns` honours for a column no saved pref mentions)
 	h.check(
-		rows.some((r) => r.cells[2] === 'Ada') && rows.some((r) => r.cells[2] === 'Me'),
-		`a peer's deletion names them and mine reads Me (${rows.map((r) => r.cells[2]).join('/')})`
+		rows.some((r) => r.cells[3] === 'Ada') && rows.some((r) => r.cells[3] === 'Me'),
+		`a peer's deletion names them and mine reads Me (${rows.map((r) => r.cells[3]).join('/')})`
+	);
+	h.check(
+		rows.every((r) => r.cells[2] === '\u2014'),
+		`...and every one of these was deleted from the library ROOT, which reads as a dash rather than a blank (${rows.map((r) => r.cells[2]).join('/')})`
 	);
 	h.check(rows.every((r) => !r.dim), 'nothing is dimmed while the bytes are all still here');
 
 	// the purge, through the row's REAL menu
-	const target = rows.find((r) => r.cells[2] === 'Ada');
+	const target = rows.find((r) => r.cells[3] === 'Ada');
 	const targetName = target.name.replace(/\s+/g, '');
 	await page.locator(`.ex-row[data-card-id="${target.id}"]`).click({ button: 'right' });
 	await page.waitForTimeout(400);
@@ -416,13 +438,18 @@ h.run(async () => {
 		`one array, two readings: ${split.bin} restorable + ${split.spent} spent = ${split.all} recorded`
 	);
 
-	// ---- 7b. THE DELETED LOG: the record the bin stopped carrying -------------------
-	// ROUND 13 (user) MOVED THE WAY IN. The log had a tree root of its OWN beside the bin's,
-	// which claimed two places for what `partitionDeleted` proves is one array read twice;
-	// it is a TAB inside the Deleted view now, and the tree keeps one root whose count is
-	// the size of the PLACE. The `deletedlog` folder id is untouched - only the way in
-	// changed - which is what keeps it deep-linkable, keeps `placeStillThere` able to put
-	// you back on it, and keeps the pinned-roots guard in explorer-mounts-edit honest.
+	// ---- 7b. THE CLEANED-UP ROWS: the record the bin stopped carrying ---------------
+	// ROUND 13 (user) MOVED THE WAY IN once already: the log had a tree root of its OWN
+	// beside the bin's, which claimed two places for what `partitionDeleted` proves is one
+	// array read twice, and it became a Bin|Log TAB strip inside the view.
+	//
+	// ROUND 36 MOVES IT AGAIN, and reverses round 13's "the log is a place" ruling. The
+	// strip cost the grid a row of height (reported: "Bin/Log toggle adds a scrollbar"),
+	// and the user asked for the record as "a checkbox to toggle log view" / "just a button
+	// to toggle it" — which is a VIEW FLAG by nature. A navigable log would also have needed
+	// a `deletedlog:<id>` namespace beside every `deleted:<id>` the bin's tree now mints.
+	// So: `explorerBinShowSpent`, driven from the breadcrumb toggle and from a checked menu
+	// entry, with `deletedlog` surviving as the alias that turns it on.
 	const rootCounts = await page.evaluate(() => ({
 		bin: document.querySelector('#deleted-folder')?.innerText.replace(/\s+/g, ' ').trim() ?? null,
 		logRoot: !!document.querySelector('#deleted-log-folder')
@@ -435,57 +462,111 @@ h.run(async () => {
 		rootCounts.bin === 'Deleted (3)',
 		`and the one root counts the whole place, not just the restorable half (${rootCounts.bin})`
 	);
-	// through the REAL tab, not the store — a view with no way in is invisible to a suite
-	// that supplies its own entry point
-	const tabsBefore = await page.evaluate(() => {
-		const t = (id) => {
-			const b = document.querySelector(id);
-			return b
-				? { text: b.innerText.replace(/\s+/g, ' ').trim(), on: b.getAttribute('aria-pressed') }
-				: null;
-		};
+	// through the REAL control, not the store — a view with no way in is invisible to a
+	// suite that supplies its own entry point
+	const toggleBefore = await page.evaluate(() => {
+		const b = document.querySelector('#deleted-log-toggle');
 		return {
 			strip: !!document.querySelector('#explorer-bin-tabs'),
-			bin: t('#deleted-tab-bin'),
-			log: t('#deleted-tab-log')
+			present: !!b,
+			inCrumbs: !!b?.closest('#explorer-crumbs'),
+			on: b?.getAttribute('aria-pressed'),
+			title: b?.getAttribute('title') ?? '',
+			disabled: !!b?.disabled,
+			// the row of height the tabs used to cost: the crumb row is ONE line tall
+			crumbLines: (() => {
+				const c = document.querySelector('#explorer-crumbs');
+				if (!c) return null;
+				return Math.round(c.getBoundingClientRect().height);
+			})()
 		};
 	});
-	h.check(tabsBefore.strip, 'the Deleted view carries the Bin | Log switch instead');
 	h.check(
-		tabsBefore.bin?.text === 'Bin (2)' && tabsBefore.log?.text === 'Log (3)',
-		`...and the two counts the roots used to carry survive the move (${tabsBefore.bin?.text} / ${tabsBefore.log?.text})`
+		!toggleBefore.strip,
+		'the Bin | Log strip is gone — it cost the grid a row of height, which is what was reported'
 	);
 	h.check(
-		tabsBefore.bin?.on === 'true' && tabsBefore.log?.on === 'false',
-		'...with the half you are standing in armed through aria-pressed'
+		toggleBefore.present && toggleBefore.inCrumbs,
+		'the toggle lives at the end of the breadcrumb row instead, where a view control costs nothing'
 	);
-	await page.locator('#deleted-tab-log').click();
+	h.check(
+		toggleBefore.crumbLines !== null && toggleBefore.crumbLines < 32,
+		`...and the row is still ONE line tall (${toggleBefore.crumbLines}px)`
+	);
+	h.check(
+		toggleBefore.on === 'false' && !toggleBefore.disabled,
+		`...off by default, with the log on there is nothing to explain (${toggleBefore.on})`
+	);
+	h.check(
+		/2 of 3 can be put back/.test(toggleBefore.title),
+		`...and the two counts the tabs used to carry survive in its title (${toggleBefore.title})`
+	);
+	await page.locator('#deleted-log-toggle').click();
 	await page.waitForTimeout(700);
+	const afterToggle = await page.evaluate(() => {
+		let a, v;
+		window.__stores.explorer.activeFolder.subscribe((x) => (a = x))();
+		window.__stores.explorerView.explorerBinShowSpent.subscribe((x) => (v = x))();
+		return { where: a, spent: v, on: document.querySelector('#deleted-log-toggle')?.getAttribute('aria-pressed') };
+	});
 	h.check(
-		(await page.evaluate(() => {
-			let a;
-			window.__stores.explorer.activeFolder.subscribe((v) => (a = v))();
-			return a;
-		})) === 'deletedlog',
-		'the tab NAVIGATES - `deletedlog` is still a place, not a view flag'
+		afterToggle.on === 'true' && afterToggle.spent === true,
+		'the toggle FLIPS THE FLAG — it is a view of the place you are already standing in'
 	);
-	const crumbLabel = await page.evaluate(() =>
-		[...document.querySelectorAll('#explorer-crumbs button, .ex-crumb')]
+	h.check(
+		afterToggle.where === 'deleted',
+		`...and does NOT navigate: there is one place, read two ways (${JSON.stringify(afterToggle.where)})`
+	);
+	// `deletedlog` SURVIVES AS AN ALIAS, which is what keeps every old entry point — a
+	// saved `activeFolder`, a deep link, the pinned-roots guard in explorer-mounts-edit —
+	// landing somewhere that shows what it asked for. Round 13's check was "the tab
+	// NAVIGATES: `deletedlog` is still a place"; this is that check INVERTED, and if the
+	// log ever becomes a place of its own again it fails.
+	//
+	// `openFolder` is component-private, so what is driven here is the state a caller of it
+	// leaves behind: the view standing on the old id draws THE BIN — one trail, one set of
+	// rows, the same columns — rather than a second view beside it.
+	await page.evaluate(() => window.__stores.explorerView.explorerBinShowSpent.set(false));
+	await page.waitForTimeout(400);
+	await page.evaluate(() => window.__stores.explorer.activeFolder.set('deletedlog'));
+	await page.waitForTimeout(700);
+	const onAlias = await page.evaluate(() => ({
+		crumbs: [...document.querySelectorAll('#explorer-crumbs button')]
 			.map((b) => b.textContent.trim())
+			.filter(Boolean)
+			.join(' / '),
+		toggle: !!document.querySelector('#deleted-log-toggle'),
+		rows: document.querySelectorAll('#explorer-grid [data-card-id]').length
+	}));
+	h.check(
+		onAlias.crumbs === 'Deleted' && onAlias.toggle,
+		`the old id is answered by the BIN itself, toggle and all (${onAlias.crumbs})`
+	);
+	h.check(onAlias.rows === 2, `...showing the bin's own rows (${onAlias.rows})`);
+	// and a navigation OUT of it is an ordinary crumb press, because it is an ordinary place
+	await page.evaluate(() => window.__stores.explorer.activeFolder.set('deleted'));
+	await page.waitForTimeout(400);
+	// now turn the record back on through the REAL toggle and read the whole record
+	await page.evaluate(() => window.__stores.explorerView.explorerBinShowSpent.set(true));
+	await page.waitForTimeout(600);
+	const crumbLabel = await page.evaluate(() =>
+		[...document.querySelectorAll('#explorer-crumbs button')]
+			.map((b) => b.textContent.trim())
+			.filter(Boolean)
 			.join(' / ')
 	);
 	h.check(
-		/Deleted \/ Log/.test(crumbLabel),
-		`and the trail says the log is INSIDE Deleted rather than beside it (${crumbLabel})`
+		crumbLabel === 'Deleted',
+		`the trail says ONE place — the record is a flag over it, not a folder beside it (${crumbLabel})`
 	);
 	const logHead = await page.locator('#explorer-list-head th[data-col]').allInnerTexts();
 	h.check(
 		JSON.stringify(logHead.map((t) => t.split('\n')[0])) ===
 			JSON.stringify(binHead.map((t) => t.split('\n')[0])),
-		`the log SHARES the bin's columns — the same row read twice (${JSON.stringify(logHead)})`
+		`the record SHARES the bin's columns — the same row read twice (${JSON.stringify(logHead)})`
 	);
 	rows = await listRows(page);
-	h.check(rows.length === 3, `every deletion is in the log, restorable or not (${rows.length})`);
+	h.check(rows.length === 3, `every deletion is shown, restorable or not (${rows.length})`);
 	const purgedRow = rows.find((r) => r.name.replace(/\s+/g, '') === targetName);
 	h.check(!!purgedRow, 'including the one the bin let go — the record outlives the bytes');
 	h.check(!!purgedRow?.dim, 'and it is DIMMED there, because nothing here can put it back');
@@ -496,9 +577,13 @@ h.run(async () => {
 	await page.locator(`.ex-row[data-card-id="${target.id}"]`).click({ button: 'right' });
 	await page.waitForTimeout(400);
 	const afterMenu = await menuRows(page);
+	// ROUND 36 FIXES THE WORDS. "Nobody here holds the bytes" claimed knowledge this
+	// machine does not have — whether a PEER still holds them is unknowable from here. What
+	// it knows is what IT did, so the label is about this device and the tooltip names the
+	// peer who might still be able to help.
 	h.check(
-		afterMenu.some((t) => t.startsWith('Nobody here holds the bytes')),
-		`the menu says so in words (${afterMenu.join(' / ')})`
+		afterMenu.some((t) => t.startsWith('Cleaned up on this device')),
+		`the menu says so in words, about THIS machine (${afterMenu.join(' / ')})`
 	);
 	h.check(
 		!afterMenu.includes('Restore') && !afterMenu.some((t) => t.startsWith('Delete permanently')),
@@ -664,68 +749,121 @@ h.run(async () => {
 		withLog.root === 'Deleted (2)' && !withLog.logRoot,
 		`premise: one root, counting the whole place - one restorable file and both recorded (${withLog.root})`
 	);
-	// stand IN the view, on the LOG half, because that is where the preference is now
-	// visible and it is also the state the rule below has to answer for
+	// stand IN the view, because that is where the preference is now visible and it is also
+	// the state the rule below has to answer for. The flag is a LOCAL pref that survived the
+	// reload above, so it is put back to its default here rather than assumed.
+	await page.evaluate(() => window.__stores.explorerView.explorerBinShowSpent.set(false));
 	await page.locator('#deleted-folder').click();
 	await page.waitForTimeout(600);
-	const tabsOn = await page.evaluate(() => {
-		const t = (id) => {
-			const b = document.querySelector(id);
-			return b
-				? {
-						text: b.innerText.replace(/\s+/g, ' ').trim(),
-						disabled: !!b.disabled,
-						opacity: getComputedStyle(b).opacity
-					}
-				: null;
-		};
-		return { bin: t('#deleted-tab-bin'), log: t('#deleted-tab-log'), off: !!document.querySelector('#deleted-log-off') };
+	const toggleOn = await page.evaluate(() => {
+		const b = document.querySelector('#deleted-log-toggle');
+		return b
+			? {
+					title: b.getAttribute('title') ?? '',
+					on: b.getAttribute('aria-pressed'),
+					disabled: !!b.disabled,
+					opacity: getComputedStyle(b).opacity
+				}
+			: null;
 	});
 	h.check(
-		tabsOn.bin?.text === 'Bin (1)' && tabsOn.log?.text === 'Log (2)',
-		`the tabs carry the split the two roots used to (${tabsOn.bin?.text} / ${tabsOn.log?.text})`
+		/1 of 2 can be put back/.test(toggleOn?.title ?? ''),
+		`the toggle carries the split the two roots used to (${toggleOn?.title})`
 	);
-	h.check(!tabsOn.log?.disabled && !tabsOn.off, '...and with the log ON there is nothing to explain');
-	await page.locator('#deleted-tab-log').click();
-	await page.waitForTimeout(500);
+	h.check(
+		!!toggleOn && !toggleOn.disabled,
+		'...and with the log ON there is nothing to explain'
+	);
+	// THE OTHER DOOR, and the reason there are two: the breadcrumb row is HIDEABLE, so the
+	// only way at the record must not be behind a preference. The same flag is a checked
+	// entry in the bin's own background menu.
+	await page.locator('#explorer-grid').click({ button: 'right', position: { x: 1000, y: 170 } });
+	await page.waitForTimeout(450);
+	const layoutMenu = await menuRows(page);
+	// R22 round 36 (user): the layout PAIR became one toggle. "Off" is not a choice here —
+	// the bin is a tree, and a flat list is the departure from it.
+	h.check(
+		layoutMenu.includes('Plain list without folders') && !layoutMenu.includes('Folder structure'),
+		`the bin's menu offers the flat-list flag as a toggle, not a pair (${layoutMenu.join(',')})`
+	);
+	h.check(
+		layoutMenu.some((t) => t.startsWith('Show cleaned-up files')),
+		'...and the cleaned-up flag, so the toggle is not the only way in'
+	);
+	h.check(
+		(await menuChecked(page, 'Show cleaned-up files')) === false,
+		'...unchecked, matching the button that is not pressed'
+	);
+	await page.getByRole('menuitem', { name: 'Show cleaned-up files' }).click();
+	await page.waitForTimeout(600);
+	const bothDoors = await page.evaluate(() => ({
+		on: document.querySelector('#deleted-log-toggle')?.getAttribute('aria-pressed'),
+		rows: document.querySelectorAll('#explorer-grid [data-card-id]').length
+	}));
+	h.check(
+		bothDoors.on === 'true' && bothDoors.rows === 2,
+		`the menu entry and the button are ONE flag — pressing either shows the record (${bothDoors.rows} rows)`
+	);
 
 	await pref('deletedLogEnabled', false);
 	await page.waitForTimeout(700);
 	const off = await page.evaluate(() => {
-		let m, a;
+		let m, a, spent;
 		window.__stores.projectManifest.projectManifest.subscribe((x) => (m = x))();
 		window.__stores.explorer.activeFolder.subscribe((x) => (a = x))();
-		const b = document.querySelector('#deleted-tab-log');
+		window.__stores.explorerView.explorerBinShowSpent.subscribe((x) => (spent = x))();
+		const b = document.querySelector('#deleted-log-toggle');
 		return {
 			logRoot: !!document.querySelector('#deleted-log-folder'),
-			logTab: b ? { disabled: !!b.disabled, opacity: getComputedStyle(b).opacity } : null,
-			reason: (document.querySelector('#deleted-log-off')?.innerText ?? '').trim(),
+			toggle: b
+				? { disabled: !!b.disabled, opacity: getComputedStyle(b).opacity, title: b.getAttribute('title') ?? '' }
+				: null,
 			where: a,
+			spent,
+			rows: document.querySelectorAll('#explorer-grid [data-card-id]').length,
 			root: document.querySelector('#deleted-folder')?.innerText.replace(/\s+/g, ' ').trim() ?? null,
 			recorded: (m.deleted ?? []).length
 		};
 	});
 	h.check(!off.logRoot, 'turning the log OFF still takes no tree root away - there was only ever one');
-	// DISABLED WITH THE REASON, the app's convention (Watch, the AO chip) - and the reason
-	// is RENDERED, not left in a tooltip, which is the storage panel's own ruling one
-	// domain over. Read the COMPUTED opacity: a class string is not evidence.
+	// DISABLED WITH THE REASON, the app's convention (Watch, the AO chip). Read the COMPUTED
+	// opacity: a class string is not evidence.
 	h.check(
-		!!off.logTab && off.logTab.disabled && Number(off.logTab.opacity) < 0.9,
-		`...it disables the Log half instead, and it looks disabled (${off.logTab && off.logTab.opacity})`
+		!!off.toggle && off.toggle.disabled && Number(off.toggle.opacity) < 0.9,
+		`...it disables the toggle instead, and it looks disabled (${off.toggle && off.toggle.opacity})`
 	);
 	h.check(
-		/File settings/.test(off.reason),
-		`...with the reason on screen and a way to undo it (${off.reason || 'nothing rendered'})`
+		/File settings/.test(off.toggle?.title ?? ''),
+		`...with the reason on the control that refused (${off.toggle?.title || 'nothing'})`
 	);
-	// ...and you cannot be left standing in a view the tabs say is switched off
+	// ...and you cannot be left LOOKING at a record the settings say is switched off. Round
+	// 13 bounced you out of a `deletedlog` FOLDER; with the record as a flag there is
+	// nowhere to bounce to, so the flag itself is forced down and the view stays put.
 	h.check(
-		off.where === 'deleted',
-		`...and a viewer standing in the log is returned to the bin, never stranded (${JSON.stringify(off.where)})`
+		off.where === 'deleted' && off.spent === false,
+		`...the flag is forced down rather than the viewer moved (${JSON.stringify(off.where)} / ${off.spent})`
 	);
+	h.check(off.rows === 1, `...so the view falls back to the bin's own rows (${off.rows})`);
 	h.check(
 		off.root === 'Deleted (1)',
 		`the root falls back to the bin's own count - with no record, the place IS the bin (${off.root})`
 	);
+	// the menu says the same thing, in the same words, on the surface no preference hides
+	await page.locator('#explorer-grid').click({ button: 'right', position: { x: 1000, y: 170 } });
+	await page.waitForTimeout(450);
+	const offMenu = await page.evaluate(() => {
+		const row = [...document.querySelectorAll('[role="menuitem"]')].find((r) =>
+			r.innerText.trim().startsWith('Show cleaned-up files')
+		);
+		return row
+			? { disabled: row.getAttribute('aria-disabled') === 'true' || row.className.includes('opacity'), title: row.getAttribute('title') ?? '' }
+			: null;
+	});
+	h.check(
+		/Switched off in File settings/.test(offMenu?.title ?? ''),
+		`...and the menu entry says why too (${offMenu?.title || 'nothing'})`
+	);
+	await closeMenu(page);
 	// HIDE, NEVER CLEAR. The array replicates whole and latest-wins, so a LOCAL preference
 	// that pruned it would delete other peers' record — and a peer's row is what makes that
 	// peer's own hidden copy restorable, so pruning would strand bytes on machines that
@@ -736,7 +874,7 @@ h.run(async () => {
 	);
 	await pref('deletedLogEnabled', true);
 	await page.waitForTimeout(600);
-	await page.locator('#deleted-tab-log').click();
+	await page.locator('#deleted-log-toggle').click();
 	await page.waitForTimeout(600);
 	const backOn = await page.evaluate(() => {
 		let a;
@@ -744,19 +882,19 @@ h.run(async () => {
 		return {
 			where: a,
 			root: document.querySelector('#deleted-folder')?.innerText.replace(/\s+/g, ' ').trim() ?? null,
-			log: document.querySelector('#deleted-tab-log')?.innerText.replace(/\s+/g, ' ').trim() ?? null,
+			title: document.querySelector('#deleted-log-toggle')?.getAttribute('title') ?? '',
 			rows: document.querySelectorAll('#explorer-grid [data-card-id]').length
 		};
 	});
 	h.check(
-		backOn.root === 'Deleted (2)' && backOn.log === 'Log (2)',
-		`so turning it back on returns everything (${backOn.root} / ${backOn.log})`
+		backOn.root === 'Deleted (2)' && /1 of 2 can be put back/.test(backOn.title),
+		`so turning it back on returns everything (${backOn.root} / ${backOn.title})`
 	);
 	h.check(
-		backOn.where === 'deletedlog' && backOn.rows === 2,
-		`...and the half that was refused a moment ago opens on the whole record (${backOn.rows} rows)`
+		backOn.where === 'deleted' && backOn.rows === 2,
+		`...and the record that was refused a moment ago is shown in place (${backOn.rows} rows)`
 	);
-	await page.locator('#deleted-tab-bin').click();
+	await page.locator('#deleted-log-toggle').click();
 	await page.waitForTimeout(400);
 
 	// ---- 10b. AN EMPTY BIN MUST NOT TAKE THE RECORD WITH IT --------------------------
@@ -775,22 +913,21 @@ h.run(async () => {
 		window.__stores.projectManifest.projectManifest.subscribe((x) => (m = x))();
 		return {
 			root: document.querySelector('#deleted-folder')?.innerText.replace(/\s+/g, ' ').trim() ?? null,
-			bin: document.querySelector('#deleted-tab-bin')?.innerText.replace(/\s+/g, ' ').trim() ?? null,
-			log: document.querySelector('#deleted-tab-log')?.innerText.replace(/\s+/g, ' ').trim() ?? null,
+			title: document.querySelector('#deleted-log-toggle')?.getAttribute('title') ?? '',
 			recorded: (m.deleted ?? []).length
 		};
 	});
 	h.check(
-		emptyBin.bin === 'Bin (0)' && emptyBin.recorded === 2,
-		`premise: nothing left to restore, and both deletions still recorded (${emptyBin.bin}, ${emptyBin.recorded} rows)`
+		/0 of 2 can be put back/.test(emptyBin.title) && emptyBin.recorded === 2,
+		`premise: nothing left to restore, and both deletions still recorded (${emptyBin.title}, ${emptyBin.recorded} rows)`
 	);
 	h.check(
 		emptyBin.root === 'Deleted (2)',
 		`the root STAYS, counting the record it still holds (${emptyBin.root || 'gone from the tree'})`
 	);
 	h.check(
-		emptyBin.log === 'Log (2)',
-		`...so the record is still one click away, with an empty bin beside it (${emptyBin.log})`
+		!!emptyBin.title,
+		'...so the record is still one press away, over an empty bin'
 	);
 
 	// ...and the one place OFF really does stop recording: with the recycle bin ALSO off the

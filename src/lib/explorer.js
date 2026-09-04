@@ -192,6 +192,55 @@ export async function deleteFolder(id) {
 	await persistIndex();
 }
 
+/**
+ * R22 round 36 — REMOVE FOLDER RECORDS AND NOTHING ELSE.
+ *
+ * `deleteFolder` above is the DESTROYER: it takes the folders, the items inside them and
+ * their blobs. That is exactly wrong for a delete that goes to the bin, where the whole
+ * point is that the files still exist (hidden, bytes intact, `folderId` untouched) so
+ * Restore can put them back where they were. So the bin needs the other half on its own:
+ * the PLACES go, the things do not.
+ *
+ * It is also what a peer runs when it applies somebody else's folder deletion — a peer
+ * must never destroy bytes on the strength of a message (the recycle-bin rule), and the
+ * hidden items inside keep pointing at these ids so the tree can be rebuilt from the log.
+ * @param {string[]} ids @returns {number} how many records went
+ */
+export function removeFolderRecords(ids) {
+	const doomed = new Set(ids ?? []);
+	if (!doomed.size) return 0;
+	explorerFolders.update((list) => list.filter((f) => !doomed.has(f.id)));
+	// standing in a folder that no longer exists shows an empty grid with a breadcrumb
+	// naming nothing — the same reset `deleteFolder` performs, for the same reason
+	activeFolder.update((current) => (current && doomed.has(current) ? null : current));
+	persistIndex();
+	return doomed.size;
+}
+
+/**
+ * R22 round 36 — the DISPLAY PATH of a folder: its own name and every ancestor's, root
+ * first. Recorded on a deleted row because a name that can no longer be resolved (the
+ * folder purged from the library AND evicted from the log) cannot be re-derived — the
+ * thumbnail's own argument, one field over.
+ *
+ * BOUNDED like every other parent walk here: a corrupted index must not hang the caller.
+ * @param {string | null | undefined} folderId @returns {string[]} `[]` for the root or an
+ *   id nothing here knows
+ */
+export function folderPath(folderId) {
+	const byId = new Map(get(explorerFolders).map((f) => [f.id, f]));
+	/** @type {string[]} */
+	const out = [];
+	let at = folderId ?? null;
+	for (let i = 0; at && i < 64; i++) {
+		const folder = byId.get(at);
+		if (!folder) break;
+		out.push(folder.name);
+		at = folder.parentId ?? null;
+	}
+	return out.reverse();
+}
+
 /** Re-parent a folder by drag (106); refuses cycles @param {string} id @param {string | null} parentId */
 export function moveFolder(id, parentId) {
 	if (id === parentId) return false;

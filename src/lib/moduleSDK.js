@@ -1160,7 +1160,9 @@ function makeApi(moduleId, moduleName = moduleId) {
 				if (off) off();
 			});
 			const install = (/** @type {any} */ m) => {
-				const disposer = m.registerAudioDevice({ ...spec, kind: full, group: spec.group ?? moduleName });
+				// moduleId rides the installed spec (23-D3): moduleRequirements resolves a
+				// device KIND back to the module a scene needs through it
+				const disposer = m.registerAudioDevice({ ...spec, kind: full, group: spec.group ?? moduleName, moduleId });
 				off = disposer;
 				if (disposed) disposer();
 				return full;

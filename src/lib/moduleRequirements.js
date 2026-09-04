@@ -1,5 +1,7 @@
 import { get, writable } from 'svelte/store';
 import { allNodes } from '../stores/flowStore';
+import { objectsGroup } from '../stores/sceneStore';
+import { deviceSpec } from './audioDevices';
 import { moduleNodeGroups, loadedModules, disabledModules } from './moduleSDK';
 
 // A6.2: "which modules does this scene need?" — DERIVED from what the scene
@@ -48,6 +50,16 @@ function knownModuleIds() {
 	return [...ids].sort((a, b) => b.length - a.length);
 }
 
+/** moduleId behind a device KIND (`mod-<moduleId>-<kind>`), or null for a core kind or an
+ * unresolvable one. @param {any} kind */
+export function moduleOfDeviceKind(kind) {
+	if (typeof kind !== 'string' || !kind.startsWith(MODULE_DEF_PREFIX)) return null;
+	const spec = deviceSpec(kind);
+	if (spec?.moduleId) return spec.moduleId;
+	for (const id of knownModuleIds()) if (kind.startsWith(MODULE_DEF_PREFIX + id + '-')) return id;
+	return null;
+}
+
 /** moduleId behind a customnode instance's def, or null. @param {any} node */
 function moduleOfCustomNode(node) {
 	if (node?.type !== 'customnode') return null;
@@ -69,6 +81,16 @@ export function moduleRequirements() {
 		const owner = moduleOfNodeType(node.type) ?? moduleOfCustomNode(node);
 		if (owner) ids.add(owner);
 	}
+	// 23-D3 (finding 12): a music room is authored as OBJECTS - its devices are
+	// userData.device on meshes and its cables a patch document, with maybe no module
+	// node at all - so the flow signal alone asked for nothing and the room loaded as a
+	// piano-shaped object that makes no sound. A device KIND is the second signal: the
+	// registry says which module registered it, and an unregistered kind falls back to the
+	// same longest-known-id parse a custom node def gets.
+	get(objectsGroup)?.traverse?.((/** @type {any} */ object) => {
+		const owner = moduleOfDeviceKind(object?.userData?.device?.kind);
+		if (owner) ids.add(owner);
+	});
 	return [...ids].sort().map((id) => ({
 		id,
 		version: loadedModules.find((m) => m.id === id)?.version ?? ''

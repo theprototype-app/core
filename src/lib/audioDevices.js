@@ -87,6 +87,7 @@ import { registerSceneAssetSource } from './sceneAssets';
  * @property {(handle: DeviceHandle, note: {note: number, velocity: number, at: number, [k: string]: any}, node: any) => void} [onNote]
  * @property {(three: typeof THREE, spec: DeviceSpec) => any} [mesh]
  * @property {(el: HTMLElement, handle: DeviceHandle, node: any) => (() => void)|void} [toolbox]
+ * @property {string} [moduleId] the module that registered it (moduleSDK stamps it; 23-D3)
  * @property {(params: Record<string, any>) => {hash: string, name?: string}[]} [assets] 23-D1: what a document of this kind references by content hash (the Scene manifest asks)
  */
 

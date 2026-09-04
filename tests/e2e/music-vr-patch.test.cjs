@@ -175,5 +175,53 @@ h.run(async () => {
 	h.check(pulled && pulled.cable, '7.2 a cv pull on A (kinds agree: cv -> cv) writes a cable');
 	await h.eventually(() => vp(B.page, 'return ap.patchDebug().cables.length'), (n) => n === 2, '7.3 and B sees it', 15000);
 
+	// ---------------------------------------------------------------- section 8
+	console.log('\n=== 8. desktop: Play mode and the editor ===');
+	// Play mode's press is crosshair-aimed from the pointer-locked look, which a headless
+	// page cannot turn — so Play is proven at its seam: the dispatch Play's tap calls
+	// (moduleClickHandlers, first entry) is driven with the plug mesh while isLocked. The
+	// EDITOR path is driven through a real mouse click on the plug's pixel. Aiming the look
+	// at a plug in Play mode is the user's on-device check.
+	await vp(page, HELPERS + "for (const u of [arg.osc, arg.spk]) obj(u).traverse((n) => { if (n.name.startsWith('vrpatch-')) n.scale.multiplyScalar(3); });", ids);
+	await page.locator('#play-button').click();
+	await page.waitForTimeout(600);
+	h.check((await page.evaluate(() => new Promise((r) => window.__stores.isLocked.subscribe((v) => r(v))()))) === true, '8.1 (premise) Play mode is on');
+	const tap = (uuid, name) => vp(page, HELPERS + 'const n = obj(arg.u).getObjectByName(arg.n); const consumed = s.moduleSDK.moduleClickHandlers[0](n); const st = vp.vrPatchState(); return { consumed, armed: st.desktopArmed, side: st.holding?.from.side ?? null, picked: st.holding?.picked ?? null, preview: st.holding?.previewVisible ?? false, n: ap.patchDebug().cables.length }', { u: uuid, n: name });
+	const cablesBefore = await vp(page, 'return ap.patchDebug().cables.length');
+	const first = await tap(ids.osc, 'vrpatch-out:out');
+	h.check(first.consumed && first.armed && first.side === 'out' && first.preview, '8.2 in Play, a tap on an output plug (through the tap dispatch) arms a wire and consumes the click');
+	const second = await tap(ids.spk, 'vrpatch-in:in');
+	const wiredLast = await vp(page, 'const d = ap.patchDebug(); return d.cables[d.cables.length - 1]');
+	h.check(second.consumed && !second.armed && second.n === cablesBefore + 1 && wiredLast.from.uuid === ids.osc && wiredLast.to.uuid === ids.spk, '8.3 a tap on the speaker input connects the wire (' + cablesBefore + ' -> ' + second.n + ')');
+	await h.eventually(() => vp(page, 'const d = ap.patchDebug(); return d.cables[d.cables.length - 1].live'), (v) => v === true, '8.4 and it routes');
+	await tap(ids.osc, 'vrpatch-out:out');
+	await page.keyboard.press('Escape');
+	await page.waitForTimeout(200);
+	const escaped = await vp(page, 'return { armed: vp.vrPatchState().desktopArmed, n: ap.patchDebug().cables.length }');
+	h.check(!escaped.armed && escaped.n === second.n, '8.5 Escape drops a held wire and writes nothing');
+	await tap(ids.osc, 'vrpatch-out:out');
+	const same = await tap(ids.osc, 'vrpatch-out:cv');
+	h.check(!same.armed && same.n === second.n, '8.6 a tap on an incompatible plug drops the wire, nothing written');
+	const picked = await tap(ids.spk, 'vrpatch-in:in');
+	h.check(picked.armed && picked.picked === wiredLast.id, '8.7 a tap on a plugged input picks that cable up');
+	const unplugged = await tap(ids.spk, 'vrpatch-in:in');
+	h.check(!unplugged.armed && unplugged.n === second.n - 1, '8.8 a second tap on the same input unplugs it');
+	await page.evaluate(() => window.__stores.history.undo());
+	await h.eventually(() => vp(page, 'return ap.patchDebug().cables.length'), (n) => n === second.n, '8.9 undo plugs it back');
+	await page.evaluate(() => window.__stores.playMode.exitPlay());
+	await page.waitForTimeout(900);
+	// the editor: a REAL mouse click on the plug's pixel, and no selection change
+	await vp(page, HELPERS + 'const n = obj(arg.u).getObjectByName(arg.n); n.updateWorldMatrix(true, false); const p = n.getWorldPosition(new THREE.Vector3()); await s.objectActions.flyTo([p.x - 0.6, p.y + 0.35, p.z + 1.2], p.toArray(), 250);', { u: ids.spk, n: 'vrpatch-in:in' }); // an IN plug sits on the -X face: look from that side
+	await page.waitForTimeout(600);
+	const selBefore = await page.evaluate(() => new Promise((r) => window.__stores.selectedObject.subscribe((v) => r(v?.uuid ?? null))()));
+	const px = await h.projectPoint(page, await vp(page, HELPERS + 'const n = obj(arg.u).getObjectByName(arg.n); n.updateWorldMatrix(true, false); return n.getWorldPosition(new THREE.Vector3()).toArray()', { u: ids.spk, n: 'vrpatch-in:in' }));
+	await page.mouse.click(px.x, px.y);
+	await page.waitForTimeout(300);
+	const editor = await vp(page, 'const st = vp.vrPatchState(); let sel; s.selectedObject.subscribe((v) => (sel = v))(); return { armed: st.desktopArmed, picked: st.holding?.picked ?? null, selected: sel?.uuid ?? null }');
+	h.check(editor.armed && editor.picked === wiredLast.id && editor.selected === selBefore, '8.10 in the editor a real click ON the plug picks the cable up and does not change the selection');
+	await page.keyboard.press('Escape');
+	await page.waitForTimeout(200);
+	h.check(!(await vp(page, 'return vp.vrPatchState().desktopArmed')), '8.11 Escape drops it');
+
 	await h.finish(browser);
 });

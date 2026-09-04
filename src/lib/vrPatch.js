@@ -6,6 +6,10 @@ import { hapticPulse, registerNavSuppressor, registerVRTriggerHooks, registerVRF
 import { beginHistoryBatch, endHistoryBatch } from './history';
 import { isDeviceObject, deviceSpec, deviceOf, setDeviceFor, previewDeviceParams } from './audioDevices';
 import { addCable, removeCable, cablesOf, setCableHidden, PORT_COLORS } from './audioPatch';
+// The DESKTOP path reaches the mouse ray and the click dispatch through a primed dynamic
+// import (the moduleSDK precedent) — a static edge into that module is a cycle risk.
+/** @type {any} */ let sdkRef = null;
+import('./moduleSDK').then((m) => (sdkRef = m));
 
 // VR PATCHING (roadmap #23 B1, cloud plans-core/pending/23-b-interfaces.md).
 //
@@ -35,6 +39,12 @@ import { addCable, removeCable, cablesOf, setCableHidden, PORT_COLORS } from './
 //          write THROTTLED to ~15 Hz through a history-free preview, and ONE exact
 //          `setDeviceFor` on release carrying the value the gesture STARTED from as
 //          its `before` — a knob turned at headset framerate is 90 writes a second.
+//   MOUSE   the same hold state without VR: a LEFT CLICK on a plug arms it (the wire then
+//          follows the mouse ray at the plug's depth), a click on a compatible plug
+//          connects, Escape or a click on anything else cancels; clicking a plugged
+//          INPUT picks its cable up, clicking that same input again unplugs it. Wired
+//          into the module click dispatch, which Play mode's tap and the editor's
+//          click both route through, so it works from the moment you hit Play.
 //   GUARDS `end` is honoured only for the hand that started (`hold.index`), so the
 //          other hand's trigger does not drop what you are holding; the trailing
 //          'select' is swallowed for 300 ms after a gesture (`handledAt`); navigation
@@ -308,6 +318,91 @@ function commitCable(current, plug) {
 	return id ? { cable: id } : null;
 }
 
+// ---- the desktop (mouse) path -----------------------------------------------------------
+
+/** the hold index the mouse uses, so a VR hand can never "end" a mouse hold */
+const MOUSE = -2;
+const ARMED_SCALE = 1.6;
+/** @type {any} */ let armedNode = null;
+
+/** @param {any} node @param {boolean} on */
+function highlightPlug(node, on) {
+	if (!node) return;
+	if (on) {
+		node.userData.__plugScale = node.scale.clone();
+		node.scale.multiplyScalar(ARMED_SCALE);
+	} else if (node.userData.__plugScale) {
+		node.scale.copy(node.userData.__plugScale);
+		delete node.userData.__plugScale;
+	}
+}
+
+/** Is the mouse holding a wire? (tests, the Escape key) */
+export function desktopPatchArmed() {
+	return !!hold && hold.index === MOUSE;
+}
+
+/**
+ * A left click on a scene object, from the module click dispatch. Returns true when it
+ * was a plug (the click is consumed: no selection, no key press). A click on anything
+ * else while a wire is held cancels the wire and is NOT consumed.
+ * @param {any} object the exact mesh hit
+ */
+export function clickPlug(object) {
+	const plug = plugInfo(plugNodeOf(object));
+	if (!plug) {
+		if (desktopPatchArmed()) cancelDesktopPatch();
+		return false;
+	}
+	if (hold && hold.index !== MOUSE) return false; // a VR hand holds one; leave it alone
+	if (!hold) {
+		const at = new THREE.Vector3();
+		plug.node.getWorldPosition(at);
+		if (!beginCableDrag(plug, { position: at, hand: 'mouse' }, { index: MOUSE, hand: 'mouse' })) return false;
+		armedNode = plug.node;
+		highlightPlug(armedNode, true);
+		return true;
+	}
+	// a second click on the very input a picked-up cable came from: UNPLUG it
+	if (hold.picked && plug.uuid === hold.picked.to.uuid && plug.port === hold.picked.to.port) {
+		highlightPlug(armedNode, false);
+		armedNode = null;
+		endCableDrag(null, { index: MOUSE });
+		return true;
+	}
+	highlightPlug(armedNode, false);
+	armedNode = null;
+	endCableDrag(plug, { index: MOUSE });
+	return true;
+}
+
+/** Escape, or a click elsewhere: drop the wire, change nothing (a picked-up cable goes
+ * back where it was). */
+export function cancelDesktopPatch() {
+	if (!desktopPatchArmed()) return false;
+	highlightPlug(armedNode, false);
+	armedNode = null;
+	cancelCableDrag();
+	handledAt = Date.now();
+	return true;
+}
+
+const mouseEnd = new THREE.Vector3();
+const plugWorld = new THREE.Vector3();
+
+/** Per frame while the mouse holds a wire: the free end sits on the mouse ray at the
+ * armed plug's distance from the camera, so it reads as following the cursor. */
+function updateDesktopPreview() {
+	const held = hold;
+	if (!held || held.index !== MOUSE || !sdkRef?.pointerRayNow) return;
+	const ray = sdkRef.pointerRayNow();
+	if (!ray?.ray) return;
+	held.from.node.getWorldPosition(plugWorld);
+	const depth = Math.max(0.5, ray.ray.origin.distanceTo(plugWorld));
+	ray.ray.at(depth, mouseEnd);
+	updateCableDrag({ position: mouseEnd });
+}
+
 /** Abandon a drag without writing anything (a teardown, a scene clear). */
 export function cancelCableDrag() {
 	if (!hold) return;
@@ -434,6 +529,7 @@ export function vrPatchTriggerEnd(index) {
  * parked at the origin, and following it slammed a knob to its minimum every frame
  * between the synthetic poses a headless suite feeds the seams. */
 export function updateVRPatch() {
+	updateDesktopPreview();
 	if (!get(globalRenderer)?.xr?.isPresenting) return;
 	if (hold) {
 		const pose = controllerPose(hold.index);
@@ -454,6 +550,14 @@ export function registerVRPatch() {
 	registerNavSuppressor(vrPatchSuppressed);
 	registerVRTriggerHooks({ start: vrPatchTriggerStart, end: vrPatchTriggerEnd, swallow: vrPatchSwallowSelect });
 	registerVRFrameHook(updateVRPatch);
+	// the desktop path: a plug click through the SAME dispatch Play mode's tap and the
+	// editor's click use for module objects, and Escape to drop a held wire
+	import('./moduleSDK').then((m) => {
+		if (!m.moduleClickHandlers.includes(clickPlug)) m.moduleClickHandlers.unshift(clickPlug);
+	});
+	window.addEventListener('keydown', (event) => {
+		if (event.key === 'Escape' && cancelDesktopPatch()) event.stopPropagation();
+	}, true);
 }
 
 /** Debug/test view. */
@@ -463,6 +567,7 @@ export function vrPatchState() {
 			? { index: hold.index, hand: hold.hand, from: { uuid: hold.from.uuid, port: hold.from.port, side: hold.from.side, kind: hold.from.kind }, picked: hold.picked?.id ?? null, previewVisible: !!hold.preview.parent }
 			: null,
 		knob: knob ? { index: knob.index, uuid: knob.uuid, key: knob.key, value: knob.value, startValue: knob.startValue } : null,
+		desktopArmed: desktopPatchArmed(),
 		previewRootParent: previewRoot?.parent?.name ?? null,
 		handledAgo: handledAt ? Date.now() - handledAt : null
 	};

@@ -23,6 +23,11 @@ import { setDeviceFor, deviceCatalog, deviceCatalogVersion } from './audioDevice
 /** the registry id the openers know it by */
 export const MUSIC_TOOLBOX_ID = 'mod-core-music';
 
+/** 23-B4: an EXTERNAL pick for the toolbox's device face (the Inspector's "Open in Music
+ * toolbox" link, scoped to the primary of the selection). The component adopts it once and
+ * clears it, so the pane goes back to following the selection afterwards. */
+export const musicToolboxPick = writable('');
+
 let registered = false;
 /** @type {(() => void)|null} */ let stop = null;
 

@@ -24,11 +24,20 @@
 	import { patch, cablesOf, setCableGain } from '$lib/audioPatch';
 	import { beginHistoryBatch, endHistoryBatch } from '$lib/history';
 	import { musicPresets, presetsFor, savePreset, deletePreset, applyPreset } from '$lib/musicToolbox';
+	import { musicToolboxPick } from '$lib/musicToolbox';
 
 	/** bumps after a local write so derived reads re-run even when no store poked */
 	let tick = $state(0);
 	/** an explicit pick in the device picker; the selection otherwise */
 	let pickedUuid = $state('');
+	// 23-B4: an external pick (the Inspector's link) becomes the explicit pick, once
+	$effect(() => {
+		const uuid = $musicToolboxPick;
+		if (uuid) {
+			pickedUuid = uuid;
+			musicToolboxPick.set('');
+		}
+	});
 
 	/** every device object in the scene, with its document and spec */
 	const devices = $derived.by(() => {

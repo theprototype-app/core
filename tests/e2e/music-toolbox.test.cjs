@@ -200,5 +200,50 @@ h.run(async () => {
 	const after = await page.evaluate(() => Math.round(document.querySelector('#mod-core-music')?.getBoundingClientRect().left ?? -1));
 	h.check(Math.abs(after - moved.left) <= 2, '8.2 the dragged position survives a reload (' + moved.left + ' -> ' + after + ')');
 
+	// ---------------------------------------------------------------- section 9
+	console.log('\n=== 9. the Inspector Device section (B4): fanned, mixed, and the seam ===');
+	// the reload gave A a NEW peer id, so B must be connected again before anything replicates
+	A.id = await page.evaluate(() => new Promise((r) => window.__stores.peers.subscribe((p) => r(p?.peer?.id))()));
+	await h.connect(B, A);
+	// after the reload the scene is empty: two fresh oscillators with DIFFERENT freqs, then a
+	// selection SET with the first as primary (the multi-edit suite's shape)
+	const pair = await inPage(page, "const a = ad.addDevice('tb-osc', { position: [0, 0, 0], name: 'Osc A' }); const b = ad.addDevice('tb-osc', { position: [4, 0, 0], name: 'Osc B' }); ad.setDeviceParam(a.uuid, 'freq', 300); ad.setDeviceParam(b.uuid, 'freq', 500); s.objectActions.selectObject(a.uuid, true); await new Promise((r) => setTimeout(r, 250)); s.objectActions.applySelectionSet([a.uuid, b.uuid]); return { a: a.uuid, b: b.uuid }");
+	await page.waitForTimeout(900);
+	const sec9 = await page.evaluate(() => ({ note: document.querySelector('#device-multi-note')?.textContent?.trim() ?? '', freq: /** @type {any} */ (document.querySelector('#device-param-freq'))?.value ?? null, level: /** @type {any} */ (document.querySelector('#device-param-level'))?.value ?? null, link: !!document.querySelector('#device-open-toolbox') }));
+	h.check(sec9.note.startsWith('Applies to 2'), '9.1 a two-device selection shows the Device section with the counted note (' + sec9.note + ')');
+	h.check(sec9.freq === '—', '9.2 the row the members disagree on renders the dash (' + sec9.freq + ')');
+	h.check(sec9.level !== '—' && sec9.level !== null, '9.3 and the row they agree on shows the value (' + sec9.level + ')');
+	const undoBefore = await undoLen(page);
+	// focus FIRST: DragRow seeds its text from the primary on focus, and a fill that arrives with
+	// the focus would land after that seed and append (500 + 440 -> clamped to 1000)
+	await page.focus('#device-param-freq');
+	await page.waitForTimeout(80);
+	await page.fill('#device-param-freq', '440');
+	await page.keyboard.press('Tab'); // leave by blur - Escape would be the REVERT
+	await page.waitForTimeout(400);
+	const written = await Promise.all([docOf(page, pair.a), docOf(page, pair.b), undoLen(page)]);
+	h.check(written[0].params.freq === 440 && written[1].params.freq === 440, '9.4 one edit writes BOTH members (' + written[0].params.freq + '/' + written[1].params.freq + ')');
+	h.check(written[2] === undoBefore + 1, '9.5 as ONE undo entry (' + undoBefore + ' -> ' + written[2] + ')');
+	await h.eventually(() => docOf(B.page, pair.b).then((d) => d?.params.freq), (v) => v === 440, '9.6 and it replicated to B');
+	await page.evaluate(() => window.__stores.history.undo());
+	await page.waitForTimeout(400);
+	const undone = await Promise.all([docOf(page, pair.a), docOf(page, pair.b)]);
+	h.check(undone[0].params.freq === 300 && undone[1].params.freq === 500, '9.7 a single undo restores EACH member\'s own value (' + undone[0].params.freq + '/' + undone[1].params.freq + ')');
+	// the seam must RE-SCOPE an open toolbox: its face shows an explicit pick over the selection,
+	// so pick the OTHER member first, then the link has to bring the primary back
+	const primary = await page.evaluate(() => { let sel; window.__stores.selectedObject.subscribe((x) => (sel = x))(); return sel?.uuid ?? null; });
+	const other = primary === pair.a ? pair.b : pair.a;
+	h.check(!!primary && [pair.a, pair.b].includes(primary), '9.8a (premise) the primary of the set is one of the two (applySelectionSet makes it the LAST member)');
+	await page.evaluate(() => window.__stores.moduleToolboxes.openModuleToolbox('mod-core-music'));
+	await page.waitForTimeout(300);
+	await page.selectOption('#music-device-pick', other);
+	await page.waitForTimeout(200);
+	const picked = await page.evaluate(() => /** @type {any} */ (document.querySelector('#music-device-pick'))?.value ?? null);
+	h.check(picked === other, '9.8b (premise) the toolbox shows the explicit pick, not the primary');
+	await page.locator('#device-open-toolbox').click();
+	await page.waitForTimeout(400);
+	const seam = await page.evaluate(() => ({ open: !!document.querySelector('#mod-core-music #music-tbx'), pick: /** @type {any} */ (document.querySelector('#music-device-pick'))?.value ?? null }));
+	h.check(seam.open && seam.pick === primary, '9.8 the link scopes the Music toolbox to the PRIMARY (' + (seam.pick === primary ? 'primary' : seam.pick === other ? 'still the other' : seam.pick) + ')');
+
 	await h.finish(browser);
 });

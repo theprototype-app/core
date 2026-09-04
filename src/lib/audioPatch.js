@@ -360,7 +360,16 @@ export const showCables = writable(typeof localStorage === 'undefined' || localS
 /** The flowSockets palette, by PORT kind, so a wire means the same thing in the 3D
  * world and in the node editor: audio = orange (an effect), cv = number blue, midi =
  * event yellow. Inlined rather than imported, to keep this module a leaf. */
-const PORT_COLORS = /** @type {Record<string, string>} */ ({ audio: '#fb923c', cv: '#38bdf8', midi: '#facc15' });
+export const PORT_COLORS = /** @type {Record<string, string>} */ ({ audio: '#fb923c', cv: '#38bdf8', midi: '#facc15' });
+
+/** B1: cables hidden while a VR hand holds them picked up (the document is untouched
+ * until release, so the route keeps sounding). @type {Set<string>} */
+const hiddenCables = new Set();
+/** @param {string} id @param {boolean} hidden */
+export function setCableHidden(id, hidden) {
+	if (hidden) hiddenCables.add(id);
+	else hiddenCables.delete(id);
+}
 const CABLE_RADIUS = 0.02;
 
 /** @type {any} */ let proxyRoot = null;
@@ -381,11 +390,14 @@ const endA = new THREE.Vector3();
 const endB = new THREE.Vector3();
 const mid = new THREE.Vector3();
 
-/** Where a cable attaches: the object's `port:<id>` child if it has one (B1's plugs),
- * else a little above the object's origin. World space. @param {any} object
- * @param {string} port @param {any} target */
-function endpoint(object, port, target) {
-	const plug = object.getObjectByName?.('port:' + port);
+/** Where a cable attaches: the object's plug child for that port — `vrpatch-out:<id>`
+ * / `vrpatch-in:<id>` (B1's plugs, which addDevice adds for every declared port), or
+ * the older `port:<id>` — else a little above the object's origin. World space.
+ * @param {any} object @param {string} port @param {any} target @param {'out'|'in'} [side] */
+function endpoint(object, port, target, side) {
+	const plug =
+		(side ? object.getObjectByName?.('vrpatch-' + side + ':' + port) : null) ??
+		object.getObjectByName?.('port:' + port);
 	if (plug) {
 		plug.getWorldPosition(target);
 		return target;
@@ -467,8 +479,12 @@ export function updateCables() {
 			entry.mesh.visible = false;
 			continue;
 		}
-		endpoint(from, cable.from.port, endA);
-		endpoint(to, cable.to.port, endB);
+		if (hiddenCables.has(cable.id)) {
+			entry.mesh.visible = false;
+			continue;
+		}
+		endpoint(from, cable.from.port, endA, 'out');
+		endpoint(to, cable.to.port, endB, 'in');
 		const moved = entry.a.distanceToSquared(endA) > 1e-8 || entry.b.distanceToSquared(endB) > 1e-8;
 		if (moved) {
 			entry.a.copy(endA);

@@ -172,6 +172,47 @@ const PLACEHOLDER = {
 	}
 };
 
+/** The flowSockets palette by PORT kind (audioPatch draws cables in the same colours). */
+const PLUG_COLORS = /** @type {Record<string, string>} */ ({ audio: '#fb923c', cv: '#38bdf8', midi: '#facc15' });
+
+/**
+ * B1: a PLUG for every declared port the mesh does not draw itself — small spheres
+ * named `vrpatch-in:<id>` (on the -X side) / `vrpatch-out:<id>` (+X), which is what
+ * a VR trigger-drag raycasts and what the cable renderer attaches to. A spec's own
+ * mesh may place them anywhere under those names; this only fills the gaps. Children
+ * ride toJSON, so peers and saves carry them without a channel of their own.
+ * @param {any} object @param {DeviceSpec} spec
+ */
+export function ensurePlugs(object, spec) {
+	if (!object || !spec?.ports) return 0;
+	object.updateMatrixWorld(true);
+	const box = new THREE.Box3().setFromObject(object);
+	if (box.isEmpty()) box.set(new THREE.Vector3(-0.2, 0, -0.15), new THREE.Vector3(0.2, 0.25, 0.15));
+	const size = box.getSize(new THREE.Vector3());
+	const centre = box.getCenter(new THREE.Vector3());
+	let added = 0;
+	for (const side of /** @type {const} */ (['in', 'out'])) {
+		const ports = spec.ports[side] ?? [];
+		ports.forEach((port, index) => {
+			const name = 'vrpatch-' + side + ':' + port.id;
+			if (object.getObjectByName(name)) return;
+			const plug = new THREE.Mesh(
+				new THREE.SphereGeometry(0.03, 12, 8),
+				new THREE.MeshStandardMaterial({ color: PLUG_COLORS[port.kind ?? 'audio'] ?? '#94a3b8', roughness: 0.5, metalness: 0.3 })
+			);
+			plug.name = name;
+			plug.userData.plug = { side, port: port.id, kind: port.kind ?? 'audio' };
+			// along the object's local x edge, spread down z when a side has several ports
+			const spread = ports.length > 1 ? (index / (ports.length - 1) - 0.5) * size.z * 0.8 : 0;
+			plug.position.set(centre.x + (side === 'out' ? 1 : -1) * (size.x / 2 + 0.03), centre.y, centre.z + spread);
+			plug.castShadow = false;
+			object.add(plug);
+			added++;
+		});
+	}
+	return added;
+}
+
 /** A deterministic colour per kind, so two kinds are told apart before they have art.
  * @param {string} kind */
 function kindColor(kind) {
@@ -245,12 +286,17 @@ export function findDeviceObject(uuid) {
  *
  * Returns a FRESH snapshot: THREE trees are not reactive, and a `$derived` handed the
  * same mutated object never propagates.
- * @param {string} uuid @param {any} patch
+ *
+ * `opts.before`: the document the undo entry should revert TO. A live gesture (a VR
+ * knob) previews many values without recording and commits ONE write on release —
+ * by then userData already holds the last preview, so the entry's `before` must be
+ * the value the gesture STARTED from, or the undo would be a no-op.
+ * @param {string} uuid @param {any} patch @param {{before?: any}} [opts]
  */
-export function setDeviceFor(uuid, patch) {
+export function setDeviceFor(uuid, patch, opts = {}) {
 	const object = get(objectsGroup)?.getObjectByProperty('uuid', uuid);
 	if (!object) return null;
-	const before = isDeviceObject(object) ? structuredClone(object.userData.device) : null;
+	const before = opts.before !== undefined ? (opts.before ? structuredClone(opts.before) : null) : isDeviceObject(object) ? structuredClone(object.userData.device) : null;
 	/** @type {any} */
 	let next = null;
 	if (patch !== null) {
@@ -272,6 +318,28 @@ export function setDeviceFor(uuid, patch) {
 	applyParams(object);
 	objectsGroup.update((value) => value);
 	return next ? structuredClone(next) : null;
+}
+
+/**
+ * B1: a LIVE PREVIEW of params during a gesture — writes the document and applies the
+ * sound at once, records NO history, and replicates only when asked (the caller
+ * throttles). The gesture's release then calls `setDeviceFor` with the value it
+ * started from as `before`: one entry, one exact broadcast.
+ * @param {string} uuid @param {Record<string, any>} params @param {{broadcast?: boolean}} [opts]
+ */
+export function previewDeviceParams(uuid, params, opts = {}) {
+	const object = get(objectsGroup)?.getObjectByProperty('uuid', uuid);
+	if (!object || !isDeviceObject(object)) return null;
+	const next = normalizeDevice({ ...object.userData.device, params: { ...object.userData.device.params, ...(params ?? {}) } });
+	object.userData.device = next;
+	applyParams(object);
+	if (opts.broadcast) {
+		/** @type {any} */
+		const peer = get(peers);
+		if (peer) peer.send({ type: 'objectParameters', parameter: 'device', uuid, device: next });
+	}
+	objectsGroup.update((value) => value);
+	return structuredClone(next);
 }
 
 /** Sugar for one knob. @param {string} uuid @param {string} key @param {any} value */
@@ -315,6 +383,7 @@ export function addDevice(kind, opts = {}) {
 	if (opts.name) object.name = opts.name;
 	else if (!object.name) object.name = spec.label || kind;
 	object.userData.device = normalizeDevice({ kind, params: { ...defaultDeviceParams(kind), ...(opts.params ?? {}) } });
+	ensurePlugs(object, spec);
 	// an instrument is not scenery you light or drop: no shadows, no physics body
 	object.userData.shadow = false;
 	object.castShadow = false;

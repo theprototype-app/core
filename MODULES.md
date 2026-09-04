@@ -536,8 +536,10 @@ const cancel = api.audio.schedule(0, ({ beat, at }) => hit(at), { every: 1 }); /
                                        // start voices at `at`; cancelled at teardown
 api.audio.note(uuid, { note: 64, velocity: 0.8 }); // replicated; every peer synthesizes it
 api.audio.setParams(uuid, { level: 0.5 });          // one undo step, replicated
+const before = api.audio.device(uuid);              // capture the document when a gesture STARTS
 api.audio.previewParams(uuid, { level: 0.5 });      // a live gesture: replicated, NO undo entry -
-                                       // throttle it while scrubbing, then setParams once
+                                       // throttle it while scrubbing, then commit once:
+api.audio.setParams(uuid, { level: 0.5 }, { before }); // one undo entry that restores `before`
 api.audio.device(uuid);                             // {kind, params} or null
 ```
 

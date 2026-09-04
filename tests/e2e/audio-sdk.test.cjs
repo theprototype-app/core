@@ -208,6 +208,19 @@ h.run(async () => {
 	await page.waitForTimeout(150);
 	const committed = await undoLen(page);
 	h.check(committed === undoP + 1, '9.3 the commit after the scrub is ONE undo entry (' + undoP + ' -> ' + committed + ')');
+	// a gesture whose LAST preview already equals the commit: without  the commit is a
+	// no-op and nothing enters history - the undo would then revert some earlier edit
+	const before = await inPage(page, 'return window.__sdkApi.audio.device(arg)', dropDev.uuid);
+	await inPage(page, "window.__sdkApi.audio.previewParams(arg, { freq: 555 }); return true", dropDev.uuid);
+	await page.waitForTimeout(100);
+	await inPage(page, "window.__sdkApi.audio.setParams(arg.uuid, { freq: 555 }, { before: arg.before }); return true", { uuid: dropDev.uuid, before });
+	await page.waitForTimeout(150);
+	const withBefore = await undoLen(page);
+	h.check(withBefore === committed + 1, '9.4 a commit equal to its last preview still records ONE entry when it carries the gesture\'s start document (' + committed + ' -> ' + withBefore + ')');
+	await page.evaluate(() => window.__stores.history.undo());
+	await page.waitForTimeout(150);
+	const restored = await inPage(page, 'return ad.deviceOf(ad.findDeviceObject(arg))?.params.freq', dropDev.uuid);
+	h.check(restored === 780, '9.5 and undo restores the value from BEFORE the gesture, not the last preview (' + restored + ')');
 
 	await inPage(page, "s.moduleSDK.deactivateModule('sdktest')");
 	await inPage(page, "await s.explorerDrop.dropExplorerItem({ id: 'drop-audio', kind: 'audio', name: 'kick.wav' }, arg.x, arg.y); return true", at);

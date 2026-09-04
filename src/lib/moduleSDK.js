@@ -1221,8 +1221,12 @@ function makeApi(moduleId, moduleName = moduleId) {
 			addDevice: (kind, opts) => audioDevicesRef?.addDevice(kind.startsWith('mod-') || audioDevicesRef.deviceSpec(kind) ? kind : `mod-${moduleId}-${kind}`, opts) ?? null,
 			/** a device object's document `{kind, params}` or null @param {string} uuid */
 			device: (uuid) => audioDevicesRef?.deviceOf(audioDevicesRef.findDeviceObject(uuid)) ?? null,
-			/** write a device's params (merge; replicated; one undo step) @param {string} uuid @param {Record<string, any>} params */
-			setParams: (uuid, params) => audioDevicesRef?.setDeviceFor(uuid, { params }) ?? null,
+			/** write a device's params (merge; replicated; one undo step). After a run of
+			 * previewParams the document ALREADY holds the values, so pass the document you
+			 * captured at the start of the gesture (`api.audio.device(uuid)`) as `opts.before`:
+			 * the entry records that as its undo state instead of skipping as a no-op.
+			 * @param {string} uuid @param {Record<string, any>} params @param {{before?: any}} [opts] */
+			setParams: (uuid, params, opts) => audioDevicesRef?.setDeviceFor(uuid, { params }, opts?.before ? { before: opts.before } : undefined) ?? null,
 			/** 23-C4: a live-gesture PREVIEW of params - replicated, applied, NO history entry.
 			 * Scrub with this (throttled), then commit once with setParams: the knob/toolbox
 			 * pattern, and the only way a scrub is one undo step. @param {string} uuid @param {Record<string, any>} params */

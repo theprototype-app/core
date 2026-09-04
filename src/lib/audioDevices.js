@@ -410,6 +410,7 @@ export function addDevice(kind, opts = {}) {
  * @property {string|null} fellBackFrom  the kind that was asked for when the placeholder ran
  * @property {DeviceHandle} handle
  * @property {Record<string, any>} params  the params the subgraph currently reflects
+ * @property {AnalyserNode|null} meter     B2: a tap on the output for the mixer's level meter
  */
 
 /** @type {Map<string, BuiltDevice>} uuid -> what is built for it */
@@ -432,7 +433,34 @@ function buildFor(object) {
 		fellBackFrom = doc.kind;
 		handle = PLACEHOLDER.build(ensureAudioContext(), object, {});
 	}
-	built.set(object.uuid, { kind: doc.kind, spec, fellBackFrom, handle, params: { ...doc.params } });
+	// B2: a meter on whatever the device puts out — an AnalyserNode is a sink, so this
+	// adds no audible path, and a device with no output simply has no level to show
+	/** @type {AnalyserNode|null} */
+	let meter = null;
+	try {
+		if (handle.output && typeof handle.output.connect === 'function') {
+			meter = ensureAudioContext().createAnalyser();
+			meter.fftSize = 256;
+			meter.smoothingTimeConstant = 0;
+			handle.output.connect(meter);
+		}
+	} catch {
+		meter = null;
+	}
+	built.set(object.uuid, { kind: doc.kind, spec, fellBackFrom, handle, params: { ...doc.params }, meter });
+}
+
+const meterScratch = new Float32Array(256);
+
+/** The RMS level (0..1) at a device's output right now, 0 when it has none or is not
+ * built. The mixer strip polls this at ~10 Hz. @param {string} uuid */
+export function deviceLevel(uuid) {
+	const meter = built.get(uuid)?.meter;
+	if (!meter) return 0;
+	meter.getFloatTimeDomainData(meterScratch);
+	let square = 0;
+	for (let i = 0; i < meterScratch.length; i++) square += meterScratch[i] * meterScratch[i];
+	return Math.sqrt(square / meterScratch.length);
 }
 
 /** @param {string} uuid */
@@ -440,6 +468,9 @@ function disposeFor(uuid) {
 	const entry = built.get(uuid);
 	if (!entry) return;
 	built.delete(uuid);
+	try {
+		entry.meter?.disconnect();
+	} catch {}
 	try {
 		entry.handle.dispose?.();
 	} catch (error) {

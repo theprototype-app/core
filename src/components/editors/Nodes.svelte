@@ -67,6 +67,7 @@
 	import ThemedSelect from '../ui/ThemedSelect.svelte';
 	import { defDefaults } from '$lib/customNodes';
 	import { findNodeSpec, nodeCatalog } from '$lib/nodeCatalog';
+	import { nodeDoc } from '$lib/nodeDocs';
 	import { isValidFlowConnection, typeColor, replaceableInputEdges } from '$lib/flowSockets';
 	import { moduleNodeGroups, moduleNodeComponents } from '$lib/moduleSDK';
 	import { peers, username, modulesOpen, flowFocus } from '../../stores/appStore';
@@ -847,6 +848,9 @@
 			{#if propsTab === 'info'}
 				{#if selectedNode}
 					<p class="ui-section-label">{selectedNode.data?.label ?? selectedNode.type}</p>
+					{#if nodeDoc(selectedNode.type)}
+						<p id="flow-node-doc" class="text-[11px] leading-snug text-gray-400">{nodeDoc(selectedNode.type)}</p>
+					{/if}
 					{#if selectedNode.type === 'slider'}
 						<label class="flex items-center justify-between gap-2">Min
 							<input id="param-slider-min" class="ui-input w-16" type="number" value={selectedNode.data?.min ?? 0}

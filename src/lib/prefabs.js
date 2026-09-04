@@ -2,7 +2,8 @@ import * as THREE from 'three';
 import { writable, get } from 'svelte/store';
 import { objectsGroup } from '../stores/sceneStore';
 import { peers, showToast } from '../stores/appStore';
-import { recordObjectPresence } from './history';
+import { recordObjectPresence, beginHistoryBatch, endHistoryBatch } from './history';
+import { patch as audioPatch, addCablesRemapped } from './audioPatch';
 import { selectObject } from './objectActions';
 import { parkEditOverlays, stripEditOverlays } from './editOverlays';
 import { idbGet, idbPut } from './idb';
@@ -66,6 +67,25 @@ function renderThumbnail(element) {
 const PREFAB_LIMIT = 5_000_000;
 
 /**
+ * 23-D2: the cables INTERNAL to a set of subtrees, with their ends rewritten through
+ * `remap` (original uuid -> the uuid the element carries). Cables crossing the boundary
+ * are dropped, deliberately: half a cable is not a thing, and re-attaching to whatever
+ * object happens to share a uuid later would be worse.
+ * @param {Record<string, string>} remap every uuid inside the selection -> its element uuid
+ */
+function cablesWithin(remap) {
+	return get(audioPatch).cables
+		.filter((cable) => remap[cable.from.uuid] && remap[cable.to.uuid])
+		.map((cable) => ({ from: { uuid: remap[cable.from.uuid], port: cable.from.port }, to: { uuid: remap[cable.to.uuid], port: cable.to.port }, gain: cable.gain }));
+}
+/** stamp the captured cables onto the serialized element's root userData - the ELEMENT,
+ * never the live object (its userData replicates) @param {any} element @param {any[]} cables */
+function stampCables(element, cables) {
+	if (!cables.length || !element?.object) return;
+	element.object.userData = { ...(element.object.userData ?? {}), cables };
+}
+
+/**
  * 21-H2: the serialized snapshot behind every prefab write — ONE object by uuid, or a
  * MULTI-selection baked into a holder group (U-2). Extracted so "Update from selection"
  * cannot drift from "Save as prefab": they are the same bytes by construction, and the
@@ -95,14 +115,30 @@ function buildPrefabElement(uuids, name) {
 			showToast('Object is too large for a prefab (>5 MB)');
 			return null;
 		}
+		// toJSON keeps the uuids, so the remap is the identity over the subtree
+		/** @type {Record<string, string>} */
+		const identity = {};
+		object.traverse((/** @type {any} */ node) => (identity[node.uuid] = node.uuid));
+		stampCables(element, cablesWithin(identity));
 		return { element, name: name || object.name || object.type };
 	}
 	const holder = new THREE.Group();
 	holder.name = name || 'Group';
+	/** clone(true) mints fresh uuids, so the cable capture needs original -> clone
+	 * @type {Record<string, string>} */
+	const remap = {};
 	for (const uuid of list) {
 		const object = group?.getObjectByProperty('uuid', uuid);
 		if (!object) continue;
 		const clone = object.clone(true);
+		/** @type {any[]} */
+		const originals = [];
+		object.traverse((/** @type {any} */ node) => originals.push(node));
+		let i = 0;
+		clone.traverse((/** @type {any} */ node) => {
+			if (originals[i]) remap[originals[i].uuid] = node.uuid;
+			i++;
+		});
 		stripEditOverlays(clone); // clone(true) copies the edit wireframe with it
 		object.updateWorldMatrix(true, false);
 		clone.matrix.copy(object.matrixWorld);
@@ -111,6 +147,7 @@ function buildPrefabElement(uuids, name) {
 	}
 	if (!holder.children.length) return null;
 	const element = holder.toJSON();
+	stampCables(element, cablesWithin(remap));
 	if (JSON.stringify(element).length > PREFAB_LIMIT) {
 		showToast('Selection is too large for a prefab (>5 MB)');
 		return null;
@@ -307,15 +344,38 @@ export function instantiatePrefab(prefab, position) {
 		return null;
 	}
 	stripEditOverlays(object); // heals a prefab an older build saved mid-session
-	object.traverse((node) => (node.uuid = crypto.randomUUID()));
+	// 23-D2: the cables the element carries come back under the fresh uuids - the re-uuid
+	// traverse is the hook, so the map falls out of the same loop
+	/** @type {Record<string, string>} */
+	const uuidMap = {};
+	object.traverse((node) => {
+		const fresh = crypto.randomUUID();
+		uuidMap[node.uuid] = fresh;
+		node.uuid = fresh;
+	});
+	const cables = Array.isArray(object.userData?.cables) ? object.userData.cables : [];
+	// the snapshot stays in the LIBRARY, not on the instance - and ObjectLoader hands the
+	// parsed object the element's userData by REFERENCE, so the copy comes first or the
+	// delete would strip the library entry itself (the second instantiate came back uncabled)
+	if (object.userData?.cables) {
+		object.userData = { ...object.userData };
+		delete object.userData.cables;
+	}
 	object.name = prefab.name;
 	if (position) object.position.copy(position);
-	group.add(object);
-	objectsGroup.update((value) => value);
-	recordObjectPresence('create', object);
-	/** @type {any} */
-	const peer = get(peers);
-	if (peer) peer.send({ type: 'object', element: object.toJSON() });
+	// the objects and their cables are ONE act, so one undo takes the whole rig back
+	if (cables.length) beginHistoryBatch();
+	try {
+		group.add(object);
+		objectsGroup.update((value) => value);
+		recordObjectPresence('create', object);
+		/** @type {any} */
+		const peer = get(peers);
+		if (peer) peer.send({ type: 'object', element: object.toJSON() });
+		if (cables.length) addCablesRemapped(cables, uuidMap);
+	} finally {
+		if (cables.length) endHistoryBatch('Prefab ' + (prefab.name || ''));
+	}
 	selectObject(object.uuid, true);
 	return object;
 }

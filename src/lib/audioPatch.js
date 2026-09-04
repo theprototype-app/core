@@ -185,6 +185,32 @@ export function clearPatch() {
 }
 
 /**
+ * 23-D2: re-create cables captured in a prefab element under the instance's uuid map -
+ * `cables` carry the ELEMENT's uuids, `uuidMap` says what each became. Cables whose ends
+ * both resolve are added in ONE commit (replicated, one history entry); the rest are
+ * dropped: half a cable is not a thing.
+ * @param {any[]} cables @param {Record<string, string>} uuidMap @returns {number} how many were added
+ */
+export function addCablesRemapped(cables, uuidMap) {
+	if (!Array.isArray(cables) || !uuidMap) return 0;
+	const inside = cables.filter((cable) => cable?.from?.uuid && cable?.to?.uuid && uuidMap[cable.from.uuid] && uuidMap[cable.to.uuid]);
+	if (!inside.length) return 0;
+	commit((state) => ({
+		...state,
+		cables: [
+			...state.cables,
+			...inside.map((cable) => ({
+				id: newId(),
+				from: { uuid: uuidMap[cable.from.uuid], port: String(cable.from.port ?? '') },
+				to: { uuid: uuidMap[cable.to.uuid], port: String(cable.to.port ?? '') },
+				gain: typeof cable.gain === 'number' ? cable.gain : 1
+			}))
+		]
+	}));
+	return inside.length;
+}
+
+/**
  * Duplicate parity: copy the cables INTERNAL to a duplicated set onto the copies,
  * uuids remapped. Records NO history entry (see the header) but does replicate —
  * the initiator-only rule: a peer that copied as well would double the cables.

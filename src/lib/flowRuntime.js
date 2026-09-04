@@ -341,6 +341,12 @@ function pruneActionSeenAt() {
 }
 
 /** @type {any} */ let shaderRef = null;
+// 23-B3: the audio devices and the musical clock, PRIMED — both reach history
+/** @type {any} */ let audioDevicesRef = null;
+/** the trigger stamp each Note Trigger node last fired on (nodeId -> stamp); seeded
+ * from whatever stamp is standing when the node is first seen, so a late joiner does
+ * not replay history (the soundRuntime firedAt rule) @type {Map<string, number>} */
+const noteTriggerStamps = new Map();
 /** L-C: reached by PRIMED dynamic import, never statically — scenePost imports
  * history, and history imports THIS module, so a static edge closes the cycle that
  * TDZ-crashes the SSR prerender. @type {any} */
@@ -2831,6 +2837,45 @@ function applyAnimation(object, base, anim, time, ctx) {
 		if (object.material?.color && typeof data.color === 'string') object.material.color.set(data.color);
 	} else if (anim.type === 'visibility') {
 		object.visible = !!data.on; // boolean input shows/hides, base-managed
+	} else if (anim.type === 'deviceparam') {
+		// 23-B3: write a device param from the graph. LOCAL per peer, the setcolor rule:
+		// the value arrives through the replicated graph and the shared clock, so every
+		// peer writes the same thing and nothing is sent. No history entry and no poke —
+		// an LFO writes every frame, and a poke per frame would starve the debounced
+		// reconciles behind objectsGroup.
+		const key = typeof data.key === 'string' ? data.key.trim() : '';
+		const device = object.userData?.device;
+		if (key && device?.kind && typeof data.value === 'number') {
+			// clamp to the param's declared range: a +-1 LFO into a 0..1 cutoff must pin at the
+			// rails, not hand the device a negative filter frequency
+			const spec = audioDevicesRef?.deviceSpec?.(device.kind)?.params?.find((/** @type {any} */ p) => p?.key === key);
+			let value = data.value;
+			if (spec && Number.isFinite(spec.min)) value = Math.max(spec.min, value);
+			if (spec && Number.isFinite(spec.max)) value = Math.min(spec.max, value);
+			if (device.params?.[key] !== value)
+				audioDevicesRef?.previewDeviceParams?.(object.uuid, { [key]: value }, { broadcast: false, poke: false });
+		}
+	} else if (anim.type === 'notetrigger') {
+		// 23-B3: a note-on per PULSE, the Sound node's firedAt rule verbatim: an event input
+		// carries a pulse LEVEL (0/1 for a window), so the edge is read off the trigger's
+		// shared STAMP instead — one note per distinct stamp, on every peer, from the same
+		// already-replicated log. Never re-broadcast. First sight seeds whatever stamp is
+		// standing (possibly none), so a late joiner never replays history and a live first
+		// pulse still fires. The note's time is the stamp itself, so peers agree on it.
+		const stamp = triggerStampFor(anim.id, ctx);
+		if (!noteTriggerStamps.has(anim.id)) noteTriggerStamps.set(anim.id, /** @type {any} */ (stamp));
+		else if (typeof stamp === 'number' && noteTriggerStamps.get(anim.id) !== stamp) {
+			noteTriggerStamps.set(anim.id, stamp);
+			audioDevicesRef?.noteDevice?.(
+				object.uuid,
+				{
+					note: Number.isFinite(+data.note) ? +data.note : 60,
+					velocity: typeof data.velocity === 'number' ? data.velocity : 0.9,
+					at: Math.floor(Date.now() / 86400000) * 86400000 + stamp * 1000
+				},
+				{ replicate: false }
+			);
+		}
 	} else if (anim.type === 'setuniform') {
 		// SH7: drive a shader-graph uniform from a behaviour graph. LOCAL per peer, exactly
 		// like setcolor above: the VALUE arrives through the flow graph, which is already
@@ -3288,6 +3333,7 @@ export function startFlowRuntime() {
 	// SH4: a compiled shader material must never reach a serializer — primed, like
 	// animationPreview, so flowRuntime keeps no static edge into it
 	import('./shaderGraph').then((m) => (shaderRef = m));
+	import('./audioDevices').then((m) => (audioDevicesRef = m)); // 23-B3
 	import('./scenePost').then((m) => (postRef = m));
 	import('./cameraPreview').then((m) => (previewRef = m));
 	import('./animatedImports').then((m) => (animImportsRef = m));

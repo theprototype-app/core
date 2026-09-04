@@ -8,6 +8,9 @@ import { peers } from '../stores/appStore';
 // meshBudget, and nothing in it reaches here).
 import { recordEntry, recordObjectPresence } from './history';
 import { ensureAudioContext } from './audioEngine';
+// 23-B3: the Device Level value node registers through the same leaf registry a module's
+// api.registerValueNode uses (moduleNodeIO imports nothing, so this is cycle-free)
+import { registerModuleValueNode, registerModuleNodeInputs } from './moduleNodeIO';
 
 // AUDIO DEVICES (roadmap #23 A3, cloud plans-core/pending/23-a-audio-engine.md).
 //
@@ -325,7 +328,9 @@ export function setDeviceFor(uuid, patch, opts = {}) {
  * sound at once, records NO history, and replicates only when asked (the caller
  * throttles). The gesture's release then calls `setDeviceFor` with the value it
  * started from as `before`: one entry, one exact broadcast.
- * @param {string} uuid @param {Record<string, any>} params @param {{broadcast?: boolean}} [opts]
+ * `poke: false` skips the objectsGroup poke — for a per-frame writer (a flow LFO), whose
+ * poke every frame would starve the debounced reconciles behind that store.
+ * @param {string} uuid @param {Record<string, any>} params @param {{broadcast?: boolean, poke?: boolean}} [opts]
  */
 export function previewDeviceParams(uuid, params, opts = {}) {
 	const object = get(objectsGroup)?.getObjectByProperty('uuid', uuid);
@@ -338,7 +343,7 @@ export function previewDeviceParams(uuid, params, opts = {}) {
 		const peer = get(peers);
 		if (peer) peer.send({ type: 'objectParameters', parameter: 'device', uuid, device: next });
 	}
-	objectsGroup.update((value) => value);
+	if (opts.poke !== false) objectsGroup.update((value) => value);
 	return structuredClone(next);
 }
 
@@ -455,6 +460,13 @@ function buildFor(object) {
 }
 
 const meterScratch = new Float32Array(256);
+
+// 23-B3: `devicelevel` — a device's live output level as a flow value. Pure of (data,
+// time) in the plan's sense: it reads state the engine derives identically on every
+// peer (the same subgraph fed by the same replicated document). The device is the
+// graph's own object unless a Selector wires `target`.
+registerModuleValueNode('devicelevel', (data, _time, ctx) => deviceLevel(typeof data?.target === 'string' && data.target ? data.target : ctx?.graphId ?? ''), 'number');
+registerModuleNodeInputs('devicelevel', { target: 'object' });
 
 /** The RMS level (0..1) at a device's output right now, 0 when it has none or is not
  * built. The mixer strip polls this at ~10 Hz. @param {string} uuid */

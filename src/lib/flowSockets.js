@@ -138,6 +138,10 @@ const INPUT = {
 	// PFX-B: drive emission from flow — density, tint, spawn offset, motion, and
 	// a burst fired from any event (On Click / Key Press / On Impact)
 	particle: { count: 'number', color: 'color', offset: 'vector3', speed: 'number', gravity: 'number', size: 'number', trigger: 'event' },
+	// 23-B3: the music nodes (devicelevel / transportbeat are value nodes; their inputs
+	// and output types come from the moduleNodeIO registry they register through)
+	deviceparam: { value: 'number' },
+	notetrigger: { trigger: 'event', note: 'number', velocity: 'number' },
 	// A3 HUD. `value` is the whole point: counter -> hudtext is a live score with no
 	// new code, because Counter already counts replicated pulses and every number
 	// source already reaches a named input through resolveInputs.

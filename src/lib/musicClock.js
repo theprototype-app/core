@@ -8,6 +8,9 @@ import { peers } from '../stores/appStore';
 // on the registerHistoryKind call below (the TDZ cycle family, three times now).
 import { registerHistoryKind, recordEntry } from './history';
 import { audioTimeFor, sampleAudioClock, primeAudioClock } from './audioEngine';
+// 23-B3: the Transport value node (moduleNodeIO and flowStore are both leaves)
+import { registerModuleValueNode } from './moduleNodeIO';
+import { syncedAnimations } from '../stores/flowStore';
 
 // The MUSICAL CLOCK (roadmap #23 A2, cloud plans-core/pending/23-a-audio-engine.md).
 //
@@ -187,6 +190,35 @@ export function transportNow(wallMs = Date.now()) {
 		swing: state.swing
 	};
 }
+
+// 23-B3: `transportbeat` — the shared transport as a flow value. A value node must be a
+// PURE function of (data, time): the flow's `time` is the synced clock in seconds into
+// the UTC day, so the wall stamp is rebuilt from it (today's day base + time) rather than
+// read from Date.now() — two evaluations with the same `time` agree exactly, on every
+// peer. Unsynced (performance.now) graphs fall back to the wall clock.
+registerModuleValueNode(
+	'transportbeat',
+	(data, time) => {
+		const synced = get(syncedAnimations) && typeof time === 'number';
+		const wallMs = synced ? Math.floor(Date.now() / 86400000) * 86400000 + time * 1000 : Date.now();
+		const t = transportNow(wallMs);
+		switch (data?.read) {
+			case 'bar':
+				return t.bar;
+			case 'phase':
+				return t.phase;
+			case 'bpm':
+				return t.bpm;
+			case 'playing':
+				return t.playing ? 1 : 0;
+			case 'loopBeats':
+				return t.loopBeats;
+			default:
+				return t.beat;
+		}
+	},
+	'number'
+);
 
 // ---- editing (local + replicate) ---------------------------------------------
 

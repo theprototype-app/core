@@ -904,6 +904,26 @@ export const nodeCatalog = [
 				]
 			}
 		]
+	},
+	{
+		// 23-B3: the control-rate half of the music playground's fork 3 — audio routes
+		// through cables (audioPatch), AUTOMATION routes through the graph. Four nodes; the
+		// rack's LFO, phasor, step advancer and fader curve are time / loop / counter /
+		// maprange, already in the catalog.
+		group: 'Music',
+		items: [
+			// writes ONE param of the device this graph belongs to (or the object a Selector
+			// names) — LOCAL per peer, the setcolor rule: the value already arrives through the
+			// replicated graph, so it is never broadcast again
+			{ type: 'deviceparam', label: 'Device Param', defaults: { key: 'level', value: 0 }, params: [{ key: 'key', kind: 'text', placeholder: 'param key (level, freq, ...)', maxLength: 40 }] },
+			// the device's live output level, 0..1 — feeds core nodes and the HUD
+			{ type: 'devicelevel', label: 'Device Level', defaults: {} },
+			// the shared transport as a number: beat, bar, phase (0..1 of the loop), bpm, playing
+			{ type: 'transportbeat', label: 'Transport', defaults: { read: 'beat' }, params: [{ key: 'read', kind: 'select', options: ['beat', 'bar', 'phase', 'bpm', 'playing', 'loopBeats'] }] },
+			// a note-on per trigger pulse: the pulse is already the replicated event, so every
+			// peer synthesizes the note itself (once per pulse per peer)
+			{ type: 'notetrigger', label: 'Note Trigger', defaults: { note: 60, velocity: 0.9 } }
+		]
 	}
 ];
 
@@ -911,7 +931,8 @@ export const nodeCatalog = [
 // managed object actions: LookAt orients, Set Color paints, Visibility toggles)
 export const animationTypes = [
 	'shake', 'spin', 'bounce', 'orbit', 'pulse', 'blink', 'pathpatrol',
-	'lookat', 'setcolor', 'visibility', 'setuniform'
+	'lookat', 'setcolor', 'visibility', 'setuniform',
+	'deviceparam', 'notetrigger' // 23-B3
 ];
 
 /**

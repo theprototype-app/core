@@ -11,6 +11,7 @@ import { ensureAudioContext } from './audioEngine';
 // 23-B3: the Device Level value node registers through the same leaf registry a module's
 // api.registerValueNode uses (moduleNodeIO imports nothing, so this is cycle-free)
 import { registerModuleValueNode, registerModuleNodeInputs } from './moduleNodeIO';
+import { registerSceneAssetSource } from './sceneAssets';
 
 // AUDIO DEVICES (roadmap #23 A3, cloud plans-core/pending/23-a-audio-engine.md).
 //
@@ -86,6 +87,7 @@ import { registerModuleValueNode, registerModuleNodeInputs } from './moduleNodeI
  * @property {(handle: DeviceHandle, note: {note: number, velocity: number, at: number, [k: string]: any}, node: any) => void} [onNote]
  * @property {(three: typeof THREE, spec: DeviceSpec) => any} [mesh]
  * @property {(el: HTMLElement, handle: DeviceHandle, node: any) => (() => void)|void} [toolbox]
+ * @property {(params: Record<string, any>) => {hash: string, name?: string}[]} [assets] 23-D1: what a document of this kind references by content hash (the Scene manifest asks)
  */
 
 /** @type {Record<string, DeviceSpec>} kind -> spec */
@@ -548,7 +550,33 @@ function scheduleReconcile() {
 }
 
 /** Start the debounced reconcile off `objectsGroup` (App.svelte, once). Idempotent. */
+/**
+ * 23-D1: what the scene's devices reference by content hash, for the Scene manifest: each
+ * KIND says so through `spec.assets(params) -> [{hash, name}]` (a sampler's pads, a deck's
+ * track). A kind that is not registered here contributes nothing - the manifest is built
+ * from what this peer knows, like everything else in it.
+ */
+export function deviceAssetRefs() {
+	/** @type {{hash: string, name: string}[]} */
+	const refs = [];
+	for (const object of listDeviceObjects()) {
+		const doc = deviceOf(object);
+		const spec = doc ? deviceKinds[doc.kind] : null;
+		if (!doc || !spec?.assets) continue;
+		try {
+			for (const ref of spec.assets(doc.params) ?? []) if (ref && typeof ref.hash === 'string' && ref.hash) refs.push({ hash: ref.hash, name: String(ref.name || '') });
+		} catch (error) {
+			console.warn('[audioDevices] assets() threw for ' + doc?.kind, error);
+		}
+	}
+	return refs;
+}
+
+/** @type {(() => void) | null} */
+let stopAssetSource = null;
+
 export function startAudioDevices() {
+	if (!stopAssetSource) stopAssetSource = registerSceneAssetSource(deviceAssetRefs);
 	if (reconcileStop) return;
 	// objectsGroup pokes on every scene mutation, so debounce (the shaderGraph shape)
 	reconcileStop = objectsGroup.subscribe(() => scheduleReconcile());

@@ -1238,7 +1238,19 @@ function makeApi(moduleId, moduleName = moduleId) {
 			 * the cable id @param {{from: {uuid: string, port?: string}, to: {uuid: string, port?: string}, gain?: number}} spec */
 			cable: (spec) => audioPatchRef?.addCable(spec) ?? null,
 			/** unplug a cable @param {string} id */
-			uncable: (id) => audioPatchRef?.removeCable(id)
+			uncable: (id) => audioPatchRef?.removeCable(id),
+			/** 23-D1: the RAW microphone as a MediaStream - a separate capture from voice chat
+			 * (no echo cancellation / noise suppression / auto gain, and never gated by
+			 * push-to-talk). Rejects when the browser refuses. @param {MediaTrackConstraints} [constraints] */
+			captureMic: (constraints) => import('./micCapture').then((m) => m.captureMicStream(constraints)),
+			/** record a take from the raw mic into the Explorer and share it by hash; resolves to
+			 * the item, or null when refused BEFORE starting (over the visible cap, over the share
+			 * limit, no recorder). @param {{maxSeconds?: number, name?: string}} [opts] */
+			record: (opts) => import('./micCapture').then((m) => m.startRecording(opts)),
+			/** end the running take (the record() promise resolves with the item) */
+			stopRecording: () => import('./micCapture').then((m) => m.stopRecording()),
+			/** the recorder's state `{active, startedAt, maxSeconds, name}` as a store */
+			recording: () => import('./micCapture').then((m) => m.recording)
 		},
 
 		/**

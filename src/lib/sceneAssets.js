@@ -16,10 +16,49 @@ import { music } from './sceneMusic';
  *           hash?, itemId?, nodeId?, uuid?, dataUrl?, derived} */
 export const sceneAssets = writable([]);
 
+/**
+ * 23-D1: sources OTHER than sound nodes and the music track. The hard-coded branches below
+ * made every device's sample reference invisible to the manifest - so a .tpscene export
+ * bundled no bytes for them and a template would load silent. A source returns
+ * `[{hash, name, kind?}]` for what it references right now; audioDevices registers one
+ * that asks each device KIND's `assets(params)`. @type {Set<() => any[]>} */
+const sources = new Set();
+/** @param {() => any[]} fn @returns {() => void} disposer */
+export function registerSceneAssetSource(fn) {
+	sources.add(fn);
+	schedule();
+	return () => {
+		sources.delete(fn);
+		schedule();
+	};
+}
+
 function compute() {
 	/** @type {any[]} */
 	const out = [];
 	const seenAudio = new Set();
+	for (const source of sources) {
+		let refs = [];
+		try {
+			refs = source() ?? [];
+		} catch (error) {
+			console.log('scene asset source failed', error);
+		}
+		for (const ref of refs) {
+			const hash = typeof ref?.hash === 'string' ? ref.hash : '';
+			if (!hash || seenAudio.has(hash)) continue;
+			seenAudio.add(hash);
+			out.push({
+				id: 'audio:' + hash,
+				group: 'audio',
+				name: String(ref.name || itemByHash(hash)?.name || 'sample'),
+				kind: ref.kind || 'audio',
+				hash,
+				itemId: itemByHash(hash)?.id ?? null,
+				derived: false
+			});
+		}
+	}
 	for (const node of allNodes()) { // H1: sound/script nodes live in any graph
 		if (node.type === 'sound' && node.data?.hash && !seenAudio.has(node.data.hash)) {
 			seenAudio.add(node.data.hash);

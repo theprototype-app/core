@@ -540,6 +540,13 @@ const before = api.audio.device(uuid);              // capture the document when
 api.audio.previewParams(uuid, { level: 0.5 });      // a live gesture: replicated, NO undo entry -
                                        // throttle it while scrubbing, then commit once:
 api.audio.setParams(uuid, { level: 0.5 }, { before }); // one undo entry that restores `before`
+api.audio.captureMic();                // Promise<MediaStream>: the RAW mic, a separate capture
+                                       // from voice chat (no AEC/NS/AGC, never gated by PTT)
+const item = await api.audio.record({ maxSeconds: 8 }); // a take -> Explorer item (content-hashed,
+                                       // shared to peers); null when refused BEFORE it starts
+api.audio.stopRecording();             // end the take early
+// declare what a kind references by hash so the Scene manifest (and a .tpscene export)
+// carries the bytes: `assets(params) -> [{hash, name}]` on the registerAudioDevice spec
 api.audio.device(uuid);                             // {kind, params} or null
 ```
 

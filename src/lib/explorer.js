@@ -67,7 +67,9 @@ export const activeFolder = writable(null);
 
 const EXTENSIONS = {
 	image: ['png', 'jpg', 'jpeg', 'webp', 'gif'],
-	audio: ['mp3', 'wav', 'ogg'],
+	// 23-D1: the containers the app's own recorder writes (MediaRecorder: webm/opus,
+	// ogg/opus, mp4) - decoding is decodeAudioData, which handles what the browser records
+	audio: ['mp3', 'wav', 'ogg', 'webm', 'weba', 'opus', 'm4a', 'flac'],
 	text: ['txt', 'json', 'md', 'cfg', 'js'],
 	object: ['glb', 'gltf', 'obj', 'stl', 'fbx'],
 	// 21-F4: a LEVEL — a .tpscene zip the travel node loads by content hash. Its own

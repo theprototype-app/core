@@ -622,7 +622,11 @@ export function sendObject(conn, element, groupuuid) {
                 groupparent: groupuuid,
                 pos: test.toArray(),
                 rot: element.rotation.toArray(),
-                scale: element.scale.toArray()
+                scale: element.scale.toArray(),
+                // 23-C1 fix: a Group can CARRY data (a device whose mesh() is a Group keeps
+                // its whole document in userData.device) — additive, absent on the /group
+                // command path and ignored by an older receiver
+                ...(element.userData && Object.keys(element.userData).length ? { userData: element.userData } : {})
             });
             sendObject(conn, element, element.uuid, groupuuid);
         } else if (element.type.endsWith('Light')) {

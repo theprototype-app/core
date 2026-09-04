@@ -392,6 +392,10 @@ export function addDevice(kind, opts = {}) {
 		else object.position.copy(opts.position);
 	}
 	group.add(object);
+	// toJSON serializes `matrix`, which three refreshes only at the next render — without
+	// this the wire copy carries an identity matrix and every peer places the device at
+	// the origin (found by C1's flight: A held the speaker at [-10,10,14], B at [0,0,0])
+	object.updateMatrix();
 	objectsGroup.update((value) => value);
 	recordObjectPresence('create', object);
 	/** @type {any} */

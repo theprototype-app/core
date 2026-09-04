@@ -417,6 +417,15 @@ export class PeerConnection {
 					createLight(data.command, data.uuid);
 				} else if(data.type == 'group') {
 					createGroup(data.command, data.uuid, data.group, data.name, data.groupparent, data.pos, data.rot, data.scale);
+					// 23-C1 fix: the late-joiner group message may carry userData (a device's
+					// document rides there); merge it onto the group just made
+					if (data.userData && typeof data.userData === 'object' && data.uuid) {
+						const made = get(objectsGroup)?.getObjectByProperty('uuid', data.uuid);
+						if (made) {
+							made.userData = { ...made.userData, ...data.userData };
+							objectsGroup.update((value) => value);
+						}
+					}
 				} else if(data.type == 'name') {
 					changeName(data.uuid, data.name);
 				} else if(data.type == 'move') {

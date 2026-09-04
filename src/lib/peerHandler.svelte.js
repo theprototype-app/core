@@ -28,7 +28,7 @@ import { applyRemoteCameraPreview, clearPeerPreview, sendCameraPreviewState } fr
 // riding the getmodulestate request, and a drop on disconnect (golden rule 3).
 import { applyRemotePlayMode, dropPeerPlayMode, sendPlayModeState } from '$lib/gamePresence';
 // P2b: which SCENE each peer is standing in — the gamePresence shape exactly
-import { applyRemotePeerScene, dropPeerScene, sendMySceneState, peerScenes, myScene, mySceneWire, amPrivate, privacySplit, elsewhereThan, sceneOfPeer, ROOM_SCOPED, canApplyByRoom, sameRoomOrUnknown } from '$lib/peerScenes';
+import { applyRemotePeerScene, dropPeerScene, sendMySceneState, peerScenes, myScene, mySceneWire, amPrivate, privacySplit, elsewhereThan, sceneOfPeer, ROOM_SCOPED, canApplyByRoom, sameRoomOrUnknown, myRoomLabel, roomLabelOf } from '$lib/peerScenes';
 // 21-G2: the project manifest — a latest-wins singleton like environment/scenephysics
 import { applyRemoteManifest, sendProjectManifest } from '$lib/projectManifest';
 // 21-G4: PEER-OWNED variables. The same three obligations as the mode above (dispatch,
@@ -603,12 +603,23 @@ export class PeerConnection {
 					// table, and it withholds SILENTLY: it is the same shape as the table's own
 					// row 2, and there is nothing for either side to be asked about.
 					if (privacySplit(conn.peer)) return;
+					//
+					// R22 ROUND 36 (rooms): THE TABLE IS HANDED ROOMS, NOT NAMES. Its `split`
+					// test was `elsewhereThan`'s rule spelled out locally, so it inherited the
+					// same hole — a peer in the session's unnamed world beside a peer in a named
+					// one read as ONE room, which is the report. `myRoomLabel`/`roomLabelOf`
+					// resolve both sides through the host; the NAMES ride along as `mineName`/
+					// `theirName` because two of the table's readers need the name and not the
+					// room (the connect decision asks "has THIS scene ever been saved", and Bring
+					// travels to a scene, which the unnamed room is not).
 					deferUntilShareChoice('objects', data.sender, {
 						otherCount: data.count ?? 0,
-						theirScene: sceneOfPeer(conn.peer),
+						theirScene: roomLabelOf(conn.peer),
+						theirName: sceneOfPeer(conn.peer),
 						theirHash: get(peerScenes)[conn.peer]?.hash ?? '',
 						fromHost: get(sessionHost) === conn.peer,
-						mineScene: myScene()?.scene ?? '',
+						mineScene: myRoomLabel(),
+						mineName: myScene()?.scene ?? '',
 						arriving: !!data.arriving
 					});
 				} else if(data.type == 'objectfile') {
@@ -652,10 +663,13 @@ export class PeerConnection {
 				} else if(data.type == 'getnodes') {
 					if (privacySplit(conn.peer)) return; // R22 round 35, as `getobjects` above
 					deferUntilShareChoice('nodes', data.sender, {
-						theirScene: sceneOfPeer(conn.peer),
+						// R22 round 36 (rooms): resolved rooms, as `getobjects` above
+						theirScene: roomLabelOf(conn.peer),
+						theirName: sceneOfPeer(conn.peer),
 						theirHash: get(peerScenes)[conn.peer]?.hash ?? '',
 						fromHost: get(sessionHost) === conn.peer,
-						mineScene: myScene()?.scene ?? ''
+						mineScene: myRoomLabel(),
+						mineName: myScene()?.scene ?? ''
 					});
 				} else if(data.type == 'nodes') {
 					applyNodesSnapshot(data.nodes, data.edges, data.graphs);
@@ -1290,12 +1304,17 @@ export class PeerConnection {
 		const gated = STREAM_TYPES.has(payload?.type) || roomScoped;
 		const mine = gated ? (myScene()?.scene ?? '') : '';
 		const where = gated ? get(peerScenes) : {};
+		// R22 round 36 (rooms): THE HOST, because the unnamed world is a room with an
+		// identity now and only the host's row can say which. `null` is a real answer here
+		// (we are hosting, so the unnamed room is OURS) — it is OMITTING the argument that
+		// would ask round 35's question, which is why it is passed unconditionally.
+		const host = gated ? get(sessionHost) : null;
 		const secret = roomScoped && amPrivate();
 		Object.keys(this.connections).forEach(peerId => {
 			const conn = this.connections[peerId];
 			if (!conn || !conn.open) return;
 			if (secret) return;
-			if (gated && elsewhereThan(where, mine, peerId)) return;
+			if (gated && elsewhereThan(where, mine, peerId, host)) return;
 			if (roomScoped && gateHolds(peerId)) return;
 			try {
 				conn.send(payload);

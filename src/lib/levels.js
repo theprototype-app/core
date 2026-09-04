@@ -531,12 +531,6 @@ export async function saveSceneAsLevel(name, folderId = null, opts = {}) {
 	// explicit act — Share with the session, granting access, or travelling away.
 	const staysPrivate = cameFrom?.private === true;
 	if (staysPrivate) setScenePrivateHere(payload.name, true);
-	currentLevel.set({
-		hash: item.hash,
-		name: payload.name,
-		signature: sceneSignature(payload),
-		...(staysPrivate ? { private: true } : {})
-	});
 	// 21-G2: a manual save IS a version — the manifest pointer moves with it (refused
 	// for viewers inside publishSceneVersion; the local item exists either way)
 	// C4: saving IS the consent to publish, and it has to be recorded BEFORE the write —
@@ -555,6 +549,26 @@ export async function saveSceneAsLevel(name, folderId = null, opts = {}) {
 	// manifest mark keeps its name out of every outbound document until the user shares.
 	if (opts.consent !== false && !staysPrivate) noteSceneOpened(payload.name);
 	publishSceneVersion(payload.name, item.hash);
+	// R22 round 34 — A SAVE NAMES THE ROOM. After the manifest publish above: a peer that
+	// takes the name and goes looking for the scene must find its history already there,
+	// and PeerJS conns are ordered, so "after" here is "after" over there too.
+	//
+	// R22 ROUND 36 (rooms) — AND BEFORE OUR OWN ROW MOVES. This used to run last, after
+	// `currentLevel.set` below had already published `atscene` with the new name. Under the
+	// only-on-evidence gate that was harmless (an unnamed room-mate gated nothing); under
+	// the resolver it is fatal twice over: `broadcast` reads US as already elsewhere from
+	// everybody still standing in the room we are naming and withholds the message, and a
+	// receiver that did get it would drop it for the same reason. So the room is TOLD FIRST,
+	// while our row still says we are in it, and only then do we move — the receivers see
+	// manifest -> sceneadopt -> atscene, in that order, on one ordered conn. Measured before
+	// the reorder: scene-adopt's headline red, `told: 0`, the host never took the name.
+	const announced = await announceSceneName(cameFrom, payload.name, item.hash, opts);
+	currentLevel.set({
+		hash: item.hash,
+		name: payload.name,
+		signature: sceneSignature(payload),
+		...(staysPrivate ? { private: true } : {})
+	});
 	// ADOPT THE FILE WE CAME FROM. Reported as: open a dragged-in cube.tpscene, rename
 	// it, move something, then save — and a SECOND cube2.tpscene appeared beside the
 	// first. Both cards were real and different (the save is a new version), but the
@@ -574,10 +588,6 @@ export async function saveSceneAsLevel(name, folderId = null, opts = {}) {
 	// 21-G7: one visible card per scene name — the pointer we just wrote
 	hideOldVersions(payload.name);
 	pruneSceneVersions(payload.name);
-	// R22 round 34 — A SAVE NAMES THE ROOM. Last, after the manifest publish above: a peer
-	// that takes the name and goes looking for the scene must find its history already
-	// there, and PeerJS conns are ordered, so "after" here is "after" over there too.
-	const announced = await announceSceneName(cameFrom, payload.name, item.hash, opts);
 	showToast(
 		'Scene saved: ' + payload.name + ' (' + (payload.count ?? 0) + ' objects)' + announced.note
 	);
@@ -1069,7 +1079,10 @@ async function roommatePeers() {
 		if (m.amPrivate()) return [];
 		const map = get(m.peerScenes);
 		const mine = m.myScene()?.scene ?? '';
-		return open.filter((id) => !m.elsewhereThan(map, mine, id));
+		// R22 round 36 (rooms): the HOST, so an unnamed roommate resolves to the room it is
+		// actually standing in — a host who saved this world has room-mates whose rows still
+		// say nothing, and before this they were counted as being nowhere in particular.
+		return open.filter((id) => !m.elsewhereThan(map, mine, id, get(sessionHost)));
 	} catch {
 		return [];
 	}
@@ -1101,7 +1114,16 @@ export async function applyRemoteSceneAdopt(data) {
 	if (String(get(currentLevel)?.name ?? '').trim()) return false;
 	try {
 		const m = await import('./peerScenes');
-		if (from && !m.sameRoomOrUnknown(from)) return false;
+		// R22 ROUND 36 (rooms) — THIS RE-CHECK RUNS LATE, and that used to be harmless. The
+		// dispatcher's own `canApplyByRoom` gated this message SYNCHRONOUSLY on arrival, when
+		// the saver's row still named the room we share; by the time two dynamic imports have
+		// resolved here, the saver's NEW `atscene` (it follows the announce on the same ordered
+		// conn) has usually landed. Under only-on-evidence a named row beside our unnamed one
+		// gated nothing, so the stale check passed by accident; under the resolver it is a
+		// split, and the host refused the very name it was being given (scene-adopt's headline
+		// red, `told: 1`, host `currentLevel` still null). A saver standing in the scene it has
+		// just announced is not elsewhere — it is the message's own subject.
+		if (from && !m.sameRoomOrUnknown(from) && m.sceneOfPeer(from) !== scene) return false;
 	} catch {}
 	if (!adoptSceneIdentity(scene, String(data?.hash ?? ''))) return false;
 	showToast(nameOf(from) + ' saved this scene as "' + scene + '"');

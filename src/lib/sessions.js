@@ -29,7 +29,7 @@ import { bottomDockActive } from './bottomDock';
 // R22 round 33 — both are store-only leaves (svelte/store + localStorage), so this edge
 // closes nothing: `mergeOnConnect` chooses which question the gate puts, and
 // `pendingConnectDecision` is what sharedLibrary holds its downloads behind.
-import { mergeOnConnect, pendingConnectDecision } from './connectionState';
+import { mergeOnConnect, pendingConnectDecision, sessionHost } from './connectionState';
 // R22 round 33 — the naming handoff, unchanged, moved from the dial to the approval. This
 // module's static imports are appStore/connectionState only, so there is no way back here.
 import { waitForSceneName, modalClosed } from './peerApproval';
@@ -1490,6 +1490,22 @@ export function applySessionProposal(data) {
  * @type {Map<string, 'shared'|'stashed'|'stayed'>}
  */
 const shareVerdicts = new Map();
+
+/**
+ * R22 ROUND 36 (rooms) — THE SESSION'S UNNAMED WORLD, AS A KEY.
+ *
+ * It MUST equal `peerScenes.UNNAMED_ROOM_TOKEN`, and it is declared here rather than
+ * imported for the reason the `getobjects` call site already states: peerScenes -> levels
+ * -> sessions closes the cycle, so this module may not import that one. Exported so the
+ * truth-table suite can assert the two agree — a copied constant that nothing compares is
+ * a copied constant that drifts.
+ *
+ * The leading space is what keeps it out of the namespace of anything a person can type
+ * into the save dialog (`saveSceneAsLevel` trims), so it is safe as a Map key beside real
+ * scene names. It must never be rendered: every row that speaks reads `hereLabel`/
+ * `roomLabel` instead.
+ */
+export const UNNAMED_ROOM_TOKEN = ' unnamed';
 /** @type {{senders: {objects: Set<string>, nodes: Set<string>}, payload: any, uuids: string[], room: string, theirHash: string, done: boolean} | null} */
 let gate = null;
 
@@ -1709,7 +1725,15 @@ async function stashAndJoin(opts = {}) {
  * land in, and it offers no way to decline, so the only route to "leave me where I am"
  * was to leave the prompt on screen forever and never sync anything again.
  *
- * M is OUR scene, T is THEIRS, and the table is five rows:
+ * M is OUR ROOM, T is THEIRS, and the table is five rows.
+ *
+ * R22 ROUND 36 (rooms) — ROOMS, NOT NAMES. Every row below used to be written in scene
+ * NAMES, with `''` meaning "no evidence of a split" — the same only-on-evidence rule the
+ * gates used, and wrong in the same place. The caller now resolves both sides through
+ * `peerScenes.roomOf` and hands us ROOMS: a named scene is its own name, the session's
+ * unnamed world is `UNNAMED_ROOM_TOKEN`, and only a peer we have never heard from is
+ * still `''`. The NAMES ride along as `mineName`/`theirName` for the two questions that
+ * are genuinely about a name rather than a room (see `hereName`/`roomName` below).
  *
  *   1. we hold NOTHING  ->  reply at once (and adopt T if they are the peer we joined).
  *      There is no merge to consent to; the world arriving is the only world there is.
@@ -1721,30 +1745,66 @@ async function stashAndJoin(opts = {}) {
  *   3. M != T and they ARE the peer we joined  ->  the three-option ask. This is the only
  *      row where a person is genuinely being asked to leave a scene, so it is the only
  *      one that offers STAY.
- *   4. we are UNNAMED and they are named  ->  two options, no Stay. Writing our work into
- *      a named document deserves the question even when that document is empty — but an
- *      unnamed scene cannot be ISOLATED (only-on-evidence: an empty scene is not evidence
- *      of being elsewhere), so a Stay button here would promise a separation the gate
- *      cannot deliver. Offering it would be a lie in a button.
+ *   4. GONE, and its disappearance is the whole of R22 round 36 (rooms). It read "we are
+ *      UNNAMED and they are named -> two options, NO STAY", and its own note said why:
+ *      "an unnamed scene cannot be ISOLATED (only-on-evidence: an empty scene is not
+ *      evidence of being elsewhere), so a Stay button here would promise a separation the
+ *      gate cannot deliver." That sentence was the BUG, written down as a design note —
+ *      the same hole that let a shared private scene pour into an unnamed host's world.
+ *      The unnamed world is a ROOM now, with the host's identity, so the gate CAN deliver
+ *      the separation and a split is a split: an unnamed peer facing a named one falls
+ *      into row 3 when it joined them (three options, Stay included) or row 2 when it did
+ *      not (silent withhold, their decision to make). Nothing was lost with the row —
+ *      "writing your work into a named document deserves the question" is exactly what
+ *      row 3 asks, and it now asks it with the third answer that was missing.
  *   5. same room (both named the same, or both unnamed)  ->  exactly today's behaviour:
  *      both sides non-empty is the classic Share/Stash merge, anything else replies.
  *
  * @param {'objects'|'nodes'} kind @param {string} sender
- * @param {{otherCount?: number, theirScene?: string, theirHash?: string, fromHost?: boolean, mineScene?: string, arriving?: boolean}|number} [opts]
+ * @param {{otherCount?: number, theirScene?: string, theirName?: string, theirHash?: string, fromHost?: boolean, mineScene?: string, mineName?: string, arriving?: boolean}|number} [opts]
  *   a bare number is read as `otherCount` — the pre-A1 shape, kept so no call site can
- *   silently pass a count into a field that ignores it
+ *   silently pass a count into a field that ignores it. R22 round 36 (rooms):
+ *   `mineScene`/`theirScene` are ROOMS and `mineName`/`theirName` are scene NAMES; a
+ *   caller that passes only the old fields is read exactly as it was, because the names
+ *   DEFAULT to the rooms and a build that never sends the token never sees one.
  */
 export function deferUntilShareChoice(kind, sender, opts = {}) {
-	/** @type {{otherCount?: number, theirScene?: string, theirHash?: string, fromHost?: boolean, mineScene?: string, arriving?: boolean}} */
+	/** @type {{otherCount?: number, theirScene?: string, theirName?: string, theirHash?: string, fromHost?: boolean, mineScene?: string, mineName?: string, arriving?: boolean}} */
 	const context = typeof opts === 'number' ? { otherCount: opts } : opts || {};
 	const { otherCount = 0, theirScene = '', theirHash = '', fromHost = false, mineScene = '', arriving = false } = context;
+	// `??`, never `||`: an explicit empty NAME beside a non-empty room is the whole point
+	// of the pair (we are standing in the session's world, which has no name).
+	const theirName = String(context.theirName ?? theirScene ?? '').trim();
+	const mineName = String(context.mineName ?? mineScene ?? '').trim();
 	const group = get(objectsGroup);
 	const count = group?.children.length ?? 0;
-	// M and T — the two names the whole table is written in
-	const here = String(mineScene ?? '').trim();
-	const room = String(theirScene ?? '').trim();
-	// DEMONSTRABLY different scenes, `elsewhereThan`'s rule spelled out locally rather
-	// than imported: two names that disagree. An empty one on either side is not evidence.
+	// M and T — the two ROOMS the whole table is written in.
+	//
+	// `asRoom` TRIMS EVERYTHING EXCEPT THE TOKEN, and that exception is load-bearing: the
+	// unnamed room's label is deliberately a string no typed scene name can be (a LEADING
+	// SPACE), so trimming it turns it into the perfectly ordinary scene name "unnamed" —
+	// which the connect decision then hands to `joinRoom`, and the joiner adopts as its
+	// scene. MEASURED that way: connect-decision read `the joiner claims no scene name
+	// ("unnamed")` red, its Dismiss ending stranded (the joiner sat in a room of its own
+	// called "unnamed" while the host stood in the real unnamed world, so the host's reply
+	// was gated away and never arrived). A legacy caller never sends the token, so the trim
+	// it always had is what it still gets.
+	const asRoom = (/** @type {string | undefined} */ v) =>
+		v === UNNAMED_ROOM_TOKEN ? v : String(v ?? '').trim();
+	const here = asRoom(mineScene);
+	const room = asRoom(theirScene);
+	// …and the two NAMES, which are a different question and are asked in exactly two
+	// places: "has THIS scene ever been saved" (the connect decision, which must not read
+	// an adopted room as a save) and "which scene does Bring travel to" (the unnamed room
+	// is not a scene, so there is nothing to travel to and `joinRoom` clears instead).
+	const hereName = here === UNNAMED_ROOM_TOKEN ? '' : mineName;
+	const roomName = room === UNNAMED_ROOM_TOKEN ? '' : room;
+	// …and how each is SPOKEN, because the token must never reach a person.
+	const hereLabel = here === UNNAMED_ROOM_TOKEN ? "the session's world" : '"' + here + '"';
+	const roomLabel = room === UNNAMED_ROOM_TOKEN ? "the session's world" : '"' + room + '"';
+	// DEMONSTRABLY different rooms: two rooms that disagree. An ABSENT row is still the one
+	// answer that is no evidence at all (`roomLabelOf` answers '' for a peer we have never
+	// heard from), so an older build allows exactly as it always did.
 	const split = !!here && !!room && here !== room;
 	if (gate && !gate.done) {
 		gate.senders[kind].add(sender); // a dialog is already open — queue behind it
@@ -1762,12 +1822,18 @@ export function deferUntilShareChoice(kind, sender, opts = {}) {
 		// Through a DYNAMIC import, because levels.js imports THIS module (applySession)
 		// and a static edge back would close the cycle. Fire-and-forget: a name is
 		// presentation and the objects are the point, so the reply never waits on it.
-		if (fromHost && theirScene) {
+		//
+		// R22 round 36 (rooms): the NAME, never the room. Adoption writes `currentLevel`,
+		// and a room label is not something a person can be standing in — adopting the
+		// unnamed room's private token would name this joiner's world after it, gate it
+		// away from the very host it just joined, and put the token on screen. Measured
+		// exactly that way before the split: the joiner took nothing.
+		if (fromHost && theirName) {
 			// the hash goes along because the caller has it, and it is what the next
 			// phase's "same scene, same version?" question will be asked with. Adoption
 			// itself deliberately does not store it — a joiner loaded no file.
 			import('./levels')
-				.then((m) => m.adoptSceneIdentity(theirScene, theirHash))
+				.then((m) => m.adoptSceneIdentity(theirName, theirHash))
 				.catch(() => {});
 		}
 		replyTo(kind, sender);
@@ -1833,8 +1899,15 @@ export function deferUntilShareChoice(kind, sender, opts = {}) {
 	// name is no evidence of a split), so their world and the asker's are already counted as
 	// one. The second sentence is the round-32 fix speaking for itself — the ask now holds
 	// BOTH directions, so nothing has moved yet and answering is the only thing that moves it.
-	const unnamed = here ? '' : 'This scene is unsaved, and unsaved scenes all count as one shared room. ';
-	const held = here
+	// R22 round 36 (rooms) CORRECTED THE FIRST SENTENCE, which said "unsaved scenes all
+	// count as one shared room" — true of round 32's gate and false of this one. An unsaved
+	// scene is the SESSION'S world (the host's, whatever it is called), which is a room like
+	// any other; what has not changed is that you are standing in it with them, which is the
+	// fact the person answering needs.
+	const unnamed = hereName
+		? ''
+		: 'This scene is unsaved, so you are standing in the session\u2019s own world rather than one of your own. ';
+	const held = hereName
 		? ''
 		: ' Nothing of yours leaves this screen, and nothing of theirs arrives, until you answer.';
 	// R22 round 33: the BACKUP'S NAME is the caller's, because the two questions bank it
@@ -1859,7 +1932,7 @@ export function deferUntilShareChoice(kind, sender, opts = {}) {
 	const ask = (/** @type {string} */ text, /** @type {any[]} */ actions) =>
 		showInfoToast('share-or-stash', text, actions, undefined, true);
 	const bring = {
-		label: 'Bring into "' + room + '"',
+		label: 'Bring into ' + roomLabel,
 		action: () => {
 			shareVerdicts.set(room, 'shared');
 			dismissToastById('share-or-stash');
@@ -1872,11 +1945,11 @@ export function deferUntilShareChoice(kind, sender, opts = {}) {
 			// NO refetch here: `joinRoom` ends in `resyncRoomPeers`, which asks the whole
 			// destination room for full state with `arriving` set — a strictly better ask
 			// than this one, and asking twice would send the burst twice.
-			void joinRoom(room, theirHash, () => resolveGate({ refetch: false }));
+			void joinRoom(roomName, theirHash, () => resolveGate({ refetch: false }));
 		}
 	};
 	const stash = {
-		label: 'Stash & join "' + room + '"',
+		label: 'Stash & join ' + roomLabel,
 		action: () => {
 			shareVerdicts.set(room, 'stashed');
 			dismissToastById('share-or-stash');
@@ -1886,7 +1959,7 @@ export function deferUntilShareChoice(kind, sender, opts = {}) {
 			// we brought with us.
 			// `refetch: false` for the same reason Bring passes it — joinRoom's own
 			// `resyncRoomPeers` is the arrival ask, and it is the better one.
-			void joinRoom(room, theirHash, () => void stashAndJoin({ refetch: false }));
+			void joinRoom(roomName, theirHash, () => void stashAndJoin({ refetch: false }));
 		}
 	};
 
@@ -1894,12 +1967,12 @@ export function deferUntilShareChoice(kind, sender, opts = {}) {
 	if (split) {
 		openGate('Stashed before joining');
 		ask(
-			'Share your ' + objects + ' into "' + room + '", stash them to a session first, or stay in "' + here + '"?',
+			'Share your ' + objects + ' into ' + roomLabel + ', stash them to a session first, or stay in ' + hereLabel + '?',
 			[
 				bring,
 				stash,
 				{
-					label: 'Stay in "' + here + '"',
+					label: 'Stay in ' + hereLabel,
 					action: () => {
 						shareVerdicts.set(room, 'stayed');
 						dismissToastById('share-or-stash');
@@ -1918,10 +1991,11 @@ export function deferUntilShareChoice(kind, sender, opts = {}) {
 	// ---- ROW 5 FAST PATH: they hold nothing ------------------------------------
 	// LIFTED ABOVE the connect decision, and deliberately: taking your scratch world to a
 	// friend who has nothing is the flow this whole feature must not break. There is no
-	// merge, so there is nothing to decide. Row 4 gets no such shortcut — writing your work
-	// into a NAMED document deserves the question even when that document is empty, which
-	// is the rule row 4 has always been written on.
-	if (!room && !otherCount) {
+	// merge, so there is nothing to decide. R22 round 36 (rooms): the test is `!roomName`
+	// — "the room they are in has no name" — which is what `!room` meant when this table
+	// was written in names. Reading the ROOM here would never fire, since the unnamed room
+	// is a non-empty token by construction.
+	if (!roomName && !otherCount) {
 		shareVerdicts.set(room, 'shared'); // we shared into the space
 		replyTo(kind, sender);
 		askDeferredState(sender); // R22 round 33 — no decision is coming
@@ -1945,18 +2019,21 @@ export function deferUntilShareChoice(kind, sender, opts = {}) {
 	// withhold, row 3's three options, the arriving branch, both verdict short-circuits and
 	// the HOST-side row 5 (`fromHost` false) all read exactly as they did. They are the
 	// backstop against a peer on an older build, and against this branch being bypassed.
-	if (connectDecisionApplies(fromHost, here)) {
+	// R22 round 36 (rooms): the NAME, not the room. `connectDecisionApplies` asks whether
+	// OUR scene has ever been saved — an unnamed joiner that resolves into the host's named
+	// room has still saved nothing, and reading the room here would silently retire the
+	// whole connect decision.
+	if (connectDecisionApplies(fromHost, hereName)) {
 		openGate('Dismissed before joining');
-		void askConnectDecision(sender, room, theirHash, count);
+		// the NAME again: this question's answers TRAVEL (`joinRoom`), and its copy names
+		// the scene it would put your work into — the unnamed room is neither
+		void askConnectDecision(sender, roomName, theirHash, count);
 		return;
 	}
 
-	// ---- ROW 4: we are unnamed, they are not ------------------------------------
-	if (!here && room) {
-		openGate('Stashed before joining');
-		ask(unnamed + 'Share your ' + objects + ' into "' + room + '", or stash them to a session first?' + held, [bring, stash]);
-		return;
-	}
+	// ---- ROW 4 IS GONE (R22 round 36, rooms) — see the table's own note ---------
+	// It sat here, and every state that reached it now reaches row 3 or row 2 above,
+	// because an unnamed peer beside a named one is a SPLIT and the gate can hold it.
 
 	// ---- ROW 5: one room — exactly what this gate always did --------------------
 	if (!otherCount) {
@@ -2215,15 +2292,50 @@ function disconnectFromDecision(sender) {
 async function joinRoom(room, hash, after) {
 	try {
 		const m = await import('./levels');
-		m.adoptSceneIdentity(room, hash);
+		// R22 round 36 (rooms): an EMPTY room here is the session's unnamed world, which has
+		// no identity to adopt — becoming unnamed IS how you stand in it, and `currentLevel`
+		// publishes the row that says so. (Every caller passes a NAME or this.)
+		if (room) m.adoptSceneIdentity(room, hash);
+		else m.currentLevel.set(null);
 	} catch {}
 	try {
 		after();
 	} catch {}
 	try {
 		const p = await import('./peerScenes');
-		p.resyncRoomPeers();
+		// `resyncRoomPeers` needs a name (it asks the peers standing in ours), so the unnamed
+		// room asks for itself: everybody this gate does not read as elsewhere.
+		if (room) p.resyncRoomPeers();
+		else askUnnamedRoomForState(p);
 	} catch {}
+}
+
+/**
+ * R22 round 36 (rooms) — THE ARRIVAL ASK FOR A ROOM WITH NO NAME.
+ *
+ * `rejoinSession`'s ending, minus the wipe: Bring keeps the work it is bringing. Deliberately
+ * WITHOUT `arriving` — that flag claims to be holding the room's own scene file, and what we
+ * hold is our own world, which is exactly the thing the far side may still want to be asked
+ * about.
+ * @param {any} p the already-imported peerScenes module @returns {number} peers asked
+ */
+function askUnnamedRoomForState(p) {
+	/** @type {any} */
+	const peer = get(peers);
+	const map = get(p.peerScenes);
+	const host = get(sessionHost);
+	let asked = 0;
+	for (const [id, conn] of Object.entries(peer?.connections ?? {})) {
+		/** @type {any} */
+		const c = conn;
+		if (!c?.open) continue;
+		if (p.elsewhereThan(map, '', id, host)) continue;
+		try {
+			peer.requestFullState?.(c);
+			asked++;
+		} catch {}
+	}
+	return asked;
 }
 
 /** Proposer side: collect answers, apply when everyone accepted @param {any} data */

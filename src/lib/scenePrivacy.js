@@ -255,7 +255,18 @@ export function sessionRoomTarget() {
 }
 
 /**
- * REJOIN THE SESSION — leave the private scene and stand where everybody else is.
+ * REJOIN THE SESSION — leave where you are and stand where everybody else is.
+ *
+ * R22 ROUND 36 (rooms) GENERALISED IT beyond privacy. Round 35 wrote this as the way out
+ * of a private scene and guarded it with `amPrivate()`, because a NAMED peer had nowhere
+ * to be sent: the session's unnamed world gated nothing, so "going back to it" was not a
+ * move the app could express. It is a ROOM now — the host's — so the same body is the way
+ * back for anybody standing in a named room of their own, and the peers popover's new
+ * **Join** button is its caller (Go to needs a name and a hash; the unnamed world has
+ * neither, which is exactly why it needs a button of its own).
+ *
+ * WHO MAY PRESS IT: a peer editing privately, or a peer standing in a NAMED scene.
+ * Somebody already in the unnamed world is already there, and answers false.
  *
  * Two endings, because the session has two shapes. A NAMED room is travelled to through the
  * ordinary path, which clears privacy by construction (it writes a fresh `currentLevel`),
@@ -272,11 +283,20 @@ export function sessionRoomTarget() {
  *   · the ASK last, and deliberately WITHOUT `arriving`: that flag is a claim to be holding
  *     the room's own scene file, and we are holding nothing at all. Holding nothing is the
  *     `deferUntilShareChoice` row that replies at once with no question for anybody.
+ * @param {{world?: boolean}} [opts] `world: true` means the UNNAMED world SPECIFICALLY,
+ *   skipping `sessionRoomTarget`'s search for a named room to send us to. The popover's
+ *   Join passes it because it is pressed ON a peer we can see standing in that world —
+ *   the button names a place, and it must go there rather than to whichever named room
+ *   happens to hold the most people.
  * @returns {Promise<boolean>}
  */
-export async function rejoinSession() {
-	if (!amPrivate()) return false;
-	const target = sessionRoomTarget();
+export async function rejoinSession(opts = {}) {
+	const privateHere = amPrivate();
+	const namedHere = !!String(get(currentLevel)?.name ?? '').trim();
+	// unnamed and not private: already in the session's world, so there is nothing to do
+	// and saying so is better than a toast claiming a journey.
+	if (!privateHere && !namedHere) return false;
+	const target = opts.world === true ? null : sessionRoomTarget();
 	// the unsaved-changes guard, exactly as any other scene replace — a private scene's
 	// edits are the least-backed-up work in the app
 	if (!(await guardSceneReplace(target?.scene || 'the session'))) return false;
@@ -311,7 +331,9 @@ export async function rejoinSession() {
 		if (!c?.open) continue;
 		// only-on-evidence, one last time: skip anybody demonstrably elsewhere (a named room
 		// of their own, or private) — everyone else is in the world we are rejoining
-		if (elsewhereThan(map, '', id)) continue;
+		// R22 round 36 (rooms): resolved through the host, so "everyone else in the world we
+		// are rejoining" means the host's room rather than every peer whose row is quiet.
+		if (elsewhereThan(map, '', id, get(sessionHost))) continue;
 		try {
 			peer.requestFullState?.(c);
 			asked++;
@@ -323,4 +345,16 @@ export async function rejoinSession() {
 			: 'Back in the session.'
 	);
 	return true;
+}
+
+/**
+ * R22 round 36 (rooms) — THE POPOVER'S NAME FOR THE SAME MOVE.
+ *
+ * A peer in a NAMED room pressing **Join** on somebody standing in the session's world is
+ * not "rejoining" anything (it may never have left), so the button and this alias say what
+ * it does. One body, two names, no second implementation.
+ * @returns {Promise<boolean>}
+ */
+export function joinSessionWorld() {
+	return rejoinSession({ world: true });
 }

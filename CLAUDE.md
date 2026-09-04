@@ -340,6 +340,42 @@ loadable play content. Everything a user does must be visible to connected peers
   `manifest.deleted` like every row (a local file's NAME reaches peers on deletion, since
   round 7 — a private log would strand this machine's bin when a peer's document wins), and
   hidden old versions of a deleted-for-everyone scene stay on the shelf indefinitely.
+- **R22 ROUND 36 (ROOMS) — THE UNNAMED WORLD IS A ROOM WITH AN IDENTITY** (`peerScenes.js`
+  `roomOf`/`roomCtx`/`elsewhereThan(map, mine, peerId, host)`; map + as-built: cloud
+  `plans-core/pending/22-scene-rooms-map.md`). THE FINDING: the room gate was only-on-evidence
+  — two rows were elsewhere only when BOTH named a scene and the names differed, so an EMPTY
+  scene gated nothing. Right for a joiner adopting the host's content over the handshake
+  without learning its name; wrong the moment a session holds a named room AND an unnamed one,
+  which is exactly what Share scene produces: the sharer's row becomes `{scene:'Secret'}`,
+  the host who never saved still says `''`, both gates read them as one room, and every edit
+  crossed (measured: 1 -> 3 objects on BOTH sides with nobody pressing Go to). The
+  share-or-stash table's row 4 said it out loud ("an unnamed scene cannot be ISOLATED").
+  · THE RULE, four lines: P -> `PRIVATE_SCENE` (equals nothing) · N(S) -> S · U -> THE HOST'S
+  ROOM (the host's named scene when known, our own when we host, else `''`) · absent -> `null`,
+  no evidence, allow. `host` is `$sessionHost` (null = we host); OMITTING it keeps round 35's
+  semantics for a caller written before rooms (none left). Two sentinels, asserted different:
+  `UNNAMED_ROOM = '(the session)'` for the popover (which branches to a **Join** button —
+  `joinSessionWorld()` = `rejoinSession({world: true})`, generalised beyond privacy) and
+  `UNNAMED_ROOM_TOKEN = ' unnamed'` for the share-or-stash table, which is written in names and
+  reads `''` as no evidence in three places; `sessions.js` keeps its own copy (cycle) and
+  `asRoom` trims everything BUT the token — the plain `.trim()` minted a scene literally named
+  "unnamed" that a joiner adopted (connect-decision went 4 red). Row 1's adoption and
+  `askConnectDecision` take the NAME, never the label. `roomsOfSession` and the popover's
+  untitled bucket resolve with the same exported `roomCtx`, so they agree by construction.
+  · THE ORDER OF A SAVE IS LOAD-BEARING NOW: `saveSceneAsLevel` announces `sceneadopt`
+  BEFORE `currentLevel.set` publishes the new row — under the resolver a saver whose row has
+  already moved is elsewhere from every room-mate, so the send gate withheld the name and a
+  receiver would have dropped it (`scene-adopt` went 19/8 red on the first pass). Receivers
+  see manifest -> sceneadopt -> atscene on one ordered conn — and `applyRemoteSceneAdopt`'s
+  own late re-check (two dynamic imports after the dispatcher's synchronous gate, by which
+  time that atscene has landed) accepts a sender standing in the scene it just announced.
+  · WHAT DID NOT FOLLOW from the map: an unnamed joiner with work resolves INTO the host's
+  room, so it is not a split and still takes the connect decision (`scene-isolation` §2);
+  row 4 folds into rows 2/3 only for the unnamed-HOST case.
+  · Suites: `scene-rooms-truth` (one page, the resolver's whole truth table, 83) and
+  `scene-rooms-matrix` (two peers, transitions T3/T5/T8/T9/T10/T11/T14 with the invariants
+  measured after each, 42); `private-scene` §4's "an unnamed peer is nobody's elsewhere"
+  was row 4's reading and asserts one Go to now.
 - `src/lib/filePreview.js` + `components/editors/FilePreviewWindow.svelte` +
   `components/editors/AudioPlayer.svelte` (R22 round 11) — THE PREVIEW WINDOW STOPS BEING
   AN IMAGE VIEWER. Image, audio, 3D or a folder, with arrows that walk the folder the
@@ -4515,7 +4551,10 @@ override for e2e — never share 5173 (the user's main-checkout server).
   this device"; the share-ask box → "Apply to all my files, now and from now on"; the
   private-scene Users row shows Request access alone. Two latent bugs fixed on the way
   (patch-after-hide was a no-op; `deleteSharedItem` never marked its own hash applied).
-  Same-day follow-ups: "Plain list without folders" as a checked toggle beside "Show
+  ROOMS, same lane (the architecture entry above): the unnamed world resolves to the host's
+  room, so Share scene no longer leaks edits between the sharer and an unnamed host; Join
+  button; two new suites (83 + 42); scene-isolation 72, scene-rooms 58, private-scene 55,
+  connect-decision 46, scene-open-guard 42 green. Same-day follow-ups: "Plain list without folders" as a checked toggle beside "Show
   cleaned-up files" (one View section, no Folder-structure entry); DRAG OUT OF DELETED onto a
   Library folder card / tree row / root restores THERE (`restoreDroppedFromBin` claims the
   drop first in `dropInto`; `binDragging` keeps the Deleted row from arming; ghosts are not

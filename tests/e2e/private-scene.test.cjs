@@ -528,14 +528,18 @@ h.run(async () => {
 		(all) => all.includes(SCENE),
 		'…and the popup names the scene it was told about'
 	);
-	// NO `.peer-goto` here, and that is only-on-evidence rather than a gap: A is itself in
-	// the UNNAMED world, and an unnamed side is never evidence of a split, so the popup
-	// offers Watch exactly as it did before B ever went private. The route A has been given
-	// is the card above, which knows something the rows do not — that this scene was shared
-	// WITH THEM.
+	// R22 ROUND 36 (rooms) FLIPPED THIS CHECK, and the old label is worth keeping to say
+	// why: it read "NO `.peer-goto` here, and that is only-on-evidence rather than a gap: A
+	// is itself in the UNNAMED world, and an unnamed side is never evidence of a split." That
+	// sentence WAS the bug — with A unnamed and B standing in a named scene, the two gates
+	// read one room and every edit crossed the moment B shared (measured: both worlds went
+	// from 1 object to 3). The session's unnamed world is a ROOM now, with the host's
+	// identity, so A is demonstrably elsewhere from B and the row offers the thing that
+	// works. The grant card above is still the better route — it knows this scene was shared
+	// WITH THEM — but the row is no longer silent about the split.
 	h.check(
-		(await A.page.evaluate(() => document.querySelectorAll('#peers-popover .peer-goto').length)) === 0,
-		'…while the ROW keeps its ordinary offer, because an unnamed peer is nobody’s elsewhere'
+		(await A.page.evaluate(() => document.querySelectorAll('#peers-popover .peer-goto').length)) === 1,
+		`…and the ROW offers Go to as well now, because an unnamed host IS somebody's elsewhere (${await A.page.evaluate(() => document.querySelectorAll('#peers-popover .peer-goto').length)} button)`
 	);
 	await closePopover(A);
 

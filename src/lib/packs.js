@@ -1,4 +1,5 @@
 import { writable, get } from 'svelte/store';
+import { contentBase } from './contentBase';
 import { addItemFromBytes, createFolder, explorerFolders } from './explorer';
 
 // N6 (roadmap 7 / ship-qa D1): object packs. Two sources, one normalized model:
@@ -16,7 +17,7 @@ import { addItemFromBytes, createFolder, explorerFolders } from './explorer';
 /** Off-bundle base for remote packs (RP): the tagged jsDelivr mirror of
  * github.com/theprototype-app/packs. Bump the tag when pack content changes —
  * jsDelivr caches tags aggressively, so released builds stay stable. */
-export const PACKS_BASE = 'https://cdn.jsdelivr.net/gh/theprototype-app/packs@v1';
+export const PACKS_BASE = contentBase(import.meta.env.VITE_PACKS_BASE, 'https://cdn.jsdelivr.net/gh/theprototype-app/packs@v1');
 
 const INSTALLED_KEY = 'installedPacks';
 

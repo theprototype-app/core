@@ -65,7 +65,9 @@ export function clampThrow(linvel, angvel) {
  * Estimate the velocity a held body should be released with, from a short ring
  * of recent poses. Returns clamped values — every caller wants them clamped and
  * a second opinion about the ceiling is exactly the bug this replaced.
- * @param {{t: number, pos: THREE.Vector3, quat: THREE.Quaternion}[]} samples oldest first
+ * @param {{t: number, pos: THREE.Vector3, quat?: THREE.Quaternion | null}[]} samples oldest first
+ *   (24-A A1: `quat` is optional — a knock probe ring may carry positions only, and the
+ *   body below already skips the angular half when either end lacks one)
  * @param {{minDt?: number}} [opts]
  * @returns {{linvel: THREE.Vector3, angvel: THREE.Vector3}}
  */

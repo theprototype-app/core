@@ -29,6 +29,15 @@ export const DEFAULT_SCENE_PHYSICS = Object.freeze({
 	ccd: false,
 	timeScale: 1,
 	play: { interaction: 'grab', grounded: false, simOnPlay: false },
+	// 24-A A1: THE KNOCK — a hand or a walking player hitting a dynamic body. An
+	// ADDITIVE nested block rather than a fourth `play.interaction`, because grab and
+	// knock coexist (grip grabs, an open controller knocks). `enabled: false` by default
+	// is the whole compatibility story: Towers and every saved scene behave
+	// byte-identically, which knock-physics asserts as its counterfactual. `maxSpeed`
+	// clamps BELOW throwVelocity's MAX_LINVEL (20) so a game can keep a ball hittable;
+	// `predict` is the non-initiator's local prediction (riskiest part of A1, so it is
+	// one switch away from off).
+	knock: { enabled: false, gain: 1, maxSpeed: 12, minSpeed: 0.3, radius: 0.12, spin: 0.5, predict: true },
 	changedAt: 0
 });
 
@@ -87,6 +96,7 @@ export function normalizeScenePhysics(raw) {
 	const materialRaw = source.material && typeof source.material === 'object' ? source.material : {};
 	const dampingRaw = source.damping && typeof source.damping === 'object' ? source.damping : {};
 	const playRaw = source.play && typeof source.play === 'object' ? source.play : {};
+	const knockRaw = source.knock && typeof source.knock === 'object' ? source.knock : {};
 	/** @type {any} */
 	const state = {
 		gravity: num(source.gravity, -20, 5, d.gravity),
@@ -135,6 +145,21 @@ export function normalizeScenePhysics(raw) {
 			},
 			['interaction', 'grounded', 'simOnPlay']
 		),
+		// A1: the 20 ceiling is throwVelocity's MAX_LINVEL, restated rather than imported —
+		// this module is store-only and the response clamps through clampThrow anyway
+		knock: withUnknown(
+			knockRaw,
+			{
+				enabled: bool(knockRaw.enabled, d.knock.enabled),
+				gain: num(knockRaw.gain, 0, 5, d.knock.gain),
+				maxSpeed: num(knockRaw.maxSpeed, 0.5, 20, d.knock.maxSpeed),
+				minSpeed: num(knockRaw.minSpeed, 0, 5, d.knock.minSpeed),
+				radius: num(knockRaw.radius, 0.02, 1, d.knock.radius),
+				spin: num(knockRaw.spin, 0, 2, d.knock.spin),
+				predict: bool(knockRaw.predict, d.knock.predict)
+			},
+			['enabled', 'gain', 'maxSpeed', 'minSpeed', 'radius', 'spin', 'predict']
+		),
 		changedAt: typeof source.changedAt === 'number' ? source.changedAt : 0
 	};
 	return withUnknown(source, state, [
@@ -146,6 +171,7 @@ export function normalizeScenePhysics(raw) {
 		'ccd',
 		'timeScale',
 		'play',
+		'knock',
 		'changedAt',
 		'type' // the wire envelope's own field, never state
 	]);
@@ -164,6 +190,8 @@ export const scenePhysicsGround = derived(scenePhysicsState_, (s) => s.ground);
 export const scenePhysicsBounds = derived(scenePhysicsState_, (s) => s.bounds);
 /** play-mode block ({interaction, grounded, simOnPlay}) */
 export const scenePlay = derived(scenePhysicsState_, (s) => s.play);
+/** A1: the knock block ({enabled, gain, maxSpeed, minSpeed, radius, spin, predict}) */
+export const sceneKnock = derived(scenePhysicsState_, (s) => s.knock);
 /** solver defaults ({material, damping, ccd, timeScale}) */
 export const scenePhysicsDefaults = derived(scenePhysicsState_, (s) => ({
 	material: s.material,
@@ -172,7 +200,7 @@ export const scenePhysicsDefaults = derived(scenePhysicsState_, (s) => ({
 	timeScale: s.timeScale
 }));
 
-const NESTED = ['ground', 'bounds', 'material', 'damping', 'play'];
+const NESTED = ['ground', 'bounds', 'material', 'damping', 'play', 'knock'];
 
 /**
  * Apply a change locally + replicate (latest-wins). Nested blocks MERGE, so a

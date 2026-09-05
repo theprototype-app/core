@@ -422,7 +422,15 @@ async function finish(browser) {
 // the sibling theprototype.app-modules checkout's packed zip. Returns false when
 // that checkout has no zips, so a suite can SKIP instead of failing on a fresh
 // clone (run "npm run pack -- --all" there to build them).
-const MODULES_REPO = require('path').resolve(__dirname, '../../../theprototype.app-modules') + '/';
+// B8: the sibling modules checkout is `theprototype.app-modules` on some machines and
+// plain `modules` on others, and a LANE worktree sits beside both — probe, first hit
+// wins, and the historical name stays the fallback so the skip message names a path.
+const MODULES_REPO =
+	([
+		require('path').resolve(__dirname, '../../../theprototype.app-modules'),
+		require('path').resolve(__dirname, '../../../modules')
+	].find((p) => require('fs').existsSync(p)) ??
+		require('path').resolve(__dirname, '../../../theprototype.app-modules')) + '/';
 function moduleZipPath(id) {
 	return MODULES_REPO + id + '.zip';
 }

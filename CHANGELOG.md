@@ -5,6 +5,61 @@
      per release, newest first. HTML comments like this one are stripped before
      rendering, so maintainer notes stay out of the user-facing window. -->
 
+## 1.8.0 — One library, many rooms 🗂️
+
+The Explorer became shared: what you share, everyone in the session has, in the same
+folders, with a recycle bin that works across peers. And the session became a set of
+rooms that actually hold — a private scene stays private, an unnamed world is a place of
+its own, and nothing crosses between rooms until somebody chooses to go.
+
+### 🗂️ A library the whole session shares
+
+- 📤 **Share a file or a folder** and every peer gets it, in the same place. Sharing a
+  folder shares what you drop into it later; a per-file "not this one" is honoured.
+- ⬇️ **Downloads happen by themselves** (switch it off for a metered connection), with a
+  transfer log that shows per-file and overall progress.
+- 🗑️ **Delete for everyone, with a recycle bin.** Deleting a shared file or folder moves
+  every peer's copy to Deleted instead of destroying it. Deleted keeps the folder
+  structure, so a folder comes back as a folder — into the place it came from, on every
+  peer — and you can drag a file out of Deleted onto a Library folder to restore it there.
+- 🧹 **"Clear the log" clears only the record** of files whose bytes are already gone;
+  "Empty Deleted" remains the one that frees the disk.
+- ❓ **Ask before sharing.** Add a file mid-session and a strip below the Library asks
+  whether to share it, with a one-box rule for everything you add from now on.
+
+### 📋 The Explorer as a file browser
+
+- 📑 **A list view** with sortable, resizable, reorderable columns, remembered per view.
+- 🖼️ **A real preview window**: images, sounds with a player, 3D models with a turntable
+  and an animation transport, folders you can page through — several windows at once
+  if you like, and a window you can fade and click through to model against.
+- 💾 **Save as…** a prefab in its own format, and prefabs that are files.
+- 🗄️ **Mount a saved project** beside your Library and browse it, edit it, save it back.
+  A storage panel shows what is using the disk and lets you reclaim it.
+- 📦 Sessions download as `.tpscene`, projects as `.tp`, and both import back.
+
+### 🚪 Rooms that hold
+
+- 🔒 **Edit a scene privately.** Opening a file the session has never seen asks: share
+  it, or keep it on this machine. A private scene's name never leaves, peers see only
+  "in a private scene", and they can ask you for it.
+- 🧭 **The unnamed world is a room too.** Sharing a private scene no longer spills edits
+  into a host who never saved anything, and a Join button takes you back to the
+  session's world.
+- 📛 **Saving names the room** — everyone standing in an untitled world takes the name.
+- 🤝 **Joining is a decision, not a merge.** Connect with unsaved work and you choose:
+  save it and join, dismiss it, or don't connect.
+- 🔀 Diverged scene versions are merged by history and the winner is named.
+
+### 🎛️ Controls, docks and phones
+
+- 🧰 **The bottom dock was rebuilt** — a dock that rides above the viewport, one toggle per
+  panel, the Explorer as a tab, a play-mode menu, a roster pill, and shortcuts you can
+  rebind.
+- 📱 **Colocation and room-scale AR**: several headsets share one physical room.
+- ✨ A round of review fixes: dock tab order, mounted scenes opening into the viewport,
+  toast outlines, menu icons, the Library that could not be squeezed out of the tree.
+
 ## 1.7.0 — Make a game, keep a project 🎮
 
 The biggest release so far. You can build and play an actual game now — a HUD you

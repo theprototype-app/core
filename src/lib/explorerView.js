@@ -31,7 +31,11 @@ import { writable, get } from 'svelte/store';
  * @type {ExplorerColumn[]}
  */
 export const LIBRARY_COLUMNS = [
-	{ key: 'name', label: 'Name', always: true },
+	// R22 round 11: NAME carries a width like every other column now. It used to be the
+	// only one without, so `table-layout: fixed` handed it whatever was left — which is
+	// exactly the behaviour a resize grip cannot coexist with (drag another column and
+	// this one silently absorbs the difference). The remainder is a SPACER cell's job.
+	{ key: 'name', label: 'Name', always: true, width: '220px' },
 	{ key: 'kind', label: 'Type', width: '72px' },
 	{ key: 'size', label: 'Size', numeric: true, width: '76px' },
 	{ key: 'added', label: 'Added', numeric: true, width: '104px' },
@@ -45,8 +49,13 @@ export const LIBRARY_COLUMNS = [
  * @type {ExplorerColumn[]}
  */
 export const DELETED_COLUMNS = [
-	{ key: 'name', label: 'Name', always: true },
+	{ key: 'name', label: 'Name', always: true, width: '220px' },
 	{ key: 'kind', label: 'Type', width: '72px' },
+	// R22 round 36: WHERE IT WAS. The bin is a tree now, so a row's location is the one
+	// fact the flat "Plain list" layout would otherwise throw away — and it is also the
+	// only column that can still say something for a row whose folder is long gone (the
+	// row carries `path` for exactly that case).
+	{ key: 'location', label: 'Location', width: '160px' },
 	{ key: 'deletedBy', label: 'Deleted by', width: '116px' },
 	{ key: 'deletedAt', label: 'Deleted at', numeric: true, width: '124px' }
 ];
@@ -100,19 +109,75 @@ explorerViewMode.subscribe((v) => {
 	} catch {}
 });
 
+const SEEN_KEY = 'explorer:columnsSeen';
+
+/**
+ * The columns that EXISTED when the visible set was last written.
+ *
+ * R22 round 36 — THE APPEND-NOT-HIDE RULE WAS ONLY HALF TRUE, and this is the missing
+ * half. `explorerColumns` stores the VISIBLE keys, which makes "added later" and "hidden
+ * on purpose" the same observation: both are simply absent from the stored array. So the
+ * doc below promised a new column would show by default and every existing install would
+ * in fact have suppressed it — measured on `location`, which no saved set can mention.
+ *
+ * Recording what was KNOWN at save time separates the two, once and for every future
+ * column: absent from the visible set but present in the seen set means the user hid it,
+ * absent from BOTH means it did not exist yet, so it is appended.
+ * @type {Record<string, string[]>}
+ */
+const PRE_SEEN = {
+	// what shipped before the seen set existed. An install upgrading from before it has
+	// no record at all, and reading that as "nothing was ever seen" would re-show every
+	// column the user had deliberately hidden.
+	library: ['name', 'kind', 'size', 'added', 'owner'],
+	deleted: ['name', 'kind', 'deletedBy', 'deletedAt']
+};
+
+/** Append every column this build has that the stored set was never offered.
+ * @param {Record<string, string[]>} sets @returns {Record<string, string[]>} */
+function appendNewColumns(sets) {
+	const seen = load(SEEN_KEY, PRE_SEEN);
+	/** @type {Record<string, string[]>} */
+	const next = { ...sets };
+	for (const view of ['library', 'deleted']) {
+		const stored = next[view];
+		if (!Array.isArray(stored)) continue;
+		const known = new Set(seen[view] ?? PRE_SEEN[view] ?? []);
+		const fresh = columnsFor(view)
+			.map((c) => c.key)
+			.filter((k) => !known.has(k) && !stored.includes(k));
+		if (!fresh.length) continue;
+		// keep the stored array canonical (declaration order), the shape `toggleColumn`
+		// maintains — the drawn order is `orderColumns`' business, not this one's
+		const wanted = new Set([...stored, ...fresh]);
+		next[view] = columnsFor(view)
+			.map((c) => c.key)
+			.filter((k) => wanted.has(k));
+	}
+	return next;
+}
+
 /**
  * Which columns are visible, per view. Stored as the VISIBLE keys rather than the hidden
  * ones so a column added in a later release shows by default instead of being silently
- * suppressed by every existing install's saved set.
+ * suppressed by every existing install's saved set — see `appendNewColumns`, which is
+ * what actually makes that sentence true.
  * @type {import('svelte/store').Writable<Record<string, string[]>>}
  */
 export const explorerColumns = writable(
-	load(COLS_KEY, {
-		library: LIBRARY_COLUMNS.map((c) => c.key),
-		deleted: DELETED_COLUMNS.map((c) => c.key)
-	})
+	appendNewColumns(
+		load(COLS_KEY, {
+			library: LIBRARY_COLUMNS.map((c) => c.key),
+			deleted: DELETED_COLUMNS.map((c) => c.key)
+		})
+	)
 );
-explorerColumns.subscribe((v) => save(COLS_KEY, v));
+explorerColumns.subscribe((v) => {
+	save(COLS_KEY, v);
+	// the seen set is written BESIDE the visible one and always holds this build's whole
+	// canonical list, so the next release's new column is the only thing missing from it
+	save(SEEN_KEY, { library: LIBRARY_COLUMNS.map((c) => c.key), deleted: DELETED_COLUMNS.map((c) => c.key) });
+});
 
 /**
  * The sort, per view. `dir` is 1 ascending / -1 descending. The bin defaults to newest
@@ -147,6 +212,181 @@ explorerDeletedGroup.subscribe((v) => {
 	} catch {}
 });
 
+const BIN_LAYOUT_KEY = 'explorer:binLayout';
+const BIN_SPENT_KEY = 'explorer:binShowSpent';
+
+/**
+ * R22 round 36 — HOW THE BIN IS DRAWN. `tree` shows every row under the folder it was
+ * deleted from (the structure the log now records); `plain` is the flat list the bin has
+ * always been, kept because "what did I delete lately" is a real question that a tree
+ * answers worse than a list does.
+ *
+ * A VIEW FLAG rather than a place: `activeFolder` walks INTO the tree (`deleted:<id>`),
+ * so layout has to be orthogonal to where you are standing or walking into a node would
+ * have to mean something different in each mode.
+ * @type {import('svelte/store').Writable<'tree'|'plain'>}
+ */
+export const explorerBinLayout = writable(
+	/** @type {'tree'|'plain'} */ (
+		typeof localStorage !== 'undefined' && localStorage.getItem(BIN_LAYOUT_KEY) === 'plain'
+			? 'plain'
+			: 'tree'
+	)
+);
+explorerBinLayout.subscribe((v) => {
+	if (typeof localStorage === 'undefined') return;
+	try {
+		localStorage.setItem(BIN_LAYOUT_KEY, v);
+	} catch {}
+});
+
+/**
+ * Show the rows whose BYTES are gone from this device ("cleaned up") beside the ones that
+ * can still be put back. OFF by default: the common reason to open Deleted is to undo
+ * something, and a row that cannot be restored from here is noise in front of that.
+ *
+ * Round 13 made the two halves separate PLACES (a Bin/Log tab strip); this makes them one
+ * place and a toggle, which is what the user asked for and what stops the strip costing a
+ * row of grid height. @type {import('svelte/store').Writable<boolean>}
+ */
+export const explorerBinShowSpent = writable(
+	typeof localStorage !== 'undefined' && localStorage.getItem(BIN_SPENT_KEY) === 'true'
+);
+explorerBinShowSpent.subscribe((v) => {
+	if (typeof localStorage === 'undefined') return;
+	try {
+		localStorage.setItem(BIN_SPENT_KEY, String(v));
+	} catch {}
+});
+
+const WIDTH_KEY = 'explorer:columnWidths';
+const ORDER_KEY = 'explorer:columnOrder';
+
+/** the narrowest a column may be dragged, and the widest. A column under ~48px shows no
+ * text at all, and one over 600px is a scrollbar with a header on it. */
+export const MIN_COLUMN_W = 48;
+export const MAX_COLUMN_W = 600;
+
+/**
+ * R22 round 11 (user): "should allow ajust size of columns and drag order".
+ *
+ * PER VIEW, like the visible set and the sort, and for the same reason the leaf's header
+ * gives: the bin and the library do not share a column set, so they cannot share widths
+ * keyed by column name either — "Deleted at" is not "Added" and a width dragged on one is
+ * meaningless on the other.
+ *
+ * Stored as `{view: {key: px}}` and SPARSE: a column with no entry uses the width it
+ * declares above, so a column whose default changes in a later release moves for everyone
+ * who never dragged it.
+ * @type {import('svelte/store').Writable<Record<string, Record<string, number>>>}
+ */
+export const explorerColumnWidths = writable(load(WIDTH_KEY, { library: {}, deleted: {} }));
+explorerColumnWidths.subscribe((v) => save(WIDTH_KEY, v));
+
+/**
+ * The user's column ORDER, per view, as a key array.
+ *
+ * A key array rather than an index map, and APPEND-not-hide for anything it does not
+ * mention — the same rule `explorerColumns` states for the visible set, and it is the rule
+ * that decides what happens to a column added in a later release: it appears, at the end,
+ * rather than being silently suppressed by every saved pref in existence.
+ * @type {import('svelte/store').Writable<Record<string, string[]>>}
+ */
+export const explorerColumnOrder = writable(load(ORDER_KEY, { library: [], deleted: [] }));
+explorerColumnOrder.subscribe((v) => save(ORDER_KEY, v));
+
+/**
+ * Apply a stored order to a canonical column list. PURE.
+ *
+ * NAME IS PINNED FIRST and cannot be dragged away from the left edge. That is a decision,
+ * not a limitation: the name cell is also the row's drag handle, its inline-rename target
+ * and where its status dot lives, so it is the row's identity rather than one of its
+ * facts — which is why Finder pins it too. Every other column is free.
+ *
+ * @param {ExplorerColumn[]} cols the canonical list, in declaration order
+ * @param {string[]} [order] the stored key order; anything missing keeps its canonical
+ *   place relative to the columns that ARE named
+ * @returns {ExplorerColumn[]} a new array
+ */
+export function orderColumns(cols, order) {
+	const list = cols ?? [];
+	const wanted = (order ?? []).filter((k) => list.some((c) => c.key === k));
+	if (!wanted.length) return [...list];
+	const named = wanted.map((k) => list.find((c) => c.key === k)).filter(Boolean);
+	// unknown to the pref (a column added since it was saved) keeps its canonical index,
+	// which is what "appended rather than hidden" means when the addition is in the middle
+	const rest = list.filter((c) => !wanted.includes(c.key));
+	/** @type {any[]} */
+	const out = [];
+	let n = 0;
+	for (const col of list) {
+		if (rest.includes(col)) out.push(col);
+		else out.push(named[n++]);
+	}
+	// ...then the pin. A stored order from a build that allowed it, or a hand-edited
+	// localStorage, must not be able to strand the identity column in the middle.
+	const nameAt = out.findIndex((c) => c.always);
+	if (nameAt > 0) out.unshift(out.splice(nameAt, 1)[0]);
+	return out;
+}
+
+/**
+ * How wide one column is drawn, in px. Falls back to its declared width, then to a
+ * readable default for a column that declares none.
+ * @param {ExplorerColumn} col
+ * @param {Record<string, number>} [stored] this view's width map
+ * @returns {number}
+ */
+export function widthOf(col, stored) {
+	const px = stored?.[col?.key ?? ''];
+	if (Number.isFinite(px)) return clampColumnWidth(/** @type {number} */ (px));
+	const declared = parseInt(String(col?.width ?? ''), 10);
+	return Number.isFinite(declared) ? declared : 120;
+}
+
+/** @param {number} px */
+export function clampColumnWidth(px) {
+	return Math.max(MIN_COLUMN_W, Math.min(MAX_COLUMN_W, Math.round(px)));
+}
+
+/** Store one width. @param {string} view @param {string} key @param {number} px */
+export function setColumnWidth(view, key, px) {
+	explorerColumnWidths.update((all) => ({
+		...all,
+		[view]: { ...(all[view] ?? {}), [key]: clampColumnWidth(px) }
+	}));
+}
+
+/** Forget one width, so the column goes back to its declared default (double-click on a
+ * grip — this app's established meaning for that gesture). @param {string} view @param {string} key */
+export function resetColumnWidth(view, key) {
+	explorerColumnWidths.update((all) => {
+		const next = { ...(all[view] ?? {}) };
+		delete next[key];
+		return { ...all, [view]: next };
+	});
+}
+
+/**
+ * Move `key` so it sits at `index` in the CURRENT visible order. Refuses to move NAME and
+ * refuses to put anything before it (see orderColumns).
+ * @param {string} view @param {string[]} current the keys as they are drawn right now
+ * @param {string} key @param {number} index
+ */
+export function moveColumn(view, current, key, index) {
+	const list = (current ?? []).filter(Boolean);
+	const from = list.indexOf(key);
+	if (from < 0) return;
+	const pinned = list[0] === 'name' ? 1 : 0;
+	if (from < pinned) return;
+	const to = Math.max(pinned, Math.min(list.length - 1, index));
+	if (to === from) return;
+	const next = [...list];
+	next.splice(from, 1);
+	next.splice(to, 0, key);
+	explorerColumnOrder.update((all) => ({ ...all, [view]: next }));
+}
+
 /**
  * Is this column showing? NAME can never be hidden.
  * @param {string} view @param {string} key
@@ -169,7 +409,10 @@ export function toggleColumn(view, key) {
 	explorerColumns.update((all) => {
 		const current = all[view] ?? columnsFor(view).map((c) => c.key);
 		const next = current.includes(key) ? current.filter((k) => k !== key) : [...current, key];
-		// keep the canonical order, so the header never depends on click history
+		// R22 round 11: this keeps the stored SET canonical, which is now only about
+		// membership — `orderColumns` decides what the header actually shows, so re-showing
+		// a column returns it to wherever the user's order puts it rather than to its
+		// declaration index.
 		const ordered = columnsFor(view)
 			.map((c) => c.key)
 			.filter((k) => next.includes(k));
@@ -208,6 +451,11 @@ export function valueFor(row, key, ctx = {}) {
 			return String(row?.name ?? '').toLowerCase();
 		case 'kind':
 			return String(row?.kind ?? '').toLowerCase();
+		// R22 round 36: the location TEXT the caller already resolved (`buildDeletedTree`'s
+		// `locationOf`), not the raw `folderId` — sorting on a uuid while showing a path is
+		// the same indefensible split the owner column's comment describes.
+		case 'location':
+			return String(row?.location ?? '').toLowerCase();
 		case 'size':
 			return Number(row?.size) || 0;
 		case 'added':

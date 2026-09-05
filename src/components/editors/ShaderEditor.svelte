@@ -45,7 +45,8 @@
 		visibleDockKey,
 		dockMinimized,
 		activateDock,
-		dockModeArm
+		dockModeArm,
+		forgetDockTab
 	} from '$lib/bottomDock';
 	import { bottomDockable } from '$lib/bottomDockDrop';
 	import { dragWindow } from '$lib/dragWindow';
@@ -398,6 +399,7 @@
 		docked = v;
 		localStorage.setItem('shaderDocked', String(v));
 		if (v) activateDock('shader'); // re-docking makes it the visible tab
+		else forgetDockTab('shader'); // an undock gives up its slot, so re-docking is a fresh add at the end of the strip
 	}
 
 	// W5: consume the shared dock-mode arm — the tab strip's right-click menu and its

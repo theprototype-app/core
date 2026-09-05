@@ -16,7 +16,7 @@
 	import { tabbable, resizeGroup, tabGroups } from '$lib/windowTabs';
 	import { clampWinSize, clampResize, anchorOf } from '$lib/windowSize';
 	import { dockable } from '$lib/docking';
-	import { setDockOccupant, dockHeight, visibleDockKey, dockMinimized, activateDock, dockModeArm } from '$lib/bottomDock';
+	import { setDockOccupant, dockHeight, visibleDockKey, dockMinimized, activateDock, dockModeArm, forgetDockTab } from '$lib/bottomDock';
 	import { bottomDockable } from '$lib/bottomDockDrop';
 	import { dockAddItems } from '$lib/dockMenu';
 	import { fly } from 'svelte/transition';
@@ -66,6 +66,7 @@
 		docked = v;
 		localStorage.setItem('flowDocked', String(v));
 		if (v) activateDock('flow'); // re-docking makes it the visible tab
+		else forgetDockTab('flow'); // an undock gives up its slot, so re-docking is a fresh add at the end of the strip
 	}
 
 	// W5: consume the shared dock-mode arm — the tab strip's right-click menu asks
@@ -193,12 +194,19 @@
 			</div>
 		</div>
 	{:else}
+		<!--
+			R22 round 28: a node editor is a canvas with a palette down one side and a toolbar
+			across the top, and none of that survives a 260px box — see `groupFloor` in
+			windowTabs. Declaring `minW`/`minH` on the tab registration is how a member keeps a
+			GROUP from being shrunk past what it can render, the group being one box for all of
+			them.
+		-->
 		<div
 			id="flow-window"
 			class="ui-panel fixed flex flex-col overflow-hidden"
 			use:dragWindow={{ key: 'flowWin', defaultRect: { left: 120, top: 90 } }}
 			use:focusStack={'flow'}
-			use:tabbable={{ key: 'flow', title: 'Node editor', openStore: flowGraphClose, isOpen: (v) => !v, close: () => flowGraphClose.set(true) }}
+			use:tabbable={{ key: 'flow', title: 'Node editor', openStore: flowGraphClose, isOpen: (v) => !v, close: () => flowGraphClose.set(true), minW: 460, minH: 320 }}
 			use:bottomDockable={{ key: 'flow' }}
 			use:dockable={{ key: 'flow' }}
 			style="z-index: var(--z-window)"

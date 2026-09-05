@@ -93,6 +93,9 @@ export function setDockOccupant(key, present, height = 0) {
 		if (entry && entry.present === present && entry.height === height) return state;
 		return { ...state, [key]: { present, height } };
 	});
+	// a view REPORTING ITSELF DOCKED is what "added" means — see `noteDockOrder`. It is
+	// safe to call on every report: a key already in the order is left exactly where it is.
+	if (present) noteDockOrder(key);
 }
 
 /** the Flow-family panels currently open+docked (the Node editor button owns this
@@ -102,18 +105,26 @@ export const flowTabs = derived(dockOccupants, ($o) =>
 );
 
 /**
- * W7 — THE TAB ORDER IS USER DATA. `DOCK_FAMILY` still declares the order the app
- * ships with; this list is what the strip actually sorts by once somebody has dragged
- * a tab or used the tab menu's Move left / Move right. LOCAL and persisted, exactly
- * like `bottomDockActive`: where a tab sits in the strip is a fact about this screen,
- * never about the scene, so it neither replicates nor saves.
+ * W7 — THE TAB ORDER IS USER DATA, and since the follow-up round it is DOCKING ORDER:
+ * a view takes its place in the strip when it is docked, at the END, and keeps it until
+ * it is dragged elsewhere. `DOCK_FAMILY` is only the order the module DECLARES its views
+ * in; it is not what the strip sorts by. Reported as "tabs should add in the order I add
+ * them" — before this the list was seeded with the whole family, so every key was
+ * already placed and adding the Explorer then the Animation tab showed them the other
+ * way round, which reads as the strip ignoring you.
  *
- * The rule that matters is what happens to a key the stored list has never heard of —
- * a view added in a LATER release, reading an order written by an older one. It is
- * neither dropped (the strip would lose a tab) nor pushed to the front (the newest
- * view would barge past an order somebody arranged by hand). `resolveOrder` splices it
- * in after its nearest DOCK_FAMILY predecessor that is already placed, so it lands
- * beside the siblings it was designed to sit with and every hand-made position holds.
+ * LOCAL and persisted, exactly like `bottomDockActive`: where a tab sits in the strip is
+ * a fact about this screen, never about the scene, so it neither replicates nor saves.
+ * Persisted is also what makes the order survive a reload — a panel re-reporting itself
+ * docked at boot is already IN the list, so `noteDockOrder` leaves it alone.
+ *
+ * WHAT LEAVES THE LIST is the other half of the rule, and the two cases are not the same:
+ *   UNDOCK  -> `forgetDockTab`, so re-docking is a fresh add at the end (the convention
+ *              a tab strip has everywhere else).
+ *   CLOSE   -> the slot is KEPT. A close is not a rearrangement, and the app closes
+ *              panels on its own — `hidePanels()` shuts the Node editor whenever Settings
+ *              or the Modules manager opens — so treating it as one would silently walk a
+ *              hand-made arrangement apart every time somebody opened a dialog.
  * @type {import('svelte/store').Writable<string[]>}
  */
 export const dockTabOrder = writable(readTabOrder());
@@ -121,9 +132,16 @@ export const dockTabOrder = writable(readTabOrder());
 function readTabOrder() {
 	try {
 		const raw = JSON.parse(ls?.getItem('dockTabOrder') ?? 'null');
-		return Array.isArray(raw) ? resolveOrder(raw) : [...DOCK_FAMILY];
+		if (!Array.isArray(raw)) return [];
+		const out = resolveOrder(raw);
+		// MIGRATION: the old model wrote the whole shipped family out on the first
+		// subscribe whether anybody had arranged anything or not, so a list that IS the
+		// shipped order carries no information — and keeping it would leave every
+		// existing install with all seven keys placed, i.e. with the reported bug intact.
+		// Any OTHER order was arranged by hand and is kept verbatim.
+		return out.join(',') === DOCK_FAMILY.join(',') ? [] : out;
 	} catch {
-		return [...DOCK_FAMILY];
+		return [];
 	}
 }
 dockTabOrder.subscribe((value) => {
@@ -133,35 +151,72 @@ dockTabOrder.subscribe((value) => {
 });
 
 /**
- * A stored (possibly partial, possibly stale) order -> the full DOCK_FAMILY order.
- * Unknown keys are dropped, duplicates collapse, and every family member the list is
- * missing is spliced in after its nearest already-placed predecessor.
+ * A stored (possibly stale, possibly hand-edited) order -> a usable one: unknown keys
+ * dropped, duplicates collapsed, nothing added. A key the list has never heard of — a
+ * view from a LATER release, or one just docked — is not this function's business: it
+ * joins the strip at the END, through `noteDockOrder`.
  * @param {string[]} stored @returns {string[]}
  */
 export function resolveOrder(stored) {
-	const out = [...new Set((stored ?? []).filter((k) => DOCK_FAMILY.includes(k)))];
-	for (const key of DOCK_FAMILY) {
-		if (out.includes(key)) continue;
-		let at = 0; // no placed predecessor = it belongs at the front (e.g. 'flow')
-		for (let i = DOCK_FAMILY.indexOf(key) - 1; i >= 0; i--) {
-			const p = out.indexOf(DOCK_FAMILY[i]);
-			if (p >= 0) {
-				at = p + 1;
-				break;
-			}
-		}
-		out.splice(at, 0, key);
-	}
-	return out;
+	return [...new Set((stored ?? []).filter((k) => DOCK_FAMILY.includes(k)))];
+}
+
+/** the keys currently docked+open */
+function presentKeys() {
+	const o = get(dockOccupants);
+	return DOCK_FAMILY.filter((k) => o[k]?.present);
+}
+
+/**
+ * `keys` in the strip's order. Anything the order list has never placed goes at the END
+ * in family order — the safety net for a tab that somehow reached the dock without a
+ * `noteDockOrder` (an order list hand-edited in localStorage, a future caller): a strip
+ * that silently DROPPED such a tab would be a panel with no way back.
+ * @param {string[]} keys @param {string[]} order
+ */
+function inOrder(keys, order) {
+	const placed = resolveOrder(order);
+	return [...placed.filter((k) => keys.includes(k)), ...keys.filter((k) => !placed.includes(k))];
 }
 
 /** every panel currently open+docked, as the dock's tabs (what DockTabs renders),
  * in the user's own order */
 export const dockTabs = derived([dockOccupants, dockTabOrder], ([$o, $order]) =>
-	resolveOrder($order)
-		.filter((k) => $o[k]?.present)
-		.map((k) => ({ key: k, title: DOCK_TITLES[k] }))
+	inOrder(
+		DOCK_FAMILY.filter((k) => $o[k]?.present),
+		$order
+	).map((k) => ({ key: k, title: DOCK_TITLES[k] }))
 );
+
+/**
+ * Give `key` a place in the strip — at the END, which is what "added in the order I add
+ * them" means. Called from `setDockOccupant`, so EVERY route into the dock earns its
+ * slot the same way: the "+" menu, a toolbar button, a panel's own Dock button, a window
+ * dropped on the bottom band, or a panel opening itself at boot.
+ * A key already placed is left where it is — that is what makes a reload, a tab switch
+ * and a panel re-mounting after Settings closes all no-ops.
+ * @param {string} key
+ */
+export function noteDockOrder(key) {
+	if (!DOCK_FAMILY.includes(key)) return;
+	const cur = resolveOrder(get(dockTabOrder));
+	if (cur.includes(key)) return;
+	dockTabOrder.set([...cur, key]);
+}
+
+/**
+ * Drop `key`'s slot, so the next time it docks it joins the strip as a fresh add at the
+ * end. Called by each panel's own `setDocked(false)` — the ONE thing every undock route
+ * passes through (the tab menu's Undock row and a tab dragged out of the strip both ask
+ * through `dockModeArm`, which the panel answers by calling it).
+ * Deliberately NOT called when a view merely CLOSES: see the note on `dockTabOrder`.
+ * @param {string} key
+ */
+export function forgetDockTab(key) {
+	const cur = resolveOrder(get(dockTabOrder));
+	if (!cur.includes(key)) return;
+	dockTabOrder.set(cur.filter((k) => k !== key));
+}
 
 /**
  * Commit a new order for the tabs that are PRESENT. The absent ones keep their own
@@ -172,7 +227,10 @@ export const dockTabs = derived([dockOccupants, dockTabOrder], ([$o, $order]) =>
  * @param {string[]} keys the present tabs, in their new order
  */
 export function reorderDockTabs(keys) {
-	const full = resolveOrder(get(dockTabOrder));
+	// the arrangement list PLUS anything present it has not placed, so the slot map below
+	// can always find every key it was asked about (`inOrder`'s safety net, committed)
+	const placed = resolveOrder(get(dockTabOrder));
+	const full = [...placed, ...presentKeys().filter((k) => !placed.includes(k))];
 	const slots = full.map((k, i) => (keys.includes(k) ? i : -1)).filter((i) => i >= 0);
 	if (slots.length !== keys.length) return false; // asked about a tab that isn't present
 	const next = [...full];

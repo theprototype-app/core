@@ -217,7 +217,12 @@ export function dragWindow(node, { key, defaultRect = {}, resizable = false, axi
 		typeof IntersectionObserver !== 'undefined'
 			? new IntersectionObserver((entries) => {
 					const vis = entries.some((e) => e.isIntersecting);
-					if (vis && !wasVisible && typeof rect.left === 'number') {
+					// R22 ROUND 29: NOT IF SOMETHING ELSE PLACES THIS WINDOW. A tab-group member
+					// is positioned by its group, and a tab switch is a hidden -> visible
+					// transition — so this rule, which re-clamps from the window's OWN stored
+					// rect, threw the revealed member back to wherever it last floated and left
+					// the tab strip standing on the group rect without it. See `applyMember`.
+					if (vis && !wasVisible && !node.dataset.tabMember && typeof rect.left === 'number') {
 						clamp(true);
 						apply();
 					}

@@ -667,5 +667,67 @@ h.run(async () => {
 	});
 	await A.page.waitForTimeout(500);
 
+	// --- 11. the ＋ row DOCKS a view that is already open as a floating window --------
+	// Reported: "when '+' selected to add a window in a dock which currently is
+	// floating, it should dock that window". The row used to be
+	// `close.set(false); activateDock(key)` — nothing about MODE — so for a floating
+	// view the close store was already false and `activateDock` named a key that is not
+	// a dock occupant: the fallback went on showing another tab and the row read as a
+	// dead button. It arms `armDockMode(key, true)` now, the same float -> dock seam the
+	// window's own "⇩ Dock" button and a drop on the bottom band use.
+	// LAST on purpose: it leaves the Animation view docked.
+	await A.page.evaluate(() => window.__stores.bottomDock.armDockMode('animation', false));
+	await A.page.waitForTimeout(900);
+	const floatState = () =>
+		A.page.evaluate(() => {
+			const s = window.__stores;
+			let occ, visible, ac;
+			s.bottomDock.dockOccupants.subscribe((v) => (occ = v))();
+			s.bottomDock.visibleDockKey.subscribe((v) => (visible = v))();
+			s.animationClose.subscribe((v) => (ac = v))();
+			return {
+				docked: !!occ.animation?.present,
+				visible,
+				open: ac === false,
+				window: !!document.querySelector('#animation-window')
+			};
+		});
+	let f = await floatState();
+	h.check(
+		f.open && !f.docked && f.window,
+		`11.0 premise: the Animation view is OPEN as a floating window and is not a dock tab (window=${f.window} docked=${f.docked})`
+	);
+	h.check(f.visible === 'flow', `11.1 ...and the dock is showing the Node editor (${f.visible})`);
+
+	// the ＋ is opened through the button's OWN handler here, not with a real mouse:
+	// the floating window we just made is parked over the dock strip, so a click at the
+	// button's coordinates lands on the window (measured: the menu never opened). What
+	// this section is about is what the ROW does — section 7 above is the real-mouse
+	// proof that this button opens the menu at all.
+	await A.page.evaluate(() => {
+		const panel = [...document.querySelectorAll('#flow-list, #explorer-list')].find(
+			(el) => !el.classList.contains('hidden')
+		);
+		panel?.querySelector('#dock-add-view')?.click();
+	});
+	await A.page.waitForTimeout(400);
+	rows = await menuRows();
+	const dockRow = rows.find((r) => /Animation/.test(r.label));
+	h.check(
+		!!dockRow && /^Dock /.test(dockRow.label),
+		`11.2 the ＋ menu offers it as "Dock Animation", not "＋" — the row moves a window, it does not open a second copy (${rows
+			.map((r) => r.label)
+			.join(' | ')})`
+	);
+	await A.page.evaluate(() =>
+		[...document.querySelectorAll('[role="menuitem"]')].find((el) => /Animation/.test(el.textContent)).click()
+	);
+	await A.page.waitForTimeout(900);
+	f = await floatState();
+	h.check(f.docked, `11.3 clicking it DOCKS the floating window (docked=${f.docked})`);
+	h.check(f.visible === 'animation', `11.4 ...and makes it the visible tab (${f.visible})`);
+	h.check(!f.window, '11.5 ...and the floating window is gone, not left behind beside its tab');
+	h.check(f.open, '11.6 ...and it was never closed on the way (a dock is a move, not a reopen)');
+
 	await h.finish(browser);
 });

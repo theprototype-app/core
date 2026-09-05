@@ -10,6 +10,8 @@
     // avatar and hands have no business floating in this one. Same evidence rule as
     // the Watch gate: an unknown or unnamed scene on either side is not evidence.
     import { peerScenes, elsewhereThan } from '$lib/peerScenes'
+    // R22 round 36 (rooms): the session host, which is what the unnamed world resolves to
+    import { sessionHost } from '$lib/connectionState'
     import { currentLevel } from '$lib/levels'
     import { handBoneSegments, handModelSegments } from '$lib/vrControls'
     import { peerHandModels, handModelCache } from '$lib/handModels'
@@ -99,7 +101,14 @@
 
   <T.Group bind:ref={peerFrame}>
   {#each $userdata as user, i}
-    {#if user[0] != $peers.peer.id && !elsewhereThan($peerScenes, $currentLevel?.name ?? '', user[0])}
+    <!-- R22 round 36 (rooms): $sessionHost is PASSED so the session's unnamed world
+         resolves to the host's room — an avatar in a scene we are not in is not drawn,
+         and "unnamed" is no longer a wildcard that draws everybody. -->
+    <!-- ...AND NOBODY WHILE WE ARE PRIVATE (round 36 review): a private HOST's own scene is
+         what an unnamed peer resolves to (hostIsMe -> our row), so the pure predicate would
+         seat the whole session in our private world; the map cannot see our privacy
+         (`privacySplit`'s rule), so the caller states it — the broadcast gate's `if (secret)`. -->
+    {#if user[0] != $peers.peer.id && !$currentLevel?.private && !elsewhereThan($peerScenes, $currentLevel?.name ?? '', user[0], $sessionHost)}
     <!-- {console.log(user)} -->
       {@const colocated = $colocatedPeers.has(user[0])}
       <T.Group>

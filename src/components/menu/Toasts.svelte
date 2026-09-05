@@ -2,7 +2,7 @@
 	import { Info, UserPlus, Download } from '@lucide/svelte';
     import { cameraPreview, stopCameraPreview, toggleCameraControl, previewLabel } from '$lib/cameraPreview'
     // R22 round 2: the connect-time library offer (see the effect below)
-    import { shareAllLocal, pullAllShared, bulkCounts, stashIntoSessions } from '$lib/sharedLibrary'
+    import { pullAllShared, bulkCounts, pendingShareAsk } from '$lib/sharedLibrary'
     // R22 round 7: the offer is for a peer who JOINED somebody — the host's library
     // already is the session's, so there is nothing of anybody else's to adopt
     import { sessionHost } from '$lib/connectionState'
@@ -28,7 +28,7 @@
     import { untrack } from 'svelte';
     // P2b: watching follows a peer's camera IN THIS WORLD, so it cannot survive them
     // opening another scene. Users.svelte gates STARTING one; this is the other half.
-    import { peerScenes } from '$lib/peerScenes';
+    import { peerScenes, elsewhereThan, PRIVATE_SCENE } from '$lib/peerScenes';
     import { currentLevel } from '$lib/levels';
     import { showToast } from '../../stores/appStore';
 
@@ -65,6 +65,13 @@
     // …and stop by itself when the peer we are watching opens another scene. ONLY ON
     // EVIDENCE, the same rule the button uses: an absent row means "we have not been
     // told", and no name on our side means there is nothing to compare against.
+    //
+    // R22 ROUND 36 (rooms): the test is `elsewhereThan` itself now, with the HOST passed,
+    // rather than a hand-written "both named and different". It was the same only-on-
+    // evidence rule spelled out a third time, and it inherited the same hole: a peer
+    // walking out of the session's world into a scene of their own left us watching a
+    // camera in a world we do not have. The one unknown that still allows is an ABSENT
+    // row — an older build — which the predicate keeps.
     $effect(() => {
         const map = $peerScenes;
         // `specatorMode` is declared writable(false) but holds a peer-id STRING when it
@@ -72,11 +79,17 @@
         const watching = typeof $specatorMode === 'string' ? $specatorMode : '';
         const ours = $currentLevel?.name ?? '';
         if (!watching) return;
+        // R22 round 36 (review): WE went private while watching. The pure predicate cannot
+        // see our own privacy (a private HOST even resolves an unnamed peer INTO our private
+        // scene), so the caller states it: there is no world of theirs we stand in any more.
+        const away = $currentLevel?.private ? PRIVATE_SCENE : elsewhereThan(map, ours, watching, $sessionHost);
+        if (!away) return;
+        // the sentinels are places, not names: a private peer and the session's own world
+        // both read as somewhere we cannot follow, and neither has a scene to name.
         const theirs = map?.[watching]?.scene ?? '';
-        if (!theirs || !ours || theirs === ours) return;
         untrack(() => {
             exitSpectate();
-            showToast('Stopped watching — they opened "' + theirs + '"');
+            showToast(theirs ? 'Stopped watching — they opened "' + theirs + '"' : 'Stopped watching — they left this scene');
         });
     });
 
@@ -179,8 +192,11 @@ function autoDismiss(node: any, toast: any) {
 // once answered, do not ask again this session: the prompt is a nudge, and one that
 // came back every time a file landed would be an interruption instead
 let libraryPromptDone = false;
-// the inline confirm for the one destructive choice: first press arms it, second acts
-let stashArmed = $state(false);
+/** R22 round 30 C2: the share/stash half of this card moved into the Explorer strip,
+ * so the arm-then-confirm state went with it. What stays here is only what the
+ * Explorer cannot say: the scene on screen is unsaved, and files nobody is fetching. */
+/** the ask announced by `explorer-share-ask`, so one batch cannot toast twice */
+let announcedAsk = '';
 
 $effect(() => {
     const snap = $restoreAvailable;
@@ -201,9 +217,13 @@ $effect(() => {
 // stayed invisible to everyone, which is correct behaviour and a terrible first
 // impression. So the moment a session exists and there is something to offer, ask.
 //
-// One sticky INFO card, the restore-prompt shape, with the two halves of the union:
-// publish mine, and fetch theirs. Ignoring it leaves everything exactly as it is —
-// local files stay local, shared files stay greyed until somebody wants them.
+// R22 round 30 C2 — HALF OF IT LEFT. "There is no logic in having share/stash options"
+// here was the report, and the reason is placement: this card floats over the 3D view
+// and expires, while the thing it is asking about is a list of files in a panel. The
+// share question is the Explorer's strip now (`pendingShareAsk`). What remains is what
+// the Explorer genuinely cannot say — the SCENE on screen has unsaved work, and there
+// are shared files nothing is fetching because auto-download is off. With neither true
+// there is no card at all, which is the "do not prompt" half of the same report.
 $effect(() => {
     // a SET, not an array (peerHandler) — `.length` here meant the prompt never showed
     // a SET, not an array (peerHandler) — `.length` here meant the prompt never showed
@@ -240,7 +260,6 @@ $effect(() => {
         parts.push($currentLevel?.name
             ? `“${$currentLevel.name}” has unsaved changes`
             : 'this scene has never been saved');
-    if (counts.local) parts.push(`${counts.local} file${counts.local === 1 ? '' : 's'} only on this device`);
     // R22 round 8: only worth mentioning when the app is NOT already fetching them.
     // With auto-download on (the default) this line describes a job in progress, and a
     // button for it would be a button for something already happening.
@@ -262,32 +281,46 @@ $effect(() => {
                 ...(unsavedScene
                     ? [{ label: 'Save the scene…', action: () => { libraryPromptDone = true; explorerClose.set(false); armExplorerSceneSave(null); dismissToastById('shared-library-offer'); } }]
                     : []),
-                ...(counts.local
-                    ? [{ label: 'Share mine', action: () => { libraryPromptDone = true; const n = shareAllLocal(); showToast(`Sharing ${n} file${n === 1 ? '' : 's'} with peers`); dismissToastById('shared-library-offer'); } }]
-                    : []),
                 ...(counts.missing && !$autoDownload
                     ? [{ label: 'Download theirs', action: () => { libraryPromptDone = true; const n = pullAllShared(); showToast(`Fetching ${n} file${n === 1 ? '' : 's'} from peers`); dismissToastById('shared-library-offer'); } }]
                     : []),
-                // R22 round 8: both of these are about YOUR files, so neither belongs on a
-                // card that is only telling you about somebody else's. With nothing of your
-                // own there is nothing to stash and nothing to decline — the card's own
-                // dismiss is enough.
-                ...(counts.local
-                    ? [
-                          stashArmed
-                              ? { label: 'Really replace my library?', action: () => { libraryPromptDone = true; void stashIntoSessions(); dismissToastById('shared-library-offer'); } }
-                              : { label: 'Stash mine', keepOpen: true, action: () => { stashArmed = true; } }
-                      ]
-                    : []),
-                // "Not now" belongs to any card that asked for something, not only to one about
-                // your files — an offer to save the scene is equally declinable
-                ...(counts.local || unsavedScene
+                // "Not now" belongs to any card that asked for something — an offer to save
+                // the scene is as declinable as an offer to download somebody else's files
+                ...(unsavedScene || (counts.missing && !$autoDownload)
                     ? [{ label: 'Not now', action: () => { libraryPromptDone = true; dismissToastById('shared-library-offer'); } }]
                     : [])
             ],
             () => { libraryPromptDone = true; }
         );
     else dismissToastById('shared-library-offer');
+});
+
+// R22 round 30 C2 — THE ASK WHEN THE EXPLORER IS SHUT.
+//
+// The question itself is a strip inside the Explorer, which is the right place for it and
+// is also NOT MOUNTED half the time. So this is the pointer, not the question: one toast
+// per batch saying what happened and offering the way to the panel that can answer it.
+// `pendingShareAsk` STAYS ARMED — nothing is decided here — so opening the Explorer later,
+// by this button or by any other route, still shows the strip.
+$effect(() => {
+    const ask = $pendingShareAsk;
+    if (!ask) {
+        announcedAsk = '';
+        return;
+    }
+    // only while the panel that draws the strip is closed; opening it is the answer to
+    // this toast, and the strip takes over from there
+    if (!$explorerClose) return;
+    const sig = ask.items.map((i) => i.id).join('|');
+    if (sig === announcedAsk) return;
+    announcedAsk = sig;
+    const n = ask.items.length;
+    untrack(() =>
+        showToast(
+            `${n} file${n === 1 ? '' : 's'} added — open the Explorer to share ${n === 1 ? 'it' : 'them'} with the session`,
+            [{ label: 'Open Explorer', action: () => explorerClose.set(false) }]
+        )
+    );
 });
 
 $effect(() => {

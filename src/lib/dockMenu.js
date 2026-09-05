@@ -13,8 +13,9 @@ import { activateDock, armDockMode, dockOccupants, dockTabs, moveDockTab, DOCK_T
 // The dock's "+" add-a-view menu, in ONE place. The docked tab strip
 // (DockTabs.svelte) and the FLOATING Node editor's header "+" (Flow.svelte) each
 // kept their own copy of the same list, so a view added to one silently went
-// missing from the other. Every entry opens its panel — they all start docked —
-// and makes it the visible tab; the Explorer is one of them now that it is an
+// missing from the other. Every entry puts its panel IN THE DOCK and makes it the
+// visible tab — opening it when it is closed, and DOCKING it when it is already open
+// as a floating window (see `dockView`); the Explorer is one of them now that it is an
 // ordinary dock tab rather than the dock's separate occupant.
 //
 // W5: a view already IN the dock is dropped from the list — offering "＋ Explorer"
@@ -55,28 +56,48 @@ export const DOCK_VIEWS = [
 	{ key: 'explorer', tooltip: 'Browse the asset library' }
 ];
 
-/** what the "+" row itself does: open the panel DOCKED and show it. Kept beside the
- *  list rather than in it, because the toolbar's consumers do not want this — a roster
- *  button goes through `togglePanel`, which can also hide the panel again.
- *  @type {Record<string, () => void>} */
-const OPENERS = {
-	flowcode: () => { flowCodeClose.set(false); activateDock('flowcode'); },
-	animation: () => { animationClose.set(false); activateDock('animation'); },
-	uv: () => { uvEditorClose.set(false); activateDock('uv'); },
-	shader: () => { shaderEditorClose.set(false); activateDock('shader'); },
-	hud: () => { hudEditorClose.set(false); activateDock('hud'); },
-	explorer: () => { explorerClose.set(false); activateDock('explorer'); }
-};
+/**
+ * What a "+" row does: put that view IN THE DOCK and show it. Kept beside the list
+ * rather than in it, because the toolbar's consumers do not want this — a roster button
+ * goes through `togglePanel`, which can also hide the panel again.
+ *
+ * It ARMS the dock mode first, and that is the whole of the "+ docks a floating window"
+ * fix. The rows used to be `close.set(false); activateDock(key)`, which says nothing
+ * about MODE — so for a view already open as a floating window the close store was
+ * already false (nothing happened) and `activateDock` named a key that is not a dock
+ * occupant, leaving `visibleDockKey`'s fallback to show some other tab. The row read as
+ * a dead button while its window sat there floating. `armDockMode` is the seam every
+ * panel already consumes (the tab strip's Undock row, a tab dragged out of the strip,
+ * a window dropped on the bottom band all go through it), so this is the SAME float ->
+ * dock transition the window's own "⇩ Dock" button makes, not a second one.
+ *
+ * The close store still has to be set for the panel that is CLOSED: it has no component
+ * mounted to consume the arm until it opens (the arm is write-once and survives until
+ * something reads it, so the order is unimportant).
+ * @param {string} key
+ */
+function dockView(key) {
+	armDockMode(key, true);
+	closeStoreFor(key)?.set(false);
+	activateDock(key);
+}
 
 /** @returns {{label: string, tooltip: string, action?: () => void, disabled?: boolean}[]} */
 export function dockAddItems() {
 	const occupied = get(dockOccupants);
-	const free = DOCK_VIEWS.filter((view) => !occupied[view.key]?.present).map((view) => ({
-		key: view.key,
-		label: `＋ ${DOCK_TITLES[view.key] ?? view.key}`,
-		tooltip: view.tooltip,
-		action: OPENERS[view.key]
-	}));
+	const free = DOCK_VIEWS.filter((view) => !occupied[view.key]?.present).map((view) => {
+		const title = DOCK_TITLES[view.key] ?? view.key;
+		// not docked, but OPEN = it is a floating window, so this row moves it rather
+		// than opening anything. Saying "＋" there would promise a second copy.
+		const closer = closeStoreFor(view.key);
+		const floating = !!closer && get(closer) === false;
+		return {
+			key: view.key,
+			label: floating ? `Dock ${title}` : `＋ ${title}`,
+			tooltip: floating ? `Bring the floating ${title} window into the dock` : view.tooltip,
+			action: () => dockView(view.key)
+		};
+	});
 	if (!free.length)
 		return [{ label: 'All views are docked', tooltip: 'Every view this menu can open is already a tab', disabled: true }];
 	return free;

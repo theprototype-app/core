@@ -69,13 +69,40 @@ export const explorerClose = writable(true);
  * `{ token, folderId }`: the token makes two consecutive requests distinguishable (two
  * identical objects are `===` different, but a number bumped per arm is what a `$effect`
  * can key on); `folderId` is where the save should land, or null for the root.
- * @type {import('svelte/store').Writable<{token: number, folderId: string|null}|null>}
+ *
+ * R22 round 33 adds `consent`: does this save also CONSENT to publishing the scene to the
+ * session (C4's `noteSceneOpened`)? True for every save a person means as a save — which
+ * is why it is only ever false when a caller says so. The connect decision's "Save scene &
+ * connect" saves in order to LEAVE a scene behind, and leaving is not publishing.
+ * @type {import('svelte/store').Writable<{token: number, folderId: string|null,
+ *   consent: boolean}|null>}
  */
 export const explorerSceneSaveArm = writable(null);
 let sceneSaveArmToken = 0;
-/** @param {string|null} folderId */
-export function armExplorerSceneSave(folderId = null) {
-	explorerSceneSaveArm.set({ token: ++sceneSaveArmToken, folderId: folderId ?? null });
+/** @param {string|null} folderId @param {{consent?: boolean}} [opts] */
+export function armExplorerSceneSave(folderId = null, opts = {}) {
+	explorerSceneSaveArm.set({
+		token: ++sceneSaveArmToken,
+		folderId: folderId ?? null,
+		consent: opts.consent !== false
+	});
+}
+/**
+ * R22 round 32 — the same seam for "open the Explorer AND show me this scene's version
+ * history". The divergence dialog lives in projectManifest, a LEAF that must not import
+ * a component, so the request travels as a write-once store the Explorer consumes
+ * exactly the way it consumes the save arm above.
+ *
+ * `{ token, name, hash }`: the scene NAME is what the manifest is keyed by and the only
+ * thing that is always resolvable; `hash` is the version the message was ABOUT, which
+ * may be one this machine does not hold — the consumer decides what to do with that.
+ * @type {import('svelte/store').Writable<{token: number, name: string, hash: string}|null>}
+ */
+export const explorerRevealArm = writable(null);
+let revealArmToken = 0;
+/** @param {string} name @param {string} [hash] */
+export function revealExplorerItem(name, hash = '') {
+	explorerRevealArm.set({ token: ++revealArmToken, name, hash: hash ?? '' });
 }
 // 4b had an Explorer-ONLY twin of the arm above ("open the Explorer as a dock tab / as
 // a floating window", from the Controls toolbar). W5 generalised it to every dock tab —

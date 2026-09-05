@@ -22,6 +22,7 @@
 	// side-effecting import: registers the built-in effect kinds. It also owns the
 	// postprocessing/n8ao imports, which is what keeps scenePost.js a pure leaf.
 	import { compilePostStack, disposePostStack } from '$lib/postEffects';
+	import { registerOutlineLayer } from '$lib/editOverlays';
 	import { faceEditObject, meshEditOutline } from '$lib/faceEdit';
 	import { editingObject } from '$lib/meshEdit';
 	import { coarsePointer } from '$lib/inputDevice';
@@ -90,6 +91,19 @@
 	const outlinePassSelected = new EffectPass(camera.current, outlineEffectSelected);
 	composer.addPass(outlinePassLocked);
 	composer.addPass(outlinePassSelected);
+	// R22 — THE OUTLINE'S RENDER LAYER IS NOT SCENE DATA, and it used to be saved.
+	// postprocessing marks a selected object by enabling a layer on it, THREE's
+	// toJSON writes the layer mask, and ObjectLoader restores it — so a scene saved
+	// while something was selected came back with that object wearing the layer
+	// while sitting in no selection at all. `Selection.clear()` only ever disables
+	// the layer on its OWN members, so nothing could take it off again, and the
+	// outline pass (which re-renders only while its set is non-empty, plus one
+	// frame after it empties) froze its target holding an outline of that object:
+	// the reported ghost that survives a scene replace and does not move with the
+	// camera. Publishing the two numbers lets `editOverlays` scrub them at the
+	// parse and serialize sites it already owns — the wireframe's own two halves.
+	if (outlineEffectSelected) registerOutlineLayer(outlineEffectSelected.selection.layer);
+	if (outlineEffectLocked) registerOutlineLayer(outlineEffectLocked.selection.layer);
 
 	// ---- the scene post stack ------------------------------------------------
 	/** passes compiled from the stack, in chain order (between render and outlines) */

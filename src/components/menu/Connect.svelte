@@ -169,9 +169,11 @@
 	});
 
 	// dial a peer — delegates to the shared requestConnect (same path the cloud
-	// plugin's "join room" uses via cloudApi.connectToPeer).
+	// plugin's "join room" uses via cloudApi.connectToPeer). ASYNC since round 31:
+	// dialing with work in an unnamed scene asks first, so the promise settles when
+	// the dial has been decided, not when it has completed. Nothing here waits on it.
 	const connectToPeer = (peerIdToConnect) => {
-		if (peerIdToConnect) requestConnect(peerIdToConnect);
+		if (peerIdToConnect) void requestConnect(peerIdToConnect);
 	};
 
 	// cancel OUR pending outbound request (the pill covers the single-dial case;
@@ -179,6 +181,22 @@
 	function cancelPending() {
 		const target = pendingOut[0]?.[0];
 		if (target) cancelOutboundRequest(target);
+	}
+
+	// REPORTED: typing an id and pressing Enter did nothing — you had to Tab to the
+	// button first. Enter in the dial box IS pressing Connect, which is what every
+	// single-field form in the app means by it. No disabled state to mirror: the button
+	// carries none, and this whole branch only renders while the pill is idle, so the
+	// one thing left to refuse is an empty box (which `connectToPeer` no-ops on anyway —
+	// refusing here keeps the keypress from swallowing itself for nothing).
+	// The handler rides the attribute form: keydown is DELEGATED, and the pill sits at
+	// the app root with no panel chrome between it and the delegation root — verified by
+	// the connect-states suite, which presses a real Enter.
+	function onDialKey(e: KeyboardEvent) {
+		if (e.key !== 'Enter') return;
+		e.preventDefault();
+		if (!String(peerIdToConnect ?? '').trim()) return;
+		connectToPeer(peerIdToConnect);
 	}
 
 	function disconnect() {
@@ -263,6 +281,7 @@
 					placeholder="Enter peer ID to connect"
 					class="nob cx-input rounded-r-none border-0"
 					bind:value="{peerIdToConnect}"
+					onkeydown={onDialKey}
 				/>
 				<Button
 					color="primary"

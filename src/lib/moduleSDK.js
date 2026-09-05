@@ -63,6 +63,24 @@ export const moduleEffects = {};
 export const moduleNodeComponents = {};
 /** @type {((object: any) => boolean)[]} */
 export const moduleClickHandlers = [];
+/** 23-B1: a viewport click that hit NOTHING. `moduleClickHandlers` is only ever handed a
+ * MESH, so a gesture armed by a plug click had no way to hear "the user clicked the sky":
+ * the wire stayed armed for the rest of the session and a picked-up cable stayed HIDDEN
+ * with it. Nothing consumes — a miss is still a deselect.
+ * @type {(() => void)[]} */
+export const moduleClickMissHandlers = [];
+
+/** Dispatch a viewport click that resolved to nothing selectable. Scene's editor pick and
+ * play mode's tap both call it; it never consumes. */
+export function fireClickMiss() {
+	for (const handler of moduleClickMissHandlers) {
+		try {
+			handler();
+		} catch (error) {
+			console.log('module click-miss handler failed', error);
+		}
+	}
+}
 /** 23-C2: Explorer drops onto a module object - `fn(hit, item, target)`: `hit` is the exact
  * mesh under the drop, `item` `{id, name, kind, hash}`, `target` the resolved drop target;
  * return true to consume it (a sampler pad taking a sample). Same lifecycle as

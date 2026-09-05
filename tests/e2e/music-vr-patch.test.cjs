@@ -223,5 +223,59 @@ h.run(async () => {
 	await page.waitForTimeout(200);
 	h.check(!(await vp(page, 'return vp.vrPatchState().desktopArmed')), '8.11 Escape drops it');
 
+	// ---------------------------------------------------------------- section 9
+	console.log('\n=== 9. the reported bugs: IN -> OUT, the wire is DRAWN, and a click on nothing gives it back ===');
+	// The user connects the other way round - from an input to an output - and reported the
+	// cable vanishing on connect. Two separate faults: the mesh's tube was never built (the
+	// audioPatch NaN seed, covered in audio-patch), and a click that hit NOTHING never
+	// reached this dispatch, so a picked-up cable stayed hidden and armed for good.
+	await vp(page, 'ap.clearPatch(); return 1');
+	await page.waitForTimeout(300);
+	const armIn = await tap(ids.spk, 'vrpatch-in:in');
+	h.check(armIn.consumed && armIn.armed && armIn.side === 'in' && armIn.picked === null, '9.1 a click on a BARE input arms a wire backwards from it (side ' + armIn.side + ')');
+	const joined = await tap(ids.osc, 'vrpatch-out:out');
+	const madeIn = await vp(page, 'const d = ap.patchDebug(); return d.cables[d.cables.length - 1] ?? null');
+	h.check(joined.consumed && !joined.armed && joined.n === 1 && madeIn && madeIn.from.uuid === ids.osc && madeIn.to.uuid === ids.spk, '9.2 clicking the OUTPUT connects it the right way round (from=osc, to=spk) whichever end you started at');
+	await h.eventually(() => vp(page, 'const d = ap.patchDebug(); return d.cables[0]?.drawn === true && d.cables[0]?.live === true'), (v) => v === true, '9.3 and the cable both ROUTES and DRAWS');
+	const tubed = await vp(page, 'const mesh = ap.cableRoot().children[0]; mesh.geometry.computeBoundingSphere(); return { verts: mesh.geometry.attributes.position?.count ?? 0, r: mesh.geometry.boundingSphere?.radius ?? -1 }');
+	h.check(tubed.verts > 0 && tubed.r > 0, '9.4 the wire is a real tube spanning its plugs (' + tubed.verts + ' vertices, radius ' + tubed.r.toFixed(3) + ')');
+
+	// a REAL mouse: pick the cable up off the input, then click the empty sky
+	await vp(page, HELPERS + 'const n = obj(arg.u).getObjectByName(arg.n); n.updateWorldMatrix(true, false); const p = n.getWorldPosition(new THREE.Vector3()); await s.objectActions.flyTo([p.x - 0.6, p.y + 0.35, p.z + 1.2], p.toArray(), 250);', { u: ids.spk, n: 'vrpatch-in:in' });
+	await page.waitForTimeout(600);
+	const inPx = await h.projectPoint(page, await vp(page, HELPERS + 'const n = obj(arg.u).getObjectByName(arg.n); n.updateWorldMatrix(true, false); return n.getWorldPosition(new THREE.Vector3()).toArray()', { u: ids.spk, n: 'vrpatch-in:in' }));
+	await page.mouse.click(inPx.x, inPx.y);
+	await page.waitForTimeout(300);
+	const held = await vp(page, 'const st = vp.vrPatchState(); const d = ap.patchDebug(); return { armed: st.desktopArmed, picked: st.holding?.picked ?? null, n: d.cables.length, drawn: d.cables[0]?.drawn ?? null }');
+	h.check(held.armed && held.picked && held.n === 1 && held.drawn === false, '9.5 a real click on the plugged input picks the cable up - still in the document, HIDDEN while held');
+	// a pixel that is canvas AND resolves to nothing (the projected-point trap: assert both)
+	const sky = { x: 90, y: 300 };
+	const skyOk = await page.evaluate((p) => {
+		const el = document.elementFromPoint(p.x, p.y);
+		const THREE = window.__stores.THREE;
+		let camera, renderer;
+		window.__stores.globalCamera.subscribe((v) => (camera = v))();
+		window.__stores.globalRenderer.subscribe((v) => (renderer = v))();
+		const rect = renderer.domElement.getBoundingClientRect();
+		const ray = new THREE.Raycaster();
+		ray.setFromCamera(new THREE.Vector2(((p.x - rect.left) / rect.width) * 2 - 1, -((p.y - rect.top) / rect.height) * 2 + 1), camera);
+		return { tag: el?.tagName ?? null, hits: window.__stores.scenePick.sceneHits(ray, { tinyProxies: true }).length };
+	}, sky);
+	h.check(skyOk.tag === 'CANVAS' && skyOk.hits === 0, '9.6 (premise) the pixel about to be clicked is the canvas and resolves to NOTHING (' + skyOk.tag + ', ' + skyOk.hits + ' hits)');
+	await page.mouse.click(sky.x, sky.y);
+	await page.waitForTimeout(400);
+	const back = await vp(page, 'const st = vp.vrPatchState(); const d = ap.patchDebug(); return { armed: st.desktopArmed, n: d.cables.length, drawn: d.cables[0]?.drawn ?? null, live: d.cables[0]?.live ?? null }');
+	h.check(!back.armed && back.n === 1 && back.drawn === true && back.live === true, '9.7 a click on NOTHING drops the held wire and puts the cable back - visible and still routed');
+
+	// and the deliberate unplug still works: pick it up, click the same input again
+	await page.mouse.click(inPx.x, inPx.y);
+	await page.waitForTimeout(250);
+	await page.mouse.click(inPx.x, inPx.y);
+	await page.waitForTimeout(350);
+	const gone = await vp(page, 'const st = vp.vrPatchState(); const d = ap.patchDebug(); return { armed: st.desktopArmed, n: d.cables.length, meshes: d.meshes }');
+	h.check(!gone.armed && gone.n === 0 && gone.meshes === 0, '9.8 two real clicks on the same plugged input UNPLUG it - document and mesh both gone');
+	await page.evaluate(() => window.__stores.history.undo());
+	await h.eventually(() => vp(page, 'const d = ap.patchDebug(); return d.cables.length === 1 && d.cables[0].drawn === true'), (v) => v === true, '9.9 undo plugs it back in, drawn again');
+
 	await h.finish(browser);
 });

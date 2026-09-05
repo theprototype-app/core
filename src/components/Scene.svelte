@@ -30,7 +30,7 @@
 	import { sceneHits } from '$lib/scenePick';
 	import { startPlayInteract, tickPlayInteract, stopPlayInteract } from '$lib/playInteract';
 	import { tickMoveSmoothing } from '$lib/moveSmoothing';
-	import { moduleClickHandlers, moduleInteractiveGroups } from '$lib/moduleSDK';
+	import { moduleClickHandlers, moduleInteractiveGroups, fireClickMiss } from '$lib/moduleSDK';
 	import { updateSpatialAudio } from '$lib/voiceChat';
 	import { tickAnimatedMixers } from '$lib/animatedImports';
 	import { tickAnimationPreview, captureAutoKey, playheadOf } from '$lib/animationPreview';
@@ -461,6 +461,9 @@
 				return true;
 			}
 		}
+		// nothing selectable under the ray: tell whoever is holding a gesture (23-B1's
+		// desktop cable) before the caller deselects. Never consumes.
+		fireClickMiss();
 		return false;
 	}
 

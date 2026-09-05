@@ -2,6 +2,7 @@
 import * as THREE from 'three';
 import { get } from 'svelte/store';
 import { globalScene, globalRenderer, objectsGroup } from '../stores/sceneStore';
+import { showToast } from '../stores/appStore';
 import { hapticPulse, registerNavSuppressor, registerVRTriggerHooks, registerVRFrameHook } from './vrControls';
 import { beginHistoryBatch, endHistoryBatch } from './history';
 import { isDeviceObject, deviceSpec, deviceOf, setDeviceFor, previewDeviceParams } from './audioDevices';
@@ -342,6 +343,12 @@ export function desktopPatchArmed() {
 	return !!hold && hold.index === MOUSE;
 }
 
+/** The cable a hold PICKED UP, if any. Its own function because `clickPlug` reads it from
+ * inside the `if (!hold)` branch, where the narrowing has already made `hold` never. */
+function heldPickedCable() {
+	return hold?.picked ?? null;
+}
+
 /**
  * A left click on a scene object, from the module click dispatch. Returns true when it
  * was a plug (the click is consumed: no selection, no key press). A click on anything
@@ -361,6 +368,10 @@ export function clickPlug(object) {
 		if (!beginCableDrag(plug, { position: at, hand: 'mouse' }, { index: MOUSE, hand: 'mouse' })) return false;
 		armedNode = plug.node;
 		highlightPlug(armedNode, true);
+		// picking a cable up HIDES it while the mouse holds it, which on its own reads as
+		// "my cable disappeared" - say what the three ways out are, once per pick-up
+		if (heldPickedCable())
+			showToast('Cable held. Click another input to move it, this input again to unplug it, or Escape to put it back.');
 		return true;
 	}
 	// a second click on the very input a picked-up cable came from: UNPLUG it
@@ -551,9 +562,13 @@ export function registerVRPatch() {
 	registerVRTriggerHooks({ start: vrPatchTriggerStart, end: vrPatchTriggerEnd, swallow: vrPatchSwallowSelect });
 	registerVRFrameHook(updateVRPatch);
 	// the desktop path: a plug click through the SAME dispatch Play mode's tap and the
-	// editor's click use for module objects, and Escape to drop a held wire
+	// editor's click use for module objects, a click on NOTHING through the MISS dispatch
+	// (that one never sees a mesh, so a held wire had no way to hear "you clicked the sky"
+	// and a picked-up cable stayed hidden and armed for the rest of the session), and
+	// Escape to drop a held wire
 	import('./moduleSDK').then((m) => {
 		if (!m.moduleClickHandlers.includes(clickPlug)) m.moduleClickHandlers.unshift(clickPlug);
+		if (!m.moduleClickMissHandlers.includes(cancelDesktopPatch)) m.moduleClickMissHandlers.push(cancelDesktopPatch);
 	});
 	window.addEventListener('keydown', (event) => {
 		if (event.key === 'Escape' && cancelDesktopPatch()) event.stopPropagation();

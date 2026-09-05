@@ -70,6 +70,21 @@ h.run(async () => {
 	await h.eventually(() => dbg(page), (d) => d.cables[0].drawn === true && d.meshes === 1, '2.5 a cable mesh is drawn');
 	const where = await ap(page, 'const root = ap.cableRoot(); const g = await new Promise((r) => s.objectsGroup.subscribe(r)()); let scene; s.globalScene.subscribe((v) => (scene = v))(); return { parentIsScene: root.parent === scene, underObjects: g.getObjectByName("audio-cables") !== undefined && g.getObjectByName("audio-cables") !== null, name: root.name }');
 	h.check(where.parentIsScene && !where.underObjects, '2.6 the cable root lives at the SCENE ROOT, not in objectsGroup (golden rule 5)');
+	// 2.6a-2.6c: the mesh must carry a real TUBE. `drawn` used to report only `mesh.visible`,
+	// and the moved-test seeded from (NaN,NaN,NaN) never fired (NaN > 1e-8 is false), so every
+	// cable in the app was an EMPTY BufferGeometry for the whole session while this suite read
+	// green. Measure the vertex count and the span it covers, and prove it FOLLOWS its plugs.
+	const tube = await ap(page, 'const root = ap.cableRoot(); const mesh = root.children[0]; const geo = mesh.geometry; geo.computeBoundingSphere(); return { verts: geo.attributes.position?.count ?? 0, radius: geo.boundingSphere?.radius ?? -1 }');
+	h.check(tube.verts > 0, '2.6a the cable mesh has REAL geometry (' + tube.verts + ' vertices, not the empty BufferGeometry it is born with)');
+	h.check(tube.radius > 0.5 && tube.radius < 4, '2.6b and it spans the 2 m between the two plugs (bounding radius ' + tube.radius.toFixed(3) + ')');
+	await ap(page, 'const g = await new Promise((r) => s.objectsGroup.subscribe(r)()); g.getObjectByProperty("uuid", arg.speaker).position.set(6, 0, 0); return 1', ids);
+	await h.eventually(
+		() => ap(page, 'const geo = ap.cableRoot().children[0].geometry; geo.computeBoundingSphere(); return geo.boundingSphere?.radius ?? -1'),
+		(r) => r > tube.radius + 0.5,
+		'2.6c moving a device REBUILDS the tube — it follows its plugs (was ' + tube.radius.toFixed(3) + ')'
+	);
+	await ap(page, 'const g = await new Promise((r) => s.objectsGroup.subscribe(r)()); g.getObjectByProperty("uuid", arg.speaker).position.set(2, 0, 0); return 1', ids);
+	await page.waitForTimeout(200);
 
 	const same = await ap(page, "return ap.addCable({ from: { uuid: arg.drone, port: 'out' }, to: { uuid: arg.speaker, port: 'in' } })", ids);
 	h.check(same === cableId, '2.7 plugging the same cable twice returns the same cable, not a duplicate');

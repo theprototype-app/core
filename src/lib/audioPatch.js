@@ -399,7 +399,7 @@ export function setCableHidden(id, hidden) {
 const CABLE_RADIUS = 0.02;
 
 /** @type {any} */ let proxyRoot = null;
-/** @type {Map<string, {mesh: any, a: any, b: any, color: string}>} */
+/** @type {Map<string, {mesh: any, a: any, b: any, built: boolean, color: string}>} */
 const meshes = new Map();
 let started = false;
 
@@ -453,6 +453,7 @@ function disposeMesh(id, entry) {
 	entry.mesh.material?.dispose?.();
 	proxyRoot?.remove(entry.mesh);
 	meshes.delete(id);
+	hiddenCables.delete(id); // a re-plug mints a NEW id; the old mark would leak forever
 }
 
 /** Add/remove meshes to match the document (not positions — that is per frame). */
@@ -479,7 +480,12 @@ function syncMeshes() {
 		mesh.raycast = () => {}; // never pickable (B1 picks plugs, not wires)
 		mesh.visible = false; // until its endpoints are found
 		proxyRoot.add(mesh);
-		meshes.set(cable.id, { mesh, a: new THREE.Vector3(NaN, NaN, NaN), b: new THREE.Vector3(NaN, NaN, NaN), color });
+		// `built` is what says "no tube yet", NOT a sentinel POSITION. The seed used to be
+		// (NaN, NaN, NaN) and `NaN > 1e-8` is FALSE, so the moved test in updateCables never
+		// fired: the geometry stayed the empty BufferGeometry it is born with and EVERY
+		// cable was invisible for the whole session. The mesh was `visible` the entire
+		// time — which is all `drawn` reported, so the suite went green over it.
+		meshes.set(cable.id, { mesh, a: new THREE.Vector3(), b: new THREE.Vector3(), built: false, color });
 	}
 	for (const [id, entry] of [...meshes.entries()]) if (!wanted.has(id)) disposeMesh(id, entry);
 }
@@ -511,10 +517,11 @@ export function updateCables() {
 		}
 		endpoint(from, cable.from.port, endA, 'out');
 		endpoint(to, cable.to.port, endB, 'in');
-		const moved = entry.a.distanceToSquared(endA) > 1e-8 || entry.b.distanceToSquared(endB) > 1e-8;
+		const moved = !entry.built || entry.a.distanceToSquared(endA) > 1e-8 || entry.b.distanceToSquared(endB) > 1e-8;
 		if (moved) {
 			entry.a.copy(endA);
 			entry.b.copy(endB);
+			entry.built = true;
 			entry.mesh.geometry?.dispose?.();
 			entry.mesh.geometry = new THREE.TubeGeometry(cableCurve(endA, endB), 20, CABLE_RADIUS, 6, false);
 		}
@@ -562,7 +569,9 @@ export function patchDebug() {
 			...cable,
 			live: live.has(cable.id),
 			gainNow: live.get(cable.id)?.gain.gain.value ?? null,
-			drawn: !!meshes.get(cable.id)?.mesh.visible,
+			// VISIBLE AND ACTUALLY TUBED: `visible` alone said yes to a mesh whose geometry
+			// was never built, which is exactly the bug the `built` flag above fixes.
+			drawn: !!meshes.get(cable.id)?.mesh.visible && (meshes.get(cable.id)?.mesh.geometry?.attributes?.position?.count ?? 0) > 0,
 			endpointsPresent: cableIsLive(cable, group)
 		})),
 		meshes: meshes.size,

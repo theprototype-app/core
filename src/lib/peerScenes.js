@@ -587,7 +587,10 @@ export const ROOM_SCOPED = new Set([
 	'nodedata', 'nodedelete', 'edgecreate', 'edgedelete', 'nodetrigger', 'triggers',
 	'particleburst', 'flowcursor',
 	// scene singletons and keyed documents
-	'environment', 'music', 'scenephysics', 'scenepost', 'shadergraph',
+	// 23-A2/A4: 'transport' (the musical clock) and 'patch' (the cable routing) are scene
+	// singletons exactly like 'music' beside them, and 'devicenote' is a runtime event on a
+	// scene object, the 'nodetrigger' case - a peer standing elsewhere plays none of it
+	'environment', 'music', 'transport', 'patch', 'devicenote', 'scenephysics', 'scenepost', 'shadergraph',
 	'shadergraphdelete', 'shadergraphs', 'hud', 'huddelete', 'huds', 'hudvalue',
 	'hudvalues', 'game', 'animdata', 'animplay', 'animations', 'jointcreate',
 	'jointdelete', 'joints', 'annotation', 'annotations',

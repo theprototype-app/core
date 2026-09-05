@@ -1,6 +1,6 @@
 // @ts-ignore - no bundled three type declarations (project-wide)
 import * as THREE from 'three';
-import { ensureAudioContext } from './voiceChat';
+import { ensureAudioContext, bus } from './audioEngine';
 import { itemByHash, itemBlob } from './explorer';
 import { requestAsset } from './assetShare';
 
@@ -61,6 +61,40 @@ async function loadBuffer(entry, hash) {
 	entry.decoding = false;
 }
 
+/** decoded buffers by content hash, shared by every api.audio.sample caller */
+/** @type {Map<string, AudioBuffer>} */
+const sampleCache = new Map();
+
+/**
+ * 23-A5: a decoded AudioBuffer for an Explorer CONTENT HASH — `api.audio.sample`.
+ * The SAME path `loadBuffer` walks, made awaitable: `itemByHash` -> `requestAsset` on
+ * a miss (the content-hash pull, golden rule 9) -> `itemBlob` -> `decodeAudioData`,
+ * including the retry while the pull is in flight. A MISSING hash is never a failure —
+ * the bytes may be one peer away — so it keeps asking until `timeoutMs` and resolves
+ * null; only a decode throw rejects. Decoded buffers are cached per hash.
+ * @param {string} hash @param {{timeoutMs?: number}} [opts]
+ * @returns {Promise<AudioBuffer|null>}
+ */
+export async function sampleBuffer(hash, opts = {}) {
+	if (typeof hash !== 'string' || !hash) return null;
+	const cached = sampleCache.get(hash);
+	if (cached) return cached;
+	const deadline = Date.now() + (opts.timeoutMs ?? 30000);
+	let item = itemByHash(hash);
+	if (!item) requestAsset(hash);
+	while (!item) {
+		if (Date.now() > deadline) return null;
+		await new Promise((r) => setTimeout(r, 500)); // the pull lands as an Explorer item later
+		item = itemByHash(hash);
+	}
+	const blob = await itemBlob(item.id);
+	const ctx = context();
+	if (!blob || !ctx) return null;
+	const buffer = await ctx.decodeAudioData(await blob.arrayBuffer()); // a throw here IS a failure
+	sampleCache.set(hash, buffer);
+	return buffer;
+}
+
 /** Build the gain -> HRTF panner chain once per entry. @param {any} entry @param {any} data */
 function ensureChain(entry, data) {
 	const ctx = context();
@@ -70,7 +104,7 @@ function ensureChain(entry, data) {
 		entry.panner = ctx.createPanner();
 		entry.panner.panningModel = 'HRTF';
 		entry.panner.distanceModel = 'inverse';
-		entry.gain.connect(entry.panner).connect(ctx.destination);
+		entry.gain.connect(entry.panner).connect(bus('sfx'));
 	}
 	entry.gain.gain.value = data.volume ?? 0.8;
 	entry.panner.refDistance = data.radius ?? 5;
@@ -155,9 +189,18 @@ export function updateSounds(pairs, sceneObjects, time) {
 			entry.firedAt = trigger;
 			playOnce(entry, data);
 		}
-		const key = [!!data.playing, data.loop !== false, data.volume ?? 0.8, data.radius ?? 5, data.rolloff ?? 1].join('|');
+		// #22 A1 finding 4: volume/radius/rolloff are NOT in the key. They were, and a
+		// key change tears the source down and restarts it — so every fader drag clicked
+		// and every one-shot restarted from zero. They are live params; set them below.
+		const key = [!!data.playing, data.loop !== false].join('|');
 		if (data.playing && (!entry.src || entry.key !== key)) startSource(entry, data, time);
 		else if (!data.playing && entry.src) stopSource(entry);
+		// live, without a restart — the sceneMusic.reconcile precedent
+		if (entry.gain) entry.gain.gain.value = data.volume ?? 0.8;
+		if (entry.panner) {
+			entry.panner.refDistance = data.radius ?? 5;
+			entry.panner.rolloffFactor = data.rolloff ?? 1;
+		}
 		entry.key = key;
 		const object = sceneObjects?.getObjectByProperty('uuid', uuid);
 		if (object && entry.panner) {

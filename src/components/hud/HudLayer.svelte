@@ -19,6 +19,7 @@
 	// 21-E7.4: RENDERABLE is no longer the same list as HUD_KINDS - a module kind is
 	// renderable and is not in it, so every render-time filter reads the registry instead.
 	import { isInteractiveKind, isRenderableKind } from '$lib/hudKinds';
+	import { gameState } from '$lib/gameState';
 	import { moduleHudKinds } from '$lib/moduleHudKinds';
 	import { hudOptionsOf } from '$lib/flowRuntime';
 	import { cameraPreview } from '$lib/cameraPreview';
@@ -67,12 +68,21 @@
 	// like it worked, because the next write to the DOCUMENT flushed the stale override
 	// too. (The `$derived`-cannot-see-a-plain-read family.)
 	// `_override` is the DEPENDENCY, not an argument: visibleScreen reads the override
-	// store through get(), which registers nothing.
-	const screensFor = (/** @type {any} */ _override, /** @type {string|null} */ cam, /** @type {any} */ _docs) =>
+	// store through get(), which registers nothing. `_state` is the same rule for the
+	// GAME STATE (B8): `showWhile` resolves through get(gameState) too, so a pure state
+	// transition — a data-authored template whose Start button writes NO override and NO
+	// document — left the layer on the stale screen. The menu stayed up over a running
+	// round while visibleScreen() already answered 'hud'.
+	const screensFor = (
+		/** @type {any} */ _override,
+		/** @type {string|null} */ cam,
+		/** @type {any} */ _docs,
+		/** @type {any} */ _state
+	) =>
 		activeHudKeys(cam)
 			.map((key) => ({ key, screen: visibleScreen(key) }))
 			.filter((entry) => !!entry.screen);
-	const screens = $derived(screensFor($hudScreenOverride, throughCamera, $hudDocs));
+	const screens = $derived(screensFor($hudScreenOverride, throughCamera, $hudDocs, $gameState));
 
 	// Unknown kinds are SKIPPED at render, never dropped from the document.
 	// any[]: an element carries PER-KIND fields beyond the base typedef (enabled, min/max,

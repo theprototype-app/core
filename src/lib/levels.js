@@ -128,7 +128,12 @@ export function sceneSignature(payload) {
 		environment: stripStamps(payload.environment ?? null),
 		physics: stripStamps(payload.physics ?? null),
 		music: stripStamps(payload.music ?? null),
-		hud: stripStamps(payload.hud ?? null)
+		hud: stripStamps(payload.hud ?? null),
+		// 23-A2/A4: the transport and the patch are scene data too — a tempo or a cable
+		// is a change worth a save, and they take stripStamps like every block above
+		// (the branch's own merge note asked for exactly this)
+		transport: stripStamps(payload.transport ?? null),
+		patch: stripStamps(payload.patch ?? null)
 	};
 	return JSON.stringify(pick);
 }

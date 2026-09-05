@@ -17,7 +17,7 @@ import { suspendAnimation, resumeAnimation, fireObjectClick } from './flowRuntim
 import { velocityFromSamples } from './throwVelocity';
 import { resolvePlaySettings } from './playSettings';
 import { nameOf } from './lockControl';
-import { moduleClickHandlers, moduleInteractiveGroups } from './moduleSDK';
+import { moduleClickHandlers, moduleInteractiveGroups, fireClickMiss } from './moduleSDK';
 
 // 21-B B3: play mode becomes INTERACT mode — a crosshair grab at distance,
 // scroll to push and pull, and a release that throws with the velocity you
@@ -290,6 +290,9 @@ function onPointerUp(event) {
 		lastUp = 'module-handler';
 		return;
 	}
+	// aimed at nothing (or at something no module claimed): a held gesture hears it here,
+	// because moduleHitTest is only reached when the crosshair actually hit a mesh
+	fireClickMiss();
 	lastUp = wasPress.uuid ? 'click' : 'no-target';
 	if (wasPress.uuid) fireObjectClick(wasPress.uuid);
 }

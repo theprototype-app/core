@@ -540,5 +540,81 @@ h.run(async () => {
 	await page.evaluate(() => window.__stores.isLocked.set(false));
 	await page.evaluate(() => window.__stores.physics.stopSimulation());
 
+	// ---------------------------------------------------------------- section 8
+	console.log('\n=== 8. the wheel sets the FLY SPEED in play mode ===');
+	// It never did. The editor's OrbitControls stay mounted while playing, and three's
+	// onMouseWheel calls preventDefault() as soon as it is past its guards — so
+	// PointerLockControls' onScroll, which stands down on `defaultPrevented` by the
+	// twin-claimant convention, was handed an already-claimed event every time. The
+	// guard is `enableZoom` and not `enabled`, because <TransformControls>' auto-pause
+	// observer force-restores `enabled = true` on cleanup and re-runs on selection
+	// changes; it never touches enableZoom.
+	await page.evaluate(() => window.__stores.playMode?.exitPlay?.());
+	await page.waitForTimeout(600);
+	const camDist = () =>
+		page.evaluate(
+			() =>
+				new Promise((r) => {
+					let c, ctl;
+					window.__stores.globalCamera.subscribe((v) => (c = v))();
+					window.__stores.orbitControls.subscribe((v) => (ctl = v))();
+					r(ctl ? c.position.distanceTo(ctl.target) : -1);
+				})
+		);
+	await page.mouse.move(640, 360);
+	const zoomBefore = await camDist();
+	for (let i = 0; i < 5; i++) await page.mouse.wheel(0, -120);
+	await page.waitForTimeout(500);
+	const zoomAfter = await camDist();
+	h.check(Math.abs(zoomAfter - zoomBefore) > 0.5, '8.1 (premise) in the EDITOR the wheel still dollies the orbit camera (' + zoomBefore.toFixed(2) + ' -> ' + zoomAfter.toFixed(2) + ')');
+
+	await page.locator('#play-button').click();
+	await page.waitForTimeout(900);
+	h.check((await page.evaluate(() => new Promise((r) => window.__stores.isLocked.subscribe((v) => r(v))()))) === true, '8.2 (premise) play mode is on');
+	const camPos = () =>
+		page.evaluate(() => new Promise((r) => window.__stores.globalCamera.subscribe((c) => r(c.getWorldPosition(new window.__stores.THREE.Vector3()).toArray()))()));
+	const travel = async () => {
+		const a = await camPos();
+		await page.keyboard.down('w');
+		await page.waitForTimeout(700);
+		await page.keyboard.up('w');
+		await page.waitForTimeout(150);
+		const b = await camPos();
+		return Math.hypot(a[0] - b[0], a[1] - b[1], a[2] - b[2]);
+	};
+	const baseTravel = await travel();
+	h.check(baseTravel > 0.05, '8.3 (premise) holding W moves at the default speed (' + baseTravel.toFixed(3) + ')');
+	const dolly1 = await camDist();
+	for (let i = 0; i < 20; i++) await page.mouse.wheel(0, -120);
+	await page.waitForTimeout(250);
+	const fastTravel = await travel();
+	h.check(fastTravel > baseTravel * 2, '8.4 scrolling UP flies FASTER (' + baseTravel.toFixed(3) + ' -> ' + fastTravel.toFixed(3) + ')');
+	for (let i = 0; i < 40; i++) await page.mouse.wheel(0, 120);
+	await page.waitForTimeout(250);
+	const slowTravel = await travel();
+	h.check(slowTravel < baseTravel * 0.5, '8.5 and DOWN flies slower (' + slowTravel.toFixed(3) + ' -> ' + slowTravel.toFixed(3) + ')');
+	// the EDITOR camera specifically: `globalCamera` is the PLAY camera in here, and the
+	// W presses above move it, so measuring that would fail for a reason unrelated to the
+	// wheel (it did, first time round).
+	const editorDist = () =>
+		page.evaluate(
+			() =>
+				new Promise((r) => {
+					let cam, ctl;
+					window.__stores.editorCam.subscribe((v) => (cam = v))();
+					window.__stores.orbitControls.subscribe((v) => (ctl = v))();
+					r(cam && ctl ? cam.position.distanceTo(ctl.target) : -1);
+				})
+		);
+	const editorBefore = await editorDist();
+	for (let i = 0; i < 5; i++) await page.mouse.wheel(0, -120);
+	await page.waitForTimeout(400);
+	h.check(Math.abs((await editorDist()) - editorBefore) < 0.001, '8.6 and none of it dollied the EDITOR camera underneath (' + editorBefore.toFixed(3) + ')');
+	void dolly1;
+	const speedStore = await page.evaluate(() => { let v; window.__stores.charController.playMoveSpeed.subscribe((x) => (v = x))(); return v; });
+	h.check(typeof speedStore === 'number', '8.7 the speed went through `playMoveSpeed`, so a Move Speed node can read it (' + speedStore + ')');
+	await page.evaluate(() => window.__stores.playMode?.exitPlay?.());
+	await page.waitForTimeout(600);
+
 	await h.finish(browser);
 });

@@ -1838,7 +1838,26 @@ let windowGrabPending = null;
 /** @type {any} pending detach: relPos/relQuat like the 100 rigid object grab */
 let windowGrab = null;
 
-function windowGroupFor(/** @type {string} */ id) {
+/** 23-B1 (finding 13): VR windows a MODULE registers, so its panel can be grip-repositioned
+ * like every core one. `windowGroupFor` / `windowHitAt` consult it after the built-ins.
+ * @type {Map<string, any>} id -> a store holding the panel's THREE.Group (or null) */
+const moduleWindows = new Map();
+/** @param {string} id @param {any} groupStore @returns {() => void} */
+export function registerVRWindow(id, groupStore) {
+	moduleWindows.set(id, groupStore);
+	return () => {
+		if (moduleWindows.get(id) === groupStore) moduleWindows.delete(id);
+	};
+}
+/** every window id the grab knows, built-ins first (tests) */
+export function vrWindowIds() {
+	return [...BUILTIN_WINDOW_IDS, ...moduleWindows.keys()];
+}
+const BUILTIN_WINDOW_IDS = ['menu', 'objects', 'palette', 'stats', 'props', 'prefabs', 'keyboard', 'chat', 'editmenu', 'snapmenu', 'approve'];
+
+export function windowGroupFor(/** @type {string} */ id) {
+	const registered = moduleWindows.get(id);
+	if (registered) return get(registered);
 	return get(
 		{
 			menu: vrMenuGroup,
@@ -1860,7 +1879,7 @@ function windowGroupFor(/** @type {string} */ id) {
 /** Which open window the controller ray lands on @param {number} index */
 function windowHitAt(index) {
 	let best = null;
-	for (const id of ['menu', 'objects', 'palette', 'stats', 'props', 'prefabs', 'keyboard', 'chat', 'editmenu', 'snapmenu', 'approve']) {
+	for (const id of vrWindowIds()) {
 		const group = windowGroupFor(id);
 		if (!group) continue;
 		const hits = controllerRay(index).intersectObject(group, true);

@@ -9,6 +9,8 @@ import { voicePeerDisconnected } from '$lib/voiceChat'
 import { physicsPeerDisconnected, physicsShapeChanged } from '$lib/physics'
 import { dropPeerCursor } from '$lib/nodesHandler'
 import { dropPeerQuality } from '$lib/networkQuality'
+import { dropPeerClock } from '$lib/musicClock'
+import { applyRemoteDevice } from '$lib/audioDevices'
 import { sessionHost, dropPeerJoined } from '$lib/connectionState'
 import { environment } from '$lib/environment'
 import { hasAnimatedImport, sendAnimatedImport, setAnimationState, dropAllAnimatedImports } from '$lib/animatedImports'
@@ -287,6 +289,7 @@ export function handleDisconnected(peerId) {
     });
     dropPeerCursor(peerId);
     dropPeerQuality(peerId); // N3: drop the peer's network-quality telemetry
+    dropPeerClock(peerId); // 23-A2: and their clock-offset samples
     // CN: host bookkeeping — the host leaving means we're no longer "joined"
     if (get(sessionHost) === peerId) sessionHost.set(null);
     dropPeerJoined(peerId);
@@ -454,6 +457,10 @@ export async function objectParameters(data) {
             else delete mesh.userData.particles;
             objectsGroup.update((value) => value);
         }
+    } else if (data.parameter == 'device') {
+        // 23-A3: userData.device is a device object's whole configuration ({kind,
+        // params}); the runtime rebuilds its WebAudio subgraph from it. null = removed.
+        applyRemoteDevice(data);
     } else if (data.parameter == 'camera') {
         // 16-P5: userData.camera holds a camera OBJECT's lens + framing settings
         // (the marker is a normal mesh; the preview camera and the frustum viz are
@@ -682,6 +689,10 @@ export function sendObject(conn, element, groupuuid, opts = {}) {
                 pos: test.toArray(),
                 rot: element.rotation.toArray(),
                 scale: element.scale.toArray(),
+                // 23-C1 fix: a Group can CARRY data (a device whose mesh() is a Group keeps
+                // its whole document in userData.device) — additive, absent on the /group
+                // command path and ignored by an older receiver
+                ...(element.userData && Object.keys(element.userData).length ? { userData: element.userData } : {}),
                 ...heal
             });
             // the 4th argument used to be a stray `groupuuid` that the 3-parameter

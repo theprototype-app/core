@@ -194,6 +194,36 @@ function clearXRWatchdog() {
 /** a session really started — Scene calls this from the renderer's own event */
 export function noteXRSessionStarted() {
 	clearXRWatchdog();
+	// the VR half of sim-on-play: only a session that REALLY started counts
+	maybeSimOnPlay();
+}
+
+/* ------------------------------------------------------------- sim on play ---- */
+
+// 21-B B8: honour `scenePhysics.play.simOnPlay`. A game template asks for its physics
+// to run the moment someone is IN the world — its whole rule surface (spawn nodes,
+// sensor triggers, grab/throw) is a documented silent no-op without a stepping sim,
+// and a menu screen cannot say "press P". The flag shipped in B1 and was written by
+// the Inspector but honoured NOWHERE until now. This module is where every play entry
+// already converges (the FAB, a keyboard shortcut, touch, and — via
+// noteXRSessionStarted — a REAL immersive session; the optimistic isVRMode flip is
+// deliberately not enough, since a denied permission would leave a sim running).
+// START only, never stop: leaving play must not end the round for every peer still
+// in it, and stopSimulation's transient-object sweep stays an explicit act.
+// Dynamic imports for the reason shortcuts.js uses one: physics.js is history-family
+// and this module is imported from shortcuts.
+function maybeSimOnPlay() {
+	Promise.all([import('./scenePhysics'), import('./physics')])
+		.then(([sp, ph]) => {
+			if (get(sp.scenePlay).simOnPlay !== true) return;
+			// a sim already running anywhere (ours or a peer's) means there is nothing
+			// to start — the quiet skip, never toggleSimulation's busy toast
+			if (get(ph.simulating) || get(ph.remoteSimulating)) return;
+			return ph.toggleSimulation();
+		})
+		.catch(() => {
+			/* physics failing to load must never take the play button down */
+		});
 }
 
 /** the session request failed (or was denied): undo the optimistic mode switch */
@@ -280,8 +310,11 @@ if (typeof window !== 'undefined') {
 		// every exit spends one — Escape, the ✕, a HUD quit, a peer-driven stop. This
 		// runs synchronously at module evaluation with the initial `null`, which is a
 		// consume of a marker nobody pushed: a no-op by the flag.
-		if (v === true) pushPlayMarker();
-		else consumePlayMarker();
+		if (v === true) {
+			pushPlayMarker();
+			// desktop/touch half of sim-on-play (the VR half is noteXRSessionStarted)
+			maybeSimOnPlay();
+		} else consumePlayMarker();
 
 		if (v !== false) return;
 		// NEVER write a store from inside its own subscriber (flush loop) — hop out of

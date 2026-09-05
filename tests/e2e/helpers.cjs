@@ -27,7 +27,21 @@ function check(ok, label) {
 // pass on). These flags hand ANGLE the real GPU when there is one — ANGLE falls
 // back to SwiftShader on its own where there isn't, so they are safe everywhere.
 // Only worth passing when a test actually cares about frame rate (net-stress).
-const GPU_ARGS = ['--use-gl=angle', '--use-angle=d3d11', '--enable-gpu', '--ignore-gpu-blocklist'];
+//
+// THE ANGLE BACKEND IS PER PLATFORM. `d3d11` exists only on Windows; on Linux it
+// silently falls back to SwiftShader, which is the starved-loop failure above in
+// disguise. MEASURED 2026-09-03 on a Linux box with an AMD GPU, same page, same
+// 660Hz voice: d3d11 -> SwiftShader, 2 audio samples per 600 ms, 6 rAF/s; vulkan ->
+// the real GPU, 37 samples per 600 ms, 61 rAF/s. An 80 ms note is invisible to the
+// first and obvious to the second.
+const ANGLE_BACKEND = process.platform === 'win32' ? 'd3d11' : process.platform === 'darwin' ? 'metal' : 'vulkan';
+const GPU_ARGS = [
+	'--use-gl=angle',
+	'--use-angle=' + ANGLE_BACKEND,
+	...(ANGLE_BACKEND === 'vulkan' ? ['--enable-features=Vulkan'] : []),
+	'--enable-gpu',
+	'--ignore-gpu-blocklist'
+];
 
 // Headless Chromium HAS no audio device, but WebAudio still runs against a null
 // sink and an AnalyserNode still sees the samples — measured: a 0.5-amplitude
@@ -422,7 +436,15 @@ async function finish(browser) {
 // the sibling theprototype.app-modules checkout's packed zip. Returns false when
 // that checkout has no zips, so a suite can SKIP instead of failing on a fresh
 // clone (run "npm run pack -- --all" there to build them).
-const MODULES_REPO = require('path').resolve(__dirname, '../../../theprototype.app-modules') + '/';
+// B8: the sibling modules checkout is `theprototype.app-modules` on some machines and
+// plain `modules` on others, and a LANE worktree sits beside both — probe, first hit
+// wins, and the historical name stays the fallback so the skip message names a path.
+const MODULES_REPO =
+	([
+		require('path').resolve(__dirname, '../../../theprototype.app-modules'),
+		require('path').resolve(__dirname, '../../../modules')
+	].find((p) => require('fs').existsSync(p)) ??
+		require('path').resolve(__dirname, '../../../theprototype.app-modules')) + '/';
 function moduleZipPath(id) {
 	return MODULES_REPO + id + '.zip';
 }

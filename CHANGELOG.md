@@ -5,6 +5,61 @@
      per release, newest first. HTML comments like this one are stripped before
      rendering, so maintainer notes stay out of the user-facing window. -->
 
+## 1.9.0 — Plug it in 🔌
+
+Sound stops being something a scene plays at you and becomes something you wire up.
+Instruments and effects are objects you place, cables you can see are how they are
+connected, and everyone in the room hears the same thing on the same beat. Plus the
+first game template that ships as pure data.
+
+### 🎛️ A music playground
+
+- 🔌 **Cables you can see.** A device has inputs and outputs — click one, click
+  another, and a wire hangs between them in the scene. Pull it out of an input to
+  move it, click that input again to unplug, Escape to put it back. In VR you grab
+  the cable and pull it across.
+- 🎚️ **Instruments and effects are ordinary scene objects.** Place them, move them,
+  group them, save them, duplicate them — a duplicated rig brings its cabling with
+  it, and a saved scene carries the whole patch.
+- ⏱️ **One clock the room shares.** Tempo, bars and beats are agreed across peers, so
+  a pattern started on one machine lands on the beat on every other.
+- 🎛️ **A Music toolbox** for device settings, presets and a mixer strip, and a
+  Device section in the inspector that fans a knob across everything selected.
+- 🎙️ **Record.** Capture the mic, turn a take into a sample, and bounce a looper's
+  output into a file the scene carries.
+- 🧩 **Four new flow nodes** — Device Param, Device Level, Transport and Note
+  Trigger — so a graph can play, tune and read your rack.
+
+> 🎵 **The instruments themselves ship as modules** (a beat lab, a pedal board, DJ
+> decks, a voice rack) and are still being polished — this release is the engine,
+> the cables and the toolbox they plug into. The **Jam Room** template is ready and
+> will offer to install what it needs.
+
+### 🏰 Towers
+
+- 🎮 **The first game template that is pure data** — nothing to install, built out of
+  the nodes and the HUD the editor already has.
+
+### 🐛 Fixes
+
+- 🖱️ **Scroll sets your fly speed in play mode again.** The editor's camera was
+  quietly swallowing the wheel, so the speed never moved.
+- 🔊 **Positional audio no longer hangs off a voice-chat setting.** Switching spatial
+  voice off used to freeze the listener and silently break every positioned sound in
+  the scene.
+- 🎵 The four music nodes no longer claim to come from a module you have not
+  installed.
+
+### 🛠️ For people building on it
+
+- 🧰 **`api.registerAudioDevice` and `api.audio`** — a module can add instruments,
+  effects and their knobs, and they join the patch like anything else.
+- 📦 **Explorer drops onto a module's mesh** (`registerDropHandler`), live parameter
+  previews while a knob is turning, and a device kind now tells a scene which module
+  it needs.
+- 🌐 The templates, modules and packs feeds take a build-time override, so content
+  can be tested before it is published.
+
 ## 1.8.0 — One library, many rooms 🗂️
 
 The Explorer became shared: what you share, everyone in the session has, in the same

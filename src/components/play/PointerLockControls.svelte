@@ -29,6 +29,7 @@
       charControl,
       playMoveSpeed,
       setPlayMoveSpeed,
+      effectiveSpeed,
       setJumpRequested,
       tickWalker,
       walkStep
@@ -45,6 +46,9 @@
     pointerSpeed = 1.0    
     moveSpeed = .1
     
+    /** wheel notch -> movement-speed RATIO (clamped 0.001..100 by setPlayMoveSpeed) */
+    const SPEED_STEP = 1.12
+
     let moveState = { forward: 0, backward: 0, left: 0, right: 0, up: 0, down: 0 };
 
     const _euler = new Euler(0, 0, 0, 'YXZ')
@@ -395,17 +399,21 @@
       // something, and says so on the event — never through a one-shot store
       // flag (the twin-Escape lesson)
       if (event.defaultPrevented) return
-      const step = event.deltaY > 0 ? -0.01 : 0.01
-      // 21-E6: while a controller is declared the wheel writes THROUGH the store, so
-      // scroll still adjusts speed AND the graph can read it (a Move Speed node) or
-      // overwrite it (a keypress -> Move Speed(set)). With no controller it stays this
-      // component's own local number, exactly as before — the parity contract.
-      if ($charControl) {
-        const current = $playMoveSpeed ?? $charControl.speed ?? moveSpeed
-        setPlayMoveSpeed(Math.min(1, Math.max(0.01, current + step)))
-        return
-      }
-      moveSpeed = Math.min(1, Math.max(0.01, moveSpeed + step))
+      // 21-E6 wrote through the store only while a controller was declared, and with
+      // none it assigned this component's own `moveSpeed` — which is a `$props()`
+      // binding (see the declaration), so the write did not reach the per-frame read
+      // and SCROLL CHANGED NOTHING in ordinary play mode. Measured: 20 notches up then
+      // 40 down moved a held-W travel not at all (0.400 every time). It writes through
+      // the store in BOTH cases now, which is also what makes a Move Speed node able to
+      // read the number the wheel just set.
+      //
+      // PROPORTIONAL, not a fixed step: +-0.01 on a 0.1 default is a 10% nudge at the
+      // bottom of the range and a 1% one at the top, so getting from a crawl to a
+      // sprint took dozens of notches. A ratio per notch covers 0.01..100 in about
+      // forty either way, and it is what a fly-speed control is expected to feel like.
+      const current = effectiveSpeed(moveSpeed)
+      const factor = event.deltaY > 0 ? 1 / SPEED_STEP : SPEED_STEP
+      setPlayMoveSpeed(current * factor)
     }
 
     function onKeyDown( event ) {

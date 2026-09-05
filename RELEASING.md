@@ -16,9 +16,9 @@ git push origin main --follow-tags
 
 After that: `npm version minor` (features) or `npm version patch` (fixes), then the
 same push. The tag triggers `.github/workflows/release.yml`, which builds, gates on
-the svelte-check baseline (476 errors / 62 warnings — update the numbers in the
-workflow when the baseline moves), zips `build/`, and publishes a GitHub Release
-with generated notes.
+the svelte-check baseline (the error/warning counts live in the workflow — update
+them when the baseline moves), zips `build/`, and publishes a GitHub Release with
+generated notes.
 
 MAJOR = a breaking file-format or wire-protocol change (`SESSION_FORMAT` /
 `MODULE_FORMAT` bumps, incompatible peer messages).
@@ -26,8 +26,13 @@ MAJOR = a breaking file-format or wire-protocol change (`SESSION_FORMAT` /
 ## After tagging
 
 - Update `CHANGELOG.md` (the in-app What's new window renders it).
-- Cloud deploys pin the tag: set `CORE_REF=vX.Y.Z` in the cloud repo's
-  `.env.deploy` so the deployed site's About shows the tagged core version.
+- Deploy the cloud site FROM THE TAG (cloud repo):
+  `npm run deploy -- --target=cloud --env=production --core-ref=vX.Y.Z`, or bump
+  `CORE_REF=vX.Y.Z` in its `.env.deploy` (the pin its prompt defaults to) and run
+  `npm run deploy`. The deployment is stamped with the version, so the Cloudflare
+  Pages Deployments page reads `vX.Y.Z (cloud <sha>)` and About shows the tagged
+  core; the script asks before shipping anything not exactly on a tag to production.
+  Then add the two-line entry to the cloud repo's `CHANGELOG.md`.
 - The peers warn (never block) on version mismatches, and `.tpscene`/`.tpmodule`
   files confirm before loading a NEWER format int — older files always load
   silently. Bump `SESSION_FORMAT`/`MODULE_FORMAT` only when the shape actually

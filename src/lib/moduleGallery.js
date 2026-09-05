@@ -1,4 +1,5 @@
 import { writable } from 'svelte/store';
+import { contentBase } from './contentBase';
 
 // 17-A3: the module gallery — a Browse tab in ModulesManager listing the
 // community modules repo (github.com/theprototype-app/modules) off its
@@ -10,7 +11,7 @@ import { writable } from 'svelte/store';
 /** Off-bundle base for the community modules repo. @main (not a tag): the
  * gallery should list new modules without a core release; module CODE is
  * versioned by each manifest, and installs snapshot the fetched bytes. */
-export const MODULES_BASE = 'https://cdn.jsdelivr.net/gh/theprototype-app/modules@main';
+export const MODULES_BASE = contentBase(import.meta.env.VITE_MODULES_BASE, 'https://cdn.jsdelivr.net/gh/theprototype-app/modules@main');
 
 /** normalized gallery entries @type {import('svelte/store').Writable<any[]>} */
 export const galleryModules = writable([]);

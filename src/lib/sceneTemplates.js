@@ -2,6 +2,7 @@ import { writable, get } from 'svelte/store';
 import { showToast, closeSelectionInspector } from '../stores/appStore.js';
 import { objectsGroup } from '../stores/sceneStore';
 import { isViewer, warnViewerReadOnly } from './objectPermissions';
+import { contentBase } from './contentBase';
 
 // Templates modal content (roadmap: "Templates" sidebar row → General/Examples/
 // Community tabs). Two content sources, no bytes in this repo beyond the bundled
@@ -24,7 +25,7 @@ import { isViewer, warnViewerReadOnly } from './objectPermissions';
  * C5.2: @v2 is a NEW tag, never a reused one, so a deployed older build cannot be
  * handed an index whose `games` section it has no tab for. (Reusing @v1 would push
  * v2 content at every build already in the wild.) */
-export const SCENES_BASE = 'https://cdn.jsdelivr.net/gh/theprototype-app/scenes@v2';
+export const SCENES_BASE = contentBase(import.meta.env.VITE_SCENES_BASE, 'https://cdn.jsdelivr.net/gh/theprototype-app/scenes@v2');
 /** Community manifest (raw = fresh + CORS; see header note). */
 export const GALLERY_JSON_URL =
 	'https://raw.githubusercontent.com/theprototype-app/community-gallery/main/gallery.json';

@@ -1874,12 +1874,22 @@ export function applySharedIndex(doc) {
 					owner: row.owner
 				});
 			}
+			// R22 round 36 (review): A LIVE FOLDER ROW IS A RESTORE OF ITS DELETION, so the
+			// applied mark comes off — the folder half of rule 1b below, which the first pass
+			// had only for items. Without it `appliedDeletes` kept `folder:<id>` across a
+			// peer's restore, and the NEXT deletion of the same folder short-circuited in step
+			// 4: `removeFolderRecords` never ran and the reconcile left a `wasShared` ghost of
+			// a folder the deleter had destroyed, surviving reloads (the set is persisted).
+			// Found by the cloud review of PR #190; the item path had it from the start.
+			forgetApplied(folderRowKey(row.id));
 		}
 		if (again.length === pending.length) {
 			// nothing resolved this pass — whatever is left is orphaned; root it
-			for (const row of again)
+			for (const row of again) {
 				if (!get(explorerFolders).some((f) => f.id === row.id))
 					createFolder(row.name, null, { id: row.id, share: 'peer', owner: row.owner });
+				forgetApplied(folderRowKey(row.id));
+			}
 			break;
 		}
 		pending = again;

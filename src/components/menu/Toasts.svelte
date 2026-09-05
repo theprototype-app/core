@@ -28,7 +28,7 @@
     import { untrack } from 'svelte';
     // P2b: watching follows a peer's camera IN THIS WORLD, so it cannot survive them
     // opening another scene. Users.svelte gates STARTING one; this is the other half.
-    import { peerScenes, elsewhereThan } from '$lib/peerScenes';
+    import { peerScenes, elsewhereThan, PRIVATE_SCENE } from '$lib/peerScenes';
     import { currentLevel } from '$lib/levels';
     import { showToast } from '../../stores/appStore';
 
@@ -79,7 +79,10 @@
         const watching = typeof $specatorMode === 'string' ? $specatorMode : '';
         const ours = $currentLevel?.name ?? '';
         if (!watching) return;
-        const away = elsewhereThan(map, ours, watching, $sessionHost);
+        // R22 round 36 (review): WE went private while watching. The pure predicate cannot
+        // see our own privacy (a private HOST even resolves an unnamed peer INTO our private
+        // scene), so the caller states it: there is no world of theirs we stand in any more.
+        const away = $currentLevel?.private ? PRIVATE_SCENE : elsewhereThan(map, ours, watching, $sessionHost);
         if (!away) return;
         // the sentinels are places, not names: a private peer and the session's own world
         // both read as somewhere we cannot follow, and neither has a scene to name.

@@ -1320,6 +1320,31 @@ h.run(async () => {
 		45000
 	);
 
+	// ---- A deletes the folder AGAIN: the peer must apply it afresh -------------------------
+	//
+	// The cloud review of PR #190: a peer's `appliedDeletes` kept `folder:<id>` across the
+	// restore (only the ITEM half of the un-apply rule existed), so the second deletion of the
+	// same folder short-circuited in the applier and the reconcile left a `wasShared` ghost of
+	// a folder the deleter had destroyed — surviving reloads, since the set is persisted. The
+	// mark comes off with the live row now. This is the whole delete -> restore -> delete
+	// cycle the batch advertises, measured on the peer.
+	await A.page.evaluate((s) => window.__t.S.sharedLibrary.deleteFolderToBin(s.folder), seed);
+	await h.eventually(
+		() =>
+			B.page.evaluate((s) => {
+				const t = window.__t;
+				const f = t.folders().find((x) => x.id === s.folder);
+				return {
+					folder: f ? { share: f.share ?? null, wasShared: !!f.wasShared } : null,
+					visible: t.items().filter((i) => i.hash === s.one || i.hash === s.two).length,
+					rows: t.log().length
+				};
+			}, seed),
+		(v) => v.folder === null && v.visible === 0 && v.rows === 3,
+		'a SECOND deletion of the same folder applies on the peer too: the record is gone again (no wasShared ghost), both files hidden, three rows',
+		30000
+	);
+
 	// ---- 6. A SHARED SCENE FILE IS NOT A PRIVATE ONE -------------------------------------
 	//
 	// R22 round 36 (user), a separate fix in the same batch: "files were shared to peers and

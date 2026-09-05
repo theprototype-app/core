@@ -198,11 +198,22 @@ h.run(async () => {
 	await A.page.waitForTimeout(200);
 	await A.page.getByText('Delete folder', { exact: true }).click();
 	await A.page.waitForTimeout(300);
+	// R22 round 11: the question is a strip inside the Explorer now, not a toast over the
+	// viewport (see explorer-delete-confirm). Same content, one surface over.
+	const cascade = await A.page.evaluate(() => {
+		const el = document.querySelector('#explorer-confirm');
+		return el
+			? {
+					title: el.querySelector('.ex-confirm-title')?.textContent?.trim() ?? '',
+					detail: el.querySelector('.ex-confirm-detail')?.textContent?.trim() ?? ''
+				}
+			: null;
+	});
 	h.check(
-		await A.page.getByText(/Delete "Textures" \(2 folders, 1 item\)/).isVisible(),
-		'cascade delete confirms with counts'
+		!!cascade && /Delete "Textures"\?/.test(cascade.title) && /2 folders and 1 item/.test(cascade.detail),
+		`cascade delete confirms with counts (${JSON.stringify(cascade)})`
 	);
-	await A.page.getByRole('button', { name: 'Delete', exact: true }).click();
+	await A.page.locator('#explorer-confirm-yes').click();
 	await A.page.waitForTimeout(400);
 	const afterDelete = await A.page.evaluate(
 		() =>

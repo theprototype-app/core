@@ -10,9 +10,29 @@ const byKey = new Map();
 /** bumps whenever the z-order changes, so followers (tab strips) can re-read z */
 export const focusTick = writable(0);
 
+/**
+ * Rank the stack into the --z-window band, 40..44, and it has to be counted FROM THE
+ * TOP.
+ *
+ * It used to be `40 + Math.min(index, 4)`, counted from the bottom, which clamps every
+ * window from the fifth onwards onto 44 — so raising one moved it to the end of `order`
+ * and changed nothing anyone could see, because four other windows were already sitting
+ * on the same number and DOM order decides a tie. MEASURED with all seven floating
+ * panels open: Flow Code, Animation, UV, HUD and the Explorer all read z=44 at once, so
+ * a click could not bring any of them forward. The pointerdown raise below was never
+ * the broken part; the arithmetic was.
+ *
+ * Counting from the top makes the TOP-MOST node the only one at 44, the next 43, and so
+ * on to a 40 floor. That is exactly the guarantee click-to-front needs — whatever you
+ * press ends up strictly above every other window — and it keeps the whole band under
+ * `--z-hud` (45), so the tier contract in ui.css is untouched. Windows past the fifth
+ * share the 40 floor, which is the same collapse the old rule had, just moved to the
+ * end of the stack nobody is looking at instead of the front.
+ */
 function apply() {
+	const top = order.length - 1;
 	order.forEach((node, index) => {
-		node.style.zIndex = String(40 + Math.min(index, 4));
+		node.style.zIndex = String(40 + Math.max(0, 4 - (top - index)));
 	});
 	focusTick.update((n) => n + 1);
 }
@@ -66,4 +86,40 @@ export function raiseWindowNode(node) {
 export function isTopWindow(key) {
 	const node = byKey.get(key);
 	return !!node && order.length > 0 && order[order.length - 1] === node;
+}
+
+/**
+ * Is a node currently on screen? The same test windowTabs' merge hit-test uses
+ * (`targetAt`): these windows are `position: fixed`, so `offsetParent` is null
+ * even when they are perfectly visible — the offsetParent clause only rules out
+ * NON-fixed ones. A closed window is hidden either by an inline `display:none`
+ * (a tab group left it behind) or by a `hidden` CLASS, which shows up as a
+ * computed `display:none` and a zero-width rect.
+ * @param {any} node
+ */
+function isVisible(node) {
+	if (!node?.isConnected) return false;
+	if (node.style.display === 'none') return false;
+	const style = getComputedStyle(node);
+	if (style.display === 'none') return false;
+	if (node.offsetParent === null && style.position !== 'fixed') return false;
+	return node.getBoundingClientRect().width > 0;
+}
+
+/**
+ * Is the keyed window the top-most VISIBLE one? `isTopWindow` cannot answer this:
+ * a closed window usually stays MOUNTED (a `hidden` class / display:none) and
+ * windowFocus only drops a node when its action is destroyed, so a window closed
+ * while it was on top sits at the top of `order` for ever — after which the
+ * top-most window that is actually on screen never reads as top.
+ * @param {string} key
+ */
+export function isTopVisibleWindow(key) {
+	const node = byKey.get(key);
+	if (!node) return false;
+	for (let index = order.length - 1; index >= 0; index--) {
+		if (!isVisible(order[index])) continue;
+		return order[index] === node;
+	}
+	return false;
 }

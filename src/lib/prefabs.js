@@ -71,9 +71,10 @@ const PREFAB_LIMIT = 5_000_000;
  * cannot drift from "Save as prefab": they are the same bytes by construction, and the
  * size refusal lives in exactly one place.
  * @param {string[]} uuids @param {string=} name
+ * @param {{keepUuids?: boolean}} [opts]
  * @returns {{element: any, name: string}|null}
  */
-function buildPrefabElement(uuids, name) {
+function buildPrefabElement(uuids, name, opts = {}) {
 	const group = get(objectsGroup);
 	const list = (uuids ?? []).filter(Boolean);
 	if (!list.length) return null;
@@ -104,6 +105,18 @@ function buildPrefabElement(uuids, name) {
 		if (!object) continue;
 		const clone = object.clone(true);
 		stripEditOverlays(clone); // clone(true) copies the edit wireframe with it
+		// R22 round 11: KEEP THE SOURCE UUIDS when the caller asks. three's clone() mints
+		// fresh ones, which is right for a snapshot nobody has to correlate with anything —
+		// but a .tpscene prefab has to hand its objects their own flow graphs, shader graphs
+		// and clips back on instantiation, and those documents are keyed by uuid. Without
+		// this the map is empty and the format silently loses exactly what it was chosen for.
+		if (opts.keepUuids) {
+			/** @type {string[]} */
+			const from = [];
+			object.traverse((/** @type {any} */ node) => from.push(node.uuid));
+			let at = 0;
+			clone.traverse((/** @type {any} */ node) => (node.uuid = from[at++] ?? node.uuid));
+		}
 		object.updateWorldMatrix(true, false);
 		clone.matrix.copy(object.matrixWorld);
 		clone.matrix.decompose(clone.position, clone.quaternion, clone.scale);
@@ -293,6 +306,46 @@ export function prefabFacts(id) {
 	};
 }
 
+/**
+ * R22 round 11 — the element a caller wants for a chosen FORMAT.
+ *
+ * A byte-backed prefab keeps its snapshot BESIDE the file rather than instead of it: the
+ * thumbnail, the 3D preview, the facts block, the VR sleeve and the drop-at-the-cursor
+ * placement all read `element`, and every one of them would go blank for the new formats
+ * otherwise. The bytes exist for the two things a snapshot cannot do — hand the file back
+ * in its own format, and travel to the Library without being converted.
+ * @param {string[]} uuids @param {string=} name @param {{keepUuids?: boolean}} [opts]
+ */
+export function prefabElementFor(uuids, name, opts) {
+	return buildPrefabElement(uuids, name, opts);
+}
+
+/** The offscreen render, exposed so a byte-backed prefab gets the same picture.
+ * @param {any} element */
+export function prefabThumbnail(element) {
+	return renderThumbnail(element);
+}
+
+/**
+ * Store a prefab record built elsewhere (see $lib/saveAs). One write path, so the size
+ * refusal, the persist and the toast cannot drift between the formats.
+ * @param {{name: string, element: any, thumbnail?: string|null, format?: string, bytes?: any}} spec
+ */
+export async function addPrefabRecord(spec) {
+	if (!spec?.element) return null;
+	const entry = {
+		id: crypto.randomUUID(),
+		name: spec.name || 'Prefab',
+		createdAt: Date.now(),
+		thumbnail: spec.thumbnail ?? renderThumbnail(spec.element),
+		element: spec.element,
+		...(spec.format && spec.format !== 'snapshot' ? { format: spec.format, bytes: spec.bytes } : {})
+	};
+	prefabs.update((list) => [...list, entry]);
+	await persist();
+	return entry;
+}
+
 /** Add a prefab instance to the scene (fresh uuids), replicated + undoable.
  * @param {any} prefab @param {any=} position optional spawn point (group-local) */
 export function instantiatePrefab(prefab, position) {
@@ -307,7 +360,13 @@ export function instantiatePrefab(prefab, position) {
 		return null;
 	}
 	stripEditOverlays(object); // heals a prefab an older build saved mid-session
-	object.traverse((node) => (node.uuid = crypto.randomUUID()));
+	/** @type {Map<string, string>} the saved uuid -> the fresh one, for the carry below */
+	const uuidMap = new Map();
+	object.traverse((node) => {
+		const fresh = crypto.randomUUID();
+		uuidMap.set(node.uuid, fresh);
+		node.uuid = fresh;
+	});
 	object.name = prefab.name;
 	if (position) object.position.copy(position);
 	group.add(object);
@@ -317,7 +376,40 @@ export function instantiatePrefab(prefab, position) {
 	const peer = get(peers);
 	if (peer) peer.send({ type: 'object', element: object.toJSON() });
 	selectObject(object.uuid, true);
+	// R22 round 11: a .tpscene prefab carries what glTF and a bare snapshot cannot — the
+	// objects' flow graphs, shader graphs and authored clips. The OBJECTS are already in
+	// the scene (synchronously, so the drop lands at the cursor and VR still gets its
+	// object back); the documents follow, because reading the zip is async and holding
+	// the placement up for it would be the wrong trade.
+	if (prefab.format === 'tpscene' && prefab.bytes) void carryPrefabDocuments(prefab, uuidMap);
 	return object;
+}
+
+/**
+ * The second half of a .tpscene prefab. Dynamic import on purpose: sessions.js pulls the
+ * zip library and the whole save machinery, and a prefab library has no business paying
+ * for that until somebody instantiates one of these.
+ * @param {any} prefab @param {Map<string, string>} uuidMap
+ */
+async function carryPrefabDocuments(prefab, uuidMap) {
+	if (!uuidMap.size) return;
+	try {
+		const { readSessionZip } = await import('./sessions');
+		const { copyGraphFrom } = await import('./flowGraphs');
+		const { copyShaderGraphFrom } = await import('./shaderGraph');
+		const { copyAnimationsFrom } = await import('./animationPreview');
+		const payload = await readSessionZip(prefab.bytes);
+		if (!payload) return;
+		let carried = 0;
+		for (const [from, to] of uuidMap) {
+			if (payload.graphs?.[from]) (copyGraphFrom(payload.graphs[from], to), carried++);
+			if (payload.shaderGraphs?.[from]) (copyShaderGraphFrom(payload.shaderGraphs[from], to), carried++);
+			if (payload.animations?.[from]) (copyAnimationsFrom(payload.animations[from], to), carried++);
+		}
+		if (carried) showToast('Restored ' + carried + ' saved document' + (carried === 1 ? '' : 's') + ' with the prefab');
+	} catch (error) {
+		console.log('prefab documents failed', error);
+	}
 }
 
 /** @param {string} id */

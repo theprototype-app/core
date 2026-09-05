@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { writable, get } from 'svelte/store';
-import { objectsGroup, globalCamera, orbitControls, TControls } from '../stores/sceneStore';
+import { objectsGroup, globalCamera, globalScene, globalRenderer, orbitControls, TControls } from '../stores/sceneStore';
 import { restoreGraphs, clearGraphs, SCENE_GRAPH, allNodes } from '../stores/flowStore';
 import { serializeGraphs, copyGraphFrom } from './flowGraphs';
 import { serializeNode, serializeEdge, sendNodes } from './nodesHandler';
@@ -15,7 +15,24 @@ import {
 } from './animatedImports';
 import { animationsSnapshot, animationsRestore, copyAnimationsFrom } from './animationPreview';
 import { shaderGraphsSnapshot, shaderGraphsRestore, copyShaderGraphFrom } from './shaderGraph';
-import { peers, showToast, showInfoToast, dismissToastById, modulesOpen } from '../stores/appStore';
+import {
+	peers,
+	showToast,
+	showInfoToast,
+	dismissToastById,
+	modulesOpen,
+	// R22 round 33: "Save scene & connect" hands over to the Explorer's own inline naming
+	explorerClose,
+	armExplorerSceneSave
+} from '../stores/appStore';
+import { bottomDockActive } from './bottomDock';
+// R22 round 33 — both are store-only leaves (svelte/store + localStorage), so this edge
+// closes nothing: `mergeOnConnect` chooses which question the gate puts, and
+// `pendingConnectDecision` is what sharedLibrary holds its downloads behind.
+import { mergeOnConnect, pendingConnectDecision, sessionHost } from './connectionState';
+// R22 round 33 — the naming handoff, unchanged, moved from the dial to the approval. This
+// module's static imports are appStore/connectionState only, so there is no way back here.
+import { waitForSceneName, modalClosed } from './peerApproval';
 import { recordObjectPresence } from './history';
 import { annotationsSnapshot, annotationsRestore } from './autosave';
 // #20 P5: selection + any open edit session ride the file; PANEL LAYOUT does not (that
@@ -61,9 +78,67 @@ const MAX_SESSION_BYTES = 50 * 1024 * 1024;
 export const sessions = writable(/** @type {any[]} */ ([]));
 
 /** Small offscreen render of the whole scene group @param {any} group */
+/**
+ * R22 round 11 — THE PICTURE COMES FROM THE VIEWPORT FIRST.
+ *
+ * The report was that saved entries showed the generic archive icon. MEASURED on this
+ * branch, the offscreen path below works: a scene holding one box produced a 1567-byte
+ * webp through the real UI, for both the scene save and the project save. So the
+ * mechanism is not broken — which means the reported nulls came from one of the two ways
+ * it can legitimately return null, and only one of those is acceptable:
+ *
+ *   · an EMPTY scene has nothing to picture, and a null there is honest;
+ *   · anything the offscreen ritual can THROW on is not. It builds a SECOND WebGL context
+ *     (browsers cap those), and it round-trips the whole scene through
+ *     `ObjectLoader().parse(group.toJSON())` — which cannot rebuild every geometry a real
+ *     scene contains (a WireframeGeometry is the documented one). Either failure is caught
+ *     and turns into a silent null, and a silent null is exactly what "it shows the
+ *     archive icon" looks like.
+ *
+ * So the primary path is now the one the cloud plugin's room thumbnails already use and
+ * that has no second context and no serialization at all: render a fresh frame on the
+ * LIVE renderer and read its canvas. It cannot throw on a geometry, it costs no context,
+ * and it shows the scene the way the author is looking at it. The offscreen render stays
+ * as the FALLBACK, for the one case the live path cannot serve (VR, where the canvas
+ * belongs to the headset).
+ *
+ * A fresh render is what makes this work without `preserveDrawingBuffer`: the drawing
+ * buffer is cleared after compositing, so it has to be read in the same tick it is drawn.
+ * @param {number} maxW @returns {string|null} a dataURL, or null
+ */
+function viewportThumbnail(maxW = 256) {
+	/** @type {any} */
+	const renderer = get(globalRenderer);
+	const scene = get(globalScene);
+	const camera = get(globalCamera);
+	if (!renderer || !scene || !camera || renderer.xr?.isPresenting) return null;
+	try {
+		renderer.render(scene, camera);
+		const source = renderer.domElement;
+		const sw = source.width || maxW;
+		const scale = Math.min(1, maxW / sw);
+		const w = Math.max(1, Math.round(sw * scale));
+		const h = Math.max(1, Math.round((source.height || maxW) * scale));
+		const canvas = document.createElement('canvas');
+		canvas.width = w;
+		canvas.height = h;
+		const ctx = canvas.getContext('2d');
+		if (!ctx) return null;
+		ctx.drawImage(source, 0, 0, w, h);
+		return canvas.toDataURL('image/webp', 0.7);
+	} catch (error) {
+		console.log('viewport thumbnail failed', error);
+		return null;
+	}
+}
+
+/** The saved entry's picture. @param {any} group @returns {string|null} */
 function renderSceneThumbnail(group) {
 	try {
 		if (!group || group.children.length === 0) return null;
+		// the live viewport first — see viewportThumbnail for why
+		const live = viewportThumbnail();
+		if (live) return live;
 		const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
 		renderer.setSize(256, 160);
 		const scene = new THREE.Scene();
@@ -89,6 +164,28 @@ function renderSceneThumbnail(group) {
 	}
 }
 
+/**
+ * R22 round 9: HOW BIG IS THIS ENTRY. Two halves measured differently because they are
+ * stored differently — the library's files are real Blobs (idb structured-clones them, so
+ * `.size` is the truth) while everything else is JSON, whose size has to be encoded to be
+ * known. Reported as one number, because the user is asking about disk and not about our
+ * storage layout.
+ *
+ * An ESTIMATE, and labelled as one in the UI: idb's own overhead is not observable from
+ * here. It is measured per payload at load, which is affordable because `loadSessions`
+ * already reads every payload in full.
+ * @param {any} payload @returns {number}
+ */
+function payloadBytes(payload) {
+	let bytes = 0;
+	try {
+		const { library, ...rest } = payload ?? {};
+		for (const row of library?.items ?? []) bytes += Number(row?.blob?.size) || 0;
+		bytes += new TextEncoder().encode(JSON.stringify(rest)).length;
+	} catch {}
+	return bytes;
+}
+
 /** @param {any} payload */
 function metaOf(payload) {
 	return {
@@ -96,7 +193,13 @@ function metaOf(payload) {
 		name: payload.name,
 		createdAt: payload.createdAt,
 		count: payload.count,
-		thumbnail: payload.thumbnail
+		thumbnail: payload.thumbnail,
+		// R22 round 9: the PROJECT/SCENE distinction is not a new field to store — a project
+		// entry is one that carries a library, which is exactly what `saveSessionWithLibrary`
+		// adds. Derived, so every session ever saved answers correctly with no migration.
+		hasLibrary: !!payload.library,
+		libraryCount: payload.library?.items?.length ?? 0,
+		bytes: payloadBytes(payload)
 	};
 }
 
@@ -207,6 +310,87 @@ export function buildSessionPayload(name) {
 }
 
 /**
+ * R22 round 11 — A .tpscene OF A SELECTION, not of the world.
+ *
+ * The user picked the formats themselves: "prefab (.glb), prefab (.tpscene) — tooltip
+ * when hovering that it includes animations/object-graph-nodes/shaders/etc". This is what
+ * makes that sentence true, and it is a DIFFERENT ACT from buildSessionPayload rather
+ * than an option on it. Two reasons to keep them apart: buildSessionPayload is on the
+ * hot path that decides "has this scene changed" (sceneSignature, round 11 phase 1) and
+ * an `only` flag there is one branch away from a wrong verdict; and what a selection
+ * MEANS is different — a subtree, not a world.
+ *
+ * SO WHAT TRAVELS: the objects, their authored clips, their object flow graphs, their
+ * shader graphs, and the joints whose BOTH ends are in the set. What does not: the
+ * environment, the look, the gravity, the music, the HUD and the game shell. Those are
+ * facts about a world, and a prefab dropped into somebody else's scene has no business
+ * changing their sky. The menu's tooltip says both halves out loud.
+ *
+ * Every snapshot already takes a `pruneMissing` predicate for exactly this shape of
+ * question, so the filtering is theirs and not a second copy here.
+ * @param {string} name @param {string[]} uuids top-level objects
+ * @returns {any} a payload readSessionZip/importObjects understand
+ */
+export function buildSelectionPayload(name, uuids) {
+	const group = get(objectsGroup);
+	const roots = (uuids ?? []).filter(Boolean);
+	/** every uuid in the selected SUBTREES — a document may be keyed by a child */
+	const inSet = new Set();
+	for (const uuid of roots) {
+		const object = group?.getObjectByProperty('uuid', uuid);
+		object?.traverse?.((/** @type {any} */ node) => inSet.add(node.uuid));
+	}
+	const missing = (/** @type {string} */ id) => !inSet.has(id);
+	const restore = parkAnimatedAtBase();
+	const animatedUuids = animatedImportUuids(group);
+	try {
+		const objects = roots
+			.map((uuid) => group?.getObjectByProperty('uuid', uuid))
+			.filter((/** @type {any} */ object) => object && !animatedUuids.includes(object.uuid) && !isTransient(object))
+			.map((/** @type {any} */ object) => object.toJSON());
+		const clips = animationsSnapshot();
+		/** @type {any} */
+		const animations = {};
+		for (const [uuid, set] of Object.entries(clips ?? {})) if (inSet.has(uuid)) animations[uuid] = set;
+		return {
+			id: crypto.randomUUID(),
+			name: name || 'Selection',
+			createdAt: Date.now(),
+			format: SESSION_FORMAT,
+			appVersion: APP_VERSION,
+			count: objects.length,
+			thumbnail: null,
+			objects,
+			// a rigged import replicates as its ORIGINAL bytes, so it rides the same way here
+			animated: animatedImportsSnapshot(group).filter((/** @type {any} */ record) => inSet.has(record.uuid)),
+			animations,
+			// THE SCENE GRAPH IS NOT PART OF A SELECTION, and `pruneMissing` cannot say so:
+			// it asks "is this graph's OBJECT still here", and the scene graph has no object,
+			// so it survives every predicate. Measured while building the counterfactual —
+			// the payload came out holding `{scene, <the box>}`, which would have travelled
+			// the author's whole scene logic inside a prefab.
+			graphs: Object.fromEntries(
+				Object.entries(serializeGraphs(serializeNode, serializeEdge, { pruneMissing: missing })).filter(
+					([key]) => key !== SCENE_GRAPH
+				)
+			),
+			nodes: [],
+			edges: [],
+			shaderGraphs: shaderGraphsSnapshot({ pruneMissing: missing }),
+			annotations: annotationsSnapshot().filter((/** @type {any} */ note) => inSet.has(note.objectUuid)),
+			// a joint with one end outside the set would arrive attached to nothing
+			joints: jointsSnapshot().filter((/** @type {any} */ joint) => inSet.has(joint.a) && inSet.has(joint.b)),
+			post: null,
+			hud: null,
+			game: null,
+			camera: null
+		};
+	} finally {
+		restore();
+	}
+}
+
+/**
  * 21-F4: a payload with NOTHING in it — what "New scene…" saves as a fresh level asset.
  * The same shape buildSessionPayload writes, minus every capture: an empty level must not
  * inherit whatever scene happens to be open when it is created.
@@ -248,6 +432,77 @@ async function persistSession(payload) {
 	return payload;
 }
 
+/**
+ * R22-R8 (locked answer) — SAVE THE PROJECT, THEN ADOPT THE HOST'S.
+ *
+ * "Save into session" saves the current project into sessions, CLEARS the Explorer and
+ * downloads everything from the peers. The middle step is destructive, so the first one
+ * has to be complete: an ordinary session payload is a SCENE snapshot and carries only
+ * the assets that scene references, which means clearing the library afterwards would
+ * throw away every file the scene does not happen to use.
+ *
+ * So this payload carries the LIBRARY as well — folders, item records and their bytes,
+ * as real Blobs, which idb structured-clones for free. It rides BESIDE the scene the way
+ * `animated` original bytes already do (the documented rule: anything the scene
+ * serializer cannot round-trip travels beside the snapshot, not inside it).
+ *
+ * Additive: a session without the key restores exactly as it always did.
+ * @param {string} name @returns {Promise<any>}
+ */
+export async function saveSessionWithLibrary(name) {
+	const { explorerFolders, explorerItems, itemBlob } = await import('./explorer');
+	const base = buildSessionPayload(name);
+	if (!base) return null;
+	/** @type {any[]} */
+	const items = [];
+	for (const item of get(explorerItems)) {
+		const blob = await itemBlob(item.id);
+		if (!blob) continue; // an index row whose bytes are gone carries nothing
+		// R22 round 11 (user): "would be nice to be able to see thumbnails from project
+		// files". The picture is already on the library record and was simply not copied
+		// across, so a saved project's files had nothing to show. Additive: a project saved
+		// before this carries no `thumbnail` key and falls back to its kind icon.
+		items.push({
+			name: item.name,
+			kind: item.kind,
+			folderId: item.folderId,
+			hash: item.hash,
+			blob,
+			...(item.thumbnail ? { thumbnail: item.thumbnail } : {})
+		});
+	}
+	/** @type {any} */
+	const payload = base;
+	payload.library = {
+		folders: get(explorerFolders).map((f) => ({ id: f.id, name: f.name, parentId: f.parentId })),
+		items
+	};
+	const saved = await persistSession(payload);
+	if (saved) showToast('Session saved: ' + saved.name + ' (with ' + items.length + ' library file' + (items.length === 1 ? '' : 's') + ')');
+	return saved;
+}
+
+/**
+ * Put a saved session's library back. Called from the session RESTORE path; a payload
+ * with no `library` key is a pre-R8 session and takes this as a no-op.
+ * @param {any} payload @returns {Promise<number>} how many files were restored
+ */
+export async function restoreSessionLibrary(payload) {
+	const lib = payload?.library;
+	if (!lib) return 0;
+	const { createFolder, addItemFromBytes } = await import('./explorer');
+	for (const f of lib.folders ?? []) createFolder(String(f.name ?? 'Folder'), f.parentId ?? null, { id: f.id });
+	let n = 0;
+	for (const row of lib.items ?? []) {
+		try {
+			const buffer = await row.blob.arrayBuffer();
+			await addItemFromBytes(buffer, row.name, row.folderId ?? null);
+			n++;
+		} catch {}
+	}
+	return n;
+}
+
 /** Snapshot the current scene into a named session @param {string} name */
 export async function saveSession(name) {
 	const payload = await persistSession(buildSessionPayload(name));
@@ -274,6 +529,30 @@ export async function renameSession(id, name) {
 	payload.name = name;
 	await idbPut(KEY + id, payload);
 	await loadSessions();
+}
+
+/**
+ * R22 round 13 P3b — SAVE A MOUNTED VOLUME BACK.
+ *
+ * Replace one saved record’s library block in place. The counterpart of
+ * `saveSessionWithLibrary`, and deliberately NOT a variant of it: that one BUILDS a
+ * payload from the live stores, while this one takes rows a mounted volume has been
+ * editing and touches no live store at all — not the Explorer, not `projectManifest`,
+ * not the scene. The record’s own scene snapshot is left exactly as it was saved.
+ *
+ * It lives here rather than as an idb reach from `mountedVolumes` because the key prefix
+ * and the list refresh are this module’s business: a saved entry’s file COUNT is part of
+ * its meta, so the card must be re-read or it goes on claiming the old number.
+ * @param {string} id @param {{folders: any[], items: any[]}} library
+ * @returns {Promise<boolean>} false when the record is gone
+ */
+export async function writeSessionLibrary(id, library) {
+	const payload = await idbGet(KEY + id);
+	if (!payload) return false;
+	payload.library = { folders: library?.folders ?? [], items: library?.items ?? [] };
+	await idbPut(KEY + id, payload);
+	await loadSessions();
+	return true;
 }
 
 /** JSON string for a .session.json download @param {any} payload */
@@ -426,6 +705,30 @@ export async function importSession(json) {
 	return finishImport(payload);
 }
 
+/**
+ * R22 round 13 — STORE A PAYLOAD BUILT OUT OF A FILE THIS MODULE CANNOT READ.
+ *
+ * `importSession` (a .session.json) and `importSessionZip` (a .tpscene) each parse their
+ * own format and then do the same three things: confirm the scene format, confirm the
+ * modules, write a fresh slot. `projectFile.importProjectAsSession` reads a THIRD format
+ * whose shape belongs to that module, and needs exactly that ending. Exporting the ENDING
+ * rather than teaching this module about `.tp` keeps the format knowledge where the format
+ * is — the same line `exportProjectFromSession` draws from the other side.
+ *
+ * The confirms are not redundant just because the caller already asked about the PROJECT
+ * format: `project.json` and the `session.json` inside its scene bundle carry different
+ * version numbers, and a newer SCENE inside a readable project is precisely the case that
+ * would otherwise land in silence.
+ * @param {any} payload @returns {Promise<any|null>} the saved record, or null when a
+ *   confirm was declined (a silent no-op for the caller, never an error)
+ */
+export async function importSessionPayload(payload) {
+	if (!payload || typeof payload !== 'object') return null;
+	if (!(await confirmSessionFormat(payload))) return null;
+	if (!(await confirmModuleRequirements(payload))) return null;
+	return finishImport(payload);
+}
+
 // ---- session ZIP: session.json + the scene's binary assets (127) ----
 
 /**
@@ -486,8 +789,35 @@ export async function exportSessionZip(payload, opts = { assets: true, packs: fa
 		payload = { ...payload, nodes: [], edges: [], graphs: {} };
 		delete payload.modules;
 	}
+	/**
+	 * R22 round 12 — THE LIBRARY HAS TO TRAVEL AS FILES.
+	 *
+	 * MEASURED BUG, pre-existing since R8: this wrote `JSON.stringify(payload)`, and a
+	 * PROJECT payload's `library.items[].blob` is a Blob — which stringifies to `{}`. So a
+	 * project entry downloaded as a bundle silently arrived with every file gone, and
+	 * nothing anywhere said so. It is the documented rule one layer down: what a serializer
+	 * cannot round-trip rides BESIDE it, keyed so the reader can put it back.
+	 *
+	 * So the blobs become real zip entries under `library/` and session.json carries an
+	 * INDEX in their place. A payload with no library is byte-identical to before.
+	 */
 	/** @type {Record<string, any>} */
-	const files = { 'session.json': strToU8(JSON.stringify(payload)) };
+	const files = {};
+	/** @type {any} */
+	let wire = payload;
+	if (payload?.library?.items?.length) {
+		/** @type {any[]} */
+		const libIndex = [];
+		let n = 0;
+		for (const row of payload.library.items) {
+			if (!row?.blob) continue;
+			const file = 'library/' + n++ + '-' + String(row.name ?? 'file').replace(/[^\w.-]+/g, '_');
+			files[file] = new Uint8Array(await row.blob.arrayBuffer());
+			libIndex.push({ name: row.name, kind: row.kind, folderId: row.folderId ?? null, hash: row.hash, file, ...(row.thumbnail ? { thumbnail: row.thumbnail } : {}) });
+		}
+		wire = { ...payload, library: { folders: payload.library.folders ?? [], items: libIndex } };
+	}
+	files['session.json'] = strToU8(JSON.stringify(wire));
 	/** @type {Array<{hash: string, name: string, kind: string, file: string}>} */
 	const index = [];
 	const seen = new Set();
@@ -524,6 +854,28 @@ export async function exportSessionZip(payload, opts = { assets: true, packs: fa
 		files['packs/index.json'] = strToU8(JSON.stringify({ packs, items: packIndex }));
 	}
 	return zipSync(files, { level: 6 });
+}
+
+/**
+ * R22 round 12: the other half of writing the library out as files. A row whose `file` is
+ * missing from the zip keeps its index entry and simply has no bytes — the same "counted,
+ * never silently dropped" rule a pruned scene hash follows.
+ * @param {any} payload @param {Record<string, any>} entries @returns {Promise<any>}
+ */
+async function restoreLibraryBlobs(payload, entries) {
+	const rows = payload?.library?.items;
+	if (!Array.isArray(rows)) return payload;
+	let restored = 0;
+	for (const row of rows) {
+		const bytes = row?.file ? entries[row.file] : null;
+		if (!bytes) continue;
+		row.blob = new Blob([
+			/** @type {BlobPart} */ (bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength))
+		]);
+		restored++;
+	}
+	if (restored) console.log('session zip: restored ' + restored + ' library file(s)');
+	return payload;
 }
 
 /** The zip's bundled assets into the Explorer (hash-deduped) so sound/texture hashes
@@ -567,6 +919,8 @@ export async function readSessionZip(buffer) {
 		return null;
 	}
 	await restoreZipAssets(entries, strFromU8);
+	// R22 round 12: and the library's own files, which session.json carries only an index of
+	await restoreLibraryBlobs(payload, entries);
 	// 21-I5: `versions/` is read by NOTHING — say so rather than ignore it silently
 	noteBundledVersions(entries);
 	return payload;
@@ -593,6 +947,10 @@ export async function importSessionZip(buffer) {
 	// not read) and before the restore loops, which never touch `versions/`
 	noteBundledVersions(entries);
 	await restoreZipAssets(entries, strFromU8);
+	// R22 round 12: a bundle written by this build carries its library as real files, so
+	// an imported PROJECT entry arrives with its files rather than with `{}` where each
+	// Blob used to be (the measured pre-existing loss).
+	await restoreLibraryBlobs(payload, entries);
 	// B3: restore bundled packs — re-store each item blob (content-hash deduped;
 	// ids can CHANGE, so remap the pack's item ids), then re-register the pack
 	if (entries['packs/index.json']) {
@@ -622,6 +980,177 @@ export async function importSessionZip(buffer) {
 	// finishImport, NOT importSession — the format was already confirmed above
 	// (importSession would double-confirm)
 	return finishImport(payload);
+}
+
+/**
+ * R22 round 11 (user): "for sessions instead of 'import objects' should be 'import files'
+ * and within files which are scenes I should be able to import objects from there".
+ *
+ * THE FILES IN A SAVED ENTRY, which is a two-level thing and always was — it simply had no
+ * first level. A PROJECT entry carries `library.items`; a SCENE-only entry carries none,
+ * and rather than showing an empty list it shows the one file it IS. So both kinds answer
+ * the same question, and drilling into a scene row is what reaches the old object list.
+ * @param {any} payload @returns {any[]}
+ */
+export function sessionFileList(payload) {
+	/** the entry's OWN scene, always first — it is the file the entry is about */
+	const own = {
+		index: -1,
+		name: (payload?.name ?? 'Scene') + '.tpscene',
+		kind: 'scene',
+		own: true,
+		thumbnail: payload?.thumbnail ?? null,
+		objects: (payload?.objects ?? []).length
+	};
+	const files = (payload?.library?.items ?? []).map((/** @type {any} */ row, /** @type {number} */ index) => ({
+		index,
+		name: row.name,
+		kind: row.kind,
+		own: false,
+		thumbnail: row.thumbnail ?? null,
+		bytes: Number(row.blob?.size) || 0
+	}));
+	return [own, ...files];
+}
+
+/**
+ * R22 round 12 (user): "for saved projects when 'import files' clicked I should be able to
+ * multiselect files, or import folders (I do not see folder structure now, but should)".
+ *
+ * THE STRUCTURE WAS ALWAYS SAVED and simply never rendered: `saveSessionWithLibrary`
+ * writes `library.folders = [{id, name, parentId}]` and every item row carries its
+ * `folderId`. This lays them out as INDENTED ROWS — a folder followed by its own files,
+ * depth-first — which is what makes "I do not see folder structure" answerable without a
+ * tree widget: a row IS its place.
+ *
+ * Files at the ROOT come last rather than first, because a project's loose files are the
+ * exception and burying its folders under them reads as no structure at all.
+ * @param {any} payload
+ * @returns {any[]} rows: {key, kind:'folder'|'file', depth, name, path, index?, id?, kindOf?, thumbnail?, bytes?}
+ */
+export function sessionLibraryTree(payload) {
+	const folders = payload?.library?.folders ?? [];
+	const items = payload?.library?.items ?? [];
+	/** @type {any[]} */
+	const rows = [];
+	const childrenOf = (/** @type {any} */ parentId) =>
+		folders
+			.filter((/** @type {any} */ f) => (f.parentId ?? null) === (parentId ?? null))
+			.sort((/** @type {any} */ a2, /** @type {any} */ b2) => String(a2.name).localeCompare(String(b2.name)));
+	const filesIn = (/** @type {any} */ folderId) =>
+		items
+			.map((/** @type {any} */ row, /** @type {number} */ index) => ({ row, index }))
+			.filter((/** @type {any} */ e) => (e.row.folderId ?? null) === (folderId ?? null))
+			.sort((/** @type {any} */ a2, /** @type {any} */ b2) => String(a2.row.name).localeCompare(String(b2.row.name)));
+	/** @param {any} folder @param {number} depth @param {string} path */
+	const walk = (folder, depth, path) => {
+		const here = path + '/' + folder.name;
+		rows.push({ key: 'f:' + folder.id, kind: 'folder', depth, name: folder.name, path: here, id: folder.id });
+		for (const child of childrenOf(folder.id)) walk(child, depth + 1, here);
+		for (const entry of filesIn(folder.id)) rows.push(fileRow(entry, depth + 1, here));
+	};
+	for (const folder of childrenOf(null)) walk(folder, 0, '');
+	for (const entry of filesIn(null)) rows.push(fileRow(entry, 0, ''));
+	return rows;
+}
+
+/** @param {any} entry @param {number} depth @param {string} path */
+function fileRow(entry, depth, path) {
+	return {
+		key: 'i:' + entry.index,
+		kind: 'file',
+		depth,
+		name: entry.row.name,
+		path: path + '/' + entry.row.name,
+		index: entry.index,
+		kindOf: entry.row.kind,
+		thumbnail: entry.row.thumbnail ?? null,
+		bytes: Number(entry.row.blob?.size) || 0
+	};
+}
+
+/**
+ * Bring chosen files out of a saved entry and into the CURRENT library.
+ *
+ * A DIFFERENT ACT from importing objects into the scene, and the reason it needs saying is
+ * that one dialog now offers both: this one writes files and folders into the Explorer,
+ * and `importObjects` puts objects in the world.
+ *
+ * FOLDERS MERGE BY PATH rather than by id. `restoreSessionLibrary` recreates the saved ids
+ * because it is putting a whole library BACK; taking two files out of somebody's project
+ * is a merge into a library that already exists, so a folder called Textures lands in the
+ * Textures you already have instead of a second one wearing a stranger's id.
+ * @param {any} payload
+ * @param {{items?: number[], folders?: string[]}} selection
+ * @returns {Promise<number>} how many files landed
+ */
+export async function importSessionFiles(payload, selection) {
+	const lib = payload?.library;
+	if (!lib) return 0;
+	const { createFolder, addItemFromBytes, explorerFolders } = await import('./explorer');
+	const saved = lib.folders ?? [];
+	const rows = lib.items ?? [];
+	/** every saved folder id under (and including) the picked ones */
+	const subtree = new Set(selection?.folders ?? []);
+	let grew = true;
+	while (grew) {
+		grew = false;
+		for (const f of saved)
+			if (f.parentId && subtree.has(f.parentId) && !subtree.has(f.id)) {
+				subtree.add(f.id);
+				grew = true;
+			}
+	}
+	/** @type {Map<string, string|null>} saved folder id -> the LIVE folder it maps onto */
+	const mapped = new Map();
+	/** @param {string|null|undefined} savedId @returns {string|null} */
+	const ensurePath = (savedId) => {
+		if (!savedId) return null;
+		if (mapped.has(savedId)) return mapped.get(savedId) ?? null;
+		const folder = saved.find((/** @type {any} */ f) => f.id === savedId);
+		if (!folder) return null;
+		const parent = ensurePath(folder.parentId);
+		const existing = get(explorerFolders).find(
+			(/** @type {any} */ f) => f.name === folder.name && (f.parentId ?? null) === parent
+		);
+		const live = existing ?? createFolder(String(folder.name ?? 'Folder'), parent);
+		mapped.set(savedId, live?.id ?? null);
+		return live?.id ?? null;
+	};
+
+	const picked = new Set(selection?.items ?? []);
+	let n = 0;
+	for (let index = 0; index < rows.length; index++) {
+		const row = rows[index];
+		const inFolder = row.folderId && subtree.has(row.folderId);
+		if (!picked.has(index) && !inFolder) continue;
+		try {
+			const buffer = await row.blob.arrayBuffer();
+			await addItemFromBytes(buffer, row.name, ensurePath(row.folderId));
+			n++;
+		} catch {}
+	}
+	return n;
+}
+
+/**
+ * The objects inside ONE file of a saved entry. The entry's own scene is already a payload;
+ * a library .tpscene is bytes that have to be read. Anything else has no object list — a
+ * texture is not something you import objects FROM, and saying so is better than an empty
+ * checklist that looks broken.
+ * @param {any} payload @param {any} file a row from sessionFileList
+ * @returns {Promise<{payload: any, entries: any[]} | null>}
+ */
+export async function sessionFilePayload(payload, file) {
+	if (file?.own) return { payload, entries: sessionObjectList(payload) };
+	const row = payload?.library?.items?.[file?.index];
+	if (!row?.blob || row.kind !== 'scene') return null;
+	try {
+		const inner = await readSessionZip(await row.blob.arrayBuffer());
+		return inner ? { payload: inner, entries: sessionObjectList(inner) } : null;
+	} catch {
+		return null;
+	}
 }
 
 /** Top-level entries for the selective-import checklist @param {any} payload */
@@ -754,6 +1283,15 @@ export async function applySession(payload, opts = {}) {
 	const { backup = true, replicate = true, game = true, workspace = true } = opts;
 	const group = get(objectsGroup);
 	if (backup && group?.children.length) await saveSession('Backup before "' + payload.name + '"');
+	// R22-R8: a session saved by "Save into session" carries the whole Explorer library
+	// beside the scene, because that gesture EMPTIES the library and the save is the only
+	// thing standing between the user and losing it. Restoring it is hash-deduped, so a
+	// file already here is not written twice; a payload with no `library` key is every
+	// session written before R8 and takes this as a no-op.
+	if (payload?.library) {
+		const restored = await restoreSessionLibrary(payload);
+		if (restored) showToast('Restored ' + restored + ' library file' + (restored === 1 ? '' : 's'));
+	}
 	if (replicate) sceneCommand('/clear all'); // replicated clear (objects + module content)
 	else clearSceneLocal();
 	/** @type {any} */
@@ -855,9 +1393,45 @@ let pendingProposal = null;
 export async function requestLoadSession(id) {
 	const payload = await getSession(id);
 	if (!payload) return false;
+	return requestLoadPayload(payload);
+}
+
+/**
+ * R22 round 14 — the same request, for a caller that already HOLDS the payload and has no
+ * saved slot to read it out of. A scene inside a MOUNTED project is exactly that: its
+ * bytes live in another project's saved record, so `readSessionZip` hands the payload
+ * straight over and there is no id `getSession` could resolve.
+ *
+ * The split is a split and nothing more — `requestLoadSession` is now this function with
+ * an idb read in front of it, so the solo apply, the room-scoped proposal and the
+ * did-it-apply verdict are ONE copy shared by every route into a scene replace. Minting a
+ * session slot just to reach this code would have been the alternative, and it would put
+ * a saved entry the user never asked for in the Sessions manager on every open.
+ * @param {any} payload
+ * @returns {Promise<boolean>} true when the load APPLIED NOW, false when it became a
+ *   proposal (or there was nothing to load)
+ */
+export async function requestLoadPayload(payload) {
+	if (!payload) return false;
 	/** @type {any} */
 	const peer = get(peers);
-	const connected = Object.keys(peer?.connections ?? {});
+	let connected = Object.keys(peer?.connections ?? {});
+	// A2: a session proposal REPLACES the current scene, so it is room-scoped on the
+	// wire - a peer standing in another scene never receives it and can therefore never
+	// accept it. Counting them among the `needed` would hang the proposer forever on
+	// answers the gate ate, and the load would simply never apply. Count our room only.
+	//
+	// DYNAMIC import: peerScenes imports levels which imports THIS module, so a static
+	// edge would close the cycle. Only-on-evidence as everywhere else - an unnamed scene
+	// asks everybody, which is exactly today's behaviour.
+	try {
+		const { peersInScene, myScene } = await import('./peerScenes');
+		const scene = myScene()?.scene ?? '';
+		if (scene) {
+			const here = new Set(peersInScene(scene));
+			connected = connected.filter((id) => here.has(id));
+		}
+	} catch {}
 	if (!connected.length) {
 		await applySession(payload);
 		return true;
@@ -898,18 +1472,93 @@ export function applySessionProposal(data) {
 // silently publish a scene the user meant to stash; a dismiss-that-shares
 // would be the same trap smaller).
 
-let shareChoiceMade = false;
-/** @type {{senders: {objects: Set<string>, nodes: Set<string>}, payload: any, uuids: string[], done: boolean} | null} */
+/**
+ * A3: THE VERDICT IS PER ROOM, not per app session.
+ *
+ * `shareChoiceMade` was one boolean for the whole run, which was right while there was
+ * one world to join: answer once, and every later joiner flows into the space you already
+ * agreed to share. With scenes it is wrong in both directions - deciding to share into
+ * Arena said nothing about Beta, and deciding to STAY OUT of Arena has to survive every
+ * later request from Arena or the question comes back on the next `getnodes`.
+ *
+ * Keyed by the ASKER'S scene name, and `''` IS a key: it is the session's unnamed world,
+ * which is where the old boolean's semantics live on unchanged - answer once there, and
+ * later unnamed joiners auto-flow.
+ *
+ * A `stayed` verdict is IGNORED once we are standing in that room ourselves: it recorded
+ * "not from over there", and travelling in is the user saying otherwise.
+ * @type {Map<string, 'shared'|'stashed'|'stayed'>}
+ */
+const shareVerdicts = new Map();
+
+/**
+ * R22 ROUND 36 (rooms) — THE SESSION'S UNNAMED WORLD, AS A KEY.
+ *
+ * It MUST equal `peerScenes.UNNAMED_ROOM_TOKEN`, and it is declared here rather than
+ * imported for the reason the `getobjects` call site already states: peerScenes -> levels
+ * -> sessions closes the cycle, so this module may not import that one. Exported so the
+ * truth-table suite can assert the two agree — a copied constant that nothing compares is
+ * a copied constant that drifts.
+ *
+ * The leading space is what keeps it out of the namespace of anything a person can type
+ * into the save dialog (`saveSceneAsLevel` trims), so it is safe as a Map key beside real
+ * scene names. It must never be rendered: every row that speaks reads `hereLabel`/
+ * `roomLabel` instead.
+ */
+export const UNNAMED_ROOM_TOKEN = ' unnamed';
+/** @type {{senders: {objects: Set<string>, nodes: Set<string>}, payload: any, uuids: string[], room: string, theirHash: string, done: boolean} | null} */
 let gate = null;
 
 // sendObjects' second param only matters for the null-peerId group path —
 // the handshake reply has always called it with the sender alone
 const sendObjectsTo = /** @type {any} */ (sendObjects);
 
-/** @param {'objects'|'nodes'} kind @param {string} sender */
-function replyTo(kind, sender) {
-	if (kind === 'objects') sendObjectsTo(sender);
-	else sendNodes(sender);
+/**
+ * R22 round 33 — THE SINGLETONS A GATED REPLY OWES, and the seam that can send them.
+ *
+ * `environment` / `music` / `scenephysics` / `scenepost` / `game` are PUSH-only: the
+ * handshake states them once and — apart from scenepost — there is no `get*` request for
+ * any of them. Round 32 made the share-or-stash ask hold BOTH directions, which means
+ * those pushes are DROPPED while a question is open, and `resolveGate`'s refetch cannot
+ * ask for what has no request: the peer who answers sits in the stock studio sky while
+ * the room has a sunset, until its author happens to touch a slider. Round 33's connect
+ * decision makes that worse rather than better, because dismissing your own world is
+ * exactly the case where the room's look is the only look there is.
+ *
+ * An objects reply is "here is my world", and the sky is part of the world — so the reply
+ * re-states them. Latest-wins stamps make it idempotent, so an ordinary (ungated) reply
+ * only repeats what the handshake already said a moment earlier.
+ *
+ * A REGISTRATION SEAM rather than an import, the `registerToneMappingOwner` shape: this
+ * module sits in the history family and must not reach environment/scenePost/gameSync,
+ * while peerHandler already holds all five and is the module that pushes them.
+ * @type {((peerId: string) => void) | null}
+ */
+let worldStatePush = null;
+
+/** @param {(peerId: string) => void} fn */
+export function registerWorldStatePush(fn) {
+	worldStatePush = fn;
+}
+
+/**
+ * @param {'objects'|'nodes'} kind @param {string} sender
+ * @param {{override?: boolean}} [opts] forwarded to `sendObjects` — see the ARRIVING row
+ *   below for the one caller that sets it. The NODES half needs no flag: a nodes reply
+ *   lands in `applyNodesSnapshot`, whose `mergeGraphSnapshot` already updates a node it
+ *   already holds in place, so graphs converge without one.
+ */
+function replyTo(kind, sender, opts = {}) {
+	if (kind === 'objects') {
+		// the scene singletons ride the objects half only — a nodes reply is the flow
+		// document and says nothing about the world's look (see registerWorldStatePush)
+		try {
+			worldStatePush?.(sender);
+		} catch {
+			/* a look that failed to send must never cost the objects */
+		}
+		sendObjectsTo(sender, undefined, opts);
+	} else sendNodes(sender);
 }
 
 /** How many objects we own — rides on the handshake getobjects request so the
@@ -918,79 +1567,775 @@ export function localSceneCount() {
 	return get(objectsGroup)?.children.length ?? 0;
 }
 
-function resolveGate() {
+/**
+ * R22 round 32 — IS OUR SHARE-OR-STASH ASK HOLDING THIS PEER?
+ *
+ * The gate was one-directional for its whole life: it queued what we would SEND and said
+ * nothing about what we RECEIVE. So a peer who answered Share first — or who carried a
+ * latched `shareVerdicts` entry from an earlier count-0 reply — poured its scene into ours
+ * while our own question was still on screen, which is the merge happening BEFORE the
+ * person was asked to consent to it. Reported as: open an invite link, edit while waiting
+ * for approval, and the host's untitled world lands on top of your work mid-question.
+ *
+ * peerHandler DROPS `ROOM_SCOPED` content from a peer this returns true for — the same
+ * treatment `canApplyByRoom` gives a peer standing elsewhere — and `resolveGate` re-asks
+ * for full state, so answering loses nothing and Stay means it never lands.
+ *
+ * Cheap on purpose: it runs on every inbound message and the common case has no gate.
+ * @param {string} peerId @returns {boolean}
+ */
+export function gateHolds(peerId) {
+	if (!gate) return false;
+	if (gate.done) return false;
+	return gate.senders.objects.has(peerId) || gate.senders.nodes.has(peerId);
+}
+
+/**
+ * R22 round 33 — PEERS WHOSE HANDSHAKE CONTENT HALF WE WITHHELD.
+ *
+ * When the connect decision is going to be put, our own handshake sends its mesh-wide half
+ * and stops (`sendHandshake` in peerHandler): no scene singletons, no `requestFullState`,
+ * no `getnodedefs`. That is what makes "nothing moves until you decide" true of the
+ * direction the gate cannot reach — the gate withholds what a peer SENDS us and what WE
+ * send them, but a request we make is an invitation for a world to arrive.
+ *
+ * The request is not cancelled, it is DEFERRED: whatever ends the decision issues it, by
+ * which time we hold either a saved-and-cleared scene or nothing at all, and the host's
+ * own fast path answers a count-0 request without ever being asked a question.
+ * @type {Set<string>}
+ */
+const deferredHandshakes = new Set();
+
+/** peerHandler tells us it withheld its content half from this peer. @param {string} peerId */
+export function noteHandshakeDeferred(peerId) {
+	deferredHandshakes.add(peerId);
+}
+
+/**
+ * Ask a peer for the half our own handshake did not ask for. Delete-on-read: a deferral is
+ * spent the moment it is honoured, and a peer we never deferred to is a no-op — which is
+ * why this can sit on every path out of the gate.
+ * @param {string} peerId
+ * @param {boolean} [full] also re-request full state; `false` for callers that have
+ *   arranged an arrival re-sync of their own (`joinRoom` ends in `resyncRoomPeers`)
+ * @returns {boolean} did it fire
+ */
+function askDeferredState(peerId, full = true) {
+	if (!deferredHandshakes.delete(peerId)) return false;
+	/** @type {any} */
+	const peer = get(peers);
+	const conn = peer?.connections?.[peerId];
+	if (!conn?.open) return false;
+	try {
+		if (full) peer.requestFullState?.(conn);
+		// `getnodedefs` rides the withheld half and is NOT part of `requestFullState`, so
+		// the round-32 refetch below cannot stand in for it
+		conn.send({ type: 'getnodedefs', sender: peer.peer?.id });
+	} catch {}
+	return true;
+}
+
+/**
+ * @param {{refetch?: boolean}} [opts] `refetch: false` for the callers that have already
+ *   arranged an arrival re-sync of their own (`joinRoom` ends in `resyncRoomPeers`) —
+ *   asking twice sends the whole burst twice for nothing.
+ */
+function resolveGate(opts = {}) {
 	if (!gate || gate.done) return;
 	gate.done = true;
 	const pending = gate;
 	gate = null;
-	for (const sender of pending.senders.objects) sendObjectsTo(sender);
+	for (const sender of pending.senders.objects) replyTo('objects', sender);
 	for (const sender of pending.senders.nodes) sendNodes(sender);
+	const every = new Set([...pending.senders.objects, ...pending.senders.nodes]);
+	if (opts.refetch === false) {
+		// still owed the withheld `getnodedefs` — the arrival re-sync covers everything
+		// `requestFullState` covers and nothing this one adds
+		for (const sender of every) askDeferredState(sender, false);
+		return;
+	}
+	// R22 round 32 — ASK BACK. Everything ROOM_SCOPED these peers sent while the question
+	// was open was DROPPED on arrival (`gateHolds` in peerHandler), so answering has to
+	// collect what the asking cost us. It is the arrival re-sync's move minus its flag:
+	// deliberately NO `arriving`, because that flag CLAIMS "what I hold is your own scene"
+	// and would walk straight past the other side's still-open ask. A plain request queues
+	// behind their gate, which is the consent-preserving shape.
+	//
+	// This is the ONLY refetch rows 4 and 5 ever get: their rooms are unnamed, and
+	// `resyncRoomPeers` needs a named scene, so it returns 0 there and covers nothing.
+	/** @type {any} */
+	const peer = get(peers);
+	for (const sender of every) {
+		// R22 round 33: a DEFERRED peer's ask is the same burst plus the withheld
+		// `getnodedefs`, so it stands in for this one entirely
+		if (askDeferredState(sender)) continue;
+		const conn = peer?.connections?.[sender];
+		if (!conn?.open) continue;
+		try {
+			peer.requestFullState?.(conn);
+		} catch {}
+	}
 }
 
-async function stashAndJoin() {
-	if (!gate || gate.done) return;
-	const { payload, uuids } = gate;
-	await persistSession(payload);
-	// drop OUR pre-connect objects locally WITHOUT broadcasting deletes —
-	// anything that already arrived from the peer stays untouched
+/**
+ * R22 round 33 — DROP THE WORK THE GATE CAPTURED, locally and silently.
+ *
+ * Extracted from `stashAndJoin` because the connect decision's two answers both end here
+ * and only one of them writes a session first: Dismiss banks a backup, Save has already
+ * written the whole world into a library scene and would only be duplicating it.
+ *
+ * `gate.uuids` was captured when the question opened, so anything that arrived from the
+ * peer since is NOT in it and survives — the sweep takes exactly the work we brought.
+ */
+function sweepGateWork() {
+	if (!gate) return;
 	const group = get(objectsGroup);
 	/** @type {any} */
 	const controls = get(TControls);
-	for (const uuid of uuids) {
+	for (const uuid of gate.uuids) {
 		const object = group?.getObjectByProperty('uuid', uuid);
 		if (!object) continue;
 		if (controls?.object?.uuid === uuid) controls.detach();
 		object.parent?.remove(object);
 	}
 	objectsGroup.update((value) => value);
-	clearGraphs(); // H1: stash empties every graph document
+	clearGraphs(); // H1: a cleared scene empties every graph document
+}
+
+/** @param {{refetch?: boolean}} [opts] forwarded to `resolveGate` — see there */
+async function stashAndJoin(opts = {}) {
+	if (!gate || gate.done) return;
+	const { payload } = gate;
+	await persistSession(payload);
+	// drop OUR pre-connect objects locally WITHOUT broadcasting deletes —
+	// anything that already arrived from the peer stays untouched
+	sweepGateWork();
 	showToast('Stashed to Sessions: ' + payload.name);
-	resolveGate();
+	resolveGate(opts);
 }
 
 /**
  * Gatekeeper for the handshake state requests. Runs the reply immediately
  * when no choice is needed (empty scene on either side, or already answered);
  * otherwise queues it behind the Share/Stash toast.
- * @param {'objects'|'nodes'} kind @param {string} sender @param {number=} otherCount
+ *
+ * A3 MADE IT SCENE-AWARE. The old question — "share your objects or stash them?" — has
+ * exactly one answer shape because it assumed one world. Once two peers can stand in two
+ * scenes it is the wrong question twice over: it never names the scene the objects would
+ * land in, and it offers no way to decline, so the only route to "leave me where I am"
+ * was to leave the prompt on screen forever and never sync anything again.
+ *
+ * M is OUR ROOM, T is THEIRS, and the table is five rows.
+ *
+ * R22 ROUND 36 (rooms) — ROOMS, NOT NAMES. Every row below used to be written in scene
+ * NAMES, with `''` meaning "no evidence of a split" — the same only-on-evidence rule the
+ * gates used, and wrong in the same place. The caller now resolves both sides through
+ * `peerScenes.roomOf` and hands us ROOMS: a named scene is its own name, the session's
+ * unnamed world is `UNNAMED_ROOM_TOKEN`, and only a peer we have never heard from is
+ * still `''`. The NAMES ride along as `mineName`/`theirName` for the two questions that
+ * are genuinely about a name rather than a room (see `hereName`/`roomName` below).
+ *
+ *   1. we hold NOTHING  ->  reply at once (and adopt T if they are the peer we joined).
+ *      There is no merge to consent to; the world arriving is the only world there is.
+ *   2. M != T and they are NOT the peer we joined  ->  WITHHOLD, silently. This is the
+ *      HOST-SIDE half, and silence is the whole point: nothing of ours is at stake, they
+ *      are the one who wandered off, and asking US about THEIR situation is how you get
+ *      two prompts for one decision. Their side owns the verdict, and when they act on it
+ *      their arrival re-sync collects everything this row refused.
+ *   3. M != T and they ARE the peer we joined  ->  the three-option ask. This is the only
+ *      row where a person is genuinely being asked to leave a scene, so it is the only
+ *      one that offers STAY.
+ *   4. GONE, and its disappearance is the whole of R22 round 36 (rooms). It read "we are
+ *      UNNAMED and they are named -> two options, NO STAY", and its own note said why:
+ *      "an unnamed scene cannot be ISOLATED (only-on-evidence: an empty scene is not
+ *      evidence of being elsewhere), so a Stay button here would promise a separation the
+ *      gate cannot deliver." That sentence was the BUG, written down as a design note —
+ *      the same hole that let a shared private scene pour into an unnamed host's world.
+ *      The unnamed world is a ROOM now, with the host's identity, so the gate CAN deliver
+ *      the separation and a split is a split: an unnamed peer facing a named one falls
+ *      into row 3 when it joined them (three options, Stay included) or row 2 when it did
+ *      not (silent withhold, their decision to make). Nothing was lost with the row —
+ *      "writing your work into a named document deserves the question" is exactly what
+ *      row 3 asks, and it now asks it with the third answer that was missing.
+ *   5. same room (both named the same, or both unnamed)  ->  exactly today's behaviour:
+ *      both sides non-empty is the classic Share/Stash merge, anything else replies.
+ *
+ * @param {'objects'|'nodes'} kind @param {string} sender
+ * @param {{otherCount?: number, theirScene?: string, theirName?: string, theirHash?: string, fromHost?: boolean, mineScene?: string, mineName?: string, arriving?: boolean}|number} [opts]
+ *   a bare number is read as `otherCount` — the pre-A1 shape, kept so no call site can
+ *   silently pass a count into a field that ignores it. R22 round 36 (rooms):
+ *   `mineScene`/`theirScene` are ROOMS and `mineName`/`theirName` are scene NAMES; a
+ *   caller that passes only the old fields is read exactly as it was, because the names
+ *   DEFAULT to the rooms and a build that never sends the token never sees one.
  */
-export function deferUntilShareChoice(kind, sender, otherCount = 0) {
+export function deferUntilShareChoice(kind, sender, opts = {}) {
+	/** @type {{otherCount?: number, theirScene?: string, theirName?: string, theirHash?: string, fromHost?: boolean, mineScene?: string, mineName?: string, arriving?: boolean}} */
+	const context = typeof opts === 'number' ? { otherCount: opts } : opts || {};
+	const { otherCount = 0, theirScene = '', theirHash = '', fromHost = false, mineScene = '', arriving = false } = context;
+	// `??`, never `||`: an explicit empty NAME beside a non-empty room is the whole point
+	// of the pair (we are standing in the session's world, which has no name).
+	const theirName = String(context.theirName ?? theirScene ?? '').trim();
+	const mineName = String(context.mineName ?? mineScene ?? '').trim();
 	const group = get(objectsGroup);
 	const count = group?.children.length ?? 0;
+	// M and T — the two ROOMS the whole table is written in.
+	//
+	// `asRoom` TRIMS EVERYTHING EXCEPT THE TOKEN, and that exception is load-bearing: the
+	// unnamed room's label is deliberately a string no typed scene name can be (a LEADING
+	// SPACE), so trimming it turns it into the perfectly ordinary scene name "unnamed" —
+	// which the connect decision then hands to `joinRoom`, and the joiner adopts as its
+	// scene. MEASURED that way: connect-decision read `the joiner claims no scene name
+	// ("unnamed")` red, its Dismiss ending stranded (the joiner sat in a room of its own
+	// called "unnamed" while the host stood in the real unnamed world, so the host's reply
+	// was gated away and never arrived). A legacy caller never sends the token, so the trim
+	// it always had is what it still gets.
+	const asRoom = (/** @type {string | undefined} */ v) =>
+		v === UNNAMED_ROOM_TOKEN ? v : String(v ?? '').trim();
+	const here = asRoom(mineScene);
+	const room = asRoom(theirScene);
+	// …and the two NAMES, which are a different question and are asked in exactly two
+	// places: "has THIS scene ever been saved" (the connect decision, which must not read
+	// an adopted room as a save) and "which scene does Bring travel to" (the unnamed room
+	// is not a scene, so there is nothing to travel to and `joinRoom` clears instead).
+	const hereName = here === UNNAMED_ROOM_TOKEN ? '' : mineName;
+	const roomName = room === UNNAMED_ROOM_TOKEN ? '' : room;
+	// …and how each is SPOKEN, because the token must never reach a person.
+	const hereLabel = here === UNNAMED_ROOM_TOKEN ? "the session's world" : '"' + here + '"';
+	const roomLabel = room === UNNAMED_ROOM_TOKEN ? "the session's world" : '"' + room + '"';
+	// DEMONSTRABLY different rooms: two rooms that disagree. An ABSENT row is still the one
+	// answer that is no evidence at all (`roomLabelOf` answers '' for a peer we have never
+	// heard from), so an older build allows exactly as it always did.
+	const split = !!here && !!room && here !== room;
 	if (gate && !gate.done) {
 		gate.senders[kind].add(sender); // a dialog is already open — queue behind it
 		return;
 	}
-	// only a merge of two NON-empty scenes needs the question — a fresh viewer
-	// joining an existing scene always just receives it
-	if (shareChoiceMade || count === 0 || !otherCount) {
-		if (count > 0) shareChoiceMade = true; // we shared into the space
+	// ---- ROW 1: we hold nothing ------------------------------------------------
+	if (count === 0) {
+		// A1 ADOPTION. We hold NOTHING and the peer we joined is standing in a named
+		// scene, so the world about to arrive down this handshake IS that scene — there
+		// is no other world it could be. Without this a joiner who never travelled keeps
+		// `currentLevel === null` for the whole session: it shows no name, it publishes an
+		// empty `atscene` row, and every scene-aware read on BOTH sides answers "no
+		// evidence" about the most ordinary peer there is.
+		//
+		// Through a DYNAMIC import, because levels.js imports THIS module (applySession)
+		// and a static edge back would close the cycle. Fire-and-forget: a name is
+		// presentation and the objects are the point, so the reply never waits on it.
+		//
+		// R22 round 36 (rooms): the NAME, never the room. Adoption writes `currentLevel`,
+		// and a room label is not something a person can be standing in — adopting the
+		// unnamed room's private token would name this joiner's world after it, gate it
+		// away from the very host it just joined, and put the token on screen. Measured
+		// exactly that way before the split: the joiner took nothing.
+		if (fromHost && theirName) {
+			// the hash goes along because the caller has it, and it is what the next
+			// phase's "same scene, same version?" question will be asked with. Adoption
+			// itself deliberately does not store it — a joiner loaded no file.
+			import('./levels')
+				.then((m) => m.adoptSceneIdentity(theirName, theirHash))
+				.catch(() => {});
+		}
 		replyTo(kind, sender);
+		// R22 round 33: no decision is coming (we hold nothing to decide about), so
+		// whatever our own handshake withheld is owed now. A no-op unless it withheld.
+		askDeferredState(sender);
 		return;
 	}
-	shareChoiceMade = true;
-	gate = {
-		senders: { objects: new Set(), nodes: new Set() },
-		payload: buildSessionPayload('Stashed before joining ' + nameOf(sender) + ' ' + new Date().toLocaleTimeString()),
-		uuids: (group?.children ?? []).map((/** @type {any} */ child) => child.uuid),
-		done: false
+
+	// ---- the standing verdict for THAT room ------------------------------------
+	// Answered once, honoured for every later request out of the same scene — which is
+	// what makes a Stay stick: `getnodes` follows `getobjects` by milliseconds, and a
+	// per-call decision would re-ask the question the user has just answered.
+	const verdict = shareVerdicts.get(room);
+	if (verdict === 'stayed' && split) return; // decided: not from over there
+	if (verdict === 'shared' || verdict === 'stashed') {
+		// R22 round 32 — A STANDING VERDICT DECIDED *WHETHER* WE ANSWER, NOT *HOW*. This
+		// short-circuit sits ABOVE the ARRIVING row below, so without the flag here an
+		// arrival heal degrades silently to the old add-only reply for any room we have
+		// already answered once — which is every travel BACK into a room we agreed to share
+		// with, the case the arrival re-sync exists for. The verdict is consent to send this
+		// peer our scene; sending it as a heal is the same bytes with one more field.
+		replyTo(kind, sender, arriving ? { override: true } : {});
+		askDeferredState(sender); // R22 round 33 — answered already, so nothing is deferred
+		return;
+	}
+
+	// ---- ROW 2: the HOST-SIDE silent withhold ----------------------------------
+	// They are somewhere else and they did not join US, so this is their decision to make
+	// and they are already being asked. Nothing is queued: a queued reply would fire the
+	// moment some unrelated gate resolved, which is precisely the leak this row closes.
+	if (split && !fromHost) return;
+
+	// ---- ARRIVING: they just travelled INTO our room ----------------------------
+	// A traveller loads the room's scene file and then asks for what has happened since
+	// (`resyncRoomPeers`), so it asks while HOLDING objects - which is exactly the shape
+	// every row below reads as "two worlds are merging". It is not: what they hold is OUR
+	// scene, out of OUR project, and asking us to consent to it would put a prompt in
+	// front of everybody in the room every time somebody walked in.
+	//
+	// It is a CLAIM, not a proof, and that is fine: the row above has already established
+	// we are in the same room, and inside one room the only thing this skips is a merge
+	// question whose honest answer is Share. It records NO verdict - nothing was decided.
+	//
+	// R22 round 32 - AND IT IS THE ONE REPLY THAT MAY OVERWRITE. `createObject` DEDUPES BY
+	// UUID, so the plain reply only ever ADDS what the traveller is missing: a box both
+	// sides hold keeps the pose the .tpscene was saved with, forever, and the two peers
+	// stand in one room looking at different worlds. Every other row is a MERGE of two
+	// authored worlds, where overwriting somebody's object would be the wrong answer -
+	// but this row has already decided the traveller is holding a snapshot of OUR scene,
+	// and the live room is what it came to catch up with. `override` is additive on the
+	// wire and only reaches builds that sent `arriving` in the first place.
+	if (arriving) {
+		replyTo(kind, sender, { override: true });
+		askDeferredState(sender); // R22 round 33 — a traveller is not a decision either
+		return;
+	}
+
+	const objects = count + ' object' + (count === 1 ? '' : 's');
+	// R22 round 32 — SAY WHAT THE UNNAMED CASE ACTUALLY IS. Rows 4 and 5 are the two that
+	// can be reached with no name on our side, and the person there is being asked to merge
+	// without being told the thing that decides it: an unsaved scene is not a room (an empty
+	// name is no evidence of a split), so their world and the asker's are already counted as
+	// one. The second sentence is the round-32 fix speaking for itself — the ask now holds
+	// BOTH directions, so nothing has moved yet and answering is the only thing that moves it.
+	// R22 round 36 (rooms) CORRECTED THE FIRST SENTENCE, which said "unsaved scenes all
+	// count as one shared room" — true of round 32's gate and false of this one. An unsaved
+	// scene is the SESSION'S world (the host's, whatever it is called), which is a room like
+	// any other; what has not changed is that you are standing in it with them, which is the
+	// fact the person answering needs.
+	const unnamed = hereName
+		? ''
+		: 'This scene is unsaved, so you are standing in the session\u2019s own world rather than one of your own. ';
+	const held = hereName
+		? ''
+		: ' Nothing of yours leaves this screen, and nothing of theirs arrives, until you answer.';
+	// R22 round 33: the BACKUP'S NAME is the caller's, because the two questions bank it
+	// for different reasons — a Stash is work you meant to keep separate, a Dismiss is work
+	// you said goodbye to and may still want back. The payload is built HERE either way,
+	// when the question opens, so it holds what you brought and nothing that arrives after.
+	const openGate = (/** @type {string} */ backupName) => {
+		gate = {
+			senders: { objects: new Set(), nodes: new Set() },
+			payload: buildSessionPayload(backupName + ' ' + nameOf(sender) + ' ' + new Date().toLocaleTimeString()),
+			uuids: (group?.children ?? []).map((/** @type {any} */ child) => child.uuid),
+			room,
+			theirHash,
+			done: false
+		};
+		gate.senders[kind].add(sender);
 	};
-	gate.senders[kind].add(sender);
-	// 15-P2: a STICKY prompt with NO ✕ — this decides whether the user's work
-	// merges into the joint space, so nothing may decide it implicitly: the 14s
-	// auto-share could silently publish a scene they meant to stash, and a
-	// dismiss-that-shares would be the same trap smaller. The joiner's handshake
-	// reply simply waits until Share or Stash is clicked.
-	showInfoToast(
-		'share-or-stash',
-		'Share your ' + count + ' object' + (count === 1 ? '' : 's') + ' with ' + nameOf(sender) + ', or stash them to a session first?',
+	// 15-P2, and it still holds with three buttons: a STICKY prompt with NO ✕. This
+	// decides whether the user's work merges into somebody else's scene, so nothing may
+	// decide it implicitly — the 14s auto-share could silently publish a scene they meant
+	// to stash, and a dismiss-that-shares would be the same trap smaller.
+	const ask = (/** @type {string} */ text, /** @type {any[]} */ actions) =>
+		showInfoToast('share-or-stash', text, actions, undefined, true);
+	const bring = {
+		label: 'Bring into ' + roomLabel,
+		action: () => {
+			shareVerdicts.set(room, 'shared');
+			dismissToastById('share-or-stash');
+			// ADOPT FIRST, REPLY SECOND, and that order is load-bearing: our reply is
+			// scene CONTENT, and the peer receiving it runs the same room gate we do —
+			// while our `atscene` row over there still names the scene we came from,
+			// every object we send is DROPPED ON ARRIVAL. Adoption publishes the new row
+			// down the same ordered conn, so the reply lands behind it.
+			//
+			// NO refetch here: `joinRoom` ends in `resyncRoomPeers`, which asks the whole
+			// destination room for full state with `arriving` set — a strictly better ask
+			// than this one, and asking twice would send the burst twice.
+			void joinRoom(roomName, theirHash, () => resolveGate({ refetch: false }));
+		}
+	};
+	const stash = {
+		label: 'Stash & join ' + roomLabel,
+		action: () => {
+			shareVerdicts.set(room, 'stashed');
+			dismissToastById('share-or-stash');
+			// adopt (and re-sync) BEFORE the stash, not after: `gate.uuids` was captured
+			// when the prompt opened, so the objects arriving from the room we are joining
+			// are not in it and survive the sweep — the stash still takes exactly the work
+			// we brought with us.
+			// `refetch: false` for the same reason Bring passes it — joinRoom's own
+			// `resyncRoomPeers` is the arrival ask, and it is the better one.
+			void joinRoom(roomName, theirHash, () => void stashAndJoin({ refetch: false }));
+		}
+	};
+
+	// ---- ROW 3: a real fork — their scene, our work, our call -------------------
+	if (split) {
+		openGate('Stashed before joining');
+		ask(
+			'Share your ' + objects + ' into ' + roomLabel + ', stash them to a session first, or stay in ' + hereLabel + '?',
+			[
+				bring,
+				stash,
+				{
+					label: 'Stay in ' + hereLabel,
+					action: () => {
+						shareVerdicts.set(room, 'stayed');
+						dismissToastById('share-or-stash');
+						// SEND NOTHING — not even an empty `loading: 0`. Withholding is the
+						// honest signal here; a zero-length sync would claim we had answered
+						// and had nothing, which is a different and untrue statement.
+						if (gate) gate.done = true;
+						gate = null;
+					}
+				}
+			]
+		);
+		return;
+	}
+
+	// ---- ROW 5 FAST PATH: they hold nothing ------------------------------------
+	// LIFTED ABOVE the connect decision, and deliberately: taking your scratch world to a
+	// friend who has nothing is the flow this whole feature must not break. There is no
+	// merge, so there is nothing to decide. R22 round 36 (rooms): the test is `!roomName`
+	// — "the room they are in has no name" — which is what `!room` meant when this table
+	// was written in names. Reading the ROOM here would never fire, since the unnamed room
+	// is a non-empty token by construction.
+	if (!roomName && !otherCount) {
+		shareVerdicts.set(room, 'shared'); // we shared into the space
+		replyTo(kind, sender);
+		askDeferredState(sender); // R22 round 33 — no decision is coming
+		return;
+	}
+
+	// ---- R22 ROUND 33: THE CONNECT DECISION ------------------------------------
+	// Rows 4 and 5, but only when the asker is the peer we JOINED and only when our own
+	// scene has never been saved. Two people both holding unmerged objects in untitled
+	// scenes is a state with no use, so the question with an answer replaces the question
+	// without one: your work has no identity to be merged INTO, so save it or let it go —
+	// and if neither, this connection was a mistake and should end.
+	//
+	// A MODAL (`showChoice` -> ConfirmModal, the app's one truly modal dialog) rather than
+	// the sticky toast the other rows use, because unlike them it can END THE SESSION, and
+	// a dialog whose ✕ disconnects may not be something you click past by accident. Every
+	// way out — the labelled button, Esc, the backdrop — resolves through the same cancel
+	// path, which is why the copy says so out loud.
+	//
+	// Everything else in this table is untouched: row 1's adoption, row 2's silent
+	// withhold, row 3's three options, the arriving branch, both verdict short-circuits and
+	// the HOST-side row 5 (`fromHost` false) all read exactly as they did. They are the
+	// backstop against a peer on an older build, and against this branch being bypassed.
+	// R22 round 36 (rooms): the NAME, not the room. `connectDecisionApplies` asks whether
+	// OUR scene has ever been saved — an unnamed joiner that resolves into the host's named
+	// room has still saved nothing, and reading the room here would silently retire the
+	// whole connect decision.
+	if (connectDecisionApplies(fromHost, hereName)) {
+		openGate('Dismissed before joining');
+		// the NAME again: this question's answers TRAVEL (`joinRoom`), and its copy names
+		// the scene it would put your work into — the unnamed room is neither
+		void askConnectDecision(sender, roomName, theirHash, count);
+		return;
+	}
+
+	// ---- ROW 4 IS GONE (R22 round 36, rooms) — see the table's own note ---------
+	// It sat here, and every state that reached it now reaches row 3 or row 2 above,
+	// because an unnamed peer beside a named one is a SPLIT and the gate can hold it.
+
+	// ---- ROW 5: one room — exactly what this gate always did --------------------
+	if (!otherCount) {
+		shareVerdicts.set(room, 'shared'); // we shared into the space
+		replyTo(kind, sender);
+		askDeferredState(sender); // R22 round 33 — no decision is coming
+		return;
+	}
+	openGate('Stashed before joining');
+	ask(
+		unnamed + 'Share your ' + objects + ' with ' + nameOf(sender) + ', or stash them to a session first?' + held,
 		[
-			{ label: 'Share', action: () => resolveGate() },
-			{ label: 'Stash', action: () => stashAndJoin() }
+			{
+				label: 'Share',
+				action: () => {
+					shareVerdicts.set(room, 'shared');
+					resolveGate();
+				}
+			},
+			{
+				label: 'Stash',
+				action: () => {
+					shareVerdicts.set(room, 'stashed');
+					void stashAndJoin();
+				}
+			}
+		]
+	);
+}
+
+// ---- R22 round 33: the connect decision ------------------------------------------------
+
+/**
+ * IS THE CONNECT DECISION THE QUESTION FOR THIS PEER? Two callers, and they must agree or
+ * the deferral and the dialog fall out of step: `deferUntilShareChoice` below, and
+ * `sendHandshake` in peerHandler, which withholds its content half on the strength of it.
+ *
+ * The one thing peerHandler cannot know at handshake time is the other side's object
+ * COUNT, which is why the row-5 fast path is a separate test at the call site: an empty
+ * peer never asks anything, so a handshake deferred for one is released the moment its
+ * `getobjects` arrives and takes the fast path.
+ * @param {boolean} fromHost is this the peer whose session we joined
+ * @param {string} here our own scene name — '' when it has never been saved
+ * @returns {boolean}
+ */
+export function connectDecisionApplies(fromHost, here) {
+	if (!fromHost) return false; // a peer that joined US decides nothing about our scene
+	if (get(mergeOnConnect)) return false; // opted back into the classic Share/Stash merge
+	if (String(here ?? '').trim()) return false; // a named scene has an identity to merge into
+	return localSceneCount() > 0; // and nothing at stake means nothing to ask
+}
+
+/** The decision is over, however it ended. Clearing this is what releases sharedLibrary's
+ * held auto-download. @returns {void} */
+function finishDecision() {
+	pendingConnectDecision.set(null);
+}
+
+/**
+ * THE QUESTION ITSELF. Opened by the gate above, resolved into one of three endings that
+ * all leave the world in a state somebody chose.
+ * @param {string} sender @param {string} room @param {string} theirHash @param {number} count
+ */
+async function askConnectDecision(sender, room, theirHash, count) {
+	const mine = gate; // the gate this question owns — see the staleness test below
+	pendingConnectDecision.set({ peerId: sender });
+	const objects = count + ' object' + (count === 1 ? '' : 's');
+	const theirs = room ? '"' + room + '"' : 'their scene';
+	const answer = await showChoice({
+		title: nameOf(sender) + ' approved your connection',
+		message:
+			'You have ' +
+			objects +
+			' in a scene that was never saved. Peers tell worlds apart by scene name, so an unsaved one cannot be a room of its own — joining puts your work into ' +
+			theirs +
+			'. Save this scene to your library and join clean, or dismiss your changes — a backup goes to Sessions, so nothing is lost either way. Closing this dialog disconnects instead, and leaves your scene exactly as it is.',
+		choices: [
+			{ value: 'save', label: 'Save scene & connect' },
+			{ value: 'dismiss', label: 'Dismiss changes' }
+		],
+		// EVERY way out means the same thing. ConfirmModal resolves Esc, the backdrop and
+		// this button through one cancel path, so making them differ is not on offer — and
+		// the least surprising thing they can all mean is the one the copy names.
+		cancelLabel: 'Disconnect'
+	});
+	// the connection can die while a dialog is up (the host leaves, the link drops), and
+	// `showChoice` also resolves a dialog that a SECOND dialog replaced
+	if (gate !== mine || !gate || gate.done) return finishDecision();
+	if (answer === 'save') return void saveAndJoin(sender, room, theirHash);
+	if (answer === 'dismiss') return void dismissAndJoin(sender, room, theirHash);
+	disconnectFromDecision(sender);
+}
+
+/**
+ * DISMISS: the stash machinery with a different name on the backup. Records NO verdict —
+ * after the sweep we hold nothing, and row 1 answers everything from here.
+ * @param {string} sender @param {string} room @param {string} theirHash
+ */
+async function dismissAndJoin(sender, room, theirHash) {
+	if (!gate || gate.done) return finishDecision();
+	const payload = gate.payload;
+	await persistSession(payload);
+	const done = () => {
+		sweepGateWork();
+		showToast('Your changes were dismissed. A backup is in Sessions: ' + payload.name);
+		finishDecision();
+	};
+	if (room) {
+		// row 4 — TAKE THE ROOM FIRST, for the reason Bring/Stash spell out: our reply is
+		// scene content, and while our `atscene` row over there still names another scene
+		// every object we send is dropped on arrival. `refetch: false` because joinRoom
+		// ends in `resyncRoomPeers`, which is the better ask.
+		await joinRoom(room, theirHash, () => {
+			done();
+			resolveGate({ refetch: false });
+		});
+		return;
+	}
+	done();
+	resolveGate();
+}
+
+/**
+ * SAVE: hand over to the Explorer's own inline naming — the round-31 handoff, moved here
+ * whole — and finish the join once a name lands.
+ *
+ * The save is the ONE place this differs from an ordinary one: it must not record the C4
+ * publish consent. Saving a scene in order to LEAVE it is not the act of publishing it to
+ * the room ("it should not share any changes unless I choose"), so the arm carries
+ * `consent: false` all the way to `saveSceneAsLevel`, whose `noteSceneOpened` is the
+ * single thing that widens the outbound manifest scope.
+ * @param {string} sender @param {string} room @param {string} theirHash
+ */
+async function saveAndJoin(sender, room, theirHash) {
+	if (!gate || gate.done) return finishDecision();
+	// WAIT FOR THE MODAL TO REALLY BE GONE: closing a <dialog> restores focus to whatever
+	// held it, and arming the naming card before that lands hands the user a field that
+	// looks ready and swallows every keystroke (peerApproval measured it).
+	await modalClosed();
+	// armed the way projectFile's bootstrap arms it: open the Explorer, make it the VISIBLE
+	// dock panel (the card is useless behind the Flow tab), then hand it the write-once
+	// request and let it own the input. Inventing a name here would be worse than asking.
+	explorerClose.set(false);
+	bottomDockActive.set('explorer');
+	armExplorerSceneSave(null, { consent: false });
+	showToast('Name your scene in the Explorer — you join as soon as it is saved.');
+	/** @type {any} */
+	let levels = null;
+	try {
+		levels = await import('./levels');
+	} catch {
+		/* the naming cannot happen without it — fall through to the offer below */
+	}
+	const named = levels ? await waitForSceneName(levels.currentLevel) : false;
+	if (!gate || gate.done) return finishDecision(); // torn down while they were typing
+	if (!named) {
+		// ABANDONED. The gate is still holding both directions, so the decision has not
+		// been dropped — it has to be reachable again, and a sticky info toast with the
+		// same three answers is the share-or-stash shape for exactly that.
+		offerDecisionAgain(sender, room, theirHash);
+		return;
+	}
+	// the save wrote the whole world into a library scene, so the live copy has a home to
+	// come back from. No second backup: `stashAndJoin`'s session would be the same bytes.
+	sweepGateWork();
+	showToast('Scene saved. Joining ' + nameOf(sender) + ' with a clean scene.');
+	if (room) {
+		await joinRoom(room, theirHash, () => {
+			finishDecision();
+			resolveGate({ refetch: false });
+		});
+		return;
+	}
+	// ROW 5 — LET THE SAVED NAME GO. `saveSceneAsLevel` writes it into `currentLevel`, and
+	// that publishes an `atscene` row: standing in the host's unnamed world while claiming
+	// to be in "Mine" is a lie every room-aware read would then believe, and the bytes that
+	// name describes are not the ones on screen. The projectFile OPEN precedent.
+	levels.currentLevel.set(null);
+	finishDecision();
+	resolveGate();
+}
+
+/**
+ * The naming was abandoned. The question stands, so put it back where it can be answered.
+ * @param {string} sender @param {string} room @param {string} theirHash
+ */
+function offerDecisionAgain(sender, room, theirHash) {
+	showInfoToast(
+		'connect-decision',
+		'Your scene was not saved, so nothing has moved either way yet. ' +
+			nameOf(sender) +
+			' is connected and waiting.',
+		[
+			{
+				label: 'Save scene & connect',
+				action: () => {
+					dismissToastById('connect-decision');
+					void saveAndJoin(sender, room, theirHash);
+				}
+			},
+			{
+				label: 'Dismiss changes',
+				action: () => {
+					dismissToastById('connect-decision');
+					void dismissAndJoin(sender, room, theirHash);
+				}
+			},
+			{
+				label: 'Disconnect',
+				action: () => {
+					dismissToastById('connect-decision');
+					disconnectFromDecision(sender);
+				}
+			}
 		],
 		undefined,
 		true
 	);
+}
+
+/**
+ * DISCONNECT: drop the gate the way Stay drops it — SEND NOTHING, not even an empty
+ * `loading: 0`, which would claim we had answered and had nothing — and then leave the
+ * session through the same call the Connect pill's own Disconnect makes.
+ * @param {string} sender
+ */
+function disconnectFromDecision(sender) {
+	const who = nameOf(sender); // read BEFORE leaving: the roster is what names a peer
+	if (gate) gate.done = true;
+	gate = null;
+	deferredHandshakes.delete(sender);
+	finishDecision();
+	try {
+		/** @type {any} */ (get(peers))?.leaveSession?.();
+	} catch {}
+	showToast('Disconnected from ' + who + ' — your scene is unchanged. Connect again any time.');
+}
+
+/**
+ * A3 — TAKE THE ROOM, THEN DO THE THING THAT HAD TO WAIT FOR IT.
+ *
+ * Adoption is `levels.adoptSceneIdentity` (the NAME and nothing else — see its comment
+ * for why no hash), and writing `currentLevel` is what publishes our new `atscene` row.
+ * `after` runs once that has happened, which matters for anything that SENDS: the room
+ * gate on the far side drops scene content from a peer whose row still names another
+ * scene, so a reply issued a moment early is silently discarded.
+ *
+ * Then the arrival re-sync, for the mirror-image reason: while our row said elsewhere,
+ * every reply THEY owed us was withheld by their own gate, so walking in means asking
+ * again for the state we could not be given.
+ *
+ * Both imports are DYNAMIC: peerScenes -> levels -> sessions is a real cycle, and a
+ * static edge either way TDZ-crashes the SSR prerender.
+ * @param {string} room @param {string} hash @param {() => void} after
+ */
+async function joinRoom(room, hash, after) {
+	try {
+		const m = await import('./levels');
+		// R22 round 36 (rooms): an EMPTY room here is the session's unnamed world, which has
+		// no identity to adopt — becoming unnamed IS how you stand in it, and `currentLevel`
+		// publishes the row that says so. (Every caller passes a NAME or this.)
+		if (room) m.adoptSceneIdentity(room, hash);
+		else m.currentLevel.set(null);
+	} catch {}
+	try {
+		after();
+	} catch {}
+	try {
+		const p = await import('./peerScenes');
+		// `resyncRoomPeers` needs a name (it asks the peers standing in ours), so the unnamed
+		// room asks for itself: everybody this gate does not read as elsewhere.
+		if (room) p.resyncRoomPeers();
+		else askUnnamedRoomForState(p);
+	} catch {}
+}
+
+/**
+ * R22 round 36 (rooms) — THE ARRIVAL ASK FOR A ROOM WITH NO NAME.
+ *
+ * `rejoinSession`'s ending, minus the wipe: Bring keeps the work it is bringing. Deliberately
+ * WITHOUT `arriving` — that flag claims to be holding the room's own scene file, and what we
+ * hold is our own world, which is exactly the thing the far side may still want to be asked
+ * about.
+ * @param {any} p the already-imported peerScenes module @returns {number} peers asked
+ */
+function askUnnamedRoomForState(p) {
+	/** @type {any} */
+	const peer = get(peers);
+	const map = get(p.peerScenes);
+	const host = get(sessionHost);
+	let asked = 0;
+	for (const [id, conn] of Object.entries(peer?.connections ?? {})) {
+		/** @type {any} */
+		const c = conn;
+		if (!c?.open) continue;
+		if (p.elsewhereThan(map, '', id, host)) continue;
+		try {
+			peer.requestFullState?.(c);
+			asked++;
+		} catch {}
+	}
+	return asked;
 }
 
 /** Proposer side: collect answers, apply when everyone accepted @param {any} data */

@@ -93,6 +93,610 @@ loadable play content. Everything a user does must be visible to connected peers
   — a held key re-stamps several times a second). The `spawn` node acts on the stamp edge
   inside the actionSeenAt family; the INITIATOR spawns and peers receive the ordinary
   `duplicate`, so there is no new message type.
+- `src/lib/sharedLibrary.js` + `src/lib/transferLedger.js` + `components/editors/
+  TransferLog.svelte` (ROADMAP 22 — THE EXPLORER LIBRARY REPLICATES AT LAST). The finding
+  the batch rests on: **the library did not replicate AT ALL** — no message carried folders
+  and none carried item rows, so a session agreed on WHICH SCENES EXIST (the manifest) and
+  on nothing about where anything lives. R1 promotes the `.tp` FORMAT 2 shape
+  (`folders[{id,name,parentId}]` + `items[{hash,name,kind,folderId}]`) into the LIVE
+  manifest, both keys OMITTED when empty (the `labels` precedent) so a project that shares
+  nothing is byte-identical to pre-R1. The SHARED SUBSET only — a private file NAME never
+  leaves the machine, and a document that replicates whole on every edit must not grow with
+  a library nobody shared. `PROJECT_FORMAT` 3: the zip is unchanged, but an older reader
+  spreads the new manifest keys through and republishes folder ids its own import remapped
+  away, which is what the gate is for (`remapSharedIndex` on open).
+  · THE FLAG LIVES ON THE LOCAL RECORD, not in the document: `share?: mine|peer|no`
+  (absent = LOCAL, which is the whole migration), plus `owner` and `wasShared`. NAMING:
+  `imported` is PROVENANCE, `share` is DISTRIBUTION, and they are orthogonal.
+  · TWO IDENTITIES: an item is its content HASH; a shared FOLDER id is NETWORK identity (an
+  adopting peer creates it under that exact uuid, so every `folderId` resolves everywhere
+  with no remapping — the one place this differs from a .tp import, which remaps precisely
+  because a file must not collide with the library it lands in).
+  · PLACEMENT CASCADES (locked): sharing a folder publishes its ANCESTORS, so every peer
+  rebuilds the same tree. Clamping was tried first and is what made a shared folder look as
+  though its contents had not arrived — they had, one level up. The trade the answer accepts
+  is that an ancestor NAME travels, as placement only.
+  · THE HARD PART: a whole-document latest-wins singleton with SEVERAL AUTHORS. Two peers
+  pressing Share inside one millisecond each build a document from a view lacking the other
+  row. Rather than per-row stamps (hudDocs argued that down), ONE WRITER PER ROW and the
+  writer is whoever HOLDS the file (the peerVars rule): a publish carries every foreign row
+  VERBATIM so it can never delete somebody else file; unshare is therefore authoritative;
+  and a document missing a row of OURS makes us re-publish. It TERMINATES because
+  `publishSharedIndex` is idempotent on CONTENT — the debounce is batching, not the thing
+  that stops a storm. `at` must therefore be STABLE for an unchanged row.
+  · TOMBSTONES (`manifest.removed`) exist only because ANYONE may unshare (locked): the
+  publisher reconcile would otherwise resurrect anybody else removal forever. Self-pruning
+  — a row whose stamp is newer has been re-shared, so its tombstone is spent, and there is
+  no lifetime policy to invent. `unshareAuthority` keeps the owner-only rule as a LOCAL
+  setting (the wire enforces nothing either way).
+  · DELETE IS NOT UNSHARE. `manifest.deleted` is the LOG (what/who/when/thumbnail, capped
+  200); each peer moves its copy to the HIDDEN shelf rather than destroying bytes, so
+  Restore works from your own disk. Restore must also LIFT the tombstone or the row it
+  republishes is filtered straight out. `recycleBinEnabled` / `keepRecycleBin` /
+  `deleteWithoutConfirm` are LOCAL prefs; emptying reclaims BYTES ONLY, never the log.
+  · BYTES: `assetShare` gained a CHUNK protocol (`assetstart`/`assetchunk`) — peerjs
+  already chunks internally and a 12 MB message goes through intact, so slicing buys
+  nothing for throughput. It buys per-file PROGRESS (peerjs own chunking is invisible), an
+  INTEGRITY check on reassembly (the single-shot path stored a truncated file and served it
+  on), and it un-pinned `MAX_SHARED_BYTES` from 5 MB to the Explorer own 25 MB import cap.
+  Costs three surfaces a single send lacks: backpressure (pace on `bufferedAmount`), partial
+  state (a stalled transfer is reaped) and ordering.
+  · `assetmissing` is the NEGATIVE reply, and TWO CAPS not one: a request is ~40 bytes so
+  requests are unlimited, while the cap sits on the SENDER outgoing bytes — capping requests
+  meant three dead hashes starved every real download behind them.
+  · `transferLedger` is a LEAF (stores + arithmetic, no protocol) so the aggregate maths is
+  testable with no peer and no bytes. The summary is BATCH-scoped: counting every row makes
+  the fiftieth download read 98% before moving a byte. `byBytes` says WHICH kind of
+  percentage you are reading. `indicatorState` is the four-state sync convention
+  (offline/idle/active/failed) and OFFLINE must not look like an error.
+  Plan + as-built: cloud `plans-core/roadmap-22-shared-library-sessions.md` sections 5-8.
+- `src/lib/mountedVolumes.js` (R22 round 13, a LEAF: svelte/store + idb + toast; `sessions`
+  by dynamic import; `explorer.js` must NEVER import it) — MOUNTED PROJECT VOLUMES: saved
+  projects browsed as roots of their own ABOVE Library. Store
+  `[{id, sessionId, name, folders, items, dirty, rev, at, missing?}]` persisted under ONE
+  idb key so mounts AND their buffered edits survive a reload. Namespace
+  `'vol:<id>[:<folderId>]'` threaded through ONE derived scope in Explorer.svelte, never
+  sprinkled startsWith. LOCAL BY CONSTRUCTION: volumes live outside `explorerItems`, so
+  `publishSharedIndex`/`itemByHash`/prefab refs keep their invariants for free (suite-
+  asserted, not believed). Edits are BUFFERED (rename/move/delete/copy-in set `dirty`);
+  `saveVolume` rewrites the session record's `payload.library` via `writeSessionLibrary`
+  and compares `rev` so an edit made DURING the save stays dirty. Copy OUT = ordinary
+  `addItemFromBytes` (hash-deduped); a whole FOLDER cannot cross the boundary. Dirty
+  unmount navigates you TO the volume, offers Save and unmount (PRIMARY, takes Enter -
+  deliberate inversion of the strip's destructive-primary rule) / Discard / Cancel, then
+  returns you unless you navigated meanwhile; `placeStillThere` decides "is this key still
+  a place" BY SHAPE (uuid = library folder, else pseudo-root). A mounted SCENE opens into
+  the viewport through fileHandler's `openScenePayload` (the loose-.tpscene path made ONE
+  exported flow, guard first, unsaved-but-saveable identity, NO name suffix - the name is
+  the key a later save files under); other kinds still ask to be copied into the Library.
+  Entry points: `#explorer-mounts` (add row pinned TOP, own scroller), `.session-mount`
+  beside Open in the Sessions manager, and the picker's `Import project (.tp)...` which
+  imports AND mounts through `importProjectAsSession`. Disk-folder mounting is a LATER
+  provider behind the same namespace (`showDirectoryPicker` is Chromium-only and
+  undrivable by Playwright - project mounts live in idb, which is why they came first).
+- `src/lib/storageUsage.js` + `components/menu/StorageModal.svelte` (R22 round 13, a
+  LEAF) — WHAT IS USING THE DISK. The whole app has ONE flat idb store, so the scan is
+  `idbKeys()` + prefix classification; `explorer:blob:*` splits by shelf (Library files /
+  Hidden versions / recycle-bin membership via `deletedLog`), `session:*` by
+  `payload.library` (scenes/projects). THE SCAN NEVER READS BLOBS (`item.size` mirrors
+  `blob.size`; reading them pulled 25MB/file into memory to learn a number in the index)
+  and every idb read is BOUNDED (`safeGet` - `idb.js` settles only on the request's own
+  onsuccess/onerror, so an aborted transaction leaves a promise pending FOREVER; the real
+  fix, settling on the transaction's onabort too, is still owed in idb.js). Reclaim goes
+  through each owning module's OWN deleter, never a raw idbDelete; `explorer:index`,
+  `project:manifest` and any hash in `keepableHashes()` are refused BY THE LEAF with the
+  reason rendered (the tick is a courtesy, `reclaimRow` is the rule). Selection reconciles
+  against ROWS across a rescan, never a clock. Three entry points: the header chip, the
+  Explorer background menu, Settings > Explorer. `deletedLogEnabled` (LOCAL, default ON)
+  gates the Deleted LOG - a Bin|Log `tp-seg` toggle INSIDE the Deleted view (the bin holds
+  what it can restore, the log holds the record; OFF hides, never clears - `manifest.
+  deleted` replicates whole, so a local pref that pruned it would delete other people's
+  record and strand restorable bytes).
+- `src/lib/explorerView.js` (R22 round 9, a LEAF — stores + arithmetic, imports NOTHING
+  from the Explorer): THUMBNAILS OR A SORTABLE LIST, plus the bin's grouping. The column
+  model is DATA (`LIBRARY_COLUMNS` / `DELETED_COLUMNS`, `columnsFor`) and `sortEntries` is
+  a PURE comparator, so the part that is easy to get subtly wrong is testable with no
+  browser (the `transferLedger`/`hudArrange` shape). Everything LOCAL — a view mode is a
+  fact about this screen, so it never replicates, saves or undoes.
+  · **THE MODE IS GLOBAL; COLUMNS AND SORT ARE PER VIEW.** One segmented control in the
+  header must not appear to do nothing when you walk into another folder. Columns cannot
+  be shared: the bin owns two the library has no value for (deleted by / deleted at) and
+  the library owns ones a log row cannot answer — a bin row has NO SIZE (the log records
+  what a file was, not how big it was, and after a purge the number can never be derived)
+  and its "added" date IS its deleted date. `explorerColumns` stores the VISIBLE keys, so
+  a column added later shows by default instead of being suppressed by every saved set.
+  · TWO SORT RULES beyond the obvious: **folders first whatever the sort** (a folder is a
+  place, a file is a thing — interleaving by size makes a tree unnavigable) and a TIE
+  falls back to name then id, INDEPENDENT of direction. `Array.sort` is stable, so an
+  unbroken tie keeps whatever order a five-branch derivation produced, which is not an
+  order two peers looking at one project can agree on.
+  · **THE SORT IS APPLIED IN `gridEntries`**, the ONE array Shift-ranges, the arrow keys,
+  Ctrl+A/I and the marquee all read their order from — sorting only where the rows are
+  drawn leaves a Shift-range picking cards from two rows away. Thumbnails keeps its
+  existing order, so that mode is byte-unchanged.
+  · The rows live in `Explorer.svelte`, deliberately NOT a component: a card and a row
+  share nine handlers, six helpers and the inline-rename snippet, so a component would
+  need thirty props and the two would drift on the next behaviour added to either. Every
+  interaction IS the function the card calls. A `<table>` because a sortable grid of
+  columns is one — the head and every row agree on their widths for free.
+  · THE BIN: `groupByDeleter` renders as collapsible SECTIONS, not navigable folders (a
+  bin is read by COMPARING who threw what away, and a folder you must walk into and back
+  out of to compare is the one shape that makes that harder); nothing is minted, the
+  cards' own no-CRUD rule. "Deleted by me" first, and an UNATTRIBUTED row (empty peer id)
+  gets its own section and sorts LAST. `tp-seg`/`tp-seg-btn` in `ui.utilities.css` are the
+  app's first shared segmented control — ToolboxWindow's `.tbx-seg` is styled by the shell
+  it lives in, so it could not be reused; the armed half is driven by `aria-pressed` so
+  the styling and the accessibility tree cannot disagree.
+  · **R22 ROUND 11 — THE HEADER BECOMES A REAL ONE**: `explorerColumnWidths` and
+  `explorerColumnOrder`, both LOCAL and both PER VIEW for the reason above (a width keyed
+  by column name is meaningless across two different column sets). Order is a key ARRAY
+  and an unmentioned column keeps its own index — the append-not-hide rule the visible set
+  already states, which is what decides the fate of a column added in a later release.
+  `orderColumns` PINS NAME FIRST and that is a decision: the name cell is also the row's
+  drag handle, its inline-rename target and where its status dot lives, so it is the row's
+  identity rather than one of its facts (Finder pins it too). `toggleColumn`'s canonical
+  re-sort is now only about MEMBERSHIP; `orderColumns` decides what is drawn.
+  · **THE SPACER CELL, and why a resizable table needs one.** `table-layout: fixed` shares
+  any SURPLUS out across every column that declares a width, so a drag was silently undone
+  by the layout the moment it left room over. MEASURED with the spacer removed: a 72px
+  column renders 129px, dragging it +60 lands at +85, and the NEIGHBOUR moves 136 -> 123.
+  A trailing auto-width cell absorbs the remainder instead, the table's `min-width` is the
+  column sum, and that is what makes `.ex-list` (never the page) scroll sideways. Body
+  cells carry `data-col` so a reader can skip the spacer by construction.
+  · A header press SORTS; a press that TRAVELS reorders — one control, two gestures, the
+  rule the mesh and UV editors keep — and the click that ends a drag is suppressed
+  (the marquee's hazard 3). It is a POINTER gesture, not HTML5 DnD, because the Explorer
+  already uses DnD for cards and a header dragstart would look like one to every drop
+  target. The grip is 7px ON the boundary, double-click FORGETS the width (rather than
+  storing the default, so a later default change still reaches it), and the header menu
+  grows "Reset widths and order" only when there is something to reset.
+  Plan: cloud `plans-core/roadmap-22-shared-library-sessions.md` section 10.
+- **R22 ROUND 36 — DELETED KEEPS ITS STRUCTURE** (`sharedLibrary.js` bin section +
+  `explorerView.js` + `Explorer.svelte`'s bin; plan + as-built: cloud
+  `plans-core/pending/22-deleted-folders.md`). THE FINDING: `explorer.deleteFolder` DESTROYED
+  locally and wrote NO tombstone and NO log row, so a peer on `shareNewFiles: always` stripped
+  the departed rows to `wasShared`, claimed them as `mine`, republished — and the deleter
+  adopted its own folder back and auto-downloaded its own files ("deleting a folder recreates
+  it"). Delete now goes through ONE path and it is the bin's: `deleteItemsToBin` /
+  `deleteFolderToBin` write a log ROW per file AND per folder, the TOMBSTONE, and the APPLIED
+  mark, in one publish. `explorer.deleteFolder` (the destroyer) survives for `clearLibrary`-
+  class callers only; `removeFolderRecords` is the records-only half a bin move and a peer's
+  applier need.
+  · THE LOG GREW TWO FIELDS AND ONE ROW KIND, nothing else on the wire: every row carries
+  `folderId` (its parent AT DELETION TIME; absent = an old row) and `path` (ancestor names,
+  a DISPLAY FALLBACK for a folder gone from both the library and the log — the thumbnail's
+  argument); a FOLDER ROW is `hash: 'folder:' + id, kind: 'folder'` (the `'prefab:'`
+  precedent) whose `folderId` is its parent. Same key, same cap, same latest-wins array.
+  · THE BIN IS A TREE (`buildDeletedTree`, PURE, takes `$explorerFolders` as an argument for
+  the get()-registers-nothing rule): a node is a DELETED FOLDER (a row — restorable, may be
+  empty) or a GHOST (still in the Library, but deleted rows point at it — somebody walked in
+  and deleted the contents; a place, not a thing to restore). Resolution log row → live
+  folder → unresolvable; an unresolvable ancestor ends the chain at the root. `activeFolder`
+  walks INTO it (`'deleted:<id>'`), cards are `deletedfolder:<id>`; `'deletedlog'` is an
+  ALIAS now (turns `explorerBinShowSpent` on, lands in `'deleted'`) — round 13's "the log is
+  a place" ruling reversed, because a checked menu entry + an icon button IS a view flag and
+  a navigable bin would otherwise need a parallel `deletedlog:<id>` namespace. Two LOCAL
+  prefs: `explorerBinLayout` (tree | plain) and `explorerBinShowSpent`; the Bin|Log strip
+  (which cost a row of grid height) is gone, replaced by `#deleted-log-toggle` at the right
+  end of the breadcrumb plus the same toggle as a checked menu entry, so the breadcrumb being
+  hideable hides no way in. `DELETED_COLUMNS` gained `location`, and `explorer:columnsSeen`
+  is what finally makes "a column added later shows by default" TRUE (visible-keys alone
+  cannot tell "added later" from "hidden on purpose").
+  · RESTORE PUTS THINGS BACK WHERE THEY WERE, recreating the way there (`ensureRestoreTarget`):
+  live folder → use it; else the log's folder rows are recreated upward under the SAME ids
+  (network identity, so every peer's `folderId` resolves with no remapping), `mine` unless
+  `localOnly`, their rows consumed, tombstones lifted; else the root. A `localOnly` row
+  restores LOCAL (it used to be marked `mine` — restoring a private deletion SHARED it).
+  `restoreDeletedFolder` takes the node, its folder rows and every HELD item under it; spent
+  rows stay in the log pointing at the now-live folders (they show under ghosts).
+  `purgeDeletedFolder` reclaims bytes under a node and drops only folder rows with no item
+  rows at all — a folder that held something keeps its row so its files have somewhere to be
+  listed. `partitionDeleted`: a folder row is in the BIN when a held item is under it OR it
+  has no item rows at all; without the second clause the default empty-on-load left a bin of
+  empty folders every start.
+  · THE PEER SIDE, two rules in `applySharedIndex`: (1b) a LIVE row for a hash we hold HIDDEN
+  with `share: 'no'` and its deletion in `appliedDeletes` is a RESTORE — un-hide it, then the
+  ordinary adoption ("restored files do not appear for peers": step 2 found the hidden copy
+  and never un-hid it, and its log row was gone, so it was invisible everywhere); the
+  three-way condition keeps a hidden old scene version (21-G7) from surfacing because a peer
+  shared the same bytes. (2) folder rows are applied AFTER the item rows of the same document
+  (`appliedDeletes` keyed `'folder:'+id`): nothing visible left in the subtree → the folder
+  RECORDS go (no blob touched, hidden items keep their `folderId`); something left (a local
+  file the deleter could not see) → the folder STAYS marked `share: 'no', wasShared: true`,
+  which the `always` sweep skips and `projection()`'s ancestor cascade STOPS AT (carrying it
+  as an ancestor would republish it with a fresh stamp that beats the tombstone — the
+  resurrection this batch exists to stop). `shareFolder` and a restore into it lift it.
+  · TWO LATENT BUGS FOUND ON THE WAY: `patchRecord` writes `explorerItems` ONLY, so the
+  shipped hide-then-patch order in `deleteSharedItem` and the applier was a silent no-op —
+  every deleted copy sat on the hidden shelf still marked `peer` (the projection carried its
+  row forward verbatim). Patch first, then hide. And `deleteSharedItem` now `noteApplied`s
+  its own hash instead of waiting for a sweep to notice "nothing here to hide".
+  · WORDING: the spent-row label "Nobody here holds the bytes" read as a fact about the
+  session; the record is THIS machine's (rows whose bytes were reclaimed HERE, unknowable for
+  a peer) so it is "Cleaned up on this device". The share-ask box "Do this for new files from
+  now on" under-described `always` (it reaches every file still local too) → "Apply to all my
+  files, now and from now on"; behaviour unchanged by ruling. The private-scene Users row
+  drops its permanently-grey Watch — 21-G5's disabled-with-the-reason is for a control that
+  will work again; this one never can until they share, and Request access beside it is how
+  you ask.
+  · "CLEAR THE LOG" CLEARS THE LOG (`clearDeletedRecords`): only the rows spent HERE go —
+  item rows with no bytes on either shelf, folder rows whose files are all gone — and every
+  restorable row stays; it used to run `emptyDeletedLog`, the bin's destructive act, which
+  keeps the "Empty Deleted" name that says so.
+  · RESTORE BY DRAG: a bin item or a real deleted folder node dropped on a Library folder
+  card, a tree folder row or the Library root restores it THERE (`restoreDeletedItem(hash,
+  {into})` / `restoreDeletedFolder(id, {into})` — the gesture is the answer to the question
+  Restore would otherwise decide); a ghost node is not draggable. "Plain list without
+  folders" is a checked toggle beside "Show cleaned-up files" (off = the tree).
+  · `sceneNameShared` (projectManifest) ALSO READS THE SHARED INDEX — the user's rule: "if
+  the file is shared, you open it and anyone can join from peers; if the file is not shared,
+  you get the prompt to edit privately or share". A `.tpscene` that rode `manifest.items`
+  opens as a ROOM with no ask; the ask is for a file that never left the machine. (Ruled,
+  reverted and re-applied the same day once the wording was checked with the user — the
+  first reading of the report had inverted it.)
+  · Suite `deleted-folders` (two peers) measures the COUNTERFACTUAL: with `always` armed on
+  the peer, 3.5 s after the folder delete the deleter has no folder, no visible file, an
+  empty index and nothing being pulled. KNOWN AND LEFT: `localOnly` rows travel in
+  `manifest.deleted` like every row (a local file's NAME reaches peers on deletion, since
+  round 7 — a private log would strand this machine's bin when a peer's document wins), and
+  hidden old versions of a deleted-for-everyone scene stay on the shelf indefinitely.
+- **R22 ROUND 36 (ROOMS) — THE UNNAMED WORLD IS A ROOM WITH AN IDENTITY** (`peerScenes.js`
+  `roomOf`/`roomCtx`/`elsewhereThan(map, mine, peerId, host)`; map + as-built: cloud
+  `plans-core/pending/22-scene-rooms-map.md`). THE FINDING: the room gate was only-on-evidence
+  — two rows were elsewhere only when BOTH named a scene and the names differed, so an EMPTY
+  scene gated nothing. Right for a joiner adopting the host's content over the handshake
+  without learning its name; wrong the moment a session holds a named room AND an unnamed one,
+  which is exactly what Share scene produces: the sharer's row becomes `{scene:'Secret'}`,
+  the host who never saved still says `''`, both gates read them as one room, and every edit
+  crossed (measured: 1 -> 3 objects on BOTH sides with nobody pressing Go to). The
+  share-or-stash table's row 4 said it out loud ("an unnamed scene cannot be ISOLATED").
+  · THE RULE, four lines: P -> `PRIVATE_SCENE` (equals nothing) · N(S) -> S · U -> THE HOST'S
+  ROOM (the host's named scene when known, our own when we host, else `''`) · absent -> `null`,
+  no evidence, allow. `host` is `$sessionHost` (null = we host); OMITTING it keeps round 35's
+  semantics for a caller written before rooms (none left). Two sentinels, asserted different:
+  `UNNAMED_ROOM = '(the session)'` for the popover (which branches to a **Join** button —
+  `joinSessionWorld()` = `rejoinSession({world: true})`, generalised beyond privacy) and
+  `UNNAMED_ROOM_TOKEN = ' unnamed'` for the share-or-stash table, which is written in names and
+  reads `''` as no evidence in three places; `sessions.js` keeps its own copy (cycle) and
+  `asRoom` trims everything BUT the token — the plain `.trim()` minted a scene literally named
+  "unnamed" that a joiner adopted (connect-decision went 4 red). Row 1's adoption and
+  `askConnectDecision` take the NAME, never the label. `roomsOfSession` and the popover's
+  untitled bucket resolve with the same exported `roomCtx`, so they agree by construction.
+  · THE ORDER OF A SAVE IS LOAD-BEARING NOW: `saveSceneAsLevel` announces `sceneadopt`
+  BEFORE `currentLevel.set` publishes the new row — under the resolver a saver whose row has
+  already moved is elsewhere from every room-mate, so the send gate withheld the name and a
+  receiver would have dropped it (`scene-adopt` went 19/8 red on the first pass). Receivers
+  see manifest -> sceneadopt -> atscene on one ordered conn — and `applyRemoteSceneAdopt`'s
+  own late re-check (two dynamic imports after the dispatcher's synchronous gate, by which
+  time that atscene has landed) accepts a sender standing in the scene it just announced.
+  · WHAT DID NOT FOLLOW from the map: an unnamed joiner with work resolves INTO the host's
+  room, so it is not a split and still takes the connect decision (`scene-isolation` §2);
+  row 4 folds into rows 2/3 only for the unnamed-HOST case.
+  · Suites: `scene-rooms-truth` (one page, the resolver's whole truth table, 83) and
+  `scene-rooms-matrix` (two peers, transitions T3/T5/T8/T9/T10/T11/T14 with the invariants
+  measured after each, 42); `private-scene` §4's "an unnamed peer is nobody's elsewhere"
+  was row 4's reading and asserts one Go to now.
+- `src/lib/filePreview.js` + `components/editors/FilePreviewWindow.svelte` +
+  `components/editors/AudioPlayer.svelte` (R22 round 11) — THE PREVIEW WINDOW STOPS BEING
+  AN IMAGE VIEWER. Image, audio, 3D or a folder, with arrows that walk the folder the
+  Explorer is showing. The leaf holds the walk (`previewWalk`/`stepPreview`/
+  `previewPosition`/`previewFaceOf`) and the two overlay prefs; the window is chrome.
+  · **THE SIBLING LIST IS PUBLISHED, NOT DERIVED.** "The files in this folder, in the order
+  you can see" depends on the filters, the search box, the view mode and the sort — a
+  question only the Explorer can answer — so it publishes `previewSiblings` off
+  `gridEntries` (the ONE array the grid is built from) and the window reads it. The
+  `noteMarkers` shape; deriving it twice would be a copy guaranteed to drift.
+  · The walk holds FOLDERS plus previewable files and CLAMPS at the ends — an arrow that
+  wraps to the start is indistinguishable from a dead one. A text file or a `.tpscene` has
+  no face (one opens the code editor, the other replaces the world), so stepping goes past
+  them. Enter walks the EXPLORER into a folder and Backspace back out, and it WAITS for the
+  republish rather than guessing at a delay: the first version used 80ms, measured empty
+  and CLOSED the window it had just walked into.
+  · **PASSTHROUGH STANDS THE PANEL DOWN, NOT THE BODY** (see the gotcha). The header, the
+  settings pane and the resize grip opt back IN, because a click-through header is a window
+  you cannot get rid of. `previewOpacity` is a SEPARATE setting from `previewPassthrough` —
+  "how loud is it" and "can I still work under it" are different questions and wanting one
+  without the other is the normal case in both directions.
+  · `AudioPlayer.svelte` is an `<audio>` ELEMENT, not a Web Audio graph: duration, seeking,
+  buffering and loop are the element's job, where a `AudioBufferSourceNode` would have to
+  decode the whole file before it could say how long it is. SLIM AND WIDE whatever the
+  window's height — the strip is fixed and the space above it is left empty. It is a
+  COMPONENT because the Properties pane wants the same player (the ModelPreview precedent
+  one kind over), and `routeOutput` is the NAMED SEAM the unmerged `feat/22-audio-engine`
+  changes in one line to ride the `sfx` bus. Space plays through a DIRECT capture listener
+  (panel chrome swallows delegated handlers).
+  · THE NAMES: the store is still `imagePreviewTarget` and the DOM id still
+  `#image-preview-window` — four suites and every caller address them, the 21-G1 ruling
+  (the user-visible word changes, the identifiers already written down do not). Only the
+  COMPONENT file was renamed, so a reader looking for the audio player finds it.
+  · **R22 ROUND 12 — MULTIPLE WINDOWS, AND THE 3D FACE.** `previewWindows` (in fileWindows)
+  is the truth and `imagePreviewTarget` survives as a SETTABLE custom store over the newest
+  entry, which is what keeps every caller and those four suites working; the pref
+  (`previewMultiWindow`, LOCAL, OFF) decides whether a second open REPLACES or ADDS. Two
+  rules make adding livable: the same source RAISES rather than duplicating (`previewRaise`
+  — the 21-I3 modelPreviewRaise ruling verbatim) and a new window CASCADES, or they all
+  land on the one saved rect and only the top is findable. The FIRST window keeps the DOM
+  id and the `imagePreviewWin` dragWindow key; the rest are `-<n>` and `:<n>`, and every
+  one carries `data-preview-id`.
+  · A library OBJECT double-clicks into this window now (not `ModelPreviewWindow`), with
+  `previewShowStats` (ON) surfacing ModelPreview's tris/verts/meshes and `previewAutoRotate`
+  (ON) driving its `autoSpin`. The "stops where I stop rotating" half needed NO code:
+  ModelPreview's drag is pointer-CAPTURED with no inertia, so the spin was the only thing
+  carrying it on. `ModelPreviewWindow` survives for the PREFAB shelf's own 3D preview — a
+  prefab is not a library file and has no place in a folder walk — and `previewSuspended`
+  now also stands the Properties inline preview down for an object shown here, which is
+  the same two-contexts-one-asset hang 21-H2 hit.
+  · The cog OVERLAYS the body (absolute, under its own cog) instead of shoving it down.
+  · **R22 ROUND 13 — THE MODEL IS THE SWITCH, AND THE VIEW IS NAVIGABLE.** A press that
+  does not TRAVEL toggles the turntable and one that does rotates it (the 4px marquee slop,
+  the same one-control-two-gestures rule the mesh and UV editors keep), so nothing has to
+  be aimed at. **A DRAG ONLY PAUSES IT** and it picks up on release — an earlier pass had
+  dragging switch it off on the reasoning that you had taken over, and the user's rule is
+  better: nudging the model to see the other side must not silently cost you the thing you
+  turned on. Full DCC navigation: left orbits, MIDDLE or Shift+left pans (scaled by
+  distance, so a pan covers the same screen at any zoom), the wheel dollies (CLAMPED, or a
+  trackpad flick loses the model with no way back), double-click goes home.
+  · `previewAutoRotate` is the DEFAULT each preview seeds from as it opens, not the live
+  state — that is per window (`spinning`), which is what lets one window spin while another
+  from the same default does not. The cog still reaches the open window, because a setting
+  you can watch do nothing is a dead control.
+  · The mesh facts run along the very bottom and the gesture tip sits above them on the
+  left; the tip is gone while the model turns (a tip is guidance for when nothing is
+  happening) and BOTH go below full opacity — a faded window is a REFERENCE, and chrome is
+  the first thing in the way of one. `input.tp-check` throughout the cog.
+  · **R22 ROUND 15 — THE PREVIEW PLAYS ANIMATIONS** (`AnimationPlayer.svelte` +
+  `previewAutoPlay`/`previewFps`/`frameCount`/`frameAt`). THE FINDING IT RESTS ON is older
+  than the request: `parseObjectFile` returned `gltf.scene` and DROPPED `gltf.animations`,
+  and that is the one parse path the Explorer, its thumbnails and every preview share — so
+  an animated .glb has been arriving in this app inert since the library was written (FBX
+  was unaffected only because FBXLoader hangs its clips on the object itself, which is now
+  what the glTF path does too). The mixer lives in `ModelPreview` beside the render loop
+  that advances it, and the transport is presentation with three callbacks out — the
+  AudioPlayer/ModelPreview split one domain over. PAUSE IS `action.paused`, never "stop
+  updating the mixer": freezing the mixer looks identical while nothing else moves and
+  jumps the pose the moment you resume. FRAMES ARE DERIVED — a glTF clip is keyed in
+  SECONDS, so the count comes from the animation editor's own `animationFps` (the one
+  convention in the app) and the UI names the rate rather than hiding the assumption.
+  Stepping WRAPS, because playback loops. "Same player style" is kept by SHARING THE
+  STYLESHEET (`tp-tr-*` in ui.utilities.css, the `tp-seg`/`tp-check` precedent), not by
+  copying it.
+  · A STEP PAUSES IN THE ANIMATION TRANSPORT AND DOES NOT IN THE AUDIO ONE, deliberately:
+  a frame you cannot see because playback ran past it is not a step, while holding "." on a
+  sound IS the fast-forward that was asked for. Nothing ever plays backwards — both keys
+  leave the element playing FORWARD from where they land.
+  · KEYS (round 16/17): Space plays either transport · `,`/`.` step (a frame, or a second)
+  · `R` this window's turntable, `I` the shared statistics · audio adds up/down for five
+  seconds, Home/End, 0-9 and M/L. The up/down pair is a DEPARTURE from the web convention
+  (volume) taken at the user's ask, and defensible here: the volume has a slider two
+  centimetres away while finding a moment in a file is why the window is open.
+  · **"TYPING" IS NOT "FOCUS IS ON A CONTROL"** — the window's key handler treated every
+  `INPUT` as a text field, so touching the transport's own slider silenced every shortcut
+  in the window. A range, a checkbox and a button are controls; only a text input, a
+  textarea or a contenteditable is typing. The one exception kept on purpose: a focused
+  range still owns the ARROWS.
+  · **R22 ROUNDS 19-28 — THE CORNER, THE HEADER, AND THE TRANSPORTS.** The corner row holds
+  ONE reading: the mesh facts if the statistics are on, the gesture line if they are not
+  (they default OFF, so a fresh preview greets you with what to DO). The gesture line
+  PERSISTS — round 14 made it an onboarding prompt on the standard every 3D viewer follows,
+  and round 19 changed what the line IS, so a row that empties itself after your first
+  click just looks broken. Both readings sit at the very bottom, UNDER the animation
+  transport the way a sound's filename sits under its strip, and both stand down below full
+  opacity — as does the transport itself, a faded window being a reference.
+  · OPACITY IS LOCKED for sounds and folders (disabled with the reason, the Users-popover
+  rule): fading exists so a window can be a reference over the scene, and a sound has
+  nothing to see through.
+  · THE HEADER HAS A RANKING and its walk is anchored LEFT — see the gotchas for both the
+  overflow rule and the counter that must not move. The order is walk / filename / zoom /
+  cog / close, and the zoom trio leaves first because the wheel and a double-click already
+  do its whole job.
+  · PANNING survives a zoom-out (the stranding gotcha).
+  · OPACITY, third and final placement: on the CONTENT, with the panel's and the body's
+  backgrounds transparent, so the header and the cog keep their own strength. See the
+  ancestor-opacity gotcha for why no other arrangement can express that.
+- `src/lib/saveAs.js` (R22 round 11) — "SAVE AS…", AND WHAT A PREFAB IS MADE OF. A prefab
+  was a JSON snapshot in IndexedDB, not a file, so "prefab (.glb)" had nothing to mean.
+  **A PREFAB RECORD MAY NOW CARRY A `format` AND THE FILE'S OWN `bytes`**, with the
+  ObjectLoader snapshot as the DEFAULT — because the user's no-conversion rule ("3d objects
+  automatically placed as existing format, .tpscene are placed as .tpscene") only works if
+  a prefab ALREADY IS one of those formats when it travels.
+  · **THE BYTES RIDE BESIDE THE SNAPSHOT, NEVER INSTEAD OF IT.** The thumbnail, the
+  Properties 3D preview, the facts block, the VR sleeve, drop-at-the-cursor and undo all
+  read `element`, and every one would have gone blank otherwise; `instantiatePrefab` stays
+  synchronous for every format. It is the rule this codebase already keeps for animated
+  rigs and material arrays. The bytes exist for the two things a snapshot cannot do: hand
+  the file back in its own format, and reach the Library without being converted.
+  · `SAVE_AS_FORMATS` is the catalog as DATA (the `buildObjectMenuItems`/`hudActions`
+  shape) so the object menu's `Save as…` submenu renders FROM it and neither can drift.
+  Each tooltip says what its format KEEPS **and what it drops**.
+  · `sessions.buildSelectionPayload` is the .tpscene of a SUBTREE — objects, their clips,
+  their flow graphs, their shader graphs and the joints whose BOTH ends are in the set;
+  NOT the world (sky, look, gravity, music, HUD, game stay with the scene they belong to).
+  Kept SEPARATE from `buildSessionPayload` deliberately: that one is on the hot path that
+  decides "has this scene changed" (sceneSignature) and an `only` flag there is one branch
+  from a wrong verdict. `fileHandler.gltfBytesFor` is the same export ritual handed back as
+  bytes. A .tpscene prefab's DOCUMENTS follow the objects asynchronously, keyed by the uuid
+  map the parse already builds — which is why `buildPrefabElement` gained `keepUuids`
+  (three's `clone()` mints fresh ones, and the documents are keyed by uuid).
+- **WINDOW CHROME, R22 ROUNDS 20/25/26/28**: the Explorer header reads filter -> view ->
+  transfers (the first two both change what the grid shows; the log is about bytes moving
+  between machines and was interrupting them), and every floating header — the Explorer's,
+  the preview's, the object list's — sheds its expendable pieces on a MEASURED width while
+  keeping the way out. `windowFocus` spends its five-slot z band (40..44, under the hud at
+  45) on the TOP of the stack rather than clamping it, so the windows you have just been
+  using stay strictly ordered and only the deep ones share; `windowTabs.groupFloor` takes
+  the worst case across a group's members. All four are in the gotchas.
+- **ROOMS ARE CONTENT PARTITIONS (R22 round 30, the whole arc)** — `peerScenes.js` grew
+  from presence into the partition: `ROOM_SCOPED` (a mutable Set of 67 message types —
+  object lifecycle/geometry incl. clearscene, flow documents+runtime, every scene
+  singleton, locks, session proposals) is withheld from peers demonstrably elsewhere on
+  the SEND side (peerHandler's broadcast gate = STREAM_TYPES ∪ ROOM_SCOPED), the RECEIVE
+  side (`canApplyByRoom` right after the capability gate — the backstop against older
+  builds and a foreign clearscene) and the REPLY side (nine full-state replies answer
+  `sameRoomOrUnknown` only). MESH-WIDE stays: chat, ALL presence (**atscene may never be
+  gated — it is the gate's own evidence**, and it sits on cloudHooks' ALWAYS_ALLOWED
+  floor for the same reason), peervars, the manifest + ALL asset transfer (the library is
+  cross-room BY DESIGN: travel pulls destination-scene bytes from peers in other rooms),
+  nodedefs, roomanchor, the module channel (SDK `roomScoped` opt-in = recorded
+  follow-up), and every get* REQUEST (the reply side is where rooms are enforced).
+  Only-on-evidence is preserved throughout: an absent row or an unnamed side gates
+  NOTHING.
+  · **THE RE-SYNC that makes the gate safe**: `requestFullState(conn)` factors the
+  handshake burst (atscene first — PeerJS conns are ordered, so the row is fresh before
+  any decision; gettriggers ahead of getnodes, the DEVX#18 order); `travelToLevel` ends
+  by re-requesting full state from every peer in the destination room, so travel-back
+  converges on the LIVE room, not the file. Deliberately NOT wired to
+  currentLevel.subscribe (adoption also writes it, and there the host already sent
+  everything). Locks re-push own-rows-only on a row transitioning INTO my scene
+  (lockRestore concats without dedupe). `requestLoadSession` counts same-room conns only
+  or a gated sessionproposal hangs the proposer. The re-sync's getobjects carries
+  `arriving: true` (additive) or every walk-in pops share-or-stash on the whole room.
+  **getgame was measured INERT and removed**: fork 3's carry semantics re-stamp the
+  traveller's state at Date.now(), so the room's reply always loses — that is the fork
+  working; the measurement lives in requestFullState's JSDoc.
+  · **ROUND 32: THE ARRIVING REPLY HEALS** — every object applier dedupes by uuid, so
+  "double-application is safe" was also "existing objects never converge": a traveller
+  who loaded a stale .tpscene kept the file's poses forever while the room moved on. The
+  reply to an `arriving` request carries `override: true` on every group/object/
+  objectfile message (conditional spread — ordinary replies byte-identical), and the
+  appliers REPLACE in place: createObject in both paths (gizmo detach first, tolerant of
+  a missing target; the GLTF path used to ADD A DUPLICATE — an unbraced if ran the
+  group-attach block unconditionally), createGroup (which had NO dedupe at all — now
+  unconditional, override also updates name+pose, never a re-parent), applyObjectFile
+  (transform/name/anim only, never a re-parse). The standing-VERDICT short-circuit
+  forwards the flag when the request was arriving — a verdict decides WHETHER we answer,
+  not HOW, and without it every travel BACK into an answered room degraded to add-only.
+  Deletions still do not converge (the reply is not authoritative about absence —
+  recorded follow-up). Nodes needed nothing: mergeGraphSnapshot already updates in place.
+  · **ROUND 32: THE ASK HOLDS BOTH DIRECTIONS** — the share-or-stash gate queued only
+  what we SEND, so whoever answered first (or held a latched verdict) poured its scene
+  into the other side mid-question. `gateHolds(peerId)` (sessions) marks a peer queued
+  behind our open ask; peerHandler DROPS its ROOM_SCOPED content (right after
+  canApplyByRoom) and `broadcast` withholds ROOM_SCOPED payloads to it (STREAM_TYPES
+  keep flowing). Answering REFETCHES full state from every queued sender in resolveGate
+  — deliberately WITHOUT `arriving`, which would walk past the other side's still-open
+  ask; rows 3/4 pass refetch:false (joinRoom already ends in resyncRoomPeers), rows 4/5
+  are unnamed so this is the only refetch they can get, and Stay refetches nothing. The
+  rows-4/5 ask copy now says the scene is unsaved and that nothing moves either way
+  until answered. The invite auto-dial stays unguarded (a fresh tab IS empty at dial
+  time); the dial-to-approval edit window is covered by this gate now, recorded in
+  requestConnect's JSDoc. ROUND 33 closed its singleton gap: environment/music/
+  scenephysics/scenepost/game are PUSH-only (no get*), so what the gate dropped was
+  unrecoverable — `replyTo('objects')` now runs a registered `pushWorldState` seam
+  (peerHandler registers, `registerWorldStatePush` — sessions may not reach those
+  modules) so every consented objects reply re-states them, idempotent on their stamps.
+  · **ROUND 33: THE CONNECT DECISION** — two users both in UNTITLED scenes holding
+  unmerged objects is a state with no use (the user's ruling), so the joiner-side
+  question moved to where it has an answer. The DIAL-TIME ask is GONE (requestConnect
+  dials immediately; settleSceneIdentity deleted; pill and invite link are one path).
+  At APPROVAL, rows 4/5 with `fromHost` + unnamed + work (row 5 only when the far side
+  also holds work — the `!otherCount` fast path is lifted ABOVE the branch so bringing
+  a scratch world to an EMPTY friend still auto-shares) put a blocking MODAL
+  (`askConnectDecision`): Save scene & connect (Explorer inline naming with
+  `consent:false` — saving in order to LEAVE is not C4 publish consent; then sweep,
+  currentLevel→null for row 5 / joinRoom for row 4) · Dismiss changes (the stash
+  machinery, backup named "Dismissed before joining") · Disconnect (Esc/backdrop/the
+  labelled cancel all mean it, said in the copy; sends NOTHING, the Stay rule). An
+  abandoned naming re-offers all three as a sticky toast. NOTHING MOVES UNTIL DECIDED
+  including what we ASK for: sendHandshake withholds the joiner's scene singletons (its
+  fresher stamps would clobber the host's world) and defers
+  requestFullState+getnodedefs (`deferredHandshakes`, delete-on-read via
+  `askDeferredState` at every gate exit — after the decision the request goes out with
+  count 0 and the host's fast path answers unasked); sharedLibrary's auto-download
+  holds behind `pendingConnectDecision` (connectionState). The OLD merge is the
+  `mergeOnConnect` opt-in (connectionState, `connect:mergeOnConnect`, default false,
+  Settings beside the sharing prefs) — ON restores the classic Share/Stash toast
+  verbatim; the rows and gates beneath are untouched either way (the backstop against
+  older builds and bypasses). KNOWN, recorded: the host's handshake singletons land on
+  the joiner BEFORE its gate opens (ordered conn), so Disconnect leaves the host's look
+  applied locally — fixing that means reordering sendHandshake, its own ticket.
+  · **ROUND 34: A SAVE NAMES THE ROOM** — `saveSceneAsLevel` broadcasts `sceneadopt`
+  {name, hash} when a consented save NAMES a previously-unnamed world with a roommate
+  present (never for re-saves, `newLevel`, or round-33's `consent:false` saves — a save
+  made in order to LEAVE must not rename anybody's world). `sceneadopt` is in ROOM_SCOPED
+  (the one member about a scene's IDENTITY: atscene REPORTS an identity, this CONFERS
+  one), so elsewhere/gate-held peers never adopt; the applier (levels, beside
+  adoptSceneIdentity) takes it only when our own scene is UNNAMED (also the idempotence
+  guard; an `unsaved` loose scene has a name and is not re-labelled) + sameRoomOrUnknown
+  as the older-build backstop. Adoption stays name-only and is NOT consent. The save
+  toast gains " — shared with this session." on any consented save with a roommate.
+  · **ROUND 35: PRIVATE SCENES** — opening an UNSHARED local scene with peers connected
+  asks Share with the session / Edit privately / Cancel (`askScenePrivacy` in the new
+  `scenePrivacy.js`; `sceneNameShared` in projectManifest decides; the travel NODE never
+  asks). Private = `private: true` ON `currentLevel` (every later writer clears it by
+  construction; the audited exception: a save of the private scene itself PRESERVES it —
+  the open-guard's "Save and open" must not publish as a side effect).
+  `mySceneWire()` is the ONE atscene builder: private publishes `{scene:'', hash:'',
+  private:true}` — THE NAME AND HASH NEVER LEAVE THE MACHINE, and the flag is the
+  positive evidence an empty row lacks (`elsewhereThan` answers the PRIVATE_SCENE
+  sentinel with no `mine` needed; `privacySplit` covers the half no map read can see —
+  WE are private). `sameRoomOrUnknown` folded + privacy buys canApplyByRoom, the nine
+  full-state replies and sceneadopt for free; `broadcast` gains the self-private
+  ROOM_SCOPED withhold (streams/chat keep flowing — private is not offline);
+  sendHandshake withholds singletons + the full-state ask + the direct `locked` send;
+  getobjects/getnodes are withheld on privacySplit BEFORE the share-or-stash table
+  (which is written in NAMES and would read a private empty row as the shared world);
+  `outboundManifest` drops `privateScenes` in BOTH branches (the host branch is what
+  makes the promise true — a host publishes whole). The popup: "In a private scene"
+  group LAST, Watch disabled with the reason, no Go-to, a Request access button; while
+  YOU are private, a strip under the Connected header offers Share with session +
+  Rejoin session. `sceneaccess` (request|grant|deny) is deliberately MESH-WIDE — the
+  one message whose whole job is to cross the divide, carrying no name and no content;
+  the private peer's sticky ask says sharing shares with EVERYONE; `sharePrivateScene`
+  is the ONE exit (lift the mark, consent, publish the real row, PUSH the manifest —
+  the send-back only fires on an arriving document); the grant card's Go to reuses the
+  guarded `travelToPeerScene` (extracted into sceneOpenGuard). Rejoin: guarded, travel
+  to the session's named room when one exists, else clear + null + publish '' +
+  requestFullState from every reachable peer (the row-1 shape — what makes an UNTITLED
+  session world rejoinable). Follow-ups: approve-while-private UX; private mode does
+  not survive a reload; sceneaccess sits off the ALWAYS_ALLOWED floor.
+  · **THE CONNECT CONTRACT** (`deferUntilShareChoice`'s five-row table in sessions.js):
+  an EMPTY joiner adopts the host's scene identity and receives, no ask
+  (`adoptSceneIdentity` in levels — **THE NAME AND NOTHING ELSE**, fileHandler's
+  loose-scene shape `{hash:'', name, unsaved:true}`: a hash in currentLevel means "these
+  are the bytes I loaded" and every reader treats it that way — storing the host's hash
+  was tried and broke the Explorer's "Open here" three ways); a HOST asked by a peer in a
+  different named room withholds SILENTLY; a joiner with work joining a different named
+  room gets THREE options — Bring / Stash & join / **Stay in mine**, which sends NOTHING
+  (not even loading:0 — that would claim a sync completed); unnamed-with-work gets two
+  (no Stay — an unnamed scene cannot be isolated, forced by only-on-evidence); same scene
+  = classic behavior. The once-per-session latch is a per-ROOM verdict map.
+  · The peers popup: Connected (N) INCLUDES you (header AND trigger badge); a tp-seg
+  All|Rooms switcher (`peers:view`, flat default); ONE `peerRow` snippet for both views;
+  grouped view = roomsOfSession's first production caller + "Untitled scene" and
+  "Scene unknown" buckets LAST (Watch stays ENABLED there — only-on-evidence); **"Go to"**
+  (class `peer-goto`, never `peer-watch` — two suites count that class) replaces Watch
+  exactly when `elsewhereThan` says elsewhere: guard → hash-first
+  `travelToLevel(row.hash)` (the exact world they stand in; the manifest pointer can be
+  newer) → 15s race toast at the CALL SITE (never inside resolveLevelItem — the LUT watch
+  rule). The atscene `hash` field got its first consumer here.
+  · `sceneOpenGuard.js` = the unsaved-changes guard as ONE module (`guardSceneReplace`),
+  shared by Explorer's openSceneItem and Go-to; NOT in levels.js (sceneIdentity imports
+  levels — cycle), and the travel NODE deliberately unguarded (replicated gameplay has
+  nobody at a dialog).
+  · **THE MANIFEST**: receive = UNION-MERGE (`mergeManifests`, pure — per-scene histories
+  by hash: prefix takes the longer, diverged splices the loser's novel hashes before the
+  newer side's pointer, the adoptSceneVersions precedent; a scene only one side has is
+  carried WHOLE, which is the wipe protection; clash = both sides novel → ONE modal per
+  connect; the HOST toasts when a remote merge MOVES a pointer). Merge runs EVEN on an
+  older incoming stamp (reconnect); the union commit is stamped ABOVE BOTH sides;
+  send-back only when the SCOPED doc has something the sender lacks (content-idempotent
+  → terminates). Send = SCOPED for a joiner (`outboundManifest` at all three senders):
+  scenes filtered to sessionSceneNames ∪ openedScenes (consent recorded in
+  saveSceneAsLevel/publishCurrentIfChanged/travelToLevel — **BEFORE the write that
+  publishes**, see the gotcha — and by a .tp open; adoption is NOT consent), the private
+  project name withheld unless renamed this session. The LOCAL store and idb keep the
+  FULL manifest; scoping lives at the send boundary only.
+  · **THE LIBRARY'S FIRST CONTACT**: auto-download really runs on connect (manifestInUse
+  counts the whole document incl. tombstones; the peer-rise edge pulls unconditionally;
+  requestAsset only records an ask that actually LEFT — the poisoned-hash fix).
+  `shareNewFiles: 'ask'|'always'|'never'` (default ask) supersedes autoShareAll
+  ('always' is the old ON verbatim; migration reads the old key); the ask is a STORE
+  (`pendingShareAsk` + `resolveShareAsk`) rendered by Explorer as a second
+  `#explorer-confirm`-style strip with the File-settings deep link — a store, not a
+  callback, because a callback is null exactly when the Explorer is closed. Keep-local
+  writes NOTHING (never the 'no' veto). Scenes never arm the strip (manifest.scenes +
+  consent own them). The connect batch asks the HOST too. The offer toast keeps only the
+  unsaved-scene warning + missing-files-when-autoDownload-off.
 - `src/lib/objectPermissions.js` (#14, store-only) — viewer object permissions, ONLY
   active when a roles plugin publishes `rolesInfo` (OSS byte-unchanged): `canEditObject`
   (a viewer edits ONLY their own `__localOnly` objects), `markLocalOnly`/`clearLocalOnly`,
@@ -534,7 +1138,20 @@ loadable play content. Everything a user does must be visible to connected peers
   texturing) + `assetShare` (assetfile/getasset hash push+pull → 'Shared' folder) +
   `packs` (N6: Explorer Packs — libraryList defaults + manifest.json .zip imports,
   normalized; LOCAL library, only PLACED objects replicate; PACKS_BASE off-bundle CDN
-  const; PACKS.md committed format) + `ModelPreview`/`ModelPreviewWindow` (N4: standalone
+  const; PACKS.md committed format. **R22 round 11 — A PACK YOU MAKE YOURSELF**:
+  `createPack`/`addToPack`/`removeFromPack`. It is an "imported" pack with no zip behind
+  it — same record, same shelf, same menu — so nothing downstream learns a fourth kind;
+  the only new thing is that it starts EMPTY and grows by drag. THE NAME IS THE IDENTITY
+  (packByName, itemCache, the installed-list dedupe, the thumb-cache prefix,
+  `activeFolder`'s `pack:<name>`), which is why 21-G1's `renamePack` writes only the
+  TITLE and why `createPack` mints a `user-<slug>` that cannot collide — the typed name
+  is the title. A pack ITEM is a REFERENCE to a library record, exactly as an imported
+  pack's already are, so nothing is copied and no bytes move; a duplicate id is refused,
+  a dropped FOLDER means its whole subtree, and a DEFAULT pack refuses because its
+  contents live on a CDN this machine does not own. `addToPack` re-runs `loadPackItems`
+  when the pack being filled is the one on screen — `openPackItems` is a separate store
+  from the registry, and without that the grid does not grow until you navigate away)
+  + `ModelPreview`/`ModelPreviewWindow` (N4: standalone
   three.js preview canvas + popup, `enable3dPreview`),
   `meshPivot` (PR #134, LEAF — imports THREE + two stores + the `proportional`
   leaf, and NOTHING from meshEdit/faceEdit, which import it): the mesh editor's
@@ -614,7 +1231,15 @@ loadable play content. Everything a user does must be visible to connected peers
   Multi-slot objects are REFUSED, the switchMaterialType precedent. UI:
   `components/editors/ShaderEditor.svelte` (a FLOW_FAMILY dock tab, its own xyflow
   instance so flowGraphs/nodesync stay byte-untouched; scope follows the SELECTION
-  like the node editor's flow graphs, so there is no scope control) +
+  like the node editor's flow graphs, so there is no scope control. It was the ONE
+  dock view with NO FLOATING MODE at all — no `docked` flag, no dragWindow, no window
+  chrome — and TWO other modules carried an exception for that fact (`panelToggles`'
+  `dockOnly` shape, and `dockMenu.dockTabItems` withholding "Undock" rather than
+  shipping a row that could only do nothing). It has UvEditor's docked/floating split
+  now — `shaderDocked` + `#shader-window` with dragWindow / a KEYED focusStack /
+  tabbable / bottomDockable / a corner grip, plus the `dockModeArm` consumer that is
+  what makes Undock and drag-a-tab-out reach it — so both exceptions are gone and the
+  seven dock views behave identically) +
   `ShaderSidebar.svelte` + `nodes/ShaderNode.svelte` (ONE generic node for the whole
   catalog) + `nodes/ShaderTexturePicker.svelte` (a file input that imports into the
   Explorer, an Explorer drag-drop target, thumbnail, clear, and a "waiting for peer"
@@ -944,8 +1569,16 @@ loadable play content. Everything a user does must be visible to connected peers
   WRITER-ONLY (`sessionHost === null`; a .tpscene embeds a fresh uuid/createdAt/
   thumbnail per save, so N peers saving identical content would mint N ghost hashes),
   SIGNATURE-GATED (`sceneSignature` = the meaningful payload fields in fixed order,
-  volatiles + the game field excluded — the zip hash cannot tell idle from edited;
-  proven stable across a real load->serialize round trip: idle hops mint NOTHING) and
+  volatiles + the game field excluded — the zip hash cannot tell idle from edited.
+  **R22 ROUND 11 CORRECTS THE "PROVEN STABLE" CLAIM**: it was stable for a bare box and
+  NOT for any scene carrying an environment, physics, music, a look or a HUD — every one
+  of those blocks is a latest-wins singleton whose restore re-stamps `changedAt` ON
+  PURPOSE, and the signature was comparing the stamp along with the content. So an idle
+  hop DID mint a ghost version, and the Explorer's open-scene guard offered to save work
+  that did not exist. `stripStamps` drops `changedAt`/`startedAt` from the small keyed
+  blocks before stringifying; `objects`/`animated` are left alone under the cost rule —
+  they are the megabytes, and a module's `userData` is the one place such a key could
+  legitimately BE content. See the gotcha) and
   NAMED-ONLY (an unnamed scene is not opted in). `travelToScene(name)` resolves the
   manifest pointer AT FIRE TIME — deterministic across peers, which no local folder
   order is; the travel card lists project scenes (latest) and library files (frozen
@@ -1257,7 +1890,30 @@ loadable play content. Everything a user does must be visible to connected peers
   the autosave dirty via `markAnnotationsDirty`), `sessions` (+ .zip export/import bundling scene assets via
   fflate; #9: the SAME bundle is the first-class **.tpscene** format — `exportSessionZip`
   takes `{assets,packs,flow}` include-opts, adds a `packs/` section; `fileHandler` saves/
-  loads it, Sidebar Files = [GLTF | Scene | ⚙cog]), `measure`, `cameraBookmarks`,
+  loads it, Sidebar Files = [GLTF | Scene | ⚙cog].
+  **R22 round 12** (the manager becomes a file browser): `sessionLibraryTree` (the saved
+  `library.folders` laid out as indented rows — the structure was ALWAYS saved and simply
+  never drawn) + `importSessionFiles` (chosen files and whole folders into the CURRENT
+  library, MERGING BY PATH: `restoreSessionLibrary` recreates saved ids because it is
+  putting a library BACK, while taking two files out of somebody's project is a merge into
+  one that already exists). **AND THE MEASURED BUG**: `exportSessionZip` wrote
+  `JSON.stringify(payload)`, and a project's `library.items[].blob` is a Blob — which
+  stringifies to `{}`, so every download of a project entry arrived with its files GONE,
+  silently, since R8. The blobs are real zip entries under `library/` now and session.json
+  carries an INDEX; `restoreLibraryBlobs` is the read half, wired into both
+  `readSessionZip` and `importSessionZip`. Downloads are `.tpscene` (the format this app
+  reopens) and `.json` is kept; there is deliberately NO `.tp` from here — that is
+  projectFile's format, written from the LIVE stores, and a second writer of one format is
+  what that file's own comments warn against.
+  **R22 round 11**: `buildSelectionPayload` (a .tpscene of a SUBTREE — see saveAs),
+  `sessionFileList`/`sessionFilePayload` (the manager's picker is TWO levels now: the
+  FILES in a saved entry, then the objects inside whichever is a scene — a scene-only
+  entry lists the one file it IS rather than an empty list, and a texture is offered but
+  REFUSES with the reason), the saved library rows carry their `thumbnail` (it was always
+  on the record and simply never copied), and `viewportThumbnail` is the new PRIMARY
+  picture path — a fresh frame on the LIVE renderer, read from its canvas, with the
+  offscreen render kept as the VR fallback. See the thumbnail gotcha for why),
+  `measure`, `cameraBookmarks`,
   `editorNavigation`, `lightHelpers`.
 - `src/modules/` — core modules (hello = the smallest complete example, button =
   custom Svelte node UI, pong, vrsleeve = a thin shell over `$lib/vrSleeve` — LOCAL-only, register()
@@ -1451,6 +2107,393 @@ loadable play content. Everything a user does must be visible to connected peers
 
 ## Hard-won gotchas (do not rediscover)
 
+- **flowbite-svelte's `Button` FREEZES its class string at mount.** `Button.svelte:34` reads
+  the theme through a DESTRUCTURING `$derived` declaration, which evaluates its object ONCE
+  — so a button BORN disabled wears `cursor-not-allowed opacity-50` forever, even after its
+  `disabled` prop genuinely flips off (the element attribute is a separate, reactive
+  derived, which is why it still ENABLES while still LOOKING refused). Both storage-modal
+  buttons were born disabled (the modal opens mid-scan, nothing ticked), so two user
+  reports were ONE bug. Key any state-dependent paint off `:disabled`/`:not(:disabled)`,
+  the reactive half. Every `<Button>` whose `disabled` can change is affected — app-wide
+  survey still owed.
+- **An INVALIDATION KEY must name the thing whose change should invalidate.** The storage
+  modal's selection was wiped by an `$effect` comparing `scan.at` — a fresh `Date.now()`
+  written by EVERY scan, including scans whose row list came back byte-identical. Since
+  the panel stays interactive on the previous reading while a scan runs (seconds, on a big
+  store), any tick made in that window was silently discarded — "Reclaim never enables".
+  Reconcile against the ROWS (keep ids the new reading still lists), never against a clock.
+- **TWO LANES CAN EACH BE CORRECT AND COMPOSE WRONG — the enumerated-roots edition.**
+  `placeStillThere` (mounts lane) listed the pinned pseudo-roots by name; the bin lane
+  pinned a NEW root (`deletedlog`) the same day; git merged both textually clean and the
+  list was one name short — cancelling an unmount from the Deleted log dumped you at the
+  Library. It tests the SHAPE now (a library folder id is a uuid, so "not uuid-shaped and
+  not a `vol:` key" IS the pseudo-root test) and the guard walks EVERY pinned root so the
+  next one is covered by construction. Neither branch's suite could see this; only the
+  merged head could — run the battery on the MERGE, not just the branches.
+- **A guard that saves INTO a store the guarded action then WIPES is a lie.** A project
+  Open replaces the whole library, and `guardSceneReplace`'s Save option writes the scene
+  into that library — destroyed moments later. Such a path must fold the unsaved-changes
+  fact into its own confirm and point at an escape hatch that SURVIVES (Save project: a
+  session is its own idb record, never a library file). And use `sceneAtRisk()`
+  (sceneOpenGuard) for the predicate, never `$sceneDirty` — the store is throttled 2s and
+  misses the unnamed-with-content case; the first draft of the fix reproduced the exact
+  documented lost-work bug by reading the store.
+- **A movement keydown guard must include ALT.** editorNavigation guarded ctrl/meta only,
+  and the #183 shortcuts are Alt-aware — so Alt+E toggled a panel AND flew the camera
+  (KEYS = w,a,s,d,q,e; measured 2.5-3.0 units per held combo). A modified press is a
+  COMMAND, never movement. The KEYUP stays unguarded (the Ctrl+V push-to-talk rule:
+  guarding it strands a key held down when the modifier arrives mid-hold).
+- **e2e: the runner kills a suite at 8 minutes** (`tests/e2e/run.cjs:26`), SILENTLY — no
+  FAIL line, "N suites in 480s", the axe simply falls mid-check. explorer-mounts read as
+  a mysterious red at 117 PASS when uncapped it was 137/137 in 708s. SPLIT the suite on
+  measured per-section runtime (never raise the shared budget — it hides the next suite to
+  outgrow it). Note `npm run e2e -- explorer-mounts` matches BOTH split files; use
+  `explorer-mounts.test` for one. Related: NEVER pipe a suite run through grep — it
+  destroys the `FAIL <check>` lines that distinguish a dying suite from a disagreeing
+  check; redirect to a file and grep the file. And a 4-suite net taking 8774s is a
+  SATURATION reading, not a result (the same suite passed in 96s serially).
+- **SessionsManager test hooks**: only LIST rows carry `.session-row` (a grid card is
+  `.session-card` alone) and the view is a REMEMBERED pref — PIN it with
+  `#session-view-list` before locating rows. An absence check (`count() === 0`) must be
+  PAIRED with a presence check on the same element or it passes green against a row that
+  never rendered. `bottomDockActive` lives NAMESPACED on the debug hook
+  (`__stores.bottomDock.*`), not spread like appStore. The Explorer identity chip exists
+  only while the Explorer is MOUNTED, and suites open it with a CLICK (a toggle) — drive
+  `explorerClose` + `bottomDockActive` instead.
+- **Vite watches `tests/`** — deleting or editing any test file while a suite is in
+  flight takes the run down with `<vite-error-overlay> intercepts pointer events`. A
+  fresh worktree has NO `certs/` (gitignored): vite serves plain HTTP and every https
+  fetch reads 000, which looks exactly like a dead server — copy localhost.crt/.key
+  from another checkout. The session SCRATCHPAD is shared across parallel agents in one
+  session — use lane-unique filenames or one overwrites another mid-run.
+- **A mount SAVE is several awaits long, so an edit made DURING one is not in the bytes
+  being written** — clearing `dirty` unconditionally marks it saved. Volumes carry a
+  `rev`; the save captures it and only clears `dirty` when nothing moved underneath
+  (the held-body `lastWritten` rule, one store over).
+
+- **ConfirmModal RESTORES FOCUS AFTER the thing you open next mounts.** Chain "answer the
+  app's one truly modal dialog, then open an input" and the input looks ready while every
+  keystroke goes to the restored focus target. Wait for the modal's own button to LEAVE
+  THE DOM before arming the next surface — never a timer (300ms won idle and lost inside
+  the full suite). Found wiring Save-&-connect's naming flow after showChoice.
+- **A SUITE THAT PASSES WITH SECONDS OF HEADROOM AGAINST THE 480s RUNNER CAP IS A COIN.**
+  scene-isolation measured 449/469/479/480s with one more section in — the last run was
+  killed AT the cap. Move the section to a cheaper suite (connect-states got the dial-ask
+  mechanics on the one-page stub) rather than trimming waits to sneak under.
+- **CONSENT MUST BE RECORDED BEFORE THE WRITE THAT PUBLISHES IT.** `publishSceneVersion`/
+  `commitManifest` IS the broadcast, so a `noteSceneOpened` placed after it scopes out
+  the very version it was meant to release — and nothing sends again until the next
+  manifest write. Measured: the host's document stayed {Foundry, Forge} after the joiner
+  saved Vault. The general form: when a filter reads a set and the publish is synchronous
+  with the act, the set must be written first.
+- **A HASH IN `currentLevel` MEANS "THESE ARE THE BYTES I LOADED", and adoption must not
+  claim it.** Every reader treats it that way — the Explorer's "Open here" refuses the
+  scene you are already in by hash, `publishCurrentIfChanged` places versions beside that
+  item. A joiner ADOPTING the host's scene identity loaded no file: storing the host's
+  hash made the derived remote-scene card answer "you are already in it", so the bytes
+  could never be fetched (three checks red). Adoption stores the NAME and nothing else —
+  fileHandler's loose-scene shape — and `unsaved` is a fact about THIS MACHINE, which no
+  arriving document can settle.
+- **A RE-SYNC REQUEST IS NOT A JOIN, and the receiver cannot tell unless it is told.**
+  travelling into a room re-requests full state, and a traveller HOLDS objects (the scene
+  file it just loaded) — which reads exactly like two worlds merging, so every walk-in
+  popped share-or-stash on the whole room. The re-sync's getobjects carries
+  `arriving: true` (additive; absent = false): it can only skip a merge question between
+  peers already agreed to be in one room, and records no verdict.
+- **FORK 3'S CARRY SEMANTICS MAKE A PULLED gameState ALWAYS LOSE.** travelToLevel
+  re-asserts the traveller's carried state through gameStateRestore, which re-stamps
+  Date.now() ON PURPOSE — so a getgame added to the arrival re-sync was measured INERT
+  (the room's reply is always strictly older and always refused). That is the fork
+  working, not a gap: the traveller keeps its carried state and the room's NEXT
+  transition reaches it. When adding a puller for latest-wins state, check who re-stamps.
+- **WHEN A FLEX ROW OVERFLOWS, WHAT FALLS OFF THE END IS WHATEVER IS LAST IN THE MARKUP —
+  and in a window header that is the way OUT.** The preview window loses its close button,
+  the floating Explorer its dock AND its close. So a narrow header needs a RANKING, and the
+  test of one is not "does something hide" but "is the exit still there when it does". The
+  ranking that works puts the expendable pieces first (a zoom trio the wheel already does,
+  a search box beside the grid it searches, a window's own name while you are looking at
+  it) and pins the ones you navigate with. MEASURE IT WITH A ResizeObserver, never a media
+  query: a floating window is resized by its own grip and can be 240px wide on a 1440px
+  screen. A container query reads the right box but brings containment that makes the
+  element a containing block for `position: fixed` descendants — the transform/
+  backdrop-filter trap by another door, and these headers host menus.
+- **A GROUPED WINDOW IS PLACED BY ITS GROUP, AND `dragWindow` HAS TO BE TOLD.** dragWindow
+  re-clamps a window from ITS OWN stored rect on a hidden -> visible transition, and a tab
+  switch is exactly that transition (a group hides inactive members with `display: none`).
+  So the revealed member jumped back to wherever it last floated while the tab strip stayed
+  on the group rect — measured group (160,120), Explorer (160,120), node editor (120,90),
+  its own `defaultRect`. Worse, `applyGroups` re-derives the group rect from the ACTIVE
+  member, so once a misplaced one had been shown, switching BACK moved the strip to ITS
+  position and stranded the other. `applyMember` stamps `data-tab-member` and dragWindow's
+  reveal stands down for it — a data attribute, not an import, since dragWindow already owns
+  that node; windowTabs clears the flag on every path a window leaves a group by, or a
+  torn-off window can never be revealed properly again.
+  THE MEASUREMENT LESSON: four rounds of checks missed this because they all measured the
+  member against ITSELF (does its header overflow, wrap, keep its last button, sit under the
+  strip) — every one of which is true of a window that is simply in the wrong place. Compare
+  the strip to the window it is supposed to be sitting on.
+- **ZERO IS NOT A WIDTH.** A tab group hides its inactive members with `display: none`, and
+  a hidden element measures 0 — so any layout that reacts to its own measured size sees
+  0px for every member behind a tab and trips every threshold at once. Keep the last real
+  measurement until there is a new one: zero means "not on screen", which is a different
+  fact from "there is no room".
+- **A TAB GROUP'S MINIMUM IS THE WORST CASE ACROSS ITS MEMBERS, not a constant.** A group
+  is ONE box showing one member at a time, so a size that suits the member on screen can
+  wreck the one behind it — and you do not find out until you switch tabs, by which point
+  you have forgotten what you resized. Members declare `minW`/`minH` through `tabbable`
+  and `groupFloor` takes the maximum of those, of what the tab strip needs to show its own
+  tabs, and of the floor below which no window is usable. The node editor declares
+  460x320; at the old flat 260 its palette, toolbar and canvas had nowhere to be.
+- **A GATE THAT DISABLES THE GESTURE THAT WOULD UNDO ITS OWN STATE STRANDS THE USER.**
+  Image panning was gated on `zoom > 1` — sound, since an image smaller than its frame has
+  nothing to pan — but pan to a corner, zoom out, and the picture sits off to one side with
+  the only gesture that could recentre it switched off. Ask whether the state a gate
+  excludes can be REACHED from a state it permits; if it can, the gate has to survive the
+  trip.
+- **A COUNTER THAT GAINS A DIGIT MOVES EVERYTHING AFTER IT, and `tabular-nums` alone does
+  not fix it.** Equal-width digits make 1/25 and 8/25 measure the same; they do nothing
+  when 9 becomes 10. Reserve the width of the WIDEST possible value — for "n of N" the
+  numerator can never exceed the denominator, so it is `String(of).length * 2 + 1` in
+  `ch`. Reserve rather than PAD: padded text is left-heavy and reads as a typo, while a
+  centred number in a fixed box reads as a counter. Measured on the preview's file walk:
+  4.79px of movement without it, under the cursor of the button being clicked.
+- **A FRAME -> SECONDS -> FRAME ROUND TRIP IS NOT THE IDENTITY, and the first casualty is
+  frame 123.** A step converts a frame index to seconds (`n / fps`) and any readout
+  converts it back (`t * fps`); in binary floating point `123 / 30` is 4.1 and `4.1 * 30`
+  is **122.99999999999999**, so the frame read back is one LOWER than the one just
+  written. A stepper that computes its successor from that reading is then wedged: every
+  press does exactly what it was told and lands in the same place. Reported as "holding
+  '.' hangs after ~150 frames", reproduced on the user's own 456-frame FBX stopping dead
+  on 123 of 456 — nowhere near the end of anything. `frameAt` floors with a `1e-6`
+  epsilon. It survived a green suite because a 60-frame fixture ENDS before the first
+  index where the arithmetic slips, which is the general lesson: a fixture shorter than
+  the first failing case proves nothing about it.
+- **DUPLICATE DOM ids ACROSS COMPONENT INSTANCES ARE HARMLESS UNTIL A `<label for>` MEETS
+  THEM.** Every preview window renders the same settings pane, so two open cogs put two
+  `id="preview-passthrough"` elements in the document — and `<label for>` resolves to the
+  FIRST match anywhere on the page, whatever component it belongs to. Clicking the second
+  window's label toggled the FIRST window's setting, which only became visible once those
+  settings became per-window. Two consequences worth carrying: a multi-instance component
+  must either scope its ids or guarantee one instance renders them at a time (the cog is
+  now single-open, which is also what the user wanted), and a bare `#id` in a suite can
+  resolve twice — `#audio-volume` matches the preview window's player AND the Properties
+  pane's, which is a strict-mode failure waiting for whoever writes the next check.
+- **A FUNCTION CALLED SYNCHRONOUSLY INSIDE AN `$effect` REGISTERS ITS READS AS
+  DEPENDENCIES — even a render loop.** `ModelPreview` defines `loop()` inside its effect
+  and CALLS IT ONCE at the end of the body; that first call reads `autoSpin`, so the effect
+  depended on a prop nobody meant it to, and toggling the checkbox tore the WebGL context
+  down (`forceContextLoss`) then asked the same canvas for a second one, which returns
+  null. Every later frame drew NOTHING. The rule is not "props read in a closure are
+  untracked" — it is "reads that happen during the effect's synchronous run are tracked,
+  wherever the code for them lives". Hold such a value in a plain `let` that a separate
+  one-line `$effect` keeps current (`spinNow`), so the render effect depends on nothing.
+  MEASURED: a frame of the body went 67088 -> 4468 bytes with the prop read restored.
+- **A CANVAS ELEMENT OUTLIVES ITS CONTEXT, so checking the element proves nothing.** The
+  round-12 guard for the bug above compared `canvas.width` and the element count across a
+  toggle — both survive a teardown, only the CONTEXT dies, so the check could not have
+  failed. Anything that asks "is this still rendering" has to look at PIXELS.
+- **`opacity` ON AN ANCESTOR APPLIES TO ITS WHOLE SUBTREE AND CANNOT BE UNDONE LOWER
+  DOWN.** This decides where a fade may live, and it took the preview window three
+  attempts: on the body against an opaque panel it can only darken (nothing behind it); on
+  the ROOT it works but takes the header and any settings pane with it, and no rule on
+  them can win it back. The answer is the fade on the CONTENT plus transparent backgrounds
+  on every layer beneath it — then the chrome, being a SIBLING of the content rather than
+  a child, keeps its own strength. Any "fade this but not that" needs the two to be
+  siblings before it is expressible at all.
+- **FADING A CHILD AGAINST ITS OWN OPAQUE PARENT CAN ONLY DARKEN IT.** The preview
+  window's opacity was put on the BODY, which sits on an opaque `.ui-panel` — so there was
+  never anything behind it to show, and the reported symptom was exactly that ("opacity
+  should show what is behind window, not just make it darker"). An overlay's fade belongs
+  to the WHOLE WINDOW, and every opaque layer under the content has to give way with it;
+  the header keeps its own surface, or a faint window is one you cannot find the handle
+  of. The test lesson is the same shape as the click-through one below: read the
+  COMPOSITED backgrounds, never the CSS opacity of the layer you happened to style.
+- **CLICK-THROUGH AND FADING ARE THE SAME MISTAKE TWICE**, and both leave a check green.
+  `pointer-events: none` on the content leaves a transparent HOLE with the panel still
+  behind it, so the click still lands on the window while
+  `getComputedStyle(body).pointerEvents` reads a convincing `none`. Put both on the ROOT
+  and opt the header, any settings pane and the resize grip back IN.
+- **A SVELTE ACTION WITH NO PARAMETER NEVER HAS ITS `update` CALLED**, so anything it
+  writes is written once on mount and never again — a volume fader and a mute button that
+  were dead controls looking perfectly alive, with nothing in the class string, the markup
+  or svelte-check to say otherwise. Drive live values from an `$effect`; keep the action
+  for one-shot mount work. (Round 12 note: reading a prop inside a rAF LOOP is the
+  opposite and is correct — the closure runs outside the tracking scope, so it sees the
+  current value with no dependency, which is why toggling `ModelPreview`'s `autoSpin` does
+  not tear its WebGL context down.)
+- **A CLICK ON A BUTTON IS NOT A CLICK ON THE ROW.** Adding selection to a row whose
+  buttons already do things makes every one of those buttons ALSO change the selection on
+  its way past — and where one of them closes the surface (Load, which replaces the scene
+  and shuts the dialog), it does so on the way out, which is impossible to attribute.
+  Guard the row handler with `closest('button, input, a, label')`, the rule the Explorer's
+  card handlers already keep.
+- **A DIALOG LEFT OPEN SHIELDS EVERY LATER CLICK, and moving a panel INTO a dialog makes
+  that everybody's problem.** Round 12 turned the Sessions picker from an inline block
+  into its own dialog, and three later sections of a passing suite began timing out on
+  clicks that had nothing to do with it. Close it explicitly. And note ESCAPE NEEDS FOCUS
+  INSIDE: after a button that had focus unmounts, focus falls to `<body>` and the
+  keypress reaches no dialog's handler at all — click the real Close instead, and test
+  Escape where focus is still in.
+- **A NON-MODAL `<dialog>` CARRIES NO `role` ATTRIBUTE.** Every app modal here is
+  `modal={false}` (`dialog.show()`) so the chrome above `--z-modal` stays clickable, and
+  only the truly-modal `ConfirmModal` gets `aria-modal`. So `[role="dialog"]` matches
+  NOTHING — a probe written that way reports an empty page and reads as a broken feature.
+  Query the `dialog` element.
+- **REPLICATION BOOKKEEPING IS NOT CONTENT, AND A CONTENT SIGNATURE THAT INCLUDES IT
+  CALLS EVERY LOADED SCENE DIRTY.** `sceneSignature` compared each block's latest-wins
+  `changedAt`, and every singleton restore re-stamps that with a fresh `Date.now()` ON
+  PURPOSE ("a restore is an authoritative local write, so it must WIN over whatever
+  changedAt the file carries" — environment, scenePhysics, sceneMusic, scenePost, hudDocs
+  and shaderGraph each say it in as many words). MEASURED: a scene saved with
+  `{preset:"sunset",…,changedAt:1787721934690}` came back as the identical object stamped
+  1787721946780, one differing field, content untouched. TWO user-visible symptoms from
+  the one cause: the Explorer's open-scene guard offered to save work that did not exist,
+  and `publishCurrentIfChanged` — whose whole SIGNATURE-GATED rule is "an idle hop must
+  not mint versions" — minted one per hop. The fix is on the READING side (`stripStamps`),
+  never the restores. Suspect this for any hash/diff over state that also carries a
+  stamp, and note the general shape: a stamp answers WHEN, a signature asks WHAT.
+- **A CHECK CANNOT SEE A LEAK THE FIXTURE DOES NOT CONTAIN.** Tearing the pruning out of
+  the new selection payload left "the payload holds the SELECTION and nothing else" and
+  "NONE of the world" both GREEN — because the test scene had no sky, no gravity and no
+  scene-level flow node for them to exclude. Authoring those three into the fixture made
+  the counterfactual bite, and it immediately exposed a real leak: `pruneMissing` cannot
+  drop the SCENE's own flow graph, because it asks whether a graph's OBJECT is still here
+  and the scene graph has none — so a prefab would have carried the author's whole scene
+  logic. Build the world the guard is supposed to exclude before trusting the guard.
+- **`table-layout: fixed` SHARES THE SURPLUS OUT, so a column drag is undone by the
+  layout.** Any leftover width is distributed across every column that DECLARES one, so
+  with no slack-absorbing cell a resize silently moves its neighbours and lands nowhere
+  near the pointer. MEASURED with the spacer removed: a 72px column renders 129px,
+  dragging it +60 lands at +85, the neighbour goes 136 -> 123. A trailing auto-width
+  `<th>/<td>` takes the remainder; the table's `min-width` is the column SUM, which is
+  what makes its own container overflow instead of the page.
+- **CLICK-THROUGH MUST STAND THE PANEL DOWN, NOT ITS BODY.** `pointer-events: none` on the
+  content leaves a transparent HOLE with the window still behind it, so a click in the
+  middle of the picture still lands on the window — `elementFromPoint` says so, while
+  `getComputedStyle(body).pointerEvents` reads a perfectly convincing `none`. Put it on the
+  ROOT and opt the header, any settings pane and the resize grip back IN; a click-through
+  header is a window you cannot move, step or switch back. The test lesson is the same
+  shape: "the content is click-through" stays GREEN over the bug, so the load-bearing
+  check is the one that asks what is UNDERNEATH.
+- **A SVELTE ACTION WITH NO PARAMETER NEVER HAS ITS `update` CALLED.** `use:action` runs
+  once on mount and re-runs only when the PARAMETER changes, so `use:routeOutput` writing
+  `node.volume`/`node.muted` in an `update()` wrote them exactly once — a fader and a mute
+  button that were dead controls looking perfectly alive (nothing in the class string, the
+  markup or svelte-check says otherwise). Drive live values from an `$effect`; keep the
+  action for the one-shot mount work. Read the ELEMENT, never the control, to test it.
+- **`Number(v) || 1` READS A SLIDER DRAGGED TO ZERO AS "no value".** An opacity clamp
+  written that way snapped the window back to FULL strength at the exact end of the track
+  the hand was aiming at — the opposite of the gesture. Guard with `Number.isFinite`, and
+  suspect the idiom anywhere 0 is a legal value.
+- **THE OFFSCREEN THUMBNAIL RITUAL HAS TWO SILENT FAILURE MODES, AND ONE OF THEM IS REAL.**
+  `renderSceneThumbnail` built a SECOND WebGL context (browsers cap those) and round-tripped
+  the scene through `new ObjectLoader().parse(group.toJSON())` — which cannot rebuild every
+  geometry a real scene holds. PROVEN, not assumed: put a `WireframeGeometry` in the scene
+  and that parse THROWS, the catch turns it into `null`, and the card falls back to a
+  generic icon. (Round 10's `editOverlays` bug means real scenes HAD those in them.) The
+  primary path is now `viewportThumbnail` — render a fresh frame on the LIVE renderer and
+  read its canvas, which is what the cloud plugin's room thumbnails already do: no second
+  context, no serialization, and it shows what the author is looking at. A fresh render is
+  what makes it work without `preserveDrawingBuffer`. The offscreen render stays as the VR
+  fallback. NOTE the reporting lesson too: the brief's premise ("session saves produce no
+  thumbnail") did NOT reproduce — a box scene saved a 1567-byte webp through the real UI —
+  so the fix was for the SILENCE, not for the mechanism.
+- **`addItemFromBytes` IS CONTENT-HASH ADDRESSED, so a fixture that seeds the same bytes
+  twice seeds ONE item.** A folder given a copy of the root's PNG came out EMPTY, and the
+  Enter-into-a-folder check then read as a broken feature. Vary the bytes. (Same family as
+  the shader suite's "two picks of the same bytes are the same texture", one domain over.)
+- **A DOUBLE-CLICK ON A TREE ROW ALSO FIRES TWO CLICKS.** `#packs-folder` toggles the tree
+  on `ondblclick` and NAVIGATES on `onclick`, so a dblclick to expand it also walks into
+  the Packs view — taking the folder card the next step was about to drag with it. Expand,
+  then go back to where you were.
+- **A WINDOW MADE TALLER PUSHES ITS OWN CONTROLS UNDER THE Controls HUD.** A 760px preview
+  window put its transport strip inside the middle-bottom chrome, and Playwright reported
+  `<p title="Rotate (2)"> … intercepts pointer events` — the feature is fine, the aim is
+  not. The documented "a card in a grid lands under the Controls HUD" trap, one surface
+  over: restore the height (or move the window) before clicking anything low in it.
+- **EVERY SOURCE FILE IN THIS REPO IS CRLF, AND `cat -A` WILL LIE IF YOU POST-PROCESS IT.**
+  A patch written with LF newlines matches NOTHING (the documented #14 file-shape trap) —
+  and `sed -n 'A,Bp' file | cat -A | sed 's/\$$/<EOL>/'` hides the `^M` it was run to
+  reveal, which cost a round of "the anchor is right and still misses". Normalize to LF,
+  patch, write back as CRLF; verify with a NODE read of the raw bytes, never a shell
+  pipeline. And never build a patch script with a bash heredoc when its payload contains
+  backticks — write the script with a file tool, or the template literal terminates early
+  and bash reports an unrelated parse error.
+- **AN INVALID ICE SERVER DOES NOT DEGRADE — IT THROWS, AND TAKES ALL CONNECTIVITY WITH
+  IT.** A TURN entry with an empty username or credential makes Chromium refuse the
+  RTCPeerConnection outright (`InvalidAccessError: ICE server parsing failed`), so
+  SIGNALING KEEPS WORKING — a peer id arrives, the Connect pill looks healthy — and no
+  data channel can ever open to anybody. Reported as "I get a peerID but no connect
+  toasts". `iceServers()` gated on the username alone and wrote `credential:
+  c.turnCredential || ''`, i.e. it emitted the exact shape that throws; it now requires
+  BOTH halves, drops a partial entry (keeping STUN) and says so once. Reachable through
+  the Settings TURN fields by any user, not just from a half-filled `.env`.
+- **A REGRESSION CAN BE A LATENT DEFECT FINALLY REACHING THE LIGHT.** The change that
+  "caused" the above (round 9 making an env host win on localhost) was correct and stayed;
+  what it did was route localhost through a branch that had never run with this `.env`.
+  Before reverting, ask whether the change exposed rather than created the fault — and
+  whether the exposed path is reachable another way. And note the e2e suite could not have
+  caught it: it runs against a `.app` hostname, and the branch was gated on
+  `location.hostname`.
+- **A DRAG PAYLOAD CAN CARRY MORE THAN THE DROP READS.** `dragPayloadFor` has attached the
+  whole multi-selection as `items` since 21-H3 for the VIEWPORT drop, while `dropInto`
+  moved `payload.id` only — so "move these five files" existed on the wire and was thrown
+  away on arrival, reported as "only the latest clicked is moved". When one consumer of a
+  payload grows a field, grep the other consumers.
+- **`absolute inset-0` INSIDE A SCROLLER PINS TO THE CONTENT, NOT THE VIEWPORT.** The
+  Explorer's drop highlight is a child of `#explorer-grid` (`overflow-y: auto`), so
+  scrolled 800px down it drew 800px above the visible area. The MARQUEE in the same
+  container is absolute for the opposite reason — it must scroll with the cards it picks —
+  so the two cannot share a rule. Offset by `scrollTop` with the visible height; do NOT
+  reach for `position: fixed`, which is measured against any transformed or
+  backdrop-filtered ancestor.
+
+- **A CLASS WITH NO CSS CAN STILL BE LOAD-BEARING.** `.explorer-card` /
+  `.explorer-folder-card` match nothing in any stylesheet — they are how three handlers on
+  `#explorer-grid` tell a card from the background (`closest('.explorer-card, …')`). The
+  R22 list view's bare `<tr>` matched neither, so a click SELECTED a row and
+  `gridBackgroundClick` deselected it in the same gesture, a press started a marquee over
+  it, and its item menu was replaced by the background one — three symptoms, one missing
+  class. Grep a class before assuming it is decoration, and when adding a NEW way to draw
+  an existing thing, carry its behavioural markers.
+- **A `$derived` can track the wrong store and look perfect.** The bin's `restorable` came
+  from `canRestoreDeleted`, which reads the two item shelves through `get()`; the derived
+  around it tracked `$projectManifest`, and a PURGE deliberately leaves the manifest alone.
+  So "Delete permanently" freed the blob and dropped the record — measured — while the card
+  and its menu stayed byte-identical, still offering a Restore that could not work.
+  Reported as "Delete permanently does not remove the file": nothing observable changed.
+  The `get()`-registers-no-dependency rule with a second edge — ask not only "does this
+  helper read a store" but "does the derived track the store this ACTION writes".
+- **A HOSTNAME SNIFF BEAT `.env`, and no suite could see it.** `peerServer`'s default mode
+  asked `isLocalDev` (hostname not ending .io/.app) BEFORE `HAS_SELF_HOSTED`, so on
+  localhost a configured `VITE_PEER_HOST` was never consulted — reported as "Server local
+  dev / localhost:9001" despite `.env`. Invisible to e2e because the suites run against
+  `theprototype.app:5173`, which ends in `.app` and takes the other branch. An explicit env
+  host wins now and the sniff is the no-`.env` fallback; the localhost server is a
+  deliberate fourth MODE. When a heuristic and an explicit setting disagree, check which
+  one the code asks first — and whether your test URL happens to dodge it.
+- **An owner stamp can be EMPTY, and reading it as a peer names nobody.** `meAsOwner`
+  stamps whatever `peer.id` holds, so anything recorded before the mesh assigns one carries
+  an empty id. The bin's first grouping read that as somebody else and rendered a section
+  headed "Deleted by peer" (the `'peer ' + id.slice(0,4)` fallback with nothing to slice).
+  An unattributed row is its own case — not mine, not theirs.
+- **`ContextMenu` documents `checked?` and `ContextMenuItems` renders it as BOLD + a tinted
+  pill, never a tick** (its own comment says why: the accent is a salmon, so tinting the
+  text would sit next to `danger` red). A test must assert the computed style; a probe
+  looking for a glyph reports the feature missing. And its rows are `[role=menuitem]`
+  DIVs — a `button` selector returns [] while the menu is visibly open.
+
+
+  prefix), which svelte-check reports as used-before-declaration.
+- **A build-time env var is inlined into whatever the dev server serves**, so a personal
+  bypass in a gitignored `.env` silently turned a COMMITTED assertion red locally while it
+  would have stayed green in CI. Gate any local override on the debug hook.
+- **A modal left open is a full-viewport click shield**, and the element playwright reports
+  as intercepting is whatever sits under the cursor (an Accordion header, a transform-
+  toolbar button). Close what you open, and when a click times out print
+  `document.elementFromPoint` before reading any handler.
+- **A batch-scoped aggregate is the only honest progress percentage.** Counting every row a
+  ledger holds makes the fiftieth item read 50/51 before it has moved a byte.
 - **THE PALETTE HAS A RULE NOW, and it is two halves.** A user filed "Key Press is in
   Triggers, it should be in Input" — and reading the palette against the socket types the
   catalog already declares showed it was almost perfectly sorted with exactly two nodes
@@ -3200,6 +4243,372 @@ override for e2e — never share 5173 (the user's main-checkout server).
   (open-core: OSS ships only inert hooks — capability gate / auth hook /
   VITE_CLOUD_PLUGIN — cloud repo holds registration/rooms/roles; contract in its
   MAINTAINING.md).
+- Status (2026-08-30, latest): **ROUNDS 34+35 — A SAVE NAMES THE ROOM, AND PRIVATE
+  SCENES** (ec02a94 + ec745af; design detail in the two new ROOMS-entry bullets). The
+  user's two reports: (1) a peer saving the shared untitled world left the host untitled
+  — identity diverged from content, popup showed two scenes for one world; fixed by the
+  `sceneadopt` broadcast (auto-adopt + toast, the user's chosen fork; the saver's toast
+  notes " — shared with this session", no modal). (2) opening your OWN unshared scene
+  file mid-session leaked the name via consent + atscene + Go-to; fixed by the
+  Share/Edit-privately/Cancel ask, the `private:true` presence state (name and hash
+  never leave the machine, both-direction isolation via the existing gates), the "In a
+  private scene" popup group with disabled Watch + Request access (grant shares with
+  EVERYONE, said in the ask; deny is polite), and Rejoin session that works for an
+  untitled world. Suites scene-adopt (28) + private-scene (51); counterfactuals per
+  guard incl. a WIRE SPY that separates the send gate from the receive backstop; the
+  r34 counterfactual reproduced the report verbatim (two peers, one world, two rooms).
+  Baseline 363/62 at both commits; builds green server-down. OWED on device: the adopt
+  toast pair on a real save, the private-open modal + the popup group/strip/Request
+  access flow end to end, Rejoin on both named and untitled sessions, non-dark themes.
+- Status (2026-08-29): **ROUND 33 — THE CONNECT DECISION (49984d9, one commit,
+  code + suite migrations together).** The user's redesign of the unnamed-with-work
+  connect: the dial ask is gone, the question moved to host approval as a blocking modal
+  — Save scene & connect / Dismiss changes / Disconnect (every close affordance = the
+  labelled cancel, said in the copy) — nothing moves in EITHER direction until answered
+  (handshake content deferral + the round-32 gate + the auto-download hold), the old
+  Share/Stash merge lives on behind `mergeOnConnect` (default off), and consented object
+  replies re-push the PUSH-only scene singletons (a round-32 gap: the refetch could
+  never ask for the sky). Design detail in the ROUND 33 bullet of the ROOMS entry.
+  Suites: NEW connect-decision (51); share-stash + share-gate-defer park the setting
+  (they are its coverage now); connect-states' R31 block flipped to R33; helpers.connect
+  dropped the dial-ask block; scene-isolation/net-handshake/scene-rooms/resync-converge
+  green. Four counterfactuals red-then-restored (deferral, download hold, consent
+  opt-out, singleton seam). Baseline 363/62 held; build green server-down. OWED on
+  device: the modal at approval on a real pointer (both buttons + Esc meaning
+  Disconnect), the naming handoff mid-connect, the abandoned-naming sticky toast, the
+  Settings row copy, non-dark themes.
+- Status (2026-08-29): **ROUND 32 — four reports triaged, three fixed, one ruled**
+  (991fa27 the share-or-stash ask holds BOTH directions — gateHolds drop + resolve-time
+  refetch, the unsaved-scene ask copy, the invite dial-window JSDoc; f9dd7f8 the
+  diverged-versions dialog names the winner per scene and its Review button LANDS on the
+  Explorer's Version history via the write-once explorerRevealArm; 0fdaa88 the arrival
+  re-sync HEALS — arriving replies carry override:true, the three appliers replace in
+  place, createGroup gains the dedupe it never had). Item 1 was reproduced with wire
+  spies first: decision inputs were already read fresh at reply time (both sides asked)
+  — the real hole was the receive direction, so fix (a) from the brief, refined to
+  drop+refetch. Item 2 ruled KEEP the ask, fix the copy (auto-merge declined — the ask
+  is what protects the joiner's work). Item 4 ruled NO — __localOnly is per-object and
+  gates broadcasts absolutely, while withheld-ness is a scene-by-peer RELATION uniform
+  across the whole list (a "Local objects" section would contain every object, i.e. a
+  banner); the surfaces are the ask itself (its copy now says nothing moves until
+  answered) and the peers popup's rooms view. New suites share-gate-defer (18) and
+  resync-converge (29); project-manifest 83 -> 98. Counterfactuals proven per guard
+  (both gate directions, the winner sentence, the override heal, the group dedupe).
+  **BASELINE RATCHETED 383/62 -> 363/62**: JSDoc on createObject/sendObjects/sendObject/
+  createGroup removed 20 pre-existing implicit-anys plus a stray-4th-argument error that
+  had been reported all along. Build green with the server down. Follow-ups recorded:
+  deletions do not converge on arrival; a heal replaces the THREE object (receiver-side
+  direct refs re-resolve by uuid). OWED on device: the two-direction hold felt on a real
+  pointer (edit while the ask is open, then answer), the diverged-versions dialog copy,
+  Review landing with 2+ clashed scenes, plus the round-30/31 list below.
+- Status (2026-08-29): **ROUND 31 — three reported fixes on top of round 30**
+  (c38704e the share-ask REMEMBER-MY-CHOICE checkbox: one box, applies to whichever
+  button you press, Share->always / Keep->never, consequence toast with the File-settings
+  way back — NOTE 'always' is wider than the label, the pre-existing blanket rule, and a
+  narrower newOnly value is the recorded alternative; 0766417 SAVE & CONNECT at the dial
+  — unnamed-with-work asks Save & connect / Connect anyway / Cancel, the Untitled chip
+  explains "you share one world until they do", invite auto-dial deliberately unguarded
+  (fires in a fresh empty tab), h.connect answers the ask with the real button only when
+  the guard's own two facts say it can apply — plus ENTER connects in the dial box).
+  Baseline 383/62; build green; counterfactuals per fix. OWED on device: the dial ask +
+  naming handoff feel, the remember checkbox beside Stash on the connect strip.
+- Status (2026-08-28): **ROADMAP 22 ROUND 30 — ROOMS THAT HOLD, AND A LIBRARY THAT
+  INTRODUCES ITSELF.** Eight code commits on `feat/22-round12` (382be38 C1 auto-download ·
+  e98a32d A1 identity+adoption · b8cde82 B1 guard module · 5f4cfc0 B2 the popup+Go-to ·
+  f665f00 A2+A3 the partition+the ask · 92b37c5 C3 union-merge · 44a1bcc C2 the share
+  strip · b3c9a51 C4 scoped publish), NOT pushed. Baseline **383/62** at every commit;
+  guards proven by breaking the code at every phase (the C4 counterfactual reads 8 red
+  whose messages are literally the user's report). Executed by SIX Opus implementation
+  agents on disjoint file sets, the orchestrator reviewing every diff and committing with
+  explicit paths (the 19-A model); two agents died to a session limit mid-wave and were
+  RESUMED in place with the tree state spelled out — nothing lost.
+  · THE ARC: presence became a PARTITION. A joiner learns the room's name in the
+  handshake and adopts it when empty; two named rooms exchange nothing; the connect ask
+  is scene-aware with a real "Stay in mine"; travel re-syncs on arrival; the manifest
+  merges by hash on receive and a joiner's send is scoped to consented scenes; the
+  library auto-downloads on connect and asks below the Library when you add files. Full
+  design + findings: the plan file (playful-zooming-seahorse) and the per-commit
+  messages, which carry the counterfactual numbers.
+  · TWO PLAN DEVIATIONS made on measurement, both in the gotchas: adoption stores the
+  NAME only (the hash claim broke the Explorer's remote-scene card), and getgame was
+  removed from the re-sync burst (fork 3 re-stamps, so the pull is inert by design).
+  · Suites: scene-isolation NEW (72), project-manifest 24 -> 83, shared-library 196 ->
+  ~258, scene-rooms 37 -> 58, peers-popover FIXED (the standing red — the mount gate
+  needed a live conn) 6 -> 19, scene-levels §5 rewritten to the partition contract.
+  · **OWED ON DEVICE**: the three-button Bring/Stash/Stay toast at narrow widths and in
+  non-dark themes; the felt latency of Bring-into; Go-to on a real pointer; the share
+  strip's copy; two browsers in genuinely different scenes doing real work.
+  · **FOLLOW-UPS RECORDED**: voice panners pin a cross-room speaker at their last stance
+  (per-peer panner bypass); the module channel stays mesh-wide (SDK roomScoped opt-in);
+  .peer-goto carries no right-click mute menu while a peer is away.
+- Status (2026-08-27, latest): **ROADMAP 22 ROUNDS 19-28 — THE PREVIEW'S CORNER, WINDOW
+  CHROME, AND TWO TAB-GROUP BUGS.** Six commits on `feat/22-round12`, NOT pushed. Baseline
+  **383/62** (down from 385: typing callbacks while restoring JSDoc my own doc blocks had
+  displaced), build green, guards proven by breaking the code EIGHT times. New suites
+  `window-header-ranking` (30) and `tab-group-stacking` (17).
+  · **R19/R21** the corner holds ONE reading and the gesture line persists — this REVERSED
+  round 14's interaction-prompt rule at the user's ask, and correctly: round 19 changed what
+  the line IS. **R22** a faded window hides its transport, and opacity is locked where it
+  means nothing. **R23/R25** three headers learn what to shed and what never to.
+  **R20** the Explorer header's reading order, plus a REGRESSION it exposed —
+  `explorer-header-panels` had been red since round 11's view toggle outgrew the row.
+  **R24** the walk anchored left, and a counter that does not move. **R26** a tab-group
+  floor + the z band spent on the top of the stack. **R27** panning that cannot strand you,
+  and zero-is-not-a-width. **R28** the floor is the worst case across the MEMBERS.
+  · **THE METHOD NOTE WORTH KEEPING**: the tab-group "header breaks" report took four
+  metrics that all came back clean — no overflow, no wrap, close button present, member
+  header exactly under the strip — before a SCREENSHOT showed the node editor visibly
+  wrecked at 260px. When a report says something breaks and the numbers disagree, take the
+  picture.
+  · **R29 CLOSED THE ONE THAT KEPT COMING BACK**, on the user's precise repro: the tab
+  strip detaching from its window on a tab switch was `dragWindow` re-placing the revealed
+  member from its own rect (see the gotcha). The earlier "header breaks" reports were this,
+  not the sizes I had been fixing.
+  · **NOT REPRODUCED**: the original stacking report (a group's strip drawing over a window
+  in front of it). The z-order measured correct in every fixture I could build; what I
+  found and fixed by reading is the band saturating at the top, which has the same shape.
+  · **OWED**: all of it on a real pointer, and the new thresholds in non-dark themes.
+- Status (2026-08-27): **ROADMAP 22 ROUNDS 14-18 — PREVIEW SETTINGS SCOPE, AND THE
+  ANIMATION TRANSPORT.** Two commits on `feat/22-round12`, NOT pushed: `1e0c7ae` (r14) and
+  the r15-18 batch. Baseline **385/62** at every commit, build green, five guards proven by
+  breaking the code. New suite `preview-animation` (46); `file-preview` grew the audio keys.
+  · **R14 — WHICH SETTINGS BELONG TO A WINDOW.** Opacity and passthrough are the WINDOW's
+  and reset per target (they describe how it sits over the scene, and the next thing you
+  open is opened to be looked at); auto-rotate is a default that never reaches an open
+  window; statistics reaches every window, as asked. The cog names its two scopes, or the
+  same panel silently means two things. The gesture prompt became an INTERACTION PROMPT
+  (dismissed by first use, never returning) rather than a status light tied to the
+  turntable — the standard `<model-viewer>` and Sketchfab both follow, and the user asked
+  for the standard over their own guess.
+  · **R15 — the preview plays animations**, resting on a real pre-existing bug: the glTF
+  parse dropped every clip. See the filePreview entry.
+  · **R16/R17 — the keyboard.** "Typing" is not "focus is on a control" (see the gotcha);
+  R/I shortcuts; the audio transport's full key set.
+  · **R18 — two reported bugs, both reproduced first**: the frame/seconds round trip that
+  wedges a held step key on frame 123 (measured on the user's own 456-frame FBX), and
+  duplicate DOM ids letting a `<label for>` in one window move another window's setting.
+  Both in the gotchas.
+  · **OWED**: pan/zoom feel, the transport in non-dark themes, and one judgement to confirm
+  — up/down seeking rather than volume on the audio player.
+- Status (2026-08-26, latest): **ROADMAP 22 ROUND 13 — THE 3D PREVIEW'S CONTROLS.** One
+  commit `938add6` on `feat/22-round12`, NOT pushed. Baseline **385/62**, build green, the
+  guard proven by restoring the bug. New suite `model-preview-controls` (24, 36s);
+  `file-preview` drops to 151s and stays green.
+  · **THE REPORTED BUG WAS REAL AND IS THE ONE TO REMEMBER**: "when auto-rotate is clicked
+  it should stop rotating, now it just stops showing". `loop()` is called SYNCHRONOUSLY at
+  the end of ModelPreview's effect, so its first run read `autoSpin` inside the tracking
+  scope — the effect depended on it and every toggle tore the WebGL context down. Measured
+  67088 -> 4468 bytes of frame with the read restored. See the gotcha; the general form is
+  "a synchronous call inside an effect registers its reads", not "closures are untracked".
+  · WHAT ROUND 12 GOT WRONG ABOUT IT: its guard compared `canvas.width` and the element
+  count, both of which survive a context teardown. The check could not have failed.
+  · The interaction model, after three user corrections: the MODEL is the switch (a press
+  that does not travel toggles, one that travels rotates), a DRAG ONLY PAUSES the turntable
+  and it resumes on release, and the cog is the DEFAULT new previews seed from. Full DCC
+  navigation (orbit / middle- or Shift-pan / wheel dolly / double-click home), pan scaled
+  by distance and zoom clamped.
+  · The mesh facts along the very bottom, the tip above them, both gone below full opacity;
+  `input.tp-check` in the cog and the sessions picker.
+  · OPACITY moved for the third and last time — see the ancestor-opacity gotcha, which is
+  the CSS fact that makes "the header and cog must not fade" expressible only when they are
+  siblings of the content rather than children.
+  · SUITE SPLIT: pixel work is its own file now, because each ModelPreview takes a WebGL
+  context and a long suite exhausts them SILENTLY — the same open gave 75KB on a fresh page
+  and 6KB at the end of `file-preview`, with no page error either way. That cost three
+  wrong-looking runs.
+  · **OWED**: the feel of the pan/zoom speeds and the tip's wording in non-dark themes.
+- Status (2026-08-26, later): **ROADMAP 22 ROUND 12 — PREVIEW-WINDOW MATURITY + THE
+  SESSIONS MANAGER AS A FILE BROWSER. Both phases EXECUTED on `feat/22-round12` (same
+  worktree, port 5203, branched off `feat/22-round11`), two commits, NOT pushed and NOT
+  PR'd.** Baseline **385/62** after each; build green with the server down; one guard per
+  phase proven by BREAKING the code. `cefc68e` A (the preview window) · `72e2650` B (the
+  Sessions manager). Suites GROWN rather than multiplied: `file-preview` 44 -> 71,
+  `sessions-packs` 32 -> 61, `explorer-delete-confirm` 39 -> 45, `save-as-formats` 30 -> 34.
+  · PHASE A: the delete strip offers a **File settings** button (the `settingsSection` deep
+  link existed and the Explorer section was one line short of being in its map); opacity
+  shows what is behind (ROUND 13 MOVED IT AGAIN — see that entry: fading the whole window
+  worked and took the chrome with it, which the user then asked to keep); the cog
+  overlays; **multiple windows** behind a LOCAL pref; a 3D
+  object opens in the shared window with its statistics and an auto-rotate toggle; a
+  prefab's kind reads `prefab (.glb)` / `(.tpscene)`.
+  · PHASE B: the picker is its own NON-MODAL dialog, per-kind (a scene entry says "Import
+  objects" and skips a file level holding one row); the saved folder STRUCTURE is drawn and
+  a folder can be ticked whole; list and thumbnail views, multiselect in both; multiselect
+  + a confirmed delete over the entries (`deleteSession` never asked, not even for one);
+  a click SELECTS and a double click RENAMES, agreeing with the grid and the Explorer.
+  · **THE BUG THIS ROUND FOUND, and it is the one worth remembering**: `exportSessionZip`
+  JSON-stringified the payload, so a PROJECT entry's `library.items[].blob` became `{}` —
+  every download of a project has arrived with its files gone, silently, since R8.
+  Measured by round-trip: `withBytes 5 -> 0` with the old write restored.
+  · FOUR MORE found while covering: a svelte action with no parameter never has `update`
+  called (a dead volume fader that looked alive); `Number(v) || 1` read a slider's zero as
+  absent; a folder nested under a ticked folder did not read as picked; and a click on any
+  button in a session row also selected it — Load did so on its way out of the dialog.
+  · THREE EXISTING CHECKS CORRECTED IN PLACE rather than worked around, each because the
+  behaviour they asserted is the behaviour the user asked to change: `file-preview`'s
+  round-11 opacity check asserted the bug, `prefab-explorer`'s "double-click opens the
+  pop-out" asserted the old routing, and `sessions-packs`' round-11 file list predates the
+  library tree.
+  · DESIGN DECISIONS I OWNED: no `.tp` download from a session entry (projectFile writes
+  that format from the LIVE stores, and a second writer of one format is what its own
+  comments warn against — the reason it was wanted is now true of the `.tpscene` bundle);
+  `ModelPreviewWindow` kept for prefabs only; and the `.tp` IMPORT name rule left as 21-I's
+  (filename wins there, deliberately) rather than overridden by this round's.
+  · PRE-EXISTING REDS, unchanged: `packs-drop` (3/3 on pristine release/next) and
+  `explorer-files` (A/B'd against the round-11 tip).
+  · **OWED**: the user's on-device pass — the two windows side by side as a real modelling
+  reference, the picker's feel, and all of it in NON-DARK themes.
+  · The round's brief is `docs/round-12-brief.md` (gitignored scratch).
+- Status (2026-08-26): **ROADMAP 22 ROUND 11 — THE EXPLORER/PREVIEW/SESSIONS BATCH.
+  All five phases EXECUTED on `feat/22-round11` (worktree `../theprototype-lane-r11`,
+  port 5203, branched off `origin/release/next` @c714f68). FIVE commits, one per phase,
+  NOT pushed and NOT PR'd.** Baseline **385/62** after every phase; `npm run build` green
+  with the dev server down each time; one guard per phase proven by BREAKING the code.
+  `111f7dd` P1 (the inline confirm strip + drop-to-Deleted + the untouched-scene guard) ·
+  `90fc50d` P2 (column resize/reorder/horizontal scroll) · `22d67e4` P3 (the file preview
+  window + the audio player) · `24bd086` P4 (Save as… + a prefab that IS a file) ·
+  `7292ac4` P5 (sessions become files, a list view, packs you make). New suites:
+  `explorer-delete-confirm`(39) `explorer-columns`(41) `file-preview`(44)
+  `save-as-formats`(30) `sessions-packs`(32), plus `scene-open-guard` grown by a section 6
+  (11); `explorer-views`/`explorer-multiselect`/`explorer` updated for the new surfaces.
+  · **THE ROOT CAUSE WORTH REMEMBERING** is P1c: the reported "'save & open' modal should
+  not appear if I have made no changes" was `sceneSignature` comparing a replication
+  STAMP as content — see the gotcha, and note it also means every idle travel hop had
+  been minting a ghost scene version.
+  · THREE MORE BUGS THE COUNTERFACTUALS FOUND, none of them the thing under test: the
+  selection payload carried the SCENE's own flow graph (`pruneMissing` cannot exclude it);
+  a svelte action with no parameter never has `update` called, so the audio fader and mute
+  were dead controls that looked alive; and `Number(v) || 1` read an opacity slider's zero
+  as "no value". Two DRIVE-BY fixes: `explorer-views` seeded `shared:deleteWithoutConfirm`
+  where the store reads `shared:deleteNoConfirm` (a dead seed), and the sessions grid and
+  list had drifted tooltips for the same actions.
+  · **THE BRIEF'S THUMBNAIL PREMISE DID NOT REPRODUCE** — measured 1567 bytes of webp
+  through the real UI for both save buttons before any change. What was worth fixing is
+  the SILENCE of the offscreen ritual's two failure modes; the WireframeGeometry one is
+  proven in-suite. See the gotcha.
+  · **DESIGN DECISIONS I OWNED, stated so they are not re-litigated**: a prefab record
+  carries a `format` + `bytes` with the snapshot as default and the bytes BESIDE it (see
+  saveAs); NAME is pinned first in the Explorer's column order; the preview window's
+  component file was renamed while its store and DOM id were not (the 21-G1 rule); and
+  the audio player rides a NAMED ONE-LINE SEAM (`routeOutput`) rather than importing the
+  unmerged `feat/22-audio-engine` — a dynamic import of a module that is not on this
+  branch is a build hazard, not a fallback.
+  · PRE-EXISTING RED, probed on BOTH servers with the counts printed: `packs-drop` fails
+  3/3 identically on pristine release/next (`before=0 after=1` on each). An earlier
+  2-vs-3 reading was a flake in the baseline run, not a regression.
+  · **OWED, because headless cannot judge it**: the confirm strip, the column header and
+  the sessions list in NON-DARK themes; the preview window's passthrough as a real
+  modelling reference over the viewport; the audio player's feel; whether "Reset widths
+  and order" belongs in the header menu; and the `routeOutput` decision once the audio
+  engine lands.
+- Status (2026-08-23): **v1.7.0 RELEASED — "Make a game, keep a project"**.
+  main @a51a3eb (tag `v1.7.0`), release.yml green, GitHub Release published,
+  cloud deployed at `CORE_REF=v1.7.0` (prod version.json 1.7.0/a51a3eb), docs site
+  deployed. THE WHOLE OF ROADMAP 21 plus the loose-scenes batch: 93 feature/fix
+  commits since v1.6.0. Baseline **385/62** and the release.yml gate already matched,
+  so the workflow needed no edit. PRs #178 (fix/loose-scenes -> release/next) and
+  #179 (release/next -> main), both merge-commits.
+  **THE LOOSE-SCENES BATCH** (the last four commits, and the reason to read this):
+  the finding is that **the Explorer library does not replicate AT ALL** — no message
+  carries folders and none carries item rows, while `projectManifest` does. So a peer
+  could TRAVEL to a scene it could not SEE. Fixed in four commits: (1) a scene FILE is
+  not a project member — travel marks a file the manifest does not name `unsaved`
+  (tested by HASH-in-history, never by name), `hideOldVersions` skips an `imported`
+  stamp so independently dragged-in files stop swallowing each other, the
+  duplicate-import modal + the Settings ▸ Files rule, and the one-item-per-hash
+  invariant `importFiles` had been breaking (incl. a thumbnail-decode race, fixed with
+  an in-flight promise per hash); (2) the unsaved-changes guard — "Open here" bypassed
+  it, it read a 2s-THROTTLED verdict so a just-made edit was lost, a scene with no
+  identity was never guarded, a file rename never reached the name the save uses, and a
+  pending inline edit was discarded by the next editor opening; (3) **P2** — derived
+  cards for project scenes this device does not hold (opening one fetches it),
+  `peerScenes.js` on the gamePresence shape (`atscene`, one writer per row, reply on
+  getmodulestate, dropped at all three disconnect sites), rooms DERIVED via
+  `roomsOfSession`, and saving a loose scene ADOPTS its source as version 1; (4) one
+  predicate `elsewhereThan` behind Watch, the preview join and RENDERING — a peer in
+  another scene is not drawn, cannot be watched (disabled WITH the reason), watching
+  stops if they travel away, and `broadcast` withholds pose streams (allowlist
+  `camera`/`vrhands`) with an arrival re-publish because that send is CHANGE-GATED.
+  **ONLY ON EVIDENCE is the rule everywhere**: an absent row or an empty scene on
+  either side never gates, because a joiner stands in the host's content without
+  learning its name. New suites: import-duplicates(65), scene-open-guard(30),
+  scene-rooms(37); four guards proven by BREAKING them. Standing pre-existing reds,
+  A/B'd against base: `explorer-drop` last check, `explorer-files`, `peers-popover`.
+  NEXT: roadmap 22 (cloud `plans-core/roadmap-22-shared-library-sessions.md`) — forks
+  locked (replicate the INDEX per-item opt-in; ONE mesh with scenes as tags;
+  scene-is-primary renaming), and the vocabulary settled: **session = the mesh, room =
+  who is in a scene, PocketBase rooms stay DISCOVERY** — that naming blocks R4.
+- Status (2026-09-03): **R22 ROUND 36 — DELETED KEEPS ITS STRUCTURE, on lane `core-lane-bin`
+  (branch `fix/22-deleted-folders` off release/next @26190af, port 5205), COMMITTED, NOT
+  PUSHED.** Folder rows + `folderId`/`path` in `manifest.deleted`; the bin as a navigable
+  TREE (`deleted:<id>`, `deletedfolder:<id>` cards, ghost nodes for live folders) with a
+  Plain-list layout; restore-where-it-was recreating the folder chain under the SAME ids;
+  peers un-hiding restored copies (1b); folder deletes tombstoned + applied-once so an
+  `always`-sharing peer cannot resurrect them (the counterfactual MEASURED: 3.5 s after the
+  delete the deleter holds no folder, no visible file, an empty index, nothing pulling);
+  the Bin|Log strip replaced by `#deleted-log-toggle` at the breadcrumb's right end + the
+  checked menu entry "Show cleaned-up files"; "Nobody here holds the bytes" → "Cleaned up on
+  this device"; the share-ask box → "Apply to all my files, now and from now on"; the
+  private-scene Users row shows Request access alone. Two latent bugs fixed on the way
+  (patch-after-hide was a no-op; `deleteSharedItem` never marked its own hash applied).
+  ROOMS, same lane (the architecture entry above): the unnamed world resolves to the host's
+  room, so Share scene no longer leaks edits between the sharer and an unnamed host; Join
+  button; two new suites (83 + 42); scene-isolation 72, scene-rooms 58, private-scene 55,
+  connect-decision 46, scene-open-guard 42 green. Same-day follow-ups: "Plain list without folders" as a checked toggle beside "Show
+  cleaned-up files" (one View section, no Folder-structure entry); DRAG OUT OF DELETED onto a
+  Library folder card / tree row / root restores THERE (`restoreDroppedFromBin` claims the
+  drop first in `dropInto`; `binDragging` keeps the Deleted row from arming; ghosts are not
+  draggable); and `sceneNameShared` reading the shared index — a shared scene FILE opens as a joinable
+  room with no ask, an unshared one asks Share / Edit privately (checked with the user).
+  Suites: NEW `deleted-folders` 126 (two peers) ·
+  `explorer-views` 114 · `explorer-delete-confirm` 54 · `explorer-multiselect` 63 ·
+  `explorer-storage` 116 · `explorer-mounts-edit` 49 · `private-scene` 55 · `peers-popover`
+  21 · `explorer-drop` 9 · `shared-library` 270/18 against a pristine-base 271/17 on the same box (the 17 are the chunked-transfer sections — the 700 KB fixture never reassembles here, `size -1` — and everything downstream of a peer holding bytes; the one extra is the SENDER ledger reading `active` instead of `done` in that same dead transfer). Three lane runs died at `h.connect` first; an instrumented copy and four probes connected every time, so that was the signaling box, not the code. svelte-check **362/47 unchanged**; build green. Architecture entry
+  above; plan + as-built: cloud `plans-core/pending/22-deleted-folders.md`. OWED: the
+  on-device pass in non-dark themes (folder-card dimming, the ghost tint, the `history`
+  glyph, the Location column's 160px).
+- Status (2026-09-02): **R22 ROUND 13 SHIPPED — PRs #186 and #188 MERGED to release/next
+  @ e832670; baseline 362 errors / 47 warnings, release.yml gate ratcheted to match.**
+  #186 (76 commits) carried: mounted project volumes (the architecture entry above),
+  the storage breakdown modal, a project downloading as .tp (`exportProjectFromSession`)
+  and importing back as a Sessions entry (`importProjectAsSession`), Open-not-Load in the
+  Sessions manager (scene -> sceneOpenGuard + a "(from Sessions)" name marker; project ->
+  ONE confirm + `peers.leaveSession()` BEFORE the load + TRUE REPLACE: clearLibrary +
+  fresh manifest, the record read before the wipe, guardSceneReplace deliberately NOT run
+  on that path — see the guard-saves-into-wiped-store gotcha), the bin/log split with the
+  Bin|Log toggle, Ctrl+S saving the SCENE (versioned; Save-As via `armExplorerSceneSave`
+  when unnamed) with the always-drawn save icon, the Alt+E/A movement-guard fix, r11's
+  rounds 32-35, and the #183 merge (5 union conflicts; debugStores asserted 186/186/186).
+  #188 carried the on-device fix pack: dock tabs in DOCKING order (`noteDockOrder`;
+  undock forgets the slot, a plain close keeps it; shipped-family stored orders read as
+  unset), N answering for the Node editor TAB alone (the flow-family sweep in
+  panelToggles DELETED — no per-panel branches remain), the dock "+" DOCKING a floating
+  view (routes through `armDockMode`; the row reads "Dock X"), and a mounted SCENE
+  opening into the viewport (`openScenePayload`, one flow two callers; new suite
+  explorer-mount-open-peers). Suites this round: explorer-mounts.test + explorer-mounts-
+  edit (split — see the 8-minute-budget gotcha), explorer-storage, session-download-
+  formats, sessions-open + sessions-open-peers, explorer-mount-open-peers, plus dock-tab-
+  drag/flow-dock-toggle rewritten onto the new contracts. OWED, its own rounds: the .tp
+  load/save FREEZE (sync main-thread work — ONE idb connection per record at ~1.1s per
+  saved project in `loadSessions`, inline zip/hash; unblock first, then progress through
+  transferLedger), the app-wide flowbite frozen-disabled-paint survey, idb.js settling on
+  the transaction's onabort, and the dock-inset suite's logo-menu leak. Plan + full
+  as-built: cloud `plans-core/roadmap-22-round13-mounts-storage.md`.
+- Status (2026-08-25): **ROADMAP 22 — THE SHARED EXPLORER LIBRARY. R1/R2/R3/R7 + R8 and
+  four review rounds EXECUTED on `feat/22-shared-library` (lane `theprototype-lane-snap`
+  @5202), 10 commits off release/next @f46d335, NOT PUSHED.** svelte-check **385/62** at
+  every commit; build green; debugStores **171/171/171**. Suite `shared-library` = **196
+  checks, two peers**, with a counterfactual proven per round (reconcile, veto, tombstone,
+  move-publish, slice integrity, recycle bin, batch scoping). Design in the architecture
+  entry. NOT DONE and next: the Explorer LIST VIEW with sortable columns (chosen in-window
+  and honestly not built — it needs a sort model, per-column visibility and persistence,
+  and it is what the Deleted group-by-deleter renders through), the SESSIONS work (a "Save
+  current project" button beside Save-scene, per-entry sizes, a scenes/projects filter,
+  `navigator.storage.estimate()` in the Explorer header), and reported items still open: a
+  local `vite dev` shows "Server local dev / localhost:9001/peerjs" despite `.env`, a stray
+  `Shared` folder on Share-all, "delete permanently" not removing the file, and the
+  one-file/unsaved-scene prompt. Plan + as-built: cloud
+  `plans-core/roadmap-22-shared-library-sessions.md` sections 5-8.
 - Status (2026-08-22, later): **B7 SPAWNER MERGED; DEVX #18, THE PALETTE RULE AND THE
   COLLECTIBLE TOOLBOX v2 ARE OPEN PRs.** `release/next` @19a8a3c carries R3a (#170) and
   B7 (#172, the spawner — see the architecture entry). OPEN: core **#176** DEVX #18 (the

@@ -205,7 +205,7 @@ h.run(async () => {
 	const names = Object.keys(zip).sort();
 	h.check(!!zip['project.json'], `project.json is at the archive root (${names.length} entries)`);
 	const doc = JSON.parse(strFromU8(zip['project.json']));
-	h.check(doc.format === 2, `format is an int and gates loading (${doc.format} — 2 since 21-G8)`);
+	h.check(doc.format === 3, `format is an int and gates loading (${doc.format} — 3 since R22-R1)`);
 	// 21-G8 fork 11: a .tp is the WHOLE Explorer — folder rows and one row per library
 	// item (A holds 3: two visible scene versions + the tracked asset), each row naming
 	// a file the archive really carries

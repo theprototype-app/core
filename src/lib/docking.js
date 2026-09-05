@@ -1,5 +1,6 @@
 import { get } from 'svelte/store';
 import { inspectorClose, closeMenu } from '../stores/appStore';
+import { bottomDockWouldTake } from './bottomDockDrop';
 
 // Docking lite (phase 81L). Drag a window near the left/right screen edge to
 // dock it as a full-height panel (--z-drawer tier); drag its header away to
@@ -248,18 +249,31 @@ export function dockable(node, { key }) {
 		}
 		dragging = true;
 	};
+	// W7 PRECEDENCE: the bottom-dock band beats an edge. The bottom-left corner is in
+	// both reaches at once, and a DOCK_FAMILY window dropped there means "put it in the
+	// dock" — the model the user was aiming at — not "make it a full-height side panel
+	// that happens to start below the dock". Asking here rather than there keeps the
+	// decision on the side that has to yield.
+	/** @param {any} e @returns {'left'|'right'|null} */
+	const edgeAt = (e) => {
+		// ...but only where the dock would really take THIS window. Yielding the band
+		// unconditionally hands the bottom of both side edges to a dock that cannot
+		// accept a non-DOCK_FAMILY panel, so the drop does nothing at all.
+		if (bottomDockWouldTake(key, e.clientY)) return null;
+		return e.clientX < EDGE ? 'left' : e.clientX > window.innerWidth - EDGE ? 'right' : null;
+	};
 	/** @param {any} e */
 	const move = (e) => {
 		if (!dragging) return;
-		showZone(e.clientX < EDGE ? 'left' : e.clientX > window.innerWidth - EDGE ? 'right' : null);
+		showZone(edgeAt(e));
 	};
 	/** @param {any} e */
 	const up = (e) => {
 		if (!dragging) return;
 		dragging = false;
 		showZone(null);
-		if (e.clientX < EDGE) dock(key, 'left');
-		else if (e.clientX > window.innerWidth - EDGE) dock(key, 'right');
+		const side = edgeAt(e);
+		if (side) dock(key, side);
 	};
 	node.addEventListener('pointerdown', down, true); // capture: beats dragWindow while docked
 	window.addEventListener('pointermove', move);

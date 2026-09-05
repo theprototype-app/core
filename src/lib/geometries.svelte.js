@@ -207,7 +207,16 @@ export function createLight(command, uuid) {
     }
 }
 
-export function createGroup(command, uuid, groupuuid, name, groupparent, pos, rot, scale) {
+/**
+ * @param {string} [command] @param {string} [uuid] @param {string} [groupuuid]
+ * @param {any} [name] straight off the wire, and assigned as-is — narrowing it here
+ *   would only mean changing a line this fix has no business touching
+ * @param {string} [groupparent]
+ * @param {number[]} [pos] @param {number[]} [rot] @param {number[]} [scale]
+ * @param {boolean} [override] R22 round 32 — an ARRIVAL HEAL: update the group we already
+ *   hold instead of leaving it as the traveller's .tpscene had it. Absent everywhere else.
+ */
+export function createGroup(command, uuid, groupuuid, name, groupparent, pos, rot, scale, override) {
     let group;
     if (groupuuid) {
         let group = sceneObjects.getObjectByProperty('uuid', groupuuid);
@@ -225,6 +234,28 @@ export function createGroup(command, uuid, groupuuid, name, groupparent, pos, ro
         objectsGroup.update((value) => value);
         return group.uuid
     } else {
+        // R22 round 32 — A GROUP IS KEYED BY UUID TOO. This branch created a second
+        // THREE.Group carrying the SAME uuid whenever the message named one we already
+        // hold, with no dedupe of any kind: every re-sent `group` message (the arrival
+        // re-sync is the one that made it routine) duplicated every group in the scene.
+        // The LOCAL creation path is unaffected — it passes no uuid.
+        const held = uuid ? sceneObjects.getObjectByProperty('uuid', uuid) : null;
+        if (held) {
+            if (override) {
+                // the heal: name and pose, in place. Never a re-parent — moving a group a
+                // peer is standing in would move its children out from under everything
+                // that addresses them, and the `groupparent` half is what the sender's
+                // recursion asserts through the children's own messages.
+                if (name) held.name = name;
+                if (pos && rot && scale) {
+                    held.position.set(pos[0], pos[1], pos[2]);
+                    held.rotation.set(rot[0], rot[1], rot[2]);
+                    held.scale.set(scale[0], scale[1], scale[2]);
+                }
+                objectsGroup.update((value) => value);
+            }
+            return held.uuid;
+        }
         let group = new THREE.Group();
         if (command?.split(' ')[1]) group.name = command.split(' ')[1] + ' Group';
         else group.name = name

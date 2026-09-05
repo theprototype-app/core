@@ -19,7 +19,7 @@ import { requestControl, nameOf } from './lockControl';
 import { createJoint, detachJoints, jointsFor } from './joints';
 import { addParticlesPreset, removeObjectParticles, burstObjectParticles } from './particleActions';
 import { PARTICLE_PRESETS } from './particlePresets';
-import { savePrefab, savePrefabSelection } from './prefabs';
+import { SAVE_AS_FORMATS, saveSelectionAs } from './saveAs';
 import { enterEditMode } from './meshEdit';
 import { addAnnotation } from './annotationsHandler';
 import { pingObject, pingObjects } from './ping';
@@ -414,10 +414,25 @@ export function buildObjectMenuItems(uuid, opts = {}) {
 					}
 				]),
 		{
-			label: 'Save as prefab' + suffix,
+			// R22 round 11 (user): "I would like to be able to save prefabs as they are now
+			// with right click 'Save as...'". The single "Save as prefab" row became a
+			// submenu whose FIRST entry is that same act — the formats are rendered from
+			// $lib/saveAs's catalog, so a format cannot exist in the code and not in the
+			// menu, and each row's tooltip says what its format keeps AND what it drops.
+			label: 'Save as…' + suffix,
 			icon: 'package',
-			tooltip: 'Reusable copy in your Library (local, instances replicate)',
-			action: () => (multi ? savePrefabSelection(targets) : savePrefab(uuid))
+			tooltip: 'Store this in your Library, or write it straight out as a file',
+			children: SAVE_AS_FORMATS.map((format) => ({
+				label: format.label,
+				tooltip: format.tooltip,
+				icon: format.kind === 'download' ? 'arrow-down-to-line' : 'package',
+				action: () =>
+					void saveSelectionAs(
+						format.id,
+						targets,
+						multi ? undefined : object?.name || object?.type || undefined
+					)
+			}))
 		},
 		{ section: ' ' },
 		{

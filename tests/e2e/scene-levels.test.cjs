@@ -212,9 +212,18 @@ h.run(async () => {
 	h.check((await sessionCount(B)) === bSessionsBefore, 'and B stashed no backup either');
 
 	// =====================================================================
-	// 5. THE TRAVEL NODE: one replicated pulse moves EVERYONE
+	// 5. THE TRAVEL NODE: one replicated pulse moves EVERYONE IN THE ROOM
 	// =====================================================================
-	// A is on Level Three's content, B on Level One's — the node must converge them.
+	// R22 A2 REWROTE THIS SECTION'S PREMISE, and the rewrite is the point. It used to
+	// author a flow graph on A (standing in Level Three) and require it to reach B
+	// (standing in Level One) — which is now precisely the edit the room gate exists to
+	// stop: a flow graph is authored per scene and travels inside the .tpscene, so a node
+	// made in one scene must not appear in another. The section keeps its claim and gains
+	// the two that A2 makes true: the graph does NOT cross while the peers are split, and
+	// the ARRIVAL RE-SYNC hands it over the moment they share a room again.
+	//
+	// The node targets LEVEL ONE now (it targeted Three, which B was about to be sitting
+	// on anyway), so the pulse still has somewhere to move both peers to.
 	const built = await A.page.evaluate(
 		({ hash, name }) => {
 			const s = window.__stores;
@@ -238,14 +247,35 @@ h.run(async () => {
 			if (p) p.send({ type: 'edgecreate', edge: s.nodesHandler.serializeEdge(edge), graphId: s.SCENE_GRAPH });
 			return { click: click.id, travel: travel.id };
 		},
-		{ hash: savedThree.hash, name: 'Level Three' }
+		{ hash: savedOne.hash, name: 'Level One' }
+	);
+	// A2: the two peers are in DIFFERENT scenes at this point (A on Level Three, B on
+	// Level One), so the graph must not cross. Nothing waits on this — an absence is
+	// asserted after a settle, not eventually.
+	await B.page.waitForTimeout(2500);
+	h.check(
+		(await B.page.evaluate((id) => window.__stores.allNodes().some((n) => n.id === id), built.travel)) === false,
+		'a flow node authored in one scene does NOT reach a peer standing in another'
+	);
+
+	// …and now B walks back into A's room. The arrival re-sync asks for full state, which
+	// is how the graph it could not be given finally arrives.
+	await B.page.evaluate((hash) => {
+		void window.__stores.levels.travelToLevel(hash, 'Level Three');
+	}, savedThree.hash);
+	await h.eventually(
+		() => childUuids(B),
+		(ids) => JSON.stringify(ids) === JSON.stringify([...three].sort()),
+		'premise: B travels back into A room and its content is Level Three again',
+		30000
 	);
 	// the peer must HOLD the graph before the pulse (flowNodes.set does not broadcast —
 	// the documented slow-raily nodesync trap — so wait on the sends we just made)
 	await h.eventually(
 		() => B.page.evaluate((id) => window.__stores.allNodes().some((n) => n.id === id), built.travel),
 		(v) => v === true,
-		'premise: the peer holds the travel node'
+		'THE ARRIVAL RE-SYNC: sharing a room again delivers the graph that was withheld',
+		30000
 	);
 	// SETTLE past the stale-stamp cutoff: B's actionSeenAt records the node on its next
 	// TICK, milliseconds after the premise above — a stamp minted inside that window is
@@ -255,15 +285,30 @@ h.run(async () => {
 	await A.page.evaluate((id) => window.__stores.flowRuntime.applyNodeTrigger(id, (Date.now() % 86400000) / 1000, true), built.click);
 	await h.eventually(
 		() => childUuids(B),
-		(ids) => JSON.stringify(ids) === JSON.stringify([...three].sort()),
+		(ids) => JSON.stringify(ids) === JSON.stringify([...one].sort()),
 		'the pulse replicated and B loaded the level ITSELF (no scene bytes on the wire)',
 		30000
 	);
 	h.check(
-		JSON.stringify(await childUuids(A)) === JSON.stringify([...three].sort()),
+		JSON.stringify(await childUuids(A)) === JSON.stringify([...one].sort()),
 		'A landed on the same level from the same stamp'
 	);
 	h.check((await gstate(B)).vars.gems === 7, `fork 3 on the peer too: B's carried score survived the hop (${(await gstate(B)).vars.gems})`);
+
+	// back onto Level Three for the sections below — the pulse just moved the whole room
+	// to Level One, and travel replaced the graph that did it (self-limiting by design).
+	for (const peer of [A, B])
+		await peer.page.evaluate((hash) => {
+			void window.__stores.levels.travelToLevel(hash, 'Level Three');
+		}, savedThree.hash);
+	await h.eventually(
+		() => Promise.all([childUuids(A), childUuids(B)]),
+		([a, b]) =>
+			JSON.stringify(a) === JSON.stringify([...three].sort()) &&
+			JSON.stringify(b) === JSON.stringify([...three].sort()),
+		'premise: the room is back on Level Three',
+		30000
+	);
 
 	// =====================================================================
 	// 6. A LATE JOINER lands in the CURRENT level with the carried state

@@ -123,6 +123,15 @@ async function connect(from, to, settleMs = 9000) {
 	await step(from, 'press Connect', () =>
 		from.page.getByRole('button', { name: 'Connect', exact: true }).click()
 	);
+	// R22 round 33 REMOVED the dial-time ask (round 31's "Save & connect / Connect anyway /
+	// Cancel"), and with it the block that used to answer it here. A dialer holding work in
+	// an UNNAMED scene now dials immediately; the question is put at the HOST's APPROVAL
+	// instead, as a blocking modal (#confirm-dialog-save / -dismiss / -cancel).
+	//
+	// That modal is deliberately NOT answered here: which of its three endings a suite wants
+	// is a per-suite decision (connect-decision drives all three by hand), and a suite that
+	// wants the OLD classic share-or-stash merge instead parks the setting that restores it —
+	// `h.setupPage(browser, 'X', { storage: { 'connect:mergeOnConnect': 'true' } })`.
 	await step(to, 'approve the request', () =>
 		to.page.getByRole('button', { name: 'Approve' }).click({ timeout: 30000 })
 	);
@@ -176,18 +185,34 @@ async function eventually(fn, predicate, label, timeout = 10000) {
 	check(false, label);
 }
 
-/** Screen pixel of a world point on that page's camera. @param {number[]} world */
+/**
+ * Screen pixel of a world point on that page's camera.
+ *
+ * W9: measured against the CANVAS, not the window, and offset by where the canvas
+ * sits — the bottom dock RESIZES the viewport now, so with a panel open the two
+ * differ by the dock's height and every click aimed by this helper would miss by
+ * that much. Identical to the old arithmetic whenever the canvas fills the window,
+ * which is every suite that never opens the dock.
+ * @param {number[]} world
+ */
 function projectPoint(page, world) {
 	return page.evaluate(
 		(world) =>
 			new Promise((resolve) => {
 				window.__stores.globalScene.subscribe((scene) => {
 					window.__stores.globalCamera.subscribe((camera) => {
-						const v = scene.position.clone().set(world[0], world[1], world[2]).project(camera);
-						resolve({
-							x: (v.x * 0.5 + 0.5) * window.innerWidth,
-							y: (-v.y * 0.5 + 0.5) * window.innerHeight
-						});
+						window.__stores.globalRenderer.subscribe((renderer) => {
+							const rect = renderer?.domElement?.getBoundingClientRect?.();
+							const box =
+								rect && rect.width > 0 && rect.height > 0
+									? rect
+									: { left: 0, top: 0, width: window.innerWidth, height: window.innerHeight };
+							const v = scene.position.clone().set(world[0], world[1], world[2]).project(camera);
+							resolve({
+								x: box.left + (v.x * 0.5 + 0.5) * box.width,
+								y: box.top + (-v.y * 0.5 + 0.5) * box.height
+							});
+						})();
 					})();
 				})();
 			}),

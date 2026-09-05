@@ -164,7 +164,24 @@ export function setAnimationState(uuid, next, replicate = true) {
 /** Receive side of the raw-bytes sync @param {any} data */
 export async function applyObjectFile(data) {
 	const group = get(objectsGroup);
-	if (!group || group.getObjectByProperty('uuid', data.uuid)) return;
+	if (!group) return;
+	const held = group.getObjectByProperty('uuid', data.uuid);
+	if (held) {
+		// R22 round 32 — AN ARRIVAL HEAL, and deliberately NOT a re-parse. A rig's
+		// geometry is not scene-editable (it travels as its original file bytes precisely
+		// because nothing in the app can rewrite it), so the only thing that can have
+		// diverged is what an editor CAN touch: where it stands, what it is called, and
+		// which clip it is playing. Re-parsing would rebuild the mixer and restart the
+		// animation on every walk-in for no gain.
+		if (!data.override) return;
+		if (data.name) held.name = data.name;
+		if (data.pos) held.position.fromArray(data.pos);
+		if (data.rot) held.rotation.set(data.rot[0], data.rot[1], data.rot[2]);
+		if (data.scale) held.scale.fromArray(data.scale);
+		objectsGroup.update((value) => value);
+		if (data.anim) setAnimationState(data.uuid, data.anim, false);
+		return;
+	}
 	try {
 		const bytes = data.buffer instanceof ArrayBuffer ? data.buffer : data.buffer?.buffer ?? data.buffer;
 		// absent kind = 'gltf' (every pre-17-D2 sender)
@@ -184,11 +201,17 @@ export async function applyObjectFile(data) {
 	}
 }
 
-/** Broadcast one animated root to a connection (or everyone) @param {any} conn @param {any} root */
-export function sendAnimatedImport(conn, root) {
+/**
+ * Broadcast one animated root to a connection (or everyone)
+ * @param {any} conn @param {any} root
+ * @param {{override?: boolean}} [opts] R22 round 32 — an ARRIVAL HEAL (see sendObject);
+ *   absent for every other caller, and then the message is byte-identical to before.
+ */
+export function sendAnimatedImport(conn, root, opts = {}) {
 	const state = get(animatedObjects)[root.uuid];
 	conn.send({
 		type: 'objectfile',
+		...(opts.override ? { override: true } : {}),
 		uuid: root.uuid,
 		name: root.name,
 		kind: animatedImportKind(root.uuid),

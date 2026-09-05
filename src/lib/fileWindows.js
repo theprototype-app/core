@@ -1,4 +1,8 @@
 import { derived, get, writable } from 'svelte/store';
+// R22 round 12: the multi-window PREF lives with the other preview prefs; the COLLECTION
+// lives here, beside the target it generalises. filePreview imports nothing of ours, so
+// this edge closes no cycle.
+import { previewMultiWindow } from './filePreview';
 
 // Floating file windows (107): one shared professional code editor window
 // (Explorer text files AND the custom-node definition editor route here) and
@@ -12,13 +16,141 @@ export function openTextEditor(target) {
 	textEditorTarget.set(target);
 }
 
-/** @type {import('svelte/store').Writable<{title: string, url: string, onClose?: () => void} | null>} */
-export const imagePreviewTarget = writable(null);
+/**
+ * R22 round 11 — THE PREVIEW WINDOW SHOWS MORE THAN AN IMAGE. It now draws an image, an
+ * audio transport, a 3D preview or a folder, and its arrows walk the folder the Explorer
+ * is showing (see $lib/filePreview for the walk and the overlay prefs).
+ *
+ * THE STORE KEEPS ITS NAME, and so does the window's DOM id. Four suites and every
+ * existing caller address them; the 21-G1 ruling covers exactly this case — the
+ * user-visible word changes, the identifiers already written down do not, because
+ * renaming them would be a migration for a word. Only the COMPONENT file was renamed, so
+ * a reader looking for the audio player can find it.
+ *
+ * ADDITIVE: a target with no kind is an image, which is what every pre-round-11 caller passes.
+ * @type {import('svelte/store').Writable<{title: string, url: string, kind?: 'image'|'audio'|'object'|'folder', itemId?: string, prefabId?: string, name?: string, folderId?: string, onClose?: () => void} | null>}
+ */
+/**
+ * R22 round 12 — EVERY OPEN PREVIEW WINDOW, oldest first. `{id, ...target}`.
+ *
+ * The collection is the truth and `imagePreviewTarget` below is a VIEW of the newest
+ * entry, because four suites and every existing caller address that store by name and the
+ * 21-G1 ruling says identifiers already written down do not get renamed for a feature.
+ * With the multi-window pref off there is never more than one entry, so nothing about the
+ * old behaviour changes.
+ * @type {import('svelte/store').Writable<any[]>}
+ */
+export const previewWindows = writable([]);
+
+/**
+ * R22 ROUND 18 (user): "if clicked cog on both window and then click on Passthrough makes
+ * first window were opened to change this option, this is a bug — also allow cog to be
+ * opened only to show for one window even if I have multiple ones".
+ *
+ * THE BUG AND THE REQUEST HAVE THE SAME FIX, which is why they are one change. Every
+ * preview window renders the same settings pane, so with two cogs open the document held
+ * two elements with `id="preview-passthrough"` — and a `<label for="...">` resolves to the
+ * FIRST match in the document, whatever window it belongs to. Clicking the second window's
+ * label therefore toggled the first window's checkbox. Now that these are per-window
+ * settings (round 14), that mis-aim moves a setting on a window you are not looking at.
+ *
+ * Holding the id of the ONE window whose cog is open fixes both halves: only one pane
+ * exists at a time, so those ids are unique by construction and no label can reach across
+ * windows. The suite asserts that uniqueness directly — the fix rests on the invariant, so
+ * the invariant is the thing to pin.
+ * @type {import('svelte/store').Writable<number|null>}
+ */
+export const openPreviewCog = writable(null);
+
+let previewSeq = 0;
+
+/**
+ * The NEWEST preview window, as a settable store.
+ *
+ * A custom store rather than a plain `writable`, so the two cannot drift: `set(x)`
+ * REPLACES the newest entry (or opens one when there is none), and `set(null)` closes it —
+ * which is exactly what every pre-round-12 caller, and `file-windows-esc`, already mean by
+ * those calls. `derived` alone would have been read-only.
+ * @type {any}
+ */
+export const imagePreviewTarget = {
+	subscribe: derived(previewWindows, (list) => list[list.length - 1] ?? null).subscribe,
+	/** @param {any} value */
+	set(value) {
+		previewWindows.update((list) => {
+			if (!value) return list.slice(0, -1);
+			if (!list.length) return [{ id: ++previewSeq, ...value }];
+			const keepId = list[list.length - 1].id;
+			return [...list.slice(0, -1), { ...value, id: keepId }];
+		});
+	},
+	/** @param {(value: any) => any} fn */
+	update(fn) {
+		let current = null;
+		const stop = this.subscribe((/** @type {any} */ v) => (current = v));
+		stop();
+		this.set(fn(current));
+	}
+};
+
+/** Close one window by id. @param {number} id */
+export function closePreviewWindow(id) {
+	previewWindows.update((list) => list.filter((w) => w.id !== id));
+}
+
+/** Re-point ONE window without touching the others. @param {number} id @param {any} target */
+export function setPreviewWindow(id, target) {
+	previewWindows.update((list) => list.map((w) => (w.id === id ? { ...target, id } : w)));
+}
+
+/** the same source, already on screen? `{itemId, prefabId, folderId}` is a preview's identity */
+const sameSource = (/** @type {any} */ a, /** @type {any} */ b) =>
+	(a?.itemId ?? '') === (b?.itemId ?? '') &&
+	(a?.prefabId ?? '') === (b?.prefabId ?? '') &&
+	(a?.folderId ?? '') === (b?.folderId ?? '') &&
+	// a pre-round-11 caller passes only {title, url}; that is its whole identity
+	(a?.itemId || a?.prefabId || a?.folderId ? true : (a?.url ?? '') === (b?.url ?? ''));
 
 /** @param {{title: string, url: string, onClose?: () => void}} target */
 export function openImagePreview(target) {
-	imagePreviewTarget.set(target);
+	openFilePreview(target);
 }
+
+/**
+ * The general opener: a file of any previewable kind. 'openImagePreview' stays as the
+ * image-shaped front door so nothing that already calls it has to change.
+ * @param {{title: string, url?: string, kind?: 'image'|'audio'|'object'|'folder', itemId?: string, prefabId?: string, name?: string, folderId?: string, onClose?: () => void}} target
+ */
+export function openFilePreview(target) {
+	const spec = { url: '', ...target };
+	// R22 round 12: with the pref ON a second open ADDS a window. Two rules make that
+	// livable rather than a way to bury the screen in panels:
+	//   · THE SAME SOURCE RAISES rather than duplicating (the 21-I3 modelPreviewRaise
+	//     ruling — "a repeat open is a raise, not a re-set"), and
+	//   · a new window CASCADES off the last one, or every one of them lands on the same
+	//     saved rect and only the top is findable.
+	if (!get(previewMultiWindow)) {
+		imagePreviewTarget.set(spec);
+		return;
+	}
+	const list = get(previewWindows);
+	const already = list.find((w) => sameSource(spec, w));
+	if (already) {
+		previewRaise.update((n) => n + 1);
+		// bring it to the end, which is what "the active one" means here
+		previewWindows.set([...list.filter((w) => w.id !== already.id), already]);
+		return;
+	}
+	previewWindows.set([...list, { ...spec, id: ++previewSeq }]);
+}
+
+/**
+ * Bumped when an open preview is asked for again. The window listens and raises itself;
+ * nothing about the preview changes. A COUNTER, not a flag — two consecutive raises are
+ * two events (the modelPreviewRaise precedent, verbatim).
+ * @type {import('svelte/store').Writable<number>}
+ */
+export const previewRaise = writable(0);
 
 // N4: 3D model preview window (rotatable canvas + poly stats).
 // 21-H2: `prefabId` is the SECOND source — a prefab is not an Explorer item, so it has
@@ -77,4 +209,11 @@ export function openModelPreview(target) {
  * itself.
  * @type {import('svelte/store').Readable<boolean>}
  */
-export const previewSuspended = derived(modelPreviewTarget, (target) => !!target);
+export const previewSuspended = derived(
+	[modelPreviewTarget, previewWindows],
+	// R22 round 12: an OBJECT shown in the file preview window is the same situation the
+	// pop-out was — two live WebGL contexts rendering one asset, which is the 21-H2 hang.
+	// The reason it is a derived and not a flag two call sites raise is unchanged: the
+	// windows are the only things that can be open, so it cannot drift or leak.
+	([target, windows]) => !!target || windows.some((/** @type {any} */ w) => w.kind === 'object')
+);

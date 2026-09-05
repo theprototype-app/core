@@ -274,11 +274,15 @@ export function applyEnvironment() {
 		} else sun.visible = false;
 	}
 
-	// shadow catcher: visible only when the sun casts and shadows aren't off
+	// shadow catcher: visible only when the sun casts and shadows aren't off.
+	// CO4: it STAYS in passthrough — ShadowMaterial only DARKENS, which composites
+	// correctly over the camera feed, and that darkening is what glues a virtual
+	// object to a real table (the sky/fog lift above is the whole AR stand-down;
+	// the sun rig keeps casting untouched)
 	const shadowsOff = get(shadowQuality) === 'off';
 	const catcher = shadowCatcher(scene, !!(preset.sun && !shadowsOff));
 	if (catcher) {
-		catcher.visible = !!(preset.sun && !shadowsOff) && !get(passthroughActive) && !wireframeActive();
+		catcher.visible = !!(preset.sun && !shadowsOff) && !wireframeActive();
 		const span = Math.max(60, sceneRadius() * 2);
 		catcher.scale.set(span, span, span);
 	}

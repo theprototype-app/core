@@ -69,14 +69,45 @@ export const explorerClose = writable(true);
  * `{ token, folderId }`: the token makes two consecutive requests distinguishable (two
  * identical objects are `===` different, but a number bumped per arm is what a `$effect`
  * can key on); `folderId` is where the save should land, or null for the root.
- * @type {import('svelte/store').Writable<{token: number, folderId: string|null}|null>}
+ *
+ * R22 round 33 adds `consent`: does this save also CONSENT to publishing the scene to the
+ * session (C4's `noteSceneOpened`)? True for every save a person means as a save — which
+ * is why it is only ever false when a caller says so. The connect decision's "Save scene &
+ * connect" saves in order to LEAVE a scene behind, and leaving is not publishing.
+ * @type {import('svelte/store').Writable<{token: number, folderId: string|null,
+ *   consent: boolean}|null>}
  */
 export const explorerSceneSaveArm = writable(null);
 let sceneSaveArmToken = 0;
-/** @param {string|null} folderId */
-export function armExplorerSceneSave(folderId = null) {
-	explorerSceneSaveArm.set({ token: ++sceneSaveArmToken, folderId: folderId ?? null });
+/** @param {string|null} folderId @param {{consent?: boolean}} [opts] */
+export function armExplorerSceneSave(folderId = null, opts = {}) {
+	explorerSceneSaveArm.set({
+		token: ++sceneSaveArmToken,
+		folderId: folderId ?? null,
+		consent: opts.consent !== false
+	});
 }
+/**
+ * R22 round 32 — the same seam for "open the Explorer AND show me this scene's version
+ * history". The divergence dialog lives in projectManifest, a LEAF that must not import
+ * a component, so the request travels as a write-once store the Explorer consumes
+ * exactly the way it consumes the save arm above.
+ *
+ * `{ token, name, hash }`: the scene NAME is what the manifest is keyed by and the only
+ * thing that is always resolvable; `hash` is the version the message was ABOUT, which
+ * may be one this machine does not hold — the consumer decides what to do with that.
+ * @type {import('svelte/store').Writable<{token: number, name: string, hash: string}|null>}
+ */
+export const explorerRevealArm = writable(null);
+let revealArmToken = 0;
+/** @param {string} name @param {string} [hash] */
+export function revealExplorerItem(name, hash = '') {
+	explorerRevealArm.set({ token: ++revealArmToken, name, hash: hash ?? '' });
+}
+// 4b had an Explorer-ONLY twin of the arm above ("open the Explorer as a dock tab / as
+// a floating window", from the Controls toolbar). W5 generalised it to every dock tab —
+// the tab strip's context menu can undock any of them — and it moved in with the rest of
+// the dock bookkeeping: `dockModeArm` / `armDockMode(key, docked)` in $lib/bottomDock.
 export const objectListClose = writable(true);
 export const chatHidden = writable('hidden');
 // AI assistant (roadmap #10): '' = window open, 'hidden' = closed (mirrors chat).
@@ -519,6 +550,56 @@ if (typeof localStorage !== 'undefined') {
     if (typeof document !== 'undefined') document.documentElement.classList.toggle('allow-undock', !!v);
   });
 }
+/** W2: FLOATING TOOLBAR — GEOMETRY. With this ON the Controls pill (and the play FAB
+ * inside its well) anchors on `--bottom-inset`, so it rides in the band just above an
+ * open bottom dock. OFF, the pill stays pinned 16px off the viewport floor and an open
+ * dock passes over that band, exactly like the chat / AI / sim-controls buttons beside
+ * it. LOCAL pref — where one person's toolbar sits is not scene data, so it never
+ * replicates and never rides a workspace snapshot. Persisted.
+ *
+ * W8a FLIPPED THE DEFAULT BACK TO ON, which is a change to the STORED SHAPE and not
+ * just to the seed: the reader has to become `!== 'false'` rather than `=== 'true'`, or
+ * every existing user — who has a literal `'false'` on disk from the moment the pref
+ * shipped default-off, because the subscriber writes on the first flush — would be
+ * pinned OFF forever with no way to tell that from never having chosen. Absent = ON. */
+export const floatingToolbar = writable(
+  typeof localStorage !== 'undefined' ? localStorage.getItem('floatingToolbar') !== 'false' : true
+);
+if (typeof localStorage !== 'undefined') {
+  floatingToolbar.subscribe((v) => {
+    try { localStorage.setItem('floatingToolbar', v ? 'true' : 'false'); } catch { /* */ }
+  });
+}
+
+/** W8a: TOOLBAR ALWAYS ON TOP — Z-ORDER, and deliberately a SECOND pref rather than a
+ * second meaning for `floatingToolbar`. That one answers "where does the bar SIT"
+ * (does it lift onto `--bottom-inset` when a dock opens); this one answers "who wins
+ * the pixel" (does the bar paint over the panels or under them). They were one flag
+ * until the on-device pass, which is why a user who wanted the bar to lift also had to
+ * accept it painting over every floating window.
+ *   ON           — `--z-hud` (45): above the dock (35) AND above floating windows (40).
+ *   OFF (default) — `--z-drawer` (30): windows and the dock cover it.
+ * They compose. The DEFAULT combination is floating ON + this OFF: the bar lifts clear
+ * of an opening dock (so the two rarely overlap at all), but a floating window dragged
+ * over it covers it — the bar moves out of the way rather than fighting. Turning this
+ * ON is one right-click away (the toolbar tail carries an "Always on top" row) as well
+ * as a Settings row.
+ * LOCAL, persisted, absent = OFF — read as `=== 'true'`. THE KEY IS RENAMED
+ * (`toolbarOnTop`, was `toolbarAlwaysOnTop`) because the default flipped OFF after the
+ * subscriber below had already written a literal 'true' onto every machine that ran
+ * the branch — a value the FIRST FLUSH wrote, not a choice anyone made. Reading the
+ * old key would pin those machines ON with no way to tell that from having chosen; a
+ * fresh key makes absent mean "never chose" again. The pref never shipped in a tagged
+ * release, so there is nothing real to migrate. */
+export const toolbarAlwaysOnTop = writable(
+  typeof localStorage !== 'undefined' ? localStorage.getItem('toolbarOnTop') === 'true' : false
+);
+if (typeof localStorage !== 'undefined') {
+  toolbarAlwaysOnTop.subscribe((v) => {
+    try { localStorage.setItem('toolbarOnTop', v ? 'true' : 'false'); } catch { /* */ }
+  });
+}
+
 /** PINNED: keep the drawer's tab bar (+ status) visible even when the body is
  * collapsed, so it acts as a persistent mini-bar under the pill. Persisted. */
 export const connectDrawerPinned = writable(
@@ -610,7 +691,9 @@ export function clearToast(toast) {
  * blocks never did.
  * @param {string} id stable key (also dedupes re-adds)
  * @param {string} text
- * @param {{label: string, action: () => void}[]=} actions
+ * @param {{label: string, action: () => void, keepOpen?: boolean}[]=} actions R22
+ *   round 7: `keepOpen` leaves the card up after the press, which is what an INLINE
+ *   CONFIRM needs — a button that arms a second press must not close the card it arms
  * @param {(() => void)=} onDismiss side effect for the ✕ (e.g. persist "seen")
  * @param {boolean=} noClose 15-P2: a genuine FORK renders no ✕ at all — a
  *   dismiss that silently picks one branch is the auto-decide trap in
@@ -618,8 +701,16 @@ export function clearToast(toast) {
  */
 export function showInfoToast(id, text, actions, onDismiss, noClose) {
   toastStore.update((list) => {
-    if (list.some((entry) => entry && entry.id === id)) return list; // already up
-    return [...list, { id, text, actions: actions ?? [], kind: 'info', sticky: true, onDismiss, noClose: !!noClose }];
+    const row = { id, text, actions: actions ?? [], kind: 'info', sticky: true, onDismiss, noClose: !!noClose };
+    // R22 round 8: UPDATE IN PLACE rather than returning early. These cards are mirrors
+    // of state, so a card that can never change its own text or buttons cannot carry an
+    // inline confirm — the first press armed the flag, the effect re-ran, and the label
+    // stayed put, which is exactly "the button does nothing".
+    const at = list.findIndex((entry) => entry && entry.id === id);
+    if (at === -1) return [...list, row];
+    const next = [...list];
+    next[at] = row;
+    return next;
   });
 }
 

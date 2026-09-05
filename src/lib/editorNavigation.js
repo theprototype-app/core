@@ -58,7 +58,13 @@ export function startEditorNavigation() {
 		if (event.key === 'Shift') return pressed.add('shift');
 		// 15-B6: non-modal dialogs leave the page live — don't fly the camera
 		// behind an open Settings/Sessions/Modules modal
-		if (guarded(event) || event.ctrlKey || event.metaKey || get(anyModalOpen)) return;
+		// R22 round 13 (user): "Alt+E alt+a open/close window, but it also affects WASD".
+		// The #183 shortcuts are Alt-aware, so Alt+E toggles a panel - and this guard
+		// checked Ctrl and Meta but not Alt, so the same press ALSO registered e as a
+		// movement key and the camera flew. A modified press is a COMMAND, never movement.
+		// The keyup below stays unguarded on purpose (the Ctrl+V push-to-talk lesson):
+		// guarding it strands a key held down when the modifier arrives mid-hold.
+		if (guarded(event) || event.ctrlKey || event.metaKey || event.altKey || get(anyModalOpen)) return;
 		const key = String(event.key || '').toLowerCase();
 		if (event.shiftKey && isShiftCommand(key)) return; // a command, not movement
 		if (KEYS.includes(key)) pressed.add(key);

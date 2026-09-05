@@ -10,19 +10,50 @@
     // avatar and hands have no business floating in this one. Same evidence rule as
     // the Watch gate: an unknown or unnamed scene on either side is not evidence.
     import { peerScenes, elsewhereThan } from '$lib/peerScenes'
+    // R22 round 36 (rooms): the session host, which is what the unnamed world resolves to
+    import { sessionHost } from '$lib/connectionState'
     import { currentLevel } from '$lib/levels'
     import { handBoneSegments, handModelSegments } from '$lib/vrControls'
     import { peerHandModels, handModelCache } from '$lib/handModels'
+    import { colocatedPeers, colocatedGhostHands, GHOST_HAND_OPACITY } from '$lib/colocationPresence'
     import { Text } from '@threlte/extras'
+
+    // CO5 — A COLOCATED PEER IS RENDERED AS A GHOST, and the whole rule lives in this
+    // component because it is PRESENTATION. `$colocatedPeers` is a peer id set derived
+    // from "their broadcast roomKey equals MINE"; that peer is standing in front of me,
+    // so their avatar body, photo card, nameplate and speaking ring would all hang in the
+    // air where the real person is. Their HANDS stay (faint, and only while the local
+    // `colocatedGhostHands` pref is on): a controller is where somebody is POINTING, and
+    // in passthrough their real hand is visible while the virtual thing it holds is not.
+    //
+    // Nothing here changes what WE broadcast, and nothing here is replicated — a remote
+    // peer's set is empty, so it renders both colocated users in full. That asymmetry is
+    // the feature, not a bug to reconcile.
 
     // R-3: a peer's CUSTOM hand GLB renders rigidly at their broadcast wrist
     // pose (the hand group's pos/rot IS the wrist). Clone per side; mirror left.
-    const customHand = (peerId: string, side: string) => {
+    // CO5: `ghost` dims it — the materials must be CLONED first, because clone(true)
+    // shares them with the cache every other peer's hands are drawn from.
+    const customHand = (peerId: string, side: string, ghost = false) => {
       const hash = $peerHandModels[peerId]
       const scene = hash ? $handModelCache[hash] : null
       if (!scene) return null
       const clone = scene.clone(true)
       if (side === 'left') clone.scale.x *= -1
+      if (ghost)
+        clone.traverse((node: any) => {
+          // gate on `.material`, never on isMesh — a Sprite has one too and would keep
+          // the real material at full strength (the onion-skin lesson)
+          if (!node.material) return
+          const dim = (m: any) => {
+            const faint = m.clone()
+            faint.transparent = true
+            faint.opacity = GHOST_HAND_OPACITY
+            // depthWrite stays TRUE: the postprocessing passes read the depth buffer
+            return faint
+          }
+          node.material = Array.isArray(node.material) ? node.material.map(dim) : dim(node.material)
+        })
       return clone
     }
 
@@ -70,30 +101,47 @@
 
   <T.Group bind:ref={peerFrame}>
   {#each $userdata as user, i}
-    {#if user[0] != $peers.peer.id && !elsewhereThan($peerScenes, $currentLevel?.name ?? '', user[0])}
+    <!-- R22 round 36 (rooms): $sessionHost is PASSED so the session's unnamed world
+         resolves to the host's room — an avatar in a scene we are not in is not drawn,
+         and "unnamed" is no longer a wildcard that draws everybody. -->
+    <!-- ...AND NOBODY WHILE WE ARE PRIVATE (round 36 review): a private HOST's own scene is
+         what an unnamed peer resolves to (hostIsMe -> our row), so the pure predicate would
+         seat the whole session in our private world; the map cannot see our privacy
+         (`privacySplit`'s rule), so the caller states it — the broadcast gate's `if (secret)`. -->
+    {#if user[0] != $peers.peer.id && !$currentLevel?.private && !elsewhereThan($peerScenes, $currentLevel?.name ?? '', user[0], $sessionHost)}
     <!-- {console.log(user)} -->
+      {@const colocated = $colocatedPeers.has(user[0])}
       <T.Group>
-        <AvatarRig {user} />
+        <!-- CO5: no body, card, nameplate or speaking ring for someone in the room -->
+        {#if !colocated}
+          <AvatarRig {user} />
+        {/if}
 
         <!-- VR controller markers while this peer is in a session -->
-        {#if $peerHands[user[0]]?.active}
+        {#if $peerHands[user[0]]?.active && (!colocated || $colocatedGhostHands)}
           {#each ['left', 'right'] as side}
             {#if $peerHands[user[0]][side]}
+              {@const hand = customHand(user[0], side, colocated)}
               <T.Group
                 name={`${user[0]}-hand-${side}`}
                 position={$peerHands[user[0]][side].pos}
                 rotation={$peerHands[user[0]][side].rot}
               >
-                {#if customHand(user[0], side)}
+                {#if hand}
                   <!-- R-3: the peer's chosen hand GLB, rigid at the wrist -->
-                  <T is={customHand(user[0], side)} />
+                  <T is={hand} />
                 {:else if $peerHands[user[0]][side].joints?.length}
                   {#if $peerHandStyle === 'model'}
                     <!-- R-3: rounded capsule hand — same bones, per-bone radii -->
                     {#each handModelSegments($peerHands[user[0]][side].joints) as b}
                       <T.Mesh position={b.pos} rotation={b.rot}>
                         <T.CapsuleGeometry args={[b.r, Math.max(b.len - b.r, 0.004), 3, 8]} />
-                        <T.MeshStandardMaterial color={handColors[side]} roughness={0.7} />
+                        <T.MeshStandardMaterial
+                          color={handColors[side]}
+                          roughness={0.7}
+                          transparent={colocated}
+                          opacity={colocated ? GHOST_HAND_OPACITY : 1}
+                        />
                       </T.Mesh>
                     {/each}
                   {:else if $peerHandStyle === 'hands'}
@@ -101,7 +149,11 @@
                     {#each handBoneSegments($peerHands[user[0]][side].joints) as b}
                       <T.Mesh position={b.pos} rotation={b.rot}>
                         <T.BoxGeometry args={[0.009, b.len, 0.009]} />
-                        <T.MeshStandardMaterial color={handColors[side]} />
+                        <T.MeshStandardMaterial
+                          color={handColors[side]}
+                          transparent={colocated}
+                          opacity={colocated ? GHOST_HAND_OPACITY : 1}
+                        />
                       </T.Mesh>
                     {/each}
                   {:else}
@@ -109,19 +161,31 @@
                     {#each jointTriples($peerHands[user[0]][side].joints) as p}
                       <T.Mesh position={p}>
                         <T.SphereGeometry args={[0.008, 8, 8]} />
-                        <T.MeshStandardMaterial color={handColors[side]} />
+                        <T.MeshStandardMaterial
+                          color={handColors[side]}
+                          transparent={colocated}
+                          opacity={colocated ? GHOST_HAND_OPACITY : 1}
+                        />
                       </T.Mesh>
                     {/each}
                   {/if}
                 {:else}
                   <T.Mesh>
                     <T.BoxGeometry args={[0.06, 0.06, 0.14]} />
-                    <T.MeshStandardMaterial color={handColors[side]} />
+                    <T.MeshStandardMaterial
+                      color={handColors[side]}
+                      transparent={colocated}
+                      opacity={colocated ? GHOST_HAND_OPACITY : 1}
+                    />
                   </T.Mesh>
                   <!-- short pointer so the aiming direction is readable -->
                   <T.Mesh position={[0, 0, -0.12]} rotation={[Math.PI / 2, 0, 0]}>
                     <T.CylinderGeometry args={[0.006, 0.006, 0.1]} />
-                    <T.MeshStandardMaterial color={0xffffff} />
+                    <T.MeshStandardMaterial
+                      color={0xffffff}
+                      transparent={colocated}
+                      opacity={colocated ? GHOST_HAND_OPACITY : 1}
+                    />
                   </T.Mesh>
                 {/if}
               </T.Group>

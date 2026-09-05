@@ -68,8 +68,16 @@ import { ensureScenesFolder, currentLevel } from './levels';
  * bytes hash-deduped across the zip's sections. A format-1 file still reads through
  * the same loops (its missing keys are empty lists — the additive-read rule), and a
  * format-1 READER of a format-2 file still gets what it understands: `scenes/` and
- * `assets/` are written exactly as format 1 wrote them. */
-export const PROJECT_FORMAT = 2;
+ * `assets/` are written exactly as format 1 wrote them.
+ *
+ * FORMAT 3 (R22-R1): the manifest inside `project.json` may now carry THE SHARED INDEX
+ * (`manifest.folders` / `manifest.items` — which peers can see which files). The bytes
+ * and both indexes are unchanged, so why bump at all: an older reader spreads those
+ * unknown manifest keys through verbatim and then PUBLISHES them to its mesh, where
+ * they name folder ids its own import just remapped away — rows nobody can serve. The
+ * gate is exactly the right instrument for that, and `openProject` below remaps the
+ * index rather than carrying the stale ids. */
+export const PROJECT_FORMAT = 3;
 
 /** @param {any} item @returns {string} the item's extension INCLUDING the dot, lowered */
 function extOf(item) {
@@ -340,6 +348,159 @@ export async function exportProject(opts = {}) {
 	};
 }
 
+/**
+ * R22 round 13 P1 (user): ".tpscene only available as download for projects, its wrong,
+ * should be .tp (project files) to download."
+ *
+ * They are right, and SessionsManager's own comment recorded why it shipped the other
+ * way: a .tp is written by `exportProject` above, FROM THE LIVE STORES - the manifest, the
+ * Explorer, the version history - so there was nothing that could write one from a SAVED
+ * record, and the bundle button sent a project through the scene writer. The fix is
+ * therefore not a label. It is this writer, the missing one.
+ *
+ * IT TOUCHES NO LIVE STORE, and that is the whole point: a saved project downloaded while
+ * a different scene is on screen must be the project that was SAVED. Everything comes out
+ * of the payload handed in - `payload.library.folders` are the folder rows,
+ * `payload.library.items` are the item rows and their `blob`s are the bytes, and the scene
+ * is the .tpscene this same record already produces through `exportSessionZip`.
+ *
+ * WHY `assets: false` on that inner bundle: `exportSessionZip`'s asset section is derived
+ * from `sceneAssetList()`, which reads the LIVE scene graph. For a saved record that is a
+ * different scene's asset list, and bundling it would be exactly the "read state this
+ * record does not own" that this function exists to avoid. Nothing is lost: a project's
+ * files ARE its library, and they travel as top-level `items/` rows, hash-addressed,
+ * which is where a .tp has carried bytes since 21-G8. (It is also why the UI offers this
+ * for a project and not for a bare scene - see SessionsManager.)
+ *
+ * THE SYNTHESIZED MANIFEST claims exactly one scene with a one-entry history, because
+ * that is all a session record HAS: a session is a snapshot, not a history. Deliberately
+ * ABSENT: `manifest.folders` / `manifest.items`, which are R22-R1's SHARED index - a saved
+ * library row carries no `share` flag, so claiming them as shared would be a fabrication.
+ * Top-level `folders`/`items` is where `restoreProjectContents` reads placement from
+ * anyway, and the omit-when-empty rule (the `labels` precedent) covers the rest.
+ *
+ * @param {any} payload a saved session record, as `getSession` returns it
+ * @returns {Promise<{bytes: Uint8Array, name: string, scenes: number, items: number,
+ *   skippedItems: number} | null>} null = there is nothing usable in the payload
+ */
+export async function exportProjectFromSession(payload) {
+	if (!payload || typeof payload !== 'object') return null;
+	const { zipSync, strToU8 } = await import('fflate');
+	// sessions.js is ALREADY reachable from here (this module imports levels.js, which
+	// imports it), so this edge closes no cycle; it is dynamic for the same reason fflate
+	// is - nothing on this module's own load path needs the zip machinery.
+	const { exportSessionZip } = await import('./sessions');
+
+	const sceneName = String(payload.name ?? '').trim() || 'Untitled scene';
+	/** @type {Record<string, Uint8Array>} */
+	const files = {};
+
+	// THE SCENE - the bundle this record already produces, minus the library.
+	//
+	// STRIPPING IT IS THE POINT, not a shortcut: round 12 taught `exportSessionZip` to write
+	// a project payload's library out as real `library/` entries, so handing it the payload
+	// whole would put every file in this archive TWICE - once inside the scene bundle and
+	// once as an `items/` row - and double the file. In a .tp the PROJECT owns the library
+	// and a `scenes/<hash>.tpscene` is a scene, which is exactly what the entries
+	// `exportProject` writes there are.
+	/** @type {any} */
+	const scenePayload = { ...payload };
+	delete scenePayload.library;
+	const sceneBytes = await exportSessionZip(scenePayload, { assets: false, packs: false, flow: true });
+	// slice the exact bytes before hashing: a VIEW into a larger buffer hashes as the whole
+	// buffer, and then the hash in project.json is not the hash of the file it names
+	const sceneBuffer = /** @type {ArrayBuffer} */ (
+		sceneBytes.buffer.slice(sceneBytes.byteOffset, sceneBytes.byteOffset + sceneBytes.byteLength)
+	);
+	const sceneHash = await hashBytes(sceneBuffer);
+	const sceneFile = 'scenes/' + sceneHash + '.tpscene';
+	files[sceneFile] = sceneBytes;
+	// the row's NAME is what an import writes into the library, and its EXTENSION is what
+	// kindOf reads to call the result a scene rather than an anonymous blob
+	const scenes = [{ hash: sceneHash, name: sceneName + '.tpscene', file: sceneFile }];
+
+	// THE LIBRARY - out of the record, never out of the Explorer
+	const folders = (payload.library?.folders ?? []).map((/** @type {any} */ f) => ({
+		id: String(f?.id ?? ''),
+		name: String(f?.name ?? 'Folder'),
+		parentId: f?.parentId == null ? null : String(f.parentId)
+	}));
+	/** @type {{hash: string, name: string, kind: string, folderId: string | null, file: string}[]} */
+	const items = [];
+	/** @type {Record<string, string>} hash -> the zip path already carrying these bytes */
+	const carried = { [sceneHash]: sceneFile };
+	let skippedItems = 0;
+	for (const row of payload.library?.items ?? []) {
+		/** @type {ArrayBuffer | null} */
+		let buffer = null;
+		try {
+			buffer = row?.blob ? await row.blob.arrayBuffer() : null;
+		} catch {
+			buffer = null;
+		}
+		// a row whose bytes have gone is COUNTED and reported, never silently dropped
+		if (!buffer) {
+			skippedItems++;
+			continue;
+		}
+		const name = String(row?.name ?? 'file');
+		// hashed from the BYTES rather than trusted from the row: a .tp is content-addressed
+		// and the stored hash is the one field here that could be stale
+		const hash = await hashBytes(buffer);
+		let file = carried[hash];
+		if (!file) {
+			file = 'items/' + hash + extOf(row);
+			files[file] = new Uint8Array(buffer);
+			carried[hash] = file;
+		}
+		items.push({
+			hash,
+			name,
+			kind: String(row?.kind ?? kindOf(name) ?? 'text'),
+			folderId: row?.folderId == null ? null : String(row.folderId),
+			file
+		});
+	}
+
+	// normalized at the boundary like every other read of this document, which is also
+	// what drops the keys that would be empty
+	const manifest = normalizeManifest({
+		name: sceneName,
+		scenes: { [sceneName]: { history: [sceneHash], pinned: [] } },
+		assets: [],
+		changedAt: Date.now()
+	});
+
+	files['project.json'] = strToU8(
+		JSON.stringify({
+			format: PROJECT_FORMAT,
+			appVersion: APP_VERSION,
+			createdAt: Date.now(),
+			name: sceneName,
+			manifest,
+			scenes,
+			// v1's asset section: a session record tracks no manifest assets, and the files it
+			// does hold are the `items` rows above
+			assets: [],
+			folders,
+			items,
+			// the four documented counts are honestly ZERO here - this file carries the single
+			// version the record holds, so nothing was pruned and nothing was left out.
+			// `items` is additive (an older reader still sees the four it knows) and it is the
+			// one thing this writer can fail to carry: a library row whose blob has gone.
+			skipped: { scenes: 0, assets: 0, omittedVersions: 0, omittedScenes: 0, items: skippedItems }
+		})
+	);
+
+	return {
+		bytes: zipSync(files, { level: 6 }),
+		name: sceneName,
+		scenes: scenes.length,
+		items: items.length,
+		skippedItems
+	};
+}
+
 /** 21-I5: the .tp half of the export-settings cog. DEFAULT ON (locked answer 2) — a
  * project file has carried its scene history since 21-G3. LOCAL, like every other
  * export preference. */
@@ -560,7 +721,9 @@ function restoreFolderTree(rows, rootId) {
  * @param {{imported?: boolean, duplicates?: string}} [opts] loose-scenes fix: `imported`
  *   stamps provenance on everything written (an IMPORT, never a project-minted save), and
  *   `duplicates: 'ask'` surfaces bytes we already hold instead of deduping in silence
- * @returns {Promise<{scenes: number, assets: number, items: number}>}
+ * @returns {Promise<{scenes: number, assets: number, items: number, remap: Map<string, string>}>}
+ *   `remap` is saved-folder-id -> the fresh local one; R22-R1's shared index is keyed by
+ *   folder id, so the only caller that installs the manifest needs it to fix those rows.
  */
 async function restoreProjectContents(doc, entries, rootId, sceneFolderId, opts = {}) {
 	const remap = restoreFolderTree(doc.folders ?? [], rootId);
@@ -651,7 +814,42 @@ async function restoreProjectContents(doc, entries, rootId, sceneFolderId, opts 
 		scenes++;
 	}
 
-	return { scenes, assets, items };
+	return { scenes, assets, items, remap };
+}
+
+/**
+ * R22-R1: rewrite a file's SHARED INDEX onto the folder ids this machine just minted.
+ * A row whose folder did not survive the restore keeps its file and loses its
+ * placement (folderId null = the library root) rather than being dropped — the whole
+ * point of the index is that somebody said these files may be seen, and a placement we
+ * cannot resolve is no reason to forget that. Item rows are keyed by content HASH, so
+ * they need no remapping at all; only their folder reference does.
+ * @param {any} manifest @param {Map<string, string>} remap @returns {any}
+ */
+function remapSharedIndex(manifest, remap) {
+	if (!manifest || typeof manifest !== 'object') return manifest;
+	const folders = Array.isArray(manifest.folders) ? manifest.folders : null;
+	const items = Array.isArray(manifest.items) ? manifest.items : null;
+	if (!folders && !items) return manifest;
+	const to = (/** @type {any} */ id) => (id == null ? null : (remap.get(String(id)) ?? null));
+	/** @type {any} */
+	const out = { ...manifest };
+	if (folders)
+		out.folders = folders
+			.map((/** @type {any} */ row) => ({ ...row, id: to(row.id), parentId: to(row.parentId) }))
+			// a folder row with no surviving id names nothing at all; its items fall to the root
+			.filter((/** @type {any} */ row) => !!row.id);
+	if (items)
+		out.items = items.map((/** @type {any} */ row) => ({ ...row, folderId: to(row.folderId) }));
+	return out;
+}
+
+/** Test seam for the remap above. It is pure and its inputs (a saved document, a remap
+ * built inside a restore) are both unreachable from outside this module, so the only way
+ * to cover the id rewrite is to hand it the pair directly.
+ * @param {any} manifest @param {Map<string, string>} remap */
+export function __remapSharedIndexForTest(manifest, remap) {
+	return remapSharedIndex(manifest, remap);
 }
 
 /**
@@ -690,7 +888,15 @@ export async function openProject(buffer) {
 	// OPEN wiped the library first, so nothing here can be a duplicate — and its manifest
 	// becomes OURS, so its scene files are project-minted, never imported strangers
 	const counts = await restoreProjectContents(doc, entries, null, null);
-	manifestRestore(doc.manifest, true);
+	// R22-R1: the file's shared index is keyed by the FOLDER IDS the file was written
+	// with, and the restore above minted fresh ones (ids are local identity — a .tp must
+	// never collide with the library it lands in). Carrying them unremapped would adopt
+	// folders that exist nowhere and strand every item row inside them.
+	// C4: the `true` is what makes this OPEN consent to publishing the file's scenes and
+	// name — `manifestRestore` marks them, because it is the seam that can see what the
+	// document holds. Without it the outbound scope would keep a joiner's freshly-opened
+	// project to itself, which is the opposite of what "brings the room along" promises.
+	manifestRestore(remapSharedIndex(doc.manifest, counts.remap), true);
 	// the open scene belongs to no scene of THIS project — a named currentLevel would
 	// let travel-away publish the old world into the new project's history
 	currentLevel.set(null);
@@ -753,4 +959,142 @@ export async function importProjectAsFolder(buffer, opts = {}) {
 			(total === 1 ? '' : 's') + '. Your project and manifest are untouched.'
 	);
 	return counts;
+}
+
+/**
+ * R22 round 13 (user), from the Sessions modal: "When add .tp file using 'import session
+ * file' button from Sessions modal should just add another item in Sessions 'projects',
+ * same as when importing .tpscene, fix it as now it imports it as a folder inside projets
+ * Library (for this I have another button and it already works: within Library anywhere I
+ * can right click and select 'Import project as folder')".
+ *
+ * THE INVERSE OF `exportProjectFromSession`, and the shapes line up on purpose: that one
+ * writes a saved record out as `project.json` + `scenes/<hash>.tpscene` + `items/`, this
+ * one reads those three back into a record. The round trip through the pair is the case
+ * this is built for and the one the suite pins.
+ *
+ * WHY A THIRD READER beside `openProject` and `importProjectAsFolder`: both of those write
+ * into the LIVE Explorer — one replaces it, one furnishes it — and neither can answer "put
+ * this file in my Sessions list", which is why the .tp arrived as a library FOLDER and the
+ * list the user went looking in stayed empty. This one writes ONE saved record and touches
+ * no live store at all, which is also what makes it the right call from the Explorer's
+ * mount picker: a mount reads a SAVED record, so importing FOR a mount has to produce one.
+ * The right-click "Import project as folder" is untouched and still means what it says.
+ *
+ * WHICH SCENE BECOMES THE RECORD'S. A session record is a SNAPSHOT and holds exactly one
+ * scene; a .tp may carry several, and several versions of each. The manifest already
+ * answers it — the pointer of the scene the document is NAMED after, else the first scene
+ * it lists — and nothing is lost by the choice: every other scene in the file is an
+ * ordinary library row and comes back as a `.tpscene` FILE inside the record's library,
+ * which is exactly what it is inside a real project.
+ *
+ * WHAT IT READS FOR THE LIBRARY is the file's own `items` rows, then the v1 stragglers
+ * (`assets`, and any `scenes` row no item row already carried) — the three loops
+ * `restoreProjectContents` runs, into an array instead of into the Explorer. The chosen
+ * scene is skipped THERE only when the file does not claim it as a library row itself: a
+ * file written by `exportProject` does claim it, because in that project the scene really
+ * is a library file, and a file written by `exportProjectFromSession` does not.
+ *
+ * Deliberately NOT read: the bytes inside the chosen scene bundle. `restoreProjectContents`
+ * does not reach into a `.tpscene` either — a project's bytes live in the .tp's own
+ * sections, and the bundle keeps its assets for whoever opens it.
+ * @param {ArrayBuffer} buffer
+ * @param {{fileName?: string}} [opts] the NAME rule is 21-I's, verbatim: the filename you
+ *   picked off a disk wins, because that is what you will look for afterwards; the
+ *   document's own name is the fallback for a caller with no filename to offer
+ * @returns {Promise<any|null>} the saved session payload (it carries `.id`, which is what
+ *   `mountVolume` takes), or null — not a project file, or a declined confirm
+ */
+export async function importProjectAsSession(buffer, opts = {}) {
+	const read = await readProjectFile(buffer);
+	if (!read) return null;
+	const { entries, doc } = read;
+	if (!(await confirmProjectFormat(doc))) return null;
+	const { unzipSync, strFromU8 } = await import('fflate');
+	const { emptySessionPayload, importSessionPayload } = await import('./sessions');
+
+	/** the exact bytes of one zip entry — a VIEW into fflate's shared buffer hashes as the
+	 * whole buffer, which is the assetShare rule and the one that silently corrupts ids */
+	const exactly = (/** @type {Uint8Array} */ view) =>
+		/** @type {ArrayBuffer} */ (view.buffer.slice(view.byteOffset, view.byteOffset + view.byteLength));
+
+	const manifest = normalizeManifest(doc.manifest);
+	const names = Object.keys(manifest.scenes ?? {});
+	const primary = names.includes(String(manifest.name ?? '')) ? String(manifest.name) : names[0];
+	const history = primary ? (manifest.scenes[primary]?.history ?? []) : [];
+	const pointer = history[history.length - 1] ?? null;
+	const sceneRows = Array.isArray(doc.scenes) ? doc.scenes : [];
+	const sceneRow = sceneRows.find((/** @type {any} */ r) => r.hash === pointer) ?? sceneRows[0] ?? null;
+
+	const fromFile = String(opts.fileName ?? '')
+		.replace(/\.tp$/i, '')
+		.trim();
+	const name = fromFile || String(doc.name ?? '').trim() || 'Imported project';
+
+	/** @type {any} */
+	let payload = null;
+	const sceneBytes = sceneRow ? entries[sceneRow.file] : null;
+	if (sceneBytes) {
+		try {
+			const inner = unzipSync(sceneBytes);
+			const json = inner['session.json'];
+			if (json) payload = JSON.parse(strFromU8(json));
+		} catch {
+			payload = null;
+		}
+	}
+	// a file with no readable scene still becomes a PROJECT entry — its library is the
+	// point, and an empty payload says "no scene" honestly instead of failing the import
+	if (!payload || !Array.isArray(payload.objects)) payload = emptySessionPayload(name);
+	payload.name = name;
+
+	/** @type {{name: string, kind: string, folderId: string|null, hash: string, blob: Blob}[]} */
+	const items = [];
+	/** @type {Set<string>} content hashes already in `items` */
+	const carried = new Set();
+	/** @param {any} row @param {string} fallbackName */
+	const take = async (row, fallbackName) => {
+		const raw = entries[row?.file];
+		if (!raw) return;
+		const bytes = exactly(raw);
+		// hashed from the BYTES rather than trusted from the row: a .tp is content-addressed
+		// and the stored hash is the one field here that could be stale
+		const hash = await hashBytes(bytes);
+		if (carried.has(hash)) return;
+		const itemName = String(row?.name ?? fallbackName);
+		items.push({
+			name: itemName,
+			kind: String(row?.kind ?? kindOf(itemName) ?? 'text'),
+			folderId: row?.folderId == null ? null : String(row.folderId),
+			hash,
+			blob: new Blob([bytes])
+		});
+		carried.add(hash);
+	};
+
+	for (const row of doc.items ?? []) await take(row, 'file');
+	for (const row of doc.assets ?? []) await take(row, String(row?.hash ?? 'asset'));
+	for (const row of sceneRows) {
+		// the chosen scene IS the record's payload; it joins the library only when the file
+		// itself claims it as a library row, which the items loop above has already done
+		if (sceneRow && row.file === sceneRow.file) continue;
+		await take(row, String(row?.hash ?? 'scene') + '.tpscene');
+	}
+
+	payload.library = {
+		folders: (doc.folders ?? []).map((/** @type {any} */ f) => ({
+			id: String(f?.id ?? crypto.randomUUID()),
+			name: String(f?.name ?? 'Folder'),
+			parentId: f?.parentId == null ? null : String(f.parentId)
+		})),
+		items
+	};
+
+	const saved = await importSessionPayload(payload);
+	if (saved)
+		showToast(
+			'"' + saved.name + '" is in Sessions now — a project with ' + items.length + ' file' +
+				(items.length === 1 ? '' : 's') + '. Your library and manifest are untouched.'
+		);
+	return saved;
 }

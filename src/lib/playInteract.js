@@ -225,6 +225,12 @@ function onPointerDown(event) {
 	const target = hit ? topLevelObjectOf(hit.object) : null;
 	press = { t: performance.now(), uuid: target?.uuid ?? null, hit: hit ?? null };
 	if (mode !== 'grab' || !target) return;
+	// W4: on TOUCH a press is the look/move gesture, so it may not also start a carry —
+	// otherwise you could not turn while standing near anything grabbable, and every
+	// swipe near a crate would fling it. The press is still RECORDED above, so
+	// tap-to-interact keeps working; carrying with a thumb wants a gesture of its own
+	// (a long press, or a HUD button) and is not in this fix.
+	if (event.pointerType === 'touch') return;
 	if (!simRunning()) return; // nothing to hold; the tap path still works
 	if (!dynamicUuids().has(target.uuid)) return;
 	const lock = get(lockedObjects).find((/** @type {any} */ entry) => entry[1] === target.uuid);
@@ -246,6 +252,16 @@ function onPointerUp(event) {
 	press = null;
 	if (grab) {
 		endGrab(true);
+		return;
+	}
+	// W4: the touch overlay claims a gesture that TRAVELLED as a look drag (or that
+	// steered the move stick), and says so on the EVENT — a capture-phase
+	// preventDefault, so it has already run by the time this bubble listener sees it.
+	// The convention is `onWheel`'s, one handler down: two claimants of one input agree
+	// through the event, never through a one-shot store flag (the twin-Escape lesson).
+	// A short STILL tap is never claimed, so tap-to-interact works on a phone.
+	if (event.defaultPrevented) {
+		lastUp = 'touch-gesture';
 		return;
 	}
 	if (!wasPress || interactionMode() === 'off') {

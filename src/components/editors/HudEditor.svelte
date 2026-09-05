@@ -66,7 +66,8 @@
 	import { focusStack } from '$lib/windowFocus';
 	import { tabbable, resizeGroup, tabGroups } from '$lib/windowTabs';
 	import { clampWinSize, clampResize, anchorOf } from '$lib/windowSize';
-	import { setDockOccupant, dockHeight, visibleDockKey, activateDock } from '$lib/bottomDock';
+	import { setDockOccupant, dockHeight, visibleDockKey, dockMinimized, activateDock, dockModeArm, forgetDockTab } from '$lib/bottomDock';
+	import { bottomDockable } from '$lib/bottomDockDrop';
 
 	// 21-D5: WHICH document is being authored. `hudDocs` was already keyed
 	// `'scene' | objectUuid`, so "attach this HUD to a camera" is simply authoring the
@@ -128,7 +129,22 @@
 		docked = v;
 		localStorage.setItem('hudDocked', String(v));
 		if (v) activateDock('hud');
+		else forgetDockTab('hud'); // an undock gives up its slot, so re-docking is a fresh add at the end of the strip
 	}
+
+	// W5: consume the shared dock-mode arm — the tab strip's right-click menu asks
+	// through it (the Explorer has had this exact effect since 4b). `docked` is read
+	// from localStorage ONCE at mount, so writing that flag from outside is inert;
+	// `setDocked` owns the mode and is what has to run. Cleared as it is acted on.
+	$effect(() => {
+		const arm = $dockModeArm;
+		if (!arm || arm.key !== 'hud') return;
+		dockModeArm.set(null);
+		untrack(() => {
+			if (arm.docked !== docked) setDocked(arm.docked);
+			hudEditorClose.set(false);
+		});
+	});
 	const myGroup = $derived($tabGroups.find((g) => g.members.includes('hud')) ?? null);
 	const effW = $derived(myGroup ? myGroup.rect.width : winW);
 	const effH = $derived(myGroup ? myGroup.rect.height : winH);
@@ -136,7 +152,9 @@
 		setDockOccupant('hud', !$hudEditorClose && docked, $dockHeight);
 		return () => setDockOccupant('hud', false);
 	});
-	const dockVisible = $derived($visibleDockKey === 'hud');
+	// W2: a MINIMIZED dock renders nothing while every tab stays open (the occupant
+	// report above is untouched, so the strip comes back with its tabs intact)
+	const dockVisible = $derived($visibleDockKey === 'hud' && !$dockMinimized);
 
 	// While the editor is open the artboard shows the screen being EDITED, so the runtime
 	// layer is pointed at it too — otherwise you would lay out one screen and watch
@@ -1410,7 +1428,7 @@
 		>
 			<!-- svelte-ignore a11y_no_static_element_interactions -->
 			<div
-				class="resize-cue absolute -top-1 left-0 right-0 z-10 h-2 cursor-ns-resize"
+				class="resize-cue absolute -top-1 left-0 right-0 z-30 h-2 cursor-ns-resize hover:bg-primary-600/30"
 				style="touch-action: none"
 				title="Drag to resize"
 				onpointerdown={startResize}
@@ -1433,8 +1451,9 @@
 			id="hud-window"
 			class="ui-panel fixed flex flex-col overflow-hidden"
 			use:dragWindow={{ key: 'hud', defaultRect: { left: 240, top: 150 } }}
-			use:focusStack
+			use:focusStack={'hud'}
 			use:tabbable={{ key: 'hud', title: 'HUD editor', openStore: hudEditorClose, isOpen: (v) => !v, close: () => hudEditorClose.set(true) }}
+			use:bottomDockable={{ key: 'hud' }}
 			style="z-index: var(--z-window); max-width: 96vw; max-height: 88vh"
 			style:width="{effW}px"
 			style:height="{effH}px"

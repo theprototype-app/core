@@ -31,8 +31,12 @@ h.run(async () => {
 	// open the Node editor dock first, so its tab strip (with the "+") is on screen
 	await page.locator('p[title="Node editor (N)"]').click();
 	await page.waitForTimeout(1400);
+	// BY ID, not by its glyph — the button renders a lucide <Plus> SVG now and has no
+	// text to match. The id repeats per docked panel, so take the one actually drawn.
 	const plus = await page.evaluate(() => {
-		const btn = [...document.querySelectorAll('button')].find((b) => (b.textContent ?? '').trim() === '＋');
+		const btn = [...document.querySelectorAll('#dock-add-view')].find(
+			(b) => b.getBoundingClientRect().width > 0
+		);
 		if (!btn) return null;
 		const r = btn.getBoundingClientRect();
 		return { x: Math.round(r.x + r.width / 2), y: Math.round(r.y + r.height / 2) };
@@ -370,8 +374,14 @@ h.run(async () => {
 	await page.keyboard.press('Escape');
 	await page.waitForTimeout(300);
 
-	// ---- 9. the tab comes back after PLAY MODE (flowDockSnapshot) ---------
-	// Miss the snapshot line in Controls and the tab is gone for good.
+	// ---- 9. the Node editor's own toggle leaves the HUD tab ALONE ---------
+	// This section used to assert the opposite: N owned the whole docked flow FAMILY, so
+	// one press closed the HUD tab along with it and the next press restored it from a
+	// snapshot — miss a line in that snapshot and the tab was gone for good (the A4
+	// hazard this section was written for). The dock is a tab strip and N answers for
+	// the Node editor tab alone now, so the hazard cannot exist: nobody else's button
+	// closes the HUD tab, and the tab that is SHOWING does not change when the one
+	// behind it closes.
 	const playRound = await page.evaluate(async () => {
 		const s = window.__stores;
 		const wasOpen = !s.hudEditorClose ? null : (() => {
@@ -382,27 +392,40 @@ h.run(async () => {
 		return { wasOpen };
 	});
 	h.check(playRound.wasOpen === false, `premise: the HUD editor is open (close=${playRound.wasOpen})`);
-	// the Controls button is what carries the snapshot logic
-	await page.locator('p[title="Node editor (N)"]').click();
-	await page.waitForTimeout(1000);
-	const hidden = await page.evaluate(() => {
-		let hud, flow;
+	// Open the Node editor as a second tab and put it ON SCREEN: step 4 of the toggle
+	// tree only CLOSES the tab that is showing (a covered tab is called back instead),
+	// so this is the arrangement in which the old family sweep could take the HUD.
+	await page.evaluate(() => {
+		window.__stores.flowGraphClose.set(false);
+		window.__stores.bottomDock.activateDock('flow');
+	});
+	await page.waitForTimeout(900);
+	const both = await page.evaluate(() => {
+		let hud, flow, visible;
 		window.__stores.hudEditorClose.subscribe((v) => (hud = v))();
 		window.__stores.flowGraphClose.subscribe((v) => (flow = v))();
-		return { hud, flow, dockInDom: !!document.querySelector('#hud-dock') };
-	});
-	h.check(hidden.hud === true && hidden.flow === true, 'toggling the dock off hides the HUD tab with the family');
-	await page.locator('p[title="Node editor (N)"]').click();
-	await page.waitForTimeout(1400);
-	const back = await page.evaluate(() => {
-		let hud;
-		window.__stores.hudEditorClose.subscribe((v) => (hud = v))();
-		return { hud, dockInDom: !!document.querySelector('#hud-dock') };
+		window.__stores.bottomDock.visibleDockKey.subscribe((v) => (visible = v))();
+		return { hud, flow, visible };
 	});
 	h.check(
-		back.hud === false,
-		`and toggling it on RESTORES the HUD tab — the flowDockSnapshot line (close=${back.hud})`
+		both.hud === false && both.flow === false && both.visible === 'flow',
+		`premise: HUD and Node editor are both docked, the Node editor showing (visible=${both.visible})`
 	);
+	await page.locator('p[title="Node editor (N)"]').click();
+	await page.waitForTimeout(1000);
+	const after = await page.evaluate(() => {
+		let hud, flow, visible;
+		window.__stores.hudEditorClose.subscribe((v) => (hud = v))();
+		window.__stores.flowGraphClose.subscribe((v) => (flow = v))();
+		window.__stores.bottomDock.visibleDockKey.subscribe((v) => (visible = v))();
+		return { hud, flow, visible, dockInDom: !!document.querySelector('#hud-dock') };
+	});
+	h.check(after.flow === true, 'the Node editor button closes the Node editor tab');
+	h.check(
+		after.hud === false && after.dockInDom,
+		`and the HUD tab is NOT swept up with it — it stays open and mounted (close=${after.hud})`
+	);
+	h.check(after.visible === 'hud', `and the dock promotes it rather than going away (${after.visible})`);
 
 	await h.finish(browser);
 });

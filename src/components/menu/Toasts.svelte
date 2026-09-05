@@ -1,6 +1,22 @@
 <script lang="ts">
 	import { Info, UserPlus, Download } from '@lucide/svelte';
     import { cameraPreview, stopCameraPreview, toggleCameraControl, previewLabel } from '$lib/cameraPreview'
+    // R22 round 2: the connect-time library offer (see the effect below)
+    import { pullAllShared, bulkCounts, pendingShareAsk } from '$lib/sharedLibrary'
+    // R22 round 7: the offer is for a peer who JOINED somebody — the host's library
+    // already is the session's, so there is nothing of anybody else's to adopt
+    import { sessionHost } from '$lib/connectionState'
+    import { autoDownload } from '$lib/sharedLibrary'
+    import { explorerItems } from '$lib/explorer'
+    import { projectManifest } from '$lib/projectManifest'
+    // R22 round 9: the offer has to know whether the OPEN SCENE is worth saving before it
+    // talks about files. `recomputeSceneDirty` is the SYNCHRONOUS verdict — `$sceneDirty`
+    // is throttled by design (recomputing costs a whole-scene serialization), which is
+    // right for a title bar and wrong for a prompt that is deciding what to say.
+    import { sceneDirty, recomputeSceneDirty } from '$lib/sceneIdentity'
+    // open the Explorer BEFORE arming: the save card is drawn by the Explorer's own effect,
+    // so arming a panel that is not mounted arms nothing
+    import { armExplorerSceneSave, explorerClose } from '../../stores/appStore'
     import { peers, loading, loadingcount, pendingApprovals, waitingForApproval, userdata, toastStore, fixLight, showSidebar, specatorMode, restorePanels, appNotice, connectDrawerOpen, connectDrawerTab, toastsInDrawerOnly, showInfoToast, dismissToastById } from '../../stores/appStore'
     import { restoreAvailable, restoreSnapshot, dismissRestore } from '$lib/autosave'
     import { cancelOutboundRequest } from '$lib/peerApproval'
@@ -12,7 +28,7 @@
     import { untrack } from 'svelte';
     // P2b: watching follows a peer's camera IN THIS WORLD, so it cannot survive them
     // opening another scene. Users.svelte gates STARTING one; this is the other half.
-    import { peerScenes } from '$lib/peerScenes';
+    import { peerScenes, elsewhereThan, PRIVATE_SCENE } from '$lib/peerScenes';
     import { currentLevel } from '$lib/levels';
     import { showToast } from '../../stores/appStore';
 
@@ -49,6 +65,13 @@
     // …and stop by itself when the peer we are watching opens another scene. ONLY ON
     // EVIDENCE, the same rule the button uses: an absent row means "we have not been
     // told", and no name on our side means there is nothing to compare against.
+    //
+    // R22 ROUND 36 (rooms): the test is `elsewhereThan` itself now, with the HOST passed,
+    // rather than a hand-written "both named and different". It was the same only-on-
+    // evidence rule spelled out a third time, and it inherited the same hole: a peer
+    // walking out of the session's world into a scene of their own left us watching a
+    // camera in a world we do not have. The one unknown that still allows is an ABSENT
+    // row — an older build — which the predicate keeps.
     $effect(() => {
         const map = $peerScenes;
         // `specatorMode` is declared writable(false) but holds a peer-id STRING when it
@@ -56,11 +79,17 @@
         const watching = typeof $specatorMode === 'string' ? $specatorMode : '';
         const ours = $currentLevel?.name ?? '';
         if (!watching) return;
+        // R22 round 36 (review): WE went private while watching. The pure predicate cannot
+        // see our own privacy (a private HOST even resolves an unnamed peer INTO our private
+        // scene), so the caller states it: there is no world of theirs we stand in any more.
+        const away = $currentLevel?.private ? PRIVATE_SCENE : elsewhereThan(map, ours, watching, $sessionHost);
+        if (!away) return;
+        // the sentinels are places, not names: a private peer and the session's own world
+        // both read as somewhere we cannot follow, and neither has a scene to name.
         const theirs = map?.[watching]?.scene ?? '';
-        if (!theirs || !ours || theirs === ours) return;
         untrack(() => {
             exitSpectate();
-            showToast('Stopped watching — they opened "' + theirs + '"');
+            showToast(theirs ? 'Stopped watching — they opened "' + theirs + '"' : 'Stopped watching — they left this scene');
         });
     });
 
@@ -160,6 +189,15 @@ function autoDismiss(node: any, toast: any) {
 // <Toast> blocks — which is why they looked nothing like the other cards and
 // never appeared in the drawer's Toasts tab. They are STATE-DRIVEN, so mirror
 // each source store into a sticky INFO entry and pull it when the source clears.
+// once answered, do not ask again this session: the prompt is a nudge, and one that
+// came back every time a file landed would be an interruption instead
+let libraryPromptDone = false;
+/** R22 round 30 C2: the share/stash half of this card moved into the Explorer strip,
+ * so the arm-then-confirm state went with it. What stays here is only what the
+ * Explorer cannot say: the scene on screen is unsaved, and files nobody is fetching. */
+/** the ask announced by `explorer-share-ask`, so one batch cannot toast twice */
+let announcedAsk = '';
+
 $effect(() => {
     const snap = $restoreAvailable;
     if (snap)
@@ -174,6 +212,117 @@ $effect(() => {
         );
     else dismissToastById('restore-session');
 });
+// R22 round 2 (user): WHAT ABOUT THE FILES ALREADY IN MY EXPLORER? Connecting to a
+// session with a library full of local files used to say nothing at all — they simply
+// stayed invisible to everyone, which is correct behaviour and a terrible first
+// impression. So the moment a session exists and there is something to offer, ask.
+//
+// R22 round 30 C2 — HALF OF IT LEFT. "There is no logic in having share/stash options"
+// here was the report, and the reason is placement: this card floats over the 3D view
+// and expires, while the thing it is asking about is a list of files in a panel. The
+// share question is the Explorer's strip now (`pendingShareAsk`). What remains is what
+// the Explorer genuinely cannot say — the SCENE on screen has unsaved work, and there
+// are shared files nothing is fetching because auto-download is off. With neither true
+// there is no card at all, which is the "do not prompt" half of the same report.
+$effect(() => {
+    // a SET, not an array (peerHandler) — `.length` here meant the prompt never showed
+    // a SET, not an array (peerHandler) — `.length` here meant the prompt never showed
+    // ...and only for a JOINER: `sessionHost` is null when we are the host, and a host
+    // has nothing to adopt because the project is already theirs
+    const connected = ($peers?.openedPeers?.size ?? 0) > 0 && !!$sessionHost;
+    // read the stores so the effect re-runs as the library and the index change
+    void $explorerItems;
+    void $projectManifest;
+    const counts = connected ? bulkCounts() : { local: 0, missing: 0 };
+    // R22 round 9 (reported): the offer said "1 file" for a scene the user had not saved,
+    // which is true and useless — the one file was a `.tpscene` from an earlier save, and
+    // sharing it would hand peers a STALE version of what is on screen. Two questions,
+    // asked in the right order: is there work here that is not written down, and only then
+    // are there files to share.
+    //
+    // `worldEmpty` is what stops this from nagging: with nothing in the scene and nothing
+    // in the library there is no offer to make at all, which is the other half of the
+    // report ("do not prompt").
+    void $currentLevel;
+    const worldEmpty = !(($objectsGroup?.children?.length ?? 0) > 0);
+    // `libraryPromptDone` FIRST, and `$sceneDirty` before the recompute: the synchronous
+    // verdict costs a whole-scene serialization, and this effect re-runs on every manifest
+    // change — which during active sharing is often. Once the user has answered the card
+    // there is nothing to decide, and while the throttled store already says dirty there is
+    // nothing to find out.
+    const unsavedScene =
+        connected &&
+        !worldEmpty &&
+        !libraryPromptDone &&
+        (!$currentLevel?.name || $sceneDirty || recomputeSceneDirty());
+    const parts = [];
+    if (unsavedScene)
+        parts.push($currentLevel?.name
+            ? `“${$currentLevel.name}” has unsaved changes`
+            : 'this scene has never been saved');
+    // R22 round 8: only worth mentioning when the app is NOT already fetching them.
+    // With auto-download on (the default) this line describes a job in progress, and a
+    // button for it would be a button for something already happening.
+    if (counts.missing && !$autoDownload)
+        parts.push(`${counts.missing} shared file${counts.missing === 1 ? '' : 's'} not downloaded`);
+    // R22 round 7 (locked answer): NO SECOND DIALOG. Each button does one thing and says
+    // what it costs; the destructive one confirms IN PLACE (its label becomes the
+    // question) rather than opening a modal that asks it again. Only "Not now" dismisses
+    // the toast — picking an action dismisses it because the action happened, which is
+    // the timing bug in the modal version: Cancel closed the toast it came from.
+    if (connected && parts.length && !libraryPromptDone)
+        showInfoToast(
+            'shared-library-offer',
+            parts.join(' \u00b7 ') + '.',
+            [
+                // R22 round 9: the SAVE comes first when there is unsaved work — sharing a stale
+                // file is the failure this was reported as. It arms the Explorer's own inline
+                // save card (the no-prompt rename convention) rather than inventing a name.
+                ...(unsavedScene
+                    ? [{ label: 'Save the scene…', action: () => { libraryPromptDone = true; explorerClose.set(false); armExplorerSceneSave(null); dismissToastById('shared-library-offer'); } }]
+                    : []),
+                ...(counts.missing && !$autoDownload
+                    ? [{ label: 'Download theirs', action: () => { libraryPromptDone = true; const n = pullAllShared(); showToast(`Fetching ${n} file${n === 1 ? '' : 's'} from peers`); dismissToastById('shared-library-offer'); } }]
+                    : []),
+                // "Not now" belongs to any card that asked for something — an offer to save
+                // the scene is as declinable as an offer to download somebody else's files
+                ...(unsavedScene || (counts.missing && !$autoDownload)
+                    ? [{ label: 'Not now', action: () => { libraryPromptDone = true; dismissToastById('shared-library-offer'); } }]
+                    : [])
+            ],
+            () => { libraryPromptDone = true; }
+        );
+    else dismissToastById('shared-library-offer');
+});
+
+// R22 round 30 C2 — THE ASK WHEN THE EXPLORER IS SHUT.
+//
+// The question itself is a strip inside the Explorer, which is the right place for it and
+// is also NOT MOUNTED half the time. So this is the pointer, not the question: one toast
+// per batch saying what happened and offering the way to the panel that can answer it.
+// `pendingShareAsk` STAYS ARMED — nothing is decided here — so opening the Explorer later,
+// by this button or by any other route, still shows the strip.
+$effect(() => {
+    const ask = $pendingShareAsk;
+    if (!ask) {
+        announcedAsk = '';
+        return;
+    }
+    // only while the panel that draws the strip is closed; opening it is the answer to
+    // this toast, and the strip takes over from there
+    if (!$explorerClose) return;
+    const sig = ask.items.map((i) => i.id).join('|');
+    if (sig === announcedAsk) return;
+    announcedAsk = sig;
+    const n = ask.items.length;
+    untrack(() =>
+        showToast(
+            `${n} file${n === 1 ? '' : 's'} added — open the Explorer to share ${n === 1 ? 'it' : 'them'} with the session`,
+            [{ label: 'Open Explorer', action: () => explorerClose.set(false) }]
+        )
+    );
+});
+
 $effect(() => {
     const notice = $appNotice;
     const seen = typeof localStorage !== 'undefined' && !!localStorage.getItem('hasSeenDisclaimer');
@@ -387,7 +536,17 @@ style="z-index: var(--z-toast-low); pointer-events: none;"
             {#if typeof toast !== 'string' && toast.actions?.length}
                 <div class="tp-toast-actions">
                     {#each toast.actions as entry}
-                        <button class="tp-toast-action" onclick={() => { entry.action(); dismiss(toast); }}>{entry.label}</button>
+						<!-- R22 round 7: `keepOpen` is what makes an INLINE CONFIRM possible. Every
+						     action used to dismiss the toast, so a button that arms a second press
+						     closed the very card it was arming — which is the timing complaint the
+						     modal version had, one layer down. -->
+						<button
+							class="tp-toast-action"
+							onclick={() => {
+								entry.action();
+								if (!entry.keepOpen) dismiss(toast);
+							}}>{entry.label}</button
+						>
                     {/each}
                 </div>
             {/if}

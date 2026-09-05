@@ -70,3 +70,137 @@
     white-space: nowrap;
   }
 }
+/*
+  R22 round 9 — THE SEGMENTED CONTROL. The app had none outside ToolboxWindow's
+  `.tbx-seg`, which is styled by the toolbox shell it lives in and so cannot be reused;
+  two places wanted one in the same round (the Explorer's Thumbnails|List toggle and the
+  Sessions Scenes|Projects filter), which is the point at which it stops being local.
+
+  Not a Tailwind utility NAME — redeclaring one of those in global CSS silently beats
+  every layered utility in the app, which is the documented `.hidden` disaster.
+
+  The armed half is driven by `aria-pressed`, so the styling and the accessibility tree
+  cannot disagree, and a test asserts the COMPUTED colour rather than a class string.
+*/
+@utility tp-seg {
+  display: inline-flex;
+  overflow: hidden;
+  border: 1px solid var(--border, #374151);
+  border-radius: 4px;
+}
+
+@utility tp-seg-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  padding: 2px 6px;
+  font-size: 11px;
+  color: #9ca3af;
+  &:hover {
+    color: #e5e7eb;
+  }
+  &[aria-pressed='true'] {
+    background: var(--accent, #3b82f6);
+    color: #fff;
+  }
+  /*
+    R22 round 13: a HALF that is switched off. The Explorer's Bin|Log control is the first
+    consumer — the deleted-files log is a preference, so its half disables rather than
+    disappearing, and the app's convention is to disable WITH the reason (which the
+    consumer renders beside the control; this only has to make the state legible).
+
+    `default`, not `not-allowed`: the same reading the Storage panel settled on one domain
+    over — a control that is off is not a control that is refusing you.
+  */
+  &:disabled {
+    cursor: default;
+    opacity: 0.45;
+  }
+  &:disabled:hover {
+    color: #9ca3af;
+  }
+}
+
+/* ---------------------------------------------------------------------------
+   TRANSPORT STRIP — the app's one media transport look, shared by the audio
+   player and the object preview's animation player.
+
+   R22 ROUND 15 (user): "be able to pause and slide animation using same player
+   style". "Same style" is a promise two copies of a stylesheet cannot keep, so
+   the strip's LOOK lives here (the `tp-seg` / `tp-check` precedent) while each
+   player keeps its own controls: audio has volume, mute and loop; the animation
+   has a clip picker and a frame readout. What they share is the shape — a
+   fixed-height row whose only growing child is the seek bar, which is what
+   keeps a transport slim in a tall window.
+   --------------------------------------------------------------------------- */
+.tp-tr-strip {
+  display: flex;
+  height: 30px;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 6px;
+  border: 1px solid var(--border, #374151);
+  border-radius: 4px;
+  background: var(--surface, #1f2937);
+  padding: 0 8px;
+}
+.tp-tr-btn {
+  display: flex;
+  height: 20px;
+  width: 20px;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
+  border-radius: 3px;
+  color: #d1d5db;
+}
+.tp-tr-btn:hover {
+  background: rgb(255 255 255 / 8%);
+  color: #fff;
+}
+.tp-tr-btn:disabled {
+  opacity: 0.4;
+}
+.tp-tr-play {
+  color: var(--accent, #3b82f6);
+}
+.tp-tr-on {
+  background: var(--accent, #3b82f6);
+  color: #fff;
+}
+.tp-tr-time {
+  flex: 0 0 auto;
+  font-size: 10px;
+  font-variant-numeric: tabular-nums;
+  color: #9ca3af;
+}
+/* the seek bar is the one thing that grows; everything beside it is fixed */
+.tp-tr-seek {
+  min-width: 0;
+  flex: 1;
+}
+.tp-tr-range {
+  height: 4px;
+  appearance: none;
+  border-radius: 2px;
+  background: #4b5563;
+  cursor: pointer;
+}
+.tp-tr-range::-webkit-slider-thumb {
+  height: 11px;
+  width: 11px;
+  appearance: none;
+  border-radius: 50%;
+  background: var(--accent, #3b82f6);
+}
+.tp-tr-range::-moz-range-thumb {
+  height: 11px;
+  width: 11px;
+  border: 0;
+  border-radius: 50%;
+  background: var(--accent, #3b82f6);
+}
+.tp-tr-range:disabled {
+  opacity: 0.5;
+}

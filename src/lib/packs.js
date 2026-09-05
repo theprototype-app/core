@@ -387,6 +387,94 @@ function attributionHtmlFrom(manifest) {
 	);
 }
 
+/**
+ * R22 round 11 (user): "for packs add right click create pack, so I can set name and
+ * create items there, by dragging from explorer folders or multiple items".
+ *
+ * A pack you make yourself is an IMPORTED pack with no zip behind it — same record, same
+ * shelf, same menu — so nothing downstream has to learn a fourth kind. The only new thing
+ * is that it starts empty and grows by drag.
+ *
+ * THE NAME IS THE IDENTITY, not the title. `name` keys packByName, the item cache, the
+ * installed-list dedupe, the thumbnail cache prefix and `activeFolder`'s `pack:<name>` —
+ * 21-G1 spelled that out when it added `renamePack`, which for exactly this reason writes
+ * only the TITLE. So a new pack mints a slug that cannot collide with a default pack's or
+ * with another of the user's, and the display name the user typed is the title.
+ * @param {string} title @returns {any} the pack record
+ */
+export function createPack(title) {
+	const label = String(title ?? '').trim() || 'My pack';
+	const slug = label.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') || 'pack';
+	const taken = new Set(get(packs).map((/** @type {any} */ p) => p.name));
+	let name = 'user-' + slug;
+	let n = 2;
+	while (taken.has(name)) name = 'user-' + slug + '-' + n++;
+	const pack = {
+		name,
+		title: label,
+		source: 'imported',
+		items: [],
+		copyright: '',
+		license: '',
+		homepage: '',
+		attributionHtml: ''
+	};
+	registerImportedPack(pack);
+	return pack;
+}
+
+/**
+ * Add LIBRARY ITEMS to a pack. A pack item is a REFERENCE to a library record (id, name,
+ * kind, thumbnail) — which is what an imported pack's items already are, so a placed item
+ * resolves exactly the same way. Nothing is copied and no bytes move: the pack is a view
+ * over files the library already holds.
+ *
+ * Refuses a duplicate by id, so dropping the same file twice is a no-op rather than two
+ * rows that place the same object.
+ * @param {string} name the pack's IDENTITY @param {any[]} records library item records
+ * @returns {number} how many were added
+ */
+export function addToPack(name, records) {
+	const pack = get(packs).find((/** @type {any} */ p) => p.name === name);
+	if (!pack) return 0;
+	const have = new Set((pack.items ?? []).map((/** @type {any} */ i) => i.id));
+	const added = [];
+	for (const record of records ?? []) {
+		if (!record?.id || have.has(record.id)) continue;
+		have.add(record.id);
+		added.push({
+			id: record.id,
+			name: record.name,
+			kind: record.kind,
+			thumbnail: record.thumbnail ?? null,
+			license: '',
+			author: '',
+			source: ''
+		});
+	}
+	if (!added.length) return 0;
+	const next = { ...pack, items: [...(pack.items ?? []), ...added] };
+	registerImportedPack(next);
+	// THE OPEN VIEW IS A SEPARATE STORE. `registerImportedPack` drops the item CACHE, so a
+	// re-open is correct — but the grid you are looking at right now reads `openPackItems`,
+	// and without this the pack does not grow until you navigate away and back, which
+	// reads as a drop that did nothing.
+	if (get(openPackItems).some((/** @type {any} */ i) => i.packName === name))
+		void loadPackItems(next);
+	return added.length;
+}
+
+/** Drop items back OUT of a pack. @param {string} name @param {string[]} ids @returns {number} */
+export function removeFromPack(name, ids) {
+	const pack = get(packs).find((/** @type {any} */ p) => p.name === name);
+	if (!pack) return 0;
+	const drop = new Set(ids ?? []);
+	const kept = (pack.items ?? []).filter((/** @type {any} */ i) => !drop.has(i.id));
+	const gone = (pack.items ?? []).length - kept.length;
+	if (gone) registerImportedPack({ ...pack, items: kept });
+	return gone;
+}
+
 /** B3 (.tpscene): the imported packs, for bundling into a scene export. */
 export function installedPacksSnapshot() {
 	return getInstalled();

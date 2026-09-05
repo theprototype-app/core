@@ -65,7 +65,11 @@ h.run(async () => {
 	// shipped with no entry point at all and every check here still passed.
 	await page.locator('p[title="Node editor (N)"]').click();
 	await page.waitForTimeout(1200);
-	const addBtn = page.locator('.tab-note', { hasText: '＋' }).first();
+	// BY ID, not by its glyph: the strip's add button used to render the literal '＋' and
+	// now renders a lucide <Plus> SVG with no text at all, so a hasText selector silently
+	// matches nothing and this premise fails before the feature is ever exercised. The id
+	// repeats once per docked panel, hence :visible — only the showing panel draws a strip.
+	const addBtn = page.locator('#dock-add-view:visible').first();
 	h.check(await addBtn.count() === 1, 'premise — the dock tab strip has its + button');
 	await addBtn.click();
 	await page.waitForTimeout(500);

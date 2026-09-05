@@ -1,4 +1,4 @@
-import { writable } from 'svelte/store';
+import { writable, get } from 'svelte/store';
 
 /**
  * Open-core extension points (roadmap #13 batch M1). These seams are INERT in the
@@ -30,6 +30,12 @@ const ALWAYS_ALLOWED = new Set([
 	'getmodulestate',
 	'getnodedefs',
 	'getjoints',
+	// A1/A2: WHERE A PEER IS STANDING. On the floor because it is the ROOM GATE'S OWN
+	// EVIDENCE - a plugin that gated `atscene` would silently switch off scene adoption
+	// AND every room gate built on it (`canApplyByRoom` reads no evidence, so it allows
+	// everything), i.e. it would relax the gate by tightening one message. It is presence
+	// besides, which is this floor's own family.
+	'atscene',
 	// DEVX #18: the flow trigger log. On the floor beside `getnodes` for the same reason
 	// the list gives — answering a full-state REQUEST is how a peer ever syncs, and this
 	// one decides whether a joiner sees a collected world or a reset one. The `triggers`
@@ -175,3 +181,45 @@ export const cloudPluginInfo = writable(null);
  *     invite?: (peerId, room) => void }
  * @type {import('svelte/store').Writable<any>} */
 export const scenePresence = writable(null);
+
+/**
+ * R22-R1: WHO OWNS A SHARED FILE, the `rolesInfo` bridge shape one domain over. A
+ * shared-library row carries an owner so the Explorer can say who put it there, and
+ * "who" has three tiers the app can actually distinguish:
+ *
+ *   · the peer ID          — always available, and all an anonymous peer has
+ *   · a nickname           — `userdata` slot 1, already replicated, still unverified
+ *   · an ACCOUNT username  — only a logged-in user has one, and only the cloud plugin
+ *     knows it, which is why this is a bridge and not a store core writes
+ *
+ * The third tier is the one that earns a checkmark: core renders it as verified
+ * because an authenticated plugin vouched for it, and renders nothing at all without
+ * a plugin. NULL is the OSS state and every reader treats it as "no account" — never
+ * as "not logged in", which is a claim core is in no position to make.
+ *
+ * Shape (loose on purpose; core reads defensively):
+ *   { username: string, verified?: boolean }
+ * @type {import('svelte/store').Writable<any>} */
+export const cloudIdentity = writable(null);
+
+/** Plugin seam for the above (cloudApi). Passing null clears it — a logout must be
+ * able to take the checkmark back. @param {any} info */
+export function setCloudIdentity(info) {
+	cloudIdentity.set(info && typeof info === 'object' && info.username ? info : null);
+}
+
+/**
+ * R22-R1: the owner stamp for a row WE publish. Three tiers, best first, and the
+ * `account` key is present ONLY when a plugin vouched for one — its absence is what
+ * makes the Explorer's checkmark mean something.
+ * @param {string} peerId @param {string} name
+ * @returns {{id: string, name: string, account?: string}}
+ */
+export function ownerStamp(peerId, name) {
+	const id = String(peerId ?? '');
+	const who = get(cloudIdentity);
+	/** @type {any} */
+	const out = { id, name: String(name ?? '') };
+	if (who?.username) out.account = String(who.username);
+	return out;
+}

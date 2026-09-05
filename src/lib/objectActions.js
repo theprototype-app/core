@@ -33,7 +33,7 @@ import {
 	toggleExpand
 } from '../stores/appStore';
 import { canEditObject, warnViewerReadOnly } from './objectPermissions';
-import { stripEditOverlays } from './editOverlays';
+import { stripEditOverlays, isEditOverlay } from './editOverlays';
 // B7: the transient marker (a LEAF — two stores only, so no cycle back through history)
 import { markTransient } from './transientObjects';
 import {
@@ -49,9 +49,29 @@ import {
 /** @type {any} */ let animModule = null;
 /** @type {any} */ let graphModule = null;
 /** @type {any} */ let shaderModule = null;
+/** @type {any} */ let patchModule = null;
 import('./animationPreview').then((m) => (animModule = m));
 import('./flowGraphs').then((m) => (graphModule = m));
 import('./shaderGraph').then((m) => (shaderModule = m));
+// 23-A4: the cables internal to a duplicated set ride onto the copies
+import('./audioPatch').then((m) => (patchModule = m));
+
+/**
+ * 23-A4: old uuid -> new uuid for every node of a duplicated tree, so a cable
+ * between two DESCENDANTS of a duplicated group is copied too. The clone was
+ * stripped of edit overlays before its uuids were assigned (see duplicateObject),
+ * so the source walk skips them to stay index-aligned.
+ * @param {any} source @param {any} clone @returns {Record<string, string>}
+ */
+function uuidMapOf(source, clone) {
+	const from = collectTree(source).filter((node) => !isEditOverlay(node));
+	const to = collectTree(clone);
+	/** @type {Record<string, string>} */
+	const map = {};
+	if (from.length === to.length) from.forEach((node, index) => (map[node.uuid] = to[index].uuid));
+	else map[source.uuid] = clone.uuid; // trees disagree: keep the copy honest at the top level
+	return map;
+}
 
 /**
  * Copy the per-uuid state that BELONGS to an object onto its fresh clone.
@@ -387,7 +407,7 @@ function stripSelectionTint(source, clone) {
  * the spawner's entire point: thirty-two crates would be thirty-two replicated graph
  * documents, into every peer and every save path, for objects that exist for one run.
  * @param {string=} uuid - defaults to the selected object
- * @param {{select?: boolean, history?: boolean, transient?: boolean, at?: number[]}=} options
+ * @param {{select?: boolean, history?: boolean, transient?: boolean, at?: number[], carryCables?: boolean}=} options
  *   select:false leaves the selection alone (duplicateSelection selects the whole clone
  *   SET once, at the end)
  */
@@ -438,6 +458,10 @@ export function duplicateObject(uuid, options = {}) {
 	// message so a peer has the object before its clips/graph arrive (not
 	// required — both stores tolerate either order — but it keeps a trace readable)
 	if (!options.transient) carryObjectState(source.uuid, clone.uuid);
+	// 23-A4: cables inside THIS object's tree (a self-loop, or between children of a
+	// group). A set duplicate passes carryCables:false and copies across the whole set
+	// once instead, so a cross-member cable is copied and a self-loop is not copied twice.
+	if (!options.transient && options.carryCables !== false) patchModule?.copyCablesWithin(uuidMapOf(source, clone));
 
 	if (options.select !== false) selectObject(clone.uuid);
 	if (options.history !== false) recordObjectPresence('create', clone);
@@ -466,10 +490,20 @@ export function duplicateSelection() {
 	// sources' tints one by one — the FIRST clone was made from a still-tinted
 	// source and then had that tint recorded as its "original". Clone the whole
 	// set first (each copy un-tinted by stripSelectionTint), select once after.
+	const group = get(objectsGroup);
+	/** @type {Record<string, string>} */
+	const uuidMap = {};
 	const clones = uuids
-		.map((uuid) => duplicateObject(uuid, { select: false }))
+		.map((uuid) => {
+			const source = group?.getObjectByProperty('uuid', uuid);
+			const clone = duplicateObject(uuid, { select: false, carryCables: false });
+			if (source && clone) Object.assign(uuidMap, uuidMapOf(source, clone));
+			return clone;
+		})
 		.filter(Boolean)
 		.map((clone) => clone.uuid);
+	// 23-A4: the cables internal to the SET, once, with every member's uuids remapped
+	if (clones.length) patchModule?.copyCablesWithin(uuidMap);
 	if (clones.length) applySelectionSet(clones);
 	return clones;
 }
@@ -540,6 +574,14 @@ registerHistoryKind('props', (entry, state) => {
 		else delete object.userData.camera;
 		if (peer)
 			peer.send({ type: 'objectParameters', parameter: 'camera', uuid: entry.uuid, camera: state.camera });
+	}
+	if ('device' in state) {
+		// 23-A3: a device's document rides the same kind; the audioDevices reconcile
+		// rebuilds/re-params the subgraph from the poke below
+		if (state.device) object.userData.device = state.device;
+		else delete object.userData.device;
+		if (peer)
+			peer.send({ type: 'objectParameters', parameter: 'device', uuid: entry.uuid, device: state.device });
 	}
 	if ('origin' in state) {
 		// 17-D: the per-object transform origin (pivot offset) is scene data, so

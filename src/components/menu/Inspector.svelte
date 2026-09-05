@@ -17,6 +17,7 @@
 	import { sineIn } from 'svelte/easing';
 	import { applyExplorerImage } from '$lib/explorerDrop';
 	import { explorerItems, explorerFolders, inspectedFile, itemBlob, renameItem, deleteItem, updateItemBytes } from '$lib/explorer';
+	import { decodeMeta } from '$lib/audioEngine';
 	import { openTextEditor, openImagePreview } from '$lib/fileWindows';
 	import {
 		removeObjectTexture,
@@ -27,6 +28,9 @@
 		setObjectsTexture
 	} from '$lib/materialsHandler';
 	import { recordEntry, beginHistoryBatch, endHistoryBatch, recordTransformSet } from '$lib/history';
+	import { deviceOf, deviceSpec, isDeviceObject, setDeviceFor, previewDeviceParams } from '$lib/audioDevices';
+	import { MUSIC_TOOLBOX_ID, musicToolboxPick } from '$lib/musicToolbox';
+	import { openModuleToolbox } from '$lib/moduleToolboxes';
 	import { canEditObject } from '$lib/objectPermissions';
 	import {
 		attachMultiPivot,
@@ -356,6 +360,102 @@
 		insTargets.filter((/** @type {any} */ o) => o?.material && !Array.isArray(o.material))
 	);
 	const matCount = $derived(matTargets.length > 1 ? matTargets.length : 0);
+
+	// ---- 23-B4: a device's declared params, fanned over the selection ----------------
+	// The same declarative params the Music toolbox renders, written through the same
+	// single path (setDeviceFor), fanned with fanOn like every other Inspector write so a
+	// set of N is ONE undo. Presets and the mixer stay in the toolbox: the section links
+	// to it (the shader-notice seam's shape) rather than duplicating them.
+	/** bumps after a local device write so the rows re-read without a store poke */
+	let devTick = $state(0);
+	/** selected objects that carry a device document */
+	const devTargets = $derived(insTargets.filter((/** @type {any} */ o) => isDeviceObject(o)));
+	/** the primary device: the selected object when it is one, else the first in the set */
+	const devPrimary = $derived(
+		devTargets.find((/** @type {any} */ o) => o?.uuid === $selectedObject?.uuid) ?? devTargets[0] ?? null
+	);
+	/** the section's rows come from the PRIMARY's spec (an unknown kind has none) */
+	const devParams = $derived(devPrimary ? (deviceSpec(devPrimary.userData.device.kind)?.params ?? []) : []);
+	/** the set members whose kind declares `key` - the ones a write fans to @param {string} key */
+	function devTargetsFor(key) {
+		return devTargets.filter((/** @type {any} */ o) =>
+			(deviceSpec(o.userData?.device?.kind)?.params ?? []).some((/** @type {any} */ p) => p?.key === key)
+		);
+	}
+	/** @param {string} key */
+	function devValue(key) {
+		void $objectsGroup;
+		void devTick;
+		return devPrimary ? deviceOf(devPrimary)?.params?.[key] : undefined;
+	}
+	/** do the set's members disagree on `key`? @param {string} key */
+	function devMixed(key) {
+		void $objectsGroup;
+		void devTick;
+		const list = devTargetsFor(key);
+		if (list.length < 2) return false;
+		const first = deviceOf(list[0])?.params?.[key];
+		return list.some((/** @type {any} */ o) => deviceOf(o)?.params?.[key] !== first);
+	}
+	/** a range write lands on the spec's grid; a nudge smaller than one step becomes ONE
+	 * step in that direction (B2's onGrid rule) @param {any} p @param {number} current @param {number} v */
+	function devSnap(p, current, v) {
+		const g = Number(p?.step) || 0;
+		if (!(g > 0)) return v;
+		let out = Math.round(v / g) * g;
+		if (out === current && v !== current) out = current + Math.sign(v - current) * g;
+		if (Number.isFinite(p.min)) out = Math.max(p.min, out);
+		if (Number.isFinite(p.max)) out = Math.min(p.max, out);
+		return Number(out.toFixed(6));
+	}
+	/** ONE setDeviceFor per member; N>1 collapses into one undo entry through fanOn
+	 * @param {string} key @param {any} value @param {Record<string, any>|null} [befores] */
+	function devWrite(key, value, befores = null) {
+		fanOn(devTargetsFor(key), 'Device', (object) =>
+			setDeviceFor(object.uuid, { params: { [key]: value } }, befores ? { before: befores[object.uuid] } : undefined)
+		);
+		devTick++;
+	}
+	/** a DragRow scrub is one gesture (B2's shape): previews while it runs, one exact write
+	 * with each member's START document as `before` on release
+	 * @type {{key: string, befores: Record<string, any>, last: any, lastSent: number}|null} */
+	let devGesture = null;
+	/** @param {string} key */
+	function devScrubStart(key) {
+		/** @type {Record<string, any>} */
+		const befores = {};
+		for (const o of devTargetsFor(key)) befores[o.uuid] = deviceOf(o);
+		devGesture = { key, befores, last: undefined, lastSent: 0 };
+	}
+	/** @param {any} p @param {number} v */
+	function devChange(p, v) {
+		const key = p.key;
+		const value = devSnap(p, Number(devValue(key) ?? p.default ?? 0), v);
+		const g = devGesture;
+		if (g && g.key === key) {
+			g.last = value;
+			const now = performance.now();
+			const broadcast = now - g.lastSent >= 66;
+			if (broadcast) g.lastSent = now;
+			for (const o of devTargetsFor(key)) previewDeviceParams(o.uuid, { [key]: value }, { broadcast });
+			devTick++;
+			return;
+		}
+		if (value === Number(devValue(key) ?? p.default ?? 0) && !devMixed(key)) return;
+		devWrite(key, value);
+	}
+	/** @param {string} key */
+	function devScrubEnd(key) {
+		const g = devGesture;
+		devGesture = null;
+		if (!g || g.key !== key || g.last === undefined) return;
+		devWrite(key, g.last, g.befores);
+	}
+	/** the seam: open the toolbox scoped to the primary rather than duplicating it here */
+	function openMusicToolboxOnPrimary() {
+		if (devPrimary) musicToolboxPick.set(devPrimary.uuid);
+		openModuleToolbox(MUSIC_TOOLBOX_ID);
+	}
 
 	// SH5: a shader-driven object's material is COMPILED from a graph. The rows below would
 	// be editing the clone the compile installed, which the next recompile throws away — an
@@ -740,10 +840,8 @@
 				} else if (item.kind === 'text') {
 					fileDetails = (await blob.text()).split('\n').length + ' lines';
 				} else if (item.kind === 'audio') {
-					const ctx = new AudioContext();
-					const decoded = await ctx.decodeAudioData(await blob.arrayBuffer());
-					fileDetails = decoded.duration.toFixed(2) + ' s · ' + decoded.numberOfChannels + ' ch';
-					ctx.close();
+					const meta = await decodeMeta(blob);
+					fileDetails = meta.duration.toFixed(2) + ' s · ' + meta.channels + ' ch';
 				}
 			} catch {}
 		});
@@ -2763,6 +2861,66 @@
 						Frustum culled
 					</Checkbox>
 					<p class="text-[10px] text-gray-500">Higher render order draws later (over other objects). Disable culling for objects that vanish at screen edges.</p>
+				</Section>
+			{/if}
+
+			{#if devPrimary}
+				<Section label="Device">
+					<!-- 23-B4: the device's declared params, fanned over the selection; presets and
+						 the mixer live in the Music toolbox, which the link below opens on the primary -->
+					{#if devTargets.length > 1}
+						<p id="device-multi-note" class="text-[10px] italic text-gray-400">
+							Applies to {devTargets.length} selected devices.
+						</p>
+					{/if}
+					<p class="text-[10px] uppercase tracking-wide text-gray-500">
+						{deviceSpec(devPrimary.userData.device.kind)?.label ?? devPrimary.userData.device.kind}
+					</p>
+					{#if !devParams.length}
+						<p class="text-[10px] italic text-gray-400">This device has no settings.</p>
+					{/if}
+					{#each devParams as p (p.key)}
+						{#if p.kind === 'select'}
+							<div class="ui-row items-center gap-2">
+								<span class="w-24 shrink-0 text-xs text-gray-400">{p.label ?? p.key}</span>
+								<ThemedSelect
+									id={'device-param-' + p.key}
+									items={[...(devMixed(p.key) ? [{ value: '', name: '—' }] : []), ...(p.options ?? []).map((/** @type {any} */ opt) => ({ value: String(opt.value), name: String(opt.label ?? opt.value) }))]}
+									value={devMixed(p.key) ? '' : String(devValue(p.key) ?? p.default ?? '')}
+									onchange={(/** @type {any} */ v) => { if (v !== '') devWrite(p.key, v); }}
+								/>
+							</div>
+						{:else if p.kind === 'toggle'}
+							<Checkbox
+								id={'device-param-' + p.key}
+								checked={!!devValue(p.key)}
+								onchange={(/** @type {any} */ e) => devWrite(p.key, e.target.checked)}
+							>
+								{p.label ?? p.key}{devMixed(p.key) ? ' (mixed)' : ''}
+							</Checkbox>
+						{:else}
+							<DragRow
+								id={'device-param-' + p.key}
+								label={p.label ?? p.key}
+								value={Number(devValue(p.key) ?? p.default ?? 0)}
+								min={p.min}
+								max={p.max}
+								step={(Number(p.max ?? 1) - Number(p.min ?? 0)) / 240}
+								snap={p.step ?? 0.01}
+								decimals={p.step && p.step >= 1 ? 0 : 2}
+								mixed={devMixed(p.key)}
+								onchange={(/** @type {number} */ v) => devChange(p, v)}
+								onscrubstart={() => devScrubStart(p.key)}
+								onscrubend={() => devScrubEnd(p.key)}
+							/>
+						{/if}
+					{/each}
+					<div class="ui-row items-center gap-2">
+						<button id="device-open-toolbox" class="ui-button-quiet" onclick={() => openMusicToolboxOnPrimary()}>
+							Open in Music toolbox
+						</button>
+					</div>
+					<p class="text-[10px] text-gray-500">Presets and the mixer live in the Music toolbox.</p>
 				</Section>
 			{/if}
 

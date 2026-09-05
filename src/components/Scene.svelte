@@ -30,7 +30,7 @@
 	import { sceneHits } from '$lib/scenePick';
 	import { startPlayInteract, tickPlayInteract, stopPlayInteract } from '$lib/playInteract';
 	import { tickMoveSmoothing } from '$lib/moveSmoothing';
-	import { moduleClickHandlers, moduleInteractiveGroups } from '$lib/moduleSDK';
+	import { moduleClickHandlers, moduleInteractiveGroups, fireClickMiss } from '$lib/moduleSDK';
 	import { updateSpatialAudio } from '$lib/voiceChat';
 	import { tickAnimatedMixers } from '$lib/animatedImports';
 	import { tickAnimationPreview, captureAutoKey, playheadOf } from '$lib/animationPreview';
@@ -60,6 +60,7 @@
 	import { startColliderHelpers, updateColliderHelpers } from '$lib/colliderHelpers';
 	import { startCameraHelpers, updateCameraHelpers } from '$lib/cameraHelpers';
 	import { updateOnionSkin } from '$lib/onionSkin';
+	import { startCables, updateCables } from '$lib/audioPatch';
 	import { updateTinyMarkers } from '$lib/tinyMarkers';
 	import { cameraPreview, activeOrbit, setOrbitEnabled } from '$lib/cameraPreview';
 	import CameraPreview from './CameraPreview.svelte';
@@ -308,6 +309,7 @@
 		updateColliderHelpers(); // CL-A A7: collider proxies follow their objects
 		updateSnapAnchor(); // 19-B P3: the picked snap-anchor marker follows its object
 		updateCameraHelpers(); // 16-P5: camera-object frustums follow their markers
+		updateCables(); // 23-A4: patch cables follow their plugs; the routing diff runs here too
 		updateOnionSkin(); // 17-E F6: ghosts at the neighbouring keys (local, off by default)
 		updateTinyMarkers(); // R2: a dot to aim at when an object has no size left
 		if (!renderer.xr.isPresenting) updateEditorNavigation(delta, camera.current, $activeOrbit);
@@ -459,6 +461,9 @@
 				return true;
 			}
 		}
+		// nothing selectable under the ray: tell whoever is holding a gesture (23-B1's
+		// desktop cable) before the caller deselects. Never consumes.
+		fireClickMiss();
 		return false;
 	}
 
@@ -466,6 +471,7 @@
 		startLightHelpers();
 		startColliderHelpers();
 		startCameraHelpers();
+		startCables(); // 23-A4
 		startEditorNavigation();
 		startSnapEngine(); // 19-B: wires the element-snap candidate marker
 		// #20 P5: hand editResume the LIVE session modules. It imports nothing itself
@@ -1343,8 +1349,22 @@
 	     (startCameraPreview / releasePreviewOrbit), because an OrbitControls that is
 	     merely dropped keeps its DOM listeners and goes on orbiting whatever camera
 	     threlte points it at — the zombie behind "the gizmo drags rotate my view". -->
+	<!-- ...and the WHEEL goes back to play mode while playing. Mounted, these keep their
+	     wheel listener, and three's onMouseWheel calls preventDefault() the moment it is
+	     past its guards — so the editor camera silently ATE the scroll and
+	     PointerLockControls' onScroll, which stands down on `defaultPrevented` by the
+	     twin-claimant convention, could never change the fly speed. Measured: 20 notches
+	     up then 40 down moved a held-W travel not at all.
+	     THE GUARD IS `enableZoom`, NOT `enabled`, and that is not a style choice.
+	     onMouseWheel reads `enabled === false || enableZoom === false` and returns AHEAD
+	     of the preventDefault, so either would hand the wheel back — but `enabled` is a
+	     flag <TransformControls> owns: its auto-pause observer's CLEANUP does an
+	     unconditional `orbitControls.enabled = true`, and it re-runs on selection
+	     changes, so a `false` from here is stomped within the tick (traced: our write,
+	     then a `true` from execute_effect_teardown). It never touches `enableZoom`.
+	     isLocked is three-state: null editor / true playing / false just exited. -->
 	{#if !$specatorMode && !$cameraPreview}
-		<OrbitControls bind:ref={$orbitControls} enableZoom={true} enableDamping autoRotateSpeed={0.5} target.y={1.5} />
+		<OrbitControls bind:ref={$orbitControls} enableZoom={$isLocked !== true} enableDamping autoRotateSpeed={0.5} target.y={1.5} />
 	{/if}
 </T.PerspectiveCamera>
 

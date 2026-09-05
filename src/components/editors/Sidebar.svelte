@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { nodeCatalog } from '$lib/nodeCatalog';
+	import { nodeDoc } from '$lib/nodeDocs';
 	import { moduleNodeGroups } from '$lib/moduleSDK';
 	import { customNodeDefs } from '../../stores/flowStore';
 
@@ -117,6 +118,7 @@
 			<div
 				class="touch-pan-y cursor-grab rounded-2xl border border-solid border-gray-200 bg-white/70 shadow-[0_7px_9px_0_rgba(0,0,0,0.02)]"
 				role="listitem"
+				title={nodeDoc(node.type)}
 				on:dragstart={(event) => onDragStart(event, node.type)}
 				on:pointerdown={(event) => onItemPointerDown(event, node.type, node.label)}
 				on:pointermove={onItemPointerMove}

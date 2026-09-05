@@ -151,3 +151,20 @@ Recommended, not implemented (needs your call):
 - **text/label** (annotation-only card) — zero-runtime, nice for big graphs.
 - **keypress trigger** (desktop-only input) — replication semantics need a decision
   (whose keypress?).
+
+## Music nodes (23-B3)
+
+The control-rate half of the music playground: audio routes through **cables** (the patch,
+pulled in VR or clicked on desktop), automation routes through the **graph**.
+
+| Node | Kind | Does |
+|---|---|---|
+| **Device Param** | effect | writes one param (`key`, a text param) of the device this graph belongs to from its `value` input — LOCAL per peer, the Set Color rule: the value already arrives through the replicated graph, so nothing is sent. No undo entry: it is automation, not an edit. |
+| **Device Level** | value (number) | the device's live output level, 0..1. Feeds any number socket and the HUD. `target` (object) picks another device. |
+| **Transport** | value (number) | the shared transport: `read` = beat / bar / phase (0..1 of the loop) / bpm / playing (0/1) / loopBeats. Pure of the flow clock, so every peer reads the same number at the same time. |
+| **Note Trigger** | effect (event input) | plays one note on the device per pulse on `trigger` (note / velocity inputs or params). The pulse is the replicated event; each peer synthesizes the note itself, once per pulse. |
+
+The rack's other pieces already exist: **Time** (mode sin) is an LFO, **Loop** a phasor,
+**Counter** a step advancer, **Map Range** a fader curve, **On Impact** a velocity drum
+trigger, **On Enter / On Exit** trigger zones. An LFO into a Device Param's `value` with
+`key` = `cutoff` modulates a filter on every peer identically.

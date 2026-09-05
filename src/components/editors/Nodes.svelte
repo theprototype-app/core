@@ -67,6 +67,7 @@
 	import ThemedSelect from '../ui/ThemedSelect.svelte';
 	import { defDefaults } from '$lib/customNodes';
 	import { findNodeSpec, nodeCatalog } from '$lib/nodeCatalog';
+	import { nodeDoc } from '$lib/nodeDocs';
 	import { isValidFlowConnection, typeColor, replaceableInputEdges } from '$lib/flowSockets';
 	import { moduleNodeGroups, moduleNodeComponents } from '$lib/moduleSDK';
 	import { peers, username, modulesOpen, flowFocus } from '../../stores/appStore';
@@ -131,6 +132,13 @@
 		friction: AnimationNode,
 		angularvelocity: AnimationNode,
 		motor: AnimationNode,
+		// 23-B3 music: the spec-driven card, like the physics family above. A type in
+		// nodeCatalog but NOT here falls through to UnknownNode — "this node comes from a
+		// module that isn't installed" — which is what these four did from the palette.
+		deviceparam: AnimationNode,
+		devicelevel: AnimationNode,
+		transportbeat: AnimationNode,
+		notetrigger: AnimationNode,
 		number: NumberNode,
 		vector3: Vector3Node,
 		toggle: ToggleNode,
@@ -847,6 +855,9 @@
 			{#if propsTab === 'info'}
 				{#if selectedNode}
 					<p class="ui-section-label">{selectedNode.data?.label ?? selectedNode.type}</p>
+					{#if nodeDoc(selectedNode.type)}
+						<p id="flow-node-doc" class="text-[11px] leading-snug text-gray-400">{nodeDoc(selectedNode.type)}</p>
+					{/if}
 					{#if selectedNode.type === 'slider'}
 						<label class="flex items-center justify-between gap-2">Min
 							<input id="param-slider-min" class="ui-input w-16" type="number" value={selectedNode.data?.min ?? 0}

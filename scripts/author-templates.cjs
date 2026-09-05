@@ -442,6 +442,43 @@ const DEFS = [
 			{ type: 'box', name: 'Jetty', color: 0x8a6f52, size: [1.2, 0.25, 5], pos: [-1.5, 0.12, 8.5] }
 		]
 	},
+	{
+		// 23-D3: the Jam Room - the fastest answer to "what is this app": a piano into a
+		// speaker, the beat lab (transport, drum machine, sampler pads), a pedal chain into a
+		// mixer, all cabled. Built from the modules' own menus, so the template is always what
+		// those modules make; the modules it needs ride the index row AND the payload (the
+		// device-kind requirement signal derives them from the objects).
+		kind: 'game',
+		slug: 'jam-room',
+		title: 'Jam Room',
+		description: 'A piano into a speaker, a beat lab (transport, drum machine, sampler pads) and a pedal chain into a mixer - all cabled. Press Play on the transport, paint the grid, plug things in.',
+		license: 'CC0-1.0',
+		author: 'theprototype',
+		tags: ['music', 'vr'],
+		installModules: ['music-lab', 'music-fx'],
+		modules: [{ id: 'music-lab', version: '0.2.0' }, { id: 'music-fx', version: '0.1.0' }],
+		objects: [{ type: 'box', name: 'Floor', color: 0x2b2f36, size: [9, 0.3, 7], pos: [1.2, -0.15, -2.4] }],
+		// a semicircle facing the spawn at the origin; both speakers turned to face the listener
+		layout: [
+			{ kind: 'mod-music-lab-transport', pos: [-2.6, 0.5, -1.8] },
+			{ kind: 'mod-music-lab-piano', pos: [-1.3, 0, -2.4] },
+			{ kind: 'mod-music-lab-drums', pos: [0.3, 0.8, -2.8] },
+			{ kind: 'mod-music-lab-sampler', pos: [1.5, 0.8, -2.8] },
+			{ kind: 'mod-music-lab-speaker', index: 0, pos: [-1.0, 0.35, -4.4], yaw: Math.PI },
+			{ kind: 'mod-music-lab-speaker', index: 1, pos: [1.6, 0.35, -4.4], yaw: Math.PI },
+			{ kind: 'mod-music-fx-mixer', pos: [3.2, 0.8, -2.6] },
+			{ kind: 'mod-music-fx-filter', pos: [2.4, 0.5, -0.9] },
+			{ kind: 'mod-music-fx-distortion', pos: [3.0, 0.5, -0.9] },
+			{ kind: 'mod-music-fx-bitcrush', pos: [3.6, 0.5, -0.9] },
+			{ kind: 'mod-music-fx-delay', pos: [4.2, 0.5, -0.9] },
+			{ kind: 'mod-music-fx-reverb', pos: [4.8, 0.5, -0.9] }
+		],
+		generate: [
+			{ menu: 'Music Lab: piano + speaker', moduleId: 'music-lab', waitMs: 1500 },
+			{ menu: 'Music Lab: beat lab', moduleId: 'music-lab', waitMs: 1500 },
+			{ menu: 'Music FX: demo chain', moduleId: 'music-fx', waitMs: 2000 }
+		]
+	},
 	TOWERS_DEF
 ];
 
@@ -597,24 +634,47 @@ const DEFS = [
 			// seams, because modules use both: a scene COMMAND (registerPrimitive-style),
 			// or a registered manager MENU action, which is how untangle and dungeon-realms
 			// expose "generate/restart" (api.registerMenu).
-			if (d.generate) {
-				if (typeof d.generate === 'string') s.commandsHandler.sceneCommand(d.generate);
-				else if (d.generate.menu) {
+			// 23-D3: `generate` may be ONE action or a SEQUENCE of them (a room built from several
+			// module menus), each a command string or {menu, moduleId}, waited in turn
+			const steps = Array.isArray(d.generate) ? d.generate : d.generate ? [d.generate] : [];
+			for (const step of steps) {
+				if (typeof step === 'string') s.commandsHandler.sceneCommand(step);
+				else if (step.menu) {
 					/** @type {any} */ let items;
 					s.moduleSDK.moduleMenuItems.subscribe((/** @type {any} */ v) => (items = v))();
 					const hit = items.find(
-						(/** @type {any} */ it) =>
-							it.label === d.generate.menu && (!d.generate.moduleId || it.moduleId === d.generate.moduleId)
+						(/** @type {any} */ it) => it.label === step.menu && (!step.moduleId || it.moduleId === step.moduleId)
 					);
 					if (hit) hit.action();
-					else throw new Error('no module menu action named "' + d.generate.menu + '"');
+					else throw new Error('no module menu action named "' + step.menu + '"');
 				}
-				await new Promise((r) => setTimeout(r, d.generateWaitMs ?? 2500));
+				await new Promise((r) => setTimeout(r, step.waitMs ?? d.generateWaitMs ?? 2500));
 				s.objectsGroup.update((v) => v);
 				await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
 			}
 
 			// export through the REAL .tpscene path (no session slot needed)
+			// 23-D3: `layout` places what the menus generated - each entry names a device KIND,
+			// the n-th object of that kind (default the first), a position and an optional yaw -
+			// so a room built from several menus is arranged, not piled where each menu drops
+			// its devices
+			if (Array.isArray(d.layout)) {
+				const seen = {};
+				const devices = [];
+				group.traverse((o) => { if (o.userData?.device?.kind) devices.push(o); });
+				for (const entry of d.layout) {
+					const n = entry.index ?? 0;
+					const matches = devices.filter((o) => o.userData.device.kind === entry.kind);
+					const target = matches[n];
+					if (!target) throw new Error('layout: no device #' + n + ' of kind ' + entry.kind);
+					target.position.set(entry.pos[0], entry.pos[1], entry.pos[2]);
+					if (typeof entry.yaw === 'number') target.rotation.set(0, entry.yaw, 0);
+					target.updateMatrix();
+					seen[entry.kind] = n;
+				}
+				s.objectsGroup.update((v) => v);
+				await new Promise((r) => setTimeout(r, 300));
+			}
 			const payload = s.sessions.buildSessionPayload(d.title);
 			const bytes = await s.sessions.exportSessionZip(payload, { assets: false, packs: false, flow: true });
 

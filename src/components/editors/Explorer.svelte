@@ -49,6 +49,7 @@
 		kindOf,
 		MAX_ITEM_BYTES
 	} from '$lib/explorer';
+	import { decodeMeta } from '$lib/audioEngine';
 	import {
 		openTextEditor,
 		openImagePreview,
@@ -1492,10 +1493,8 @@
 				} else if (item.kind === 'text') {
 					itemDetails = (await blob.text()).split('\n').length + ' lines';
 				} else if (item.kind === 'audio') {
-					const ctx = new AudioContext();
-					const decoded = await ctx.decodeAudioData(await blob.arrayBuffer());
-					itemDetails = decoded.duration.toFixed(2) + ' s · ' + decoded.numberOfChannels + ' ch';
-					ctx.close();
+					const meta = await decodeMeta(blob);
+					itemDetails = meta.duration.toFixed(2) + ' s · ' + meta.channels + ' ch';
 				}
 			} catch {}
 		});

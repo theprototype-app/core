@@ -49,6 +49,11 @@ import { scenePostSnapshot, scenePostRestore } from './scenePost';
 import { environmentSnapshot, environmentRestore } from './environment';
 import { scenePhysicsSnapshot, scenePhysicsRestore } from './scenePhysics';
 import { musicSnapshot, musicRestore } from './sceneMusic';
+// 23-A2: the musical transport, on the same terms as physics/music — null at the
+// default, omitted rather than written, restart-from-now when it was playing
+import { transportSnapshot, transportRestore } from './musicClock';
+// 23-A4: the patch — orphan cables pruned at THIS boundary and nowhere else
+import { patchSnapshot, patchRestore } from './audioPatch';
 import {
 	moduleRequirements,
 	classifyRequirements,
@@ -236,6 +241,8 @@ export function buildSessionPayload(name) {
 	const env = environmentSnapshot();
 	const gravity = scenePhysicsSnapshot();
 	const track = musicSnapshot();
+	const clock = transportSnapshot();
+	const routing = patchSnapshot();
 	const mods = moduleRequirements();
 	try {
 		return {
@@ -286,6 +293,8 @@ export function buildSessionPayload(name) {
 			...(env ? { environment: env } : {}),
 			...(gravity ? { physics: gravity } : {}),
 			...(track ? { music: track } : {}),
+			...(clock ? { transport: clock } : {}),
+			...(routing ? { patch: routing } : {}),
 			// A6.2: {id, version} — the handshake's shape, so there is one shape for
 			// "which modules" in the whole system.
 			...(mods.length ? { modules: mods } : {}),
@@ -1351,6 +1360,12 @@ export async function applySession(payload, opts = {}) {
 	environmentRestore(payload.environment, replicate);
 	scenePhysicsRestore(payload.physics, replicate);
 	musicRestore(payload.music, replicate);
+	// 23-A2: and the transport — absent means the default (stopped, 120), and a saved
+	// PLAYING transport restarts from beat 0 now so every peer shares the phase
+	transportRestore(payload.transport, replicate);
+	// 23-A4: the cables — absent means none; the objects they name are the ones
+	// this same load just re-created, with their saved uuids
+	patchRestore(payload.patch, replicate);
 	// and the HUD with it: loading a game scene into a live room must bring its overlay
 	hudDocsRestore(payload.hud ?? null, true, replicate);
 	// and the game with it: loading a game scene into a live room must bring its state.

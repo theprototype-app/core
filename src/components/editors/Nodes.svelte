@@ -132,6 +132,13 @@
 		friction: AnimationNode,
 		angularvelocity: AnimationNode,
 		motor: AnimationNode,
+		// 23-B3 music: the spec-driven card, like the physics family above. A type in
+		// nodeCatalog but NOT here falls through to UnknownNode — "this node comes from a
+		// module that isn't installed" — which is what these four did from the palette.
+		deviceparam: AnimationNode,
+		devicelevel: AnimationNode,
+		transportbeat: AnimationNode,
+		notetrigger: AnimationNode,
 		number: NumberNode,
 		vector3: Vector3Node,
 		toggle: ToggleNode,

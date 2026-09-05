@@ -1349,8 +1349,22 @@
 	     (startCameraPreview / releasePreviewOrbit), because an OrbitControls that is
 	     merely dropped keeps its DOM listeners and goes on orbiting whatever camera
 	     threlte points it at — the zombie behind "the gizmo drags rotate my view". -->
+	<!-- ...and the WHEEL goes back to play mode while playing. Mounted, these keep their
+	     wheel listener, and three's onMouseWheel calls preventDefault() the moment it is
+	     past its guards — so the editor camera silently ATE the scroll and
+	     PointerLockControls' onScroll, which stands down on `defaultPrevented` by the
+	     twin-claimant convention, could never change the fly speed. Measured: 20 notches
+	     up then 40 down moved a held-W travel not at all.
+	     THE GUARD IS `enableZoom`, NOT `enabled`, and that is not a style choice.
+	     onMouseWheel reads `enabled === false || enableZoom === false` and returns AHEAD
+	     of the preventDefault, so either would hand the wheel back — but `enabled` is a
+	     flag <TransformControls> owns: its auto-pause observer's CLEANUP does an
+	     unconditional `orbitControls.enabled = true`, and it re-runs on selection
+	     changes, so a `false` from here is stomped within the tick (traced: our write,
+	     then a `true` from execute_effect_teardown). It never touches `enableZoom`.
+	     isLocked is three-state: null editor / true playing / false just exited. -->
 	{#if !$specatorMode && !$cameraPreview}
-		<OrbitControls bind:ref={$orbitControls} enableZoom={true} enableDamping autoRotateSpeed={0.5} target.y={1.5} />
+		<OrbitControls bind:ref={$orbitControls} enableZoom={$isLocked !== true} enableDamping autoRotateSpeed={0.5} target.y={1.5} />
 	{/if}
 </T.PerspectiveCamera>
 

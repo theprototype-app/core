@@ -2,8 +2,18 @@
 	import { Box, ChevronDown, ChevronRight, Eye, EyeOff, Layers, Lock, PersonStanding, Settings, Share2, Sun, UserLock } from '@lucide/svelte';
     /** @type {{ element: any }} */
     let { element } = $props();
-    let isExpanded = $state(false);
+    // 24-B2: expansion lives in the `expandedObjects` store (appStore) so the keyboard
+    // walker can see the visible order and it survives a re-mount; `setExpanded` is
+    // the one writer
+    const isExpanded = $derived($expandedObjects.has(element.uuid));
+    /** @param {boolean} on */
+    function setExpanded(on) {
+        if ($expandedObjects.has(element.uuid) === on) return;
+        expandedObjects.update((set) => withExpanded(set, element.uuid, on));
+    }
     let previouslySelectedObject;
+    /** @type {any} the row's own element, for the keyboard scroll-follow */
+    let rowEl = $state(null);
     import { getContext } from 'svelte';
     import { Tooltip } from 'flowbite-svelte';
     // recursive tree — svelte 5 self-import replaces the deprecated <svelte:self>
@@ -18,9 +28,10 @@
     // groups on the path to a match auto-expand while filtering
     $effect(() => {
         if ($objectFilter && element.children.length > 0 && $objectFilter.has(element.uuid))
-            isExpanded = true;
+            setExpanded(true);
     });
-    import { toggleExpand, objectContextMenu, renamingObject } from '../../stores/appStore';
+    import { toggleExpand, objectContextMenu, renamingObject, expandedObjects } from '../../stores/appStore';
+    import { withExpanded } from '$lib/objectListNav';
     import { objectsGroup, TControls, selectedObject, selectedObjects, lockedObjects } from '../../stores/sceneStore';
     import { sceneCommand } from '$lib/commandsHandler.svelte';
     import { selectObject, renameObject, moveObjectToGroup, toggleObjectVisibility } from '$lib/objectActions';
@@ -42,7 +53,7 @@
      */
     $effect(() => {
         if ($toggleExpand === element.uuid) {
-            isExpanded = true;
+            setExpanded(true);
             $toggleExpand = null;
         }
     });
@@ -50,6 +61,13 @@
     const isSelected = $derived(
         $selectedObject?.uuid === element.uuid || $selectedObjects.includes(element.uuid)
     );
+    // 24-B2: keep the keyboard cursor in view — only while the TREE has focus, so a
+    // viewport click never scrolls the list under the user
+    $effect(() => {
+        if (!isSelected || !rowEl) return;
+        const tree = rowEl.closest?.('[role="tree"]');
+        if (tree && tree.contains(document.activeElement)) rowEl.scrollIntoView?.({ block: 'nearest' });
+    });
     const lockEntry = $derived($lockedObjects.find((lockedUuid) => lockedUuid[1] === element.uuid));
 
     function select(uuid, additive = false) {
@@ -101,6 +119,14 @@
         holdTimer = null;
     }
 
+    /** 24-B2: focus the rename field on mount. The `autofocus` attribute only fires
+     * when nothing but the body has focus — true for a double-click on the name, false
+     * for F2 with the tree focused — so F2 opened a field the keys never reached.
+     * @param {HTMLInputElement} node */
+    function focusRename(node) {
+        node.focus({ preventScroll: true });
+    }
+
     function commitRename(event) {
         const name = event.target.value.trim();
         if (name && name !== element.name) renameObject(element.uuid, name);
@@ -128,7 +154,7 @@
         dropHover = true;
         if (!isExpanded && element.children.length > 0 && !hoverExpandTimer)
             hoverExpandTimer = setTimeout(() => {
-                isExpanded = true;
+                setExpanded(true);
                 hoverExpandTimer = null;
             }, 600);
     }
@@ -153,7 +179,7 @@
             shareObject(dragged, element.uuid);
         else
             moveObjectToGroup(uuid, element.uuid);
-        isExpanded = true;
+        setExpanded(true);
     }
 
 	function deleteItem(item) {
@@ -176,7 +202,7 @@
                 // /clear removes it from its real parent (and records the undo step)
                 sceneCommand('/clear ' + el.uuid);
 
-                isExpanded = false;
+                setExpanded(false);
                 // Toggle the 'hidden' class to immediately hide the item
                 // The list will update automatically after collapse/expand
                 document.getElementById(el.uuid)?.classList.toggle('hidden');
@@ -191,10 +217,14 @@
 
     {#if rowVisible}
     <div id={element.uuid} oncontextmenu={openContextMenu}
+        bind:this={rowEl}
         class={'group/row select-none ' +
             (dropHover ? 'rounded-sm outline-solid outline-2 outline-primary-400 bg-primary-900/20 ' : '') +
             (lockEntry ? '' : 'cursor-grab active:cursor-grabbing')}
-        role="listitem"
+        role="treeitem"
+        tabindex="-1"
+        aria-selected={isSelected}
+        aria-expanded={element.children.length > 0 ? isExpanded : undefined}
         draggable={!lockEntry}
         ondragstart={onRowDragStart}
         ondragover={onRowDragOver}
@@ -218,7 +248,7 @@
                 <button
                     class="w-4 shrink-0 text-center text-[10px] text-gray-400 hover:text-gray-100"
                     title={isExpanded ? 'Collapse group' : 'Expand group'}
-                    onclick={(e) => { e.stopPropagation(); isExpanded = !isExpanded; }}
+                    onclick={(e) => { e.stopPropagation(); setExpanded(!isExpanded); }}
                 >
                     {#if isExpanded}<ChevronDown size={14} aria-hidden="true" />{:else}<ChevronRight size={14} aria-hidden="true" />{/if}
                 </button>
@@ -254,9 +284,10 @@
                     class="row-rename ui-input min-w-0 flex-1 px-1 py-0 text-sm"
                     value={element.name}
                     autofocus
-                    onkeydown={(e) => { if (e.key === 'Enter') commitRename(e); if (e.key === 'Escape') $renamingObject = null; }}
+                    use:focusRename
+                    onkeydown={(/** @type {KeyboardEvent} */ e) => { if (e.key === 'Enter') commitRename(e); if (e.key === 'Escape') $renamingObject = null; }}
                     onblur={commitRename}
-                    onclick={(e) => e.stopPropagation()}
+                    onclick={(/** @type {Event} */ e) => e.stopPropagation()}
                 />
             {:else}
                 <p
@@ -296,7 +327,7 @@
     </div>
 
     {#if isExpanded}
-    <div class="ml-3 border-l border-gray-600/40 pl-1">
+    <div class="ml-3 border-l border-gray-600/40 pl-1" role="group">
         {#each kids as item (item.uuid)}
             <Objects element={item} />
         {/each}

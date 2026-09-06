@@ -202,6 +202,35 @@ export function applyInviteServerOverride(ov) {
 	inviteOverride = ov || null;
 }
 
+/** The session-only override in force, if any (24-D2: switchServer restores it when a
+ * new server never opens). @returns {any} */
+export function inviteServerOverride() {
+	return inviteOverride;
+}
+
+/**
+ * 24-D1: does an invite's `~srv` target name the server we are ALREADY on? Kind + host
+ * + port + path; `{forcePublic}` equals the public cloud. Missing `srv` is "no server
+ * named" and is the caller's "same server" (the user's rule: no server or the same
+ * server → just connect).
+ * @param {{forcePublic?: boolean, custom?: {host?: string, port?: number, path?: string}} | null} target
+ * @param {PeerServerStatus | null} status
+ */
+export function sameServer(target, status) {
+	if (!target) return true;
+	if (!status) return false;
+	if (target.forcePublic) return status.kind === 'public';
+	const c = target.custom || {};
+	if (!c.host) return false;
+	if (status.kind === 'public') return false;
+	const norm = (/** @type {string} */ p) => (p && p !== '/' ? p : '/peerjs');
+	return (
+		String(status.host || '').toLowerCase() === String(c.host).toLowerCase() &&
+		(Number(status.port) || 443) === (Number(c.port) || 443) &&
+		norm(status.path || '') === norm(c.path || '')
+	);
+}
+
 /** Split a location.hash into peer id + optional invite server tail.
  * @param {string} rawHash @returns {{ peerId: string, srv: string | null }} */
 export function parseInviteHash(rawHash) {
@@ -217,7 +246,15 @@ export function parseInviteHash(rawHash) {
 export function decodeInviteServer(srv) {
 	if (!srv) return null;
 	if (srv === 'public') return { forcePublic: true };
-	const raw = decodeURIComponent(srv);
+	// 24-D1: a malformed escape (`%zz`) used to THROW out of here — at load time out of
+	// the PeerConnection constructor, live out of the hashchange handler. Unreadable
+	// means "no server named", which every caller already handles as null.
+	let raw = '';
+	try {
+		raw = decodeURIComponent(srv);
+	} catch {
+		return null;
+	}
 	// host[:port][/path]
 	const m = /^([^:/]+)(?::(\d+))?(\/.*)?$/.exec(raw);
 	if (!m) return null;

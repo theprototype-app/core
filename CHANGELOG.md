@@ -20,6 +20,22 @@
   **Mouse wheel** picks Zoom / Pan / Auto in one click, and Settings ▸ Controls has a
   **Wheel diagnostics** readout of the last eight wheel events for the odd machine.
 
+### 🎯 Selection and windows (roadmap #24, batch B)
+
+- 🔁 **1 / 2 / 3 bring the selection back.** Pressing the active mode key hides the
+  gizmo and the selection, as before — and pressing any mode key again brings the same
+  selection back in that mode, including a multi-select with the origin you placed
+  and a face, edge or vertex pick inside Edit Mesh (the toolbox's gizmo button does
+  the same).
+- ⌨️ **Keyboard in the object list.** With the list focused, ↑/↓ walk the visible
+  tree and select, Shift extends, → expands, ← collapses or goes to the parent,
+  Home/End jump, Enter opens Properties, F2 renames, typing a name jumps to it, and
+  ↓ from the search box drops you into the list.
+- 🪟 **Windows keep their header.** A floating window or module toolbox can no longer
+  be dragged so that its header hides under the Controls pill, the bottom band on
+  touch and narrow screens, the dock, or a browser overlay — and a tall toolbox near
+  the bottom scrolls its body instead.
+
 ## 1.10.0 — Publish, play, remix ☁️
 
 The engine learned the moves a community needs — publish the open scene, open a

@@ -12,6 +12,35 @@ import { globalScene, objectsGroup } from '../stores/sceneStore';
 export const showLightHelpers = writable(
 	typeof localStorage === 'undefined' || localStorage.getItem('showLightHelpers') !== 'false'
 );
+/** 24-E1: how far along its forward a directional/spot light's target sits (the
+ * helper's line length; display only — the direction is what shadows read, and the
+ * distance changes nothing for either light type). LOCAL pref, Settings ▸ Scene. */
+export const lightHelperLength = writable(
+	typeof localStorage === 'undefined' ? 2 : Math.max(0.2, Number(localStorage.getItem('lightHelperLength')) || 2)
+);
+lightHelperLength.subscribe((value) => {
+	if (typeof localStorage !== 'undefined') localStorage.setItem('lightHelperLength', String(value));
+});
+const forward = new THREE.Vector3();
+const worldQuat = new THREE.Quaternion();
+
+/**
+ * 24-E1: the ONE-TIME migration of the old spot model. A spot used to persist an aim
+ * point (`userData.spotTarget`) enforced per frame; under the rotation model the same
+ * numbers become a `lookAt` once and the key goes. Runs on every peer for every spot
+ * that still carries it (sessions, prefabs, `.tpscene` files, an older peer's object
+ * sync) — the rotation is derived from the same numbers everywhere, so no format bump
+ * and no message. @param {any} light @returns {boolean} migrated
+ */
+export function migrateSpotTarget(light) {
+	if (!light?.isSpotLight || !Array.isArray(light.userData?.spotTarget)) return false;
+	const point = new THREE.Vector3().fromArray(light.userData.spotTarget.map(Number));
+	delete light.userData.spotTarget;
+	light.updateMatrixWorld?.(true);
+	light.lookAt(point);
+	light.updateMatrixWorld?.(true);
+	return true;
+}
 /** the proxies group, registered for Scene raycasts */
 /** @type {import('svelte/store').Writable<any>} */
 export const lightProxiesGroup = writable(null);
@@ -57,6 +86,7 @@ function sync() {
 	});
 
 	lights.forEach((light) => {
+		migrateSpotTarget(light); // 24-E1: an old spot aims by rotation from here on
 		if (entries.has(light.uuid)) return;
 		const helper = helperFor(light);
 		if (helper) scene.add(helper);
@@ -88,15 +118,28 @@ function sync() {
 export function updateLightHelpers() {
 	if (entries.size === 0) return;
 	const scene = get(globalScene);
+	const length = get(lightHelperLength);
 	entries.forEach((entry) => {
-		// spot aim (79): userData.spotTarget survives sync — enforce it here so
-		// late joiners aim correctly without touching the legacy object loader
-		if (entry.light.isSpotLight && entry.light.userData.spotTarget) {
-			if (!entry.light.target.parent && scene) scene.add(entry.light.target);
-			entry.light.target.position.fromArray(entry.light.userData.spotTarget);
+		const light = entry.light;
+		// 24-E1: DIRECTION FROM ROTATION. A directional/spot light shines from its
+		// position toward `light.target`, a detached Object3D nobody moved — every
+		// directional light pointed at the world origin and rotating it changed nothing
+		// (reported). The target now rides the light's own forward (-Z, the camera
+		// convention `lookAt` shares) at the helper length, on the scene ROOT (golden
+		// rule 5 — never objectsGroup), so the rotate gizmo aims the light and the shadow
+		// camera (it reads `target.matrixWorld`) follows. Runs whether or not helpers
+		// are visible: shadows need it either way.
+		if (light.isDirectionalLight || light.isSpotLight) {
+			if (light.userData.spotTarget) migrateSpotTarget(light);
+			if (!light.target.parent && scene) scene.add(light.target);
+			light.getWorldPosition(tempVector);
+			light.getWorldQuaternion(worldQuat);
+			forward.set(0, 0, -1).applyQuaternion(worldQuat).multiplyScalar(length);
+			light.target.position.copy(tempVector).add(forward);
+			light.target.updateMatrixWorld(true);
 		}
 		if (!visible) return;
-		entry.light.getWorldPosition(tempVector);
+		light.getWorldPosition(tempVector);
 		entry.proxy.position.copy(tempVector);
 		entry.helper?.update?.();
 	});

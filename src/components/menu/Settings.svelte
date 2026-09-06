@@ -7,6 +7,7 @@
 	import { applyVRFrameRate } from '$lib/vrControls';
 	import { settingsOpen, settingsSection, hidePanels, restorePanels, advancedMode, showEnvInList, objectSearchEnabled, showSimControls, showToast, showRoomsButton, toastsInDrawerOnly, mobileUndockAllowed, enableShiftAdd, noteDoubleClickToOpen, duplicateCarriesAnimation, duplicateCarriesFlow, duplicateCarriesShader, touchTools, floatingToolbar, toolbarAlwaysOnTop } from '../../stores/appStore.js';
 	import { trackpadMode, allowBrowserZoom, reversePan, panEnabled, pinchZoomEnabled, lastWheelEvents } from '$lib/trackpadNav';
+	import { lightHelperLength } from '$lib/lightHelpers';
 	import { gamepadPrefs, setGamepadPrefs, DEADZONE_RANGE, SENSITIVITY_RANGE } from '$lib/gamepadPrefs';
 	import { drawerSlot, cloudPluginInfo } from '$lib/cloudHooks';
 	import { versionString } from '$lib/version.js';
@@ -982,6 +983,20 @@
 								}} />
 						</svelte:fragment>
 						Display grid on floor
+					</SettingRow>
+					<SettingRow name="Light helper length">
+						<svelte:fragment slot="control">
+							<input
+								id="light-helper-length"
+								type="number"
+								min="0.2"
+								max="50"
+								step="0.5"
+								class="w-full rounded-sm bg-gray-700 px-1 py-0.5 text-xs text-white"
+								value={$lightHelperLength}
+								on:change={(e: any) => lightHelperLength.set(Math.max(0.2, Number(e.target.value) || 2))} />
+						</svelte:fragment>
+						How far a directional or spot light's helper line reaches along its direction (display only — a directional light has a direction, not a distance)
 					</SettingRow>
 					<SettingRow name="Shadow quality">
 						<svelte:fragment slot="control">

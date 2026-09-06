@@ -46,6 +46,22 @@
 - 🔀 **Settings ▸ Connection ▸ Apply** switches the peer server without reloading and
   keeps your session id.
 
+### 💡 Lights, helpers and origins (roadmap #24, batch E)
+
+- 🔦 **Lights aim by rotation.** A directional or spot light shines where it points:
+  turn it with the rotate gizmo and the shadow follows. "Aim at" points it once at a
+  point you type or pick in the viewport. Old scenes with an aimed spot load aimed the
+  same way.
+- 🌅 **Lights have an origin.** Give a sun an origin and Rotate swings it around that
+  point.
+- 🙈 **Helpers hide in Play.** Light helpers, camera frustums and camera markers stay
+  out of the game, camera previews and captures; "Show helpers in Play (debug)" brings
+  them back with a DEBUG chip.
+- 🎯 **Rotate about the origin you set.** Typing a rotation on a group with an origin
+  turns it about that origin, a group's origin is one right-click away (Centre of
+  children / World zero), and a selection has a pivot point: Median, Active object,
+  Parent origin or Individual origins.
+
 ## 1.10.0 — Publish, play, remix ☁️
 
 The engine learned the moves a community needs — publish the open scene, open a

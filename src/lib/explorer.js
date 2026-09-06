@@ -552,17 +552,21 @@ async function writeItem(buffer, name, folderId, meta = {}) {
 }
 
 /** @param {ArrayBuffer} buffer @param {string} name @param {string | null} folderId
- *  @param {{kind?: string, type?: string, imported?: boolean, hash?: string}} meta */
+ *  @param {{kind?: string, type?: string, imported?: boolean, hash?: string, thumbnail?: string | null}} meta
+ *  `thumbnail` (24-C1): a copy carries its source's, so a duplicate costs no decode */
 async function writeItemNow(buffer, name, folderId, meta) {
 	const kind = meta.kind ?? kindOf(name) ?? 'text';
 	const blob = new Blob([buffer], meta.type ? { type: meta.type } : undefined);
 	// the thumbnail is DECORATIVE — never let a wedged loader/renderer block
 	// storing the bytes (a hung GLB parse used to silently swallow shared
 	// assets on the receiving peer, R-3); the card falls back to an icon
-	const thumbnail = await Promise.race([
-		thumbnailFor(blob, name, kind),
-		new Promise((resolve) => setTimeout(() => resolve(null), 4000))
-	]);
+	const thumbnail =
+		meta.thumbnail !== undefined
+			? meta.thumbnail
+			: await Promise.race([
+					thumbnailFor(blob, name, kind),
+					new Promise((resolve) => setTimeout(() => resolve(null), 4000))
+				]);
 	const item = {
 		id: crypto.randomUUID(),
 		name,
@@ -593,26 +597,131 @@ async function writeItemNow(buffer, name, folderId, meta) {
  * through `importFiles` / the duplicate resolver instead.
  * @param {ArrayBuffer} buffer @param {string} name
  * @param {string | null} folderId
- * @param {{imported?: boolean}} [opts] loose-scenes fix: stamp provenance — see
- *   `writeItem`. Absent means "this app minted it", so nothing already stored changes.
+ * @param {{imported?: boolean, allowDuplicate?: boolean}} [opts] loose-scenes fix: stamp
+ *   provenance — see `writeItem`. Absent means "this app minted it", so nothing already
+ *   stored changes. `allowDuplicate` (24-C1): skip the hash dedupe and mint a SECOND
+ *   record for bytes we already hold — a copy is a record, its bytes are content.
  */
 export async function addItemFromBytes(buffer, name, folderId = null, opts = {}) {
 	const hash = await sha256(buffer);
-	const existing = get(explorerItems).find((item) => item.hash === hash);
-	if (existing) return existing;
-	// 21-G7: we may already hold these exact bytes on the hidden shelf — a restored
-	// version being saved again, or a peer pushing back a hash we folded away. Bring
-	// the record back rather than minting a second item for one blob; the caller's
-	// publish then decides whether it stays visible (it is the pointer) or is folded
-	// straight back by the hide sweep.
-	const shelved = get(hiddenItems).find((item) => item.hash === hash);
-	if (shelved) {
-		setItemHidden(shelved.id, false);
-		return shelved;
+	if (!opts.allowDuplicate) {
+		const existing = get(explorerItems).find((item) => item.hash === hash);
+		if (existing) return existing;
+		// 21-G7: we may already hold these exact bytes on the hidden shelf — a restored
+		// version being saved again, or a peer pushing back a hash we folded away. Bring
+		// the record back rather than minting a second item for one blob; the caller's
+		// publish then decides whether it stays visible (it is the pointer) or is folded
+		// straight back by the hide sweep.
+		const shelved = get(hiddenItems).find((item) => item.hash === hash);
+		if (shelved) {
+			setItemHidden(shelved.id, false);
+			return shelved;
+		}
 	}
-	const item = await writeItem(buffer, name, folderId, { hash, imported: !!opts.imported });
+	const item = opts.allowDuplicate
+		? await writeItemNow(buffer, name, folderId, { hash, imported: !!opts.imported })
+		: await writeItem(buffer, name, folderId, { hash, imported: !!opts.imported });
 	await persistIndex();
 	return item;
+}
+
+// ---- 24-C1: Duplicate / Copy / Paste — a record is a pointer, bytes are content ----
+//
+// The git model, and the folder precedent this library already keeps ("a folder's id is
+// network identity"): a copy is a NEW RECORD holding the SAME hash. Locally that is a
+// second id-addressed blob (nothing is shared between records, so deleting one leaves the
+// other); on the wire (C2) it is a second row with the same content pointer, which a peer
+// that already holds the hash materialises with no transfer. `share` is NOT copied — the
+// copy is local until shared, unless it lands in a shared folder, where the inheritance
+// sweep picks it up exactly as it would a dropped file.
+
+/**
+ * The Finder/Blender copy name: "Tower.glb" → "Tower copy.glb" → "Tower copy 2.glb",
+ * extension preserved, an existing " copy N" suffix collapsed rather than stacked.
+ * @param {string} name @param {Iterable<string>} siblings names already in the folder
+ */
+export function nextCopyName(name, siblings) {
+	const m = /^(.*?)(\.[^./]+)?$/.exec(String(name || 'file'));
+	const rawBase = m?.[1] ?? '';
+	// a dot-file (".env") has no extension: the whole name is the stem
+	const ext = rawBase ? (m?.[2] ?? '') : '';
+	const stem = (rawBase || String(name || 'file')).replace(/ copy( \d+)?$/i, '') || 'file';
+	const taken = new Set([...siblings].map((s) => String(s).toLowerCase()));
+	for (let n = 1; n < 10000; n++) {
+		const candidate = (n === 1 ? stem + ' copy' : stem + ' copy ' + n) + ext;
+		if (!taken.has(candidate.toLowerCase())) return candidate;
+	}
+	return stem + ' copy ' + Date.now() + ext;
+}
+
+/** the names in one folder (visible items), for collision checks @param {string | null} folderId */
+function namesIn(folderId) {
+	return get(explorerItems)
+		.filter((item) => (item.folderId ?? null) === (folderId ?? null))
+		.map((item) => item.name);
+}
+
+/**
+ * A second record for an item's bytes — a local blob read, no hashing (the hash is
+ * known), the thumbnail carried over, `share` NOT copied. Into the same folder it takes
+ * the copy name; into another folder it keeps its name unless that collides.
+ * @param {string} id @param {{folderId?: string | null, name?: string}} [opts]
+ *   `folderId` undefined = the source's folder
+ * @returns {Promise<any | null>} the new record
+ */
+export async function duplicateItem(id, opts = {}) {
+	const source = allItems().find((item) => item.id === id);
+	if (!source) return null;
+	const blob = await itemBlob(id);
+	if (!blob) return null;
+	const folderId = opts.folderId === undefined ? source.folderId ?? null : opts.folderId;
+	const siblings = namesIn(folderId);
+	const sameFolder = (folderId ?? null) === (source.folderId ?? null);
+	const collides = siblings.some((n) => n.toLowerCase() === source.name.toLowerCase());
+	const name = opts.name ?? (sameFolder || collides ? nextCopyName(source.name, siblings) : source.name);
+	const item = await writeItemNow(await blob.arrayBuffer(), name, folderId, {
+		hash: source.hash,
+		kind: source.kind,
+		type: blob.type || undefined,
+		imported: !!source.imported,
+		thumbnail: source.thumbnail ?? null
+	});
+	await persistIndex();
+	return item;
+}
+
+/**
+ * A folder and everything under it as new records (a new folder id — network identity
+ * is minted here, C2 makes its rows zero-transfer for held hashes). Same naming rule
+ * against the sibling folders.
+ * @param {string} id @param {string | null} [parentId] undefined = beside the source
+ * @returns {Promise<any | null>} the new root folder
+ */
+export async function duplicateFolder(id, parentId) {
+	const source = get(explorerFolders).find((f) => f.id === id);
+	if (!source) return null;
+	const into = parentId === undefined ? source.parentId ?? null : parentId;
+	if (into && folderSubtree(id).includes(into)) return null; // never into itself
+	const siblingNames = get(explorerFolders)
+		.filter((f) => (f.parentId ?? null) === (into ?? null))
+		.map((f) => f.name);
+	const sameParent = (into ?? null) === (source.parentId ?? null);
+	const collides = siblingNames.some((n) => n.toLowerCase() === source.name.toLowerCase());
+	const name = sameParent || collides ? nextCopyName(source.name, siblingNames) : source.name;
+	const copy = createFolder(name, into);
+	if (!copy) return null;
+	/** @param {string} fromId @param {string} toId */
+	const walk = async (fromId, toId) => {
+		for (const item of get(explorerItems).filter((i) => i.folderId === fromId))
+			await duplicateItem(item.id, { folderId: toId, name: item.name });
+		for (const sub of get(explorerFolders).filter((f) => f.parentId === fromId)) {
+			const made = createFolder(sub.name, toId);
+			if (made) await walk(sub.id, made.id);
+		}
+	};
+	await walk(id, copy.id);
+	await persistIndex();
+	return copy;
 }
 
 /** Delete an item and its bytes. 21-G7: the id may name a HIDDEN version (Version

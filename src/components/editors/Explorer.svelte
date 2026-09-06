@@ -47,7 +47,9 @@
 		parseObjectFile,
 		hashBytes,
 		kindOf,
-		MAX_ITEM_BYTES
+		MAX_ITEM_BYTES,
+		duplicateItem,
+		duplicateFolder
 	} from '$lib/explorer';
 	import { decodeMeta } from '$lib/audioEngine';
 	import {
@@ -253,8 +255,7 @@
 		restorePrefabBytes,
 		savePrefabSelection,
 		addPrefabRecord,
-		exportPrefab
-	} from '$lib/prefabs';
+		exportPrefab, duplicatePrefab } from '$lib/prefabs';
 	// 21-I3: Export ▸ scene (.tpscene) — a scene containing just this prefab. Built from
 	// the EMPTY payload plus this one object, never a capture of the live scene.
 	// R22 round 13 P3: `sessions` is read for the Mount picker (which saved entries are
@@ -267,6 +268,8 @@
 	import { bottomDockActive, visibleDockKey, dockMinimized, setDockOccupant, dockHeight, dockModeArm, forgetDockTab } from '$lib/bottomDock';
 	import { bottomDockable } from '$lib/bottomDockDrop';
 	import { dragWindow } from '$lib/dragWindow';
+	// 24-C1: the in-app clipboard for files and folders
+	import { explorerClipboard, setClipboard, clearClipboard, isCutPending, clipboardLabel } from '$lib/explorerClipboard';
 	import { focusStack } from '$lib/windowFocus';
 	import { tabbable, resizeGroup, tabGroups } from '$lib/windowTabs';
 	import { dockable } from '$lib/docking';
@@ -2073,6 +2076,16 @@
 			e.preventDefault();
 			e.stopPropagation();
 			setSel(gridEntries.map(entryId).filter((id: string) => !selectedIds.has(id)));
+		} else if (mod && (e.code === 'KeyD' || e.code === 'KeyC' || e.code === 'KeyX' || e.code === 'KeyV')) {
+			// 24-C1: by `code` like Ctrl+A/I above, stopped so the viewport's Ctrl+D
+			// (Duplicate object) and the window shortcuts never also fire
+			if (e.code !== 'KeyV' && !selectedIds.size) return;
+			e.preventDefault();
+			e.stopPropagation();
+			if (e.code === 'KeyD') void duplicateSelection();
+			else if (e.code === 'KeyC') clipSelection('copy');
+			else if (e.code === 'KeyX') clipSelection('cut');
+			else void pasteClipboard();
 		} else if (e.key === 'Escape') {
 			// only when there IS a selection: Escape belongs to a dozen local handlers in
 			// this app, and swallowing it while nothing is selected steals it from them
@@ -3327,6 +3340,41 @@
 									}
 						]),
 				{ label: 'Properties', icon: 'info', action: () => showProperties({ kind: 'folder', folder }) },
+				// 24-C1: a folder copies as new records (new folder id — network identity is
+				// minted here), and pastes INTO it land in it
+				{
+					label: 'Duplicate folder',
+					icon: 'copy',
+					hint: 'Ctrl+D',
+					tooltip: 'A copy of this folder and everything in it, beside it',
+					action: () => void duplicateFolder(folder.id).then((made: any) => made && showToast('Duplicated ' + folder.name + ' as ' + made.name))
+				},
+				{
+					label: 'Copy',
+					icon: 'clipboard-copy',
+					hint: 'Ctrl+C',
+					action: () => {
+						setClipboard([{ id: folder.id, kind: 'folder' }], 'copy', activeLibraryFolder());
+						showToast('Copied ' + folder.name + ' — paste into a folder');
+					}
+				},
+				{
+					label: 'Cut',
+					icon: 'scissors',
+					hint: 'Ctrl+X',
+					action: () => {
+						setClipboard([{ id: folder.id, kind: 'folder' }], 'cut', activeLibraryFolder());
+						showToast('Cut ' + folder.name + ' — paste into a folder to move it');
+					}
+				},
+				{
+					label: clipboardLabel($explorerClipboard) + ' here',
+					icon: 'clipboard-paste',
+					hint: 'Ctrl+V',
+					disabled: !$explorerClipboard?.entries.length,
+					tooltip: $explorerClipboard?.entries.length ? 'Into ' + folder.name : 'Copy or cut something first',
+					action: () => void pasteClipboard(folder.id)
+				},
 				// 170: "New subfolder" only makes sense in the tree; the thumbnail grid drops it
 				...(inTree ? [{ label: 'New subfolder', icon: 'folder-plus', action: () => startCreate(folder.id) }] : []),
 				{ label: 'Rename', icon: 'pencil', action: () => startRename(folder, !inTree) },
@@ -3406,6 +3454,112 @@
 		item.kind !== 'pack-folder';
 
 	/** what the selection breaks down into, once and for every batch entry point */
+	// ---- 24-C1: Duplicate / Copy / Cut / Paste --------------------------------------
+	// A copy is a NEW RECORD with the same hash (explorer.duplicateItem); the clipboard is
+	// in-app (a page cannot put a file on the OS clipboard). Paste lands in the folder
+	// the menu was opened on, or the active library folder for the keys.
+	/** the library place a paste can land: `{ok}` false outside the library */
+	function pasteTarget(folderId?: string | null): { ok: boolean; folderId: string | null } {
+		if (folderId !== undefined) return { ok: true, folderId };
+		const a = $activeFolder;
+		if (typeof a !== 'string' || !a) return { ok: !binScope.inBin, folderId: null }; // the Library root
+		const lib = activeLibraryFolder();
+		return { ok: lib !== null, folderId: lib };
+	}
+	/** what the current selection would put on the clipboard (library rows + mount files) */
+	function clipEntriesOfSelection(): { id: string; kind: 'item' | 'folder'; volumeId?: string }[] {
+		const out: { id: string; kind: 'item' | 'folder'; volumeId?: string }[] = [];
+		for (const e of selectedEntries()) {
+			if (e.kind === 'folder' && e.folder && !e.folder.deletedNode && !e.folder.volumeId) out.push({ id: e.folder.id, kind: 'folder' });
+			else if (e.kind === 'item' && e.item?.volumeItem) out.push({ id: e.item.id, kind: 'item', volumeId: e.item.volumeId });
+			else if (e.kind === 'item' && e.item && isOwnedItem(e.item) && !e.item.packEntry && !e.item.deletedEntry) out.push({ id: e.item.id, kind: 'item' });
+		}
+		return out;
+	}
+	/** Duplicate: every selected library file (not scenes until C3) and folder, beside itself */
+	async function duplicateSelection() {
+		const entries = clipEntriesOfSelection().filter((e) => !e.volumeId);
+		const ids: string[] = [];
+		let skippedScenes = 0;
+		for (const e of entries) {
+			if (e.kind === 'folder') {
+				const made = await duplicateFolder(e.id);
+				if (made) ids.push(made.id);
+			} else {
+				const item = $explorerItems.find((i: any) => i.id === e.id);
+				if (item?.kind === 'scene') { skippedScenes++; continue; }
+				const made = await duplicateItem(e.id);
+				if (made) ids.push(made.id);
+			}
+		}
+		if (ids.length) setSel(ids);
+		if (!ids.length && !skippedScenes) return showToast('Nothing to duplicate here');
+		showToast(
+			(ids.length ? 'Duplicated ' + plural(ids.length, 'item') : '') +
+				(skippedScenes ? (ids.length ? ' — ' : '') + plural(skippedScenes, 'scene') + ' skipped (duplicate a scene from its own menu)' : '')
+		);
+	}
+	/** Copy / Cut the selection onto the in-app clipboard */
+	function clipSelection(mode: 'copy' | 'cut') {
+		const entries = clipEntriesOfSelection();
+		if (mode === 'cut') {
+			// a cut MOVES; mount files and shared-by-peer rows are copied instead
+			const movable = entries.filter((e) => !e.volumeId);
+			if (!movable.length) return showToast('Nothing here can be cut — use Copy');
+			setClipboard(movable, 'cut', activeLibraryFolder());
+			showToast('Cut ' + plural(movable.length, 'item') + ' — paste into a folder to move');
+			return;
+		}
+		if (!entries.length) return showToast('Nothing to copy');
+		setClipboard(entries, 'copy', activeLibraryFolder());
+		showToast('Copied ' + plural(entries.length, 'item') + ' — paste into a folder');
+	}
+	/** Paste the clipboard into a library folder (null = the root) */
+	async function pasteClipboard(folderId?: string | null) {
+		const clip = $explorerClipboard;
+		if (!clip?.entries.length) return showToast('Nothing to paste');
+		const target = pasteTarget(folderId);
+		if (!target.ok) return showToast('Paste into a Library folder');
+		const into = target.folderId;
+		const landed: string[] = [];
+		const fromMount = clip.entries.filter((e) => e.volumeId);
+		if (fromMount.length) {
+			const rows = fromMount.map((e) => volumeRow(e.volumeId as string, e.id)).filter(Boolean);
+			await copyOutOfVolume(rows, into);
+		}
+		for (const e of clip.entries) {
+			if (e.volumeId) continue;
+			if (clip.mode === 'cut') {
+				if (e.kind === 'folder') {
+					if (moveFolder(e.id, into)) landed.push(e.id);
+				} else {
+					const item = $explorerItems.find((i: any) => i.id === e.id);
+					if (!item) continue;
+					if ((item.folderId ?? null) !== (into ?? null)) moveItem(e.id, into);
+					landed.push(e.id);
+				}
+			} else if (e.kind === 'folder') {
+				const made = await duplicateFolder(e.id, into);
+				if (made) landed.push(made.id);
+			} else {
+				const made = await duplicateItem(e.id, { folderId: into });
+				if (made) landed.push(made.id);
+			}
+		}
+		if (clip.mode === 'cut') clearClipboard(); // a cut is spent; a copy can paste again
+		if (landed.length) {
+			if ((into ?? null) !== ($activeFolder ?? null) && typeof $activeFolder !== 'string') setSel(landed);
+			else setSel(landed);
+			showToast((clip.mode === 'cut' ? 'Moved ' : 'Pasted ') + plural(landed.length, 'item'));
+		} else if (!fromMount.length) showToast('Nothing pasted');
+	}
+	/** a mount's row by id (for a paste out of a mount) */
+	function volumeRow(volumeId: string, id: string): any {
+		const vol = $mountedVolumes.find((v: any) => v.id === volumeId);
+		const row = vol?.items?.find((i: any) => i.id === id);
+		return row ? { ...row, volumeId } : null;
+	}
+
 	function selectionParts() {
 		const entries = selectedEntries();
 		const folders = entries
@@ -3687,6 +3841,14 @@
 					showToast(plural(unshareable.length + unshareableFolders.length, 'item') + ' no longer shared');
 				}
 			});
+		// 24-C1: the set as a whole — every library file/folder in it (mount files copy)
+		const clipCount = clipEntriesOfSelection().length;
+		if (clipCount)
+			items.push(
+				{ label: `Duplicate ${plural(clipCount, 'item')}`, icon: 'copy', hint: 'Ctrl+D', action: () => void duplicateSelection() },
+				{ label: `Copy ${plural(clipCount, 'item')}`, icon: 'clipboard-copy', hint: 'Ctrl+C', action: () => clipSelection('copy') },
+				{ label: `Cut ${plural(clipCount, 'item')}`, icon: 'scissors', hint: 'Ctrl+X', action: () => clipSelection('cut') }
+			);
 		if (counts.deletable)
 			items.push({
 				label: `Delete ${plural(counts.deletable, 'item')}`,
@@ -3850,6 +4012,14 @@
 					action: () => instantiatePrefab(prefab)
 				},
 				{
+					// 24-C1: a second prefab record with the same snapshot, its own id
+					label: 'Duplicate',
+					icon: 'copy',
+					hint: 'Ctrl+D',
+					tooltip: 'A copy of this prefab under a new name',
+					action: () => void duplicatePrefab(prefab.id).then((made: any) => made && showToast('Duplicated as ' + made.name))
+				},
+				{
 					label: 'Export',
 					icon: 'arrow-down-to-line', // Icon.svelte's MAP falls back to a plain Box for an unknown name
 					children: [
@@ -3943,6 +4113,17 @@
 						tooltip:
 							'Import these bytes into your own library — deduped by content hash, like any other import',
 						action: () => void copyOutOfVolume([item], activeLibraryFolder())
+					},
+					{
+						// 24-C1: the clipboard route to the same import — paste into the folder you want
+						label: 'Copy',
+						icon: 'clipboard-copy',
+						hint: 'Ctrl+C',
+						tooltip: 'Paste into a Library folder to import it there',
+						action: () => {
+							setClipboard([{ id: item.id, kind: 'item', volumeId: item.volumeId }], 'copy', activeLibraryFolder());
+							showToast('Copied ' + item.name + ' — paste into a Library folder');
+						}
 					},
 					{ section: item.volumeName ?? 'Mounted project' },
 					{ label: 'Rename', icon: 'pencil', action: () => startRenameItem(item) },
@@ -4105,6 +4286,45 @@
 								icon: 'history',
 								tooltip: 'Earlier versions of this scene — restore, pin or free their bytes',
 								action: () => showProperties({ kind: 'item', item })
+							}
+						]
+					: []),
+				// 24-C1: a copy is a new RECORD with the same bytes; Copy/Cut go to the in-app
+				// clipboard (a page cannot put a file on the OS clipboard — text kinds keep
+				// "Copy contents" below for that)
+				{
+					label: 'Duplicate',
+					icon: 'copy',
+					hint: 'Ctrl+D',
+					disabled: item.kind === 'scene' || !!item.packEntry,
+					tooltip: item.packEntry
+						? 'Packs are read-only bundles'
+						: item.kind === 'scene'
+							? 'Duplicate a scene from its Scenes row (it needs a new name inside the file)'
+							: 'A second copy beside this one — same bytes, its own record',
+					action: () => void duplicateItem(item.id).then((made: any) => made && setSel([made.id]))
+				},
+				...(!item.packEntry
+					? [
+							{
+								label: 'Copy',
+								icon: 'clipboard-copy',
+								hint: 'Ctrl+C',
+								tooltip: 'Then paste into another folder',
+								action: () => {
+									setClipboard([{ id: item.id, kind: 'item' }], 'copy', activeLibraryFolder());
+									showToast('Copied ' + item.name + ' — paste into a folder');
+								}
+							},
+							{
+								label: 'Cut',
+								icon: 'scissors',
+								hint: 'Ctrl+X',
+								tooltip: 'Then paste into another folder to move it',
+								action: () => {
+									setClipboard([{ id: item.id, kind: 'item' }], 'cut', activeLibraryFolder());
+									showToast('Cut ' + item.name + ' — paste into a folder to move it');
+								}
 							}
 						]
 					: []),
@@ -4641,6 +4861,17 @@
 						{ label: 'Load pack from URL', icon: 'globe', action: loadPackFromUrl }
 					]
 				: [
+						// 24-C1: what the clipboard holds lands in THIS folder
+						{
+							label: clipboardLabel($explorerClipboard),
+							icon: 'clipboard-paste',
+							hint: 'Ctrl+V',
+							disabled: !$explorerClipboard?.entries.length,
+							tooltip: $explorerClipboard?.entries.length
+								? ($explorerClipboard.mode === 'cut' ? 'Move' : 'Copy') + ' into this folder'
+								: 'Copy or cut something first (Ctrl+C / Ctrl+X on a card)',
+							action: () => void pasteClipboard()
+						},
 						{ label: 'New folder', icon: 'folder-plus', action: () => startCreate($activeFolder ?? null, true) },
 						// 21-F4: a saved scene is an ordinary content-hashed .tpscene item —
 						// a Travel node loads it by hash. 21-G1: the `Scenes` folder is only
@@ -5842,6 +6073,8 @@
 	-->
 	<tr
 		data-card-id={id}
+		class:opacity-50={!!$explorerClipboard && isCutPending(id)}
+		data-cut={!!$explorerClipboard && isCutPending(id) ? '1' : undefined}
 		class="ex-row {isFolder ? 'explorer-folder-card' : 'explorer-card'} {isFolder && folder.deletedNode
 			? 'ex-deleted-node'
 			: ''} {isFolder && folder.ghost ? 'ex-deleted-ghost' : ''} {cardClass(selectedIds, $inspectedFile, selected, id)} {!isFolder &&
@@ -6898,6 +7131,8 @@
 							onpointerdown={(e) => onCardPointerDown(e, item)}
 							onpointermove={onCardPointerMove}
 							onpointerup={onCardPointerUp}
+							data-cut={!!$explorerClipboard && isCutPending(item.id) ? '1' : undefined}
+							class:opacity-50={!!$explorerClipboard && isCutPending(item.id)}
 							oncontextmenu={(e) => itemMenu(e, item)}
 							onclick={(e) => onCardClick(e, item)}
 							ondblclick={() => openItem(item)}

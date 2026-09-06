@@ -76,7 +76,8 @@
 		resetShortcut,
 		resetAllShortcuts,
 		setOverride,
-		setShortcutCapture
+		setShortcutCapture,
+		nonLatinLayoutSeen
 	} from '$lib/shortcuts';
 	import {
 		aiEnabled,
@@ -109,6 +110,38 @@
 
 	let shortcutGroups = [...new Set(shortcuts.map((s) => s.group))];
 	let shortcutsExpanded = false;
+	/**
+	 * 24-A1: what the CURRENT layout prints on each physical key (Chromium's
+	 * `navigator.keyboard.getLayoutMap`; null where the API is missing — Firefox,
+	 * Safari). Letter shortcuts resolve by physical position on a non-Latin layout, so
+	 * the list says which printed key that is ("G · п on your layout"). Loaded when the
+	 * section opens; the map is tiny and the call is async, hence the store-free `let`.
+	 */
+	let layoutLabels: Map<string, string> | null = null;
+	let layoutLabelsAsked = false;
+	function loadLayoutMap() {
+		if (layoutLabelsAsked) return;
+		layoutLabelsAsked = true;
+		const kb = (navigator as any)?.keyboard;
+		if (!kb?.getLayoutMap) return;
+		kb.getLayoutMap()
+			.then((map: Map<string, string>) => {
+				layoutLabels = map;
+			})
+			.catch(() => {});
+	}
+	$: if (shortcutsExpanded) loadLayoutMap();
+	/** The printed label for a combo's letter when the layout prints something that is
+	 * NOT that Latin letter — the only case where the hybrid rule falls back to the
+	 * physical key and a hint helps. AZERTY/Dvorak print Latin letters and need none. */
+	function layoutHint(keys: string, labels: Map<string, string> | null): string {
+		if (!labels) return '';
+		const last = String(keys || '').split('+').pop() || '';
+		if (!/^[A-Z]$/.test(last)) return '';
+		const printed = labels.get('Key' + last) || '';
+		if (!printed || /^[a-z]$/i.test(printed)) return '';
+		return printed;
+	}
 
 	// --- Phase 5: rebinding ------------------------------------------------
 	// The registry is a plain array, so nothing here re-renders when a combo
@@ -2012,6 +2045,13 @@
 					     - click a row's keys and press the combo you want. A row with no action
 					     of its own (fly keys, push-to-talk, the mesh-edit bundles, a module's
 					     declared bindings) is listed for discoverability and locked. -->
+					{#if $nonLatinLayoutSeen && !layoutLabels}
+						<!-- 24-A1: the browser cannot tell us the printed labels (no getLayoutMap), but
+						     a keydown already showed a non-Latin layout — say how letters resolve -->
+						<p id="shortcut-layout-note" class="mb-1 text-xs text-amber-600 dark:text-amber-400">
+							Letter shortcuts use the physical key position on this layout (the key where the letter sits on a QWERTY keyboard).
+						</p>
+					{/if}
 					<div class="mb-1 flex items-center justify-between gap-3">
 						<p class="text-xs text-gray-500 dark:text-gray-400">Click a shortcut's keys to rebind it - Esc cancels.</p>
 						<button
@@ -2041,6 +2081,9 @@
 												</span>
 											{/if}
 											<span class="text-sm text-gray-600 dark:text-gray-300">{shortcut.label}</span>
+											{#if layoutHint(shortcut.keys, layoutLabels)}
+												<span class="shortcut-layout shrink-0 text-xs text-gray-400" title="Your keyboard layout prints this on that key">· {layoutHint(shortcut.keys, layoutLabels)} on your layout</span>
+											{/if}
 											{#if isRebindable(shortcut) && shortcut.keys !== shortcut.defaultKeys}
 												<button
 													class="shortcut-reset ml-auto shrink-0 rounded-sm p-1 text-gray-400 hover:text-gray-200"

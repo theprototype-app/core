@@ -34,6 +34,7 @@
 	// W5: the BINDING for this editor's grab key lives in the shortcut registry (an
 	// `external` row), so Settings can move it; the key itself is answered here.
 	import { comboOf, bindingOf } from '$lib/shortcuts';
+	import { keyOf } from '$lib/keyOf';
 	import ContextMenu from '../ContextMenu.svelte';
 	// read-only: the Edit Mesh pick is what scopes the UV view (UV5)
 	import { faceEditSelectedTris, faceEditObject, triangleCount } from '$lib/faceEdit';
@@ -1036,6 +1037,8 @@
 		if (from && (from.tagName === 'INPUT' || from.tagName === 'TEXTAREA' || from.tagName === 'SELECT' || from.isContentEditable))
 			return;
 		const ctrl = e.ctrlKey || e.metaKey;
+		// 24-A1: the layout-independent token — `L` on a Cyrillic layout arrives as `д`
+		const k = keyOf(e);
 		const claim = () => {
 			e.preventDefault();
 			e.stopPropagation();
@@ -1052,9 +1055,9 @@
 			armXform('move');
 			return;
 		}
-		if (!ctrl && !e.altKey && (e.key === '1' || e.key === '2' || e.key === '3')) {
+		if (!ctrl && !e.altKey && !e.shiftKey && (k === '1' || k === '2' || k === '3')) {
 			claim();
-			armXform(e.key === '1' ? 'move' : e.key === '2' ? 'rotate' : 'scale');
+			armXform(k === '1' ? 'move' : k === '2' ? 'rotate' : 'scale');
 			return;
 		}
 		if (e.code === 'Space' && ctrl) {
@@ -1075,17 +1078,17 @@
 			selCluster = [];
 			return;
 		}
-		if (ctrl && !e.shiftKey && (e.key === 'a' || e.key === 'A')) {
+		if (ctrl && !e.shiftKey && k === 'A') {
 			claim();
 			selectAllUv();
 			return;
 		}
-		if (ctrl && !e.shiftKey && (e.key === 'i' || e.key === 'I')) {
+		if (ctrl && !e.shiftKey && k === 'I') {
 			claim();
 			invertUv();
 			return;
 		}
-		if (!ctrl && !e.altKey && (e.key === 'l' || e.key === 'L')) {
+		if (!ctrl && !e.altKey && k === 'L') {
 			claim();
 			selectLinked();
 			return;

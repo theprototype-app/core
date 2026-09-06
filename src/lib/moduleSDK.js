@@ -1,3 +1,4 @@
+import { keyOf, letterOf } from './keyOf';
 import * as THREE from 'three';
 import { writable, get } from 'svelte/store';
 import { globalScene, objectsGroup, selectedObject, selectedObjects, globalCamera, isVRMode, isLocked } from '../stores/sceneStore';
@@ -625,6 +626,20 @@ function makeApi(moduleId, moduleName = moduleId) {
 		/** Per-frame input snapshot: {codes: Set<'KeyW'...>, axes: {lx,ly,rx,ry}, vrButtons} */
 		input() {
 			return inputApi().getInput();
+		},
+		/**
+		 * 24-A1: the key token the EDITOR's shortcuts resolve by — `event.key` when it is
+		 * an ASCII letter/digit, else the physical `event.code` position — so a module
+		 * reading the keyboard itself works on a Cyrillic/Greek/Hebrew layout too.
+		 * `'G'`, `'7'`, `'Escape'`; `letterOf` gives the lowercase form (`'g'`).
+		 * @param {KeyboardEvent} event
+		 */
+		keyOf(event) {
+			return keyOf(event);
+		},
+		/** @param {KeyboardEvent} event */
+		letterOf(event) {
+			return letterOf(event);
 		},
 		/** Key down/up events; returns an unsubscribe. @param {(kind: 'down'|'up', code: string) => void} fn */
 		onInput(fn) {

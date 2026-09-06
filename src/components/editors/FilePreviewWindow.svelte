@@ -52,6 +52,7 @@
 	import { get } from 'svelte/store';
 	import AudioPlayer from './AudioPlayer.svelte';
 	import AnimationPlayer from './AnimationPlayer.svelte';
+	import { keyOf } from '$lib/keyOf';
 
 	/**
 	 * R22 round 12 — ONE INSTANCE PER OPEN WINDOW. `winId` addresses this window's entry in
@@ -302,6 +303,9 @@
 			 * because stepping the control under your hand is what those keys do everywhere
 			 * and taking them away to walk to the next FILE would be a nasty surprise. */
 			const onRange = tag === 'INPUT' && type === 'range';
+			// 24-A1: R / I / M / L / 0-9 by layout-independent token, so a Cyrillic user
+			// gains this window's keys too (named keys and , . stay by `key`)
+			const k = keyOf(e);
 			const stop = () => {
 				e.preventDefault();
 				e.stopPropagation();
@@ -329,12 +333,12 @@
 			// this WINDOW's turntable (the same thing a click on the model does, which is why
 			// it is not the pref); I is the info overlay, and that one IS the shared pref,
 			// because hiding chrome everywhere at once is what that switch is for.
-			if (face === 'object' && (e.key === 'r' || e.key === 'R')) {
+			if (face === 'object' && k === 'R') {
 				stop();
 				spinning = !spinning;
 				return;
 			}
-			if (face === 'object' && (e.key === 'i' || e.key === 'I')) {
+			if (face === 'object' && k === 'I') {
 				stop();
 				previewShowStats.set(!$previewShowStats);
 				return;
@@ -364,9 +368,9 @@
 				}
 				if (e.key === 'Home') return stop(), player.toFraction(0);
 				if (e.key === 'End') return stop(), player.toFraction(0.999);
-				if (e.key === 'm' || e.key === 'M') return stop(), player.toggleMute();
-				if (e.key === 'l' || e.key === 'L') return stop(), player.toggleLoop();
-				if (/^[0-9]$/.test(e.key)) return stop(), player.toFraction(Number(e.key) / 10);
+				if (k === 'M') return stop(), player.toggleMute();
+				if (k === 'L') return stop(), player.toggleLoop();
+				if (/^[0-9]$/.test(k)) return stop(), player.toFraction(Number(k) / 10);
 			}
 			if (onRange) return;
 			if (e.key === 'ArrowLeft') return stop(), step(-1);

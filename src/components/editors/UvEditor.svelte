@@ -20,7 +20,7 @@
 	import { applyExplorerImage } from '$lib/explorerDrop';
 	import { unwrapBackends } from '$lib/uvUnwrap';
 	import {
-		uvActiveSlot, uvTool, uvBrushColor, uvBrushSize, uvFaceFilter, uvPaintTick, uvEditable, uvViewable, UV_WIRE_LIMIT, uvTriangles, materialsOf, slotCount,
+		uvActiveSlot, uvTool, uvBrushColor, uvBrushSize, uvPenPressure, uvFaceFilter, uvPaintTick, uvEditable, uvViewable, UV_WIRE_LIMIT, uvTriangles, materialsOf, slotCount,
 		nearestUvIndex, weldedCluster, expandClusters, uvIndicesInRect, uvIndicesInPolygon,
 		beginUvDrag, endUvDrag, cancelUvDrag,
 		beginPaintStroke, paintMove, endPaintStroke, cancelPaintStroke,
@@ -828,14 +828,20 @@
 		// pending moves queue behind the seed.
 		if ($uvTool === 'paint') {
 			gesture = 'paint';
+			// 24-F1 (found on the way): this branch returned WITHOUT the window move/up
+			// pair, so a pointer stroke got its first dab and nothing else — no moves
+			// painted and no pointerup ever committed it (the uv-paint suite asserted only
+			// the gesture name). The pair below is what pan / marquee / lasso attach.
+			attachDragListeners();
 			const uuid = target.uuid;
 			const at = { u: toU(x), v: toV(y) };
+			const w = pressureOf(e);
 			beginPaintStroke(uuid, slot).then((ok) => {
 				if (!ok) {
 					if (gesture === 'paint') gesture = 'idle';
 					return;
 				}
-				paintMove(at.u, at.v, $uvBrushColor, brushUv());
+				paintMove(at.u, at.v, $uvBrushColor, brushUv(), w);
 			});
 			return;
 		}
@@ -914,9 +920,29 @@
 			// thin the path: sub-pixel samples add nothing but work
 			if (!last || Math.abs(last[0] - x) > 1.5 || Math.abs(last[1] - y) > 1.5) lasso = [...lasso, [x, y]];
 		} else if (gesture === 'paint') {
-			const { x, y } = localPoint(e);
-			paintMove(toU(x), toV(y), $uvBrushColor, brushUv());
+			// 24-F1: every COALESCED sample (a fast pen stroke delivers several per
+			// frame) becomes a dab, each with its own pressure — smoother curves for
+			// any device; paintMove's throttle still bounds the wire
+			let samples = [];
+			try {
+				samples = /** @type {any} */ (e).getCoalescedEvents?.() ?? [];
+			} catch {
+				samples = []; // an untrusted (synthetic) event may refuse the call
+			}
+			for (const sample of samples.length ? samples : [e]) {
+				const { x, y } = localPoint(sample);
+				paintMove(toU(x), toV(y), $uvBrushColor, brushUv(), pressureOf(sample));
+			}
 		}
+	}
+
+	/** 24-F1: a PEN's pressure (0..1); a mouse or a finger returns undefined, so the
+	 * point stays a plain [u, v] and the wire is byte-identical to before.
+	 * @param {any} e */
+	function pressureOf(e) {
+		if ($uvPenPressure === 'off' || e?.pointerType !== 'pen') return undefined;
+		const p = Number(e.pressure);
+		return Number.isFinite(p) ? Math.max(0, Math.min(1, p)) : undefined;
 	}
 
 	/** The brush is set in TEXTURE pixels, so it paints the same width whatever
@@ -1855,9 +1881,23 @@
 								oninput={(e) => uvBrushSize.set(parseInt(e.currentTarget.value) || 1)}
 							/>
 						</label>
+						<!-- 24-F1: pen pressure — size (default) · opacity · off -->
+						<div class="mt-2 text-[11px] text-gray-400">Pen pressure</div>
+						<div id="uv-pen-pressure" class="mt-1 flex gap-1" role="radiogroup" aria-label="Pen pressure">
+							{#each [['size', 'Size'], ['opacity', 'Opacity'], ['off', 'Off']] as [value, label] (value)}
+								<button
+									type="button"
+									role="radio"
+									aria-checked={$uvPenPressure === value}
+									data-value={value}
+									class={'flex-1 rounded-sm px-2 py-0.5 text-[11px] ' + ($uvPenPressure === value ? 'bg-primary-600 text-white' : 'bg-gray-700 text-gray-300 hover:bg-gray-600')}
+									onclick={() => uvPenPressure.set(/** @type {any} */ (value))}>{label}</button>
+							{/each}
+						</div>
 						<p class="mt-1 text-[10px] leading-relaxed text-gray-500">
 							Size is in texture pixels, so it paints the same width at any zoom.
-							Each stroke is one undo step; peers watch it live.
+							Each stroke is one undo step; peers watch it live. A pen's pressure varies the
+							width (or the opacity); a mouse stroke is unchanged.
 						</p>
 					</div>
 				{/if}

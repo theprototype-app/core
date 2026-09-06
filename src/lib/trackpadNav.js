@@ -67,23 +67,122 @@ pinchZoomEnabled.subscribe((value) => {
 	if (typeof localStorage !== 'undefined') localStorage.setItem('trackpadPinchZoom', String(value));
 });
 
-/** end timestamp of the current trackpad-swipe gesture (see isTrackpadSwipe) */
-let lastSwipeTs = 0;
+// ---- 24-A2: the wheel classifier ------------------------------------------------
+//
+// THE FINDING: the old test was MAGNITUDE — a pixel-mode event under 40px was "a
+// trackpad" and PANNED. Linux Chromium/CEF with libinput's high-resolution scrolling
+// (the Steam Deck's trackpad-as-wheel, Logitech hi-res wheels, many laptops) emits
+// 3-15px ticks, so every notch panned and the dolly never fired ("scrolling moving
+// up/down camera does not work"). Firefox delivers line mode and was fine.
+//
+// THE RULE NOW: DEVICE SIGNATURE, not size. A real wheel is a `wheelDeltaY` multiple of
+// 120 (Chromium/WebKit's legacy field), or an integer vertical-only delta of notch size,
+// or a SPARSE stream — one event, then silence. A trackpad is dense, often two-axis,
+// fractional. The thresholds are exported CONSTANTS so the Settings ▸ Controls readout
+// (`lastWheelEvents`, the Deck's own numbers) can tune them without a refactor.
+// `trackpadMode` 'on'/'off' still overrides everything.
+//
+// The one honest ambiguity is the FIRST event of a vertical-only stream: a hi-res
+// wheel notch and the first sample of a two-finger swipe look identical at that
+// instant (small, deltaX 0). Deciding "wheel" there would dolly one step at the start
+// of every Mac trackpad swipe, so that event is HELD for `TRACKPAD_DENSE_MS`: a
+// follow-up inside the window makes it a swipe (both samples pan), silence makes it a
+// notch and it is REPLAYED to the canvas for OrbitControls. ~20ms of latency on the
+// first notch only; nothing else waits.
 
-/** Trackpad-swipe detector. Classic wheels tick in coarse (>=40px or line-mode)
- *  vertical jumps; trackpads emit fine pixel deltas, usually with a horizontal
- *  component. STATEFUL: once a swipe is recognized, events arriving within the
- *  gesture window stay a PAN even when a fast flick produces big deltas — the
- *  per-event heuristic alone let mid-pan flicks fall through to zoom.
- *  @param {WheelEvent} e */
-function isTrackpadSwipe(e) {
+/** Chromium/WebKit report a real wheel notch as `wheelDeltaY` in multiples of this. */
+export const WHEEL_NOTCH = 120;
+/** A vertical-only INTEGER delta at/over this many px is a wheel whatever the cadence. */
+export const WHEEL_MIN_INTEGER_PX = 40;
+/** Events closer than this are one dense stream (a swipe); a lone event = a notch. */
+export const TRACKPAD_DENSE_MS = 20;
+/** Continuation window: once a gesture is classified, later events keep the verdict. */
+export const GESTURE_WINDOW_MS = 250;
+/** Diagnostics ring length (Settings ▸ Controls ▸ Wheel diagnostics). */
+export const WHEEL_LOG_SIZE = 8;
+
+/**
+ * @typedef {{ t: number, dt: number, deltaMode: number, deltaX: number, deltaY: number,
+ *   wheelDeltaY: number | null, ctrl: boolean, kind: 'wheel'|'trackpad'|'pinch', why: string }} WheelSample
+ */
+
+/** The last few wheel events over the canvas, newest LAST — the readout that turns a
+ *  "scrolling does nothing on my machine" report into numbers in one minute.
+ *  @type {import('svelte/store').Writable<WheelSample[]>} */
+export const lastWheelEvents = writable([]);
+
+/** @param {WheelSample} sample */
+function logWheel(sample) {
+	lastWheelEvents.update((list) => {
+		const next = [...list, sample];
+		return next.length > WHEEL_LOG_SIZE ? next.slice(next.length - WHEEL_LOG_SIZE) : next;
+	});
+}
+
+/** timestamp of the previous over-canvas wheel event (cadence) */
+let lastWheelTs = 0;
+/** what the previous event was classified as, for the continuation rule */
+/** @type {'wheel'|'trackpad'|null} */
+let lastKind = null;
+/** a first vertical-only event waiting to learn whether a stream follows */
+/** @type {{ e: WheelEvent, t: number, timer: any } | null} */
+let held = null;
+/** set on a replayed event so the capture listener lets it through to OrbitControls */
+const REPLAY = '__tpWheelReplay';
+
+/**
+ * Signature verdict for one event, or null when it is ambiguous (decided by cadence).
+ * Pure: no state read beyond the constants.
+ * @param {WheelEvent} e
+ * @returns {{ kind: 'wheel'|'trackpad', why: string } | null}
+ */
+export function classifyWheelSignature(e) {
+	if (e.deltaMode !== 0) return { kind: 'wheel', why: 'line/page mode' };
+	const wd = /** @type {any} */ (e).wheelDeltaY;
+	if (typeof wd === 'number' && wd !== 0 && wd % WHEEL_NOTCH === 0) return { kind: 'wheel', why: 'notch multiple' };
+	if (e.deltaX === 0 && Number.isInteger(e.deltaY) && Math.abs(e.deltaY) >= WHEEL_MIN_INTEGER_PX)
+		return { kind: 'wheel', why: 'integer ≥ ' + WHEEL_MIN_INTEGER_PX + 'px' };
+	if (e.deltaX !== 0) return { kind: 'trackpad', why: 'two-axis' };
+	return null;
+}
+
+/**
+ * The full verdict, with mode override and cadence. `'hold'` = ambiguous first event.
+ * @param {WheelEvent} e @param {number} now
+ * @returns {{ kind: 'wheel'|'trackpad'|'hold', why: string }}
+ */
+function classifyWheel(e, now) {
 	const mode = get(trackpadMode);
-	if (mode === 'off') return false;
-	if (mode === 'on') return true;
-	if (e.deltaMode !== 0) return false;
-	const now = performance.now();
-	if (now - lastSwipeTs < 250) return true; // continuation of the active gesture
-	return e.deltaX !== 0 || Math.abs(e.deltaY) < 40;
+	if (mode === 'off') return { kind: 'wheel', why: 'mode: zoom' };
+	if (mode === 'on') return { kind: 'trackpad', why: 'mode: pan' };
+	if (e.deltaMode !== 0) return { kind: 'wheel', why: 'line/page mode' };
+	const gap = now - lastWheelTs;
+	// a LIVE swipe keeps panning whatever one sample looks like: a fast flick mid-gesture
+	// produces a big integer vertical delta (the trackpad-nav suite's case, user-reported
+	// as "mid-pan flicks zoomed"), and a macOS trackpad's 40px sample has wheelDeltaY
+	// -120 — both would read as a wheel by signature alone
+	if (lastKind === 'trackpad' && gap < GESTURE_WINDOW_MS) return { kind: 'trackpad', why: 'gesture continues' };
+	const signature = classifyWheelSignature(e);
+	if (signature) return signature;
+	if (lastKind === 'wheel' && gap < GESTURE_WINDOW_MS) return { kind: 'wheel', why: 'notch stream continues' };
+	// vertical-only, small, fractional or not, first after silence: cadence decides
+	return { kind: 'hold', why: 'first vertical sample' };
+}
+
+/** @param {WheelEvent} e @param {number} now @param {'wheel'|'trackpad'} kind @param {string} why */
+function sampleOf(e, now, kind, why) {
+	const wd = /** @type {any} */ (e).wheelDeltaY;
+	return {
+		t: now,
+		dt: lastWheelTs ? Math.round(now - lastWheelTs) : 0,
+		deltaMode: e.deltaMode,
+		deltaX: e.deltaX,
+		deltaY: e.deltaY,
+		wheelDeltaY: typeof wd === 'number' ? wd : null,
+		ctrl: !!e.ctrlKey,
+		kind,
+		why
+	};
 }
 
 /** Screen-space pan of the orbit camera + target (the same math OrbitControls
@@ -108,8 +207,58 @@ function panCamera(dx, dy) {
 	controls.target.add(pan);
 }
 
+/** Pan by one event's deltas (direction pref applied). @param {WheelEvent} e */
+function panBy(e) {
+	const dir = get(reversePan) ? 1 : -1; // default = content-follows-fingers
+	panCamera(dir * e.deltaX, dir * e.deltaY);
+}
+
+/** A2.3: once ever, the first time the classifier turns a wheel into a pan in auto
+ *  mode, point at the one-click override. `wheelHintSeen` in localStorage. */
+function maybeWheelHint() {
+	if (typeof localStorage === 'undefined' || localStorage.getItem('wheelHintSeen')) return;
+	localStorage.setItem('wheelHintSeen', '1');
+	import('../stores/appStore').then((m) =>
+		m.showToast('Wheel panned instead of zooming? Viewport menu ▸ View ▸ Mouse wheel switches it')
+	);
+}
+
+/** Replay a held event to the canvas so OrbitControls dollies exactly as it would have.
+ *  @param {WheelEvent} e */
+function replayToCanvas(e) {
+	const canvas = get(globalRenderer)?.domElement;
+	if (!canvas) return;
+	const copy = new WheelEvent('wheel', {
+		deltaX: e.deltaX,
+		deltaY: e.deltaY,
+		deltaZ: e.deltaZ,
+		deltaMode: e.deltaMode,
+		clientX: e.clientX,
+		clientY: e.clientY,
+		ctrlKey: e.ctrlKey,
+		shiftKey: e.shiftKey,
+		altKey: e.altKey,
+		metaKey: e.metaKey,
+		bubbles: true,
+		cancelable: true
+	});
+	/** @type {any} */ (copy)[REPLAY] = true;
+	canvas.dispatchEvent(copy);
+}
+
+/** The held first sample turned out to be alone: a wheel notch. */
+function releaseHeldAsWheel() {
+	const h = held;
+	held = null;
+	if (!h) return;
+	lastKind = 'wheel';
+	logWheel(sampleOf(h.e, h.t, 'wheel', 'held → alone = notch'));
+	replayToCanvas(h.e);
+}
+
 /** @param {WheelEvent} e */
 function onWheel(e) {
+	if (/** @type {any} */ (e)[REPLAY]) return; // our own replay: straight to OrbitControls
 	// a live proportional drag owns the wheel (radius resize) — never pan under it
 	if (proportionalWheelActive()) return;
 	const canvas = get(globalRenderer)?.domElement;
@@ -119,22 +268,70 @@ function onWheel(e) {
 	// lock to one axis unless started diagonally). Idempotent, set lazily
 	// because the renderer doesn't exist at install time.
 	if (canvas && canvas.style.touchAction !== 'none') canvas.style.touchAction = 'none';
+	const now = performance.now();
 	if (e.ctrlKey) {
 		// pinch / ctrl+wheel: the PAGE must never zoom. Over the canvas the event
 		// reaches OrbitControls (which dollies) UNLESS pinch zoom is disabled.
 		if (!get(allowBrowserZoom)) e.preventDefault();
 		if (overCanvas && !get(pinchZoomEnabled)) e.stopPropagation();
+		if (overCanvas) {
+			logWheel({ ...sampleOf(e, now, 'wheel', 'ctrl: pinch/zoom'), kind: 'pinch' });
+			lastWheelTs = now;
+		}
 		return;
 	}
 	if (!overCanvas) return; // UI panels keep native scrolling
 	if (document.pointerLockElement) return; // play mode owns the pointer
-	if (!get(panEnabled)) return; // pan off -> wheel zoom; right-drag still pans
-	if (!isTrackpadSwipe(e)) return; // classic wheel -> OrbitControls dolly
-	lastSwipeTs = performance.now(); // extend the gesture window
+	if (!get(panEnabled)) {
+		// pan off -> wheel zoom; right-drag still pans
+		logWheel(sampleOf(e, now, 'wheel', 'two-finger pan off'));
+		lastWheelTs = now;
+		return;
+	}
+	const verdict = classifyWheel(e, now);
+	if (held) {
+		// a second sample inside the dense window: the held one was a swipe's first
+		// sample — pan both, and this one is trackpad whatever its own signature said
+		const h = held;
+		clearTimeout(h.timer);
+		held = null;
+		// (the hold timer releases at TRACKPAD_DENSE_MS, so a follow-up that finds one
+		// still held IS inside the dense window — the wide-gap branch below is a guard
+		// against a late timer, nothing more)
+		if (now - h.t < TRACKPAD_DENSE_MS || verdict.kind === 'trackpad' || verdict.kind === 'hold') {
+			lastKind = 'trackpad';
+			logWheel(sampleOf(h.e, h.t, 'trackpad', 'held → stream = swipe'));
+			lastWheelTs = h.t;
+			panBy(h.e);
+			logWheel(sampleOf(e, now, 'trackpad', 'dense follow-up'));
+			lastWheelTs = now;
+			e.preventDefault();
+			e.stopPropagation();
+			panBy(e);
+			maybeWheelHint();
+			return;
+		}
+		// the gap was wider than the window: the held one was a notch after all
+		lastKind = 'wheel';
+		logWheel(sampleOf(h.e, h.t, 'wheel', 'held → alone = notch'));
+		lastWheelTs = h.t;
+		replayToCanvas(h.e);
+	}
+	if (verdict.kind === 'hold') {
+		e.preventDefault();
+		e.stopPropagation(); // OrbitControls must not dolly a swipe's first sample
+		held = { e, t: now, timer: setTimeout(releaseHeldAsWheel, TRACKPAD_DENSE_MS) };
+		lastWheelTs = now;
+		return;
+	}
+	logWheel(sampleOf(e, now, verdict.kind, verdict.why));
+	lastWheelTs = now;
+	lastKind = verdict.kind;
+	if (verdict.kind === 'wheel') return; // classic wheel -> OrbitControls dolly
 	e.preventDefault();
 	e.stopPropagation(); // capture phase: OrbitControls never sees the pan swipe
-	const dir = get(reversePan) ? 1 : -1; // default = content-follows-fingers
-	panCamera(dir * e.deltaX, dir * e.deltaY);
+	panBy(e);
+	if (get(trackpadMode) === 'auto') maybeWheelHint();
 }
 
 /** iOS Safari fires proprietary gesture events for pinch — the only reliable

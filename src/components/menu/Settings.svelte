@@ -6,7 +6,7 @@
 	import { showGrid, vrOverride, vrMenuHand, vrSnapAngle, vrMirrorSnapTurn, vrTeleportEnabled, vrSleeveEnabled, vrVertexHold, vrFlying, vrPassthrough, vrMenuHold, vrTargetHz, peerHandStyle } from '../../stores/sceneStore.js';
 	import { applyVRFrameRate } from '$lib/vrControls';
 	import { settingsOpen, settingsSection, hidePanels, restorePanels, advancedMode, showEnvInList, objectSearchEnabled, showSimControls, showToast, showRoomsButton, toastsInDrawerOnly, mobileUndockAllowed, enableShiftAdd, noteDoubleClickToOpen, duplicateCarriesAnimation, duplicateCarriesFlow, duplicateCarriesShader, touchTools, floatingToolbar, toolbarAlwaysOnTop } from '../../stores/appStore.js';
-	import { trackpadMode, allowBrowserZoom, reversePan, panEnabled, pinchZoomEnabled } from '$lib/trackpadNav';
+	import { trackpadMode, allowBrowserZoom, reversePan, panEnabled, pinchZoomEnabled, lastWheelEvents } from '$lib/trackpadNav';
 	import { gamepadPrefs, setGamepadPrefs, DEADZONE_RANGE, SENSITIVITY_RANGE } from '$lib/gamepadPrefs';
 	import { drawerSlot, cloudPluginInfo } from '$lib/cloudHooks';
 	import { versionString } from '$lib/version.js';
@@ -110,6 +110,16 @@
 
 	let shortcutGroups = [...new Set(shortcuts.map((s) => s.group))];
 	let shortcutsExpanded = false;
+	// 24-A2.1: the wheel diagnostics readout's static half — WHAT machine this is. The
+	// Steam Deck report ("scrolling does nothing") had never been measured; this row plus
+	// `lastWheelEvents` turns it into numbers in one minute.
+	const wheelPlatform =
+		typeof navigator === 'undefined'
+			? ''
+			: String((navigator as any).userAgentData?.platform || navigator.platform || '') +
+				(/Firefox/.test(navigator.userAgent) ? ' · Firefox' : /Chrom/.test(navigator.userAgent) ? ' · Chromium' : /Safari/.test(navigator.userAgent) ? ' · Safari' : '');
+	const wheelCoarse = typeof window !== 'undefined' && !!window.matchMedia?.('(pointer: coarse)').matches;
+	const fmt = (n: number | null) => (n === null || n === undefined ? '—' : Number.isInteger(n) ? String(n) : n.toFixed(2));
 	/**
 	 * 24-A1: what the CURRENT layout prints on each physical key (Chromium's
 	 * `navigator.keyboard.getLayoutMap`; null where the API is missing — Firefox,
@@ -847,6 +857,34 @@
 					<SettingRow name="Allow browser pinch zoom">
 						<svelte:fragment slot="control"><Toggle bind:checked={$allowBrowserZoom} /></svelte:fragment>
 						Accessibility: let pinch / Ctrl+scroll zoom the whole PAGE again (off keeps pinch as an app gesture and stops accidental page zoom over panels, on desktop and mobile)
+					</SettingRow>
+					<!-- 24-A2.1: the readout. A wheel is classified by DEVICE SIGNATURE now
+					     (trackpadNav.js); when a machine still guesses wrong, these are the numbers
+					     that tune the constants — and the Viewport menu ▸ View ▸ Mouse wheel row is
+					     the one-click fix meanwhile. -->
+					<SettingRow name="Wheel diagnostics" noControl>
+						<div id="wheel-diagnostics" class="text-xs">
+							<p class="mb-1 text-gray-500 dark:text-gray-400">
+								{wheelPlatform || 'unknown platform'} · pointer: {wheelCoarse ? 'coarse' : 'fine'} · wheel mode: {$trackpadMode === 'off' ? 'zoom' : $trackpadMode === 'on' ? 'pan' : 'auto'}
+							</p>
+							{#if $lastWheelEvents.length}
+								<div class="overflow-x-auto">
+									<table class="wheel-diag w-full text-left font-mono">
+										<thead><tr><th>Δt ms</th><th>mode</th><th>ΔX</th><th>ΔY</th><th>wheelΔY</th><th>ctrl</th><th>as</th><th>why</th></tr></thead>
+										<tbody>
+											{#each $lastWheelEvents as s, i (s.t + ':' + i)}
+												<tr data-kind={s.kind}>
+													<td>{s.dt}</td><td>{s.deltaMode}</td><td>{fmt(s.deltaX)}</td><td>{fmt(s.deltaY)}</td><td>{fmt(s.wheelDeltaY)}</td><td>{s.ctrl ? '✓' : ''}</td><td>{s.kind}</td><td>{s.why}</td>
+												</tr>
+											{/each}
+										</tbody>
+									</table>
+								</div>
+							{:else}
+								<p class="text-gray-500 dark:text-gray-400">Scroll over the viewport — the last 8 wheel events land here, with how each was classified.</p>
+							{/if}
+							<p class="mt-1 text-gray-500 dark:text-gray-400">If a mouse wheel pans instead of zooming (or a trackpad zooms), pick Viewport menu ▸ View ▸ Mouse wheel, or "Trackpad gestures" above.</p>
+						</div>
 					</SettingRow>
 				</AccordionItem>
 				<AccordionItem bind:open={inputExpanded}>

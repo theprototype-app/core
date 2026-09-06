@@ -25,6 +25,22 @@ const paste = (peer, hash) =>
 const approveOn = async (peer) => {
 	await peer.page.getByRole('button', { name: 'Approve' }).click({ timeout: 30000 });
 };
+/** press a toast action button. The button is asserted RENDERED and laid out, then
+ * clicked through the DOM: Playwright's actionability probe on the animated toast
+ * card timed out intermittently while the button was plainly there (its hit-test
+ * lands on the fly-in transition), and what this suite proves is the DECISION each
+ * button makes — asserted on the session state right after. */
+const clickToast = async (peer, name) => {
+	const found = await peer.page.evaluate((name) => {
+		const button = [...document.querySelectorAll('.tp-toast-action')].find((b) => b.textContent.trim() === name);
+		if (!button) return { found: false, buttons: [...document.querySelectorAll('.tp-toast-action')].map((b) => b.textContent.trim()) };
+		const laidOut = button.offsetParent !== null && button.getBoundingClientRect().width > 0;
+		if (laidOut) button.click();
+		return { found: true, laidOut };
+	}, name);
+	h.check(found.found && found.laidOut, `the "${name}" toast button is rendered (${JSON.stringify(found)})`);
+	await peer.page.waitForTimeout(300);
+};
 
 h.run(async () => {
 	const browser = await h.launch();
@@ -58,14 +74,14 @@ h.run(async () => {
 	await B.page.waitForTimeout(400);
 	toasts = await lastToasts(B);
 	h.check(toasts.some((t) => /Leave it and join/.test(t)), `a third id while connected asks to leave first (${JSON.stringify(toasts.at(-1))})`);
-	await B.page.getByRole('button', { name: 'Stay' }).click({ timeout: 10000 });
+	await clickToast(B, 'Stay');
 	await B.page.waitForTimeout(600);
 	h.check((await openPeers(B)).includes(A.id) && (await pendingOut(B)).length === 0, 'Stay leaves the session with A intact and dials nobody');
 
 	// ---- 4. ...and Leave & join leaves A and dials C ---------------------------------
 	await paste(B, '#' + C.id);
 	await B.page.waitForTimeout(400);
-	await B.page.getByRole('button', { name: 'Leave & join' }).click({ timeout: 10000 });
+	await clickToast(B, 'Leave & join');
 	await h.eventually(() => openPeers(A), (p) => !p.includes(B.id), 'A sees B leave (goodbye delivered)', 20000);
 	await h.eventually(() => pendingOut(B), (p) => p.includes(C.id), 'B dials C', 10000);
 	await approveOn(C);
@@ -79,6 +95,48 @@ h.run(async () => {
 	});
 	h.check(edge.empty === 'none' && edge.hashOnly === 'none', `an empty hash (our own clears) is ignored (${edge.empty}, ${edge.hashOnly})`);
 	h.check(edge.badSrv === 'none', `an unreadable ~srv is refused without a dial (${edge.badSrv})`);
+
+	// ---- 6. D2: a link pinning ANOTHER server switches at runtime, then dials ---------
+	// D on a CUSTOM config (the self-hosted box spelled out), E on the public cloud
+	const custom = { mode: 'custom', custom: { host: 'peerjs.theprototype.app', port: 443, path: '/peerjs', secure: true } };
+	const D = await h.setupPage(browser, 'D', { storage: { peerServerConfig: JSON.stringify(custom) } });
+	const E = await h.setupPage(browser, 'E', { storage: { peerServerConfig: JSON.stringify({ mode: 'public' }) } });
+	h.check((await serverKind(D)) === 'custom' && (await serverKind(E)) === 'public', `premise: D on a custom server, E on the public cloud (${await serverKind(D)}, ${await serverKind(E)})`);
+	await paste(D, '#' + E.id + '~srv=public');
+	await D.page.waitForTimeout(400);
+	toasts = await lastToasts(D);
+	h.check(toasts.some((t) => /^Join .* on the public PeerJS cloud\?/.test(t)), `a link pinning another server asks, naming it (${JSON.stringify(toasts.at(-1))})`);
+	await clickToast(D, 'Join');
+	await h.eventually(() => serverKind(D), (k) => k === 'public', 'D switched to the public cloud without a reload', 20000);
+	await h.eventually(() => pendingOut(D), (p) => p.includes(E.id), 'D dials E on the new server', 15000);
+	await approveOn(E);
+	await h.eventually(() => openPeers(D), (p) => p.includes(E.id), 'D is connected to E across the switch', 40000);
+	h.check((await navCount(D)) === 1, 'no navigation on D');
+	const idKept = await D.page.evaluate(() => { let p; window.__stores.peers.subscribe((x) => (p = x))(); return p.peer.id; });
+	h.check(idKept === D.id, `D kept its session id across the switch (${idKept} = ${D.id})`);
+
+	// ---- 7. D2: a pinned server that never opens: back where you were, said so -------
+	await D.page.evaluate(() => { let p; window.__stores.peers.subscribe((x) => (p = x))(); p.leaveSession(); });
+	await D.page.waitForTimeout(1500);
+	await paste(D, '#' + A.id + '~srv=' + encodeURIComponent('nonexistent.invalid:4443'));
+	await D.page.waitForTimeout(400);
+	await clickToast(D, 'Join');
+	await h.eventually(() => lastToasts(D), (t) => t.some((x) => /Could not reach nonexistent\.invalid:4443/.test(x)), 'an unreachable pinned server is reported by name', 30000);
+	await h.eventually(() => serverKind(D), (k) => k === 'public', 'D is back on the server it had (public)', 20000);
+	h.check((await pendingOut(D)).length === 0, 'and nothing was dialled');
+	await h.eventually(() => D.page.evaluate(() => { let p; window.__stores.peers.subscribe((x) => (p = x))(); return !!p.peer?.open; }), (o) => o, 'the rebuilt link on the previous server opened', 20000);
+
+	// ---- 8. D2: Settings ▸ Connection "Apply" switches without a reload -------------
+	await D.page.evaluate((cfg) => {
+		window.__stores.peerServer.peerServerConfig.set(cfg);
+		window.__stores.settingsSection.set('connection');
+		window.__stores.settingsOpen.set(true);
+	}, custom);
+	await D.page.waitForSelector('#peer-server-apply', { timeout: 15000 });
+	await D.page.locator('#peer-server-apply').click();
+	await h.eventually(() => serverKind(D), (k) => k === 'custom', 'Apply moved D to the configured custom server, no reload', 20000);
+	h.check((await navCount(D)) === 1, 'still one navigation entry on D');
+	await D.page.evaluate(() => window.__stores.settingsOpen.set(false));
 
 	await h.finish(browser);
 });

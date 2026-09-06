@@ -2,6 +2,8 @@ import * as THREE from 'three';
 import { writable, get } from 'svelte/store';
 import { RectAreaLightHelper } from 'three/addons/helpers/RectAreaLightHelper.js';
 import { globalScene, objectsGroup } from '../stores/sceneStore';
+// 24-E2: helpers + proxies live on the helper layer (the editor camera enables it)
+import { markHelper } from './helperLayer';
 
 // Makes lights visible and draggable: a type-specific helper plus a small
 // wireframe "bulb" pick proxy per light. Helpers and proxies live at the
@@ -89,11 +91,12 @@ function sync() {
 		migrateSpotTarget(light); // 24-E1: an old spot aims by rotation from here on
 		if (entries.has(light.uuid)) return;
 		const helper = helperFor(light);
-		if (helper) scene.add(helper);
+		if (helper) scene.add(markHelper(helper));
 		const proxy = new THREE.Mesh(
 			new THREE.SphereGeometry(0.18, 10, 8),
 			new THREE.MeshBasicMaterial({ color: 0xffd54a, wireframe: true })
 		);
+		markHelper(proxy);
 		proxy.name = 'light-proxy';
 		proxy.userData.lightUuid = light.uuid;
 		proxyRoot.add(proxy);

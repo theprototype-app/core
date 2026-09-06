@@ -8,6 +8,7 @@
 	import { settingsOpen, settingsSection, hidePanels, restorePanels, advancedMode, showEnvInList, objectSearchEnabled, showSimControls, showToast, showRoomsButton, toastsInDrawerOnly, mobileUndockAllowed, enableShiftAdd, noteDoubleClickToOpen, duplicateCarriesAnimation, duplicateCarriesFlow, duplicateCarriesShader, touchTools, floatingToolbar, toolbarAlwaysOnTop } from '../../stores/appStore.js';
 	import { trackpadMode, allowBrowserZoom, reversePan, panEnabled, pinchZoomEnabled, lastWheelEvents } from '$lib/trackpadNav';
 	import { lightHelperLength } from '$lib/lightHelpers';
+	import { helpersInPlay } from '$lib/helperLayer';
 	import { gamepadPrefs, setGamepadPrefs, DEADZONE_RANGE, SENSITIVITY_RANGE } from '$lib/gamepadPrefs';
 	import { drawerSlot, cloudPluginInfo } from '$lib/cloudHooks';
 	import { versionString } from '$lib/version.js';
@@ -837,6 +838,12 @@
 						<svelte:fragment slot="control"><Toggle bind:checked={$enableShiftAdd} /></svelte:fragment>
 						Pressing Shift+A opens the Add menu at the cursor and spawns the picked object
 						under it. Off by default — Shift also strafes the camera in fly mode
+					</SettingRow>
+					<SettingRow name="Show helpers in Play (debug)">
+						<svelte:fragment slot="control"><Toggle id="helpers-in-play" bind:checked={$helpersInPlay} /></svelte:fragment>
+						Light helpers, camera frustums and camera markers hide when Play starts (camera
+						previews and captures never show them). On, they render inside Play with a DEBUG
+						chip so a screenshot cannot be mistaken for the game
 					</SettingRow>
 					<SettingRow name="Double-click to open notes">
 						<svelte:fragment slot="control"><Toggle bind:checked={$noteDoubleClickToOpen} /></svelte:fragment>

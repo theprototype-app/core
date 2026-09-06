@@ -2,7 +2,7 @@
 // stay inside the viewport, persist the position per `key` in localStorage.
 // Windows sit on the --z-window tier; the caller sets size and z-index.
 
-import { clampWinSize, clampResize } from './windowSize';
+import { clampWinSize, clampResize, bottomReserve } from './windowSize';
 
 // 169: live reset registry — every draggable window (this action + the object
 // list's own dragMe) registers a reset fn so Settings can rescue windows stuck
@@ -95,17 +95,37 @@ export function dragWindow(node, { key, defaultRect = {}, resizable = false, axi
 	}
 
 	// min px of the window kept on-screen while DRAGGING — you can shove a window mostly
-	// off the left/right/bottom (to get it out of the way) but a grabbable strip always
-	// stays, and its top (the drag header) never goes above the top edge, so it's never
-	// lost. `reveal`/init clamp it FULLY back on-screen.
+	// off the left/right (to get it out of the way) but a grabbable strip always stays,
+	// and its top (the drag header) never goes above the top edge, so it's never lost.
+	// `reveal`/init clamp it FULLY back on-screen.
 	const KEEP = 52;
+
+	/** 24-B3: what must stay reachable at the bottom is the HEADER, not a strip. A
+	 * 52px strip measured against the raw viewport was exactly what the Controls pill
+	 * covered, so a toolbox dragged low kept "52px on-screen" and lost its header
+	 * under the HUD (user-reported). The header is measured live (`.move-handle`),
+	 * with the strip as the fallback for a window that drags by its whole body.
+	 *
+	 * NEVER capped by the node's own height (`Math.min(KEEP, h)` was the old strip's
+	 * rule): a toolbox caps its height against the space below its top (`--dw-top`
+	 * max-height), so as it is dragged down the NODE shrinks to a few pixels while
+	 * the header keeps rendering at its full height — measured 2px node / 28px header
+	 * at the bottom edge — and a keep derived from the node let the header slide
+	 * clean off. The header's own height is the honest number; the strip fallback
+	 * keeps the min. */
+	function keepHeader() {
+		const handle = node.querySelector?.('.move-handle');
+		const hh = handle ? handle.offsetHeight : 0;
+		return hh > 0 ? hh + 4 : Math.min(KEEP, node.offsetHeight || 0);
+	}
 
 	/** @param {boolean} full  true = keep the whole window on-screen; false = allow partial off */
 	function clamp(full) {
 		const w = node.offsetWidth || 0;
 		const h = node.offsetHeight || 0;
 		const keepX = full ? w : Math.min(KEEP, w);
-		const keepY = full ? h : Math.min(KEEP, h);
+		const header = keepHeader();
+		const keepY = full ? Math.max(h, header) : header;
 		rect.left = Math.min(Math.max(keepX - w, rect.left), Math.max(keepX - w, window.innerWidth - keepX));
 		// keep the window from sliding BEHIND the Connect bar/pill (which sits above the
 		// window tier) — only when they actually overlap horizontally (the centred pill on
@@ -116,8 +136,22 @@ export function dragWindow(node, { key, defaultRect = {}, resizable = false, axi
 			const r = cp.getBoundingClientRect();
 			if (rect.left < r.right && rect.left + w > r.left) minTop = Math.max(minTop, Math.round(r.bottom) + 4);
 		}
-		// top never above minTop (the drag header stays reachable); may slide off the bottom
-		rect.top = Math.min(Math.max(minTop, rect.top), Math.max(minTop, window.innerHeight - keepY));
+		// 24-B3: the bottom is chrome too. The band (`--controls-inset` on coarse/narrow
+		// viewports, the dock when it pushes the viewport, browser overlays via
+		// visualViewport) applies to every window; the centred Controls pill on a wide
+		// desktop is tested as a RECT, the symmetric of the Connect pill above, so a window
+		// can still be parked in a bottom corner beside it. Only a pill in the bottom half
+		// counts — a toolbar the user customized to the top is the Connect case, not this.
+		let maxTop = window.innerHeight - bottomReserve() - keepY;
+		const pill = typeof document !== 'undefined' ? document.getElementById('controls-pill') : null;
+		if (pill) {
+			const r = pill.getBoundingClientRect();
+			if (r.height > 0 && r.top > window.innerHeight / 2 && rect.left < r.right && rect.left + w > r.left)
+				maxTop = Math.min(maxTop, Math.round(r.top) - 4 - header);
+		}
+		// top never above minTop (the drag header stays reachable), never so low that the
+		// header goes under the bottom chrome
+		rect.top = Math.min(Math.max(minTop, rect.top), Math.max(minTop, maxTop));
 	}
 
 	/** clamp a persisted size into the current viewport (B7).
@@ -377,13 +411,23 @@ export function dragWindow(node, { key, defaultRect = {}, resizable = false, axi
 		save();
 	}
 
-	// a shrinking viewport must not strand a window at a size that no longer fits
+	// a shrinking viewport must not strand a window at a size that no longer fits —
+	// 24-B3: nor at a POSITION whose header is now under the bottom chrome. The
+	// visual viewport (browser overlays on SteamOS / mobile) is watched as well as the
+	// layout one. `clamp(false)` on purpose: the header must stay reachable, but a
+	// window the user parked partly off the side is not yanked back by a resize (a
+	// display decision, never saved — the reveal rule's reasoning).
 	const onWindowResize = () => {
-		if (!resizable) return;
-		clampSize();
-		apply();
+		if (suspended() || typeof rect.left !== 'number' || typeof rect.top !== 'number') return;
+		if (resizable) clampSize();
+		const before = rect.left + ',' + rect.top;
+		clamp(false);
+		if (resizable || before !== rect.left + ',' + rect.top) apply();
 	};
 	window.addEventListener('resize', onWindowResize);
+	const vv = typeof window !== 'undefined' ? window.visualViewport : null;
+	vv?.addEventListener?.('resize', onWindowResize);
+	vv?.addEventListener?.('scroll', onWindowResize);
 
 	return {
 		destroy() {
@@ -394,6 +438,8 @@ export function dragWindow(node, { key, defaultRect = {}, resizable = false, axi
 			io?.disconnect();
 			sizeWatch?.disconnect();
 			window.removeEventListener('resize', onWindowResize);
+			vv?.removeEventListener?.('resize', onWindowResize);
+			vv?.removeEventListener?.('scroll', onWindowResize);
 			grabber?.remove();
 			node.removeEventListener('pointerdown', down);
 			node.removeEventListener('pointermove', move);

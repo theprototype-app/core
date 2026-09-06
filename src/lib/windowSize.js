@@ -33,13 +33,43 @@ function topInset() {
 	return Math.max(0, Math.round(r.bottom) + 4);
 }
 
+/**
+ * 24-B3: bottom chrome a window's HEADER may not sit under. Three things cover the
+ * bottom of the layout viewport and none of them was accounted for — a toolbox
+ * dragged low slid its header under the Controls pill and was lost:
+ *  - `--controls-inset`: the band the Controls pill / play FAB and HUD buttons own on
+ *    coarse-pointer or narrow viewports (76px / 68px, ui.css), on `--z-hud` ABOVE windows;
+ *  - `--viewport-inset`: the bottom dock's height WHEN it pushes the viewport (the
+ *    `dockPushesViewport` pref; bottomDock.js publishes it gated, unlike
+ *    `--bottom-inset` which is the raw dock height);
+ *  - `visualViewport`: browser chrome drawn OVER the layout viewport (SteamOS's
+ *    gaming-mode browser, mobile URL bars) — `innerHeight` lies there, the visual
+ *    viewport does not.
+ * The centred Controls pill on a wide desktop is a RECT, not a band; dragWindow tests it
+ * per window so a window can still be parked in the bottom corners beside it.
+ */
+export function bottomReserve() {
+	if (typeof window === 'undefined' || typeof document === 'undefined') return 0;
+	let inset = 0;
+	let dock = 0;
+	try {
+		const cs = getComputedStyle(document.documentElement);
+		inset = parseFloat(cs.getPropertyValue('--controls-inset')) || 0;
+		dock = parseFloat(cs.getPropertyValue('--viewport-inset')) || 0;
+	} catch {}
+	const vv = window.visualViewport;
+	const overlay =
+		vv && typeof vv.height === 'number' ? Math.max(0, window.innerHeight - (vv.height + (vv.offsetTop || 0))) : 0;
+	return Math.max(inset, dock) + overlay;
+}
+
 /** The largest a window may be right now, given it will be placed below the top
- * chrome. @param {number} [margin] */
+ * chrome and above the bottom chrome (24-B3). @param {number} [margin] */
 export function viewportCap(margin = WIN_MARGIN) {
 	if (typeof window === 'undefined') return { w: Infinity, h: Infinity };
 	return {
 		w: Math.max(120, window.innerWidth - margin),
-		h: Math.max(120, window.innerHeight - margin - topInset())
+		h: Math.max(120, window.innerHeight - margin - topInset() - bottomReserve())
 	};
 }
 
@@ -70,7 +100,9 @@ export function clampResize(w, h, left, top, { minW = 260, minH = 180, margin = 
 	// wherever the top chrome pushed this window, so subtracting the inset again
 	// would shrink it twice
 	const maxW = Math.max(120, (typeof window === 'undefined' ? Infinity : window.innerWidth - margin) - Math.max(0, left || 0));
-	const maxH = Math.max(120, (typeof window === 'undefined' ? Infinity : window.innerHeight - margin) - Math.max(0, top || 0));
+	// 24-B3: the corner also stops above the bottom chrome, so a resize cannot put the
+	// grip under the Controls band either
+	const maxH = Math.max(120, (typeof window === 'undefined' ? Infinity : window.innerHeight - margin - bottomReserve()) - Math.max(0, top || 0));
 	return {
 		w: Math.min(Math.max(Math.min(minW, maxW), w || 0), maxW),
 		h: Math.min(Math.max(Math.min(minH, maxH), h || 0), maxH)

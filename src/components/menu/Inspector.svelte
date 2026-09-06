@@ -39,8 +39,7 @@
 		resetPivotOrigin,
 		reseatPivot,
 		pivotOnly,
-		pivotPose
-	} from '$lib/multiTransform';
+		pivotPose, pivotMode, pivotParentAvailable } from '$lib/multiTransform';
 	// 17-D: per-object transform ORIGIN (userData.origin, a local pivot offset)
 	import { originOf, originWorld, setOriginFromWorld, resetOrigin, originPreset } from '$lib/objectOrigin';
 	// the HINGE point: snap the origin to the vertices picked in Edit Mesh
@@ -1049,6 +1048,7 @@
 					items.map((item) => item.uuid),
 					keepOrigin
 				);
+			else if (items.length === 1 && originTarget && originSet) reseatPivot(); // 24-E3: the single-object pivot too
 		}, 500);
 	}
 
@@ -1077,6 +1077,25 @@
 			});
 			selectedObject.update((v) => v);
 			return;
+		}
+		// 24-E3: ONE object with an ORIGIN rotates/scales about it, exactly as a gizmo
+		// drag does — the pivot is already seated there (attachMultiPivot's single-object
+		// rule). The rows keep showing the object's own numbers, so the typed value is
+		// applied as a DELTA on the pivot (a per-gesture handle that starts at identity);
+		// position keeps writing the object itself (moving an object moves its origin).
+		if (field !== 'position' && originTarget && originSet) {
+			trackTransformGesture();
+			const current = Number($selectedObject[field][axis]) || 0;
+			const moved = applyPivotTransform((pivot) => {
+				if (field === 'rotation') pivot.rotation[axis] += next - current;
+				else pivot.scale[axis] *= current ? next / current : 1;
+			});
+			if (moved) {
+				selectedObject.update((v) => v);
+				autoKeyAfterEdit([$selectedObject]);
+				return;
+			}
+			// no pivot seated (VR, or a gizmo-suppressed mode): fall through to the plain write
 		}
 		trackTransformGesture(); // capture the BEFORE pose before we write
 		$selectedObject[field][axis] = next;
@@ -2756,6 +2775,20 @@
 								Centre
 							</Button>
 						</div>
+					</div>
+					<!-- 24-E3: the PIVOT POINT of the set — Blender's list minus the 3D cursor
+					     (the snap anchor plays that role). A hand-placed origin overrides any mode. -->
+					<div class="mb-1 grid grid-cols-[3.2rem_1fr] items-center gap-1">
+						<span class="text-[11px] text-gray-400">Pivot</span>
+						<ThemedSelect
+							id="pivot-mode"
+							items={[
+								{ value: 'median', name: 'Median point' },
+								{ value: 'active', name: 'Active object' },
+								{ value: 'parent', name: pivotParentAvailable() ? 'Parent origin' : 'Parent origin (no common parent)' },
+								{ value: 'individual', name: 'Individual origins' }
+							]}
+							bind:value={$pivotMode} />
 					</div>
 				{/if}
 				<div class="grid grid-cols-[3.2rem_1fr] items-center gap-1">

@@ -149,6 +149,15 @@ export const drawerSlot = writable(null);
  * @type {import('svelte/store').Writable<((el: HTMLElement) => (() => void) | void) | null>} */
 export const profileSlot = writable(null);
 
+/** 28-A5 (roadmap #28, publish · play · remix): THE SAVE ROW'S NEIGHBOUR. Rendered
+ * directly under the Save row's format segment in the logo menu (Sidebar.svelte),
+ * because a Publish row anywhere else is a row nobody finds. The plugin renders its
+ * own `.side-row`-styled element; Sidebar republishes the row look under the slot so
+ * a foreign button reads as a native row. Null without a plugin = the row does not
+ * exist, so the OSS menu is byte-identical.
+ * @type {import('svelte/store').Writable<((el: HTMLElement) => (() => void) | void) | null>} */
+export const sidebarSlot = writable(null);
+
 /** Roles bridge (2026-07-25): the cloud plugin publishes the live roles so CORE can
  * render a per-peer role control next to Watch, gate viewer actions, etc. Shape:
  * `{ myId, myRole, amAdmin, order:[…], roleOf(id), setRole(id,role) }` or null (no
@@ -159,8 +168,14 @@ export const rolesInfo = writable(null);
 /** V2 (versioning): the hooks-contract version a plugin can require via its
  * `compatibleHooks` export — a plugin needing a NEWER contract fails closed
  * (cloudPlugin.startCloudPlugin). Additive members keep using plugin-side typeof
- * probes; bump only on incompatible surface changes. */
-export const CLOUD_HOOKS_VERSION = 2;
+ * probes; bump only on incompatible surface changes.
+ *
+ * v3 (roadmap #28-A, 2026-09): + buildSceneBundle / loadRemoteScene / camera.* /
+ * startPlay / stopPlay / mountSidebar / setCommunityProvider. Every member is
+ * additive and typeof-probed, but the plugin that USES them declares
+ * `compatibleHooks = 3` and must fail closed on a v2 engine — which is what the bump
+ * buys (MAINTAINING.md, "coupled change": the plugin deploys AFTER the core deploy). */
+export const CLOUD_HOOKS_VERSION = 3;
 
 /** V2: `{name, version}` published by the loaded plugin via api.setPluginInfo —
  * Settings ▸ About renders it as a "Cloud plugin x.y.z" row. Null without a plugin.
@@ -206,6 +221,32 @@ export const cloudIdentity = writable(null);
  * able to take the checkmark back. @param {any} info */
 export function setCloudIdentity(info) {
 	cloudIdentity.set(info && typeof info === 'object' && info.username ? info : null);
+}
+
+/**
+ * 28-A6: THE COMMUNITY SOURCE, as a provider the plugin installs. The Templates modal's
+ * Community tab reads the PR-gated GitHub gallery in the OSS build; a cloud plugin swaps
+ * the source by publishing an object here, and `sceneTemplates.loadCommunityGallery`
+ * consults it FIRST. Core never learns what is behind it (open-core: no PocketBase, no
+ * URLs, no product copy here). NULL is the OSS state and RESTORES the GitHub source — a
+ * logout must be able to take the swap back, the `setCloudIdentity(null)` precedent.
+ *
+ * Shape (the plugin owns the logic; core reads defensively — see OPEN-CORE.md):
+ *   { list(opts: {force?: boolean}) → Promise<entry[]>   // gallery-shaped rows
+ *     load(entry) → Promise<boolean>                      // a card click; true = applied
+ *     notice?() → {text: string, href?: string} | null   // ONE row above the grid
+ *     submit?: {label: string, href?: string, action?: () => void} }
+ *                                                         // replaces "Submit yours on GitHub"
+ * @type {import('svelte/store').Writable<any>} */
+export const communityProvider = writable(null);
+
+/** Plugin seam for the above (cloudApi.setCommunityProvider). Anything without a
+ * `list` function reads as null — a half-built provider must not blank the tab.
+ * @param {any} provider */
+export function setCommunityProvider(provider) {
+	communityProvider.set(
+		provider && typeof provider === 'object' && typeof provider.list === 'function' ? provider : null
+	);
 }
 
 /**

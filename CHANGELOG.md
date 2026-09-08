@@ -5,6 +5,19 @@
      per release, newest first. HTML comments like this one are stripped before
      rendering, so maintainer notes stay out of the user-facing window. -->
 
+## 1.10.0 — Unreleased
+
+### 🛠️ For people building on it
+
+- ☁️ **The engine grew the seams a community tier plugs into** (cloudApi v3): build the
+  open scene as a publishable `.tpscene` with the facts a card needs, load a published
+  scene straight into the editor, read and set the camera (and recall a saved view for a
+  hero shot), enter and leave play mode, mount a row under **Save** in the logo menu, and
+  swap the Templates ▸ Community source. All inert without a plugin — the app behaves
+  exactly as before. See `OPEN-CORE.md`.
+- 🔗 **Scene links (`/?s=<id>`) are treated like invites:** the first-run welcome stands
+  down so the scene you were sent is the first thing you see.
+
 ## 1.9.0 — Plug it in 🔌
 
 Sound stops being something a scene plays at you and becomes something you wire up.

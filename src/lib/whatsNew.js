@@ -100,6 +100,31 @@ function hasInviteHash() {
 }
 
 /**
+ * 28-A7: is this page load somebody following a SCENE link? Published scenes deep-link
+ * through the QUERY string (`/?s=<id>`, optionally `&play=1` / `&remix=1`) so they can
+ * never collide with an invite's `#<peerId>` hash. Only the presence of `s` is read here
+ * — what the id means belongs to the cloud plugin.
+ */
+function hasSceneQuery() {
+	try {
+		return new URLSearchParams(window.location.search ?? '').has('s');
+	} catch {
+		return false;
+	}
+}
+
+/**
+ * 28-A7: was this URL addressed to somebody — an invite (`#<peerId>`) or a scene link
+ * (`?s=<id>`)? Either way the first thing they should see is the thing they were sent,
+ * not an introduction to the app: the welcome overlay stands down for the boot (the
+ * version badge and its toast still work either way, so nothing is lost, only deferred).
+ * Exported so a plugin or a suite can ask the same question core does.
+ */
+export function hasDeepLink() {
+	return hasInviteHash() || hasSceneQuery();
+}
+
+/**
  * Decide what (if anything) greets the user this boot. Called once from App.svelte.
  * First visit -> welcome overlay, and the current version counts as seen so the
  * update badge can't fire on top of it. Returning user on a new version -> badge +
@@ -112,10 +137,14 @@ export function startWhatsNew() {
 	// answering "join me", and the first thing they should see is the session, not an
 	// introduction to the app. The overlay is for a bare open; the version badge and its
 	// toast still work either way, so nothing is lost, only deferred to the next visit.
+	// 28-A7 widened the same rule to a scene link (`?s=<id>`) — see hasDeepLink. The
+	// Welcome overlay has no other way to fire on a first run (Welcome.svelte only renders
+	// `welcomeOpen`, which this function and the manual openWelcome write), so this ONE
+	// guard covers both the first-visit overlay and the opt-in welcome-on-start.
 	//
 	// VITE_SKIP_WELCOME is the other door, for a local dev server: set it in your own
 	// (gitignored) .env and the overlay never appears. See .env.example.
-	const invited = hasInviteHash();
+	const invited = hasDeepLink();
 	// ...and it is IGNORED under test. A build-time env var is inlined into whatever the
 	// dev server serves, so a personal bypass in a gitignored .env silently changed a
 	// COMMITTED assertion — measured: whats-new went red on my machine and would have

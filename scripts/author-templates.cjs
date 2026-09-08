@@ -22,6 +22,22 @@
 // (examples are curated remote content by definition — the bundled fallback keeps
 // examples: []). With --out the full templates/ + examples/ tree and a
 // repo-relative index.json are written for the scenes repo working copy.
+//
+// 28-G: a def may also be kind:'contest'. A CONTEST is a starter scene plus the text a
+// contest page reads: it is written under contests/<slug>/ (scene.tpscene + thumb.webp +
+// contest.json, from `def.contest`) and listed in a `contests` array of the --out
+// index.json — optional exactly like `games`, and only written when a contest def ran.
+// Never part of the bundled seed. The two starters needed more than four primitives, so
+// the object vocabulary grew, all ADDITIVE (every earlier def builds byte-identically):
+//   {type:'torus'} · {type:'light', kind:'point'} · {type:'empty'} · {type:'camera', pos,
+//   lookAt, fov} (the app's own /create Camera marker) · {type:'spline', points} ·
+//   {type:'group', children} · {type:'mirror', of, opacity, prefix} (a named group's
+//   objects reflected across x = 0) · `shadow:false` on any object · def-level
+//   `animations` (authored clips keyed by object NAME) · `music` {url|file, sha256, name}
+//   (the track lands in the Explorer and the scene's music slot; `'$music'` in node data
+//   becomes its content hash, so a Sound node can play the same bytes) · `view` (the
+//   editor camera the file opens on) · `thumb.camera` (render the card through a named
+//   camera object). A def with `music` exports WITH assets, so the bytes ride the .tpscene.
 const { chromium } = require('playwright');
 const fs = require('fs');
 const path = require('path');
@@ -338,6 +354,467 @@ const TOWERS_DEF = {
 	]
 };
 
+// ---- 28-G: the first two contests — Make a mirror, Follow the beat ---------------
+// Both are DATA (spec: cloud plans-core/28-g-contests-mirror-and-beat.md). The mirror
+// starter ships the answer as a faint ghost; the beat starter ships a CC0 track, a
+// Conductor whose clip is only a CLOCK (markers on every beat, every bar and one cue per
+// loop) and the graph that turns those markers into a light pulse and three camera cuts.
+
+/**
+ * The track bytes for a def's `music`: a local `file` (repo-relative), else `url`
+ * fetched once and cached under the OS temp dir — the file belongs to neither repo, the
+ * .tpscene is where it ships. `sha256` PINS the bytes: a CDN quietly swapping the file
+ * would otherwise change every entry's soundtrack without anyone noticing.
+ * @param {{url?: string, file?: string, sha256?: string}} music
+ */
+async function fetchMusic(music) {
+	let bytes;
+	if (music.file) bytes = fs.readFileSync(path.resolve(__dirname, '..', music.file));
+	else {
+		const cacheDir = path.join(require('os').tmpdir(), 'author-templates-cache');
+		// globalThis.URL: this file's `URL` const is the app's address, not the class
+		const cached = path.join(cacheDir, path.basename(new globalThis.URL(music.url).pathname));
+		if (fs.existsSync(cached)) bytes = fs.readFileSync(cached);
+		else {
+			const res = await fetch(music.url);
+			if (!res.ok) throw new Error('music: HTTP ' + res.status + ' fetching ' + music.url);
+			bytes = Buffer.from(await res.arrayBuffer());
+			fs.mkdirSync(cacheDir, { recursive: true });
+			fs.writeFileSync(cached, bytes);
+		}
+	}
+	if (music.sha256) {
+		const got = require('crypto').createHash('sha256').update(bytes).digest('hex');
+		if (got !== music.sha256) throw new Error('music: sha256 mismatch for ' + (music.file ?? music.url) + ' (got ' + got + ')');
+	}
+	return bytes;
+}
+
+/**
+ * The text a contest page and the ops ritual read (the cloud repo's seed-contests.mjs
+ * turns it into a record and uploads the starter). `starter` is filled in from the
+ * layout so the two can never disagree; brief and rules are capped at 1500 chars
+ * because they render in a card. @param {string} file @param {any} def
+ */
+function writeContestJson(file, def) {
+	const c = def.contest ?? {};
+	const json = {
+		slug: def.slug,
+		title: def.title,
+		brief: c.brief ?? '',
+		rules: c.rules ?? '',
+		starter: `contests/${def.slug}/scene.tpscene`,
+		durationDays: c.durationDays ?? 14,
+		opensAfterDays: c.opensAfterDays ?? 0,
+		judging: c.judging ?? '',
+		credits: c.credits ?? []
+	};
+	for (const key of ['brief', 'rules'])
+		if (json[key].length > 1500) throw new Error(`contest ${def.slug}: ${key} is ${json[key].length} chars (max 1500)`);
+	fs.writeFileSync(file, JSON.stringify(json, null, '\t') + '\n');
+}
+
+const CONTEST_JUDGING = "top 3 by likes + Judge's pick; winners get featured";
+const ALL_TOGETHER =
+	'Do it alone or **all together**: host the starter, share the invite link, build in one ' +
+	'session and publish once from the host with everyone credited in `authors`. Co-built ' +
+	'entries are welcome.';
+
+// The sculpture is CLEARLY HANDED: a staircase that spirals one way, yawed slabs, a cone
+// pointing at the line, a flag on one side of its mast, a three-axis-rotated cube and a
+// bent spline — so a mirror that only negates x reads wrong at a glance, and the ghost
+// (built by the same code with `mirror`) shows what a reflection does to each rotation.
+const MIRROR_SCULPTURE = [
+	{ type: 'cylinder', name: 'Plinth', color: 0x6b7280, r: 1.3, r2: 1.5, h: 0.4, pos: [-3.2, 0.2, 0.2], roughness: 0.9 },
+	{ type: 'box', name: 'Base slab', color: 0xaab2bd, size: [2.6, 0.3, 1.7], pos: [-3.2, 0.55, 0.2], rot: [0, 0.35, 0] },
+	{ type: 'box', name: 'Tower', color: 0xd0a070, size: [0.8, 2.6, 0.8], pos: [-3.6, 2.0, 0.5], rot: [0, 0.35, 0] },
+	{ type: 'box', name: 'Cantilever', color: 0xa3be8c, size: [2.4, 0.28, 0.5], pos: [-2.2, 3.15, 0.75], rot: [0, 0.1, 0.12] },
+	{ type: 'sphere', name: 'Lamp', color: 0xffe08a, r: 0.34, pos: [-1.0, 3.45, 0.85], emissive: 0xffcf50, emissiveIntensity: 0.9, roughness: 0.4 },
+	{ type: 'box', name: 'Step 1', color: 0x99a3ae, size: [0.9, 0.2, 0.9], pos: [-4.9, 0.1, 1.6] },
+	{ type: 'box', name: 'Step 2', color: 0x99a3ae, size: [0.9, 0.2, 0.9], pos: [-5.0, 0.4, 0.7], rot: [0, 0.5, 0] },
+	{ type: 'box', name: 'Step 3', color: 0x99a3ae, size: [0.9, 0.2, 0.9], pos: [-4.7, 0.7, -0.2], rot: [0, 1.0, 0] },
+	{ type: 'box', name: 'Step 4', color: 0x99a3ae, size: [0.9, 0.2, 0.9], pos: [-4.1, 1.0, -0.9], rot: [0, 1.5, 0] },
+	{ type: 'box', name: 'Leaning slab', color: 0xd97706, size: [0.16, 2.2, 1.2], pos: [-1.7, 1.1, -1.5], rot: [0, 0.6, -0.3] },
+	{ type: 'cylinder', name: 'Mast', color: 0x4c566a, r: 0.06, h: 3.2, pos: [-5.4, 1.6, -1.3] },
+	{ type: 'box', name: 'Flag', color: 0xc2452f, size: [0.8, 0.45, 0.05], pos: [-5.0, 3.0, -1.3] },
+	{ type: 'torus', name: 'Ring', color: 0x88c0d0, r: 0.55, tube: 0.09, pos: [-1.7, 2.9, 1.6], rot: [0.6, 0.4, 0] },
+	{ type: 'sphere', name: 'Orb A', color: 0xb48ead, r: 0.36, pos: [-1.4, 0.36, 2.0] },
+	{ type: 'sphere', name: 'Orb B', color: 0xb48ead, r: 0.26, pos: [-1.4, 0.95, 2.0] },
+	{ type: 'sphere', name: 'Orb C', color: 0xb48ead, r: 0.16, pos: [-1.4, 1.35, 2.0] },
+	{ type: 'box', name: 'Beam', color: 0x4c566a, size: [0.2, 0.2, 2.8], pos: [-2.5, 1.85, 0.1], rot: [0, -0.4, 0] },
+	// a cone lying on its side, tip toward the line (rot z -90 deg): its mirror points back
+	{ type: 'cone', name: 'Nose cone', color: 0xebcb8b, r: 0.55, h: 0.9, pos: [-0.9, 0.55, -0.6], rot: [0, 0, -1.5708] },
+	{ type: 'cylinder', name: 'Dish', color: 0xe8e2d6, r: 0.75, h: 0.08, pos: [-2.0, 2.5, -1.0], rot: [0.5, 0, 0.3] },
+	{ type: 'cylinder', name: 'Pillar A', color: 0x8f99a4, r: 0.15, h: 1.6, pos: [-5.6, 0.8, 1.0] },
+	{ type: 'cylinder', name: 'Pillar B', color: 0x8f99a4, r: 0.15, h: 1.2, pos: [-5.6, 0.6, -0.4] },
+	{ type: 'box', name: 'Lintel', color: 0x8f99a4, size: [0.3, 0.16, 1.9], pos: [-5.6, 1.65, 0.3], rot: [0.15, 0, 0] },
+	{ type: 'box', name: 'Tilted cube', color: 0xbf616a, size: [0.6, 0.6, 0.6], pos: [-3.9, 3.7, 0.4], rot: [0.3, 0.8, 0.2] },
+	{ type: 'cylinder', name: 'Antenna', color: 0x2e3440, r: 0.04, h: 1.1, pos: [-3.4, 3.85, 0.7] },
+	{ type: 'sphere', name: 'Antenna tip', color: 0xbf616a, r: 0.1, pos: [-3.4, 4.45, 0.7] },
+	{ type: 'box', name: 'Ramp', color: 0x94b07e, size: [1.5, 0.12, 0.8], pos: [-1.0, 0.4, 1.0], rot: [0, 0, 0.35] },
+	{
+		type: 'spline', name: 'Ribbon', color: 0xff7b3d,
+		points: [
+			{ pos: [-2.7, 0.7, 1.3], radius: 0.09 }, { pos: [-2.1, 1.5, 1.7], radius: 0.085 },
+			{ pos: [-1.5, 2.2, 1.2], radius: 0.08 }, { pos: [-1.2, 2.8, 0.4], radius: 0.07 },
+			{ pos: [-1.6, 3.4, -0.2], radius: 0.06 }
+		]
+	}
+];
+
+// a real floor grid in objects (the app's own grid is a local pref, so it may be off)
+const MIRROR_FLOOR = [
+	{ type: 'box', name: 'Floor left', color: 0x7e8a97, size: [8, 0.2, 10], pos: [-4, -0.1, 0], roughness: 0.95 },
+	{ type: 'box', name: 'Floor right', color: 0x8b959f, size: [8, 0.2, 10], pos: [4, -0.1, 0], roughness: 0.95 },
+	...[-4, -2, 0, 2, 4].map((z) => ({ type: 'box', name: 'Grid line z' + z, color: 0x5d6673, size: [16, 0.03, 0.04], pos: [0, 0.015, z] })),
+	...[-6, -4, -2, 2, 4, 6].map((x) => ({ type: 'box', name: 'Grid line x' + x, color: 0x5d6673, size: [0.04, 0.03, 10], pos: [x, 0.015, 0] }))
+];
+
+const MIRROR_DEF = {
+	kind: 'contest',
+	slug: 'make-a-mirror',
+	title: 'Make a mirror',
+	description:
+		'Rebuild the sculpture on the left as its mirror image on the right of the glowing line. The faint ghost is the answer — hide it to test yourself.',
+	license: 'CC0-1.0',
+	author: 'theprototype',
+	tags: ['contest', 'primitives', 'co-op'],
+	env: { preset: 'studio', exposure: 1 },
+	post: {
+		enabled: true,
+		effects: [
+			{ id: 'ao', kind: 'ao', enabled: true, params: {} },
+			{ id: 'aa', kind: 'smaa', enabled: true, params: {} }
+		],
+		changedAt: 0
+	},
+	// the editor opens on a 3/4 view that shows both halves and the line between them
+	view: { pos: [6.5, 5.2, 13], target: [0, 1.6, 0] },
+	thumb: { camera: 'Judge' },
+	objects: [
+		{ type: 'group', name: 'Floor grid', children: MIRROR_FLOOR },
+		// the mirror plane: emissive, translucent, at x = 0 exactly
+		{ type: 'box', name: 'Mirror plane', color: 0x9ee6ff, size: [0.04, 4.8, 10], pos: [0, 2.4, 0], emissive: 0x4fc3f7, emissiveIntensity: 1.1, opacity: 0.4, roughness: 0.3, shadow: false },
+		{ type: 'group', name: 'Sculpture', children: MIRROR_SCULPTURE },
+		// THE GHOST: every sculpture piece reflected, 15% opacity, one group so one click
+		// hides it. Locks are live session state (lockedObjects), not part of a file —
+		// see the PR: the starter cannot ship it locked, only as a single, hide-able group.
+		{ type: 'mirror', name: 'Ghost', of: 'Sculpture', opacity: 0.15, prefix: 'Ghost ' },
+		{ type: 'camera', name: 'Front', pos: [0, 2.6, 12.5], lookAt: [0, 1.8, 0], fov: 45 },
+		{ type: 'camera', name: 'Judge', pos: [7.5, 4.4, 8.8], lookAt: [-0.4, 1.6, 0.2], fov: 42 }
+	],
+	contest: {
+		brief:
+			'Build the mirror image of the sculpture on the right side of the glowing line. Use the ' +
+			'ghost as a guide, or hide it to test yourself (select the **Ghost** group and hide it). ' +
+			'Every piece is a primitive: mirror its position across the line and mind the rotations — ' +
+			'a reflection turns a left-handed twist into a right-handed one.\n\n' +
+			ALL_TOGETHER +
+			'\n\nJudged on accuracy and on what you add: lighting, a look, a motion.',
+		rules:
+			'- Primitives and your own assets — no duplicating the ghost.\n' +
+			'- The **Ghost** group must be hidden or removed in the entry.\n' +
+			'- One entry per person (or per co-built session); updates allowed until the contest closes.',
+		durationDays: 14,
+		opensAfterDays: 0,
+		judging: CONTEST_JUDGING,
+		credits: []
+	}
+};
+
+// The track: CC0 on freesound, 72 s, and MEASURED at 120.00 BPM (onset autocorrelation,
+// the "Party Retro Organ ... 120bpm" candidate read 122 despite its title, and was
+// dropped). The HQ preview is the same CC0 work transcoded to mp3; the sha256 pins it.
+const BEAT_TRACK = {
+	url: 'https://cdn.freesound.org/previews/622/622426_2282212-hq.mp3',
+	sha256: '8542ef29eb53aad159230fa8dd6cab54e6b3bedc829f9a9ecaa5758cbd80a0fb',
+	name: 'szegvari - Happy Ethno Jazz Dance 120bpm (CC0).mp3',
+	volume: 0.8,
+	credit: {
+		what: 'track',
+		title: 'Happy Experimental Ethno Jazz Vocal Instruments Dance Cinematic Music 120Bpm Mastered',
+		author: 'szegvari',
+		license: 'CC0-1.0',
+		source: 'https://freesound.org/people/szegvari/sounds/622426/'
+	}
+};
+
+const BEAT_BPM = 120;
+const BEAT_SECONDS = 60 / BEAT_BPM; // 0.5
+// THREE bars per loop, because there are three cameras: a Sequence off one cue per loop
+// cuts Wide / Dolly / Detail on bars 1 / 2 / 3 and the loop brings Wide back. (A trigger
+// stamp comes only from EVENT nodes, so "counter mod 3 -> which camera" cannot be wired;
+// the Sequence is the one node that fans a single pulse out in time.)
+const BEAT_BARS = 3;
+const BEAT_LOOP = BEAT_BARS * 4 * BEAT_SECONDS; // 6 s
+// The cue sits 60 ms AFTER the downbeat, never on it: a marker at exactly t = 0 is not
+// crossed on the FIRST lap (the tick has no previous head to travel from), so a cue at 0
+// would give lap one no camera cuts. 60 ms is under a frame's worth of error at the cut
+// and past two frames of start-up hitch; the Sequence's second delay takes it back off.
+const BEAT_CUE_AT = 0.06;
+function beatMarkers() {
+	const markers = [];
+	for (let beat = 0; beat < BEAT_BARS * 4; beat++) {
+		markers.push({ t: beat * BEAT_SECONDS, name: 'beat' });
+		if (beat % 4 === 0) markers.push({ t: beat * BEAT_SECONDS, name: 'bar' });
+	}
+	markers.push({ t: BEAT_CUE_AT, name: 'cue' });
+	return markers;
+}
+
+function beatGraph() {
+	/** @type {any[]} */ const nodes = [];
+	/** @type {any[]} */ const edges = [];
+	/** @param {string} id @param {string} type @param {string} label @param {number} x @param {number} y @param {any} data */
+	const N = (id, type, label, x, y, data) => {
+		nodes.push({ id, type, position: { x, y }, data: { label, ...data }, class: 'w-[150px]' });
+		return id;
+	};
+	// the editor's canonical edge id with BOTH handles (Nodes.svelte) — a Sequence step is
+	// a SOURCE handle, which the Towers helper never needed
+	/** @param {string} source @param {string} target @param {string} [targetHandle] @param {string} [sourceHandle] */
+	const E = (source, target, targetHandle, sourceHandle) => {
+		edges.push({
+			id: 'e-' + source + (sourceHandle ? '.' + sourceHandle : '') + '-' + target + (targetHandle ? '.' + targetHandle : ''),
+			source,
+			target,
+			...(sourceHandle ? { sourceHandle } : {}),
+			...(targetHandle ? { targetHandle } : {})
+		});
+	};
+	// selectors — every trigger and action names its object through one
+	N('selcond', 'objectselector', 'Conductor', 760, 190, { selected: 'Conductor' });
+	N('selstage', 'objectselector', 'Stage', 760, 340, { selected: 'Stage' });
+	N('sellight', 'objectselector', 'Beat light', 760, 640, { selected: 'Beat light' });
+	N('sellamp', 'objectselector', 'Beat lamp', 760, 790, { selected: 'Beat lamp' });
+	N('selpad', 'objectselector', 'Pad', 760, 940, { selected: 'Pad' });
+	N('selwide', 'objectselector', 'Wide camera', 760, 40, { selected: 'Wide' });
+	N('seldolly', 'objectselector', 'Dolly camera', 1000, 1160, { selected: 'Dolly' });
+	N('seldetail', 'objectselector', 'Detail camera', 1000, 1400, { selected: 'Detail' });
+
+	// ---- Start: the HUD button enters `playing`; everyone starts on Wide -----------
+	N('bstart', 'hudbutton', 'Start button', 40, 40, { element: 'start-btn' });
+	N('gostart', 'setgamestate', 'Start', 280, 40, { state: 'playing', outcome: '', reset: false });
+	E('bstart', 'gostart', 'trigger');
+	N('gcam', 'gamestart', 'Everyone starts on Wide', 520, 40, { camera: '' });
+	E('selwide', 'gcam', 'camera');
+	// entering `playing` restarts the clock, plays the track once and flashes the downbeat.
+	// THROUGH A ZERO-SECOND DELAY, measured: On Game State (like HUD Button) has a trigger
+	// STAMP but no VALUE in the evaluator, and Play Animation acts on the rising edge of
+	// its resolved `trigger` VALUE — so wired straight, the clock never started while the
+	// stamp-reading Sound node beside it played. A Delay is pure and value-evaluable
+	// (pulseAt(stamp + 0)), which turns the stamp into the pulse Play Animation can see.
+	// Recorded as a core follow-up (playanim could read the stamp like setcamera does).
+	N('onplay', 'ongamestate', 'When play starts', 40, 190, { state: 'playing', edge: 'enter', pulse: 0.3 });
+	N('startpulse', 'delay', 'Start pulse (0 s)', 280, 190, { seconds: 0, pulse: 0.3 });
+	E('onplay', 'startpulse', 'trigger');
+	N('clock', 'playanim', 'Start the beat clock', 520, 190, { clip: 'Beat clock', action: 'restart', speed: 1 });
+	E('startpulse', 'clock', 'trigger');
+	E('clock', 'selcond');
+	// the track as a ONE-SHOT on the stage: no falloff (rolloff 0) so it is heard everywhere
+	N('track', 'sound', 'Play the track', 520, 340, {
+		hash: '$music', file: BEAT_TRACK.name, volume: BEAT_TRACK.volume, radius: 40, rolloff: 0, loop: false, playing: false
+	});
+	E('startpulse', 'track', 'trigger');
+	E('track', 'selstage');
+	N('downbeat', 'playanim', 'Flash on the downbeat', 520, 490, { clip: 'Flash', action: 'restart', speed: 1 });
+	E('startpulse', 'downbeat', 'trigger');
+	E('downbeat', 'sellight');
+
+	// ---- every beat: the light and the lamp restart their Flash clip ----------------
+	N('beat', 'animmarker', 'Every beat', 40, 640, { name: 'beat', pulse: 0.3 });
+	E('beat', 'selcond');
+	N('flash', 'playanim', 'Pulse the light', 280, 640, { clip: 'Flash', action: 'restart', speed: 1 });
+	E('beat', 'flash', 'trigger');
+	E('flash', 'sellight');
+	N('lamp', 'playanim', 'Pulse the lamp', 280, 790, { clip: 'Flash', action: 'restart', speed: 1 });
+	E('beat', 'lamp', 'trigger');
+	E('lamp', 'sellamp');
+
+	// ---- every bar: a burst of stars off the Pad -------------------------------------
+	N('bar', 'animmarker', 'Every bar', 40, 940, { name: 'bar', pulse: 0.3 });
+	E('bar', 'selcond');
+	N('burst', 'particle', 'Burst on the bar', 280, 940, {
+		mode: 'burst', count: 80, lifetime: 1.2, speed: 2.2, gravity: 0, turbulence: 0.4,
+		sizeStart: 0.1, opacity: 0.9, sprite: 'star', blending: 'additive', space: 'world',
+		colorStart: '#fffbe8', colorEnd: '#b48ead'
+	});
+	E('bar', 'burst', 'trigger');
+	E('burst', 'selpad');
+
+	// ---- the camera cuts: one cue per loop fans out to the three bars -----------------
+	N('cue', 'animmarker', 'Cue (once per loop)', 40, 1090, { name: 'cue', pulse: 0.3 });
+	E('cue', 'selcond');
+	const barLen = 4 * BEAT_SECONDS;
+	N('cuts', 'sequence', 'Cuts on the bars', 280, 1090, {
+		delay1: 0, delay2: +(barLen - BEAT_CUE_AT).toFixed(3), delay3: barLen, delay4: 0, pulse: 0.3
+	});
+	E('cue', 'cuts', 'trigger');
+	N('cutwide', 'setcamera', 'Bar 1: Wide', 520, 1040, { camera: '' });
+	E('cuts', 'cutwide', 'trigger', 'step1');
+	E('selwide', 'cutwide', 'camera');
+	N('cutdolly', 'setcamera', 'Bar 2: Dolly', 520, 1160, { camera: '' });
+	E('cuts', 'cutdolly', 'trigger', 'step2');
+	E('seldolly', 'cutdolly', 'camera');
+	// ...and the Dolly TRUCKS for its bar: its own 2 s clip, restarted on the same step
+	N('truck', 'playanim', 'Truck the Dolly', 760, 1280, { clip: 'Truck', action: 'restart', speed: 1 });
+	E('cuts', 'truck', 'trigger', 'step2');
+	E('truck', 'seldolly');
+	N('cutdetail', 'setcamera', 'Bar 3: Detail', 520, 1400, { camera: '' });
+	E('cuts', 'cutdetail', 'trigger', 'step3');
+	E('seldetail', 'cutdetail', 'camera');
+	return { nodes, edges };
+}
+
+const BEAT_HUD_PANEL = {
+	bg: 'rgba(20, 26, 36, 0.92)',
+	radius: 16,
+	border: '1px solid rgba(180, 142, 173, 0.35)'
+};
+const BEAT_DEF = {
+	kind: 'contest',
+	slug: 'follow-the-beat',
+	title: 'Follow the beat',
+	description:
+		'A 120 BPM track, a Conductor whose clip marks every beat and bar, a light that pulses on the beat and three cameras that cut on the bars. Press Start, then make the scene move. ' +
+		'Track: "' + BEAT_TRACK.credit.title + '" by ' + BEAT_TRACK.credit.author + ' (freesound, CC0 1.0).',
+	license: 'CC0-1.0',
+	author: 'theprototype',
+	tags: ['contest', 'music', 'animation', 'cameras'],
+	env: { preset: 'sunset', exposure: 1 },
+	post: {
+		enabled: true,
+		effects: [
+			{ id: 'ao', kind: 'ao', enabled: true, params: {} },
+			{ id: 'tone', kind: 'tonemapping', enabled: true, params: { mode: 'AGX' } },
+			{ id: 'bloom', kind: 'bloom', enabled: true, params: { intensity: 0.6, luminanceThreshold: 0.8 } },
+			{ id: 'aa', kind: 'smaa', enabled: true, params: {} }
+		],
+		changedAt: 0
+	},
+	view: { pos: [3, 4, 15], target: [0, 1.6, -0.5] },
+	thumb: { camera: 'Wide' },
+	// `music` = the scene's track slot (playing OFF: the Start button plays it through the
+	// Sound node above, so the editor stays quiet) and the bytes bundled into the .tpscene
+	music: BEAT_TRACK,
+	objects: [
+		{ type: 'box', name: 'Stage', color: 0x2b2f36, size: [16, 0.3, 10], pos: [0, -0.15, 0], roughness: 0.9 },
+		{ type: 'cylinder', name: 'Riser', color: 0x3b4252, r: 2.6, h: 0.3, pos: [0, 0.15, -0.5] },
+		{ type: 'box', name: 'Backdrop', color: 0x1f2430, size: [16, 6.5, 0.3], pos: [0, 3.1, -5.2] },
+		{ type: 'box', name: 'Pillar left', color: 0x434c5e, size: [0.5, 6, 0.5], pos: [-7, 3, -4.5], emissive: 0x88c0d0, emissiveIntensity: 0.35 },
+		{ type: 'box', name: 'Pillar right', color: 0x434c5e, size: [0.5, 6, 0.5], pos: [7, 3, -4.5], emissive: 0x88c0d0, emissiveIntensity: 0.35 },
+		// a few primitives to animate — the contest is what you do with them
+		{ type: 'box', name: 'Bass', color: 0xd08770, size: [1.5, 1.5, 1.5], pos: [-3.6, 0.75, 0.2] },
+		{ type: 'cylinder', name: 'Snare', color: 0xebcb8b, r: 0.7, h: 0.5, pos: [0, 0.55, 1.2] },
+		{ type: 'cone', name: 'Hat', color: 0xa3be8c, r: 0.6, h: 1.2, pos: [3.6, 0.6, 0.2] },
+		{ type: 'sphere', name: 'Pad', color: 0xb48ead, r: 0.9, pos: [0, 2.6, -2.6], emissive: 0x7a5a9e, emissiveIntensity: 0.5 },
+		// the beat: a lamp you can see and a light that lights the stage, both pulsed
+		{ type: 'sphere', name: 'Beat lamp', color: 0xfff3d6, r: 0.35, pos: [0, 4.6, 0.6], emissive: 0xffd45e, emissiveIntensity: 0.6, shadow: false },
+		{ type: 'light', name: 'Beat light', kind: 'point', color: 0xffd9a0, intensity: 6, pos: [0, 4.6, 0.6] },
+		// the Conductor: an EMPTY whose clip is the clock (markers, one gentle turn)
+		{ type: 'empty', name: 'Conductor', pos: [0, 5.6, 0.6] },
+		{ type: 'camera', name: 'Wide', pos: [0, 3.4, 13], lookAt: [0, 1.6, -0.5], fov: 45 },
+		// the Dolly faces straight at the backdrop and TRUCKS left-to-right for its bar
+		{ type: 'camera', name: 'Dolly', pos: [-4.5, 1.7, 6.5], lookAt: [-4.5, 1.4, -0.5], fov: 40 },
+		{ type: 'camera', name: 'Detail', pos: [2.4, 1.3, 3.2], lookAt: [0, 0.6, 1.2], fov: 32 }
+	],
+	animations: {
+		Conductor: {
+			active: 'clock',
+			changedAt: 0,
+			clips: {
+				clock: {
+					name: 'Beat clock', duration: BEAT_LOOP, loop: 'loop', fps: 30,
+					tracks: [{ id: 'turn', channel: 'rot.y', keys: [{ t: 0, v: 0 }, { t: BEAT_LOOP, v: 6.2832 }] }],
+					markers: beatMarkers()
+				}
+			}
+		},
+		'Beat light': {
+			active: 'flash',
+			changedAt: 0,
+			clips: {
+				flash: {
+					name: 'Flash', duration: 0.5, loop: 'once',
+					tracks: [{ id: 'i', channel: 'light.intensity', keys: [{ t: 0, v: 60, ease: [0.2, 0.6, 0.4, 1] }, { t: 0.45, v: 6 }] }]
+				}
+			}
+		},
+		'Beat lamp': {
+			active: 'flash',
+			changedAt: 0,
+			clips: {
+				flash: {
+					name: 'Flash', duration: 0.5, loop: 'once',
+					tracks: [
+						{ id: 'glow', channel: 'emissive', keys: [{ t: 0, v: 4 }, { t: 0.45, v: 0.6 }] },
+						{ id: 'size', channel: 'scale', keys: [{ t: 0, v: 1.35 }, { t: 0.4, v: 1 }] }
+					]
+				}
+			}
+		},
+		// position keys are RELATIVE to where the object is (R1): 0 -> 9 trucks 9 m right
+		Dolly: {
+			active: 'truck',
+			changedAt: 0,
+			clips: {
+				truck: {
+					name: 'Truck', duration: 4 * BEAT_SECONDS, loop: 'once',
+					tracks: [{ id: 'x', channel: 'pos.x', keys: [{ t: 0, v: 0 }, { t: 4 * BEAT_SECONDS, v: 9 }] }]
+				}
+			}
+		}
+	},
+	graphs: { scene: beatGraph() },
+	hud: {
+		scene: {
+			active: '',
+			changedAt: 0,
+			screens: [
+				{
+					id: 'menu',
+					name: 'Menu',
+					showWhile: 'menu',
+					input: 'menu',
+					elements: [
+						{ id: 'menu-panel', kind: 'panel', anchor: 'center', x: 0, y: 0, w: 480, h: 320, z: 0, label: '', style: BEAT_HUD_PANEL },
+						{ id: 'title', kind: 'text', anchor: 'center', x: 0, y: -105, w: 440, h: 54, z: 1, label: 'FOLLOW THE BEAT', style: { size: 38, weight: '700', color: '#ebcb8b', align: 'center' } },
+						{ id: 'subtitle', kind: 'text', anchor: 'center', x: 0, y: -50, w: 440, h: 48, z: 1, label: 'Press Start: the track plays, the light pulses on every beat and the cameras cut on the bars. Make the scene move with it.', style: { size: 14, color: '#d8dee9', align: 'center' }, wrap: true },
+						{ id: 'start-btn', kind: 'button', anchor: 'center', x: 0, y: 30, w: 220, h: 48, z: 1, label: 'Start', enabled: true, style: { size: 17, weight: '600', bg: '#b48ead', color: '#1f2430', radius: 10 } },
+						{ id: 'menu-hint', kind: 'text', anchor: 'center', x: 0, y: 105, w: 440, h: 40, z: 1, label: 'Judged in play mode from the Wide camera  ·  Esc leaves play', style: { size: 12, color: '#8b97a8', align: 'center' }, wrap: true }
+					]
+				},
+				{
+					id: 'hud',
+					name: 'HUD',
+					showWhile: 'playing',
+					input: 'game',
+					elements: [
+						{ id: 'play-hint', kind: 'text', anchor: 'bottom-center', x: 0, y: 12, w: 560, h: 20, z: 1, label: 'Wide · Dolly · Detail cut on the bars  ·  Esc to leave play', style: { size: 11, color: '#8b97a8', align: 'center' } }
+					]
+				}
+			]
+		}
+	},
+	contest: {
+		brief:
+			'Make the scene move with the track: animate objects to the beat, cut between cameras on ' +
+			'the bars, add a look. The starter gives you the clock — a **Conductor** whose clip carries ' +
+			'a marker on every beat and every bar, a light that pulses on the beat and three cameras ' +
+			'that cut on the bars. Open the node editor to see how, then make it yours. Entries are ' +
+			'judged in play mode from the **Wide** camera.\n\n' +
+			ALL_TOGETHER,
+		rules:
+			'- Keep the track (it ships inside the scene, CC0).\n' +
+			'- Add anything: objects, clips, cameras, a look, a HUD.\n' +
+			'- The entry must play from **Start** without any other input.',
+		durationDays: 14,
+		opensAfterDays: 7,
+		judging: CONTEST_JUDGING,
+		credits: [BEAT_TRACK.credit]
+	}
+};
+
 const DEFS = [
 	{
 		kind: 'template',
@@ -479,7 +956,9 @@ const DEFS = [
 			{ menu: 'Music FX: demo chain', moduleId: 'music-fx', waitMs: 2000 }
 		]
 	},
-	TOWERS_DEF
+	TOWERS_DEF,
+	MIRROR_DEF,
+	BEAT_DEF
 ];
 
 (async () => {
@@ -533,43 +1012,133 @@ const DEFS = [
 			await page.evaluate(() => window.__stores.modulesOpen.set(false));
 			await page.waitForTimeout(300);
 		}
-		const out = await page.evaluate(async (d) => {
+		// 28-G: a def's music is fetched HERE in node (the page has no business reaching a
+		// CDN, and the file belongs to no repo); the page hands the bytes to the Explorer,
+		// which is what makes them a scene asset the .tpscene bundles.
+		const music = def.music ? { ...def.music, b64: (await fetchMusic(def.music)).toString('base64') } : null;
+		const out = await page.evaluate(async ({ d, music }) => {
 			const s = window.__stores;
+			const T = s.THREE;
 			s.commandsHandler.sceneCommand('/clear all');
 			/** @type {any} */
 			let group;
 			s.objectsGroup.subscribe((g) => (group = g))();
-			for (const o of d.objects) {
-				let geo;
-				if (o.type === 'box') geo = new s.THREE.BoxGeometry(o.size[0], o.size[1], o.size[2]);
-				else if (o.type === 'cylinder') geo = new s.THREE.CylinderGeometry(o.r, o.r2 ?? o.r, o.h, 24);
-				else if (o.type === 'sphere') geo = new s.THREE.SphereGeometry(o.r, 24, 16);
-				else geo = new s.THREE.ConeGeometry(o.r, o.h, 24);
-				const mat = new s.THREE.MeshStandardMaterial({
-					color: o.color,
-					roughness: o.roughness ?? 0.85,
-					metalness: o.metalness ?? 0
-				});
-				// B8: material EMISSIVE + opacity, so a game can glow a pad or float a
-				// translucent marker without a shader doc (which the user found "strange").
-				// emissiveIntensity multiplies the emissive COLOUR, so both are needed.
-				if (o.emissive != null) {
-					mat.emissive = new s.THREE.Color(o.emissive);
-					mat.emissiveIntensity = o.emissiveIntensity ?? 1;
+			/** @param {number} n */
+			const hex = (n) => '#' + Number(n).toString(16).padStart(6, '0');
+			// 28-G: ONE recursive builder. The four original primitives take exactly the
+			// steps they always did, in the same order, so every earlier def is byte-identical.
+			// `mirror` reflects across x = 0: position x negated, yaw and roll NEGATED — a
+			// reflection flips handedness, and every primitive here is symmetric about its own
+			// axes, so the reflected shape is the same primitive posed (rx, -ry, -rz); a spline
+			// reflects its points. A ghost's material is faded and it casts no shadow.
+			/** @param {any} o @param {{mirror?: boolean, prefix?: string, opacity?: number, shadow?: boolean}} [opts] */
+			const build = (o, opts = {}) => {
+				const mirror = !!opts.mirror;
+				const pos = o.pos ? [mirror ? -o.pos[0] : o.pos[0], o.pos[1], o.pos[2]] : null;
+				const rot = o.rot ? [o.rot[0], mirror ? -o.rot[1] : o.rot[1], mirror ? -o.rot[2] : o.rot[2]] : null;
+				/** @type {any} */
+				let object;
+				if (o.type === 'group' || o.type === 'empty') {
+					object = new T.Group();
+					for (const child of o.children ?? []) object.add(build(child, opts));
+				} else if (o.type === 'light') {
+					// a point light: a viewpoint's worth of scenery it lights, no shadow map
+					object = new T.PointLight(o.color ?? 0xffffff, o.intensity ?? 1, o.distance ?? 0, o.decay ?? 2);
+					object.castShadow = false;
+				} else if (o.type === 'camera') {
+					// the app's OWN marker: /create Camera builds the body and stamps
+					// userData.camera (geometries.svelte.js), so a camera authored here is the
+					// one a user makes. The create selects + attaches the gizmo — undo that —
+					// and aim with the CAMERA convention (-Z forward: Matrix4.lookAt(eye,
+					// target, up); Object3D.lookAt on a plain mesh faces +Z, the gotcha).
+					s.commandsHandler.sceneCommand('/create Camera');
+					s.selectedObject.subscribe((v) => (object = v))();
+					/** @type {any} */ let controls;
+					s.TControls.subscribe((v) => (controls = v))();
+					controls?.detach?.();
+					s.objectActions.deselectObject();
+					if (o.lookAt && pos) {
+						const m = new T.Matrix4().lookAt(new T.Vector3(...pos), new T.Vector3(...o.lookAt), new T.Vector3(0, 1, 0));
+						object.quaternion.setFromRotationMatrix(m);
+					}
+					object.userData.camera = {
+						...object.userData.camera,
+						...(o.fov ? { fov: o.fov } : {}),
+						...(o.aspect ? { aspect: o.aspect } : {})
+					};
+				} else if (o.type === 'spline') {
+					// the record lives in the mesh's frame, re-seated on the centroid (the
+					// finishSpline ritual), so the object's origin and gizmo pivot are sane
+					const pts = o.points.map((/** @type {any} */ p) => ({ pos: [mirror ? -p.pos[0] : p.pos[0], p.pos[1], p.pos[2]], radius: p.radius }));
+					const c = [0, 1, 2].map((i) => pts.reduce((a, /** @type {any} */ p) => a + p.pos[i], 0) / pts.length);
+					object = s.splineTool.createSplineMesh(
+						{
+							points: pts.map((/** @type {any} */ p) => ({ pos: [p.pos[0] - c[0], p.pos[1] - c[1], p.pos[2] - c[2]], radius: p.radius })),
+							color: hex(o.color ?? 0xff7b3d),
+							closed: !!o.closed
+						},
+						new T.Vector3(c[0], c[1], c[2])
+					);
+				} else {
+					let geo;
+					if (o.type === 'box') geo = new T.BoxGeometry(o.size[0], o.size[1], o.size[2]);
+					else if (o.type === 'cylinder') geo = new T.CylinderGeometry(o.r, o.r2 ?? o.r, o.h, 24);
+					else if (o.type === 'sphere') geo = new T.SphereGeometry(o.r, 24, 16);
+					else if (o.type === 'torus') geo = new T.TorusGeometry(o.r, o.tube ?? o.r * 0.2, 16, 40);
+					else geo = new T.ConeGeometry(o.r, o.h, 24);
+					const mat = new T.MeshStandardMaterial({
+						color: o.color,
+						roughness: o.roughness ?? 0.85,
+						metalness: o.metalness ?? 0
+					});
+					// B8: material EMISSIVE + opacity, so a game can glow a pad or float a
+					// translucent marker without a shader doc (which the user found "strange").
+					// emissiveIntensity multiplies the emissive COLOUR, so both are needed.
+					if (o.emissive != null && opts.opacity == null) {
+						mat.emissive = new T.Color(o.emissive);
+						mat.emissiveIntensity = o.emissiveIntensity ?? 1;
+					}
+					if (o.opacity != null && o.opacity < 1) {
+						mat.transparent = true;
+						mat.opacity = o.opacity;
+					}
+					object = new T.Mesh(geo, mat);
 				}
-				if (o.opacity != null && o.opacity < 1) {
-					mat.transparent = true;
-					mat.opacity = o.opacity;
+				// a ghost fades WHATEVER it is made of — the spline builds its own material
+				// above, so this sits after every branch rather than inside the primitive one
+				if (opts.opacity != null && object.material) {
+					object.material.transparent = true;
+					object.material.opacity = opts.opacity;
 				}
-				const mesh = new s.THREE.Mesh(geo, mat);
-				mesh.name = o.name;
-				mesh.position.set(o.pos[0], o.pos[1], o.pos[2]);
-				if (o.rot) mesh.rotation.set(o.rot[0], o.rot[1], o.rot[2]);
-				if (o.physics) mesh.userData.physics = o.physics;
+				object.name = (opts.prefix ?? '') + o.name;
+				if (pos && o.type !== 'spline') object.position.set(pos[0], pos[1], pos[2]);
+				if (rot) object.rotation.set(rot[0], rot[1], rot[2]);
+				if (o.physics && !mirror) object.userData.physics = o.physics;
+				if (o.shadow === false || opts.shadow === false) {
+					// shadowDefaults sweeps cast/receive back ON unless the object opts out
+					object.castShadow = false;
+					object.receiveShadow = false;
+					object.userData.shadow = false;
+				}
 				// toJSON reads the MATRIX the last render composed (the serializer
 				// gotcha) — compose it now, we export before any frame runs
-				mesh.updateMatrix();
-				group.add(mesh);
+				object.updateMatrix();
+				return object;
+			};
+			for (const o of d.objects) {
+				if (o.type === 'mirror') {
+					const src = d.objects.find((/** @type {any} */ x) => x.name === o.of);
+					if (!src) throw new Error('mirror: no object named "' + o.of + '"');
+					const ghost = new T.Group();
+					ghost.name = o.name;
+					const kids = src.type === 'group' ? src.children ?? [] : [src];
+					for (const child of kids) ghost.add(build(child, { mirror: true, opacity: o.opacity ?? 0.15, prefix: o.prefix ?? '', shadow: false }));
+					ghost.userData.shadow = false;
+					ghost.updateMatrix();
+					group.add(ghost);
+					continue;
+				}
+				group.add(build(o));
 			}
 			s.objectsGroup.update((v) => v);
 
@@ -589,6 +1158,44 @@ const DEFS = [
 			// deterministic grid means two peers still agree byte for byte.
 			const named = {}; // def-local object names -> real uuids
 			group.children.forEach((c) => (named[c.name] = c.uuid));
+			// 28-G: nested objects too (a group's children), top level winning a name clash
+			group.traverse((c) => {
+				if (c !== group && c.name && !named[c.name]) named[c.name] = c.uuid;
+			});
+			// 28-G: AUTHORED CLIPS, keyed by def-local object name -> the uuid just minted.
+			// Through animationsRestore, the app's own read path, so a def's clip is exactly
+			// what the Animation window would have saved (normalizeClip runs on the way in).
+			if (d.animations && s.animationPreview) {
+				/** @type {Record<string, any>} */
+				const sets = {};
+				for (const [key, set] of Object.entries(d.animations)) {
+					if (!named[key]) throw new Error('animations: no object named "' + key + '"');
+					sets[named[key]] = set;
+				}
+				s.animationPreview.animationsRestore(sets, false);
+			}
+			// 28-G: THE TRACK. Into the Explorer (content-hashed, so re-runs dedupe) and into
+			// the scene's music slot with playing OFF — the graph plays it from Start. The
+			// hash is what a Sound node addresses, hence the `'$music'` remap below.
+			if (music && s.explorer && s.sceneMusic) {
+				const bin = Uint8Array.from(atob(music.b64), (ch) => ch.charCodeAt(0));
+				const item = await s.explorer.addItemFromBytes(bin.buffer, music.name, null, { imported: true });
+				named['$music'] = item.hash;
+				s.sceneMusic.commitMusic({ hash: item.hash, name: music.name, volume: music.volume ?? 0.8, playing: false, startedAt: 0 });
+			}
+			// 28-G: the editor camera the file opens on (buildSessionPayload saves it). BOTH
+			// the camera and the orbit target, or OrbitControls.update() reverts the move.
+			if (d.view) {
+				/** @type {any} */ let cam;
+				/** @type {any} */ let controls;
+				s.globalCamera.subscribe((v) => (cam = v))();
+				s.orbitControls.subscribe((v) => (controls = v))();
+				if (cam) cam.position.set(d.view.pos[0], d.view.pos[1], d.view.pos[2]);
+				if (controls?.target) {
+					controls.target.set(d.view.target[0], d.view.target[1], d.view.target[2]);
+					controls.update?.();
+				}
+			}
 			if (d.graphs) {
 				const grid = (i) => ({ x: 40 + (i % 4) * 220, y: 40 + Math.floor(i / 4) * 140 });
 				// a node's object reference may be a def-local NAME: `uuid` on effect/anim
@@ -598,6 +1205,9 @@ const DEFS = [
 					const out = { ...(data ?? {}) };
 					if (out.uuid && named[out.uuid]) out.uuid = named[out.uuid];
 					if (out.selected && named[out.selected]) out.selected = named[out.selected];
+					// 28-G: `camera` on setcamera/gamestart/setlook, and the track's hash
+					if (out.camera && named[out.camera]) out.camera = named[out.camera];
+					if (out.hash === '$music' && named['$music']) out.hash = named['$music'];
 					return out;
 				};
 				const resolved = {};
@@ -676,7 +1286,9 @@ const DEFS = [
 				await new Promise((r) => setTimeout(r, 300));
 			}
 			const payload = s.sessions.buildSessionPayload(d.title);
-			const bytes = await s.sessions.exportSessionZip(payload, { assets: false, packs: false, flow: true });
+			// 28-G: a def with music exports WITH assets — the track rides the .tpscene
+			// (sceneAssetList lists the music hash and the Sound node's, one blob for both)
+			const bytes = await s.sessions.exportSessionZip(payload, { assets: !!music, packs: false, flow: true });
 
 			// fitted offscreen thumbnail — the sessions.js renderSceneThumbnail
 			// approach at card size (480x270 webp)
@@ -696,9 +1308,23 @@ const DEFS = [
 				const box = new T.Box3().setFromObject(clone);
 				const size = Math.max(box.getSize(new T.Vector3()).length(), 1);
 				const center = box.getCenter(new T.Vector3());
-				const camera = new T.PerspectiveCamera(40, 480 / 270, size / 100, size * 10);
+				let camera = new T.PerspectiveCamera(40, 480 / 270, size / 100, size * 10);
 				camera.position.copy(center).add(new T.Vector3(size * 0.55, size * 0.42, size * 0.72));
 				camera.lookAt(center);
+				// 28-G: `thumb.camera` renders the card THROUGH a named camera object — the
+				// hero shot the def already authored — instead of the fitted 3/4 view. Camera
+				// markers are chrome, not scenery, so they stay out of that picture.
+				const hero = d.thumb?.camera ? group.getObjectByName(d.thumb.camera) : null;
+				if (hero) {
+					group.updateMatrixWorld(true);
+					const spec = hero.userData?.camera ?? {};
+					camera = new T.PerspectiveCamera(spec.fov ?? 50, 480 / 270, spec.near ?? 0.1, spec.far ?? 1000);
+					hero.getWorldPosition(camera.position);
+					hero.getWorldQuaternion(camera.quaternion);
+					clone.traverse((/** @type {any} */ n) => {
+						if (n.userData?.camera) n.visible = false;
+					});
+				}
 				renderer.render(scene, camera);
 				thumb = renderer.domElement.toDataURL('image/webp', 0.82);
 				renderer.dispose();
@@ -719,8 +1345,12 @@ const DEFS = [
 			if (s.shaderGraph) s.shaderGraph.shaderGraphsRestore({}, true);
 			if (s.scenePost) s.scenePost.scenePostRestore(null, false);
 			if (s.gameState) s.gameState.gameStateRestore(null, false);
+			// 28-G: the clips and the track slot too (the Explorer keeps the bytes — it is a
+			// library, and the hash dedupes a re-run; nothing of it reaches the next def)
+			if (s.animationPreview) s.animationPreview.animationsRestore({}, false);
+			if (s.sceneMusic) s.sceneMusic.musicRestore(null, false);
 			return { bytes: Array.from(bytes), thumb };
-		}, def);
+		}, { d: def, music });
 		const bytes = Buffer.from(out.bytes);
 		const thumb = out.thumb ? Buffer.from(out.thumb.split(',')[1], 'base64') : null;
 		built[def.slug] = { entry: def, bytes, thumb };
@@ -791,7 +1421,10 @@ const DEFS = [
 					version: 2,
 					templates: prev.templates ?? [],
 					examples: prev.examples ?? [],
-					games: prev.games ?? []
+					games: prev.games ?? [],
+					// 28-G: contests is OPTIONAL (the games rule) — carried only when the
+					// file already has it, so an index without contests stays byte-identical
+					...(Array.isArray(prev.contests) ? { contests: prev.contests } : {})
 				};
 			} catch {
 				console.log('  WARN existing index.json unreadable — rebuilding it from this run');
@@ -799,13 +1432,18 @@ const DEFS = [
 		}
 		for (const def of defs) {
 			const section =
-				def.kind === 'template' ? 'templates' : def.kind === 'game' ? 'games' : 'examples';
+				def.kind === 'template' ? 'templates' : def.kind === 'game' ? 'games' : def.kind === 'contest' ? 'contests' : 'examples';
 			const row = {
 				...writeDef(path.join(REPO_OUT, section), def),
 				scene: `${section}/${def.slug}/scene.tpscene`,
-				thumb: built[def.slug].thumb ? `${section}/${def.slug}/thumb.webp` : ''
+				thumb: built[def.slug].thumb ? `${section}/${def.slug}/thumb.webp` : '',
+				// 28-G: a contest row points at its text, beside the starter it describes
+				...(def.kind === 'contest' ? { contest: `${section}/${def.slug}/contest.json` } : {})
 			};
-			const rows = index[section];
+			if (def.kind === 'contest') writeContestJson(path.join(REPO_OUT, section, def.slug, 'contest.json'), def);
+			// the section array is created on first use — `contests` only exists once a
+			// contest def has run, so every other index keeps its exact shape
+			const rows = (index[section] ??= []);
 			const at = rows.findIndex((/** @type {any} */ r) => r.slug === def.slug);
 			if (at === -1) rows.push(row);
 			else rows[at] = row;

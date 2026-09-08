@@ -86,4 +86,73 @@ export function register(cloudApi) {
 			/* ignore */
 		}
 	});
+
+	// 6) Community (example) — cloudApi v3 (roadmap #28-A): publish · play · remix.
+	//    Everything below is typeof-probed so the example still registers on a v2 host.
+	//    A LOCAL provider that lists the bundled template index stands in for a real
+	//    backend: it is the OSS-visible proof that the seams work and the fixture the
+	//    community-seams e2e drives. A real plugin swaps the fetch for its own API.
+	if (typeof cloudApi.setCommunityProvider === 'function') {
+		cloudApi.setCommunityProvider({
+			// the rows: gallery-shaped, plus the optional provider-only fields a card
+			// renders when present (id / href / likeCount / remixOf)
+			list: async () => {
+				const res = await fetch('/templates/index.json');
+				const data = await res.json();
+				return (data.templates || []).map((t, i) => ({
+					...t,
+					id: 'example-' + t.slug,
+					href: 'https://example.com/s/' + t.slug,
+					likeCount: (i + 1) * 3,
+					remixOf: i === 1 ? { id: 'example-' + data.templates[0].slug, title: data.templates[0].title } : null
+				}));
+			},
+			// a card click: the provider decides, and here it simply loads the file
+			load: (entry) => cloudApi.loadRemoteScene({ sceneUrl: entry.sceneUrl, title: entry.title, slug: entry.slug }),
+			// ONE quiet row above the grid
+			notice: () => ({ text: 'Community (example): these are the bundled templates, listed through a provider.', href: 'https://example.com/community' }),
+			// replaces "Submit yours on GitHub"
+			submit: { label: 'Publish from the app (example)', action: () => cloudApi.toast('The publish dialog would open here.') }
+		});
+	}
+
+	// 6b) The row under Save. A plain `.side-row` button — the sidebar's row look
+	//     reaches the slot, so it reads as a native row. Its click exercises
+	//     buildSceneBundle, and stashes the result for the e2e to read.
+	if (typeof cloudApi.mountSidebar === 'function') {
+		cloudApi.mountSidebar((el) => {
+			const btn = document.createElement('button');
+			btn.id = 'cloud-publish-row';
+			btn.className = 'side-row';
+			btn.type = 'button';
+			const ico = document.createElement('span');
+			ico.className = 'side-ico';
+			ico.textContent = '\u2601';
+			const label = document.createElement('span');
+			label.style.cssText = 'flex:1;white-space:nowrap';
+			label.textContent = 'Publish (example)';
+			btn.append(ico, label);
+			btn.onclick = async () => {
+				const bundle = await cloudApi.buildSceneBundle({ assets: true, flow: true });
+				try {
+					window.__cloudLastBundle = bundle;
+				} catch {
+					/* ignore */
+				}
+				cloudApi.toast(
+					'Bundle ready: ' + bundle.meta.objectCount + ' object(s), ' + Math.round(bundle.meta.bytes / 1024) + ' KB' +
+						(bundle.meta.hasFlow ? ', flow' : '') + (bundle.meta.hasAudio ? ', audio' : '') + (bundle.meta.hasGame ? ', game' : '')
+				);
+			};
+			el.appendChild(btn);
+			return () => btn.remove();
+		});
+	}
+
+	// 6c) The api itself, for the e2e (a real plugin keeps it private).
+	try {
+		window.__cloudApi = cloudApi;
+	} catch {
+		/* ignore */
+	}
 }

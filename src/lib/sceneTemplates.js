@@ -3,6 +3,9 @@ import { showToast, closeSelectionInspector } from '../stores/appStore.js';
 import { objectsGroup } from '../stores/sceneStore';
 import { isViewer, warnViewerReadOnly } from './objectPermissions';
 import { contentBase } from './contentBase';
+// 28-A6: the Community source a cloud plugin may install (store-only, no cycle — the
+// objectPermissions import above already reaches cloudHooks' family)
+import { communityProvider } from './cloudHooks';
 
 // Templates modal content (roadmap: "Templates" sidebar row → General/Examples/
 // Community tabs). Two content sources, no bytes in this repo beyond the bundled
@@ -55,6 +58,11 @@ export const communityState = writable('idle');
 /** slug of the entry currently fetching/applying (per-card busy state)
  * @type {import('svelte/store').Writable<string | null>} */
 export const loadingSlug = writable(null);
+/** 28-A6: the provider's ONE notice row above the Community grid — `{text, href?}` or
+ * null. Written only by loadCommunityGallery (from `provider.notice()`); always null in
+ * the OSS build, so the modal renders no row.
+ * @type {import('svelte/store').Writable<{text: string, href?: string} | null>} */
+export const communityNotice = writable(null);
 
 /** Resolve an index path against a CDN base: absolute http(s) URLs pass through
  * (big .tpscene files >~20MB point at raw.githubusercontent — the jsDelivr file
@@ -160,13 +168,63 @@ export async function loadTemplatesIndex(force = false) {
 	templatesState.set('error');
 }
 
+/**
+ * 28-A6: a provider entry, normalized to the card shape. `normalizeEntry`'s ten fields
+ * exactly, plus the optional `{id, href, likeCount, remixOf}` the card renders only when
+ * present (absent = absent — a GitHub row never grows them). A provider may hand over
+ * already-resolved `sceneUrl`/`thumbUrl` or index-style `scene`/`thumb`; either works,
+ * and absolute URLs pass through resolveUrl untouched.
+ * @param {any} e
+ */
+function normalizeProviderEntry(e) {
+	const row = normalizeEntry({ ...e, scene: e?.scene ?? e?.sceneUrl ?? '', thumb: e?.thumb ?? e?.thumbUrl ?? '' }, '');
+	/** @type {any} */
+	const extra = {};
+	if (e?.id != null && e.id !== '') extra.id = String(e.id);
+	if (e?.href) extra.href = String(e.href);
+	if (e?.likeCount != null && Number.isFinite(Number(e.likeCount))) extra.likeCount = Number(e.likeCount);
+	if (e?.remixOf) extra.remixOf = typeof e.remixOf === 'object' ? e.remixOf : { id: String(e.remixOf) };
+	return { ...row, ...extra };
+}
+
 /** Load the Community gallery manifest. Memoized — pass force to refetch.
  * 404 / unreachable / zero entries all land on the friendly empty/error states
- * (the repo may simply not have content yet). @param {boolean=} force */
+ * (the repo may simply not have content yet). @param {boolean=} force
+ *
+ * 28-A6: PROVIDER FIRST. When a cloud plugin has installed a community provider
+ * (cloudHooks.communityProvider) the list comes from `provider.list()` and the notice
+ * row from `provider.notice()`; the GitHub gallery below is the OSS path and the
+ * fallback the moment the provider is cleared. Same `communityState` vocabulary either
+ * way, so the modal needs no state work. */
 export async function loadCommunityGallery(force = false) {
 	const state = get(communityState);
 	if (!force && (state === 'ready' || state === 'empty' || state === 'loading')) return;
 	communityState.set('loading');
+	const provider = get(communityProvider);
+	if (provider) {
+		try {
+			const raw = await provider.list({ force: !!force });
+			// the provider may have been swapped/cleared while its list was in flight — a
+			// late answer must not overwrite what the new source (or the GitHub path) shows
+			if (get(communityProvider) !== provider) return;
+			const list = (Array.isArray(raw) ? raw : []).map(normalizeProviderEntry);
+			communityEntries.set(list);
+			communityState.set(list.length ? 'ready' : 'empty');
+		} catch {
+			if (get(communityProvider) !== provider) return;
+			communityEntries.set([]);
+			communityState.set('error');
+		}
+		let notice = null;
+		try {
+			notice = typeof provider.notice === 'function' ? provider.notice() : null;
+		} catch {
+			notice = null;
+		}
+		communityNotice.set(notice && typeof notice === 'object' && notice.text ? { text: String(notice.text), ...(notice.href ? { href: String(notice.href) } : {}) } : null);
+		return;
+	}
+	communityNotice.set(null);
 	try {
 		const res = await fetch(GALLERY_JSON_URL);
 		if (res.ok) {
@@ -182,6 +240,27 @@ export async function loadCommunityGallery(force = false) {
 	} catch {
 		communityEntries.set([]);
 		communityState.set('error');
+	}
+}
+
+/**
+ * 28-A6: a Community card click. With a provider installed its `load(entry)` decides
+ * (the plugin owns the fetch, the account rules and the remix lineage); without one —
+ * or with a provider that declared no `load` — the GitHub path below applies. The
+ * per-card busy state is kept either way.
+ * @param {any} entry a normalized entry @returns {Promise<boolean>} applied
+ */
+export async function loadCommunityEntry(entry) {
+	const provider = get(communityProvider);
+	if (!provider || typeof provider.load !== 'function') return loadRemoteScene(entry);
+	loadingSlug.set(entry?.slug ?? null);
+	try {
+		return (await provider.load(entry)) === true;
+	} catch {
+		showToast(`Could not load "${entry?.title ?? 'scene'}"`);
+		return false;
+	} finally {
+		loadingSlug.set(null);
 	}
 }
 
@@ -250,3 +329,18 @@ export function confirmClearScene() {
 		{ label: 'Cancel', action: () => {} }
 	]);
 }
+
+// 28-A6: a provider swap (install, or null on logout) invalidates the memo — the tab
+// re-fetches from whichever source is now in force the next time it is shown (the
+// modal's own effect asks again when the state goes back to idle). Reset, never
+// re-fetch here: a logout must not fire a network request from a closed modal. The
+// stores this reads are declared above (module-level subscribers run synchronously at
+// eval — the TDZ rule).
+let lastProvider = get(communityProvider);
+communityProvider.subscribe((provider) => {
+	if (provider === lastProvider) return;
+	lastProvider = provider;
+	communityEntries.set([]);
+	communityNotice.set(null);
+	communityState.set('idle');
+});

@@ -13,15 +13,20 @@
 		templatesState,
 		communityEntries,
 		communityState,
+		communityNotice,
 		loadingSlug,
 		loadTemplatesIndex,
 		loadCommunityGallery,
+		loadCommunityEntry,
 		loadRemoteScene,
 		confirmClearScene,
 		tagUnion,
 		matchesTags,
 		SUBMIT_URL
 	} from '$lib/sceneTemplates';
+	// 28-A6: a cloud plugin's Community provider — null in the OSS build. Read for two
+	// things only: whether the GitHub copy applies, and the provider's own submit control.
+	import { communityProvider } from '$lib/cloudHooks';
 	import { licenseLabel } from '$lib/packs';
 	import { classifyRequirements } from '$lib/moduleRequirements';
 	import { Gamepad2, Puzzle } from '@lucide/svelte';
@@ -39,6 +44,15 @@
 	// without a core release, and a tab with no tags grows no chip row at all
 	const chips = $derived(tagUnion(tabEntries));
 	const shown = $derived(tabEntries.filter((/** @type {any} */ e) => matchesTags(e, activeTags)));
+	// 28-A6: the provider's submit control replaces "Submit yours on GitHub" when present,
+	// and the pull-request copy stands down whenever ANY provider is installed — it would
+	// be a false statement about a source core knows nothing about.
+	const provided = $derived(!!$communityProvider);
+	const submit = $derived(
+		$communityProvider?.submit && typeof $communityProvider.submit === 'object' && $communityProvider.submit.label
+			? $communityProvider.submit
+			: null
+	);
 
 	/** @param {string} tag */
 	function toggleTag(tag) {
@@ -89,6 +103,17 @@
 			if (wants) loadCommunityGallery();
 		});
 	});
+	// 28-A6: a provider swap while the tab is SHOWING resets the memo to idle (see the
+	// subscriber in sceneTemplates); ask again then, so the grid follows the source
+	// without a tab round-trip. Tracks idle only — tracking every state would re-fetch
+	// forever on 'error'.
+	$effect(() => {
+		const idle = $communityState === 'idle';
+		const wants = $templatesModalOpen && tab === 'community';
+		untrack(() => {
+			if (idle && wants) loadCommunityGallery();
+		});
+	});
 
 	function pickBlank() {
 		templatesModalOpen.set(false);
@@ -99,7 +124,18 @@
 		// close first (the Sessions Load precedent) — the load path talks through
 		// toasts/confirms from here on
 		templatesModalOpen.set(false);
-		loadRemoteScene(entry);
+		// 28-A6: a Community card goes through the provider when one is installed
+		if (tab === 'community') loadCommunityEntry(entry);
+		else loadRemoteScene(entry);
+	}
+	/** 28-A6: the provider's submit control — a link when it names an href, a button
+	 * when it names an action (a plugin's publish dialog opens in-app). */
+	function runSubmit() {
+		try {
+			if (typeof submit?.action === 'function') submit.action();
+		} catch (e) {
+			console.error('community submit action failed:', e);
+		}
 	}
 	/** @param {number} n */
 	function sizeLabel(n) {
@@ -161,9 +197,25 @@
 				{#if entry.author && entry.license}·{/if}
 				{#if entry.license}<span title={licenseLabel(entry.license)}>{entry.license}</span>{/if}
 				{#if entry.bytes}<span class="pl-1">{sizeLabel(entry.bytes)}</span>{/if}
+				<!-- 28-A6: provider-only facts, rendered ONLY when present (a GitHub row has none) -->
+				{#if entry.likeCount != null}<span class="tpl-likes pl-1" title="Likes">♥ {entry.likeCount}</span>{/if}
+				{#if entry.remixOf}<span class="tpl-remix pl-1" title="A remix of another published scene">remix{#if entry.remixOf.title}&nbsp;of {entry.remixOf.title}{/if}</span>{/if}
 			</p>
 		</div>
 	</button>
+{/snippet}
+
+{#snippet submitControl(/** @type {string} */ id, /** @type {string} */ cls)}
+	<!-- 28-A6: the provider's submit control when it has one, the GitHub link otherwise -->
+	{#if submit}
+		{#if submit.href}
+			<a {id} class={cls} href={submit.href} target="_blank" rel="noopener">{submit.label}</a>
+		{:else}
+			<button {id} class={cls} type="button" onclick={runSubmit}>{submit.label}</button>
+		{/if}
+	{:else}
+		<a {id} class={cls} href={SUBMIT_URL} target="_blank" rel="noopener">Submit yours on GitHub</a>
+	{/if}
 {/snippet}
 
 {#snippet skeletons()}
@@ -344,6 +396,16 @@
 				</div>
 			{/if}
 		{:else}
+			<!-- 28-A6: the provider's ONE notice row, above whatever the tab shows. Null in
+			     the OSS build, so nothing renders here without a plugin. -->
+			{#if $communityNotice}
+				<p id="community-notice" class="tpl-notice">
+					{$communityNotice.text}
+					{#if $communityNotice.href}
+						<a class="tpl-link" href={$communityNotice.href} target="_blank" rel="noopener">More</a>
+					{/if}
+				</p>
+			{/if}
 			{#if $communityState === 'loading' || $communityState === 'idle'}
 				{@render skeletons()}
 			{:else if $communityState === 'ready'}
@@ -353,8 +415,10 @@
 					{/each}
 				</div>
 				<p class="mt-3 text-xs text-gray-500">
-					Community scenes are contributed via pull request and reviewed before they appear.
-					<a class="tpl-link" href={SUBMIT_URL} target="_blank" rel="noopener">Submit yours on GitHub</a>
+					{#if !provided}
+						Community scenes are contributed via pull request and reviewed before they appear.
+					{/if}
+					{@render submitControl('community-submit', 'tpl-link')}
 				</p>
 			{:else}
 				<div id="community-empty" class="flex flex-col items-center gap-2 rounded-lg border border-dashed border-gray-600 p-6 text-center">
@@ -363,13 +427,13 @@
 							? "Couldn't reach the community gallery — check your connection."
 							: 'No community scenes yet — be the first!'}
 					</p>
-					<p class="text-xs text-gray-500">
-						Scenes are shared as pull requests and reviewed before they appear here.
-					</p>
+					{#if !provided}
+						<p class="text-xs text-gray-500">
+							Scenes are shared as pull requests and reviewed before they appear here.
+						</p>
+					{/if}
 					<div class="flex items-center gap-2">
-						<a id="community-submit-link" class="tpl-link text-sm" href={SUBMIT_URL} target="_blank" rel="noopener">
-							Submit yours on GitHub
-						</a>
+						{@render submitControl('community-submit-link', 'tpl-link text-sm')}
 						{#if $communityState === 'error'}
 							<button id="community-retry" class="ui-button-quiet" onclick={() => loadCommunityGallery(true)}>
 								<RefreshCw size={14} aria-hidden="true" /> Retry
@@ -499,6 +563,28 @@
 	.tpl-link {
 		color: #93c5fd;
 		text-decoration: underline;
+	}
+	/* 28-A6: a submit BUTTON (a provider with an action) reads exactly like the link */
+	button.tpl-link {
+		background: none;
+		border: 0;
+		padding: 0;
+		font: inherit;
+		cursor: pointer;
+	}
+	/* 28-A6: the provider's notice row — one quiet line, never a banner */
+	.tpl-notice {
+		margin-bottom: 0.7rem;
+		padding: 0.35rem 0.6rem;
+		font-size: 0.75rem;
+		color: rgb(209 213 219);
+		background: rgb(55 65 81 / 0.4);
+		border: 1px solid rgb(75 85 99 / 0.6);
+		border-radius: 0.375rem;
+	}
+	.tpl-likes,
+	.tpl-remix {
+		white-space: nowrap;
 	}
 	.tpl-link:hover {
 		color: #bfdbfe;

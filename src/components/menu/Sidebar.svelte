@@ -21,6 +21,9 @@
 		connectBarHeight
 	} from '../../stores/appStore.js';
 	import { confirmClearScene } from '$lib/sceneTemplates';
+	// 28-A5: the cloud plugin's row under Save (null without a plugin = no row at all)
+	import { sidebarSlot } from '$lib/cloudHooks';
+	import CloudSlot from '../CloudSlot.svelte';
 	import { whatsNewUnseen, openWhatsNew } from '$lib/whatsNew';
 
 	// 203: redesigned as a compact floating panel — flat list (order preserved,
@@ -200,6 +203,16 @@
 				{/if}
 			</div>
 		{/if}
+		<!-- 28-A5 (roadmap #28): THE SAVE ROW'S NEIGHBOUR. A cloud plugin's own row (Publish)
+		     mounts here, directly under the format segment, because a publish row anywhere
+		     else is one nobody finds. The plugin renders a plain `.side-row` button and the
+		     row look reaches it (see the style block). Absent ENTIRELY without a plugin — the
+		     slot store is null — so the OSS menu is byte-identical. -->
+		{#if $sidebarSlot}
+			<div id="sidebar-cloud-slot" class="side-cloud">
+				<CloudSlot mount={$sidebarSlot} />
+			</div>
+		{/if}
 
 		<div class="side-div"></div>
 
@@ -364,7 +377,13 @@
 	.app-sidebar::-webkit-scrollbar {
 		display: none; /* Chrome/Safari — scroll, no bar */
 	}
-	.side-row {
+	/* 28-A5: the `.side-cloud :global(...)` halves republish the row look for the cloud
+	   slot's FOREIGN DOM. svelte scopes these rules to elements in this template, and a
+	   plugin's button carries no scope class, so without them a Publish row rendered
+	   under Save would sit unstyled beside every native row. Scoped under the slot only,
+	   never as a bare global — the sidebar's look must not leak into the page. */
+	.side-row,
+	.side-cloud :global(.side-row) {
 		display: flex;
 		width: 100%;
 		align-items: center;
@@ -374,10 +393,12 @@
 		text-align: left;
 		font-size: 0.875rem;
 	}
-	.side-row:hover {
+	.side-row:hover,
+	.side-cloud :global(.side-row:hover) {
 		background-color: rgb(0 0 0 / 0.06);
 	}
-	:global(.dark) .side-row:hover {
+	:global(.dark) .side-row:hover,
+	:global(.dark) .side-cloud :global(.side-row:hover) {
 		background-color: rgb(255 255 255 / 0.08);
 	}
 	/* 15-O: active nav row (Configure Scene while its panel is open) — a tinted
@@ -387,7 +408,8 @@
 		background-color: rgb(59 130 246 / 0.12);
 		color: var(--color-primary-400, #60a5fa);
 	}
-	.side-ico {
+	.side-ico,
+	.side-cloud :global(.side-ico) {
 		width: 1.25rem;
 		flex-shrink: 0;
 		text-align: center;

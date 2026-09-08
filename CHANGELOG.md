@@ -5,7 +5,11 @@
      per release, newest first. HTML comments like this one are stripped before
      rendering, so maintainer notes stay out of the user-facing window. -->
 
-## 1.10.0 — Unreleased
+## 1.10.0 — Publish, play, remix ☁️
+
+The engine learned the moves a community needs — publish the open scene, open a
+published one from a link, play it, remix it — and left every one of them switched off
+until a cloud plugin asks. Without a plugin nothing changes.
 
 ### 🛠️ For people building on it
 
@@ -17,6 +21,8 @@
   exactly as before. See `OPEN-CORE.md`.
 - 🔗 **Scene links (`/?s=<id>`) are treated like invites:** the first-run welcome stands
   down so the scene you were sent is the first thing you see.
+- 🏆 **Contest starters** for the first two community contests (Make a mirror, Follow the
+  beat) are authored with `author-templates.cjs` like every other template.
 
 ## 1.9.0 — Plug it in 🔌
 

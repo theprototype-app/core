@@ -50,8 +50,13 @@ import {
 	itemBlob,
 	deleteItem,
 	setItemHidden,
-	loadExplorer
+	loadExplorer,
+	nextCopyName
 } from './explorer';
+// 24-C3: a scene COPY is the import-a-copy rewrite (fresh id/createdAt, the new name inside
+// the file) — one implementation of "the same bundle with a new identity", not a second.
+// importDuplicates is a leaf (stores + explorer + fflate), so this closes no cycle.
+import { sceneCopyBytes } from './importDuplicates';
 import { requestAsset } from './assetShare';
 import { gameState, gameStateRestore } from './gameState';
 // 21-G2: the manifest is the project's one mutable document; travel-away publishes
@@ -70,6 +75,8 @@ import {
 	// here, which is the only thing that makes the promise true for a HOST (it publishes
 	// its project whole, so withholding consent alone would buy it nothing).
 	setScenePrivateHere,
+	isScenePrivateHere,
+	manifestSceneNames,
 	sendProjectManifest
 } from './projectManifest';
 import { sessionHost } from './connectionState';
@@ -809,6 +816,126 @@ export async function newLevel(name, folderId = null) {
 	);
 	if (item) showToast('Scene created: ' + payload.name);
 	return item;
+}
+
+// ---- 24-C3: DUPLICATE A SCENE — a copy is a new scene, not a new version ----------
+//
+// A scene's identity is its NAME (the manifest key) and the name is INSIDE the .tpscene,
+// so "the same bytes under a second record" — what C1's Duplicate does for every other
+// kind — cannot be a scene copy: it would be a second card of the SAME scene, and the
+// first publish of either would fold the other onto the hidden shelf as an old version.
+// A scene copy therefore rewrites the file (`sceneCopyBytes`: fresh id/createdAt, the new
+// name, the author's workspace stripped as a save strips it) and lands as a NEW hash with
+// a history of its own — which also means it costs peers ONE transfer (accepted in the
+// plan), exactly like a save, where a duplicated texture costs them none (C2).
+
+/**
+ * Every name a new scene could collide with, lower-cased: the manifest's scenes (a
+ * peer's included — publishing under one of those would append a version to THEIR scene)
+ * and every scene FILE's stem on either shelf (a save files under `<name>.tpscene`).
+ * @returns {Set<string>}
+ */
+function takenSceneNames() {
+	const taken = new Set(manifestSceneNames().map((n) => n.toLowerCase()));
+	for (const item of [...get(explorerItems), ...get(hiddenItems)])
+		if (item.kind === 'scene' || /\.tpscene$/i.test(String(item.name ?? '')))
+			taken.add(levelSceneName(item.name).toLowerCase());
+	return taken;
+}
+
+/** Would a scene of this name collide with one this project already has? @param {string} name */
+export function sceneNameTaken(name) {
+	const scene = String(name ?? '').trim();
+	return !!scene && takenSceneNames().has(scene.toLowerCase());
+}
+
+/**
+ * The copy name a Duplicate prefills: "Arena" → "Arena copy" → "Arena copy 2" — the
+ * Finder/Blender rule every other kind's copy already follows (`nextCopyName`).
+ * @param {string} from the source scene's name
+ */
+export function sceneCopyName(from) {
+	return nextCopyName(levelSceneName(from) || 'Scene', takenSceneNames());
+}
+
+/**
+ * A scene name that is FREE: `base` itself when nothing holds it, else its copy name.
+ * The Templates modal's "Save to Library" wants the template's own title when it can
+ * have it and a copy name only when it cannot.
+ * @param {string} base
+ */
+export function freeSceneName(base) {
+	const scene = levelSceneName(base) || 'Scene';
+	return sceneNameTaken(scene) ? nextCopyName(scene, takenSceneNames()) : scene;
+}
+
+/**
+ * A NEW project scene out of a .tpscene's bytes — the write half every scene copy
+ * shares, whether the bytes came from a library card (`duplicateScene`) or a template
+ * fetched off the CDN (`sceneTemplates.saveRemoteSceneToLibrary`).
+ *
+ * The rules are `saveSceneAsLevel`'s, because that is what a copy IS: the file a save
+ * would have written. Consent BEFORE the publish (the C4 gotcha — the commit is the
+ * broadcast); `private` keeps the new name off the wire when the source is a scene this
+ * machine is editing privately (the Save-as rule: the session has never heard of that
+ * name either); a viewer's publish is refused inside publishSceneVersion and the local
+ * file still lands. A name the project already has is REFUSED rather than appended to —
+ * appending would make the copy a VERSION of an unrelated scene.
+ * @param {ArrayBuffer} buffer a readable .tpscene
+ * @param {string} name the copy's scene name — the manifest key, no extension
+ * @param {string|null} [folderId] where the file lands (a real library folder, else the root)
+ * @param {{thumbnail?: string | null, private?: boolean}} [opts]
+ * @returns {Promise<{id: string, hash: string, name: string}|null>} the new item
+ */
+export async function addSceneFromBytes(buffer, name, folderId = null, opts = {}) {
+	const scene = levelSceneName(name);
+	if (!scene) return null;
+	if (sceneNameTaken(scene)) {
+		showToast('A scene called "' + scene + '" already exists — choose another name');
+		return null;
+	}
+	const bytes = await sceneCopyBytes(buffer, scene, { workspace: false });
+	if (!bytes) {
+		showToast('That file could not be read as a scene.');
+		return null;
+	}
+	const target = await targetFolder(folderId);
+	const item = await addItemFromBytes(bytes, levelFileName(scene), target, {
+		...(opts.thumbnail !== undefined ? { thumbnail: opts.thumbnail } : {})
+	});
+	if (!item) return null;
+	if (opts.private === true) setScenePrivateHere(scene, true);
+	else noteSceneOpened(scene);
+	publishSceneVersion(scene, item.hash);
+	return item;
+}
+
+/**
+ * Duplicate a scene CARD: read its file, rewrite the identity, land the copy beside it.
+ * The source's thumbnail rides over (a .tpscene decodes to none, and a peer-pushed
+ * picture would otherwise be lost); `private` follows the source — a scene the user is
+ * editing privately, or has marked private here, makes a private copy.
+ * @param {any} item the library record (visible shelf)
+ * @param {string} newName the copy's scene name, already chosen
+ * @returns {Promise<{id: string, hash: string, name: string}|null>}
+ */
+export async function duplicateScene(item, newName) {
+	if (!item?.id) return null;
+	const blob = await itemBlob(item.id);
+	if (!blob) {
+		showToast('That scene\'s file is not on this device.');
+		return null;
+	}
+	const from = levelSceneName(item.name);
+	const at = get(currentLevel);
+	const secret =
+		isScenePrivateHere(from) || (at?.private === true && !!at.hash && at.hash === item.hash);
+	const made = await addSceneFromBytes(await blob.arrayBuffer(), newName, item.folderId ?? null, {
+		thumbnail: item.thumbnail ?? null,
+		private: secret
+	});
+	if (made) showToast('Duplicated ' + from + ' as ' + levelSceneName(made.name));
+	return made;
 }
 
 /**

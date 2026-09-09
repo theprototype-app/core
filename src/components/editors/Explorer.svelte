@@ -81,7 +81,12 @@
 		renameOpenLooseScene,
 		travelToLevel,
 		levelSceneName,
-		currentLevel
+		currentLevel,
+		// 24-C3: a scene copy is a NEW scene (the name is inside the file), so it is named
+		// inline like a save and written through levels, not through explorer.duplicateItem
+		duplicateScene,
+		sceneCopyName,
+		sceneNameTaken
 	} from '$lib/levels';
 	// R22 round 35: opening a scene the session has never seen asks whether to share it or
 	// edit it privately. It answers itself (share) when nobody is connected or the session
@@ -2235,6 +2240,21 @@
 		editing = { mode, value: mode === 'save-scene' ? 'Scene' : 'New scene', inGrid: true, consent };
 	}
 	/**
+	 * 24-C3: DUPLICATE A SCENE asks for the copy's NAME first — the name is the manifest
+	 * key and it lives inside the file, so a scene copy is a new scene, not a second
+	 * record of the same one (levels.js carries the reasoning). Same inline input as a
+	 * save, prefilled with the Finder/Blender copy name ("Arena copy"), in the grid where
+	 * the copy will land. A taken name is refused at Enter and discarded at blur.
+	 */
+	function startDuplicateScene(item: any) {
+		settlePendingEdit();
+		editing = { mode: 'duplicate-scene', itemId: item.id, value: sceneCopyName(item.name), inGrid: true };
+	}
+	/** the one name rule the inline editor adds for a scene copy: not one the project has */
+	function duplicateNameTaken(edit: any) {
+		return edit?.mode === 'duplicate-scene' && sceneNameTaken(edit.value);
+	}
+	/**
 	 * R22 round 11 (user): "for packs add right click create pack, so I can set name and
 	 * create items there". The name is typed INLINE, in the grid, like every other thing
 	 * this app makes — never a browser prompt (the no-prompt rename convention).
@@ -2262,10 +2282,24 @@
 			editing = null;
 			return;
 		}
+		// 24-C3: a scene copy named after a scene the project already has cannot be
+		// committed either (it would become a VERSION of that scene) — same rule, same
+		// exit, said out loud because the input vanishes with it
+		if (duplicateNameTaken(editing)) {
+			showToast('Duplicate cancelled — a scene called "' + editing.value.trim() + '" already exists');
+			editing = null;
+			return;
+		}
 		void commitEdit();
 	}
 	async function commitEdit() {
 		if (!editing || !isValidName(editing.value)) return;
+		// 24-C3: Enter on a taken scene name keeps the input open with the reason (focus is
+		// still inside, so nothing is stranded — blur has its own exit above)
+		if (duplicateNameTaken(editing)) {
+			showToast('A scene called "' + editing.value.trim() + '" already exists — choose another name');
+			return;
+		}
 		// snapshot and CLOSE first: the scene modes await, and an input still mounted over
 		// an in-flight save is one blur away from committing the same name twice
 		const edit = editing;
@@ -2294,6 +2328,14 @@
 		// active folder is a pseudo view or a stale id
 		else if (edit.mode === 'save-scene') await saveSceneAsLevel(edit.value, activeLibraryFolder(), { consent: edit.consent });
 		else if (edit.mode === 'new-scene') await newLevel(edit.value, activeLibraryFolder());
+		// 24-C3: the copy lands beside its source (levels.duplicateScene reads the folder off
+		// the record), so the active folder plays no part here
+		else if (edit.mode === 'duplicate-scene') {
+			const source = $explorerItems.find((i: any) => i.id === edit.itemId);
+			if (!source) return showToast('That scene is no longer in the Library');
+			const made: any = await duplicateScene(source, edit.value);
+			if (made) setSel([made.id]);
+		}
 		else if (edit.mode === 'new-pack') {
 			const pack = createPack(edit.value);
 			openFolder('pack:' + pack.name);
@@ -2366,6 +2408,7 @@
 		editing &&
 			(editing.mode === 'save-scene' ||
 				editing.mode === 'new-scene' ||
+				editing.mode === 'duplicate-scene' ||
 				editing.mode === 'new-pack' ||
 				(editing.mode === 'create' && editing.inGrid))
 			? (editing.mode as string)
@@ -3499,9 +3542,19 @@
 		}
 		return out;
 	}
-	/** Duplicate: every selected library file (not scenes until C3) and folder, beside itself */
+	/**
+	 * Duplicate: every selected library file and folder, beside itself. 24-C3: a SCENE
+	 * needs a name before it can be copied (the name is inside the file), so a selection
+	 * that is exactly one scene opens the naming input instead; scenes inside a bigger
+	 * selection are skipped and the toast says how to do them.
+	 */
 	async function duplicateSelection() {
 		const entries = clipEntriesOfSelection().filter((e) => !e.volumeId);
+		const itemOf = (e: any) => (e.kind === 'item' ? $explorerItems.find((i: any) => i.id === e.id) : null);
+		if (entries.length === 1 && itemOf(entries[0])?.kind === 'scene') {
+			startDuplicateScene(itemOf(entries[0]));
+			return;
+		}
 		const ids: string[] = [];
 		let skippedScenes = 0;
 		for (const e of entries) {
@@ -3509,7 +3562,7 @@
 				const made = await duplicateFolder(e.id);
 				if (made) ids.push(made.id);
 			} else {
-				const item = $explorerItems.find((i: any) => i.id === e.id);
+				const item = itemOf(e);
 				if (item?.kind === 'scene') { skippedScenes++; continue; }
 				const made = await duplicateItem(e.id);
 				if (made) ids.push(made.id);
@@ -3519,7 +3572,7 @@
 		if (!ids.length && !skippedScenes) return showToast('Nothing to duplicate here');
 		showToast(
 			(ids.length ? 'Duplicated ' + plural(ids.length, 'item') : '') +
-				(skippedScenes ? (ids.length ? ' — ' : '') + plural(skippedScenes, 'scene') + ' skipped (duplicate a scene from its own menu)' : '')
+				(skippedScenes ? (ids.length ? ' — ' : '') + plural(skippedScenes, 'scene') + ' skipped (duplicate a scene on its own, so it can take a name)' : '')
 		);
 	}
 	/** Copy / Cut the selection onto the in-app clipboard */
@@ -4315,17 +4368,22 @@
 				// 24-C1: a copy is a new RECORD with the same bytes; Copy/Cut go to the in-app
 				// clipboard (a page cannot put a file on the OS clipboard — text kinds keep
 				// "Copy contents" below for that)
+				// 24-C3: a SCENE duplicates too — as a new scene under a name you type, because
+				// the name is inside the file and is the project's key for it
 				{
 					label: 'Duplicate',
 					icon: 'copy',
 					hint: 'Ctrl+D',
-					disabled: item.kind === 'scene' || !!item.packEntry,
+					disabled: !!item.packEntry,
 					tooltip: item.packEntry
 						? 'Packs are read-only bundles'
 						: item.kind === 'scene'
-							? 'Duplicate a scene from its Scenes row (it needs a new name inside the file)'
+							? 'A copy of this scene under a new name — its own file, its own version history'
 							: 'A second copy beside this one — same bytes, its own record',
-					action: () => void duplicateItem(item.id).then((made: any) => made && setSel([made.id]))
+					action: () =>
+						item.kind === 'scene'
+							? startDuplicateScene(item)
+							: void duplicateItem(item.id).then((made: any) => made && setSel([made.id]))
 				},
 				...(!item.packEntry
 					? [

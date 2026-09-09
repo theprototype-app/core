@@ -525,7 +525,7 @@ const writing = new Map();
  * dedupe, the `imported` stamp and the thumbnail rule cannot drift between them; the
  * caller owns `persistIndex` because a batch import should write the index once.
  * @param {ArrayBuffer} buffer @param {string} name @param {string | null} folderId
- * @param {{kind?: string, type?: string, imported?: boolean, hash?: string}} [meta]
+ * @param {{kind?: string, type?: string, imported?: boolean, hash?: string, thumbnail?: string | null}} [meta]
  */
 async function writeItem(buffer, name, folderId, meta = {}) {
 	const hash = meta.hash ?? (await sha256(buffer));
@@ -604,13 +604,15 @@ async function writeItemNow(buffer, name, folderId, meta) {
  * through `importFiles` / the duplicate resolver instead.
  * @param {ArrayBuffer} buffer @param {string} name
  * @param {string | null} folderId
- * @param {{imported?: boolean, allowDuplicate?: boolean, id?: string, share?: string, owner?: any}} [opts]
+ * @param {{imported?: boolean, allowDuplicate?: boolean, id?: string, share?: string, owner?: any, thumbnail?: string | null}} [opts]
  *   loose-scenes fix: stamp provenance — see `writeItem`. Absent means "this app minted
  *   it", so nothing already stored changes. `allowDuplicate` (24-C1): skip the hash dedupe
  *   and mint a SECOND record for bytes we already hold — a copy is a record, its bytes are
  *   content. `id` (24-C2): write the record under THIS uuid — a shared row's identity — and
  *   skip the dedupe for the same reason; a record already held under that id is returned
  *   as-is (idempotent, the `createFolder` rule). `share`/`owner` ride onto the record.
+ *   `thumbnail` (24-C3): a scene copy carries its source card's picture rather than
+ *   decoding one (a .tpscene decodes to none anyway); undefined = derive as before.
  */
 export async function addItemFromBytes(buffer, name, folderId = null, opts = {}) {
 	const wantId = String(opts.id ?? '').trim();
@@ -646,7 +648,7 @@ async function mintOnce(id, fn) {
 
 /** the body of addItemFromBytes, once any id lock is held
  * @param {ArrayBuffer} buffer @param {string} name @param {string | null} folderId
- * @param {{imported?: boolean, allowDuplicate?: boolean, id?: string, share?: string, owner?: any}} opts
+ * @param {{imported?: boolean, allowDuplicate?: boolean, id?: string, share?: string, owner?: any, thumbnail?: string | null}} opts
  * @param {string} wantId */
 async function addItemFromBytesNow(buffer, name, folderId, opts, wantId) {
 	if (wantId) {
@@ -668,16 +670,18 @@ async function addItemFromBytesNow(buffer, name, folderId, opts, wantId) {
 			return shelved;
 		}
 	}
+	const thumb = opts.thumbnail !== undefined ? { thumbnail: opts.thumbnail } : {};
 	const item =
 		opts.allowDuplicate || wantId
 			? await writeItemNow(buffer, name, folderId, {
 					hash,
 					imported: !!opts.imported,
+					...thumb,
 					...(wantId ? { id: wantId } : {}),
 					...(opts.share ? { share: opts.share } : {}),
 					...(opts.owner ? { owner: opts.owner } : {})
 				})
-			: await writeItem(buffer, name, folderId, { hash, imported: !!opts.imported });
+			: await writeItem(buffer, name, folderId, { hash, imported: !!opts.imported, ...thumb });
 	await persistIndex();
 	return item;
 }

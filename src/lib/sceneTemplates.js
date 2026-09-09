@@ -299,6 +299,40 @@ export async function loadRemoteScene(entry) {
 }
 
 /**
+ * 24-C3 — SAVE A TEMPLATE INTO THE LIBRARY without loading it: the card's second
+ * action. Loading replaces the world for everyone; this fetches the same .tpscene and
+ * files it as a NEW project scene under the template's own title (its copy name when
+ * that is taken — `levels.freeSceneName`), through the one scene-copy write path
+ * (`levels.addSceneFromBytes`: fresh identity inside the file, consent, the manifest
+ * entry). The open scene is untouched, so there is nothing to confirm and no backup to
+ * stash. Dynamic import: levels.js is history-family and this module is a leaf.
+ * @param {any} entry a normalized entry @returns {Promise<any|null>} the library item
+ */
+export async function saveRemoteSceneToLibrary(entry) {
+	if (!entry?.sceneUrl) return null;
+	loadingSlug.set(entry.slug);
+	try {
+		const res = await fetch(entry.sceneUrl);
+		if (!res.ok) {
+			showToast(`Could not fetch "${entry.title}" (${res.status})`);
+			return null;
+		}
+		const { addSceneFromBytes, freeSceneName } = await import('./levels');
+		// a title is prose, a scene name is a file stem: the three characters the Explorer
+		// refuses in any name (`isValidName`) become dashes before the name is chosen
+		const name = freeSceneName(String(entry.title || entry.slug || 'Scene').replace(/[*\\/]+/g, '-'));
+		const item = await addSceneFromBytes(await res.arrayBuffer(), name, null);
+		if (item) showToast(`Saved to your Library as "${name}" — open it from the Explorer`);
+		return item;
+	} catch {
+		showToast(`Could not save "${entry.title}" — check your connection`);
+		return null;
+	} finally {
+		loadingSlug.set(null);
+	}
+}
+
+/**
  * Confirm-and-clear the scene for everyone (the Sidebar "Clear Scene" flow,
  * shared with the modal's Blank card). Viewer-gated like loadRemoteScene.
  * Synchronous up to the confirm toast (suites snapshot it right after the

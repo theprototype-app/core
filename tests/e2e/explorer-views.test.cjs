@@ -395,9 +395,11 @@ h.run(async () => {
 	await page.waitForTimeout(900);
 
 	// the bytes really went
+	// 24-C2: the card suffix is the log row's key — the RECORD id for a deletion logged since
+	// C2 — so the record is looked up by id (the hash reading is kept for an older row)
 	const gone = await page.evaluate(async (t) => {
 		const e = window.__stores.explorer;
-		const it = e.itemByHash(t);
+		const it = e.allItems().find((i) => i.id === t) ?? e.itemByHash(t);
 		return { found: !!it, blob: it ? !!(await e.itemBlob(it.id)) : null };
 	}, target.id.replace('deleted:', ''));
 	h.check(!gone.found && gone.blob === null, 'the purge freed the record and the blob');
@@ -595,13 +597,15 @@ h.run(async () => {
 	// two answers differ. Without this the two checks above pass whether or not the bug
 	// is fixed — the documented "a check that cannot fail" trap.
 	const counter = await page.evaluate((t) => {
+		// 24-C2: the suffix is the log row's key (the RECORD id since C2), which the helper
+		// takes directly and the store reading resolves by id first, hash second
 		const hash = t.replace('deleted:', '');
 		// the old expression, verbatim: a helper that reaches the shelves with get()
 		const oldAnswer = window.__stores.sharedLibrary.canRestoreDeleted(hash);
 		let vis, hid;
 		window.__stores.explorer.explorerItems.subscribe((x) => (vis = x))();
 		window.__stores.explorer.hiddenItems.subscribe((x) => (hid = x))();
-		const newAnswer = new Set([...vis, ...hid].map((i) => i.hash)).has(hash);
+		const newAnswer = new Set([...vis, ...hid].flatMap((i) => [i.id, i.hash])).has(hash);
 		return { oldAnswer, newAnswer };
 	}, target.id);
 	h.check(

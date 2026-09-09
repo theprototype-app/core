@@ -1,7 +1,16 @@
 import { get, writable } from 'svelte/store';
 import { peers, showToast } from '../stores/appStore';
-import { explorerFolders, explorerItems, itemBlob, itemByHash, addItemFromBytes, hashBytes } from './explorer';
-import { projectManifest } from './projectManifest';
+import {
+	explorerFolders,
+	explorerItems,
+	itemBlob,
+	itemByHash,
+	itemById,
+	addItemFromBytes,
+	replaceItemBytes,
+	hashBytes
+} from './explorer';
+import { projectManifest, isSyntheticId, itemRowLive } from './projectManifest';
 import { idbGet, idbPut } from './idb';
 import {
 	beginTransfer,
@@ -67,6 +76,54 @@ function destinationFor(hash) {
 	// — a share flag, two dot colours, a filter — and a folder wearing it that carries none
 	// of that is the kind of thing a user reads as a bug, which is exactly what happened.
 	return null;
+}
+
+/**
+ * 24-C2 — LAND ARRIVING BYTES ON EVERY ROW THAT NAMES THEM. A shared row is `{id, hash}`
+ * now, and one hash may have several rows (a copy is a second record holding the same
+ * bytes), so a single `addItemFromBytes` at the first row's folder is wrong twice: it
+ * leaves the other copies as derived cards nothing will ever fill, and it mints a record
+ * under a RANDOM id that no row names — a stray local file beside the shared ones.
+ *
+ * So: one record PER ROW, each under the row's own id (network identity) with the row's
+ * name, placement and adoption marks written at once. A row whose record is already here
+ * but holds DIFFERENT bytes is an edit the publisher made — the record follows in place
+ * (`replaceItemBytes`), which is what keeps an edited copy one card and one transfer. A
+ * legacy (synthetic-id) row still lands by hash, as it always did. Bytes nothing in the
+ * document describes — a scene asset pushed before its row, or a hash nobody shared —
+ * take the old path: one record at `destinationFor`.
+ * @param {string} hash @param {string} name @param {ArrayBuffer} buffer
+ */
+async function landBytes(hash, name, buffer) {
+	/** @type {any} */
+	const doc = get(projectManifest);
+	const tombs = doc?.removed?.items ?? {};
+	const rows = (doc?.items ?? []).filter(
+		(/** @type {any} */ r) => r?.hash === hash && itemRowLive(r, tombs)
+	);
+	if (!rows.length) {
+		await addItemFromBytes(buffer, name, destinationFor(hash));
+		return;
+	}
+	for (const row of rows) {
+		const folder =
+			row.folderId && get(explorerFolders).some((f) => f.id === row.folderId) ? row.folderId : null;
+		if (isSyntheticId(row.id)) {
+			// a pre-24 row: by hash, through the dedupe — the sweep marks whatever record holds it
+			await addItemFromBytes(buffer, row.name ?? name, folder);
+			continue;
+		}
+		const held = itemById(row.id);
+		if (held) {
+			if (held.hash !== hash) await replaceItemBytes(row.id, buffer);
+			continue;
+		}
+		await addItemFromBytes(buffer, row.name ?? name, folder, {
+			id: row.id,
+			share: 'peer',
+			owner: row.owner
+		});
+	}
 }
 
 /**
@@ -185,7 +242,7 @@ export async function applyAssetFile(data) {
 			size: buffer.byteLength
 		});
 	activateTransfer(tx, buffer.byteLength);
-	await addItemFromBytes(buffer, data.name ?? 'shared-asset', destinationFor(data.hash));
+	await landBytes(data.hash, data.name ?? 'shared-asset', buffer);
 	finishTransfer(tx);
 	settlePull(data.hash);
 }
@@ -563,7 +620,7 @@ export async function applyAssetChunk(data) {
 		next.delete(hash);
 		return next;
 	});
-	await addItemFromBytes(whole.buffer, state.name, destinationFor(hash));
+	await landBytes(hash, state.name, whole.buffer);
 	finishTransfer(state.tx);
 	settlePull(hash);
 }

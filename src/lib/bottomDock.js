@@ -303,4 +303,11 @@ if (typeof document !== 'undefined') {
 	bottomInset.subscribe((inset) => {
 		document.documentElement.style.setProperty('--bottom-inset', inset + 'px');
 	});
+	// 24-B3: the GATED height too — what the dock actually takes from the viewport.
+	// `--bottom-inset` above is the raw dock height whether or not it pushes the
+	// viewport; the window clamp (windowSize.bottomReserve) and the toolbox cap need
+	// the pushing case only, an overlay dock sits BELOW the window tier.
+	viewportInset.subscribe((inset) => {
+		document.documentElement.style.setProperty('--viewport-inset', inset + 'px');
+	});
 }

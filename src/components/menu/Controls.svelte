@@ -2,12 +2,15 @@
 	import { Clapperboard, Code, Cog, Eye, FolderOpen, Grid2x2, List, Maximize2, MessageSquare, Monitor, Move, Palette, Pin, Play, RectangleGoggles, RotateCcw, SquarePen, Sun, Workflow } from '@lucide/svelte';
 	import { Listgroup } from 'flowbite-svelte';
 	import { objectsGroup, TControls, transformMode, isLocked, lockedObjects, globalScene, vrPassthrough, vrOverride, selectedObject, selectedObjects } from '../../stores/sceneStore';
-	import { chatHidden, flowGraphClose, flowCodeClose, animationClose, uvEditorClose, shaderEditorClose, hudEditorClose, explorerClose, objectListClose, objectContextMenu, renamingObject, advancedMode, showEnvInList, showLocalObjects, floatingToolbar, toolbarAlwaysOnTop, showSimControls } from '../../stores/appStore.js';
+	import { chatHidden, flowGraphClose, flowCodeClose, animationClose, uvEditorClose, shaderEditorClose, hudEditorClose, explorerClose, objectListClose, objectContextMenu, renamingObject, advancedMode, showEnvInList, showLocalObjects, floatingToolbar, toolbarAlwaysOnTop, showSimControls, expandedObjects } from '../../stores/appStore.js';
+	// 24-B2: keyboard navigation in the object list (the Explorer's gridKeydown shape)
+	import { visibleObjectRows, withExpanded, typeAheadIndex } from '$lib/objectListNav';
+	import { keyOf } from '$lib/keyOf';
 	import { systemGroupNames } from '$lib/moduleSDK';
 	import { ENV_ROOT } from '$lib/environment';
 	import { flyTo } from '$lib/objectActions';
 	import { mutedFlowObjects } from '../../stores/flowStore';
-	import { focusObject, duplicateObject, toggleObjectVisibility, moveObjectToGroup, setTransformMode } from '$lib/objectActions';
+	import { focusObject, duplicateObject, toggleObjectVisibility, moveObjectToGroup, setTransformMode, selectObject } from '$lib/objectActions';
 	import { registerWindowReset } from '$lib/dragWindow';
 	import { enterEditMode } from '$lib/meshEdit';
 	import { addAnnotation } from '$lib/annotationsHandler';
@@ -167,6 +170,143 @@
 		refreshFilter();
 	});
 	objectsGroup.subscribe(() => refreshFilter()); // re-filter on scene changes
+
+	// --- 24-B2: keyboard navigation over the VISIBLE rows -----------------------------
+	// The handler sits on the list container (role="tree", tabindex 0), so rows stay
+	// simple; it stops the keys it consumes, because shortcuts.js listens on WINDOW and
+	// Enter / F2 / letters mean other things there (the Explorer lesson). The rename
+	// input keeps its own keys — it is a text field, so nothing here runs while it has
+	// focus. Type-ahead reads the CHARACTER first (a name is text) and falls back to the
+	// physical key (24-A's keyOf), so a Cyrillic layout still reaches "Box".
+	let treeEl: HTMLElement | null = $state(null);
+	let typeAhead = '';
+	let typeAheadPhysical = '';
+	let typeAheadAt = 0;
+	function currentRowIndex(rows: { uuid: string }[]) {
+		// the SET only: `selectedObject` keeps the last object after a deselect (the
+		// Inspector binds to it), and walking from a row that is not highlighted reads
+		// as the arrows skipping — from nothing, ↓ starts at the top
+		const current = $selectedObjects.length ? $selectedObjects[$selectedObjects.length - 1] : null;
+		return current ? rows.findIndex((r) => r.uuid === current) : -1;
+	}
+	function listKeydown(e: KeyboardEvent) {
+		if (viewMode) return;
+		const target = e.target as HTMLElement | null;
+		if (target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.tagName === 'SELECT' || target.isContentEditable)) return;
+		const rows = visibleObjectRows($objectsGroup, $expandedObjects, $objectFilter as any);
+		if (!rows.length) return;
+		const index = currentRowIndex(rows);
+		const claim = () => {
+			e.preventDefault();
+			e.stopPropagation();
+		};
+		const go = (i: number, additive = false) => {
+			const row = rows[Math.max(0, Math.min(rows.length - 1, i))];
+			if (row) selectObject(row.uuid, false, additive);
+		};
+		switch (e.key) {
+			case 'ArrowDown':
+				claim();
+				go(index < 0 ? 0 : index + 1, e.shiftKey);
+				return;
+			case 'ArrowUp':
+				claim();
+				go(index < 0 ? rows.length - 1 : index - 1, e.shiftKey);
+				return;
+			case 'Home':
+				claim();
+				go(0);
+				return;
+			case 'End':
+				claim();
+				go(rows.length - 1);
+				return;
+			case 'ArrowRight': {
+				claim();
+				const row = rows[index];
+				if (!row || !row.hasKids) return;
+				if (!$expandedObjects.has(row.uuid)) expandedObjects.update((set) => withExpanded(set, row.uuid, true));
+				else go(index + 1); // already open: step into the first child
+				return;
+			}
+			case 'ArrowLeft': {
+				claim();
+				const row = rows[index];
+				if (!row) return;
+				if (row.hasKids && $expandedObjects.has(row.uuid)) expandedObjects.update((set) => withExpanded(set, row.uuid, false));
+				else if (row.parent) selectObject(row.parent);
+				return;
+			}
+			case 'Enter':
+				if (index < 0) return;
+				claim();
+				selectObject(rows[index].uuid, true); // Properties, the row's configure path
+				return;
+			case 'F2':
+				if (index < 0) return;
+				claim();
+				renamingObject.set(rows[index].uuid);
+				return;
+			case 'Escape': {
+				claim();
+				// the keys go back to the viewport — whichever tree element holds focus
+				const active = document.activeElement as HTMLElement | null;
+				if (active && treeEl?.contains(active)) active.blur();
+				else treeEl?.blur();
+				return;
+			}
+		}
+		if (e.ctrlKey || e.metaKey || e.altKey) return;
+		const physical = keyOf(e);
+		const character = e.key && e.key.length === 1 ? e.key : '';
+		if (!character || physical.length !== 1) return;
+		claim();
+		const now = Date.now();
+		if (now - typeAheadAt > 500) {
+			typeAhead = '';
+			typeAheadPhysical = '';
+		}
+		typeAheadAt = now;
+		typeAhead += character;
+		typeAheadPhysical += physical.toLowerCase();
+		let hit = typeAheadIndex(rows, typeAhead, index);
+		if (hit < 0 && typeAheadPhysical !== typeAhead.toLowerCase()) hit = typeAheadIndex(rows, typeAheadPhysical, index);
+		if (hit >= 0) go(hit);
+	}
+	/** ↓ in the search box hands the keys to the tree (the ObjectSearch convention) */
+	function searchKeydown(e: KeyboardEvent) {
+		if (e.key === 'Escape') {
+			searchTerm = '';
+			(e.currentTarget as HTMLInputElement).blur();
+			return;
+		}
+		if (e.key === 'ArrowDown' && treeEl) {
+			e.preventDefault();
+			treeEl.focus();
+			const rows = visibleObjectRows($objectsGroup, $expandedObjects, $objectFilter as any);
+			if (rows.length && !$selectedObjects.length) selectObject(rows[0].uuid);
+		}
+	}
+	/** clicking anywhere in the list focuses the tree, so the arrows work right after a
+	 * row click — never when the click is on a field the browser is about to focus */
+	function treePointerDown(e: PointerEvent) {
+		const target = e.target as HTMLElement | null;
+		if (target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.tagName === 'SELECT' || target.isContentEditable)) return;
+		if (!treeEl?.contains(document.activeElement)) treeEl?.focus({ preventScroll: true });
+	}
+	/** the tree's listeners as an ACTION (the dragMe/focusStack shape) — this component
+	 * still uses `on:` directives, and two more of those would grow the svelte-check
+	 * warning baseline */
+	function treeKeys(node: HTMLElement) {
+		node.addEventListener('keydown', listKeydown);
+		node.addEventListener('pointerdown', treePointerDown);
+		return {
+			destroy() {
+				node.removeEventListener('keydown', listKeydown);
+				node.removeEventListener('pointerdown', treePointerDown);
+			}
+		};
+	}
 
 	// 80.3: which chips show in the bar (⚙ popover), persisted
 	let chipPopup = $state(false);
@@ -1864,7 +2004,7 @@
 				value={searchTerm}
 				on:pointerdown={(e) => e.stopPropagation()}
 				on:input={(e) => (searchTerm = e.currentTarget.value)}
-				on:keydown={(e) => { if (e.key === 'Escape') { searchTerm = ''; e.currentTarget.blur(); } }}
+				on:keydown={searchKeydown}
 			/>
 		{/if}
 		<span class="flex-1"></span>
@@ -1954,7 +2094,16 @@
 		</div>
 	</div>
 	<Listgroup active class="min-h-0 flex-1 overflow-y-auto -rounded rounded-br rounded-bl">
-		<div class="container">
+		<!-- 24-B2: the tree is the keyboard surface — focusable, arrows/Enter/F2/type-ahead
+		     walk the VISIBLE rows (see listKeydown); a subtle ring says it has focus -->
+		<div
+			id="object-tree"
+			class="container outline-none focus-visible:ring-1 focus-visible:ring-primary-500"
+			role="tree"
+			tabindex="0"
+			aria-label="Objects"
+			bind:this={treeEl}
+			use:treeKeys>
 			{#if viewMode === 'system'}
 				{#if !systemNoticeDismissed}
 					<div class="flex items-start gap-1 bg-yellow-900/40 p-2 text-[11px] text-yellow-200">

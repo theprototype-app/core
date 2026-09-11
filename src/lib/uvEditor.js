@@ -54,6 +54,24 @@ export const uvTool = writable('select');
 export const uvBrushColor = writable('#ff3b30');
 /** UV3 brush @type {import('svelte/store').Writable<number>} */
 export const uvBrushSize = writable(24);
+/** 24-F1: what pen PRESSURE does to a stroke — 'size' (width, default) · 'opacity'
+ * (alpha) · 'off'. LOCAL pref; the sender's mode rides the stroke as an optional
+ * `pmode` (absent = size) so a receiver draws the same picture.
+ * @type {import('svelte/store').Writable<'size'|'opacity'|'off'>} */
+export const uvPenPressure = writable(
+	/** @type {any} */ (
+		typeof localStorage !== 'undefined' && ['size', 'opacity', 'off'].includes(localStorage.getItem('uvPenPressure') || '')
+			? localStorage.getItem('uvPenPressure')
+			: 'size'
+	)
+);
+uvPenPressure.subscribe((value) => {
+	if (typeof localStorage !== 'undefined') localStorage.setItem('uvPenPressure', String(value));
+});
+/** a light touch still marks: the width/alpha factor at pressure 0 */
+export const MIN_PRESSURE_FACTOR = 0.15;
+/** @param {number} w 0..1 pressure */
+const pressureFactor = (w) => MIN_PRESSURE_FACTOR + (1 - MIN_PRESSURE_FACTOR) * Math.max(0, Math.min(1, w));
 
 /**
  * UV5: restrict the editor to the faces picked in Edit Mesh mode.
@@ -952,7 +970,7 @@ const STROKE_STALE_MS = 5000;
 const paintCanvases = new Map();
 /** @type {Map<string, {ts: number}>} */
 const liveUvStrokes = new Map();
-/** @type {{id: string, uuid: string, slot: number, before: string|null, sent: number, points: number[][]} | null} */
+/** @type {{id: string, uuid: string, slot: number, before: string|null, sent: number, points: number[][], pmode: 'size'|'opacity'|'off'} | null} */
 let paintStroke = null;
 let strokeSeq = 0;
 
@@ -985,8 +1003,14 @@ async function paintSurface(uuid, slot) {
 	const key = paintKey(uuid, slot);
 	const existing = paintCanvases.get(key);
 	// reuse only while it still represents the CURRENT image — an undo, a peer's
-	// commit or a dropped image all change it out from under us
-	if (existing && existing.seededFrom === seedKey) {
+	// commit or a dropped image all change it out from under us.
+	// 24-F1 (found on the way): when the slot has NO dataURL the seed key comes from
+	// the live texture — and after the first segment of a peer's stroke the live
+	// texture IS this entry's own CanvasTexture, so the key changed, the canvas was
+	// re-seeded (white, from itself) and every earlier segment vanished: a receiver
+	// showed only the LAST segment of a live stroke on an untextured slot. Our own
+	// installed canvas is the current image by definition.
+	if (existing && (existing.seededFrom === seedKey || material.map === existing.texture)) {
 		// remember what we are about to cover, so a cancel can restore it. Must be
 		// re-read per install, not kept from the first one: after a commit the
 		// material wears applyMap's texture, and a stale previousMap would restore
@@ -1111,17 +1135,29 @@ function canvasY(entry, v) {
 /** Draw one segment in UV space onto a surface.
  * @param {any} entry @param {number[]} from @param {number[]} to
  * @param {string} color @param {number} size */
-function strokeSegment(entry, from, to, color, size) {
+/**
+ * One segment of a stroke. 24-F1: a point is `[u, v, w?]` where `w` is a pressure
+ * factor in 0..1 and ABSENT means 1 — so a mouse stroke's wire is byte-identical to
+ * before and an older peer indexing [0]/[1] ignores it. The segment takes its
+ * factor from its END point: width for `pmode` 'size' (default), alpha for 'opacity'.
+ * @param {any} entry @param {number[]} from @param {number[]} to @param {string} color
+ * @param {number} size @param {'size'|'opacity'|'off'} [pmode]
+ */
+function strokeSegment(entry, from, to, color, size, pmode = 'size') {
 	const ctx = entry.canvas.getContext('2d');
 	if (!ctx) return;
+	const w = pmode === 'off' ? 1 : Number.isFinite(to[2]) ? to[2] : 1;
+	const factor = pressureFactor(w);
 	ctx.strokeStyle = color;
-	ctx.lineWidth = size;
+	ctx.lineWidth = pmode === 'opacity' ? size : size * factor;
+	ctx.globalAlpha = pmode === 'opacity' ? factor : 1;
 	ctx.lineCap = 'round';
 	ctx.lineJoin = 'round';
 	ctx.beginPath();
 	ctx.moveTo(from[0] * entry.canvas.width, canvasY(entry, from[1]));
 	ctx.lineTo(to[0] * entry.canvas.width, canvasY(entry, to[1]));
 	ctx.stroke();
+	ctx.globalAlpha = 1;
 	entry.texture.needsUpdate = true;
 	// canvas pixels are not reactive: the UV editor redraws off this tick
 	uvPaintTick.update((n) => n + 1);
@@ -1145,7 +1181,8 @@ export async function beginPaintStroke(uuid, slot = 0) {
 		slot,
 		before: material.userData?.mapDataUrl ?? null,
 		sent: 0,
-		points: []
+		points: [],
+		pmode: get(uvPenPressure) // 24-F1: fixed for the stroke, so its segments agree
 	};
 	return true;
 }
@@ -1161,14 +1198,18 @@ let lastPaintSend = 0;
  * Extend the open stroke to (u, v): draws locally and streams the unsent tail to
  * peers on a throttle. @param {number} u @param {number} v
  * @param {string} color @param {number} size
+ * @param {number} [w] 24-F1: pen pressure 0..1; omitted (or 1, or the pref off) stores
+ *   a plain `[u, v]` — the wire stays byte-identical for a mouse
  */
-export function paintMove(u, v, color, size) {
+export function paintMove(u, v, color, size, w) {
 	if (!paintStroke) return false;
 	const entry = paintCanvases.get(paintKey(paintStroke.uuid, paintStroke.slot));
 	if (!entry) return false;
 	const previous = paintStroke.points[paintStroke.points.length - 1];
-	paintStroke.points.push([u, v]);
-	if (previous) strokeSegment(entry, previous, [u, v], color, size);
+	const pressured = paintStroke.pmode !== 'off' && typeof w === 'number' && Number.isFinite(w) && w < 1;
+	const point = pressured && typeof w === 'number' ? [u, v, Math.max(0, Math.min(1, Math.round(w * 1000) / 1000))] : [u, v];
+	paintStroke.points.push(point);
+	if (previous) strokeSegment(entry, previous, point, color, size, paintStroke.pmode);
 	objectsGroup.update((value) => value);
 	const now = performance.now();
 	if (now - lastPaintSend < PAINT_THROTTLE) return true;
@@ -1195,7 +1236,9 @@ function flushStroke(color, size) {
 		...(paintStroke.slot ? { slot: paintStroke.slot } : {}),
 		seg,
 		color,
-		size
+		size,
+		// 24-F1: only the non-default mode travels (rule 6: absent when it does not apply)
+		...(paintStroke.pmode === 'opacity' ? { pmode: 'opacity' } : {})
 	});
 }
 
@@ -1275,8 +1318,11 @@ export async function applyUvPaint(data) {
 	const entry = await paintSurface(data?.uuid, slot);
 	if (!entry) return;
 	const seg = data.seg ?? [];
+	// 24-F1: a point may carry a third number (pen pressure); the sender's mode rides
+	// `pmode` when it is not the default
+	const pmode = data.pmode === 'opacity' ? 'opacity' : 'size';
 	for (let i = 1; i < seg.length; i++)
-		strokeSegment(entry, seg[i - 1], seg[i], data.color ?? '#000000', data.size ?? 16);
+		strokeSegment(entry, seg[i - 1], seg[i], data.color ?? '#000000', data.size ?? 16, pmode);
 	liveUvStrokes.set(data.id, { ts: Date.now() });
 	objectsGroup.update((v) => v);
 }

@@ -62,6 +62,15 @@
   children / World zero), and a selection has a pivot point: Median, Active object,
   Parent origin or Individual origins.
 
+### 🖊️ UV painting (roadmap #24, batch F)
+
+- ✍️ **Pen pressure in the UV editor.** Painting with a pen varies the stroke width
+  (or, if you prefer, its opacity) with pressure; a mouse stroke is unchanged, and
+  peers see the same widths live. Fast pen strokes are smoother too.
+- 🩹 Fixed on the way: a pointer stroke in the UV editor painted only its first dab
+  and never committed, and a peer watching a live stroke on an untextured material saw
+  only its last segment.
+
 ## 1.10.0 — Publish, play, remix ☁️
 
 The engine learned the moves a community needs — publish the open scene, open a

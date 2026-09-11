@@ -17,7 +17,7 @@ import { applyMeshGeo } from '$lib/faceEdit';
 import { applyUvPaint, applyUvPaintEnd } from '$lib/uvEditor';
 import { applySplineEdit } from '$lib/splineTool';
 import { initVoiceChat, attachVoiceToPeer, voicePeerConnected } from '$lib/voiceChat';
-import { resolvePeerOptions, describePeerServer, peerServerStatus, parseInviteHash, decodeInviteServer, applyInviteServerOverride } from '$lib/peerServer';
+import { resolvePeerOptions, describePeerServer, peerServerStatus, parseInviteHash, decodeInviteServer, applyInviteServerOverride, inviteServerOverride } from '$lib/peerServer';
 import { sessionHost, markPeerJoined, resetSession } from '$lib/connectionState';
 import { canApply, getAuthProvider, dispatchCloudMessage, rolesInfo } from '$lib/cloudHooks';
 import { applyAnnotation, applyAnnotationsSnapshot, sendAnnotations } from '$lib/annotationsHandler';
@@ -126,6 +126,7 @@ export class PeerConnection {
 		this.hasOpened = false;   // the signaling link has opened at least once
 		this.didFallback = false; // we've already switched to the public cloud
 		this.idRetries = 0;       // fresh-id attempts after an id collision (B5)
+		this.serverErrorAt = 0;   // 24-D2: last signaling-level error (switchServer fails fast)
 
 		/** @type {Record<string, any>} outgoing DataConnections, keyed by peer id */
 		this.connections = {};
@@ -189,6 +190,68 @@ export class PeerConnection {
 			wire();
 		};
 
+		// 24-D2: switch the signaling server at RUNTIME — fallbackToPublic generalised.
+		// `override` is an invite pin ({forcePublic} | {custom:{host,port,path,secure}})
+		// or null for "whatever Settings says" (the Apply button). Session-only, never
+		// persisted (CN-3). A live mesh is LEFT first (never switch under one); the id
+		// is kept (ids are per-server registrations, so the invite link the user copied
+		// a minute ago still works if they come back). Resolves true once the new link
+		// opens; on a server that never opens the previous override is restored AND the
+		// peer is rebuilt on it, so the user is back where they were — a link-pinned
+		// server must never fall back to public (CN-3), and "staying disconnected" on a
+		// dead server would leave them with a reconnect loop and no way back but reload.
+		const SWITCH_TIMEOUT_MS = 8000;
+		/** @param {any} override @returns {Promise<boolean>} */
+		this.switchServer = (override) => {
+			const target = override || null;
+			const label = target?.forcePublic
+				? 'the public PeerJS cloud'
+				: target?.custom?.host
+					? target.custom.host + (target.custom.port && Number(target.custom.port) !== 443 ? ':' + target.custom.port : '')
+					: 'the configured peer server';
+			if (Object.keys(this.connections).length || this.openedPeers.size) this.leaveSession();
+			const previous = inviteServerOverride();
+			const rebuild = (/** @type {any} */ ov) => {
+				applyInviteServerOverride(ov);
+				this.didFallback = false;
+				this.hasOpened = false;
+				this.idRetries = 0;
+				this.reconnectAttempts = 0;
+				this.serverErrorAt = 0;
+				try { this.peer.destroy(); } catch (e) { /* already gone */ }
+				createPeerForMode(!!ov?.forcePublic);
+				attachVoiceToPeer(this);
+				wire();
+			};
+			rebuild(target);
+			const pinned = !!(target && (target.forcePublic || target.custom?.host));
+			return new Promise((resolve) => {
+				const startedAt = Date.now();
+				const tick = () => {
+					if (this.peer?.open) {
+						peers.update((value) => value);
+						resolve(true);
+						return;
+					}
+					// a network error with no fallback in play, or the clock: give up
+					const failed = (this.serverErrorAt > startedAt && !this.canFallback) || Date.now() - startedAt > SWITCH_TIMEOUT_MS;
+					if (!failed) {
+						setTimeout(tick, 200);
+						return;
+					}
+					if (pinned) {
+						rebuild(previous);
+						showToast('Could not reach ' + label + ' — back on your previous peer server.');
+					} else {
+						showToast('Could not reach ' + label + ' — check Settings ▸ Connection, or reload.');
+					}
+					peers.update((value) => value);
+					resolve(false);
+				};
+				setTimeout(tick, 200);
+			});
+		};
+
 		const wire = () => {
 		this.peer.on('open', (id) => {
 			console.log(id);
@@ -240,6 +303,8 @@ export class PeerConnection {
 				fallbackToPublic();
 				return;
 			}
+			// 24-D2: a runtime switch waiting on `open` reads this to fail fast
+			if (['network', 'server-error', 'socket-error', 'socket-closed'].includes(err.type)) this.serverErrorAt = Date.now();
 			// B5: session ids are 5 hex chars = 20 bits, so a birthday collision is
 			// likely well before a million concurrent sessions (~1k live ids gives a
 			// ~40% chance of one). The id is generated fresh on every page load and

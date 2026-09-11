@@ -105,9 +105,25 @@
 		MESH_PRESETS,
 		meshPresetFor
 	} from '$lib/ai/meshProviders';
-	import { peerServerConfig, HAS_SELF_HOSTED, SELF_HOSTED_HOST } from '$lib/peerServer';
+	import { peerServerConfig, HAS_SELF_HOSTED, SELF_HOSTED_HOST, peerServerStatus } from '$lib/peerServer';
+	import { peers } from '../../stores/appStore.js';
 	import { autofocusOk, typeToFocus } from '$lib/inputDevice';
 
+	// 24-D2: Settings ▸ Connection applies WITHOUT a reload — PeerConnection.switchServer
+	// rebuilds the Peer on the configured server, keeping the session id (an open session
+	// is left first). The reload link stays for the paranoid.
+	let applyingServer = false;
+	async function applyPeerServer() {
+		const p: any = $peers;
+		if (!p?.switchServer) {
+			location.reload();
+			return;
+		}
+		applyingServer = true;
+		const ok = await p.switchServer(null);
+		applyingServer = false;
+		if (ok) showToast('Connected to ' + ($peerServerStatus?.label ?? 'the peer server') + ' — your session id is unchanged.');
+	}
 	let shortcutGroups = [...new Set(shortcuts.map((s) => s.group))];
 	let shortcutsExpanded = false;
 	// 24-A2.1: the wheel diagnostics readout's static half — WHAT machine this is. The
@@ -2070,11 +2086,13 @@
 					<SettingRow name="Apply changes">
 						<svelte:fragment slot="control">
 							<button
-								id="peer-server-reload"
-								class="rounded-sm bg-gray-600 px-2 py-1 text-xs text-white hover:bg-gray-500"
-								on:click={() => location.reload()}>Apply &amp; reload</button>
+								id="peer-server-apply"
+								class="rounded-sm bg-gray-600 px-2 py-1 text-xs text-white hover:bg-gray-500 disabled:opacity-50"
+								disabled={applyingServer}
+								on:click={applyPeerServer}>{applyingServer ? 'Switching…' : 'Apply'}</button>
 						</svelte:fragment>
-						The peer connection is created at startup — reload to switch servers
+						Switches the signaling server now and keeps your session id; an open session is left
+						first. <button id="peer-server-reload" class="underline" on:click={() => location.reload()}>Reload</button> if anything looks stuck
 					</SettingRow>
 				</AccordionItem>
 				<AccordionItem bind:open={shortcutsExpanded}>

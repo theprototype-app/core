@@ -36,6 +36,16 @@
   touch and narrow screens, the dock, or a browser overlay — and a tall toolbox near
   the bottom scrolls its body instead.
 
+### 🔗 Invite links (roadmap #24, batch D)
+
+- 📋 **Paste an invite link into the open tab.** `https://…#75F41` pasted over a running
+  app now dials that session without a reload. If you are already in a session it asks
+  whether to leave first; your own id and the host you are with are refused with a
+  message; a link that names another signaling server asks "Join … on that server?"
+  and switches on the spot.
+- 🔀 **Settings ▸ Connection ▸ Apply** switches the peer server without reloading and
+  keeps your session id.
+
 ## 1.10.0 — Publish, play, remix ☁️
 
 The engine learned the moves a community needs — publish the open scene, open a

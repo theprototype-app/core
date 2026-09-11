@@ -1,3 +1,4 @@
+import * as THREE from 'three';
 import { writable, get } from 'svelte/store';
 import { objectsGroup, globalScene, globalRenderer } from '../stores/sceneStore';
 
@@ -86,11 +87,39 @@ export function setShadowMapSize(light, size) {
 	light.shadow.map = null;
 }
 
-/** receiver side of the spot aim point @param {any} data */
+/**
+ * 24-E1: ROTATION DRIVES DIRECTION (Blender sun/spot, Unity, Unreal, Godot). A
+ * directional or spot light shines along its local -Z, exactly like a camera —
+ * `Object3D.lookAt` special-cases `isLight` for this — and `lightHelpers` places
+ * `light.target` along that forward every frame, so the rotate gizmo, the Inspector's
+ * rotation rows and this one-shot all aim the same way and shadows follow. "Aim at" is
+ * therefore a WRITE to the rotation (the Maya "aim constraint, then bake" habit),
+ * nothing runs per frame against the user's rotation.
+ * @param {any} light @param {number[] | THREE.Vector3} point world point
+ * @returns {boolean} whether anything changed
+ */
+export function aimLight(light, point) {
+	if (!light?.isDirectionalLight && !light?.isSpotLight) return false;
+	const target = Array.isArray(point) ? new THREE.Vector3().fromArray(point) : point.clone();
+	const before = light.quaternion.clone();
+	light.updateMatrixWorld?.(true);
+	light.lookAt(target);
+	light.updateMatrixWorld?.(true);
+	return !before.equals(light.quaternion);
+}
+
+/**
+ * Receiver side of `lighttarget` — kept in the dispatcher for one release (an older
+ * peer still sends it for a spot). It used to persist `userData.spotTarget` and enforce
+ * it per frame; now it performs the same one-shot `lookAt`, so an old peer's aim lands
+ * as a rotation here. @param {any} data
+ */
 export function applyLightTarget(data) {
 	const group = get(objectsGroup);
 	const light = group?.getObjectByProperty('uuid', data.uuid);
-	if (light?.isSpotLight && Array.isArray(data.pos)) light.userData.spotTarget = [...data.pos];
+	if (!light || !Array.isArray(data.pos)) return;
+	aimLight(light, data.pos);
+	delete light.userData.spotTarget;
 }
 
 let started = false;

@@ -23,7 +23,17 @@ const lightOf = (page, name) =>
 									bias: l.shadow?.bias ?? null,
 									mapWish: l.userData?.shadowMapSize ?? null,
 									mapReal: l.shadow?.mapSize.x ?? null,
-									target: l.userData?.spotTarget ?? null
+									// 24-E1: rotation drives direction — the old userData.spotTarget is
+									// migrated into a rotation; report the forward and the position instead
+									target: l.userData?.spotTarget ?? null,
+									forward: (() => {
+										const T = window.__stores.THREE;
+										l.updateMatrixWorld(true);
+										const q = new T.Quaternion();
+										l.getWorldQuaternion(q);
+										return new T.Vector3(0, 0, -1).applyQuaternion(q).toArray();
+									})(),
+									pos: l.getWorldPosition(new window.__stores.THREE.Vector3()).toArray()
 								}
 							: null
 					);
@@ -58,12 +68,22 @@ h.run(async () => {
 		spot.distance = 25;
 		spot.castShadow = true;
 		spot.shadow.bias = -0.002;
-		spot.userData.spotTarget = [3, 0, -2];
+		// 24-E1: "Aim at" is a one-shot lookAt that writes the ROTATION; the old
+		// `lighttarget` message still lands on a peer as the same lookAt
+		window.__stores.lightParams.aimLight(spot, [3, 0, -2]);
 		window.__stores.lightParams.setShadowMapSize(spot, 2048);
 		const peer = await new Promise((r) => window.__stores.peers.subscribe(r)());
 		peer.send({ type: 'lighttarget', uuid: spot.uuid, pos: [3, 0, -2] });
 		peer.send({ type: 'object', element: spot.toJSON(), override: true });
 	});
+	/** does the light's forward point at `p` from its position? */
+	const aimsAt = (light, p) => {
+		if (!light?.forward || !light?.pos) return false;
+		const d = [p[0] - light.pos[0], p[1] - light.pos[1], p[2] - light.pos[2]];
+		const n = Math.hypot(...d) || 1;
+		const f = light.forward;
+		return Math.abs((f[0] * d[0] + f[1] * d[1] + f[2] * d[2]) / n - 1) < 1e-3;
+	};
 	await h.eventually(
 		() => lightOf(B.page, 'Spot'),
 		(spot) =>
@@ -74,8 +94,9 @@ h.run(async () => {
 			spot.castShadow === true &&
 			Math.abs(spot.bias + 0.002) < 0.0005 &&
 			spot.mapWish === 2048 &&
-			spot.target?.[0] === 3,
-		'spot params, shadow settings and aim replicated'
+			spot.target === null &&
+			aimsAt(spot, [3, 0, -2]),
+		'spot params, shadow settings and aim replicated (as a rotation, no userData.spotTarget)'
 	);
 
 	// rect area width/height replicate
@@ -103,17 +124,27 @@ h.run(async () => {
 	const uncapped = await lightOf(A.page, 'Spot');
 	h.check(uncapped.mapReal === 2048, 'high quality restores the wished size');
 
-	// spot aim enforcement puts the target into the scene (helpers tick)
+	// 24-E1: the helpers tick keeps `light.target` in the scene ALONG THE FORWARD (the
+	// shadow camera reads it), one helper length away — not at the old aim point
 	const aimed = await A.page.evaluate(
 		() =>
 			new Promise((r) =>
 				window.__stores.objectsGroup.subscribe((g) => {
 					const spot = g?.children.find((c) => c.name === 'Spot');
-					r(spot ? { parented: !!spot.target.parent, pos: spot.target.position.toArray() } : null);
+					if (!spot) return r(null);
+					const T = window.__stores.THREE;
+					spot.updateMatrixWorld(true);
+					const q = new T.Quaternion();
+					spot.getWorldQuaternion(q);
+					const f = new T.Vector3(0, 0, -1).applyQuaternion(q);
+					const p = spot.getWorldPosition(new T.Vector3());
+					const t = spot.target.getWorldPosition(new T.Vector3());
+					const d = t.clone().sub(p);
+					r({ parented: !!spot.target.parent, along: d.length() > 0.1 && Math.abs(d.normalize().dot(f) - 1) < 1e-3 });
 				})()
 			)
 	);
-	h.check(aimed?.parented && aimed.pos[0] === 3 && aimed.pos[2] === -2, 'spot target enforced in the scene');
+	h.check(aimed?.parented && aimed.along, `spot target is in the scene along the light's forward (${JSON.stringify(aimed)})`);
 
 	await h.finish(browser);
 });

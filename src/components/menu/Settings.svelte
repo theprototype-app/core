@@ -7,6 +7,8 @@
 	import { applyVRFrameRate } from '$lib/vrControls';
 	import { settingsOpen, settingsSection, hidePanels, restorePanels, advancedMode, showEnvInList, objectSearchEnabled, showSimControls, showToast, showRoomsButton, toastsInDrawerOnly, mobileUndockAllowed, enableShiftAdd, noteDoubleClickToOpen, duplicateCarriesAnimation, duplicateCarriesFlow, duplicateCarriesShader, touchTools, floatingToolbar, toolbarAlwaysOnTop } from '../../stores/appStore.js';
 	import { trackpadMode, allowBrowserZoom, reversePan, panEnabled, pinchZoomEnabled, lastWheelEvents } from '$lib/trackpadNav';
+	import { lightHelperLength } from '$lib/lightHelpers';
+	import { helpersInPlay } from '$lib/helperLayer';
 	import { gamepadPrefs, setGamepadPrefs, DEADZONE_RANGE, SENSITIVITY_RANGE } from '$lib/gamepadPrefs';
 	import { drawerSlot, cloudPluginInfo } from '$lib/cloudHooks';
 	import { versionString } from '$lib/version.js';
@@ -837,6 +839,12 @@
 						Pressing Shift+A opens the Add menu at the cursor and spawns the picked object
 						under it. Off by default — Shift also strafes the camera in fly mode
 					</SettingRow>
+					<SettingRow name="Show helpers in Play (debug)">
+						<svelte:fragment slot="control"><Toggle id="helpers-in-play" bind:checked={$helpersInPlay} /></svelte:fragment>
+						Light helpers, camera frustums and camera markers hide when Play starts (camera
+						previews and captures never show them). On, they render inside Play with a DEBUG
+						chip so a screenshot cannot be mistaken for the game
+					</SettingRow>
 					<SettingRow name="Double-click to open notes">
 						<svelte:fragment slot="control"><Toggle bind:checked={$noteDoubleClickToOpen} /></svelte:fragment>
 						A single click on a note marker — and the notes drawer's ‹ › group arrows — then only
@@ -982,6 +990,20 @@
 								}} />
 						</svelte:fragment>
 						Display grid on floor
+					</SettingRow>
+					<SettingRow name="Light helper length">
+						<svelte:fragment slot="control">
+							<input
+								id="light-helper-length"
+								type="number"
+								min="0.2"
+								max="50"
+								step="0.5"
+								class="w-full rounded-sm bg-gray-700 px-1 py-0.5 text-xs text-white"
+								value={$lightHelperLength}
+								on:change={(e: any) => lightHelperLength.set(Math.max(0.2, Number(e.target.value) || 2))} />
+						</svelte:fragment>
+						How far a directional or spot light's helper line reaches along its direction (display only — a directional light has a direction, not a distance)
 					</SettingRow>
 					<SettingRow name="Shadow quality">
 						<svelte:fragment slot="control">

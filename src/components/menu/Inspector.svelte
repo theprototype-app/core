@@ -39,8 +39,7 @@
 		resetPivotOrigin,
 		reseatPivot,
 		pivotOnly,
-		pivotPose
-	} from '$lib/multiTransform';
+		pivotPose, pivotMode, pivotParentAvailable } from '$lib/multiTransform';
 	// 17-D: per-object transform ORIGIN (userData.origin, a local pivot offset)
 	import { originOf, originWorld, setOriginFromWorld, resetOrigin, originPreset } from '$lib/objectOrigin';
 	// the HINGE point: snap the origin to the vertices picked in Edit Mesh
@@ -92,7 +91,9 @@
 	import { addParticlesPreset, updateObjectParticles, removeObjectParticles, burstObjectParticles } from '$lib/particleActions';
 	import { PARTICLE_PRESETS } from '$lib/particlePresets';
 	import { flowGraphs } from '../../stores/flowStore';
-	import { showLightHelpers } from '$lib/lightHelpers';
+	import { showLightHelpers, lightHelperLength } from '$lib/lightHelpers';
+	import { aimLight } from '$lib/lightParams';
+	import { startLightAimPick, cancelLightAimPick, lightAimPicking } from '$lib/lightAim';
 	import {
 		cameraNear,
 		cameraFar,
@@ -565,9 +566,12 @@
 	const matMixed = (read) => mixed(read, matTargets);
 
 	// ---- 17-D: the single object's own ORIGIN -------------------------------
-	// Shown in WORLD space (where the pivot sits), stored as a local offset. A
-	// light has no geometry and its position IS its origin, so it is excluded.
-	const originTarget = $derived(!isLight && !multiCount && $selectedObject?.uuid ? $selectedObject : null);
+	// Shown in WORLD space (where the pivot sits), stored as a local offset. 24-E1:
+	// lights are IN — `originWorld` works on any Object3D and `attachMultiPivot`
+	// already seats a pivot for one object with an origin, which is what lets a sun
+	// orbit a point under Rotate. The geometry presets and "Pick from mesh…" stay
+	// hidden for a light (nothing to measure); World 0 and the typed rows work.
+	const originTarget = $derived(!multiCount && $selectedObject?.uuid ? $selectedObject : null);
 	const originPos = $derived.by(() => {
 		$objectsGroup;
 		$selectedObject;
@@ -592,10 +596,61 @@
 	/** @param {'bottom'|'center'|'median'|'world'|'children'} kind */
 	function applyOriginPreset(kind) {
 		if (!originTarget) return;
-		originPreset(originTarget.uuid, kind);
+		if (originPreset(originTarget.uuid, kind) === null) {
+			showToast('Nothing to measure for that preset — use World 0 or type the origin');
+			return;
+		}
 		reseatPivot();
 		selectedObject.update((v) => v);
 	}
+
+	// ---- 24-E1: "Aim at…" for directional + spot lights ----------------------
+	// One-shot: lookAt writes the ROTATION (the rotate gizmo and the rotation rows aim
+	// the same way); the rows show the point the light is looking at, one helper
+	// length along its forward, and re-read it when the selection or pose changes.
+	const aimsByRotation = $derived(!!($selectedObject?.isDirectionalLight || $selectedObject?.isSpotLight));
+	const aimPoint = $derived.by(() => {
+		$objectsGroup;
+		const light = $selectedObject;
+		if (!light?.isDirectionalLight && !light?.isSpotLight) return [0, 0, 0];
+		light.updateMatrixWorld?.(true);
+		const p = new THREE.Vector3();
+		light.getWorldPosition(p);
+		const q = new THREE.Quaternion();
+		light.getWorldQuaternion(q);
+		const f = new THREE.Vector3(0, 0, -1).applyQuaternion(q).multiplyScalar($lightHelperLength);
+		return p.add(f).toArray().map((n) => Math.round(n * 1000) / 1000);
+	});
+	/** @param {number[]} point world */
+	function aimAt(point) {
+		const light = $selectedObject;
+		if (!light) return;
+		trackTransformGesture(); // one undo step per aim, through the transformSet kind
+		if (!aimLight(light, point)) return;
+		sendMove(light);
+		selectedObject.update((v) => v);
+		autoKeyAfterEdit([light]);
+	}
+	/** @param {number} index @param {number} value */
+	function setAimAxis(index, value) {
+		const point = aimPoint.slice();
+		point[index] = value;
+		aimAt(point);
+	}
+	function pickAim() {
+		const light = $selectedObject;
+		if (!light) return;
+		if ($lightAimPicking === light.uuid) {
+			cancelLightAimPick();
+			return;
+		}
+		startLightAimPick(light.uuid, (point) => aimAt(point.toArray()));
+	}
+	$effect(() => {
+		// a pick armed for another light (or nothing) ends with the selection
+		const picking = $lightAimPicking;
+		if (picking && picking !== $selectedObject?.uuid) cancelLightAimPick();
+	});
 
 	function clearOrigin() {
 		if (!originTarget) return;
@@ -993,6 +1048,7 @@
 					items.map((item) => item.uuid),
 					keepOrigin
 				);
+			else if (items.length === 1 && originTarget && originSet) reseatPivot(); // 24-E3: the single-object pivot too
 		}, 500);
 	}
 
@@ -1021,6 +1077,25 @@
 			});
 			selectedObject.update((v) => v);
 			return;
+		}
+		// 24-E3: ONE object with an ORIGIN rotates/scales about it, exactly as a gizmo
+		// drag does — the pivot is already seated there (attachMultiPivot's single-object
+		// rule). The rows keep showing the object's own numbers, so the typed value is
+		// applied as a DELTA on the pivot (a per-gesture handle that starts at identity);
+		// position keeps writing the object itself (moving an object moves its origin).
+		if (field !== 'position' && originTarget && originSet) {
+			trackTransformGesture();
+			const current = Number($selectedObject[field][axis]) || 0;
+			const moved = applyPivotTransform((pivot) => {
+				if (field === 'rotation') pivot.rotation[axis] += next - current;
+				else pivot.scale[axis] *= current ? next / current : 1;
+			});
+			if (moved) {
+				selectedObject.update((v) => v);
+				autoKeyAfterEdit([$selectedObject]);
+				return;
+			}
+			// no pivot seated (VR, or a gizmo-suppressed mode): fall through to the plain write
 		}
 		trackTransformGesture(); // capture the BEFORE pose before we write
 		$selectedObject[field][axis] = next;
@@ -2701,6 +2776,20 @@
 							</Button>
 						</div>
 					</div>
+					<!-- 24-E3: the PIVOT POINT of the set — Blender's list minus the 3D cursor
+					     (the snap anchor plays that role). A hand-placed origin overrides any mode. -->
+					<div class="mb-1 grid grid-cols-[3.2rem_1fr] items-center gap-1">
+						<span class="text-[11px] text-gray-400">Pivot</span>
+						<ThemedSelect
+							id="pivot-mode"
+							items={[
+								{ value: 'median', name: 'Median point' },
+								{ value: 'active', name: 'Active object' },
+								{ value: 'parent', name: pivotParentAvailable() ? 'Parent origin' : 'Parent origin (no common parent)' },
+								{ value: 'individual', name: 'Individual origins' }
+							]}
+							bind:value={$pivotMode} />
+					</div>
 				{/if}
 				<div class="grid grid-cols-[3.2rem_1fr] items-center gap-1">
 					<span class="text-[11px] text-gray-400">{multiCount ? 'Origin' : 'Position'}</span>
@@ -2781,15 +2870,18 @@
 							</div>
 						</div>
 						<div class="mt-1 flex flex-wrap gap-1">
-							<Button id="origin-bottom" size="xs" color="alternative" onclick={() => applyOriginPreset('bottom')}>
-								Bottom
-							</Button>
-							<Button id="origin-center" size="xs" color="alternative" onclick={() => applyOriginPreset('center')}>
-								Centre
-							</Button>
-							<Button id="origin-median" size="xs" color="alternative" onclick={() => applyOriginPreset('median')}>
-								Median
-							</Button>
+							{#if !isLight}
+								<!-- 24-E1: a light has no geometry to measure — World 0 and the rows are its presets -->
+								<Button id="origin-bottom" size="xs" color="alternative" onclick={() => applyOriginPreset('bottom')}>
+									Bottom
+								</Button>
+								<Button id="origin-center" size="xs" color="alternative" onclick={() => applyOriginPreset('center')}>
+									Centre
+								</Button>
+								<Button id="origin-median" size="xs" color="alternative" onclick={() => applyOriginPreset('median')}>
+									Median
+								</Button>
+							{/if}
 							<Button id="origin-world" size="xs" color="alternative" onclick={() => applyOriginPreset('world')}>
 								World 0
 							</Button>
@@ -2798,7 +2890,9 @@
 									Children
 								</Button>
 							{/if}
-							{#if editingThis}
+							{#if isLight}
+								<span class="self-center text-[10px] text-gray-500">A light with an origin orbits it under Rotate.</span>
+							{:else if editingThis}
 								<Button id="origin-hinge" size="xs" color="primary" onclick={originFromSelection}>
 									Set origin here{$vertexSelectionSize > 1 ? ` (${$vertexSelectionSize} verts)` : ''}
 								</Button>
@@ -3087,25 +3181,39 @@
 							}} />
 					{/each}
 
-					{#if $selectedObject.type === 'SpotLight'}
-						<p class="ui-section-label">Aim at</p>
-						<div id="inspector-spot-target" class="grid grid-cols-3 gap-1">
+					{#if aimsByRotation}
+						<!-- 24-E1: rotation drives direction; this is a one-shot lookAt that WRITES
+						     the rotation (replicates as the ordinary `move`). A directional light
+						     has no point and no distance under this model — the rows are the
+						     point one helper length along its forward. -->
+						<div class="flex items-center justify-between gap-2">
+							<p class="ui-section-label">Aim at</p>
+							<Button
+								id="light-aim-pick"
+								size="xs"
+								color={$lightAimPicking === $selectedObject.uuid ? 'primary' : 'alternative'}
+								title="Click a surface in the viewport to aim the light at it"
+								onclick={pickAim}>
+								{$lightAimPicking === $selectedObject.uuid ? 'Picking… (Esc)' : 'Pick in viewport'}
+							</Button>
+						</div>
+						<div id="inspector-light-aim" class="grid grid-cols-3 gap-1">
 							{#each ['X', 'Y', 'Z'] as axis, index (axis)}
 								<DragRow
 									label={axis}
 									accent={['text-red-400', 'text-green-400', 'text-blue-400'][index]}
 									step={0.05}
-									value={($selectedObject.userData.spotTarget ?? [0, 0, 0])[index]}
-									onchange={(v) => {
-										const target = [...($selectedObject.userData.spotTarget ?? [0, 0, 0])];
-										target[index] = v;
-										$selectedObject.userData.spotTarget = target;
-										selectedObject.update((s) => s);
-										$peers.send({ type: 'lighttarget', uuid: $selectedObject.uuid, pos: target });
-										sendLightUpdate(); // userData rides along for late joiners
-									}} />
+									unit="length"
+									value={aimPoint[index]}
+									onchange={(v) => setAimAxis(index, v)} />
 							{/each}
 						</div>
+						<p class="text-[10px] text-gray-500">
+							Rotating the light (gizmo or the rotation rows) aims it too. Shadows follow.
+							{#if $selectedObject.isDirectionalLight}
+								A directional light has a direction, not a distance — the helper's line length is Settings ▸ Scene.
+							{/if}
+						</p>
 					{/if}
 
 					{#if SHADOW_TYPES.includes($selectedObject.type)}

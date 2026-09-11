@@ -57,6 +57,7 @@
 	import { registerEditResumeSources } from '$lib/editResume';
 	import { sendPing } from '$lib/ping';
 	import { startLightHelpers, updateLightHelpers, lightProxiesGroup } from '$lib/lightHelpers';
+	import { HELPER_LAYER } from '$lib/helperLayer';
 	import { startColliderHelpers, updateColliderHelpers } from '$lib/colliderHelpers';
 	import { startCameraHelpers, updateCameraHelpers } from '$lib/cameraHelpers';
 	import { updateOnionSkin } from '$lib/onionSkin';
@@ -393,6 +394,9 @@
 
 	// --- viewport click selection (desktop) and controller ray selection (VR) ---
 	const selectionRaycaster = new THREE.Raycaster();
+	// 24-E2: light pick-proxies live on the helper layer (hidden from play/preview
+	// cameras); this raycaster must still hit them
+	selectionRaycaster.layers.enable(HELPER_LAYER);
 
 	// 17-D3: every scene pick goes through the ONE path in $lib/scenePick, which
 	// keeps the BVH trees current first and excludes the object of a live

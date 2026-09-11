@@ -4,6 +4,10 @@ import { writable, get } from 'svelte/store';
 import { globalScene, objectsGroup } from '../stores/sceneStore';
 import { isCameraObject, cameraSpec, aspectRatio } from './cameraObjects';
 import { wireframeActive } from './viewMode';
+// 24-E2: frustums live on the helper layer; MARKERS hop onto it while hidden (Play
+// without the debug toggle, or a camera preview) — see helperLayer.js for the rule
+import { markHelper, setMarkersHidden, helpersHidden, helpersInPlay } from './helperLayer';
+import { isLocked } from '../stores/sceneStore';
 
 // 16-P5: frustum visualization for camera OBJECTS — the colliderHelpers pattern.
 // One wireframe frustum per camera object, built from `userData.camera` and
@@ -124,13 +128,21 @@ function sync() {
 			return;
 		}
 		if (existing) disposeEntry(uuid, existing);
-		const proxy = buildFrustum(spec);
+		const proxy = markHelper(buildFrustum(spec));
 		proxyRoot.add(proxy);
 		entries.set(uuid, { object, group: proxy, key });
 	});
 	[...entries.entries()].forEach(([uuid, entry]) => {
 		if (!tracked.has(uuid) || !group.getObjectByProperty('uuid', uuid)) disposeEntry(uuid, entry);
 	});
+	applyMarkerLayers(); // 24-E2: a marker that just arrived (or a mid-Play snapshot's mask)
+}
+
+/** 24-E2: markers hide in Play (unless the debug toggle) and during a camera preview
+ * (`frustumSuppressed` names the previewed camera — you are inside it, and the others
+ * would show in its picture). Idempotent; runs on every sync and on each state flip. */
+function applyMarkerLayers() {
+	setMarkersHidden(helpersHidden() || !!get(frustumSuppressed));
 }
 
 const followPos = new THREE.Vector3();
@@ -159,6 +171,12 @@ export function updateCameraHelpers() {
 /** @type {any} */ let syncTimer = null;
 
 export function startCameraHelpers() {
+	// 24-E2: the marker hop follows Play, the debug toggle and the preview
+	if (!started && typeof window !== 'undefined') {
+		isLocked.subscribe(applyMarkerLayers);
+		helpersInPlay.subscribe(applyMarkerLayers);
+		frustumSuppressed.subscribe(applyMarkerLayers);
+	}
 	if (started || typeof window === 'undefined') return;
 	started = true;
 	objectsGroup.subscribe(() => {

@@ -45,6 +45,60 @@ let lastLiveSend = 0;
 // risks the documented HMR dual-instance trap — so the engine registers.
 /** @type {any} */ let pivotSnapAdjuster = null;
 
+// ---- 24-E3: PIVOT-POINT MODES for a selection of two or more --------------------
+// Blender's list minus the 3D cursor (the transient snap anchor already plays that
+// role): Median (the centroid, today's rule) · Active (the last-selected object's
+// origin) · Parent origin (the common parent's origin — the user's "adjusting origin
+// of group and then rotating objects should rotate them along origin") · Individual
+// origins (each member rotates/scales about its OWN origin; translate is unchanged).
+// A hand-placed origin (`customOrigin`) and a transient anchor override any mode, as
+// they do today. LOCAL pref; a mode change re-seats.
+/** @type {import('svelte/store').Writable<'median'|'active'|'parent'|'individual'>} */
+export const pivotMode = writable(
+	/** @type {any} */ (
+		typeof localStorage !== 'undefined' && ['median', 'active', 'parent', 'individual'].includes(localStorage.getItem('pivotMode') || '')
+			? localStorage.getItem('pivotMode')
+			: 'median'
+	)
+);
+pivotMode.subscribe((value) => {
+	if (typeof localStorage !== 'undefined') localStorage.setItem('pivotMode', String(value));
+});
+
+/** The parent every member shares, when it is a real object (not objectsGroup).
+ * @param {any[]} objects @returns {any | null} */
+export function commonParentOf(objects) {
+	if (!objects?.length) return null;
+	const parent = objects[0]?.parent;
+	if (!parent || parent === get(objectsGroup)) return null;
+	return objects.every((object) => object?.parent === parent) ? parent : null;
+}
+
+/** Is "Parent origin" meaningful for the current selection? (the dropdown greys it) */
+export function pivotParentAvailable() {
+	const group = get(objectsGroup);
+	const objects = get(selectedObjects)
+		.map((uuid) => group?.getObjectByProperty('uuid', uuid))
+		.filter(Boolean);
+	return objects.length > 1 && !!commonParentOf(objects);
+}
+
+const reanchorA = new THREE.Matrix4();
+const reanchorB = new THREE.Matrix4();
+/**
+ * Individual origins: the pivot's world delta re-anchored about a member's own origin.
+ * `delta` rotates/scales about the pivot's start position `p`; the same rotation/scale
+ * about `o` with the same translation is T(o−p)·delta·T(p−o). Translation-only deltas
+ * come out unchanged (translate is never per-member).
+ * @param {THREE.Matrix4} delta @param {THREE.Vector3} p @param {THREE.Vector3} o
+ * @param {THREE.Matrix4} out
+ */
+function reanchorDelta(delta, p, o, out) {
+	reanchorA.makeTranslation(o.x - p.x, o.y - p.y, o.z - p.z);
+	reanchorB.makeTranslation(p.x - o.x, p.y - o.y, p.z - o.z);
+	return out.copy(reanchorA).multiply(delta).multiply(reanchorB);
+}
+
 /** @param {(pivot: any, primary: any) => void} fn */
 export function registerPivotSnapAdjuster(fn) {
 	pivotSnapAdjuster = fn;
@@ -167,9 +221,11 @@ export function applyPivotTransform(mutate) {
 	if (!pivot || members.length < 1) return false;
 	pivot.updateMatrixWorld(true);
 	const startInverse = pivot.matrixWorld.clone().invert();
+	const pivotStart = pivot.position.clone();
+	const individual = members.length > 1 && get(pivotMode) === 'individual' && !customOrigin && !transientPivot;
 	const starts = members.map((member) => {
 		member.updateMatrixWorld(true);
-		return { object: member, startWorld: member.matrixWorld.clone() };
+		return { object: member, startWorld: member.matrixWorld.clone(), origin: individual ? originWorld(member) : null };
 	});
 	mutate(pivot);
 	pivot.updateMatrixWorld(true);
@@ -178,8 +234,9 @@ export function applyPivotTransform(mutate) {
 	const peer = get(peers);
 	const world = new THREE.Matrix4();
 	const inverse = new THREE.Matrix4();
+	const own = new THREE.Matrix4();
 	for (const entry of starts) {
-		world.multiplyMatrices(delta, entry.startWorld);
+		world.multiplyMatrices(entry.origin ? reanchorDelta(delta, pivotStart, entry.origin, own) : delta, entry.startWorld);
 		entry.object.parent.updateMatrixWorld(true);
 		inverse.copy(entry.object.parent.matrixWorld).invert();
 		world.premultiply(inverse);
@@ -242,8 +299,17 @@ export function attachMultiPivot(uuids, keepOrigin = false) {
 		// switching objects therefore brings each one's own origin back
 		originWorld(objects[0], centroid);
 	} else {
-		objects.forEach((object) => centroid.add(object.getWorldPosition(world)));
-		centroid.divideScalar(objects.length);
+		// 24-E3: the pivot-point mode picks the seat for a SET
+		const mode = get(pivotMode);
+		const parent = mode === 'parent' ? commonParentOf(objects) : null;
+		if (mode === 'active') originWorld(objects[objects.length - 1], centroid);
+		else if (parent) originWorld(parent, centroid);
+		else {
+			// Median (and the fallbacks: Parent with no common parent, Individual —
+			// whose seat is only where the gizmo sits; each member turns about its own)
+			objects.forEach((object) => centroid.add(object.getWorldPosition(world)));
+			centroid.divideScalar(objects.length);
+		}
 	}
 	// a hand-placed SELECTION origin outlives the re-seat after every panel edit;
 	// a transient snap anchor WINS over both while it exists (19-B)
@@ -286,9 +352,13 @@ function onDraggingChanged(/** @type {any} */ event) {
 		// capture start matrices; park animated members at their base first
 		pivot.updateMatrixWorld(true);
 		pivotStartInverse = pivot.matrixWorld.clone().invert();
-		dragMembers = get(selectedObjects)
+		dragPivotStart.copy(pivot.position);
+		const members = get(selectedObjects)
 			.map((uuid) => group?.getObjectByProperty('uuid', uuid))
-			.filter(Boolean)
+			.filter(Boolean);
+		// 24-E3: Individual origins — each member turns about its OWN origin
+		const individual = members.length > 1 && get(pivotMode) === 'individual' && !customOrigin && !transientPivot;
+		dragMembers = members
 			.map((member) => {
 				suspendAnimation(member.uuid);
 				// P-A: mid-sim, grabbed dynamic bodies follow the pivot kinematically
@@ -296,6 +366,7 @@ function onDraggingChanged(/** @type {any} */ event) {
 				member.updateMatrixWorld(true);
 				return {
 					object: member,
+					origin: individual ? originWorld(member) : null,
 					startWorld: member.matrixWorld.clone(),
 					before: {
 						pos: member.position.toArray(),
@@ -338,8 +409,10 @@ function onDraggingChanged(/** @type {any} */ event) {
 }
 
 const deltaMatrix = new THREE.Matrix4();
+const memberDelta = new THREE.Matrix4();
 const memberWorld = new THREE.Matrix4();
 const parentInverse = new THREE.Matrix4();
+const dragPivotStart = new THREE.Vector3();
 
 function onObjectChange() {
 	/** @type {any} */
@@ -362,7 +435,7 @@ function onObjectChange() {
 	pivot.updateMatrixWorld(true);
 	deltaMatrix.multiplyMatrices(pivot.matrixWorld, pivotStartInverse);
 	for (const entry of dragMembers) {
-		memberWorld.multiplyMatrices(deltaMatrix, entry.startWorld);
+		memberWorld.multiplyMatrices(entry.origin ? reanchorDelta(deltaMatrix, dragPivotStart, entry.origin, memberDelta) : deltaMatrix, entry.startWorld);
 		entry.object.parent.updateMatrixWorld(true);
 		parentInverse.copy(entry.object.parent.matrixWorld).invert();
 		memberWorld.premultiply(parentInverse);
@@ -392,6 +465,8 @@ let hooked = null;
 let started = false;
 
 export function startMultiTransform() {
+	// 24-E3: a mode change re-seats the pivot for the current selection
+	if (!started && typeof window !== 'undefined') pivotMode.subscribe(() => { if (pivot) reseatPivot(); });
 	if (started || typeof window === 'undefined') return;
 	started = true;
 	TControls.subscribe((controls) => {

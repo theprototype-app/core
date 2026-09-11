@@ -21,6 +21,9 @@ import { addParticlesPreset, removeObjectParticles, burstObjectParticles } from 
 import { PARTICLE_PRESETS } from './particlePresets';
 import { SAVE_AS_FORMATS, saveSelectionAs } from './saveAs';
 import { enterEditMode } from './meshEdit';
+// 24-E3: a group's origin from its context menu, and the set's pivot point
+import { originPreset, resetOrigin } from './objectOrigin';
+import { pivotMode, reseatPivot, pivotParentAvailable } from './multiTransform';
 import { addAnnotation } from './annotationsHandler';
 import { pingObject, pingObjects } from './ping';
 
@@ -107,6 +110,65 @@ export function buildObjectMenuItems(uuid, opts = {}) {
 						disabled: locked,
 						tooltip: locked ? lockedTooltip : 'Move the children out, then remove the empty group',
 						action: () => ungroupObject(uuid)
+					}
+				]
+			: []),
+		// 24-E3: a group made by /group or drag-to-group sits at the world centre, so a
+		// typed rotation turned it about (0,0,0); its origin is one right-click away
+		...(isGroup && !multi
+			? [
+					{
+						label: 'Origin',
+						icon: 'crosshair',
+						children: [
+							{
+								label: 'Centre of children',
+								tooltip: 'Put the group\'s origin at the centre of what it contains',
+								disabled: locked,
+								action: () => {
+									if (originPreset(uuid, 'children') === null) return;
+									reseatPivot();
+								}
+							},
+							{
+								label: 'World zero',
+								tooltip: 'Put the group\'s origin at the world origin',
+								disabled: locked,
+								action: () => {
+									originPreset(uuid, 'world');
+									reseatPivot();
+								}
+							},
+							{
+								label: 'Reset origin',
+								disabled: locked,
+								action: () => {
+									resetOrigin(uuid);
+									reseatPivot();
+								}
+							}
+						]
+					}
+				]
+			: []),
+		// 24-E3: the pivot point of a SET (the Inspector's dropdown, here as a submenu)
+		...(multi
+			? [
+					{
+						label: 'Pivot point',
+						icon: 'crosshair',
+						children: [
+							{ label: 'Median point', checked: get(pivotMode) === 'median', action: () => pivotMode.set('median') },
+							{ label: 'Active object', checked: get(pivotMode) === 'active', action: () => pivotMode.set('active') },
+							{
+								label: 'Parent origin',
+								checked: get(pivotMode) === 'parent',
+								disabled: !pivotParentAvailable(),
+								tooltip: pivotParentAvailable() ? 'Rotate and scale about the common parent\'s origin' : 'The selected objects do not share a parent',
+								action: () => pivotMode.set('parent')
+							},
+							{ label: 'Individual origins', checked: get(pivotMode) === 'individual', action: () => pivotMode.set('individual') }
+						]
 					}
 				]
 			: []),

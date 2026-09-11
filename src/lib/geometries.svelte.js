@@ -257,8 +257,12 @@ export function createGroup(command, uuid, groupuuid, name, groupparent, pos, ro
             return held.uuid;
         }
         let group = new THREE.Group();
+        // 24-E3: a bare `/group` used to leave the name UNDEFINED, and the Inspector's
+        // selection branch keys on `name !== undefined` — so the very group the report
+        // starts from ("/group, set its origin, type a rotation") showed an empty panel.
+        // The local path names it; peers receive that name in the `group` message.
         if (command?.split(' ')[1]) group.name = command.split(' ')[1] + ' Group';
-        else group.name = name
+        else group.name = name ?? 'Group'
         if (uuid) group.uuid = uuid
         sceneObjects.add(group);
         if(pos && rot && scale) {

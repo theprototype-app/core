@@ -341,7 +341,17 @@ export async function scanStorage() {
 
 		const visible = new Map(get(explorerItems).map((/** @type {any} */ i) => [i.id, i]));
 		const hidden = new Map(get(hiddenItems).map((/** @type {any} */ i) => [i.id, i]));
-		const binHashes = new Set(deletedLog(get(projectManifest)).map((/** @type {any} */ r) => r.hash));
+		// 24-C2: a bin row names ONE record when it carries an id (a deleted copy is its own
+		// row); an older row names whatever hidden record holds its bytes. The reclaim ref is
+		// the row's LOG KEY, which is what `purgeDeletedItem` resolves.
+		const binRows = deletedLog(get(projectManifest));
+		/** @param {any} item @returns {string | null} the log key of the row naming this record */
+		const binKeyOf = (item) => {
+			const row =
+				binRows.find((/** @type {any} */ r) => r.id && r.id === item.id) ??
+				binRows.find((/** @type {any} */ r) => !r.id && r.hash === item.hash);
+			return row ? String(row.id || row.hash) : null;
+		};
 		const kept = keptHashes();
 		const sessionMetas = new Map(get(sessions).map((/** @type {any} */ m) => [m.id, m]));
 
@@ -381,7 +391,8 @@ export async function scanStorage() {
 						ref: id
 					});
 				} else if (hidden.has(id)) {
-					const inBin = binHashes.has(item.hash);
+					const binKey = binKeyOf(item);
+					const inBin = binKey !== null;
 					const isKept = kept.has(item.hash);
 					push({
 						id: key,
@@ -396,7 +407,7 @@ export async function scanStorage() {
 							? 'The project points at this version — it is the current or a pinned one. Unpin it, or lower Settings ▸ Explorer ▸ versions kept, and it becomes removable.'
 							: undefined,
 						kind: inBin ? 'bin' : 'item',
-						ref: inBin ? item.hash : id
+						ref: inBin ? binKey : id
 					});
 				} else {
 					// no record on either shelf: real garbage, and `deleteItem` is still the

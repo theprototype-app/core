@@ -51,11 +51,24 @@
 // storm.
 //
 // ---------------------------------------------------------------------------------
-// TWO IDENTITIES. An ITEM is its content hash — two peers holding one file have
-// different local record ids and the same hash, which is also why unshare can never
-// destroy a peer's copy. A shared FOLDER's id is NETWORK identity: an adopting peer
-// creates the folder under that exact uuid, so every `folderId` reference resolves
-// everywhere with no remapping.
+// TWO IDENTITIES. An ITEM ROW is `{id, hash}` (24-C2): `id` is the publisher's RECORD
+// uuid and, like a shared folder's id, becomes NETWORK identity — an adopting peer holds
+// the record under that exact uuid; `hash` is the CONTENT pointer the bytes travel by.
+// Until C2 the row WAS its hash, so a COPY (a second record holding the same bytes, C1)
+// could not exist on the wire. Now the row IS the copy command: a peer that already holds
+// the hash materialises the record from its own disk and moves no bytes; one that does
+// not pulls the hash once, however many rows name it. Hash-addressing is also still why
+// unshare can never destroy a peer's copy. A LEGACY row (no `id`) reads by hash through a
+// synthetic id — `isSyntheticId` — so two pre-24 peers keep agreeing.
+//
+// BIND FIRST, COPY SECOND. A row whose id we do not hold first looks for an UNCLAIMED
+// record with the same hash — one that is not `mine` and not already the record of some
+// other live row — and RE-KEYS it onto the row's id (bytes moved with it, the row's name and
+// placement taken). That is what keeps "the same bytes on both machines are ONE file" true
+// (a peer who imported the texture independently adopts the row rather than gaining a
+// twin), what makes the first document after an upgrade silent (every previously shared
+// record still carries a random local id), and what a mixed-version session needs. Only
+// when nothing unclaimed holds the hash is a copy minted from a held record's bytes.
 //
 // PLACEMENT IS CLAMPED, NOT CASCADED. Sharing a folder does not share its ancestors —
 // that would hand peers the names of folders nobody offered. A shared row whose parent
@@ -82,13 +95,24 @@ import {
 	removeFolderRecords,
 	moveItem,
 	itemByHash,
+	itemById,
+	itemsByHash,
+	itemBlob,
+	rekeyItem,
+	replaceItemBytes,
+	duplicateItem,
 	setItemHidden
 } from './explorer';
 import {
 	projectManifest,
 	publishSharedIndex,
 	registerSharedIndexListener,
-	resetSessionScope
+	resetSessionScope,
+	isSyntheticId,
+	rowKeyOf,
+	logKeyOf,
+	itemTombstoneAt,
+	itemRowLive
 } from './projectManifest';
 import {
 	requestAsset,
@@ -151,18 +175,47 @@ function heldHashes() {
 	return new Set([...get(explorerItems), ...get(hiddenItems)].map((i) => i.hash));
 }
 
+/** Every record id this machine holds, on either shelf. @returns {Set<string>} */
+function heldIds() {
+	return new Set([...get(explorerItems), ...get(hiddenItems)].map((i) => i.id));
+}
+
 /**
- * The shared rows whose BYTES are not on this machine — the Explorer renders one card
- * each, dimmed, and opening one pulls it. Deliberately DERIVED and never stored: an
- * index row is not a library record, and writing one would leave a phantom card behind
- * the moment the owner unshared it.
+ * 24-C2: the RECORD an index row names on this machine, on either shelf — by id for a
+ * real row, by hash for a legacy (synthetic-id) one. Null means "not held", which is a
+ * different fact from "the bytes are not here": a row we hold no record for may still
+ * name a hash a sibling record holds, and that is the zero-transfer case.
+ * @param {any} row @returns {any | null}
+ */
+function heldRecordFor(row) {
+	if (!row) return null;
+	return isSyntheticId(row.id) ? itemByHash(row.hash) : itemById(row.id);
+}
+
+/**
+ * The shared rows whose BYTES are not on this machine at all — what auto-download asks
+ * for. A hash is pulled ONCE however many rows name it; `landBytes` (assetShare) then
+ * writes one record per row.
+ * @param {any} manifest @returns {any[]}
+ */
+export function rowsNeedingBytes(manifest) {
+	const held = heldHashes();
+	return (manifest?.items ?? []).filter((/** @type {any} */ r) => r?.hash && !held.has(r.hash));
+}
+
+/**
+ * The shared rows this machine has NO RECORD for and no bytes to make one from — the
+ * Explorer renders one card each, dimmed, and opening one pulls it. Deliberately DERIVED
+ * and never stored: an index row is not a library record, and writing one would leave a
+ * phantom card behind the moment the owner unshared it. 24-C2: a row whose record IS here
+ * but points at other bytes (the publisher edited it) has a real card already and is not
+ * in this list — it is in `rowsNeedingBytes`, and its record is updated in place.
  * @param {any} manifest pass `$projectManifest` so a component stays reactive — a
  *   helper reading through get() registers no dependency (the documented rule)
  * @returns {any[]}
  */
 export function remoteSharedRows(manifest) {
-	const held = heldHashes();
-	return (manifest?.items ?? []).filter((/** @type {any} */ r) => r?.hash && !held.has(r.hash));
+	return rowsNeedingBytes(manifest).filter((/** @type {any} */ r) => !heldRecordFor(r));
 }
 
 /** Ask the mesh for a shared file we do not hold. R22 round 12: the pending mark and
@@ -202,12 +255,12 @@ function projection() {
 	 * stops the reconcile becoming a stamp ping-pong — quietly stops holding. So a row
 	 * keeps the stamp the document already gave it and takes a fresh one only when
 	 * something about it actually moved.
-	 * @param {any} row @param {'id'|'hash'} key
+	 * @param {any} row @param {any[]} prevRows the document's own rows of the same kind
 	 */
-	const stamp = (row, key) => {
-		const prev = (key === 'hash' ? (doc.items ?? []) : (doc.folders ?? [])).find(
-			(/** @type {any} */ r) => r[key] === row[key]
-		);
+	const stamp = (row, prevRows) => {
+		// 24-C2: by id for items too — two copies share a hash, so a hash cannot say which
+		// row an unchanged row is unchanged FROM
+		const prev = prevRows.find((/** @type {any} */ r) => r.id === row.id);
 		if (prev) {
 			const { at: _drop, ...was } = prev;
 			if (JSON.stringify(was) === JSON.stringify(row)) return { ...row, at: prev.at ?? now };
@@ -262,13 +315,15 @@ function projection() {
 		.map((id) => byId.get(id))
 		.filter(Boolean)
 		.map((/** @type {any} */ f) =>
-			stamp({ id: f.id, name: f.name, parentId: f.parentId ?? null, owner }, 'id')
+			stamp({ id: f.id, name: f.name, parentId: f.parentId ?? null, owner }, doc.folders ?? [])
 		);
+	// 24-C2: the row carries the RECORD id beside the hash — the id is what a peer holds
+	// the file under, the hash is what it pulls (or copies from its own disk)
 	/** @type {any[]} */
 	const items = mineItems.map((i) =>
 		stamp(
-			{ hash: i.hash, name: i.name, kind: i.kind, folderId: i.folderId ?? null, owner },
-			'hash'
+			{ id: i.id, hash: i.hash, name: i.name, kind: i.kind, folderId: i.folderId ?? null, owner },
+			doc.items ?? []
 		)
 	);
 
@@ -285,15 +340,19 @@ function projection() {
 	// says 'peer'. Anything else (ours, vetoed, or cleared) means our projection above is
 	// the authority on it, and its absence there is a removal rather than an omission.
 	const myFolderIds = new Set(folders.map((f) => f.id));
-	const myHashes = new Set(items.map((i) => i.hash));
+	const myIds = new Set(items.map((i) => i.id));
 	for (const row of doc.folders ?? []) {
 		if (myFolderIds.has(row.id)) continue;
 		const held = get(explorerFolders).find((f) => f.id === row.id);
 		if (!held || held.share === 'peer') folders.push(row);
 	}
 	for (const row of doc.items ?? []) {
-		if (myHashes.has(row.hash)) continue;
-		const held = itemByHash(row.hash);
+		if (myIds.has(row.id)) continue;
+		// 24-C2: by the row's RECORD (a legacy row resolves by hash, see heldRecordFor). A
+		// legacy row for a file we now publish under its real id resolves to OUR 'mine'
+		// record and drops out here — replaced by the real-id row above, which is the
+		// upgrade path in one line.
+		const held = heldRecordFor(row);
 		if (!held || held.share === 'peer') items.push(row);
 	}
 
@@ -309,13 +368,15 @@ function projection() {
 	const removed = doc.removed ?? {};
 	const tombF = removed.folders ?? {};
 	const tombI = removed.items ?? {};
-	const live = (/** @type {any} */ row, /** @type {any} */ tombs, /** @type {string} */ key) => {
-		const at = Number(tombs[row[key]]);
+	const liveFolder = (/** @type {any} */ row) => {
+		const at = Number(tombF[row.id]);
 		return !Number.isFinite(at) || (Number(row.at) || 0) > at;
 	};
 	return {
-		folders: folders.filter((r) => live(r, tombF, 'id')),
-		items: items.filter((r) => live(r, tombI, 'hash')),
+		folders: folders.filter(liveFolder),
+		// 24-C2: an item row's tombstone lives under its own key (the record id; the bare
+		// hash for a legacy row) — and a bare-hash tombstone from an older peer still applies
+		items: items.filter((r) => itemRowLive(r, tombI)),
 		removed: pruneTombs({ folders: { ...tombF }, items: { ...tombI } }, folders, items),
 		// carried through verbatim: an ordinary publish is not a statement about deletions
 		deleted: doc.deleted ?? []
@@ -335,11 +396,27 @@ function pruneTombs(tombs, folders, items) {
 		const at = Number(tombs.folders[row.id]);
 		if (Number.isFinite(at) && (Number(row.at) || 0) > at) delete tombs.folders[row.id];
 	}
-	for (const row of items) {
-		const at = Number(tombs.items[row.hash]);
-		if (Number.isFinite(at) && (Number(row.at) || 0) > at) delete tombs.items[row.hash];
-	}
+	for (const row of items)
+		for (const key of [rowKeyOf(row), String(row.hash ?? '')]) {
+			const at = Number(tombs.items[key]);
+			if (key && Number.isFinite(at) && (Number(row.at) || 0) > at) delete tombs.items[key];
+		}
 	return tombs;
+}
+
+/**
+ * 24-C2: the tombstone keys a REMOVAL of this record writes — its own id, plus the bare
+ * hash when the document still carries a legacy row for these bytes (that row is keyed by
+ * hash, and a removal that misses it would leave the file offered under its old row).
+ * Never the bare hash otherwise: that would remove every COPY of the content, and a copy
+ * is exactly what this batch made distinct.
+ * @param {any} item a local record @returns {string[]}
+ */
+function itemTombKeys(item) {
+	const keys = [String(item.id)];
+	if ((get(projectManifest).items ?? []).some((/** @type {any} */ r) => isSyntheticId(r.id) && r.hash === item.hash))
+		keys.push(String(item.hash));
+	return keys;
 }
 
 /** @type {any} */
@@ -555,7 +632,7 @@ export async function emptyRecycleBinOnLoad() {
 	const log = get(projectManifest).deleted ?? [];
 	if (!log.length) return 0;
 	let n = 0;
-	for (const row of log) if (await purgeDeletedItem(row.hash)) n++;
+	for (const row of log) if (await purgeDeletedRow(row)) n++;
 	return n;
 }
 
@@ -586,7 +663,7 @@ function tomb(keys) {
 	// the projection filters against the CURRENT document, so hand it the new tombstones
 	// explicitly rather than publishing a stale removal set
 	const liveF = folders.filter((r) => !(r.id in next.folders) || (Number(r.at) || 0) > next.folders[r.id]);
-	const liveI = items.filter((r) => !(r.hash in next.items) || (Number(r.at) || 0) > next.items[r.hash]);
+	const liveI = items.filter((r) => itemRowLive(r, next.items));
 	publishSharedIndex(liveF, liveI, next, get(projectManifest).deleted ?? []);
 }
 
@@ -624,11 +701,13 @@ export function shareItem(id) {
 	const item = get(explorerItems).find((i) => i.id === id);
 	if (!item) return false;
 	patchRecord(id, { share: 'mine', owner: meAsOwner(), wasShared: undefined });
-	untomb({ items: [item.hash] });
+	// 24-C2: the row is keyed by this record's id; the bare hash is lifted too, because a
+	// tombstone written by an older peer (or before the upgrade) is keyed that way
+	untomb({ items: [item.id, item.hash] });
 	// ...and clear it out of the DELETED log. Sharing a file is putting it back, so a
-	// deletion recorded against that hash is spent — otherwise the next sweep hides the
-	// file you just shared (the reported bug).
-	clearDeletedEntry(item.hash);
+	// deletion recorded against THIS record is spent — otherwise the next sweep hides the
+	// file you just shared (the reported bug). A sibling copy's row is left alone.
+	clearDeletedEntry(item);
 	// push the PICTURE too, so a peer's card has something to show before it decides
 	// whether to download the file at all
 	sendAssetThumb(item.hash);
@@ -653,19 +732,24 @@ export function unshareItem(id) {
 	// the TOMBSTONE is what makes the removal reach peers even when we are not the row's
 	// publisher (round 2: anyone may unshare)
 	patchRecord(id, { share: 'no', owner: undefined, wasShared: undefined });
-	tomb({ items: [item.hash] });
+	tomb({ items: itemTombKeys(item) });
 	return true;
 }
 
 /**
  * R22 round 2: unshare a row we do NOT hold the bytes for — the derived remote card.
  * There is no local record to veto, so the tombstone is the whole of it.
- * @param {string} hash @returns {boolean}
+ * 24-C2: takes the ROW KEY (the card carries it) — or a hash, in which case every live
+ * row for those bytes is tombstoned, which is what a hash meant before rows had ids.
+ * @param {string} keyOrHash @returns {boolean}
  */
-export function unshareHash(hash) {
-	const h = String(hash ?? '').trim();
-	if (!h) return false;
-	tomb({ items: [h] });
+export function unshareHash(keyOrHash) {
+	const k = String(keyOrHash ?? '').trim();
+	if (!k) return false;
+	const rows = (get(projectManifest).items ?? []).filter(
+		(/** @type {any} */ r) => r.id === k || r.hash === k
+	);
+	tomb({ items: rows.length ? rows.map(rowKeyOf) : [k] });
 	return true;
 }
 
@@ -689,7 +773,7 @@ export function shareFolder(id) {
 		if (ids.includes(item.folderId ?? '') && item.share !== 'no' && item.share !== 'peer')
 			patchRecord(item.id, { share: 'mine', owner, wasShared: undefined });
 	const broughtIn = get(explorerItems).filter((i) => ids.includes(i.folderId ?? ''));
-	untomb({ folders: ids, items: broughtIn.map((i) => i.hash) });
+	untomb({ folders: ids, items: broughtIn.flatMap((i) => [i.id, i.hash]) });
 	for (const i of broughtIn) sendAssetThumb(i.hash);
 	publishMine();
 	return true;
@@ -713,7 +797,7 @@ export function unshareFolder(id) {
 	for (const item of inside)
 		if (item.share === 'mine')
 			patchRecord(item.id, { share: undefined, owner: undefined, wasShared: undefined });
-	tomb({ folders: ids, items: inside.map((i) => i.hash) });
+	tomb({ folders: ids, items: inside.flatMap(itemTombKeys) });
 	return true;
 }
 
@@ -736,7 +820,7 @@ export function shareAllLocal() {
 	}
 	// folders come too, or the files land at the peers' root and the tree is lost
 	for (const folder of get(explorerFolders)) if (!folder.share) patchRecord(folder.id, { share: 'mine', owner }, 'folder');
-	if (fresh.length) untomb({ items: fresh.map((i) => i.hash) });
+	if (fresh.length) untomb({ items: fresh.flatMap((i) => [i.id, i.hash]) });
 	publishMine(true);
 	return fresh.length;
 }
@@ -749,9 +833,11 @@ export function shareAllLocal() {
  * @returns {number} how many pulls were started
  */
 export function pullAllShared() {
-	const rows = remoteSharedRows(get(projectManifest));
+	// 24-C2: by HASH, once — two rows naming one hash are one download, and `landBytes`
+	// writes both records when it arrives
+	const hashes = new Set(rowsNeedingBytes(get(projectManifest)).map((/** @type {any} */ r) => r.hash));
 	let asked = 0;
-	for (const row of rows) if (pullSharedItem(row.hash)) asked++;
+	for (const hash of hashes) if (pullSharedItem(hash)) asked++;
 	return asked;
 }
 
@@ -830,7 +916,7 @@ export function cancelDownload(hash) {
 export function bulkCounts() {
 	return {
 		local: get(explorerItems).filter((i) => !i.share).length,
-		missing: remoteSharedRows(get(projectManifest)).length
+		missing: rowsNeedingBytes(get(projectManifest)).length
 	};
 }
 
@@ -944,17 +1030,18 @@ export function resolveShareAsk(choice, remember = false) {
  * Prefabs are LOCAL, so there is nothing to tombstone and nothing to tell peers: the
  * entry is a record for this machine, and Restore hands the prefab back from the same
  * bytes it was always stored in.
- * @param {{hash: string, name: string, kind: string, thumb?: string|null,
+ * @param {{hash: string, name: string, kind: string, thumb?: string|null, id?: string,
  *   folderId?: string|null, path?: string[]}} spec R22 round 36: `folderId` and `path`
  *   are WHERE IT WAS, so Restore can put it back there. Both optional — a prefab has no
- *   library folder, and an omitted `folderId` reads as the root.
+ *   library folder, and an omitted `folderId` reads as the root. 24-C2: `id` is the
+ *   RECORD id when the row is about a library record, so two deleted copies are two rows.
  */
 export function logLocalDeletion(spec) {
 	const hash = String(spec?.hash ?? '').trim();
 	if (!hash) return false;
-	const doc = get(projectManifest);
-	const log = [...(doc.deleted ?? []).filter((/** @type {any} */ r) => r.hash !== hash)];
-	log.push({
+	const id = String(spec?.id ?? '').trim();
+	const row = {
+		...(id ? { id } : {}),
 		hash,
 		name: String(spec.name ?? hash),
 		kind: String(spec.kind ?? 'text'),
@@ -964,70 +1051,28 @@ export function logLocalDeletion(spec) {
 		...(spec.folderId === undefined ? {} : { folderId: spec.folderId ?? null }),
 		...(spec.path?.length ? { path: spec.path } : {}),
 		...(spec.thumb ? { thumb: spec.thumb } : {})
-	});
-	noteApplied(hash);
+	};
+	const key = logKeyOf(row);
+	const doc = get(projectManifest);
+	const log = [...(doc.deleted ?? []).filter((/** @type {any} */ r) => logKeyOf(r) !== key)];
+	log.push(row);
+	noteApplied(key);
 	const { folders, items, removed } = projection();
 	publishSharedIndex(folders, items, removed, log);
 	return true;
 }
 
-/** @param {string} id a VISIBLE library item id @returns {boolean} */
+/**
+ * @param {string} id a VISIBLE library item id @returns {boolean}
+ * 24-C2: the one-item path IS the bin path. It used to carry its own copy of the three
+ * writes (`binOneItem` below has them, with the local/shared branch round 36 added), and
+ * a second copy of a rule is where the next fix lands on one side only — so this is a
+ * thin call now. `deleteItemsToBin`'s per-item rules apply verbatim: the log row (carrying
+ * the RECORD id, so a deleted copy is its own row), the tombstone under that id, the
+ * applied mark, the patch-before-hide, and the bin-off destroy.
+ */
 export function deleteSharedItem(id) {
-	const item = get(explorerItems).find((i) => i.id === id);
-	if (!item) return false;
-	const doc = get(projectManifest);
-	// R22 round 13: THE ONE PLACE "stop recording" can mean something. With the bin off
-	// the bytes go immediately, so the row it would write is not a bin entry at all — it
-	// is pure history, and with the log off nobody asked for history. With the bin ON the
-	// row IS the bin entry and must be written whatever this preference says, or the file
-	// goes to the hidden shelf with nothing pointing at it. Deliberately not extended to
-	// rows already in the document: see the deletedLogEnabled header.
-	const keepRow = get(recycleBinEnabled) || get(deletedLogEnabled);
-	const log = [...(doc.deleted ?? []).filter((/** @type {any} */ r) => r.hash !== item.hash)];
-	if (keepRow)
-		log.push({
-			hash: item.hash,
-			name: item.name,
-			kind: item.kind,
-			at: Date.now(),
-			by: meAsOwner(),
-			// R22 round 36: WHERE IT WAS, so Restore can put it back rather than dropping
-			// it at the root — and the names beside it, because the folder may be gone by
-			// the time anybody looks
-			folderId: item.folderId ?? null,
-			path: folderPath(item.folderId),
-			// R22 round 7: keep the PICTURE. It cannot be re-derived once the bytes are
-			// reclaimed, so a bin full of generic icons is what you get by not recording it.
-			...(item.thumbnail ? { thumb: item.thumbnail } : {})
-		});
-	// THE PATCH GOES FIRST, and this is a bug fix rather than a tidy-up: `patchRecord`
-	// writes into `explorerItems` only, so patching a record that `setItemHidden` has
-	// already moved to the hidden shelf silently did NOTHING. The deleted copy therefore
-	// kept `share: 'peer'`, which meant the projection went on carrying the row forward
-	// verbatim (see the foreign-row rule) and the restore rule in `applySharedIndex` —
-	// hidden AND `share: 'no'` AND applied — could never match on the deleter's own machine.
-	patchRecord(item.id, { share: 'no', owner: undefined, wasShared: undefined });
-	// off the visible shelf, bytes intact — unless the bin is switched off, in which case
-	// the user has already said they do not want a second chance at this
-	if (get(recycleBinEnabled)) setItemHidden(item.id, true);
-	else void import('./explorer').then((m) => m.deleteItem(item.id));
-	// ...and OUR OWN applied-set is right immediately. Without this the row we just wrote
-	// is a deletion we have not "seen", so the next sweep applies it against the copy —
-	// harmless today, and the thing that would re-hide a file restored a second later.
-	noteApplied(item.hash);
-	// ...and out of the index for everybody, through the tombstone that already exists
-	const { folders, items } = projection();
-	const tombs = {
-		items: { ...((doc.removed ?? {}).items ?? {}), [item.hash]: Date.now() },
-		folders: { ...((doc.removed ?? {}).folders ?? {}) }
-	};
-	publishSharedIndex(
-		folders,
-		items.filter((/** @type {any} */ r) => r.hash !== item.hash),
-		tombs,
-		log
-	);
-	return true;
+	return deleteItemsToBin([String(id ?? '')]) > 0;
 }
 
 // ---- R22 round 36: DELETE GOES THROUGH ONE PATH, AND IT IS THE BIN'S ---------------
@@ -1055,10 +1100,16 @@ function binOneItem(item, log, tombs, at, by, keepRow) {
 	// so Restore knows to put it back LOCAL rather than publishing it (round 36's fourth
 	// report — restoring a local deletion used to share it).
 	const shared = item.share === 'mine' || item.share === 'peer';
-	const i = log.findIndex((/** @type {any} */ r) => r.hash === item.hash);
-	if (i >= 0) log.splice(i, 1);
+	// 24-C2: ONE STORY PER RECORD — the row for this id is replaced, and so is a legacy
+	// (id-less) row for the same bytes, which is what this record's earlier deletion looked
+	// like before rows had ids. A sibling COPY's row (another id, same hash) is left alone.
+	for (let i = log.length - 1; i >= 0; i--) {
+		const r = log[i];
+		if (logKeyOf(r) === item.id || (!r.id && r.hash === item.hash)) log.splice(i, 1);
+	}
 	if (keepRow)
 		log.push({
+			id: item.id,
 			hash: item.hash,
 			name: item.name,
 			kind: item.kind,
@@ -1069,12 +1120,24 @@ function binOneItem(item, log, tombs, at, by, keepRow) {
 			...(shared ? {} : { localOnly: true }),
 			...(item.thumbnail ? { thumb: item.thumbnail } : {})
 		});
-	// the patch before the hide — see the note in `deleteSharedItem`
+	// THE PATCH GOES FIRST, and this is a bug fix rather than a tidy-up: `patchRecord`
+	// writes into `explorerItems` only, so patching a record that `setItemHidden` has
+	// already moved to the hidden shelf silently did NOTHING. The deleted copy therefore
+	// kept `share: 'peer'`, which meant the projection went on carrying the row forward
+	// verbatim (see the foreign-row rule) and the restore rule in `applySharedIndex` —
+	// hidden AND `share: 'no'` AND applied — could never match on the deleter's own machine.
 	if (shared) patchRecord(item.id, { share: 'no', owner: undefined, wasShared: undefined });
+	// off the visible shelf, bytes intact — unless the bin is switched off, in which case
+	// the user has already said they do not want a second chance at this
 	if (get(recycleBinEnabled)) setItemHidden(item.id, true);
 	else void import('./explorer').then((m) => m.deleteItem(item.id));
-	if (shared) tombs.items[item.hash] = at;
-	noteApplied(item.hash);
+	// the tombstone under the ROW's key (24-C2: the record id — a copy's removal must not
+	// take its sibling's row with it)
+	if (shared) for (const key of itemTombKeys(item)) tombs.items[key] = at;
+	// ...and OUR OWN applied-set is right immediately. Without this the row we just wrote
+	// is a deletion we have not "seen", so the next sweep applies it against the copy —
+	// harmless today, and the thing that would re-hide a file restored a second later.
+	noteApplied(item.id);
 	return item;
 }
 
@@ -1107,15 +1170,16 @@ export function deleteItemsToBin(ids) {
 	const tombs = tombsOf(doc);
 	const at = Date.now();
 	const by = meAsOwner();
+	/** @type {Set<string>} */
 	const gone = new Set();
 	for (const item of targets) {
 		binOneItem(item, log, tombs, at, by, keepRow);
-		gone.add(item.hash);
+		for (const key of itemTombKeys(item)) gone.add(key);
 	}
 	const { folders, items } = projection();
 	publishSharedIndex(
 		folders,
-		items.filter((/** @type {any} */ r) => !gone.has(r.hash)),
+		items.filter((/** @type {any} */ r) => !gone.has(rowKeyOf(r))),
 		tombs,
 		log
 	);
@@ -1148,10 +1212,11 @@ export function deleteFolderToBin(id) {
 	// tree, so a row written after the removal would carry an empty path — and the path is
 	// the only thing left once the log row itself is evicted by the cap.
 	const targets = get(explorerItems).filter((i) => inside.has(i.folderId ?? ''));
+	/** @type {Set<string>} */
 	const gone = new Set();
 	for (const item of targets) {
 		binOneItem(item, log, tombs, at, by, keepRow);
-		gone.add(item.hash);
+		for (const key of itemTombKeys(item)) gone.add(key);
 	}
 	for (const fid of ids) {
 		const folder = byId.get(fid);
@@ -1182,42 +1247,47 @@ export function deleteFolderToBin(id) {
 	// document (the same shape `deleteSharedItem` uses for its one hash)
 	publishSharedIndex(
 		folders.filter((/** @type {any} */ r) => !inside.has(r.id)),
-		items.filter((/** @type {any} */ r) => !gone.has(r.hash)),
+		items.filter((/** @type {any} */ r) => !gone.has(rowKeyOf(r))),
 		tombs,
 		log
 	);
 	return { folders: ids.length, files: targets.length };
 }
 
-/** Drop one hash out of the deleted log (and out of the applied set), leaving the rest
- * of the document alone. @param {string} hash */
-export function clearDeletedEntry(hash) {
-	const h = String(hash ?? '').trim();
-	if (!h) return false;
-	forgetApplied(h);
+/**
+ * Drop a deletion out of the log (and out of the applied set), leaving the rest of the
+ * document alone. 24-C2: about ONE RECORD — pass the record (`{id, hash}`), and the row
+ * keyed by its id goes, plus a legacy id-less row for the same bytes (what an earlier
+ * deletion of this record looked like). A sibling copy's row stays. A bare string is read
+ * as a log key first and a hash second, for callers written before rows had ids.
+ * @param {{id?: string, hash?: string} | string} ref
+ */
+export function clearDeletedEntry(ref) {
+	const id = typeof ref === 'string' ? ref.trim() : String(ref?.id ?? '').trim();
+	const hash = typeof ref === 'string' ? ref.trim() : String(ref?.hash ?? '').trim();
+	if (!id && !hash) return false;
+	const hit = (/** @type {any} */ r) => (id && logKeyOf(r) === id) || (hash && !r.id && r.hash === hash);
 	const doc = get(projectManifest);
 	const log = doc.deleted ?? [];
-	if (!log.some((/** @type {any} */ r) => r.hash === h)) return false;
+	const dropped = log.filter(hit);
+	for (const r of dropped) forgetApplied(logKeyOf(r));
+	if (id) forgetApplied(id);
+	if (!dropped.length) return false;
 	const { folders, items, removed } = projection();
-	publishSharedIndex(
-		folders,
-		items,
-		removed,
-		log.filter((/** @type {any} */ r) => r.hash !== h)
-	);
+	publishSharedIndex(folders, items, removed, log.filter((/** @type {any} */ r) => !hit(r)));
 	return true;
 }
 
 /** R22 round 7: empty the whole bin — the Deleted section's own context menu. Local
  * bytes AND the log, because "empty the bin" is a statement about both. R22 round 36:
- * FOLDER ROWS GO TOO and need no special case — `purgeDeletedItem` finds no item for a
+ * FOLDER ROWS GO TOO and need no special case — `purgeDeletedRow` finds no item for a
  * `'folder:'` hash and does nothing, and the publish of `[]` takes the whole array. */
 export async function emptyDeletedLog() {
 	const log = get(projectManifest).deleted ?? [];
 	if (!log.length) return 0;
 	for (const row of log) {
-		await purgeDeletedItem(row.hash);
-		forgetApplied(row.hash);
+		await purgeDeletedRow(row);
+		forgetApplied(logKeyOf(row));
 	}
 	const { folders, items, removed } = projection();
 	publishSharedIndex(folders, items, removed, []);
@@ -1246,16 +1316,16 @@ export async function emptyDeletedLog() {
 export function clearDeletedRecords() {
 	const log = get(projectManifest).deleted ?? [];
 	if (!log.length) return 0;
-	const { spent } = partitionDeleted(log, heldHashes(), get(explorerFolders));
+	const { spent } = partitionDeleted(log, heldHashes(), get(explorerFolders), heldIds());
 	if (!spent.length) return 0;
-	const gone = new Set(spent.map((/** @type {any} */ r) => r.hash));
-	for (const h of gone) forgetApplied(h);
+	const gone = new Set(spent.map((/** @type {any} */ r) => logKeyOf(r)));
+	for (const k of gone) forgetApplied(k);
 	const { folders, items, removed } = projection();
 	publishSharedIndex(
 		folders,
 		items,
 		removed,
-		log.filter((/** @type {any} */ r) => !gone.has(r.hash))
+		log.filter((/** @type {any} */ r) => !gone.has(logKeyOf(r)))
 	);
 	return gone.size;
 }
@@ -1488,10 +1558,16 @@ export function buildDeletedTree(rows, liveFolders) {
  * @param {any[]} [liveFolders] `explorerFolders`, so an item sitting in a GHOST folder
  *   nested inside a deleted one is still counted under it. Omitted, the classification is
  *   purely structural — which is what a suite driving this with no library wants.
+ * @param {Set<string>|string[]} [heldIds] 24-C2: every RECORD id this device holds. When
+ *   given, a row that names a record (it has an `id`) is judged by that record and not by
+ *   its hash — a purged copy whose sibling still holds the same bytes is spent, not
+ *   restorable. Omitted, every row is judged by hash as before (the pre-C2 callers).
  * @returns {{bin: any[], spent: any[]}}
  */
-export function partitionDeleted(rows, held, liveFolders) {
+export function partitionDeleted(rows, held, liveFolders, heldIds) {
 	const has = held instanceof Set ? held : new Set(held ?? []);
+	const ids = heldIds == null ? null : heldIds instanceof Set ? heldIds : new Set(heldIds);
+	const holds = (/** @type {any} */ row) => (ids && row?.id ? ids.has(row.id) : has.has(row?.hash));
 	/** @type {any[]} */ const bin = [];
 	/** @type {any[]} */ const spent = [];
 	// built ONCE for the whole log rather than per folder row: the walk is the expensive
@@ -1499,22 +1575,66 @@ export function partitionDeleted(rows, held, liveFolders) {
 	const tree = buildDeletedTree(rows ?? [], liveFolders ?? []);
 	for (const row of rows ?? []) {
 		if (!isFolderRow(row)) {
-			(has.has(row?.hash) ? bin : spent).push(row);
+			(holds(row) ? bin : spent).push(row);
 			continue;
 		}
 		const id = folderRowId(row);
 		const inside = id ? tree.descendants(id).items : [];
-		const restorable = !inside.length || inside.some((/** @type {any} */ r) => has.has(r.hash));
+		const restorable = !inside.length || inside.some(holds);
 		(restorable ? bin : spent).push(row);
 	}
 	return { bin, spent };
 }
 
+/**
+ * 24-C2: the LOG ROW a key names. A record id first (the bin's cards carry `logKeyOf` the
+ * row — the record id for a deletion logged since C2), then a hash, for every caller
+ * written before rows had ids: a hash still finds the row of the (first) copy it names.
+ * @param {string} keyOrHash @returns {any | null}
+ */
+function deletedRowFor(keyOrHash) {
+	const k = String(keyOrHash ?? '').trim();
+	if (!k) return null;
+	const log = get(projectManifest).deleted ?? [];
+	return (
+		log.find((/** @type {any} */ r) => logKeyOf(r) === k) ??
+		log.find((/** @type {any} */ r) => !isFolderRow(r) && r.hash === k) ??
+		null
+	);
+}
+
+/**
+ * The RECORD a log row stands for. By id when the row has one; otherwise the HIDDEN record
+ * holding its bytes — the bin IS the hidden shelf, so a visible record is never a bin entry
+ * — then, for a restore that finds nothing hidden, any record with the hash (the pre-C2
+ * reading, kept so a hash-only row from before the upgrade still restores).
+ * @param {any} row @param {{hiddenOnly?: boolean}} [opts] `hiddenOnly` for the PURGE: a
+ *   purge destroys bytes, and the one record it may destroy is one on the hidden shelf —
+ *   never a visible file that happens to share the row's hash, which is what a hash-keyed
+ *   purge did to a live copy
+ * @returns {any | null}
+ */
+function binRecordFor(row, opts = {}) {
+	if (!row) return null;
+	if (row.id) {
+		const record = itemById(row.id);
+		if (!record) return null;
+		if (opts.hiddenOnly && !get(hiddenItems).some((i) => i.id === record.id)) return null;
+		return record;
+	}
+	const hidden = get(hiddenItems).find((i) => i.hash === row.hash) ?? null;
+	if (hidden || opts.hiddenOnly) return hidden;
+	return itemByHash(row.hash);
+}
+
 /** Do we still hold the bytes of a deleted file? Restore is only offered when we do —
  * see the header: a button that cannot work is worse than no button.
- * @param {string} hash */
-export function canRestoreDeleted(hash) {
-	return !!itemByHash(hash);
+ * @param {string} keyOrHash 24-C2: the bin card's key (the log row's id) or a hash */
+export function canRestoreDeleted(keyOrHash) {
+	const row = deletedRowFor(keyOrHash);
+	if (row) return !!binRecordFor(row);
+	// no row at all: the pre-C2 reading, "do we hold these bytes"
+	return !!itemByHash(String(keyOrHash ?? '').trim());
 }
 
 /**
@@ -1604,7 +1724,9 @@ function ensureRestoreTarget(fid, log, tombs, consumed) {
  * @returns {boolean}
  */
 function restoreOneItem(row, log, tombs, consumed, into) {
-	const item = itemByHash(String(row?.hash ?? '').trim());
+	// 24-C2: the record the ROW names — by id for a deletion logged since C2, so restoring
+	// one copy puts back that copy and not whichever record happens to share its hash
+	const item = binRecordFor(row);
 	if (!item) return false;
 	// AN OLD ROW HAS NO `folderId` AT ALL, and that is not the same as `folderId: null`.
 	// The hidden record kept its own placement while it sat there, so a row that never
@@ -1620,6 +1742,8 @@ function restoreOneItem(row, log, tombs, consumed, into) {
 					? item.folderId
 					: null;
 	setItemHidden(item.id, false);
+	forgetApplied(logKeyOf(row));
+	forgetApplied(item.id);
 	forgetApplied(item.hash);
 	// A `localOnly` ROW RESTORES LOCAL. Marking it `mine` was the reported "restoring a
 	// local deletion shares it": restore puts a file back as it was, and a file nobody
@@ -1627,11 +1751,13 @@ function restoreOneItem(row, log, tombs, consumed, into) {
 	if (row?.localOnly) patchRecord(item.id, { share: undefined, owner: undefined, wasShared: undefined });
 	else {
 		patchRecord(item.id, { share: 'mine', owner: meAsOwner(), wasShared: undefined });
-		// lift the tombstone, or the row we are about to publish is filtered straight out
+		// lift the tombstone, or the row we are about to publish is filtered straight out —
+		// 24-C2: under the record's id, and under the bare hash an older removal used
+		delete tombs.items[item.id];
 		delete tombs.items[item.hash];
 	}
 	moveItem(item.id, target ?? null);
-	consumed.add(item.hash);
+	consumed.add(logKeyOf(row));
 	// the picture, so a peer's card has something to show before it decides to download —
 	// but only for a file that is going back into the index at all
 	if (!row?.localOnly) sendAssetThumb(item.hash);
@@ -1642,17 +1768,18 @@ function restoreOneItem(row, log, tombs, consumed, into) {
  * Put a deleted file back: on the visible shelf, IN THE FOLDER IT CAME FROM (recreating
  * the way there if it has to), out of the log, and shared again — unless it was never
  * shared, in which case it comes back local.
- * @param {string} hash
+ * @param {string} keyOrHash 24-C2: the bin card's key (the log row's id) or a hash — a
+ *   hash restores the first copy whose row names it, which is every pre-C2 caller's meaning
  * @param {{into?: string|null}} [opts] `into` = an explicit destination folder id (null =
  *   the library root) from a drag out of Deleted; omitted = where it was
  * @returns {boolean}
  */
-export function restoreDeletedItem(hash, opts = {}) {
-	const h = String(hash ?? '').trim();
-	if (!itemByHash(h)) return false;
+export function restoreDeletedItem(keyOrHash, opts = {}) {
+	const k = String(keyOrHash ?? '').trim();
 	const doc = get(projectManifest);
 	const log = doc.deleted ?? [];
-	const row = log.find((/** @type {any} */ r) => r.hash === h) ?? { hash: h };
+	const row = deletedRowFor(k) ?? { hash: k };
+	if (!binRecordFor(row)) return false;
 	const tombs = tombsOf(doc);
 	/** @type {Set<string>} */
 	const consumed = new Set();
@@ -1663,7 +1790,7 @@ export function restoreDeletedItem(hash, opts = {}) {
 		folders,
 		items,
 		tombs,
-		log.filter((/** @type {any} */ r) => !consumed.has(r.hash))
+		log.filter((/** @type {any} */ r) => !consumed.has(logKeyOf(r)))
 	);
 	return true;
 }
@@ -1724,7 +1851,7 @@ export function restoreDeletedFolder(id, opts = {}) {
 		folders,
 		items,
 		tombs,
-		log.filter((/** @type {any} */ r) => !consumed.has(r.hash))
+		log.filter((/** @type {any} */ r) => !consumed.has(logKeyOf(r)))
 	);
 	return { folders: folderCount, files };
 }
@@ -1733,15 +1860,28 @@ export function restoreDeletedFolder(id, opts = {}) {
  * Reclaim the disk. LOCAL and deliberate: the recycle bin exists so a delete is
  * reversible, and emptying it is the one moment somebody has actually said they want the
  * bytes gone. It leaves the log entry, because "this was deleted" stays true.
- * @param {string} hash @returns {Promise<boolean>}
+ * @param {string} keyOrHash 24-C2: the bin card's key (the log row's id) or a hash
+ * @returns {Promise<boolean>}
  */
-export async function purgeDeletedItem(hash) {
-	const item = itemByHash(String(hash ?? '').trim());
+export async function purgeDeletedItem(keyOrHash) {
+	const k = String(keyOrHash ?? '').trim();
+	return purgeDeletedRow(deletedRowFor(k) ?? { hash: k });
+}
+
+/**
+ * The purge proper, for a log ROW. 24-C2: it destroys the HIDDEN record the row names and
+ * nothing else — a hash-keyed purge used to reach `itemByHash`, which answers VISIBLE
+ * first, so emptying the bin with a live copy of the same bytes in the library would have
+ * deleted the live copy. A row whose record is visible again (a stale row, a restore that
+ * raced the log) is refused; Restore consumes such a row harmlessly.
+ * @param {any} row @returns {Promise<boolean>}
+ */
+async function purgeDeletedRow(row) {
+	const item = binRecordFor(row, { hiddenOnly: true });
 	if (!item) return false;
-/** @type {any} */
+	/** @type {any} */
 	const mod = await import('./explorer');
-	const deleteItem = mod.deleteItem;
-	await deleteItem(item.id);
+	await mod.deleteItem(item.id);
 	return true;
 }
 
@@ -1769,17 +1909,17 @@ export async function purgeDeletedFolder(id) {
 	if (!node) return 0;
 	const kids = tree.descendants(fid);
 	let reclaimed = 0;
-	for (const row of kids.items) if (await purgeDeletedItem(row.hash)) reclaimed++;
+	for (const row of kids.items) if (await purgeDeletedRow(row)) reclaimed++;
 	/** @type {Set<string>} */
 	const doomed = new Set();
 	for (const folder of [node, ...kids.folders]) {
 		if (!folder.row) continue; // a ghost has no row to drop
 		if (tree.descendants(folder.id).items.length) continue;
-		doomed.add(folder.row.hash);
-		forgetApplied(folder.row.hash);
+		doomed.add(logKeyOf(folder.row));
+		forgetApplied(logKeyOf(folder.row));
 	}
 	const doc = get(projectManifest);
-	const log = (doc.deleted ?? []).filter((/** @type {any} */ r) => !doomed.has(r.hash));
+	const log = (doc.deleted ?? []).filter((/** @type {any} */ r) => !doomed.has(logKeyOf(r)));
 	const { folders, items, removed } = projection();
 	publishSharedIndex(folders, items, removed, log);
 	return reclaimed;
@@ -1820,20 +1960,18 @@ export function applySharedIndex(doc) {
 	// (a removal racing a carry-forward), and the removal wins — see the projection.
 	/** @type {any} */
 	const tombAll = doc?.removed ?? {};
-	const notTombed = (/** @type {any} */ row, /** @type {string} */ key, /** @type {any} */ map) => {
-		const at = Number(map?.[row[key]]);
+	const notTombedFolder = (/** @type {any} */ row) => {
+		const at = Number(tombAll.folders?.[row.id]);
 		return !Number.isFinite(at) || (Number(row.at) || 0) > at;
 	};
-	const folderRows = (doc?.folders ?? []).filter((/** @type {any} */ r) =>
-		notTombed(r, 'id', tombAll.folders)
-	);
-	const itemRows = (doc?.items ?? []).filter((/** @type {any} */ r) =>
-		notTombed(r, 'hash', tombAll.items)
-	);
+	const folderRows = (doc?.folders ?? []).filter(notTombedFolder);
+	// 24-C2: an item row's tombstone is under its own key (record id, or the bare hash for
+	// a legacy row) — and a bare-hash tombstone from an older peer still removes it
+	const itemRows = (doc?.items ?? []).filter((/** @type {any} */ r) => itemRowLive(r, tombAll.items));
 	// OUR OWN row being tombstoned means somebody else unshared our file. Honour it: drop
 	// the mark so we stop republishing, and keep the file (nothing here ever deletes bytes).
 	for (const item of get(explorerItems))
-		if (item.share === 'mine' && Number.isFinite(Number(tombAll.items?.[item.hash])))
+		if (item.share === 'mine' && itemTombstoneAt({ id: item.id, hash: item.hash }, tombAll.items) !== null)
 			patchRecord(item.id, { share: 'no', owner: undefined, wasShared: true });
 	for (const folder of get(explorerFolders))
 		if (folder.share === 'mine' && Number.isFinite(Number(tombAll.folders?.[folder.id])))
@@ -1907,20 +2045,30 @@ export function applySharedIndex(doc) {
 	// because a peer happened to share the same bytes. Hidden AND `share: 'no'` AND a
 	// deletion we applied is the state only a delete-for-everyone can produce.
 	for (const row of itemRows) {
-		if (!appliedDeletes.has(row.hash)) continue;
-		const held = itemByHash(row.hash);
+		// 24-C2: the deletion this restores was logged under the RECORD id (or, before rows
+		// had ids, under the hash) — both are checked, because the record may predate C2
+		if (!appliedDeletes.has(rowKeyOf(row)) && !appliedDeletes.has(row.hash)) continue;
+		const held = heldRecordFor(row);
 		if (!held || held.share !== 'no') continue;
 		if (get(explorerItems).some((i) => i.id === held.id)) continue; // already visible
 		setItemHidden(held.id, false);
+		forgetApplied(rowKeyOf(row));
 		forgetApplied(row.hash);
 		// step 2 does the rest: the `peer` mark and the placement the row asks for
 	}
 
-	// 2. items we hold
-	const rowByHash = new Map(itemRows.map((/** @type {any} */ r) => [r.hash, r]));
+	// 2. items we hold — 24-C2: BY RECORD. A row names a record id; a legacy row names a
+	// hash (heldRecordFor). A row whose record is not here is MATERIALISED afterwards, off
+	// the synchronous path: bound to an unclaimed local record with the same bytes, else
+	// copied from a held record's bytes, else left to the pull (see materialiseRow).
+	/** @type {any[]} */
+	const materialise = [];
 	for (const row of itemRows) {
-		const item = itemByHash(row.hash);
-		if (!item) continue;
+		const item = heldRecordFor(row);
+		if (!item) {
+			materialise.push(row);
+			continue;
+		}
 		if (item.share === 'mine') continue; // we are its writer
 		/** @type {any} */
 		const patch = { share: 'peer', owner: row.owner, wasShared: undefined };
@@ -1931,7 +2079,11 @@ export function applySharedIndex(doc) {
 			: null;
 		if ((item.folderId ?? null) !== dest) patch.folderId = dest;
 		patchRecord(item.id, patch);
+		// the row points at OTHER bytes: the publisher edited the file, and the record
+		// follows in place — from a sibling record if one holds them, else through the pull
+		if (!isSyntheticId(row.id) && item.hash !== row.hash) materialise.push(row);
 	}
+	if (materialise.length) void materialiseRows(materialise);
 
 	// R22 round 4: a DELETION somebody else performed. Our copy goes to the hidden shelf
 	// — bytes intact, so Restore works from this machine alone — rather than being
@@ -1946,12 +2098,17 @@ export function applySharedIndex(doc) {
 		// "is anything left in this folder" can only be answered once the items that were
 		// deleted alongside it have gone
 		if (isFolderRow(row)) continue;
-		if (appliedDeletes.has(row.hash)) continue;
-		const held = get(explorerItems).find((i) => i.hash === row.hash);
+		// 24-C2: a row with an id names ONE record (a deleted copy is its own row); an old
+		// row names whatever visible record holds its bytes
+		const key = logKeyOf(row);
+		if (appliedDeletes.has(key)) continue;
+		const held = row.id
+			? get(explorerItems).find((i) => i.id === row.id)
+			: get(explorerItems).find((i) => i.hash === row.hash);
 		if (!held) {
 			// nothing here to hide, but the event is still seen — otherwise it fires later,
 			// against a copy the user has since put back
-			noteApplied(row.hash);
+			noteApplied(key);
 			continue;
 		}
 		// the PATCH BEFORE the hide: `patchRecord` writes into `explorerItems` only, so
@@ -1961,7 +2118,7 @@ export function applySharedIndex(doc) {
 		patchRecord(held.id, { share: 'no', owner: undefined, wasShared: undefined });
 		if (get(recycleBinEnabled)) setItemHidden(held.id, true);
 		else void import('./explorer').then((m) => m.deleteItem(held.id));
-		noteApplied(row.hash);
+		noteApplied(key);
 	}
 
 	// R22 round 36 — AND THE FOLDER ROWS, once per row like an item row (`appliedDeletes`
@@ -1990,10 +2147,19 @@ export function applySharedIndex(doc) {
 		noteApplied(row.hash);
 	}
 
-	// 3. what left the index
+	// 3. what left the index — 24-C2: a record is IN the document when a real row carries
+	// its id, or a legacy row carries its hash. A 'peer' record whose bytes a row still
+	// names but under an id we do not hold yet is not "gone": it is about to be BOUND to
+	// that row (materialiseRow), and marking it unshared for the interval would toast a
+	// removal nobody performed — the first document after an upgrade is exactly this case
+	// for every previously shared file.
+	const boundIds = new Set(itemRows.filter((/** @type {any} */ r) => !isSyntheticId(r.id)).map((/** @type {any} */ r) => r.id));
+	const legacyHashes = new Set(itemRows.filter((/** @type {any} */ r) => isSyntheticId(r.id)).map((/** @type {any} */ r) => r.hash));
+	const pendingHashes = new Set(materialise.map((/** @type {any} */ r) => r.hash));
+	const inDoc = (/** @type {any} */ item) => boundIds.has(item.id) || legacyHashes.has(item.hash);
 	let dropped = 0;
 	for (const item of get(explorerItems))
-		if (item.share === 'peer' && !rowByHash.has(item.hash)) {
+		if (item.share === 'peer' && !inDoc(item) && !pendingHashes.has(item.hash)) {
 			patchRecord(item.id, { share: undefined, owner: undefined, wasShared: true });
 			dropped++;
 		}
@@ -2004,7 +2170,6 @@ export function applySharedIndex(doc) {
 	noticeUnshared(dropped);
 
 	// THE RECONCILE: is anything of OURS missing from the document somebody just wrote?
-	const docHashes = new Set(itemRows.map((/** @type {any} */ r) => r.hash));
 	const docFolders = new Set(folderRows.map((/** @type {any} */ r) => r.id));
 	// ...but NEVER against a tombstone. A row of ours that is missing because somebody
 	// DELIBERATELY removed it is not a lost race, and re-publishing it is how the
@@ -2014,7 +2179,7 @@ export function applySharedIndex(doc) {
 	const tombed = (/** @type {any} */ map, /** @type {string} */ key) =>
 		Number.isFinite(Number(map?.[key]));
 	const lostItem = get(explorerItems).some(
-		(i) => i.share === 'mine' && !docHashes.has(i.hash) && !tombed(tombs.items, i.hash)
+		(i) => i.share === 'mine' && !inDoc(i) && !tombed(tombs.items, i.id) && !tombed(tombs.items, i.hash)
 	);
 	const lostFolder = get(explorerFolders).some(
 		(f) => f.share === 'mine' && !docFolders.has(f.id) && !tombed(tombs.folders, f.id)
@@ -2073,17 +2238,125 @@ function autoPullWhenAllowed() {
 /** Fetch every shared file this machine lacks, honouring the queue. Silent when there
  * is nothing to do, which is the common case on every subsequent document. */
 function autoPullMissing() {
-	const rows = remoteSharedRows(get(projectManifest));
-	if (!rows.length) return;
+	// 24-C2: every row whose BYTES are missing — a derived card, or a record we hold whose
+	// publisher edited it — and by HASH, once: two rows naming one hash are one download
+	const hashes = new Set(rowsNeedingBytes(get(projectManifest)).map((/** @type {any} */ r) => r.hash));
+	if (!hashes.size) return;
 	// requestAsset, not pullSharedItem: an automatic sweep must respect the dead-hash
 	// mark, or it re-queues an unanswerable file on every index change forever.
 	// R22 round 12: the pending mark arms only when the request actually left. This
 	// sweep runs with no connection open more often than it looks (an idb-restored
 	// manifest at boot, a .tp open), and marking those hashes pending drew a permanent
 	// row of downloading cards for files nobody had been asked for.
-	for (const row of rows)
-		if (requestAsset(row.hash))
-			pendingPulls.update((s) => (s.has(row.hash) ? s : new Set([...s, row.hash])));
+	for (const hash of hashes)
+		if (requestAsset(hash)) pendingPulls.update((s) => (s.has(hash) ? s : new Set([...s, hash])));
+}
+
+// ---- 24-C2: materialising a row we hold no record for ---------------------------------
+//
+// THE COPY COMMAND, and the one place the new identity earns its keep. `applySharedIndex`
+// is synchronous and these writes are not (a blob read, an idb write), so the rows it could
+// not resolve to a record are handed here and settled one at a time; the sweep that runs
+// when each record lands re-applies the document and finds them held. Three outcomes, in
+// this order:
+//
+//   BIND.  An UNCLAIMED local record holds the same bytes — not `mine` (that is our own
+//          row, with its own id) and not the record of some other live row — so it takes
+//          the row's identity: re-keyed onto the row's id, bytes and all, then given the
+//          row's name and placement and the `peer` mark. This is "the same bytes on both
+//          machines are ONE file" (a peer who imported the texture independently adopts
+//          the row rather than gaining a twin), and it is also the silent upgrade path:
+//          every record shared before rows had ids still carries a random local id.
+//   COPY.  Every record holding the bytes is claimed (ours, or another row's) — so this
+//          row is a copy, and it is minted from a held record's bytes under the row's own
+//          id. Zero wire bytes; the row was the whole command.
+//   PULL.  Nothing here holds the bytes: the derived card stays, and auto-download (or a
+//          click) fetches the hash once, after which `landBytes` writes one record per row.
+//
+// A record we DO hold whose row now names OTHER bytes is the fourth case (the publisher
+// edited the file): if a sibling record holds the new bytes they are copied across in
+// place, else the pull brings them and `landBytes` replaces them in place.
+
+/** rows being written right now, so a sweep landing mid-write cannot mint a second record */
+const materialising = new Set();
+
+/** The record ids some live row already accounts for. @param {any} doc */
+function claimedRecordIds(doc) {
+	const tombs = doc?.removed?.items ?? {};
+	/** @type {Set<string>} */
+	const out = new Set();
+	for (const r of doc?.items ?? []) {
+		if (!itemRowLive(r, tombs)) continue;
+		if (isSyntheticId(r.id)) {
+			const held = itemByHash(r.hash);
+			if (held) out.add(held.id);
+		} else out.add(String(r.id));
+	}
+	return out;
+}
+
+/** @param {any[]} rows */
+async function materialiseRows(rows) {
+	for (const row of rows) {
+		const key = String(row?.id ?? '');
+		if (!key || materialising.has(key)) continue;
+		materialising.add(key);
+		try {
+			await materialiseRow(row);
+		} catch (e) {
+			console.log('shared row could not be materialised', e);
+		} finally {
+			materialising.delete(key);
+		}
+	}
+}
+
+/** @param {any} row */
+async function materialiseRow(row) {
+	// re-read: a row can leave the document (unshared, tombstoned) between the sweep that
+	// queued it and this write, and writing it anyway would resurrect it locally
+	const doc = get(projectManifest);
+	const live = (doc.items ?? []).find((/** @type {any} */ r) => r.id === row.id);
+	if (!live || !itemRowLive(live, doc.removed?.items)) return;
+	const folder =
+		live.folderId && get(explorerFolders).some((f) => f.id === live.folderId) ? live.folderId : null;
+	const held = heldRecordFor(live);
+	if (held) {
+		// the edited-copy case: same record, new bytes — from a sibling that holds them
+		if (held.hash === live.hash) return;
+		const src = itemsByHash(live.hash).find((i) => i.id !== held.id);
+		if (!src) return; // nothing here holds the new bytes — the pull brings them
+		const blob = await itemBlob(src.id);
+		if (!blob) return;
+		await replaceItemBytes(held.id, await blob.arrayBuffer(), { type: blob.type || undefined });
+		return;
+	}
+	const claimed = claimedRecordIds(doc);
+	const unclaimed = itemsByHash(live.hash).filter((i) => i.share !== 'mine' && !claimed.has(i.id));
+	// a VISIBLE candidate first: the hidden shelf carries a scene's old versions, and one of
+	// those must not be surfaced (it is not — a bound hidden record stays hidden) nor
+	// preferred over the card the user can see
+	const candidate = unclaimed.find((i) => get(explorerItems).some((v) => v.id === i.id)) ?? unclaimed[0];
+	if (candidate) {
+		if (await rekeyItem(candidate.id, live.id))
+			patchRecord(live.id, {
+				name: live.name,
+				share: 'peer',
+				owner: live.owner,
+				wasShared: undefined,
+				folderId: folder
+			});
+		return;
+	}
+	const source = itemsByHash(live.hash)[0];
+	if (!source) return; // not held at all: a derived card, and the pull
+	await duplicateItem(source.id, {
+		id: live.id,
+		name: live.name,
+		folderId: folder,
+		share: 'peer',
+		owner: live.owner
+	});
 }
 
 // ---- inheritance (R3, and the user's rule: a shared folder shares what lands in it)
@@ -2286,10 +2559,13 @@ function endShareSession() {
 }
 
 function scheduleSweep() {
-	// a cheap key: only placement and the share flags can change the answer
+	// a cheap key: placement, the share flags — and, since 24-C2, the HASH: a row carries
+	// its record's content pointer, so an edit to a shared file (updateItemBytes) is a
+	// change the document must see. Before C2 an edited shared file kept its old row until
+	// something unrelated moved.
 	const key =
 		get(explorerItems)
-			.map((i) => i.id + ':' + (i.folderId ?? '') + ':' + (i.share ?? ''))
+			.map((i) => i.id + ':' + (i.folderId ?? '') + ':' + (i.share ?? '') + ':' + (i.hash ?? ''))
 			.join('|') +
 		'#' +
 		get(explorerFolders)

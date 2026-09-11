@@ -213,7 +213,12 @@
 		manifestInUse,
 		setProjectName,
 		sceneOfHash,
-		sceneEntry
+		sceneEntry,
+		// 24-C2: a shared row and a deleted-log row are keyed by RECORD id now (a copy is its
+		// own row); these two are the one place the key rule lives, so the card ids here
+		// cannot drift from the documents they address
+		rowKeyOf,
+		logKeyOf
 	} from '$lib/projectManifest';
 	const staleScene = (_manifest: any, hash: string) => staleSceneHash(hash);
 	// 21-I5 REVISED: the ONE filesystem sanitiser, plus the version-date stamp the zip
@@ -1042,15 +1047,23 @@
 	 */
 	const deletedRows = $derived(deletedLog($projectManifest));
 	const deletedHeld = $derived(new Set([...$explorerItems, ...$hiddenItems].map((i: any) => i.hash)));
+	// 24-C2: a log row written since carries the RECORD id it is about, so "do we still hold
+	// it" is asked of that record — two deleted copies share a hash, and purging one must
+	// not leave the other's row looking spent (or vice versa). An older row is judged by
+	// hash as before. Same STORE-read rule as `deletedHeld`, for the same reason.
+	const deletedHeldIds = $derived(new Set([...$explorerItems, ...$hiddenItems].map((i: any) => i.id)));
+	const binHeld = (r: any): boolean => (r?.id ? deletedHeldIds.has(r.id) : deletedHeld.has(r?.hash));
 	const deletedTree = $derived(buildDeletedTree(deletedRows, $explorerFolders));
 	/** the rows this view is showing at all: the bin, or the whole record when the
 	 *  cleaned-up toggle is on (those extra rows are dimmed and offer no Restore). */
 	const binRows = $derived(
 		$explorerBinShowSpent
 			? deletedRows
-			: partitionDeleted(deletedRows, deletedHeld, $explorerFolders).bin
+			: partitionDeleted(deletedRows, deletedHeld, $explorerFolders, deletedHeldIds).bin
 	);
-	const binVisibleHashes = $derived(new Set(binRows.map((r: any) => r.hash)));
+	// keyed by the row's LOG KEY (24-C2: the record id when it has one, the hash otherwise) —
+	// the card id namespace below is built from the same key
+	const binVisibleKeys = $derived(new Set(binRows.map((r: any) => logKeyOf(r))));
 	/**
 	 * The FOLDER NODES of the node you are standing in. Plain layout offers none — that is
 	 * the whole of what "plain" means here, and it is why navigation into a node is not
@@ -1066,11 +1079,11 @@
 		const kids = deletedTree.children.get(binScope.folderId) ?? { folders: [], items: [] };
 		return kids.folders
 			.filter((node: any) => {
-				if (!node.ghost) return binVisibleHashes.has(node.row?.hash);
+				if (!node.ghost) return binVisibleKeys.has(logKeyOf(node.row));
 				const under = deletedTree.descendants(node.id);
 				return (
-					under.items.some((r: any) => binVisibleHashes.has(r.hash)) ||
-					under.folders.some((n: any) => n.row && binVisibleHashes.has(n.row.hash))
+					under.items.some((r: any) => binVisibleKeys.has(logKeyOf(r))) ||
+					under.folders.some((n: any) => n.row && binVisibleKeys.has(logKeyOf(n.row)))
 				);
 			})
 			.map((node: any) => ({
@@ -1092,11 +1105,14 @@
 		const rows =
 			$explorerBinLayout === 'tree'
 				? (deletedTree.children.get(binScope.folderId) ?? { folders: [], items: [] }).items.filter(
-						(r: any) => binVisibleHashes.has(r.hash)
+						(r: any) => binVisibleKeys.has(logKeyOf(r))
 					)
 				: binRows.filter((r: any) => !isFolderRow(r));
 		return rows.map((r: any) => ({
-			id: 'deleted:' + r.hash,
+			// 24-C2: the card is the LOG ROW, keyed as the row is — the record id for a
+			// deletion logged since C2 (so two deleted copies are two cards), the hash before
+			id: 'deleted:' + logKeyOf(r),
+			binKey: logKeyOf(r),
 			name: r.name,
 			kind: r.kind || 'text',
 			hash: r.hash,
@@ -1110,7 +1126,7 @@
 			thumbnail: deletedThumb(r),
 			owner: r.by ?? null,
 			deletedEntry: true,
-			restorable: deletedHeld.has(r.hash)
+			restorable: binHeld(r)
 		}));
 	});
 	/** the ancestor chain of a bin NODE as text ("A / B"), for the Location column and the
@@ -1245,7 +1261,10 @@
 			.filter((r: any) => (q ? r.name.toLowerCase().includes(q) : (r.folderId ?? null) === ($activeFolder ?? null)))
 			.sort((a: any, b: any) => String(a.name).localeCompare(String(b.name)))
 			.map((r: any) => ({
-				id: 'shared:' + r.hash,
+				// 24-C2: keyed by the ROW (two copies nobody here holds share a hash, and a
+				// keyed each over one key would throw); `rowKey` is what Unshare tombstones
+				id: 'shared:' + rowKeyOf(r),
+				rowKey: rowKeyOf(r),
 				name: r.name,
 				kind: r.kind || 'text',
 				hash: r.hash,
@@ -1848,7 +1867,9 @@
 	 * that reaches them with `get()` registers no dependency, so these would never re-run
 	 * on a purge (round 9's bug, verbatim).
 	 */
-	const binCount = $derived(partitionDeleted(deletedRows, deletedHeld, $explorerFolders).bin.length);
+	const binCount = $derived(
+		partitionDeleted(deletedRows, deletedHeld, $explorerFolders, deletedHeldIds).bin.length
+	);
 	const logCount = $derived(deletedRows.length);
 	/** the cleaned-up records: what "Clear the log" forgets and nothing more (round 36) */
 	const spentCount = $derived(Math.max(0, logCount - binCount));
@@ -3066,6 +3087,8 @@
 			: payload?.type === 'folder' && payload.id
 				? [payload.id]
 				: [];
+		// 24-C2: the suffix is the row's LOG KEY (a record id, or a hash for an older row) —
+		// `restoreDeletedItem` takes either
 		const hashes = dragged
 			.map((p: any) => String(p?.id ?? ''))
 			.filter((id: string) => id.startsWith('deleted:'))
@@ -3126,7 +3149,7 @@
 			if (back.folders || back.files) names.push(node.name);
 		}
 		for (const hash of hashes) {
-			const row = deletedRows.find((r: any) => r.hash === hash);
+			const row = deletedRows.find((r: any) => logKeyOf(r) === hash) ?? deletedRows.find((r: any) => r.hash === hash);
 			if (restoreDeletedItem(hash, { into })) {
 				files++;
 				names.push(String(row?.name ?? 'file'));
@@ -4163,7 +4186,7 @@
 									? 'Put it back in ' + item.location
 									: 'Put it back in the Library',
 								action: () => {
-									restoreDeletedItem(item.hash);
+									restoreDeletedItem(item.binKey ?? item.hash);
 									showToast('Restored ' + item.name);
 								}
 							}
@@ -4183,7 +4206,7 @@
 									danger: true,
 									tooltip: 'Free the disk on THIS machine. Peers keep their own copies.',
 									action: () => {
-										void purgeDeletedItem(item.hash);
+										void purgeDeletedItem(item.binKey ?? item.hash);
 										showToast(item.name + ' removed from this device');
 									}
 								}
@@ -4233,7 +4256,7 @@
 									tooltip:
 										'Take it out of the project. You do not hold this file, so there is nothing here to lose.',
 									action: () => {
-										unshareHash(item.hash);
+										unshareHash(item.rowKey ?? item.hash);
 										showToast(item.name + ' is no longer shared');
 									}
 								}
@@ -4653,7 +4676,7 @@
 		e.preventDefault();
 		e.stopPropagation();
 		const under = deletedTree.descendants(node.nodeId);
-		const heldUnder = under.items.filter((r: any) => deletedHeld.has(r.hash)).length;
+		const heldUnder = under.items.filter((r: any) => binHeld(r)).length;
 		const counts =
 			plural(under.folders.length, 'folder') + ' and ' + plural(under.items.length, 'file');
 		const who = node.row ? ownerLabel({ owner: node.row.by ?? null }) : '';

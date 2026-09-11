@@ -246,7 +246,7 @@ export async function exportProject(opts = {}) {
 			name: f.name,
 			parentId: reparent(f.parentId)
 		}));
-	/** @type {{hash: string, name: string, kind: string, folderId: string | null, file: string}[]} */
+	/** @type {{id: string, hash: string, name: string, kind: string, folderId: string | null, file: string}[]} */
 	const items = [];
 	/** @type {Record<string, string>} hash -> the zip path already carrying these bytes */
 	const carried = {};
@@ -262,7 +262,12 @@ export async function exportProject(opts = {}) {
 			files[file] = found.bytes;
 			carried[item.hash] = file;
 		}
+		// 24-C2: the RECORD id rides beside the hash (additive — an older reader ignores it).
+		// Two records holding one hash are two rows pointing at one zip entry, which is how a
+		// copy survives the round trip: the reader mints a record per row, and the shared
+		// index inside `manifest` is remapped onto those records by this same id.
 		items.push({
+			id: item.id,
 			hash: item.hash,
 			name: item.name,
 			kind: item.kind,
@@ -721,12 +726,17 @@ function restoreFolderTree(rows, rootId) {
  * @param {{imported?: boolean, duplicates?: string}} [opts] loose-scenes fix: `imported`
  *   stamps provenance on everything written (an IMPORT, never a project-minted save), and
  *   `duplicates: 'ask'` surfaces bytes we already hold instead of deduping in silence
- * @returns {Promise<{scenes: number, assets: number, items: number, remap: Map<string, string>}>}
+ * @returns {Promise<{scenes: number, assets: number, items: number, remap: Map<string, string>,
+ *   itemRemap: Map<string, string>}>}
  *   `remap` is saved-folder-id -> the fresh local one; R22-R1's shared index is keyed by
  *   folder id, so the only caller that installs the manifest needs it to fix those rows.
+ *   `itemRemap` (24-C2) is the same for ITEM rows: saved record id -> the record that
+ *   received those bytes here, because the shared index is keyed by record id now.
  */
 async function restoreProjectContents(doc, entries, rootId, sceneFolderId, opts = {}) {
 	const remap = restoreFolderTree(doc.folders ?? [], rootId);
+	/** @type {Map<string, string>} */
+	const itemRemap = new Map();
 	const imported = !!opts.imported;
 
 	// loose-scenes fix (bug 2a): BEFORE writing anything, find out how much of this file
@@ -771,6 +781,12 @@ async function restoreProjectContents(doc, entries, rootId, sceneFolderId, opts 
 
 	// v2 items — every library item, placed where its saved folder landed
 	let items = 0;
+	/** 24-C2: hashes THIS FILE has already placed a record for. A second row with the same
+	 * hash is a COPY the file is describing — two records, one zip entry — and goes in past
+	 * the hash dedupe; the FIRST row still dedupes against what the library already held,
+	 * which is the import rule (and the duplicate ask) exactly as before.
+	 * @type {Set<string>} */
+	const placedHashes = new Set();
 	for (const row of doc.items ?? []) {
 		const bytes = entries[row.file];
 		if (!bytes) continue;
@@ -779,9 +795,15 @@ async function restoreProjectContents(doc, entries, rootId, sceneFolderId, opts 
 		const exact = /** @type {ArrayBuffer} */ (
 			bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength)
 		);
+		const hash = await hashBytes(exact);
 		const folderId = row.folderId == null ? rootId : (remap.get(String(row.folderId)) ?? rootId);
-		await addItemFromBytes(exact, row.name || String(row.hash ?? 'item'), folderId, { imported });
-		for (const copy of extraCopies.get(await hashBytes(exact)) ?? [])
+		const record = await addItemFromBytes(exact, row.name || String(row.hash ?? 'item'), folderId, {
+			imported,
+			allowDuplicate: placedHashes.has(hash)
+		});
+		placedHashes.add(hash);
+		if (record && row?.id != null) itemRemap.set(String(row.id), record.id);
+		for (const copy of extraCopies.get(hash) ?? [])
 			await addItemFromBytes(copy.buffer, copy.name, folderId, { imported });
 		items++;
 	}
@@ -814,7 +836,7 @@ async function restoreProjectContents(doc, entries, rootId, sceneFolderId, opts 
 		scenes++;
 	}
 
-	return { scenes, assets, items, remap };
+	return { scenes, assets, items, remap, itemRemap };
 }
 
 /**
@@ -822,11 +844,21 @@ async function restoreProjectContents(doc, entries, rootId, sceneFolderId, opts 
  * A row whose folder did not survive the restore keeps its file and loses its
  * placement (folderId null = the library root) rather than being dropped — the whole
  * point of the index is that somebody said these files may be seen, and a placement we
- * cannot resolve is no reason to forget that. Item rows are keyed by content HASH, so
- * they need no remapping at all; only their folder reference does.
- * @param {any} manifest @param {Map<string, string>} remap @returns {any}
+ * cannot resolve is no reason to forget that.
+ *
+ * 24-C2: ITEM ROWS ARE KEYED BY RECORD ID NOW, so they are remapped the way folder rows
+ * are — onto the record `restoreProjectContents` wrote for the same saved id — with two
+ * differences from the folder rule. A LEGACY row (no id) is left as it is: it reads by
+ * hash, and the record that holds those bytes is found that way. And a row whose id the
+ * file could not map is KEPT under its original id rather than dropped: it names a record
+ * this file did not carry the bytes of (a remote card at export time), and its original
+ * holder may still be in the session to serve it — dropping the row would unshare it for
+ * everyone, which a folder row with no surviving folder cannot do to anything.
+ * @param {any} manifest @param {Map<string, string>} remap saved folder id -> fresh id
+ * @param {Map<string, string>} [itemRemap] saved record id -> fresh record id
+ * @returns {any}
  */
-function remapSharedIndex(manifest, remap) {
+function remapSharedIndex(manifest, remap, itemRemap = new Map()) {
 	if (!manifest || typeof manifest !== 'object') return manifest;
 	const folders = Array.isArray(manifest.folders) ? manifest.folders : null;
 	const items = Array.isArray(manifest.items) ? manifest.items : null;
@@ -840,16 +872,20 @@ function remapSharedIndex(manifest, remap) {
 			// a folder row with no surviving id names nothing at all; its items fall to the root
 			.filter((/** @type {any} */ row) => !!row.id);
 	if (items)
-		out.items = items.map((/** @type {any} */ row) => ({ ...row, folderId: to(row.folderId) }));
+		out.items = items.map((/** @type {any} */ row) => ({
+			...row,
+			...(row?.id != null ? { id: itemRemap.get(String(row.id)) ?? row.id } : {}),
+			folderId: to(row.folderId)
+		}));
 	return out;
 }
 
 /** Test seam for the remap above. It is pure and its inputs (a saved document, a remap
  * built inside a restore) are both unreachable from outside this module, so the only way
  * to cover the id rewrite is to hand it the pair directly.
- * @param {any} manifest @param {Map<string, string>} remap */
-export function __remapSharedIndexForTest(manifest, remap) {
-	return remapSharedIndex(manifest, remap);
+ * @param {any} manifest @param {Map<string, string>} remap @param {Map<string, string>} [itemRemap] */
+export function __remapSharedIndexForTest(manifest, remap, itemRemap) {
+	return remapSharedIndex(manifest, remap, itemRemap);
 }
 
 /**
@@ -896,7 +932,7 @@ export async function openProject(buffer) {
 	// name — `manifestRestore` marks them, because it is the seam that can see what the
 	// document holds. Without it the outbound scope would keep a joiner's freshly-opened
 	// project to itself, which is the opposite of what "brings the room along" promises.
-	manifestRestore(remapSharedIndex(doc.manifest, counts.remap), true);
+	manifestRestore(remapSharedIndex(doc.manifest, counts.remap, counts.itemRemap), true);
 	// the open scene belongs to no scene of THIS project — a named currentLevel would
 	// let travel-away publish the old world into the new project's history
 	currentLevel.set(null);

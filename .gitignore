@@ -36,3 +36,7 @@ static/cloud-plugin.js
 
 # Maintainer planning area (never published; public docs live in theprototype-docs)
 /docs/
+
+# Local plan drafts — plans are versioned in the private cloud repo
+# (docs/plans-core/), never here; finished ones move to plans-core/done/.
+/plans/

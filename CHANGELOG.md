@@ -5,6 +5,21 @@
      per release, newest first. HTML comments like this one are stripped before
      rendering, so maintainer notes stay out of the user-facing window. -->
 
+## Unreleased
+
+### ⌨️ Input parity (roadmap #24, batch A)
+
+- 🌍 **Hotkeys on every keyboard layout.** `G`, `F`, `Ctrl+Z`, WASD and every other
+  letter shortcut now work on Russian, Greek, Hebrew, Arabic and CJK layouts (they
+  resolve by the key's physical position), while AZERTY, Dvorak and QWERTZ keep the
+  labels printed on their keys. Settings ▸ Shortcuts shows your layout's own label
+  beside each letter where the browser can tell us.
+- 🖱️ **A wheel that zooms on Linux.** Scrolling over the viewport is classified by
+  what the device is, not how big one tick was — high-resolution wheels (Steam Deck,
+  hi-res mice) dolly again, two-finger swipes still pan. Viewport menu ▸ View ▸
+  **Mouse wheel** picks Zoom / Pan / Auto in one click, and Settings ▸ Controls has a
+  **Wheel diagnostics** readout of the last eight wheel events for the odd machine.
+
 ## 1.10.0 — Publish, play, remix ☁️
 
 The engine learned the moves a community needs — publish the open scene, open a

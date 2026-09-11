@@ -43,6 +43,7 @@
 	// W5: the BINDING for this pane's grab key lives in the shortcut registry (an
 	// `external` row), so Settings can move it; the key itself is answered here.
 	import { comboOf, bindingOf } from '$lib/shortcuts';
+	import { keyOf } from '$lib/keyOf';
 	import { dragWindow } from '$lib/dragWindow';
 	import DragRow from '../ui/DragRow.svelte';
 	import { focusStack } from '$lib/windowFocus';
@@ -1156,6 +1157,8 @@
 			if (tag === 'INPUT' || tag === 'SELECT' || tag === 'TEXTAREA') return;
 			const mult = e.ctrlKey || e.metaKey ? 10 : e.shiftKey ? 100 : 1;
 			const arrow = { ArrowLeft: [-1, 0], ArrowRight: [1, 0], ArrowUp: [0, 1], ArrowDown: [0, -1] }[e.key];
+			// 24-A1: the layout-independent token (Ctrl+C on a Cyrillic layout is Ctrl+с)
+			const k = keyOf(e);
 
 			// W5: Blender's G arms Move. The same key is Move on the gizmo and Arm Move
 			// in the UV editor; all three coexist because this handler claims (and stops)
@@ -1181,14 +1184,14 @@
 				selKeys = [];
 				return;
 			}
-			if ((e.ctrlKey || e.metaKey) && (e.key === 'c' || e.key === 'C')) {
+			if ((e.ctrlKey || e.metaKey) && k === 'C') {
 				if (!selKeys.length) return;
 				claim(e);
 				const n = copyKeys(target.uuid, selKeys);
 				if (n) showToast(n === 1 ? 'Copied 1 key' : 'Copied ' + n + ' keys');
 				return;
 			}
-			if ((e.ctrlKey || e.metaKey) && (e.key === 'v' || e.key === 'V')) {
+			if ((e.ctrlKey || e.metaKey) && k === 'V') {
 				if (!$clipboardSize) return;
 				claim(e);
 				const landed = pasteKeys(target.uuid, snapT(curTime));
@@ -1198,22 +1201,22 @@
 				}
 				return;
 			}
-			if ((e.ctrlKey || e.metaKey) && (e.key === 'd' || e.key === 'D')) {
+			if ((e.ctrlKey || e.metaKey) && k === 'D') {
 				if (!selKeys.length) return;
 				claim(e);
 				const landed = duplicateKeys(target.uuid, selKeys);
 				if (landed.length) selKeys = landed;
 				return;
 			}
-			if ((e.key === 'm' || e.key === 'M') && !e.ctrlKey && !e.metaKey) {
+			if (k === 'M' && !e.ctrlKey && !e.metaKey) {
 				if (!selKeys.length) return;
 				claim(e);
 				mirrorKeys(target.uuid, selKeys, snapT(curTime));
 				return;
 			}
-			if (e.key === '1' || e.key === '2') {
+			if (!e.shiftKey && (k === '1' || k === '2')) {
 				claim(e);
-				xform = e.key === '1' ? 'move' : 'scale';
+				xform = k === '1' ? 'move' : 'scale';
 				return;
 			}
 			if (e.code === 'Space' && (e.ctrlKey || e.metaKey)) {

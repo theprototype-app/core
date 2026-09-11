@@ -10,6 +10,7 @@
 	// the meshEditHotkeys pref is on (the toggle here; while on, shortcuts.js
 	// skips bare mesh-edit keys and editorNavigation parks the fly keys);
 	// typing in inputs skips. Esc always works.
+	import { letterOf } from '$lib/keyOf';
 	import { untrack } from 'svelte';
 	import { get } from 'svelte/store';
 	import {
@@ -660,7 +661,8 @@
 		if (!$meshEditHotkeys) return; // D3: toggled off — Esc/Done still work above
 		const target = /** @type {any} */ (event.target);
 		if (target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.tagName === 'SELECT' || target.isContentEditable)) return;
-		const key = event.key.toLowerCase();
+		// 24-A1: layout-independent (`л` on a Cyrillic layout is the L key)
+		const key = letterOf(event);
 		// M2/M6: the SELECTION commands are Ctrl chords, so they are checked before
 		// the plain-key guard below (which deliberately ignores modifier combos)
 		if ((event.ctrlKey || event.metaKey) && !event.altKey) {
@@ -722,7 +724,7 @@
 				return;
 			}
 			const byKey = { e: 'extrude', i: 'inset', g: 'move', s: 'subdivide', f: 'flip', x: 'delete' };
-			const op = key === 'delete' ? 'delete' : /** @type {any} */ (byKey)[key];
+			const op = event.key === 'Delete' ? 'delete' : /** @type {any} */ (byKey)[key];
 			if (!op) return;
 			runOp(op);
 			event.preventDefault();

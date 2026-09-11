@@ -6,7 +6,7 @@
 	import { showGrid, vrOverride, vrMenuHand, vrSnapAngle, vrMirrorSnapTurn, vrTeleportEnabled, vrSleeveEnabled, vrVertexHold, vrFlying, vrPassthrough, vrMenuHold, vrTargetHz, peerHandStyle } from '../../stores/sceneStore.js';
 	import { applyVRFrameRate } from '$lib/vrControls';
 	import { settingsOpen, settingsSection, hidePanels, restorePanels, advancedMode, showEnvInList, objectSearchEnabled, showSimControls, showToast, showRoomsButton, toastsInDrawerOnly, mobileUndockAllowed, enableShiftAdd, noteDoubleClickToOpen, duplicateCarriesAnimation, duplicateCarriesFlow, duplicateCarriesShader, touchTools, floatingToolbar, toolbarAlwaysOnTop } from '../../stores/appStore.js';
-	import { trackpadMode, allowBrowserZoom, reversePan, panEnabled, pinchZoomEnabled } from '$lib/trackpadNav';
+	import { trackpadMode, allowBrowserZoom, reversePan, panEnabled, pinchZoomEnabled, lastWheelEvents } from '$lib/trackpadNav';
 	import { gamepadPrefs, setGamepadPrefs, DEADZONE_RANGE, SENSITIVITY_RANGE } from '$lib/gamepadPrefs';
 	import { drawerSlot, cloudPluginInfo } from '$lib/cloudHooks';
 	import { versionString } from '$lib/version.js';
@@ -76,7 +76,8 @@
 		resetShortcut,
 		resetAllShortcuts,
 		setOverride,
-		setShortcutCapture
+		setShortcutCapture,
+		nonLatinLayoutSeen
 	} from '$lib/shortcuts';
 	import {
 		aiEnabled,
@@ -109,6 +110,48 @@
 
 	let shortcutGroups = [...new Set(shortcuts.map((s) => s.group))];
 	let shortcutsExpanded = false;
+	// 24-A2.1: the wheel diagnostics readout's static half — WHAT machine this is. The
+	// Steam Deck report ("scrolling does nothing") had never been measured; this row plus
+	// `lastWheelEvents` turns it into numbers in one minute.
+	const wheelPlatform =
+		typeof navigator === 'undefined'
+			? ''
+			: String((navigator as any).userAgentData?.platform || navigator.platform || '') +
+				(/Firefox/.test(navigator.userAgent) ? ' · Firefox' : /Chrom/.test(navigator.userAgent) ? ' · Chromium' : /Safari/.test(navigator.userAgent) ? ' · Safari' : '');
+	const wheelCoarse = typeof window !== 'undefined' && !!window.matchMedia?.('(pointer: coarse)').matches;
+	const fmt = (n: number | null) => (n === null || n === undefined ? '—' : Number.isInteger(n) ? String(n) : n.toFixed(2));
+	/**
+	 * 24-A1: what the CURRENT layout prints on each physical key (Chromium's
+	 * `navigator.keyboard.getLayoutMap`; null where the API is missing — Firefox,
+	 * Safari). Letter shortcuts resolve by physical position on a non-Latin layout, so
+	 * the list says which printed key that is ("G · п on your layout"). Loaded when the
+	 * section opens; the map is tiny and the call is async, hence the store-free `let`.
+	 */
+	let layoutLabels: Map<string, string> | null = null;
+	let layoutLabelsAsked = false;
+	function loadLayoutMap() {
+		if (layoutLabelsAsked) return;
+		layoutLabelsAsked = true;
+		const kb = (navigator as any)?.keyboard;
+		if (!kb?.getLayoutMap) return;
+		kb.getLayoutMap()
+			.then((map: Map<string, string>) => {
+				layoutLabels = map;
+			})
+			.catch(() => {});
+	}
+	$: if (shortcutsExpanded) loadLayoutMap();
+	/** The printed label for a combo's letter when the layout prints something that is
+	 * NOT that Latin letter — the only case where the hybrid rule falls back to the
+	 * physical key and a hint helps. AZERTY/Dvorak print Latin letters and need none. */
+	function layoutHint(keys: string, labels: Map<string, string> | null): string {
+		if (!labels) return '';
+		const last = String(keys || '').split('+').pop() || '';
+		if (!/^[A-Z]$/.test(last)) return '';
+		const printed = labels.get('Key' + last) || '';
+		if (!printed || /^[a-z]$/i.test(printed)) return '';
+		return printed;
+	}
 
 	// --- Phase 5: rebinding ------------------------------------------------
 	// The registry is a plain array, so nothing here re-renders when a combo
@@ -814,6 +857,34 @@
 					<SettingRow name="Allow browser pinch zoom">
 						<svelte:fragment slot="control"><Toggle bind:checked={$allowBrowserZoom} /></svelte:fragment>
 						Accessibility: let pinch / Ctrl+scroll zoom the whole PAGE again (off keeps pinch as an app gesture and stops accidental page zoom over panels, on desktop and mobile)
+					</SettingRow>
+					<!-- 24-A2.1: the readout. A wheel is classified by DEVICE SIGNATURE now
+					     (trackpadNav.js); when a machine still guesses wrong, these are the numbers
+					     that tune the constants — and the Viewport menu ▸ View ▸ Mouse wheel row is
+					     the one-click fix meanwhile. -->
+					<SettingRow name="Wheel diagnostics" noControl>
+						<div id="wheel-diagnostics" class="text-xs">
+							<p class="mb-1 text-gray-500 dark:text-gray-400">
+								{wheelPlatform || 'unknown platform'} · pointer: {wheelCoarse ? 'coarse' : 'fine'} · wheel mode: {$trackpadMode === 'off' ? 'zoom' : $trackpadMode === 'on' ? 'pan' : 'auto'}
+							</p>
+							{#if $lastWheelEvents.length}
+								<div class="overflow-x-auto">
+									<table class="wheel-diag w-full text-left font-mono">
+										<thead><tr><th>Δt ms</th><th>mode</th><th>ΔX</th><th>ΔY</th><th>wheelΔY</th><th>ctrl</th><th>as</th><th>why</th></tr></thead>
+										<tbody>
+											{#each $lastWheelEvents as s, i (s.t + ':' + i)}
+												<tr data-kind={s.kind}>
+													<td>{s.dt}</td><td>{s.deltaMode}</td><td>{fmt(s.deltaX)}</td><td>{fmt(s.deltaY)}</td><td>{fmt(s.wheelDeltaY)}</td><td>{s.ctrl ? '✓' : ''}</td><td>{s.kind}</td><td>{s.why}</td>
+												</tr>
+											{/each}
+										</tbody>
+									</table>
+								</div>
+							{:else}
+								<p class="text-gray-500 dark:text-gray-400">Scroll over the viewport — the last 8 wheel events land here, with how each was classified.</p>
+							{/if}
+							<p class="mt-1 text-gray-500 dark:text-gray-400">If a mouse wheel pans instead of zooming (or a trackpad zooms), pick Viewport menu ▸ View ▸ Mouse wheel, or "Trackpad gestures" above.</p>
+						</div>
 					</SettingRow>
 				</AccordionItem>
 				<AccordionItem bind:open={inputExpanded}>
@@ -2012,6 +2083,13 @@
 					     - click a row's keys and press the combo you want. A row with no action
 					     of its own (fly keys, push-to-talk, the mesh-edit bundles, a module's
 					     declared bindings) is listed for discoverability and locked. -->
+					{#if $nonLatinLayoutSeen && !layoutLabels}
+						<!-- 24-A1: the browser cannot tell us the printed labels (no getLayoutMap), but
+						     a keydown already showed a non-Latin layout — say how letters resolve -->
+						<p id="shortcut-layout-note" class="mb-1 text-xs text-amber-600 dark:text-amber-400">
+							Letter shortcuts use the physical key position on this layout (the key where the letter sits on a QWERTY keyboard).
+						</p>
+					{/if}
 					<div class="mb-1 flex items-center justify-between gap-3">
 						<p class="text-xs text-gray-500 dark:text-gray-400">Click a shortcut's keys to rebind it - Esc cancels.</p>
 						<button
@@ -2041,6 +2119,9 @@
 												</span>
 											{/if}
 											<span class="text-sm text-gray-600 dark:text-gray-300">{shortcut.label}</span>
+											{#if layoutHint(shortcut.keys, layoutLabels)}
+												<span class="shortcut-layout shrink-0 text-xs text-gray-400" title="Your keyboard layout prints this on that key">· {layoutHint(shortcut.keys, layoutLabels)} on your layout</span>
+											{/if}
 											{#if isRebindable(shortcut) && shortcut.keys !== shortcut.defaultKeys}
 												<button
 													class="shortcut-reset ml-auto shrink-0 rounded-sm p-1 text-gray-400 hover:text-gray-200"

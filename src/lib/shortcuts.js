@@ -1,5 +1,7 @@
-import { get } from 'svelte/store';
+import { get, writable } from 'svelte/store';
 import { TControls, isLocked } from '../stores/sceneStore';
+// 24-A1: the layout-independent key token (zero-import leaf, see keyOf.js)
+import { keyOf } from './keyOf';
 import {
 	flowGraphClose,
 	chatHidden,
@@ -802,14 +804,12 @@ export function setShortcutCapture(value) {
  * @param {KeyboardEvent} event
  */
 export function comboOf(event) {
-	// raw || '': synthetic events (Chrome password-manager autofill) have key undefined
-	const raw = event.key || '';
-	// digits by code so Shift+1 stays "Shift+1" instead of layout characters like "!"
-	const key = event.code?.startsWith('Digit')
-		? event.code.slice(5)
-		: raw.length === 1
-			? raw.toUpperCase()
-			: raw;
+	// 24-A1: `keyOf` keeps the two rules this used to spell out — digits by code so
+	// Shift+1 stays "Shift+1" instead of "!", single characters uppercased — and adds
+	// the one that was missing: a NON-ASCII character (a Cyrillic/Greek/Hebrew layout)
+	// resolves to the physical key, so `G`, `F`, `Ctrl+Z` work on every layout. Latin
+	// layouts produce byte-identical combos (the hotkeys-layout suite pins the registry).
+	const key = keyOf(event);
 	return (
 		(event.ctrlKey || event.metaKey ? 'Ctrl+' : '') +
 		// Phase 5: Alt was previously unrepresentable, so no default uses it — every
@@ -821,8 +821,19 @@ export function comboOf(event) {
 	);
 }
 
+/**
+ * 24-A1: set the first time a keydown carries a non-ASCII character on a lettered
+ * physical key — i.e. the user is on a non-Latin layout and letter shortcuts are
+ * resolving by POSITION. Settings ▸ Shortcuts reads it to say so where the browser
+ * cannot map the labels itself (`navigator.keyboard.getLayoutMap` is Chromium-only).
+ * @type {import('svelte/store').Writable<boolean>} */
+export const nonLatinLayoutSeen = writable(false);
+
 /** @param {KeyboardEvent} event */
 function handleKeydown(event) {
+	const raw = event.key || '';
+	if (raw.length === 1 && !/[a-z0-9]/i.test(raw) && /^Key[A-Z]$/.test(event.code || '') && !get(nonLatinLayoutSeen))
+		nonLatinLayoutSeen.set(true);
 	// Settings is recording this press as a binding — the registry must not also
 	// ACT on it.
 	if (capturing) return;

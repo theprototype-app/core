@@ -6,6 +6,7 @@ import { ensureAudioContext as engineContext, bus, updateListener, resumeAudio }
 // copy arrives ~50ms later and reads as an echo of the person in front of you. Muted
 // LOCALLY with a gain (see the colo stage below); nothing about what we transmit changes.
 import { colocatedPeers, isColocatedWith } from './colocationPresence';
+import { letterOf } from './keyOf';
 
 // Voice chat over the existing peerjs mesh (MediaConnection).
 // - mic toggle transmits continuously; while OFF, holding V is push-to-talk
@@ -316,7 +317,7 @@ function keyGuard(event) {
 /** @param {KeyboardEvent} event */
 async function onKeydown(event) {
 	// key can be undefined on synthetic events (Chrome password-manager autofill)
-	if (String(event.key || '').toLowerCase() !== 'v' || event.repeat || keyGuard(event)) return;
+	if (letterOf(event) !== 'v' || event.repeat || keyGuard(event)) return;
 	// PTT is a BARE hold — no modified form of it exists, so Ctrl+V (paste) must not
 	// open the mic. The registry gets this for free (it holds 'V' while comboOf builds
 	// 'Ctrl+V'), which is why Ctrl+C never toggled chat; this listener is our own.
@@ -332,7 +333,7 @@ function onKeyup(event) {
 	// deliberately NOT modifier-guarded: pressing Ctrl mid-hold and then releasing V
 	// must still close the mic, or the hold sticks open forever. Gating on pttHeld is
 	// what keeps the Ctrl+V release from doing any work.
-	if (String(event.key || '').toLowerCase() !== 'v' || !pttHeld) return;
+	if (letterOf(event) !== 'v' || !pttHeld) return;
 	pttHeld = false;
 	applyTrackState();
 }

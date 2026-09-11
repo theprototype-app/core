@@ -71,6 +71,24 @@
   and never committed, and a peer watching a live stroke on an untextured material saw
   only its last segment.
 
+### 📋 Explorer: Duplicate, Copy, Cut, Paste (roadmap #24, batch C)
+
+- 📑 **Duplicate, Copy, Cut and Paste in the Explorer.** Right-click a file or a folder
+  for Duplicate / Copy / Cut, right-click a folder or the background for Paste — or use
+  Ctrl+D / Ctrl+C / Ctrl+X / Ctrl+V with the grid focused, on one card or a whole
+  selection. A duplicate lands beside its source as "Tower copy.glb"; a cut row dims until
+  you paste it. Prefabs duplicate too; packs stay read-only.
+- 🪶 **A copy of a shared file costs your peers no download.** A shared file now travels as
+  a row with its own identity beside its content hash, so peers who already hold the
+  bytes make the copy from their own disk — ten copies, zero transfers. Deleting a copy
+  removes only that copy, and editing one sends its new bytes once.
+- 🗺️ **Duplicate a scene or a whole folder.** Duplicate on a scene asks for the copy's
+  name (the name lives inside the file) and makes a scene of its own, with its own
+  version history. Duplicate on a folder copies everything in it under a new folder —
+  share the copy and peers who already hold the files get it for free. The Templates
+  window's cards gained a small "save to Library" button that files a starter as a new
+  scene without loading it.
+
 ## 1.10.0 — Publish, play, remix ☁️
 
 The engine learned the moves a community needs — publish the open scene, open a

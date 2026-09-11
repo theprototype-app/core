@@ -3,7 +3,8 @@
 // clipboard for text), and `addItemFromBytes` dedupes by hash so a byte-identical copy
 // could not exist. Now a copy is a NEW RECORD with the same hash (its own id-addressed
 // blob, `share` not copied), the clipboard is in-app, and the keys go by `code` like
-// Ctrl+A / Ctrl+I. Duplicate on a scene item stays disabled until C3.
+// Ctrl+A / Ctrl+I. A SCENE duplicates through a naming input instead (24-C3 — the name is
+// inside the file; `explorer-duplicate-scene-folder` owns that contract end to end).
 const h = require('./helpers.cjs');
 
 const TINY_PNG = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==';
@@ -114,7 +115,9 @@ h.run(async () => {
 	h.check(!!paste && paste.disabled, `the background menu offers Paste, greyed while the clipboard is empty (${JSON.stringify(paste)})`);
 	await page.keyboard.press('Escape');
 
-	// ---- 6. a scene item's Duplicate is disabled until C3 ------------------------------
+	// ---- 6. a scene item's Duplicate asks for a NAME (24-C3) ----------------------------
+	// C1 shipped this entry disabled; C3 flipped it: a scene copy is a new scene, so the
+	// entry opens the inline naming input prefilled with the copy name instead of writing.
 	await page.evaluate(async () => {
 		await window.__stores.explorer.importFiles([new File([new Blob(['{}'])], 'room.tpscene', { type: 'application/zip' })], null);
 	});
@@ -125,8 +128,12 @@ h.run(async () => {
 	await page.waitForTimeout(300);
 	labels = await menuLabels(page);
 	const dup = labels.find((l) => l.label === 'Duplicate');
-	h.check(!!dup && dup.disabled, `Duplicate on a scene item is disabled (${JSON.stringify(dup)})`);
+	h.check(!!dup && !dup.disabled, `Duplicate on a scene item is offered and enabled (${JSON.stringify(dup)})`);
+	await page.getByRole('menuitem', { name: /^Duplicate/ }).click();
+	await h.eventually(() => page.locator('#explorer-new-card input').inputValue().catch(() => null), (v) => v === 'room copy', 'it opens the inline name input prefilled with the copy name, writing nothing yet');
 	await page.keyboard.press('Escape');
+	await page.waitForTimeout(300);
+	h.check((await items(page)).filter((i) => i.kind === 'scene').length === 1, 'Escape leaves the one scene');
 
 	// ---- 7. folder Duplicate: records + blobs under a new folder id --------------------
 	const before = (await folders(page)).length;

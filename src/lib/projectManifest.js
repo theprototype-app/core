@@ -1062,6 +1062,12 @@ export function setScenePrivateHere(name, on) {
 	else privateScenes.delete(scene);
 }
 
+/** 24-C3: is this scene marked private on this machine? A copy of a private scene takes
+ * the mark under its new name (the `saveSceneAsLevel` Save-as rule). @param {string} name */
+export function isScenePrivateHere(name) {
+	return privateScenes.has(String(name ?? '').trim());
+}
+
 /**
  * WOULD OPENING THIS SCENE TELL THE SESSION SOMETHING IT DOES NOT ALREADY KNOW?
  *

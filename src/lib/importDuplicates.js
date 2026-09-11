@@ -74,9 +74,13 @@ export function resolveDuplicateImport(answer) {
  * beats re-exporting, because an export reads the LIVE scene and this file may be one
  * the user has never opened — the copy has to be of the FILE, not of the world.
  * @param {ArrayBuffer} buffer @param {string} name the copy's scene name
+ * @param {{workspace?: boolean}} [opts] 24-C3: `workspace: false` strips the author's
+ *   resume point (selection, open edit session) — what `saveSceneAsLevel` strips from a
+ *   save, so a Duplicate in the Explorer makes the file a save would have made. Absent
+ *   keeps it, which is what the import-a-copy path always did.
  * @returns {Promise<ArrayBuffer | null>} null when it is not a readable .tpscene
  */
-export async function sceneCopyBytes(buffer, name) {
+export async function sceneCopyBytes(buffer, name, opts = {}) {
 	try {
 		const { unzipSync, zipSync, strToU8, strFromU8 } = await import('fflate');
 		const entries = unzipSync(new Uint8Array(buffer));
@@ -87,6 +91,7 @@ export async function sceneCopyBytes(buffer, name) {
 		payload.id = crypto.randomUUID();
 		payload.createdAt = Date.now();
 		if (name) payload.name = name;
+		if (opts.workspace === false) delete payload.workspace;
 		entries['session.json'] = strToU8(JSON.stringify(payload));
 		const out = zipSync(entries);
 		return out.buffer.slice(out.byteOffset, out.byteOffset + out.byteLength);

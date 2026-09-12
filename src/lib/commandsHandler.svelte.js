@@ -22,7 +22,11 @@ import { annotations } from '$lib/annotationsHandler'
 import { isViewer, warnViewerReadOnly } from '$lib/objectPermissions'
 import { get } from 'svelte/store'
 import { addMessage, loading, loadingcount, showToast, fixLight, specatorMode } from '../stores/appStore';
+import { dropWireErrors } from './wireErrors';
 import { peers, userdata } from '../stores/appStore';
+// 27-G (audit H6): removing an object frees NOTHING on the GPU. These free what only
+// the departing object was using, and never what the rest of the scene still holds.
+import { disposeTree, keepSet } from '$lib/disposeTree';
 
 //Access scene Store
 let scene = $state();
@@ -65,7 +69,12 @@ const loader = new THREE.ObjectLoader();
 let uuids = [];
 
 export function userData(data) {
+    // 27-A (audit H1): the roster applier called .forEach on whatever arrived. A malformed
+    // `userdata` threw out of the dispatcher, which had no try/catch — the A1 note below
+    // records the same class of failure in `specator`.
+    if (!Array.isArray(data)) return;
     data.forEach(element => {
+        if (!Array.isArray(element) || typeof element[0] !== 'string') return;
         console.log('received new approved host : ' + element[0])
         if (!users.some(u => u[0] === element[0]))
             users.push(element)
@@ -139,9 +148,13 @@ export function sceneCommand(command) {
             } else {
                 let object = sceneObjects.getObjectByProperty('uuid', command.split(' ')[1])
                 if (object != null) {
+                    // the undo entry is a toJSON SNAPSHOT (history.captureObjectSnapshot),
+                    // not a live reference, so freeing the buffers here cannot strand it
                     recordObjectPresence('delete', object);
+                    const keep = keepSet(sceneRoot(), object);
                     // parent-aware so nested objects are removed too
                     (object.parent ?? sceneObjects).remove(object);
+                    disposeTree(object, { keep });
                 }
                 peer.send({type: 'delete', uuid: command.split(' ')[1], peerId: peer.peer.id});
             }
@@ -239,8 +252,22 @@ export function sceneCommand(command) {
  * Full local scene wipe (both the local /clear all and the clearscene message):
  * objects, module viewport content, annotations, locks and byte registries.
  */
+/** The scene ROOT for keep-set purposes. Scene-root helpers share resources with real
+ * meshes on purpose (an onion-skin ghost shares its source mesh's geometry), so a keep
+ * set computed over the replicated group alone would free things still being drawn. */
+function sceneRoot() {
+    return scene ?? sceneObjects;
+}
+
 export function clearSceneLocal() {
     controls?.detach();
+    // 27-G: `clear()` drops the references and frees nothing, so a session that opens and
+    // clears several scenes pays for every one of them until the context dies.
+    const doomed = sceneObjects ? [...sceneObjects.children] : [];
+    if (doomed.length) {
+        const keep = keepSet(sceneRoot(), doomed);
+        for (const child of doomed) disposeTree(child, { keep });
+    }
     sceneObjects?.clear();
     runSceneClearHandlers(); // modules remove their scene-root content
     annotations.set([]);
@@ -260,8 +287,10 @@ export function applyClearScene(peerId) {
 }
 
 export function lockRestore(lockeditems) {
+    // 27-A: same trust, same fix — a non-array here threw inside the handshake.
+    if (!Array.isArray(lockeditems)) return;
     // Filter out the current peer id locks
-    locked = locked.concat(lockeditems.filter((lock) => lock[0] != peer.peer.id));
+    locked = locked.concat(lockeditems.filter((lock) => Array.isArray(lock) && lock[0] != peer.peer.id));
     // Update the locked objects store
     lockedObjects.set(locked);
 }
@@ -289,6 +318,7 @@ export function handleDisconnected(peerId) {
     });
     dropPeerCursor(peerId);
     dropPeerQuality(peerId); // N3: drop the peer's network-quality telemetry
+    dropWireErrors(peerId); // 27-A: and its wire-failure counters (golden rule 3)
     dropPeerClock(peerId); // 23-A2: and their clock-offset samples
     // CN: host bookkeeping — the host leaving means we're no longer "joined"
     if (get(sessionHost) === peerId) sessionHost.set(null);
@@ -483,9 +513,11 @@ export async function objectParameters(data) {
 export async function deleteObject(uuid) {
     let object = sceneObjects.getObjectByProperty('uuid', uuid)
     if (!object) return;
+    const keep = keepSet(sceneRoot(), object);
     object.parent?.remove(object);
     if(selected?.uuid == uuid) controls.detach();
     sceneObjects.remove(sceneObjects.getObjectByProperty('uuid', uuid));
+    disposeTree(object, { keep });
     //Trigger reactivity for UI list of objects on remote
     objectsGroup.update((value) => value);
 }
@@ -522,6 +554,9 @@ export async function createObject(object, uuid, override, groupuuid, pos, rot, 
         parent = existing.parent ?? sceneObjects;
         parent.remove(existing);
         parent.add(mesh)
+        // AFTER the replacement is in the scene: anything the two share is then in the
+        // keep set and survives, which a dispose before the add would have freed.
+        disposeTree(existing, { keep: keepSet(sceneRoot(), existing) });
     } else if (sceneObjects.getObjectByProperty('uuid', mesh.uuid) == null) {
         // …and an override for something we never had falls through to here. It used to
         // read `overrideObject.parent` unconditionally and THROW on null.
@@ -548,7 +583,9 @@ export async function createObject(object, uuid, override, groupuuid, pos, rot, 
               // one, and even a plain re-send attached a duplicate into the group.
               if (!override) return;
               if (controls?.object?.uuid === existing.uuid) controls.detach();
+              const keepExisting = keepSet(sceneRoot(), existing);
               existing.parent?.remove(existing);
+              disposeTree(existing, { keep: keepExisting });
           }
           sceneObjects.add(mesh)
             if (groupuuid){

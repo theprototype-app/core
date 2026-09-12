@@ -1,6 +1,11 @@
 import { get } from 'svelte/store';
 import { peers, userdata, pendingApprovals, waitingForApproval, showToast } from '../stores/appStore';
-import { sessionHost } from './connectionState';
+import {
+	sessionHost,
+	APPROVAL_WINDOW_MS,
+	noteApprovalStarted,
+	clearApprovalStarted
+} from './connectionState';
 
 // Pending-connection approval (211). Kept in its own store-only module so VR
 // (vrControls -> executeVRMenuAction) can call it WITHOUT statically importing
@@ -172,11 +177,68 @@ function dial(peerId) {
 		const waiting = /** @type {any[]} */ (get(waitingForApproval));
 		if (!waiting.some((/** @type {any} */ w) => w[0] === peerId)) waiting.push([peerId, 'pending']);
 		waitingForApproval.set(/** @type {any} */ (waiting));
+		// 27-E: a request that can hang forever is the worst of the three states a dial can
+		// be in — "no" at least ends. Stamp the shared clock (the pill's countdown reads it)
+		// and arm the expiry.
+		noteApprovalStarted(peerId);
+		armApprovalTimeout(peerId);
 	} else {
 		const pend = /** @type {any[]} */ (get(pendingApprovals));
 		pend.push({ peerId, status: 'retry' });
 		pendingApprovals.set(/** @type {any} */ (pend));
 	}
+}
+
+/** @type {Map<string, any>} one expiry timer per outbound request */
+const approvalTimers = new Map();
+
+/**
+ * 27-E: end the wait. The window is the SAME constant the host's card ages against, so
+ * the two sides never disagree about whether a request is still live.
+ * @param {string} peerId
+ */
+function armApprovalTimeout(peerId) {
+	clearApprovalTimeout(peerId);
+	approvalTimers.set(
+		peerId,
+		setTimeout(() => {
+			approvalTimers.delete(peerId);
+			// still pending? (approval clears the row, so this is the only way to be here)
+			const waiting = /** @type {any[]} */ (get(waitingForApproval));
+			if (!waiting.some((/** @type {any} */ w) => w[0] === peerId && w[1] === 'pending')) return;
+			cancelOutboundRequest(peerId);
+			const label = String(peerId).slice(0, 6).toUpperCase();
+			showToast(label + ' did not answer in ' + Math.round(APPROVAL_WINDOW_MS / 1000) + 's.', [
+				{ label: 'Try again', action: () => requestConnect(peerId) }
+			]);
+		}, APPROVAL_WINDOW_MS)
+	);
+}
+
+/** @param {string} peerId */
+export function clearApprovalTimeout(peerId) {
+	const t = approvalTimers.get(peerId);
+	if (t) clearTimeout(t);
+	approvalTimers.delete(peerId);
+	// 27-E: cancelling a TIMER is not ending a REQUEST, so the clock STAYS here.
+	// `armApprovalTimeout` calls this defensively to avoid a duplicate timer, and
+	// clearing the stamp here deleted it one line after `dial` wrote it — so every
+	// outbound request lost its countdown, and the two sides disagreed about the
+	// age of the same request. The paths that really END a request clear it.
+}
+
+/**
+ * 27-E: the peer is not online at all — peerjs says so through `peer-unavailable`. The
+ * pill used to stay on "Requesting" beside a toast saying the opposite, and the whitelist
+ * row we added optimistically at dial time stayed forever. End it now; the caller owns
+ * the message, since only it knows whether this id was ever plausible.
+ * @param {string} peerId
+ */
+export function abandonOutboundRequest(peerId) {
+	const waiting = /** @type {any[]} */ (get(waitingForApproval));
+	if (!waiting.some((/** @type {any} */ w) => w[0] === peerId)) return false;
+	cancelOutboundRequest(peerId);
+	return true;
 }
 
 /**
@@ -187,6 +249,8 @@ function dial(peerId) {
  * restoreConnection retry loop too (its stale-conn guard). @param {string} peerId
  */
 export function cancelOutboundRequest(peerId) {
+	clearApprovalTimeout(peerId); // 27-E: no orphan timer, no stale countdown
+	clearApprovalStarted(peerId); // and the request really is over, so drop the clock
 	waitingForApproval.set(
 		get(waitingForApproval).filter((/** @type {any} */ w) => w[0] !== peerId)
 	);

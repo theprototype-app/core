@@ -89,6 +89,56 @@
   window's cards gained a small "save to Library" button that files a starter as a new
   scene without loading it.
 
+### 🛡️ Connections that recover, and sessions with a size (roadmap #27 + #25)
+
+- ⏱️ **A connection request now ends.** The pill counts down while you wait and the
+  host's card shows how long someone has been waiting. After 90 seconds the request
+  cancels itself and offers **Try again**, instead of sitting on *Requesting* for
+  ever. Dialling someone who is not online ends the request too, rather than leaving
+  it up beside a toast saying they are unreachable.
+- 👥 **A session has a size.** Settings ▸ Connection ▸ **Session size** says how many
+  people you expect. Past it an approval still works but warns you, and at 16 the
+  approve buttons say the session is full — everyone connects to everyone, so one
+  more person costs every other person bandwidth. Waiting requests are capped, and
+  expired cards are dropped before live ones.
+- 🔌 **The signaling link stops giving up.** Reconnection retries with a jittered
+  backoff and no attempt limit, a closed peer is rebuilt rather than abandoned, and
+  coming back online or returning to the tab retries immediately. The Connect pill
+  shows a chip while it is retrying, so a dead link no longer looks like a dead app.
+- 🧱 **One bad message can no longer kill a connection.** Everything arriving from a
+  peer is shape-checked before it reaches the code that applies it, and anything
+  malformed is counted and dropped instead of throwing. A peer sending repeated
+  rubbish is reported once, not once per message.
+- 🔁 **The editor survives a bad frame.** A throw inside the flow runtime or the
+  physics step no longer ends the session: the frame is skipped, the failure is rate
+  limited so one broken node cannot flood you, and the runtime can be resumed.
+- 🩺 **Diagnostics you can copy.** Settings ▸ About ▸ **Copy diagnostics** puts a
+  bundle on the clipboard — recent log entries, the last uncaught error and session
+  details — so a problem can be reported with something in it.
+- 🔁 **A runaway script no longer takes the room with it.** Script nodes run on every
+  peer, every frame, so a `while (true)` in one node used to freeze everybody's tab,
+  not just its author's. Every loop a script contains is now counted, and one that
+  runs away stops with a *Script loop limit* badge on the node while the scene keeps
+  running. A node that is merely slow — rather than infinite — is paused after it has
+  spent too long in too many frames in a row, and editing its code starts it again.
+- 🧯 **Safe mode.** Adding `#safe` to the app's address opens a scene with the flow
+  runtime paused, so a scene whose scripts misbehave on load can still be opened,
+  repaired and resumed. A restore that never completed a frame is also remembered: the
+  next start offers the prompt with a warning instead of silently loading it again.
+- 🧹 **Deleting gives the memory back.** Removing an object used to drop it from the
+  scene and leave its geometry, materials and textures sitting on the graphics card
+  until the page was closed, so a session that imported and deleted the same model ten
+  times paid for ten copies. Deleting, clearing a scene and replacing an object now free
+  what only that object was using — and never what something else still draws with,
+  which matters because duplicates, clones and a material shared across a selection all
+  point at the same resources.
+- 🖥️ **A lost graphics context now says so.** When the browser takes the 3D context
+  away — a driver update, a graphics reset, a phone under memory pressure — the viewport
+  used to freeze silently while the rest of the app carried on answering, which reads as
+  the whole thing having crashed. You get a panel explaining what happened, a button to
+  save the scene (which is still intact, because it lives in the page rather than on the
+  graphics card), and the view restores itself when the browser hands the context back.
+
 ## 1.10.0 — Publish, play, remix ☁️
 
 The engine learned the moves a community needs — publish the open scene, open a

@@ -25,8 +25,12 @@ import { gameState, gameStateSnapshot, gameStateRestore } from './gameState';
 import { peers, showToast, showInfoToast } from '../stores/appStore';
 import { isMultiMaterial, serializeMeshWithGroups } from './materialsHandler';
 import { idbGet, idbPut, idbDelete } from './idb';
+// 27-B: recovery paths report through the diagnostics ring instead of console.log,
+// so a user can hand over what happened (hardening audit H4). A zero-import leaf.
+import { log } from './diagnostics';
 // #20 P5: selection + edit session + panel layout, restored only on an EXPLICIT restore
 import { captureEditResume, applyEditResume } from './editResume';
+import { disposeTree, keepSet } from './disposeTree';
 
 // Crash safety: snapshots of the scene (GLTF json), the node graph and the
 // camera go to IndexedDB — debounced 30s after any change plus a 3-minute
@@ -124,7 +128,7 @@ function exportScene() {
 				unpark();
 				unstamp();
 				restore();
-				console.log('autosave export failed', error);
+				log('warn', 'autosave', 'export failed', String(error));
 				resolve(null);
 			}
 		);
@@ -216,7 +220,7 @@ async function saveSnapshot() {
 		await idbPut('latest', snapshot);
 		dirty = false;
 	} catch (error) {
-		console.log('autosave failed', error);
+		log('warn', 'autosave', 'snapshot save failed', String(error));
 	}
 }
 
@@ -275,16 +279,25 @@ async function checkRestore() {
 			if (!group) return;
 			setTimeout(() => unsubscribe(), 0);
 			if (group.children.length !== 0) return;
-			const offer = { ts: snapshot.ts, objects: snapshot.objects ?? 0, snapshot };
+			let armed = false;
+			try {
+				armed = typeof localStorage !== 'undefined' && !!localStorage.getItem('restoreArmed');
+			} catch {
+				/* unreadable storage reads as "not armed" — the old behaviour */
+			}
+			const offer = { ts: snapshot.ts, objects: snapshot.objects ?? 0, snapshot, risky: armed };
 			// 18-A: with auto-restore on, restore straight away and REPORT it. The
 			// offer deliberately never reaches `restoreAvailable` — the Toasts mirror
 			// would flash the "Restore previous session?" prompt for a frame before
 			// the restore nulled the store again.
-			if (get(autoRestoreEnabled)) autoRestore(offer);
+			// 27-D: `risky` means the previous restore of this snapshot never reached a clean
+			// flow tick. Auto-restoring it again is how one bad scene becomes a boot loop the
+			// user cannot escape, so it always goes to the PROMPT, which says why.
+			if (get(autoRestoreEnabled) && !armed) autoRestore(offer);
 			else restoreAvailable.set(offer);
 		});
 	} catch (error) {
-		console.log('autosave restore check failed', error);
+		log('warn', 'autosave', 'restore check failed', String(error));
 	}
 }
 
@@ -325,7 +338,7 @@ function restoreMultiMaterial(entries) {
 		try {
 			mesh = loader.parse(entry.element);
 		} catch (error) {
-			console.log('multi-material restore failed', error);
+			log('warn', 'autosave', 'multi-material restore failed', String(error));
 			continue;
 		}
 		stripEditOverlays(mesh);
@@ -336,6 +349,17 @@ function restoreMultiMaterial(entries) {
 		const parent = twin.parent ?? group;
 		parent.remove(twin);
 		parent.add(mesh);
+		// 27-G: the twin was parsed from the GLTF snapshot moments ago and is now replaced,
+		// so nothing else refers to its buffers — but compute a keep set anyway, and AFTER
+		// the add, so a resource the two happen to share is protected.
+		//
+		// The root here is the GROUP, where every other disposal site in this batch uses
+		// the whole SCENE. That is deliberate, not an oversight: the scene root matters
+		// when a helper shares a real mesh's resources (an onion-skin ghost shares its
+		// source geometry), and a twin parsed seconds ago inside this function cannot be
+		// the source of one. autosave does not import globalScene, and adding an import
+		// for symmetry alone would be a worse trade than saying so here.
+		disposeTree(twin, { keep: keepSet(get(objectsGroup), twin) });
 	}
 	objectsGroup.update((value) => value);
 }
@@ -347,6 +371,15 @@ function restoreMultiMaterial(entries) {
  * @returns {Promise<boolean>} did it land?
  */
 async function applyRestore(snapshot) {
+	// 27-D: arm BEFORE the restore, clear on the first clean flow tick (flowRuntime).
+	// A flag still set at the next boot means this snapshot never reached a working
+	// frame — so the next boot must not silently restore it again. Placed here rather
+	// than at each call site so the explicit Restore button is covered too.
+	try {
+		if (typeof localStorage !== 'undefined') localStorage.setItem('restoreArmed', '1');
+	} catch {
+		/* private mode or a full quota: the guard degrades to the old behaviour */
+	}
 	const group = get(objectsGroup);
 	try {
 		if (snapshot.scene && group) {
@@ -426,7 +459,7 @@ async function applyRestore(snapshot) {
 		}
 		return true;
 	} catch (error) {
-		console.log('restore failed', error);
+		log('warn', 'autosave', 'restore failed', String(error));
 		return false;
 	}
 }

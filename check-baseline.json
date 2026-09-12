@@ -1,0 +1,6 @@
+{
+	"comment": "27-I: the svelte-check floor, read ONLY by scripts/check-ratchet.cjs. It used to be hardcoded in release.yml's shell block, where it went stale (362 while the tree measured 359). Ratchet it DOWN whenever a change legitimately removes errors - that is the project convention, and --update does it in one command.",
+	"errors": 358,
+	"warnings": 47,
+	"measured": "2026-09-12"
+}

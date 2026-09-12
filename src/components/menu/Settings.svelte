@@ -12,6 +12,8 @@
 	import { gamepadPrefs, setGamepadPrefs, DEADZONE_RANGE, SENSITIVITY_RANGE } from '$lib/gamepadPrefs';
 	import { drawerSlot, cloudPluginInfo } from '$lib/cloudHooks';
 	import { versionString } from '$lib/version.js';
+	// 27-B: the diagnostics bundle — clipboard only, nothing leaves the browser
+	import { copyDiagnostics } from '$lib/diagnostics';
 	const appVersionString = versionString();
 	import { vrFaceCap, VR_FACE_CAP } from '$lib/faceEdit';
 	import { doubleClickAction, DOUBLE_CLICK_ACTIONS } from '$lib/selectionPrefs';
@@ -2188,6 +2190,21 @@
 				<AccordionItem bind:open={aboutExpanded}>
 					{#snippet header()}About{/snippet}
 					<SettingRow name="Version" noControl>{appVersionString}</SettingRow>
+					<SettingRow name="Diagnostics">
+						<svelte:fragment slot="control">
+							<Button
+								id="about-copy-diagnostics"
+								size="xs"
+								color="alternative"
+								onclick={async () => {
+									const ok = await copyDiagnostics();
+									showToast(ok ? 'Diagnostics copied to the clipboard' : 'Could not copy the diagnostics');
+								}}>Copy diagnostics</Button
+							>
+						</svelte:fragment>
+						What the app has been doing: version, this session's peer and scene counts, and the last
+						300 log lines. It goes to your clipboard and nowhere else — paste it into a bug report.
+					</SettingRow>
 					{#if $cloudPluginInfo}
 						<SettingRow name="Cloud plugin" noControl>{$cloudPluginInfo.name} {$cloudPluginInfo.version}</SettingRow>
 					{/if}

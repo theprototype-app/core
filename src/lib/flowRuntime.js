@@ -63,6 +63,9 @@ import {
 	setPlayMoveSpeed,
 	DEFAULT_FLY_SPEED
 } from './charController';
+// 27-B: recovery paths report through the diagnostics ring instead of console.log,
+// so a user can hand over what happened (hardening audit H4). A zero-import leaf.
+import { log } from './diagnostics';
 
 // H3: inputRuntime is reached via a PRIMED dynamic import (the moduleSDK
 // pattern) — a static edge would close the TDZ cycle history -> flowRuntime ->
@@ -2767,7 +2770,7 @@ function applyAnimation(object, base, anim, time, ctx) {
 				trigger: moduleTriggerInfo(anim, ctx)
 			});
 		} catch (error) {
-			console.log('module effect ' + anim.type + ' failed', error);
+			log('warn', 'flow', 'module effect ' + anim.type + ' failed', String(error));
 		}
 		return;
 	}
@@ -3235,7 +3238,7 @@ function runTick(now) {
 		try {
 			task(time);
 		} catch (error) {
-			console.log('module frame task failed', error);
+			log('warn', 'flow', 'module frame task failed', String(error));
 		}
 	});
 
@@ -3248,7 +3251,7 @@ function runTick(now) {
 		try {
 			postTick(now);
 		} catch (error) {
-			console.log('post-tick hook failed', error);
+			log('warn', 'flow', 'post-tick hook failed', String(error));
 		}
 	}
 }

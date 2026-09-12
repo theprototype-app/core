@@ -20,6 +20,10 @@
     import { peers, loading, loadingcount, pendingApprovals, waitingForApproval, userdata, toastStore, fixLight, showSidebar, specatorMode, restorePanels, appNotice, connectDrawerOpen, connectDrawerTab, toastsInDrawerOnly, showInfoToast, dismissToastById } from '../../stores/appStore'
     import { restoreAvailable, restoreSnapshot, dismissRestore } from '$lib/autosave'
     import { cancelOutboundRequest } from '$lib/peerApproval'
+    // 27-B: the ONE sticky card for an uncaught error. This file already mirrors
+    // state stores into sticky toasts (restoreAvailable below); diagnostics.js stays a
+    // leaf by publishing a store instead of importing the toast pipeline itself.
+    import { lastUncaught, copyDiagnostics } from '$lib/diagnostics'
     import { rolesInfo } from '$lib/cloudHooks'
     import { sceneCommand } from '$lib/commandsHandler.svelte';
 	import { objectsGroup, camSave, globalCamera, globalScene } from '../../stores/sceneStore.js';
@@ -197,6 +201,27 @@ let libraryPromptDone = false;
  * Explorer cannot say: the scene on screen is unsaved, and files nobody is fetching. */
 /** the ask announced by `explorer-share-ask`, so one batch cannot toast twice */
 let announcedAsk = '';
+
+$effect(() => {
+    const err = $lastUncaught;
+    if (err)
+        showInfoToast(
+            'diagnostics-error',
+            `Something went wrong: ${err.message}`,
+            [
+                {
+                    label: 'Copy diagnostics',
+                    keepOpen: true,
+                    action: async () => {
+                        const ok = await copyDiagnostics();
+                        showToast(ok ? 'Diagnostics copied to the clipboard' : 'Could not copy the diagnostics');
+                    }
+                }
+            ],
+            () => lastUncaught.set(null)
+        );
+    else dismissToastById('diagnostics-error');
+});
 
 $effect(() => {
     const snap = $restoreAvailable;

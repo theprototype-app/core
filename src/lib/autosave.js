@@ -25,6 +25,9 @@ import { gameState, gameStateSnapshot, gameStateRestore } from './gameState';
 import { peers, showToast, showInfoToast } from '../stores/appStore';
 import { isMultiMaterial, serializeMeshWithGroups } from './materialsHandler';
 import { idbGet, idbPut, idbDelete } from './idb';
+// 27-B: recovery paths report through the diagnostics ring instead of console.log,
+// so a user can hand over what happened (hardening audit H4). A zero-import leaf.
+import { log } from './diagnostics';
 // #20 P5: selection + edit session + panel layout, restored only on an EXPLICIT restore
 import { captureEditResume, applyEditResume } from './editResume';
 
@@ -124,7 +127,7 @@ function exportScene() {
 				unpark();
 				unstamp();
 				restore();
-				console.log('autosave export failed', error);
+				log('warn', 'autosave', 'export failed', String(error));
 				resolve(null);
 			}
 		);
@@ -216,7 +219,7 @@ async function saveSnapshot() {
 		await idbPut('latest', snapshot);
 		dirty = false;
 	} catch (error) {
-		console.log('autosave failed', error);
+		log('warn', 'autosave', 'snapshot save failed', String(error));
 	}
 }
 
@@ -284,7 +287,7 @@ async function checkRestore() {
 			else restoreAvailable.set(offer);
 		});
 	} catch (error) {
-		console.log('autosave restore check failed', error);
+		log('warn', 'autosave', 'restore check failed', String(error));
 	}
 }
 
@@ -325,7 +328,7 @@ function restoreMultiMaterial(entries) {
 		try {
 			mesh = loader.parse(entry.element);
 		} catch (error) {
-			console.log('multi-material restore failed', error);
+			log('warn', 'autosave', 'multi-material restore failed', String(error));
 			continue;
 		}
 		stripEditOverlays(mesh);
@@ -426,7 +429,7 @@ async function applyRestore(snapshot) {
 		}
 		return true;
 	} catch (error) {
-		console.log('restore failed', error);
+		log('warn', 'autosave', 'restore failed', String(error));
 		return false;
 	}
 }

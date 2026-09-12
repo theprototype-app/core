@@ -261,7 +261,13 @@ $effect(() => {
     if (snap)
         showInfoToast(
             'restore-session',
-            `Restore previous session? ${snap.objects} objects, saved ${new Date(snap.ts).toLocaleTimeString()}`,
+            `Restore previous session? ${snap.objects} objects, saved ${new Date(snap.ts).toLocaleTimeString()}` +
+                // 27-D: `risky` means the last attempt to restore THIS snapshot never
+                // reached a clean flow tick. Auto-restore is already skipped for it; say
+                // why, so pressing Restore again is a choice rather than a surprise.
+                (snap.risky
+                    ? ' Warning: the last attempt to restore this scene never finished a frame, so it may be what stopped the app.'
+                    : ''),
             [
                 { label: 'Restore', action: () => restoreSnapshot() },
                 { label: 'Dismiss', action: () => dismissRestore() }

@@ -119,7 +119,11 @@ async function setupPage(browser, name, options = {}) {
 		page.__errors.push(err.message ?? String(err));
 		console.log(`[${name} pageerror] ` + err.stack);
 	});
-	await page.goto(URL, { waitUntil: 'domcontentloaded', timeout: 60000 });
+	// 27-D: `options.hash` loads the app WITH a hash (`{ hash: '#safe' }`). It has to be
+	// on the initial navigation, not set afterwards: safe mode is read once during
+	// onMount, so a hash assigned to a live page arrives long after the decision.
+	// Absent means an unchanged URL, so every existing caller is untouched.
+	await page.goto(URL + (options.hash ?? ''), { waitUntil: 'domcontentloaded', timeout: 60000 });
 	await page.waitForTimeout(4000);
 	await page.waitForFunction(() => window.__stores && !!window.__stores.moduleSDK, { timeout: 30000 });
 	const id = await page.evaluate(

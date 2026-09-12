@@ -3287,12 +3287,34 @@ let tickFails = 0;
  * which IS this phase — so the threshold and the re-arm would otherwise be unprovable. */
 let failTicksRemaining = 0;
 
+/**
+ * 27-D: a completed tick is what makes a restored snapshot TRUSTWORTHY. `autosave` arms
+ * `restoreArmed` before it applies one; if that flag is still set at the next boot, the
+ * restore never reached a clean frame, so the next boot offers the prompt with a warning
+ * instead of auto-restoring the same scene into the same crash.
+ *
+ * Written straight to localStorage rather than through `autosave`: the import edge runs
+ * autosave -> flowRuntime, and reversing it would close a cycle into the history family.
+ * The `armed` latch keeps this to ONE write, not one per frame.
+ */
+let armedCleared = false;
+function clearRestoreArmed() {
+	if (armedCleared || typeof localStorage === 'undefined') return;
+	armedCleared = true;
+	try {
+		localStorage.removeItem('restoreArmed');
+	} catch {
+		/* private mode, quota, a browser refusing site data — nothing to do */
+	}
+}
+
 /** Shared by the desktop scheduler and the XR pump — both must survive a throw.
  * @param {number} now */
 function safeRunTick(now) {
 	try {
 		runTick(now);
 		tickFails = 0;
+		clearRestoreArmed();
 		return true;
 	} catch (error) {
 		tickFails++;

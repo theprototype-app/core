@@ -115,6 +115,16 @@
 - 🩺 **Diagnostics you can copy.** Settings ▸ About ▸ **Copy diagnostics** puts a
   bundle on the clipboard — recent log entries, the last uncaught error and session
   details — so a problem can be reported with something in it.
+- 🔁 **A runaway script no longer takes the room with it.** Script nodes run on every
+  peer, every frame, so a `while (true)` in one node used to freeze everybody's tab,
+  not just its author's. Every loop a script contains is now counted, and one that
+  runs away stops with a *Script loop limit* badge on the node while the scene keeps
+  running. A node that is merely slow — rather than infinite — is paused after it has
+  spent too long in too many frames in a row, and editing its code starts it again.
+- 🧯 **Safe mode.** Adding `#safe` to the app's address opens a scene with the flow
+  runtime paused, so a scene whose scripts misbehave on load can still be opened,
+  repaired and resumed. A restore that never completed a frame is also remembered: the
+  next start offers the prompt with a warning instead of silently loading it again.
 
 ## 1.10.0 — Publish, play, remix ☁️
 

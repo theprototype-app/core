@@ -278,12 +278,21 @@ async function checkRestore() {
 			if (!group) return;
 			setTimeout(() => unsubscribe(), 0);
 			if (group.children.length !== 0) return;
-			const offer = { ts: snapshot.ts, objects: snapshot.objects ?? 0, snapshot };
+			let armed = false;
+			try {
+				armed = typeof localStorage !== 'undefined' && !!localStorage.getItem('restoreArmed');
+			} catch {
+				/* unreadable storage reads as "not armed" — the old behaviour */
+			}
+			const offer = { ts: snapshot.ts, objects: snapshot.objects ?? 0, snapshot, risky: armed };
 			// 18-A: with auto-restore on, restore straight away and REPORT it. The
 			// offer deliberately never reaches `restoreAvailable` — the Toasts mirror
 			// would flash the "Restore previous session?" prompt for a frame before
 			// the restore nulled the store again.
-			if (get(autoRestoreEnabled)) autoRestore(offer);
+			// 27-D: `risky` means the previous restore of this snapshot never reached a clean
+			// flow tick. Auto-restoring it again is how one bad scene becomes a boot loop the
+			// user cannot escape, so it always goes to the PROMPT, which says why.
+			if (get(autoRestoreEnabled) && !armed) autoRestore(offer);
 			else restoreAvailable.set(offer);
 		});
 	} catch (error) {
@@ -350,6 +359,15 @@ function restoreMultiMaterial(entries) {
  * @returns {Promise<boolean>} did it land?
  */
 async function applyRestore(snapshot) {
+	// 27-D: arm BEFORE the restore, clear on the first clean flow tick (flowRuntime).
+	// A flag still set at the next boot means this snapshot never reached a working
+	// frame — so the next boot must not silently restore it again. Placed here rather
+	// than at each call site so the explicit Restore button is covered too.
+	try {
+		if (typeof localStorage !== 'undefined') localStorage.setItem('restoreArmed', '1');
+	} catch {
+		/* private mode or a full quota: the guard degrades to the old behaviour */
+	}
 	const group = get(objectsGroup);
 	try {
 		if (snapshot.scene && group) {

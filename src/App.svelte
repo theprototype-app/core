@@ -32,7 +32,10 @@
   import ModuleToolboxLayer from './components/ui/ModuleToolboxLayer.svelte'
   import { isLocked } from './stores/sceneStore'
   import { objectsGroup, globalRenderer } from './stores/sceneStore'
-  import { startFlowRuntime } from '$lib/flowRuntime'
+  import { startFlowRuntime, resumeFlowRuntime } from '$lib/flowRuntime'
+  // 27-D: safe mode pauses the runtime BEFORE it is started, so a scene whose scripts
+  // hang on load can still be opened and edited.
+  import { flowPaused } from './stores/flowStore'
   import { startNodeSync } from '$lib/nodesHandler'
   import { startLockSweep } from '$lib/lockControl'
   import { loadUserModules } from '$lib/userModules'
@@ -85,7 +88,7 @@ import { startMusicToolbox } from './lib/musicToolbox'
   import HudLayer from './components/hud/HudLayer.svelte'
   import HudEditor from './components/editors/HudEditor.svelte'
   import { importFile, load } from '$lib/fileHandler.svelte'
-  import { showToast } from './stores/appStore'
+  import { showToast, showInfoToast } from './stores/appStore'
   import { peers, userdata } from './stores/appStore'
   import { get } from 'svelte/store'
   import { initModules, disabledModules } from '$lib/moduleSDK'
@@ -138,6 +141,22 @@ import { startMusicToolbox } from './lib/musicToolbox'
     // SW in front of vite's HMR only causes confusion.
     if ('serviceWorker' in navigator && import.meta.env.PROD)
       navigator.serviceWorker.register('/sw.js').catch(() => {})
+    // 27-D (audit C1): SAFE MODE. A scene whose scripts hang on load cannot be repaired,
+    // because the editor never gets a frame to repair it in. Opening the same URL with
+    // `#safe` starts with the flow runtime PAUSED: the graph loads, the node can be
+    // edited or deleted, and Resume (or a reload without the hash) starts it again.
+    //
+    // The hash is the whole mechanism, deliberately. A HELD key cannot be read at boot —
+    // there is no synchronous API for modifier state, only events — so a Shift check here
+    // would look like a second way in while being one the first frame could never honour.
+    if (typeof location !== 'undefined' && /(^|[#&])safe\b/i.test(location.hash)) {
+      flowPaused.set({ paused: true, reason: 'safe mode' })
+      showInfoToast(
+        'safe-mode',
+        'Safe mode: the flow runtime is paused, so scripts are not running. Fix the node, then press Resume.',
+        [{ label: 'Resume', action: () => resumeFlowRuntime() }]
+      )
+    }
     startFlowRuntime()
     startNodeSync()
     startLockSweep()

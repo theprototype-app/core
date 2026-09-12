@@ -5,7 +5,7 @@
      per release, newest first. HTML comments like this one are stripped before
      rendering, so maintainer notes stay out of the user-facing window. -->
 
-## Unreleased
+## 1.11.0 — Muscle memory ⌨️
 
 ### ⌨️ Input parity (roadmap #24, batch A)
 

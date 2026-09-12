@@ -18,6 +18,9 @@ import { applyUvPaint, applyUvPaintEnd } from '$lib/uvEditor';
 import { applySplineEdit } from '$lib/splineTool';
 import { initVoiceChat, attachVoiceToPeer, voicePeerConnected } from '$lib/voiceChat';
 import { resolvePeerOptions, describePeerServer, peerServerStatus, parseInviteHash, decodeInviteServer, applyInviteServerOverride, inviteServerOverride } from '$lib/peerServer';
+// 27-B/27-G integration: the RECOVERY story belongs in the copyable bundle, not in a
+// console nobody reads. diagnostics.js is a zero-dependency leaf, so this closes no cycle.
+import { log } from '$lib/diagnostics';
 import { sessionHost, markPeerJoined, resetSession, signalingRetry, noteSignalingRetry, clearSignalingRetry, noteApprovalStarted, clearApprovalStarted, approvalStartedAt, APPROVAL_WINDOW_MS, MAX_PENDING_APPROVALS, HARD_PEER_CAP, roomIsFull } from '$lib/connectionState';
 import { canApply, getAuthProvider, dispatchCloudMessage, rolesInfo } from '$lib/cloudHooks';
 // 27-A (audit H1): shape validation + per-peer failure counters. Both are LEAVES, so the
@@ -318,7 +321,7 @@ export class PeerConnection {
 		// SAME id (an id is a per-server registration, so the invite link a user copied
 		// a minute ago still works when the link comes back).
 		this.peer.on('close', () => {
-			console.log('server closed');
+			log('error', 'net', 'signaling server closed');
 			this.reconnectAttempts++;
 			const delay = backoffDelay(this.reconnectAttempts, RETRY_BACKOFF) ?? 8000;
 			if (this.reconnectAttempts === 1) showToast('The peer server closed the link - reconnecting...');
@@ -335,7 +338,7 @@ export class PeerConnection {
 		// live state — an unbounded retry that toasts per attempt is spam.
 		this.reconnectAttempts = 0;
 		this.peer.on('disconnected', () => {
-			console.log('server disconnected');
+			log('warn', 'net', 'signaling server disconnected');
 			if (this.peer.destroyed) return;
 			this.reconnectAttempts++;
 			const delay = backoffDelay(this.reconnectAttempts, RETRY_BACKOFF) ?? 8000;
@@ -346,7 +349,7 @@ export class PeerConnection {
 			}, delay);
 		});
 		this.peer.on('error', (err) => {
-			console.log('peer error: ' + err.type, err);
+			log('error', 'net', 'peer error', { type: err?.type, error: String(err) });
 			// Pinned self-hosted server never opened -> retry on the public cloud
 			// (default mode only; custom/public keep canFallback false).
 			if (!this.hasOpened && this.canFallback && !this.didFallback &&
@@ -369,7 +372,7 @@ export class PeerConnection {
 			if (err.type === 'unavailable-id' && this.hasOpened && this.idRetries < 3) {
 				this.idRetries++;
 				const wait = backoffDelay(this.idRetries, RETRY_BACKOFF) ?? 8000;
-				console.log('id still held by the old registration — rebuilding in ' + wait + 'ms');
+				log('warn', 'net', 'id still held by the old registration — rebuilding', { wait });
 				noteSignalingRetry(this.idRetries);
 				setTimeout(() => { if (!this.peer?.open) recreatePeer(this.didFallback); }, wait);
 				return;
@@ -377,7 +380,7 @@ export class PeerConnection {
 			if (err.type === 'unavailable-id' && !this.hasOpened && this.idRetries < 3) {
 				this.idRetries++;
 				this.myId = createPeer();
-				console.log('session id collided — retrying as ' + this.myId);
+				log('warn', 'net', 'session id collided — retrying', { id: this.myId });
 				recreatePeer(this.didFallback);
 				return;
 			}
@@ -514,7 +517,7 @@ export class PeerConnection {
 			conn.on('open', () => {
 				const existing = this.connections[conn.peer];
 				if (existing?.open) return; // stable outgoing conn stays preferred
-				console.log('adopting inbound connection from ' + conn.peer + ' as the send channel');
+				log('warn', 'net', 'adopting inbound connection as the send channel', { peer: conn.peer });
 				if (existing) { try { existing.close(); } catch {} }
 				this.connections[conn.peer] = conn;
 				conn.on('close', () => this.onConnClose(conn.peer, conn));
@@ -1246,7 +1249,7 @@ export class PeerConnection {
             // peer.connect returns undefined when the signaling link is down
             // (disconnected peer) — bail instead of throwing on conn.on below (CN)
             if (!conn) {
-                console.log('connect to ' + peerId + ' failed: signaling link is down');
+                log('error', 'net', 'connect failed: signaling link is down', { peer: peerId });
                 showToast('Cannot reach the signaling server - the connection request was not sent.');
                 return;
             }
@@ -1317,7 +1320,7 @@ export class PeerConnection {
 		// finish its own 4s cycle instead of resetting the negotiation (B5)
 		const inFlight = this.connections[peerId];
 		if (inFlight && Date.now() - (inFlight.__dialedAt ?? 0) < RESTORE_RETRY_MS && attempt === 0) return;
-		console.log('Restoring connection: ' + peerId + (attempt ? ' (attempt ' + (attempt + 1) + ')' : ''));
+		log('warn', 'net', 'restoring connection', { peer: peerId, attempt: (attempt || 0) + 1 });
 		// drop the stale never-opened conn FIRST — left in peerjs's per-peer
 		// bookkeeping it can wedge the fresh negotiation (offer never starts)
 		const stale = this.connections[peerId];
@@ -1327,14 +1330,14 @@ export class PeerConnection {
 		}
 		const conn = this.peer.connect(peerId);
 		if (!conn) {
-			console.log('restore to ' + peerId + ' failed: signaling link is down');
+			log('error', 'net', 'restore failed: signaling link is down', { peer: peerId });
 			return;
 		}
 		/** @type {any} */ (conn).__dialedAt = Date.now();
 		this.connections[peerId] = conn;
 		conn.on('close', () => this.onConnClose(peerId, conn));
 		conn.on('open', () => {
-			console.log('Connection to ' + peerId + ' restored');
+			log('info', 'net', 'connection restored', { peer: peerId });
 			this.openedPeers.add(peerId);
 			markPeerJoined(peerId);
 			peers.update((value) => value);
@@ -1345,7 +1348,7 @@ export class PeerConnection {
 			// still ours, still never opened -> replace the stale conn and retry
 			if (this.connections[peerId] !== conn || conn.open) return;
 			if (attempt >= 4) {
-				console.log('restore to ' + peerId + ' gave up after ' + (attempt + 1) + ' attempts');
+				log('error', 'net', 'restore gave up', { peer: peerId, attempts: attempt + 1 });
 				return;
 			}
 			try { conn.close(); } catch {}
@@ -1377,7 +1380,7 @@ export class PeerConnection {
 			this.finalizeDisconnect(peerId, false);
 			return;
 		}
-		console.log('connection to ' + peerId + ' dropped without a goodbye - trying to get them back');
+		log('warn', 'net', 'connection dropped without a goodbye — trying to get them back', { peer: peerId });
 		this.scheduleReconnect(peerId, 1);
 	}
 
@@ -1423,7 +1426,7 @@ export class PeerConnection {
 					this.connections[peerId] = conn;
 					conn.on('close', () => this.onConnClose(peerId, conn));
 					conn.on('open', () => {
-						console.log('reconnected to ' + peerId);
+						log('info', 'net', 'reconnected', { peer: peerId });
 						this.reconnecting.delete(peerId);
 						peers.update((value) => value);
 						this.sendHandshake(conn, peerId, true, this.peer.id);
@@ -1562,7 +1565,7 @@ export class PeerConnection {
 			try {
 				conn.send(payload);
 			} catch (err) {
-				console.log('send to ' + peerId + ' failed', err);
+				log('error', 'net', 'send failed', { peer: peerId, error: String(err) });
 			}
 		});
 	}

@@ -85,7 +85,11 @@ jobs:
         env:
           APP_URL: https://localhost:5173/
         run: |
-          for s in net-backoff net-mesh wire-hardening runtime-resilience diagnostics mesh-budget; do
+          # 27-D/27-E/27-G added three more SINGLE-PEER suites, so they belong here.
+          # Deliberately NOT added: net-stress and signaling-reconnect are multi-peer and
+          # meet on the self-hosted signaling box, which a public runner cannot reach and
+          # should not be pointed at (see the header) — they stay a manual gate.
+          for s in net-backoff net-mesh wire-hardening runtime-resilience diagnostics mesh-budget script-guard dispose approval-timeout; do
             echo "::group::$s"
             npm run e2e -- "$s" || echo "SUITE FAILED: $s"
             echo "::endgroup::"

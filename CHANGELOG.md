@@ -125,6 +125,19 @@
   runtime paused, so a scene whose scripts misbehave on load can still be opened,
   repaired and resumed. A restore that never completed a frame is also remembered: the
   next start offers the prompt with a warning instead of silently loading it again.
+- 🧹 **Deleting gives the memory back.** Removing an object used to drop it from the
+  scene and leave its geometry, materials and textures sitting on the graphics card
+  until the page was closed, so a session that imported and deleted the same model ten
+  times paid for ten copies. Deleting, clearing a scene and replacing an object now free
+  what only that object was using — and never what something else still draws with,
+  which matters because duplicates, clones and a material shared across a selection all
+  point at the same resources.
+- 🖥️ **A lost graphics context now says so.** When the browser takes the 3D context
+  away — a driver update, a graphics reset, a phone under memory pressure — the viewport
+  used to freeze silently while the rest of the app carried on answering, which reads as
+  the whole thing having crashed. You get a panel explaining what happened, a button to
+  save the scene (which is still intact, because it lives in the page rather than on the
+  graphics card), and the view restores itself when the browser hands the context back.
 
 ## 1.10.0 — Publish, play, remix ☁️
 

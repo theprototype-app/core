@@ -30,6 +30,7 @@ import { idbGet, idbPut, idbDelete } from './idb';
 import { log } from './diagnostics';
 // #20 P5: selection + edit session + panel layout, restored only on an EXPLICIT restore
 import { captureEditResume, applyEditResume } from './editResume';
+import { disposeTree, keepSet } from './disposeTree';
 
 // Crash safety: snapshots of the scene (GLTF json), the node graph and the
 // camera go to IndexedDB — debounced 30s after any change plus a 3-minute
@@ -348,6 +349,17 @@ function restoreMultiMaterial(entries) {
 		const parent = twin.parent ?? group;
 		parent.remove(twin);
 		parent.add(mesh);
+		// 27-G: the twin was parsed from the GLTF snapshot moments ago and is now replaced,
+		// so nothing else refers to its buffers — but compute a keep set anyway, and AFTER
+		// the add, so a resource the two happen to share is protected.
+		//
+		// The root here is the GROUP, where every other disposal site in this batch uses
+		// the whole SCENE. That is deliberate, not an oversight: the scene root matters
+		// when a helper shares a real mesh's resources (an onion-skin ghost shares its
+		// source geometry), and a twin parsed seconds ago inside this function cannot be
+		// the source of one. autosave does not import globalScene, and adding an import
+		// for symmetry alone would be a worse trade than saying so here.
+		disposeTree(twin, { keep: keepSet(get(objectsGroup), twin) });
 	}
 	objectsGroup.update((value) => value);
 }

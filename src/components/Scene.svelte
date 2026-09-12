@@ -8,7 +8,7 @@
 	import { peers, username, userdata, specatorMode, avatarConfig, viewportMenu, objectContextMenu, viewportMenuOpener, addMenu, addMenuOpener, showToast, multiSelectMode } from '../stores/appStore';
 	import { get } from 'svelte/store';
 	import { vrPostEnabled } from '$lib/viewportOverrides';
-	import { isLocked, editorCam, isVRMode, globalScene, objectsGroup, showGrid, TControls, selectedObject, selectedObjects, lockedObjects, marqueeRect, worldRig, vrOverride, specators, globalCamera, globalRenderer, orbitControls, passthroughActive, sessionCompositesOverRoom, vrObjectsPanelOpen, vrPaletteOpen, vrPropsPanelOpen, vrPrefabsPanelOpen, vrChatPanelOpen, vrEditMenuOpen, vrSnapMenuOpen, vrSettingsPanelOpen, vrApprovePanelOpen, vrToolMode, viewMode } from '../stores/sceneStore';
+	import { isLocked, editorCam, isVRMode, globalScene, objectsGroup, showGrid, TControls, selectedObject, selectedObjects, lockedObjects, marqueeRect, worldRig, vrOverride, specators, globalCamera, globalRenderer, orbitControls, passthroughActive, sessionCompositesOverRoom, vrObjectsPanelOpen, vrPaletteOpen, vrPropsPanelOpen, vrPrefabsPanelOpen, vrChatPanelOpen, vrEditMenuOpen, vrSnapMenuOpen, vrSettingsPanelOpen, vrApprovePanelOpen, vrToolMode, viewMode, contextLost } from '../stores/sceneStore';
 	import {
 		selectObject,
 		deselectObject,
@@ -567,6 +567,27 @@
 		renderer.xr.addEventListener('sessionstart', onSessionStart);
 
 		const element = renderer.domElement;
+
+		// 27-G (audit M13): a lost WebGL context is SILENT. The canvas stops updating while
+		// every other part of the app keeps answering, so it reads to a user as "the whole
+		// thing froze" with nothing to act on. preventDefault() is load-bearing rather than
+		// a formality: without it the browser never fires a restore event AT ALL, so there
+		// is no way back short of a reload.
+		const onContextLost = (event: any) => {
+			event.preventDefault();
+			$contextLost = true;
+		};
+		const onContextRestored = () => {
+			// three rebuilds its own GPU objects lazily, but a material compiled against the
+			// dead context keeps its stale program, so force a recompile across the scene.
+			$globalScene?.traverse((o: any) => {
+				const list = Array.isArray(o.material) ? o.material : o.material ? [o.material] : [];
+				for (const m of list) if (m) m.needsUpdate = true;
+			});
+			$contextLost = false;
+		};
+		element.addEventListener('webglcontextlost', onContextLost);
+		element.addEventListener('webglcontextrestored', onContextRestored);
 		let downPosition = null;
 		let downTime = 0;
 		let strokeActive = false;
@@ -1264,6 +1285,8 @@
 			stopPlayInteract(); // 21-B B3 (releases any carried body with zero velocity)
 			element.removeEventListener('pointerdown', onPointerDown);
 			element.removeEventListener('contextmenu', onContextMenu);
+			element.removeEventListener('webglcontextlost', onContextLost);
+			element.removeEventListener('webglcontextrestored', onContextRestored);
 			window.removeEventListener('pointerup', onPointerUp);
 			xrControllers.forEach((controller) => {
 				controller.removeEventListener('select', onXRSelect);

@@ -51,6 +51,15 @@ export const globalCamera = writable(null);
 export const camSave = writable(null);
 /** @type {import('svelte/store').Writable<any>} */
 export const globalRenderer = writable(null);
+
+/**
+ * 27-G (audit M13): the WebGL context has been lost. A lost context is SILENT — the
+ * canvas simply stops updating while every other part of the app keeps responding, so it
+ * reads to a user as "it froze" with nothing to act on. This drives the overlay that says
+ * what happened and offers a way out.
+ * @type {import('svelte/store').Writable<boolean>}
+ */
+export const contextLost = writable(false);
 /** @type {import('svelte/store').Writable<any>} */
 export const orbitControls = writable(null);
 /**

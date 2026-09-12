@@ -33,6 +33,9 @@
   import { isLocked } from './stores/sceneStore'
   import { objectsGroup, globalRenderer } from './stores/sceneStore'
   import { startFlowRuntime, resumeFlowRuntime } from '$lib/flowRuntime'
+  // 27-G: the one overlay that must sit above everything, because nothing else on
+  // screen is usable while the graphics context is gone.
+  import ContextLostOverlay from './components/ContextLostOverlay.svelte'
   // 27-D: safe mode pauses the runtime BEFORE it is started, so a scene whose scripts
   // hang on load can still be opened and edited.
   import { flowPaused } from './stores/flowStore'
@@ -488,6 +491,7 @@ import { startMusicToolbox } from './lib/musicToolbox'
   <div id="helpers-debug-chip" class="pointer-events-none fixed right-4 top-16 rounded-sm bg-amber-500/90 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-black" style="z-index: var(--z-hud)">DEBUG · helpers</div>
 {/if}
 <ConfirmModal />
+<ContextLostOverlay />
 <ImportDuplicatesModal />
 <StorageModal />
 <DrawToolbar />

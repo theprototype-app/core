@@ -8,6 +8,7 @@ import { createLight } from './geometries.svelte';
 import { cappedShadowSize, shadowQuality } from './lightParams';
 import { wireframeActive } from './viewMode';
 import { idbGet, idbPut, idbDelete, idbKeys } from './idb';
+import { safeStorage } from './safeStorage';
 
 // Environment v2 (phase 70). Everything environmental lives under ONE group at
 // the scene root: `environment-root` — the preset rig (hemi+sun) plus any
@@ -66,7 +67,7 @@ const DEFAULT_STATE = { preset: 'studio', exposure: 1, customPreset: null, light
 
 function persisted() {
 	try {
-		const raw = localStorage.getItem('environment');
+		const raw = safeStorage.getItem('environment');
 		if (raw) return { ...DEFAULT_STATE, ...JSON.parse(raw) };
 	} catch {}
 	return { ...DEFAULT_STATE };
@@ -608,7 +609,7 @@ export function startEnvironment() {
 	loadEnvPresets();
 	environment.subscribe((state) => {
 		try {
-			localStorage.setItem('environment', JSON.stringify(state));
+			safeStorage.setItem('environment', JSON.stringify(state));
 		} catch {}
 	});
 	// scene/renderer arrive async at boot

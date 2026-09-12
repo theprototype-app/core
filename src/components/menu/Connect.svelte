@@ -12,6 +12,7 @@
 	import { connectSlot, drawerSlot } from '$lib/cloudHooks';
 	import CloudSlot from '../CloudSlot.svelte';
 	import ConnectInfoDrawer from './ConnectInfoDrawer.svelte';
+	import { safeStorage } from '$lib/safeStorage';
 
 	let peerIdToConnect = $state('');
 	let displayid = $state('Generating...');
@@ -168,10 +169,10 @@
 		// is fine for a quick try but not recommended for real use. Shown once.
 		try {
 			const isLocalVersion = !/(\.io|\.app)$/i.test(location.hostname);
-			const firstRun = !localStorage.getItem('peerServerConfig');
-			const seen = localStorage.getItem('localPeerNoticeSeen');
+			const firstRun = !safeStorage.getItem('peerServerConfig');
+			const seen = safeStorage.getItem('localPeerNoticeSeen');
 			if (isLocalVersion && firstRun && !seen) {
-				localStorage.setItem('localPeerNoticeSeen', '1');
+				safeStorage.setItem('localPeerNoticeSeen', '1');
 				showToast(
 					'It looks like you are running a local build of theprototype. Configure a peer signaling server in Settings for reliable connections — the public PeerJS cloud is not recommended for real use.',
 					[

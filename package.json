@@ -19,7 +19,8 @@
 		"e2e": "node tests/e2e/run.cjs",
 		"deps:check": "node scripts/deps-check.cjs",
 		"sync-llms": "node scripts/sync-llms.cjs",
-		"test:unit": "vitest run"
+		"test:unit": "vitest run",
+		"check:storage": "node scripts/check-storage.cjs"
 	},
 	"devDependencies": {
 		"@sveltejs/adapter-static": "^3.0.10",

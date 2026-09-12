@@ -37,6 +37,7 @@
 	import { togglePanel } from '$lib/panelToggles';
 	import { requestPlay, willEnterXR, willEnterAR, vrSupported, arSupported, xrSessionFailed } from '$lib/playMode';
 	import { DOCK_VIEWS } from '$lib/dockMenu';
+	import { safeStorage } from '$lib/safeStorage';
 	import { VRButton, XRButton } from '@threlte/xr'
 
 	// A panel is "shown" when it is open AND either the visible dock tab OR floating
@@ -313,7 +314,7 @@
 	let hiddenChips: Set<string> = $state(
 		new Set(
 			typeof localStorage !== 'undefined'
-				? JSON.parse(localStorage.getItem('hiddenListChips') ?? '[]')
+				? JSON.parse(safeStorage.getItem('hiddenListChips') ?? '[]')
 				: []
 		)
 	);
@@ -327,7 +328,7 @@
 			if (viewMode === value) viewMode = '';
 		}
 		hiddenChips = next;
-		localStorage.setItem('hiddenListChips', JSON.stringify([...next]));
+		safeStorage.setItem('hiddenListChips', JSON.stringify([...next]));
 	}
 	function resetAllFilters() {
 		searchTerm = '';
@@ -335,7 +336,7 @@
 		lastTypes = new Set();
 		viewMode = '';
 		hiddenChips = new Set();
-		localStorage.setItem('hiddenListChips', '[]');
+		safeStorage.setItem('hiddenListChips', '[]');
 		chipPopup = false;
 	}
 
@@ -429,7 +430,7 @@
 	// --- advanced mode: System filter shows scene-root module/env objects ---
 	let systemRows = $state([]);
 	let systemNoticeDismissed = $state(
-		typeof localStorage !== 'undefined' && localStorage.getItem('systemNoticeDismissed') === 'true'
+		typeof localStorage !== 'undefined' && safeStorage.getItem('systemNoticeDismissed') === 'true'
 	);
 	let expandedSystem = $state({});
 	function refreshSystemRows() {
@@ -478,7 +479,7 @@
 	// --- environment filter (70.4): read-only rows for environment-root ---
 	let envRows = $state([]);
 	let envNoticeDismissed = $state(
-		typeof localStorage !== 'undefined' && localStorage.getItem('envNoticeDismissed') === 'true'
+		typeof localStorage !== 'undefined' && safeStorage.getItem('envNoticeDismissed') === 'true'
 	);
 	function refreshEnvRows() {
 		const scene = $globalScene;
@@ -534,7 +535,7 @@
 		// 80.1: proper resize (start-size captured, clamped) + persisted rect
 		let saved: any = null;
 		try {
-			saved = JSON.parse(localStorage.getItem('objectListRect') ?? 'null');
+			saved = JSON.parse(safeStorage.getItem('objectListRect') ?? 'null');
 		} catch {}
 		let moving = false;
 		let left = saved?.left ?? 350;
@@ -589,7 +590,7 @@
 		}
 
 		const persist = () =>
-			localStorage.setItem(
+			safeStorage.setItem(
 				'objectListRect',
 				JSON.stringify({ left, top, width: node.offsetWidth, height: node.offsetHeight })
 			);
@@ -735,7 +736,7 @@
 					// vrOverride is the STRING mirror Settings writes; Scene seeds the store
 					// from localStorage on boot, so both halves have to move together.
 					vrOverride.set(true);
-					localStorage.setItem('vrOverride', 'true');
+					safeStorage.setItem('vrOverride', 'true');
 					requestPlay();
 				}
 			},
@@ -746,9 +747,9 @@
 				tooltip: $vrSupported ? 'Immersive VR — the scene replaces your view' : 'No immersive-vr support detected',
 				action: () => {
 					vrOverride.set(false);
-					localStorage.removeItem('vrOverride');
+					safeStorage.removeItem('vrOverride');
 					vrPassthrough.set(false);
-					localStorage.setItem('vrPassthrough', 'false');
+					safeStorage.setItem('vrPassthrough', 'false');
 					requestPlay();
 				}
 			},
@@ -761,9 +762,9 @@
 					: 'No immersive-ar (passthrough) support detected',
 				action: () => {
 					vrOverride.set(false);
-					localStorage.removeItem('vrOverride');
+					safeStorage.removeItem('vrOverride');
 					vrPassthrough.set(true);
-					localStorage.setItem('vrPassthrough', 'true');
+					safeStorage.setItem('vrPassthrough', 'true');
 					requestPlay();
 				}
 			},
@@ -923,7 +924,7 @@
 	function loadLayout(): ControlsLayout {
 		if (typeof localStorage === 'undefined') return defaultLayout();
 		try {
-			const raw = localStorage.getItem('controlsLayout');
+			const raw = safeStorage.getItem('controlsLayout');
 			if (!raw) return defaultLayout();
 			const saved = JSON.parse(raw) ?? {};
 			// W8b: kept ids are the ones the REGISTRY knows, not the ones the DEFAULT order
@@ -962,7 +963,7 @@
 
 	function saveLayout() {
 		try {
-			localStorage.setItem('controlsLayout', JSON.stringify(controlsLayout));
+			safeStorage.setItem('controlsLayout', JSON.stringify(controlsLayout));
 		} catch {
 			// private mode / storage full — the bar still works for this session
 		}
@@ -978,7 +979,7 @@
 	function resetLayout() {
 		controlsLayout = defaultLayout();
 		try {
-			localStorage.removeItem('controlsLayout');
+			safeStorage.removeItem('controlsLayout');
 		} catch {
 			// nothing to clear
 		}
@@ -1115,7 +1116,7 @@
 	 *  than duplicated, so the two rows can say which one is on. `setDocked` keeps this
 	 *  flag in step with the panel, so it is the honest answer either way. */
 	function explorerOpensDocked(): boolean {
-		return typeof localStorage === 'undefined' || localStorage.getItem('explorerDocked') !== 'false';
+		return typeof localStorage === 'undefined' || safeStorage.getItem('explorerDocked') !== 'false';
 	}
 
 	/** Move the Explorer between dock tab and floating window.
@@ -2115,7 +2116,7 @@
 							class="rounded-sm bg-gray-600 px-1 text-white"
 							on:click={() => {
 								systemNoticeDismissed = true;
-								localStorage.setItem('systemNoticeDismissed', 'true');
+								safeStorage.setItem('systemNoticeDismissed', 'true');
 							}}>✕</button>
 					</div>
 				{/if}
@@ -2168,7 +2169,7 @@
 							class="rounded-sm bg-gray-600 px-1 text-white"
 							on:click={() => {
 								envNoticeDismissed = true;
-								localStorage.setItem('envNoticeDismissed', 'true');
+								safeStorage.setItem('envNoticeDismissed', 'true');
 							}}>✕</button>
 					</div>
 				{/if}

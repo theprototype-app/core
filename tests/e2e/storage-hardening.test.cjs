@@ -328,6 +328,91 @@ h.run(async () => {
 	h.check(/ms$/.test(line.cost), `...and what the last snapshot cost to prepare ("${line.cost}")`);
 	await A.page.evaluate(() => window.__stores.storageUsage.storageModalOpen.set(false));
 
+	// ---- 3. safeStorage: a broken localStorage no longer kills its caller ---------------
+	// SAFARI PRIVATE MODE, simulated where the browser really fails: `Storage.prototype
+	// .setItem` throws. Stubbing the PROTOTYPE rather than our own module is the point —
+	// everything downstream, including the ~500 codemodded call sites, meets the real
+	// failure. Restored immediately afterwards, or every later section runs degraded.
+	const priv = await A.page.evaluate(() => {
+		const store = window.__stores.safeStorage;
+		store.debugResetStorage();
+		const real = Storage.prototype.setItem;
+		let threw = 0;
+		Storage.prototype.setItem = function () {
+			threw++;
+			throw new DOMException('The quota has been exceeded.', 'QuotaExceededError');
+		};
+		let raised = null;
+		let wrote = null;
+		try {
+			wrote = store.setItem('27h-pref', 'chosen');
+		} catch (error) {
+			raised = String(error);
+		}
+		const readBack = store.getItem('27h-pref');
+		const state = store.storageDebug();
+		// and the counterfactual, in the same broken world: the bare call this replaced
+		let bareThrew = false;
+		try {
+			localStorage.setItem('27h-pref-bare', 'chosen');
+		} catch {
+			bareThrew = true;
+		}
+		Storage.prototype.setItem = real;
+		return { raised, wrote, readBack, state, threw, bareThrew };
+	});
+	h.check(priv.threw > 0, `premise: the stub really is in the write path (${priv.threw} throws)`);
+	h.check(priv.bareThrew, 'premise: a bare localStorage.setItem throws in that world — the bug');
+	h.check(priv.raised === null, 'safeStorage.setItem does not throw, so the caller survives');
+	h.check(priv.wrote === false, '...and it says the write did not reach the disk');
+	h.check(
+		priv.readBack === 'chosen',
+		`...while the setting still APPLIES for this session (read back "${priv.readBack}")`
+	);
+	h.check(
+		priv.state.degraded === true && priv.state.failures > 0,
+		`...and the app knows it is degraded (${JSON.stringify(priv.state)})`
+	);
+
+	// A real setting, driven the way the app drives it, in the same broken world: the
+	// subscriber that persists it must still run its OTHER work. This is the actual bug —
+	// a throw inside a store subscriber kills the subscriber for the session.
+	const setting = await A.page.evaluate(async () => {
+		const real = Storage.prototype.setItem;
+		Storage.prototype.setItem = function () {
+			throw new DOMException('The quota has been exceeded.', 'QuotaExceededError');
+		};
+		let raised = null;
+		try {
+			const { autosaveEnabled } = window.__stores.autosave;
+			autosaveEnabled.set(false);
+			autosaveEnabled.set(true);
+		} catch (error) {
+			raised = String(error);
+		}
+		Storage.prototype.setItem = real;
+		let value = null;
+		window.__stores.autosave.autosaveEnabled.subscribe((v) => (value = v))();
+		return { raised, value };
+	});
+	h.check(
+		setting.raised === null && setting.value === true,
+		`a setting toggled while storage is broken still applies (${setting.value}, raised ${setting.raised})`
+	);
+
+	// The whole codemod, asserted as a property rather than a diff: nothing in src/ calls
+	// localStorage directly any more, and CI fails on the next one that does.
+	const guard = await A.page.evaluate(() => ({
+		exposed: typeof window.__stores.safeStorage?.setItem === 'function',
+		diagnostics: window.__stores.diagnostics.bundle().sections?.storage ?? null
+	}));
+	h.check(guard.exposed, 'premise: safeStorage is the module the app is using');
+	h.check(
+		guard.diagnostics && typeof guard.diagnostics.degraded === 'boolean',
+		`the diagnostics bundle carries whether persistence is working (${JSON.stringify(guard.diagnostics)})`
+	);
+	await A.page.evaluate(() => window.__stores.safeStorage.debugResetStorage());
+
 	await A.page.evaluate(async () => {
 		for (const k of ['27h-probe', '27h-abort', '27h-stall', '27h-after']) await window.__stores.idb.idbDelete(k);
 	});

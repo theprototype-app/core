@@ -5,6 +5,7 @@ import { peers } from '../stores/appStore';
 import { recordTransformSet } from './history';
 import { hasOrigin, originWorld, setOriginFromWorld } from './objectOrigin';
 import { suspendAnimation, resumeAnimation } from './flowRuntime';
+import { safeStorage } from './safeStorage';
 // physics is reached DYNAMICALLY: a static import would close the cycle
 // multiTransform -> physics -> lockControl -> objectActions -> multiTransform
 // (the vite-dev TDZ trap; Rollup tolerates it, the dev server 500s)
@@ -56,13 +57,13 @@ let lastLiveSend = 0;
 /** @type {import('svelte/store').Writable<'median'|'active'|'parent'|'individual'>} */
 export const pivotMode = writable(
 	/** @type {any} */ (
-		typeof localStorage !== 'undefined' && ['median', 'active', 'parent', 'individual'].includes(localStorage.getItem('pivotMode') || '')
-			? localStorage.getItem('pivotMode')
+		typeof localStorage !== 'undefined' && ['median', 'active', 'parent', 'individual'].includes(safeStorage.getItem('pivotMode') || '')
+			? safeStorage.getItem('pivotMode')
 			: 'median'
 	)
 );
 pivotMode.subscribe((value) => {
-	if (typeof localStorage !== 'undefined') localStorage.setItem('pivotMode', String(value));
+	if (typeof localStorage !== 'undefined') safeStorage.setItem('pivotMode', String(value));
 });
 
 /** The parent every member shares, when it is a real object (not objectsGroup).

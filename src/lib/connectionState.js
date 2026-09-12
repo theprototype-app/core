@@ -1,4 +1,5 @@
 import { writable, get } from 'svelte/store';
+import { safeStorage } from './safeStorage';
 
 /**
  * Session-connection state (roadmap #14 CN). STORE-ONLY module (svelte/store only)
@@ -106,14 +107,14 @@ export function roomIsFull(peers) {
 
 function readSoftCap() {
 	if (typeof localStorage === 'undefined') return SOFT_PEER_CAP_DEFAULT;
-	const raw = Number(localStorage.getItem('connect:softPeerCap'));
+	const raw = Number(safeStorage.getItem('connect:softPeerCap'));
 	return Number.isFinite(raw) && raw >= 2 && raw <= HARD_PEER_CAP ? raw : SOFT_PEER_CAP_DEFAULT;
 }
 
 /** LOCAL, like every other connection preference. @type {import('svelte/store').Writable<number>} */
 export const softPeerCap = writable(readSoftCap());
 softPeerCap.subscribe((v) => {
-	if (typeof localStorage !== 'undefined') localStorage.setItem('connect:softPeerCap', String(v));
+	if (typeof localStorage !== 'undefined') safeStorage.setItem('connect:softPeerCap', String(v));
 });
 
 /**
@@ -192,7 +193,7 @@ export const mergeOnConnect = writable(readMergeOnConnect());
  * default, never a crash. The `readFlag` idiom from sharedLibrary. */
 function readMergeOnConnect() {
 	try {
-		return localStorage.getItem('connect:mergeOnConnect') === 'true';
+		return safeStorage.getItem('connect:mergeOnConnect') === 'true';
 	} catch {
 		return false;
 	}
@@ -202,6 +203,6 @@ function readMergeOnConnect() {
 // callback only ever reads its own argument, so it is safe wherever it sits.
 mergeOnConnect.subscribe((v) => {
 	try {
-		localStorage.setItem('connect:mergeOnConnect', String(v));
+		safeStorage.setItem('connect:mergeOnConnect', String(v));
 	} catch {}
 });

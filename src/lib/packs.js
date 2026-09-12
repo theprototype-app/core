@@ -1,6 +1,7 @@
 import { writable, get } from 'svelte/store';
 import { contentBase } from './contentBase';
 import { addItemFromBytes, createFolder, explorerFolders } from './explorer';
+import { safeStorage } from './safeStorage';
 
 // N6 (roadmap 7 / ship-qa D1): object packs. Two sources, one normalized model:
 //  - DEFAULT packs from static/libraryList.json (bundled today; the model bytes
@@ -39,7 +40,7 @@ let loadSeq = 0;
 /** @returns {any[]} imported packs persisted locally */
 function getInstalled() {
 	try {
-		return JSON.parse(localStorage.getItem(INSTALLED_KEY) || '[]');
+		return JSON.parse(safeStorage.getItem(INSTALLED_KEY) || '[]');
 	} catch {
 		return [];
 	}
@@ -47,7 +48,7 @@ function getInstalled() {
 /** @param {any[]} list */
 function setInstalled(list) {
 	try {
-		localStorage.setItem(INSTALLED_KEY, JSON.stringify(list));
+		safeStorage.setItem(INSTALLED_KEY, JSON.stringify(list));
 	} catch {}
 }
 
@@ -59,7 +60,7 @@ const THUMB_KEY = 'packThumbCache';
 /** @returns {Record<string, string>} */
 function getThumbCache() {
 	try {
-		return JSON.parse(localStorage.getItem(THUMB_KEY) || '{}');
+		return JSON.parse(safeStorage.getItem(THUMB_KEY) || '{}');
 	} catch {
 		return {};
 	}
@@ -74,7 +75,7 @@ export function rememberThumb(packName, itemName, url) {
 	if (c[`${packName}/${itemName}`] === url) return;
 	c[`${packName}/${itemName}`] = url;
 	try {
-		localStorage.setItem(THUMB_KEY, JSON.stringify(c));
+		safeStorage.setItem(THUMB_KEY, JSON.stringify(c));
 	} catch {}
 }
 // 21-G1: PACK RENAME. The report was "the Audio Essentials folder can't be renamed", and
@@ -94,7 +95,7 @@ const TITLE_KEY = 'packTitles';
 /** @returns {Record<string, string>} */
 function getTitleOverrides() {
 	try {
-		return JSON.parse(localStorage.getItem(TITLE_KEY) || '{}');
+		return JSON.parse(safeStorage.getItem(TITLE_KEY) || '{}');
 	} catch {
 		return {};
 	}
@@ -114,7 +115,7 @@ export function renamePack(name, title) {
 	const map = getTitleOverrides();
 	map[name] = clean;
 	try {
-		localStorage.setItem(TITLE_KEY, JSON.stringify(map));
+		safeStorage.setItem(TITLE_KEY, JSON.stringify(map));
 	} catch {}
 	packs.update((list) => list.map((/** @type {any} */ p) => (p.name === name ? { ...p, title: clean } : p)));
 	return true;
@@ -125,7 +126,7 @@ function dropTitleOverride(packName) {
 	if (!(packName in map)) return;
 	delete map[packName];
 	try {
-		localStorage.setItem(TITLE_KEY, JSON.stringify(map));
+		safeStorage.setItem(TITLE_KEY, JSON.stringify(map));
 	} catch {}
 }
 
@@ -137,7 +138,7 @@ function dropPackThumbs(packName) {
 	for (const k of Object.keys(c)) if (k.startsWith(prefix)) (delete c[k], (changed = true));
 	if (changed)
 		try {
-			localStorage.setItem(THUMB_KEY, JSON.stringify(c));
+			safeStorage.setItem(THUMB_KEY, JSON.stringify(c));
 		} catch {}
 }
 

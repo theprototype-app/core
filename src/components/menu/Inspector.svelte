@@ -200,6 +200,7 @@
 		saveSnapAnchorAsOrigin
 	} from '$lib/snapEngine';
 	import { peers, inspectorClose, inspectorKind, inspectorPinned, showToast, inspectorFilter, notesDrawerOpen } from '../../stores/appStore.js';
+	import { safeStorage } from '$lib/safeStorage';
 	import {
 		isShaderDriven,
 		openShaderEditor,
@@ -278,7 +279,7 @@
 	let inspectorH = $state(0);
 	$effect(() => {
 		if (inspectorH || typeof window === 'undefined') return;
-		const saved = parseInt(localStorage.getItem('inspectorSheetH') || '');
+		const saved = parseInt(safeStorage.getItem('inspectorSheetH') || '');
 		inspectorH = !saved || Number.isNaN(saved) ? Math.round(window.innerHeight * 0.45) : saved;
 	});
 	let insResizing = $state(false);
@@ -303,7 +304,7 @@
 		insResizing = false;
 		/** @type {HTMLElement} */ (e.currentTarget).releasePointerCapture?.(e.pointerId);
 		try {
-			localStorage.setItem('inspectorSheetH', String(inspectorH));
+			safeStorage.setItem('inspectorSheetH', String(inspectorH));
 		} catch {}
 	}
 
@@ -1846,8 +1847,8 @@
 					checked={!!$showGrid}
 					onchange={() => {
 						showGrid.update((v) => !v);
-						if (localStorage.getItem('showGrid')) localStorage.removeItem('showGrid');
-						else localStorage.setItem('showGrid', 'false');
+						if (safeStorage.getItem('showGrid')) safeStorage.removeItem('showGrid');
+						else safeStorage.setItem('showGrid', 'false');
 					}}>Show grid</Checkbox
 				>
 				<Checkbox

@@ -25,6 +25,7 @@ import { parkAnimatedAtBase } from '$lib/flowRuntime';
 import { stripEditOverlays } from '$lib/editOverlays';
 import { saveFileBase } from '$lib/saveName';
 import { peers, fixLight, loadingFile, showToast } from '../stores/appStore';
+import { safeStorage } from './safeStorage';
 
 //Access objects Store
 let sceneObjects = $state();
@@ -61,7 +62,7 @@ export function currentSceneName() {
 // B3: .tpscene export prefs (set from the Sidebar export-settings cog)
 export function tpsceneOptions() {
 	const read = (/** @type {string} */ k, /** @type {boolean} */ dflt) => {
-		const v = typeof localStorage !== 'undefined' ? localStorage.getItem(k) : null;
+		const v = typeof localStorage !== 'undefined' ? safeStorage.getItem(k) : null;
 		return v === null ? dflt : v === 'true';
 	};
 	// 21-I5 REVISED: there is deliberately no `versions` option here. This path exports

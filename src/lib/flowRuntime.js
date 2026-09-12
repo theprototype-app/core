@@ -66,6 +66,7 @@ import {
 // 27-B: recovery paths report through the diagnostics ring instead of console.log,
 // so a user can hand over what happened (hardening audit H4). A zero-import leaf.
 import { log } from './diagnostics';
+import { safeStorage } from './safeStorage';
 
 // H3: inputRuntime is reached via a PRIMED dynamic import (the moduleSDK
 // pattern) — a static edge would close the TDZ cycle history -> flowRuntime ->
@@ -3302,7 +3303,7 @@ function clearRestoreArmed() {
 	if (armedCleared || typeof localStorage === 'undefined') return;
 	armedCleared = true;
 	try {
-		localStorage.removeItem('restoreArmed');
+		safeStorage.removeItem('restoreArmed');
 	} catch {
 		/* private mode, quota, a browser refusing site data — nothing to do */
 	}
@@ -3457,7 +3458,7 @@ export function startFlowRuntime() {
 	});
 	syncedAnimations.subscribe((value) => {
 		synced = value;
-		if (typeof localStorage !== 'undefined') localStorage.setItem('syncedAnimations', String(value));
+		if (typeof localStorage !== 'undefined') safeStorage.setItem('syncedAnimations', String(value));
 	});
 
 	requestAnimationFrame(tick);

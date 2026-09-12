@@ -61,6 +61,7 @@
 	import ShaderTexturePicker from './nodes/ShaderTexturePicker.svelte';
 	import ShaderVectorInput from './nodes/ShaderVectorInput.svelte';
 	import DragRow from '../ui/DragRow.svelte';
+	import { safeStorage } from '$lib/safeStorage';
 
 	const nodeTypes = Object.fromEntries(shaderNodeDefs().map((def) => [def.key, ShaderNode]));
 	const catalog = shaderNodeDefs().filter((def) => def.key !== SURFACE_NODE);
@@ -375,12 +376,12 @@
 	let winW = $state(720);
 	let winH = $state(480);
 	if (typeof localStorage !== 'undefined') {
-		docked = localStorage.getItem('shaderDocked') !== 'false';
+		docked = safeStorage.getItem('shaderDocked') !== 'false';
 		// 18-B: a size saved on a bigger screen must not come back oversized. Fitted
 		// BEFORE the assignment so nothing reads $state during init.
 		const savedWin = clampWinSize(
-			parseInt(localStorage.getItem('shaderWinW') ?? '720') || 720,
-			parseInt(localStorage.getItem('shaderWinH') ?? '480') || 480,
+			parseInt(safeStorage.getItem('shaderWinW') ?? '720') || 720,
+			parseInt(safeStorage.getItem('shaderWinH') ?? '480') || 480,
 			WIN_MIN
 		);
 		winW = savedWin.w;
@@ -397,7 +398,7 @@
 
 	function setDocked(/** @type {boolean} */ v) {
 		docked = v;
-		localStorage.setItem('shaderDocked', String(v));
+		safeStorage.setItem('shaderDocked', String(v));
 		if (v) activateDock('shader'); // re-docking makes it the visible tab
 		else forgetDockTab('shader'); // an undock gives up its slot, so re-docking is a fresh add at the end of the strip
 	}
@@ -479,8 +480,8 @@
 		saveWinSize();
 	}
 	function saveWinSize() {
-		localStorage.setItem('shaderWinW', String(winW));
-		localStorage.setItem('shaderWinH', String(winH));
+		safeStorage.setItem('shaderWinW', String(winW));
+		safeStorage.setItem('shaderWinH', String(winH));
 	}
 	function resetWinSize() {
 		const fit = clampWinSize(WIN_DEFAULT.w, WIN_DEFAULT.h, WIN_MIN);

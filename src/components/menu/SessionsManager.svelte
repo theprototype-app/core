@@ -50,6 +50,7 @@
 		importObjects
 	} from '$lib/sessions';
 	import { showConfirm } from '$lib/confirmDialog';
+	import { safeStorage } from '$lib/safeStorage';
 	// R22 round 11: a file's icon. The Explorer keeps its own map inside the component, so
 	// this is the small subset a saved entry can hold rather than an import of it — three
 	// rows, and no reason to export a table from a 5,000-line component to share them.
@@ -87,11 +88,11 @@
 	 * Explorer's own split, and for the same reason: a wall of thumbnails is how you
 	 * recognise a scene and a row of facts is how you compare twenty of them.
 	 */
-	let sessionView = typeof localStorage !== 'undefined' && localStorage.getItem('sessions:view') === 'list' ? 'list' : 'grid';
-	$: if (typeof localStorage !== 'undefined') localStorage.setItem('sessions:view', sessionView);
+	let sessionView = typeof localStorage !== 'undefined' && safeStorage.getItem('sessions:view') === 'list' ? 'list' : 'grid';
+	$: if (typeof localStorage !== 'undefined') safeStorage.setItem('sessions:view', sessionView);
 	/** the picker's own view, remembered separately — it lists FILES, not entries */
-	let pickerView = typeof localStorage !== 'undefined' && localStorage.getItem('sessions:pickerView') === 'grid' ? 'grid' : 'list';
-	$: if (typeof localStorage !== 'undefined') localStorage.setItem('sessions:pickerView', pickerView);
+	let pickerView = typeof localStorage !== 'undefined' && safeStorage.getItem('sessions:pickerView') === 'grid' ? 'grid' : 'list';
+	$: if (typeof localStorage !== 'undefined') safeStorage.setItem('sessions:pickerView', pickerView);
 	/**
 	 * R22 round 12 (user): "allow multiselect in sessions so I can delete multiple files".
 	 * A Set of entry ids. Kept as a plain `let` reassigned wholesale — this file is LEGACY

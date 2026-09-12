@@ -87,6 +87,7 @@
 	import PathWaypoints from './PathWaypoints.svelte';
 	import LockHighlights from './LockHighlights.svelte';
 	import Grid from '../extensions/Grid.svelte';
+	import { safeStorage } from '$lib/safeStorage';
 	import Outline from './Outline.svelte'
 	import Player from './play/Player.svelte'
 	import { Mesh, Vector3 } from 'three'
@@ -99,23 +100,23 @@
 
 	$globalScene.background = new THREE.Color(0x101010);
 
-	$username = localStorage.getItem('username');
-	$userdata.push([$peers.peer.id, localStorage.getItem('username'), localStorage.getItem('avatar'), null, null, get(avatarConfig)]);
+	$username = safeStorage.getItem('username');
+	$userdata.push([$peers.peer.id, safeStorage.getItem('username'), safeStorage.getItem('avatar'), null, null, get(avatarConfig)]);
 	$userdata = $userdata;
 
-	$showGrid = localStorage.getItem('showGrid') === 'false' ? false : true;
-	$vrOverride = localStorage.getItem('vrOverride');
+	$showGrid = safeStorage.getItem('showGrid') === 'false' ? false : true;
+	$vrOverride = safeStorage.getItem('vrOverride');
 	camera.current.position.set(10.5, 7.57, 11.4);
 	let fov = camera.current.fov
 	let resetSettings = false;
 	setTimeout(() => {
 		// $peers.send({ type: 'userdata', userdata: $userdata });
-		if(localStorage.getItem("camx"))
-		camera.current.position.x = localStorage.getItem("camx");
-		if(localStorage.getItem("camy"))
-		camera.current.position.y = localStorage.getItem("camy");
-		if(localStorage.getItem("camz"))
-		camera.current.position.z = localStorage.getItem("camz");
+		if(safeStorage.getItem("camx"))
+		camera.current.position.x = safeStorage.getItem("camx");
+		if(safeStorage.getItem("camy"))
+		camera.current.position.y = safeStorage.getItem("camy");
+		if(safeStorage.getItem("camz"))
+		camera.current.position.z = safeStorage.getItem("camz");
 	
 		// console.log(camera.current.position)
 		resetSettings = true;
@@ -276,9 +277,9 @@
 			// console.log(camera.current.rotation)
 		}
 		if (resetSettings == true) {
-			// localStorage.setItem("camx",camera.current.position.x);
-			// localStorage.setItem("camy",camera.current.position.y);
-			// localStorage.setItem("camz",camera.current.position.z);
+			// safeStorage.setItem("camx",camera.current.position.x);
+			// safeStorage.setItem("camy",camera.current.position.y);
+			// safeStorage.setItem("camz",camera.current.position.z);
 		}
 		
 		if (!$specatorMode) {

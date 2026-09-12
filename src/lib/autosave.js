@@ -31,6 +31,7 @@ import { log, registerDiagnosticsSection } from './diagnostics';
 // #20 P5: selection + edit session + panel layout, restored only on an EXPLICIT restore
 import { captureEditResume, applyEditResume } from './editResume';
 import { disposeTree, keepSet } from './disposeTree';
+import { safeStorage } from './safeStorage';
 
 // Crash safety: snapshots of the scene (GLTF json), the node graph and the
 // camera go to IndexedDB — debounced 30s after any change plus a 3-minute
@@ -117,7 +118,7 @@ export function estimateSnapshotBytes(snapshot) {
 }
 
 export const autosaveEnabled = writable(
-	typeof localStorage === 'undefined' || localStorage.getItem('autosave') !== 'false'
+	typeof localStorage === 'undefined' || safeStorage.getItem('autosave') !== 'false'
 );
 /**
  * 18-A: restore the snapshot on boot instead of asking. OFF by default — an
@@ -125,7 +126,7 @@ export const autosaveEnabled = writable(
  * construction because checkRestore only ever fires on an EMPTY scene.
  */
 export const autoRestoreEnabled = writable(
-	typeof localStorage !== 'undefined' && localStorage.getItem('autoRestore') === 'true'
+	typeof localStorage !== 'undefined' && safeStorage.getItem('autoRestore') === 'true'
 );
 /** restore offer for the toast: { ts, objects, snapshot } | null */
 /** @type {import('svelte/store').Writable<any>} */
@@ -479,7 +480,7 @@ async function checkRestore() {
 			if (group.children.length !== 0) return;
 			let armed = false;
 			try {
-				armed = typeof localStorage !== 'undefined' && !!localStorage.getItem('restoreArmed');
+				armed = typeof localStorage !== 'undefined' && !!safeStorage.getItem('restoreArmed');
 			} catch {
 				/* unreadable storage reads as "not armed" — the old behaviour */
 			}
@@ -574,7 +575,7 @@ async function applyRestore(snapshot) {
 	// frame — so the next boot must not silently restore it again. Placed here rather
 	// than at each call site so the explicit Restore button is covered too.
 	try {
-		if (typeof localStorage !== 'undefined') localStorage.setItem('restoreArmed', '1');
+		if (typeof localStorage !== 'undefined') safeStorage.setItem('restoreArmed', '1');
 	} catch {
 		/* private mode or a full quota: the guard degrades to the old behaviour */
 	}
@@ -751,8 +752,8 @@ export function startAutosave() {
 		// best effort — the async export may not finish, the debounce usually already ran
 		if (dirty) saveSnapshot();
 	});
-	autosaveEnabled.subscribe((value) => localStorage.setItem('autosave', String(value)));
-	autoRestoreEnabled.subscribe((value) => localStorage.setItem('autoRestore', String(value)));
+	autosaveEnabled.subscribe((value) => safeStorage.setItem('autosave', String(value)));
+	autoRestoreEnabled.subscribe((value) => safeStorage.setItem('autoRestore', String(value)));
 	// 27-H: the storage story belongs in the bundle a user hands over. "Autosave last
 	// failed with QuotaExceededError and has been backing off to 5 minutes" is the
 	// single most useful line for a lost-work report, and nowhere else records it.

@@ -1,4 +1,5 @@
 import { writable } from 'svelte/store';
+import { safeStorage } from './safeStorage';
 
 // CO0 — the on-device WebXR capability probe.
 //
@@ -47,7 +48,7 @@ const RESTORE_DEADLINE = 45;
 
 function loadFindings() {
 	try {
-		const raw = typeof localStorage !== 'undefined' ? localStorage.getItem(FINDINGS_KEY) : null;
+		const raw = typeof localStorage !== 'undefined' ? safeStorage.getItem(FINDINGS_KEY) : null;
 		const stored = raw ? JSON.parse(raw) : null;
 		return Array.isArray(stored) ? stored : [];
 	} catch {
@@ -67,7 +68,7 @@ export const probeRunning = writable(false);
 /** @param {any} list */
 function persistFindings(list) {
 	try {
-		if (typeof localStorage !== 'undefined') localStorage.setItem(FINDINGS_KEY, JSON.stringify(list));
+		if (typeof localStorage !== 'undefined') safeStorage.setItem(FINDINGS_KEY, JSON.stringify(list));
 	} catch {
 		// private mode / quota: the on-screen report still works for this run
 	}
@@ -143,7 +144,7 @@ function ago(ms) {
 
 function readStoredAnchor() {
 	try {
-		const raw = typeof localStorage !== 'undefined' ? localStorage.getItem(ANCHOR_KEY) : null;
+		const raw = typeof localStorage !== 'undefined' ? safeStorage.getItem(ANCHOR_KEY) : null;
 		const stored = raw ? JSON.parse(raw) : null;
 		return stored && typeof stored.handle === 'string' && stored.handle ? stored : null;
 	} catch {
@@ -154,7 +155,7 @@ function readStoredAnchor() {
 /** @param {any} record */
 function writeStoredAnchor(record) {
 	try {
-		if (typeof localStorage !== 'undefined') localStorage.setItem(ANCHOR_KEY, JSON.stringify(record));
+		if (typeof localStorage !== 'undefined') safeStorage.setItem(ANCHOR_KEY, JSON.stringify(record));
 		return true;
 	} catch {
 		return false;
@@ -599,8 +600,8 @@ export async function clearProbeState() {
 	resetFindings();
 	try {
 		if (typeof localStorage !== 'undefined') {
-			localStorage.removeItem(ANCHOR_KEY);
-			localStorage.removeItem(FINDINGS_KEY);
+			safeStorage.removeItem(ANCHOR_KEY);
+			safeStorage.removeItem(FINDINGS_KEY);
 		}
 	} catch {
 		// nothing to do — the store is already reset

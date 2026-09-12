@@ -3,6 +3,7 @@ import { peers } from '../stores/appStore';
 import { ensureAudioContext, bus } from './audioEngine';
 import { itemByHash, itemBlob } from './explorer';
 import { requestAsset, sendAsset } from './assetShare';
+import { safeStorage } from './safeStorage';
 
 // Scene music (M-1): ONE shared background track per scene — a singleton synced
 // latest-wins like the environment, so everyone hears the same track at the same
@@ -19,10 +20,10 @@ export const music = writable({ ...DEFAULT });
 
 // per-device overlay (LOCAL, persisted) — your own volume trim + mute
 export const musicLocalVolume = writable(
-	typeof localStorage !== 'undefined' ? +(localStorage.getItem('musicLocalVolume') ?? '1') : 1
+	typeof localStorage !== 'undefined' ? +(safeStorage.getItem('musicLocalVolume') ?? '1') : 1
 );
 export const musicMuted = writable(
-	typeof localStorage !== 'undefined' ? localStorage.getItem('musicMuted') === 'true' : false
+	typeof localStorage !== 'undefined' ? safeStorage.getItem('musicMuted') === 'true' : false
 );
 
 /** whether the audio context is currently blocked by the browser autoplay policy */
@@ -235,13 +236,13 @@ export function startSceneMusic() {
 	started = true;
 	musicLocalVolume.subscribe((v) => {
 		try {
-			localStorage.setItem('musicLocalVolume', String(v));
+			safeStorage.setItem('musicLocalVolume', String(v));
 		} catch {}
 		reconcile();
 	});
 	musicMuted.subscribe((v) => {
 		try {
-			localStorage.setItem('musicMuted', String(v));
+			safeStorage.setItem('musicMuted', String(v));
 		} catch {}
 		reconcile();
 	});

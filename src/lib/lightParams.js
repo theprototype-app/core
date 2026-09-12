@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { writable, get } from 'svelte/store';
 import { objectsGroup, globalScene, globalRenderer } from '../stores/sceneStore';
+import { safeStorage } from './safeStorage';
 
 // Light parameter registry (phase 79): type-specific settings the Inspector
 // renders (color/intensity/visible are common rows it already has). Values
@@ -36,7 +37,7 @@ export const SHADOW_SIZES = [512, 1024, 2048];
 const QUALITY_CAPS = { off: 512, low: 512, medium: 1024, high: 2048 };
 export const shadowQuality = writable(
 	typeof localStorage !== 'undefined'
-		? localStorage.getItem('shadowQuality') ?? 'high'
+		? safeStorage.getItem('shadowQuality') ?? 'high'
 		: 'high'
 );
 
@@ -127,7 +128,7 @@ export function startLightParams() {
 	if (started || typeof window === 'undefined') return;
 	started = true;
 	shadowQuality.subscribe((value) => {
-		localStorage.setItem('shadowQuality', String(value));
+		safeStorage.setItem('shadowQuality', String(value));
 		applyShadowQualityCap();
 	});
 }

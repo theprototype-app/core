@@ -51,6 +51,7 @@
 	import { clampWinSize, clampResize, anchorOf } from '$lib/windowSize';
 	import { setDockOccupant, dockHeight, visibleDockKey, dockMinimized, activateDock, dockModeArm, forgetDockTab } from '$lib/bottomDock';
 	import { bottomDockable } from '$lib/bottomDockDrop';
+	import { safeStorage } from '$lib/safeStorage';
 
 	// live-follow the primary selection (keeps a truthy [] before the first select)
 	const target = $derived($selectedObject && $selectedObject.uuid ? $selectedObject : null);
@@ -93,12 +94,12 @@
 	let view = $state(/** @type {'sheet'|'graph'} */ ('sheet'));
 	/** 'off' | 'frame' | a step in seconds as a string */
 	let snapMode = $state(
-		typeof localStorage !== 'undefined' ? (localStorage.getItem('animationSnap') ?? 'frame') : 'frame'
+		typeof localStorage !== 'undefined' ? (safeStorage.getItem('animationSnap') ?? 'frame') : 'frame'
 	);
 	let renaming = $state(/** @type {string|null} */ (null));
 	// how tall the clip list is allowed to be, dragged by the divider under it
 	let clipsH = $state(
-		typeof localStorage !== 'undefined' ? parseInt(localStorage.getItem('animationClipsH') ?? '96') || 96 : 96
+		typeof localStorage !== 'undefined' ? parseInt(safeStorage.getItem('animationClipsH') ?? '96') || 96 : 96
 	);
 	let clipsResizing = $state(false);
 	/** the sidebar's own height, measured — the resize ceiling comes from it */
@@ -130,7 +131,7 @@
 		if (!clipsResizing) return;
 		clipsResizing = false;
 		e.currentTarget.releasePointerCapture?.(e.pointerId);
-		localStorage.setItem('animationClipsH', String(clipsH));
+		safeStorage.setItem('animationClipsH', String(clipsH));
 	}
 
 	// imported clips for the selected object (empty for anything not imported
@@ -215,12 +216,12 @@
 	let winW = $state(660);
 	let winH = $state(460);
 	if (typeof localStorage !== 'undefined') {
-		docked = localStorage.getItem('animationDocked') !== 'false';
+		docked = safeStorage.getItem('animationDocked') !== 'false';
 		// 18-B: a size saved on a bigger screen must not come back oversized.
 		// Fitted before the assignment so nothing reads $state during init.
 		const savedWin = clampWinSize(
-			parseInt(localStorage.getItem('animationWinW') ?? '660') || 660,
-			parseInt(localStorage.getItem('animationWinH') ?? '460') || 460,
+			parseInt(safeStorage.getItem('animationWinW') ?? '660') || 660,
+			parseInt(safeStorage.getItem('animationWinH') ?? '460') || 460,
 			WIN_MIN
 		);
 		winW = savedWin.w;
@@ -228,7 +229,7 @@
 	}
 	function setDocked(/** @type {boolean} */ v) {
 		docked = v;
-		localStorage.setItem('animationDocked', String(v));
+		safeStorage.setItem('animationDocked', String(v));
 		if (v) activateDock('animation');
 		else forgetDockTab('animation'); // an undock gives up its slot, so re-docking is a fresh add at the end of the strip
 	}
@@ -443,7 +444,7 @@
 	// select exactly what the eye picks out, including under zoom and pan.
 	/** @type {'box'|'lasso'} */
 	let marqMode = $state(
-		typeof localStorage !== 'undefined' && localStorage.getItem('animationMarquee') === 'lasso'
+		typeof localStorage !== 'undefined' && safeStorage.getItem('animationMarquee') === 'lasso'
 			? 'lasso'
 			: 'box'
 	);
@@ -459,7 +460,7 @@
 	function setMarqMode(/** @type {'box'|'lasso'} */ mode) {
 		marqMode = mode;
 		try {
-			localStorage.setItem('animationMarquee', mode);
+			safeStorage.setItem('animationMarquee', mode);
 		} catch {}
 	}
 
@@ -710,7 +711,7 @@
 	// MEAN, and one object can hold a 24fps swing beside a 60fps flourish — with a
 	// LOCAL default for clips that never set one (`animationFps` in localStorage).
 	const DEFAULT_FPS = (() => {
-		const raw = typeof localStorage !== 'undefined' ? Number(localStorage.getItem('animationFps')) : NaN;
+		const raw = typeof localStorage !== 'undefined' ? Number(safeStorage.getItem('animationFps')) : NaN;
 		return Number.isFinite(raw) && raw >= 1 && raw <= 240 ? raw : 30;
 	})();
 	const FPS = $derived(anim?.fps ?? DEFAULT_FPS);
@@ -1427,7 +1428,7 @@
 			tooltip: FPS + ' fps',
 			action: () => {
 				snapMode = snapMode === 'frame' ? 'off' : 'frame';
-				localStorage.setItem('animationSnap', snapMode);
+				safeStorage.setItem('animationSnap', snapMode);
 			}
 		});
 		menu = { x: e.clientX, y: e.clientY, items };
@@ -1652,8 +1653,8 @@
 		saveWinSize();
 	}
 	function saveWinSize() {
-		localStorage.setItem('animationWinW', String(winW));
-		localStorage.setItem('animationWinH', String(winH));
+		safeStorage.setItem('animationWinW', String(winW));
+		safeStorage.setItem('animationWinH', String(winH));
 	}
 	/** 18-B: double-click the grip — back to the default size, position kept */
 	function resetWinSize() {
@@ -2086,7 +2087,7 @@
 							value={snapMode}
 							onchange={(e) => {
 								snapMode = e.currentTarget.value;
-								localStorage.setItem('animationSnap', snapMode);
+								safeStorage.setItem('animationSnap', snapMode);
 							}}
 						>
 							<option value="off">off</option>

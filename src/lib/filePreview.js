@@ -22,6 +22,7 @@
 // Deriving it a second time here would be a copy of that logic guaranteed to drift.
 
 import { writable } from 'svelte/store';
+import { safeStorage } from './safeStorage';
 
 /**
  * What the preview window can actually SHOW. A `.txt` opens in the code editor and a
@@ -199,7 +200,7 @@ previewAutoPlay.subscribe((v) => saveFlag('preview:autoPlay', v));
  */
 export function previewFps() {
 	if (typeof localStorage === 'undefined') return 30;
-	const raw = Number(localStorage.getItem('animationFps'));
+	const raw = Number(safeStorage.getItem('animationFps'));
 	return Number.isFinite(raw) && raw >= 1 && raw <= 240 ? Math.round(raw) : 30;
 }
 
@@ -242,14 +243,14 @@ export function frameAt(t, duration, fps = previewFps()) {
 /** @param {string} key @param {boolean} fallback */
 function readFlag(key, fallback) {
 	if (typeof localStorage === 'undefined') return fallback;
-	const raw = localStorage.getItem(key);
+	const raw = safeStorage.getItem(key);
 	return raw === null ? fallback : raw === 'true';
 }
 /** @param {string} key @param {boolean} value */
 function saveFlag(key, value) {
 	if (typeof localStorage === 'undefined') return;
 	try {
-		localStorage.setItem(key, String(value));
+		safeStorage.setItem(key, String(value));
 	} catch {}
 }
 

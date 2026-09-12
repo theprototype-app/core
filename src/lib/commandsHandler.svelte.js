@@ -27,6 +27,7 @@ import { peers, userdata } from '../stores/appStore';
 // 27-G (audit H6): removing an object frees NOTHING on the GPU. These free what only
 // the departing object was using, and never what the rest of the scene still holds.
 import { disposeTree, keepSet } from '$lib/disposeTree';
+import { safeStorage } from './safeStorage';
 
 //Access scene Store
 let scene = $state();
@@ -163,12 +164,12 @@ export function sceneCommand(command) {
             if (command.split(' ')[1] == 'on')
             {
                 showGrid.set(true);
-                localStorage.removeItem('showGrid')
+                safeStorage.removeItem('showGrid')
             }
             else if (command.split(' ')[1] == 'off')
             {
                 showGrid.set(false);
-                localStorage.setItem('showGrid', false);
+                safeStorage.setItem('showGrid', false);
             }
         }
         else if (command.startsWith('/create')) {

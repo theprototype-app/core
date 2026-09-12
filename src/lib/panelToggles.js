@@ -21,6 +21,7 @@ import {
 import { raiseWindow, isTopVisibleWindow } from './windowFocus';
 import { groupOfKey, activateTab } from './windowTabs';
 import { revealWindow } from './dragWindow';
+import { safeStorage } from './safeStorage';
 
 // ONE decision tree for the Controls panel buttons AND their keyboard shortcuts
 // (O / N). Before this module the Object list button had taskbar semantics
@@ -105,7 +106,7 @@ function isDockedPresent(key) {
 /** Would opening this panel put it in the dock? @param {PanelConfig} cfg */
 function opensDocked(cfg) {
 	if (!cfg.dockedLs) return false; // floating-only panel
-	return typeof localStorage === 'undefined' || localStorage.getItem(cfg.dockedLs) !== 'false';
+	return typeof localStorage === 'undefined' || safeStorage.getItem(cfg.dockedLs) !== 'false';
 }
 
 /** Is this panel the one the dock is actually SHOWING? @param {PanelConfig} cfg */

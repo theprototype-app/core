@@ -1,4 +1,5 @@
 import { writable } from 'svelte/store';
+import { safeStorage } from './safeStorage';
 
 // Phase 85: what a DOUBLE-CLICK on an object does, as a LOCAL preference.
 //
@@ -26,12 +27,12 @@ const DEFAULT = 'properties';
 /** @type {DoubleClickAction} */
 const stored =
 	typeof localStorage !== 'undefined' &&
-	DOUBLE_CLICK_ACTIONS.some((a) => a.value === localStorage.getItem(KEY))
-		? /** @type {any} */ (localStorage.getItem(KEY))
+	DOUBLE_CLICK_ACTIONS.some((a) => a.value === safeStorage.getItem(KEY))
+		? /** @type {any} */ (safeStorage.getItem(KEY))
 		: DEFAULT;
 
 /** @type {import('svelte/store').Writable<DoubleClickAction>} */
 export const doubleClickAction = writable(stored);
 
 if (typeof localStorage !== 'undefined')
-	doubleClickAction.subscribe((value) => localStorage.setItem(KEY, value));
+	doubleClickAction.subscribe((value) => safeStorage.setItem(KEY, value));

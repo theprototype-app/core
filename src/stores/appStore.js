@@ -1,4 +1,5 @@
 import { writable, derived, get } from 'svelte/store';
+import { safeStorage } from '../lib/safeStorage';
 
 /** @type {import('svelte/store').Writable<any>} */
 export const settingsOpen = writable(null);
@@ -19,12 +20,12 @@ export const inspectorKind = writable('selection');
  * it). LOCAL preference.
  */
 export const inspectorPinned = writable(
-	typeof localStorage !== 'undefined' && localStorage.getItem('inspectorPinned') === 'true'
+	typeof localStorage !== 'undefined' && safeStorage.getItem('inspectorPinned') === 'true'
 );
 if (typeof localStorage !== 'undefined')
 	inspectorPinned.subscribe((v) => {
 		try {
-			localStorage.setItem('inspectorPinned', String(v));
+			safeStorage.setItem('inspectorPinned', String(v));
 		} catch {}
 	});
 export const flowGraphClose = writable(true);
@@ -124,7 +125,7 @@ export const username = writable(null);
 
 // local player's avatar configuration (userdata slot 5, replicated to peers)
 const storedAvatarConfig =
-	typeof localStorage !== 'undefined' ? localStorage.getItem('avatarConfig') : null;
+	typeof localStorage !== 'undefined' ? safeStorage.getItem('avatarConfig') : null;
 /** @type {import('svelte/store').Writable<{body: string, hat: string, face: string}>} */
 export const avatarConfig = writable(
 	storedAvatarConfig ? JSON.parse(storedAvatarConfig) : { body: '#4f83cc', hat: 'none', face: 'label' }
@@ -340,46 +341,46 @@ export const viewportMenuOpener = writable(null);
 /** @type {import('svelte/store').Writable<any>} */
 export const objectSearch = writable(null);
 export const objectSearchEnabled = writable(
-	typeof localStorage !== 'undefined' && localStorage.getItem('objectSearchEnabled') === 'true'
+	typeof localStorage !== 'undefined' && safeStorage.getItem('objectSearchEnabled') === 'true'
 );
 objectSearchEnabled.subscribe((on) => {
-	if (typeof localStorage !== 'undefined') localStorage.setItem('objectSearchEnabled', String(on));
+	if (typeof localStorage !== 'undefined') safeStorage.setItem('objectSearchEnabled', String(on));
 });
 
 // advanced mode: reveals system objects (module content, environment rig)
 // in the object list behind a System filter chip
 export const advancedMode = writable(
-	typeof localStorage !== 'undefined' && localStorage.getItem('advancedMode') === 'true'
+	typeof localStorage !== 'undefined' && safeStorage.getItem('advancedMode') === 'true'
 );
 advancedMode.subscribe((on) => {
-	if (typeof localStorage !== 'undefined') localStorage.setItem('advancedMode', String(on));
+	if (typeof localStorage !== 'undefined') safeStorage.setItem('advancedMode', String(on));
 });
 
 // object list: reveal the environment group behind an Environment chip (70.4)
 export const showEnvInList = writable(
-	typeof localStorage !== 'undefined' && localStorage.getItem('showEnvInList') === 'true'
+	typeof localStorage !== 'undefined' && safeStorage.getItem('showEnvInList') === 'true'
 );
 showEnvInList.subscribe((on) => {
-	if (typeof localStorage !== 'undefined') localStorage.setItem('showEnvInList', String(on));
+	if (typeof localStorage !== 'undefined') safeStorage.setItem('showEnvInList', String(on));
 });
 
 // A3 (roadmap #13): show the physics simulation transport (SimControls HUD).
 // Default OFF — the standalone ▶/⏸/⏹ HUD confuses with the main play button in
 // Controls; the P shortcut still starts/stops the sim when this is hidden.
 export const showSimControls = writable(
-	typeof localStorage !== 'undefined' && localStorage.getItem('showSimControls') === 'true'
+	typeof localStorage !== 'undefined' && safeStorage.getItem('showSimControls') === 'true'
 );
 showSimControls.subscribe((on) => {
-	if (typeof localStorage !== 'undefined') localStorage.setItem('showSimControls', String(on));
+	if (typeof localStorage !== 'undefined') safeStorage.setItem('showSimControls', String(on));
 });
 
 // N4: Explorer 3D model preview — a rotatable inline preview in Properties + a
 // popup on open. Global (all of Explorer), persisted; off by default.
 export const enable3dPreview = writable(
-	typeof localStorage !== 'undefined' && localStorage.getItem('enable3dPreview') === 'true'
+	typeof localStorage !== 'undefined' && safeStorage.getItem('enable3dPreview') === 'true'
 );
 enable3dPreview.subscribe((on) => {
-	if (typeof localStorage !== 'undefined') localStorage.setItem('enable3dPreview', String(on));
+	if (typeof localStorage !== 'undefined') safeStorage.setItem('enable3dPreview', String(on));
 });
 
 // 21-H3: dropping a MULTI-selection into the viewport. OFF = the N objects SPREAD in
@@ -388,10 +389,10 @@ enable3dPreview.subscribe((on) => {
 // stack. A LOCAL pref like every other Explorer setting — `explorerDrop` reads it and
 // nothing about it goes on the wire (each placement replicates through its own path).
 export const stackOnDrop = writable(
-	typeof localStorage !== 'undefined' && localStorage.getItem('explorerStackOnDrop') === 'true'
+	typeof localStorage !== 'undefined' && safeStorage.getItem('explorerStackOnDrop') === 'true'
 );
 stackOnDrop.subscribe((on) => {
-	if (typeof localStorage !== 'undefined') localStorage.setItem('explorerStackOnDrop', String(on));
+	if (typeof localStorage !== 'undefined') safeStorage.setItem('explorerStackOnDrop', String(on));
 });
 
 // 21-I3 (locked answer 6): "Update from selection" REPLACES a prefab's bytes instantly
@@ -400,20 +401,20 @@ stackOnDrop.subscribe((on) => {
 // can undo does not need a dialog in front of it, and the Undo is the safety net. A
 // LOCAL pref like every other Explorer setting; nothing about it goes on the wire.
 export const confirmPrefabUpdate = writable(
-	typeof localStorage !== 'undefined' && localStorage.getItem('confirmPrefabUpdate') === 'true'
+	typeof localStorage !== 'undefined' && safeStorage.getItem('confirmPrefabUpdate') === 'true'
 );
 confirmPrefabUpdate.subscribe((on) => {
-	if (typeof localStorage !== 'undefined') localStorage.setItem('confirmPrefabUpdate', String(on));
+	if (typeof localStorage !== 'undefined') safeStorage.setItem('confirmPrefabUpdate', String(on));
 });
 
 // Shift+A quick-add (the cursor-anchored Add popover). Opt-in, persisted; OFF by
 // default — Shift is a camera-strafe modifier in fly mode, so the shortcut only
 // exists for users who ask for it in Settings.
 export const enableShiftAdd = writable(
-	typeof localStorage !== 'undefined' && localStorage.getItem('enableShiftAdd') === 'true'
+	typeof localStorage !== 'undefined' && safeStorage.getItem('enableShiftAdd') === 'true'
 );
 enableShiftAdd.subscribe((on) => {
-	if (typeof localStorage !== 'undefined') localStorage.setItem('enableShiftAdd', String(on));
+	if (typeof localStorage !== 'undefined') safeStorage.setItem('enableShiftAdd', String(on));
 });
 
 /**
@@ -433,7 +434,7 @@ enableShiftAdd.subscribe((on) => {
 export const touchTools = writable(
 	(() => {
 		if (typeof localStorage === 'undefined') return false;
-		const stored = localStorage.getItem('touchTools');
+		const stored = safeStorage.getItem('touchTools');
 		if (stored !== null) return stored === 'true';
 		const coarse =
 			typeof matchMedia !== 'undefined' && matchMedia('(pointer: coarse)').matches;
@@ -442,7 +443,7 @@ export const touchTools = writable(
 	})()
 );
 touchTools.subscribe((on) => {
-	if (typeof localStorage !== 'undefined') localStorage.setItem('touchTools', String(on));
+	if (typeof localStorage !== 'undefined') safeStorage.setItem('touchTools', String(on));
 });
 
 // The sticky additive-selection MODE the cluster toggles. Touch cannot hold a modifier,
@@ -459,32 +460,32 @@ export const multiSelectMode = writable(false);
 // what MY copy command does is not scene data.
 export const duplicateCarriesAnimation = writable(
 	typeof localStorage === 'undefined' ||
-		localStorage.getItem('duplicateCarriesAnimation') !== 'false'
+		safeStorage.getItem('duplicateCarriesAnimation') !== 'false'
 );
 duplicateCarriesAnimation.subscribe((on) => {
 	if (typeof localStorage !== 'undefined')
-		localStorage.setItem('duplicateCarriesAnimation', String(on));
+		safeStorage.setItem('duplicateCarriesAnimation', String(on));
 });
 export const duplicateCarriesFlow = writable(
-	typeof localStorage === 'undefined' || localStorage.getItem('duplicateCarriesFlow') !== 'false'
+	typeof localStorage === 'undefined' || safeStorage.getItem('duplicateCarriesFlow') !== 'false'
 );
 duplicateCarriesFlow.subscribe((on) => {
-	if (typeof localStorage !== 'undefined') localStorage.setItem('duplicateCarriesFlow', String(on));
+	if (typeof localStorage !== 'undefined') safeStorage.setItem('duplicateCarriesFlow', String(on));
 });
 export const duplicateCarriesShader = writable(
-	typeof localStorage === 'undefined' || localStorage.getItem('duplicateCarriesShader') !== 'false'
+	typeof localStorage === 'undefined' || safeStorage.getItem('duplicateCarriesShader') !== 'false'
 );
 duplicateCarriesShader.subscribe((on) => {
 	if (typeof localStorage !== 'undefined')
-		localStorage.setItem('duplicateCarriesShader', String(on));
+		safeStorage.setItem('duplicateCarriesShader', String(on));
 });
 
 export const noteDoubleClickToOpen = writable(
-	typeof localStorage !== 'undefined' && localStorage.getItem('noteDoubleClickToOpen') === 'true'
+	typeof localStorage !== 'undefined' && safeStorage.getItem('noteDoubleClickToOpen') === 'true'
 );
 noteDoubleClickToOpen.subscribe((on) => {
 	if (typeof localStorage !== 'undefined')
-		localStorage.setItem('noteDoubleClickToOpen', String(on));
+		safeStorage.setItem('noteDoubleClickToOpen', String(on));
 });
 
 // E1 (roadmap #13): notification center — a persisted history of everything that
@@ -495,7 +496,7 @@ export const notifications = writable(
   (() => {
     if (typeof localStorage === 'undefined') return [];
     try {
-      return JSON.parse(localStorage.getItem('notifications') || '[]');
+      return JSON.parse(safeStorage.getItem('notifications') || '[]');
     } catch {
       return [];
     }
@@ -504,7 +505,7 @@ export const notifications = writable(
 notifications.subscribe((list) => {
   if (typeof localStorage === 'undefined') return;
   try {
-    localStorage.setItem('notifications', JSON.stringify(list.slice(-50)));
+    safeStorage.setItem('notifications', JSON.stringify(list.slice(-50)));
   } catch {
     /* storage full / disabled */
   }
@@ -546,11 +547,11 @@ export const connectBarHeight = writable(0);
  * hidden. Toggle in Settings; a `.allow-undock` root class drives the CSS, and the
  * panels read this to decide whether to force-dock on load. Persisted. */
 export const mobileUndockAllowed = writable(
-  typeof localStorage !== 'undefined' ? localStorage.getItem('mobileUndockAllowed') === 'true' : false
+  typeof localStorage !== 'undefined' ? safeStorage.getItem('mobileUndockAllowed') === 'true' : false
 );
 if (typeof localStorage !== 'undefined') {
   mobileUndockAllowed.subscribe((v) => {
-    try { localStorage.setItem('mobileUndockAllowed', v ? 'true' : 'false'); } catch { /* */ }
+    try { safeStorage.setItem('mobileUndockAllowed', v ? 'true' : 'false'); } catch { /* */ }
     if (typeof document !== 'undefined') document.documentElement.classList.toggle('allow-undock', !!v);
   });
 }
@@ -567,11 +568,11 @@ if (typeof localStorage !== 'undefined') {
  * shipped default-off, because the subscriber writes on the first flush — would be
  * pinned OFF forever with no way to tell that from never having chosen. Absent = ON. */
 export const floatingToolbar = writable(
-  typeof localStorage !== 'undefined' ? localStorage.getItem('floatingToolbar') !== 'false' : true
+  typeof localStorage !== 'undefined' ? safeStorage.getItem('floatingToolbar') !== 'false' : true
 );
 if (typeof localStorage !== 'undefined') {
   floatingToolbar.subscribe((v) => {
-    try { localStorage.setItem('floatingToolbar', v ? 'true' : 'false'); } catch { /* */ }
+    try { safeStorage.setItem('floatingToolbar', v ? 'true' : 'false'); } catch { /* */ }
   });
 }
 
@@ -596,43 +597,43 @@ if (typeof localStorage !== 'undefined') {
  * fresh key makes absent mean "never chose" again. The pref never shipped in a tagged
  * release, so there is nothing real to migrate. */
 export const toolbarAlwaysOnTop = writable(
-  typeof localStorage !== 'undefined' ? localStorage.getItem('toolbarOnTop') === 'true' : false
+  typeof localStorage !== 'undefined' ? safeStorage.getItem('toolbarOnTop') === 'true' : false
 );
 if (typeof localStorage !== 'undefined') {
   toolbarAlwaysOnTop.subscribe((v) => {
-    try { localStorage.setItem('toolbarOnTop', v ? 'true' : 'false'); } catch { /* */ }
+    try { safeStorage.setItem('toolbarOnTop', v ? 'true' : 'false'); } catch { /* */ }
   });
 }
 
 /** PINNED: keep the drawer's tab bar (+ status) visible even when the body is
  * collapsed, so it acts as a persistent mini-bar under the pill. Persisted. */
 export const connectDrawerPinned = writable(
-  typeof localStorage !== 'undefined' ? localStorage.getItem('connectDrawerPinned') === 'true' : false
+  typeof localStorage !== 'undefined' ? safeStorage.getItem('connectDrawerPinned') === 'true' : false
 );
 /** Route toasts into the drawer's Toasts tab only — hide the viewport pop-ups even
  * when the drawer is closed (they still live in the Toasts tab + notification bell).
  * Persisted. */
 export const toastsInDrawerOnly = writable(
-  typeof localStorage !== 'undefined' ? localStorage.getItem('toastsInDrawerOnly') === 'true' : false
+  typeof localStorage !== 'undefined' ? safeStorage.getItem('toastsInDrawerOnly') === 'true' : false
 );
 if (typeof localStorage !== 'undefined') {
   connectDrawerPinned.subscribe((v) => {
-    try { localStorage.setItem('connectDrawerPinned', v ? 'true' : 'false'); } catch { /* */ }
+    try { safeStorage.setItem('connectDrawerPinned', v ? 'true' : 'false'); } catch { /* */ }
   });
   toastsInDrawerOnly.subscribe((v) => {
-    try { localStorage.setItem('toastsInDrawerOnly', v ? 'true' : 'false'); } catch { /* */ }
+    try { safeStorage.setItem('toastsInDrawerOnly', v ? 'true' : 'false'); } catch { /* */ }
   });
 }
 /** Show the "Local objects" section in the object list (viewer WIP / editor-shareable
  * objects). OFF by default — auto-enabled when the first local object is made; also
  * togglable under the object-list filter cog. Persisted. */
 export const showLocalObjects = writable(
-  typeof localStorage !== 'undefined' ? localStorage.getItem('showLocalObjects') === 'true' : false
+  typeof localStorage !== 'undefined' ? safeStorage.getItem('showLocalObjects') === 'true' : false
 );
 if (typeof localStorage !== 'undefined') {
   showLocalObjects.subscribe((v) => {
     try {
-      localStorage.setItem('showLocalObjects', v ? 'true' : 'false');
+      safeStorage.setItem('showLocalObjects', v ? 'true' : 'false');
     } catch {
       /* storage disabled */
     }
@@ -643,12 +644,12 @@ if (typeof localStorage !== 'undefined') {
  * cloud plugin is present). Default ON for discoverability; users can hide it and
  * still reach rooms via the chevron drawer's Rooms tab. Persisted. */
 export const showRoomsButton = writable(
-  typeof localStorage !== 'undefined' ? localStorage.getItem('showRoomsButton') !== 'false' : true
+  typeof localStorage !== 'undefined' ? safeStorage.getItem('showRoomsButton') !== 'false' : true
 );
 if (typeof localStorage !== 'undefined') {
   showRoomsButton.subscribe((v) => {
     try {
-      localStorage.setItem('showRoomsButton', v ? 'true' : 'false');
+      safeStorage.setItem('showRoomsButton', v ? 'true' : 'false');
     } catch {
       /* storage disabled */
     }

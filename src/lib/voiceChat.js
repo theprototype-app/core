@@ -7,6 +7,7 @@ import { ensureAudioContext as engineContext, bus, updateListener, resumeAudio }
 // LOCALLY with a gain (see the colo stage below); nothing about what we transmit changes.
 import { colocatedPeers, isColocatedWith } from './colocationPresence';
 import { letterOf } from './keyOf';
+import { safeStorage } from './safeStorage';
 
 // Voice chat over the existing peerjs mesh (MediaConnection).
 // - mic toggle transmits continuously; while OFF, holding V is push-to-talk
@@ -20,7 +21,7 @@ export const micGranted = writable(false);
 export const pttActive = writable(false);
 // positional audio: voices come from the peer's avatar (PannerNode per peer)
 export const spatialVoice = writable(
-	typeof localStorage === 'undefined' || localStorage.getItem('spatialVoice') !== 'false'
+	typeof localStorage === 'undefined' || safeStorage.getItem('spatialVoice') !== 'false'
 );
 /** @type {import('svelte/store').Writable<'ptt' | 'open' | 'off'>} VR mic mode (quick-menu tile) */
 export const vrMicMode = writable('ptt');
@@ -387,7 +388,7 @@ mutedPeers.subscribe((list) => {
 // writes a store from inside a subscriber.
 colocatedPeers.subscribe(() => applyColocationGains());
 spatialVoice.subscribe((on) => {
-	if (typeof localStorage !== 'undefined') localStorage.setItem('spatialVoice', String(on));
+	if (typeof localStorage !== 'undefined') safeStorage.setItem('spatialVoice', String(on));
 	if (on) Object.entries(get(remoteStreams)).forEach(([peerId, stream]) => buildSpatialChain(peerId, stream));
 	else Object.keys(spatialChains).forEach(dropSpatialChain);
 });

@@ -4,6 +4,7 @@
 	import Icon from './ui/Icon.svelte';
 	import { collectLeaves, rankMatches } from '$lib/menuFilter';
 	import { autofocusOk, typeToFocus } from '$lib/inputDevice';
+	import { safeStorage } from '$lib/safeStorage';
 
 	// Generic context menu. items: [{ label, action?, disabled?, tooltip?, danger?,
 	// icon?, hint?, checked?, keepOpen?, rowActions?, children?: items[] } |
@@ -116,12 +117,12 @@
 	/** @param {number} value */
 	function rememberHeight(value: number) {
 		try {
-			localStorage.setItem(heightStore(), String(Math.round(value)));
+			safeStorage.setItem(heightStore(), String(Math.round(value)));
 		} catch {}
 	}
 	function storedHeight(): number | null {
 		try {
-			const raw = parseInt(localStorage.getItem(heightStore()) ?? "", 10);
+			const raw = parseInt(safeStorage.getItem(heightStore()) ?? "", 10);
 			return Number.isFinite(raw) && raw >= MIN_LIST_HEIGHT ? raw : null;
 		} catch {
 			return null;

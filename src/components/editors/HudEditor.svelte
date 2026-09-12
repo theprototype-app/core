@@ -68,6 +68,7 @@
 	import { clampWinSize, clampResize, anchorOf } from '$lib/windowSize';
 	import { setDockOccupant, dockHeight, visibleDockKey, dockMinimized, activateDock, dockModeArm, forgetDockTab } from '$lib/bottomDock';
 	import { bottomDockable } from '$lib/bottomDockDrop';
+	import { safeStorage } from '$lib/safeStorage';
 
 	// 21-D5: WHICH document is being authored. `hudDocs` was already keyed
 	// `'scene' | objectUuid`, so "attach this HUD to a camera" is simply authoring the
@@ -116,10 +117,10 @@
 	let winW = $state(680);
 	let winH = $state(480);
 	if (typeof localStorage !== 'undefined') {
-		docked = localStorage.getItem('hudDocked') !== 'false';
+		docked = safeStorage.getItem('hudDocked') !== 'false';
 		const saved = clampWinSize(
-			parseInt(localStorage.getItem('hudWinW') ?? '680') || 680,
-			parseInt(localStorage.getItem('hudWinH') ?? '480') || 480,
+			parseInt(safeStorage.getItem('hudWinW') ?? '680') || 680,
+			parseInt(safeStorage.getItem('hudWinH') ?? '480') || 480,
 			WIN_MIN
 		);
 		winW = saved.w;
@@ -127,7 +128,7 @@
 	}
 	function setDocked(/** @type {boolean} */ v) {
 		docked = v;
-		localStorage.setItem('hudDocked', String(v));
+		safeStorage.setItem('hudDocked', String(v));
 		if (v) activateDock('hud');
 		else forgetDockTab('hud'); // an undock gives up its slot, so re-docking is a fresh add at the end of the strip
 	}
@@ -181,7 +182,7 @@
 	const SCREENS_RESERVE = 148;
 	let paneH = $state(0);
 	let screensH = $state(
-		parseInt((typeof localStorage !== 'undefined' && localStorage.getItem('hudScreens:h')) || '132') || 132
+		parseInt((typeof localStorage !== 'undefined' && safeStorage.getItem('hudScreens:h')) || '132') || 132
 	);
 	let screensResizing = $state(false);
 	const screensMax = $derived(Math.max(56, (paneH || 320) - SCREENS_RESERVE));
@@ -203,7 +204,7 @@
 		screensResizing = false;
 		e.currentTarget.releasePointerCapture?.(e.pointerId);
 		try {
-			localStorage.setItem('hudScreens:h', String(screensH));
+			safeStorage.setItem('hudScreens:h', String(screensH));
 		} catch {}
 	}
 
@@ -275,20 +276,20 @@
 	/** @param {string} key @param {number} fallback */
 	function snapPref(key, fallback) {
 		if (typeof localStorage === 'undefined') return fallback;
-		const raw = localStorage.getItem(key);
+		const raw = safeStorage.getItem(key);
 		const n = raw === null ? NaN : parseFloat(raw);
 		return Number.isFinite(n) ? n : fallback;
 	}
 	let snapOn = $state(
-		typeof localStorage === 'undefined' ? SNAP_DEFAULTS.on : localStorage.getItem('hud:snapOn') !== 'false'
+		typeof localStorage === 'undefined' ? SNAP_DEFAULTS.on : safeStorage.getItem('hud:snapOn') !== 'false'
 	);
 	let snapGrid = $state(Math.max(1, snapPref('hud:snapGrid', SNAP_DEFAULTS.grid)));
 	let snapThreshold = $state(Math.max(0, snapPref('hud:snapThreshold', SNAP_DEFAULTS.threshold)));
 	$effect(() => {
 		try {
-			localStorage.setItem('hud:snapOn', String(snapOn));
-			localStorage.setItem('hud:snapGrid', String(snapGrid));
-			localStorage.setItem('hud:snapThreshold', String(snapThreshold));
+			safeStorage.setItem('hud:snapOn', String(snapOn));
+			safeStorage.setItem('hud:snapGrid', String(snapGrid));
+			safeStorage.setItem('hud:snapThreshold', String(snapThreshold));
 		} catch {}
 	});
 	// the lines the LIVE gesture is actually sitting on, drawn as 1px overlays. Cleared
@@ -948,8 +949,8 @@
 		saveWinSize();
 	}
 	function saveWinSize() {
-		localStorage.setItem('hudWinW', String(winW));
-		localStorage.setItem('hudWinH', String(winH));
+		safeStorage.setItem('hudWinW', String(winW));
+		safeStorage.setItem('hudWinH', String(winH));
 	}
 	function resetWinSize() {
 		const fit = clampWinSize(WIN_DEFAULT.w, WIN_DEFAULT.h, WIN_MIN);

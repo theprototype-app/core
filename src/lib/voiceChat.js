@@ -38,6 +38,8 @@ let pttHeld = false;
 /** @type {Record<string, any>} */ const outgoingCalls = {};
 /** @type {Record<string, any>} */ const incomingCalls = {};
 /** @type {Record<string, {analyser: any, data: Uint8Array}>} */ const analysers = {};
+/** @type {any} the speaking-detection interval, armed only while there is audio */
+let pollTimer = null;
 
 /**
  * The shared AudioContext. #22 A1 moved OWNERSHIP into `audioEngine` — the whole
@@ -52,6 +54,7 @@ export function ensureAudioContext() {
 /** @param {any} call @param {'in'|'out'} direction */
 function trackCall(call, direction) {
 	(direction === 'in' ? incomingCalls : outgoingCalls)[call.peer] = call;
+	syncPoll();
 	call.on('stream', (/** @type {MediaStream} */ stream) => {
 		remoteStreams.update((map) => ({ ...map, [call.peer]: stream }));
 		watchStream(call.peer, stream);
@@ -225,9 +228,11 @@ function cleanupCall(peerId, direction) {
 		delete analysers[peerId];
 		dropSpatialChain(peerId);
 	}
+	syncPoll();
 }
 
 async function ensureStream() {
+	clearTimeout(idleRelease);
 	if (localStream) return true;
 	try {
 		localStream = await navigator.mediaDevices.getUserMedia({ audio: true });
@@ -235,12 +240,112 @@ async function ensureStream() {
 		applyTrackState();
 		callEveryone();
 		watchStream('self', localStream);
+		syncPoll();
 		return true;
 	} catch (error) {
 		console.log('mic denied', error);
 		showToast('Microphone permission denied');
 		return false;
 	}
+}
+
+/**
+ * 27-H (hardening audit M9) — GIVE THE MICROPHONE BACK.
+ *
+ * Mute only ever set `track.enabled = false`, and nothing in this module has ever
+ * called `stop()`. A disabled track is still a LIVE track: the tab keeps its recording
+ * indicator, the OS keeps the device claimed so nothing else can open it, and both
+ * stay that way for the life of the page after one press. That is a trust problem
+ * before it is a resource one — the indicator says "this page is listening" and it is
+ * not true.
+ *
+ * THE OUTGOING CALLS GO WITH IT, and they have to: a MediaConnection carries this
+ * stream, so leaving them up after stopping its tracks leaves peers holding a channel
+ * that can never carry audio again — `callPeer` skips a peer that already has one, so
+ * re-acquiring would reach nobody. Closing them means `ensureStream` re-calls
+ * everybody, which costs a renegotiation but is the only version that works.
+ *
+ * INCOMING calls are deliberately left alone: listening never needed a microphone,
+ * and turning your own mic off is not a request to stop hearing other people.
+ */
+export function releaseMic() {
+	clearTimeout(idleRelease);
+	if (!localStream) return false;
+	try {
+		localStream.getTracks().forEach((track) => track.stop());
+	} catch {}
+	localStream = null;
+	delete analysers['self'];
+	for (const peerId of Object.keys(outgoingCalls)) {
+		try {
+			outgoingCalls[peerId].close();
+		} catch {}
+		cleanupCall(peerId, 'out');
+	}
+	pttActive.set(false);
+	// THE STATE HAS TO AGREE WITH THE DEVICE. Leaving `micActive` true with no stream
+	// behind it leaves the toolbar claiming the mic is open while nothing is being
+	// transmitted, and the NEXT toggle then turns it "off" — measured as B never being
+	// called at all, because the press the suite meant as "on" was read as "off".
+	micActive.set(false);
+	syncPoll();
+	return true;
+}
+
+/**
+ * How long the mic stays claimed after a push-to-talk release.
+ *
+ * NOT zero, and this is the one piece of policy in the change. Re-acquiring costs a
+ * `getUserMedia` AND a renegotiation with every peer, so releasing the instant a key
+ * comes up would make the second sentence of a conversation arrive seconds late. A few
+ * seconds of indicator after you stop talking is active use; forever is the bug.
+ * An explicit voice-OFF releases immediately — you said so.
+ */
+const PTT_IDLE_MS = 3000;
+/** @type {any} */ let idleRelease = null;
+
+/** Arm the idle release, unless something is still transmitting. */
+function releaseWhenIdle() {
+	clearTimeout(idleRelease);
+	if (get(micActive) || pttHeld) return;
+	idleRelease = setTimeout(() => {
+		if (!get(micActive) && !pttHeld) releaseMic();
+	}, PTT_IDLE_MS);
+}
+
+/**
+ * 27-H (audit M9): the speaking poll used to be armed once at init and run at ~7Hz for
+ * the life of the tab — with no microphone, no peers and nothing to measure. It runs
+ * only while there is something to measure now: our own stream, or somebody on a call.
+ */
+function pollWanted() {
+	return !!localStream || Object.keys(incomingCalls).length > 0 || Object.keys(outgoingCalls).length > 0;
+}
+
+function syncPoll() {
+	const wanted = pollWanted();
+	if (wanted && !pollTimer) pollTimer = setInterval(pollSpeaking, 150);
+	else if (!wanted && pollTimer) {
+		clearInterval(pollTimer);
+		pollTimer = null;
+		// nobody can be speaking when nothing is being measured
+		if (get(speakingPeers).length) speakingPeers.set([]);
+	}
+}
+
+/** Is the microphone claimed, and is the analyser loop running? (tests / diagnostics) */
+export function voiceDebug() {
+	const tracks = localStream ? localStream.getTracks() : [];
+	return {
+		stream: !!localStream,
+		live: tracks.filter((t) => t.readyState === 'live').length,
+		ended: tracks.filter((t) => t.readyState === 'ended').length,
+		enabled: tracks.filter((t) => t.enabled).length,
+		polling: !!pollTimer,
+		outgoing: Object.keys(outgoingCalls).length,
+		incoming: Object.keys(incomingCalls).length,
+		analysers: Object.keys(analysers).length
+	};
 }
 
 function applyTrackState() {
@@ -266,6 +371,9 @@ export async function toggleMic() {
 	if (next && !(await ensureStream())) return;
 	micActive.set(next);
 	applyTrackState();
+	// M9: turning the mic off is an explicit "I am done" — the device goes back now,
+	// not after a grace, because the indicator is what the user is watching
+	if (!next) releaseMic();
 }
 
 /** VR A-button push-to-talk (same track path as hold-V) @param {boolean} held */
@@ -275,7 +383,10 @@ export async function setPttHeld(held) {
 	if (held) {
 		if (await ensureStream()) applyTrackState();
 		else pttHeld = false;
-	} else applyTrackState();
+	} else {
+		applyTrackState();
+		releaseWhenIdle();
+	}
 }
 
 /** Radial menu (74): jump straight to a mode, reusing the cycle transitions
@@ -295,6 +406,8 @@ export async function cycleMicMode() {
 		if (get(micActive)) await toggleMic();
 		pttHeld = false;
 		applyTrackState();
+		// M9: OFF means off — no stream, no device claim, no indicator
+		releaseMic();
 	} else {
 		vrMicMode.set('ptt');
 	}
@@ -337,6 +450,8 @@ function onKeyup(event) {
 	if (letterOf(event) !== 'v' || !pttHeld) return;
 	pttHeld = false;
 	applyTrackState();
+	// M9: hand the device back shortly after the hold ends
+	releaseWhenIdle();
 }
 
 // --- speaking detection ---
@@ -417,7 +532,9 @@ export function initVoiceChat(/** @type {any} */ pc) {
 	window.addEventListener('keyup', onKeyup);
 	// AudioContext starts suspended until a user gesture
 	window.addEventListener('pointerdown', () => resumeAudio(), { once: false });
-	setInterval(pollSpeaking, 150);
+	// M9: NOT an unconditional interval any more — `syncPoll` arms it when there is
+	// audio to measure and stands it down when there is not
+	syncPoll();
 }
 
 /** A data connection to this peer just opened — call them if we transmit @param {string} peerId */

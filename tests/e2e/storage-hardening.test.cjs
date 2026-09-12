@@ -13,7 +13,12 @@
 const h = require('./helpers.cjs');
 
 h.run(async () => {
-	const browser = await h.launch();
+	// A FAKE CAPTURE DEVICE, for section 4: the microphone checks read `track.readyState`
+	// on a real MediaStream, which headless Chromium will not produce without it — and a
+	// stubbed stream would be asserting a mock rather than the release.
+	const browser = await h.launch({
+		args: ['--use-fake-ui-for-media-stream', '--use-fake-device-for-media-stream']
+	});
 	const A = await h.setupPage(browser, 'A');
 
 	// ---- 1. a transaction always settles -----------------------------------------------
@@ -412,6 +417,123 @@ h.run(async () => {
 		`the diagnostics bundle carries whether persistence is working (${JSON.stringify(guard.diagnostics)})`
 	);
 	await A.page.evaluate(() => window.__stores.safeStorage.debugResetStorage());
+
+	// ---- 4. the microphone is given back -----------------------------------------------
+	// A fake device, so a real MediaStream with real tracks exists to be stopped — the
+	// whole check is about `track.readyState`, and a stub would be asserting a mock.
+	const seam = await A.page.evaluate(() => typeof window.__stores.voiceChat?.voiceDebug === 'function');
+	h.check(seam, 'premise: the voice seam is reachable');
+
+	const idle = await A.page.evaluate(() => window.__stores.voiceChat.voiceDebug());
+	h.check(
+		idle.stream === false && idle.polling === false,
+		`with no mic and no peers nothing is claimed and nothing is polling (${JSON.stringify(idle)})`
+	);
+
+	const on = await A.page.evaluate(async () => {
+		await window.__stores.voiceChat.toggleMic();
+		return window.__stores.voiceChat.voiceDebug();
+	});
+	h.check(on.stream === true && on.live === 1, `premise: the mic really opened (${on.live} live track)`);
+	h.check(on.polling === true, 'the speaking poll runs while there is audio to measure');
+
+	const off = await A.page.evaluate(async () => {
+		const before = window.__stores.voiceChat.voiceDebug();
+		await window.__stores.voiceChat.toggleMic();
+		const after = window.__stores.voiceChat.voiceDebug();
+		return { before, after };
+	});
+	h.check(
+		off.after.stream === false,
+		`turning the mic off releases the stream rather than muting a live track (${JSON.stringify(off.after)})`
+	);
+	h.check(
+		off.after.live === 0,
+		"...so the tab's recording indicator goes out and the device is free for another app"
+	);
+	h.check(off.after.polling === false, '...and the analyser loop stands down with it');
+	h.check(
+		off.after.analysers === 0,
+		`...and the analyser it was feeding is dropped too (${off.after.analysers})`
+	);
+
+	// PTT re-acquires, and does NOT release the instant the key comes up: re-acquiring
+	// costs a getUserMedia and a renegotiation with every peer, so an immediate release
+	// would make the next sentence arrive late. A few seconds is active use; forever is
+	// the bug this section is about.
+	const ptt = await A.page.evaluate(async () => {
+		await window.__stores.voiceChat.setPttHeld(true);
+		const held = window.__stores.voiceChat.voiceDebug();
+		await window.__stores.voiceChat.setPttHeld(false);
+		await new Promise((r) => setTimeout(r, 400));
+		const justAfter = window.__stores.voiceChat.voiceDebug();
+		await new Promise((r) => setTimeout(r, 4200));
+		const settled = window.__stores.voiceChat.voiceDebug();
+		return { held, justAfter, settled };
+	});
+	h.check(ptt.held.stream === true && ptt.held.live === 1, 'push-to-talk re-acquires the device');
+	h.check(ptt.justAfter.stream === true, '...and does not drop it the instant the key comes up');
+	h.check(
+		ptt.settled.stream === false && ptt.settled.live === 0,
+		`...but hands it back once the hold is over (${JSON.stringify(ptt.settled)})`
+	);
+
+	// leaving a session is the other half of the report: nothing in the peer layer used to
+	// touch voice at all
+	const left = await A.page.evaluate(async () => {
+		await window.__stores.voiceChat.toggleMic();
+		const before = window.__stores.voiceChat.voiceDebug();
+		let peer = null;
+		window.__stores.peers.subscribe((/** @type {any} */ v) => (peer = v))();
+		peer.leaveSession();
+		return { before, after: window.__stores.voiceChat.voiceDebug() };
+	});
+	h.check(left.before.stream === true, 'premise: the mic was open when the session ended');
+	h.check(
+		left.after.stream === false && left.after.live === 0,
+		`leaving the session hands the microphone back (${JSON.stringify(left.after)})`
+	);
+
+	// ---- 5. releasing the device must not cost the session its voice --------------------
+	// THE RISK THIS CHANGE INTRODUCES, asserted rather than reasoned about: releasing the
+	// stream closes our OUTGOING MediaConnections (they carry it, and `callPeer` skips a
+	// peer that already has one, so leaving a dead channel up would make the next
+	// re-acquire reach nobody). So the thing to prove is that turning the mic back on
+	// really does call everybody again.
+	const B = await h.setupPage(browser, 'B');
+	await h.connect(B, A);
+
+	const voiceOf = (peer) => peer.page.evaluate(() => window.__stores.voiceChat.voiceDebug());
+
+	await A.page.evaluate(() => window.__stores.voiceChat.toggleMic());
+	await h.eventually(() => voiceOf(B), (v) => v.incoming > 0, "premise: A's first mic-on reaches B", 20000);
+
+	await A.page.evaluate(() => window.__stores.voiceChat.toggleMic());
+	const released = await voiceOf(A);
+	h.check(
+		released.stream === false && released.outgoing === 0,
+		`mic-off releases the device AND the channel that carried it (${JSON.stringify(released)})`
+	);
+
+	await A.page.evaluate(() => window.__stores.voiceChat.toggleMic());
+	await h.eventually(
+		() => voiceOf(A),
+		(v) => v.stream === true && v.outgoing > 0,
+		'turning the mic back on re-establishes the call, so voice survives a release',
+		20000
+	);
+	await h.eventually(
+		() => voiceOf(B),
+		(v) => v.incoming > 0,
+		'...and the peer has a live incoming call again',
+		20000
+	);
+	const restored = await voiceOf(A);
+	h.check(
+		restored.stream === true && restored.live === 1 && restored.outgoing > 0,
+		`...with a live device behind it (${JSON.stringify(restored)})`
+	);
+	await A.page.evaluate(() => window.__stores.voiceChat.releaseMic());
 
 	await A.page.evaluate(async () => {
 		for (const k of ['27h-probe', '27h-abort', '27h-stall', '27h-after']) await window.__stores.idb.idbDelete(k);

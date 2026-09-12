@@ -20,6 +20,10 @@ import { initVoiceChat, attachVoiceToPeer, voicePeerConnected } from '$lib/voice
 import { resolvePeerOptions, describePeerServer, peerServerStatus, parseInviteHash, decodeInviteServer, applyInviteServerOverride, inviteServerOverride } from '$lib/peerServer';
 import { sessionHost, markPeerJoined, resetSession, signalingRetry, noteSignalingRetry, clearSignalingRetry } from '$lib/connectionState';
 import { canApply, getAuthProvider, dispatchCloudMessage, rolesInfo } from '$lib/cloudHooks';
+// 27-A (audit H1): shape validation + per-peer failure counters. Both are LEAVES, so the
+// dispatcher can reject a malformed message before any applier sees it.
+import { validateWireMessage } from '$lib/wireValidate';
+import { noteWireError } from '$lib/wireErrors';
 import { applyAnnotation, applyAnnotationsSnapshot, sendAnnotations } from '$lib/annotationsHandler';
 import { applyPing } from '$lib/ping';
 import { applyAssetFile, answerAssetRequest, applyAssetThumb, answerAssetThumbRequest, applyAssetStart, applyAssetChunk, applyAssetMissing } from '$lib/assetShare';
@@ -498,7 +502,17 @@ export class PeerConnection {
 
 		/** @this {any} @param {any} conn */
 		function handleData(conn) {
-			conn.on('data', (data) => {
+			// 27-A: a conn reports its OWN failures now. eventemitter3 swallows an 'error'
+			// nobody listens for, so a send to a half-open conn and a failed negotiation were
+			// both invisible. This is the one function every creation site already calls —
+			// the four dials and the adopted inbound conn — so one listener pair covers all.
+			conn.on('error', (/** @type {any} */ err) => noteWireError(conn.peer, 'conn-error', err?.type ?? err));
+			conn.on('iceStateChanged', (/** @type {any} */ state) => {
+				if (state === 'failed' || state === 'closed') noteWireError(conn.peer, 'ice-' + state);
+			});
+			// The dispatch chain itself, called from the guarded handler below. Naming it is
+			// what lets a try/catch wrap 440 lines without re-indenting any of them.
+			const dispatch = (/** @type {any} */ data) => {
 				// M1a (open-core): the ONE receive-side capability gate. Default allows
 				// everything (byte-identical OSS behavior); a cloud plugin's provider
 				// drops disallowed message types from a peer (e.g. a viewer's mutations).
@@ -969,11 +983,42 @@ export class PeerConnection {
 						...map,
 						[data.peerId]: { left: data.left, right: data.right, active: data.active !== false, ts: Date.now() }
 					}));
-				} else if(data.startsWith('/')) {
-					sceneCommand(data);
+				} else {
+					// 27-A (audit M11): THE RAW-STRING BRANCH IS GONE. It routed a peer's
+					// string straight into sceneCommand, where '/clear all' wipes the scene
+					// AND re-broadcasts it — a receiver re-broadcasting is golden rule 1
+					// inverted. Nothing sends raw strings (sendMessage runs slash commands
+					// locally), so an unreachable branch was standing armed. What is here now
+					// is the counter that says a peer sent something this build cannot apply,
+					// which is how version skew becomes visible instead of silent.
+					noteWireError(conn.peer, 'unknown:' + data.type);
 				}
-			}
-			);
+			};
+
+			conn.on('data', (data) => {
+				// 27-A (audit H1): SHAPE FIRST, before any gate reads `data.type`. A null, a
+				// string or a number used to fall through the whole chain to
+				// `data.startsWith(...)` and throw out of the handler, where peerjs swallowed
+				// it and nothing counted it. canApply stays the first POLICY gate; this is
+				// only "is this a message at all".
+				if (!data || typeof data !== 'object') {
+					noteWireError(conn.peer, 'shape', typeof data);
+					return;
+				}
+				// …then the shape its own type implies, so an applier cannot throw halfway
+				// through applying half a message. A type absent from the table is ALLOWED,
+				// which is what keeps a newer peer's messages working.
+				if (!validateWireMessage(data)) {
+					noteWireError(conn.peer, 'invalid:' + data.type);
+					return;
+				}
+				try {
+					dispatch(data);
+				} catch (error) {
+					// One bad message must not take this connection's handler down with it.
+					noteWireError(conn.peer, data.type, error);
+				}
+			});
 		}
 	}
 

@@ -22,6 +22,7 @@ import { annotations } from '$lib/annotationsHandler'
 import { isViewer, warnViewerReadOnly } from '$lib/objectPermissions'
 import { get } from 'svelte/store'
 import { addMessage, loading, loadingcount, showToast, fixLight, specatorMode } from '../stores/appStore';
+import { dropWireErrors } from './wireErrors';
 import { peers, userdata } from '../stores/appStore';
 
 //Access scene Store
@@ -65,7 +66,12 @@ const loader = new THREE.ObjectLoader();
 let uuids = [];
 
 export function userData(data) {
+    // 27-A (audit H1): the roster applier called .forEach on whatever arrived. A malformed
+    // `userdata` threw out of the dispatcher, which had no try/catch — the A1 note below
+    // records the same class of failure in `specator`.
+    if (!Array.isArray(data)) return;
     data.forEach(element => {
+        if (!Array.isArray(element) || typeof element[0] !== 'string') return;
         console.log('received new approved host : ' + element[0])
         if (!users.some(u => u[0] === element[0]))
             users.push(element)
@@ -260,8 +266,10 @@ export function applyClearScene(peerId) {
 }
 
 export function lockRestore(lockeditems) {
+    // 27-A: same trust, same fix — a non-array here threw inside the handshake.
+    if (!Array.isArray(lockeditems)) return;
     // Filter out the current peer id locks
-    locked = locked.concat(lockeditems.filter((lock) => lock[0] != peer.peer.id));
+    locked = locked.concat(lockeditems.filter((lock) => Array.isArray(lock) && lock[0] != peer.peer.id));
     // Update the locked objects store
     lockedObjects.set(locked);
 }
@@ -289,6 +297,7 @@ export function handleDisconnected(peerId) {
     });
     dropPeerCursor(peerId);
     dropPeerQuality(peerId); // N3: drop the peer's network-quality telemetry
+    dropWireErrors(peerId); // 27-A: and its wire-failure counters (golden rule 3)
     dropPeerClock(peerId); // 23-A2: and their clock-offset samples
     // CN: host bookkeeping — the host leaving means we're no longer "joined"
     if (get(sessionHost) === peerId) sessionHost.set(null);

@@ -15,6 +15,9 @@ function initRectAreaUniforms() {
 }
 import { notifyExternalMove, noteObjectPose } from '$lib/flowRuntime';
 import { globalScene, objectsGroup, TControls, lockedObjects, selectedObject, selectedObjects } from '../stores/sceneStore.js';
+// 27-A: a transform off the wire is sanitised before it reaches the scene graph
+import { sanitizeTransform } from './wireValidate';
+import { noteWireError } from './wireErrors';
 
 //Access scene Store
 let scene = $state();
@@ -311,6 +314,22 @@ export function moveGeometry(uuid, pos, rot, scale) {
     // per component (B5).
     const object = sceneObjects.getObjectByProperty('uuid', uuid);
     if(object) {
+        // 27-A (audit M7): the BACKSTOP, not the primary gate. wireValidate refuses a
+        // `move` whose components are not finite, so wire traffic never reaches here in
+        // that state; this covers any caller that does not pass through the dispatcher.
+        // A NON-FINITE component is worse than a malformed message — it
+        // applies cleanly, poisons the object's matrix, and every consumer that measures
+        // the scene afterwards (Box3 bounds, frame-to-fit, the body's next physics step)
+        // reads NaN forever with nothing pointing back at the message that did it. Each
+        // bad component falls back to the pose the object already has.
+        const safe = sanitizeTransform(pos, rot, scale, {
+            pos: object.position.toArray(),
+            rot: [object.rotation.x, object.rotation.y, object.rotation.z],
+            scale: object.scale.toArray()
+        });
+        if (!safe) return;
+        if (safe.repaired) noteWireError('local', 'move-nan');
+        pos = safe.pos; rot = safe.rot; scale = safe.scale;
         object.position.set(pos[0], pos[1], pos[2]);
         object.rotation.set(rot[0], rot[1], rot[2]);
         object.scale.set(scale[0], scale[1], scale[2]);

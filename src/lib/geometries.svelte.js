@@ -340,9 +340,31 @@ export function moveGeometry(uuid, pos, rot, scale) {
     }
 }
 
+/**
+ * 27-E (audit H7): peer avatars are INDEXED, not searched. This is the hottest receive
+ * path there is — one message per remote peer per send-gate tick — and it walked the
+ * WHOLE scene graph each time (`getObjectByName` is a full traverse). With 2,000 objects
+ * and nine peers that is millions of node visits a second before anybody edits anything.
+ * The index is a cache keyed by peer id, re-resolved whenever it misses or goes stale, so
+ * an avatar that mounts later or is replaced still works with no lifecycle to maintain.
+ * @type {Map<string, any>}
+ */
+const peerAvatars = new Map();
+
+/** Drop one peer's cached avatar (teardown, and whenever the object leaves the scene).
+ * @param {string} peerId */
+export function dropPeerAvatar(peerId) {
+    peerAvatars.delete(peerId);
+}
+
 export function moveCamera(data) {
-    // console.log('moveCamera: ' + data.position[1] + ' ' + data.rotation[1]);
-    let peerMesh = scene.getObjectByName(data.peerId)
+    let peerMesh = peerAvatars.get(data.peerId);
+    // stale (avatar replaced, scene cleared) or never seen: resolve once and remember
+    if (!peerMesh || peerMesh.parent === null || peerMesh.name !== data.peerId) {
+        peerMesh = scene.getObjectByName(data.peerId);
+        if (peerMesh) peerAvatars.set(data.peerId, peerMesh);
+        else peerAvatars.delete(data.peerId);
+    }
     if (!peerMesh) return;
     peerMesh.position.set(data.position[0], data.position[1], data.position[2]);
     peerMesh.rotation.set(data.rotation[0], data.rotation[1], data.rotation[2]);

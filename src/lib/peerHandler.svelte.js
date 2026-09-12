@@ -18,7 +18,7 @@ import { applyUvPaint, applyUvPaintEnd } from '$lib/uvEditor';
 import { applySplineEdit } from '$lib/splineTool';
 import { initVoiceChat, attachVoiceToPeer, voicePeerConnected } from '$lib/voiceChat';
 import { resolvePeerOptions, describePeerServer, peerServerStatus, parseInviteHash, decodeInviteServer, applyInviteServerOverride, inviteServerOverride } from '$lib/peerServer';
-import { sessionHost, markPeerJoined, resetSession, signalingRetry, noteSignalingRetry, clearSignalingRetry } from '$lib/connectionState';
+import { sessionHost, markPeerJoined, resetSession, signalingRetry, noteSignalingRetry, clearSignalingRetry, noteApprovalStarted, clearApprovalStarted, approvalStartedAt, APPROVAL_WINDOW_MS, MAX_PENDING_APPROVALS, HARD_PEER_CAP, roomIsFull } from '$lib/connectionState';
 import { canApply, getAuthProvider, dispatchCloudMessage, rolesInfo } from '$lib/cloudHooks';
 // 27-A (audit H1): shape validation + per-peer failure counters. Both are LEAVES, so the
 // dispatcher can reject a malformed message before any applier sees it.
@@ -125,6 +125,27 @@ userdata.subscribe(value => { users = value });
 /** P2b: the only messages `broadcast` will withhold from a peer in another scene.
  * Pure presence, re-sent continuously, useless to somebody in a different world. */
 const STREAM_TYPES = new Set(['camera', 'vrhands']);
+
+/**
+ * 27-E: keep the pending queue bounded, dropping the EXPIRED first and only then the
+ * oldest still-live request. A missed request is worse than a stale card, so nothing is
+ * dropped while there is room — this only decides who goes when there is not.
+ * @param {any[]} approvals @returns {any[]}
+ */
+function boundApprovals(approvals) {
+	if (approvals.length <= MAX_PENDING_APPROVALS) return approvals;
+	const started = get(approvalStartedAt);
+	const age = (/** @type {any} */ a) => Date.now() - (started[a.peerId] ?? 0);
+	const expired = approvals.filter((a) => age(a) > APPROVAL_WINDOW_MS).sort((a, b) => age(b) - age(a));
+	const live = approvals.filter((a) => age(a) <= APPROVAL_WINDOW_MS).sort((a, b) => age(b) - age(a));
+	const drop = new Set();
+	for (const a of [...expired, ...live]) {
+		if (approvals.length - drop.size <= MAX_PENDING_APPROVALS) break;
+		drop.add(a.peerId);
+	}
+	for (const peerId of drop) clearApprovalStarted(peerId);
+	return approvals.filter((a) => !drop.has(a.peerId));
+}
 
 export class PeerConnection {
 	constructor(id, updateIdFn) {
@@ -361,6 +382,10 @@ export class PeerConnection {
 				return;
 			}
 			if (err.type === 'peer-unavailable') {
+				// 27-E: end the request this names. The pill used to sit on "Requesting"
+				// beside this very toast, and the optimistic whitelist row never went away.
+				const id = String(err.message ?? '').match(/[0-9a-z]{3,}/i)?.[0] ?? '';
+				if (id) import('$lib/peerApproval').then((m) => m.abandonOutboundRequest(id)).catch(() => {});
 				showToast('Peer is unreachable. Check the ID and ask them to stay online.');
 			} else if (err.type === 'unavailable-id') {
 				showToast('Your session ID is already in use. Please reload the page.');
@@ -412,8 +437,12 @@ export class PeerConnection {
 			let waiting = get(waitingForApproval);
 			waiting.forEach(element => {
 				if(element[0] === conn.peer) {
-					// Clear waiting list for approved peers
-					waiting = waiting.filter(e => e[1] !== 'approved');
+					// 27-E (audit M10): the row is REMOVED on approval, not mutated in place
+					// with a discarded filter — the old shape grew one dead row per join for
+					// the tab's lifetime, and mutating a store's array in place is how the
+					// next reader gets a value nobody published.
+					clearApprovalStarted(conn.peer);
+					waitingForApproval.set(get(waitingForApproval).filter((/** @type {any} */ w) => w[0] !== conn.peer));
 					element[1] = 'approved';
 
 					// CN: OUR outbound request was approved — that peer is the session
@@ -468,7 +497,11 @@ export class PeerConnection {
 				var approvals = get(pendingApprovals);
 				if (!approvals.some(toast => toast.peerId === conn.peer)) {
 					approvals.push({ peerId: conn.peer });
-					pendingApprovals.set(approvals);
+					// 27-E: stamp the SAME clock the joiner's countdown uses, so the card's
+					// age and their pill agree; and BOUND the queue — a host who walked away
+					// used to collect a card per dial with nothing dropping them (audit H3).
+					noteApprovalStarted(conn.peer);
+					pendingApprovals.set(boundApprovals(approvals));
 				}
 				conn.close();
 			}
@@ -549,6 +582,12 @@ export class PeerConnection {
 					console.log('Connecting to received hosts');
 					data.hosts.forEach( id =>
 					{
+						// 27-E (audit L7): a joiner must not fill the mesh past the cap the
+						// approving side is enforcing, or the room grows by the back door.
+						// Counted off the OPEN connections, never `userdata` — that roster is
+						// the whitelist, written at dial time, so it counts people who were
+						// invited and never arrived.
+						if (roomIsFull(this)) return;
 						// mesh fill: connect, but DON'T request full state — the scene
 						// is one shared state and we already pull it from the peer we
 						// joined. Requesting it from everyone made a joiner download

@@ -14,6 +14,8 @@
 	import { versionString } from '$lib/version.js';
 	// 27-B: the diagnostics bundle — clipboard only, nothing leaves the browser
 	import { copyDiagnostics } from '$lib/diagnostics';
+	// 27-E: session size. LOCAL, like every other connection preference.
+	import { softPeerCap, HARD_PEER_CAP, SOFT_PEER_CAP_DEFAULT } from '$lib/connectionState';
 	const appVersionString = versionString();
 	import { vrFaceCap, VR_FACE_CAP } from '$lib/faceEdit';
 	import { doubleClickAction, DOUBLE_CLICK_ACTIONS } from '$lib/selectionPrefs';
@@ -2008,6 +2010,27 @@
 				</AccordionItem>
 				<AccordionItem bind:open={connectionExpanded}>
 					{#snippet header()}Connection{/snippet}
+					<SettingRow name="Session size">
+						<svelte:fragment slot="control">
+							<input
+								id="soft-peer-cap"
+								type="number"
+								min="2"
+								max={HARD_PEER_CAP}
+								class="w-full rounded-sm bg-gray-700 px-1 py-0.5 text-xs text-white"
+								value={$softPeerCap}
+								on:change={(e: any) => {
+									const n = Number(e.target.value);
+									softPeerCap.set(Number.isFinite(n) ? Math.min(HARD_PEER_CAP, Math.max(2, Math.round(n))) : SOFT_PEER_CAP_DEFAULT);
+								}}
+							/>
+						</svelte:fragment>
+						How many people you expect in a session. Everyone connects to everyone, so each
+						extra person costs every other person bandwidth — voice and live gestures are the
+						hungry parts. Past this number an approval still works but warns; the hard limit
+						is <span class="font-mono">{HARD_PEER_CAP}</span>, where approving would degrade
+						the session for everybody rather than just for whoever joined last.
+					</SettingRow>
 					<SettingRow name="Signaling server">
 						<svelte:fragment slot="control">
 							<ThemedSelect

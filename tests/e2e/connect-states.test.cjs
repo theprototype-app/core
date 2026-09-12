@@ -47,7 +47,7 @@ h.run(async () => {
 	const pendingInput = A.page.locator('.cx-connect input[disabled]').first();
 	const pendingValue = await pendingInput.inputValue();
 	h.check(
-		(await pendingInput.isVisible()) && /^Requesting FFFF1$/i.test(pendingValue),
+		(await pendingInput.isVisible()) && /^Requesting FFFF1( · \d+:\d{2})?$/i.test(pendingValue),
 		`CN: pending shows the waiting-for-approval status ("${pendingValue}")`
 	);
 

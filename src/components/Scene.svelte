@@ -124,6 +124,7 @@
 	interactivity();
 	const scale = spring(0.5);
 	let rotation = 0;
+	let lastCameraSendAt = 0 // 27-E: the camera stream's rate gate
 	let lastCameraPosition = new THREE.Vector3();
 	// P2b THE OTHER HALF OF THE SEND GATE. The camera broadcast is CHANGE-GATED, so a
 	// peer who travels into our scene while we are standing still would never receive a
@@ -289,8 +290,18 @@
 			camContentPos.copy(camera.current.position);
 			camContentQuat.copy(camera.current.quaternion);
 			worldToContentPose($worldRig, camContentPos, camContentQuat);
-			if (camContentPos.distanceTo(lastCameraPosition) > ($isVRMode ? 0.0001 : 0.01) ||
-				camContentQuat.angleTo(lastCameraQuaternion) > THREE.MathUtils.degToRad(1)) {
+			// 27-E (audit H7): the camera stream is RATE-GATED now. It used to send on every
+			// frame the camera moved past a threshold — in VR that threshold is 0.0001 m, so
+			// at 90 Hz it is a message per frame, and at N=10 each peer both sends and
+			// receives ~800 a second. The movement threshold is unchanged; this only bounds
+			// HOW OFTEN, which is the `vrhands` pattern one block below. Golden rule 11: a
+			// receiver eases between samples, we never raise a send rate to paper over it.
+			const camGapMs = $isVRMode ? 33 : 50;
+			const nowMs = performance.now();
+			if ((camContentPos.distanceTo(lastCameraPosition) > ($isVRMode ? 0.0001 : 0.01) ||
+				camContentQuat.angleTo(lastCameraQuaternion) > THREE.MathUtils.degToRad(1)) &&
+				nowMs - lastCameraSendAt >= camGapMs) {
+				lastCameraSendAt = nowMs;
 				camContentEuler.setFromQuaternion(camContentQuat);
 				$peers.send({ type: 'camera', peerId: $peers.peer.id, position: camContentPos.toArray(), rotation: [camContentEuler.x, camContentEuler.y, camContentEuler.z] });
 				lastCameraPosition.copy(camContentPos);

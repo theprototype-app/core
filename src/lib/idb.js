@@ -41,16 +41,19 @@ export const OP_TIMEOUT_MS = 10_000;
 
 /** @type {number | null} test override for the timeout (null = OP_TIMEOUT_MS) */
 let timeoutOverride = null;
-/** @type {'abort' | 'stall' | null} test override for the next transaction */
+/** @type {'abort' | 'stall' | 'quota' | null} test override for the next transaction */
 let forcedFailure = null;
+/** @type {any} the error a forced failure should report instead of the transaction's own */
+let forcedError = null;
 
 /**
- * TEST SEAM: make the next transaction fail the way the two unbounded cases do.
- * `'abort'` calls `tx.abort()` once the request is queued (what a quota failure or a
- * closing connection does); `'stall'` swallows every completion callback, which is the
- * state that used to hang forever and now hits the timeout. One-shot — it clears itself
- * as soon as it is used, so a suite cannot poison the rest of its own run.
- * @param {'abort' | 'stall' | null} mode
+ * TEST SEAM: make the next transaction fail the way the real ones do.
+ * `'abort'` aborts it, `'stall'` swallows every completion callback (the state that
+ * used to hang forever and now hits the timeout), and `'quota'` reports the exact
+ * `QuotaExceededError` a full disk reports — which cannot be provoked honestly in a
+ * headless run, where the origin is granted tens of gigabytes. One-shot: each clears
+ * itself as soon as it is used, so a suite cannot poison the rest of its own run.
+ * @param {'abort' | 'stall' | 'quota' | null} mode
  */
 export function debugForceNextTx(mode) {
 	forcedFailure = mode;
@@ -172,9 +175,15 @@ async function withDb(label, body) {
  */
 function settle(tx, value) {
 	return new Promise((resolve, reject) => {
+		/** @param {string} fallback */
+		const fail = (fallback) => {
+			const forced = forcedError;
+			forcedError = null;
+			reject(forced ?? tx.error ?? new Error(fallback));
+		};
 		tx.oncomplete = () => resolve(value());
-		tx.onerror = () => reject(tx.error ?? new Error('idb transaction failed'));
-		tx.onabort = () => reject(tx.error ?? new Error('idb transaction aborted'));
+		tx.onerror = () => fail('idb transaction failed');
+		tx.onabort = () => fail('idb transaction aborted');
 	});
 }
 
@@ -189,12 +198,18 @@ function settle(tx, value) {
  *
  * `'stall'` removes every handler the transaction could settle through: the shape of an
  * operation the browser never reports on at all, which only the timeout can catch.
+ *
+ * `'quota'` aborts the same way and hands `settle` the error a full disk raises, so the
+ * whole failure path downstream — the name test in autosave, the sticky toast, the
+ * diagnostics line — runs against the real exception rather than a stand-in for it.
  * @param {IDBTransaction} tx @param {IDBRequest} [request]
  */
 function applyForcedFailure(tx, request) {
 	const mode = forcedFailure;
 	forcedFailure = null;
-	if (mode === 'abort') {
+	if (mode === 'abort' || mode === 'quota') {
+		if (mode === 'quota')
+			forcedError = new DOMException('The quota has been exceeded.', 'QuotaExceededError');
 		const fire = () => {
 			try {
 				tx.abort();

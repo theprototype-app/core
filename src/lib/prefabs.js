@@ -281,6 +281,32 @@ export function prefabById(id) {
 }
 
 /**
+ * 24-C1: a second prefab record with the same snapshot (a deep copy of the element
+ * JSON, the thumbnail carried over, a file-format prefab keeps its bytes) under a fresh
+ * id and the copy name. Prefabs are local records, so nothing replicates.
+ * @param {string} id @returns {Promise<any | null>}
+ */
+export async function duplicatePrefab(id) {
+	const source = prefabById(id);
+	if (!source?.element) return null;
+	const names = get(prefabs).map((p) => String(p.name || ''));
+	const stem = String(source.name || 'Prefab').replace(/ copy( \d+)?$/i, '');
+	let name = stem + ' copy';
+	for (let n = 2; names.some((x) => x.toLowerCase() === name.toLowerCase()); n++) name = stem + ' copy ' + n;
+	const entry = {
+		...source,
+		id: crypto.randomUUID(),
+		name,
+		createdAt: Date.now(),
+		element: JSON.parse(JSON.stringify(source.element))
+	};
+	delete entry.updatedAt;
+	prefabs.update((list) => [...list, entry]);
+	await persist();
+	return entry;
+}
+
+/**
  * 21-H2: the stored prefab JSON as a LIVE THREE tree — **never added to the scene**.
  *
  * ONE seam, deliberately, because the preview and the GLTF export are not two features:

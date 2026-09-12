@@ -76,8 +76,9 @@ export function autoVersionsOff() {
  *   version — absent means every version reads as "Auto", so an older manifest is
  *   byte-unchanged.
  * @typedef {{id: string, name: string, parentId: string|null, owner?: any, at?: number}} SharedFolder
- * @typedef {{hash: string, name: string, kind: string, folderId: string|null, owner?: any,
- *   at?: number}} SharedItem
+ * @typedef {{id: string, hash: string, name: string, kind: string, folderId: string|null,
+ *   owner?: any, at?: number}} SharedItem 24-C2: `id` is the publisher's record uuid (network
+ *   identity); `hash` is the content pointer. A legacy row has a synthetic `'hash:' + hash`.
  * @typedef {{name: string, scenes: Record<string, SceneEntry>, assets: string[],
  *   changedAt: number, folders?: SharedFolder[], items?: SharedItem[],
  *   removed?: {items: Record<string, number>, folders: Record<string, number>},
@@ -92,8 +93,9 @@ export function autoVersionsOff() {
  *   A FOLDER ROW is `hash: 'folder:' + folderId` with `kind: 'folder'` (the `'prefab:'`
  *   precedent, so one array keeps one key) and its `folderId` is its PARENT. A shared
  *   folder's id is network identity (R22-R1), so a peer's row resolves to the same place
- *   everywhere. `normalizeDeleted` needs no special casing: it keys on `hash`, coerces
- *   `name`/`kind`/`at` and passes every other field through untouched.
+ *   everywhere. `normalizeDeleted` keys on `id` when a row has one (24-C2: an item row
+ *   written since carries its record id, so two deleted COPIES are two rows) and on `hash`
+ *   otherwise, coerces `name`/`kind`/`at` and passes every other field through untouched.
  *   `name` (21-G9) is the project's identity; `folders`/`items` (R22-R1) are THE SHARED
  *   INDEX — see the block comment above normalizeSharedIndex.
  */
@@ -101,6 +103,63 @@ export function autoVersionsOff() {
 /** @returns {Manifest} */
 function defaultManifest() {
 	return { name: '', scenes: {}, assets: [], changedAt: 0 };
+}
+
+// ---- 24-C2: row identity ------------------------------------------------------------
+//
+// A shared item row is `{id, hash, ...}`. `id` is the publisher's RECORD uuid — network
+// identity, the folder precedent — and `hash` is the CONTENT pointer the bytes travel by.
+// A row written by a pre-24 build carries no `id`, and `normalizeSharedIndex` gives it a
+// synthetic one derived from the hash. Three helpers say what that means downstream, so no
+// consumer has to know the prefix.
+
+/** the prefix of a synthetic (hash-derived) item id */
+export const SYNTHETIC_ID = 'hash:';
+
+/** Is this an item id a legacy row was given, i.e. "treat this row by hash"? @param {any} id */
+export function isSyntheticId(id) {
+	return String(id ?? '').startsWith(SYNTHETIC_ID);
+}
+
+/**
+ * The key a TOMBSTONE for an item row is written under: the record id for a real row, the
+ * BARE hash for a legacy one — an old peer keys its tombstones by hash, so the two builds
+ * keep agreeing about what has been removed. @param {any} row @returns {string}
+ */
+export function rowKeyOf(row) {
+	const id = String(row?.id ?? '').trim();
+	return !id || isSyntheticId(id) ? String(row?.hash ?? '').trim() : id;
+}
+
+/**
+ * The key a DELETED-LOG row is keyed by: its record id when it has one, its hash otherwise
+ * (an old row, a folder row, a prefab row). Two copies deleted are two rows.
+ * @param {any} row @returns {string}
+ */
+export function logKeyOf(row) {
+	const id = String(row?.id ?? '').trim();
+	return id || String(row?.hash ?? '').trim();
+}
+
+/**
+ * The tombstone that applies to an item row, if any: the newest of the one under its own
+ * key and the one under its bare hash. The second read is the compatibility half — a
+ * pre-24 peer (or the idb document from before the upgrade) tombstones "the file" by hash,
+ * and honouring that against a real-id row is exactly what that peer meant.
+ * @param {any} row @param {any} tombs the `removed.items` map @returns {number | null}
+ */
+export function itemTombstoneAt(row, tombs) {
+	const a = Number(tombs?.[rowKeyOf(row)]);
+	const b = Number(tombs?.[String(row?.hash ?? '').trim()]);
+	const at = Math.max(Number.isFinite(a) ? a : -1, Number.isFinite(b) ? b : -1);
+	return at >= 0 ? at : null;
+}
+
+/** Is an item row LIVE against a tombstone map — untombed, or re-shared after the removal?
+ * @param {any} row @param {any} tombs */
+export function itemRowLive(row, tombs) {
+	const at = itemTombstoneAt(row, tombs);
+	return at === null || (Number(row?.at) || 0) > at;
 }
 
 /**
@@ -120,9 +179,18 @@ function defaultManifest() {
  * that replicates on every edit does not grow with a library nobody shared.
  *
  * TWO IDENTITIES, and they are not the same kind of thing:
- *   · an ITEM is its content HASH. Two peers holding one file have different local
- *     record ids and the same hash, so the hash is the only thing a row can be keyed
- *     by — and it is also why unshare can never destroy a peer's copy (R2).
+ *   · an ITEM is a RECORD (24-C2): the row's `id` is the publisher's record uuid and
+ *     becomes NETWORK identity exactly as a folder's does, while `hash` stays the
+ *     CONTENT pointer the bytes travel by. Until C2 the row WAS its hash, which is why a
+ *     copy (a second record holding the same bytes, 24-C1) could not exist on the wire —
+ *     the second row collapsed into the first. Keeping the hash beside the id is what
+ *     makes a copy free: a peer that already holds the hash materialises the record
+ *     from its own disk, and `getasset` still pulls by hash for one that does not. It is
+ *     also still why unshare can never destroy a peer's copy (R2).
+ *     A LEGACY ROW (a pre-24 peer, an old `.tp`, the idb copy from before the upgrade)
+ *     has no `id` and takes a SYNTHETIC one, `'hash:' + hash`, stable on every machine so
+ *     two old peers keep agreeing — and every consumer treats a synthetic id as "by
+ *     hash" (`isSyntheticId`), so the old semantics survive for old rows only.
  *   · a FOLDER is its `id`, and a shared folder's id becomes NETWORK identity: a peer
  *     adopting the row creates a local folder with that exact uuid, so every
  *     `folderId` reference resolves on every machine with no remapping. That is the
@@ -146,7 +214,12 @@ function normalizeSharedIndex(rows, kind) {
 	for (const row of rows) {
 		if (!row || typeof row !== 'object') continue;
 		// the KEY is the identity of the thing, and a row with none is not a row
-		const key = kind === 'item' ? String(row.hash ?? '').trim() : String(row.id ?? '').trim();
+		const hash = kind === 'item' ? String(row.hash ?? '').trim() : '';
+		if (kind === 'item' && !hash) continue;
+		const givenId = String(row.id ?? '').trim();
+		// 24-C2: an item row is keyed by its record id; a row that has none (a legacy peer or
+		// file) takes the synthetic hash-derived one, so two pre-24 peers still agree
+		const key = kind === 'item' ? givenId || SYNTHETIC_ID + hash : givenId;
 		if (!key) continue;
 		const name = String(row.name ?? '').trim();
 		if (!name) continue;
@@ -156,10 +229,10 @@ function normalizeSharedIndex(rows, kind) {
 		// this build (the normalizeAnnotation rule, applied per row rather than per doc)
 		const clean = { ...row, name };
 		if (kind === 'item') {
-			clean.hash = key;
+			clean.hash = hash;
+			clean.id = key;
 			clean.kind = String(row.kind ?? '').trim() || 'text';
 			clean.folderId = folderRef == null ? null : String(folderRef);
-			delete clean.id; // an item row is keyed by hash; a local record id means nothing here
 		} else {
 			clean.id = key;
 			clean.parentId = folderRef == null ? null : String(folderRef);
@@ -186,15 +259,22 @@ function normalizeSharedIndex(rows, kind) {
 function normalizeDeleted(rows) {
 	if (!Array.isArray(rows)) return [];
 	/** @type {Map<string, any>} */
-	const byHash = new Map();
+	const byKey = new Map();
 	for (const row of rows) {
 		const hash = String(row?.hash ?? '').trim();
 		const at = Number(row?.at);
 		if (!hash || !Number.isFinite(at) || at <= 0) continue;
-		// last entry for a hash wins: deleting, restoring and deleting again is one story
-		byHash.set(hash, { ...row, hash, name: String(row.name ?? hash), kind: String(row.kind ?? 'text'), at });
+		/** @type {any} */
+		const clean = { ...row, hash, name: String(row.name ?? hash), kind: String(row.kind ?? 'text'), at };
+		const id = String(row?.id ?? '').trim();
+		if (id) clean.id = id;
+		else delete clean.id;
+		// 24-C2: last entry for a KEY wins — the record id when the row has one, the hash
+		// otherwise (an old row, a folder row, a prefab row). Deleting, restoring and deleting
+		// again is one story; two COPIES deleted are two stories.
+		byKey.set(logKeyOf(clean), clean);
 	}
-	return [...byHash.values()].sort((a, b) => a.at - b.at).slice(-DELETED_LOG_CAP);
+	return [...byKey.values()].sort((a, b) => a.at - b.at).slice(-DELETED_LOG_CAP);
 }
 
 /** how many deletions the log remembers */
@@ -533,7 +613,9 @@ export function publishSharedIndex(folders, items, removed, deleted) {
 	const nextD = normalizeDeleted(deleted ?? m.deleted);
 	const same =
 		JSON.stringify(sortedIndex(nextF, 'id')) === JSON.stringify(sortedIndex(m.folders ?? [], 'id')) &&
-		JSON.stringify(sortedIndex(nextI, 'hash')) === JSON.stringify(sortedIndex(m.items ?? [], 'hash')) &&
+		// 24-C2: by id — two copies share a hash, so a hash is not an order these rows can be
+		// compared in
+		JSON.stringify(sortedIndex(nextI, 'id')) === JSON.stringify(sortedIndex(m.items ?? [], 'id')) &&
 		JSON.stringify(nextR) === JSON.stringify(normalizeTombs(m.removed)) &&
 		JSON.stringify(nextD) === JSON.stringify(normalizeDeleted(m.deleted));
 	if (same) return false;
@@ -978,6 +1060,12 @@ export function setScenePrivateHere(name, on) {
 	if (!scene) return;
 	if (on) privateScenes.add(scene);
 	else privateScenes.delete(scene);
+}
+
+/** 24-C3: is this scene marked private on this machine? A copy of a private scene takes
+ * the mark under its new name (the `saveSceneAsLevel` Save-as rule). @param {string} name */
+export function isScenePrivateHere(name) {
+	return privateScenes.has(String(name ?? '').trim());
 }
 
 /**

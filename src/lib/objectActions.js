@@ -18,9 +18,9 @@ import {
 	gizmoSuppressed,
 	cameraClaim
 } from '../stores/sceneStore';
-import { attachMultiPivot, releaseMultiPivot } from './multiTransform';
-import { focusTargetFace } from './faceEdit';
-import { focusTargetVertex } from './meshEdit';
+import { attachMultiPivot, releaseMultiPivot, hasCustomOrigin, pivotPose, setPivotOrigin } from './multiTransform';
+import { focusTargetFace, faceEditObject, hideElementSelection, restoreElementSelection } from './faceEdit';
+import { focusTargetVertex, editingObject, hideVertexSelection, restoreVertexSelection } from './meshEdit';
 import {
 	peers,
 	showSidebar,
@@ -127,6 +127,26 @@ function applyMemberTints(group, uuids) {
 	}
 }
 
+/**
+ * 24-B1: the "last selection" memory. Pressing the active mode key with a gizmo
+ * attached HIDES the selection (deselect + detach, the long-standing "done"
+ * gesture) — and nothing remembered what was hidden, so a third press only set the
+ * mode and the user had to click everything again (reported). Every selection path
+ * writes this (they all go through applySelectionSet); any mode key restores it when
+ * nothing is attached, filtered to objects that still exist and are not peer-locked.
+ * `origin` is a hand-placed SELECTION origin (multiTransform's customOrigin) captured
+ * at hide time, so a set comes back about the point the user put — attachMultiPivot
+ * recentres a fresh selection, which is right for a click and wrong for a recall.
+ * Deleting objects does NOT clear it: an undo brings them back and the memory still
+ * works; the filter at restore time is what handles the gone ones.
+ * @type {{ uuids: string[], origin: number[] | null } | null} */
+let lastSelection = null;
+
+/** What a mode key would bring back (tests, and the toast copy). */
+export function lastSelectionMemory() {
+	return lastSelection;
+}
+
 /** Make a uuid set the current selection. Primary = last entry.
  * @param {string[]} uuids @param {boolean=} openProperties */
 export function applySelectionSet(uuids, openProperties = false) {
@@ -145,6 +165,7 @@ export function applySelectionSet(uuids, openProperties = false) {
 	applyMemberTints(group, clean);
 	const previous = get(selectedObjects);
 	selectedObjects.set(clean);
+	if (clean.length) lastSelection = { uuids: [...clean], origin: null }; // 24-B1
 	if (!clean.length) {
 		releaseMultiPivot();
 		if (controls && !get(isVRMode)) controls.detach();
@@ -260,24 +281,76 @@ export function deselectObject() {
  * ONE path (151), so the toolbar tint (transformMode store) always matches.
  * Pressing the ALREADY-active mode while a gizmo is attached = "done": deselect
  * + detach (a repeat press exits rather than being a no-op).
+ *
+ * 24-B1: ...and pressing ANY mode key with nothing attached brings the last
+ * selection back in that mode (`1 1 1` = move · hide · move with the same set;
+ * pressing a different key on an empty selection has no other meaning here, so
+ * "bring it back in that mode" is the consistent reading — recorded as a choice).
+ * The multi-pivot proxy now hides too (a multi-select comes back as the same set
+ * with its custom origin); the face/vertex proxies hide the ELEMENT selection through
+ * the mesh session's own switch (`meshGizmoEnabled`, the toolbox button's store, so
+ * the button always agrees with what the key did). VR is unchanged.
  * @param {'translate'|'rotate'|'scale'} mode
  */
 export function setTransformMode(mode) {
 	/** @type {any} */
 	const controls = get(TControls);
 	const object = controls?.object;
-	// a face/vertex/multi gizmo proxy just switches mode (163) — no deselect
-	const isProxy = !!(
-		object?.userData?.isFaceProxy ||
-		object?.userData?.isVertexProxy ||
-		object?.userData?.isMultiPivot
-	);
-	if (!isProxy && get(transformMode) === mode && object && !get(isVRMode)) {
-		deselectObject();
-		return;
+	const vr = get(isVRMode);
+	const same = get(transformMode) === mode;
+	const isEditProxy = !!(object?.userData?.isFaceProxy || object?.userData?.isVertexProxy);
+	if (same && object && !vr) {
+		if (isEditProxy) {
+			// the element selection goes with the gizmo, remembered in the session
+			if (get(faceEditObject) && object.userData.isFaceProxy && hideElementSelection()) return;
+			if (get(editingObject) && object.userData.isVertexProxy && hideVertexSelection()) return;
+			// a proxy with nothing to hide just keeps its mode (163)
+		} else {
+			// an object or the multi-pivot: remember the set (and a hand-placed origin)
+			const custom = hasCustomOrigin() ? get(pivotPose)?.pos ?? null : null;
+			lastSelection = { uuids: selectionUuids(), origin: custom ? [...custom] : null };
+			deselectObject();
+			return;
+		}
+	}
+	if (!object && !vr) {
+		// restore: an edit session's hidden elements first, then the object memory
+		if (get(faceEditObject) && restoreElementSelection()) {
+			controls?.setMode(mode);
+			transformMode.set(mode);
+			return;
+		}
+		if (get(editingObject) && restoreVertexSelection()) {
+			controls?.setMode(mode);
+			transformMode.set(mode);
+			return;
+		}
+		if (!get(faceEditObject) && !get(editingObject) && lastSelection?.uuids.length) recallLastSelection();
 	}
 	controls?.setMode(mode);
 	transformMode.set(mode);
+}
+
+/** 24-B1: bring the remembered set back — the members that still exist and are not
+ * locked by a peer. Says so (quietly) when some or all are gone; silent on a cold
+ * press (no memory), which the caller guards. */
+function recallLastSelection() {
+	const memory = lastSelection;
+	if (!memory) return;
+	const group = get(objectsGroup);
+	const locked = get(lockedObjects);
+	const alive = memory.uuids.filter(
+		(uuid) => group?.getObjectByProperty('uuid', uuid) && !locked.find((entry) => entry[1] === uuid)
+	);
+	const gone = memory.uuids.length - alive.length;
+	if (!alive.length) {
+		showToast(gone === 1 ? 'Nothing to reselect — the object is gone or locked by a peer' : 'Nothing to reselect — the objects are gone or locked by a peer');
+		return;
+	}
+	applySelectionSet(alive, false);
+	// a hand-placed selection origin only means something to the SAME set
+	if (memory.origin && alive.length > 1 && !gone) setPivotOrigin(memory.origin);
+	if (gone) showToast(gone === 1 ? '1 object could not be reselected (gone or locked by a peer)' : gone + ' objects could not be reselected (gone or locked by a peer)');
 }
 
 /** Every selected uuid (the set, or the single selection) */

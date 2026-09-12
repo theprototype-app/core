@@ -2481,6 +2481,13 @@ export const faceEditSubmode = writable('faces');
 // point at different geometry.
 /** @type {{uuid: string, sig: number, faces: number[], edges: string[]}} */
 let selectionStash = { uuid: '', sig: -1, faces: [], edges: [] };
+/** 24-B1: the element selection the active mode key HID (with its gizmo), waiting for
+ * the next mode key or the toolbox's gizmo button. The pick itself sits in
+ * `selectionStash` (the exitFaceEdit slot); this only says which submode to put back.
+ * Declared up here, before the `meshGizmoEnabled` subscriber that reads it at module
+ * eval (the store-subscriber TDZ gotcha).
+ * @type {{ uuid: string, submode: 'faces'|'edges' } | null} */
+let hiddenElements = null;
 
 /** the current geometry's identity for the stash */
 function selectionSignature() {
@@ -2510,6 +2517,49 @@ export function stashSelections(mode) {
 		selectionStash = { uuid, sig, faces: [], edges: [] };
 	if (which === 'edges') selectionStash.edges = [...get(edgeEditSelected)];
 	else selectionStash.faces = [...get(faceEditSelectedTris)];
+}
+
+/**
+ * 24-B1: hide the element selection AND the gizmo — pressing the active mode key on
+ * the face/edge proxy, the object-selection "done" gesture applied to elements. The
+ * pick is stashed where exitFaceEdit keeps it, the overlay is cleared so the viewport
+ * reads as hidden, and the gizmo goes through `meshGizmoEnabled` (the toolbox button's
+ * own switch) so the button state agrees with what the key did.
+ * @returns {boolean} whether there was anything to hide
+ */
+export function hideElementSelection() {
+	if (!faceEdited) return false;
+	const submode = get(faceEditSubmode) === 'edges' ? 'edges' : 'faces';
+	const count = submode === 'edges' ? get(edgeEditSelected).length : get(faceEditSelectedTris).length;
+	if (!count) return false;
+	stashSelections(submode);
+	hiddenElements = { uuid: faceEdited.uuid, submode };
+	if (submode === 'edges') clearEdgeSelection();
+	else clearFaceSelection();
+	if (get(meshGizmoEnabled)) meshGizmoEnabled.set(false);
+	else detachFaceGizmo();
+	return true;
+}
+
+/** the selection half of the restore — also run by the `meshGizmoEnabled` subscriber,
+ * so the toolbox button brings the hidden pick back exactly like the key */
+function restoreHiddenElements() {
+	if (!faceEdited || !hiddenElements || hiddenElements.uuid !== faceEdited.uuid) return false;
+	const { submode } = hiddenElements;
+	hiddenElements = null;
+	const live = get(faceEditSubmode) === 'edges' ? 'edges' : 'faces';
+	if (live !== submode) setFaceSubmode(submode);
+	restoreSelection(submode);
+	return true;
+}
+
+/** 24-B1: the next mode key — put the hidden pick back and seat the gizmo on it.
+ * @returns {boolean} whether something was hidden */
+export function restoreElementSelection() {
+	if (!restoreHiddenElements()) return false;
+	if (!get(meshGizmoEnabled)) meshGizmoEnabled.set(true); // its subscriber seats the gizmo
+	else attachFaceGizmo();
+	return true;
 }
 
 /** Put back what this mode had, unless the geometry changed underneath.
@@ -6898,9 +6948,13 @@ export const meshGizmoEnabled = writable(
 meshGizmoEnabled.subscribe((value) => {
 	if (typeof localStorage !== 'undefined') localStorage.setItem('meshGizmoEnabled', value ? '1' : '0');
 	if (typeof window === 'undefined') return;
-	// live: seat or drop the gizmo the moment the switch flips, in whichever mode is open
-	if (value) attachFaceGizmo();
-	else detachFaceGizmo();
+	// live: seat or drop the gizmo the moment the switch flips, in whichever mode is open.
+	// 24-B1: switching it back ON also restores a pick the mode key hid, so the toolbox
+	// button and the key are one control (no-op when nothing is hidden)
+	if (value) {
+		restoreHiddenElements();
+		attachFaceGizmo();
+	} else detachFaceGizmo();
 	gizmoPrefListeners.forEach((fn) => fn());
 });
 

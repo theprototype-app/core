@@ -9,6 +9,9 @@ import { shortcuts } from './shortcuts';
 // D3 (15): same cycle argument — meshEdit/faceEdit never import editorNavigation
 import { editingObject } from './meshEdit';
 import { faceEditObject, meshEditHotkeys } from './faceEdit';
+// 24-A1: fly keys by layout-independent letter (zero-import leaf) — on a Cyrillic
+// layout W is `ц`, so `event.key` never matched and the camera could not fly
+import { letterOf } from './keyOf';
 
 // WASD fly-panning for the desktop editor, Q down / E up, Shift = 3x.
 // Camera position and orbit target move together. Inert while typing, in
@@ -65,13 +68,13 @@ export function startEditorNavigation() {
 		// The keyup below stays unguarded on purpose (the Ctrl+V push-to-talk lesson):
 		// guarding it strands a key held down when the modifier arrives mid-hold.
 		if (guarded(event) || event.ctrlKey || event.metaKey || event.altKey || get(anyModalOpen)) return;
-		const key = String(event.key || '').toLowerCase();
+		const key = letterOf(event);
 		if (event.shiftKey && isShiftCommand(key)) return; // a command, not movement
 		if (KEYS.includes(key)) pressed.add(key);
 	});
 	window.addEventListener('keyup', (event) => {
 		if (event.key === 'Shift') return pressed.delete('shift');
-		pressed.delete(String(event.key || '').toLowerCase());
+		pressed.delete(letterOf(event));
 	});
 	window.addEventListener('blur', () => pressed.clear());
 }

@@ -503,7 +503,9 @@ h.run(async () => {
 	);
 
 	// ---- 18. R1's card for a shared file whose bytes are NOT here -----------------
-	const remoteSel = '[data-card-id="shared:' + peerFile.hash + '"]';
+	// 24-C2: the derived card is keyed by the ROW — the publisher's record id — because two
+	// rows nobody here holds may share one hash (a copy) and a keyed each over one key throws
+	const remoteSel = '[data-card-id="shared:' + peerFile.id + '"]';
 	const remoteCard = A.page.locator(remoteSel);
 	await h.eventually(() => remoteCard.count(), (n) => n === 1,
 		'a shared file we do not hold gets a DERIVED card in the grid');
@@ -730,7 +732,10 @@ h.run(async () => {
 	const stillGone = await manifestOf(A);
 	h.check(!(stillGone.items ?? []).some((r) => r.hash === victim.hash),
 		'and it STAYS gone — the reconcile does not resurrect a deliberate removal');
-	h.check(!!stillGone.removed?.items?.[victim.hash], 'a tombstone records it');
+	// 24-C2: a tombstone is keyed by the ROW's key — the publisher's record id — so a copy's
+	// removal cannot take its sibling's row with it (a legacy row's key is still its hash)
+	h.check(!!(stillGone.removed?.items?.[victim.id] ?? stillGone.removed?.items?.[victim.hash]),
+		'a tombstone records it');
 	const ownerSide = (await itemsOf(A)).find((i) => i.hash === victim.hash);
 	h.check(ownerSide?.share === 'no' && ownerSide?.wasShared === true,
 		`the owner's own record honours it and keeps the file (${JSON.stringify(ownerSide?.share)})`);
@@ -1214,7 +1219,9 @@ h.run(async () => {
 		'the restorer becomes its publisher — it was shared when it was deleted'
 	);
 	// the tombstone has to be lifted too, or the row we just published is filtered out
-	h.check(!(await manifestOf(A)).removed?.items?.[victimFile.hash],
+	// (24-C2: keyed by the record id; the hash key is a legacy row's, checked as well)
+	const tombsAfterRestore = (await manifestOf(A)).removed?.items ?? {};
+	h.check(!tombsAfterRestore[victimFile.id] && !tombsAfterRestore[victimFile.hash],
 		'and the tombstone is lifted, so the restored row survives the next publish');
 
 	// ---- 41. the Deleted view, driven through the real UI -------------------------
@@ -1228,14 +1235,16 @@ h.run(async () => {
 		sl.shareItem(item.id);
 		sl.publishMine(true);
 		sl.deleteSharedItem(item.id);
-		return item.hash;
+		return { id: item.id, hash: item.hash };
 	});
 	await A.page.waitForTimeout(700);
 	h.check((await A.page.locator('#deleted-folder').count()) === 1,
 		'a Deleted row appears in the tree once something is in the bin');
 	await A.page.locator('#deleted-folder').click();
 	await A.page.waitForTimeout(500);
-	const binCard = A.page.locator('[data-card-id="deleted:' + gone + '"]');
+	// 24-C2: the bin card is keyed by the log row's key — the RECORD id for a deletion logged
+	// since C2 (two deleted copies are two cards), the hash only for an older row
+	const binCard = A.page.locator('[data-card-id="deleted:' + gone.id + '"]');
 	h.check((await binCard.count()) === 1, 'the deleted file is listed there');
 	await binCard.click({ button: 'right' });
 	await A.page.waitForTimeout(300);
@@ -1246,7 +1255,7 @@ h.run(async () => {
 	await A.page.locator('[role=menu]').getByText('Restore', { exact: true }).first().click();
 	await h.eventually(
 		() => manifestOf(A),
-		(m) => !(m.deleted ?? []).some((r) => r.hash === gone),
+		(m) => !(m.deleted ?? []).some((r) => r.hash === gone.hash),
 		'Restore from the menu empties it out of the bin'
 	);
 	await A.page.evaluate(() => window.__stores.explorer.activeFolder.set(null));

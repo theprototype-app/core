@@ -5,6 +5,90 @@
      per release, newest first. HTML comments like this one are stripped before
      rendering, so maintainer notes stay out of the user-facing window. -->
 
+## 1.11.0 — Muscle memory ⌨️
+
+### ⌨️ Input parity (roadmap #24, batch A)
+
+- 🌍 **Hotkeys on every keyboard layout.** `G`, `F`, `Ctrl+Z`, WASD and every other
+  letter shortcut now work on Russian, Greek, Hebrew, Arabic and CJK layouts (they
+  resolve by the key's physical position), while AZERTY, Dvorak and QWERTZ keep the
+  labels printed on their keys. Settings ▸ Shortcuts shows your layout's own label
+  beside each letter where the browser can tell us.
+- 🖱️ **A wheel that zooms on Linux.** Scrolling over the viewport is classified by
+  what the device is, not how big one tick was — high-resolution wheels (Steam Deck,
+  hi-res mice) dolly again, two-finger swipes still pan. Viewport menu ▸ View ▸
+  **Mouse wheel** picks Zoom / Pan / Auto in one click, and Settings ▸ Controls has a
+  **Wheel diagnostics** readout of the last eight wheel events for the odd machine.
+
+### 🎯 Selection and windows (roadmap #24, batch B)
+
+- 🔁 **1 / 2 / 3 bring the selection back.** Pressing the active mode key hides the
+  gizmo and the selection, as before — and pressing any mode key again brings the same
+  selection back in that mode, including a multi-select with the origin you placed
+  and a face, edge or vertex pick inside Edit Mesh (the toolbox's gizmo button does
+  the same).
+- ⌨️ **Keyboard in the object list.** With the list focused, ↑/↓ walk the visible
+  tree and select, Shift extends, → expands, ← collapses or goes to the parent,
+  Home/End jump, Enter opens Properties, F2 renames, typing a name jumps to it, and
+  ↓ from the search box drops you into the list.
+- 🪟 **Windows keep their header.** A floating window or module toolbox can no longer
+  be dragged so that its header hides under the Controls pill, the bottom band on
+  touch and narrow screens, the dock, or a browser overlay — and a tall toolbox near
+  the bottom scrolls its body instead.
+
+### 🔗 Invite links (roadmap #24, batch D)
+
+- 📋 **Paste an invite link into the open tab.** `https://…#75F41` pasted over a running
+  app now dials that session without a reload. If you are already in a session it asks
+  whether to leave first; your own id and the host you are with are refused with a
+  message; a link that names another signaling server asks "Join … on that server?"
+  and switches on the spot.
+- 🔀 **Settings ▸ Connection ▸ Apply** switches the peer server without reloading and
+  keeps your session id.
+
+### 💡 Lights, helpers and origins (roadmap #24, batch E)
+
+- 🔦 **Lights aim by rotation.** A directional or spot light shines where it points:
+  turn it with the rotate gizmo and the shadow follows. "Aim at" points it once at a
+  point you type or pick in the viewport. Old scenes with an aimed spot load aimed the
+  same way.
+- 🌅 **Lights have an origin.** Give a sun an origin and Rotate swings it around that
+  point.
+- 🙈 **Helpers hide in Play.** Light helpers, camera frustums and camera markers stay
+  out of the game, camera previews and captures; "Show helpers in Play (debug)" brings
+  them back with a DEBUG chip.
+- 🎯 **Rotate about the origin you set.** Typing a rotation on a group with an origin
+  turns it about that origin, a group's origin is one right-click away (Centre of
+  children / World zero), and a selection has a pivot point: Median, Active object,
+  Parent origin or Individual origins.
+
+### 🖊️ UV painting (roadmap #24, batch F)
+
+- ✍️ **Pen pressure in the UV editor.** Painting with a pen varies the stroke width
+  (or, if you prefer, its opacity) with pressure; a mouse stroke is unchanged, and
+  peers see the same widths live. Fast pen strokes are smoother too.
+- 🩹 Fixed on the way: a pointer stroke in the UV editor painted only its first dab
+  and never committed, and a peer watching a live stroke on an untextured material saw
+  only its last segment.
+
+### 📋 Explorer: Duplicate, Copy, Cut, Paste (roadmap #24, batch C)
+
+- 📑 **Duplicate, Copy, Cut and Paste in the Explorer.** Right-click a file or a folder
+  for Duplicate / Copy / Cut, right-click a folder or the background for Paste — or use
+  Ctrl+D / Ctrl+C / Ctrl+X / Ctrl+V with the grid focused, on one card or a whole
+  selection. A duplicate lands beside its source as "Tower copy.glb"; a cut row dims until
+  you paste it. Prefabs duplicate too; packs stay read-only.
+- 🪶 **A copy of a shared file costs your peers no download.** A shared file now travels as
+  a row with its own identity beside its content hash, so peers who already hold the
+  bytes make the copy from their own disk — ten copies, zero transfers. Deleting a copy
+  removes only that copy, and editing one sends its new bytes once.
+- 🗺️ **Duplicate a scene or a whole folder.** Duplicate on a scene asks for the copy's
+  name (the name lives inside the file) and makes a scene of its own, with its own
+  version history. Duplicate on a folder copies everything in it under a new folder —
+  share the copy and peers who already hold the files get it for free. The Templates
+  window's cards gained a small "save to Library" button that files a starter as a new
+  scene without loading it.
+
 ## 1.10.0 — Publish, play, remix ☁️
 
 The engine learned the moves a community needs — publish the open scene, open a

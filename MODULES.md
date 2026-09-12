@@ -407,6 +407,14 @@ api.onInput((kind, code) => {});        // 'down'/'up' events; returns unsubscri
 //   'locomotion' — VR left-stick locomotion
 api.claimInput('keys');                 // ALWAYS release when your mode ends
 api.releaseInput('keys');
+
+// reading a keydown YOURSELF (a toolbox's own handler)? resolve the key the way the
+// editor does — `event.key` when it is an ASCII letter/digit, the physical
+// `event.code` position otherwise — so it works on a Cyrillic/Greek/Hebrew layout:
+window.addEventListener('keydown', (e) => {
+	if (api.keyOf(e) === 'G') grab();       // 'G' on QWERTY, AZERTY, Dvorak AND ЙЦУКЕН
+	if (api.letterOf(e) === 'w') drive();   // lowercase form; named keys ('Escape') unchanged
+});
 ```
 
 ### Pointer ray (190)

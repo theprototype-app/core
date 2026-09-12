@@ -4,6 +4,7 @@ import { objectsGroup, globalCamera, orbitControls, globalRenderer, globalScene 
 import { peers, showToast } from '../stores/appStore';
 import { recordEntry } from './history';
 import { flyTo } from './objectActions';
+import { withMarkersHidden } from './helperLayer';
 
 // Scene CAMERA objects (16-P5). A camera is a normal replicated MARKER MESH
 // (`/create Camera` / `/create CameraOrtho`, body from customGeometries) whose
@@ -194,7 +195,9 @@ export function captureThroughCamera(uuid, height = 1080) {
 	});
 	const previousTarget = renderer.getRenderTarget();
 	renderer.setRenderTarget(target);
-	renderer.render(scene, camera);
+	// 24-E2: a capture is a picture FOR someone — no marker meshes in it (helpers are on
+	// the helper layer already, and this camera only renders layer 0)
+	withMarkersHidden(() => renderer.render(scene, camera));
 	renderer.setRenderTarget(previousTarget);
 	const pixels = new Uint8Array(width * height * 4);
 	renderer.readRenderTargetPixels(target, 0, 0, width, height, pixels);

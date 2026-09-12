@@ -191,8 +191,11 @@
 		display: flex;
 		flex-direction: column;
 		/* `--dw-top` is the window's own offset, published by dragWindow — the cap
-		   is the space BELOW the window, not the whole viewport */
-		max-height: calc(100vh - var(--dw-top, 24px) - 12px);
+		   is the space BELOW the window, not the whole viewport. 24-B3: minus the
+		   bottom chrome as well — the Controls band on coarse/narrow viewports and the
+		   dock when it pushes the viewport — so a toolbox parked low scrolls its body
+		   instead of hanging its status footer under the pill. */
+		max-height: calc(100vh - var(--dw-top, 24px) - 12px - var(--controls-inset, 0px) - var(--viewport-inset, 0px));
 		user-select: none;
 		font-size: 13px;
 		/* own the SURFACE from tokens: `ui-panel`'s background is compiled from

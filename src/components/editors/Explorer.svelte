@@ -47,7 +47,9 @@
 		parseObjectFile,
 		hashBytes,
 		kindOf,
-		MAX_ITEM_BYTES
+		MAX_ITEM_BYTES,
+		duplicateItem,
+		duplicateFolder
 	} from '$lib/explorer';
 	import { decodeMeta } from '$lib/audioEngine';
 	import {
@@ -79,7 +81,12 @@
 		renameOpenLooseScene,
 		travelToLevel,
 		levelSceneName,
-		currentLevel
+		currentLevel,
+		// 24-C3: a scene copy is a NEW scene (the name is inside the file), so it is named
+		// inline like a save and written through levels, not through explorer.duplicateItem
+		duplicateScene,
+		sceneCopyName,
+		sceneNameTaken
 	} from '$lib/levels';
 	// R22 round 35: opening a scene the session has never seen asks whether to share it or
 	// edit it privately. It answers itself (share) when nobody is connected or the session
@@ -211,7 +218,12 @@
 		manifestInUse,
 		setProjectName,
 		sceneOfHash,
-		sceneEntry
+		sceneEntry,
+		// 24-C2: a shared row and a deleted-log row are keyed by RECORD id now (a copy is its
+		// own row); these two are the one place the key rule lives, so the card ids here
+		// cannot drift from the documents they address
+		rowKeyOf,
+		logKeyOf
 	} from '$lib/projectManifest';
 	const staleScene = (_manifest: any, hash: string) => staleSceneHash(hash);
 	// 21-I5 REVISED: the ONE filesystem sanitiser, plus the version-date stamp the zip
@@ -253,8 +265,7 @@
 		restorePrefabBytes,
 		savePrefabSelection,
 		addPrefabRecord,
-		exportPrefab
-	} from '$lib/prefabs';
+		exportPrefab, duplicatePrefab } from '$lib/prefabs';
 	// 21-I3: Export ▸ scene (.tpscene) — a scene containing just this prefab. Built from
 	// the EMPTY payload plus this one object, never a capture of the live scene.
 	// R22 round 13 P3: `sessions` is read for the Mount picker (which saved entries are
@@ -267,6 +278,8 @@
 	import { bottomDockActive, visibleDockKey, dockMinimized, setDockOccupant, dockHeight, dockModeArm, forgetDockTab } from '$lib/bottomDock';
 	import { bottomDockable } from '$lib/bottomDockDrop';
 	import { dragWindow } from '$lib/dragWindow';
+	// 24-C1: the in-app clipboard for files and folders
+	import { explorerClipboard, setClipboard, clearClipboard, isCutPending, clipboardLabel } from '$lib/explorerClipboard';
 	import { focusStack } from '$lib/windowFocus';
 	import { tabbable, resizeGroup, tabGroups } from '$lib/windowTabs';
 	import { dockable } from '$lib/docking';
@@ -1039,15 +1052,23 @@
 	 */
 	const deletedRows = $derived(deletedLog($projectManifest));
 	const deletedHeld = $derived(new Set([...$explorerItems, ...$hiddenItems].map((i: any) => i.hash)));
+	// 24-C2: a log row written since carries the RECORD id it is about, so "do we still hold
+	// it" is asked of that record — two deleted copies share a hash, and purging one must
+	// not leave the other's row looking spent (or vice versa). An older row is judged by
+	// hash as before. Same STORE-read rule as `deletedHeld`, for the same reason.
+	const deletedHeldIds = $derived(new Set([...$explorerItems, ...$hiddenItems].map((i: any) => i.id)));
+	const binHeld = (r: any): boolean => (r?.id ? deletedHeldIds.has(r.id) : deletedHeld.has(r?.hash));
 	const deletedTree = $derived(buildDeletedTree(deletedRows, $explorerFolders));
 	/** the rows this view is showing at all: the bin, or the whole record when the
 	 *  cleaned-up toggle is on (those extra rows are dimmed and offer no Restore). */
 	const binRows = $derived(
 		$explorerBinShowSpent
 			? deletedRows
-			: partitionDeleted(deletedRows, deletedHeld, $explorerFolders).bin
+			: partitionDeleted(deletedRows, deletedHeld, $explorerFolders, deletedHeldIds).bin
 	);
-	const binVisibleHashes = $derived(new Set(binRows.map((r: any) => r.hash)));
+	// keyed by the row's LOG KEY (24-C2: the record id when it has one, the hash otherwise) —
+	// the card id namespace below is built from the same key
+	const binVisibleKeys = $derived(new Set(binRows.map((r: any) => logKeyOf(r))));
 	/**
 	 * The FOLDER NODES of the node you are standing in. Plain layout offers none — that is
 	 * the whole of what "plain" means here, and it is why navigation into a node is not
@@ -1063,11 +1084,11 @@
 		const kids = deletedTree.children.get(binScope.folderId) ?? { folders: [], items: [] };
 		return kids.folders
 			.filter((node: any) => {
-				if (!node.ghost) return binVisibleHashes.has(node.row?.hash);
+				if (!node.ghost) return binVisibleKeys.has(logKeyOf(node.row));
 				const under = deletedTree.descendants(node.id);
 				return (
-					under.items.some((r: any) => binVisibleHashes.has(r.hash)) ||
-					under.folders.some((n: any) => n.row && binVisibleHashes.has(n.row.hash))
+					under.items.some((r: any) => binVisibleKeys.has(logKeyOf(r))) ||
+					under.folders.some((n: any) => n.row && binVisibleKeys.has(logKeyOf(n.row)))
 				);
 			})
 			.map((node: any) => ({
@@ -1089,11 +1110,14 @@
 		const rows =
 			$explorerBinLayout === 'tree'
 				? (deletedTree.children.get(binScope.folderId) ?? { folders: [], items: [] }).items.filter(
-						(r: any) => binVisibleHashes.has(r.hash)
+						(r: any) => binVisibleKeys.has(logKeyOf(r))
 					)
 				: binRows.filter((r: any) => !isFolderRow(r));
 		return rows.map((r: any) => ({
-			id: 'deleted:' + r.hash,
+			// 24-C2: the card is the LOG ROW, keyed as the row is — the record id for a
+			// deletion logged since C2 (so two deleted copies are two cards), the hash before
+			id: 'deleted:' + logKeyOf(r),
+			binKey: logKeyOf(r),
 			name: r.name,
 			kind: r.kind || 'text',
 			hash: r.hash,
@@ -1107,7 +1131,7 @@
 			thumbnail: deletedThumb(r),
 			owner: r.by ?? null,
 			deletedEntry: true,
-			restorable: deletedHeld.has(r.hash)
+			restorable: binHeld(r)
 		}));
 	});
 	/** the ancestor chain of a bin NODE as text ("A / B"), for the Location column and the
@@ -1242,7 +1266,10 @@
 			.filter((r: any) => (q ? r.name.toLowerCase().includes(q) : (r.folderId ?? null) === ($activeFolder ?? null)))
 			.sort((a: any, b: any) => String(a.name).localeCompare(String(b.name)))
 			.map((r: any) => ({
-				id: 'shared:' + r.hash,
+				// 24-C2: keyed by the ROW (two copies nobody here holds share a hash, and a
+				// keyed each over one key would throw); `rowKey` is what Unshare tombstones
+				id: 'shared:' + rowKeyOf(r),
+				rowKey: rowKeyOf(r),
 				name: r.name,
 				kind: r.kind || 'text',
 				hash: r.hash,
@@ -1845,7 +1872,9 @@
 	 * that reaches them with `get()` registers no dependency, so these would never re-run
 	 * on a purge (round 9's bug, verbatim).
 	 */
-	const binCount = $derived(partitionDeleted(deletedRows, deletedHeld, $explorerFolders).bin.length);
+	const binCount = $derived(
+		partitionDeleted(deletedRows, deletedHeld, $explorerFolders, deletedHeldIds).bin.length
+	);
 	const logCount = $derived(deletedRows.length);
 	/** the cleaned-up records: what "Clear the log" forgets and nothing more (round 36) */
 	const spentCount = $derived(Math.max(0, logCount - binCount));
@@ -2073,6 +2102,16 @@
 			e.preventDefault();
 			e.stopPropagation();
 			setSel(gridEntries.map(entryId).filter((id: string) => !selectedIds.has(id)));
+		} else if (mod && (e.code === 'KeyD' || e.code === 'KeyC' || e.code === 'KeyX' || e.code === 'KeyV')) {
+			// 24-C1: by `code` like Ctrl+A/I above, stopped so the viewport's Ctrl+D
+			// (Duplicate object) and the window shortcuts never also fire
+			if (e.code !== 'KeyV' && !selectedIds.size) return;
+			e.preventDefault();
+			e.stopPropagation();
+			if (e.code === 'KeyD') void duplicateSelection();
+			else if (e.code === 'KeyC') clipSelection('copy');
+			else if (e.code === 'KeyX') clipSelection('cut');
+			else void pasteClipboard();
 		} else if (e.key === 'Escape') {
 			// only when there IS a selection: Escape belongs to a dozen local handlers in
 			// this app, and swallowing it while nothing is selected steals it from them
@@ -2201,6 +2240,21 @@
 		editing = { mode, value: mode === 'save-scene' ? 'Scene' : 'New scene', inGrid: true, consent };
 	}
 	/**
+	 * 24-C3: DUPLICATE A SCENE asks for the copy's NAME first — the name is the manifest
+	 * key and it lives inside the file, so a scene copy is a new scene, not a second
+	 * record of the same one (levels.js carries the reasoning). Same inline input as a
+	 * save, prefilled with the Finder/Blender copy name ("Arena copy"), in the grid where
+	 * the copy will land. A taken name is refused at Enter and discarded at blur.
+	 */
+	function startDuplicateScene(item: any) {
+		settlePendingEdit();
+		editing = { mode: 'duplicate-scene', itemId: item.id, value: sceneCopyName(item.name), inGrid: true };
+	}
+	/** the one name rule the inline editor adds for a scene copy: not one the project has */
+	function duplicateNameTaken(edit: any) {
+		return edit?.mode === 'duplicate-scene' && sceneNameTaken(edit.value);
+	}
+	/**
 	 * R22 round 11 (user): "for packs add right click create pack, so I can set name and
 	 * create items there". The name is typed INLINE, in the grid, like every other thing
 	 * this app makes — never a browser prompt (the no-prompt rename convention).
@@ -2228,10 +2282,24 @@
 			editing = null;
 			return;
 		}
+		// 24-C3: a scene copy named after a scene the project already has cannot be
+		// committed either (it would become a VERSION of that scene) — same rule, same
+		// exit, said out loud because the input vanishes with it
+		if (duplicateNameTaken(editing)) {
+			showToast('Duplicate cancelled — a scene called "' + editing.value.trim() + '" already exists');
+			editing = null;
+			return;
+		}
 		void commitEdit();
 	}
 	async function commitEdit() {
 		if (!editing || !isValidName(editing.value)) return;
+		// 24-C3: Enter on a taken scene name keeps the input open with the reason (focus is
+		// still inside, so nothing is stranded — blur has its own exit above)
+		if (duplicateNameTaken(editing)) {
+			showToast('A scene called "' + editing.value.trim() + '" already exists — choose another name');
+			return;
+		}
 		// snapshot and CLOSE first: the scene modes await, and an input still mounted over
 		// an in-flight save is one blur away from committing the same name twice
 		const edit = editing;
@@ -2260,6 +2328,14 @@
 		// active folder is a pseudo view or a stale id
 		else if (edit.mode === 'save-scene') await saveSceneAsLevel(edit.value, activeLibraryFolder(), { consent: edit.consent });
 		else if (edit.mode === 'new-scene') await newLevel(edit.value, activeLibraryFolder());
+		// 24-C3: the copy lands beside its source (levels.duplicateScene reads the folder off
+		// the record), so the active folder plays no part here
+		else if (edit.mode === 'duplicate-scene') {
+			const source = $explorerItems.find((i: any) => i.id === edit.itemId);
+			if (!source) return showToast('That scene is no longer in the Library');
+			const made: any = await duplicateScene(source, edit.value);
+			if (made) setSel([made.id]);
+		}
 		else if (edit.mode === 'new-pack') {
 			const pack = createPack(edit.value);
 			openFolder('pack:' + pack.name);
@@ -2332,6 +2408,7 @@
 		editing &&
 			(editing.mode === 'save-scene' ||
 				editing.mode === 'new-scene' ||
+				editing.mode === 'duplicate-scene' ||
 				editing.mode === 'new-pack' ||
 				(editing.mode === 'create' && editing.inGrid))
 			? (editing.mode as string)
@@ -3053,6 +3130,8 @@
 			: payload?.type === 'folder' && payload.id
 				? [payload.id]
 				: [];
+		// 24-C2: the suffix is the row's LOG KEY (a record id, or a hash for an older row) —
+		// `restoreDeletedItem` takes either
 		const hashes = dragged
 			.map((p: any) => String(p?.id ?? ''))
 			.filter((id: string) => id.startsWith('deleted:'))
@@ -3113,7 +3192,7 @@
 			if (back.folders || back.files) names.push(node.name);
 		}
 		for (const hash of hashes) {
-			const row = deletedRows.find((r: any) => r.hash === hash);
+			const row = deletedRows.find((r: any) => logKeyOf(r) === hash) ?? deletedRows.find((r: any) => r.hash === hash);
 			if (restoreDeletedItem(hash, { into })) {
 				files++;
 				names.push(String(row?.name ?? 'file'));
@@ -3327,6 +3406,41 @@
 									}
 						]),
 				{ label: 'Properties', icon: 'info', action: () => showProperties({ kind: 'folder', folder }) },
+				// 24-C1: a folder copies as new records (new folder id — network identity is
+				// minted here), and pastes INTO it land in it
+				{
+					label: 'Duplicate folder',
+					icon: 'copy',
+					hint: 'Ctrl+D',
+					tooltip: 'A copy of this folder and everything in it, beside it',
+					action: () => void duplicateFolder(folder.id).then((made: any) => made && showToast('Duplicated ' + folder.name + ' as ' + made.name))
+				},
+				{
+					label: 'Copy',
+					icon: 'clipboard-copy',
+					hint: 'Ctrl+C',
+					action: () => {
+						setClipboard([{ id: folder.id, kind: 'folder' }], 'copy', activeLibraryFolder());
+						showToast('Copied ' + folder.name + ' — paste into a folder');
+					}
+				},
+				{
+					label: 'Cut',
+					icon: 'scissors',
+					hint: 'Ctrl+X',
+					action: () => {
+						setClipboard([{ id: folder.id, kind: 'folder' }], 'cut', activeLibraryFolder());
+						showToast('Cut ' + folder.name + ' — paste into a folder to move it');
+					}
+				},
+				{
+					label: clipboardLabel($explorerClipboard) + ' here',
+					icon: 'clipboard-paste',
+					hint: 'Ctrl+V',
+					disabled: !$explorerClipboard?.entries.length,
+					tooltip: $explorerClipboard?.entries.length ? 'Into ' + folder.name : 'Copy or cut something first',
+					action: () => void pasteClipboard(folder.id)
+				},
 				// 170: "New subfolder" only makes sense in the tree; the thumbnail grid drops it
 				...(inTree ? [{ label: 'New subfolder', icon: 'folder-plus', action: () => startCreate(folder.id) }] : []),
 				{ label: 'Rename', icon: 'pencil', action: () => startRename(folder, !inTree) },
@@ -3406,6 +3520,122 @@
 		item.kind !== 'pack-folder';
 
 	/** what the selection breaks down into, once and for every batch entry point */
+	// ---- 24-C1: Duplicate / Copy / Cut / Paste --------------------------------------
+	// A copy is a NEW RECORD with the same hash (explorer.duplicateItem); the clipboard is
+	// in-app (a page cannot put a file on the OS clipboard). Paste lands in the folder
+	// the menu was opened on, or the active library folder for the keys.
+	/** the library place a paste can land: `{ok}` false outside the library */
+	function pasteTarget(folderId?: string | null): { ok: boolean; folderId: string | null } {
+		if (folderId !== undefined) return { ok: true, folderId };
+		const a = $activeFolder;
+		if (typeof a !== 'string' || !a) return { ok: !binScope.inBin, folderId: null }; // the Library root
+		const lib = activeLibraryFolder();
+		return { ok: lib !== null, folderId: lib };
+	}
+	/** what the current selection would put on the clipboard (library rows + mount files) */
+	function clipEntriesOfSelection(): { id: string; kind: 'item' | 'folder'; volumeId?: string }[] {
+		const out: { id: string; kind: 'item' | 'folder'; volumeId?: string }[] = [];
+		for (const e of selectedEntries()) {
+			if (e.kind === 'folder' && e.folder && !e.folder.deletedNode && !e.folder.volumeId) out.push({ id: e.folder.id, kind: 'folder' });
+			else if (e.kind === 'item' && e.item?.volumeItem) out.push({ id: e.item.id, kind: 'item', volumeId: e.item.volumeId });
+			else if (e.kind === 'item' && e.item && isOwnedItem(e.item) && !e.item.packEntry && !e.item.deletedEntry) out.push({ id: e.item.id, kind: 'item' });
+		}
+		return out;
+	}
+	/**
+	 * Duplicate: every selected library file and folder, beside itself. 24-C3: a SCENE
+	 * needs a name before it can be copied (the name is inside the file), so a selection
+	 * that is exactly one scene opens the naming input instead; scenes inside a bigger
+	 * selection are skipped and the toast says how to do them.
+	 */
+	async function duplicateSelection() {
+		const entries = clipEntriesOfSelection().filter((e) => !e.volumeId);
+		const itemOf = (e: any) => (e.kind === 'item' ? $explorerItems.find((i: any) => i.id === e.id) : null);
+		if (entries.length === 1 && itemOf(entries[0])?.kind === 'scene') {
+			startDuplicateScene(itemOf(entries[0]));
+			return;
+		}
+		const ids: string[] = [];
+		let skippedScenes = 0;
+		for (const e of entries) {
+			if (e.kind === 'folder') {
+				const made = await duplicateFolder(e.id);
+				if (made) ids.push(made.id);
+			} else {
+				const item = itemOf(e);
+				if (item?.kind === 'scene') { skippedScenes++; continue; }
+				const made = await duplicateItem(e.id);
+				if (made) ids.push(made.id);
+			}
+		}
+		if (ids.length) setSel(ids);
+		if (!ids.length && !skippedScenes) return showToast('Nothing to duplicate here');
+		showToast(
+			(ids.length ? 'Duplicated ' + plural(ids.length, 'item') : '') +
+				(skippedScenes ? (ids.length ? ' — ' : '') + plural(skippedScenes, 'scene') + ' skipped (duplicate a scene on its own, so it can take a name)' : '')
+		);
+	}
+	/** Copy / Cut the selection onto the in-app clipboard */
+	function clipSelection(mode: 'copy' | 'cut') {
+		const entries = clipEntriesOfSelection();
+		if (mode === 'cut') {
+			// a cut MOVES; mount files and shared-by-peer rows are copied instead
+			const movable = entries.filter((e) => !e.volumeId);
+			if (!movable.length) return showToast('Nothing here can be cut — use Copy');
+			setClipboard(movable, 'cut', activeLibraryFolder());
+			showToast('Cut ' + plural(movable.length, 'item') + ' — paste into a folder to move');
+			return;
+		}
+		if (!entries.length) return showToast('Nothing to copy');
+		setClipboard(entries, 'copy', activeLibraryFolder());
+		showToast('Copied ' + plural(entries.length, 'item') + ' — paste into a folder');
+	}
+	/** Paste the clipboard into a library folder (null = the root) */
+	async function pasteClipboard(folderId?: string | null) {
+		const clip = $explorerClipboard;
+		if (!clip?.entries.length) return showToast('Nothing to paste');
+		const target = pasteTarget(folderId);
+		if (!target.ok) return showToast('Paste into a Library folder');
+		const into = target.folderId;
+		const landed: string[] = [];
+		const fromMount = clip.entries.filter((e) => e.volumeId);
+		if (fromMount.length) {
+			const rows = fromMount.map((e) => volumeRow(e.volumeId as string, e.id)).filter(Boolean);
+			await copyOutOfVolume(rows, into);
+		}
+		for (const e of clip.entries) {
+			if (e.volumeId) continue;
+			if (clip.mode === 'cut') {
+				if (e.kind === 'folder') {
+					if (moveFolder(e.id, into)) landed.push(e.id);
+				} else {
+					const item = $explorerItems.find((i: any) => i.id === e.id);
+					if (!item) continue;
+					if ((item.folderId ?? null) !== (into ?? null)) moveItem(e.id, into);
+					landed.push(e.id);
+				}
+			} else if (e.kind === 'folder') {
+				const made = await duplicateFolder(e.id, into);
+				if (made) landed.push(made.id);
+			} else {
+				const made = await duplicateItem(e.id, { folderId: into });
+				if (made) landed.push(made.id);
+			}
+		}
+		if (clip.mode === 'cut') clearClipboard(); // a cut is spent; a copy can paste again
+		if (landed.length) {
+			if ((into ?? null) !== ($activeFolder ?? null) && typeof $activeFolder !== 'string') setSel(landed);
+			else setSel(landed);
+			showToast((clip.mode === 'cut' ? 'Moved ' : 'Pasted ') + plural(landed.length, 'item'));
+		} else if (!fromMount.length) showToast('Nothing pasted');
+	}
+	/** a mount's row by id (for a paste out of a mount) */
+	function volumeRow(volumeId: string, id: string): any {
+		const vol = $mountedVolumes.find((v: any) => v.id === volumeId);
+		const row = vol?.items?.find((i: any) => i.id === id);
+		return row ? { ...row, volumeId } : null;
+	}
+
 	function selectionParts() {
 		const entries = selectedEntries();
 		const folders = entries
@@ -3687,6 +3917,14 @@
 					showToast(plural(unshareable.length + unshareableFolders.length, 'item') + ' no longer shared');
 				}
 			});
+		// 24-C1: the set as a whole — every library file/folder in it (mount files copy)
+		const clipCount = clipEntriesOfSelection().length;
+		if (clipCount)
+			items.push(
+				{ label: `Duplicate ${plural(clipCount, 'item')}`, icon: 'copy', hint: 'Ctrl+D', action: () => void duplicateSelection() },
+				{ label: `Copy ${plural(clipCount, 'item')}`, icon: 'clipboard-copy', hint: 'Ctrl+C', action: () => clipSelection('copy') },
+				{ label: `Cut ${plural(clipCount, 'item')}`, icon: 'scissors', hint: 'Ctrl+X', action: () => clipSelection('cut') }
+			);
 		if (counts.deletable)
 			items.push({
 				label: `Delete ${plural(counts.deletable, 'item')}`,
@@ -3850,6 +4088,14 @@
 					action: () => instantiatePrefab(prefab)
 				},
 				{
+					// 24-C1: a second prefab record with the same snapshot, its own id
+					label: 'Duplicate',
+					icon: 'copy',
+					hint: 'Ctrl+D',
+					tooltip: 'A copy of this prefab under a new name',
+					action: () => void duplicatePrefab(prefab.id).then((made: any) => made && showToast('Duplicated as ' + made.name))
+				},
+				{
 					label: 'Export',
 					icon: 'arrow-down-to-line', // Icon.svelte's MAP falls back to a plain Box for an unknown name
 					children: [
@@ -3944,6 +4190,17 @@
 							'Import these bytes into your own library — deduped by content hash, like any other import',
 						action: () => void copyOutOfVolume([item], activeLibraryFolder())
 					},
+					{
+						// 24-C1: the clipboard route to the same import — paste into the folder you want
+						label: 'Copy',
+						icon: 'clipboard-copy',
+						hint: 'Ctrl+C',
+						tooltip: 'Paste into a Library folder to import it there',
+						action: () => {
+							setClipboard([{ id: item.id, kind: 'item', volumeId: item.volumeId }], 'copy', activeLibraryFolder());
+							showToast('Copied ' + item.name + ' — paste into a Library folder');
+						}
+					},
 					{ section: item.volumeName ?? 'Mounted project' },
 					{ label: 'Rename', icon: 'pencil', action: () => startRenameItem(item) },
 					{
@@ -3982,7 +4239,7 @@
 									? 'Put it back in ' + item.location
 									: 'Put it back in the Library',
 								action: () => {
-									restoreDeletedItem(item.hash);
+									restoreDeletedItem(item.binKey ?? item.hash);
 									showToast('Restored ' + item.name);
 								}
 							}
@@ -4002,7 +4259,7 @@
 									danger: true,
 									tooltip: 'Free the disk on THIS machine. Peers keep their own copies.',
 									action: () => {
-										void purgeDeletedItem(item.hash);
+										void purgeDeletedItem(item.binKey ?? item.hash);
 										showToast(item.name + ' removed from this device');
 									}
 								}
@@ -4052,7 +4309,7 @@
 									tooltip:
 										'Take it out of the project. You do not hold this file, so there is nothing here to lose.',
 									action: () => {
-										unshareHash(item.hash);
+										unshareHash(item.rowKey ?? item.hash);
 										showToast(item.name + ' is no longer shared');
 									}
 								}
@@ -4105,6 +4362,50 @@
 								icon: 'history',
 								tooltip: 'Earlier versions of this scene — restore, pin or free their bytes',
 								action: () => showProperties({ kind: 'item', item })
+							}
+						]
+					: []),
+				// 24-C1: a copy is a new RECORD with the same bytes; Copy/Cut go to the in-app
+				// clipboard (a page cannot put a file on the OS clipboard — text kinds keep
+				// "Copy contents" below for that)
+				// 24-C3: a SCENE duplicates too — as a new scene under a name you type, because
+				// the name is inside the file and is the project's key for it
+				{
+					label: 'Duplicate',
+					icon: 'copy',
+					hint: 'Ctrl+D',
+					disabled: !!item.packEntry,
+					tooltip: item.packEntry
+						? 'Packs are read-only bundles'
+						: item.kind === 'scene'
+							? 'A copy of this scene under a new name — its own file, its own version history'
+							: 'A second copy beside this one — same bytes, its own record',
+					action: () =>
+						item.kind === 'scene'
+							? startDuplicateScene(item)
+							: void duplicateItem(item.id).then((made: any) => made && setSel([made.id]))
+				},
+				...(!item.packEntry
+					? [
+							{
+								label: 'Copy',
+								icon: 'clipboard-copy',
+								hint: 'Ctrl+C',
+								tooltip: 'Then paste into another folder',
+								action: () => {
+									setClipboard([{ id: item.id, kind: 'item' }], 'copy', activeLibraryFolder());
+									showToast('Copied ' + item.name + ' — paste into a folder');
+								}
+							},
+							{
+								label: 'Cut',
+								icon: 'scissors',
+								hint: 'Ctrl+X',
+								tooltip: 'Then paste into another folder to move it',
+								action: () => {
+									setClipboard([{ id: item.id, kind: 'item' }], 'cut', activeLibraryFolder());
+									showToast('Cut ' + item.name + ' — paste into a folder to move it');
+								}
 							}
 						]
 					: []),
@@ -4433,7 +4734,7 @@
 		e.preventDefault();
 		e.stopPropagation();
 		const under = deletedTree.descendants(node.nodeId);
-		const heldUnder = under.items.filter((r: any) => deletedHeld.has(r.hash)).length;
+		const heldUnder = under.items.filter((r: any) => binHeld(r)).length;
 		const counts =
 			plural(under.folders.length, 'folder') + ' and ' + plural(under.items.length, 'file');
 		const who = node.row ? ownerLabel({ owner: node.row.by ?? null }) : '';
@@ -4641,6 +4942,17 @@
 						{ label: 'Load pack from URL', icon: 'globe', action: loadPackFromUrl }
 					]
 				: [
+						// 24-C1: what the clipboard holds lands in THIS folder
+						{
+							label: clipboardLabel($explorerClipboard),
+							icon: 'clipboard-paste',
+							hint: 'Ctrl+V',
+							disabled: !$explorerClipboard?.entries.length,
+							tooltip: $explorerClipboard?.entries.length
+								? ($explorerClipboard.mode === 'cut' ? 'Move' : 'Copy') + ' into this folder'
+								: 'Copy or cut something first (Ctrl+C / Ctrl+X on a card)',
+							action: () => void pasteClipboard()
+						},
 						{ label: 'New folder', icon: 'folder-plus', action: () => startCreate($activeFolder ?? null, true) },
 						// 21-F4: a saved scene is an ordinary content-hashed .tpscene item —
 						// a Travel node loads it by hash. 21-G1: the `Scenes` folder is only
@@ -5842,6 +6154,8 @@
 	-->
 	<tr
 		data-card-id={id}
+		class:opacity-50={!!$explorerClipboard && isCutPending(id)}
+		data-cut={!!$explorerClipboard && isCutPending(id) ? '1' : undefined}
 		class="ex-row {isFolder ? 'explorer-folder-card' : 'explorer-card'} {isFolder && folder.deletedNode
 			? 'ex-deleted-node'
 			: ''} {isFolder && folder.ghost ? 'ex-deleted-ghost' : ''} {cardClass(selectedIds, $inspectedFile, selected, id)} {!isFolder &&
@@ -6898,6 +7212,8 @@
 							onpointerdown={(e) => onCardPointerDown(e, item)}
 							onpointermove={onCardPointerMove}
 							onpointerup={onCardPointerUp}
+							data-cut={!!$explorerClipboard && isCutPending(item.id) ? '1' : undefined}
+							class:opacity-50={!!$explorerClipboard && isCutPending(item.id)}
 							oncontextmenu={(e) => itemMenu(e, item)}
 							onclick={(e) => onCardClick(e, item)}
 							ondblclick={() => openItem(item)}

@@ -4216,6 +4216,8 @@ override for e2e — never share 5173 (the user's main-checkout server).
   bullets + `Co-Authored-By: Claude ... <noreply@anthropic.com>`.
 - Plan documents live in the PRIVATE cloud repo: `../theprototype.app-cloud/docs/plans-core/`
   (versioned there — moved 2026-07-24; **never commit plans into THIS repo**).
+  `/plans/` in this repo is GITIGNORED local drafting space; a finished roadmap's
+  plan files move to cloud `plans-core/done/` (roadmap 24's did, 2026-09-12).
   Postponed phases → `plans-core/pending/`; future ideas → `plans-core/backlog.md`;
   open design questions → `plans-core/quiz.md`. Keep `00-overview.md` tables in sync
   with every scope change. Historical `docs/plan/...` references below = the old

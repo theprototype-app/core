@@ -203,6 +203,10 @@ vertexHandleScale.subscribe((value) => {
 
 /** 177: handle indices ctrl/shift-selected for Create face */
 let vertexSelection = new Set();
+/** 24-B1: the vertex pick the active mode key HID (with its gizmo) — the face
+ * session's `hiddenElements`, for this session. Declared before the gizmo-pref
+ * listener below reads it. @type {{ uuid: string, indices: number[], anchor: number } | null} */
+let hiddenVertices = null;
 /** reactive size of the multi-selection (drives the Create face button) */
 export const vertexSelectionSize = writable(0);
 function syncVertexSelection() {
@@ -693,10 +697,52 @@ function setAnchor(index) {
 	} else if (controls.object === proxy) controls.detach();
 }
 
-// live: flipping either gizmo pref re-seats (or drops) the VERTEX proxy too
+// live: flipping either gizmo pref re-seats (or drops) the VERTEX proxy too.
+// 24-B1: switching the gizmo back ON restores a pick the mode key hid (the toolbox
+// button and the key are one control)
 registerGizmoPrefListener(() => {
-	if (edited && selectedHandle >= 0) setAnchor(selectedHandle);
+	if (!edited) return;
+	if (get(meshGizmoEnabled)) restoreHiddenVertices();
+	if (selectedHandle >= 0) setAnchor(selectedHandle);
 });
+
+/**
+ * 24-B1: hide the vertex selection AND its gizmo — pressing the active mode key on
+ * the vertex proxy. The set + anchor are remembered for the session and the gizmo
+ * goes through `meshGizmoEnabled` so the toolbox button agrees.
+ * @returns {boolean} whether there was anything to hide
+ */
+export function hideVertexSelection() {
+	if (!edited) return false;
+	const indices = [...vertexSelection];
+	const anchor = selectedHandle;
+	if (anchor < 0 && !indices.length) return false;
+	hiddenVertices = { uuid: edited.uuid, indices, anchor };
+	clearVertexSelection();
+	if (get(meshGizmoEnabled)) meshGizmoEnabled.set(false);
+	return true;
+}
+
+/** the selection half of the restore (the anchor takes the gizmo through setAnchor) */
+function restoreHiddenVertices() {
+	if (!edited || !hiddenVertices || hiddenVertices.uuid !== edited.uuid) return false;
+	const { indices, anchor } = hiddenVertices;
+	hiddenVertices = null;
+	const live = indices.filter((i) => i >= 0 && i < handles.length);
+	vertexSelection = new Set(live);
+	const a = anchor >= 0 && anchor < handles.length ? anchor : live.length ? live[live.length - 1] : -1;
+	setAnchor(a);
+	syncVertexSelection();
+	return true;
+}
+
+/** 24-B1: the next mode key — put the hidden pick back and seat the gizmo on it.
+ * @returns {boolean} whether something was hidden */
+export function restoreVertexSelection() {
+	if (!restoreHiddenVertices()) return false;
+	if (!get(meshGizmoEnabled)) meshGizmoEnabled.set(true); // the listener above re-seats
+	return true;
+}
 
 // ...and so does placing / clearing the custom pivot (plus its marker)
 registerMeshPivotListener(() => {

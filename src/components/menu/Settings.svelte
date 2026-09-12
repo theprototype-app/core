@@ -6,7 +6,9 @@
 	import { showGrid, vrOverride, vrMenuHand, vrSnapAngle, vrMirrorSnapTurn, vrTeleportEnabled, vrSleeveEnabled, vrVertexHold, vrFlying, vrPassthrough, vrMenuHold, vrTargetHz, peerHandStyle } from '../../stores/sceneStore.js';
 	import { applyVRFrameRate } from '$lib/vrControls';
 	import { settingsOpen, settingsSection, hidePanels, restorePanels, advancedMode, showEnvInList, objectSearchEnabled, showSimControls, showToast, showRoomsButton, toastsInDrawerOnly, mobileUndockAllowed, enableShiftAdd, noteDoubleClickToOpen, duplicateCarriesAnimation, duplicateCarriesFlow, duplicateCarriesShader, touchTools, floatingToolbar, toolbarAlwaysOnTop } from '../../stores/appStore.js';
-	import { trackpadMode, allowBrowserZoom, reversePan, panEnabled, pinchZoomEnabled } from '$lib/trackpadNav';
+	import { trackpadMode, allowBrowserZoom, reversePan, panEnabled, pinchZoomEnabled, lastWheelEvents } from '$lib/trackpadNav';
+	import { lightHelperLength } from '$lib/lightHelpers';
+	import { helpersInPlay } from '$lib/helperLayer';
 	import { gamepadPrefs, setGamepadPrefs, DEADZONE_RANGE, SENSITIVITY_RANGE } from '$lib/gamepadPrefs';
 	import { drawerSlot, cloudPluginInfo } from '$lib/cloudHooks';
 	import { versionString } from '$lib/version.js';
@@ -76,7 +78,8 @@
 		resetShortcut,
 		resetAllShortcuts,
 		setOverride,
-		setShortcutCapture
+		setShortcutCapture,
+		nonLatinLayoutSeen
 	} from '$lib/shortcuts';
 	import {
 		aiEnabled,
@@ -104,11 +107,69 @@
 		MESH_PRESETS,
 		meshPresetFor
 	} from '$lib/ai/meshProviders';
-	import { peerServerConfig, HAS_SELF_HOSTED, SELF_HOSTED_HOST } from '$lib/peerServer';
+	import { peerServerConfig, HAS_SELF_HOSTED, SELF_HOSTED_HOST, peerServerStatus } from '$lib/peerServer';
+	import { peers } from '../../stores/appStore.js';
 	import { autofocusOk, typeToFocus } from '$lib/inputDevice';
 
+	// 24-D2: Settings ▸ Connection applies WITHOUT a reload — PeerConnection.switchServer
+	// rebuilds the Peer on the configured server, keeping the session id (an open session
+	// is left first). The reload link stays for the paranoid.
+	let applyingServer = false;
+	async function applyPeerServer() {
+		const p: any = $peers;
+		if (!p?.switchServer) {
+			location.reload();
+			return;
+		}
+		applyingServer = true;
+		const ok = await p.switchServer(null);
+		applyingServer = false;
+		if (ok) showToast('Connected to ' + ($peerServerStatus?.label ?? 'the peer server') + ' — your session id is unchanged.');
+	}
 	let shortcutGroups = [...new Set(shortcuts.map((s) => s.group))];
 	let shortcutsExpanded = false;
+	// 24-A2.1: the wheel diagnostics readout's static half — WHAT machine this is. The
+	// Steam Deck report ("scrolling does nothing") had never been measured; this row plus
+	// `lastWheelEvents` turns it into numbers in one minute.
+	const wheelPlatform =
+		typeof navigator === 'undefined'
+			? ''
+			: String((navigator as any).userAgentData?.platform || navigator.platform || '') +
+				(/Firefox/.test(navigator.userAgent) ? ' · Firefox' : /Chrom/.test(navigator.userAgent) ? ' · Chromium' : /Safari/.test(navigator.userAgent) ? ' · Safari' : '');
+	const wheelCoarse = typeof window !== 'undefined' && !!window.matchMedia?.('(pointer: coarse)').matches;
+	const fmt = (n: number | null) => (n === null || n === undefined ? '—' : Number.isInteger(n) ? String(n) : n.toFixed(2));
+	/**
+	 * 24-A1: what the CURRENT layout prints on each physical key (Chromium's
+	 * `navigator.keyboard.getLayoutMap`; null where the API is missing — Firefox,
+	 * Safari). Letter shortcuts resolve by physical position on a non-Latin layout, so
+	 * the list says which printed key that is ("G · п on your layout"). Loaded when the
+	 * section opens; the map is tiny and the call is async, hence the store-free `let`.
+	 */
+	let layoutLabels: Map<string, string> | null = null;
+	let layoutLabelsAsked = false;
+	function loadLayoutMap() {
+		if (layoutLabelsAsked) return;
+		layoutLabelsAsked = true;
+		const kb = (navigator as any)?.keyboard;
+		if (!kb?.getLayoutMap) return;
+		kb.getLayoutMap()
+			.then((map: Map<string, string>) => {
+				layoutLabels = map;
+			})
+			.catch(() => {});
+	}
+	$: if (shortcutsExpanded) loadLayoutMap();
+	/** The printed label for a combo's letter when the layout prints something that is
+	 * NOT that Latin letter — the only case where the hybrid rule falls back to the
+	 * physical key and a hint helps. AZERTY/Dvorak print Latin letters and need none. */
+	function layoutHint(keys: string, labels: Map<string, string> | null): string {
+		if (!labels) return '';
+		const last = String(keys || '').split('+').pop() || '';
+		if (!/^[A-Z]$/.test(last)) return '';
+		const printed = labels.get('Key' + last) || '';
+		if (!printed || /^[a-z]$/i.test(printed)) return '';
+		return printed;
+	}
 
 	// --- Phase 5: rebinding ------------------------------------------------
 	// The registry is a plain array, so nothing here re-renders when a combo
@@ -778,6 +839,12 @@
 						Pressing Shift+A opens the Add menu at the cursor and spawns the picked object
 						under it. Off by default — Shift also strafes the camera in fly mode
 					</SettingRow>
+					<SettingRow name="Show helpers in Play (debug)">
+						<svelte:fragment slot="control"><Toggle id="helpers-in-play" bind:checked={$helpersInPlay} /></svelte:fragment>
+						Light helpers, camera frustums and camera markers hide when Play starts (camera
+						previews and captures never show them). On, they render inside Play with a DEBUG
+						chip so a screenshot cannot be mistaken for the game
+					</SettingRow>
 					<SettingRow name="Double-click to open notes">
 						<svelte:fragment slot="control"><Toggle bind:checked={$noteDoubleClickToOpen} /></svelte:fragment>
 						A single click on a note marker — and the notes drawer's ‹ › group arrows — then only
@@ -814,6 +881,34 @@
 					<SettingRow name="Allow browser pinch zoom">
 						<svelte:fragment slot="control"><Toggle bind:checked={$allowBrowserZoom} /></svelte:fragment>
 						Accessibility: let pinch / Ctrl+scroll zoom the whole PAGE again (off keeps pinch as an app gesture and stops accidental page zoom over panels, on desktop and mobile)
+					</SettingRow>
+					<!-- 24-A2.1: the readout. A wheel is classified by DEVICE SIGNATURE now
+					     (trackpadNav.js); when a machine still guesses wrong, these are the numbers
+					     that tune the constants — and the Viewport menu ▸ View ▸ Mouse wheel row is
+					     the one-click fix meanwhile. -->
+					<SettingRow name="Wheel diagnostics" noControl>
+						<div id="wheel-diagnostics" class="text-xs">
+							<p class="mb-1 text-gray-500 dark:text-gray-400">
+								{wheelPlatform || 'unknown platform'} · pointer: {wheelCoarse ? 'coarse' : 'fine'} · wheel mode: {$trackpadMode === 'off' ? 'zoom' : $trackpadMode === 'on' ? 'pan' : 'auto'}
+							</p>
+							{#if $lastWheelEvents.length}
+								<div class="overflow-x-auto">
+									<table class="wheel-diag w-full text-left font-mono">
+										<thead><tr><th>Δt ms</th><th>mode</th><th>ΔX</th><th>ΔY</th><th>wheelΔY</th><th>ctrl</th><th>as</th><th>why</th></tr></thead>
+										<tbody>
+											{#each $lastWheelEvents as s, i (s.t + ':' + i)}
+												<tr data-kind={s.kind}>
+													<td>{s.dt}</td><td>{s.deltaMode}</td><td>{fmt(s.deltaX)}</td><td>{fmt(s.deltaY)}</td><td>{fmt(s.wheelDeltaY)}</td><td>{s.ctrl ? '✓' : ''}</td><td>{s.kind}</td><td>{s.why}</td>
+												</tr>
+											{/each}
+										</tbody>
+									</table>
+								</div>
+							{:else}
+								<p class="text-gray-500 dark:text-gray-400">Scroll over the viewport — the last 8 wheel events land here, with how each was classified.</p>
+							{/if}
+							<p class="mt-1 text-gray-500 dark:text-gray-400">If a mouse wheel pans instead of zooming (or a trackpad zooms), pick Viewport menu ▸ View ▸ Mouse wheel, or "Trackpad gestures" above.</p>
+						</div>
 					</SettingRow>
 				</AccordionItem>
 				<AccordionItem bind:open={inputExpanded}>
@@ -895,6 +990,20 @@
 								}} />
 						</svelte:fragment>
 						Display grid on floor
+					</SettingRow>
+					<SettingRow name="Light helper length">
+						<svelte:fragment slot="control">
+							<input
+								id="light-helper-length"
+								type="number"
+								min="0.2"
+								max="50"
+								step="0.5"
+								class="w-full rounded-sm bg-gray-700 px-1 py-0.5 text-xs text-white"
+								value={$lightHelperLength}
+								on:change={(e: any) => lightHelperLength.set(Math.max(0.2, Number(e.target.value) || 2))} />
+						</svelte:fragment>
+						How far a directional or spot light's helper line reaches along its direction (display only — a directional light has a direction, not a distance)
 					</SettingRow>
 					<SettingRow name="Shadow quality">
 						<svelte:fragment slot="control">
@@ -1999,11 +2108,13 @@
 					<SettingRow name="Apply changes">
 						<svelte:fragment slot="control">
 							<button
-								id="peer-server-reload"
-								class="rounded-sm bg-gray-600 px-2 py-1 text-xs text-white hover:bg-gray-500"
-								on:click={() => location.reload()}>Apply &amp; reload</button>
+								id="peer-server-apply"
+								class="rounded-sm bg-gray-600 px-2 py-1 text-xs text-white hover:bg-gray-500 disabled:opacity-50"
+								disabled={applyingServer}
+								on:click={applyPeerServer}>{applyingServer ? 'Switching…' : 'Apply'}</button>
 						</svelte:fragment>
-						The peer connection is created at startup — reload to switch servers
+						Switches the signaling server now and keeps your session id; an open session is left
+						first. <button id="peer-server-reload" class="underline" on:click={() => location.reload()}>Reload</button> if anything looks stuck
 					</SettingRow>
 				</AccordionItem>
 				<AccordionItem bind:open={shortcutsExpanded}>
@@ -2012,6 +2123,13 @@
 					     - click a row's keys and press the combo you want. A row with no action
 					     of its own (fly keys, push-to-talk, the mesh-edit bundles, a module's
 					     declared bindings) is listed for discoverability and locked. -->
+					{#if $nonLatinLayoutSeen && !layoutLabels}
+						<!-- 24-A1: the browser cannot tell us the printed labels (no getLayoutMap), but
+						     a keydown already showed a non-Latin layout — say how letters resolve -->
+						<p id="shortcut-layout-note" class="mb-1 text-xs text-amber-600 dark:text-amber-400">
+							Letter shortcuts use the physical key position on this layout (the key where the letter sits on a QWERTY keyboard).
+						</p>
+					{/if}
 					<div class="mb-1 flex items-center justify-between gap-3">
 						<p class="text-xs text-gray-500 dark:text-gray-400">Click a shortcut's keys to rebind it - Esc cancels.</p>
 						<button
@@ -2041,6 +2159,9 @@
 												</span>
 											{/if}
 											<span class="text-sm text-gray-600 dark:text-gray-300">{shortcut.label}</span>
+											{#if layoutHint(shortcut.keys, layoutLabels)}
+												<span class="shortcut-layout shrink-0 text-xs text-gray-400" title="Your keyboard layout prints this on that key">· {layoutHint(shortcut.keys, layoutLabels)} on your layout</span>
+											{/if}
 											{#if isRebindable(shortcut) && shortcut.keys !== shortcut.defaultKeys}
 												<button
 													class="shortcut-reset ml-auto shrink-0 rounded-sm p-1 text-gray-400 hover:text-gray-200"

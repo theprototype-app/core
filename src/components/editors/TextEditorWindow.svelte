@@ -8,6 +8,7 @@
 	import { dragWindow } from '$lib/dragWindow';
 	import { focusStack } from '$lib/windowFocus';
 	import CodeEditor from './CodeEditor.svelte';
+	import { keyOf } from '$lib/keyOf';
 
 	let code = $state('');
 	let dirty = $state(false);
@@ -40,7 +41,7 @@
 		else close();
 	}
 	function onKeydown(e: KeyboardEvent) {
-		if ((e.ctrlKey || e.metaKey) && e.key === 's') {
+		if ((e.ctrlKey || e.metaKey) && !e.shiftKey && keyOf(e) === 'S') {
 			e.preventDefault();
 			save();
 		} else if (e.key === 'Escape') {

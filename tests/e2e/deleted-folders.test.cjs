@@ -642,7 +642,9 @@ h.run(async () => {
 		await settle(400);
 		L.deleteFolderToBin(docs.id);
 		await settle(500);
-		return { docs: docs.id, inner: inner.id, top: top.hash, keep: keep.hash };
+		// 24-C2: a bin card is keyed by the LOG ROW's key — the RECORD id for a deletion logged
+		// since (two deleted copies are two cards), the hash only for an older row
+		return { docs: docs.id, inner: inner.id, top: top.id, keep: keep.id };
 	});
 
 	// the Explorer WINDOW has to be open before its tree can be read — every section above
@@ -726,11 +728,12 @@ h.run(async () => {
 	await page.waitForTimeout(900);
 	const restored = await ev((u) => {
 		const t = window.__t;
-		const item = t.items().find((i) => i.hash === u.top);
+		const item = t.items().find((i) => i.id === u.top);
 		return {
 			folderLive: t.folders().some((f) => f.id === u.docs),
 			folderId: item && item.folderId,
-			rows: t.log().map((r) => r.hash)
+			// 24-C2: the log key — the record id for an item row, the `folder:` hash for a folder row
+			rows: t.log().map((r) => r.id ?? r.hash)
 		};
 	}, ui);
 	h.check(
@@ -926,13 +929,15 @@ h.run(async () => {
 		// thing, which is exactly the node this gesture must refuse to pick up
 		L.deleteItemsToBin([ghosted.id]);
 		await settle(600);
+		// 24-C2: a bin card is keyed by the log row's key — the RECORD id for a deletion logged
+		// since (two deleted copies are two cards) — so the item keys here are record ids
 		return {
 			vault: vault.id,
 			elsewhere: elsewhere.id,
 			gone: gone.id,
-			loose: loose.hash,
-			inside: inside.hash,
-			ghosted: ghosted.hash
+			loose: loose.id,
+			inside: inside.id,
+			ghosted: ghosted.id
 		};
 	});
 	await page.locator('#deleted-folder').click();
@@ -1004,8 +1009,9 @@ h.run(async () => {
 	h.check(droppedRow.ok, `premise: the drop reached the Vault tree row (${JSON.stringify(droppedRow)})`);
 	await page.waitForTimeout(900);
 	let after = await ev((d) => ({
-		row: window.__t.items().find((i) => i.hash === d.loose)?.folderId ?? 'MISSING',
-		log: window.__t.log().map((r) => r.hash)
+		row: window.__t.items().find((i) => i.id === d.loose)?.folderId ?? 'MISSING',
+		// the log KEY: the record id for an item row, the `folder:` hash for a folder row
+		log: window.__t.log().map((r) => r.id ?? r.hash)
 	}), dnd);
 	h.check(
 		after.row === dnd.vault,
@@ -1025,8 +1031,8 @@ h.run(async () => {
 		const back = folders.find((f) => f.id === d.gone);
 		return {
 			folder: back ? { name: back.name, parentId: back.parentId ?? null } : null,
-			inside: window.__t.items().find((i) => i.hash === d.inside)?.folderId ?? 'MISSING',
-			log: window.__t.log().map((r) => r.hash)
+			inside: window.__t.items().find((i) => i.id === d.inside)?.folderId ?? 'MISSING',
+			log: window.__t.log().map((r) => r.id ?? r.hash)
 		};
 	}, dnd);
 	h.check(
@@ -1078,8 +1084,8 @@ h.run(async () => {
 	h.check(ontoCard.ok, 'premise: the Elsewhere folder card took the drop');
 	await page.waitForTimeout(900);
 	const moved = await ev((d) => ({
-		folderId: window.__t.items().find((i) => i.hash === d.ghosted)?.folderId ?? 'MISSING',
-		log: window.__t.log().map((r) => r.hash)
+		folderId: window.__t.items().find((i) => i.id === d.ghosted)?.folderId ?? 'MISSING',
+		log: window.__t.log().map((r) => r.id ?? r.hash)
 	}), dnd);
 	h.check(
 		moved.folderId === dnd.elsewhere,

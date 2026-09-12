@@ -16,6 +16,8 @@
 	import { sendPing } from '$lib/ping';
 	import { moduleToolboxes, openToolboxes, buildToolboxItems } from '$lib/moduleToolboxes';
 	import { togglePanel } from '$lib/panelToggles';
+	import { trackpadMode } from '$lib/trackpadNav';
+	import { helpersInPlay } from '$lib/helperLayer';
 
 	// Scene.svelte routes right-TAPS here (77): empty viewport → this menu with
 	// the clicked ground point; an object under the cursor → its own context
@@ -271,6 +273,27 @@
 					icon: 'sliders-horizontal',
 					tooltip: 'Cell size, colours, fade and the origin axes (Configure Scene ▸ Grid)',
 					action: () => openSceneSection('Grid')
+				},
+				{
+					// 24-E2: light helpers, frustums and camera markers hide in Play; this
+					// brings them back for debugging, with a DEBUG chip in the play HUD
+					label: 'Show helpers in Play (debug)',
+					checked: $helpersInPlay,
+					tooltip: 'Render light helpers, camera frustums and camera markers inside Play mode (a DEBUG chip marks the frame)',
+					action: () => helpersInPlay.update((v) => !v)
+				},
+				{
+					// 24-A2.3: the per-device override, where the problem is. The classifier
+					// (trackpadNav.js) decides by device signature; a user whose wheel still
+					// pans — or whose trackpad zooms — fixes it here in one click.
+					label: 'Mouse wheel',
+					hint: $trackpadMode === 'off' ? 'Zoom' : $trackpadMode === 'on' ? 'Pan' : 'Auto',
+					tooltip: 'What a scroll over the viewport does: zoom (a mouse wheel), pan (a trackpad swipe), or detect per event',
+					children: [
+						{ label: 'Zoom (mouse wheel)', checked: $trackpadMode === 'off', action: () => trackpadMode.set('off') },
+						{ label: 'Pan (trackpad swipe)', checked: $trackpadMode === 'on', action: () => trackpadMode.set('on') },
+						{ label: 'Auto-detect', checked: $trackpadMode === 'auto', action: () => trackpadMode.set('auto') }
+					]
 				},
 				{
 					// L3: the scene's authored look — AO, grading, camera FX

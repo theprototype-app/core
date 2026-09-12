@@ -135,6 +135,10 @@ export const profileSettingsOpen = writable(false);
 /** @type {import('svelte/store').Writable<any>} */
 export const peers = writable(null);
 export const toggleExpand = writable(null);
+/** 24-B2: which object-list rows are EXPANDED, lifted out of the row component so
+ * the keyboard walker (visibleObjectRows) can see the visible order, and so expansion
+ * survives a re-mount. @type {import('svelte/store').Writable<Set<string>>} */
+export const expandedObjects = writable(new Set());
 export const closeMenu = writable(true);
 export const specatorMode = writable(false);
 

@@ -525,7 +525,7 @@ const writing = new Map();
  * dedupe, the `imported` stamp and the thumbnail rule cannot drift between them; the
  * caller owns `persistIndex` because a batch import should write the index once.
  * @param {ArrayBuffer} buffer @param {string} name @param {string | null} folderId
- * @param {{kind?: string, type?: string, imported?: boolean, hash?: string}} [meta]
+ * @param {{kind?: string, type?: string, imported?: boolean, hash?: string, thumbnail?: string | null}} [meta]
  */
 async function writeItem(buffer, name, folderId, meta = {}) {
 	const hash = meta.hash ?? (await sha256(buffer));
@@ -552,19 +552,28 @@ async function writeItem(buffer, name, folderId, meta = {}) {
 }
 
 /** @param {ArrayBuffer} buffer @param {string} name @param {string | null} folderId
- *  @param {{kind?: string, type?: string, imported?: boolean, hash?: string}} meta */
+ *  @param {{kind?: string, type?: string, imported?: boolean, hash?: string, thumbnail?: string | null,
+ *    id?: string, share?: string, owner?: any}} meta
+ *  `thumbnail` (24-C1): a copy carries its source's, so a duplicate costs no decode.
+ *  `id` (24-C2): the record is minted under a GIVEN uuid — a shared row's id is network
+ *  identity, so a peer materialising the row must hold it under the same one (the
+ *  `createFolder(name, parent, {id})` rule). `share`/`owner` stamp the adoption marks at
+ *  write, so the record never spends a sweep looking like a local file nobody decided about. */
 async function writeItemNow(buffer, name, folderId, meta) {
 	const kind = meta.kind ?? kindOf(name) ?? 'text';
 	const blob = new Blob([buffer], meta.type ? { type: meta.type } : undefined);
 	// the thumbnail is DECORATIVE — never let a wedged loader/renderer block
 	// storing the bytes (a hung GLB parse used to silently swallow shared
 	// assets on the receiving peer, R-3); the card falls back to an icon
-	const thumbnail = await Promise.race([
-		thumbnailFor(blob, name, kind),
-		new Promise((resolve) => setTimeout(() => resolve(null), 4000))
-	]);
+	const thumbnail =
+		meta.thumbnail !== undefined
+			? meta.thumbnail
+			: await Promise.race([
+					thumbnailFor(blob, name, kind),
+					new Promise((resolve) => setTimeout(() => resolve(null), 4000))
+				]);
 	const item = {
-		id: crypto.randomUUID(),
+		id: String(meta.id ?? '').trim() || crypto.randomUUID(),
 		name,
 		kind,
 		folderId,
@@ -578,7 +587,9 @@ async function writeItemNow(buffer, name, folderId, meta) {
 		// user dragged in independently — one of them silently vanishes onto the hidden
 		// shelf. A stamp is the only thing that can tell the two apart, and its ABSENCE
 		// means "this app minted it", so every item written before today keeps folding.
-		...(meta.imported ? { imported: true } : {})
+		...(meta.imported ? { imported: true } : {}),
+		...(meta.share ? { share: meta.share } : {}),
+		...(meta.owner ? { owner: meta.owner } : {})
 	};
 	await idbPut(BLOB_KEY + item.id, blob);
 	explorerItems.update((list) => [...list, item]);
@@ -593,26 +604,205 @@ async function writeItemNow(buffer, name, folderId, meta) {
  * through `importFiles` / the duplicate resolver instead.
  * @param {ArrayBuffer} buffer @param {string} name
  * @param {string | null} folderId
- * @param {{imported?: boolean}} [opts] loose-scenes fix: stamp provenance — see
- *   `writeItem`. Absent means "this app minted it", so nothing already stored changes.
+ * @param {{imported?: boolean, allowDuplicate?: boolean, id?: string, share?: string, owner?: any, thumbnail?: string | null}} [opts]
+ *   loose-scenes fix: stamp provenance — see `writeItem`. Absent means "this app minted
+ *   it", so nothing already stored changes. `allowDuplicate` (24-C1): skip the hash dedupe
+ *   and mint a SECOND record for bytes we already hold — a copy is a record, its bytes are
+ *   content. `id` (24-C2): write the record under THIS uuid — a shared row's identity — and
+ *   skip the dedupe for the same reason; a record already held under that id is returned
+ *   as-is (idempotent, the `createFolder` rule). `share`/`owner` ride onto the record.
+ *   `thumbnail` (24-C3): a scene copy carries its source card's picture rather than
+ *   decoding one (a .tpscene decodes to none anyway); undefined = derive as before.
  */
 export async function addItemFromBytes(buffer, name, folderId = null, opts = {}) {
-	const hash = await sha256(buffer);
-	const existing = get(explorerItems).find((item) => item.hash === hash);
-	if (existing) return existing;
-	// 21-G7: we may already hold these exact bytes on the hidden shelf — a restored
-	// version being saved again, or a peer pushing back a hash we folded away. Bring
-	// the record back rather than minting a second item for one blob; the caller's
-	// publish then decides whether it stays visible (it is the pointer) or is folded
-	// straight back by the hide sweep.
-	const shelved = get(hiddenItems).find((item) => item.hash === hash);
-	if (shelved) {
-		setItemHidden(shelved.id, false);
-		return shelved;
+	const wantId = String(opts.id ?? '').trim();
+	// a write FOR a given id goes through the per-id lock: the shared library's sweep and
+	// the bytes landing from a peer both want to mint the same record, and the second
+	// caller must receive the first one's record rather than a twin under one id
+	if (wantId) return mintOnce(wantId, () => addItemFromBytesNow(buffer, name, folderId, opts, wantId));
+	return addItemFromBytesNow(buffer, name, folderId, opts, '');
+}
+
+/** @type {Map<string, Promise<any>>} record id -> the write minting it (24-C2) */
+const mintingById = new Map();
+
+/**
+ * 24-C2: ONE WRITE PER RECORD ID. Two async callers can ask for the same id inside one
+ * tick — `landBytes` writing a row's record as the bytes arrive, and the library sweep
+ * copying the same row from a sibling record — and both would pass an `itemById` check
+ * before either had written. The second waits for the first and gets its record, the same
+ * shape as `writeItem`'s in-flight promise per hash.
+ * @param {string} id @param {() => Promise<any>} fn
+ */
+async function mintOnce(id, fn) {
+	const pending = mintingById.get(id);
+	if (pending) return pending;
+	const job = fn();
+	mintingById.set(id, job);
+	try {
+		return await job;
+	} finally {
+		mintingById.delete(id);
 	}
-	const item = await writeItem(buffer, name, folderId, { hash, imported: !!opts.imported });
+}
+
+/** the body of addItemFromBytes, once any id lock is held
+ * @param {ArrayBuffer} buffer @param {string} name @param {string | null} folderId
+ * @param {{imported?: boolean, allowDuplicate?: boolean, id?: string, share?: string, owner?: any, thumbnail?: string | null}} opts
+ * @param {string} wantId */
+async function addItemFromBytesNow(buffer, name, folderId, opts, wantId) {
+	if (wantId) {
+		const held = itemById(wantId);
+		if (held) return held;
+	}
+	const hash = await sha256(buffer);
+	if (!opts.allowDuplicate && !wantId) {
+		const existing = get(explorerItems).find((item) => item.hash === hash);
+		if (existing) return existing;
+		// 21-G7: we may already hold these exact bytes on the hidden shelf — a restored
+		// version being saved again, or a peer pushing back a hash we folded away. Bring
+		// the record back rather than minting a second item for one blob; the caller's
+		// publish then decides whether it stays visible (it is the pointer) or is folded
+		// straight back by the hide sweep.
+		const shelved = get(hiddenItems).find((item) => item.hash === hash);
+		if (shelved) {
+			setItemHidden(shelved.id, false);
+			return shelved;
+		}
+	}
+	const thumb = opts.thumbnail !== undefined ? { thumbnail: opts.thumbnail } : {};
+	const item =
+		opts.allowDuplicate || wantId
+			? await writeItemNow(buffer, name, folderId, {
+					hash,
+					imported: !!opts.imported,
+					...thumb,
+					...(wantId ? { id: wantId } : {}),
+					...(opts.share ? { share: opts.share } : {}),
+					...(opts.owner ? { owner: opts.owner } : {})
+				})
+			: await writeItem(buffer, name, folderId, { hash, imported: !!opts.imported, ...thumb });
 	await persistIndex();
 	return item;
+}
+
+// ---- 24-C1: Duplicate / Copy / Paste — a record is a pointer, bytes are content ----
+//
+// The git model, and the folder precedent this library already keeps ("a folder's id is
+// network identity"): a copy is a NEW RECORD holding the SAME hash. Locally that is a
+// second id-addressed blob (nothing is shared between records, so deleting one leaves the
+// other); on the wire (C2) it is a second row with the same content pointer, which a peer
+// that already holds the hash materialises with no transfer. `share` is NOT copied — the
+// copy is local until shared, unless it lands in a shared folder, where the inheritance
+// sweep picks it up exactly as it would a dropped file.
+
+/**
+ * The Finder/Blender copy name: "Tower.glb" → "Tower copy.glb" → "Tower copy 2.glb",
+ * extension preserved, an existing " copy N" suffix collapsed rather than stacked.
+ * @param {string} name @param {Iterable<string>} siblings names already in the folder
+ */
+export function nextCopyName(name, siblings) {
+	const m = /^(.*?)(\.[^./]+)?$/.exec(String(name || 'file'));
+	const rawBase = m?.[1] ?? '';
+	// a dot-file (".env") has no extension: the whole name is the stem
+	const ext = rawBase ? (m?.[2] ?? '') : '';
+	const stem = (rawBase || String(name || 'file')).replace(/ copy( \d+)?$/i, '') || 'file';
+	const taken = new Set([...siblings].map((s) => String(s).toLowerCase()));
+	for (let n = 1; n < 10000; n++) {
+		const candidate = (n === 1 ? stem + ' copy' : stem + ' copy ' + n) + ext;
+		if (!taken.has(candidate.toLowerCase())) return candidate;
+	}
+	return stem + ' copy ' + Date.now() + ext;
+}
+
+/** the names in one folder (visible items), for collision checks @param {string | null} folderId */
+function namesIn(folderId) {
+	return get(explorerItems)
+		.filter((item) => (item.folderId ?? null) === (folderId ?? null))
+		.map((item) => item.name);
+}
+
+/**
+ * A second record for an item's bytes — a local blob read, no hashing (the hash is
+ * known), the thumbnail carried over, `share` NOT copied. Into the same folder it takes
+ * the copy name; into another folder it keeps its name unless that collides.
+ * @param {string} id @param {{folderId?: string | null, name?: string, id?: string, share?: string, owner?: any}} [opts]
+ *   `folderId` undefined = the source's folder. `id`/`share`/`owner` (24-C2): the copy is
+ *   being made FOR a shared row a peer published — it takes the row's id (network identity)
+ *   and its adoption marks, and a record already held under that id is returned as-is.
+ * @returns {Promise<any | null>} the new record
+ */
+export async function duplicateItem(id, opts = {}) {
+	const wantId = String(opts.id ?? '').trim();
+	// the same per-id lock as addItemFromBytes: a copy made FOR a shared row must not race
+	// the bytes of that row landing from a peer into a second record under one id
+	if (wantId) return mintOnce(wantId, () => duplicateItemNow(id, opts, wantId));
+	return duplicateItemNow(id, opts, '');
+}
+
+/** the body of duplicateItem, once any id lock is held
+ * @param {string} id @param {{folderId?: string | null, name?: string, id?: string, share?: string, owner?: any}} opts
+ * @param {string} wantId */
+async function duplicateItemNow(id, opts, wantId) {
+	if (wantId) {
+		const held = itemById(wantId);
+		if (held) return held;
+	}
+	const source = allItems().find((item) => item.id === id);
+	if (!source) return null;
+	const blob = await itemBlob(id);
+	if (!blob) return null;
+	const folderId = opts.folderId === undefined ? source.folderId ?? null : opts.folderId;
+	const siblings = namesIn(folderId);
+	const sameFolder = (folderId ?? null) === (source.folderId ?? null);
+	const collides = siblings.some((n) => n.toLowerCase() === source.name.toLowerCase());
+	const name = opts.name ?? (sameFolder || collides ? nextCopyName(source.name, siblings) : source.name);
+	const item = await writeItemNow(await blob.arrayBuffer(), name, folderId, {
+		hash: source.hash,
+		kind: source.kind,
+		type: blob.type || undefined,
+		imported: !!source.imported,
+		thumbnail: source.thumbnail ?? null,
+		...(wantId ? { id: wantId } : {}),
+		...(opts.share ? { share: opts.share } : {}),
+		...(opts.owner ? { owner: opts.owner } : {})
+	});
+	await persistIndex();
+	return item;
+}
+
+/**
+ * A folder and everything under it as new records (a new folder id — network identity
+ * is minted here, C2 makes its rows zero-transfer for held hashes). Same naming rule
+ * against the sibling folders.
+ * @param {string} id @param {string | null} [parentId] undefined = beside the source
+ * @returns {Promise<any | null>} the new root folder
+ */
+export async function duplicateFolder(id, parentId) {
+	const source = get(explorerFolders).find((f) => f.id === id);
+	if (!source) return null;
+	const into = parentId === undefined ? source.parentId ?? null : parentId;
+	if (into && folderSubtree(id).includes(into)) return null; // never into itself
+	const siblingNames = get(explorerFolders)
+		.filter((f) => (f.parentId ?? null) === (into ?? null))
+		.map((f) => f.name);
+	const sameParent = (into ?? null) === (source.parentId ?? null);
+	const collides = siblingNames.some((n) => n.toLowerCase() === source.name.toLowerCase());
+	const name = sameParent || collides ? nextCopyName(source.name, siblingNames) : source.name;
+	const copy = createFolder(name, into);
+	if (!copy) return null;
+	/** @param {string} fromId @param {string} toId */
+	const walk = async (fromId, toId) => {
+		for (const item of get(explorerItems).filter((i) => i.folderId === fromId))
+			await duplicateItem(item.id, { folderId: toId, name: item.name });
+		for (const sub of get(explorerFolders).filter((f) => f.parentId === fromId)) {
+			const made = createFolder(sub.name, toId);
+			if (made) await walk(sub.id, made.id);
+		}
+	};
+	await walk(id, copy.id);
+	await persistIndex();
+	return copy;
 }
 
 /** Delete an item and its bytes. 21-G7: the id may name a HIDDEN version (Version
@@ -701,4 +891,77 @@ export function itemByHash(hash) {
 		get(hiddenItems).find((item) => item.hash === hash) ??
 		null
 	);
+}
+
+// ---- 24-C2: a record is a pointer, and the pointer has an identity ------------------
+//
+// Four reads and writes the shared library needs once a row is `{id, hash}` rather than a
+// hash: find a record by its id on EITHER shelf, list every record holding one hash (the
+// copies), re-key a record onto a row's id (a peer's own copy of the same bytes BINDS to the
+// arriving row rather than sitting beside a duplicate), and replace a record's bytes in
+// place (an edited copy is the same record with a new hash — one transfer, no second card).
+
+/** A record by id, visible or hidden. @param {string} id @returns {any | null} */
+export function itemById(id) {
+	const want = String(id ?? '').trim();
+	if (!want) return null;
+	return (
+		get(explorerItems).find((item) => item.id === want) ??
+		get(hiddenItems).find((item) => item.id === want) ??
+		null
+	);
+}
+
+/** Every record holding these bytes, visible first then hidden. @param {string} hash @returns {any[]} */
+export function itemsByHash(hash) {
+	const want = String(hash ?? '').trim();
+	if (!want) return [];
+	return [...get(explorerItems), ...get(hiddenItems)].filter((item) => item.hash === want);
+}
+
+/**
+ * Give a record a new id, blob included. The blob is copied under the new key BEFORE the
+ * index changes and dropped under the old one after, so no read in between finds a record
+ * whose bytes are missing. Refuses to collide with a record already held under `newId`.
+ * @param {string} oldId @param {string} newId @returns {Promise<boolean>} did it move
+ */
+export async function rekeyItem(oldId, newId) {
+	const from = String(oldId ?? '').trim();
+	const to = String(newId ?? '').trim();
+	if (!from || !to || from === to) return false;
+	if (itemById(to) || !itemById(from)) return false;
+	const blob = await idbGet(BLOB_KEY + from);
+	if (blob) await idbPut(BLOB_KEY + to, blob);
+	const swap = (/** @type {any[]} */ list) => list.map((item) => (item.id === from ? { ...item, id: to } : item));
+	explorerItems.update(swap);
+	hiddenItems.update(swap);
+	if (blob) await idbDelete(BLOB_KEY + from);
+	await persistIndex();
+	return true;
+}
+
+/**
+ * Replace a record's bytes in place: new blob under the SAME id, hash and size recomputed,
+ * the thumbnail re-derived (time-boxed like every write). `updateItemBytes` is the text
+ * editor's special case of this; the shared library uses it when a row it holds points at a
+ * hash it does not — the publisher edited the file, and the record follows.
+ * @param {string} id @param {ArrayBuffer} buffer @param {{type?: string}} [opts]
+ * @returns {Promise<any | null>} the updated record
+ */
+export async function replaceItemBytes(id, buffer, opts = {}) {
+	const record = itemById(id);
+	if (!record) return null;
+	const hash = await sha256(buffer);
+	const blob = new Blob([buffer], opts.type ? { type: opts.type } : undefined);
+	const thumbnail = await Promise.race([
+		thumbnailFor(blob, record.name, record.kind),
+		new Promise((resolve) => setTimeout(() => resolve(record.thumbnail ?? null), 4000))
+	]);
+	await idbPut(BLOB_KEY + record.id, blob);
+	const patch = (/** @type {any[]} */ list) =>
+		list.map((item) => (item.id === record.id ? { ...item, hash, size: buffer.byteLength, thumbnail } : item));
+	explorerItems.update(patch);
+	hiddenItems.update(patch);
+	await persistIndex();
+	return itemById(record.id);
 }

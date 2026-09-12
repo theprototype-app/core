@@ -4,7 +4,7 @@
 	// $lib/sceneTemplates.js — this file is presentation only. Runes-mode.
 	import { untrack } from 'svelte';
 	import { Modal } from 'flowbite-svelte';
-	import { FilePlus, Image as ImageIcon, RefreshCw } from '@lucide/svelte';
+	import { FilePlus, FolderDown, Image as ImageIcon, RefreshCw } from '@lucide/svelte';
 	import { templatesModalOpen, hidePanels, restorePanels } from '../../stores/appStore.js';
 	import {
 		templates,
@@ -19,6 +19,7 @@
 		loadCommunityGallery,
 		loadCommunityEntry,
 		loadRemoteScene,
+		saveRemoteSceneToLibrary,
 		confirmClearScene,
 		tagUnion,
 		matchesTags,
@@ -137,6 +138,16 @@
 			console.error('community submit action failed:', e);
 		}
 	}
+	/**
+	 * 24-C3: the card's SECOND action — file the template into the Library as a scene of
+	 * your own, leaving the open scene alone. The modal stays up: saving several starters
+	 * in a row is the ordinary use, and nothing here replaced the world, so there is no
+	 * confirm to hand off to.
+	 * @param {any} entry
+	 */
+	function saveEntry(entry) {
+		void saveRemoteSceneToLibrary(entry);
+	}
 	/** @param {number} n */
 	function sizeLabel(n) {
 		if (!n) return '';
@@ -151,8 +162,14 @@
 </script>
 
 {#snippet card(/** @type {any} */ entry)}
+	<!-- 24-C3: the card is TWO buttons in one grid cell — the whole card loads, and a small
+	     corner button saves the template into the Library instead. Siblings under one
+	     wrapper rather than a button inside a button (invalid HTML, and the click would
+	     reach both); `data-scene-slug` stays on the load button, which still carries every
+	     word the card shows. -->
+	<div class="tpl-card-wrap relative">
 	<button
-		class="tpl-card flex flex-col overflow-hidden rounded-lg border border-gray-700/60 bg-gray-800/70 text-left"
+		class="tpl-card flex h-full w-full flex-col overflow-hidden rounded-lg border border-gray-700/60 bg-gray-800/70 text-left"
 		data-scene-slug={entry.slug}
 		disabled={$loadingSlug === entry.slug}
 		title={'Load "' + entry.title + '" — replaces the current scene (a backup is stashed first)'}
@@ -203,6 +220,17 @@
 			</p>
 		</div>
 	</button>
+	<button
+		class="tpl-save"
+		data-scene-save={entry.slug}
+		disabled={$loadingSlug === entry.slug}
+		title={'Save "' + entry.title + '" to your Library as a new scene — the current scene stays as it is'}
+		aria-label={'Save ' + entry.title + ' to your Library'}
+		onclick={() => saveEntry(entry)}
+	>
+		<FolderDown size={14} aria-hidden="true" />
+	</button>
+	</div>
 {/snippet}
 
 {#snippet submitControl(/** @type {string} */ id, /** @type {string} */ cls)}
@@ -547,6 +575,35 @@
 	}
 	.tpl-card:disabled {
 		opacity: 0.6;
+		cursor: wait;
+	}
+	/* 24-C3: the corner "save to Library" button. Always visible (touch has no hover),
+	   quiet until pointed at; LITERAL fallbacks like every colour in this file. */
+	.tpl-card-wrap {
+		min-height: 10rem;
+	}
+	.tpl-save {
+		position: absolute;
+		top: 0.35rem;
+		right: 0.35rem;
+		display: inline-flex;
+		align-items: center;
+		justify-content: center;
+		width: 1.6rem;
+		height: 1.6rem;
+		color: rgb(209 213 219);
+		background: rgb(17 24 39 / 0.75);
+		border: 1px solid rgb(75 85 99 / 0.7);
+		border-radius: 0.375rem;
+		cursor: pointer;
+	}
+	.tpl-save:hover {
+		color: #fff;
+		border-color: var(--color-primary-600, #2563eb);
+		background: rgb(17 24 39 / 0.95);
+	}
+	.tpl-save:disabled {
+		opacity: 0.5;
 		cursor: wait;
 	}
 	.tpl-blank:hover {

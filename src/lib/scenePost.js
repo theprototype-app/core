@@ -194,10 +194,12 @@ export function clearLookOverride(key) {
 }
 
 /** A document with any runtime override folded in — what the renderer should use.
- * @param {string} [key] */
-export function resolvedDoc(key) {
+ * `overrides` defaults to OUR map; P2 hands a WATCHED peer's map in, so what we render
+ * while watching is what their Set Look nodes did to them, not what ours did to us.
+ * @param {string} [key] @param {Record<string, boolean>} [overrides] */
+export function resolvedDoc(key, overrides) {
 	const doc = postStackFor(key);
-	const over = get(lookOverride)[key || POST_SCENE_KEY];
+	const over = (overrides ?? get(lookOverride))[key || POST_SCENE_KEY];
 	return typeof over === 'boolean' && over !== doc.enabled ? { ...doc, enabled: over } : doc;
 }
 

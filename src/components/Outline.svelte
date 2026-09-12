@@ -8,6 +8,10 @@
 	// the scene's. Exactly how HudLayer resolves an attached HUD — a look on a camera IS
 	// a post document keyed by that camera's uuid, so there is no new concept here.
 	import { cameraPreview } from '$lib/cameraPreview';
+	// P2: while WATCHING a peer, the chain resolves from THEIR look state (camera, view
+	// mode, local post switch, Set Look overrides) instead of ours — presence, never data.
+	import { specatorMode } from '../stores/appStore.js';
+	import { peerLooks, lookOf } from '$lib/lookPresence';
 	import {
 		scenePost,
 		postStacks,
@@ -237,6 +241,8 @@
 	// belt-and-braces for unknown engines: post also skips the first composer frames
 	// (the boot-compile window is where the breakage bites hardest)
 	let postWarm = $state(false);
+	/** P2: the peer whose look state the chain was last resolved from ('' = our own) */
+	let adoptedFrom = '';
 	let warmupFrames = 0;
 	let postGateToasted = false;
 
@@ -245,17 +251,25 @@
 	// mode, the local kill switch, the capability gate and the warm-up).
 	// `postWarm` flipping after 10 frames is one extra rebuild, once.
 	$effect(() => {
-		const throughCamera = $cameraPreview?.uuid ?? null;
+		// P2: the WATCHED peer's row, when there is one. `specatorMode` holds a peer id
+		// while watching; an absent row (an older build) falls through to our own state,
+		// and so does leaving the watch — nothing of theirs is ever written into ours.
+		void $peerLooks;
+		const watching = typeof $specatorMode === 'string' ? $specatorMode : '';
+		const adopted = watching ? lookOf(watching) : null;
+		adoptedFrom = adopted ? watching : '';
+		const throughCamera = adopted ? adopted.camera : ($cameraPreview?.uuid ?? null);
 		// resolvedDoc reads the stores with get(), which registers NO svelte dependency —
 		// so BOTH have to be touched here or this effect stops re-running when a document
 		// changes (measured: setting a camera to No files replaced rendered nothing new).
 		void $postStacks;
 		void $lookOverride;
+		const overrides = adopted ? adopted.look : undefined;
 		const entries = effectivePostStack({
-			stack: resolvedDoc(POST_SCENE_KEY),
-			cameraStack: /** @type {any} */ (throughCamera ? resolvedDoc(throughCamera) : null),
-			mode: $viewMode,
-			localEnabled: $postEnabledLocal,
+			stack: resolvedDoc(POST_SCENE_KEY, overrides),
+			cameraStack: /** @type {any} */ (throughCamera ? resolvedDoc(throughCamera, overrides) : null),
+			mode: adopted ? adopted.mode : $viewMode,
+			localEnabled: adopted ? adopted.overrides.post !== false : $postEnabledLocal,
 			postOk,
 			postWarm
 		});
@@ -462,6 +476,8 @@
 					((composer as any).passes ?? []).at(-1) === outlinePassSelected,
 				postWarm,
 				postOk,
+				// P2: whose look state the chain came from ('' = this viewer's own)
+				adoptedFrom,
 				// L4: what the renderer was TOLD about tone mapping and what it actually
 				// holds - double grading is invisible in the stack itself
 				stackTonemaps,

@@ -27,6 +27,8 @@ import { applyRemoteCameraPreview, clearPeerPreview, sendCameraPreviewState } fr
 // 21-F3: play-mode PRESENCE, the campreview shape — a tiny per-peer message, a reply
 // riding the getmodulestate request, and a drop on disconnect (golden rule 3).
 import { applyRemotePlayMode, dropPeerPlayMode, sendPlayModeState } from '$lib/gamePresence';
+// P2: watch adopts the watched peer's LOOK STATE — the campreview shape, one row per peer
+import { applyRemoteLookState, dropPeerLook, sendLookState } from '$lib/lookPresence';
 // P2b: which SCENE each peer is standing in — the gamePresence shape exactly
 import { applyRemotePeerScene, dropPeerScene, sendMySceneState, peerScenes, myScene, mySceneWire, amPrivate, privacySplit, elsewhereThan, sceneOfPeer, ROOM_SCOPED, canApplyByRoom, sameRoomOrUnknown, myRoomLabel, roomLabelOf } from '$lib/peerScenes';
 // 21-G2: the project manifest — a latest-wins singleton like environment/scenephysics
@@ -857,6 +859,7 @@ export class PeerConnection {
 				} else if(data.type == 'getmodulestate') {
 					sendModuleStates(data.sender);
 					sendCameraPreviewState(); // 16-P5: ride the same late-joiner request
+					sendLookState(); // P2: ...and how we are looking at the scene (view mode, look switches)
 					sendPlayModeState(); // 21-F3: ...and so does play-mode presence
 					sendMySceneState(); // P2b: ...and where we are standing
 					sendPeerVarsState(); // 21-G4: ...and our own per-player row, if we hold one
@@ -900,6 +903,10 @@ export class PeerConnection {
 				} else if(data.type == 'campreview') {
 					// 16-P5: presence only — "X is previewing camera Y" (peers may join it)
 					applyRemoteCameraPreview(data);
+				} else if(data.type == 'lookstate') {
+					// P2: presence only — how X is LOOKING at the scene, so a watcher renders
+					// X's chain rather than its own. ADDITIVE: an older build never sends it.
+					applyRemoteLookState(data);
 				} else if(data.type == 'annotation') {
 					applyAnnotation(data);
 				} else if(data.type == 'annotations') {
@@ -1321,6 +1328,7 @@ export class PeerConnection {
 		this.openedPeers.delete(peerId);
 		handleDisconnected(peerId);
 		clearPeerPreview(peerId); // 16-P5
+		dropPeerLook(peerId); // P2
 		dropPeerPlayMode(peerId); // 21-F3
 		dropPeerScene(peerId); // P2b
 		dropPeerVars(peerId); // 21-G4
@@ -1355,6 +1363,7 @@ export class PeerConnection {
 				this.openedPeers.delete(peerId);
 				handleDisconnected(peerId);
 				clearPeerPreview(peerId); // 16-P5
+				dropPeerLook(peerId); // P2
 				dropPeerPlayMode(peerId); // 21-F3
 				dropPeerScene(peerId); // P2b
 				dropPeerVars(peerId); // 21-G4

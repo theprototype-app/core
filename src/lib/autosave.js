@@ -273,6 +273,11 @@ export function debugRequestSave() {
 }
 
 async function writeSnapshot() {
+	// What has changed BEFORE any of this runs. It has to be read HERE rather than
+	// beside the write: the GLTF export below is the slow part, so a change made
+	// during it is precisely the one that is NOT in the bytes we are about to store,
+	// and clearing `dirty` unconditionally at the end would mark it saved.
+	const markAtStart = get(dirtyPulse);
 	// H1: persist EVERY graph document; orphan object graphs (owner object gone)
 	// are pruned from the OUTPUT only. Legacy nodes/edges fields keep carrying the
 	// scene graph so an old build can still restore this snapshot.
@@ -348,8 +353,6 @@ async function writeSnapshot() {
 			? { position: camera.position.toArray(), target: controls?.target?.toArray() ?? [0, 0, 0] }
 			: null
 	};
-	// what changed BEFORE the write; anything dirtied during it must survive the clear
-	const markAtStart = get(dirtyPulse);
 	const bytes = estimateSnapshotBytes(snapshot);
 	autosaveStatus.update((state) => ({ ...state, lastBytes: bytes }));
 	try {

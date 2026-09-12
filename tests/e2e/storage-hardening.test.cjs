@@ -257,6 +257,29 @@ h.run(async () => {
 		`the live cadence is the one that measurement implies (${Math.round(derived.ms)}ms -> ${derived.debounce}ms)`
 	);
 
+	// A change made DURING a save is NOT in the bytes that save wrote, so the save must
+	// not mark it saved (the held-body `lastWritten` rule, one domain over). The window is
+	// real and it is the GLTF export, which is the slow part — which is also why the
+	// pulse has to be read before the export rather than beside the write.
+	const duringSave = await A.page.evaluate(async () => {
+		const a = window.__stores.autosave;
+		const settle = a.saveNow();
+		// synchronously after the save has begun: `markAtStart` is already taken
+		a.markAnnotationsDirty();
+		await settle;
+		return { dirty: a.isDirty() };
+	});
+	h.check(
+		duringSave.dirty === true,
+		`an edit made while a snapshot is being written stays unsaved (${duringSave.dirty})`
+	);
+	// and the ordinary case still clears, or the flag would be stuck on forever
+	const afterSave = await A.page.evaluate(async () => {
+		await window.__stores.autosave.saveNow();
+		return window.__stores.autosave.isDirty();
+	});
+	h.check(afterSave === false, `...while a quiet save does clear it (${afterSave})`);
+
 	// A FAILED AUTOSAVE IS SAID OUT LOUD. This used to reach `console.log` and stop there,
 	// so a full disk meant crash recovery had silently switched itself off. The quota error
 	// is raised through the idb seam because a headless origin is granted tens of gigabytes

@@ -1,9 +1,9 @@
 import * as THREE from 'three';
 import { get } from 'svelte/store';
-import { flowGraphs, mutedFlowObjects, syncedAnimations, flowValues, flowTriggers, SCENE_GRAPH, startGraphMirror, allNodes, allEdges } from '../stores/flowStore';
+import { flowGraphs, mutedFlowObjects, syncedAnimations, flowValues, flowTriggers, SCENE_GRAPH, startGraphMirror, allNodes, allEdges, flowPaused} from '../stores/flowStore';
 // 21-F2: `isLocked` is the LOCAL play substate the recipe gate reads — see gamePlayActive
 import { objectsGroup, isLocked } from '../stores/sceneStore';
-import { peers, showToast } from '../stores/appStore';
+import { peers, showToast, showInfoToast, dismissToastById} from '../stores/appStore';
 import { animationTypes } from './nodeCatalog';
 // 21-E7.6: hudKinds is a leaf (it reads only moduleHudKinds, itself svelte/store-only)
 import { isIndexValuedKind } from './hudKinds';
@@ -2770,7 +2770,7 @@ function applyAnimation(object, base, anim, time, ctx) {
 				trigger: moduleTriggerInfo(anim, ctx)
 			});
 		} catch (error) {
-			log('warn', 'flow', 'module effect ' + anim.type + ' failed', String(error));
+			noteFrameFailure('module effect ' + anim.type, error);
 		}
 		return;
 	}
@@ -2955,8 +2955,23 @@ function applyPathPatrol(object, data, time) {
 // threlte's task loop (setAnimationLoop — XR-aware) while presenting; the
 // timestamp guard makes a double delivery (both loops in one frame) a no-op.
 let lastRunAt = -1000;
+/** 27-C: per-frame failures are rate-limited per KIND — first three, then one per 300.
+ * A throwing frame task is the loudest thing in the app otherwise, and the noise is what
+ * costs you the first failure. @type {Record<string, number>} */
+const frameFailCounts = {};
+
+/** @param {string} kind @param {unknown} error */
+function noteFrameFailure(kind, error) {
+	const n = (frameFailCounts[kind] = (frameFailCounts[kind] ?? 0) + 1);
+	if (n <= 3 || n % 300 === 0) log('warn', 'flow', kind + ' failed (' + n + ')', String(error));
+}
+
 /** @param {number} now */
 function runTick(now) {
+	if (failTicksRemaining > 0) {
+		failTicksRemaining--;
+		throw new Error('forced tick failure (test hook)');
+	}
 	if (now - lastRunAt < 3) return;
 	lastRunAt = now;
 	// wall clock (wrapped daily to keep float noise low) -> same phase on every peer
@@ -3238,7 +3253,10 @@ function runTick(now) {
 		try {
 			task(time);
 		} catch (error) {
-			log('warn', 'flow', 'module frame task failed', String(error));
+			// 27-C: a module task that throws EVERY frame wrote 60 lines a second into the
+			// ring, which evicts the context around the first failure — the only line that
+			// says what broke. First three, then one per 300.
+			noteFrameFailure('module frame task', error);
 		}
 	});
 
@@ -3251,22 +3269,79 @@ function runTick(now) {
 		try {
 			postTick(now);
 		} catch (error) {
-			log('warn', 'flow', 'post-tick hook failed', String(error));
+			noteFrameFailure('post-tick hook', error);
 		}
 	}
+}
+
+// 27-C (audit top-10 #3): ONE THROW USED TO END EVERY ANIMATION AND EVERY PHYSICS STEP
+// FOR THE SESSION. `tick` called `runTick` and then re-armed the frame, so an exception
+// escaped before `requestAnimationFrame` ran and nothing ever scheduled another frame —
+// no error surfaced, the scene simply stopped moving. The frame is re-armed in a
+// `finally`, which is the whole fix; the counter below is what stops a permanently
+// broken graph burning a core at 60Hz with nobody watching.
+const TICK_FAIL_LIMIT = 120; // ~2s of failing frames at 60Hz
+let tickFails = 0;
+/** TEST-ONLY: force the next N ticks to throw. There is no organic way in — every real
+ * path into runTick (module tasks, the post-tick hook, scripts) is individually caught,
+ * which IS this phase — so the threshold and the re-arm would otherwise be unprovable. */
+let failTicksRemaining = 0;
+
+/** Shared by the desktop scheduler and the XR pump — both must survive a throw.
+ * @param {number} now */
+function safeRunTick(now) {
+	try {
+		runTick(now);
+		tickFails = 0;
+		return true;
+	} catch (error) {
+		tickFails++;
+		// first three, then one per 300: a per-frame log is 60 lines a second, which
+		// buries the very first failure — the one that says what broke.
+		if (tickFails <= 3 || tickFails % 300 === 0)
+			log('error', 'flow', 'tick failed (' + tickFails + ' in a row)', String(error));
+		if (tickFails >= TICK_FAIL_LIMIT && !get(flowPaused).paused) {
+			flowPaused.set({ paused: true, reason: String(error) });
+			showInfoToast(
+				'flow-paused',
+				'Flow runtime paused after repeated errors. Your scene is intact; fix the node and resume.',
+				[{ label: 'Resume', action: () => resumeFlowRuntime() }]
+			);
+		}
+		return false;
+	}
+}
+
+/** Clear the paused state and start ticking again (the Resume button, and 27-D's
+ * safe-mode exit). Idempotent. */
+/** TEST-ONLY, see failTicksRemaining. @param {number} n */
+export function failTicksForTest(n) {
+	failTicksRemaining = Math.max(0, Number(n) || 0);
+}
+
+export function resumeFlowRuntime() {
+	tickFails = 0;
+	flowPaused.set({ paused: false, reason: '' });
+	dismissToastById('flow-paused');
 }
 
 /** the desktop scheduler (suspended by the browser while in immersive XR) */
 /** @param {number} now */
 function tick(now) {
-	runTick(now);
-	requestAnimationFrame(tick);
+	try {
+		if (!get(flowPaused).paused) safeRunTick(now);
+	} finally {
+		// ALWAYS re-arm. A frame loop that can stop being scheduled is a frame loop that
+		// ends the session's animation on the first bad node.
+		requestAnimationFrame(tick);
+	}
 }
 
 /** XR-side pump: Scene.svelte calls this from threlte's task loop while
  * presenting, so flow + physics keep running in the headset. @param {number} now */
 export function pumpFlowTick(now) {
-	runTick(now);
+	if (get(flowPaused).paused) return;
+	safeRunTick(now);
 }
 
 /** @type {((now: number) => void) | null} */

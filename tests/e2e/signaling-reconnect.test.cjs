@@ -157,24 +157,38 @@ h.run(async () => {
 		p.reconnect = () => window.__sig.calls++;
 		pc.reconnectAttempts = 5;
 	});
-	await page.evaluate(() => window.dispatchEvent(new Event('online')));
-	await page.waitForTimeout(150);
-	const onOnline = await page.evaluate(() => ({
-		calls: window.__sig.calls,
-		attempts: window.__sig.pc.reconnectAttempts
-	}));
+	const onOnline = await page.evaluate(() => {
+		const pc = window.__sig.pc;
+		const p = pc.peer; // whatever the app holds NOW, not what was stubbed at setup
+		Object.defineProperty(p, 'open', { get: () => false, configurable: true });
+		Object.defineProperty(p, 'disconnected', { get: () => true, configurable: true });
+		Object.defineProperty(p, 'destroyed', { get: () => false, configurable: true });
+		let calls = 0;
+		p.reconnect = () => calls++;
+		pc.reconnectAttempts = 5;
+		window.dispatchEvent(new Event('online')); // listeners run synchronously
+		return { calls, attempts: pc.reconnectAttempts };
+	});
 	h.check(onOnline.calls === 1, 'an `online` event retries immediately instead of waiting out the backoff');
 	h.check(
 		onOnline.attempts === 0,
 		'…and RESETS the schedule (the wait is for a server that is down, not a link that just came back)'
 	);
 
-	await page.evaluate(() => document.dispatchEvent(new Event('visibilitychange')));
-	await page.waitForTimeout(250);
-	const onVisible = await page.evaluate(() => ({ calls: window.__sig.calls, hidden: document.hidden }));
+	const onVisible = await page.evaluate(() => {
+		const pc = window.__sig.pc;
+		const p = pc.peer;
+		Object.defineProperty(p, 'open', { get: () => false, configurable: true });
+		Object.defineProperty(p, 'disconnected', { get: () => true, configurable: true });
+		Object.defineProperty(p, 'destroyed', { get: () => false, configurable: true });
+		let calls = 0;
+		p.reconnect = () => calls++;
+		document.dispatchEvent(new Event('visibilitychange'));
+		return { calls, hidden: document.hidden };
+	});
 	h.check(
-		onVisible.calls === onOnline.calls + 1,
-		`a tab becoming visible retries too, a lid or a phone lock ends here (calls ${onOnline.calls} -> ${onVisible.calls}, document.hidden=${onVisible.hidden})`
+		onVisible.calls === 1,
+		`a tab becoming visible retries too, a lid or a phone lock ends here (${onVisible.calls} retries, document.hidden=${onVisible.hidden})`
 	);
 
 	await page.evaluate(() => {

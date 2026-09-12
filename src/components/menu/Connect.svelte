@@ -5,6 +5,8 @@
 	import { onMount, tick } from 'svelte';
 	import { createPeer, PeerConnection } from '$lib/peerHandler.svelte';
 	import { peerServerStatus, inviteServerParam } from '$lib/peerServer';
+	// 27-F: the signaling link's retry state (audit H2). A chip, not a toast per attempt.
+	import { signalingRetry } from '$lib/connectionState';
 	import { cancelOutboundRequest, requestConnect } from '$lib/peerApproval';
 	import { sessionHost } from '$lib/connectionState';
 	import { connectSlot, drawerSlot } from '$lib/cloudHooks';
@@ -292,6 +294,20 @@
 			</div>
 		{/if}
 
+		{#if $signalingRetry.retrying}
+			<!-- 27-F: the signaling link is down and retrying. This is a STATE you can look
+				 at, which is why it is a chip and not a toast per attempt — the retry is
+				 unbounded now. It never replaces the pill's own state: your live peers are
+				 unaffected by a dead signaling link, only NEW joins are. -->
+			<span
+				id="connect-retry-chip"
+				class="cx-retry"
+				data-testid="connect-retry-chip"
+				title="Reconnecting to the signaling server — peers you are already connected to are unaffected"
+				>Reconnecting… {$signalingRetry.attempt}</span
+			>
+		{/if}
+
 		<!-- connection/server info disclosure — a chevron that rotates 180° on open;
 			 the panel slides down from under the pill. Present in every state; the
 			 amber badge surfaces a signaling fallback without a permanent label. -->
@@ -444,6 +460,19 @@
 	}
 	/* the chevron is a lucide component's svg — the class lands OUTSIDE this
 	   component's scope hash, so these selectors must be :global to reach it */
+	/* 27-F: the signaling retry chip. Amber like the pending state, compact, and only
+	   present while the link is down — so it costs the pill no width the rest of the time. */
+	.cx-retry {
+		align-self: center;
+		white-space: nowrap;
+		border-radius: 9999px;
+		padding: 2px 8px;
+		font-size: 11px;
+		font-weight: 600;
+		color: #78350f;
+		background: #fbbf24;
+	}
+
 	.cx-toggle :global(.cx-chevron) {
 		transition: transform 0.2s ease;
 	}

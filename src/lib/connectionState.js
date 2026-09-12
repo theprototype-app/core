@@ -33,6 +33,27 @@ export function dropPeerJoined(peerId) {
 	peerJoinedAt.set(next);
 }
 
+/**
+ * 27-F: the signaling link's retry state, for the Connect pill's chip (audit H2).
+ * A STORE rather than a toast per attempt: an unbounded retry toasting each time is
+ * spam, while a chip is a state you can look at. peerHandler already imports this
+ * leaf, so surfacing it costs no new module edge.
+ * @type {import('svelte/store').Writable<{retrying: boolean, attempt: number}>}
+ */
+export const signalingRetry = writable({ retrying: false, attempt: 0 });
+
+/** @param {number} attempt */
+export function noteSignalingRetry(attempt) {
+	signalingRetry.set({ retrying: true, attempt });
+}
+
+/** The link is back (or we gave the peer up) — clear the chip. */
+export function clearSignalingRetry() {
+	const now = get(signalingRetry);
+	if (!now.retrying && now.attempt === 0) return;
+	signalingRetry.set({ retrying: false, attempt: 0 });
+}
+
 /** Full reset — leaving the session / cancelling out. */
 export function resetSession() {
 	sessionHost.set(null);

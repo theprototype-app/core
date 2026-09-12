@@ -18,7 +18,7 @@ import { applyUvPaint, applyUvPaintEnd } from '$lib/uvEditor';
 import { applySplineEdit } from '$lib/splineTool';
 import { initVoiceChat, attachVoiceToPeer, voicePeerConnected } from '$lib/voiceChat';
 import { resolvePeerOptions, describePeerServer, peerServerStatus, parseInviteHash, decodeInviteServer, applyInviteServerOverride, inviteServerOverride } from '$lib/peerServer';
-import { sessionHost, markPeerJoined, resetSession } from '$lib/connectionState';
+import { sessionHost, markPeerJoined, resetSession, signalingRetry, noteSignalingRetry, clearSignalingRetry } from '$lib/connectionState';
 import { canApply, getAuthProvider, dispatchCloudMessage, rolesInfo } from '$lib/cloudHooks';
 import { applyAnnotation, applyAnnotationsSnapshot, sendAnnotations } from '$lib/annotationsHandler';
 import { applyPing } from '$lib/ping';
@@ -97,6 +97,10 @@ export function createPeer() {
 // remote had already adopted as its send channel. Killing young conns is how
 // mesh formation shredded itself above ~5 peers.
 const DIAL_GRACE_MS = 10000;
+// 27-F: the SIGNALING schedule — 800ms doubling to a 8s ceiling, forever, +/-25% so a
+// room full of tabs does not return in lockstep. Separate from the per-peer conn
+// backoff below, which is bounded on purpose (a peer really can be gone).
+const RETRY_BACKOFF = { base: 800, cap: 8000, max: Infinity, jitter: 0.25 };
 // restoreConnection's own retry cadence (pre-existing 4s) — also used to spot
 // a restore dial that is already in flight so parallel calls don't stack.
 const RESTORE_RETRY_MS = 4000;
@@ -178,16 +182,25 @@ export class PeerConnection {
 			this.peer = new Peer(this.myId, options);
 		};
 
+		// 27-F (audit H2): THE recreate ritual, in one place. Four callers had their own
+		// copy of destroy -> createPeerForMode -> attachVoiceToPeer -> wire (the public
+		// fallback, the runtime switchServer, the id-collision retry) and the fourth —
+		// a peer whose link CLOSED — did not exist at all, which is why a closed peer
+		// stayed dead: `reconnect()` cannot revive a spent Peer object.
+		const recreatePeer = (/** @type {boolean} */ forcePublic) => {
+			try { this.peer.destroy(); } catch (e) { /* already gone */ }
+			createPeerForMode(!!forcePublic);
+			attachVoiceToPeer(this); // rebind the incoming-call handler to the new peer
+			wire();
+		};
+
 		// The pinned self-hosted server never opened -> rebuild against the public
 		// PeerJS cloud and re-wire. Default mode only; custom/public never fall back.
 		const fallbackToPublic = () => {
 			this.didFallback = true;
 			this.canFallback = false;
 			showToast('Your peer server is unreachable - switching to the public PeerJS server.');
-			try { this.peer.destroy(); } catch (e) { /* already gone */ }
-			createPeerForMode(true);
-			attachVoiceToPeer(this); // rebind the incoming-call handler to the new peer
-			wire();
+			recreatePeer(true);
 		};
 
 		// 24-D2: switch the signaling server at RUNTIME — fallbackToPublic generalised.
@@ -218,10 +231,7 @@ export class PeerConnection {
 				this.idRetries = 0;
 				this.reconnectAttempts = 0;
 				this.serverErrorAt = 0;
-				try { this.peer.destroy(); } catch (e) { /* already gone */ }
-				createPeerForMode(!!ov?.forcePublic);
-				attachVoiceToPeer(this);
-				wire();
+				recreatePeer(!!ov?.forcePublic);
 			};
 			rebuild(target);
 			const pinned = !!(target && (target.forcePublic || target.custom?.host));
@@ -256,6 +266,9 @@ export class PeerConnection {
 		this.peer.on('open', (id) => {
 			console.log(id);
 			this.hasOpened = true;
+			// 27-F: say it ONCE, and only to somebody who saw it go away.
+			if (get(signalingRetry).retrying) showToast('Reconnected to the peer server.');
+			clearSignalingRetry();
 			this.reconnectAttempts = 0; // a fresh/re-established server link resets the backoff
 			if (this.updateIdFn) this.updateIdFn(id);
 			if (!window.location.hash.slice(1)) return;
@@ -275,21 +288,34 @@ export class PeerConnection {
 			window.location.hash = '';	
 		});
 
-		this.peer.on('close', function() { console.log('server closed') });
+		// 27-F: a closed Peer is SPENT — `reconnect()` does nothing for it, which is why
+		// this used to be a dead end with only a page reload out of it. Rebuild on the
+		// SAME id (an id is a per-server registration, so the invite link a user copied
+		// a minute ago still works when the link comes back).
+		this.peer.on('close', () => {
+			console.log('server closed');
+			this.reconnectAttempts++;
+			const delay = backoffDelay(this.reconnectAttempts, RETRY_BACKOFF) ?? 8000;
+			if (this.reconnectAttempts === 1) showToast('The peer server closed the link - reconnecting...');
+			noteSignalingRetry(this.reconnectAttempts);
+			setTimeout(() => { if (!this.peer?.open) recreatePeer(this.didFallback); }, delay);
+		});
 
-		// Surface signaling-server problems to the user. Reconnect on a bounded
-		// exponential backoff instead of hammering reconnect() immediately (172).
+		// 27-F (audit H2): THE RETRY NEVER GIVES UP. It used to stop after five attempts
+		// (~20 s) and tell the user to reload — but a reload drops every live
+		// DataConnection AND the invite id, while the thing that failed is usually a lid
+		// closing, a phone locking or a wifi hop. What protects the server is the CAPPED
+		// interval (plus jitter, so N tabs dropped by one hop do not return in lockstep);
+		// the attempt COUNT protected nobody. One toast on the way in, a CHIP for the
+		// live state — an unbounded retry that toasts per attempt is spam.
 		this.reconnectAttempts = 0;
 		this.peer.on('disconnected', () => {
 			console.log('server disconnected');
 			if (this.peer.destroyed) return;
 			this.reconnectAttempts++;
-			const delay = backoffDelay(this.reconnectAttempts, { base: 800, max: 5 });
-			if (delay === null) {
-				showToast('Could not reach the peer server. Please reload the page.');
-				return;
-			}
-			showToast('Lost connection to the peer server, reconnecting... (attempt ' + this.reconnectAttempts + ')');
+			const delay = backoffDelay(this.reconnectAttempts, RETRY_BACKOFF) ?? 8000;
+			if (this.reconnectAttempts === 1) showToast('Lost the peer server - reconnecting...');
+			noteSignalingRetry(this.reconnectAttempts);
 			setTimeout(() => {
 				if (!this.peer.destroyed && this.peer.disconnected) this.peer.reconnect();
 			}, delay);
@@ -311,14 +337,23 @@ export class PeerConnection {
 			// never persisted, so nothing is pinned to it before the link opens —
 			// take a new one instead of making the user reload. Lengthening the id
 			// was assumed to be a compat break; it isn't, but it also isn't needed.
+			// 27-F: the SAME collision, met on a REBUILD. The branch below only covers the
+			// first open, so a peer rebuilt after a close — while the server still holds the
+			// old registration for a moment — fell through to "please reload", which is the
+			// dead end this phase exists to remove. Wait out the registration and rebuild.
+			if (err.type === 'unavailable-id' && this.hasOpened && this.idRetries < 3) {
+				this.idRetries++;
+				const wait = backoffDelay(this.idRetries, RETRY_BACKOFF) ?? 8000;
+				console.log('id still held by the old registration — rebuilding in ' + wait + 'ms');
+				noteSignalingRetry(this.idRetries);
+				setTimeout(() => { if (!this.peer?.open) recreatePeer(this.didFallback); }, wait);
+				return;
+			}
 			if (err.type === 'unavailable-id' && !this.hasOpened && this.idRetries < 3) {
 				this.idRetries++;
 				this.myId = createPeer();
 				console.log('session id collided — retrying as ' + this.myId);
-				try { this.peer.destroy(); } catch (e) { /* already gone */ }
-				createPeerForMode(this.didFallback);
-				attachVoiceToPeer(this); // rebind the incoming-call handler to the new peer
-				wire();
+				recreatePeer(this.didFallback);
 				return;
 			}
 			if (err.type === 'peer-unavailable') {
@@ -348,6 +383,18 @@ export class PeerConnection {
 			window.addEventListener('pagehide', () => {
 				try { this.broadcast({ type: 'disconnected', peerId: this.peer.id }); } catch (e) { /* going down anyway */ }
 			});
+			// 27-F: the two events that mean "there is a point in trying NOW" — a wifi hop
+			// ends as `online`, a lid or a phone lock ends as `visible`. Both RESET the
+			// schedule: the wait is there to be kind to a server that is down, not to a
+			// link that has just come back.
+			const retryNow = () => {
+				if (!this.peer || this.peer.open) return;
+				this.reconnectAttempts = 0;
+				if (this.peer.destroyed) recreatePeer(this.didFallback);
+				else if (this.peer.disconnected) this.peer.reconnect();
+			};
+			window.addEventListener('online', retryNow);
+			document.addEventListener('visibilitychange', () => { if (!document.hidden) retryNow(); });
 		}
 
 		// Wire the message dispatcher onto a connection. Historically only INBOUND

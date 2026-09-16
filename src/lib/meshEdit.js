@@ -1365,8 +1365,14 @@ function recaptureVertexFalloff() {
 			refreshHandleMatrix(i);
 		}
 	}
-	// members first, anchor last — the tail commitSelectedLocal refreshes
-	// normals/bounds/overlay and sets needsUpdate (the onProxyMoved shape)
+	// F1: a live gizmo gesture re-applies by MODE (a rotate/scale wheel resize used to
+	// fall through to the translate falloff and displace the neighbours); the VR /
+	// no-gesture path keeps the translate shape: members first, anchor last — the
+	// tail commitSelectedLocal refreshes normals/bounds/overlay and sets needsUpdate
+	if (proxyGesture) {
+		applyProxyGesture();
+		return;
+	}
 	applyFalloff(deltaVector.copy(handles[selectedHandle].position).sub(falloffOrigin()));
 	commitSelectedLocal(handles[selectedHandle].position.clone());
 }
@@ -1440,10 +1446,8 @@ function applyTranslate(delta) {
  * on every call, so a long drag cannot drift, and conjugated out of the proxy
  * frame into object-local before it touches a vertex.
  *
- * DELIBERATE: proportional falloff is a TRANSLATE tool and is left alone here.
- * Only the selected set turns/scales; the neighbourhood keeps its positions. A
- * weighted partial rotation is a different (and much less obvious) operation,
- * and silently inventing one would be worse than not offering it.
+ * Since v1.13 (F1) the falloff neighbourhood turns/scales too, weighted — see the
+ * blend note inside. Before that the falloff was a translate-only tool here.
  */
 function applyPivotTransform() {
 	const g = /** @type {any} */ (proxyGesture);
@@ -1460,15 +1464,33 @@ function applyPivotTransform() {
 	// resets that to 1 — the divide keeps it honest if it ever is not
 	const scale = proxy.scale.clone().divide(g.scale);
 	const point = new THREE.Vector3();
-	for (const index of gestureIndices()) {
+	// F1 (v1.13): PROPORTIONAL rotate/scale = the WEIGHTED TRANSFORM BLEND (the plan's
+	// option 3): per vertex the rotation is slerped and the scale lerped toward
+	// identity by its falloff weight, then applied. For a pure rotation that is the
+	// conventional weighted ANGLE (a w = 0.5 vertex turns half way, so a straight edge
+	// through the falloff becomes a spiral — what Blender does), and it is the only
+	// reading that stays defined when rotate and scale combine. The selection has
+	// w = 1 by construction (beginFalloff), so it turns by the full amount either way.
+	const weighted = falloffActive();
+	const identity = new THREE.Quaternion();
+	const one = new THREE.Vector3(1, 1, 1);
+	const q = new THREE.Quaternion();
+	const sc = new THREE.Vector3();
+	const indices = weighted
+		? handles.map((_, i) => i).filter((i) => /** @type {number[]} */ (falloffWeights)[i] > 0)
+		: gestureIndices();
+	for (const index of indices) {
 		if (!g.starts[index]) continue;
+		const w = weighted ? /** @type {number[]} */ (falloffWeights)[index] : 1;
+		q.copy(identity).slerp(dQuat, w);
+		sc.copy(one).lerp(scale, w);
 		point
 			.copy(g.starts[index])
 			.sub(pivot)
 			.applyQuaternion(Rinv)
-			.multiply(scale)
+			.multiply(sc)
 			.applyQuaternion(R)
-			.applyQuaternion(dQuat)
+			.applyQuaternion(q)
 			.add(pivot);
 		writeHandle(index, point);
 	}

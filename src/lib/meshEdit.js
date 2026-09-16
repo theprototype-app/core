@@ -575,6 +575,7 @@ export function exitEditMode() {
 	hoveredHandle = -1;
 	slideEdge = null;
 	slideStart = null;
+	slidePivotTold = false;
 	vertexSlide.set(false); // an armed tool never survives the session
 	proportionalEdit.set(false);
 	falloffStart = null;
@@ -1124,6 +1125,8 @@ function refreshGeometryAfterWrite() {
 export const vertexSlide = writable(false);
 /** the edge chosen for the live slide: local-space endpoints @type {any} */
 let slideEdge = null;
+/** F2: the stand-down toast fires once per session @type {boolean} */
+let slidePivotTold = false;
 /** local-space position at drag start (the origin for the direction vote) @type {any} */
 let slideStart = null;
 /** the live slide's parameter along its edge (0 = start, 1 = far end) — kept
@@ -1206,8 +1209,17 @@ function proxyLocal() {
 	// the slide projects the PROXY's position onto one of the vertex's own edges,
 	// which only means anything while the proxy IS the vertex — a custom pivot
 	// seats it somewhere else entirely, so the constraint stands down there
-	if (!get(vertexSlide) || !slideStart || vertexSelection.size > 1 || hasMeshPivot(edited.uuid))
+	if (!get(vertexSlide) || !slideStart || vertexSelection.size > 1 || hasMeshPivot(edited.uuid)) {
+		// F2 (v1.13, decided WONTFIX for the interaction, made VISIBLE): the slide
+		// measures from the PROXY, and a placed pivot seats the proxy away from the
+		// vertex, so the projection would slide it by a nonsense amount. The tool
+		// silently doing nothing was the only real problem — say so, once a session.
+		if (get(vertexSlide) && slideStart && vertexSelection.size <= 1 && !slidePivotTold && hasMeshPivot(edited.uuid)) {
+			slidePivotTold = true;
+			showToast('Vertex slide is off while a custom pivot is placed — the slide measures from the gizmo, and the pivot moved it off the vertex. Reset the pivot to slide.');
+		}
 		return local;
+	}
 	if (!slideEdge) {
 		// choose on the first REAL movement: the incident edge whose direction best
 		// matches how the user started dragging (a tiny jitter must not decide it)

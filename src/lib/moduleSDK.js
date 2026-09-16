@@ -174,7 +174,15 @@ let flowGraphsRef = null;
 /** R3a: primed for api.flow.addNodes' spec defaults — nodeCatalog statically imports
  * THIS module, so a static edge back is a direct cycle. @type {any} */
 let nodeCatalogRef = null;
+/** 24-A A2: primed for api.onHit / api.hitLog — knock.js imports physics, which imports
+ * flowRuntime, which imports THIS module (the same cycle as the refs above). The promise
+ * is kept as well as the ref, because a listener registered at module boot must not be
+ * dropped for arriving before the import settles (the DEVX #8 family). @type {any} */
+let knockRef = null;
+/** @type {Promise<any>} */
+let knockReady = Promise.resolve(null);
 if (typeof window !== 'undefined') {
+	knockReady = import('./knock').then((m) => (knockRef = m));
 	import('./inputRuntime').then((m) => (inputRuntimeRef = m));
 	import('./physics').then((m) => (physicsRef = m));
 	import('./possess').then((m) => (possessRef = m));
@@ -723,6 +731,43 @@ function makeApi(moduleId, moduleName = moduleId) {
 		 */
 		haptic(intensity = 0.5, durationMs = 50, hand = undefined) {
 			vrControlsRef?.hapticPulse?.(intensity, durationMs, hand);
+		},
+		/**
+		 * 24-A A2: every KNOCK this peer sees — its own hand's, and every peer's as the
+		 * `hit` message is applied — as `{uuid, by, at, speed, point, linvel, angvel,
+		 * probe, local}`. `local` is true on the peer whose hand it was; `by` is that
+		 * peer's id (empty when solo). The same feed On Hit stamps from, so a module and a
+		 * graph agree on which hits happened. Returns the unsubscribe; torn down with the
+		 * module. Football's last-touch attribution rides this, evaluated BY EACH PEER
+		 * (the peerVars one-writer rule).
+		 * @param {(hit: any) => void} fn @returns {() => void}
+		 */
+		onHit(fn) {
+			/** @param {any} hit @param {boolean} local */
+			const wrapped = (hit, local) => fn({ ...hit, local });
+			/** @type {(() => void) | null} */
+			let off = null;
+			let gone = false;
+			knockReady.then((m) => {
+				if (m && !gone) off = m.registerHitListener(wrapped);
+			});
+			const stop = () => {
+				gone = true;
+				off?.();
+				off = null;
+			};
+			onDispose(stop);
+			return stop;
+		},
+		/**
+		 * 24-A A2: the knock log as a COPY — `last` = the most recent hit per live body
+		 * (keyed by uuid), `recent` = the last 32 hits in order. Runtime state: a late
+		 * joiner's log starts empty (a module that needs history keeps its own through
+		 * registerStateSync).
+		 * @returns {{last: Record<string, any>, recent: any[]}}
+		 */
+		hitLog() {
+			return knockRef?.hitLogSnapshot?.() ?? { last: {}, recent: [] };
 		},
 		/** In a VR session right now? (DEVX #6) @returns {boolean} */
 		isVR() {

@@ -39,7 +39,7 @@ import { applyModuleMessage, moduleVersions, checkModuleVersions, checkPeerAppVe
 import { APP_VERSION, COMMIT_SHA } from '$lib/version.js';
 import { applyLockRequest, applyUnlock, applyLockDenied } from '$lib/lockControl';
 import { applyDrawLive, applyDrawEnd } from '$lib/drawMode';
-import { applySimulate, physicsExternalMove, applyThrow, applyHit } from '$lib/physics';
+import { applySimulate, physicsExternalMove, applyThrow, applyHit, simulating, simPaused } from '$lib/physics';
 import { noteRemoteMove } from '$lib/moveSmoothing';
 import { noteRemoteHit, endKnockPrediction } from '$lib/knock';
 import { applyJointCreate, applyJointDelete, applyJointsSnapshot, sendJoints } from '$lib/joints';
@@ -1104,6 +1104,14 @@ export class PeerConnection {
 		if (getobjects && !holdContent) this.requestFullState(conn)
 		// singleton PUSH, like environmentState/scenePhysicsState above
 		if (!holdContent) conn.send(gameStatePayload())
+		// 24-A A2: WHETHER A SIM IS RUNNING HERE, for a late joiner. `simulate` went out at
+		// start/stop only, so a peer joining mid-run kept `remoteSimulating` null and neither
+		// the knock probes nor play-mode grab armed until the sim restarted (A1's finding;
+		// football's late joiner mid-match is the case). The start message's own shape, so
+		// an older joiner applies it exactly as it applies the live one, and held with the
+		// singletons — a running sim is content about THIS room.
+		if (!holdContent && get(simulating))
+			conn.send({ type: 'simulate', running: true, paused: get(simPaused), peerId: this.peer.id })
 		// module state is the one PER-PEER payload in the get* family (each peer
 		// answers with its OWN states — e.g. campreview presence), so it can't be
 		// deduped down to the host like the shared-scene requests above (B5)

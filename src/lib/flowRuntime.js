@@ -1779,6 +1779,7 @@ export const valueTypes = [
 	'gamepadbutton', // 21-E5: pad trigger — the keypress model verbatim
 	'gamepadaxis', // 21-E5: a stick, read LOCALLY (never streamed)
 	'onimpact', // PFX-C: physics impact trigger
+	'onhit', // 24-A A2: the knock's trigger — a handle map: __default pulse + speed/byMe
 	'onenter', 'onexit', // CL-C: sensor overlap triggers
 	'velocity', // CL-C: live speed readout (m/s)
 	'measure', // B6: an object's top / bottom / height / y / speed
@@ -1813,7 +1814,11 @@ let graphOutputs = {};
  * @param {any} value @param {any} edge */
 function unwrapHandle(value, edge) {
 	if (value && typeof value === 'object' && value.__handles)
-		return edge?.sourceHandle ? value.__handles[edge.sourceHandle] : undefined;
+		// 24-A A2: `__default` is what the UNNAMED output handle reads — On Hit keeps its
+		// pulse on the ordinary right-edge dot (so it wires like On Click into an Object
+		// Selector or a Counter) and carries speed/byMe as named handles beside it. Every
+		// earlier handle-map producer omits it, so an unnamed edge there still reads undefined.
+		return edge?.sourceHandle ? value.__handles[edge.sourceHandle] : value.__default;
 	return value;
 }
 
@@ -2193,6 +2198,18 @@ function evalNodeBody(node, allNodes, allEdges, time, seen, ctx) {
 			const trig = ctx && ctx.triggers ? ctx.triggers[node.id] : null;
 			const dt = trig ? time - trig.lastT : Infinity;
 			return dt >= 0 && dt < num(d.pulse ?? 0.3) ? 1 : 0;
+		}
+		case 'onhit': {
+			// 24-A A2: the knock's trigger. fireObjectHit stamps this node on EVERY peer
+			// from the hit message's own `at`, so the pulse agrees everywhere with no second
+			// message; speed/byMe are the LAST accepted hit's, held until the next one.
+			const trig = ctx && ctx.triggers ? ctx.triggers[node.id] : null;
+			const dt = trig ? time - trig.lastT : Infinity;
+			const info = hitInfo.get(node.id);
+			return {
+				__default: dt >= 0 && dt < num(d.pulse ?? 0.3) ? 1 : 0,
+				__handles: { speed: info ? info.speed : 0, byMe: info && info.byMe ? 1 : 0 }
+			};
 		}
 		case 'onenter':
 		case 'onexit': {
@@ -2660,6 +2677,59 @@ export function fireObjectImpact(uuid, strength) {
 		if (reachesObjectSelector(node.id, uuid) || implicitOwnerOf(node) === uuid)
 			applyNodeTrigger(node.id, syncedNow(), replicatesPulse(node));
 	});
+}
+
+/**
+ * 24-A A2: the last hit each On Hit node ACCEPTED — its value outputs. Runtime state
+ * keyed by node id (a late joiner reads 0 until the next knock; the trigger log it is
+ * handed carries the stamps, not the speeds).
+ * @type {Map<string, {speed: number, byMe: boolean, at: number}>}
+ */
+const hitInfo = new Map();
+
+/**
+ * A hit's wall-clock `at` (ms — the sender's Date.now, monotonic per sender) as a trigger
+ * stamp in the tick clock's seconds: the fold syncedNow applies to Date.now, so every peer
+ * derives ONE stamp from one message. Off the synced clock there is no peer to agree
+ * with and the tick clock is performance-based, so the local clock is used instead.
+ * @param {number} atMs
+ */
+function stampFromWallClock(atMs) {
+	return synced && Number.isFinite(atMs) ? (atMs % 86400000) / 1000 : syncedNow();
+}
+
+/**
+ * 24-A A2: a body was KNOCKED (knock.js — this peer's own probe, or a peer's `hit`
+ * message being applied) — pulse every On Hit node targeting it whose `minSpeed` and
+ * `who` gates pass. Unlike fireObjectImpact this runs on EVERY peer from the SAME
+ * message, so the stamp is derived from the message's `at` and NOT replicated: a
+ * nodetrigger on top would stamp every peer twice. `who` is read against `by` per peer,
+ * which is how `me` reaches a setvariable scope:'player' without a second writer.
+ * @param {{uuid: string, by?: string, at: number, speed: number}} hit
+ * @param {boolean} local true on the peer whose probe hit
+ * @returns {number} nodes pulsed
+ */
+export function fireObjectHit(hit, local) {
+	if (!hit || typeof hit.uuid !== 'string') return 0;
+	const me = /** @type {any} */ (get(peers))?.peer?.id ?? '';
+	const byMe = !!local || (!!hit.by && hit.by === me);
+	const ctx = runtimeCtx();
+	const stamp = stampFromWallClock(hit.at);
+	const speed = Number.isFinite(hit.speed) ? hit.speed : 0;
+	let fired = 0;
+	nodes.forEach((node) => {
+		if (node.type !== 'onhit') return;
+		if (!(reachesObjectSelector(node.id, hit.uuid) || implicitOwnerOf(node) === hit.uuid)) return;
+		const data = resolveInputs(node, nodes, edges, syncedNow(), ctx);
+		if (speed < num(data.minSpeed ?? 0)) return;
+		const who = data.who ?? 'anyone';
+		if (who === 'me' && !byMe) return;
+		if (who === 'others' && byMe) return;
+		hitInfo.set(node.id, { speed, byMe, at: hit.at });
+		applyNodeTrigger(node.id, stamp, false);
+		fired++;
+	});
+	return fired;
 }
 
 /**
@@ -3342,6 +3412,9 @@ export function startFlowRuntime() {
 	import('./possess').then((m) => (possessRef = m));
 	// 21-F4: the travel node's loader + the allplayers verdict channel
 	import('./levels').then((m) => (levelsRef = m));
+	// 24-A A2: the knock's hit feed drives On Hit. PRIMED for the same reason as physics:
+	// knock.js imports physics, which imports this module.
+	import('./knock').then((m) => m.registerHitListener((hit, local) => fireObjectHit(hit, local)));
 	import('./gamePresence').then((m) => (presenceRef = m));
 	flowGraphs.subscribe(() => {
 		nodes = allNodes();

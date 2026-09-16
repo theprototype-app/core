@@ -96,6 +96,9 @@ const probes = new Map();
 let hands = null;
 /** @type {(() => (string | null)[]) | null} */
 let heldUuids = null;
+/** A2: Scene's haptic seam (vrControls.hapticPulse), `(intensity, ms, hand) => void`
+ * @type {((intensity: number, ms: number, hand: 'left'|'right') => void) | null} */
+let haptic = null;
 let started = false;
 /** @type {Map<string, {key: string, center: THREE.Vector3, radius: number}>} */
 const boundsCache = new Map();
@@ -330,6 +333,10 @@ function fireKnock(probe, object, speed, point, response) {
 			probe: hit.probe
 		});
 	}
+	// A2: the hand that hit feels it — LOCAL only (the message carries no haptic), and
+	// the head probe is desktop, where there is nothing to buzz. 0.2 + speed/10, capped.
+	if (haptic && (probe.id === 'left' || probe.id === 'right'))
+		haptic(Math.min(1, 0.2 + speed / 10), 30, probe.id);
 	noteHit(hit, true);
 	return true;
 }
@@ -540,13 +547,14 @@ export function dropProbe(id) {
 /**
  * Wire the feeds. Called from Scene's onMount beside startPlayInteract — BELOW every
  * `let` its closures read (the TDZ rule).
- * @param {{hands?: (hand: 'left'|'right') => any, heldUuids?: () => (string | null)[]}} [options]
+ * @param {{hands?: (hand: 'left'|'right') => any, heldUuids?: () => (string | null)[], haptic?: (intensity: number, ms: number, hand: 'left'|'right') => void}} [options]
  */
 export function startKnock(options = {}) {
 	if (started || typeof window === 'undefined') return () => {};
 	started = true;
 	hands = options.hands ?? null;
 	heldUuids = options.heldUuids ?? null;
+	haptic = options.haptic ?? null;
 	return stopKnock;
 }
 
@@ -555,6 +563,7 @@ export function stopKnock() {
 	started = false;
 	hands = null;
 	heldUuids = null;
+	haptic = null;
 	probes.clear();
 	predictions.clear();
 	bodyTracks.clear();

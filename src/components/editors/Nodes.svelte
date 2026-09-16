@@ -58,6 +58,7 @@
 	import GamepadNode from './nodes/GamepadNode.svelte';
 	import PlayAnimNode from './nodes/PlayAnimNode.svelte';
 	import AnimStateNode from './nodes/AnimStateNode.svelte';
+	import OnHitNode from './nodes/OnHitNode.svelte';
 	import UnknownNode from './nodes/UnknownNode.svelte';
 	import { flowNodes as flowNodesStore, flowEdges as flowEdgesStore, customNodeDefs, nodeDesignerOpen, flowGraphs, activeGraphId, SCENE_GRAPH, setActiveGraph } from '../../stores/flowStore';
 	import { createObjectGraph, requestDeleteObjectGraph } from '$lib/flowGraphs';
@@ -157,6 +158,9 @@
 		setuniform: EffectNode,
 		onclick: OnClickNode,
 		onimpact: AnimationNode,
+		// 24-A A2: its own card — the pulse dot PLUS speed/byMe value rows (the MoveInput
+		// shape: several source handles need labelled rows, not one right-edge dot)
+		onhit: OnHitNode,
 		onenter: OnClickNode, // CL-C: same pulse card, sensor copy
 		onexit: OnClickNode,
 		collider: ColliderNode, // CL-C

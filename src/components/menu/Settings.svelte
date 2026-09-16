@@ -8,6 +8,7 @@
 	import { settingsOpen, settingsSection, hidePanels, restorePanels, advancedMode, showEnvInList, objectSearchEnabled, showSimControls, showToast, showRoomsButton, toastsInDrawerOnly, mobileUndockAllowed, enableShiftAdd, noteDoubleClickToOpen, duplicateCarriesAnimation, duplicateCarriesFlow, duplicateCarriesShader, touchTools, floatingToolbar, toolbarAlwaysOnTop } from '../../stores/appStore.js';
 	import { trackpadMode, allowBrowserZoom, reversePan, panEnabled, pinchZoomEnabled, lastWheelEvents } from '$lib/trackpadNav';
 	import { lightHelperLength } from '$lib/lightHelpers';
+	import { flowMouseBindings, FLOW_MOUSE_BINDINGS } from '$lib/flowPrefs';
 	import { helpersInPlay } from '$lib/helperLayer';
 	import { gamepadPrefs, setGamepadPrefs, DEADZONE_RANGE, SENSITIVITY_RANGE } from '$lib/gamepadPrefs';
 	import { drawerSlot, cloudPluginInfo } from '$lib/cloudHooks';
@@ -976,6 +977,13 @@
 					<p class="ui-section-label">Bindings</p>
 					<SettingRow name="Per-game controls" noControl={true}>
 						<span>A scene can bind the pad itself with the <strong>Gamepad Button</strong> and <strong>Gamepad Axis</strong> nodes in the node editor (Input group) — button presses replicate like a key press, while a stick value stays local to the player holding it. Module bindings are listed under Shortcuts</span>
+					</SettingRow>
+					<p class="ui-section-label">Node editor</p>
+					<SettingRow name="Mouse bindings">
+						<svelte:fragment slot="control">
+							<ThemedSelect id="flow-mouse-bindings" items={FLOW_MOUSE_BINDINGS} bind:value={$flowMouseBindings} />
+						</svelte:fragment>
+						<span>Classic (the default): a left drag on the node editor's canvas pans and <kbd>Shift</kbd>+drag draws a selection box. Select-first: a left drag selects, dragging any selected node moves the whole selection, <kbd>Shift</kbd>+click adds to or removes from it, and the middle or right button pans — a right click that does not move still opens the menu</span>
 					</SettingRow>
 				</AccordionItem>
 				<AccordionItem bind:open={sceneExpanded}>

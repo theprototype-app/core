@@ -8,6 +8,7 @@
 		Controls,
 		MiniMap,
 		MarkerType,
+		SelectionMode,
 		useSvelteFlow,
 		type Node,
 		type Edge,
@@ -62,6 +63,7 @@
 	import { flowNodes as flowNodesStore, flowEdges as flowEdgesStore, customNodeDefs, nodeDesignerOpen, flowGraphs, activeGraphId, SCENE_GRAPH, setActiveGraph } from '../../stores/flowStore';
 	import { createObjectGraph, requestDeleteObjectGraph } from '$lib/flowGraphs';
 	import { deselectObject } from '$lib/objectActions';
+	import { flowMouseBindings } from '$lib/flowPrefs';
 	import { objectsGroup, selectedObject, selectedObjects } from '../../stores/sceneStore';
 	import { serializeNode, serializeEdge, deleteFlowNodes, deleteFlowEdges, setNodeData } from '$lib/nodesHandler';
 	import ThemedSelect from '../ui/ThemedSelect.svelte';
@@ -375,6 +377,38 @@
 	const snapGrid = $derived([gridSnapOn ? gridSize : 1, gridSnapOn ? gridSize : 1] as [number, number]);
 	const bgVariant = $derived(bgPattern === 'lines' ? BG_LINES : BG_DOTS);
 	const selectedNode = $derived((nodes as any[]).find((n) => n.selected) ?? null);
+
+	// 114 (v1.13): MOUSE BINDINGS. Classic (the default, byte-identical to every
+	// version before it): left-drag pans. Select-first: left-drag draws a selection
+	// rectangle, dragging any selected node moves the set, Shift+click toggles
+	// membership, and the middle/right button pans. xyflow 1.6: `panOnDrag` takes the
+	// button list, `selectionOnDrag` the rectangle, `multiSelectionKey` the modifier.
+	const selectFirst = $derived($flowMouseBindings === 'select');
+	// Select-first re-emits a STATIONARY right click as the pane menu: once the right
+	// button pans, xyflow's Pane preventDefaults EVERY contextmenu and forwards none
+	// (its system layer would re-emit a press that did not travel, but the svelte
+	// wrapper never passes that callback through), so the wrapper below tracks the
+	// gesture itself. A right DRAG is a pan and opens nothing.
+	//
+	// The decision is made on POINTERUP, not on the contextmenu event: Chromium fires
+	// `contextmenu` on the PRESS, so at that moment the gesture has travelled zero
+	// pixels whether it turns out to be a click or a 200px pan — measured, and the
+	// first version opened the menu on every right drag because of it. The native menu
+	// is suppressed either way, by xyflow's own preventDefault.
+	let rightDown: { x: number; y: number } | null = null;
+	const onWrapPointerDown = (event: PointerEvent) => {
+		const target = event.target as HTMLElement | null;
+		const onBarePane =
+			!!target?.closest('.svelte-flow__pane') && !target.closest('.svelte-flow__node, .svelte-flow__edge');
+		rightDown = event.button === 2 && onBarePane ? { x: event.clientX, y: event.clientY } : null;
+	};
+	const onWrapPointerUp = (event: PointerEvent) => {
+		if (!selectFirst || event.button !== 2 || !rightDown) return; // Classic: xyflow's Pane opens it
+		const travelled = Math.hypot(event.clientX - rightDown.x, event.clientY - rightDown.y);
+		rightDown = null;
+		if (travelled > 4) return; // that gesture was a pan
+		onPaneContextMenu({ event });
+	};
 
 	// H1 (flow v2): the editor scope follows the viewport selection — a selected
 	// object shows ITS graph (or the create-flow empty state), deselecting returns
@@ -709,6 +743,8 @@
 	<div
 		class="svelteFlow relative h-full grow"
 		style="order: {paletteSide === 'right' ? 1 : 3}"
+		onpointerdown={onWrapPointerDown}
+		onpointerup={onWrapPointerUp}
 		onpointermove={onPointerMoveCursor}
 		onpointerleave={onPointerLeaveCursor}
 	>
@@ -795,6 +831,10 @@
 			{onbeforeconnect}
 			{ondelete}
 			{isValidConnection}
+			panOnDrag={selectFirst ? [1, 2] : true}
+			selectionOnDrag={selectFirst}
+			selectionMode={SelectionMode.Partial}
+			multiSelectionKey={selectFirst ? 'Shift' : undefined}
 			defaultEdgeOptions={{ type: edgeStyle, markerEnd: { type: MarkerType.ArrowClosed, width: 16, height: 16 } }}
 			deleteKey={['Backspace', 'Delete']}
 			fitView

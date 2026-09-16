@@ -38,6 +38,21 @@
 //   becomes its content hash, so a Sound node can play the same bytes) · `view` (the
 //   editor camera the file opens on) · `thumb.camera` (render the card through a named
 //   camera object). A def with `music` exports WITH assets, so the bytes ride the .tpscene.
+//
+// 24-A A3 (the PR #192 follow-up): the node/edge helpers are ONE module-scope
+// `graphBuilder()` and `remapData` walks every own string field. Both are meant to leave
+// every earlier def byte-identical, and that is CHECKED, not believed — build the same def
+// with the script before and after the change and compare the two trees:
+//
+//   APP_URL=https://theprototype.app:5177/ node scripts/author-templates.cjs --only towers --out /tmp/towers-before
+//   (edit)  APP_URL=https://theprototype.app:5177/ node scripts/author-templates.cjs --only towers --out /tmp/towers-after
+//   node scripts/compare-authored.cjs /tmp/towers-before /tmp/towers-after
+//
+// compare-authored.cjs unzips each .tpscene, strips what a build mints afresh every run
+// (`changedAt`/`createdAt`/`at` stamps, the session uuid, and every object uuid — replaced
+// by its order of first appearance, so the graph's remapped references still have to
+// agree) and diffs the rest; the thumbnails are compared by size only (an offscreen render
+// is not bit-stable across GPU drivers).
 const { chromium } = require('playwright');
 const fs = require('fs');
 const path = require('path');
@@ -79,6 +94,41 @@ const ONLY =
 //           {mode:'static'|'dynamic', mass, restitution, friction}.
 const gray = { floor: 0x8b939c, block: 0xaab2bd, wall: 0x99a3ae, accent: 0xd97706 };
 
+// ---- 24-A A3: the ONE graph builder every def authors its nodes through -----------
+// Hoisted from towersGraph()/beatGraph(), which each carried a local copy (PR #192's
+// review asked for this the moment a second game arrived). Byte-identical output: the
+// `class: 'w-[150px]'`, the label rule (a programmatic node with no label renders a blank
+// card) and the editor's CANONICAL edge id — `e-<source>[.<sourceHandle>]-<target>
+// [.<targetHandle>]` (Nodes.svelte / hudActions.makeEdge) — which peer dedupe depends on.
+// The E signature is the beat graph's superset: a Sequence step is a SOURCE handle, and a
+// three-argument call (every Towers edge) produces exactly the id it always did.
+function graphBuilder() {
+	/** @type {any[]} */ const nodes = [];
+	/** @type {any[]} */ const edges = [];
+	/** every node gets a LABEL — a programmatic node with none renders a blank card.
+	 * @param {string} id @param {string} type @param {string} label @param {number} x @param {number} y @param {any} data */
+	const N = (id, type, label, x, y, data) => {
+		nodes.push({ id, type, position: { x, y }, data: { label, ...data }, class: 'w-[150px]' });
+		return id;
+	};
+	/** @param {string} source @param {string} target @param {string} [targetHandle] @param {string} [sourceHandle] */
+	const E = (source, target, targetHandle, sourceHandle) => {
+		edges.push({
+			id: 'e-' + source + (sourceHandle ? '.' + sourceHandle : '') + '-' + target + (targetHandle ? '.' + targetHandle : ''),
+			source,
+			target,
+			...(sourceHandle ? { sourceHandle } : {}),
+			...(targetHandle ? { targetHandle } : {})
+		});
+	};
+	return { N, E, nodes, edges, done: () => ({ nodes, edges }) };
+}
+
+// 24-A A3: the node-data keys that are HUMAN TEXT and must never be remapped, even when
+// their value happens to equal a def-local object's name — a HUD text whose format is
+// literally "Build pad" must stay text, and a variable NAMED like an object is a name.
+const HUMAN_TEXT_KEYS = new Set(['label', 'format', 'text', 'placeholder', 'name']);
+
 // ---- B8: Towers, the first GAME def -------------------------------------------
 // A DATA-ONLY game: core nodes + a HUD document + the collectible module. Rebuilt
 // from the first playthrough's findings — the clever sensor-conveyor spawner cascaded
@@ -89,24 +139,8 @@ const gray = { floor: 0x8b939c, block: 0xaab2bd, wall: 0x99a3ae, accent: 0xd9770
 // material emissive, no shader graphs; every node carries a label; and a pause menu
 // (P) gives a Restart-while-playing button.
 function towersGraph() {
-	/** @type {any[]} */ const nodes = [];
-	/** @type {any[]} */ const edges = [];
-	/** every node gets a LABEL — a programmatic node with none renders a blank card.
-	 * @param {string} id @param {string} type @param {string} label @param {number} x @param {number} y @param {any} data */
-	const N = (id, type, label, x, y, data) => {
-		nodes.push({ id, type, position: { x, y }, data: { label, ...data }, class: 'w-[150px]' });
-		return id;
-	};
-	// the editor's canonical edge id (hudActions.makeEdge) — peer dedupe depends on it
-	/** @param {string} source @param {string} target @param {string} [handle] */
-	const E = (source, target, handle) => {
-		edges.push({
-			id: 'e-' + source + '-' + target + (handle ? '.' + handle : ''),
-			source,
-			target,
-			...(handle ? { targetHandle: handle } : {})
-		});
-	};
+	const g = graphBuilder();
+	const { N, E } = g;
 
 	// ---- round control ---------------------------------------------------------
 	// Start from the menu: entering 'playing' from menu BUMPS the round and re-stamps
@@ -216,7 +250,7 @@ function towersGraph() {
 	N('gotime', 'setgamestate', 'Time over', 1000, 2240, { state: 'over', outcome: "Time's up!", reset: false });
 	E('alltime', 'gotime', 'trigger');
 
-	return { nodes, edges };
+	return g.done();
 }
 
 const TOWERS_HUD_PANEL = {
@@ -563,25 +597,8 @@ function beatMarkers() {
 }
 
 function beatGraph() {
-	/** @type {any[]} */ const nodes = [];
-	/** @type {any[]} */ const edges = [];
-	/** @param {string} id @param {string} type @param {string} label @param {number} x @param {number} y @param {any} data */
-	const N = (id, type, label, x, y, data) => {
-		nodes.push({ id, type, position: { x, y }, data: { label, ...data }, class: 'w-[150px]' });
-		return id;
-	};
-	// the editor's canonical edge id with BOTH handles (Nodes.svelte) — a Sequence step is
-	// a SOURCE handle, which the Towers helper never needed
-	/** @param {string} source @param {string} target @param {string} [targetHandle] @param {string} [sourceHandle] */
-	const E = (source, target, targetHandle, sourceHandle) => {
-		edges.push({
-			id: 'e-' + source + (sourceHandle ? '.' + sourceHandle : '') + '-' + target + (targetHandle ? '.' + targetHandle : ''),
-			source,
-			target,
-			...(sourceHandle ? { sourceHandle } : {}),
-			...(targetHandle ? { targetHandle } : {})
-		});
-	};
+	const g = graphBuilder();
+	const { N, E } = g;
 	// selectors — every trigger and action names its object through one
 	N('selcond', 'objectselector', 'Conductor', 760, 190, { selected: 'Conductor' });
 	N('selstage', 'objectselector', 'Stage', 760, 340, { selected: 'Stage' });
@@ -663,7 +680,7 @@ function beatGraph() {
 	N('cutdetail', 'setcamera', 'Bar 3: Detail', 520, 1400, { camera: '' });
 	E('cuts', 'cutdetail', 'trigger', 'step3');
 	E('seldetail', 'cutdetail', 'camera');
-	return { nodes, edges };
+	return g.done();
 }
 
 const BEAT_HUD_PANEL = {
@@ -1016,7 +1033,9 @@ const DEFS = [
 		// CDN, and the file belongs to no repo); the page hands the bytes to the Explorer,
 		// which is what makes them a scene asset the .tpscene bundles.
 		const music = def.music ? { ...def.music, b64: (await fetchMusic(def.music)).toString('base64') } : null;
-		const out = await page.evaluate(async ({ d, music }) => {
+		const out = await page.evaluate(async ({ d, music, humanTextKeys }) => {
+			// 24-A A3: the module-scope Set does not cross into the page — it arrives as a list
+			const humanText = new Set(humanTextKeys);
 			const s = window.__stores;
 			const T = s.THREE;
 			s.commandsHandler.sceneCommand('/clear all');
@@ -1200,14 +1219,23 @@ const DEFS = [
 				const grid = (i) => ({ x: 40 + (i % 4) * 220, y: 40 + Math.floor(i / 4) * 140 });
 				// a node's object reference may be a def-local NAME: `uuid` on effect/anim
 				// nodes, `selected` on an Object Selector (B8 — the selector is how every
-				// trigger and action names its target, so a game graph is mostly selectors)
+				// trigger and action names its target), `camera` on the camera nodes (28-G),
+				// `hash: '$music'` on a Sound node — and, 24-A A3, ANY own string field a
+				// later node type may add: every string that names a def-local object becomes
+				// its uuid, string ARRAYS too (a future multi-target node), EXCEPT the human-
+				// text keys in HUMAN_TEXT_KEYS. `uuid`/`selected`/`camera`/`hash` fall out
+				// as ordinary cases, so the four earlier rules produce exactly what they did.
 				const remapData = (data) => {
 					const out = { ...(data ?? {}) };
-					if (out.uuid && named[out.uuid]) out.uuid = named[out.uuid];
-					if (out.selected && named[out.selected]) out.selected = named[out.selected];
-					// 28-G: `camera` on setcamera/gamestart/setlook, and the track's hash
-					if (out.camera && named[out.camera]) out.camera = named[out.camera];
-					if (out.hash === '$music' && named['$music']) out.hash = named['$music'];
+					for (const key of Object.keys(out)) {
+						if (humanText.has(key)) continue;
+						const v = out[key];
+						if (typeof v === 'string') {
+							if (named[v]) out[key] = named[v];
+						} else if (Array.isArray(v) && v.length && v.every((x) => typeof x === 'string')) {
+							out[key] = v.map((x) => (named[x] ? named[x] : x));
+						}
+					}
 					return out;
 				};
 				const resolved = {};
@@ -1350,7 +1378,7 @@ const DEFS = [
 			if (s.animationPreview) s.animationPreview.animationsRestore({}, false);
 			if (s.sceneMusic) s.sceneMusic.musicRestore(null, false);
 			return { bytes: Array.from(bytes), thumb };
-		}, { d: def, music });
+		}, { d: def, music, humanTextKeys: [...HUMAN_TEXT_KEYS] });
 		const bytes = Buffer.from(out.bytes);
 		const thumb = out.thumb ? Buffer.from(out.thumb.split(',')[1], 'base64') : null;
 		built[def.slug] = { entry: def, bytes, thumb };

@@ -1523,6 +1523,40 @@ function broadcastSelected(positionArray) {
 		});
 }
 
+/**
+ * F3 (v1.13): a PROPORTIONAL drag ends with ONE whole-geometry `meshgeo` commit —
+ * applied locally, broadcast, and recorded as the undo entry — instead of the
+ * selection-only `verts` stream. The falloff neighbourhood was never on the wire
+ * before (only the gesture's own handles were sent, per handle), so a peer saw the
+ * selected vertices move and the bulge around them never arrive.
+ *
+ * The LOCAL apply is load-bearing, not a convenience: `applyMeshGeo` rebuilds the
+ * receiver's geometry NON-indexed, while a `/create Plane` is indexed — so if only
+ * the peer swapped, the sender's next `verts` message would carry indices into a
+ * layout the peer no longer has. Both sides swap together (the undo path's rule).
+ *
+ * THE TRAP that follows: the swap rebuilds `handles` in triangle order through
+ * `refreshVertexEditSession`, which clamps the selection by COUNT only, so the
+ * indices would silently name different vertices. The selection is captured as
+ * POSITIONS before the commit and re-found by position after it.
+ * @param {number[]} before @param {number[]} after
+ * @returns {boolean} false when the commit was refused (size cap) and nothing changed
+ */
+function commitFalloffSnapshot(before, after) {
+	if (!edited || selectedHandle < 0) return false;
+	const anchorPos = handles[selectedHandle].position.clone();
+	const memberPos = [...vertexSelection].map((i) => handles[i]?.position.clone()).filter(Boolean);
+	if (!commitMeshGeoSnapshot(edited.uuid, before, after)) return false;
+	// handles were rebuilt by the vertex session refresher — same positions, new order
+	const find = (/** @type {any} */ p) => handles.findIndex((h) => h.position.distanceToSquared(p) < 1e-10);
+	const anchor = find(anchorPos);
+	vertexSelection = new Set(memberPos.map(find).filter((i) => i >= 0));
+	selectedHandle = anchor;
+	if (anchor >= 0) vertexSelection.add(anchor);
+	syncVertexSelection();
+	return true;
+}
+
 /** Called from Scene.svelte on dragging-changed for the proxy @param {boolean} dragging */
 export function onProxyDragChanged(dragging) {
 	if (!edited || !proxy) return;
@@ -1574,8 +1608,19 @@ export function onProxyDragChanged(dragging) {
 		// catch any tail movement since the last change event
 		applyProxyGesture();
 		const after = handles[selectedHandle].position.toArray();
-		broadcastGesture(); // final unthrottled state, every moved handle
-		if (vertexSelection.size > 1 || falloffActive() || mode !== 'translate') {
+		// F3: a live falloff commits the WHOLE geometry once (see commitFalloffSnapshot);
+		// read the predicate here, before the falloff state is cleared below
+		let committedWhole = false;
+		if (falloffActive() && dragStartExpanded) {
+			const afterExpanded = trisToPositions(readTriangles(edited.geometry));
+			committedWhole =
+				JSON.stringify(dragStartExpanded) === JSON.stringify(afterExpanded) ||
+				commitFalloffSnapshot(dragStartExpanded, afterExpanded);
+		}
+		if (!committedWhole) broadcastGesture(); // final unthrottled state, every moved handle
+		if (committedWhole) {
+			// the commit applied, sent and recorded everything
+		} else if (vertexSelection.size > 1 || falloffActive() || mode !== 'translate') {
 			const afterExpanded = trisToPositions(readTriangles(edited.geometry));
 			if (dragStartExpanded && JSON.stringify(dragStartExpanded) !== JSON.stringify(afterExpanded))
 				recordEntry({

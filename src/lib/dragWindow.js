@@ -256,7 +256,10 @@ export function dragWindow(node, { key, defaultRect = {}, resizable = false, axi
 					// transition — so this rule, which re-clamps from the window's OWN stored
 					// rect, threw the revealed member back to wherever it last floated and left
 					// the tab strip standing on the group rect without it. See `applyMember`.
-					if (vis && !wasVisible && !node.dataset.tabMember && typeof rect.left === 'number') {
+					// 81.4: a side-DOCKED window is in exactly the same position — docking.js
+					// owns its rect, and a reveal (reopening it after a reload) would throw
+					// it back to wherever it last floated, half out of its column.
+					if (vis && !wasVisible && !node.dataset.tabMember && !node.dataset.docked && typeof rect.left === 'number') {
 						clamp(true);
 						apply();
 					}

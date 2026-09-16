@@ -48,7 +48,8 @@ h.run(async () => {
 	const savedWidth = await A.page.evaluate(() => localStorage.getItem('dockWidth:objects'));
 	h.check(Math.abs(parseInt(savedWidth) - wider.width) < 4, 'dock width persisted');
 
-	// a second window cannot take the same edge
+	// 81.4: a second window on the same edge SPLITS it (two stacked panels) — the
+	// refusal is for a THIRD; the split's own coverage is dock-splits
 	await A.page.locator('p[title="Node editor (N)"]').click();
 	await A.page.waitForTimeout(500);
 	await A.page.locator('#flow-undock').click();
@@ -60,10 +61,28 @@ h.run(async () => {
 	await A.page.mouse.up();
 	await A.page.waitForTimeout(300);
 	const flowBox = await A.page.locator('#flow-window').boundingBox();
-	h.check(flowBox.height < vh * 0.8, 'occupied edge refuses a second dock');
+	const split = await A.page.evaluate(() => ({
+		flow: document.querySelector('#flow-window').dataset.docked,
+		slot: document.querySelector('#flow-window').dataset.dockSlot,
+		list: document.querySelector('#object-list').dataset.dockSlot
+	}));
+	h.check(split.flow === 'right' && flowBox.height < vh * 0.8, `occupied edge splits for a second window (${JSON.stringify(split)})`);
+	// the drop landed on the UPPER half of the occupant (y 300 of a 64..720 panel), and
+	// the half you release over is the slot you take — so the newcomer is on top here
+	h.check(split.slot === 'top' && split.list === 'bottom', `the half you drop on is the slot you get (${JSON.stringify(split)})`);
 
-	// ...but the other edge works
+	// dragging the split member's header away undocks it (the split collapses)...
 	await A.page.mouse.move(flowBox.x + 120, flowBox.y + 12);
+	await A.page.mouse.down();
+	await A.page.mouse.move(flowBox.x - 300, flowBox.y + 200, { steps: 10 });
+	await A.page.mouse.up();
+	await A.page.waitForTimeout(300);
+	const listAgain = await A.page.locator('#object-list').boundingBox();
+	h.check(listAgain.height > vh * 0.8, 'the panel left behind takes the whole column again');
+
+	// ...and the other edge works, on the next gesture
+	const flowFree = await A.page.locator('#flow-window').boundingBox();
+	await A.page.mouse.move(flowFree.x + 120, flowFree.y + 12);
 	await A.page.mouse.down();
 	await A.page.mouse.move(10, 300, { steps: 10 });
 	await A.page.mouse.up();

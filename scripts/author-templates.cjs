@@ -388,6 +388,317 @@ const TOWERS_DEF = {
 	]
 };
 
+// ---- 24-A A4: Stars Room, the second GAME def -------------------------------------
+// The first game that needs NO module download: a zero-g room you knock stars around
+// in (A1's knock, A2's On Hit), pure core. Sandbox by default (locked fork 4): the sim
+// runs on Play, the stars react, the touch leaderboard counts; the P menu (or the
+// physical Start pad, for VR — F8: the DOM HUD is invisible in a headset) opens the
+// OPTIONAL round: light every star. Design notes worth keeping:
+//   · the default screen is \`input: 'game'\` — a \`menu\`-input screen visible while
+//     playing releases the pointer lock (21-E3), which would make free play unplayable
+//     on desktop; every button lives on the P menu, plus two onclick PADS for VR;
+//   · the lit colour rides latch -> Select -> Set Color. The editor would refuse to draw
+//     Select (number) into Set Color's colour input, but the runtime reads whatever the
+//     wire resolves to and Select passes a string through raw — recorded as a follow-up
+//     (a Select typed by its wired inputs, or a Select Colour node);
+//   · the spawner RECYCLES oldest-out at maxAlive, it does not refuse — "More stars"
+//     therefore never fails, and the room holds at most 27 + 32 dynamic bodies;
+//   · the chime is a def-level \`sounds\` entry (A4, additive): fetched like \`music\`,
+//     dropped into the Explorer, addressed by \`'$sound:<key>'\` from a Sound node — NOT
+//     \`music\`, which would also fill the scene's background-music slot;
+//   · dark by nature, so authored on a LIT preset at low exposure + bloom (F14, the
+//     Towers finding); the look on the user's display is owed, never assumed.
+const STARS_HUD_PANEL = {
+	bg: 'rgba(8, 10, 24, 0.9)',
+	radius: 16,
+	border: '1px solid rgba(255, 212, 94, 0.25)'
+};
+const STARS_CHIME = {
+	key: 'chime',
+	name: 'impact-glass.ogg',
+	url: 'https://cdn.jsdelivr.net/gh/theprototype-app/packs@v1/audio-essentials/assets/impact-glass.ogg',
+	sha256: '9252d50bfb85edb17d6073c4a7806e10cdb9de56d3dbfc93a4b9727146d2df6d',
+	credit: { what: 'Impact Glass', author: 'Kenney', license: 'CC0-1.0', source: 'https://kenney.nl/assets/impact-sounds' }
+};
+const STAR_DIM = '#3b3f66';
+const STAR_LIT = '#ffe08a';
+/** a seeded LCG, so the lattice jitter is DATA and two builds place every star alike
+ * @param {number} seed */
+function seeded(seed) {
+	let s = seed >>> 0;
+	return () => {
+		s = (Math.imul(s, 1664525) + 1013904223) >>> 0;
+		return s / 4294967296;
+	};
+}
+/** 24 stars on a jittered 4 x 6 lattice at hand height (0.8-2.6 m), r 0.16-0.3 */
+function starObjects() {
+	const rand = seeded(24);
+	const palette = [
+		{ color: 0xffe08a, emissive: 0xffcf50 },
+		{ color: 0x9ad0ff, emissive: 0x5aa8ff },
+		{ color: 0xffb0d8, emissive: 0xff6ab0 },
+		{ color: 0xc8ffb0, emissive: 0x8aff6a }
+	];
+	/** @type {any[]} */ const out = [];
+	let i = 0;
+	for (let gx = 0; gx < 4; gx++)
+		for (let gz = 0; gz < 6; gz++) {
+			i++;
+			const x = -3.9 + gx * 2.6 + (rand() - 0.5) * 1.2;
+			const z = -4.5 + gz * 1.8 + (rand() - 0.5) * 1.0;
+			const y = 0.8 + rand() * 1.8;
+			const r = 0.16 + rand() * 0.14;
+			const p = palette[(i - 1) % palette.length];
+			out.push({
+				type: 'sphere', name: 'Star ' + i, color: p.color, r: +r.toFixed(3),
+				pos: [+x.toFixed(2), +y.toFixed(2), +z.toFixed(2)],
+				emissive: p.emissive, emissiveIntensity: 1.2, roughness: 0.4,
+				physics: { mode: 'dynamic', mass: 0.2, restitution: 0.9, friction: 0.1 }
+			});
+		}
+	return out;
+}
+
+function starsGraph() {
+	const g = graphBuilder();
+	const { N, E } = g;
+	// ---- the round: Start (P menu or the VR pad) -> playing; Back to menu ------------
+	N('bstart', 'hudbutton', 'Start button', 40, 40, { element: 'start-btn' });
+	N('gostart', 'setgamestate', 'Start round', 280, 40, { state: 'playing', outcome: '', reset: false });
+	E('bstart', 'gostart', 'trigger');
+	N('padstart', 'onclick', 'Start pad clicked', 40, 120, { pulse: 0.3 });
+	N('selstartpad', 'objectselector', 'Start pad', 280, 120, { selected: 'Start pad' });
+	E('padstart', 'selstartpad');
+	E('padstart', 'gostart', 'trigger');
+	N('starthide', 'hudscreen', 'Close menu on start', 520, 40, { screen: 'pause', action: 'hide' });
+	E('bstart', 'starthide', 'trigger');
+	N('bagain', 'hudbutton', 'Play again button', 40, 200, { element: 'again-btn' });
+	N('gomenu', 'setgamestate', 'Back to menu', 280, 200, { state: 'menu', outcome: '', reset: true });
+	E('bagain', 'gomenu', 'trigger');
+	// ---- the P menu (Towers' pause, plus Start / More stars) --------------------------
+	N('pkey', 'keypress', 'Press P', 40, 340, { code: 'KeyP', edge: 'down', pulse: 0.3 });
+	N('pausetoggle', 'hudscreen', 'Toggle menu', 280, 340, { screen: 'pause', action: 'toggle' });
+	E('pkey', 'pausetoggle', 'trigger');
+	N('bresume', 'hudbutton', 'Resume button', 40, 490, { element: 'resume-btn' });
+	N('resumehide', 'hudscreen', 'Close menu', 280, 490, { screen: 'pause', action: 'hide' });
+	E('bresume', 'resumehide', 'trigger');
+	N('brestart', 'hudbutton', 'Restart button', 40, 640, { element: 'restart-btn' });
+	N('restartreset', 'setgamestate', 'Restart: to menu', 280, 640, { state: 'menu', outcome: '', reset: true });
+	N('restartdelay', 'delay', 'Restart: wait', 520, 640, { seconds: 0.2, pulse: 0.3 });
+	N('restartplay', 'setgamestate', 'Restart: play', 760, 640, { state: 'playing', outcome: '', reset: false });
+	N('restarthide', 'hudscreen', 'Close menu on restart', 280, 760, { screen: 'pause', action: 'hide' });
+	E('brestart', 'restartreset', 'trigger');
+	E('brestart', 'restartdelay', 'trigger');
+	E('restartdelay', 'restartplay', 'trigger');
+	E('brestart', 'restarthide', 'trigger');
+	N('bquit', 'hudbutton', 'Quit to free play button', 40, 790, { element: 'quit-btn' });
+	N('doquit', 'setgamestate', 'Quit to free play', 280, 790, { state: 'menu', outcome: '', reset: true });
+	N('quithide', 'hudscreen', 'Close menu on quit', 520, 790, { screen: 'pause', action: 'hide' });
+	E('bquit', 'doquit', 'trigger');
+	E('bquit', 'quithide', 'trigger');
+	// ---- More stars: the menu button or the VR pad spawns 3 copies of the template ----
+	N('bmore', 'hudbutton', 'More stars button', 40, 940, { element: 'more-btn' });
+	N('padmore', 'onclick', 'More pad clicked', 40, 1020, { pulse: 0.3 });
+	N('selmorepad', 'objectselector', 'More stars pad', 280, 1020, { selected: 'More stars pad' });
+	E('padmore', 'selmorepad');
+	N('seltpl', 'objectselector', 'Star template', 280, 940, { selected: 'Star template' });
+	// \`at\` is an OFFSET from the template (under the floor at y -2): y 4 lands copies at 2 m
+	N('spawn', 'spawn', 'Spawn 3 stars', 520, 940, { x: 0, y: 4, z: 0, count: 3, maxAlive: 32, interval: 0.5, spread: 1.5 });
+	E('bmore', 'spawn', 'trigger');
+	E('padmore', 'spawn', 'trigger');
+	E('seltpl', 'spawn', 'source');
+	// ---- touches: per-player rows (one writer each), the sum, the leaderboard ---------
+	N('touch', 'setvariable', 'Count my touch', 520, 1240, { name: 'touches', value: 1, op: 'add', scope: 'player' });
+	N('mytouch', 'peervariable', 'My touches', 40, 1390, { name: 'touches', read: 'mine', peer: '', fallback: 0 });
+	N('hmine', 'hudtext', 'HUD my touches', 280, 1390, { element: 'touches-read', format: 'Your touches: {v}', decimals: 0, value: 0 });
+	E('mytouch', 'hmine', 'value');
+	N('hmine2', 'hudtext', 'HUD my touches (round)', 520, 1390, { element: 'touches-read-2', format: 'Your touches: {v}', decimals: 0, value: 0 });
+	E('mytouch', 'hmine2', 'value');
+	N('sumtouch', 'peervariable', 'All touches', 40, 1540, { name: 'touches', read: 'sum', peer: '', fallback: 0 });
+	N('hsum', 'hudtext', 'HUD all touches', 280, 1540, { element: 'total-read', format: 'Touches: {v}', decimals: 0, value: 0 });
+	E('sumtouch', 'hsum', 'value');
+	N('board', 'leaderboard', 'Touch leaderboard', 520, 1540, { element: 'board', variable: 'touches', order: 'desc', format: '{name} — {v}', decimals: 0, limit: 8 });
+	N('board2', 'leaderboard', 'Touch leaderboard (round)', 760, 1540, { element: 'board-2', variable: 'touches', order: 'desc', format: '{name} — {v}', decimals: 0, limit: 8 });
+	// ---- the round clock ---------------------------------------------------------
+	N('clock', 'gametime', 'Round clock', 40, 1690, { read: 'elapsed', length: 600 });
+	N('hclock', 'hudtext', 'HUD clock', 280, 1690, { element: 'clock', format: '{v}s', decimals: 0, value: 0 });
+	E('clock', 'hclock', 'value');
+	N('hfinal', 'hudtext', 'HUD final time', 520, 1690, { element: 'final-time', format: 'Every star lit in {v}s', decimals: 0, value: 0 });
+	E('clock', 'hfinal', 'value');
+	// ---- per star: burst + chime on any hit, a per-player touch on MY hit, a perRound
+	// latch that paints the star lit during a round ---------------------------------------
+	let prevSum = '';
+	for (let i = 1; i <= 24; i++) {
+		const y = 1900 + (i - 1) * 180;
+		N('sel' + i, 'objectselector', 'Star ' + i, 1000, y, { selected: 'Star ' + i });
+		N('hit' + i, 'onhit', 'Star ' + i + ' hit', 40, y, { pulse: 0.3, minSpeed: 0.3, who: 'anyone' });
+		E('hit' + i, 'sel' + i);
+		N('mulc' + i, 'math', 'Burst size ' + i, 280, y, { op: 'mul', a: 0, b: 15 });
+		E('hit' + i, 'mulc' + i, 'a', 'speed');
+		N('pfx' + i, 'particle', 'Star ' + i + ' burst', 520, y, {
+			mode: 'burst', count: 40, lifetime: 0.9, speed: 1.8, gravity: 0,
+			turbulence: 0.3, sizeStart: 0.08, opacity: 0.9, sprite: 'star', blending: 'additive', space: 'world'
+		});
+		E('hit' + i, 'pfx' + i, 'trigger');
+		E('mulc' + i, 'pfx' + i, 'count');
+		E('pfx' + i, 'sel' + i);
+		N('snd' + i, 'sound', 'Star ' + i + ' chime', 760, y, {
+			hash: '$sound:chime', file: STARS_CHIME.name, volume: 0.7, radius: 8, rolloff: 1, loop: false, playing: false
+		});
+		E('hit' + i, 'snd' + i, 'trigger');
+		E('snd' + i, 'sel' + i);
+		N('me' + i, 'onhit', 'Star ' + i + ' my hit', 40, y + 90, { pulse: 0.3, minSpeed: 0.3, who: 'me' });
+		E('me' + i, 'sel' + i);
+		E('me' + i, 'touch', 'trigger');
+		N('lat' + i, 'latch', 'Star ' + i + ' lit', 1240, y, { initial: false, perRound: true });
+		E('hit' + i, 'lat' + i, 'set');
+		N('lit' + i, 'select', 'Star ' + i + ' colour', 1480, y, { index: 0, a: STAR_DIM, b: STAR_LIT });
+		E('lat' + i, 'lit' + i, 'index');
+		N('col' + i, 'setcolor', 'Star ' + i + ' paint', 1720, y, { color: STAR_DIM, whilePlaying: true });
+		E('lit' + i, 'col' + i, 'color');
+		E('col' + i, 'sel' + i);
+		if (i === 2) {
+			N('sum2', 'math', 'Lit 1-2', 1960, y, { op: 'add', a: 0, b: 0 });
+			E('lat1', 'sum2', 'a');
+			E('lat2', 'sum2', 'b');
+			prevSum = 'sum2';
+		} else if (i > 2) {
+			N('sum' + i, 'math', 'Lit 1-' + i, 1960, y, { op: 'add', a: 0, b: 0 });
+			E(prevSum, 'sum' + i, 'a');
+			E('lat' + i, 'sum' + i, 'b');
+			prevSum = 'sum' + i;
+		}
+	}
+	N('hlit', 'hudtext', 'HUD lit', 2200, 2000, { element: 'lit-read', format: 'Lit: {v} / 24', decimals: 0, value: 0 });
+	E('sum24', 'hlit', 'value');
+	N('alllit', 'compare', 'All lit?', 2200, 2150, { op: 'gte', a: 0, b: 24 });
+	E('sum24', 'alllit', 'a');
+	N('allwin', 'allplayers', 'Everyone agrees', 2440, 2150, { pulse: 0.3 });
+	E('alllit', 'allwin', 'condition');
+	N('gowin', 'setgamestate', 'Round won', 2680, 2150, { state: 'over', outcome: 'Every star lit!', reset: false });
+	E('allwin', 'gowin', 'trigger');
+	return g.done();
+}
+
+const STARS_TEXT = { size: 13, color: '#d8dee9', align: 'center' };
+const STARS_BTN = { size: 16, weight: '600', bg: '#3b7dd8', color: '#ffffff', radius: 10 };
+const STARS_DEF = {
+	kind: 'game',
+	slug: 'stars-room',
+	title: 'Stars Room',
+	description:
+		'A zero-gravity room full of glowing stars. Knock them with your hands in VR or walk into them; press P for the round: light every star, and see who touched the most.',
+	license: 'CC0-1.0',
+	author: 'theprototype',
+	tags: ['zero-g', 'physics', 'sandbox', 'vr'],
+	// pure core — the first game that needs no download (no 'modules', no 'installModules')
+	env: { preset: 'studio', exposure: 0.55 },
+	physics: {
+		gravity: 0,
+		ground: { enabled: false },
+		bounds: { limit: -50, action: 'respawn' },
+		material: { friction: 0.1, restitution: 0.85 },
+		damping: { linear: 0.35, angular: 0.2 },
+		ccd: false,
+		play: { interaction: 'grab', grounded: false, simOnPlay: true },
+		knock: { enabled: true, gain: 1, maxSpeed: 10, radius: 0.12, spin: 0.6 }
+	},
+	post: {
+		enabled: true,
+		effects: [
+			{ id: 'ao', kind: 'ao', enabled: true, params: {} },
+			{ id: 'tone', kind: 'tonemapping', enabled: true, params: { mode: 'AGX' } },
+			{ id: 'bloom', kind: 'bloom', enabled: true, params: { intensity: 1.2, luminanceThreshold: 0.55 } },
+			{ id: 'vig', kind: 'vignette', enabled: true, params: {} },
+			{ id: 'aa', kind: 'smaa', enabled: true, params: {} }
+		],
+		changedAt: 0
+	},
+	sounds: [STARS_CHIME],
+	view: { pos: [0, 3.4, 11], target: [0, 1.6, 0] },
+	graphs: { scene: starsGraph() },
+	hud: {
+		scene: {
+			active: '',
+			changedAt: 0,
+			screens: [
+				{
+					id: 'free',
+					name: 'Free play',
+					showWhile: 'menu',
+					input: 'game',
+					elements: [
+						{ id: 'free-title', kind: 'text', anchor: 'top-center', x: 0, y: 14, w: 420, h: 30, z: 1, label: 'STARS ROOM  ·  free play', style: { size: 18, weight: '700', color: '#ffd45e', align: 'center' } },
+						{ id: 'free-hint', kind: 'text', anchor: 'top-center', x: 0, y: 44, w: 520, h: 22, z: 1, label: 'Knock the stars.  P: menu (start a round, more stars)', style: { size: 12, color: '#8b97a8', align: 'center' } },
+						{ id: 'touches-read', kind: 'text', anchor: 'top-right', x: 16, y: 14, w: 220, h: 24, z: 1, label: '', style: { size: 14, color: '#ffd45e', align: 'right' } },
+						{ id: 'total-read', kind: 'text', anchor: 'top-right', x: 16, y: 40, w: 220, h: 22, z: 1, label: '', style: { size: 12, color: '#c8d0dc', align: 'right' } },
+						{ id: 'board', kind: 'list', anchor: 'top-right', x: 16, y: 70, w: 220, h: 150, z: 1, label: '', title: 'Touches', rowsText: '', rows: 8, rowHeight: 18, style: { size: 12, bg: 'rgba(8, 10, 24, 0.6)', radius: 8, pad: 6 } }
+					]
+				},
+				{
+					id: 'hud',
+					name: 'Round',
+					showWhile: 'playing',
+					input: 'game',
+					elements: [
+						{ id: 'lit-read', kind: 'text', anchor: 'top-center', x: 0, y: 14, w: 280, h: 30, z: 1, label: '', style: { size: 18, weight: '600', color: '#ffe08a', align: 'center' } },
+						{ id: 'clock', kind: 'text', anchor: 'top-center', x: 0, y: 46, w: 120, h: 22, z: 1, label: '', style: { size: 13, color: '#c8d0dc', align: 'center' } },
+						{ id: 'touches-read-2', kind: 'text', anchor: 'top-right', x: 16, y: 14, w: 220, h: 24, z: 1, label: '', style: { size: 14, color: '#ffd45e', align: 'right' } },
+						{ id: 'board-2', kind: 'list', anchor: 'top-right', x: 16, y: 44, w: 220, h: 150, z: 1, label: '', title: 'Touches', rowsText: '', rows: 8, rowHeight: 18, style: { size: 12, bg: 'rgba(8, 10, 24, 0.6)', radius: 8, pad: 6 } },
+						{ id: 'play-hint', kind: 'text', anchor: 'bottom-center', x: 0, y: 12, w: 520, h: 20, z: 1, label: 'Light every star.  P: menu', style: { size: 11, color: '#8b97a8', align: 'center' } }
+					]
+				},
+				{
+					id: 'pause',
+					name: 'Menu',
+					input: 'menu',
+					elements: [
+						{ id: 'pause-panel', kind: 'panel', anchor: 'center', x: 0, y: 0, w: 400, h: 400, z: 0, label: '', style: STARS_HUD_PANEL },
+						{ id: 'pause-title', kind: 'text', anchor: 'center', x: 0, y: -150, w: 360, h: 36, z: 1, label: 'STARS ROOM', style: { size: 28, weight: '700', color: '#ffd45e', align: 'center' } },
+						{ id: 'pause-sub', kind: 'text', anchor: 'center', x: 0, y: -112, w: 360, h: 40, z: 1, label: 'Zero gravity. Knock the stars with your hands in VR, or walk into them.', style: STARS_TEXT, wrap: true },
+						{ id: 'start-btn', kind: 'button', anchor: 'center', x: 0, y: -50, w: 250, h: 42, z: 1, label: 'Start round: light every star', enabled: true, style: STARS_BTN },
+						{ id: 'restart-btn', kind: 'button', anchor: 'center', x: 0, y: 0, w: 250, h: 42, z: 1, label: 'Restart round', enabled: true, style: { ...STARS_BTN, bg: '#4c9e6a' } },
+						{ id: 'more-btn', kind: 'button', anchor: 'center', x: 0, y: 50, w: 250, h: 42, z: 1, label: 'More stars', enabled: true, style: { ...STARS_BTN, bg: '#b0863b' } },
+						{ id: 'resume-btn', kind: 'button', anchor: 'center', x: 0, y: 100, w: 250, h: 42, z: 1, label: 'Resume', enabled: true, style: { ...STARS_BTN, size: 15, weight: '500', bg: '#3a4150', color: '#e5e9f0' } },
+						{ id: 'quit-btn', kind: 'button', anchor: 'center', x: 0, y: 150, w: 250, h: 42, z: 1, label: 'Quit to free play', enabled: true, style: { ...STARS_BTN, size: 15, weight: '500', bg: '#3a4150', color: '#e5e9f0' } }
+					]
+				},
+				{
+					id: 'over',
+					name: 'Round over',
+					showWhile: 'over',
+					input: 'menu',
+					elements: [
+						{ id: 'over-panel', kind: 'panel', anchor: 'center', x: 0, y: 0, w: 420, h: 250, z: 0, label: '', style: STARS_HUD_PANEL },
+						{ id: 'over-title', kind: 'text', anchor: 'center', x: 0, y: -70, w: 380, h: 40, z: 1, label: 'EVERY STAR LIT', style: { size: 30, weight: '700', color: '#ffd45e', align: 'center' } },
+						{ id: 'final-time', kind: 'text', anchor: 'center', x: 0, y: -18, w: 380, h: 26, z: 1, label: '', style: { size: 16, color: '#e5e9f0', align: 'center' } },
+						{ id: 'again-btn', kind: 'button', anchor: 'center', x: 0, y: 58, w: 220, h: 44, z: 1, label: 'Back to free play', enabled: true, style: STARS_BTN }
+					]
+				}
+			]
+		}
+	},
+	objects: [
+		// the room: 12 x 7 x 12, walls you can see through and bounce off
+		{ type: 'box', name: 'Floor', color: 0x101626, size: [12, 0.5, 12], pos: [0, -0.25, 0], roughness: 0.9, physics: { mode: 'static', friction: 0.1, restitution: 0.85 } },
+		{ type: 'box', name: 'Ceiling', color: 0x101626, size: [12, 0.5, 12], pos: [0, 7.25, 0], roughness: 0.9, physics: { mode: 'static', friction: 0.1, restitution: 0.85 } },
+		{ type: 'box', name: 'Wall north', color: 0x2a3a6a, size: [12.5, 7, 0.5], pos: [0, 3.5, -6], emissive: 0x1a2a5a, emissiveIntensity: 0.5, opacity: 0.12, physics: { mode: 'static', friction: 0.1, restitution: 0.85 } },
+		{ type: 'box', name: 'Wall south', color: 0x2a3a6a, size: [12.5, 7, 0.5], pos: [0, 3.5, 6], emissive: 0x1a2a5a, emissiveIntensity: 0.5, opacity: 0.12, physics: { mode: 'static', friction: 0.1, restitution: 0.85 } },
+		{ type: 'box', name: 'Wall west', color: 0x2a3a6a, size: [0.5, 7, 12.5], pos: [-6, 3.5, 0], emissive: 0x1a2a5a, emissiveIntensity: 0.5, opacity: 0.12, physics: { mode: 'static', friction: 0.1, restitution: 0.85 } },
+		{ type: 'box', name: 'Wall east', color: 0x2a3a6a, size: [0.5, 7, 12.5], pos: [6, 3.5, 0], emissive: 0x1a2a5a, emissiveIntensity: 0.5, opacity: 0.12, physics: { mode: 'static', friction: 0.1, restitution: 0.85 } },
+		{ type: 'light', name: 'Room light', kind: 'point', color: 0x9fb4ff, intensity: 6, distance: 16, pos: [0, 5.5, 0] },
+		// the two physical buttons (an onclick fires from a VR ray — the HUD is not in a headset)
+		{ type: 'box', name: 'Start pad', color: 0x3b7dd8, size: [0.6, 0.16, 0.6], pos: [-1, 0.08, -4.8], emissive: 0x1f4f9f, emissiveIntensity: 0.9, roughness: 0.4, physics: { mode: 'static' } },
+		{ type: 'box', name: 'More stars pad', color: 0xb0863b, size: [0.6, 0.16, 0.6], pos: [1, 0.08, -4.8], emissive: 0x7a5a1f, emissiveIntensity: 0.9, roughness: 0.4, physics: { mode: 'static' } },
+		// the stars, two planets for contrast, and the spawner's template under the floor
+		...starObjects(),
+		{ type: 'sphere', name: 'Planet Azure', color: 0x5b7fd6, r: 0.6, pos: [-3, 1.9, 2.2], emissive: 0x1f3f9f, emissiveIntensity: 0.35, roughness: 0.6, physics: { mode: 'dynamic', mass: 2, restitution: 0.7, friction: 0.2 } },
+		{ type: 'sphere', name: 'Planet Ember', color: 0xd68a5b, r: 0.6, pos: [3.2, 2.3, -2.4], emissive: 0x8f3a1a, emissiveIntensity: 0.35, roughness: 0.6, physics: { mode: 'dynamic', mass: 2, restitution: 0.7, friction: 0.2 } },
+		{ type: 'sphere', name: 'Star template', color: 0xffe08a, r: 0.22, pos: [0, -2, 0], emissive: 0xffcf50, emissiveIntensity: 1.2, roughness: 0.4, physics: { mode: 'dynamic', mass: 0.2, restitution: 0.9, friction: 0.1 } }
+	]
+};
+
 // ---- 28-G: the first two contests — Make a mirror, Follow the beat ---------------
 // Both are DATA (spec: cloud plans-core/28-g-contests-mirror-and-beat.md). The mirror
 // starter ships the answer as a faint ghost; the beat starter ships a CC0 track, a
@@ -974,6 +1285,7 @@ const DEFS = [
 		]
 	},
 	TOWERS_DEF,
+	STARS_DEF,
 	MIRROR_DEF,
 	BEAT_DEF
 ];
@@ -1033,7 +1345,12 @@ const DEFS = [
 		// CDN, and the file belongs to no repo); the page hands the bytes to the Explorer,
 		// which is what makes them a scene asset the .tpscene bundles.
 		const music = def.music ? { ...def.music, b64: (await fetchMusic(def.music)).toString('base64') } : null;
-		const out = await page.evaluate(async ({ d, music, humanTextKeys }) => {
+		// 24-A A4: one-shot SOUNDS a graph plays (a def-level list, ADDITIVE). Same fetch and
+		// the same Explorer drop as the track, but NOT the music slot: a chime is a scene
+		// asset a Sound node addresses through '$sound:<key>', never background music.
+		const sounds = [];
+		for (const snd of def.sounds ?? []) sounds.push({ ...snd, b64: (await fetchMusic(snd)).toString('base64') });
+		const out = await page.evaluate(async ({ d, music, sounds, humanTextKeys }) => {
 			// 24-A A3: the module-scope Set does not cross into the page — it arrives as a list
 			const humanText = new Set(humanTextKeys);
 			const s = window.__stores;
@@ -1202,6 +1519,14 @@ const DEFS = [
 				named['$music'] = item.hash;
 				s.sceneMusic.commitMusic({ hash: item.hash, name: music.name, volume: music.volume ?? 0.8, playing: false, startedAt: 0 });
 			}
+			// 24-A A4: the one-shot sounds — Explorer only (content-hashed), `'$sound:<key>'`
+			// in node data becomes the hash through the widened remap (A3)
+			for (const snd of sounds) {
+				if (!s.explorer) break;
+				const bin = Uint8Array.from(atob(snd.b64), (ch) => ch.charCodeAt(0));
+				const item = await s.explorer.addItemFromBytes(bin.buffer, snd.name, null, { imported: true });
+				named['$sound:' + snd.key] = item.hash;
+			}
 			// 28-G: the editor camera the file opens on (buildSessionPayload saves it). BOTH
 			// the camera and the orbit target, or OrbitControls.update() reverts the move.
 			if (d.view) {
@@ -1316,7 +1641,7 @@ const DEFS = [
 			const payload = s.sessions.buildSessionPayload(d.title);
 			// 28-G: a def with music exports WITH assets — the track rides the .tpscene
 			// (sceneAssetList lists the music hash and the Sound node's, one blob for both)
-			const bytes = await s.sessions.exportSessionZip(payload, { assets: !!music, packs: false, flow: true });
+			const bytes = await s.sessions.exportSessionZip(payload, { assets: !!music || sounds.length > 0, packs: false, flow: true });
 
 			// fitted offscreen thumbnail — the sessions.js renderSceneThumbnail
 			// approach at card size (480x270 webp)
@@ -1378,7 +1703,7 @@ const DEFS = [
 			if (s.animationPreview) s.animationPreview.animationsRestore({}, false);
 			if (s.sceneMusic) s.sceneMusic.musicRestore(null, false);
 			return { bytes: Array.from(bytes), thumb };
-		}, { d: def, music, humanTextKeys: [...HUMAN_TEXT_KEYS] });
+		}, { d: def, music, sounds, humanTextKeys: [...HUMAN_TEXT_KEYS] });
 		const bytes = Buffer.from(out.bytes);
 		const thumb = out.thumb ? Buffer.from(out.thumb.split(',')[1], 'base64') : null;
 		built[def.slug] = { entry: def, bytes, thumb };

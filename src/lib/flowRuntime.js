@@ -388,6 +388,27 @@ const baseState = new Map();
 // animated objects whose animation is paused while the user drags them
 const suspended = new Set();
 
+/**
+ * 24-A A4: the effects a SUSPENDED object still gets.
+ *
+ * Suspension means "somebody else owns this object's POSE right now" — a gizmo drag, a
+ * possess ride, an animation scrub, or (physics.trackBody) a dynamic body for the whole
+ * run: "dynamic wins over an animation". Skipping the object's WHOLE effect list was too
+ * broad, because these four write no pose at all: a colour, a shader uniform, a device
+ * param, a note. Measured in the Stars Room, where every star is a dynamic body with a
+ * Set Color node: the star painted once in the frames before the sim's bodies existed and
+ * then STUCK there for the rest of the round — the latch flipped, the wired colour
+ * resolved (proven: resolveInputs returned the lit colour under both clocks), and nothing
+ * repainted; changing the node's dialled colour live did nothing either, which is what
+ * says the node was not applying rather than resolving wrong. The stuck paint survives
+ * because `restoreBase` carries pose + visibility and never material state.
+ *
+ * Deliberately NOT here: `visibility` (base-managed — restoreBase re-asserts it, and the
+ * restore is exactly what a suspended object must not get), module effects, scripts and
+ * custom nodes (all of them may write a pose).
+ */
+const POSE_FREE_EFFECTS = new Set(['setcolor', 'setuniform', 'deviceparam', 'notetrigger']);
+
 /** @param {any} object */
 function captureBase(object) {
 	return {
@@ -1790,6 +1811,15 @@ export const valueTypes = [
 	'hudinput', // 21-D4: the HUD as a SOURCE - what the player set on a slider/toggle/etc
 	// 21-D6 the game shell
 	'ongamestate', 'getvariable', 'gametime',
+	// 24-A A4: `peervariable` was MISSING here since 21-G4, and the omission was silent in
+	// every direction that is easy to look at — it has an OUTPUT type in flowSockets, an
+	// evaluator case below, and the editor draws its source handle — but `resolveInputs`
+	// only accepts a source listed HERE, so a Player Variable wired into anything delivered
+	// NOTHING and the consumer quietly kept its own dialled value. Found authoring the Stars
+	// Room, whose two `peervariable -> hudtext` readouts (the shape CLAUDE.md prescribes)
+	// both rendered 0 while the leaderboard beside them, which reads peerVars directly
+	// rather than through a wire, read 1.
+	'peervariable',
 	// 21-F3's `collectcount` MOVED to the collectible module (R3a) — the chain walk was
 	// the one reader that knew the recipe's shape, and the module owns that shape now
 	// 21-E4: the logic a game LOOP is made of. Sequence's value is a handle MAP,
@@ -3112,10 +3142,18 @@ function runTick(now) {
 	});
 
 	active.forEach((anims, uuid) => {
-		if (suspended.has(uuid)) return; // user is dragging it — leave it alone
 		const object = sceneObjects.getObjectByProperty('uuid', uuid);
 		if (!object) {
 			baseState.delete(uuid);
+			return;
+		}
+		// somebody else owns the POSE (a drag, a ride, a dynamic body for the run) — so no
+		// base restore and no pose effects, but the writers that touch no pose still run
+		if (suspended.has(uuid)) {
+			anims.forEach((/** @type {any} */ anim) => {
+				if (POSE_FREE_EFFECTS.has(anim.type))
+					applyAnimation(object, baseState.get(uuid) ?? captureBase(object), anim, effectTime(time), ctx);
+			});
 			return;
 		}
 		if (!baseState.has(uuid)) baseState.set(uuid, captureBase(object));

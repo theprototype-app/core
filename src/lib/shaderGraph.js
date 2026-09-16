@@ -24,6 +24,10 @@ import {
 	registerShaderTextureListener,
 	startShaderTextures
 } from './shaderTextures.js';
+// P5: the LOCAL right to switch this layer off. `viewportOverrides` is a leaf (stores
+// only), and its `shaders` key has been DECLARED since B precisely so this phase adds a
+// renderer rather than a new concept — see that module for the rule it encodes.
+import { viewportOverrides, renderLayer } from './viewportOverrides.js';
 
 /** The reserved key for the scene default material (layer 2). */
 export const SCENE_GRAPH_KEY = 'scene';
@@ -325,9 +329,53 @@ export function defaultTargetsFor(key) {
 	return out;
 }
 
+/**
+ * P5 — THE LOCAL RENDER GATE.
+ *
+ * THE RULE THIS KEEPS (viewportOverrides states it, and the look plan makes it the
+ * answer all three layers must share): an authored layer is SCENE DATA and renders for
+ * everyone by DEFAULT. Nobody opts in to seeing the scene. What is local is the right to
+ * switch it off HERE — for performance, for comfort, or to see what an object really
+ * looks like underneath.
+ *
+ * Off is a SWAP, never a detach: the documents, the compiled materials and the base
+ * materials all stay exactly as they were, so switching back costs no compile and a peer
+ * sees nothing at all. Deliberately NOT `scene.overrideMaterial` (which wireframe and the
+ * UV checker use): that replaces EVERY material in the scene, and this layer is only the
+ * ones a graph drives.
+ */
+let shadersOn = true;
+
+/** Swap every shader-driven object to (or back from) its own material. @param {boolean} on */
+function applyShaderLayer(on) {
+	if (on === shadersOn) return;
+	shadersOn = on;
+	const group = get(objectsGroup);
+	if (!group) return;
+	group.traverse((/** @type {any} */ node) => {
+		const mine = installed.get(node.uuid);
+		if (!mine) return;
+		const base = baseMaterials.get(node.uuid);
+		if (on) node.material = mine;
+		else if (base && node.material === mine) node.material = base;
+	});
+	// THREE trees are not reactive: without the poke the Inspector's material derived and
+	// the shader-driven notice both keep showing the state before the switch
+	objectsGroup.update((value) => value);
+}
+
+/** Is this viewer rendering shader-driven materials right now? (test/debug seam) */
+export function shaderLayerOn() {
+	return shadersOn;
+}
+
 /** Install the default wiring. Idempotent; call once at boot. */
 export function startShaderGraphs() {
 	if (!targetsHook) registerShaderTargets(defaultTargetsFor);
+	// subscribed HERE rather than at module level: the callback reads `shadersOn` and
+	// `installed`, and a module-level subscribe runs synchronously at eval, where a `let`
+	// declared below would TDZ-crash the SSR prerender (the meshEdit lesson)
+	viewportOverrides.subscribe(() => applyShaderLayer(renderLayer('shaders')));
 	startShaderClock();
 	startReconcile();
 	// the retry half of golden rule 9: bytes pulled from a peer land as an Explorer item
@@ -480,8 +528,12 @@ export function baseMaterialOf(uuid) {
 
 /** @param {any} object @param {any} material */
 function applyMaterial(object, material) {
-	object.material = material;
 	installed.set(object.uuid, material);
+	// P5: with the layer switched off on THIS device the compile still runs and the
+	// result is still remembered — only the assignment waits. So switching back on is a
+	// swap rather than a recompile, and a peer's authored material is never lost here.
+	if (!shadersOn) return;
+	object.material = material;
 	// THREE trees are NOT reactive, so nothing observing the scene can see this: the
 	// Inspector's `material` derived and its shader-driven notice both read through
 	// `objectsGroup`, and without the poke they keep showing the pre-shader state. Safe

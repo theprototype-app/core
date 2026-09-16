@@ -1660,7 +1660,7 @@
 					 add a key here rather than each inventing their own checkbox and their own
 					 "do my peers need to switch this on?" question. -->
 				<p class="ui-section-label" data-anchor="Overrides">Overrides — this device</p>
-				{#each OVERRIDES.filter((o) => o.key !== 'shaders') as override (override.key)}
+				{#each OVERRIDES as override (override.key)}
 					<Checkbox
 						id={'override-' + override.key}
 						checked={$viewportOverrides[override.key] !== false}

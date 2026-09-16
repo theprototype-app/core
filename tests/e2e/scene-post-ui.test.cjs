@@ -1,4 +1,4 @@
-// L3 — Configure Scene ▸ Post-processing, driven through the REAL UI.
+// L3 — Configure Scene ▸ Scene look (the post stack's half), driven through the REAL UI.
 //
 // Kept separate from `scene-post` (the pixel/replication suite) so both stay
 // readable and each runs standalone. Everything here is a DOM assertion or a real
@@ -90,7 +90,7 @@ h.run(async () => {
 	await page.evaluate(() => {
 		window.__stores.inspectorKind.set('scene');
 		window.__stores.inspectorClose.set(false);
-		for (const label of ['File', 'Actions', 'Environment', 'Music', 'View', 'Camera', 'Grid', 'Snapping', 'Physics', 'Background', 'Fog', 'Post-processing'])
+		for (const label of ['File', 'Actions', 'Environment', 'Music', 'View', 'Camera', 'Grid', 'Snapping', 'Physics', 'Background', 'Fog', 'Scene look'])
 			localStorage.setItem('inspector:sec:' + label, 'open');
 	});
 	await h.freshReload(A);
@@ -106,7 +106,7 @@ h.run(async () => {
 		// find the panel scroller the same way Section.svelte does — by real
 		// scrollability, not by class name
 		const anchor = [...document.querySelectorAll('.ui-section-label')].find((el) =>
-			(el.textContent ?? '').startsWith('Post-processing')
+			(el.textContent ?? '').startsWith('Scene look')
 		);
 		if (!anchor) return { found: false };
 		let scroller = anchor.parentElement;
@@ -119,14 +119,17 @@ h.run(async () => {
 		scroller.scrollTop = scroller.scrollHeight; // start at the far end
 		return { found: true, scrollable: true, before: scroller.scrollTop, max: scroller.scrollHeight };
 	});
-	h.check(scrolled.found === true, '1.1 the Post-processing section renders in the scene inspector');
+	h.check(scrolled.found === true, '1.1 the Scene look section renders in the scene inspector');
 	h.check(scrolled.scrollable === true, '1.2 premise: the panel is genuinely scrollable, so a scroll can be measured');
 
+	// P6 renamed the section and kept its deep-link NAME working (Section `aliases`), so
+	// this drives the OLD name on purpose — every menu, component and suite that wrote it
+	// down must keep landing
 	await page.evaluate(() => window.__stores.openSceneSection('Post-processing'));
 	await page.waitForTimeout(1200);
 	const landed = await page.evaluate(() => {
 		const anchor = [...document.querySelectorAll('.ui-section-label')].find((el) =>
-			(el.textContent ?? '').startsWith('Post-processing')
+			(el.textContent ?? '').startsWith('Scene look')
 		);
 		let scroller = anchor?.parentElement;
 		while (scroller) {
@@ -519,6 +522,89 @@ h.run(async () => {
 	h.check(
 		h.pageErrors(A).length === 0,
 		'7.4 the panel never threw: ' + JSON.stringify(h.pageErrors(A).slice(0, 2))
+	);
+
+	// ---------------------------------------------------------------- section 8
+	// P6 — ONE STORY. The three layers of the authored look are one section now, so the
+	// section has to SAY what the look is and account for the layer whose editing surface
+	// lives elsewhere (materials are a dock tab). The cost line is the point: an author
+	// learns what a look costs in exactly one place, and the materials half now speaks in
+	// the same voice as "Effects: N, passes: M".
+	console.log('\n=== 8. one Scene look story (P6) ===');
+	await page.evaluate(() => window.__stores.openSceneSection('Scene look'));
+	await page.waitForTimeout(700);
+	const story = await page.evaluate(() => ({
+		summary: document.querySelector('#scene-look-shaders')?.textContent?.trim() ?? '',
+		opener: !!document.querySelector('#scene-look-open-shader'),
+		counts: document.querySelector('#post-counts')?.textContent?.trim() ?? ''
+	}));
+	h.check(
+		/no shader materials/i.test(story.summary),
+		'8.1 with no graphs the materials line says so: "' + story.summary + '"'
+	);
+	h.check(story.opener, '8.2 ...and the way in is right there');
+	h.check(/Effects:/.test(story.counts), '8.3 the post cost line is still in the same section');
+
+	// a scene default, and the cost line reads it
+	await page.evaluate(() => {
+		window.__stores.commandsHandler.sceneCommand('/create box');
+	});
+	await page.waitForTimeout(900);
+	await page.evaluate(() =>
+		window.__stores.shaderGraph.setShaderGraphFor('scene', {
+			nodes: [
+				{ id: 'surface', type: 'surface', position: { x: 360, y: 120 }, data: {} },
+				{ id: 'col', type: 'color', position: { x: 90, y: 130 }, data: { value: '#44ff88' } }
+			],
+			edges: [
+				{ id: 'e-col.out-surface.albedo', source: 'col', sourceHandle: 'out', target: 'surface', targetHandle: 'albedo' }
+			]
+		})
+	);
+	await page.waitForTimeout(1800);
+	const withScene = await page.evaluate(
+		() => document.querySelector('#scene-look-shaders')?.textContent?.trim() ?? ''
+	);
+	h.check(
+		/scene default/i.test(withScene) && /driving \d+ object/.test(withScene) && /program/.test(withScene),
+		'8.4 a scene default is reported WITH its cost, in the post line\'s voice: "' + withScene + '"'
+	);
+
+	// The opener reaches the editor — whose SCOPE follows the selection, so the button
+	// lands on the scene default with nothing selected and on an object's own material
+	// when one is. Both halves are asserted, because the first draft of this check
+	// pressed the button straight after `/create box` (which SELECTS) and read the
+	// object scope as a failure when it was the rule working.
+	await page.evaluate(() => window.__stores.objectActions.deselectObject());
+	await page.waitForTimeout(500);
+	await page.evaluate(() => document.querySelector('#scene-look-open-shader').click());
+	await page.waitForTimeout(1200);
+	const shaderTab = await page.evaluate(() => ({
+		tab: !!document.querySelector('#shader-editor'),
+		scope: document.querySelector('#shader-scope')?.textContent?.trim() ?? ''
+	}));
+	h.check(
+		shaderTab.tab && /scene default/i.test(shaderTab.scope),
+		'8.5 the button opens the shader editor, scoped to the scene default with nothing selected: ' +
+			JSON.stringify(shaderTab)
+	);
+	const boxUuid = await page.evaluate(() => {
+		let group = null;
+		window.__stores.objectsGroup.subscribe((g) => (group = g))();
+		let found = '';
+		group.traverse((n) => {
+			if (n.isMesh && !found) found = n.uuid;
+		});
+		return found;
+	});
+	await page.evaluate((u) => window.__stores.objectActions.selectObject(u), boxUuid);
+	await page.waitForTimeout(900);
+	const objectScope = await page.evaluate(
+		() => document.querySelector('#shader-scope')?.textContent?.trim() ?? ''
+	);
+	h.check(
+		/own material/i.test(objectScope),
+		'8.6 ...and follows the selection to that object: "' + objectScope + '"'
 	);
 
 	await h.finish(browser);

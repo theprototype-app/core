@@ -223,6 +223,9 @@ h.run(async () => {
 		window.__stores.viewMode.set('custom');
 		window.__stores.inspectorKind.set('scene');
 		window.__stores.inspectorClose.set(false);
+		// P6 renamed the section; the collapse pref is keyed by the LABEL, so this seeds
+		// both names rather than silently opening nothing
+		localStorage.setItem('inspector:sec:Scene look', 'open');
 		localStorage.setItem('inspector:sec:Post-processing', 'open');
 		await new Promise((r) => setTimeout(r, 900));
 	});

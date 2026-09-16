@@ -713,6 +713,29 @@ export function setShaderParam(key, nodeId, param, value) {
 // injected material as if it were the object's own), and undo snapshots the tree. So
 // every serializer must read the BASE material, and the GRAPH rides beside the
 // snapshot — the `animated` / `multiMaterial` shape, keyed by uuid.
+//
+// P6 — THE SAVE-PATH AUDIT, done once across the three layers now that they meet.
+// Every one of them is a KEYED DOCUMENT plus a runtime product, and the rule that
+// falls out is the same each time: SAVE THE DOCUMENT, never the product.
+//
+//   layer 3 / 2  shaderGraphs[uuid | 'scene']  product: a compiled Material
+//   layer 1      shaderGraphs['post:<id>']     product: a compiled Effect
+//   layer 1      postStacks['scene' | camUuid] product: composer passes
+//
+// Carriers, checked for each: the WIRE (`shadergraph` / `scenepost`, both
+// latest-wins on a stamp), AUTOSAVE and SESSIONS/.tpscene (`shaderGraphsSnapshot` +
+// `scenePostSnapshot`, both beside the objects rather than inside them), and UNDO
+// (the `'shadergraph'` and `'look'` history kinds). The PRODUCTS are carried by
+// nobody, deliberately — they are rebuilt from the document on the other side.
+//
+// The ritual `parkShaderMaterials` performs is only needed where a product is ATTACHED
+// TO THE SCENE TREE, which is layers 2 and 3 alone: a post Effect lives in the
+// composer, which no serializer walks, so P4 needed no fourth park. The one thing a
+// reader should not expect to find is a park for post graphs; this paragraph is why.
+//
+// KNOWN AND ACCEPTED: `shaderGraphsSnapshot()` writes `{}` into every save even when
+// nothing uses it (SH4's shape), where the post stack writes `null`. Harmless and
+// pre-existing; changing it is a save-format decision, not a rendering one.
 
 /** parks nest (a serializer inside a serializer), so this is a DEPTH, not a flag */
 let materialParkDepth = 0;

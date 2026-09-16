@@ -22,10 +22,10 @@
 // recomputed per consumer), and loop forever on a cycle. Both are handled by the
 // memo + the in-progress set, the PATH-based guard the flow editor uses.
 
-import { shaderNodeDef, outputTypeOf, SURFACE_NODE } from './shaderCatalog.js';
+import { shaderNodeDef, outputTypeOf, SURFACE_NODE, POST_OUTPUT_NODE } from './shaderCatalog.js';
 
 /** @typedef {'float'|'vec2'|'vec3'|'vec4'|'sampler2D'} GlslType */
-/** @typedef {'fragment'|'vertex'} ShaderStage */
+/** @typedef {'fragment'|'vertex'|'post'} ShaderStage */
 
 /** The FRAGMENT taps the inject backend exposes, and the type each expects. */
 const TAP_TYPES = {
@@ -41,8 +41,24 @@ const TAP_TYPES = {
 /** The VERTEX taps — compiled in their own pass. */
 const VERTEX_TAP_TYPES = { position: 'vec3' };
 
+/** The POST tap: one colour (plus the frame's own alpha unless wired). */
+const POST_TAP_TYPES = { color: 'vec3', alpha: 'float' };
+
 /** Stage names as a user would recognise them. @type {Record<string,string>} */
-const STAGE_LABEL = { fragment: 'surface', vertex: 'vertex displacement' };
+const STAGE_LABEL = { fragment: 'surface', vertex: 'vertex displacement', post: 'post-processing' };
+
+/**
+ * The one helper every depth-reading post node calls, emitted ONCE by the post pass
+ * whenever any node requires 'depth' — declared here rather than on the Scene depth node
+ * so Edge detect and the AO node work in a graph that has no Scene depth node at all.
+ * `readDepth`/`getViewZ`/cameraNear/cameraFar are the EffectPass fragment's own.
+ */
+const POST_DEPTH_PRELUDE =
+	'vec2 tpDepthAt(vec2 uv) {\n' +
+	'  float d = readDepth(uv);\n' +
+	'  float z = -getViewZ(d);\n' +
+	'  return vec2(d, clamp((z - cameraNear) / (cameraFar - cameraNear), 0.0, 1.0));\n' +
+	'}\n';
 
 /**
  * A socket DEFAULT written for the fragment shader, and its vertex-stage equivalent.
@@ -58,6 +74,21 @@ const VERTEX_EQUIVALENT = {
 	vUv: 'uv', // the attribute three always declares, rather than the varying
 	'normalize(vNormal)': 'objectNormal'
 };
+
+/**
+ * The same rule for the POST stage: a socket default written for a surface has a screen
+ * equivalent or none. `vUv` is the screen position mainImage receives as `uv`; a surface
+ * normal has no screen equivalent, and a socket defaulting to one is refused by name
+ * rather than silently reading a varying that does not exist in an EffectPass.
+ * @type {Record<string,string|null>}
+ */
+const POST_EQUIVALENT = {
+	vUv: 'uv',
+	'normalize(vNormal)': null
+};
+
+/** @type {Record<string, Record<string, string|null>>} */
+const STAGE_EQUIVALENT = { vertex: VERTEX_EQUIVALENT, post: POST_EQUIVALENT };
 
 /**
  * Convert `expr` from `from` to `to`. GLSL will not do this silently, and a mismatch is
@@ -152,17 +183,17 @@ export function uniformValue(authored, type) {
 }
 
 /**
- * Compile a graph document into the inject IR.
- * @param {{nodes: any[], edges: any[]}} graph
- * @returns {{ok: boolean, ir?: any, errors?: string[]}}
+ * The compiler CORE, shared by both domains: the memoised per-pass evaluator over one
+ * graph and its terminal node. The two public entry points differ only in which taps
+ * they walk and what they assemble from the result.
+ * @param {{nodes: any[], edges: any[]}} graph @param {string} outputType
  */
-export function compileShaderGraphToIR(graph) {
+function createCompiler(graph, outputType) {
 	const nodes = graph?.nodes ?? [];
 	const edges = graph?.edges ?? [];
 	/** @type {string[]} */
 	const errors = [];
-	const output = nodes.find((n) => n.type === SURFACE_NODE);
-	if (!output) return { ok: false, errors: ['The graph has no Surface output node.'] };
+	const output = nodes.find((n) => n.type === outputType);
 
 	/** @type {Map<string, any>} */
 	const nodeById = new Map(nodes.map((n) => [n.id, n]));
@@ -263,12 +294,13 @@ export function compileShaderGraphToIR(graph) {
 			for (const socket of def.inputs ?? []) {
 				const edge = incoming.get(nodeId + '\0' + socket.name);
 				// a screen input means something different per stage, so an unwired socket's
-				// default is translated for the vertex stage (see VERTEX_EQUIVALENT), with an
-				// explicit `vertexDefault` overriding it
-				const fallback =
-					stage === 'vertex'
-						? (socket.vertexDefault ?? VERTEX_EQUIVALENT[socket.default] ?? socket.default)
-						: socket.default;
+				// default is translated for the vertex stage (see VERTEX_EQUIVALENT) and the
+				// post stage (POST_EQUIVALENT, where `null` means "no equivalent — refuse"),
+				// with an explicit `vertexDefault` overriding the vertex one
+				const table = STAGE_EQUIVALENT[stage];
+				let fallback = socket.default;
+				if (stage === 'vertex' && socket.vertexDefault !== undefined) fallback = socket.vertexDefault;
+				else if (table && socket.default != null && socket.default in table) fallback = table[socket.default];
 				if (edge) {
 					const up = evalOutput(edge.source, edge.sourceHandle ?? 'out');
 					if (!up) {
@@ -282,8 +314,14 @@ export function compileShaderGraphToIR(graph) {
 					inExpr[socket.name] = fallback;
 					if (fallback === 'vUv') requires.add('uv');
 				} else {
-					// an unwired socket with no default is a real authoring error
-					errors.push('Node "' + label + '" needs its "' + socket.name + '" input connected.');
+					// an unwired socket with no default is a real authoring error — and so is a
+					// surface-only default in a stage that has no equivalent for it
+					errors.push(
+						socket.default != null
+							? 'Node "' + label + '" reads "' + socket.name + '" from the surface, which the ' +
+								(STAGE_LABEL[stage] ?? stage) + ' stage does not have — connect it.'
+							: 'Node "' + label + '" needs its "' + socket.name + '" input connected.'
+					);
 					inProgress.delete(nodeId);
 					return null;
 				}
@@ -349,6 +387,18 @@ export function compileShaderGraphToIR(graph) {
 		return { statements, requires, walkTaps };
 	}
 
+	return { output, errors, uniforms, preludes, makePass };
+}
+
+/**
+ * Compile a SURFACE graph document into the inject IR.
+ * @param {{nodes: any[], edges: any[]}} graph
+ * @returns {{ok: boolean, ir?: any, errors?: string[]}}
+ */
+export function compileShaderGraphToIR(graph) {
+	const { output, errors, uniforms, preludes, makePass } = createCompiler(graph, SURFACE_NODE);
+	if (!output) return { ok: false, errors: ['The graph has no Surface output node.'] };
+
 	/** @type {any} */
 	const ir = { uniforms: [], prelude: '', body: '', defines: {} };
 
@@ -379,6 +429,48 @@ export function compileShaderGraphToIR(graph) {
 	if (Object.keys(vertTaps).length)
 		ir.vertex = { body: vertex.statements.join('\n\t'), ...vertTaps };
 	return { ok: true, ir };
+}
+
+/**
+ * Compile a POST graph document into a `postBackends` shader spec (P4, the Post domain).
+ *
+ * ONE pass, stage 'post', over the Post output node's `color` (and optional `alpha`)
+ * taps. The result is the whole fragment an EffectPass wants: the graph's preludes, its
+ * uniform DECLARATIONS (postprocessing prefixes and integrates the ones the Effect's
+ * uniform map names — so they must be declared in the text and named in the map, both),
+ * and a `mainImage` writing `outputColor`. `readsDepth` asks the backend for
+ * EffectAttribute.DEPTH (getting that wrong is SILENT — the sampler is simply never
+ * filled), `readsNormals` asks the chain for a NormalPass, and `usesClock` for the
+ * shared-clock uniform every peer advances identically.
+ * @param {{nodes: any[], edges: any[]}} graph
+ * @returns {{ok: boolean, ir?: {fragment: string, uniforms: any[], readsDepth: boolean, readsNormals: boolean, usesClock: boolean, requires: string[]}, errors?: string[]}}
+ */
+export function compilePostGraphToIR(graph) {
+	const { output, errors, uniforms, preludes, makePass } = createCompiler(graph, POST_OUTPUT_NODE);
+	if (!output) return { ok: false, errors: ['The graph has no Post output node.'] };
+	const pass = makePass('post');
+	const taps = pass.walkTaps(POST_TAP_TYPES);
+	if (!taps.color && !errors.length)
+		errors.push('Nothing is connected to the Post output\'s colour, so the effect would change nothing.');
+	if (errors.length) return { ok: false, errors };
+	const usesClock = pass.requires.has('time');
+	if (usesClock) uniforms.set('uShaderTime', { name: 'uShaderTime', type: 'float', value: 0, clock: true });
+	const readsDepth = pass.requires.has('depth') || pass.requires.has('normals');
+	const readsNormals = pass.requires.has('normals');
+	const list = [...uniforms.values()];
+	const decls = list.map((u) => 'uniform ' + u.type + ' ' + u.name + ';').join('\n');
+	const fragment =
+		(readsDepth ? POST_DEPTH_PRELUDE : '') +
+		(readsNormals ? 'uniform sampler2D normalBuffer;\n' : '') +
+		[...preludes.values()].join('\n') +
+		(decls ? decls + '\n' : '') +
+		'void mainImage(const in vec4 inputColor, const in vec2 uv, out vec4 outputColor) {\n\t' +
+		pass.statements.join('\n\t') +
+		'\n\toutputColor = vec4(' + taps.color + ', ' + (taps.alpha ?? 'inputColor.a') + ');\n}';
+	return {
+		ok: true,
+		ir: { fragment, uniforms: list, readsDepth, readsNormals, usesClock, requires: [...pass.requires] }
+	};
 }
 
 /** node ids can contain anything; GLSL identifiers cannot. @param {string} id */

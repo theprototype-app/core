@@ -38,7 +38,21 @@
 		shaderRefusalReason
 	} from '$lib/shaderGraph';
 	import { beginShaderGesture, endShaderGesture } from '$lib/shaderSync';
-	import { shaderNodeDefs, shaderNodeDef, SURFACE_NODE } from '$lib/shaderCatalog';
+	import { shaderNodeDefs, shaderNodeDef, SURFACE_NODE, POST_OUTPUT_NODE } from '$lib/shaderCatalog';
+	// P4: the POST domain. The editor is one surface for two domains — same cards, same
+	// palette, same pane menu — because a post graph IS a shader graph; what differs is
+	// which nodes mean anything, which terminal node the graph ends at, and (since a post
+	// graph belongs to no object) that the post half needs a scope control while the
+	// surface half's scope is still the selection.
+	import {
+		shaderDomain,
+		activePostGraph,
+		postGraphKeys,
+		postGraphName,
+		createPostGraph,
+		deletePostGraph,
+		postPresets
+	} from '$lib/postGraphs';
 	import {
 		setDockOccupant,
 		dockHeight,
@@ -63,24 +77,67 @@
 	import DragRow from '../ui/DragRow.svelte';
 
 	const nodeTypes = Object.fromEntries(shaderNodeDefs().map((def) => [def.key, ShaderNode]));
-	const catalog = shaderNodeDefs().filter((def) => def.key !== SURFACE_NODE);
-	const groups = [...new Set(catalog.map((def) => def.group))];
+	const allDefs = shaderNodeDefs();
+	/**
+	 * The palette for ONE domain.
+	 *
+	 * `stages` absent means every stage, so the arithmetic and channel nodes are in both
+	 * lists; a node declaring its stages is offered only where it means something. Showing
+	 * the others anyway would be the worst outcome: the compiler refuses them BY NAME, so
+	 * the user would place a card, wire it, and be told it belongs somewhere else — the
+	 * palette is the right place to say so, before the wire.
+	 * @param {string} which
+	 */
+	const catalogFor = (which) =>
+		allDefs.filter(
+			(def) =>
+				def.key !== SURFACE_NODE &&
+				def.key !== POST_OUTPUT_NODE &&
+				(!def.stages || def.stages.includes(which === 'post' ? 'post' : 'fragment'))
+		);
+	const catalog = $derived(catalogFor($shaderDomain));
+	const groups = $derived([...new Set(catalog.map((def) => def.group))]);
 	const { screenToFlowPosition } = useSvelteFlow();
 
 	const LS = typeof localStorage !== 'undefined' ? localStorage : null;
 
-	// ---- scope: purely selection-driven ----------------------------------------
+	// ---- scope: selection-driven in SURFACE, picked in POST ---------------------
 	const selectedUuid = $derived($selectedObjects?.length === 1 ? $selectedObjects[0] : null);
-	const scope = $derived(selectedUuid ?? SCENE_GRAPH_KEY);
-	const doc = $derived($shaderGraphs[scope] ?? null);
-	const errors = $derived($shaderErrors[scope] ?? []);
+	const isPost = $derived($shaderDomain === 'post');
+	/** every post graph, re-derived off the store so a new one appears at once */
+	/** @param {any} _poke */
+	const graphsOf = (_poke) => postGraphKeys();
+	const postGraphs = $derived(graphsOf($shaderGraphs));
+	/** the post scope: the one asked for, else the first that exists, else none */
+	const postScope = $derived(
+		$activePostGraph && $shaderGraphs[$activePostGraph]
+			? $activePostGraph
+			: (postGraphs[0]?.key ?? '')
+	);
+	const scope = $derived(isPost ? postScope : (selectedUuid ?? SCENE_GRAPH_KEY));
+	/** the navigator's list, split by domain (see its markup below) */
+	const treeDocuments = $derived(
+		Object.fromEntries(
+			Object.entries($shaderGraphs).filter(([key]) => key.startsWith('post:') === isPost)
+		)
+	);
+	const doc = $derived(scope ? ($shaderGraphs[scope] ?? null) : null);
+	const errors = $derived(scope ? ($shaderErrors[scope] ?? []) : []);
 	const ownerName = $derived(
-		scope === SCENE_GRAPH_KEY
-			? 'The scene'
-			: $objectsGroup?.getObjectByProperty('uuid', scope)?.name || 'This object'
+		isPost
+			? scope
+				? postGraphName(scope)
+				: 'No post effect'
+			: scope === SCENE_GRAPH_KEY
+				? 'The scene'
+				: $objectsGroup?.getObjectByProperty('uuid', scope)?.name || 'This object'
 	);
 	const scopeLabel = $derived(
-		scope === SCENE_GRAPH_KEY ? 'Scene default material' : ownerName + ' — own material'
+		isPost
+			? ownerName + ' — post effect'
+			: scope === SCENE_GRAPH_KEY
+				? 'Scene default material'
+				: ownerName + ' — own material'
 	);
 
 	// ---- graph settings (LOCAL prefs, the node editor's set) -------------------
@@ -163,6 +220,12 @@
 
 	// ---- actions ---------------------------------------------------------------
 	function createGraph() {
+		if (isPost) {
+			// in the post half "create" MINTS a document (there is no object to attach one
+			// to), and the new one becomes the scope so you are looking at what you made
+			activePostGraph.set(createPostGraph({}));
+			return;
+		}
 		if (scope !== SCENE_GRAPH_KEY) {
 			const object = $objectsGroup?.getObjectByProperty('uuid', scope);
 			if (object && !shaderTargetSupported(object)) {
@@ -188,6 +251,11 @@
 	}
 
 	function removeGraph() {
+		if (isPost) {
+			if (scope) deletePostGraph(scope);
+			activePostGraph.set(null);
+			return;
+		}
 		if (scope !== SCENE_GRAPH_KEY) {
 			const object = $objectsGroup?.getObjectByProperty('uuid', scope);
 			if (object) detachFrom(object);
@@ -197,7 +265,7 @@
 
 	/** @param {string} key @param {{x:number,y:number}} [at] */
 	function addNode(key, at) {
-		if (!doc) return;
+		if (!doc || !scope) return;
 		const id = key + '_' + Math.random().toString(36).slice(2, 7);
 		setShaderGraphFor(scope, {
 			nodes: [...doc.nodes, { id, type: key, position: at ?? { x: 140, y: 120 }, data: {} }]
@@ -505,6 +573,42 @@
 <!-- The two chrome buttons every mode shows, as ONE snippet: the docked strip and the
      floating header differ ONLY in the mode button between them, and writing the pair
      out twice is how the two headers drift on the next button either gains. -->
+<!-- P4: ONE control for the two domains, plus the post half's scope picker. A snippet
+     because the editor has TWO headers (docked and floating) and a second copy would
+     drift the moment either gains anything. -->
+{#snippet domainSwitch()}
+	<div class="tp-seg shader-domain" id="shader-domain" role="group" aria-label="Shader domain">
+		<button
+			class="tp-seg-btn"
+			id="shader-domain-surface"
+			aria-pressed={!isPost}
+			title="Materials: this object's, or the scene's default"
+			onclick={() => shaderDomain.set('surface')}>Surface</button
+		>
+		<button
+			class="tp-seg-btn"
+			id="shader-domain-post"
+			aria-pressed={isPost}
+			title="Post effects: a fragment over the finished frame, added to the scene look"
+			onclick={() => shaderDomain.set('post')}>Post</button
+		>
+	</div>
+	{#if isPost && postGraphs.length}
+		<!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
+		<select
+			id="shader-post-pick"
+			class="shader-post-pick"
+			title="Which post effect to edit"
+			value={scope}
+			onchange={(e) => activePostGraph.set(e.currentTarget.value)}
+		>
+			{#each postGraphs as entry (entry.key)}
+				<option value={entry.key}>{entry.name}</option>
+			{/each}
+		</select>
+	{/if}
+{/snippet}
+
 {#snippet actions()}
 	{#if doc}
 		<button
@@ -537,15 +641,18 @@
 			{#if paletteOpen}
 				<div class="shader-side shader-side-left" bind:clientHeight={paletteColH}>
 					<!-- #20 P7: the graph navigator sits ABOVE the palette in the same pane -->
+					<!-- the navigator shows the documents of the domain you are IN: it resolves a
+					     key to the object that owns it, and a post graph owns no object, so
+					     listing both halves together would offer rows that can go nowhere -->
 					<GraphTree
 						kind="shader"
-						documents={$shaderGraphs}
+						documents={treeDocuments}
 						sceneKey={SCENE_GRAPH_KEY}
-						label="Shaders"
+						label={isPost ? 'Post effects' : 'Shaders'}
 						paneHeight={paletteColH}
 					/>
 					<div class="shader-side-scroll">
-						<ShaderSidebar onPick={addNodeAtCentre} />
+						<ShaderSidebar onPick={addNodeAtCentre} entries={catalog} />
 					</div>
 				</div>
 			{/if}
@@ -592,16 +699,39 @@
 					<!-- the `#flow-empty-state` shape: ONE centred call to action -->
 					<div id="shader-empty-state" class="shader-empty">
 						<p class="text-sm text-gray-300">
-							<span class="font-semibold text-gray-100">{ownerName}</span> has no shader yet
+							{#if isPost}
+								No post effect to edit yet
+							{:else}
+								<span class="font-semibold text-gray-100">{ownerName}</span> has no shader yet
+							{/if}
 						</p>
 						<button id="shader-create-btn" class="shader-create" onclick={createGraph}>
-							Create shader
+							{isPost ? 'Create post effect' : 'Create shader'}
 						</button>
-						<p class="text-[11px] text-gray-500">
-							{scope === SCENE_GRAPH_KEY
-								? 'A scene shader drives every object that has no shader of its own'
-								: 'Deselect to edit the scene-wide shader instead'}
-						</p>
+						{#if isPost}
+							<!-- the presets are the fastest way to see what the domain can do, and each
+							     one is an ordinary graph you can then take apart -->
+							<div class="shader-preset-row">
+								{#each postPresets() as preset (preset.key)}
+									<button
+										class="shader-preset"
+										title={preset.hint}
+										onclick={() => activePostGraph.set(createPostGraph({ preset: preset.key }))}
+										>{preset.label}</button
+									>
+								{/each}
+							</div>
+							<p class="text-[11px] text-gray-500">
+								A post effect runs over the finished frame — add it to a look in Configure
+								Scene ▸ Post-processing
+							</p>
+						{:else}
+							<p class="text-[11px] text-gray-500">
+								{scope === SCENE_GRAPH_KEY
+									? 'A scene shader drives every object that has no shader of its own'
+									: 'Deselect to edit the scene-wide shader instead'}
+							</p>
+						{/if}
 					</div>
 				{/if}
 			</div>
@@ -750,6 +880,11 @@
 									{doc.nodes.length} nodes · {doc.edges.length} wires · {doc.backend}
 								</p>
 								<p class="shader-hint">Replicates to peers · saved with the scene</p>
+							{:else if isPost}
+								<p class="shader-hint">
+									Create a post effect, then add it to a look in Configure Scene ▸
+									Post-processing.
+								</p>
 							{:else}
 								<p class="shader-hint">
 									Select nothing for the scene shader, or one object for its own.
@@ -781,6 +916,7 @@
 		></div>
 		<div class="shader-topbar">
 			<DockTabs />
+			{@render domainSwitch()}
 			<span class="shader-scope" id="shader-scope">{scopeLabel}</span>
 			<div class="shader-actions">
 				<button
@@ -815,6 +951,7 @@
 	>
 		<div class="ui-panel-header move-handle shrink-0 cursor-move select-none py-1.5">
 			<span>Shader editor</span>
+			{@render domainSwitch()}
 			<span class="shader-scope" id="shader-scope">{scopeLabel}</span>
 			<span class="flex-1"></span>
 			<button
@@ -933,6 +1070,35 @@
 		padding: 3px 8px;
 		max-height: 64px;
 		overflow-y: auto;
+	}
+	.shader-domain {
+		flex-shrink: 0;
+	}
+	.shader-post-pick {
+		max-width: 11rem;
+		flex-shrink: 1;
+		border-radius: 0.25rem;
+		border: 1px solid var(--border, #374151);
+		background: var(--surface, #1f2937);
+		padding: 0 0.35rem;
+		font-size: 0.7rem;
+		color: #e5e7eb;
+	}
+	.shader-preset-row {
+		display: flex;
+		flex-wrap: wrap;
+		justify-content: center;
+		gap: 0.25rem;
+	}
+	.shader-preset {
+		border-radius: 0.25rem;
+		background: #374151;
+		padding: 0.15rem 0.45rem;
+		font-size: 0.7rem;
+		color: #e5e7eb;
+	}
+	.shader-preset:hover {
+		background: #4b5563;
 	}
 	.shader-empty {
 		position: absolute;

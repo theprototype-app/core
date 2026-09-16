@@ -26,6 +26,10 @@
 	// side-effecting import: registers the built-in effect kinds. It also owns the
 	// postprocessing/n8ao imports, which is what keeps scenePost.js a pure leaf.
 	import { compilePostStack, disposePostStack } from '$lib/postEffects';
+	// P4: side-effecting too — registers the `graph` kind, so a post-domain shader graph
+	// is just another entry in the stack above. This component owns the one thing that
+	// module cannot: the NormalPass, added ON DEMAND below when a graph reads normals.
+	import '$lib/postGraphs';
 	import { registerOutlineLayer } from '$lib/editOverlays';
 	import { faceEditObject, meshEditOutline } from '$lib/faceEdit';
 	import { editingObject } from '$lib/meshEdit';
@@ -37,6 +41,7 @@
 		BlendFunction,
 		EffectComposer,
 		EffectPass,
+		NormalPass,
 		OutlineEffect,
 		RenderPass
 	} from 'postprocessing';
@@ -118,6 +123,9 @@
 	let stackSkipped: any[] = [];
 	/** L4: does the built stack map the frame itself? (environment reads this) */
 	let stackTonemaps = false;
+	/** P4: the ONE normal pass, built only while something in the stack reads normals —
+	 * a second scene render per frame is not a cost to pay for a chain that never asks */
+	let normalPass: any = null;
 	// "would the compiled chain differ?" — a param scrub that changes nothing must
 	// not thrash the composer, and the effect below re-runs on every store write
 	let stackSignature = '';
@@ -144,6 +152,11 @@
 	function rebuildStack(entries: any[]) {
 		for (const pass of stackPasses) (composer as any).removePass(pass);
 		disposePostStack(stackPasses, stackInstances);
+		if (normalPass) {
+			(composer as any).removePass(normalPass);
+			normalPass.dispose?.();
+			normalPass = null;
+		}
 		// `size.current` / `camera.current` are PLAIN property reads on threlte's
 		// CurrentWritable, so they register no dependency — deliberate: a resize or a
 		// camera swap must not rebuild the whole chain, they have their own effects.
@@ -163,7 +176,24 @@
 		// index 1.. = after RenderPass, BEFORE the two outline passes. postprocessing's
 		// addPass(pass, index) re-assigns renderToScreen to whatever ends up last, so
 		// the outlines keep presenting.
-		stackPasses.forEach((pass, offset) => (composer as any).addPass(pass, 1 + offset));
+		// P4 — THE NORMAL PASS, on demand. A post graph that reads Scene normal (edge
+		// detect is the shipped case) needs a buffer nothing else in this app renders, and
+		// it costs a second pass over the scene — so it is built only when an effect
+		// actually asks, and ONE of them serves every effect that does. It goes in FIRST,
+		// right after the beauty render, because a pass can only read a buffer something
+		// earlier in the chain has filled.
+		const wantNormals = stackInstances.filter((instance: any) => instance.object?.tpNeedsNormals);
+		let offsetBase = 1;
+		if (wantNormals.length) {
+			normalPass = new NormalPass(scene, camera.current);
+			(composer as any).addPass(normalPass, 1);
+			offsetBase = 2;
+			for (const instance of wantNormals) {
+				const slot = instance.object.uniforms?.get?.('normalBuffer');
+				if (slot) slot.value = normalPass.texture;
+			}
+		}
+		stackPasses.forEach((pass, offset) => (composer as any).addPass(pass, offsetBase + offset));
 		applyLocalPrefs();
 		// L4 — TONE MAPPING, where the SCOPING is the whole point.
 		//
@@ -208,6 +238,8 @@
 		// setMainCamera does over `pass.mainCamera`. Generic, so a future effect that
 		// needs the camera is correct for free.
 		for (const instance of stackInstances) instance.def?.retarget?.(instance.object, active);
+		// the normal pass renders the scene itself, so it needs the camera swap too
+		if (normalPass) normalPass.mainCamera = active;
 	});
 
 	$effect(() => {
@@ -356,6 +388,11 @@
 			// empty -> still nothing to compose. Measured as a stack that could never
 			// compile a pass in play mode.
 			if (!postWarm && ++warmupFrames > 10) postWarm = true;
+			// P4: the per-frame write a kind may declare — the shared shader clock, which
+			// must reach a live uniform WITHOUT a chain rebuild (a rebuild per frame is
+			// what the parent plan names as the reason a param-driving node needs a seam
+			// like this one first).
+			for (const instance of stackInstances) instance.def?.tick?.(instance.object, delta);
 			if (renderer.xr.isPresenting || nothingToCompose) renderer.render(scene, camera.current);
 			else {
 				composer.render(delta);
@@ -466,6 +503,17 @@
 				outlinedSelected: outlineEffectSelected?.selection.size ?? 0,
 				outlinedLocked: outlineEffectLocked?.selection.size ?? 0,
 				stackPasses: stackPasses.length,
+				// P4: the normal pass is not one of `stackPasses` (it is the chain's, not an
+				// entry's), so the suite needs it named to prove it is added ON DEMAND
+				normals: !!normalPass,
+				graphs: stackInstances
+					.filter((instance: any) => instance.object?.tpGraphKey)
+					.map((instance: any) => ({
+						key: instance.object.tpGraphKey,
+						normals: !!instance.object.tpNeedsNormals,
+						clock: !!instance.object.tpUsesClock,
+						depth: !!(instance.object.getAttributes?.() & 1)
+					})),
 				plan: stackPlan,
 				skipped: stackSkipped.map((entry: any) => entry.kind),
 				kinds: stackInstances.map((instance: any) => instance.kind),

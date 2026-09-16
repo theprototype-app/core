@@ -23,7 +23,7 @@ import { registerHistoryKind, recordEntry } from './history';
 /**
  * @typedef {{id: string, kind: string, enabled: boolean, params: Record<string, any>}} PostEntry
  * @typedef {{enabled: boolean, effects: PostEntry[], changedAt: number, mode?: 'append'|'replace'}} PostStack
- * @typedef {{key: string, label: string, type?: 'number'|'select'|'bool'|'asset', min?: number, max?: number, step?: number, decimals?: number, default: any, hint?: string, options?: {value: any, label: string}[]}} PostParam
+ * @typedef {{key: string, label: string, type?: 'number'|'select'|'bool'|'asset'|'graph', min?: number, max?: number, step?: number, decimals?: number, default: any, hint?: string, options?: {value: any, label: string}[]}} PostParam
  */
 
 // ---- the kind REGISTRY -----------------------------------------------------
@@ -49,7 +49,15 @@ const postKinds = {};
  *   retarget?: (object: any, camera: any) => void,
  *   resize?: (object: any, width: number, height: number, dpr: number) => void,
  *   applyLocal?: (object: any, prefs: any, params: any) => void,
+ *   signature?: (params: Record<string, any>) => string,
+ *   tick?: (object: any, delta: number) => void,
  *   dispose?: (object: any) => void}} def
+ *
+ * P4 added two OPTIONAL members, both absent on every built-in so nothing about them
+ * changes: `signature` lets a kind whose output depends on state OUTSIDE its params (a
+ * post GRAPH, whose shader lives in its own document) tell the chain when it would
+ * compile differently, and `tick` is the per-frame write for a kind with a live uniform
+ * — the shared clock, which must not go through a rebuild.
  */
 export function registerPostEffect(kind, def) {
 	postKinds[kind] = { group: 'other', isPass: false, params: [], ...def, kind };
@@ -389,7 +397,12 @@ export function postStackSignature(entries) {
 	return JSON.stringify(
 		(entries ?? []).map((entry) => {
 			const def = postKinds[entry.kind];
-			return [entry.kind, def ? (def.isPass ? 'pass' : 'effect') : 'unknown', entry.params ?? {}];
+			const base = [entry.kind, def ? (def.isPass ? 'pass' : 'effect') : 'unknown', entry.params ?? {}];
+			// P4: a kind may depend on state its params only POINT at — a post graph's entry
+			// names a document, and editing that document changes the shader without changing
+			// one character of the entry. The extra element is appended ONLY when a kind
+			// declares `signature`, so every built-in's signature is byte-identical.
+			return def?.signature ? [...base, def.signature(entry.params ?? {})] : base;
 		})
 	);
 }

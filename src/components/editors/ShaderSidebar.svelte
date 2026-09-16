@@ -4,15 +4,21 @@
 	// has no HTML5 drag, so a tap is the touch path — same reasoning as the flow palette.
 	import { shaderNodeDefs, SURFACE_NODE } from '$lib/shaderCatalog';
 
-	let { onPick = (/** @type {string} */ _key) => {} } = $props();
+	// P4: `entries` is the DOMAIN's catalog, passed in — the editor decides which nodes
+	// mean anything in the half you are looking at, and a palette that decided for itself
+	// would offer post nodes in a material (where the compiler refuses them by name).
+	// Absent = the old behaviour, every surface node.
+	let { onPick = (/** @type {string} */ _key) => {}, entries = null } = $props();
 
 	// the Surface output is created with the graph and there is exactly one, so it is
 	// not something you add
-	const defs = shaderNodeDefs().filter((def) => def.key !== SURFACE_NODE);
-	const groups = [...new Set(defs.map((def) => def.group))];
+	const fallback = shaderNodeDefs().filter((def) => def.key !== SURFACE_NODE);
+	const defs = $derived(entries ?? fallback);
+	const groups = $derived([...new Set(defs.map((/** @type {any} */ def) => def.group))]);
 
 	/** @type {Record<string, string>} */
 	const GROUP_ACCENT = {
+		Post: '#f472b6',
 		Input: '#38bdf8',
 		Math: '#2dd4bf',
 		Channel: '#facc15',
@@ -35,7 +41,7 @@
 			<span class="dot" style="background: {GROUP_ACCENT[group] ?? '#94a3b8'}"></span>
 			{group}
 		</div>
-		{#each defs.filter((d) => d.group === group) as def (def.key)}
+		{#each defs.filter((/** @type {any} */ d) => d.group === group) as def (def.key)}
 			<button
 				class="shader-palette-item"
 				draggable="true"

@@ -217,6 +217,33 @@ export function scheduleCompile(key, delay = 60) {
 	);
 }
 
+/** P4: the POST domain's own compile path, registered by `postGraphs` (never imported —
+ * this module must keep no edge into the composer side). @type {((key: string) => any)|null} */
+let postDomainHook = null;
+
+/**
+ * Install the post domain's compiler.
+ *
+ * A post document has no Surface node and drives no object, so shaderGraph's material
+ * path is simply the wrong question for it: left to run it would stamp "The graph has no
+ * Surface output node" on every post graph. A REGISTRATION rather than an import for the
+ * usual reason — `postGraphs` reaches `scenePost` and `postBackends`, and an edge from
+ * here into that is one this module does not need.
+ * @param {(key: string) => any} fn
+ */
+export function registerPostDomain(fn) {
+	postDomainHook = typeof fn === 'function' ? fn : null;
+	return () => {
+		if (postDomainHook === fn) postDomainHook = null;
+	};
+}
+
+/** Is this key a post-domain document (by its own `domain`, so the prefix is a
+ * convention and not the truth)? @param {string} key */
+export function isPostDomain(key) {
+	return shaderGraphOf(key)?.domain === 'post';
+}
+
 /**
  * Compile a key's graph and install the material on every object it drives.
  * On FAILURE the object keeps its last good material — a broken graph mid-edit must not
@@ -225,6 +252,11 @@ export function scheduleCompile(key, delay = 60) {
  */
 export async function compileAndApply(key) {
 	const doc = shaderGraphOf(key);
+	// P4: a POST document is an EFFECT, not a material — hand it to the domain that owns
+	// it. A deleted document still reaches the hook (doc is null), which is how a post
+	// graph's own teardown runs.
+	if ((doc?.domain === 'post' || (!doc && postDomainHook && key.startsWith('post:'))) && postDomainHook)
+		return postDomainHook(key) ?? { ok: true };
 	if (!doc) {
 		// deleted: put every target back to its own material
 		for (const object of targetsFor(key)) detachFrom(object);

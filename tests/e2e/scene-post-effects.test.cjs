@@ -63,7 +63,11 @@ h.run(async () => {
 		'pixelation:camera',
 		'scanlines:camera',
 		'dotscreen:stylize',
-		'smaa:aa'
+		'smaa:aa',
+		// P4: the post DOMAIN's bridge — an effect whose shader is a graph document rather
+		// than a built-in. It belongs in this list for the same reason it belongs in the add
+		// menu: it is a kind of the library, registered through the same seam.
+		'graph:graph'
 	];
 	for (const want of expected)
 		h.check(kinds.includes(want), '1.x ' + want + ' is registered in the right group');

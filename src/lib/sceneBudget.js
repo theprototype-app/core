@@ -421,9 +421,33 @@ function sample() {
 	sceneMetrics.set(metrics);
 }
 
+/** @type {Set<(ms: number) => void>} */
+const frameObservers = new Set();
+
+/**
+ * Hear every frame's duration. 26-G's freeze detector is the reader; it registers rather
+ * than being imported so this module keeps knowing nothing about pausing. An observer
+ * that throws is isolated — one bad observer must not end the sampler for everyone.
+ * @param {(ms: number) => void} fn @returns {() => void} unregister
+ */
+export function registerFrameObserver(fn) {
+	frameObservers.add(fn);
+	return () => frameObservers.delete(fn);
+}
+
 function loop() {
 	const now = typeof performance !== 'undefined' ? performance.now() : Date.now();
-	if (lastFrameAt) noteFrame(now - lastFrameAt);
+	if (lastFrameAt) {
+		const ms = now - lastFrameAt;
+		noteFrame(ms);
+		for (const fn of frameObservers) {
+			try {
+				fn(ms);
+			} catch {
+				/* isolated — see registerFrameObserver */
+			}
+		}
+	}
 	lastFrameAt = now;
 	if (now - lastSampleAt >= SAMPLE_MS) {
 		lastSampleAt = now;

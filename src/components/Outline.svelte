@@ -36,7 +36,8 @@
 		OutlineEffect,
 		RenderPass
 	} from 'postprocessing';
-	import { onMount, untrack } from 'svelte';
+	import { onMount, onDestroy, untrack } from 'svelte';
+	import { renderPaused } from '$lib/overloadGuard';
 	// 16-Q4: the camera preview window renders as an inset viewport of THIS renderer
 	import { pipRect, pipTarget, glRect } from '$lib/cameraPip';
 	import { buildCamera } from '$lib/cameraObjects';
@@ -321,8 +322,17 @@
 			autoRender.set(before);
 		};
 	});
+	// 26-G (roadmap 26 Stage 4): THE ONE PLACE A FRAME IS DRAWN, so the one place a
+	// pause can be real — no GPU work at all while it holds, which is what a device that
+	// cannot keep up needs. Read through a subscription, never get() per frame. NEVER in
+	// a headset: the XR compositor needs frames, and a paused XR session shows the user a
+	// frozen world strapped to their face with no overlay (DOM is invisible in VR).
+	let renderIsPaused = false;
+	const stopPauseWatch = renderPaused.subscribe((value) => (renderIsPaused = !!value));
+	onDestroy(stopPauseWatch);
 	useTask(
 		(delta) => {
+			if (renderIsPaused && !renderer.xr.isPresenting) return;
 			// In WebXR the EffectComposer can't be used: its passes render to canvas-sized
 			// targets, not the XR framebuffer, so blitting them mismatches sizes
 			// (GL_INVALID_FRAMEBUFFER_OPERATION) and nothing reaches the headset (dark

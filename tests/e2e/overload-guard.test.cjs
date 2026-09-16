@@ -89,8 +89,32 @@ h.run(async () => {
 
 	// ---- 3. the render freeze -------------------------------------------------
 	h.check((await A.page.locator('#render-paused').count()) === 0, 'the paused overlay starts hidden (premise)');
+
+	// THE REGRESSION THIS RULE WAS REWRITTEN FOR: a SLOW MACHINE drawing a LIGHT scene. A
+	// software-rendered page lives at ~2.5fps — 400ms frames, forever — and the first
+	// version of this trigger paused it, covering every non-GPU e2e suite with the overlay
+	// ("#render-paused intercepts pointer events", 23 times in one battery). Pausing a
+	// light scene helps nothing: there is nothing heavy to set aside.
+	const light = await A.page.evaluate(() => {
+		const g = window.__stores.overloadGuard;
+		const b = window.__stores.sceneBudget;
+		g.resumeRendering();
+		const realNow = Date.now;
+		Date.now = () => realNow() + 10000;
+		b.sceneMetrics.set({ at: Date.now(), profile: 'desktop', objects: 12, triangles: 144, calls: 12 });
+		const heavy = g.sceneIsHeavy();
+		let paused = false;
+		for (let i = 0; i < 40; i++) paused = g.noteFrameForFreeze(400) || paused;
+		Date.now = realNow;
+		return { heavy, paused };
+	});
+	h.check(!light.heavy, 'twelve boxes are not a heavy scene (premise)');
+	h.check(!light.paused, 'forty 400ms frames on a LIGHT scene never pause — a slow machine is not an overloaded scene');
+
 	const freeze = await A.page.evaluate(() => {
 		const g = window.__stores.overloadGuard;
+		// a HEAVY reading: past the desktop object budget, so pausing could actually help
+		window.__stores.sceneBudget.sceneMetrics.set({ at: Date.now(), profile: 'desktop', objects: 4200, triangles: 900000, calls: 2600 });
 		g.resumeRendering();
 		// resumeRendering starts a grace window; step past it for the test
 		const realNow = Date.now;
@@ -135,6 +159,8 @@ h.run(async () => {
 	// a BACKGROUNDED tab throttles rAF to ~1Hz on purpose — that must never pause
 	const hidden = await A.page.evaluate(() => {
 		const g = window.__stores.overloadGuard;
+		// HEAVY, or this check passes vacuously — a light scene never pauses anyway
+		window.__stores.sceneBudget.sceneMetrics.set({ at: Date.now(), profile: 'desktop', objects: 4200, triangles: 900000, calls: 2600 });
 		g.resumeRendering();
 		const realNow = Date.now;
 		Date.now = () => realNow() + 10000;
@@ -241,10 +267,19 @@ h.run(async () => {
 		(await A.page.locator('.tp-toast').getByRole('button', { name: 'Show them again' }).count()) > 0,
 		'…with a way to undo it'
 	);
+	// leave a LIGHT scene behind: 3,200 objects is heavy by definition, and the real frame
+	// loop would be entitled to pause over it on a saturated box while section 5 runs
+	await A.page.evaluate(() => {
+		const { objectsGroup, pokeScene, overloadGuard } = window.__stores;
+		overloadGuard.restoreReduced();
+		let group; { const s = objectsGroup.subscribe((/** @type {any} */ g) => (group = g)); s(); }
+		group.clear();
+		pokeScene();
+		overloadGuard.resumeRendering();
+	});
 
 	// ---- 5. the restore prompt names the budget ------------------------------
 	await A.page.evaluate(() => {
-		window.__stores.overloadGuard.restoreReduced();
 		window.__stores.toastStore.set([]);
 		window.__stores.autosave.restoreAvailable.set({ objects: 4200, ts: Date.now() });
 	});

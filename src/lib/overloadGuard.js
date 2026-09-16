@@ -1,6 +1,6 @@
 import { writable, get } from 'svelte/store';
 import { objectsGroup, globalRenderer, pokeScene } from '../stores/sceneStore';
-import { BUDGETS, profileFor, registerFrameObserver } from './sceneBudget';
+import { BUDGETS, profileFor, registerFrameObserver, sceneMetrics, tierOf } from './sceneBudget';
 
 // 26-G (roadmap 26 section 4, Stages 3 and 4) — WHEN THE SCENE IS TOO HEAVY TO RUN.
 //
@@ -101,11 +101,37 @@ export function noteFrameForFreeze(ms) {
 		return false;
 	}
 	if (get(renderPaused) || Date.now() < graceUntil) return false;
+	// A SLOW MACHINE IS NOT AN OVERLOADED SCENE. A software-rendered page lives at
+	// ~2.5fps — 400ms frames, forever — and a real user on a weak GPU can too, drawing a
+	// scene of twelve boxes. Pausing that helps nothing: there is nothing heavy to set
+	// aside, Reduce would reduce nothing, and the person loses a window that was slow but
+	// ANSWERING. The first version of this trigger did exactly that and covered every
+	// non-GPU e2e suite with the overlay. So the streak only counts while the SCENE is
+	// heavy by its own measure; a light scene cannot build one at all.
+	if (!sceneIsHeavy()) {
+		freezeWatch.reset();
+		return false;
+	}
 	if (freezeWatch.note(ms)) {
 		pauseRendering('frozen');
 		return true;
 	}
 	return false;
+}
+
+/** The scene-size axes only — never frame time itself, which would make the rule
+ * circular. `unknown` (nothing sampled yet) is NOT heavy, so a freshly booted page can
+ * never be paused before the first reading. */
+const HEAVY_AXES = ['objects', 'triangles', 'calls'];
+
+/** Is the scene big enough that pausing it and setting part of it aside could help? */
+export function sceneIsHeavy() {
+	const metrics = get(sceneMetrics);
+	const profile = metrics?.profile === 'vr' ? 'vr' : 'desktop';
+	return HEAVY_AXES.some((key) => {
+		const tier = tierOf(key, metrics?.[key], profile);
+		return tier === 'amber' || tier === 'red';
+	});
 }
 
 /** @param {string} reason */

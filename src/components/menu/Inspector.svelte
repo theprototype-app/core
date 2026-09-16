@@ -71,6 +71,8 @@
 	} from '$lib/scenePhysics';
 	import { scenePost, sceneProvidesAo } from '$lib/scenePost';
 	import { viewportOverrides, setRenderLayer, OVERRIDES } from '$lib/viewportOverrides';
+	// D2: the shared-material notice and its way out
+	import { fanTargets as fanMaterialTargets, unlinkMaterial } from '$lib/materialSharing';
 	import PostStack from './PostStack.svelte';
 	import { showColliders, colliderVizObjects, setColliderViz } from '$lib/colliderHelpers';
 	import { enterColliderEdit } from '$lib/colliderEdit';
@@ -492,6 +494,35 @@
 	// precedent: decline with an explanation rather than half-support it.
 	// `objectsGroup` is a dependency because being shader-driven is not a store; the
 	// install pokes that one, and it is the only signal this derived gets.
+	/**
+	 * D2 — the OTHER objects wearing this object's material.
+	 *
+	 * Reads through `$objectsGroup` because the id lives on `userData` and THREE trees are
+	 * not reactive: without that dependency the notice would be correct exactly once.
+	 * Single-object only — a multi-selection's members can each share with different
+	 * things, and one sentence cannot say that honestly.
+	 * @param {any} _poke
+	 */
+	const sharedWithOf = (/** @type {any} */ uuid, /** @type {any} */ _poke) =>
+		uuid ? fanMaterialTargets(uuid) : [];
+	const sharedWith = $derived(
+		matTargets.length === 1 ? sharedWithOf($selectedObject?.uuid, $objectsGroup) : []
+	);
+
+	/** Give this object its own material back (the Settings copy promises this button). */
+	function unlinkSharedMaterial() {
+		const uuid = $selectedObject?.uuid;
+		if (!uuid) return;
+		const count = sharedWith.length;
+		if (!unlinkMaterial(uuid)) return;
+		showToast(
+			'This object has its own material now — the other ' +
+				count +
+				(count === 1 ? ' object keeps' : ' objects keep') +
+				' the shared one'
+		);
+	}
+
 	const shaderDriven = $derived.by(() => {
 		$objectsGroup;
 		return matTargets.filter((/** @type {any} */ o) => isShaderDriven(o.uuid));
@@ -3359,6 +3390,30 @@
 									     remove, and restoring the base would not stick -->
 									<span class="shader-driven-text">Inherited from the scene shader.</span>
 								{/if}
+							</div>
+						</div>
+					{/if}
+
+					<!-- D2: a SHARED material is one material on several objects, so an edit below
+					     changes all of them — for everyone. Said here rather than left to be
+					     discovered, and with the way out beside it (the `shader-driven` notice's
+					     shape, one concern over). -->
+					{#if sharedWith.length}
+						<div id="material-shared-note" class="shader-driven">
+							<p class="shader-driven-text">
+								This material is shared with {sharedWith.length}
+								other object{sharedWith.length === 1 ? '' : 's'} — editing it here changes
+								{sharedWith.length === 1 ? 'that one' : 'them'} too, for everyone.
+							</p>
+							<div class="shader-driven-actions">
+								<button
+									id="material-unlink"
+									class="ui-button-quiet"
+									title="Give this object its own copy of the material and stop sharing"
+									onclick={unlinkSharedMaterial}
+								>
+									Unlink
+								</button>
 							</div>
 						</div>
 					{/if}

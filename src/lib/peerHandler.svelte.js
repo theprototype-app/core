@@ -735,8 +735,10 @@ export class PeerConnection {
 				} else if(data.type == 'objectParameters') {
 					objectParameters(data);
 				} else if(data.type == 'duplicate') {
-					// B7: `transient` is additive — absent for every ordinary duplicate
-					applyRemoteDuplicate(data.sourceUuid, data.uuids, data.name, data.pos, data.transient);
+					// B7: `transient` is additive — absent for every ordinary duplicate.
+					// D2: so is `shareMaterial` — absent means the copy gets its own material,
+					// which is what every peer before this build did unconditionally.
+					applyRemoteDuplicate(data.sourceUuid, data.uuids, data.name, data.pos, data.transient, data.shareMaterial);
 				} else if(data.type == 'clearscene') {
 					applyClearScene(data.peerId);
 				} else if(data.type == 'delete') {

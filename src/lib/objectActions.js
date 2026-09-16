@@ -36,6 +36,8 @@ import { canEditObject, warnViewerReadOnly } from './objectPermissions';
 import { stripEditOverlays, isEditOverlay } from './editOverlays';
 // B7: the transient marker (a LEAF — two stores only, so no cycle back through history)
 import { markTransient } from './transientObjects';
+// D2: a LEAF (svelte stores + THREE), so a static import here closes no cycle
+import { shareDuplicatedMaterials, linkMaterials } from './materialSharing';
 import {
 	duplicateCarriesAnimation,
 	duplicateCarriesFlow,
@@ -429,7 +431,14 @@ function collectTree(object, list = []) {
 	return list;
 }
 
-/** @param {any} clone - give cloned meshes their own materials and geometry (three's clone() shares both) */
+/**
+ * @param {any} clone - give cloned meshes their own materials and geometry (three's
+ * clone() shares both)
+ *
+ * D2: geometry is ALWAYS detached, materials only when the copy is not meant to share —
+ * the two are separate questions and only one of them has a setting. A shared geometry
+ * would make a vertex edit on the copy deform the original, which nobody asked for.
+ */
 function detachMaterials(clone) {
 	collectTree(clone).forEach((node) => {
 		if (node.material)
@@ -499,8 +508,15 @@ export function duplicateObject(uuid, options = {}) {
 	// It also keeps the node COUNT the same on both sides of applyRemoteDuplicate,
 	// whose uuid assignment walks the clone in depth-first order.
 	stripEditOverlays(clone);
+	// D2: with sharing on, the copy keeps the SOURCE's material instance and both objects
+	// take a `materialId`, so an edit to either reaches both — locally through the shared
+	// instance, and on peers through the send-side fan. OFF by default: a duplicate is a
+	// working copy of everything that belongs to the object, and only data people
+	// deliberately share is linked (Blender's linked duplicate is its own command).
+	const shareMaterial = get(shareDuplicatedMaterials) && !options.transient;
 	detachMaterials(clone);
 	stripSelectionTint(source, clone);
+	if (shareMaterial) linkMaterials(source, clone);
 	const cloneNodes = collectTree(clone);
 	cloneNodes.forEach((node) => (node.uuid = crypto.randomUUID()));
 	clone.name = (source.name || source.type) + ' copy';
@@ -524,7 +540,12 @@ export function duplicateObject(uuid, options = {}) {
 			pos: clone.position.toArray(),
 			// B7: absent for every ordinary duplicate, so the message a peer already
 			// knows how to read is unchanged
-			...(options.transient ? { transient: true } : {})
+			...(options.transient ? { transient: true } : {}),
+			// D2: likewise ADDITIVE. The peer has to link its own copy, or its two objects
+			// would hold separate materials and the fan would be writing into one of them
+			// twice. An older peer ignores it and keeps a plain copy, which is what it
+			// would have had anyway.
+			...(shareMaterial ? { shareMaterial: true } : {})
 		});
 
 	// after the clone exists and its uuid is known, and after the `duplicate`
@@ -589,8 +610,11 @@ export function duplicateSelection() {
  *   flag has to be stamped HERE because the clone is made from OUR source object, whose
  *   userData is (correctly) not transient. Without it a peer would keep the spawned crates
  *   in its own sessions and autosave, and only the initiator's sweep would remove them.
+ * @param {boolean=} shareMaterial D2: the sender's copy shares its source's material, so
+ *   ours must too — the id is what the fan and the reconcile both key on, and a peer that
+ *   skipped this would hold two materials the sender thinks are one.
  */
-export function applyRemoteDuplicate(sourceUuid, uuids, name, pos, transient) {
+export function applyRemoteDuplicate(sourceUuid, uuids, name, pos, transient = false, shareMaterial = false) {
 	const group = get(objectsGroup);
 	const source = group?.getObjectByProperty('uuid', sourceUuid);
 	if (!source) return;
@@ -600,6 +624,10 @@ export function applyRemoteDuplicate(sourceUuid, uuids, name, pos, transient) {
 	collectTree(clone).forEach((node, index) => {
 		if (uuids[index]) node.uuid = uuids[index];
 	});
+	// D2: AFTER the uuids are assigned — `linkMaterials` stamps the id on both trees and
+	// the reconcile groups by it, so doing this against placeholder uuids would group the
+	// wrong objects for the one frame before they were replaced
+	if (shareMaterial) linkMaterials(source, clone);
 	clone.name = name;
 	clone.position.fromArray(pos);
 	if (transient) markTransient(clone);

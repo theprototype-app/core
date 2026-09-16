@@ -1,7 +1,7 @@
 // @ts-ignore - no bundled three type declarations (project-wide)
 import * as THREE from 'three';
 import { writable, get } from 'svelte/store';
-import { objectsGroup, lockedObjects, globalScene, TControls, gizmoSuppressed } from '../stores/sceneStore';
+import { objectsGroup, lockedObjects, globalScene, TControls, gizmoSuppressed, pokeScene } from '../stores/sceneStore';
 import { peers, showToast } from '../stores/appStore';
 import { commitMeshGeoSnapshot } from './faceEdit';
 import { MAX_SNAPSHOT, previewReplicable } from './meshBudget';
@@ -428,7 +428,7 @@ export function strokeMove(uuid, x, z, dt = 0.016, y = 0) {
 			});
 		}
 	}
-	objectsGroup.update((v) => v);
+	pokeScene();
 }
 
 /** Stroke end: flush the pending preview + ONE snapshot commit + undo entry. */

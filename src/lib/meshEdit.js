@@ -7,8 +7,7 @@ import {
 	TControls,
 	lockedObjects,
 	isVRMode,
-	transformMode
-} from '../stores/sceneStore';
+	transformMode, pokeScene } from '../stores/sceneStore';
 import { peers, showToast } from '../stores/appStore';
 import { registerHistoryKind, recordEntry } from './history';
 // 15-F: session-scoped undo — editSession imports ONLY history (an edge we
@@ -1637,7 +1636,7 @@ export function applyVerts(uuid, indices, positionArray) {
 			overlay.geometry = editWireGeometry(object.geometry);
 		}
 	}
-	objectsGroup.update((value) => value);
+	pokeScene();
 }
 
 // ---- VR vertex editing (113): drive a handle from a controller, no gizmo ----

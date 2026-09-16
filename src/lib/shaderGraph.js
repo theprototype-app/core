@@ -14,7 +14,7 @@
 // tracks the scene's light set, which ShaderFrog silently does not).
 
 import { writable, get } from 'svelte/store';
-import { objectsGroup, globalScene, globalCamera, globalRenderer } from '../stores/sceneStore.js';
+import { objectsGroup, globalScene, globalCamera, globalRenderer, pokeScene } from '../stores/sceneStore.js';
 import { compileShaderGraphToIR } from './shaderCompile.js';
 import { compileShaderGraph, INJECT_SHADER_BACKEND, forgetShaderContext } from './shaderBackends.js';
 import {
@@ -454,7 +454,7 @@ function applyMaterial(object, material) {
 	// Inspector's `material` derived and its shader-driven notice both read through
 	// `objectsGroup`, and without the poke they keep showing the pre-shader state. Safe
 	// from the reconcile's own subscriber because a compile always runs off a timer.
-	objectsGroup.update((v) => v);
+	pokeScene();
 }
 
 // ---- texture uniforms ------------------------------------------------------------
@@ -519,7 +519,7 @@ export function detachFrom(object) {
 	if (mine && mine !== base && typeof mine.dispose === 'function') mine.dispose();
 	// and poke, for the same reason the install does — otherwise the Inspector keeps
 	// offering Detach for an object that is no longer shader-driven
-	objectsGroup.update((v) => v);
+	pokeScene();
 }
 
 /** Is this object currently shader-driven? @param {string} uuid */

@@ -225,3 +225,100 @@ export const vrGrabStyle = writable(
 );
 /** handedness currently holding a grab ('left'|'right'|null) — gates that hand's stick */
 export const vrGrabbedHand = writable(null);
+
+// ---------------------------------------------------------------------------
+// 26-B (hardening audit M6) — THE ONE PLACE A SCENE MUTATION IS ANNOUNCED.
+//
+// THE FINDING: `objectsGroup.update((v) => v)` sat at 117 call sites and eighteen
+// subscribers hang off it, several of which TRAVERSE the whole tree (the Controls
+// status-line walk, `refreshFilter`, `shadowDefaults.sweep`, the collider / camera /
+// light helper sweeps, the shader reconcile, `sceneAssets.schedule`). A 1,000-object
+// handshake therefore ran 1,000 pokes x ~8 traversals x 1,000 nodes — about 8M node
+// visits, synchronously, on the receive path — which IS the reported "the window
+// freezes while a big scene arrives". The same shape on `/clear` + restore and on any
+// bulk import.
+//
+// The mutation itself is unchanged: `pokeScene()` still ends in the same identity
+// update and every subscriber still sees the same value. What changes is HOW MANY
+// times: at most one flush per microtask normally, and at most one per frame while an
+// INGEST BATCH is open. N pokes inside one task become one.
+//
+// WHY A MICROTASK AND NOT rAF as the default: a microtask lands before the browser
+// paints and before any `await` continuation, so nothing that reads a subscriber's
+// output after yielding can observe a stale tree — and it still runs in a backgrounded
+// tab, which rAF does not. The batch mode uses a TIMER for the same reason: a hidden
+// tab throttles it to ~1Hz instead of stopping, so an ingest that starts and then loses
+// focus still converges.
+//
+// This lives in the STORE and not in a new leaf on purpose: all 37 files that poke
+// already import from here, so the seam costs no import edge anywhere — which matters,
+// because the pokers include peerHandler, flowRuntime, autosave and history, i.e. every
+// module inside the documented import cycles.
+// ---------------------------------------------------------------------------
+
+/** Bumped on every flush. A subscriber that caches an expensive traversal can key it
+ * off this instead of re-walking; it is also what the 26-A meter samples. LOCAL — it
+ * never replicates, saves or undoes. */
+export const sceneRevision = writable(0);
+
+/** One poke per this many ms while an ingest batch is open (~one frame at 60Hz). */
+const POKE_BATCH_MS = 16;
+
+let pokePending = false;
+/** @type {any} */
+let pokeTimer = null;
+let batchDepth = 0;
+
+function flushScenePoke() {
+	pokePending = false;
+	if (pokeTimer !== null) {
+		clearTimeout(pokeTimer);
+		pokeTimer = null;
+	}
+	sceneRevision.update((n) => n + 1);
+	objectsGroup.update((value) => value);
+}
+
+/**
+ * Announce that the THREE tree under `objectsGroup` changed. Coalesced — see above.
+ * Every former `objectsGroup.update((v) => v)` call site calls this instead.
+ */
+export function pokeScene() {
+	if (batchDepth > 0) {
+		// batch mode: a timer already armed means this poke is already covered
+		if (pokeTimer !== null) return;
+		pokePending = true;
+		pokeTimer = setTimeout(flushScenePoke, POKE_BATCH_MS);
+		return;
+	}
+	if (pokePending) return;
+	pokePending = true;
+	queueMicrotask(flushScenePoke);
+}
+
+/**
+ * Open an ingest batch: while one is open, pokes flush at most once per frame instead
+ * of once per microtask. Refcounted, so nested batches (an import inside a handshake)
+ * compose. ALWAYS pair with `endSceneBatch` in a `finally`.
+ */
+export function beginSceneBatch() {
+	batchDepth++;
+}
+
+/** Close an ingest batch and flush immediately, so the last object of a batch is on
+ * screen without waiting out a frame. */
+export function endSceneBatch() {
+	batchDepth = Math.max(0, batchDepth - 1);
+	if (batchDepth === 0 && pokePending) flushScenePoke();
+}
+
+/** Flush any pending poke right now. For the paths that must not yield first (a
+ * serializer about to read the tree) and for the suite. */
+export function flushScenePokes() {
+	if (pokePending) flushScenePoke();
+}
+
+/** Is an ingest batch open? Read by the suite and by the 26-A meter. */
+export function sceneBatchOpen() {
+	return batchDepth > 0;
+}

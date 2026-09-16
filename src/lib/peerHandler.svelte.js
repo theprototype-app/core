@@ -85,7 +85,7 @@ import { applySessionProposal, applySessionAnswer, deferUntilShareChoice, localS
 import { applyRemoteGeometry } from '$lib/geometryEdit';
 import { applyLightTarget } from '$lib/lightParams';
 import { applyObjectFile } from '$lib/animatedImports';
-import { lockedObjects, selectedObject, peerHands, objectsGroup } from '../stores/sceneStore';
+import { lockedObjects, selectedObject, peerHands, objectsGroup, pokeScene } from '../stores/sceneStore';
 import { addMessage, peers, userdata, pendingApprovals, waitingForApproval, showToast } from '../stores/appStore';
 import { get } from 'svelte/store';
 
@@ -616,7 +616,7 @@ export class PeerConnection {
 						const made = get(objectsGroup)?.getObjectByProperty('uuid', data.uuid);
 						if (made) {
 							made.userData = { ...made.userData, ...data.userData };
-							objectsGroup.update((value) => value);
+							pokeScene();
 						}
 					}
 				} else if(data.type == 'name') {
@@ -845,7 +845,9 @@ export class PeerConnection {
 				} else if(data.type == 'color') {
 					colorObject(data.uuid, data.color, data.near, data.far);
 				} else if(data.type == 'loading') {
-					createLoader(data.count, data.uuids);
+					// 26-B (audit M2): WHO announced it, so their teardown can clear the batch. Local
+					// only — the message is unchanged, so an older peer is unaffected.
+					createLoader(data.count, data.uuids, conn.peer);
 				} else if(data.type == 'disconnected') {
 					if (data.peerId === conn.peer) {
 						// the peer says goodbye ITSELF (leaveSession / tab close): tear

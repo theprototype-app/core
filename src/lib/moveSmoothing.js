@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { get } from 'svelte/store';
-import { objectsGroup } from '../stores/sceneStore';
+import { objectsGroup, pokeScene } from '../stores/sceneStore';
 
 
 // 21-B: a thrown crate is SMOOTH on the peer watching it.
@@ -105,7 +105,7 @@ export function noteRemoteMove(uuid, object, before) {
 			object.position.copy(pending.to.pos);
 			object.quaternion.copy(pending.to.quat);
 			eases.delete(uuid);
-			objectsGroup.update((value) => value);
+			pokeScene();
 		}, interval + 60)
 	);
 	return true;
@@ -133,7 +133,7 @@ export function tickMoveSmoothing() {
 		object.position.lerpVectors(ease.from.pos, ease.to.pos, t);
 		object.quaternion.slerpQuaternions(ease.from.quat, ease.to.quat, t);
 	}
-	objectsGroup.update((value) => value);
+	pokeScene();
 }
 
 /** the sim stopped, the peer left, the scene changed — land everything at once */

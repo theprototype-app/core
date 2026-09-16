@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { writable, get } from 'svelte/store';
-import { isLocked, isVRMode, playPointerFree, objectsGroup, globalScene, lockedObjects } from '../stores/sceneStore';
+import { isLocked, isVRMode, playPointerFree, objectsGroup, globalScene, lockedObjects, pokeScene } from '../stores/sceneStore';
 import { peers } from '../stores/appStore';
 import { sceneHits } from './scenePick';
 import { topLevelObjectOf } from './objectActions';
@@ -375,7 +375,7 @@ export function tickPlayInteract(delta, camera) {
 					scale: grab.object.scale.toArray()
 				});
 		}
-		objectsGroup.update((v) => v);
+		pokeScene();
 		return;
 	}
 

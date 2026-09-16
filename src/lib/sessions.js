@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { writable, get } from 'svelte/store';
-import { objectsGroup, globalCamera, globalScene, globalRenderer, orbitControls, TControls } from '../stores/sceneStore';
+import { objectsGroup, globalCamera, globalScene, globalRenderer, orbitControls, TControls, pokeScene } from '../stores/sceneStore';
 import { restoreGraphs, clearGraphs, SCENE_GRAPH, allNodes } from '../stores/flowStore';
 import { serializeGraphs, copyGraphFrom } from './flowGraphs';
 import { serializeNode, serializeEdge, sendNodes } from './nodesHandler';
@@ -1206,7 +1206,7 @@ export function importObjects(payload, indices) {
 		if (peer) peer.send({ type: 'object', element: object.toJSON() });
 		added++;
 	}
-	objectsGroup.update((value) => value);
+	pokeScene();
 	carryObjectDocuments(payload, uuidMap);
 	showToast('Imported ' + added + ' object' + (added === 1 ? '' : 's') + ' from the session');
 	return added;
@@ -1321,7 +1321,7 @@ export async function applySession(payload, opts = {}) {
 		group.add(object); // keep original uuids — every peer converges on them
 		if (replicate && peer) peer.send({ type: 'object', element });
 	}
-	objectsGroup.update((value) => value);
+	pokeScene();
 	// animated imports come back from their original bytes (mixers rebuilt, peers
 	// reparse the same file) and authored tracks from the payload
 	await animatedImportsRestore(payload.animated ?? [], replicate);
@@ -1713,7 +1713,7 @@ function sweepGateWork() {
 		if (controls?.object?.uuid === uuid) controls.detach();
 		object.parent?.remove(object);
 	}
-	objectsGroup.update((value) => value);
+	pokeScene();
 	clearGraphs(); // H1: a cleared scene empties every graph document
 }
 

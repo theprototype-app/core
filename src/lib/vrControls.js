@@ -39,8 +39,7 @@ import {
 	vrToolMode,
 	vrTargetHz,
 	vrSleeveEnabled,
-	peerHandStyle
-} from '../stores/sceneStore';
+	peerHandStyle, pokeScene } from '../stores/sceneStore';
 import { activeRing, findMenuEntry, ringEntries, sectorFromStick, pushRing, popRing, resetRings, hubEntry } from './vrRadialMenu';
 import { paletteColorAt, barValueAt } from './vrPalette';
 import { recordMaterialChange, setMaterialParam } from './materialsHandler';
@@ -1295,7 +1294,7 @@ function nudgeTransform(object, kind, axis, sign) {
 	else object.scale[axis] = Math.max(0.01, object.scale[axis] + sign * step);
 	recordTransform({ uuid: object.uuid, before, after: transformStateOf(object) });
 	broadcastMove(object, true);
-	objectsGroup.update((v) => v);
+	pokeScene();
 }
 
 /** Props panel actions ('props:' prefix in executeVRMenuAction) @param {string} action */
@@ -2440,7 +2439,7 @@ function updateGrab() {
 		}
 		grab.prevPos.copy(position);
 		grab.prevQuat.copy(quaternion);
-		objectsGroup.update((value) => value);
+		pokeScene();
 		broadcastMove(object);
 		return;
 	}
@@ -2469,7 +2468,7 @@ function updateGrab() {
 	}
 	grab.prevPos.copy(position);
 	grab.prevQuat.copy(quaternion);
-	objectsGroup.update((value) => value);
+	pokeScene();
 	broadcastMove(object);
 }
 
@@ -2481,7 +2480,7 @@ function updateScaleGrab() {
 		factor = Math.max(Math.round(factorRaw / step) * step, step);
 	}
 	scaleGrab.object.scale.copy(scaleGrab.startScale).multiplyScalar(factor);
-	objectsGroup.update((value) => value);
+	pokeScene();
 	broadcastMove(scaleGrab.object);
 }
 
@@ -2511,7 +2510,7 @@ function spawnPrimitive(command) {
 	} else {
 		object.position.set(spawn.x, object.position.y, spawn.z);
 	}
-	objectsGroup.update((value) => value);
+	pokeScene();
 	broadcastMove(object, true);
 }
 
@@ -2759,7 +2758,7 @@ export function executeVRMenuAction(name) {
 		object.rotation.set(0, 0, 0);
 		recordTransform({ uuid: object.uuid, before, after: transformStateOf(object) });
 		broadcastMove(object, true);
-		objectsGroup.update((v) => v);
+		pokeScene();
 		hapticPulse(0.3, 40);
 		return;
 	}

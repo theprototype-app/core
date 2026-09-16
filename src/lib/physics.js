@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import { writable, get } from 'svelte/store';
 import { flowGraphs, allNodes, allEdges, SCENE_GRAPH } from '../stores/flowStore';
-import { objectsGroup, lockedObjects, selectedObject, selectedObjects } from '../stores/sceneStore';
+import { objectsGroup, lockedObjects, selectedObject, selectedObjects, pokeScene } from '../stores/sceneStore';
 import { peers, showToast, openSceneSection } from '../stores/appStore';
 import { recordTransformSet, recordEntry } from './history';
 import {
@@ -458,7 +458,7 @@ export function setPhysicsFor(uuid, patch) {
 	/** @type {any} */
 	const peer = get(peers);
 	peer?.send({ type: 'objectParameters', parameter: 'physics', uuid, physics: next });
-	objectsGroup.update((v) => v); // collider viz re-syncs from the poke
+	pokeScene(); // collider viz re-syncs from the poke
 	physicsShapeChanged(uuid); // CL-A A2: live mid-sim collider rebuild
 	return next;
 }
@@ -488,7 +488,7 @@ export function enablePhysicsOnSelection() {
 		showToast('Select an object first — then Enable physics makes it fall and collide');
 		return 0;
 	}
-	objectsGroup.update((v) => v);
+	pokeScene();
 	selectedObject.update((v) => v);
 	showToast(count === 1 ? 'Physics enabled — dynamic, mass 1' : 'Physics enabled on ' + count + ' objects — dynamic, mass 1');
 	return count;
@@ -1236,7 +1236,7 @@ export function applyThrow(data) {
 	// external kinematic hold and EATS the throw
 	entry.lastWritten.pos.copy(object.position);
 	entry.lastWritten.quat.copy(object.quaternion);
-	objectsGroup.update((value) => value);
+	pokeScene();
 	return true;
 }
 
@@ -1448,7 +1448,7 @@ function stepInner(now) {
 		}
 	});
 	pendingOob.forEach((entry) => handleOutOfBounds(entry, oobActionNow));
-	objectsGroup.update((value) => value);
+	pokeScene();
 }
 
 /**
@@ -1600,7 +1600,7 @@ export function stopSimulation(opts = {}) {
 	simPaused.set(false);
 	if (peer) peer.send({ type: 'simulate', running: false, peerId: peer.peer.id });
 	if (items.length > 0) showToast('Simulation stopped — Ctrl+Z restores the initial layout');
-	objectsGroup.update((value) => value);
+	pokeScene();
 }
 
 /** Reset: restore the initial layout and stop (no history entry — net no-op). */

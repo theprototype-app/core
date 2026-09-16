@@ -165,8 +165,7 @@
 		backgroundColor,
 		globalCamera,
 		viewMode,
-		showGrid
-	} from '../../stores/sceneStore';
+		showGrid, pokeScene } from '../../stores/sceneStore';
 	// 16-P3: grid + snapping prefs (LOCAL, like the clip planes)
 	import { gridSettings, setGrid, resetGrid, effectiveCell } from '$lib/gridSettings';
 	import { snapEnabled, snapSettings, surfaceSnap, snapTargets } from '$lib/snapping';
@@ -499,7 +498,7 @@
 			setShaderGraphFor(object.uuid, null);
 			detachFrom(object);
 		}
-		objectsGroup.update((v) => v);
+		pokeScene();
 		showToast(own.length === 1 ? 'Shader removed from this object' : 'Shader removed from ' + own.length + ' objects');
 	}
 
@@ -1185,7 +1184,7 @@
 			}
 		}
 		selectedObject.update((s) => s);
-		objectsGroup.update((v) => v);
+		pokeScene();
 	}
 
 	/** A picked image file → every selected material, decoded once. @param {File} file */
@@ -1199,7 +1198,7 @@
 			if (uuids.length > 1) endHistoryBatch(`Texture (${uuids.length})`);
 		}
 		selectedObject.update((s) => s);
-		objectsGroup.update((v) => v);
+		pokeScene();
 	}
 
 	/** CL-A A4: which material preset matches the current values (else 'custom') @param {any} p */
@@ -1221,7 +1220,7 @@
 	}
 
 	function sendName() {
-		objectsGroup.update((value) => value); // refresh the object list
+		pokeScene(); // refresh the object list
 		$peers.send({ type: 'name', name: $selectedObject.name, uuid: $selectedObject.uuid });
 	}
 
@@ -2578,7 +2577,7 @@
 									$selectedObject.uuid,
 									selected?.name === 'Level Up' ? 'up' : val
 								);
-								objectsGroup.update((v) => v);
+								pokeScene();
 								rerenderSelectGroup = !rerenderSelectGroup;
 							}}
 						/>
@@ -3353,7 +3352,7 @@
 									object.material.needsUpdate = true;
 									$peers.send({ type: 'color', uuid: object.uuid, color: c.hex });
 								}
-								objectsGroup.update((v) => v);
+								pokeScene();
 							}}
 						/>
 					{/if}

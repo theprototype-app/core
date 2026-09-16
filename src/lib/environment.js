@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { writable, get } from 'svelte/store';
-import { globalScene, globalRenderer, objectsGroup, backgroundColor, TControls, passthroughActive } from '../stores/sceneStore';
+import { globalScene, globalRenderer, objectsGroup, backgroundColor, TControls, passthroughActive, pokeScene } from '../stores/sceneStore';
 import { peers } from '../stores/appStore';
 import { sceneRadius } from './sceneBounds';
 import { registerSystemGroup } from './moduleSDK';
@@ -403,7 +403,7 @@ export function convertToEnvironment(uuid) {
 	const controls = get(TControls);
 	if (controls?.object?.uuid === uuid) controls.detach();
 	object.parent?.remove(object);
-	objectsGroup.update((value) => value);
+	pokeScene();
 	/** @type {any} */
 	const peer = get(peers);
 	if (peer) peer.send({ type: 'delete', uuid, peerId: peer.peer.id });
@@ -424,7 +424,7 @@ export function convertFromEnvironment(id) {
 	if (def.groundColor && light.groundColor) light.groundColor.set(def.groundColor);
 	light.intensity = def.intensity ?? 1;
 	if (def.position) light.position.fromArray(def.position);
-	objectsGroup.update((value) => value);
+	pokeScene();
 	/** @type {any} */
 	const peer = get(peers);
 	if (peer) {

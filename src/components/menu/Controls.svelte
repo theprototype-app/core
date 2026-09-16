@@ -5,6 +5,7 @@
 	import { chatHidden, flowGraphClose, flowCodeClose, animationClose, uvEditorClose, shaderEditorClose, hudEditorClose, explorerClose, objectListClose, objectContextMenu, renamingObject, advancedMode, showEnvInList, showLocalObjects, floatingToolbar, toolbarAlwaysOnTop, showSimControls, expandedObjects } from '../../stores/appStore.js';
 	// 24-B2: keyboard navigation in the object list (the Explorer's gridKeydown shape)
 	import { visibleObjectRows, withExpanded, typeAheadIndex } from '$lib/objectListNav';
+	import { sceneMetrics, statsOpen, worstTier, budgetRows } from '$lib/sceneBudget';
 	import { keyOf } from '$lib/keyOf';
 	import { systemGroupNames } from '$lib/moduleSDK';
 	import { ENV_ROOT } from '$lib/environment';
@@ -496,6 +497,27 @@
 		const view = treeScroller.clientHeight;
 		if (top < treeScroller.scrollTop) treeScroller.scrollTop = top;
 		else if (top + rowH > treeScroller.scrollTop + view) treeScroller.scrollTop = top + rowH - view;
+	});
+
+	// 26-A: the meter's dot and its tooltip. The reading is the sampler's; this only
+	// picks the worst tier and spells out what is over budget, so the tooltip answers
+	// "over budget on WHAT" without opening anything.
+	const budgetProfileNow = $derived($sceneMetrics.profile === 'vr' ? 'vr' : 'desktop');
+	const budgetTier = $derived(worstTier($sceneMetrics, budgetProfileNow));
+	/** A DIRECT listener, not `on:click`/`onclick`: this file is written in the `on:`
+	 * style throughout, so an attribute handler here is a hard "mixing syntaxes" error,
+	 * and the `on:` form is deprecated in runes mode — the action is the way out of both,
+	 * and it is what the panel-chrome rule asks for anyway (a delegated handler inside a
+	 * panel can be swallowed on its way up). */
+	function openStats(node: HTMLElement) {
+		const open = () => statsOpen.set(true);
+		node.addEventListener('click', open);
+		return { destroy() { node.removeEventListener('click', open); } };
+	}
+	const budgetTitle = $derived.by(() => {
+		const over = budgetRows($sceneMetrics, budgetProfileNow).filter((r) => r.tier === 'amber' || r.tier === 'red');
+		if (!over.length) return 'Scene budget — within the ' + (budgetProfileNow === 'vr' ? 'VR / mobile' : 'desktop') + ' budget. Click for statistics.';
+		return 'Scene budget: over on ' + over.map((r) => r.label.toLowerCase()).join(', ') + '. Click for statistics.';
 	});
 
 	// bottom status line: totals across the whole tree (N objects · M hidden)
@@ -2303,9 +2325,17 @@
 			{/if}
 		</div>
 	</Listgroup>
-	<div id="object-count" class="shrink-0 rounded-bl rounded-br bg-gray-100 px-2 py-0.5 text-[10px] text-gray-500 dark:bg-gray-700 dark:text-gray-300">
-		{objectCount} object{objectCount === 1 ? '' : 's'}{hiddenCount ? ' · ' + hiddenCount + ' hidden' : ''}
-	</div>
+	<!-- 26-A: THE BUDGET METER. One dot beside the count that a person can learn in a
+	     second, next to the one number that already says how big the scene is. It opens
+	     the Statistics window, because a warning you cannot act on is a decoration. -->
+	<button
+		id="object-count"
+		class="shrink-0 rounded-bl rounded-br bg-gray-100 px-2 py-0.5 text-left text-[10px] text-gray-500 dark:bg-gray-700 dark:text-gray-300"
+		title={budgetTitle}
+		use:openStats
+	>
+		<span id="object-budget-dot" class="budget-dot mr-1" data-tier={budgetTier}></span>{objectCount} object{objectCount === 1 ? '' : 's'}{hiddenCount ? ' · ' + hiddenCount + ' hidden' : ''}
+	</button>
 	<!-- corner grip INSIDE the window (was parked 38px below the box and unreachable, 92) -->
 	<div
 		class="resize-handle resize-cue"

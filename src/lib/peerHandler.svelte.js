@@ -27,6 +27,7 @@ import { canApply, getAuthProvider, dispatchCloudMessage, rolesInfo } from '$lib
 // dispatcher can reject a malformed message before any applier sees it.
 import { validateWireMessage } from '$lib/wireValidate';
 import { noteWireError } from '$lib/wireErrors';
+import { noteWire } from '$lib/sceneBudget';
 import { applyAnnotation, applyAnnotationsSnapshot, sendAnnotations } from '$lib/annotationsHandler';
 import { applyPing } from '$lib/ping';
 import { applyAssetFile, answerAssetRequest, applyAssetThumb, answerAssetThumbRequest, applyAssetStart, applyAssetChunk, applyAssetMissing } from '$lib/assetShare';
@@ -1049,6 +1050,10 @@ export class PeerConnection {
 					noteWireError(conn.peer, 'shape', typeof data);
 					return;
 				}
+				// 26-A (roadmap 26 section 3, audit H7): WHICH STREAM IS CHATTY. Counted per
+				// type here and in `broadcast`; local only, never replicated, and the byte
+				// figure is a 1-in-16 sample so the measurement cannot become the cost.
+				noteWire('in', data);
 				// …then the shape its own type implies, so an applier cannot throw halfway
 				// through applying half a message. A type absent from the table is ALLOWED,
 				// which is what keeps a newer peer's messages working.
@@ -1517,6 +1522,7 @@ export class PeerConnection {
 	// conn can't throw mid-loop and starve the rest of the mesh (172).
 	/** @param {any} payload */
 	broadcast(payload) {
+		noteWire('out', payload);
 		// TWO REASONS TO WITHHOLD, and they are different arguments about the same peer.
 		//
 		// P2b, BANDWIDTH: pose streams (`camera`, `vrhands`) are bytes nobody in another

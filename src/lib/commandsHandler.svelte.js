@@ -28,6 +28,9 @@ import { peers, userdata } from '../stores/appStore';
 // the departing object was using, and never what the rest of the scene still holds.
 import { disposeTree, keepSet } from '$lib/disposeTree';
 import { safeStorage } from './safeStorage';
+// 26-A: the backlog is a reading the Statistics panel wants and sceneBudget cannot
+// reach — it REGISTERS rather than importing us, the registerDiagnosticsSection shape.
+import { registerMetricSource } from './sceneBudget';
 
 //Access scene Store
 let scene = $state();
@@ -672,6 +675,7 @@ export function dropIngestQueue() {
 export function ingestBacklog() {
     return ingestQueue.length;
 }
+registerMetricSource('ingestBacklog', ingestBacklog);
 
 /**
  * @param {any} object @param {string[]|null} uuid @param {boolean} [override]

@@ -20,7 +20,7 @@ import { stripEditOverlays } from '$lib/editOverlays'
 import { runSceneClearHandlers } from '$lib/moduleSDK'
 import { annotations } from '$lib/annotationsHandler'
 import { isViewer, warnViewerReadOnly } from '$lib/objectPermissions'
-import { get } from 'svelte/store'
+import { get, writable } from 'svelte/store'
 import { addMessage, loading, loadingcount, showToast, fixLight, specatorMode } from '../stores/appStore';
 import { dropWireErrors } from './wireErrors';
 import { peers, userdata } from '../stores/appStore';
@@ -30,7 +30,8 @@ import { disposeTree, keepSet } from '$lib/disposeTree';
 import { safeStorage } from './safeStorage';
 // 26-A: the backlog is a reading the Statistics panel wants and sceneBudget cannot
 // reach — it REGISTERS rather than importing us, the registerDiagnosticsSection shape.
-import { registerMetricSource } from './sceneBudget';
+import { registerMetricSource, ingestVerdict, profileFor } from './sceneBudget';
+import { globalRenderer } from '../stores/sceneStore.js';
 
 //Access scene Store
 let scene = $state();
@@ -452,6 +453,24 @@ export async function createLoader(count, uuids, senderId) {
     loading.set(Array.isArray(uuids) ? uuids : []);
     loadingcount.set(count);
     loadingSender = senderId ?? null;
+    // 26-C: THE ONE MOMENT the size is known and nothing has been applied. Past it a
+    // 4,000-object scene is simply happening to you.
+    const verdict = ingestVerdict(liveObjectCount(), count, profileFor(get(globalRenderer)));
+    if (verdict.gate) {
+        ingestHeld = true;
+        ingestGate.set({
+            count: verdict.incoming,
+            allowed: verdict.allowed,
+            total: verdict.total,
+            limit: verdict.limit,
+            sender: loadingSender
+        });
+        // the stall timer must NOT run while the question is open — the objects are
+        // parked, not missing, and clearing the bar under an open fork would be a lie
+        clearTimeout(loadingStallTimer);
+        loadingStallTimer = null;
+        return;
+    }
     armLoadingStall();
 }
 
@@ -622,6 +641,78 @@ const INGEST_SLICE_MS = 8;
 let ingestQueue = [];
 let ingestDraining = false;
 
+// ---------------------------------------------------------------------------
+// 26-C (roadmap 26 Stage 2) — THE INGEST GATE.
+//
+// A scene arriving over the wire announces itself first (`{type:'loading', count,
+// uuids}`) and only then sends the objects, so there is exactly one moment where the
+// size is known and nothing has been applied yet. Past that moment a 4,000-object scene
+// is simply happening to you.
+//
+// The queue built in 26-B is already the parking mechanism: HOLDING it parks every
+// object that arrives, parsed or not, with no second code path and nothing to unwind.
+// The fork is three-way because a stream is divisible — half a room's scenery is a
+// usable scene, and the alternative to "load the first N" is all-or-nothing on somebody
+// else's content.
+//
+// LOCAL ONLY. Nothing here is sent: the peer is not told we declined, because that is a
+// fact about THIS device's budget and there is nothing for them to do about it. They
+// see us with fewer objects, which is what actually happened.
+// ---------------------------------------------------------------------------
+
+/** The open question, or null. Toasts.svelte MIRRORS this into one sticky card (the
+ * `restoreAvailable` idiom) rather than this module importing the UI. */
+/** @type {import('svelte/store').Writable<{count: number, allowed: number, total: number, limit: number, sender: string | null} | null>} */
+export const ingestGate = writable(null);
+
+let ingestHeld = false;
+/** How many more objects this drain may apply before dropping the rest. Infinity = no
+ * cap, which is every path that never met a gate. */
+let ingestCap = Infinity;
+
+/** How many objects the scene already holds — the walk the verdict is measured against. */
+function liveObjectCount() {
+    let n = 0;
+    sceneObjects?.traverse?.((/** @type {any} */ o) => {
+        if (o !== sceneObjects) n++;
+    });
+    return n;
+}
+
+/**
+ * Answer the fork. 'all' releases everything, 'some' applies up to the budget and drops
+ * the rest, 'cancel' drops the lot.
+ * @param {'all'|'some'|'cancel'} answer
+ */
+export function resolveIngestGate(answer) {
+    const open = get(ingestGate);
+    if (!open) return 0;
+    ingestGate.set(null);
+    ingestHeld = false;
+    if (answer === 'cancel') {
+        const dropped = dropIngestQueue();
+        clearLoadingBatch();
+        showToast('Cancelled — ' + open.count + ' objects were not loaded.');
+        return dropped;
+    }
+    ingestCap = answer === 'some' ? open.allowed : Infinity;
+    // the stall timer was parked while the question was open; the transfer resumes now
+    armLoadingStall();
+    if (!ingestDraining && ingestQueue.length) {
+        ingestDraining = true;
+        beginSceneBatch();
+        void drainIngest();
+    }
+    if (answer === 'some')
+        showToast('Loading the first ' + open.allowed + ' of ' + open.count + ' objects.');
+    return ingestQueue.length;
+}
+
+/** Is a fork open? Read by the suite. */
+export function ingestGateOpen() {
+    return ingestHeld;
+}
+
 /** @param {any[]} args */
 function enqueueIngest(args) {
     return new Promise((resolve, reject) => {
@@ -636,14 +727,24 @@ function enqueueIngest(args) {
 
 async function drainIngest() {
     try {
-        while (ingestQueue.length) {
+        while (ingestQueue.length && !ingestHeld) {
             const started = performance.now();
             while (ingestQueue.length && performance.now() - started < INGEST_SLICE_MS) {
                 const job = ingestQueue.shift();
                 if (!job) break;
+                if (ingestCap <= 0) {
+                    // over the budget the user agreed to: the object is DROPPED, and its
+                    // uuid is counted as arrived so the progress bar does not wait out
+                    // the full stall for something that is never coming
+                    const uuid = job.args[1];
+                    noteLoadFailed(Array.isArray(uuid) ? uuid : []);
+                    job.resolve(undefined);
+                    continue;
+                }
                 try {
                     // @ts-ignore - spread of a fixed-length arg tuple
                     job.resolve(await applyCreateObject(...job.args));
+                    if (Number.isFinite(ingestCap)) ingestCap--;
                 } catch (error) {
                     // a parse that rejects is still an ARRIVAL as far as the progress bar
                     // is concerned, or the batch waits out the full 60s stall
@@ -653,17 +754,21 @@ async function drainIngest() {
                     job.reject(error);
                 }
             }
-            if (ingestQueue.length) await new Promise((r) => setTimeout(r, 0));
+            if (ingestQueue.length && !ingestHeld) await new Promise((r) => setTimeout(r, 0));
         }
     } finally {
         ingestDraining = false;
         endSceneBatch();
+        if (!ingestQueue.length) ingestCap = Infinity;
     }
 }
 
 /** A peer wiped the scene, or we did: whatever is still parked is about to be wrong.
  * (Roadmap 26 section 5 — "the ingest queue drops on clear".) */
 export function dropIngestQueue() {
+    ingestHeld = false;
+    ingestCap = Infinity;
+    ingestGate.set(null);
     if (!ingestQueue.length) return 0;
     const dropped = ingestQueue.length;
     for (const job of ingestQueue) job.resolve(undefined);

@@ -19,6 +19,7 @@
     import { armExplorerSceneSave, explorerClose } from '../../stores/appStore'
     import { peers, loading, loadingcount, pendingApprovals, waitingForApproval, userdata, toastStore, fixLight, showSidebar, specatorMode, restorePanels, appNotice, connectDrawerOpen, connectDrawerTab, toastsInDrawerOnly, showInfoToast, dismissToastById } from '../../stores/appStore'
     import { restoreAvailable, restoreSnapshot, dismissRestore } from '$lib/autosave'
+    import { ingestGate, resolveIngestGate } from '$lib/commandsHandler.svelte'
     import { cancelOutboundRequest } from '$lib/peerApproval'
     // 27-B: the ONE sticky card for an uncaught error. This file already mirrors
     // state stores into sticky toasts (restoreAvailable below); diagnostics.js stays a
@@ -258,6 +259,28 @@ $effect(() => {
             () => lastUncaught.set(null)
         );
     else dismissToastById('diagnostics-error');
+});
+
+// 26-C (roadmap 26 Stage 2): A SCENE BIGGER THAN THIS DEVICE'S BUDGET IS ARRIVING.
+// The objects are PARKED in the ingest queue, not applied, so this card is the only
+// thing between them and the scene — hence `noClose`: dismissing it with an X would
+// leave the transfer stalled with nothing left to resume it. The state store is the
+// seam (the restoreAvailable idiom), so commandsHandler never imports the UI.
+$effect(() => {
+    const gate = $ingestGate;
+    if (gate)
+        showInfoToast(
+            'ingest-gate',
+            `This scene has ${gate.count} objects — that would take this device to ${gate.total}, above the ${gate.limit} recommended here.`,
+            [
+                { label: 'Load all', action: () => resolveIngestGate('all') },
+                { label: `Load the first ${gate.allowed}`, action: () => resolveIngestGate('some') },
+                { label: 'Cancel', action: () => resolveIngestGate('cancel') }
+            ],
+            undefined,
+            true
+        );
+    else dismissToastById('ingest-gate');
 });
 
 $effect(() => {

@@ -1426,8 +1426,71 @@ export async function requestLoadSession(id) {
  * @returns {Promise<boolean>} true when the load APPLIED NOW, false when it became a
  *   proposal (or there was nothing to load)
  */
+
+/** Objects in a SERIALIZED payload, counting nested children — the same unit the
+ * budget is stated in (`objectsGroup` tree nodes), not the top-level array length.
+ * @param {any} payload */
+export function countPayloadObjects(payload) {
+	let n = 0;
+	/** @param {any} node */
+	const walk = (node) => {
+		if (!node) return;
+		n++;
+		for (const kid of node.children ?? []) walk(kid);
+	};
+	for (const element of payload?.objects ?? []) {
+		// a serialized element is `{object: {...}, geometries, materials}` (toJSON) or the
+		// bare node; both shapes appear in saved payloads
+		walk(element?.object ?? element);
+	}
+	return n;
+}
+
+/**
+ * Ask when a file would take this device past its object budget. True = go ahead.
+ * @param {any} payload
+ */
+async function confirmSceneSize(payload) {
+	try {
+		const [{ ingestVerdict, profileFor }, { showChoice }] = await Promise.all([
+			import('./sceneBudget'),
+			import('./confirmDialog')
+		]);
+		const group = get(objectsGroup);
+		// the file REPLACES the scene, so the comparison is the file against the budget
+		// and not the file plus what is already here
+		const verdict = ingestVerdict(0, countPayloadObjects(payload), profileFor(get(globalRenderer)));
+		if (!verdict.gate) return true;
+		const answer = await showChoice({
+			title: 'This scene is large',
+			message:
+				'"' + (payload?.name ?? 'This scene') + '" has ' + verdict.incoming +
+				' objects — above the ' + verdict.limit +
+				' recommended for this device. It may be slow, and on a phone or headset the tab can be closed by the browser.',
+			choices: [{ value: 'open', label: 'Open anyway' }],
+			cancelLabel: 'Cancel'
+		});
+		return answer === 'open';
+	} catch {
+		// the ask is a courtesy; never let it stop a load it could not evaluate
+		return true;
+	}
+}
+
+/** @param {any} payload @returns {Promise<boolean>} see the block comment above */
 export async function requestLoadPayload(payload) {
 	if (!payload) return false;
+	// 26-C (roadmap 26 Stage 2, last bullet): SAY HOW BIG IT IS BEFORE REPLACING THE
+	// SCENE. This is the file half of the ingest gate, and it sits HERE rather than in
+	// `applySession` on purpose: travel, a peer's proposal, an autosave restore and the
+	// rejoin path all go through applySession, and a replicated hop must never stop at a
+	// dialog nobody is standing at (the travel-node rule). This function is the one
+	// entry point a PERSON reaches by opening a file or pressing Load.
+	//
+	// TWO ways out, not the wire's three. "Load the first N objects of this file" makes
+	// a scene nobody saved, which the user would then re-save over their own file
+	// silently truncated — a stream is divisible, a document is not.
+	if (!(await confirmSceneSize(payload))) return false;
 	/** @type {any} */
 	const peer = get(peers);
 	let connected = Object.keys(peer?.connections ?? {});

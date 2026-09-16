@@ -160,6 +160,42 @@ export function budgetRows(metrics, profile) {
 	});
 }
 
+/**
+ * 26-C (roadmap 26 Stage 2) — SHOULD THIS MANY MORE OBJECTS BE LET IN?
+ *
+ * The one question the ingest gate and the file-open ask both need, and it is PURE, so
+ * it is answerable with no scene, no wire and no browser.
+ *
+ * `allowed` is how many of `incoming` fit before the scene crosses into red — the
+ * number the "load the first N" fork offers. It is measured against the AMBER ceiling
+ * because that is where red begins; offering to fill the scene exactly to the edge of
+ * red is the most that can be let in without asking again.
+ *
+ * @param {number} current objects already in the scene
+ * @param {number} incoming objects announced
+ * @param {'desktop'|'vr'} profile
+ * @returns {{tier: Tier, total: number, current: number, incoming: number, limit: number, allowed: number, gate: boolean}}
+ */
+export function ingestVerdict(current, incoming, profile) {
+	const now = Math.max(0, Number(current) || 0);
+	const more = Math.max(0, Number(incoming) || 0);
+	const total = now + more;
+	const budget = byKey.get('objects');
+	const limit = budget ? (profile === 'vr' ? budget.vr[1] : budget.desktop[1]) : Infinity;
+	const tier = tierOf('objects', total, profile);
+	return {
+		tier,
+		total,
+		current: now,
+		incoming: more,
+		limit,
+		allowed: Math.max(0, Math.min(more, limit - now)),
+		// nothing to ask about when the arrival is empty, and nothing to ask about
+		// below red — amber warns, red asks (the tiers-with-actions rule)
+		gate: more > 0 && tier === 'red'
+	};
+}
+
 // --- frame times ------------------------------------------------------------------
 // A RING, not an average. p95 is the whole point: a scene that renders 58 of every 60
 // frames in 8ms and two in 300ms reads as 60fps and feels broken.

@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { sessionNow } from './sessionClock'; // 25-E: stamps another peer compares
 import { writable, get } from 'svelte/store';
 import { objectsGroup, pokeScene } from '../stores/sceneStore';
 import { peers } from '../stores/appStore';
@@ -608,7 +609,7 @@ export function deviceHandle(uuid) {
  */
 export function noteDevice(uuid, note = {}, opts = {}) {
 	const object = get(objectsGroup)?.getObjectByProperty('uuid', uuid);
-	const event = { note: 60, velocity: 1, ...note, at: typeof note.at === 'number' ? note.at : Date.now() };
+	const event = { note: 60, velocity: 1, ...note, at: typeof note.at === 'number' ? note.at : sessionNow() };
 	deliverNote(object, event);
 	if (opts.replicate === false) return event;
 	/** @type {any} */

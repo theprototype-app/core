@@ -1,4 +1,5 @@
 import { keyOf, letterOf } from './keyOf';
+import { sessionNow } from './sessionClock'; // 25-E: stamps another peer compares
 import * as THREE from 'three';
 import { writable, get } from 'svelte/store';
 import { globalScene, objectsGroup, selectedObject, selectedObjects, globalCamera, isVRMode, isLocked } from '../stores/sceneStore';
@@ -1469,7 +1470,7 @@ export function registerModuleAssets(id, assets) {
  * with this so time-based effects agree across peers.
  */
 export function runtimeNow() {
-	return get(syncedAnimations) ? (Date.now() % 86400000) / 1000 : performance.now() / 1000;
+	return get(syncedAnimations) ? (sessionNow() % 86400000) / 1000 : performance.now() / 1000;
 }
 
 /**

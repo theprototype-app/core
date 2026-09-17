@@ -14,6 +14,7 @@
 // tracks the scene's light set, which ShaderFrog silently does not).
 
 import { writable, get } from 'svelte/store';
+import { sessionNow } from './sessionClock'; // 25-E: stamps another peer compares
 import { objectsGroup, globalScene, globalCamera, globalRenderer, pokeScene } from '../stores/sceneStore.js';
 import { compileShaderGraphToIR } from './shaderCompile.js';
 import { compileShaderGraph, INJECT_SHADER_BACKEND, forgetShaderContext } from './shaderBackends.js';
@@ -166,7 +167,7 @@ export function setShaderGraphFor(key, patch, opts = {}) {
 				// millisecond, and with a bare Date.now() those edits share a stamp — the
 				// receiver's latest-wins guard then drops every one after the first, so a
 				// drag (and the undo that follows it) silently failed to replicate.
-				changedAt: opts.stamp ?? Math.max(Date.now(), (all[key]?.changedAt ?? 0) + 1)
+				changedAt: opts.stamp ?? Math.max(sessionNow(), (all[key]?.changedAt ?? 0) + 1)
 			});
 			next[key] = after;
 		}
@@ -381,7 +382,7 @@ export function stopReconcile() {
 
 /** Wall clock wrapped daily to keep float precision. @returns {number} */
 export function shaderClockNow() {
-	return (Date.now() % 86400000) / 1000;
+	return (sessionNow() % 86400000) / 1000;
 }
 
 /** @type {number|null} */
@@ -705,7 +706,7 @@ export function shaderGraphsRestore(map, replace = false) {
 	for (const [key, doc] of Object.entries(map)) {
 		if (!doc) continue;
 		// silent: a restore is not an undo step and must not re-broadcast
-		setShaderGraphFor(key, normalizeShaderGraph(doc), { silent: true, stamp: Date.now() });
+		setShaderGraphFor(key, normalizeShaderGraph(doc), { silent: true, stamp: sessionNow() });
 	}
 	reconcileShaderGraphs();
 }

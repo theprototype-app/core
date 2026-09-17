@@ -1,5 +1,9 @@
 import { writable, get } from 'svelte/store';
 import { safeStorage } from './safeStorage';
+// 25-E: the session clock is a sibling leaf; re-exported here because this is where peer
+// code already looks for "what session am I in", and resetSession must reset it too
+import { resetSessionClock } from './sessionClock';
+export { sessionNow, sessionClock, sessionClockDebug } from './sessionClock';
 
 /**
  * Session-connection state (roadmap #14 CN). STORE-ONLY module (svelte/store only)
@@ -148,11 +152,58 @@ export function approvalRemaining(startedAt) {
 	return Math.max(0, APPROVAL_WINDOW_MS - (Date.now() - (startedAt || 0)));
 }
 
+/**
+ * 25-F — A REAL "NO". Until this, an incoming connection from the host WAS the approval
+ * signal, and a refusal had no channel at all: the host closes a stranger's conn before
+ * it opens, so a Reject left the joiner on "Requesting" for the full 90 s window and then
+ * told it the host "did not answer" — which is false, and a full room said the same.
+ *
+ * The answer rides the CONNECTION METADATA of a short dial from the host, so it arrives
+ * at the joiner's `connection` event through the signaling server with no ICE at all —
+ * a pair of peers that could never open a data channel still hears "declined".
+ *
+ *   joiner dials with `{jr: 1}`       "I understand a join result" (an older joiner sends
+ *                                     nothing, and is never sent a refusal dial, because
+ *                                     it would read ANY incoming conn from the host as
+ *                                     approval — the whole reason the capability exists)
+ *   host dials `{joinresult: R}`      R = 'approved' on the approve dial-back (and a
+ *                                     `joinresult` data message first in its handshake),
+ *                                     'denied' / 'full' on a refusal dial that is never
+ *                                     added to the mesh and closes itself
+ *
+ * Absent means the old behaviour on both sides: an incoming conn from a peer we are
+ * waiting on is an approval.
+ */
+export const JOIN_RESULTS = /** @type {const} */ (['approved', 'denied', 'full']);
+
+/** @param {any} v @returns {v is 'denied' | 'full'} */
+export function isRefusal(v) {
+	return v === 'denied' || v === 'full';
+}
+
+/**
+ * The last refusal this joiner received, for the Connect pill: `{peerId, result, at}`, or
+ * null. Cleared by the next dial, by dismissing it, and by leaving the session.
+ * @type {import('svelte/store').Writable<{peerId: string, result: 'denied' | 'full', at: number} | null>}
+ */
+export const joinRefusal = writable(null);
+
+/** @param {string} peerId @param {'denied' | 'full'} result */
+export function noteJoinRefusal(peerId, result) {
+	joinRefusal.set({ peerId, result, at: Date.now() });
+}
+
+export function clearJoinRefusal() {
+	if (get(joinRefusal)) joinRefusal.set(null);
+}
+
 /** Full reset — leaving the session / cancelling out. */
 export function resetSession() {
 	sessionHost.set(null);
 	peerJoinedAt.set({});
 	approvalStartedAt.set({}); // 27-E: no request survives leaving the session
+	resetSessionClock(); // 25-E: our own clock is the only one left
+	joinRefusal.set(null); // 25-F
 }
 
 /**

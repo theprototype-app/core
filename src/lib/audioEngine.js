@@ -1,6 +1,8 @@
+// 25-E: wall stamps on the wire are SESSION time; `sessionClock` is itself a store-only leaf
+import { sessionNow } from './sessionClock';
 // The audio ENGINE (roadmap #22 A1, cloud plans-core/pending/22-a-audio-engine.md).
 //
-// A deliberate LEAF: it imports nothing of ours, so `peerHandler` / `sessions` /
+// A deliberate LEAF: it imports nothing of ours (bar the store-only `sessionClock`), so `peerHandler` / `sessions` /
 // `autosave` can all reach it and so its maths is testable with no GL context and
 // no scene. That is the `scenePost` rule, and it is what keeps the whole audio
 // stack out of the TDZ cycle family around `history`.
@@ -170,8 +172,8 @@ function audioClockOffset() {
 }
 
 /**
- * Map a WALL-CLOCK stamp (a `Date.now()` value, which is what every replicated
- * message carries) onto this context's `currentTime`, so a "play at beat 4"
+ * Map a WALL-CLOCK stamp (a `sessionNow()` value since 25-E, which is what every
+ * replicated message carries) onto this context's `currentTime`, so a "play at beat 4"
  * message can become an `osc.start(t)`.
  *
  * Through the clock filter above, so two stamps a beat apart map to audio times a
@@ -185,7 +187,7 @@ function audioClockOffset() {
  */
 export function audioTimeFor(wallMs) {
 	const off = audioClockOffset();
-	return off + (performance.now() + (wallMs - Date.now())) / 1000;
+	return off + (performance.now() + (wallMs - sessionNow())) / 1000;
 }
 
 /** This context's own clock. @returns {number} */

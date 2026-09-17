@@ -6,7 +6,7 @@
 	import { createPeer, PeerConnection } from '$lib/peerHandler.svelte';
 	import { peerServerStatus, inviteServerParam } from '$lib/peerServer';
 	// 27-F: the signaling link's retry state (audit H2). A chip, not a toast per attempt.
-	import { signalingRetry, approvalStartedAt, approvalRemaining, APPROVAL_WINDOW_MS } from '$lib/connectionState';
+	import { signalingRetry, approvalStartedAt, approvalRemaining, APPROVAL_WINDOW_MS, joinRefusal, clearJoinRefusal, HARD_PEER_CAP } from '$lib/connectionState';
 	import { cancelOutboundRequest, requestConnect } from '$lib/peerApproval';
 	import { sessionHost } from '$lib/connectionState';
 	import { connectSlot, drawerSlot } from '$lib/cloudHooks';
@@ -42,6 +42,25 @@
 	// from $userdata.length: the roster is populated optimistically at DIAL time.
 	const remoteOpen = $derived($peers ? [...$peers.openedPeers] : []);
 	const pendingOut = $derived($waitingForApproval.filter((w) => w[1] === 'pending'));
+
+	// 25-F: the host's answer, when it was no. A chip beside the idle pill for a while,
+	// because the toast that also says it can be missed or routed into the drawer — and
+	// "declined" and "full" call for different next moves.
+	const REFUSAL_CHIP_MS = 20000;
+	const refusalText = $derived(
+		$joinRefusal
+			? String($joinRefusal.peerId).slice(0, 6).toUpperCase() +
+					($joinRefusal.result === 'full' ? "'s session is full (" + HARD_PEER_CAP + ')' : ' declined')
+			: ''
+	);
+	$effect(() => {
+		const at = $joinRefusal?.at;
+		if (!at) return;
+		const t = setTimeout(() => {
+			if ($joinRefusal?.at === at) clearJoinRefusal();
+		}, REFUSAL_CHIP_MS);
+		return () => clearTimeout(t);
+	});
 	// 27-E: the pill COUNTS DOWN. A request that hangs with no end is the worst of the
 	// three states a dial can be in — a refusal at least finishes — so the wait is visible
 	// and bounded. One 1s tick only while something is pending; the clock itself lives in
@@ -337,6 +356,18 @@
 			>
 		{/if}
 
+		{#if $joinRefusal && connState === 'idle'}
+			<!-- 25-F: declined, or full — told apart, and dismissable -->
+			<button
+				id="connect-refusal-chip"
+				class="cx-refused"
+				data-result={$joinRefusal.result}
+				data-testid="connect-refusal-chip"
+				title="Dismiss"
+				onclick={clearJoinRefusal}>{refusalText} ✕</button
+			>
+		{/if}
+
 		<!-- connection/server info disclosure — a chevron that rotates 180° on open;
 			 the panel slides down from under the pill. Present in every state; the
 			 amber badge surfaces a signaling fallback without a permanent label. -->
@@ -498,6 +529,24 @@
 		padding: 2px 8px;
 		font-size: 11px;
 		font-weight: 600;
+		color: #78350f;
+		background: #fbbf24;
+	}
+
+	/* 25-F: the refusal chip — red for declined, amber for a full room (a wait, not a no) */
+	.cx-refused {
+		align-self: center;
+		white-space: nowrap;
+		border: 0;
+		border-radius: 9999px;
+		padding: 2px 8px;
+		font-size: 11px;
+		font-weight: 600;
+		color: #fff;
+		background: #dc2626;
+		cursor: pointer;
+	}
+	.cx-refused[data-result='full'] {
 		color: #78350f;
 		background: #fbbf24;
 	}

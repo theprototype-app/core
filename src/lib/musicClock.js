@@ -1,4 +1,6 @@
 import { writable, get } from 'svelte/store';
+// 25-E: the transport keeps time by the SESSION clock, like every other stamp site
+import { sessionNow, peerClocks, clockSamples } from './sessionClock';
 import { peers } from '../stores/appStore';
 // The 'transport' history kind. Safe as a static import for the same reason
 // scenePost's is: history's own subtree is three/stores/flowRuntime/editOverlays/
@@ -32,7 +34,8 @@ import { syncedAnimations } from '../stores/flowStore';
 //      and `sceneMusic` all assume every peer's `Date.now()` agrees. A `clockping` /
 //      `clockpong` round trip estimates it NTP-style, median of the last N.
 //
-// ONE CLOCK BASIS (finding 5). Beats are `(Date.now() - startedAt) / 1000 * bpm / 60`
+// ONE CLOCK BASIS (finding 5). Beats are `(sessionNow() - startedAt) / 1000 * bpm / 60`
+// (25-E: `Date.now()` until the session clock existed — see the offset section below)
 // — the `sceneMusic` basis, which has no daily wrap. `flowRuntime`'s
 // `Date.now() % 86400000 / 1000` is LEFT ALONE ON PURPOSE: it is fine for a sine LFO
 // and fatal for a transport, because a loop whose duration does not divide 86 400 s
@@ -138,7 +141,7 @@ export const transport = writable(normalizeTransport(null));
  * through this one function.
  * @param {Transport} state @param {number} [wallMs]
  */
-export function beatAt(state, wallMs = Date.now()) {
+export function beatAt(state, wallMs = sessionNow()) {
 	if (!state.playing || !state.startedAt) return 0;
 	return Math.max(0, ((wallMs - state.startedAt) / 1000) * (state.bpm / 60));
 }
@@ -175,7 +178,7 @@ export function swungBeat(beat, swing) {
 
 /** A read of the transport for a HUD or a value node: `{bpm, beat, bar, step, phase,
  * playing, loopBeats}`. `phase` is the position inside the current loop in 0..1. */
-export function transportNow(wallMs = Date.now()) {
+export function transportNow(wallMs = sessionNow()) {
 	const state = get(transport);
 	const beat = beatAt(state, wallMs);
 	const loop = loopBeats(state);
@@ -200,7 +203,7 @@ registerModuleValueNode(
 	'transportbeat',
 	(data, time) => {
 		const synced = get(syncedAnimations) && typeof time === 'number';
-		const wallMs = synced ? Math.floor(Date.now() / 86400000) * 86400000 + time * 1000 : Date.now();
+		const wallMs = synced ? Math.floor(sessionNow() / 86400000) * 86400000 + time * 1000 : sessionNow();
 		const t = transportNow(wallMs);
 		switch (data?.read) {
 			case 'bar':
@@ -238,7 +241,7 @@ let applyingHistory = false;
 function commit(fn) {
 	const before = get(transport);
 	const next = normalizeTransport(fn(before));
-	next.changedAt = Math.max(Date.now(), (before.changedAt || 0) + 1);
+	next.changedAt = Math.max(sessionNow(), (before.changedAt || 0) + 1);
 	transport.set(next);
 	if (!applyingHistory) recordTransportEntry(before, next);
 	broadcastTransport();
@@ -278,7 +281,7 @@ export function setTransport(patch) {
 		/** @type {any} */
 		const merged = { ...state, ...(patch ?? {}) };
 		if (state.playing && typeof patch?.bpm === 'number' && patch.bpm !== state.bpm) {
-			const now = Date.now();
+			const now = sessionNow();
 			const bpm = num(patch.bpm, 20, 300, state.bpm);
 			merged.bpm = bpm;
 			merged.startedAt = now - (beatAt(state, now) * 60000) / bpm;
@@ -304,7 +307,7 @@ export function setBarsPerLoop(bars) {
 
 /** Start from beat 0 at `at` (default now). Every peer starts inside the same beat
  * from the same stamp — the `sceneMusic` loop-phase model. @param {number} [at] */
-export function playTransport(at = Date.now()) {
+export function playTransport(at = sessionNow()) {
 	return commit((state) => ({ ...state, playing: true, startedAt: at }));
 }
 
@@ -397,13 +400,13 @@ export function transportRestore(payload, replicate = false, opts = {}) {
 	const resume = opts.resume !== false;
 	const next = normalizeTransport(payload);
 	if (next.playing) {
-		if (resume) next.startedAt = Date.now();
+		if (resume) next.startedAt = sessionNow();
 		else next.playing = false;
 	}
 	// a restore is an authoritative local write, so it must WIN over whatever changedAt
 	// the file carries (an old file's stamp is in the past) — and stay monotonic, since
 	// it can land in the same millisecond as the write before it
-	next.changedAt = Math.max(Date.now(), (get(transport).changedAt || 0) + 1);
+	next.changedAt = Math.max(sessionNow(), (get(transport).changedAt || 0) + 1);
 	transport.set(next);
 	if (replicate) broadcastTransport();
 	return next;
@@ -521,13 +524,13 @@ transport.subscribe((state) => {
 	const run = runKey(state);
 	if (run === seenRun) return;
 	seenRun = run;
-	runSeenAt = Date.now();
+	runSeenAt = sessionNow();
 	if (events.length) tick(runSeenAt);
 });
 
 /** One look-ahead pass. Exported for the suite, which drives it by hand to prove the
  * horizon and the no-double-fire rule without waiting on real time. */
-export function tick(wallMs = Date.now()) {
+export function tick(wallMs = sessionNow()) {
 	// feed the engine's clock filter every tick, so `audioTimeFor` sees many phases of
 	// the device callback (see the clock section of audioEngine.js)
 	sampleAudioClock();
@@ -580,177 +583,23 @@ function fire(state, event, beat, late) {
 
 // ---- peer clock offset (finding 6) ----------------------------------------------
 //
-// NTP's four-stamp round trip, over the data channel the peers already share:
-//   t0  we send `clockping`            (our clock)
-//   t1  they receive it                (their clock)
-//   t2  they send `clockpong`          (their clock)
-//   t3  we receive it                  (our clock)
-//   rtt    = (t3 - t0) - (t2 - t1)
-//   offset = ((t1 - t0) + (t2 - t3)) / 2       their clock minus ours
-// The error of one sample is bounded by the round trip's ASYMMETRY, at most rtt/2.
-// The estimate is the MEDIAN of the last N: a median rejects the one sample that
-// went through a slow relay, a mean does not.
-
-/** samples kept per peer */
-const CLOCK_RING = 12;
-/** how many pings the connect burst sends, how far apart, and how long after the
- * handshake it starts. MEASURED: samples taken during the connect storm (the joiner is
- * receiving objects, compiling shaders, first-painting) carried 100+ ms of one-sided
- * main-thread delay and pulled a 6-sample median to +427 ms on a true +300 — so the
- * burst waits for the storm to pass, and the filter below discounts what it catches. */
-const BURST = 6;
-const BURST_GAP_MS = 250;
-const BURST_DELAY_MS = 2000;
-/** steady-state re-measure, so a drifting clock is tracked and storm samples age out */
-const RESYNC_MS = 5000;
-
-/** @type {Record<string, {offsets: number[], rtts: number[]}>} */
-const clockSamples = {};
-
-/** peerId -> `{offset, rtt, samples}` — offset is THEIR clock minus OURS, in ms.
- * Local, derived, never replicated (the `peerQuality` precedent).
- * @type {import('svelte/store').Writable<Record<string, {offset: number, rtt: number, samples: number}>>} */
-export const peerClocks = writable({});
-
-/** @param {number[]} arr */
-function median(arr) {
-	const s = [...arr].sort((a, b) => a - b);
-	const m = Math.floor(s.length / 2);
-	return s.length % 2 ? s[m] : (s[m - 1] + s[m]) / 2;
-}
-
-/**
- * The estimate from a ring of samples: the MEDIAN OFFSET OF THE LOWEST-RTT HALF.
- *
- * A sample's error is its round trip's asymmetry, and asymmetry comes from queueing —
- * a packet that waited (in the network, or on a busy main thread before the handler
- * ran) is late on ONE leg. The samples with the shortest round trips waited the least,
- * so NTP's clock filter keeps the minimum-delay sample; taking the median of the best
- * half keeps that bias-rejection while still outvoting a single odd reading. Pure,
- * exported for the suite. @param {{offsets: number[], rtts: number[]}} ring
- */
-export function estimateFromSamples(ring) {
-	const n = ring.offsets.length;
-	if (!n) return null;
-	const order = ring.rtts.map((rtt, i) => i).sort((a, b) => ring.rtts[a] - ring.rtts[b]);
-	const best = order.slice(0, Math.max(1, Math.ceil(n / 2)));
-	return {
-		offset: median(best.map((i) => ring.offsets[i])),
-		rtt: median(best.map((i) => ring.rtts[i])),
-		samples: n
-	};
-}
-
-/**
- * Fold one measurement into a peer's ring and republish the median. Pure enough to
- * test without a connection. @param {string} peerId @param {number} offset @param {number} rtt
- */
-export function recordClockSample(peerId, offset, rtt) {
-	if (!Number.isFinite(offset) || !Number.isFinite(rtt) || rtt < 0) return;
-	const ring = (clockSamples[peerId] ??= { offsets: [], rtts: [] });
-	ring.offsets.push(offset);
-	ring.rtts.push(rtt);
-	while (ring.offsets.length > CLOCK_RING) {
-		ring.offsets.shift();
-		ring.rtts.shift();
-	}
-	const estimate = estimateFromSamples(ring);
-	if (estimate) peerClocks.update((map) => ({ ...map, [peerId]: estimate }));
-}
-
-/** The estimated offset of a peer's clock from ours (ms, theirs minus ours), or null
- * before the first sample lands. @param {string} peerId */
-export function peerClockOffset(peerId) {
-	return get(peerClocks)[peerId]?.offset ?? null;
-}
-
-/**
- * A stamp taken on `peerId`'s clock, expressed on OURS. The primitive for the
- * colocated case (see the header): only meaningful when the GRID is corrected by the
- * same rule, so nothing in core applies it by default. Unknown peer = unchanged.
- * @param {string} peerId @param {number} wallMs
- */
-export function correctRemoteStamp(peerId, wallMs) {
-	const offset = peerClockOffset(peerId);
-	return offset == null ? wallMs : wallMs - offset;
-}
-
-/** Drop a peer's samples (handleDisconnected — golden rule 3). @param {string} peerId */
-export function dropPeerClock(peerId) {
-	delete clockSamples[peerId];
-	peerClocks.update((map) => {
-		if (!(peerId in map)) return map;
-		const next = { ...map };
-		delete next[peerId];
-		return next;
-	});
-}
-
-/** @param {string} peerId @returns {any} the stable OUTGOING conn, or null */
-function connFor(peerId) {
-	/** @type {any} */
-	const peer = get(peers);
-	const conn = peer?.connections?.[peerId];
-	return conn && conn.open ? conn : null;
-}
-
-/** One ping. Returns false when there is no open conn to send it on. @param {string} peerId */
-export function sendClockPing(peerId) {
-	const conn = connFor(peerId);
-	if (!conn) return false;
-	/** @type {any} */
-	const peer = get(peers);
-	conn.send({ type: 'clockping', sender: peer.peer.id, t0: Date.now() });
-	return true;
-}
-
-/**
- * Answer a ping. Stamped on receipt (t1) and again on send (t2) so the responder's
- * own processing time is subtracted out of the round trip. Replies over our stable
- * OUTGOING conn to the sender (golden rule 9), falling back to the conn it arrived on
- * while the dance is still settling. @param {any} data @param {any} [arrivedOn]
- */
-export function answerClockPing(data, arrivedOn) {
-	const t1 = Date.now();
-	if (!data || typeof data.t0 !== 'number') return;
-	/** @type {any} */
-	const peer = get(peers);
-	const conn = connFor(data.sender) ?? (arrivedOn && arrivedOn.open ? arrivedOn : null);
-	if (!conn) return;
-	conn.send({ type: 'clockpong', sender: peer?.peer?.id ?? '', t0: data.t0, t1, t2: Date.now() });
-}
-
-/** Fold a pong into the sender's estimate. @param {any} data */
-export function applyClockPong(data) {
-	const t3 = Date.now();
-	if (!data || typeof data.t0 !== 'number' || typeof data.t1 !== 'number' || typeof data.t2 !== 'number') return;
-	if (!data.sender) return;
-	const rtt = t3 - data.t0 - (data.t2 - data.t1);
-	const offset = (data.t1 - data.t0 + (data.t2 - t3)) / 2;
-	recordClockSample(String(data.sender), offset, rtt);
-}
-
-/** @type {any} */
-let resyncTimer = null;
-
-/**
- * Start measuring a peer: a short burst now (so an estimate exists within a second of
- * connecting — the median needs several samples before it means anything), then a
- * steady re-measure every RESYNC_MS for as long as the conn is open. Called from
- * `sendHandshake`, which is the one place a conn is known to be OPEN (golden rule 2).
- * @param {string} peerId
- */
-export function startClockSync(peerId) {
-	if (typeof setTimeout === 'undefined') return;
-	for (let i = 0; i < BURST; i++) setTimeout(() => sendClockPing(peerId), BURST_DELAY_MS + i * BURST_GAP_MS);
-	if (resyncTimer == null) {
-		resyncTimer = setInterval(() => {
-			/** @type {any} */
-			const peer = get(peers);
-			for (const id of Object.keys(peer?.connections ?? {})) sendClockPing(id);
-		}, RESYNC_MS);
-	}
-}
+// 25-E MOVED THE ESTIMATOR OUT. It was built here for the transport and then applied to
+// nothing, because only the music line knew it existed; the session needed it far more
+// (every latest-wins stamp, every trigger pulse, the synced flow clock). The four-stamp
+// maths and the ring live in the `sessionClock` leaf, the round trip in `clockSync`,
+// and this module now keeps time by `sessionNow()` like every other stamp site — which
+// is the "correct BOTH the grid and the stamp" rule from the header, applied to the grid
+// (`startedAt`) and every note stamp at once. Re-exported so the suite and any caller
+// that learned the names here keep working.
+export {
+	peerClocks,
+	estimateFromSamples,
+	recordClockSample,
+	peerClockOffset,
+	correctRemoteStamp,
+	dropPeerClock
+} from './sessionClock';
+export { sendClockPing, answerClockPing, applyClockPong, startClockSync } from './clockSync';
 
 // ---- debug ----------------------------------------------------------------------
 

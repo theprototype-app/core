@@ -21,6 +21,9 @@ import { resolvePeerOptions, describePeerServer, peerServerStatus, parseInviteHa
 // 27-B/27-G integration: the RECOVERY story belongs in the copyable bundle, not in a
 // console nobody reads. diagnostics.js is a zero-dependency leaf, so this closes no cycle.
 import { log } from '$lib/diagnostics';
+// 25-F: the join result (peerApproval is store-only, so a static edge closes no cycle)
+import { isRefusal } from '$lib/connectionState';
+import { applyJoinRefusal } from '$lib/peerApproval';
 import { sessionHost, markPeerJoined, resetSession, signalingRetry, noteSignalingRetry, clearSignalingRetry, noteApprovalStarted, clearApprovalStarted, approvalStartedAt, APPROVAL_WINDOW_MS, MAX_PENDING_APPROVALS, HARD_PEER_CAP, roomIsFull } from '$lib/connectionState';
 import { canApply, getAuthProvider, dispatchCloudMessage, rolesInfo } from '$lib/cloudHooks';
 // 27-A (audit H1): shape validation + per-peer failure counters. Both are LEAVES, so the
@@ -66,7 +69,10 @@ import { applyRemoteColocation, dropPeerColocation, sendColocationState } from '
 import { applyRemoteScenePost, scenePostStates, sendScenePost } from '$lib/scenePost';
 // 23-A2: the musical transport (a latest-wins singleton like scenephysics) and the
 // peer clock-offset estimate it carries alongside
-import { applyRemoteTransport, transportState, sendTransport, answerClockPing, applyClockPong, startClockSync } from '$lib/musicClock';
+import { applyRemoteTransport, transportState, sendTransport } from '$lib/musicClock';
+// 25-E: the clock round trip is the SESSION's now, not the music line's (sessionClock.js)
+import { answerClockPing, applyClockPong, startClockSync } from '$lib/clockSync';
+import { sessionNow } from '$lib/sessionClock';
 import { applyRemoteDeviceNote } from '$lib/audioDevices';
 // 23-A4: the patch (cables between device ports), a latest-wins singleton
 import { applyRemotePatch, patchState, sendPatch } from '$lib/audioPatch';
@@ -131,6 +137,22 @@ userdata.subscribe(value => { users = value });
 const STREAM_TYPES = new Set(['camera', 'vrhands']);
 
 /**
+ * 25-F: what every dial carries. `jr: 1` says this build understands a join RESULT, which
+ * is what lets a host send a refusal without an older joiner mistaking the refusal dial
+ * for an approval (see `JOIN_RESULTS` in connectionState). `result` is set only by the
+ * host's approve dial-back.
+ * @param {string} [result] @returns {{metadata: Record<string, any>}}
+ */
+function dialOptions(result) {
+	return { metadata: result ? { jr: 1, joinresult: result } : { jr: 1 } };
+}
+
+/** How long a refusal dial may hang before it is closed regardless. The answer is in its
+ * metadata, which the joiner has at its `connection` event — the conn never needs to
+ * open, and a joiner that closes it at once is the normal case. */
+const REFUSAL_DIAL_MS = 15000;
+
+/**
  * 27-E: keep the pending queue bounded, dropping the EXPIRED first and only then the
  * oldest still-live request. A missed request is worse than a stale card, so nothing is
  * dropped while there is room — this only decides who goes when there is not.
@@ -180,6 +202,11 @@ export class PeerConnection {
 		 * dials (the `hosts` flow) don't request state, and an adopted inbound
 		 * conn requests it only when it stands in for one of these (B5) */
 		this.wantsStateFrom = new Set();
+		/** 25-F: peers whose NEXT dial is an approval dial-back, so its handshake opens with
+		 * `joinresult: approved` @type {Set<string>} */
+		this.approvedDialBacks = new Set();
+		/** 25-F: peers a refusal dial is out to — their `peer-unavailable` is not news @type {Set<string>} */
+		this.refusalDials = new Set();
 
 		// CN-3: an invite link can pin the signaling world (#A1B2C~srv=…). Parse it
 		// HERE, before resolvePeerOptions runs — the peer.on('open') hash flow below
@@ -389,6 +416,8 @@ export class PeerConnection {
 				// 27-E: end the request this names. The pill used to sit on "Requesting"
 				// beside this very toast, and the optimistic whitelist row never went away.
 				const id = String(err.message ?? '').match(/[0-9a-z]{3,}/i)?.[0] ?? '';
+				// 25-F: a refusal to somebody who already gave up and left is not news
+				if (id && this.refusalDials.has(id)) return;
 				if (id) import('$lib/peerApproval').then((m) => m.abandonOutboundRequest(id)).catch(() => {});
 				showToast('Peer is unreachable. Check the ID and ask them to stay online.');
 			} else if (err.type === 'unavailable-id') {
@@ -435,7 +464,18 @@ export class PeerConnection {
 		// peer may send back over OUR outgoing conn, so those wire it too (P-A).
 		this.wireData = handleData.bind(this);
 
+		/** @this {any} @param {any} conn */
 		function handleConnection(conn) {
+
+			// 25-F: A REFUSAL DIAL. Its metadata IS the answer, so it is read here, before
+			// anything below can treat an incoming conn from the host as the approval it
+			// used to mean. Never whitelisted, never adopted, never wired — closed at once.
+			if (isRefusal(conn?.metadata?.joinresult)) {
+				const ended = applyJoinRefusal(conn.peer, conn.metadata.joinresult);
+				log('info', 'net', 'join refused', { peer: conn.peer, result: conn.metadata.joinresult, ended });
+				try { conn.close(); } catch {}
+				return;
+			}
 
 			// Update approval status on expected connections
 			let waiting = get(waitingForApproval);
@@ -477,7 +517,14 @@ export class PeerConnection {
 			if (!found) {
 				const auth = getAuthProvider();
 				try {
-					if (auth && typeof auth.authorize === 'function' && auth.authorize(conn.peer)) {
+					const authorized = !!auth && typeof auth.authorize === 'function' && auth.authorize(conn.peer);
+					if (authorized && roomIsFull(this) && conn?.metadata?.jr) {
+						// 25-F: a plugin would let them in, but the mesh cannot take one more —
+						// say so rather than auto-approving past the hard cap
+						this.sendJoinResult(conn.peer, 'full');
+						conn.close();
+						return;
+					} else if (authorized) {
 						found = true;
 						// AUTO-APPROVE == the manual Approve: whitelist the peer, broadcast the
 						// roster, and DIAL BACK. The joiner only leaves its "waiting for
@@ -489,7 +536,7 @@ export class PeerConnection {
 							userdata.set(roster);
 						}
 						get(peers).send({ type: 'userdata', userdata: get(userdata) });
-						get(peers).connectToPeer(conn.peer, true);
+						this.approveDialBack(conn.peer);
 					}
 				} catch (e) {
 					console.error('cloud auth provider threw:', e);
@@ -499,8 +546,15 @@ export class PeerConnection {
 			if (!found) {
 				// If peer is not found, add it to the pending approvals
 				var approvals = get(pendingApprovals);
-				if (!approvals.some(toast => toast.peerId === conn.peer)) {
-					approvals.push({ peerId: conn.peer });
+				// 25-F: remember whether this dial can HEAR a refusal (see denyPeer). A re-dial
+				// refreshes the answer on the card that is already there.
+				const hearsNo = !!conn?.metadata?.jr;
+				const known = approvals.find(toast => toast.peerId === conn.peer);
+				if (known && known.hearsNo !== hearsNo) {
+					pendingApprovals.set(/** @type {any} */ (approvals.map((/** @type {any} */ a) => (a.peerId === conn.peer ? { ...a, hearsNo } : a))));
+				}
+				if (!known) {
+					approvals.push({ peerId: conn.peer, hearsNo });
 					// 27-E: stamp the SAME clock the joiner's countdown uses, so the card's
 					// age and their pill agree; and BOUND the queue — a host who walked away
 					// used to collect a card per dial with nothing dropping them (audit H3).
@@ -699,9 +753,17 @@ export class PeerConnection {
 					// the room gate every full-state reply here takes: a peer standing in
 					// another scene must not be handed this one's tempo
 					if (sameRoomOrUnknown(conn.peer)) sendTransport(data.sender);
+				} else if(data.type == 'joinresult') {
+					// 25-F: the answer to our join request as a MESSAGE. A refusal normally
+					// arrives as dial metadata and never reaches here; this path is the same
+					// answer from a sender that has an open conn to say it on. 'approved' needs
+					// nothing — the conn it arrived on already approved us (handleConnection).
+					if (isRefusal(data.result)) applyJoinRefusal(conn.peer, data.result);
 				} else if(data.type == 'clockping') {
 					// 23-A2: the peer clock-offset round trip. Answered over the stable OUTGOING
-					// conn to the sender (golden rule 9), this conn only as the fallback.
+					// conn to the sender (golden rule 9), this conn only as the fallback. 25-E:
+					// the pong now also says which clock WE keep, so a joiner of a joiner
+					// inherits the session's time (clockSync.js).
 					answerClockPing(data, conn);
 				} else if(data.type == 'clockpong') {
 					applyClockPong(data);
@@ -1091,7 +1153,7 @@ export class PeerConnection {
 		// scene privately it answers `{scene:'', hash:'', private:true}`, so the very first
 		// message of a handshake is where the name stops. Reading `myScene()` here (which is
 		// the SCREEN's answer, name and all) would leak it to every peer that ever connects.
-		conn.send({ type: 'atscene', peerId: this.peer.id, ...mySceneWire(), at: Date.now() });
+		conn.send({ type: 'atscene', peerId: this.peer.id, ...mySceneWire(), at: sessionNow() });
 	}
 
 	/**
@@ -1155,6 +1217,11 @@ export class PeerConnection {
 	// Must only be called once the connection is open — messages sent earlier are dropped by peerjs.
 	/** @param {any} conn @param {string} peerId @param {boolean} getobjects @param {string} id */
 	sendHandshake(conn, peerId, getobjects, id) {
+		// 25-F: an approval dial-back SAYS it is one, ahead of everything else (the roadmap's
+		// "first message"). The metadata already carried it; this is the same answer for a
+		// peer that reads messages rather than metadata, and it is idempotent on a joiner
+		// that has already moved on.
+		if (this.approvedDialBacks.delete(peerId)) conn.send({ type: 'joinresult', result: 'approved' });
 		// a conn opened to them — whatever goodbye they once sent is history
 		this.gracefulLeft.delete(peerId);
 		let hosts = [id];
@@ -1168,6 +1235,11 @@ export class PeerConnection {
 		// A1: WHERE WE ARE, ahead of everything else — the reasoning lives on
 		// `sendMyScene`, which A2 shares with the arrival re-sync for the same reason.
 		this.sendMyScene(conn);
+		// 25-E: the clock round trip goes out SECOND — ahead of every full-state request —
+		// so on an ordered conn the host's first pong lands before its content does, and a
+		// grossly wrong joiner clock is corrected before the history it would mis-stamp
+		// arrives (flowRuntime shifts its cutoffs for whatever still lands first).
+		startClockSync(peerId);
 		// R22 round 35: `locked` is ROOM_SCOPED and this is a DIRECT send, so the broadcast
 		// gate never sees it — a private peer would hand a stranger the uuids it is holding in
 		// a scene that stranger cannot see. Our own table is stale while private anyway (every
@@ -1241,9 +1313,44 @@ export class PeerConnection {
 		if (getobjects && !holdContent) conn.send({type: 'getnodedefs', sender: this.peer.id})
 		// join them into the voice mesh if our mic is live
 		voicePeerConnected(peerId);
-		// 23-A2: start estimating their clock's offset from ours — here because this is
-		// the one place the conn is known to be OPEN (golden rule 2)
-		startClockSync(peerId);
+	}
+
+	/**
+	 * 25-F: approve and dial back, marking the dial as the approval so the joiner is told
+	 * rather than left to infer it. @param {string} peerId
+	 */
+	approveDialBack(peerId) {
+		this.approvedDialBacks.add(peerId);
+		this.connectToPeer(peerId, true);
+	}
+
+	/**
+	 * 25-F: tell a would-be joiner "no" (or "full"). A short dial whose METADATA is the
+	 * answer — delivered through signaling with the offer, so it arrives even where a data
+	 * channel could never open — never added to `connections`, never wired, closed by the
+	 * joiner at once and by us after REFUSAL_DIAL_MS whatever happens. Callers only send
+	 * this to a dial that advertised `jr` (see denyPeer). @param {string} peerId
+	 * @param {'denied' | 'full'} result @returns {boolean} whether a dial went out
+	 */
+	sendJoinResult(peerId, result) {
+		if (!isRefusal(result) || !this.peer?.open) return false;
+		const conn = this.peer.connect(peerId, dialOptions(result));
+		if (!conn) return false;
+		this.refusalDials.add(peerId);
+		let done = false;
+		const finish = () => {
+			if (done) return;
+			done = true;
+			try { conn.close(); } catch {}
+			// keep the quiet-unavailable mark a little longer: the error can trail the close
+			setTimeout(() => this.refusalDials.delete(peerId), 5000);
+		};
+		conn.on?.('close', finish);
+		conn.on?.('error', finish);
+		conn.on?.('open', () => setTimeout(finish, 1000));
+		setTimeout(finish, REFUSAL_DIAL_MS);
+		log('info', 'net', 'join result sent', { peer: peerId, result });
+		return true;
 	}
 
 	connectToPeer(peerId, getobjects = true, id = this.peer.id) {
@@ -1252,7 +1359,9 @@ export class PeerConnection {
 		if (getobjects) this.wantsStateFrom.add(peerId);
 		if (!this.connections[peerId]) {
 			console.log("Connecting to " + peerId);
-            const conn = this.peer.connect(peerId);
+            // 25-F: an approval dial-back says so in its metadata; every dial says it can
+            // hear a join result
+            const conn = this.peer.connect(peerId, dialOptions(this.approvedDialBacks.has(peerId) ? 'approved' : undefined));
             // peer.connect returns undefined when the signaling link is down
             // (disconnected peer) — bail instead of throwing on conn.on below (CN)
             if (!conn) {
@@ -1335,7 +1444,7 @@ export class PeerConnection {
 			try { stale.close(); } catch {}
 			delete this.connections[peerId];
 		}
-		const conn = this.peer.connect(peerId);
+		const conn = this.peer.connect(peerId, dialOptions());
 		if (!conn) {
 			log('error', 'net', 'restore failed: signaling link is down', { peer: peerId });
 			return;
@@ -1427,7 +1536,7 @@ export class PeerConnection {
 			// a dial started now would be torn down before it could ever open
 			const lastCheck = backoffDelay(attempt + 1, { base: 500, max: 5 }) === null;
 			if (!this.connections[peerId] && !lastCheck && this.peer.id < peerId) {
-				const conn = this.peer.connect(peerId);
+				const conn = this.peer.connect(peerId, dialOptions());
 				if (conn) {
 					/** @type {any} */ (conn).__dialedAt = Date.now();
 					this.connections[peerId] = conn;

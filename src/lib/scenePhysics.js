@@ -1,4 +1,5 @@
 import { writable, derived, get } from 'svelte/store';
+import { sessionNow } from './sessionClock'; // 25-E: stamps another peer compares
 import { peers } from '../stores/appStore';
 
 // CL-A A6 / 21-B B1: scene-wide physics settings. ONE shared object for the
@@ -192,7 +193,7 @@ export function setScenePhysics(partial) {
 	// previous stamp so the sequence stays strictly increasing
 	const state = normalizeScenePhysics({
 		...merged,
-		changedAt: Math.max(Date.now(), (current.changedAt ?? 0) + 1)
+		changedAt: Math.max(sessionNow(), (current.changedAt ?? 0) + 1)
 	});
 	scenePhysicsState_.set(state);
 	/** @type {any} */
@@ -253,7 +254,7 @@ export function scenePhysicsRestore(payload, replicate = false) {
 	// changedAt the save happens to carry (an old file's stamp is in the past).
 	// Monotonic for the same reason setScenePhysics is: a restore can land in the
 	// same millisecond as the write before it, and an equal stamp is a coin toss.
-	next.changedAt = Math.max(Date.now(), (get(scenePhysicsState_).changedAt ?? 0) + 1);
+	next.changedAt = Math.max(sessionNow(), (get(scenePhysicsState_).changedAt ?? 0) + 1);
 	scenePhysicsState_.set(next);
 	if (replicate) {
 		/** @type {any} */

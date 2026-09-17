@@ -1,5 +1,6 @@
 // @ts-ignore - no bundled three type declarations (project-wide)
 import * as THREE from 'three';
+import { sessionNow } from './sessionClock'; // 25-E: stamps another peer compares
 import { writable, get } from 'svelte/store';
 import { globalScene, objectsGroup } from '../stores/sceneStore';
 import { peers } from '../stores/appStore';
@@ -119,7 +120,7 @@ let applyingHistory = false;
 function commit(fn, opts = {}) {
 	const before = get(patch);
 	const next = normalizePatch(fn(before));
-	next.changedAt = Math.max(Date.now(), (before.changedAt || 0) + 1);
+	next.changedAt = Math.max(sessionNow(), (before.changedAt || 0) + 1);
 	patch.set(next);
 	if (opts.record !== false && !applyingHistory) recordPatchEntry(before, next);
 	broadcastPatch();
@@ -308,7 +309,7 @@ export function patchSnapshot(opts = {}) {
  */
 export function patchRestore(payload, replicate = false) {
 	const next = normalizePatch(payload);
-	next.changedAt = Math.max(Date.now(), (get(patch).changedAt || 0) + 1);
+	next.changedAt = Math.max(sessionNow(), (get(patch).changedAt || 0) + 1);
 	patch.set(next);
 	if (replicate) broadcastPatch();
 	return next;

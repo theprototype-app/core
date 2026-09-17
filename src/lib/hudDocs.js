@@ -22,6 +22,7 @@
 // PURPOSE — one player on the start menu while another plays.
 
 import { writable, get } from 'svelte/store';
+import { sessionNow } from './sessionClock'; // 25-E: stamps another peer compares
 // 21-D1: the kind REGISTRY. hudKinds imports nothing, so this stays a leaf.
 import { HUD_KINDS as REGISTERED_KINDS, defaultsForKind, styleDefaultsForKind, kindDef } from './hudKinds';
 // 21-D6: a screen can follow the GAME STATE. gameState is a leaf too, so this closes no
@@ -163,7 +164,7 @@ export function setHudValue(id, value, opts = {}) {
 		if (opts.at < held) return;
 		valueStamps[key] = opts.at;
 	} else if (opts.shared) {
-		valueStamps[key] = Math.max(Date.now(), (valueStamps[key] ?? 0) + 1);
+		valueStamps[key] = Math.max(sessionNow(), (valueStamps[key] ?? 0) + 1);
 	}
 	hudValues.update((all) => (all[key] === value ? all : { ...all, [key]: value }));
 	if (opts.shared && !opts.silent) valueBroadcastHook?.(key, value, valueStamps[key]);
@@ -592,7 +593,7 @@ export function setHudDocFor(key, patch, opts = {}) {
 				// those edits share a bare Date.now() and the receiver's latest-wins guard
 				// drops every one after the first — measured in the shader round: the drag
 				// AND the undo after it silently failed to replicate.
-				changedAt: opts.stamp ?? Math.max(Date.now(), (all[key]?.changedAt ?? 0) + 1)
+				changedAt: opts.stamp ?? Math.max(sessionNow(), (all[key]?.changedAt ?? 0) + 1)
 			});
 			next[key] = after;
 		}
@@ -719,7 +720,7 @@ export function hudDocsRestore(map, replace = false, replicate = false) {
 		clearHudRuntimeRows();
 	}
 	if (!map || typeof map !== 'object') return;
-	const stamp = Date.now();
+	const stamp = sessionNow();
 	let i = 0;
 	for (const [key, doc] of Object.entries(map)) {
 		if (!doc) continue;

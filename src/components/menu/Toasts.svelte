@@ -21,7 +21,7 @@
     import { restoreAvailable, restoreSnapshot, dismissRestore } from '$lib/autosave'
     import { ingestGate, resolveIngestGate } from '$lib/commandsHandler.svelte'
     import { ingestVerdict, profileFor } from '$lib/sceneBudget'
-    import { cancelOutboundRequest } from '$lib/peerApproval'
+    import { cancelOutboundRequest, denyPeer } from '$lib/peerApproval'
     // 27-B: the ONE sticky card for an uncaught error. This file already mirrors
     // state stores into sticky toasts (restoreAvailable below); diagnostics.js stays a
     // leaf by publishing a store instead of importing the toast pipeline itself.
@@ -207,12 +207,15 @@ function approvePeer(approval, role) {
         $userdata.push([approval.peerId, '', '']);
     }
     $peers.send({ type: 'userdata', userdata: $userdata });
-    $peers.connectToPeer(approval.peerId, true);
+    // 25-F: an approval dial-back says it is one (a retry is a re-dial, not an approval)
+    if (approval.status !== 'retry' && typeof $peers.approveDialBack === 'function') $peers.approveDialBack(approval.peerId);
+    else $peers.connectToPeer(approval.peerId, true);
     if (role && $rolesInfo?.setRole) $rolesInfo.setRole(approval.peerId, role);
 }
-function rejectPeer(approval) {
-    $pendingApprovals = $pendingApprovals.filter((p) => p.peerId !== approval.peerId);
-    try { $peers.connections[approval.peerId]?.close?.(); } catch {}
+// 25-F: through the shared deny, so the joiner HEARS it (and VR and the card agree)
+const hearsNo = (approval: any) => !!approval?.hearsNo;
+function rejectPeer(approval, result: 'denied' | 'full' = 'denied') {
+    denyPeer(approval.peerId, result);
 }
 
 // professional toast card: manual close (✕) + auto-dismiss timer (kept from before)
@@ -543,7 +546,12 @@ style="z-index: var(--z-toast); pointer-events: none;"
                 {:else}
                     <button class="cxreq-btn cxreq-editor" disabled={roomFull} onclick={() => approvePeer(approval, null)} title={roomFull ? 'This session is full (' + HARD_PEER_CAP + ')' : 'Approve this request'}>Approve</button>
                 {/if}
-                <button class="cxreq-btn cxreq-reject" onclick={() => rejectPeer(approval)} title="Decline">Reject</button>
+                <!-- 25-F: at the cap, say so. Only offered to a joiner that can hear it —
+                     an older build would take ANY dial from us as an approval. -->
+                {#if roomFull && hearsNo(approval)}
+                    <button class="cxreq-btn cxreq-full" onclick={() => rejectPeer(approval, 'full')} title={'Tell them this session is full (' + HARD_PEER_CAP + ')'}>Tell them it's full</button>
+                {/if}
+                <button class="cxreq-btn cxreq-reject" onclick={() => rejectPeer(approval)} title={hearsNo(approval) ? 'Decline — they are told' : 'Decline'}>Reject</button>
             </div>
         </div>
     </div>
@@ -729,6 +737,7 @@ style="z-index: var(--z-toast-low); pointer-events: none;"
     .cxreq-editor:hover { background: #1d4ed8; }
     .cxreq-reject { background: transparent; border: 1px solid rgb(248 113 113 / 0.4); color: #f87171; }
     .cxreq-reject:hover { background: rgb(220 38 38 / 0.15); }
+    .cxreq-full { background: #b45309; }
     /* professional notification toast (replaces the flowbite green toast) */
     .tp-toast {
         pointer-events: auto;

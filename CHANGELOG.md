@@ -5,6 +5,105 @@
      per release, newest first. HTML comments like this one are stripped before
      rendering, so maintainer notes stay out of the user-facing window. -->
 
+## 1.12.0 — Hold together 🛡️
+
+### 🛡️ Connections that recover, and sessions with a size (roadmap #27 + #25)
+
+- ⏱️ **A connection request now ends.** The pill counts down while you wait and the
+  host's card shows how long someone has been waiting. After 90 seconds the request
+  cancels itself and offers **Try again**, instead of sitting on *Requesting* for
+  ever. Dialling someone who is not online ends the request too, rather than leaving
+  it up beside a toast saying they are unreachable.
+- 👥 **A session has a size.** Settings ▸ Connection ▸ **Session size** says how many
+  people you expect. Past it an approval still works but warns you, and at 16 the
+  approve buttons say the session is full — everyone connects to everyone, so one
+  more person costs every other person bandwidth. Waiting requests are capped, and
+  expired cards are dropped before live ones.
+- 🔌 **The signaling link stops giving up.** Reconnection retries with a jittered
+  backoff and no attempt limit, a closed peer is rebuilt rather than abandoned, and
+  coming back online or returning to the tab retries immediately. The Connect pill
+  shows a chip while it is retrying, so a dead link no longer looks like a dead app.
+- 🧱 **One bad message can no longer kill a connection.** Everything arriving from a
+  peer is shape-checked before it reaches the code that applies it, and anything
+  malformed is counted and dropped instead of throwing. A peer sending repeated
+  rubbish is reported once, not once per message.
+- 🔁 **The editor survives a bad frame.** A throw inside the flow runtime or the
+  physics step no longer ends the session: the frame is skipped, the failure is rate
+  limited so one broken node cannot flood you, and the runtime can be resumed.
+- 🩺 **Diagnostics you can copy.** Settings ▸ About ▸ **Copy diagnostics** puts a
+  bundle on the clipboard — recent log entries, the last uncaught error and session
+  details — so a problem can be reported with something in it.
+- 🔁 **A runaway script no longer takes the room with it.** Script nodes run on every
+  peer, every frame, so a `while (true)` in one node used to freeze everybody's tab,
+  not just its author's. Every loop a script contains is now counted, and one that
+  runs away stops with a *Script loop limit* badge on the node while the scene keeps
+  running. A node that is merely slow — rather than infinite — is paused after it has
+  spent too long in too many frames in a row, and editing its code starts it again.
+- 🧯 **Safe mode.** Adding `#safe` to the app's address opens a scene with the flow
+  runtime paused, so a scene whose scripts misbehave on load can still be opened,
+  repaired and resumed. A restore that never completed a frame is also remembered: the
+  next start offers the prompt with a warning instead of silently loading it again.
+- 🧹 **Deleting gives the memory back.** Removing an object used to drop it from the
+  scene and leave its geometry, materials and textures sitting on the graphics card
+  until the page was closed, so a session that imported and deleted the same model ten
+  times paid for ten copies. Deleting, clearing a scene and replacing an object now free
+  what only that object was using — and never what something else still draws with,
+  which matters because duplicates, clones and a material shared across a selection all
+  point at the same resources.
+- 🖥️ **A lost graphics context now says so.** When the browser takes the 3D context
+  away — a driver update, a graphics reset, a phone under memory pressure — the viewport
+  used to freeze silently while the rest of the app carried on answering, which reads as
+  the whole thing having crashed. You get a panel explaining what happened, a button to
+  save the scene (which is still intact, because it lives in the page rather than on the
+  graphics card), and the view restores itself when the browser hands the context back.
+
+### 💾 Storage that keeps your work (roadmap #27, wave 2)
+
+- 💾 **Saving can no longer hang forever.** A database operation that is aborted or
+  stops answering now fails and says so, instead of leaving the app waiting on it.
+- 🪶 **Autosave stopped stuttering on big scenes.** It measures what saving actually
+  costs and spaces itself out accordingly, it can no longer start a second save on top
+  of the one already running, and when it cannot save at all it tells you rather than
+  going quiet.
+- 🕶️ **Settings keep working in Safari private mode and on a full disk.** Every
+  preference now goes through one place that falls back to memory for the keys it
+  cannot write, so a browser that refuses storage costs you the setting, not the app.
+- 🎙️ **The microphone is given back.** Turning voice off, leaving voice mode or leaving
+  a session now releases the device, so your operating system stops showing the
+  recording indicator. Push-to-talk holds the device for a few seconds between presses
+  on purpose — reacquiring it costs a renegotiation with every peer.
+
+### 🚦 A scene that will not freeze you out (roadmap #26)
+
+- 🚦 **A big scene stays responsive while it arrives.** Objects are created in slices
+  rather than all at once, the viewport is refreshed once a frame instead of once per
+  object, and an object list of thousands of rows draws only the rows you can see.
+- 📊 **A Statistics panel, and a budget you can see.** The burger menu ▸ **Statistics**
+  opens frame timings, draw calls, triangles, memory and per-message network counters.
+  The object count in the status line carries a coloured dot that names whatever is over
+  budget, and the numbers ride along in a diagnostics bundle.
+- 🛑 **An oversized scene asks before it arrives.** A scene big enough to hurt is held at
+  the door with **Load all / Load the first N / Cancel** instead of arriving and
+  wedging the tab, and opening an oversized file warns you first.
+- ⏸️ **A window that cannot keep up pauses instead of freezing.** A simulation that
+  falls too far behind stops once, with a Resume button, and a viewport that has stopped
+  drawing offers **Save now**, **Reduce** and **Resume** rather than appearing to have
+  crashed.
+
+### ⏱️ One clock, and a joiner that is told (roadmap #25 + #26, wave 3)
+
+- ⏱️ **Everyone in a session now shares one clock.** Peers used to stamp events with
+  their own machine's time, so anything comparing ages or ordering across peers was
+  wrong by the difference between two computers. The session now runs on the host's
+  clock, and a machine whose clock is minutes out is corrected on its first exchange.
+- 🚪 **A refused join is told it was refused.** Being declined, and arriving at a session
+  that is already full, now say so plainly instead of leaving you watching a request
+  that never resolves.
+- 🎚️ **A heavy scene gives up shadows before it gives up frames.** When a scene is too
+  much for the machine, quality is reduced automatically and reversibly — starting with
+  the passes that cost the most and show the least — so the room keeps moving. The
+  budgets it steers by are measured on real scenes rather than estimated.
+
 ## 1.11.0 — Muscle memory ⌨️
 
 ### ⌨️ Input parity (roadmap #24, batch A)
@@ -358,7 +457,6 @@ select more than one thing — including on a phone.
 
 - 🎨 Modules can add their own post-processing effects and shader compilers.
 - 🧹 Settings descriptions read as sentences again instead of one word per line.
-
 
 ## 1.5.0 — Move it, properly 🎬
 

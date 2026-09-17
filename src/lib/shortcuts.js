@@ -38,6 +38,7 @@ import { togglePanel, toggleDock } from './panelToggles';
 // SSR prerender.
 import { requestPlay } from './playMode';
 import { selectedObject } from '../stores/sceneStore';
+import { safeStorage } from './safeStorage';
 
 // Single source of truth for keyboard shortcuts: the same registry binds the keys
 // and renders the list in Settings -> Shortcuts. Other modules push entries via
@@ -472,8 +473,8 @@ export const shortcuts = [
 			// A3: the SimControls HUD is off by default; P still works, but the first
 			// time it's used while the HUD is hidden, point users at the setting so the
 			// transport (pause/stop/reset) is discoverable.
-			if (!get(showSimControls) && typeof localStorage !== 'undefined' && !localStorage.getItem('simHudHintSeen')) {
-				localStorage.setItem('simHudHintSeen', '1');
+			if (!get(showSimControls) && typeof localStorage !== 'undefined' && !safeStorage.getItem('simHudHintSeen')) {
+				safeStorage.setItem('simHudHintSeen', '1');
 				showToast('Simulation controls are hidden — enable them in Settings → Scene to show the pause/stop/reset buttons.', [
 					{
 						label: 'Open Settings',
@@ -576,7 +577,7 @@ let overrides = {};
 function loadOverrides() {
 	try {
 		if (typeof localStorage === 'undefined') return {};
-		const raw = localStorage.getItem(OVERRIDES_KEY);
+		const raw = safeStorage.getItem(OVERRIDES_KEY);
 		const parsed = raw ? JSON.parse(raw) : null;
 		if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return {};
 		/** @type {Record<string, string>} */
@@ -591,9 +592,9 @@ function loadOverrides() {
 function saveOverrides() {
 	try {
 		if (typeof localStorage === 'undefined') return;
-		if (Object.keys(overrides).length) localStorage.setItem(OVERRIDES_KEY, JSON.stringify(overrides));
+		if (Object.keys(overrides).length) safeStorage.setItem(OVERRIDES_KEY, JSON.stringify(overrides));
 		// an empty map is the DEFAULT state, so remove the key rather than store `{}`
-		else localStorage.removeItem(OVERRIDES_KEY);
+		else safeStorage.removeItem(OVERRIDES_KEY);
 	} catch {
 		/* private mode: the rebind still applies for this session */
 	}

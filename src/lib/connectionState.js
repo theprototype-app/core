@@ -1,4 +1,9 @@
 import { writable, get } from 'svelte/store';
+import { safeStorage } from './safeStorage';
+// 25-E: the session clock is a sibling leaf; re-exported here because this is where peer
+// code already looks for "what session am I in", and resetSession must reset it too
+import { resetSessionClock } from './sessionClock';
+export { sessionNow, sessionClock, sessionClockDebug } from './sessionClock';
 
 /**
  * Session-connection state (roadmap #14 CN). STORE-ONLY module (svelte/store only)
@@ -33,10 +38,172 @@ export function dropPeerJoined(peerId) {
 	peerJoinedAt.set(next);
 }
 
+/**
+ * 27-F: the signaling link's retry state, for the Connect pill's chip (audit H2).
+ * A STORE rather than a toast per attempt: an unbounded retry toasting each time is
+ * spam, while a chip is a state you can look at. peerHandler already imports this
+ * leaf, so surfacing it costs no new module edge.
+ * @type {import('svelte/store').Writable<{retrying: boolean, attempt: number}>}
+ */
+export const signalingRetry = writable({ retrying: false, attempt: 0 });
+
+/** @param {number} attempt */
+export function noteSignalingRetry(attempt) {
+	signalingRetry.set({ retrying: true, attempt });
+}
+
+/** The link is back (or we gave the peer up) — clear the chip. */
+export function clearSignalingRetry() {
+	const now = get(signalingRetry);
+	if (!now.retrying && now.attempt === 0) return;
+	signalingRetry.set({ retrying: false, attempt: 0 });
+}
+
+/**
+ * 27-E (roadmap 25) — HOW LONG AN APPROVAL MAY HANG, on BOTH sides of it.
+ *
+ * Today it hangs forever: a joiner sits on "Requesting AB12" with no countdown and no
+ * end, and a host who walked away collects cards without bound. 90 s is a human act — the
+ * host may be in a headset, on another tab, or mid-gesture — while past about two minutes
+ * the joiner has stopped watching and a dial-back lands in a tab that has moved on. ONE
+ * constant, so the pill's countdown and the card's age can never disagree.
+ */
+export const APPROVAL_WINDOW_MS = 90_000;
+
+/** Beyond this many cards the oldest EXPIRED ones are dropped first, then the oldest
+ * pending — bounding the array `handleConnection` pushes into (audit H3). */
+export const MAX_PENDING_APPROVALS = 12;
+
+/**
+ * 27-E — SESSION SIZE. The mesh is FULL: every peer holds N-1 data connections and, with
+ * voice on, N-1 media connections, and every mutation fans out N-1 times. 10 is the
+ * tested target; 8 is the default because the costs that bite first (voice encoders,
+ * presence streams) are per-peer and land hardest on the slowest device in the room.
+ * SOFT warns and still approves; HARD refuses, because past it the session degrades for
+ * everyone rather than only for the person who just joined.
+ */
+export const SOFT_PEER_CAP_DEFAULT = 8;
+export const HARD_PEER_CAP = 16;
+
+/**
+ * How many people are in the session, counting YOURSELF.
+ *
+ * `openedPeers` is the set of peers whose data channel is actually open. `userdata` is
+ * the WHITELIST, and it is written at DIAL time — so it counts everyone who was ever
+ * invited, including people who never arrived and people who have since left. Counting
+ * it means a host who dialled sixteen names refuses every approval while sitting alone.
+ * That trap is documented in this repo and this batch walked straight into it in four
+ * places, which is why the arithmetic now lives here and nowhere else.
+ *
+ * Pure and peer-SHAPED rather than a derived store, so every caller can pass whatever it
+ * already holds: the store value in a component, or `this` inside PeerConnection.
+ * @param {{ openedPeers?: { size?: number } } | null | undefined} peers
+ */
+export function sessionSize(peers) {
+	return (peers?.openedPeers?.size ?? 0) + 1;
+}
+
+/** True when one more person would take the mesh past what it can carry (audit L7).
+ * @param {{ openedPeers?: { size?: number } } | null | undefined} peers */
+export function roomIsFull(peers) {
+	return sessionSize(peers) >= HARD_PEER_CAP;
+}
+
+function readSoftCap() {
+	if (typeof localStorage === 'undefined') return SOFT_PEER_CAP_DEFAULT;
+	const raw = Number(safeStorage.getItem('connect:softPeerCap'));
+	return Number.isFinite(raw) && raw >= 2 && raw <= HARD_PEER_CAP ? raw : SOFT_PEER_CAP_DEFAULT;
+}
+
+/** LOCAL, like every other connection preference. @type {import('svelte/store').Writable<number>} */
+export const softPeerCap = writable(readSoftCap());
+softPeerCap.subscribe((v) => {
+	if (typeof localStorage !== 'undefined') safeStorage.setItem('connect:softPeerCap', String(v));
+});
+
+/**
+ * When each pending request started, keyed by peer id — the ONE clock the joiner's
+ * countdown and the host's card age both read. A map rather than a field on the request
+ * rows, because those rows are plain arrays and objects that several modules already write.
+ * @type {import('svelte/store').Writable<Record<string, number>>}
+ */
+export const approvalStartedAt = writable({});
+
+/** @param {string} peerId */
+export function noteApprovalStarted(peerId) {
+	approvalStartedAt.update((m) => (m[peerId] ? m : { ...m, [peerId]: Date.now() }));
+}
+
+/** @param {string} peerId */
+export function clearApprovalStarted(peerId) {
+	approvalStartedAt.update((m) => {
+		if (!(peerId in m)) return m;
+		const next = { ...m };
+		delete next[peerId];
+		return next;
+	});
+}
+
+/** Milliseconds left in a request's window, 0 once it has expired.
+ * Takes `undefined` because callers look the stamp up in `approvalStartedAt` BY PEER ID
+ * and a miss is ordinary — an absent stamp reads as expired, which is the safe direction.
+ * @param {number | undefined} startedAt */
+export function approvalRemaining(startedAt) {
+	return Math.max(0, APPROVAL_WINDOW_MS - (Date.now() - (startedAt || 0)));
+}
+
+/**
+ * 25-F — A REAL "NO". Until this, an incoming connection from the host WAS the approval
+ * signal, and a refusal had no channel at all: the host closes a stranger's conn before
+ * it opens, so a Reject left the joiner on "Requesting" for the full 90 s window and then
+ * told it the host "did not answer" — which is false, and a full room said the same.
+ *
+ * The answer rides the CONNECTION METADATA of a short dial from the host, so it arrives
+ * at the joiner's `connection` event through the signaling server with no ICE at all —
+ * a pair of peers that could never open a data channel still hears "declined".
+ *
+ *   joiner dials with `{jr: 1}`       "I understand a join result" (an older joiner sends
+ *                                     nothing, and is never sent a refusal dial, because
+ *                                     it would read ANY incoming conn from the host as
+ *                                     approval — the whole reason the capability exists)
+ *   host dials `{joinresult: R}`      R = 'approved' on the approve dial-back (and a
+ *                                     `joinresult` data message first in its handshake),
+ *                                     'denied' / 'full' on a refusal dial that is never
+ *                                     added to the mesh and closes itself
+ *
+ * Absent means the old behaviour on both sides: an incoming conn from a peer we are
+ * waiting on is an approval.
+ */
+export const JOIN_RESULTS = /** @type {const} */ (['approved', 'denied', 'full']);
+
+/** @param {any} v @returns {v is 'denied' | 'full'} */
+export function isRefusal(v) {
+	return v === 'denied' || v === 'full';
+}
+
+/**
+ * The last refusal this joiner received, for the Connect pill: `{peerId, result, at}`, or
+ * null. Cleared by the next dial, by dismissing it, and by leaving the session.
+ * @type {import('svelte/store').Writable<{peerId: string, result: 'denied' | 'full', at: number} | null>}
+ */
+export const joinRefusal = writable(null);
+
+/** @param {string} peerId @param {'denied' | 'full'} result */
+export function noteJoinRefusal(peerId, result) {
+	joinRefusal.set({ peerId, result, at: Date.now() });
+}
+
+export function clearJoinRefusal() {
+	if (get(joinRefusal)) joinRefusal.set(null);
+}
+
 /** Full reset — leaving the session / cancelling out. */
 export function resetSession() {
 	sessionHost.set(null);
 	peerJoinedAt.set({});
+	approvalStartedAt.set({}); // 27-E: no request survives leaving the session
+	resetSessionClock(); // 25-E: our own clock is the only one left
+	joinRefusal.set(null); // 25-F
 }
 
 /**
@@ -77,7 +244,7 @@ export const mergeOnConnect = writable(readMergeOnConnect());
  * default, never a crash. The `readFlag` idiom from sharedLibrary. */
 function readMergeOnConnect() {
 	try {
-		return localStorage.getItem('connect:mergeOnConnect') === 'true';
+		return safeStorage.getItem('connect:mergeOnConnect') === 'true';
 	} catch {
 		return false;
 	}
@@ -87,6 +254,6 @@ function readMergeOnConnect() {
 // callback only ever reads its own argument, so it is safe wherever it sits.
 mergeOnConnect.subscribe((v) => {
 	try {
-		localStorage.setItem('connect:mergeOnConnect', String(v));
+		safeStorage.setItem('connect:mergeOnConnect', String(v));
 	} catch {}
 });

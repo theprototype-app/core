@@ -1,7 +1,9 @@
 import { writable } from 'svelte/store';
+import { safeStorage } from './safeStorage';
 
 // 114 (v1.13): the node editor's MOUSE BINDINGS, a LOCAL pref (a leaf: svelte/store
-// only, so Settings and Nodes.svelte can both reach it with no cycle).
+// only plus the safeStorage leaf, so Settings and Nodes.svelte can both reach it with no
+// cycle — and a write that cannot reach the disk still applies for this session).
 //
 //   'classic' — the default and the behaviour every version so far shipped: a left
 //               drag on the pane PANS; a rectangle selection needs Shift.
@@ -25,11 +27,8 @@ function normalize(value) {
 }
 
 /** @type {import('svelte/store').Writable<FlowMouseBindings>} */
-export const flowMouseBindings = writable(
-	normalize(typeof localStorage !== 'undefined' ? localStorage.getItem(KEY) : null)
-);
-if (typeof localStorage !== 'undefined')
-	flowMouseBindings.subscribe((value) => localStorage.setItem(KEY, normalize(value)));
+export const flowMouseBindings = writable(normalize(safeStorage.getItem(KEY)));
+flowMouseBindings.subscribe((value) => safeStorage.setItem(KEY, normalize(value)));
 
 /** the choices, as DATA, so the Settings row and the docs cannot drift */
 export const FLOW_MOUSE_BINDINGS = [

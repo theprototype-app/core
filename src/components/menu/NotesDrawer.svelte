@@ -21,6 +21,7 @@
 		DEFAULT_NOTE_COLOR
 	} from '$lib/annotationsHandler';
 	import { objectsGroup } from '../../stores/sceneStore.js';
+	import { safeStorage } from '$lib/safeStorage';
 
 	// One bottom sheet at a time on narrow: opening scene notes closes the object/scene
 	// settings sheet (they'd otherwise stack at the bottom).
@@ -37,7 +38,7 @@
 	// bottom dock) with a drag handle to adjust its height — the right-side drawer was
 	// covered by the profile chrome there. On wide screens it stays the right drawer.
 	let stored =
-		typeof localStorage !== 'undefined' ? parseInt(localStorage.getItem('notesSheetH') || '') : NaN;
+		typeof localStorage !== 'undefined' ? parseInt(safeStorage.getItem('notesSheetH') || '') : NaN;
 	let sheetH = $state(
 		!stored || Number.isNaN(stored)
 			? Math.round((typeof window !== 'undefined' ? window.innerHeight : 800) * 0.45)
@@ -65,7 +66,7 @@
 		resizing = false;
 		/** @type {HTMLElement} */ (e.currentTarget).releasePointerCapture?.(e.pointerId);
 		try {
-			localStorage.setItem('notesSheetH', String(sheetH));
+			safeStorage.setItem('notesSheetH', String(sheetH));
 		} catch {}
 	}
 

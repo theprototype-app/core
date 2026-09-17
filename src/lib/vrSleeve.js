@@ -8,8 +8,7 @@ import {
 	vrMenuHand,
 	vrMenuOpen,
 	vrSnapMode,
-	vrSleeveEnabled
-} from '../stores/sceneStore';
+	vrSleeveEnabled, pokeScene } from '../stores/sceneStore';
 import { peers, showToast } from '../stores/appStore';
 import { parkEditOverlays } from './editOverlays';
 import { snapEnabled, snapSettings, dropToSurface } from './snapping';
@@ -304,7 +303,7 @@ function applyPlacement(object, pose, scale) {
 		object.position.z = Math.round(object.position.z / step) * step;
 	}
 	object.updateMatrix();
-	objectsGroup.update((v) => v);
+	pokeScene();
 	/** @type {any} */
 	const peer = get(peers);
 	if (peer)
@@ -515,7 +514,7 @@ export function sleeveGripDrop(object, before) {
 	if (before?.pos) object.position.fromArray(before.pos);
 	if (before?.rot) object.rotation.set(before.rot[0], before.rot[1], before.rot[2]);
 	if (before?.scale) object.scale.fromArray(before.scale);
-	objectsGroup.update((v) => v);
+	pokeScene();
 	/** @type {any} */
 	const peer = get(peers);
 	if (peer)

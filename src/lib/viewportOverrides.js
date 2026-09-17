@@ -1,4 +1,5 @@
 import { writable, get } from 'svelte/store';
+import { safeStorage } from './safeStorage';
 
 // B — VIEWPORT OVERRIDES (this device).
 //
@@ -56,9 +57,9 @@ function load() {
 	for (const def of OVERRIDES) state[def.key] = true;
 	if (typeof localStorage === 'undefined') return state;
 	try {
-		const raw = localStorage.getItem(KEY);
+		const raw = safeStorage.getItem(KEY);
 		if (raw) Object.assign(state, JSON.parse(raw));
-		else if (localStorage.getItem(LEGACY_POST_KEY) === 'false') state.post = false;
+		else if (safeStorage.getItem(LEGACY_POST_KEY) === 'false') state.post = false;
 	} catch {}
 	return state;
 }
@@ -68,7 +69,7 @@ export const viewportOverrides = writable(load());
 viewportOverrides.subscribe((state) => {
 	if (typeof localStorage === 'undefined') return;
 	try {
-		localStorage.setItem(KEY, JSON.stringify(state));
+		safeStorage.setItem(KEY, JSON.stringify(state));
 	} catch {}
 });
 
@@ -96,10 +97,10 @@ export function viewportOverridesDebug() {
  * not a promise that it does. LOCAL, like every other override here.
  */
 export const vrPostEnabled = writable(
-	typeof localStorage !== 'undefined' && localStorage.getItem('vrPostEnabled') === 'true'
+	typeof localStorage !== 'undefined' && safeStorage.getItem('vrPostEnabled') === 'true'
 );
 vrPostEnabled.subscribe((value) => {
 	try {
-		localStorage.setItem('vrPostEnabled', String(value));
+		safeStorage.setItem('vrPostEnabled', String(value));
 	} catch {}
 });

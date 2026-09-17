@@ -28,7 +28,7 @@
 // reach it, and any of those edges through objectActions/history would be a cycle.
 
 import { get } from 'svelte/store';
-import { objectsGroup } from '../stores/sceneStore';
+import { objectsGroup, pokeScene } from '../stores/sceneStore';
 import { peers } from '../stores/appStore';
 
 /** @param {any} object */
@@ -84,7 +84,7 @@ export function removeTransientObjects() {
 	if (!doomed.length) return [];
 	const uuids = doomed.map((object) => object.uuid);
 	uuids.forEach((uuid) => removeTransientObject(uuid, false));
-	objectsGroup.update((value) => value);
+	pokeScene();
 	return uuids;
 }
 
@@ -102,7 +102,7 @@ export function removeTransientObject(uuid, poke = true) {
 	const peer = get(peers);
 	object.parent?.remove(object);
 	if (peer) peer.send({ type: 'delete', uuid, peerId: peer.peer.id });
-	if (poke) objectsGroup.update((value) => value);
+	if (poke) pokeScene();
 	return true;
 }
 

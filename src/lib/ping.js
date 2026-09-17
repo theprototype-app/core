@@ -4,6 +4,7 @@ import { peers, username } from '../stores/appStore';
 import { objectsGroup } from '../stores/sceneStore';
 import { peerColor } from './lockControl';
 import { playPing } from './pingAudio';
+import { safeStorage } from './safeStorage';
 
 // Ping a world point (or object) so every peer sees a pulse there for ~4s.
 // V2 (87): pings carry the sender's chosen color + chime — everyone renders
@@ -16,14 +17,14 @@ export const pings = writable([]);
 
 // per-user ping preferences (Settings; '' color = automatic peer color)
 export const pingColor = writable(
-	typeof localStorage !== 'undefined' ? localStorage.getItem('pingColor') ?? '' : ''
+	typeof localStorage !== 'undefined' ? safeStorage.getItem('pingColor') ?? '' : ''
 );
 export const pingSound = writable(
-	typeof localStorage !== 'undefined' ? localStorage.getItem('pingSound') ?? 'ding' : 'ding'
+	typeof localStorage !== 'undefined' ? safeStorage.getItem('pingSound') ?? 'ding' : 'ding'
 );
 if (typeof localStorage !== 'undefined') {
-	pingColor.subscribe((value) => localStorage.setItem('pingColor', value));
-	pingSound.subscribe((value) => localStorage.setItem('pingSound', value));
+	pingColor.subscribe((value) => safeStorage.setItem('pingColor', value));
+	pingSound.subscribe((value) => safeStorage.setItem('pingSound', value));
 }
 
 /** @param {any} ping */

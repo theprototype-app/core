@@ -1,6 +1,7 @@
 import { get } from 'svelte/store';
 import { inspectorClose, closeMenu } from '../stores/appStore';
 import { bottomDockWouldTake } from './bottomDockDrop';
+import { safeStorage } from './safeStorage';
 
 // Docking lite (phase 81L). Drag a window near the left/right screen edge to
 // dock it as a full-height panel (--z-drawer tier); drag its header away to
@@ -39,23 +40,23 @@ function sideList(value) {
 }
 
 try {
-	const saved = JSON.parse(localStorage.getItem('dockedWindows') ?? 'null');
+	const saved = JSON.parse(safeStorage.getItem('dockedWindows') ?? 'null');
 	if (saved) docked = { left: sideList(saved.left), right: sideList(saved.right) };
 } catch {}
 
 function persist() {
-	localStorage.setItem('dockedWindows', JSON.stringify(docked));
+	safeStorage.setItem('dockedWindows', JSON.stringify(docked));
 }
 
 /** @param {string} key */
 function widthOf(key) {
-	const value = parseInt(localStorage.getItem('dockWidth:' + key) ?? '300');
+	const value = parseInt(safeStorage.getItem('dockWidth:' + key) ?? '300');
 	return Math.min(Math.max(Number.isNaN(value) ? 300 : value, 250), Math.round(window.innerWidth * 0.4));
 }
 
 /** the TOP panel's share of a split column @param {'left'|'right'} side */
 function ratioOf(side) {
-	const value = parseFloat(localStorage.getItem('dockSplit:' + side) ?? '0.5');
+	const value = parseFloat(safeStorage.getItem('dockSplit:' + side) ?? '0.5');
 	return Math.min(Math.max(Number.isNaN(value) ? 0.5 : value, MIN_RATIO), 1 - MIN_RATIO);
 }
 
@@ -163,7 +164,7 @@ function apply(key) {
 				const next = Math.min(Math.max(250, startWidth + delta), Math.round(window.innerWidth * 0.4));
 				// the column is one width: write it for every member of the side
 				for (const k of currentSide ? docked[currentSide] : [key])
-					localStorage.setItem('dockWidth:' + k, String(next));
+					safeStorage.setItem('dockWidth:' + k, String(next));
 				if (currentSide) applySide(currentSide);
 				else apply(key);
 			};
@@ -200,7 +201,7 @@ function apply(key) {
 				const column = Math.max(1, window.innerHeight - TOP - inset);
 				const move = (/** @type {any} */ ev) => {
 					const next = Math.min(Math.max((ev.clientY - TOP) / column, MIN_RATIO), 1 - MIN_RATIO);
-					localStorage.setItem('dockSplit:' + currentSide, String(Math.round(next * 1000) / 1000));
+					safeStorage.setItem('dockSplit:' + currentSide, String(Math.round(next * 1000) / 1000));
 					applySide(currentSide);
 				};
 				const up = () => {

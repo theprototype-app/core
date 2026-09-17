@@ -5,6 +5,9 @@
 	import { chatHidden, flowGraphClose, flowCodeClose, animationClose, uvEditorClose, shaderEditorClose, hudEditorClose, explorerClose, objectListClose, objectContextMenu, renamingObject, advancedMode, showEnvInList, showLocalObjects, floatingToolbar, toolbarAlwaysOnTop, showSimControls, expandedObjects } from '../../stores/appStore.js';
 	// 24-B2: keyboard navigation in the object list (the Explorer's gridKeydown shape)
 	import { visibleObjectRows, withExpanded, typeAheadIndex } from '$lib/objectListNav';
+	import { sceneMetrics, statsOpen, worstTier, budgetRows } from '$lib/sceneBudget';
+	import { qualityState, pinQuality, releaseQuality } from '$lib/qualityGovernor';
+	import { showToast as showQualityToast } from '../../stores/appStore';
 	import { keyOf } from '$lib/keyOf';
 	import { systemGroupNames } from '$lib/moduleSDK';
 	import { ENV_ROOT } from '$lib/environment';
@@ -19,9 +22,9 @@
 	import { sendPing } from '$lib/ping';
 	import { buildObjectMenuItems } from '$lib/objectMenu';
 	import * as THREE from 'three';
-	import { onMount, setContext, tick } from 'svelte';
+	import { onMount, setContext, tick, untrack } from 'svelte';
 	import { createGesture } from '$lib/modalGrab';
-	import { writable } from 'svelte/store';
+	import { writable, get } from 'svelte/store';
 	import { shareObject } from '$lib/objectPermissions';
 	import Objects from './Objects.svelte';
 	import LocalObjects from './LocalObjects.svelte';
@@ -37,6 +40,7 @@
 	import { togglePanel } from '$lib/panelToggles';
 	import { requestPlay, willEnterXR, willEnterAR, vrSupported, arSupported, xrSessionFailed } from '$lib/playMode';
 	import { DOCK_VIEWS } from '$lib/dockMenu';
+	import { safeStorage } from '$lib/safeStorage';
 	import { VRButton, XRButton } from '@threlte/xr'
 
 	// A panel is "shown" when it is open AND either the visible dock tab OR floating
@@ -313,7 +317,7 @@
 	let hiddenChips: Set<string> = $state(
 		new Set(
 			typeof localStorage !== 'undefined'
-				? JSON.parse(localStorage.getItem('hiddenListChips') ?? '[]')
+				? JSON.parse(safeStorage.getItem('hiddenListChips') ?? '[]')
 				: []
 		)
 	);
@@ -327,7 +331,7 @@
 			if (viewMode === value) viewMode = '';
 		}
 		hiddenChips = next;
-		localStorage.setItem('hiddenListChips', JSON.stringify([...next]));
+		safeStorage.setItem('hiddenListChips', JSON.stringify([...next]));
 	}
 	function resetAllFilters() {
 		searchTerm = '';
@@ -335,7 +339,7 @@
 		lastTypes = new Set();
 		viewMode = '';
 		hiddenChips = new Set();
-		localStorage.setItem('hiddenListChips', '[]');
+		safeStorage.setItem('hiddenListChips', '[]');
 		chipPopup = false;
 	}
 
@@ -410,6 +414,147 @@
 		};
 	}
 
+	// --- 26-B: LIST VIRTUALISATION (roadmap 26 Stage 0, audit M6) -------------------
+	// The tree rendered EVERY visible row, recursively, and re-reconciled all of them on
+	// every scene poke. At 3,000 objects that is 3,000 component instances each carrying
+	// nine handlers and a Tooltip — the object list alone was several hundred ms of the
+	// reported freeze, and it is why deleting one object in a big scene felt worse than
+	// the delete itself.
+	//
+	// Above the threshold the SAME row component renders in `flat` mode over the
+	// flattened `visibleObjectRows` — the one array the keyboard walker, Ctrl+A and the
+	// type-ahead already read their order from — with two spacer divs standing in for
+	// what is off screen. Sharing that array is what keeps the arrows and the window
+	// agreeing by construction; deriving a second order would be a copy guaranteed to
+	// drift (the Explorer's `gridEntries` ruling, one panel over).
+	//
+	// Below the threshold NOTHING changes: the recursive tree renders exactly as it did,
+	// indent borders and all, so the common case is byte-identical.
+	const VIRTUAL_MIN = 500;
+	/** rows drawn beyond each edge, so a fast flick does not show blank space */
+	const OVERSCAN = 12;
+	let rowH = $state(24);
+	let scrollTop = $state(0);
+	let viewportH = $state(0);
+	let treeScroller: HTMLElement | null = null;
+	const treeRows = $derived(viewMode ? [] : visibleObjectRows($objectsGroup, $expandedObjects, $objectFilter as any));
+	const virtualising = $derived(treeRows.length > VIRTUAL_MIN);
+	const windowStart = $derived(virtualising ? Math.max(0, Math.floor(scrollTop / rowH) - OVERSCAN) : 0);
+	const windowEnd = $derived(
+		virtualising
+			? Math.min(treeRows.length, Math.ceil((scrollTop + (viewportH || 400)) / rowH) + OVERSCAN)
+			: 0
+	);
+	const windowRows = $derived(virtualising ? treeRows.slice(windowStart, windowEnd) : []);
+
+	/** Find the real scrolling ancestor by SCROLLABILITY, never by class name — the
+	 * scroller is flowbite's `Listgroup`, whose element we do not own (the deep-link
+	 * ruling in Section.svelte, same reason). */
+	function trackTreeScroll(node: HTMLElement) {
+		let ro: any = null;
+		const read = () => {
+			if (!treeScroller) return;
+			scrollTop = treeScroller.scrollTop;
+			viewportH = treeScroller.clientHeight;
+			// measure ONE real row rather than trusting a constant: the spacers are in
+			// pixels, so a wrong height makes the window drift away from the scrollbar
+			const first = node.querySelector('[role="treeitem"] > div') as HTMLElement | null;
+			const h = first?.offsetHeight ?? 0;
+			if (h > 8 && Math.abs(h - rowH) > 0.5) rowH = h;
+		};
+		let el: HTMLElement | null = node.parentElement;
+		while (el) {
+			const style = getComputedStyle(el);
+			if (/(auto|scroll)/.test(style.overflowY)) break;
+			el = el.parentElement;
+		}
+		treeScroller = el;
+		if (treeScroller) {
+			treeScroller.addEventListener('scroll', read, { passive: true });
+			ro = new ResizeObserver(read);
+			ro.observe(treeScroller);
+			ro.observe(node);
+		}
+		read();
+		return {
+			destroy() {
+				treeScroller?.removeEventListener('scroll', read);
+				ro?.disconnect();
+				treeScroller = null;
+			}
+		};
+	}
+
+	// keyboard follow: in the window a selected row that is off screen has no element to
+	// scroll itself into view, so the WINDOW moves instead (the arrows would otherwise
+	// walk silently into nothing).
+	let lastFollowed = '';
+	$effect(() => {
+		const uuid = $selectedObjects.length ? $selectedObjects[$selectedObjects.length - 1] : '';
+		if (!virtualising || !uuid || uuid === lastFollowed) { lastFollowed = uuid; return; }
+		lastFollowed = uuid;
+		const index = treeRows.findIndex((r) => r.uuid === uuid);
+		if (index < 0 || !treeScroller) return;
+		const top = index * rowH;
+		const view = treeScroller.clientHeight;
+		if (top < treeScroller.scrollTop) treeScroller.scrollTop = top;
+		else if (top + rowH > treeScroller.scrollTop + view) treeScroller.scrollTop = top + rowH - view;
+	});
+
+	// 26-A: the meter's dot and its tooltip. The reading is the sampler's; this only
+	// picks the worst tier and spells out what is over budget, so the tooltip answers
+	// "over budget on WHAT" without opening anything.
+	const budgetProfileNow = $derived($sceneMetrics.profile === 'vr' ? 'vr' : 'desktop');
+	const budgetTier = $derived(worstTier($sceneMetrics, budgetProfileNow));
+	/** A DIRECT listener, not `on:click`/`onclick`: this file is written in the `on:`
+	 * style throughout, so an attribute handler here is a hard "mixing syntaxes" error,
+	 * and the `on:` form is deprecated in runes mode — the action is the way out of both,
+	 * and it is what the panel-chrome rule asks for anyway (a delegated handler inside a
+	 * panel can be swallowed on its way up). */
+	function openStats(node: HTMLElement) {
+		const open = () => statsOpen.set(true);
+		node.addEventListener('click', open);
+		return { destroy() { node.removeEventListener('click', open); } };
+	}
+	const budgetTitle = $derived.by(() => {
+		const over = budgetRows($sceneMetrics, budgetProfileNow).filter((r) => r.tier === 'amber' || r.tier === 'red');
+		if (!over.length) return 'Scene budget — within the ' + (budgetProfileNow === 'vr' ? 'VR / mobile' : 'desktop') + ' budget. Click for statistics.';
+		return 'Scene budget: over on ' + over.map((r) => r.label.toLowerCase()).join(', ') + '. Click for statistics.';
+	});
+
+	// 26-D: THE QUALITY CHIP. The governor acts on its own, so it has to be SEEN acting and
+	// be answerable in one click — an automatic change a person cannot see or undo is just a
+	// different kind of broken (26-G's rule). Two states, one button: reducing on its own
+	// (click keeps it), or held (click gives full quality back). A direct listener for the
+	// same reason as openStats.
+	const qualityTitle = $derived.by(() => {
+		const q = $qualityState;
+		const what = q.labels.join(', ').toLowerCase();
+		return q.pinned
+			? 'Held at reduced quality (' + what + '). Click to restore full quality.'
+			: 'This scene is heavy for this device, so drawing was reduced: ' + what + '. It comes back on its own when frames recover. Click to keep it this way.';
+	});
+	function qualityChipClick(node: HTMLElement) {
+		const click = () => (get(qualityState).pinned ? releaseQuality() : pinQuality());
+		node.addEventListener('click', click);
+		return { destroy() { node.removeEventListener('click', click); } };
+	}
+	// …and once per session, a toast when it FIRST acts, because the chip lives in the object
+	// list's footer and that window can be closed
+	let qualityToasted = false;
+	$effect(() => {
+		const q = $qualityState;
+		if (q.level > 0 && !qualityToasted) {
+			qualityToasted = true;
+			untrack(() =>
+				showQualityToast('Quality reduced — this scene is heavy for this device (' + q.labels.join(', ').toLowerCase() + '). It comes back on its own.', [
+					{ label: 'Restore full quality', action: () => releaseQuality() },
+					{ label: 'Keep it', action: () => pinQuality() }
+				])
+			);
+		}
+	});
+
 	// bottom status line: totals across the whole tree (N objects · M hidden)
 	let objectCount = $state(0);
 	let hiddenCount = $state(0);
@@ -429,7 +574,7 @@
 	// --- advanced mode: System filter shows scene-root module/env objects ---
 	let systemRows = $state([]);
 	let systemNoticeDismissed = $state(
-		typeof localStorage !== 'undefined' && localStorage.getItem('systemNoticeDismissed') === 'true'
+		typeof localStorage !== 'undefined' && safeStorage.getItem('systemNoticeDismissed') === 'true'
 	);
 	let expandedSystem = $state({});
 	function refreshSystemRows() {
@@ -478,7 +623,7 @@
 	// --- environment filter (70.4): read-only rows for environment-root ---
 	let envRows = $state([]);
 	let envNoticeDismissed = $state(
-		typeof localStorage !== 'undefined' && localStorage.getItem('envNoticeDismissed') === 'true'
+		typeof localStorage !== 'undefined' && safeStorage.getItem('envNoticeDismissed') === 'true'
 	);
 	function refreshEnvRows() {
 		const scene = $globalScene;
@@ -534,7 +679,7 @@
 		// 80.1: proper resize (start-size captured, clamped) + persisted rect
 		let saved: any = null;
 		try {
-			saved = JSON.parse(localStorage.getItem('objectListRect') ?? 'null');
+			saved = JSON.parse(safeStorage.getItem('objectListRect') ?? 'null');
 		} catch {}
 		let moving = false;
 		let left = saved?.left ?? 350;
@@ -593,7 +738,7 @@
 		}
 
 		const persist = () =>
-			localStorage.setItem(
+			safeStorage.setItem(
 				'objectListRect',
 				JSON.stringify({ left, top, width: node.offsetWidth, height: node.offsetHeight })
 			);
@@ -739,7 +884,7 @@
 					// vrOverride is the STRING mirror Settings writes; Scene seeds the store
 					// from localStorage on boot, so both halves have to move together.
 					vrOverride.set(true);
-					localStorage.setItem('vrOverride', 'true');
+					safeStorage.setItem('vrOverride', 'true');
 					requestPlay();
 				}
 			},
@@ -750,9 +895,9 @@
 				tooltip: $vrSupported ? 'Immersive VR — the scene replaces your view' : 'No immersive-vr support detected',
 				action: () => {
 					vrOverride.set(false);
-					localStorage.removeItem('vrOverride');
+					safeStorage.removeItem('vrOverride');
 					vrPassthrough.set(false);
-					localStorage.setItem('vrPassthrough', 'false');
+					safeStorage.setItem('vrPassthrough', 'false');
 					requestPlay();
 				}
 			},
@@ -765,9 +910,9 @@
 					: 'No immersive-ar (passthrough) support detected',
 				action: () => {
 					vrOverride.set(false);
-					localStorage.removeItem('vrOverride');
+					safeStorage.removeItem('vrOverride');
 					vrPassthrough.set(true);
-					localStorage.setItem('vrPassthrough', 'true');
+					safeStorage.setItem('vrPassthrough', 'true');
 					requestPlay();
 				}
 			},
@@ -927,7 +1072,7 @@
 	function loadLayout(): ControlsLayout {
 		if (typeof localStorage === 'undefined') return defaultLayout();
 		try {
-			const raw = localStorage.getItem('controlsLayout');
+			const raw = safeStorage.getItem('controlsLayout');
 			if (!raw) return defaultLayout();
 			const saved = JSON.parse(raw) ?? {};
 			// W8b: kept ids are the ones the REGISTRY knows, not the ones the DEFAULT order
@@ -966,7 +1111,7 @@
 
 	function saveLayout() {
 		try {
-			localStorage.setItem('controlsLayout', JSON.stringify(controlsLayout));
+			safeStorage.setItem('controlsLayout', JSON.stringify(controlsLayout));
 		} catch {
 			// private mode / storage full — the bar still works for this session
 		}
@@ -982,7 +1127,7 @@
 	function resetLayout() {
 		controlsLayout = defaultLayout();
 		try {
-			localStorage.removeItem('controlsLayout');
+			safeStorage.removeItem('controlsLayout');
 		} catch {
 			// nothing to clear
 		}
@@ -1119,7 +1264,7 @@
 	 *  than duplicated, so the two rows can say which one is on. `setDocked` keeps this
 	 *  flag in step with the panel, so it is the honest answer either way. */
 	function explorerOpensDocked(): boolean {
-		return typeof localStorage === 'undefined' || localStorage.getItem('explorerDocked') !== 'false';
+		return typeof localStorage === 'undefined' || safeStorage.getItem('explorerDocked') !== 'false';
 	}
 
 	/** Move the Explorer between dock tab and floating window.
@@ -2119,7 +2264,7 @@
 							class="rounded-sm bg-gray-600 px-1 text-white"
 							on:click={() => {
 								systemNoticeDismissed = true;
-								localStorage.setItem('systemNoticeDismissed', 'true');
+								safeStorage.setItem('systemNoticeDismissed', 'true');
 							}}>✕</button>
 					</div>
 				{/if}
@@ -2172,7 +2317,7 @@
 							class="rounded-sm bg-gray-600 px-1 text-white"
 							on:click={() => {
 								envNoticeDismissed = true;
-								localStorage.setItem('envNoticeDismissed', 'true');
+								safeStorage.setItem('envNoticeDismissed', 'true');
 							}}>✕</button>
 					</div>
 				{/if}
@@ -2202,8 +2347,14 @@
 			  {#if $objectsGroup}
 				<LocalObjects />
 				<!-- drop a local object anywhere here to SHARE it to the scene root -->
-				<div class="min-h-8 rounded-sm transition-colors" use:shareDropZone>
-					{#if $objectsGroup.children.length > 0}
+				<div class="min-h-8 rounded-sm transition-colors" data-object-rows={virtualising ? 'window' : 'tree'} use:shareDropZone use:trackTreeScroll>
+					{#if virtualising}
+						<div style={'height:' + windowStart * rowH + 'px'} aria-hidden="true"></div>
+						{#each windowRows as row (row.uuid)}
+							<Objects element={row.object} flat depth={row.depth} />
+						{/each}
+						<div style={'height:' + (treeRows.length - windowEnd) * rowH + 'px'} aria-hidden="true"></div>
+					{:else if $objectsGroup.children.length > 0}
 						{#each $objectsGroup.children.filter((/** @type {any} */ c) => !c.userData?.__localOnly) as element}
 						<Objects {element} />
 						{/each}
@@ -2213,9 +2364,29 @@
 			{/if}
 		</div>
 	</Listgroup>
-	<div id="object-count" class="shrink-0 rounded-bl rounded-br bg-gray-100 px-2 py-0.5 text-[10px] text-gray-500 dark:bg-gray-700 dark:text-gray-300">
-		{objectCount} object{objectCount === 1 ? '' : 's'}{hiddenCount ? ' · ' + hiddenCount + ' hidden' : ''}
-	</div>
+	<!-- 26-A: THE BUDGET METER. One dot beside the count that a person can learn in a
+	     second, next to the one number that already says how big the scene is. It opens
+	     the Statistics window, because a warning you cannot act on is a decoration. -->
+	{#if $qualityState.level > 0 || $qualityState.pinned}
+		<button
+			id="quality-chip"
+			class="shrink-0 bg-amber-100 px-2 py-0.5 text-left text-[10px] text-amber-800 dark:bg-amber-900/60 dark:text-amber-200"
+			data-level={$qualityState.level}
+			data-pinned={$qualityState.pinned ? 'true' : 'false'}
+			title={qualityTitle}
+			use:qualityChipClick
+		>
+			Reduced quality{$qualityState.pinned ? ' · held' : ' (scene is heavy)'}
+		</button>
+	{/if}
+	<button
+		id="object-count"
+		class="shrink-0 rounded-bl rounded-br bg-gray-100 px-2 py-0.5 text-left text-[10px] text-gray-500 dark:bg-gray-700 dark:text-gray-300"
+		title={budgetTitle}
+		use:openStats
+	>
+		<span id="object-budget-dot" class="budget-dot mr-1" data-tier={budgetTier}></span>{objectCount} object{objectCount === 1 ? '' : 's'}{hiddenCount ? ' · ' + hiddenCount + ' hidden' : ''}
+	</button>
 	<!-- corner grip INSIDE the window (was parked 38px below the box and unreachable, 92) -->
 	<div
 		class="resize-handle resize-cue"

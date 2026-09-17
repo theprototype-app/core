@@ -1,5 +1,6 @@
 import { get } from 'svelte/store';
-import { objectsGroup, selectedObject } from '../stores/sceneStore';
+import { sessionNow } from './sessionClock'; // 25-E: stamps another peer compares
+import { objectsGroup, selectedObject, pokeScene } from '../stores/sceneStore';
 import { peers } from '../stores/appStore';
 import { recordEntry } from './history';
 import { particlePreset, PARTICLE_DEFAULTS } from './particlePresets';
@@ -22,7 +23,7 @@ function objectOf(uuid) {
 
 /** poke the stores so the Inspector/object list re-render */
 function poke() {
-	objectsGroup.update((v) => v);
+	pokeScene();
 	selectedObject.update((v) => v);
 }
 
@@ -68,7 +69,7 @@ export function removeObjectParticles(uuid) {
  * @param {string} uuid
  */
 export function burstObjectParticles(uuid) {
-	const t = (Date.now() % 86400000) / 1000; // same formula as the flow tick clock
+	const t = (sessionNow() % 86400000) / 1000; // same formula as the flow tick clock
 	applyBurst(uuid, t);
 	/** @type {any} */
 	const peer = get(peers);

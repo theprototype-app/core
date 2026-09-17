@@ -11,6 +11,7 @@
 	// The open/closed state is a LOCAL preference (localStorage, per section
 	// key): which sections a user keeps open is workflow, not scene data.
 	import { ChevronRight } from '@lucide/svelte';
+	import { safeStorage } from '$lib/safeStorage';
 
 	/** @type {{ key: string, label: string, open?: boolean, forceOpen?: boolean,
 	 *   id?: string, children: any }} */
@@ -23,14 +24,14 @@
 	const isOpen = $derived.by(() => {
 		if (forceOpen) return true;
 		const saved =
-			override ?? (typeof localStorage !== 'undefined' ? localStorage.getItem(storeKey) : null);
+			override ?? (typeof localStorage !== 'undefined' ? safeStorage.getItem(storeKey) : null);
 		return saved === null ? open : saved === 'open';
 	});
 
 	function toggle() {
 		override = isOpen ? 'closed' : 'open';
 		try {
-			localStorage.setItem(storeKey, override);
+			safeStorage.setItem(storeKey, override);
 		} catch {}
 	}
 </script>

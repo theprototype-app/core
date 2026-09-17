@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { writable, get } from 'svelte/store';
-import { objectsGroup } from '../stores/sceneStore';
+import { objectsGroup, pokeScene } from '../stores/sceneStore';
 import { peers, showToast } from '../stores/appStore';
 import { recordObjectPresence } from './history';
 
@@ -199,7 +199,7 @@ export function endStroke() {
 	mesh.userData.shadow = false; // draw strokes don't cast (basic-material lines)
 
 	group.add(mesh);
-	objectsGroup.update((value) => value);
+	pokeScene();
 	recordObjectPresence('create', mesh);
 	/** @type {any} */
 	const peer = get(peers);

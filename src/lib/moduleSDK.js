@@ -1,4 +1,5 @@
 import { keyOf, letterOf } from './keyOf';
+import { sessionNow } from './sessionClock'; // 25-E: stamps another peer compares
 import * as THREE from 'three';
 import { writable, get } from 'svelte/store';
 import { globalScene, objectsGroup, selectedObject, selectedObjects, globalCamera, isVRMode, isLocked } from '../stores/sceneStore';
@@ -36,6 +37,9 @@ import { setPeerVar, myPeerVar, leaderboardRows } from './peerVars';
 import { createFlowNode, createFlowEdge, serializeNode, serializeEdge, setNodeData as sendNodeData } from './nodesHandler';
 import { APP_VERSION } from './version.js';
 import { ndcFromClient } from './canvasRect';
+// 27-B: recovery paths report through the diagnostics ring (hardening audit H4)
+import { log } from './diagnostics';
+import { safeStorage } from './safeStorage';
 
 // Module SDK v1 — in-repo modules under src/modules/<name>/ register through
 // the api object passed to their register(api). See MODULES.md for the guide.
@@ -78,7 +82,7 @@ export function fireClickMiss() {
 		try {
 			handler();
 		} catch (error) {
-			console.log('module click-miss handler failed', error);
+			log('warn', 'module', 'click-miss handler failed', String(error));
 		}
 	}
 }
@@ -108,7 +112,7 @@ export function runSceneClearHandlers() {
 		try {
 			fn();
 		} catch (error) {
-			console.log('module scene-clear handler failed', error);
+			log('warn', 'module', 'scene-clear handler failed', String(error));
 		}
 	});
 }
@@ -1466,7 +1470,7 @@ export function registerModuleAssets(id, assets) {
  * with this so time-based effects agree across peers.
  */
 export function runtimeNow() {
-	return get(syncedAnimations) ? (Date.now() % 86400000) / 1000 : performance.now() / 1000;
+	return get(syncedAnimations) ? (sessionNow() % 86400000) / 1000 : performance.now() / 1000;
 }
 
 /**
@@ -1481,9 +1485,9 @@ export function initModules(modules) {
 		try {
 			mod.register(makeApi(mod.id, mod.name || mod.id));
 			loadedModules.push({ id: mod.id, name: mod.name, version: mod.version, description: mod.description });
-			console.log('module loaded: ' + mod.id + ' v' + mod.version);
+			log('info', 'module', 'loaded ' + mod.id + ' v' + mod.version);
 		} catch (error) {
-			console.log('module ' + mod.id + ' failed to register', error);
+			log('warn', 'module', mod.id + ' failed to register', String(error));
 			showToast('Module "' + mod.id + '" failed to load');
 		}
 	});
@@ -1508,7 +1512,7 @@ export function deactivateModule(id) {
 		try {
 			disposals[i]();
 		} catch (error) {
-			console.log('module ' + id + ' teardown step failed', error);
+			log('warn', 'module', id + ' teardown step failed', String(error));
 		}
 	}
 	Object.values(moduleAssets[id] ?? {}).forEach((url) => {
@@ -1534,7 +1538,7 @@ export function isModuleLoaded(id) {
 
 function readDisabled() {
 	try {
-		return JSON.parse(localStorage.getItem('disabledModules') ?? '[]');
+		return JSON.parse(safeStorage.getItem('disabledModules') ?? '[]');
 	} catch {
 		return [];
 	}
@@ -1546,7 +1550,7 @@ export const disabledModules = writable(
 );
 disabledModules.subscribe((list) => {
 	if (typeof localStorage !== 'undefined')
-		localStorage.setItem('disabledModules', JSON.stringify(list));
+		safeStorage.setItem('disabledModules', JSON.stringify(list));
 });
 
 /**
@@ -1573,7 +1577,7 @@ export function applyModuleMessage(data) {
 		try {
 			fn(data);
 		} catch (error) {
-			console.log('module ' + data.moduleId + ' message handler failed', error);
+			log('warn', 'module', data.moduleId + ' message handler failed', String(error));
 		}
 	});
 }
@@ -1625,7 +1629,7 @@ export function sendModuleStates(peerId, attempt = 0) {
 			const state = sync.getState();
 			if (state != null) states[id] = state;
 		} catch (error) {
-			console.log('module ' + id + ' getState failed', error);
+			log('warn', 'module', id + ' getState failed', String(error));
 		}
 	});
 	if (Object.keys(states).length === 0) return;
@@ -1644,7 +1648,7 @@ export function applyModuleStates(states) {
 		try {
 			stateSyncs[id]?.applyState(state);
 		} catch (error) {
-			console.log('module ' + id + ' applyState failed', error);
+			log('warn', 'module', id + ' applyState failed', String(error));
 		}
 	});
 }

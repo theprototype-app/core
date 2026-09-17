@@ -1,4 +1,5 @@
 import { writable, get } from 'svelte/store';
+import { safeStorage } from '../lib/safeStorage';
 
 // Shared node graph state, replicated between peers.
 //
@@ -194,6 +195,16 @@ export function clearGraphs() {
 
 // scene object uuids whose flow effects (animations/colors) are muted locally
 /** @type {import('svelte/store').Writable<string[]>} */
+/**
+ * 27-C: the flow runtime has STOPPED ticking after repeated failures (audit top-10 #3).
+ * It lives HERE rather than in flowRuntime because 27-D's safe-mode boot sets it before
+ * the runtime starts, and because flowRuntime sits inside the documented history cycle.
+ * A store, so the Resume toast and any future indicator read one truth.
+ * @type {import('svelte/store').Writable<{paused: boolean, reason: string}>}
+ */
+export const flowPaused = writable({ paused: false, reason: '' });
+
+/** @type {import('svelte/store').Writable<any[]>} */
 export const mutedFlowObjects = writable([]);
 
 // live output value of each value/logic node (133), for the on-card readouts --
@@ -214,7 +225,7 @@ export const flowCursors = writable({});
 // animations use wall-clock time so phases match across peers (NTP keeps
 // machines within tens of ms); off = local page time like before
 export const syncedAnimations = writable(
-	typeof localStorage === 'undefined' || localStorage.getItem('syncedAnimations') !== 'false'
+	typeof localStorage === 'undefined' || safeStorage.getItem('syncedAnimations') !== 'false'
 );
 
 // user-designed node definitions ({id, name, params, code}), replicated

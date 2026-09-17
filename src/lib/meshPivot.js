@@ -4,6 +4,7 @@ import { writable, get } from 'svelte/store';
 import { globalScene, globalCamera, globalRenderer, TControls, transformMode } from '../stores/sceneStore';
 import { showToast, showInfoToast, dismissToastById } from '../stores/appStore';
 import { proportionalAnchor } from './proportional';
+import { safeStorage } from './safeStorage';
 
 // The mesh editor's CUSTOM TRANSFORM PIVOT — where the gizmo sits, and what
 // rotate/scale turn around, in all three element modes.
@@ -40,7 +41,7 @@ const MAX_STORED = 200;
 /** @returns {Record<string, number[]>} */
 function load() {
 	try {
-		const raw = typeof localStorage !== 'undefined' ? localStorage.getItem(KEY) : null;
+		const raw = typeof localStorage !== 'undefined' ? safeStorage.getItem(KEY) : null;
 		const stored = raw ? JSON.parse(raw) : {};
 		if (!stored || typeof stored !== 'object') return {};
 		/** @type {Record<string, number[]>} */
@@ -72,7 +73,7 @@ export const meshPivotPicking = writable(false);
 export const meshPivotMoving = writable(false);
 
 meshPivots.subscribe((value) => {
-	if (typeof localStorage !== 'undefined') localStorage.setItem(KEY, JSON.stringify(value));
+	if (typeof localStorage !== 'undefined') safeStorage.setItem(KEY, JSON.stringify(value));
 });
 
 /** meshEdit/faceEdit register here so the gizmo re-seats the moment the pivot

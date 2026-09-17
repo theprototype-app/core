@@ -20,6 +20,7 @@
 // delegates to `fileNameBase`.
 
 import { writable, get } from 'svelte/store';
+import { safeStorage } from './safeStorage';
 
 /** What a save is called when nothing else is said: the thing's own name. */
 export const DEFAULT_TEMPLATE = '[name]';
@@ -135,7 +136,7 @@ const KEY = 'saveNameTemplate';
 
 function readTemplate() {
 	try {
-		const raw = localStorage.getItem(KEY);
+		const raw = safeStorage.getItem(KEY);
 		return raw === null ? DEFAULT_TEMPLATE : String(raw);
 	} catch {
 		return DEFAULT_TEMPLATE;
@@ -149,7 +150,7 @@ export const saveNameTemplate = writable(readTemplate());
 
 saveNameTemplate.subscribe((value) => {
 	try {
-		localStorage.setItem(KEY, String(value ?? ''));
+		safeStorage.setItem(KEY, String(value ?? ''));
 	} catch {}
 });
 

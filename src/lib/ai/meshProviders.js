@@ -1,4 +1,5 @@
 import { writable, get } from 'svelte/store';
+import { safeStorage } from '../safeStorage';
 
 // Text/image -> 3D mesh generation providers (roadmap #11, G1). Mirrors
 // ai/providers.js (the LLM providers) but for mesh backends: a self-hosted ComfyUI
@@ -53,7 +54,7 @@ const ENABLED_KEY = 'meshGenEnabled';
 /** @returns {MeshProviderConfig[]} */
 function loadProviders() {
 	try {
-		const raw = localStorage.getItem(PROVIDERS_KEY);
+		const raw = safeStorage.getItem(PROVIDERS_KEY);
 		const parsed = raw ? JSON.parse(raw) : null;
 		return Array.isArray(parsed) ? parsed : [];
 	} catch {
@@ -64,7 +65,7 @@ function loadProviders() {
 /** @param {MeshProviderConfig[]} list */
 function persist(list) {
 	try {
-		localStorage.setItem(PROVIDERS_KEY, JSON.stringify(list));
+		safeStorage.setItem(PROVIDERS_KEY, JSON.stringify(list));
 	} catch {}
 }
 
@@ -75,7 +76,7 @@ export const meshProviders = writable(loadProviders());
 export const meshActiveProvider = writable(
 	(() => {
 		try {
-			return localStorage.getItem(ACTIVE_KEY) || null;
+			return safeStorage.getItem(ACTIVE_KEY) || null;
 		} catch {
 			return null;
 		}
@@ -86,7 +87,7 @@ export const meshActiveProvider = writable(
 export const meshGenEnabled = writable(
 	(() => {
 		try {
-			return localStorage.getItem(ENABLED_KEY) === 'true';
+			return safeStorage.getItem(ENABLED_KEY) === 'true';
 		} catch {
 			return false;
 		}
@@ -160,8 +161,8 @@ export function removeMeshProvider(id) {
 export function setMeshActiveProvider(id) {
 	meshActiveProvider.set(id);
 	try {
-		if (id) localStorage.setItem(ACTIVE_KEY, id);
-		else localStorage.removeItem(ACTIVE_KEY);
+		if (id) safeStorage.setItem(ACTIVE_KEY, id);
+		else safeStorage.removeItem(ACTIVE_KEY);
 	} catch {}
 }
 
@@ -169,7 +170,7 @@ export function setMeshActiveProvider(id) {
 export function setMeshGenEnabled(on) {
 	meshGenEnabled.set(!!on);
 	try {
-		localStorage.setItem(ENABLED_KEY, String(!!on));
+		safeStorage.setItem(ENABLED_KEY, String(!!on));
 	} catch {}
 }
 

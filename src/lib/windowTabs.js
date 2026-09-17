@@ -1,4 +1,5 @@
 import { writable, get } from 'svelte/store';
+import { safeStorage } from './safeStorage';
 
 // Window tab groups (phase 83, floating windows only — docked splits stay in
 // pending/81). Grouped windows share ONE rect; the active member is visible,
@@ -19,7 +20,7 @@ let nextId = 1;
 
 function persist() {
 	try {
-		localStorage.setItem(
+		safeStorage.setItem(
 			'windowTabGroups',
 			JSON.stringify(get(tabGroups).map(({ id, members, active, rect }) => ({ id, members, active, rect })))
 		);
@@ -43,7 +44,7 @@ const migrateKey = (key) => KEY_ALIASES[key] ?? key;
 /** @type {any[]} groups waiting for their members to register+open again */
 let pendingRestore = [];
 try {
-	pendingRestore = JSON.parse(localStorage.getItem('windowTabGroups') ?? '[]').map(
+	pendingRestore = JSON.parse(safeStorage.getItem('windowTabGroups') ?? '[]').map(
 		(/** @type {any} */ saved) => ({
 			...saved,
 			members: (saved.members ?? []).map(migrateKey),

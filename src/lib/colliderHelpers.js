@@ -6,6 +6,7 @@ import { globalScene, objectsGroup } from '../stores/sceneStore';
 import { colliderSpecOf } from './colliderSpec';
 import { wireframeActive } from './viewMode';
 import { scenePhysicsGround } from './scenePhysics';
+import { safeStorage } from './safeStorage';
 
 // CL-A A7: collider visualization (the lightHelpers pattern). Per tracked
 // object a wireframe built FROM colliderSpecOf — the SAME spec physics
@@ -15,7 +16,7 @@ import { scenePhysicsGround } from './scenePhysics';
 
 /** global toggle (scene ▸ View), LOCAL pref, default OFF */
 export const showColliders = writable(
-	typeof localStorage !== 'undefined' && localStorage.getItem('showColliders') === 'true'
+	typeof localStorage !== 'undefined' && safeStorage.getItem('showColliders') === 'true'
 );
 /** per-object opt-in (Inspector ▸ Physics "Show collider") — session-local,
  * NOT persisted or replicated. @type {import('svelte/store').Writable<Set<string>>} */
@@ -264,7 +265,7 @@ export function startColliderHelpers() {
 	});
 	showColliders.subscribe((value) => {
 		try {
-			localStorage.setItem('showColliders', String(value));
+			safeStorage.setItem('showColliders', String(value));
 		} catch {}
 		sync();
 	});

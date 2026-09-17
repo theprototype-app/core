@@ -1,4 +1,5 @@
 import { writable } from 'svelte/store';
+import { safeStorage } from './safeStorage';
 
 // 19-A P4: PROPORTIONAL EDITING's shared state, split out of meshEdit as a LEAF
 // (svelte/store only) so faceEdit can read it too. faceEdit cannot import
@@ -17,11 +18,11 @@ export const proportionalEdit = writable(false);
  * @type {import('svelte/store').Writable<number>} */
 export const proportionalRadius = writable(
 	typeof localStorage !== 'undefined'
-		? Math.min(Math.max(parseFloat(localStorage.getItem('proportionalRadius') ?? '') || 1, 0.01), 100)
+		? Math.min(Math.max(parseFloat(safeStorage.getItem('proportionalRadius') ?? '') || 1, 0.01), 100)
 		: 1
 );
 proportionalRadius.subscribe((value) => {
-	if (typeof localStorage !== 'undefined') localStorage.setItem('proportionalRadius', String(value));
+	if (typeof localStorage !== 'undefined') safeStorage.setItem('proportionalRadius', String(value));
 });
 
 /**

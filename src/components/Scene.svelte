@@ -1,6 +1,7 @@
 <script lang="ts">
 	import * as THREE from 'three';
-	import { onMount } from 'svelte';
+	import { onMount, onDestroy } from 'svelte';
+	import { qualityOverrides } from '$lib/qualityGovernor';
 	import { T, useTask, useThrelte } from '@threlte/core';
 	import { Environment, interactivity, OrbitControls, TransformControls } from '@threlte/extras';
 	import { XR, Controller, Hand, useHand } from '@threlte/xr'
@@ -8,7 +9,7 @@
 	import { peers, username, userdata, specatorMode, avatarConfig, viewportMenu, objectContextMenu, viewportMenuOpener, addMenu, addMenuOpener, showToast, multiSelectMode } from '../stores/appStore';
 	import { get } from 'svelte/store';
 	import { vrPostEnabled } from '$lib/viewportOverrides';
-	import { isLocked, editorCam, isVRMode, globalScene, objectsGroup, showGrid, TControls, selectedObject, selectedObjects, lockedObjects, marqueeRect, worldRig, vrOverride, specators, globalCamera, globalRenderer, orbitControls, passthroughActive, sessionCompositesOverRoom, vrObjectsPanelOpen, vrPaletteOpen, vrPropsPanelOpen, vrPrefabsPanelOpen, vrChatPanelOpen, vrEditMenuOpen, vrSnapMenuOpen, vrSettingsPanelOpen, vrApprovePanelOpen, vrToolMode, viewMode } from '../stores/sceneStore';
+	import { isLocked, editorCam, isVRMode, globalScene, objectsGroup, showGrid, TControls, selectedObject, selectedObjects, lockedObjects, marqueeRect, worldRig, vrOverride, specators, globalCamera, globalRenderer, orbitControls, passthroughActive, sessionCompositesOverRoom, vrObjectsPanelOpen, vrPaletteOpen, vrPropsPanelOpen, vrPrefabsPanelOpen, vrChatPanelOpen, vrEditMenuOpen, vrSnapMenuOpen, vrSettingsPanelOpen, vrApprovePanelOpen, vrToolMode, viewMode, contextLost } from '../stores/sceneStore';
 	import {
 		selectObject,
 		deselectObject,
@@ -87,35 +88,51 @@
 	import PathWaypoints from './PathWaypoints.svelte';
 	import LockHighlights from './LockHighlights.svelte';
 	import Grid from '../extensions/Grid.svelte';
+	import { safeStorage } from '$lib/safeStorage';
 	import Outline from './Outline.svelte'
 	import Player from './play/Player.svelte'
 	import { Mesh, Vector3 } from 'three'
 
 
-	let { scene, camera, renderer } = useThrelte();
+	let { scene, camera, renderer, dpr } = useThrelte();
+
+	// 26-D: the quality governor's two knobs that live here. Resolution goes through
+	// threlte's OWN dpr (renderer.setPixelRatio directly would be undone by threlte's resize
+	// effect), and only once the governor has asked for something — at full quality this
+	// never touches the dpr, so threlte keeps following devicePixelRatio as it always did.
+	// The presence halving is read by the camera send below.
+	let presenceSlow = false;
+	let appliedDprScale = 1;
+	const stopQualityWatch = qualityOverrides.subscribe((o) => {
+		presenceSlow = o.presenceSlow;
+		if (o.dprScale === appliedDprScale) return;
+		appliedDprScale = o.dprScale;
+		dpr.set((typeof window !== 'undefined' ? window.devicePixelRatio || 1 : 1) * o.dprScale);
+	});
+	onDestroy(stopQualityWatch);
 
 	$globalScene = scene; // console.log($globalScene)
 	$globalRenderer = renderer;
 
 	$globalScene.background = new THREE.Color(0x101010);
 
-	$username = localStorage.getItem('username');
-	$userdata.push([$peers.peer.id, localStorage.getItem('username'), localStorage.getItem('avatar'), null, null, get(avatarConfig)]);
+	$username = safeStorage.getItem('username');
+	$userdata.push([$peers.peer.id, safeStorage.getItem('username'), safeStorage.getItem('avatar'), null, null, get(avatarConfig)]);
 	$userdata = $userdata;
 
-	$showGrid = localStorage.getItem('showGrid') === 'false' ? false : true;
-	$vrOverride = localStorage.getItem('vrOverride');
+	$showGrid = safeStorage.getItem('showGrid') === 'false' ? false : true;
+	$vrOverride = safeStorage.getItem('vrOverride');
 	camera.current.position.set(10.5, 7.57, 11.4);
 	let fov = camera.current.fov
 	let resetSettings = false;
 	setTimeout(() => {
 		// $peers.send({ type: 'userdata', userdata: $userdata });
-		if(localStorage.getItem("camx"))
-		camera.current.position.x = localStorage.getItem("camx");
-		if(localStorage.getItem("camy"))
-		camera.current.position.y = localStorage.getItem("camy");
-		if(localStorage.getItem("camz"))
-		camera.current.position.z = localStorage.getItem("camz");
+		if(safeStorage.getItem("camx"))
+		camera.current.position.x = safeStorage.getItem("camx");
+		if(safeStorage.getItem("camy"))
+		camera.current.position.y = safeStorage.getItem("camy");
+		if(safeStorage.getItem("camz"))
+		camera.current.position.z = safeStorage.getItem("camz");
 	
 		// console.log(camera.current.position)
 		resetSettings = true;
@@ -124,6 +141,7 @@
 	interactivity();
 	const scale = spring(0.5);
 	let rotation = 0;
+	let lastCameraSendAt = 0 // 27-E: the camera stream's rate gate
 	let lastCameraPosition = new THREE.Vector3();
 	// P2b THE OTHER HALF OF THE SEND GATE. The camera broadcast is CHANGE-GATED, so a
 	// peer who travels into our scene while we are standing still would never receive a
@@ -275,9 +293,9 @@
 			// console.log(camera.current.rotation)
 		}
 		if (resetSettings == true) {
-			// localStorage.setItem("camx",camera.current.position.x);
-			// localStorage.setItem("camy",camera.current.position.y);
-			// localStorage.setItem("camz",camera.current.position.z);
+			// safeStorage.setItem("camx",camera.current.position.x);
+			// safeStorage.setItem("camy",camera.current.position.y);
+			// safeStorage.setItem("camz",camera.current.position.z);
 		}
 		
 		if (!$specatorMode) {
@@ -289,8 +307,19 @@
 			camContentPos.copy(camera.current.position);
 			camContentQuat.copy(camera.current.quaternion);
 			worldToContentPose($worldRig, camContentPos, camContentQuat);
-			if (camContentPos.distanceTo(lastCameraPosition) > ($isVRMode ? 0.0001 : 0.01) ||
-				camContentQuat.angleTo(lastCameraQuaternion) > THREE.MathUtils.degToRad(1)) {
+			// 27-E (audit H7): the camera stream is RATE-GATED now. It used to send on every
+			// frame the camera moved past a threshold — in VR that threshold is 0.0001 m, so
+			// at 90 Hz it is a message per frame, and at N=10 each peer both sends and
+			// receives ~800 a second. The movement threshold is unchanged; this only bounds
+			// HOW OFTEN, which is the `vrhands` pattern one block below. Golden rule 11: a
+			// receiver eases between samples, we never raise a send rate to paper over it.
+			// 26-D: the governor's last step halves it again (a receiver eases, rule 11)
+			const camGapMs = ($isVRMode ? 33 : 50) * (presenceSlow ? 2 : 1);
+			const nowMs = performance.now();
+			if ((camContentPos.distanceTo(lastCameraPosition) > ($isVRMode ? 0.0001 : 0.01) ||
+				camContentQuat.angleTo(lastCameraQuaternion) > THREE.MathUtils.degToRad(1)) &&
+				nowMs - lastCameraSendAt >= camGapMs) {
+				lastCameraSendAt = nowMs;
 				camContentEuler.setFromQuaternion(camContentQuat);
 				$peers.send({ type: 'camera', peerId: $peers.peer.id, position: camContentPos.toArray(), rotation: [camContentEuler.x, camContentEuler.y, camContentEuler.z] });
 				lastCameraPosition.copy(camContentPos);
@@ -556,6 +585,27 @@
 		renderer.xr.addEventListener('sessionstart', onSessionStart);
 
 		const element = renderer.domElement;
+
+		// 27-G (audit M13): a lost WebGL context is SILENT. The canvas stops updating while
+		// every other part of the app keeps answering, so it reads to a user as "the whole
+		// thing froze" with nothing to act on. preventDefault() is load-bearing rather than
+		// a formality: without it the browser never fires a restore event AT ALL, so there
+		// is no way back short of a reload.
+		const onContextLost = (event: any) => {
+			event.preventDefault();
+			$contextLost = true;
+		};
+		const onContextRestored = () => {
+			// three rebuilds its own GPU objects lazily, but a material compiled against the
+			// dead context keeps its stale program, so force a recompile across the scene.
+			$globalScene?.traverse((o: any) => {
+				const list = Array.isArray(o.material) ? o.material : o.material ? [o.material] : [];
+				for (const m of list) if (m) m.needsUpdate = true;
+			});
+			$contextLost = false;
+		};
+		element.addEventListener('webglcontextlost', onContextLost);
+		element.addEventListener('webglcontextrestored', onContextRestored);
 		let downPosition = null;
 		let downTime = 0;
 		let strokeActive = false;
@@ -1253,6 +1303,8 @@
 			stopPlayInteract(); // 21-B B3 (releases any carried body with zero velocity)
 			element.removeEventListener('pointerdown', onPointerDown);
 			element.removeEventListener('contextmenu', onContextMenu);
+			element.removeEventListener('webglcontextlost', onContextLost);
+			element.removeEventListener('webglcontextrestored', onContextRestored);
 			window.removeEventListener('pointerup', onPointerUp);
 			xrControllers.forEach((controller) => {
 				controller.removeEventListener('select', onXRSelect);

@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { writable, derived, get } from 'svelte/store';
-import { objectsGroup, TControls, selectedObject } from '../stores/sceneStore';
+import { objectsGroup, TControls, selectedObject, pokeScene } from '../stores/sceneStore';
 import { peers, showToast, closeSelectionInspector } from '../stores/appStore';
 import { notifyExternalMove } from '$lib/flowRuntime';
 import { parkEditOverlays, stripEditOverlays } from '$lib/editOverlays';
@@ -258,7 +258,7 @@ function applyPresence(entry, state) {
 			? group.getObjectByProperty('uuid', entry.snapshot.parentUuid)
 			: null;
 		(parent ?? group).add(object);
-		objectsGroup.update((value) => value);
+		pokeScene();
 		// receivers take the same ObjectLoader path as light/parent sync
 		if (peer)
 			peer.send({ type: 'object', element: entry.snapshot.element, groupuuid: entry.snapshot.parentUuid ?? undefined });
@@ -284,7 +284,7 @@ function applyPresence(entry, state) {
 		closeSelectionInspector();
 	}
 	existing.parent?.remove(existing);
-	objectsGroup.update((value) => value);
+	pokeScene();
 	if (peer) peer.send({ type: 'delete', uuid: entry.uuid, peerId: peer.peer.id });
 	return true;
 }
@@ -311,7 +311,7 @@ registerHistoryKind('transformSet', (entry, state) => {
 			peer.send({ type: 'move', uuid: item.uuid, pos: target.pos, rot: target.rot, scale: target.scale });
 		any = true;
 	});
-	if (any) objectsGroup.update((value) => value);
+	if (any) pokeScene();
 	else showToast('Cannot undo/redo: the objects no longer exist');
 	return any;
 });
@@ -330,7 +330,7 @@ function applyState(entry, state) {
 	object.rotation.set(state.rot[0], state.rot[1], state.rot[2]);
 	object.scale.fromArray(state.scale);
 	notifyExternalMove(entry.uuid); // undoing an animated object rewrites its base
-	objectsGroup.update((value) => value);
+	pokeScene();
 	/** @type {any} */
 	const peer = get(peers);
 	if (peer) peer.send({ type: 'move', uuid: entry.uuid, pos: state.pos, rot: state.rot, scale: state.scale });

@@ -3,6 +3,7 @@ import { globalCamera, orbitControls } from '../stores/sceneStore';
 import { showToast } from '../stores/appStore';
 import { flyTo } from './objectActions';
 import { cameraNear, cameraFar, setCameraNear, setCameraFar } from './cameraClip';
+import { safeStorage } from './safeStorage';
 
 // Saved camera views, persisted LOCALLY (never replicated), recalled from the
 // viewport menu, Configure Scene ▸ Camera, or Shift+1..5 for the first five.
@@ -38,7 +39,7 @@ export function normalizeBookmark(entry, index) {
 
 function load() {
 	try {
-		const raw = typeof localStorage !== 'undefined' ? localStorage.getItem(KEY) : null;
+		const raw = typeof localStorage !== 'undefined' ? safeStorage.getItem(KEY) : null;
 		const list = raw ? JSON.parse(raw) : [];
 		return Array.isArray(list) ? list.map(normalizeBookmark) : [];
 	} catch {
@@ -50,7 +51,7 @@ function load() {
 export const bookmarks = writable(load());
 
 bookmarks.subscribe((value) => {
-	if (typeof localStorage !== 'undefined') localStorage.setItem(KEY, JSON.stringify(value));
+	if (typeof localStorage !== 'undefined') safeStorage.setItem(KEY, JSON.stringify(value));
 });
 
 /** the current view as a bookmark payload, or null when the camera isn't ready */

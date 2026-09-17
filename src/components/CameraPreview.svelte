@@ -5,6 +5,7 @@
 	import { objectsGroup, TControls } from '../stores/sceneStore';
 	import { cameraPreview, writeBackPose, previewOrbit, seatOrbitBehind } from '$lib/cameraPreview';
 	import { cameraSpec, aspectRatio, syncCameraToObject } from '$lib/cameraObjects';
+	import { safeStorage } from '$lib/safeStorage';
 
 	// 16-P5: while a camera OBJECT is previewed, THIS is the render camera — a real
 	// perspective/orthographic camera (`makeDefault`, so threlte's `camera.current`
@@ -33,7 +34,7 @@
 
 	// debug probe for the suites (opt-in, like __outlineDebug)
 	$effect(() => {
-		if (typeof window === 'undefined' || !localStorage.getItem('debugStores')) return;
+		if (typeof window === 'undefined' || !safeStorage.getItem('debugStores')) return;
 		(window as any).__cameraPreviewDebug = () => ({
 			preview: $cameraPreview,
 			hasObject: !!object,

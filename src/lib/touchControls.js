@@ -1,4 +1,5 @@
 import { writable, get } from 'svelte/store';
+import { safeStorage } from './safeStorage';
 
 // W4: THE TOUCH PLAY CONTROLS LEAF — a virtual move stick and a look drag, plus the
 // one local preference that tunes them.
@@ -61,7 +62,7 @@ function clamp(value, min, max) {
 
 function storedSpeed() {
 	if (typeof localStorage === 'undefined') return 1;
-	const raw = Number(localStorage.getItem(SPEED_KEY));
+	const raw = Number(safeStorage.getItem(SPEED_KEY));
 	if (!Number.isFinite(raw) || raw <= 0) return 1;
 	return clamp(raw, TOUCH_LOOK_SPEED_RANGE.min, TOUCH_LOOK_SPEED_RANGE.max);
 }
@@ -78,7 +79,7 @@ export function setTouchLookSpeed(value) {
 	const next = clamp(Number(value) || 1, TOUCH_LOOK_SPEED_RANGE.min, TOUCH_LOOK_SPEED_RANGE.max);
 	touchLookSpeed.set(next);
 	try {
-		if (typeof localStorage !== 'undefined') localStorage.setItem(SPEED_KEY, String(next));
+		if (typeof localStorage !== 'undefined') safeStorage.setItem(SPEED_KEY, String(next));
 	} catch {
 		/* private mode — the pref is a convenience, never a requirement */
 	}

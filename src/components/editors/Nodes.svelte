@@ -73,6 +73,7 @@
 	import { isValidFlowConnection, typeColor, replaceableInputEdges } from '$lib/flowSockets';
 	import { moduleNodeGroups, moduleNodeComponents } from '$lib/moduleSDK';
 	import { peers, username, modulesOpen, flowFocus } from '../../stores/appStore';
+	import { safeStorage } from '$lib/safeStorage';
 
 	// 21-D7: DEEP LINK — 'show me the node that drives this HUD element'. A write-once
 	// request that we act on and CLEAR, the inspectorScrollTo shape, so it cannot re-fire
@@ -279,7 +280,7 @@
 	// 3775px for a 200px gesture. A test that needs to press a field needs this.
 	$effect(() => {
 		if (typeof window === 'undefined' || typeof localStorage === 'undefined') return;
-		if (localStorage.getItem('debugStores') !== 'true') return;
+		if (safeStorage.getItem('debugStores') !== 'true') return;
 		// TS syntax, not a JSDoc cast: this file is lang="ts", where JSDoc @type is IGNORED
 		(window as any).__flowViewport = { setViewport, fitView };
 		// A6.4: which types this MOUNTED pane can actually render, plus the snapshot it
@@ -302,10 +303,10 @@
 	// inset its content above the Controls HUD only when the palette is actually shown.
 	let {
 		paletteOpen = $bindable(
-			typeof localStorage === 'undefined' || localStorage.getItem('flowPaletteOpen') !== 'false'
+			typeof localStorage === 'undefined' || safeStorage.getItem('flowPaletteOpen') !== 'false'
 		)
 	}: { paletteOpen?: boolean } = $props();
-	let paletteSide = $state(typeof localStorage !== 'undefined' ? localStorage.getItem('flowPaletteSide') ?? 'left' : 'left');
+	let paletteSide = $state(typeof localStorage !== 'undefined' ? safeStorage.getItem('flowPaletteSide') ?? 'left' : 'left');
 	// #20 P7: the left column's own height, measured — the graph tree's resize ceiling
 	let paletteColH = $state(0);
 
@@ -721,7 +722,7 @@
 			title={paletteOpen ? 'Hide the node palette' : 'Show the node palette'}
 			onclick={() => {
 				paletteOpen = !paletteOpen;
-				localStorage.setItem('flowPaletteOpen', String(paletteOpen));
+				safeStorage.setItem('flowPaletteOpen', String(paletteOpen));
 			}}
 		>
 			{paletteOpen ? (paletteSide === 'right' ? '▸' : '◂') : paletteSide === 'right' ? '◂' : '▸'}
@@ -733,7 +734,7 @@
 			title="Move the palette to the other side"
 			onclick={() => {
 				paletteSide = paletteSide === 'right' ? 'left' : 'right';
-				localStorage.setItem('flowPaletteSide', paletteSide);
+				safeStorage.setItem('flowPaletteSide', paletteSide);
 			}}
 		>
 			⇄

@@ -2013,6 +2013,51 @@ loadable play content. Everything a user does must be visible to connected peers
   `docs/plans-core/`, local `../theprototype.app-cloud`). This repo's `/docs` is
   gitignored scratch space (pointer READMEs inside).
 
+- `src/lib/knock.js` + `knockMath.js` (24-A) — A HAND KNOCKS A BODY. `knockMath` is the pure
+  leaf (THREE + `throwVelocity`): a 6-sample/100ms probe ring, `contactOf` (sphere vs bounding
+  sphere; `approach` = closing speed along the normal), `knockResponse` (`v' = v_body + n *
+  approach * gain`, infinite-mass hand, spin from the TANGENTIAL slip — a sphere contact is
+  central, so `r × Δv` is zero by construction), `cooldownStep`. `knock.js` is the runtime:
+  VR hands arrive through a seam `Scene.svelte` passes in (it never imports vrControls), the
+  desktop camera is a 0.35 m head probe, both carried into the objects group's frame. The
+  HITTER broadcasts `{type:'hit'}` whoever it is; the INITIATOR applies it (`physics.applyHit`,
+  the throw's sibling — `clampThrow` + the scene's `maxSpeed`, CCD over 5 m/s); a
+  non-initiator predicts locally behind `knock.predict` and withdraws after 400 ms.
+  `hit` is CONTENT (gateable, room-scoped), `by` is stamped from the connection, and its `at`
+  is **`sessionNow()`** — A2 folds it into the trigger log beside every other stamp, so it has
+  to be on 25-E's session clock, not the sender's raw one. `scenePhysics` carries the nested
+  `knock` block, `enabled:false`, which is what keeps every saved scene byte-identical.
+- `src/lib/lookPresence.js` (P2) — a peer's LOOK as PRESENCE, in the `campreview` shape:
+  `{camera, mode, overrides:{post,shaders}, look}` sent on change and in the `getmodulestate`
+  reply, dropped at both `finalizeDisconnect` sites. Watching a peer resolves the post chain
+  from THEIR row (`Outline.svelte`), and 26-D's quality governor still applies on top — the
+  governor is this machine giving up post to hold its frames, which watching must not undo.
+- `src/lib/postGraphs.js` + `postGraphPresets.js` (P4) — a shader graph whose output IS a
+  post-processing effect. `shaderGraph`'s `registerPostDomain` seam keeps the compiler core
+  shared (`createCompiler(graph, outputType)` in `shaderCompile.js`); the post domain differs
+  only in its inputs (SceneColor/SceneDepth/SceneNormal/UV/Time/Resolution) and its terminal
+  (`postOutput`), plus `EffectAttribute.DEPTH` and a NormalPass added on demand.
+- `src/lib/materialSharing.js` (D2) — two objects, ONE material, by id. The id is scene data
+  and survives every carrier (wire, autosave, sessions, undo, GLTF rebuild) because
+  `startMaterialSharing()` re-unifies by id whenever the scene changes; the SENDER fans the
+  per-object messages a receiver already understands, so the wire is byte-unchanged and no
+  capability-gate entry or older-peer story is needed. `materialsHandler`'s material-TYPE
+  swap is the one op that replaces the instance rather than writing into it, so it hands the
+  new instance to the sharers too.
+- `src/lib/flowPrefs.js` (114) — the node editor's mouse bindings as a LOCAL pref leaf
+  (svelte/store + safeStorage): `classic` (left-drag pans, the default and byte-identical to
+  every version before it) or `select` (left-drag rectangle-selects, right-drag pans).
+- `docking.js` (81.4) — an edge holds TWO stacked panels: `docked` is
+  `{left: string[], right: string[]}`, `dockSplit:<side>` is the share, and a DOCKED window's
+  rect belongs to docking.js — so `dragWindow`'s and the object list's reveal clamps stand
+  down for it, exactly as they already do for a tab member.
+- `meshEdit.js` (F1/F3) — a proportional drag ends in ONE whole-geometry `meshgeo` commit
+  (`commitFalloffSnapshot`), applied LOCALLY as well as broadcast: `applyMeshGeo` rebuilds the
+  receiver index-EXPANDED while a `/create Plane` is indexed, so both sides must swap together
+  or the sender's next `verts` indices address a layout the peer no longer holds. The selection
+  is re-found by POSITION after the swap. `applyPivotTransform` now covers the falloff for
+  rotate and scale by slerping the rotation and lerping the scale toward identity per vertex.
+
 ## Replication golden rules
 
 1. Every mutation = apply locally + `$peers.send({type, ...})`; receivers apply WITHOUT
@@ -4179,6 +4224,37 @@ loadable play content. Everything a user does must be visible to connected peers
   needs `:global(...)` (bit cx-chevron/tp-toast-icon/role-caret — silent style loss,
   sometimes without even an unused-selector warning); svg `className` is an
   SVGAnimatedString — e2e reads `getAttribute('class')` and selects `svg`, not `i`.
+
+- **`git checkout --theirs -- <file>` during a merge discards the WHOLE ours side of that
+  file, not just the conflicted hunk.** Resolving App.svelte's debug-hook tails that way
+  silently dropped the one `import('./lib/knock')` line that had auto-merged cleanly 100 lines
+  above, leaving a destructure with one more name than the import list — every module after it
+  bound to its neighbour. The three tails (the `Promise.all` import list, the destructured
+  parameter list, the `window.__stores` object) must always COUNT EQUAL and be in the same
+  order; check that after any merge that touches them.
+- **An attribute INDEX recorded before a `meshgeo` commit addresses a DIFFERENT vertex after
+  it** — the commit rebuilds the mesh index-expanded (81 entries → 384 in triangle order). Any
+  fixture or handle map captured before it must be re-found by POSITION, not carried over.
+- **A handle hung past a docked window's edge is clipped away and takes no pointer events** —
+  every docked window is `overflow-hidden`. The 81.4 divider sits INSIDE the top panel; the
+  width grip only works because half of its 6px is inside.
+- **Chromium fires `contextmenu` on the PRESS**, so a travel check there is always zero.
+  Decide click-versus-drag on pointerup (114's pane menu does).
+- **The node pane's empty bottom-right corner is the MINIMAP** — a drag there pans at the
+  minimap's own scale (measured 631px for an 80px gesture).
+- **`.peer-watch` is worn by TWO buttons** — Watch, and the join-a-peer's-camera button
+  (`.peer-watch.peer-preview`) that only renders while that peer previews a camera. A suite
+  selecting the bare class joins the camera instead of watching and reads the right answer for
+  the wrong reason; `.spectator-exit` has the same shape.
+- **A type check cannot tell a shader-driven material from its base** — the injected material
+  is a CLONE, so both read `MeshStandardMaterial`. Measure material IDENTITY instead.
+- **A guard that is redundant on the happy path is not proven by the happy path**: D2's fan and
+  its applier link both survived deletion until the suite staged the one state each exists for.
+- **A constant in a shader graph must be a Float node** — the arithmetic nodes take operands
+  from sockets and have no params, so authored `{b: 0.5}` node data is silently ignored.
+- **A perRound latch count reads 0 the instant the round ends** (the Infinity cutoff), so a
+  suite that polls `flowValues` for "all N lit" can only ever catch it for one publish. Assert
+  the TRIGGER LOG instead, folded to seconds-of-day the way `retiredByRound` does.
 
 ## Verification (mandatory before commit)
 

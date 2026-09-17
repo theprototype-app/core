@@ -1,4 +1,5 @@
 import { writable, get } from 'svelte/store';
+import { safeStorage } from './safeStorage';
 
 // UI themes (phase 89): a theme is a token block on :root[data-theme] (see
 // styles/theme.css) — strictly LOCAL chrome, never replicated. 'light' also
@@ -62,7 +63,7 @@ export const THEME_TOKENS = [
 function loadCustomThemes() {
 	if (typeof localStorage === 'undefined') return [];
 	try {
-		const raw = localStorage.getItem('customThemes');
+		const raw = safeStorage.getItem('customThemes');
 		const parsed = raw ? JSON.parse(raw) : [];
 		return Array.isArray(parsed) ? parsed : [];
 	} catch {
@@ -75,13 +76,13 @@ export const customThemes = writable(loadCustomThemes());
 
 // must be initialized BEFORE the theme subscriber so a persisted custom id resolves on load
 export const theme = writable(
-	typeof localStorage !== 'undefined' ? localStorage.getItem('theme') ?? 'dark' : 'dark'
+	typeof localStorage !== 'undefined' ? safeStorage.getItem('theme') ?? 'dark' : 'dark'
 );
 
 customThemes.subscribe((value) => {
 	if (typeof localStorage === 'undefined') return;
 	try {
-		localStorage.setItem('customThemes', JSON.stringify(value));
+		safeStorage.setItem('customThemes', JSON.stringify(value));
 	} catch {}
 });
 
@@ -103,7 +104,7 @@ function applyTheme(id) {
 		root.classList.toggle('dark', id !== 'light');
 	}
 	try {
-		localStorage.setItem('theme', id);
+		safeStorage.setItem('theme', id);
 	} catch {}
 }
 

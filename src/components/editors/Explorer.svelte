@@ -288,6 +288,7 @@
 	import WindowShell from '../shared/WindowShell.svelte';
 	import { clampWinSize, clampResize, anchorOf } from '$lib/windowSize';
 	import { fly } from 'svelte/transition';
+	import { safeStorage } from '$lib/safeStorage';
 
 	const clampH = (h: number) =>
 		Math.min(Math.max(h || 300, 200), Math.round(window.innerHeight * 0.8));
@@ -313,25 +314,25 @@
 		// ('explorerHeight'). It is a dock TAB now, so the dock's shared height owns
 		// it — adopt the old value once, then drop the key.
 		try {
-			const legacyH = localStorage.getItem('explorerHeight');
+			const legacyH = safeStorage.getItem('explorerHeight');
 			if (legacyH) {
 				dockHeight.set(clampH(parseInt(legacyH) || 300));
-				localStorage.removeItem('explorerHeight');
+				safeStorage.removeItem('explorerHeight');
 			}
 		} catch {}
-		docked = localStorage.getItem('explorerDocked') !== 'false';
+		docked = safeStorage.getItem('explorerDocked') !== 'false';
 		// 18-B: a size saved on a bigger screen must not come back oversized —
 		// that is the state whose resize grip sits off-screen. Fitted BEFORE the
 		// assignment so nothing reads $state during init (state_referenced_locally).
 		const savedWin = clampWinSize(
-			parseInt(localStorage.getItem('explorerWinW') ?? '720') || 720,
-			parseInt(localStorage.getItem('explorerWinH') ?? '440') || 440,
+			parseInt(safeStorage.getItem('explorerWinW') ?? '720') || 720,
+			parseInt(safeStorage.getItem('explorerWinH') ?? '440') || 440,
 			WIN_MIN
 		);
 		winW = savedWin.w;
 		winH = savedWin.h;
-		singleClickOpen = localStorage.getItem('explorerSingleClickOpen') === 'true';
-		showBreadcrumb = localStorage.getItem('explorerBreadcrumb') !== 'false';
+		singleClickOpen = safeStorage.getItem('explorerSingleClickOpen') === 'true';
+		showBreadcrumb = safeStorage.getItem('explorerBreadcrumb') !== 'false';
 	}
 	// touch / limited-width: keep the Explorer docked (no room to float; undock hidden),
 	// unless the user opted into undocking on touch (Settings > Allow undocking)
@@ -347,7 +348,7 @@
 
 	function setDocked(v: boolean) {
 		docked = v;
-		localStorage.setItem('explorerDocked', String(v));
+		safeStorage.setItem('explorerDocked', String(v));
 		if (v) bottomDockActive.set('explorer'); // re-docking makes it the visible panel
 		else forgetDockTab('explorer'); // an undock gives up its slot, so re-docking is a fresh add at the end of the strip
 	}
@@ -431,8 +432,8 @@
 		saveWinSize();
 	}
 	function saveWinSize() {
-		localStorage.setItem('explorerWinW', String(winW));
-		localStorage.setItem('explorerWinH', String(winH));
+		safeStorage.setItem('explorerWinW', String(winW));
+		safeStorage.setItem('explorerWinH', String(winH));
 	}
 	/** 18-B: double-click the grip — back to the default size, position kept */
 	function resetWinSize() {
@@ -722,34 +723,34 @@
 	let expanded = $state(new Set<string>());
 	if (typeof localStorage !== 'undefined') {
 		try {
-			expanded = new Set(JSON.parse(localStorage.getItem('explorerExpanded') ?? '[]'));
+			expanded = new Set(JSON.parse(safeStorage.getItem('explorerExpanded') ?? '[]'));
 		} catch {}
 	}
 	function toggleExpand(id: string) {
 		const next = new Set(expanded);
 		next.has(id) ? next.delete(id) : next.add(id);
 		expanded = next;
-		localStorage.setItem('explorerExpanded', JSON.stringify([...next]));
+		safeStorage.setItem('explorerExpanded', JSON.stringify([...next]));
 	}
 
 	// 197: Library is always open (no caret). Scene is pinned at the bottom and
 	// collapsed by default; double-click it to reveal audio/config/textures.
 	let sceneExpanded = $state(
-		typeof localStorage !== 'undefined' && localStorage.getItem('explorerSceneExpanded') === 'true'
+		typeof localStorage !== 'undefined' && safeStorage.getItem('explorerSceneExpanded') === 'true'
 	);
 	function toggleScene() {
 		sceneExpanded = !sceneExpanded;
-		localStorage.setItem('explorerSceneExpanded', String(sceneExpanded));
+		safeStorage.setItem('explorerSceneExpanded', String(sceneExpanded));
 	}
 
 	// N6: Packs section (mirror Scene) — expandable, lists packs; opening a pack
 	// shows its items with lazily-resolved thumbnails.
 	let packsExpanded = $state(
-		typeof localStorage !== 'undefined' && localStorage.getItem('explorerPacksExpanded') === 'true'
+		typeof localStorage !== 'undefined' && safeStorage.getItem('explorerPacksExpanded') === 'true'
 	);
 	function togglePacks() {
 		packsExpanded = !packsExpanded;
-		localStorage.setItem('explorerPacksExpanded', String(packsExpanded));
+		safeStorage.setItem('explorerPacksExpanded', String(packsExpanded));
 		if (packsExpanded && $packs.length === 0) loadPacks();
 	}
 	let thumbIdx: Record<string, number> = $state({}); // per pack-item webp->png->screenshot cursor
@@ -757,14 +758,14 @@
 	// 21-G8: the "Import project as folder (.tp)…" menu entry's hidden picker
 	let tpImportInput: HTMLInputElement | undefined = $state();
 	let hideBuiltinPacks = $state(
-		typeof localStorage !== 'undefined' && localStorage.getItem('explorerHideBuiltinPacks') === 'true'
+		typeof localStorage !== 'undefined' && safeStorage.getItem('explorerHideBuiltinPacks') === 'true'
 	);
 	// P5: per-pack hide (built-ins can't be truly deleted — they're bundled/CDN — so
 	// hiding is the reversible alternative; imported packs delete outright)
 	let hiddenPacks = $state(new Set<string>(loadHiddenPacks()));
 	function loadHiddenPacks(): string[] {
 		try {
-			return JSON.parse(localStorage.getItem('explorerHiddenPacks') || '[]');
+			return JSON.parse(safeStorage.getItem('explorerHiddenPacks') || '[]');
 		} catch {
 			return [];
 		}
@@ -773,12 +774,12 @@
 		const s = new Set(hiddenPacks);
 		s.add(name);
 		hiddenPacks = s;
-		localStorage.setItem('explorerHiddenPacks', JSON.stringify([...s]));
+		safeStorage.setItem('explorerHiddenPacks', JSON.stringify([...s]));
 		if ($activeFolder === 'pack:' + name) openFolder('packs');
 	}
 	function showAllHiddenPacks() {
 		hiddenPacks = new Set();
-		localStorage.setItem('explorerHiddenPacks', '[]');
+		safeStorage.setItem('explorerHiddenPacks', '[]');
 	}
 	let shownPacks = $derived(
 		$packs.filter(
@@ -2426,7 +2427,7 @@
 	let treeColH = $state(0);
 	let rootsResizing = $state(false);
 	let rootsH = $state(
-		(typeof localStorage !== 'undefined' && parseInt(localStorage.getItem('explorerRootsH') ?? '')) ||
+		(typeof localStorage !== 'undefined' && parseInt(safeStorage.getItem('explorerRootsH') ?? '')) ||
 			160
 	);
 
@@ -2509,13 +2510,13 @@
 		if (!rootsResizing) return;
 		rootsResizing = false;
 		(e.currentTarget as HTMLElement).releasePointerCapture?.(e.pointerId);
-		localStorage.setItem('explorerRootsH', String(rootsH));
+		safeStorage.setItem('explorerRootsH', String(rootsH));
 	}
 	// 18-B's rule for every grip in the app: a double-click restores a size you might
 	// otherwise have no way to get back
 	function resetRootsH() {
 		rootsH = Math.min(160, rootsMax);
-		localStorage.setItem('explorerRootsH', String(rootsH));
+		safeStorage.setItem('explorerRootsH', String(rootsH));
 	}
 
 	// ---- R22 round 13 P3: THE MOUNTS SECTION -----------------------------------------
@@ -2656,7 +2657,7 @@
 		const next = new Set(expanded);
 		next.add(volumeKey(vol.id));
 		expanded = next;
-		localStorage.setItem('explorerExpanded', JSON.stringify([...next]));
+		safeStorage.setItem('explorerExpanded', JSON.stringify([...next]));
 		openFolder(volumeKey(vol.id));
 	}
 	/**
@@ -7601,7 +7602,7 @@
 						checked={singleClickOpen}
 						onchange={(e) => {
 							singleClickOpen = e.currentTarget.checked;
-							localStorage.setItem('explorerSingleClickOpen', String(singleClickOpen));
+							safeStorage.setItem('explorerSingleClickOpen', String(singleClickOpen));
 						}}
 					/>
 					Single-click opens folders
@@ -7613,7 +7614,7 @@
 						checked={showBreadcrumb}
 						onchange={(e) => {
 							showBreadcrumb = e.currentTarget.checked;
-							localStorage.setItem('explorerBreadcrumb', String(showBreadcrumb));
+							safeStorage.setItem('explorerBreadcrumb', String(showBreadcrumb));
 						}}
 					/>
 					Show path bar
@@ -7664,7 +7665,7 @@
 						checked={hideBuiltinPacks}
 						onchange={(e) => {
 							hideBuiltinPacks = e.currentTarget.checked;
-							localStorage.setItem('explorerHideBuiltinPacks', String(hideBuiltinPacks));
+							safeStorage.setItem('explorerHideBuiltinPacks', String(hideBuiltinPacks));
 						}}
 					/>
 					Hide built-in packs

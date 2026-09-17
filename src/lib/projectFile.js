@@ -58,6 +58,7 @@ import {
 	projectName
 } from './projectManifest';
 import { ensureScenesFolder, currentLevel } from './levels';
+import { safeStorage } from './safeStorage';
 
 /** V4's gating pattern with its own int: a NEWER format ASKS before importing, an
  * older or absent one loads silently. `appVersion` beside it is display-only
@@ -511,7 +512,7 @@ export async function exportProjectFromSession(payload) {
  * export preference. */
 export function projectVersionsEnabled() {
 	try {
-		return localStorage.getItem('tpProjectVersions') !== 'false';
+		return safeStorage.getItem('tpProjectVersions') !== 'false';
 	} catch {
 		return true;
 	}

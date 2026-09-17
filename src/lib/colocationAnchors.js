@@ -53,6 +53,7 @@ import {
 import { calibrating, worldGrabActive } from './colocationCalibrate';
 import { forgetNudge } from './colocationNudge';
 import { registerVRFrameHook } from './vrControls';
+import { safeStorage } from './safeStorage';
 import {
 	sessionContext,
 	createAnchorAt,
@@ -88,7 +89,7 @@ const GRAB_ACTIVE_MS = 400;
 /** @returns {Record<string, any>} */
 function loadRecords() {
 	try {
-		const raw = typeof localStorage !== 'undefined' ? localStorage.getItem(STORE_KEY) : null;
+		const raw = typeof localStorage !== 'undefined' ? safeStorage.getItem(STORE_KEY) : null;
 		const stored = raw ? JSON.parse(raw) : null;
 		return stored && typeof stored === 'object' && !Array.isArray(stored) ? stored : {};
 	} catch {
@@ -105,7 +106,7 @@ export const anchorRecords = writable(loadRecords());
 function saveRecords(map) {
 	anchorRecords.set(map);
 	try {
-		if (typeof localStorage !== 'undefined') localStorage.setItem(STORE_KEY, JSON.stringify(map));
+		if (typeof localStorage !== 'undefined') safeStorage.setItem(STORE_KEY, JSON.stringify(map));
 	} catch {
 		// private mode / quota: the in-memory mirror still works for this run
 	}

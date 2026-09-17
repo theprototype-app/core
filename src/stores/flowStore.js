@@ -1,4 +1,5 @@
 import { writable, get } from 'svelte/store';
+import { safeStorage } from '../lib/safeStorage';
 
 // Shared node graph state, replicated between peers.
 //
@@ -224,7 +225,7 @@ export const flowCursors = writable({});
 // animations use wall-clock time so phases match across peers (NTP keeps
 // machines within tens of ms); off = local page time like before
 export const syncedAnimations = writable(
-	typeof localStorage === 'undefined' || localStorage.getItem('syncedAnimations') !== 'false'
+	typeof localStorage === 'undefined' || safeStorage.getItem('syncedAnimations') !== 'false'
 );
 
 // user-designed node definitions ({id, name, params, code}), replicated

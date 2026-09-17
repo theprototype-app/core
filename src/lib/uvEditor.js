@@ -10,6 +10,7 @@ import { applyMap, materialAt, recordMaterialChange, copyTextureParams } from '.
 // the unwrap REGISTRY: built-in projections, plus whatever a module registers
 import { unwrap } from './uvUnwrap';
 import { MAX_SNAPSHOT } from './meshBudget';
+import { safeStorage } from './safeStorage';
 // UV1: read-only reuse of the mesh snapshot pipeline. faceEdit owns the triangle
 // <-> geometry conversion AND the 'meshgeo' history kind (which already accepts a
 // {positions, groups, uvs} triple and re-broadcasts uvs on undo), so a UV commit
@@ -60,13 +61,13 @@ export const uvBrushSize = writable(24);
  * @type {import('svelte/store').Writable<'size'|'opacity'|'off'>} */
 export const uvPenPressure = writable(
 	/** @type {any} */ (
-		typeof localStorage !== 'undefined' && ['size', 'opacity', 'off'].includes(localStorage.getItem('uvPenPressure') || '')
-			? localStorage.getItem('uvPenPressure')
+		typeof localStorage !== 'undefined' && ['size', 'opacity', 'off'].includes(safeStorage.getItem('uvPenPressure') || '')
+			? safeStorage.getItem('uvPenPressure')
 			: 'size'
 	)
 );
 uvPenPressure.subscribe((value) => {
-	if (typeof localStorage !== 'undefined') localStorage.setItem('uvPenPressure', String(value));
+	if (typeof localStorage !== 'undefined') safeStorage.setItem('uvPenPressure', String(value));
 });
 /** a light touch still marks: the width/alpha factor at pressure 0 */
 export const MIN_PRESSURE_FACTOR = 0.15;
@@ -85,12 +86,12 @@ const pressureFactor = (w) => MIN_PRESSURE_FACTOR + (1 - MIN_PRESSURE_FACTOR) * 
  * @type {import('svelte/store').Writable<string>}
  */
 export const uvFaceFilter = writable(
-	typeof localStorage !== 'undefined' ? localStorage.getItem('uvFaceFilter') ?? 'all' : 'all'
+	typeof localStorage !== 'undefined' ? safeStorage.getItem('uvFaceFilter') ?? 'all' : 'all'
 );
 if (typeof localStorage !== 'undefined')
 	uvFaceFilter.subscribe((value) => {
 		try {
-			localStorage.setItem('uvFaceFilter', value);
+			safeStorage.setItem('uvFaceFilter', value);
 		} catch {}
 	});
 

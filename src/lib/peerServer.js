@@ -1,4 +1,5 @@
 import { writable, get } from 'svelte/store';
+import { safeStorage } from './safeStorage';
 
 /**
  * Peer signaling-server selection + ICE (STUN/TURN) config.
@@ -154,7 +155,7 @@ function defaults() {
 function load() {
 	if (typeof localStorage === 'undefined') return defaults();
 	try {
-		const raw = localStorage.getItem(LS_KEY);
+		const raw = safeStorage.getItem(LS_KEY);
 		if (raw) {
 			const parsed = JSON.parse(raw);
 			return { ...defaults(), ...parsed, custom: { ...defaults().custom, ...(parsed.custom || {}) } };
@@ -170,7 +171,7 @@ export const peerServerConfig = writable(load());
 peerServerConfig.subscribe((v) => {
 	if (typeof localStorage === 'undefined') return;
 	try {
-		localStorage.setItem(LS_KEY, JSON.stringify(v));
+		safeStorage.setItem(LS_KEY, JSON.stringify(v));
 	} catch {
 		/* storage full / disabled */
 	}

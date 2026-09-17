@@ -114,6 +114,7 @@
 	import { peerServerConfig, HAS_SELF_HOSTED, SELF_HOSTED_HOST, peerServerStatus } from '$lib/peerServer';
 	import { peers } from '../../stores/appStore.js';
 	import { autofocusOk, typeToFocus } from '$lib/inputDevice';
+	import { safeStorage } from '$lib/safeStorage';
 
 	// 24-D2: Settings ▸ Connection applies WITHOUT a reload — PeerConnection.switchServer
 	// rebuilds the Peer on the configured server, keeping the session id (an open session
@@ -989,8 +990,8 @@
 							<Checkbox
 								bind:checked={$showGrid}
 								onclick={() => {
-									if (localStorage.getItem('showGrid')) localStorage.removeItem('showGrid');
-									else localStorage.setItem('showGrid', 'false');
+									if (safeStorage.getItem('showGrid')) safeStorage.removeItem('showGrid');
+									else safeStorage.setItem('showGrid', 'false');
 								}} />
 						</svelte:fragment>
 						Display grid on floor
@@ -1436,8 +1437,8 @@
 							<Checkbox
 								bind:checked={$vrOverride}
 								onclick={() => {
-									if (localStorage.getItem('vrOverride')) localStorage.removeItem('vrOverride');
-									else localStorage.setItem('vrOverride', 'true');
+									if (safeStorage.getItem('vrOverride')) safeStorage.removeItem('vrOverride');
+									else safeStorage.setItem('vrOverride', 'true');
 								}} />
 						</svelte:fragment>
 						Forces normal play even if immersive-vr is enabled
@@ -1448,7 +1449,7 @@
 								checked={$vrFlying}
 								onchange={(e) => {
 									$vrFlying = e.target.checked;
-									localStorage.setItem('vrFlying', String($vrFlying));
+									safeStorage.setItem('vrFlying', String($vrFlying));
 								}} />
 						</svelte:fragment>
 						Left-stick movement follows where the controller points (fly); off = stay level
@@ -1463,7 +1464,7 @@
 								checked={$vrPassthrough}
 								onchange={(e: any) => {
 									$vrPassthrough = e.target.checked;
-									localStorage.setItem('vrPassthrough', String($vrPassthrough));
+									safeStorage.setItem('vrPassthrough', String($vrPassthrough));
 									showToast('Passthrough ' + ($vrPassthrough ? 'on' : 'off') + ' — takes effect on the next VR entry');
 								}} />
 						</svelte:fragment>
@@ -1476,7 +1477,7 @@
 								onclick={() => {
 									const next = $vrMenuHand === 'left' ? 'right' : 'left';
 									$vrMenuHand = next;
-									localStorage.setItem('vrMenuHand', next);
+									safeStorage.setItem('vrMenuHand', next);
 								}} />
 						</svelte:fragment>
 						Which controller opens the VR quick-menu (the other hand points)
@@ -1488,7 +1489,7 @@
 								checked={$vrMenuHold}
 								onchange={(e: any) => {
 									$vrMenuHold = e.target.checked;
-									localStorage.setItem('vrMenuHold', String($vrMenuHold));
+									safeStorage.setItem('vrMenuHold', String($vrMenuHold));
 								}} />
 						</svelte:fragment>
 						Hold B/Y to show the radial menu, release over a sector to pick it (off = press toggles)
@@ -1505,7 +1506,7 @@
 								value={$vrSnapAngle}
 								onchange={(v) => {
 									$vrSnapAngle = parseInt(v);
-									localStorage.setItem('vrSnapAngle', String($vrSnapAngle));
+									safeStorage.setItem('vrSnapAngle', String($vrSnapAngle));
 								}}
 							/>
 						</svelte:fragment>
@@ -1518,7 +1519,7 @@
 								checked={$vrMirrorSnapTurn}
 								onchange={(e: any) => {
 									$vrMirrorSnapTurn = e.target.checked;
-									localStorage.setItem('vrMirrorSnapTurn', String($vrMirrorSnapTurn));
+									safeStorage.setItem('vrMirrorSnapTurn', String($vrMirrorSnapTurn));
 								}} />
 						</svelte:fragment>
 						Flip the flick direction — left turns right and vice-versa
@@ -1530,7 +1531,7 @@
 								checked={$vrTeleportEnabled}
 								onchange={(e: any) => {
 									$vrTeleportEnabled = e.target.checked;
-									localStorage.setItem('vrTeleportEnabled', String($vrTeleportEnabled));
+									safeStorage.setItem('vrTeleportEnabled', String($vrTeleportEnabled));
 								}} />
 						</svelte:fragment>
 						Right-stick-up teleport arc — off if you navigate only by stick/fly
@@ -1542,7 +1543,7 @@
 								checked={$vrSleeveEnabled}
 								onchange={(e: any) => {
 									$vrSleeveEnabled = e.target.checked;
-									localStorage.setItem('vrSleeveEnabled', String($vrSleeveEnabled));
+									safeStorage.setItem('vrSleeveEnabled', String($vrSleeveEnabled));
 								}} />
 						</svelte:fragment>
 						Experimental — a strip of ghost primitives on your forearm: trigger-drag one out to place it (stick scales, wrist rotates). Grip-drop an object onto the strip to keep it as a personal slot
@@ -1554,7 +1555,7 @@
 								checked={$vrVertexHold}
 								onchange={(e: any) => {
 									$vrVertexHold = e.target.checked;
-									localStorage.setItem('vrVertexHold', String($vrVertexHold));
+									safeStorage.setItem('vrVertexHold', String($vrVertexHold));
 								}} />
 						</svelte:fragment>
 						Hold the trigger to carry a vertex (release drops it); off = press to grab, press again to drop
@@ -2248,7 +2249,7 @@
 		</div>
 	</div>
 	{#snippet footer()}
-		<Button onclick={() => localStorage.clear()}>Reset settings</Button>
+		<Button onclick={() => safeStorage.clear()}>Reset settings</Button>
 		<Button color="alternative" onclick={() => clearSavedSession()}>Clear saved session</Button>
 		<Button id="about-whats-new" color="alternative" onclick={() => { settingsOpen.set(false); openWhatsNew(); }}>What's new</Button>
 	{/snippet}

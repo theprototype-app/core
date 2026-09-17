@@ -38,6 +38,7 @@
     import { peerScenes, elsewhereThan, PRIVATE_SCENE } from '$lib/peerScenes';
     import { currentLevel } from '$lib/levels';
     import { showToast } from '../../stores/appStore';
+    import { safeStorage } from '$lib/safeStorage';
 
     /**
      * Stop watching and give the camera back. EXTRACTED from the banner button so the
@@ -389,9 +390,9 @@ $effect(() => {
 
 $effect(() => {
     const notice = $appNotice;
-    const seen = typeof localStorage !== 'undefined' && !!localStorage.getItem('hasSeenDisclaimer');
+    const seen = typeof localStorage !== 'undefined' && !!safeStorage.getItem('hasSeenDisclaimer');
     const markSeen = () => {
-        try { localStorage.setItem('hasSeenDisclaimer', 'true'); } catch {}
+        try { safeStorage.setItem('hasSeenDisclaimer', 'true'); } catch {}
     };
     if (notice && !seen)
         showInfoToast(
@@ -557,7 +558,7 @@ style="z-index: var(--z-toast-low); pointer-events: none;"
 {#if $fixLight}
 <div class="my-1">
     <Toast  transition={fly} class="flex items-center gap-3 p-2 rounded-lg dark:bg-gray-700 dark:border-dark-700 border-2 border-red-500" onclose={() => 
-        { localStorage.setItem('hasSeenDisclaimer', 'true'); }
+        { safeStorage.setItem('hasSeenDisclaimer', 'true'); }
         }>
         <div style="position: relative; left: 50%; transform: translate(-25%, -50%);">
     

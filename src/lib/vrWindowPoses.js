@@ -1,6 +1,7 @@
 // @ts-ignore - no bundled three type declarations (project-wide)
 import * as THREE from 'three';
 import { writable } from 'svelte/store';
+import { safeStorage } from './safeStorage';
 
 // VR window grab (111): every follower window (radial ring, objects panel,
 // color palette, stats card) can be detached by holding the other hand's grip
@@ -23,7 +24,7 @@ export const vrWindowAdjust = writable(null);
 
 function loadPoses() {
 	try {
-		return JSON.parse(localStorage.getItem('vrWindowPoses') ?? '{}') ?? {};
+		return JSON.parse(safeStorage.getItem('vrWindowPoses') ?? '{}') ?? {};
 	} catch {
 		return {};
 	}
@@ -42,7 +43,7 @@ export function saveWindowPose(id, offset) {
 	windowPoses.update((poses) => {
 		const next = { ...poses, [id]: offset };
 		try {
-			localStorage.setItem('vrWindowPoses', JSON.stringify(next));
+			safeStorage.setItem('vrWindowPoses', JSON.stringify(next));
 		} catch {}
 		return next;
 	});
@@ -52,7 +53,7 @@ export function saveWindowPose(id, offset) {
 export function resetWindowPoses() {
 	windowPoses.set({});
 	try {
-		localStorage.removeItem('vrWindowPoses');
+		safeStorage.removeItem('vrWindowPoses');
 	} catch {}
 }
 

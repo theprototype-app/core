@@ -52,6 +52,7 @@
 import { writable, derived, get } from 'svelte/store';
 import { peers } from '../stores/appStore';
 import { roomAlignment, roomKey } from './colocation';
+import { safeStorage } from './safeStorage';
 
 /** REMOTE peers only, `peerId -> roomKey`. A peer NOT in this map is not colocated —
  * absence is the single representation of that, so nothing ever writes a null row.
@@ -66,7 +67,7 @@ export const peerColocation = writable({});
  * hands are visible but the thing they hold is not.
  * @type {import('svelte/store').Writable<boolean>} */
 export const colocatedGhostHands = writable(
-	typeof localStorage === 'undefined' || localStorage.getItem('colocatedGhostHands') !== 'false'
+	typeof localStorage === 'undefined' || safeStorage.getItem('colocatedGhostHands') !== 'false'
 );
 
 /** How faint. Low enough to read as a hint rather than as an avatar, high enough to
@@ -246,5 +247,5 @@ export function resetColocationPresence() {
 // Declared last so nothing above it can be read by this subscriber before its `let`s
 // exist — the same TDZ rule the wiring comment states.
 colocatedGhostHands.subscribe((value) => {
-	if (typeof localStorage !== 'undefined') localStorage.setItem('colocatedGhostHands', String(value));
+	if (typeof localStorage !== 'undefined') safeStorage.setItem('colocatedGhostHands', String(value));
 });

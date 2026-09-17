@@ -106,6 +106,7 @@
 	import NotificationCenter from './NotificationCenter.svelte';
 	import CloudSlot from '../CloudSlot.svelte';
 	import { usersSlot, profileSlot, rolesInfo, scenePresence } from '$lib/cloudHooks';
+	import { safeStorage } from '$lib/safeStorage';
 
 	// N3: latency-band dot color for a peer's network-quality indicator
 	const qColor = (level: string) =>
@@ -145,7 +146,7 @@
 			const reader = new FileReader();
 			reader.onload = function(fileLoadedEvent) {			
 			avatarImage = fileLoadedEvent.target.result;
-			localStorage.setItem('avatar', avatarImage);
+			safeStorage.setItem('avatar', avatarImage);
 
 			//find and update, same for image
 			$userdata.forEach(element => {
@@ -159,7 +160,7 @@
 			};
 			reader.readAsDataURL(avatarFile);
 			// an uploaded image is a CUSTOM avatar
-			try { localStorage.removeItem('avatarReset'); } catch {}
+			try { safeStorage.removeItem('avatarReset'); } catch {}
 		}
 	 }
 
@@ -168,7 +169,7 @@
 	// (pushed by the plugin via cloudApi.setAccountIdentity -> $cloudIdentity) UNLESS
 	// the user set a custom one. "Custom username" = the usernameCustom flag; "custom
 	// avatar" = an uploaded image in localStorage.avatar.
-	const ls = (k: string) => (typeof localStorage !== 'undefined' ? localStorage.getItem(k) : null);
+	const ls = (k: string) => (typeof localStorage !== 'undefined' ? safeStorage.getItem(k) : null);
 	const usernameIsCustom = () => ls('usernameCustom') === '1';
 	const cid = $derived($cloudIdentity);
 	/** what the header/button/peers show */
@@ -196,7 +197,7 @@
 	/** @param {string} v */
 	function setPeersView(v: string) {
 		peersView = v;
-		try { localStorage.setItem('peers:view', v); } catch {}
+		try { safeStorage.setItem('peers:view', v); } catch {}
 	}
 	/** WHO AM I in the roster. The flat list has always taken index 0 as self (userdata
 	 * is built that way), so the fallback is not a guess — it is the same rule, reached
@@ -443,15 +444,15 @@
 
 	function onUsernameEdited() {
 		try {
-			localStorage.setItem('username', $username || '');
-			localStorage.setItem('usernameCustom', ($username || '').trim() ? '1' : '0');
+			safeStorage.setItem('username', $username || '');
+			safeStorage.setItem('usernameCustom', ($username || '').trim() ? '1' : '0');
 		} catch {}
 		broadcastUserdata();
 	}
 
 	function resetAvatarToDefault() {
 		avatarImage = '';
-		try { localStorage.removeItem('avatar'); } catch {}
+		try { safeStorage.removeItem('avatar'); } catch {}
 		broadcastUserdata(); // falls back to the cloud-account avatar (or default)
 	}
 
@@ -985,7 +986,7 @@
 				></path></svg>
 				{/if}
 				<!-- reset to the signed-in account's picture (or the default) -->
-				{#if avatarImage || (typeof localStorage !== 'undefined' && localStorage.getItem('avatar'))}
+				{#if avatarImage || (typeof localStorage !== 'undefined' && safeStorage.getItem('avatar'))}
 				<button id="avatar-reset" class="rounded-sm border border-gray-500 px-2 py-1 text-xs text-gray-300 hover:bg-gray-700"
 					onclick={resetAvatarToDefault}>Reset to {cid?.avatar ? 'account picture' : 'default'}</button>
 				{/if}

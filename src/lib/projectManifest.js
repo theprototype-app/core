@@ -31,6 +31,7 @@ import { showChoice } from './confirmDialog';
 import { sessionHost } from './connectionState';
 import { isViewer } from './objectPermissions';
 import { idbGet, idbPut } from './idb';
+import { safeStorage } from './safeStorage';
 
 const IDB_KEY = 'project:manifest';
 /** versions of ONE scene kept locally beyond the pinned set (fork 4) — the DEFAULT of
@@ -50,7 +51,7 @@ export const keepVersionsSetting = writable(readKeepVersions());
 
 function readKeepVersions() {
 	try {
-		const raw = localStorage.getItem('project:keepVersions');
+		const raw = safeStorage.getItem('project:keepVersions');
 		if (raw === null) return KEEP_VERSIONS;
 		const n = Number(raw);
 		return Number.isFinite(n) && n >= 0 ? Math.floor(n) : KEEP_VERSIONS;
@@ -61,7 +62,7 @@ function readKeepVersions() {
 
 keepVersionsSetting.subscribe((n) => {
 	try {
-		localStorage.setItem('project:keepVersions', String(n));
+		safeStorage.setItem('project:keepVersions', String(n));
 	} catch {}
 });
 

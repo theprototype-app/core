@@ -47,6 +47,7 @@
 	import { dragWindow } from '$lib/dragWindow';
 	import { focusStack } from '$lib/windowFocus';
 	import { notesDrawerOpen, inspectorClose } from '../../stores/appStore';
+	import { safeStorage } from '$lib/safeStorage';
 
 	/** @type {{ id: string, title: string, key: string,
 	 *   defaultRect?: { left?: number, top?: number, right?: number, bottom?: number },
@@ -89,7 +90,7 @@
 	const sheetKey = $derived('tbxSheetH:' + key);
 	$effect(() => {
 		if (sheetH || typeof window === 'undefined') return;
-		const saved = parseInt(localStorage.getItem(sheetKey) || '');
+		const saved = parseInt(safeStorage.getItem(sheetKey) || '');
 		sheetH = !saved || Number.isNaN(saved) ? Math.round(window.innerHeight * 0.4) : saved;
 	});
 	let sheetResizing = $state(false);
@@ -121,7 +122,7 @@
 			/** @type {HTMLElement} */ (e.currentTarget).releasePointerCapture?.(e.pointerId);
 		} catch {}
 		try {
-			localStorage.setItem(sheetKey, String(sheetH));
+			safeStorage.setItem(sheetKey, String(sheetH));
 		} catch {}
 	}
 </script>

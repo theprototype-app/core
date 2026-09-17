@@ -45,6 +45,7 @@ import {
 	endProportionalWheel
 } from './proportional';
 import { showProportionalRingAt, hideProportionalRing } from './proportionalRing';
+import { safeStorage } from './safeStorage';
 // the custom transform PIVOT (a LOCAL per-object pref). Another leaf — meshPivot
 // imports THREE, the two stores and `proportional`, and nothing from here.
 import {
@@ -100,11 +101,11 @@ export const VR_FACE_CAP = 2500;
  * @type {import('svelte/store').Writable<number>} */
 export const vrFaceCap = writable(
 	typeof localStorage !== 'undefined'
-		? parseInt(localStorage.getItem('vrFaceCap') ?? '') || VR_FACE_CAP
+		? parseInt(safeStorage.getItem('vrFaceCap') ?? '') || VR_FACE_CAP
 		: VR_FACE_CAP
 );
 if (typeof localStorage !== 'undefined')
-	vrFaceCap.subscribe((value) => localStorage.setItem('vrFaceCap', String(value)));
+	vrFaceCap.subscribe((value) => safeStorage.setItem('vrFaceCap', String(value)));
 
 /** D7: over-limit / blocked-edit warning with a deep link into the Settings
  * VR section (works in noVR immediately; VR users see it on exit — on-device
@@ -1539,10 +1540,10 @@ let wireSource = null;
 
 /** wireframe overlay display toggle — honored by BOTH edit modes, local pref */
 export const meshEditWireframe = writable(
-	typeof localStorage === 'undefined' || localStorage.getItem('meshEditWireframe') !== 'false'
+	typeof localStorage === 'undefined' || safeStorage.getItem('meshEditWireframe') !== 'false'
 );
 meshEditWireframe.subscribe((value) => {
-	if (typeof localStorage !== 'undefined') localStorage.setItem('meshEditWireframe', String(value));
+	if (typeof localStorage !== 'undefined') safeStorage.setItem('meshEditWireframe', String(value));
 	if (wire) wire.visible = value; // live toggle mid-session (face mode)
 });
 
@@ -1552,10 +1553,10 @@ meshEditWireframe.subscribe((value) => {
  * editorNavigation (W/A/S/D/Q/E fly is suppressed while it's on; toggling the
  * pref OFF is the escape hatch that returns the camera keys, quiz 15-D3). */
 export const meshEditHotkeys = writable(
-	typeof localStorage === 'undefined' || localStorage.getItem('meshEditHotkeys') !== 'false'
+	typeof localStorage === 'undefined' || safeStorage.getItem('meshEditHotkeys') !== 'false'
 );
 meshEditHotkeys.subscribe((value) => {
-	if (typeof localStorage !== 'undefined') localStorage.setItem('meshEditHotkeys', String(value));
+	if (typeof localStorage !== 'undefined') safeStorage.setItem('meshEditHotkeys', String(value));
 });
 
 /** Show the object SELECTION OUTLINE while mesh-editing — local pref, default
@@ -1564,10 +1565,10 @@ meshEditHotkeys.subscribe((value) => {
  * what they do with depthTest/renderOrder: while you are editing elements, the
  * object-level outline is pure glare. Read by Outline.svelte. */
 export const meshEditOutline = writable(
-	typeof localStorage !== 'undefined' && localStorage.getItem('meshEditOutline') === 'true'
+	typeof localStorage !== 'undefined' && safeStorage.getItem('meshEditOutline') === 'true'
 );
 meshEditOutline.subscribe((value) => {
-	if (typeof localStorage !== 'undefined') localStorage.setItem('meshEditOutline', String(value));
+	if (typeof localStorage !== 'undefined') safeStorage.setItem('meshEditOutline', String(value));
 });
 
 /** Show the raw TRIANGULATION in the edit wireframe — local pref, default OFF.
@@ -1576,7 +1577,7 @@ meshEditOutline.subscribe((value) => {
  * not dissolvable, so drawing it advertised an edge the tools refuse to touch.
  * Every modeller shows quads in edit mode for the same reason. */
 export const meshEditTriWire = writable(
-	typeof localStorage !== 'undefined' && localStorage.getItem('meshEditTriWire') === 'true'
+	typeof localStorage !== 'undefined' && safeStorage.getItem('meshEditTriWire') === 'true'
 );
 
 /** meshEdit owns the vertex-mode overlay; it imports THIS module, so it hands
@@ -1591,7 +1592,7 @@ export function registerVertexWireRebuild(fn) {
 }
 
 meshEditTriWire.subscribe((value) => {
-	if (typeof localStorage !== 'undefined') localStorage.setItem('meshEditTriWire', String(value));
+	if (typeof localStorage !== 'undefined') safeStorage.setItem('meshEditTriWire', String(value));
 	// the edge set differs, so this rebuilds rather than toggling visibility.
 	// `wire` is the only session state read here: faceEdited lives further down
 	// the file and would TDZ-crash the SSR eval, so refreshFaceWireframe (which
@@ -6919,12 +6920,12 @@ export function registerGizmoPrefListener(fn) {
  * subscriber runs at module eval (the store-subscriber TDZ gotcha).
  * @type {import('svelte/store').Writable<'local'|'world'>} */
 export const faceGizmoSpace = writable(
-	typeof localStorage !== 'undefined' && localStorage.getItem('faceGizmoSpace') === 'world'
+	typeof localStorage !== 'undefined' && safeStorage.getItem('faceGizmoSpace') === 'world'
 		? 'world'
 		: 'local'
 );
 faceGizmoSpace.subscribe((value) => {
-	if (typeof localStorage !== 'undefined') localStorage.setItem('faceGizmoSpace', String(value));
+	if (typeof localStorage !== 'undefined') safeStorage.setItem('faceGizmoSpace', String(value));
 	/** @type {any} */
 	const controls = get(TControls);
 	// live flip while the face gizmo is seated
@@ -6943,10 +6944,10 @@ faceGizmoSpace.subscribe((value) => {
  * of the way" — modelling with click-select and the ops toolbar only.
  * @type {import('svelte/store').Writable<boolean>} */
 export const meshGizmoEnabled = writable(
-	typeof localStorage !== 'undefined' ? localStorage.getItem('meshGizmoEnabled') !== '0' : true
+	typeof localStorage !== 'undefined' ? safeStorage.getItem('meshGizmoEnabled') !== '0' : true
 );
 meshGizmoEnabled.subscribe((value) => {
-	if (typeof localStorage !== 'undefined') localStorage.setItem('meshGizmoEnabled', value ? '1' : '0');
+	if (typeof localStorage !== 'undefined') safeStorage.setItem('meshGizmoEnabled', value ? '1' : '0');
 	if (typeof window === 'undefined') return;
 	// live: seat or drop the gizmo the moment the switch flips, in whichever mode is open.
 	// 24-B1: switching it back ON also restores a pick the mode key hid, so the toolbox

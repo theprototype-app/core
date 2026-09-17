@@ -40,6 +40,7 @@
 	// 16-Q4: the camera preview window renders as an inset viewport of THIS renderer
 	import { pipRect, pipTarget, glRect } from '$lib/cameraPip';
 	import { buildCamera } from '$lib/cameraObjects';
+	import { safeStorage } from '$lib/safeStorage';
 
 	let outlineEffectSelected: OutlineEffect | null = null;
 	let outlineEffectLocked: OutlineEffect | null = null;
@@ -428,7 +429,7 @@
 	});
 	// e2e hook (debugStores opt-in): the effects live in this component only
 	onMount(() => {
-		if (typeof localStorage !== 'undefined' && localStorage.getItem('debugStores'))
+		if (typeof localStorage !== 'undefined' && safeStorage.getItem('debugStores'))
 			(window as any).__outlineDebug = () => ({
 				selected: outlineEffectSelected?.selection.size ?? -1,
 				locked: outlineEffectLocked?.selection.size ?? -1,
@@ -439,7 +440,7 @@
 		// L1: the compiled chain lives in this component only, and its ORDER is the
 		// thing worth asserting — so the hook names each pass by identity rather than
 		// by constructor (minified in a build) and reports the merge plan.
-		if (typeof localStorage !== 'undefined' && localStorage.getItem('debugStores'))
+		if (typeof localStorage !== 'undefined' && safeStorage.getItem('debugStores'))
 			(window as any).__postDebug = () => ({
 				chain: ((composer as any).passes ?? []).map((pass: any) => {
 					if (pass === renderPass) return 'render';

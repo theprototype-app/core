@@ -15,6 +15,7 @@
 	import { tabbable, resizeGroup, tabGroups } from '$lib/windowTabs';
 	import { setDockOccupant, dockHeight, visibleDockKey, dockMinimized, activateDock, dockModeArm, forgetDockTab } from '$lib/bottomDock';
 	import { bottomDockable } from '$lib/bottomDockDrop';
+	import { safeStorage } from '$lib/safeStorage';
 
 	let text = $state('');
 	let error = $state('');
@@ -22,13 +23,13 @@
 	let winW = $state(460);
 	let winH = $state(440);
 	if (typeof localStorage !== 'undefined') {
-		docked = localStorage.getItem('flowCodeDocked') !== 'false'; // start docked
-		winW = parseInt(localStorage.getItem('flowCodeWinW') ?? '460') || 460;
-		winH = parseInt(localStorage.getItem('flowCodeWinH') ?? '440') || 440;
+		docked = safeStorage.getItem('flowCodeDocked') !== 'false'; // start docked
+		winW = parseInt(safeStorage.getItem('flowCodeWinW') ?? '460') || 460;
+		winH = parseInt(safeStorage.getItem('flowCodeWinH') ?? '440') || 440;
 	}
 	function setDocked(/** @type {boolean} */ v) {
 		docked = v;
-		localStorage.setItem('flowCodeDocked', String(v));
+		safeStorage.setItem('flowCodeDocked', String(v));
 		if (v) activateDock('flowcode');
 		else forgetDockTab('flowcode'); // an undock gives up its slot, so re-docking is a fresh add at the end of the strip
 	}
@@ -129,8 +130,8 @@
 		if (!winResizing) return;
 		winResizing = false;
 		e.currentTarget.releasePointerCapture?.(e.pointerId);
-		localStorage.setItem('flowCodeWinW', String(winW));
-		localStorage.setItem('flowCodeWinH', String(winH));
+		safeStorage.setItem('flowCodeWinW', String(winW));
+		safeStorage.setItem('flowCodeWinH', String(winH));
 	}
 </script>
 

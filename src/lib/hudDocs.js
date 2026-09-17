@@ -27,6 +27,7 @@ import { HUD_KINDS as REGISTERED_KINDS, defaultsForKind, styleDefaultsForKind, k
 // 21-D6: a screen can follow the GAME STATE. gameState is a leaf too, so this closes no
 // cycle — and it is what lets a menu hide itself when the game starts, with no wiring.
 import { gameState } from './gameState';
+import { safeStorage } from './safeStorage';
 
 /** The scene-wide HUD, and the only key the v1 UI creates. */
 export const HUD_SCENE_KEY = 'scene';
@@ -85,12 +86,12 @@ export const hudSelection = writable({});
  * `viewportOverrides.hud` is the separate, persistent local kill switch.
  * @type {import('svelte/store').Writable<boolean>} */
 export const hudPreviewInViewport = writable(
-	typeof localStorage !== 'undefined' && localStorage.getItem('hudPreviewInViewport') === 'true'
+	typeof localStorage !== 'undefined' && safeStorage.getItem('hudPreviewInViewport') === 'true'
 );
 if (typeof localStorage !== 'undefined')
 	hudPreviewInViewport.subscribe((on) => {
 		try {
-			localStorage.setItem('hudPreviewInViewport', String(!!on));
+			safeStorage.setItem('hudPreviewInViewport', String(!!on));
 		} catch {}
 	});
 

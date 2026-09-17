@@ -1,6 +1,7 @@
 import { get } from 'svelte/store';
 import { inspectorClose, closeMenu } from '../stores/appStore';
 import { bottomDockWouldTake } from './bottomDockDrop';
+import { safeStorage } from './safeStorage';
 
 // Docking lite (phase 81L). Drag a window near the left/right screen edge to
 // dock it as a full-height panel (--z-drawer tier); drag its header away to
@@ -19,17 +20,17 @@ let docked = { left: null, right: null };
 const registry = new Map(); // key -> {node, prevRect, handle}
 
 try {
-	const saved = JSON.parse(localStorage.getItem('dockedWindows') ?? 'null');
+	const saved = JSON.parse(safeStorage.getItem('dockedWindows') ?? 'null');
 	if (saved) docked = { left: saved.left ?? null, right: saved.right ?? null };
 } catch {}
 
 function persist() {
-	localStorage.setItem('dockedWindows', JSON.stringify(docked));
+	safeStorage.setItem('dockedWindows', JSON.stringify(docked));
 }
 
 /** @param {string} key */
 function widthOf(key) {
-	const value = parseInt(localStorage.getItem('dockWidth:' + key) ?? '300');
+	const value = parseInt(safeStorage.getItem('dockWidth:' + key) ?? '300');
 	return Math.min(Math.max(Number.isNaN(value) ? 300 : value, 250), Math.round(window.innerWidth * 0.4));
 }
 
@@ -102,7 +103,7 @@ function apply(key) {
 			const move = (/** @type {any} */ ev) => {
 				const delta = currentSide === 'left' ? ev.clientX - startX : startX - ev.clientX;
 				const next = Math.min(Math.max(250, startWidth + delta), Math.round(window.innerWidth * 0.4));
-				localStorage.setItem('dockWidth:' + key, String(next));
+				safeStorage.setItem('dockWidth:' + key, String(next));
 				apply(key);
 			};
 			const up = () => {

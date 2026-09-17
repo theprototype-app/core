@@ -16,7 +16,7 @@ import { applyMeshGeo } from '$lib/faceEdit';
 // materialsHandler, history) are already in this file's subtree.
 import { applyUvPaint, applyUvPaintEnd } from '$lib/uvEditor';
 import { applySplineEdit } from '$lib/splineTool';
-import { initVoiceChat, attachVoiceToPeer, voicePeerConnected } from '$lib/voiceChat';
+import { initVoiceChat, attachVoiceToPeer, voicePeerConnected, releaseMic } from '$lib/voiceChat';
 import { resolvePeerOptions, describePeerServer, peerServerStatus, parseInviteHash, decodeInviteServer, applyInviteServerOverride, inviteServerOverride } from '$lib/peerServer';
 // 27-B/27-G integration: the RECOVERY story belongs in the copyable bundle, not in a
 // console nobody reads. diagnostics.js is a zero-dependency leaf, so this closes no cycle.
@@ -1501,6 +1501,10 @@ export class PeerConnection {
 		userdata.set(get(userdata).filter(u => u[0] === this.peer.id));
 		waitingForApproval.set([]);
 		pendingApprovals.set([]);
+		// 27-H (audit M9): leaving a session must hand the microphone back. Nothing here
+		// touched voice, so the tab's recording indicator stayed on and the device stayed
+		// claimed after you left — for the life of the page.
+		releaseMic();
 		resetSession();
 		checkLocks();
 		peers.update((value) => value);

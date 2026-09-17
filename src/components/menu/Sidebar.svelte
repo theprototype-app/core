@@ -25,6 +25,7 @@
 	import { sidebarSlot } from '$lib/cloudHooks';
 	import CloudSlot from '../CloudSlot.svelte';
 	import { whatsNewUnseen, openWhatsNew } from '$lib/whatsNew';
+	import { safeStorage } from '$lib/safeStorage';
 
 	// 203: redesigned as a compact floating panel — flat list (order preserved,
 	// no boxed group / section headers / vertical bar), a fast fade-in (was a
@@ -44,8 +45,8 @@
 	// your work, and it was taking a permanent third of a row from the two that are.
 	// An enabled optional format renders on a SECOND ROW rather than widening the first,
 	// so the primary pair never moves as the cog is toggled.
-	const initShowJson = typeof localStorage !== 'undefined' && localStorage.getItem('showJsonFormat') === 'true';
-	const initShowGltf = typeof localStorage !== 'undefined' && localStorage.getItem('showGltfFormat') === 'true';
+	const initShowJson = typeof localStorage !== 'undefined' && safeStorage.getItem('showJsonFormat') === 'true';
+	const initShowGltf = typeof localStorage !== 'undefined' && safeStorage.getItem('showGltfFormat') === 'true';
 	/**
 	 * A STORED format can name one that is no longer on screen — a Save button pointing
 	 * at a control the user cannot see, which is the bug the JSON rule already existed
@@ -57,7 +58,7 @@
 		if (f === 'gltf' && !gltf) return 'tp';
 		return f;
 	}
-	const initFormat = typeof localStorage !== 'undefined' ? localStorage.getItem('saveFormat') || 'tp' : 'tp';
+	const initFormat = typeof localStorage !== 'undefined' ? safeStorage.getItem('saveFormat') || 'tp' : 'tp';
 	let saveFormat = $state(visibleFormat(initFormat, initShowJson, initShowGltf));
 	let showJson = $state(initShowJson);
 	let showGltf = $state(initShowGltf);
@@ -78,9 +79,9 @@
 		exportPos = { top, left };
 		exportSettingsOpen = true;
 	}
-	let tpAssets = $state(typeof localStorage !== 'undefined' && localStorage.getItem('tpsceneAssets') !== 'false');
-	let tpPacks = $state(typeof localStorage !== 'undefined' && localStorage.getItem('tpscenePacks') === 'true');
-	let tpFlow = $state(typeof localStorage !== 'undefined' && localStorage.getItem('tpsceneFlow') !== 'false');
+	let tpAssets = $state(typeof localStorage !== 'undefined' && safeStorage.getItem('tpsceneAssets') !== 'false');
+	let tpPacks = $state(typeof localStorage !== 'undefined' && safeStorage.getItem('tpscenePacks') === 'true');
+	let tpFlow = $state(typeof localStorage !== 'undefined' && safeStorage.getItem('tpsceneFlow') !== 'false');
 	// 21-I5 (locked answer 2): the PROJECT box is ON by default, because a .tp has carried
 	// its scene history since 21-G3 and flipping that off silently would make an existing
 	// behaviour vanish — and it gates machinery with its own proper import.
@@ -90,10 +91,10 @@
 	// an unnamed or never-travelled scene has no manifest entry, so the box that used to
 	// sit here silently bundled nothing. The Explorer's scene card knows the name and the
 	// history unambiguously, so downloading versions lives on ITS menu instead.
-	let tpProjectVersions = $state(typeof localStorage === 'undefined' || localStorage.getItem('tpProjectVersions') !== 'false');
+	let tpProjectVersions = $state(typeof localStorage === 'undefined' || safeStorage.getItem('tpProjectVersions') !== 'false');
 	function pickFormat(f: string) {
 		saveFormat = f;
-		localStorage.setItem('saveFormat', f);
+		safeStorage.setItem('saveFormat', f);
 	}
 	/** Called after either cog checkbox moves: if what is selected just went off screen,
 	 * fall back (and PERSIST the fallback — the stored value is what the next boot reads). */
@@ -291,31 +292,31 @@
 		<p class="mb-2 font-semibold">Export settings</p>
 		<p class="mb-1 text-[11px] text-gray-400">Scene (.tpscene) includes:</p>
 		<label class="flex items-center gap-2 py-0.5">
-			<input class="tp-check" type="checkbox" checked={tpAssets} onchange={(e: any) => { tpAssets = e.target.checked; localStorage.setItem('tpsceneAssets', String(tpAssets)); }} />
+			<input class="tp-check" type="checkbox" checked={tpAssets} onchange={(e: any) => { tpAssets = e.target.checked; safeStorage.setItem('tpsceneAssets', String(tpAssets)); }} />
 			Assets (audio, textures, configs)
 		</label>
 		<label class="flex items-center gap-2 py-0.5">
-			<input id="tpscene-packs" class="tp-check" type="checkbox" checked={tpPacks} onchange={(e: any) => { tpPacks = e.target.checked; localStorage.setItem('tpscenePacks', String(tpPacks)); }} />
+			<input id="tpscene-packs" class="tp-check" type="checkbox" checked={tpPacks} onchange={(e: any) => { tpPacks = e.target.checked; safeStorage.setItem('tpscenePacks', String(tpPacks)); }} />
 			Imported packs
 		</label>
 		<label class="flex items-center gap-2 py-0.5">
-			<input id="tpscene-flow" class="tp-check" type="checkbox" checked={tpFlow} onchange={(e: any) => { tpFlow = e.target.checked; localStorage.setItem('tpsceneFlow', String(tpFlow)); }} />
+			<input id="tpscene-flow" class="tp-check" type="checkbox" checked={tpFlow} onchange={(e: any) => { tpFlow = e.target.checked; safeStorage.setItem('tpsceneFlow', String(tpFlow)); }} />
 			Flow graph (nodes + edges)
 		</label>
 		<div class="my-2 border-t border-gray-700"></div>
 		<p class="mb-1 text-[11px] text-gray-400">Project (.tp) includes:</p>
 		<label class="flex items-center gap-2 py-0.5">
-			<input id="tp-project-versions" class="tp-check" type="checkbox" checked={tpProjectVersions} onchange={(e: any) => { tpProjectVersions = e.target.checked; localStorage.setItem('tpProjectVersions', String(tpProjectVersions)); }} />
+			<input id="tp-project-versions" class="tp-check" type="checkbox" checked={tpProjectVersions} onchange={(e: any) => { tpProjectVersions = e.target.checked; safeStorage.setItem('tpProjectVersions', String(tpProjectVersions)); }} />
 			<span title="Every kept version of every scene. Off exports each scene's current version only.">Scene version history</span>
 		</label>
 		<div class="my-2 border-t border-gray-700"></div>
 		<!-- 21-H1: both optional formats, same shape, both OFF by default -->
 		<label class="flex items-center gap-2 py-0.5">
-			<input id="show-gltf-format" class="tp-check" type="checkbox" checked={showGltf} onchange={(e: any) => { showGltf = e.target.checked; localStorage.setItem('showGltfFormat', String(showGltf)); syncFormatVisibility(); }} />
+			<input id="show-gltf-format" class="tp-check" type="checkbox" checked={showGltf} onchange={(e: any) => { showGltf = e.target.checked; safeStorage.setItem('showGltfFormat', String(showGltf)); syncFormatVisibility(); }} />
 			Show GLTF format
 		</label>
 		<label class="flex items-center gap-2 py-0.5">
-			<input id="show-json-format" class="tp-check" type="checkbox" checked={showJson} onchange={(e: any) => { showJson = e.target.checked; localStorage.setItem('showJsonFormat', String(showJson)); syncFormatVisibility(); }} />
+			<input id="show-json-format" class="tp-check" type="checkbox" checked={showJson} onchange={(e: any) => { showJson = e.target.checked; safeStorage.setItem('showJsonFormat', String(showJson)); syncFormatVisibility(); }} />
 			Show JSON format
 		</label>
 		<div class="mt-3 flex justify-end">

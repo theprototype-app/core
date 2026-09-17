@@ -45,6 +45,14 @@ jobs:
       # stale by three.
       - name: svelte-check baseline gate
         run: node scripts/check-ratchet.cjs
+      # 27-H (audit M4): 507 bare `localStorage` calls were routed through
+      # $lib/safeStorage in one pass. Without a gate that codemod decays on the next
+      # feature, because the file you are editing still shows you ninety-three examples
+      # of the old way. `setItem` throws in Safari private mode and on a full quota, and
+      # most of these sit inside $effects and store subscribers, where the throw kills
+      # the subscriber for the session.
+      - name: no bare localStorage
+        run: node scripts/check-storage.cjs
 
   unit:
     runs-on: ubuntu-latest

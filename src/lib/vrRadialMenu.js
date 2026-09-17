@@ -14,6 +14,7 @@ import { simulating, remoteSimulating, toggleSimulation } from './physics';
 import { setMicMode, vrMicMode } from './voiceChat';
 import { duplicateSelection, deleteSelection, groupSelection, selectionUuids } from './objectActions';
 import { savePrefab, savePrefabSelection } from './prefabs';
+import { safeStorage } from './safeStorage';
 
 // D4 (roadmap 13): selection-set helpers for the Edit ring — counted labels
 // act on the whole SET (parity with the desktop object menu, U-2)
@@ -286,7 +287,7 @@ function registerBuiltins() {
 				SNAP_ANGLES[(SNAP_ANGLES.indexOf(get(vrSnapAngle)) + 1) % SNAP_ANGLES.length];
 			vrSnapAngle.set(next);
 			try {
-				localStorage.setItem('vrSnapAngle', String(next));
+				safeStorage.setItem('vrSnapAngle', String(next));
 			} catch {}
 		}
 	});
@@ -321,7 +322,7 @@ function registerBuiltins() {
 			const next = get(vrMenuHand) === 'left' ? 'right' : 'left';
 			vrMenuHand.set(/** @type {any} */ (next));
 			try {
-				localStorage.setItem('vrMenuHand', next);
+				safeStorage.setItem('vrMenuHand', next);
 			} catch {}
 		}
 	});

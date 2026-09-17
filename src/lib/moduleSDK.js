@@ -38,6 +38,7 @@ import { APP_VERSION } from './version.js';
 import { ndcFromClient } from './canvasRect';
 // 27-B: recovery paths report through the diagnostics ring (hardening audit H4)
 import { log } from './diagnostics';
+import { safeStorage } from './safeStorage';
 
 // Module SDK v1 — in-repo modules under src/modules/<name>/ register through
 // the api object passed to their register(api). See MODULES.md for the guide.
@@ -1536,7 +1537,7 @@ export function isModuleLoaded(id) {
 
 function readDisabled() {
 	try {
-		return JSON.parse(localStorage.getItem('disabledModules') ?? '[]');
+		return JSON.parse(safeStorage.getItem('disabledModules') ?? '[]');
 	} catch {
 		return [];
 	}
@@ -1548,7 +1549,7 @@ export const disabledModules = writable(
 );
 disabledModules.subscribe((list) => {
 	if (typeof localStorage !== 'undefined')
-		localStorage.setItem('disabledModules', JSON.stringify(list));
+		safeStorage.setItem('disabledModules', JSON.stringify(list));
 });
 
 /**

@@ -9,6 +9,7 @@ import { registerHistoryKind, recordEntry } from './history';
 import { ensureAudioContext } from './audioEngine';
 import { deviceHandle, deviceSpec, isDeviceObject } from './audioDevices';
 import { wireframeActive } from './viewMode';
+import { safeStorage } from './safeStorage';
 
 // THE PATCH (roadmap #23 A4, cloud plans-core/pending/23-a-audio-engine.md).
 //
@@ -381,7 +382,7 @@ export function reconcileRouting() {
 
 /** LOCAL pref: draw the cables. On by default — a patch you cannot see is not much of
  * a patch. */
-export const showCables = writable(typeof localStorage === 'undefined' || localStorage.getItem('showCables') !== 'false');
+export const showCables = writable(typeof localStorage === 'undefined' || safeStorage.getItem('showCables') !== 'false');
 
 /** The flowSockets palette, by PORT kind, so a wire means the same thing in the 3D
  * world and in the node editor: audio = orange (an effect), cv = number blue, midi =
@@ -550,7 +551,7 @@ export function startCables() {
 	});
 	showCables.subscribe((value) => {
 		try {
-			localStorage.setItem('showCables', String(value));
+			safeStorage.setItem('showCables', String(value));
 		} catch {}
 	});
 }

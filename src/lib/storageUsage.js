@@ -205,19 +205,22 @@ const READ_TIMEOUT_MS = 5000;
 /** a sentinel the timeout resolves with — `undefined` is a legitimate stored value */
 const UNMEASURED = Symbol('unmeasured');
 /**
- * A BOUNDED read. `idb.js` settles its promise on the request's own `onsuccess` /
- * `onerror` and nothing else — so a transaction that ABORTS without firing either leaves
- * the promise pending FOREVER, and an `await` on it stalls whatever is holding it with no
- * error anywhere. Measured here, and it is worth stating precisely because the symptom is
- * so unhelpful: a scan opened from the header chip stopped after three keys, the panel
- * kept showing the PREVIOUS reading, `unhandledrejection` never fired, and a scan started
- * a few seconds later over the same store completed normally.
+ * A BOUNDED read. This was written around a bug in `idb.js`: it settled its promise on
+ * the request's own `onsuccess` / `onerror` and nothing else, so a transaction that
+ * ABORTED without firing either left the promise pending FOREVER and an `await` on it
+ * stalled its holder with no error anywhere. Worth stating precisely, because the symptom
+ * was so unhelpful: a scan opened from the header chip stopped after three keys, the
+ * panel kept showing the PREVIOUS reading, `unhandledrejection` never fired, and a scan
+ * started a few seconds later over the same store completed normally.
  *
- * A panel whose whole job is to report a number must not be able to hang silently, so a
- * read that does not come back inside the window is reported as an UNMEASURED row rather
- * than being waited on. It is the honest degradation: the row still appears, still says
- * what it is, and still offers to remove itself — only its size is missing, and it says
- * so. (The scan needs six of these now rather than one per file: see the blob branch.)
+ * 27-H FIXED THAT AT THE SOURCE — `idb.js` rejects on `onabort` and bounds every
+ * operation at 10s — and this stays anyway, for a reason that has not changed: a panel
+ * whose whole job is to report a number must not wait ten seconds per key for a store
+ * that is misbehaving. A read that does not come back inside THIS window is reported as
+ * an UNMEASURED row rather than being waited on. It is the honest degradation: the row
+ * still appears, still says what it is, and still offers to remove itself — only its size
+ * is missing, and it says so. (The scan needs six of these now rather than one per file:
+ * see the blob branch.)
  * @param {string} key @returns {Promise<{value: any, measured: boolean}>}
  */
 async function safeGet(key) {

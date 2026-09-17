@@ -7,8 +7,7 @@ import {
 	TControls,
 	lockedObjects,
 	isVRMode,
-	transformMode
-} from '../stores/sceneStore';
+	transformMode, pokeScene } from '../stores/sceneStore';
 import { peers, showToast } from '../stores/appStore';
 import { registerHistoryKind, recordEntry } from './history';
 // 15-F: session-scoped undo — editSession imports ONLY history (an edge we
@@ -56,6 +55,7 @@ import { slideClamp } from './meshToolParams';
 // W9: where the viewport is. A leaf (svelte/store + sceneStore) — no new edge out of
 // the history-cycle family this module belongs to.
 import { canvasRect } from './canvasRect';
+import { safeStorage } from './safeStorage';
 // the custom transform PIVOT (local pref). Another leaf: meshPivot imports THREE
 // + the two stores + proportional, and nothing from here or faceEdit.
 import {
@@ -138,13 +138,13 @@ const HANDLE_MULTI = 0x22c55e; // 177: ctrl/shift multi-select for Create face
  * @type {import('svelte/store').Writable<number>} */
 export const vertexHandleScale = writable(
 	typeof localStorage !== 'undefined'
-		? Math.min(Math.max(parseFloat(localStorage.getItem('vertexHandleScale') ?? '') || 1, 0.1), 4)
+		? Math.min(Math.max(parseFloat(safeStorage.getItem('vertexHandleScale') ?? '') || 1, 0.1), 4)
 		: 1
 );
 /** Screen-constant handle size (default ON — see refreshHandleMatrix). A local pref.
  * @type {import('svelte/store').Writable<boolean>} */
 export const vertexHandleAdaptive = writable(
-	typeof localStorage !== 'undefined' ? localStorage.getItem('vertexHandleAdaptive') !== '0' : true
+	typeof localStorage !== 'undefined' ? safeStorage.getItem('vertexHandleAdaptive') !== '0' : true
 );
 /** reused so the per-frame path allocates nothing */
 const scaleVector = new THREE.Vector3();
@@ -187,14 +187,14 @@ const APPARENT_PX = 9;
 
 vertexHandleAdaptive.subscribe((value) => {
 	if (typeof localStorage !== 'undefined')
-		localStorage.setItem('vertexHandleAdaptive', value ? '1' : '0');
+		safeStorage.setItem('vertexHandleAdaptive', value ? '1' : '0');
 	if (!handleMesh || !edited) return;
 	// re-pose every handle: the matrices carry the scale, so switching modes is a rewrite
 	for (let i = 0; i < handles.length; i++) refreshHandleMatrix(i);
 });
 
 vertexHandleScale.subscribe((value) => {
-	if (typeof localStorage !== 'undefined') localStorage.setItem('vertexHandleScale', String(value));
+	if (typeof localStorage !== 'undefined') safeStorage.setItem('vertexHandleScale', String(value));
 	// live, and cheap: the size lives in the instance MATRICES, so nothing is rebuilt and
 	// no handle index moves — the selection survives a size change
 	if (!handleMesh || !edited) return;
@@ -1636,7 +1636,7 @@ export function applyVerts(uuid, indices, positionArray) {
 			overlay.geometry = editWireGeometry(object.geometry);
 		}
 	}
-	objectsGroup.update((value) => value);
+	pokeScene();
 }
 
 // ---- VR vertex editing (113): drive a handle from a controller, no gizmo ----
@@ -1649,11 +1649,11 @@ export const VR_VERTEX_CAP = 800;
  * @type {import('svelte/store').Writable<number>} */
 export const vrVertexCap = writable(
 	typeof localStorage !== 'undefined'
-		? parseInt(localStorage.getItem('vrVertexCap') ?? '') || VR_VERTEX_CAP
+		? parseInt(safeStorage.getItem('vrVertexCap') ?? '') || VR_VERTEX_CAP
 		: VR_VERTEX_CAP
 );
 if (typeof localStorage !== 'undefined')
-	vrVertexCap.subscribe((value) => localStorage.setItem('vrVertexCap', String(value)));
+	vrVertexCap.subscribe((value) => safeStorage.setItem('vrVertexCap', String(value)));
 
 /** Vertex (position entry) count of an object's geometry @param {any} object */
 export function vertexCount(object) {

@@ -16,8 +16,7 @@ import {
 	orbitControls,
 	isVRMode,
 	gizmoSuppressed,
-	cameraClaim
-} from '../stores/sceneStore';
+	cameraClaim, pokeScene } from '../stores/sceneStore';
 import { attachMultiPivot, releaseMultiPivot, hasCustomOrigin, pivotPose, setPivotOrigin } from './multiTransform';
 import { focusTargetFace, faceEditObject, hideElementSelection, restoreElementSelection } from './faceEdit';
 import { focusTargetVertex, editingObject, hideVertexSelection, restoreVertexSelection } from './meshEdit';
@@ -379,7 +378,7 @@ export function deleteObjectsByUuid(uuids) {
 		object.parent?.remove(object);
 		if (peer) peer.send({ type: 'delete', uuid, peerId: peer.peer.id });
 	}
-	objectsGroup.update((value) => value);
+	pokeScene();
 	return uuids.length;
 }
 
@@ -511,7 +510,7 @@ export function duplicateObject(uuid, options = {}) {
 	}
 	if (options.transient) markTransient(clone);
 	source.parent.add(clone);
-	objectsGroup.update((value) => value);
+	pokeScene();
 
 	/** @type {any} */
 	const peer = get(peers);
@@ -604,7 +603,7 @@ export function applyRemoteDuplicate(sourceUuid, uuids, name, pos, transient) {
 	clone.position.fromArray(pos);
 	if (transient) markTransient(clone);
 	source.parent.add(clone);
-	objectsGroup.update((value) => value);
+	pokeScene();
 }
 
 // name/visibility undo entries replay by setting the recorded value directly
@@ -664,7 +663,7 @@ registerHistoryKind('props', (entry, state) => {
 		if (peer)
 			peer.send({ type: 'objectParameters', parameter: 'origin', uuid: entry.uuid, origin: state.origin });
 	}
-	objectsGroup.update((value) => value);
+	pokeScene();
 	return true;
 });
 
@@ -691,7 +690,7 @@ export function toggleObjectVisibility(uuid) {
 		after: { visible: !object.visible }
 	});
 	object.visible = !object.visible;
-	objectsGroup.update((value) => value);
+	pokeScene();
 	/** @type {any} */
 	const peer = get(peers);
 	if (peer)
@@ -706,7 +705,7 @@ export function renameObject(uuid, name) {
 	if (object.name !== name)
 		recordEntry({ kind: 'props', uuid: uuid, before: { name: object.name }, after: { name: name } });
 	object.name = name;
-	objectsGroup.update((value) => value);
+	pokeScene();
 	/** @type {any} */
 	const peer = get(peers);
 	if (peer) peer.send({ type: 'name', uuid: uuid, name: name });
@@ -755,7 +754,7 @@ export function moveObjectToGroup(uuid, target) {
 	const toParent = object.parent === group ? 'root' : object.parent?.uuid;
 	if (fromParent !== toParent)
 		recordEntry({ kind: 'group', uuid: uuid, before: { parent: fromParent }, after: { parent: toParent } });
-	objectsGroup.update((value) => value);
+	pokeScene();
 }
 
 /**
@@ -825,7 +824,7 @@ export function groupSelection() {
 	}
 	for (const uuid of uuids) moveObjectToGroup(uuid, groupUuid);
 	endHistoryBatch('Group objects');
-	objectsGroup.update((value) => value);
+	pokeScene();
 	applySelectionSet([groupUuid]);
 	return groupUuid;
 }
@@ -1038,7 +1037,7 @@ export async function convertToMesh(uuids) {
 		});
 	endHistoryBatch('Convert to mesh');
 
-	objectsGroup.update((value) => value);
+	pokeScene();
 	applySelectionSet([mesh.uuid]);
 	showToast(`Merged ${sources.length} meshes into "${mesh.name}"`);
 	return mesh.uuid;
@@ -1074,7 +1073,7 @@ export function alignToGround(uuid) {
 	};
 	recordTransform({ uuid: object.uuid, before: before, after: after });
 	resumeAnimation(object.uuid); // dropped spot becomes the new animation base
-	objectsGroup.update((value) => value);
+	pokeScene();
 	/** @type {any} */
 	const peer = get(peers);
 	if (peer)
@@ -1242,7 +1241,7 @@ export function isolateObjects(uuids) {
 		}
 	}
 	isolationSnapshot = snapshot;
-	objectsGroup.update((v) => v);
+	pokeScene();
 	if (hidden) showToast('Isolated — press Esc to bring the scene back');
 	return hidden;
 }
@@ -1258,6 +1257,6 @@ export function clearIsolation() {
 		if (object && visible && object.visible === false) object.visible = true;
 	}
 	isolationSnapshot = null;
-	objectsGroup.update((v) => v);
+	pokeScene();
 	return true;
 }

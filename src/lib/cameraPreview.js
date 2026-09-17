@@ -1,6 +1,6 @@
 import { writable, derived, get } from 'svelte/store';
 import * as THREE from 'three';
-import { objectsGroup, orbitControls } from '../stores/sceneStore';
+import { objectsGroup, orbitControls, pokeScene } from '../stores/sceneStore';
 import { peers, showToast, specatorMode } from '../stores/appStore';
 import { recordTransformSet } from './history';
 import { findCameraObject, cameraSpec } from './cameraObjects';
@@ -129,7 +129,7 @@ function setMarkerHidden(object, hide) {
 		object.visible = markerWasVisible;
 		markerWasVisible = null;
 	}
-	objectsGroup.update((value) => value);
+	pokeScene();
 }
 
 /** Broadcast our preview state so peers can see (and join) it. @param {string|null} uuid */

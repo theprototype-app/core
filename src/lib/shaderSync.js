@@ -11,6 +11,7 @@
 // re-broadcasts (golden rule 1); a late joiner pulls the whole map (golden rule 3).
 
 import { get } from 'svelte/store';
+import { sessionNow } from './sessionClock'; // 25-E: stamps another peer compares
 import { peers } from '../stores/appStore';
 import { registerHistoryKind, recordEntry } from './history';
 import {
@@ -37,7 +38,7 @@ function broadcast(key, doc) {
 	const peer = get(peers);
 	if (!peer) return;
 	if (doc) peer.send({ type: 'shadergraph', key, doc: wireDoc(doc) });
-	else peer.send({ type: 'shadergraphdelete', key, changedAt: Date.now() });
+	else peer.send({ type: 'shadergraphdelete', key, changedAt: sessionNow() });
 }
 
 /**

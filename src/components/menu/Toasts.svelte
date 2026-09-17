@@ -19,7 +19,16 @@
     import { armExplorerSceneSave, explorerClose } from '../../stores/appStore'
     import { peers, loading, loadingcount, pendingApprovals, waitingForApproval, userdata, toastStore, fixLight, showSidebar, specatorMode, restorePanels, appNotice, connectDrawerOpen, connectDrawerTab, toastsInDrawerOnly, showInfoToast, dismissToastById } from '../../stores/appStore'
     import { restoreAvailable, restoreSnapshot, dismissRestore } from '$lib/autosave'
-    import { cancelOutboundRequest } from '$lib/peerApproval'
+    import { ingestGate, resolveIngestGate } from '$lib/commandsHandler.svelte'
+    import { ingestVerdict, profileFor } from '$lib/sceneBudget'
+    import { cancelOutboundRequest, denyPeer } from '$lib/peerApproval'
+    // 27-B: the ONE sticky card for an uncaught error. This file already mirrors
+    // state stores into sticky toasts (restoreAvailable below); diagnostics.js stays a
+    // leaf by publishing a store instead of importing the toast pipeline itself.
+    import { lastUncaught, copyDiagnostics } from '$lib/diagnostics'
+    // 27-E: the card ages against the SAME clock the joiner's pill counts down from, and
+    // the caps decide whether approving is even offered.
+    import { approvalStartedAt, APPROVAL_WINDOW_MS, softPeerCap, HARD_PEER_CAP, sessionSize, roomIsFull } from '$lib/connectionState'
     import { rolesInfo } from '$lib/cloudHooks'
     import { sceneCommand } from '$lib/commandsHandler.svelte';
 	import { objectsGroup, camSave, globalCamera, globalScene } from '../../stores/sceneStore.js';
@@ -31,6 +40,7 @@
     import { peerScenes, elsewhereThan, PRIVATE_SCENE } from '$lib/peerScenes';
     import { currentLevel } from '$lib/levels';
     import { showToast } from '../../stores/appStore';
+    import { safeStorage } from '$lib/safeStorage';
 
     /**
      * Stop watching and give the camera back. EXTRACTED from the banner button so the
@@ -116,23 +126,44 @@ const MAX_REQUESTS = 3;
 // evicted by a burst of ordinary toasts — only the transient ones are capped,
 // and the "+N more" count reflects just those. Sticky cards render LAST so they
 // hold a stable spot while transients come and go above them.
+// 27-E: one 1s tick, and only while a request is actually pending.
+let approvalTick = $state(Date.now());
+$effect(() => {
+    if (!$pendingApprovals.length) return;
+    const t = setInterval(() => (approvalTick = Date.now()), 1000);
+    return () => clearInterval(t);
+});
+function approvalAge(peerId: string) {
+    void approvalTick;
+    const started = $approvalStartedAt[peerId];
+    return started ? Date.now() - started : 0;
+}
+// A pending row comes from a store declared `writable([])`, which TypeScript infers as
+// `never[]` — so reading `.peerId` off the row is an error at every use. Narrow ONCE
+// here rather than casting at each read in the card.
+const rowAge = (approval: any) => approvalAge(approval?.peerId);
+const roomFull = $derived(roomIsFull($peers));
+
 const stickyToasts = $derived($toastStore.filter((t: any) => t?.sticky));
 const transientToasts = $derived($toastStore.filter((t: any) => !t?.sticky));
 const hiddenCount = $derived(Math.max(0, transientToasts.length - MAX_TOASTS));
 const visibleToasts = $derived([...transientToasts.slice(-MAX_TOASTS), ...stickyToasts]);
 
+// 26-B (audit M6): ONE traversal, then set lookups. This ran
+// `getObjectByProperty` — a full tree walk — TWICE per outstanding uuid, on every
+// scene poke: with 1,000 objects still to arrive over a 1,000-object scene that is
+// two million node visits per poke, and the receive path poked once per object. It
+// was the single most expensive consumer of the poke and a large part of the
+// reported freeze. Same verdict, O(objects + outstanding) instead of O(both).
 $effect(() => {
-    if($loading.length > 0)
-    if($objectsGroup)
-    // Remove loaded UUIDs from the loading array
-    // once their corresponding objects are available
-    $loading.forEach((uuid) => {
-        $objectsGroup.getObjectByProperty('uuid', uuid)
-        if ($objectsGroup.getObjectByProperty('uuid', uuid)) {
-            $loading.splice($loading.indexOf(uuid, 0), 1);
-            $loading = $loading // Trigger reactivity
-        }
-    })
+    const group = $objectsGroup;
+    const outstanding = $loading;
+    if (!group || !outstanding.length) return;
+    /** @type {Set<string>} */
+    const present = new Set();
+    group.traverse((/** @type {any} */ o) => present.add(o.uuid));
+    const left = outstanding.filter((/** @type {string} */ uuid) => !present.has(uuid));
+    if (left.length !== outstanding.length) loading.set(left);
 });
 
 // 15-P2: "Receiving objects" visibility. The old machinery (showToast +
@@ -157,6 +188,18 @@ $effect(() => {
 // joiner a role right away — "Approve + edit" makes them an editor instead of the
 // default viewer. A 'retry' request just re-establishes an existing whitelisted conn.
 function approvePeer(approval, role) {
+    // 27-E: the mesh is FULL — every peer holds N-1 connections and every mutation fans
+    // out N-1 times — so past the hard cap approving degrades the session for everyone,
+    // not just for the person joining. The button is disabled with the reason; this is
+    // the backstop for any other path in. Counted off the OPEN
+    // connections: userdata is the whitelist, written at DIAL time, so it counts every
+    // person ever invited — including those who never arrived and those who have left.
+    if (roomIsFull($peers)) {
+        showToast('This session is full (' + HARD_PEER_CAP + ' people). Ask someone to leave first.');
+        return;
+    }
+    if (sessionSize($peers) >= $softPeerCap)
+        showToast('That is ' + (sessionSize($peers) + 1) + ' people — voice and live gestures may lag on slower devices.');
     $pendingApprovals = $pendingApprovals.filter((p) => p.peerId !== approval.peerId);
     if (approval.status === 'retry') {
         try { $peers.connections[approval.peerId]?.close(); } catch {}
@@ -164,12 +207,15 @@ function approvePeer(approval, role) {
         $userdata.push([approval.peerId, '', '']);
     }
     $peers.send({ type: 'userdata', userdata: $userdata });
-    $peers.connectToPeer(approval.peerId, true);
+    // 25-F: an approval dial-back says it is one (a retry is a re-dial, not an approval)
+    if (approval.status !== 'retry' && typeof $peers.approveDialBack === 'function') $peers.approveDialBack(approval.peerId);
+    else $peers.connectToPeer(approval.peerId, true);
     if (role && $rolesInfo?.setRole) $rolesInfo.setRole(approval.peerId, role);
 }
-function rejectPeer(approval) {
-    $pendingApprovals = $pendingApprovals.filter((p) => p.peerId !== approval.peerId);
-    try { $peers.connections[approval.peerId]?.close?.(); } catch {}
+// 25-F: through the shared deny, so the joiner HEARS it (and VR and the card agree)
+const hearsNo = (approval: any) => !!approval?.hearsNo;
+function rejectPeer(approval, result: 'denied' | 'full' = 'denied') {
+    denyPeer(approval.peerId, result);
 }
 
 // professional toast card: manual close (✕) + auto-dismiss timer (kept from before)
@@ -199,11 +245,72 @@ let libraryPromptDone = false;
 let announcedAsk = '';
 
 $effect(() => {
+    const err = $lastUncaught;
+    if (err)
+        showInfoToast(
+            'diagnostics-error',
+            `Something went wrong: ${err.message}`,
+            [
+                {
+                    label: 'Copy diagnostics',
+                    keepOpen: true,
+                    action: async () => {
+                        const ok = await copyDiagnostics();
+                        showToast(ok ? 'Diagnostics copied to the clipboard' : 'Could not copy the diagnostics');
+                    }
+                }
+            ],
+            () => lastUncaught.set(null)
+        );
+    else dismissToastById('diagnostics-error');
+});
+
+/** 26-G: the restore prompt's budget line reads the same verdict the ingest gate does. */
+function restoreLimit() {
+    return ingestVerdict(0, 1, profileFor(null)).limit;
+}
+function restoreOverBudget(objects: number) {
+    return ingestVerdict(0, Number(objects) || 0, profileFor(null)).gate;
+}
+
+// 26-C (roadmap 26 Stage 2): A SCENE BIGGER THAN THIS DEVICE'S BUDGET IS ARRIVING.
+// The objects are PARKED in the ingest queue, not applied, so this card is the only
+// thing between them and the scene — hence `noClose`: dismissing it with an X would
+// leave the transfer stalled with nothing left to resume it. The state store is the
+// seam (the restoreAvailable idiom), so commandsHandler never imports the UI.
+$effect(() => {
+    const gate = $ingestGate;
+    if (gate)
+        showInfoToast(
+            'ingest-gate',
+            `This scene has ${gate.count} objects — that would take this device to ${gate.total}, above the ${gate.limit} recommended here.`,
+            [
+                { label: 'Load all', action: () => resolveIngestGate('all') },
+                { label: `Load the first ${gate.allowed}`, action: () => resolveIngestGate('some') },
+                { label: 'Cancel', action: () => resolveIngestGate('cancel') }
+            ],
+            undefined,
+            true
+        );
+    else dismissToastById('ingest-gate');
+});
+
+$effect(() => {
     const snap = $restoreAvailable;
     if (snap)
         showInfoToast(
             'restore-session',
-            `Restore previous session? ${snap.objects} objects, saved ${new Date(snap.ts).toLocaleTimeString()}`,
+            `Restore previous session? ${snap.objects} objects, saved ${new Date(snap.ts).toLocaleTimeString()}` +
+                // 26-G (roadmap 26 Stage 4, last bullet): say how the snapshot compares with
+                // this device's budget BEFORE restoring it. A phone that died restoring a
+                // 50MB scene comes back to this exact prompt, and the count is the reason.
+                (restoreOverBudget(snap.objects) ? ` — above the ${restoreLimit()} recommended for this device.` : '') +
+                // 27-D: `risky` means the last attempt to restore THIS snapshot never
+                // reached a clean flow tick. Auto-restore is already skipped for it; say
+                // why, so pressing Restore again is a choice rather than a surprise.
+                (snap.risky
+                    ? ' Warning: the last attempt to restore this scene never finished a frame, so it may be what stopped the app.'
+                    : ''),
             [
                 { label: 'Restore', action: () => restoreSnapshot() },
                 { label: 'Dismiss', action: () => dismissRestore() }
@@ -325,9 +432,9 @@ $effect(() => {
 
 $effect(() => {
     const notice = $appNotice;
-    const seen = typeof localStorage !== 'undefined' && !!localStorage.getItem('hasSeenDisclaimer');
+    const seen = typeof localStorage !== 'undefined' && !!safeStorage.getItem('hasSeenDisclaimer');
     const markSeen = () => {
-        try { localStorage.setItem('hasSeenDisclaimer', 'true'); } catch {}
+        try { safeStorage.setItem('hasSeenDisclaimer', 'true'); } catch {}
     };
     if (notice && !seen)
         showInfoToast(
@@ -418,16 +525,33 @@ style="z-index: var(--z-toast); pointer-events: none;"
             <div class="tp-toast-text">
                 Connection request <span class="cxreq-id">{String(approval.peerId).slice(0, 6).toUpperCase()}</span>
             </div>
+            <!-- 27-E: how long they have been waiting. An EXPIRED card stays approvable —
+                 a missed request is worse than a stale card, and approving still just
+                 dials back; if they gave up, that dial answers with peer-unavailable,
+                 which their side already turns into a clean cancel. -->
+            <div class="cxreq-age" class:expired={rowAge(approval) > APPROVAL_WINDOW_MS}>
+                {#if rowAge(approval) > APPROVAL_WINDOW_MS}
+                    asked {Math.round(rowAge(approval) / 1000)}s ago — they may have given up
+                {:else}
+                    asked {Math.max(1, Math.round(rowAge(approval) / 1000))}s ago
+                {/if}
+                {#if roomFull}· this session is full ({HARD_PEER_CAP}){/if}
+            </div>
             <div class="tp-toast-actions">
                 {#if $rolesInfo}
-                    <button class="cxreq-btn cxreq-view" onclick={() => approvePeer(approval, null)} title="Approve as a view-only viewer">View only</button>
+                    <button class="cxreq-btn cxreq-view" disabled={roomFull} onclick={() => approvePeer(approval, null)} title={roomFull ? 'This session is full (' + HARD_PEER_CAP + ')' : 'Approve as a view-only viewer'}>View only</button>
                     {#if approval.status !== 'retry'}
-                        <button class="cxreq-btn cxreq-editor" onclick={() => approvePeer(approval, 'editor')} title="Approve and grant edit access">Editor access</button>
+                        <button class="cxreq-btn cxreq-editor" disabled={roomFull} onclick={() => approvePeer(approval, 'editor')} title={roomFull ? 'This session is full (' + HARD_PEER_CAP + ')' : 'Approve and grant edit access'}>Editor access</button>
                     {/if}
                 {:else}
-                    <button class="cxreq-btn cxreq-editor" onclick={() => approvePeer(approval, null)}>Approve</button>
+                    <button class="cxreq-btn cxreq-editor" disabled={roomFull} onclick={() => approvePeer(approval, null)} title={roomFull ? 'This session is full (' + HARD_PEER_CAP + ')' : 'Approve this request'}>Approve</button>
                 {/if}
-                <button class="cxreq-btn cxreq-reject" onclick={() => rejectPeer(approval)} title="Decline">Reject</button>
+                <!-- 25-F: at the cap, say so. Only offered to a joiner that can hear it —
+                     an older build would take ANY dial from us as an approval. -->
+                {#if roomFull && hearsNo(approval)}
+                    <button class="cxreq-btn cxreq-full" onclick={() => rejectPeer(approval, 'full')} title={'Tell them this session is full (' + HARD_PEER_CAP + ')'}>Tell them it's full</button>
+                {/if}
+                <button class="cxreq-btn cxreq-reject" onclick={() => rejectPeer(approval)} title={hearsNo(approval) ? 'Decline — they are told' : 'Decline'}>Reject</button>
             </div>
         </div>
     </div>
@@ -481,7 +605,7 @@ style="z-index: var(--z-toast-low); pointer-events: none;"
 {#if $fixLight}
 <div class="my-1">
     <Toast  transition={fly} class="flex items-center gap-3 p-2 rounded-lg dark:bg-gray-700 dark:border-dark-700 border-2 border-red-500" onclose={() => 
-        { localStorage.setItem('hasSeenDisclaimer', 'true'); }
+        { safeStorage.setItem('hasSeenDisclaimer', 'true'); }
         }>
         <div style="position: relative; left: 50%; transform: translate(-25%, -50%);">
     
@@ -593,13 +717,27 @@ style="z-index: var(--z-toast-low); pointer-events: none;"
        with every other toast); only the role-coloured buttons + the peer-id chip
        remain bespoke (viewer=gray, editor=blue, reject=outlined red). */
     .cxreq-id { font-size: 11px; color: #9ca3af; font-family: ui-monospace, monospace; }
-    .cxreq-btn { font-size: 11px; padding: 4px 10px; border-radius: 7px; border: 0; cursor: pointer; color: #fff; white-space: nowrap; }
+    .cxreq-age {
+    margin-top: 2px;
+    font-size: 11px;
+    opacity: 0.65;
+}
+.cxreq-age.expired {
+    opacity: 0.9;
+    color: #fbbf24;
+}
+.cxreq-btn:disabled {
+    opacity: 0.45;
+    cursor: not-allowed;
+}
+.cxreq-btn { font-size: 11px; padding: 4px 10px; border-radius: 7px; border: 0; cursor: pointer; color: #fff; white-space: nowrap; }
     .cxreq-view { background: #6b7280; }
     .cxreq-view:hover { background: #7b8494; }
     .cxreq-editor { background: #2563eb; }
     .cxreq-editor:hover { background: #1d4ed8; }
     .cxreq-reject { background: transparent; border: 1px solid rgb(248 113 113 / 0.4); color: #f87171; }
     .cxreq-reject:hover { background: rgb(220 38 38 / 0.15); }
+    .cxreq-full { background: #b45309; }
     /* professional notification toast (replaces the flowbite green toast) */
     .tp-toast {
         pointer-events: auto;

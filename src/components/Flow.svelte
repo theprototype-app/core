@@ -20,6 +20,7 @@
 	import { bottomDockable } from '$lib/bottomDockDrop';
 	import { dockAddItems } from '$lib/dockMenu';
 	import { fly } from 'svelte/transition';
+	import { safeStorage } from '$lib/safeStorage';
 
 	const clampH = (h: number) => Math.min(Math.max(h || 320, 200), Math.round(window.innerHeight * 0.8));
 	// 18-B: floating-window size limits, shared with the clamp helpers
@@ -29,7 +30,7 @@
 	// mirrors Nodes' palette-open (bound below) so the docked content only insets above
 	// the Controls HUD when the node palette is actually shown (overlapping the HUD)
 	let paletteOpen = $state(
-		typeof localStorage !== 'undefined' ? localStorage.getItem('flowPaletteOpen') !== 'false' : true
+		typeof localStorage !== 'undefined' ? safeStorage.getItem('flowPaletteOpen') !== 'false' : true
 	);
 	let winW = $state(760);
 	let winH = $state(480);
@@ -42,9 +43,9 @@
 		winH = Math.min(fit.h, Math.round(window.innerHeight * 0.9));
 	}
 	if (typeof localStorage !== 'undefined') {
-		docked = localStorage.getItem('flowDocked') !== 'false';
-		winW = parseInt(localStorage.getItem('flowWinW') ?? '760') || 760;
-		winH = parseInt(localStorage.getItem('flowWinH') ?? '480') || 480;
+		docked = safeStorage.getItem('flowDocked') !== 'false';
+		winW = parseInt(safeStorage.getItem('flowWinW') ?? '760') || 760;
+		winH = parseInt(safeStorage.getItem('flowWinH') ?? '480') || 480;
 		clampWin();
 	}
 	// touch / limited-width: keep the editor docked (no room to float; undock hidden),
@@ -64,7 +65,7 @@
 
 	function setDocked(v: boolean) {
 		docked = v;
-		localStorage.setItem('flowDocked', String(v));
+		safeStorage.setItem('flowDocked', String(v));
 		if (v) activateDock('flow'); // re-docking makes it the visible tab
 		else forgetDockTab('flow'); // an undock gives up its slot, so re-docking is a fresh add at the end of the strip
 	}
@@ -151,15 +152,15 @@
 		winW = fit.w;
 		winH = fit.h;
 		resizeGroup('flow', winW, winH);
-		localStorage.setItem('flowWinW', String(winW));
-		localStorage.setItem('flowWinH', String(winH));
+		safeStorage.setItem('flowWinW', String(winW));
+		safeStorage.setItem('flowWinH', String(winH));
 	}
 	function endWinResize(e: any) {
 		if (!winResizing) return;
 		winResizing = false;
 		e.currentTarget.releasePointerCapture?.(e.pointerId);
-		localStorage.setItem('flowWinW', String(winW));
-		localStorage.setItem('flowWinH', String(winH));
+		safeStorage.setItem('flowWinW', String(winW));
+		safeStorage.setItem('flowWinH', String(winH));
 	}
 </script>
 

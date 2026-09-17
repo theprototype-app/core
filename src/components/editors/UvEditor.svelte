@@ -47,6 +47,7 @@
 	import { clampWinSize, clampResize, anchorOf } from '$lib/windowSize';
 	import { setDockOccupant, dockHeight, visibleDockKey, dockMinimized, activateDock, dockModeArm, forgetDockTab } from '$lib/bottomDock';
 	import { bottomDockable } from '$lib/bottomDockDrop';
+	import { safeStorage } from '$lib/safeStorage';
 
 	/** the armed transform modes, in 1/2/3 order */
 	const MODES = /** @type {['move'|'rotate'|'scale', string, string][]} */ ([
@@ -128,12 +129,12 @@
 	let winW = $state(640);
 	let winH = $state(460);
 	if (typeof localStorage !== 'undefined') {
-		docked = localStorage.getItem('uvDocked') !== 'false';
+		docked = safeStorage.getItem('uvDocked') !== 'false';
 		// 18-B: a size saved on a bigger screen must not come back oversized.
 		// Fitted before the assignment so nothing reads $state during init.
 		const savedWin = clampWinSize(
-			parseInt(localStorage.getItem('uvWinW') ?? '640') || 640,
-			parseInt(localStorage.getItem('uvWinH') ?? '460') || 460,
+			parseInt(safeStorage.getItem('uvWinW') ?? '640') || 640,
+			parseInt(safeStorage.getItem('uvWinH') ?? '460') || 460,
 			WIN_MIN
 		);
 		winW = savedWin.w;
@@ -141,7 +142,7 @@
 	}
 	function setDocked(/** @type {boolean} */ v) {
 		docked = v;
-		localStorage.setItem('uvDocked', String(v));
+		safeStorage.setItem('uvDocked', String(v));
 		if (v) activateDock('uv');
 		else forgetDockTab('uv'); // an undock gives up its slot, so re-docking is a fresh add at the end of the strip
 	}
@@ -1543,8 +1544,8 @@
 		saveWinSize();
 	}
 	function saveWinSize() {
-		localStorage.setItem('uvWinW', String(winW));
-		localStorage.setItem('uvWinH', String(winH));
+		safeStorage.setItem('uvWinW', String(winW));
+		safeStorage.setItem('uvWinH', String(winH));
 	}
 	/** 18-B: double-click the grip — back to the default size, position kept */
 	function resetWinSize() {

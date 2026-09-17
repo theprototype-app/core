@@ -3,6 +3,7 @@
 // Windows sit on the --z-window tier; the caller sets size and z-index.
 
 import { clampWinSize, clampResize, bottomReserve } from './windowSize';
+import { safeStorage } from './safeStorage';
 
 // 169: live reset registry — every draggable window (this action + the object
 // list's own dragMe) registers a reset fn so Settings can rescue windows stuck
@@ -42,10 +43,10 @@ export function revealWindow(key) {
  *  button, so it is the honest hatch rather than a second one. */
 export function resetWindowLayout() {
 	if (typeof localStorage !== 'undefined') {
-		for (const key of Object.keys(localStorage))
-			if (key.startsWith('win:')) localStorage.removeItem(key);
+		for (const key of safeStorage.keys())
+			if (key.startsWith('win:')) safeStorage.removeItem(key);
 		['objectListRect', 'explorerWinW', 'explorerWinH', 'explorerHeight', 'explorerTreeW', 'uvWinW', 'uvWinH', 'controlsLayout'].forEach((k) =>
-			localStorage.removeItem(k)
+			safeStorage.removeItem(k)
 		);
 	}
 	resetters.forEach((fn) => {
@@ -76,7 +77,7 @@ export function dragWindow(node, { key, defaultRect = {}, resizable = false, axi
 	/** @type {any} */
 	let rect = null;
 	try {
-		rect = JSON.parse(localStorage.getItem('win:' + key) ?? 'null');
+		rect = JSON.parse(safeStorage.getItem('win:' + key) ?? 'null');
 	} catch {
 		rect = null;
 	}
@@ -189,7 +190,7 @@ export function dragWindow(node, { key, defaultRect = {}, resizable = false, axi
 			payload.w = rect.w;
 			if (axis !== 'x') payload.h = rect.h;
 		}
-		localStorage.setItem('win:' + key, JSON.stringify(payload));
+		safeStorage.setItem('win:' + key, JSON.stringify(payload));
 	}
 
 	// right/bottom-anchored defaults need the rendered size — resolve on the
@@ -268,7 +269,7 @@ export function dragWindow(node, { key, defaultRect = {}, resizable = false, axi
 	// 169: reset this window to its default spot (Settings rescue)
 	function resetToDefault() {
 		try {
-			localStorage.removeItem('win:' + key);
+			safeStorage.removeItem('win:' + key);
 		} catch {}
 		rect = { ...defaultRect };
 		if (resizable) {

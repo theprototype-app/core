@@ -4,7 +4,7 @@ import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { FBXLoader } from 'three/addons/loaders/FBXLoader.js';
 import { DRACOLoader } from 'three/addons/loaders/DRACOLoader.js';
 import { MeshoptDecoder } from 'three/addons/libs/meshopt_decoder.module.js';
-import { objectsGroup } from '../stores/sceneStore';
+import { objectsGroup, pokeScene } from '../stores/sceneStore';
 import { peers, showToast } from '../stores/appStore';
 import { registerHistoryKind, recordEntry } from './history';
 import { runtimeNow } from './moduleSDK';
@@ -178,7 +178,7 @@ export async function applyObjectFile(data) {
 		if (data.pos) held.position.fromArray(data.pos);
 		if (data.rot) held.rotation.set(data.rot[0], data.rot[1], data.rot[2]);
 		if (data.scale) held.scale.fromArray(data.scale);
-		objectsGroup.update((value) => value);
+		pokeScene();
 		if (data.anim) setAnimationState(data.uuid, data.anim, false);
 		return;
 	}
@@ -192,7 +192,7 @@ export async function applyObjectFile(data) {
 		if (data.rot) root.rotation.set(data.rot[0], data.rot[1], data.rot[2]);
 		if (data.scale) root.scale.fromArray(data.scale);
 		group.add(root);
-		objectsGroup.update((value) => value);
+		pokeScene();
 		registerAnimatedImport(root, animations, bytes, data.kind === 'fbx' ? 'fbx' : 'gltf');
 		if (data.anim) setAnimationState(data.uuid, data.anim, false);
 	} catch (error) {
@@ -329,7 +329,7 @@ export async function animatedImportsRestore(entries, replicate = true) {
 			console.log('animated import restore failed', error);
 		}
 	}
-	if (restored) objectsGroup.update((value) => value);
+	if (restored) pokeScene();
 	return restored;
 }
 
@@ -383,7 +383,7 @@ registerHistoryKind('animimport', (entry, state) => {
 		return false;
 	}
 	existing.parent?.remove(existing);
-	objectsGroup.update((value) => value);
+	pokeScene();
 	if (peer) peer.send({ type: 'delete', uuid: entry.uuid, peerId: peer.peer.id });
 	return true;
 });

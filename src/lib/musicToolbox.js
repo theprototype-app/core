@@ -3,6 +3,7 @@ import { writable, get } from 'svelte/store';
 import MusicToolbox from '../components/menu/MusicToolbox.svelte';
 import { registerModuleToolbox, unregisterModuleToolbox } from './moduleToolboxes';
 import { setDeviceFor, deviceCatalog, deviceCatalogVersion } from './audioDevices';
+import { safeStorage } from './safeStorage';
 
 // THE MUSIC TOOLBOX (roadmap #23 B2, cloud plans-core/pending/23-b-interfaces.md).
 //
@@ -77,7 +78,7 @@ const PRESETS_KEY = 'musicPresets';
 /** @returns {Record<string, {name: string, params: Record<string, any>}[]>} kind -> presets */
 function loadPresets() {
 	try {
-		const raw = typeof localStorage !== 'undefined' ? localStorage.getItem(PRESETS_KEY) : null;
+		const raw = typeof localStorage !== 'undefined' ? safeStorage.getItem(PRESETS_KEY) : null;
 		const parsed = raw ? JSON.parse(raw) : {};
 		return parsed && typeof parsed === 'object' ? parsed : {};
 	} catch {
@@ -91,7 +92,7 @@ export const musicPresets = writable(loadPresets());
 
 function persist() {
 	try {
-		localStorage.setItem(PRESETS_KEY, JSON.stringify(get(musicPresets)));
+		safeStorage.setItem(PRESETS_KEY, JSON.stringify(get(musicPresets)));
 	} catch {}
 }
 

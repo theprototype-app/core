@@ -1,13 +1,15 @@
 import * as THREE from 'three';
+import { sessionNow } from './sessionClock'; // 25-E: stamps another peer compares
 import { writable, get } from 'svelte/store';
-import { globalScene, globalRenderer, objectsGroup, backgroundColor, TControls, passthroughActive } from '../stores/sceneStore';
+import { globalScene, globalRenderer, objectsGroup, backgroundColor, TControls, passthroughActive, pokeScene } from '../stores/sceneStore';
 import { peers } from '../stores/appStore';
 import { sceneRadius } from './sceneBounds';
 import { registerSystemGroup } from './moduleSDK';
 import { createLight } from './geometries.svelte';
-import { cappedShadowSize, shadowQuality } from './lightParams';
+import { cappedShadowSize, shadowsDisabled } from './lightParams';
 import { wireframeActive } from './viewMode';
 import { idbGet, idbPut, idbDelete, idbKeys } from './idb';
+import { safeStorage } from './safeStorage';
 
 // Environment v2 (phase 70). Everything environmental lives under ONE group at
 // the scene root: `environment-root` — the preset rig (hemi+sun) plus any
@@ -66,7 +68,7 @@ const DEFAULT_STATE = { preset: 'studio', exposure: 1, customPreset: null, light
 
 function persisted() {
 	try {
-		const raw = localStorage.getItem('environment');
+		const raw = safeStorage.getItem('environment');
 		if (raw) return { ...DEFAULT_STATE, ...JSON.parse(raw) };
 	} catch {}
 	return { ...DEFAULT_STATE };
@@ -239,7 +241,8 @@ export function applyEnvironment() {
 		// honor a persisted 'off' shadow pref here too: the renderer arrives
 		// after lightParams' first subscribe fires (which would no-op on a null
 		// renderer), so re-assert it on every apply
-		if (renderer.shadowMap) renderer.shadowMap.enabled = get(shadowQuality) !== 'off';
+		// (26-D: through shadowsDisabled, so the quality governor's override survives an apply)
+		if (renderer.shadowMap) renderer.shadowMap.enabled = !shadowsDisabled();
 	}
 
 	const { hemi, sun } = rigLights(scene, !!preset.hemi);
@@ -279,7 +282,7 @@ export function applyEnvironment() {
 	// correctly over the camera feed, and that darkening is what glues a virtual
 	// object to a real table (the sky/fog lift above is the whole AR stand-down;
 	// the sun rig keeps casting untouched)
-	const shadowsOff = get(shadowQuality) === 'off';
+	const shadowsOff = shadowsDisabled();
 	const catcher = shadowCatcher(scene, !!(preset.sun && !shadowsOff));
 	if (catcher) {
 		catcher.visible = !!(preset.sun && !shadowsOff) && !wireframeActive();
@@ -292,7 +295,7 @@ export function applyEnvironment() {
 
 /** Apply a state change locally, persist and replicate @param {any} partial */
 function commit(partial) {
-	const state = { ...get(environment), ...partial, changedAt: Date.now() };
+	const state = { ...get(environment), ...partial, changedAt: sessionNow() };
 	environment.set(state);
 	applyEnvironment();
 	/** @type {any} */
@@ -402,7 +405,7 @@ export function convertToEnvironment(uuid) {
 	const controls = get(TControls);
 	if (controls?.object?.uuid === uuid) controls.detach();
 	object.parent?.remove(object);
-	objectsGroup.update((value) => value);
+	pokeScene();
 	/** @type {any} */
 	const peer = get(peers);
 	if (peer) peer.send({ type: 'delete', uuid, peerId: peer.peer.id });
@@ -423,7 +426,7 @@ export function convertFromEnvironment(id) {
 	if (def.groundColor && light.groundColor) light.groundColor.set(def.groundColor);
 	light.intensity = def.intensity ?? 1;
 	if (def.position) light.position.fromArray(def.position);
-	objectsGroup.update((value) => value);
+	pokeScene();
 	/** @type {any} */
 	const peer = get(peers);
 	if (peer) {
@@ -583,9 +586,9 @@ export function environmentRestore(payload, replicate = false) {
 				exposure: payload.exposure ?? 1,
 				customPreset: payload.customPreset ?? null,
 				lights: payload.lights ?? [],
-				changedAt: Date.now()
+				changedAt: sessionNow()
 			}
-		: { ...DEFAULT_STATE, changedAt: Date.now() };
+		: { ...DEFAULT_STATE, changedAt: sessionNow() };
 	environment.set(state);
 	applyEnvironment();
 	if (!replicate) return;
@@ -608,7 +611,7 @@ export function startEnvironment() {
 	loadEnvPresets();
 	environment.subscribe((state) => {
 		try {
-			localStorage.setItem('environment', JSON.stringify(state));
+			safeStorage.setItem('environment', JSON.stringify(state));
 		} catch {}
 	});
 	// scene/renderer arrive async at boot

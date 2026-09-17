@@ -19,6 +19,7 @@
 // columns that distinguish the bin or leave dead columns in the library.
 
 import { writable, get } from 'svelte/store';
+import { safeStorage } from './safeStorage';
 
 /**
  * @typedef {{key: string, label: string, always?: boolean, numeric?: boolean, width?: string}} ExplorerColumn
@@ -74,7 +75,7 @@ const GROUP_KEY = 'explorer:deletedGroup';
 function load(key, fallback) {
 	if (typeof localStorage === 'undefined') return fallback;
 	try {
-		const raw = localStorage.getItem(key);
+		const raw = safeStorage.getItem(key);
 		if (!raw) return fallback;
 		const parsed = JSON.parse(raw);
 		return parsed && typeof parsed === 'object' ? { ...fallback, ...parsed } : fallback;
@@ -87,7 +88,7 @@ function load(key, fallback) {
 function save(key, value) {
 	if (typeof localStorage === 'undefined') return;
 	try {
-		localStorage.setItem(key, JSON.stringify(value));
+		safeStorage.setItem(key, JSON.stringify(value));
 	} catch {}
 }
 
@@ -97,7 +98,7 @@ function save(key, value) {
  */
 export const explorerViewMode = writable(
 	/** @type {'thumbnails'|'list'} */ (
-		typeof localStorage !== 'undefined' && localStorage.getItem(MODE_KEY) === 'list'
+		typeof localStorage !== 'undefined' && safeStorage.getItem(MODE_KEY) === 'list'
 			? 'list'
 			: 'thumbnails'
 	)
@@ -105,7 +106,7 @@ export const explorerViewMode = writable(
 explorerViewMode.subscribe((v) => {
 	if (typeof localStorage === 'undefined') return;
 	try {
-		localStorage.setItem(MODE_KEY, v);
+		safeStorage.setItem(MODE_KEY, v);
 	} catch {}
 });
 
@@ -200,7 +201,7 @@ explorerSort.subscribe((v) => save(SORT_KEY, v));
  */
 export const explorerDeletedGroup = writable(
 	/** @type {'none'|'deleter'} */ (
-		typeof localStorage !== 'undefined' && localStorage.getItem(GROUP_KEY) === 'deleter'
+		typeof localStorage !== 'undefined' && safeStorage.getItem(GROUP_KEY) === 'deleter'
 			? 'deleter'
 			: 'none'
 	)
@@ -208,7 +209,7 @@ export const explorerDeletedGroup = writable(
 explorerDeletedGroup.subscribe((v) => {
 	if (typeof localStorage === 'undefined') return;
 	try {
-		localStorage.setItem(GROUP_KEY, v);
+		safeStorage.setItem(GROUP_KEY, v);
 	} catch {}
 });
 
@@ -228,7 +229,7 @@ const BIN_SPENT_KEY = 'explorer:binShowSpent';
  */
 export const explorerBinLayout = writable(
 	/** @type {'tree'|'plain'} */ (
-		typeof localStorage !== 'undefined' && localStorage.getItem(BIN_LAYOUT_KEY) === 'plain'
+		typeof localStorage !== 'undefined' && safeStorage.getItem(BIN_LAYOUT_KEY) === 'plain'
 			? 'plain'
 			: 'tree'
 	)
@@ -236,7 +237,7 @@ export const explorerBinLayout = writable(
 explorerBinLayout.subscribe((v) => {
 	if (typeof localStorage === 'undefined') return;
 	try {
-		localStorage.setItem(BIN_LAYOUT_KEY, v);
+		safeStorage.setItem(BIN_LAYOUT_KEY, v);
 	} catch {}
 });
 
@@ -250,12 +251,12 @@ explorerBinLayout.subscribe((v) => {
  * row of grid height. @type {import('svelte/store').Writable<boolean>}
  */
 export const explorerBinShowSpent = writable(
-	typeof localStorage !== 'undefined' && localStorage.getItem(BIN_SPENT_KEY) === 'true'
+	typeof localStorage !== 'undefined' && safeStorage.getItem(BIN_SPENT_KEY) === 'true'
 );
 explorerBinShowSpent.subscribe((v) => {
 	if (typeof localStorage === 'undefined') return;
 	try {
-		localStorage.setItem(BIN_SPENT_KEY, String(v));
+		safeStorage.setItem(BIN_SPENT_KEY, String(v));
 	} catch {}
 });
 

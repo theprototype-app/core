@@ -1,6 +1,16 @@
 import { get } from 'svelte/store';
 import { peers, userdata, pendingApprovals, waitingForApproval, showToast } from '../stores/appStore';
-import { sessionHost } from './connectionState';
+import {
+	sessionHost,
+	APPROVAL_WINDOW_MS,
+	HARD_PEER_CAP,
+	noteApprovalStarted,
+	clearApprovalStarted,
+	roomIsFull,
+	isRefusal,
+	noteJoinRefusal,
+	clearJoinRefusal
+} from './connectionState';
 
 // Pending-connection approval (211). Kept in its own store-only module so VR
 // (vrControls -> executeVRMenuAction) can call it WITHOUT statically importing
@@ -13,26 +23,75 @@ import { sessionHost } from './connectionState';
  * and connect back (the requester already whitelisted us). @param {string} peerId
  */
 export function approvePeer(peerId) {
+	/** @type {any} */
+	const peer = get(peers);
+	// 25-F: past the hard cap an approval is a refusal the joiner can HEAR. The desktop card
+	// offers "Tell them it's full" itself; this is the path every other caller takes (the
+	// VR panel's yes, a plugin), which used to approve straight past the cap.
+	if (peer && roomIsFull(peer)) {
+		denyPeer(peerId, 'full');
+		showToast('This session is full (' + HARD_PEER_CAP + ' people) — ' + label(peerId) + ' was told.');
+		return;
+	}
 	pendingApprovals.set(get(pendingApprovals).filter((/** @type {any} */ p) => p.peerId !== peerId));
+	clearApprovalStarted(peerId);
 	const users = /** @type {any[]} */ (get(userdata));
 	if (!users.some((/** @type {any} */ u) => u[0] === peerId)) users.push([peerId, '', '']);
 	userdata.set(/** @type {any} */ (users));
-	/** @type {any} */
-	const peer = get(peers);
 	if (!peer) return;
 	peer.send({ type: 'userdata', userdata: get(userdata) });
-	peer.connectToPeer(peerId, true);
+	// 25-F: the dial-back SAYS it is an approval (older peers still read the conn alone)
+	if (typeof peer.approveDialBack === 'function') peer.approveDialBack(peerId);
+	else peer.connectToPeer(peerId, true);
+}
+
+/** @param {string} peerId */
+function label(peerId) {
+	return String(peerId).slice(0, 6).toUpperCase();
 }
 
 /**
  * Deny a pending request: drop it from the queue and close any lingering incoming
- * connection. The peer stays off the whitelist. @param {string} peerId
+ * connection. The peer stays off the whitelist.
+ *
+ * 25-F: and TELL them, when their dial said they can hear it (`hearsNo` on the card) — a
+ * short refusal dial whose metadata is the answer. A joiner that did not say so is an
+ * older build, which reads ANY incoming conn from the host as an approval, so it gets the
+ * old silence and its own 90 s expiry rather than a false "approved".
+ * @param {string} peerId @param {'denied' | 'full'} [result]
  */
-export function denyPeer(peerId) {
+export function denyPeer(peerId, result = 'denied') {
+	const card = /** @type {any[]} */ (get(pendingApprovals)).find((p) => p.peerId === peerId);
 	pendingApprovals.set(get(pendingApprovals).filter((/** @type {any} */ p) => p.peerId !== peerId));
+	clearApprovalStarted(peerId);
 	/** @type {any} */
 	const peer = get(peers);
 	peer?.connections?.[peerId]?.close?.();
+	if (card?.hearsNo && typeof peer?.sendJoinResult === 'function') peer.sendJoinResult(peerId, result);
+}
+
+/**
+ * 25-F — the JOINER's half: the host said no (or that the room is full). End the request
+ * exactly as a cancel does (the waiting row, the optimistic whitelist row, the timer, the
+ * never-open conn) and say which it was. A refusal from a peer we are NOT waiting on —
+ * a second approver after we joined, or an answer that outlived our own 90 s expiry — is
+ * ignored: nothing is pending, so there is nothing to end and nobody to tell.
+ * @param {string} peerId @param {any} result @returns {boolean} whether it ended a request
+ */
+export function applyJoinRefusal(peerId, result) {
+	if (!isRefusal(result)) return false;
+	const waiting = /** @type {any[]} */ (get(waitingForApproval));
+	if (!waiting.some((/** @type {any} */ w) => w[0] === peerId && w[1] === 'pending')) return false;
+	cancelOutboundRequest(peerId);
+	noteJoinRefusal(peerId, result);
+	if (result === 'full') {
+		showToast(label(peerId) + "'s session is full (" + HARD_PEER_CAP + ' people). Try again when someone leaves.', [
+			{ label: 'Try again', action: () => requestConnect(peerId) }
+		]);
+	} else {
+		showToast(label(peerId) + ' declined your connection request.');
+	}
+	return true;
 }
 
 /**
@@ -163,6 +222,7 @@ function dial(peerId) {
 	/** @type {any} */
 	const peer = get(peers);
 	if (!peer) return;
+	clearJoinRefusal(); // 25-F: a new request replaces the last answer on the pill
 	const users = /** @type {any[]} */ (get(userdata));
 	if (!users.some((/** @type {any} */ u) => u[0] === peerId)) {
 		users.push([peerId, '', '']);
@@ -172,11 +232,68 @@ function dial(peerId) {
 		const waiting = /** @type {any[]} */ (get(waitingForApproval));
 		if (!waiting.some((/** @type {any} */ w) => w[0] === peerId)) waiting.push([peerId, 'pending']);
 		waitingForApproval.set(/** @type {any} */ (waiting));
+		// 27-E: a request that can hang forever is the worst of the three states a dial can
+		// be in — "no" at least ends. Stamp the shared clock (the pill's countdown reads it)
+		// and arm the expiry.
+		noteApprovalStarted(peerId);
+		armApprovalTimeout(peerId);
 	} else {
 		const pend = /** @type {any[]} */ (get(pendingApprovals));
 		pend.push({ peerId, status: 'retry' });
 		pendingApprovals.set(/** @type {any} */ (pend));
 	}
+}
+
+/** @type {Map<string, any>} one expiry timer per outbound request */
+const approvalTimers = new Map();
+
+/**
+ * 27-E: end the wait. The window is the SAME constant the host's card ages against, so
+ * the two sides never disagree about whether a request is still live.
+ * @param {string} peerId
+ */
+function armApprovalTimeout(peerId) {
+	clearApprovalTimeout(peerId);
+	approvalTimers.set(
+		peerId,
+		setTimeout(() => {
+			approvalTimers.delete(peerId);
+			// still pending? (approval clears the row, so this is the only way to be here)
+			const waiting = /** @type {any[]} */ (get(waitingForApproval));
+			if (!waiting.some((/** @type {any} */ w) => w[0] === peerId && w[1] === 'pending')) return;
+			cancelOutboundRequest(peerId);
+			const label = String(peerId).slice(0, 6).toUpperCase();
+			showToast(label + ' did not answer in ' + Math.round(APPROVAL_WINDOW_MS / 1000) + 's.', [
+				{ label: 'Try again', action: () => requestConnect(peerId) }
+			]);
+		}, APPROVAL_WINDOW_MS)
+	);
+}
+
+/** @param {string} peerId */
+export function clearApprovalTimeout(peerId) {
+	const t = approvalTimers.get(peerId);
+	if (t) clearTimeout(t);
+	approvalTimers.delete(peerId);
+	// 27-E: cancelling a TIMER is not ending a REQUEST, so the clock STAYS here.
+	// `armApprovalTimeout` calls this defensively to avoid a duplicate timer, and
+	// clearing the stamp here deleted it one line after `dial` wrote it — so every
+	// outbound request lost its countdown, and the two sides disagreed about the
+	// age of the same request. The paths that really END a request clear it.
+}
+
+/**
+ * 27-E: the peer is not online at all — peerjs says so through `peer-unavailable`. The
+ * pill used to stay on "Requesting" beside a toast saying the opposite, and the whitelist
+ * row we added optimistically at dial time stayed forever. End it now; the caller owns
+ * the message, since only it knows whether this id was ever plausible.
+ * @param {string} peerId
+ */
+export function abandonOutboundRequest(peerId) {
+	const waiting = /** @type {any[]} */ (get(waitingForApproval));
+	if (!waiting.some((/** @type {any} */ w) => w[0] === peerId)) return false;
+	cancelOutboundRequest(peerId);
+	return true;
 }
 
 /**
@@ -187,6 +304,8 @@ function dial(peerId) {
  * restoreConnection retry loop too (its stale-conn guard). @param {string} peerId
  */
 export function cancelOutboundRequest(peerId) {
+	clearApprovalTimeout(peerId); // 27-E: no orphan timer, no stale countdown
+	clearApprovalStarted(peerId); // and the request really is over, so drop the clock
 	waitingForApproval.set(
 		get(waitingForApproval).filter((/** @type {any} */ w) => w[0] !== peerId)
 	);

@@ -39,6 +39,7 @@ import { registerVRFrameHook } from './vrControls';
 import { registerVRMenuEntry } from './vrRadialMenu';
 import { getInput } from './inputRuntime';
 import { calibrating } from './colocationCalibrate';
+import { safeStorage } from './safeStorage';
 
 const STORE_KEY = 'colocation-nudge-v1';
 
@@ -59,7 +60,7 @@ export const nudgeMode = writable(false);
 
 function readAll() {
 	try {
-		const raw = typeof localStorage !== 'undefined' ? localStorage.getItem(STORE_KEY) : null;
+		const raw = typeof localStorage !== 'undefined' ? safeStorage.getItem(STORE_KEY) : null;
 		const parsed = raw ? JSON.parse(raw) : null;
 		return parsed && typeof parsed === 'object' ? parsed : {};
 	} catch {
@@ -70,7 +71,7 @@ function readAll() {
 /** @param {any} all */
 function writeAll(all) {
 	try {
-		if (typeof localStorage !== 'undefined') localStorage.setItem(STORE_KEY, JSON.stringify(all));
+		if (typeof localStorage !== 'undefined') safeStorage.setItem(STORE_KEY, JSON.stringify(all));
 	} catch {
 		// private mode / quota: the live correction still works for this session
 	}
@@ -313,7 +314,7 @@ export function resetColocationNudge() {
 	loadedKey = null;
 	lastTick = 0;
 	try {
-		if (typeof localStorage !== 'undefined') localStorage.removeItem(STORE_KEY);
+		if (typeof localStorage !== 'undefined') safeStorage.removeItem(STORE_KEY);
 	} catch {
 		// nothing to do
 	}

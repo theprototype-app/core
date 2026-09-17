@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { sessionNow } from './sessionClock'; // 25-E: stamps another peer compares
 import { writable, get } from 'svelte/store';
 import { objectsGroup } from '../stores/sceneStore';
 import { peers, showToast } from '../stores/appStore';
@@ -122,7 +123,7 @@ function newId() {
  * flowRuntime's syncedNow / moduleSDK's runtimeNow (neither is exported; both
  * read this store). Wall clock wrapped daily to keep float precision. */
 function syncedNow() {
-	return get(syncedAnimations) ? (Date.now() % 86400000) / 1000 : performance.now() / 1000;
+	return get(syncedAnimations) ? (sessionNow() % 86400000) / 1000 : performance.now() / 1000;
 }
 
 /** @param {string} uuid */
@@ -1040,7 +1041,7 @@ registerHistoryKind('anim', (entry, state) => {
 	if (!set) stop(entry.uuid);
 	animations.update((map) => {
 		const next = { ...map };
-		if (set) next[entry.uuid] = { ...set, changedAt: Date.now() };
+		if (set) next[entry.uuid] = { ...set, changedAt: sessionNow() };
 		else delete next[entry.uuid];
 		return next;
 	});
@@ -1061,7 +1062,7 @@ function editSet(uuid, fn) {
 		const next = fn(structuredClone(set));
 		if (!next) return map;
 		changed = true;
-		return { ...map, [uuid]: { ...next, changedAt: Date.now() } };
+		return { ...map, [uuid]: { ...next, changedAt: sessionNow() } };
 	});
 	if (!changed || gesture) return;
 	recordAnimEntry(uuid, before, get(animations)[uuid]);
@@ -2082,7 +2083,7 @@ export function copyAnimationsFrom(set, toUuid) {
 	// clip ids are per object, so they can stay as they are
 	const copy = normalizeAnimSet(structuredClone(source));
 	if (!copy) return false;
-	animations.update((map) => ({ ...map, [toUuid]: { ...copy, changedAt: Date.now() } }));
+	animations.update((map) => ({ ...map, [toUuid]: { ...copy, changedAt: sessionNow() } }));
 	broadcastAnim(toUuid);
 	return true;
 }
@@ -2174,7 +2175,7 @@ function parkedPosition(clip, p) {
 function setPlay(uuid, patch, replicate = false) {
 	playback.update((map) => ({
 		...map,
-		[uuid]: { ...playOf(uuid), ...patch, changedAt: patch.changedAt ?? Date.now() }
+		[uuid]: { ...playOf(uuid), ...patch, changedAt: patch.changedAt ?? sessionNow() }
 	}));
 	if (replicate) broadcastPlay(uuid);
 }

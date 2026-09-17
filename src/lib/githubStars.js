@@ -1,4 +1,5 @@
 import { writable } from 'svelte/store';
+import { safeStorage } from './safeStorage';
 
 // 15-M: the repo's GitHub star count, for the Welcome overlay's GitHub link.
 // Deliberately tiny and FAIL-QUIET: unauthenticated api.github.com allows 60
@@ -19,7 +20,7 @@ let started = false;
 /** Read the cached count (fresh or stale) @returns {{n: number, ts: number}|null} */
 function cached() {
 	try {
-		const raw = localStorage.getItem(CACHE_KEY);
+		const raw = safeStorage.getItem(CACHE_KEY);
 		if (!raw) return null;
 		const entry = JSON.parse(raw);
 		return typeof entry?.n === 'number' ? entry : null;
@@ -45,7 +46,7 @@ export function loadGithubStars() {
 			if (typeof n !== 'number') return; // rate limited / offline — keep the cache
 			githubStars.set(n);
 			try {
-				localStorage.setItem(CACHE_KEY, JSON.stringify({ n, ts: Date.now() }));
+				safeStorage.setItem(CACHE_KEY, JSON.stringify({ n, ts: Date.now() }));
 			} catch {}
 		})
 		.catch(() => {}); // offline / blocked: the link renders without a count

@@ -4,6 +4,7 @@ import { RectAreaLightHelper } from 'three/addons/helpers/RectAreaLightHelper.js
 import { globalScene, objectsGroup } from '../stores/sceneStore';
 // 24-E2: helpers + proxies live on the helper layer (the editor camera enables it)
 import { markHelper } from './helperLayer';
+import { safeStorage } from './safeStorage';
 
 // Makes lights visible and draggable: a type-specific helper plus a small
 // wireframe "bulb" pick proxy per light. Helpers and proxies live at the
@@ -12,16 +13,16 @@ import { markHelper } from './helperLayer';
 // uuid; Scene.svelte routes clicks on them to selectObject(lightUuid).
 
 export const showLightHelpers = writable(
-	typeof localStorage === 'undefined' || localStorage.getItem('showLightHelpers') !== 'false'
+	typeof localStorage === 'undefined' || safeStorage.getItem('showLightHelpers') !== 'false'
 );
 /** 24-E1: how far along its forward a directional/spot light's target sits (the
  * helper's line length; display only — the direction is what shadows read, and the
  * distance changes nothing for either light type). LOCAL pref, Settings ▸ Scene. */
 export const lightHelperLength = writable(
-	typeof localStorage === 'undefined' ? 2 : Math.max(0.2, Number(localStorage.getItem('lightHelperLength')) || 2)
+	typeof localStorage === 'undefined' ? 2 : Math.max(0.2, Number(safeStorage.getItem('lightHelperLength')) || 2)
 );
 lightHelperLength.subscribe((value) => {
-	if (typeof localStorage !== 'undefined') localStorage.setItem('lightHelperLength', String(value));
+	if (typeof localStorage !== 'undefined') safeStorage.setItem('lightHelperLength', String(value));
 });
 const forward = new THREE.Vector3();
 const worldQuat = new THREE.Quaternion();
@@ -159,7 +160,7 @@ export function startLightHelpers() {
 	});
 	showLightHelpers.subscribe((value) => {
 		visible = value;
-		localStorage.setItem('showLightHelpers', String(value));
+		safeStorage.setItem('showLightHelpers', String(value));
 		applyVisibility();
 	});
 }

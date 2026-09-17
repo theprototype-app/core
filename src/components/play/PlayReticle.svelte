@@ -5,11 +5,12 @@
 	// playInteract.js.
 	import { isLocked, isVRMode } from '../../stores/sceneStore';
 	import { playInteractState } from '$lib/playInteract';
+	import { safeStorage } from '$lib/safeStorage';
 
 	// the scroll hint is worth exactly one showing, so it is a LOCAL pref and
 	// never touches the wire
 	let hintSeen = $state(
-		typeof localStorage !== 'undefined' && localStorage.getItem('playCarryHintSeen') === 'true'
+		typeof localStorage !== 'undefined' && safeStorage.getItem('playCarryHintSeen') === 'true'
 	);
 
 	const reticle = $derived($playInteractState);
@@ -20,7 +21,7 @@
 		if (!carrying || hintSeen) return;
 		hintSeen = true;
 		try {
-			localStorage.setItem('playCarryHintSeen', 'true');
+			safeStorage.setItem('playCarryHintSeen', 'true');
 		} catch {}
 	});
 </script>

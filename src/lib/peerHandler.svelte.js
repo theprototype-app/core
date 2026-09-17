@@ -50,8 +50,9 @@ import { applyModuleMessage, moduleVersions, checkModuleVersions, checkPeerAppVe
 import { APP_VERSION, COMMIT_SHA } from '$lib/version.js';
 import { applyLockRequest, applyUnlock, applyLockDenied } from '$lib/lockControl';
 import { applyDrawLive, applyDrawEnd } from '$lib/drawMode';
-import { applySimulate, physicsExternalMove, applyThrow } from '$lib/physics';
+import { applySimulate, physicsExternalMove, applyThrow, applyHit, simulating, simPaused } from '$lib/physics';
 import { noteRemoteMove } from '$lib/moveSmoothing';
+import { noteRemoteHit, endKnockPrediction } from '$lib/knock';
 import { applyJointCreate, applyJointDelete, applyJointsSnapshot, sendJoints } from '$lib/joints';
 import { applyAnimData, applyAnimPlay, applyAnimationsSnapshot, sendAnimations } from '$lib/animationPreview';
 import { applyHandModel, handModelState, dropPeerHandModel } from '$lib/handModels';
@@ -680,6 +681,10 @@ export class PeerConnection {
 					// the pose BEFORE the write, so a remote physics stream can be eased
 					// across rather than stepped through (moveSmoothing; ~10 Hz on the wire
 					// looked like 10 fps on the watching peer)
+					// 24-A A1: authority has spoken for this body, so a knock prediction of
+					// ours ends HERE — before the pose below is captured, so the ease starts
+					// from where the prediction left the object, not from where the hit found it
+					endKnockPrediction(data.uuid);
 					const movedObject = get(objectsGroup)?.getObjectByProperty('uuid', data.uuid);
 					const movedFrom = movedObject
 						? { pos: movedObject.position.clone(), quat: movedObject.quaternion.clone() }
@@ -695,6 +700,14 @@ export class PeerConnection {
 					// B5: a peer's EXACT release. Initiator-only, never re-broadcast —
 					// the flight itself replicates through the existing move stream.
 					applyThrow(data);
+				} else if(data.type == 'hit') {
+					// 24-A A1: a peer's hand (or head) KNOCKED a body — the throw's sibling.
+					// The initiator puts the velocity into the body (clamped again, never
+					// re-broadcast: the flight rides the move stream); EVERY peer logs it,
+					// stamped with the connection's peer, never the payload's. CONTENT, so it
+					// is gateable by canApply like `throw` and ROOM_SCOPED like `move`.
+					applyHit(data);
+					noteRemoteHit(data, conn.peer);
 				} else if(data.type == 'simulate') {
 					applySimulate(data);
 				} else if(data.type == 'jointcreate') {
@@ -1304,6 +1317,14 @@ export class PeerConnection {
 		if (getobjects && !holdContent) this.requestFullState(conn)
 		// singleton PUSH, like environmentState/scenePhysicsState above
 		if (!holdContent) conn.send(gameStatePayload())
+		// 24-A A2: WHETHER A SIM IS RUNNING HERE, for a late joiner. `simulate` went out at
+		// start/stop only, so a peer joining mid-run kept `remoteSimulating` null and neither
+		// the knock probes nor play-mode grab armed until the sim restarted (A1's finding;
+		// football's late joiner mid-match is the case). The start message's own shape, so
+		// an older joiner applies it exactly as it applies the live one, and held with the
+		// singletons — a running sim is content about THIS room.
+		if (!holdContent && get(simulating))
+			conn.send({ type: 'simulate', running: true, paused: get(simPaused), peerId: this.peer.id })
 		// module state is the one PER-PEER payload in the get* family (each peer
 		// answers with its OWN states — e.g. campreview presence), so it can't be
 		// deduped down to the host like the shared-scene requests above (B5)

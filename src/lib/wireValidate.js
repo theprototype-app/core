@@ -96,6 +96,9 @@ export const VALIDATORS = {
 	name: (d) => isUuid(d.uuid) && typeof d.name === 'string',
 	move: (d) => isUuid(d.uuid) && isVec3(d.pos) && isQuatOrEuler(d.rot) && isVec3(d.scale),
 	throw: (d) => isUuid(d.uuid),
+	// 24-A: a knock. The velocities are applied to a body the moment this lands, so the
+	// triples are checked here rather than trusted by `applyHit`.
+	hit: (d) => isUuid(d.uuid) && isArray(d.linvel) && isArray(d.angvel) && typeof d.speed === 'number',
 	simulate: (d) => typeof d.running === 'boolean' || typeof d.paused === 'boolean',
 	loading: (d) => isArray(d.uuids),
 	object: (d) => d.element !== undefined,

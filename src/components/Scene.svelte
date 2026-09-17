@@ -29,7 +29,8 @@
 	import { holdBody, releaseBody } from '$lib/physics';
 	import { sculptObject, enterSculpt, beginStroke, strokeMove, endStroke as sculptEndStroke, showCursorAt, hideCursor } from '$lib/terrainSculpt';
 	import { sceneHits } from '$lib/scenePick';
-	import { startPlayInteract, tickPlayInteract, stopPlayInteract } from '$lib/playInteract';
+	import { startPlayInteract, tickPlayInteract, stopPlayInteract, carriedUuid } from '$lib/playInteract';
+	import { startKnock, tickKnock, stopKnock } from '$lib/knock';
 	import { tickMoveSmoothing } from '$lib/moveSmoothing';
 	import { moduleClickHandlers, moduleInteractiveGroups, fireClickMiss } from '$lib/moduleSDK';
 	import { updateSpatialAudio } from '$lib/voiceChat';
@@ -50,7 +51,7 @@
 	// the annotation is TS syntax — a JSDoc @type cast is ignored here (the documented trap).
 	let knifeFrom: number[] | null = null;
 	import { peerScenes } from '$lib/peerScenes';
-	import { initVRControls, updateVRControls, raycastMenu, raycastPanel, raycastPalette, raycastProps, raycastPrefabs, raycastKeyboard, raycastChat, raycastEdit, raycastSnap, raycastSettings, raycastApprove, placePrefabGhost, vrFaceTrigger, vrVertexTrigger, vrVertexGrabStart, vrVertexGrabEnd, beginStretchSliderDrag, endStretchSliderDrag, executeVRMenuAction, resetWorldRig, onInputSourcesChange, worldToContentPose, boxSelectStart, boxSelectEnd, boxSelectActive, applyVRFrameRate, shouldSendHands, onHandPinchStart, onHandPinchEnd, pinchMenuToggledAt, firePingIfArmed, vrModuleTriggerStart, vrModuleTriggerEnd, vrModuleSelectSwallowed } from '$lib/vrControls';
+	import { initVRControls, updateVRControls, raycastMenu, raycastPanel, raycastPalette, raycastProps, raycastPrefabs, raycastKeyboard, raycastChat, raycastEdit, raycastSnap, raycastSettings, raycastApprove, placePrefabGhost, vrFaceTrigger, vrVertexTrigger, vrVertexGrabStart, vrVertexGrabEnd, beginStretchSliderDrag, endStretchSliderDrag, executeVRMenuAction, resetWorldRig, onInputSourcesChange, worldToContentPose, boxSelectStart, boxSelectEnd, boxSelectActive, applyVRFrameRate, shouldSendHands, onHandPinchStart, onHandPinchEnd, pinchMenuToggledAt, firePingIfArmed, vrModuleTriggerStart, vrModuleTriggerEnd, vrModuleSelectSwallowed, handSnapshot, vrGrabbedUuid, hapticPulse } from '$lib/vrControls';
 	import { vrKeyboardTarget } from '$lib/vrKeyboard';
 	import { measureMode, measureClick } from '$lib/measure';
 	import { pinsGroup, openAnnotation, showNotePins } from '$lib/annotationsHandler';
@@ -278,6 +279,9 @@
 		// 21-B B3: play-mode grab/carry. The ray is NDC (0,0) every frame, so it
 		// belongs in the frame loop rather than on a pointer event.
 		tickPlayInteract(delta, camera.current);
+		// 24-A A1: the knock probes (hands in VR, the camera on desktop) against every
+		// dynamic body — inert unless the scene's knock block is on and a sim runs
+		tickKnock(performance.now(), camera.current);
 		// 21-B: ease between a remote peer's ~10 Hz physics poses (no-op unless a
 		// remote peer is simulating and something is mid-ease)
 		tickMoveSmoothing();
@@ -1289,6 +1293,11 @@
 		// 21-B B3: play mode's own input path. Registered HERE, below every `let`
 		// its closure reads (runModuleClickHandlers among them) — the TDZ rule.
 		startPlayInteract({ moduleHitTest: runModuleClickHandlers });
+		// 24-A A1: the knock's feeds. The VR hand poses come from vrControls through
+		// this seam rather than an import (knock.js stays off vrControls' 3500 lines),
+		// and the two "what am I holding" reads keep a probe off its own carried object.
+		// A2: the hand that hit gets a buzz — LOCAL, the same seam shape as the hand poses
+		startKnock({ hands: handSnapshot, heldUuids: () => [carriedUuid(), vrGrabbedUuid()], haptic: hapticPulse });
 
 		xrControllers.forEach((controller) => {
 			controller.addEventListener('select', onXRSelect);
@@ -1301,6 +1310,7 @@
 		return () => {
 			offEditResume(); // #20 P5
 			stopPlayInteract(); // 21-B B3 (releases any carried body with zero velocity)
+			stopKnock(); // 24-A A1
 			element.removeEventListener('pointerdown', onPointerDown);
 			element.removeEventListener('contextmenu', onContextMenu);
 			element.removeEventListener('webglcontextlost', onContextLost);

@@ -322,6 +322,38 @@ h.run(async () => {
 		`the Player Variable node reads mine/sum/max/peer (${JSON.stringify(readings)})`
 	);
 
+	// ---- 1c. ...and the number REACHES a consumer through a wire ------------------
+	// 24-A A4: 1b above evaluates the node ALONE, which proves the evaluator and says
+	// nothing about the wire — and that is the gap the bug lived in: `peervariable` was
+	// missing from flowRuntime's `valueTypes`, so `resolveInputs` refused it as a source
+	// and every consumer silently kept its own dialled value (measured in the Stars Room:
+	// two `peervariable -> hudtext` readouts rendered 0 beside a leaderboard reading 1).
+	// The honest check asks the CONSUMER what it resolved, through the real path.
+	const wired = await A.page.evaluate(() => {
+		const s = window.__stores;
+		const src = {
+			id: 'pv-src',
+			type: 'peervariable',
+			position: { x: 0, y: 1400 },
+			data: { type: 'peervariable', name: 'laps', read: 'mine' },
+			class: 'w-[150px]'
+		};
+		const sink = {
+			id: 'pv-sink',
+			type: 'math',
+			position: { x: 240, y: 1400 },
+			data: { type: 'math', op: 'add', a: 99, b: 0 },
+			class: 'w-[150px]'
+		};
+		const edge = { id: 'e-pv-src-pv-sink.a', source: 'pv-src', target: 'pv-sink', targetHandle: 'a' };
+		const data = s.flowRuntime.resolveInputs(sink, [src, sink], [edge], 0, { triggers: {} });
+		return { a: data.a, value: s.flowRuntime.evalNode(sink, [src, sink], [edge], 0, new Set(), { triggers: {} }) };
+	});
+	h.check(
+		wired.a === 3 && wired.value === 3,
+		`a wired Player Variable REACHES its consumer — the Math node resolves 3, not its own 99 (${JSON.stringify(wired)})`
+	);
+
 	// =====================================================================
 	// 2. A PER-PLAYER COLLECTIBLE: the gem hides only for whoever took it
 	// =====================================================================

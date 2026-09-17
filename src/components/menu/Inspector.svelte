@@ -67,6 +67,7 @@
 		scenePhysicsBounds,
 		scenePhysicsDefaults,
 		scenePlay,
+		sceneKnock,
 		DEFAULT_GRAVITY
 	} from '$lib/scenePhysics';
 	import { scenePost, sceneProvidesAo } from '$lib/scenePost';
@@ -2423,6 +2424,61 @@
 				</button>
 				<p class="text-[10px] italic text-gray-400">
 					Dynamic objects fall and collide while a simulation runs (▶ or P).
+				</p>
+
+				<!-- 24-A A2: the knock block (A1) — an open VR hand or a walking player hitting a
+					 dynamic body. Inside the Physics section (the B4 rule: one section, labelled
+					 sub-blocks), with a data-anchor so a toast can openSceneSection('Physics:Knock'). -->
+				<p class="mt-2 text-[10px] uppercase tracking-wide text-gray-500" data-anchor="Knock">Knock</p>
+				<Checkbox
+					id="physics-knock-enabled"
+					checked={$sceneKnock.enabled}
+					onchange={(e) => setScenePhysics({ knock: { enabled: e.currentTarget.checked } })}
+				>
+					Hands and players knock dynamic objects
+				</Checkbox>
+				{#if $sceneKnock.enabled}
+					<SliderRow
+						id="physics-knock-gain"
+						label="Gain"
+						min={0}
+						max={5}
+						step={0.05}
+						value={$sceneKnock.gain}
+						onchange={(v) => setScenePhysics({ knock: { gain: v } })}
+					/>
+					<SliderRow
+						id="physics-knock-maxspeed"
+						label="Max speed"
+						min={0.5}
+						max={20}
+						step={0.5}
+						decimals={1}
+						value={$sceneKnock.maxSpeed}
+						onchange={(v) => setScenePhysics({ knock: { maxSpeed: v } })}
+					/>
+					<SliderRow
+						id="physics-knock-radius"
+						label="Probe radius"
+						min={0.02}
+						max={1}
+						step={0.01}
+						value={$sceneKnock.radius}
+						onchange={(v) => setScenePhysics({ knock: { radius: v } })}
+					/>
+					<SliderRow
+						id="physics-knock-spin"
+						label="Spin"
+						min={0}
+						max={2}
+						step={0.05}
+						value={$sceneKnock.spin}
+						onchange={(v) => setScenePhysics({ knock: { spin: v } })}
+					/>
+				{/if}
+				<p class="text-[10px] italic text-gray-400">
+					An open VR hand, or walking into an object on desktop, sends it off at the speed it
+					was hit. Grip still grabs. Shared, and it needs a running simulation.
 				</p>
 
 				<p class="mt-2 text-[10px] uppercase tracking-wide text-gray-500">Play mode</p>

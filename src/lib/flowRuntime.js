@@ -405,6 +405,27 @@ const baseState = new Map();
 // animated objects whose animation is paused while the user drags them
 const suspended = new Set();
 
+/**
+ * 24-A A4: the effects a SUSPENDED object still gets.
+ *
+ * Suspension means "somebody else owns this object's POSE right now" — a gizmo drag, a
+ * possess ride, an animation scrub, or (physics.trackBody) a dynamic body for the whole
+ * run: "dynamic wins over an animation". Skipping the object's WHOLE effect list was too
+ * broad, because these four write no pose at all: a colour, a shader uniform, a device
+ * param, a note. Measured in the Stars Room, where every star is a dynamic body with a
+ * Set Color node: the star painted once in the frames before the sim's bodies existed and
+ * then STUCK there for the rest of the round — the latch flipped, the wired colour
+ * resolved (proven: resolveInputs returned the lit colour under both clocks), and nothing
+ * repainted; changing the node's dialled colour live did nothing either, which is what
+ * says the node was not applying rather than resolving wrong. The stuck paint survives
+ * because `restoreBase` carries pose + visibility and never material state.
+ *
+ * Deliberately NOT here: `visibility` (base-managed — restoreBase re-asserts it, and the
+ * restore is exactly what a suspended object must not get), module effects, scripts and
+ * custom nodes (all of them may write a pose).
+ */
+const POSE_FREE_EFFECTS = new Set(['setcolor', 'setuniform', 'deviceparam', 'notetrigger']);
+
 /** @param {any} object */
 function captureBase(object) {
 	return {
@@ -1796,6 +1817,7 @@ export const valueTypes = [
 	'gamepadbutton', // 21-E5: pad trigger — the keypress model verbatim
 	'gamepadaxis', // 21-E5: a stick, read LOCALLY (never streamed)
 	'onimpact', // PFX-C: physics impact trigger
+	'onhit', // 24-A A2: the knock's trigger — a handle map: __default pulse + speed/byMe
 	'onenter', 'onexit', // CL-C: sensor overlap triggers
 	'velocity', // CL-C: live speed readout (m/s)
 	'measure', // B6: an object's top / bottom / height / y / speed
@@ -1806,6 +1828,15 @@ export const valueTypes = [
 	'hudinput', // 21-D4: the HUD as a SOURCE - what the player set on a slider/toggle/etc
 	// 21-D6 the game shell
 	'ongamestate', 'getvariable', 'gametime',
+	// 24-A A4: `peervariable` was MISSING here since 21-G4, and the omission was silent in
+	// every direction that is easy to look at — it has an OUTPUT type in flowSockets, an
+	// evaluator case below, and the editor draws its source handle — but `resolveInputs`
+	// only accepts a source listed HERE, so a Player Variable wired into anything delivered
+	// NOTHING and the consumer quietly kept its own dialled value. Found authoring the Stars
+	// Room, whose two `peervariable -> hudtext` readouts (the shape CLAUDE.md prescribes)
+	// both rendered 0 while the leaderboard beside them, which reads peerVars directly
+	// rather than through a wire, read 1.
+	'peervariable',
 	// 21-F3's `collectcount` MOVED to the collectible module (R3a) — the chain walk was
 	// the one reader that knew the recipe's shape, and the module owns that shape now
 	// 21-E4: the logic a game LOOP is made of. Sequence's value is a handle MAP,
@@ -1830,7 +1861,11 @@ let graphOutputs = {};
  * @param {any} value @param {any} edge */
 function unwrapHandle(value, edge) {
 	if (value && typeof value === 'object' && value.__handles)
-		return edge?.sourceHandle ? value.__handles[edge.sourceHandle] : undefined;
+		// 24-A A2: `__default` is what the UNNAMED output handle reads — On Hit keeps its
+		// pulse on the ordinary right-edge dot (so it wires like On Click into an Object
+		// Selector or a Counter) and carries speed/byMe as named handles beside it. Every
+		// earlier handle-map producer omits it, so an unnamed edge there still reads undefined.
+		return edge?.sourceHandle ? value.__handles[edge.sourceHandle] : value.__default;
 	return value;
 }
 
@@ -2210,6 +2245,18 @@ function evalNodeBody(node, allNodes, allEdges, time, seen, ctx) {
 			const trig = ctx && ctx.triggers ? ctx.triggers[node.id] : null;
 			const dt = trig ? time - trig.lastT : Infinity;
 			return dt >= 0 && dt < num(d.pulse ?? 0.3) ? 1 : 0;
+		}
+		case 'onhit': {
+			// 24-A A2: the knock's trigger. fireObjectHit stamps this node on EVERY peer
+			// from the hit message's own `at`, so the pulse agrees everywhere with no second
+			// message; speed/byMe are the LAST accepted hit's, held until the next one.
+			const trig = ctx && ctx.triggers ? ctx.triggers[node.id] : null;
+			const dt = trig ? time - trig.lastT : Infinity;
+			const info = hitInfo.get(node.id);
+			return {
+				__default: dt >= 0 && dt < num(d.pulse ?? 0.3) ? 1 : 0,
+				__handles: { speed: info ? info.speed : 0, byMe: info && info.byMe ? 1 : 0 }
+			};
 		}
 		case 'onenter':
 		case 'onexit': {
@@ -2680,6 +2727,59 @@ export function fireObjectImpact(uuid, strength) {
 }
 
 /**
+ * 24-A A2: the last hit each On Hit node ACCEPTED — its value outputs. Runtime state
+ * keyed by node id (a late joiner reads 0 until the next knock; the trigger log it is
+ * handed carries the stamps, not the speeds).
+ * @type {Map<string, {speed: number, byMe: boolean, at: number}>}
+ */
+const hitInfo = new Map();
+
+/**
+ * A hit's wall-clock `at` (ms — the sender's Date.now, monotonic per sender) as a trigger
+ * stamp in the tick clock's seconds: the fold syncedNow applies to Date.now, so every peer
+ * derives ONE stamp from one message. Off the synced clock there is no peer to agree
+ * with and the tick clock is performance-based, so the local clock is used instead.
+ * @param {number} atMs
+ */
+function stampFromWallClock(atMs) {
+	return synced && Number.isFinite(atMs) ? (atMs % 86400000) / 1000 : syncedNow();
+}
+
+/**
+ * 24-A A2: a body was KNOCKED (knock.js — this peer's own probe, or a peer's `hit`
+ * message being applied) — pulse every On Hit node targeting it whose `minSpeed` and
+ * `who` gates pass. Unlike fireObjectImpact this runs on EVERY peer from the SAME
+ * message, so the stamp is derived from the message's `at` and NOT replicated: a
+ * nodetrigger on top would stamp every peer twice. `who` is read against `by` per peer,
+ * which is how `me` reaches a setvariable scope:'player' without a second writer.
+ * @param {{uuid: string, by?: string, at: number, speed: number}} hit
+ * @param {boolean} local true on the peer whose probe hit
+ * @returns {number} nodes pulsed
+ */
+export function fireObjectHit(hit, local) {
+	if (!hit || typeof hit.uuid !== 'string') return 0;
+	const me = /** @type {any} */ (get(peers))?.peer?.id ?? '';
+	const byMe = !!local || (!!hit.by && hit.by === me);
+	const ctx = runtimeCtx();
+	const stamp = stampFromWallClock(hit.at);
+	const speed = Number.isFinite(hit.speed) ? hit.speed : 0;
+	let fired = 0;
+	nodes.forEach((node) => {
+		if (node.type !== 'onhit') return;
+		if (!(reachesObjectSelector(node.id, hit.uuid) || implicitOwnerOf(node) === hit.uuid)) return;
+		const data = resolveInputs(node, nodes, edges, syncedNow(), ctx);
+		if (speed < num(data.minSpeed ?? 0)) return;
+		const who = data.who ?? 'anyone';
+		if (who === 'me' && !byMe) return;
+		if (who === 'others' && byMe) return;
+		hitInfo.set(node.id, { speed, byMe, at: hit.at });
+		applyNodeTrigger(node.id, stamp, false);
+		fired++;
+	});
+	return fired;
+}
+
+/**
  * B6: the physics INITIATOR reports how long a dynamic body has been still
  * (0 = it is moving). Same shape as fireObjectImpact: initiator-detected,
  * dispatched as a REPLICATED trigger stamp, so every peer's On Rest node pulses
@@ -3074,10 +3174,18 @@ function runTick(now) {
 	});
 
 	active.forEach((anims, uuid) => {
-		if (suspended.has(uuid)) return; // user is dragging it — leave it alone
 		const object = sceneObjects.getObjectByProperty('uuid', uuid);
 		if (!object) {
 			baseState.delete(uuid);
+			return;
+		}
+		// somebody else owns the POSE (a drag, a ride, a dynamic body for the run) — so no
+		// base restore and no pose effects, but the writers that touch no pose still run
+		if (suspended.has(uuid)) {
+			anims.forEach((/** @type {any} */ anim) => {
+				if (POSE_FREE_EFFECTS.has(anim.type))
+					applyAnimation(object, baseState.get(uuid) ?? captureBase(object), anim, effectTime(time), ctx);
+			});
 			return;
 		}
 		if (!baseState.has(uuid)) baseState.set(uuid, captureBase(object));
@@ -3456,6 +3564,9 @@ export function startFlowRuntime() {
 	import('./possess').then((m) => (possessRef = m));
 	// 21-F4: the travel node's loader + the allplayers verdict channel
 	import('./levels').then((m) => (levelsRef = m));
+	// 24-A A2: the knock's hit feed drives On Hit. PRIMED for the same reason as physics:
+	// knock.js imports physics, which imports this module.
+	import('./knock').then((m) => m.registerHitListener((hit, local) => fireObjectHit(hit, local)));
 	import('./gamePresence').then((m) => (presenceRef = m));
 	flowGraphs.subscribe(() => {
 		nodes = allNodes();

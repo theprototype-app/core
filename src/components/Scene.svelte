@@ -8,7 +8,7 @@
 	import { peers, username, userdata, specatorMode, avatarConfig, viewportMenu, objectContextMenu, viewportMenuOpener, addMenu, addMenuOpener, showToast, multiSelectMode } from '../stores/appStore';
 	import { get } from 'svelte/store';
 	import { vrPostEnabled } from '$lib/viewportOverrides';
-	import { isLocked, editorCam, isVRMode, globalScene, objectsGroup, showGrid, TControls, selectedObject, selectedObjects, lockedObjects, marqueeRect, worldRig, vrOverride, specators, globalCamera, globalRenderer, orbitControls, passthroughActive, sessionCompositesOverRoom, vrObjectsPanelOpen, vrPaletteOpen, vrPropsPanelOpen, vrPrefabsPanelOpen, vrChatPanelOpen, vrEditMenuOpen, vrSnapMenuOpen, vrSettingsPanelOpen, vrApprovePanelOpen, vrToolMode, viewMode } from '../stores/sceneStore';
+	import { isLocked, editorCam, isVRMode, globalScene, objectsGroup, showGrid, TControls, selectedObject, selectedObjects, lockedObjects, marqueeRect, worldRig, vrOverride, specators, globalCamera, globalRenderer, orbitControls, passthroughActive, sessionCompositesOverRoom, vrObjectsPanelOpen, vrPaletteOpen, vrPropsPanelOpen, vrPrefabsPanelOpen, vrChatPanelOpen, vrEditMenuOpen, vrSnapMenuOpen, vrSettingsPanelOpen, vrApprovePanelOpen, vrToolMode, viewMode, contextLost } from '../stores/sceneStore';
 	import {
 		selectObject,
 		deselectObject,
@@ -124,6 +124,7 @@
 	interactivity();
 	const scale = spring(0.5);
 	let rotation = 0;
+	let lastCameraSendAt = 0 // 27-E: the camera stream's rate gate
 	let lastCameraPosition = new THREE.Vector3();
 	// P2b THE OTHER HALF OF THE SEND GATE. The camera broadcast is CHANGE-GATED, so a
 	// peer who travels into our scene while we are standing still would never receive a
@@ -289,8 +290,18 @@
 			camContentPos.copy(camera.current.position);
 			camContentQuat.copy(camera.current.quaternion);
 			worldToContentPose($worldRig, camContentPos, camContentQuat);
-			if (camContentPos.distanceTo(lastCameraPosition) > ($isVRMode ? 0.0001 : 0.01) ||
-				camContentQuat.angleTo(lastCameraQuaternion) > THREE.MathUtils.degToRad(1)) {
+			// 27-E (audit H7): the camera stream is RATE-GATED now. It used to send on every
+			// frame the camera moved past a threshold — in VR that threshold is 0.0001 m, so
+			// at 90 Hz it is a message per frame, and at N=10 each peer both sends and
+			// receives ~800 a second. The movement threshold is unchanged; this only bounds
+			// HOW OFTEN, which is the `vrhands` pattern one block below. Golden rule 11: a
+			// receiver eases between samples, we never raise a send rate to paper over it.
+			const camGapMs = $isVRMode ? 33 : 50;
+			const nowMs = performance.now();
+			if ((camContentPos.distanceTo(lastCameraPosition) > ($isVRMode ? 0.0001 : 0.01) ||
+				camContentQuat.angleTo(lastCameraQuaternion) > THREE.MathUtils.degToRad(1)) &&
+				nowMs - lastCameraSendAt >= camGapMs) {
+				lastCameraSendAt = nowMs;
 				camContentEuler.setFromQuaternion(camContentQuat);
 				$peers.send({ type: 'camera', peerId: $peers.peer.id, position: camContentPos.toArray(), rotation: [camContentEuler.x, camContentEuler.y, camContentEuler.z] });
 				lastCameraPosition.copy(camContentPos);
@@ -556,6 +567,27 @@
 		renderer.xr.addEventListener('sessionstart', onSessionStart);
 
 		const element = renderer.domElement;
+
+		// 27-G (audit M13): a lost WebGL context is SILENT. The canvas stops updating while
+		// every other part of the app keeps answering, so it reads to a user as "the whole
+		// thing froze" with nothing to act on. preventDefault() is load-bearing rather than
+		// a formality: without it the browser never fires a restore event AT ALL, so there
+		// is no way back short of a reload.
+		const onContextLost = (event: any) => {
+			event.preventDefault();
+			$contextLost = true;
+		};
+		const onContextRestored = () => {
+			// three rebuilds its own GPU objects lazily, but a material compiled against the
+			// dead context keeps its stale program, so force a recompile across the scene.
+			$globalScene?.traverse((o: any) => {
+				const list = Array.isArray(o.material) ? o.material : o.material ? [o.material] : [];
+				for (const m of list) if (m) m.needsUpdate = true;
+			});
+			$contextLost = false;
+		};
+		element.addEventListener('webglcontextlost', onContextLost);
+		element.addEventListener('webglcontextrestored', onContextRestored);
 		let downPosition = null;
 		let downTime = 0;
 		let strokeActive = false;
@@ -1253,6 +1285,8 @@
 			stopPlayInteract(); // 21-B B3 (releases any carried body with zero velocity)
 			element.removeEventListener('pointerdown', onPointerDown);
 			element.removeEventListener('contextmenu', onContextMenu);
+			element.removeEventListener('webglcontextlost', onContextLost);
+			element.removeEventListener('webglcontextrestored', onContextRestored);
 			window.removeEventListener('pointerup', onPointerUp);
 			xrControllers.forEach((controller) => {
 				controller.removeEventListener('select', onXRSelect);

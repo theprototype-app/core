@@ -18,8 +18,15 @@ import { applyUvPaint, applyUvPaintEnd } from '$lib/uvEditor';
 import { applySplineEdit } from '$lib/splineTool';
 import { initVoiceChat, attachVoiceToPeer, voicePeerConnected } from '$lib/voiceChat';
 import { resolvePeerOptions, describePeerServer, peerServerStatus, parseInviteHash, decodeInviteServer, applyInviteServerOverride, inviteServerOverride } from '$lib/peerServer';
-import { sessionHost, markPeerJoined, resetSession } from '$lib/connectionState';
+// 27-B/27-G integration: the RECOVERY story belongs in the copyable bundle, not in a
+// console nobody reads. diagnostics.js is a zero-dependency leaf, so this closes no cycle.
+import { log } from '$lib/diagnostics';
+import { sessionHost, markPeerJoined, resetSession, signalingRetry, noteSignalingRetry, clearSignalingRetry, noteApprovalStarted, clearApprovalStarted, approvalStartedAt, APPROVAL_WINDOW_MS, MAX_PENDING_APPROVALS, HARD_PEER_CAP, roomIsFull } from '$lib/connectionState';
 import { canApply, getAuthProvider, dispatchCloudMessage, rolesInfo } from '$lib/cloudHooks';
+// 27-A (audit H1): shape validation + per-peer failure counters. Both are LEAVES, so the
+// dispatcher can reject a malformed message before any applier sees it.
+import { validateWireMessage } from '$lib/wireValidate';
+import { noteWireError } from '$lib/wireErrors';
 import { applyAnnotation, applyAnnotationsSnapshot, sendAnnotations } from '$lib/annotationsHandler';
 import { applyPing } from '$lib/ping';
 import { applyAssetFile, answerAssetRequest, applyAssetThumb, answerAssetThumbRequest, applyAssetStart, applyAssetChunk, applyAssetMissing } from '$lib/assetShare';
@@ -97,6 +104,10 @@ export function createPeer() {
 // remote had already adopted as its send channel. Killing young conns is how
 // mesh formation shredded itself above ~5 peers.
 const DIAL_GRACE_MS = 10000;
+// 27-F: the SIGNALING schedule — 800ms doubling to a 8s ceiling, forever, +/-25% so a
+// room full of tabs does not return in lockstep. Separate from the per-peer conn
+// backoff below, which is bounded on purpose (a peer really can be gone).
+const RETRY_BACKOFF = { base: 800, cap: 8000, max: Infinity, jitter: 0.25 };
 // restoreConnection's own retry cadence (pre-existing 4s) — also used to spot
 // a restore dial that is already in flight so parallel calls don't stack.
 const RESTORE_RETRY_MS = 4000;
@@ -117,6 +128,27 @@ userdata.subscribe(value => { users = value });
 /** P2b: the only messages `broadcast` will withhold from a peer in another scene.
  * Pure presence, re-sent continuously, useless to somebody in a different world. */
 const STREAM_TYPES = new Set(['camera', 'vrhands']);
+
+/**
+ * 27-E: keep the pending queue bounded, dropping the EXPIRED first and only then the
+ * oldest still-live request. A missed request is worse than a stale card, so nothing is
+ * dropped while there is room — this only decides who goes when there is not.
+ * @param {any[]} approvals @returns {any[]}
+ */
+function boundApprovals(approvals) {
+	if (approvals.length <= MAX_PENDING_APPROVALS) return approvals;
+	const started = get(approvalStartedAt);
+	const age = (/** @type {any} */ a) => Date.now() - (started[a.peerId] ?? 0);
+	const expired = approvals.filter((a) => age(a) > APPROVAL_WINDOW_MS).sort((a, b) => age(b) - age(a));
+	const live = approvals.filter((a) => age(a) <= APPROVAL_WINDOW_MS).sort((a, b) => age(b) - age(a));
+	const drop = new Set();
+	for (const a of [...expired, ...live]) {
+		if (approvals.length - drop.size <= MAX_PENDING_APPROVALS) break;
+		drop.add(a.peerId);
+	}
+	for (const peerId of drop) clearApprovalStarted(peerId);
+	return approvals.filter((a) => !drop.has(a.peerId));
+}
 
 export class PeerConnection {
 	constructor(id, updateIdFn) {
@@ -178,16 +210,25 @@ export class PeerConnection {
 			this.peer = new Peer(this.myId, options);
 		};
 
+		// 27-F (audit H2): THE recreate ritual, in one place. Four callers had their own
+		// copy of destroy -> createPeerForMode -> attachVoiceToPeer -> wire (the public
+		// fallback, the runtime switchServer, the id-collision retry) and the fourth —
+		// a peer whose link CLOSED — did not exist at all, which is why a closed peer
+		// stayed dead: `reconnect()` cannot revive a spent Peer object.
+		const recreatePeer = (/** @type {boolean} */ forcePublic) => {
+			try { this.peer.destroy(); } catch (e) { /* already gone */ }
+			createPeerForMode(!!forcePublic);
+			attachVoiceToPeer(this); // rebind the incoming-call handler to the new peer
+			wire();
+		};
+
 		// The pinned self-hosted server never opened -> rebuild against the public
 		// PeerJS cloud and re-wire. Default mode only; custom/public never fall back.
 		const fallbackToPublic = () => {
 			this.didFallback = true;
 			this.canFallback = false;
 			showToast('Your peer server is unreachable - switching to the public PeerJS server.');
-			try { this.peer.destroy(); } catch (e) { /* already gone */ }
-			createPeerForMode(true);
-			attachVoiceToPeer(this); // rebind the incoming-call handler to the new peer
-			wire();
+			recreatePeer(true);
 		};
 
 		// 24-D2: switch the signaling server at RUNTIME — fallbackToPublic generalised.
@@ -218,10 +259,7 @@ export class PeerConnection {
 				this.idRetries = 0;
 				this.reconnectAttempts = 0;
 				this.serverErrorAt = 0;
-				try { this.peer.destroy(); } catch (e) { /* already gone */ }
-				createPeerForMode(!!ov?.forcePublic);
-				attachVoiceToPeer(this);
-				wire();
+				recreatePeer(!!ov?.forcePublic);
 			};
 			rebuild(target);
 			const pinned = !!(target && (target.forcePublic || target.custom?.host));
@@ -256,6 +294,9 @@ export class PeerConnection {
 		this.peer.on('open', (id) => {
 			console.log(id);
 			this.hasOpened = true;
+			// 27-F: say it ONCE, and only to somebody who saw it go away.
+			if (get(signalingRetry).retrying) showToast('Reconnected to the peer server.');
+			clearSignalingRetry();
 			this.reconnectAttempts = 0; // a fresh/re-established server link resets the backoff
 			if (this.updateIdFn) this.updateIdFn(id);
 			if (!window.location.hash.slice(1)) return;
@@ -275,27 +316,40 @@ export class PeerConnection {
 			window.location.hash = '';	
 		});
 
-		this.peer.on('close', function() { console.log('server closed') });
+		// 27-F: a closed Peer is SPENT — `reconnect()` does nothing for it, which is why
+		// this used to be a dead end with only a page reload out of it. Rebuild on the
+		// SAME id (an id is a per-server registration, so the invite link a user copied
+		// a minute ago still works when the link comes back).
+		this.peer.on('close', () => {
+			log('error', 'net', 'signaling server closed');
+			this.reconnectAttempts++;
+			const delay = backoffDelay(this.reconnectAttempts, RETRY_BACKOFF) ?? 8000;
+			if (this.reconnectAttempts === 1) showToast('The peer server closed the link - reconnecting...');
+			noteSignalingRetry(this.reconnectAttempts);
+			setTimeout(() => { if (!this.peer?.open) recreatePeer(this.didFallback); }, delay);
+		});
 
-		// Surface signaling-server problems to the user. Reconnect on a bounded
-		// exponential backoff instead of hammering reconnect() immediately (172).
+		// 27-F (audit H2): THE RETRY NEVER GIVES UP. It used to stop after five attempts
+		// (~20 s) and tell the user to reload — but a reload drops every live
+		// DataConnection AND the invite id, while the thing that failed is usually a lid
+		// closing, a phone locking or a wifi hop. What protects the server is the CAPPED
+		// interval (plus jitter, so N tabs dropped by one hop do not return in lockstep);
+		// the attempt COUNT protected nobody. One toast on the way in, a CHIP for the
+		// live state — an unbounded retry that toasts per attempt is spam.
 		this.reconnectAttempts = 0;
 		this.peer.on('disconnected', () => {
-			console.log('server disconnected');
+			log('warn', 'net', 'signaling server disconnected');
 			if (this.peer.destroyed) return;
 			this.reconnectAttempts++;
-			const delay = backoffDelay(this.reconnectAttempts, { base: 800, max: 5 });
-			if (delay === null) {
-				showToast('Could not reach the peer server. Please reload the page.');
-				return;
-			}
-			showToast('Lost connection to the peer server, reconnecting... (attempt ' + this.reconnectAttempts + ')');
+			const delay = backoffDelay(this.reconnectAttempts, RETRY_BACKOFF) ?? 8000;
+			if (this.reconnectAttempts === 1) showToast('Lost the peer server - reconnecting...');
+			noteSignalingRetry(this.reconnectAttempts);
 			setTimeout(() => {
 				if (!this.peer.destroyed && this.peer.disconnected) this.peer.reconnect();
 			}, delay);
 		});
 		this.peer.on('error', (err) => {
-			console.log('peer error: ' + err.type, err);
+			log('error', 'net', 'peer error', { type: err?.type, error: String(err) });
 			// Pinned self-hosted server never opened -> retry on the public cloud
 			// (default mode only; custom/public keep canFallback false).
 			if (!this.hasOpened && this.canFallback && !this.didFallback &&
@@ -311,17 +365,30 @@ export class PeerConnection {
 			// never persisted, so nothing is pinned to it before the link opens —
 			// take a new one instead of making the user reload. Lengthening the id
 			// was assumed to be a compat break; it isn't, but it also isn't needed.
+			// 27-F: the SAME collision, met on a REBUILD. The branch below only covers the
+			// first open, so a peer rebuilt after a close — while the server still holds the
+			// old registration for a moment — fell through to "please reload", which is the
+			// dead end this phase exists to remove. Wait out the registration and rebuild.
+			if (err.type === 'unavailable-id' && this.hasOpened && this.idRetries < 3) {
+				this.idRetries++;
+				const wait = backoffDelay(this.idRetries, RETRY_BACKOFF) ?? 8000;
+				log('warn', 'net', 'id still held by the old registration — rebuilding', { wait });
+				noteSignalingRetry(this.idRetries);
+				setTimeout(() => { if (!this.peer?.open) recreatePeer(this.didFallback); }, wait);
+				return;
+			}
 			if (err.type === 'unavailable-id' && !this.hasOpened && this.idRetries < 3) {
 				this.idRetries++;
 				this.myId = createPeer();
-				console.log('session id collided — retrying as ' + this.myId);
-				try { this.peer.destroy(); } catch (e) { /* already gone */ }
-				createPeerForMode(this.didFallback);
-				attachVoiceToPeer(this); // rebind the incoming-call handler to the new peer
-				wire();
+				log('warn', 'net', 'session id collided — retrying', { id: this.myId });
+				recreatePeer(this.didFallback);
 				return;
 			}
 			if (err.type === 'peer-unavailable') {
+				// 27-E: end the request this names. The pill used to sit on "Requesting"
+				// beside this very toast, and the optimistic whitelist row never went away.
+				const id = String(err.message ?? '').match(/[0-9a-z]{3,}/i)?.[0] ?? '';
+				if (id) import('$lib/peerApproval').then((m) => m.abandonOutboundRequest(id)).catch(() => {});
 				showToast('Peer is unreachable. Check the ID and ask them to stay online.');
 			} else if (err.type === 'unavailable-id') {
 				showToast('Your session ID is already in use. Please reload the page.');
@@ -348,6 +415,18 @@ export class PeerConnection {
 			window.addEventListener('pagehide', () => {
 				try { this.broadcast({ type: 'disconnected', peerId: this.peer.id }); } catch (e) { /* going down anyway */ }
 			});
+			// 27-F: the two events that mean "there is a point in trying NOW" — a wifi hop
+			// ends as `online`, a lid or a phone lock ends as `visible`. Both RESET the
+			// schedule: the wait is there to be kind to a server that is down, not to a
+			// link that has just come back.
+			const retryNow = () => {
+				if (!this.peer || this.peer.open) return;
+				this.reconnectAttempts = 0;
+				if (this.peer.destroyed) recreatePeer(this.didFallback);
+				else if (this.peer.disconnected) this.peer.reconnect();
+			};
+			window.addEventListener('online', retryNow);
+			document.addEventListener('visibilitychange', () => { if (!document.hidden) retryNow(); });
 		}
 
 		// Wire the message dispatcher onto a connection. Historically only INBOUND
@@ -361,8 +440,12 @@ export class PeerConnection {
 			let waiting = get(waitingForApproval);
 			waiting.forEach(element => {
 				if(element[0] === conn.peer) {
-					// Clear waiting list for approved peers
-					waiting = waiting.filter(e => e[1] !== 'approved');
+					// 27-E (audit M10): the row is REMOVED on approval, not mutated in place
+					// with a discarded filter — the old shape grew one dead row per join for
+					// the tab's lifetime, and mutating a store's array in place is how the
+					// next reader gets a value nobody published.
+					clearApprovalStarted(conn.peer);
+					waitingForApproval.set(get(waitingForApproval).filter((/** @type {any} */ w) => w[0] !== conn.peer));
 					element[1] = 'approved';
 
 					// CN: OUR outbound request was approved — that peer is the session
@@ -417,7 +500,11 @@ export class PeerConnection {
 				var approvals = get(pendingApprovals);
 				if (!approvals.some(toast => toast.peerId === conn.peer)) {
 					approvals.push({ peerId: conn.peer });
-					pendingApprovals.set(approvals);
+					// 27-E: stamp the SAME clock the joiner's countdown uses, so the card's
+					// age and their pill agree; and BOUND the queue — a host who walked away
+					// used to collect a card per dial with nothing dropping them (audit H3).
+					noteApprovalStarted(conn.peer);
+					pendingApprovals.set(boundApprovals(approvals));
 				}
 				conn.close();
 			}
@@ -430,7 +517,7 @@ export class PeerConnection {
 			conn.on('open', () => {
 				const existing = this.connections[conn.peer];
 				if (existing?.open) return; // stable outgoing conn stays preferred
-				console.log('adopting inbound connection from ' + conn.peer + ' as the send channel');
+				log('warn', 'net', 'adopting inbound connection as the send channel', { peer: conn.peer });
 				if (existing) { try { existing.close(); } catch {} }
 				this.connections[conn.peer] = conn;
 				conn.on('close', () => this.onConnClose(conn.peer, conn));
@@ -451,7 +538,17 @@ export class PeerConnection {
 
 		/** @this {any} @param {any} conn */
 		function handleData(conn) {
-			conn.on('data', (data) => {
+			// 27-A: a conn reports its OWN failures now. eventemitter3 swallows an 'error'
+			// nobody listens for, so a send to a half-open conn and a failed negotiation were
+			// both invisible. This is the one function every creation site already calls —
+			// the four dials and the adopted inbound conn — so one listener pair covers all.
+			conn.on('error', (/** @type {any} */ err) => noteWireError(conn.peer, 'conn-error', err?.type ?? err));
+			conn.on('iceStateChanged', (/** @type {any} */ state) => {
+				if (state === 'failed' || state === 'closed') noteWireError(conn.peer, 'ice-' + state);
+			});
+			// The dispatch chain itself, called from the guarded handler below. Naming it is
+			// what lets a try/catch wrap 440 lines without re-indenting any of them.
+			const dispatch = (/** @type {any} */ data) => {
 				// M1a (open-core): the ONE receive-side capability gate. Default allows
 				// everything (byte-identical OSS behavior); a cloud plugin's provider
 				// drops disallowed message types from a peer (e.g. a viewer's mutations).
@@ -488,6 +585,12 @@ export class PeerConnection {
 					console.log('Connecting to received hosts');
 					data.hosts.forEach( id =>
 					{
+						// 27-E (audit L7): a joiner must not fill the mesh past the cap the
+						// approving side is enforcing, or the room grows by the back door.
+						// Counted off the OPEN connections, never `userdata` — that roster is
+						// the whitelist, written at dial time, so it counts people who were
+						// invited and never arrived.
+						if (roomIsFull(this)) return;
 						// mesh fill: connect, but DON'T request full state — the scene
 						// is one shared state and we already pull it from the peer we
 						// joined. Requesting it from everyone made a joiner download
@@ -922,11 +1025,42 @@ export class PeerConnection {
 						...map,
 						[data.peerId]: { left: data.left, right: data.right, active: data.active !== false, ts: Date.now() }
 					}));
-				} else if(data.startsWith('/')) {
-					sceneCommand(data);
+				} else {
+					// 27-A (audit M11): THE RAW-STRING BRANCH IS GONE. It routed a peer's
+					// string straight into sceneCommand, where '/clear all' wipes the scene
+					// AND re-broadcasts it — a receiver re-broadcasting is golden rule 1
+					// inverted. Nothing sends raw strings (sendMessage runs slash commands
+					// locally), so an unreachable branch was standing armed. What is here now
+					// is the counter that says a peer sent something this build cannot apply,
+					// which is how version skew becomes visible instead of silent.
+					noteWireError(conn.peer, 'unknown:' + data.type);
 				}
-			}
-			);
+			};
+
+			conn.on('data', (data) => {
+				// 27-A (audit H1): SHAPE FIRST, before any gate reads `data.type`. A null, a
+				// string or a number used to fall through the whole chain to
+				// `data.startsWith(...)` and throw out of the handler, where peerjs swallowed
+				// it and nothing counted it. canApply stays the first POLICY gate; this is
+				// only "is this a message at all".
+				if (!data || typeof data !== 'object') {
+					noteWireError(conn.peer, 'shape', typeof data);
+					return;
+				}
+				// …then the shape its own type implies, so an applier cannot throw halfway
+				// through applying half a message. A type absent from the table is ALLOWED,
+				// which is what keeps a newer peer's messages working.
+				if (!validateWireMessage(data)) {
+					noteWireError(conn.peer, 'invalid:' + data.type);
+					return;
+				}
+				try {
+					dispatch(data);
+				} catch (error) {
+					// One bad message must not take this connection's handler down with it.
+					noteWireError(conn.peer, data.type, error);
+				}
+			});
 		}
 	}
 
@@ -1115,7 +1249,7 @@ export class PeerConnection {
             // peer.connect returns undefined when the signaling link is down
             // (disconnected peer) — bail instead of throwing on conn.on below (CN)
             if (!conn) {
-                console.log('connect to ' + peerId + ' failed: signaling link is down');
+                log('error', 'net', 'connect failed: signaling link is down', { peer: peerId });
                 showToast('Cannot reach the signaling server - the connection request was not sent.');
                 return;
             }
@@ -1186,7 +1320,7 @@ export class PeerConnection {
 		// finish its own 4s cycle instead of resetting the negotiation (B5)
 		const inFlight = this.connections[peerId];
 		if (inFlight && Date.now() - (inFlight.__dialedAt ?? 0) < RESTORE_RETRY_MS && attempt === 0) return;
-		console.log('Restoring connection: ' + peerId + (attempt ? ' (attempt ' + (attempt + 1) + ')' : ''));
+		log('warn', 'net', 'restoring connection', { peer: peerId, attempt: (attempt || 0) + 1 });
 		// drop the stale never-opened conn FIRST — left in peerjs's per-peer
 		// bookkeeping it can wedge the fresh negotiation (offer never starts)
 		const stale = this.connections[peerId];
@@ -1196,14 +1330,14 @@ export class PeerConnection {
 		}
 		const conn = this.peer.connect(peerId);
 		if (!conn) {
-			console.log('restore to ' + peerId + ' failed: signaling link is down');
+			log('error', 'net', 'restore failed: signaling link is down', { peer: peerId });
 			return;
 		}
 		/** @type {any} */ (conn).__dialedAt = Date.now();
 		this.connections[peerId] = conn;
 		conn.on('close', () => this.onConnClose(peerId, conn));
 		conn.on('open', () => {
-			console.log('Connection to ' + peerId + ' restored');
+			log('info', 'net', 'connection restored', { peer: peerId });
 			this.openedPeers.add(peerId);
 			markPeerJoined(peerId);
 			peers.update((value) => value);
@@ -1214,7 +1348,7 @@ export class PeerConnection {
 			// still ours, still never opened -> replace the stale conn and retry
 			if (this.connections[peerId] !== conn || conn.open) return;
 			if (attempt >= 4) {
-				console.log('restore to ' + peerId + ' gave up after ' + (attempt + 1) + ' attempts');
+				log('error', 'net', 'restore gave up', { peer: peerId, attempts: attempt + 1 });
 				return;
 			}
 			try { conn.close(); } catch {}
@@ -1246,7 +1380,7 @@ export class PeerConnection {
 			this.finalizeDisconnect(peerId, false);
 			return;
 		}
-		console.log('connection to ' + peerId + ' dropped without a goodbye - trying to get them back');
+		log('warn', 'net', 'connection dropped without a goodbye — trying to get them back', { peer: peerId });
 		this.scheduleReconnect(peerId, 1);
 	}
 
@@ -1292,7 +1426,7 @@ export class PeerConnection {
 					this.connections[peerId] = conn;
 					conn.on('close', () => this.onConnClose(peerId, conn));
 					conn.on('open', () => {
-						console.log('reconnected to ' + peerId);
+						log('info', 'net', 'reconnected', { peer: peerId });
 						this.reconnecting.delete(peerId);
 						peers.update((value) => value);
 						this.sendHandshake(conn, peerId, true, this.peer.id);
@@ -1431,7 +1565,7 @@ export class PeerConnection {
 			try {
 				conn.send(payload);
 			} catch (err) {
-				console.log('send to ' + peerId + ' failed', err);
+				log('error', 'net', 'send failed', { peer: peerId, error: String(err) });
 			}
 		});
 	}

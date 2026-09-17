@@ -5,6 +5,8 @@
 	import { onMount, tick } from 'svelte';
 	import { createPeer, PeerConnection } from '$lib/peerHandler.svelte';
 	import { peerServerStatus, inviteServerParam } from '$lib/peerServer';
+	// 27-F: the signaling link's retry state (audit H2). A chip, not a toast per attempt.
+	import { signalingRetry, approvalStartedAt, approvalRemaining, APPROVAL_WINDOW_MS } from '$lib/connectionState';
 	import { cancelOutboundRequest, requestConnect } from '$lib/peerApproval';
 	import { sessionHost } from '$lib/connectionState';
 	import { connectSlot, drawerSlot } from '$lib/cloudHooks';
@@ -39,6 +41,26 @@
 	// from $userdata.length: the roster is populated optimistically at DIAL time.
 	const remoteOpen = $derived($peers ? [...$peers.openedPeers] : []);
 	const pendingOut = $derived($waitingForApproval.filter((w) => w[1] === 'pending'));
+	// 27-E: the pill COUNTS DOWN. A request that hangs with no end is the worst of the
+	// three states a dial can be in — a refusal at least finishes — so the wait is visible
+	// and bounded. One 1s tick only while something is pending; the clock itself lives in
+	// connectionState so the host's card age cannot disagree with it.
+	let nowTick = $state(Date.now());
+	$effect(() => {
+		if (!pendingOut.length) return;
+		const t = setInterval(() => (nowTick = Date.now()), 1000);
+		return () => clearInterval(t);
+	});
+	const pendingLeft = $derived.by(() => {
+		void nowTick;
+		const id = pendingOut[0]?.[0];
+		if (!id) return 0;
+		const started = $approvalStartedAt[id];
+		// No stamp means no clock, and a fabricated full window is worse than none: it
+		// paints a confident 1:30 that never decrements, and it disagrees with the host's
+		// card, which ages from the same map and would read zero. Show nothing instead.
+		return started ? Math.ceil(approvalRemaining(started) / 1000) : 0;
+	});
 	const connState = $derived(
 		remoteOpen.length > 0 ? 'connected' : pendingOut.length > 0 ? 'pending' : 'idle'
 	);
@@ -259,7 +281,15 @@
 		{:else if connState === 'pending'}
 			<!-- pending: same gray disabled input for a stable width + amber Cancel -->
 			<div class="cx-connect inline-flex rounded-md shadow-xs">
-				<Input type="text" disabled title="Waiting for approval" class="nob cx-input rounded-r-none border-0 opacity-70" value={'Requesting ' + String(pendingOut[0]?.[0] ?? peerIdToConnect ?? '').toUpperCase()} />
+				<Input
+					type="text"
+					disabled
+					title="Waiting for approval — the request ends by itself if they do not answer"
+					class="nob cx-input rounded-r-none border-0 opacity-70"
+					value={'Requesting ' +
+						String(pendingOut[0]?.[0] ?? peerIdToConnect ?? '').toUpperCase() +
+						(pendingLeft > 0 ? ' · ' + Math.floor(pendingLeft / 60) + ':' + String(pendingLeft % 60).padStart(2, '0') : '')}
+				/>
 				<Button
 					color="yellow"
 					id="cancel-request-button"
@@ -290,6 +320,20 @@
 					>Connect</Button
 				>
 			</div>
+		{/if}
+
+		{#if $signalingRetry.retrying}
+			<!-- 27-F: the signaling link is down and retrying. This is a STATE you can look
+				 at, which is why it is a chip and not a toast per attempt — the retry is
+				 unbounded now. It never replaces the pill's own state: your live peers are
+				 unaffected by a dead signaling link, only NEW joins are. -->
+			<span
+				id="connect-retry-chip"
+				class="cx-retry"
+				data-testid="connect-retry-chip"
+				title="Reconnecting to the signaling server — peers you are already connected to are unaffected"
+				>Reconnecting… {$signalingRetry.attempt}</span
+			>
 		{/if}
 
 		<!-- connection/server info disclosure — a chevron that rotates 180° on open;
@@ -444,6 +488,19 @@
 	}
 	/* the chevron is a lucide component's svg — the class lands OUTSIDE this
 	   component's scope hash, so these selectors must be :global to reach it */
+	/* 27-F: the signaling retry chip. Amber like the pending state, compact, and only
+	   present while the link is down — so it costs the pill no width the rest of the time. */
+	.cx-retry {
+		align-self: center;
+		white-space: nowrap;
+		border-radius: 9999px;
+		padding: 2px 8px;
+		font-size: 11px;
+		font-weight: 600;
+		color: #78350f;
+		background: #fbbf24;
+	}
+
 	.cx-toggle :global(.cx-chevron) {
 		transition: transform 0.2s ease;
 	}

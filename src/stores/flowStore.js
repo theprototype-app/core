@@ -194,6 +194,16 @@ export function clearGraphs() {
 
 // scene object uuids whose flow effects (animations/colors) are muted locally
 /** @type {import('svelte/store').Writable<string[]>} */
+/**
+ * 27-C: the flow runtime has STOPPED ticking after repeated failures (audit top-10 #3).
+ * It lives HERE rather than in flowRuntime because 27-D's safe-mode boot sets it before
+ * the runtime starts, and because flowRuntime sits inside the documented history cycle.
+ * A store, so the Resume toast and any future indicator read one truth.
+ * @type {import('svelte/store').Writable<{paused: boolean, reason: string}>}
+ */
+export const flowPaused = writable({ paused: false, reason: '' });
+
+/** @type {import('svelte/store').Writable<any[]>} */
 export const mutedFlowObjects = writable([]);
 
 // live output value of each value/logic node (133), for the on-card readouts --

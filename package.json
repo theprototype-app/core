@@ -18,7 +18,8 @@
 		"lint": "prettier --check .",
 		"e2e": "node tests/e2e/run.cjs",
 		"deps:check": "node scripts/deps-check.cjs",
-		"sync-llms": "node scripts/sync-llms.cjs"
+		"sync-llms": "node scripts/sync-llms.cjs",
+		"test:unit": "vitest run"
 	},
 	"devDependencies": {
 		"@sveltejs/adapter-static": "^3.0.10",
@@ -38,7 +39,8 @@
 		"svelte-check": "^4.7.6",
 		"tailwindcss": "^4.3.3",
 		"typescript": "^5.9.3",
-		"vite": "^8.2.2"
+		"vite": "^8.2.2",
+		"vitest": "^5.0.0"
 	},
 	"dependencies": {
 		"@codemirror/lang-javascript": "^6.2.5",

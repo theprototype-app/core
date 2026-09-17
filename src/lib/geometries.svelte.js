@@ -15,6 +15,9 @@ function initRectAreaUniforms() {
 }
 import { notifyExternalMove, noteObjectPose } from '$lib/flowRuntime';
 import { globalScene, objectsGroup, TControls, lockedObjects, selectedObject, selectedObjects } from '../stores/sceneStore.js';
+// 27-A: a transform off the wire is sanitised before it reaches the scene graph
+import { sanitizeTransform } from './wireValidate';
+import { noteWireError } from './wireErrors';
 
 //Access scene Store
 let scene = $state();
@@ -311,6 +314,22 @@ export function moveGeometry(uuid, pos, rot, scale) {
     // per component (B5).
     const object = sceneObjects.getObjectByProperty('uuid', uuid);
     if(object) {
+        // 27-A (audit M7): the BACKSTOP, not the primary gate. wireValidate refuses a
+        // `move` whose components are not finite, so wire traffic never reaches here in
+        // that state; this covers any caller that does not pass through the dispatcher.
+        // A NON-FINITE component is worse than a malformed message — it
+        // applies cleanly, poisons the object's matrix, and every consumer that measures
+        // the scene afterwards (Box3 bounds, frame-to-fit, the body's next physics step)
+        // reads NaN forever with nothing pointing back at the message that did it. Each
+        // bad component falls back to the pose the object already has.
+        const safe = sanitizeTransform(pos, rot, scale, {
+            pos: object.position.toArray(),
+            rot: [object.rotation.x, object.rotation.y, object.rotation.z],
+            scale: object.scale.toArray()
+        });
+        if (!safe) return;
+        if (safe.repaired) noteWireError('local', 'move-nan');
+        pos = safe.pos; rot = safe.rot; scale = safe.scale;
         object.position.set(pos[0], pos[1], pos[2]);
         object.rotation.set(rot[0], rot[1], rot[2]);
         object.scale.set(scale[0], scale[1], scale[2]);
@@ -321,9 +340,31 @@ export function moveGeometry(uuid, pos, rot, scale) {
     }
 }
 
+/**
+ * 27-E (audit H7): peer avatars are INDEXED, not searched. This is the hottest receive
+ * path there is — one message per remote peer per send-gate tick — and it walked the
+ * WHOLE scene graph each time (`getObjectByName` is a full traverse). With 2,000 objects
+ * and nine peers that is millions of node visits a second before anybody edits anything.
+ * The index is a cache keyed by peer id, re-resolved whenever it misses or goes stale, so
+ * an avatar that mounts later or is replaced still works with no lifecycle to maintain.
+ * @type {Map<string, any>}
+ */
+const peerAvatars = new Map();
+
+/** Drop one peer's cached avatar (teardown, and whenever the object leaves the scene).
+ * @param {string} peerId */
+export function dropPeerAvatar(peerId) {
+    peerAvatars.delete(peerId);
+}
+
 export function moveCamera(data) {
-    // console.log('moveCamera: ' + data.position[1] + ' ' + data.rotation[1]);
-    let peerMesh = scene.getObjectByName(data.peerId)
+    let peerMesh = peerAvatars.get(data.peerId);
+    // stale (avatar replaced, scene cleared) or never seen: resolve once and remember
+    if (!peerMesh || peerMesh.parent === null || peerMesh.name !== data.peerId) {
+        peerMesh = scene.getObjectByName(data.peerId);
+        if (peerMesh) peerAvatars.set(data.peerId, peerMesh);
+        else peerAvatars.delete(data.peerId);
+    }
     if (!peerMesh) return;
     peerMesh.position.set(data.position[0], data.position[1], data.position[2]);
     peerMesh.rotation.set(data.rotation[0], data.rotation[1], data.rotation[2]);

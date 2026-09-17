@@ -1244,7 +1244,39 @@ const FIXED_DT = 1 / 60;
 const MAX_SUBSTEPS = 8;
 
 /** @param {number} now */
+// 27-C (audit M7): rapier steps inside a WASM boundary, and a NaN transform off the wire
+// or a poisoned body makes it panic. The throw escaped into flowRuntime's post-tick slot,
+// which logged it 60 times a second forever with the simulation already dead and nothing
+// telling the user. Now a throw stops the run ONCE, says so, and leaves the scene intact.
+/** @param {number} now */
 function step(now) {
+	try {
+		stepInner(now);
+	} catch (error) {
+		console.warn('physics step failed, stopping the simulation', error);
+		// stopSimulation clears the post-tick hook itself, so this cannot re-enter.
+		try {
+			stopSimulation({ reason: 'error' });
+		} catch (stopError) {
+			// a teardown that also throws must not take the frame loop with it
+			console.warn('stopping after a physics failure also failed', stopError);
+		}
+		showToast('Physics stopped after an error - the scene is intact. Press play to run it again.');
+	}
+}
+
+/** TEST-ONLY: force the next step to throw, so the guard around it is provable. */
+let throwOnNextStep = false;
+export function throwOnNextStepForTest() {
+	throwOnNextStep = true;
+}
+
+/** @param {number} now */
+function stepInner(now) {
+	if (throwOnNextStep) {
+		throwOnNextStep = false;
+		throw new Error('forced physics failure (test hook)');
+	}
 	if (!world) return;
 	if (get(simPaused)) {
 		lastStep = now; // don't accumulate a giant timestep across the pause
@@ -1503,7 +1535,8 @@ export function pauseSimulation(paused) {
 	if (peer) peer.send({ type: 'simulate', running: true, paused: next, peerId: peer.peer.id });
 }
 
-/** @param {{reset?: boolean}=} opts reset restores the initial layout (no undo entry) */
+/** @param {{reset?: boolean, reason?: string}=} opts reset restores the initial layout
+ * (no undo entry); 27-C passes a `reason` when a failing step stops the run. */
 export function stopSimulation(opts = {}) {
 	if (!get(simulating)) return;
 	setPostTick(null); // clear the hook BEFORE freeing the world

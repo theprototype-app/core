@@ -20,6 +20,7 @@
 	const appVersionString = versionString();
 	import { vrFaceCap, VR_FACE_CAP } from '$lib/faceEdit';
 	import { doubleClickAction, DOUBLE_CLICK_ACTIONS } from '$lib/selectionPrefs';
+	import { shareDuplicatedMaterials } from '$lib/materialSharing';
 	import { lengthUnit, angleUnit, LENGTH_UNIT_KEYS } from '$lib/units';
 	import { vrVertexCap, VR_VERTEX_CAP } from '$lib/meshEdit';
 	import { syncedAnimations } from '../../stores/flowStore';
@@ -1142,6 +1143,16 @@
 						A duplicate of a shader-driven object gets its own copy of the graph. Off leaves the copy
 						with a frozen snapshot of the compiled material and nothing to edit. An object inheriting
 						the scene default keeps inheriting it either way
+					</SettingRow>
+					<SettingRow name="Share materials">
+						<svelte:fragment slot="control"><Toggle bind:checked={$shareDuplicatedMaterials} /></svelte:fragment>
+						<span>
+							Off (the default), a duplicate gets its own copy of the material, so editing one
+							leaves the other alone. On, the copy and the original share ONE material and an
+							edit to either changes both — for everyone in the session. Geometry is always
+							copied either way. Use the Material section's <strong>Unlink</strong> to give one
+							object its own material back
+						</span>
 					</SettingRow>
 					<p class="ui-section-label">Wireframe &amp; outline</p>
 					<SettingRow name="Wireframe color">

@@ -72,6 +72,8 @@
 	} from '$lib/scenePhysics';
 	import { scenePost, sceneProvidesAo } from '$lib/scenePost';
 	import { viewportOverrides, setRenderLayer, OVERRIDES } from '$lib/viewportOverrides';
+	// D2: the shared-material notice and its way out
+	import { fanTargets as fanMaterialTargets, unlinkMaterial } from '$lib/materialSharing';
 	import PostStack from './PostStack.svelte';
 	import { showColliders, colliderVizObjects, setColliderViz } from '$lib/colliderHelpers';
 	import { enterColliderEdit } from '$lib/colliderEdit';
@@ -206,8 +208,35 @@
 		openShaderEditor,
 		detachFrom,
 		shaderGraphOf,
-		setShaderGraphFor
+		setShaderGraphFor,
+		// P6: the look's THIRD layer, summarised where the other two live
+		shaderGraphs,
+		SCENE_GRAPH_KEY,
+		shaderDrivenCount
 	} from '$lib/shaderGraph';
+
+	/**
+	 * P6 — the material layer's COST, in the same voice as the post stack's
+	 * "Effects: N, passes: M" line. Program count is what a shader-driven scene costs:
+	 * `customProgramCacheKey` hashes the injected source, so N objects on ONE graph
+	 * compile ONE program (measured at 22 -> 23 programs for 24 objects), and that is
+	 * the number worth showing rather than the object count on its own.
+	 * @param {Record<string, any>} graphs the shader documents
+	 * @param {any} _poke THREE trees are not reactive; the count reads through them
+	 */
+	const shaderSummaryOf = (graphs, /** @type {any} */ _poke) => {
+		const keys = Object.keys(graphs ?? {}).filter((key) => !key.startsWith('post:'));
+		const scene = keys.includes(SCENE_GRAPH_KEY);
+		const own = keys.filter((key) => key !== SCENE_GRAPH_KEY).length;
+		const driven = shaderDrivenCount();
+		if (!keys.length) return 'No shader materials. The scene uses each object’s own material.';
+		return (
+			(scene ? 'A scene default' : 'No scene default') +
+			(own ? ' and ' + own + ' object' + (own === 1 ? '' : 's') + ' with their own' : '') +
+			' — driving ' + driven + ' object' + (driven === 1 ? '' : 's') +
+			', ' + keys.length + ' program' + (keys.length === 1 ? '' : 's') + '.'
+		);
+	};
 
 	// (15-L3 dropped the standalone hex textboxes under each colour picker — the
 	// picker's own hex/rgb/hsv field from 15-C2 replaced them, so the validating
@@ -466,6 +495,35 @@
 	// precedent: decline with an explanation rather than half-support it.
 	// `objectsGroup` is a dependency because being shader-driven is not a store; the
 	// install pokes that one, and it is the only signal this derived gets.
+	/**
+	 * D2 — the OTHER objects wearing this object's material.
+	 *
+	 * Reads through `$objectsGroup` because the id lives on `userData` and THREE trees are
+	 * not reactive: without that dependency the notice would be correct exactly once.
+	 * Single-object only — a multi-selection's members can each share with different
+	 * things, and one sentence cannot say that honestly.
+	 * @param {any} _poke
+	 */
+	const sharedWithOf = (/** @type {any} */ uuid, /** @type {any} */ _poke) =>
+		uuid ? fanMaterialTargets(uuid) : [];
+	const sharedWith = $derived(
+		matTargets.length === 1 ? sharedWithOf($selectedObject?.uuid, $objectsGroup) : []
+	);
+
+	/** Give this object its own material back (the Settings copy promises this button). */
+	function unlinkSharedMaterial() {
+		const uuid = $selectedObject?.uuid;
+		if (!uuid) return;
+		const count = sharedWith.length;
+		if (!unlinkMaterial(uuid)) return;
+		showToast(
+			'This object has its own material now — the other ' +
+				count +
+				(count === 1 ? ' object keeps' : ' objects keep') +
+				' the shared one'
+		);
+	}
+
 	const shaderDriven = $derived.by(() => {
 		$objectsGroup;
 		return matTargets.filter((/** @type {any} */ o) => isShaderDriven(o.uuid));
@@ -1661,7 +1719,7 @@
 					 add a key here rather than each inventing their own checkbox and their own
 					 "do my peers need to switch this on?" question. -->
 				<p class="ui-section-label" data-anchor="Overrides">Overrides — this device</p>
-				{#each OVERRIDES.filter((o) => o.key !== 'shaders') as override (override.key)}
+				{#each OVERRIDES as override (override.key)}
 					<Checkbox
 						id={'override-' + override.key}
 						checked={$viewportOverrides[override.key] !== false}
@@ -1675,10 +1733,35 @@
 				<Checkbox bind:checked={$showColliders}>Show colliders — this device</Checkbox>
 			</Section>
 
-			<!-- L3: the scene's authored post stack. Its whole UI lives in PostStack.svelte
-				 so this shared file keeps a one-line edit. -->
-			<Section label="Post-processing">
+			<!-- P6 — ONE STORY, not three. The post stack, the scene default material and
+				 per-object shaders are three LAYERS of one authored look (the look plan's own
+				 table), and reading them as unrelated sections is what made "must my peers
+				 switch this on?" a question three separate times. The section says what the
+				 look IS, then shows the stack; the materials half is a summary plus the way
+				 in, because its editing surface is a dock tab and belongs there.
+				 The LABEL changed and the deep-link name did not: `openSceneSection` matches
+				 on it, so both names resolve (the 21-G1 rule — the user-visible word moves,
+				 the identifier already written down does not). -->
+			<Section label="Scene look" aliases={['Post-processing']}>
+				<p class="mb-1 text-[10px] text-gray-400">
+					Three layers, all of them scene data that everyone sees: effects over the
+					finished frame (below), a default material every object without its own
+					inherits, and a material on one object. Only the right to switch a layer off
+					is local — that is View ▸ Overrides, above.
+				</p>
 				<PostStack />
+				<p class="ui-section-label" data-anchor="Materials">Shader materials</p>
+				<p id="scene-look-shaders" class="text-[10px] text-gray-400">
+					{shaderSummaryOf($shaderGraphs, $objectsGroup)}
+				</p>
+				<button
+					id="scene-look-open-shader"
+					class="ui-chip w-full justify-center bg-gray-600 text-gray-200 hover:bg-gray-500"
+					title="Open the shader editor — the scene default with nothing selected, an object's own when one is"
+					onclick={() => openShaderEditor()}
+				>
+					Open the shader editor
+				</button>
 			</Section>
 
 			<!-- 16-P4: everything about the VIEWPORT camera in one place (it used to be a
@@ -3363,6 +3446,30 @@
 									     remove, and restoring the base would not stick -->
 									<span class="shader-driven-text">Inherited from the scene shader.</span>
 								{/if}
+							</div>
+						</div>
+					{/if}
+
+					<!-- D2: a SHARED material is one material on several objects, so an edit below
+					     changes all of them — for everyone. Said here rather than left to be
+					     discovered, and with the way out beside it (the `shader-driven` notice's
+					     shape, one concern over). -->
+					{#if sharedWith.length}
+						<div id="material-shared-note" class="shader-driven">
+							<p class="shader-driven-text">
+								This material is shared with {sharedWith.length}
+								other object{sharedWith.length === 1 ? '' : 's'} — editing it here changes
+								{sharedWith.length === 1 ? 'that one' : 'them'} too, for everyone.
+							</p>
+							<div class="shader-driven-actions">
+								<button
+									id="material-unlink"
+									class="ui-button-quiet"
+									title="Give this object its own copy of the material and stop sharing"
+									onclick={unlinkSharedMaterial}
+								>
+									Unlink
+								</button>
 							</div>
 						</div>
 					{/if}

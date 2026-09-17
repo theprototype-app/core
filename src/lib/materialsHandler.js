@@ -1,6 +1,8 @@
 import * as THREE from 'three';
 import { get } from 'svelte/store';
 import { objectsGroup, pokeScene } from '../stores/sceneStore';
+// D2: shared materials. A leaf (stores + THREE), so importing it here closes no cycle.
+import { fanTargets } from './materialSharing';
 import { peers, showToast } from '../stores/appStore';
 import { recordEntry, registerHistoryKind } from '$lib/history';
 
@@ -66,11 +68,25 @@ export function materialAt(object, slot = 0) {
 	return materials[slot] ?? null;
 }
 
-/** @param {any} data */
+/**
+ * Send a material message — and, for a SHARED material (D2), the same message again for
+ * every other object wearing it.
+ *
+ * THE FAN LIVES HERE because this is the one choke point every material message in the
+ * app passes through (colour, params, maps, the slot array, the type switch), so sharing
+ * costs the wire NOTHING: a receiver applies the per-object messages it already
+ * understands, an older peer needs no code, and there is no material-addressed message
+ * type to add, gate and explain. `fanTargets` is empty for an unshared object, which is
+ * every object until somebody turns the setting on.
+ * @param {any} data
+ */
 function broadcast(data) {
 	/** @type {any} */
 	const peer = get(peers);
-	if (peer) peer.send(data);
+	if (!peer) return;
+	peer.send(data);
+	if (!data?.uuid) return;
+	for (const other of fanTargets(data.uuid)) peer.send({ ...data, uuid: other });
 }
 
 // Undo entries replay through the same replicated actions below
@@ -531,6 +547,15 @@ export function switchMaterialType(uuid, type, replicate = true) {
 	}
 	object.material = fresh;
 	fresh.needsUpdate = true;
+	// D2: this is the ONE material op that REPLACES the instance rather than writing into
+	// it, so it is the one that would silently break a share — every other edit reaches
+	// the sharers for free by being a write to the material they hold. Hand them the new
+	// one too, or the next reconcile would put the OLD material back on this object.
+	for (const other of fanTargets(uuid)) {
+		const node = objectOf(other);
+		if (node && !Array.isArray(node.material)) node.material = fresh;
+	}
+	// 26-B: one poke for the whole op, never `objectsGroup.update` per call site
 	pokeScene();
 	if (replicate)
 		broadcast({ type: 'objectParameters', parameter: 'material', uuid: uuid, material: type });

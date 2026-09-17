@@ -27,6 +27,7 @@
 // state enters `playing`, so all views converge with no new message and no forced viewpoint.
 
 import { writable, get } from 'svelte/store';
+import { sessionNow } from './sessionClock'; // 25-E: stamps another peer compares
 
 /** The states a game moves through. `over` carries an `outcome` string, which is how
  * win/lose is expressed without a node of its own. */
@@ -120,7 +121,7 @@ export function commitGameState(patch, opts = {}) {
 	const after = normalizeGameState({
 		...before,
 		...patch,
-		changedAt: opts.stamp ?? Math.max(Date.now(), (before.changedAt ?? 0) + 1)
+		changedAt: opts.stamp ?? Math.max(sessionNow(), (before.changedAt ?? 0) + 1)
 	});
 	gameState.set(after);
 	if (!opts.silent) {
@@ -145,16 +146,16 @@ export function setGameState(state, opts = {}) {
 		// resuming FROM a pause keeps the round and its startedAt; a fresh start (from
 		// menu/over) re-stamps and bumps the round. The pause span is banked either way.
 		if (before.state === 'paused') {
-			patch.pausedMs = before.pausedMs + (before.pausedAt ? Date.now() - before.pausedAt : 0);
+			patch.pausedMs = before.pausedMs + (before.pausedAt ? sessionNow() - before.pausedAt : 0);
 			patch.pausedAt = 0;
 		} else {
-			patch.startedAt = Date.now();
+			patch.startedAt = sessionNow();
 			patch.round = opts.round ?? before.round + 1;
 			patch.pausedAt = 0;
 			patch.pausedMs = 0;
 		}
 	}
-	if (state === 'paused' && entering) patch.pausedAt = Date.now();
+	if (state === 'paused' && entering) patch.pausedAt = sessionNow();
 	if (state !== 'paused' && state !== 'playing' && entering) {
 		// leaving the round entirely closes any live pause span
 		patch.pausedAt = 0;
@@ -170,8 +171,8 @@ export function gameElapsed() {
 	// counting through - which it measurably did.
 	const { startedAt, pausedAt, pausedMs } = get(gameState);
 	if (!startedAt) return 0;
-	const live = pausedAt ? Date.now() - pausedAt : 0;
-	return Math.max(0, (Date.now() - startedAt - pausedMs - live) / 1000);
+	const live = pausedAt ? sessionNow() - pausedAt : 0;
+	return Math.max(0, (sessionNow() - startedAt - pausedMs - live) / 1000);
 }
 
 // ---- 21-F2: what "a round" means to everything derived from it -------------------
@@ -258,11 +259,11 @@ export function gameStateSnapshot() {
 export function gameStateRestore(payload, replicate = false) {
 	if (!payload) {
 		// a scene with no game field resets, or the previous scene's round would leak in
-		gameState.set({ ...DEFAULT, changedAt: Date.now() });
+		gameState.set({ ...DEFAULT, changedAt: sessionNow() });
 		if (replicate && broadcastHook) broadcastHook(get(gameState));
 		return;
 	}
-	commitGameState(normalizeGameState(payload), { silent: !replicate, stamp: Date.now() });
+	commitGameState(normalizeGameState(payload), { silent: !replicate, stamp: sessionNow() });
 }
 
 /** Test/serializer seam. */

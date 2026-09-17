@@ -1,4 +1,5 @@
 import { writable } from 'svelte/store';
+import { safeStorage } from './safeStorage';
 
 // 18-A: viewport LINE colours — the wireframe view mode, the selection outline and
 // the mesh-edit overlay. A LOCAL per-device view preference, never replicated and
@@ -35,7 +36,7 @@ export const DEFAULT_VIEW_PREFS = {
 
 function load() {
 	try {
-		const raw = typeof localStorage !== 'undefined' ? localStorage.getItem(KEY) : null;
+		const raw = typeof localStorage !== 'undefined' ? safeStorage.getItem(KEY) : null;
 		// unknown/missing keys fall back to defaults, so old payloads keep working
 		const stored = raw ? JSON.parse(raw) : {};
 		return { ...DEFAULT_VIEW_PREFS, ...stored };
@@ -48,7 +49,7 @@ function load() {
 export const viewPrefs = writable(load());
 
 viewPrefs.subscribe((value) => {
-	if (typeof localStorage !== 'undefined') localStorage.setItem(KEY, JSON.stringify(value));
+	if (typeof localStorage !== 'undefined') safeStorage.setItem(KEY, JSON.stringify(value));
 });
 
 /** @param {Partial<typeof DEFAULT_VIEW_PREFS>} patch */

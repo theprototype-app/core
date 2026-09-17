@@ -1,6 +1,6 @@
 import { get } from 'svelte/store';
 import * as THREE from 'three';
-import { objectsGroup, globalCamera, orbitControls, globalRenderer, globalScene } from '../stores/sceneStore';
+import { objectsGroup, globalCamera, orbitControls, globalRenderer, globalScene, pokeScene } from '../stores/sceneStore';
 import { peers, showToast } from '../stores/appStore';
 import { recordEntry } from './history';
 import { flyTo } from './objectActions';
@@ -85,7 +85,7 @@ export function setCameraFor(uuid, patch) {
 	const peer = get(peers);
 	if (peer) peer.send({ type: 'objectParameters', parameter: 'camera', uuid, camera: next });
 	// THREE trees are not reactive — poke so the list/viz/preview see it
-	objectsGroup.update((value) => value);
+	pokeScene();
 	return next;
 }
 
@@ -94,7 +94,7 @@ export function applyRemoteCamera(data) {
 	const object = get(objectsGroup)?.getObjectByProperty('uuid', data.uuid);
 	if (!object) return;
 	object.userData.camera = { ...DEFAULT_CAMERA, ...(data.camera ?? {}) };
-	objectsGroup.update((value) => value);
+	pokeScene();
 }
 
 /** Build (or update) a real THREE camera from a marker. Used by preview + Capture.
@@ -170,7 +170,7 @@ export function setCameraFromView(uuid) {
 		});
 	if (typeof view.fov === 'number' && cameraSpec(object).kind === 'perspective')
 		setCameraFor(uuid, { fov: Math.round(view.fov) });
-	else objectsGroup.update((value) => value);
+	else pokeScene();
 }
 
 /**

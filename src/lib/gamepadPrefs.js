@@ -1,4 +1,5 @@
 import { writable, get } from 'svelte/store';
+import { safeStorage } from './safeStorage';
 
 // 21-E5: THE GAMEPAD LEAF — the standard-mapping table plus this device's preferences.
 //
@@ -105,7 +106,7 @@ export function normalizeGamepadPrefs(raw) {
 
 function load() {
 	try {
-		const raw = typeof localStorage !== 'undefined' ? localStorage.getItem(KEY) : null;
+		const raw = typeof localStorage !== 'undefined' ? safeStorage.getItem(KEY) : null;
 		return normalizeGamepadPrefs(raw ? JSON.parse(raw) : {});
 	} catch {
 		return { ...DEFAULT_GAMEPAD_PREFS };
@@ -116,7 +117,7 @@ function load() {
 export const gamepadPrefs = writable(load());
 
 gamepadPrefs.subscribe((value) => {
-	if (typeof localStorage !== 'undefined') localStorage.setItem(KEY, JSON.stringify(value));
+	if (typeof localStorage !== 'undefined') safeStorage.setItem(KEY, JSON.stringify(value));
 });
 
 /** @param {Partial<typeof DEFAULT_GAMEPAD_PREFS>} patch */

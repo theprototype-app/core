@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { get } from 'svelte/store';
-import { objectsGroup } from '../stores/sceneStore';
+import { objectsGroup, pokeScene } from '../stores/sceneStore';
 // D2: shared materials. A leaf (stores + THREE), so importing it here closes no cycle.
 import { fanTargets } from './materialSharing';
 import { peers, showToast } from '../stores/appStore';
@@ -116,7 +116,7 @@ registerHistoryKind('material', (entry, state) => {
 		if (object.material?.color) object.material.color.set(state.value);
 		broadcast({ type: 'color', uuid: entry.uuid, color: state.value });
 	}
-	objectsGroup.update((value) => value);
+	pokeScene();
 	return true;
 });
 
@@ -165,7 +165,7 @@ export function applyMaterials(object, payload, replicate = false) {
 			object.geometry.addGroup(group.start, group.count, group.materialIndex);
 	}
 	object.material.needsUpdate ??= true;
-	objectsGroup.update((value) => value);
+	pokeScene();
 	if (replicate)
 		broadcast({ type: 'objectParameters', parameter: 'materials', uuid: object.uuid, payload });
 }
@@ -235,7 +235,7 @@ export function setObjectMaterials(uuid, materials, groups) {
 		object.geometry.clearGroups();
 		for (const group of groups) object.geometry.addGroup(group.start, group.count, group.materialIndex);
 	}
-	objectsGroup.update((value) => value);
+	pokeScene();
 	const after = materialsPayload(object);
 	recordEntry({
 		kind: 'material',
@@ -397,7 +397,7 @@ export function applyMap(object, dataURL, slot = 0) {
 		material.map = null;
 		delete material.userData.mapDataUrl;
 		material.needsUpdate = true;
-		objectsGroup.update((value) => value);
+		pokeScene();
 		return;
 	}
 	// set synchronously so the UI thumbnail appears immediately
@@ -418,7 +418,7 @@ export function applyMap(object, dataURL, slot = 0) {
 		material.map?.dispose();
 		material.map = texture;
 		material.needsUpdate = true;
-		objectsGroup.update((value) => value);
+		pokeScene();
 	});
 }
 
@@ -555,7 +555,8 @@ export function switchMaterialType(uuid, type, replicate = true) {
 		const node = objectOf(other);
 		if (node && !Array.isArray(node.material)) node.material = fresh;
 	}
-	objectsGroup.update((value) => value);
+	// 26-B: one poke for the whole op, never `objectsGroup.update` per call site
+	pokeScene();
 	if (replicate)
 		broadcast({ type: 'objectParameters', parameter: 'material', uuid: uuid, material: type });
 }
@@ -573,7 +574,7 @@ export function setObjectColor(uuid, hex, replicate = true) {
 	const before = '#' + material.color.getHexString();
 	material.color.set(hex);
 	material.needsUpdate = true;
-	objectsGroup.update((v) => v);
+	pokeScene();
 	if (replicate) {
 		recordMaterialChange(uuid, 'color', null, before, hex);
 		broadcast({ type: 'color', uuid: uuid, color: hex });
@@ -597,7 +598,7 @@ export function setMaterialParam(uuid, key, value, replicate = true) {
 	if (isColor) material[key].set(value);
 	else material[key] = value;
 	material.needsUpdate = true;
-	objectsGroup.update((v) => v);
+	pokeScene();
 	if (replicate)
 		broadcast({ type: 'objectParameters', parameter: 'materialParam', uuid: uuid, key: key, value: value });
 }

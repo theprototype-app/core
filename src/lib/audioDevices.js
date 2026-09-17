@@ -1,6 +1,7 @@
 import * as THREE from 'three';
+import { sessionNow } from './sessionClock'; // 25-E: stamps another peer compares
 import { writable, get } from 'svelte/store';
-import { objectsGroup } from '../stores/sceneStore';
+import { objectsGroup, pokeScene } from '../stores/sceneStore';
 import { peers } from '../stores/appStore';
 // The device write path rides the existing 'props' history kind (objectActions.js
 // owns the replay), so this module needs history only to RECORD — a static edge
@@ -322,7 +323,7 @@ export function setDeviceFor(uuid, patch, opts = {}) {
 	// a knob wants its sound NOW, not after the debounce — apply locally at once; the
 	// reconcile below is the backstop for everything that did not come through here
 	applyParams(object);
-	objectsGroup.update((value) => value);
+	pokeScene();
 	return next ? structuredClone(next) : null;
 }
 
@@ -346,7 +347,7 @@ export function previewDeviceParams(uuid, params, opts = {}) {
 		const peer = get(peers);
 		if (peer) peer.send({ type: 'objectParameters', parameter: 'device', uuid, device: next });
 	}
-	if (opts.poke !== false) objectsGroup.update((value) => value);
+	if (opts.poke !== false) pokeScene();
 	return structuredClone(next);
 }
 
@@ -364,7 +365,7 @@ export function applyRemoteDevice(data) {
 	if (data.device && typeof data.device === 'object') object.userData.device = normalizeDevice(data.device);
 	else delete object.userData.device;
 	applyParams(object);
-	objectsGroup.update((value) => value);
+	pokeScene();
 	return true;
 }
 
@@ -404,7 +405,7 @@ export function addDevice(kind, opts = {}) {
 	// this the wire copy carries an identity matrix and every peer places the device at
 	// the origin (found by C1's flight: A held the speaker at [-10,10,14], B at [0,0,0])
 	object.updateMatrix();
-	objectsGroup.update((value) => value);
+	pokeScene();
 	recordObjectPresence('create', object);
 	/** @type {any} */
 	const peer = get(peers);
@@ -608,7 +609,7 @@ export function deviceHandle(uuid) {
  */
 export function noteDevice(uuid, note = {}, opts = {}) {
 	const object = get(objectsGroup)?.getObjectByProperty('uuid', uuid);
-	const event = { note: 60, velocity: 1, ...note, at: typeof note.at === 'number' ? note.at : Date.now() };
+	const event = { note: 60, velocity: 1, ...note, at: typeof note.at === 'number' ? note.at : sessionNow() };
 	deliverNote(object, event);
 	if (opts.replicate === false) return event;
 	/** @type {any} */

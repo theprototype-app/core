@@ -6,6 +6,12 @@ import { showToast } from '../stores/appStore';
 import { wireframeActive } from './viewMode';
 import { particleVertexShader, particleFragmentShader, spriteTexture, wrapTime } from './particleShader';
 import { PARTICLE_DEFAULTS } from './particlePresets';
+import { qualityOverrides } from './qualityGovernor';
+
+// 26-D: the governor's particle step caps every emitter at the VR count (roadmap 26 Stage 3's
+// third bullet). Read through a subscription — this runs per frame per emitter.
+let particlesCapped = false;
+qualityOverrides.subscribe((o) => (particlesCapped = o.particlesCapped));
 
 // Particle emitter runtime (PFX-A). flowRuntime hands over the live emitters
 // each tick — `particle` NODE pairs (like sound) plus every object carrying
@@ -263,7 +269,7 @@ export function updateParticles(pairs, sceneObjects, time) {
 	const camera = get(globalCamera);
 	const height = renderer?.domElement?.height ?? 600;
 	const sizeScale = height / (2 * Math.tan(((camera?.fov ?? 40) * Math.PI) / 360));
-	const vr = get(isVRMode);
+	const vr = get(isVRMode) || particlesCapped;
 	const tw = wrapTime(time);
 
 	const wanted = new Set();

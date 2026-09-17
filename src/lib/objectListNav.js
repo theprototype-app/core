@@ -4,7 +4,7 @@
 // can all use it.
 
 /**
- * @typedef {{ uuid: string, depth: number, hasKids: boolean, parent: string | null, name: string }} ObjectRow
+ * @typedef {{ uuid: string, depth: number, hasKids: boolean, parent: string | null, name: string, object: any }} ObjectRow
  */
 
 /**
@@ -25,7 +25,9 @@ export function visibleObjectRows(group, expanded, filter) {
 		if (!object || object.userData?.__localOnly) return;
 		if (filter && !filter.has(object.uuid)) return;
 		const kids = object.children ?? [];
-		rows.push({ uuid: object.uuid, depth, hasKids: kids.length > 0, parent, name: object.name || object.type || '' });
+		// 26-B: the OBJECT rides along so the virtualised list can render a row without
+		// walking the tree again to find it (additive — every existing reader ignores it).
+		rows.push({ uuid: object.uuid, depth, hasKids: kids.length > 0, parent, name: object.name || object.type || '', object });
 		if (kids.length && expanded?.has(object.uuid)) for (const kid of kids) walk(kid, depth + 1, object.uuid);
 	};
 	for (const child of group?.children ?? []) walk(child, 0, null);

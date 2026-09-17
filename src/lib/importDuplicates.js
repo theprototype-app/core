@@ -28,13 +28,14 @@
 import { writable, get } from 'svelte/store';
 import { explorerItems, hiddenItems, registerDuplicateResolver } from './explorer';
 import { showToast } from '../stores/appStore';
+import { safeStorage } from './safeStorage';
 
 export const DUPLICATE_MODES = ['ask', 'skip', 'copy'];
 const STORAGE_KEY = 'importDuplicateMode';
 
 function readMode() {
 	try {
-		const stored = localStorage.getItem(STORAGE_KEY);
+		const stored = safeStorage.getItem(STORAGE_KEY);
 		if (stored && DUPLICATE_MODES.includes(stored)) return stored;
 	} catch {}
 	return 'ask';
@@ -45,7 +46,7 @@ function readMode() {
 export const duplicateImportMode = writable(readMode());
 duplicateImportMode.subscribe((mode) => {
 	try {
-		localStorage.setItem(STORAGE_KEY, String(mode));
+		safeStorage.setItem(STORAGE_KEY, String(mode));
 	} catch {}
 });
 

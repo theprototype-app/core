@@ -23,6 +23,7 @@
 // Imports sceneStore only (the lightHelpers/cameraHelpers family), no THREE.
 import { get, writable } from 'svelte/store';
 import { isLocked, editorCam, globalCamera, objectsGroup } from '../stores/sceneStore';
+import { safeStorage } from './safeStorage';
 
 export const HELPER_LAYER = 1;
 
@@ -30,10 +31,10 @@ export const HELPER_LAYER = 1;
  * in Play and a DEBUG chip sits in the play HUD so a screenshot cannot be mistaken for
  * the game. @type {import('svelte/store').Writable<boolean>} */
 export const helpersInPlay = writable(
-	typeof localStorage !== 'undefined' && localStorage.getItem('helpersInPlay') === 'true'
+	typeof localStorage !== 'undefined' && safeStorage.getItem('helpersInPlay') === 'true'
 );
 helpersInPlay.subscribe((value) => {
-	if (typeof localStorage !== 'undefined') localStorage.setItem('helpersInPlay', String(value));
+	if (typeof localStorage !== 'undefined') safeStorage.setItem('helpersInPlay', String(value));
 });
 
 /** Put a scene-root helper (and its whole subtree) on the helper layer, only.

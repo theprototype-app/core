@@ -25,12 +25,14 @@
 // bytes serves them.
 
 import { writable, get } from 'svelte/store';
+import { sessionNow } from './sessionClock'; // 25-E: stamps another peer compares
 import { peers, showToast, explorerClose, revealExplorerItem } from '../stores/appStore';
 import { bottomDockActive } from './bottomDock';
 import { showChoice } from './confirmDialog';
 import { sessionHost } from './connectionState';
 import { isViewer } from './objectPermissions';
 import { idbGet, idbPut } from './idb';
+import { safeStorage } from './safeStorage';
 
 const IDB_KEY = 'project:manifest';
 /** versions of ONE scene kept locally beyond the pinned set (fork 4) — the DEFAULT of
@@ -50,7 +52,7 @@ export const keepVersionsSetting = writable(readKeepVersions());
 
 function readKeepVersions() {
 	try {
-		const raw = localStorage.getItem('project:keepVersions');
+		const raw = safeStorage.getItem('project:keepVersions');
 		if (raw === null) return KEEP_VERSIONS;
 		const n = Number(raw);
 		return Number.isFinite(n) && n >= 0 ? Math.floor(n) : KEEP_VERSIONS;
@@ -61,7 +63,7 @@ function readKeepVersions() {
 
 keepVersionsSetting.subscribe((n) => {
 	try {
-		localStorage.setItem('project:keepVersions', String(n));
+		safeStorage.setItem('project:keepVersions', String(n));
 	} catch {}
 });
 
@@ -440,7 +442,7 @@ async function persist() {
 function commitManifest(next, opts = {}) {
 	const before = get(projectManifest);
 	const doc = normalizeManifest(next);
-	doc.changedAt = Math.max(Date.now(), (before.changedAt ?? 0) + 1, (opts.above ?? 0) + 1);
+	doc.changedAt = Math.max(sessionNow(), (before.changedAt ?? 0) + 1, (opts.above ?? 0) + 1);
 	projectManifest.set(doc);
 	void persist();
 	if (opts.replicate !== false) {

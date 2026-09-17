@@ -1,4 +1,5 @@
 import { writable } from 'svelte/store';
+import { safeStorage } from './safeStorage';
 
 // #20 P3: display UNITS for numeric fields.
 //
@@ -65,7 +66,9 @@ const ALIASES = {
 };
 ALIASES.angleDeg = ALIASES.angle;
 
-const ls = typeof localStorage !== 'undefined' ? localStorage : null;
+// 27-H: `safeStorage` is the alias now — it already answers when there is no storage at
+// all, so the `typeof` dance and the `?.` on every use below are what it replaces.
+const ls = safeStorage;
 
 /** @param {string} key @param {string} fallback @param {string[]} allowed */
 function storedUnit(key, fallback, allowed) {

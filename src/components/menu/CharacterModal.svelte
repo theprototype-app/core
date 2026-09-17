@@ -3,6 +3,7 @@
 	import ThemedSelect from '../ui/ThemedSelect.svelte';
 	import { characterModalOpen, avatarConfig, userdata, peers } from '../../stores/appStore.js';
 	import { FACE_SHAPES, resolveAvatar } from '$lib/avatarModel';
+	import { safeStorage } from '$lib/safeStorage';
 
 	// resolve so shape/showLabel have defaults even for older stored configs
 	$: cfg = resolveAvatar($avatarConfig);
@@ -29,7 +30,7 @@
 	function update(partial: any) {
 		const next = { ...$avatarConfig, ...partial };
 		$avatarConfig = next;
-		localStorage.setItem('avatarConfig', JSON.stringify(next));
+		safeStorage.setItem('avatarConfig', JSON.stringify(next));
 		// update our own userdata row and broadcast
 		$userdata.forEach((element) => {
 			if (element[0] === $peers.peer.id) element[5] = next;

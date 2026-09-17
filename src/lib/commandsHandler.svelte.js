@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { globalScene, objectsGroup, showGrid, TControls, lockedObjects, selectedObject, globalCamera, peerHands } from '../stores/sceneStore.js';
+import { globalScene, objectsGroup, showGrid, TControls, lockedObjects, selectedObject, globalCamera, peerHands, pokeScene, beginSceneBatch, endSceneBatch } from '../stores/sceneStore.js';
 import { GLTFExporter } from 'three/addons/exporters/GLTFExporter.js';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { createGeometry, createLight, createGroup } from '$lib/geometries.svelte'
@@ -20,9 +20,18 @@ import { stripEditOverlays } from '$lib/editOverlays'
 import { runSceneClearHandlers } from '$lib/moduleSDK'
 import { annotations } from '$lib/annotationsHandler'
 import { isViewer, warnViewerReadOnly } from '$lib/objectPermissions'
-import { get } from 'svelte/store'
+import { get, writable } from 'svelte/store'
 import { addMessage, loading, loadingcount, showToast, fixLight, specatorMode } from '../stores/appStore';
+import { dropWireErrors } from './wireErrors';
 import { peers, userdata } from '../stores/appStore';
+// 27-G (audit H6): removing an object frees NOTHING on the GPU. These free what only
+// the departing object was using, and never what the rest of the scene still holds.
+import { disposeTree, keepSet } from '$lib/disposeTree';
+import { safeStorage } from './safeStorage';
+// 26-A: the backlog is a reading the Statistics panel wants and sceneBudget cannot
+// reach — it REGISTERS rather than importing us, the registerDiagnosticsSection shape.
+import { registerMetricSource, ingestVerdict, profileFor } from './sceneBudget';
+import { globalRenderer } from '../stores/sceneStore.js';
 
 //Access scene Store
 let scene = $state();
@@ -62,10 +71,14 @@ globalCamera.subscribe(value => { camera = value });
 
 const loader = new THREE.ObjectLoader();
 
-let uuids = [];
 
 export function userData(data) {
+    // 27-A (audit H1): the roster applier called .forEach on whatever arrived. A malformed
+    // `userdata` threw out of the dispatcher, which had no try/catch — the A1 note below
+    // records the same class of failure in `specator`.
+    if (!Array.isArray(data)) return;
     data.forEach(element => {
+        if (!Array.isArray(element) || typeof element[0] !== 'string') return;
         console.log('received new approved host : ' + element[0])
         if (!users.some(u => u[0] === element[0]))
             users.push(element)
@@ -139,9 +152,13 @@ export function sceneCommand(command) {
             } else {
                 let object = sceneObjects.getObjectByProperty('uuid', command.split(' ')[1])
                 if (object != null) {
+                    // the undo entry is a toJSON SNAPSHOT (history.captureObjectSnapshot),
+                    // not a live reference, so freeing the buffers here cannot strand it
                     recordObjectPresence('delete', object);
+                    const keep = keepSet(sceneRoot(), object);
                     // parent-aware so nested objects are removed too
                     (object.parent ?? sceneObjects).remove(object);
+                    disposeTree(object, { keep });
                 }
                 peer.send({type: 'delete', uuid: command.split(' ')[1], peerId: peer.peer.id});
             }
@@ -150,12 +167,12 @@ export function sceneCommand(command) {
             if (command.split(' ')[1] == 'on')
             {
                 showGrid.set(true);
-                localStorage.removeItem('showGrid')
+                safeStorage.removeItem('showGrid')
             }
             else if (command.split(' ')[1] == 'off')
             {
                 showGrid.set(false);
-                localStorage.setItem('showGrid', false);
+                safeStorage.setItem('showGrid', false);
             }
         }
         else if (command.startsWith('/create')) {
@@ -232,15 +249,32 @@ export function sceneCommand(command) {
         }
     }
     //Trigger reactivity for UI list of objects
-    objectsGroup.update((value) => value);
+    pokeScene();
 }
 
 /**
  * Full local scene wipe (both the local /clear all and the clearscene message):
  * objects, module viewport content, annotations, locks and byte registries.
  */
+/** The scene ROOT for keep-set purposes. Scene-root helpers share resources with real
+ * meshes on purpose (an onion-skin ghost shares its source mesh's geometry), so a keep
+ * set computed over the replicated group alone would free things still being drawn. */
+function sceneRoot() {
+    return scene ?? sceneObjects;
+}
+
 export function clearSceneLocal() {
     controls?.detach();
+    // 26-B: anything still parked in the ingest queue belongs to the scene being wiped
+    dropIngestQueue();
+    clearLoadingBatch();
+    // 27-G: `clear()` drops the references and frees nothing, so a session that opens and
+    // clears several scenes pays for every one of them until the context dies.
+    const doomed = sceneObjects ? [...sceneObjects.children] : [];
+    if (doomed.length) {
+        const keep = keepSet(sceneRoot(), doomed);
+        for (const child of doomed) disposeTree(child, { keep });
+    }
     sceneObjects?.clear();
     runSceneClearHandlers(); // modules remove their scene-root content
     annotations.set([]);
@@ -250,7 +284,7 @@ export function clearSceneLocal() {
     // authored clips were the one registry a wipe used to leak (dropAnimation had
     // no call site at all before 17-E)
     dropAllAnimations();
-    objectsGroup.update((value) => value);
+    pokeScene();
 }
 
 /** A peer wiped the shared scene @param {string} peerId */
@@ -260,8 +294,10 @@ export function applyClearScene(peerId) {
 }
 
 export function lockRestore(lockeditems) {
+    // 27-A: same trust, same fix — a non-array here threw inside the handshake.
+    if (!Array.isArray(lockeditems)) return;
     // Filter out the current peer id locks
-    locked = locked.concat(lockeditems.filter((lock) => lock[0] != peer.peer.id));
+    locked = locked.concat(lockeditems.filter((lock) => Array.isArray(lock) && lock[0] != peer.peer.id));
     // Update the locked objects store
     lockedObjects.set(locked);
 }
@@ -289,12 +325,21 @@ export function handleDisconnected(peerId) {
     });
     dropPeerCursor(peerId);
     dropPeerQuality(peerId); // N3: drop the peer's network-quality telemetry
+    dropWireErrors(peerId); // 27-A: and its wire-failure counters (golden rule 3)
     dropPeerClock(peerId); // 23-A2: and their clock-offset samples
     // CN: host bookkeeping — the host leaving means we're no longer "joined"
     if (get(sessionHost) === peerId) sessionHost.set(null);
     dropPeerJoined(peerId);
     voicePeerDisconnected(peerId);
     physicsPeerDisconnected(peerId);
+    // 26-B (audit M2): the objects they were sending are never coming. Clearing the
+    // batch here is what stops "Receiving objects: 3/40" living forever on screen, and
+    // it drops the parked queue so a half-sent scene does not trickle in afterwards.
+    if (loadingSender === peerId) {
+        const left = /** @type {string[]} */ (get(loading)).length;
+        clearLoadingBatch();
+        if (left) showToast('The scene transfer stopped — ' + peerId + ' left.');
+    }
 }
 
 // Local age-out for roster entries that never grew a connection (a peer that
@@ -362,14 +407,132 @@ export function checkLocks(data) {
     if (locked.length !== before) lockedObjects.set(locked);
 }
 
-export async function createLoader(count, uuids) {
+/** 26-B (audit M2): who announced the batch we are receiving, so their teardown can
+ * clear it. LOCAL — nothing about this crosses the wire. */
+/** @type {string | null} */
+let loadingSender = null;
+/** @type {any} */
+let loadingStallTimer = null;
+/** The progress bar sticks at "3/40" forever when the sender leaves mid-send or a parse
+ * rejects. Nothing cleared it: the only writer was the Toasts effect, which removes a
+ * uuid when its object APPEARS, and an object that never arrives never appears. */
+const LOADING_STALL_MS = 60000;
+let loadingStallMs = LOADING_STALL_MS;
+/** TEST-ONLY: shorten the stall so "silence, not duration" is provable in seconds.
+ * @param {number} [ms] omit to restore the real value */
+export function setLoadingStallMsForTest(ms) {
+    loadingStallMs = Number.isFinite(ms) && /** @type {number} */ (ms) > 0 ? /** @type {number} */ (ms) : LOADING_STALL_MS;
+}
+
+// 26-E: THE STALL IS SILENCE, NOT DURATION. The timer was armed once, at the announcement,
+// and never again — so any transfer that simply took longer than a minute was declared
+// dead while it was still arriving. The stress rig measured exactly that: a joiner
+// receiving 3,000 boxes on a real GPU was still landing ~10 objects a second at 63s when
+// the bar cleared and the toast said "1085 objects never arrived"; all 3,000 arrived by
+// 180s. Every uuid that lands now re-arms it (the `loading` subscription below), so the
+// 60s is measured from the LAST sign of life, which is what M2 meant by a stall.
+function armLoadingStall() {
+    clearTimeout(loadingStallTimer);
+    loadingStallTimer = setTimeout(() => {
+        const left = /** @type {string[]} */ (get(loading));
+        if (!left.length) return;
+        console.log('Receiving objects: giving up on ' + left.length + ' that never arrived');
+        clearLoadingBatch();
+        showToast(left.length + ' object' + (left.length === 1 ? '' : 's') + ' never arrived.');
+    }, loadingStallMs);
+}
+
+// 26-E (roadmap 26 section 3, "handshake time-to-synced"): how long the last RECEIVED
+// batch took, from its `loading` announcement to the last object landing. The receive
+// side is where the cost is felt, and it is the one moment both ends of the interval
+// are known locally — no clock is compared across peers. LOCAL, never sent.
+/** @type {number} */
+let loadingStartedAt = 0;
+/** @type {number} */
+let loadingAnnounced = 0;
+/** uuids still outstanding when the batch was CLOSED rather than finished (a stall, a
+ * departed sender, a cleared scene) — so a batch that never finished cannot report a
+ * sync time as though it had. */
+let loadingLeftAtClear = 0;
+/** @type {{ms: number, objects: number, complete: boolean, at: number} | null} */
+let lastSync = null;
+/** The last batch that ENDED (finished or closed), or null before one has run. */
+export function lastSyncStats() {
+    return lastSync;
+}
+// Both ends of a batch pass through the store: the Toasts reconcile empties it as the
+// last object appears, and `clearLoadingBatch` empties it on every other way out.
+// Subscribing here sees both without touching either writer.
+/** outstanding count at the last notification, so only PROGRESS re-arms the stall */
+let loadingLastLeft = 0;
+loading.subscribe((/** @type {any} */ left) => {
+    const count = Array.isArray(left) ? left.length : 0;
+    // progress on an open batch: re-arm — but only a timer that is running, never one the
+    // ingest fork parked on purpose while its question is open
+    if (loadingStartedAt && count > 0 && count < loadingLastLeft && loadingStallTimer) armLoadingStall();
+    loadingLastLeft = count;
+    if (!loadingStartedAt || count) return;
+    lastSync = {
+        ms: Math.round(performance.now() - loadingStartedAt),
+        objects: loadingAnnounced,
+        complete: loadingLeftAtClear === 0,
+        at: Date.now()
+    };
+    loadingStartedAt = 0;
+    loadingLeftAtClear = 0;
+});
+// only a batch that FINISHED has a sync time; a closed one says null rather than a
+// number that would read as a fast join
+registerMetricSource('syncMs', () => (lastSync?.complete ? lastSync.ms : null));
+registerMetricSource('syncObjects', () => (lastSync?.complete ? lastSync.objects : null));
+
+/** Close the batch: the bar goes away, the stall timer disarms. Idempotent. */
+export function clearLoadingBatch() {
+    if (loadingStartedAt) loadingLeftAtClear = /** @type {string[]} */ (get(loading)).length;
+    clearTimeout(loadingStallTimer);
+    loadingStallTimer = null;
+    loadingSender = null;
+    loading.set([]);
+}
+
+/** Count a uuid as ARRIVED even though no object exists for it — a parse that rejected,
+ * or an object the sender dropped. Without this the bar waits out the full stall.
+ * @param {string[] | string} uuids */
+export function noteLoadFailed(uuids) {
+    const gone = new Set(Array.isArray(uuids) ? uuids : [uuids]);
+    const left = /** @type {string[]} */ (get(loading)).filter((u) => !gone.has(u));
+    loading.set(left);
+    if (!left.length) clearLoadingBatch();
+}
+
+/** @param {number} count @param {string[]} uuids @param {string} [senderId] */
+export async function createLoader(count, uuids, senderId) {
     // console.log("create loader for " + count + " objects: " + uuids);
-    loading.set(uuids);
+    loading.set(Array.isArray(uuids) ? uuids : []);
     loadingcount.set(count);
-    //Trigger reactivity for UI list of objects on remote
-    loading.update((value) => value);
-    //Trigger reactivity for UI list of objects on remote
-    loadingcount.update((value) => value);
+    loadingSender = senderId ?? null;
+    // an empty announcement opens nothing to finish, so it starts no clock
+    loadingStartedAt = Array.isArray(uuids) && uuids.length ? performance.now() : 0;
+    loadingAnnounced = Number(count) || 0;
+    // 26-C: THE ONE MOMENT the size is known and nothing has been applied. Past it a
+    // 4,000-object scene is simply happening to you.
+    const verdict = ingestVerdict(liveObjectCount(), count, profileFor(get(globalRenderer)));
+    if (verdict.gate) {
+        ingestHeld = true;
+        ingestGate.set({
+            count: verdict.incoming,
+            allowed: verdict.allowed,
+            total: verdict.total,
+            limit: verdict.limit,
+            sender: loadingSender
+        });
+        // the stall timer must NOT run while the question is open — the objects are
+        // parked, not missing, and clearing the bar under an open fork would be a lie
+        clearTimeout(loadingStallTimer);
+        loadingStallTimer = null;
+        return;
+    }
+    armLoadingStall();
 }
 
 export async function colorObject(uuid, color, near, far) {
@@ -426,7 +589,7 @@ export async function objectParameters(data) {
                 smoothWeldedNormals(mesh.geometry);
             } else mesh.geometry.computeVertexNormals();
             mesh.geometry.attributes.normal.needsUpdate = true;
-            objectsGroup.update((value) => value);
+            pokeScene();
         }
     } else if (data.parameter == 'physics') {
         // P-A: userData.physics is the source of truth for the Inspector-set
@@ -435,7 +598,7 @@ export async function objectParameters(data) {
         if (mesh) {
             if (data.physics) mesh.userData.physics = data.physics;
             else delete mesh.userData.physics;
-            objectsGroup.update((value) => value); // collider viz re-syncs
+            pokeScene(); // collider viz re-syncs
             physicsShapeChanged(data.uuid); // CL-A A2: live mid-sim rebuild
         }
     } else if (data.parameter == 'origin') {
@@ -445,7 +608,7 @@ export async function objectParameters(data) {
         if (mesh) {
             if (data.origin) mesh.userData.origin = data.origin;
             else delete mesh.userData.origin;
-            objectsGroup.update((value) => value);
+            pokeScene();
             physicsShapeChanged(data.uuid); // the body/collider pose follows the pivot
         }
     } else if (data.parameter == 'particles') {
@@ -455,7 +618,7 @@ export async function objectParameters(data) {
         if (mesh) {
             if (data.particles) mesh.userData.particles = data.particles;
             else delete mesh.userData.particles;
-            objectsGroup.update((value) => value);
+            pokeScene();
         }
     } else if (data.parameter == 'device') {
         // 23-A3: userData.device is a device object's whole configuration ({kind,
@@ -469,7 +632,7 @@ export async function objectParameters(data) {
         if (mesh) {
             if (data.camera) mesh.userData.camera = data.camera;
             else delete mesh.userData.camera;
-            objectsGroup.update((value) => value); // frustum viz + preview re-read
+            pokeScene(); // frustum viz + preview re-read
         }
     } else if (data.parameter == 'renderOrder') {
         let mesh = sceneObjects.getObjectByProperty('uuid', data.uuid);
@@ -483,11 +646,13 @@ export async function objectParameters(data) {
 export async function deleteObject(uuid) {
     let object = sceneObjects.getObjectByProperty('uuid', uuid)
     if (!object) return;
+    const keep = keepSet(sceneRoot(), object);
     object.parent?.remove(object);
     if(selected?.uuid == uuid) controls.detach();
     sceneObjects.remove(sceneObjects.getObjectByProperty('uuid', uuid));
+    disposeTree(object, { keep });
     //Trigger reactivity for UI list of objects on remote
-    objectsGroup.update((value) => value);
+    pokeScene();
 }
 
 
@@ -508,6 +673,181 @@ export async function deleteObject(uuid) {
  * @param {string} [groupuuid] @param {number[]} [pos] @param {number[]} [rot] @param {number[]} [scale]
  */
 export async function createObject(object, uuid, override, groupuuid, pos, rot, scale) {
+    return enqueueIngest([object, uuid, override, groupuuid, pos, rot, scale]);
+}
+
+// ---------------------------------------------------------------------------
+// 26-B (roadmap 26 Stage 0) — TIME-SLICED INGEST.
+//
+// The dispatcher calls `createObject` once per incoming `object` message and never
+// awaits it, so a 1,000-object handshake used to start 1,000 overlapping parses in the
+// same task: `GLTFLoader.parse` is main-thread by design, so the tab had no frame to
+// give anyone until the last one finished. Ordering was also only accidental — two
+// parses that resolved out of order could attach a child before its group existed.
+//
+// The queue fixes both with one mechanism. Objects are applied STRICTLY IN THE ORDER
+// RECEIVED, and the drainer yields to the event loop every SLICE_MS of work, so input,
+// rendering and the poke flush all get a turn while a big scene lands. A batch is open
+// for the whole drain, which is what puts `pokeScene` into its one-per-frame mode.
+//
+// A macrotask (setTimeout 0) is the yield, not a microtask: a microtask chain never
+// returns to the browser, so it would slice the work without ever letting a frame run.
+// ---------------------------------------------------------------------------
+
+/** How long the drainer may hold the thread before yielding. 8ms leaves half a 60Hz
+ * frame for everything else. */
+const INGEST_SLICE_MS = 8;
+
+/** @type {{args: any[], resolve: (v?: any) => void, reject: (e: any) => void}[]} */
+let ingestQueue = [];
+let ingestDraining = false;
+
+// ---------------------------------------------------------------------------
+// 26-C (roadmap 26 Stage 2) — THE INGEST GATE.
+//
+// A scene arriving over the wire announces itself first (`{type:'loading', count,
+// uuids}`) and only then sends the objects, so there is exactly one moment where the
+// size is known and nothing has been applied yet. Past that moment a 4,000-object scene
+// is simply happening to you.
+//
+// The queue built in 26-B is already the parking mechanism: HOLDING it parks every
+// object that arrives, parsed or not, with no second code path and nothing to unwind.
+// The fork is three-way because a stream is divisible — half a room's scenery is a
+// usable scene, and the alternative to "load the first N" is all-or-nothing on somebody
+// else's content.
+//
+// LOCAL ONLY. Nothing here is sent: the peer is not told we declined, because that is a
+// fact about THIS device's budget and there is nothing for them to do about it. They
+// see us with fewer objects, which is what actually happened.
+// ---------------------------------------------------------------------------
+
+/** The open question, or null. Toasts.svelte MIRRORS this into one sticky card (the
+ * `restoreAvailable` idiom) rather than this module importing the UI. */
+/** @type {import('svelte/store').Writable<{count: number, allowed: number, total: number, limit: number, sender: string | null} | null>} */
+export const ingestGate = writable(null);
+
+let ingestHeld = false;
+/** How many more objects this drain may apply before dropping the rest. Infinity = no
+ * cap, which is every path that never met a gate. */
+let ingestCap = Infinity;
+
+/** How many objects the scene already holds — the walk the verdict is measured against. */
+function liveObjectCount() {
+    let n = 0;
+    sceneObjects?.traverse?.((/** @type {any} */ o) => {
+        if (o !== sceneObjects) n++;
+    });
+    return n;
+}
+
+/**
+ * Answer the fork. 'all' releases everything, 'some' applies up to the budget and drops
+ * the rest, 'cancel' drops the lot.
+ * @param {'all'|'some'|'cancel'} answer
+ */
+export function resolveIngestGate(answer) {
+    const open = get(ingestGate);
+    if (!open) return 0;
+    ingestGate.set(null);
+    ingestHeld = false;
+    if (answer === 'cancel') {
+        const dropped = dropIngestQueue();
+        clearLoadingBatch();
+        showToast('Cancelled — ' + open.count + ' objects were not loaded.');
+        return dropped;
+    }
+    ingestCap = answer === 'some' ? open.allowed : Infinity;
+    // the stall timer was parked while the question was open; the transfer resumes now
+    armLoadingStall();
+    if (!ingestDraining && ingestQueue.length) {
+        ingestDraining = true;
+        beginSceneBatch();
+        void drainIngest();
+    }
+    if (answer === 'some')
+        showToast('Loading the first ' + open.allowed + ' of ' + open.count + ' objects.');
+    return ingestQueue.length;
+}
+
+/** Is a fork open? Read by the suite. */
+export function ingestGateOpen() {
+    return ingestHeld;
+}
+
+/** @param {any[]} args */
+function enqueueIngest(args) {
+    return new Promise((resolve, reject) => {
+        ingestQueue.push({ args, resolve, reject });
+        if (!ingestDraining) {
+            ingestDraining = true;
+            beginSceneBatch();
+            void drainIngest();
+        }
+    });
+}
+
+async function drainIngest() {
+    try {
+        while (ingestQueue.length && !ingestHeld) {
+            const started = performance.now();
+            while (ingestQueue.length && performance.now() - started < INGEST_SLICE_MS) {
+                const job = ingestQueue.shift();
+                if (!job) break;
+                if (ingestCap <= 0) {
+                    // over the budget the user agreed to: the object is DROPPED, and its
+                    // uuid is counted as arrived so the progress bar does not wait out
+                    // the full stall for something that is never coming
+                    const uuid = job.args[1];
+                    noteLoadFailed(Array.isArray(uuid) ? uuid : []);
+                    job.resolve(undefined);
+                    continue;
+                }
+                try {
+                    // @ts-ignore - spread of a fixed-length arg tuple
+                    job.resolve(await applyCreateObject(...job.args));
+                    if (Number.isFinite(ingestCap)) ingestCap--;
+                } catch (error) {
+                    // a parse that rejects is still an ARRIVAL as far as the progress bar
+                    // is concerned, or the batch waits out the full 60s stall
+                    console.log('Failed to create an incoming object: ' + error);
+                    const uuid = job.args[1];
+                    noteLoadFailed(Array.isArray(uuid) ? uuid : [job.args[0]?.element?.object?.uuid].filter(Boolean));
+                    job.reject(error);
+                }
+            }
+            if (ingestQueue.length && !ingestHeld) await new Promise((r) => setTimeout(r, 0));
+        }
+    } finally {
+        ingestDraining = false;
+        endSceneBatch();
+        if (!ingestQueue.length) ingestCap = Infinity;
+    }
+}
+
+/** A peer wiped the scene, or we did: whatever is still parked is about to be wrong.
+ * (Roadmap 26 section 5 — "the ingest queue drops on clear".) */
+export function dropIngestQueue() {
+    ingestHeld = false;
+    ingestCap = Infinity;
+    ingestGate.set(null);
+    if (!ingestQueue.length) return 0;
+    const dropped = ingestQueue.length;
+    for (const job of ingestQueue) job.resolve(undefined);
+    ingestQueue = [];
+    return dropped;
+}
+
+/** How many objects are parked. Read by the suite and the 26-A meter. */
+export function ingestBacklog() {
+    return ingestQueue.length;
+}
+registerMetricSource('ingestBacklog', ingestBacklog);
+
+/**
+ * @param {any} object @param {string[]|null} uuid @param {boolean} [override]
+ * @param {string} [groupuuid] @param {number[]} [pos] @param {number[]} [rot] @param {number[]} [scale]
+ */
+async function applyCreateObject(object, uuid, override, groupuuid, pos, rot, scale) {
     let parent;
     if (uuid == null) {
     let mesh = loader.parse(object.element);
@@ -522,6 +862,9 @@ export async function createObject(object, uuid, override, groupuuid, pos, rot, 
         parent = existing.parent ?? sceneObjects;
         parent.remove(existing);
         parent.add(mesh)
+        // AFTER the replacement is in the scene: anything the two share is then in the
+        // keep set and survives, which a dispose before the add would have freed.
+        disposeTree(existing, { keep: keepSet(sceneRoot(), existing) });
     } else if (sceneObjects.getObjectByProperty('uuid', mesh.uuid) == null) {
         // …and an override for something we never had falls through to here. It used to
         // read `overrideObject.parent` unconditionally and THROW on null.
@@ -548,7 +891,9 @@ export async function createObject(object, uuid, override, groupuuid, pos, rot, 
               // one, and even a plain re-send attached a duplicate into the group.
               if (!override) return;
               if (controls?.object?.uuid === existing.uuid) controls.detach();
+              const keepExisting = keepSet(sceneRoot(), existing);
               existing.parent?.remove(existing);
+              disposeTree(existing, { keep: keepExisting });
           }
           sceneObjects.add(mesh)
             if (groupuuid){
@@ -575,7 +920,7 @@ export async function createObject(object, uuid, override, groupuuid, pos, rot, 
         });
     }
     //Trigger reactivity for UI list of objects
-    objectsGroup.update((value) => value);
+    pokeScene();
 }
 
 /**
@@ -589,30 +934,39 @@ export async function createObject(object, uuid, override, groupuuid, pos, rot, 
  *   walk emits is byte-identical to what it always sent.
  */
 export function sendObjects(peerId, element, opts = {}) {
-    let conn; let groupid;
+    let groupid;
     if (peerId === null) {
         groupid = element.uuid;
-        conn = peer;
-        conn.send({type: 'group', name: element.name, uuid: element.uuid, groupparent: null,
+        peer.send({type: 'group', name: element.name, uuid: element.uuid, groupparent: null,
             pos: element.position.toArray(),
             rot: element.rotation.toArray(),
             scale: element.scale.toArray(),
             ...(opts.override ? { override: true } : {})
         });
     }
-    else
-    conn = peer.connections[peerId];
 
-    let objects = [];
-
-    // Iterate over all objects in the scene
-    let count = countObjects(element);
+    // 26-B (audit M1): the uuid list is built PER CALL. It used to be a module-level
+    // array that `countObjects` PUSHED onto and only the timer emptied, so two
+    // approvals 400ms apart both counted into it: the second joiner was told to expect
+    // the first joiner's objects too and its progress bar read "12/40" forever, while
+    // `count` itself was the RUNNING TOTAL rather than this send's.
+    const uuidList = [];
+    const count = countObjects(element, uuidList);
     console.log("Sending " + count + " objects to " + peerId);
 
     // Wait 500ms to ensure the connection is established before sending the objects
     setTimeout(() => {
+        // …and RESOLVE THE CONNECTION HERE, not 500ms ago. `peer.connections[peerId]`
+        // is undefined while the dial is still in flight and closed when the joiner
+        // gave up in between; both used to throw INSIDE A TIMER, where nothing catches
+        // it — the handshake reply simply vanished with an uncaught TypeError.
+        const conn = peerId === null ? peer : peer?.connections?.[peerId];
+        if (!conn || (peerId !== null && !conn.open)) {
+            console.log('Not sending ' + count + ' objects to ' + peerId + ': the connection is gone');
+            return;
+        }
         // Send amount of objects to be sent and their uuids
-        conn.send({type: 'loading', count: count, uuids: uuids});
+        conn.send({type: 'loading', count: count, uuids: uuidList});
         // park animated objects at their base pose so the receiver captures the
         // TRUE animation base, not a mid-swing pose (88). The walk below reads
         // every transform synchronously, so restore right after.
@@ -622,7 +976,6 @@ export function sendObjects(peerId, element, opts = {}) {
         } finally {
             restore();
         }
-        uuids = [];
     }, 500);
 
 }
@@ -795,7 +1148,8 @@ export function sendObject(conn, element, groupuuid, opts = {}) {
 
 }
 
-function countObjects(element) {
+/** @param {any} element @param {string[]} sink the CALLER's uuid list (audit M1) */
+function countObjects(element, sink) {
     let objects = [];
     if (typeof element !== 'undefined') {
         objects = element.children;
@@ -804,10 +1158,9 @@ function countObjects(element) {
     }
     objects.forEach(element => {
         if (element.type == "Group" && !hasAnimatedImport(element.uuid)) {
-            countObjects(element);
+            countObjects(element, sink);
         }
-        uuids.push(element.uuid)
+        sink.push(element.uuid)
     })
-    // console.log(uuids.length)
-    return uuids.length;
+    return sink.length;
 }

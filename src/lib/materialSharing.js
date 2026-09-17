@@ -41,7 +41,8 @@
 // Inspector all read it, so it may import none of them.
 
 import { writable, get } from 'svelte/store';
-import { objectsGroup } from '../stores/sceneStore';
+import { objectsGroup, pokeScene } from '../stores/sceneStore';
+import { safeStorage } from './safeStorage'; // 27-H: a pref write must not kill this subscriber
 
 /** The userData key. Short and namespaced, since it rides every serializer. */
 export const MATERIAL_ID_KEY = 'materialId';
@@ -54,14 +55,13 @@ export const MATERIAL_ID_KEY = 'materialId';
  * want different answers. What they produce (a shared id) IS scene data and replicates.
  */
 export const shareDuplicatedMaterials = writable(
-	typeof localStorage !== 'undefined' && localStorage.getItem('shareDuplicatedMaterials') === 'true'
+	safeStorage.getItem('shareDuplicatedMaterials') === 'true'
 );
+// 27-H: safeStorage never throws and keeps a failed write in memory for the session, so the
+// hand-rolled try/catch this used to carry (and the `typeof` guard, which SecurityError walks
+// straight through) are both its job now.
 shareDuplicatedMaterials.subscribe((value) => {
-	try {
-		localStorage.setItem('shareDuplicatedMaterials', String(value));
-	} catch {
-		/* private mode: a pref is a convenience, never a requirement */
-	}
+	safeStorage.setItem('shareDuplicatedMaterials', String(value));
 });
 
 let idCounter = 0;
@@ -169,7 +169,7 @@ export function unlinkMaterial(uuid) {
 	if (!object || Array.isArray(object.material)) return false;
 	setMaterialId(object, '');
 	if (object.material) object.material = object.material.clone();
-	objectsGroup.update((value) => value);
+	pokeScene(); // 26-B
 	return true;
 }
 
@@ -203,7 +203,7 @@ export function reconcileSharedMaterials() {
 			changed++;
 		}
 	}
-	if (changed) objectsGroup.update((value) => value);
+	if (changed) pokeScene(); // 26-B
 	return changed;
 }
 

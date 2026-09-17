@@ -17,54 +17,55 @@ import { globalCamera, globalRenderer, orbitControls } from '../stores/sceneStor
 // this one has to ask and stand down itself. proportional is a svelte/store-only
 // leaf: no cycle.
 import { proportionalWheelActive } from './proportional';
+import { safeStorage } from './safeStorage';
 
 /** How two-finger swipes are treated: 'auto' (heuristic) | 'on' | 'off'.
  *  @type {import('svelte/store').Writable<string>} */
 export const trackpadMode = writable(
-	typeof localStorage !== 'undefined' ? localStorage.getItem('trackpadMode') || 'auto' : 'auto'
+	typeof localStorage !== 'undefined' ? safeStorage.getItem('trackpadMode') || 'auto' : 'auto'
 );
 trackpadMode.subscribe((value) => {
-	if (typeof localStorage !== 'undefined') localStorage.setItem('trackpadMode', value);
+	if (typeof localStorage !== 'undefined') safeStorage.setItem('trackpadMode', value);
 });
 
 /** Accessibility escape hatch: let the BROWSER zoom the page again (pinch /
  *  ctrl+wheel over UI, mobile pinch). Off by default — pinch is an app gesture.
  *  @type {import('svelte/store').Writable<boolean>} */
 export const allowBrowserZoom = writable(
-	typeof localStorage !== 'undefined' && localStorage.getItem('allowBrowserZoom') === 'true'
+	typeof localStorage !== 'undefined' && safeStorage.getItem('allowBrowserZoom') === 'true'
 );
 allowBrowserZoom.subscribe((value) => {
-	if (typeof localStorage !== 'undefined') localStorage.setItem('allowBrowserZoom', String(value));
+	if (typeof localStorage !== 'undefined') safeStorage.setItem('allowBrowserZoom', String(value));
 });
 
 /** Flip the two-finger pan direction. The DEFAULT (off) is content-follows-
  *  fingers, the user-picked direction; on = the opposite convention.
  *  @type {import('svelte/store').Writable<boolean>} */
 export const reversePan = writable(
-	typeof localStorage !== 'undefined' && localStorage.getItem('trackpadReversePan') === 'true'
+	typeof localStorage !== 'undefined' && safeStorage.getItem('trackpadReversePan') === 'true'
 );
 reversePan.subscribe((value) => {
-	if (typeof localStorage !== 'undefined') localStorage.setItem('trackpadReversePan', String(value));
+	if (typeof localStorage !== 'undefined') safeStorage.setItem('trackpadReversePan', String(value));
 });
 
 /** Two-finger pan on/off (default ON). Off = trackpad swipes fall through to the
  *  wheel zoom and panning stays available via right-click drag (OrbitControls).
  *  @type {import('svelte/store').Writable<boolean>} */
 export const panEnabled = writable(
-	typeof localStorage === 'undefined' || localStorage.getItem('trackpadPanEnabled') !== 'false'
+	typeof localStorage === 'undefined' || safeStorage.getItem('trackpadPanEnabled') !== 'false'
 );
 panEnabled.subscribe((value) => {
-	if (typeof localStorage !== 'undefined') localStorage.setItem('trackpadPanEnabled', String(value));
+	if (typeof localStorage !== 'undefined') safeStorage.setItem('trackpadPanEnabled', String(value));
 });
 
 /** Pinch-to-zoom on/off (default ON). Off = pinch does nothing to the camera
  *  (the page-zoom guard still applies); zoom stays on the mouse wheel.
  *  @type {import('svelte/store').Writable<boolean>} */
 export const pinchZoomEnabled = writable(
-	typeof localStorage === 'undefined' || localStorage.getItem('trackpadPinchZoom') !== 'false'
+	typeof localStorage === 'undefined' || safeStorage.getItem('trackpadPinchZoom') !== 'false'
 );
 pinchZoomEnabled.subscribe((value) => {
-	if (typeof localStorage !== 'undefined') localStorage.setItem('trackpadPinchZoom', String(value));
+	if (typeof localStorage !== 'undefined') safeStorage.setItem('trackpadPinchZoom', String(value));
 });
 
 // ---- 24-A2: the wheel classifier ------------------------------------------------
@@ -216,8 +217,8 @@ function panBy(e) {
 /** A2.3: once ever, the first time the classifier turns a wheel into a pan in auto
  *  mode, point at the one-click override. `wheelHintSeen` in localStorage. */
 function maybeWheelHint() {
-	if (typeof localStorage === 'undefined' || localStorage.getItem('wheelHintSeen')) return;
-	localStorage.setItem('wheelHintSeen', '1');
+	if (typeof localStorage === 'undefined' || safeStorage.getItem('wheelHintSeen')) return;
+	safeStorage.setItem('wheelHintSeen', '1');
 	import('../stores/appStore').then((m) =>
 		m.showToast('Wheel panned instead of zooming? Viewport menu ▸ View ▸ Mouse wheel switches it')
 	);

@@ -44,6 +44,7 @@
 // `flowRuntime` imports it statically.
 
 import { writable, derived, get } from 'svelte/store';
+import { sessionNow } from './sessionClock'; // 25-E: stamps another peer compares
 import { peers, userdata } from '../stores/appStore';
 
 /** How many names one peer may hold. A leaderboard, not a database — and a bound is
@@ -125,7 +126,7 @@ export function broadcastPeerVars(force = false) {
 	const peer = get(peers);
 	const id = peer?.peer?.id;
 	if (!id) return false;
-	sentAt = Math.max(Date.now(), sentAt + 1);
+	sentAt = Math.max(sessionNow(), sentAt + 1);
 	peer.send({ type: 'peervars', peerId: id, vars: { ...vars }, at: sentAt });
 	return true;
 }
@@ -359,7 +360,7 @@ export function clearPeerVars(announce = true) {
 		const id = peer?.peer?.id;
 		if (id) {
 			sentJson = '{}';
-			sentAt = Math.max(Date.now(), sentAt + 1);
+			sentAt = Math.max(sessionNow(), sentAt + 1);
 			peer.send({ type: 'peervars', peerId: id, vars: {}, at: sentAt });
 			return;
 		}

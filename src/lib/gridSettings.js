@@ -1,5 +1,6 @@
 import { writable, get } from 'svelte/store';
 import { snapSettings } from './snapping';
+import { safeStorage } from './safeStorage';
 
 // Grid appearance (16-P3): a LOCAL per-device view preference, never replicated —
 // same family as `showGrid`, `viewMode` and the cameraClip planes. Peers each get
@@ -43,7 +44,7 @@ export const DEFAULT_GRID = {
 
 function load() {
 	try {
-		const raw = typeof localStorage !== 'undefined' ? localStorage.getItem(KEY) : null;
+		const raw = typeof localStorage !== 'undefined' ? safeStorage.getItem(KEY) : null;
 		// unknown/missing keys fall back to defaults, so old payloads keep working
 		const stored = raw ? JSON.parse(raw) : {};
 		const value = { ...DEFAULT_GRID, ...stored };
@@ -61,7 +62,7 @@ function load() {
 export const gridSettings = writable(load());
 
 gridSettings.subscribe((value) => {
-	if (typeof localStorage !== 'undefined') localStorage.setItem(KEY, JSON.stringify(value));
+	if (typeof localStorage !== 'undefined') safeStorage.setItem(KEY, JSON.stringify(value));
 });
 
 /** @param {Partial<typeof DEFAULT_GRID>} patch */

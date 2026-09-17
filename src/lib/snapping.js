@@ -1,18 +1,19 @@
 import * as THREE from 'three';
 import { writable, get } from 'svelte/store';
 import { TControls } from '../stores/sceneStore';
+import { safeStorage } from './safeStorage';
 
 // Grid snapping for the transform gizmo: translate, rotate AND scale.
 // Persisted in localStorage. "Snap to surface" is a future improvement.
 
-const stored = typeof localStorage !== 'undefined' ? localStorage.getItem('snapSettings') : null;
+const stored = typeof localStorage !== 'undefined' ? safeStorage.getItem('snapSettings') : null;
 
 export const snapEnabled = writable(
-	typeof localStorage !== 'undefined' && localStorage.getItem('snapEnabled') === 'true'
+	typeof localStorage !== 'undefined' && safeStorage.getItem('snapEnabled') === 'true'
 );
 // translate drags keep the object resting on whatever is underneath it
 export const surfaceSnap = writable(
-	typeof localStorage !== 'undefined' && localStorage.getItem('surfaceSnap') === 'true'
+	typeof localStorage !== 'undefined' && safeStorage.getItem('surfaceSnap') === 'true'
 );
 /** @type {import('svelte/store').Writable<{translate: number, rotateDeg: number, scale: number}>} */
 export const snapSettings = writable(stored ? JSON.parse(stored) : { translate: 0.5, rotateDeg: 15, scale: 0.1 });
@@ -40,14 +41,14 @@ export function startSnapping() {
 	started = true;
 	TControls.subscribe(apply);
 	snapEnabled.subscribe((value) => {
-		localStorage.setItem('snapEnabled', String(value));
+		safeStorage.setItem('snapEnabled', String(value));
 		apply();
 	});
 	surfaceSnap.subscribe((value) => {
-		localStorage.setItem('surfaceSnap', String(value));
+		safeStorage.setItem('surfaceSnap', String(value));
 	});
 	snapSettings.subscribe((value) => {
-		localStorage.setItem('snapSettings', JSON.stringify(value));
+		safeStorage.setItem('snapSettings', JSON.stringify(value));
 		apply();
 	});
 }
@@ -74,7 +75,7 @@ export const DEFAULT_SNAP_TARGETS = {
 
 function loadSnapTargets() {
 	try {
-		const raw = typeof localStorage !== 'undefined' ? localStorage.getItem('snapTargets') : null;
+		const raw = typeof localStorage !== 'undefined' ? safeStorage.getItem('snapTargets') : null;
 		// unknown/missing keys fall back to defaults, so old payloads keep working
 		return { ...DEFAULT_SNAP_TARGETS, ...(raw ? JSON.parse(raw) : {}) };
 	} catch {
@@ -86,7 +87,7 @@ function loadSnapTargets() {
 export const snapTargets = writable(loadSnapTargets());
 
 snapTargets.subscribe((value) => {
-	if (typeof localStorage !== 'undefined') localStorage.setItem('snapTargets', JSON.stringify(value));
+	if (typeof localStorage !== 'undefined') safeStorage.setItem('snapTargets', JSON.stringify(value));
 });
 
 const DOWN = new THREE.Vector3(0, -1, 0);

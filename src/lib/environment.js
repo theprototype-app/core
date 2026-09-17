@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { sessionNow } from './sessionClock'; // 25-E: stamps another peer compares
 import { writable, get } from 'svelte/store';
 import { globalScene, globalRenderer, objectsGroup, backgroundColor, TControls, passthroughActive, pokeScene } from '../stores/sceneStore';
 import { peers } from '../stores/appStore';
@@ -293,7 +294,7 @@ export function applyEnvironment() {
 
 /** Apply a state change locally, persist and replicate @param {any} partial */
 function commit(partial) {
-	const state = { ...get(environment), ...partial, changedAt: Date.now() };
+	const state = { ...get(environment), ...partial, changedAt: sessionNow() };
 	environment.set(state);
 	applyEnvironment();
 	/** @type {any} */
@@ -584,9 +585,9 @@ export function environmentRestore(payload, replicate = false) {
 				exposure: payload.exposure ?? 1,
 				customPreset: payload.customPreset ?? null,
 				lights: payload.lights ?? [],
-				changedAt: Date.now()
+				changedAt: sessionNow()
 			}
-		: { ...DEFAULT_STATE, changedAt: Date.now() };
+		: { ...DEFAULT_STATE, changedAt: sessionNow() };
 	environment.set(state);
 	applyEnvironment();
 	if (!replicate) return;

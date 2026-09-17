@@ -83,6 +83,7 @@
 // `publishSharedIndex`, which refuses for a viewer.
 
 import { get, writable } from 'svelte/store';
+import { sessionNow } from './sessionClock'; // 25-E: stamps another peer compares
 import { peers, userdata, showToast } from '../stores/appStore';
 import {
 	explorerFolders,
@@ -248,7 +249,7 @@ export function pullSharedItem(hash) {
 function projection() {
 	const doc = get(projectManifest);
 	const owner = meAsOwner();
-	const now = Date.now();
+	const now = sessionNow();
 
 	/**
 	 * `at` MUST BE STABLE FOR AN UNCHANGED ROW, or `publishSharedIndex`'s content compare
@@ -655,7 +656,7 @@ function tomb(keys) {
 	const doc = get(projectManifest);
 	/** @type {any} */
 	const prev = doc.removed ?? {};
-	const at = Date.now();
+	const at = sessionNow();
 	/** @type {any} */
 	const next = { items: { ...(prev.items ?? {}) }, folders: { ...(prev.folders ?? {}) } };
 	for (const hash of keys.items ?? []) next.items[hash] = at;
@@ -1046,7 +1047,7 @@ export function logLocalDeletion(spec) {
 		hash,
 		name: String(spec.name ?? hash),
 		kind: String(spec.kind ?? 'text'),
-		at: Date.now(),
+		at: sessionNow(),
 		by: meAsOwner(),
 		localOnly: true,
 		...(spec.folderId === undefined ? {} : { folderId: spec.folderId ?? null }),
@@ -1169,7 +1170,7 @@ export function deleteItemsToBin(ids) {
 	const keepRow = get(recycleBinEnabled) || get(deletedLogEnabled);
 	const log = [...(doc.deleted ?? [])];
 	const tombs = tombsOf(doc);
-	const at = Date.now();
+	const at = sessionNow();
 	const by = meAsOwner();
 	/** @type {Set<string>} */
 	const gone = new Set();
@@ -1207,7 +1208,7 @@ export function deleteFolderToBin(id) {
 	const keepRow = get(recycleBinEnabled) || get(deletedLogEnabled);
 	const log = [...(doc.deleted ?? [])];
 	const tombs = tombsOf(doc);
-	const at = Date.now();
+	const at = sessionNow();
 	const by = meAsOwner();
 	// THE ITEMS FIRST, while the folder records still exist: `folderPath` reads the live
 	// tree, so a row written after the removal would carry an empty path — and the path is

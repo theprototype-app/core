@@ -66,7 +66,10 @@ import { applyRemoteColocation, dropPeerColocation, sendColocationState } from '
 import { applyRemoteScenePost, scenePostStates, sendScenePost } from '$lib/scenePost';
 // 23-A2: the musical transport (a latest-wins singleton like scenephysics) and the
 // peer clock-offset estimate it carries alongside
-import { applyRemoteTransport, transportState, sendTransport, answerClockPing, applyClockPong, startClockSync } from '$lib/musicClock';
+import { applyRemoteTransport, transportState, sendTransport } from '$lib/musicClock';
+// 25-E: the clock round trip is the SESSION's now, not the music line's (sessionClock.js)
+import { answerClockPing, applyClockPong, startClockSync } from '$lib/clockSync';
+import { sessionNow } from '$lib/sessionClock';
 import { applyRemoteDeviceNote } from '$lib/audioDevices';
 // 23-A4: the patch (cables between device ports), a latest-wins singleton
 import { applyRemotePatch, patchState, sendPatch } from '$lib/audioPatch';
@@ -701,7 +704,9 @@ export class PeerConnection {
 					if (sameRoomOrUnknown(conn.peer)) sendTransport(data.sender);
 				} else if(data.type == 'clockping') {
 					// 23-A2: the peer clock-offset round trip. Answered over the stable OUTGOING
-					// conn to the sender (golden rule 9), this conn only as the fallback.
+					// conn to the sender (golden rule 9), this conn only as the fallback. 25-E:
+					// the pong now also says which clock WE keep, so a joiner of a joiner
+					// inherits the session's time (clockSync.js).
 					answerClockPing(data, conn);
 				} else if(data.type == 'clockpong') {
 					applyClockPong(data);
@@ -1091,7 +1096,7 @@ export class PeerConnection {
 		// scene privately it answers `{scene:'', hash:'', private:true}`, so the very first
 		// message of a handshake is where the name stops. Reading `myScene()` here (which is
 		// the SCREEN's answer, name and all) would leak it to every peer that ever connects.
-		conn.send({ type: 'atscene', peerId: this.peer.id, ...mySceneWire(), at: Date.now() });
+		conn.send({ type: 'atscene', peerId: this.peer.id, ...mySceneWire(), at: sessionNow() });
 	}
 
 	/**
@@ -1168,6 +1173,11 @@ export class PeerConnection {
 		// A1: WHERE WE ARE, ahead of everything else — the reasoning lives on
 		// `sendMyScene`, which A2 shares with the arrival re-sync for the same reason.
 		this.sendMyScene(conn);
+		// 25-E: the clock round trip goes out SECOND — ahead of every full-state request —
+		// so on an ordered conn the host's first pong lands before its content does, and a
+		// grossly wrong joiner clock is corrected before the history it would mis-stamp
+		// arrives (flowRuntime shifts its cutoffs for whatever still lands first).
+		startClockSync(peerId);
 		// R22 round 35: `locked` is ROOM_SCOPED and this is a DIRECT send, so the broadcast
 		// gate never sees it — a private peer would hand a stranger the uuids it is holding in
 		// a scene that stranger cannot see. Our own table is stale while private anyway (every
@@ -1241,9 +1251,6 @@ export class PeerConnection {
 		if (getobjects && !holdContent) conn.send({type: 'getnodedefs', sender: this.peer.id})
 		// join them into the voice mesh if our mic is live
 		voicePeerConnected(peerId);
-		// 23-A2: start estimating their clock's offset from ours — here because this is
-		// the one place the conn is known to be OPEN (golden rule 2)
-		startClockSync(peerId);
 	}
 
 	connectToPeer(peerId, getobjects = true, id = this.peer.id) {

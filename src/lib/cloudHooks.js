@@ -36,6 +36,11 @@ const ALWAYS_ALLOWED = new Set([
 	// everything), i.e. it would relax the gate by tightening one message. It is presence
 	// besides, which is this floor's own family.
 	'atscene',
+	// 25-E: the session clock's round trip. Protocol, not content — a plugin that gated it
+	// for a viewer would leave that viewer stamping on its own machine's clock, so every
+	// latest-wins write it made would sort wrongly against the room's.
+	'clockping',
+	'clockpong',
 	// DEVX #18: the flow trigger log. On the floor beside `getnodes` for the same reason
 	// the list gives — answering a full-state REQUEST is how a peer ever syncs, and this
 	// one decides whether a joiner sees a collected world or a reset one. The `triggers`

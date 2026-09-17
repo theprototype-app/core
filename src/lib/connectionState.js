@@ -1,5 +1,9 @@
 import { writable, get } from 'svelte/store';
 import { safeStorage } from './safeStorage';
+// 25-E: the session clock is a sibling leaf; re-exported here because this is where peer
+// code already looks for "what session am I in", and resetSession must reset it too
+import { resetSessionClock } from './sessionClock';
+export { sessionNow, sessionClock, sessionClockDebug } from './sessionClock';
 
 /**
  * Session-connection state (roadmap #14 CN). STORE-ONLY module (svelte/store only)
@@ -153,6 +157,7 @@ export function resetSession() {
 	sessionHost.set(null);
 	peerJoinedAt.set({});
 	approvalStartedAt.set({}); // 27-E: no request survives leaving the session
+	resetSessionClock(); // 25-E: our own clock is the only one left
 }
 
 /**

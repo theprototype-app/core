@@ -29,6 +29,7 @@
 // would close the TDZ cycle (the moduleSDK rule).
 
 import { writable, get } from 'svelte/store';
+import { sessionNow } from './sessionClock'; // 25-E: stamps another peer compares
 import { showToast, showInfoToast, dismissToastById, peers } from '../stores/appStore';
 // R22 round 34: the adopt message names the peer who saved. `sessions.js` — which this
 // module already imports — imports lockControl too, so this closes no new edge.
@@ -1179,7 +1180,7 @@ async function announceSceneName(cameFrom, name, hash, opts) {
 	try {
 		/** @type {any} */
 		const peer = get(peers);
-		peer.send({ type: 'sceneadopt', name, hash, peerId: peer.peer.id, at: Date.now() });
+		peer.send({ type: 'sceneadopt', name, hash, peerId: peer.peer.id, at: sessionNow() });
 	} catch {
 		return { told: 0, note };
 	}

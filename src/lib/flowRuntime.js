@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { sessionNow, onSessionClockJump } from './sessionClock'; // 25-E: the synced clock is the SESSION's
 import { get } from 'svelte/store';
 import { flowGraphs, mutedFlowObjects, syncedAnimations, flowValues, flowTriggers, SCENE_GRAPH, startGraphMirror, allNodes, allEdges, flowPaused} from '../stores/flowStore';
 // 21-F2: `isLocked` is the LOCAL play substate the recipe gate reads — see gamePlayActive
@@ -152,6 +153,18 @@ function historicTrigger(stamp) {
 export function triggerHistoryEpoch() {
 	return triggerHistoryAt;
 }
+
+// 25-E: THE CUTOFFS FOLLOW THE CLOCK. The epoch above and every `actionSeenAt` entry are
+// SESSION seconds recorded as local cutoffs, and a joiner records most of them during its
+// handshake — before its clock has been corrected onto the host's. A -90 s correction
+// would then leave every one of them 90 s in the future, so every live pulse would be
+// refused as older than the node acting on it. Shift them by the jump instead. A callback
+// registration, not a subscribe, so nothing here runs at module eval.
+onSessionClockJump((deltaMs) => {
+	const d = deltaMs / 1000;
+	if (triggerHistoryAt) triggerHistoryAt += d;
+	for (const [id, seen] of actionSeenAt) actionSeenAt.set(id, seen + d);
+});
 
 /**
  * Register an action node's first-seen moment. Called for EVERY action node on EVERY
@@ -2456,7 +2469,7 @@ export function speedOf(uuid) {
 
 /** Synced seconds — same formula as the tick clock. */
 function syncedNow() {
-	return synced ? (Date.now() % 86400000) / 1000 : performance.now() / 1000;
+	return synced ? (sessionNow() % 86400000) / 1000 : performance.now() / 1000;
 }
 
 /**
@@ -2875,7 +2888,7 @@ function applyAnimation(object, base, anim, time, ctx) {
 				{
 					note: Number.isFinite(+data.note) ? +data.note : 60,
 					velocity: typeof data.velocity === 'number' ? data.velocity : 0.9,
-					at: Math.floor(Date.now() / 86400000) * 86400000 + stamp * 1000
+					at: Math.floor(sessionNow() / 86400000) * 86400000 + stamp * 1000
 				},
 				{ replicate: false }
 			);
@@ -2984,7 +2997,7 @@ function runTick(now) {
 	// now lands in THIS tick's trigger snapshot, exactly as a keydown arriving between
 	// frames would. (It also rides pumpFlowTick, so a pad works in a headset for free.)
 	inputRuntimeRef?.pollGamepads();
-	const time = synced ? (Date.now() % 86400000) / 1000 : now / 1000;
+	const time = synced ? (sessionNow() % 86400000) / 1000 : now / 1000;
 	const ctx = runtimeCtx(); // 134: scene + trigger state for the evaluators
 
 	// collect active animations per scene object

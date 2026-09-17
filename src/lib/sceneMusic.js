@@ -1,4 +1,5 @@
 import { writable, get } from 'svelte/store';
+import { sessionNow } from './sessionClock'; // 25-E: stamps another peer compares
 import { peers } from '../stores/appStore';
 import { ensureAudioContext, bus } from './audioEngine';
 import { itemByHash, itemBlob } from './explorer';
@@ -101,7 +102,7 @@ function startSource(state) {
 	src.loop = true;
 	src.connect(gain);
 	// synced phase: everyone starts inside the same loop cycle
-	const offset = ((Date.now() - (state.startedAt || Date.now())) / 1000) % buffer.duration;
+	const offset = ((sessionNow() - (state.startedAt || sessionNow())) / 1000) % buffer.duration;
 	src.start(0, Math.max(0, offset));
 	source = src;
 	startedKey = state.hash + '|' + state.startedAt;
@@ -138,7 +139,7 @@ function reconcile() {
 
 /** Apply a change locally + replicate. @param {any} partial */
 export function commitMusic(partial) {
-	const state = { ...get(music), ...partial, changedAt: Date.now() };
+	const state = { ...get(music), ...partial, changedAt: sessionNow() };
 	music.set(state);
 	reconcile();
 	/** @type {any} */
@@ -149,13 +150,13 @@ export function commitMusic(partial) {
 /** Set (or clear) the shared track by content hash; pushes the bytes to peers.
  * @param {string|null} hash @param {string} name */
 export function setMusicTrack(hash, name = '') {
-	commitMusic({ hash, name, playing: !!hash, startedAt: hash ? Date.now() : 0 });
+	commitMusic({ hash, name, playing: !!hash, startedAt: hash ? sessionNow() : 0 });
 	if (hash) sendAsset(hash);
 }
 
 /** Transport: play (restarts the synced phase) / stop. @param {boolean} playing */
 export function setMusicPlaying(playing) {
-	commitMusic({ playing, startedAt: playing ? Date.now() : get(music).startedAt });
+	commitMusic({ playing, startedAt: playing ? sessionNow() : get(music).startedAt });
 }
 
 /** Shared volume (0..1) — adjusts gain without restarting. @param {number} v */
@@ -210,10 +211,10 @@ export function musicRestore(payload, replicate = false) {
 				name: payload.name ?? '',
 				volume: payload.volume ?? 0.8,
 				playing: !!payload.playing,
-				startedAt: payload.playing ? Date.now() : 0,
-				changedAt: Date.now()
+				startedAt: payload.playing ? sessionNow() : 0,
+				changedAt: sessionNow()
 			}
-		: { ...DEFAULT, changedAt: Date.now() };
+		: { ...DEFAULT, changedAt: sessionNow() };
 	music.set(state);
 	reconcile();
 	if (!replicate) return;
@@ -252,7 +253,7 @@ export function startSceneMusic() {
 /** test/debug view of the live music chain */
 export function musicDebug() {
 	const state = get(music);
-	const offset = buffer && state.startedAt ? ((Date.now() - state.startedAt) / 1000) % buffer.duration : 0;
+	const offset = buffer && state.startedAt ? ((sessionNow() - state.startedAt) / 1000) % buffer.duration : 0;
 	return {
 		hash: state.hash,
 		playing: state.playing,

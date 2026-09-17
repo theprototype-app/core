@@ -25,6 +25,7 @@
 // bytes serves them.
 
 import { writable, get } from 'svelte/store';
+import { sessionNow } from './sessionClock'; // 25-E: stamps another peer compares
 import { peers, showToast, explorerClose, revealExplorerItem } from '../stores/appStore';
 import { bottomDockActive } from './bottomDock';
 import { showChoice } from './confirmDialog';
@@ -441,7 +442,7 @@ async function persist() {
 function commitManifest(next, opts = {}) {
 	const before = get(projectManifest);
 	const doc = normalizeManifest(next);
-	doc.changedAt = Math.max(Date.now(), (before.changedAt ?? 0) + 1, (opts.above ?? 0) + 1);
+	doc.changedAt = Math.max(sessionNow(), (before.changedAt ?? 0) + 1, (opts.above ?? 0) + 1);
 	projectManifest.set(doc);
 	void persist();
 	if (opts.replicate !== false) {

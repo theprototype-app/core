@@ -3,8 +3,13 @@ import { peers, userdata, pendingApprovals, waitingForApproval, showToast } from
 import {
 	sessionHost,
 	APPROVAL_WINDOW_MS,
+	HARD_PEER_CAP,
 	noteApprovalStarted,
-	clearApprovalStarted
+	clearApprovalStarted,
+	roomIsFull,
+	isRefusal,
+	noteJoinRefusal,
+	clearJoinRefusal
 } from './connectionState';
 
 // Pending-connection approval (211). Kept in its own store-only module so VR
@@ -18,26 +23,75 @@ import {
  * and connect back (the requester already whitelisted us). @param {string} peerId
  */
 export function approvePeer(peerId) {
+	/** @type {any} */
+	const peer = get(peers);
+	// 25-F: past the hard cap an approval is a refusal the joiner can HEAR. The desktop card
+	// offers "Tell them it's full" itself; this is the path every other caller takes (the
+	// VR panel's yes, a plugin), which used to approve straight past the cap.
+	if (peer && roomIsFull(peer)) {
+		denyPeer(peerId, 'full');
+		showToast('This session is full (' + HARD_PEER_CAP + ' people) — ' + label(peerId) + ' was told.');
+		return;
+	}
 	pendingApprovals.set(get(pendingApprovals).filter((/** @type {any} */ p) => p.peerId !== peerId));
+	clearApprovalStarted(peerId);
 	const users = /** @type {any[]} */ (get(userdata));
 	if (!users.some((/** @type {any} */ u) => u[0] === peerId)) users.push([peerId, '', '']);
 	userdata.set(/** @type {any} */ (users));
-	/** @type {any} */
-	const peer = get(peers);
 	if (!peer) return;
 	peer.send({ type: 'userdata', userdata: get(userdata) });
-	peer.connectToPeer(peerId, true);
+	// 25-F: the dial-back SAYS it is an approval (older peers still read the conn alone)
+	if (typeof peer.approveDialBack === 'function') peer.approveDialBack(peerId);
+	else peer.connectToPeer(peerId, true);
+}
+
+/** @param {string} peerId */
+function label(peerId) {
+	return String(peerId).slice(0, 6).toUpperCase();
 }
 
 /**
  * Deny a pending request: drop it from the queue and close any lingering incoming
- * connection. The peer stays off the whitelist. @param {string} peerId
+ * connection. The peer stays off the whitelist.
+ *
+ * 25-F: and TELL them, when their dial said they can hear it (`hearsNo` on the card) — a
+ * short refusal dial whose metadata is the answer. A joiner that did not say so is an
+ * older build, which reads ANY incoming conn from the host as an approval, so it gets the
+ * old silence and its own 90 s expiry rather than a false "approved".
+ * @param {string} peerId @param {'denied' | 'full'} [result]
  */
-export function denyPeer(peerId) {
+export function denyPeer(peerId, result = 'denied') {
+	const card = /** @type {any[]} */ (get(pendingApprovals)).find((p) => p.peerId === peerId);
 	pendingApprovals.set(get(pendingApprovals).filter((/** @type {any} */ p) => p.peerId !== peerId));
+	clearApprovalStarted(peerId);
 	/** @type {any} */
 	const peer = get(peers);
 	peer?.connections?.[peerId]?.close?.();
+	if (card?.hearsNo && typeof peer?.sendJoinResult === 'function') peer.sendJoinResult(peerId, result);
+}
+
+/**
+ * 25-F — the JOINER's half: the host said no (or that the room is full). End the request
+ * exactly as a cancel does (the waiting row, the optimistic whitelist row, the timer, the
+ * never-open conn) and say which it was. A refusal from a peer we are NOT waiting on —
+ * a second approver after we joined, or an answer that outlived our own 90 s expiry — is
+ * ignored: nothing is pending, so there is nothing to end and nobody to tell.
+ * @param {string} peerId @param {any} result @returns {boolean} whether it ended a request
+ */
+export function applyJoinRefusal(peerId, result) {
+	if (!isRefusal(result)) return false;
+	const waiting = /** @type {any[]} */ (get(waitingForApproval));
+	if (!waiting.some((/** @type {any} */ w) => w[0] === peerId && w[1] === 'pending')) return false;
+	cancelOutboundRequest(peerId);
+	noteJoinRefusal(peerId, result);
+	if (result === 'full') {
+		showToast(label(peerId) + "'s session is full (" + HARD_PEER_CAP + ' people). Try again when someone leaves.', [
+			{ label: 'Try again', action: () => requestConnect(peerId) }
+		]);
+	} else {
+		showToast(label(peerId) + ' declined your connection request.');
+	}
+	return true;
 }
 
 /**
@@ -168,6 +222,7 @@ function dial(peerId) {
 	/** @type {any} */
 	const peer = get(peers);
 	if (!peer) return;
+	clearJoinRefusal(); // 25-F: a new request replaces the last answer on the pill
 	const users = /** @type {any[]} */ (get(userdata));
 	if (!users.some((/** @type {any} */ u) => u[0] === peerId)) {
 		users.push([peerId, '', '']);

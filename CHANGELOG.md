@@ -57,13 +57,16 @@
   always) or switch to Select-first, where a left drag draws a selection rectangle, dragging
   any selected node moves the whole set, and the right button pans.
 
-### ⚽ VR Football (a module and a template)
+### ⚽ VR Football (a module)
 
-- 🥅 **Football** joins the Games tab: two floating gates, one ball, red against blue, played
-  with your hands. Goals go to whoever touched the ball last, own goals land on the right
-  sheet, and the mode decides when the match ends (first to N, a clock, or either). Scores,
-  touches and own goals are per player, the gate lamps read from across the room, and a saved
-  scene keeps the match log. Two people in one room can play it colocated.
+- 🥅 **Football** is a new module in Browse: two floating gates, one ball, red against blue,
+  played with your hands. Install it, open its toolbox and **Build pitch** lays out the pitch,
+  the gates and the rules in your scene. Goals go to whoever touched the ball last, own goals
+  land on the right sheet, and the mode decides when the match ends (first to N, a clock, or
+  either). Scores, touches and own goals are per player, the gate lamps read from across the
+  room, and a saved scene keeps the match log. Two people in one room can play it colocated.
+  (A ready-made Football template for the Games tab is not published yet — the toolbox recipe
+  is how you get a pitch today.)
 
 ### 🛠️ For people building on it
 

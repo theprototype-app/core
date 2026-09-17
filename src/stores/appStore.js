@@ -724,8 +724,15 @@ export function dismissToastById(id) {
   toastStore.update((list) => list.filter((entry) => !(entry && entry.id === id)));
 }
 
+/** 26-B: the uuids of an inbound object batch still outstanding. Typed, because it is
+ * now WRITTEN as an array (the old code spliced in place and re-assigned), and
+ * `writable([])` alone infers `never[]`. */
+/** @type {import('svelte/store').Writable<string[]>} */
 export const loading = writable([]);
-export const loadingcount = writable([]);
+/** How many the batch announced. It was initialised to `[]` and only ever held a
+ * number; `[] > 0` is false and `[] - n` is `-n`, so 0 reads identically. */
+/** @type {import('svelte/store').Writable<number>} */
+export const loadingcount = writable(0);
 export const loadingFile = writable([]);
 
 export const messages = writable([]);

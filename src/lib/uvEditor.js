@@ -1,7 +1,7 @@
 // @ts-ignore - no bundled three type declarations (project-wide)
 import * as THREE from 'three';
 import { writable, get } from 'svelte/store';
-import { objectsGroup } from '../stores/sceneStore';
+import { objectsGroup, pokeScene } from '../stores/sceneStore';
 import { peers, showToast } from '../stores/appStore';
 import { recordEntry } from './history';
 // UV3 painting commits through the EXISTING replicated texture path, so
@@ -385,7 +385,7 @@ export function transformUvCluster(object, indices, options = {}) {
 		uv.setXY(i, pivot.cu + du * cos - dv * sin, pivot.cv + du * sin + dv * cos);
 	}
 	uv.needsUpdate = true;
-	objectsGroup.update((v) => v);
+	pokeScene();
 	return true;
 }
 
@@ -470,7 +470,7 @@ export function applyUvSnapshot(object, snapshot, options = {}) {
 		uv.setXY(s.i, u + du, v + dv);
 	}
 	uv.needsUpdate = true;
-	objectsGroup.update((v) => v);
+	pokeScene();
 	return true;
 }
 
@@ -514,7 +514,7 @@ export function snapUvToPixels(object, indices, w, h) {
 		uv.setXY(i, Math.round(uv.getX(i) * w) / w, Math.round(uv.getY(i) * h) / h);
 	}
 	uv.needsUpdate = true;
-	objectsGroup.update((v) => v);
+	pokeScene();
 	return true;
 }
 
@@ -593,7 +593,7 @@ export function fitUvToSquare(object, indices, margin = 0.02) {
 		uv.setXY(i, u, v);
 	}
 	uv.needsUpdate = true;
-	objectsGroup.update((v) => v);
+	pokeScene();
 	return true;
 }
 
@@ -910,7 +910,7 @@ export function moveUvCluster(object, indices, du, dv) {
 	}
 	for (const i of indices) uv.setXY(i, uv.getX(i) + du, uv.getY(i) + dv);
 	uv.needsUpdate = true;
-	objectsGroup.update((v) => v);
+	pokeScene();
 	return true;
 }
 
@@ -1079,7 +1079,7 @@ function install(material, entry) {
 		material.needsUpdate = true;
 	}
 	entry.texture.needsUpdate = true;
-	objectsGroup.update((v) => v);
+	pokeScene();
 }
 
 /** A live texture identifies its seed by uuid+version, so a blank canvas (seed
@@ -1211,7 +1211,7 @@ export function paintMove(u, v, color, size, w) {
 	const point = pressured && typeof w === 'number' ? [u, v, Math.max(0, Math.min(1, Math.round(w * 1000) / 1000))] : [u, v];
 	paintStroke.points.push(point);
 	if (previous) strokeSegment(entry, previous, point, color, size, paintStroke.pmode);
-	objectsGroup.update((value) => value);
+	pokeScene();
 	const now = performance.now();
 	if (now - lastPaintSend < PAINT_THROTTLE) return true;
 	lastPaintSend = now;
@@ -1295,7 +1295,7 @@ export function cancelPaintStroke() {
 	if (material.map === entry.texture) {
 		material.map = entry.previousMap ?? null;
 		material.needsUpdate = true;
-		objectsGroup.update((v) => v);
+		pokeScene();
 	}
 	// the canvas now disagrees with the material — drop it so the next stroke
 	// re-seeds from whatever is actually on the model
@@ -1325,7 +1325,7 @@ export async function applyUvPaint(data) {
 	for (let i = 1; i < seg.length; i++)
 		strokeSegment(entry, seg[i - 1], seg[i], data.color ?? '#000000', data.size ?? 16, pmode);
 	liveUvStrokes.set(data.id, { ts: Date.now() });
-	objectsGroup.update((v) => v);
+	pokeScene();
 }
 
 /** Receive side: a peer finished a stroke. @param {any} data */

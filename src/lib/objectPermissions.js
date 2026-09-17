@@ -10,7 +10,7 @@ import { get } from 'svelte/store';
 import { rolesInfo } from './cloudHooks';
 import { parkEditOverlays } from './editOverlays';
 import { showToast, showLocalObjects, peers } from '../stores/appStore';
-import { objectsGroup } from '../stores/sceneStore';
+import { objectsGroup, pokeScene } from '../stores/sceneStore';
 
 /** broadcast message `type`s that CREATE a scene object (peerHandler send-gate) */
 const CREATE_TYPES = new Set(['create', 'light', 'group', 'object', 'objectfile', 'duplicate']);
@@ -74,7 +74,7 @@ export function shareObject(object, groupUuid = null) {
 	} finally {
 		unpark();
 	}
-	objectsGroup.update((v) => v);
+	pokeScene();
 	return true;
 }
 

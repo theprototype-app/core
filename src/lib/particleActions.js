@@ -1,5 +1,5 @@
 import { get } from 'svelte/store';
-import { objectsGroup, selectedObject } from '../stores/sceneStore';
+import { objectsGroup, selectedObject, pokeScene } from '../stores/sceneStore';
 import { peers } from '../stores/appStore';
 import { recordEntry } from './history';
 import { particlePreset, PARTICLE_DEFAULTS } from './particlePresets';
@@ -22,7 +22,7 @@ function objectOf(uuid) {
 
 /** poke the stores so the Inspector/object list re-render */
 function poke() {
-	objectsGroup.update((v) => v);
+	pokeScene();
 	selectedObject.update((v) => v);
 }
 

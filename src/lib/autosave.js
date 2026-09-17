@@ -3,7 +3,7 @@ import * as THREE from 'three';
 import { get, writable } from 'svelte/store';
 import { GLTFExporter } from 'three/addons/exporters/GLTFExporter.js';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
-import { objectsGroup, globalCamera, orbitControls } from '../stores/sceneStore';
+import { objectsGroup, globalCamera, orbitControls, pokeScene } from '../stores/sceneStore';
 import { flowGraphs, restoreGraphs, SCENE_GRAPH } from '../stores/flowStore';
 import { serializeGraphs } from './flowGraphs';
 import { serializeNode, serializeEdge } from './nodesHandler';
@@ -563,7 +563,7 @@ function restoreMultiMaterial(entries) {
 		// for symmetry alone would be a worse trade than saying so here.
 		disposeTree(twin, { keep: keepSet(get(objectsGroup), twin) });
 	}
-	objectsGroup.update((value) => value);
+	pokeScene();
 }
 
 /**
@@ -611,7 +611,7 @@ async function applyRestore(snapshot) {
 				group.add(child);
 				if (peer) peer.send({ type: 'object', element: child.toJSON() });
 			});
-			objectsGroup.update((value) => value);
+			pokeScene();
 		}
 		// multi-material meshes come back from their toJSON, REPLACING the Group of
 		// single-material children the GLTF export left behind (same twin-replacement

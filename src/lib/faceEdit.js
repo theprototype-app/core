@@ -1,7 +1,7 @@
 // @ts-ignore - no bundled three type declarations (project-wide)
 import * as THREE from 'three';
 import { writable, get } from 'svelte/store';
-import { globalScene, globalCamera, objectsGroup, TControls, lockedObjects, isVRMode } from '../stores/sceneStore';
+import { globalScene, globalCamera, objectsGroup, TControls, lockedObjects, isVRMode, pokeScene } from '../stores/sceneStore';
 // 15-F: session-scoped undo — editSession imports ONLY history (an edge we
 // already have), so this closes no cycle
 import { noteEditEnter, noteEditExit, sealEditHistorySession } from './editSession';
@@ -1481,7 +1481,7 @@ export function applyMeshGeo(uuid, positions, groups, uvs, faceCounts, faceTris)
 	// module eval (it imports us — a dynamic import back would be a SECOND module
 	// instance under vite's ?t= HMR stamps, whose editingObject is always null).
 	vertexSessionRefresher?.(uuid);
-	objectsGroup.update((v) => v);
+	pokeScene();
 }
 
 /** Average normals across position-welded vertices of a NON-INDEXED geometry
@@ -5433,7 +5433,7 @@ export function setShadingSmooth(smooth) {
 			uuid: faceEdited.uuid,
 			shading: faceEdited.userData.shading
 		});
-	objectsGroup.update((v) => v);
+	pokeScene();
 	showToast(smooth ? 'Shading: smooth' : 'Shading: flat');
 	return true;
 }
@@ -6316,7 +6316,7 @@ function applyGeometrySnapshot(positions, groups, uvs, faces) {
 	refreshFaceOverlay();
 	refreshEdgeHighlight(); // M4: baked in world space, same as the face overlay
 	refreshFaceWireframe(); // B2: the overlay wraps the NEW geometry
-	objectsGroup.update((v) => v);
+	pokeScene();
 }
 
 /**
@@ -6486,7 +6486,7 @@ function liveGeometryUpdate() {
 	// grab it draws from the grab's own live endpoints (see refreshEdgeOverlay)
 	refreshEdgeOverlay();
 	refreshFaceWireframe(); // B2: track the gesture live
-	objectsGroup.update((v) => v);
+	pokeScene();
 	const now = Date.now();
 	// The PREVIEW is the one thing that must stay small. A gesture streams this
 	// ~5×/s, so a mesh at the commit ceiling would be ~60 MB/s at every peer —

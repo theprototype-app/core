@@ -14,7 +14,7 @@ function initRectAreaUniforms() {
     RectAreaLightUniformsLib.init();
 }
 import { notifyExternalMove, noteObjectPose } from '$lib/flowRuntime';
-import { globalScene, objectsGroup, TControls, lockedObjects, selectedObject, selectedObjects } from '../stores/sceneStore.js';
+import { globalScene, objectsGroup, TControls, lockedObjects, selectedObject, selectedObjects, pokeScene } from '../stores/sceneStore.js';
 // 27-A: a transform off the wire is sanitised before it reaches the scene graph
 import { sanitizeTransform } from './wireValidate';
 import { noteWireError } from './wireErrors';
@@ -134,7 +134,7 @@ export function createGeometry(command, uuid) {
         if (['Wedge', 'Stairs', 'Arch', 'Corner'].includes(geometry)) object.userData.colliderHint = 'hull';
         sceneObjects.add(object);
         //Trigger reactivity for UI list of objects
-        objectsGroup.update((value) => value);
+        pokeScene();
         // console.log('createGeometry: ' + geometry);
         if (!uuid) controls.attach(object);
         if (!uuid) selectedObject.set(object);
@@ -199,7 +199,7 @@ export function createLight(command, uuid) {
         if (uuid) light.uuid = uuid
         sceneObjects.add(light);
         //Trigger reactivity for UI list of objects
-        objectsGroup.update((value) => value);
+        pokeScene();
         // console.log('createLight: ' + light);
         if (!uuid) controls.attach(light);
         if (!uuid) selectedObject.set(light);
@@ -234,7 +234,7 @@ export function createGroup(command, uuid, groupuuid, name, groupparent, pos, ro
             group.scale.set(scale[0], scale[1], scale[2]);
         }
         //Trigger reactivity for UI list of objects
-        objectsGroup.update((value) => value);
+        pokeScene();
         return group.uuid
     } else {
         // R22 round 32 — A GROUP IS KEYED BY UUID TOO. This branch created a second
@@ -255,7 +255,7 @@ export function createGroup(command, uuid, groupuuid, name, groupparent, pos, ro
                     held.rotation.set(rot[0], rot[1], rot[2]);
                     held.scale.set(scale[0], scale[1], scale[2]);
                 }
-                objectsGroup.update((value) => value);
+                pokeScene();
             }
             return held.uuid;
         }
@@ -275,7 +275,7 @@ export function createGroup(command, uuid, groupuuid, name, groupparent, pos, ro
         }
         
         //Trigger reactivity for UI list of objects
-        objectsGroup.update((value) => value);
+        pokeScene();
         // console.log('createGroup: ' + group);
         if (!uuid) controls.attach(group);
         if (!uuid) selectedObject.set(group);
@@ -303,7 +303,7 @@ export function changeName(uuid, name) {
     if(object) {
         object.name = name;
         //Trigger reactivity for UI list of objects
-        objectsGroup.update((value) => value);
+        pokeScene();
     }
 }
    

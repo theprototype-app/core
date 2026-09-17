@@ -27,6 +27,7 @@ import { canApply, getAuthProvider, dispatchCloudMessage, rolesInfo } from '$lib
 // dispatcher can reject a malformed message before any applier sees it.
 import { validateWireMessage } from '$lib/wireValidate';
 import { noteWireError } from '$lib/wireErrors';
+import { noteWire } from '$lib/sceneBudget';
 import { applyAnnotation, applyAnnotationsSnapshot, sendAnnotations } from '$lib/annotationsHandler';
 import { applyPing } from '$lib/ping';
 import { applyAssetFile, answerAssetRequest, applyAssetThumb, answerAssetThumbRequest, applyAssetStart, applyAssetChunk, applyAssetMissing } from '$lib/assetShare';
@@ -85,7 +86,7 @@ import { applySessionProposal, applySessionAnswer, deferUntilShareChoice, localS
 import { applyRemoteGeometry } from '$lib/geometryEdit';
 import { applyLightTarget } from '$lib/lightParams';
 import { applyObjectFile } from '$lib/animatedImports';
-import { lockedObjects, selectedObject, peerHands, objectsGroup } from '../stores/sceneStore';
+import { lockedObjects, selectedObject, peerHands, objectsGroup, pokeScene } from '../stores/sceneStore';
 import { addMessage, peers, userdata, pendingApprovals, waitingForApproval, showToast } from '../stores/appStore';
 import { get } from 'svelte/store';
 
@@ -616,7 +617,7 @@ export class PeerConnection {
 						const made = get(objectsGroup)?.getObjectByProperty('uuid', data.uuid);
 						if (made) {
 							made.userData = { ...made.userData, ...data.userData };
-							objectsGroup.update((value) => value);
+							pokeScene();
 						}
 					}
 				} else if(data.type == 'name') {
@@ -845,7 +846,9 @@ export class PeerConnection {
 				} else if(data.type == 'color') {
 					colorObject(data.uuid, data.color, data.near, data.far);
 				} else if(data.type == 'loading') {
-					createLoader(data.count, data.uuids);
+					// 26-B (audit M2): WHO announced it, so their teardown can clear the batch. Local
+					// only — the message is unchanged, so an older peer is unaffected.
+					createLoader(data.count, data.uuids, conn.peer);
 				} else if(data.type == 'disconnected') {
 					if (data.peerId === conn.peer) {
 						// the peer says goodbye ITSELF (leaveSession / tab close): tear
@@ -1047,6 +1050,10 @@ export class PeerConnection {
 					noteWireError(conn.peer, 'shape', typeof data);
 					return;
 				}
+				// 26-A (roadmap 26 section 3, audit H7): WHICH STREAM IS CHATTY. Counted per
+				// type here and in `broadcast`; local only, never replicated, and the byte
+				// figure is a 1-in-16 sample so the measurement cannot become the cost.
+				noteWire('in', data);
 				// …then the shape its own type implies, so an applier cannot throw halfway
 				// through applying half a message. A type absent from the table is ALLOWED,
 				// which is what keeps a newer peer's messages working.
@@ -1515,6 +1522,7 @@ export class PeerConnection {
 	// conn can't throw mid-loop and starve the rest of the mesh (172).
 	/** @param {any} payload */
 	broadcast(payload) {
+		noteWire('out', payload);
 		// TWO REASONS TO WITHHOLD, and they are different arguments about the same peer.
 		//
 		// P2b, BANDWIDTH: pose streams (`camera`, `vrhands`) are bytes nobody in another

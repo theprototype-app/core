@@ -9,7 +9,7 @@ import { STLLoader } from 'three/addons/loaders/STLLoader.js';
 import { FBXLoader } from 'three/addons/loaders/FBXLoader.js';
 import { get } from 'svelte/store';
 import { scenePost } from '$lib/scenePost';
-import { objectsGroup, TControls, selectedObject, selectedObjects } from '../stores/sceneStore.js';
+import { objectsGroup, TControls, selectedObject, selectedObjects, pokeScene } from '../stores/sceneStore.js';
 import { sendObjects } from './commandsHandler.svelte';
 import { recordObjectPresence } from '$lib/history';
 // 17-D2: the .mtl texture path reuses the app's own downscale-to-dataURL step.
@@ -330,7 +330,7 @@ function addAnimatedImport(result, buffer, name, kind) {
 	const root = result.scene;
 	root.name = name ?? 'Animated import';
 	sceneObjects.add(root);
-	objectsGroup.update((value) => value);
+	pokeScene();
 	controls.attach(root);
 	registerAnimatedImport(root, result.animations, buffer, kind ?? 'gltf');
 	recordAnimatedImport(root);
@@ -350,7 +350,7 @@ function addImported(imported, name, position) {
 	if (position) imported.position.fromArray(position);
 	sceneObjects.add(imported);
 	//Trigger reactivity for UI list of objects
-	objectsGroup.update((value) => value);
+	pokeScene();
 	controls.attach(imported);
 	recordObjectPresence('create', imported);
 	sendObjects(/** @type {any} */ (null), imported);
@@ -734,7 +734,7 @@ try {
       sceneObjects.add(mesh)
     });
     //Trigger reactivity for UI list of objects
-    objectsGroup.update((value) => value);
+    pokeScene();
     //Send object to peers
     peer.send({type: 'object', element: json, uuids: uuids})
     } else if (file.name.split('.').pop() == 'json') {
@@ -753,7 +753,7 @@ try {
         peer.send({type: 'object', element: child.toJSON()})
 	});
 	//Trigger reactivity for UI list of objects
-	objectsGroup.update((value) => value);
+	pokeScene();
 	// Free memory by emptying the array
 	objectsArray.length = 0;
 	console.log('Scene load complete');

@@ -19,6 +19,8 @@
     import { armExplorerSceneSave, explorerClose } from '../../stores/appStore'
     import { peers, loading, loadingcount, pendingApprovals, waitingForApproval, userdata, toastStore, fixLight, showSidebar, specatorMode, restorePanels, appNotice, connectDrawerOpen, connectDrawerTab, toastsInDrawerOnly, showInfoToast, dismissToastById } from '../../stores/appStore'
     import { restoreAvailable, restoreSnapshot, dismissRestore } from '$lib/autosave'
+    import { ingestGate, resolveIngestGate } from '$lib/commandsHandler.svelte'
+    import { ingestVerdict, profileFor } from '$lib/sceneBudget'
     import { cancelOutboundRequest } from '$lib/peerApproval'
     // 27-B: the ONE sticky card for an uncaught error. This file already mirrors
     // state stores into sticky toasts (restoreAvailable below); diagnostics.js stays a
@@ -147,18 +149,21 @@ const transientToasts = $derived($toastStore.filter((t: any) => !t?.sticky));
 const hiddenCount = $derived(Math.max(0, transientToasts.length - MAX_TOASTS));
 const visibleToasts = $derived([...transientToasts.slice(-MAX_TOASTS), ...stickyToasts]);
 
+// 26-B (audit M6): ONE traversal, then set lookups. This ran
+// `getObjectByProperty` — a full tree walk — TWICE per outstanding uuid, on every
+// scene poke: with 1,000 objects still to arrive over a 1,000-object scene that is
+// two million node visits per poke, and the receive path poked once per object. It
+// was the single most expensive consumer of the poke and a large part of the
+// reported freeze. Same verdict, O(objects + outstanding) instead of O(both).
 $effect(() => {
-    if($loading.length > 0)
-    if($objectsGroup)
-    // Remove loaded UUIDs from the loading array
-    // once their corresponding objects are available
-    $loading.forEach((uuid) => {
-        $objectsGroup.getObjectByProperty('uuid', uuid)
-        if ($objectsGroup.getObjectByProperty('uuid', uuid)) {
-            $loading.splice($loading.indexOf(uuid, 0), 1);
-            $loading = $loading // Trigger reactivity
-        }
-    })
+    const group = $objectsGroup;
+    const outstanding = $loading;
+    if (!group || !outstanding.length) return;
+    /** @type {Set<string>} */
+    const present = new Set();
+    group.traverse((/** @type {any} */ o) => present.add(o.uuid));
+    const left = outstanding.filter((/** @type {string} */ uuid) => !present.has(uuid));
+    if (left.length !== outstanding.length) loading.set(left);
 });
 
 // 15-P2: "Receiving objects" visibility. The old machinery (showToast +
@@ -257,12 +262,46 @@ $effect(() => {
     else dismissToastById('diagnostics-error');
 });
 
+/** 26-G: the restore prompt's budget line reads the same verdict the ingest gate does. */
+function restoreLimit() {
+    return ingestVerdict(0, 1, profileFor(null)).limit;
+}
+function restoreOverBudget(objects: number) {
+    return ingestVerdict(0, Number(objects) || 0, profileFor(null)).gate;
+}
+
+// 26-C (roadmap 26 Stage 2): A SCENE BIGGER THAN THIS DEVICE'S BUDGET IS ARRIVING.
+// The objects are PARKED in the ingest queue, not applied, so this card is the only
+// thing between them and the scene — hence `noClose`: dismissing it with an X would
+// leave the transfer stalled with nothing left to resume it. The state store is the
+// seam (the restoreAvailable idiom), so commandsHandler never imports the UI.
+$effect(() => {
+    const gate = $ingestGate;
+    if (gate)
+        showInfoToast(
+            'ingest-gate',
+            `This scene has ${gate.count} objects — that would take this device to ${gate.total}, above the ${gate.limit} recommended here.`,
+            [
+                { label: 'Load all', action: () => resolveIngestGate('all') },
+                { label: `Load the first ${gate.allowed}`, action: () => resolveIngestGate('some') },
+                { label: 'Cancel', action: () => resolveIngestGate('cancel') }
+            ],
+            undefined,
+            true
+        );
+    else dismissToastById('ingest-gate');
+});
+
 $effect(() => {
     const snap = $restoreAvailable;
     if (snap)
         showInfoToast(
             'restore-session',
             `Restore previous session? ${snap.objects} objects, saved ${new Date(snap.ts).toLocaleTimeString()}` +
+                // 26-G (roadmap 26 Stage 4, last bullet): say how the snapshot compares with
+                // this device's budget BEFORE restoring it. A phone that died restoring a
+                // 50MB scene comes back to this exact prompt, and the count is the reason.
+                (restoreOverBudget(snap.objects) ? ` — above the ${restoreLimit()} recommended for this device.` : '') +
                 // 27-D: `risky` means the last attempt to restore THIS snapshot never
                 // reached a clean flow tick. Auto-restore is already skipped for it; say
                 // why, so pressing Restore again is a choice rather than a surprise.

@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { writable, get } from 'svelte/store';
-import { objectsGroup } from '../stores/sceneStore';
+import { objectsGroup, pokeScene } from '../stores/sceneStore';
 import { peers, showToast } from '../stores/appStore';
 import { recordObjectPresence, beginHistoryBatch, endHistoryBatch } from './history';
 import { patch as audioPatch, addCablesRemapped } from './audioPatch';
@@ -449,7 +449,7 @@ export function instantiatePrefab(prefab, position) {
 	if (cables.length) beginHistoryBatch();
 	try {
 		group.add(object);
-		objectsGroup.update((value) => value);
+		pokeScene();
 		recordObjectPresence('create', object);
 		/** @type {any} */
 		const peer = get(peers);

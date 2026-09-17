@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { Archive, BookOpen, FileInput, FolderOpen, LayoutTemplate, Puzzle, Save, Settings, SlidersHorizontal, Trash2, Wrench } from '@lucide/svelte';
+	import { Archive, BookOpen, FileInput, FolderOpen, Gauge, LayoutTemplate, Puzzle, Save, Settings, SlidersHorizontal, Trash2, Wrench } from '@lucide/svelte';
 	import '../../app.css';
 	import { moduleToolboxes, openToolboxes, buildToolboxItems } from '$lib/moduleToolboxes';
 	import '../../styles/menu.css';
@@ -26,6 +26,7 @@
 	import CloudSlot from '../CloudSlot.svelte';
 	import { whatsNewUnseen, openWhatsNew } from '$lib/whatsNew';
 	import { safeStorage } from '$lib/safeStorage';
+	import { statsOpen } from '$lib/sceneBudget';
 
 	// 203: redesigned as a compact floating panel — flat list (order preserved,
 	// no boxed group / section headers / vertical bar), a fast fade-in (was a
@@ -257,6 +258,11 @@
 		<div class="side-div"></div>
 
 		<!-- App -->
+		<!-- 26-A: what the scene costs. It sits beside Settings rather than under it
+		     because it is something you WATCH while working, not something you set. -->
+		<button id="open-stats" class="side-row" onclick={() => { statsOpen.set(true); closeMenu.set(true); }}>
+			<span class="side-ico"><Gauge size={16} aria-hidden="true" /></span><span class="flex-1 whitespace-nowrap">Statistics</span>
+		</button>
 		<button class="side-row" onclick={() => { settingsOpen.set(!$settingsOpen); closeMenu.set(true); }}>
 			<span class="side-ico"><Settings size={16} aria-hidden="true" /></span><span class="flex-1 whitespace-nowrap">Settings</span>
 		</button>

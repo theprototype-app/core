@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { get, writable } from 'svelte/store';
-import { globalScene, objectsGroup, TControls, selectedObjects, isVRMode } from '../stores/sceneStore';
+import { globalScene, objectsGroup, TControls, selectedObjects, isVRMode, pokeScene } from '../stores/sceneStore';
 import { peers } from '../stores/appStore';
 import { recordTransformSet } from './history';
 import { hasOrigin, originWorld, setOriginFromWorld } from './objectOrigin';
@@ -256,7 +256,7 @@ export function applyPivotTransform(mutate) {
 	if (customOrigin) customOrigin.copy(pivot.position);
 	if (transientPivot) transientPivot.copy(pivot.position);
 	publishPivotPose();
-	objectsGroup.update((value) => value);
+	pokeScene();
 	return true;
 }
 
@@ -405,7 +405,7 @@ function onDraggingChanged(/** @type {any} */ event) {
 		pivotStartInverse = null;
 		// the transient snap anchor rides where the drag left the pivot (19-B)
 		if (transientPivot) transientPivot.copy(pivot.position);
-		objectsGroup.update((value) => value);
+		pokeScene();
 	}
 }
 

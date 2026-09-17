@@ -1,7 +1,9 @@
 import * as THREE from 'three';
+// 26-G: the streak watch is a pure leaf (stores + sceneBudget) — no edge into history.
+import { createStreakWatch, PHYSICS_SLOW_MS, PHYSICS_SLOW_STEPS } from './overloadGuard';
 import { writable, get } from 'svelte/store';
 import { flowGraphs, allNodes, allEdges, SCENE_GRAPH } from '../stores/flowStore';
-import { objectsGroup, lockedObjects, selectedObject, selectedObjects } from '../stores/sceneStore';
+import { objectsGroup, lockedObjects, selectedObject, selectedObjects, pokeScene } from '../stores/sceneStore';
 import { peers, showToast, openSceneSection } from '../stores/appStore';
 import { recordTransformSet, recordEntry } from './history';
 import {
@@ -458,7 +460,7 @@ export function setPhysicsFor(uuid, patch) {
 	/** @type {any} */
 	const peer = get(peers);
 	peer?.send({ type: 'objectParameters', parameter: 'physics', uuid, physics: next });
-	objectsGroup.update((v) => v); // collider viz re-syncs from the poke
+	pokeScene(); // collider viz re-syncs from the poke
 	physicsShapeChanged(uuid); // CL-A A2: live mid-sim collider rebuild
 	return next;
 }
@@ -488,7 +490,7 @@ export function enablePhysicsOnSelection() {
 		showToast('Select an object first — then Enable physics makes it fall and collide');
 		return 0;
 	}
-	objectsGroup.update((v) => v);
+	pokeScene();
 	selectedObject.update((v) => v);
 	showToast(count === 1 ? 'Physics enabled — dynamic, mass 1' : 'Physics enabled on ' + count + ' objects — dynamic, mass 1');
 	return count;
@@ -1236,7 +1238,7 @@ export function applyThrow(data) {
 	// external kinematic hold and EATS the throw
 	entry.lastWritten.pos.copy(object.position);
 	entry.lastWritten.quat.copy(object.quaternion);
-	objectsGroup.update((value) => value);
+	pokeScene();
 	return true;
 }
 
@@ -1251,7 +1253,15 @@ const MAX_SUBSTEPS = 8;
 /** @param {number} now */
 function step(now) {
 	try {
+		const started = performance.now();
 		stepInner(now);
+		// 26-G (roadmap 26 Stage 3): A SIMULATION THAT CANNOT KEEP UP. 27-C catches a step
+		// that THROWS; nothing caught one that simply takes longer than the frame it runs
+		// in, which turns every frame late before rendering starts and reads as the app
+		// freezing. Streak-based and ONCE per streak (a single slow step while a big body
+		// is built is not a scene too heavy to simulate), and the toast carries Resume so
+		// the stop is never a dead end.
+		if (slowStepWatch.note(performance.now() - started)) stopForSlowSteps();
 	} catch (error) {
 		console.warn('physics step failed, stopping the simulation', error);
 		// stopSimulation clears the post-tick hook itself, so this cannot re-enter.
@@ -1263,6 +1273,31 @@ function step(now) {
 		}
 		showToast('Physics stopped after an error - the scene is intact. Press play to run it again.');
 	}
+}
+
+const slowStepWatch = createStreakWatch({ overMs: PHYSICS_SLOW_MS, count: PHYSICS_SLOW_STEPS });
+
+/** ONE stop path for the slow-step streak, shared by the real step and the test hook so
+ * the two cannot drift apart. */
+function stopForSlowSteps() {
+	slowStepWatch.reset();
+	stopSimulation({ reason: 'too slow' });
+	showToast('Physics stopped — the simulation was too slow for this device (over ' + PHYSICS_SLOW_MS + 'ms a step). The scene is intact.', [
+		{ label: 'Resume', action: () => { void toggleSimulation(); } }
+	]);
+}
+
+/** TEST-ONLY: feed `n` step durations of `ms` through the SAME watch the real step uses,
+ * so the slow-step stop is provable without building a scene slow enough on the CI box. */
+export function noteSlowStepsForTest(/** @type {number} */ n, /** @type {number} */ ms) {
+	let fired = false;
+	for (let i = 0; i < n; i++) {
+		if (slowStepWatch.note(ms)) {
+			fired = true;
+			stopForSlowSteps();
+		}
+	}
+	return fired;
 }
 
 /** TEST-ONLY: force the next step to throw, so the guard around it is provable. */
@@ -1448,7 +1483,7 @@ function stepInner(now) {
 		}
 	});
 	pendingOob.forEach((entry) => handleOutOfBounds(entry, oobActionNow));
-	objectsGroup.update((value) => value);
+	pokeScene();
 }
 
 /**
@@ -1600,7 +1635,7 @@ export function stopSimulation(opts = {}) {
 	simPaused.set(false);
 	if (peer) peer.send({ type: 'simulate', running: false, peerId: peer.peer.id });
 	if (items.length > 0) showToast('Simulation stopped — Ctrl+Z restores the initial layout');
-	objectsGroup.update((value) => value);
+	pokeScene();
 }
 
 /** Reset: restore the initial layout and stop (no history entry — net no-op). */

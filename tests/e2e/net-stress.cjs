@@ -1,7 +1,7 @@
 // B5 — mesh network stress harness (LOCAL PeerJS ONLY).
 //
-//   node tests/e2e/net-stress.cjs [--peers 4,6,8,10] [--load 20] [--objects 20]
-//                                 [--out docs/net-stress.md] [--hz 10]
+//   node tests/e2e/net-stress.cjs [--peers 8,10,12,16] [--load 20] [--objects 20]
+//                                 [--out docs/net-stress.md] [--hz 10] [--presence 10]
 //
 // NOT a .test.cjs on purpose: a full sweep runs for many minutes, well past the
 // runner's per-suite timeout. `npm run e2e -- net-stress` runs the small
@@ -14,20 +14,25 @@
 //   - message loss   — sequence numbers over a synthetic mutation load
 //   - fan-out cost   — wall time of one PeerConnection.send() across N-1 conns
 //   - renderer FPS   — idle baseline vs under load (relative; see the caveat below)
+//   - long tasks/min — main-thread blocks over 50ms per peer under the load (25-G)
+//   - presence       — with --presence N, every peer orbits its camera for N seconds and
+//                      each counts the `camera` messages it RECEIVES per sender: the
+//                      audit-H7 stream, now rate-gated (25-C), at mesh scale (25-G)
 //
 // HARD RULE: local signaling server only. Pointing a 10-peer flood at the public
-// or self-hosted production box is abuse, so the harness refuses any APP_URL that
-// isn't localhost and spawns its own `peer` server on :9001 (the same one the
-// .vscode "peerjs" task starts).
+// or self-hosted production box is abuse, so the harness spawns its own `peer` server on
+// :9001 (localSignal.cjs) and SEEDS every page with `peerServerConfig = {mode:'local'}` —
+// which is what actually keeps the pages off production, whatever the app's hostname.
+// The APP_URL must still resolve to this machine (a lane serves theprototype.app via
+// /etc/hosts), so the dev server being flooded is our own.
 //
 // CAVEAT on FPS: N headless Chromium contexts each render a WebGL scene on the
-// same machine (SwiftShader, no GPU), so absolute FPS says more about the host
-// than about the protocol. Only the idle-vs-load DELTA at a given N is meaningful.
+// same machine, so absolute FPS says more about the host than about the protocol.
+// Only the idle-vs-load DELTA at a given N is meaningful. The rig launches with
+// GPU_ARGS; on a box without a GPU that silently falls back to SwiftShader.
 
 const fs = require('fs');
 const path = require('path');
-const https = require('https');
-const { spawn } = require('child_process');
 
 // ---------------------------------------------------------------- arguments
 const argv = process.argv.slice(2);
@@ -36,7 +41,7 @@ function arg(name, fallback) {
 	const i = argv.indexOf('--' + name);
 	return i >= 0 && argv[i + 1] ? argv[i + 1] : fallback;
 }
-const SIZES = arg('peers', '4,6,8,10')
+const SIZES = arg('peers', '8,10,12,16')
 	.split(',')
 	.map((n) => parseInt(n, 10))
 	.filter((n) => n >= 2);
@@ -44,6 +49,8 @@ const LOAD_SECS = parseInt(arg('load', '20'), 10);
 const HZ = parseInt(arg('hz', '10'), 10);
 const OBJECTS = parseInt(arg('objects', '20'), 10);
 const OUT = arg('out', '');
+// 25-G: seconds of continuous camera motion on every peer; 0 = skip the presence phase
+const PRESENCE_SECS = parseInt(arg('presence', '0'), 10);
 // --logs echoes each page's own console (peerHandler is chatty about the connect
 // dance) with a ms stamp, which is the only way to see WHY a join stalls
 const LOGS = argv.includes('--logs');
@@ -53,52 +60,17 @@ const T0 = Date.now();
 const APP_URL = process.env.APP_URL || 'https://localhost:5185/';
 process.env.APP_URL = APP_URL;
 const host = new URL(APP_URL).hostname;
-if (!/^(localhost|127\.0\.0\.1|\[?::1\]?)$/.test(host)) {
-	console.error(
-		'REFUSING to run: APP_URL host is "' + host + '".\n' +
-			'The stress harness floods the signaling server and must only ever point at a\n' +
-			'LOCAL dev server (which routes PeerJS to localhost:9001). See the file header.'
-	);
-	process.exit(2);
-}
-
 const h = require('./helpers.cjs');
+const { SIGNAL_PORT, LOCAL_PEER_STORAGE, ensureSignalServer } = require('./localSignal.cjs');
 
-// ------------------------------------------------------- local peerjs server
-const SIGNAL_PORT = 9001;
-
-function signalUp() {
-	return new Promise((resolve) => {
-		const req = https.get(
-			{ host: 'localhost', port: SIGNAL_PORT, path: '/', rejectUnauthorized: false, timeout: 1500 },
-			(res) => {
-				res.resume();
-				resolve(res.statusCode === 200);
-			}
-		);
-		req.on('error', () => resolve(false));
-		req.on('timeout', () => { req.destroy(); resolve(false); });
-	});
-}
-
-async function ensureSignalServer() {
-	if (await signalUp()) return null;
-	const bin = path.join(ROOT, 'node_modules', 'peer', 'dist', 'bin', 'peerjs.js');
-	const key = path.join(ROOT, 'certs', 'localhost.key');
-	const crt = path.join(ROOT, 'certs', 'localhost.crt');
-	if (!fs.existsSync(bin)) throw new Error('the `peer` devDependency is missing — run npm ci');
-	if (!fs.existsSync(key)) throw new Error('certs/localhost.key missing — run npm run certs');
-	console.log('starting local PeerJS server on :' + SIGNAL_PORT);
-	const child = spawn(process.execPath, [bin, '--port', String(SIGNAL_PORT), '--sslkey', key, '--sslcert', crt], {
-		cwd: ROOT,
-		stdio: 'ignore'
-	});
-	for (let i = 0; i < 40; i++) {
-		await sleep(250);
-		if (await signalUp()) return child;
-	}
-	try { child.kill(); } catch { /* already gone */ }
-	throw new Error('local PeerJS server did not come up on :' + SIGNAL_PORT);
+/** Does the APP_URL host resolve to this machine? @param {string} name */
+function isLoopback(name) {
+	if (/^(localhost|127\.0\.0\.1|\[?::1\]?)$/.test(name)) return Promise.resolve(true);
+	return new Promise((resolve) =>
+		require('dns').lookup(name, { all: true }, (err, addrs) =>
+			resolve(!err && addrs.length > 0 && addrs.every((a) => a.address === '127.0.0.1' || a.address === '::1'))
+		)
+	);
 }
 
 // ------------------------------------------------------------------- utils
@@ -147,9 +119,43 @@ function installProbe(peer) {
 			// per-type traffic accounting — ON during joins (where the interesting
 			// asymmetry is), OFF under load so the sizing cost can't skew FPS
 			accounting: true,
-			traffic: { count: 0, bytes: 0, byType: {} }
+			traffic: { count: 0, bytes: 0, byType: {} },
+			// 25-G: camera messages received per SENDER, and the main thread's long tasks
+			cam: {},
+			tasks: []
 		});
 		ns.pc = pc;
+		if (!ns.taskObserver) {
+			try {
+				ns.taskObserver = new PerformanceObserver((list) => {
+					for (const e of list.getEntries()) ns.tasks.push(e.startTime);
+				});
+				ns.taskObserver.observe({ entryTypes: ['longtask'] });
+			} catch {
+				ns.taskObserver = null;
+			}
+		}
+		/** long tasks that started in the last `ms` */
+		ns.tasksIn = (/** @type {number} */ ms) => ns.tasks.filter((/** @type {number} */ t) => t >= performance.now() - ms).length;
+		/** orbit the editor camera every frame until stopped — the presence stream's source */
+		ns.orbitStart = () => {
+			let controls;
+			w.__stores.orbitControls.subscribe((/** @type {any} */ c) => (controls = c))();
+			ns.orbitFrames = 0;
+			ns.orbiting = true;
+			const tick = () => {
+				if (!ns.orbiting) return;
+				if (controls?._rotateLeft) controls._rotateLeft(0.03);
+				controls?.update?.();
+				ns.orbitFrames++;
+				requestAnimationFrame(tick);
+			};
+			requestAnimationFrame(tick);
+		};
+		ns.orbitStop = () => {
+			ns.orbiting = false;
+			return ns.orbitFrames;
+		};
 
 		/** rough wire size; binarypack is compact but relative sizes are what matter */
 		ns.sizeOf = (/** @type {any} */ d) => {
@@ -196,6 +202,7 @@ function installProbe(peer) {
 				ns.hooked.add(c);
 				added++;
 				c.on('data', (/** @type {any} */ d) => {
+					if (d && d.type === 'camera' && d.peerId) ns.cam[d.peerId] = (ns.cam[d.peerId] || 0) + 1;
 					if (ns.accounting && d) {
 						const t = typeof d === 'string' ? 'string' : d.type || 'unknown';
 						const tr = ns.traffic;
@@ -364,7 +371,7 @@ async function runSize(N) {
 			// measures render starvation. We want the NETWORK to be the bottleneck.
 			const p = await h.setupPage(browser, 'P' + i, {
 				context: { viewport: { width: 800, height: 600 } },
-				storage: { viewMode: 'shaded' }
+				storage: { viewMode: 'shaded', ...LOCAL_PEER_STORAGE }
 			});
 			if (LOGS) {
 				const tag = 'P' + i + '/' + p.id;
@@ -499,12 +506,65 @@ async function runSize(N) {
 
 		// --- load: every peer broadcasts `move` at hz for `secs`, then a ramp to
 		// find where the mesh actually starts hurting
+		/**
+		 * 25-G: every peer orbits its camera for `secs`, and each counts the `camera` messages
+		 * it RECEIVES per sender. The rate is per sender per receiver, stated beside the
+		 * sender's own frame count — a 50ms gate at 60fps is ~0.33 messages a frame.
+		 * @param {number} secs
+		 */
+		const presencePhase = async (secs) => {
+			for (const p of peers) await p.page.evaluate(() => window.__ns.hook());
+			for (const p of peers) await p.page.evaluate(() => { window.__ns.cam = {}; });
+			for (const p of peers) await p.page.evaluate(() => window.__ns.orbitStart());
+			await sleep(secs * 1000);
+			const frames = [];
+			for (const p of peers) frames.push(await p.page.evaluate(() => window.__ns.orbitStop()));
+			const longPerMin = [];
+			for (const p of peers) longPerMin.push(await p.page.evaluate((ms) => window.__ns.tasksIn(ms), secs * 1000));
+			await sleep(1000);
+			/** received camera msgs/s per peer, summed over every sender */
+			const receivedPerPeer = [];
+			/** per sender->receiver pair, msgs per sender frame */
+			const perFrame = [];
+			let pairsSilent = 0;
+			for (let i = 0; i < N; i++) {
+				const cam = await peers[i].page.evaluate(() => ({ ...window.__ns.cam }));
+				let total = 0;
+				for (let j = 0; j < N; j++) {
+					if (i === j) continue;
+					const got = cam[peers[j].id] || 0;
+					total += got;
+					if (!got) pairsSilent++;
+					if (frames[j]) perFrame.push(got / frames[j]);
+				}
+				receivedPerPeer.push(total / secs);
+			}
+			const out = {
+				secs,
+				senderFps: median(frames.map((f) => f / secs)),
+				receivedPerPeerPerSec: median(receivedPerPeer),
+				maxReceivedPerPeerPerSec: Math.max(...receivedPerPeer),
+				msgsPerSenderFrame: stats(perFrame),
+				pairsSilent,
+				longTasksPerMin: median(longPerMin.map((n) => (n * 60) / secs)),
+				maxLongTasksPerMin: Math.max(...longPerMin.map((n) => (n * 60) / secs))
+			};
+			console.log(
+				'  presence: ' + r(out.receivedPerPeerPerSec) + ' camera msgs/s received per peer (max ' + r(out.maxReceivedPerPeerPerSec) + ')' +
+					', ' + r(out.msgsPerSenderFrame.p50, 2) + ' msgs per sender frame, sender fps ' + r(out.senderFps) +
+					', silent pairs ' + pairsSilent + ', long tasks/min ' + r(out.longTasksPerMin) + ' (max ' + r(out.maxLongTasksPerMin) + ')'
+			);
+			return out;
+		};
+
 		/** @param {number} hz @param {number} secs */
 		const loadPhase = async (hz, secs) => {
 			for (const p of peers) await p.page.evaluate(() => window.__ns.hook());
 			for (const p of peers) await p.page.evaluate(() => window.__ns.fpsStart());
 			for (const p of peers) await p.page.evaluate(([u, z]) => window.__ns.startLoad(u, z), [uuid, hz]);
 			await sleep(secs * 1000);
+			const longPerMin = [];
+			for (const p of peers) longPerMin.push(await p.page.evaluate((ms) => window.__ns.tasksIn(ms), secs * 1000));
 			const sent = [];
 			for (const p of peers) sent.push(await p.page.evaluate(() => window.__ns.stopLoad()));
 			const fps = [];
@@ -549,6 +609,7 @@ async function runSize(N) {
 				sendMs: stats(sendMs),
 				oneWay: stats(lat),
 				fps: median(fps),
+				longTasksPerMin: median(longPerMin.map((n) => (n * 60) / secs)),
 				msgs: { expected, got, lossPct: expected ? (100 * (expected - got)) / expected : 0 },
 				meshMsgsPerSec: hz * N * (N - 1)
 			};
@@ -564,6 +625,7 @@ async function runSize(N) {
 		};
 
 		row.steady = await loadPhase(HZ, LOAD_SECS);
+		if (PRESENCE_SECS > 0) row.presence = await presencePhase(PRESENCE_SECS);
 		row.ramp = [];
 		for (const hz of [30, 60, 120]) row.ramp.push(await loadPhase(hz, 8));
 
@@ -624,8 +686,8 @@ function report(rows) {
 	lines.push('');
 	lines.push('## Load ramp (8s per step; "emitted" = what the send timer actually managed)');
 	lines.push('');
-	lines.push('| N | Hz/peer | mesh msgs/s | loss | one-way p50/p95 | send() p95 | fps | emitted/wanted |');
-	lines.push('|---|---|---|---|---|---|---|---|');
+	lines.push('| N | Hz/peer | mesh msgs/s | loss | one-way p50/p95 | send() p95 | fps | long tasks/min | emitted/wanted |');
+	lines.push('|---|---|---|---|---|---|---|---|---|');
 	for (const w of rows) {
 		for (const s of [w.steady, ...(w.ramp || [])]) {
 			if (!s) continue;
@@ -634,7 +696,26 @@ function report(rows) {
 					' | ' + r(s.oneWay.p50) + ' / ' + r(s.oneWay.p95) +
 					' | ' + r(s.sendMs.p95, 2) +
 					' | ' + r(s.fps) +
+					' | ' + r(s.longTasksPerMin) +
 					' | ' + r(s.sentPerPeer, 0) + '/' + s.wantedPerPeer + ' |'
+			);
+		}
+	}
+	if (rows.some((w) => w.presence)) {
+		lines.push('');
+		lines.push('## Presence (25-G): every peer orbiting for ' + PRESENCE_SECS + 's');
+		lines.push('');
+		lines.push('| N | sender fps | camera msgs/s received per peer (median / max) | msgs per sender frame p50/max | silent pairs | long tasks/min (median / max) |');
+		lines.push('|---|---|---|---|---|---|');
+		for (const w of rows) {
+			const p = w.presence;
+			if (!p) continue;
+			lines.push(
+				'| ' + w.N + ' | ' + r(p.senderFps) +
+					' | ' + r(p.receivedPerPeerPerSec) + ' / ' + r(p.maxReceivedPerPeerPerSec) +
+					' | ' + r(p.msgsPerSenderFrame.p50, 2) + ' / ' + r(p.msgsPerSenderFrame.max, 2) +
+					' | ' + p.pairsSilent +
+					' | ' + r(p.longTasksPerMin) + ' / ' + r(p.maxLongTasksPerMin) + ' |'
 			);
 		}
 	}
@@ -649,6 +730,13 @@ function report(rows) {
 (async () => {
 	let server = null;
 	try {
+		if (!(await isLoopback(host))) {
+			console.error(
+				'REFUSING to run: APP_URL host "' + host + '" does not resolve to this machine.\n' +
+					'The rig floods its dev server and must only ever point at a LOCAL one. See the file header.'
+			);
+			process.exit(2);
+		}
 		server = await ensureSignalServer();
 		console.log('app: ' + APP_URL + '   signaling: https://localhost:' + SIGNAL_PORT);
 		const rows = [];

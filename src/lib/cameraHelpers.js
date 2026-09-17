@@ -8,6 +8,7 @@ import { wireframeActive } from './viewMode';
 // without the debug toggle, or a camera preview) — see helperLayer.js for the rule
 import { markHelper, setMarkersHidden, helpersHidden, helpersInPlay } from './helperLayer';
 import { isLocked } from '../stores/sceneStore';
+import { safeStorage } from './safeStorage';
 
 // 16-P5: frustum visualization for camera OBJECTS — the colliderHelpers pattern.
 // One wireframe frustum per camera object, built from `userData.camera` and
@@ -18,7 +19,7 @@ import { isLocked } from '../stores/sceneStore';
 // much of a camera. `showCameraFrustums` is a LOCAL pref for turning it off.
 
 export const showCameraFrustums = writable(
-	typeof localStorage === 'undefined' || localStorage.getItem('showCameraFrustums') !== 'false'
+	typeof localStorage === 'undefined' || safeStorage.getItem('showCameraFrustums') !== 'false'
 );
 
 /** the camera currently PREVIEWED — its own frustum is pointless (you're inside it)
@@ -185,7 +186,7 @@ export function startCameraHelpers() {
 	});
 	showCameraFrustums.subscribe((value) => {
 		try {
-			localStorage.setItem('showCameraFrustums', String(value));
+			safeStorage.setItem('showCameraFrustums', String(value));
 		} catch {}
 		sync();
 	});

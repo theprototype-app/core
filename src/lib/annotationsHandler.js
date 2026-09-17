@@ -21,6 +21,7 @@ import {
 } from '../stores/appStore';
 import { registerAnnotationsPersistence, markAnnotationsDirty } from './autosave';
 import { flyTo } from './objectActions';
+import { safeStorage } from './safeStorage';
 
 // Synced note pins on objects. Offsets are object-local so pins follow their
 // object; one note per pin. Replication mirrors the flow-graph pattern:
@@ -49,10 +50,10 @@ export const noteMarkers = writable([]);
 
 /** H3: LOCAL pref — pins visible in the viewport (not replicated) */
 export const showNotePins = writable(
-	typeof localStorage === 'undefined' || localStorage.getItem('showNotePins') !== 'false'
+	typeof localStorage === 'undefined' || safeStorage.getItem('showNotePins') !== 'false'
 );
 if (typeof localStorage !== 'undefined')
-	showNotePins.subscribe((value) => localStorage.setItem('showNotePins', String(value)));
+	showNotePins.subscribe((value) => safeStorage.setItem('showNotePins', String(value)));
 
 /** H9: pin shapes (replicated per note; 'round' = the historical pin) */
 export const NOTE_SHAPES = ['round', 'star', 'square'];
@@ -172,9 +173,9 @@ let authorKeyCache = '';
 export function myAuthorKey() {
 	if (authorKeyCache) return authorKeyCache;
 	try {
-		const stored = localStorage.getItem(AUTHOR_KEY);
+		const stored = safeStorage.getItem(AUTHOR_KEY);
 		authorKeyCache = stored || crypto.randomUUID();
-		if (!stored) localStorage.setItem(AUTHOR_KEY, authorKeyCache);
+		if (!stored) safeStorage.setItem(AUTHOR_KEY, authorKeyCache);
 	} catch {
 		authorKeyCache = 'local';
 	}

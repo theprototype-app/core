@@ -1,7 +1,7 @@
 // @ts-ignore - no bundled three type declarations (project-wide)
 import * as THREE from 'three';
 import { writable, get } from 'svelte/store';
-import { globalScene, objectsGroup, selectedObject } from '../stores/sceneStore';
+import { globalScene, objectsGroup, selectedObject, pokeScene } from '../stores/sceneStore';
 import { peers, showToast } from '../stores/appStore';
 import { recordObjectPresence, recordEntry, registerHistoryKind } from './history';
 import { drawMode, drawTool, drawColor, drawSize } from './drawMode';
@@ -245,7 +245,7 @@ export function finishSpline() {
 	const mesh = createSplineMesh(spline, center);
 	if (!mesh) return null;
 	group.add(mesh);
-	objectsGroup.update((value) => value);
+	pokeScene();
 	recordObjectPresence('create', mesh);
 	/** @type {any} */
 	const peer = get(peers);
@@ -291,7 +291,7 @@ export function applySplineEdit(uuid, spline) {
 	object.geometry = geometry;
 	object.userData.spline = data;
 	if (object.material && !Array.isArray(object.material)) object.material.color?.set?.(data.color);
-	objectsGroup.update((value) => value);
+	pokeScene();
 	selectedObject.update((value) => value); // keep the Spline inspector rows live
 	fireRefresh(uuid);
 	return true;

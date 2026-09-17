@@ -12,6 +12,10 @@
 	import { gamepadPrefs, setGamepadPrefs, DEADZONE_RANGE, SENSITIVITY_RANGE } from '$lib/gamepadPrefs';
 	import { drawerSlot, cloudPluginInfo } from '$lib/cloudHooks';
 	import { versionString } from '$lib/version.js';
+	// 27-B: the diagnostics bundle — clipboard only, nothing leaves the browser
+	import { copyDiagnostics } from '$lib/diagnostics';
+	// 27-E: session size. LOCAL, like every other connection preference.
+	import { softPeerCap, HARD_PEER_CAP, SOFT_PEER_CAP_DEFAULT } from '$lib/connectionState';
 	const appVersionString = versionString();
 	import { vrFaceCap, VR_FACE_CAP } from '$lib/faceEdit';
 	import { doubleClickAction, DOUBLE_CLICK_ACTIONS } from '$lib/selectionPrefs';
@@ -20,6 +24,7 @@
 	import { syncedAnimations } from '../../stores/flowStore';
 	import { spatialVoice } from '$lib/voiceChat';
 	import { shadowQuality } from '$lib/lightParams';
+	import { autoQuality } from '$lib/qualityGovernor';
 	import { myHandModel, setMyHandModel } from '$lib/handModels';
 	import { explorerItems } from '$lib/explorer';
 	import { pingColor, pingSound } from '$lib/ping';
@@ -110,6 +115,7 @@
 	import { peerServerConfig, HAS_SELF_HOSTED, SELF_HOSTED_HOST, peerServerStatus } from '$lib/peerServer';
 	import { peers } from '../../stores/appStore.js';
 	import { autofocusOk, typeToFocus } from '$lib/inputDevice';
+	import { safeStorage } from '$lib/safeStorage';
 
 	// 24-D2: Settings ▸ Connection applies WITHOUT a reload — PeerConnection.switchServer
 	// rebuilds the Peer on the configured server, keeping the session id (an open session
@@ -985,8 +991,8 @@
 							<Checkbox
 								bind:checked={$showGrid}
 								onclick={() => {
-									if (localStorage.getItem('showGrid')) localStorage.removeItem('showGrid');
-									else localStorage.setItem('showGrid', 'false');
+									if (safeStorage.getItem('showGrid')) safeStorage.removeItem('showGrid');
+									else safeStorage.setItem('showGrid', 'false');
 								}} />
 						</svelte:fragment>
 						Display grid on floor
@@ -1019,6 +1025,10 @@
 							/>
 						</svelte:fragment>
 						Caps every light's shadow map size on THIS machine (Off disables shadows entirely; per-light sizes still replicate)
+					</SettingRow>
+					<SettingRow name="Reduce quality when the scene is heavy">
+						<svelte:fragment slot="control"><Checkbox id="auto-quality" bind:checked={$autoQuality} /></svelte:fragment>
+						When a heavy scene cannot keep 30 frames a second on THIS machine, drop shadows, then resolution, then effects, one step at a time, and give each back when frames recover. Never changes the scene for anyone else; the chip beside the object count says when it is active
 					</SettingRow>
 					<SettingRow name="Simulation controls">
 						<svelte:fragment slot="control"><Checkbox bind:checked={$showSimControls} /></svelte:fragment>
@@ -1432,8 +1442,8 @@
 							<Checkbox
 								bind:checked={$vrOverride}
 								onclick={() => {
-									if (localStorage.getItem('vrOverride')) localStorage.removeItem('vrOverride');
-									else localStorage.setItem('vrOverride', 'true');
+									if (safeStorage.getItem('vrOverride')) safeStorage.removeItem('vrOverride');
+									else safeStorage.setItem('vrOverride', 'true');
 								}} />
 						</svelte:fragment>
 						Forces normal play even if immersive-vr is enabled
@@ -1444,7 +1454,7 @@
 								checked={$vrFlying}
 								onchange={(e) => {
 									$vrFlying = e.target.checked;
-									localStorage.setItem('vrFlying', String($vrFlying));
+									safeStorage.setItem('vrFlying', String($vrFlying));
 								}} />
 						</svelte:fragment>
 						Left-stick movement follows where the controller points (fly); off = stay level
@@ -1459,7 +1469,7 @@
 								checked={$vrPassthrough}
 								onchange={(e: any) => {
 									$vrPassthrough = e.target.checked;
-									localStorage.setItem('vrPassthrough', String($vrPassthrough));
+									safeStorage.setItem('vrPassthrough', String($vrPassthrough));
 									showToast('Passthrough ' + ($vrPassthrough ? 'on' : 'off') + ' — takes effect on the next VR entry');
 								}} />
 						</svelte:fragment>
@@ -1472,7 +1482,7 @@
 								onclick={() => {
 									const next = $vrMenuHand === 'left' ? 'right' : 'left';
 									$vrMenuHand = next;
-									localStorage.setItem('vrMenuHand', next);
+									safeStorage.setItem('vrMenuHand', next);
 								}} />
 						</svelte:fragment>
 						Which controller opens the VR quick-menu (the other hand points)
@@ -1484,7 +1494,7 @@
 								checked={$vrMenuHold}
 								onchange={(e: any) => {
 									$vrMenuHold = e.target.checked;
-									localStorage.setItem('vrMenuHold', String($vrMenuHold));
+									safeStorage.setItem('vrMenuHold', String($vrMenuHold));
 								}} />
 						</svelte:fragment>
 						Hold B/Y to show the radial menu, release over a sector to pick it (off = press toggles)
@@ -1501,7 +1511,7 @@
 								value={$vrSnapAngle}
 								onchange={(v) => {
 									$vrSnapAngle = parseInt(v);
-									localStorage.setItem('vrSnapAngle', String($vrSnapAngle));
+									safeStorage.setItem('vrSnapAngle', String($vrSnapAngle));
 								}}
 							/>
 						</svelte:fragment>
@@ -1514,7 +1524,7 @@
 								checked={$vrMirrorSnapTurn}
 								onchange={(e: any) => {
 									$vrMirrorSnapTurn = e.target.checked;
-									localStorage.setItem('vrMirrorSnapTurn', String($vrMirrorSnapTurn));
+									safeStorage.setItem('vrMirrorSnapTurn', String($vrMirrorSnapTurn));
 								}} />
 						</svelte:fragment>
 						Flip the flick direction — left turns right and vice-versa
@@ -1526,7 +1536,7 @@
 								checked={$vrTeleportEnabled}
 								onchange={(e: any) => {
 									$vrTeleportEnabled = e.target.checked;
-									localStorage.setItem('vrTeleportEnabled', String($vrTeleportEnabled));
+									safeStorage.setItem('vrTeleportEnabled', String($vrTeleportEnabled));
 								}} />
 						</svelte:fragment>
 						Right-stick-up teleport arc — off if you navigate only by stick/fly
@@ -1538,7 +1548,7 @@
 								checked={$vrSleeveEnabled}
 								onchange={(e: any) => {
 									$vrSleeveEnabled = e.target.checked;
-									localStorage.setItem('vrSleeveEnabled', String($vrSleeveEnabled));
+									safeStorage.setItem('vrSleeveEnabled', String($vrSleeveEnabled));
 								}} />
 						</svelte:fragment>
 						Experimental — a strip of ghost primitives on your forearm: trigger-drag one out to place it (stick scales, wrist rotates). Grip-drop an object onto the strip to keep it as a personal slot
@@ -1550,7 +1560,7 @@
 								checked={$vrVertexHold}
 								onchange={(e: any) => {
 									$vrVertexHold = e.target.checked;
-									localStorage.setItem('vrVertexHold', String($vrVertexHold));
+									safeStorage.setItem('vrVertexHold', String($vrVertexHold));
 								}} />
 						</svelte:fragment>
 						Hold the trigger to carry a vertex (release drops it); off = press to grab, press again to drop
@@ -2006,6 +2016,27 @@
 				</AccordionItem>
 				<AccordionItem bind:open={connectionExpanded}>
 					{#snippet header()}Connection{/snippet}
+					<SettingRow name="Session size">
+						<svelte:fragment slot="control">
+							<input
+								id="soft-peer-cap"
+								type="number"
+								min="2"
+								max={HARD_PEER_CAP}
+								class="w-full rounded-sm bg-gray-700 px-1 py-0.5 text-xs text-white"
+								value={$softPeerCap}
+								on:change={(e: any) => {
+									const n = Number(e.target.value);
+									softPeerCap.set(Number.isFinite(n) ? Math.min(HARD_PEER_CAP, Math.max(2, Math.round(n))) : SOFT_PEER_CAP_DEFAULT);
+								}}
+							/>
+						</svelte:fragment>
+						How many people you expect in a session. Everyone connects to everyone, so each
+						extra person costs every other person bandwidth — voice and live gestures are the
+						hungry parts. Past this number an approval still works but warns; the hard limit
+						is <span class="font-mono">{HARD_PEER_CAP}</span>, where approving would degrade
+						the session for everybody rather than just for whoever joined last.
+					</SettingRow>
 					<SettingRow name="Signaling server">
 						<svelte:fragment slot="control">
 							<ThemedSelect
@@ -2188,6 +2219,21 @@
 				<AccordionItem bind:open={aboutExpanded}>
 					{#snippet header()}About{/snippet}
 					<SettingRow name="Version" noControl>{appVersionString}</SettingRow>
+					<SettingRow name="Diagnostics">
+						<svelte:fragment slot="control">
+							<Button
+								id="about-copy-diagnostics"
+								size="xs"
+								color="alternative"
+								onclick={async () => {
+									const ok = await copyDiagnostics();
+									showToast(ok ? 'Diagnostics copied to the clipboard' : 'Could not copy the diagnostics');
+								}}>Copy diagnostics</Button
+							>
+						</svelte:fragment>
+						What the app has been doing: version, this session's peer and scene counts, and the last
+						300 log lines. It goes to your clipboard and nowhere else — paste it into a bug report.
+					</SettingRow>
 					{#if $cloudPluginInfo}
 						<SettingRow name="Cloud plugin" noControl>{$cloudPluginInfo.name} {$cloudPluginInfo.version}</SettingRow>
 					{/if}
@@ -2208,7 +2254,7 @@
 		</div>
 	</div>
 	{#snippet footer()}
-		<Button onclick={() => localStorage.clear()}>Reset settings</Button>
+		<Button onclick={() => safeStorage.clear()}>Reset settings</Button>
 		<Button color="alternative" onclick={() => clearSavedSession()}>Clear saved session</Button>
 		<Button id="about-whats-new" color="alternative" onclick={() => { settingsOpen.set(false); openWhatsNew(); }}>What's new</Button>
 	{/snippet}

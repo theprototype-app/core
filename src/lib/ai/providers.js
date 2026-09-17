@@ -1,4 +1,5 @@
 import { writable, get } from 'svelte/store';
+import { safeStorage } from '../safeStorage';
 
 // AI provider settings (roadmap #10, A1). A LOCAL per-device preference — the
 // only credentials the app stores. Keys live in PLAINTEXT localStorage (there is
@@ -89,7 +90,7 @@ const ENABLED_KEY = 'aiEnabled';
 /** @returns {AiProviderConfig[]} */
 function loadProviders() {
 	try {
-		const raw = localStorage.getItem(PROVIDERS_KEY);
+		const raw = safeStorage.getItem(PROVIDERS_KEY);
 		const parsed = raw ? JSON.parse(raw) : null;
 		return Array.isArray(parsed) ? parsed : [];
 	} catch {
@@ -100,7 +101,7 @@ function loadProviders() {
 /** @param {AiProviderConfig[]} list */
 function persistProviders(list) {
 	try {
-		localStorage.setItem(PROVIDERS_KEY, JSON.stringify(list));
+		safeStorage.setItem(PROVIDERS_KEY, JSON.stringify(list));
 	} catch {}
 }
 
@@ -113,7 +114,7 @@ export const aiProviders = writable(loadProviders());
 export const aiActiveProvider = writable(
 	(() => {
 		try {
-			return localStorage.getItem(ACTIVE_KEY) || null;
+			return safeStorage.getItem(ACTIVE_KEY) || null;
 		} catch {
 			return null;
 		}
@@ -124,7 +125,7 @@ export const aiActiveProvider = writable(
 export const aiEnabled = writable(
 	(() => {
 		try {
-			return localStorage.getItem(ENABLED_KEY) === 'true';
+			return safeStorage.getItem(ENABLED_KEY) === 'true';
 		} catch {
 			return false;
 		}
@@ -203,8 +204,8 @@ export function removeAiProvider(id) {
 export function setAiActiveProvider(id) {
 	aiActiveProvider.set(id);
 	try {
-		if (id) localStorage.setItem(ACTIVE_KEY, id);
-		else localStorage.removeItem(ACTIVE_KEY);
+		if (id) safeStorage.setItem(ACTIVE_KEY, id);
+		else safeStorage.removeItem(ACTIVE_KEY);
 	} catch {}
 }
 
@@ -212,7 +213,7 @@ export function setAiActiveProvider(id) {
 export function setAiEnabled(on) {
 	aiEnabled.set(!!on);
 	try {
-		localStorage.setItem(ENABLED_KEY, String(!!on));
+		safeStorage.setItem(ENABLED_KEY, String(!!on));
 	} catch {}
 }
 

@@ -83,6 +83,7 @@
 // `publishSharedIndex`, which refuses for a viewer.
 
 import { get, writable } from 'svelte/store';
+import { sessionNow } from './sessionClock'; // 25-E: stamps another peer compares
 import { peers, userdata, showToast } from '../stores/appStore';
 import {
 	explorerFolders,
@@ -130,6 +131,7 @@ import { transfers, removeTransfer } from './transferLedger';
 // R22 round 33: automatic downloads WAIT while the joiner is being asked what to do with
 // its own scene. A store-only leaf, so this edge closes nothing.
 import { pendingConnectDecision } from './connectionState';
+import { safeStorage } from './safeStorage';
 
 /**
  * Hashes we have ASKED the mesh for and not yet received. A remote card with nothing to
@@ -247,7 +249,7 @@ export function pullSharedItem(hash) {
 function projection() {
 	const doc = get(projectManifest);
 	const owner = meAsOwner();
-	const now = Date.now();
+	const now = sessionNow();
 
 	/**
 	 * `at` MUST BE STABLE FOR AN UNCHANGED ROW, or `publishSharedIndex`'s content compare
@@ -460,7 +462,7 @@ export const unshareAuthority = writable(readAuthority());
 
 function readAuthority() {
 	try {
-		return localStorage.getItem('shared:unshareAuthority') === 'owner' ? 'owner' : 'anyone';
+		return safeStorage.getItem('shared:unshareAuthority') === 'owner' ? 'owner' : 'anyone';
 	} catch {
 		return 'anyone';
 	}
@@ -468,7 +470,7 @@ function readAuthority() {
 
 unshareAuthority.subscribe((v) => {
 	try {
-		localStorage.setItem('shared:unshareAuthority', v);
+		safeStorage.setItem('shared:unshareAuthority', v);
 	} catch {}
 });
 
@@ -507,9 +509,9 @@ export const shareNewFiles = writable(readShareNewFiles());
  * was "do not publish everything", never "do not ask me". */
 function readShareNewFiles() {
 	try {
-		const raw = localStorage.getItem('shared:shareNewFiles');
+		const raw = safeStorage.getItem('shared:shareNewFiles');
 		if (raw === 'ask' || raw === 'always' || raw === 'never') return raw;
-		return localStorage.getItem('shared:autoShareAll') === 'true' ? 'always' : 'ask';
+		return safeStorage.getItem('shared:autoShareAll') === 'true' ? 'always' : 'ask';
 	} catch {
 		return 'ask';
 	}
@@ -527,7 +529,7 @@ export const autoDownload = writable(readFlag('shared:autoDownload', true));
 /** @param {string} key @param {boolean} fallback */
 function readFlag(key, fallback) {
 	try {
-		const raw = localStorage.getItem(key);
+		const raw = safeStorage.getItem(key);
 		return raw === null ? fallback : raw === 'true';
 	} catch {
 		return fallback;
@@ -536,12 +538,12 @@ function readFlag(key, fallback) {
 
 shareNewFiles.subscribe((v) => {
 	try {
-		localStorage.setItem('shared:shareNewFiles', v);
+		safeStorage.setItem('shared:shareNewFiles', v);
 	} catch {}
 });
 autoDownload.subscribe((v) => {
 	try {
-		localStorage.setItem('shared:autoDownload', String(v));
+		safeStorage.setItem('shared:autoDownload', String(v));
 	} catch {}
 });
 
@@ -555,7 +557,7 @@ export const deleteWithoutConfirm = writable(readFlag('shared:deleteNoConfirm', 
 
 deleteWithoutConfirm.subscribe((v) => {
 	try {
-		localStorage.setItem('shared:deleteNoConfirm', String(v));
+		safeStorage.setItem('shared:deleteNoConfirm', String(v));
 	} catch {}
 });
 
@@ -576,12 +578,12 @@ export const keepRecycleBin = writable(readFlag('shared:keepRecycleBin', false))
 
 recycleBinEnabled.subscribe((v) => {
 	try {
-		localStorage.setItem('shared:recycleBin', String(v));
+		safeStorage.setItem('shared:recycleBin', String(v));
 	} catch {}
 });
 keepRecycleBin.subscribe((v) => {
 	try {
-		localStorage.setItem('shared:keepRecycleBin', String(v));
+		safeStorage.setItem('shared:keepRecycleBin', String(v));
 	} catch {}
 });
 
@@ -617,7 +619,7 @@ export const deletedLogEnabled = writable(readFlag('shared:deletedLog', true));
 
 deletedLogEnabled.subscribe((v) => {
 	try {
-		localStorage.setItem('shared:deletedLog', String(v));
+		safeStorage.setItem('shared:deletedLog', String(v));
 	} catch {}
 });
 
@@ -654,7 +656,7 @@ function tomb(keys) {
 	const doc = get(projectManifest);
 	/** @type {any} */
 	const prev = doc.removed ?? {};
-	const at = Date.now();
+	const at = sessionNow();
 	/** @type {any} */
 	const next = { items: { ...(prev.items ?? {}) }, folders: { ...(prev.folders ?? {}) } };
 	for (const hash of keys.items ?? []) next.items[hash] = at;
@@ -1045,7 +1047,7 @@ export function logLocalDeletion(spec) {
 		hash,
 		name: String(spec.name ?? hash),
 		kind: String(spec.kind ?? 'text'),
-		at: Date.now(),
+		at: sessionNow(),
 		by: meAsOwner(),
 		localOnly: true,
 		...(spec.folderId === undefined ? {} : { folderId: spec.folderId ?? null }),
@@ -1168,7 +1170,7 @@ export function deleteItemsToBin(ids) {
 	const keepRow = get(recycleBinEnabled) || get(deletedLogEnabled);
 	const log = [...(doc.deleted ?? [])];
 	const tombs = tombsOf(doc);
-	const at = Date.now();
+	const at = sessionNow();
 	const by = meAsOwner();
 	/** @type {Set<string>} */
 	const gone = new Set();
@@ -1206,7 +1208,7 @@ export function deleteFolderToBin(id) {
 	const keepRow = get(recycleBinEnabled) || get(deletedLogEnabled);
 	const log = [...(doc.deleted ?? [])];
 	const tombs = tombsOf(doc);
-	const at = Date.now();
+	const at = sessionNow();
 	const by = meAsOwner();
 	// THE ITEMS FIRST, while the folder records still exist: `folderPath` reads the live
 	// tree, so a row written after the removal would carry an empty path — and the path is
@@ -2370,7 +2372,7 @@ const appliedDeletes = new Set(readApplied());
 
 function readApplied() {
 	try {
-		return JSON.parse(localStorage.getItem('shared:appliedDeletes') ?? '[]');
+		return JSON.parse(safeStorage.getItem('shared:appliedDeletes') ?? '[]');
 	} catch {
 		return [];
 	}
@@ -2381,7 +2383,7 @@ function noteApplied(hash) {
 	appliedDeletes.add(hash);
 	try {
 		// bounded: the log itself is capped at 200, so this cannot outgrow it by much
-		localStorage.setItem('shared:appliedDeletes', JSON.stringify([...appliedDeletes].slice(-400)));
+		safeStorage.setItem('shared:appliedDeletes', JSON.stringify([...appliedDeletes].slice(-400)));
 	} catch {}
 }
 
@@ -2389,7 +2391,7 @@ function noteApplied(hash) {
 function forgetApplied(hash) {
 	if (!appliedDeletes.delete(hash)) return;
 	try {
-		localStorage.setItem('shared:appliedDeletes', JSON.stringify([...appliedDeletes]));
+		safeStorage.setItem('shared:appliedDeletes', JSON.stringify([...appliedDeletes]));
 	} catch {}
 }
 

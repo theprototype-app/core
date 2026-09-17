@@ -18,6 +18,7 @@
 	import { togglePanel } from '$lib/panelToggles';
 	import { trackpadMode } from '$lib/trackpadNav';
 	import { helpersInPlay } from '$lib/helperLayer';
+	import { safeStorage } from '$lib/safeStorage';
 
 	// Scene.svelte routes right-TAPS here (77): empty viewport → this menu with
 	// the clicked ground point; an object under the cursor → its own context
@@ -264,8 +265,8 @@
 					checked: !!$showGrid,
 					action: () => {
 						showGrid.update((v) => !v);
-						if (localStorage.getItem('showGrid')) localStorage.removeItem('showGrid');
-						else localStorage.setItem('showGrid', 'false');
+						if (safeStorage.getItem('showGrid')) safeStorage.removeItem('showGrid');
+						else safeStorage.setItem('showGrid', 'false');
 					}
 				},
 				{

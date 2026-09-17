@@ -21,6 +21,7 @@
 // No `handleDisconnected` cleanup: documents are SCENE data, not per-peer state.
 
 import { get } from 'svelte/store';
+import { sessionNow } from './sessionClock'; // 25-E: stamps another peer compares
 import { peers } from '../stores/appStore';
 import { registerHistoryKind, recordEntry } from './history';
 import {
@@ -51,7 +52,7 @@ function broadcast(key, doc) {
 	const peer = get(peers);
 	if (!peer) return;
 	if (doc) peer.send({ type: 'hud', key, doc: wireDoc(doc) });
-	else peer.send({ type: 'huddelete', key, changedAt: Date.now() });
+	else peer.send({ type: 'huddelete', key, changedAt: sessionNow() });
 }
 
 /**

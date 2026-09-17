@@ -22,6 +22,11 @@
 	import { HardDrive, RefreshCw, Trash2, Info, ChevronRight } from '@lucide/svelte';
 	import { showConfirm } from '$lib/confirmDialog';
 	import { showToast } from '../../stores/appStore';
+	// 27-H (audit M5): autosave backs its own cadence off when an export gets expensive,
+	// and a save cadence that quietly moved from 30s to 5 minutes should be visible
+	// somewhere rather than guessed at. This panel is already where "what is this app
+	// doing to my disk" is answered.
+	import { autosaveStatus, autosaveEnabled } from '$lib/autosave';
 	import {
 		storageModalOpen,
 		storageScan,
@@ -162,6 +167,14 @@
 		}
 	}
 
+	/** "every 30 seconds" / "every 2 minutes" — the cadence in words. @param {number} ms */
+	function fmtCadence(ms) {
+		const seconds = Math.round(ms / 1000);
+		if (seconds < 90) return seconds + ' seconds';
+		const minutes = Math.round(seconds / 60);
+		return minutes + (minutes === 1 ? ' minute' : ' minutes');
+	}
+
 	/** the fill of the used/quota bar, as a percentage @param {any} s */
 	function usedPct(s) {
 		if (!s?.estimate?.quota) return 0;
@@ -234,6 +247,26 @@
 			{:else}
 				<p class="mt-1.5 text-xs text-gray-400">Reading the store…</p>
 			{/if}
+		<p id="storage-autosave" class="mt-1.5 text-xs text-gray-400">
+			{#if !$autosaveEnabled}
+				Autosave is <strong>off</strong>, so nothing here is crash recovery.
+			{:else if $autosaveStatus.lastError}
+				<strong id="storage-autosave-error">Autosave is failing</strong> — the last snapshot
+				could not be written, so there is nothing to recover from a crash.
+			{:else}
+				Autosave writes a snapshot
+				<strong id="storage-autosave-cadence">{fmtCadence($autosaveStatus.debounceMs)}</strong>
+				after a change{#if $autosaveStatus.lastExportMs}, and the last one took
+					<strong id="storage-autosave-cost">{Math.round($autosaveStatus.lastExportMs)}ms</strong>
+					to prepare{/if}.
+				{#if $autosaveStatus.debounceMs > 30_000}
+					<span id="storage-autosave-backoff"
+						>It has slowed itself down because this scene is expensive to export; a shorter
+						interval would stutter while you work.</span
+					>
+				{/if}
+			{/if}
+		</p>
 		</div>
 
 		{#if groups.length}

@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { get } from 'svelte/store';
-import { objectsGroup } from '../stores/sceneStore';
+import { objectsGroup, pokeScene } from '../stores/sceneStore';
 import { peers } from '../stores/appStore';
 import { recordEntry, registerHistoryKind } from './history';
 import { GEOMETRY_PARAMS, geometrySpec } from './geometryParams';
@@ -113,7 +113,7 @@ export function applyGeometry(uuid, patch, options = {}) {
 	// disabled after a rebuild that just threw those edits away.
 	delete object.userData.vertexEdited;
 	delete object.userData.faceEdited;
-	objectsGroup.update((value) => value);
+	pokeScene();
 	if (record)
 		recordEntry({ kind: 'geometry', uuid, before, after: { gtype: current.gtype, params } });
 	if (replicate) {
@@ -137,7 +137,7 @@ export function applyRemoteGeometry(data) {
 	object.userData.geometryParams = { gtype: data.gtype, params: { ...data.params } };
 	delete object.userData.vertexEdited;
 	delete object.userData.faceEdited; // same lock, same reset as the local path
-	objectsGroup.update((value) => value);
+	pokeScene();
 }
 
 // undo/redo replays the full param set — `state` is the recorded

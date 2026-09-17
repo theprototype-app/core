@@ -166,8 +166,7 @@
 		backgroundColor,
 		globalCamera,
 		viewMode,
-		showGrid
-	} from '../../stores/sceneStore';
+		showGrid, pokeScene } from '../../stores/sceneStore';
 	// 16-P3: grid + snapping prefs (LOCAL, like the clip planes)
 	import { gridSettings, setGrid, resetGrid, effectiveCell } from '$lib/gridSettings';
 	import { snapEnabled, snapSettings, surfaceSnap, snapTargets } from '$lib/snapping';
@@ -201,6 +200,7 @@
 		saveSnapAnchorAsOrigin
 	} from '$lib/snapEngine';
 	import { peers, inspectorClose, inspectorKind, inspectorPinned, showToast, inspectorFilter, notesDrawerOpen } from '../../stores/appStore.js';
+	import { safeStorage } from '$lib/safeStorage';
 	import {
 		isShaderDriven,
 		openShaderEditor,
@@ -279,7 +279,7 @@
 	let inspectorH = $state(0);
 	$effect(() => {
 		if (inspectorH || typeof window === 'undefined') return;
-		const saved = parseInt(localStorage.getItem('inspectorSheetH') || '');
+		const saved = parseInt(safeStorage.getItem('inspectorSheetH') || '');
 		inspectorH = !saved || Number.isNaN(saved) ? Math.round(window.innerHeight * 0.45) : saved;
 	});
 	let insResizing = $state(false);
@@ -304,7 +304,7 @@
 		insResizing = false;
 		/** @type {HTMLElement} */ (e.currentTarget).releasePointerCapture?.(e.pointerId);
 		try {
-			localStorage.setItem('inspectorSheetH', String(inspectorH));
+			safeStorage.setItem('inspectorSheetH', String(inspectorH));
 		} catch {}
 	}
 
@@ -499,7 +499,7 @@
 			setShaderGraphFor(object.uuid, null);
 			detachFrom(object);
 		}
-		objectsGroup.update((v) => v);
+		pokeScene();
 		showToast(own.length === 1 ? 'Shader removed from this object' : 'Shader removed from ' + own.length + ' objects');
 	}
 
@@ -1185,7 +1185,7 @@
 			}
 		}
 		selectedObject.update((s) => s);
-		objectsGroup.update((v) => v);
+		pokeScene();
 	}
 
 	/** A picked image file → every selected material, decoded once. @param {File} file */
@@ -1199,7 +1199,7 @@
 			if (uuids.length > 1) endHistoryBatch(`Texture (${uuids.length})`);
 		}
 		selectedObject.update((s) => s);
-		objectsGroup.update((v) => v);
+		pokeScene();
 	}
 
 	/** CL-A A4: which material preset matches the current values (else 'custom') @param {any} p */
@@ -1221,7 +1221,7 @@
 	}
 
 	function sendName() {
-		objectsGroup.update((value) => value); // refresh the object list
+		pokeScene(); // refresh the object list
 		$peers.send({ type: 'name', name: $selectedObject.name, uuid: $selectedObject.uuid });
 	}
 
@@ -1847,8 +1847,8 @@
 					checked={!!$showGrid}
 					onchange={() => {
 						showGrid.update((v) => !v);
-						if (localStorage.getItem('showGrid')) localStorage.removeItem('showGrid');
-						else localStorage.setItem('showGrid', 'false');
+						if (safeStorage.getItem('showGrid')) safeStorage.removeItem('showGrid');
+						else safeStorage.setItem('showGrid', 'false');
 					}}>Show grid</Checkbox
 				>
 				<Checkbox
@@ -2633,7 +2633,7 @@
 									$selectedObject.uuid,
 									selected?.name === 'Level Up' ? 'up' : val
 								);
-								objectsGroup.update((v) => v);
+								pokeScene();
 								rerenderSelectGroup = !rerenderSelectGroup;
 							}}
 						/>
@@ -3408,7 +3408,7 @@
 									object.material.needsUpdate = true;
 									$peers.send({ type: 'color', uuid: object.uuid, color: c.hex });
 								}
-								objectsGroup.update((v) => v);
+								pokeScene();
 							}}
 						/>
 					{/if}

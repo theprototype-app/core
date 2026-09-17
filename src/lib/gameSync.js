@@ -10,6 +10,7 @@
 // keyed-document one: one message, one stamp, no per-key map.
 
 import { get } from 'svelte/store';
+import { sessionNow } from './sessionClock'; // 25-E: stamps another peer compares
 import { peers } from '../stores/appStore';
 import { registerHistoryKind, recordEntry } from './history';
 import {
@@ -76,7 +77,7 @@ registerHistoryKind('game', (/** @type {any} */ entry, /** @type {any} */ state)
 	// silently restored `before`).
 	const target = state === entry.before ? entry.before : entry.after;
 	// through the single write path, so an undo replicates exactly like an edit
-	commitGameState(normalizeGameState(target), { stamp: Date.now() });
+	commitGameState(normalizeGameState(target), { stamp: sessionNow() });
 	return true;
 });
 

@@ -1,6 +1,7 @@
 import { writable, get } from 'svelte/store';
 import { editorCam, playerCam, orbitControls } from '../stores/sceneStore';
 import { sceneRadius } from './sceneBounds';
+import { safeStorage } from './safeStorage';
 
 // Camera clip planes (123): a LOCAL per-device view preference (never
 // replicated) exposed in Configure Scene. The far plane still grows to fit the
@@ -14,7 +15,7 @@ const FAR_CAP = 200000;
 /** @param {string} key @param {number} fallback */
 function stored(key, fallback) {
 	try {
-		const v = parseFloat(localStorage.getItem(key) ?? '');
+		const v = parseFloat(safeStorage.getItem(key) ?? '');
 		return isFinite(v) ? v : fallback;
 	} catch {
 		return fallback;
@@ -59,7 +60,7 @@ export function setCameraNear(v) {
 	const n = Math.min(Math.max(v, 0.001), 10);
 	cameraNear.set(n);
 	try {
-		localStorage.setItem('cameraNear', String(n));
+		safeStorage.setItem('cameraNear', String(n));
 	} catch {}
 	applyCameraClip();
 }
@@ -69,7 +70,7 @@ export function setCameraFar(v) {
 	const f = Math.min(Math.max(v, 10), FAR_CAP);
 	cameraFar.set(f);
 	try {
-		localStorage.setItem('cameraFar', String(f));
+		safeStorage.setItem('cameraFar', String(f));
 	} catch {}
 	applyCameraClip();
 }
@@ -83,7 +84,7 @@ export const DEFAULT_ORBIT = { rotateSpeed: 1, zoomSpeed: 1, panSpeed: 1, dampin
 
 function storedOrbit() {
 	try {
-		const raw = typeof localStorage !== 'undefined' ? localStorage.getItem('orbitPrefs') : null;
+		const raw = typeof localStorage !== 'undefined' ? safeStorage.getItem('orbitPrefs') : null;
 		return raw ? { ...DEFAULT_ORBIT, ...JSON.parse(raw) } : { ...DEFAULT_ORBIT };
 	} catch {
 		return { ...DEFAULT_ORBIT };
@@ -110,7 +111,7 @@ export function applyOrbitPrefs() {
 export function setOrbitPrefs(patch) {
 	orbitPrefs.update((value) => ({ ...value, ...patch }));
 	try {
-		localStorage.setItem('orbitPrefs', JSON.stringify(get(orbitPrefs)));
+		safeStorage.setItem('orbitPrefs', JSON.stringify(get(orbitPrefs)));
 	} catch {}
 	applyOrbitPrefs();
 }
@@ -118,7 +119,7 @@ export function setOrbitPrefs(patch) {
 export function resetOrbitPrefs() {
 	orbitPrefs.set({ ...DEFAULT_ORBIT });
 	try {
-		localStorage.setItem('orbitPrefs', JSON.stringify(DEFAULT_ORBIT));
+		safeStorage.setItem('orbitPrefs', JSON.stringify(DEFAULT_ORBIT));
 	} catch {}
 	applyOrbitPrefs();
 }

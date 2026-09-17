@@ -79,6 +79,7 @@
 // different building) would place the content somewhere arbitrary.
 
 import { writable, get } from 'svelte/store';
+import { sessionNow } from './sessionClock'; // 25-E: stamps another peer compares
 import * as THREE from 'three';
 import { worldRig } from '../stores/sceneStore';
 import { peers } from '../stores/appStore';
@@ -311,7 +312,7 @@ export function setRoomAnchor(patch) {
 	const record = normalizeRoomAnchor({
 		...base,
 		...(patch ?? {}),
-		at: Math.max(Date.now(), (current?.at ?? 0) + 1)
+		at: Math.max(sessionNow(), (current?.at ?? 0) + 1)
 	});
 	roomAnchor.set(record);
 	/** @type {any} */

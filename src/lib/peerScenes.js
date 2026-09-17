@@ -33,6 +33,7 @@
 // (currentLevel only) and appStore. Nothing here registers a history kind.
 
 import { writable, get } from 'svelte/store';
+import { sessionNow } from './sessionClock'; // 25-E: stamps another peer compares
 import { peers } from '../stores/appStore';
 import { lockedObjects, selectedObject } from '../stores/sceneStore';
 import { currentLevel } from './levels';
@@ -121,7 +122,7 @@ function broadcast(where) {
 		// a monotonic-enough stamp: this is latest-wins per SENDER and only that sender
 		// ever writes the row, so a plain clock is sufficient and ordering across peers
 		// is never compared
-		at: Date.now()
+		at: sessionNow()
 	});
 }
 

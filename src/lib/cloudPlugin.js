@@ -24,6 +24,7 @@ import {
 // cloudPlugin path is in history's import subtree — App alone imports this module).
 import { currentLevel } from './levels';
 import { myPlayMode, peerPlayModes } from './gamePresence';
+import { safeStorage } from './safeStorage';
 
 // 28-A (roadmap #28, publish · play · remix): the seams below reach cycle-sensitive
 // modules — sessions is history-family, cameraBookmarks imports objectActions, playMode is
@@ -58,7 +59,7 @@ export async function startCloudPlugin() {
 	try {
 		url =
 			(import.meta && import.meta.env && import.meta.env.VITE_CLOUD_PLUGIN) ||
-			(typeof localStorage !== 'undefined' && localStorage.getItem('cloudPluginUrl')) ||
+			(typeof localStorage !== 'undefined' && safeStorage.getItem('cloudPluginUrl')) ||
 			'';
 	} catch {
 		url = '';

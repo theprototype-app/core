@@ -39,8 +39,7 @@ import {
 	vrToolMode,
 	vrTargetHz,
 	vrSleeveEnabled,
-	peerHandStyle
-} from '../stores/sceneStore';
+	peerHandStyle, pokeScene } from '../stores/sceneStore';
 import { activeRing, findMenuEntry, ringEntries, sectorFromStick, pushRing, popRing, resetRings, hubEntry } from './vrRadialMenu';
 import { paletteColorAt, barValueAt } from './vrPalette';
 import { recordMaterialChange, setMaterialParam } from './materialsHandler';
@@ -128,6 +127,7 @@ import { setVRAxes, setVRButtons } from './inputRuntime';
 import { suspendAnimation, resumeAnimation } from './flowRuntime';
 import { drawMode, toggleDrawMode, addStrokePoint, endStroke } from './drawMode';
 import { setPttHeld, cycleMicMode, vrMicMode, micActive, pttActive } from './voiceChat';
+import { safeStorage } from './safeStorage';
 import {
 	HOLD_MS,
 	vrWindowAdjust,
@@ -1272,7 +1272,7 @@ export function raycastSettings(index) {
 export function applySnapMode(mode) {
 	vrSnapMode.set(mode);
 	try {
-		localStorage.setItem('vrSnapMode', mode);
+		safeStorage.setItem('vrSnapMode', mode);
 	} catch {}
 	snapEnabled.set(mode === 'grid' || mode === 'rotation');
 	surfaceSnap.set(mode === 'surface');
@@ -1299,7 +1299,7 @@ function nudgeTransform(object, kind, axis, sign) {
 	else object.scale[axis] = Math.max(0.01, object.scale[axis] + sign * step);
 	recordTransform({ uuid: object.uuid, before, after: transformStateOf(object) });
 	broadcastMove(object, true);
-	objectsGroup.update((v) => v);
+	pokeScene();
 }
 
 /** Props panel actions ('props:' prefix in executeVRMenuAction) @param {string} action */
@@ -2444,7 +2444,7 @@ function updateGrab() {
 		}
 		grab.prevPos.copy(position);
 		grab.prevQuat.copy(quaternion);
-		objectsGroup.update((value) => value);
+		pokeScene();
 		broadcastMove(object);
 		return;
 	}
@@ -2473,7 +2473,7 @@ function updateGrab() {
 	}
 	grab.prevPos.copy(position);
 	grab.prevQuat.copy(quaternion);
-	objectsGroup.update((value) => value);
+	pokeScene();
 	broadcastMove(object);
 }
 
@@ -2485,7 +2485,7 @@ function updateScaleGrab() {
 		factor = Math.max(Math.round(factorRaw / step) * step, step);
 	}
 	scaleGrab.object.scale.copy(scaleGrab.startScale).multiplyScalar(factor);
-	objectsGroup.update((value) => value);
+	pokeScene();
 	broadcastMove(scaleGrab.object);
 }
 
@@ -2515,7 +2515,7 @@ function spawnPrimitive(command) {
 	} else {
 		object.position.set(spawn.x, object.position.y, spawn.z);
 	}
-	objectsGroup.update((value) => value);
+	pokeScene();
 	broadcastMove(object, true);
 }
 
@@ -2696,19 +2696,19 @@ export function executeVRMenuAction(name) {
 		if (key === 'close') vrSettingsPanelOpen.set(false);
 		else if (key === 'teleport') {
 			vrTeleportEnabled.update((v) => !v);
-			try { localStorage.setItem('vrTeleportEnabled', String(get(vrTeleportEnabled))); } catch {}
+			try { safeStorage.setItem('vrTeleportEnabled', String(get(vrTeleportEnabled))); } catch {}
 		} else if (key === 'mirror') {
 			vrMirrorSnapTurn.update((v) => !v);
-			try { localStorage.setItem('vrMirrorSnapTurn', String(get(vrMirrorSnapTurn))); } catch {}
+			try { safeStorage.setItem('vrMirrorSnapTurn', String(get(vrMirrorSnapTurn))); } catch {}
 		} else if (key === 'vertexhold') {
 			vrVertexHold.update((v) => !v);
-			try { localStorage.setItem('vrVertexHold', String(get(vrVertexHold))); } catch {}
+			try { safeStorage.setItem('vrVertexHold', String(get(vrVertexHold))); } catch {}
 		} else if (key === 'angle') {
 			// cycle Off -> 15 -> 30 -> 45 -> Off
 			const steps = [0, 15, 30, 45];
 			const next = steps[(steps.indexOf(get(vrSnapAngle)) + 1) % steps.length];
 			vrSnapAngle.set(next);
-			try { localStorage.setItem('vrSnapAngle', String(next)); } catch {}
+			try { safeStorage.setItem('vrSnapAngle', String(next)); } catch {}
 		} else if (key === 'hz') {
 			// B2.1: cycle Auto(max) -> 90 -> 120 and apply live if presenting
 			const steps = ['auto', '90', '120'];
@@ -2723,12 +2723,12 @@ export function executeVRMenuAction(name) {
 			// WebXR can't hot-swap session modes — applies on the next VR entry
 			const next = !get(vrPassthrough);
 			vrPassthrough.set(next);
-			try { localStorage.setItem('vrPassthrough', String(next)); } catch {}
+			try { safeStorage.setItem('vrPassthrough', String(next)); } catch {}
 			showToast('Passthrough ' + (next ? 'on' : 'off') + ' — takes effect on the next VR entry');
 		} else if (key === 'sleeve') {
 			// K1: experimental forearm sleeve palette (default off)
 			vrSleeveEnabled.update((v) => !v);
-			try { localStorage.setItem('vrSleeveEnabled', String(get(vrSleeveEnabled))); } catch {}
+			try { safeStorage.setItem('vrSleeveEnabled', String(get(vrSleeveEnabled))); } catch {}
 		} else if (key === 'resetpanels') {
 			resetWindowPoses();
 			showToast('VR panel positions reset');
@@ -2763,7 +2763,7 @@ export function executeVRMenuAction(name) {
 		object.rotation.set(0, 0, 0);
 		recordTransform({ uuid: object.uuid, before, after: transformStateOf(object) });
 		broadcastMove(object, true);
-		objectsGroup.update((v) => v);
+		pokeScene();
 		hapticPulse(0.3, 40);
 		return;
 	}
@@ -2850,7 +2850,7 @@ export function executeVRMenuAction(name) {
 		vrWireframeSelection.update((v) => {
 			const next = !v;
 			try {
-				localStorage.setItem('vrWireframe', String(next));
+				safeStorage.setItem('vrWireframe', String(next));
 			} catch {}
 			return next;
 		});
@@ -2948,7 +2948,7 @@ export function executeVRMenuAction(name) {
 		vrStatsOpen.update((v) => {
 			const next = !v;
 			try {
-				localStorage.setItem('vrStats', String(next));
+				safeStorage.setItem('vrStats', String(next));
 			} catch {}
 			return next;
 		});
@@ -2958,7 +2958,7 @@ export function executeVRMenuAction(name) {
 		const next = order[(order.indexOf(get(vrGrabStyle)) + 1) % order.length];
 		vrGrabStyle.set(next);
 		try {
-			localStorage.setItem('vrGrabStyle', next);
+			safeStorage.setItem('vrGrabStyle', next);
 		} catch {}
 		showToast(
 			next === 'rigid'
@@ -2980,8 +2980,8 @@ export function executeVRMenuAction(name) {
 		}
 	} else if (name === 'grid') {
 		showGrid.update((v) => !v);
-		if (localStorage.getItem('showGrid')) localStorage.removeItem('showGrid');
-		else localStorage.setItem('showGrid', 'false');
+		if (safeStorage.getItem('showGrid')) safeStorage.removeItem('showGrid');
+		else safeStorage.setItem('showGrid', 'false');
 	} else if (name === 'undo') undo();
 	else if (name === 'redo') redo();
 	else if (name === 'box') spawnPrimitive('/create Box 1 1 1');
@@ -2993,7 +2993,7 @@ export function executeVRMenuAction(name) {
 	else if (name === 'hand') {
 		vrMenuHand.update((hand) => {
 			const next = hand === 'right' ? 'left' : 'right';
-			localStorage.setItem('vrMenuHand', next);
+			safeStorage.setItem('vrMenuHand', next);
 			return next;
 		});
 	} else if (name === 'mic') {

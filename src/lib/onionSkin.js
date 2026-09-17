@@ -4,6 +4,7 @@ import { writable, get } from 'svelte/store';
 import { globalScene, objectsGroup, selectedObject } from '../stores/sceneStore';
 import { activeClip, keyTimes, poseAt, ghostBase, playheadOf } from './animationPreview';
 import { wireframeActive } from './viewMode';
+import { safeStorage } from './safeStorage';
 
 // 17-E F6: ONION SKIN — faint copies of the object at the neighbouring keys, so you
 // can see where a movement came from and where it is going while you work on the
@@ -19,14 +20,14 @@ import { wireframeActive } from './viewMode';
 // is not what someone opening a file wants to see.
 
 export const showOnionSkin = writable(
-	typeof localStorage !== 'undefined' && localStorage.getItem('showOnionSkin') === 'true'
+	typeof localStorage !== 'undefined' && safeStorage.getItem('showOnionSkin') === 'true'
 );
 
 /** @param {boolean} on */
 export function setOnionSkin(on) {
 	showOnionSkin.set(on);
 	try {
-		localStorage.setItem('showOnionSkin', on ? 'true' : 'false');
+		safeStorage.setItem('showOnionSkin', on ? 'true' : 'false');
 	} catch {}
 }
 

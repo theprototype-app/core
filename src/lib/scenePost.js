@@ -1,4 +1,5 @@
 import { writable, derived, get } from 'svelte/store';
+import { sessionNow } from './sessionClock'; // 25-E: stamps another peer compares
 import { peers } from '../stores/appStore';
 import { viewportOverrides } from './viewportOverrides';
 // L2: the 'look' history kind. Safe as a static import — history's own subtree is
@@ -415,7 +416,7 @@ function commit(fn, key = POST_SCENE_KEY) {
 	// MONOTONIC per key (the shaderGraph lesson): a gesture writes several times in one
 	// millisecond, so a bare Date.now() gives those edits the SAME stamp and a receiver
 	// guarding with <= drops all but the first.
-	next.changedAt = Math.max(Date.now(), (postStackFor(key).changedAt || 0) + 1);
+	next.changedAt = Math.max(sessionNow(), (postStackFor(key).changedAt || 0) + 1);
 	postStacks.update((map) => ({ ...map, [key]: next }));
 	if (gesture) return next; // the gesture owns the entry and the broadcast
 	if (before) recordLookEntry(before, next, key);
@@ -468,7 +469,7 @@ registerHistoryKind('look', (entry, state) => {
 	applyingHistory = true;
 	try {
 		const next = normalizeScenePost(target);
-		next.changedAt = Math.max(Date.now(), (postStackFor(key).changedAt || 0) + 1);
+		next.changedAt = Math.max(sessionNow(), (postStackFor(key).changedAt || 0) + 1);
 		postStacks.update((map) => ({ ...map, [key]: next }));
 		broadcastScenePost(key);
 	} finally {
@@ -652,7 +653,7 @@ export function scenePostRestore(payload, replicate = false) {
 			: { [POST_SCENE_KEY]: payload };
 	/** @type {Record<string, PostStack>} */
 	const next = {};
-	let stamp = Date.now();
+	let stamp = sessionNow();
 	for (const key of Object.keys(source)) {
 		const doc = normalizeScenePost(source[key]);
 		// a restore is an authoritative local write, so it must WIN over whatever

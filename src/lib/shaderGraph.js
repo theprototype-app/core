@@ -14,7 +14,8 @@
 // tracks the scene's light set, which ShaderFrog silently does not).
 
 import { writable, get } from 'svelte/store';
-import { objectsGroup, globalScene, globalCamera, globalRenderer } from '../stores/sceneStore.js';
+import { sessionNow } from './sessionClock'; // 25-E: stamps another peer compares
+import { objectsGroup, globalScene, globalCamera, globalRenderer, pokeScene } from '../stores/sceneStore.js';
 import { compileShaderGraphToIR } from './shaderCompile.js';
 import { compileShaderGraph, INJECT_SHADER_BACKEND, forgetShaderContext } from './shaderBackends.js';
 import {
@@ -166,7 +167,7 @@ export function setShaderGraphFor(key, patch, opts = {}) {
 				// millisecond, and with a bare Date.now() those edits share a stamp — the
 				// receiver's latest-wins guard then drops every one after the first, so a
 				// drag (and the undo that follows it) silently failed to replicate.
-				changedAt: opts.stamp ?? Math.max(Date.now(), (all[key]?.changedAt ?? 0) + 1)
+				changedAt: opts.stamp ?? Math.max(sessionNow(), (all[key]?.changedAt ?? 0) + 1)
 			});
 			next[key] = after;
 		}
@@ -381,7 +382,7 @@ export function stopReconcile() {
 
 /** Wall clock wrapped daily to keep float precision. @returns {number} */
 export function shaderClockNow() {
-	return (Date.now() % 86400000) / 1000;
+	return (sessionNow() % 86400000) / 1000;
 }
 
 /** @type {number|null} */
@@ -454,7 +455,7 @@ function applyMaterial(object, material) {
 	// Inspector's `material` derived and its shader-driven notice both read through
 	// `objectsGroup`, and without the poke they keep showing the pre-shader state. Safe
 	// from the reconcile's own subscriber because a compile always runs off a timer.
-	objectsGroup.update((v) => v);
+	pokeScene();
 }
 
 // ---- texture uniforms ------------------------------------------------------------
@@ -519,7 +520,7 @@ export function detachFrom(object) {
 	if (mine && mine !== base && typeof mine.dispose === 'function') mine.dispose();
 	// and poke, for the same reason the install does — otherwise the Inspector keeps
 	// offering Detach for an object that is no longer shader-driven
-	objectsGroup.update((v) => v);
+	pokeScene();
 }
 
 /** Is this object currently shader-driven? @param {string} uuid */
@@ -705,7 +706,7 @@ export function shaderGraphsRestore(map, replace = false) {
 	for (const [key, doc] of Object.entries(map)) {
 		if (!doc) continue;
 		// silent: a restore is not an undo step and must not re-broadcast
-		setShaderGraphFor(key, normalizeShaderGraph(doc), { silent: true, stamp: Date.now() });
+		setShaderGraphFor(key, normalizeShaderGraph(doc), { silent: true, stamp: sessionNow() });
 	}
 	reconcileShaderGraphs();
 }

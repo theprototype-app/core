@@ -1,7 +1,11 @@
 <script>
 	import { Box, ChevronDown, ChevronRight, Eye, EyeOff, Layers, Lock, PersonStanding, Settings, Share2, Sun, UserLock } from '@lucide/svelte';
-    /** @type {{ element: any }} */
-    let { element } = $props();
+    /** 26-B: `flat` renders ONE row and no recursion — the virtualised list in
+     * Controls draws the flattened `visibleObjectRows` itself and supplies the
+     * indent, so the same component (and the same nine handlers) serve both the
+     * recursive tree and the window. `depth` is the indent in tree levels.
+     * @type {{ element: any, flat?: boolean, depth?: number }} */
+    let { element, flat = false, depth = 0 } = $props();
     // 24-B2: expansion lives in the `expandedObjects` store (appStore) so the keyboard
     // walker can see the visible order and it survives a re-mount; `setExpanded` is
     // the one writer
@@ -240,6 +244,7 @@
                 (isSelected
                     ? 'bg-primary-900/50 text-primary-100'
                     : 'text-gray-800 hover:bg-gray-200 dark:text-gray-200 dark:hover:bg-gray-600/50')}
+            style={depth ? 'padding-left:' + (depth * 12 + 4) + 'px' : ''}
             role="presentation"
             onclick={(e) => { select(element.uuid, e.shiftKey); }}
         >
@@ -326,7 +331,7 @@
         </div>
     </div>
 
-    {#if isExpanded}
+    {#if isExpanded && !flat}
     <div class="ml-3 border-l border-gray-600/40 pl-1" role="group">
         {#each kids as item (item.uuid)}
             <Objects element={item} />

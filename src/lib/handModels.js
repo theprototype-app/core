@@ -4,6 +4,7 @@ import { writable, get } from 'svelte/store';
 import { peers } from '../stores/appStore';
 import { itemByHash, itemBlob } from './explorer';
 import { requestAsset, sendAsset } from './assetShare';
+import { safeStorage } from './safeStorage';
 
 // Custom hand models (R-3): a user's chosen hand GLB is part of their IDENTITY
 // (the avatar-photo precedent) — the content HASH rides a tiny `handmodel`
@@ -16,7 +17,7 @@ import { requestAsset, sendAsset } from './assetShare';
 
 /** my chosen hand model hash ('' = none), LOCAL pref that broadcasts */
 export const myHandModel = writable(
-	typeof localStorage !== 'undefined' ? localStorage.getItem('myHandModel') ?? '' : ''
+	typeof localStorage !== 'undefined' ? safeStorage.getItem('myHandModel') ?? '' : ''
 );
 
 /** @type {import('svelte/store').Writable<Record<string, string>>} peerId -> hash */
@@ -96,7 +97,7 @@ export function startHandModels() {
 	started = true;
 	myHandModel.subscribe((hash) => {
 		try {
-			localStorage.setItem('myHandModel', hash ?? '');
+			safeStorage.setItem('myHandModel', hash ?? '');
 		} catch {}
 	});
 	// missing bytes may arrive later (assetShare pull) — retry pending parses

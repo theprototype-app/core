@@ -3,7 +3,7 @@ import * as THREE from 'three';
 import { get, writable } from 'svelte/store';
 import { GLTFExporter } from 'three/addons/exporters/GLTFExporter.js';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
-import { objectsGroup, globalCamera, orbitControls } from '../stores/sceneStore';
+import { objectsGroup, globalCamera, orbitControls, pokeScene } from '../stores/sceneStore';
 import { flowGraphs, restoreGraphs, SCENE_GRAPH } from '../stores/flowStore';
 import { serializeGraphs } from './flowGraphs';
 import { serializeNode, serializeEdge } from './nodesHandler';
@@ -22,11 +22,17 @@ import { transport, transportSnapshot, transportRestore } from './musicClock';
 import { patch, patchSnapshot, patchRestore } from './audioPatch';
 import { hudDocs, hudDocsSnapshot, hudDocsRestore } from './hudDocs';
 import { gameState, gameStateSnapshot, gameStateRestore } from './gameState';
-import { peers, showToast, showInfoToast } from '../stores/appStore';
+import { peers, showToast, showInfoToast, dismissToastById } from '../stores/appStore';
 import { isMultiMaterial, serializeMeshWithGroups } from './materialsHandler';
 import { idbGet, idbPut, idbDelete } from './idb';
+// 27-B: recovery paths report through the diagnostics ring instead of console.log,
+// so a user can hand over what happened (hardening audit H4). A zero-import leaf.
+import { log, registerDiagnosticsSection } from './diagnostics';
 // #20 P5: selection + edit session + panel layout, restored only on an EXPLICIT restore
 import { captureEditResume, applyEditResume } from './editResume';
+import { disposeTree, keepSet } from './disposeTree';
+import { safeStorage } from './safeStorage';
+import { registerMetricSource } from './sceneBudget';
 
 // Crash safety: snapshots of the scene (GLTF json), the node graph and the
 // camera go to IndexedDB — debounced 30s after any change plus a 3-minute
@@ -35,9 +41,91 @@ import { captureEditResume, applyEditResume } from './editResume';
 const DEBOUNCE_MS = 30_000;
 const INTERVAL_MS = 180_000;
 const MAX_SNAPSHOT_BYTES = 50 * 1024 * 1024;
+/**
+ * 27-H (hardening audit M5) — THE CADENCE ADAPTS TO WHAT A SAVE COSTS.
+ *
+ * A snapshot is one GLTF export of the whole scene on the main thread, so its cost
+ * grows with the scene while the interval stayed flat at 30s: on a big scene that is a
+ * hitch every half minute for as long as you keep editing, which is the "the app
+ * stutters periodically" report waiting to be filed. Above this threshold the interval
+ * doubles per doubling of the cost, so an export stays a roughly constant FRACTION of
+ * the time between saves instead of growing without bound.
+ */
+const SLOW_EXPORT_MS = 150;
+const MAX_DEBOUNCE_MS = 300_000;
+
+/**
+ * What autosave is doing and what it last cost. Rendered by the Storage panel, because
+ * a save cadence that quietly moved from 30s to 5 minutes is exactly the kind of
+ * adaptive behaviour a user should be able to SEE rather than guess at.
+ * @type {import('svelte/store').Writable<{lastExportMs: number, lastBytes: number,
+ *   debounceMs: number, lastSaveAt: number, writes: number, coalesced: number,
+ *   lastError: string | null}>}
+ */
+// 26-E (roadmap 26 section 3): what the last snapshot cost, for the budget sampler and
+// the stress rig. The status store already held both numbers; nothing sampled them.
+// Registered, not imported by sceneBudget — that module stays a leaf.
+registerMetricSource('autosaveExportMs', () => get(autosaveStatus).lastExportMs || null);
+registerMetricSource('autosaveBytes', () => get(autosaveStatus).lastBytes || null);
+
+export const autosaveStatus = writable({
+	lastExportMs: 0,
+	lastBytes: 0,
+	debounceMs: DEBOUNCE_MS,
+	lastSaveAt: 0,
+	/** snapshots actually written */
+	writes: 0,
+	/** saves asked for while one was already running, and therefore folded into it */
+	coalesced: 0,
+	lastError: /** @type {string | null} */ (null)
+});
+
+/**
+ * How long to wait after a change, given what the last export cost. PURE and exported
+ * so it can be asserted directly: ONE measurement decides the whole answer, which is
+ * what keeps this from oscillating the way a stateful "double it, halve it" rule does.
+ *
+ * 150ms or less -> 30s (unchanged) · 150-300 -> 1min · 300-600 -> 2min · 600-1200 ->
+ * 4min · beyond that the 5min cap.
+ * @param {number} exportMs @returns {number}
+ */
+export function cadenceFor(exportMs) {
+	if (!(exportMs > SLOW_EXPORT_MS)) return DEBOUNCE_MS;
+	const doublings = Math.ceil(Math.log2(exportMs / SLOW_EXPORT_MS));
+	return Math.min(MAX_DEBOUNCE_MS, DEBOUNCE_MS * 2 ** doublings);
+}
+
+/**
+ * A CHEAP size estimate. This used to be `JSON.stringify(snapshot).length` — a full
+ * serialisation of everything, thrown away immediately, purely to learn a number,
+ * after which the structured clone inside `idbPut` walked the same graph again. Near
+ * the 50MB ceiling the probe alone is hundreds of milliseconds, on the main thread,
+ * every single save.
+ *
+ * Almost every byte of a snapshot lives in a handful of base64 strings whose `.length`
+ * is free to read: the GLTF buffer and image data URIs, and the original file bytes of
+ * each animated import. The rest is structure, estimated from COUNTS. The number is
+ * approximate and says so — it exists to refuse a pathological write early, and
+ * `idbPut` remains the thing that actually fails on size.
+ * @param {any} snapshot @returns {number}
+ */
+export function estimateSnapshotBytes(snapshot) {
+	let bytes = 0;
+	const scene = snapshot?.scene;
+	for (const buffer of scene?.buffers ?? []) bytes += buffer?.uri?.length ?? buffer?.byteLength ?? 0;
+	for (const image of scene?.images ?? []) bytes += image?.uri?.length ?? 0;
+	for (const entry of snapshot?.animated ?? []) bytes += entry?.bytes?.length ?? 0;
+	// a multi-material twin carries its own toJSON, embedded textures included
+	for (const entry of snapshot?.multiMaterial ?? [])
+		for (const image of entry?.element?.images ?? []) bytes += image?.url?.length ?? 0;
+	// structure: node/mesh/accessor metadata, and the graph documents beside it
+	bytes += (scene?.nodes?.length ?? 0) * 400;
+	bytes += (snapshot?.nodes?.length ?? 0) * 300;
+	return bytes;
+}
 
 export const autosaveEnabled = writable(
-	typeof localStorage === 'undefined' || localStorage.getItem('autosave') !== 'false'
+	typeof localStorage === 'undefined' || safeStorage.getItem('autosave') !== 'false'
 );
 /**
  * 18-A: restore the snapshot on boot instead of asking. OFF by default — an
@@ -45,7 +133,7 @@ export const autosaveEnabled = writable(
  * construction because checkRestore only ever fires on an EMPTY scene.
  */
 export const autoRestoreEnabled = writable(
-	typeof localStorage !== 'undefined' && localStorage.getItem('autoRestore') === 'true'
+	typeof localStorage !== 'undefined' && safeStorage.getItem('autoRestore') === 'true'
 );
 /** restore offer for the toast: { ts, objects, snapshot } | null */
 /** @type {import('svelte/store').Writable<any>} */
@@ -91,6 +179,15 @@ function multiMaterialSnapshot() {
 
 function exportScene() {
 	return new Promise((resolve) => {
+		const started = performance.now();
+		/** M5: the measurement the cadence is derived from. Taken around the WHOLE export,
+		 * park and stamp rituals included, because that is what the main thread spends.
+		 * @param {any} result */
+		const done = (result) => {
+			const ms = performance.now() - started;
+			autosaveStatus.update((state) => ({ ...state, lastExportMs: ms, debounceMs: cadenceFor(ms) }));
+			resolve(result);
+		};
 		const group = get(objectsGroup);
 		if (!group || group.children.length === 0) return resolve(null);
 		// snapshots must store animation BASE poses, not the current swing (88)
@@ -118,21 +215,76 @@ function exportScene() {
 				unpark(); // before unstamp, so the parked objects lose their __uuid too
 				unstamp();
 				restore();
-				resolve(result);
+				done(result);
 			},
 			(error) => {
 				unpark();
 				unstamp();
 				restore();
-				console.log('autosave export failed', error);
-				resolve(null);
+				log('warn', 'autosave', 'export failed', String(error));
+				done(null);
 			}
 		);
 	});
 }
 
-async function saveSnapshot() {
-	if (!get(autosaveEnabled)) return;
+/**
+ * 27-H (audit M3): ONE SAVE AT A TIME. `markDirty` rescheduled `saveSnapshot`
+ * unconditionally, and a snapshot is several awaits long (a GLTF export, then a put
+ * that may be bounded at 10s) — so on a scene where the export is slower than the
+ * debounce, every tick started a FRESH full export while the previous one was still
+ * running, each one parking and unparking the same objects. The one that is running
+ * will pick up whatever changed; a save asked for while it runs is remembered and
+ * scheduled once, when it finishes.
+ */
+let saving = false;
+let queuedWhileSaving = false;
+/** @type {Promise<void> | null} the write in flight, so an explicit save can await it */
+let savingPromise = null;
+
+function saveSnapshot() {
+	if (!get(autosaveEnabled)) return Promise.resolve();
+	if (saving) {
+		queuedWhileSaving = true;
+		autosaveStatus.update((state) => ({ ...state, coalesced: state.coalesced + 1 }));
+		return savingPromise ?? Promise.resolve();
+	}
+	saving = true;
+	savingPromise = (async () => {
+		try {
+			await writeSnapshot();
+		} finally {
+			saving = false;
+			savingPromise = null;
+			if (queuedWhileSaving) {
+				queuedWhileSaving = false;
+				schedule();
+			}
+		}
+	})();
+	return savingPromise;
+}
+
+/** Is a snapshot being written right now? (Storage panel / tests) */
+export function isSaving() {
+	return saving;
+}
+
+/**
+ * TEST SEAM: exactly what the debounce timer calls — including the re-entrancy refusal,
+ * which `saveNow` deliberately does NOT do (it waits its turn instead). The suite needs
+ * the timer's path to prove that three ticks during one slow export produce ONE export.
+ */
+export function debugRequestSave() {
+	return saveSnapshot();
+}
+
+async function writeSnapshot() {
+	// What has changed BEFORE any of this runs. It has to be read HERE rather than
+	// beside the write: the GLTF export below is the slow part, so a change made
+	// during it is precisely the one that is NOT in the bytes we are about to store,
+	// and clearing `dirty` unconditionally at the end would mark it saved.
+	const markAtStart = get(dirtyPulse);
 	// H1: persist EVERY graph document; orphan object graphs (owner object gone)
 	// are pruned from the OUTPUT only. Legacy nodes/edges fields keep carrying the
 	// scene graph so an old build can still restore this snapshot.
@@ -208,16 +360,69 @@ async function saveSnapshot() {
 			? { position: camera.position.toArray(), target: controls?.target?.toArray() ?? [0, 0, 0] }
 			: null
 	};
+	const bytes = estimateSnapshotBytes(snapshot);
+	autosaveStatus.update((state) => ({ ...state, lastBytes: bytes }));
 	try {
-		if (JSON.stringify(snapshot).length > MAX_SNAPSHOT_BYTES) {
-			console.warn('autosave skipped: snapshot too large');
+		if (bytes > MAX_SNAPSHOT_BYTES) {
+			log('warn', 'autosave', 'snapshot too large, skipped', { bytes });
+			reportSaveFailure(
+				'too-large',
+				'This scene is too large to autosave, so crash recovery is off for it. Save it yourself.'
+			);
 			return;
 		}
 		await idbPut('latest', snapshot);
-		dirty = false;
+		// a change made DURING the export is not in the bytes just written (the held-body
+		// `lastWritten` rule): clearing unconditionally would mark it saved when it isn't
+		if (get(dirtyPulse) === markAtStart) dirty = false;
+		autosaveStatus.update((state) => ({
+			...state,
+			lastSaveAt: Date.now(),
+			writes: state.writes + 1,
+			lastError: null
+		}));
+		dismissToastById('autosave-failed');
 	} catch (error) {
-		console.log('autosave failed', error);
+		log('warn', 'autosave', 'snapshot save failed', String(error));
+		const full = isQuotaError(error);
+		reportSaveFailure(
+			full ? 'quota' : 'failed',
+			full
+				? 'There is no room left to autosave this session. Crash recovery is off until some space is freed.'
+				: 'Autosave could not write a snapshot, so crash recovery is off for now.',
+			String(error)
+		);
 	}
+}
+
+/**
+ * Is this the disk being full? Every engine spells it differently and two of the three
+ * spellings are legacy numeric codes, so the name test alone would miss Firefox.
+ * @param {any} error
+ */
+function isQuotaError(error) {
+	const name = String(error?.name ?? '');
+	return name === 'QuotaExceededError' || name === 'NS_ERROR_DOM_QUOTA_REACHED' || error?.code === 22;
+}
+
+/**
+ * 27-H (audit M3): A FAILED AUTOSAVE IS SAID OUT LOUD. It used to reach `console.log`
+ * and stop there — so a full disk meant autosave had silently stopped and the
+ * crash-recovery promise was void with nothing to tell the user, which is the worst
+ * shape a safety feature can fail in. STICKY, because a 5s toast about losing work is
+ * a toast nobody reads, and it carries the way to act on it.
+ * @param {string} kind @param {string} text @param {string} [detail]
+ */
+function reportSaveFailure(kind, text, detail) {
+	autosaveStatus.update((state) => ({ ...state, lastError: detail ?? kind }));
+	showInfoToast('autosave-failed', text, [
+		{
+			label: 'Manage storage',
+			// storageUsage imports THIS module (clearSavedSession), so the edge has to be
+			// dynamic or it is a cycle
+			action: () => import('./storageUsage').then((m) => m.openStorageModal())
+		}
+	]);
 }
 
 /** 21-G8: one-shot listeners for "the scene just got dirtied" — the seam behind the
@@ -244,8 +449,16 @@ function markDirty() {
 				fn();
 			} catch {}
 		}
+	schedule();
+}
+
+/**
+ * Arm the debounce at the CURRENT cadence — 30s normally, longer while the export is
+ * expensive. Split out of `markDirty` because the re-entrancy guard re-arms it too.
+ */
+function schedule() {
 	clearTimeout(debounceTimer);
-	debounceTimer = setTimeout(saveSnapshot, DEBOUNCE_MS);
+	debounceTimer = setTimeout(saveSnapshot, get(autosaveStatus).debounceMs);
 }
 
 /** Phase 22 registers its annotations getter/setter here (avoids a hard dependency) */
@@ -275,16 +488,25 @@ async function checkRestore() {
 			if (!group) return;
 			setTimeout(() => unsubscribe(), 0);
 			if (group.children.length !== 0) return;
-			const offer = { ts: snapshot.ts, objects: snapshot.objects ?? 0, snapshot };
+			let armed = false;
+			try {
+				armed = typeof localStorage !== 'undefined' && !!safeStorage.getItem('restoreArmed');
+			} catch {
+				/* unreadable storage reads as "not armed" — the old behaviour */
+			}
+			const offer = { ts: snapshot.ts, objects: snapshot.objects ?? 0, snapshot, risky: armed };
 			// 18-A: with auto-restore on, restore straight away and REPORT it. The
 			// offer deliberately never reaches `restoreAvailable` — the Toasts mirror
 			// would flash the "Restore previous session?" prompt for a frame before
 			// the restore nulled the store again.
-			if (get(autoRestoreEnabled)) autoRestore(offer);
+			// 27-D: `risky` means the previous restore of this snapshot never reached a clean
+			// flow tick. Auto-restoring it again is how one bad scene becomes a boot loop the
+			// user cannot escape, so it always goes to the PROMPT, which says why.
+			if (get(autoRestoreEnabled) && !armed) autoRestore(offer);
 			else restoreAvailable.set(offer);
 		});
 	} catch (error) {
-		console.log('autosave restore check failed', error);
+		log('warn', 'autosave', 'restore check failed', String(error));
 	}
 }
 
@@ -325,7 +547,7 @@ function restoreMultiMaterial(entries) {
 		try {
 			mesh = loader.parse(entry.element);
 		} catch (error) {
-			console.log('multi-material restore failed', error);
+			log('warn', 'autosave', 'multi-material restore failed', String(error));
 			continue;
 		}
 		stripEditOverlays(mesh);
@@ -336,8 +558,19 @@ function restoreMultiMaterial(entries) {
 		const parent = twin.parent ?? group;
 		parent.remove(twin);
 		parent.add(mesh);
+		// 27-G: the twin was parsed from the GLTF snapshot moments ago and is now replaced,
+		// so nothing else refers to its buffers — but compute a keep set anyway, and AFTER
+		// the add, so a resource the two happen to share is protected.
+		//
+		// The root here is the GROUP, where every other disposal site in this batch uses
+		// the whole SCENE. That is deliberate, not an oversight: the scene root matters
+		// when a helper shares a real mesh's resources (an onion-skin ghost shares its
+		// source geometry), and a twin parsed seconds ago inside this function cannot be
+		// the source of one. autosave does not import globalScene, and adding an import
+		// for symmetry alone would be a worse trade than saying so here.
+		disposeTree(twin, { keep: keepSet(get(objectsGroup), twin) });
 	}
-	objectsGroup.update((value) => value);
+	pokeScene();
 }
 
 /**
@@ -347,6 +580,15 @@ function restoreMultiMaterial(entries) {
  * @returns {Promise<boolean>} did it land?
  */
 async function applyRestore(snapshot) {
+	// 27-D: arm BEFORE the restore, clear on the first clean flow tick (flowRuntime).
+	// A flag still set at the next boot means this snapshot never reached a working
+	// frame — so the next boot must not silently restore it again. Placed here rather
+	// than at each call site so the explicit Restore button is covered too.
+	try {
+		if (typeof localStorage !== 'undefined') safeStorage.setItem('restoreArmed', '1');
+	} catch {
+		/* private mode or a full quota: the guard degrades to the old behaviour */
+	}
 	const group = get(objectsGroup);
 	try {
 		if (snapshot.scene && group) {
@@ -376,7 +618,7 @@ async function applyRestore(snapshot) {
 				group.add(child);
 				if (peer) peer.send({ type: 'object', element: child.toJSON() });
 			});
-			objectsGroup.update((value) => value);
+			pokeScene();
 		}
 		// multi-material meshes come back from their toJSON, REPLACING the Group of
 		// single-material children the GLTF export left behind (same twin-replacement
@@ -426,7 +668,7 @@ async function applyRestore(snapshot) {
 		}
 		return true;
 	} catch (error) {
-		console.log('restore failed', error);
+		log('warn', 'autosave', 'restore failed', String(error));
 		return false;
 	}
 }
@@ -448,9 +690,15 @@ export function dismissRestore() {
 	restoreAvailable.set(null);
 }
 
-/** Immediate save (Settings action / tests) */
+/**
+ * Immediate save (Settings action / tests). With the re-entrancy guard in place a bare
+ * `saveSnapshot()` during an in-flight save would return having only QUEUED one, and
+ * this is the path whose whole promise is "it is on disk when I resolve" — so it waits
+ * for the running write and then takes its own turn.
+ */
 export function saveNow() {
-	return saveSnapshot();
+	const inflight = savingPromise;
+	return inflight ? inflight.then(() => saveSnapshot()) : saveSnapshot();
 }
 
 /**
@@ -504,13 +752,26 @@ export function startAutosave() {
 	// and once more: a game's state changes touch no object either
 	gameState.subscribe(() => markDirty());
 	setInterval(() => {
-		if (dirty) saveSnapshot();
+		// M5: the safety-net interval has to respect the adaptive cadence as well, or a
+		// scene that backed off to 5 minutes still pays for a full export every 3
+		// and the backoff buys nothing
+		const state = get(autosaveStatus);
+		if (dirty && Date.now() - state.lastSaveAt >= Math.min(state.debounceMs, INTERVAL_MS)) saveSnapshot();
 	}, INTERVAL_MS);
 	window.addEventListener('beforeunload', () => {
 		// best effort — the async export may not finish, the debounce usually already ran
 		if (dirty) saveSnapshot();
 	});
-	autosaveEnabled.subscribe((value) => localStorage.setItem('autosave', String(value)));
-	autoRestoreEnabled.subscribe((value) => localStorage.setItem('autoRestore', String(value)));
+	autosaveEnabled.subscribe((value) => safeStorage.setItem('autosave', String(value)));
+	autoRestoreEnabled.subscribe((value) => safeStorage.setItem('autoRestore', String(value)));
+	// 27-H: the storage story belongs in the bundle a user hands over. "Autosave last
+	// failed with QuotaExceededError and has been backing off to 5 minutes" is the
+	// single most useful line for a lost-work report, and nowhere else records it.
+	registerDiagnosticsSection('autosave', () => ({
+		...get(autosaveStatus),
+		enabled: get(autosaveEnabled),
+		dirty,
+		saving
+	}));
 	checkRestore();
 }

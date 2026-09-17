@@ -1,5 +1,5 @@
 import { get } from 'svelte/store';
-import { objectsGroup, lockedObjects } from '../../stores/sceneStore.js';
+import { objectsGroup, lockedObjects, pokeScene } from '../../stores/sceneStore.js';
 import { peers } from '../../stores/appStore.js';
 import { createGeometry, createLight, createGroup } from '$lib/geometries.svelte.js';
 import { recordObjectPresence, recordTransform } from '$lib/history';
@@ -245,7 +245,7 @@ function applyAiTransform(object, t) {
 		scale: object.scale.toArray()
 	};
 	notifyExternalMove(object.uuid);
-	objectsGroup.update((v) => v);
+	pokeScene();
 	broadcast({ type: 'move', uuid: object.uuid, pos: after.pos, rot: after.rot, scale: after.scale });
 	recordTransform({ uuid: object.uuid, before, after });
 }

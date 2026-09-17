@@ -3,6 +3,7 @@ import { writable, get } from 'svelte/store';
 import { isLocked, isVRMode, objectsGroup } from '../stores/sceneStore';
 import { peers } from '../stores/appStore';
 import { sceneKnock } from './scenePhysics';
+import { sessionNow } from './sessionClock'; // 25-E: `at` crosses the wire, so it is SESSION time
 import {
 	listPhysicsObjects,
 	bodyVelocityOf,
@@ -302,8 +303,12 @@ function fireKnock(probe, object, speed, point, response) {
 	const peer = get(peers);
 	const me = peer?.peer?.id ?? '';
 	// monotonic per sender: two knocks in one millisecond must not share a stamp,
-	// because A2 keys the `onhit` pulse by it
-	lastStamp = Math.max(Date.now(), lastStamp + 1);
+	// because A2 keys the `onhit` pulse by it.
+	// 25-E: `sessionNow()`, not `Date.now()` — this number is compared on another
+	// machine (A2 folds it into the trigger log beside every other stamp, and the log
+	// is ordered), and the session clock is what makes those comparisons mean the same
+	// thing on a peer whose own clock is minutes out.
+	lastStamp = Math.max(sessionNow(), lastStamp + 1);
 	/** @type {KnockHit} */
 	const hit = {
 		uuid: object.uuid,
@@ -382,7 +387,7 @@ export function noteRemoteHit(data, fromPeer) {
 		angvel: arr3(data.angvel),
 		point: arr3(data.point),
 		speed: Number.isFinite(Number(data.speed)) ? Number(data.speed) : 0,
-		at: Number.isFinite(Number(data.at)) ? Number(data.at) : Date.now(),
+		at: Number.isFinite(Number(data.at)) ? Number(data.at) : sessionNow(), // 25-E, as above
 		by: fromPeer ?? '',
 		probe: typeof data.probe === 'string' ? data.probe : ''
 	};

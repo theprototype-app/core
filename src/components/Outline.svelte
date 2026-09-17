@@ -36,15 +36,18 @@
 		OutlineEffect,
 		RenderPass
 	} from 'postprocessing';
-	import { onMount, untrack } from 'svelte';
+	import { onMount, onDestroy, untrack } from 'svelte';
+	import { renderPaused } from '$lib/overloadGuard';
+	import { qualityOverrides, ingestDrawGap } from '$lib/qualityGovernor';
 	// 16-Q4: the camera preview window renders as an inset viewport of THIS renderer
 	import { pipRect, pipTarget, glRect } from '$lib/cameraPip';
 	import { buildCamera } from '$lib/cameraObjects';
+	import { safeStorage } from '$lib/safeStorage';
 
 	let outlineEffectSelected: OutlineEffect | null = null;
 	let outlineEffectLocked: OutlineEffect | null = null;
 
-	const { scene, renderer, camera, size, autoRender, renderStage } = useThrelte();
+	const { scene, renderer, camera, size, autoRender, renderStage, dpr } = useThrelte();
 	const composer = new EffectComposer(renderer);
 	composer.removeAllPasses();
 	const renderPass = new RenderPass(scene, camera.current);
@@ -213,10 +216,13 @@
 		// displays, so its output was upsampled and read as a shifted "ghost" of the
 		// shading offset from the objects. The per-kind `resize` hook carries that
 		// lesson in the registry rather than hardcoded here.
-		const dpr = renderer.getPixelRatio ? renderer.getPixelRatio() : 1;
+		// 26-D: the governor changes the pixel ratio WITHOUT changing the CSS size, so the
+		// composer has to follow the dpr too or its targets stay at the old resolution
+		void $dpr;
+		const pixelRatio = renderer.getPixelRatio ? renderer.getPixelRatio() : 1;
 		composer.setSize($size.width, $size.height);
 		for (const instance of stackInstances)
-			instance.def?.resize?.(instance.object, $size.width, $size.height, dpr);
+			instance.def?.resize?.(instance.object, $size.width, $size.height, pixelRatio);
 	});
 	// L4: the capability gate now covers the WHOLE stack, not just AO (see
 	// viewMode.postSupported for the three-r185 + Chromium<=150 story, why the
@@ -251,14 +257,18 @@
 		// changes (measured: setting a camera to No files replaced rendered nothing new).
 		void $postStacks;
 		void $lookOverride;
+		// 26-D: the quality governor's post steps — AO first (the personal chip reads as plain
+		// shaded, an authored AO entry is dropped), then the whole stack. LOCAL overrides: the
+		// authored document is never touched, so a peer's look is unchanged
+		const reduced = $qualityOverrides;
 		const entries = effectivePostStack({
 			stack: resolvedDoc(POST_SCENE_KEY),
 			cameraStack: /** @type {any} */ (throughCamera ? resolvedDoc(throughCamera) : null),
-			mode: $viewMode,
-			localEnabled: $postEnabledLocal,
+			mode: reduced.aoOff && $viewMode === 'shaded-ao' ? 'shaded' : $viewMode,
+			localEnabled: $postEnabledLocal && !reduced.postOff,
 			postOk,
 			postWarm
-		});
+		}).filter((entry) => !(reduced.aoOff && entry.kind === 'ao'));
 		const signature = postStackSignature(entries);
 		if (signature === stackSignature) return;
 		stackSignature = signature;
@@ -320,8 +330,30 @@
 			autoRender.set(before);
 		};
 	});
+	// 26-G (roadmap 26 Stage 4): THE ONE PLACE A FRAME IS DRAWN, so the one place a
+	// pause can be real — no GPU work at all while it holds, which is what a device that
+	// cannot keep up needs. Read through a subscription, never get() per frame. NEVER in
+	// a headset: the XR compositor needs frames, and a paused XR session shows the user a
+	// frozen world strapped to their face with no overlay (DOM is invisible in VR).
+	let renderIsPaused = false;
+	const stopPauseWatch = renderPaused.subscribe((value) => (renderIsPaused = !!value));
+	onDestroy(stopPauseWatch);
+	// 26-D THE INGEST DRAW GAP (26-E's finding): while a big received scene drains through
+	// slow frames, draw at most one frame per gap — every object's parse waits for a frame to
+	// pass, so a joiner redrawing a 2,000-object scene 30 times a second was starving its own
+	// receive queue (3,000 objects: ~180s drawing, 5.6s not). Never in XR, like the pause.
+	let drawGapMs = 0;
+	let lastDrawAt = 0;
+	const stopGapWatch = ingestDrawGap.subscribe((value) => (drawGapMs = value));
+	onDestroy(stopGapWatch);
 	useTask(
 		(delta) => {
+			if (renderIsPaused && !renderer.xr.isPresenting) return;
+			if (drawGapMs > 0 && !renderer.xr.isPresenting) {
+				const drawNow = performance.now();
+				if (drawNow - lastDrawAt < drawGapMs) return;
+				lastDrawAt = drawNow;
+			}
 			// In WebXR the EffectComposer can't be used: its passes render to canvas-sized
 			// targets, not the XR framebuffer, so blitting them mismatches sizes
 			// (GL_INVALID_FRAMEBUFFER_OPERATION) and nothing reaches the headset (dark
@@ -428,7 +460,7 @@
 	});
 	// e2e hook (debugStores opt-in): the effects live in this component only
 	onMount(() => {
-		if (typeof localStorage !== 'undefined' && localStorage.getItem('debugStores'))
+		if (typeof localStorage !== 'undefined' && safeStorage.getItem('debugStores'))
 			(window as any).__outlineDebug = () => ({
 				selected: outlineEffectSelected?.selection.size ?? -1,
 				locked: outlineEffectLocked?.selection.size ?? -1,
@@ -439,7 +471,7 @@
 		// L1: the compiled chain lives in this component only, and its ORDER is the
 		// thing worth asserting — so the hook names each pass by identity rather than
 		// by constructor (minified in a build) and reports the merge plan.
-		if (typeof localStorage !== 'undefined' && localStorage.getItem('debugStores'))
+		if (typeof localStorage !== 'undefined' && safeStorage.getItem('debugStores'))
 			(window as any).__postDebug = () => ({
 				chain: ((composer as any).passes ?? []).map((pass: any) => {
 					if (pass === renderPass) return 'render';
@@ -449,6 +481,8 @@
 					return index >= 0 ? 'stack:' + (stackPlan[index]?.kinds ?? []).join('+') : 'other';
 				}),
 				composerPasses: ((composer as any).passes ?? []).length,
+				// 26-D: the composer's own buffer, which must follow a governor dpr change
+				composerBufferWidth: (composer as any).inputBuffer?.width ?? null,
 				outlinedSelected: outlineEffectSelected?.selection.size ?? 0,
 				outlinedLocked: outlineEffectLocked?.selection.size ?? 0,
 				stackPasses: stackPasses.length,

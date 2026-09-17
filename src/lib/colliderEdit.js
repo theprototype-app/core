@@ -1,7 +1,7 @@
 // @ts-ignore - no bundled three type declarations (project-wide)
 import * as THREE from 'three';
 import { writable, get } from 'svelte/store';
-import { globalScene, selectedObject, objectsGroup } from '../stores/sceneStore';
+import { globalScene, selectedObject, objectsGroup, pokeScene } from '../stores/sceneStore';
 import { peers, showToast } from '../stores/appStore';
 import { recordEntry } from './history';
 import {
@@ -245,7 +245,7 @@ export function commitColliderEdit() {
 	/** @type {any} */
 	const peer = get(peers);
 	if (peer) peer.send({ type: 'objectParameters', parameter: 'physics', uuid, physics: next });
-	objectsGroup.update((v) => v);
+	pokeScene();
 	selectedObject.update((v) => v);
 	import('./physics').then((m) => m.physicsShapeChanged(uuid)); // live rebuild mid-sim
 	showToast('Custom collider saved — ' + colliderPieces.length + ' convex piece' + (colliderPieces.length === 1 ? '' : 's'));

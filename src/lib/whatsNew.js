@@ -10,6 +10,7 @@ import { APP_VERSION, IS_DEV } from './version.js';
 import { showToast } from '../stores/appStore.js';
 // The changelog ships as the repo-root CHANGELOG.md (GitHub renders the same file).
 import changelogRaw from '../../CHANGELOG.md?raw';
+import { safeStorage } from './safeStorage';
 
 /** Raw markdown of the changelog, rendered by WhatsNew.svelte. */
 export const CHANGELOG = String(changelogRaw || '');
@@ -22,12 +23,12 @@ const LAST_SEEN_VERSION = 'lastSeenVersion';
  * @param {string} key @param {boolean} dflt
  */
 function boolPref(key, dflt) {
-	const raw = typeof localStorage !== 'undefined' ? localStorage.getItem(key) : null;
+	const raw = typeof localStorage !== 'undefined' ? safeStorage.getItem(key) : null;
 	const store = writable(raw === null ? dflt : raw === 'true');
 	if (typeof localStorage !== 'undefined') {
 		store.subscribe((v) => {
 			try {
-				localStorage.setItem(key, v ? 'true' : 'false');
+				safeStorage.setItem(key, v ? 'true' : 'false');
 			} catch {
 				/* storage disabled */
 			}
@@ -54,7 +55,7 @@ export const whatsNewUnseen = writable(false);
 
 function markSeen() {
 	try {
-		localStorage.setItem(LAST_SEEN_VERSION, APP_VERSION);
+		safeStorage.setItem(LAST_SEEN_VERSION, APP_VERSION);
 	} catch {
 		/* storage disabled */
 	}
@@ -80,7 +81,7 @@ export function openWelcome() {
 export function closeWelcome() {
 	welcomeOpen.set(false);
 	try {
-		localStorage.setItem(SEEN_WELCOME, 'true');
+		safeStorage.setItem(SEEN_WELCOME, 'true');
 	} catch {
 		/* storage disabled */
 	}
@@ -132,7 +133,7 @@ export function hasDeepLink() {
  */
 export function startWhatsNew() {
 	if (typeof localStorage === 'undefined') return;
-	const firstVisit = !localStorage.getItem(SEEN_WELCOME);
+	const firstVisit = !safeStorage.getItem(SEEN_WELCOME);
 	// R22 round 7 — DO NOT GREET AN INVITE. A URL with a peer id in its hash is somebody
 	// answering "join me", and the first thing they should see is the session, not an
 	// introduction to the app. The overlay is for a bare open; the version badge and its
@@ -150,7 +151,7 @@ export function startWhatsNew() {
 	// COMMITTED assertion — measured: whats-new went red on my machine and would have
 	// stayed green in CI, which is the worst shape a local override can take. The debug
 	// hook is the one reliable signal that this page is a test.
-	const underTest = !!localStorage.getItem('debugStores');
+	const underTest = !!safeStorage.getItem('debugStores');
 	const skipEnv = !underTest && String(import.meta.env.VITE_SKIP_WELCOME ?? '') === 'true';
 	const welcomeThisBoot = !invited && !skipEnv && (firstVisit || get(showWelcomeOnStart));
 	if (welcomeThisBoot) welcomeOpen.set(true);
@@ -161,7 +162,7 @@ export function startWhatsNew() {
 		return;
 	}
 	if (!get(showWhatsNewNotice)) return;
-	const lastSeen = localStorage.getItem(LAST_SEEN_VERSION);
+	const lastSeen = safeStorage.getItem(LAST_SEEN_VERSION);
 	// IS_DEV: the version string is constant across dev reloads, so this stays quiet
 	// after the first acknowledgement instead of nagging every HMR restart.
 	if (!lastSeen) {

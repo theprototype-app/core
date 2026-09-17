@@ -1,10 +1,11 @@
 import * as THREE from 'three';
 import { get, writable } from 'svelte/store';
-import { globalScene, objectsGroup, TControls, selectedObjects, isVRMode } from '../stores/sceneStore';
+import { globalScene, objectsGroup, TControls, selectedObjects, isVRMode, pokeScene } from '../stores/sceneStore';
 import { peers } from '../stores/appStore';
 import { recordTransformSet } from './history';
 import { hasOrigin, originWorld, setOriginFromWorld } from './objectOrigin';
 import { suspendAnimation, resumeAnimation } from './flowRuntime';
+import { safeStorage } from './safeStorage';
 // physics is reached DYNAMICALLY: a static import would close the cycle
 // multiTransform -> physics -> lockControl -> objectActions -> multiTransform
 // (the vite-dev TDZ trap; Rollup tolerates it, the dev server 500s)
@@ -56,13 +57,13 @@ let lastLiveSend = 0;
 /** @type {import('svelte/store').Writable<'median'|'active'|'parent'|'individual'>} */
 export const pivotMode = writable(
 	/** @type {any} */ (
-		typeof localStorage !== 'undefined' && ['median', 'active', 'parent', 'individual'].includes(localStorage.getItem('pivotMode') || '')
-			? localStorage.getItem('pivotMode')
+		typeof localStorage !== 'undefined' && ['median', 'active', 'parent', 'individual'].includes(safeStorage.getItem('pivotMode') || '')
+			? safeStorage.getItem('pivotMode')
 			: 'median'
 	)
 );
 pivotMode.subscribe((value) => {
-	if (typeof localStorage !== 'undefined') localStorage.setItem('pivotMode', String(value));
+	if (typeof localStorage !== 'undefined') safeStorage.setItem('pivotMode', String(value));
 });
 
 /** The parent every member shares, when it is a real object (not objectsGroup).
@@ -255,7 +256,7 @@ export function applyPivotTransform(mutate) {
 	if (customOrigin) customOrigin.copy(pivot.position);
 	if (transientPivot) transientPivot.copy(pivot.position);
 	publishPivotPose();
-	objectsGroup.update((value) => value);
+	pokeScene();
 	return true;
 }
 
@@ -404,7 +405,7 @@ function onDraggingChanged(/** @type {any} */ event) {
 		pivotStartInverse = null;
 		// the transient snap anchor rides where the drag left the pivot (19-B)
 		if (transientPivot) transientPivot.copy(pivot.position);
-		objectsGroup.update((value) => value);
+		pokeScene();
 	}
 }
 

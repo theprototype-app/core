@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { get } from 'svelte/store';
-import { objectsGroup } from '../stores/sceneStore';
+import { objectsGroup, pokeScene } from '../stores/sceneStore';
 import { peers } from '../stores/appStore';
 import { recordEntry } from './history';
 
@@ -94,7 +94,7 @@ export function setOriginFor(uuid, local) {
 	/** @type {any} */
 	const peer = get(peers);
 	peer?.send({ type: 'objectParameters', parameter: 'origin', uuid, origin: next });
-	objectsGroup.update((v) => v);
+	pokeScene();
 	return next;
 }
 

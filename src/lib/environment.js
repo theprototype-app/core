@@ -6,7 +6,7 @@ import { peers } from '../stores/appStore';
 import { sceneRadius } from './sceneBounds';
 import { registerSystemGroup } from './moduleSDK';
 import { createLight } from './geometries.svelte';
-import { cappedShadowSize, shadowQuality } from './lightParams';
+import { cappedShadowSize, shadowsDisabled } from './lightParams';
 import { wireframeActive } from './viewMode';
 import { idbGet, idbPut, idbDelete, idbKeys } from './idb';
 import { safeStorage } from './safeStorage';
@@ -241,7 +241,8 @@ export function applyEnvironment() {
 		// honor a persisted 'off' shadow pref here too: the renderer arrives
 		// after lightParams' first subscribe fires (which would no-op on a null
 		// renderer), so re-assert it on every apply
-		if (renderer.shadowMap) renderer.shadowMap.enabled = get(shadowQuality) !== 'off';
+		// (26-D: through shadowsDisabled, so the quality governor's override survives an apply)
+		if (renderer.shadowMap) renderer.shadowMap.enabled = !shadowsDisabled();
 	}
 
 	const { hemi, sun } = rigLights(scene, !!preset.hemi);
@@ -281,7 +282,7 @@ export function applyEnvironment() {
 	// correctly over the camera feed, and that darkening is what glues a virtual
 	// object to a real table (the sky/fog lift above is the whole AR stand-down;
 	// the sun rig keeps casting untouched)
-	const shadowsOff = get(shadowQuality) === 'off';
+	const shadowsOff = shadowsDisabled();
 	const catcher = shadowCatcher(scene, !!(preset.sun && !shadowsOff));
 	if (catcher) {
 		catcher.visible = !!(preset.sun && !shadowsOff) && !wireframeActive();

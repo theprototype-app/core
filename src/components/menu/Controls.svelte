@@ -6,6 +6,8 @@
 	// 24-B2: keyboard navigation in the object list (the Explorer's gridKeydown shape)
 	import { visibleObjectRows, withExpanded, typeAheadIndex } from '$lib/objectListNav';
 	import { sceneMetrics, statsOpen, worstTier, budgetRows } from '$lib/sceneBudget';
+	import { qualityState, pinQuality, releaseQuality } from '$lib/qualityGovernor';
+	import { showToast as showQualityToast } from '../../stores/appStore';
 	import { keyOf } from '$lib/keyOf';
 	import { systemGroupNames } from '$lib/moduleSDK';
 	import { ENV_ROOT } from '$lib/environment';
@@ -20,9 +22,9 @@
 	import { sendPing } from '$lib/ping';
 	import { buildObjectMenuItems } from '$lib/objectMenu';
 	import * as THREE from 'three';
-	import { onMount, setContext, tick } from 'svelte';
+	import { onMount, setContext, tick, untrack } from 'svelte';
 	import { createGesture } from '$lib/modalGrab';
-	import { writable } from 'svelte/store';
+	import { writable, get } from 'svelte/store';
 	import { shareObject } from '$lib/objectPermissions';
 	import Objects from './Objects.svelte';
 	import LocalObjects from './LocalObjects.svelte';
@@ -518,6 +520,39 @@
 		const over = budgetRows($sceneMetrics, budgetProfileNow).filter((r) => r.tier === 'amber' || r.tier === 'red');
 		if (!over.length) return 'Scene budget — within the ' + (budgetProfileNow === 'vr' ? 'VR / mobile' : 'desktop') + ' budget. Click for statistics.';
 		return 'Scene budget: over on ' + over.map((r) => r.label.toLowerCase()).join(', ') + '. Click for statistics.';
+	});
+
+	// 26-D: THE QUALITY CHIP. The governor acts on its own, so it has to be SEEN acting and
+	// be answerable in one click — an automatic change a person cannot see or undo is just a
+	// different kind of broken (26-G's rule). Two states, one button: reducing on its own
+	// (click keeps it), or held (click gives full quality back). A direct listener for the
+	// same reason as openStats.
+	const qualityTitle = $derived.by(() => {
+		const q = $qualityState;
+		const what = q.labels.join(', ').toLowerCase();
+		return q.pinned
+			? 'Held at reduced quality (' + what + '). Click to restore full quality.'
+			: 'This scene is heavy for this device, so drawing was reduced: ' + what + '. It comes back on its own when frames recover. Click to keep it this way.';
+	});
+	function qualityChipClick(node: HTMLElement) {
+		const click = () => (get(qualityState).pinned ? releaseQuality() : pinQuality());
+		node.addEventListener('click', click);
+		return { destroy() { node.removeEventListener('click', click); } };
+	}
+	// …and once per session, a toast when it FIRST acts, because the chip lives in the object
+	// list's footer and that window can be closed
+	let qualityToasted = false;
+	$effect(() => {
+		const q = $qualityState;
+		if (q.level > 0 && !qualityToasted) {
+			qualityToasted = true;
+			untrack(() =>
+				showQualityToast('Quality reduced — this scene is heavy for this device (' + q.labels.join(', ').toLowerCase() + '). It comes back on its own.', [
+					{ label: 'Restore full quality', action: () => releaseQuality() },
+					{ label: 'Keep it', action: () => pinQuality() }
+				])
+			);
+		}
 	});
 
 	// bottom status line: totals across the whole tree (N objects · M hidden)
@@ -2328,6 +2363,18 @@
 	<!-- 26-A: THE BUDGET METER. One dot beside the count that a person can learn in a
 	     second, next to the one number that already says how big the scene is. It opens
 	     the Statistics window, because a warning you cannot act on is a decoration. -->
+	{#if $qualityState.level > 0 || $qualityState.pinned}
+		<button
+			id="quality-chip"
+			class="shrink-0 bg-amber-100 px-2 py-0.5 text-left text-[10px] text-amber-800 dark:bg-amber-900/60 dark:text-amber-200"
+			data-level={$qualityState.level}
+			data-pinned={$qualityState.pinned ? 'true' : 'false'}
+			title={qualityTitle}
+			use:qualityChipClick
+		>
+			Reduced quality{$qualityState.pinned ? ' · held' : ' (scene is heavy)'}
+		</button>
+	{/if}
 	<button
 		id="object-count"
 		class="shrink-0 rounded-bl rounded-br bg-gray-100 px-2 py-0.5 text-left text-[10px] text-gray-500 dark:bg-gray-700 dark:text-gray-300"

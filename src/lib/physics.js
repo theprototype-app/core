@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 // 26-G: the streak watch is a pure leaf (stores + sceneBudget) — no edge into history.
 import { createStreakWatch, PHYSICS_SLOW_MS, PHYSICS_SLOW_STEPS } from './overloadGuard';
+import { registerMetricSource } from './sceneBudget';
 import { writable, get } from 'svelte/store';
 import { flowGraphs, allNodes, allEdges, SCENE_GRAPH } from '../stores/flowStore';
 import { objectsGroup, lockedObjects, selectedObject, selectedObjects, pokeScene } from '../stores/sceneStore';
@@ -826,6 +827,7 @@ async function startSimulation() {
 	// ColliderDesc.trimesh (fixed bodies only) and terrain from a heightfield —
 	// both deferred; every collider today is a cuboid AABB or an opt-in hull.
 	bodies = [];
+	stepTimes = []; // 26-E: a new run's cost is not the last run's
 	beforeStates = [];
 	suspendedForRun = [];
 	fixedBodies = new Map();
@@ -1255,6 +1257,7 @@ function step(now) {
 	try {
 		const started = performance.now();
 		stepInner(now);
+		noteStepMs(performance.now() - started);
 		// 26-G (roadmap 26 Stage 3): A SIMULATION THAT CANNOT KEEP UP. 27-C catches a step
 		// that THROWS; nothing caught one that simply takes longer than the frame it runs
 		// in, which turns every frame late before rendering starts and reads as the app
@@ -1276,6 +1279,33 @@ function step(now) {
 }
 
 const slowStepWatch = createStreakWatch({ overMs: PHYSICS_SLOW_MS, count: PHYSICS_SLOW_STEPS });
+
+// 26-E: what a simulation COSTS, for the budget sampler and the stress rig. Roadmap 26
+// section 2 budgets dynamic bodies (<200 desktop) and section 3 names the step time;
+// neither was readable anywhere. Registered, never imported — sceneBudget is a leaf and
+// physics sits in the history family. A step ring rather than the last value, because
+// the question is the same as for frames: the step you FEEL is the slow one.
+const STEP_RING = 120;
+/** @type {number[]} */
+let stepTimes = [];
+/** @param {number} ms */
+function noteStepMs(ms) {
+	stepTimes.push(ms);
+	if (stepTimes.length > STEP_RING) stepTimes.shift();
+}
+/** p95 of the recent steps, or null when no simulation is running (a stale ring from a
+ * run that ended must not read as a live cost). */
+export function physicsStepStats() {
+	if (!world || !stepTimes.length) return null;
+	const sorted = [...stepTimes].sort((a, b) => a - b);
+	const at = (/** @type {number} */ q) => sorted[Math.min(sorted.length - 1, Math.max(0, Math.ceil(q * sorted.length) - 1))];
+	return { n: sorted.length, p50: at(0.5), p95: at(0.95), max: sorted[sorted.length - 1] };
+}
+registerMetricSource('bodies', () => (world ? bodies.length : 0));
+registerMetricSource('physicsStepMs', () => {
+	const stats = physicsStepStats();
+	return stats ? Math.round(stats.p95 * 100) / 100 : null;
+});
 
 /** ONE stop path for the slow-step streak, shared by the real step and the test hook so
  * the two cannot drift apart. */

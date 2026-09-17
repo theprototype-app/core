@@ -24,6 +24,7 @@
 	import { syncedAnimations } from '../../stores/flowStore';
 	import { spatialVoice } from '$lib/voiceChat';
 	import { shadowQuality } from '$lib/lightParams';
+	import { autoQuality } from '$lib/qualityGovernor';
 	import { myHandModel, setMyHandModel } from '$lib/handModels';
 	import { explorerItems } from '$lib/explorer';
 	import { pingColor, pingSound } from '$lib/ping';
@@ -1024,6 +1025,10 @@
 							/>
 						</svelte:fragment>
 						Caps every light's shadow map size on THIS machine (Off disables shadows entirely; per-light sizes still replicate)
+					</SettingRow>
+					<SettingRow name="Reduce quality when the scene is heavy">
+						<svelte:fragment slot="control"><Checkbox id="auto-quality" bind:checked={$autoQuality} /></svelte:fragment>
+						When a heavy scene cannot keep 30 frames a second on THIS machine, drop shadows, then resolution, then effects, one step at a time, and give each back when frames recover. Never changes the scene for anyone else; the chip beside the object count says when it is active
 					</SettingRow>
 					<SettingRow name="Simulation controls">
 						<svelte:fragment slot="control"><Checkbox bind:checked={$showSimControls} /></svelte:fragment>

@@ -32,6 +32,7 @@ import { log, registerDiagnosticsSection } from './diagnostics';
 import { captureEditResume, applyEditResume } from './editResume';
 import { disposeTree, keepSet } from './disposeTree';
 import { safeStorage } from './safeStorage';
+import { registerMetricSource } from './sceneBudget';
 
 // Crash safety: snapshots of the scene (GLTF json), the node graph and the
 // camera go to IndexedDB — debounced 30s after any change plus a 3-minute
@@ -61,6 +62,12 @@ const MAX_DEBOUNCE_MS = 300_000;
  *   debounceMs: number, lastSaveAt: number, writes: number, coalesced: number,
  *   lastError: string | null}>}
  */
+// 26-E (roadmap 26 section 3): what the last snapshot cost, for the budget sampler and
+// the stress rig. The status store already held both numbers; nothing sampled them.
+// Registered, not imported by sceneBudget — that module stays a leaf.
+registerMetricSource('autosaveExportMs', () => get(autosaveStatus).lastExportMs || null);
+registerMetricSource('autosaveBytes', () => get(autosaveStatus).lastBytes || null);
+
 export const autosaveStatus = writable({
 	lastExportMs: 0,
 	lastBytes: 0,

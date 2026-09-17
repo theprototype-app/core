@@ -46,11 +46,18 @@ export const BUDGETS = [
 		vr: [500, 1500],
 		why: 'every object is at least one draw call, one wire message per joiner, one row in the tree and one node in every traversal'
 	},
+	// 26-E MEASURED the two render axes below (tests/e2e/scene-stress.cjs, Radeon 890M
+	// iGPU, 1280x720): they are counted per DISPLAY frame across every render() call now,
+	// which the starting numbers never were — a frame is ~13 calls with the composer, and
+	// the shadow pass draws each mesh again, so both read about TWICE the naive count.
+	// VR/mobile columns are still the starting estimates; they are owed on a headset.
 	{
 		key: 'triangles',
 		label: 'Triangles / frame',
 		unit: '',
-		desktop: [1000000, 3000000],
+		// 6.0M/frame (15 x 200k-tri models, shadow pass included) held a locked 60fps on
+		// an integrated GPU; the red edge above that is extrapolated, not measured
+		desktop: [4000000, 8000000],
 		vr: [300000, 600000],
 		why: 'vertex and fill cost, at 60Hz on a desktop against 72-90Hz on a headset'
 	},
@@ -58,7 +65,10 @@ export const BUDGETS = [
 		key: 'calls',
 		label: 'Draw calls / frame',
 		unit: '',
-		desktop: [1000, 2000],
+		// measured: 1,943 calls (1,000 boxes) 60fps p95 16.7 · 2,799-3,625 p95 33 ·
+		// 4,446 a steady 30fps · 5,323 p95 50 · 16,342 p95 133. Calls, not triangles, are
+		// what binds a many-object scene: it is CPU time per call
+		desktop: [2000, 4500],
 		vr: [300, 500],
 		why: 'there is no instancing or batching in core, so every call is CPU time'
 	},
@@ -377,10 +387,89 @@ function walkScene() {
 	return { objects, meshes, hidden };
 }
 
+// --- per-frame render totals (26-E) -----------------------------------------------
+//
+// THE FINDING the stress rig made on its first run: 1,000 boxes on screen, and the meter
+// read `triangles: 1, calls: 1`. `renderer.info` is AUTO-RESET at the start of every
+// `renderer.render()` call, and a desktop frame is not one call — the EffectComposer
+// renders the scene into a target, then N8AO, then the outline, then a fullscreen
+// triangle to the canvas, each its own `render()`. Whatever reads `info` afterwards sees
+// the LAST pass: one triangle, one call. So the triangle and draw-call budgets could
+// never leave green, and 26-G's `sceneIsHeavy` was really asking about objects alone.
+//
+// The fix counts EVERY `render()` and divides by the display frames the sampler saw.
+// Deliberately NOT `info.autoReset = false`: that changes what `info` means for every
+// other reader (the VR stats plate, the diagnostics section, a test that resets and
+// renders once), and inside a WebXR session `window.requestAnimationFrame` does not run,
+// so nothing would ever reset it again and the plate would count up forever. A wrapper
+// on the instance leaves `info` byte-identical for everyone and works in XR too.
+
+const renderAcc = { calls: 0, triangles: 0, renders: 0 };
+/** Display frames the sampler loop counted since the last sample. */
+let renderFrames = 0;
+
+/**
+ * Wrap this renderer's `render` so each call adds what it drew to the accumulator. Once
+ * per instance (a restored context can hand the store a NEW renderer, which gets its own).
+ * @param {any} renderer
+ */
+export function countRenderCalls(renderer) {
+	if (!renderer || typeof renderer.render !== 'function' || renderer.__budgetRender) return false;
+	const original = renderer.render;
+	renderer.__budgetRender = original;
+	renderer.render = function (/** @type {any[]} */ ...args) {
+		const info = this.info?.render;
+		// with autoReset ON (three's default) render() zeroes the counters itself, so the
+		// base is 0; with it OFF somebody is accumulating on purpose and we take the delta
+		const baseCalls = info && this.info.autoReset === false ? info.calls : 0;
+		const baseTris = info && this.info.autoReset === false ? info.triangles : 0;
+		const result = original.apply(this, args);
+		if (info) {
+			renderAcc.calls += info.calls - baseCalls;
+			renderAcc.triangles += info.triangles - baseTris;
+			renderAcc.renders++;
+		}
+		return result;
+	};
+	return true;
+}
+
+/** Undo `countRenderCalls` — the sampler stopping must leave the renderer as it found it.
+ * @param {any} renderer */
+export function uncountRenderCalls(renderer) {
+	if (!renderer?.__budgetRender) return;
+	renderer.render = renderer.__budgetRender;
+	delete renderer.__budgetRender;
+}
+
+/** @type {{calls: number, triangles: number, rendersPerFrame: number} | null} */
+let lastTotals = null;
+
+/** Per display frame since the last call, then start a new window. A window with no
+ * frame in it (two forced readings back to back, a paused loop) keeps the previous
+ * reading rather than inventing a zero — "nothing measured" is not "nothing drawn". */
+function takeRenderTotals() {
+	const frames = renderFrames;
+	if (frames === 0) return lastTotals;
+	const out = {
+		calls: Math.round(renderAcc.calls / frames),
+		triangles: Math.round(renderAcc.triangles / frames),
+		rendersPerFrame: Math.round((renderAcc.renders / frames) * 10) / 10
+	};
+	lastTotals = out;
+	renderAcc.calls = 0;
+	renderAcc.triangles = 0;
+	renderAcc.renders = 0;
+	renderFrames = 0;
+	return out;
+}
+
 function sample() {
 	/** @type {any} */
 	const renderer = get(globalRenderer);
+	if (running) countRenderCalls(renderer);
 	const info = renderer?.info;
+	const totals = takeRenderTotals();
 	const profile = profileFor(renderer);
 	const scene = walkScene();
 	const fps = frameStats();
@@ -403,8 +492,11 @@ function sample() {
 		objects: scene.objects,
 		meshes: scene.meshes,
 		hidden: scene.hidden,
-		triangles: info?.render?.triangles ?? null,
-		calls: info?.render?.calls ?? null,
+		// per DISPLAY frame across every render() call; before the sampler has counted a
+		// frame (a forced reading straight after boot) fall back to the raw last pass
+		triangles: totals ? totals.triangles : (info?.render?.triangles ?? null),
+		calls: totals ? totals.calls : (info?.render?.calls ?? null),
+		rendersPerFrame: totals ? totals.rendersPerFrame : null,
 		geometries: info?.memory?.geometries ?? null,
 		textures: info?.memory?.textures ?? null,
 		frameP50: fps.p50,
@@ -449,6 +541,7 @@ function loop() {
 		}
 	}
 	lastFrameAt = now;
+	renderFrames++;
 	if (now - lastSampleAt >= SAMPLE_MS) {
 		lastSampleAt = now;
 		sample();
@@ -467,6 +560,8 @@ export function startSceneMetrics() {
 	running = true;
 	lastFrameAt = 0;
 	lastSampleAt = 0;
+	renderFrames = 0;
+	countRenderCalls(get(globalRenderer));
 	startLongTasks();
 	rafId = requestAnimationFrame(loop);
 }
@@ -476,6 +571,7 @@ export function stopSceneMetrics() {
 	if (rafId != null) cancelAnimationFrame(rafId);
 	rafId = null;
 	stopLongTasks();
+	uncountRenderCalls(get(globalRenderer));
 }
 
 /** Force a reading now — the overlay opening, and the suite. */

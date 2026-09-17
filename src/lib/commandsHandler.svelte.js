@@ -417,7 +417,20 @@ let loadingStallTimer = null;
  * rejects. Nothing cleared it: the only writer was the Toasts effect, which removes a
  * uuid when its object APPEARS, and an object that never arrives never appears. */
 const LOADING_STALL_MS = 60000;
+let loadingStallMs = LOADING_STALL_MS;
+/** TEST-ONLY: shorten the stall so "silence, not duration" is provable in seconds.
+ * @param {number} [ms] omit to restore the real value */
+export function setLoadingStallMsForTest(ms) {
+    loadingStallMs = Number.isFinite(ms) && /** @type {number} */ (ms) > 0 ? /** @type {number} */ (ms) : LOADING_STALL_MS;
+}
 
+// 26-E: THE STALL IS SILENCE, NOT DURATION. The timer was armed once, at the announcement,
+// and never again — so any transfer that simply took longer than a minute was declared
+// dead while it was still arriving. The stress rig measured exactly that: a joiner
+// receiving 3,000 boxes on a real GPU was still landing ~10 objects a second at 63s when
+// the bar cleared and the toast said "1085 objects never arrived"; all 3,000 arrived by
+// 180s. Every uuid that lands now re-arms it (the `loading` subscription below), so the
+// 60s is measured from the LAST sign of life, which is what M2 meant by a stall.
 function armLoadingStall() {
     clearTimeout(loadingStallTimer);
     loadingStallTimer = setTimeout(() => {
@@ -426,11 +439,56 @@ function armLoadingStall() {
         console.log('Receiving objects: giving up on ' + left.length + ' that never arrived');
         clearLoadingBatch();
         showToast(left.length + ' object' + (left.length === 1 ? '' : 's') + ' never arrived.');
-    }, LOADING_STALL_MS);
+    }, loadingStallMs);
 }
+
+// 26-E (roadmap 26 section 3, "handshake time-to-synced"): how long the last RECEIVED
+// batch took, from its `loading` announcement to the last object landing. The receive
+// side is where the cost is felt, and it is the one moment both ends of the interval
+// are known locally — no clock is compared across peers. LOCAL, never sent.
+/** @type {number} */
+let loadingStartedAt = 0;
+/** @type {number} */
+let loadingAnnounced = 0;
+/** uuids still outstanding when the batch was CLOSED rather than finished (a stall, a
+ * departed sender, a cleared scene) — so a batch that never finished cannot report a
+ * sync time as though it had. */
+let loadingLeftAtClear = 0;
+/** @type {{ms: number, objects: number, complete: boolean, at: number} | null} */
+let lastSync = null;
+/** The last batch that ENDED (finished or closed), or null before one has run. */
+export function lastSyncStats() {
+    return lastSync;
+}
+// Both ends of a batch pass through the store: the Toasts reconcile empties it as the
+// last object appears, and `clearLoadingBatch` empties it on every other way out.
+// Subscribing here sees both without touching either writer.
+/** outstanding count at the last notification, so only PROGRESS re-arms the stall */
+let loadingLastLeft = 0;
+loading.subscribe((/** @type {any} */ left) => {
+    const count = Array.isArray(left) ? left.length : 0;
+    // progress on an open batch: re-arm — but only a timer that is running, never one the
+    // ingest fork parked on purpose while its question is open
+    if (loadingStartedAt && count > 0 && count < loadingLastLeft && loadingStallTimer) armLoadingStall();
+    loadingLastLeft = count;
+    if (!loadingStartedAt || count) return;
+    lastSync = {
+        ms: Math.round(performance.now() - loadingStartedAt),
+        objects: loadingAnnounced,
+        complete: loadingLeftAtClear === 0,
+        at: Date.now()
+    };
+    loadingStartedAt = 0;
+    loadingLeftAtClear = 0;
+});
+// only a batch that FINISHED has a sync time; a closed one says null rather than a
+// number that would read as a fast join
+registerMetricSource('syncMs', () => (lastSync?.complete ? lastSync.ms : null));
+registerMetricSource('syncObjects', () => (lastSync?.complete ? lastSync.objects : null));
 
 /** Close the batch: the bar goes away, the stall timer disarms. Idempotent. */
 export function clearLoadingBatch() {
+    if (loadingStartedAt) loadingLeftAtClear = /** @type {string[]} */ (get(loading)).length;
     clearTimeout(loadingStallTimer);
     loadingStallTimer = null;
     loadingSender = null;
@@ -453,6 +511,9 @@ export async function createLoader(count, uuids, senderId) {
     loading.set(Array.isArray(uuids) ? uuids : []);
     loadingcount.set(count);
     loadingSender = senderId ?? null;
+    // an empty announcement opens nothing to finish, so it starts no clock
+    loadingStartedAt = Array.isArray(uuids) && uuids.length ? performance.now() : 0;
+    loadingAnnounced = Number(count) || 0;
     // 26-C: THE ONE MOMENT the size is known and nothing has been applied. Past it a
     // 4,000-object scene is simply happening to you.
     const verdict = ingestVerdict(liveObjectCount(), count, profileFor(get(globalRenderer)));

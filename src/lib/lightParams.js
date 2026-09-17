@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import { writable, get } from 'svelte/store';
 import { objectsGroup, globalScene, globalRenderer } from '../stores/sceneStore';
 import { safeStorage } from './safeStorage';
+import { qualityOverrides } from './qualityGovernor';
 
 // Light parameter registry (phase 79): type-specific settings the Inspector
 // renders (color/intensity/visible are common rows it already has). Values
@@ -51,8 +52,19 @@ export function cappedShadowSize(wanted) {
 /** re-apply the cap to every shadow-casting light (on quality change) —
  * walks both objectsGroup and the scene-root environment rig, and toggles the
  * renderer's shadow map on the 'off' setting */
+/**
+ * Are shadows off on THIS device right now: the user's saved 'off', or 26-D's quality
+ * governor holding its shadows step (a local override that never writes the preference).
+ * The ONE read every place that sets `renderer.shadowMap.enabled` must use — the first
+ * version of the override was undone within a frame by environment.applyEnvironment, which
+ * re-asserted the saved preference on every apply.
+ */
+export function shadowsDisabled() {
+	return get(shadowQuality) === 'off' || get(qualityOverrides).shadowsOff;
+}
+
 export function applyShadowQualityCap() {
-	const off = get(shadowQuality) === 'off';
+	const off = shadowsDisabled();
 	/** @type {any} */
 	const renderer = get(globalRenderer);
 	if (renderer?.shadowMap) {
@@ -129,6 +141,12 @@ export function startLightParams() {
 	started = true;
 	shadowQuality.subscribe((value) => {
 		safeStorage.setItem('shadowQuality', String(value));
+		applyShadowQualityCap();
+	});
+	let lastShadowsOff = false;
+	qualityOverrides.subscribe((o) => {
+		if (o.shadowsOff === lastShadowsOff) return;
+		lastShadowsOff = o.shadowsOff;
 		applyShadowQualityCap();
 	});
 }

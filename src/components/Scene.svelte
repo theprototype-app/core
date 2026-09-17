@@ -1,6 +1,7 @@
 <script lang="ts">
 	import * as THREE from 'three';
-	import { onMount } from 'svelte';
+	import { onMount, onDestroy } from 'svelte';
+	import { qualityOverrides } from '$lib/qualityGovernor';
 	import { T, useTask, useThrelte } from '@threlte/core';
 	import { Environment, interactivity, OrbitControls, TransformControls } from '@threlte/extras';
 	import { XR, Controller, Hand, useHand } from '@threlte/xr'
@@ -93,7 +94,22 @@
 	import { Mesh, Vector3 } from 'three'
 
 
-	let { scene, camera, renderer } = useThrelte();
+	let { scene, camera, renderer, dpr } = useThrelte();
+
+	// 26-D: the quality governor's two knobs that live here. Resolution goes through
+	// threlte's OWN dpr (renderer.setPixelRatio directly would be undone by threlte's resize
+	// effect), and only once the governor has asked for something — at full quality this
+	// never touches the dpr, so threlte keeps following devicePixelRatio as it always did.
+	// The presence halving is read by the camera send below.
+	let presenceSlow = false;
+	let appliedDprScale = 1;
+	const stopQualityWatch = qualityOverrides.subscribe((o) => {
+		presenceSlow = o.presenceSlow;
+		if (o.dprScale === appliedDprScale) return;
+		appliedDprScale = o.dprScale;
+		dpr.set((typeof window !== 'undefined' ? window.devicePixelRatio || 1 : 1) * o.dprScale);
+	});
+	onDestroy(stopQualityWatch);
 
 	$globalScene = scene; // console.log($globalScene)
 	$globalRenderer = renderer;
@@ -297,7 +313,8 @@
 			// receives ~800 a second. The movement threshold is unchanged; this only bounds
 			// HOW OFTEN, which is the `vrhands` pattern one block below. Golden rule 11: a
 			// receiver eases between samples, we never raise a send rate to paper over it.
-			const camGapMs = $isVRMode ? 33 : 50;
+			// 26-D: the governor's last step halves it again (a receiver eases, rule 11)
+			const camGapMs = ($isVRMode ? 33 : 50) * (presenceSlow ? 2 : 1);
 			const nowMs = performance.now();
 			if ((camContentPos.distanceTo(lastCameraPosition) > ($isVRMode ? 0.0001 : 0.01) ||
 				camContentQuat.angleTo(lastCameraQuaternion) > THREE.MathUtils.degToRad(1)) &&

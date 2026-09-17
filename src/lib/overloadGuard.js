@@ -1,6 +1,6 @@
 import { writable, get } from 'svelte/store';
 import { objectsGroup, globalRenderer, pokeScene } from '../stores/sceneStore';
-import { BUDGETS, profileFor, registerFrameObserver, sceneMetrics, tierOf } from './sceneBudget';
+import { BUDGETS, profileFor, registerFrameObserver, sceneMetrics, isHeavy, qualityBaseline } from './sceneBudget';
 
 // 26-G (roadmap 26 section 4, Stages 3 and 4) — WHEN THE SCENE IS TOO HEAVY TO RUN.
 //
@@ -119,19 +119,16 @@ export function noteFrameForFreeze(ms) {
 	return false;
 }
 
-/** The scene-size axes only — never frame time itself, which would make the rule
- * circular. `unknown` (nothing sampled yet) is NOT heavy, so a freshly booted page can
- * never be paused before the first reading. */
-const HEAVY_AXES = ['objects', 'triangles', 'calls'];
-
-/** Is the scene big enough that pausing it and setting part of it aside could help? */
+/** Is the scene big enough that pausing it and setting part of it aside could help?
+ * The size axes only (`sceneBudget.HEAVY_AXES`); `unknown` (nothing sampled yet) is NOT
+ * heavy, so a freshly booted page can never be paused before the first reading.
+ * 26-D: judged against what the scene cost BEFORE the quality governor reduced it
+ * (`qualityBaseline`) — the governor drawing less must not talk this guard out of a
+ * scene that is still too heavy. */
 export function sceneIsHeavy() {
 	const metrics = get(sceneMetrics);
 	const profile = metrics?.profile === 'vr' ? 'vr' : 'desktop';
-	return HEAVY_AXES.some((key) => {
-		const tier = tierOf(key, metrics?.[key], profile);
-		return tier === 'amber' || tier === 'red';
-	});
+	return isHeavy(metrics, profile, get(qualityBaseline));
 }
 
 /** @param {string} reason */

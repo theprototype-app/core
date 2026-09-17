@@ -206,6 +206,45 @@ export function ingestVerdict(current, incoming, profile) {
 	};
 }
 
+// --- is the scene heavy? (26-G's gate, 26-D's gate) --------------------------------
+
+/** The scene-size axes only — never frame time itself, which would make the rule
+ * circular: "slow, therefore heavy, therefore act on the slowness". */
+export const HEAVY_AXES = ['objects', 'triangles', 'calls'];
+
+/**
+ * The size readings as they were BEFORE the quality governor (26-D) took anything away,
+ * or null while nothing is reduced. LOCAL.
+ *
+ * WHY IT EXISTS: turning shadows off halves the draw calls (26-E measured the shadow pass
+ * as the second copy of every mesh). A heaviness rule reading the live calls would then
+ * see a lighter scene, so 26-G's freeze streak — which only counts while the scene is
+ * heavy — would stand down BECAUSE the governor helped, and the one scene that most needs
+ * the last-resort pause could no longer get it. The scene did not get lighter; this
+ * device drew less of it.
+ * @type {import('svelte/store').Writable<{objects: number, triangles: number, calls: number} | null>}
+ */
+export const qualityBaseline = writable(null);
+
+/**
+ * Heavy = any size axis at amber or worse. While a baseline stands, each axis reads the
+ * larger of now and then — unless the scene really did shrink (fewer than 70% of the
+ * objects the baseline was taken with), in which case the baseline no longer describes
+ * this scene and is ignored. PURE.
+ * @param {Record<string, any>} metrics @param {'desktop'|'vr'} profile
+ * @param {{objects: number, triangles: number, calls: number} | null} [baseline]
+ */
+export function isHeavy(metrics, profile, baseline = null) {
+	const valid = !!baseline && Number(metrics?.objects) >= 0.7 * Number(baseline.objects);
+	return HEAVY_AXES.some((key) => {
+		const now = metrics?.[key];
+		const then = valid ? /** @type {any} */ (baseline)[key] : null;
+		const reading = Number.isFinite(then) && (!Number.isFinite(now) || then > now) ? then : now;
+		const tier = tierOf(key, reading, profile);
+		return tier === 'amber' || tier === 'red';
+	});
+}
+
 // --- frame times ------------------------------------------------------------------
 // A RING, not an average. p95 is the whole point: a scene that renders 58 of every 60
 // frames in 8ms and two in 300ms reads as 60fps and feels broken.
@@ -248,9 +287,30 @@ let longTasks = [];
 /** @type {any} */
 let longTaskObserver = null;
 
+/** @type {Set<(ms: number) => void>} */
+const longTaskObservers = new Set();
+
+/**
+ * Hear every long task as it is observed. 26-D's governor is the reader (more than two
+ * in five seconds is "overloaded" whatever the frames say); registered, never imported,
+ * for the same reason as `registerFrameObserver`.
+ * @param {(ms: number) => void} fn @returns {() => void} unregister
+ */
+export function registerLongTaskObserver(fn) {
+	longTaskObservers.add(fn);
+	return () => longTaskObservers.delete(fn);
+}
+
 /** @param {number} ms */
 export function noteLongTask(ms) {
 	const now = Date.now();
+	for (const fn of longTaskObservers) {
+		try {
+			fn(ms);
+		} catch {
+			/* isolated — one bad observer must not end the observation */
+		}
+	}
 	longTasks.push({ at: now, ms });
 	// a rolling minute, which is what the budget is stated in
 	longTasks = longTasks.filter((t) => now - t.at < 60000);

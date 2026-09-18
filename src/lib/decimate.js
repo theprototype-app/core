@@ -286,3 +286,61 @@ export function plannedTriangles(root, plan = {}) {
 	const targets = planTargets(eligible, { room, meshCap: plan.meshCap ?? null, floor: plan.floor });
 	return kept + targets.reduce((a, b) => a + b, 0);
 }
+
+// ---- the retained ORIGINALS (26-F phase 3 moved them here from fileHandler) --------
+// A leaf, so the object menu can ask "is there an original to go back to?" synchronously
+// without a static edge into fileHandler's history family. Only the machine that did the
+// import holds one: a peer sees the `reduced` stamp but never the file.
+
+/** What a retained original costs, and the ceiling across all of them: the oldest go
+ * first, and a restore past eviction says so rather than failing silently. */
+const ORIGINALS_BUDGET = 256 * 1024 * 1024;
+/** @type {Map<string, {file: any, extension: string, extras: any[] | undefined, name: string, bytes: number, at: number}>} */
+const originals = new Map();
+
+/** The retained source of a reduced import, or undefined. @param {string} uuid */
+export function originalOf(uuid) {
+	return originals.get(uuid);
+}
+
+/**
+ * Hold the source of a reduced import so Restore can re-read it. LRU by insertion, with
+ * the newest always kept even when it alone is over the ceiling (the import that JUST
+ * happened is the one a user is about to reconsider).
+ * @param {string} uuid @param {{file: any, extension: string, extras?: any[], name: string, bytes?: number}} source
+ */
+export function retainOriginal(uuid, source) {
+	originals.delete(uuid);
+	const bytes = Math.max(0, Number(source.bytes ?? source.file?.size) || 0);
+	originals.set(uuid, { file: source.file, extension: source.extension, extras: source.extras, name: source.name, bytes, at: Date.now() });
+	let total = 0;
+	for (const entry of originals.values()) total += entry.bytes;
+	for (const [key, entry] of originals) {
+		if (total <= ORIGINALS_BUDGET || key === uuid) break;
+		originals.delete(key);
+		total -= entry.bytes;
+	}
+}
+
+/** Is the original of this reduced import still held? @param {string} uuid */
+export function hasOriginal(uuid) {
+	return originals.has(uuid);
+}
+
+
+/**
+ * The longest side `reduceModel(root, plan)` would draw textures down to, or null — the
+ * number the dialog offers ("Reduce to 4096px textures"). Same planner.
+ * @param {any} root @param {{textureCap?: number | null, textureBudget?: number | null}} plan
+ */
+export function textureCapFor(root, plan = {}) {
+	/** @type {Map<string, any>} */
+	const textures = new Map();
+	root?.traverse?.((/** @type {any} */ o) => {
+		if (!o.isMesh) return;
+		const materials = Array.isArray(o.material) ? o.material : [o.material];
+		for (const material of materials) for (const t of texturesOf(material)) textures.set(t.source?.uuid ?? t.uuid, t);
+	});
+	const sizes = [...textures.values()].map((t) => textureSizeOf(t));
+	return planTextureCap(sizes, { single: plan.textureCap ?? null, budget: plan.textureBudget ?? null });
+}

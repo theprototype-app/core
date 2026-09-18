@@ -26,6 +26,7 @@ import { originPreset, resetOrigin } from './objectOrigin';
 import { pivotMode, reseatPivot, pivotParentAvailable } from './multiTransform';
 import { addAnnotation } from './annotationsHandler';
 import { pingObject, pingObjects } from './ping';
+import { hasOriginal } from './decimate';
 
 /**
  * The FULL object context menu, shared so the direct object menu (right-click an
@@ -184,6 +185,25 @@ export function buildObjectMenuItems(uuid, opts = {}) {
 							? lockedTooltip
 							: 'Merge into a single mesh — every material is kept as a slot',
 						action: () => convertToMesh(targets)
+					}
+				]
+			: []),
+		// 26-F: a REDUCED import can go back to its original for the rest of the session —
+		// the report toast offers it once, and a way back that expires with a toast is not
+		// a way back. Only where the original file is actually held (the machine that did
+		// the import); a peer sees the stamp and the reason, never a button that cannot work.
+		...(!multi && object?.userData?.reduced
+			? [
+					{
+						label: 'Restore original model',
+						icon: 'history',
+						disabled: locked || !hasOriginal(uuid),
+						tooltip: locked
+							? lockedTooltip
+							: hasOriginal(uuid)
+								? 'Put back the full ' + Number(object.userData.reduced.trianglesBefore).toLocaleString('en-US') + '-triangle model it was reduced from (undoable)'
+								: 'The original file is held only by whoever imported it, and only until they reload',
+						action: () => import('./fileHandler.svelte').then((m) => m.restoreOriginalImport(uuid))
 					}
 				]
 			: []),

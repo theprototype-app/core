@@ -227,7 +227,7 @@ h.run(async () => {
 		s.selectedObjects.set([]);
 		let last = null;
 		s.fileHandler.lastReduction.subscribe((/** @type {any} */ v) => (last = v))();
-		return { uuid, probe: window.__probe(uuid), undo: window.__undoDepth() - before, held: s.fileHandler.hasOriginal(uuid), last };
+		return { uuid, probe: window.__probe(uuid), undo: window.__undoDepth() - before, held: s.decimate.hasOriginal(uuid), last };
 	});
 	h.check(!!placed.uuid && placed.probe.triangles <= 6000, `the reduced import is placed (${placed.probe?.triangles} triangles, from ${placed.probe?.reduced?.trianglesBefore})`);
 	h.check(placed.probe.reduced?.trianglesAfter === placed.probe.triangles && placed.probe.reduced.error >= 0, 'the root carries a `reduced` stamp saying what was done');
@@ -311,7 +311,7 @@ h.run(async () => {
 
 	// the retention ceiling: the newest is kept, the oldest go
 	const lru = await A.page.evaluate(() => {
-		const f = window.__stores.fileHandler;
+		const f = window.__stores.decimate;
 		const big = 100 * 1024 * 1024;
 		f.retainOriginal('lru-1', { file: null, extension: 'glb', name: '1', bytes: big });
 		f.retainOriginal('lru-2', { file: null, extension: 'glb', name: '2', bytes: big });

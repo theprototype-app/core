@@ -62,7 +62,8 @@ export function gateMessage(verdict, name) {
  * stays ONE dialog however many ways out it has.
  *
  * @param {any} root the parsed tree
- * @param {{name?: string, extraChoices?: (verdict: any) => {value: string, label: string}[]}} [opts]
+ * @param {{name?: string, note?: string, extraChoices?: (verdict: any) => {value: string, label: string}[]}} [opts]
+ *   `note` is one more sentence for the message (why an option is NOT offered)
  * @returns {Promise<string|null>}
  */
 export async function admitModel(root, opts = {}) {
@@ -79,7 +80,7 @@ export async function admitModel(root, opts = {}) {
 	try {
 		return await showChoice({
 			title: 'This model is heavy',
-			message: gateMessage(verdict, name),
+			message: gateMessage(verdict, name) + (opts.note ? ' ' + opts.note : ''),
 			choices: [...extra, { value: 'load', label: 'Load anyway' }],
 			cancelLabel: 'Cancel'
 		});

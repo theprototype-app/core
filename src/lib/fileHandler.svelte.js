@@ -24,11 +24,12 @@ import { environment } from './environment';
 import { parkAnimatedAtBase } from '$lib/flowRuntime';
 import { stripEditOverlays } from '$lib/editOverlays';
 import { saveFileBase } from '$lib/saveName';
-import { peers, fixLight, loadingFile, showToast } from '../stores/appStore';
+import { peers, fixLight, loadingFile, showToast, showInfoToast, dismissToastById } from '../stores/appStore';
 import { safeStorage } from './safeStorage';
 import { admitModel, verdictFor } from './importGate';
 import { reductionPlan } from './importBudget';
-import { reduceModel } from './decimate';
+import { reduceModel, plannedTriangles, retainOriginal, originalOf, textureCapFor } from './decimate';
+import { shortCount } from './importBudget';
 
 //Access objects Store
 let sceneObjects = $state();
@@ -395,11 +396,30 @@ export function importGeneratedGlb(buffer, opts = {}) {
 						const root = result.scene;
 						// 26-F: a generated mesh is a model like any other — the same ask,
 						// and a cancel rejects so the job reports it rather than waiting
-						if ((await admitModel(root, { name: opts.name ?? 'Generated' })) !== 'load') {
+						const animated = result.animations?.length > 0;
+						const answer = await admitModel(root, {
+							name: opts.name ?? 'Generated',
+							extraChoices: animated ? undefined : (verdict) => reduceChoice(verdict, root),
+							note: animated ? ANIMATED_NOTE : undefined
+						});
+						if (answer !== 'load' && answer !== 'reduce') {
 							reject(new Error('Import cancelled — the model is above this device\'s budget'));
 							return;
 						}
 						if (opts.provenance) root.userData = { ...(root.userData || {}), aiGen: opts.provenance };
+						if (answer === 'reduce') {
+							const name = opts.name ?? 'Generated';
+							const placed = await placeReduced(
+								{ root, notes: [] },
+								{ file: new File([buffer], name + '.glb', { type: 'model/gltf-binary' }), extension: 'glb' },
+								name,
+								opts.position,
+								reductionPlan(verdictFor(root))
+							);
+							if (placed) resolve(placed);
+							else reject(new Error('The reduction failed — nothing was imported'));
+							return;
+						}
 						if (result.animations?.length > 0) {
 							// rare for generated meshes; animated rigs keep the raw-bytes path (unplaced)
 							addAnimatedImport(result, buffer, opts.name ?? 'Generated');
@@ -665,7 +685,15 @@ export async function importFile(file, name, ext, position, extras, opts = {}) {
 	// budget the verdict names, or an explicit plan). Phase 3 routes the dialog's own
 	// Reduce answer here. An animated rig is never reduced — it replicates as its original
 	// BYTES, and decimating the tree would leave peers reparsing the unreduced file.
-	const answer = opts.reduce && !parsed.animated ? 'reduce' : await admitModel(parsed.root, { name: label ?? file?.name });
+	const answer =
+		opts.reduce && !parsed.animated
+			? 'reduce'
+			: await admitModel(parsed.root, {
+					name: label ?? file?.name,
+					// 26-F phase 3: ONE dialog — the reduction is a third way out of the same ask
+					extraChoices: parsed.animated ? undefined : (verdict) => reduceChoice(verdict, parsed.root),
+					note: parsed.animated ? ANIMATED_NOTE : undefined
+				});
 	if (answer === 'reduce' && !parsed.animated) {
 		const plan = opts.reduce && typeof opts.reduce === 'object' ? opts.reduce : reductionPlan(verdictFor(parsed.root));
 		return placeReduced(parsed, { file, extension, extras }, label ?? file?.name ?? 'Model', position, plan);
@@ -700,34 +728,55 @@ export async function importFile(file, name, ext, position, extras, opts = {}) {
 // `userData.reduced` on the root (additive; rides toJSON and GLTF extras like `__uuid`):
 // what was reduced and by how much, so a peer or a reopened file can still say so.
 
-/** What a retained original costs, and the ceiling across all of them: the oldest go
- * first, and a restore past eviction says so rather than failing silently. */
-const ORIGINALS_BUDGET = 256 * 1024 * 1024;
-/** @type {Map<string, {file: any, extension: string, extras: any[] | undefined, name: string, bytes: number, at: number}>} */
-const originals = new Map();
+/** Why an animated model is not offered a reduction — said in the dialog, because an
+ * option that is silently missing reads as a bug. */
+const ANIMATED_NOTE =
+	'It is animated, so it cannot be reduced here: its rig reaches your peers as the original file.';
 
 /**
- * Hold the source of a reduced import so Restore can re-read it. LRU by insertion, with
- * the newest always kept even when it alone is over the ceiling (the import that JUST
- * happened is the one a user is about to reconsider).
- * @param {string} uuid @param {{file: any, extension: string, extras?: any[], name: string, bytes?: number}} source
+ * The dialog's Reduce choice for this verdict, or none when nothing that asked can be
+ * reduced (draw calls alone; a model of skinned meshes). The LABEL is the quality
+ * judgement made visible before anyone commits to it: it names the number of triangles
+ * and the texture size the reduction aims at, from the same planner that will do it.
+ * @param {any} verdict @param {any} root @returns {{value: string, label: string}[]}
  */
-export function retainOriginal(uuid, source) {
-	originals.delete(uuid);
-	const bytes = Math.max(0, Number(source.bytes ?? source.file?.size) || 0);
-	originals.set(uuid, { file: source.file, extension: source.extension, extras: source.extras, name: source.name, bytes, at: Date.now() });
-	let total = 0;
-	for (const entry of originals.values()) total += entry.bytes;
-	for (const [key, entry] of originals) {
-		if (total <= ORIGINALS_BUDGET || key === uuid) break;
-		originals.delete(key);
-		total -= entry.bytes;
+export function reduceChoice(verdict, root) {
+	if (!verdict?.reducible) return [];
+	const plan = reductionPlan(verdict);
+	/** @type {string[]} */
+	const parts = [];
+	if (plan.room != null || plan.meshCap != null) {
+		const planned = plannedTriangles(root, plan);
+		if (planned < verdict.incoming.triangles) parts.push('~' + shortCount(planned) + ' triangles');
 	}
+	if (plan.textureCap != null || plan.textureBudget != null) {
+		const cap = textureCapFor(root, plan);
+		if (cap) parts.push(cap + 'px textures');
+	}
+	return parts.length ? [{ value: 'reduce', label: 'Reduce to ' + parts.join(', ') }] : [];
 }
 
-/** Is the original of this reduced import still held? @param {string} uuid */
-export function hasOriginal(uuid) {
-	return originals.has(uuid);
+/** The sentence a finished reduction reports. PURE given the report. @param {string} name
+ * @param {import('./decimate').ReduceReport} report @param {boolean} stillOver */
+export function reductionSummary(name, report, stillOver) {
+	/** @type {string[]} */
+	const bits = [];
+	if (report.trianglesAfter < report.trianglesBefore) {
+		const cut = Math.round((1 - report.trianglesAfter / Math.max(1, report.trianglesBefore)) * 100);
+		bits.push(
+			shortCount(report.trianglesBefore) + ' → ' + shortCount(report.trianglesAfter) + ' triangles (−' + cut + '%)' +
+				// the error is a fraction of the mesh's size: say it as the most any point moved
+				', no point moved more than ' + Math.max(0.01, Math.round(report.error * 10000) / 100) + '% of its size'
+		);
+	}
+	if (report.texturesScaled)
+		bits.push('textures ' + report.textureMaxBefore + 'px → ' + report.textureMaxAfter + 'px');
+	if (report.skipped.length)
+		bits.push(report.skipped.length + ' mesh' + (report.skipped.length === 1 ? '' : 'es') + ' left as ' + (report.skipped.length === 1 ? 'it was' : 'they were') + ' (' + report.skipped[0].why + ')');
+	return (
+		'Reduced "' + name + '": ' + (bits.join('; ') || 'nothing needed reducing') +
+		(stillOver ? ' — still above what this device is recommended to hold.' : '.')
+	);
 }
 
 /**
@@ -745,14 +794,20 @@ export function hasOriginal(uuid) {
 async function placeReduced(parsed, source, label, position, plan) {
 	/** @type {import('./decimate').ReduceReport} */
 	let report;
+	// the Worker's run is seconds on a scan: say it is happening, and that the window is
+	// still yours meanwhile (that is the point of the Worker)
+	const progressId = 'import-reduce-' + parsed.root.uuid;
+	showInfoToast(progressId, 'Reducing "' + label + '"… you can keep working while it runs.', [], undefined, true);
 	try {
 		report = await reduceModel(parsed.root, plan);
 	} catch (error) {
+		dismissToastById(progressId);
 		console.error('Could not reduce the model:', error);
 		showToast('Could not reduce "' + label + '" — nothing was imported. Import it again and choose Load anyway to keep the original.');
 		disposeParsed(parsed.root);
 		return null;
 	}
+	dismissToastById(progressId);
 	const root = parsed.root;
 	const after = verdictFor(root);
 	root.userData = {
@@ -773,8 +828,15 @@ async function placeReduced(parsed, source, label, position, plan) {
 	addImported(root, label, position);
 	retainOriginal(root.uuid, { file: source.file, extension: source.extension, extras: source.extras, name: label });
 	lastReduction.set({ uuid: root.uuid, name: label, report, stillOver: after.gate, asking: after.asking.map((r) => r.key) });
+	// THE WAY BACK is offered in the same breath as the report — and it outlasts the toast:
+	// the object's menu carries "Restore original model" for the rest of the session
+	const uuid = root.uuid;
+	showToast(reductionSummary(label, report, after.gate), [
+		{ label: 'Restore original', action: () => void restoreOriginalImport(uuid) },
+		{ label: 'Keep', action: () => {} }
+	]);
 	for (const note of parsed.notes) showToast(note);
-	return root.uuid;
+	return uuid;
 }
 
 /** The last reduction this device made: what, by how much, whether it still does not
@@ -859,7 +921,7 @@ registerHistoryKind('importswap', applyImportSwap);
  * @returns {Promise<boolean>} whether it was restored
  */
 export async function restoreOriginalImport(uuid) {
-	const source = originals.get(uuid);
+	const source = originalOf(uuid);
 	if (!source) {
 		showToast('The original file is no longer held — import it again to use it.');
 		return false;

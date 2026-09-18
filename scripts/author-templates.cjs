@@ -73,6 +73,14 @@ const MODULES_REPO =
 function moduleZipPath(id) {
 	return path.join(MODULES_REPO, id + '.zip');
 }
+// 24-B: a def a MODULE owns lives in that module's own folder, emitted by its build
+// (`npm run build:football` writes modules/football/football.def.json from the same
+// source the module's own flight runs), so the def and the module cannot drift. Read it
+// from the sibling checkout like the zips; null when that checkout does not have it.
+function moduleDef(id) {
+	const file = path.join(MODULES_REPO, 'modules', id, id + '.def.json');
+	return fs.existsSync(file) ? JSON.parse(fs.readFileSync(file, 'utf8')) : null;
+}
 const STATIC_OUT = path.join(__dirname, '../static/templates');
 const outFlag = process.argv.indexOf('--out');
 const REPO_OUT = outFlag !== -1 ? path.resolve(process.argv[outFlag + 1]) : null;
@@ -1287,7 +1295,9 @@ const DEFS = [
 	TOWERS_DEF,
 	STARS_DEF,
 	MIRROR_DEF,
-	BEAT_DEF
+	BEAT_DEF,
+	// the def is the module's (see moduleDef); a checkout without it cannot author it
+	...['football'].map((id) => moduleDef(id) ?? { slug: id, missingModuleDef: true })
 ];
 
 (async () => {
@@ -1312,7 +1322,16 @@ const DEFS = [
 	const defs = ONLY ? DEFS.filter((d) => ONLY.includes(d.slug)) : DEFS;
 	if (ONLY && defs.length !== ONLY.length)
 		console.log('  WARN --only names a slug DEFS does not have: ' + ONLY.join(','));
-	for (const def of defs) {
+	// a module-owned def whose file is absent must not quietly drop its row from a full
+	// --out rebuild (that rebuilds index.json from scratch) — refuse instead.
+	// (Without --out only TEMPLATE kinds are written, so a missing game def is moot there.)
+	const missing = defs.filter((d) => d.missingModuleDef).map((d) => d.slug);
+	if (missing.length && REPO_OUT) {
+		console.log(`  FATAL module def(s) not found under ${MODULES_REPO}/modules: ${missing.join(',')} — set MODULES_REPO to a modules checkout that has them`);
+		await browser.close();
+		process.exit(1);
+	}
+	for (const def of defs.filter((d) => !d.missingModuleDef)) {
 		// C5.3: a game thumbnail wants the GAME, not a grey box — install its module and
 		// run its generator first. Skipped (with a warning, never a failure) when the
 		// sibling modules checkout has no zips, the helpers.cjs installModule contract.

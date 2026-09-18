@@ -7,11 +7,11 @@ import { OBJLoader } from 'three/addons/loaders/OBJLoader.js';
 import { MTLLoader } from 'three/addons/loaders/MTLLoader.js';
 import { STLLoader } from 'three/addons/loaders/STLLoader.js';
 import { FBXLoader } from 'three/addons/loaders/FBXLoader.js';
-import { get } from 'svelte/store';
+import { get, writable } from 'svelte/store';
 import { scenePost } from '$lib/scenePost';
 import { objectsGroup, TControls, selectedObject, selectedObjects, pokeScene } from '../stores/sceneStore.js';
 import { sendObjects } from './commandsHandler.svelte';
-import { recordObjectPresence } from '$lib/history';
+import { recordObjectPresence, recordEntry, registerHistoryKind } from '$lib/history';
 // 17-D2: the .mtl texture path reuses the app's own downscale-to-dataURL step.
 // STATIC on purpose — a lazy import of it from here never settled in dev, and
 // materialsHandler does not import fileHandler, so this closes no cycle.
@@ -24,8 +24,12 @@ import { environment } from './environment';
 import { parkAnimatedAtBase } from '$lib/flowRuntime';
 import { stripEditOverlays } from '$lib/editOverlays';
 import { saveFileBase } from '$lib/saveName';
-import { peers, fixLight, loadingFile, showToast } from '../stores/appStore';
+import { peers, fixLight, loadingFile, showToast, showInfoToast, dismissToastById } from '../stores/appStore';
 import { safeStorage } from './safeStorage';
+import { admitModel, verdictFor } from './importGate';
+import { reductionPlan } from './importBudget';
+import { reduceModel, plannedTriangles, retainOriginal, originalOf, textureCapFor } from './decimate';
+import { shortCount } from './importBudget';
 
 //Access objects Store
 let sceneObjects = $state();
@@ -387,10 +391,35 @@ export function importGeneratedGlb(buffer, opts = {}) {
 			createGltfLoader().parse(
 				buffer,
 				'',
-				(/** @type {any} */ result) => {
+				async (/** @type {any} */ result) => {
 					try {
 						const root = result.scene;
+						// 26-F: a generated mesh is a model like any other — the same ask,
+						// and a cancel rejects so the job reports it rather than waiting
+						const animated = result.animations?.length > 0;
+						const answer = await admitModel(root, {
+							name: opts.name ?? 'Generated',
+							extraChoices: animated ? undefined : (verdict) => reduceChoice(verdict, root),
+							note: animated ? ANIMATED_NOTE : undefined
+						});
+						if (answer !== 'load' && answer !== 'reduce') {
+							reject(new Error('Import cancelled — the model is above this device\'s budget'));
+							return;
+						}
 						if (opts.provenance) root.userData = { ...(root.userData || {}), aiGen: opts.provenance };
+						if (answer === 'reduce') {
+							const name = opts.name ?? 'Generated';
+							const placed = await placeReduced(
+								{ root, notes: [] },
+								{ file: new File([buffer], name + '.glb', { type: 'model/gltf-binary' }), extension: 'glb' },
+								name,
+								opts.position,
+								reductionPlan(verdictFor(root))
+							);
+							if (placed) resolve(placed);
+							else reject(new Error('The reduction failed — nothing was imported'));
+							return;
+						}
 						if (result.animations?.length > 0) {
 							// rare for generated meshes; animated rigs keep the raw-bytes path (unplaced)
 							addAnimatedImport(result, buffer, opts.name ?? 'Generated');
@@ -559,72 +588,399 @@ export function importModelFiles(list) {
 }
 
 /**
+ * Parse a model file into a tree WITHOUT touching the scene. 26-F split this out of
+ * `importFile` so the budget can look at the model between the parse and the add —
+ * the one moment its cost is exact and nothing has been paid for it yet — and so a
+ * reversible reduction can re-read the ORIGINAL from the same file later.
+ *
+ * Resolves `{root, animated, notes}`: `animated` is set for a rig that must ride the
+ * raw-bytes path (it carries the clips, the bytes and the parser kind), and `notes` are
+ * the toasts that belong AFTER a successful add (an OBJ whose .mtl was not brought).
+ * Throws on a file the loader cannot read.
+ * @param {any} file @param {string} extension @param {any[]=} extras
+ * @returns {Promise<{root: any, animated: {result: any, buffer: ArrayBuffer, kind: string} | null, notes: string[]}>}
+ */
+export async function parseModelFile(file, extension, extras) {
+	/** @type {string[]} */
+	const notes = [];
+	if (extension === 'obj') {
+		const text = await readAs(file, 'text');
+		const loader = new OBJLoader();
+		// 17-D2: an .obj carries no materials of its own — when the user brought
+		// the .mtl along (multi-select in the import dialog, or a multi-file
+		// drop), parse it and hand the material library to OBJLoader.
+		const { applied, dropped, maps } = await applyObjMaterials(loader, file, extras);
+		const object = loader.parse(text);
+		// stamp BEFORE addImported — that call is what replicates the object
+		stampImportedTextures(object, maps);
+		if (!applied && hasMtlReference(text))
+			notes.push('This .obj references a .mtl — pick both files together to import its materials');
+		else if (dropped)
+			notes.push(dropped + ' texture(s) named by the .mtl were not included — add the image files to see them');
+		return { root: object, animated: null, notes };
+	}
+	if (extension === 'stl') {
+		const geometry = new STLLoader().parse(await readAs(file, 'buffer'));
+		geometry.computeVertexNormals();
+		const mesh = new THREE.Mesh(geometry, new THREE.MeshStandardMaterial({ color: 0xcccccc }));
+		return { root: mesh, animated: null, notes };
+	}
+	if (extension === 'fbx') {
+		const buffer = await readAs(file, 'buffer');
+		const object = new FBXLoader().parse(buffer, '');
+		// 17-D2: FBX clips used to be dropped on the floor (the loader parsed
+		// them, nothing read them). Animated rigs now take the SAME raw-bytes
+		// route as animated GLB — peers reparse the original file.
+		const animated = object.animations?.length > 0
+			? { result: { scene: object, animations: object.animations }, buffer, kind: 'fbx' }
+			: null;
+		return { root: object, animated, notes };
+	}
+	// glb/gltf (default) — draco/meshopt capable
+	const buffer = await readAs(file, 'buffer');
+	const result = await new Promise((resolve, reject) =>
+		createGltfLoader().parse(buffer, '', resolve, (/** @type {any} */ error) => reject(error))
+	);
+	// animated rigs keep their own pipeline (raw-bytes sync) — unplaced
+	const animated = result.animations?.length > 0 ? { result, buffer, kind: 'gltf' } : null;
+	return { root: result.scene, animated, notes };
+}
+
+/** The name an import takes when the caller gave none — what each branch used before.
+ * @param {string} extension @param {string=} name */
+function defaultImportName(extension, name) {
+	if (name) return name;
+	if (extension === 'obj') return 'OBJ';
+	if (extension === 'stl') return 'STL';
+	if (extension === 'fbx') return 'FBX';
+	return undefined;
+}
+
+/**
  * Import a 3d file into the scene. GLB/GLTF, OBJ (+ .mtl when its companion file
  * comes along), STL and FBX (animated ones ride the raw-bytes path since 17-D2).
+ *
+ * 26-F: parse, then ASK when the model would take this device past its budget
+ * (`importGate.admitModel`), then place. Cancel leaves the scene untouched — nothing was
+ * added, sent or recorded.
  * @param {any} file @param {string=} name @param {string=} ext - explicit extension when the blob has no name (Library)
  * @param {number[]=} position - world drop point (Explorer drag-out, 96)
  * @param {any[]=} extras - companion files picked/dropped alongside (.mtl + its textures)
+ * @param {{reduce?: boolean | import('./importBudget').ReductionPlan}} [opts] 26-F: import REDUCED
+ * @returns {Promise<string|null>} the placed root's uuid, or null when nothing was placed
  */
-export async function importFile(file, name, ext, position, extras) {
-	const extension = String(ext ?? file.name ?? '').toLowerCase().split('.').pop();
+export async function importFile(file, name, ext, position, extras, opts = {}) {
+	const extension = String(ext ?? file.name ?? '').toLowerCase().split('.').pop() ?? '';
+	/** @type {any} */
+	let parsed;
 	try {
-		if (extension === 'obj') {
-			const text = await readAs(file, 'text');
-			const loader = new OBJLoader();
-			// 17-D2: an .obj carries no materials of its own — when the user brought
-			// the .mtl along (multi-select in the import dialog, or a multi-file
-			// drop), parse it and hand the material library to OBJLoader.
-			const { applied, dropped, maps } = await applyObjMaterials(loader, file, extras);
-			const object = loader.parse(text);
-			// stamp BEFORE addImported — that call is what replicates the object
-			stampImportedTextures(object, maps);
-			addImported(object, name ?? 'OBJ', position);
-			if (!applied && hasMtlReference(text))
-				showToast('This .obj references a .mtl — pick both files together to import its materials');
-			else if (dropped)
-				showToast(
-					dropped + ' texture(s) named by the .mtl were not included — add the image files to see them'
-				);
-		} else if (extension === 'stl') {
-			const geometry = new STLLoader().parse(await readAs(file, 'buffer'));
-			geometry.computeVertexNormals();
-			const mesh = new THREE.Mesh(geometry, new THREE.MeshStandardMaterial({ color: 0xcccccc }));
-			addImported(mesh, name ?? 'STL', position);
-		} else if (extension === 'fbx') {
-			const buffer = await readAs(file, 'buffer');
-			const object = new FBXLoader().parse(buffer, '');
-			// 17-D2: FBX clips used to be dropped on the floor (the loader parsed
-			// them, nothing read them). Animated rigs now take the SAME raw-bytes
-			// route as animated GLB — peers reparse the original file.
-			if (object.animations?.length > 0)
-				addAnimatedImport(
-					{ scene: object, animations: object.animations },
-					buffer,
-					name ?? 'FBX',
-					'fbx'
-				);
-			else addImported(object, name ?? 'FBX', position);
-		} else {
-			// glb/gltf (default) — draco/meshopt capable
-			const buffer = await readAs(file, 'buffer');
-			createGltfLoader().parse(
-				buffer,
-				'',
-				(result) => {
-					// animated rigs keep their own pipeline (raw-bytes sync) — unplaced
-					if (result.animations?.length > 0) addAnimatedImport(result, buffer, name);
-					else addImported(result.scene, name, position);
-				},
-				(error) => {
-					console.error('Error importing file:', error);
-					showToast('Could not import ' + (name ?? file.name ?? 'file'));
-				}
-			);
-		}
+		parsed = await parseModelFile(file, extension, extras);
 	} catch (error) {
 		console.error('Error importing file:', error);
 		showToast('Could not import ' + (name ?? file.name ?? 'file') + ' — the file may be corrupt or an unsupported version');
+		return null;
 	}
+	const label = defaultImportName(extension, name);
+	// 26-F phase 2: `opts.reduce` asks for the reduced import directly (true = aim at the
+	// budget the verdict names, or an explicit plan). Phase 3 routes the dialog's own
+	// Reduce answer here. An animated rig is never reduced — it replicates as its original
+	// BYTES, and decimating the tree would leave peers reparsing the unreduced file.
+	const answer =
+		opts.reduce && !parsed.animated
+			? 'reduce'
+			: await admitModel(parsed.root, {
+					name: label ?? file?.name,
+					// 26-F phase 3: ONE dialog — the reduction is a third way out of the same ask
+					extraChoices: parsed.animated ? undefined : (verdict) => reduceChoice(verdict, parsed.root),
+					note: parsed.animated ? ANIMATED_NOTE : undefined
+				});
+	if (answer === 'reduce' && !parsed.animated) {
+		const plan = opts.reduce && typeof opts.reduce === 'object' ? opts.reduce : reductionPlan(verdictFor(parsed.root));
+		return placeReduced(parsed, { file, extension, extras }, label ?? file?.name ?? 'Model', position, plan);
+	}
+	if (answer !== 'load') {
+		disposeParsed(parsed.root);
+		return null;
+	}
+	try {
+		if (parsed.animated) addAnimatedImport(parsed.animated.result, parsed.animated.buffer, label, parsed.animated.kind);
+		else addImported(parsed.root, label, position);
+		for (const note of parsed.notes) showToast(note);
+		return parsed.root.uuid;
+	} catch (error) {
+		console.error('Error importing file:', error);
+		showToast('Could not import ' + (name ?? file.name ?? 'file') + ' — the file may be corrupt or an unsupported version');
+		return null;
+	}
+}
+
+// ---- 26-F phase 2: a REDUCED import, and the way back ----------------------
+//
+// A reduction is a quality judgement made on the user's behalf, so it must be undoable
+// within the session: the ORIGINAL file is retained (the File, not the parsed tree — a
+// 2.4M-triangle scan is ~100MB of geometry in memory and ~70MB on disk) and Restore
+// re-parses it. The swap is a delete + a create at the SAME uuid in ONE history batch, so
+// it rides three existing channels and invents none: peers get the ordinary `delete` then
+// the ordinary GLTF object sync, and Ctrl+Z puts the reduced version back.
+//
+// What travels and persists is simply the reduced geometry — it is ordinary geometry, so
+// the wire, autosave and a .tpscene carry it with no new field. The one addition is
+// `userData.reduced` on the root (additive; rides toJSON and GLTF extras like `__uuid`):
+// what was reduced and by how much, so a peer or a reopened file can still say so.
+
+/** Why an animated model is not offered a reduction — said in the dialog, because an
+ * option that is silently missing reads as a bug. */
+const ANIMATED_NOTE =
+	'It is animated, so it cannot be reduced here: its rig reaches your peers as the original file.';
+
+/**
+ * The dialog's Reduce choice for this verdict, or none when nothing that asked can be
+ * reduced (draw calls alone; a model of skinned meshes). The LABEL is the quality
+ * judgement made visible before anyone commits to it: it names the number of triangles
+ * and the texture size the reduction aims at, from the same planner that will do it.
+ * @param {any} verdict @param {any} root @returns {{value: string, label: string}[]}
+ */
+export function reduceChoice(verdict, root) {
+	if (!verdict?.reducible) return [];
+	const plan = reductionPlan(verdict);
+	/** @type {string[]} */
+	const parts = [];
+	if (plan.room != null || plan.meshCap != null) {
+		const planned = plannedTriangles(root, plan);
+		if (planned < verdict.incoming.triangles) parts.push('~' + shortCount(planned) + ' triangles');
+	}
+	if (plan.textureCap != null || plan.textureBudget != null) {
+		const cap = textureCapFor(root, plan);
+		if (cap) parts.push(cap + 'px textures');
+	}
+	return parts.length ? [{ value: 'reduce', label: 'Reduce to ' + parts.join(', ') }] : [];
+}
+
+/** The sentence a finished reduction reports. PURE given the report. @param {string} name
+ * @param {import('./decimate').ReduceReport} report @param {boolean} stillOver */
+export function reductionSummary(name, report, stillOver) {
+	/** @type {string[]} */
+	const bits = [];
+	if (report.trianglesAfter < report.trianglesBefore) {
+		const cut = Math.round((1 - report.trianglesAfter / Math.max(1, report.trianglesBefore)) * 100);
+		bits.push(
+			shortCount(report.trianglesBefore) + ' → ' + shortCount(report.trianglesAfter) + ' triangles (−' + cut + '%)' +
+				// the error is a fraction of the mesh's size: say it as the most any point moved
+				', no point moved more than ' + Math.max(0.01, Math.round(report.error * 10000) / 100) + '% of its size'
+		);
+	}
+	if (report.texturesScaled)
+		bits.push('textures ' + report.textureMaxBefore + 'px → ' + report.textureMaxAfter + 'px');
+	if (report.skipped.length)
+		bits.push(report.skipped.length + ' mesh' + (report.skipped.length === 1 ? '' : 'es') + ' left as ' + (report.skipped.length === 1 ? 'it was' : 'they were') + ' (' + report.skipped[0].why + ')');
+	return (
+		'Reduced "' + name + '": ' + (bits.join('; ') || 'nothing needed reducing') +
+		(stillOver ? ' — still above what this device is recommended to hold.' : '.')
+	);
+}
+
+/**
+ * Reduce a parsed model off the main thread, stamp what was done, place it, and retain
+ * the original. Resolves the placed uuid, or null (nothing placed) when the reduction
+ * failed — a failed reduction never falls back to importing the heavy original
+ * unasked: the user chose the reduced model, and a surprise 2.4M triangles is exactly
+ * what they chose to avoid.
+ * @param {{root: any, notes: string[]}} parsed
+ * @param {{file: any, extension: string, extras?: any[]}} source
+ * @param {string} label @param {number[] | undefined} position
+ * @param {import('./importBudget').ReductionPlan} plan
+ * @returns {Promise<string|null>}
+ */
+async function placeReduced(parsed, source, label, position, plan) {
+	/** @type {import('./decimate').ReduceReport} */
+	let report;
+	// the Worker's run is seconds on a scan: say it is happening, and that the window is
+	// still yours meanwhile (that is the point of the Worker)
+	const progressId = 'import-reduce-' + parsed.root.uuid;
+	showInfoToast(progressId, 'Reducing "' + label + '"… you can keep working while it runs.', [], undefined, true);
+	try {
+		report = await reduceModel(parsed.root, plan);
+	} catch (error) {
+		dismissToastById(progressId);
+		console.error('Could not reduce the model:', error);
+		showToast('Could not reduce "' + label + '" — nothing was imported. Import it again and choose Load anyway to keep the original.');
+		disposeParsed(parsed.root);
+		return null;
+	}
+	dismissToastById(progressId);
+	const root = parsed.root;
+	const after = verdictFor(root);
+	root.userData = {
+		...(root.userData || {}),
+		reduced: {
+			trianglesBefore: report.trianglesBefore,
+			trianglesAfter: report.trianglesAfter,
+			verticesBefore: report.verticesBefore,
+			verticesAfter: report.verticesAfter,
+			texturesScaled: report.texturesScaled,
+			textureMaxBefore: report.textureMaxBefore,
+			textureMaxAfter: report.textureMaxAfter,
+			// the largest shape error the simplifier introduced, as a fraction of the mesh's size
+			error: Math.round(report.error * 10000) / 10000,
+			at: Date.now()
+		}
+	};
+	addImported(root, label, position);
+	retainOriginal(root.uuid, { file: source.file, extension: source.extension, extras: source.extras, name: label });
+	lastReduction.set({ uuid: root.uuid, name: label, report, stillOver: after.gate, asking: after.asking.map((r) => r.key) });
+	// THE WAY BACK is offered in the same breath as the report — and it outlasts the toast:
+	// the object's menu carries "Restore original model" for the rest of the session
+	const uuid = root.uuid;
+	showToast(reductionSummary(label, report, after.gate), [
+		{ label: 'Restore original', action: () => void restoreOriginalImport(uuid) },
+		{ label: 'Keep', action: () => {} }
+	]);
+	for (const note of parsed.notes) showToast(note);
+	return uuid;
+}
+
+/** The last reduction this device made: what, by how much, whether it still does not
+ * fit. LOCAL — phase 3's toast renders it, the suite reads it.
+ * @type {import('svelte/store').Writable<any>} */
+export const lastReduction = writable(null);
+
+/** Bytes of geometry a tree holds — what an `importswap` entry keeps alive, stated in
+ * the unit meshBudget's history byte budget reads (`positions.byteLength`), so fifty of
+ * these cannot quietly outgrow HISTORY_BYTES. @param {any} root */
+function treeBytes(root) {
+	let bytes = 0;
+	root?.traverse?.((/** @type {any} */ o) => {
+		const g = o.geometry;
+		if (!g) return;
+		for (const key of Object.keys(g.attributes ?? {})) bytes += g.attributes[key]?.array?.byteLength ?? 0;
+		bytes += g.index?.array?.byteLength ?? 0;
+	});
+	return bytes;
+}
+
+/**
+ * Put `incoming` where `live` stands — same uuid, same pose, same name — and replicate it
+ * as the ordinary `delete` then the ordinary GLTF object sync. The one code path for the
+ * restore AND for its undo/redo.
+ *
+ * WHY NOT the create/delete history kinds: their undo re-broadcasts the object as a
+ * toJSON element, whose geometry is PLAIN NUMBER ARRAYS — and binarypack overflows its
+ * stack past ~40k numbers, which `broadcast` swallows (golden rule 6). MEASURED: a
+ * 6,000-triangle reduced model re-added by undo stayed on this machine and the peer was
+ * left with nothing at that uuid. The GLTF path packs the same geometry as raw bytes.
+ * And a live-object entry has no 5MB snapshot ceiling, so a restore is ALWAYS undoable.
+ * @param {any} live @param {any} incoming
+ */
+function swapImport(live, incoming) {
+	const group = get(objectsGroup);
+	group.updateWorldMatrix(true, false);
+	live.updateWorldMatrix(true, false);
+	// the pose it stands in NOW (moved since the import, or since the last swap), in
+	// objectsGroup's frame — the swap lands at the root, where both peers can agree on it
+	const local = new THREE.Matrix4().copy(group.matrixWorld).invert().multiply(live.matrixWorld);
+	local.decompose(incoming.position, incoming.quaternion, incoming.scale);
+	incoming.name = live.name;
+	const wasSelected = get(selectedObject)?.uuid === live.uuid;
+	if (controls?.object?.uuid === live.uuid) controls.detach();
+	live.parent?.remove(live);
+	peer?.send?.({ type: 'delete', uuid: live.uuid, peerId: peer.peer.id });
+	group.add(incoming);
+	pokeScene();
+	if (wasSelected) {
+		selectedObject.set(incoming);
+		controls?.attach?.(incoming);
+	}
+	sendObjects(/** @type {any} */ (null), incoming);
+}
+
+/** The `importswap` history kind: `state.which` names the version that should be in
+ * the scene. Registered HERE — nothing in history's own import subtree reaches this
+ * module (checked by walking the static graph), which is the rule for any module whose
+ * body registers a kind. @param {any} entry @param {any} state */
+function applyImportSwap(entry, state) {
+	const want = state?.which === 'original' ? entry.original : entry.reduced;
+	const live = get(objectsGroup)?.getObjectByProperty('uuid', entry.uuid);
+	if (!live || !want) {
+		showToast('Cannot undo/redo: that model is no longer in the scene');
+		return false;
+	}
+	if (live === want) return true;
+	// whatever is live now is what the OTHER side of the entry must hold (a later edit
+	// to it — a material, a move — belongs to that version)
+	if (want === entry.original) entry.reduced = live;
+	else entry.original = live;
+	swapImport(live, want);
+	return true;
+}
+registerHistoryKind('importswap', applyImportSwap);
+
+/**
+ * Put the ORIGINAL model back in place of its reduced import — same uuid, same place,
+ * same name — as ONE undoable step that replicates through the ordinary delete + create.
+ * @param {string} uuid the reduced root
+ * @returns {Promise<boolean>} whether it was restored
+ */
+export async function restoreOriginalImport(uuid) {
+	const source = originalOf(uuid);
+	if (!source) {
+		showToast('The original file is no longer held — import it again to use it.');
+		return false;
+	}
+	const current = get(objectsGroup)?.getObjectByProperty('uuid', uuid);
+	if (!current) {
+		showToast('That model is no longer in the scene.');
+		return false;
+	}
+	/** @type {any} */
+	let parsed;
+	try {
+		parsed = await parseModelFile(source.file, source.extension, source.extras);
+	} catch (error) {
+		console.error('Could not re-read the original:', error);
+		showToast('Could not re-read the original of "' + source.name + '".');
+		return false;
+	}
+	const fresh = parsed.root;
+	// IDENTITY: the root keeps its uuid (flows, notes, joints and selection are keyed by
+	// it), and so does every child when the tree still has the shape it was imported with
+	// — a reduction never changes the tree, so only a user's own edit can make them differ
+	/** @type {any[]} */
+	const was = [];
+	/** @type {any[]} */
+	const now = [];
+	current.traverse((/** @type {any} */ o) => was.push(o));
+	fresh.traverse((/** @type {any} */ o) => now.push(o));
+	if (was.length === now.length) now.forEach((o, i) => (o.uuid = was[i].uuid));
+	else fresh.uuid = current.uuid;
+	const { reduced, ...keep } = current.userData ?? {};
+	void reduced;
+	fresh.userData = { ...(fresh.userData || {}), ...keep };
+	swapImport(current, fresh);
+	recordEntry({
+		kind: 'importswap',
+		label: 'Restore original model',
+		uuid,
+		reduced: current,
+		original: fresh,
+		before: { which: 'reduced', positions: { byteLength: treeBytes(current) } },
+		after: { which: 'original', positions: { byteLength: treeBytes(fresh) } }
+	});
+	for (const note of parsed.notes) showToast(note);
+	showToast('Restored the original "' + fresh.name + '" — Ctrl+Z to go back to the reduced one');
+	return true;
+}
+
+/** Free a parsed tree that never reached the scene (a cancelled import). Geometry and
+ * textures only — nothing else holds them yet. @param {any} root */
+function disposeParsed(root) {
+	root?.traverse?.((/** @type {any} */ o) => {
+		o.geometry?.dispose?.();
+		const list = Array.isArray(o.material) ? o.material : o.material ? [o.material] : [];
+		for (const material of list) {
+			for (const key of Object.keys(material)) if (material[key]?.isTexture) material[key].dispose();
+			material.dispose?.();
+		}
+	});
 }
 
 /**

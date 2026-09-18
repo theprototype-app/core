@@ -8,6 +8,10 @@
 	// the scene's. Exactly how HudLayer resolves an attached HUD — a look on a camera IS
 	// a post document keyed by that camera's uuid, so there is no new concept here.
 	import { cameraPreview } from '$lib/cameraPreview';
+	// P2: while WATCHING a peer, the chain resolves from THEIR look state (camera, view
+	// mode, local post switch, Set Look overrides) instead of ours — presence, never data.
+	import { specatorMode } from '../stores/appStore.js';
+	import { peerLooks, lookOf } from '$lib/lookPresence';
 	import {
 		scenePost,
 		postStacks,
@@ -22,6 +26,10 @@
 	// side-effecting import: registers the built-in effect kinds. It also owns the
 	// postprocessing/n8ao imports, which is what keeps scenePost.js a pure leaf.
 	import { compilePostStack, disposePostStack } from '$lib/postEffects';
+	// P4: side-effecting too — registers the `graph` kind, so a post-domain shader graph
+	// is just another entry in the stack above. This component owns the one thing that
+	// module cannot: the NormalPass, added ON DEMAND below when a graph reads normals.
+	import '$lib/postGraphs';
 	import { registerOutlineLayer } from '$lib/editOverlays';
 	import { faceEditObject, meshEditOutline } from '$lib/faceEdit';
 	import { editingObject } from '$lib/meshEdit';
@@ -33,6 +41,7 @@
 		BlendFunction,
 		EffectComposer,
 		EffectPass,
+		NormalPass,
 		OutlineEffect,
 		RenderPass
 	} from 'postprocessing';
@@ -117,6 +126,9 @@
 	let stackSkipped: any[] = [];
 	/** L4: does the built stack map the frame itself? (environment reads this) */
 	let stackTonemaps = false;
+	/** P4: the ONE normal pass, built only while something in the stack reads normals —
+	 * a second scene render per frame is not a cost to pay for a chain that never asks */
+	let normalPass: any = null;
 	// "would the compiled chain differ?" — a param scrub that changes nothing must
 	// not thrash the composer, and the effect below re-runs on every store write
 	let stackSignature = '';
@@ -143,6 +155,11 @@
 	function rebuildStack(entries: any[]) {
 		for (const pass of stackPasses) (composer as any).removePass(pass);
 		disposePostStack(stackPasses, stackInstances);
+		if (normalPass) {
+			(composer as any).removePass(normalPass);
+			normalPass.dispose?.();
+			normalPass = null;
+		}
 		// `size.current` / `camera.current` are PLAIN property reads on threlte's
 		// CurrentWritable, so they register no dependency — deliberate: a resize or a
 		// camera swap must not rebuild the whole chain, they have their own effects.
@@ -162,7 +179,24 @@
 		// index 1.. = after RenderPass, BEFORE the two outline passes. postprocessing's
 		// addPass(pass, index) re-assigns renderToScreen to whatever ends up last, so
 		// the outlines keep presenting.
-		stackPasses.forEach((pass, offset) => (composer as any).addPass(pass, 1 + offset));
+		// P4 — THE NORMAL PASS, on demand. A post graph that reads Scene normal (edge
+		// detect is the shipped case) needs a buffer nothing else in this app renders, and
+		// it costs a second pass over the scene — so it is built only when an effect
+		// actually asks, and ONE of them serves every effect that does. It goes in FIRST,
+		// right after the beauty render, because a pass can only read a buffer something
+		// earlier in the chain has filled.
+		const wantNormals = stackInstances.filter((instance: any) => instance.object?.tpNeedsNormals);
+		let offsetBase = 1;
+		if (wantNormals.length) {
+			normalPass = new NormalPass(scene, camera.current);
+			(composer as any).addPass(normalPass, 1);
+			offsetBase = 2;
+			for (const instance of wantNormals) {
+				const slot = instance.object.uniforms?.get?.('normalBuffer');
+				if (slot) slot.value = normalPass.texture;
+			}
+		}
+		stackPasses.forEach((pass, offset) => (composer as any).addPass(pass, offsetBase + offset));
 		applyLocalPrefs();
 		// L4 — TONE MAPPING, where the SCOPING is the whole point.
 		//
@@ -207,6 +241,8 @@
 		// setMainCamera does over `pass.mainCamera`. Generic, so a future effect that
 		// needs the camera is correct for free.
 		for (const instance of stackInstances) instance.def?.retarget?.(instance.object, active);
+		// the normal pass renders the scene itself, so it needs the camera swap too
+		if (normalPass) normalPass.mainCamera = active;
 	});
 
 	$effect(() => {
@@ -243,6 +279,8 @@
 	// belt-and-braces for unknown engines: post also skips the first composer frames
 	// (the boot-compile window is where the breakage bites hardest)
 	let postWarm = $state(false);
+	/** P2: the peer whose look state the chain was last resolved from ('' = our own) */
+	let adoptedFrom = '';
 	let warmupFrames = 0;
 	let postGateToasted = false;
 
@@ -251,7 +289,14 @@
 	// mode, the local kill switch, the capability gate and the warm-up).
 	// `postWarm` flipping after 10 frames is one extra rebuild, once.
 	$effect(() => {
-		const throughCamera = $cameraPreview?.uuid ?? null;
+		// P2: the WATCHED peer's row, when there is one. `specatorMode` holds a peer id
+		// while watching; an absent row (an older build) falls through to our own state,
+		// and so does leaving the watch — nothing of theirs is ever written into ours.
+		void $peerLooks;
+		const watching = typeof $specatorMode === 'string' ? $specatorMode : '';
+		const adopted = watching ? lookOf(watching) : null;
+		adoptedFrom = adopted ? watching : '';
+		const throughCamera = adopted ? adopted.camera : ($cameraPreview?.uuid ?? null);
 		// resolvedDoc reads the stores with get(), which registers NO svelte dependency —
 		// so BOTH have to be touched here or this effect stops re-running when a document
 		// changes (measured: setting a camera to No files replaced rendered nothing new).
@@ -259,13 +304,18 @@
 		void $lookOverride;
 		// 26-D: the quality governor's post steps — AO first (the personal chip reads as plain
 		// shaded, an authored AO entry is dropped), then the whole stack. LOCAL overrides: the
-		// authored document is never touched, so a peer's look is unchanged
+		// authored document is never touched, so a peer's look is unchanged.
+		// P2 + 26-D: while WATCHING a peer the authored documents and the mode come from THEIR
+		// look (`adopted`), but the governor still applies on top — it is this machine giving
+		// up post to keep its frames, and that must not be undone by watching somebody.
 		const reduced = $qualityOverrides;
+		const overrides = adopted ? adopted.look : undefined;
+		const adoptedMode = adopted ? adopted.mode : $viewMode;
 		const entries = effectivePostStack({
-			stack: resolvedDoc(POST_SCENE_KEY),
-			cameraStack: /** @type {any} */ (throughCamera ? resolvedDoc(throughCamera) : null),
-			mode: reduced.aoOff && $viewMode === 'shaded-ao' ? 'shaded' : $viewMode,
-			localEnabled: $postEnabledLocal && !reduced.postOff,
+			stack: resolvedDoc(POST_SCENE_KEY, overrides),
+			cameraStack: /** @type {any} */ (throughCamera ? resolvedDoc(throughCamera, overrides) : null),
+			mode: reduced.aoOff && adoptedMode === 'shaded-ao' ? 'shaded' : adoptedMode,
+			localEnabled: (adopted ? adopted.overrides.post !== false : $postEnabledLocal) && !reduced.postOff,
 			postOk,
 			postWarm
 		}).filter((entry) => !(reduced.aoOff && entry.kind === 'ao'));
@@ -374,6 +424,11 @@
 			// empty -> still nothing to compose. Measured as a stack that could never
 			// compile a pass in play mode.
 			if (!postWarm && ++warmupFrames > 10) postWarm = true;
+			// P4: the per-frame write a kind may declare — the shared shader clock, which
+			// must reach a live uniform WITHOUT a chain rebuild (a rebuild per frame is
+			// what the parent plan names as the reason a param-driving node needs a seam
+			// like this one first).
+			for (const instance of stackInstances) instance.def?.tick?.(instance.object, delta);
 			if (renderer.xr.isPresenting || nothingToCompose) renderer.render(scene, camera.current);
 			else {
 				composer.render(delta);
@@ -486,6 +541,17 @@
 				outlinedSelected: outlineEffectSelected?.selection.size ?? 0,
 				outlinedLocked: outlineEffectLocked?.selection.size ?? 0,
 				stackPasses: stackPasses.length,
+				// P4: the normal pass is not one of `stackPasses` (it is the chain's, not an
+				// entry's), so the suite needs it named to prove it is added ON DEMAND
+				normals: !!normalPass,
+				graphs: stackInstances
+					.filter((instance: any) => instance.object?.tpGraphKey)
+					.map((instance: any) => ({
+						key: instance.object.tpGraphKey,
+						normals: !!instance.object.tpNeedsNormals,
+						clock: !!instance.object.tpUsesClock,
+						depth: !!(instance.object.getAttributes?.() & 1)
+					})),
 				plan: stackPlan,
 				skipped: stackSkipped.map((entry: any) => entry.kind),
 				kinds: stackInstances.map((instance: any) => instance.kind),
@@ -496,6 +562,8 @@
 					((composer as any).passes ?? []).at(-1) === outlinePassSelected,
 				postWarm,
 				postOk,
+				// P2: whose look state the chain came from ('' = this viewer's own)
+				adoptedFrom,
 				// L4: what the renderer was TOLD about tone mapping and what it actually
 				// holds - double grading is invisible in the stack itself
 				stackTonemaps,

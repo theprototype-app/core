@@ -8,6 +8,7 @@
 	import { settingsOpen, settingsSection, hidePanels, restorePanels, advancedMode, showEnvInList, objectSearchEnabled, showSimControls, showToast, showRoomsButton, toastsInDrawerOnly, mobileUndockAllowed, enableShiftAdd, noteDoubleClickToOpen, duplicateCarriesAnimation, duplicateCarriesFlow, duplicateCarriesShader, touchTools, floatingToolbar, toolbarAlwaysOnTop } from '../../stores/appStore.js';
 	import { trackpadMode, allowBrowserZoom, reversePan, panEnabled, pinchZoomEnabled, lastWheelEvents } from '$lib/trackpadNav';
 	import { lightHelperLength } from '$lib/lightHelpers';
+	import { flowMouseBindings, FLOW_MOUSE_BINDINGS } from '$lib/flowPrefs';
 	import { helpersInPlay } from '$lib/helperLayer';
 	import { gamepadPrefs, setGamepadPrefs, DEADZONE_RANGE, SENSITIVITY_RANGE } from '$lib/gamepadPrefs';
 	import { drawerSlot, cloudPluginInfo } from '$lib/cloudHooks';
@@ -19,6 +20,7 @@
 	const appVersionString = versionString();
 	import { vrFaceCap, VR_FACE_CAP } from '$lib/faceEdit';
 	import { doubleClickAction, DOUBLE_CLICK_ACTIONS } from '$lib/selectionPrefs';
+	import { shareDuplicatedMaterials } from '$lib/materialSharing';
 	import { lengthUnit, angleUnit, LENGTH_UNIT_KEYS } from '$lib/units';
 	import { vrVertexCap, VR_VERTEX_CAP } from '$lib/meshEdit';
 	import { syncedAnimations } from '../../stores/flowStore';
@@ -983,6 +985,13 @@
 					<SettingRow name="Per-game controls" noControl={true}>
 						<span>A scene can bind the pad itself with the <strong>Gamepad Button</strong> and <strong>Gamepad Axis</strong> nodes in the node editor (Input group) — button presses replicate like a key press, while a stick value stays local to the player holding it. Module bindings are listed under Shortcuts</span>
 					</SettingRow>
+					<p class="ui-section-label">Node editor</p>
+					<SettingRow name="Mouse bindings">
+						<svelte:fragment slot="control">
+							<ThemedSelect id="flow-mouse-bindings" items={FLOW_MOUSE_BINDINGS} bind:value={$flowMouseBindings} />
+						</svelte:fragment>
+						<span>Classic (the default): a left drag on the node editor's canvas pans and <kbd>Shift</kbd>+drag draws a selection box. Select-first: a left drag selects, dragging any selected node moves the whole selection, <kbd>Shift</kbd>+click adds to or removes from it, and the middle or right button pans — a right click that does not move still opens the menu</span>
+					</SettingRow>
 				</AccordionItem>
 				<AccordionItem bind:open={sceneExpanded}>
 					{#snippet header()}Scene{/snippet}
@@ -1134,6 +1143,16 @@
 						A duplicate of a shader-driven object gets its own copy of the graph. Off leaves the copy
 						with a frozen snapshot of the compiled material and nothing to edit. An object inheriting
 						the scene default keeps inheriting it either way
+					</SettingRow>
+					<SettingRow name="Share materials">
+						<svelte:fragment slot="control"><Toggle bind:checked={$shareDuplicatedMaterials} /></svelte:fragment>
+						<span>
+							Off (the default), a duplicate gets its own copy of the material, so editing one
+							leaves the other alone. On, the copy and the original share ONE material and an
+							edit to either changes both — for everyone in the session. Geometry is always
+							copied either way. Use the Material section's <strong>Unlink</strong> to give one
+							object its own material back
+						</span>
 					</SettingRow>
 					<p class="ui-section-label">Wireframe &amp; outline</p>
 					<SettingRow name="Wireframe color">

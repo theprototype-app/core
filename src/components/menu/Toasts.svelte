@@ -18,6 +18,9 @@
     // so arming a panel that is not mounted arms nothing
     import { armExplorerSceneSave, explorerClose } from '../../stores/appStore'
     import { peers, loading, loadingcount, pendingApprovals, waitingForApproval, userdata, toastStore, fixLight, showSidebar, specatorMode, restorePanels, appNotice, connectDrawerOpen, connectDrawerTab, toastsInDrawerOnly, showInfoToast, dismissToastById } from '../../stores/appStore'
+    // P2: the watch banner says when the watched peer's look CANNOT be adopted (the
+    // P1 rule: a scoped feature must say on its own surface when it takes no effect)
+    import { peerLooks, watchLookNote } from '$lib/lookPresence'
     import { restoreAvailable, restoreSnapshot, dismissRestore } from '$lib/autosave'
     import { ingestGate, resolveIngestGate } from '$lib/commandsHandler.svelte'
     import { ingestVerdict, profileFor } from '$lib/sceneBudget'
@@ -48,6 +51,12 @@
      * The avatar lookup is GUARDED now: by the time this runs the peer may have
      * travelled or left, and the inline version dereferenced it unconditionally.
      */
+    // `watchLookNote` reads the map with get(); `$peerLooks` is the dependency (the
+    // get()-registers-nothing rule) — passed as the unused argument the codebase uses
+    // for exactly this so svelte-check does not flag a comma expression
+    const lookNote = $derived(typeof $specatorMode === 'string' ? noteFor($specatorMode, $peerLooks) : '');
+    function noteFor(peerId: string, _dep: unknown) { return watchLookNote(peerId); }
+
     function exitSpectate() {
         if (!$specatorMode) return;
         const dolly = $globalScene?.getObjectByName('dolly');
@@ -467,7 +476,7 @@ $effect(() => {
         <span class="spectator-dot" aria-hidden="true"></span>
         <div class="inline-flex items-center">
             <p class="spectator-text">
-                Watching <strong>{$specatorMode}</strong>
+                Watching <strong>{$specatorMode}</strong>{#if lookNote}<span class="spectator-note" title="What you see is rendered with their look settings while you watch"> · {lookNote}</span>{/if}
             </p>
             <button
             class="spectator-exit"
@@ -821,6 +830,11 @@ style="z-index: var(--z-toast-low); pointer-events: none;"
     @keyframes spectator-pulse {
         50% { opacity: 0.35; }
     }
+    .spectator-note {
+        font-weight: 400;
+        opacity: 0.8;
+    }
+
     .spectator-text {
         font-size: 12.5px;
         color: #e5e7eb;

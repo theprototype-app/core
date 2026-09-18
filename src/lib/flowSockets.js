@@ -24,6 +24,9 @@ const OUTPUT = {
 	gamepadbutton: 'event',
 	gamepadaxis: 'number',
 	onimpact: 'event', // PFX-C
+	// 24-A A2: the pulse is the unnamed handle; `speed`/`byMe` are named handles that
+	// reach number/boolean inputs through the event coercion row (outputType is per NODE)
+	onhit: 'event',
 	onenter: 'event', onexit: 'event', // CL-C: sensor overlap edges
 	animfinished: 'event', // 17-E: a clip reached its end
 	animmarker: 'event', // 17-E F5: the playhead crossed a named point in a clip

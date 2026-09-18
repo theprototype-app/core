@@ -87,6 +87,26 @@ export function aoSupported() {
  */
 export const postSupported = aoSupported;
 
+/**
+ * P6 — THE CAPABILITY GATE QUESTION, DECIDED: shader-driven MATERIALS are NOT gated
+ * with fullscreen passes, and they stay separate deliberately.
+ *
+ * The measured evidence behind `postSupported` is about a fullscreen pass linking
+ * broken on an old ANGLE/D3D11 stack, and three properties of that failure do not
+ * transfer to a material:
+ *  - BLAST RADIUS. A broken post pass takes the WHOLE viewport (black, or a frozen
+ *    frame, with nothing in the console); a material that fails to compile affects the
+ *    objects it drives, and `compileAndApply` already keeps the last good material and
+ *    reports the error, so the scene is still there to look at.
+ *  - WHERE THEY RUN. Post is skipped entirely in VR; materials are the only layer of
+ *    the look that works in a headset. One gate would switch off the half that works.
+ *  - WHO COMPILES. A material goes through three's own program path, which every other
+ *    material in the app already uses — gating it would be gating three itself.
+ * So the local switch for materials is `viewportOverrides.shaders` (a CHOICE) and the
+ * capability gate stays post-only (a REFUSAL). If a driver is ever found that breaks
+ * generated materials specifically, it wants its own gate and its own measurement.
+ */
+
 let started = false;
 export function startViewMode() {
 	if (started || typeof window === 'undefined') return;

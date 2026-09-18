@@ -38,6 +38,8 @@ import { applyRemoteCameraPreview, clearPeerPreview, sendCameraPreviewState } fr
 // 21-F3: play-mode PRESENCE, the campreview shape — a tiny per-peer message, a reply
 // riding the getmodulestate request, and a drop on disconnect (golden rule 3).
 import { applyRemotePlayMode, dropPeerPlayMode, sendPlayModeState } from '$lib/gamePresence';
+// P2: watch adopts the watched peer's LOOK STATE — the campreview shape, one row per peer
+import { applyRemoteLookState, dropPeerLook, sendLookState } from '$lib/lookPresence';
 // P2b: which SCENE each peer is standing in — the gamePresence shape exactly
 import { applyRemotePeerScene, dropPeerScene, sendMySceneState, peerScenes, myScene, mySceneWire, amPrivate, privacySplit, elsewhereThan, sceneOfPeer, ROOM_SCOPED, canApplyByRoom, sameRoomOrUnknown, myRoomLabel, roomLabelOf } from '$lib/peerScenes';
 // 21-G2: the project manifest — a latest-wins singleton like environment/scenephysics
@@ -50,8 +52,9 @@ import { applyModuleMessage, moduleVersions, checkModuleVersions, checkPeerAppVe
 import { APP_VERSION, COMMIT_SHA } from '$lib/version.js';
 import { applyLockRequest, applyUnlock, applyLockDenied } from '$lib/lockControl';
 import { applyDrawLive, applyDrawEnd } from '$lib/drawMode';
-import { applySimulate, physicsExternalMove, applyThrow } from '$lib/physics';
+import { applySimulate, physicsExternalMove, applyThrow, applyHit, simulating, simPaused } from '$lib/physics';
 import { noteRemoteMove } from '$lib/moveSmoothing';
+import { noteRemoteHit, endKnockPrediction } from '$lib/knock';
 import { applyJointCreate, applyJointDelete, applyJointsSnapshot, sendJoints } from '$lib/joints';
 import { applyAnimData, applyAnimPlay, applyAnimationsSnapshot, sendAnimations } from '$lib/animationPreview';
 import { applyHandModel, handModelState, dropPeerHandModel } from '$lib/handModels';
@@ -680,6 +683,10 @@ export class PeerConnection {
 					// the pose BEFORE the write, so a remote physics stream can be eased
 					// across rather than stepped through (moveSmoothing; ~10 Hz on the wire
 					// looked like 10 fps on the watching peer)
+					// 24-A A1: authority has spoken for this body, so a knock prediction of
+					// ours ends HERE — before the pose below is captured, so the ease starts
+					// from where the prediction left the object, not from where the hit found it
+					endKnockPrediction(data.uuid);
 					const movedObject = get(objectsGroup)?.getObjectByProperty('uuid', data.uuid);
 					const movedFrom = movedObject
 						? { pos: movedObject.position.clone(), quat: movedObject.quaternion.clone() }
@@ -695,6 +702,14 @@ export class PeerConnection {
 					// B5: a peer's EXACT release. Initiator-only, never re-broadcast —
 					// the flight itself replicates through the existing move stream.
 					applyThrow(data);
+				} else if(data.type == 'hit') {
+					// 24-A A1: a peer's hand (or head) KNOCKED a body — the throw's sibling.
+					// The initiator puts the velocity into the body (clamped again, never
+					// re-broadcast: the flight rides the move stream); EVERY peer logs it,
+					// stamped with the connection's peer, never the payload's. CONTENT, so it
+					// is gateable by canApply like `throw` and ROOM_SCOPED like `move`.
+					applyHit(data);
+					noteRemoteHit(data, conn.peer);
 				} else if(data.type == 'simulate') {
 					applySimulate(data);
 				} else if(data.type == 'jointcreate') {
@@ -899,8 +914,10 @@ export class PeerConnection {
 				} else if(data.type == 'objectParameters') {
 					objectParameters(data);
 				} else if(data.type == 'duplicate') {
-					// B7: `transient` is additive — absent for every ordinary duplicate
-					applyRemoteDuplicate(data.sourceUuid, data.uuids, data.name, data.pos, data.transient);
+					// B7: `transient` is additive — absent for every ordinary duplicate.
+					// D2: so is `shareMaterial` — absent means the copy gets its own material,
+					// which is what every peer before this build did unconditionally.
+					applyRemoteDuplicate(data.sourceUuid, data.uuids, data.name, data.pos, data.transient, data.shareMaterial);
 				} else if(data.type == 'clearscene') {
 					applyClearScene(data.peerId);
 				} else if(data.type == 'delete') {
@@ -1025,6 +1042,7 @@ export class PeerConnection {
 				} else if(data.type == 'getmodulestate') {
 					sendModuleStates(data.sender);
 					sendCameraPreviewState(); // 16-P5: ride the same late-joiner request
+					sendLookState(); // P2: ...and how we are looking at the scene (view mode, look switches)
 					sendPlayModeState(); // 21-F3: ...and so does play-mode presence
 					sendMySceneState(); // P2b: ...and where we are standing
 					sendPeerVarsState(); // 21-G4: ...and our own per-player row, if we hold one
@@ -1068,6 +1086,10 @@ export class PeerConnection {
 				} else if(data.type == 'campreview') {
 					// 16-P5: presence only — "X is previewing camera Y" (peers may join it)
 					applyRemoteCameraPreview(data);
+				} else if(data.type == 'lookstate') {
+					// P2: presence only — how X is LOOKING at the scene, so a watcher renders
+					// X's chain rather than its own. ADDITIVE: an older build never sends it.
+					applyRemoteLookState(data);
 				} else if(data.type == 'annotation') {
 					applyAnnotation(data);
 				} else if(data.type == 'annotations') {
@@ -1304,6 +1326,14 @@ export class PeerConnection {
 		if (getobjects && !holdContent) this.requestFullState(conn)
 		// singleton PUSH, like environmentState/scenePhysicsState above
 		if (!holdContent) conn.send(gameStatePayload())
+		// 24-A A2: WHETHER A SIM IS RUNNING HERE, for a late joiner. `simulate` went out at
+		// start/stop only, so a peer joining mid-run kept `remoteSimulating` null and neither
+		// the knock probes nor play-mode grab armed until the sim restarted (A1's finding;
+		// football's late joiner mid-match is the case). The start message's own shape, so
+		// an older joiner applies it exactly as it applies the live one, and held with the
+		// singletons — a running sim is content about THIS room.
+		if (!holdContent && get(simulating))
+			conn.send({ type: 'simulate', running: true, paused: get(simPaused), peerId: this.peer.id })
 		// module state is the one PER-PEER payload in the get* family (each peer
 		// answers with its OWN states — e.g. campreview presence), so it can't be
 		// deduped down to the host like the shared-scene requests above (B5)
@@ -1571,6 +1601,7 @@ export class PeerConnection {
 		this.openedPeers.delete(peerId);
 		handleDisconnected(peerId);
 		clearPeerPreview(peerId); // 16-P5
+		dropPeerLook(peerId); // P2
 		dropPeerPlayMode(peerId); // 21-F3
 		dropPeerScene(peerId); // P2b
 		dropPeerVars(peerId); // 21-G4
@@ -1605,6 +1636,7 @@ export class PeerConnection {
 				this.openedPeers.delete(peerId);
 				handleDisconnected(peerId);
 				clearPeerPreview(peerId); // 16-P5
+				dropPeerLook(peerId); // P2
 				dropPeerPlayMode(peerId); // 21-F3
 				dropPeerScene(peerId); // P2b
 				dropPeerVars(peerId); // 21-G4

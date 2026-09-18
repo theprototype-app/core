@@ -46,6 +46,13 @@ h.run(async () => {
 		state.play.interaction === 'grab' && state.play.grounded === false && state.play.simOnPlay === false,
 		'1.6 the play block ships {grab, not grounded, no sim on play}'
 	);
+	// 24-A A1: the knock block ships OFF — the whole compatibility story for every
+	// saved scene, and the value the knock-physics counterfactual measures
+	h.check(
+		JSON.stringify(state.knock) ===
+			JSON.stringify({ enabled: false, gain: 1, maxSpeed: 12, minSpeed: 0.3, radius: 0.12, spin: 0.5, predict: true }),
+		'1.8 the knock block ships {off, gain 1, max 12, min 0.3, radius 0.12, spin 0.5, predict}'
+	);
 	const defaultsMatch = await sp(
 		page,
 		'const { changedAt: a, ...live } = sp.scenePhysicsDebug();' +
@@ -73,6 +80,18 @@ h.run(async () => {
 		clamped.play.interaction === 'grab',
 		'2.7 an unknown interaction falls back to grab, not through to the UI'
 	);
+	const knockClamped = await sp(
+		page,
+		'return sp.normalizeScenePhysics({ knock: { gain: 99, maxSpeed: 999, minSpeed: -1, radius: 5, spin: -2, enabled: "yes", predict: 0 } }).knock'
+	);
+	h.check(
+		knockClamped.gain === 5 && knockClamped.maxSpeed === 20 && knockClamped.minSpeed === 0 && knockClamped.radius === 1 && knockClamped.spin === 0,
+		'2.9 the knock block clamps (gain 5, maxSpeed 20 = the throw ceiling, minSpeed 0, radius 1, spin 0)'
+	);
+	h.check(
+		knockClamped.enabled === false && knockClamped.predict === true,
+		'2.10 ...and its booleans refuse a non-boolean instead of coercing it'
+	);
 	// the clamp must be in the NORMALIZER, so a hostile wire payload cannot dodge it
 	const viaWire = await sp(
 		page,
@@ -96,6 +115,17 @@ h.run(async () => {
 		'3.2 its SIBLINGS survive (friction ' + merged.g.friction + ', enabled ' + merged.g.enabled + ')'
 	);
 	h.check(merged.bounds.limit === -100, '3.3 an untouched block is untouched');
+	const knockMerged = await sp(
+		page,
+		'sp.setScenePhysics({ knock: { enabled: true } });' +
+			'const k = sp.scenePhysicsDebug().knock;' +
+			'sp.setScenePhysics({ knock: { enabled: false } });' +
+			'return k'
+	);
+	h.check(
+		knockMerged.enabled === true && knockMerged.gain === 1 && knockMerged.maxSpeed === 12,
+		'3.3b switching the knock on keeps its siblings (gain ' + knockMerged.gain + ', max ' + knockMerged.maxSpeed + ')'
+	);
 
 	const stamps = await sp(
 		page,
@@ -163,6 +193,26 @@ h.run(async () => {
 	h.check(
 		round.stamp > round.before,
 		'5.5 a restore stamps FRESH — an old file\'s stale changedAt cannot lose to live state'
+	);
+	// 24-A A1: a file written before the knock existed carries no `knock` key, and
+	// restoring it must leave the knock OFF — an absent block means "at the default"
+	const oldFile = await sp(
+		page,
+		'sp.setScenePhysics({ knock: { enabled: true, gain: 3 } });' +
+			'sp.scenePhysicsRestore({ gravity: -5, ground: { height: 1 } });' +
+			'const k = sp.scenePhysicsDebug().knock;' +
+			'sp.setScenePhysics({ knock: { enabled: true, gain: 2 } });' +
+			'const snap = sp.scenePhysicsSnapshot();' +
+			'sp.scenePhysicsRestore(sp.DEFAULT_SCENE_PHYSICS);' +
+			'return { k, snapKnock: snap && snap.knock }'
+	);
+	h.check(
+		oldFile.k.enabled === false && oldFile.k.gain === 1,
+		'5.6 restoring a pre-knock file resets the block to OFF (enabled ' + oldFile.k.enabled + ', gain ' + oldFile.k.gain + ')'
+	);
+	h.check(
+		oldFile.snapKnock && oldFile.snapKnock.enabled === true && oldFile.snapKnock.gain === 2,
+		'5.7 ...and a scene that switched it on saves the block with the singleton'
 	);
 
 	// ---------------------------------------------------------------- section 6

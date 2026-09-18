@@ -16,6 +16,19 @@
 	import { viewMode } from '../../stores/sceneStore';
 	import { explorerItems, loadExplorer, kindOf } from '$lib/explorer';
 	import { listCameraObjects } from '$lib/cameraObjects';
+	// P4: the post DOMAIN — an effect you author as a node graph rather than pick from
+	// the registry. Everything below treats it as one more kind; the only special case is
+	// that its param names a DOCUMENT, so the row offers the graphs that exist and a way
+	// into the editor rather than a number.
+	import {
+		postGraphKeys,
+		postPresets,
+		postGraphName,
+		addPostGraphToLook,
+		setPostGraphEntry,
+		openPostGraph
+	} from '$lib/postGraphs';
+	import { shaderGraphs, shaderErrors } from '$lib/shaderGraph';
 	import { objectsGroup } from '../../stores/sceneStore';
 	import { sendAsset } from '$lib/assetShare';
 	import {
@@ -72,12 +85,13 @@
 	const counts = $derived(stackCounts(doc));
 	// grouped for the add menu, so 'Colour grading' and 'Camera FX' do not
 	// interleave in one flat list of a dozen entries
-	const GROUP_ORDER = ['ao', 'grading', 'stylize', 'camera', 'aa', 'test', 'other'];
+	const GROUP_ORDER = ['ao', 'grading', 'stylize', 'graph', 'camera', 'aa', 'test', 'other'];
 	/** @type {Record<string, string>} */
 	const GROUP_LABEL = {
 		ao: 'Ambient occlusion',
 		grading: 'Colour grading',
 		stylize: 'Stylize',
+		graph: 'Shader graph',
 		camera: 'Camera FX',
 		aa: 'Anti-aliasing',
 		test: 'Test',
@@ -107,17 +121,64 @@
 			.filter((group) => byGroup[group]?.length)
 			.map((group) => ({
 				label: GROUP_LABEL[group] ?? group,
-				children: byGroup[group]
-					.slice()
-					.sort((a, b) => a.label.localeCompare(b.label))
-					.map((def) => ({ label: def.label, action: () => add(def.kind) }))
+				// P4: the `graph` kind's leaf would add an entry pointing at NOTHING, which is
+				// a row you then have to go and fix. Its submenu offers the shipped presets and
+				// the graphs this scene already has instead, so every way in lands on something
+				// that renders.
+				children:
+					group === 'graph'
+						? [
+								...postPresets().map((preset) => ({
+									label: 'New: ' + preset.label,
+									title: preset.hint,
+									action: () => addGraph({ preset: preset.key })
+								})),
+								{ label: 'New: empty graph', action: () => addGraph({}) },
+								...graphsList.map((entry) => ({
+									label: entry.name,
+									action: () => addExistingGraph(entry.key)
+								}))
+							]
+						: byGroup[group]
+								.slice()
+								.sort((a, b) => a.label.localeCompare(b.label))
+								.map((def) => ({ label: def.label, action: () => add(def.kind) }))
 			}));
 	});
 
+	/** the post graphs that exist, re-derived off the store so a new one shows at once */
+	/** @param {any} _poke */
+	const graphsOf = (_poke) => postGraphKeys();
+	const graphsList = $derived(graphsOf($shaderGraphs));
+
+	/** @param {{preset?: string}} opts */
+	function addGraph(opts) {
+		menu = null;
+		const made = addPostGraphToLook({ ...opts, docKey });
+		openId = made.id;
+	}
+
+	/** @param {string} key */
+	function addExistingGraph(key) {
+		menu = null;
+		const id = addPostEffect('graph', undefined, docKey);
+		setPostGraphEntry(id, key, docKey);
+		openId = id;
+	}
+
 	/** @param {any} entry */
 	function labelOf(entry) {
+		// a graph entry is named by its DOCUMENT: three rows all reading "Shader graph"
+		// would be indistinguishable, and the document's name is the thing the author chose
+		if (entry.kind === 'graph')
+			return entry.params?.graph ? postGraphName(entry.params.graph) : 'Shader graph (none picked)';
 		return postEffectDef(entry.kind)?.label ?? entry.kind;
 	}
+
+	/** compile errors for a graph entry, shown on the row that runs it. @param {any} entry */
+	/** @param {any} entry @param {any} _poke */
+	const graphErrorsOf = (entry, _poke) =>
+		entry.kind === 'graph' && entry.params?.graph ? ($shaderErrors[entry.params.graph] ?? []) : [];
 	/** an entry whose kind this build does not know — kept, never rendered */
 	/** @param {any} entry */
 	function isUnknown(entry) {
@@ -360,6 +421,28 @@
 											onchange={(v) => setPostEffectParams(entry.id, { [param.key]: v }, docKey)}
 										/>
 									</div>
+								{:else if param.type === 'graph'}
+									<div class="ui-row items-center gap-2">
+										<span class="w-20 shrink-0 text-xs text-gray-300">{param.label}</span>
+										<ThemedSelect
+											id={'post-param-' + entry.id + '-' + param.key}
+											class="min-w-0 flex-1"
+											items={graphsList.map((g) => ({ value: g.key, name: g.name }))}
+											value={entry.params[param.key] ?? ''}
+											placeholder="Pick a graph…"
+											onchange={(v) => setPostEffectParams(entry.id, { [param.key]: String(v ?? '') }, docKey)}
+										/>
+										<button
+											id={'post-edit-' + entry.id}
+											class="ui-chip shrink-0 bg-gray-600 text-gray-200 hover:bg-gray-500"
+											title="Open this graph in the shader editor"
+											disabled={!entry.params[param.key]}
+											onclick={() => openPostGraph(entry.params[param.key])}>Edit</button
+										>
+									</div>
+									{#each graphErrorsOf(entry, $shaderErrors) as message, i (i)}
+										<p class="text-[10px] italic text-amber-400">{message}</p>
+									{/each}
 								{:else if param.type === 'asset'}
 									<div class="ui-row items-center gap-2">
 										<span class="w-20 shrink-0 text-xs text-gray-300">{param.label}</span>

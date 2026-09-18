@@ -25,6 +25,10 @@ import {
 	registerShaderTextureListener,
 	startShaderTextures
 } from './shaderTextures.js';
+// P5: the LOCAL right to switch this layer off. `viewportOverrides` is a leaf (stores
+// only), and its `shaders` key has been DECLARED since B precisely so this phase adds a
+// renderer rather than a new concept — see that module for the rule it encodes.
+import { viewportOverrides, renderLayer } from './viewportOverrides.js';
 
 /** The reserved key for the scene default material (layer 2). */
 export const SCENE_GRAPH_KEY = 'scene';
@@ -218,6 +222,33 @@ export function scheduleCompile(key, delay = 60) {
 	);
 }
 
+/** P4: the POST domain's own compile path, registered by `postGraphs` (never imported —
+ * this module must keep no edge into the composer side). @type {((key: string) => any)|null} */
+let postDomainHook = null;
+
+/**
+ * Install the post domain's compiler.
+ *
+ * A post document has no Surface node and drives no object, so shaderGraph's material
+ * path is simply the wrong question for it: left to run it would stamp "The graph has no
+ * Surface output node" on every post graph. A REGISTRATION rather than an import for the
+ * usual reason — `postGraphs` reaches `scenePost` and `postBackends`, and an edge from
+ * here into that is one this module does not need.
+ * @param {(key: string) => any} fn
+ */
+export function registerPostDomain(fn) {
+	postDomainHook = typeof fn === 'function' ? fn : null;
+	return () => {
+		if (postDomainHook === fn) postDomainHook = null;
+	};
+}
+
+/** Is this key a post-domain document (by its own `domain`, so the prefix is a
+ * convention and not the truth)? @param {string} key */
+export function isPostDomain(key) {
+	return shaderGraphOf(key)?.domain === 'post';
+}
+
 /**
  * Compile a key's graph and install the material on every object it drives.
  * On FAILURE the object keeps its last good material — a broken graph mid-edit must not
@@ -226,6 +257,11 @@ export function scheduleCompile(key, delay = 60) {
  */
 export async function compileAndApply(key) {
 	const doc = shaderGraphOf(key);
+	// P4: a POST document is an EFFECT, not a material — hand it to the domain that owns
+	// it. A deleted document still reaches the hook (doc is null), which is how a post
+	// graph's own teardown runs.
+	if ((doc?.domain === 'post' || (!doc && postDomainHook && key.startsWith('post:'))) && postDomainHook)
+		return postDomainHook(key) ?? { ok: true };
 	if (!doc) {
 		// deleted: put every target back to its own material
 		for (const object of targetsFor(key)) detachFrom(object);
@@ -294,9 +330,54 @@ export function defaultTargetsFor(key) {
 	return out;
 }
 
+/**
+ * P5 — THE LOCAL RENDER GATE.
+ *
+ * THE RULE THIS KEEPS (viewportOverrides states it, and the look plan makes it the
+ * answer all three layers must share): an authored layer is SCENE DATA and renders for
+ * everyone by DEFAULT. Nobody opts in to seeing the scene. What is local is the right to
+ * switch it off HERE — for performance, for comfort, or to see what an object really
+ * looks like underneath.
+ *
+ * Off is a SWAP, never a detach: the documents, the compiled materials and the base
+ * materials all stay exactly as they were, so switching back costs no compile and a peer
+ * sees nothing at all. Deliberately NOT `scene.overrideMaterial` (which wireframe and the
+ * UV checker use): that replaces EVERY material in the scene, and this layer is only the
+ * ones a graph drives.
+ */
+let shadersOn = true;
+
+/** Swap every shader-driven object to (or back from) its own material. @param {boolean} on */
+function applyShaderLayer(on) {
+	if (on === shadersOn) return;
+	shadersOn = on;
+	const group = get(objectsGroup);
+	if (!group) return;
+	group.traverse((/** @type {any} */ node) => {
+		const mine = installed.get(node.uuid);
+		if (!mine) return;
+		const base = baseMaterials.get(node.uuid);
+		if (on) node.material = mine;
+		else if (base && node.material === mine) node.material = base;
+	});
+	// THREE trees are not reactive: without the poke the Inspector's material derived and
+	// the shader-driven notice both keep showing the state before the switch (26-B: one
+	// coalesced poke, which is what every call site in the tree uses now)
+	pokeScene();
+}
+
+/** Is this viewer rendering shader-driven materials right now? (test/debug seam) */
+export function shaderLayerOn() {
+	return shadersOn;
+}
+
 /** Install the default wiring. Idempotent; call once at boot. */
 export function startShaderGraphs() {
 	if (!targetsHook) registerShaderTargets(defaultTargetsFor);
+	// subscribed HERE rather than at module level: the callback reads `shadersOn` and
+	// `installed`, and a module-level subscribe runs synchronously at eval, where a `let`
+	// declared below would TDZ-crash the SSR prerender (the meshEdit lesson)
+	viewportOverrides.subscribe(() => applyShaderLayer(renderLayer('shaders')));
 	startShaderClock();
 	startReconcile();
 	// the retry half of golden rule 9: bytes pulled from a peer land as an Explorer item
@@ -449,8 +530,12 @@ export function baseMaterialOf(uuid) {
 
 /** @param {any} object @param {any} material */
 function applyMaterial(object, material) {
-	object.material = material;
 	installed.set(object.uuid, material);
+	// P5: with the layer switched off on THIS device the compile still runs and the
+	// result is still remembered — only the assignment waits. So switching back on is a
+	// swap rather than a recompile, and a peer's authored material is never lost here.
+	if (!shadersOn) return;
+	object.material = material;
 	// THREE trees are NOT reactive, so nothing observing the scene can see this: the
 	// Inspector's `material` derived and its shader-driven notice both read through
 	// `objectsGroup`, and without the poke they keep showing the pre-shader state. Safe
@@ -630,6 +715,29 @@ export function setShaderParam(key, nodeId, param, value) {
 // injected material as if it were the object's own), and undo snapshots the tree. So
 // every serializer must read the BASE material, and the GRAPH rides beside the
 // snapshot — the `animated` / `multiMaterial` shape, keyed by uuid.
+//
+// P6 — THE SAVE-PATH AUDIT, done once across the three layers now that they meet.
+// Every one of them is a KEYED DOCUMENT plus a runtime product, and the rule that
+// falls out is the same each time: SAVE THE DOCUMENT, never the product.
+//
+//   layer 3 / 2  shaderGraphs[uuid | 'scene']  product: a compiled Material
+//   layer 1      shaderGraphs['post:<id>']     product: a compiled Effect
+//   layer 1      postStacks['scene' | camUuid] product: composer passes
+//
+// Carriers, checked for each: the WIRE (`shadergraph` / `scenepost`, both
+// latest-wins on a stamp), AUTOSAVE and SESSIONS/.tpscene (`shaderGraphsSnapshot` +
+// `scenePostSnapshot`, both beside the objects rather than inside them), and UNDO
+// (the `'shadergraph'` and `'look'` history kinds). The PRODUCTS are carried by
+// nobody, deliberately — they are rebuilt from the document on the other side.
+//
+// The ritual `parkShaderMaterials` performs is only needed where a product is ATTACHED
+// TO THE SCENE TREE, which is layers 2 and 3 alone: a post Effect lives in the
+// composer, which no serializer walks, so P4 needed no fourth park. The one thing a
+// reader should not expect to find is a park for post graphs; this paragraph is why.
+//
+// KNOWN AND ACCEPTED: `shaderGraphsSnapshot()` writes `{}` into every save even when
+// nothing uses it (SH4's shape), where the post stack writes `null`. Harmless and
+// pre-existing; changing it is a save-format decision, not a rendering one.
 
 /** parks nest (a serializer inside a serializer), so this is a DEPTH, not a flag */
 let materialParkDepth = 0;

@@ -5,6 +5,77 @@
      per release, newest first. HTML comments like this one are stripped before
      rendering, so maintainer notes stay out of the user-facing window. -->
 
+## 1.13.0 — Knock it about 🪐
+
+### ✨ Knock things about (roadmap #24)
+
+- 🌠 **Hit a floating object with your hand and it flies off.** In VR your hands, and on
+  desktop the camera you walk with, now knock a physics object at the speed you hit it —
+  the first thing a zero-g room needs and the thing grab-and-throw never covered. Configure
+  Scene ▸ Physics ▸ **Knock** turns it on for a scene and sets the strength, the reach and
+  the spin; it is off in every scene that does not ask for it.
+- 💥 **An On Hit node** fires when something is knocked, with how hard (`speed`) and whether
+  it was you (`byMe`), so a graph can burst particles in proportion or count only your own
+  touches. **Who** can be narrowed to anyone / me / others.
+- 🌟 **The Stars Room** — a new template in Games. Twenty-four stars and two planets float in
+  a room with no gravity; knock them, watch them chime and drift, add more from the HUD, or
+  press Start for a round that ends when every star is lit. Nothing to install.
+- 🔄 **Someone joining a running simulation now knows it is running**, so their knocks and
+  their grab work from the first second instead of after the next restart.
+- 🩹 Fixed on the way: a Player Variable now reaches the node it is wired to, and a colour,
+  shader-uniform or device effect keeps working on an object the physics simulation owns.
+
+### 🎨 One scene look, and materials you can share
+
+- 👀 **Watching someone shows you their look.** Watch a peer and you see the camera they are
+  looking through, its grade, their view mode and their scene-look switches — the banner says
+  when something cannot be adopted. It ends when you stop watching.
+- 🌓 **Shader graphs have a Post domain**: build a post-processing effect as a node graph and
+  drop it into the scene look. Ships with Posterise, Ordered dither, Edge detect (ink) and a
+  graph-built Ambient occlusion.
+- 🗂️ **Configure Scene ▸ Scene look** is now one section for the whole look — the post stack,
+  the scene's default material and per-object shaders — with a line saying what it costs.
+- 🙈 **Scene shaders can be switched off on your own screen** (Configure Scene ▸ View ▸
+  Overrides), the way post already could. Nobody else's view changes.
+- 🔗 **Duplicate can share a material instead of copying it** (Settings ▸ Scene ▸ Duplicate).
+  A shared material carries its link through save, undo, a peer's copy and a late joiner, and
+  the Material section has **Unlink** when you want your own again.
+
+### 🧱 Modelling, windows and the node editor
+
+- 🫱 **Proportional editing reaches your peers.** Drag a vertex with a falloff radius and the
+  whole neighbourhood now arrives on every other screen (in one step, when you let go) —
+  before, only the vertices you had selected moved for anybody else.
+- 🔃 **Proportional rotate and scale**, not just move: the falloff blends the turn and the
+  scale toward identity across the radius, so a rotation twists the surrounding surface
+  instead of leaving it behind.
+- 💬 Vertex slide now says why it stands down while a custom pivot is placed, instead of
+  quietly doing nothing.
+- 🪟 **Two windows on one screen edge.** Drop a second window onto a docked one and the edge
+  splits into two stacked panels with a divider you can drag; the share is remembered per side.
+- 🖱️ **Settings ▸ Input ▸ Node editor ▸ Mouse bindings** — keep Classic (left-drag pans, as
+  always) or switch to Select-first, where a left drag draws a selection rectangle, dragging
+  any selected node moves the whole set, and the right button pans.
+
+### ⚽ VR Football (a module)
+
+- 🥅 **Football** is a new module in Browse: two floating gates, one ball, red against blue,
+  played with your hands. Install it, open its toolbox and **Build pitch** lays out the pitch,
+  the gates and the rules in your scene. Goals go to whoever touched the ball last, own goals
+  land on the right sheet, and the mode decides when the match ends (first to N, a clock, or
+  either). Scores, touches and own goals are per player, the gate lamps read from across the
+  room, and a saved scene keeps the match log. Two people in one room can play it colocated.
+  (A ready-made Football template for the Games tab is not published yet — the toolbox recipe
+  is how you get a pitch today.)
+
+### 🛠️ For people building on it
+
+- 🥊 **`api.onHit(cb)` and `api.hitLog()`** — a module can react to a knock (uuid, who, how
+  hard, where) or read the recent ones, which is what the football module's last-touch rule
+  stands on.
+- 🧩 The template author script gained one graph builder and a remap that resolves every
+  object named in node data, so a game def can name objects instead of carrying uuids.
+
 ## 1.12.0 — Hold together 🛡️
 
 ### 🛡️ Connections that recover, and sessions with a size (roadmap #27 + #25)

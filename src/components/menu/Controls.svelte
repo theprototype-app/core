@@ -701,6 +701,10 @@
 		// the clipped tree rows (same bug the Flow window had)
 		const clampRect = () => {
 			if (grouped()) return; // the group rect drives size/pos while grouped
+			// 81.4: ...and neither does this window while it is side-DOCKED — docking.js
+			// owns the rect then, and the reveal below (reopening after a reload) would
+			// otherwise re-assert the floating one over its column
+			if (node.dataset.docked) return;
 			// 18-B: the viewport cap wins over the minimum, so this can never leave
 			// the window wider than the screen
 			({ w: width, h: height } = clampWinSize(width, height, OBJ_WIN_MIN));

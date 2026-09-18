@@ -575,6 +575,7 @@ export function exitEditMode() {
 	hoveredHandle = -1;
 	slideEdge = null;
 	slideStart = null;
+	slidePivotTold = false;
 	vertexSlide.set(false); // an armed tool never survives the session
 	proportionalEdit.set(false);
 	falloffStart = null;
@@ -1124,6 +1125,8 @@ function refreshGeometryAfterWrite() {
 export const vertexSlide = writable(false);
 /** the edge chosen for the live slide: local-space endpoints @type {any} */
 let slideEdge = null;
+/** F2: the stand-down toast fires once per session @type {boolean} */
+let slidePivotTold = false;
 /** local-space position at drag start (the origin for the direction vote) @type {any} */
 let slideStart = null;
 /** the live slide's parameter along its edge (0 = start, 1 = far end) — kept
@@ -1206,8 +1209,17 @@ function proxyLocal() {
 	// the slide projects the PROXY's position onto one of the vertex's own edges,
 	// which only means anything while the proxy IS the vertex — a custom pivot
 	// seats it somewhere else entirely, so the constraint stands down there
-	if (!get(vertexSlide) || !slideStart || vertexSelection.size > 1 || hasMeshPivot(edited.uuid))
+	if (!get(vertexSlide) || !slideStart || vertexSelection.size > 1 || hasMeshPivot(edited.uuid)) {
+		// F2 (v1.13, decided WONTFIX for the interaction, made VISIBLE): the slide
+		// measures from the PROXY, and a placed pivot seats the proxy away from the
+		// vertex, so the projection would slide it by a nonsense amount. The tool
+		// silently doing nothing was the only real problem — say so, once a session.
+		if (get(vertexSlide) && slideStart && vertexSelection.size <= 1 && !slidePivotTold && hasMeshPivot(edited.uuid)) {
+			slidePivotTold = true;
+			showToast('Vertex slide is off while a custom pivot is placed — the slide measures from the gizmo, and the pivot moved it off the vertex. Reset the pivot to slide.');
+		}
 		return local;
+	}
 	if (!slideEdge) {
 		// choose on the first REAL movement: the incident edge whose direction best
 		// matches how the user started dragging (a tiny jitter must not decide it)
@@ -1353,8 +1365,14 @@ function recaptureVertexFalloff() {
 			refreshHandleMatrix(i);
 		}
 	}
-	// members first, anchor last — the tail commitSelectedLocal refreshes
-	// normals/bounds/overlay and sets needsUpdate (the onProxyMoved shape)
+	// F1: a live gizmo gesture re-applies by MODE (a rotate/scale wheel resize used to
+	// fall through to the translate falloff and displace the neighbours); the VR /
+	// no-gesture path keeps the translate shape: members first, anchor last — the
+	// tail commitSelectedLocal refreshes normals/bounds/overlay and sets needsUpdate
+	if (proxyGesture) {
+		applyProxyGesture();
+		return;
+	}
 	applyFalloff(deltaVector.copy(handles[selectedHandle].position).sub(falloffOrigin()));
 	commitSelectedLocal(handles[selectedHandle].position.clone());
 }
@@ -1428,10 +1446,8 @@ function applyTranslate(delta) {
  * on every call, so a long drag cannot drift, and conjugated out of the proxy
  * frame into object-local before it touches a vertex.
  *
- * DELIBERATE: proportional falloff is a TRANSLATE tool and is left alone here.
- * Only the selected set turns/scales; the neighbourhood keeps its positions. A
- * weighted partial rotation is a different (and much less obvious) operation,
- * and silently inventing one would be worse than not offering it.
+ * Since v1.13 (F1) the falloff neighbourhood turns/scales too, weighted — see the
+ * blend note inside. Before that the falloff was a translate-only tool here.
  */
 function applyPivotTransform() {
 	const g = /** @type {any} */ (proxyGesture);
@@ -1448,15 +1464,33 @@ function applyPivotTransform() {
 	// resets that to 1 — the divide keeps it honest if it ever is not
 	const scale = proxy.scale.clone().divide(g.scale);
 	const point = new THREE.Vector3();
-	for (const index of gestureIndices()) {
+	// F1 (v1.13): PROPORTIONAL rotate/scale = the WEIGHTED TRANSFORM BLEND (the plan's
+	// option 3): per vertex the rotation is slerped and the scale lerped toward
+	// identity by its falloff weight, then applied. For a pure rotation that is the
+	// conventional weighted ANGLE (a w = 0.5 vertex turns half way, so a straight edge
+	// through the falloff becomes a spiral — what Blender does), and it is the only
+	// reading that stays defined when rotate and scale combine. The selection has
+	// w = 1 by construction (beginFalloff), so it turns by the full amount either way.
+	const weighted = falloffActive();
+	const identity = new THREE.Quaternion();
+	const one = new THREE.Vector3(1, 1, 1);
+	const q = new THREE.Quaternion();
+	const sc = new THREE.Vector3();
+	const indices = weighted
+		? handles.map((_, i) => i).filter((i) => /** @type {number[]} */ (falloffWeights)[i] > 0)
+		: gestureIndices();
+	for (const index of indices) {
 		if (!g.starts[index]) continue;
+		const w = weighted ? /** @type {number[]} */ (falloffWeights)[index] : 1;
+		q.copy(identity).slerp(dQuat, w);
+		sc.copy(one).lerp(scale, w);
 		point
 			.copy(g.starts[index])
 			.sub(pivot)
 			.applyQuaternion(Rinv)
-			.multiply(scale)
+			.multiply(sc)
 			.applyQuaternion(R)
-			.applyQuaternion(dQuat)
+			.applyQuaternion(q)
 			.add(pivot);
 		writeHandle(index, point);
 	}
@@ -1523,6 +1557,40 @@ function broadcastSelected(positionArray) {
 		});
 }
 
+/**
+ * F3 (v1.13): a PROPORTIONAL drag ends with ONE whole-geometry `meshgeo` commit —
+ * applied locally, broadcast, and recorded as the undo entry — instead of the
+ * selection-only `verts` stream. The falloff neighbourhood was never on the wire
+ * before (only the gesture's own handles were sent, per handle), so a peer saw the
+ * selected vertices move and the bulge around them never arrive.
+ *
+ * The LOCAL apply is load-bearing, not a convenience: `applyMeshGeo` rebuilds the
+ * receiver's geometry NON-indexed, while a `/create Plane` is indexed — so if only
+ * the peer swapped, the sender's next `verts` message would carry indices into a
+ * layout the peer no longer has. Both sides swap together (the undo path's rule).
+ *
+ * THE TRAP that follows: the swap rebuilds `handles` in triangle order through
+ * `refreshVertexEditSession`, which clamps the selection by COUNT only, so the
+ * indices would silently name different vertices. The selection is captured as
+ * POSITIONS before the commit and re-found by position after it.
+ * @param {number[]} before @param {number[]} after
+ * @returns {boolean} false when the commit was refused (size cap) and nothing changed
+ */
+function commitFalloffSnapshot(before, after) {
+	if (!edited || selectedHandle < 0) return false;
+	const anchorPos = handles[selectedHandle].position.clone();
+	const memberPos = [...vertexSelection].map((i) => handles[i]?.position.clone()).filter(Boolean);
+	if (!commitMeshGeoSnapshot(edited.uuid, before, after)) return false;
+	// handles were rebuilt by the vertex session refresher — same positions, new order
+	const find = (/** @type {any} */ p) => handles.findIndex((h) => h.position.distanceToSquared(p) < 1e-10);
+	const anchor = find(anchorPos);
+	vertexSelection = new Set(memberPos.map(find).filter((i) => i >= 0));
+	selectedHandle = anchor;
+	if (anchor >= 0) vertexSelection.add(anchor);
+	syncVertexSelection();
+	return true;
+}
+
 /** Called from Scene.svelte on dragging-changed for the proxy @param {boolean} dragging */
 export function onProxyDragChanged(dragging) {
 	if (!edited || !proxy) return;
@@ -1574,8 +1642,19 @@ export function onProxyDragChanged(dragging) {
 		// catch any tail movement since the last change event
 		applyProxyGesture();
 		const after = handles[selectedHandle].position.toArray();
-		broadcastGesture(); // final unthrottled state, every moved handle
-		if (vertexSelection.size > 1 || falloffActive() || mode !== 'translate') {
+		// F3: a live falloff commits the WHOLE geometry once (see commitFalloffSnapshot);
+		// read the predicate here, before the falloff state is cleared below
+		let committedWhole = false;
+		if (falloffActive() && dragStartExpanded) {
+			const afterExpanded = trisToPositions(readTriangles(edited.geometry));
+			committedWhole =
+				JSON.stringify(dragStartExpanded) === JSON.stringify(afterExpanded) ||
+				commitFalloffSnapshot(dragStartExpanded, afterExpanded);
+		}
+		if (!committedWhole) broadcastGesture(); // final unthrottled state, every moved handle
+		if (committedWhole) {
+			// the commit applied, sent and recorded everything
+		} else if (vertexSelection.size > 1 || falloffActive() || mode !== 'translate') {
 			const afterExpanded = trisToPositions(readTriangles(edited.geometry));
 			if (dragStartExpanded && JSON.stringify(dragStartExpanded) !== JSON.stringify(afterExpanded))
 				recordEntry({

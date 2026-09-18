@@ -145,7 +145,11 @@ export default defineConfig({
 			// ...but excluding it stops vite pre-bundling its CJS dep too, and
 			// `import groupBy from 'lodash.groupby'` then has no default export. Pre-bundle
 			// that one explicitly so the interop wrapper still exists.
-			include: ['lodash.groupby']
+			// 26-F: the decimation Worker's simplifier is only reached from inside the Worker,
+			// so dev discovered it on the FIRST reduction and reloaded the page mid-import
+			// ("optimized dependencies changed. reloading") — losing whatever was unsaved.
+			// Pre-bundle it up front so the first reduction is as quiet as the rest.
+			include: ['lodash.groupby', 'meshoptimizer/simplifier']
 		},
 	// dev https via the repo's local certs (vite-plugin-mkcert stayed on vite<=5;
 	// certs/ was already how CI-less https worked before mkcert)

@@ -5,6 +5,28 @@
      per release, newest first. HTML comments like this one are stripped before
      rendering, so maintainer notes stay out of the user-facing window. -->
 
+## 1.14.0 — Room for one more 🗜️
+
+### 🗜️ Heavy models stop being a cliff (roadmap #26, the last held phase)
+
+- 📥 **An import is weighed before it lands.** A model's real cost — triangles, draw calls and
+  texture bytes — is measured against what the scene already holds, and anything heavy enough
+  to hurt asks first instead of arriving and wedging the tab.
+- 🗜️ **One dialog, three honest answers: Reduce, Load anyway, or Cancel.** Reduce simplifies
+  the mesh on a background worker, so the window keeps drawing while it works, and a progress
+  card tells you how far along it is. You are told afterwards what was reduced and by how much.
+- ↩️ **A reduction you can take back.** The original file is kept for the session, so
+  **Restore original model** on the object menu puts the full-detail version back — and it
+  says why when it cannot, rather than being mysteriously greyed out.
+- 🤖 Models an AI generates go through the same gate, because a generated mesh is as heavy as
+  any other.
+
+### ⚽ Football has a Games tab template
+
+- ⚽ **Football is a starter you can open**, not only a toolbox recipe: the Games tab now lists
+  it beside Towers and the Stars Room, built from the module's own definition so the two can
+  never drift apart.
+
 ## 1.13.0 — Knock it about 🪐
 
 ### ✨ Knock things about (roadmap #24)
@@ -59,14 +81,14 @@
 
 ### ⚽ VR Football (a module)
 
-- 🥅 **Football** is a new module in Browse: two floating gates, one ball, red against blue,
-  played with your hands. Install it, open its toolbox and **Build pitch** lays out the pitch,
-  the gates and the rules in your scene. Goals go to whoever touched the ball last, own goals
-  land on the right sheet, and the mode decides when the match ends (first to N, a clock, or
-  either). Scores, touches and own goals are per player, the gate lamps read from across the
-  room, and a saved scene keeps the match log. Two people in one room can play it colocated.
-  (A ready-made Football template for the Games tab is not published yet — the toolbox recipe
-  is how you get a pitch today.)
+- 🥅 **Football** is a new game: two floating gates, one ball, red against blue, played with
+  your hands. Open **Templates ▸ Games ▸ Football** for a ready-made pitch — loading it offers
+  to install the Football module — or install the module from Browse and let its toolbox's
+  **Build pitch** lay out the pitch, the gates and the rules in a scene of your own. Goals go
+  to whoever touched the ball last, own goals land on the right sheet, and the mode decides
+  when the match ends (first to N, a clock, or either). Scores, touches and own goals are per
+  player, the gate lamps read from across the room, and a saved scene keeps the match log.
+  Two people in one room can play it colocated.
 
 ### 🛠️ For people building on it
 

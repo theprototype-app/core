@@ -941,6 +941,12 @@ export function sendObjects(peerId, element, opts = {}) {
             pos: element.position.toArray(),
             rot: element.rotation.toArray(),
             scale: element.scale.toArray(),
+            // 26-F: the ROOT of a placed import is sent by THIS message, which carried no
+            // userData — so a stamp on an imported model's root (its `reduced` report, an
+            // AI mesh's `aiGen` provenance) never reached a peer, while the same stamp on a
+            // nested group did (sendObject's 23-C1 branch). Same additive field, same
+            // receiver merge; absent when there is nothing to carry.
+            ...(element.userData && Object.keys(element.userData).length ? { userData: element.userData } : {}),
             ...(opts.override ? { override: true } : {})
         });
     }

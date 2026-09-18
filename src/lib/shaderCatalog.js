@@ -16,9 +16,10 @@
 //            `uniform: true`, so a param edit is a value write and never a recompile
 //   inputs   sockets [{name, type, default}] — `default` is the GLSL used when unwired
 //   outputs  sockets [{name, type, suffix}] — `suffix` swizzles the node's temp
-//   stages   which shader STAGES the node works in (absent = both). uv/normal mean
-//            different things per stage and `emit` receives the stage; a node needing the
-//            view vector or dFdx is 'fragment' only
+//   stages   which shader STAGES the node works in (absent = every stage: 'fragment',
+//            'vertex' and, since P4, 'post'). uv/normal mean different things per stage
+//            and `emit` receives the stage; a node needing the view vector or dFdx is
+//            'fragment' only, and a node reading a SCREEN buffer is 'post' only
 //   nativeType the GLSL type `emit` actually returns, when that is not the FIRST output's
 //            type. Every multi-output node needs it: the compiler declares one temp per
 //            node and the swizzled outputs read it, so the temp's type must not depend on
@@ -41,17 +42,31 @@
  * @property {any[]} [inputs]
  * @property {any[]} [outputs]
  * @property {GlslType} [nativeType]
- * @property {('fragment'|'vertex')[]} [stages] which shader stages the node works in.
- *   Absent = both. A node needing the view vector or screen-space derivatives is
- *   fragment-only, and the compiler refuses it in the vertex pass with an explanation.
+ * @property {('fragment'|'vertex'|'post')[]} [stages] which shader stages the node works
+ *   in. Absent = all three. A node needing the view vector or screen-space derivatives is
+ *   fragment-only, one reading the scene's colour or depth buffer is post-only, and the
+ *   compiler refuses either elsewhere with an explanation naming both stages.
  * @property {string[]} [requires]
  * @property {string} [prelude]
  * @property {string} [doc] the manual line, merged in from DOCS below
  * @property {(arg: any) => string} [emit]
  */
 
-/** The single output node every graph must have. */
+/** The single output node every SURFACE graph must have. */
 export const SURFACE_NODE = 'surface';
+
+/**
+ * The single output node every POST graph must have (P4, the Post domain). A post graph
+ * is a fragment function over SCREEN buffers — it can never know an object's material,
+ * and a surface graph can never see a neighbouring pixel — so the two domains share the
+ * catalog but each has its own terminal, and `outputNodeFor(domain)` names it.
+ */
+export const POST_OUTPUT_NODE = 'postOutput';
+
+/** @param {string} domain @returns {string} */
+export function outputNodeFor(domain) {
+	return domain === 'post' ? POST_OUTPUT_NODE : SURFACE_NODE;
+}
 
 /** float in / float out helper for the one-argument maths nodes. */
 const fn1 = (/** @type {string} */ name, /** @type {string} */ glsl, /** @type {GlslType} */ type = 'float') => ({
@@ -137,14 +152,18 @@ const DEFS = [
 		requires: ['uv'],
 		outputs: [{ name: 'out', type: 'vec2' }],
 		// the varying in the fragment shader, the ATTRIBUTE in the vertex one (three's
-		// vertex prefix always declares `uv`, but `vUv` only exists behind USE_UV)
-		emit: (a) => (a.stage === 'vertex' ? 'uv' : 'vUv')
+		// vertex prefix always declares `uv`, but `vUv` only exists behind USE_UV) — and
+		// in a POST graph the SCREEN position, which mainImage receives as `uv`
+		emit: (a) => (a.stage === 'vertex' || a.stage === 'post' ? 'uv' : 'vUv')
 	},
 	{
 		key: 'normal',
 		label: 'Normal',
 		group: 'Input',
 		requires: ['normal'],
+		// a screen pixel has no surface of its own: the post domain reads normals from the
+		// normal BUFFER (Scene normal) instead, so this one is refused there by name
+		stages: ['fragment', 'vertex'],
 		outputs: [{ name: 'out', type: 'vec3' }],
 		// FRAGMENT: the VARYING, not three's shaded `normal` — our body is emitted before
 		// <normal_fragment_begin>, so the shaded one is not in scope yet.
@@ -580,6 +599,182 @@ const DEFS = [
 		}
 	},
 
+	// ---- post (P4: the Post domain — screen buffers, post-only) --------------------
+	// Everything here reads what the EffectPass fragment already has in scope:
+	// `inputColor`/`inputBuffer` (the frame so far), `readDepth`/`getViewZ` + cameraNear/
+	// cameraFar (behind EffectAttribute.DEPTH, requested through `requires: ['depth']`),
+	// `resolution`/`texelSize`, and a NormalPass texture the chain adds ON DEMAND when a
+	// graph `requires` 'normals'.
+	{
+		key: 'sceneColor',
+		label: 'Scene colour',
+		group: 'Post',
+		stages: ['post'],
+		nativeType: 'vec4',
+		outputs: [
+			{ name: 'rgb', type: 'vec3', suffix: '.rgb' },
+			{ name: 'a', type: 'float', suffix: '.a' },
+			{ name: 'rgba', type: 'vec4' }
+		],
+		emit: () => 'inputColor'
+	},
+	{
+		key: 'sceneSample',
+		label: 'Scene sample',
+		group: 'Post',
+		stages: ['post'],
+		inputs: [{ name: 'uv', type: 'vec2', default: 'uv' }],
+		nativeType: 'vec4',
+		outputs: [
+			{ name: 'rgb', type: 'vec3', suffix: '.rgb' },
+			{ name: 'a', type: 'float', suffix: '.a' },
+			{ name: 'rgba', type: 'vec4' }
+		],
+		emit: (a) => 'texture2D(inputBuffer, ' + a.in.uv + ')'
+	},
+	{
+		key: 'sceneDepth',
+		label: 'Scene depth',
+		group: 'Post',
+		stages: ['post'],
+		requires: ['depth'],
+		inputs: [{ name: 'uv', type: 'vec2', default: 'uv' }],
+		// raw (non-linear, what the buffer holds) AND a 0..1 linear reading between the
+		// camera's near and far planes — the second is what every visible use wants
+		nativeType: 'vec2',
+		outputs: [
+			{ name: 'linear', type: 'float', suffix: '.y' },
+			{ name: 'raw', type: 'float', suffix: '.x' }
+		],
+		// `tpDepthAt` is the compiler's POST_DEPTH_PRELUDE, emitted once whenever any node
+		// requires 'depth' — declared there rather than here so Edge detect and the AO node
+		// can call it without this node being in the graph
+		emit: (a) => 'tpDepthAt(' + a.in.uv + ')'
+	},
+	{
+		key: 'sceneNormal',
+		label: 'Scene normal',
+		group: 'Post',
+		stages: ['post'],
+		requires: ['normals'],
+		inputs: [{ name: 'uv', type: 'vec2', default: 'uv' }],
+		outputs: [{ name: 'out', type: 'vec3' }],
+		// the NormalPass encodes view-space normals as 0..1
+		emit: (a) => '(texture2D(normalBuffer, ' + a.in.uv + ').rgb * 2.0 - 1.0)'
+	},
+	{
+		key: 'resolution',
+		label: 'Resolution',
+		group: 'Post',
+		stages: ['post'],
+		nativeType: 'vec4',
+		outputs: [
+			{ name: 'size', type: 'vec2', suffix: '.xy' },
+			{ name: 'texel', type: 'vec2', suffix: '.zw' }
+		],
+		emit: () => 'vec4(resolution, texelSize)'
+	},
+	{
+		key: 'bayer',
+		label: 'Bayer pattern',
+		group: 'Post',
+		stages: ['post'],
+		inputs: [{ name: 'uv', type: 'vec2', default: 'uv' }],
+		params: [{ name: 'scale', type: 'float', default: 1, uniform: true }],
+		outputs: [{ name: 'out', type: 'float' }],
+		// the 4x4 ordered-dither threshold matrix, 0..1, indexed by the PIXEL so it never
+		// swims with the picture; `scale` grows the cells
+		prelude:
+			'float tpBayer4(vec2 px) {\n' +
+			'  ivec2 p = ivec2(mod(floor(px), 4.0));\n' +
+			'  int i = p.x + p.y * 4;\n' +
+			'  float v = 0.0;\n' +
+			'  if (i == 0) v = 0.0; else if (i == 1) v = 8.0; else if (i == 2) v = 2.0; else if (i == 3) v = 10.0;\n' +
+			'  else if (i == 4) v = 12.0; else if (i == 5) v = 4.0; else if (i == 6) v = 14.0; else if (i == 7) v = 6.0;\n' +
+			'  else if (i == 8) v = 3.0; else if (i == 9) v = 11.0; else if (i == 10) v = 1.0; else if (i == 11) v = 9.0;\n' +
+			'  else if (i == 12) v = 15.0; else if (i == 13) v = 7.0; else if (i == 14) v = 13.0; else v = 5.0;\n' +
+			'  return (v + 0.5) / 16.0;\n' +
+			'}\n',
+		emit: (a) => 'tpBayer4(' + a.in.uv + ' * resolution / max(' + a.params.scale + ', 1.0))'
+	},
+	{
+		key: 'edgeDetect',
+		label: 'Edge detect',
+		group: 'Post',
+		stages: ['post'],
+		requires: ['depth', 'normals'],
+		inputs: [{ name: 'uv', type: 'vec2', default: 'uv' }],
+		params: [
+			{ name: 'depthWeight', type: 'float', default: 4, uniform: true },
+			{ name: 'normalWeight', type: 'float', default: 1, uniform: true }
+		],
+		outputs: [{ name: 'out', type: 'float' }],
+		// a Sobel over LINEAR depth plus the normal buffer: depth finds silhouettes,
+		// normals find creases a depth edge misses (the box edge facing you)
+		prelude:
+			'float tpEdge(vec2 uv, float dw, float nw) {\n' +
+			'  vec2 t = texelSize;\n' +
+			'  float d00 = tpDepthAt(uv + t * vec2(-1.0, -1.0)).y, d10 = tpDepthAt(uv + t * vec2(0.0, -1.0)).y, d20 = tpDepthAt(uv + t * vec2(1.0, -1.0)).y;\n' +
+			'  float d01 = tpDepthAt(uv + t * vec2(-1.0, 0.0)).y, d21 = tpDepthAt(uv + t * vec2(1.0, 0.0)).y;\n' +
+			'  float d02 = tpDepthAt(uv + t * vec2(-1.0, 1.0)).y, d12 = tpDepthAt(uv + t * vec2(0.0, 1.0)).y, d22 = tpDepthAt(uv + t * vec2(1.0, 1.0)).y;\n' +
+			'  float gx = (d20 + 2.0 * d21 + d22) - (d00 + 2.0 * d01 + d02);\n' +
+			'  float gy = (d02 + 2.0 * d12 + d22) - (d00 + 2.0 * d10 + d20);\n' +
+			'  float de = sqrt(gx * gx + gy * gy) * dw;\n' +
+			'  vec3 n = texture2D(normalBuffer, uv).rgb;\n' +
+			'  float ne = 0.0;\n' +
+			'  ne += length(texture2D(normalBuffer, uv + t * vec2(1.0, 0.0)).rgb - n);\n' +
+			'  ne += length(texture2D(normalBuffer, uv + t * vec2(0.0, 1.0)).rgb - n);\n' +
+			'  ne += length(texture2D(normalBuffer, uv - t * vec2(1.0, 0.0)).rgb - n);\n' +
+			'  ne += length(texture2D(normalBuffer, uv - t * vec2(0.0, 1.0)).rgb - n);\n' +
+			'  return clamp(de + ne * nw, 0.0, 1.0);\n' +
+			'}\n',
+		emit: (a) => 'tpEdge(' + a.in.uv + ', ' + a.params.depthWeight + ', ' + a.params.normalWeight + ')'
+	},
+	{
+		key: 'ambientOcclusion',
+		label: 'Ambient occlusion (depth)',
+		group: 'Post',
+		stages: ['post'],
+		requires: ['depth'],
+		inputs: [{ name: 'uv', type: 'vec2', default: 'uv' }],
+		params: [
+			{ name: 'radius', type: 'float', default: 6, uniform: true },
+			{ name: 'bias', type: 'float', default: 0.002, uniform: true }
+		],
+		outputs: [{ name: 'out', type: 'float' }],
+		// the custom-AO slot: a cheap 8-tap depth-only occlusion, 0 (open) .. 1
+		// (occluded). Not N8AO — the point is that a post GRAPH can sit beside or
+		// replace it, and this is the honest small version a graph can carry.
+		prelude:
+			'float tpAo(vec2 uv, float radius, float bias) {\n' +
+			'  float d = tpDepthAt(uv).y;\n' +
+			'  vec2 r = texelSize * radius;\n' +
+			'  float occ = 0.0;\n' +
+			'  vec2 dirs[8];\n' +
+			'  dirs[0] = vec2(1.0, 0.0); dirs[1] = vec2(-1.0, 0.0); dirs[2] = vec2(0.0, 1.0); dirs[3] = vec2(0.0, -1.0);\n' +
+			'  dirs[4] = vec2(0.7, 0.7); dirs[5] = vec2(-0.7, 0.7); dirs[6] = vec2(0.7, -0.7); dirs[7] = vec2(-0.7, -0.7);\n' +
+			'  for (int i = 0; i < 8; i++) {\n' +
+			'    float s = tpDepthAt(uv + dirs[i] * r).y;\n' +
+			'    float diff = d - s - bias;\n' +
+			'    occ += clamp(diff / max(bias * 8.0, 0.0001), 0.0, 1.0) * step(0.0, diff);\n' +
+			'  }\n' +
+			'  return clamp(occ / 8.0, 0.0, 1.0);\n' +
+			'}\n',
+		emit: (a) => 'tpAo(' + a.in.uv + ', ' + a.params.radius + ', ' + a.params.bias + ')'
+	},
+	{
+		key: POST_OUTPUT_NODE,
+		label: 'Post output',
+		group: 'Output',
+		stages: ['post'],
+		inputs: [
+			{ name: 'color', type: 'vec3', default: null },
+			// unwired: the frame's own alpha, so a graph that only recolours keeps it
+			{ name: 'alpha', type: 'float', default: 'inputColor.a' }
+		],
+		outputs: []
+	},
+
 	// ---- the output -------------------------------------------------------------
 	{
 		key: SURFACE_NODE,
@@ -617,7 +812,7 @@ const DOCS = {
 	color: 'A colour you pick. Converted sRGB -> linear, so it matches what the picker shows.',
 	vector2: 'Two numbers — usually a UV offset, a tiling amount or a 2D direction.',
 	vector3: 'Three numbers — a direction, a position offset, or a colour you want as numbers.',
-	uv: "The surface's texture coordinates: 0..1 across the mesh's UV layout. The starting point for anything that varies across a surface.",
+	uv: "The surface's texture coordinates: 0..1 across the mesh's UV layout — or, in a post graph, the screen position. The starting point for anything that varies across a surface.",
 	normal: 'Which way the surface faces. In the surface stage this is the shaded normal; wired into Position it is the object-space normal, which is what you displace along.',
 	viewDirection: 'The direction from the surface towards the camera. Surface stage only — there is no camera vector while vertices are being placed.',
 	time: 'Seconds from the SHARED clock, so anything animated is at the same point for every peer with no messages. Multiply by speed to go faster.',
@@ -667,7 +862,19 @@ const DOCS = {
 	normalMap: 'Reads a normal map image and applies it as surface detail, building the tangent frame from screen-space derivatives so it works on meshes with no tangents.',
 	glsl: 'The escape hatch: write a GLSL expression using a, b and c as the wired inputs, and declare what type it returns.',
 
+	// post (P4)
+	sceneColor: 'The frame as rendered so far, before this effect: the colour under this screen pixel. The starting point of every post graph.',
+	sceneSample: 'The frame colour at ANY screen position you give it — offset the UV by a texel to read a neighbour, which is how blurs and edge detectors are built.',
+	sceneDepth: 'How far away the thing under this pixel is: linear runs 0 (near plane) to 1 (far plane), raw is what the depth buffer holds. Fog, depth tints, edge detection.',
+	sceneNormal: 'Which way the surface under this pixel faces, from a normal pass the chain adds only when a graph asks for it. Creases and outlines that depth alone misses.',
+	resolution: 'The frame size in pixels, and one texel as a UV step — what you multiply a screen offset by so it stays one pixel wide at any window size.',
+	bayer: 'An ordered-dither threshold pattern locked to the pixel grid, 0..1. Add it (minus a half) before Posterise for retro dithering; scale grows the cells.',
+	edgeDetect: 'A line strength, 0..1, where depth or normals change sharply — silhouettes and creases. Mix a line colour over the scene colour by it for an ink look.',
+	ambientOcclusion: 'A cheap screen-space occlusion from depth alone, 0 open to 1 tucked into a corner. Darken the scene colour by it for contact shading you can tune in a graph.',
+
 	// output
+	[POST_OUTPUT_NODE]:
+		"The post graph's output: the colour this effect writes for the pixel, with alpha left to the frame's own unless you wire it. Everything upstream of color is one fullscreen pass.",
 	[SURFACE_NODE]:
 		"The graph's output. Each input replaces one part of the material and anything left unconnected keeps the material's own value: albedo (base colour), emissive (glow), roughness, metalness, normal (surface detail), opacity (needs blending), ao (shades indirect light) and position (moves vertices — note it does not recompute normals or move the shadow)."
 };

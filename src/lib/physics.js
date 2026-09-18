@@ -24,7 +24,8 @@ import {
 	sceneGravity,
 	scenePhysicsGround,
 	scenePhysicsBounds,
-	scenePhysicsDefaults
+	scenePhysicsDefaults,
+	sceneKnock
 } from './scenePhysics';
 import { velocityFromSamples, clampThrow, MAX_LINVEL, MAX_ANGVEL } from './throwVelocity';
 // B7: spawned objects are swept when the run ends. transientObjects is a LEAF (the two
@@ -1242,6 +1243,54 @@ export function applyThrow(data) {
 	entry.lastWritten.quat.copy(object.quaternion);
 	pokeScene();
 	return true;
+}
+
+/**
+ * 24-A A1: a hand (or a walking player) KNOCKED a dynamic body — the throw's sibling.
+ *
+ * Same authority rule as applyThrow: the INITIATOR applies it and nobody re-broadcasts,
+ * because the flight itself replicates through the ordinary move stream. Unlike a
+ * throw there is no pose to reseat — the hitter never moved the object, so the body
+ * keeps its own position and only its VELOCITY changes (add-on-top semantics were
+ * resolved by the sender: `linvel` is the absolute result). The vectors go through
+ * the SAME clampThrow as every release, plus the scene's own `knock.maxSpeed` — the
+ * config is shared latest-wins, so the initiator can hold the cap it authored without
+ * trusting the sender's number (F2: never trust the sender's numbers).
+ *
+ * A HELD body refuses: knocking a crate somebody is carrying would fight their hold,
+ * and an EXTERNAL hold means a peer's move stream owns the pose right now. The return
+ * is the body's answer only; the hit LOG is knock.js's business and is written on every
+ * peer whether or not a body took it (convergence over refusal, see noteRemoteHit).
+ * @param {any} data {uuid, linvel, angvel}
+ */
+export function applyHit(data) {
+	if (!world || !get(simulating)) return false;
+	const entry = bodies.find((e) => e.object.uuid === data?.uuid && e.mode === 'dynamic');
+	if (!entry || entry.hold) return false;
+	const v = clampThrow(data.linvel, data.angvel);
+	const cap = Math.min(get(sceneKnock)?.maxSpeed ?? MAX_LINVEL, MAX_LINVEL);
+	if (v.linvel.length() > cap) v.linvel.setLength(cap);
+	entry.body.setLinvel({ x: v.linvel.x, y: v.linvel.y, z: v.linvel.z }, true);
+	entry.body.setAngvel({ x: v.angvel.x, y: v.angvel.y, z: v.angvel.z }, true);
+	if (v.linvel.length() > 5) entry.body.enableCcd(true); // B4: a fast body must not tunnel
+	return true;
+}
+
+/**
+ * A1: a dynamic body's EXACT velocity, for the knock's approach test on the peer that
+ * steps the world. Null off the initiator (there is no body) — knock.js then falls
+ * back to its own estimate off the poses it renders. `held` lets the probe skip a body
+ * somebody is carrying without a second lookup.
+ * @param {string} uuid
+ * @returns {{linvel: number[], angvel: number[], held: boolean} | null}
+ */
+export function bodyVelocityOf(uuid) {
+	if (!world) return null;
+	const entry = bodies.find((e) => e.object.uuid === uuid && e.mode === 'dynamic');
+	if (!entry) return null;
+	const l = entry.body.linvel();
+	const a = entry.body.angvel();
+	return { linvel: [l.x, l.y, l.z], angvel: [a.x, a.y, a.z], held: !!entry.hold };
 }
 
 const FIXED_DT = 1 / 60;

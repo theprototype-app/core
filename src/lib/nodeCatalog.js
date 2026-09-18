@@ -608,6 +608,22 @@ export const nodeCatalog = [
 				defaults: { pulse: 0.3, minStrength: 1 },
 				params: [{ key: 'minStrength', kind: 'range', min: 0, max: 10, step: 0.1 }]
 			},
+			// 24-A A2: a hand (VR controller) or a walking player KNOCKED this body (A1's
+			// probe). Fired on EVERY peer as the `hit` message is applied, stamped from the
+			// message's own `at` — one message per knock, identical stamps everywhere, no
+			// nodetrigger. `who` is read per peer against the hitter's id, which is how a
+			// per-player count reaches setvariable scope:'player' without a second writer.
+			// Its own card (OnHitNode): the pulse dot plus `speed` and `byMe` value outputs,
+			// so a graph can scale a burst by how hard the hit was.
+			{
+				type: 'onhit',
+				label: 'On Hit',
+				defaults: { pulse: 0.3, minSpeed: 0, who: 'anyone' },
+				params: [
+					{ key: 'minSpeed', kind: 'range', min: 0, max: 10, step: 0.1 },
+					{ key: 'who', kind: 'select', options: ['anyone', 'me', 'others'] }
+				]
+			},
 			// CL-C C2: sensor overlap edges (initiator-detected, replicated stamps)
 			{ type: 'onenter', label: 'On Enter', defaults: { pulse: 0.3 } },
 			{ type: 'onexit', label: 'On Exit', defaults: { pulse: 0.3 } },

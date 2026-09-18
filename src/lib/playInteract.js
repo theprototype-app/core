@@ -426,6 +426,12 @@ export function stopPlayInteract() {
 	window.removeEventListener('wheel', onWheel, { capture: true });
 }
 
+/** 24-A A1: the object the crosshair is carrying, or null — the knock's head probe
+ * skips it for the same reason the VR probe skips a gripped object. */
+export function carriedUuid() {
+	return grab?.object?.uuid ?? null;
+}
+
 /** test/debug view */
 export function playInteractDebug() {
 	return {

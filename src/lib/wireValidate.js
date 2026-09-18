@@ -96,6 +96,12 @@ export const VALIDATORS = {
 	name: (d) => isUuid(d.uuid) && typeof d.name === 'string',
 	move: (d) => isUuid(d.uuid) && isVec3(d.pos) && isQuatOrEuler(d.rot) && isVec3(d.scale),
 	throw: (d) => isUuid(d.uuid),
+	// 24-A: a knock. The velocities are applied to a body the moment this lands, so the
+	// triples are checked here rather than trusted by `applyHit`.
+	hit: (d) => isUuid(d.uuid) && isArray(d.linvel) && isArray(d.angvel) && typeof d.speed === 'number',
+	// P2: a peer's LOOK presence row. `overrides` and `look` are read as objects the moment
+	// this lands, so a malformed row is dropped here rather than breaking the watch chain.
+	lookstate: (d) => typeof d.peerId === 'string' && (d.overrides === undefined || typeof d.overrides === 'object'),
 	simulate: (d) => typeof d.running === 'boolean' || typeof d.paused === 'boolean',
 	loading: (d) => isArray(d.uuids),
 	object: (d) => d.element !== undefined,

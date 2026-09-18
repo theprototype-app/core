@@ -26,8 +26,10 @@ const LEGACY_POST_KEY = 'postEnabledLocal';
  */
 
 /**
- * The layers a viewer may switch off locally. `shaders` is declared HERE, ahead of
- * L6/L7 needing it, precisely so those phases add a renderer and not a new concept.
+ * The layers a viewer may switch off locally. `shaders` was declared HERE ahead of
+ * L6/L7 needing it, precisely so those phases would add a RENDERER and not a new
+ * concept — P5 wired it (shaderGraph's `applyShaderLayer`), which is exactly what that
+ * bet was for.
  * @type {OverrideDef[]}
  */
 export const OVERRIDES = [
@@ -39,7 +41,7 @@ export const OVERRIDES = [
 	{
 		key: 'shaders',
 		label: 'Scene shaders',
-		hint: 'Materials driven by the scene’s shader graphs. Reserved for the shader work; nothing reads it yet.'
+		hint: 'Materials driven by the scene’s shader graphs — the scene default and any object with its own. Turning this off shows those objects their own material, on this screen only.'
 	},
 	// 21-D5: the first REAL consumer of renderLayer(). A HUD is scene data and renders for
 	// everyone by default, exactly like the look above - this is only the right to switch it

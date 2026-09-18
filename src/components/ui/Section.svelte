@@ -6,8 +6,21 @@
 	// rendered TEXT, and hides itself when nothing matches.
 	import { inspectorFilter, inspectorScrollTo } from '../../stores/appStore';
 
-	/** @type {{label?: string, collapsible?: boolean, open?: boolean, children?: any}} */
-	let { label = '', collapsible = true, open = $bindable(true), children = null } = $props();
+	/**
+	 * P6: `aliases` are OLD deep-link names this section still answers to. A section's
+	 * label is user-visible copy and its deep-link name is an identifier written down in
+	 * menus, other components and suites — the 21-G1 rule is that the word may change and
+	 * the identifier may not, so a rename lists what it used to be called instead of
+	 * hunting every caller (and silently missing one).
+	 * @type {{label?: string, aliases?: string[], collapsible?: boolean, open?: boolean, children?: any}}
+	 */
+	let {
+		label = '',
+		aliases = [],
+		collapsible = true,
+		open = $bindable(true),
+		children = null
+	} = $props();
 
 	const LS = typeof localStorage !== 'undefined' ? localStorage : null;
 	// persisted collapse, keyed by the section label (static per instance — a
@@ -43,7 +56,7 @@
 		const request = $inspectorScrollTo;
 		// a request is either "Grid" or "Camera:Saved views" (section:sub-anchor)
 		const [wanted, anchor] = String(request ?? '').split(':');
-		if (!request || wanted !== label) return;
+		if (!request || (wanted !== label && !aliases.includes(wanted))) return;
 		collapsed = false;
 		try {
 			LS?.setItem('inspector:sec:' + label, 'open');

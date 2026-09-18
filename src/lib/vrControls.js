@@ -243,6 +243,11 @@ const tempVector = new THREE.Vector3();
 let grab = null;
 /** @type {any} two-hand scale: { object, startDistance, startScale, before } */
 let scaleGrab = null;
+/** 24-A A1: the object a VR hand is holding right now, or null — the knock probe
+ * skips it (a hand knocking the crate it is carrying would fight its own hold). */
+export function vrGrabbedUuid() {
+	return grab?.object?.uuid ?? scaleGrab?.object?.uuid ?? null;
+}
 let lastMoveSent = 0;
 
 // --- clarity pack: controller rays, hover highlight, snap turn ---

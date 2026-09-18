@@ -298,11 +298,11 @@
 				},
 				{
 					// L3: the scene's authored look — AO, grading, camera FX
-					label: 'Post-processing…',
+					label: 'Scene look…',
 					icon: 'sliders-horizontal',
 					tooltip:
-						'Ambient occlusion, colour grading and camera effects (Configure Scene ▸ Post-processing)',
-					action: () => openSceneSection('Post-processing')
+						'Ambient occlusion, colour grading, camera effects and shader materials (Configure Scene ▸ Scene look)',
+					action: () => openSceneSection('Scene look')
 				},
 				{ label: 'Screenshot', icon: 'camera', action: screenshot }
 			]

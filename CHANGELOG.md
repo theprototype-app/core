@@ -5,7 +5,7 @@
      per release, newest first. HTML comments like this one are stripped before
      rendering, so maintainer notes stay out of the user-facing window. -->
 
-## Unreleased
+## 1.13.0 — Knock it about 🪐
 
 ### ✨ Knock things about (roadmap #24)
 

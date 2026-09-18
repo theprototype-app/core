@@ -59,14 +59,14 @@
 
 ### ⚽ VR Football (a module)
 
-- 🥅 **Football** is a new module in Browse: two floating gates, one ball, red against blue,
-  played with your hands. Install it, open its toolbox and **Build pitch** lays out the pitch,
-  the gates and the rules in your scene. Goals go to whoever touched the ball last, own goals
-  land on the right sheet, and the mode decides when the match ends (first to N, a clock, or
-  either). Scores, touches and own goals are per player, the gate lamps read from across the
-  room, and a saved scene keeps the match log. Two people in one room can play it colocated.
-  (A ready-made Football template for the Games tab is not published yet — the toolbox recipe
-  is how you get a pitch today.)
+- 🥅 **Football** is a new game: two floating gates, one ball, red against blue, played with
+  your hands. Open **Templates ▸ Games ▸ Football** for a ready-made pitch — loading it offers
+  to install the Football module — or install the module from Browse and let its toolbox's
+  **Build pitch** lay out the pitch, the gates and the rules in a scene of your own. Goals go
+  to whoever touched the ball last, own goals land on the right sheet, and the mode decides
+  when the match ends (first to N, a clock, or either). Scores, touches and own goals are per
+  player, the gate lamps read from across the room, and a saved scene keeps the match log.
+  Two people in one room can play it colocated.
 
 ### 🛠️ For people building on it
 

@@ -295,3 +295,51 @@ export function describeRow(row) {
 			return row.label;
 	}
 }
+
+/**
+ * @typedef {{room: number | null, meshCap: number | null, textureCap: number | null,
+ *   textureBudget: number | null}} ReductionPlan
+ */
+
+/**
+ * 26-F phase 2 — WHAT A REDUCTION SHOULD AIM AT, from the verdict that asked. PURE.
+ *
+ * Only the axes that ASKED get a target; a model asked about for its texture is not
+ * decimated as well. Each aims at the edge of RED — the most that fits without asking
+ * again, the same rule as `ingestVerdict.allowed` — with a 5% margin so the re-check
+ * after the reduction lands inside it. A scene that was already red has no room at the
+ * edge, so there the model aims at the GREEN ceiling on its own (it is asking only
+ * because it is heavy by itself, and that is the thing to fix).
+ *  · triangles: the model's share of the frame, divided by RENDER_PASSES back into
+ *    triangles of geometry;
+ *  · largest mesh: 90% of the single-mesh ceiling (the simplifier's vertex count lands
+ *    a little over half its triangle count, and seams add a few);
+ *  · textures: the single-texture ceiling, and the byte room left in texture memory.
+ * @param {ReturnType<typeof importVerdict>} verdict
+ * @returns {ReductionPlan}
+ */
+export function reductionPlan(verdict) {
+	/** @type {ReductionPlan} */
+	const plan = { room: null, meshCap: null, textureCap: null, textureBudget: null };
+	if (!verdict) return plan;
+	const asking = (/** @type {string} */ key) => verdict.asking?.some((r) => r.key === key);
+	const ceilings = (/** @type {string} */ key) => {
+		const b = budgetFor(key);
+		return b ? (verdict.profile === 'vr' ? b.vr : b.desktop) : [Infinity, Infinity];
+	};
+	if (asking('triangles')) {
+		const [green, amber] = ceilings('triangles');
+		const current = verdict.current.triangles * RENDER_PASSES;
+		const room = current > amber ? green : amber - current;
+		plan.room = Math.max(0, Math.floor((0.95 * room) / RENDER_PASSES));
+	}
+	if (asking('meshVertices')) plan.meshCap = Math.floor(0.9 * ceilings('meshVertices')[0]);
+	if (asking('textureSize')) plan.textureCap = ceilings('textureSize')[0];
+	if (asking('textureMB')) {
+		const [green, amber] = ceilings('textureMB');
+		const current = verdict.current.textureBytes / MB;
+		const room = current > amber ? green : amber - current;
+		plan.textureBudget = Math.max(0, Math.floor(0.95 * room * MB));
+	}
+	return plan;
+}

@@ -7,11 +7,11 @@ import { OBJLoader } from 'three/addons/loaders/OBJLoader.js';
 import { MTLLoader } from 'three/addons/loaders/MTLLoader.js';
 import { STLLoader } from 'three/addons/loaders/STLLoader.js';
 import { FBXLoader } from 'three/addons/loaders/FBXLoader.js';
-import { get } from 'svelte/store';
+import { get, writable } from 'svelte/store';
 import { scenePost } from '$lib/scenePost';
 import { objectsGroup, TControls, selectedObject, selectedObjects, pokeScene } from '../stores/sceneStore.js';
 import { sendObjects } from './commandsHandler.svelte';
-import { recordObjectPresence } from '$lib/history';
+import { recordObjectPresence, recordEntry, registerHistoryKind } from '$lib/history';
 // 17-D2: the .mtl texture path reuses the app's own downscale-to-dataURL step.
 // STATIC on purpose — a lazy import of it from here never settled in dev, and
 // materialsHandler does not import fileHandler, so this closes no cycle.
@@ -26,7 +26,9 @@ import { stripEditOverlays } from '$lib/editOverlays';
 import { saveFileBase } from '$lib/saveName';
 import { peers, fixLight, loadingFile, showToast } from '../stores/appStore';
 import { safeStorage } from './safeStorage';
-import { admitModel } from './importGate';
+import { admitModel, verdictFor } from './importGate';
+import { reductionPlan } from './importBudget';
+import { reduceModel } from './decimate';
 
 //Access objects Store
 let sceneObjects = $state();
@@ -644,9 +646,10 @@ function defaultImportName(extension, name) {
  * @param {any} file @param {string=} name @param {string=} ext - explicit extension when the blob has no name (Library)
  * @param {number[]=} position - world drop point (Explorer drag-out, 96)
  * @param {any[]=} extras - companion files picked/dropped alongside (.mtl + its textures)
+ * @param {{reduce?: boolean | import('./importBudget').ReductionPlan}} [opts] 26-F: import REDUCED
  * @returns {Promise<string|null>} the placed root's uuid, or null when nothing was placed
  */
-export async function importFile(file, name, ext, position, extras) {
+export async function importFile(file, name, ext, position, extras, opts = {}) {
 	const extension = String(ext ?? file.name ?? '').toLowerCase().split('.').pop() ?? '';
 	/** @type {any} */
 	let parsed;
@@ -658,7 +661,15 @@ export async function importFile(file, name, ext, position, extras) {
 		return null;
 	}
 	const label = defaultImportName(extension, name);
-	const answer = await admitModel(parsed.root, { name: label ?? file?.name });
+	// 26-F phase 2: `opts.reduce` asks for the reduced import directly (true = aim at the
+	// budget the verdict names, or an explicit plan). Phase 3 routes the dialog's own
+	// Reduce answer here. An animated rig is never reduced — it replicates as its original
+	// BYTES, and decimating the tree would leave peers reparsing the unreduced file.
+	const answer = opts.reduce && !parsed.animated ? 'reduce' : await admitModel(parsed.root, { name: label ?? file?.name });
+	if (answer === 'reduce' && !parsed.animated) {
+		const plan = opts.reduce && typeof opts.reduce === 'object' ? opts.reduce : reductionPlan(verdictFor(parsed.root));
+		return placeReduced(parsed, { file, extension, extras }, label ?? file?.name ?? 'Model', position, plan);
+	}
 	if (answer !== 'load') {
 		disposeParsed(parsed.root);
 		return null;
@@ -673,6 +684,228 @@ export async function importFile(file, name, ext, position, extras) {
 		showToast('Could not import ' + (name ?? file.name ?? 'file') + ' — the file may be corrupt or an unsupported version');
 		return null;
 	}
+}
+
+// ---- 26-F phase 2: a REDUCED import, and the way back ----------------------
+//
+// A reduction is a quality judgement made on the user's behalf, so it must be undoable
+// within the session: the ORIGINAL file is retained (the File, not the parsed tree — a
+// 2.4M-triangle scan is ~100MB of geometry in memory and ~70MB on disk) and Restore
+// re-parses it. The swap is a delete + a create at the SAME uuid in ONE history batch, so
+// it rides three existing channels and invents none: peers get the ordinary `delete` then
+// the ordinary GLTF object sync, and Ctrl+Z puts the reduced version back.
+//
+// What travels and persists is simply the reduced geometry — it is ordinary geometry, so
+// the wire, autosave and a .tpscene carry it with no new field. The one addition is
+// `userData.reduced` on the root (additive; rides toJSON and GLTF extras like `__uuid`):
+// what was reduced and by how much, so a peer or a reopened file can still say so.
+
+/** What a retained original costs, and the ceiling across all of them: the oldest go
+ * first, and a restore past eviction says so rather than failing silently. */
+const ORIGINALS_BUDGET = 256 * 1024 * 1024;
+/** @type {Map<string, {file: any, extension: string, extras: any[] | undefined, name: string, bytes: number, at: number}>} */
+const originals = new Map();
+
+/**
+ * Hold the source of a reduced import so Restore can re-read it. LRU by insertion, with
+ * the newest always kept even when it alone is over the ceiling (the import that JUST
+ * happened is the one a user is about to reconsider).
+ * @param {string} uuid @param {{file: any, extension: string, extras?: any[], name: string, bytes?: number}} source
+ */
+export function retainOriginal(uuid, source) {
+	originals.delete(uuid);
+	const bytes = Math.max(0, Number(source.bytes ?? source.file?.size) || 0);
+	originals.set(uuid, { file: source.file, extension: source.extension, extras: source.extras, name: source.name, bytes, at: Date.now() });
+	let total = 0;
+	for (const entry of originals.values()) total += entry.bytes;
+	for (const [key, entry] of originals) {
+		if (total <= ORIGINALS_BUDGET || key === uuid) break;
+		originals.delete(key);
+		total -= entry.bytes;
+	}
+}
+
+/** Is the original of this reduced import still held? @param {string} uuid */
+export function hasOriginal(uuid) {
+	return originals.has(uuid);
+}
+
+/**
+ * Reduce a parsed model off the main thread, stamp what was done, place it, and retain
+ * the original. Resolves the placed uuid, or null (nothing placed) when the reduction
+ * failed — a failed reduction never falls back to importing the heavy original
+ * unasked: the user chose the reduced model, and a surprise 2.4M triangles is exactly
+ * what they chose to avoid.
+ * @param {{root: any, notes: string[]}} parsed
+ * @param {{file: any, extension: string, extras?: any[]}} source
+ * @param {string} label @param {number[] | undefined} position
+ * @param {import('./importBudget').ReductionPlan} plan
+ * @returns {Promise<string|null>}
+ */
+async function placeReduced(parsed, source, label, position, plan) {
+	/** @type {import('./decimate').ReduceReport} */
+	let report;
+	try {
+		report = await reduceModel(parsed.root, plan);
+	} catch (error) {
+		console.error('Could not reduce the model:', error);
+		showToast('Could not reduce "' + label + '" — nothing was imported. Import it again and choose Load anyway to keep the original.');
+		disposeParsed(parsed.root);
+		return null;
+	}
+	const root = parsed.root;
+	const after = verdictFor(root);
+	root.userData = {
+		...(root.userData || {}),
+		reduced: {
+			trianglesBefore: report.trianglesBefore,
+			trianglesAfter: report.trianglesAfter,
+			verticesBefore: report.verticesBefore,
+			verticesAfter: report.verticesAfter,
+			texturesScaled: report.texturesScaled,
+			textureMaxBefore: report.textureMaxBefore,
+			textureMaxAfter: report.textureMaxAfter,
+			// the largest shape error the simplifier introduced, as a fraction of the mesh's size
+			error: Math.round(report.error * 10000) / 10000,
+			at: Date.now()
+		}
+	};
+	addImported(root, label, position);
+	retainOriginal(root.uuid, { file: source.file, extension: source.extension, extras: source.extras, name: label });
+	lastReduction.set({ uuid: root.uuid, name: label, report, stillOver: after.gate, asking: after.asking.map((r) => r.key) });
+	for (const note of parsed.notes) showToast(note);
+	return root.uuid;
+}
+
+/** The last reduction this device made: what, by how much, whether it still does not
+ * fit. LOCAL — phase 3's toast renders it, the suite reads it.
+ * @type {import('svelte/store').Writable<any>} */
+export const lastReduction = writable(null);
+
+/** Bytes of geometry a tree holds — what an `importswap` entry keeps alive, stated in
+ * the unit meshBudget's history byte budget reads (`positions.byteLength`), so fifty of
+ * these cannot quietly outgrow HISTORY_BYTES. @param {any} root */
+function treeBytes(root) {
+	let bytes = 0;
+	root?.traverse?.((/** @type {any} */ o) => {
+		const g = o.geometry;
+		if (!g) return;
+		for (const key of Object.keys(g.attributes ?? {})) bytes += g.attributes[key]?.array?.byteLength ?? 0;
+		bytes += g.index?.array?.byteLength ?? 0;
+	});
+	return bytes;
+}
+
+/**
+ * Put `incoming` where `live` stands — same uuid, same pose, same name — and replicate it
+ * as the ordinary `delete` then the ordinary GLTF object sync. The one code path for the
+ * restore AND for its undo/redo.
+ *
+ * WHY NOT the create/delete history kinds: their undo re-broadcasts the object as a
+ * toJSON element, whose geometry is PLAIN NUMBER ARRAYS — and binarypack overflows its
+ * stack past ~40k numbers, which `broadcast` swallows (golden rule 6). MEASURED: a
+ * 6,000-triangle reduced model re-added by undo stayed on this machine and the peer was
+ * left with nothing at that uuid. The GLTF path packs the same geometry as raw bytes.
+ * And a live-object entry has no 5MB snapshot ceiling, so a restore is ALWAYS undoable.
+ * @param {any} live @param {any} incoming
+ */
+function swapImport(live, incoming) {
+	const group = get(objectsGroup);
+	group.updateWorldMatrix(true, false);
+	live.updateWorldMatrix(true, false);
+	// the pose it stands in NOW (moved since the import, or since the last swap), in
+	// objectsGroup's frame — the swap lands at the root, where both peers can agree on it
+	const local = new THREE.Matrix4().copy(group.matrixWorld).invert().multiply(live.matrixWorld);
+	local.decompose(incoming.position, incoming.quaternion, incoming.scale);
+	incoming.name = live.name;
+	const wasSelected = get(selectedObject)?.uuid === live.uuid;
+	if (controls?.object?.uuid === live.uuid) controls.detach();
+	live.parent?.remove(live);
+	peer?.send?.({ type: 'delete', uuid: live.uuid, peerId: peer.peer.id });
+	group.add(incoming);
+	pokeScene();
+	if (wasSelected) {
+		selectedObject.set(incoming);
+		controls?.attach?.(incoming);
+	}
+	sendObjects(/** @type {any} */ (null), incoming);
+}
+
+/** The `importswap` history kind: `state.which` names the version that should be in
+ * the scene. Registered HERE — nothing in history's own import subtree reaches this
+ * module (checked by walking the static graph), which is the rule for any module whose
+ * body registers a kind. @param {any} entry @param {any} state */
+function applyImportSwap(entry, state) {
+	const want = state?.which === 'original' ? entry.original : entry.reduced;
+	const live = get(objectsGroup)?.getObjectByProperty('uuid', entry.uuid);
+	if (!live || !want) {
+		showToast('Cannot undo/redo: that model is no longer in the scene');
+		return false;
+	}
+	if (live === want) return true;
+	// whatever is live now is what the OTHER side of the entry must hold (a later edit
+	// to it — a material, a move — belongs to that version)
+	if (want === entry.original) entry.reduced = live;
+	else entry.original = live;
+	swapImport(live, want);
+	return true;
+}
+registerHistoryKind('importswap', applyImportSwap);
+
+/**
+ * Put the ORIGINAL model back in place of its reduced import — same uuid, same place,
+ * same name — as ONE undoable step that replicates through the ordinary delete + create.
+ * @param {string} uuid the reduced root
+ * @returns {Promise<boolean>} whether it was restored
+ */
+export async function restoreOriginalImport(uuid) {
+	const source = originals.get(uuid);
+	if (!source) {
+		showToast('The original file is no longer held — import it again to use it.');
+		return false;
+	}
+	const current = get(objectsGroup)?.getObjectByProperty('uuid', uuid);
+	if (!current) {
+		showToast('That model is no longer in the scene.');
+		return false;
+	}
+	/** @type {any} */
+	let parsed;
+	try {
+		parsed = await parseModelFile(source.file, source.extension, source.extras);
+	} catch (error) {
+		console.error('Could not re-read the original:', error);
+		showToast('Could not re-read the original of "' + source.name + '".');
+		return false;
+	}
+	const fresh = parsed.root;
+	// IDENTITY: the root keeps its uuid (flows, notes, joints and selection are keyed by
+	// it), and so does every child when the tree still has the shape it was imported with
+	// — a reduction never changes the tree, so only a user's own edit can make them differ
+	/** @type {any[]} */
+	const was = [];
+	/** @type {any[]} */
+	const now = [];
+	current.traverse((/** @type {any} */ o) => was.push(o));
+	fresh.traverse((/** @type {any} */ o) => now.push(o));
+	if (was.length === now.length) now.forEach((o, i) => (o.uuid = was[i].uuid));
+	else fresh.uuid = current.uuid;
+	const { reduced, ...keep } = current.userData ?? {};
+	void reduced;
+	fresh.userData = { ...(fresh.userData || {}), ...keep };
+	swapImport(current, fresh);
+	recordEntry({
+		kind: 'importswap',
+		label: 'Restore original model',
+		uuid,
+		reduced: current,
+		original: fresh,
+		before: { which: 'reduced', positions: { byteLength: treeBytes(current) } },
+		after: { which: 'original', positions: { byteLength: treeBytes(fresh) } }
+	});
+	for (const note of parsed.notes) showToast(note);
+	showToast('Restored the original "' + fresh.name + '" — Ctrl+Z to go back to the reduced one');
+	return true;
 }
 
 /** Free a parsed tree that never reached the scene (a cancelled import). Geometry and

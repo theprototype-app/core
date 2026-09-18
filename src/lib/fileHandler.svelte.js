@@ -26,6 +26,7 @@ import { stripEditOverlays } from '$lib/editOverlays';
 import { saveFileBase } from '$lib/saveName';
 import { peers, fixLight, loadingFile, showToast } from '../stores/appStore';
 import { safeStorage } from './safeStorage';
+import { admitModel } from './importGate';
 
 //Access objects Store
 let sceneObjects = $state();
@@ -387,9 +388,15 @@ export function importGeneratedGlb(buffer, opts = {}) {
 			createGltfLoader().parse(
 				buffer,
 				'',
-				(/** @type {any} */ result) => {
+				async (/** @type {any} */ result) => {
 					try {
 						const root = result.scene;
+						// 26-F: a generated mesh is a model like any other — the same ask,
+						// and a cancel rejects so the job reports it rather than waiting
+						if ((await admitModel(root, { name: opts.name ?? 'Generated' })) !== 'load') {
+							reject(new Error('Import cancelled — the model is above this device\'s budget'));
+							return;
+						}
 						if (opts.provenance) root.userData = { ...(root.userData || {}), aiGen: opts.provenance };
 						if (result.animations?.length > 0) {
 							// rare for generated meshes; animated rigs keep the raw-bytes path (unplaced)
@@ -559,72 +566,126 @@ export function importModelFiles(list) {
 }
 
 /**
+ * Parse a model file into a tree WITHOUT touching the scene. 26-F split this out of
+ * `importFile` so the budget can look at the model between the parse and the add —
+ * the one moment its cost is exact and nothing has been paid for it yet — and so a
+ * reversible reduction can re-read the ORIGINAL from the same file later.
+ *
+ * Resolves `{root, animated, notes}`: `animated` is set for a rig that must ride the
+ * raw-bytes path (it carries the clips, the bytes and the parser kind), and `notes` are
+ * the toasts that belong AFTER a successful add (an OBJ whose .mtl was not brought).
+ * Throws on a file the loader cannot read.
+ * @param {any} file @param {string} extension @param {any[]=} extras
+ * @returns {Promise<{root: any, animated: {result: any, buffer: ArrayBuffer, kind: string} | null, notes: string[]}>}
+ */
+export async function parseModelFile(file, extension, extras) {
+	/** @type {string[]} */
+	const notes = [];
+	if (extension === 'obj') {
+		const text = await readAs(file, 'text');
+		const loader = new OBJLoader();
+		// 17-D2: an .obj carries no materials of its own — when the user brought
+		// the .mtl along (multi-select in the import dialog, or a multi-file
+		// drop), parse it and hand the material library to OBJLoader.
+		const { applied, dropped, maps } = await applyObjMaterials(loader, file, extras);
+		const object = loader.parse(text);
+		// stamp BEFORE addImported — that call is what replicates the object
+		stampImportedTextures(object, maps);
+		if (!applied && hasMtlReference(text))
+			notes.push('This .obj references a .mtl — pick both files together to import its materials');
+		else if (dropped)
+			notes.push(dropped + ' texture(s) named by the .mtl were not included — add the image files to see them');
+		return { root: object, animated: null, notes };
+	}
+	if (extension === 'stl') {
+		const geometry = new STLLoader().parse(await readAs(file, 'buffer'));
+		geometry.computeVertexNormals();
+		const mesh = new THREE.Mesh(geometry, new THREE.MeshStandardMaterial({ color: 0xcccccc }));
+		return { root: mesh, animated: null, notes };
+	}
+	if (extension === 'fbx') {
+		const buffer = await readAs(file, 'buffer');
+		const object = new FBXLoader().parse(buffer, '');
+		// 17-D2: FBX clips used to be dropped on the floor (the loader parsed
+		// them, nothing read them). Animated rigs now take the SAME raw-bytes
+		// route as animated GLB — peers reparse the original file.
+		const animated = object.animations?.length > 0
+			? { result: { scene: object, animations: object.animations }, buffer, kind: 'fbx' }
+			: null;
+		return { root: object, animated, notes };
+	}
+	// glb/gltf (default) — draco/meshopt capable
+	const buffer = await readAs(file, 'buffer');
+	const result = await new Promise((resolve, reject) =>
+		createGltfLoader().parse(buffer, '', resolve, (/** @type {any} */ error) => reject(error))
+	);
+	// animated rigs keep their own pipeline (raw-bytes sync) — unplaced
+	const animated = result.animations?.length > 0 ? { result, buffer, kind: 'gltf' } : null;
+	return { root: result.scene, animated, notes };
+}
+
+/** The name an import takes when the caller gave none — what each branch used before.
+ * @param {string} extension @param {string=} name */
+function defaultImportName(extension, name) {
+	if (name) return name;
+	if (extension === 'obj') return 'OBJ';
+	if (extension === 'stl') return 'STL';
+	if (extension === 'fbx') return 'FBX';
+	return undefined;
+}
+
+/**
  * Import a 3d file into the scene. GLB/GLTF, OBJ (+ .mtl when its companion file
  * comes along), STL and FBX (animated ones ride the raw-bytes path since 17-D2).
+ *
+ * 26-F: parse, then ASK when the model would take this device past its budget
+ * (`importGate.admitModel`), then place. Cancel leaves the scene untouched — nothing was
+ * added, sent or recorded.
  * @param {any} file @param {string=} name @param {string=} ext - explicit extension when the blob has no name (Library)
  * @param {number[]=} position - world drop point (Explorer drag-out, 96)
  * @param {any[]=} extras - companion files picked/dropped alongside (.mtl + its textures)
+ * @returns {Promise<string|null>} the placed root's uuid, or null when nothing was placed
  */
 export async function importFile(file, name, ext, position, extras) {
-	const extension = String(ext ?? file.name ?? '').toLowerCase().split('.').pop();
+	const extension = String(ext ?? file.name ?? '').toLowerCase().split('.').pop() ?? '';
+	/** @type {any} */
+	let parsed;
 	try {
-		if (extension === 'obj') {
-			const text = await readAs(file, 'text');
-			const loader = new OBJLoader();
-			// 17-D2: an .obj carries no materials of its own — when the user brought
-			// the .mtl along (multi-select in the import dialog, or a multi-file
-			// drop), parse it and hand the material library to OBJLoader.
-			const { applied, dropped, maps } = await applyObjMaterials(loader, file, extras);
-			const object = loader.parse(text);
-			// stamp BEFORE addImported — that call is what replicates the object
-			stampImportedTextures(object, maps);
-			addImported(object, name ?? 'OBJ', position);
-			if (!applied && hasMtlReference(text))
-				showToast('This .obj references a .mtl — pick both files together to import its materials');
-			else if (dropped)
-				showToast(
-					dropped + ' texture(s) named by the .mtl were not included — add the image files to see them'
-				);
-		} else if (extension === 'stl') {
-			const geometry = new STLLoader().parse(await readAs(file, 'buffer'));
-			geometry.computeVertexNormals();
-			const mesh = new THREE.Mesh(geometry, new THREE.MeshStandardMaterial({ color: 0xcccccc }));
-			addImported(mesh, name ?? 'STL', position);
-		} else if (extension === 'fbx') {
-			const buffer = await readAs(file, 'buffer');
-			const object = new FBXLoader().parse(buffer, '');
-			// 17-D2: FBX clips used to be dropped on the floor (the loader parsed
-			// them, nothing read them). Animated rigs now take the SAME raw-bytes
-			// route as animated GLB — peers reparse the original file.
-			if (object.animations?.length > 0)
-				addAnimatedImport(
-					{ scene: object, animations: object.animations },
-					buffer,
-					name ?? 'FBX',
-					'fbx'
-				);
-			else addImported(object, name ?? 'FBX', position);
-		} else {
-			// glb/gltf (default) — draco/meshopt capable
-			const buffer = await readAs(file, 'buffer');
-			createGltfLoader().parse(
-				buffer,
-				'',
-				(result) => {
-					// animated rigs keep their own pipeline (raw-bytes sync) — unplaced
-					if (result.animations?.length > 0) addAnimatedImport(result, buffer, name);
-					else addImported(result.scene, name, position);
-				},
-				(error) => {
-					console.error('Error importing file:', error);
-					showToast('Could not import ' + (name ?? file.name ?? 'file'));
-				}
-			);
-		}
+		parsed = await parseModelFile(file, extension, extras);
 	} catch (error) {
 		console.error('Error importing file:', error);
 		showToast('Could not import ' + (name ?? file.name ?? 'file') + ' — the file may be corrupt or an unsupported version');
+		return null;
 	}
+	const label = defaultImportName(extension, name);
+	const answer = await admitModel(parsed.root, { name: label ?? file?.name });
+	if (answer !== 'load') {
+		disposeParsed(parsed.root);
+		return null;
+	}
+	try {
+		if (parsed.animated) addAnimatedImport(parsed.animated.result, parsed.animated.buffer, label, parsed.animated.kind);
+		else addImported(parsed.root, label, position);
+		for (const note of parsed.notes) showToast(note);
+		return parsed.root.uuid;
+	} catch (error) {
+		console.error('Error importing file:', error);
+		showToast('Could not import ' + (name ?? file.name ?? 'file') + ' — the file may be corrupt or an unsupported version');
+		return null;
+	}
+}
+
+/** Free a parsed tree that never reached the scene (a cancelled import). Geometry and
+ * textures only — nothing else holds them yet. @param {any} root */
+function disposeParsed(root) {
+	root?.traverse?.((/** @type {any} */ o) => {
+		o.geometry?.dispose?.();
+		const list = Array.isArray(o.material) ? o.material : o.material ? [o.material] : [];
+		for (const material of list) {
+			for (const key of Object.keys(material)) if (material[key]?.isTexture) material[key].dispose();
+			material.dispose?.();
+		}
+	});
 }
 
 /**

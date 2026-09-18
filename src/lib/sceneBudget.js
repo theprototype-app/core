@@ -106,8 +106,53 @@ export const BUDGETS = [
 	}
 ];
 
+/**
+ * 26-F — the budgets only an IMPORT is judged against. They are not meter rows: nothing
+ * samples "the biggest single mesh" or "the largest texture" every 500ms, and a meter row
+ * that always reads "unknown" is noise. They live beside BUDGETS so `tierOf` stays the
+ * ONE rule (the import gate asks the same question as the wire gate, about more axes).
+ * The two single-item axes have no amber band on purpose — the roadmap states them as
+ * ceilings ("Single mesh 500k verts", "Single texture 4k"), and a ceiling is either kept
+ * or not. VR/mobile columns are the roadmap's starting numbers, owed on a headset.
+ * @type {Budget[]}
+ */
+export const IMPORT_BUDGETS = [
+	{
+		key: 'meshVertices',
+		label: 'Largest single mesh (vertices)',
+		unit: '',
+		// the mesh-edit commit ceiling (meshBudget MAX_SNAPSHOT = 1.5M floats = 500k
+		// vertices): past it the mesh cannot be edited, undone or streamed as one message
+		desktop: [500000, 500000],
+		vr: [100000, 100000],
+		why: 'commit and undo latency (measured at the meshBudget ceiling), and a headset draws one mesh in one frame'
+	},
+	{
+		key: 'textureSize',
+		label: 'Largest texture (px)',
+		unit: 'px',
+		desktop: [4096, 4096],
+		vr: [2048, 2048],
+		why: 'an upload stall on first draw, and mipmaps are a third on top of the image'
+	},
+	{
+		key: 'textureMB',
+		label: 'Texture memory',
+		unit: 'MB',
+		desktop: [512, 1024],
+		vr: [256, 384],
+		why: 'the tab is killed on mobile and the WebGL context lost on desktop'
+	}
+];
+
 /** @type {Map<string, Budget>} */
-const byKey = new Map(BUDGETS.map((b) => [b.key, b]));
+const byKey = new Map([...BUDGETS, ...IMPORT_BUDGETS].map((b) => [b.key, b]));
+
+/** The budget row for a key (either table), for callers that must name a ceiling.
+ * @param {string} key */
+export function budgetFor(key) {
+	return byKey.get(key) ?? null;
+}
 
 /**
  * Which profile this device is judged against. `renderer.xr.isPresenting` is the true

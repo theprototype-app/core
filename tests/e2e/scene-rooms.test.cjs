@@ -258,9 +258,12 @@ h.run(async () => {
 			el.textContent?.trim()
 		)
 	);
+	// R22 R4: the card also offers "Join <peer>" for whoever is standing there — the host
+	// is in Arena, and joining them is the other thing this card CAN do. Open here is the
+	// fetch; Join is the fetch plus the guard; nothing else (no rename, no delete).
 	h.check(
-		bMenu.length === 1 && /Open here/.test(bMenu[0] ?? ''),
-		`…offering only what it can actually do (${JSON.stringify(bMenu)})`
+		bMenu.some((t) => /Open here/.test(t ?? '')) && bMenu.every((t) => /Open here|^Join /.test(t ?? '')),
+		`…offering only what it can actually do — Open here, and Join whoever is there (${JSON.stringify(bMenu)})`
 	);
 	await B.page.keyboard.press('Escape');
 	await B.page.waitForTimeout(300);

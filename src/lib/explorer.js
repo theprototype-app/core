@@ -838,6 +838,36 @@ export function allItems() {
 	return [...get(explorerItems), ...get(hiddenItems)];
 }
 
+/**
+ * ROADMAP 22 R5 — FILES FOLLOW THE SCENE. Rename every record on EITHER shelf that holds
+ * one of `hashes` and is called `from`, to `to`. Both shelves, because a scene's old
+ * versions sit hidden and keep the scene's file name; by hash AND name, because a loose
+ * file that merely shares the name is a different scene. Idempotent (a record already
+ * called `to` is skipped), so every peer may run it on every manifest change.
+ * @param {Iterable<string>} hashes @param {string} from @param {string} to
+ * @returns {number} how many records moved
+ */
+export function renameItemsWhere(hashes, from, to) {
+	const line = new Set(hashes ?? []);
+	const a = String(from ?? '');
+	const b = String(to ?? '');
+	if (!line.size || !a || !b || a === b) return 0;
+	let n = 0;
+	const swap = (/** @type {any[]} */ list) =>
+		list.map((item) => {
+			if (!line.has(item.hash) || item.name !== a) return item;
+			n++;
+			return { ...item, name: b };
+		});
+	const visible = swap(get(explorerItems));
+	const hidden = swap(get(hiddenItems));
+	if (!n) return 0;
+	explorerItems.set(visible);
+	hiddenItems.set(hidden);
+	persistIndex();
+	return n;
+}
+
 /** @param {string} id @param {string} name */
 export function renameItem(id, name) {
 	explorerItems.update((list) => list.map((item) => (item.id === id ? { ...item, name } : item)));

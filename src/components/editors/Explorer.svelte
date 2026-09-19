@@ -99,7 +99,7 @@
 	import { sceneDirty } from '$lib/sceneIdentity';
 	// R22 round 30 B1: the shared unsaved-changes guard, one copy for every authoring
 	// route that replaces the world.
-	import { guardSceneReplace } from '$lib/sceneOpenGuard';
+	import { guardSceneReplace, travelToPeerScene } from '$lib/sceneOpenGuard';
 	import VersionHistory from './VersionHistory.svelte';
 	// 21-G2: the "update available" dot on old scene versions. The manifest store is
 	// passed as the reactive dependency — a helper reading through get() registers none
@@ -208,6 +208,13 @@
 		volumeUpdateBytes,
 		volumeItems
 	} from '$lib/mountedVolumes';
+	// ROADMAP 22 R4 — WHO IS IN THIS SCENE, on the card. The session is the mesh and every
+	// peer in it carries a scene tag (peerScenes); a scene card reads the tags for the scene
+	// it stands for and says who is standing there, you included, and offers to JOIN them.
+	// The store is passed as the reactive dependency (the get()-registers-nothing rule).
+	import { peerScenes, peersAtScene } from '$lib/peerScenes';
+	import { sessionHost } from '$lib/connectionState';
+	import { nameOf, peerColor } from '$lib/lockControl';
 	// R22 round 13 P2: the header reading opens a breakdown of it. The leaf owns the
 	// open store, so the chip, this view's background menu and Settings all reach one
 	// action with no component owning the state.
@@ -226,6 +233,43 @@
 		logKeyOf
 	} from '$lib/projectManifest';
 	const staleScene = (_manifest: any, hash: string) => staleSceneHash(hash);
+	/**
+	 * ROADMAP 22 R4 — THE SESSION ROSTER OF ONE SCENE CARD: who is standing in the scene
+	 * this file belongs to, us included. The scene is found by HASH first (a version file
+	 * of "Arena" is Arena whatever it is called) and by file name only for a loose file the
+	 * project has never recorded. Every argument is a store VALUE so the badge re-renders
+	 * when anybody moves — a helper reading through get() registers no dependency.
+	 */
+	function sceneRoster(map: any, level: any, host: any, item: any) {
+		const scene = sceneOfHash(item.hash) ?? levelSceneName(item.name);
+		const mine = level?.private ? '' : String(level?.name ?? '');
+		return peersAtScene(map, scene, mine, host);
+	}
+	/** the badge's title: "You are here" / "Alice is here" / "You, Alice and Bob are here" */
+	function rosterTitle(roster: { peerIds: string[]; me: boolean }) {
+		const names = roster.peerIds.map((id: string) => nameOf(id));
+		if (roster.me) names.unshift('You');
+		if (names.length === 1) return roster.me ? 'You are here' : names[0] + ' is here';
+		return names.slice(0, -1).join(', ') + ' and ' + names[names.length - 1] + ' are here';
+	}
+	/** how many people the badge counts */
+	function rosterCount(roster: { peerIds: string[]; me: boolean }) {
+		return roster.peerIds.length + (roster.me ? 1 : 0);
+	}
+	/**
+	 * "Join <peer>" — one entry per peer standing in this scene, travelling there through
+	 * the guarded route the peers popover's Go to already uses (the unsaved-changes guard
+	 * runs inside it). Nothing for ourselves: you cannot join where you already are.
+	 */
+	function joinEntries(item: any) {
+		const roster = sceneRoster($peerScenes, $currentLevel, $sessionHost, item);
+		return roster.peerIds.slice(0, 6).map((id: string) => ({
+			label: 'Join ' + nameOf(id),
+			icon: 'arrow-right',
+			tooltip: 'Travel to this scene, where ' + nameOf(id) + ' is — you leave the one you are in',
+			action: () => void travelToPeerScene(id)
+		}));
+	}
 	// 21-I5 REVISED: the ONE filesystem sanitiser, plus the version-date stamp the zip
 	// entries and the panel's per-row download both name their files with.
 	import { fileNameBase, versionStamp } from '$lib/saveName';
@@ -4331,7 +4375,9 @@
 						icon: 'download',
 						tooltip: 'This project scene is not on this device yet — opening it fetches it from a peer',
 						action: () => void openSceneItem(item)
-					}
+					},
+					// R4: the peers standing there are the reason to fetch it
+					...joinEntries(item)
 				]
 			};
 			return;
@@ -4363,7 +4409,9 @@
 								icon: 'history',
 								tooltip: 'Earlier versions of this scene — restore, pin or free their bytes',
 								action: () => showProperties({ kind: 'item', item })
-							}
+							},
+							// R4: one Join per peer standing in this scene
+							...joinEntries(item)
 						]
 					: []),
 				// 24-C1: a copy is a new RECORD with the same bytes; Copy/Cut go to the in-app
@@ -6261,6 +6309,16 @@
 										'" exists — this file is an older version'}
 								></span>
 							{/if}
+							{#if item.kind === 'scene'}
+								{@const roster = sceneRoster($peerScenes, $currentLevel, $sessionHost, item)}
+								{#if roster.me || roster.peerIds.length}
+									<span
+										class="explorer-here ml-1 shrink-0 rounded-full bg-gray-700 px-1 text-[9px] leading-4 text-gray-200"
+										title={rosterTitle(roster)}
+										data-here={rosterCount(roster)}>{rosterCount(roster)} here</span
+									>
+								{/if}
+							{/if}
 						{:else if sharingOn && (folder.share === 'mine' || folder.share === 'peer')}
 							<span
 								class="ex-dot {folder.share === 'mine' ? 'bg-teal-400' : 'bg-sky-400'}"
@@ -7281,6 +7339,23 @@
 									class="absolute right-1 top-1 h-2.5 w-2.5 rounded-full bg-amber-400"
 									title={'An update of "' + staleScene($projectManifest, item.hash) + '" exists — this file is an older version'}
 								></span>
+							{/if}
+							{#if item.kind === 'scene'}
+								{@const roster = sceneRoster($peerScenes, $currentLevel, $sessionHost, item)}
+								{#if roster.me || roster.peerIds.length}
+									<!-- R4: WHO IS HERE. Bottom RIGHT, the one corner nothing else claims. A dot
+									     per person in that person's own colour (emerald = you, the open-scene
+									     dot's colour) and the count, names in the title. -->
+									<span
+										class="explorer-here absolute bottom-1 right-1 flex items-center gap-0.5 rounded-full bg-gray-900/80 px-1 py-px text-[9px] leading-none text-gray-200"
+										title={rosterTitle(roster)}
+										data-here={rosterCount(roster)}
+									>
+										{#if roster.me}<span class="h-1.5 w-1.5 rounded-full bg-emerald-400"></span>{/if}
+										{#each roster.peerIds.slice(0, 3) as id (id)}<span class="h-1.5 w-1.5 rounded-full" style:background={peerColor(id)}></span>{/each}
+										<span>{rosterCount(roster)}</span>
+									</span>
+								{/if}
 							{/if}
 							{#if item.packEntry}
 								{#if packThumb(item)}

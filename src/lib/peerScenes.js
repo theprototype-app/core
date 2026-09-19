@@ -462,6 +462,41 @@ export function peersInScene(scene) {
 }
 
 /**
+ * ROADMAP 22 R4 — WHO IS STANDING IN ONE SCENE, US INCLUDED. The per-scene roster a
+ * scene CARD renders (the Explorer's "2 here" badge and its "Join <peer>" entries), in
+ * the locked vocabulary: the SESSION is the mesh, and every peer in it carries a scene
+ * TAG; this reads the tags for one scene.
+ *
+ * `peersInScene` answers the same question for the wire (the arrival re-sync, the room
+ * gate) and is deliberately remote-only and get()-based. This one takes the MAP so a
+ * component stays reactive (a helper reading through get() registers no dependency),
+ * and says whether WE are there too, because "you are here" is the first thing a card
+ * has to be able to say. Resolved through the same `roomOf`/`roomCtx` pair as every
+ * other reader, so an unnamed peer in the host's room counts as being in it — the
+ * card and the popover cannot disagree about who is where.
+ * @param {Record<string, {scene: string, private?: boolean}>} map pass `$peerScenes`
+ * @param {string} scene the scene NAME the card stands for
+ * @param {string} mine our own scene name, '' while unnamed or PRIVATE (a private scene
+ *   is nobody's room, so we are "there" for nobody's card)
+ * @param {string | null} host `$sessionHost` (null = we host)
+ * @returns {{peerIds: string[], me: boolean}} remote peer ids (sorted) + are we here
+ */
+export function peersAtScene(map, scene, mine, host) {
+	const want = String(scene ?? '').trim();
+	if (!want) return { peerIds: [], me: false };
+	const here = String(mine ?? '').trim();
+	const ctx = roomCtx(map ?? {}, host, here);
+	const peerIds = Object.keys(map ?? {})
+		.filter((id) => {
+			const row = map[id];
+			return !!row && !row.private && roomOf(row, ctx) === want;
+		})
+		.sort();
+	const me = !!here && (roomOf({ scene: here }, ctx) ?? '') === want;
+	return { peerIds, me };
+}
+
+/**
  * THE ROOMS OF THIS SESSION, derived. A room is a scene somebody is standing in, and
  * nothing stores one: the session is the mesh, the scene is the tag, and this is the
  * grouping. Our own scene is included and marked, because "which room am I in" is the

@@ -607,6 +607,82 @@ h.run(async () => {
 	h.check(p1[1].peer > p0[1].peer, `and the OTHER peer's, as the row arrives (+${p1[1].peer - p0[1].peer})`);
 
 	// =====================================================================
+	// 7b. R29 S3 — THE MEASURED CASE: a sixty-node group edit, one real Ctrl+Z, a late joiner
+	// =====================================================================
+	// sixty nodes spread over the scene graph and two object graphs (a collectible group is
+	// one object graph per member), created in THREE calls — so the entry right under the
+	// edit is a CREATION, the one sdk-polish's measurement watched Ctrl+Z take away
+	await setPlay(A, null);
+	await gstate(A, 'menu');
+	const g60a = await makeBox(A);
+	const g60b = await makeBox(A);
+	await A.page.waitForTimeout(600);
+	const sixty = [];
+	for (const graphId of [undefined, g60a, g60b])
+		sixty.push(
+			...(await A.page.evaluate(
+				(g) =>
+					window.__seams.api.flow.addNodes({
+						...(g ? { graphId: g } : {}),
+						nodes: Array.from({ length: 20 }, (_, i) => ({ type: 'seamvalue', x: 900 + i * 12, y: 900, data: { tag: 'orig' } }))
+					}),
+				graphId ?? null
+			))
+		);
+	await A.page.waitForTimeout(1200);
+	h.check(sixty.length === 60, `premise: sixty nodes across three graphs (${sixty.length})`);
+	const sixtyOf = (peer) =>
+		peer.page.evaluate((ids) => {
+			const nodes = window.__stores.allNodes();
+			const got = ids.map((i) => nodes.find((n) => n.id === i));
+			return { present: got.filter(Boolean).length, tags: [...new Set(got.map((n) => n?.data?.tag ?? null))] };
+		}, sixty);
+	const s60 = await A.page.evaluate(
+		(ids) => {
+			const t0 = performance.now();
+			const n = window.__seams.api.flow.setNodesData(ids.map((id) => ({ id, patch: { tag: 'bulk60' } })));
+			return { n, ms: performance.now() - t0 };
+		},
+		sixty
+	);
+	h.check(s60.n === 60, `one setNodesData call writes all sixty (${s60.n} in ${s60.ms.toFixed(1)} ms)`);
+	await h.eventually(
+		() => sixtyOf(B),
+		(r) => r.present === 60 && r.tags.length === 1 && r.tags[0] === 'bulk60',
+		'all sixty land on the peer'
+	);
+	// a REAL Ctrl+Z, the user's gesture — nothing focused that could swallow it
+	await A.page.evaluate(() => document.activeElement instanceof HTMLElement && document.activeElement.blur());
+	await A.page.keyboard.press('Control+z');
+	await A.page.waitForTimeout(900);
+	const z1 = [await sixtyOf(A), await sixtyOf(B)];
+	h.check(
+		z1.every((r) => r.present === 60 && r.tags.length === 1 && r.tags[0] === 'orig'),
+		`ONE Ctrl+Z restores all sixty on both peers — and the nodes are still there, the creation was NOT undone (${JSON.stringify(z1)})`
+	);
+	await A.page.evaluate(() => window.__stores.history.redo());
+	await A.page.waitForTimeout(900);
+	// a LATE JOINER takes the edited values from the ordinary full-state reply
+	const C = await h.setupPage(browser, 'C');
+	await C.page.waitForFunction(() => !!window.__stores?.allNodes, { timeout: 30000 });
+	await h.connect(C, A);
+	await h.eventually(
+		() => sixtyOf(C),
+		(r) => r.present === 60 && r.tags.length === 1 && r.tags[0] === 'bulk60',
+		'a late joiner has all sixty edited values',
+		20000
+	);
+	// and an undo made AFTER it joined reaches it too (the entry replays per-node nodedata)
+	await A.page.evaluate(() => document.activeElement instanceof HTMLElement && document.activeElement.blur());
+	await A.page.keyboard.press('Control+z');
+	await h.eventually(
+		() => sixtyOf(C),
+		(r) => r.present === 60 && r.tags.length === 1 && r.tags[0] === 'orig',
+		'and a later undo reverts it on the joiner as well'
+	);
+	await C.page.close();
+
+	// =====================================================================
 	// 8. the debug line + the action catalog seams, and their teardown
 	// =====================================================================
 	const hudSeams = await A.page.evaluate(() => {

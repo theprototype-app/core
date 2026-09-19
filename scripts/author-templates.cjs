@@ -1151,6 +1151,17 @@ const BEAT_DEF = {
 	}
 };
 
+// ---- module-owned DEFS (the LOADER region) -------------------------------------------
+// Each slug here is read from the sibling modules checkout as
+// modules/<id>/<id>.def.json (moduleDef above), emitted by that module's own build so the
+// def and the module cannot drift. `--only <slug>` authors one of them; the def's
+// `installModules` installs the zips first so the card shows the game.
+//   football       — 24-B (PR #218)
+//   dungeon-realms — 21-C C6-b: the TWO-MODULE case (`modules: dungeon + dungeon-realms`);
+//                    its world is scene-root module content, so the def names
+//                    `thumb.sceneGroups: ['dungeon-module']` to get it onto the card
+const MODULE_DEFS = ['football', 'dungeon-realms'];
+
 const DEFS = [
 	{
 		kind: 'template',
@@ -1297,7 +1308,7 @@ const DEFS = [
 	MIRROR_DEF,
 	BEAT_DEF,
 	// the def is the module's (see moduleDef); a checkout without it cannot author it
-	...['football'].map((id) => moduleDef(id) ?? { slug: id, missingModuleDef: true })
+	...MODULE_DEFS.map((id) => moduleDef(id) ?? { slug: id, missingModuleDef: true })
 ];
 
 (async () => {
@@ -1677,6 +1688,17 @@ const DEFS = [
 				scene.add(sun);
 				const clone = new T.ObjectLoader().parse(group.toJSON());
 				scene.add(clone);
+				// 21-C C6-b: a module's WORLD lives at the scene root (golden rule 5), so a
+				// card rendered from objectsGroup alone shows a dungeon template as a lone
+				// arch. `thumb.sceneGroups` names scene-root groups to include — cloned into
+				// the offscreen scene, never moved; absent, the picture is what it always was.
+				/** @type {any} */ let liveScene;
+				s.globalScene.subscribe((v) => (liveScene = v))();
+				for (const name of d.thumb?.sceneGroups ?? []) {
+					const live = liveScene?.getObjectByName(name);
+					if (live) clone.add(live.clone(true));
+					else console.log('  WARN thumb.sceneGroups: no scene-root group named ' + name);
+				}
 				const box = new T.Box3().setFromObject(clone);
 				const size = Math.max(box.getSize(new T.Vector3()).length(), 1);
 				const center = box.getCenter(new T.Vector3());

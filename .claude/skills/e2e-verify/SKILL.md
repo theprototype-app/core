@@ -27,7 +27,7 @@ coverage this repo has of the gizmo-grab uv path and of the late-joiner object s
 The GAME line: `game-state`, `hud-actions`, `logic-nodes`, `collectibles-v2`,
 `peer-variables`, `game-presence`, `scene-levels`, `project-manifest`, `project-file`,
 `scene-folders` and the `game-loop-v2/v3/v4` acceptance suites, plus (R3a)
-`sdk-game-seams` — the module-facing seams api.game/peerVars/flow/playerPosition, the
+`sdk-game-seams` (78 since 29: onChange/freeRegion/setNodesData) — the module-facing seams api.game/peerVars/flow/playerPosition, the
 `{replicate:false}` local pulse, the round-aware `ctx.trigger`, and the counterfactual
 that the migrated collectible pieces are GONE from core. `module-toolbox` covers the
 toolbox seams incl. the `sidebar: false` opt-out and openToolbox/closeToolbox/
@@ -128,6 +128,16 @@ the host's rAF cadence, not your code.
 
 Rules: never run suites in parallel AGAINST THE SAME dev server, never edit sources
 while one runs (HMR reloads the pages mid-test — see "HMR churn makes runs LIE").
+
+
+The GAMES-TAB line (real scene from the scenes feed @v2 + real module zips from a packed
+sibling modules checkout, every one SKIPS-never-fails when a source is missing):
+`game-towers` (20), `game-stars-room` (36), `game-football` (102, two peers + late joiner;
+FOOTBALL_TPSCENE / FOOTBALL_ZIP), `game-dungeon-realms` (64, two peers + late joiner, TWO zips:
+DUNGEON_REALMS_TPSCENE / DUNGEON_KIT_ZIP / DUNGEON_REALMS_ZIP / MODULES_REPO), `game-untangle`
+(46; UNTANGLE_TPSCENE / UNTANGLE_ZIP). Before a scenes row is released, point the TPSCENE env
+at the staged file. The SESSIONS line (roadmap 22 R4-R6): `session-scenes` (36, three peers),
+`scene-rename` (46), `scene-duplicate` (29). `embed-boot` (20) = the `?embed=1` flag.
 
 ## Assertion discipline (a check that cannot fail is not a check)
 

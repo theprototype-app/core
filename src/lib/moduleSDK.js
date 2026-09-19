@@ -4,7 +4,7 @@ import * as THREE from 'three';
 import { writable, get } from 'svelte/store';
 import { globalScene, objectsGroup, selectedObject, selectedObjects, globalCamera, isVRMode, isLocked } from '../stores/sceneStore';
 import { peers, showToast, modulesOpen, userdata } from '../stores/appStore';
-import { syncedAnimations, flowGraphs, flowValues, allNodes, findNodeAnyGraph, SCENE_GRAPH } from '../stores/flowStore';
+import { syncedAnimations, flowGraphs, flowValues, flowTriggers, allNodes, findNodeAnyGraph, SCENE_GRAPH } from '../stores/flowStore';
 import { customGeometryBuilders } from './customGeometries';
 // A1: moduleNodeIO imports NOTHING, so a static edge to it closes no cycle
 import {
@@ -32,8 +32,11 @@ import {
 // R3a: all three are LEAVES (svelte stores only — gameState/peerVars say so in their own
 // headers; nodesHandler reaches only flowStore + appStore), so none of these edges can
 // close the history cycle. flowGraphs/nodeCatalog are NOT leaves and stay primed below.
-import { roundCutoff, roundUnderway, gameVar, setGameVar } from './gameState';
-import { setPeerVar, myPeerVar, leaderboardRows } from './peerVars';
+import { roundCutoff, roundUnderway, gameVar, setGameVar, gameState } from './gameState';
+import { setPeerVar, myPeerVar, leaderboardRows, peerVarsMine, peerVarsRemote } from './peerVars';
+// R29 S1/S2: both leaves import NOTHING, so neither edge can close a cycle
+import { freeRegion as freeRegionIn } from './flowLayout';
+import { coalescedSubscribe } from './coalesce';
 import { createFlowNode, createFlowEdge, serializeNode, serializeEdge, setNodeData as sendNodeData } from './nodesHandler';
 import { APP_VERSION } from './version.js';
 import { ndcFromClient } from './canvasRect';
@@ -256,6 +259,35 @@ function makeApi(moduleId, moduleName = moduleId) {
 	const disposals = (moduleDisposals[moduleId] ??= []);
 	/** record an undo thunk deactivateModule runs at teardown (A2) @param {() => void} fn */
 	const onDispose = (fn) => disposals.push(fn);
+	/** A value frozen for the undo stack, so a module mutating its patch object later
+	 * cannot rewrite history. @param {any} v */
+	const frozen = (v) => {
+		try {
+			return structuredClone(v);
+		} catch {
+			return v;
+		}
+	};
+	/** One node-data write through the replicated `nodedata` path; returns the undo
+	 * item (the patched keys' previous values) or null when no node has the id.
+	 * @param {string} id @param {Record<string, any>} patch */
+	const writeNodeData = (id, patch) => {
+		const found = findNodeAnyGraph((n) => n.id === id);
+		if (!found) return null;
+		const after = frozen(patch && typeof patch === 'object' ? patch : {});
+		/** @type {Record<string, any>} */
+		const before = {};
+		for (const key of Object.keys(after)) before[key] = frozen(found.node.data?.[key]);
+		sendNodeData(id, patch && typeof patch === 'object' ? patch : {}, found.graphId);
+		return { id, graphId: found.graphId, before, after };
+	};
+	/** ONE `flownodes` data entry for these writes (a no-op until flowGraphs is primed,
+	 * which it is long before a module's UI can be pressed).
+	 * @param {{id: string, graphId: string, before: any, after: any}[]} items */
+	const recordNodeData = (items) => {
+		if (!items.length) return;
+		flowGraphsRef?.recordFlowNodesEntry({ op: 'data', graphId: items[0].graphId, items, moduleId });
+	};
 	/** input scopes this module still holds — released at teardown
 	 * @type {Set<'keys'|'locomotion'>} */
 	const claimedScopes = new Set();
@@ -965,6 +997,15 @@ function makeApi(moduleId, moduleName = moduleId) {
 			 * @param {string} name @param {number} value */
 			setVar(name, value) {
 				setGameVar(name, value);
+			},
+			/** R29 S2: `fn()` runs after the game singleton changes (state, round, a
+			 * variable) — COALESCED, at most once per frame however many writes land, never per
+			 * store tick; torn down with the module (or earlier, by calling what it returns).
+			 * Read what you need inside it. @param {() => void} fn @returns {() => void} off */
+			onChange(fn) {
+				const off = coalescedSubscribe([gameState], fn);
+				onDispose(off);
+				return off;
 			}
 		},
 		/**
@@ -987,6 +1028,14 @@ function makeApi(moduleId, moduleName = moduleId) {
 			 * @param {{order?: 'desc'|'asc'}=} opts */
 			all(name, opts) {
 				return leaderboardRows(name, opts);
+			},
+			/** R29 S2: `fn()` runs after ANY peer's row changes (mine or a remote one) —
+			 * coalesced to one call per frame, torn down with the module or by the returned
+			 * `off`. @param {() => void} fn @returns {() => void} off */
+			onChange(fn) {
+				const off = coalescedSubscribe([peerVarsMine, peerVarsRemote], fn);
+				onDispose(off);
+				return off;
 			}
 		},
 		/**
@@ -997,15 +1046,54 @@ function makeApi(moduleId, moduleName = moduleId) {
 		 */
 		flow: {
 			/** Every node (optionally one type) as plain snapshots:
-			 * `{id, type, graphId, data}` — graphId 'scene' or the owner object's uuid.
-			 * @param {string=} type @returns {any[]} */
+			 * `{id, type, graphId, x, y, data}` — graphId 'scene' or the owner object's uuid;
+			 * x/y the node's position in its graph (R29 S1, read-only — move a node in the
+			 * editor, never by writing these). @param {string=} type @returns {any[]} */
 			nodes(type) {
 				const out = [];
 				for (const n of allNodes()) {
 					if (type && n.type !== type) continue;
-					out.push({ id: n.id, type: n.type, graphId: n.__graph ?? SCENE_GRAPH, data: { ...(n.data ?? {}) } });
+					out.push({
+						id: n.id,
+						type: n.type,
+						graphId: n.__graph ?? SCENE_GRAPH,
+						x: Number(n.position?.x) || 0,
+						y: Number(n.position?.y) || 0,
+						data: { ...(n.data ?? {}) }
+					});
 				}
 				return out;
+			},
+			/**
+			 * R29 S1: where a `w` x `h` block of new nodes can land without covering what is
+			 * already in the graph — left-aligned under its lowest card (an empty graph gets
+			 * a margin from the origin). Pass the result's x/y to `addNodes`; ask again before
+			 * each block, since the answer moves as the graph grows. The rule is core's one
+			 * copy (`flowLayout.freeRegion`), shared with the HUD editor's bindings.
+			 * @param {{w?: number, h?: number, graphId?: string}=} opts
+			 * @returns {{x: number, y: number, w: number, h: number}}
+			 */
+			freeRegion(opts) {
+				const graphId = opts?.graphId ?? SCENE_GRAPH;
+				const nodes = get(flowGraphs)?.[graphId]?.nodes ?? [];
+				return freeRegionIn(nodes, { w: opts?.w, h: opts?.h });
+			},
+			/**
+			 * R29 S2: `fn()` runs after the flow graphs change — a node or edge created,
+			 * deleted, moved or re-parameterised, on this peer or arriving from one — or
+			 * after a node FIRES (the trigger log, which is what a latch, a counter or your
+			 * own `triggerStamp` read derives from, so a manager listing collected state
+			 * needs it as much as it needs the structure). It is
+			 * COALESCED to one frame: however many store writes a gesture or a stream of
+			 * arriving edits makes, the handler runs once, after them. Live VALUES (`nodeValue`) tick every frame
+			 * and deliberately do not fire it. Torn down with the module, or earlier by
+			 * calling the returned `off` (a toolbox that mounts and unmounts).
+			 * @param {() => void} fn @returns {() => void} off
+			 */
+			onChange(fn) {
+				const off = coalescedSubscribe([flowGraphs, flowTriggers], fn);
+				onDispose(off);
+				return off;
 			},
 			/** Every edge, graph-tagged: `{id, source, target, sourceHandle, targetHandle,
 			 * graphId}`. @returns {any[]} */
@@ -1037,13 +1125,34 @@ function makeApi(moduleId, moduleName = moduleId) {
 				return flowRuntimeRef?.nodeTriggerStamp?.(id) ?? null;
 			},
 			/** Replicated node-data MERGE (the editor's own `nodedata` path — same message,
-			 * same merge). The manager toolbox's inline param edit. @param {string} id
+			 * same merge) that is ALSO one undo step: a `flownodes` data entry holding the
+			 * patched keys' previous values, attributed to this module (R29 S3 — before it,
+			 * a module's write left the stack untouched and the next Ctrl+Z undid whatever
+			 * came before). The manager toolbox's inline param edit. @param {string} id
 			 * @param {Record<string, any>} patch @returns {boolean} found */
 			setNodeData(id, patch) {
-				const found = findNodeAnyGraph((n) => n.id === id);
-				if (!found) return false;
-				sendNodeData(id, patch ?? {}, found.graphId);
+				const item = writeNodeData(id, patch);
+				if (!item) return false;
+				recordNodeData([item]);
 				return true;
+			},
+			/**
+			 * Many node-data writes as ONE undo step (R29 S3): a toolbox's group edit over
+			 * sixty collectibles is one Ctrl+Z, not sixty and not none. Each item is
+			 * validated exactly as `setNodeData` (an unknown id is skipped) and may live in
+			 * any graph. The wire is the ordinary per-node `nodedata` — there is no batched
+			 * type, so a peer on any build converges; the measured cost is ~0.1 ms/node.
+			 * @param {{id: string, patch: Record<string, any>}[]} list
+			 * @returns {number} how many nodes were written
+			 */
+			setNodesData(list) {
+				const items = [];
+				for (const entry of Array.isArray(list) ? list : []) {
+					const item = entry && writeNodeData(entry.id, entry.patch);
+					if (item) items.push(item);
+				}
+				recordNodeData(items);
+				return items.length;
 			},
 			/**
 			 * Create nodes (and edges) the way the editor does: replicated `nodecreate`/

@@ -36,6 +36,8 @@ import { isInteractiveKind, isValuedKind } from './hudKinds';
 // reaches nodesHandler/flowGraphs — the history family — so moduleSDK cannot import it;
 // the leaf is where both sides can meet, the moduleToolboxes rule)
 import { moduleHudActionList } from './moduleHudKinds';
+// R29 S1: a leaf (imports nothing) — the one placement rule, shared with api.flow.freeRegion
+import { freeRegion } from './flowLayout';
 
 /** The HUD node types that READ an element (a display binding), by element kind. */
 // 21-E7.6: the PACK kinds map onto the SAME four display nodes rather than earning nodes
@@ -454,8 +456,9 @@ export function addBinding(elementId, actionKey) {
 	/** @type {any[]} */
 	const createdEdges = [];
 
-	// where to put them: past whatever is furthest right, in a column per binding
-	const baseX = nodes.reduce((max, n) => Math.max(max, Number(n.position?.x) || 0), 0) + 220;
+	// where to put them: past whatever is furthest right, in a column per binding (R29 S1:
+	// the rule is flowLayout's one copy now, shared with api.flow.freeRegion)
+	const baseX = freeRegion(nodes, { side: 'right' }).x;
 	const baseY = 40 + bindingsFor(elementId).length * 150;
 
 	if (action.role === 'value') {

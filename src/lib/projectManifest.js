@@ -25,6 +25,16 @@
 // bytes serves them.
 
 import { writable, get } from 'svelte/store';
+// ROADMAP 22 R5 — SCENE RENAME. The record (`manifest.renames`), the transitive resolve
+// and the merge fold are pure and live in their own leaf (imports nothing), so the rule
+// that keeps a renamed scene from being resurrected by a stale peer's document is unit
+// tested with no browser. This module owns the WIRE half: normalize, merge, scope.
+import {
+	normalizeSceneRenames,
+	resolveSceneName,
+	recordSceneRename,
+	foldRenamedScenes
+} from './sceneRename';
 import { sessionNow } from './sessionClock'; // 25-E: stamps another peer compares
 import { peers, showToast, explorerClose, revealExplorerItem } from '../stores/appStore';
 import { bottomDockActive } from './bottomDock';
@@ -84,6 +94,7 @@ export function autoVersionsOff() {
  * @typedef {{name: string, scenes: Record<string, SceneEntry>, assets: string[],
  *   changedAt: number, folders?: SharedFolder[], items?: SharedItem[],
  *   removed?: {items: Record<string, number>, folders: Record<string, number>},
+ *   renames?: Record<string, {to: string, at: number}>,
  *   deleted?: {hash: string, name: string, kind: string, at: number, by?: any,
  *     thumb?: string, localOnly?: boolean, folderId?: string|null, path?: string[]}[]}} Manifest
  *   R22 round 36 — THE DELETED LOG GREW TWO FIELDS AND ONE ROW KIND, and nothing else on
@@ -368,6 +379,12 @@ export function normalizeManifest(data) {
 	const deleted = normalizeDeleted(data.deleted);
 	if (deleted.length) out.deleted = deleted;
 	else delete out.deleted;
+	// R5: RENAMES — `{from: {to, at}}`, the record that lets a rename survive the union
+	// merge (see sceneRename.js). Omitted when empty, so a project that never renamed a
+	// scene serializes exactly as it did.
+	const renames = normalizeSceneRenames(data.renames);
+	if (Object.keys(renames).length) out.renames = renames;
+	else delete out.renames;
 	return out;
 }
 
@@ -872,6 +889,66 @@ function mergeSceneEntry(a, b, remoteNewer) {
 	return { entry, clash, novelLoser };
 }
 
+/** R5: two rename maps, per key the newer stamp. @param {any} a @param {any} b
+ * @returns {Record<string, {to: string, at: number}>} */
+function unionRenames(a, b) {
+	const out = normalizeSceneRenames(a);
+	for (const [from, rec] of Object.entries(normalizeSceneRenames(b)))
+		if (!out[from] || out[from].at < rec.at) out[from] = rec;
+	return out;
+}
+
+/**
+ * ROADMAP 22 R5 — RENAME A PROJECT SCENE. Fork 3, locked: the SCENE is primary and its
+ * files follow. This is the document half — the entry moves to its new key and the
+ * rename is RECORDED so the union merge folds any peer's stale copy rather than
+ * resurrecting the old name (sceneRename.js). Consent and privacy follow the name:
+ * a scene this joiner was allowed to publish under the old name is publishable under
+ * the new one, and a private scene stays private. Files, the open scene's own name and
+ * the live Travel nodes are the LOCAL half, applied by levels.js on every peer off the
+ * document itself — so the initiator and a receiver run one applier.
+ *
+ * FORK 3 of 21-G2 still holds: a viewer publishes nothing, so a viewer cannot rename.
+ * A taken name is refused (it would make the scene a VERSION of an unrelated one).
+ * @param {string} from @param {string} to
+ * @returns {'ok' | 'missing' | 'taken' | 'invalid' | 'viewer'}
+ */
+export function renameProjectScene(from, to) {
+	const a = String(from ?? '').trim();
+	const b = String(to ?? '').trim();
+	if (!a || !b) return 'invalid';
+	if (a === b) return 'ok';
+	if (isViewer()) return 'viewer';
+	const m = get(projectManifest);
+	const entry = m.scenes[a];
+	if (!entry) return 'missing';
+	if (m.scenes[b]) return 'taken';
+	/** @type {Record<string, SceneEntry>} */
+	const scenes = {};
+	// keep the key order, with the renamed entry where the old one stood
+	for (const [name, e] of Object.entries(m.scenes)) scenes[name === a ? b : name] = e;
+	if (openedScenes.has(a)) openedScenes.add(b);
+	if (sessionSceneNames.has(a)) sessionSceneNames.add(b);
+	if (privateScenes.has(a)) {
+		privateScenes.delete(a);
+		privateScenes.add(b);
+	}
+	commitManifest({ ...m, scenes, renames: recordSceneRename(m.renames, a, b, sessionNow()) });
+	return 'ok';
+}
+
+/** R5: the rename records of the live document. @returns {Record<string, {to: string, at: number}>} */
+export function sceneRenames() {
+	return normalizeSceneRenames(get(projectManifest).renames);
+}
+
+/** R5: where a scene NAME points now — a Travel node authored before a rename, in a file
+ * on disk nobody rewrote, resolves through the replicated record at fire time.
+ * @param {string} name @returns {string} */
+export function resolveProjectSceneName(name) {
+	return resolveSceneName(name, get(projectManifest).renames);
+}
+
 /** Which merged content the SENDER does not carry — scenes, assets and the project name
  * only. The index sections are deliberately absent: sharedLibrary's own reconcile is what
  * republishes a row a peer is missing, and answering for it here would be two writers.
@@ -951,7 +1028,20 @@ export function mergeManifests(local, remote) {
 		if (a.history[a.history.length - 1] !== entry.history[entry.history.length - 1])
 			pointerMoves.push(name);
 	}
-	doc.scenes = scenes;
+	// R5: RENAMES. The records are a UNION (per key, the newer stamp) rather than the
+	// base side's alone: a rename is a fact about the past that the side which never heard
+	// cannot retract, and the base is exactly as likely to be that side. Then every scene
+	// sitting under a renamed key is folded to where the name points now, the manifest's
+	// own entry merge deciding a divergence with the RENAMED line as the winner (it is the
+	// line that carried on; the old key is a peer that had not heard). A fresh scene that
+	// reuses an old name keeps it and spends the record — sceneRename.js has the rules.
+	const folded = foldRenamedScenes(
+		scenes,
+		unionRenames(mine.renames, theirs.renames),
+		(target, moved) => mergeSceneEntry(moved, target, true).entry
+	);
+	doc.scenes = folded.scenes;
+	doc.renames = folded.renames;
 	const out = normalizeManifest(doc);
 	return { doc: out, clashes, clashDetails, pointerMoves, senderLacks: senderLacking(out, theirs) };
 }
@@ -1168,15 +1258,33 @@ export function outboundManifest(doc) {
 		for (const [name, entry] of Object.entries(scenes ?? {})) if (!hidden.has(name)) out[name] = entry;
 		return out;
 	};
+	// R5: a rename record NAMES two scenes, so one touching a private scene is withheld
+	// with it — and a joiner sends only the records it may name (the scene rule, per side)
+	const dropRenames = (/** @type {any} */ renames, /** @type {(n: string) => boolean} */ may) => {
+		/** @type {Record<string, {to: string, at: number}>} */
+		const out = {};
+		for (const [from, rec] of Object.entries(normalizeSceneRenames(renames)))
+			if (!hidden.has(from) && !hidden.has(rec.to) && may(rec.to)) out[from] = rec;
+		return out;
+	};
+	const withRenames = (/** @type {any} */ scoped, /** @type {(n: string) => boolean} */ may) => {
+		const renames = dropRenames(doc.renames, may);
+		if (Object.keys(renames).length) return { ...scoped, renames };
+		const { renames: _dropped, ...rest } = scoped;
+		return rest;
+	};
 	// the host — and a solo user, who is one — publishes its project whole
 	if (get(sessionHost) === null)
-		return hidden.size ? { ...doc, scenes: drop(doc.scenes ?? {}) } : doc;
+		return withRenames(hidden.size ? { ...doc, scenes: drop(doc.scenes ?? {}) } : doc, () => true);
 	const allowed = new Set([...sessionSceneNames, ...openedScenes]);
 	/** @type {Record<string, SceneEntry>} */
 	const scenes = {};
 	for (const [name, entry] of Object.entries(doc.scenes ?? {}))
 		if (allowed.has(name)) scenes[name] = entry;
-	return { ...doc, scenes: drop(scenes), name: renamedThisSession ? doc.name : '' };
+	return withRenames(
+		{ ...doc, scenes: drop(scenes), name: renamedThisSession ? doc.name : '' },
+		(n) => allowed.has(n)
+	);
 }
 
 // ---- the merge, surfaced -------------------------------------------------------------

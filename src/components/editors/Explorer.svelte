@@ -79,6 +79,8 @@
 		saveSceneAsLevel,
 		newLevel,
 		renameOpenLooseScene,
+		// ROADMAP 22 R5: the header's double-click and the card's "Rename scene…"
+		renameScene,
 		travelToLevel,
 		levelSceneName,
 		currentLevel,
@@ -1348,6 +1350,56 @@
 	let projectEdit: string | null = $state(null);
 	const projectLabel = $derived($projectManifest.name || 'Untitled project');
 	const openSceneHash = $derived($currentLevel?.hash ?? null);
+	// ROADMAP 22 R5 — RENAME THE OPEN SCENE FROM THE CHIP. Fork 3, locked: the scene is
+	// primary and its files follow, so the chip shows both halves — the scene NAME (the
+	// manifest key) and, in brackets, the FILE it is currently loaded from — and renaming
+	// the name is what moves the file. Double-click or the chip's own context menu opens
+	// the same inline editor the project name uses (Enter/blur commit, Escape cancels; the
+	// no-prompt rule). `renameScene` decides whether it is a project rename (replicated)
+	// or a loose file's (local), and says so in its toast.
+	let sceneEdit: string | null = $state(null);
+	/** the file the open scene was loaded from, on either shelf; '' for an adopted identity */
+	const openSceneFile = $derived(
+		openSceneHash
+			? ([...$explorerItems, ...$hiddenItems].find((i: any) => i.hash === openSceneHash)?.name ?? '')
+			: ''
+	);
+	function startSceneEdit() {
+		if (!$currentLevel?.name) return;
+		settlePendingEdit();
+		sceneEdit = $currentLevel.name;
+	}
+	function commitSceneEdit() {
+		if (sceneEdit === null) return;
+		const next = sceneEdit.trim();
+		const from = $currentLevel?.name ?? '';
+		sceneEdit = null;
+		if (!next || next === from) return;
+		if (!isValidName(next)) return showToast('A scene name cannot be empty or contain * \\ /');
+		renameScene(from, next);
+	}
+	function sceneKeydown(e: KeyboardEvent) {
+		if (e.key === 'Enter') commitSceneEdit();
+		else if (e.key === 'Escape') sceneEdit = null;
+		e.stopPropagation();
+	}
+	function sceneChipMenu(e: MouseEvent) {
+		e.preventDefault();
+		e.stopPropagation();
+		menu = {
+			x: e.clientX,
+			y: e.clientY,
+			items: [
+				{
+					label: 'Rename scene…',
+					icon: 'pencil',
+					tooltip: 'Rename "' + ($currentLevel?.name ?? '') + '" — its files follow, on every peer',
+					action: startSceneEdit
+				},
+				{ label: 'Find its file', icon: 'search', action: () => void revealOpenScene() }
+			]
+		};
+	}
 	function startProjectEdit() {
 		projectEdit = $projectManifest.name ?? '';
 	}
@@ -2259,6 +2311,30 @@
 			value: item.name
 		};
 	}
+	/**
+	 * ROADMAP 22 R5: rename the SCENE a card belongs to — the manifest key, not the file
+	 * name — through the same inline editor, prefilled with the scene's name. Only for a
+	 * file the project records (a loose file's identity IS its file, and plain Rename
+	 * already carries the open scene's name for it).
+	 */
+	function startRenameScene(item: any) {
+		const sceneName = sceneOfHash(item.hash);
+		if (!sceneName) return;
+		settlePendingEdit();
+		editing = { mode: 'rename-scene', itemId: item.id, sceneName, value: sceneName };
+	}
+	function renameSceneEntry(item: any) {
+		const sceneName = item?.kind === 'scene' && !item.remoteScene ? sceneOfHash(item.hash) : null;
+		if (!sceneName) return [];
+		return [
+			{
+				label: 'Rename scene…',
+				icon: 'pencil',
+				tooltip: 'Rename "' + sceneName + '" — every version file follows, on every peer',
+				action: () => startRenameScene(item)
+			}
+		];
+	}
 	// 21-H2: a PREFAB renames through the SAME inline editor — never window.prompt(),
 	// which is what the deleted Library modal used (fork 14's rule, one surface over).
 	// Its own mode because the id addresses the prefab library, not `explorerItems`.
@@ -2367,6 +2443,8 @@
 			const renamed = $explorerItems.find((i) => i.id === edit.itemId);
 			if (renamed?.kind === 'scene') renameOpenLooseScene(renamed.hash, edit.value);
 		}
+		// R5: the scene rename — replicated through the manifest, its files follow
+		else if (edit.mode === 'rename-scene') renameScene(edit.sceneName, edit.value);
 		else if (edit.mode === 'rename-prefab') renamePrefab(edit.prefabId, edit.value);
 		else if (edit.mode === 'rename-pack') renamePack(edit.packName, edit.value);
 		// 21-G9 (union): land the scene where the user is looking — Scenes when the
@@ -4411,7 +4489,9 @@
 								action: () => showProperties({ kind: 'item', item })
 							},
 							// R4: one Join per peer standing in this scene
-							...joinEntries(item)
+							...joinEntries(item),
+							// R5: a PROJECT scene renames as a scene (files follow); a loose file keeps plain Rename
+							...renameSceneEntry(item)
 						]
 					: []),
 				// 24-C1: a copy is a new RECORD with the same bytes; Copy/Cut go to the in-app
@@ -6257,7 +6337,7 @@
 								><Icon name={KIND_ICONS[item.kind] ?? 'package'} size={14} /></span
 							>
 						{/if}
-						{#if (editing?.mode === 'rename' && editing.inGrid && (editing.cardId ?? editing.folderId) === id) || (editing?.mode === 'rename-item' && editing.itemId === id) || (editing?.mode === 'rename-prefab' && editing.prefabId === item?.prefabId)}
+						{#if (editing?.mode === 'rename' && editing.inGrid && (editing.cardId ?? editing.folderId) === id) || (editing?.mode === 'rename-item' && editing.itemId === id) || (editing?.mode === 'rename-scene' && editing.itemId === id) || (editing?.mode === 'rename-prefab' && editing.prefabId === item?.prefabId)}
 							{@render cardEdit()}
 						{:else}
 							<span
@@ -6424,12 +6504,39 @@
 		{/if}
 		{#if $currentLevel?.name}
 			<span class="shrink-0 px-0.5 text-gray-600" aria-hidden="true">▸</span>
-			<button
-				id="explorer-scene"
-				class="min-w-0 truncate rounded-sm px-1 py-0.5 text-white hover:bg-gray-700"
-				title={'The scene you have open: ' + $currentLevel.name + ' — click to find its file'}
-				onclick={revealOpenScene}>{$currentLevel.name}</button
-			>
+			{#if sceneEdit !== null}
+				<input
+					id="explorer-scene-input"
+					class="ui-input w-40 shrink py-0 text-[11px]"
+					aria-label="Scene name"
+					value={sceneEdit}
+					use:focusSelect
+					oninput={(e) => (sceneEdit = e.currentTarget.value)}
+					onkeydown={sceneKeydown}
+					onblur={commitSceneEdit}
+				/>
+			{:else}
+				<button
+					id="explorer-scene"
+					class="min-w-0 truncate rounded-sm px-1 py-0.5 text-white hover:bg-gray-700"
+					title={'The scene you have open: ' +
+						$currentLevel.name +
+						' — click to find its file, double-click to rename it'}
+					onclick={revealOpenScene}
+					ondblclick={startSceneEdit}
+					oncontextmenu={sceneChipMenu}>{$currentLevel.name}</button
+				>
+				{#if openSceneFile}
+					<!-- R5: the FILE half — the scene is the identity, this is where it is loaded
+					     from right now, and a rename moves it -->
+					<span
+						id="explorer-scene-file"
+						class="min-w-0 shrink truncate text-[10px] text-gray-500"
+						title={'Loaded from ' + openSceneFile + ' — renaming the scene renames its files'}
+						>[{openSceneFile}]</span
+					>
+				{/if}
+			{/if}
 			<!--
 				R22 round 13 (user): "before this yellow dot should have lucid save icon, its
 				standard, right? the icon should be gray if nothing to save". It is, so the
@@ -7388,7 +7495,7 @@
 									<Icon name={KIND_ICONS[item.kind] ?? 'package'} size={28} />
 								</span>
 							{/if}
-							{#if (editing?.mode === 'rename-item' && editing.itemId === item.id) || (editing?.mode === 'rename-prefab' && editing.prefabId === item.prefabId)}
+							{#if (editing?.mode === 'rename-item' && editing.itemId === item.id) || (editing?.mode === 'rename-scene' && editing.itemId === item.id) || (editing?.mode === 'rename-prefab' && editing.prefabId === item.prefabId)}
 								{@render cardEdit()}
 							{:else}
 								<!-- R22-R2: the plan asks for local items in a distinct colour. Drawn only

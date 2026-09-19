@@ -223,7 +223,11 @@ registerHistoryKind('flownodes', (entry, state) => {
 	const peer = get(peers);
 	const graphId = entry.graphId;
 	if (entry.op === 'data') {
-		for (const item of entry.items ?? []) {
+		// undo walks the items BACKWARDS: a batch that writes one node twice recorded the
+		// second item's `before` AFTER the first write, so only the reverse order lands on
+		// the first item's `before` last
+		const items = entry.items ?? [];
+		for (const item of undoing ? [...items].reverse() : items) {
 			const data = undoing ? item.before : item.after;
 			const gid = item.graphId ?? graphId;
 			updateFlowNodeData(item.id, data, gid);

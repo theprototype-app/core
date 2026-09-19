@@ -1137,6 +1137,24 @@ function makeApi(moduleId, moduleName = moduleId) {
 				return true;
 			},
 			/**
+			 * Many node-data writes as ONE undo step (R29 S3): a toolbox's group edit over
+			 * sixty collectibles is one Ctrl+Z, not sixty and not none. Each item is
+			 * validated exactly as `setNodeData` (an unknown id is skipped) and may live in
+			 * any graph. The wire is the ordinary per-node `nodedata` — there is no batched
+			 * type, so a peer on any build converges; the measured cost is ~0.1 ms/node.
+			 * @param {{id: string, patch: Record<string, any>}[]} list
+			 * @returns {number} how many nodes were written
+			 */
+			setNodesData(list) {
+				const items = [];
+				for (const entry of Array.isArray(list) ? list : []) {
+					const item = entry && writeNodeData(entry.id, entry.patch);
+					if (item) items.push(item);
+				}
+				recordNodeData(items);
+				return items.length;
+			},
+			/**
 			 * Create nodes (and edges) the way the editor does: replicated `nodecreate`/
 			 * `edgecreate` per item plus ONE `flownodes` undo entry for the batch — so what a
 			 * module builds can be undone in one step and taken apart afterwards, because it

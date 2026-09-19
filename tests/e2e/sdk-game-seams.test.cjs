@@ -288,6 +288,62 @@ h.run(async () => {
 	h.check(missing === false, 'an unknown id still returns false (and records nothing)');
 
 	// =====================================================================
+	// 4c. R29 S3: setNodesData — a group edit across graphs is ONE undo step
+	// =====================================================================
+	const obox = await makeBox(A);
+	await A.page.waitForTimeout(600);
+	const grpScene = await A.page.evaluate(() =>
+		window.__seams.api.flow.addNodes({ nodes: Array.from({ length: 6 }, (_, i) => ({ type: 'seamvalue', x: 700 + i * 20, y: 700, data: {} })) })
+	);
+	const grpObj = await A.page.evaluate(
+		(g) => window.__seams.api.flow.addNodes({ graphId: g, nodes: Array.from({ length: 6 }, (_, i) => ({ type: 'seamvalue', x: 60 + i * 20, y: 60, data: {} })) }),
+		obox
+	);
+	await A.page.waitForTimeout(900);
+	const grp = [...grpScene, ...grpObj];
+	const tagsOf = (peer) =>
+		peer.page.evaluate((ids) => {
+			const nodes = window.__seams.api.flow.nodes();
+			return ids.map((i) => nodes.find((n) => n.id === i)?.data?.tag ?? null);
+		}, grp);
+	const gDepth0 = await depthOf(A);
+	const written = await A.page.evaluate(
+		(ids) =>
+			window.__seams.api.flow.setNodesData([
+				...ids.map((id) => ({ id, patch: { tag: 'grp' } })),
+				{ id: 'no-such-node', patch: { tag: 'x' } },
+				null,
+				// the SAME node twice in one batch: undo must still land on its original value
+				{ id: ids[0], patch: { tag: 'twice' } }
+			]),
+		grp
+	);
+	await A.page.waitForTimeout(900);
+	const gTop = await A.page.evaluate(() => {
+		let v;
+		window.__stores.history.undoStack.subscribe((x) => (v = x))();
+		const e = v[v.length - 1];
+		return { depth: v.length, items: e?.items?.length, graphs: [...new Set((e?.items ?? []).map((i) => i.graphId))].length, moduleId: e?.moduleId };
+	});
+	h.check(written === 13, `setNodesData writes every known node, skips the unknown and the null (${written})`);
+	h.check(gTop.depth === gDepth0 + 1 && gTop.items === 13, `and records ONE entry for the whole batch (${gDepth0} -> ${gTop.depth}, ${gTop.items} items)`);
+	h.check(gTop.graphs === 2 && gTop.moduleId === 'seams', `the one entry spans both graphs, attributed (${gTop.graphs} graphs, ${gTop.moduleId})`);
+	const gAfter = [await tagsOf(A), await tagsOf(B)];
+	const wantAfter = JSON.stringify(['twice', ...grp.slice(1).map(() => 'grp')]);
+	h.check(gAfter.every((t) => JSON.stringify(t) === wantAfter), `the batch replicated over the ordinary nodedata path (${JSON.stringify(gAfter[1])})`);
+	await A.page.evaluate(() => window.__stores.history.undo());
+	await A.page.waitForTimeout(900);
+	const gUndo = [await tagsOf(A), await tagsOf(B)];
+	h.check(gUndo.every((t) => t.every((x) => x === null)), `ONE undo restores all twelve, on both peers, incl. the node written twice (${JSON.stringify(gUndo[1])})`);
+	await A.page.evaluate(() => window.__stores.history.redo());
+	await A.page.waitForTimeout(900);
+	const gRedo = [await tagsOf(A), await tagsOf(B)];
+	h.check(gRedo.every((t) => JSON.stringify(t) === wantAfter), `and one redo re-applies the batch in order (${JSON.stringify(gRedo[0])})`);
+	const emptyWrite = await A.page.evaluate(() => window.__seams.api.flow.setNodesData([]));
+	const gDepth2 = await depthOf(A);
+	h.check(emptyWrite === 0 && gDepth2 === gTop.depth, `an empty batch writes nothing and records nothing (${emptyWrite}, depth ${gDepth2})`);
+
+	// =====================================================================
 	// 5. api.flow.addNodes — one undo entry, canonical edge ids, spec defaults
 	// =====================================================================
 	const box = await makeBox(A);

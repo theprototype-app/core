@@ -259,6 +259,35 @@ function makeApi(moduleId, moduleName = moduleId) {
 	const disposals = (moduleDisposals[moduleId] ??= []);
 	/** record an undo thunk deactivateModule runs at teardown (A2) @param {() => void} fn */
 	const onDispose = (fn) => disposals.push(fn);
+	/** A value frozen for the undo stack, so a module mutating its patch object later
+	 * cannot rewrite history. @param {any} v */
+	const frozen = (v) => {
+		try {
+			return structuredClone(v);
+		} catch {
+			return v;
+		}
+	};
+	/** One node-data write through the replicated `nodedata` path; returns the undo
+	 * item (the patched keys' previous values) or null when no node has the id.
+	 * @param {string} id @param {Record<string, any>} patch */
+	const writeNodeData = (id, patch) => {
+		const found = findNodeAnyGraph((n) => n.id === id);
+		if (!found) return null;
+		const after = frozen(patch && typeof patch === 'object' ? patch : {});
+		/** @type {Record<string, any>} */
+		const before = {};
+		for (const key of Object.keys(after)) before[key] = frozen(found.node.data?.[key]);
+		sendNodeData(id, patch && typeof patch === 'object' ? patch : {}, found.graphId);
+		return { id, graphId: found.graphId, before, after };
+	};
+	/** ONE `flownodes` data entry for these writes (a no-op until flowGraphs is primed,
+	 * which it is long before a module's UI can be pressed).
+	 * @param {{id: string, graphId: string, before: any, after: any}[]} items */
+	const recordNodeData = (items) => {
+		if (!items.length) return;
+		flowGraphsRef?.recordFlowNodesEntry({ op: 'data', graphId: items[0].graphId, items, moduleId });
+	};
 	/** input scopes this module still holds — released at teardown
 	 * @type {Set<'keys'|'locomotion'>} */
 	const claimedScopes = new Set();
@@ -1096,13 +1125,34 @@ function makeApi(moduleId, moduleName = moduleId) {
 				return flowRuntimeRef?.nodeTriggerStamp?.(id) ?? null;
 			},
 			/** Replicated node-data MERGE (the editor's own `nodedata` path — same message,
-			 * same merge). The manager toolbox's inline param edit. @param {string} id
+			 * same merge) that is ALSO one undo step: a `flownodes` data entry holding the
+			 * patched keys' previous values, attributed to this module (R29 S3 — before it,
+			 * a module's write left the stack untouched and the next Ctrl+Z undid whatever
+			 * came before). The manager toolbox's inline param edit. @param {string} id
 			 * @param {Record<string, any>} patch @returns {boolean} found */
 			setNodeData(id, patch) {
-				const found = findNodeAnyGraph((n) => n.id === id);
-				if (!found) return false;
-				sendNodeData(id, patch ?? {}, found.graphId);
+				const item = writeNodeData(id, patch);
+				if (!item) return false;
+				recordNodeData([item]);
 				return true;
+			},
+			/**
+			 * Many node-data writes as ONE undo step (R29 S3): a toolbox's group edit over
+			 * sixty collectibles is one Ctrl+Z, not sixty and not none. Each item is
+			 * validated exactly as `setNodeData` (an unknown id is skipped) and may live in
+			 * any graph. The wire is the ordinary per-node `nodedata` — there is no batched
+			 * type, so a peer on any build converges; the measured cost is ~0.1 ms/node.
+			 * @param {{id: string, patch: Record<string, any>}[]} list
+			 * @returns {number} how many nodes were written
+			 */
+			setNodesData(list) {
+				const items = [];
+				for (const entry of Array.isArray(list) ? list : []) {
+					const item = entry && writeNodeData(entry.id, entry.patch);
+					if (item) items.push(item);
+				}
+				recordNodeData(items);
+				return items.length;
 			},
 			/**
 			 * Create nodes (and edges) the way the editor does: replicated `nodecreate`/

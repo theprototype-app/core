@@ -248,6 +248,102 @@ h.run(async () => {
 	h.check(dataOnB === true, 'setNodeData replicated the perRound patch (the nodedata path)');
 
 	// =====================================================================
+	// 4b. R29 S3: a module's setNodeData is ONE undo step, attributed to the module
+	// =====================================================================
+	const dataOf = (peer, id) =>
+		peer.page.evaluate((i) => {
+			const n = window.__seams.api.flow.nodes().find((x) => x.id === i);
+			return n ? { perRound: n.data.perRound, tag: n.data.tag ?? null } : null;
+		}, id);
+	const depthOf = (peer) =>
+		peer.page.evaluate(() => {
+			let v;
+			window.__stores.history.undoStack.subscribe((x) => (v = x))();
+			return v.length;
+		});
+	const depth0 = await depthOf(A);
+	await A.page.evaluate((id) => window.__seams.api.flow.setNodeData(id, { perRound: false, tag: 's3' }), evId);
+	await A.page.waitForTimeout(600);
+	const top = await A.page.evaluate(() => {
+		let v;
+		window.__stores.history.undoStack.subscribe((x) => (v = x))();
+		const e = v[v.length - 1];
+		return { depth: v.length, kind: e?.kind, op: e?.op, moduleId: e?.moduleId, items: e?.items?.length };
+	});
+	h.check(top.depth === depth0 + 1 && top.kind === 'flownodes' && top.op === 'data', `setNodeData records ONE flownodes data entry (${depth0} -> ${top.depth}, ${top.kind}/${top.op})`);
+	h.check(top.moduleId === 'seams', `the entry is attributed to the module (${top.moduleId})`);
+	const edited = [await dataOf(A, evId), await dataOf(B, evId)];
+	h.check(edited.every((d) => d && d.perRound === false && d.tag === 's3'), `premise: the write landed on both peers (${JSON.stringify(edited)})`);
+	await A.page.evaluate(() => window.__stores.history.undo());
+	await A.page.waitForTimeout(800);
+	const undone = [await dataOf(A, evId), await dataOf(B, evId)];
+	h.check(undone.every((d) => d && d.perRound === true && !d.tag), `one undo restores the node's previous data, on BOTH peers (${JSON.stringify(undone)})`);
+	await A.page.evaluate(() => window.__stores.history.redo());
+	await A.page.waitForTimeout(800);
+	const redone = [await dataOf(A, evId), await dataOf(B, evId)];
+	h.check(redone.every((d) => d && d.perRound === false && d.tag === 's3'), `and one redo re-applies it everywhere (${JSON.stringify(redone)})`);
+	await A.page.evaluate((id) => window.__seams.api.flow.setNodeData(id, { perRound: true }), evId);
+	await A.page.waitForTimeout(400);
+	const missing = await A.page.evaluate(() => window.__seams.api.flow.setNodeData('no-such-node', { x: 1 }));
+	h.check(missing === false, 'an unknown id still returns false (and records nothing)');
+
+	// =====================================================================
+	// 4c. R29 S3: setNodesData — a group edit across graphs is ONE undo step
+	// =====================================================================
+	const obox = await makeBox(A);
+	await A.page.waitForTimeout(600);
+	const grpScene = await A.page.evaluate(() =>
+		window.__seams.api.flow.addNodes({ nodes: Array.from({ length: 6 }, (_, i) => ({ type: 'seamvalue', x: 700 + i * 20, y: 700, data: {} })) })
+	);
+	const grpObj = await A.page.evaluate(
+		(g) => window.__seams.api.flow.addNodes({ graphId: g, nodes: Array.from({ length: 6 }, (_, i) => ({ type: 'seamvalue', x: 60 + i * 20, y: 60, data: {} })) }),
+		obox
+	);
+	await A.page.waitForTimeout(900);
+	const grp = [...grpScene, ...grpObj];
+	const tagsOf = (peer) =>
+		peer.page.evaluate((ids) => {
+			const nodes = window.__seams.api.flow.nodes();
+			return ids.map((i) => nodes.find((n) => n.id === i)?.data?.tag ?? null);
+		}, grp);
+	const gDepth0 = await depthOf(A);
+	const written = await A.page.evaluate(
+		(ids) =>
+			window.__seams.api.flow.setNodesData([
+				...ids.map((id) => ({ id, patch: { tag: 'grp' } })),
+				{ id: 'no-such-node', patch: { tag: 'x' } },
+				null,
+				// the SAME node twice in one batch: undo must still land on its original value
+				{ id: ids[0], patch: { tag: 'twice' } }
+			]),
+		grp
+	);
+	await A.page.waitForTimeout(900);
+	const gTop = await A.page.evaluate(() => {
+		let v;
+		window.__stores.history.undoStack.subscribe((x) => (v = x))();
+		const e = v[v.length - 1];
+		return { depth: v.length, items: e?.items?.length, graphs: [...new Set((e?.items ?? []).map((i) => i.graphId))].length, moduleId: e?.moduleId };
+	});
+	h.check(written === 13, `setNodesData writes every known node, skips the unknown and the null (${written})`);
+	h.check(gTop.depth === gDepth0 + 1 && gTop.items === 13, `and records ONE entry for the whole batch (${gDepth0} -> ${gTop.depth}, ${gTop.items} items)`);
+	h.check(gTop.graphs === 2 && gTop.moduleId === 'seams', `the one entry spans both graphs, attributed (${gTop.graphs} graphs, ${gTop.moduleId})`);
+	const gAfter = [await tagsOf(A), await tagsOf(B)];
+	const wantAfter = JSON.stringify(['twice', ...grp.slice(1).map(() => 'grp')]);
+	h.check(gAfter.every((t) => JSON.stringify(t) === wantAfter), `the batch replicated over the ordinary nodedata path (${JSON.stringify(gAfter[1])})`);
+	await A.page.evaluate(() => window.__stores.history.undo());
+	await A.page.waitForTimeout(900);
+	const gUndo = [await tagsOf(A), await tagsOf(B)];
+	h.check(gUndo.every((t) => t.every((x) => x === null)), `ONE undo restores all twelve, on both peers, incl. the node written twice (${JSON.stringify(gUndo[1])})`);
+	await A.page.evaluate(() => window.__stores.history.redo());
+	await A.page.waitForTimeout(900);
+	const gRedo = [await tagsOf(A), await tagsOf(B)];
+	h.check(gRedo.every((t) => JSON.stringify(t) === wantAfter), `and one redo re-applies the batch in order (${JSON.stringify(gRedo[0])})`);
+	const emptyWrite = await A.page.evaluate(() => window.__seams.api.flow.setNodesData([]));
+	const gDepth2 = await depthOf(A);
+	h.check(emptyWrite === 0 && gDepth2 === gTop.depth, `an empty batch writes nothing and records nothing (${emptyWrite}, depth ${gDepth2})`);
+
+	// =====================================================================
 	// 5. api.flow.addNodes — one undo entry, canonical edge ids, spec defaults
 	// =====================================================================
 	const box = await makeBox(A);
@@ -509,6 +605,82 @@ h.run(async () => {
 	const p1 = [await counts(A), await counts(B)];
 	h.check(p1[0].peer > p0[0].peer, `a peer-var write fires my handler (+${p1[0].peer - p0[0].peer})`);
 	h.check(p1[1].peer > p0[1].peer, `and the OTHER peer's, as the row arrives (+${p1[1].peer - p0[1].peer})`);
+
+	// =====================================================================
+	// 7b. R29 S3 — THE MEASURED CASE: a sixty-node group edit, one real Ctrl+Z, a late joiner
+	// =====================================================================
+	// sixty nodes spread over the scene graph and two object graphs (a collectible group is
+	// one object graph per member), created in THREE calls — so the entry right under the
+	// edit is a CREATION, the one sdk-polish's measurement watched Ctrl+Z take away
+	await setPlay(A, null);
+	await gstate(A, 'menu');
+	const g60a = await makeBox(A);
+	const g60b = await makeBox(A);
+	await A.page.waitForTimeout(600);
+	const sixty = [];
+	for (const graphId of [undefined, g60a, g60b])
+		sixty.push(
+			...(await A.page.evaluate(
+				(g) =>
+					window.__seams.api.flow.addNodes({
+						...(g ? { graphId: g } : {}),
+						nodes: Array.from({ length: 20 }, (_, i) => ({ type: 'seamvalue', x: 900 + i * 12, y: 900, data: { tag: 'orig' } }))
+					}),
+				graphId ?? null
+			))
+		);
+	await A.page.waitForTimeout(1200);
+	h.check(sixty.length === 60, `premise: sixty nodes across three graphs (${sixty.length})`);
+	const sixtyOf = (peer) =>
+		peer.page.evaluate((ids) => {
+			const nodes = window.__stores.allNodes();
+			const got = ids.map((i) => nodes.find((n) => n.id === i));
+			return { present: got.filter(Boolean).length, tags: [...new Set(got.map((n) => n?.data?.tag ?? null))] };
+		}, sixty);
+	const s60 = await A.page.evaluate(
+		(ids) => {
+			const t0 = performance.now();
+			const n = window.__seams.api.flow.setNodesData(ids.map((id) => ({ id, patch: { tag: 'bulk60' } })));
+			return { n, ms: performance.now() - t0 };
+		},
+		sixty
+	);
+	h.check(s60.n === 60, `one setNodesData call writes all sixty (${s60.n} in ${s60.ms.toFixed(1)} ms)`);
+	await h.eventually(
+		() => sixtyOf(B),
+		(r) => r.present === 60 && r.tags.length === 1 && r.tags[0] === 'bulk60',
+		'all sixty land on the peer'
+	);
+	// a REAL Ctrl+Z, the user's gesture — nothing focused that could swallow it
+	await A.page.evaluate(() => document.activeElement instanceof HTMLElement && document.activeElement.blur());
+	await A.page.keyboard.press('Control+z');
+	await A.page.waitForTimeout(900);
+	const z1 = [await sixtyOf(A), await sixtyOf(B)];
+	h.check(
+		z1.every((r) => r.present === 60 && r.tags.length === 1 && r.tags[0] === 'orig'),
+		`ONE Ctrl+Z restores all sixty on both peers — and the nodes are still there, the creation was NOT undone (${JSON.stringify(z1)})`
+	);
+	await A.page.evaluate(() => window.__stores.history.redo());
+	await A.page.waitForTimeout(900);
+	// a LATE JOINER takes the edited values from the ordinary full-state reply
+	const C = await h.setupPage(browser, 'C');
+	await C.page.waitForFunction(() => !!window.__stores?.allNodes, { timeout: 30000 });
+	await h.connect(C, A);
+	await h.eventually(
+		() => sixtyOf(C),
+		(r) => r.present === 60 && r.tags.length === 1 && r.tags[0] === 'bulk60',
+		'a late joiner has all sixty edited values',
+		20000
+	);
+	// and an undo made AFTER it joined reaches it too (the entry replays per-node nodedata)
+	await A.page.evaluate(() => document.activeElement instanceof HTMLElement && document.activeElement.blur());
+	await A.page.keyboard.press('Control+z');
+	await h.eventually(
+		() => sixtyOf(C),
+		(r) => r.present === 60 && r.tags.length === 1 && r.tags[0] === 'orig',
+		'and a later undo reverts it on the joiner as well'
+	);
+	await C.page.close();
 
 	// =====================================================================
 	// 8. the debug line + the action catalog seams, and their teardown

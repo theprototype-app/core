@@ -5,6 +5,52 @@
      per release, newest first. HTML comments like this one are stripped before
      rendering, so maintainer notes stay out of the user-facing window. -->
 
+## 1.15.0 — Where everyone is 👥
+
+### 👥 One session, and you can see who is in which scene (roadmap #22, the last three rounds)
+
+- 👥 **See who is in each scene, right on the scene card.** Every scene in the Explorer shows
+  who is standing in it (you included), and its menu offers **Join <name>** to travel there —
+  even for a scene you have not downloaded yet. One session, scenes as tags: the invite link is
+  unchanged.
+- ✏️ **Rename a scene; its files follow.** Double-click the scene name in the Explorer header
+  (or right-click it, or a scene card's **Rename scene…**). Every version file takes the new
+  name, on every peer, and Travel nodes keep working — by name and by version. The header now
+  reads `Scene [file.tpscene]`.
+- 📋 **Paste a scene, get a scene.** Ctrl+C / Ctrl+V on a scene makes "Arena copy" — its own
+  file, its own version history — instead of a second card for the same file.
+
+### 🎮 Two more games on the Games tab, and Football gets its proof
+
+- 🏰 **Dungeon Realms** — a seeded five-floor co-op crawl built from two modules: the Dungeon
+  Kit generates, Realms plays. Gems, portals that unseal, a dragon's hoard at the top.
+- 🧩 **Untangle** — a planar-graph puzzle on a lit board; drag the dots until nothing crosses
+  and the next level appears, the same board on every peer.
+- ⚽ **Football's whole match is now a test the app runs against itself** (two peers and a late
+  joiner, the real scene and the real module) — a known race is recorded below.
+- 🧱 Templates are read from each module's own definition, so a card and its module cannot drift.
+
+### 🖼️ Embeds
+
+- 🖼️ **A scene can live inside another page.** Open the app with `?embed=1` and the editor
+  chrome stays hidden for the page's life, play keeps working, and a small corner link opens the
+  full app. The community site's `/e/<id>` pages frame scenes with it.
+
+### 🧰 Module SDK
+
+- 🧰 **A module can ask where a graph fits, and listen instead of polling.** `api.flow.nodes()`
+  returns node positions, `api.flow.freeRegion()` finds room for a built block, and
+  `api.flow / game / peerVars.onChange()` fire once per frame when something changed.
+- ↩️ **A module's node edits are undoable.** `api.flow.setNodeData` is one undo step, and
+  `api.flow.setNodesData([...])` makes a whole group edit one step — the collectible manager's
+  group settings use it.
+
+### 🐞 Known
+
+- Two players pressing Play inside the physics start-up window can both start a simulator
+  (the `simulate` message has not landed yet when the second guard runs). Football's suite
+  enters Play in order; a deterministic yield rule is the next ticket.
+
 ## 1.14.0 — Room for one more 🗜️
 
 ### 🗜️ Heavy models stop being a cliff (roadmap #26, the last held phase)
@@ -176,7 +222,7 @@
   The object count in the status line carries a coloured dot that names whatever is over
   budget, and the numbers ride along in a diagnostics bundle.
 - 🛑 **An oversized scene asks before it arrives.** A scene big enough to hurt is held at
-  the door with **Load all / Load the first N / Cancel** instead of arriving and
+  the door with **Open anyway / Cancel** instead of arriving and
   wedging the tab, and opening an oversized file warns you first.
 - ⏸️ **A window that cannot keep up pauses instead of freezing.** A simulation that
   falls too far behind stops once, with a Resume button, and a viewport that has stopped

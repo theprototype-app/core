@@ -2058,6 +2058,64 @@ loadable play content. Everything a user does must be visible to connected peers
   is re-found by POSITION after the swap. `applyPivotTransform` now covers the falloff for
   rotate and scale by slerping the rotation and lerping the scale toward identity per vertex.
 
+- **THE VOCABULARY (roadmap 22 R4, locked):** a **session** is the mesh — one per invite link
+  — and owns the project: its library, manifest, scenes and who is where. A **scene** is where a
+  peer currently is inside the session, a TAG on the peer rather than a second connection. A
+  **room** is the PocketBase discovery record only. New core/plugin surface uses these words; no
+  PB field was renamed.
+- `src/lib/sceneRename.js` (R22 R5, a LEAF, imports nothing): `manifest.renames = {from:{to,at}}`
+  is what lets a rename survive the union merge (the wipe protection would otherwise resurrect
+  the old key from any stale document); `foldRenamedScenes` folds a scene under a renamed key
+  into where the name points, by LINEAGE (a shared hash) — a fresh scene reusing an old name
+  stays and SPENDS the record; `resolveSceneName` is transitive with a cycle limit;
+  `rewriteTravelNodes` patches by-name (`sceneName`) and by-hash (`levelName`) Travel nodes,
+  idempotent. THE DATA HAZARD answer: graphs in files on disk are NOT rewritten (that would mint
+  a version of every referencing scene); the LIVE graphs are rewritten on every peer locally off
+  the replicated record (`levels.applySceneRenames`, deterministic — nothing sent), and
+  `travelToScene` resolves a stale name at fire time. `travelToLevel` names an arrived scene by
+  `sceneOfHash` FIRST (a renamed scene's file keeps the old name inside). The applier re-stamps
+  the open scene's signature after a rewrite, or the dirty check honestly reads "differs from
+  the saved version". A module-level `projectManifest.subscribe` in levels.js sits LAST (the TDZ
+  rule) and applies renames in a MICROTASK — the applier renames library records and the
+  shared-library sweep writes the manifest back. `explorer.renameItemsWhere(hashes, from, to)`
+  = both shelves, by hash AND name; `levels.renameScene(from, to)` = project (replicated) vs
+  loose (file + open name); `duplicateScene(item, name, {folderId})` additive opt (R6: a PASTED
+  scene mints a scene copy under the copy name — the 24-C per-kind rule stays for every other
+  kind). Suites `scene-rename` (46, two peers), `scene-duplicate` (29), vitest `sceneRename`.
+- `peerScenes.peersAtScene(map, scene, mine, host)` (R22 R4) — the per-scene session roster,
+  us included, through the same `roomOf`/`roomCtx` the popover uses, so card and popover cannot
+  disagree. Explorer scene cards carry a presence badge in both views (`.explorer-here`,
+  `data-here=<count>`, a coloured dot per person) and "Join <peer>" menu entries (held AND
+  not-on-this-device cards) routed through `travelToPeerScene` (the guarded Go-to path). The
+  invite link carries NO scene hint — the link IS the session, where the host stands is presence.
+  Suite `session-scenes` (36, three peers).
+- `src/lib/flowLayout.js` + `src/lib/coalesce.js` (R29 S1/S2, both LEAVES, vitest-covered):
+  `freeRegion({w,h,graphId})` is the ONE placement rule for anything that authors nodes on the
+  user's behalf (`hudActions.addBinding` calls it, side 'right', byte-identical); the SDK
+  `onChange` seams (`api.flow`/`game`/`peerVars`, each returning `off()`, journalled) coalesce
+  to ONE call per frame (+100 ms timer fallback) because arriving peer edits are one task each.
+  `flow.onChange` also fires on the trigger log (a collected-state list changes on a fire).
+- `scripts/author-templates.cjs` (21-C C6-b): a `MODULE_DEFS` LOADER region (`football`,
+  `dungeon-realms`, `untangle`) read from the sibling modules checkout as
+  `modules/<id>/<id>.def.json` — a template's def is OWNED BY ITS MODULE so the card and the
+  module cannot drift — and an additive `thumb.sceneGroups` (scene-root module groups cloned
+  into the card render: a dungeon's world is scene-root content, so the card showed a lone
+  arch). Absent = byte-identical. The HUD-helper region is a SEPARATE region (24-B R2's
+  `gameShellHud` extraction was measured and declined: Stars Room's pause panel differs from
+  Towers in eight numbers and Football's HUD is authored by its module). Suites
+  `game-dungeon-realms` (64, two peers + late joiner; env DUNGEON_REALMS_TPSCENE /
+  DUNGEON_KIT_ZIP / DUNGEON_REALMS_ZIP / MODULES_REPO), `game-untangle` (46; UNTANGLE_TPSCENE /
+  UNTANGLE_ZIP), `game-football` (102; scene from the scenes feed @v2, zip from a packed
+  sibling modules checkout — skips, never fails, when every source misses).
+- `playMode.js` `embedMode` / `embedSceneId` / `embedOpenUrl()` (R29 fork 4): the additive
+  `?embed=1` boot flag, read ONCE at module evaluation (before the cloud plugin clears the
+  query). Menu's chrome wrapper is `#editor-chrome`, hidden on `$isLocked || $embedMode`;
+  App.svelte gates the editor windows on `!$embedMode`, drops the dock inset, and draws the two
+  things an embed owns — `#embed-open-link` ("Open in theprototype.app", new tab) and
+  `#embed-play` (▶ while not playing, so an Esc inside the frame has a way back in). Absent = the
+  old app. The community Worker's `/e/<id>` frames the app at `/?s=<id>&play=1&embed=1`; no
+  separate viewer build. Suite `embed-boot` (20).
+
 ## Replication golden rules
 
 1. Every mutation = apply locally + `$peers.send({type, ...})`; receivers apply WITHOUT
@@ -4256,6 +4314,49 @@ loadable play content. Everything a user does must be visible to connected peers
   suite that polls `flowValues` for "all N lit" can only ever catch it for one publish. Assert
   the TRIGGER LOG instead, folded to seconds-of-day the way `retiredByRound` does.
 
+- **TWO PLAY PRESSES INSIDE THE SIM START-UP WINDOW START TWO SIMULATORS.** `playMode
+  .maybeSimOnPlay` guards on `simulating || remoteSimulating`, and the `simulate` message has
+  not landed yet when the second peer's guard runs — so both simulate. Measured (24-B R1): after
+  B's hit the ball on A sat under a permanent `hold: external` fed by B's 30 Hz `move`s (74 in
+  ~2 s), applyThrow snapped back, no goal could score. The same shape for a late joiner if the
+  handshake `simulate` push is missing. `game-football` enters Play in ORDER and asserts it; the
+  modules football flight clicks both Play buttons back-to-back and rides the race. Open ticket:
+  a peer receiving `simulate` while simulating must yield by a deterministic rule (lower peer id
+  keeps it).
+- **A MESH NAME WITH A SPACE ARRIVES UNDERSCORED ON THE PEER** over the object sync
+  (`Entrance plinth` -> `Entrance_plinth`; a LIGHT keeps its space). Graphs bind by uuid so games
+  work; a suite asserting a peer's objects must do so by UUID (`game-dungeon-realms`).
+- **THE MODULES MANAGER'S USER TAB LABEL GROWS A COUNT AFTER AN INSTALL** ("User (1)"), so a
+  second install on one peer hangs an `exact: true` locator — match `/^User/`. The modules repo's
+  shared `tests/helpers.cjs` does since 29; four of its flights (door-keypad, sabers,
+  template-install, tutorial-room) still carry their own exact locator and time out on the
+  SECOND open of the manager — pre-existing, A/B'd against 1.14.0, a one-line fix each.
+- **A MODULE'S NODE-DATA WRITES WERE NOT UNDOABLE AT ALL.** Measured (29 S3): one collectible
+  group press over 60 members = 60 `nodedata` messages, 7.1 ms synchronous, ZERO undo entries —
+  the next Ctrl+Z undid the nodes' CREATION. The brief had gated a batch seam on "sixty messages
+  AND sixty undo entries"; the finding was the opposite problem. `api.flow.setNodeData` records
+  ONE `flownodes` op:'data' entry now (moduleId-attributed, before-values structuredClone'd) and
+  `setNodesData` ONE across graphs; the wire stays per-node `nodedata` (no batched type exists).
+  Data undo replays items in REVERSE (a batch writing one node twice). A key absent before the
+  write undoes to `{key: undefined}` — nodedata cannot delete keys, the AI flow tool's own rule.
+- **A MODULE EFFECT NODE PINS ITS TARGET'S POSE** — the runtime re-seats an effect target's base
+  every frame (football's "no node may target the ball"), so a module that must let its object
+  MOVE (a damageable enemy that walks) names it through a `target` OBJECT INPUT on a VALUE node
+  instead. And two clocks: `api.game.roundCutoff()`/`startedAt` are session ms while `api.now()`
+  and every trigger stamp are seconds of day; `nodeValue` republishes at ~6 Hz (DEVX #23-#25,
+  from the health/waves modules).
+- **A SPAWNED COPY IS A TRANSIENT CLONE WITH NO FLOW NODES**, its uuid minted by the initiator,
+  alive only while the simulation runs, and a `nodetrigger` carries only `{id, t}` — so
+  per-copy state (health) cannot ride the trigger log. A module CAN author and pulse core's
+  `spawn` node through `api.flow.addNodes` + `fireNodeTrigger` (the 29 health spike proved it on
+  two peers + a joiner, no core seam needed), but enemies that carry state are PRE-PLACED.
+- **A SAME-SPOT APPEND FROM TWO LANES MERGES AS A CONFLICT WHOSE UNION IS RIGHT — EXCEPT WHERE
+  THE HUNK BOUNDARY SPLITS A BRACE OR BOTH SIDES DECLARE THE SAME CONST.** The 1.15 cloud smoke
+  merge (three lanes appending sections to one script) needed: one `startPocketBase` (both sides
+  had edited the same statement), `onState` renamed on one side (two `const`s in one block), and
+  `roomsAccess()`'s closing brace put back (the boundary fell between the return and the `}`).
+  `node --check` after every union; a brace-depth scan counts braces inside strings and lies.
+
 ## Verification (mandatory before commit)
 
 PIXEL features (post-processing, outlines, AO) are asserted through the helpers
@@ -4616,6 +4717,20 @@ override for e2e — never share 5173 (the user's main-checkout server).
   locked (replicate the INDEX per-item opt-in; ONE mesh with scenes as tags;
   scene-is-primary renaming), and the vocabulary settled: **session = the mesh, room =
   who is in a scene, PocketBase rooms stay DISCOVERY** — that naming blocks R4.
+- Status (2026-09-19): **1.15.0 "Where everyone is" — ROADMAP 29's finished lanes INTEGRATED.**
+  Core `feat/1.15` = six lane PRs merged clean (#223 sessions R4/R5/R6 · #224 sdk-polish S1/S2 ·
+  #227 s3-followup S3a/b/d · #226 football suite · #225 c6-template · #222 embed); vitest 178;
+  svelte-check **341/47, list identical to base**; build green. Modules `dev` took #4 #7 #6 #5 #8
+  (collectible 1.1.1, dungeon 2.0.0 = the Kit, dungeon-realms 2.0.0, untangle 2.0.0, health 1.0.0,
+  waves 1.0.0; 20 zips). Cloud `main` took #25 rooms-access (knock + code; the plugin FAILS
+  CLOSED until core lands `cloudApi.dialMeta`/`authProvider.decide`), #24 scene versions +
+  `/e/<id>` + email OTP (OFF until SMTP), #23 hosted-AI preset (INERT until core lands
+  `api.aiPresets`) — PB rules 147, Worker 174. Scenes: Dungeon Realms + Untangle rows on `v2`.
+  Docs PR #4 (1.12-1.14 pages). STILL OPEN → round 2 as 1.15.x: lane `29-core-seams` (the two
+  core seams above, brief `lanes/29/task-29-core-seams.md`, nothing committed yet). Recorded
+  follow-ups: the dual-simulator race; a `games/waves` template (needs `waves` in MODULE_DEFS +
+  a suite); the four modules flights with an exact User-tab locator. Plan + log: cloud
+  `plans/core/roadmap-29-loose-ends-and-everything-queued.md`.
 - Status (2026-09-03): **R22 ROUND 36 — DELETED KEEPS ITS STRUCTURE, on lane `core-lane-bin`
   (branch `fix/22-deleted-folders` off release/next @26190af, port 5205), COMMITTED, NOT
   PUSHED.** Folder rows + `folderId`/`path` in `manifest.deleted`; the bin as a navigable
@@ -6056,3 +6171,24 @@ drag previews + authoritative move, LOCKSTEP win/level advance with NO win messa
 same positions → same result on every peer). Script nodes run arbitrary replicated
 code deterministically (pure function of object/base/data/time) — never stream
 outputs.
+
+**R29 additions (S1-S3 + the health/waves and dungeon lanes' findings):** `api.flow.nodes(type?)`
+snapshots carry `x`/`y` and `api.flow.freeRegion({w?,h?,graphId?})` answers where a built block
+lands (`{x,y,w,h}`, the `flowLayout` leaf — the same rule `hudActions.addBinding` uses);
+`api.flow.onChange(fn)` / `api.game.onChange(fn)` / `api.peerVars.onChange(fn)` return `off()`,
+fire ONE call per frame (`coalesce` leaf), are torn down with the module, and `flow` also fires
+on a node firing — a manager listens instead of polling (the collectible module keeps a 1.14
+fallback, feature-detected). `api.flow.setNodeData(id, patch)` is ONE undo step attributed to
+the module (`flownodes` op:'data', before-values cloned; items may carry their own `graphId`)
+and `api.flow.setNodesData([{id, patch}])` is ONE step across graphs (returns the count written;
+the wire stays one `nodedata` per node; undo replays in REVERSE). Ruled and measured: no batched
+wire type (nothing carries multi-node data and undo correctness was the ask — 60 nodes = 4.8 ms
+sync, 60 messages, all delivered); `api.spawn` still does NOT exist (a module authors core's
+`spawn` node through `addNodes` and pulses it — proven). Inter-module seam pattern (Dungeon
+Kit -> Dungeon Realms): share the SCENE — `userData.play` (data) plus a function record
+(`userData.kit`: generate/showFloor/clear/setMarkers/setGrounded) on the Kit's persistent
+scene-root group, never serialized, no new SDK surface; a rule module renders what it plays
+with in its OWN group and the generator publishes no markers itself. DEVX filed by 29:
+#23 `api.teleportPlayer` (a play-mode respawn cannot move the rig; `flyTo` moves the editor
+camera) / play-mode menus as module DOM, #24 a live trigger count (`nodeValue` is ~6 Hz),
+#25 two clocks on the api.

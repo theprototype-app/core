@@ -1160,7 +1160,9 @@ const BEAT_DEF = {
 //   dungeon-realms — 21-C C6-b: the TWO-MODULE case (`modules: dungeon + dungeon-realms`);
 //                    its world is scene-root module content, so the def names
 //                    `thumb.sceneGroups: ['dungeon-module']` to get it onto the card
-const MODULE_DEFS = ['football', 'dungeon-realms'];
+//   untangle       — 21-C C7: the thin template (pose + level + room + HUD + graph); its
+//                    board is scene-root content too (`thumb.sceneGroups: ['untangle-module']`)
+const MODULE_DEFS = ['football', 'dungeon-realms', 'untangle'];
 
 const DEFS = [
 	{

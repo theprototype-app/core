@@ -1032,9 +1032,11 @@ export async function addSceneFromBytes(buffer, name, folderId = null, opts = {}
  * editing privately, or has marked private here, makes a private copy.
  * @param {any} item the library record (visible shelf)
  * @param {string} newName the copy's scene name, already chosen
+ * @param {{folderId?: string | null}} [opts] R6: where the copy LANDS — a paste lands in
+ *   the folder it was pasted into; absent keeps Duplicate's beside-its-source rule
  * @returns {Promise<{id: string, hash: string, name: string}|null>}
  */
-export async function duplicateScene(item, newName) {
+export async function duplicateScene(item, newName, opts = {}) {
 	if (!item?.id) return null;
 	const blob = await itemBlob(item.id);
 	if (!blob) {
@@ -1045,7 +1047,8 @@ export async function duplicateScene(item, newName) {
 	const at = get(currentLevel);
 	const secret =
 		isScenePrivateHere(from) || (at?.private === true && !!at.hash && at.hash === item.hash);
-	const made = await addSceneFromBytes(await blob.arrayBuffer(), newName, item.folderId ?? null, {
+	const folderId = opts.folderId === undefined ? item.folderId ?? null : opts.folderId;
+	const made = await addSceneFromBytes(await blob.arrayBuffer(), newName, folderId, {
 		thumbnail: item.thumbnail ?? null,
 		private: secret
 	});

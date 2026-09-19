@@ -3741,7 +3741,18 @@
 				const made = await duplicateFolder(e.id, into);
 				if (made) landed.push(made.id);
 			} else {
-				const made = await duplicateItem(e.id, { folderId: into });
+				// ROADMAP 22 R6: a SCENE pastes as a scene COPY under the Finder copy name
+				// ("Arena copy"), the file a Save would have made — its own name inside the
+				// file, its own hash, its own version history. A plain record copy would put
+				// a second card named "Arena.tpscene" beside the first, pointing at the SAME
+				// hash and carrying the same name inside: one scene, two cards, and the next
+				// fold would hide one of them. Every other kind is its content hash, and a
+				// second record of it is exactly what Copy/Paste means (24-C2).
+				const item = $explorerItems.find((i: any) => i.id === e.id);
+				const made =
+					item?.kind === 'scene'
+						? await duplicateScene(item, sceneCopyName(item.name), { folderId: into })
+						: await duplicateItem(e.id, { folderId: into });
 				if (made) landed.push(made.id);
 			}
 		}

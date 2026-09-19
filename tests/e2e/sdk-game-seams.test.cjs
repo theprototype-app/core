@@ -350,6 +350,72 @@ h.run(async () => {
 	);
 
 	// =====================================================================
+	// 7b. R29 S1 — node POSITIONS come back, and api.flow.freeRegion keeps two
+	//     recipes in a row off each other and off the user's own nodes
+	// =====================================================================
+	await wipe([A, B]);
+	const placed = await A.page.evaluate(() =>
+		window.__seams.api.flow.addNodes({ nodes: [{ type: 'seamvalue', x: 123, y: 456, data: {} }] })
+	);
+	await A.page.waitForTimeout(700);
+	const snap = await Promise.all(
+		[A, B].map((p) => p.page.evaluate((id) => window.__seams.api.flow.nodes().find((n) => n.id === id), placed[0]))
+	);
+	h.check(
+		snap.every((n) => n && n.x === 123 && n.y === 456),
+		`api.flow.nodes() snapshots carry x/y, on both peers (${JSON.stringify(snap.map((n) => n && [n.x, n.y]))})`
+	);
+	// a "user" node dragged somewhere a fixed-row layout would collide with
+	await A.page.evaluate(() =>
+		window.__seams.api.flow.addNodes({ nodes: [{ type: 'seamvalue', x: 60, y: 700, data: {} }] })
+	);
+	/** run one two-node recipe at whatever freeRegion answers; return its ids */
+	const recipe = (peer) =>
+		peer.page.evaluate(() => {
+			const api = window.__seams.api;
+			const at = api.flow.freeRegion({ w: 370, h: 150 });
+			return api.flow.addNodes({
+				nodes: [
+					{ type: 'seamvalue', x: at.x, y: at.y, data: {} },
+					{ type: 'seamcollect', x: at.x + 220, y: at.y, data: {} }
+				],
+				edges: [{ from: 1, to: 0 }]
+			});
+		});
+	const r1 = await recipe(A);
+	const r2 = await recipe(A);
+	await A.page.waitForTimeout(600);
+	/** every pair of 150x150 cards that overlap, over the scene graph */
+	const overlapsOf = (peer) =>
+		peer.page.evaluate(() => {
+			const ns = window.__seams.api.flow.nodes().filter((n) => n.graphId === 'scene');
+			const hits = [];
+			for (let i = 0; i < ns.length; i++)
+				for (let j = i + 1; j < ns.length; j++) {
+					const a = ns[i], b = ns[j];
+					if (a.x < b.x + 150 && b.x < a.x + 150 && a.y < b.y + 150 && b.y < a.y + 150) hits.push([a.id, b.id]);
+				}
+			return { n: ns.length, hits };
+		});
+	const ov = await overlapsOf(A);
+	h.check(r1.length === 2 && r2.length === 2 && ov.n === 6, `premise: two recipes built beside two nodes (${ov.n} nodes)`);
+	h.check(ov.hits.length === 0, `two recipes in a row land on nothing — no overlapping cards (${JSON.stringify(ov.hits)})`);
+	const ys = await A.page.evaluate(
+		(ids) => ids.map((id) => window.__seams.api.flow.nodes().find((n) => n.id === id)?.y),
+		[r1[0], r2[0]]
+	);
+	h.check(ys[0] > 700 && ys[1] > ys[0], `each block lands BELOW everything before it (${JSON.stringify(ys)})`);
+	// the detector is live: a recipe at a CONSTANT point (what freeRegion used to be
+	// hand-rolled as) is caught — proves the check above cannot pass vacuously
+	await A.page.evaluate(() =>
+		window.__seams.api.flow.addNodes({ nodes: [{ type: 'seamvalue', x: 60, y: 700, data: {} }] })
+	);
+	const ovBad = await overlapsOf(A);
+	h.check(ovBad.hits.length > 0, `and a constant-placed block IS detected as an overlap (${ovBad.hits.length})`);
+	const scoped = await A.page.evaluate(() => window.__seams.api.flow.freeRegion({ graphId: 'no-such-graph' }));
+	h.check(scoped.x === 40 && scoped.y === 40, `an empty/unknown graph answers the margin (${JSON.stringify(scoped)})`);
+
+	// =====================================================================
 	// 8. the debug line + the action catalog seams, and their teardown
 	// =====================================================================
 	const hudSeams = await A.page.evaluate(() => {
@@ -376,6 +442,5 @@ h.run(async () => {
 	});
 	h.check(!afterOff.lines.includes('seams: line-alive'), 'deactivate removes the debug line (journal)');
 	h.check(!afterOff.offered.includes('mod-seams-showseam'), 'and the catalog entry');
-
 	await h.finish(browser);
 });

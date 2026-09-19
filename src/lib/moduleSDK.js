@@ -34,6 +34,8 @@ import {
 // close the history cycle. flowGraphs/nodeCatalog are NOT leaves and stay primed below.
 import { roundCutoff, roundUnderway, gameVar, setGameVar } from './gameState';
 import { setPeerVar, myPeerVar, leaderboardRows } from './peerVars';
+// R29 S1: a leaf that imports NOTHING, so the edge cannot close a cycle
+import { freeRegion as freeRegionIn } from './flowLayout';
 import { createFlowNode, createFlowEdge, serializeNode, serializeEdge, setNodeData as sendNodeData } from './nodesHandler';
 import { APP_VERSION } from './version.js';
 import { ndcFromClient } from './canvasRect';
@@ -997,15 +999,37 @@ function makeApi(moduleId, moduleName = moduleId) {
 		 */
 		flow: {
 			/** Every node (optionally one type) as plain snapshots:
-			 * `{id, type, graphId, data}` — graphId 'scene' or the owner object's uuid.
-			 * @param {string=} type @returns {any[]} */
+			 * `{id, type, graphId, x, y, data}` — graphId 'scene' or the owner object's uuid;
+			 * x/y the node's position in its graph (R29 S1, read-only — move a node in the
+			 * editor, never by writing these). @param {string=} type @returns {any[]} */
 			nodes(type) {
 				const out = [];
 				for (const n of allNodes()) {
 					if (type && n.type !== type) continue;
-					out.push({ id: n.id, type: n.type, graphId: n.__graph ?? SCENE_GRAPH, data: { ...(n.data ?? {}) } });
+					out.push({
+						id: n.id,
+						type: n.type,
+						graphId: n.__graph ?? SCENE_GRAPH,
+						x: Number(n.position?.x) || 0,
+						y: Number(n.position?.y) || 0,
+						data: { ...(n.data ?? {}) }
+					});
 				}
 				return out;
+			},
+			/**
+			 * R29 S1: where a `w` x `h` block of new nodes can land without covering what is
+			 * already in the graph — left-aligned under its lowest card (an empty graph gets
+			 * a margin from the origin). Pass the result's x/y to `addNodes`; ask again before
+			 * each block, since the answer moves as the graph grows. The rule is core's one
+			 * copy (`flowLayout.freeRegion`), shared with the HUD editor's bindings.
+			 * @param {{w?: number, h?: number, graphId?: string}=} opts
+			 * @returns {{x: number, y: number, w: number, h: number}}
+			 */
+			freeRegion(opts) {
+				const graphId = opts?.graphId ?? SCENE_GRAPH;
+				const nodes = get(flowGraphs)?.[graphId]?.nodes ?? [];
+				return freeRegionIn(nodes, { w: opts?.w, h: opts?.h });
 			},
 			/** Every edge, graph-tagged: `{id, source, target, sourceHandle, targetHandle,
 			 * graphId}`. @returns {any[]} */

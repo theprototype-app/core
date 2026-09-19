@@ -4,7 +4,7 @@ import * as THREE from 'three';
 import { writable, get } from 'svelte/store';
 import { globalScene, objectsGroup, selectedObject, selectedObjects, globalCamera, isVRMode, isLocked } from '../stores/sceneStore';
 import { peers, showToast, modulesOpen, userdata } from '../stores/appStore';
-import { syncedAnimations, flowGraphs, flowValues, allNodes, findNodeAnyGraph, SCENE_GRAPH } from '../stores/flowStore';
+import { syncedAnimations, flowGraphs, flowValues, flowTriggers, allNodes, findNodeAnyGraph, SCENE_GRAPH } from '../stores/flowStore';
 import { customGeometryBuilders } from './customGeometries';
 // A1: moduleNodeIO imports NOTHING, so a static edge to it closes no cycle
 import {
@@ -32,10 +32,11 @@ import {
 // R3a: all three are LEAVES (svelte stores only — gameState/peerVars say so in their own
 // headers; nodesHandler reaches only flowStore + appStore), so none of these edges can
 // close the history cycle. flowGraphs/nodeCatalog are NOT leaves and stay primed below.
-import { roundCutoff, roundUnderway, gameVar, setGameVar } from './gameState';
-import { setPeerVar, myPeerVar, leaderboardRows } from './peerVars';
-// R29 S1: a leaf that imports NOTHING, so the edge cannot close a cycle
+import { roundCutoff, roundUnderway, gameVar, setGameVar, gameState } from './gameState';
+import { setPeerVar, myPeerVar, leaderboardRows, peerVarsMine, peerVarsRemote } from './peerVars';
+// R29 S1/S2: both leaves import NOTHING, so neither edge can close a cycle
 import { freeRegion as freeRegionIn } from './flowLayout';
+import { coalescedSubscribe } from './coalesce';
 import { createFlowNode, createFlowEdge, serializeNode, serializeEdge, setNodeData as sendNodeData } from './nodesHandler';
 import { APP_VERSION } from './version.js';
 import { ndcFromClient } from './canvasRect';
@@ -967,6 +968,15 @@ function makeApi(moduleId, moduleName = moduleId) {
 			 * @param {string} name @param {number} value */
 			setVar(name, value) {
 				setGameVar(name, value);
+			},
+			/** R29 S2: `fn()` runs after the game singleton changes (state, round, a
+			 * variable) — COALESCED, at most once per frame however many writes land, never per
+			 * store tick; torn down with the module (or earlier, by calling what it returns).
+			 * Read what you need inside it. @param {() => void} fn @returns {() => void} off */
+			onChange(fn) {
+				const off = coalescedSubscribe([gameState], fn);
+				onDispose(off);
+				return off;
 			}
 		},
 		/**
@@ -989,6 +999,14 @@ function makeApi(moduleId, moduleName = moduleId) {
 			 * @param {{order?: 'desc'|'asc'}=} opts */
 			all(name, opts) {
 				return leaderboardRows(name, opts);
+			},
+			/** R29 S2: `fn()` runs after ANY peer's row changes (mine or a remote one) —
+			 * coalesced to one call per frame, torn down with the module or by the returned
+			 * `off`. @param {() => void} fn @returns {() => void} off */
+			onChange(fn) {
+				const off = coalescedSubscribe([peerVarsMine, peerVarsRemote], fn);
+				onDispose(off);
+				return off;
 			}
 		},
 		/**
@@ -1030,6 +1048,23 @@ function makeApi(moduleId, moduleName = moduleId) {
 				const graphId = opts?.graphId ?? SCENE_GRAPH;
 				const nodes = get(flowGraphs)?.[graphId]?.nodes ?? [];
 				return freeRegionIn(nodes, { w: opts?.w, h: opts?.h });
+			},
+			/**
+			 * R29 S2: `fn()` runs after the flow graphs change — a node or edge created,
+			 * deleted, moved or re-parameterised, on this peer or arriving from one — or
+			 * after a node FIRES (the trigger log, which is what a latch, a counter or your
+			 * own `triggerStamp` read derives from, so a manager listing collected state
+			 * needs it as much as it needs the structure). It is
+			 * COALESCED to one frame: however many store writes a gesture or a stream of
+			 * arriving edits makes, the handler runs once, after them. Live VALUES (`nodeValue`) tick every frame
+			 * and deliberately do not fire it. Torn down with the module, or earlier by
+			 * calling the returned `off` (a toolbox that mounts and unmounts).
+			 * @param {() => void} fn @returns {() => void} off
+			 */
+			onChange(fn) {
+				const off = coalescedSubscribe([flowGraphs, flowTriggers], fn);
+				onDispose(off);
+				return off;
 			},
 			/** Every edge, graph-tagged: `{id, source, target, sourceHandle, targetHandle,
 			 * graphId}`. @returns {any[]} */

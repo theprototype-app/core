@@ -416,6 +416,101 @@ h.run(async () => {
 	h.check(scoped.x === 40 && scoped.y === 40, `an empty/unknown graph answers the margin (${JSON.stringify(scoped)})`);
 
 	// =====================================================================
+	// 7c. R29 S2 — onChange: fires on a node edit, a game-state change and a peer-var
+	//     write; COALESCED (one call per burst, nothing while idle); torn down in §8
+	// =====================================================================
+	await wipe([A, B]);
+	for (const p of [A, B])
+		await p.page.evaluate(() => {
+			const api = window.__seams.api;
+			const c = (window.__seamCounts = { flow: 0, game: 0, peer: 0 });
+			api.flow.onChange(() => c.flow++);
+			api.game.onChange(() => c.game++);
+			api.peerVars.onChange(() => c.peer++);
+			// a toolbox-style subscriber that unmounts early: the returned off must stop it
+			c.early = 0;
+			const off = api.flow.onChange(() => c.early++);
+			window.__seamEarlyOff = off;
+		});
+	const counts = (peer) => peer.page.evaluate(() => ({ ...window.__seamCounts }));
+	const frames = (peer, n) =>
+		peer.page.evaluate(
+			(n) => new Promise((r) => {
+				let i = 0;
+				const step = () => (++i >= n ? r(i) : requestAnimationFrame(step));
+				requestAnimationFrame(step);
+			}),
+			n
+		);
+	// idle: sixty frames with the flow runtime ticking, a clock running, nothing edited
+	await A.page.evaluate(() => window.__seams.api.flow.addNodes({ nodes: [{ type: 'time', x: 60, y: 60, data: {} }] }));
+	await A.page.waitForTimeout(800);
+	const idle0 = await counts(A);
+	await frames(A, 60);
+	const idle1 = await counts(A);
+	h.check(
+		idle1.flow === idle0.flow && idle1.game === idle0.game && idle1.peer === idle0.peer,
+		`NOT once per frame: 60 idle frames fire nothing (${JSON.stringify(idle0)} -> ${JSON.stringify(idle1)})`
+	);
+	// a node edit fires it, locally AND on the peer the edit arrives at
+	const bumpIds = await A.page.evaluate(() =>
+		window.__seams.api.flow.addNodes({
+			nodes: Array.from({ length: 30 }, (_, i) => ({ type: 'seamvalue', x: 400 + i * 10, y: 60, data: {} }))
+		})
+	);
+	await A.page.waitForTimeout(900);
+	const e0 = [await counts(A), await counts(B)];
+	// ONE burst: thirty node edits in one synchronous gesture (a toolbox bulk edit)
+	const ticks = await A.page.evaluate((ids) => {
+		const s = window.__stores;
+		let n = 0;
+		const off = s.flowGraphs.subscribe(() => n++);
+		n = 0;
+		for (const id of ids) window.__seams.api.flow.setNodeData(id, { tag: 'bulk' });
+		off();
+		return n;
+	}, bumpIds);
+	await A.page.waitForTimeout(900);
+	const e1 = [await counts(A), await counts(B)];
+	h.check(ticks >= 30, `premise: the bulk edit is ${ticks} store ticks`);
+	h.check(e1[0].flow - e0[0].flow === 1, `a ${ticks}-tick bulk edit runs the flow handler ONCE (${e1[0].flow - e0[0].flow})`);
+	h.check(e1[1].flow > e0[1].flow, `and the peer's handler fires as the edits ARRIVE (+${e1[1].flow - e0[1].flow})`);
+	h.check(e1[0].early - e0[0].early === 1, `premise: the early subscriber saw the burst too (+${e1[0].early - e0[0].early})`);
+	await A.page.evaluate(() => window.__seamEarlyOff());
+	await A.page.evaluate((id) => window.__seams.api.flow.setNodeData(id, { tag: 'after-off' }), bumpIds[0]);
+	await A.page.waitForTimeout(400);
+	const e2 = await counts(A);
+	h.check(e2.early === e1[0].early && e2.flow === e1[0].flow + 1, `the returned off() stops ONE subscriber and leaves the rest (${e2.early}, flow +${e2.flow - e1[0].flow})`);
+	h.check(e1[1].flow - e0[1].flow < ticks, `arriving edits are coalesced too, not one per message (+${e1[1].flow - e0[1].flow} for ${ticks})`);
+	// a node FIRING is a flow change too (the trigger log) — what a collected-state list needs
+	const f0 = await counts(A);
+	await A.page.evaluate(() => window.__seams.api.fireNodeTrigger('seamvalue', undefined, { replicate: false }));
+	await A.page.waitForTimeout(400);
+	const f1 = await counts(A);
+	h.check(f1.flow - f0.flow === 1, `a node firing runs the flow handler once (+${f1.flow - f0.flow})`);
+	// game state: a transition fires it on both peers; a variable burst is one call
+	const g0c = await counts(A);
+	await gstate(A, 'playing');
+	await A.page.waitForTimeout(700);
+	const g1c = [await counts(A), await counts(B)];
+	h.check(g1c[0].game > g0c.game, `a game-state change fires api.game.onChange (+${g1c[0].game - g0c.game})`);
+	h.check(g1c[1].game > 0, `and on the peer, from the replicated singleton (${g1c[1].game})`);
+	await A.page.evaluate(() => {
+		for (let i = 0; i < 20; i++) window.__seams.api.game.setVar('burst', i);
+	});
+	await A.page.waitForTimeout(400);
+	const g2c = await counts(A);
+	h.check(g2c.game - g1c[0].game === 1, `twenty setVar calls in one burst = ONE game handler call (${g2c.game - g1c[0].game})`);
+	await gstate(A, 'menu');
+	// peer vars: my write fires mine; the peer's write fires mine as it arrives
+	const p0 = [await counts(A), await counts(B)];
+	await A.page.evaluate(() => window.__seams.api.peerVars.setMine('laps', 9));
+	await A.page.waitForTimeout(900);
+	const p1 = [await counts(A), await counts(B)];
+	h.check(p1[0].peer > p0[0].peer, `a peer-var write fires my handler (+${p1[0].peer - p0[0].peer})`);
+	h.check(p1[1].peer > p0[1].peer, `and the OTHER peer's, as the row arrives (+${p1[1].peer - p0[1].peer})`);
+
+	// =====================================================================
 	// 8. the debug line + the action catalog seams, and their teardown
 	// =====================================================================
 	const hudSeams = await A.page.evaluate(() => {
@@ -442,5 +537,20 @@ h.run(async () => {
 	});
 	h.check(!afterOff.lines.includes('seams: line-alive'), 'deactivate removes the debug line (journal)');
 	h.check(!afterOff.offered.includes('mod-seams-showseam'), 'and the catalog entry');
+	// R29 S2: the three onChange subscriptions went with the journal
+	const off0 = await counts(A);
+	await A.page.evaluate(() => {
+		const s = window.__stores;
+		s.gameState.setGameVar('after', 1);
+		s.peerVars.setPeerVar('after', 1);
+		s.flowGraphs.update((g) => ({ ...g }));
+	});
+	await A.page.waitForTimeout(400);
+	const off1 = await counts(A);
+	h.check(
+		JSON.stringify(off0) === JSON.stringify(off1),
+		`deactivate unsubscribes every onChange (${JSON.stringify(off0)} -> ${JSON.stringify(off1)})`
+	);
+
 	await h.finish(browser);
 });

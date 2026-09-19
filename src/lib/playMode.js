@@ -59,6 +59,41 @@ export const willEnterAR = derived(
 	([$xr, $passthrough]) => $xr && !!$passthrough
 );
 
+/* --------------------------------------------------------------- embed (29-E) --- */
+
+/**
+ * `?embed=1` — this page is the thing INSIDE an <iframe> (the community Worker's
+ * `/e/<id>` frames `/?s=<id>&play=1&embed=1`; roadmap 29 fork 4: no separate viewer
+ * build). Embed mode hides everything that is editor chrome — the whole Menu tree
+ * (sidebar, pill, panels, toasts), the editor windows, the dock inset — and keeps what a
+ * player needs: the viewport, the play HUD, the touch controls, plus a small corner link
+ * back to the same scene in the full app and a ▶ button to re-enter play after an Esc.
+ *
+ * Read ONCE at module evaluation and never written again: the cloud plugin clears the
+ * query with `history.replaceState` as soon as it has read `?s=` (the reload-must-not-
+ * re-load rule), so anything that asked `location.search` later would see nothing. This
+ * module evaluates before the plugin loads (it is imported from shortcuts). Absent, or any
+ * value but `1`, is exactly the old app — the flag is ADDITIVE.
+ */
+function readEmbedBoot() {
+	try {
+		if (typeof location === 'undefined') return { on: false, scene: '' };
+		const q = new URLSearchParams(location.search);
+		return { on: q.get('embed') === '1', scene: q.get('s') || '' };
+	} catch {
+		return { on: false, scene: '' };
+	}
+}
+const embedBoot = readEmbedBoot();
+/** true for the whole life of a page opened with `?embed=1` */
+export const embedMode = writable(embedBoot.on);
+/** the `?s=<id>` the embed opened with ('' when none) — the corner link's target */
+export const embedSceneId = embedBoot.scene;
+/** the same scene in the full app: `/?s=<id>`, or `/` when the embed carried no scene */
+export function embedOpenUrl() {
+	return embedSceneId ? `/?s=${encodeURIComponent(embedSceneId)}` : '/';
+}
+
 /* ------------------------------------------------------------------ the exit --- */
 
 // W3: THE FIXED WALL IS GONE. There used to be an `allowPlay` flag here holding play

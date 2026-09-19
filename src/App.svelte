@@ -36,6 +36,9 @@
   import SplineToolbar from './components/menu/SplineToolbar.svelte'
   import ModuleToolboxLayer from './components/ui/ModuleToolboxLayer.svelte'
   import { isLocked } from './stores/sceneStore'
+  // 29-E: `?embed=1` — the editor windows and the dock inset stand down for the page's
+  // life; a corner link and a ▶ button are the only chrome an embed draws
+  import { embedMode, embedOpenUrl, requestPlay } from './lib/playMode'
   import { objectsGroup, globalRenderer } from './stores/sceneStore'
   import { startFlowRuntime, resumeFlowRuntime } from '$lib/flowRuntime'
   // 27-G: the one overlay that must sit above everything, because nothing else on
@@ -506,7 +509,7 @@ import { startMusicToolbox } from './lib/musicToolbox'
 
 <svelte:window on:dragover|preventDefault on:drop|preventDefault={handleDrop} />
 
-{#if !$isLocked}
+{#if !$isLocked && !$embedMode}
 <Flow />
 <FlowCode />
 <AnimationWindow />
@@ -523,6 +526,18 @@ import { startMusicToolbox } from './lib/musicToolbox'
 <ModelPreviewWindow />
 {/if}
 <Menu />
+{#if $embedMode}
+  <!-- 29-E: the embed's only chrome. The link opens the same scene in the full app (a
+       new tab — the iframe stays where it is); the ▶ shows only when not playing, so an
+       Esc inside the frame has a way back in (browsers grant the pointer lock only in a
+       gesture, which this click is). --z-hud: above the canvas, below modals. -->
+  <div id="embed-chrome" class="pointer-events-none fixed inset-x-0 bottom-3 flex items-end justify-between px-3" style="z-index: var(--z-hud)">
+    <a id="embed-open-link" class="pointer-events-auto rounded-md bg-gray-900/80 px-2.5 py-1 text-[11px] font-semibold text-gray-100 shadow backdrop-blur-sm hover:bg-gray-800" href={embedOpenUrl()} target="_blank" rel="noopener">Open in theprototype.app ↗</a>
+    {#if $isLocked !== true}
+      <button id="embed-play" type="button" class="pointer-events-auto rounded-md bg-orange-600/90 px-3 py-1 text-[12px] font-semibold text-white shadow hover:bg-orange-500" on:click={() => requestPlay()}>▶ Play</button>
+    {/if}
+  </div>
+{/if}
 {#if $isLocked && $helpersInPlay}
   <!-- 24-E2: helpers are rendering inside Play on purpose — say so, so a screenshot
        cannot be mistaken for the game (the SimControls chip corner) -->
@@ -566,7 +581,7 @@ import { startMusicToolbox } from './lib/musicToolbox'
      already sits above the canvas at the default 0. No `transition` either: each
      step reallocates the composer's render targets, so animating the inset turns one
      realloc into one per frame. -->
-<div class="viewport" class:viewport-inset={$viewPrefs.dockPushesViewport}>
+<div class="viewport" class:viewport-inset={$viewPrefs.dockPushesViewport && !$embedMode}>
   <Canvas>
     <Scene />
   </Canvas>

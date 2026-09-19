@@ -37,6 +37,8 @@
 	import WhatsNew from './menu/WhatsNew.svelte';
 
 	import { isLocked } from '../stores/sceneStore'
+	// 29-E: `?embed=1` (playMode.embedMode) hides the editor chrome for the page's life
+	import { embedMode } from '../lib/playMode'
 </script>
 
 <Chat />
@@ -44,7 +46,8 @@
 <MeshGenModal />
 <MeshJobsCard />
 
-<div class={$isLocked ? 'hidden' : ''}>
+<!-- the editor chrome: hidden while playing, and for good in an embed (29-E) -->
+<div id="editor-chrome" class={$isLocked || $embedMode ? 'hidden' : ''}>
 <Welcome />
 <WhatsNew />
 <Connect />

@@ -52,8 +52,15 @@ import {
 	deleteItem,
 	setItemHidden,
 	loadExplorer,
-	nextCopyName
+	nextCopyName,
+	renameItemsWhere
 } from './explorer';
+// ROADMAP 22 R5 — the local half of a scene rename rewrites the LIVE Travel nodes. Both
+// are leaves (flowStore is svelte/store only; nodesHandler is flowStore + appStore), so
+// neither edge reaches the history family this module already keeps clear of.
+import { allNodes } from '../stores/flowStore';
+import { updateFlowNodeData } from './nodesHandler';
+import { rewriteTravelNodes } from './sceneRename';
 // 24-C3: a scene COPY is the import-a-copy rewrite (fresh id/createdAt, the new name inside
 // the file) — one implementation of "the same bundle with a new identity", not a second.
 // importDuplicates is a leaf (stores + explorer + fflate), so this closes no cycle.
@@ -78,7 +85,12 @@ import {
 	setScenePrivateHere,
 	isScenePrivateHere,
 	manifestSceneNames,
-	sendProjectManifest
+	sendProjectManifest,
+	// R5: the rename record and its two resolves
+	renameProjectScene,
+	resolveProjectSceneName,
+	sceneRenames,
+	sceneOfHash
 } from './projectManifest';
 import { sessionHost } from './connectionState';
 // loose-scenes fix: the prompt is for an EDITOR, so it stands down in play mode (see
@@ -786,13 +798,115 @@ export function pruneSceneVersions(name) {
 }
 
 /**
+ * ROADMAP 22 R5 — THE LOCAL HALF OF EVERY SCENE RENAME, on every peer, off the document.
+ * Fork 3 (locked): the scene is primary and its files follow. For each record the
+ * manifest carries, resolved to where the name points NOW:
+ *   · the scene's files (both shelves, by hash AND old name) take the new name;
+ *   · the scene we are standing in, if it is that scene, takes it too (signature kept —
+ *     a rename is not an edit, the `renameOpenLooseScene` rule);
+ *   · every LIVE Travel node naming it is rewritten LOCALLY — never sent. Each peer
+ *     rewrites its own graphs from the same replicated record, so they agree by
+ *     construction (the travel node's own deterministic model), and a peer in another
+ *     scene — which the room gate would never hand a `nodedata` to — is covered too.
+ * IDEMPOTENT by construction, which is what lets it run on every manifest change and
+ * after every scene load instead of exactly once: nothing here needs to remember what
+ * it has already done. Graphs in FILES ON DISK are not touched; `travelToScene` resolves
+ * a stale name at fire time, and a file that is loaded runs this on arrival.
+ * @returns {number} how many things moved
+ */
+export function applySceneRenames() {
+	const renames = sceneRenames();
+	let touched = 0;
+	let rewrote = 0;
+	for (const from of Object.keys(renames)) {
+		const to = resolveProjectSceneName(from);
+		if (to === from) continue;
+		const line = sceneEntry(to)?.history ?? [];
+		if (line.length) touched += renameItemsWhere(line, levelFileName(from), levelFileName(to));
+		const at = get(currentLevel);
+		// standing in it: an adopted identity carries no hash and follows the name; a
+		// loaded file follows only when its bytes ARE the renamed line — a loose file that
+		// merely shares the old name is a different scene and keeps it
+		if (at?.name === from && (!at.hash || line.includes(at.hash))) {
+			currentLevel.set({ ...at, name: to });
+			touched++;
+		}
+		for (const p of rewriteTravelNodes(allNodes(), from, to, line)) {
+			updateFlowNodeData(p.id, p.data, p.graphId);
+			touched++;
+			rewrote++;
+		}
+	}
+	// A rewritten node is a CHANGE to the open scene's graph, so the dirty check would
+	// honestly read "differs from the saved version" — and a rename must not leave the
+	// scene looking edited (the renameOpenLooseScene rule: the SIGNATURE is content
+	// identity). Re-stamp it from what is on screen now: the rewrite is deterministic from
+	// the replicated record, so a file that still says the old name is brought up to date
+	// the moment it loads, and nothing here needs saving. One whole-scene serialization,
+	// paid once per rename that touched a node — the same price an editing session pays.
+	if (rewrote) {
+		const at = get(currentLevel);
+		if (at?.name && typeof at.signature === 'string') {
+			try {
+				currentLevel.set({ ...at, signature: sceneSignature(buildSessionPayload(at.name)) });
+			} catch {}
+		}
+	}
+	return touched;
+}
+
+/**
+ * ROADMAP 22 R5 — RENAME A SCENE (the header's double-click, the card menu). Two cases:
+ * a PROJECT scene rekeys the document (replicated — the record rides the manifest and
+ * every peer applies the local half above), while a LOOSE file's rename is just the
+ * file's rename plus the name of the open scene, the inverse of `renameOpenLooseScene`
+ * and the other half of fork 3's "renaming a loose file just renames the file".
+ * A taken name is refused: a scene may not become a version of an unrelated one.
+ * @param {string} from @param {string} to
+ * @returns {{ok: boolean, reason: string}}
+ */
+export function renameScene(from, to) {
+	const a = levelSceneName(from);
+	const b = levelSceneName(to);
+	if (!a || !b) return { ok: false, reason: 'invalid' };
+	if (a === b) return { ok: true, reason: 'same' };
+	// a change of CASE only is the same key to `sceneNameTaken` and a real rename to a person
+	if (a.toLowerCase() !== b.toLowerCase() && sceneNameTaken(b)) {
+		showToast('A scene called "' + b + '" already exists — choose another name');
+		return { ok: false, reason: 'taken' };
+	}
+	if (sceneEntry(a)) {
+		const verdict = renameProjectScene(a, b);
+		if (verdict === 'viewer') showToast('Only an editor can rename a project scene');
+		else if (verdict !== 'ok') showToast('Could not rename "' + a + '" (' + verdict + ')');
+		if (verdict !== 'ok') return { ok: false, reason: verdict };
+		applySceneRenames();
+		showToast('Renamed "' + a + '" to "' + b + '" — its files follow');
+		return { ok: true, reason: 'project' };
+	}
+	const at = get(currentLevel);
+	const file = levelFileName(a);
+	const held = [...get(explorerItems)].find(
+		(it) => it.name === file && (it.kind === 'scene' || /\.tpscene$/i.test(String(it.name)))
+	);
+	const hash = at?.name === a && at.hash ? at.hash : held?.hash;
+	if (!hash) return { ok: false, reason: 'missing' };
+	renameItemsWhere([hash], file, levelFileName(b));
+	if (at?.name === a && at.hash === hash) currentLevel.set({ ...at, name: b });
+	showToast('Renamed "' + a + '" to "' + b + '"');
+	return { ok: true, reason: 'loose' };
+}
+
+/**
  * 21-G2 TRAVEL BY NAME: resolve a scene NAME through the replicated manifest to its
  * CURRENT pointer at fire time. Deterministic across peers — the manifest is the one
  * shared truth about where "the latest of Arena" is, unlike any local folder order.
  * @param {string} name @returns {Promise<boolean>}
  */
 export async function travelToScene(name) {
-	const scene = String(name ?? '').trim();
+	// R5: a Travel node authored before a rename — in a saved graph nobody rewrote — names
+	// the scene as it was. The record is replicated, so every peer resolves it the same.
+	const scene = resolveProjectSceneName(String(name ?? '').trim());
 	if (!scene) return false;
 	const hash = latestSceneHash(scene);
 	if (!hash) {
@@ -918,9 +1032,11 @@ export async function addSceneFromBytes(buffer, name, folderId = null, opts = {}
  * editing privately, or has marked private here, makes a private copy.
  * @param {any} item the library record (visible shelf)
  * @param {string} newName the copy's scene name, already chosen
+ * @param {{folderId?: string | null}} [opts] R6: where the copy LANDS — a paste lands in
+ *   the folder it was pasted into; absent keeps Duplicate's beside-its-source rule
  * @returns {Promise<{id: string, hash: string, name: string}|null>}
  */
-export async function duplicateScene(item, newName) {
+export async function duplicateScene(item, newName, opts = {}) {
 	if (!item?.id) return null;
 	const blob = await itemBlob(item.id);
 	if (!blob) {
@@ -931,7 +1047,8 @@ export async function duplicateScene(item, newName) {
 	const at = get(currentLevel);
 	const secret =
 		isScenePrivateHere(from) || (at?.private === true && !!at.hash && at.hash === item.hash);
-	const made = await addSceneFromBytes(await blob.arrayBuffer(), newName, item.folderId ?? null, {
+	const folderId = opts.folderId === undefined ? item.folderId ?? null : opts.folderId;
+	const made = await addSceneFromBytes(await blob.arrayBuffer(), newName, folderId, {
 		thumbnail: item.thumbnail ?? null,
 		private: secret
 	});
@@ -1008,8 +1125,16 @@ export async function travelToLevel(hash, name = '', opts = {}) {
 		await applySession(payload, { backup: false, replicate: false, game: false, workspace: false });
 		// …and put it back. The level's own `game` field never applied (game: false).
 		gameStateRestore(carried, false);
+		// R5: the graphs that just arrived from disk may name a scene by a name the
+		// project has since renamed — bring them up to date (idempotent, local)
+		applySceneRenames();
+		// R5: the scene's NAME comes from the project first — a renamed scene's files keep
+		// the old name INSIDE them (rewriting the bytes would change the hash the history
+		// is made of), so the payload's own name is only the fallback for a file the
+		// project has never recorded. The hash is the identity; the manifest says whose.
+		//
 		// the signature of what we LOADED, so an untouched stay here publishes nothing
-		const here = name || payload.name || item.name;
+		const here = sceneOfHash(key) || name || payload.name || item.name;
 		// LOOSE-SCENES FIX (bug 1). Every gate in publishCurrentIfChanged asked a question
 		// about US — are we the writer, is auto-versioning on, has the content changed —
 		// and not one asked whether the project has ever heard of this scene. So opening a
@@ -1321,5 +1446,20 @@ projectManifest.subscribe(() => {
 	queueMicrotask(() => {
 		foldQueued = false;
 		foldSceneVersions().catch(() => {});
+	});
+});
+
+// ROADMAP 22 R5, LAST in the file on purpose (a module-level subscribe runs synchronously
+// at import, so every `let` it reaches must already be declared — the documented TDZ
+// rule). A rename that arrives in somebody else's document is applied here, off the
+// document itself, exactly as the initiator applied its own. A MICROTASK, not inline:
+// the applier renames library records, and the shared-library sweep that watches them
+// writes the manifest back (debounced, but the rule is not to write a store from inside
+// its own subscriber). Idempotent, so a second pass finds nothing to do.
+projectManifest.subscribe(() => {
+	queueMicrotask(() => {
+		try {
+			applySceneRenames();
+		} catch {}
 	});
 });

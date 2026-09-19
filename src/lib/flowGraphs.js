@@ -206,9 +206,12 @@ registerHistoryKind('flowgraph', (entry, state) => {
 /**
  * Record an undoable flow-node mutation.
  * op 'create'/'delete' take {nodes, edges} (serialized); op 'data' takes
- * {items: [{id, before, after}]} of node-data patches.
+ * {items: [{id, before, after, graphId?}]} of node-data patches. An item's own
+ * `graphId` overrides the entry's (R29 S3: a module's group edit spans one graph per
+ * object, and it is still ONE undo step). `moduleId` attributes a module's write.
  * @param {{op: 'create'|'delete'|'data', graphId: string, nodes?: any[],
- *   edges?: any[], items?: {id: string, before: any, after: any}[]}} info
+ *   edges?: any[], items?: {id: string, before: any, after: any, graphId?: string}[],
+ *   moduleId?: string}} info
  */
 export function recordFlowNodesEntry(info) {
 	recordEntry({ kind: 'flownodes', ...info, before: 'before', after: 'after' });
@@ -222,8 +225,9 @@ registerHistoryKind('flownodes', (entry, state) => {
 	if (entry.op === 'data') {
 		for (const item of entry.items ?? []) {
 			const data = undoing ? item.before : item.after;
-			updateFlowNodeData(item.id, data, graphId);
-			if (peer) peer.send({ type: 'nodedata', id: item.id, data, graphId });
+			const gid = item.graphId ?? graphId;
+			updateFlowNodeData(item.id, data, gid);
+			if (peer) peer.send({ type: 'nodedata', id: item.id, data, graphId: gid });
 		}
 		return true;
 	}

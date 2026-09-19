@@ -248,6 +248,46 @@ h.run(async () => {
 	h.check(dataOnB === true, 'setNodeData replicated the perRound patch (the nodedata path)');
 
 	// =====================================================================
+	// 4b. R29 S3: a module's setNodeData is ONE undo step, attributed to the module
+	// =====================================================================
+	const dataOf = (peer, id) =>
+		peer.page.evaluate((i) => {
+			const n = window.__seams.api.flow.nodes().find((x) => x.id === i);
+			return n ? { perRound: n.data.perRound, tag: n.data.tag ?? null } : null;
+		}, id);
+	const depthOf = (peer) =>
+		peer.page.evaluate(() => {
+			let v;
+			window.__stores.history.undoStack.subscribe((x) => (v = x))();
+			return v.length;
+		});
+	const depth0 = await depthOf(A);
+	await A.page.evaluate((id) => window.__seams.api.flow.setNodeData(id, { perRound: false, tag: 's3' }), evId);
+	await A.page.waitForTimeout(600);
+	const top = await A.page.evaluate(() => {
+		let v;
+		window.__stores.history.undoStack.subscribe((x) => (v = x))();
+		const e = v[v.length - 1];
+		return { depth: v.length, kind: e?.kind, op: e?.op, moduleId: e?.moduleId, items: e?.items?.length };
+	});
+	h.check(top.depth === depth0 + 1 && top.kind === 'flownodes' && top.op === 'data', `setNodeData records ONE flownodes data entry (${depth0} -> ${top.depth}, ${top.kind}/${top.op})`);
+	h.check(top.moduleId === 'seams', `the entry is attributed to the module (${top.moduleId})`);
+	const edited = [await dataOf(A, evId), await dataOf(B, evId)];
+	h.check(edited.every((d) => d && d.perRound === false && d.tag === 's3'), `premise: the write landed on both peers (${JSON.stringify(edited)})`);
+	await A.page.evaluate(() => window.__stores.history.undo());
+	await A.page.waitForTimeout(800);
+	const undone = [await dataOf(A, evId), await dataOf(B, evId)];
+	h.check(undone.every((d) => d && d.perRound === true && !d.tag), `one undo restores the node's previous data, on BOTH peers (${JSON.stringify(undone)})`);
+	await A.page.evaluate(() => window.__stores.history.redo());
+	await A.page.waitForTimeout(800);
+	const redone = [await dataOf(A, evId), await dataOf(B, evId)];
+	h.check(redone.every((d) => d && d.perRound === false && d.tag === 's3'), `and one redo re-applies it everywhere (${JSON.stringify(redone)})`);
+	await A.page.evaluate((id) => window.__seams.api.flow.setNodeData(id, { perRound: true }), evId);
+	await A.page.waitForTimeout(400);
+	const missing = await A.page.evaluate(() => window.__seams.api.flow.setNodeData('no-such-node', { x: 1 }));
+	h.check(missing === false, 'an unknown id still returns false (and records nothing)');
+
+	// =====================================================================
 	// 5. api.flow.addNodes — one undo entry, canonical edge ids, spec defaults
 	// =====================================================================
 	const box = await makeBox(A);

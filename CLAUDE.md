@@ -986,6 +986,23 @@ loadable play content. Everything a user does must be visible to connected peers
   (Euler differencing is wrong across a wrap and wrong in general — YXZ couples
   the axes) and a MAGNITUDE clamp (per-component clamping ROTATES the throw;
   measured 4.6 degrees off on a skewed vector).
+  · `simAuthority.js` (29-F, imports NOTHING) = `simulateVerdict`, the rule that ends a
+  DUAL-SIMULATOR race in one pure function of four facts (are we simulating, our id,
+  theirs, who we thought was stepping the world) -> keep | yield | adopt | clear | ignore.
+  **THE LOWER PEER ID KEEPS THE WORLD**, which both sides compute from data they already
+  hold, so no round trip and no new message decides it — and it is the SAME tie-break the
+  football module's `isAuthority()` already falls back to with no sim running, so core's
+  winner and a module's fallback authority are one peer by construction. `applySimulate`
+  is the only place the rule can live (a peer cannot know it is racing until the other
+  side's message lands, which is exactly what `maybeSimOnPlay`'s guard is still waiting
+  for), and `ignore` is what keeps a SPECTATOR honest: told about two simulators it keeps
+  the lower id, and a stop from a peer it was not watching must not blank
+  `remoteSimulating` — that store is what arms the knock probes and play-mode grab.
+  Yielding is `stopSimulation({yielded: true})`: see the gotcha for why quiet is not
+  enough. `keep` also ANSWERS with our own start — redundant in an ordinary race, where the
+  two starts cross, and the only thing that reaches a peer which never heard ours (one that
+  travelled in after the run began: the push rides `sendHandshake` and is not repeated on
+  arrival). Additive — a message with no `peerId` takes the pre-29-F path verbatim.
   · `playInteract.js` = play mode's own input path, deliberately NOT a lift of
   Scene's pick (the editor's select branch is a short STATIONARY click, its
   `$isLocked` bails guard six editor modes, and play mode's ray is NDC (0,0)
@@ -2719,6 +2736,24 @@ loadable play content. Everything a user does must be visible to connected peers
 - **Never run `npm run build` while the lane's `vite dev` watches the same worktree** —
   it rewrites `.svelte-kit/output` under the server and kills it; the next ten suites
   report `ERR_CONNECTION_REFUSED`, which reads as a mass regression.
+- **TWO PLAY PRESSES INSIDE THE SIM'S START-UP WINDOW START TWO SIMULATORS.**
+  `playMode.maybeSimOnPlay` guards on `simulating || remoteSimulating`, and both are still
+  FALSE on both peers until the other side's `simulate` arrives — a window that spans
+  `warmup()` plus the whole of `startSimulation`, so presses a second apart still both pass
+  it. Two authorities then broadcast `move` at 30 Hz, each stream reads as an EXTERNAL write
+  on the other, and every dynamic body sits under a `hold: 'external'` refreshed long before
+  its 250 ms timeout can expire. MEASURED on a real two-peer Football match: 74 moves in
+  ~2 s, the ball snapping back, `applyThrow` eaten, and NO GOAL COULD SCORE. Note what a
+  suite has to assert here: "the peer we expect is simulating" reads TRUE while both of
+  them are, so the load-bearing check is that a goal SCORES. Same shape for a
+  late joiner that is already simulating when the handshake `simulate` push lands
+  (symmetric: both sides push). The guard cannot be fixed where it stands, so the rule is
+  on the RECEIVE side (`simAuthority.js`, 29-F): the lower peer id keeps the world.
+  YIELDING MUST BE CLEAN, NOT MERELY QUIET — `stopSimulation({yielded: true})` also
+  withholds the settling `move` per body (which would pin every one of the winner's copies
+  one last time, the very shape the yield exists to end) and the transformSet undo entry
+  (Ctrl+Z over a layout nobody ever saw); and the winner drops the holds the loser's stream
+  already claimed instead of waiting out their timeout.
 - **A HELD body's `lastWritten` is stale by definition, so every release must
   refresh it.** The write-back skips a held body, so `lastWritten` still
   describes the pose it had when it was GRABBED — and the deviation detector

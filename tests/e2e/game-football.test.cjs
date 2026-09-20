@@ -294,13 +294,12 @@ h.run(async () => {
 	await h.eventually(() => B.page.evaluate(() => window.__stores.scenePhysics.scenePhysicsDebug()), (p) => p.gravity === 0 && p.knock?.enabled === true, '1.12 B: the physics block reached B');
 
 	// ---- 2. play + the menu screen -----------------------------------------------------------
-	// Play is entered in ORDER: A first, and B only once it has HEARD that A simulates.
-	// Two Play presses inside the sim's start-up window both pass maybeSimOnPlay's
-	// "nothing is running anywhere" guard (the `simulate` message has not landed yet), so
-	// BOTH peers simulate and every body is fought over by two authorities — measured
-	// here: a parked ball snapped back under a permanent `hold: external` fed by the other
-	// simulator's 30 Hz moves, and no goal could score. A core race, recorded for the
-	// integrator; this suite asserts the single-simulator premise instead of riding it.
+	// Play is entered in ORDER here: A first, and B only once it has HEARD that A
+	// simulates, so the rest of this suite has a KNOWN authority to drive (the touch and
+	// teleport helpers both take the authority's page). The race — both presses inside the
+	// sim's start-up window, where maybeSimOnPlay's "nothing is running anywhere" guard is
+	// still true on both peers — is run for real in section 7, where nothing downstream
+	// depends on which peer wins it.
 	await A.page.locator('#play-button').click();
 	await h.eventually(() => simOf(A.page), (v) => v.own === true, '2.1 A simulates (simOnPlay)');
 	await h.eventually(() => simOf(B.page), (v) => v.remote === A.id, '2.2 B knows A simulates');
@@ -459,6 +458,143 @@ h.run(async () => {
 	await h.eventually(() => gameStateOf(C.page), (v) => v === 'menu', '6.11 C: the shell is back in menu');
 	await h.eventually(() => screenOf(A.page), (v) => v === 'menu', '6.12 A sees the menu again', 6000);
 	h.check((await myVar(B.page, 'goals')) === 1 && (await snap(B.page)).log.length === 1, '6.13 the session sheet and the saved log survive a new match');
+
+	// ---- 7. THE PLAY RACE: two presses inside the sim's start-up window -----------------------------
+	// 29-F. `maybeSimOnPlay` guards on "nothing is running anywhere", and that is still TRUE on
+	// both peers for as long as it takes the other side's `simulate` to arrive — a window that
+	// spans `warmup()` and the whole of `startSimulation`. Two presses inside it therefore both
+	// pass, both peers step a world, and each one's 30 Hz `move` stream pins every one of the
+	// other's bodies under a `hold: 'external'` that is refreshed long before its 250 ms timeout:
+	// measured as a ball that snapped back, an eaten `applyThrow` and NO GOAL COULD SCORE.
+	// The rule that ends it is computed from data both sides already hold — the LOWER PEER ID
+	// KEEPS THE WORLD — so it costs no round trip and no new message. The football module's own
+	// no-sim tie-break is the same one (`isAuthority` sorts the live ids), so core's winner and
+	// the module's fallback authority are the same peer by construction.
+	// Note what this section asserts and 2.2b cannot: "one simulator" was TRUE while the ball was
+	// unplayable, so the goal at the end is the check that matters.
+	await A.page.evaluate(() => window.__stores.physics.stopSimulation());
+	await h.eventually(() => simOf(B.page), (v) => v.own === false && v.remote === null, '  (premise) the pitch is idle on B', 10000);
+	await h.eventually(() => simOf(C.page), (v) => v.own === false && v.remote === null, '  (premise) ...and on C', 10000);
+	for (const p of [A, B]) await p.page.evaluate(() => window.__stores.isLocked.set(false));
+	await A.page.waitForTimeout(2600); // the 2 s exit cooldown, so both presses are taken the same way
+	// nothing between the two presses: this IS the window
+	await Promise.all([A.page.locator('#play-button').click(), B.page.locator('#play-button').click()]);
+	const low = A.id < B.id ? A : B;
+	const high = A.id < B.id ? B : A;
+	const lowName = low === A ? 'A' : 'B';
+	await h.eventually(() => simOf(low.page), (v) => v.own === true, `7.1 the LOWER peer id keeps the world (${lowName}: ${low.id} < ${high.id})`, 20000);
+	await h.eventually(() => simOf(high.page), (v) => v.own === false && v.remote === low.id, '7.2 the higher id YIELDED and adopted the winner', 20000);
+	h.check((await simOf(low.page)).remote === null, '7.3 ...and the winner never recorded the loser as a simulator');
+	await h.eventually(() => simOf(C.page), (v) => v.own === false && v.remote === low.id, '7.4 C (a spectator to the race) agrees on the same winner', 20000);
+	// the measured shape, directly: the loser's stream must leave nothing pinned
+	const heldBy = (page, id) =>
+		page.evaluate((id) => window.__stores.physics.physicsDebug().filter((e) => e.hold === 'external' && e.holdPeer === id).length, id);
+	await low.page.waitForTimeout(1500);
+	const pinned = await heldBy(low.page, high.id);
+	h.check(pinned === 0, `7.5 no body on the winner is pinned by the loser's move stream (${pinned})`);
+
+	// ---- 7b. THE RACE, FORCED, BOTH WAYS ---------------------------------------------------------
+	// Two real presses do not RELIABLY race — sometimes the first peer's `simulate` lands
+	// before the second one's guard is read, and then 7.1-7.5 are true because nothing
+	// raced at all. So force it, in the one shape that has no timing in it: clearing
+	// `remoteSimulating` is exactly what a peer that never heard the start looks like (it
+	// travelled into this room after the run began — the handshake push rides
+	// `sendHandshake` and is not repeated on arrival), and its own Play then goes through.
+	// That peer never receives a start message of its own to reason about, so the winner
+	// has to ANSWER a competing claim with its own start, and these are the only checks
+	// that cover that half of the rule.
+	const forceStart = (peer) =>
+		peer.page.evaluate(() => {
+			const p = window.__stores.physics;
+			p.remoteSimulating.set(null);
+			return p.toggleSimulation();
+		});
+	await forceStart(high);
+	await h.eventually(() => simOf(high.page), (v) => v.own === false && v.remote === low.id, '7.6 a forced second world on the HIGHER id yields to the lower one', 25000);
+	h.check((await simOf(low.page)).own === true && (await simOf(low.page)).remote === null, '7.7 ...and the lower id kept stepping throughout, watching nobody');
+	await h.eventually(() => simOf(C.page), (v) => v.own === false && v.remote === low.id, '7.8 the spectator never moved off the winner', 10000);
+	const pinned2 = await heldBy(low.page, high.id);
+	h.check(pinned2 === 0, `7.9 nothing left pinned after the forced yield (${pinned2})`);
+
+	// and the other way round: the LOWER id arriving on a world the HIGHER one holds
+	await low.page.evaluate(() => window.__stores.physics.stopSimulation());
+	await h.eventually(() => simOf(high.page), (v) => v.own === false && v.remote === null, '  (premise) the pitch is idle again', 10000);
+	await high.page.evaluate(() => window.__stores.physics.toggleSimulation());
+	await h.eventually(() => simOf(low.page), (v) => v.own === false && v.remote === high.id, '  (premise) the higher id holds the world', 20000);
+	await forceStart(low);
+	await h.eventually(() => simOf(high.page), (v) => v.own === false && v.remote === low.id, '7.10 ...and a forced world on the LOWER id takes it BACK from the higher one', 25000);
+	h.check((await simOf(low.page)).own === true, '7.11 the lower id holds it');
+	// the yielded peer's stream ended, so its holds go on OUR side too — the `ignore`-a-stop
+	// release path (our `remoteSimulating` is null here, so the stop matches nobody)
+	await h.eventually(() => heldBy(low.page, high.id), (n) => n === 0, '7.12 ...with nothing left pinned by the world it took over', 10000);
+
+	// ---- 7c. the two halves a race cannot prove, driven directly ---------------------------------
+	// THE SPECTATOR HALF FIRST, while C is still watching the winner: which of two competing
+	// starts reaches a third peer LAST is a coin, so the arbitration is driven through the
+	// real applier with ids whose order is known (`low.id + 'zzz'` is strictly greater than
+	// `low.id` for any id). MEASURED: with the spectator rule removed the race above stays
+	// green, so these two are its only cover.
+	const cRemote = () => C.page.evaluate(() => new Promise((r) => window.__stores.physics.remoteSimulating.subscribe(r)()));
+	h.check((await cRemote()) === low.id, '  (premise) the spectator is watching the winner');
+	await C.page.evaluate((id) => window.__stores.physics.applySimulate({ running: true, paused: false, peerId: id + 'zzz' }), low.id);
+	const cAfterStart = await cRemote();
+	h.check(cAfterStart === low.id, `7.13 a spectator told about a HIGHER-id simulator keeps the lower one (${cAfterStart})`);
+	await C.page.evaluate((id) => window.__stores.physics.applySimulate({ running: false, peerId: id + 'zzz' }), low.id);
+	const cAfterStop = await cRemote();
+	h.check(cAfterStop === low.id, `7.14 ...and a stop from a peer it was not watching does not blank it (${cAfterStop})`);
+
+	// THE `yielded` HALF. A yield resolves in about a tenth of a second, so the run it ends
+	// has barely moved anything and its settling broadcast is invisible in the aggregate —
+	// MEASURED: with the suppression removed the whole race above stays green. So the flag's
+	// contract is asserted where it can fail: on a run whose bodies HAVE moved, a yielded
+	// stop sends no settling `move` at all (each would put the winner's copy under a fresh
+	// `hold: 'external'` on the way out) and records no transformSet entry (Ctrl+Z over a
+	// layout nobody ever saw), while still telling the mesh the run ended.
+	await low.page.evaluate((uuid) => window.__stores.physics.applyThrow({ uuid, pos: [0, 2.4, 0.9], rot: [0, 0, 0], linvel: [0, 0, 0], angvel: [0, 0, 0] }), ball);
+	await low.page.waitForTimeout(600);
+	const yielded = await low.page.evaluate(() => {
+		const s = window.__stores;
+		let peer;
+		s.peers.subscribe((p) => (peer = p))();
+		const send = peer.send.bind(peer);
+		let moves = 0;
+		let stops = 0;
+		peer.send = (/** @type {any} */ m) => {
+			if (m?.type === 'move') moves++;
+			if (m?.type === 'simulate' && m.running === false) stops++;
+			return send(m);
+		};
+		let before, after;
+		const bodies = s.physics.physicsDebug().length; // BEFORE the stop frees them
+		s.history.undoStack.subscribe((/** @type {any[]} */ v) => (before = v.length))();
+		s.physics.stopSimulation({ yielded: true });
+		s.history.undoStack.subscribe((/** @type {any[]} */ v) => (after = v.length))();
+		peer.send = send;
+		return { moves, stops, before, after, bodies };
+	});
+	h.check(yielded.bodies > 0 && yielded.moves === 0, `7.15 a yielded stop broadcasts NO settling move (${yielded.bodies} bodies, ${yielded.moves} moves)`);
+	h.check(yielded.after === yielded.before, `7.16 ...and records no undo entry (${yielded.before} -> ${yielded.after})`);
+	h.check(yielded.stops === 1, `7.17 ...while still telling the mesh the run ended (${yielded.stops} stop message)`);
+
+	// put the world back for the goal
+	await low.page.evaluate(() => window.__stores.physics.toggleSimulation());
+	await h.eventually(() => simOf(low.page), (v) => v.own === true, '  (premise) the winner steps a world again', 20000);
+	await h.eventually(() => simOf(high.page), (v) => v.own === false && v.remote === low.id, '  (premise) and the loser follows it', 20000);
+
+	// and the point of all of it: a goal scores
+	// section 6 left the match on a 30 s clock — put it back on goals, or this one ends
+	// itself halfway through
+	await setRules(A.page, { winBy: 'goals', goalsToWin: 20 });
+	await h.eventually(() => snap(low.page), (s) => s?.rules.winBy === 'goals' && s.rules.goalsToWin === 20, '  (premise) back on goals, with room to spare', 10000);
+	await h.eventually(() => screenOf(low.page), (v) => v === 'menu', '  (premise) the menu screen is up on the winner', 10000);
+	await hudButton(A.page, 'Start match').click();
+	await h.eventually(() => snap(low.page), (s) => s?.started === true, '7.18 the match restarts under the race winner', 15000);
+	await h.eventually(() => snap(high.page), (s) => s?.started === true && s.authority === false, '7.19 the loser follows it and claims no authority', 15000);
+	await h.eventually(() => snap(low.page), (s) => s?.started && s.serveAt === 0, '  (premise) re-served', 12000);
+	const before7 = (await snap(low.page)).score.blue;
+	await teleport(low.page, ball, redPos);
+	await h.eventually(() => snap(high.page), (s) => s?.score.blue === before7 + 1, `7.20 A GOAL SCORES through the race (blue ${before7} -> ${before7 + 1} on the loser's copy)`, 15000);
+	await h.eventually(() => snap(C.page), (s) => s?.score.blue === before7 + 1, '7.21 ...and on the spectator', 15000);
 
 	for (const p of [A, B, C]) await p.page.evaluate(() => window.__stores.isLocked.set(false)).catch(() => {});
 	await A.page.waitForTimeout(400);

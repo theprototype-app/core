@@ -28,6 +28,9 @@ import {
 	sceneKnock
 } from './scenePhysics';
 import { velocityFromSamples, clampThrow, MAX_LINVEL, MAX_ANGVEL } from './throwVelocity';
+// 29-F: the lower-id-keeps-the-world rule, as a leaf that imports nothing — the whole
+// decision is a pure function of four facts, so its truth table is a vitest unit.
+import { simulateVerdict } from './simAuthority';
 // B7: spawned objects are swept when the run ends. transientObjects is a LEAF (the two
 // stores only), so this edge closes nothing — unlike objectActions, which the
 // out-of-bounds delete has to reach dynamically.
@@ -1198,6 +1201,33 @@ export function physicsExternalMove(uuid, peerId = null) {
 }
 
 /**
+ * 29-F: drop the external holds ONE peer's move stream claimed, now rather than at the
+ * 250 ms timeout.
+ *
+ * Called when that peer's stream is known to have ended — it yielded a Play race to us,
+ * or it told us its run stopped. Without this the bodies it was dragging stay kinematic
+ * for a further quarter of a second after there is anything left to drag them, which on a
+ * ball in flight is a visible stall; with it, the release is the SAME release the timeout
+ * would have performed (`releaseHold`'s own sample-derived estimate, so the body carries
+ * on along the path it was already on) and only the timing changes.
+ *
+ * Deliberately NOT extended to `physicsPeerDisconnected`: a disconnect already has the
+ * timeout as its answer, and a peer that dropped mid-carry has no "ended cleanly" moment
+ * to hang an immediate release on.
+ * @param {string|null|undefined} peerId @returns {number} how many were released
+ */
+function releaseExternalHoldsBy(peerId) {
+	if (!world || !peerId || !get(simulating)) return 0;
+	let released = 0;
+	bodies.forEach((entry) => {
+		if (entry.hold !== 'external' || entry.holdPeer !== peerId) return;
+		releaseHold(entry);
+		released++;
+	});
+	return released;
+}
+
+/**
  * B5: a peer released something they were carrying, and told us EXACTLY how.
  *
  * Applied by the INITIATOR only (rule 8: two peers authoring one flight is
@@ -1649,8 +1679,9 @@ export function pauseSimulation(paused) {
 	if (peer) peer.send({ type: 'simulate', running: true, paused: next, peerId: peer.peer.id });
 }
 
-/** @param {{reset?: boolean, reason?: string}=} opts reset restores the initial layout
- * (no undo entry); 27-C passes a `reason` when a failing step stops the run. */
+/** @param {{reset?: boolean, reason?: string, yielded?: boolean}=} opts reset restores the
+ * initial layout (no undo entry); 27-C passes a `reason` when a failing step stops the run;
+ * 29-F passes `yielded` when this run lost a Play race (see below). */
 export function stopSimulation(opts = {}) {
 	if (!get(simulating)) return;
 	setPostTick(null); // clear the hook BEFORE freeing the world
@@ -1678,10 +1709,18 @@ export function stopSimulation(opts = {}) {
 			object.scale.fromArray(before.scale);
 		}
 		const after = transformOf(object);
-		if (!opts.reset && JSON.stringify(before) !== JSON.stringify(after))
+		// 29-F: A YIELDED RUN LEAVES NOTHING BEHIND. This run lost the race, so its poses
+		// were never authoritative and the winner's stream is the truth — broadcasting a
+		// settling `move` per body would put the WINNER's copy of every one of them under
+		// a fresh `hold: 'external'` on the way out (the exact shape the yield exists to
+		// end), and an undo entry would offer Ctrl+Z over a layout nobody ever saw.
+		// `notifyExternalMove` still runs either way: our local poses are about to be
+		// replaced by the winner's stream, and a half-applied interpolation must not
+		// survive that.
+		if (!opts.reset && !opts.yielded && JSON.stringify(before) !== JSON.stringify(after))
 			items.push({ uuid, before, after });
 		notifyExternalMove(uuid);
-		if (peer)
+		if (peer && !opts.yielded)
 			peer.send({ type: 'move', uuid: uuid, pos: after.pos, rot: after.rot, scale: after.scale });
 	});
 	if (items.length > 0) recordTransformSet(items);
@@ -1776,12 +1815,64 @@ export function setBodyVelocity(uuid, linvel, angvel) {
 	return true;
 }
 
-/** @param {any} data */
+/**
+ * A peer's run started, stopped or paused.
+ *
+ * 29-F: this is also where a DUAL-SIMULATOR RACE is resolved, and it is the only place
+ * it can be — a peer cannot know it is racing until the other side's message lands, which
+ * is precisely what `maybeSimOnPlay`'s "nothing is running anywhere" guard is still
+ * waiting for when both presses go through. `simulateVerdict` holds the rule (lower peer
+ * id keeps the world) and the reasoning; everything below is what each verdict COSTS.
+ *
+ * Yielding has to be clean, not merely quiet: the loser's 30 Hz `move` stream is what
+ * pins every one of the winner's bodies under a permanent `hold: 'external'`, so the run
+ * must actually end (`stopSimulation` clears the post-tick hook, which is what stops the
+ * stream) and must end without broadcasting the settling moves that would pin them one
+ * last time. The winner has two mirror duties: the moves that arrived before the verdict
+ * did have already claimed holds in its world, and those are dropped here; and it answers
+ * the competing claim with its own start, which is what reaches a peer that never heard
+ * the first one.
+ * @param {any} data
+ */
 export function applySimulate(data) {
-	remoteSimulating.set(data.running ? data.peerId : null);
+	/** @type {any} */
+	const peer = get(peers);
+	const theirs = typeof data?.peerId === 'string' ? data.peerId : null;
+	const verdict = simulateVerdict({
+		running: !!data?.running,
+		mine: peer?.peer?.id ?? null,
+		theirs,
+		simulating: get(simulating) === true,
+		remote: get(remoteSimulating)
+	});
+	if (verdict === 'ignore') {
+		// a stop from a peer we were not watching still ends ITS stream, so the holds it
+		// claimed in our world can go now (the race's loser sends exactly this)
+		if (!data?.running) releaseExternalHoldsBy(theirs);
+		return;
+	}
+	if (verdict === 'keep') {
+		releaseExternalHoldsBy(theirs);
+		// AND TELL THEM. In an ordinary race the two starts cross, so the loser reaches
+		// its own verdict from ours and this is redundant. It is not redundant for a peer
+		// that never heard our start at all — one that travelled into this room after the
+		// run began, since the `simulate` push rides `sendHandshake` and is not repeated
+		// on arrival — because nothing else will ever tell it, and it would step a second
+		// world forever. At most ONE of these per race (only the keeper sends, and the
+		// loser answers with a stop we `ignore`), so it cannot storm.
+		if (peer) peer.send({ type: 'simulate', running: true, paused: get(simPaused), peerId: peer.peer.id });
+		return;
+	}
+	if (verdict === 'yield') {
+		stopSimulation({ yielded: true });
+		showToast(nameOf(data.peerId) + ' is simulating too — handing the physics over (lower id keeps it)');
+	}
+	if (verdict === 'clear') releaseExternalHoldsBy(theirs);
+	remoteSimulating.set(data?.running ? theirs : null);
 	// a finished run must not leave an interpolation half-applied
-	if (!data.running) import('./moveSmoothing').then((m) => m.clearMoveSmoothing()).catch(() => {});
-	if (data.running && !data.paused) showToast('▶ ' + nameOf(data.peerId) + ' is simulating physics');
+	if (!data?.running) import('./moveSmoothing').then((m) => m.clearMoveSmoothing()).catch(() => {});
+	if (data?.running && !data?.paused && verdict !== 'yield')
+		showToast('▶ ' + nameOf(data.peerId) + ' is simulating physics');
 }
 
 /** @param {string} peerId */

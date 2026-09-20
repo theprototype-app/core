@@ -2,7 +2,7 @@
 // `dungeon` Kit generates + renders the world from the graph's Dungeon node; the
 // `dungeon-realms` module plays it) on the REAL artefacts and nothing authored in-test:
 //   the scene  — games/dungeon-realms/scene.tpscene from the scenes FEED (SCENES_BASE,
-//                tag v2), or DUNGEON_REALMS_TPSCENE=<path>, or a sibling scenes checkout
+//                ref format-2), or DUNGEON_REALMS_TPSCENE=<path>, or a sibling scenes checkout
 //   the zips   — dungeon.zip + dungeon-realms.zip: DUNGEON_KIT_ZIP / DUNGEON_REALMS_ZIP,
 //                the MODULES_REPO checkout, a packed sibling modules checkout, or the CDN
 // installed on TWO peers plus a LATE JOINER. Skip-never-fail: when the scene or a zip
@@ -29,7 +29,7 @@ const h = require('./helpers.cjs');
 const fs = require('fs');
 const path = require('path');
 
-const SCENES_BASE = (process.env.DUNGEON_REALMS_SCENES_BASE || 'https://cdn.jsdelivr.net/gh/theprototype-app/scenes@v2').replace(/\/$/, '');
+const SCENES_BASE = (process.env.DUNGEON_REALMS_SCENES_BASE || 'https://cdn.jsdelivr.net/gh/theprototype-app/scenes@format-2').replace(/\/$/, '');
 const MODULES_BASE = (process.env.DUNGEON_REALMS_MODULES_BASE || 'https://cdn.jsdelivr.net/gh/theprototype-app/modules@main').replace(/\/$/, '');
 const ROOT = path.resolve(__dirname, '../../..');
 const SEED = 1337;

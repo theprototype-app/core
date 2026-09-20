@@ -21,6 +21,9 @@ h.run(async () => {
 	h.check(def.hasProvider === false, 'M1a: no capability provider installed by default');
 	h.check(def.auth === null, 'M1b: no auth provider installed by default');
 	h.check((await A.page.locator('.cloud-slot').count()) === 0, 'M1d: no cloud UI mounted by default');
+	// the Rooms shortcut on the Connect pill exists ONLY because a plugin mounted
+	// drawer content — which is what makes the Rooms-tab check further down non-vacuous.
+	h.check((await A.page.locator('#connect-rooms-button').count()) === 0, 'M1d: no Rooms affordance in the inert build');
 
 	// --- load the example plugin -------------------------------------------
 	await A.page.evaluate(() => localStorage.setItem('cloudPluginUrl', '/cloud-plugin-example.js'));
@@ -62,10 +65,15 @@ h.run(async () => {
 	});
 	h.check(v2.profile, 'PM: plugin installs a profile mount (mountProfile / profileSlot)');
 	h.check(v2.drawer, 'PM: plugin installs a Connect-drawer mount (mountConnectDrawer / drawerSlot)');
-	// drawer mount renders in the DOM when the (i) drawer opens
-	await A.page.locator('[data-testid="connect-info-button"]').click();
+	// The drawer mount renders on the drawer's ROOMS tab: batch CN (4b7b8cf) turned the
+	// info drawer into Info/Rooms/Toasts and moved the plugin's content behind the Rooms
+	// tab, which exists only when a plugin mounted some. The chevron deliberately opens
+	// on Info, so reach the mount the way the app offers it — the Rooms shortcut the
+	// Connect pill grows for exactly this (the inert check above pins that it is the
+	// plugin putting it there).
+	await A.page.locator('#connect-rooms-button').click();
 	await A.page.waitForTimeout(350);
-	h.check(await A.page.locator('#cloud-drawer-section').first().isVisible(), 'PM: drawer section renders in the open info drawer');
+	h.check(await A.page.locator('#cloud-drawer-section').first().isVisible(), 'PM: drawer section renders on the drawer Rooms tab');
 	await A.page.mouse.click(10, 500); // close the drawer
 	await A.page.waitForTimeout(350);
 

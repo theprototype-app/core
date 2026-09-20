@@ -201,13 +201,13 @@ function bodyVelocity(uuid) {
 	if (exact) {
 		_bodyVel.fromArray(exact.linvel);
 		_bodyAng.fromArray(exact.angvel);
-		return { linvel: _bodyVel, angvel: _bodyAng, held: exact.held };
+		return { linvel: _bodyVel, angvel: _bodyAng, held: exact.held, hold: exact.hold };
 	}
 	const ring = bodyTracks.get(uuid);
 	if (ring && ring.length >= 2) _bodyVel.copy(velocityFromSamples(ring).linvel);
 	else _bodyVel.set(0, 0, 0);
 	_bodyAng.set(0, 0, 0);
-	return { linvel: _bodyVel, angvel: _bodyAng, held: false };
+	return { linvel: _bodyVel, angvel: _bodyAng, held: false, hold: null };
 }
 
 /** @param {string} id @param {number} radius */
@@ -262,7 +262,9 @@ function evaluateProbe(probe, now, group, dyn) {
 		if (!dyn.has(uuid) || held.has(uuid)) continue;
 		const bounds = boundsOf(object);
 		const body = bodyVelocity(uuid);
-		if (body.held) continue; // somebody is carrying it: knocking it would fight their hold
+		// somebody is carrying it: knocking it would fight their hold. A body under an
+		// EXTERNAL hold (driven by a module or a peer's stream) is NOT skipped — see fireKnock
+		if (body.held) continue;
 		const contact = contactOf(pPos, probe.radius, pVel, bounds.centre, bounds.radius, body.linvel);
 		const may = cooldownStep(probe, uuid, contact.overlap, now);
 		if (!contact.overlap) continue;
@@ -291,8 +293,10 @@ function evaluateProbe(probe, now, group, dyn) {
 }
 
 /**
- * The hit leaves here. Initiator: into the body first, and a refusal (held, gone)
- * sends nothing and spends nothing. Otherwise: onto the wire, predicted locally when
+ * The hit leaves here. Initiator: into the body first, and a refusal (carried, gone)
+ * sends nothing and spends nothing — except a DRIVEN body (an `external` hold: a module
+ * walking it, a peer's move stream), which refuses the impulse and is still logged and
+ * sent, because the hand did hit it. Otherwise: onto the wire, predicted locally when
  * the block says so. Either way it is logged HERE too — the sender never receives
  * its own broadcast.
  * @param {import('./knockMath').Probe} probe @param {any} object @param {number} speed
@@ -321,7 +325,14 @@ function fireKnock(probe, object, speed, point, response) {
 		probe: probe.id
 	};
 	if (isInitiator()) {
-		if (!applyHit(hit)) return false;
+		// A body under an EXTERNAL hold is DRIVEN: the impulse is refused (the next write
+		// would erase it) but the hit is real, so it is logged and sent like every other —
+		// the rule the receive side already keeps for a held crate (noteRemoteHit logs,
+		// applyHit refuses, independently). Only a body nobody drives that still refuses
+		// (gone, not dynamic) sends nothing and spends nothing. 29-F: the waves template's
+		// walkers were unhittable on the one peer that steps the world and hittable from
+		// every other, which read as "knocks land at random".
+		if (!applyHit(hit) && bodyVelocityOf(object.uuid)?.hold !== 'external') return false;
 	} else if (get(sceneKnock).predict) {
 		startPrediction(object, response.linvel);
 	}

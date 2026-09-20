@@ -144,11 +144,19 @@ const STREAM_TYPES = new Set(['camera', 'vrhands']);
  * is what lets a host send a refusal without an older joiner mistaking the refusal dial
  * for an approval (see `JOIN_RESULTS` in connectionState). `result` is set only by the
  * host's approve dial-back.
- * @param {string} [result] @returns {{metadata: Record<string, any>}}
+ * 29: `cloud` is a plugin's dial data (peerApproval.boundCloudMeta), never on a result dial.
+ * @param {string} [result] @param {any} [cloud] @returns {{metadata: Record<string, any>}}
  */
-function dialOptions(result) {
-	return { metadata: result ? { jr: 1, joinresult: result } : { jr: 1 } };
+function dialOptions(result, cloud) {
+	/** @type {Record<string, any>} */
+	const metadata = result ? { jr: 1, joinresult: result } : { jr: 1 };
+	// 29 (rooms access): a cloud plugin's own dial data — a knock's name, a room-code
+	// proof — rides the join dial so the host's auth hook reads it BEFORE any data flows
+	// (an unapproved conn is closed at once). Absent = the dial is byte-identical.
+	if (cloud !== undefined && !result) metadata.cloud = cloud;
+	return { metadata };
 }
+
 
 /** How long a refusal dial may hang before it is closed regardless. The answer is in its
  * metadata, which the joiner has at its `connection` event — the conn never needs to
@@ -208,6 +216,9 @@ export class PeerConnection {
 		/** 25-F: peers whose NEXT dial is an approval dial-back, so its handshake opens with
 		 * `joinresult: approved` @type {Set<string>} */
 		this.approvedDialBacks = new Set();
+		/** @type {Map<string, any>} 29 (rooms access): a cloud plugin's dial data per peer we
+		 * are joining — read by every join dial and its restore re-dials (dialOptions) */
+		this.dialCloud = new Map();
 		/** 25-F: peers a refusal dial is out to — their `peer-unavailable` is not news @type {Set<string>} */
 		this.refusalDials = new Set();
 
@@ -517,10 +528,26 @@ export class PeerConnection {
 			// M1b (open-core): a cloud auth provider may pre-approve a known /
 			// authenticated peer, skipping the manual Approve. Default — no provider
 			// — keeps the whitelist + approval flow byte-identical.
+			/** 29: the approval card's plugin label ("Ada wants to join Amber Mesa") */
+			let knockLabel = '';
 			if (!found) {
 				const auth = getAuthProvider();
 				try {
-					const authorized = !!auth && typeof auth.authorize === 'function' && auth.authorize(conn.peer);
+					// 29 (rooms access): a provider with `decide(peerId, cloudMeta)` answers
+					// 'admit' | 'deny' | {label} (knock). 'deny' refuses with no card — told to a
+					// joiner that can hear it. Without `decide`, `authorize` as before.
+					const cloudMeta = conn?.metadata?.cloud ?? null;
+					const verdict = auth && typeof auth.decide === 'function' ? auth.decide(conn.peer, cloudMeta) : undefined;
+					if (verdict === 'deny') {
+						if (conn?.metadata?.jr) this.sendJoinResult(conn.peer, 'denied');
+						conn.close();
+						return;
+					}
+					if (verdict && typeof verdict === 'object' && verdict.label) knockLabel = String(verdict.label).slice(0, 120);
+					const authorized =
+						verdict !== undefined
+							? verdict === 'admit'
+							: !!auth && typeof auth.authorize === 'function' && auth.authorize(conn.peer);
 					if (authorized && roomIsFull(this) && conn?.metadata?.jr) {
 						// 25-F: a plugin would let them in, but the mesh cannot take one more —
 						// say so rather than auto-approving past the hard cap
@@ -553,11 +580,11 @@ export class PeerConnection {
 				// refreshes the answer on the card that is already there.
 				const hearsNo = !!conn?.metadata?.jr;
 				const known = approvals.find(toast => toast.peerId === conn.peer);
-				if (known && known.hearsNo !== hearsNo) {
-					pendingApprovals.set(/** @type {any} */ (approvals.map((/** @type {any} */ a) => (a.peerId === conn.peer ? { ...a, hearsNo } : a))));
+				if (known && (known.hearsNo !== hearsNo || (knockLabel && known.label !== knockLabel))) {
+					pendingApprovals.set(/** @type {any} */ (approvals.map((/** @type {any} */ a) => (a.peerId === conn.peer ? { ...a, hearsNo, ...(knockLabel ? { label: knockLabel } : {}) } : a))));
 				}
 				if (!known) {
-					approvals.push({ peerId: conn.peer, hearsNo });
+					approvals.push(knockLabel ? { peerId: conn.peer, hearsNo, label: knockLabel } : { peerId: conn.peer, hearsNo });
 					// 27-E: stamp the SAME clock the joiner's countdown uses, so the card's
 					// age and their pill agree; and BOUND the queue — a host who walked away
 					// used to collect a card per dial with nothing dropping them (audit H3).
@@ -1391,7 +1418,7 @@ export class PeerConnection {
 			console.log("Connecting to " + peerId);
             // 25-F: an approval dial-back says so in its metadata; every dial says it can
             // hear a join result
-            const conn = this.peer.connect(peerId, dialOptions(this.approvedDialBacks.has(peerId) ? 'approved' : undefined));
+            const conn = this.peer.connect(peerId, dialOptions(this.approvedDialBacks.has(peerId) ? 'approved' : undefined, this.dialCloud?.get(peerId)));
             // peer.connect returns undefined when the signaling link is down
             // (disconnected peer) — bail instead of throwing on conn.on below (CN)
             if (!conn) {
@@ -1474,7 +1501,7 @@ export class PeerConnection {
 			try { stale.close(); } catch {}
 			delete this.connections[peerId];
 		}
-		const conn = this.peer.connect(peerId, dialOptions());
+		const conn = this.peer.connect(peerId, dialOptions(undefined, this.dialCloud?.get(peerId)));
 		if (!conn) {
 			log('error', 'net', 'restore failed: signaling link is down', { peer: peerId });
 			return;

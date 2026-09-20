@@ -131,8 +131,13 @@ function makeCloudApi() {
 		/** the id of the peer whose session we joined, or null when WE are the host —
 		 *  lets the plugin make the session host the roles authority (admin) — v2.1 */
 		sessionHost: () => get(sessionHost),
-		/** dial a peer through the normal request flow (join a room) — v2 */
-		connectToPeer: (/** @type {string} */ peerId) => requestConnect(peerId),
+		/** dial a peer through the normal request flow (join a room) — v2. 29: an optional
+		 *  `cloudMeta` (plain JSON, ≤ 1 KB) rides the join dial to the host's auth hook
+		 *  (`decide(peerId, cloudMeta)`) — a knock's name, a room-code proof. */
+		connectToPeer: (/** @type {string} */ peerId, /** @type {any} */ cloudMeta) => requestConnect(peerId, cloudMeta),
+		/** 29: this engine carries `cloudMeta` on dials and consults `authProvider.decide`
+		 *  (admit / deny / knock-with-label). Absent on older engines — probe it. */
+		dialMeta: true,
 
 		// --- plugin message channel (replicate the plugin's own state) ---
 		/** broadcast a cloud message to all peers (roles, room announces) */

@@ -209,7 +209,7 @@
 				<ul class="cxd-toast-list">
 					{#each $pendingApprovals as a (a.peerId)}
 						<li class="cxd-toast cxd-live" data-kind="request">
-							<div class="cxd-toast-text">Connection request from <span class="cxd-mono">{String(a.peerId).toUpperCase()}</span></div>
+							<div class="cxd-toast-text">Connection request from <span class="cxd-mono">{String(a.peerId).toUpperCase()}</span>{#if a.label}<span class="cxd-knock"> — {a.label}</span>{/if}</div>
 							<div class="cxd-live-actions">
 								{#if $rolesInfo}
 									<button class="cxd-approve" onclick={() => approveRequest(a, null)} title="Approve as viewer">View only</button>

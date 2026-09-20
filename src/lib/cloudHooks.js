@@ -96,6 +96,10 @@ export function hasCapabilityProvider() {
  *     is a synchronous lookup against it). Returns false/undefined = defer to the
  *     normal whitelist+approval flow.
  *   onPeerConnect(peerId): void — observe accepted connections (identity binding).
+ *   decide(peerId, cloudMeta): 'admit' | 'deny' | {label} — 29 (rooms access). When
+ *     present it replaces `authorize`: `cloudMeta` is the joiner's dial data
+ *     (cloudApi.connectToPeer's 2nd arg, null when absent); 'deny' refuses with no
+ *     approval card; an object is the normal card, carrying `label`.
  * @type {any}
  */
 let authProvider = null;

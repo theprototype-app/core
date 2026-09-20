@@ -199,9 +199,10 @@ export function modalClosed() {
  * immediately, and it costs nothing to ask before opening a connection that cannot open.
  * Still `async` so the cloud plugin's `connectToPeer` keeps returning a promise; the body
  * has no awaits, so every dial happens in the same tick.
- * @param {string} rawId @returns {Promise<void>}
+ * @param {string} rawId @param {any} [cloudMeta] 29: a cloud plugin's dial data (see dialOptions)
+ * @returns {Promise<void>}
  */
-export async function requestConnect(rawId) {
+export async function requestConnect(rawId, cloudMeta) {
 	const peerId = String(rawId || '').toLowerCase();
 	/** @type {any} */
 	const peer = get(peers);
@@ -210,18 +211,23 @@ export async function requestConnect(rawId) {
 		showToast('Not connected to a signaling server yet — try again in a moment.');
 		return;
 	}
-	dial(peerId);
+	dial(peerId, cloudMeta);
 }
 
 /**
  * The dial itself: whitelist + broadcast the roster + open the DataConnection + queue the
  * pending entry. Split out of `requestConnect` so the guard above reads as one decision
  * and this stays exactly what it always did. @param {string} peerId
+ * @param {any} [cloudMeta] 29: the plugin's dial data, remembered per peer for re-dials
  */
-function dial(peerId) {
+function dial(peerId, cloudMeta) {
 	/** @type {any} */
 	const peer = get(peers);
 	if (!peer) return;
+	// 29: remember the plugin's dial data for this peer's join dials (and their restores)
+	const cloud = boundCloudMeta(cloudMeta);
+	if (cloud !== undefined) (peer.dialCloud ??= new Map()).set(peerId, cloud);
+	else peer.dialCloud?.delete(peerId);
 	clearJoinRefusal(); // 25-F: a new request replaces the last answer on the pill
 	const users = /** @type {any[]} */ (get(userdata));
 	if (!users.some((/** @type {any} */ u) => u[0] === peerId)) {
@@ -241,6 +247,18 @@ function dial(peerId) {
 		const pend = /** @type {any[]} */ (get(pendingApprovals));
 		pend.push({ peerId, status: 'retry' });
 		pendingApprovals.set(/** @type {any} */ (pend));
+	}
+}
+
+/** 29: a plugin's dial data, bounded — plain JSON under 1 KB, else nothing.
+ * @param {any} cloud @returns {any} */
+function boundCloudMeta(cloud) {
+	if (cloud === undefined || cloud === null) return undefined;
+	try {
+		const s = JSON.stringify(cloud);
+		return s && s.length <= 1024 ? JSON.parse(s) : undefined;
+	} catch {
+		return undefined;
 	}
 }
 

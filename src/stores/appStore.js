@@ -254,6 +254,9 @@ export const objectContextMenu = writable(null);
 export const renamingObject = writable(null);
 
 export const fixLight = writable(false);
+/** connection requests awaiting the host's answer: `{peerId, hearsNo?, label?, status?, at?}` per
+ * row (29: `label` is a cloud plugin's knock line, see peerHandler's decide branch).
+ * @type {import('svelte/store').Writable<any[]>} */
 export const pendingApprovals = writable([]);
 export const waitingForApproval = writable([]);
 /** @type {import('svelte/store').Writable<any[]>} strings or {text, actions} */

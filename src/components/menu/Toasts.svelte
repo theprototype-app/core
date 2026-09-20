@@ -534,6 +534,8 @@ style="z-index: var(--z-toast); pointer-events: none;"
             <div class="tp-toast-text">
                 Connection request <span class="cxreq-id">{String(approval.peerId).slice(0, 6).toUpperCase()}</span>
             </div>
+            <!-- 29: a cloud plugin's label for the knock ("Ada wants to join Amber Mesa") -->
+            {#if approval.label}<div class="cxreq-label">{approval.label}</div>{/if}
             <!-- 27-E: how long they have been waiting. An EXPIRED card stays approvable —
                  a missed request is worse than a stale card, and approving still just
                  dials back; if they gave up, that dial answers with peer-unavailable,
@@ -730,6 +732,11 @@ style="z-index: var(--z-toast-low); pointer-events: none;"
     margin-top: 2px;
     font-size: 11px;
     opacity: 0.65;
+}
+.cxreq-label {
+    margin-top: 2px;
+    font-size: 12px;
+    overflow-wrap: anywhere;
 }
 .cxreq-age.expired {
     opacity: 0.9;

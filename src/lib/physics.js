@@ -1280,9 +1280,13 @@ export function applyHit(data) {
  * A1: a dynamic body's EXACT velocity, for the knock's approach test on the peer that
  * steps the world. Null off the initiator (there is no body) — knock.js then falls
  * back to its own estimate off the poses it renders. `held` lets the probe skip a body
- * somebody is carrying without a second lookup.
+ * somebody is CARRYING (a `user` hold) without a second lookup; `hold` is the raw kind,
+ * because an `external` hold is a different thing — a body some other writer drives (a
+ * module walking it every frame, a peer's move stream) is not carried, and a hand that
+ * meets it at speed has hit it. 29-F: `held: !!entry.hold` folded the two together, so
+ * the waves template's walkers could not be knocked on the one peer that steps the world.
  * @param {string} uuid
- * @returns {{linvel: number[], angvel: number[], held: boolean} | null}
+ * @returns {{linvel: number[], angvel: number[], held: boolean, hold: 'user'|'external'|null} | null}
  */
 export function bodyVelocityOf(uuid) {
 	if (!world) return null;
@@ -1290,7 +1294,7 @@ export function bodyVelocityOf(uuid) {
 	if (!entry) return null;
 	const l = entry.body.linvel();
 	const a = entry.body.angvel();
-	return { linvel: [l.x, l.y, l.z], angvel: [a.x, a.y, a.z], held: !!entry.hold };
+	return { linvel: [l.x, l.y, l.z], angvel: [a.x, a.y, a.z], held: entry.hold === 'user', hold: entry.hold };
 }
 
 const FIXED_DT = 1 / 60;

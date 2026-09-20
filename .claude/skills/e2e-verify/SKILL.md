@@ -136,7 +136,7 @@ Rules: never run suites in parallel AGAINST THE SAME dev server, never edit sour
 while one runs (HMR reloads the pages mid-test — see "HMR churn makes runs LIE").
 
 
-The GAMES-TAB line (real scene from the scenes feed @v2 + real module zips from a packed
+The GAMES-TAB line (real scene from the scenes feed @format-2 + real module zips from a packed
 sibling modules checkout, every one SKIPS-never-fails when a source is missing):
 `game-towers` (20), `game-stars-room` (36), `game-football` (102, two peers + late joiner;
 FOOTBALL_TPSCENE / FOOTBALL_ZIP), `game-dungeon-realms` (64, two peers + late joiner, TWO zips:

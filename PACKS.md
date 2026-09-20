@@ -10,9 +10,10 @@ There are two kinds of pack:
 - **Default packs** come from the pack repo's `index.json`, fetched from
   `PACKS_BASE` (`src/lib/packs.js`) — the jsDelivr CDN over
   [theprototype-app/packs](https://github.com/theprototype-app/packs), pinned to a
-  tag (`@v1`). If the CDN is unreachable, the app falls back to the MINIMAL starter
-  bundled at `static/library/libraryList.json` (offline / fresh clones are never
-  empty).
+  ref (`@format-1` — never a semver-looking name: jsDelivr resolves a version once
+  and a retag of it is a no-op, core #230). If the CDN is unreachable, the app falls
+  back to the MINIMAL starter bundled at `static/library/libraryList.json` (offline /
+  fresh clones are never empty).
 - **Remote / imported packs** are self-describing repos or `.zip` files using the
   `manifest.json` format below — drag a `.zip` in with **＋ Import pack**.
 

@@ -22,13 +22,25 @@ import { communityProvider } from './cloudHooks';
 // requestLoadSession): format confirm, "Backup before <name>" stash, replicated
 // clear+rebuild, and the sessionproposal peer-consent flow all come for free.
 
-/** Off-bundle base for curated templates/examples/games. Bump the tag when content
- * changes — jsDelivr caches tags aggressively, so released builds stay stable.
+/** Off-bundle base for curated templates/examples/games. A content release re-points
+ * the ref in the scenes repo (`git tag -f format-2 && git push -f origin format-2`,
+ * then purge) — jsDelivr caches a ref for up to 12 hours, so released builds stay
+ * stable and the app picks the change up without a redeploy.
  *
- * C5.2: @v2 is a NEW tag, never a reused one, so a deployed older build cannot be
- * handed an index whose `games` section it has no tab for. (Reusing @v1 would push
- * v2 content at every build already in the wild.) */
-export const SCENES_BASE = contentBase(import.meta.env.VITE_SCENES_BASE, 'https://cdn.jsdelivr.net/gh/theprototype-app/scenes@v2');
+ * C5.2: the ref tracks the INDEX FORMAT and a format bump takes a NEW ref, never a
+ * reused one, so a deployed older build cannot be handed an index whose `games`
+ * section it has no tab for. (Reusing the previous ref would push new-format content
+ * at every build already in the wild.)
+ *
+ * 29f (#230): THE REF MUST NOT LOOK LIKE A VERSION. jsDelivr parses `v2` as a SEMVER
+ * VERSION (`x-jsd-version-type: version`, `cache-control: immutable` for a year), so a
+ * retag of `v2` was a no-op forever and four purges changed nothing — the Games tab
+ * shipped three games while the feed had six. A ref jsDelivr cannot parse as a version
+ * (`format-2`, tag or branch) is reported as type `branch` with a 12-hour s-maxage,
+ * which is what makes the retag-and-purge ritual work. `scenes@v2` is a dead ref, left
+ * where jsDelivr first resolved it for the builds that shipped against it;
+ * `tests/unit/contentBase.test.js` asserts no semver-looking ref comes back. */
+export const SCENES_BASE = contentBase(import.meta.env.VITE_SCENES_BASE, 'https://cdn.jsdelivr.net/gh/theprototype-app/scenes@format-2');
 /** Community manifest (raw = fresh + CORS; see header note). */
 export const GALLERY_JSON_URL =
 	'https://raw.githubusercontent.com/theprototype-app/community-gallery/main/gallery.json';

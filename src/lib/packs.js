@@ -15,10 +15,16 @@ import { safeStorage } from './safeStorage';
 //
 // The pack repo/manifest structure is documented in PACKS.md.
 
-/** Off-bundle base for remote packs (RP): the tagged jsDelivr mirror of
- * github.com/theprototype-app/packs. Bump the tag when pack content changes —
- * jsDelivr caches tags aggressively, so released builds stay stable. */
-export const PACKS_BASE = contentBase(import.meta.env.VITE_PACKS_BASE, 'https://cdn.jsdelivr.net/gh/theprototype-app/packs@v1');
+/** Off-bundle base for remote packs (RP): the ref-pinned jsDelivr mirror of
+ * github.com/theprototype-app/packs. A content release re-points the ref there
+ * (`git tag -f format-1 && git push -f origin format-1`, then purge) — jsDelivr caches
+ * a ref for up to 12 hours, so released builds stay stable.
+ *
+ * 29f (#230): the ref must NOT look like a version. `packs@v1` was the same trap as
+ * `scenes@v2` (jsDelivr parses `v1` as a semver VERSION and caches it immutably, so a
+ * retag would have been a no-op the first time it was tried) and moved in the same
+ * change; see the SCENES_BASE note in sceneTemplates.js for the measurement. */
+export const PACKS_BASE = contentBase(import.meta.env.VITE_PACKS_BASE, 'https://cdn.jsdelivr.net/gh/theprototype-app/packs@format-1');
 
 const INSTALLED_KEY = 'installedPacks';
 

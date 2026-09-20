@@ -2129,7 +2129,7 @@ loadable play content. Everything a user does must be visible to connected peers
   Towers in eight numbers and Football's HUD is authored by its module). Suites
   `game-dungeon-realms` (64, two peers + late joiner; env DUNGEON_REALMS_TPSCENE /
   DUNGEON_KIT_ZIP / DUNGEON_REALMS_ZIP / MODULES_REPO), `game-untangle` (46; UNTANGLE_TPSCENE /
-  UNTANGLE_ZIP), `game-football` (102; scene from the scenes feed @v2, zip from a packed
+  UNTANGLE_ZIP), `game-football` (102; scene from the scenes feed @format-2, zip from a packed
   sibling modules checkout — skips, never fails, when every source misses).
 - `playMode.js` `embedMode` / `embedSceneId` / `embedOpenUrl()` (R29 fork 4): the additive
   `?embed=1` boot flag, read ONCE at module evaluation (before the cloud plugin clears the
@@ -2243,6 +2243,20 @@ loadable play content. Everything a user does must be visible to connected peers
   purgeable). So a moving ref on jsDelivr must be a branch or a tag name that is not a
   version (`format-2`); `packs@v1` has the same trap waiting. Core ticket #230; the deploy-time
   unblock is `VITE_SCENES_BASE=…scenes@main` (what `contentBase()` exists for).
+  **29f CLOSED IT BY MEASUREMENT**: a plain TAG named `format-2` (scenes, at a5ebe8f) and
+  `format-1` (packs, at 03b9568) are reported `x-jsd-version-type: branch` with
+  `s-maxage=43200`, while `@v2`/`@v1` carry `cache-control: immutable` for a year — so the
+  tag form works and no branch was needed. `SCENES_BASE`/`PACKS_BASE` default to the
+  `format-N` refs now, the three games suites' feed fallback with them, and
+  `tests/unit/contentBase.test.js` reads both source files and refuses any fallback whose ref
+  matches jsDelivr's version rule (an optional v, then dotted digits, nothing else). `v1`/`v2`
+  are DEAD refs, left where jsDelivr first resolved them for the builds that shipped against
+  them. Production keeps the cloud `.env.deploy` `VITE_SCENES_BASE=…scenes@main` override until
+  the core release carrying this ships; the scenes/packs READMEs and cloud's
+  `.env.deploy.example` teach the new ritual. THE EDITING TRAP THIS FOUND: a JS
+  `String.replace(from, to)` with a STRING `to` expands `$\``, `$'`, `$&` — a doc edit whose
+  replacement text quoted a regex ending in `$` followed by a backtick pasted 2255 lines of
+  this file into itself. Use `split(from).join(to)` for literal replacement.
 - **flowbite-svelte's `Button` FREEZES its class string at mount.** `Button.svelte:34` reads
   the theme through a DESTRUCTURING `$derived` declaration, which evaluates its object ONCE
   — so a button BORN disabled wears `cursor-not-allowed opacity-50` forever, even after its

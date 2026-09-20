@@ -424,7 +424,7 @@ const STARS_HUD_PANEL = {
 const STARS_CHIME = {
 	key: 'chime',
 	name: 'impact-glass.ogg',
-	url: 'https://cdn.jsdelivr.net/gh/theprototype-app/packs@v1/audio-essentials/assets/impact-glass.ogg',
+	url: 'https://cdn.jsdelivr.net/gh/theprototype-app/packs@format-1/audio-essentials/assets/impact-glass.ogg',
 	sha256: '9252d50bfb85edb17d6073c4a7806e10cdb9de56d3dbfc93a4b9727146d2df6d',
 	credit: { what: 'Impact Glass', author: 'Kenney', license: 'CC0-1.0', source: 'https://kenney.nl/assets/impact-sounds' }
 };

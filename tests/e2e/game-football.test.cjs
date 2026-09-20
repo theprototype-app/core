@@ -1,7 +1,7 @@
 // 24-B B4 ACCEPTANCE — the Football game (VR football on the knock; the RULES are the
 // `football` module, the physics is the template's data). Driven through the REAL
 // artefacts and nothing authored in-test:
-//   the scene  — games/football/scene.tpscene from the scenes FEED (SCENES_BASE, tag v2),
+//   the scene  — games/football/scene.tpscene from the scenes FEED (SCENES_BASE, ref format-2),
 //                or FOOTBALL_TPSCENE=<path>, or a sibling scenes checkout as the fallback
 //   the module — football.zip: FOOTBALL_ZIP=<path>, a sibling modules checkout's packed zip
 //                (`npm run pack -- football` there), or the modules CDN
@@ -31,7 +31,7 @@ const h = require('./helpers.cjs');
 const fs = require('fs');
 const path = require('path');
 
-const SCENES_BASE = (process.env.FOOTBALL_SCENES_BASE || 'https://cdn.jsdelivr.net/gh/theprototype-app/scenes@v2').replace(/\/$/, '');
+const SCENES_BASE = (process.env.FOOTBALL_SCENES_BASE || 'https://cdn.jsdelivr.net/gh/theprototype-app/scenes@format-2').replace(/\/$/, '');
 const MODULES_BASE = (process.env.FOOTBALL_MODULES_BASE || 'https://cdn.jsdelivr.net/gh/theprototype-app/modules@main').replace(/\/$/, '');
 const ROOT = path.resolve(__dirname, '../../..');
 

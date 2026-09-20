@@ -969,7 +969,10 @@ drops the P2P session.
   + `freshReload`, then asserts the seams (`window.__stores.cloudHooks.canApply`,
   `profileSlot`/`drawerSlot` are functions, mounted DOM). The flowbite avatar Dropdown
   is flaky to open headlessly — assert profile mounts at the STORE level, not by
-  clicking `#avatar-menu`. A `transition:slide` element stays in the DOM through the
+  clicking `#avatar-menu`. The DRAWER mount renders on the connect drawer's ROOMS tab,
+  not under the chevron (which opens on Info and keeps the last tab): reach it with
+  `#connect-rooms-button`, the Connect-pill shortcut that exists only while `$drawerSlot`
+  is set — which is also what keeps that check from passing vacuously. A `transition:slide` element stays in the DOM through the
   ~200ms out-transition — poll with `eventually`, don't assert `count===0` immediately.
 - **HMR churn makes runs LIE** (cost ~4 cycles in #16-Q5): a page that loads while
   vite is still re-transforming just-edited modules gets a half-mounted app —
@@ -1109,7 +1112,7 @@ drops the P2P session.
 - KNOWN failing suites in the localhost env (2026-07-28, proven identical across a
   full old-deps/new-deps baseline comparison — treat as the dirty baseline, not
   regressions): the drag-drop-SIMULATION cluster (explorer-drop, explorer,
-  packs-drop) + user-modules (setup crash), open-core-m1 (1 drawer check),
+  packs-drop) + user-modules (setup crash),
   dock-sidebar-inset, layout, panels, script-nodes, and a few
   two-peer timing suites (module-sdk, scene-music, physics-kinematic,
   physics-discoverability, roadmap-13-notifications-notes, scene-assets,
@@ -1129,10 +1132,20 @@ drops the P2P session.
   suite in a PRISTINE sibling worktree on its OWN freshly started server and diffing the
   PASS/FAIL lines — the only A/B that means anything (see the day-lived-server trap):
   `flow-customnode-io` (1 check — "a stale snapshot cannot resurrect the pruned edge"),
-  `flow-object-embed` (`locator.dblclick` timeout). `open-core-m1`'s single drawer check
-  was re-confirmed on that same pair: 18 identical PASS/FAIL lines both sides. Two
+  `flow-object-embed` (`locator.dblclick` timeout). Two
   worktrees is what makes this cheap — you never touch the tree under test, so there is
   no stash to pop and no chance of the "restart fixed it" confound.
+- **"PRE-EXISTING" IS A DIAGNOSIS ABOUT THE ENVIRONMENT, NOT A VERDICT ON THE CHECK —
+  AND `open-core-m1` SPENT TWO MONTHS ON THIS LIST BECAUSE OF THE DIFFERENCE.** Its one
+  red was A/B'd honestly every time (identical on pristine 1.14.0, 18 identical PASS/FAIL
+  lines across two worktrees) and every lane correctly moved on — but identical-on-base
+  only rules out YOUR diff. Here the check had simply been asserting a superseded
+  contract since the day after it was written: it opened the connect drawer with the
+  chevron and demanded the plugin's section, and the very next commit (4b7b8cf) made the
+  drawer TABBED and moved that mount behind the Rooms tab. `git log --follow` on the
+  suite against `git log` on the component answered it in one look. So when a red is
+  pre-existing, spend the two minutes asking WHEN it started and WHAT changed then; a
+  red nobody reads is a suite nobody reads.
 - Long full-suite runs: the Bash tool caps at 10 min — launch the runner DETACHED
   (PowerShell `Start-Process node -ArgumentList 'tests\e2e\run.cjs ...'` with
   output redirects) and poll/Monitor the log. A dev server started via the Bash

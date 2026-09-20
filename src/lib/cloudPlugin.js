@@ -25,6 +25,11 @@ import {
 import { currentLevel } from './levels';
 import { myPlayMode, peerPlayModes } from './gamePresence';
 import { safeStorage } from './safeStorage';
+// v3.1 (roadmap 29 G-3): the hosted-AI preset seam. Both provider modules are LEAVES
+// (svelte/store + safeStorage), so a static edge from here closes nothing.
+import { aiProviders, aiActiveProvider, aiEnabled, addAiProvider, updateAiProvider, removeAiProvider, setAiActiveProvider, setAiEnabled } from './ai/providers';
+import { meshProviders, meshActiveProvider, meshGenEnabled, addMeshProvider, updateMeshProvider, removeMeshProvider, setMeshActiveProvider, setMeshGenEnabled } from './ai/meshProviders';
+import { meshJobStatus } from './cloudHooks';
 
 // 28-A (roadmap #28, publish · play · remix): the seams below reach cycle-sensitive
 // modules — sessions is history-family, cameraBookmarks imports objectActions, playMode is
@@ -91,11 +96,114 @@ export async function startCloudPlugin() {
 }
 
 /**
+ * v3.1 (roadmap 29 G-3, hosted AI) — ONE plugin-managed provider preset, in BOTH
+ * provider lists. Core keeps ownership of the stores: the plugin describes one entry
+ * per domain and never sees the others' keys. `tag` marks the plugin's own entry
+ * (`managedBy` on the config), so a user-created provider — which carries no tag — is
+ * untouchable by construction rather than by care.
+ *
+ * ACTIVATION takes TWO guards, both required: `activate.<domain>` (the caller's
+ * permission — the plugin passes !userHas) AND the slot being empty or already ours.
+ * Either alone leaves a hole: the first misses "they have a provider but it is not the
+ * selected one", the second misses "they just deleted the selected one". And one
+ * trap the lane brief spelled out: `addAiProvider`/`addMeshProvider` make the FIRST
+ * provider active whenever the slot is empty, so a seed that is NOT allowed to
+ * activate has to put the previous pointer back, or guard 1 leaks through the add.
+ *
+ * `enable: true` also flips the master aiEnabled / meshGenEnabled, and ONLY when our
+ * entry is the active one (the plugin gates that to once per device on its side).
+ * Switching a feature on for somebody is a bigger liberty than offering them a row.
+ *
+ * `null` for `ai` or `mesh` REMOVES that entry (the store's own remove re-points the
+ * active slot at the first remaining provider, exactly as a user delete does).
+ */
+const aiPresets = {
+	/** does the user have a provider of their OWN (the tagged entry excluded)?
+	 *  @param {string} tag @returns {{ai: boolean, mesh: boolean}} */
+	userHas: (tag) => ({
+		ai: get(aiProviders).some((p) => p.managedBy !== tag),
+		mesh: get(meshProviders).some((p) => p.managedBy !== tag)
+	}),
+	/**
+	 * Create / update / remove the managed entry in aiProviders + meshProviders.
+	 * @param {string} tag
+	 * @param {{ai?: any, mesh?: any, activate?: {ai?: boolean, mesh?: boolean}, enable?: boolean}} opts
+	 * @returns {{ai: {id: string, active: boolean}, mesh: {id: string, active: boolean}, enabled: {ai: boolean, mesh: boolean}}}
+	 */
+	seed(tag, { ai, mesh, activate, enable } = {}) {
+		if (typeof tag !== 'string' || !tag) throw new Error('aiPresets.seed: a non-empty tag is required');
+		const mayActivate = { ai: activate?.ai !== false, mesh: activate?.mesh !== false };
+		const out = { ai: { id: '', active: false }, mesh: { id: '', active: false }, enabled: { ai: false, mesh: false } };
+
+		out.ai.id = seedOne(tag, ai, mayActivate.ai, {
+			list: aiProviders,
+			active: aiActiveProvider,
+			add: (/** @type {any} */ cfg) => addAiProvider({ ...cfg, preset: 'custom' }),
+			update: updateAiProvider,
+			remove: removeAiProvider,
+			setActive: setAiActiveProvider
+		});
+		out.ai.active = !!out.ai.id && get(aiActiveProvider) === out.ai.id;
+		if (enable && out.ai.active && !get(aiEnabled)) {
+			setAiEnabled(true);
+			out.enabled.ai = true;
+		}
+
+		out.mesh.id = seedOne(tag, mesh, mayActivate.mesh, {
+			list: meshProviders,
+			active: meshActiveProvider,
+			add: (/** @type {any} */ cfg) => addMeshProvider({ kind: 'comfyui', ...cfg }),
+			update: updateMeshProvider,
+			remove: removeMeshProvider,
+			setActive: setMeshActiveProvider
+		});
+		out.mesh.active = !!out.mesh.id && get(meshActiveProvider) === out.mesh.id;
+		if (enable && out.mesh.active && !get(meshGenEnabled)) {
+			setMeshGenEnabled(true);
+			out.enabled.mesh = true;
+		}
+		return out;
+	}
+};
+
+/**
+ * One domain of `aiPresets.seed`. Returns the managed entry's id, or '' when there is
+ * none (removed, or nothing offered). @param {string} tag @param {any} cfg
+ * @param {boolean} mayActivate @param {any} s the domain's store + writers
+ * @returns {string}
+ */
+function seedOne(tag, cfg, mayActivate, s) {
+	const existing = get(s.list).find((/** @type {any} */ p) => p.managedBy === tag) || null;
+	if (!cfg || typeof cfg !== 'object') {
+		if (existing) s.remove(existing.id);
+		return '';
+	}
+	// the plugin describes FIELDS; the identity (id) and the ownership (managedBy) are
+	// core's to assign, so a config carrying either cannot re-point an entry
+	const fields = { ...cfg };
+	delete fields.id;
+	delete fields.managedBy;
+	let id = existing?.id || '';
+	if (existing) {
+		s.update(id, { ...fields, managedBy: tag });
+	} else {
+		const before = get(s.active);
+		id = s.add({ ...fields, managedBy: tag });
+		// the store activates a first provider on its own — undo that when the caller
+		// may not activate (guard 1 would otherwise leak through the add)
+		if (!mayActivate && get(s.active) !== before) s.setActive(before);
+	}
+	const active = get(s.active);
+	if (mayActivate && (!active || active === id)) s.setActive(id);
+	return id;
+}
+
+/**
  * The API surface handed to a cloud plugin's `register(api)`. Deliberately small
  * and stable: peer hooks, UI mount points, and a couple of context accessors.
  * @returns {any}
  */
-function makeCloudApi() {
+export function makeCloudApi() {
 	return {
 		/** contract version — bump when the surface changes incompatibly.
 		 *  v2 (roadmap #14 PM): + mountProfile, mountConnectDrawer.
@@ -131,8 +239,13 @@ function makeCloudApi() {
 		/** the id of the peer whose session we joined, or null when WE are the host —
 		 *  lets the plugin make the session host the roles authority (admin) — v2.1 */
 		sessionHost: () => get(sessionHost),
-		/** dial a peer through the normal request flow (join a room) — v2 */
-		connectToPeer: (/** @type {string} */ peerId) => requestConnect(peerId),
+		/** dial a peer through the normal request flow (join a room) — v2. 29: an optional
+		 *  `cloudMeta` (plain JSON, ≤ 1 KB) rides the join dial to the host's auth hook
+		 *  (`decide(peerId, cloudMeta)`) — a knock's name, a room-code proof. */
+		connectToPeer: (/** @type {string} */ peerId, /** @type {any} */ cloudMeta) => requestConnect(peerId, cloudMeta),
+		/** 29: this engine carries `cloudMeta` on dials and consults `authProvider.decide`
+		 *  (admit / deny / knock-with-label). Absent on older engines — probe it. */
+		dialMeta: true,
 
 		// --- plugin message channel (replicate the plugin's own state) ---
 		/** broadcast a cloud message to all peers (roles, room announces) */
@@ -331,6 +444,16 @@ function makeCloudApi() {
 		 *  and OPEN-CORE.md for the exact shape) — or null to restore the GitHub gallery
 		 *  (logout). Core never learns what is behind the provider. */
 		setCommunityProvider: (/** @type {any} */ provider) => setCommunityProvider(provider),
+
+		// --- v3.1 (roadmap 29 G-3): hosted AI ---
+		/** ONE plugin-managed provider preset in Settings ▸ AI — `userHas(tag)` +
+		 *  `seed(tag, {ai, mesh, activate, enable})`; see `aiPresets` above. Additive and
+		 *  typeof-probed: no CLOUD_HOOKS_VERSION bump, an older engine simply has none. */
+		aiPresets,
+		/** an extra status line under each mesh-job card ("You are #3 in queue"). Pass
+		 *  `fn() → string | null` (null renders nothing) or null to remove it; call it
+		 *  again whenever the line may have changed — every set is a poke. */
+		setMeshJobStatus: (/** @type {any} */ fn) => meshJobStatus.set(typeof fn === 'function' ? fn : null),
 
 		// --- utilities ---
 		toast: showToast

@@ -5,6 +5,32 @@
      per release, newest first. HTML comments like this one are stripped before
      rendering, so maintainer notes stay out of the user-facing window. -->
 
+## 1.15.1 — Knock, and a key you never typed 🔑
+
+### 🚪 Gated cloud rooms work end to end
+
+- 🚪 **A room with a code, or a knock with your name.** Joining a cloud room now carries what
+  the room asks for: the right code lets you straight in, a wrong one is declined at once, and
+  a knock shows the host *"Ada wants to join Amber Mesa"* on the approval card. (The plugin
+  shipped this with 1.15.0 and fell back to the plain card until the engine could carry it.)
+
+### ⚡ Hosted AI, zero configuration
+
+- ⚡ **Signed in? The assistant can be set up for you.** The cloud plugin can now add a hosted
+  provider to Settings ▸ AI — no key, URL or model to type. A provider you configured yourself
+  always stays the selected one; the hosted row sits beside it to switch to. (Experimental —
+  it appears only while our hardware is reachable.)
+- ⏳ **"You are #3 in queue for the hosted AI."** The mesh-job card shows your place in the
+  hosted queue while a text-to-3D job waits.
+
+### 🧩 For plugin authors
+
+- 🧩 **cloudApi v3.1**, all additive (no hooks-version bump): `connectToPeer(peerId, cloudMeta)`
+  rides plain JSON on the join dial, `authProvider.decide(peerId, cloudMeta)` answers
+  admit / deny / `{label}`, `cloudApi.dialMeta` is the probe; `api.aiPresets.{userHas, seed}`
+  own one plugin-managed provider preset per domain, `api.setMeshJobStatus(fn)` is the line
+  under the mesh-job card.
+
 ## 1.15.0 — Where everyone is 👥
 
 ### 👥 One session, and you can see who is in which scene (roadmap #22, the last three rounds)

@@ -96,6 +96,10 @@ export function hasCapabilityProvider() {
  *     is a synchronous lookup against it). Returns false/undefined = defer to the
  *     normal whitelist+approval flow.
  *   onPeerConnect(peerId): void — observe accepted connections (identity binding).
+ *   decide(peerId, cloudMeta): 'admit' | 'deny' | {label} — 29 (rooms access). When
+ *     present it replaces `authorize`: `cloudMeta` is the joiner's dial data
+ *     (cloudApi.connectToPeer's 2nd arg, null when absent); 'deny' refuses with no
+ *     approval card; an object is the normal card, carrying `label`.
  * @type {any}
  */
 let authProvider = null;
@@ -190,6 +194,17 @@ export const CLOUD_HOOKS_VERSION = 3;
  * Settings ▸ About renders it as a "Cloud plugin x.y.z" row. Null without a plugin.
  * @type {import('svelte/store').Writable<{name: string, version: string} | null>} */
 export const cloudPluginInfo = writable(null);
+
+/**
+ * v3.1 (roadmap 29 G-3, hosted AI): ONE extra status line under each mesh-job card,
+ * e.g. "You are #3 in queue for the hosted AI". The plugin installs a FUNCTION
+ * (`api.setMeshJobStatus(fn)`); `fn()` → string | null, null renders nothing. It is a
+ * function rather than a string so the plugin owns the wording and the moment: core
+ * re-reads it whenever the store is SET (a function is never `===` its last value in
+ * svelte's equality check, so setting the same fn again is a poke) and whenever the
+ * job list changes. Null = no plugin, the card is byte-identical.
+ * @type {import('svelte/store').Writable<(() => string | null) | null>} */
+export const meshJobStatus = writable(null);
 
 /**
  * 21-G5 (F7): CROSS-SCENE PRESENCE, the rolesInfo-bridge shape one domain over. The

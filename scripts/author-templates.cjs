@@ -1162,7 +1162,7 @@ const BEAT_DEF = {
 //                    `thumb.sceneGroups: ['dungeon-module']` to get it onto the card
 //   untangle       — 21-C C7: the thin template (pose + level + room + HUD + graph); its
 //                    board is scene-root content too (`thumb.sceneGroups: ['untangle-module']`)
-const MODULE_DEFS = ['football', 'dungeon-realms', 'untangle'];
+const MODULE_DEFS = ['football', 'dungeon-realms', 'untangle', 'waves'];
 
 const DEFS = [
 	{

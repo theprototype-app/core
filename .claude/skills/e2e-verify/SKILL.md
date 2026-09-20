@@ -141,8 +141,11 @@ sibling modules checkout, every one SKIPS-never-fails when a source is missing):
 `game-towers` (20), `game-stars-room` (36), `game-football` (102, two peers + late joiner;
 FOOTBALL_TPSCENE / FOOTBALL_ZIP), `game-dungeon-realms` (64, two peers + late joiner, TWO zips:
 DUNGEON_REALMS_TPSCENE / DUNGEON_KIT_ZIP / DUNGEON_REALMS_ZIP / MODULES_REPO), `game-untangle`
-(46; UNTANGLE_TPSCENE / UNTANGLE_ZIP). Before a scenes row is released, point the TPSCENE env
-at the staged file. The SESSIONS line (roadmap 22 R4-R6): `session-scenes` (36, three peers),
+(46; UNTANGLE_TPSCENE / UNTANGLE_ZIP), `game-waves` (90, two peers + late joiner, TWO zips:
+WAVES_TPSCENE / HEALTH_ZIP / WAVES_ZIP / MODULES_REPO — it picks the card in the REAL Games tab
+through a routed feed, kills enemies with core's feedProbe, and reads core's own SCENES_BASE
+fallback out of sceneTemplates.js so the #230 ref move follows by construction). Before a scenes
+row is released, point the TPSCENE env at the staged file. The SESSIONS line (roadmap 22 R4-R6): `session-scenes` (36, three peers),
 `scene-rename` (46), `scene-duplicate` (29). `embed-boot` (20) = the `?embed=1` flag.
 
 ## Assertion discipline (a check that cannot fail is not a check)

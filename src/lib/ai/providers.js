@@ -27,6 +27,10 @@ import { safeStorage } from '../safeStorage';
  * @property {string[]} [models]   model ids the endpoint reported on the last
  *   successful Test connection (GET /models) — Settings' model-picker suggestions.
  *   Persisted so the picker still works after a reload without re-fetching.
+ * @property {string} [managedBy] cloudApi v3.1 (roadmap 29 G-3): the tag of the cloud
+ *   plugin that OWNS this entry (`api.aiPresets.seed`). ABSENT = the user's own — every
+ *   entry saved before the seam existed reads as theirs with no migration, and a preset
+ *   is untouchable-by-construction for anything but its own tag.
  */
 
 /**
@@ -164,6 +168,8 @@ export function addAiProvider(config) {
 	if (Array.isArray(config.models) && config.models.length) {
 		entry.models = config.models.map(String).slice(0, 500);
 	}
+	// v3.1: a plugin-managed preset keeps its tag (the whitelist above used to drop it)
+	if (typeof config.managedBy === 'string' && config.managedBy) entry.managedBy = config.managedBy;
 	const list = [...get(aiProviders), entry];
 	aiProviders.set(list);
 	persistProviders(list);

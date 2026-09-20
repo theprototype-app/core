@@ -20,6 +20,9 @@ import { safeStorage } from '../safeStorage';
  * @property {string} [assetProxy]    meshy: CORS proxy for the GLB download — Meshy's
  *   assets CDN sends no Access-Control-Allow-Origin, so browsers can't fetch the
  *   result directly. Blank = the build-time VITE_ASSET_PROXY default (meshy.js).
+ * @property {string} [managedBy] cloudApi v3.1 (roadmap 29 G-3): the tag of the cloud
+ *   plugin that OWNS this entry (`api.aiPresets.seed`). Absent = the user's own (see
+ *   ai/providers.js — same rule, same reason).
  */
 
 /**
@@ -121,7 +124,9 @@ export function addMeshProvider(config) {
 		...(config.workflowJson !== undefined ? { workflowJson: config.workflowJson } : {}),
 		...(config.outputNodeId !== undefined ? { outputNodeId: String(config.outputNodeId).trim() } : {}),
 		...(config.mode !== undefined ? { mode: config.mode } : {}),
-		...(config.assetProxy !== undefined ? { assetProxy: String(config.assetProxy).trim() } : {})
+		...(config.assetProxy !== undefined ? { assetProxy: String(config.assetProxy).trim() } : {}),
+		// v3.1: a plugin-managed preset keeps its tag
+		...(typeof config.managedBy === 'string' && config.managedBy ? { managedBy: config.managedBy } : {})
 	};
 	const list = [...get(meshProviders), entry];
 	meshProviders.set(list);

@@ -479,19 +479,40 @@ h.run(async () => {
 	await A.page.waitForTimeout(2600); // the 2 s exit cooldown, so both presses are taken the same way
 	// nothing between the two presses: this IS the window
 	await Promise.all([A.page.locator('#play-button').click(), B.page.locator('#play-button').click()]);
+	// EXACTLY ONE WORLD is the invariant these presses can carry, and it is deliberately
+	// NOT "the lower id wins": two presses do not reliably race (the first peer's
+	// `simulate` often lands before the second's guard is read, and then nothing raced and
+	// whoever pressed first keeps it, higher id or not). The ID RULE is asserted in 7b,
+	// where the race is forced and has no timing in it.
 	const low = A.id < B.id ? A : B;
 	const high = A.id < B.id ? B : A;
-	const lowName = low === A ? 'A' : 'B';
-	await h.eventually(() => simOf(low.page), (v) => v.own === true, `7.1 the LOWER peer id keeps the world (${lowName}: ${low.id} < ${high.id})`, 20000);
-	await h.eventually(() => simOf(high.page), (v) => v.own === false && v.remote === low.id, '7.2 the higher id YIELDED and adopted the winner', 20000);
-	h.check((await simOf(low.page)).remote === null, '7.3 ...and the winner never recorded the loser as a simulator');
-	await h.eventually(() => simOf(C.page), (v) => v.own === false && v.remote === low.id, '7.4 C (a spectator to the race) agrees on the same winner', 20000);
-	// the measured shape, directly: the loser's stream must leave nothing pinned
+	await h.eventually(
+		() => Promise.all([simOf(A.page), simOf(B.page)]),
+		([a, b]) => (a.own ? !b.own && b.remote === A.id : b.own && a.remote === B.id),
+		'7.1 the two presses leave exactly ONE simulator, and the other knows who it is',
+		25000
+	);
+	const holder = (await simOf(A.page)).own ? A : B;
+	const follower = holder === A ? B : A;
+	h.check((await simOf(holder.page)).remote === null, '7.2 the peer stepping the world recorded nobody else as a simulator');
+	await h.eventually(() => simOf(C.page), (v) => v.own === false && v.remote === holder.id, '7.3 C (a spectator) agrees on the same one', 20000);
+	// the measured shape, directly: a loser's stream must leave nothing pinned
 	const heldBy = (page, id) =>
 		page.evaluate((id) => window.__stores.physics.physicsDebug().filter((e) => e.hold === 'external' && e.holdPeer === id).length, id);
-	await low.page.waitForTimeout(1500);
-	const pinned = await heldBy(low.page, high.id);
-	h.check(pinned === 0, `7.5 no body on the winner is pinned by the loser's move stream (${pinned})`);
+	await holder.page.waitForTimeout(1500);
+	const pinned = await heldBy(holder.page, follower.id);
+	h.check(pinned === 0, `7.4 no body on it is pinned by the other peer's move stream (${pinned})`);
+
+	// hand the world to the LOWER id, so 7b starts from the state the rule elects (when the
+	// presses DID race that is already true and this is a no-op)
+	if (holder !== low) {
+		await holder.page.evaluate(() => window.__stores.physics.stopSimulation());
+		await h.eventually(() => simOf(low.page), (v) => v.own === false && v.remote === null, '  (premise) the pitch is idle', 10000);
+		await low.page.evaluate(() => window.__stores.physics.toggleSimulation());
+	}
+	await h.eventually(() => simOf(low.page), (v) => v.own === true, `7.5 the lower id holds the world (${low === A ? 'A' : 'B'}: ${low.id} < ${high.id})`, 20000);
+	await h.eventually(() => simOf(high.page), (v) => v.own === false && v.remote === low.id, '  (premise) the higher id follows it', 20000);
+	await h.eventually(() => simOf(C.page), (v) => v.own === false && v.remote === low.id, '  (premise) and so does the spectator', 20000);
 
 	// ---- 7b. THE RACE, FORCED, BOTH WAYS ---------------------------------------------------------
 	// Two real presses do not RELIABLY race — sometimes the first peer's `simulate` lands
@@ -503,6 +524,11 @@ h.run(async () => {
 	// That peer never receives a start message of its own to reason about, so the winner
 	// has to ANSWER a competing claim with its own start, and these are the only checks
 	// that cover that half of the rule.
+	// NOTE, measured: there is deliberately no "the intruder really started" premise here.
+	// The forced world lives for about a fifth of a second before it yields, which is
+	// shorter than `eventually`'s poll, so such a premise reads {own:false} and fails on a
+	// race that DID happen. What proves these two are not vacuous is the counterfactual:
+	// remove the winner's re-announce and 7.6 goes red, which a vacuous check cannot do.
 	const forceStart = (peer) =>
 		peer.page.evaluate(() => {
 			const p = window.__stores.physics;

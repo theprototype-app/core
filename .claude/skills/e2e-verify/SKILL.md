@@ -29,7 +29,13 @@ The GAME line: `game-state`, `hud-actions`, `logic-nodes`, `collectibles-v2`,
 `scene-folders` and the `game-loop-v2/v3/v4` acceptance suites, plus (R3a)
 `sdk-game-seams` (78 since 29: onChange/freeRegion/setNodesData) — the module-facing seams api.game/peerVars/flow/playerPosition, the
 `{replicate:false}` local pulse, the round-aware `ctx.trigger`, and the counterfactual
-that the migrated collectible pieces are GONE from core. `module-toolbox` covers the
+that the migrated collectible pieces are GONE from core. The cloudApi v3.1 seams (1.15.1) are
+`dial-metadata` (43: the join dial's `cloud` metadata + `authProvider.decide` against a
+stubbed peer, then two real peers over signaling — needs PEER_CONFIG for its last section;
+NOTE a knock's conn IS closed at once like every pending request's, the CARD is the state) and
+`ai-presets` (45: `api.aiPresets` create/update/remove, both activation guards with their
+counterfactuals, `setMeshJobStatus` rendering under a fake RUNNING job pushed into
+`s.meshJobs.meshJobs`). `module-toolbox` covers the
 toolbox seams incl. the `sidebar: false` opt-out and openToolbox/closeToolbox/
 toggleToolbox. **`trigger-log-sync`** (56, three peers) covers DEVX #18 - the handshake
 reply for the trigger log, and the epoch that keeps arriving history readable while making

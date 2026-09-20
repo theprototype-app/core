@@ -45,7 +45,31 @@ loadable play content. Everything a user does must be visible to connected peers
   `{myId,myRole,amAdmin,order,roleOf(id),setRole(id,role)}` so CORE renders per-peer
   role controls + gates viewer actions) + `setRolesInfo`; `sessionHost()` accessor;
   `captureThumbnail(maxW)` (renders a fresh frame + reads the canvas synchronously →
-  downscaled JPEG blob, null in VR — for cloud room thumbnails).
+  downscaled JPEG blob, null in VR — for cloud room thumbnails). **cloudApi v3.1 (1.15.1,
+  roadmap 29 core seams — both ADDITIVE, typeof-probed, no CLOUD_HOOKS_VERSION bump):**
+  (1) ROOMS ACCESS — `connectToPeer(peerId, cloudMeta)` puts `cloud: <plain JSON ≤ 1 KB>`
+  on the join dial's PeerJS metadata (`peerApproval.boundCloudMeta`; remembered per peer on
+  `PeerConnection.dialCloud` so a restore re-dial knocks with the same hand; absent = the dial
+  is byte-identical `{jr:1}`), because an unapproved conn is closed before it opens and the
+  metadata is the only thing the host reads FIRST. `authProvider.decide(peerId, cloudMeta)`
+  REPLACES `authorize` when present: `'admit'` (the auto-approve path) · `'deny'` (refused with
+  NO card; a `jr` joiner hears `denied` through the 25-F refusal dial, an older one is closed
+  silently) · `{label}` (the normal card carrying the label, 120-char cap, refreshed by a
+  re-dial; Toasts + the drawer's Toasts tab render `approval.label`). Undefined defers to
+  `authorize`; a throwing `decide` falls back to the manual card. `cloudApi.dialMeta = true`
+  is the probe; the cloud rooms plugin fails CLOSED to the plain card without it.
+  (2) HOSTED AI — `api.aiPresets.userHas(tag)` / `seed(tag, {ai, mesh, activate, enable})`:
+  core owns ONE plugin-managed provider preset per domain (`managedBy` on the
+  `providers.js`/`meshProviders.js` config; ABSENT = the user's own, no migration, and the
+  add whitelists keep it). Activation takes TWO guards (the caller's `activate.<domain>` AND
+  the slot empty-or-ours) and the trap the lane named: `addAiProvider`/`addMeshProvider`
+  auto-activate a FIRST provider, so a seed without permission restores the previous pointer
+  or guard 1 leaks through the add. `enable` flips the master only when our entry became
+  active. `setMeshJobStatus(fn)` + `cloudHooks.meshJobStatus` = one line under each RUNNING
+  mesh-job card, re-read on every SET (a function is never `===` its last value in svelte's
+  store check, so a set is a poke — the plugin re-sets on every change) and on every job-list
+  change. `makeCloudApi` is exported for the debug hook. Suites `dial-metadata` (43, two real
+  peers at the end) + `ai-presets` (45).
 - `src/lib/triggerSync.js` (DEVX #18, the gameSync/hudSync shape — data in the leaf
   store, wire out here, NO history kind because the log is RUNTIME state): the flow
   TRIGGER LOG finally has a handshake reply. `flowTriggers` is what every stateful node
@@ -149,7 +173,7 @@ loadable play content. Everything a user does must be visible to connected peers
   the fiftieth download read 98% before moving a byte. `byBytes` says WHICH kind of
   percentage you are reading. `indicatorState` is the four-state sync convention
   (offline/idle/active/failed) and OFFLINE must not look like an error.
-  Plan + as-built: cloud `plans-core/roadmap-22-shared-library-sessions.md` sections 5-8.
+  Plan + as-built: cloud `plans/core/roadmap-22-shared-library-sessions.md` sections 5-8.
 - `src/lib/mountedVolumes.js` (R22 round 13, a LEAF: svelte/store + idb + toast; `sessions`
   by dynamic import; `explorer.js` must NEVER import it) — MOUNTED PROJECT VOLUMES: saved
   projects browsed as roots of their own ABOVE Library. Store
@@ -250,10 +274,10 @@ loadable play content. Everything a user does must be visible to connected peers
   target. The grip is 7px ON the boundary, double-click FORGETS the width (rather than
   storing the default, so a later default change still reaches it), and the header menu
   grows "Reset widths and order" only when there is something to reset.
-  Plan: cloud `plans-core/roadmap-22-shared-library-sessions.md` section 10.
+  Plan: cloud `plans/core/roadmap-22-shared-library-sessions.md` section 10.
 - **R22 ROUND 36 — DELETED KEEPS ITS STRUCTURE** (`sharedLibrary.js` bin section +
   `explorerView.js` + `Explorer.svelte`'s bin; plan + as-built: cloud
-  `plans-core/pending/22-deleted-folders.md`). THE FINDING: `explorer.deleteFolder` DESTROYED
+  `plans/core/pending/22-deleted-folders.md`). THE FINDING: `explorer.deleteFolder` DESTROYED
   locally and wrote NO tombstone and NO log row, so a peer on `shareNewFiles: always` stripped
   the departed rows to `wasShared`, claimed them as `mine`, republished — and the deleter
   adopted its own folder back and auto-downloaded its own files ("deleting a folder recreates
@@ -342,7 +366,7 @@ loadable play content. Everything a user does must be visible to connected peers
   hidden old versions of a deleted-for-everyone scene stay on the shelf indefinitely.
 - **R22 ROUND 36 (ROOMS) — THE UNNAMED WORLD IS A ROOM WITH AN IDENTITY** (`peerScenes.js`
   `roomOf`/`roomCtx`/`elsewhereThan(map, mine, peerId, host)`; map + as-built: cloud
-  `plans-core/pending/22-scene-rooms-map.md`). THE FINDING: the room gate was only-on-evidence
+  `plans/core/pending/22-scene-rooms-map.md`). THE FINDING: the room gate was only-on-evidence
   — two rows were elsewhere only when BOTH named a scene and the names differed, so an EMPTY
   scene gated nothing. Right for a joiner adopting the host's content over the handshake
   without learning its name; wrong the moment a session holds a named room AND an unnamed one,
@@ -1274,7 +1298,7 @@ loadable play content. Everything a user does must be visible to connected peers
   names so a flow node has something to address. **The MANUAL is a `doc` line per def
   in a DOCS map** (helper-made nodes have no literal to hang one on), feeding the info
   pane, the palette tooltip AND the docs-site tables from one string; `shader-node-docs`
-  fails if a node ships without one. Plan + as-built: cloud `plans-core/pending/shader-graph-editor.md`; the
+  fails if a node ships without one. Plan + as-built: cloud `plans/core/pending/shader-graph-editor.md`; the
   scene-wide half (post stack, layer 2) is `scene-look-post-processing.md`.
   **THE HUD** (21-A, `hudDocs` + `hudSync` + `components/hud/` + the dock tab) — core
   had not one UI/2D/screen node, so a game's menu and score could not be authored:
@@ -1328,7 +1352,7 @@ loadable play content. Everything a user does must be visible to connected peers
   to ~10Hz AND written only ON CHANGE — the layer is real DOM. `HudEditor.svelte` is the
   6th `FLOW_FAMILY` member on UvEditor's shell (see the flex-feedback gotcha for the
   artboard sizing), and `Controls.svelte`'s `flowDockSnapshot` needs its `hud` lines or
-  the tab never comes back after play mode. Plan: cloud `plans-core/pending/21-a-hud-and-sdk.md`.
+  the tab never comes back after play mode. Plan: cloud `plans/core/pending/21-a-hud-and-sdk.md`.
   **21-D — THE HUD BECOMES INTERACTIVE, AND THE GAME SHELL** (`hudKinds` + `hudImages` +
   `hudActions` + `gameState` + `gameSync` + `HudElementPicker`/`HudPalette`/
   `HudActionsSection`/`GameCameraNode`). 21-A shipped a PRESENTATION layer; a user could
@@ -1396,7 +1420,7 @@ loadable play content. Everything a user does must be visible to connected peers
   borrows that camera's aspect. The HUD is hidden in the VIEWPORT while authoring
   (`viewportOverrides` gains a `hud` key — its first real `renderLayer` caller — with
   `hudPreviewInViewport` as the eye toggle). Plan + as-built: cloud
-  `plans-core/pending/21-d-hud-interaction-game-shell.md`.
+  `plans/core/pending/21-d-hud-interaction-game-shell.md`.
   **21-E — GAME HARDENING** (roadmap 21-E, all eight phases): the layer between "the
   pieces exist" and "press Play and a game works". E1/E2 made the HUD editor WYSIWYG
   (content at 1:1 inside a transform-scaled stage — it used to scale boxes and not
@@ -1457,7 +1481,7 @@ loadable play content. Everything a user does must be visible to connected peers
   playanim/sound/particles/impulse/reset-counter/toggle-visibility (chain actions),
   the objectMenu "Make collectible" recipe (onclick→latch→not→visibility + setvariable
   add, ONE flownodes entry per object), and the docs-site `build-a-game.md`
-  walkthrough. Plan + as-built: cloud `plans-core/roadmap-21e-game-hardening.md`.
+  walkthrough. Plan + as-built: cloud `plans/core/roadmap-21e-game-hardening.md`.
   **21-F — LEVELS, COLLECTIBLES v2, HUD EDITOR POLISH** (roadmap 21-F): `levels.js` —
   a SCENE ASSET is an ordinary content-hashed .tpscene in the Explorer. **21-G1 renamed
   the folder to `Scenes` and DEMOTED it**: `SCENES_FOLDER`/`ensureScenesFolder` premake it
@@ -1530,7 +1554,7 @@ loadable play content. Everything a user does must be visible to connected peers
   drew the id hash, so two screens disagreed about one person) + `showFacing`
   heading wedges (`facingAngle` = one atan2(z, x): canvas +y IS world +z). F7
   (cross-scene presence on the rooms layer) deliberately slipped to 21-G. Plan +
-  as-built: cloud `plans-core/roadmap-21f-levels-and-polish.md`.
+  as-built: cloud `plans/core/roadmap-21f-levels-and-polish.md`.
   **21-G1 — SCENES NOT LEVELS; RECIPE RE-HOMING** (see the levels entry above for the
   discovery change). Three more pieces. (1) **The object menu's `Game ▸` submenu is
   GONE** — its only entries were the two collectible recipes, and they moved to the NODE
@@ -1608,7 +1632,7 @@ loadable play content. Everything a user does must be visible to connected peers
   peerRoster. Plugin half (cloud repo): rooms records carry {scene, members, invites}
   (PB fields in pocketbase-setup.md), a 30s presence POLL, invites riding MY room
   record (self-expiring ~2min; Join = connectToPeer — the ordinary join sync lands
-  them in the scene). Plan: cloud `plans-core/roadmap-21g-projects-presence.md`.
+  them in the scene). Plan: cloud `plans/core/roadmap-21g-projects-presence.md`.
   `editOverlays` (PR #133, imports NOTHING): park/strip for the edit WIREFRAME,
   which is a LineSegments CHILD of the edited mesh and therefore inside the
   serialized tree — a save taken mid-session wrote it into the file as a
@@ -2010,7 +2034,7 @@ loadable play content. Everything a user does must be visible to connected peers
 - Docs (2026-07-24 split): SDK authoring docs live on the PUBLIC docs site
   (theprototype-docs: module-sdk.md + module-package.md); `MODULES.md` committed here.
   ALL planning docs live in the PRIVATE cloud repo (`theprototype-app/cloud` →
-  `docs/plans-core/`, local `../theprototype.app-cloud`). This repo's `/docs` is
+  `plans/core/`, local `/home/deck/.code/theprototype-app/cloud`). This repo's `/docs` is
   gitignored scratch space (pointer READMEs inside).
 
 - `src/lib/knock.js` + `knockMath.js` (24-A) — A HAND KNOCKS A BODY. `knockMath` is the pure
@@ -2210,6 +2234,15 @@ loadable play content. Everything a user does must be visible to connected peers
 
 ## Hard-won gotchas (do not rediscover)
 
+- **jsDelivr PARSES `@v2` AS A SEMVER VERSION, AND A VERSION IS NEVER RE-RESOLVED.** The scenes
+  feed is `scenes@v2` and the serving ritual retags `v2`; jsDelivr's data API lists the repo as
+  `versions: ["1","2"], tags: {}`, the response says `x-jsd-version-type: version`, and a
+  version's files are cached permanently — `purge.jsdelivr.net` reports `finished` and changes
+  nothing (measured: 16 h and four purges after the Jam Room retag the index still listed three
+  games while `@a5ebe8f` and `@main` listed six). `@main` resolves as a BRANCH (≤ 12 h cache,
+  purgeable). So a moving ref on jsDelivr must be a branch or a tag name that is not a
+  version (`format-2`); `packs@v1` has the same trap waiting. Core ticket #230; the deploy-time
+  unblock is `VITE_SCENES_BASE=…scenes@main` (what `contentBase()` exists for).
 - **flowbite-svelte's `Button` FREEZES its class string at mount.** `Button.svelte:34` reads
   the theme through a DESTRUCTURING `$derived` declaration, which evaluates its object ONCE
   — so a button BORN disabled wears `cursor-not-allowed opacity-50` forever, even after its
@@ -4391,14 +4424,14 @@ override for e2e — never share 5173 (the user's main-checkout server).
 
 - One commit per phase/feature; message style: `[feat]/[fix] lowercase summary` + body
   bullets + `Co-Authored-By: Claude ... <noreply@anthropic.com>`.
-- Plan documents live in the PRIVATE cloud repo: `../theprototype.app-cloud/docs/plans-core/`
+- Plan documents live in the PRIVATE cloud repo: `cloud/plans/core/` (local `/home/deck/.code/theprototype-app/cloud/plans/core/`)
   (versioned there — moved 2026-07-24; **never commit plans into THIS repo**).
   `/plans/` in this repo is GITIGNORED local drafting space; a finished roadmap's
-  plan files move to cloud `plans-core/done/` (roadmap 24's did, 2026-09-12).
-  Postponed phases → `plans-core/pending/`; future ideas → `plans-core/backlog.md`;
-  open design questions → `plans-core/quiz.md`. Keep `00-overview.md` tables in sync
+  plan files move to cloud `plans/core/done/` (roadmap 24's did, 2026-09-12).
+  Postponed phases → `plans/core/pending/`; future ideas → `plans/core/backlog.md`;
+  open design questions → `plans/core/quiz.md`. Keep `00-overview.md` tables in sync
   with every scope change. Historical `docs/plan/...` references below = the old
-  in-repo path; those files are now under `plans-core/`.
+  in-repo path; those files are now under `plans/core/`.
 - Roadmap ritual: user drops notes → ask 3-4 targeted AskUserQuestion forks (offer a
   recommended option — they usually take it) → write plan files → present the batch
   table (sizes S/M/L/XL, riskiest last) → they pick what executes.
@@ -4713,10 +4746,29 @@ override for e2e — never share 5173 (the user's main-checkout server).
   learning its name. New suites: import-duplicates(65), scene-open-guard(30),
   scene-rooms(37); four guards proven by BREAKING them. Standing pre-existing reds,
   A/B'd against base: `explorer-drop` last check, `explorer-files`, `peers-popover`.
-  NEXT: roadmap 22 (cloud `plans-core/roadmap-22-shared-library-sessions.md`) — forks
+  NEXT: roadmap 22 (cloud `plans/core/roadmap-22-shared-library-sessions.md`) — forks
   locked (replicate the INDEX per-item opt-in; ONE mesh with scenes as tags;
   scene-is-primary renaming), and the vocabulary settled: **session = the mesh, room =
   who is in a scene, PocketBase rooms stay DISCOVERY** — that naming blocks R4.
+- Status (2026-09-20): **1.15.1 "Knock, and a key you never typed" — ROADMAP 29 ROUND 2, the two
+  core seams, taken IN-HOUSE by the integrator.** The `29-core-seams` lane had sat ~11 h at a budget
+  checkpoint with nothing committed and a resume prompt nobody sent, so `feat/1.15.1` (off
+  release/next = main 02ce930) carries them: `8e9fb5d` seam 1 (the rooms-access lane's proven
+  patch landed + the JSDoc it lacked; `pendingApprovals` typed, which REMOVED five baseline
+  errors) · `311e184` seam 2 (`api.aiPresets` + `setMeshJobStatus`, written here against the
+  cloud's `hostedAi.js` and the answered QUESTIONS-29-ai-gateway forks 1/1b) · the docs commit.
+  Gates: svelte-check **336/47** (341 → 336, zero NEW messages, baseline ratcheted), vitest 178,
+  build green server-down; battery under the lock: dial-metadata 44 · ai-presets 46 ·
+  net-handshake 9 · approval-timeout 17 · join-result 41 · sdk-game-seams 78 green;
+  invite-link-live 21/1 (the documented public-cloud red) and open-core-m1 16/1 (the drawer-mount
+  check, A/B'd IDENTICAL on pristine 1.14.0 at :5214 — pre-existing). Cloud smoke against this
+  core: **139/0**, the rooms-access section now admitting on a real room code through `decide`
+  and G3 seeding through `api.aiPresets` (not the debugStores adapter). Cloud side: one consumer
+  line for `setMeshJobStatus` (re-set on every `hostedAi.onChange`). FOUND on the way: the Games
+  tab's stale feed is jsDelivr parsing `scenes@v2` as a VERSION (gotcha above, core #230).
+  OWED on device: a gated room with two real logins (right code → in, wrong → declined, knock →
+  the labelled card), the hosted preset appearing in Settings ▸ AI on a real sign-in once
+  `VITE_AI_GATEWAY_URL` is set, and the queue line under a real mesh job.
 - Status (2026-09-19): **1.15.0 "Where everyone is" — ROADMAP 29's finished lanes INTEGRATED.**
   Core `feat/1.15` = six lane PRs merged clean (#223 sessions R4/R5/R6 · #224 sdk-polish S1/S2 ·
   #227 s3-followup S3a/b/d · #226 football suite · #225 c6-template · #222 embed); vitest 178;
@@ -4757,7 +4809,7 @@ override for e2e — never share 5173 (the user's main-checkout server).
   `explorer-views` 114 · `explorer-delete-confirm` 54 · `explorer-multiselect` 63 ·
   `explorer-storage` 116 · `explorer-mounts-edit` 49 · `private-scene` 55 · `peers-popover`
   21 · `explorer-drop` 9 · `shared-library` 270/18 against a pristine-base 271/17 on the same box (the 17 are the chunked-transfer sections — the 700 KB fixture never reassembles here, `size -1` — and everything downstream of a peer holding bytes; the one extra is the SENDER ledger reading `active` instead of `done` in that same dead transfer). Three lane runs died at `h.connect` first; an instrumented copy and four probes connected every time, so that was the signaling box, not the code. svelte-check **362/47 unchanged**; build green. Architecture entry
-  above; plan + as-built: cloud `plans-core/pending/22-deleted-folders.md`. OWED: the
+  above; plan + as-built: cloud `plans/core/pending/22-deleted-folders.md`. OWED: the
   on-device pass in non-dark themes (folder-card dimming, the ghost tint, the `history`
   glyph, the Location column's 160px).
 - Status (2026-09-02): **R22 ROUND 13 SHIPPED — PRs #186 and #188 MERGED to release/next
@@ -4786,7 +4838,7 @@ override for e2e — never share 5173 (the user's main-checkout server).
   saved project in `loadSessions`, inline zip/hash; unblock first, then progress through
   transferLedger), the app-wide flowbite frozen-disabled-paint survey, idb.js settling on
   the transaction's onabort, and the dock-inset suite's logo-menu leak. Plan + full
-  as-built: cloud `plans-core/roadmap-22-round13-mounts-storage.md`.
+  as-built: cloud `plans/core/roadmap-22-round13-mounts-storage.md`.
 - Status (2026-08-25): **ROADMAP 22 — THE SHARED EXPLORER LIBRARY. R1/R2/R3/R7 + R8 and
   four review rounds EXECUTED on `feat/22-shared-library` (lane `theprototype-lane-snap`
   @5202), 10 commits off release/next @f46d335, NOT PUSHED.** svelte-check **385/62** at
@@ -4801,7 +4853,7 @@ override for e2e — never share 5173 (the user's main-checkout server).
   local `vite dev` shows "Server local dev / localhost:9001/peerjs" despite `.env`, a stray
   `Shared` folder on Share-all, "delete permanently" not removing the file, and the
   one-file/unsaved-scene prompt. Plan + as-built: cloud
-  `plans-core/roadmap-22-shared-library-sessions.md` sections 5-8.
+  `plans/core/roadmap-22-shared-library-sessions.md` sections 5-8.
 - Status (2026-08-22, later): **B7 SPAWNER MERGED; DEVX #18, THE PALETTE RULE AND THE
   COLLECTIBLE TOOLBOX v2 ARE OPEN PRs.** `release/next` @19a8a3c carries R3a (#170) and
   B7 (#172, the spawner — see the architecture entry). OPEN: core **#176** DEVX #18 (the
@@ -4857,7 +4909,7 @@ override for e2e — never share 5173 (the user's main-checkout server).
   table — pre-existing (the 21-F recipe stood on the same stamps), asserted in the
   module suite so a core `gettriggers`/`triggers` pair would flip it loudly. OWED
   on-device: the manager in non-dark themes and as a <=640px sheet, touch radius feel in
-  VR, a 3+ player per-player scramble. Plan: cloud `plans-core/roadmap-21g-projects-
+  VR, a 3+ player per-player scramble. Plan: cloud `plans/core/roadmap-21g-projects-
   presence.md` ROUND 3 REVISED.
 - Status (2026-08-21, latest): **ROADMAP 21-G — PROJECTS, CROSS-SCENE PRESENCE,
 - Status (2026-08-22, latest): **21-G ROUND 2 — DCC-STANDARD PROJECTS (G7-G10 + docs)
@@ -4883,7 +4935,7 @@ override for e2e — never share 5173 (the user's main-checkout server).
   explorer-inline-input(38) project-open-import(36) scene-versions(68) + project-file
   updated to OPEN semantics; docs-site projects.md committed there (72d14c7);
   build-a-game touch-ups ride the parallel round-3 session's uncommitted rewrite.
-  As-built + owed-on-device: cloud `plans-core/roadmap-21g-projects-presence.md`.
+  As-built + owed-on-device: cloud `plans/core/roadmap-21g-projects-presence.md`.
 - Status (2026-08-21): **ROADMAP 21-G — PROJECTS, CROSS-SCENE PRESENCE,
   PER-PLAYER PROGRESS: G1-G6 EXECUTED same-day off the 21-F merge (release/next
   @fdfbe39); MERGED 2026-08-22: PRs #164 -> #165 -> #166 to release/next @f126b85 (both lane merges landed CLEAN - G1 was already both branches' base - and the App.svelte hook counts held 164/164). ROUND 2 (G7-G10, DCC-standard projects: hidden version history + panel, the TP|Scene|GLTF menu with open-replaces vs import-furnishes, project/scene identity, inline naming) and ROUND 3 (the collectible NODE + manager toolbox) are PLANNED with locked forks 10-20 in the same plan doc, executing in parallel windows.** The user's four fork
@@ -4910,7 +4962,7 @@ override for e2e — never share 5173 (the user's main-checkout server).
   for the per-player case. OWED on-device: the project round-trip feel, cross-scene
   presence + invites on real cloud rooms (after the PB fields land), a 3+ player
   leaderboard, the Scenes/Download/recipe UI in non-dark themes. Plan + as-built:
-  cloud `plans-core/roadmap-21g-projects-presence.md`.
+  cloud `plans/core/roadmap-21g-projects-presence.md`.
 - Status (2026-08-21, later): **ROADMAP 21-F — LEVELS, COLLECTIBLES v2, HUD EDITOR
   POLISH: F1-F6 EXECUTED across three lanes; F7 (cross-scene presence on the rooms
   layer) deliberately slipped to 21-G per the plan.** Baseline re-measured 385/62 on a
@@ -4941,7 +4993,7 @@ override for e2e — never share 5173 (the user's main-checkout server).
   debug element and the new toolbar/dialog in non-dark themes, the marquee's feel on
   a real pointer, and the confirmation that "equalize takes the FIRST pick's size" is
   the right reference. Plan + as-built: cloud
-  `plans-core/roadmap-21f-levels-and-polish.md`.
+  `plans/core/roadmap-21f-levels-and-polish.md`.
 - Status (2026-08-21): **ROADMAP 21-E — GAME HARDENING, ALL EIGHT PHASES EXECUTED AND
   MERGED — PRs #158/#159/#160 to `release/next` @2d8af51.** Baseline **385/62** measured
   on the merged head; the release.yml gate ratcheted with it. Each lane PR took a
@@ -5032,12 +5084,12 @@ override for e2e — never share 5173 (the user's main-checkout server).
   action picker, the new input controls in NON-DARK themes, the game loop in VR (the
   HUD layer is DOM, desktop-only by design), and one judgement to confirm — an input
   value is LOCAL by default with `shared` as a per-element opt-in. Plan + as-built:
-  cloud `plans-core/pending/21-d-hud-interaction-game-shell.md`.
+  cloud `plans/core/pending/21-d-hud-interaction-game-shell.md`.
 - Status (2026-08-18, later): **ROADMAP #21-A — lanes L1 and L2 MERGED, PRs #149 (L1) and
   #150 (L2) to `release/next`.** The two lanes conflicted in exactly the ONE file
   `git merge-tree` predicted — App.svelte's debugStores lines — resolved as a UNION with the
   array/destructure/store-object counts asserted equal afterwards (141/141), which is the
-  whole point of that gotcha. Plan: cloud `plans-core/pending/21-a-hud-and-sdk.md` (parent
+  whole point of that gotcha. Plan: cloud `plans/core/pending/21-a-hud-and-sdk.md` (parent
   `roadmap-21-games-hud-physics.md`). flowRuntime, flowSockets, nodeCatalog and
   AnimationNode all auto-merged despite both lanes touching them. **L1 `feat/21-module-node-io`** (worktree `../theprototype-lane-flow` @5200,
   3 commits): `c48d1bc` the `'text'` param kind as its own commit so L2 could
@@ -5069,7 +5121,7 @@ override for e2e — never share 5173 (the user's main-checkout server).
   passes `playMode: true`.
 - Status (2026-08-18): **ROADMAP #20 MERGED + v1.6.0 — PRs #146 and #147 to
   `release/next` @944eb8d.** Editor ergonomics, units, workspace restore, the graph
-  tree. Plan + as-built: cloud `plans-core/roadmap-20-editor-ergonomics-units.md`.
+  tree. Plan + as-built: cloud `plans/core/roadmap-20-editor-ergonomics-units.md`.
   Baseline **388/62** (391 -> 388: annotating Scene's `marqueeStart` fixed three
   pre-existing implicit-anys; the release.yml gate was ratcheted to match).
   **P1** duplicate carries animation clips, object flows AND shader graphs (the last
@@ -5095,7 +5147,7 @@ override for e2e — never share 5173 (the user's main-checkout server).
   (lane `../theprototype-lane-uv` @ port 5193, 2 commits, NOT PR'd yet; **branched off
   `feat/17e-animation-curves`**, because U1 re-points the TIMELINE at the extracted
   engine — retarget once 17-E lands). Plan + as-built: cloud
-  `plans-core/pending/uv-editor-transform-tools.md`. **U1** `$lib/modalGrab.js` =
+  `plans/core/pending/uv-editor-transform-tools.md`. **U1** `$lib/modalGrab.js` =
   `createGesture` (see the architecture entry); shipped by moving the timeline onto it
   FIRST, with animation-curves/animation-window as the safety net, so the extraction is
   provably behaviour-preserving. **U2/U3** the UV editor gained the timeline's whole
@@ -5160,7 +5212,7 @@ override for e2e — never share 5173 (the user's main-checkout server).
   when a once-clip reaches its end, LOCALLY on every peer — each runtime reaches that
   elapsed time itself, the same reasoning as the once-clip end, so no message. Wire it
   into a Counter, a sound, or the next door's Play Animation.
-  **FOLLOW-UP DROP (2026-08-14, plan `plans-core/pending/17-e-animation-followups.md`,
+  **FOLLOW-UP DROP (2026-08-14, plan `plans/core/pending/17-e-animation-followups.md`,
   F1-F6 ALL EXECUTED + two user requests, 8 commits):** F1 the reported
   **Ctrl+V fires push-to-talk** (voiceChat matched the KEY and no modifiers; PTT is
   a BARE hold, and the keyup path is deliberately NOT modifier-guarded or pressing
@@ -5196,7 +5248,7 @@ override for e2e — never share 5173 (the user's main-checkout server).
   Baseline held **391/62**; build green. OWED: the user’s on-device/feel pass, then
   the PR of the whole 17-E branch to release/next.
   NEXT (planned): the same transform tools
-  in the UV editor → cloud `plans-core/pending/uv-editor-transform-tools.md`.
+  in the UV editor → cloud `plans/core/pending/uv-editor-transform-tools.md`.
 - Status (2026-08-17): **THE MESH-EDIT ROUND IS MERGED TO release/next — PRs #132
   (19-A), #133 (two fix rounds) and #134 (the pivot work) @9972a24.** #133:
   the Cancel button drew Undo2 beside #mesh-undo's Undo2 (now the X of a
@@ -5216,7 +5268,7 @@ override for e2e — never share 5173 (the user's main-checkout server).
   surfaced in the toolbox. Baseline **391/62** at every commit. New suites:
   mesh-pivot-gizmo (124+). OWED: the user's on-device feel pass (incl. the
   non-dark themes, which headless cannot judge). PENDING follow-ups written up
-  in cloud `plans-core/pending/mesh-proportional-pivot-followups.md`: F1
+  in cloud `plans/core/pending/mesh-proportional-pivot-followups.md`: F1
   proportional falloff for ROTATE/SCALE (needs the user's fork answer), F2
   vertex slide under a custom pivot (probably WONTFIX, make it visible), F3 a
   proportional TRANSLATE never replicates its falloff neighbours — the only
@@ -5224,7 +5276,7 @@ override for e2e — never share 5173 (the user's main-checkout server).
   separate) and P7c (vertex-bevel segments + the mitered corner) stay PARKED.
 - Status (2026-08-19): **21-C1..C4 TERRAIN + SPLINES — branch `feat/21-terrain-road`
   (lane `../theprototype-lane-spline` @ port 5203), 8 commits, MERGED to release/next.**
-  Plan: cloud `plans-core/pending/21-c-games-content.md` (C1-C4). **C2** is the PORT of
+  Plan: cloud `plans/core/pending/21-c-games-content.md` (C1-C4). **C2** is the PORT of
   phase 57 (`feat/spline-tool` @6be9f8a cherry-picked, three conflicts, all in the
   places the plan predicted) with the post-1.2.0 adaptations: SplineToolbar on the
   shared ToolboxWindow, DragRow numbers, and the plan's registerEditProxy /
@@ -5274,7 +5326,7 @@ override for e2e — never share 5173 (the user's main-checkout server).
 - Status (2026-08-18): **SCENE LOOK / POST-PROCESSING — branch `feat/scene-post-stack`
   (lane `../theprototype-lane-post` @ port 5198), 8 commits, release/next merged in
   CLEAN, baseline 391/62 at every commit, NOT PR'd.** Plan: cloud
-  `plans-core/pending/scene-look-post-processing.md` (L1-L5 marked EXECUTED there).
+  `plans/core/pending/scene-look-post-processing.md` (L1-L5 marked EXECUTED there).
   **L1** the stack core (see the `scenePost`/`postEffects` architecture entries) ·
   **L2** `scenepost`/`getscenepost` + sessions/.tpscene/autosave + the `'look'` history
   kind · **L3** Configure Scene ▸ Post-processing (`PostStack.svelte`, params from the
@@ -5290,13 +5342,13 @@ override for e2e — never share 5173 (the user's main-checkout server).
   `api.registerPostEffect` SDK seam + docs-site pages). **L6** (the Post DOMAIN in the
   shader editor) and **L7** (the scene default material) are BLOCKED on the shader lane
   landing and move to the follow-up plan, together with the user's per-CAMERA looks and
-  Watch-adopts-look: cloud `plans-core/pending/post-camera-looks-and-shader-integration.md`.
+  Watch-adopts-look: cloud `plans/core/pending/post-camera-looks-and-shader-integration.md`.
   The two lanes conflict in exactly TWO files (`App.svelte` debugStores,
   `peerHandler` dispatch) — measured with `git merge-tree`; everything else auto-merges.
 - Status (2026-08-19): **21-B PHYSICS PLAY — B1-B6 + A8 EXECUTED**, lane
   `../theprototype-lane-post` @ port 5202, branch `feat/21-physics-play` off
   release/next @803d040, 13 commits, NOT PR'd. Plan: cloud
-  `plans-core/pending/21-b-physics-play.md`. Baseline **388/62** at every commit
+  `plans/core/pending/21-b-physics-play.md`. Baseline **388/62** at every commit
   (roadmap 20 dropped it from 391 — re-measure on a pristine worktree, do not
   trust the number in an older plan). B1 scenePhysics v2 · B2 the throw-velocity
   leaf + the Euler/clamp fixes · B4 ground + out-of-bounds + the parameter
@@ -5373,7 +5425,7 @@ override for e2e — never share 5173 (the user's main-checkout server).
   commits @be8cb0d off release/next @78e71d7 (merged in; the one conflict was
   App.svelte's debugStores, as `git merge-tree` predicted). NOT PR'd. Baseline
   **391/62** at every commit. Plan + as-built: cloud
-  `plans-core/pending/shader-graph-editor.md`. SH0 spike (all four gates measured) ->
+  `plans/core/pending/shader-graph-editor.md`. SH0 spike (all four gates measured) ->
   the ShaderFrog array-varying vite patch -> **SH0.5, which flipped the backend
   choice on CORRECTNESS**: adding a light to a scene leaves ShaderFrog-driven objects
   byte-identically unchanged (it bakes three's light set into the source) while the
@@ -5405,7 +5457,7 @@ override for e2e — never share 5173 (the user's main-checkout server).
   coincident-ghost fix, and the properties-panel poke REMOVED as unworkable.
   New suites: `animation-relative-motion`, `pick-tiny-objects`, `animation-loop-pause`,
   `animation-look-channels`, `edit-overlay-gaps`, `mesh-budget`, `selection-extras`.
-  Release plan + CHANGELOG draft: cloud `plans-core/pending/1.5.0-release-prep.md`.
+  Release plan + CHANGELOG draft: cloud `plans/core/pending/1.5.0-release-prep.md`.
   PENDING plans from this round: `animation-relative-and-136-followups.md` (done),
   `duplicate-parity-and-material-sharing.md` (duplicate must carry clips + object
   flows; shared materials WAIT for the shader lane, because every material change
@@ -5471,7 +5523,7 @@ override for e2e — never share 5173 (the user's main-checkout server).
   P5a `7179a6f` (Opus) · P5b `d224cc2` · docs `497ef8e`/`cfff1c8` · P7a `5da6fe8`
   (Opus) · P7b `7edcbed`. Baseline **391/62 at EVERY commit**; build green; 28 files,
   +7195/-487. As-built table + the parked specs: cloud
-  `plans-core/pending/19-a-mesh-tool-interaction.md` §9 (§4 keeps P6's spec, §8 P7c's).
+  `plans/core/pending/19-a-mesh-tool-interaction.md` §9 (§4 keeps P6's spec, §8 P7c's).
   P7a = bridge **invert faces** (negate the wall dir AFTER the shell-test guess) +
   face-bevel **negative profile** (the concave quarter circle is the same arc with the
   sin/cos roles SWAPPED; every schedule column telescopes to 1, so total reach is
@@ -5506,7 +5558,7 @@ override for e2e — never share 5173 (the user's main-checkout server).
   off its source.
 - Status (2026-08-15, superseded by the entry above): **ROADMAP #19-A IN FLIGHT — the mesh tool APPLY-AND-ADJUST model.**
   Branch `feat/mesh-tool-interaction` off release/next @608e852; plans in the cloud repo
-  (`plans-core/roadmap-19-tool-interaction-snapping.md` + `pending/19-a/-b`); 19-B
+  (`plans/core/roadmap-19-tool-interaction-snapping.md` + `pending/19-a/-b`); 19-B
   (advanced snapping) runs in a PARALLEL user session on a worktree lane — Scene.svelte
   belongs to 19-B in that split. Committed so far: **P0** `bf6f2df` (DragRow
   onscrubstart/onscrubend; meshToolParams into debugStores; componentsOfTris exported;
@@ -5662,7 +5714,7 @@ override for e2e — never share 5173 (the user's main-checkout server).
   reasoning (the flipY direction had two confident opposite answers; the "empty scene
   on late join" turned out to be an earlier probe SUPPRESSING delivery, so a planned
   send-channel rewrite was dropped as aimed at a non-bug). As-built + what remains:
-  cloud `plans-core/pending/uv-editor.md`.
+  cloud `plans/core/pending/uv-editor.md`.
 - Status (2026-08-10): **MESH HARDENING — branch `feat/mesh-hardening`** (off
   release/next @372af29, lane ../theprototype-lane-c @5182, 4 commits + docs),
   from user reports on the merged M0-M6 tools. (1) `setFaceSubmode` + the
@@ -5681,13 +5733,13 @@ override for e2e — never share 5173 (the user's main-checkout server).
   New suites mesh-selection-undo(23)/mesh-edit-display(9)/mesh-loop-hardening(22);
   27-suite mesh+undo battery green; baseline 391/62 (unchanged from base).
   **NEXT WORKSTREAM (user-approved, ahead of M4 gizmo/M5/M9): stored face
-  topology as a HALF-EDGE structure** — cloud plans-core/pending/
+  topology as a HALF-EDGE structure** — cloud plans/core/pending/
   mesh-topology-halfedge.md, with the measurement that justifies it (a 4-degree
   rotate twists a quad's triangles ~9 degrees apart, indistinguishable from a
   real crease in a soup, so a rotated band leaves the derived topology).
 - Status (2026-08-10): **17-A MODULE PLATFORM SHIPPED — core PR #101** (branch
   feat/module-platform, lane ../theprototype-lane-flow @5186, 13 commits; plan +
-  as-built: cloud plans-core/pending/17-a-module-platform.md). **A1** SDK gaps
+  as-built: cloud plans/core/pending/17-a-module-platform.md). **A1** SDK gaps
   from the modules repo's DEVX-REQUESTS.md (api.haptic per-hand, isVR, vrHand,
   fireObjectClick, possess camera:'first' + possessModes probe; DEVX #8 fix —
   onInput subscribed via import().then() and DROPPED KEYS for seconds after
@@ -5712,7 +5764,7 @@ override for e2e — never share 5173 (the user's main-checkout server).
   are not testable headlessly); dungeon/dungeon-play stop at a THIRD peer on
   this box (setupPage waitForFunction, pre-existing environment limit).
 - Status (2026-08-10): **mesh-editing roadmap M0-M4 + M6 EXECUTED** (plan: cloud
-  `plans-core/pending/mesh-editing-roadmap.md`, which also carries the M5 bevel design
+  `plans/core/pending/mesh-editing-roadmap.md`, which also carries the M5 bevel design
   notes). Lane `../theprototype-lane-c` @ **port 5182**. Three stacked PRs off
   `release/next`: **#92** 15-G convert-to-mesh + quad granularity + the three mesh-edit
   defects it surfaced (multi-material meshes rendering NOTHING after an edit; wall
@@ -5781,7 +5833,7 @@ override for e2e — never share 5173 (the user's main-checkout server).
   `noteDoubleClickToOpen` (single click / drawer arrows only FLY; dblclick opens) +
   `visitedNote`, and the Esc order (first stops following, second closes the card).
   Suite `notes-v2` = 90 checks incl. a PROVEN frame-lag guard; baseline 419/62 held
-  throughout. Plan + as-built notes: cloud `plans-core/pending/15-h-notes-v2.md`.
+  throughout. Plan + as-built notes: cloud `plans/core/pending/15-h-notes-v2.md`.
   Backlog spinoff: a camera follow/look-at NODE for roadmap-16 camera OBJECTS.
 - Status (2026-08-02): **Roadmap #15 in flight — A+J → PR #81, B+C → PR #82,
   second drop K/L/M/N/O + toast-system rework → PR #84 (stacked on #82), docs
@@ -5792,7 +5844,7 @@ override for e2e — never share 5173 (the user's main-checkout server).
   GitHub stars (Welcome + cloud profile — cloud repo carries its own copy),
   PWA manifest/icons/no-cache SW, outline-follows-the-selection-SET (K).
   Baseline 419/62. Plan + parked designs: cloud repo
-  plans-core/roadmap-15-editmesh-notes-polish.md (mesh lane D→E→F, G, H notes
+  plans/core/roadmap-15-editmesh-notes-polish.md (mesh lane D→E→F, G, H notes
   v2 still pending there). Lane: ../theprototype-lane-ui @ port 5186 (5176 is
   shadowed by a stale [::1] server — the port-shadow trap; ALWAYS curl a source
   file and grep your new symbol before trusting a lane server).
@@ -5825,7 +5877,7 @@ override for e2e — never share 5173 (the user's main-checkout server).
 - Status (2026-08-04): **Roadmap #16 (menus, grid & scene cameras) EXECUTED →
   core PR #86** (branch fix/roadmap16-menus-cameras, six commits, STACKED on #85 →
   #84 → #82; retarget to release/next as they land; plan + as-built notes in the
-  cloud repo plans-core/roadmap-16-menus-grid-cameras.md). P6 deselect broadcasts
+  cloud repo plans/core/roadmap-16-menus-grid-cameras.md). P6 deselect broadcasts
   `unlock` (peers kept objects locked forever) + "Selected ▸" gates on the SET · P1
   menu filter hidden-until-typing + ↑/↓ navigation + Enter-opens-submenu · P2 the
   node editor's private search box retired onto the shared filter · P3 Configure
@@ -5836,7 +5888,7 @@ override for e2e — never share 5173 (the user's main-checkout server).
   deselect-unlock/grid-snapping/camera-bookmarks/camera-objects; 419/62 held.
   REMAINING from #15: mesh lane D→E→F, G (convert to mesh), H (notes v2).
 - Status (2026-08-01): **VR sleeve palette (K1+K2) MERGED to release/next (PR #75)**
-  — plan: cloud repo plans-core/done/k-vr-sleeve-palette.md (as-built notes there).
+  — plan: cloud repo plans/core/done/k-vr-sleeve-palette.md (as-built notes there).
   One commit: `$lib/vrSleeve.js` + the `vrsleeve` core-module shell + the generic
   module-VR hook registries in vrControls (nav suppressor / panel-group provider /
   trigger start-end-swallow / grip-drop interceptor / frame hook — Scene.svelte
@@ -5847,7 +5899,7 @@ override for e2e — never share 5173 (the user's main-checkout server).
   clear/cap). Lane: ../theprototype-lane-aiphys @5178. REMAINING: on-device feel
   (strip offsets on the forearm — constants at the top of vrSleeve.js) = user check.
   **AI assistant v3 flow+physics tools: PR #76 OPEN against release/next** (same
-  lane; plan: plans-core/done/ai-flow-physics-tools.md). The assistant creates
+  lane; plan: plans/core/done/ai-flow-physics-tools.md). The assistant creates
   BEHAVIOR now: `create_flow_nodes`/`update_flow_nodes` always available (curated
   node-type enum + alias map, editor-identical node/edge construction incl. the
   handle-qualified edge-id format, ONE 'flownodes' history entry per call; the
@@ -5868,7 +5920,7 @@ override for e2e — never share 5173 (the user's main-checkout server).
   resolved by absorbing physicsShapeChanged into setPhysicsFor); post-merge 438/62
   held + ai/collider/joints suites green. REMAINING: live vLLM smoke = user check.
 - Status (2026-08-01): **Colliders v2 + Edit Mesh Pro MERGED to release/next (PR
-  #74)** — plan: cloud repo plans-core/pending/colliders-v2-editmesh-pro.md (marked
+  #74)** — plan: cloud repo plans/core/pending/colliders-v2-editmesh-pro.md (marked
   EXECUTED). Five commits: **CL-A** colliders core (colliderSpec.js one source of
   truth, LIVE mid-sim collider rebuild, sensors + enter/exit dispatch, material
   presets, freeze axes, scene-gravity `scenephysics` singleton, collider viz,
@@ -5903,7 +5955,7 @@ override for e2e — never share 5173 (the user's main-checkout server).
   bump): drag-drop-simulation cluster (explorer-drop/explorer/packs-drop) +
   user-modules, open-core-m1 (1 check), dock-sidebar-inset, layout, node-search,
   panels, script-nodes + a few two-peer timing suites. NEXT: deps migrations
-  post-1.0 (cloud plans-core/pending/deps-migrations-post-1.0.md, Part A first).
+  post-1.0 (cloud plans/core/pending/deps-migrations-post-1.0.md, Part A first).
 - Status (2026-07-26): **Mobile/responsive UI polish — branch
   `fix/ui-polish-connect-settings` (off main, NOT PR'd yet).** A large ad-hoc pass, not a
   numbered roadmap batch. Landmarks: **Connect docking** — the centred pill MEASURES

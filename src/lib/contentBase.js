@@ -1,9 +1,11 @@
 // The off-bundle CONTENT BASES, overridable at build time.
 //
-// Three content repos are read over jsDelivr at pinned refs — `scenes@v2`
-// (templates/examples/games), `modules@main` (the module gallery) and `packs@v1`
-// (Explorer packs). Every one of them was a hardcoded const, which makes them the
-// only build-time configuration in the app that CANNOT be pointed anywhere else:
+// Three content repos are read over jsDelivr at pinned refs — `scenes@format-2`
+// (templates/examples/games), `modules@main` (the module gallery) and `packs@format-1`
+// (Explorer packs; 29f/#230: a ref must never look like a semver version, because
+// jsDelivr resolves a version ONCE and a retag of it is a no-op forever). Every one
+// of them was a hardcoded const, which makes them the only build-time configuration
+// in the app that CANNOT be pointed anywhere else:
 // the ref a build reads is the ref production reads, so there was no way to try
 // unpublished content without publishing it to the ref real users are on.
 //

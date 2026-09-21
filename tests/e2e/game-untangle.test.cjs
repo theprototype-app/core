@@ -27,7 +27,7 @@ const h = require('./helpers.cjs');
 const fs = require('fs');
 const path = require('path');
 
-const SCENES_BASE = (process.env.UNTANGLE_SCENES_BASE || 'https://cdn.jsdelivr.net/gh/theprototype-app/scenes@v2').replace(/\/$/, '');
+const SCENES_BASE = (process.env.UNTANGLE_SCENES_BASE || 'https://cdn.jsdelivr.net/gh/theprototype-app/scenes@format-2').replace(/\/$/, '');
 const MODULES_BASE = (process.env.UNTANGLE_MODULES_BASE || 'https://cdn.jsdelivr.net/gh/theprototype-app/modules@main').replace(/\/$/, '');
 const ROOT = path.resolve(__dirname, '../../..');
 const TEMPLATE_LEVEL = 2;

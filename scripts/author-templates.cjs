@@ -424,7 +424,7 @@ const STARS_HUD_PANEL = {
 const STARS_CHIME = {
 	key: 'chime',
 	name: 'impact-glass.ogg',
-	url: 'https://cdn.jsdelivr.net/gh/theprototype-app/packs@v1/audio-essentials/assets/impact-glass.ogg',
+	url: 'https://cdn.jsdelivr.net/gh/theprototype-app/packs@format-1/audio-essentials/assets/impact-glass.ogg',
 	sha256: '9252d50bfb85edb17d6073c4a7806e10cdb9de56d3dbfc93a4b9727146d2df6d',
 	credit: { what: 'Impact Glass', author: 'Kenney', license: 'CC0-1.0', source: 'https://kenney.nl/assets/impact-sounds' }
 };
@@ -1162,7 +1162,7 @@ const BEAT_DEF = {
 //                    `thumb.sceneGroups: ['dungeon-module']` to get it onto the card
 //   untangle       — 21-C C7: the thin template (pose + level + room + HUD + graph); its
 //                    board is scene-root content too (`thumb.sceneGroups: ['untangle-module']`)
-const MODULE_DEFS = ['football', 'dungeon-realms', 'untangle'];
+const MODULE_DEFS = ['football', 'dungeon-realms', 'untangle', 'waves'];
 
 const DEFS = [
 	{

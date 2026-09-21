@@ -5,6 +5,34 @@
      per release, newest first. HTML comments like this one are stripped before
      rendering, so maintainer notes stay out of the user-facing window. -->
 
+## 1.16.0 — Waves, and one world to keep 🌊
+
+### 🎮 A new game, and a Games tab that can move again
+
+- 🌊 **Waves — a new game on the Games tab.** Hold the goal against three waves of enemies
+  walking in from the spawn pads; knock them down, the round ends when the last one falls. Two
+  players plus a late joiner see the same wave, and every kill is credited to the hand that made
+  it. (Needs the `health` and `waves` modules; the card offers to install them.)
+- 🎮 **Seven games, not three.** The scenes and packs feeds are pinned to `format-2` / `format-1`
+  refs instead of `v2` / `v1`. jsDelivr treated those as immutable version numbers, so the Games
+  tab could never see a scene released after the first resolve (#230).
+
+### 🥊 Physics that holds up with two players
+
+- ⚖️ **Two players pressing Play at the same moment no longer start two physics simulations.**
+  The lower peer id keeps the world and the other hands it over cleanly — a toast names the
+  handover, and a third player watching agrees with them.
+- 🥊 **Knocking a moving target works on the host too.** A body another writer was moving (a
+  module walking it, a peer's stream) read as "carried" to the knock on the peer running the
+  simulation, so the host's hand passed through it. The hit is now logged and shared; the shove
+  alone is skipped.
+
+### 🧹 Housekeeping
+
+- 🧪 `open-core-m1`'s drawer-mount check had been asserting the pre-tabbed connect drawer since
+  2026-07-25 and was carried as a known red ever since; it now drives the Rooms shortcut the app
+  actually offers, and the suite is green. No product change.
+
 ## 1.15.1 — Knock, and a key you never typed 🔑
 
 ### 🚪 Gated cloud rooms work end to end

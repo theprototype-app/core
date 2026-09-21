@@ -986,6 +986,23 @@ loadable play content. Everything a user does must be visible to connected peers
   (Euler differencing is wrong across a wrap and wrong in general — YXZ couples
   the axes) and a MAGNITUDE clamp (per-component clamping ROTATES the throw;
   measured 4.6 degrees off on a skewed vector).
+  · `simAuthority.js` (29-F, imports NOTHING) = `simulateVerdict`, the rule that ends a
+  DUAL-SIMULATOR race in one pure function of four facts (are we simulating, our id,
+  theirs, who we thought was stepping the world) -> keep | yield | adopt | clear | ignore.
+  **THE LOWER PEER ID KEEPS THE WORLD**, which both sides compute from data they already
+  hold, so no round trip and no new message decides it — and it is the SAME tie-break the
+  football module's `isAuthority()` already falls back to with no sim running, so core's
+  winner and a module's fallback authority are one peer by construction. `applySimulate`
+  is the only place the rule can live (a peer cannot know it is racing until the other
+  side's message lands, which is exactly what `maybeSimOnPlay`'s guard is still waiting
+  for), and `ignore` is what keeps a SPECTATOR honest: told about two simulators it keeps
+  the lower id, and a stop from a peer it was not watching must not blank
+  `remoteSimulating` — that store is what arms the knock probes and play-mode grab.
+  Yielding is `stopSimulation({yielded: true})`: see the gotcha for why quiet is not
+  enough. `keep` also ANSWERS with our own start — redundant in an ordinary race, where the
+  two starts cross, and the only thing that reaches a peer which never heard ours (one that
+  travelled in after the run began: the push rides `sendHandshake` and is not repeated on
+  arrival). Additive — a message with no `peerId` takes the pre-29-F path verbatim.
   · `playInteract.js` = play mode's own input path, deliberately NOT a lift of
   Scene's pick (the editor's select branch is a short STATIONARY click, its
   `$isLocked` bails guard six editor modes, and play mode's ray is NDC (0,0)
@@ -2129,7 +2146,7 @@ loadable play content. Everything a user does must be visible to connected peers
   Towers in eight numbers and Football's HUD is authored by its module). Suites
   `game-dungeon-realms` (64, two peers + late joiner; env DUNGEON_REALMS_TPSCENE /
   DUNGEON_KIT_ZIP / DUNGEON_REALMS_ZIP / MODULES_REPO), `game-untangle` (46; UNTANGLE_TPSCENE /
-  UNTANGLE_ZIP), `game-football` (102; scene from the scenes feed @v2, zip from a packed
+  UNTANGLE_ZIP), `game-football` (102; scene from the scenes feed @format-2, zip from a packed
   sibling modules checkout — skips, never fails, when every source misses).
 - `playMode.js` `embedMode` / `embedSceneId` / `embedOpenUrl()` (R29 fork 4): the additive
   `?embed=1` boot flag, read ONCE at module evaluation (before the cloud plugin clears the
@@ -2243,6 +2260,20 @@ loadable play content. Everything a user does must be visible to connected peers
   purgeable). So a moving ref on jsDelivr must be a branch or a tag name that is not a
   version (`format-2`); `packs@v1` has the same trap waiting. Core ticket #230; the deploy-time
   unblock is `VITE_SCENES_BASE=…scenes@main` (what `contentBase()` exists for).
+  **29f CLOSED IT BY MEASUREMENT**: a plain TAG named `format-2` (scenes, at a5ebe8f) and
+  `format-1` (packs, at 03b9568) are reported `x-jsd-version-type: branch` with
+  `s-maxage=43200`, while `@v2`/`@v1` carry `cache-control: immutable` for a year — so the
+  tag form works and no branch was needed. `SCENES_BASE`/`PACKS_BASE` default to the
+  `format-N` refs now, the three games suites' feed fallback with them, and
+  `tests/unit/contentBase.test.js` reads both source files and refuses any fallback whose ref
+  matches jsDelivr's version rule (an optional v, then dotted digits, nothing else). `v1`/`v2`
+  are DEAD refs, left where jsDelivr first resolved them for the builds that shipped against
+  them. Production keeps the cloud `.env.deploy` `VITE_SCENES_BASE=…scenes@main` override until
+  the core release carrying this ships; the scenes/packs READMEs and cloud's
+  `.env.deploy.example` teach the new ritual. THE EDITING TRAP THIS FOUND: a JS
+  `String.replace(from, to)` with a STRING `to` expands `$\``, `$'`, `$&` — a doc edit whose
+  replacement text quoted a regex ending in `$` followed by a backtick pasted 2255 lines of
+  this file into itself. Use `split(from).join(to)` for literal replacement.
 - **flowbite-svelte's `Button` FREEZES its class string at mount.** `Button.svelte:34` reads
   the theme through a DESTRUCTURING `$derived` declaration, which evaluates its object ONCE
   — so a button BORN disabled wears `cursor-not-allowed opacity-50` forever, even after its
@@ -2719,6 +2750,24 @@ loadable play content. Everything a user does must be visible to connected peers
 - **Never run `npm run build` while the lane's `vite dev` watches the same worktree** —
   it rewrites `.svelte-kit/output` under the server and kills it; the next ten suites
   report `ERR_CONNECTION_REFUSED`, which reads as a mass regression.
+- **TWO PLAY PRESSES INSIDE THE SIM'S START-UP WINDOW START TWO SIMULATORS.**
+  `playMode.maybeSimOnPlay` guards on `simulating || remoteSimulating`, and both are still
+  FALSE on both peers until the other side's `simulate` arrives — a window that spans
+  `warmup()` plus the whole of `startSimulation`, so presses a second apart still both pass
+  it. Two authorities then broadcast `move` at 30 Hz, each stream reads as an EXTERNAL write
+  on the other, and every dynamic body sits under a `hold: 'external'` refreshed long before
+  its 250 ms timeout can expire. MEASURED on a real two-peer Football match: 74 moves in
+  ~2 s, the ball snapping back, `applyThrow` eaten, and NO GOAL COULD SCORE. Note what a
+  suite has to assert here: "the peer we expect is simulating" reads TRUE while both of
+  them are, so the load-bearing check is that a goal SCORES. Same shape for a
+  late joiner that is already simulating when the handshake `simulate` push lands
+  (symmetric: both sides push). The guard cannot be fixed where it stands, so the rule is
+  on the RECEIVE side (`simAuthority.js`, 29-F): the lower peer id keeps the world.
+  YIELDING MUST BE CLEAN, NOT MERELY QUIET — `stopSimulation({yielded: true})` also
+  withholds the settling `move` per body (which would pin every one of the winner's copies
+  one last time, the very shape the yield exists to end) and the transformSet undo entry
+  (Ctrl+Z over a layout nobody ever saw); and the winner drops the holds the loser's stream
+  already claimed instead of waiting out their timeout.
 - **A HELD body's `lastWritten` is stale by definition, so every release must
   refresh it.** The write-back skips a held body, so `lastWritten` still
   describes the pose it had when it was GRABBED — and the deviation detector
@@ -4347,15 +4396,6 @@ loadable play content. Everything a user does must be visible to connected peers
   suite that polls `flowValues` for "all N lit" can only ever catch it for one publish. Assert
   the TRIGGER LOG instead, folded to seconds-of-day the way `retiredByRound` does.
 
-- **TWO PLAY PRESSES INSIDE THE SIM START-UP WINDOW START TWO SIMULATORS.** `playMode
-  .maybeSimOnPlay` guards on `simulating || remoteSimulating`, and the `simulate` message has
-  not landed yet when the second peer's guard runs — so both simulate. Measured (24-B R1): after
-  B's hit the ball on A sat under a permanent `hold: external` fed by B's 30 Hz `move`s (74 in
-  ~2 s), applyThrow snapped back, no goal could score. The same shape for a late joiner if the
-  handshake `simulate` push is missing. `game-football` enters Play in ORDER and asserts it; the
-  modules football flight clicks both Play buttons back-to-back and rides the race. Open ticket:
-  a peer receiving `simulate` while simulating must yield by a deterministic rule (lower peer id
-  keeps it).
 - **A MESH NAME WITH A SPACE ARRIVES UNDERSCORED ON THE PEER** over the object sync
   (`Entrance plinth` -> `Entrance_plinth`; a LIGHT keeps its space). Graphs bind by uuid so games
   work; a suite asserting a peer's objects must do so by UUID (`game-dungeon-realms`).
@@ -4750,6 +4790,23 @@ override for e2e — never share 5173 (the user's main-checkout server).
   locked (replicate the INDEX per-item opt-in; ONE mesh with scenes as tags;
   scene-is-primary renaming), and the vocabulary settled: **session = the mesh, room =
   who is in a scene, PocketBase rooms stay DISCOVERY** — that naming blocks R4.
+- Status (2026-09-22): **1.16.0 "Waves, and one world to keep" — ROADMAP 29 ROUND 3, the follow-up
+  round closed by the integrator (lane `29f-integrate`).** Merged: core #236 + modules #14 (the
+  simulate-race rule, `simAuthority.js`: a peer receiving `simulate` while simulating yields to the
+  LOWER peer id — see the gotcha and the architecture bullet beside `throwVelocity`), on top of the
+  already-merged #233 (the standing `open-core-m1` red was the TEST asserting the pre-tabbed drawer
+  since 2026-07-25 — 18/18 now), #235 (content refs `scenes@format-2` / `packs@format-1`, core #230)
+  and #234 (the `waves` template def in `MODULE_DEFS` + suite `game-waves`, and the knock fix: a body
+  under an EXTERNAL physics hold — a module walking it — is HIT, not carried, on the initiator too).
+  Scenes: the `games/waves` row released and `format-2` retagged (NEVER `v2`); modules `dev` → `main`
+  (waves def env `sunset`, the door-keypad + football flight fixes) and the `waves` index row gained
+  `"template": "games/waves"` after the scene was served. Cloud: deployed from the tag with the
+  `VITE_SCENES_BASE=…scenes@main` stopgap REMOVED from `.env.deploy` (core defaults to `format-2`
+  now). Gates on the union: svelte-check 336/47 (identical list), vitest 196, build green, the serial
+  battery green (see the round-3 execution-log entry in the roadmap 29 master for the counts). OWED
+  on device: the two-player Play race handover toast + ball continuity at the yield, being hit in VR
+  in Waves, the Waves card thumbnail framing (`thumb.camera` in the def), the walkers stacking at the
+  goal, and one EYEBALL: the production Games tab shows seven cards.
 - Status (2026-09-20): **1.15.1 "Knock, and a key you never typed" — ROADMAP 29 ROUND 2, the two
   core seams, taken IN-HOUSE by the integrator.** The `29-core-seams` lane had sat ~11 h at a budget
   checkpoint with nothing committed and a resume prompt nobody sent, so `feat/1.15.1` (off

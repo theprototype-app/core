@@ -4396,15 +4396,6 @@ loadable play content. Everything a user does must be visible to connected peers
   suite that polls `flowValues` for "all N lit" can only ever catch it for one publish. Assert
   the TRIGGER LOG instead, folded to seconds-of-day the way `retiredByRound` does.
 
-- **TWO PLAY PRESSES INSIDE THE SIM START-UP WINDOW START TWO SIMULATORS.** `playMode
-  .maybeSimOnPlay` guards on `simulating || remoteSimulating`, and the `simulate` message has
-  not landed yet when the second peer's guard runs — so both simulate. Measured (24-B R1): after
-  B's hit the ball on A sat under a permanent `hold: external` fed by B's 30 Hz `move`s (74 in
-  ~2 s), applyThrow snapped back, no goal could score. The same shape for a late joiner if the
-  handshake `simulate` push is missing. `game-football` enters Play in ORDER and asserts it; the
-  modules football flight clicks both Play buttons back-to-back and rides the race. Open ticket:
-  a peer receiving `simulate` while simulating must yield by a deterministic rule (lower peer id
-  keeps it).
 - **A MESH NAME WITH A SPACE ARRIVES UNDERSCORED ON THE PEER** over the object sync
   (`Entrance plinth` -> `Entrance_plinth`; a LIGHT keeps its space). Graphs bind by uuid so games
   work; a suite asserting a peer's objects must do so by UUID (`game-dungeon-realms`).
@@ -4799,6 +4790,23 @@ override for e2e — never share 5173 (the user's main-checkout server).
   locked (replicate the INDEX per-item opt-in; ONE mesh with scenes as tags;
   scene-is-primary renaming), and the vocabulary settled: **session = the mesh, room =
   who is in a scene, PocketBase rooms stay DISCOVERY** — that naming blocks R4.
+- Status (2026-09-22): **1.16.0 "Waves, and one world to keep" — ROADMAP 29 ROUND 3, the follow-up
+  round closed by the integrator (lane `29f-integrate`).** Merged: core #236 + modules #14 (the
+  simulate-race rule, `simAuthority.js`: a peer receiving `simulate` while simulating yields to the
+  LOWER peer id — see the gotcha and the architecture bullet beside `throwVelocity`), on top of the
+  already-merged #233 (the standing `open-core-m1` red was the TEST asserting the pre-tabbed drawer
+  since 2026-07-25 — 18/18 now), #235 (content refs `scenes@format-2` / `packs@format-1`, core #230)
+  and #234 (the `waves` template def in `MODULE_DEFS` + suite `game-waves`, and the knock fix: a body
+  under an EXTERNAL physics hold — a module walking it — is HIT, not carried, on the initiator too).
+  Scenes: the `games/waves` row released and `format-2` retagged (NEVER `v2`); modules `dev` → `main`
+  (waves def env `sunset`, the door-keypad + football flight fixes) and the `waves` index row gained
+  `"template": "games/waves"` after the scene was served. Cloud: deployed from the tag with the
+  `VITE_SCENES_BASE=…scenes@main` stopgap REMOVED from `.env.deploy` (core defaults to `format-2`
+  now). Gates on the union: svelte-check 336/47 (identical list), vitest 196, build green, the serial
+  battery green (see the round-3 execution-log entry in the roadmap 29 master for the counts). OWED
+  on device: the two-player Play race handover toast + ball continuity at the yield, being hit in VR
+  in Waves, the Waves card thumbnail framing (`thumb.camera` in the def), the walkers stacking at the
+  goal, and one EYEBALL: the production Games tab shows seven cards.
 - Status (2026-09-20): **1.15.1 "Knock, and a key you never typed" — ROADMAP 29 ROUND 2, the two
   core seams, taken IN-HOUSE by the integrator.** The `29-core-seams` lane had sat ~11 h at a budget
   checkpoint with nothing committed and a resume prompt nobody sent, so `feat/1.15.1` (off

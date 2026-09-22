@@ -39,6 +39,9 @@
 	import { visibleDockKey, dockOccupants, bottomInset, FLOW_FAMILY, armDockMode, DOCK_TITLES } from '$lib/bottomDock';
 	import { togglePanel } from '$lib/panelToggles';
 	import { requestPlay, willEnterXR, willEnterAR, vrSupported, arSupported, xrSessionFailed } from '$lib/playMode';
+	// 30 P2: Test play — the play button's right-click row beside the game chip's button
+	import { testPlay } from '$lib/gamePresence';
+	import { hudIsGame } from '$lib/hudDocs';
 	import { DOCK_VIEWS } from '$lib/dockMenu';
 	import { safeStorage } from '$lib/safeStorage';
 	import { VRButton, XRButton } from '@threlte/xr'
@@ -916,6 +919,18 @@
 					requestPlay();
 				}
 			},
+			// 30 P2: TEST PLAY — back to the menu, into Play, the Start screen. Offered only
+			// where it means something: a scene with no game shell has no menu to start from.
+			...($hudIsGame
+				? [
+						{ section: 'Game' },
+						{
+							label: 'Test play (start from the menu)',
+							tooltip: 'Reset the game to its menu, enter Play, and start from the Start screen',
+							action: () => testPlay()
+						}
+					]
+				: []),
 			// the FAB is a toolbar cell like any other, so it carries the same tail —
 			// minus "Hide button" (there is no toolbar without a way to press play)
 			...toolbarTail(null)

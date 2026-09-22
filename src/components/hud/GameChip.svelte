@@ -12,11 +12,12 @@
 	// LOCAL chrome: editor only, never in embed mode (an embed has its own ▶), never in a
 	// headset (DOM is invisible there), and it replicates nothing — Test play's reset goes
 	// through the game shell's own write path, which is what replicates.
-	import { Eye, EyeOff } from '@lucide/svelte';
+	import { Play, Eye, EyeOff } from '@lucide/svelte';
 	import { isLocked, isVRMode } from '../../stores/sceneStore';
 	import { hudIsGame, hudPreviewInViewport } from '$lib/hudDocs';
 	import { gameState } from '$lib/gameState';
 	import { embedMode } from '$lib/playMode';
+	import { testPlay } from '$lib/gamePresence';
 
 	const visible = $derived($hudIsGame && $isLocked !== true && !$isVRMode && !$embedMode);
 	const stateLabel = $derived(String($gameState?.state ?? 'menu'));
@@ -35,6 +36,16 @@
 			onclick={() => hudPreviewInViewport.update((on) => !on)}
 		>
 			{#if $hudPreviewInViewport}<Eye size={14} aria-hidden="true" />{:else}<EyeOff size={14} aria-hidden="true" />{/if}
+		</button>
+		<button
+			id="game-chip-test"
+			type="button"
+			class="game-chip-test"
+			title="Test play: back to the menu, enter Play, start from the Start screen"
+			onclick={() => testPlay()}
+		>
+			<Play size={13} aria-hidden="true" />
+			<span>Test play</span>
 		</button>
 	</div>
 {/if}
@@ -82,5 +93,19 @@
 	.game-chip-icon[aria-pressed='true'] {
 		opacity: 1;
 		background: rgba(255, 255, 255, 0.08);
+	}
+	.game-chip-test {
+		display: inline-flex;
+		align-items: center;
+		gap: 4px;
+		padding: 5px 10px 5px 8px;
+		border-radius: 9999px;
+		background: var(--accent, #ef562f);
+		color: #fff;
+		font-weight: 600;
+		white-space: nowrap;
+	}
+	.game-chip-test:hover {
+		filter: brightness(1.08);
 	}
 </style>

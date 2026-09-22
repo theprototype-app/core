@@ -28,6 +28,7 @@
 	import { shareObject } from '$lib/objectPermissions';
 	import Objects from './Objects.svelte';
 	import LocalObjects from './LocalObjects.svelte';
+	import ModuleContent from './ModuleContent.svelte';
 	import ContextMenu from '../ContextMenu.svelte';
 	import MobileAddButton from './MobileAddButton.svelte';
 	import AiHudButton from './AiHudButton.svelte';
@@ -2408,6 +2409,8 @@
 						{/each}
 					{/if}
 				</div>
+				<!-- 30 P3: every module's scene-root content, listed read-only -->
+				<ModuleContent />
 			  {/if}
 			{/if}
 		</div>

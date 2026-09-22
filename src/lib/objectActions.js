@@ -36,6 +36,8 @@ import { canEditObject, warnViewerReadOnly } from './objectPermissions';
 import { stripEditOverlays, isEditOverlay } from './editOverlays';
 // B7: the transient marker (a LEAF — two stores only, so no cycle back through history)
 import { markTransient } from './transientObjects';
+// 30 P3: a LEAF (THREE + stores), so a static import here closes no cycle
+import { clearModuleSelection } from './moduleContent';
 // D2: a LEAF (svelte stores + THREE), so a static import here closes no cycle
 import { shareDuplicatedMaterials, linkMaterials } from './materialSharing';
 import {
@@ -165,6 +167,7 @@ export function applySelectionSet(uuids, openProperties = false) {
 			!locked.find((lockedUuid) => lockedUuid[1] === uuid)
 	);
 	applyMemberTints(group, clean);
+	if (clean.length) clearModuleSelection(); // 30 P3: an object selection replaces the proxy
 	const previous = get(selectedObjects);
 	selectedObjects.set(clean);
 	if (clean.length) lastSelection = { uuids: [...clean], origin: null }; // 24-B1
@@ -307,6 +310,7 @@ export function deselectObject() {
 	applyMemberTints(get(objectsGroup), []);
 	broadcastSelectionRelease(get(selectedObjects));
 	selectedObjects.set([]);
+	clearModuleSelection(); // 30 P3: the Module content proxy goes with any deselect
 	if (controls && !get(isVRMode)) controls.detach();
 	// selectedObject keeps the last object on purpose — the open inspector binds
 	// to $selectedObject.position/material and would crash on an empty value

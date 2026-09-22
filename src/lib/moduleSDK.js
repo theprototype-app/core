@@ -42,6 +42,9 @@ import { APP_VERSION } from './version.js';
 import { ndcFromClient } from './canvasRect';
 // 27-B: recovery paths report through the diagnostics ring (hardening audit H4)
 import { log } from './diagnostics';
+// 30 P3: the object list's Module content registry — a LEAF, so no cycle
+import { noteModuleGroup, forgetModuleGroup } from './moduleContent';
+export { moduleContentDebug } from './moduleContent';
 import { safeStorage } from './safeStorage';
 
 // Module SDK v1 — in-repo modules under src/modules/<name>/ register through
@@ -554,19 +557,36 @@ function makeApi(moduleId, moduleName = moduleId) {
 		registerInteractiveGroup(name) {
 			moduleInteractiveGroups.push(name);
 			registerSystemGroup(name); // clickable module content is also listable
+			noteModuleGroup(name, { id: moduleId, name: moduleName }, 'interactive'); // 30 P3
 			onDispose(() => {
 				arrayRemove(moduleInteractiveGroups, name);
 				arrayRemove(systemGroupNames, name);
+				forgetModuleGroup(name, 'interactive');
 				removeSceneRootGroup(name); // module-owned viewport content goes with the module
 			});
 		},
 		/** List a scene-root group under the object list's System filter @param {string} name */
 		registerSystemGroup(name) {
 			registerSystemGroup(name);
+			noteModuleGroup(name, { id: moduleId, name: moduleName }, 'system'); // 30 P3
 			onDispose(() => {
 				arrayRemove(systemGroupNames, name);
+				forgetModuleGroup(name, 'system');
 				removeSceneRootGroup(name);
 			});
+		},
+		/**
+		 * 30 P3: list a scene-root group in the object list's "Module content" section under
+		 * a label a person can read (the group's own name is usually an id). Groups passed to
+		 * registerInteractiveGroup / registerSystemGroup are listed anyway; this names them,
+		 * or lists one that is neither. Read-only there: a click selects a PROXY and frames
+		 * it, and the Inspector points at your module's toolbox and nodes.
+		 * @param {string} name the scene-root group's object name
+		 * @param {{label?: string, icon?: string}} [options]
+		 */
+		registerListedGroup(name, options = {}) {
+			noteModuleGroup(name, { id: moduleId, name: moduleName }, 'listed', options ?? {});
+			onDispose(() => forgetModuleGroup(name, 'listed'));
 		},
 		/**
 		 * Runs when the scene is cleared (locally or by a peer) — remove your

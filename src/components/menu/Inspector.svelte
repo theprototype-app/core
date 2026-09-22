@@ -30,7 +30,9 @@
 	import { recordEntry, beginHistoryBatch, endHistoryBatch, recordTransformSet } from '$lib/history';
 	import { deviceOf, deviceSpec, isDeviceObject, setDeviceFor, previewDeviceParams } from '$lib/audioDevices';
 	import { MUSIC_TOOLBOX_ID, musicToolboxPick } from '$lib/musicToolbox';
-	import { openModuleToolbox } from '$lib/moduleToolboxes';
+	import { openModuleToolbox, moduleToolboxes } from '$lib/moduleToolboxes';
+	// 30 P3: a Module content row selected in the object list (a proxy, not an object)
+	import { moduleSelection } from '$lib/moduleContent';
 	import { canEditObject } from '$lib/objectPermissions';
 	import {
 		attachMultiPivot,
@@ -591,6 +593,10 @@
 			if (object?.uuid) captureAutoKey(object.uuid, playheadOf(object.uuid));
 		}
 	}
+	// 30 P3: the module toolbox a Module content card can open (null = the module has none)
+	const moduleToolbox = $derived(
+		$moduleSelection ? $moduleToolboxes.find((/** @type {any} */ box) => box.moduleId === $moduleSelection.moduleId) ?? null : null
+	);
 	// 30 P2: every member is click-through (a mixed set reads unchecked; ticking it marks them all)
 	const pickThroughAll = $derived.by(() => {
 		$selectedObject;
@@ -2660,6 +2666,25 @@
 					}}>Remove Fog</Button
 				>
 			</Section>
+		</div>
+	{:else if $moduleSelection && !$selectedObjects.length}
+		<!-- 30 P3: a Module content row (a PROXY, not an object): whose it is, and where it
+		     is edited — never transform rows the module would overwrite on its next rebuild -->
+		<div id="drawer-label" class="sticky top-0 z-10 -mx-4 rounded-tl-lg bg-gray-800 px-4">
+			<PanelHeader
+				title="Properties"
+				badge="Module content"
+				pinned={$inspectorPinned}
+				onpin={() => inspectorPinned.update((v) => !v)}
+				onclose={() => inspectorClose.set(true)}
+			/>
+		</div>
+		<div id="module-content-card" class="mt-2 flex flex-col gap-2 rounded-sm border border-gray-600/60 p-2 text-xs text-gray-300">
+			<p class="text-sm font-semibold text-gray-100">{$moduleSelection.label}</p>
+			<p>Made by the <strong>{$moduleSelection.moduleName}</strong> module — edit it with its toolbox or nodes.</p>
+			{#if moduleToolbox}
+				<button type="button" class="ui-button self-start" onclick={() => openModuleToolbox(moduleToolbox.id)}>Open {moduleToolbox.title}</button>
+			{/if}
 		</div>
 	{:else if $selectedObject?.name !== undefined}
 		<div id="drawer-label" class="sticky top-0 z-10 -mx-4 rounded-tl-lg bg-gray-800 px-4">

@@ -30,6 +30,7 @@
 	import { sculptObject, enterSculpt, beginStroke, strokeMove, endStroke as sculptEndStroke, showCursorAt, hideCursor } from '$lib/terrainSculpt';
 	import { sceneHits } from '$lib/scenePick';
 	import { pickStack, chooseInStack } from '$lib/selectThrough';
+	import { tickModuleProxy, selectModuleGroup, moduleGroupOf } from '$lib/moduleContent';
 	import { startPlayInteract, tickPlayInteract, stopPlayInteract, carriedUuid, editorInteractActive, cursorGrabStart, cursorGrabMove, cursorGrabEnd, interactClick } from '$lib/playInteract';
 	import { registerKeySessionProbe } from '$lib/shortcuts';
 	import { startKnock, tickKnock, stopKnock } from '$lib/knock';
@@ -393,6 +394,7 @@
 		updateCables(); // 23-A4: patch cables follow their plugs; the routing diff runs here too
 		updateOnionSkin(); // 17-E F6: ghosts at the neighbouring keys (local, off by default)
 		updateTinyMarkers(); // R2: a dot to aim at when an object has no size left
+		tickModuleProxy(); // 30 P3: a selected module group's proxy box follows its content
 		if (!renderer.xr.isPresenting) updateEditorNavigation(delta, camera.current, $activeOrbit);
 	});
 
@@ -512,11 +514,17 @@
 	// scene reacts. null = VR's trigger, unchanged: every handler first, then select + pulse.
 	function raycastSelect(additive = false, mode: string | null = null, click: { x: number; y: number; t: number } | null = null) {
 		// module-owned interactive groups live at the scene root (pong, dungeon, ...)
+		// 30 P3: in EDIT the nearest module-content hit that no edit handler took is
+		// remembered, so a click on a board or a dungeon selects its PROXY (the object list's
+		// Module content row) instead of passing through it to the floor behind
+		let moduleHit: { name: string; distance: number } | null = null;
 		for (const name of moduleInteractiveGroups) {
 			const root = scene.getObjectByName(name);
 			if (!root) continue;
 			const moduleHits = selectionRaycaster.intersectObject(root, true);
 			if (moduleHits.length > 0 && runModuleClickHandlers(moduleHits[0].object, mode)) return true;
+			if (moduleHits.length > 0 && (!moduleHit || moduleHits[0].distance < moduleHit.distance))
+				moduleHit = { name, distance: moduleHits[0].distance };
 		}
 		const hits = pickSceneObjects();
 		// 30 P2: SELECT-THROUGH — collapse the hits into a stack of top-level targets and
@@ -525,6 +533,11 @@
 		const stack = pickStack(hits, topLevelObjectOf);
 		const choice = chooseInStack(stack, click ?? { x: -1e6, y: -1e6, t: 0 }, !additive && click ? lastSelectClick : null);
 		const chosen = choice.index >= 0 ? stack[choice.index] : null;
+		if (mode === 'edit' && !additive && moduleHit && moduleGroupOf(moduleHit.name) && (!chosen || moduleHit.distance < chosen.hit.distance)) {
+			deselectObject();
+			selectModuleGroup(moduleHit.name);
+			return true;
+		}
 		if (chosen) {
 			// modules may consume the click (buttons, instruments, ...) — in Edit only the
 			// ones that asked for it (an editor tool), everything else in VR

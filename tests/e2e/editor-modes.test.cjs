@@ -1,4 +1,4 @@
-// 30 P1 — EDIT and INTERACT, and P4 — api.pointerRay under a pointer lock.
+// 30 P1 — EDIT and INTERACT, and (section 7) P4 — api.pointerRay under a pointer lock.
 //
 // The user's report: "interact with objects" and "edit mesh/transform" were one mode, so
 // some objects could not be moved or even SELECTED — the music modules' click handlers
@@ -389,6 +389,45 @@ h.run(async () => {
 	h.check(orbitOn === true, '6.9 the camera controls are back after the carry');
 	await page.evaluate(() => window.__stores.physics.stopSimulation());
 	await page.evaluate(() => window.__stores.objectActions.setEditorMode('edit'));
+
+	// ---------------------------------------------------------------- 7
+	console.log('\n=== 7. P4: api.pointerRay() under a pointer lock is the CROSSHAIR ray ===');
+	await page.mouse.move(40, 300); // a mouse ray well off-centre
+	await page.waitForTimeout(100);
+	const rays = await page.evaluate(() => {
+		const s = window.__stores;
+		const THREE = s.THREE;
+		let renderer;
+		s.globalRenderer.subscribe((v) => (renderer = v))();
+		const free = s.moduleSDK.pointerRayNow();
+		const freeDir = free ? free.ray.direction.toArray() : null;
+		let lockEl = renderer.domElement;
+		Object.defineProperty(document, 'pointerLockElement', { configurable: true, get: () => lockEl });
+		s.isLocked.set(true);
+		const locked = s.moduleSDK.pointerRayNow();
+		let camera;
+		s.globalCamera.subscribe((v) => (camera = v))();
+		const centre = new THREE.Raycaster();
+		centre.setFromCamera(new THREE.Vector2(0, 0), camera);
+		const out = {
+			freeDir,
+			lockedDir: locked ? locked.ray.direction.toArray() : null,
+			centreDir: centre.ray.direction.toArray(),
+			lockedOrigin: locked ? locked.ray.origin.toArray() : null,
+			centreOrigin: centre.ray.origin.toArray()
+		};
+		s.isLocked.set(null);
+		lockEl = null;
+		delete document.pointerLockElement;
+		const after = s.moduleSDK.pointerRayNow();
+		out.afterDir = after ? after.ray.direction.toArray() : null;
+		return out;
+	});
+	const dot = (a, b) => a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
+	h.check(rays.freeDir && dot(rays.freeDir, rays.centreDir) < 0.999, '7.1 (premise) the mouse ray is off-centre');
+	h.check(rays.lockedDir && dot(rays.lockedDir, rays.centreDir) > 0.99999, `7.2 under a lock pointerRay is the crosshair ray (dot ${rays.lockedDir ? dot(rays.lockedDir, rays.centreDir).toFixed(6) : 'null'})`);
+	h.check(rays.lockedOrigin && Math.hypot(...rays.lockedOrigin.map((v, i) => v - rays.centreOrigin[i])) < 1e-6, '7.3 ...from the camera');
+	h.check(rays.afterDir && dot(rays.afterDir, rays.freeDir) > 0.99999, '7.4 unlocked, it is the mouse ray again');
 
 	h.check(h.pageErrors(A).filter((m) => /setPointerCapture/.test(m)).length === 0, 'no pointer-capture errors in the run');
 	await h.finish(browser);

@@ -2,7 +2,9 @@ import { keyOf, letterOf } from './keyOf';
 import { sessionNow } from './sessionClock'; // 25-E: stamps another peer compares
 import * as THREE from 'three';
 import { writable, get } from 'svelte/store';
-import { globalScene, objectsGroup, selectedObject, selectedObjects, globalCamera, isVRMode, isLocked } from '../stores/sceneStore';
+import { globalScene, objectsGroup, selectedObject, selectedObjects, globalCamera, isVRMode, isLocked, playPointerFree } from '../stores/sceneStore';
+// 30 P4: the scene's play block decides whether play aims with a crosshair (a leaf chain)
+import { resolvePlaySettings } from './playSettings';
 import { peers, showToast, modulesOpen, userdata } from '../stores/appStore';
 import { syncedAnimations, flowGraphs, flowValues, flowTriggers, allNodes, findNodeAnyGraph, SCENE_GRAPH } from '../stores/flowStore';
 import { customGeometryBuilders } from './customGeometries';
@@ -284,11 +286,38 @@ if (typeof window !== 'undefined') {
 		pointerClient.seen = true;
 	});
 }
+/** 30 P4: the CROSSHAIR ray, a fresh Raycaster through the centre of the view */
+const SCREEN_CENTRE = new THREE.Vector2(0, 0);
+
+/**
+ * 30 P4: does play aim with a CROSSHAIR right now? Under a pointer lock the cursor is
+ * pinned and its last client position is where the mouse happened to be when the lock
+ * began — a STALE ray that never moves again (untangle's carried dot followed it, so a
+ * drag in play went nowhere). So while playing, the pointer locked, and not in the menu
+ * substate (the pointer is free there, over the HUD), the ray is the view's centre —
+ * play mode's own NDC (0,0), the one playInteract aims with.
+ */
+function crosshairAims() {
+	if (get(isLocked) !== true || get(playPointerFree)) return false;
+	if (typeof document === 'undefined' || !document.pointerLockElement) return false;
+	// 30-core-flow: free cursor — a scene whose play block says `cursor: 'free'` plays with
+	// the real cursor and no lock, so its ray IS the mouse ray. Read defensively: the field
+	// lands with that lane, and absent means 'locked' (today's play).
+	const settings = /** @type {any} */ (resolvePlaySettings(get(globalScene)));
+	return settings?.cursor !== 'free';
+}
+
 function pointerRayNow() {
 	if (get(isVRMode)) return vrControlsRef?.pointerHandRay?.() ?? null;
 	/** @type {any} */
 	const camera = get(globalCamera);
-	if (!camera || !pointerClient.seen) return null;
+	if (!camera) return null;
+	if (crosshairAims()) {
+		const centre = new THREE.Raycaster();
+		centre.setFromCamera(SCREEN_CENTRE, camera);
+		return centre;
+	}
+	if (!pointerClient.seen) return null;
 	const fresh = new THREE.Raycaster();
 	const ndc = ndcFromClient(pointerClient.x, pointerClient.y);
 	fresh.setFromCamera(new THREE.Vector2(ndc.x, ndc.y), camera);
@@ -601,6 +630,8 @@ function makeApi(moduleId, moduleName = moduleId) {
 		 * Where the user is POINTING, as a THREE.Raycaster in world space —
 		 * desktop mouse over the viewport, or the VR pointer hand's ray. A fresh
 		 * instance per call (safe to keep). Null before the first pointer event.
+		 * 30 P4: in play under a pointer lock it is the CROSSHAIR ray (the view's
+		 * centre) — the mouse ray is frozen there; a free-cursor game keeps the mouse.
 		 * The drag recipe (190/untangle): click to pick, follow pointerRay() in a
 		 * frame task, click to drop. (190)
 		 */

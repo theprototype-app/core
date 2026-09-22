@@ -39,6 +39,78 @@
 //   editor camera the file opens on) · `thumb.camera` (render the card through a named
 //   camera object). A def with `music` exports WITH assets, so the bytes ride the .tpscene.
 //
+// ==== THE DEF SCHEMA (30 author-kit) — every field, one line each ======================
+// Colours are 0xRRGGBB numbers or '#rrggbb' strings; positions/rotations are [x, y, z]
+// (rotation in radians, Euler XYZ); lengths in metres. Every field is OPTIONAL unless marked *;
+// an absent field is the old behaviour, so a def only states what it means to change.
+//
+// DEF (the file / the card):
+//   kind*            'template' | 'example' | 'game' | 'contest' — decides the folder + index section
+//   slug* title* description   identity + card text; author, license ('CC0-1.0'), tags []
+//   modules          [{id, version}] — the card's module list (games only; must match installModules)
+//   installModules   ['<id>'] — zips installed from MODULES_REPO before the build (the game shows)
+//   generate         a /command, {menu, moduleId?, waitMs?}, or a list of them — run after the build
+//   generateWaitMs   default wait after each generate step (2500)
+//   layout           [{kind, index?, pos, yaw?}] — place generated devices by userData.device.kind
+//   objects*         the scene: OBJECTS below
+//   env              '<preset>' | {preset, exposure} | a CUSTOM sky (ENV below)
+//   gravity          number (m/s², negative = down) · physics — a scenePhysics block, merged
+//   post             a scenePost document (effects: AO, tone mapping, bloom, SMAA, ...)
+//   graphs           {'scene' | <object name>: {nodes, edges}} — node data strings naming a def
+//                    object become its uuid (not label/format/text/placeholder/name); '$music' and
+//                    '$sound:<key>' become content hashes
+//   hud              a hudDocs map · shaders {'scene' | <object name>: shader graph document}
+//   animations       {<object name>: an authored animation set (clips of tracks of keys)}
+//   music            {url | file, sha256, name, volume?} — the scene's background track (+ Explorer)
+//   sounds           [{key, url | file, sha256, name}] — one-shot assets for Sound nodes
+//   view             {pos, target} — the editor camera the file opens on (also the card's camera)
+//   thumb            {camera?: <camera object name>, sceneGroups?: ['<scene-root group>'],
+//                     toneMapping?: 'agx'|'aces'|'neutral'|'reinhard'|'cineon'|'linear'|'none'}
+//   contest          (kind contest) {brief, rules, durationDays, opensAfterDays, judging, credits}
+//
+// OBJECTS — {type*, name*, pos?, rot?, ...}:
+//   box              size [w, h, d]; bevel (radius → a ROUNDED box, baked), bevelSegments (3)
+//   sphere           r                  · cylinder  r (top), r2 (bottom, = r), h
+//   cone             r, h               · torus     r, tube (r × 0.2)
+//   capsule          r, h (the straight part; `length` alias)
+//   plane            size [w, h] — faces +Z (rot [-π/2, 0, 0] to lie flat)
+//   ring             r (outer), inner (r × 0.5) — a flat annulus facing +Z
+//   icosahedron / dodecahedron   r, detail (0)
+//   light            kind 'point' (default: color, intensity, distance, decay — no shadow)
+//                    | 'spot' (angle π/6, penumbra 0.3, distance, decay, target) | 'directional'
+//                    (target; its shadow frustum is FITTED to the built meshes — `fit: false` to
+//                    keep three's) | 'hemisphere' (color = sky, groundColor, intensity).
+//                    spot/directional: castShadow (true), shadowMapSize, `target` = a WORLD point
+//                    aimed by rotation — place a directional OUTSIDE the scene on its sun side
+//   camera           lookAt, fov, aspect — the app's own /create Camera marker
+//   spline           points [{pos, radius}], closed, color
+//   group / empty    children [objects] (names resolve inside groups too)
+//   mirror           of (a named object/group), opacity (0.15), prefix — reflected across x = 0
+// MATERIAL (every mesh type): color, roughness (0.85), metalness (0), emissive +
+//   emissiveIntensity (1), opacity (< 1 → transparent), flatShading, side ('double' | 'back'),
+//   toon (MeshToonMaterial), physical (MeshPhysicalMaterial — also implied by any of:
+//   clearcoat, clearcoatRoughness, transmission, thickness, ior, sheen, sheenColor,
+//   sheenRoughness, iridescence, specularIntensity)
+// FLAGS (any object): physics {mode, mass, restitution, friction, ...} (userData.physics) ·
+//   shadow false (no cast/receive) · pick 'through' (select-through shells: walls, glass) ·
+//   origin [x, y, z] (the local pivot a Door preset swings about) · anim '<preset>' | [..]
+//   (door, drawer, elevator, turntable, pulse, fade — key or name; an AUTHORED clip, run it with
+//   a Play Animation node) · particles '<preset>' | {preset, ...overrides} (sparkles, fire,
+//   smoke, dust, confetti, sparks)
+// ENV — a custom sky: {preset: 'custom' | '<preset>', base?: '<preset>', exposure,
+//   background: '#hex' | {top, bottom} (a gradient; `background` keeps the bottom colour),
+//   fog: {color, near, far} | null, ground: {color, roughness?} (a solid ground disc that takes
+//   the shadows), sun: {color, intensity, dir (FROM the scene TOWARD the sun) | position} | null,
+//   hemi: {sky, ground, intensity} | null}. Any of those keys (or preset 'custom') builds a custom
+//   payload from the base preset (default: the named preset, else studio); exposure is applied once.
+// LOADER FLAGS: --out <dir> (scenes-repo tree + index.json) · --only <slug,..> (a subset, index
+//   MERGED) · --def <file.json,..> (defs from JSON; a same-slug def REPLACES the built-in one) ·
+//   env APP_URL, MODULES_REPO (the sibling modules checkout: zips + modules/<id>/<id>.def.json)
+// THE CARD: rendered with the scene's own look (background, fog, environment rig, authored
+//   lights, shadows), the post stack's tone curve else none, through thumb.camera, else view,
+//   else a 3/4 fit of the content (floor slabs excluded); the private studio pair only lights a
+//   scene with no light at all.
+//
 // 24-A A3 (the PR #192 follow-up): the node/edge helpers are ONE module-scope
 // `graphBuilder()` and `remapData` walks every own string field. Both are meant to leave
 // every earlier def byte-identical, and that is CHECKED, not believed — build the same def

@@ -95,6 +95,22 @@ const ONLY =
 				.split(',')
 				.filter(Boolean)
 		: null;
+// 30 author-kit: `--def <file.json[,file.json]>` adds defs from JSON files — each file holds
+// ONE def or an ARRAY of them. A file def whose slug matches a DEFS entry REPLACES it (so a
+// lane can iterate on a def without editing DEFS); any other slug is appended. Combine with
+// `--only <slug>` to author just that def. This is also how the author-kit suite authors its
+// def-under-test into a scratch folder.
+const defFlag = process.argv.indexOf('--def');
+const FILE_DEFS =
+	defFlag !== -1
+		? String(process.argv[defFlag + 1] ?? '')
+				.split(',')
+				.filter(Boolean)
+				.flatMap((file) => {
+					const parsed = JSON.parse(fs.readFileSync(path.resolve(file), 'utf8'));
+					return Array.isArray(parsed) ? parsed : [parsed];
+				})
+		: [];
 
 // ---- declarative scene definitions ------------------------------------------
 // objects: {type:'box'|'cylinder'|'sphere'|'cone', name, color, pos, rot?, ...dims,
@@ -1332,7 +1348,11 @@ const DEFS = [
 
 	/** @type {Record<string, {entry: any, bytes: Buffer, thumb: Buffer|null}>} */
 	const built = {};
-	const defs = ONLY ? DEFS.filter((d) => ONLY.includes(d.slug)) : DEFS;
+	// 30 author-kit: `--def` files replace a same-slug DEFS entry in place, or append
+	const allDefs = DEFS.map((d) => FILE_DEFS.find((f) => f.slug === d.slug) ?? d).concat(
+		FILE_DEFS.filter((f) => !DEFS.some((d) => d.slug === f.slug))
+	);
+	const defs = ONLY ? allDefs.filter((d) => ONLY.includes(d.slug)) : allDefs;
 	if (ONLY && defs.length !== ONLY.length)
 		console.log('  WARN --only names a slug DEFS does not have: ' + ONLY.join(','));
 	// a module-owned def whose file is absent must not quietly drop its row from a full
@@ -1393,6 +1413,90 @@ const DEFS = [
 			s.objectsGroup.subscribe((g) => (group = g))();
 			/** @param {number} n */
 			const hex = (n) => '#' + Number(n).toString(16).padStart(6, '0');
+			// 30 author-kit: material fields only MeshPhysicalMaterial has (a def using any of
+			// them gets one), the directional lights whose shadow frustum is fitted once the
+			// whole scene is built, and the animation presets applied once objects have uuids
+			const PHYSICAL_KEYS = ['clearcoat', 'clearcoatRoughness', 'transmission', 'thickness', 'ior', 'sheen', 'sheenColor', 'sheenRoughness', 'iridescence', 'specularIntensity'];
+			/** @type {any[]} */ const fitShadows = [];
+			/** @type {{object: any, anim: any}[]} */ const animQueue = [];
+			// 30 author-kit: a ROUNDED box. Core's Box params carry no bevel, so this is a port of
+			// three/examples' RoundedBoxGeometry (MIT) — same vertex placement, normals and UVs —
+			// BAKED into a plain BufferGeometry: toJSON writes a subclass's `type` and ObjectLoader
+			// cannot rebuild 'RoundedBoxGeometry', while a plain BufferGeometry round-trips its
+			// buffers. @param {number} width @param {number} height @param {number} depth
+			// @param {number} segments @param {number} radius
+			const roundedBox = (width, height, depth, segments, radius) => {
+				const total = segments * 2 + 1;
+				radius = Math.min(width / 2, height / 2, depth / 2, radius);
+				const src = new T.BoxGeometry(1, 1, 1, total, total, total).toNonIndexed();
+				const positions = src.attributes.position.array;
+				const normals = src.attributes.normal.array;
+				const uvs = src.attributes.uv.array;
+				const position = new T.Vector3();
+				const normal = new T.Vector3();
+				const temp = new T.Vector3();
+				const faceDir = new T.Vector3();
+				const box = new T.Vector3(width, height, depth).divideScalar(2).subScalar(radius);
+				const faceTris = positions.length / 6;
+				const half = 0.5 / total;
+				/** @param {string} uvAxis @param {string} projAxis @param {number} side */
+				const getUv = (uvAxis, projAxis, side) => {
+					const arc = (2 * Math.PI * radius) / 4;
+					const centre = Math.max(side - 2 * radius, 0);
+					temp.copy(normal);
+					/** @type {any} */ (temp)[projAxis] = 0;
+					temp.normalize();
+					const arcUv = (0.5 * arc) / (arc + centre);
+					const arcAngle = 1.0 - temp.angleTo(faceDir) / (Math.PI / 4);
+					if (Math.sign(/** @type {any} */ (temp)[uvAxis]) === 1) return arcAngle * arcUv;
+					return centre / (arc + centre) + arcUv + arcUv * (1.0 - arcAngle);
+				};
+				for (let i = 0, j = 0; i < positions.length; i += 3, j += 2) {
+					position.fromArray(positions, i);
+					normal.copy(position);
+					normal.x -= Math.sign(normal.x) * half;
+					normal.y -= Math.sign(normal.y) * half;
+					normal.z -= Math.sign(normal.z) * half;
+					normal.normalize();
+					positions[i] = box.x * Math.sign(position.x) + normal.x * radius;
+					positions[i + 1] = box.y * Math.sign(position.y) + normal.y * radius;
+					positions[i + 2] = box.z * Math.sign(position.z) + normal.z * radius;
+					normals[i] = normal.x;
+					normals[i + 1] = normal.y;
+					normals[i + 2] = normal.z;
+					const face = Math.floor(i / faceTris);
+					if (face === 0) {
+						faceDir.set(1, 0, 0);
+						uvs[j] = getUv('z', 'y', depth);
+						uvs[j + 1] = 1.0 - getUv('y', 'z', height);
+					} else if (face === 1) {
+						faceDir.set(-1, 0, 0);
+						uvs[j] = 1.0 - getUv('z', 'y', depth);
+						uvs[j + 1] = 1.0 - getUv('y', 'z', height);
+					} else if (face === 2) {
+						faceDir.set(0, 1, 0);
+						uvs[j] = 1.0 - getUv('x', 'z', width);
+						uvs[j + 1] = getUv('z', 'x', depth);
+					} else if (face === 3) {
+						faceDir.set(0, -1, 0);
+						uvs[j] = 1.0 - getUv('x', 'z', width);
+						uvs[j + 1] = 1.0 - getUv('z', 'x', depth);
+					} else if (face === 4) {
+						faceDir.set(0, 0, 1);
+						uvs[j] = 1.0 - getUv('x', 'y', width);
+						uvs[j + 1] = 1.0 - getUv('y', 'x', height);
+					} else {
+						faceDir.set(0, 0, -1);
+						uvs[j] = getUv('x', 'y', width);
+						uvs[j + 1] = 1.0 - getUv('y', 'x', height);
+					}
+				}
+				const geo = new T.BufferGeometry();
+				geo.setAttribute('position', new T.BufferAttribute(positions, 3));
+				geo.setAttribute('normal', new T.BufferAttribute(normals, 3));
+				geo.setAttribute('uv', new T.BufferAttribute(uvs, 2));
+				return geo;
+			};
 			// 28-G: ONE recursive builder. The four original primitives take exactly the
 			// steps they always did, in the same order, so every earlier def is byte-identical.
 			// `mirror` reflects across x = 0: position x negated, yaw and roll NEGATED — a
@@ -1409,6 +1513,29 @@ const DEFS = [
 				if (o.type === 'group' || o.type === 'empty') {
 					object = new T.Group();
 					for (const child of o.children ?? []) object.add(build(child, opts));
+				} else if (o.type === 'light' && o.kind && o.kind !== 'point') {
+					// 30 author-kit: spot / directional / hemisphere. Spot and directional follow
+					// createLight's convention (cast shadows by default, the V-1 bias pair) and aim
+					// by ROTATION (24-E1: they shine along local -Z; lightHelpers places the target
+					// on that forward) — `target` is a WORLD point applied with lookAt once the
+					// position is set, below. A directional's ortho frustum is FITTED to the built
+					// scene after every object exists (`fitShadows`), unless `fit: false`.
+					if (o.kind === 'hemisphere') {
+						object = new T.HemisphereLight(o.color ?? 0xffffff, o.groundColor ?? 0x444444, o.intensity ?? 1);
+					} else if (o.kind === 'spot' || o.kind === 'directional') {
+						object =
+							o.kind === 'spot'
+								? new T.SpotLight(o.color ?? 0xffffff, o.intensity ?? 1, o.distance ?? 0, o.angle ?? Math.PI / 6, o.penumbra ?? 0.3, o.decay ?? 2)
+								: new T.DirectionalLight(o.color ?? 0xffffff, o.intensity ?? 1);
+						object.castShadow = o.castShadow ?? true;
+						object.shadow.bias = -0.0002;
+						object.shadow.normalBias = 0.02;
+						if (o.shadowMapSize) {
+							object.userData.shadowMapSize = o.shadowMapSize;
+							object.shadow.mapSize.set(o.shadowMapSize, o.shadowMapSize);
+						}
+						if (o.kind === 'directional' && object.castShadow && o.fit !== false) fitShadows.push(object);
+					} else throw new Error('light: unknown kind "' + o.kind + '" (point | spot | directional | hemisphere)');
 				} else if (o.type === 'light') {
 					// a point light: a viewpoint's worth of scenery it lights, no shadow map
 					object = new T.PointLight(o.color ?? 0xffffff, o.intensity ?? 1, o.distance ?? 0, o.decay ?? 2);
@@ -1449,16 +1576,44 @@ const DEFS = [
 					);
 				} else {
 					let geo;
-					if (o.type === 'box') geo = new T.BoxGeometry(o.size[0], o.size[1], o.size[2]);
+					if (o.type === 'box' && o.bevel > 0) geo = roundedBox(o.size[0], o.size[1], o.size[2], o.bevelSegments ?? 3, o.bevel);
+					else if (o.type === 'box') geo = new T.BoxGeometry(o.size[0], o.size[1], o.size[2]);
 					else if (o.type === 'cylinder') geo = new T.CylinderGeometry(o.r, o.r2 ?? o.r, o.h, 24);
 					else if (o.type === 'sphere') geo = new T.SphereGeometry(o.r, 24, 16);
 					else if (o.type === 'torus') geo = new T.TorusGeometry(o.r, o.tube ?? o.r * 0.2, 16, 40);
-					else geo = new T.ConeGeometry(o.r, o.h, 24);
-					const mat = new T.MeshStandardMaterial({
-						color: o.color,
-						roughness: o.roughness ?? 0.85,
-						metalness: o.metalness ?? 0
-					});
+					// 30 author-kit: four more primitives, all core three geometries ObjectLoader
+					// rebuilds from their parameters (so the .tpscene stays small). A plane faces +Z
+					// (rotate it -90deg on x to lie flat); a ring is the flat annulus, also +Z.
+					else if (o.type === 'capsule') geo = new T.CapsuleGeometry(o.r, o.h ?? o.length ?? 1, 8, 16);
+					else if (o.type === 'plane') geo = new T.PlaneGeometry(o.size[0], o.size[1]);
+					else if (o.type === 'ring') geo = new T.RingGeometry(o.inner ?? o.r * 0.5, o.r, 48);
+					else if (o.type === 'icosahedron') geo = new T.IcosahedronGeometry(o.r, o.detail ?? 0);
+					else if (o.type === 'dodecahedron') geo = new T.DodecahedronGeometry(o.r, o.detail ?? 0);
+					else if (o.type === 'cone') geo = new T.ConeGeometry(o.r, o.h, 24);
+					else throw new Error('object "' + o.name + '": unknown type "' + o.type + '"');
+					// 30 author-kit: MeshPhysicalMaterial when a def asks for `physical` or uses any
+					// field only it has; MeshToonMaterial for `toon`. Absent all of those it is the
+					// same MeshStandardMaterial as ever (byte-identical defs).
+					const physical = o.physical || PHYSICAL_KEYS.some((k) => o[k] != null);
+					/** @type {any} */
+					let mat;
+					if (o.toon) mat = new T.MeshToonMaterial({ color: o.color });
+					else if (physical) {
+						mat = new T.MeshPhysicalMaterial({ color: o.color, roughness: o.roughness ?? 0.85, metalness: o.metalness ?? 0 });
+						for (const k of PHYSICAL_KEYS) {
+							if (o[k] == null) continue;
+							if (k === 'sheenColor') mat.sheenColor = new T.Color(o[k]);
+							else mat[k] = o[k];
+						}
+					} else
+						mat = new T.MeshStandardMaterial({
+							color: o.color,
+							roughness: o.roughness ?? 0.85,
+							metalness: o.metalness ?? 0
+						});
+					if (o.flatShading) mat.flatShading = true;
+					if (o.side === 'double') mat.side = T.DoubleSide;
+					else if (o.side === 'back') mat.side = T.BackSide;
 					// B8: material EMISSIVE + opacity, so a game can glow a pad or float a
 					// translucent marker without a shader doc (which the user found "strange").
 					// emissiveIntensity multiplies the emissive COLOUR, so both are needed.
@@ -1482,6 +1637,35 @@ const DEFS = [
 				if (pos && o.type !== 'spline') object.position.set(pos[0], pos[1], pos[2]);
 				if (rot) object.rotation.set(rot[0], rot[1], rot[2]);
 				if (o.physics && !mirror) object.userData.physics = o.physics;
+				// 30 author-kit: object FLAGS. Each lands where the app itself keeps it, so the
+				// .tpscene carries it the ordinary way (userData rides toJSON; a clip rides the
+				// animations block). A mirror ghost takes none of them (it is decoration).
+				if (!mirror) {
+					// select-through: a shell (wall, ceiling, glass) the editor's pick passes by
+					if (o.pick === 'through') object.userData.pick = 'through';
+					// the transform ORIGIN (objectOrigin's local pivot offset) — a Door preset
+					// swings about it, so a hinge is authored here
+					if (Array.isArray(o.origin)) object.userData.origin = o.origin.map(Number);
+					// a particle emitter from a preset (particlePresets), optionally patched —
+					// the config addParticlesPreset writes to userData.particles
+					if (o.particles) {
+						const spec = typeof o.particles === 'string' ? { preset: o.particles } : o.particles;
+						if (!s.particlePresets.PARTICLE_PRESETS.some((/** @type {any} */ p) => p.key === spec.preset))
+							throw new Error('object "' + o.name + '": no particle preset "' + spec.preset + '"');
+						const base = s.particlePresets.particlePreset(spec.preset);
+						if (!base) throw new Error('object "' + o.name + '": no particle preset "' + spec.preset + '"');
+						const { preset: _preset, ...patch } = spec;
+						object.userData.particles = { ...structuredClone(base), ...patch };
+					}
+					// animation presets are applied once the object has a uuid in the scene
+					if (o.anim) animQueue.push({ object, anim: o.anim });
+				}
+				// a spot/directional aims by rotation at a WORLD point (see the light branch)
+				if (o.target && (object.isSpotLight || object.isDirectionalLight)) {
+					const t = o.target;
+					object.updateMatrixWorld(true);
+					object.lookAt(mirror ? -t[0] : t[0], t[1], t[2]);
+				}
 				if (o.shadow === false || opts.shadow === false) {
 					// shadowDefaults sweeps cast/receive back ON unless the object opts out
 					object.castShadow = false;
@@ -1507,6 +1691,41 @@ const DEFS = [
 					continue;
 				}
 				group.add(build(o));
+			}
+			// 30 author-kit: FIT each shadow-casting directional light's ortho frustum to the
+			// meshes just built — the 8 corners of their world box carried into the light's own
+			// frame (it looks down -Z, and the shadow camera is posed from the light toward its
+			// target on that same forward). Saved with the light: LightShadow.toJSON carries the
+			// camera, so the fitted frustum is what the file (and every peer) renders with.
+			if (fitShadows.length) {
+				group.updateMatrixWorld(true);
+				const bounds = new T.Box3();
+				group.traverse((/** @type {any} */ n) => {
+					if (n.isMesh && !n.userData?.camera) bounds.expandByObject(n);
+				});
+				if (!bounds.isEmpty()) {
+					const corners = [];
+					for (const x of [bounds.min.x, bounds.max.x])
+						for (const y of [bounds.min.y, bounds.max.y])
+							for (const z of [bounds.min.z, bounds.max.z]) corners.push(new T.Vector3(x, y, z));
+					for (const light of fitShadows) {
+						light.updateMatrixWorld(true);
+						const inv = light.matrixWorld.clone().invert();
+						const local = new T.Box3().setFromPoints(corners.map((c) => c.clone().applyMatrix4(inv)));
+						const pad = Math.max(local.max.x - local.min.x, local.max.y - local.min.y) * 0.05 + 0.5;
+						const cam = light.shadow.camera;
+						// symmetric about the light's axis (the shadow camera is centred on it)
+						const rx = Math.max(Math.abs(local.min.x), Math.abs(local.max.x)) + pad;
+						const ry = Math.max(Math.abs(local.min.y), Math.abs(local.max.y)) + pad;
+						cam.left = -rx;
+						cam.right = rx;
+						cam.bottom = -ry;
+						cam.top = ry;
+						cam.near = Math.max(0.1, -local.max.z - pad);
+						cam.far = Math.max(cam.near + 1, -local.min.z + pad);
+						cam.updateProjectionMatrix();
+					}
+				}
 			}
 			s.objectsGroup.update((v) => v);
 
@@ -1541,6 +1760,22 @@ const DEFS = [
 					sets[named[key]] = set;
 				}
 				s.animationPreview.animationsRestore(sets, false);
+			}
+			// 30 author-kit: `anim: '<preset>'` (or a list of them) — through applyPreset, the
+			// Animation window's own preset path, so each is an ORDINARY authored clip keyed
+			// from where the object stands (and, for a Door, about its `origin`). A clip is
+			// authored, not playing: a Play Animation node (or the Animation window) runs it.
+			if (animQueue.length && s.animationPreview) {
+				const presets = s.animationPreview.PRESETS;
+				for (const { object, anim } of animQueue) {
+					for (const name of Array.isArray(anim) ? anim : [anim]) {
+						const key = Object.keys(presets).find(
+							(k) => k === String(name).toLowerCase() || presets[k].name.toLowerCase() === String(name).toLowerCase()
+						);
+						if (!key) throw new Error('object "' + object.name + '": no animation preset "' + name + '" (' + Object.keys(presets).join(', ') + ')');
+						s.animationPreview.applyPreset(key, object.uuid, object);
+					}
+				}
 			}
 			// 28-G: THE TRACK. Into the Explorer (content-hashed, so re-runs dedupe) and into
 			// the scene's music slot with playing OFF — the graph plays it from Start. The

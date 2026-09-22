@@ -235,6 +235,96 @@ h.run(async () => {
 	check(r.hemi.is && r.hemi.ground === '332211', 'hemisphere: HemisphereLight with its ground colour');
 	check(r.bulb.is && r.bulb.distance === 8, 'point: the existing point light is unchanged');
 
+	// ---- P1: a custom sky ---------------------------------------------------------------
+	const SKY = {
+		kind: 'template',
+		slug: 'author-kit-sky',
+		title: 'Author kit sky',
+		description: 'a custom env: gradient sky, fog, ground, sun, hemi',
+		license: 'CC0-1.0',
+		author: 'theprototype',
+		env: {
+			preset: 'custom',
+			exposure: 1.2,
+			background: { top: '#ff2020', bottom: 0x2020ff },
+			fog: { color: '#6070a0', near: 20, far: 90 },
+			ground: { color: '#3a5a2a' },
+			sun: { color: '#fff0dd', intensity: 2.2, dir: [1, 2, 0.5] },
+			hemi: { sky: '#cfe0ff', ground: 0x303820, intensity: 0.7 }
+		},
+		// looking steeply UP, so the whole frame is sky (no grid, no ground, no object)
+		view: { pos: [0, 1.6, 6], target: [0, 40, -12] },
+		objects: [{ type: 'box', name: 'Block', color: 0x999999, size: [1, 1, 1], pos: [0, 0.5, 0] }]
+	};
+	const sky = author(SKY, 'p1');
+	check(await load(page, sky.scene), 'the custom-sky file loads');
+	await page.waitForTimeout(1200);
+	const e = await page.evaluate(() => {
+		const s = window.__stores;
+		/** @type {any} */ let state;
+		s.environment.environment.subscribe((v) => (state = v))();
+		/** @type {any} */ let scene;
+		s.globalScene.subscribe((v) => (scene = v))();
+		/** @type {any} */ let renderer;
+		s.globalRenderer.subscribe((v) => (renderer = v))();
+		const ground = scene.getObjectByName('env-ground');
+		const catcher = scene.getObjectByName('env-shadow-catcher');
+		return {
+			preset: state.preset,
+			exposure: state.exposure,
+			custom: state.customPreset,
+			backgroundIsTexture: !!scene.background?.isTexture,
+			fog: scene.fog ? { color: scene.fog.color.getHexString(), near: scene.fog.near } : null,
+			groundVisible: !!ground?.visible,
+			groundColor: ground?.material?.color?.getHexString(),
+			catcherVisible: !!catcher?.visible,
+			rendererExposure: renderer?.toneMappingExposure
+		};
+	});
+	console.log(JSON.stringify(e));
+	const c = e.custom ?? {};
+	check(e.preset === 'custom' && Math.abs(e.exposure - 1.2) < 1e-9, "env: preset 'custom' with the def's exposure 1.2 as the STATE multiplier");
+	check(c.exposure === 1 && Math.abs(e.rendererExposure - 1.2) < 1e-6, 'env: exposure is applied once, not squared (renderer ' + e.rendererExposure + ')');
+	check(c.gradient?.top === '#ff2020' && c.gradient?.bottom === '#2020ff', 'env: the gradient {top, bottom} is saved (numbers become #hex)');
+	check(c.background === '#2020ff', 'env: `background` keeps a flat horizon colour beside the gradient (older peers read it)');
+	check(e.backgroundIsTexture, 'env: the live scene background is the gradient texture');
+	check(c.fog?.color === '#6070a0' && c.fog?.near === 20 && e.fog?.color === '6070a0', 'env: fog {color, near, far} is applied');
+	check(c.ground?.color === '#3a5a2a' && e.groundVisible && e.groundColor === '3a5a2a', 'env: the ground disc shows in the authored colour');
+	check(!e.catcherVisible, 'env: the shadow catcher stands down while the ground receives the shadows');
+	const sunDir = c.sun?.position ? c.sun.position.map((v) => v / Math.hypot(...c.sun.position)) : [];
+	const want = [1, 2, 0.5].map((v) => v / Math.hypot(1, 2, 0.5));
+	check(sunDir.length === 3 && sunDir.every((v, i) => Math.abs(v - want[i]) < 1e-3) && c.sun.intensity === 2.2 && c.sun.color === '#fff0dd', 'env: sun {color, intensity, dir} -> the rig sun position along dir');
+	check(c.hemi?.sky === '#cfe0ff' && c.hemi?.ground === '#303820' && c.hemi?.intensity === 0.7, 'env: hemi {sky, ground, intensity}');
+
+	// the pixels: the sky's upper band is red-heavy and its lower band blue-heavy
+	const frame = await h.grabFrame(peer);
+	const bands = await page.evaluate(
+		async ({ b64 }) => {
+			const img = new Image();
+			img.src = 'data:image/png;base64,' + b64;
+			await img.decode();
+			const canvas = document.createElement('canvas');
+			canvas.width = img.width;
+			canvas.height = img.height;
+			const ctx = canvas.getContext('2d');
+			ctx.drawImage(img, 0, 0);
+			// clear of the Connect pill (top centre) and the Controls HUD (bottom centre)
+			const band = (/** @type {number} */ y0, /** @type {number} */ y1) => {
+				const x0 = Math.round(img.width * 0.08);
+				const w = Math.round(img.width * 0.22);
+				const d = ctx.getImageData(x0, Math.round(img.height * y0), w, Math.round(img.height * (y1 - y0))).data;
+				const sum = [0, 0, 0];
+				for (let i = 0; i < d.length; i += 4) for (let k = 0; k < 3; k++) sum[k] += d[i + k];
+				return sum.map((v) => v / (d.length / 4));
+			};
+			return { top: band(0.18, 0.26), bottom: band(0.74, 0.82) };
+		},
+		{ b64: frame.toString('base64') }
+	);
+	console.log('sky bands', JSON.stringify(bands));
+	check(bands.top[0] - bands.bottom[0] > 60, 'pixels: the upper sky is redder than the lower (R ' + bands.top[0].toFixed(0) + ' vs ' + bands.bottom[0].toFixed(0) + ')');
+	check(bands.bottom[2] - bands.top[2] > 60, 'pixels: the lower sky is bluer than the upper (B ' + bands.bottom[2].toFixed(0) + ' vs ' + bands.top[2].toFixed(0) + ')');
+
 	await h.finish(browser);
 });
 

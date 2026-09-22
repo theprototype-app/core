@@ -1732,7 +1732,70 @@ const DEFS = [
 			// ---- C5.3: the scene DATA a game carries beyond its objects -------------
 			// Each of these lands through the app's own write path, so what the script
 			// produces is exactly what a user authoring by hand would have saved.
-			if (d.env) s.environment.setEnvironment(d.env.preset ?? d.env, d.env.exposure ?? 1);
+			// 30 author-kit: a CUSTOM sky. `env` is still a preset name or {preset, exposure}
+			// (unchanged path, byte-identical); a def that says preset:'custom' or overrides any
+			// sky field builds a custom payload from a base preset (`base`, else the named
+			// preset, else studio) and commits it through the environment module's own custom
+			// path (applyCustomPreset), so the scene saves it as `customPreset` and a peer or a
+			// late joiner receives it on the environment singleton like any authored sky.
+			// The payload's own `exposure` stays 1 — the def's exposure is the STATE multiplier
+			// (applyCustomPreset would otherwise square it).
+			const SKY_KEYS = ['background', 'fog', 'ground', 'sun', 'hemi'];
+			const env = d.env && typeof d.env === 'object' ? d.env : null;
+			/** @param {any} c */
+			const col = (c) => (typeof c === 'number' ? hex(c) : c);
+			if (env && (env.preset === 'custom' || SKY_KEYS.some((k) => env[k] !== undefined))) {
+				const presets = s.environment.ENVIRONMENT_PRESETS;
+				const baseKey = env.base ?? (env.preset && env.preset !== 'custom' ? env.preset : 'studio');
+				if (!presets[baseKey]) throw new Error('env: no base preset "' + baseKey + '"');
+				const payload = JSON.parse(JSON.stringify(presets[baseKey]));
+				payload.label = env.label ?? 'Custom';
+				payload.exposure = 1;
+				if (env.background !== undefined) {
+					if (env.background && typeof env.background === 'object') {
+						// a GRADIENT sky: `background` keeps a flat colour beside it (the horizon)
+						// for the backgroundColor store and for an older peer that ignores it
+						payload.gradient = { top: col(env.background.top), bottom: col(env.background.bottom) };
+						payload.background = col(env.background.bottom);
+					} else payload.background = col(env.background);
+				}
+				if (env.fog !== undefined)
+					payload.fog =
+						env.fog === null
+							? null
+							: {
+									...(payload.fog ?? { color: payload.background, near: 30, far: 160 }),
+									...env.fog,
+									...(env.fog.color != null ? { color: col(env.fog.color) } : {})
+								};
+				if (env.ground) payload.ground = { color: col(env.ground.color), ...(env.ground.roughness != null ? { roughness: env.ground.roughness } : {}) };
+				if (env.sun !== undefined) {
+					if (env.sun === null) payload.sun = null;
+					else {
+						const prev = payload.sun ?? { color: '#ffffff', intensity: 1.8, position: [6, 10, 4] };
+						// `dir` points FROM the scene TOWARD the sun; the rig wants a position
+						const dir = env.sun.dir ? new T.Vector3(...env.sun.dir).normalize().multiplyScalar(16) : null;
+						payload.sun = {
+							color: env.sun.color != null ? col(env.sun.color) : prev.color,
+							intensity: env.sun.intensity ?? prev.intensity,
+							position: dir ? dir.toArray().map((v) => Math.round(v * 1000) / 1000) : env.sun.position ?? prev.position
+						};
+					}
+				}
+				if (env.hemi !== undefined) {
+					if (env.hemi === null) payload.hemi = null;
+					else {
+						const prev = payload.hemi ?? { sky: '#ffffff', ground: '#4c525c', intensity: 1 };
+						payload.hemi = {
+							sky: env.hemi.sky != null ? col(env.hemi.sky) : prev.sky,
+							ground: env.hemi.ground != null ? col(env.hemi.ground) : prev.ground,
+							intensity: env.hemi.intensity ?? prev.intensity
+						};
+					}
+				}
+				s.environment.applyCustomPreset(payload);
+				s.environment.setEnvironment('custom', env.exposure ?? 1);
+			} else if (d.env) s.environment.setEnvironment(d.env.preset ?? d.env, d.env.exposure ?? 1);
 			if (typeof d.gravity === 'number') s.scenePhysics.setSceneGravity(d.gravity);
 			// B8: the whole scenePhysics block (ground/bounds/material/damping/play), not
 			// just gravity — a physics GAME is authored in these numbers. setScenePhysics
@@ -1966,7 +2029,9 @@ const DEFS = [
 			// leave no look or rule behind for the next def — a leaked sky or gravity is
 			// exactly the bug A6 exists to fix, and it would be baked into the next scene
 			s.commandsHandler.sceneCommand('/clear all');
-			s.environment.setEnvironment('studio', 1);
+			// 30 author-kit: the FULL reset — setEnvironment('studio') keeps a custom payload
+			// in the state, and environmentSnapshot would then save it into the NEXT def
+			s.environment.environmentRestore(null, false);
 			s.scenePhysics.resetSceneGravity();
 			s.restoreGraphs({});
 			// B8: every singleton a game def can now set — a null/empty restore is the

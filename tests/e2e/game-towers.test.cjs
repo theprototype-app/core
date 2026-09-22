@@ -65,11 +65,13 @@ h.run(async () => {
 	h.check(crates.length === 9, `9 pre-placed dynamic crates (${crates.length})`);
 	h.check(st.play?.simOnPlay === true && st.play?.interaction === 'grab', 'play block: grab + simOnPlay');
 	h.check(st.state === 'menu' && st.screen === 'menu', `starts on the menu screen (${st.state}/${st.screen})`);
-	h.check(/TOWERS/.test(await hud()), 'the menu renders (TOWERS)');
 
 	// 2 — entering play starts the sim (simOnPlay honoured from the file)
 	await page.evaluate(() => window.__stores.isLocked.set(true));
 	await h.eventually(() => snap().then((v) => v.sim), (v) => v === true, 'entering play starts the sim', 10000);
+	// 30 P1: a game's menu is drawn in PLAY, not over the editor (game-editor-flow covers
+	// the editor half), so the menu check lives on this side of the play press now
+	h.check(/TOWERS/.test(await hud()), 'the menu renders in play (TOWERS)');
 
 	// 3 — the Start button flips to playing and swaps the menu for the HUD
 	await clickBtn('Start round');

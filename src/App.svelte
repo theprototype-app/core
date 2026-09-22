@@ -106,6 +106,7 @@ import { startMusicToolbox } from './lib/musicToolbox'
   import { loadProjectManifest } from '$lib/projectManifest'
   import { startSharedLibrary } from '$lib/sharedLibrary'
   import { startSceneIdentity } from '$lib/sceneIdentity'
+  import GameChip from './components/hud/GameChip.svelte'
   import HudLayer from './components/hud/HudLayer.svelte'
   import HudEditor from './components/editors/HudEditor.svelte'
   import { importFile, load } from '$lib/fileHandler.svelte'
@@ -572,6 +573,10 @@ import { startMusicToolbox } from './lib/musicToolbox'
      above (a game HUD that dies when you press play is no HUD at all). --z-hud, no
      new tier: it beats the camera PiP and loses to modal/toast/menu. -->
 <HudLayer />
+<!-- 30 P1: the game chip — "Game · <state>" + ▶ Test play. Beside HudLayer because it is the
+     editor's stand-in for a game's screens, which HudLayer no longer draws outside Play.
+     Editor-only (it hides itself in Play, in VR and in embed mode). -->
+<GameChip />
 
 <!-- W9: THE VIEWPORT IS A LAYOUT REGION.
      threlte's Canvas fills its parent (`width/height: 100%`) and sizes the renderer

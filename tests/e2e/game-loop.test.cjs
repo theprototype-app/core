@@ -82,7 +82,10 @@ h.run(async () => {
 			...withStates,
 			screens: withStates.screens.map((sc) => ({
 				...sc,
-				showWhile: sc.id === hudScreen ? 'playing' : 'menu'
+				showWhile: sc.id === hudScreen ? 'playing' : 'menu',
+				// 30 P1: the menu is pressed IN PLAY now, so it frees the pointer the way every
+				// Games-tab menu does (21-E3's menu substate)
+				...(sc.id === hudScreen ? {} : { input: 'menu' })
 			}))
 		});
 		await new Promise((r) => setTimeout(r, 600));
@@ -168,6 +171,10 @@ h.run(async () => {
 		// close the editor so the HUD renders in the viewport (D5's authoring rule)
 		window.__stores.hudEditorClose.set(true);
 	});
+	// 30 P1: a GAME's screens are drawn in PLAY, never over the editor (game-editor-flow),
+	// so both players press play first — which is also the only honest version of "the
+	// user's scenario": Start is a button inside the game, not a switch in the editor.
+	for (const p of [A, B]) await p.page.evaluate(() => window.__stores.playMode.requestPlay());
 	await page.waitForTimeout(1200);
 	const beforeA = await onScreen(A);
 	const beforeB = await onScreen(B);
@@ -238,10 +245,17 @@ h.run(async () => {
 	h.check(scoredB === 'Gems: 7', `and the peer derives the same string with no runtime message (${JSON.stringify(scoredB)})`);
 
 	// ---- 8. a LATE JOINER walks into a running game ------------------------
+	// A approves from the EDITOR (a peer cannot approve while in play); B stays in play,
+	// so the round keeps a player and the abandon watch leaves it running
+	await page.evaluate(() => window.__stores.playMode.exitPlay());
+	await page.waitForTimeout(600);
 	const C = await h.setupPage(browser, 'C');
 	await C.page.waitForFunction(() => !!window.__stores?.gameState, { timeout: 30000 });
 	await h.connect(C, A);
 	await C.page.waitForTimeout(3200);
+	// the joiner looks at the game the way a player does: from inside Play
+	await C.page.evaluate(() => window.__stores.playMode.requestPlay());
+	await C.page.waitForTimeout(1200);
 	const lateState = await gstate(C);
 	h.check(lateState.state === 'playing', `a late joiner arrives mid-game (${lateState.state})`);
 	h.check(lateState.vars?.gems === 7, `with the score already right (${lateState.vars?.gems})`);
@@ -286,6 +300,8 @@ h.run(async () => {
 	);
 
 	// ---- 9. the game ENDS, and everyone follows ----------------------------
+	await page.evaluate(() => window.__stores.playMode.requestPlay());
+	await page.waitForTimeout(600);
 	const ended = await page.evaluate(async () => {
 		const s = window.__stores;
 		s.gameState.setGameState('over', { outcome: 'won' });

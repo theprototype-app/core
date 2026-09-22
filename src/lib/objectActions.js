@@ -727,6 +727,12 @@ registerHistoryKind('props', (entry, state) => {
 		if (peer)
 			peer.send({ type: 'objectParameters', parameter: 'device', uuid: entry.uuid, device: state.device });
 	}
+	if ('pick' in state) {
+		// 30 P2: click-through in the viewport ("the next opaque thing behind me")
+		if (state.pick) object.userData.pick = state.pick;
+		else delete object.userData.pick;
+		if (peer) peer.send({ type: 'objectParameters', parameter: 'pick', uuid: entry.uuid, pick: state.pick ?? null });
+	}
 	if ('origin' in state) {
 		// 17-D: the per-object transform origin (pivot offset) is scene data, so
 		// moving it is undoable and replicated like any other userData write
@@ -749,6 +755,30 @@ registerHistoryKind('group', (entry, state) => {
 	moveObjectToGroup(entry.uuid, state.parent);
 	return true;
 });
+
+/**
+ * 30 P2: mark an object CLICK-THROUGH in the viewport — an editor click passes it to the
+ * next opaque thing behind (a game's walls, a glass case, a ceiling). Scene data like
+ * `userData.physics`: one `props` undo entry, the existing `objectParameters` message,
+ * and it rides toJSON / GLTF extras into every save. Absent is the default, so an object
+ * never flagged serialises byte-identically.
+ * @param {string} uuid @param {boolean} on @returns {boolean} whether anything changed
+ */
+export function setPickThrough(uuid, on) {
+	const object = get(objectsGroup)?.getObjectByProperty('uuid', uuid);
+	if (!object) return false;
+	const before = object.userData.pick ?? null;
+	const next = on ? 'through' : null;
+	if (before === next) return false;
+	if (next) object.userData.pick = next;
+	else delete object.userData.pick;
+	recordEntry({ kind: 'props', uuid, before: { pick: before }, after: { pick: next } });
+	/** @type {any} */
+	const peer = get(peers);
+	peer?.send({ type: 'objectParameters', parameter: 'pick', uuid, pick: next });
+	pokeScene();
+	return true;
+}
 
 /** Toggle visibility and replicate (same message Properties uses) @param {string} uuid */
 export function toggleObjectVisibility(uuid) {

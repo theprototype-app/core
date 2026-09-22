@@ -16,6 +16,7 @@ import {
 import { suspendAnimation, resumeAnimation, fireObjectClick } from './flowRuntime';
 import { velocityFromSamples } from './throwVelocity';
 import { resolvePlaySettings } from './playSettings';
+import { pickStack, primaryIndex } from './selectThrough';
 import { nameOf } from './lockControl';
 import { moduleInteractiveGroups, fireClickMiss, runClickHandlers } from './moduleSDK';
 
@@ -207,9 +208,13 @@ export function interactClick(ray) {
 		const hits = ray.intersectObject(root, true);
 		if (hits.length > 0 && runClickHandlers(hits[0].object, 'interact')) return 'module-group';
 	}
-	const hit = sceneHits(ray, { tinyProxies: true })[0];
+	// 30 P2: the same see-through rule as the editor's pick — a 0.12-opacity wall in
+	// front of a star must not take the star's click here either
+	const stack = pickStack(sceneHits(ray, { tinyProxies: true }), topLevelObjectOf);
+	const entry = stack.length ? stack[primaryIndex(stack)] : null;
+	const hit = entry?.hit ?? null;
 	if (hit && runClickHandlers(hit.object, 'interact')) return 'module-handler';
-	const target = hit ? topLevelObjectOf(hit.object) : null;
+	const target = entry?.target ?? null;
 	if (target) {
 		fireObjectClick(target.uuid);
 		return 'click';

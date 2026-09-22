@@ -56,7 +56,7 @@
 	import { LIGHT_PARAMS, SHADOW_TYPES, SHADOW_SIZES, setShadowMapSize, cappedShadowSize } from '$lib/lightParams';
 	import { animatedObjects, setAnimationState } from '$lib/animatedImports';
 	import { captureAutoKey, playheadOf } from '$lib/animationPreview';
-	import { moveObjectToGroup, selectObject, flyTo } from '$lib/objectActions';
+	import { moveObjectToGroup, selectObject, flyTo, setPickThrough } from '$lib/objectActions';
 	import { listPhysicsObjects, enablePhysicsOnSelection, setPhysicsFor, PHYSICS_MATERIALS } from '$lib/physics';
 	import {
 		sceneGravity,
@@ -591,6 +591,12 @@
 			if (object?.uuid) captureAutoKey(object.uuid, playheadOf(object.uuid));
 		}
 	}
+	// 30 P2: every member is click-through (a mixed set reads unchecked; ticking it marks them all)
+	const pickThroughAll = $derived.by(() => {
+		$selectedObject;
+		$objectsGroup;
+		return insTargets.length > 0 && insTargets.every((/** @type {any} */ object) => object?.userData?.pick === 'through');
+	});
 	/** @param {string} label @param {(object:any)=>void} fn */
 	function fan(label, fn) {
 		fanOn(insTargets, label, fn);
@@ -3094,6 +3100,19 @@
 						Frustum culled
 					</Checkbox>
 					<p class="text-[10px] text-gray-500">Higher render order draws later (over other objects). Disable culling for objects that vanish at screen edges.</p>
+					<!-- 30 P2: a wall, a ceiling or a glass case can stand aside for the editor's
+					     click — it picks the next opaque thing behind (click again to cycle back) -->
+					<Checkbox
+						id="inspector-pick-through"
+						checked={pickThroughAll}
+						onchange={(/** @type {any} */ e) => {
+							const on = e.target.checked;
+							fan('Click-through', (/** @type {any} */ object) => setPickThrough(object.uuid, on));
+							selectedObject.update((v) => v);
+						}}
+					>
+						Click-through in the viewport
+					</Checkbox>
 				</Section>
 			{/if}
 

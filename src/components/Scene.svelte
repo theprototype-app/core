@@ -29,6 +29,7 @@
 	import { holdBody, releaseBody } from '$lib/physics';
 	import { sculptObject, enterSculpt, beginStroke, strokeMove, endStroke as sculptEndStroke, showCursorAt, hideCursor } from '$lib/terrainSculpt';
 	import { sceneHits } from '$lib/scenePick';
+	import { pickStack, chooseInStack } from '$lib/selectThrough';
 	import { startPlayInteract, tickPlayInteract, stopPlayInteract, carriedUuid, editorInteractActive, cursorGrabStart, cursorGrabMove, cursorGrabEnd, interactClick } from '$lib/playInteract';
 	import { registerKeySessionProbe } from '$lib/shortcuts';
 	import { startKnock, tickKnock, stopKnock } from '$lib/knock';
@@ -500,12 +501,16 @@
 	// existing click path instead of a separate dblclick listener. Declared at
 	// COMPONENT scope: raycastSelect lives here, not in the pointer-handler block.
 	let lastPick: { uuid: string | null; t: number } = { uuid: null, t: 0 };
+	// 30 P2: the last plain editor click — where, when, and what it picked — so a repeat on
+	// the same spot can walk DOWN the stack instead of re-picking the same object
+	let lastSelectClick: { x: number; y: number; t: number; uuid: string | null } | null = null;
+	let selectBehindHinted = safeStorage.getItem('hint:selectBehind') === 'true';
 
 	// 30 P1: `mode` is where the click came from. 'edit' = the desktop editor pick, where a
 	// module handler runs only if it registered for Edit (so a piano or a puzzle piece no
 	// longer swallows the select) and On Click nodes do NOT fire — Interact is where the
 	// scene reacts. null = VR's trigger, unchanged: every handler first, then select + pulse.
-	function raycastSelect(additive = false, mode: string | null = null) {
+	function raycastSelect(additive = false, mode: string | null = null, click: { x: number; y: number; t: number } | null = null) {
 		// module-owned interactive groups live at the scene root (pong, dungeon, ...)
 		for (const name of moduleInteractiveGroups) {
 			const root = scene.getObjectByName(name);
@@ -514,11 +519,26 @@
 			if (moduleHits.length > 0 && runModuleClickHandlers(moduleHits[0].object, mode)) return true;
 		}
 		const hits = pickSceneObjects();
-		if (hits.length > 0) {
+		// 30 P2: SELECT-THROUGH — collapse the hits into a stack of top-level targets and
+		// prefer the first OPAQUE one (a 0.12-opacity wall, a flagged ceiling or a hidden
+		// node no longer wins the click); a plain repeat on the same spot walks down it.
+		const stack = pickStack(hits, topLevelObjectOf);
+		const choice = chooseInStack(stack, click ?? { x: -1e6, y: -1e6, t: 0 }, !additive && click ? lastSelectClick : null);
+		const chosen = choice.index >= 0 ? stack[choice.index] : null;
+		if (chosen) {
 			// modules may consume the click (buttons, instruments, ...) — in Edit only the
 			// ones that asked for it (an editor tool), everything else in VR
-			if (runModuleClickHandlers(hits[0].object, mode)) return true;
-			const target = topLevelObjectOf(hits[0].object);
+			if (runModuleClickHandlers(chosen.hit.object, mode)) return true;
+			const target = chosen.target;
+			if (click && !additive) {
+				lastSelectClick = { ...click, uuid: target.uuid };
+				// the first time a click lands on a stack, say how to reach what is behind
+				if (stack.length > 1 && !selectBehindHinted) {
+					selectBehindHinted = true;
+					safeStorage.setItem('hint:selectBehind', 'true');
+					showToast('Click again to select behind');
+				}
+			}
 			if (target) {
 				// 15-O: a plain click SELECTS; the properties panel opens on a
 				// DOUBLE-click (or via the context menu / object list / a pinned
@@ -1097,7 +1117,7 @@
 			// 85: a click on nothing is also the way out of an isolation — the same
 			// "click the background to get back" instinct as deselecting.
 			const additive = event.shiftKey || $multiSelectMode;
-			if (!raycastSelect(additive, 'edit') && !additive) {
+			if (!raycastSelect(additive, 'edit', { x: event.clientX, y: event.clientY, t: Date.now() }) && !additive) {
 				if (isIsolated()) clearIsolation();
 				deselectObject();
 			}

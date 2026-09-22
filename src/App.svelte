@@ -2,6 +2,10 @@
 	import { safeStorage } from '$lib/safeStorage';
   import { onMount } from 'svelte'
   import { Canvas } from '@threlte/core'
+  // 30 P0: threlte's Canvas defaults `shadows` to PCFSoftShadowMap, which three 0.185
+  // deprecates and silently downgrades to PCFShadowMap on the first shadow render (with a
+  // console warning). Asking for PCF directly is the identical picture, minus the warning.
+  import { PCFShadowMap } from 'three'
   import Scene from './components/Scene.svelte'
   import Menu from './components/Menu.svelte'
   import ConfirmModal from './components/menu/ConfirmModal.svelte'
@@ -582,7 +586,7 @@ import { startMusicToolbox } from './lib/musicToolbox'
      step reallocates the composer's render targets, so animating the inset turns one
      realloc into one per frame. -->
 <div class="viewport" class:viewport-inset={$viewPrefs.dockPushesViewport && !$embedMode}>
-  <Canvas>
+  <Canvas shadows={PCFShadowMap}>
     <Scene />
   </Canvas>
 </div>

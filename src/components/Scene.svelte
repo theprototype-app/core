@@ -95,7 +95,51 @@
 	import { Mesh, Vector3 } from 'three'
 
 
-	let { scene, camera, renderer, dpr } = useThrelte();
+	let { scene, camera, renderer, dpr, dom } = useThrelte();
+
+	// 30 P0: THE POINTER-CAPTURE THROW — ~100 errors on a Quest were one per press.
+	// three 0.185's OrbitControls.onPointerDown calls `domElement.setPointerCapture` with
+	// no guard (its TransformControls sibling guards exactly this), and Chromium refuses a
+	// capture with InvalidStateError while the page holds a pointer lock — which is every
+	// press in play, since the editor controls stay mounted there. The throw lands before
+	// `_addPointer`, so it fired once per press and surfaced as "Something went wrong".
+	// Two halves: the controls stand down while playing (syncOrbitForPlay, per frame), and
+	// the capture itself is guarded on the element they listen on — the smaller of the two
+	// ways to reach it (a subclass would mean replacing threlte's <OrbitControls> with a
+	// hand-built <T is>), and it covers the camera preview's OrbitControls too, which
+	// listens on the same element. It calls the PROTOTYPE method at call time rather than
+	// a captured copy, so nothing else on the element is shadowed for good.
+	const pointerCaptureGuard = (el: any) => {
+		if (!el || typeof el.setPointerCapture !== 'function' || el.__captureGuarded) return () => {};
+		el.__captureGuarded = true;
+		el.setPointerCapture = function (this: any, pointerId: number) {
+			if (this.ownerDocument?.pointerLockElement) return; // the lock already owns the pointer
+			return Element.prototype.setPointerCapture.call(this, pointerId);
+		};
+		return () => {
+			delete el.setPointerCapture;
+			delete el.__captureGuarded;
+		};
+	};
+	onDestroy(pointerCaptureGuard(dom));
+	// the first half: while playing, every OrbitControls that drives the view stands
+	// down. Per FRAME rather than on the isLocked edge, because <TransformControls>
+	// unmounts in play and its auto-pause CLEANUP writes `enabled = true`
+	// unconditionally a tick later (the enableZoom note on the mount below) — a write on
+	// the edge would be stomped. Whatever this stood down comes back when play ends.
+	const orbitStoodDown = new Set<any>();
+	function syncOrbitForPlay() {
+		const controls: any = $activeOrbit;
+		if ($isLocked === true) {
+			if (controls && controls.enabled !== false) {
+				controls.enabled = false;
+				orbitStoodDown.add(controls);
+			}
+		} else if (orbitStoodDown.size) {
+			for (const stood of orbitStoodDown) stood.enabled = true;
+			orbitStoodDown.clear();
+		}
+	}
 
 	// 26-D: the quality governor's two knobs that live here. Resolution goes through
 	// threlte's OWN dpr (renderer.setPixelRatio directly would be undone by threlte's resize
@@ -276,6 +320,7 @@
 
 	useTask((delta) => {
 		rotation += 0.25 * delta;
+		syncOrbitForPlay(); // 30 P0: the editor camera controls stand down while playing
 		// 21-B B3: play-mode grab/carry. The ray is NDC (0,0) every frame, so it
 		// belongs in the frame loop rather than on a pointer event.
 		tickPlayInteract(delta, camera.current);

@@ -16,6 +16,7 @@ import {
 	orbitControls,
 	isVRMode,
 	gizmoSuppressed,
+	editorMode,
 	cameraClaim, pokeScene } from '../stores/sceneStore';
 import { attachMultiPivot, releaseMultiPivot, hasCustomOrigin, pivotPose, setPivotOrigin } from './multiTransform';
 import { focusTargetFace, faceEditObject, hideElementSelection, restoreElementSelection } from './faceEdit';
@@ -180,7 +181,13 @@ export function applySelectionSet(uuids, openProperties = false) {
 		// move gizmo unless every object in the set is editable by the local user
 		// (their own local-only objects, or anything for editors/admins).
 		const editable = clean.every((/** @type {any} */ uuid) => canEditObject(group.getObjectByProperty('uuid', uuid)));
-		if (get(gizmoSuppressed)) {
+		if (get(editorMode) === 'interact') {
+			// 30 P1: INTERACT hands the scene to the player-style input, so a selection
+			// made from the object list (or kept from Edit) stands with no gizmo — a
+			// seated gizmo would take the next press on the object and move it instead
+			releaseMultiPivot();
+			controls.detach();
+		} else if (get(gizmoSuppressed)) {
 			// sculpt mode: selection (and its lock) stand, but no gizmo — the
 			// SculptToolbar toggle re-attaches explicitly when the user opts in
 			releaseMultiPivot();
@@ -209,6 +216,35 @@ export function applySelectionSet(uuids, openProperties = false) {
 	if (openProperties || get(inspectorPinned) || (!get(inspectorClose) && get(inspectorKind) === 'selection')) {
 		showSidebar('properties');
 	}
+}
+
+/**
+ * 30 P1: switch the editor between EDIT (a click selects, the gizmo attaches) and
+ * INTERACT (a click plays with the scene: module handlers, On Click nodes, the cursor
+ * grab). LOCAL — the store is never sent or saved. Entering Interact puts the gizmo away
+ * without dropping the selection, and coming back re-seats it on whatever is still
+ * selected, so a round trip through Interact costs the user nothing.
+ * @param {'edit' | 'interact'} mode @returns {'edit' | 'interact'}
+ */
+export function setEditorMode(mode) {
+	/** @type {'edit' | 'interact'} */
+	const next = mode === 'interact' ? 'interact' : 'edit';
+	if (get(editorMode) === next) return next;
+	editorMode.set(next);
+	/** @type {any} */
+	const controls = get(TControls);
+	if (next === 'interact') {
+		releaseMultiPivot();
+		if (controls && !get(isVRMode)) controls.detach();
+	} else if (get(selectedObjects).length) {
+		applySelectionSet([...get(selectedObjects)]);
+	}
+	return next;
+}
+
+/** The toolbar cell and the I key. */
+export function toggleEditorMode() {
+	return setEditorMode(get(editorMode) === 'interact' ? 'edit' : 'interact');
 }
 
 /** @param {string} uuid @param {boolean} openProperties @param {boolean=} additive - shift-click toggles set membership */
@@ -298,6 +334,14 @@ export function setTransformMode(mode) {
 	const controls = get(TControls);
 	const object = controls?.object;
 	const vr = get(isVRMode);
+	// 30 P1: a transform tool IS editing — picking one in Interact goes back to Edit (which
+	// re-seats the gizmo on the selection) in that tool, rather than doing nothing visible
+	if (get(editorMode) === 'interact' && !vr) {
+		setEditorMode('edit');
+		get(TControls)?.setMode(mode);
+		transformMode.set(mode);
+		return;
+	}
 	const same = get(transformMode) === mode;
 	const isEditProxy = !!(object?.userData?.isFaceProxy || object?.userData?.isVertexProxy);
 	if (same && object && !vr) {

@@ -71,6 +71,59 @@ export const moduleEffects = {};
 export const moduleNodeComponents = {};
 /** @type {((object: any) => boolean)[]} */
 export const moduleClickHandlers = [];
+
+/** 30 P1: the three places a viewport click can come from. */
+export const CLICK_MODES = ['edit', 'interact', 'play'];
+/** What an SDK handler hears when it names no modes: Interact and Play, NOT Edit —
+ * the behaviour change the user asked for (a piano or a puzzle piece used to swallow
+ * every EDITOR click, so it could never be selected). */
+export const DEFAULT_CLICK_MODES = ['interact', 'play'];
+/** handler -> the modes it runs in. A handler with NO entry runs everywhere: that is a
+ * core handler pushed straight into the array (vrPatch's plug click — patching a cable
+ * is authoring, so it must keep working in Edit), never an SDK one.
+ * @type {WeakMap<Function, string[]>} */
+const clickHandlerModes = new WeakMap();
+
+/** Normalise a `{modes}` option: known names only, the default when nothing usable is
+ * left. @param {any} modes @returns {string[]} */
+export function normalizeClickModes(modes) {
+	const list = Array.isArray(modes) ? modes : typeof modes === 'string' ? [modes] : [];
+	const known = [...new Set(list.filter((mode) => CLICK_MODES.includes(mode)))];
+	return known.length ? known : [...DEFAULT_CLICK_MODES];
+}
+
+/** Does this handler run for a click in `mode`? A null mode is VR's trigger, which has
+ * no editor mode of its own yet and keeps offering every handler, as it always has.
+ * @param {Function} fn @param {string | null} mode */
+export function clickHandlerRunsIn(fn, mode) {
+	if (!mode) return true;
+	const modes = clickHandlerModes.get(fn);
+	return !modes || modes.includes(mode);
+}
+
+/**
+ * Offer a clicked mesh to every handler that runs in `mode`, in registration order; the
+ * first to return true consumes the click. ONE dispatch for the editor's pick, Interact
+ * and Play's tap, so the three can never disagree about who hears what.
+ * @param {any} object @param {string | null} mode @returns {boolean}
+ */
+export function runClickHandlers(object, mode) {
+	for (const handler of [...moduleClickHandlers]) {
+		if (!clickHandlerRunsIn(handler, mode)) continue;
+		try {
+			if (handler(object)) return true;
+		} catch (error) {
+			log('warn', 'module', 'click handler failed', String(error));
+		}
+	}
+	return false;
+}
+
+/** The modes a handler was registered with (tests / the debug view).
+ * @param {Function} fn @returns {string[] | null} */
+export function clickHandlerModesOf(fn) {
+	return clickHandlerModes.get(fn) ?? null;
+}
 /** 23-B1: a viewport click that hit NOTHING. `moduleClickHandlers` is only ever handed a
  * MESH, so a gesture armed by a plug click had no way to hear "the user clicked the sky":
  * the wire stayed armed for the rest of the session and a picked-up cable stayed HIDDEN
@@ -463,9 +516,17 @@ function makeApi(moduleId, moduleName = moduleId) {
 		/**
 		 * Intercept viewport clicks (desktop click + VR trigger). Receives the
 		 * exact mesh hit; return true to consume the click (no selection).
+		 *
+		 * 30 P1: `{modes}` says WHERE it runs — any of 'edit' | 'interact' | 'play'.
+		 * Absent means ['interact', 'play']: a handler that is part of the GAME (a key,
+		 * a pad, a puzzle piece) no longer eats the editor's select click. A handler
+		 * that is an editor TOOL (a toolbox pick) passes {modes: ['edit']}, or all three.
+		 * In Edit an 'edit' handler still runs BEFORE the selection, so it can consume.
 		 * @param {(object: any) => boolean} fn
+		 * @param {{modes?: string[]}} [options]
 		 */
-		registerClickHandler(fn) {
+		registerClickHandler(fn, options = {}) {
+			clickHandlerModes.set(fn, normalizeClickModes(options?.modes));
 			moduleClickHandlers.push(fn);
 			onDispose(() => arrayRemove(moduleClickHandlers, fn));
 		},

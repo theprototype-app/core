@@ -9,7 +9,7 @@
 	import { peers, username, userdata, specatorMode, avatarConfig, viewportMenu, objectContextMenu, viewportMenuOpener, addMenu, addMenuOpener, showToast, multiSelectMode } from '../stores/appStore';
 	import { get } from 'svelte/store';
 	import { vrPostEnabled } from '$lib/viewportOverrides';
-	import { isLocked, editorCam, isVRMode, globalScene, objectsGroup, showGrid, TControls, selectedObject, selectedObjects, lockedObjects, marqueeRect, worldRig, vrOverride, specators, globalCamera, globalRenderer, orbitControls, passthroughActive, sessionCompositesOverRoom, vrObjectsPanelOpen, vrPaletteOpen, vrPropsPanelOpen, vrPrefabsPanelOpen, vrChatPanelOpen, vrEditMenuOpen, vrSnapMenuOpen, vrSettingsPanelOpen, vrApprovePanelOpen, vrToolMode, viewMode, contextLost } from '../stores/sceneStore';
+	import { isLocked, editorMode, editorCam, isVRMode, globalScene, objectsGroup, showGrid, TControls, selectedObject, selectedObjects, lockedObjects, marqueeRect, worldRig, vrOverride, specators, globalCamera, globalRenderer, orbitControls, passthroughActive, sessionCompositesOverRoom, vrObjectsPanelOpen, vrPaletteOpen, vrPropsPanelOpen, vrPrefabsPanelOpen, vrChatPanelOpen, vrEditMenuOpen, vrSnapMenuOpen, vrSettingsPanelOpen, vrApprovePanelOpen, vrToolMode, viewMode, contextLost } from '../stores/sceneStore';
 	import {
 		selectObject,
 		deselectObject,
@@ -29,10 +29,11 @@
 	import { holdBody, releaseBody } from '$lib/physics';
 	import { sculptObject, enterSculpt, beginStroke, strokeMove, endStroke as sculptEndStroke, showCursorAt, hideCursor } from '$lib/terrainSculpt';
 	import { sceneHits } from '$lib/scenePick';
-	import { startPlayInteract, tickPlayInteract, stopPlayInteract, carriedUuid } from '$lib/playInteract';
+	import { startPlayInteract, tickPlayInteract, stopPlayInteract, carriedUuid, editorInteractActive, cursorGrabStart, cursorGrabMove, cursorGrabEnd, interactClick } from '$lib/playInteract';
+	import { registerKeySessionProbe } from '$lib/shortcuts';
 	import { startKnock, tickKnock, stopKnock } from '$lib/knock';
 	import { tickMoveSmoothing } from '$lib/moveSmoothing';
-	import { moduleClickHandlers, moduleInteractiveGroups, fireClickMiss } from '$lib/moduleSDK';
+	import { moduleInteractiveGroups, fireClickMiss, runClickHandlers } from '$lib/moduleSDK';
 	import { updateSpatialAudio } from '$lib/voiceChat';
 	import { tickAnimatedMixers } from '$lib/animatedImports';
 	import { tickAnimationPreview, captureAutoKey, playheadOf } from '$lib/animationPreview';
@@ -488,15 +489,11 @@
 		return sceneHits(selectionRaycaster, { tinyProxies: true });
 	}
 
-	function runModuleClickHandlers(hit) {
-		for (const handler of moduleClickHandlers) {
-			try {
-				if (handler(hit)) return true;
-			} catch (error) {
-				console.log('module click handler failed', error);
-			}
-		}
-		return false;
+	// 30 P1: ONE dispatch, filtered by the mode the click came from — 'edit' (the editor
+	// pick: only handlers that asked for Edit), 'play' (the play tap), or null (VR's
+	// trigger, which has no editor mode yet and still offers every handler first)
+	function runModuleClickHandlers(hit: any, mode: string | null = null) {
+		return runClickHandlers(hit, mode);
 	}
 
 	// 15-O: double-click detection for "open the properties panel" — reuses the
@@ -504,18 +501,23 @@
 	// COMPONENT scope: raycastSelect lives here, not in the pointer-handler block.
 	let lastPick: { uuid: string | null; t: number } = { uuid: null, t: 0 };
 
-	function raycastSelect(additive = false) {
+	// 30 P1: `mode` is where the click came from. 'edit' = the desktop editor pick, where a
+	// module handler runs only if it registered for Edit (so a piano or a puzzle piece no
+	// longer swallows the select) and On Click nodes do NOT fire — Interact is where the
+	// scene reacts. null = VR's trigger, unchanged: every handler first, then select + pulse.
+	function raycastSelect(additive = false, mode: string | null = null) {
 		// module-owned interactive groups live at the scene root (pong, dungeon, ...)
 		for (const name of moduleInteractiveGroups) {
 			const root = scene.getObjectByName(name);
 			if (!root) continue;
 			const moduleHits = selectionRaycaster.intersectObject(root, true);
-			if (moduleHits.length > 0 && runModuleClickHandlers(moduleHits[0].object)) return true;
+			if (moduleHits.length > 0 && runModuleClickHandlers(moduleHits[0].object, mode)) return true;
 		}
 		const hits = pickSceneObjects();
 		if (hits.length > 0) {
-			// modules may consume the click (buttons, instruments, ...)
-			if (runModuleClickHandlers(hits[0].object)) return true;
+			// modules may consume the click (buttons, instruments, ...) — in Edit only the
+			// ones that asked for it (an editor tool), everything else in VR
+			if (runModuleClickHandlers(hits[0].object, mode)) return true;
 			const target = topLevelObjectOf(hits[0].object);
 			if (target) {
 				// 15-O: a plain click SELECTS; the properties panel opens on a
@@ -539,7 +541,9 @@
 					focusObject(target.uuid);
 					isolateObjects([target.uuid]);
 				}
-				fireObjectClick(target.uuid); // 134: pulse any OnClick node targeting it
+				// 134: pulse any OnClick node targeting it — not from the EDIT pick (30 P1:
+				// selecting a button in the editor must not press it; Interact does that)
+				if (mode !== 'edit') fireObjectClick(target.uuid);
 				return true;
 			}
 		}
@@ -670,14 +674,21 @@
 		let lastSplineClick = 0; // 57.2: a second click here finishes the spline
 		let lastPointerXY: number[] | null = null; // last cursor position, for keyboard-opened menus
 
-		const setRayFromEvent = (event) => {
+		const ndcOfEvent = (event: any) => {
 			const rect = element.getBoundingClientRect();
-			const ndc = new THREE.Vector2(
+			return new THREE.Vector2(
 				((event.clientX - rect.left) / rect.width) * 2 - 1,
 				-((event.clientY - rect.top) / rect.height) * 2 + 1
 			);
-			selectionRaycaster.setFromCamera(ndc, camera.current);
 		};
+		const setRayFromEvent = (event) => {
+			selectionRaycaster.setFromCamera(ndcOfEvent(event), camera.current);
+		};
+		// 30 P1: an Interact carry in progress (the camera controls stand down for it)
+		let interactCarrying = false;
+		// the press that CAN start an Interact gesture: no editor session or tool holds it
+		const interactPress = () =>
+			editorInteractActive() && !$specatorMode && !$editingObject && !$faceEditObject && !$splineEditObject && !$drawMode && !$sculptObject;
 
 		const onPointerDown = (event) => {
 			if (event.button === 2) {
@@ -718,6 +729,20 @@
 				}
 				return;
 			}
+			// 30 P1: INTERACT — a press on a dynamic body of a running sim CARRIES it along the
+			// cursor (play's hold, unforked); anything else is a click-or-orbit, and never a
+			// marquee (a box SELECTS, which Interact does not do)
+			if (interactPress()) {
+				setRayFromEvent(event);
+				if (cursorGrabStart(selectionRaycaster, ndcOfEvent(event), camera.current)) {
+					interactCarrying = true;
+					setOrbitEnabled(false);
+					return;
+				}
+				downPosition = [event.clientX, event.clientY];
+				downTime = Date.now();
+				return;
+			}
 			// Shift+drag = marquee select (13) — orbit pauses for the gesture
 			// #20: inside a MESH SESSION the same gesture boxes ELEMENTS instead of objects.
 			// A separate branch, not a loosened gate: the object marquee must never run in a
@@ -748,6 +773,8 @@
 		};
 
 		const onPointerMove = (event) => {
+			// 30 P1: an Interact carry follows the cursor
+			if (interactCarrying) cursorGrabMove(ndcOfEvent(event));
 			// 57.3: a radius drag owns the gesture (thickness, not the camera)
 			if (radiusDragActive()) {
 				radiusDragMove(event.clientY);
@@ -812,6 +839,13 @@
 		};
 
 		const onPointerUp = (event) => {
+			if (interactCarrying && event.button === 0) {
+				interactCarrying = false;
+				cursorGrabEnd(); // a throw (false if the carry was already cancelled)
+				setOrbitEnabled(true);
+				downPosition = null;
+				return;
+			}
 			if (radiusDragActive() && event.button === 0) {
 				endRadiusDrag(); // final broadcast + one undo entry
 				setOrbitEnabled(true);
@@ -1033,6 +1067,13 @@
 				}
 				return;
 			}
+			// 30 P1: INTERACT — the click plays with the scene and selects nothing (the
+			// editor tools above — pings, spline/measure/path picks, mesh sessions — keep
+			// their clicks in either mode; they were armed on purpose)
+			if (interactPress()) {
+				interactClick(selectionRaycaster);
+				return;
+			}
 			// light pick-proxies select their light (lights have no raycastable geometry)
 			if ($lightProxiesGroup) {
 				const proxyHits = selectionRaycaster.intersectObject($lightProxiesGroup, true);
@@ -1056,7 +1097,7 @@
 			// 85: a click on nothing is also the way out of an isolation — the same
 			// "click the background to get back" instinct as deselecting.
 			const additive = event.shiftKey || $multiSelectMode;
-			if (!raycastSelect(additive) && !additive) {
+			if (!raycastSelect(additive, 'edit') && !additive) {
 				if (isIsolated()) clearIsolation();
 				deselectObject();
 			}
@@ -1337,7 +1378,10 @@
 		const onDisc = (e: any) => { e.target.userData.handedness = null; };
 		// 21-B B3: play mode's own input path. Registered HERE, below every `let`
 		// its closure reads (runModuleClickHandlers among them) — the TDZ rule.
-		startPlayInteract({ moduleHitTest: runModuleClickHandlers });
+		startPlayInteract({ moduleHitTest: (object: any) => runModuleClickHandlers(object, 'play') });
+		// 30 P1: the sessions that own the letter keys, so the I (Edit/Interact) key stands
+		// down while one is open — shortcuts cannot import them (history's cycle family)
+		const offKeyProbe = registerKeySessionProbe(() => !!get(sculptObject) || !!get(splineEditObject) || !!get(drawMode) || splineToolActive());
 		// 24-A A1: the knock's feeds. The VR hand poses come from vrControls through
 		// this seam rather than an import (knock.js stays off vrControls' 3500 lines),
 		// and the two "what am I holding" reads keep a probe off its own carried object.
@@ -1354,6 +1398,7 @@
 
 		return () => {
 			offEditResume(); // #20 P5
+			offKeyProbe(); // 30 P1
 			stopPlayInteract(); // 21-B B3 (releases any carried body with zero velocity)
 			stopKnock(); // 24-A A1
 			element.removeEventListener('pointerdown', onPointerDown);

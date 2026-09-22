@@ -1330,9 +1330,21 @@ const DEFS = [
 ];
 
 (async () => {
+	// 30 author-kit: the REAL GPU. `--use-angle=gl` fell back to SwiftShader on Linux, so every
+	// card was a software render. The ANGLE backend is per platform — tests/e2e/helpers.cjs
+	// GPU_ARGS, which is where the measurements behind it live.
+	const angle = process.platform === 'win32' ? 'd3d11' : process.platform === 'darwin' ? 'metal' : 'vulkan';
 	const browser = await chromium.launch({
 		headless: true,
-		args: ['--disable-background-timer-throttling', '--disable-renderer-backgrounding', '--use-gl=angle', '--use-angle=gl']
+		args: [
+			'--disable-background-timer-throttling',
+			'--disable-renderer-backgrounding',
+			'--use-gl=angle',
+			'--use-angle=' + angle,
+			...(angle === 'vulkan' ? ['--enable-features=Vulkan'] : []),
+			'--enable-gpu',
+			'--ignore-gpu-blocklist'
+		]
 	});
 	const ctx = await browser.newContext({ ignoreHTTPSErrors: true });
 	await ctx.addInitScript(() => {
@@ -1345,6 +1357,14 @@ const DEFS = [
 	await page.goto(URL, { waitUntil: 'domcontentloaded', timeout: 60000 });
 	await page.waitForFunction(() => window.__stores && !!window.__stores.sessions, { timeout: 40000 });
 	await page.waitForTimeout(2000);
+	// 30 author-kit: say which GPU the thumbnails are rendered on — a SwiftShader card is
+	// not the one a user's display would show, and nothing else in the run would tell
+	const gpu = await page.evaluate(() => {
+		const gl = document.createElement('canvas').getContext('webgl2');
+		const info = gl?.getExtension('WEBGL_debug_renderer_info');
+		return info ? gl.getParameter(info.UNMASKED_RENDERER_WEBGL) : 'unknown';
+	});
+	console.log('GPU: ' + gpu + (/swiftshader/i.test(gpu) ? '  (WARN software rendering)' : ''));
 
 	/** @type {Record<string, {entry: any, bytes: Buffer, thumb: Buffer|null}>} */
 	const built = {};
@@ -1974,40 +1994,136 @@ const DEFS = [
 			const bytes = await s.sessions.exportSessionZip(payload, { assets: !!music || sounds.length > 0, packs: false, flow: true });
 
 			// fitted offscreen thumbnail — the sessions.js renderSceneThumbnail
-			// approach at card size (480x270 webp)
+			// approach at card size (480x270 webp).
+			// 30 author-kit P2: THE CARD LOOKS LIKE THE GAME. It used to light the scene with a
+			// private hemisphere + directional pair on a fixed grey, which is why a sunset game
+			// read as a grey box. Now it renders with the scene's OWN look: the live background
+			// (flat colour or the gradient texture), its fog, the environment rig cloned from the
+			// scene root (hemi + sun + shadow catcher / ground + extra env lights, at the
+			// intensities the viewport uses) and the authored lights; the private pair is the
+			// fallback ONLY when the scene has no light at all. Shadows on (PCF). Tone mapping
+			// follows the post stack's Tone mapping curve when it has one, else the renderer's
+			// own ACES Filmic — what a play-mode frame shows — at the environment's exposure.
+			// The camera is `thumb.camera`, else `view`, else a 3/4 framing of the CONTENT: the
+			// objects' bounds without the camera markers and without floor-like slabs (a 30x40 m
+			// ground framed whole leaves every game piece a speck — the 1690-byte Waves card).
 			let thumb = null;
 			try {
 				const T = s.THREE;
+				/** @type {any} */ let liveScene;
+				s.globalScene.subscribe((v) => (liveScene = v))();
+				/** @type {any} */ let liveRenderer;
+				s.globalRenderer.subscribe((v) => (liveRenderer = v))();
 				const renderer = new T.WebGLRenderer({ antialias: true, alpha: true });
 				renderer.setSize(480, 270);
+				renderer.shadowMap.enabled = true;
+				renderer.shadowMap.type = T.PCFShadowMap;
+				/** @type {any} */ let post;
+				s.scenePost?.scenePost?.subscribe((/** @type {any} */ v) => (post = v))();
+				const tonemap = post?.enabled !== false ? (post?.effects ?? []).find((/** @type {any} */ fx) => fx.kind === 'tonemapping' && fx.enabled !== false) : null;
+				const CURVES = { AGX: T.AgXToneMapping, ACES_FILMIC: T.ACESFilmicToneMapping, NEUTRAL: T.NeutralToneMapping, REINHARD: T.ReinhardToneMapping, CINEON: T.CineonToneMapping, LINEAR: T.LinearToneMapping };
+				// what the DESKTOP frame shows: a composed frame (the default Shaded+AO view mode
+				// keeps the composer running) never receives the renderer's own ACES — only a stack
+				// Tone mapping entry maps it (the "renderer.toneMapping NEVER REACHES A COMPOSED
+				// FRAME" gotcha). So: the stack's curve, else none. `thumb.toneMapping` overrides.
+				const PICK = { agx: 'AGX', aces: 'ACES_FILMIC', neutral: 'NEUTRAL', reinhard: 'REINHARD', cineon: 'CINEON', linear: 'LINEAR' };
+				const forced = d.thumb?.toneMapping;
+				renderer.toneMapping =
+					forced === 'none'
+						? T.NoToneMapping
+						: forced
+							? (/** @type {any} */ (CURVES)[/** @type {any} */ (PICK)[forced] ?? ''] ?? T.NoToneMapping)
+							: tonemap
+								? (/** @type {any} */ (CURVES)[tonemap.params?.mode ?? 'AGX'] ?? T.AgXToneMapping)
+								: T.NoToneMapping;
+				renderer.toneMappingExposure = liveRenderer?.toneMappingExposure ?? 1;
 				const scene = new T.Scene();
-				scene.background = new T.Color('#232a33');
-				scene.add(new T.HemisphereLight(0xffffff, 0x444466, 2.2));
-				const sun = new T.DirectionalLight(0xffffff, 1.4);
-				sun.position.set(6, 10, 4);
-				scene.add(sun);
+				const bg = liveScene?.background;
+				scene.background = bg?.isColor ? bg.clone() : bg ?? new T.Color('#232a33');
+				if (liveScene?.fog) scene.fog = liveScene.fog.clone();
+				const envRoot = liveScene?.getObjectByName('environment-root');
+				if (envRoot) scene.add(envRoot.clone(true));
 				const clone = new T.ObjectLoader().parse(group.toJSON());
 				scene.add(clone);
 				// 21-C C6-b: a module's WORLD lives at the scene root (golden rule 5), so a
 				// card rendered from objectsGroup alone shows a dungeon template as a lone
 				// arch. `thumb.sceneGroups` names scene-root groups to include — cloned into
 				// the offscreen scene, never moved; absent, the picture is what it always was.
-				/** @type {any} */ let liveScene;
-				s.globalScene.subscribe((v) => (liveScene = v))();
 				for (const name of d.thumb?.sceneGroups ?? []) {
 					const live = liveScene?.getObjectByName(name);
 					if (live) clone.add(live.clone(true));
 					else console.log('  WARN thumb.sceneGroups: no scene-root group named ' + name);
 				}
+				// camera markers are chrome, not scenery
+				clone.traverse((/** @type {any} */ n) => {
+					if (n.userData?.camera) n.visible = false;
+				});
+				scene.updateMatrixWorld(true);
+				// a spot/directional shines along its -Z (24-E1) — lightHelpers seats its target
+				// there every frame in the live app; nothing does in this offscreen scene
+				let lights = 0;
+				scene.traverse((/** @type {any} */ n) => {
+					if (!n.isLight || !n.visible || !(n.intensity > 0)) return;
+					let shown = true;
+					for (let p = n.parent; p; p = p.parent) if (!p.visible) shown = false;
+					if (!shown) return;
+					lights++;
+					if ((n.isSpotLight || n.isDirectionalLight) && n.parent !== scene.getObjectByName('environment-root')) {
+						const at = n.getWorldPosition(new T.Vector3());
+						const fwd = new T.Vector3(0, 0, -1).applyQuaternion(n.getWorldQuaternion(new T.Quaternion()));
+						n.target.position.copy(at).add(fwd.multiplyScalar(10));
+						scene.add(n.target);
+						n.target.updateMatrixWorld(true);
+					}
+				});
+				if (!lights) {
+					scene.add(new T.HemisphereLight(0xffffff, 0x444466, 2.2));
+					const sun = new T.DirectionalLight(0xffffff, 1.4);
+					sun.position.set(6, 10, 4);
+					scene.add(sun);
+				}
 				const box = new T.Box3().setFromObject(clone);
-				const size = Math.max(box.getSize(new T.Vector3()).length(), 1);
-				const center = box.getCenter(new T.Vector3());
-				let camera = new T.PerspectiveCamera(40, 480 / 270, size / 100, size * 10);
-				camera.position.copy(center).add(new T.Vector3(size * 0.55, size * 0.42, size * 0.72));
+				// the CONTENT box: every visible mesh except floor-like slabs (thin, and covering
+				// over a quarter of the whole footprint); the whole box when nothing else is left
+				const whole = box.getSize(new T.Vector3());
+				const footprint = Math.max(whole.x * whole.z, 1e-6);
+				const content = new T.Box3();
+				clone.traverse((/** @type {any} */ n) => {
+					if (!n.isMesh || !n.visible || n.userData?.camera) return;
+					const b = new T.Box3().setFromObject(n);
+					if (b.isEmpty()) return;
+					const sz = b.getSize(new T.Vector3());
+					const slab = sz.y < 0.05 * Math.max(sz.x, sz.z) && (sz.x * sz.z) / footprint > 0.25;
+					if (!slab) content.union(b);
+				});
+				const frame = content.isEmpty() ? box : content;
+				const center = frame.getCenter(new T.Vector3());
+				// FIT the box to the 16:9 frame from the 3/4 direction: every corner q (relative
+				// to the centre) needs |q.right| <= tanH * depth and |q.up| <= tanV * depth, where
+				// depth = dist - q.dir — so the distance is the max over the eight corners (a
+				// bounding sphere wastes the card's width on a box that is long and low)
+				const fov = 40;
+				const dir = new T.Vector3(0.55, 0.42, 0.72).normalize();
+				const fwd = dir.clone().negate();
+				const right = new T.Vector3().crossVectors(fwd, new T.Vector3(0, 1, 0)).normalize();
+				const up = new T.Vector3().crossVectors(right, fwd);
+				const tanV = Math.tan(((fov / 2) * Math.PI) / 180);
+				const tanH = tanV * (480 / 270);
+				let dist = 1;
+				for (const x of [frame.min.x, frame.max.x])
+					for (const y of [frame.min.y, frame.max.y])
+						for (const z of [frame.min.z, frame.max.z]) {
+							const q = new T.Vector3(x, y, z).sub(center);
+							const along = q.dot(dir);
+							dist = Math.max(dist, Math.abs(q.dot(right)) / tanH + along, Math.abs(q.dot(up)) / tanV + along);
+						}
+				dist *= 1.08;
+				const span = Math.max(whole.length(), dist * 2);
+				let camera = new T.PerspectiveCamera(fov, 480 / 270, Math.max(dist / 200, 0.01), dist + span * 4);
+				camera.position.copy(center).add(dir.clone().multiplyScalar(dist));
 				camera.lookAt(center);
 				// 28-G: `thumb.camera` renders the card THROUGH a named camera object — the
-				// hero shot the def already authored — instead of the fitted 3/4 view. Camera
-				// markers are chrome, not scenery, so they stay out of that picture.
+				// hero shot the def already authored — instead of the fitted 3/4 view.
 				const hero = d.thumb?.camera ? group.getObjectByName(d.thumb.camera) : null;
 				if (hero) {
 					group.updateMatrixWorld(true);
@@ -2015,9 +2131,13 @@ const DEFS = [
 					camera = new T.PerspectiveCamera(spec.fov ?? 50, 480 / 270, spec.near ?? 0.1, spec.far ?? 1000);
 					hero.getWorldPosition(camera.position);
 					hero.getWorldQuaternion(camera.quaternion);
-					clone.traverse((/** @type {any} */ n) => {
-						if (n.userData?.camera) n.visible = false;
-					});
+				} else if (d.view) {
+					// the editor view the file opens on — the author already chose it
+					/** @type {any} */ let editorCam;
+					s.globalCamera.subscribe((v) => (editorCam = v))();
+					camera = new T.PerspectiveCamera(editorCam?.fov ?? 50, 480 / 270, 0.1, 2000);
+					camera.position.set(d.view.pos[0], d.view.pos[1], d.view.pos[2]);
+					camera.lookAt(d.view.target[0], d.view.target[1], d.view.target[2]);
 				}
 				renderer.render(scene, camera);
 				thumb = renderer.domElement.toDataURL('image/webp', 0.82);

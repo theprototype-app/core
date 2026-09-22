@@ -63,21 +63,29 @@ const DEF = {
 };
 
 /** Author the def through the real script into a fresh temp folder; returns the .tpscene
- * bytes and the thumbnail bytes. @param {any} def @param {string} tag */
+ * bytes and the thumbnail bytes. A STRING is a slug the script already knows (a DEFS entry
+ * or a module-owned def from the sibling modules checkout).
+ * @param {any} def @param {string} tag */
 function author(def, tag) {
 	const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'author-kit-' + tag + '-'));
-	const file = path.join(dir, 'def.json');
-	fs.writeFileSync(file, JSON.stringify(def));
+	const slug = typeof def === 'string' ? def : def.slug;
+	const args = ['--only', slug, '--out', path.join(dir, 'out')];
+	if (typeof def !== 'string') {
+		const file = path.join(dir, 'def.json');
+		fs.writeFileSync(file, JSON.stringify(def));
+		args.unshift('--def', file);
+	}
 	const out = path.join(dir, 'out');
 	const script = path.join(__dirname, '../../scripts/author-templates.cjs');
-	const log = execFileSync('node', [script, '--def', file, '--only', def.slug, '--out', out], {
+	const log = execFileSync('node', [script, ...args], {
 		env: { ...process.env, APP_URL: h.URL },
 		encoding: 'utf8',
 		timeout: 240000
 	});
-	console.log(log.trim().split('\n').filter((l) => /B, thumb|WARN|FATAL|PAGEERROR/.test(l)).join('\n'));
-	const section = def.kind === 'game' ? 'games' : def.kind === 'template' ? 'templates' : 'examples';
-	const base = path.join(out, section, def.slug);
+	console.log(log.trim().split('\n').filter((l) => /B, thumb|WARN|FATAL|PAGEERROR|GPU/.test(l)).join('\n'));
+	const section = ['games', 'templates', 'examples', 'contests'].find((d) => fs.existsSync(path.join(out, d, slug)));
+	if (!section) return { scene: Buffer.alloc(0), thumb: null };
+	const base = path.join(out, section, slug);
 	return {
 		scene: fs.readFileSync(path.join(base, 'scene.tpscene')),
 		thumb: fs.existsSync(path.join(base, 'thumb.webp')) ? fs.readFileSync(path.join(base, 'thumb.webp')) : null
@@ -324,6 +332,76 @@ h.run(async () => {
 	console.log('sky bands', JSON.stringify(bands));
 	check(bands.top[0] - bands.bottom[0] > 60, 'pixels: the upper sky is redder than the lower (R ' + bands.top[0].toFixed(0) + ' vs ' + bands.bottom[0].toFixed(0) + ')');
 	check(bands.bottom[2] - bands.top[2] > 60, 'pixels: the lower sky is bluer than the upper (B ' + bands.bottom[2].toFixed(0) + ' vs ' + bands.top[2].toFixed(0) + ')');
+
+	// ---- P2: a thumbnail that looks like the game -----------------------------------------
+	// The card is rendered with the SCENE's look — its background (flat or gradient), fog,
+	// environment rig and authored lights — not a private grey studio. Three measurements:
+	//   · the SKY def's card (its `view` looks straight up) shows the authored gradient;
+	//   · the P0 def's card (studio + its own lights) reads (centre luminance > 0.2);
+	//   · the Waves def from the sibling modules checkout — the 1690-byte near-blank case to
+	//     beat — shows its OWN sunset sky, not the old grey, and carries more picture.
+	// (Waves itself is dark: its live frames read 0.11-0.13 on this metric, so a truthful card
+	// cannot clear 0.2 until its look is raised — QUESTIONS-30-author-kit fork 1.)
+	const stats = (/** @type {Buffer | null} */ webp) =>
+		page.evaluate(async (b64) => {
+			if (!b64) return null;
+			const img = new Image();
+			img.src = 'data:image/webp;base64,' + b64;
+			await img.decode();
+			const canvas = document.createElement('canvas');
+			canvas.width = img.width;
+			canvas.height = img.height;
+			const ctx = canvas.getContext('2d');
+			ctx.drawImage(img, 0, 0);
+			const mean = (/** @type {number} */ x, /** @type {number} */ y, /** @type {number} */ w, /** @type {number} */ hh) => {
+				const d = ctx.getImageData(Math.round(x), Math.round(y), Math.round(w), Math.round(hh)).data;
+				const sum = [0, 0, 0];
+				for (let i = 0; i < d.length; i += 4) for (let k = 0; k < 3; k++) sum[k] += d[i + k];
+				return sum.map((v) => v / (d.length / 4));
+			};
+			const W = img.width;
+			const H = img.height;
+			const c = mean(W / 4, H / 4, W / 2, H / 2);
+			return {
+				w: W,
+				h: H,
+				// the centre clip: the middle half on each axis, Rec.709 luma in 0..1
+				lum: (0.2126 * c[0] + 0.7152 * c[1] + 0.0722 * c[2]) / 255,
+				top: mean(0, 0, W, H * 0.12),
+				bottom: mean(0, H * 0.88, W, H * 0.12),
+				corner: mean(4, 4, 24, 16)
+			};
+		}, webp ? webp.toString('base64') : null);
+
+	const skyCard = await stats(sky.thumb);
+	console.log('sky card', JSON.stringify(skyCard));
+	check(!!skyCard && skyCard.w === 480 && skyCard.h === 270, 'card: 480x270');
+	check(!!skyCard && skyCard.top[0] - skyCard.bottom[0] > 60 && skyCard.bottom[2] - skyCard.top[2] > 60,
+		'card: the sky def card shows the authored GRADIENT (top R ' + skyCard?.top[0].toFixed(0) + ' / bottom B ' + skyCard?.bottom[2].toFixed(0) + ')');
+	const kitCard = await stats(authored.thumb);
+	console.log('kit card', JSON.stringify(kitCard));
+	check(!!kitCard && kitCard.lum > 0.2, 'card: a lit studio scene reads (centre luminance ' + kitCard?.lum.toFixed(3) + ' > 0.2)');
+
+	const wavesDef = [path.resolve(__dirname, '../../../modules'), path.resolve(__dirname, '../../../theprototype.app-modules')]
+		.map((root) => path.join(process.env.MODULES_REPO || root, 'modules/waves/waves.def.json'))
+		.find((f) => fs.existsSync(f));
+	if (!wavesDef) console.log('SKIP waves card: no modules/waves/waves.def.json in the sibling modules checkout');
+	else {
+		const wavesEnv = JSON.parse(fs.readFileSync(wavesDef, 'utf8')).env;
+		const waves = author('waves', 'p2');
+		const size = waves.thumb?.length ?? 0;
+		const card = await stats(waves.thumb);
+		const want = await page.evaluate((preset) => {
+			const hexc = window.__stores.environment.ENVIRONMENT_PRESETS[preset]?.background ?? '#000000';
+			const n = parseInt(hexc.slice(1), 16);
+			return [(n >> 16) & 255, (n >> 8) & 255, n & 255];
+		}, wavesEnv?.preset ?? wavesEnv);
+		console.log('waves card', size, JSON.stringify(card), 'scene background', want);
+		check(size > 1690 * 1.2, 'waves: the card carries more picture than the old 1690-byte render (' + size + ' B)');
+		check(!!card && card.corner.every((v, i) => Math.abs(v - want[i]) < 12),
+			"waves: the card's sky is the scene's OWN background " + JSON.stringify(want) + ', not a private grey (' + card?.corner.map((v) => v.toFixed(0)) + ')');
+		if (process.env.AUTHOR_KIT_SAVE && waves.thumb) fs.writeFileSync(process.env.AUTHOR_KIT_SAVE, waves.thumb);
+	}
 
 	await h.finish(browser);
 });

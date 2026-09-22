@@ -2,7 +2,9 @@ import { keyOf, letterOf } from './keyOf';
 import { sessionNow } from './sessionClock'; // 25-E: stamps another peer compares
 import * as THREE from 'three';
 import { writable, get } from 'svelte/store';
-import { globalScene, objectsGroup, selectedObject, selectedObjects, globalCamera, isVRMode, isLocked } from '../stores/sceneStore';
+import { globalScene, objectsGroup, selectedObject, selectedObjects, globalCamera, isVRMode, isLocked, playPointerFree } from '../stores/sceneStore';
+// 30 P4: the scene's play block decides whether play aims with a crosshair (a leaf chain)
+import { resolvePlaySettings } from './playSettings';
 import { peers, showToast, modulesOpen, userdata } from '../stores/appStore';
 import { syncedAnimations, flowGraphs, flowValues, flowTriggers, allNodes, findNodeAnyGraph, SCENE_GRAPH } from '../stores/flowStore';
 import { customGeometryBuilders } from './customGeometries';
@@ -42,6 +44,9 @@ import { APP_VERSION } from './version.js';
 import { ndcFromClient } from './canvasRect';
 // 27-B: recovery paths report through the diagnostics ring (hardening audit H4)
 import { log } from './diagnostics';
+// 30 P3: the object list's Module content registry — a LEAF, so no cycle
+import { noteModuleGroup, forgetModuleGroup } from './moduleContent';
+export { moduleContentDebug } from './moduleContent';
 import { safeStorage } from './safeStorage';
 
 // Module SDK v1 — in-repo modules under src/modules/<name>/ register through
@@ -71,6 +76,59 @@ export const moduleEffects = {};
 export const moduleNodeComponents = {};
 /** @type {((object: any) => boolean)[]} */
 export const moduleClickHandlers = [];
+
+/** 30 P1: the three places a viewport click can come from. */
+export const CLICK_MODES = ['edit', 'interact', 'play'];
+/** What an SDK handler hears when it names no modes: Interact and Play, NOT Edit —
+ * the behaviour change the user asked for (a piano or a puzzle piece used to swallow
+ * every EDITOR click, so it could never be selected). */
+export const DEFAULT_CLICK_MODES = ['interact', 'play'];
+/** handler -> the modes it runs in. A handler with NO entry runs everywhere: that is a
+ * core handler pushed straight into the array (vrPatch's plug click — patching a cable
+ * is authoring, so it must keep working in Edit), never an SDK one.
+ * @type {WeakMap<Function, string[]>} */
+const clickHandlerModes = new WeakMap();
+
+/** Normalise a `{modes}` option: known names only, the default when nothing usable is
+ * left. @param {any} modes @returns {string[]} */
+export function normalizeClickModes(modes) {
+	const list = Array.isArray(modes) ? modes : typeof modes === 'string' ? [modes] : [];
+	const known = [...new Set(list.filter((mode) => CLICK_MODES.includes(mode)))];
+	return known.length ? known : [...DEFAULT_CLICK_MODES];
+}
+
+/** Does this handler run for a click in `mode`? A null mode is VR's trigger, which has
+ * no editor mode of its own yet and keeps offering every handler, as it always has.
+ * @param {Function} fn @param {string | null} mode */
+export function clickHandlerRunsIn(fn, mode) {
+	if (!mode) return true;
+	const modes = clickHandlerModes.get(fn);
+	return !modes || modes.includes(mode);
+}
+
+/**
+ * Offer a clicked mesh to every handler that runs in `mode`, in registration order; the
+ * first to return true consumes the click. ONE dispatch for the editor's pick, Interact
+ * and Play's tap, so the three can never disagree about who hears what.
+ * @param {any} object @param {string | null} mode @returns {boolean}
+ */
+export function runClickHandlers(object, mode) {
+	for (const handler of [...moduleClickHandlers]) {
+		if (!clickHandlerRunsIn(handler, mode)) continue;
+		try {
+			if (handler(object)) return true;
+		} catch (error) {
+			log('warn', 'module', 'click handler failed', String(error));
+		}
+	}
+	return false;
+}
+
+/** The modes a handler was registered with (tests / the debug view).
+ * @param {Function} fn @returns {string[] | null} */
+export function clickHandlerModesOf(fn) {
+	return clickHandlerModes.get(fn) ?? null;
+}
 /** 23-B1: a viewport click that hit NOTHING. `moduleClickHandlers` is only ever handed a
  * MESH, so a gesture armed by a plug click had no way to hear "the user clicked the sky":
  * the wire stayed armed for the rest of the session and a picked-up cable stayed HIDDEN
@@ -228,11 +286,38 @@ if (typeof window !== 'undefined') {
 		pointerClient.seen = true;
 	});
 }
+/** 30 P4: the CROSSHAIR ray, a fresh Raycaster through the centre of the view */
+const SCREEN_CENTRE = new THREE.Vector2(0, 0);
+
+/**
+ * 30 P4: does play aim with a CROSSHAIR right now? Under a pointer lock the cursor is
+ * pinned and its last client position is where the mouse happened to be when the lock
+ * began — a STALE ray that never moves again (untangle's carried dot followed it, so a
+ * drag in play went nowhere). So while playing, the pointer locked, and not in the menu
+ * substate (the pointer is free there, over the HUD), the ray is the view's centre —
+ * play mode's own NDC (0,0), the one playInteract aims with.
+ */
+function crosshairAims() {
+	if (get(isLocked) !== true || get(playPointerFree)) return false;
+	if (typeof document === 'undefined' || !document.pointerLockElement) return false;
+	// 30-core-flow: free cursor — a scene whose play block says `cursor: 'free'` plays with
+	// the real cursor and no lock, so its ray IS the mouse ray. Read defensively: the field
+	// lands with that lane, and absent means 'locked' (today's play).
+	const settings = /** @type {any} */ (resolvePlaySettings(get(globalScene)));
+	return settings?.cursor !== 'free';
+}
+
 function pointerRayNow() {
 	if (get(isVRMode)) return vrControlsRef?.pointerHandRay?.() ?? null;
 	/** @type {any} */
 	const camera = get(globalCamera);
-	if (!camera || !pointerClient.seen) return null;
+	if (!camera) return null;
+	if (crosshairAims()) {
+		const centre = new THREE.Raycaster();
+		centre.setFromCamera(SCREEN_CENTRE, camera);
+		return centre;
+	}
+	if (!pointerClient.seen) return null;
 	const fresh = new THREE.Raycaster();
 	const ndc = ndcFromClient(pointerClient.x, pointerClient.y);
 	fresh.setFromCamera(new THREE.Vector2(ndc.x, ndc.y), camera);
@@ -463,9 +548,17 @@ function makeApi(moduleId, moduleName = moduleId) {
 		/**
 		 * Intercept viewport clicks (desktop click + VR trigger). Receives the
 		 * exact mesh hit; return true to consume the click (no selection).
+		 *
+		 * 30 P1: `{modes}` says WHERE it runs — any of 'edit' | 'interact' | 'play'.
+		 * Absent means ['interact', 'play']: a handler that is part of the GAME (a key,
+		 * a pad, a puzzle piece) no longer eats the editor's select click. A handler
+		 * that is an editor TOOL (a toolbox pick) passes {modes: ['edit']}, or all three.
+		 * In Edit an 'edit' handler still runs BEFORE the selection, so it can consume.
 		 * @param {(object: any) => boolean} fn
+		 * @param {{modes?: string[]}} [options]
 		 */
-		registerClickHandler(fn) {
+		registerClickHandler(fn, options = {}) {
+			clickHandlerModes.set(fn, normalizeClickModes(options?.modes));
 			moduleClickHandlers.push(fn);
 			onDispose(() => arrayRemove(moduleClickHandlers, fn));
 		},
@@ -493,19 +586,36 @@ function makeApi(moduleId, moduleName = moduleId) {
 		registerInteractiveGroup(name) {
 			moduleInteractiveGroups.push(name);
 			registerSystemGroup(name); // clickable module content is also listable
+			noteModuleGroup(name, { id: moduleId, name: moduleName }, 'interactive'); // 30 P3
 			onDispose(() => {
 				arrayRemove(moduleInteractiveGroups, name);
 				arrayRemove(systemGroupNames, name);
+				forgetModuleGroup(name, 'interactive');
 				removeSceneRootGroup(name); // module-owned viewport content goes with the module
 			});
 		},
 		/** List a scene-root group under the object list's System filter @param {string} name */
 		registerSystemGroup(name) {
 			registerSystemGroup(name);
+			noteModuleGroup(name, { id: moduleId, name: moduleName }, 'system'); // 30 P3
 			onDispose(() => {
 				arrayRemove(systemGroupNames, name);
+				forgetModuleGroup(name, 'system');
 				removeSceneRootGroup(name);
 			});
+		},
+		/**
+		 * 30 P3: list a scene-root group in the object list's "Module content" section under
+		 * a label a person can read (the group's own name is usually an id). Groups passed to
+		 * registerInteractiveGroup / registerSystemGroup are listed anyway; this names them,
+		 * or lists one that is neither. Read-only there: a click selects a PROXY and frames
+		 * it, and the Inspector points at your module's toolbox and nodes.
+		 * @param {string} name the scene-root group's object name
+		 * @param {{label?: string, icon?: string}} [options]
+		 */
+		registerListedGroup(name, options = {}) {
+			noteModuleGroup(name, { id: moduleId, name: moduleName }, 'listed', options ?? {});
+			onDispose(() => forgetModuleGroup(name, 'listed'));
 		},
 		/**
 		 * Runs when the scene is cleared (locally or by a peer) — remove your
@@ -520,6 +630,8 @@ function makeApi(moduleId, moduleName = moduleId) {
 		 * Where the user is POINTING, as a THREE.Raycaster in world space —
 		 * desktop mouse over the viewport, or the VR pointer hand's ray. A fresh
 		 * instance per call (safe to keep). Null before the first pointer event.
+		 * 30 P4: in play under a pointer lock it is the CROSSHAIR ray (the view's
+		 * centre) — the mouse ray is frozen there; a free-cursor game keeps the mouse.
 		 * The drag recipe (190/untangle): click to pick, follow pointerRay() in a
 		 * frame task, click to drop. (190)
 		 */

@@ -601,6 +601,14 @@ export async function objectParameters(data) {
             pokeScene(); // collider viz re-syncs
             physicsShapeChanged(data.uuid); // CL-A A2: live mid-sim rebuild
         }
+    } else if (data.parameter == 'pick') {
+        // 30 P2: click-through in the viewport. null = cleared (the default).
+        let mesh = sceneObjects.getObjectByProperty('uuid', data.uuid);
+        if (mesh) {
+            if (data.pick === 'through') mesh.userData.pick = 'through';
+            else delete mesh.userData.pick;
+            pokeScene();
+        }
     } else if (data.parameter == 'origin') {
         // 17-D: userData.origin is the per-object transform ORIGIN — a local-space
         // pivot offset the tools transform around. null = the object's own zero.

@@ -52,7 +52,8 @@ const closeMenus = async (page) => {
 
 /** right-click a toolbar cell by its title and wait for its menu */
 async function cellMenu(page, title) {
-	await page.locator(`#controls-pill p[title="${title}"]`).click({ button: 'right' });
+	// 30 P1: a toggle cell is a <button>, the rest are <p>s — address the CELL, whatever it is
+	await page.locator(`#controls-pill > div > [title="${title}"]`).click({ button: 'right' });
 	await page.waitForTimeout(350);
 }
 
@@ -81,11 +82,13 @@ h.run(async () => {
 	const A = await h.setupPage(browser, 'A');
 
 	// ---- premise: the default roster, in the default order ------------------------
-	const DEFAULT = ['Move (1)', 'Rotate (2)', 'Scale (3)', '—', 'Object list (O)', 'Node editor (N)', 'Explorer'];
+	// 30 P1: the Edit/Interact toggle joined the default bar at the right end (the place a
+	// default id new to an older record is appended), so the well keeps its slot
+	const DEFAULT = ['Move (1)', 'Rotate (2)', 'Scale (3)', '—', 'Object list (O)', 'Node editor (N)', 'Explorer', 'Interact mode (I)'];
 	let titles = await barTitles(A.page);
 	h.check(
 		titles.join(' | ') === DEFAULT.join(' | '),
-		`premise: six buttons around the play well, in order (${titles.join(' | ')})`
+		`premise: seven buttons around the play well, in order (${titles.join(' | ')})`
 	);
 	h.check(
 		await A.page.evaluate(() => !!document.querySelector('#controls-pill #play-button')),
@@ -114,8 +117,8 @@ h.run(async () => {
 	// plus Play. It reads checked (it IS on the bar) and carries no toggle, because
 	// there is no toolbar without a way to press play.
 	h.check(
-		menu.filter((r) => r.checked).length === 7,
-		`Customize lists the six buttons AND the play well as on the bar (${menu.filter((r) => r.checked).length})`
+		menu.filter((r) => r.checked).length === 8,
+		`Customize lists the seven buttons AND the play well as on the bar (${menu.filter((r) => r.checked).length})`
 	);
 	h.check(
 		menu.some((r) => r.label === 'Play' && r.checked),
@@ -134,7 +137,7 @@ h.run(async () => {
 	await pick(A.page, 'Rotate (2)');
 	titles = await barTitles(A.page);
 	h.check(!titles.includes('Rotate (2)'), `Rotate left the bar (${titles.join(' | ')})`);
-	h.check(titles.length === 6, `the bar lost exactly one cell (${titles.length})`);
+	h.check(titles.length === 7, `the bar lost exactly one cell (${titles.length})`);
 	h.check(
 		titles.indexOf('—') === 2,
 		`the well stayed between the same neighbours — spacerIndex followed the hide (${titles.indexOf('—')})`
@@ -150,7 +153,7 @@ h.run(async () => {
 	await A.page.waitForTimeout(600);
 	titles = await barTitles(A.page);
 	h.check(
-		!titles.includes('Rotate (2)') && titles.length === 6,
+		!titles.includes('Rotate (2)') && titles.length === 7,
 		`the hidden button is still hidden after a reload (${titles.join(' | ')})`
 	);
 	h.check(titles.indexOf('—') === 2, 'the well came back where it was left');
@@ -219,7 +222,7 @@ h.run(async () => {
 	await pick(A.page, 'Expand toolbar');
 	titles = await barTitles(A.page);
 	h.check(
-		titles.length === 6 && titles.includes('Explorer'),
+		titles.length === 7 && titles.includes('Explorer'),
 		`the FAB menu brings the bar back exactly as it was (${titles.join(' | ')})`
 	);
 	h.check((await layout(A.page))?.collapsed === false, 'expanding persisted too');
@@ -228,15 +231,15 @@ h.run(async () => {
 	await cellMenu(A.page, 'Explorer');
 	await pick(A.page, 'Customize toolbar…');
 	h.check(
-		(await rows(A.page)).filter((r) => r.checked).length === 6,
-		'premise: Customize opens showing the hidden button unchecked (5 buttons + Play)'
+		(await rows(A.page)).filter((r) => r.checked).length === 7,
+		'premise: Customize opens showing the hidden button unchecked (6 buttons + Play)'
 	);
 	await pick(A.page, 'Reset toolbar');
 	// W1: Reset is `keepOpen` too, so the list itself has to show the restored roster
 	h.check(await menuOpen(A.page), 'Reset toolbar leaves the Customize list up');
 	h.check(
-		(await rows(A.page)).filter((r) => r.checked).length === 7,
-		`and the rows re-rendered IN PLACE — all six read checked again (${(await rows(A.page)).filter((r) => r.checked).length})`
+		(await rows(A.page)).filter((r) => r.checked).length === 8,
+		`and the rows re-rendered IN PLACE — all seven read checked again (${(await rows(A.page)).filter((r) => r.checked).length})`
 	);
 	titles = await barTitles(A.page);
 	h.check(
@@ -275,7 +278,7 @@ h.run(async () => {
 	);
 	saved = await layout(A.page);
 	h.check(
-		saved && saved.spacerIndex === 2 && saved.order.join(',') === 'move,rotate,scale,objects,flow,explorer',
+		saved && saved.spacerIndex === 2 && saved.order.join(',') === 'move,rotate,scale,objects,flow,explorer,mode',
 		`the RECORD is derived from the row: the well moved, the order did not (spacerIndex=${saved?.spacerIndex} order=${saved?.order.join(',')})`
 	);
 	await cellMenu(A.page, 'Scale (3)');
@@ -304,7 +307,7 @@ h.run(async () => {
 		'the leftmost cell refuses Move left and offers Move right'
 	);
 	await closeMenus(A.page);
-	await cellMenu(A.page, 'Explorer');
+	await cellMenu(A.page, 'Interact mode (I)');
 	menu = await rows(A.page);
 	h.check(
 		menu.find((r) => r.label === 'Move right')?.disabled === true,
@@ -583,7 +586,7 @@ h.run(async () => {
 	titles = await barTitles(A.page);
 	h.check(
 		titles.join(' | ') === DEFAULT.join(' | ') && titles.indexOf('—') === 3,
-		`W8b: the default bar is byte-identical — same six, same order, same well slot (${titles.join(' | ')})`
+		`W8b: the default bar is the roster's default — same cells, same order, same well slot (${titles.join(' | ')})`
 	);
 	h.check(
 		(await layout(A.page)) === null,
@@ -621,7 +624,7 @@ h.run(async () => {
 	);
 	h.check(
 		await A.page.evaluate(
-			() => document.querySelector('[role="menu"] button[aria-label="Move Explorer down"]')?.disabled === true
+			() => document.querySelector('[role="menu"] button[aria-label="Move Interact mode (I) down"]')?.disabled === true
 		),
 		'▼ is refused on the last row'
 	);
@@ -721,7 +724,7 @@ h.run(async () => {
 	await pick(A.page, 'Animation');
 	titles = await barTitles(A.page);
 	h.check(
-		titles.includes('Animation') && titles.length === 8,
+		titles.includes('Animation') && titles.length === 9,
 		`enabling Animation put it on the bar (${titles.join(' | ')})`
 	);
 	h.check(

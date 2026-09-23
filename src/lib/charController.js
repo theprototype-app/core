@@ -267,7 +267,12 @@ function ensureCapsule(rt, eyeHeight) {
 	if (capsule && key !== capsuleKey) dropCapsule();
 	if (!capsule) {
 		try {
-			capsule = world.createCollider(RAPIER.ColliderDesc.capsule(half, CAPSULE_RADIUS));
+			// a QUERY shape for the controller, never an obstacle: a collider with no body is
+			// FIXED, and teleported with the camera every frame it depenetrated whatever it
+			// was moved into (30b-integrate: desktop Play + a sim flung a crate 8 m before the
+			// first knock) and stood as an invisible pillar where the player last was. Solver
+			// groups 0 = no contact forces with anything; computeColliderMovement still sweeps it.
+			capsule = world.createCollider(RAPIER.ColliderDesc.capsule(half, CAPSULE_RADIUS).setSolverGroups(0));
 			controller = world.createCharacterController(0.02);
 			controller.enableAutostep?.(0.3, 0.2, true);
 			controller.enableSnapToGround?.(0.3);

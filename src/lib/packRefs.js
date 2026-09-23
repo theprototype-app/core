@@ -536,6 +536,11 @@ let scanTimer = null;
 export function startPackRefs() {
 	if (started || typeof window === 'undefined') return;
 	started = true;
+	// 30b integrate: undo keeps a pristine piece as its stub (history.registerReferenceSnapshot).
+	// Dynamic: history's import subtree must not gain an edge to the Explorer through here.
+	import('./history').then((history) =>
+		history.registerReferenceSnapshot((/** @type {any} */ object) => (isPristinePackRef(object) ? stubElementOf(object) : null))
+	);
 	objectsGroup.subscribe(() => {
 		if (scanTimer) return;
 		scanTimer = setTimeout(() => {

@@ -1,6 +1,7 @@
 import { writable, derived, get } from 'svelte/store';
 import { sessionNow } from './sessionClock'; // 25-E: stamps another peer compares
 import { peers } from '../stores/appStore';
+import { normalizeLocomotion, normalizeSpawn } from './locomotionPolicy'; // 30b P3/P4
 
 // CL-A A6 / 21-B B1: scene-wide physics settings. ONE shared object for the
 // whole session, replicated as its OWN latest-wins singleton message (the
@@ -63,6 +64,12 @@ function nullableNum(v, lo, hi) {
 	const n = Number(v);
 	if (!Number.isFinite(n)) return null;
 	return Math.max(lo, Math.min(hi, n));
+}
+
+/** `{[key]: value}` when there is a value, `{}` when not — for fields that are ABSENT at
+ * their default. @param {string} key @param {any} value */
+function optional(key, value) {
+	return value == null ? {} : { [key]: value };
 }
 
 /** @param {any} v @param {boolean} fallback */
@@ -148,9 +155,13 @@ export function normalizeScenePhysics(raw) {
 				grounded: bool(playRaw.grounded, d.play.grounded),
 				simOnPlay: bool(playRaw.simOnPlay, d.play.simOnPlay),
 				// 30 P3: present only when free (see PLAY_CURSORS)
-				...(pick(playRaw.cursor, PLAY_CURSORS, 'locked') === 'free' ? { cursor: 'free' } : {})
+				...(pick(playRaw.cursor, PLAY_CURSORS, 'locked') === 'free' ? { cursor: 'free' } : {}),
+				// 30b P3/P4: present only when authored (locomotionPolicy's normalizers), so a
+				// scene that never used them stays byte-identical
+				...optional('locomotion', normalizeLocomotion(playRaw.locomotion)),
+				...optional('spawn', normalizeSpawn(playRaw.spawn))
 			},
-			['interaction', 'grounded', 'simOnPlay', 'cursor']
+			['interaction', 'grounded', 'simOnPlay', 'cursor', 'locomotion', 'spawn']
 		),
 		// A1: the 20 ceiling is throwVelocity's MAX_LINVEL, restated rather than imported —
 		// this module is store-only and the response clamps through clampThrow anyway

@@ -1,12 +1,13 @@
 <script lang="ts">
     import { onDestroy, untrack } from 'svelte'
     import { get } from 'svelte/store'
-    import { Euler, Camera } from 'three'
+    import { Euler, Camera, Vector3 } from 'three'
     import { useThrelte, useParent, useTask } from '@threlte/core'
     import { isLocked, playPointerFree, playerCam, editorCam, globalScene } from '../../stores/sceneStore'
     import { userdata, peers } from '../../stores/appStore'
     import { dungeonData, slideMove, spawnPointFor } from '$lib/dungeonPlay'
     import { resolvePlaySettings } from '$lib/playSettings'
+    import { spawnDesktopPlayer } from '$lib/playSpawn'
     // 30 P3: free-cursor games never take the pointer — the real cursor aims
     import { playCursorFree } from '$lib/playCursor'
     import { inputClaims, getGamepadAxes } from '$lib/inputRuntime'
@@ -34,7 +35,8 @@
       effectiveSpeed,
       setJumpRequested,
       tickWalker,
-      walkStep
+      walkStep,
+      collideRigStep
     } from '$lib/charController'
 
     const { renderer, camera, invalidate } = useThrelte()
@@ -191,6 +193,9 @@
         // in your seed-deterministic room (peers take consecutive rooms).
         // untracked: the effect must only depend on $isLocked.
         untrack(() => {
+          // 30b P4: a game's own spawn (the scene's play.spawn, or a module's api.setSpawn)
+          // wins; the dungeon's per-peer rooms below are what a scene without one gets
+          if (spawnDesktopPlayer()) return
           const data = dungeonData($globalScene)
           // resolve the rig ONCE and mutate the object: `$cameraParent.position.x = v`
           // compiles to store_mutate -> cameraParent.set(), and useParent() is a
@@ -282,6 +287,8 @@
 
       const beforeX = $cameraParent?.position.x ?? 0
       const beforeZ = $cameraParent?.position.z ?? 0
+      // 30b P3: the rig's WORLD pose before this frame's built-in step, for the collision pass
+      const beforeWorld: any = $isLocked === true && $cameraParent ? $cameraParent.getWorldPosition(new Vector3()) : null
 
       if (moveState.forward === 1) {
         $cameraParent.translateZ(-speed);
@@ -369,6 +376,10 @@
           rig.position.z = c.z
         }
       }
+
+      // 30b P3: ...and against the physics world's colliders while a simulation runs, so
+      // desktop Play stops at a game's walls as the VR walker does (no world, no change)
+      if ($isLocked === true && rig && beforeWorld) collideRigStep(rig, beforeWorld)
 
     },
     {

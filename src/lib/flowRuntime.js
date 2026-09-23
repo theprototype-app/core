@@ -70,6 +70,8 @@ import { log } from './diagnostics';
 import { safeStorage } from './safeStorage';
 // 30 P4: the device-local store Store Value / Stored Value read and write (a leaf)
 import { sceneStorageKey, readStored, writeStored } from './gameStorage';
+// 30b (core-games): the game-feel nodes' runtime half (announce/sound/burst/haptic/music)
+import { GAME_FEEL_ACTIONS, runGameFeelAction, updateGameMusicNodes, primeGameFeelActions } from './gameFeelActions';
 
 // H3: inputRuntime is reached via a PRIMED dynamic import (the moduleSDK
 // pattern) — a static edge would close the TDZ cycle history -> flowRuntime ->
@@ -1190,7 +1192,7 @@ function updateGameNodes(time, ctx) {
 	// 1. the ACTIONS, on a fresh trigger stamp only
 	for (const node of nodes) {
 		const type = node.type;
-		if (type !== 'setgamestate' && type !== 'setcamera' && type !== 'setvariable' && type !== 'setlook' && type !== 'travel' && type !== 'storevalue')
+		if (type !== 'setgamestate' && type !== 'setcamera' && type !== 'setvariable' && type !== 'setlook' && type !== 'travel' && type !== 'storevalue' && !GAME_FEEL_ACTIONS.includes(type))
 			continue;
 		seeActionNode(node, time);
 		const stamp = triggerStampFor(node.id, ctx);
@@ -1233,6 +1235,11 @@ function updateGameNodes(time, ctx) {
 			const hash = typeof data.level === 'string' ? data.level : '';
 			if (sceneName && levelsRef?.travelToScene) levelsRef.travelToScene(sceneName);
 			else if (hash && levelsRef) levelsRef.travelToLevel(hash, String(data.levelName ?? ''));
+		} else if (GAME_FEEL_ACTIONS.includes(type)) {
+			// 30b (core-games): a banner, a sound, a burst or a buzz — LOCAL on every peer from
+			// the replicated stamp, inside the actionSeenAt family above like storevalue (a
+			// fresh node adopting an old stamp must not announce on connect)
+			runGameFeelAction(type, data);
 		} else if (type === 'storevalue') {
 			// 30 P4: a LOCAL write on the stamp edge, inside the actionSeenAt family above (a
 			// fresh node adopting an old stamp must not overwrite a best on connect). It
@@ -1295,6 +1302,9 @@ function updateGameNodes(time, ctx) {
 	}
 	for (const id of [...gameActed.keys()])
 		if (!nodes.some((/** @type {any} */ n) => n.id === id)) gameActed.delete(id);
+
+	// 1a. 30b (core-games): Game Music is a DECLARATION (present = wanted), read per frame
+	updateGameMusicNodes(nodes, (/** @type {any} */ node) => resolveInputs(node, nodes, edges, time, ctx), game.state);
 
 	// 1b. 21-F4 ALLPLAYERS — the group-travel gate. Each peer evaluates the wired
 	// condition for ITSELF (my answer about my player), publishes the verdict through
@@ -1859,6 +1869,7 @@ export const valueTypes = [
 	'gamepadbutton', // 21-E5: pad trigger — the keypress model verbatim
 	'gamepadaxis', // 21-E5: a stick, read LOCALLY (never streamed)
 	'onimpact', // PFX-C: physics impact trigger
+	'ongrab', // 30b (core-games): a player picked it up
 	'onhit', // 24-A A2: the knock's trigger — a handle map: __default pulse + speed/byMe
 	'onenter', 'onexit', // CL-C: sensor overlap triggers
 	'velocity', // CL-C: live speed readout (m/s)
@@ -2232,6 +2243,7 @@ function evalNodeBody(node, allNodes, allEdges, time, seen, ctx) {
 		}
 		case 'animfinished': // 17-E: fired locally when a clip reaches its end
 		case 'animmarker': // 17-E F5: fired locally when the playhead crosses one
+		case 'ongrab': // 30b (core-games): the On Click window, fired on a player's grab
 		case 'onclick': {
 			const trig = ctx && ctx.triggers ? ctx.triggers[node.id] : null;
 			const dt = trig ? time - trig.lastT : Infinity;
@@ -2759,6 +2771,25 @@ export function fireObjectClick(uuid) {
 		if (reachesObjectSelector(node.id, uuid) || implicitOwnerOf(node) === uuid) {
 			// 21-G4: a perPlayer On Click keeps its pulse LOCAL — that one bit is the
 			// whole per-player collectible (see replicatesPulse)
+			applyNodeTrigger(node.id, syncedNow(), replicatesPulse(node));
+			fired++;
+		}
+	});
+	return fired;
+}
+
+/**
+ * 30b (core-games): a PLAYER picked `uuid` up — the desktop play/interact carry
+ * (playInteract.beginGrab) or a VR Interact grip. Pulses every On Grab node wired to the
+ * object (or unwired inside its own graph), exactly as fireObjectClick does for a click; the
+ * stamp replicates (unless the node is perPlayer), so every peer hears the crate lift.
+ * Returns how many nodes it reached. @param {string} uuid @returns {number}
+ */
+export function fireObjectGrab(uuid) {
+	let fired = 0;
+	nodes.forEach((node) => {
+		if (node.type !== 'ongrab') return;
+		if (reachesObjectSelector(node.id, uuid) || implicitOwnerOf(node) === uuid) {
 			applyNodeTrigger(node.id, syncedNow(), replicatesPulse(node));
 			fired++;
 		}
@@ -3634,6 +3665,7 @@ export function startFlowRuntime() {
 	// knock.js imports physics, which imports this module.
 	import('./knock').then((m) => m.registerHitListener((hit, local) => fireObjectHit(hit, local)));
 	import('./gamePresence').then((m) => (presenceRef = m));
+	primeGameFeelActions(); // 30b: effectsBurst + vrControls, primed (see gameFeelActions)
 	flowGraphs.subscribe(() => {
 		nodes = allNodes();
 		edges = allEdges();

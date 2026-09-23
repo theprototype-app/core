@@ -18,6 +18,7 @@ const OUTPUT = {
 	colorpicker: 'color',
 	objectselector: 'object',
 	onclick: 'event',
+	ongrab: 'event', // 30b (core-games)
 	keypress: 'event', // H3
 	// 21-E5: a pad button is an EVENT (the keypress channel), a stick is a NUMBER. Both
 	// therefore reach every existing consumer with no coercion of their own.
@@ -172,6 +173,14 @@ const INPUT = {
 	setlook: { trigger: 'event', camera: 'object', on: 'boolean' },
 	setvariable: { trigger: 'event', value: 'number' },
 	storevalue: { trigger: 'event', value: 'number' }, // 30 P4
+	// 30b (core-games): the Game Feel family — an event, a wired number for {v}, a PLACE
+	// (an object: an undeclared handle types as 'number' and would refuse an Object
+	// Selector), and Game Music's on/off
+	announce: { trigger: 'event', value: 'number' },
+	gamesound: { trigger: 'event', at: 'object' },
+	effectburst: { trigger: 'event', at: 'object' },
+	hapticpulse: { trigger: 'event' },
+	gamemusic: { on: 'boolean' },
 	gamestart: { camera: 'object' },
 	// 21-F4: travel fires on its trigger edge; allplayers takes each player's own
 	// boolean answer (a Latch, a Gate, a Compare — anything true/false)

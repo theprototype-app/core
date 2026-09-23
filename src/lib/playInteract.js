@@ -13,7 +13,7 @@ import {
 	remoteSimulating,
 	isInitiator
 } from './physics';
-import { suspendAnimation, resumeAnimation, fireObjectClick } from './flowRuntime';
+import { suspendAnimation, resumeAnimation, fireObjectClick, fireObjectGrab } from './flowRuntime';
 import { velocityFromSamples } from './throwVelocity';
 import { resolvePlaySettings } from './playSettings';
 import { pickStack, primaryIndex } from './selectThrough';
@@ -256,6 +256,8 @@ function beginGrab(object, camera) {
 	);
 	suspendAnimation(object.uuid);
 	playInteractState.set({ mode: 'carrying', distance: carryDistance, uuid: object.uuid, blocked: null });
+	// 30b (core-games): an On Grab node hears it (a crate's lift sound in Towers)
+	fireObjectGrab(object.uuid);
 }
 
 /**

@@ -42,6 +42,9 @@ import {
 	peerHandStyle, pokeScene } from '../stores/sceneStore';
 import { activeRing, findMenuEntry, ringEntries, sectorFromStick, pushRing, popRing, resetRings, hubEntry } from './vrRadialMenu';
 import { paletteColorAt, barValueAt } from './vrPalette';
+// 30b (vr-play) C4: the ONE game-feel predicate (a leaf) + the pattern shapes (pure)
+import { gameFeelActive } from './gameFeel';
+import { hapticSchedule, knockHapticScale } from './hapticPatterns';
 import { recordMaterialChange, setMaterialParam } from './materialsHandler';
 import { prefabs, instantiatePrefab } from './prefabs';
 import {
@@ -926,22 +929,69 @@ export function initVRControls(r) {
 	renderer = r;
 }
 
+/** 30b: what the actuators were asked for (a ring, newest last) and how many pulses the
+ * Edit-mode gate swallowed — the suites' view, since no headset is attached headless */
+const hapticRing = /** @type {{intensity: number, ms: number, hand: string | null, at: number}[]} */ ([]);
+let hapticSuppressed = 0;
+
 /**
  * Buzz the VR controllers if the session's gamepads support it (no-op on
  * desktop). Used by modules for press feedback. Optional `hand` targets one
  * controller — matched by each inputSource's OWN handedness (never a raw slot
  * index, which diverges from the controller order after a hands<->controllers
  * swap — 194/210; axesForSlot resolves the same way).
+ *
+ * 30b (C4): a NO-OP IN EDIT MODE — "The vibration should be only interactive mode, not
+ * in edit mode" (the user, from a Quest). Every core pulse and a module's api.haptic
+ * funnel through here, so this one gate covers all of them.
  * @param {number} intensity 0..1 @param {number} durationMs
  * @param {'left'|'right'=} hand omit to pulse both
  */
 export function hapticPulse(intensity = 0.5, durationMs = 50, hand = undefined) {
+	if (!gameFeelActive()) {
+		hapticSuppressed++;
+		return;
+	}
 	const session = renderer?.xr?.getSession?.();
-	session?.inputSources?.forEach((source) => {
+	if (!session) return;
+	hapticRing.push({ intensity, ms: durationMs, hand: hand ?? null, at: performance.now() });
+	if (hapticRing.length > 64) hapticRing.shift();
+	session.inputSources?.forEach((/** @type {any} */ source) => {
 		if (hand && source.handedness !== hand) return;
 		const actuator = source.gamepad?.hapticActuators?.[0];
 		actuator?.pulse?.(intensity, durationMs);
 	});
+}
+
+/**
+ * 30b (C4): play a named PATTERN ('tap' 'bump' 'hit' 'success' 'fail' 'rumble'
+ * 'heartbeat' — hapticPatterns.js) as timed pulses. `scale` sizes every pulse (a knock's
+ * impulse). Returns false for an unknown name or outside Interact/Play; each pulse is
+ * gated again as it fires, so leaving the game mid-pattern stops it.
+ * @param {string} name @param {'left'|'right'=} hand @param {number=} scale
+ * @returns {boolean}
+ */
+export function hapticPattern(name, hand = undefined, scale = 1) {
+	const pulses = hapticSchedule(name, scale);
+	if (!pulses.length || !gameFeelActive()) return false;
+	for (const pulse of pulses) {
+		if (pulse.at <= 0) hapticPulse(pulse.intensity, pulse.ms, hand);
+		else setTimeout(() => hapticPulse(pulse.intensity, pulse.ms, hand), pulse.at);
+	}
+	return true;
+}
+
+/** 30b: the knock's haptic seam (Scene hands this to knock.js) — a `hit` sized by the
+ * knock's own strength, on the hand that hit. `intensity` arrives as knock.js computes
+ * it (0.2 + speed/10); read back as the speed it encodes.
+ * @param {number} intensity @param {number} _ms @param {'left'|'right'} hand */
+export function hapticKnock(intensity, _ms, hand) {
+	hapticPattern('hit', hand, knockHapticScale(Math.max(0, (Number(intensity) - 0.2) * 10)));
+}
+
+/** the suites' view of the actuators @returns {{pulses: any[], suppressed: number}} */
+export function hapticDebug() {
+	return { pulses: hapticRing.map((p) => ({ ...p })), suppressed: hapticSuppressed };
 }
 
 /** 194: resolve a controller slot by HANDEDNESS. three's getController(i) is a
@@ -2291,7 +2341,8 @@ function onSqueezeStart(index) {
 		before: transformStateOf(object)
 	};
 	vrGrabbedHand.set(renderer.xr.getController(index)?.userData?.handedness ?? null);
-	hapticPulse(0.25, 30);
+	// 30b (C4): a grab lands with a `hit` (a gated no-op in Edit, like every pulse)
+	hapticPattern('hit', renderer.xr.getController(index)?.userData?.handedness ?? undefined);
 	selectObject(object.uuid); // locks it for peers, updates selection state
 }
 

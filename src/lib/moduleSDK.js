@@ -902,7 +902,19 @@ function makeApi(moduleId, moduleName = moduleId) {
 		 * @param {'left'|'right'=} hand
 		 */
 		haptic(intensity = 0.5, durationMs = 50, hand = undefined) {
+			// 30b: silent in EDIT mode (core's own gate) — vibration is for playing
 			vrControlsRef?.hapticPulse?.(intensity, durationMs, hand);
+		},
+		/**
+		 * 30b: a named haptic PATTERN — 'tap' (hover), 'bump' (a press), 'hit' (a grab,
+		 * a contact), 'success', 'fail', 'rumble' (an engine, an explosion), 'heartbeat'.
+		 * On one hand ('left'|'right') or both. LOCAL, Interact/Play only (false in Edit,
+		 * on desktop nothing buzzes). Core already plays tap / bump / hit / knocks for
+		 * you; use this for the game's own moments.
+		 * @param {string} name @param {'left'|'right'=} hand @returns {boolean}
+		 */
+		hapticPattern(name, hand = undefined) {
+			return vrControlsRef?.hapticPattern?.(String(name), hand) ?? false;
 		},
 		/**
 		 * 24-A A2: every KNOCK this peer sees — its own hand's, and every peer's as the

@@ -5,3 +5,5 @@ export * as gameFeel from './gameFeel';
 export * as gameSfx from './gameSfx';
 export * as gameMusic from './gameMusic';
 export * as gameMusicPresets from './gameMusicPresets';
+export * as hapticPatterns from './hapticPatterns';
+export * as vrGameInput from './vrGameInput';

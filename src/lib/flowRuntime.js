@@ -2752,14 +2752,27 @@ export function fireModuleTrigger(type, match, opts) {
 }
 
 export function fireObjectClick(uuid) {
+	let fired = 0; // 30b: how many On Click nodes this reached (additive return)
 	nodes.forEach((node) => {
 		if (node.type !== 'onclick') return;
 		// H1: an unwired OnClick inside the clicked object's own graph also fires
-		if (reachesObjectSelector(node.id, uuid) || implicitOwnerOf(node) === uuid)
+		if (reachesObjectSelector(node.id, uuid) || implicitOwnerOf(node) === uuid) {
 			// 21-G4: a perPlayer On Click keeps its pulse LOCAL — that one bit is the
 			// whole per-player collectible (see replicatesPulse)
 			applyNodeTrigger(node.id, syncedNow(), replicatesPulse(node));
+			fired++;
+		}
 	});
+	return fired;
+}
+
+/** 30b (vr-play): would a click on `uuid` reach an On Click node? The same two rules
+ * fireObjectClick fires by — the VR hover tap and the sweep ask it before touching
+ * anything. @param {string} uuid @returns {boolean} */
+export function objectHasOnClick(uuid) {
+	return nodes.some(
+		(node) => node.type === 'onclick' && (reachesObjectSelector(node.id, uuid) || implicitOwnerOf(node) === uuid)
+	);
 }
 
 /**

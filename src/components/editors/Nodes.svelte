@@ -211,6 +211,9 @@
 		ongamestate: AnimationNode,
 		setvariable: AnimationNode,
 		getvariable: AnimationNode,
+		// 30 P4: the device-local pair (the second registry — the catalog is the first)
+		storevalue: AnimationNode,
+		storedvalue: AnimationNode,
 		gametime: AnimationNode,
 		// 21-F3's `collectcount` card MOVED to the collectible module (R3a) — an old
 		// scene's node renders as UnknownNode until the module is installed, honestly

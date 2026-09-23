@@ -255,7 +255,7 @@ h.run(async () => {
 	const dungeonNodes = await nodesOf(A.page, 'dkdungeon');
 	h.check(dungeonNodes.length === 1 && dungeonNodes[0].data.apply === true && dungeonNodes[0].data.seed === SEED, '1.7 ONE Dungeon node owns the recipe (apply on, seed ' + SEED + ')');
 	h.check((await gameStateOf(A.page)) === 'menu' && (await screenOf(A.page)) === 'menu', '1.8 the game shell starts in menu with the menu screen');
-	h.check(/DUNGEON REALMS/.test(await hudText(A.page)), '1.9 the HUD menu screen renders its title');
+	await h.eventually(() => A.page.evaluate(() => ({ chip: !!document.querySelector('#game-chip'), buttons: document.querySelectorAll('#hud-layer button').length })), (v) => v.chip && v.buttons === 0, '1.9 in the editor the game chip stands in for the menu (30 P1: no live menu over the editor)', 6000);
 	h.check(a1.resolvedGrounded === true && a1.grounded === true, '1.10 grounded resolves TRUE from the Kit contract (playSettings)');
 
 	// ---- 2. B receives it over the handshake ---------------------------------------------------
@@ -276,6 +276,7 @@ h.run(async () => {
 	await A.page.locator('#play-button').click();
 	await B.page.locator('#play-button').click();
 	await h.eventually(() => snap(A.page), (s) => s.menu, '3.1 A: the module start menu appears in play mode');
+	await h.eventually(async () => (await hudText(A.page)) ?? '', (t) => /DUNGEON REALMS/.test(t), '3.1b in play the HUD menu screen renders its title');
 	await h.eventually(() => snap(B.page), (s) => s.menu, '3.2 B: the module start menu appears');
 	h.check(await clickMenu(A.page, 'join-p1'), '3.3 A joins as Player 1 (module menu)');
 	h.check(await clickMenu(B.page, 'join-p2'), '3.4 B joins as Player 2');

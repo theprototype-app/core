@@ -39,7 +39,10 @@ import {
 	vrToolMode,
 	vrTargetHz,
 	vrSleeveEnabled,
+	editorMode,
 	peerHandStyle, pokeScene } from '../stores/sceneStore';
+import { isScenery, pickGripTarget, gripMovesWorld } from './vrGrip';
+import { resolvePlaySettings } from './playSettings';
 import { activeRing, findMenuEntry, ringEntries, sectorFromStick, pushRing, popRing, resetRings, hubEntry } from './vrRadialMenu';
 import { paletteColorAt, barValueAt } from './vrPalette';
 import { recordMaterialChange, setMaterialParam } from './materialsHandler';
@@ -1577,11 +1580,12 @@ function broadcastMove(object, force = false) {
 		});
 }
 
-/** @param {any} object @param {any} before */
+/** @param {any} object @param {any} before null = a PLAYER's grab (Interact): moved and
+ * thrown like any other, but not an edit, so no undo entry */
 function endGrab(object, before) {
 	broadcastMove(object, true);
 	const after = transformStateOf(object);
-	if (JSON.stringify(before) !== JSON.stringify(after))
+	if (before && JSON.stringify(before) !== JSON.stringify(after))
 		recordTransform({ uuid: object.uuid, before: before, after: after });
 	// PFX-C: mid-sim release = throw (velocity estimate from the hold samples)
 	import('./physics').then((m) => m.releaseBody(object.uuid));
@@ -1590,6 +1594,17 @@ function endGrab(object, before) {
 
 /** @type {{index: number, prev: any} | null} right-grip drag-the-world pan */
 let worldPan = null;
+
+/** 30b P2: test/debug view of what the grips are doing right now */
+export function vrGripDebug() {
+	return {
+		grab: grab?.object?.uuid ?? null,
+		grabInteract: !!grab?.interact,
+		worldGrab: !!worldGrab,
+		worldPan: !!worldPan,
+		emptyAir: [...emptyAirSqueeze]
+	};
+}
 
 // ---- 214: Box Select — a 3D drag-box marquee. Trigger-press anchors a corner,
 // the controller drags the opposite corner, release selects every top-level
@@ -2229,13 +2244,13 @@ function onSqueezeStart(index) {
 	}
 	if (!get(objectsGroup)) return;
 	const controller = renderer.xr.getController(index);
-	const hits = controllerRay(index).intersectObjects(get(objectsGroup).children, true);
-	let object = hits.length ? topLevelObjectOf(hits[0].object) : null;
+	// 30b P2: the grip takes what vrGrip.pickGripTarget says — scenery (floors, walls, the
+	// room you stand in) passes through, and in INTERACT only a player-holdable body counts
+	const mode = get(editorMode) === 'interact' ? 'interact' : 'edit';
+	let object = gripTargetOf(controllerRay(index), controller.getWorldPosition(new THREE.Vector3()), mode);
 	if (!object) {
-		// hand inside an object grabs it without a pointer (100.3)
-		object = containedTopLevel(controller.getWorldPosition(new THREE.Vector3()), get(objectsGroup));
-	}
-	if (!object) {
+		// 30b P2: Interact's grips never move the world (contract C1)
+		if (!gripMovesWorld(mode)) return;
 		emptyAirSqueeze[index] = true;
 		// 186: in stretch mode both grips drive the stretch, not a world grab
 		if (get(vrStretchObject)) return;
@@ -2255,6 +2270,8 @@ function onSqueezeStart(index) {
 	if (get(lockedObjects).find((lock) => lock[1] === object.uuid)) return;
 
 	if (grab && grab.object === object && grab.index !== index) {
+		// 30b P2: a player's second hand does not resize the thing it is holding
+		if (mode === 'interact') return;
 		// second hand on the same object -> two-hand scale
 		const distance = controllerDistance();
 		scaleGrab = {
@@ -2268,6 +2285,7 @@ function onSqueezeStart(index) {
 		return;
 	}
 
+	const interact = mode === 'interact';
 	suspendAnimation(object.uuid); // animated objects park at their base while held
 	// PFX-C: mid-sim, a VR-grabbed dynamic body follows the hand kinematically
 	// and RELEASE throws it with the estimated hand velocity — the exact desktop
@@ -2286,7 +2304,10 @@ function onSqueezeStart(index) {
 	grab = {
 		object,
 		index,
-		style: get(vrGrabStyle),
+		// 30b P2: a player's hand is RIGID (no gizmo-style move/rotate), and `interact`
+		// switches off the editor's extras in updateGrab/endGrab (snap, stick scale, undo)
+		interact,
+		style: interact ? 'rigid' : get(vrGrabStyle),
 		relPos: object.position.clone().sub(pPos).applyQuaternion(pQuat.clone().invert()),
 		relQuat: pQuat.clone().invert().multiply(object.quaternion),
 		startScale: object.scale.clone(),
@@ -2297,7 +2318,49 @@ function onSqueezeStart(index) {
 	};
 	vrGrabbedHand.set(renderer.xr.getController(index)?.userData?.handedness ?? null);
 	hapticPulse(0.25, 30);
-	selectObject(object.uuid); // locks it for peers, updates selection state
+	// 30b P2: a player picking something up is not SELECTING it — no lock broadcast, no
+	// selection shell, no inspector (Edit keeps all three)
+	if (!interact) selectObject(object.uuid); // locks it for peers, updates selection state
+}
+
+/**
+ * 30b P2: the top-level object a grip closes on, or null for empty air. Ray hits first
+ * (nearest first, each top-level object once), then the hand-inside test (100.3); both go
+ * through the vrGrip rule, so a floor, a wall or the room you stand in is never held.
+ * Exported for the headless suite. @param {any} ray a THREE.Raycaster
+ * @param {any} handPos the controller's world position @param {'edit'|'interact'} mode
+ */
+export function gripTargetOf(ray, handPos, mode) {
+	const group = get(objectsGroup);
+	if (!group) return null;
+	/** @type {any} */
+	const camera = get(globalCamera);
+	const head = camera ? camera.getWorldPosition(new THREE.Vector3()) : null;
+	const locked = get(lockedObjects);
+	const interaction = mode === 'interact' ? resolvePlaySettings(get(globalScene)).interaction : 'grab';
+	/** @param {any} object */
+	const describe = (object) => {
+		const box = new THREE.Box3().setFromObject(object);
+		return {
+			scenery: isScenery(box.isEmpty() ? null : box, head),
+			grabbable:
+				interaction === 'grab' &&
+				object.userData?.physics?.mode === 'dynamic' &&
+				!locked.find((/** @type {any} */ lock) => lock[1] === object.uuid)
+		};
+	};
+	/** @type {any[]} */
+	const order = [];
+	for (const hit of ray.intersectObjects(group.children, true)) {
+		const top = topLevelObjectOf(hit.object);
+		if (top && !order.includes(top)) order.push(top);
+	}
+	const picked = pickGripTarget(order.map(describe), mode);
+	if (picked >= 0) return order[picked];
+	// a hand INSIDE an object needs no pointer (100.3) — the same rule decides
+	const inside = containedTopLevel(handPos, group);
+	if (inside && pickGripTarget([describe(inside)], mode) === 0) return inside;
+	return null;
 }
 
 /** @param {number} index */
@@ -2364,7 +2427,7 @@ function onSqueezeEnd(index) {
 			hapticPulse(0.4, 60);
 			return;
 		}
-		endGrab(object, grab.before);
+		endGrab(object, grab.interact ? null : grab.before);
 		grab = null;
 		vrGrabbedHand.set(null);
 		hapticPulse(0.18, 24);
@@ -2424,7 +2487,7 @@ function updateGrab() {
 		const pPos = position.clone().applyMatrix4(parentInv);
 		const pQuat = parentQuat.clone().invert().multiply(quaternion);
 
-		const axes = axesForSlot(grab.index);
+		const axes = grab.interact ? [] : axesForSlot(grab.index); // 30b P2: no reel/scale in Interact
 		const adjusted = grabStickAdjust({
 			length: Math.max(grab.relPos.length(), 0.05),
 			scale: grab.scaleFactor,
@@ -2440,7 +2503,9 @@ function updateGrab() {
 		const pose = rigidGrabPose(pPos, pQuat, grab.relPos, grab.relQuat);
 		object.position.copy(pose.position);
 		object.quaternion.copy(pose.quaternion);
-		if (get(vrSnapMode) === 'surface') {
+		if (grab.interact) {
+			// 30b P2: a player's hand does not snap
+		} else if (get(vrSnapMode) === 'surface') {
 			dropToSurface(object, get(objectsGroup)); // 156: rest on the nearest surface under it
 		} else if (get(snapEnabled)) {
 			const step = get(snapSettings).translate;

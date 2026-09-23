@@ -1,6 +1,29 @@
-import { get } from 'svelte/store';
+import { get, writable } from 'svelte/store';
 import { scenePlay } from './scenePhysics';
 import { showToast } from '../stores/appStore';
+import { normalizeLocomotion, normalizeSpawn } from './locomotionPolicy';
+import { moduleWorldChildren } from './moduleWorld';
+
+/**
+ * 30b P4: a spawn point set at RUNTIME by a module (`api.setSpawn(position, yaw)`) — a
+ * dungeon's floor, a level's start. LOCAL (every peer's module runs the same code off the
+ * same replicated state, so each sets its own), never saved, and it wins over the scene's
+ * authored `play.spawn` (contract C1: a module overrides the scene's).
+ * @type {import('svelte/store').Writable<{position: [number, number, number], yaw: number, owner?: string} | null>}
+ */
+export const runtimeSpawn = writable(null);
+
+/** @param {any} position @param {any} [yaw] @param {string} [owner] @returns {boolean} */
+export function setRuntimeSpawn(position, yaw, owner) {
+	if (position == null) {
+		runtimeSpawn.set(null);
+		return true;
+	}
+	const spawn = normalizeSpawn(position, yaw);
+	if (!spawn) return false;
+	runtimeSpawn.set(owner ? { ...spawn, owner } : spawn);
+	return true;
+}
 
 // 21-B B3: what play mode BEHAVES like in this scene.
 //
@@ -28,7 +51,10 @@ let warnedMultiple = false;
  */
 export function playPublishers(scene) {
 	if (!scene?.children) return [];
-	const found = scene.children.filter((/** @type {any} */ child) => child?.userData?.play);
+	// 30b P5: registered module groups live under the world rig's module root now
+	const found = [...scene.children, ...moduleWorldChildren()].filter(
+		(/** @type {any} */ child) => child?.userData?.play
+	);
 	found.sort((/** @type {any} */ a, /** @type {any} */ b) => {
 		if (a.name === 'dungeon-module') return -1;
 		if (b.name === 'dungeon-module') return 1;
@@ -45,7 +71,11 @@ export function playPublishers(scene) {
  * crosshair, today). A module publishing `userData.play.cursor` overrides the scene's, the
  * way `grounded` does, which is how a board-game module asks for it without an authored
  * scene field.
- * @returns {{interaction: 'grab'|'click'|'off', grounded: boolean, eyeHeight: number, cursor: 'free'|'locked'}}
+ * 30b P3/P4: `locomotion` ({teleport, fly}, both false unless the scene or a publisher
+ * allows them — field by field, like `grounded`) and `spawn` (the runtime api.setSpawn,
+ * else a publisher's `userData.play.spawn`, else the scene's `play.spawn`, else null).
+ * @returns {{interaction: 'grab'|'click'|'off', grounded: boolean, eyeHeight: number, cursor: 'free'|'locked',
+ *   locomotion: {teleport: boolean, fly: boolean}, spawn: {position: [number, number, number], yaw: number} | null}}
  */
 export function resolvePlaySettings(scene) {
 	const base = get(scenePlay);
@@ -54,8 +84,12 @@ export function resolvePlaySettings(scene) {
 		interaction: base.interaction,
 		grounded: base.grounded,
 		eyeHeight: DEFAULT_EYE_HEIGHT,
-		cursor: base.cursor === 'free' ? 'free' : 'locked'
+		cursor: base.cursor === 'free' ? 'free' : 'locked',
+		locomotion: { teleport: false, fly: false },
+		spawn: normalizeSpawn(base.spawn)
 	};
+	const baseLoco = normalizeLocomotion(base.locomotion);
+	if (baseLoco) Object.assign(out.locomotion, baseLoco);
 	const publishers = playPublishers(scene);
 	if (publishers.length > 1 && !warnedMultiple) {
 		warnedMultiple = true;
@@ -73,7 +107,13 @@ export function resolvePlaySettings(scene) {
 		if (typeof play.grounded === 'boolean') out.grounded = play.grounded;
 		if (typeof play.eyeHeight === 'number') out.eyeHeight = play.eyeHeight;
 		if (play.cursor === 'free' || play.cursor === 'locked') out.cursor = play.cursor;
+		const loco = normalizeLocomotion(play.locomotion);
+		if (loco) Object.assign(out.locomotion, loco);
+		const spawn = normalizeSpawn(play.spawn);
+		if (spawn) out.spawn = spawn;
 	}
+	const runtime = get(runtimeSpawn);
+	if (runtime) out.spawn = { position: runtime.position, yaw: runtime.yaw };
 	return out;
 }
 

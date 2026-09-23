@@ -51,6 +51,8 @@ export { moduleContentDebug } from './moduleContent';
 import { safeStorage } from './safeStorage';
 // 30 P4: api.storage — a LEAF (safeStorage only), shared with the Store Value flow node
 import { makeModuleStorage } from './gameStorage';
+import { runtimeSpawn, setRuntimeSpawn } from './playSettings'; // 30b P4 (a leaf)
+import { spawnDesktopPlayer, currentSpawn, spawnEyePose } from './playSpawn'; // 30b P4 (a leaf)
 
 /** modules already told they hit the storage cap this session (ONE toast each, never
  * one per write — a game saving every frame would otherwise bury the screen) */
@@ -343,6 +345,27 @@ function physicsApi() {
 	return physicsRef;
 }
 
+/**
+ * 30b P4: move the player to the spawn in force — VR moves the rig (vrControls), desktop
+ * Play moves the play camera, desktop Interact the editor view. Edit is never moved.
+ * @returns {boolean}
+ */
+function respawnPlayerNow() {
+	const spawn = currentSpawn();
+	if (!spawn) return false;
+	if (get(isVRMode)) {
+		if (get(editorMode) !== 'interact') return false;
+		return !!vrControlsRef?.spawnPlayer?.();
+	}
+	if (get(isLocked) === true) return spawnDesktopPlayer(spawn);
+	if (get(editorMode) === 'interact') {
+		const { eye, lookAt } = spawnEyePose(spawn);
+		objectActionsRef?.flyTo?.(eye, lookAt);
+		return !!objectActionsRef;
+	}
+	return false;
+}
+
 /** @param {string} moduleId @param {string} [moduleName] the DISPLAY name, needed while
  * register() runs: loadedModules is not appended until it RETURNS, so anything reading the
  * name from there during registration gets the raw id (which is how a module HUD kind was
@@ -351,6 +374,8 @@ function makeApi(moduleId, moduleName = moduleId) {
 	const disposals = (moduleDisposals[moduleId] ??= []);
 	/** record an undo thunk deactivateModule runs at teardown (A2) @param {() => void} fn */
 	const onDispose = (fn) => disposals.push(fn);
+	/** 30b P4: setSpawn journals its clear once per module */
+	let spawnDisposeHooked = false;
 	/** A value frozen for the undo stack, so a module mutating its patch object later
 	 * cannot rewrite history. @param {any} v */
 	const frozen = (v) => {
@@ -643,6 +668,38 @@ function makeApi(moduleId, moduleName = moduleId) {
 		 */
 		editorMode() {
 			return get(editorMode) === 'interact' ? 'interact' : 'edit';
+		},
+		/**
+		 * 30b P4: where the player STARTS — entering Interact or Play puts them here (VR: the
+		 * rig so the FEET land on it facing `yaw`; desktop Play: the play camera; desktop
+		 * Interact: the editor view). `position` is [x, y, z] with y the FEET height; `yaw`
+		 * is radians, three's rotation.y (0 faces -Z, forward = (-sin yaw, 0, -cos yaw)).
+		 * Overrides the scene's authored `play.spawn`. LOCAL: every peer's module sets its
+		 * own from the same replicated state; never saved. `{teleport: true}` also moves the
+		 * player there NOW when Interact or Play is on (a new level, a new dungeon floor) —
+		 * without it a changed spawn is a checkpoint, used on the next entry.
+		 * `setSpawn(null)` clears it. Cleared when the module is disabled.
+		 * @param {number[] | null} position @param {number=} yaw
+		 * @param {{teleport?: boolean}=} options @returns {boolean} whether it was accepted
+		 */
+		setSpawn(position, yaw = 0, options = {}) {
+			const ok = setRuntimeSpawn(position, yaw, moduleId);
+			if (!spawnDisposeHooked) {
+				spawnDisposeHooked = true;
+				onDispose(() => {
+					if (get(runtimeSpawn)?.owner === moduleId) setRuntimeSpawn(null);
+				});
+			}
+			if (ok && position && options?.teleport) respawnPlayerNow();
+			return ok;
+		},
+		/**
+		 * 30b P4: move the player to the spawn in force now (see setSpawn) — only while
+		 * Interact or Play is on; the editor's Edit view is never moved.
+		 * @returns {boolean} whether the player was moved
+		 */
+		respawnPlayer() {
+			return respawnPlayerNow();
 		},
 		/**
 		 * Where the user is POINTING, as a THREE.Raycaster in world space —

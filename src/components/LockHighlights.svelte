@@ -4,6 +4,8 @@
 	import { lockedObjects, objectsGroup } from '../stores/sceneStore';
 	import { peers } from '../stores/appStore';
 	import { peerColor } from '$lib/lockControl';
+	// 30b P1: who-holds-what boxes are editor information - none in Interact/Play
+	import { editorHelpersShown } from '$lib/helperLayer';
 
 	// Wireframe box around every object locked by ANOTHER peer, tinted with
 	// that peer's color (same hash as pings/cursors). Boxes track the object
@@ -16,6 +18,7 @@
 	const helpers = new Map();
 
 	useTask(() => {
+		group.visible = $editorHelpersShown;
 		/** @type {any} */
 		const peer = $peers;
 		const scene = $objectsGroup;

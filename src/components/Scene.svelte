@@ -31,6 +31,7 @@
 	import { sceneHits } from '$lib/scenePick';
 	import { pickStack, chooseInStack } from '$lib/selectThrough';
 	import { tickModuleProxy, selectModuleGroup, moduleGroupOf } from '$lib/moduleContent';
+	import { setModuleWorldRoot } from '$lib/moduleWorld';
 	import { startPlayInteract, tickPlayInteract, stopPlayInteract, carriedUuid, editorInteractActive, cursorGrabStart, cursorGrabMove, cursorGrabEnd, interactClick } from '$lib/playInteract';
 	import { registerKeySessionProbe } from '$lib/shortcuts';
 	import { startKnock, tickKnock, stopKnock } from '$lib/knock';
@@ -54,7 +55,7 @@
 	// the annotation is TS syntax — a JSDoc @type cast is ignored here (the documented trap).
 	let knifeFrom: number[] | null = null;
 	import { peerScenes } from '$lib/peerScenes';
-	import { initVRControls, updateVRControls, raycastMenu, raycastPanel, raycastPalette, raycastProps, raycastPrefabs, raycastKeyboard, raycastChat, raycastEdit, raycastSnap, raycastSettings, raycastApprove, placePrefabGhost, vrFaceTrigger, vrVertexTrigger, vrVertexGrabStart, vrVertexGrabEnd, beginStretchSliderDrag, endStretchSliderDrag, executeVRMenuAction, resetWorldRig, onInputSourcesChange, worldToContentPose, boxSelectStart, boxSelectEnd, boxSelectActive, applyVRFrameRate, shouldSendHands, onHandPinchStart, onHandPinchEnd, pinchMenuToggledAt, firePingIfArmed, vrModuleTriggerStart, vrModuleTriggerEnd, vrModuleSelectSwallowed, handSnapshot, vrGrabbedUuid, hapticPulse } from '$lib/vrControls';
+	import { initVRControls, updateVRControls, raycastMenu, raycastPanel, raycastPalette, raycastProps, raycastPrefabs, raycastKeyboard, raycastChat, raycastEdit, raycastSnap, raycastSettings, raycastApprove, placePrefabGhost, vrFaceTrigger, vrVertexTrigger, vrVertexGrabStart, vrVertexGrabEnd, beginStretchSliderDrag, endStretchSliderDrag, executeVRMenuAction, resetWorldRig, onInputSourcesChange, worldToContentPose, boxSelectStart, boxSelectEnd, boxSelectActive, applyVRFrameRate, shouldSendHands, onHandPinchStart, onHandPinchEnd, pinchMenuToggledAt, firePingIfArmed, vrModuleTriggerStart, vrModuleTriggerEnd, vrModuleSelectSwallowed, handSnapshot, vrGrabbedUuid, hapticPulse, onVRSessionStart } from '$lib/vrControls';
 	import { vrKeyboardTarget } from '$lib/vrKeyboard';
 	import { measureMode, measureClick } from '$lib/measure';
 	import { pinsGroup, openAnnotation, showNotePins } from '$lib/annotationsHandler';
@@ -1600,6 +1601,11 @@
 	     sceneObjects — they'd leak into GLTF sync). oncreate passes the ref
 	     DIRECTLY (the { ref } destructure trap, N1). -->
 	<T.Group name="particle-root" oncreate={(ref: any) => setParticleRoot(ref)} />
+
+	<!-- 30b P5: module viewport content (registered scene-root groups) is re-homed here so
+	     the VR world gestures carry it too — Untangle's dots spin with the world. Not in
+	     sceneObjects: nothing under it is serialised or sent (golden rule 5). -->
+	<T.Group name="module-world-root" oncreate={(ref: any) => setModuleWorldRoot(ref)} />
 </T.Group>
 
 {#if !$isLocked && !$isVRMode}
@@ -1642,6 +1648,9 @@ position={[0, 2, 3]}
 		// B2.1: request the preferred refresh rate (auto = highest supported) —
 		// without this the Quest stays at its 90Hz default
 		applyVRFrameRate();
+		// 30b P4: remember the untouched reference space (the walker's floor), and a
+		// GAME lands in Interact on its spawn
+		onVRSessionStart();
 	}}
 	onsessionend={() => passthroughActive.set(false)}
 >

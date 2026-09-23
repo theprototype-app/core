@@ -188,6 +188,23 @@ h.run(async () => {
 	await h.eventually(() => counter(page), (n) => n > before, `a real click at the target's pixel fires its On Click (${before} -> ?)`, 3000);
 	const debugClick = await page.evaluate(() => window.__stores.playInteract.playInteractDebug().lastUp);
 	h.check(debugClick === 'click', `recorded as a click on an object (${debugClick})`);
+	// 30 integrate: api.pointerRay() in a free-cursor game is the CURSOR's ray (30-core-modes'
+	// P4 made it the crosshair under a lock; both lanes now ask the one playCursor leaf)
+	const aimAgree = await page.evaluate((at) => {
+		const S = window.__stores;
+		let cam = null;
+		S.globalCamera.subscribe((c) => { cam = c; })();
+		const ray = S.moduleSDK.pointerRayNow();
+		if (!ray || !cam) return null;
+		const T = S.THREE;
+		const camPos = cam.getWorldPosition(new T.Vector3());
+		const toTarget = new T.Vector3(...at).sub(camPos).normalize();
+		const centre = new T.Raycaster();
+		centre.setFromCamera(new T.Vector2(0, 0), cam);
+		return { target: ray.ray.direction.dot(toTarget), centre: ray.ray.direction.dot(centre.ray.direction) };
+	}, targetAt);
+	h.check(!!aimAgree && aimAgree.target > 0.999, `api.pointerRay() aims at the cursor in a free-cursor game (dot ${aimAgree?.target?.toFixed(5)})`);
+	h.check(!!aimAgree && aimAgree.centre < 0.999, `and not along the view axis (dot ${aimAgree?.centre?.toFixed(5)})`);
 
 	// ===================================================================== 5. a real press-drag carries a body
 	const crateAt = await placeInView(page, ids.crate, 3, -0.9);

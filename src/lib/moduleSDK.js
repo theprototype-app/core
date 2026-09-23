@@ -4,7 +4,8 @@ import * as THREE from 'three';
 import { writable, get } from 'svelte/store';
 import { globalScene, objectsGroup, selectedObject, selectedObjects, globalCamera, isVRMode, isLocked, playPointerFree } from '../stores/sceneStore';
 // 30 P4: the scene's play block decides whether play aims with a crosshair (a leaf chain)
-import { resolvePlaySettings } from './playSettings';
+// 30 integrate: the ONE answer to "is this a free-cursor game" (30-core-flow's leaf)
+import { playCursorSetting } from './playCursor';
 import { peers, showToast, modulesOpen, userdata } from '../stores/appStore';
 import { syncedAnimations, flowGraphs, flowValues, flowTriggers, allNodes, findNodeAnyGraph, SCENE_GRAPH } from '../stores/flowStore';
 import { customGeometryBuilders } from './customGeometries';
@@ -306,11 +307,11 @@ const SCREEN_CENTRE = new THREE.Vector2(0, 0);
 function crosshairAims() {
 	if (get(isLocked) !== true || get(playPointerFree)) return false;
 	if (typeof document === 'undefined' || !document.pointerLockElement) return false;
-	// 30-core-flow: free cursor — a scene whose play block says `cursor: 'free'` plays with
-	// the real cursor and no lock, so its ray IS the mouse ray. Read defensively: the field
-	// lands with that lane, and absent means 'locked' (today's play).
-	const settings = /** @type {any} */ (resolvePlaySettings(get(globalScene)));
-	return settings?.cursor !== 'free';
+	// 30-core-flow: free cursor — a scene whose play block says `cursor: 'free'` (or a
+	// module publishing it through userData.play) plays with the real cursor and no lock,
+	// so its ray IS the mouse ray. Asked through playCursor, the leaf playInteract, PLC and
+	// PlayReticle ask too, so the four cannot disagree about where the player aims.
+	return playCursorSetting() !== 'free';
 }
 
 function pointerRayNow() {

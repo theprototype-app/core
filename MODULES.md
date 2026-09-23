@@ -244,6 +244,8 @@ api.registerClickHandler(pickTool, { modes: ['edit'] });             // an edito
 ```
 
 The VR trigger has no editor mode yet and still offers every handler.
+`api.editorMode()` reads the mode on this screen (`'edit'` | `'interact'`) — for a module
+whose own pointer listeners run outside click routing (a drag), so it can stand down in Edit.
 
 **Listed in the object list (1.17).** Content you build at the scene root shows in
 the object list's *Module content* section — a read-only row that frames it, hides

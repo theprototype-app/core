@@ -128,6 +128,7 @@ import { suspendAnimation, resumeAnimation } from './flowRuntime';
 import { drawMode, toggleDrawMode, addStrokePoint, endStroke } from './drawMode';
 import { setPttHeld, cycleMicMode, vrMicMode, micActive, pttActive } from './voiceChat';
 import { safeStorage } from './safeStorage';
+import { helpersHidden } from './helperLayer';
 import {
 	HOLD_MS,
 	vrWindowAdjust,
@@ -310,6 +311,8 @@ function ensureRayLines() {
 export function updateHoverBox(object) {
 	const scene = get(globalScene);
 	if (!scene) return;
+	// 30b P1: the hover shell is editor scaffolding — none in Interact/Play
+	if (helpersHidden()) object = null;
 	if (!hoverBox) {
 		hoverBox = new THREE.Box3Helper(new THREE.Box3(), new THREE.Color(RAY_HOVER));
 		hoverBox.name = 'vr-hover-box';
@@ -329,6 +332,8 @@ function setHovered(object) {
 	// the shell is the primary, emissive-independent cue; the emissive tint is a
 	// secondary touch for materials that support it
 	updateHoverBox(object);
+	// 30b P1: ...and neither is the emissive hover tint (it paints a replicated material)
+	if (helpersHidden()) object = null;
 	if (hoveredObject === object) return;
 	if (hoveredObject?.material?.emissive) hoveredObject.material.emissive.setHex(hoveredEmissive);
 	hoveredObject = null;

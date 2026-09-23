@@ -7,6 +7,7 @@ import { colliderSpecOf } from './colliderSpec';
 import { wireframeActive } from './viewMode';
 import { scenePhysicsGround } from './scenePhysics';
 import { safeStorage } from './safeStorage';
+import { helpersHidden } from './helperLayer';
 
 // CL-A A7: collider visualization (the lightHelpers pattern). Per tracked
 // object a wireframe built FROM colliderSpecOf — the SAME spec physics
@@ -233,7 +234,8 @@ const followQuat = new THREE.Quaternion();
  * entirely in wireframe view mode (they'd render as junk). */
 export function updateColliderHelpers() {
 	if (!proxyRoot) return;
-	proxyRoot.visible = (entries.size > 0 || !!groundProxy) && !wireframeActive();
+	// 30b P1: collider/trigger wireframes are editor scaffolding — gone in Interact and Play
+	proxyRoot.visible = (entries.size > 0 || !!groundProxy) && !wireframeActive() && !helpersHidden();
 	if (!proxyRoot.visible) return;
 	entries.forEach((entry) => {
 		entry.object.updateMatrixWorld();

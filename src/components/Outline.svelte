@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { objectsGroup, selectedObjects, lockedObjects, viewMode, TControls, isLocked } from '../stores/sceneStore.js';
+	import { objectsGroup, selectedObjects, lockedObjects, viewMode, TControls, isLocked, editorMode } from '../stores/sceneStore.js';
 	import { showToast } from '../stores/appStore.js';
 	import { get } from 'svelte/store';
 	import { chromiumMajor, postSupported } from '$lib/viewMode';
@@ -504,7 +504,9 @@
 		// information — who has what selected, what a peer has locked — and in play
 		// mode they are glare over the thing you are playing with, which is the same
 		// argument the mesh-edit session already makes one line up.
-		const playing = $isLocked;
+		// 30b P1: ...and in INTERACT, which is play's hands without play's lock: a
+		// player-style view of the scene has no selection glare either
+		const playing = $isLocked || $editorMode === 'interact';
 		if ($objectsGroup && !editing && !playing)
 			for (const uuid of $selectedObjects) addMeshes(outlineEffectSelected.selection, uuid);
 		outlineEffectLocked.selection.clear();

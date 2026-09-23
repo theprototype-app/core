@@ -946,9 +946,12 @@ let hapticSuppressed = 0;
  * funnel through here, so this one gate covers all of them.
  * @param {number} intensity 0..1 @param {number} durationMs
  * @param {'left'|'right'=} hand omit to pulse both
+ * @param {boolean=} force pulse even in Edit (the mode-switch tick only)
  */
-export function hapticPulse(intensity = 0.5, durationMs = 50, hand = undefined) {
-	if (!gameFeelActive()) {
+export function hapticPulse(intensity = 0.5, durationMs = 50, hand = undefined, force = false) {
+	// `force`: the one pulse that must be felt IN Edit — 30b-vr-modes' Edit/Interact switch
+	// tick, which confirms the switch INTO Edit
+	if (!force && !gameFeelActive()) {
 		hapticSuppressed++;
 		return;
 	}

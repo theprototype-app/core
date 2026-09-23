@@ -55,6 +55,8 @@ import { makeModuleStorage } from './gameStorage';
 // safeStorage, sessionClock, sceneStore), so static edges close no cycle
 import { isGameSound, playGameSound } from './gameSfx';
 import { playGameMusic, stopGameMusic, gameMusicState, MUSIC_PRESET_IDS } from './gameMusic';
+// 30b (vr-play): api.announce's banner store — a LEAF (svelte/store only)
+import { announce as announceBanner, clearAnnouncement } from './gameAnnounce';
 /** the ping chimes `api.playSound` still reaches (pingAudio's PING_SOUNDS ids) */
 const PING_NAMES = new Set(['ding', 'chime', 'pluck', 'bell']);
 
@@ -182,6 +184,9 @@ const sceneClearHandlers = [];
 
 /** Called by the clear-scene path (local and remote) */
 export function runSceneClearHandlers() {
+	// 30b: a cleared scene takes its game's bursts and banner with it
+	effectsRef?.clearBursts?.();
+	clearAnnouncement();
 	sceneClearHandlers.forEach((fn) => {
 		try {
 			fn();
@@ -259,6 +264,8 @@ let nodeCatalogRef = null;
 let knockRef = null;
 /** @type {Promise<any>} */
 let knockReady = Promise.resolve(null);
+/** 30b: primed for api.effects (effectsBurst imports moduleFrameTasks from here) @type {any} */
+let effectsRef = null;
 if (typeof window !== 'undefined') {
 	knockReady = import('./knock').then((m) => (knockRef = m));
 	import('./inputRuntime').then((m) => (inputRuntimeRef = m));
@@ -279,6 +286,8 @@ if (typeof window !== 'undefined') {
 	import('./flowRuntime').then((m) => (flowRuntimeRef = m));
 	import('./flowGraphs').then((m) => (flowGraphsRef = m));
 	import('./nodeCatalog').then((m) => (nodeCatalogRef = m));
+	// 30b (C6): the burst pool reads moduleFrameTasks from here, so the edge back is dynamic
+	import('./effectsBurst').then((m) => (effectsRef = m));
 }
 
 // --- api.pointerRay (190): where the user is POINTING, as a world ray --------
@@ -1062,6 +1071,30 @@ function makeApi(moduleId, moduleName = moduleId) {
 		 * false) and stops by itself when the player leaves the game.
 		 * Presets: 'arcade', 'ambient', 'dungeon', 'stadium', 'space', 'puzzle', 'studio'.
 		 */
+		/**
+		 * 30b (C6): a short, pooled particle BURST at a world position — 'sparkle' (the
+		 * default), 'confetti', 'smoke' or 'sparks', an optional CSS colour and a count
+		 * (1..96). LOCAL: broadcast your own op if peers should see it too. Returns
+		 * whether a burst started.
+		 * @param {number[]} position @param {{kind?: string, color?: string, count?: number}=} options
+		 * @returns {boolean}
+		 */
+		effects: {
+			burst: (/** @type {number[]} */ position, /** @type {{kind?: string, color?: string, count?: number}} */ options = {}) =>
+				!!effectsRef?.burst?.(position, options ?? {}),
+			kinds: () => ['sparkle', 'confetti', 'smoke', 'sparks']
+		},
+		/**
+		 * 30b: a BIG centred banner — "GOAL!", "Level 3", "Ring 2 reached" — on the desktop
+		 * HUD and, in a headset, head-locked in front of the player. `sub` is a second,
+		 * smaller line; `ms` how long it stays (300..15000, default 1800); `color` the
+		 * title's colour. A new banner replaces the one showing. LOCAL. Returns its id.
+		 * @param {string} text @param {{sub?: string, ms?: number, color?: string}=} options
+		 * @returns {number}
+		 */
+		announce(text, options = {}) {
+			return announceBanner(text, options ?? {});
+		},
 		music: {
 			/** @param {string} preset @param {{volume?: number}=} options 0..1 @returns {boolean} */
 			play: (preset, options = {}) => playGameMusic(preset, options ?? {}),

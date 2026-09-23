@@ -275,6 +275,10 @@ function towersGraph() {
 	N('quithide', 'hudscreen', 'Close pause on quit', 520, 790, { screen: 'pause', action: 'hide' });
 	E('bquit', 'doquit', 'trigger');
 	E('bquit', 'quithide', 'trigger');
+	// 30: Round over offers Play again beside Menu — the Restart chain above, from `over`
+	N('breplay', 'hudbutton', 'Play again button', 40, 875, { element: 'replay-btn' });
+	E('breplay', 'restartreset', 'trigger');
+	E('breplay', 'restartdelay', 'trigger');
 
 	// ---- height: rung sensors -> perRound latches -> boolean*height -> max -> HUD
 	for (let i = 1; i <= 4; i++) {
@@ -298,8 +302,33 @@ function towersGraph() {
 	E('mx34', 'mxall', 'b');
 	N('hheight', 'hudtext', 'HUD height', 1480, 1030, { element: 'height-read', format: 'Best height: {v} m', decimals: 0, value: 0 });
 	E('mxall', 'hheight', 'value');
-	N('hfinal', 'hudtext', 'HUD final height', 1480, 1180, { element: 'final-height', format: 'Your best tower: {v} m', decimals: 0, value: 0 });
-	E('mxall', 'hfinal', 'value');
+	// ---- 30: the BEST HEIGHT, saved on THIS device (Store Value / Stored Value) --------
+	// Stored on every ring crossing, never on `over`: a perRound latch READS un-set the
+	// instant the round ends (the Infinity cutoff), so an `over` edge would store 0 — and
+	// that is also why the old Round-over line read "0 m" every time. `towers-last` is the
+	// same number for THIS round: `max` too (a crate jittering in a ring sensor re-fires
+	// the crossing after the round ends, when the height reads 0 — a `set` would wipe it),
+	// zeroed by its own `set` node when a round starts. Keys are game-specific because a
+	// Games-tab load leaves the scene unnamed, so every template shares tp:scene:untitled:*.
+	N('storebest', 'storevalue', 'Save best height', 1720, 1030, { key: 'towers-best', mode: 'max', value: 0 });
+	N('storelast', 'storevalue', 'Save this round', 1720, 1180, { key: 'towers-last', mode: 'max', value: 0 });
+	E('mxall', 'storebest', 'value');
+	E('mxall', 'storelast', 'value');
+	for (let i = 1; i <= 4; i++) {
+		E('enr' + i, 'storebest', 'trigger');
+		E('enr' + i, 'storelast', 'trigger');
+	}
+	N('onround', 'ongamestate', 'When a round starts', 1480, 1330, { state: 'playing', edge: 'enter', pulse: 0.3 });
+	N('zerolast', 'storevalue', 'New round: zero it', 1720, 1330, { key: 'towers-last', mode: 'set', value: 0 });
+	E('onround', 'zerolast', 'trigger');
+	N('storedbest', 'storedvalue', 'My best height', 1960, 1030, { key: 'towers-best', output: 'number', fallback: 0 });
+	N('hbest', 'hudtext', 'HUD best (menu)', 2200, 980, { element: 'best-read', format: 'Your best tower: {v} m', decimals: 0, value: 0 });
+	E('storedbest', 'hbest', 'value');
+	N('hbest2', 'hudtext', 'HUD best (over)', 2200, 1100, { element: 'over-best', format: 'Best ever: {v} m', decimals: 0, value: 0 });
+	E('storedbest', 'hbest2', 'value');
+	N('storedlast', 'storedvalue', 'This round', 1960, 1180, { key: 'towers-last', output: 'number', fallback: 0 });
+	N('hfinal', 'hudtext', 'HUD final height', 2200, 1220, { element: 'final-height', format: 'This round: {v} m', decimals: 0, value: 0 });
+	E('storedlast', 'hfinal', 'value');
 	// reaching the top rung earns a sparkle burst on the pad
 	N('pfx', 'particle', '4m sparkle', 1000, 1400, {
 		mode: 'burst', count: 120, lifetime: 1.4, speed: 2.5, gravity: 0,
@@ -318,7 +347,16 @@ function towersGraph() {
 		});
 		N('selstar' + i, 'objectselector', 'Star ' + i, 280, y, { selected: 'Star ' + i });
 		E('colstar' + i, 'selstar' + i);
+		// 30: every star turns and breathes once a round starts (its authored `Star glow`
+		// clip: the Turntable + Pulse presets in ONE clip, since a transport plays one clip
+		// per object). Through a zero-second Delay: Play Animation reads a trigger VALUE and
+		// On Game State carries only a stamp (the beat-graph finding).
+		N('glow' + i, 'playanim', 'Star ' + i + ' glow', 1240, y, { clip: 'Star glow', action: 'restart', speed: 1 });
+		E('glowpulse', 'glow' + i, 'trigger');
+		E('glow' + i, 'selstar' + i);
 	}
+	N('glowpulse', 'delay', 'Round start pulse (0 s)', 1000, 1560, { seconds: 0, pulse: 0.3 });
+	E('onround', 'glowpulse', 'trigger');
 	N('cstars', 'collectiblecount', 'Stars left', 520, 1670, { variable: 'stars', read: 'left' });
 	N('hstars', 'hudtext', 'HUD stars', 760, 1670, { element: 'stars-read', format: 'Stars left: {v}', decimals: 0, value: 0 });
 	E('cstars', 'hstars', 'value');
@@ -350,24 +388,99 @@ function towersGraph() {
 }
 
 const TOWERS_HUD_PANEL = {
-	bg: 'rgba(20, 26, 36, 0.92)',
-	radius: 16,
-	border: '1px solid rgba(136, 192, 208, 0.25)'
+	bg: 'rgba(14, 20, 32, 0.9)',
+	radius: 18,
+	border: '1px solid rgba(255, 212, 94, 0.28)'
+};
+const TOWERS_BTN = { size: 17, weight: '600', bg: '#3b7dd8', color: '#ffffff', radius: 10 };
+// 30: the finished look. Crates read as WOOD (a physical material with a sheen and a thin
+// clearcoat, chamfered edges), the floor carries a subtle 2 m tile from a shader graph, the
+// walls are chamfered with a glowing trim, and the height markers are thin glowing rings
+// beside a marked pole instead of stacked translucent squares.
+const TOWERS_WOOD = { physical: true, roughness: 0.6, sheen: 0.4, sheenColor: 0xffd7a0, sheenRoughness: 0.55, clearcoat: 0.12, clearcoatRoughness: 0.5 };
+const TOWERS_CRATE = { mode: 'dynamic', mass: 1, friction: 0.8, restitution: 0.03 };
+const TOWERS_PLANK = { mode: 'dynamic', mass: 0.9, friction: 0.8, restitution: 0.03 };
+/** a chamfered wooden crate (bevelSegments 1 keeps the baked geometry small)
+ * @param {string} name @param {number} color @param {number[]} size @param {number[]} pos @param {any} physics */
+const towersCrate = (name, color, size, pos, physics) => ({ type: 'box', name, color, size, bevel: 0.045, bevelSegments: 1, pos, ...TOWERS_WOOD, physics });
+/** the floor tile: a 13 x 13 grid of 2 m tiles with a thin grout line and a faint checker,
+ * MULTIPLYING the authored colour (albedo is `diffuseColor.rgb *= ` in the inject backend) */
+const TOWERS_FLOOR_SHADER = {
+	nodes: [
+		{ id: 'uv', type: 'uv', position: { x: 40, y: 80 }, data: {} },
+		{ id: 'xy', type: 'split', position: { x: 240, y: 80 }, data: {} },
+		{
+			id: 'tile',
+			type: 'glsl',
+			position: { x: 460, y: 80 },
+			data: {
+				type: 'vec3',
+				expression:
+					'vec3(1.0 - 0.3 * (1.0 - step(0.025, fract(a * 13.0)) * step(fract(a * 13.0), 0.975) * step(0.025, fract(b * 13.0)) * step(fract(b * 13.0), 0.975)) - 0.06 * mod(floor(a * 13.0) + floor(b * 13.0), 2.0))'
+			}
+		},
+		{ id: 's', type: 'surface', position: { x: 720, y: 80 }, data: {} }
+	],
+	edges: [
+		{ id: 'e-uv-xy', source: 'uv', sourceHandle: 'out', target: 'xy', targetHandle: 'value' },
+		{ id: 'e-xy-tile-a', source: 'xy', sourceHandle: 'x', target: 'tile', targetHandle: 'a' },
+		{ id: 'e-xy-tile-b', source: 'xy', sourceHandle: 'y', target: 'tile', targetHandle: 'b' },
+		{ id: 'e-tile-s', source: 'tile', sourceHandle: 'out', target: 's', targetHandle: 'albedo' }
+	]
+};
+/** the Turntable + Pulse presets folded into ONE clip (a transport plays one clip per
+ * object): a turn every 6 s, a breath every 1.5 s — scale and glow together */
+const STAR_GLOW_CLIP = {
+	active: 'glow',
+	changedAt: 0,
+	clips: {
+		glow: {
+			name: 'Star glow',
+			duration: 6,
+			loop: 'loop',
+			tracks: [
+				{ id: 'turn', channel: 'rot.y', keys: [{ t: 0, v: 0 }, { t: 6, v: 6.2832 }] },
+				{
+					id: 'breathe',
+					channel: 'scale',
+					keys: [0, 1.5, 3, 4.5, 6].flatMap((t, i, all) =>
+						i < all.length - 1
+							? [{ t, v: 1, ease: [0.42, 0, 0.58, 1] }, { t: t + 0.75, v: 1.18, ease: [0.42, 0, 0.58, 1] }]
+							: [{ t, v: 1 }]
+					)
+				},
+				{
+					id: 'shine',
+					channel: 'emissive',
+					keys: [0, 1.5, 3, 4.5, 6].flatMap((t, i, all) =>
+						i < all.length - 1 ? [{ t, v: 1.6 }, { t: t + 0.75, v: 3.2 }] : [{ t, v: 1.6 }]
+					)
+				}
+			]
+		}
+	}
 };
 const TOWERS_DEF = {
 	kind: 'game',
 	slug: 'towers',
 	title: 'Towers',
 	description:
-		'Co-op crate stacking: grab the crates, build the tallest tower on the glowing pad, climb to the stars. Press P to pause or restart.',
+		'Co-op crate stacking: grab the wooden crates, build the tallest tower on the glowing pad, climb to the stars. Your best height is saved. Press P to pause or restart.',
 	license: 'CC0-1.0',
 	author: 'theprototype',
 	tags: ['physics', 'stacking', 'co-op', 'vr'],
-	modules: [{ id: 'collectible', version: '1.0.0' }],
+	modules: [{ id: 'collectible', version: '1.1.1' }],
 	installModules: ['collectible'],
-	// daylight: the scene must READ, and a stacking game lives on seeing block edges.
-	// (night was black on the user's display; the emissive accents below still pop.)
-	env: { preset: 'daylight', exposure: 1 },
+	// 30: daylight under a real sky — a blue-to-haze gradient, a far fog that softens the
+	// horizon, and a solid ground disc around the arena (the infinite grid is editor chrome;
+	// it no longer shows in Play). Exposure above the 0.9 floor.
+	env: {
+		preset: 'daylight',
+		exposure: 1.05,
+		background: { top: '#4a7fc0', bottom: '#dbe8f2' },
+		fog: { color: '#dbe8f2', near: 40, far: 120 },
+		ground: { color: '#6e7a5e', roughness: 0.95 }
+	},
 	// ground ON — a solid floor the crates rest on. A crate knocked past the low wall
 	// falls to the bounds limit and RESPAWNS to its start pose (beforeStates), so the
 	// supply cannot be lost. Grab interaction, sim starts on Play.
@@ -378,18 +491,23 @@ const TOWERS_DEF = {
 		damping: { linear: 0.05, angular: 0.3 },
 		play: { interaction: 'grab', grounded: false, simOnPlay: true }
 	},
-	// C9 Towers look, minimal + VR-safe: ao -> AgX -> low bloom -> smaa. No shader docs.
+	// the shell floor (fork 11): ao -> AgX -> bloom -> smaa, bloom a touch higher so the
+	// rings, the trim and the pad read as light
 	post: {
 		enabled: true,
 		effects: [
 			{ id: 'ao', kind: 'ao', enabled: true, params: {} },
 			{ id: 'tone', kind: 'tonemapping', enabled: true, params: { mode: 'AGX' } },
-			{ id: 'bloom', kind: 'bloom', enabled: true, params: { intensity: 0.5, luminanceThreshold: 0.85 } },
+			{ id: 'bloom', kind: 'bloom', enabled: true, params: { intensity: 0.75, luminanceThreshold: 0.8 } },
 			{ id: 'aa', kind: 'smaa', enabled: true, params: {} }
 		],
 		changedAt: 0
 	},
+	view: { pos: [7.5, 6.5, 12.5], target: [0, 1.4, 0] },
+	thumb: { camera: 'Card camera' },
 	graphs: { scene: towersGraph() },
+	shaders: { 'Arena floor': TOWERS_FLOOR_SHADER },
+	animations: { 'Star 1': STAR_GLOW_CLIP, 'Star 2': STAR_GLOW_CLIP, 'Star 3': STAR_GLOW_CLIP },
 	hud: {
 		scene: {
 			active: '',
@@ -401,11 +519,12 @@ const TOWERS_DEF = {
 					showWhile: 'menu',
 					input: 'menu',
 					elements: [
-						{ id: 'menu-panel', kind: 'panel', anchor: 'center', x: 0, y: 0, w: 460, h: 340, z: 0, label: '', style: TOWERS_HUD_PANEL },
-						{ id: 'title', kind: 'text', anchor: 'center', x: 0, y: -115, w: 400, h: 54, z: 1, label: 'TOWERS', style: { size: 40, weight: '700', color: '#ffd45e', align: 'center' } },
-						{ id: 'subtitle', kind: 'text', anchor: 'center', x: 0, y: -68, w: 430, h: 44, z: 1, label: 'Grab the crates and build the tallest tower on the glowing pad. Touch the floating stars.', style: { size: 14, color: '#d8dee9', align: 'center' }, wrap: true },
-						{ id: 'start-btn', kind: 'button', anchor: 'center', x: 0, y: 20, w: 220, h: 48, z: 1, label: 'Start round', enabled: true, style: { size: 17, weight: '600', bg: '#3b7dd8', color: '#ffffff', radius: 10 } },
-						{ id: 'menu-hint', kind: 'text', anchor: 'center', x: 0, y: 110, w: 430, h: 40, z: 1, label: 'Grab: hold click  ·  Push/pull: wheel  ·  Fly: Q/E  ·  Pause: P', style: { size: 12, color: '#8b97a8', align: 'center' }, wrap: true }
+						{ id: 'menu-panel', kind: 'panel', anchor: 'center', x: 0, y: 0, w: 480, h: 380, z: 0, label: '', style: TOWERS_HUD_PANEL },
+						{ id: 'title', kind: 'text', anchor: 'center', x: 0, y: -135, w: 420, h: 54, z: 1, label: 'TOWERS', style: { size: 42, weight: '700', color: '#ffd45e', align: 'center' } },
+						{ id: 'subtitle', kind: 'text', anchor: 'center', x: 0, y: -84, w: 440, h: 44, z: 1, label: 'Grab the crates and build the tallest tower on the glowing pad. Touch the floating stars.', style: { size: 14, color: '#d8dee9', align: 'center' }, wrap: true },
+						{ id: 'best-read', kind: 'text', anchor: 'center', x: 0, y: -34, w: 420, h: 24, z: 1, label: 'Your best tower: 0 m', style: { size: 15, weight: '600', color: '#9ee6ff', align: 'center' } },
+						{ id: 'start-btn', kind: 'button', anchor: 'center', x: 0, y: 28, w: 240, h: 50, z: 1, label: 'Start round', enabled: true, style: TOWERS_BTN },
+						{ id: 'menu-hint', kind: 'text', anchor: 'center', x: 0, y: 120, w: 440, h: 40, z: 1, label: 'Grab: hold click  ·  Push/pull: wheel  ·  Fly: Q/E  ·  Pause: P', style: { size: 12, color: '#8b97a8', align: 'center' }, wrap: true }
 					]
 				},
 				{
@@ -414,10 +533,10 @@ const TOWERS_DEF = {
 					showWhile: 'playing',
 					input: 'game',
 					elements: [
-						{ id: 'height-read', kind: 'text', anchor: 'top-center', x: 0, y: 14, w: 280, h: 30, z: 1, label: '', style: { size: 18, weight: '600', color: '#e5e9f0', align: 'center' } },
-						{ id: 'clock', kind: 'text', anchor: 'top-center', x: 0, y: 46, w: 120, h: 22, z: 1, label: '', style: { size: 13, color: '#c8d0dc', align: 'center' } },
-						{ id: 'stars-read', kind: 'text', anchor: 'top-right', x: 16, y: 14, w: 200, h: 24, z: 1, label: '', style: { size: 14, color: '#ffd45e', align: 'right' } },
-						{ id: 'play-hint', kind: 'text', anchor: 'bottom-center', x: 0, y: 12, w: 520, h: 20, z: 1, label: 'Stack on the glowing pad — the rings mark your height.  Press P to pause.', style: { size: 11, color: '#8b97a8', align: 'center' } }
+						{ id: 'height-read', kind: 'text', anchor: 'top-center', x: 0, y: 14, w: 280, h: 30, z: 1, label: '', style: { size: 20, weight: '700', color: '#ffffff', align: 'center' } },
+						{ id: 'clock', kind: 'text', anchor: 'top-center', x: 0, y: 48, w: 120, h: 22, z: 1, label: '', style: { size: 13, weight: '600', color: '#e5e9f0', align: 'center' } },
+						{ id: 'stars-read', kind: 'text', anchor: 'top-right', x: 16, y: 14, w: 200, h: 24, z: 1, label: '', style: { size: 15, weight: '600', color: '#ffd45e', align: 'right' } },
+						{ id: 'play-hint', kind: 'text', anchor: 'bottom-center', x: 0, y: 12, w: 520, h: 20, z: 1, label: 'Stack on the glowing pad — the rings mark your height.  Press P to pause.', style: { size: 11, color: '#e5e9f0', align: 'center' } }
 					]
 				},
 				{
@@ -427,8 +546,8 @@ const TOWERS_DEF = {
 					elements: [
 						{ id: 'pause-panel', kind: 'panel', anchor: 'center', x: 0, y: 0, w: 380, h: 300, z: 0, label: '', style: TOWERS_HUD_PANEL },
 						{ id: 'pause-title', kind: 'text', anchor: 'center', x: 0, y: -95, w: 340, h: 36, z: 1, label: 'PAUSED', style: { size: 26, weight: '700', color: '#e5e9f0', align: 'center' } },
-						{ id: 'resume-btn', kind: 'button', anchor: 'center', x: 0, y: -30, w: 240, h: 42, z: 1, label: 'Resume', enabled: true, style: { size: 16, weight: '600', bg: '#3b7dd8', color: '#ffffff', radius: 10 } },
-						{ id: 'restart-btn', kind: 'button', anchor: 'center', x: 0, y: 22, w: 240, h: 42, z: 1, label: 'Restart round', enabled: true, style: { size: 16, weight: '600', bg: '#4c9e6a', color: '#ffffff', radius: 10 } },
+						{ id: 'resume-btn', kind: 'button', anchor: 'center', x: 0, y: -30, w: 240, h: 42, z: 1, label: 'Resume', enabled: true, style: { ...TOWERS_BTN, size: 16 } },
+						{ id: 'restart-btn', kind: 'button', anchor: 'center', x: 0, y: 22, w: 240, h: 42, z: 1, label: 'Restart round', enabled: true, style: { ...TOWERS_BTN, size: 16, bg: '#4c9e6a' } },
 						{ id: 'quit-btn', kind: 'button', anchor: 'center', x: 0, y: 74, w: 240, h: 42, z: 1, label: 'Quit to menu', enabled: true, style: { size: 15, weight: '500', bg: '#3a4150', color: '#e5e9f0', radius: 10 } }
 					]
 				},
@@ -438,49 +557,68 @@ const TOWERS_DEF = {
 					showWhile: 'over',
 					input: 'menu',
 					elements: [
-						{ id: 'over-panel', kind: 'panel', anchor: 'center', x: 0, y: 0, w: 420, h: 250, z: 0, label: '', style: TOWERS_HUD_PANEL },
-						{ id: 'over-title', kind: 'text', anchor: 'center', x: 0, y: -70, w: 380, h: 40, z: 1, label: 'ROUND OVER', style: { size: 30, weight: '700', color: '#ffd45e', align: 'center' } },
-						{ id: 'final-height', kind: 'text', anchor: 'center', x: 0, y: -18, w: 380, h: 26, z: 1, label: '', style: { size: 16, color: '#e5e9f0', align: 'center' } },
-						{ id: 'again-btn', kind: 'button', anchor: 'center', x: 0, y: 58, w: 220, h: 44, z: 1, label: 'Back to menu', enabled: true, style: { size: 16, weight: '600', bg: '#3b7dd8', color: '#ffffff', radius: 10 } }
+						{ id: 'over-panel', kind: 'panel', anchor: 'center', x: 0, y: 0, w: 440, h: 320, z: 0, label: '', style: TOWERS_HUD_PANEL },
+						{ id: 'over-title', kind: 'text', anchor: 'center', x: 0, y: -104, w: 400, h: 40, z: 1, label: 'ROUND OVER', style: { size: 30, weight: '700', color: '#ffd45e', align: 'center' } },
+						{ id: 'final-height', kind: 'text', anchor: 'center', x: 0, y: -56, w: 400, h: 28, z: 1, label: '', style: { size: 18, weight: '600', color: '#e5e9f0', align: 'center' } },
+						{ id: 'over-best', kind: 'text', anchor: 'center', x: 0, y: -24, w: 400, h: 22, z: 1, label: '', style: { size: 14, color: '#9ee6ff', align: 'center' } },
+						{ id: 'replay-btn', kind: 'button', anchor: 'center', x: 0, y: 40, w: 240, h: 46, z: 1, label: 'Play again', enabled: true, style: TOWERS_BTN },
+						{ id: 'again-btn', kind: 'button', anchor: 'center', x: 0, y: 96, w: 240, h: 42, z: 1, label: 'Menu', enabled: true, style: { size: 15, weight: '500', bg: '#3a4150', color: '#e5e9f0', radius: 10 } }
 					]
 				}
 			]
 		}
 	},
 	objects: [
-		// the arena — a lit floor with a low rim, built on the ground plane
-		{ type: 'box', name: 'Arena floor', color: 0x6b7280, size: [26, 0.5, 26], pos: [0, -0.25, 0], roughness: 0.95, physics: { mode: 'static', friction: 0.9 } },
-		{ type: 'box', name: 'Wall north', color: 0x565f6e, size: [26, 1, 0.5], pos: [0, 0.5, -13], physics: { mode: 'static' } },
-		{ type: 'box', name: 'Wall south', color: 0x565f6e, size: [26, 1, 0.5], pos: [0, 0.5, 13], physics: { mode: 'static' } },
-		{ type: 'box', name: 'Wall west', color: 0x565f6e, size: [0.5, 1, 26], pos: [-13, 0.5, 0], physics: { mode: 'static' } },
-		{ type: 'box', name: 'Wall east', color: 0x565f6e, size: [0.5, 1, 26], pos: [13, 0.5, 0], physics: { mode: 'static' } },
-		// build pad — glowing blue, SUNK so its bottom face is not coplanar with the floor
-		{ type: 'cylinder', name: 'Build pad', color: 0x3b6ea8, r: 1.7, h: 0.24, pos: [0, 0.08, 0], emissive: 0x2a5b8f, emissiveIntensity: 0.7, roughness: 0.5, physics: { mode: 'static', friction: 1 } },
+		// the arena — a tiled floor with a low chamfered rim and a glowing trim on top
+		{ type: 'box', name: 'Arena floor', color: 0xb4bbc4, size: [26, 0.5, 26], pos: [0, -0.25, 0], roughness: 0.78, physics: { mode: 'static', friction: 0.9 } },
+		{ type: 'box', name: 'Wall north', color: 0x7a8494, size: [26, 1, 0.5], bevel: 0.1, bevelSegments: 1, pos: [0, 0.5, -13], physical: true, roughness: 0.55, clearcoat: 0.3, physics: { mode: 'static' } },
+		{ type: 'box', name: 'Wall south', color: 0x7a8494, size: [26, 1, 0.5], bevel: 0.1, bevelSegments: 1, pos: [0, 0.5, 13], physical: true, roughness: 0.55, clearcoat: 0.3, physics: { mode: 'static' } },
+		{ type: 'box', name: 'Wall west', color: 0x7a8494, size: [0.5, 1, 26], bevel: 0.1, bevelSegments: 1, pos: [-13, 0.5, 0], physical: true, roughness: 0.55, clearcoat: 0.3, physics: { mode: 'static' } },
+		{ type: 'box', name: 'Wall east', color: 0x7a8494, size: [0.5, 1, 26], bevel: 0.1, bevelSegments: 1, pos: [13, 0.5, 0], physical: true, roughness: 0.55, clearcoat: 0.3, physics: { mode: 'static' } },
+		{ type: 'box', name: 'Trim north', color: 0x9fe8ff, size: [25.4, 0.05, 0.12], pos: [0, 1.02, -13], emissive: 0x4fcfff, emissiveIntensity: 2.4, shadow: false },
+		{ type: 'box', name: 'Trim south', color: 0x9fe8ff, size: [25.4, 0.05, 0.12], pos: [0, 1.02, 13], emissive: 0x4fcfff, emissiveIntensity: 2.4, shadow: false },
+		{ type: 'box', name: 'Trim west', color: 0x9fe8ff, size: [0.12, 0.05, 25.4], pos: [-13, 1.02, 0], emissive: 0x4fcfff, emissiveIntensity: 2.4, shadow: false },
+		{ type: 'box', name: 'Trim east', color: 0x9fe8ff, size: [0.12, 0.05, 25.4], pos: [13, 1.02, 0], emissive: 0x4fcfff, emissiveIntensity: 2.4, shadow: false },
+		// build pad — glowing blue under a clearcoat, SUNK so its bottom face is not coplanar
+		// with the floor, a bright rim, and a soft blue light spilling onto the tiles
+		{ type: 'cylinder', name: 'Build pad', color: 0x2f6fbf, r: 1.7, h: 0.24, pos: [0, 0.08, 0], emissive: 0x2f8fff, emissiveIntensity: 1.1, physical: true, roughness: 0.3, clearcoat: 0.8, physics: { mode: 'static', friction: 1 } },
+		{ type: 'torus', name: 'Pad rim', color: 0xbfefff, r: 1.72, tube: 0.045, pos: [0, 0.2, 0], rot: [-Math.PI / 2, 0, 0], emissive: 0x7fdcff, emissiveIntensity: 3, shadow: false },
+		{ type: 'light', name: 'Pad glow', kind: 'point', color: 0x5fb4ff, intensity: 4, distance: 7, pos: [0, 0.7, 0] },
 		// podiums where the crate supply sits, sunk into the floor by the same trick
-		{ type: 'cylinder', name: 'Cube podium', color: 0x4a5262, r: 1.1, h: 0.5, pos: [-5.5, 0.2, 0], physics: { mode: 'static', friction: 0.9 } },
-		{ type: 'cylinder', name: 'Plank podium', color: 0x4a5262, r: 1.1, h: 0.5, pos: [5.5, 0.2, 0], physics: { mode: 'static', friction: 0.9 } },
-		// PRE-PLACED crates: a tidy supply that rests until grabbed, then stays put.
+		{ type: 'cylinder', name: 'Cube podium', color: 0x5d6879, r: 1.1, h: 0.5, pos: [-5.5, 0.2, 0], physical: true, metalness: 0.1, roughness: 0.4, clearcoat: 0.5, physics: { mode: 'static', friction: 0.9 } },
+		{ type: 'cylinder', name: 'Plank podium', color: 0x5d6879, r: 1.1, h: 0.5, pos: [5.5, 0.2, 0], physical: true, metalness: 0.1, roughness: 0.4, clearcoat: 0.5, physics: { mode: 'static', friction: 0.9 } },
+		// PRE-PLACED wooden crates: a tidy supply that rests until grabbed, then stays put.
 		// Cubes on the left podium (podium top ~0.45; stack from just above it).
-		{ type: 'box', name: 'Cube 1', color: 0xd08770, size: [0.6, 0.6, 0.6], pos: [-5.5, 0.85, 0], physics: { mode: 'dynamic', mass: 1, friction: 0.8, restitution: 0.03 } },
-		{ type: 'box', name: 'Cube 2', color: 0xd0a070, size: [0.6, 0.6, 0.6], pos: [-5.5, 1.5, 0], physics: { mode: 'dynamic', mass: 1, friction: 0.8, restitution: 0.03 } },
-		{ type: 'box', name: 'Cube 3', color: 0xc98a5a, size: [0.6, 0.6, 0.6], pos: [-5.5, 2.15, 0], physics: { mode: 'dynamic', mass: 1, friction: 0.8, restitution: 0.03 } },
-		{ type: 'box', name: 'Cube 4', color: 0xd08770, size: [0.6, 0.6, 0.6], pos: [-5.5, 2.8, 0], physics: { mode: 'dynamic', mass: 1, friction: 0.8, restitution: 0.03 } },
+		towersCrate('Cube 1', 0xb57a45, [0.6, 0.6, 0.6], [-5.5, 0.85, 0], TOWERS_CRATE),
+		towersCrate('Cube 2', 0xc28d55, [0.6, 0.6, 0.6], [-5.5, 1.5, 0], TOWERS_CRATE),
+		towersCrate('Cube 3', 0xa86d3c, [0.6, 0.6, 0.6], [-5.5, 2.15, 0], TOWERS_CRATE),
+		towersCrate('Cube 4', 0xb57a45, [0.6, 0.6, 0.6], [-5.5, 2.8, 0], TOWERS_CRATE),
 		// planks on the right podium
-		{ type: 'box', name: 'Plank 1', color: 0xa3be8c, size: [1.4, 0.3, 0.6], pos: [5.5, 0.75, 0], physics: { mode: 'dynamic', mass: 0.9, friction: 0.8, restitution: 0.03 } },
-		{ type: 'box', name: 'Plank 2', color: 0x94b07e, size: [1.4, 0.3, 0.6], pos: [5.5, 1.2, 0], physics: { mode: 'dynamic', mass: 0.9, friction: 0.8, restitution: 0.03 } },
-		{ type: 'box', name: 'Plank 3', color: 0xa3be8c, size: [1.4, 0.3, 0.6], pos: [5.5, 1.65, 0], physics: { mode: 'dynamic', mass: 0.9, friction: 0.8, restitution: 0.03 } },
+		towersCrate('Plank 1', 0xd2a86e, [1.4, 0.3, 0.6], [5.5, 0.75, 0], TOWERS_PLANK),
+		towersCrate('Plank 2', 0xc49a60, [1.4, 0.3, 0.6], [5.5, 1.2, 0], TOWERS_PLANK),
+		towersCrate('Plank 3', 0xd2a86e, [1.4, 0.3, 0.6], [5.5, 1.65, 0], TOWERS_PLANK),
 		// a few loose cubes near the pad to start building right away
-		{ type: 'box', name: 'Cube 5', color: 0xd08770, size: [0.6, 0.6, 0.6], pos: [-2, 0.35, 2], physics: { mode: 'dynamic', mass: 1, friction: 0.8, restitution: 0.03 } },
-		{ type: 'box', name: 'Cube 6', color: 0xc98a5a, size: [0.6, 0.6, 0.6], pos: [2, 0.35, 2], physics: { mode: 'dynamic', mass: 1, friction: 0.8, restitution: 0.03 } },
-		// height rings over the pad — faint translucent bands, sensors a rising crate trips
-		{ type: 'box', name: 'Height ring 1m', color: 0x9ee6ff, size: [1.5, 0.05, 1.5], pos: [0, 1, 0], emissive: 0x2f6f8f, emissiveIntensity: 0.6, opacity: 0.28, physics: { mode: 'static', sensor: true, collider: 'box' } },
-		{ type: 'box', name: 'Height ring 2m', color: 0x9ee6ff, size: [1.5, 0.05, 1.5], pos: [0, 2, 0], emissive: 0x2f6f8f, emissiveIntensity: 0.6, opacity: 0.28, physics: { mode: 'static', sensor: true, collider: 'box' } },
-		{ type: 'box', name: 'Height ring 3m', color: 0x9ee6ff, size: [1.5, 0.05, 1.5], pos: [0, 3, 0], emissive: 0x2f6f8f, emissiveIntensity: 0.6, opacity: 0.28, physics: { mode: 'static', sensor: true, collider: 'box' } },
-		{ type: 'box', name: 'Height ring 4m', color: 0x9ee6ff, size: [1.5, 0.05, 1.5], pos: [0, 4, 0], emissive: 0x2f6f8f, emissiveIntensity: 0.6, opacity: 0.28, physics: { mode: 'static', sensor: true, collider: 'box' } },
-		// the stars — glowing collectible touch pickups at climbing heights
-		{ type: 'sphere', name: 'Star 1', color: 0xffe08a, r: 0.2, pos: [-3.5, 2.4, 3.5], emissive: 0xffcf50, emissiveIntensity: 0.9, roughness: 0.4 },
-		{ type: 'sphere', name: 'Star 2', color: 0xffe08a, r: 0.2, pos: [3.5, 3.2, -3.5], emissive: 0xffcf50, emissiveIntensity: 0.9, roughness: 0.4 },
-		{ type: 'sphere', name: 'Star 3', color: 0xffe08a, r: 0.2, pos: [0, 4.4, 0], emissive: 0xffcf50, emissiveIntensity: 0.9, roughness: 0.4 }
+		towersCrate('Cube 5', 0xc28d55, [0.6, 0.6, 0.6], [-2, 0.35, 2], TOWERS_CRATE),
+		towersCrate('Cube 6', 0xa86d3c, [0.6, 0.6, 0.6], [2, 0.35, 2], TOWERS_CRATE),
+		// height rings over the pad — thin glowing rings a rising crate trips (the sensor is
+		// the ring's box, so the hole still counts); select-through, so a click reaches the
+		// tower inside. The top ring is gold: the one worth a sparkle.
+		{ type: 'torus', name: 'Height ring 1m', color: 0xbff4ff, r: 0.9, tube: 0.035, pos: [0, 1, 0], rot: [-Math.PI / 2, 0, 0], emissive: 0x49d2ff, emissiveIntensity: 2.2, shadow: false, pick: 'through', physics: { mode: 'static', sensor: true, collider: 'box' } },
+		{ type: 'torus', name: 'Height ring 2m', color: 0xbff4ff, r: 0.9, tube: 0.035, pos: [0, 2, 0], rot: [-Math.PI / 2, 0, 0], emissive: 0x49d2ff, emissiveIntensity: 2.2, shadow: false, pick: 'through', physics: { mode: 'static', sensor: true, collider: 'box' } },
+		{ type: 'torus', name: 'Height ring 3m', color: 0xbff4ff, r: 0.9, tube: 0.035, pos: [0, 3, 0], rot: [-Math.PI / 2, 0, 0], emissive: 0x49d2ff, emissiveIntensity: 2.2, shadow: false, pick: 'through', physics: { mode: 'static', sensor: true, collider: 'box' } },
+		{ type: 'torus', name: 'Height ring 4m', color: 0xfff0b8, r: 0.9, tube: 0.04, pos: [0, 4, 0], rot: [-Math.PI / 2, 0, 0], emissive: 0xffc640, emissiveIntensity: 2.6, shadow: false, pick: 'through', physics: { mode: 'static', sensor: true, collider: 'box' } },
+		// the measuring pole beside the pad: one bright mark per metre, lined up with a ring
+		{ type: 'cylinder', name: 'Height pole', color: 0xe8edf3, r: 0.04, h: 4.3, pos: [2.2, 2.15, 0], physical: true, metalness: 0.6, roughness: 0.3, shadow: false },
+		{ type: 'torus', name: 'Pole mark 1m', color: 0xbff4ff, r: 0.1, tube: 0.025, pos: [2.2, 1, 0], rot: [-Math.PI / 2, 0, 0], emissive: 0x49d2ff, emissiveIntensity: 2.4, shadow: false },
+		{ type: 'torus', name: 'Pole mark 2m', color: 0xbff4ff, r: 0.1, tube: 0.025, pos: [2.2, 2, 0], rot: [-Math.PI / 2, 0, 0], emissive: 0x49d2ff, emissiveIntensity: 2.4, shadow: false },
+		{ type: 'torus', name: 'Pole mark 3m', color: 0xbff4ff, r: 0.1, tube: 0.025, pos: [2.2, 3, 0], rot: [-Math.PI / 2, 0, 0], emissive: 0x49d2ff, emissiveIntensity: 2.4, shadow: false },
+		{ type: 'torus', name: 'Pole mark 4m', color: 0xfff0b8, r: 0.1, tube: 0.03, pos: [2.2, 4, 0], rot: [-Math.PI / 2, 0, 0], emissive: 0xffc640, emissiveIntensity: 2.6, shadow: false },
+		// the stars — faceted glowing collectibles at climbing heights (touch pickups)
+		{ type: 'dodecahedron', name: 'Star 1', color: 0xffc640, r: 0.24, pos: [-3.5, 2.4, 3.5], emissive: 0xffb830, emissiveIntensity: 1.6, physical: true, roughness: 0.25, metalness: 0.1, clearcoat: 1, flatShading: true },
+		{ type: 'dodecahedron', name: 'Star 2', color: 0xffc640, r: 0.24, pos: [3.5, 3.2, -3.5], emissive: 0xffb830, emissiveIntensity: 1.6, physical: true, roughness: 0.25, metalness: 0.1, clearcoat: 1, flatShading: true },
+		{ type: 'dodecahedron', name: 'Star 3', color: 0xffc640, r: 0.24, pos: [0, 4.6, 0], emissive: 0xffb830, emissiveIntensity: 1.6, physical: true, roughness: 0.25, metalness: 0.1, clearcoat: 1, flatShading: true },
+		// the card's camera: a 3/4 view over the pad with the podiums either side
+		{ type: 'camera', name: 'Card camera', pos: [8.2, 6, 10.2], lookAt: [0, 1.5, 0], fov: 45 }
 	]
 };
 

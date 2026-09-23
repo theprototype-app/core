@@ -282,6 +282,31 @@ api.registerClickHandler((object) => {
 Handlers see desktop clicks and VR trigger presses (the exact mesh hit, not the
 top-level group). Return `false` to let normal selection continue.
 
+**Modes (1.17).** The editor has two click modes, Edit (every click selects) and
+Interact (play-style clicks and drags without starting the game), plus Play. A
+handler runs in Interact and Play by default, so an Edit click on your game piece
+selects it like any object. Say so when you want something else:
+
+```js
+api.registerClickHandler(pressKey, { modes: ['interact', 'play'] }); // the default, spelled out
+api.registerClickHandler(pickTool, { modes: ['edit'] });             // an editor TOOL
+```
+
+In a headset the same modes apply (1.17, 30b): Play in VR enters Interact, where the
+trigger clicks (module handlers, On Click) and selects nothing; in Edit it selects as
+before. Handlers also get `ctx = {source, mode}` — see *Game feel* below for the
+hold-and-sweep and `{sweep: false}`.
+`api.editorMode()` reads the mode on this screen (`'edit'` | `'interact'`) — for a module
+whose own pointer listeners run outside click routing (a drag), so it can stand down in Edit.
+
+**Listed in the object list (1.17).** Content you build at the scene root shows in
+the object list's *Module content* section — a read-only row that frames it, hides
+it locally, or opens your toolbox. Give it a readable name:
+
+```js
+api.registerListedGroup('piano-module', { label: 'Piano' });
+```
+
 ```js
 api.registerFrameTask((time) => { /* runs every frame, synced time */ });
 
@@ -456,6 +481,14 @@ api.onInput((kind, code) => {});        // 'down'/'up' events; returns unsubscri
 //   'locomotion' — VR left-stick locomotion
 api.claimInput('keys');                 // ALWAYS release when your mode ends
 api.releaseInput('keys');
+
+// reading a keydown YOURSELF (a toolbox's own handler)? resolve the key the way the
+// editor does — `event.key` when it is an ASCII letter/digit, the physical
+// `event.code` position otherwise — so it works on a Cyrillic/Greek/Hebrew layout:
+window.addEventListener('keydown', (e) => {
+	if (api.keyOf(e) === 'G') grab();       // 'G' on QWERTY, AZERTY, Dvorak AND ЙЦУКЕН
+	if (api.letterOf(e) === 'w') drive();   // lowercase form; named keys ('Escape') unchanged
+});
 ```
 
 ### Pointer ray (190)
@@ -471,6 +504,100 @@ api.registerFrameTask(() => {
 	const hit = ray.ray.intersectPlane(dragPlane, tempVec);
 	if (hit) carried.position.copy(hit);
 });
+```
+
+### Free-cursor games (1.17)
+
+A board, puzzle or instrument game can play with the real mouse cursor and no
+pointer lock: publish `userData.play.cursor = 'free'` on your scene-root group
+(or the scene's physics block sets `play.cursor: 'free'`). `api.pointerRay()` is
+then the cursor's ray in play; in a locked game it is the CROSSHAIR ray (the view's
+centre), never the stale mouse position the lock pinned.
+
+### Storage (1.17)
+
+```js
+// JSON on THIS device, namespaced to your module (tp:mod:<id>:<key>), 256 KB per
+// module; never replicated, never saved into a scene, survives disable/remove.
+if (api.storage) {
+	const progress = api.storage.get('progress', { unlocked: 1 });
+	api.storage.set('progress', progress);   // -> true, or false over the quota
+	api.storage.keys(); api.storage.bytes(); api.storage.remove('progress');
+	api.storage.clear();                     // your "Reset progress"
+}
+```
+
+Feature-detect it; on an older app write the SAME key yourself
+(`localStorage['tp:mod:<id>:<key>'] = JSON.stringify(value)`) so progress carries over.
+
+### Game feel: sound, music, haptics, effects, banners (1.17, roadmap 30b)
+
+Everything here is LOCAL to the device it runs on — broadcast your own op
+(`api.send`) when every peer should hear, feel or see it — and all of it is
+feature-detected, so a module written against it still loads on an older app.
+
+```js
+register(api) {
+	api.registerClickHandler((object, ctx) => {
+		if (!object.userData.ring) return false;
+		const at = object.getWorldPosition(new api.THREE.Vector3()).toArray();
+		api.playSound?.('success', at);
+		api.effects?.burst(at, { kind: 'sparkle' });
+		api.announce?.('Ring ' + object.userData.ring + ' reached', { sub: '+50' });
+		api.hapticPattern?.('success');                // both hands; 'left' | 'right' for one
+		return true;
+	});
+	api.game.onChange?.(() => (api.game.roundUnderway() ? api.music?.play('arcade') : api.music?.stop()));
+}
+```
+
+- **`api.playSound(name, position?)`** → `true` when a sound started. Twenty
+  procedural game sounds, no assets: `click` `pop` `whoosh` `success` `fail` `hit`
+  `kick` `shoot` `laser` `explosion` `coin` `levelup` `goal` `whistle` `cheer`
+  `step` `ring` `sparkle` `hurt` `portal`, plus the ping chimes `ding` (the default),
+  `chime`, `pluck`, `bell`. An unknown name is a quiet no-op (it used to play the
+  ding). `position` spatialises it. Played at the player's "Game sounds" volume.
+- **`api.music.play(preset, {volume?})` / `api.music.stop()`** — a looping
+  procedural track under the effects, at the player's "Music" volume: `arcade`
+  `ambient` `dungeon` `stadium` `space` `puzzle` `studio`. It is TEMPO-SYNCED to the
+  session clock (two peers on one preset hear the same bar), plays only in Interact
+  or Play (`false` from the editor) and stops by itself when the player goes back to
+  editing. `api.music.current()` names what is playing; `api.music.presets()` lists them.
+- **`api.hapticPattern(name, hand?)`** — `tap` `bump` `hit` `success` `fail`
+  `rumble` `heartbeat` on the VR controllers. `api.haptic(intensity, ms, hand?)`
+  still exists. BOTH are silent in Edit mode (vibration is for playing), and core
+  already plays the defaults for you in Interact/Play: a `tap` when the laser enters
+  something clickable, a `bump` when a press lands, a `hit` on a grab, and a knock
+  sized by how hard the hand hit.
+- **`api.effects.burst([x, y, z], {kind?, color?, count?})`** — a short, pooled
+  particle burst at the scene root: `sparkle` (default), `confetti`, `smoke`,
+  `sparks`; `count` 1..96. Nothing is saved or replicated.
+- **`api.announce(text, {sub?, ms?, color?})`** — a big centred banner ("GOAL!",
+  "Level 3"): the desktop HUD, and in a headset a banner fixed in front of the
+  player. A new one replaces the one showing; `ms` 300..15000 (default 1800).
+
+**In VR, your game's HUD is in the player's hands.** A screen with `input: 'menu'`,
+a control on it, or bound to the `menu` / `paused` / `over` game state is drawn on
+a board ~1.2 m in front of the player that follows their head lazily; its buttons
+work with the laser and trigger and with a poke. The other screens (score, timer,
+level) read as short lines on a card on the left wrist and a strip across the top
+of the view. The board and the wrist card always carry an **Edit mode** button.
+Nothing to do on your side — author the HUD once and it works on both.
+
+**Hold the trigger and sweep (VR, Interact/Play).** While the trigger is held, the
+controller TIP clicks each clickable it passes over — the one it is NEAREST to, so a
+glide along a keyboard plays one key at a time — once, and again after it leaves and
+comes back: piano keys, pads, toggles, HUD buttons; the laser does the same for things
+out of reach. "Clickable" (also what earns the hover `tap`) means: under a group you
+passed to `registerInteractiveGroup`, a part of an audio device (`userData.device` on
+an ancestor — each key/pad is its own control), an object an On Click node targets, or
+an object you mark `userData.clickable = true`. Your handler gets a second argument
+`ctx = {source, mode}`: `source` is `'click'` (desktop), `'trigger'` (the VR press
+itself) or `'sweep'` (a later entry while held). A control that must not be swept
+(a knob you drag, a dot you carry) opts out:
+
+```js
+api.registerClickHandler(pickDot, { sweep: false }); // presses still reach it; sweeps do not
 ```
 
 ### Physics (P-A)
@@ -620,8 +747,9 @@ api.scene();        // THREE.Scene
 api.objectsGroup(); // the replicated objects root (add scene content here)
 api.peerId();       // our peer id (undefined before the mesh is up)
 api.toast('hi');    // toast in the corner
-api.haptic(0.6, 60);          // buzz the VR controllers (no-op on desktop);
+api.haptic(0.6, 60);          // buzz the VR controllers (no-op on desktop and in Edit);
 api.haptic(0.6, 60, 'right'); // optional hand targets one controller (17-A1)
+api.hapticPattern('success'); // a named pattern (1.17, see Game feel)
 api.isVR();                   // true inside a VR session
 api.vrHand('left');           // one hand's WORLD pose + buttons, or null:
                               // {position, quaternion, trigger, gripped, connected}

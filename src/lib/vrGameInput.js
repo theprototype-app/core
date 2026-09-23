@@ -29,7 +29,9 @@ import { pickStack, primaryIndex } from './selectThrough';
 import { topLevelObjectOf } from './objectActions';
 import { objectHasOnClick } from './flowRuntime';
 import { moduleInteractiveGroups } from './moduleSDK';
-import { registerVRFrameHook, registerVRTriggerHooks, hapticPattern } from './vrControls';
+import { registerVRFrameHook, registerVRTriggerHooks, registerPanelGroupProvider, controllerIndexFor, hapticPattern } from './vrControls';
+// P3 (C2): the game UI in VR — the panel, the wrist card, the strip, the banner
+import { vrGamePanelFrame, panelTargetAlong, panelHover, pressPanelTarget, pokeFrame, uAcross, vrGameSurface, hideVrGamePanel } from './vrGamePanel';
 
 const _mat = new THREE.Matrix4();
 
@@ -165,6 +167,55 @@ export function vrGameInputDebug() {
 	return { ...stats, hover: [...hoverKey] };
 }
 
+/* --------------------------------------------------------------- P3 the panel ---- */
+
+const _pos = new THREE.Vector3();
+const _quat = new THREE.Quaternion();
+
+/** one hand's controller world pose, or null @param {'left'|'right'} hand */
+function handPose(hand) {
+	const renderer = /** @type {any} */ (get(globalRenderer));
+	const index = controllerIndexFor(hand);
+	const controller = index >= 0 ? renderer?.xr?.getController?.(index) : null;
+	if (!controller) return null;
+	controller.getWorldPosition(_pos);
+	controller.getWorldQuaternion(_quat);
+	return { position: _pos.clone(), quaternion: _quat.clone() };
+}
+
+/** the controller's TIP for a poke (the target-ray origin is its front end) @param {number} index */
+function tipOf(index) {
+	const renderer = /** @type {any} */ (get(globalRenderer));
+	const controller = renderer?.xr?.getController?.(index);
+	return controller ? controller.getWorldPosition(new THREE.Vector3()) : null;
+}
+
+/** true once a press of OURS (a panel button) took this trigger: its trailing 'select'
+ * must not also reach Scene's pick */
+let swallowNext = false;
+/** was a headset presenting on the last frame (the session-end edge) */
+let presenting = false;
+
+/**
+ * A trigger PRESS on slot `index`: a game-panel button under the laser is pressed and the
+ * press consumed; anything else only gets its haptic bump and falls through untouched.
+ * Exported for the suites (the live hook calls it).
+ * @param {number} index @returns {boolean} consumed
+ */
+export function triggerStart(index) {
+	swallowNext = false;
+	const ray = controllerRayOf(index);
+	const target = ray && gameFeelActive() ? panelTargetAlong(ray) : null;
+	if (target) {
+		pressPanelTarget(target, { source: 'trigger', u: uAcross(target) });
+		hapticPattern('bump', handOf(index));
+		swallowNext = true;
+		return true;
+	}
+	pressFeedback(index);
+	return false;
+}
+
 /** @type {(() => void)[]} */
 let offs = [];
 
@@ -174,15 +225,39 @@ export function startVrGameInput() {
 	offs = [
 		registerVRFrameHook(() => {
 			const renderer = /** @type {any} */ (get(globalRenderer));
-			if (!renderer?.xr?.isPresenting) return;
-			hoverFrame(0);
-			hoverFrame(1);
+			if (!renderer?.xr?.isPresenting) {
+				// the session ENDED: take the surfaces down once (this hook runs every desktop
+				// frame too, where there is nothing to do)
+				if (presenting) hideVrGamePanel();
+				presenting = false;
+				return;
+			}
+			presenting = true;
+			vrGamePanelFrame({ hands: [handPose('left'), null] });
+			for (const index of [0, 1]) {
+				const ray = controllerRayOf(index);
+				// the laser on the board wins over the world behind it
+				if (panelHover(index, gameFeelActive() ? ray : null)) hoverKey[index] = null;
+				else hoverFrame(index, ray);
+				pokeFrame(index, gameFeelActive() ? tipOf(index) : null);
+			}
 		}),
 		registerVRTriggerHooks({
-			start: (/** @type {number} */ index) => {
-				pressFeedback(index);
-				return false; // feedback only — the press is not ours to take
+			start: (/** @type {number} */ index) => triggerStart(index),
+			swallow: () => {
+				if (!swallowNext) return false;
+				swallowNext = false;
+				return true;
 			}
+		}),
+		// the beam ends ON the board and the wrist card (the reticle sits on the button)
+		registerPanelGroupProvider(() => {
+			const s = vrGameSurface('vr-game-panel');
+			return s?.mesh.visible ? s.mesh : null;
+		}),
+		registerPanelGroupProvider(() => {
+			const s = vrGameSurface('vr-game-wrist');
+			return s?.mesh.visible ? s.mesh : null;
 		})
 	];
 	return stopVrGameInput;
@@ -192,4 +267,5 @@ export function stopVrGameInput() {
 	for (const off of offs) off();
 	offs = [];
 	hoverKey[0] = hoverKey[1] = null;
+	hideVrGamePanel();
 }

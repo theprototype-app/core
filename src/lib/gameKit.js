@@ -9,3 +9,4 @@ export * as hapticPatterns from './hapticPatterns';
 export * as vrGameInput from './vrGameInput';
 export * as effectsBurst from './effectsBurst';
 export * as gameAnnounce from './gameAnnounce';
+export * as vrGamePanel from './vrGamePanel';

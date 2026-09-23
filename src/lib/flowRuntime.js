@@ -68,6 +68,8 @@ import {
 // so a user can hand over what happened (hardening audit H4). A zero-import leaf.
 import { log } from './diagnostics';
 import { safeStorage } from './safeStorage';
+// 30 P4: the device-local store Store Value / Stored Value read and write (a leaf)
+import { sceneStorageKey, readStored, writeStored } from './gameStorage';
 
 // H3: inputRuntime is reached via a PRIMED dynamic import (the moduleSDK
 // pattern) — a static edge would close the TDZ cycle history -> flowRuntime ->
@@ -1115,6 +1117,40 @@ function updateLeaderboardNodes(time, ctx) {
 /** @type {Map<string, number>} */
 const hudSetActed = new Map();
 
+/** 30 P4: a Store Value / Stored Value key in THIS scene's namespace
+ * (`tp:scene:<scene name or 'untitled'>:<key>`). The name is the scene's own (levels'
+ * `currentLevel`), so a best score belongs to its game. @param {string} key */
+function storedKey(key) {
+	let name = null;
+	try {
+		name = levelsRef ? get(levelsRef.currentLevel)?.name ?? null : null;
+	} catch {}
+	return sceneStorageKey(name, key);
+}
+
+/** 30 P4: the Store Value write. `set` keeps whatever arrived (a number or text); `max`,
+ * `min` and `add` are numeric against what this device already holds, and an unchanged
+ * best writes nothing. @param {any} data */
+function storeValue(data) {
+	const key = String(data.key ?? '').trim();
+	if (!key) return;
+	const full = storedKey(key);
+	const mode = data.mode ?? 'set';
+	if (mode === 'set') {
+		writeStored(full, typeof data.value === 'string' ? data.value : num(data.value ?? 0));
+		return;
+	}
+	const value = num(data.value ?? 0);
+	const held = Number(readStored(full, undefined));
+	const has = Number.isFinite(held);
+	const next =
+		mode === 'max' ? (has ? Math.max(held, value) : value)
+		: mode === 'min' ? (has ? Math.min(held, value) : value)
+		: mode === 'add' ? (has ? held : 0) + value
+		: value;
+	if (!has || next !== held) writeStored(full, next);
+}
+
 /** The element behind an id, across every HUD document. An input's OPTIONS and its
  * `shared` flag live on the element, and a node names only the id. @param {string} id */
 function findHudElement(id) {
@@ -1154,7 +1190,7 @@ function updateGameNodes(time, ctx) {
 	// 1. the ACTIONS, on a fresh trigger stamp only
 	for (const node of nodes) {
 		const type = node.type;
-		if (type !== 'setgamestate' && type !== 'setcamera' && type !== 'setvariable' && type !== 'setlook' && type !== 'travel')
+		if (type !== 'setgamestate' && type !== 'setcamera' && type !== 'setvariable' && type !== 'setlook' && type !== 'travel' && type !== 'storevalue')
 			continue;
 		seeActionNode(node, time);
 		const stamp = triggerStampFor(node.id, ctx);
@@ -1197,6 +1233,12 @@ function updateGameNodes(time, ctx) {
 			const hash = typeof data.level === 'string' ? data.level : '';
 			if (sceneName && levelsRef?.travelToScene) levelsRef.travelToScene(sceneName);
 			else if (hash && levelsRef) levelsRef.travelToLevel(hash, String(data.levelName ?? ''));
+		} else if (type === 'storevalue') {
+			// 30 P4: a LOCAL write on the stamp edge, inside the actionSeenAt family above (a
+			// fresh node adopting an old stamp must not overwrite a best on connect). It
+			// sends NOTHING: every peer that sees the trigger acts for its own device, which
+			// is the whole semantics of "saved on this device".
+			storeValue(data);
 		} else if (type === 'setcamera') {
 			const uuid = typeof data.camera === 'string' ? data.camera : '';
 			if (uuid) lookThroughCamera(uuid);
@@ -1828,6 +1870,7 @@ export const valueTypes = [
 	'hudinput', // 21-D4: the HUD as a SOURCE - what the player set on a slider/toggle/etc
 	// 21-D6 the game shell
 	'ongamestate', 'getvariable', 'gametime',
+	'storedvalue', // 30 P4: what Store Value saved on this device
 	// 24-A A4: `peervariable` was MISSING here since 21-G4, and the omission was silent in
 	// every direction that is easy to look at — it has an OUTPUT type in flowSockets, an
 	// evaluator case below, and the editor draws its source handle — but `resolveInputs`
@@ -2368,6 +2411,16 @@ function evalNodeBody(node, allNodes, allEdges, time, seen, ctx) {
 			// LOCAL read of REPLICATED state, so every peer computes the same number and
 			// nothing about the read goes on the wire
 			return num(gameVar(String(d.name ?? ''), d.fallback ?? 0));
+		// --- 30 P4: what THIS device saved (never replicated, legitimately per-peer) ---
+		case 'storedvalue': {
+			const key = String(d.key ?? '').trim();
+			const held = key ? readStored(storedKey(key), undefined) : undefined;
+			if (d.output === 'text') {
+				if (held === undefined) return String(d.fallback ?? '');
+				return typeof held === 'string' ? held : JSON.stringify(held);
+			}
+			return held === undefined ? num(d.fallback ?? 0) : num(held);
+		}
 		// --- 21-G4: the PER-PLAYER half of the same idea ---
 		case 'peervariable': {
 			// Also a LOCAL read of REPLICATED state — every peer holds every peer's row —

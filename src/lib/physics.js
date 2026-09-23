@@ -148,8 +148,32 @@ const IMPACT_MIN_DOWN_VY = 1.2; // m/s downward (pre-step) for a contact to coun
 export async function warmup() {
 	if (RAPIER) return;
 	const module = await import('@dimforge/rapier3d-compat');
-	await module.init();
+	await initQuietly(module);
 	RAPIER = module;
+}
+
+// 30 P0: rapier-compat's own `init()` hands wasm-bindgen's init a bare byte array — the
+// pre-0.2.93 calling convention — and wasm-bindgen answers with "using deprecated
+// parameters for the initialization function; pass a single object instead". The call
+// is INSIDE rapier's bundle (`init` takes no arguments and the inner init is not
+// exported), so there is no single-object form for us to pass, and rapier is a FROZEN
+// dependency (solver behaviour). So the one warning is filtered for the length of that
+// call and nothing else: an exact-prefix match, restored in `finally`, every other
+// console.warn passes straight through.
+const RAPIER_INIT_WARNING = 'using deprecated parameters for the initialization function';
+
+/** @param {any} module */
+async function initQuietly(module) {
+	const warn = console.warn;
+	console.warn = (/** @type {any[]} */ ...args) => {
+		if (typeof args[0] === 'string' && args[0].startsWith(RAPIER_INIT_WARNING)) return;
+		warn.apply(console, args);
+	};
+	try {
+		await module.init();
+	} finally {
+		console.warn = warn;
+	}
 }
 
 /** @param {any} object */

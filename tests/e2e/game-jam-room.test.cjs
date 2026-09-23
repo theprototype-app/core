@@ -60,6 +60,15 @@ h.run(async () => {
 		});
 	const hud = async () => (await page.locator('#hud-layer').textContent()) ?? '';
 	const clickBtn = (text) => page.getByRole('button', { name: text, exact: true }).click();
+	// 30b: what the VR wrist card / top strip would SAY right now (vr-play's overlay split)
+	const vrLines = () =>
+		page.evaluate(() => {
+			const s = window.__stores;
+			const k = s.gameKit.vrGamePanel;
+			let rt; s.hudDocs.hudRuntime.subscribe((v) => (rt = v))();
+			const { panel, overlay } = k.vrScreens();
+			return { panel: panel.map((p) => p.screen.id), lines: overlay.flatMap((o) => k.overlayLines(o.screen.elements, rt)) };
+		});
 	const stored = () => page.evaluate(() => {
 		const out = {};
 		for (let i = 0; i < localStorage.length; i++) {
@@ -195,11 +204,14 @@ h.run(async () => {
 	await page.evaluate(() => { const m = window.__stores.musicClock; m.setBpm(240); m.playTransport(); });
 	await h.eventually(async () => await hud(), (t) => /Keep the band going\s+·\s+240 BPM/.test(t), 'the hint follows the transport (playing, 240 BPM)', 4000);
 	await h.eventually(async () => await hud(), (t) => /Bar [1-7] \/ 8/.test(t), 'the bars count up', 6000);
+	const vr = await vrLines();
+	h.check(vr.panel.length === 0 && vr.lines.some((l) => /^Bar [1-7] \/ 8$/.test(l)) && vr.lines.some((l) => /^Beat [1-4]$/.test(l)), `30b: the bars and the beat read on the VR wrist/strip (${JSON.stringify(vr)})`);
 	await h.eventually(() => snap().then((v) => v.state), (v) => v === 'over', 'eight bars complete the session (over)', 14000);
 	await h.eventually(async () => await hud(), (t) => /SESSION COMPLETE/.test(t) && /8 bars at 240 BPM/.test(t) && /Your best tempo: 240 BPM/.test(t), 'Session complete names the tempo and the best', 4000);
 	h.check((await stored())['jam-best-bpm'] === 240, 'the best tempo is saved on this device (jam-best-bpm 240)');
 	const done = await page.evaluate(() => window.__stores.gameKit.gameFeelActions.gameFeelActionsDebug());
-	h.check(done.last.some((e) => e.type === 'announce' && e.text === 'Session complete!' && e.sub === '8 bars at 240 BPM') && done.last.some((e) => e.type === 'effectburst' && e.kind === 'confetti') && (done.sounds.levelup ?? 0) >= 1, '30b: the session ends with a banner (8 bars at 240 BPM), confetti and the fanfare');
+	h.check(done.last.some((e) => e.type === 'effectburst' && e.kind === 'confetti') && (done.sounds.levelup ?? 0) >= 1 && done.last.some((e) => e.type === 'hapticpulse' && e.pattern === 'success'), '30b: the session ends in confetti, the fanfare and a success buzz');
+	h.check(!done.last.some((e) => e.type === 'announce' && /complete/i.test(e.text)), '30b: and no banner over the Session complete panel (it read twice)');
 
 	// 5 — Play again: a fresh count-in, and the bars count from where the count-in ENDED —
 	// the transport is still running at beat 30-something

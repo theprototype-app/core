@@ -348,6 +348,13 @@ function towersGraph() {
 		N('fx' + i, 'effectburst', 'Burst at ring ' + i, 2920, y, { kind: top ? 'confetti' : 'sparkle', count: top ? 96 : 56, lift: 0, color: '' });
 		E('first' + i, 'fx' + i, 'trigger');
 		E('selr' + i, 'fx' + i, 'at');
+		// an additive sparkle alone is faint against a daylight sky: a small confetti puff
+		// beside it reads at any exposure (the top ring's burst IS confetti already)
+		if (!top) {
+			N('puff' + i, 'effectburst', 'Puff at ring ' + i, 2920, y + 70, { kind: 'confetti', count: 36, lift: 0.1, color: '' });
+			E('first' + i, 'puff' + i, 'trigger');
+			E('selr' + i, 'puff' + i, 'at');
+		}
 		N('chime' + i, 'gamesound', top ? 'Fanfare at the top' : 'Chime at ring ' + i, 3160, y, { sound: top ? 'levelup' : 'ring' });
 		E('first' + i, 'chime' + i, 'trigger');
 		E('selr' + i, 'chime' + i, 'at');
@@ -409,19 +416,16 @@ function towersGraph() {
 	// Every menu button clicks.
 	N('click', 'gamesound', 'Button click', 280, 2480, { sound: 'click' });
 	for (const b of ['bstart', 'bagain', 'bresume', 'brestart', 'bquit', 'breplay']) E(b, 'click', 'trigger');
-	// A round starts with a whistle and a banner; it ends with one of two.
+	// A round starts with a whistle and a banner. It ENDS without one: the Round over panel is
+	// the result (a banner over it read twice), so the end is a cheer or a whistle + confetti.
 	N('saygo', 'announce', 'Say: build!', 1720, 1640, { text: 'Build!', sub: 'Stack crates on the glowing pad — reach the gold ring', seconds: 2.2, color: '#ffd45e', decimals: 0 });
 	E('onround', 'saygo', 'trigger');
 	N('whistle', 'gamesound', 'Round start whistle', 1720, 1720, { sound: 'whistle' });
 	E('onround', 'whistle', 'trigger');
-	N('saywin', 'announce', 'Say: all stars', 1240, 2000, { text: 'All stars collected!', sub: '', seconds: 2.4, color: '#ffc640', decimals: 0 });
-	E('allwin', 'saywin', 'trigger');
 	N('cheer', 'gamesound', 'Cheer', 1240, 2080, { sound: 'cheer' });
 	E('allwin', 'cheer', 'trigger');
 	N('confetti', 'effectburst', 'Confetti for everyone', 1240, 2160, { kind: 'confetti', count: 96, lift: 0, color: '' });
 	E('allwin', 'confetti', 'trigger');
-	N('sayup', 'announce', "Say: time's up", 1240, 2300, { text: "Time's up!", sub: '', seconds: 2.2, color: '#e5e9f0', decimals: 0 });
-	E('alltime', 'sayup', 'trigger');
 	N('upwhistle', 'gamesound', 'Final whistle', 1240, 2380, { sound: 'whistle' });
 	E('alltime', 'upwhistle', 'trigger');
 	// Each crate: a pop when a player lifts it (On Grab) and a knock when it lands on
@@ -977,16 +981,13 @@ function starsGraph() {
 	E('onround', 'whistle', 'trigger');
 	N('sayfree', 'announce', 'Say: free play', 520, 110, { text: 'Free play', sub: 'Knock the stars around — P or the menu to start a round', seconds: 2, color: '#9ee6ff', decimals: 0 });
 	E('bfree', 'sayfree', 'trigger');
-	N('saywin', 'announce', 'Say: all lit', 2920, 2150, { text: 'Every star lit!', sub: '', seconds: 2.4, color: '#ffe08a', decimals: 0 });
-	E('allwin', 'saywin', 'trigger');
 	N('fanfare', 'gamesound', 'Win fanfare', 2920, 2230, { sound: 'levelup' });
 	E('allwin', 'fanfare', 'trigger');
-	N('sayup', 'announce', "Say: time's up", 1240, 1840, { text: "Time's up!", sub: '', seconds: 2.2, color: '#e5e9f0', decimals: 0 });
-	E('alltime', 'sayup', 'trigger');
 	N('upwhistle', 'gamesound', 'Final whistle', 1240, 1920, { sound: 'whistle' });
 	E('alltime', 'upwhistle', 'trigger');
 	// the round's end, whichever way: confetti in front of every player and a cheer, with the
-	// results on the Round over screen (the VR board in a headset)
+	// results on the Round over screen (the VR board in a headset) — NO banner at the end: it
+	// read twice over the results panel
 	N('onover', 'ongamestate', 'When the round ends', 3160, 2700, { state: 'over', edge: 'enter', pulse: 0.3 });
 	N('confetti', 'effectburst', 'Confetti', 3400, 2700, { kind: 'confetti', count: 96, lift: 0, color: '' });
 	E('onover', 'confetti', 'trigger');
@@ -1782,14 +1783,13 @@ function jamGraph() {
 	E('bmenu', 'doquit', 'trigger');
 	E('bquit', 'quithide', 'trigger');
 
-	// ---- 30b: the shell sounds like a game — but never plays music over the band ----------
+	// ---- 30b: the shell sounds like a game — but never plays music over the band. The end
+	// of a session is confetti, the fanfare and a buzz; its words are the Session complete
+	// panel (a banner over the panel read twice) -----------------------------------------------
 	N('click', 'gamesound', 'Button click', 280, 1360, { sound: 'click' });
 	for (const b of ['bgo', 'bresume', 'brestart', 'breplay', 'bquit', 'bmenu']) E(b, 'click', 'trigger');
 	N('saygo', 'announce', 'Say: go', 1000, 40, { text: 'Go!', sub: 'Press ▶ on the Transport — keep it going for ' + JAM_BARS + ' bars', seconds: 2, color: '#ffb060', decimals: 0 });
 	E('countdone', 'saygo', 'trigger');
-	N('saydone', 'announce', 'Say: session complete', 2440, 480, { text: 'Session complete!', sub: JAM_BARS + ' bars at {v} BPM', seconds: 2.6, color: '#ffb060', decimals: 0 });
-	E('allwin', 'saydone', 'trigger');
-	E('tbpm', 'saydone', 'value');
 	N('donefx', 'effectburst', 'Confetti', 2440, 400, { kind: 'confetti', count: 96, lift: 0, color: '' });
 	E('allwin', 'donefx', 'trigger');
 	N('donesnd', 'gamesound', 'Fanfare', 2680, 400, { sound: 'levelup' });

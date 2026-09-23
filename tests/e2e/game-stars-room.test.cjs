@@ -179,6 +179,15 @@ h.run(async () => {
 			return { music: music?.preset ?? null, ann: ann?.text ?? null, last: d.last, fired: d.fired, sounds: d.sounds };
 		});
 	const resetFeel = () => page.evaluate(() => window.__stores.gameKit.gameFeelActions.resetGameFeelActionsDebug());
+	// 30b: what the VR wrist card / top strip would SAY right now (vr-play's overlay split)
+	const vrLines = () =>
+		page.evaluate(() => {
+			const s = window.__stores;
+			const k = s.gameKit.vrGamePanel;
+			let rt; s.hudDocs.hudRuntime.subscribe((v) => (rt = v))();
+			const { panel, overlay } = k.vrScreens();
+			return { panel: panel.map((p) => p.screen.id), lines: overlay.flatMap((o) => k.overlayLines(o.screen.elements, rt)) };
+		});
 
 	// 2 — entering play starts the sim (free play, no round)
 	await page.evaluate(() => window.__stores.isLocked.set(true));
@@ -264,6 +273,10 @@ h.run(async () => {
 	await resetFeel();
 	await knockStar('Star 3', 3, 'q');
 	await h.eventually(async () => await hud(), (t) => /Lit: 1 \/ 24/.test(t), 'one hit lights one star (Lit: 1 / 24)', 8000);
+	// 30b: the score is readable in VR — the round HUD is an OVERLAY, so the wrist card and the
+	// top strip carry "Lit: 1 / 24" and the clock (the menu screens go to the VR board)
+	const vr = await vrLines();
+	h.check(vr.panel.length === 0 && vr.lines.some((l) => /^Lit: 1 \/ 24$/.test(l)) && vr.lines.some((l) => /\d+s left/.test(l)), `30b: the score and the clock read on the VR wrist/strip (${JSON.stringify(vr)})`);
 	// 30b: LIGHTING a star pays a coin chime at it and a tap in VR — once per star per round
 	await h.eventually(() => feel(), (f) => f.last.filter((e) => e.sound === 'coin' && e.spatial).length === 1 && (f.fired.hapticpulse ?? 0) === 1, '30b: lighting Star 3 plays one coin at it and asks one tap', 4000);
 	await page.waitForTimeout(1500); // let it drift, then knock it again inside the same round
@@ -323,7 +336,8 @@ h.run(async () => {
 	await h.eventually(litThisRound, (n) => n >= 24, 'all 24 latches were set this round (hit stamps at or after startedAt)', 10000);
 	await h.eventually(() => snap().then((v) => v.state), (v) => v === 'over', 'every star lit ends the round (over)', 10000);
 	// 30b: the round ends in confetti and a cheer, and the win is announced
-	await h.eventually(() => feel(), (f) => f.fired.effectburst > 0 && f.last.some((e) => e.type === 'effectburst' && e.kind === 'confetti') && f.last.some((e) => e.sound === 'cheer') && f.last.some((e) => e.type === 'announce' && e.text === 'Every star lit!'), '30b: over = confetti, a cheer and "Every star lit!"', 4000);
+	await h.eventually(() => feel(), (f) => f.last.some((e) => e.type === 'effectburst' && e.kind === 'confetti') && f.last.some((e) => e.sound === 'cheer') && (f.sounds.levelup ?? 0) === 1, '30b: over = confetti, a cheer and the win fanfare', 4000);
+	h.check(!(await feel()).last.some((e) => e.type === 'announce' && /lit!|up!/i.test(e.text)), '30b: and no banner over the results panel (it read twice)');
 	const coins = (await feel()).sounds.coin ?? 0;
 	h.check(coins === 24, `30b: the sweep paid exactly one coin per star lit (${coins} / 24)`);
 	await h.eventually(async () => await hud(), (t) => /EVERY STAR LIT/.test(t) && /Every star lit in \d+s/.test(t) && /Your best: 24 \/ 24/.test(t), 'the over screen names the time and the best, from storage');

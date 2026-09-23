@@ -43,6 +43,12 @@ import { ndcFromClient } from './canvasRect';
 // 27-B: recovery paths report through the diagnostics ring (hardening audit H4)
 import { log } from './diagnostics';
 import { safeStorage } from './safeStorage';
+// 30 P4: api.storage — a LEAF (safeStorage only), shared with the Store Value flow node
+import { makeModuleStorage } from './gameStorage';
+
+/** modules already told they hit the storage cap this session (ONE toast each, never
+ * one per write — a game saving every frame would otherwise bury the screen) */
+const storageCapWarned = new Set();
 
 // Module SDK v1 — in-repo modules under src/modules/<name>/ register through
 // the api object passed to their register(api). See MODULES.md for the guide.
@@ -1014,6 +1020,24 @@ function makeApi(moduleId, moduleName = moduleId) {
 		 * immune to the shared-scope add race. Rows replicate on the presence channel,
 		 * late joiners converge, a row drops with its owner's disconnect.
 		 */
+		/**
+		 * 30 P4 (roadmap 30 fork 7): what this module remembers ON THIS DEVICE — a best
+		 * score, unlocked levels, a settings choice. JSON values under
+		 * `tp:mod:<moduleId>:<key>` through safeStorage (never throws: a private window or a
+		 * full quota falls back to memory for the session), 256 KB per module (a `set` over
+		 * it returns false and says so ONCE), LOCAL: never replicated, never in a scene
+		 * file, never undone — and deliberately NOT cleared when the module is disabled or
+		 * removed (a reinstall keeps your progress; `clear()` is the module's own reset).
+		 * `get(key, fallback)` · `set(key, value) -> bool` · `remove(key)` · `keys()` ·
+		 * `clear()` · `bytes()`.
+		 */
+		storage: makeModuleStorage(moduleId, {
+			onOverCap: () => {
+				if (storageCapWarned.has(moduleId)) return;
+				storageCapWarned.add(moduleId);
+				showToast(`"${moduleName}" hit its 256 KB storage limit on this device — that value was not saved.`);
+			}
+		}),
 		peerVars: {
 			/** Write MY OWN row. @param {string} name @param {number} value */
 			setMine(name, value) {

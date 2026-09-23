@@ -1215,7 +1215,10 @@ export function flyTo(position, target, duration = 400) {
 	/** @param {number} now */
 	function step(now) {
 		if (token !== focusAnimation) return;
-		const t = Math.min((now - started) / duration, 1);
+		// a rAF timestamp is the FRAME's start, which can precede `started`: a 0 ms fly then
+		// divided a negative (or zero) elapsed by 0 and parked the camera at ±Infinity/NaN for a
+		// frame, which threw from the audio listener (30 mod-audit finding). Clamp both ends.
+		const t = duration > 0 ? Math.min(Math.max((now - started) / duration, 0), 1) : 1;
 		const ease = 1 - Math.pow(1 - t, 3);
 		camera.position.lerpVectors(startPosition, endPosition, ease);
 		controls.target.lerpVectors(startTarget, endTarget, ease);

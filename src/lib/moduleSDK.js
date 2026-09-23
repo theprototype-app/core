@@ -2,7 +2,7 @@ import { keyOf, letterOf } from './keyOf';
 import { sessionNow } from './sessionClock'; // 25-E: stamps another peer compares
 import * as THREE from 'three';
 import { writable, get } from 'svelte/store';
-import { globalScene, objectsGroup, selectedObject, selectedObjects, globalCamera, isVRMode, isLocked, playPointerFree } from '../stores/sceneStore';
+import { globalScene, objectsGroup, selectedObject, selectedObjects, globalCamera, isVRMode, isLocked, playPointerFree, editorMode } from '../stores/sceneStore';
 // 30 P4: the scene's play block decides whether play aims with a crosshair (a leaf chain)
 // 30 integrate: the ONE answer to "is this a free-cursor game" (30-core-flow's leaf)
 import { playCursorSetting } from './playCursor';
@@ -632,6 +632,17 @@ function makeApi(moduleId, moduleName = moduleId) {
 		onSceneClear(fn) {
 			sceneClearHandlers.push(fn);
 			onDispose(() => arrayRemove(sceneClearHandlers, fn));
+		},
+		/**
+		 * 30 integrate (modules DEVX #35): the editor's click mode on THIS screen —
+		 * 'edit' | 'interact'. LOCAL and read-only; `isPlaying()` says whether Play is on
+		 * top of it. A module whose own pointer listeners run outside core's click routing
+		 * (untangle's drag) stands down while this reads 'edit' and nothing is playing, so an
+		 * Edit click selects its content like any object.
+		 * @returns {'edit' | 'interact'}
+		 */
+		editorMode() {
+			return get(editorMode) === 'interact' ? 'interact' : 'edit';
 		},
 		/**
 		 * Where the user is POINTING, as a THREE.Raycaster in world space —

@@ -207,6 +207,26 @@ h.run(async () => {
 	// ---------------------------------------------------------------- 5
 	console.log('\n=== 5. in the VIEWPORT: an Edit click on the board selects its proxy; Interact plays ===');
 	await page.evaluate(() => window.__stores.inspectorClose.set(true));
+	// 30 integrate: flyTo(..., 0) is a jump — even on a frame whose rAF timestamp precedes the
+	// call (the race that parked the camera at -Infinity/NaN for a frame, mod-audit's finding)
+	const jump = await page.evaluate(
+		() =>
+			new Promise((resolve) => {
+				const s = window.__stores;
+				let cam;
+				s.globalCamera.subscribe((v) => (cam = v))();
+				const raf = window.requestAnimationFrame;
+				window.requestAnimationFrame = (cb) => {
+					window.requestAnimationFrame = raf;
+					return raf(() => {
+						cb(performance.now() - 20);
+						resolve(cam.position.toArray());
+					});
+				};
+				s.objectActions.flyTo([1, 2.5, 6], [0, 1, 0], 0);
+			})
+	);
+	h.check(jump.every(Number.isFinite) && Math.hypot(jump[0] - 1, jump[1] - 2.5, jump[2] - 6) < 0.05, `5.0 flyTo(…, 0) lands in one frame, finite (${jump.map((v) => +v.toFixed(3))})`);
 	await page.evaluate((g) => {
 		const s = window.__stores;
 		let sc;

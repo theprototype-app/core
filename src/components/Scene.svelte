@@ -57,6 +57,7 @@
 	import { initVRControls, updateVRControls, raycastMenu, raycastPanel, raycastPalette, raycastProps, raycastPrefabs, raycastKeyboard, raycastChat, raycastEdit, raycastSnap, raycastSettings, raycastApprove, placePrefabGhost, vrFaceTrigger, vrVertexTrigger, vrVertexGrabStart, vrVertexGrabEnd, beginStretchSliderDrag, endStretchSliderDrag, executeVRMenuAction, resetWorldRig, onInputSourcesChange, worldToContentPose, boxSelectStart, boxSelectEnd, boxSelectActive, applyVRFrameRate, shouldSendHands, onHandPinchStart, onHandPinchEnd, pinchMenuToggledAt, firePingIfArmed, vrModuleTriggerStart, vrModuleTriggerEnd, vrModuleSelectSwallowed, handSnapshot, vrGrabbedUuid, hapticKnock } from '$lib/vrControls';
 	// 30b (vr-play): the game in your hands — hover/press haptics (P1), the sweep (P4)
 	import { startVrGameInput, stopVrGameInput } from '$lib/vrGameInput';
+	import { gameFeelActive } from '$lib/gameFeel';
 	import { vrKeyboardTarget } from '$lib/vrKeyboard';
 	import { measureMode, measureClick } from '$lib/measure';
 	import { pinsGroup, openAnnotation, showNotePins } from '$lib/annotationsHandler';
@@ -1388,6 +1389,13 @@
 			tempMatrix.identity().extractRotation(controller.matrixWorld);
 			selectionRaycaster.ray.origin.setFromMatrixPosition(controller.matrixWorld);
 			selectionRaycaster.ray.direction.set(0, 0, -1).applyMatrix4(tempMatrix);
+			// 30b (C3): in Interact/Play a VR press is a CLICK — module handlers, On Click,
+			// the miss — and selects nothing, ever (the desktop Interact rule); the sweep
+			// already fired anything it knew was clickable and swallowed this release
+			if (gameFeelActive()) {
+				interactClick(selectionRaycaster);
+				return;
+			}
 			raycastSelect();
 		};
 		// 182: hold-to-move a vertex — grab on trigger press, drop on release

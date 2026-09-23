@@ -384,9 +384,17 @@ export function registerVRTriggerHooks(hooks) {
 		if (i >= 0) triggerHooks.splice(i, 1);
 	};
 }
+/** 30b (C3): did SOME hook take the last trigger press on each slot? The sweep starts
+ * from a non-consuming hook, so it reads this on its next frame to stand down under a
+ * gesture another feature claimed (a knob drag, a cable, the sleeve). */
+const triggerClaims = [false, false];
+/** @param {number} index */
+export function triggerClaimed(index) {
+	return !!triggerClaims[index];
+}
 /** @param {number} index @returns {boolean} */
 export function vrModuleTriggerStart(index) {
-	return triggerHooks.some((h) => {
+	const claimed = triggerHooks.some((h) => {
 		try {
 			return !!h.start?.(index);
 		} catch (error) {
@@ -394,6 +402,8 @@ export function vrModuleTriggerStart(index) {
 			return false;
 		}
 	});
+	triggerClaims[index] = claimed;
+	return claimed;
 }
 /** @param {number} index @returns {boolean} */
 export function vrModuleTriggerEnd(index) {

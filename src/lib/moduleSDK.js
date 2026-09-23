@@ -89,7 +89,8 @@ export const moduleMenuItems = writable([]);
 export const moduleEffects = {};
 /** @type {Record<string, any>} node type -> Svelte component */
 export const moduleNodeComponents = {};
-/** @type {((object: any) => boolean)[]} */
+/** 30b: a handler also gets `ctx = {source, mode}` (see runClickHandlers)
+ * @type {((object: any, ctx?: {source: string, mode: string}) => boolean)[]} */
 export const moduleClickHandlers = [];
 
 /** 30 P1: the three places a viewport click can come from. */
@@ -112,6 +113,11 @@ export function normalizeClickModes(modes) {
 	return known.length ? known : [...DEFAULT_CLICK_MODES];
 }
 
+/** 30b (C3): handlers that asked NOT to be swept (`{sweep: false}`) — a knob you drag, a
+ * dot you carry. They still hear the press itself; only the later entries of a held
+ * trigger skip them. @type {WeakSet<Function>} */
+const noSweepHandlers = new WeakSet();
+
 /** Does this handler run for a click in `mode`? A null mode is VR's trigger, which has
  * no editor mode of its own yet and keeps offering every handler, as it always has.
  * @param {Function} fn @param {string | null} mode */
@@ -125,13 +131,22 @@ export function clickHandlerRunsIn(fn, mode) {
  * Offer a clicked mesh to every handler that runs in `mode`, in registration order; the
  * first to return true consumes the click. ONE dispatch for the editor's pick, Interact
  * and Play's tap, so the three can never disagree about who hears what.
- * @param {any} object @param {string | null} mode @returns {boolean}
+ *
+ * 30b (C3): every handler also gets `ctx = {source, mode}` — `source` is 'click' (the
+ * desktop / a VR release), 'trigger' (the VR press itself, fired on the press) or 'sweep'
+ * (a later entry while the trigger is held). A 'sweep' skips handlers registered with
+ * `{sweep: false}`. Additive: a one-argument handler is byte-unchanged.
+ * @param {any} object @param {string | null} mode @param {{source?: string}} [ctx]
+ * @returns {boolean}
  */
-export function runClickHandlers(object, mode) {
+export function runClickHandlers(object, mode, ctx = {}) {
+	const source = ctx?.source ?? 'click';
+	const info = { source, mode: mode ?? 'vr' };
 	for (const handler of [...moduleClickHandlers]) {
 		if (!clickHandlerRunsIn(handler, mode)) continue;
+		if (source === 'sweep' && noSweepHandlers.has(handler)) continue;
 		try {
-			if (handler(object)) return true;
+			if (handler(object, info)) return true;
 		} catch (error) {
 			log('warn', 'module', 'click handler failed', String(error));
 		}
@@ -576,11 +591,18 @@ function makeApi(moduleId, moduleName = moduleId) {
 		 * a pad, a puzzle piece) no longer eats the editor's select click. A handler
 		 * that is an editor TOOL (a toolbox pick) passes {modes: ['edit']}, or all three.
 		 * In Edit an 'edit' handler still runs BEFORE the selection, so it can consume.
-		 * @param {(object: any) => boolean} fn
-		 * @param {{modes?: string[]}} [options]
+		 *
+		 * 30b: `fn(object, ctx)` — `ctx.source` is 'click', 'trigger' (the VR press) or
+		 * 'sweep' (VR, Interact/Play: the trigger HELD and the controller tip or laser
+		 * passing into this mesh — each entry clicks once, re-armed when it leaves). Pass
+		 * `{sweep: false}` for a control that must not be swept (a knob you drag, a dot you
+		 * carry); it still hears the press.
+		 * @param {(object: any, ctx?: {source: string, mode: string}) => boolean} fn
+		 * @param {{modes?: string[], sweep?: boolean}} [options]
 		 */
 		registerClickHandler(fn, options = {}) {
 			clickHandlerModes.set(fn, normalizeClickModes(options?.modes));
+			if (options?.sweep === false) noSweepHandlers.add(fn);
 			moduleClickHandlers.push(fn);
 			onDispose(() => arrayRemove(moduleClickHandlers, fn));
 		},

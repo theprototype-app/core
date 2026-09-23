@@ -7,6 +7,7 @@
     import { userdata, peers } from '../../stores/appStore'
     import { dungeonData, slideMove, spawnPointFor } from '$lib/dungeonPlay'
     import { resolvePlaySettings } from '$lib/playSettings'
+    import { spawnDesktopPlayer } from '$lib/playSpawn'
     // 30 P3: free-cursor games never take the pointer — the real cursor aims
     import { playCursorFree } from '$lib/playCursor'
     import { inputClaims, getGamepadAxes } from '$lib/inputRuntime'
@@ -192,6 +193,9 @@
         // in your seed-deterministic room (peers take consecutive rooms).
         // untracked: the effect must only depend on $isLocked.
         untrack(() => {
+          // 30b P4: a game's own spawn (the scene's play.spawn, or a module's api.setSpawn)
+          // wins; the dungeon's per-peer rooms below are what a scene without one gets
+          if (spawnDesktopPlayer()) return
           const data = dungeonData($globalScene)
           // resolve the rig ONCE and mutate the object: `$cameraParent.position.x = v`
           // compiles to store_mutate -> cameraParent.set(), and useParent() is a

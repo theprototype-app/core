@@ -1,7 +1,28 @@
-import { get } from 'svelte/store';
+import { get, writable } from 'svelte/store';
 import { scenePlay } from './scenePhysics';
 import { showToast } from '../stores/appStore';
 import { normalizeLocomotion, normalizeSpawn } from './locomotionPolicy';
+
+/**
+ * 30b P4: a spawn point set at RUNTIME by a module (`api.setSpawn(position, yaw)`) — a
+ * dungeon's floor, a level's start. LOCAL (every peer's module runs the same code off the
+ * same replicated state, so each sets its own), never saved, and it wins over the scene's
+ * authored `play.spawn` (contract C1: a module overrides the scene's).
+ * @type {import('svelte/store').Writable<{position: [number, number, number], yaw: number, owner?: string} | null>}
+ */
+export const runtimeSpawn = writable(null);
+
+/** @param {any} position @param {any} [yaw] @param {string} [owner] @returns {boolean} */
+export function setRuntimeSpawn(position, yaw, owner) {
+	if (position == null) {
+		runtimeSpawn.set(null);
+		return true;
+	}
+	const spawn = normalizeSpawn(position, yaw);
+	if (!spawn) return false;
+	runtimeSpawn.set(owner ? { ...spawn, owner } : spawn);
+	return true;
+}
 
 // 21-B B3: what play mode BEHAVES like in this scene.
 //
@@ -87,6 +108,8 @@ export function resolvePlaySettings(scene) {
 		const spawn = normalizeSpawn(play.spawn);
 		if (spawn) out.spawn = spawn;
 	}
+	const runtime = get(runtimeSpawn);
+	if (runtime) out.spawn = { position: runtime.position, yaw: runtime.yaw };
 	return out;
 }
 

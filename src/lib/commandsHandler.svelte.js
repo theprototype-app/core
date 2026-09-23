@@ -17,6 +17,7 @@ import { hasAnimatedImport, sendAnimatedImport, setAnimationState, dropAllAnimat
 import { dropAllAnimations } from '$lib/animationPreview'
 import { parkAnimatedAtBase } from '$lib/flowRuntime'
 import { stripEditOverlays } from '$lib/editOverlays'
+import { isPristinePackRef, stubElementOf } from '$lib/packRefs'
 import { runSceneClearHandlers } from '$lib/moduleSDK'
 import { annotations } from '$lib/annotationsHandler'
 import { isViewer, warnViewerReadOnly } from '$lib/objectPermissions'
@@ -943,6 +944,12 @@ async function applyCreateObject(object, uuid, override, groupuuid, pos, rot, sc
  */
 export function sendObjects(peerId, element, opts = {}) {
     let groupid;
+    if (peerId === null && isPristinePackRef(element)) {
+        // 30c: a placed KIT PIECE reaches every peer as its stub; each refills it from
+        // the pack (no GLTF of a 1 MB piece per placement — see packRefs.js)
+        peer.send({ type: 'object', element: stubElementOf(element), groupuuid: element.parent?.uuid, ...(opts.override ? { override: true } : {}) });
+        return;
+    }
     if (peerId === null) {
         groupid = element.uuid;
         peer.send({type: 'group', name: element.name, uuid: element.uuid, groupparent: null,
@@ -1039,6 +1046,19 @@ export function sendObject(conn, element, groupuuid, opts = {}) {
     objects.forEach(element => {
         // viewer perms: never sync a viewer's local-only objects to a peer
         if (element.userData && element.userData.__localOnly) return;
+        if (isPristinePackRef(element)) {
+            // 30c: a pristine KIT PIECE travels as a stub (one small message) and the
+            // receiver refills it from its pack — packRefs.js carries the measurement (one
+            // wall is 7.9 MB as toJSON). ObjectLoader path: the element's matrix is LOCAL,
+            // and the receiver adds it under `groupuuid`.
+            conn.send({
+                type: 'object',
+                element: stubElementOf(element),
+                groupuuid: element.parent?.uuid,
+                ...heal
+            });
+            return;
+        }
         if (hasAnimatedImport(element.uuid)) {
             // rigs travel as their original file bytes, one message
             sendAnimatedImport(conn, element, opts);
@@ -1171,7 +1191,8 @@ function countObjects(element, sink) {
         objects = sceneObjects.children;
     }
     objects.forEach(element => {
-        if (element.type == "Group" && !hasAnimatedImport(element.uuid)) {
+        // 30c: a kit-piece stub is ONE message; its children are refilled, never sent
+        if (element.type == "Group" && !hasAnimatedImport(element.uuid) && !isPristinePackRef(element)) {
             countObjects(element, sink);
         }
         sink.push(element.uuid)

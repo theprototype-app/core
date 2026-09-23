@@ -7,6 +7,7 @@
     import { userdata, peers } from '../../stores/appStore'
     import { dungeonData, slideMove, spawnPointFor } from '$lib/dungeonPlay'
     import { resolvePlaySettings } from '$lib/playSettings'
+    import { scenePlay } from '$lib/scenePhysics'
     // 30 P3: free-cursor games never take the pointer — the real cursor aims
     import { playCursorFree } from '$lib/playCursor'
     import { inputClaims, getGamepadAxes } from '$lib/inputRuntime'
@@ -204,6 +205,15 @@
               rig.position.x = spawn.x
               rig.position.y = 0.8
               rig.position.z = spawn.z
+            }
+          } else if (rig) {
+            // 30c: the scene's own SPAWN (scenePhysics play.spawn: feet position + yaw).
+            // Absent = the fixed start, untouched. The rig lives in a group lifted 0.9, so
+            // an eye 0.8 above that is 1.7 above the feet (the dungeon line above).
+            const at = get(scenePlay)?.spawn
+            if (at) {
+              rig.position.set(at.pos[0], at.pos[1] + 0.8, at.pos[2])
+              rig.quaternion.setFromEuler(new Euler(0, at.yaw ?? 0, 0, 'YXZ'))
             }
           }
         })

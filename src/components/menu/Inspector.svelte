@@ -169,6 +169,7 @@
 		selectedObjects,
 		backgroundColor,
 		globalCamera,
+		orbitControls,
 		viewMode,
 		showGrid, pokeScene } from '../../stores/sceneStore';
 	// 16-P3: grid + snapping prefs (LOCAL, like the clip planes)
@@ -1404,6 +1405,28 @@
 		if (!direction.lengthSq()) direction.set(-1, 1, 1).normalize();
 		flyTo(direction.multiplyScalar(distance).toArray(), [0, 0, 0]);
 	}
+	/**
+	 * 30c: the play SPAWN from the editor view — the point the view orbits around is where
+	 * the player's feet go, and the camera's heading toward it is the way they face (yaw 0
+	 * looks down -Z, the fixed start's direction).
+	 */
+	function setSpawnFromView() {
+		/** @type {any} */
+		const camera = $globalCamera;
+		/** @type {any} */
+		const controls = $orbitControls;
+		const target = controls?.target;
+		if (!camera || !target) return;
+		const yaw = Math.atan2(-(target.x - camera.position.x), -(target.z - camera.position.z));
+		const r2 = (/** @type {number} */ v) => Math.round(v * 100) / 100;
+		setScenePhysics({ play: { spawn: { pos: [r2(target.x), r2(target.y), r2(target.z)], yaw: Math.round(yaw * 1000) / 1000 } } });
+	}
+	/** @param {any} spawn */
+	function spawnText(spawn) {
+		if (!spawn) return 'Default — (0, 2, 3), facing −Z';
+		const deg = Math.round((((spawn.yaw * 180) / Math.PI) % 360 + 360) % 360);
+		return '(' + spawn.pos.map((/** @type {number} */ v) => v.toFixed(1)).join(', ') + '), facing ' + deg + '°';
+	}
 	/** shared look for the small bookmark row buttons */
 	const bmBtn = 'shrink-0 rounded-sm bg-gray-700 px-1.5 py-0.5 text-xs text-gray-300 hover:bg-gray-600 disabled:opacity-40';
 	function resetView() {
@@ -2605,6 +2628,24 @@
 				>
 					Start the simulation when play mode opens
 				</Checkbox>
+				<!-- 30c: where desktop play starts — feet position + heading, shared scene data -->
+				<div class="ui-row items-center gap-2">
+					<span class="w-24 shrink-0 text-xs text-gray-300">Spawn point</span>
+					<span id="physics-spawn-readout" class="flex-1 text-xs text-gray-400">{spawnText($scenePlay.spawn)}</span>
+				</div>
+				<div class="ui-row gap-2">
+					<button
+						id="physics-spawn-set"
+						class="ui-button-quiet text-xs"
+						title="Play starts at the point the view orbits around, facing the way the camera looks at it"
+						onclick={setSpawnFromView}>Set to the view's focus</button
+					>
+					{#if $scenePlay.spawn}
+						<button id="physics-spawn-clear" class="ui-button-quiet text-xs" onclick={() => setScenePhysics({ play: { spawn: null } })}
+							>Clear</button
+						>
+					{/if}
+				</div>
 				<p class="text-[10px] italic text-gray-400">
 					Shared: everyone entering play mode in this scene gets these.
 				</p>

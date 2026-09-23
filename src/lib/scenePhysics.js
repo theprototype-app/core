@@ -65,6 +65,22 @@ function nullableNum(v, lo, hi) {
 	return Math.max(lo, Math.min(hi, n));
 }
 
+/**
+ * 30c: the play SPAWN — where desktop play mode puts the player's feet, and which way they
+ * face (`yaw`, radians about +Y; 0 looks down -Z, the fixed start's direction). Null when
+ * absent or malformed, and then the block OMITS the key, so a scene that never set one
+ * saves byte-identically and play starts where it always has.
+ * @param {any} raw @returns {{pos: number[], yaw: number} | null}
+ */
+function spawnOf(raw) {
+	const pos = raw?.pos;
+	if (!Array.isArray(pos) || pos.length !== 3) return null;
+	const out = pos.map((v) => Number(v));
+	if (!out.every((v) => Number.isFinite(v) && Math.abs(v) <= 100000)) return null;
+	const yaw = Number(raw.yaw ?? 0);
+	return { pos: out, yaw: Number.isFinite(yaw) ? yaw : 0 };
+}
+
 /** @param {any} v @param {boolean} fallback */
 function bool(v, fallback) {
 	return typeof v === 'boolean' ? v : fallback;
@@ -148,9 +164,11 @@ export function normalizeScenePhysics(raw) {
 				grounded: bool(playRaw.grounded, d.play.grounded),
 				simOnPlay: bool(playRaw.simOnPlay, d.play.simOnPlay),
 				// 30 P3: present only when free (see PLAY_CURSORS)
-				...(pick(playRaw.cursor, PLAY_CURSORS, 'locked') === 'free' ? { cursor: 'free' } : {})
+				...(pick(playRaw.cursor, PLAY_CURSORS, 'locked') === 'free' ? { cursor: 'free' } : {}),
+				// 30c: present only when set (see spawnOf)
+				...(spawnOf(playRaw.spawn) ? { spawn: spawnOf(playRaw.spawn) } : {})
 			},
-			['interaction', 'grounded', 'simOnPlay', 'cursor']
+			['interaction', 'grounded', 'simOnPlay', 'cursor', 'spawn']
 		),
 		// A1: the 20 ceiling is throwVelocity's MAX_LINVEL, restated rather than imported —
 		// this module is store-only and the response clamps through clampThrow anyway
@@ -195,7 +213,7 @@ scenePhysicsState_.subscribe((s) => sceneGravity.set(s.gravity));
 export const scenePhysicsGround = derived(scenePhysicsState_, (s) => s.ground);
 /** out-of-bounds config. NOT named `sceneBounds` — that is sceneBounds.js */
 export const scenePhysicsBounds = derived(scenePhysicsState_, (s) => s.bounds);
-/** play-mode block ({interaction, grounded, simOnPlay, cursor?: 'free'}) */
+/** play-mode block ({interaction, grounded, simOnPlay, cursor?: 'free', spawn?: {pos, yaw}}) */
 export const scenePlay = derived(scenePhysicsState_, (s) => s.play);
 /** A1: the knock block ({enabled, gain, maxSpeed, minSpeed, radius, spin, predict}) */
 export const sceneKnock = derived(scenePhysicsState_, (s) => s.knock);

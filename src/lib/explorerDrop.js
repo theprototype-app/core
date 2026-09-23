@@ -6,6 +6,7 @@ import { peers, showToast, toastStore, stackOnDrop } from '../stores/appStore';
 import { explorerItems, itemBlob } from './explorer';
 import { prefabs, instantiatePrefab } from './prefabs';
 import { importFile } from './fileHandler.svelte';
+import { packRefFromUrl } from './packRefs';
 import { setObjectTexture } from './materialsHandler';
 import { topLevelObjectOf } from './objectActions';
 import { sceneHits, hitWorldNormal } from './scenePick';
@@ -205,7 +206,11 @@ async function placeExplorerPayload(payload, target) {
 				dismiss();
 				return showToast('Could not fetch the pack item');
 			}
-			importFile(new File([await res.blob()], name + '.glb'), name, undefined, target.point ?? undefined);
+			// 30c: the placed piece carries its pack reference, so a save and the wire write it
+			// as a small stub instead of the whole model (packRefs.js)
+			importFile(new File([await res.blob()], name + '.glb'), name, undefined, target.point ?? undefined, undefined, {
+				packRef: packRefFromUrl(payload.url, { item: name })
+			});
 			dismiss();
 		} catch {
 			dismiss();

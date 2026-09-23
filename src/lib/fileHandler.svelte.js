@@ -23,6 +23,8 @@ import { createGltfLoader, registerAnimatedImport, recordAnimatedImport, sendAni
 import { environment } from './environment';
 import { parkAnimatedAtBase } from '$lib/flowRuntime';
 import { stripEditOverlays } from '$lib/editOverlays';
+import { stampPackRef } from '$lib/packRefs';
+import { hashBytes } from '$lib/explorer';
 import { saveFileBase } from '$lib/saveName';
 import { peers, fixLight, loadingFile, showToast, showInfoToast, dismissToastById } from '../stores/appStore';
 import { safeStorage } from './safeStorage';
@@ -666,7 +668,10 @@ function defaultImportName(extension, name) {
  * @param {any} file @param {string=} name @param {string=} ext - explicit extension when the blob has no name (Library)
  * @param {number[]=} position - world drop point (Explorer drag-out, 96)
  * @param {any[]=} extras - companion files picked/dropped alongside (.mtl + its textures)
- * @param {{reduce?: boolean | import('./importBudget').ReductionPlan}} [opts] 26-F: import REDUCED
+ * @param {{reduce?: boolean | import('./importBudget').ReductionPlan, packRef?: import('./packRefs').PackRef | null}} [opts]
+ *   26-F: `reduce` imports REDUCED. 30c: `packRef` names the PACK ITEM this file is — the
+ *   placed root then carries the reference (packRefs.js), so a save and the wire write it
+ *   as a small stub. Ignored for an animated or a reduced import (neither IS the file).
  * @returns {Promise<string|null>} the placed root's uuid, or null when nothing was placed
  */
 export async function importFile(file, name, ext, position, extras, opts = {}) {
@@ -703,6 +708,9 @@ export async function importFile(file, name, ext, position, extras, opts = {}) {
 		return null;
 	}
 	try {
+		// 30c: stamp the pack reference BEFORE addImported, which is what replicates it
+		if (opts.packRef && !parsed.animated && typeof file?.arrayBuffer === 'function')
+			stampPackRef(parsed.root, opts.packRef, await hashBytes(await file.arrayBuffer()));
 		if (parsed.animated) addAnimatedImport(parsed.animated.result, parsed.animated.buffer, label, parsed.animated.kind);
 		else addImported(parsed.root, label, position);
 		for (const note of parsed.notes) showToast(note);

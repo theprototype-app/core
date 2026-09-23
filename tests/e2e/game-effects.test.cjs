@@ -37,7 +37,12 @@ h.run(async () => {
 		s.globalScene.subscribe((v) => (scene = v))();
 		s.objectsGroup.subscribe((v) => (group = v))();
 		const before = group.children.length;
+		let rd;
+		s.globalRenderer.subscribe((v) => (rd = v))();
+		const pointsBefore = rd.info.programs.length;
 		const ok = window.__api.effects.burst([0, 1.5, -3], { kind: 'confetti' });
+		// synchronously, before ANY frame has drawn the burst
+		const pointsAfter = rd.info.programs.length;
 		const fx = s.gameKit.effectsBurst.burstDebug();
 		const live = fx.live[0];
 		const points = live ? scene.getObjectByName(live.name) : null;
@@ -48,13 +53,19 @@ h.run(async () => {
 			inGroup: !!group.getObjectByName(live?.name ?? '-'),
 			groupDelta: group.children.length - before,
 			drawCount: points?.geometry?.drawRange?.count ?? -1,
-			sent: window.__sent.slice()
+			sent: window.__sent.slice(),
+			pointsBefore,
+			pointsAfter
 		};
 	});
 	h.check(fired.ok === true && fired.live?.kind === 'confetti', '1.1 api.effects.burst starts a confetti burst (' + JSON.stringify(fired.live) + ')');
 	h.check(fired.parentIsScene && !fired.inGroup && fired.groupDelta === 0, '1.2 it lives at the scene root, never in objectsGroup');
 	h.check(fired.drawCount === 80, '1.3 confetti draws its recipe count (80, got ' + fired.drawCount + ')');
 	h.check(!fired.sent.length, '1.4 nothing was sent (' + JSON.stringify(fired.sent) + ')');
+	h.check(
+		fired.pointsAfter > fired.pointsBefore,
+		'1.5 the burst program is compiled when the pool is built, not on the first draw (' + fired.pointsBefore + ' -> ' + fired.pointsAfter + ')'
+	);
 
 	console.log('\n=== 2. each kind moves the way it says ===');
 	const motion = await page.evaluate(() => {
@@ -151,19 +162,43 @@ h.run(async () => {
 	const quiet1 = await h.grabFrame(A);
 	await page.waitForTimeout(150);
 	const quiet2 = await h.grabFrame(A);
-	await page.evaluate(() => {
+	const fired6 = await page.evaluate(() => {
 		const s = window.__stores;
 		let cam;
 		s.globalCamera.subscribe((c) => (cam = c))();
 		const THREE = s.THREE;
 		const at = cam.getWorldPosition(new THREE.Vector3()).add(cam.getWorldDirection(new THREE.Vector3()).multiplyScalar(4));
-		window.__api.effects.burst(at.toArray(), { kind: 'sparkle', count: 96, color: '#ffffff' });
+		const ok = window.__api.effects.burst(at.toArray(), { kind: 'confetti', count: 96 }); // 2.2 s of life: a slow frame cannot outlive it
+		return { ok, live: s.gameKit.effectsBurst.burstDebug().live, tasks: s.moduleSDK.moduleFrameTasks.length };
 	});
-	await page.waitForTimeout(120);
-	const lit = await h.grabFrame(A);
+	// the burst lives 1.1 s; a loaded machine can take a while to render the next frame,
+	// so sample until one differs (or the burst is surely gone)
 	const idle = await h.frameDelta(page, quiet1, quiet2);
-	const burstDelta = await h.frameDelta(page, quiet2, lit);
-	h.check(burstDelta.changed > idle.changed + 400, '6.1 a sparkle in view changes the frame (' + burstDelta.changed + ' px vs idle ' + idle.changed + ')');
+	let burstDelta = { changed: 0 };
+	for (let i = 0; i < 6 && burstDelta.changed <= idle.changed + 400; i++) {
+		await page.waitForTimeout(80);
+		const frame = await h.grabFrame(A);
+		burstDelta = await h.frameDelta(page, quiet2, frame);
+	}
+	const diag = await page.evaluate(async () => {
+		const s = window.__stores;
+		let rd, scene, cam;
+		s.globalRenderer.subscribe((v) => (rd = v))();
+		s.globalScene.subscribe((v) => (scene = v))();
+		s.globalCamera.subscribe((v) => (cam = v))();
+		const f0 = rd.info.render.frame;
+		await new Promise((r) => setTimeout(r, 300));
+		const live = s.gameKit.effectsBurst.burstDebug().live;
+		const p = live[0] ? scene.getObjectByName(live[0].name) : null;
+		return {
+			frames: rd.info.render.frame - f0,
+			live,
+			parent: p?.parent === scene,
+			cam: cam?.position.toArray().map((v) => +v.toFixed(1)),
+			pos: p ? Array.from(p.geometry.attributes.position.array.slice(0, 3)).map((v) => +v.toFixed(1)) : null
+		};
+	});
+	h.check(burstDelta.changed > idle.changed + 400, '6.1 a burst in view changes the frame (' + burstDelta.changed + ' px vs idle ' + idle.changed + ') ' + JSON.stringify({ fired6, diag }));
 
 	console.log('\n=== 7. announce ===');
 	const ann = await page.evaluate(async () => {

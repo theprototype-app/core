@@ -21,7 +21,7 @@
 //  sparks   fast orange streaks, gravity, very short
 import * as THREE from 'three';
 import { get } from 'svelte/store';
-import { globalScene } from '../stores/sceneStore';
+import { globalScene, globalRenderer, globalCamera } from '../stores/sceneStore';
 import { moduleFrameTasks } from './moduleSDK';
 
 export const BURST_KINDS = ['sparkle', 'confetti', 'smoke', 'sparks'];
@@ -128,12 +128,36 @@ function makeSystem(index) {
 	};
 }
 
+/**
+ * Compile the burst material NOW, while nothing is showing. three builds a program on the
+ * first draw that needs it, and on a loaded device (a headset mid-game) that stall ate the
+ * first burst of a session whole — measured: the first burst on a page changed 0 pixels,
+ * every later one ~1500. One material, one program; cheap.
+ * @param {any} scene
+ */
+function warmUp(scene) {
+	const renderer = /** @type {any} */ (get(globalRenderer));
+	const camera = /** @type {any} */ (get(globalCamera));
+	const probe = pool[0]?.points;
+	if (!renderer?.compile || !camera || !probe) return;
+	const was = probe.visible;
+	probe.visible = true; // compile() walks VISIBLE objects only
+	try {
+		renderer.compile(probe, camera, scene);
+	} catch {
+		/* a lost context compiles nothing; the first draw will */
+	}
+	probe.visible = was;
+}
+
 /** the free system, or the oldest running one @returns {BurstSystem | null} */
 function takeSystem() {
 	const scene = /** @type {any} */ (get(globalScene));
 	if (!scene) return null;
+	const fresh = pool.length === 0;
 	while (pool.length < POOL_SIZE) pool.push(makeSystem(pool.length));
 	for (const sys of pool) if (sys.points.parent !== scene) scene.add(sys.points);
+	if (fresh) warmUp(scene);
 	const idle = pool.find((sys) => !sys.points.visible);
 	if (idle) return idle;
 	stats.recycled++;

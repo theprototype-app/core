@@ -61,19 +61,20 @@ h.run(async () => {
 
 	console.log('\n=== 3. patterns are timed pulses and stop when the player leaves ===');
 	const ok = await page.evaluate(() => ({ s: window.__api.hapticPattern('success', 'right'), u: window.__api.hapticPattern('zzz') }));
-	await page.waitForTimeout(400);
+	// wait on the PULSES, not a clock: headless timers run late under load
+	await page.waitForFunction(() => window.__buzz.length >= 3, null, { timeout: 5000 }).catch(() => {});
 	const success = await buzz();
 	h.check(ok.s === true && ok.u === false, '3.1 a known pattern plays, an unknown one is refused');
 	h.check(
 		success.length === 3 && success.every((b) => b.hand === 'right') && success[0].i < success[1].i && success[1].i < success[2].i,
 		'3.2 success = three rising pulses on the right (' + JSON.stringify(success.map((b) => b.i)) + ')'
 	);
-	h.check(success[2].t - success[0].t > 120, '3.3 they are spaced in time, not fired at once (' + (success[2].t - success[0].t).toFixed(0) + ' ms)');
+	h.check(success.length === 3 && success[2].t - success[0].t > 120, '3.3 they are spaced in time, not fired at once (' + (success.length === 3 ? (success[2].t - success[0].t).toFixed(0) : '-') + ' ms)');
 	await page.evaluate(() => {
 		window.__api.hapticPattern('rumble', 'left');
 		window.__stores.objectActions.setEditorMode('edit');
 	});
-	await page.waitForTimeout(600);
+	await page.waitForTimeout(2000); // past the whole rumble even with late timers
 	const cut = await buzz();
 	h.check(cut.length === 1, '3.4 leaving Interact mid-rumble stops it after the first pulse (' + cut.length + ' of 4)');
 	await mode('interact');
@@ -161,10 +162,10 @@ h.run(async () => {
 		const v = window.__stores.vrControls;
 		v.hapticKnock(Math.min(1, 0.2 + 0.4 / 10), 30, 'right'); // a brush at 0.4 m/s
 	});
-	await page.waitForTimeout(800); // headless timers run late — let the second pulse land
+	await page.waitForFunction(() => window.__buzz.length >= 2, null, { timeout: 5000 }).catch(() => {});
 	const soft = await buzz();
 	await page.evaluate(() => window.__stores.vrControls.hapticKnock(Math.min(1, 0.2 + 6 / 10), 30, 'right')); // a swing at 6 m/s
-	await page.waitForTimeout(800);
+	await page.waitForFunction(() => window.__buzz.length >= 2, null, { timeout: 5000 }).catch(() => {});
 	const hard = await buzz();
 	h.check(soft.length === 2 && hard.length === 2, '6.1 a knock plays the two-pulse hit (' + soft.length + ', ' + hard.length + ')');
 	h.check(hard[0].i > soft[0].i * 2 && hard[0].i <= 1, '6.2 a harder knock buzzes harder (' + soft[0].i.toFixed(3) + ' -> ' + hard[0].i.toFixed(3) + ')');

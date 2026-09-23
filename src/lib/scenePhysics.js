@@ -206,7 +206,7 @@ scenePhysicsState_.subscribe((s) => sceneGravity.set(s.gravity));
 export const scenePhysicsGround = derived(scenePhysicsState_, (s) => s.ground);
 /** out-of-bounds config. NOT named `sceneBounds` — that is sceneBounds.js */
 export const scenePhysicsBounds = derived(scenePhysicsState_, (s) => s.bounds);
-/** play-mode block ({interaction, grounded, simOnPlay, cursor?: 'free'}) */
+/** play-mode block ({interaction, grounded, simOnPlay, cursor?: 'free', spawn?: {position, yaw}}) */
 export const scenePlay = derived(scenePhysicsState_, (s) => s.play);
 /** A1: the knock block ({enabled, gain, maxSpeed, minSpeed, radius, spin, predict}) */
 export const sceneKnock = derived(scenePhysicsState_, (s) => s.knock);

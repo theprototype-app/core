@@ -46,6 +46,7 @@
 //
 // DEF (the file / the card):
 //   kind*            'template' | 'example' | 'game' | 'contest' — decides the folder + index section
+//   seed             false keeps a template out of the bundled offline seed (30c: kit levels need the pack CDN)
 //   slug* title* description   identity + card text; author, license ('CC0-1.0'), tags []
 //   modules          [{id, version}] — the card's module list (games only; must match installModules)
 //   installModules   ['<id>'] — zips installed from MODULES_REPO before the build (the game shows)
@@ -86,6 +87,11 @@
 //   spline           points [{pos, radius}], closed, color
 //   group / empty    children [objects] (names resolve inside groups too)
 //   mirror           of (a named object/group), opacity (0.15), prefix — reflected across x = 0
+//   kit              pack*, item* (a pack item NAME, e.g. 'architecture-kit' / 'WallStone'), scale?
+//                    ([x,y,z] or a number) — a PACK PIECE as a reference (30c packRefs.js): written
+//                    as a stub the app refills from PACKS_BASE, so a level of 100 pieces stays small.
+//                    Kept TOP-LEVEL (physics only reads top-level objects); `physics` sets its
+//                    collider (custom compound boxes/wedges for doorways, stairs, trees)
 // MATERIAL (every mesh type): color, roughness (0.85), metalness (0), emissive +
 //   emissiveIntensity (1), opacity (< 1 → transparent), flatShading, side ('double' | 'back'),
 //   toon (MeshToonMaterial), physical (MeshPhysicalMaterial — also implied by any of:
@@ -2146,7 +2152,10 @@ const DEFS = [
 	MIRROR_DEF,
 	BEAT_DEF,
 	// the def is the module's (see moduleDef); a checkout without it cannot author it
-	...MODULE_DEFS.map((id) => moduleDef(id) ?? { slug: id, missingModuleDef: true })
+	...MODULE_DEFS.map((id) => moduleDef(id) ?? { slug: id, missingModuleDef: true }),
+	// 30c level design: three walkable GENERAL templates built from the kits (seed: false —
+	// kit references need the pack CDN); the layouts live in level-templates.cjs
+	...require('./level-templates.cjs').LEVEL_DEFS
 ];
 
 (async () => {
@@ -2248,6 +2257,28 @@ const DEFS = [
 			const s = window.__stores;
 			const T = s.THREE;
 			s.commandsHandler.sceneCommand('/clear all');
+			// 30c: KIT pieces name a pack item; resolve each to its file path through the pack's
+			// own item list (default.json) on PACKS_BASE, once per pack, before anything builds
+			/** @type {Record<string, Record<string, string>>} */
+			const kitFiles = {};
+			/** @param {any[]} list @param {Set<string>} sink */
+			const kitPacks = (list, sink) => {
+				for (const o of list ?? []) {
+					if (o.type === 'kit') sink.add(o.pack);
+					if (o.children) kitPacks(o.children, sink);
+				}
+				return sink;
+			};
+			for (const pack of kitPacks(d.objects, new Set())) {
+				const base = String(s.packs.PACKS_BASE).replace(/\/+$/, '');
+				const res = await fetch(base + '/' + pack + '/default.json');
+				if (!res.ok) throw new Error('kit: pack "' + pack + '" is not served at ' + base + ' (HTTP ' + res.status + ')');
+				kitFiles[pack] = {};
+				for (const row of await res.json()) {
+					const file = row?.variants?.['glTF-Binary'];
+					if (row?.name && file) kitFiles[pack][row.name] = pack + '/' + row.name + '/glTF-Binary/' + file;
+				}
+			}
 			/** @type {any} */
 			let group;
 			s.objectsGroup.subscribe((g) => (group = g))();
@@ -2353,6 +2384,18 @@ const DEFS = [
 				if (o.type === 'group' || o.type === 'empty') {
 					object = new T.Group();
 					for (const child of o.children ?? []) object.add(build(child, opts));
+				} else if (o.type === 'kit') {
+					// 30c: a hollow STUB — the app's packRefs watcher refills it from the pack
+					// (awaited below, before the card renders and the file is written)
+					const path = kitFiles[o.pack]?.[o.item];
+					if (!path) throw new Error('kit "' + o.name + '": pack ' + o.pack + ' has no item "' + o.item + '"');
+					object = new T.Group();
+					object.userData.packRef = { pack: o.pack, item: o.item, path, kids: [] };
+					object.userData.packStub = true;
+					if (o.scale != null) {
+						const k = Array.isArray(o.scale) ? o.scale : [o.scale, o.scale, o.scale];
+						object.scale.set(k[0], k[1], k[2]);
+					}
 				} else if (o.type === 'light' && o.kind && o.kind !== 'point') {
 					// 30 author-kit: spot / directional / hemisphere. Spot and directional follow
 					// createLight's convention (cast shadows by default, the V-1 bias pair) and aim
@@ -2531,6 +2574,18 @@ const DEFS = [
 					continue;
 				}
 				group.add(build(o));
+			}
+			// 30c: refill every kit stub from its pack BEFORE anything measures the scene (the
+			// shadow fit below, the card) — and refuse to write a level whose pack is unreachable
+			if (kitPacks(d.objects, new Set()).size) {
+				s.objectsGroup.update((v) => v);
+				await new Promise((r) => setTimeout(r, 200));
+				await s.packRefs.packRefsSettled();
+				const hollow = [];
+				group.traverse((/** @type {any} */ n) => {
+					if (n.userData?.packStub) hollow.push(n.name);
+				});
+				if (hollow.length) throw new Error('kit pieces did not load: ' + hollow.slice(0, 5).join(', '));
 			}
 			// 30 author-kit: FIT each shadow-casting directional light's ortho frustum to the
 			// meshes just built — the 8 corners of their world box carried into the light's own
@@ -2863,7 +2918,10 @@ const DEFS = [
 				if (liveScene?.fog) scene.fog = liveScene.fog.clone();
 				const envRoot = liveScene?.getObjectByName('environment-root');
 				if (envRoot) scene.add(envRoot.clone(true));
-				const clone = new T.ObjectLoader().parse(group.toJSON());
+				// 30c: a level of kit pieces is CLONED, not round-tripped — toJSON writes every
+				// piece's textures as PNG data URLs (7.9 MB for one wall), which is the very cost
+				// the kit references exist to avoid. Every other def renders exactly as before.
+				const clone = kitPacks(d.objects, new Set()).size ? group.clone(true) : new T.ObjectLoader().parse(group.toJSON());
 				scene.add(clone);
 				// 21-C C6-b: a module's WORLD lives at the scene root (golden rule 5), so a
 				// card rendered from objectsGroup alone shows a dungeon template as a lone
@@ -3029,7 +3087,9 @@ const DEFS = [
 	// with a partial one.
 	if (!ONLY) {
 		fs.mkdirSync(STATIC_OUT, { recursive: true });
-		const seedTemplates = defs.filter((d) => d.kind === 'template').map((d) => ({
+		// 30c: `seed: false` keeps a template OUT of the offline seed — a level built from kit
+		// references needs the pack CDN, so bundling it offline would promise an empty world
+		const seedTemplates = defs.filter((d) => d.kind === 'template' && d.seed !== false).map((d) => ({
 			...writeDef(STATIC_OUT, d),
 			scene: `/templates/${d.slug}/scene.tpscene`,
 			thumb: built[d.slug].thumb ? `/templates/${d.slug}/thumb.webp` : ''

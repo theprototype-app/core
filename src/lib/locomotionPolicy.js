@@ -53,7 +53,9 @@ const SPAWN_LIMIT = 100000;
  * @returns {{position: [number, number, number], yaw: number} | null}
  */
 export function normalizeSpawn(raw, yawArg) {
-	const position = Array.isArray(raw) ? raw : raw?.position;
+	// 30c's first shape was `{pos, yaw}` (the level lane); read it too so a scene authored
+	// that way keeps its spawn
+	const position = Array.isArray(raw) ? raw : (raw?.position ?? raw?.pos);
 	if (!Array.isArray(position) || position.length < 3) return null;
 	const p = position.slice(0, 3).map(Number);
 	if (!p.every((v) => Number.isFinite(v) && Math.abs(v) <= SPAWN_LIMIT)) return null;

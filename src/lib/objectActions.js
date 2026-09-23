@@ -39,7 +39,7 @@ import { stripEditOverlays, isEditOverlay } from './editOverlays';
 import { markTransient } from './transientObjects';
 // 30 P3: a LEAF (THREE + stores), so a static import here closes no cycle
 import { clearModuleSelection } from './moduleContent';
-import { currentSpawn, spawnEyePose } from './playSpawn'; // 30b P4
+import { desktopSpawn, spawnEyePose } from './playSpawn'; // 30b P4 (+ vrOnly: core-games)
 // D2: a LEAF (svelte stores + THREE), so a static import here closes no cycle
 import { shareDuplicatedMaterials, linkMaterials } from './materialSharing';
 import {
@@ -244,7 +244,7 @@ export function setEditorMode(mode) {
 		// 30b P4: a game that names a spawn puts the desktop view there on the way in (VR
 		// does the same for the rig — vrControls follows this store; Play's camera spawns in
 		// PointerLockControls). No spawn, no move: the view stays where the author left it.
-		const spawn = currentSpawn();
+		const spawn = desktopSpawn();
 		if (spawn && !get(isVRMode) && get(isLocked) !== true) {
 			const { eye, lookAt } = spawnEyePose(spawn);
 			flyTo(eye, lookAt);

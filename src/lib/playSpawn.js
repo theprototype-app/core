@@ -20,6 +20,13 @@ export function currentSpawn() {
 	return resolvePlaySettings(get(globalScene)).spawn;
 }
 
+/** the spawn a DESKTOP view honours — the one in force unless it is VR-only (30b core-games)
+ * @returns {{position: [number, number, number], yaw: number} | null} */
+export function desktopSpawn() {
+	const spawn = currentSpawn();
+	return spawn && !(/** @type {any} */ (spawn).vrOnly) ? spawn : null;
+}
+
 /**
  * Where an EYE stands on a spawn, and a point straight ahead of it at eye height (what
  * flyTo and lookAt want). Pure. @param {{position: number[], yaw: number}} spawn
@@ -38,7 +45,7 @@ export function spawnEyePose(spawn) {
  * @param {{position: number[], yaw: number} | null} [spawn] defaults to the one in force
  * @returns {boolean} whether the camera moved
  */
-export function spawnDesktopPlayer(spawn = currentSpawn()) {
+export function spawnDesktopPlayer(spawn = desktopSpawn()) {
 	/** @type {any} */
 	const cam = get(playerCam);
 	if (!spawn || !cam?.isObject3D) return false;

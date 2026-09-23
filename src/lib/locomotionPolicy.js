@@ -61,7 +61,11 @@ export function normalizeSpawn(raw, yawArg) {
 	const yaw = Number(yawRaw ?? 0);
 	return {
 		position: /** @type {[number, number, number]} */ (p),
-		yaw: Number.isFinite(yaw) ? yaw : 0
+		yaw: Number.isFinite(yaw) ? yaw : 0,
+		// 30b (core-games): a VR-ONLY spawn — the headset stands on it, desktop Play and
+		// Interact keep their own camera (the Jam Room puts a VR player INSIDE the band, where
+		// a level desktop eye would see only the piano). Additive, kept only when true.
+		...(!Array.isArray(raw) && raw?.vrOnly === true ? { vrOnly: true } : {})
 	};
 }
 

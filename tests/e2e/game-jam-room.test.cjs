@@ -94,6 +94,61 @@ h.run(async () => {
 	h.check(st.cursor.setting === 'free', `a free-cursor game (${JSON.stringify(st.cursor)})`);
 	h.check(!st.transport.playing, 'the transport is stopped on load (nothing plays until you do)');
 
+	// 1c — 30b: THE COCKPIT. Standing on the VR spawn, the controller TIP reaches a control on
+	// every instrument (piano, drums, sampler, transport, mixer) at hand height, and the laser
+	// has a clear line to every pedal and speaker. Measured from the scene, not believed.
+	const reach = await page.evaluate(() => {
+		const s = window.__stores;
+		const THREE = s.THREE;
+		let scene, group;
+		s.globalScene.subscribe((v) => (scene = v))();
+		s.objectsGroup.subscribe((v) => (group = v))();
+		group.updateMatrixWorld(true);
+		const spawn = s.playSettings.resolvePlaySettings(scene).spawn;
+		if (!spawn) return { spawn: null };
+		const [fx, fy, fz] = spawn.position;
+		const head = new THREE.Vector3(fx, fy + 1.6, fz);
+		const devices = [];
+		group.traverse((o) => { if (o.userData?.device?.kind) devices.push(o); });
+		const out = {};
+		for (const d of devices) {
+			const kind = d.userData.device.kind.replace(/^mod-music-(lab|fx)-/, '');
+			let best = null;
+			d.traverse((m) => {
+				if (!m.isMesh || m === d) return;
+				if (!s.gameKit.vrGameInput.clickTargetOf({ object: m, point: new THREE.Vector3(), distance: 0 })) return;
+				if (/^vrpatch/.test(m.name)) return; // a cable jack is not the instrument
+				const b = new THREE.Box3().setFromObject(m);
+				const c = b.getCenter(new THREE.Vector3());
+				// horizontal distance from the feet axis to the nearest point of the control
+				const nx = Math.max(b.min.x, Math.min(fx, b.max.x));
+				const nz = Math.max(b.min.z, Math.min(fz, b.max.z));
+				const flat = Math.hypot(nx - fx, nz - fz);
+				// the laser: nothing opaque between the head and the control's centre
+				const dir = c.clone().sub(head);
+				const len = dir.length();
+				const ray = new THREE.Raycaster(head, dir.normalize(), 0, len - 0.02);
+				const blocker = ray.intersectObjects(group.children, true).find((hit) => {
+					let n = hit.object;
+					while (n && n !== group) {
+						if (n === d || n.userData?.pick === 'through') return false;
+						n = n.parent;
+					}
+					return true;
+				});
+				const row = { flat: +flat.toFixed(2), y: +c.y.toFixed(2), laser: +len.toFixed(2), blocked: blocker ? blocker.object.name : null };
+				if (!best || row.flat < best.flat) best = row;
+			});
+			(out[kind] ??= []).push(best);
+		}
+		return { spawn, out };
+	});
+	h.check(reach.spawn?.vrOnly === true && reach.spawn.position.join() === '1,0,-1', `30b: a VR-only spawn in the middle of the cockpit (${JSON.stringify(reach.spawn)})`);
+	const tipReach = ['piano', 'drums', 'sampler', 'transport', 'mixer'].map((k) => [k, reach.out?.[k]?.[0]]);
+	h.check(tipReach.every(([, r]) => r && r.flat <= 0.85 && r.y >= 0.6 && r.y <= 1.6), `30b: the tip reaches every instrument at hand height from the spawn (${JSON.stringify(Object.fromEntries(tipReach))})`);
+	const laserReach = Object.entries(reach.out ?? {}).flatMap(([k, rows]) => rows.map((r) => [k, r]));
+	h.check(laserReach.length === 12 && laserReach.every(([, r]) => r && !r.blocked && r.laser <= 3.5), `30b: the laser has a clear line to all twelve devices (${JSON.stringify(laserReach.filter(([, r]) => !r || r.blocked || r.laser > 3.5))})`);
+
 	// 2 — Play: no pointer lock, the start screen
 	await page.evaluate(() => window.__stores.isLocked.set(true));
 	await page.waitForTimeout(1500);
@@ -101,6 +156,18 @@ h.run(async () => {
 	const lockEl = await page.evaluate(() => !!document.pointerLockElement);
 	h.check(st.cursor.free === true && !lockEl, `in Play the cursor stays free (free ${st.cursor.free}, lock ${lockEl})`);
 	h.check(/JAM ROOM/.test(await hud()) && /Start jam/.test(await hud()) && /Your best tempo: 0 BPM/.test(await hud()), 'the start screen: title, Start jam, this device\'s best (none yet)');
+	// 30b: how to play, on a desktop and in VR; no music over the band; a desktop keeps its view
+	h.check(/HOW TO PLAY/.test(await hud()) && /VR: hold the trigger and sweep/.test(await hud()), '30b: the start screen says how to play, VR included');
+	const quiet = await page.evaluate(() => {
+		const s = window.__stores;
+		let m, cam;
+		s.gameKit.gameMusic.gameMusicState.subscribe((v) => (m = v))();
+		s.playerCam.subscribe((v) => (cam = v))();
+		const p = cam.getWorldPosition(new s.THREE.Vector3());
+		return { music: m, musicNodes: s.allNodes().filter((n) => n.type === 'gamemusic').length, eye: [p.x, p.y, p.z].map((n) => +n.toFixed(2)) };
+	});
+	h.check(quiet.music === null && quiet.musicNodes === 0, `30b: no game music — the room IS the music (${JSON.stringify(quiet.music)}, ${quiet.musicNodes} nodes)`);
+	h.check(Math.hypot(quiet.eye[0] - 1, quiet.eye[2] + 1) > 0.5, `30b: desktop Play does not stand on the VR-only spawn (eye ${quiet.eye})`);
 
 	// 3 — Start: the count-in, then the goal, which waits for the transport
 	await clickBtn('Start jam');
@@ -131,6 +198,8 @@ h.run(async () => {
 	await h.eventually(() => snap().then((v) => v.state), (v) => v === 'over', 'eight bars complete the session (over)', 14000);
 	await h.eventually(async () => await hud(), (t) => /SESSION COMPLETE/.test(t) && /8 bars at 240 BPM/.test(t) && /Your best tempo: 240 BPM/.test(t), 'Session complete names the tempo and the best', 4000);
 	h.check((await stored())['jam-best-bpm'] === 240, 'the best tempo is saved on this device (jam-best-bpm 240)');
+	const done = await page.evaluate(() => window.__stores.gameKit.gameFeelActions.gameFeelActionsDebug());
+	h.check(done.last.some((e) => e.type === 'announce' && e.text === 'Session complete!' && e.sub === '8 bars at 240 BPM') && done.last.some((e) => e.type === 'effectburst' && e.kind === 'confetti') && (done.sounds.levelup ?? 0) >= 1, '30b: the session ends with a banner (8 bars at 240 BPM), confetti and the fanfare');
 
 	// 5 — Play again: a fresh count-in, and the bars count from where the count-in ENDED —
 	// the transport is still running at beat 30-something

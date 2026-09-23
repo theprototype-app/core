@@ -1781,8 +1781,37 @@ function jamGraph() {
 	E('bquit', 'doquit', 'trigger');
 	E('bmenu', 'doquit', 'trigger');
 	E('bquit', 'quithide', 'trigger');
+
+	// ---- 30b: the shell sounds like a game — but never plays music over the band ----------
+	N('click', 'gamesound', 'Button click', 280, 1360, { sound: 'click' });
+	for (const b of ['bgo', 'bresume', 'brestart', 'breplay', 'bquit', 'bmenu']) E(b, 'click', 'trigger');
+	N('saygo', 'announce', 'Say: go', 1000, 40, { text: 'Go!', sub: 'Press ▶ on the Transport — keep it going for ' + JAM_BARS + ' bars', seconds: 2, color: '#ffb060', decimals: 0 });
+	E('countdone', 'saygo', 'trigger');
+	N('saydone', 'announce', 'Say: session complete', 2440, 480, { text: 'Session complete!', sub: JAM_BARS + ' bars at {v} BPM', seconds: 2.6, color: '#ffb060', decimals: 0 });
+	E('allwin', 'saydone', 'trigger');
+	E('tbpm', 'saydone', 'value');
+	N('donefx', 'effectburst', 'Confetti', 2440, 400, { kind: 'confetti', count: 96, lift: 0, color: '' });
+	E('allwin', 'donefx', 'trigger');
+	N('donesnd', 'gamesound', 'Fanfare', 2680, 400, { sound: 'levelup' });
+	E('allwin', 'donesnd', 'trigger');
+	N('donebuzz', 'hapticpulse', 'Buzz: done', 2680, 480, { pattern: 'success', hand: 'both' });
+	E('allwin', 'donebuzz', 'trigger');
 	return g.done();
 }
+/** 30b: where a VR player stands in the Jam Room — the middle of the cockpit (feet) */
+const JAM_SPAWN = [1.0, 0, -1.0];
+/** 30b: a stand/desk under a device: a top slab and two end panels, dark wood, select-through
+ * @param {string} name @param {number[]} at the floor centre @param {number[]} size [w, top height, d] */
+const jamStand = (name, at, size) => {
+	const [w, h, d] = size;
+	const wood = { color: 0x3a2618, physical: true, roughness: 0.55, clearcoat: 0.3, pick: 'through' };
+	const alongX = w >= d;
+	return [
+		{ type: 'box', name: name, size: [w, 0.05, d], pos: [at[0], h - 0.025, at[2]], bevel: 0.015, bevelSegments: 1, ...wood },
+		{ type: 'box', name: name + ' end A', size: alongX ? [0.05, h - 0.05, d * 0.9] : [w * 0.9, h - 0.05, 0.05], pos: alongX ? [at[0] - w / 2 + 0.06, (h - 0.05) / 2, at[2]] : [at[0], (h - 0.05) / 2, at[2] - d / 2 + 0.06], ...wood },
+		{ type: 'box', name: name + ' end B', size: alongX ? [0.05, h - 0.05, d * 0.9] : [w * 0.9, h - 0.05, 0.05], pos: alongX ? [at[0] + w / 2 - 0.06, (h - 0.05) / 2, at[2]] : [at[0], (h - 0.05) / 2, at[2] + d / 2 - 0.06], ...wood }
+	];
+};
 /** a warm lamp: a pole, a glowing shade and its light, as ONE group
  * @param {string} name @param {number[]} pos */
 const jamLamp = (name, pos) => ({
@@ -1818,8 +1847,14 @@ const JAM_DEF = {
 		sun: { color: '#ffe2c0', intensity: 1.6, dir: [0.4, 1, 0.7] }
 	},
 	// no simulation (nothing here has a body); a FREE cursor, because you play the
-	// instruments by pointing at them — no pointer lock, the real cursor clicks keys and pads
-	physics: { play: { cursor: 'free', simOnPlay: false } },
+	// instruments by pointing at them — no pointer lock, the real cursor clicks keys and pads.
+	// 30b: a VR-ONLY spawn INSIDE the band (see JAM_SPAWN): the headset stands at the
+	// cockpit, where the controller tip reaches the piano, the drums, the sampler, the
+	// transport and the mixer; a desktop keeps the overview it always had (a level eye at the
+	// cockpit would see only the piano).
+	physics: { play: { cursor: 'free', simOnPlay: false, spawn: { position: JAM_SPAWN, yaw: 0, vrOnly: true } } },
+	// 30b: NO Game Music node, on purpose — the room IS the music (the transport, the drums and
+	// the piano are what you hear), so a procedural `studio` loop would only fight the band.
 	post: {
 		enabled: true,
 		effects: [
@@ -1832,7 +1867,7 @@ const JAM_DEF = {
 		changedAt: 0
 	},
 	// inside the room, a step back from the band: Play starts from the editor camera's spot
-	view: { pos: [1.0, 2.4, 2.4], target: [1.0, 0.8, -3.2] },
+	view: { pos: [1.0, 2.5, 2.2], target: [1.0, 0.7, -1.4] },
 	thumb: { camera: 'Card camera' },
 	graphs: { scene: jamGraph() },
 	hud: {
@@ -1848,10 +1883,13 @@ const JAM_DEF = {
 					elements: [
 						{ id: 'start-panel', kind: 'panel', anchor: 'center', x: 0, y: 0, w: 480, h: 360, z: 0, label: '', style: JAM_PANEL },
 						{ id: 'start-title', kind: 'text', anchor: 'center', x: 0, y: -125, w: 420, h: 48, z: 1, label: 'JAM ROOM', style: { size: 38, weight: '700', color: '#ffb060', align: 'center' } },
-						{ id: 'start-sub', kind: 'text', anchor: 'center', x: 0, y: -72, w: 420, h: 44, z: 1, label: 'Press Start, then ▶ on the Transport, and keep the band going for eight bars.', style: { size: 14, color: '#f1e6dc', align: 'center' }, wrap: true },
-						{ id: 'best-read', kind: 'text', anchor: 'center', x: 0, y: -24, w: 420, h: 24, z: 1, label: 'Your best tempo: 0 BPM', style: { size: 15, weight: '600', color: '#ffd9a8', align: 'center' } },
+						// 30b: HOW TO PLAY
+						{ id: 'howto-title', kind: 'text', anchor: 'center', x: 0, y: -94, w: 420, h: 18, z: 1, label: 'HOW TO PLAY', style: { size: 12, weight: '700', color: '#ffd9a8', align: 'center' } },
+						{ id: 'start-sub', kind: 'text', anchor: 'center', x: 0, y: -62, w: 440, h: 44, z: 1, label: 'Press Start, then ▶ on the Transport, and keep the band going for eight bars. Play the piano, the drum grid and the pads on top of it.', style: { size: 14, color: '#f1e6dc', align: 'center' }, wrap: true },
+						{ id: 'best-read', kind: 'text', anchor: 'center', x: 0, y: -18, w: 420, h: 24, z: 1, label: 'Your best tempo: 0 BPM', style: { size: 15, weight: '600', color: '#ffd9a8', align: 'center' } },
 						{ id: 'go-btn', kind: 'button', anchor: 'center', x: 0, y: 40, w: 240, h: 50, z: 1, label: 'Start jam', enabled: true, style: JAM_BTN },
-						{ id: 'start-hint', kind: 'text', anchor: 'center', x: 0, y: 122, w: 440, h: 40, z: 1, label: 'Click keys, pads and the drum grid  ·  BPM −/+ on the Transport  ·  P: menu', style: { size: 12, color: '#b8a594', align: 'center' }, wrap: true }
+						{ id: 'start-hint', kind: 'text', anchor: 'center', x: 0, y: 108, w: 440, h: 22, z: 1, label: 'Click keys, pads and the drum grid  ·  BPM −/+ on the Transport  ·  P: menu', style: { size: 12, color: '#b8a594', align: 'center' }, wrap: true },
+						{ id: 'start-hint-vr', kind: 'text', anchor: 'center', x: 0, y: 136, w: 440, h: 22, z: 1, label: 'VR: hold the trigger and sweep across keys and pads  ·  Y: Edit mode', style: { size: 12, color: '#b8a594', align: 'center' }, wrap: true }
 					]
 				},
 				{
@@ -1928,7 +1966,7 @@ const JAM_DEF = {
 		// warm light: two floor lamps and a spot on the beat lab
 		jamLamp('Lamp left', [-4.1, 0, -5.4]),
 		jamLamp('Lamp right', [6.3, 0, -5.4]),
-		{ type: 'light', name: 'Stage spot', kind: 'spot', color: 0xffd9a8, intensity: 60, angle: 0.7, penumbra: 0.6, distance: 14, pos: [1, 5.2, 1.5], target: [0.9, 0, -2.6] },
+		{ type: 'light', name: 'Stage spot', kind: 'spot', color: 0xffd9a8, intensity: 60, angle: 0.7, penumbra: 0.6, distance: 14, pos: [1, 5.2, 1.5], target: [1.0, 0.6, -1.3] },
 		// props: an amp stack, a plant, a stool
 		{
 			type: 'group', name: 'Amp', pos: [-3.6, 0, -3.4], rot: [0, 0.5, 0],
@@ -1955,22 +1993,38 @@ const JAM_DEF = {
 				{ type: 'cylinder', name: 'Stool foot', color: 0x2b2420, r: 0.2, h: 0.03, pos: [0, 0.015, 0], physical: true, metalness: 0.6, roughness: 0.35 }
 			]
 		},
-		{ type: 'camera', name: 'Card camera', pos: [4.2, 2.6, 2.6], lookAt: [0.9, 0.5, -2.7], fov: 55 }
+		// 30b: the cockpit's furniture — what the devices stand on, at hand height. Select-
+		// through, so a press or the laser always reaches the device on top.
+		...jamStand('Keyboard stand', [1.0, 0, -2.0], [1.84, 0.74, 1.0]),
+		...jamStand('Drum desk', [0.1, 0, -0.85], [0.72, 0.78, 1.12]),
+		...jamStand('Right desk', [1.75, 0, -0.85], [0.56, 0.78, 1.2]),
+		...jamStand('Pedal board', [2.65, 0, -0.9], [0.36, 0.46, 1.9]),
+		// the speakers stand above the keys, so the laser (and the sound) clears the piano
+		...jamStand('Speaker stand left', [0.1, 0, -3.1], [0.44, 0.75, 0.44]),
+		...jamStand('Speaker stand right', [1.9, 0, -3.1], [0.44, 0.75, 0.44]),
+		{ type: 'camera', name: 'Card camera', pos: [4.2, 2.6, 2.6], lookAt: [1.0, 0.7, -1.3], fov: 55 }
 	],
-	// a semicircle facing the spawn at the origin; both speakers turned to face the listener
+	// 30b: THE COCKPIT — a U of stands around the VR spawn (JAM_SPAWN, facing -Z): the piano
+	// straight ahead with its keys at hand height, the drum machine on the left desk, the
+	// sampler and the mixer on the right desk, the transport on its stand behind-left, all
+	// turned to face the player; the pedal chain on its board beyond the right desk and the
+	// two speakers on stands behind the piano, both in the laser's reach and line of sight. (30's
+	// semicircle faced a desktop view: in VR the piano sat on the FLOOR and the drums were
+	// two metres from anyone.) Each yaw turns the device's player side (+Z; the transport's
+	// panel is on -Z) toward the spawn.
 	layout: [
-		{ kind: 'mod-music-lab-transport', pos: [-2.6, 0.5, -1.8] },
-		{ kind: 'mod-music-lab-piano', pos: [-1.3, 0, -2.4] },
-		{ kind: 'mod-music-lab-drums', pos: [0.3, 0.8, -2.8] },
-		{ kind: 'mod-music-lab-sampler', pos: [1.5, 0.8, -2.8] },
-		{ kind: 'mod-music-lab-speaker', index: 0, pos: [-1.0, 0.35, -4.4], yaw: Math.PI },
-		{ kind: 'mod-music-lab-speaker', index: 1, pos: [1.6, 0.35, -4.4], yaw: Math.PI },
-		{ kind: 'mod-music-fx-mixer', pos: [3.2, 0.8, -2.6] },
-		{ kind: 'mod-music-fx-filter', pos: [2.4, 0.5, -0.9] },
-		{ kind: 'mod-music-fx-distortion', pos: [3.0, 0.5, -0.9] },
-		{ kind: 'mod-music-fx-bitcrush', pos: [3.6, 0.5, -0.9] },
-		{ kind: 'mod-music-fx-delay', pos: [4.2, 0.5, -0.9] },
-		{ kind: 'mod-music-fx-reverb', pos: [4.8, 0.5, -0.9] }
+		{ kind: 'mod-music-lab-piano', pos: [1.0, 0.8, -2.0], yaw: 0 },
+		{ kind: 'mod-music-lab-drums', pos: [0.1, 0.85, -0.85], yaw: Math.PI / 2 },
+		{ kind: 'mod-music-lab-transport', pos: [0.7, 0.5, -0.2], yaw: Math.atan2(-0.3, 0.8) },
+		{ kind: 'mod-music-lab-sampler', pos: [1.75, 0.85, -1.17], yaw: -Math.PI / 2 },
+		{ kind: 'mod-music-fx-mixer', pos: [1.75, 0.85, -0.6], yaw: -Math.PI / 2 },
+		{ kind: 'mod-music-lab-speaker', index: 0, pos: [0.1, 1.1, -3.1], yaw: Math.PI },
+		{ kind: 'mod-music-lab-speaker', index: 1, pos: [1.9, 1.1, -3.1], yaw: Math.PI },
+		{ kind: 'mod-music-fx-filter', pos: [2.65, 0.5, -1.7], yaw: -Math.PI / 2 },
+		{ kind: 'mod-music-fx-distortion', pos: [2.65, 0.5, -1.3], yaw: -Math.PI / 2 },
+		{ kind: 'mod-music-fx-bitcrush', pos: [2.65, 0.5, -0.9], yaw: -Math.PI / 2 },
+		{ kind: 'mod-music-fx-delay', pos: [2.65, 0.5, -0.5], yaw: -Math.PI / 2 },
+		{ kind: 'mod-music-fx-reverb', pos: [2.65, 0.5, -0.1], yaw: -Math.PI / 2 }
 	],
 	generate: [
 		{ menu: 'Music Lab: piano + speaker', moduleId: 'music-lab', waitMs: 1500 },

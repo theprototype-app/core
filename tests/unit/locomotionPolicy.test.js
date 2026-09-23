@@ -115,3 +115,13 @@ describe('vrSpawnOffsets', () => {
 		expect(turn.orientation.w).toBeCloseTo(Math.cos(0.5));
 	});
 });
+
+// 30b (core-games): a VR-only spawn keeps its flag through the one normalizer (absent = none)
+describe('a VR-only spawn', () => {
+	it('keeps vrOnly only when it is exactly true', () => {
+		expect(normalizeSpawn({ position: [1, 0, -1], yaw: 0, vrOnly: true })).toEqual({ position: [1, 0, -1], yaw: 0, vrOnly: true });
+		expect(normalizeSpawn({ position: [1, 0, -1], yaw: 0, vrOnly: 'yes' })).toEqual({ position: [1, 0, -1], yaw: 0 });
+		expect(normalizeSpawn({ position: [1, 0, -1] })).toEqual({ position: [1, 0, -1], yaw: 0 });
+		expect(normalizeSpawn([1, 0, -1], 0.5)).toEqual({ position: [1, 0, -1], yaw: 0.5 });
+	});
+});

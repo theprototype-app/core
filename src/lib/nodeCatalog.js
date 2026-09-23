@@ -14,6 +14,14 @@ import { GAME_STATES } from './gameState';
 // svelte/store). Reaching them through inputRuntime instead would close a cycle:
 // inputRuntime imports shortcuts, which reaches history.
 import { GAMEPAD_BUTTONS, GAMEPAD_AXES } from './gamepadPrefs';
+// 30b (core-games): the Game Feel nodes' option lists come from the leaves that own them,
+// so a sound, a pattern or a preset added there reaches the palette with no second edit
+import { GAME_SOUNDS as GAME_SOUND_NAMES } from './gameSfx';
+import { HAPTIC_PATTERN_NAMES } from './hapticPatterns';
+import { MUSIC_PRESET_IDS } from './gameMusicPresets';
+/** Announce's value mark, spelled once OUTSIDE the catalog literals: a brace inside a node's
+ * strings breaks the brace-matching scan flow-node-docs reads this file with */
+const V_MARK = '{v}';
 
 /**
  * A1: `kind: 'text'` is a free-text param. It writes on COMMIT (change/blur),
@@ -240,6 +248,72 @@ export const nodeCatalog = [
 					{ key: 'output', kind: 'select', options: ['number', 'text'] }
 				],
 				note: 'Reads what THIS device saved — each player sees their own.'
+			},
+			// 30b (core-games): GAME FEEL — the flow half of 30b-vr-play's module kit, so a
+			// graph-authored game (Towers, Stars Room, Jam Room) can say "Ring 2 reached",
+			// sparkle, chime, buzz and score itself. All LOCAL on every peer from the
+			// replicated trigger stamp (the storevalue / setcamera rule): no message of their
+			// own. Haptics and music keep the core's Interact/Play gate — silent in Edit.
+			{
+				type: 'announce',
+				label: 'Announce',
+				defaults: { text: 'Level ' + V_MARK, sub: '', seconds: 1.8, color: '#ffd76a', decimals: 0 },
+				inputs: ['trigger', 'value'],
+				inputLabels: { value: 'value - fills ' + V_MARK + ' in the text' },
+				params: [
+					{ key: 'text', kind: 'text', placeholder: 'Ring ' + V_MARK + ' reached', maxLength: 80 },
+					{ key: 'sub', kind: 'text', placeholder: 'a smaller second line', maxLength: 120 },
+					{ key: 'seconds', kind: 'range', min: 0.3, max: 15, step: 0.1 },
+					{ key: 'color', kind: 'text', placeholder: '#ffd76a', maxLength: 20 }
+				],
+				note: 'A big banner on every screen (and in VR) — each player sees it from the same pulse.'
+			},
+			{
+				type: 'gamesound',
+				label: 'Game Sound',
+				defaults: { sound: 'coin' },
+				inputs: ['trigger', 'at'],
+				inputLabels: { at: 'at - an object (unwired = not placed)' },
+				params: [{ key: 'sound', kind: 'select', options: [...GAME_SOUND_NAMES] }],
+				note: 'Built-in sounds, no files — played on each device, at the wired object when there is one.'
+			},
+			{
+				type: 'effectburst',
+				label: 'Effect Burst',
+				defaults: { kind: 'sparkle', color: '', count: 48, lift: 0 },
+				inputs: ['trigger', 'at'],
+				inputLabels: { at: 'at - an object (unwired = in front of the player)' },
+				params: [
+					{ key: 'kind', kind: 'select', options: ['sparkle', 'confetti', 'smoke', 'sparks'] },
+					{ key: 'count', kind: 'range', min: 4, max: 96, step: 1 },
+					{ key: 'lift', kind: 'range', min: -2, max: 4, step: 0.1 },
+					{ key: 'color', kind: 'text', placeholder: 'the kind\'s own colours', maxLength: 20 }
+				],
+				note: 'A short particle burst, pooled — any number of these costs nothing between pulses.'
+			},
+			{
+				type: 'hapticpulse',
+				label: 'Controller Buzz',
+				defaults: { pattern: 'success', hand: 'both' },
+				inputs: ['trigger'],
+				params: [
+					{ key: 'pattern', kind: 'select', options: [...HAPTIC_PATTERN_NAMES] },
+					{ key: 'hand', kind: 'select', options: ['both', 'left', 'right'] }
+				],
+				note: 'VR controllers only, and only in Interact or Play — the editor stays still.'
+			},
+			{
+				type: 'gamemusic',
+				label: 'Game Music',
+				defaults: { preset: 'arcade', volume: 0.7, while: 'always' },
+				inputs: ['on'],
+				inputLabels: { on: 'on - unwired = always' },
+				params: [
+					{ key: 'preset', kind: 'select', options: [...MUSIC_PRESET_IDS] },
+					{ key: 'volume', kind: 'range', min: 0, max: 1, step: 0.05 },
+					{ key: 'while', kind: 'select', options: ['always', 'round'] }
+				],
+				note: 'Plays while you are in Interact or Play (never in the editor); each device hears its own.'
 			},
 			// the round clock, derived from the shared startedAt stamp — no clock of its own
 			{
@@ -612,6 +686,9 @@ export const nodeCatalog = [
 		items: [
 			// 134: EVENT nodes — ride small replicated trigger messages, not state
 			{ type: 'onclick', label: 'On Click', defaults: { pulse: 0.3 } },
+			// 30b (core-games): a player picked the object up — desktop play/Interact carry or
+			// a VR Interact grip (never an editor move). Towers' crates sound on the lift.
+			{ type: 'ongrab', label: 'On Grab', defaults: { pulse: 0.3 } },
 			// H3: keyboard trigger — LOCAL key presses replicate as trigger pulses
 			// (golden rule: never stream local state); held keys re-pulse so the
 			// output stays high while held

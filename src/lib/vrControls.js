@@ -135,7 +135,7 @@ import { sceneCommand } from './commandsHandler.svelte';
 import { sendPing, pingColor } from './ping';
 import { peerColor } from './lockControl';
 import { setVRAxes, setVRButtons } from './inputRuntime';
-import { suspendAnimation, resumeAnimation } from './flowRuntime';
+import { suspendAnimation, resumeAnimation, fireObjectGrab } from './flowRuntime';
 import { drawMode, toggleDrawMode, addStrokePoint, endStroke } from './drawMode';
 import { setPttHeld, cycleMicMode, vrMicMode, micActive, pttActive } from './voiceChat';
 import { safeStorage } from './safeStorage';
@@ -2545,6 +2545,8 @@ function onSqueezeStart(index) {
 	// 30b P2: a player picking something up is not SELECTING it — no lock broadcast, no
 	// selection shell, no inspector (Edit keeps all three)
 	if (!interact) selectObject(object.uuid); // locks it for peers, updates selection state
+	// 30b (core-games): a PLAYER's grab reaches On Grab nodes (Edit moves things, it does not play)
+	else fireObjectGrab(object.uuid);
 }
 
 /**

@@ -10,3 +10,4 @@ export * as vrGameInput from './vrGameInput';
 export * as effectsBurst from './effectsBurst';
 export * as gameAnnounce from './gameAnnounce';
 export * as vrGamePanel from './vrGamePanel';
+export * as gameFeelActions from './gameFeelActions'; // 30b (core-games): the Game Feel flow nodes

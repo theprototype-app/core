@@ -60,7 +60,7 @@ import { announce as announceBanner, clearAnnouncement } from './gameAnnounce';
 /** the ping chimes `api.playSound` still reaches (pingAudio's PING_SOUNDS ids) */
 const PING_NAMES = new Set(['ding', 'chime', 'pluck', 'bell']);
 import { runtimeSpawn, setRuntimeSpawn } from './playSettings'; // 30b P4 (a leaf)
-import { spawnDesktopPlayer, currentSpawn, spawnEyePose } from './playSpawn'; // 30b P4 (a leaf)
+import { spawnDesktopPlayer, currentSpawn, desktopSpawn, spawnEyePose } from './playSpawn'; // 30b P4 (a leaf)
 
 /** modules already told they hit the storage cap this session (ONE toast each, never
  * one per write — a game saving every frame would otherwise bury the screen) */
@@ -387,9 +387,12 @@ function respawnPlayerNow() {
 		if (get(editorMode) !== 'interact') return false;
 		return !!vrControlsRef?.spawnPlayer?.();
 	}
-	if (get(isLocked) === true) return spawnDesktopPlayer(spawn);
+	// 30b (core-games): a VR-only spawn leaves the desktop view where it is
+	const desk = desktopSpawn();
+	if (!desk) return false;
+	if (get(isLocked) === true) return spawnDesktopPlayer(desk);
 	if (get(editorMode) === 'interact') {
-		const { eye, lookAt } = spawnEyePose(spawn);
+		const { eye, lookAt } = spawnEyePose(desk);
 		objectActionsRef?.flyTo?.(eye, lookAt);
 		return !!objectActionsRef;
 	}

@@ -48,6 +48,7 @@ export function primeGameFeelActions() {
 /** what each node type did — the suites' view (no headset, no ears) */
 const debug = {
 	/** @type {Record<string, number>} */ fired: {},
+	/** per sound name, so a suite can count coins among the clicks @type {Record<string, number>} */ sounds: {},
 	/** @type {any[]} */ last: [],
 	musicOwner: /** @type {string | null} */ (null),
 	musicStarts: 0,
@@ -99,7 +100,7 @@ function inFrontOfPlayer(metres = 1.6) {
 function note(type, what) {
 	debug.fired[type] = (debug.fired[type] ?? 0) + 1;
 	debug.last.push({ type, ...what, at: Date.now() });
-	if (debug.last.length > 40) debug.last.shift();
+	if (debug.last.length > 120) debug.last.shift();
 }
 
 /**
@@ -121,6 +122,7 @@ export function runGameFeelAction(type, data) {
 		if (!isGameSound(name)) return false;
 		const at = worldPositionOf(data.at);
 		const ok = playGameSound(name, at);
+		debug.sounds[name] = (debug.sounds[name] ?? 0) + 1;
 		note(type, { sound: name, spatial: !!at, played: ok });
 		return ok;
 	}
@@ -208,12 +210,13 @@ export function updateGameMusicNodes(nodes, resolve, gameStateName) {
 
 /** the suites' view @returns {any} */
 export function gameFeelActionsDebug() {
-	return { fired: { ...debug.fired }, last: debug.last.map((e) => ({ ...e })), musicOwner: debug.musicOwner, musicStarts: debug.musicStarts, musicStops: debug.musicStops };
+	return { fired: { ...debug.fired }, sounds: { ...debug.sounds }, last: debug.last.map((e) => ({ ...e })), musicOwner: debug.musicOwner, musicStarts: debug.musicStarts, musicStops: debug.musicStops };
 }
 
 /** forget the counters (a suite section's clean slate) */
 export function resetGameFeelActionsDebug() {
 	debug.fired = {};
+	debug.sounds = {};
 	debug.last = [];
 	debug.musicStarts = 0;
 	debug.musicStops = 0;

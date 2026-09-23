@@ -63,6 +63,16 @@ h.run(async () => {
 			};
 		});
 	const hud = async () => (await page.locator('#hud-layer').textContent()) ?? '';
+	// 30b: the game-feel stores the suite reads (sound / burst / banner / music)
+	const feel = () =>
+		page.evaluate(() => {
+			const k = window.__stores.gameKit;
+			let music;
+			k.gameMusic.gameMusicState.subscribe((v) => (music = v))();
+			const d = k.gameFeelActions.gameFeelActionsDebug();
+			return { music: music?.preset ?? null, last: d.last, fired: d.fired, sounds: d.sounds };
+		});
+	const resetFeel = () => page.evaluate(() => window.__stores.gameKit.gameFeelActions.resetGameFeelActionsDebug());
 	const clickBtn = (text) => page.locator('#hud-layer button', { hasText: text }).click();
 
 	// 1 — the world arrived whole and lit
@@ -113,6 +123,16 @@ h.run(async () => {
 	// the editor half), so the menu check lives on this side of the play press now
 	h.check(/TOWERS/.test(await hud()), 'the menu renders in play (TOWERS)');
 	h.check(/Your best tower: 0 m/.test(await hud()), 'the menu shows this device\'s best height (none yet: 0 m)');
+	// 30b: HOW TO PLAY on the menu, the arcade music in Play, and Play put the eye on the spawn
+	h.check(/HOW TO PLAY/.test(await hud()) && /gold ring at 4 m is the top/.test(await hud()) && /VR: grip grabs a crate/.test(await hud()), '30b: the menu says how to play, on a desktop and in VR');
+	await h.eventually(() => feel().then((f) => f.music), (m) => m === 'arcade', '30b: the arcade music plays in Play', 6000);
+	const eye = await page.evaluate(() => {
+		const s = window.__stores;
+		let cam; s.playerCam.subscribe((v) => (cam = v))();
+		const p = cam.getWorldPosition(new s.THREE.Vector3());
+		return [p.x, p.y, p.z].map((n) => +n.toFixed(2));
+	});
+	h.check(Math.abs(eye[0]) < 0.05 && Math.abs(eye[1] - 1.7) < 0.05 && Math.abs(eye[2] - 4.5) < 0.05, `30b: Play put the eye on the spawn in front of the pad (${eye})`);
 	// 30: a centred HUD text is CENTRED — the words, not the box (a flex row shrank the line
 	// to its text, so text-align did nothing and every centred title sat flush left)
 	const centring = await page.evaluate(() => {
@@ -131,8 +151,10 @@ h.run(async () => {
 	h.check(Object.keys(centring).length === 2 && Object.values(centring).every((d) => Math.abs(d) < 3), `centred HUD texts are centred on their box (offsets ${JSON.stringify(centring)})`);
 
 	// 3 — the Start button flips to playing and swaps the menu for the HUD
+	await resetFeel();
 	await clickBtn('Start round');
 	await h.eventually(() => snap().then((v) => v.state), (v) => v === 'playing', 'Start flips to playing', 8000);
+	await h.eventually(() => feel(), (f) => (f.sounds.click ?? 0) >= 1 && (f.sounds.whistle ?? 0) >= 1 && f.last.some((e) => e.type === 'announce' && e.text === 'Build!'), '30b: Start clicks, whistles and says "Build!"', 4000);
 	await h.eventually(() => snap().then((v) => v.screen), (v) => v === 'hud', 'the in-game HUD screen shows', 6000);
 	// 30: the stars turn and breathe once the round starts (a Play Animation per star)
 	await h.eventually(
@@ -173,6 +195,35 @@ h.run(async () => {
 		o.position.set(0, 3.5, 0); o.updateMatrix();
 	}, crate.uuid);
 	await h.eventually(async () => await hud(), (t) => /Best height: [1-3] m/.test(t), 'lifting a crate latches the height HUD', 12000);
+	// 30b: every ring the crate crossed is a MILESTONE — a banner, a burst at the ring, its
+	// chime, and a buzz for a player in VR
+	await h.eventually(
+		() => feel(),
+		(f) => [1, 2, 3].every((i) => f.last.some((e) => e.type === 'announce' && e.text === 'Ring ' + i + ' reached')),
+		'30b: rings 1, 2 and 3 are announced as they are reached', 6000
+	);
+	const rings = await feel();
+	const bursts = rings.last.filter((e) => e.type === 'effectburst' && e.kind === 'sparkle' && e.fired);
+	h.check([1, 2, 3].every((y) => bursts.some((b) => Math.abs(b.where[1] - y) < 0.05 && Math.hypot(b.where[0], b.where[2]) < 0.05)), `30b: a sparkle burst AT each ring (${JSON.stringify(bursts.map((b) => b.where.map((n) => +n.toFixed(2))))})`);
+	h.check((rings.sounds.ring ?? 0) === 3 && rings.last.filter((e) => e.sound === 'ring').every((e) => e.spatial), `30b: each ring chimes once, from the ring (${rings.sounds.ring})`);
+	h.check((rings.fired.hapticpulse ?? 0) >= 1 && rings.last.some((e) => e.type === 'hapticpulse' && e.pattern === 'success' && e.felt), `30b: and asks the success buzz, felt in Play (${rings.fired.hapticpulse})`);
+	// a crate re-entering ring 1 in the same round is not a new milestone
+	await page.evaluate(() => {
+		let group; window.__stores.objectsGroup.subscribe((v) => (group = v))();
+		window.__stores.flowRuntime.fireObjectEnter(group.getObjectByName('Height ring 1m').uuid, group.getObjectByName('Cube 2').uuid);
+	});
+	await page.waitForTimeout(700);
+	const re = await feel();
+	h.check(re.last.filter((e) => e.type === 'announce' && e.text === 'Ring 1 reached').length === 1 && (re.sounds.ring ?? 0) === 3, '30b: a second crossing of ring 1 in the same round says nothing (a perRound Once)');
+	// THE TOP: the gold ring is the big one
+	await page.evaluate((uuid) => {
+		let group; window.__stores.objectsGroup.subscribe((v) => (group = v))();
+		const o = group.children.find((c) => c.uuid === uuid);
+		o.position.set(0, 4.4, 0); o.updateMatrix();
+	}, crate.uuid);
+	await h.eventually(() => feel(), (f) => f.last.some((e) => e.type === 'announce' && e.text === 'Top of the tower!') && (f.sounds.levelup ?? 0) === 1 && f.last.some((e) => e.type === 'effectburst' && e.kind === 'confetti' && Math.abs(e.where[1] - 4) < 0.05), '30b: the gold ring: "Top of the tower!", confetti at the ring and the level-up fanfare', 8000);
+	// ...and when that crate comes down on the pad it lands with a knock (On Impact -> Game Sound)
+	await h.eventually(() => feel(), (f) => f.last.some((e) => e.sound === 'hit' && e.spatial), '30b: a falling crate lands with a knock, at the crate', 8000);
 	h.check(/Stars left: 3/.test(await hud()), 'the collectible module reports 3 stars left');
 	// 30: the crossing SAVED the height on this device (Store Value max + the round's `set`)
 	const stored = () => page.evaluate(() => {
@@ -211,6 +262,8 @@ h.run(async () => {
 		return window.__stores.playInteract.playInteractDebug().carrying;
 	});
 	h.check(carrying === grabCrate, `pointerdown grabs the crate (${carrying === grabCrate})`);
+	// 30b: the lift makes a sound, placed at the crate (On Grab -> Game Sound)
+	await h.eventually(() => feel(), (f) => f.last.some((e) => e.sound === 'pop' && e.spatial), '30b: grabbing the crate pops, at the crate', 3000);
 	await page.evaluate(() => window.dispatchEvent(new PointerEvent('pointerup', { button: 0, bubbles: true })));
 	await page.waitForTimeout(300);
 

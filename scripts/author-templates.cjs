@@ -329,14 +329,33 @@ function towersGraph() {
 	N('storedlast', 'storedvalue', 'This round', 1960, 1180, { key: 'towers-last', output: 'number', fallback: 0 });
 	N('hfinal', 'hudtext', 'HUD final height', 2200, 1220, { element: 'final-height', format: 'This round: {v} m', decimals: 0, value: 0 });
 	E('storedlast', 'hfinal', 'value');
-	// reaching the top rung earns a sparkle burst on the pad
-	N('pfx', 'particle', '4m sparkle', 1000, 1400, {
-		mode: 'burst', count: 120, lifetime: 1.4, speed: 2.5, gravity: 0,
-		turbulence: 0.4, sizeStart: 0.12, opacity: 0.9, sprite: 'star', blending: 'additive', space: 'world'
-	});
-	N('selpad', 'objectselector', 'Build pad', 1240, 1400, { selected: 'Build pad' });
-	E('enr4', 'pfx', 'trigger');
-	E('pfx', 'selpad');
+	// ---- 30b: the rings are MILESTONES. The first crossing of a ring in a round (a perRound
+	// Once — a crate re-entering the sensor must not re-announce) tells every player: a banner,
+	// a burst AT the ring, a chime from the ring, and a success buzz in VR. The gold ring at
+	// the top is the big one: confetti, the level-up fanfare, "Top of the tower!". The Game
+	// Feel nodes are LOCAL on every peer from the replicated stamp, so no message of their own.
+	// (It replaces 30's particle emitter on the pad: the burst pool costs no emitter slot.)
+	N('buzzring', 'hapticpulse', 'Buzz: a ring reached', 1720, 1480, { pattern: 'success', hand: 'both' });
+	for (let i = 1; i <= 4; i++) {
+		const y = 960 + (i - 1) * 150;
+		const top = i === 4;
+		N('first' + i, 'once', 'First time at ' + i + 'm', 2440, y, { perRound: true, pulse: 0.3 });
+		E('enr' + i, 'first' + i, 'trigger');
+		N('say' + i, 'announce', top ? 'Say: top!' : 'Say: ring ' + i, 2680, y, top
+			? { text: 'Top of the tower!', sub: '4 m — the gold ring', seconds: 2.6, color: '#ffc640', decimals: 0 }
+			: { text: 'Ring ' + i + ' reached', sub: i + ' m — keep stacking', seconds: 1.8, color: '#9ee6ff', decimals: 0 });
+		E('first' + i, 'say' + i, 'trigger');
+		N('fx' + i, 'effectburst', 'Burst at ring ' + i, 2920, y, { kind: top ? 'confetti' : 'sparkle', count: top ? 96 : 56, lift: 0, color: '' });
+		E('first' + i, 'fx' + i, 'trigger');
+		E('selr' + i, 'fx' + i, 'at');
+		N('chime' + i, 'gamesound', top ? 'Fanfare at the top' : 'Chime at ring ' + i, 3160, y, { sound: top ? 'levelup' : 'ring' });
+		E('first' + i, 'chime' + i, 'trigger');
+		E('selr' + i, 'chime' + i, 'at');
+		E('first' + i, 'buzzring', 'trigger');
+	}
+	N('topsparkle', 'effectburst', 'Sparkle at the top', 2920, 1560, { kind: 'sparkle', count: 80, lift: 0.4, color: '#ffe08a' });
+	E('first4', 'topsparkle', 'trigger');
+	E('selr4', 'topsparkle', 'at');
 
 	// ---- the stars — collectible-module touch pickups (shared team score) -------
 	for (let i = 1; i <= 3; i++) {
@@ -384,8 +403,48 @@ function towersGraph() {
 	N('gotime', 'setgamestate', 'Time over', 1000, 2240, { state: 'over', outcome: "Time's up!", reset: false });
 	E('alltime', 'gotime', 'trigger');
 
+	// ---- 30b: the round's sound, and the crates' ------------------------------------------
+	// Music: the arcade loop while you are in the game (Interact or Play; never the editor).
+	N('music', 'gamemusic', 'Arcade music', 40, 2480, { preset: 'arcade', volume: 0.45, while: 'always' });
+	// Every menu button clicks.
+	N('click', 'gamesound', 'Button click', 280, 2480, { sound: 'click' });
+	for (const b of ['bstart', 'bagain', 'bresume', 'brestart', 'bquit', 'breplay']) E(b, 'click', 'trigger');
+	// A round starts with a whistle and a banner; it ends with one of two.
+	N('saygo', 'announce', 'Say: build!', 1720, 1640, { text: 'Build!', sub: 'Stack crates on the glowing pad — reach the gold ring', seconds: 2.2, color: '#ffd45e', decimals: 0 });
+	E('onround', 'saygo', 'trigger');
+	N('whistle', 'gamesound', 'Round start whistle', 1720, 1720, { sound: 'whistle' });
+	E('onround', 'whistle', 'trigger');
+	N('saywin', 'announce', 'Say: all stars', 1240, 2000, { text: 'All stars collected!', sub: '', seconds: 2.4, color: '#ffc640', decimals: 0 });
+	E('allwin', 'saywin', 'trigger');
+	N('cheer', 'gamesound', 'Cheer', 1240, 2080, { sound: 'cheer' });
+	E('allwin', 'cheer', 'trigger');
+	N('confetti', 'effectburst', 'Confetti for everyone', 1240, 2160, { kind: 'confetti', count: 96, lift: 0, color: '' });
+	E('allwin', 'confetti', 'trigger');
+	N('sayup', 'announce', "Say: time's up", 1240, 2300, { text: "Time's up!", sub: '', seconds: 2.2, color: '#e5e9f0', decimals: 0 });
+	E('alltime', 'sayup', 'trigger');
+	N('upwhistle', 'gamesound', 'Final whistle', 1240, 2380, { sound: 'whistle' });
+	E('alltime', 'upwhistle', 'trigger');
+	// Each crate: a pop when a player lifts it (On Grab) and a knock when it lands on
+	// something (On Impact past a gentle landing), both placed AT the crate.
+	TOWERS_CRATES.forEach((name, k) => {
+		const y = 2560 + k * 110;
+		N('csel' + k, 'objectselector', name, 280, y, { selected: name });
+		N('cgrab' + k, 'ongrab', name + ' grabbed', 40, y, { pulse: 0.3 });
+		E('cgrab' + k, 'csel' + k);
+		N('cpop' + k, 'gamesound', name + ' lift', 520, y, { sound: 'pop' });
+		E('cgrab' + k, 'cpop' + k, 'trigger');
+		E('csel' + k, 'cpop' + k, 'at');
+		N('cland' + k, 'onimpact', name + ' lands', 760, y, { pulse: 0.3, minStrength: 0.8 });
+		E('cland' + k, 'csel' + k);
+		N('cknock' + k, 'gamesound', name + ' knock', 1000, y, { sound: 'hit' });
+		E('cland' + k, 'cknock' + k, 'trigger');
+		E('csel' + k, 'cknock' + k, 'at');
+	});
+
 	return g.done();
 }
+/** the nine crates the sound chains above name (the objects below) */
+const TOWERS_CRATES = ['Cube 1', 'Cube 2', 'Cube 3', 'Cube 4', 'Cube 5', 'Cube 6', 'Plank 1', 'Plank 2', 'Plank 3'];
 
 const TOWERS_HUD_PANEL = {
 	bg: 'rgba(14, 20, 32, 0.9)',
@@ -491,7 +550,9 @@ const TOWERS_DEF = {
 		bounds: { limit: -20, action: 'respawn' },
 		material: { friction: 0.7, restitution: 0.05 },
 		damping: { linear: 0.05, angular: 0.3 },
-		play: { interaction: 'grab', grounded: false, simOnPlay: true }
+		// 30b: a SPAWN — Play (and Interact in VR) puts you 4.5 m in front of the pad, facing
+		// it, with a podium on each hand (yaw 0 faces -Z)
+		play: { interaction: 'grab', grounded: false, simOnPlay: true, spawn: { position: [0, 0, 4.5], yaw: 0 } }
 	},
 	// the shell floor (fork 11): ao -> AgX -> bloom -> smaa, bloom a touch higher so the
 	// rings, the trim and the pad read as light
@@ -521,12 +582,15 @@ const TOWERS_DEF = {
 					showWhile: 'menu',
 					input: 'menu',
 					elements: [
-						{ id: 'menu-panel', kind: 'panel', anchor: 'center', x: 0, y: 0, w: 480, h: 380, z: 0, label: '', style: TOWERS_HUD_PANEL },
-						{ id: 'title', kind: 'text', anchor: 'center', x: 0, y: -135, w: 420, h: 54, z: 1, label: 'TOWERS', style: { size: 42, weight: '700', color: '#ffd45e', align: 'center' } },
-						{ id: 'subtitle', kind: 'text', anchor: 'center', x: 0, y: -84, w: 440, h: 44, z: 1, label: 'Grab the crates and build the tallest tower on the glowing pad. Touch the floating stars.', style: { size: 14, color: '#d8dee9', align: 'center' }, wrap: true },
-						{ id: 'best-read', kind: 'text', anchor: 'center', x: 0, y: -34, w: 420, h: 24, z: 1, label: 'Your best tower: 0 m', style: { size: 15, weight: '600', color: '#9ee6ff', align: 'center' } },
-						{ id: 'start-btn', kind: 'button', anchor: 'center', x: 0, y: 28, w: 240, h: 50, z: 1, label: 'Start round', enabled: true, style: TOWERS_BTN },
-						{ id: 'menu-hint', kind: 'text', anchor: 'center', x: 0, y: 120, w: 440, h: 40, z: 1, label: 'Grab: hold click  ·  Push/pull: wheel  ·  Fly: Q/E  ·  Pause: P', style: { size: 12, color: '#8b97a8', align: 'center' }, wrap: true }
+						{ id: 'menu-panel', kind: 'panel', anchor: 'center', x: 0, y: 0, w: 500, h: 460, z: 0, label: '', style: TOWERS_HUD_PANEL },
+						{ id: 'title', kind: 'text', anchor: 'center', x: 0, y: -176, w: 420, h: 54, z: 1, label: 'TOWERS', style: { size: 42, weight: '700', color: '#ffd45e', align: 'center' } },
+						// 30b: HOW TO PLAY, said once, plainly — the goal, the milestones, the clock
+						{ id: 'howto-title', kind: 'text', anchor: 'center', x: 0, y: -132, w: 440, h: 20, z: 1, label: 'HOW TO PLAY', style: { size: 12, weight: '700', color: '#9ee6ff', align: 'center' } },
+						{ id: 'subtitle', kind: 'text', anchor: 'center', x: 0, y: -94, w: 450, h: 60, z: 1, label: 'Grab crates from the podiums and stack them on the glowing pad. Each ring your tower reaches is a milestone — the gold ring at 4 m is the top. Touch the three floating stars. Three minutes a round.', style: { size: 14, color: '#d8dee9', align: 'center' }, wrap: true },
+						{ id: 'best-read', kind: 'text', anchor: 'center', x: 0, y: -44, w: 420, h: 24, z: 1, label: 'Your best tower: 0 m', style: { size: 15, weight: '600', color: '#9ee6ff', align: 'center' } },
+						{ id: 'start-btn', kind: 'button', anchor: 'center', x: 0, y: 14, w: 240, h: 50, z: 1, label: 'Start round', enabled: true, style: TOWERS_BTN },
+						{ id: 'menu-hint', kind: 'text', anchor: 'center', x: 0, y: 88, w: 460, h: 36, z: 1, label: 'Desktop: hold click to grab  ·  wheel pushes/pulls  ·  Q/E fly  ·  P pause', style: { size: 12, color: '#8b97a8', align: 'center' }, wrap: true },
+						{ id: 'menu-hint-vr', kind: 'text', anchor: 'center', x: 0, y: 128, w: 460, h: 36, z: 1, label: 'VR: grip grabs a crate  ·  left stick walks  ·  Y switches to Edit mode', style: { size: 12, color: '#8b97a8', align: 'center' }, wrap: true }
 					]
 				},
 				{
@@ -641,12 +705,11 @@ const TOWERS_DEF = {
 //     wire resolves to and Select passes a string through raw — recorded as a follow-up
 //     (a Select typed by its wired inputs, or a Select Colour node). The Round-over title
 //     uses the same trick into HUD Text's `format`;
-//   · THE POOLED BURST (30): the runtime renders at most 8 emitters and a node wired to 24
-//     stars is 24 of them — the "Particle emitter cap (8) reached" toast on LOAD. So there
-//     is ONE burst emitter on a `Burst anchor`, and a Script node moves the anchor onto the
-//     star that was just hit: the star's number is Σ i·hit_i (each On Hit reads 1 for its
-//     0.3 s pulse), and the same sum is the burst's trigger. Two hits inside one pulse sum
-//     to a wrong index and simply burst nowhere new — a sparkle, not state;
+//   · THE BURST (30b): 30 pooled ONE particle emitter on a `Burst anchor` a Script moved onto
+//     the star just hit, because a particle node wired to 24 stars is 24 of the runtime's 8
+//     emitters. The Game Feel Effect Burst is pooled by the CORE (twelve short-lived systems at
+//     the scene root, no emitter slot), so each star has its own burst node now and the anchor,
+//     the Script and the hit-index sum are gone;
 //   · the spawner RECYCLES oldest-out at maxAlive, it does not refuse — "More stars"
 //     therefore never fails, and the room holds at most 27 + 32 dynamic bodies;
 //   · the chime is a def-level `sounds` entry (A4, additive): fetched like `music`,
@@ -797,10 +860,9 @@ function starsGraph() {
 	E('timeandplay', 'alltime', 'condition');
 	N('gotime', 'setgamestate', 'Time over', 1000, 1760, { state: 'over', outcome: "Time's up!", reset: false });
 	E('alltime', 'gotime', 'trigger');
-	// ---- per star: a chime on any hit, a per-player touch on MY hit, a perRound latch that
-	// paints the star lit during a round, and its share of the pooled burst's index --------
+	// ---- per star: a chime on any hit, a per-player touch on MY hit, and a perRound latch
+	// that paints the star lit during a round ------------------------------------------------
 	let prevSum = '';
-	let prevIdx = '';
 	for (let i = 1; i <= 24; i++) {
 		const y = 1900 + (i - 1) * 180;
 		N('sel' + i, 'objectselector', 'Star ' + i, 1000, y, { selected: 'Star ' + i });
@@ -821,46 +883,35 @@ function starsGraph() {
 		N('col' + i, 'setcolor', 'Star ' + i + ' paint', 1720, y, { color: STAR_DIM, whilePlaying: true });
 		E('lit' + i, 'col' + i, 'color');
 		E('col' + i, 'sel' + i);
-		N('idx' + i, 'math', 'Star ' + i + ' index', 280, y, { op: 'mul', a: 0, b: i });
-		E('hit' + i, 'idx' + i, 'a');
 		if (i === 2) {
 			N('sum2', 'math', 'Lit 1-2', 1960, y, { op: 'add', a: 0, b: 0 });
 			E('lat1', 'sum2', 'a');
 			E('lat2', 'sum2', 'b');
 			prevSum = 'sum2';
-			N('isum2', 'math', 'Hit index 1-2', 520, y, { op: 'add', a: 0, b: 0 });
-			E('idx1', 'isum2', 'a');
-			E('idx2', 'isum2', 'b');
-			prevIdx = 'isum2';
 		} else if (i > 2) {
 			N('sum' + i, 'math', 'Lit 1-' + i, 1960, y, { op: 'add', a: 0, b: 0 });
 			E(prevSum, 'sum' + i, 'a');
 			E('lat' + i, 'sum' + i, 'b');
 			prevSum = 'sum' + i;
-			N('isum' + i, 'math', 'Hit index 1-' + i, 520, y, { op: 'add', a: 0, b: 0 });
-			E(prevIdx, 'isum' + i, 'a');
-			E('idx' + i, 'isum' + i, 'b');
-			prevIdx = 'isum' + i;
 		}
 	}
-	// ---- the pooled burst: one emitter, moved onto the star just hit -------------------
-	N('selanchor', 'objectselector', 'Burst anchor', 1000, 1400, { selected: 'Burst anchor' });
-	N('hop', 'script', 'Stand on the hit star', 760, 1400, {
-		code:
-			'// the pooled burst: stand on the star that was just hit (a = its number, 0 = none).\n' +
-			'// Deterministic — every peer derives the same index from the replicated hit stamps.\n' +
-			"const n = Math.round(Number(data.a) || 0);\n" +
-			"const star = n >= 1 && n <= 24 && object.parent ? object.parent.getObjectByName('Star ' + n) : null;\n" +
-			'if (star) object.position.copy(star.position);\n'
-	});
-	E('isum24', 'hop', 'a');
-	E('hop', 'selanchor');
-	N('pool', 'particle', 'Pooled star burst', 760, 1300, {
-		mode: 'burst', count: 60, lifetime: 0.9, speed: 1.8, gravity: 0,
-		turbulence: 0.3, sizeStart: 0.09, opacity: 0.95, sprite: 'star', blending: 'additive', space: 'world'
-	});
-	E('isum24', 'pool', 'trigger');
-	E('pool', 'selanchor');
+	// ---- 30b: each star SPARKLES where it is hit, and LIGHTING it (the first hit of the round,
+	// a perRound Once) pays a coin chime and a haptic tap. The Game Feel burst is POOLED by
+	// the core (twelve short-lived systems at the scene root, no emitter slot), so 24 of them
+	// cost nothing between hits — which retires 30's one-emitter-plus-Script anchor trick.
+	N('buzzlit', 'hapticpulse', 'Buzz: a star lit', 1960, 1400, { pattern: 'tap', hand: 'both' });
+	for (let i = 1; i <= 24; i++) {
+		const y = 1900 + (i - 1) * 180;
+		N('fx' + i, 'effectburst', 'Star ' + i + ' sparkle', 2200, y, { kind: 'sparkle', count: 28, lift: 0, color: '' });
+		E('hit' + i, 'fx' + i, 'trigger');
+		E('sel' + i, 'fx' + i, 'at');
+		N('first' + i, 'once', 'Star ' + i + ' first lit', 2440, y, { perRound: true, pulse: 0.3 });
+		E('hit' + i, 'first' + i, 'trigger');
+		N('coin' + i, 'gamesound', 'Star ' + i + ' coin', 2680, y, { sound: 'coin' });
+		E('first' + i, 'coin' + i, 'trigger');
+		E('sel' + i, 'coin' + i, 'at');
+		E('first' + i, 'buzzlit', 'trigger');
+	}
 	// ---- the round's result, kept where the round's end cannot erase it ------------------
 	N('hlit', 'hudtext', 'HUD lit', 2200, 2000, { element: 'lit-read', format: 'Lit: {v} / 24', decimals: 0, value: 0 });
 	E('sum24', 'hlit', 'value');
@@ -915,6 +966,32 @@ function starsGraph() {
 	E('storedbest', 'hbest', 'value');
 	N('hbest0', 'hudtext', 'HUD best (start)', 3400, 2700, { element: 'best-read', format: 'Your best round: {v} / 24 stars', decimals: 0, value: 0 });
 	E('storedbest', 'hbest0', 'value');
+
+	// ---- 30b: the round says what is happening, and sounds like it -----------------------
+	N('music', 'gamemusic', 'Space music', 40, 1240, { preset: 'space', volume: 0.45, while: 'always' });
+	N('click', 'gamesound', 'Button click', 280, 1100, { sound: 'click' });
+	for (const b of ['bstart0', 'bfree', 'bstart', 'bagain', 'breplay', 'bresume', 'brestart', 'bquit', 'bmore']) E(b, 'click', 'trigger');
+	N('saygo', 'announce', 'Say: light them', 2680, 2540, { text: 'Light every star!', sub: 'Two minutes — knock each one', seconds: 2.2, color: '#ffe08a', decimals: 0 });
+	E('onround', 'saygo', 'trigger');
+	N('whistle', 'gamesound', 'Round start whistle', 2680, 2620, { sound: 'whistle' });
+	E('onround', 'whistle', 'trigger');
+	N('sayfree', 'announce', 'Say: free play', 520, 110, { text: 'Free play', sub: 'Knock the stars around — P or the menu to start a round', seconds: 2, color: '#9ee6ff', decimals: 0 });
+	E('bfree', 'sayfree', 'trigger');
+	N('saywin', 'announce', 'Say: all lit', 2920, 2150, { text: 'Every star lit!', sub: '', seconds: 2.4, color: '#ffe08a', decimals: 0 });
+	E('allwin', 'saywin', 'trigger');
+	N('fanfare', 'gamesound', 'Win fanfare', 2920, 2230, { sound: 'levelup' });
+	E('allwin', 'fanfare', 'trigger');
+	N('sayup', 'announce', "Say: time's up", 1240, 1840, { text: "Time's up!", sub: '', seconds: 2.2, color: '#e5e9f0', decimals: 0 });
+	E('alltime', 'sayup', 'trigger');
+	N('upwhistle', 'gamesound', 'Final whistle', 1240, 1920, { sound: 'whistle' });
+	E('alltime', 'upwhistle', 'trigger');
+	// the round's end, whichever way: confetti in front of every player and a cheer, with the
+	// results on the Round over screen (the VR board in a headset)
+	N('onover', 'ongamestate', 'When the round ends', 3160, 2700, { state: 'over', edge: 'enter', pulse: 0.3 });
+	N('confetti', 'effectburst', 'Confetti', 3400, 2700, { kind: 'confetti', count: 96, lift: 0, color: '' });
+	E('onover', 'confetti', 'trigger');
+	N('cheer', 'gamesound', 'Cheer', 3400, 2780, { sound: 'cheer' });
+	E('onover', 'cheer', 'trigger');
 	return g.done();
 }
 
@@ -958,7 +1035,8 @@ const STARS_DEF = {
 		material: { friction: 0.1, restitution: 0.85 },
 		damping: { linear: 0.35, angular: 0.2 },
 		ccd: false,
-		play: { interaction: 'grab', grounded: false, simOnPlay: true },
+		// 30b: a SPAWN just inside the south glass, facing the stars (yaw 0 faces -Z)
+		play: { interaction: 'grab', grounded: false, simOnPlay: true, spawn: { position: [0, 0, 5.2], yaw: 0 } },
 		knock: { enabled: true, gain: 1, maxSpeed: 10, radius: 0.12, spin: 0.6 }
 	},
 	post: {
@@ -989,11 +1067,14 @@ const STARS_DEF = {
 					elements: [
 						{ id: 'start-panel', kind: 'panel', anchor: 'center', x: 0, y: 0, w: 460, h: 400, z: 0, label: '', style: STARS_HUD_PANEL },
 						{ id: 'start-title', kind: 'text', anchor: 'center', x: 0, y: -145, w: 420, h: 48, z: 1, label: 'STARS ROOM', style: { size: 36, weight: '700', color: '#ffd45e', align: 'center' } },
-						{ id: 'start-sub', kind: 'text', anchor: 'center', x: 0, y: -92, w: 400, h: 44, z: 1, label: 'Zero gravity. Knock the crystal stars with your hands in VR, or walk into them.', style: STARS_TEXT, wrap: true },
+						// 30b: HOW TO PLAY
+						{ id: 'howto-title', kind: 'text', anchor: 'center', x: 0, y: -112, w: 400, h: 18, z: 1, label: 'HOW TO PLAY', style: { size: 12, weight: '700', color: '#9ee6ff', align: 'center' } },
+						{ id: 'start-sub', kind: 'text', anchor: 'center', x: 0, y: -80, w: 420, h: 44, z: 1, label: 'Zero gravity. Knock every crystal star once to light it — in VR swing your hands through them, on a desktop walk into them.', style: STARS_TEXT, wrap: true },
 						{ id: 'best-read', kind: 'text', anchor: 'center', x: 0, y: -44, w: 400, h: 24, z: 1, label: 'Your best round: 0 / 24 stars', style: { size: 14, weight: '600', color: '#9ee6ff', align: 'center' } },
 						{ id: 'go-btn', kind: 'button', anchor: 'center', x: 0, y: 12, w: 260, h: 48, z: 1, label: 'Start round', enabled: true, style: { ...STARS_BTN, size: 17 } },
 						{ id: 'free-btn', kind: 'button', anchor: 'center', x: 0, y: 70, w: 260, h: 42, z: 1, label: 'Free play', enabled: true, style: STARS_QUIET },
-						{ id: 'start-hint', kind: 'text', anchor: 'center', x: 0, y: 150, w: 420, h: 40, z: 1, label: 'Light every star in two minutes  ·  P: menu', style: { size: 12, color: '#8b97a8', align: 'center' }, wrap: true }
+						{ id: 'start-hint', kind: 'text', anchor: 'center', x: 0, y: 128, w: 420, h: 22, z: 1, label: 'Light all 24 in two minutes  ·  P: menu', style: { size: 12, color: '#8b97a8', align: 'center' }, wrap: true },
+						{ id: 'start-hint-vr', kind: 'text', anchor: 'center', x: 0, y: 156, w: 420, h: 22, z: 1, label: 'VR: left stick walks  ·  grip grabs  ·  Y switches to Edit mode', style: { size: 12, color: '#8b97a8', align: 'center' }, wrap: true }
 					]
 				},
 				{
@@ -1085,9 +1166,6 @@ const STARS_DEF = {
 				opacity: 1, fadeIn: 0.3, fadeOut: 0.25, sprite: 'star', blending: 'additive', spin: 0, space: 'local'
 			}
 		},
-		// the pooled burst's anchor — parked under the deck until a hit moves it (the emitter
-		// auto-fires once when it is built, and that must happen out of sight)
-		{ type: 'empty', name: 'Burst anchor', pos: [0, -3, 0] },
 		{ type: 'light', name: 'Room light', kind: 'point', color: 0xa8bcff, intensity: 20, distance: 18, pos: [0, 5.5, 0] },
 		{ type: 'light', name: 'Deck glow', kind: 'point', color: 0x7fd4ff, intensity: 4, distance: 9, pos: [0, 0.6, 0] },
 		// the two physical buttons (an onclick fires from a VR ray — the HUD is not in a headset)

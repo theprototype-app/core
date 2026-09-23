@@ -16,6 +16,7 @@ import {
 	orbitControls,
 	isVRMode,
 	gizmoSuppressed,
+	editorMode,
 	cameraClaim, pokeScene } from '../stores/sceneStore';
 import { attachMultiPivot, releaseMultiPivot, hasCustomOrigin, pivotPose, setPivotOrigin } from './multiTransform';
 import { focusTargetFace, faceEditObject, hideElementSelection, restoreElementSelection } from './faceEdit';
@@ -35,6 +36,8 @@ import { canEditObject, warnViewerReadOnly } from './objectPermissions';
 import { stripEditOverlays, isEditOverlay } from './editOverlays';
 // B7: the transient marker (a LEAF — two stores only, so no cycle back through history)
 import { markTransient } from './transientObjects';
+// 30 P3: a LEAF (THREE + stores), so a static import here closes no cycle
+import { clearModuleSelection } from './moduleContent';
 // D2: a LEAF (svelte stores + THREE), so a static import here closes no cycle
 import { shareDuplicatedMaterials, linkMaterials } from './materialSharing';
 import {
@@ -164,6 +167,7 @@ export function applySelectionSet(uuids, openProperties = false) {
 			!locked.find((lockedUuid) => lockedUuid[1] === uuid)
 	);
 	applyMemberTints(group, clean);
+	if (clean.length) clearModuleSelection(); // 30 P3: an object selection replaces the proxy
 	const previous = get(selectedObjects);
 	selectedObjects.set(clean);
 	if (clean.length) lastSelection = { uuids: [...clean], origin: null }; // 24-B1
@@ -180,7 +184,13 @@ export function applySelectionSet(uuids, openProperties = false) {
 		// move gizmo unless every object in the set is editable by the local user
 		// (their own local-only objects, or anything for editors/admins).
 		const editable = clean.every((/** @type {any} */ uuid) => canEditObject(group.getObjectByProperty('uuid', uuid)));
-		if (get(gizmoSuppressed)) {
+		if (get(editorMode) === 'interact') {
+			// 30 P1: INTERACT hands the scene to the player-style input, so a selection
+			// made from the object list (or kept from Edit) stands with no gizmo — a
+			// seated gizmo would take the next press on the object and move it instead
+			releaseMultiPivot();
+			controls.detach();
+		} else if (get(gizmoSuppressed)) {
 			// sculpt mode: selection (and its lock) stand, but no gizmo — the
 			// SculptToolbar toggle re-attaches explicitly when the user opts in
 			releaseMultiPivot();
@@ -209,6 +219,35 @@ export function applySelectionSet(uuids, openProperties = false) {
 	if (openProperties || get(inspectorPinned) || (!get(inspectorClose) && get(inspectorKind) === 'selection')) {
 		showSidebar('properties');
 	}
+}
+
+/**
+ * 30 P1: switch the editor between EDIT (a click selects, the gizmo attaches) and
+ * INTERACT (a click plays with the scene: module handlers, On Click nodes, the cursor
+ * grab). LOCAL — the store is never sent or saved. Entering Interact puts the gizmo away
+ * without dropping the selection, and coming back re-seats it on whatever is still
+ * selected, so a round trip through Interact costs the user nothing.
+ * @param {'edit' | 'interact'} mode @returns {'edit' | 'interact'}
+ */
+export function setEditorMode(mode) {
+	/** @type {'edit' | 'interact'} */
+	const next = mode === 'interact' ? 'interact' : 'edit';
+	if (get(editorMode) === next) return next;
+	editorMode.set(next);
+	/** @type {any} */
+	const controls = get(TControls);
+	if (next === 'interact') {
+		releaseMultiPivot();
+		if (controls && !get(isVRMode)) controls.detach();
+	} else if (get(selectedObjects).length) {
+		applySelectionSet([...get(selectedObjects)]);
+	}
+	return next;
+}
+
+/** The toolbar cell and the I key. */
+export function toggleEditorMode() {
+	return setEditorMode(get(editorMode) === 'interact' ? 'edit' : 'interact');
 }
 
 /** @param {string} uuid @param {boolean} openProperties @param {boolean=} additive - shift-click toggles set membership */
@@ -271,6 +310,7 @@ export function deselectObject() {
 	applyMemberTints(get(objectsGroup), []);
 	broadcastSelectionRelease(get(selectedObjects));
 	selectedObjects.set([]);
+	clearModuleSelection(); // 30 P3: the Module content proxy goes with any deselect
 	if (controls && !get(isVRMode)) controls.detach();
 	// selectedObject keeps the last object on purpose — the open inspector binds
 	// to $selectedObject.position/material and would crash on an empty value
@@ -298,6 +338,14 @@ export function setTransformMode(mode) {
 	const controls = get(TControls);
 	const object = controls?.object;
 	const vr = get(isVRMode);
+	// 30 P1: a transform tool IS editing — picking one in Interact goes back to Edit (which
+	// re-seats the gizmo on the selection) in that tool, rather than doing nothing visible
+	if (get(editorMode) === 'interact' && !vr) {
+		setEditorMode('edit');
+		get(TControls)?.setMode(mode);
+		transformMode.set(mode);
+		return;
+	}
 	const same = get(transformMode) === mode;
 	const isEditProxy = !!(object?.userData?.isFaceProxy || object?.userData?.isVertexProxy);
 	if (same && object && !vr) {
@@ -683,6 +731,12 @@ registerHistoryKind('props', (entry, state) => {
 		if (peer)
 			peer.send({ type: 'objectParameters', parameter: 'device', uuid: entry.uuid, device: state.device });
 	}
+	if ('pick' in state) {
+		// 30 P2: click-through in the viewport ("the next opaque thing behind me")
+		if (state.pick) object.userData.pick = state.pick;
+		else delete object.userData.pick;
+		if (peer) peer.send({ type: 'objectParameters', parameter: 'pick', uuid: entry.uuid, pick: state.pick ?? null });
+	}
 	if ('origin' in state) {
 		// 17-D: the per-object transform origin (pivot offset) is scene data, so
 		// moving it is undoable and replicated like any other userData write
@@ -705,6 +759,30 @@ registerHistoryKind('group', (entry, state) => {
 	moveObjectToGroup(entry.uuid, state.parent);
 	return true;
 });
+
+/**
+ * 30 P2: mark an object CLICK-THROUGH in the viewport — an editor click passes it to the
+ * next opaque thing behind (a game's walls, a glass case, a ceiling). Scene data like
+ * `userData.physics`: one `props` undo entry, the existing `objectParameters` message,
+ * and it rides toJSON / GLTF extras into every save. Absent is the default, so an object
+ * never flagged serialises byte-identically.
+ * @param {string} uuid @param {boolean} on @returns {boolean} whether anything changed
+ */
+export function setPickThrough(uuid, on) {
+	const object = get(objectsGroup)?.getObjectByProperty('uuid', uuid);
+	if (!object) return false;
+	const before = object.userData.pick ?? null;
+	const next = on ? 'through' : null;
+	if (before === next) return false;
+	if (next) object.userData.pick = next;
+	else delete object.userData.pick;
+	recordEntry({ kind: 'props', uuid, before: { pick: before }, after: { pick: next } });
+	/** @type {any} */
+	const peer = get(peers);
+	peer?.send({ type: 'objectParameters', parameter: 'pick', uuid, pick: next });
+	pokeScene();
+	return true;
+}
 
 /** Toggle visibility and replicate (same message Properties uses) @param {string} uuid */
 export function toggleObjectVisibility(uuid) {

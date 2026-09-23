@@ -51,6 +51,12 @@ export { moduleContentDebug } from './moduleContent';
 import { safeStorage } from './safeStorage';
 // 30 P4: api.storage — a LEAF (safeStorage only), shared with the Store Value flow node
 import { makeModuleStorage } from './gameStorage';
+// 30b (vr-play) C5: the game sound set and game music — LEAVES (svelte/store, audioEngine,
+// safeStorage, sessionClock, sceneStore), so static edges close no cycle
+import { isGameSound, playGameSound } from './gameSfx';
+import { playGameMusic, stopGameMusic, gameMusicState, MUSIC_PRESET_IDS } from './gameMusic';
+/** the ping chimes `api.playSound` still reaches (pingAudio's PING_SOUNDS ids) */
+const PING_NAMES = new Set(['ding', 'chime', 'pluck', 'bell']);
 
 /** modules already told they hit the storage cap this session (ONE toast each, never
  * one per write — a game saving every frame would otherwise bury the screen) */
@@ -1020,10 +1026,37 @@ function makeApi(moduleId, moduleName = moduleId) {
 		flyTo(position, lookAt) {
 			objectActionsRef?.flyTo(position, lookAt ?? position);
 		},
-		/** A spatial UI chime (the ping sounds). LOCAL — broadcast your own op if
-		 * peers should hear it too. @param {string=} sound @param {number[]=} position */
+		/**
+		 * A sound, LOCAL to this device — broadcast your own op if peers should hear it.
+		 * 30b: the GAME set (procedural, no assets, the "Game sounds" volume): 'click',
+		 * 'pop', 'whoosh', 'success', 'fail', 'hit', 'kick', 'shoot', 'laser',
+		 * 'explosion', 'coin', 'levelup', 'goal', 'whistle', 'cheer', 'step', 'ring',
+		 * 'sparkle', 'hurt', 'portal'; plus the ping chimes 'ding' (the default),
+		 * 'chime', 'pluck', 'bell'. An unknown name is a quiet no-op. `position`
+		 * spatialises it. Returns whether a sound started.
+		 * @param {string=} sound @param {number[]=} position @returns {boolean}
+		 */
 		playSound(sound = 'ding', position = undefined) {
-			pingAudioRef?.playPing(sound, position ?? null);
+			const name = String(sound ?? 'ding');
+			if (isGameSound(name)) return playGameSound(name, position ?? null);
+			if (!PING_NAMES.has(name)) return false;
+			pingAudioRef?.playPing(name, position ?? null);
+			return !!pingAudioRef;
+		},
+		/**
+		 * 30b: game MUSIC — procedural loops, LOCAL to this device, tempo-synced to the
+		 * session clock (two peers on one preset hear the same bar), under the effects
+		 * and on the "Music" volume. Plays only in Interact/Play (a call from Edit returns
+		 * false) and stops by itself when the player leaves the game.
+		 * Presets: 'arcade', 'ambient', 'dungeon', 'stadium', 'space', 'puzzle', 'studio'.
+		 */
+		music: {
+			/** @param {string} preset @param {{volume?: number}=} options 0..1 @returns {boolean} */
+			play: (preset, options = {}) => playGameMusic(preset, options ?? {}),
+			stop: () => stopGameMusic(),
+			/** the preset playing now, or null @returns {string | null} */
+			current: () => get(gameMusicState)?.preset ?? null,
+			presets: () => [...MUSIC_PRESET_IDS]
 		},
 		/** Park the editor camera behind an object and follow it (the car's chase
 		 * cam) — LOCAL, no selection, no undo. @param {string} uuid */

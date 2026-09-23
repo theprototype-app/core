@@ -2,6 +2,7 @@ import { get, writable } from 'svelte/store';
 import { scenePlay } from './scenePhysics';
 import { showToast } from '../stores/appStore';
 import { normalizeLocomotion, normalizeSpawn } from './locomotionPolicy';
+import { moduleWorldChildren } from './moduleWorld';
 
 /**
  * 30b P4: a spawn point set at RUNTIME by a module (`api.setSpawn(position, yaw)`) — a
@@ -50,7 +51,10 @@ let warnedMultiple = false;
  */
 export function playPublishers(scene) {
 	if (!scene?.children) return [];
-	const found = scene.children.filter((/** @type {any} */ child) => child?.userData?.play);
+	// 30b P5: registered module groups live under the world rig's module root now
+	const found = [...scene.children, ...moduleWorldChildren()].filter(
+		(/** @type {any} */ child) => child?.userData?.play
+	);
 	found.sort((/** @type {any} */ a, /** @type {any} */ b) => {
 		if (a.name === 'dungeon-module') return -1;
 		if (b.name === 'dungeon-module') return 1;

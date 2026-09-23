@@ -107,7 +107,9 @@ export function moduleContentRows(scene) {
 	const rows = [];
 	for (const entry of moduleGroupList()) {
 		const root = scene.getObjectByName(entry.name);
-		if (!root || root.parent !== scene) continue;
+		// 30b P5: a registered group is re-homed under the world rig's module root
+		// (moduleWorld.js — named, not imported, because that leaf imports this one)
+		if (!root || (root.parent !== scene && root.parent?.name !== 'module-world-root')) continue;
 		/** @type {{name: string, depth: number, uuid: string}[]} */
 		const children = [];
 		let total = 0;

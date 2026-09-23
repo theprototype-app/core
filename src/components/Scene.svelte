@@ -31,6 +31,7 @@
 	import { sceneHits } from '$lib/scenePick';
 	import { pickStack, chooseInStack } from '$lib/selectThrough';
 	import { tickModuleProxy, selectModuleGroup, moduleGroupOf } from '$lib/moduleContent';
+	import { setModuleWorldRoot } from '$lib/moduleWorld';
 	import { startPlayInteract, tickPlayInteract, stopPlayInteract, carriedUuid, editorInteractActive, cursorGrabStart, cursorGrabMove, cursorGrabEnd, interactClick } from '$lib/playInteract';
 	import { registerKeySessionProbe } from '$lib/shortcuts';
 	import { startKnock, tickKnock, stopKnock } from '$lib/knock';
@@ -1600,6 +1601,11 @@
 	     sceneObjects — they'd leak into GLTF sync). oncreate passes the ref
 	     DIRECTLY (the { ref } destructure trap, N1). -->
 	<T.Group name="particle-root" oncreate={(ref: any) => setParticleRoot(ref)} />
+
+	<!-- 30b P5: module viewport content (registered scene-root groups) is re-homed here so
+	     the VR world gestures carry it too — Untangle's dots spin with the world. Not in
+	     sceneObjects: nothing under it is serialised or sent (golden rule 5). -->
+	<T.Group name="module-world-root" oncreate={(ref: any) => setModuleWorldRoot(ref)} />
 </T.Group>
 
 {#if !$isLocked && !$isVRMode}

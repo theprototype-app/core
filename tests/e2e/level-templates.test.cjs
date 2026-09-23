@@ -16,6 +16,7 @@
 //
 //   APP_URL=https://theprototype.app:5255/ node tests/e2e/level-templates.test.cjs
 //   LEVELS=castle-courtyard  (a subset)
+//   LIVE=1  (no routes: the build's own feed + pack CDN — the preview proof; LEVELS_DIR still lists the slugs)
 const fs = require('fs');
 const path = require('path');
 const h = require('./helpers.cjs');
@@ -124,7 +125,8 @@ h.run(async () => {
 	const page = A.page;
 	// the Templates modal's feed -> the staged folder; the kits -> PACKS_DIR when this build
 	// reads them from the CDN (a relative pack path resolves against PACKS_BASE)
-	await page.route('**/cdn.jsdelivr.net/**', (route) => {
+	// LIVE=1: no routing at all — the build's own scenes feed and pack CDN (a preview proof)
+	if (!process.env.LIVE) await page.route('**/cdn.jsdelivr.net/**', (route) => {
 		const url = route.request().url();
 		const scenes = url.match(/\/theprototype-app\/scenes@[^/]+\/(.*)$/);
 		if (scenes) {

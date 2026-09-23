@@ -449,6 +449,59 @@ h.run(async () => {
 			'10.2 one held sweep across three piano keys plays each, once (' + JSON.stringify(jam.keyClicks) + ')'
 		);
 		h.check(jam.stepClicks.length === 3 && jam.diff >= 3, '10.3 a sweep across three drum steps flips each (' + JSON.stringify({ cells: jam.cellNames, clicks: jam.stepClicks.length, diff: jam.diff }) + ')');
+		// the Quest ask: "on the mixer enable/disable" — music-fx 0.2.0's mute BUTTONS and the
+		// pedals' FOOTSWITCHES answer a click, so one held sweep flips each it passes
+		const fx = await page.evaluate(async () => {
+			const s = window.__stores;
+			const THREE = s.THREE;
+			const T = window.__T;
+			let g;
+			s.objectsGroup.subscribe((v) => (g = v))();
+			g.updateMatrixWorld(true);
+			const topOf = (o) => {
+				const b = new THREE.Box3().setFromObject(o);
+				return new THREE.Vector3((b.min.x + b.max.x) / 2, b.max.y + 0.005, (b.min.z + b.max.z) / 2);
+			};
+			const devices = [];
+			g.traverse((o) => o.userData?.device?.kind?.startsWith?.('mod-music-fx-') && devices.push(o));
+			const mixer = devices.find((d) => d.userData.device.kind === 'mod-music-fx-mixer');
+			const pedals = devices.filter((d) => d !== mixer).sort((a, b) => a.getWorldPosition(new THREE.Vector3()).z - b.getWorldPosition(new THREE.Vector3()).z);
+			const params = (d) => ({ ...(s.audioDevices.deviceOf(d)?.params ?? d.userData.device.params ?? {}) });
+			const mutes = ['mute-1', 'mute-2', 'mute-3'].map((n) => mixer?.getObjectByName(n)).filter(Boolean);
+			const muteBefore = mixer ? params(mixer) : {};
+			if (mutes.length === 3) {
+				T.aim(1, topOf(mutes[0]).add(new THREE.Vector3(0, 0.05, 0.2)), topOf(mutes[0]));
+				T.press(1);
+				for (const m of mutes) {
+					T.tipFrame(1, topOf(m));
+					T.tipFrame(1, topOf(m));
+				}
+				T.release(1);
+			}
+			const switches = pedals.slice(0, 2).map((p) => p.getObjectByName('footswitch')).filter(Boolean);
+			const bypassBefore = pedals.slice(0, 2).map((p) => !!params(p).bypass);
+			if (switches.length === 2) {
+				T.aim(1, topOf(switches[0]).add(new THREE.Vector3(0, 0.05, 0.2)), topOf(switches[0]));
+				T.press(1);
+				for (const sw of switches) {
+					T.tipFrame(1, topOf(sw));
+					T.tipFrame(1, topOf(sw));
+				}
+				T.release(1);
+			}
+			await new Promise((r) => setTimeout(r, 600));
+			const muteAfter = mixer ? params(mixer) : {};
+			return {
+				mixer: !!mixer,
+				mutes: mutes.length,
+				muted: [1, 2, 3].map((i) => !!muteAfter['mute' + i] !== !!muteBefore['mute' + i]),
+				pedals: pedals.length,
+				switches: switches.length,
+				stomped: pedals.slice(0, 2).map((p, i) => !!params(p).bypass !== bypassBefore[i])
+			};
+		});
+		h.check(fx.mixer && fx.mutes === 3 && fx.muted.every(Boolean), '10.4 one held sweep across three mixer MUTE buttons flips each channel (' + JSON.stringify(fx) + ')');
+		h.check(fx.switches === 2 && fx.stomped.every(Boolean), '10.5 a sweep over two pedals\' FOOTSWITCHES stomps each (music-fx 0.2.0)');
 	}
 
 	await h.finish(browser);

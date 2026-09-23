@@ -315,7 +315,7 @@ const CASTLE_DEF = {
 	physics: playPhysics([1, 0.3, 4.6], 0),
 	post: lookPost(0.5),
 	graphs: { scene: walkGraph() },
-	view: { position: [9.5, 9, 13], target: [0, 2, -5] },
+	view: { pos: [9.5, 9, 13], target: [0, 2, -5] },
 	thumb: {}
 };
 
@@ -451,7 +451,7 @@ const FOREST_DEF = {
 	physics: playPhysics([0, 0.35, 5], 0),
 	post: lookPost(0.5),
 	graphs: { scene: walkGraph() },
-	view: { position: [-6, 7.5, 12], target: [3, 1, -6] },
+	view: { pos: [-6, 7.5, 12], target: [3, 1, -6] },
 	thumb: {}
 };
 
@@ -591,7 +591,7 @@ const TAVERN_DEF = {
 	physics: playPhysics([-1.4, 0.3, 3.3], -0.2),
 	post: lookPost(0.7),
 	graphs: { scene: walkGraph() },
-	view: { position: [0.5, 2.1, 3.3], target: [-1.5, 1.6, -3] },
+	view: { pos: [0.5, 2.1, 3.3], target: [-1.5, 1.6, -3] },
 	thumb: {}
 };
 

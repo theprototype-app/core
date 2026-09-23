@@ -460,10 +460,10 @@ h.run(async () => {
 	await h.eventually(() => screenOf(A.page), (v) => v === 'over', '6.7 A sees the over screen', 6000);
 	h.check(/MATCH OVER/.test(await hudText(A.page)), '6.8 the over screen renders');
 
-	// New match on the over screen: back to the menu, the sheet survives
+	// Menu on the over screen (30b: Rematch + Menu; it was New match): back to the menu, the sheet survives
 	const newBefore = await stampOf(B.page, 'evnew');
-	await hudButton(A.page, 'New match').click();
-	await h.eventually(() => snap(B.page), (s) => s?.score.blue === 0 && s.started === false && s.outcome === null, '6.9 B: New match — score 0');
+	await hudButton(A.page, 'Menu').click();
+	await h.eventually(() => snap(B.page), (s) => s?.score.blue === 0 && s.started === false && s.outcome === null, '6.9 B: Menu on the over screen (30b: Rematch + Menu) — score 0');
 	await h.eventually(() => stampOf(B.page, 'evnew'), (t) => t !== null && t !== newBefore, '6.10 B: the "On new match" stamp landed in the trigger log');
 	await h.eventually(() => gameStateOf(C.page), (v) => v === 'menu', '6.11 C: the shell is back in menu');
 	await h.eventually(() => screenOf(A.page), (v) => v === 'menu', '6.12 A sees the menu again', 6000);

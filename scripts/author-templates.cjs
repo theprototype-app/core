@@ -1839,7 +1839,7 @@ const JAM_DEF = {
 	author: 'theprototype',
 	tags: ['music', 'vr'],
 	installModules: ['music-lab', 'music-fx'],
-	modules: [{ id: 'music-lab', version: '0.2.1' }, { id: 'music-fx', version: '0.1.0' }],
+	modules: [{ id: 'music-lab', version: '0.2.1' }, { id: 'music-fx', version: '0.2.0' }],
 	// warm, indoor, readable: a dark wood gradient behind the open front, a warm hemisphere,
 	// a soft key light, and the lamps doing the rest
 	env: {

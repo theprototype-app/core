@@ -1,6 +1,7 @@
 import { get } from 'svelte/store';
 import { scenePlay } from './scenePhysics';
 import { showToast } from '../stores/appStore';
+import { normalizeLocomotion, normalizeSpawn } from './locomotionPolicy';
 
 // 21-B B3: what play mode BEHAVES like in this scene.
 //
@@ -45,7 +46,11 @@ export function playPublishers(scene) {
  * crosshair, today). A module publishing `userData.play.cursor` overrides the scene's, the
  * way `grounded` does, which is how a board-game module asks for it without an authored
  * scene field.
- * @returns {{interaction: 'grab'|'click'|'off', grounded: boolean, eyeHeight: number, cursor: 'free'|'locked'}}
+ * 30b P3/P4: `locomotion` ({teleport, fly}, both false unless the scene or a publisher
+ * allows them — field by field, like `grounded`) and `spawn` (the runtime api.setSpawn,
+ * else a publisher's `userData.play.spawn`, else the scene's `play.spawn`, else null).
+ * @returns {{interaction: 'grab'|'click'|'off', grounded: boolean, eyeHeight: number, cursor: 'free'|'locked',
+ *   locomotion: {teleport: boolean, fly: boolean}, spawn: {position: [number, number, number], yaw: number} | null}}
  */
 export function resolvePlaySettings(scene) {
 	const base = get(scenePlay);
@@ -54,8 +59,12 @@ export function resolvePlaySettings(scene) {
 		interaction: base.interaction,
 		grounded: base.grounded,
 		eyeHeight: DEFAULT_EYE_HEIGHT,
-		cursor: base.cursor === 'free' ? 'free' : 'locked'
+		cursor: base.cursor === 'free' ? 'free' : 'locked',
+		locomotion: { teleport: false, fly: false },
+		spawn: normalizeSpawn(base.spawn)
 	};
+	const baseLoco = normalizeLocomotion(base.locomotion);
+	if (baseLoco) Object.assign(out.locomotion, baseLoco);
 	const publishers = playPublishers(scene);
 	if (publishers.length > 1 && !warnedMultiple) {
 		warnedMultiple = true;
@@ -73,6 +82,10 @@ export function resolvePlaySettings(scene) {
 		if (typeof play.grounded === 'boolean') out.grounded = play.grounded;
 		if (typeof play.eyeHeight === 'number') out.eyeHeight = play.eyeHeight;
 		if (play.cursor === 'free' || play.cursor === 'locked') out.cursor = play.cursor;
+		const loco = normalizeLocomotion(play.locomotion);
+		if (loco) Object.assign(out.locomotion, loco);
+		const spawn = normalizeSpawn(play.spawn);
+		if (spawn) out.spawn = spawn;
 	}
 	return out;
 }

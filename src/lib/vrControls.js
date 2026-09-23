@@ -43,6 +43,8 @@ import {
 	peerHandStyle, pokeScene } from '../stores/sceneStore';
 import { isScenery, pickGripTarget, gripMovesWorld } from './vrGrip';
 import { resolvePlaySettings } from './playSettings';
+import { locomotionPolicy, vrSpawnOffsets, yawForward } from './locomotionPolicy';
+import { resolveWalk } from './charController';
 import { activeRing, findMenuEntry, ringEntries, sectorFromStick, pushRing, popRing, resetRings, hubEntry } from './vrRadialMenu';
 import { paletteColorAt, barValueAt } from './vrPalette';
 import { recordMaterialChange, setMaterialParam } from './materialsHandler';
@@ -808,7 +810,8 @@ export function updateTeleport(session) {
 	const y = source?.gamepad?.axes?.[3] ?? 0;
 
 	// 157: teleport can be disabled — reset any arm + hide the arc
-	if (!get(vrTeleportEnabled)) {
+	// 30b P3: ...and Interact allows it only when the scene's play block says so
+	if (!get(vrTeleportEnabled) || !vrLocomotionNow().teleport) {
 		teleportEngaged = false;
 		hideArc();
 		return;
@@ -932,6 +935,160 @@ function updateSnapTurn(session) {
 /** @param {any} r */
 export function initVRControls(r) {
 	renderer = r;
+}
+
+// ---- 30b P3: WALK LIKE A GAME (Interact) ------------------------------------------------
+// Edit keeps the editor's stick (VRControls.svelte: fly/strafe, left-grip pan/elevate,
+// teleport, the world gestures). INTERACT walks: the left stick moves along the head's
+// yaw at a walking pace, the step resolves through charController.resolveWalk — the SAME
+// three tiers desktop's walker uses (the rapier capsule when a sim runs, a dungeon raster,
+// the ground plane) — gravity pulls the feet down, a ~0.3 m step is climbed (the
+// capsule's autostep), and nothing flies or teleports unless the play block allows it.
+// The rig moves the WebXR way: by offsetting the reference space (offset = -(the viewer's
+// displacement), the convention across this file).
+//
+// FEET. A headset reports the HEAD. The physical head height comes from the viewer pose in
+// the BASE reference space captured at session start (local-floor: y 0 is the real floor),
+// and the feet are the head's current world y minus it — robust to every offset any gesture
+// applied since. Without a base space (a fake session in a suite), a standing 1.6 m head.
+
+/** metres per second on a full stick */
+export const VR_WALK_SPEED = 2.2;
+/** a standing head when no base space can say better */
+const STANDING_HEAD = 1.6;
+/** @type {any} */ let xrBaseSpace = null;
+
+/** Scene's onsessionstart: remember the untouched reference space. */
+export function noteXRBaseSpace() {
+	xrBaseSpace = renderer?.xr?.getReferenceSpace?.() ?? null;
+}
+
+/** 30b P3: the locomotion rules in force right now (mode + the resolved play block). */
+export function vrLocomotionNow() {
+	const mode = get(editorMode) === 'interact' ? 'interact' : 'edit';
+	return locomotionPolicy(mode, resolvePlaySettings(get(globalScene)).locomotion);
+}
+
+/** the viewer pose in the current space, and the head's physical height @returns {any} */
+function viewerNow() {
+	const frame = renderer?.xr?.getFrame?.();
+	const space = renderer?.xr?.getReferenceSpace?.();
+	const pose = frame && space ? frame.getViewerPose?.(space) : null;
+	if (!pose) return null;
+	const base = xrBaseSpace ? frame.getViewerPose?.(xrBaseSpace) : null;
+	const p = pose.transform.position;
+	const o = pose.transform.orientation;
+	const q = new THREE.Quaternion(o.x, o.y, o.z, o.w);
+	const fwd = new THREE.Vector3(0, 0, -1).applyQuaternion(q);
+	return {
+		head: { x: p.x, y: p.y, z: p.z },
+		yaw: Math.atan2(-fwd.x, -fwd.z),
+		headHeight: base ? base.transform.position.y : STANDING_HEAD
+	};
+}
+
+/** @param {{x: number, y: number, z: number}} offset reference-space offset (-(displacement))
+ * @param {{x: number, y: number, z: number, w: number}} [orientation] */
+function offsetSpace(offset, orientation) {
+	const space = renderer?.xr?.getReferenceSpace?.();
+	if (!space) return false;
+	renderer.xr.setReferenceSpace(
+		space.getOffsetReferenceSpace(
+			orientation ? new XRRigidTransform(offset, orientation) : new XRRigidTransform(offset)
+		)
+	);
+	return true;
+}
+
+/**
+ * 30b P3: ONE walker step as data — the wanted displacement from the stick, resolved against
+ * the world. Exported so a suite drives it with a real simulation and no headset.
+ * @param {{head: {x: number, y: number, z: number}, headHeight: number, yaw: number,
+ *   stick: {x: number, y: number}, dt: number, fly?: boolean, aim?: {x: number, y: number, z: number}}} input
+ * @returns {{dx: number, dy: number, dz: number, feet: number, grounded: boolean, source: string}}
+ */
+export function vrWalkStep(input) {
+	const dead = (/** @type {number} */ v) => (Math.abs(v) > 0.15 ? v : 0);
+	const sx = dead(input.stick.x);
+	const sy = dead(input.stick.y);
+	const dt = Math.max(0, Math.min(input.dt, 0.1));
+	const speed = VR_WALK_SPEED * dt;
+	const fwd = input.fly && input.aim ? input.aim : yawForward(input.yaw);
+	const flat = yawForward(input.yaw);
+	// stick UP is negative y in xr-standard; strafe is always horizontal
+	const right = { x: -flat.z, z: flat.x };
+	const desired = {
+		dx: speed * (-sy * fwd.x + sx * right.x),
+		dz: speed * (-sy * fwd.z + sx * right.z),
+		...(input.fly ? { dy: speed * -sy * (fwd.y ?? 0) } : {})
+	};
+	// the capsule is quantised to 10 cm so a nodding head does not rebuild it every frame
+	const height = Math.min(2.1, Math.max(1, Math.round(input.headHeight * 10) / 10));
+	const feet = input.head.y - input.headHeight;
+	const r = resolveWalk({ x: input.head.x, y: feet, z: input.head.z }, height, dt, desired, {
+		gravity: !input.fly
+	});
+	return { dx: r.dx, dy: r.feet - feet, dz: r.dz, feet: r.feet, grounded: r.grounded, source: r.source };
+}
+
+/**
+ * 30b P3: the Interact half of VRControls.svelte's stick task. Returns false in Edit (the
+ * caller then runs the editor's own stick code unchanged).
+ * @param {number} dt seconds @param {any} session
+ */
+export function tickVRInteractLocomotion(dt, session) {
+	const policy = vrLocomotionNow();
+	if (!policy.walk) return false;
+	const viewer = viewerNow();
+	if (!viewer) return true;
+	const left = [...(session?.inputSources ?? [])].find((s) => s.handedness === 'left');
+	const axes = left?.gamepad?.axes ?? [];
+	/** @type {any} */
+	let aim = null;
+	if (policy.fly) {
+		const index = controllerIndexFor('left');
+		if (index >= 0) {
+			const v = new THREE.Vector3(0, 0, -1).applyQuaternion(
+				renderer.xr.getController(index).getWorldQuaternion(new THREE.Quaternion())
+			);
+			aim = { x: v.x, y: v.y, z: v.z };
+		}
+	}
+	const step = vrWalkStep({
+		head: viewer.head,
+		headHeight: viewer.headHeight,
+		yaw: viewer.yaw,
+		stick: { x: axes[2] ?? 0, y: axes[3] ?? 0 },
+		dt,
+		fly: policy.fly,
+		aim
+	});
+	// fell out of the world: back to the spawn (or the origin)
+	if (step.feet < -50) {
+		// no spawn: stand back up on the origin, feet at 0
+		if (!spawnPlayer())
+			offsetSpace({ x: viewer.head.x, y: viewer.head.y - viewer.headHeight, z: viewer.head.z });
+		return true;
+	}
+	if (step.dx || step.dy || step.dz) offsetSpace({ x: -step.dx, y: -step.dy, z: -step.dz });
+	return true;
+}
+
+/**
+ * 30b P4: put the player on the game's spawn — the runtime api.setSpawn, else the scene's
+ * `play.spawn` (resolvePlaySettings). In VR the FEET land on it facing its yaw; on the
+ * desktop the play camera does (PointerLockControls reads the same resolution). No spawn,
+ * no move. @returns {boolean} whether the player was moved
+ */
+export function spawnPlayer() {
+	const spawn = resolvePlaySettings(get(globalScene)).spawn;
+	if (!spawn || !renderer?.xr?.getSession?.()) return false;
+	const viewer = viewerNow();
+	if (!viewer) return false;
+	const { turn, move } = vrSpawnOffsets(viewer.head, viewer.yaw, viewer.headHeight, spawn);
+	offsetSpace(turn.position, turn.orientation);
+	offsetSpace(move);
+	return true;
 }
 
 /**

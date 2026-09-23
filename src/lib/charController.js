@@ -307,13 +307,48 @@ function floorHeight() {
  */
 export function tickWalker(rig, settings, dt, desired) {
 	if (!rig) return { grounded, vy, source: 'none' };
-	const step = Math.max(0, Math.min(dt, 0.1)); // a tab that was backgrounded
 	const eyeHeight = Math.max(0.1, Number(settings?.eyeHeight ?? 1.7) || 1.7);
-	const useGravity = settings?.gravity !== false;
-	const g = Math.abs(Number(get(sceneGravity)) || 9.81);
-
 	rig.getWorldPosition(_worldPos);
-	let feet = _worldPos.y - eyeHeight;
+	const moved = resolveWalk(
+		{ x: _worldPos.x, y: _worldPos.y - eyeHeight, z: _worldPos.z },
+		eyeHeight,
+		dt,
+		desired,
+		{ gravity: settings?.gravity !== false, jumpHeight: settings?.jumpHeight }
+	);
+	// write back through the rig's PARENT: the camera lives in a group at y = 0.9, so a
+	// world target has to be converted rather than assigned
+	_target.set(_worldPos.x + moved.dx, moved.feet + eyeHeight, _worldPos.z + moved.dz);
+	if (rig.parent) rig.parent.worldToLocal(_target);
+	rig.position.copy(_target);
+	return { grounded: moved.grounded, vy: moved.vy, source: moved.source };
+}
+
+/**
+ * 30b P3: THE WALKER'S RESOLUTION, without a rig — so the VR walker (which moves the
+ * XR reference space, not a camera parent) resolves against exactly the same tiers.
+ * `feetPos` is the feet in WORLD space; the capsule spans feet -> feet + `height`.
+ * Returns the resolved world step and the new feet height. Owns the module's vertical
+ * state (vy / grounded / the jump edge): desktop play and a VR session never walk at once.
+ *
+ * 30b (asked by the dungeon lane): the dungeon RASTER now also clamps the rapier tier.
+ * A Kit dungeon's walls are module InstancedMeshes, never rapier colliders, so with a
+ * simulation running the capsule found nothing to stop it and walked through every wall.
+ * @param {{x: number, y: number, z: number}} feetPos
+ * @param {number} height eye/capsule height in metres
+ * @param {number} dt seconds
+ * @param {{dx: number, dz: number, dy?: number}} desired the wanted step, world units
+ *   (`dy` only without gravity — a flier's vertical intent)
+ * @param {{gravity?: boolean, jumpHeight?: number}} [opts]
+ * @returns {{dx: number, dy: number, dz: number, feet: number, grounded: boolean, vy: number, source: 'rapier'|'dungeon'|'plane'}}
+ */
+export function resolveWalk(feetPos, height, dt, desired, opts = {}) {
+	const step = Math.max(0, Math.min(dt, 0.1)); // a tab that was backgrounded
+	const eyeHeight = Math.max(0.1, Number(height) || 1.7);
+	const useGravity = opts.gravity !== false;
+	const g = Math.abs(Number(get(sceneGravity)) || 9.81);
+	_worldPos.set(feetPos.x, feetPos.y + eyeHeight, feetPos.z);
+	let feet = feetPos.y;
 
 	// gravity + the jump edge. The jump is spent only while we are ON something, so a
 	// press in mid-air is DROPPED rather than queued — a queued one fires on landing,
@@ -321,7 +356,7 @@ export function tickWalker(rig, settings, dt, desired) {
 	if (useGravity) {
 		if (jumpRequested && grounded) {
 			jumpRequested = false;
-			vy = Math.sqrt(2 * g * Math.max(0, Number(settings?.jumpHeight ?? 0) || 0));
+			vy = Math.sqrt(2 * g * Math.max(0, Number(opts.jumpHeight ?? 0) || 0));
 		}
 		vy -= g * step;
 	} else {
@@ -333,7 +368,7 @@ export function tickWalker(rig, settings, dt, desired) {
 	let source = 'plane';
 	let dx = desired?.dx ?? 0;
 	let dz = desired?.dz ?? 0;
-	let dy = useGravity ? vy * step : 0;
+	let dy = useGravity ? vy * step : Number(desired?.dy ?? 0) || 0;
 
 	const built = ensureCapsule(physicsRuntime(), eyeHeight);
 	if (built && capsule && controller) {
@@ -345,6 +380,13 @@ export function tickWalker(rig, settings, dt, desired) {
 			dx = moved.x;
 			dy = moved.y;
 			dz = moved.z;
+			// 30b: a dungeon raster clamps the capsule's step too (see resolveWalk)
+			const raster = dungeonData(get(globalScene));
+			if (raster && (dx || dz)) {
+				const slid = slideMove(raster, _worldPos.x, _worldPos.z, dx, dz, CAPSULE_RADIUS);
+				dx = slid.x - _worldPos.x;
+				dz = slid.z - _worldPos.z;
+			}
 			grounded = !!controller.computedGrounded();
 			feet += dy;
 			if (grounded && vy < 0) vy = 0;
@@ -356,7 +398,7 @@ export function tickWalker(rig, settings, dt, desired) {
 			console.log('character controller step failed', error);
 			dropCapsule();
 			source = 'plane';
-			dy = useGravity ? vy * step : 0;
+			dy = useGravity ? vy * step : Number(desired?.dy ?? 0) || 0;
 		}
 	}
 
@@ -373,8 +415,15 @@ export function tickWalker(rig, settings, dt, desired) {
 		const floor = raster ? 0 : floorHeight();
 		feet += dy;
 		if (!useGravity) {
-			feet = floor;
-			grounded = true;
+			// a flier (30b: `desired.dy` given) keeps its height above the floor; the walker
+			// with gravity off never passes dy, so it still stands ON the floor, unchanged
+			if (desired?.dy == null) {
+				feet = floor;
+				grounded = true;
+			} else {
+				feet = Math.max(floor, feet);
+				grounded = feet <= floor + 1e-4;
+			}
 		} else if (feet <= floor + 1e-4) {
 			feet = floor;
 			if (vy < 0) vy = 0;
@@ -383,12 +432,6 @@ export function tickWalker(rig, settings, dt, desired) {
 			grounded = false;
 		}
 	}
-
-	// write back through the rig's PARENT: the camera lives in a group at y = 0.9, so a
-	// world target has to be converted rather than assigned
-	_target.set(_worldPos.x + dx, feet + eyeHeight, _worldPos.z + dz);
-	if (rig.parent) rig.parent.worldToLocal(_target);
-	rig.position.copy(_target);
 
 	const state = { vy, grounded, ground: feet, source };
 	const previous = get(walkerState);
@@ -399,7 +442,47 @@ export function tickWalker(rig, settings, dt, desired) {
 		Math.abs(previous.ground - state.ground) > 1e-4
 	)
 		walkerState.set(state);
-	return { grounded, vy, source };
+	return { dx, dy, dz, feet, grounded, vy, source };
+}
+
+/** the head-sized capsule the built-in flier collides with: eye .. eye - FLY_BODY */
+const FLY_BODY = 1.0;
+
+/**
+ * 30b P3: DESKTOP PLAY'S BUILT-IN FLIER COLLIDES. With no Character Controller node,
+ * PointerLockControls moves the camera rig freely (WASD/QE/the pad) and the only wall it
+ * ever respected was a dungeon raster, so a player flew through every wall of every game.
+ * After the built-in step, the rig's world displacement since `before` is resolved through
+ * the walker's rapier capsule (a 1 m body hanging below the eye — a wall stops you, a floor
+ * holds you up, a low rim can still be flown over). Only while a simulation RUNS, because
+ * only then does a world with colliders exist; otherwise nothing happens and the step is
+ * byte-for-byte the old one (the 21-E6 parity contract: an empty scene flies as before).
+ * @param {any} rig the camera object PointerLockControls drives
+ * @param {{x: number, y: number, z: number}} before the rig's WORLD position before the step
+ * @returns {boolean} whether a collision pass ran
+ */
+export function collideRigStep(rig, before) {
+	if (!rig) return false;
+	const rt = physicsRuntime();
+	if (!rt) return false;
+	if (!ensureCapsule(rt, FLY_BODY) || !capsule || !controller) return false;
+	rig.getWorldPosition(_worldPos);
+	const d = { x: _worldPos.x - before.x, y: _worldPos.y - before.y, z: _worldPos.z - before.z };
+	if (Math.abs(d.x) + Math.abs(d.y) + Math.abs(d.z) < 1e-7) return false;
+	try {
+		capsule.setTranslation({ x: before.x, y: before.y - FLY_BODY / 2, z: before.z });
+		controller.computeColliderMovement(capsule, d);
+		const moved = controller.computedMovement();
+		_target.set(before.x + moved.x, before.y + moved.y, before.z + moved.z);
+		capsule.setTranslation({ x: _target.x, y: _target.y - FLY_BODY / 2, z: _target.z });
+		if (rig.parent) rig.parent.worldToLocal(_target);
+		rig.position.copy(_target);
+		return true;
+	} catch (error) {
+		console.log('fly collision failed', error);
+		dropCapsule();
+		return false;
+	}
 }
 
 /** Forget the walker's motion (a mode change, the controller removed, a test starting

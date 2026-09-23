@@ -1,7 +1,7 @@
 <script lang="ts">
     import { onDestroy, untrack } from 'svelte'
     import { get } from 'svelte/store'
-    import { Euler, Camera } from 'three'
+    import { Euler, Camera, Vector3 } from 'three'
     import { useThrelte, useParent, useTask } from '@threlte/core'
     import { isLocked, playPointerFree, playerCam, editorCam, globalScene } from '../../stores/sceneStore'
     import { userdata, peers } from '../../stores/appStore'
@@ -34,7 +34,8 @@
       effectiveSpeed,
       setJumpRequested,
       tickWalker,
-      walkStep
+      walkStep,
+      collideRigStep
     } from '$lib/charController'
 
     const { renderer, camera, invalidate } = useThrelte()
@@ -282,6 +283,8 @@
 
       const beforeX = $cameraParent?.position.x ?? 0
       const beforeZ = $cameraParent?.position.z ?? 0
+      // 30b P3: the rig's WORLD pose before this frame's built-in step, for the collision pass
+      const beforeWorld: any = $isLocked === true && $cameraParent ? $cameraParent.getWorldPosition(new Vector3()) : null
 
       if (moveState.forward === 1) {
         $cameraParent.translateZ(-speed);
@@ -369,6 +372,10 @@
           rig.position.z = c.z
         }
       }
+
+      // 30b P3: ...and against the physics world's colliders while a simulation runs, so
+      // desktop Play stops at a game's walls as the VR walker does (no world, no change)
+      if ($isLocked === true && rig && beforeWorld) collideRigStep(rig, beforeWorld)
 
     },
     {

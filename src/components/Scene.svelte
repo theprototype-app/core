@@ -9,7 +9,7 @@
 	import { peers, username, userdata, specatorMode, avatarConfig, viewportMenu, objectContextMenu, viewportMenuOpener, addMenu, addMenuOpener, showToast, multiSelectMode } from '../stores/appStore';
 	import { get } from 'svelte/store';
 	import { vrPostEnabled } from '$lib/viewportOverrides';
-	import { isLocked, editorCam, isVRMode, globalScene, objectsGroup, showGrid, TControls, selectedObject, selectedObjects, lockedObjects, marqueeRect, worldRig, vrOverride, specators, globalCamera, globalRenderer, orbitControls, passthroughActive, sessionCompositesOverRoom, vrObjectsPanelOpen, vrPaletteOpen, vrPropsPanelOpen, vrPrefabsPanelOpen, vrChatPanelOpen, vrEditMenuOpen, vrSnapMenuOpen, vrSettingsPanelOpen, vrApprovePanelOpen, vrToolMode, viewMode, contextLost } from '../stores/sceneStore';
+	import { isLocked, editorMode, editorCam, isVRMode, globalScene, objectsGroup, showGrid, TControls, selectedObject, selectedObjects, lockedObjects, marqueeRect, worldRig, vrOverride, specators, globalCamera, globalRenderer, orbitControls, passthroughActive, sessionCompositesOverRoom, vrObjectsPanelOpen, vrPaletteOpen, vrPropsPanelOpen, vrPrefabsPanelOpen, vrChatPanelOpen, vrEditMenuOpen, vrSnapMenuOpen, vrSettingsPanelOpen, vrApprovePanelOpen, vrToolMode, viewMode, contextLost } from '../stores/sceneStore';
 	import {
 		selectObject,
 		deselectObject,
@@ -29,10 +29,14 @@
 	import { holdBody, releaseBody } from '$lib/physics';
 	import { sculptObject, enterSculpt, beginStroke, strokeMove, endStroke as sculptEndStroke, showCursorAt, hideCursor } from '$lib/terrainSculpt';
 	import { sceneHits } from '$lib/scenePick';
-	import { startPlayInteract, tickPlayInteract, stopPlayInteract, carriedUuid } from '$lib/playInteract';
+	import { pickStack, chooseInStack } from '$lib/selectThrough';
+	import { tickModuleProxy, selectModuleGroup, moduleGroupOf } from '$lib/moduleContent';
+	import { setModuleWorldRoot } from '$lib/moduleWorld';
+	import { startPlayInteract, tickPlayInteract, stopPlayInteract, carriedUuid, editorInteractActive, cursorGrabStart, cursorGrabMove, cursorGrabEnd, interactClick } from '$lib/playInteract';
+	import { registerKeySessionProbe } from '$lib/shortcuts';
 	import { startKnock, tickKnock, stopKnock } from '$lib/knock';
 	import { tickMoveSmoothing } from '$lib/moveSmoothing';
-	import { moduleClickHandlers, moduleInteractiveGroups, fireClickMiss } from '$lib/moduleSDK';
+	import { moduleInteractiveGroups, fireClickMiss, runClickHandlers } from '$lib/moduleSDK';
 	import { updateSpatialAudio } from '$lib/voiceChat';
 	import { tickAnimatedMixers } from '$lib/animatedImports';
 	import { tickAnimationPreview, captureAutoKey, playheadOf } from '$lib/animationPreview';
@@ -51,7 +55,10 @@
 	// the annotation is TS syntax — a JSDoc @type cast is ignored here (the documented trap).
 	let knifeFrom: number[] | null = null;
 	import { peerScenes } from '$lib/peerScenes';
-	import { initVRControls, updateVRControls, raycastMenu, raycastPanel, raycastPalette, raycastProps, raycastPrefabs, raycastKeyboard, raycastChat, raycastEdit, raycastSnap, raycastSettings, raycastApprove, placePrefabGhost, vrFaceTrigger, vrVertexTrigger, vrVertexGrabStart, vrVertexGrabEnd, beginStretchSliderDrag, endStretchSliderDrag, executeVRMenuAction, resetWorldRig, onInputSourcesChange, worldToContentPose, boxSelectStart, boxSelectEnd, boxSelectActive, applyVRFrameRate, shouldSendHands, onHandPinchStart, onHandPinchEnd, pinchMenuToggledAt, firePingIfArmed, vrModuleTriggerStart, vrModuleTriggerEnd, vrModuleSelectSwallowed, handSnapshot, vrGrabbedUuid, hapticPulse } from '$lib/vrControls';
+	import { initVRControls, updateVRControls, raycastMenu, raycastPanel, raycastPalette, raycastProps, raycastPrefabs, raycastKeyboard, raycastChat, raycastEdit, raycastSnap, raycastSettings, raycastApprove, placePrefabGhost, vrFaceTrigger, vrVertexTrigger, vrVertexGrabStart, vrVertexGrabEnd, beginStretchSliderDrag, endStretchSliderDrag, executeVRMenuAction, resetWorldRig, onInputSourcesChange, worldToContentPose, boxSelectStart, boxSelectEnd, boxSelectActive, applyVRFrameRate, shouldSendHands, onHandPinchStart, onHandPinchEnd, pinchMenuToggledAt, firePingIfArmed, vrModuleTriggerStart, vrModuleTriggerEnd, vrModuleSelectSwallowed, handSnapshot, vrGrabbedUuid, hapticKnock, hapticPulse, onVRSessionStart } from '$lib/vrControls';
+	// 30b (vr-play): the game in your hands — hover/press haptics (P1), the sweep (P4)
+	import { startVrGameInput, stopVrGameInput } from '$lib/vrGameInput';
+	import { gameFeelActive } from '$lib/gameFeel';
 	import { vrKeyboardTarget } from '$lib/vrKeyboard';
 	import { measureMode, measureClick } from '$lib/measure';
 	import { pinsGroup, openAnnotation, showNotePins } from '$lib/annotationsHandler';
@@ -95,7 +102,51 @@
 	import { Mesh, Vector3 } from 'three'
 
 
-	let { scene, camera, renderer, dpr } = useThrelte();
+	let { scene, camera, renderer, dpr, dom } = useThrelte();
+
+	// 30 P0: THE POINTER-CAPTURE THROW — ~100 errors on a Quest were one per press.
+	// three 0.185's OrbitControls.onPointerDown calls `domElement.setPointerCapture` with
+	// no guard (its TransformControls sibling guards exactly this), and Chromium refuses a
+	// capture with InvalidStateError while the page holds a pointer lock — which is every
+	// press in play, since the editor controls stay mounted there. The throw lands before
+	// `_addPointer`, so it fired once per press and surfaced as "Something went wrong".
+	// Two halves: the controls stand down while playing (syncOrbitForPlay, per frame), and
+	// the capture itself is guarded on the element they listen on — the smaller of the two
+	// ways to reach it (a subclass would mean replacing threlte's <OrbitControls> with a
+	// hand-built <T is>), and it covers the camera preview's OrbitControls too, which
+	// listens on the same element. It calls the PROTOTYPE method at call time rather than
+	// a captured copy, so nothing else on the element is shadowed for good.
+	const pointerCaptureGuard = (el: any) => {
+		if (!el || typeof el.setPointerCapture !== 'function' || el.__captureGuarded) return () => {};
+		el.__captureGuarded = true;
+		el.setPointerCapture = function (this: any, pointerId: number) {
+			if (this.ownerDocument?.pointerLockElement) return; // the lock already owns the pointer
+			return Element.prototype.setPointerCapture.call(this, pointerId);
+		};
+		return () => {
+			delete el.setPointerCapture;
+			delete el.__captureGuarded;
+		};
+	};
+	onDestroy(pointerCaptureGuard(dom));
+	// the first half: while playing, every OrbitControls that drives the view stands
+	// down. Per FRAME rather than on the isLocked edge, because <TransformControls>
+	// unmounts in play and its auto-pause CLEANUP writes `enabled = true`
+	// unconditionally a tick later (the enableZoom note on the mount below) — a write on
+	// the edge would be stomped. Whatever this stood down comes back when play ends.
+	const orbitStoodDown = new Set<any>();
+	function syncOrbitForPlay() {
+		const controls: any = $activeOrbit;
+		if ($isLocked === true) {
+			if (controls && controls.enabled !== false) {
+				controls.enabled = false;
+				orbitStoodDown.add(controls);
+			}
+		} else if (orbitStoodDown.size) {
+			for (const stood of orbitStoodDown) stood.enabled = true;
+			orbitStoodDown.clear();
+		}
+	}
 
 	// 26-D: the quality governor's two knobs that live here. Resolution goes through
 	// threlte's OWN dpr (renderer.setPixelRatio directly would be undone by threlte's resize
@@ -276,6 +327,7 @@
 
 	useTask((delta) => {
 		rotation += 0.25 * delta;
+		syncOrbitForPlay(); // 30 P0: the editor camera controls stand down while playing
 		// 21-B B3: play-mode grab/carry. The ray is NDC (0,0) every frame, so it
 		// belongs in the frame loop rather than on a pointer event.
 		tickPlayInteract(delta, camera.current);
@@ -346,6 +398,7 @@
 		updateCables(); // 23-A4: patch cables follow their plugs; the routing diff runs here too
 		updateOnionSkin(); // 17-E F6: ghosts at the neighbouring keys (local, off by default)
 		updateTinyMarkers(); // R2: a dot to aim at when an object has no size left
+		tickModuleProxy(); // 30 P3: a selected module group's proxy box follows its content
 		if (!renderer.xr.isPresenting) updateEditorNavigation(delta, camera.current, $activeOrbit);
 	});
 
@@ -443,35 +496,66 @@
 		return sceneHits(selectionRaycaster, { tinyProxies: true });
 	}
 
-	function runModuleClickHandlers(hit) {
-		for (const handler of moduleClickHandlers) {
-			try {
-				if (handler(hit)) return true;
-			} catch (error) {
-				console.log('module click handler failed', error);
-			}
-		}
-		return false;
+	// 30 P1: ONE dispatch, filtered by the mode the click came from — 'edit' (the editor
+	// pick: only handlers that asked for Edit), 'play' (the play tap), or null (VR's
+	// trigger, which has no editor mode yet and still offers every handler first)
+	function runModuleClickHandlers(hit: any, mode: string | null = null) {
+		return runClickHandlers(hit, mode);
 	}
 
 	// 15-O: double-click detection for "open the properties panel" — reuses the
 	// existing click path instead of a separate dblclick listener. Declared at
 	// COMPONENT scope: raycastSelect lives here, not in the pointer-handler block.
 	let lastPick: { uuid: string | null; t: number } = { uuid: null, t: 0 };
+	// 30 P2: the last plain editor click — where, when, and what it picked — so a repeat on
+	// the same spot can walk DOWN the stack instead of re-picking the same object
+	let lastSelectClick: { x: number; y: number; t: number; uuid: string | null } | null = null;
+	let selectBehindHinted = safeStorage.getItem('hint:selectBehind') === 'true';
 
-	function raycastSelect(additive = false) {
+	// 30 P1: `mode` is where the click came from. 'edit' = the desktop editor pick, where a
+	// module handler runs only if it registered for Edit (so a piano or a puzzle piece no
+	// longer swallows the select) and On Click nodes do NOT fire — Interact is where the
+	// scene reacts. null = VR's trigger, unchanged: every handler first, then select + pulse.
+	function raycastSelect(additive = false, mode: string | null = null, click: { x: number; y: number; t: number } | null = null) {
 		// module-owned interactive groups live at the scene root (pong, dungeon, ...)
+		// 30 P3: in EDIT the nearest module-content hit that no edit handler took is
+		// remembered, so a click on a board or a dungeon selects its PROXY (the object list's
+		// Module content row) instead of passing through it to the floor behind
+		let moduleHit: { name: string; distance: number } | null = null;
 		for (const name of moduleInteractiveGroups) {
 			const root = scene.getObjectByName(name);
 			if (!root) continue;
 			const moduleHits = selectionRaycaster.intersectObject(root, true);
-			if (moduleHits.length > 0 && runModuleClickHandlers(moduleHits[0].object)) return true;
+			if (moduleHits.length > 0 && runModuleClickHandlers(moduleHits[0].object, mode)) return true;
+			if (moduleHits.length > 0 && (!moduleHit || moduleHits[0].distance < moduleHit.distance))
+				moduleHit = { name, distance: moduleHits[0].distance };
 		}
 		const hits = pickSceneObjects();
-		if (hits.length > 0) {
-			// modules may consume the click (buttons, instruments, ...)
-			if (runModuleClickHandlers(hits[0].object)) return true;
-			const target = topLevelObjectOf(hits[0].object);
+		// 30 P2: SELECT-THROUGH — collapse the hits into a stack of top-level targets and
+		// prefer the first OPAQUE one (a 0.12-opacity wall, a flagged ceiling or a hidden
+		// node no longer wins the click); a plain repeat on the same spot walks down it.
+		const stack = pickStack(hits, topLevelObjectOf);
+		const choice = chooseInStack(stack, click ?? { x: -1e6, y: -1e6, t: 0 }, !additive && click ? lastSelectClick : null);
+		const chosen = choice.index >= 0 ? stack[choice.index] : null;
+		if (mode === 'edit' && !additive && moduleHit && moduleGroupOf(moduleHit.name) && (!chosen || moduleHit.distance < chosen.hit.distance)) {
+			deselectObject();
+			selectModuleGroup(moduleHit.name);
+			return true;
+		}
+		if (chosen) {
+			// modules may consume the click (buttons, instruments, ...) — in Edit only the
+			// ones that asked for it (an editor tool), everything else in VR
+			if (runModuleClickHandlers(chosen.hit.object, mode)) return true;
+			const target = chosen.target;
+			if (click && !additive) {
+				lastSelectClick = { ...click, uuid: target.uuid };
+				// the first time a click lands on a stack, say how to reach what is behind
+				if (stack.length > 1 && !selectBehindHinted) {
+					selectBehindHinted = true;
+					safeStorage.setItem('hint:selectBehind', 'true');
+					showToast('Click again to select behind');
+				}
+			}
 			if (target) {
 				// 15-O: a plain click SELECTS; the properties panel opens on a
 				// DOUBLE-click (or via the context menu / object list / a pinned
@@ -494,7 +578,9 @@
 					focusObject(target.uuid);
 					isolateObjects([target.uuid]);
 				}
-				fireObjectClick(target.uuid); // 134: pulse any OnClick node targeting it
+				// 134: pulse any OnClick node targeting it — not from the EDIT pick (30 P1:
+				// selecting a button in the editor must not press it; Interact does that)
+				if (mode !== 'edit') fireObjectClick(target.uuid);
 				return true;
 			}
 		}
@@ -625,14 +711,21 @@
 		let lastSplineClick = 0; // 57.2: a second click here finishes the spline
 		let lastPointerXY: number[] | null = null; // last cursor position, for keyboard-opened menus
 
-		const setRayFromEvent = (event) => {
+		const ndcOfEvent = (event: any) => {
 			const rect = element.getBoundingClientRect();
-			const ndc = new THREE.Vector2(
+			return new THREE.Vector2(
 				((event.clientX - rect.left) / rect.width) * 2 - 1,
 				-((event.clientY - rect.top) / rect.height) * 2 + 1
 			);
-			selectionRaycaster.setFromCamera(ndc, camera.current);
 		};
+		const setRayFromEvent = (event) => {
+			selectionRaycaster.setFromCamera(ndcOfEvent(event), camera.current);
+		};
+		// 30 P1: an Interact carry in progress (the camera controls stand down for it)
+		let interactCarrying = false;
+		// the press that CAN start an Interact gesture: no editor session or tool holds it
+		const interactPress = () =>
+			editorInteractActive() && !$specatorMode && !$editingObject && !$faceEditObject && !$splineEditObject && !$drawMode && !$sculptObject;
 
 		const onPointerDown = (event) => {
 			if (event.button === 2) {
@@ -673,6 +766,20 @@
 				}
 				return;
 			}
+			// 30 P1: INTERACT — a press on a dynamic body of a running sim CARRIES it along the
+			// cursor (play's hold, unforked); anything else is a click-or-orbit, and never a
+			// marquee (a box SELECTS, which Interact does not do)
+			if (interactPress()) {
+				setRayFromEvent(event);
+				if (cursorGrabStart(selectionRaycaster, ndcOfEvent(event), camera.current)) {
+					interactCarrying = true;
+					setOrbitEnabled(false);
+					return;
+				}
+				downPosition = [event.clientX, event.clientY];
+				downTime = Date.now();
+				return;
+			}
 			// Shift+drag = marquee select (13) — orbit pauses for the gesture
 			// #20: inside a MESH SESSION the same gesture boxes ELEMENTS instead of objects.
 			// A separate branch, not a loosened gate: the object marquee must never run in a
@@ -703,6 +810,8 @@
 		};
 
 		const onPointerMove = (event) => {
+			// 30 P1: an Interact carry follows the cursor
+			if (interactCarrying) cursorGrabMove(ndcOfEvent(event));
 			// 57.3: a radius drag owns the gesture (thickness, not the camera)
 			if (radiusDragActive()) {
 				radiusDragMove(event.clientY);
@@ -767,6 +876,13 @@
 		};
 
 		const onPointerUp = (event) => {
+			if (interactCarrying && event.button === 0) {
+				interactCarrying = false;
+				cursorGrabEnd(); // a throw (false if the carry was already cancelled)
+				setOrbitEnabled(true);
+				downPosition = null;
+				return;
+			}
 			if (radiusDragActive() && event.button === 0) {
 				endRadiusDrag(); // final broadcast + one undo entry
 				setOrbitEnabled(true);
@@ -988,6 +1104,13 @@
 				}
 				return;
 			}
+			// 30 P1: INTERACT — the click plays with the scene and selects nothing (the
+			// editor tools above — pings, spline/measure/path picks, mesh sessions — keep
+			// their clicks in either mode; they were armed on purpose)
+			if (interactPress()) {
+				interactClick(selectionRaycaster);
+				return;
+			}
 			// light pick-proxies select their light (lights have no raycastable geometry)
 			if ($lightProxiesGroup) {
 				const proxyHits = selectionRaycaster.intersectObject($lightProxiesGroup, true);
@@ -1011,7 +1134,7 @@
 			// 85: a click on nothing is also the way out of an isolation — the same
 			// "click the background to get back" instinct as deselecting.
 			const additive = event.shiftKey || $multiSelectMode;
-			if (!raycastSelect(additive) && !additive) {
+			if (!raycastSelect(additive, 'edit', { x: event.clientX, y: event.clientY, t: Date.now() }) && !additive) {
 				if (isIsolated()) clearIsolation();
 				deselectObject();
 			}
@@ -1267,6 +1390,13 @@
 			tempMatrix.identity().extractRotation(controller.matrixWorld);
 			selectionRaycaster.ray.origin.setFromMatrixPosition(controller.matrixWorld);
 			selectionRaycaster.ray.direction.set(0, 0, -1).applyMatrix4(tempMatrix);
+			// 30b (C3): in Interact/Play a VR press is a CLICK — module handlers, On Click,
+			// the miss — and selects nothing, ever (the desktop Interact rule); the sweep
+			// already fired anything it knew was clickable and swallowed this release
+			if (gameFeelActive()) {
+				interactClick(selectionRaycaster);
+				return;
+			}
 			raycastSelect();
 		};
 		// 182: hold-to-move a vertex — grab on trigger press, drop on release
@@ -1292,12 +1422,17 @@
 		const onDisc = (e: any) => { e.target.userData.handedness = null; };
 		// 21-B B3: play mode's own input path. Registered HERE, below every `let`
 		// its closure reads (runModuleClickHandlers among them) — the TDZ rule.
-		startPlayInteract({ moduleHitTest: runModuleClickHandlers });
+		startPlayInteract({ moduleHitTest: (object: any) => runModuleClickHandlers(object, 'play') });
+		// 30 P1: the sessions that own the letter keys, so the I (Edit/Interact) key stands
+		// down while one is open — shortcuts cannot import them (history's cycle family)
+		const offKeyProbe = registerKeySessionProbe(() => !!get(sculptObject) || !!get(splineEditObject) || !!get(drawMode) || splineToolActive());
 		// 24-A A1: the knock's feeds. The VR hand poses come from vrControls through
 		// this seam rather than an import (knock.js stays off vrControls' 3500 lines),
 		// and the two "what am I holding" reads keep a probe off its own carried object.
 		// A2: the hand that hit gets a buzz — LOCAL, the same seam shape as the hand poses
-		startKnock({ hands: handSnapshot, heldUuids: () => [carriedUuid(), vrGrabbedUuid()], haptic: hapticPulse });
+		startKnock({ hands: handSnapshot, heldUuids: () => [carriedUuid(), vrGrabbedUuid()], haptic: hapticKnock });
+		// 30b: game feel in VR (a frame hook + a trigger hook through vrControls' registries)
+		startVrGameInput();
 
 		xrControllers.forEach((controller) => {
 			controller.addEventListener('select', onXRSelect);
@@ -1309,8 +1444,10 @@
 
 		return () => {
 			offEditResume(); // #20 P5
+			offKeyProbe(); // 30 P1
 			stopPlayInteract(); // 21-B B3 (releases any carried body with zero velocity)
 			stopKnock(); // 24-A A1
+			stopVrGameInput(); // 30b
 			element.removeEventListener('pointerdown', onPointerDown);
 			element.removeEventListener('contextmenu', onContextMenu);
 			element.removeEventListener('webglcontextlost', onContextLost);
@@ -1477,6 +1614,11 @@
 	     sceneObjects — they'd leak into GLTF sync). oncreate passes the ref
 	     DIRECTLY (the { ref } destructure trap, N1). -->
 	<T.Group name="particle-root" oncreate={(ref: any) => setParticleRoot(ref)} />
+
+	<!-- 30b P5: module viewport content (registered scene-root groups) is re-homed here so
+	     the VR world gestures carry it too — Untangle's dots spin with the world. Not in
+	     sceneObjects: nothing under it is serialised or sent (golden rule 5). -->
+	<T.Group name="module-world-root" oncreate={(ref: any) => setModuleWorldRoot(ref)} />
 </T.Group>
 
 {#if !$isLocked && !$isVRMode}
@@ -1519,6 +1661,9 @@ position={[0, 2, 3]}
 		// B2.1: request the preferred refresh rate (auto = highest supported) —
 		// without this the Quest stays at its 90Hz default
 		applyVRFrameRate();
+		// 30b P4: remember the untouched reference space (the walker's floor), and a
+		// GAME lands in Interact on its spawn
+		onVRSessionStart();
 	}}
 	onsessionend={() => passthroughActive.set(false)}
 >

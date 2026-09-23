@@ -19,6 +19,7 @@
 		onclick: ['clicked!', 'connect to the object; pulses on click'],
 		onenter: ['entered!', 'pulses when something enters the sensor object'],
 		onexit: ['exited!', 'pulses when a sensor overlap ends'],
+		ongrab: ['grabbed!', 'pulses when a player picks the object up'], // 30b (core-games)
 		animfinished: ['finished!', 'pulses when the clip on this object reaches its end'],
 		// 17-E F5: the same pulse card, plus a marker NAME to watch for
 		animmarker: ['marker!', 'pulses as the playhead crosses a marker; blank = any']

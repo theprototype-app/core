@@ -5,6 +5,8 @@
 	import { selectedObject, isVRMode, objectsGroup, vrWireframeSelection } from '../../stores/sceneStore'
 	import { editingObject } from '$lib/meshEdit'
 	import { faceEditObject } from '$lib/faceEdit'
+	// 30b P1: a selection indicator is editor scaffolding - none in Interact/Play
+	import { editorHelpersShown } from '$lib/helperLayer'
 
 	// VR selection indicator (101/110): the desktop outline is a postprocessing
 	// composer and does NOT render in WebXR. Default is a two-tone wireframe —
@@ -106,7 +108,7 @@
 		// the live structure — a static indicator would just lag behind edits
 		const editing = !!$editingObject || !!$faceEditObject
 		const active =
-			$isVRMode && !editing && !!target?.uuid && !!$objectsGroup?.getObjectByProperty('uuid', target.uuid)
+			$isVRMode && $editorHelpersShown && !editing && !!target?.uuid && !!$objectsGroup?.getObjectByProperty('uuid', target.uuid)
 		group.visible = active
 		if (!active) return
 		const style = $vrWireframeSelection ? 'wire' : 'shell'

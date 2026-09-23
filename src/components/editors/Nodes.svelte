@@ -160,6 +160,7 @@
 		visibility: EffectNode,
 		setuniform: EffectNode,
 		onclick: OnClickNode,
+		ongrab: OnClickNode, // 30b (core-games): the same pulse card
 		onimpact: AnimationNode,
 		// 24-A A2: its own card — the pulse dot PLUS speed/byMe value rows (the MoveInput
 		// shape: several source handles need labelled rows, not one right-edge dot)
@@ -211,6 +212,15 @@
 		ongamestate: AnimationNode,
 		setvariable: AnimationNode,
 		getvariable: AnimationNode,
+		// 30 P4: the device-local pair (the second registry — the catalog is the first)
+		storevalue: AnimationNode,
+		storedvalue: AnimationNode,
+		// 30b (core-games): Game Feel — spec-driven like the rest of the game shell
+		announce: AnimationNode,
+		gamesound: AnimationNode,
+		effectburst: AnimationNode,
+		hapticpulse: AnimationNode,
+		gamemusic: AnimationNode,
 		gametime: AnimationNode,
 		// 21-F3's `collectcount` card MOVED to the collectible module (R3a) — an old
 		// scene's node renders as UnknownNode until the module is installed, honestly

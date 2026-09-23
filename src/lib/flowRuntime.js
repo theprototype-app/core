@@ -68,6 +68,10 @@ import {
 // so a user can hand over what happened (hardening audit H4). A zero-import leaf.
 import { log } from './diagnostics';
 import { safeStorage } from './safeStorage';
+// 30 P4: the device-local store Store Value / Stored Value read and write (a leaf)
+import { sceneStorageKey, readStored, writeStored } from './gameStorage';
+// 30b (core-games): the game-feel nodes' runtime half (announce/sound/burst/haptic/music)
+import { GAME_FEEL_ACTIONS, runGameFeelAction, updateGameMusicNodes, primeGameFeelActions } from './gameFeelActions';
 
 // H3: inputRuntime is reached via a PRIMED dynamic import (the moduleSDK
 // pattern) — a static edge would close the TDZ cycle history -> flowRuntime ->
@@ -1115,6 +1119,40 @@ function updateLeaderboardNodes(time, ctx) {
 /** @type {Map<string, number>} */
 const hudSetActed = new Map();
 
+/** 30 P4: a Store Value / Stored Value key in THIS scene's namespace
+ * (`tp:scene:<scene name or 'untitled'>:<key>`). The name is the scene's own (levels'
+ * `currentLevel`), so a best score belongs to its game. @param {string} key */
+function storedKey(key) {
+	let name = null;
+	try {
+		name = levelsRef ? get(levelsRef.currentLevel)?.name ?? null : null;
+	} catch {}
+	return sceneStorageKey(name, key);
+}
+
+/** 30 P4: the Store Value write. `set` keeps whatever arrived (a number or text); `max`,
+ * `min` and `add` are numeric against what this device already holds, and an unchanged
+ * best writes nothing. @param {any} data */
+function storeValue(data) {
+	const key = String(data.key ?? '').trim();
+	if (!key) return;
+	const full = storedKey(key);
+	const mode = data.mode ?? 'set';
+	if (mode === 'set') {
+		writeStored(full, typeof data.value === 'string' ? data.value : num(data.value ?? 0));
+		return;
+	}
+	const value = num(data.value ?? 0);
+	const held = Number(readStored(full, undefined));
+	const has = Number.isFinite(held);
+	const next =
+		mode === 'max' ? (has ? Math.max(held, value) : value)
+		: mode === 'min' ? (has ? Math.min(held, value) : value)
+		: mode === 'add' ? (has ? held : 0) + value
+		: value;
+	if (!has || next !== held) writeStored(full, next);
+}
+
 /** The element behind an id, across every HUD document. An input's OPTIONS and its
  * `shared` flag live on the element, and a node names only the id. @param {string} id */
 function findHudElement(id) {
@@ -1154,7 +1192,7 @@ function updateGameNodes(time, ctx) {
 	// 1. the ACTIONS, on a fresh trigger stamp only
 	for (const node of nodes) {
 		const type = node.type;
-		if (type !== 'setgamestate' && type !== 'setcamera' && type !== 'setvariable' && type !== 'setlook' && type !== 'travel')
+		if (type !== 'setgamestate' && type !== 'setcamera' && type !== 'setvariable' && type !== 'setlook' && type !== 'travel' && type !== 'storevalue' && !GAME_FEEL_ACTIONS.includes(type))
 			continue;
 		seeActionNode(node, time);
 		const stamp = triggerStampFor(node.id, ctx);
@@ -1197,6 +1235,17 @@ function updateGameNodes(time, ctx) {
 			const hash = typeof data.level === 'string' ? data.level : '';
 			if (sceneName && levelsRef?.travelToScene) levelsRef.travelToScene(sceneName);
 			else if (hash && levelsRef) levelsRef.travelToLevel(hash, String(data.levelName ?? ''));
+		} else if (GAME_FEEL_ACTIONS.includes(type)) {
+			// 30b (core-games): a banner, a sound, a burst or a buzz — LOCAL on every peer from
+			// the replicated stamp, inside the actionSeenAt family above like storevalue (a
+			// fresh node adopting an old stamp must not announce on connect)
+			runGameFeelAction(type, data);
+		} else if (type === 'storevalue') {
+			// 30 P4: a LOCAL write on the stamp edge, inside the actionSeenAt family above (a
+			// fresh node adopting an old stamp must not overwrite a best on connect). It
+			// sends NOTHING: every peer that sees the trigger acts for its own device, which
+			// is the whole semantics of "saved on this device".
+			storeValue(data);
 		} else if (type === 'setcamera') {
 			const uuid = typeof data.camera === 'string' ? data.camera : '';
 			if (uuid) lookThroughCamera(uuid);
@@ -1253,6 +1302,9 @@ function updateGameNodes(time, ctx) {
 	}
 	for (const id of [...gameActed.keys()])
 		if (!nodes.some((/** @type {any} */ n) => n.id === id)) gameActed.delete(id);
+
+	// 1a. 30b (core-games): Game Music is a DECLARATION (present = wanted), read per frame
+	updateGameMusicNodes(nodes, (/** @type {any} */ node) => resolveInputs(node, nodes, edges, time, ctx), game.state);
 
 	// 1b. 21-F4 ALLPLAYERS — the group-travel gate. Each peer evaluates the wired
 	// condition for ITSELF (my answer about my player), publishes the verdict through
@@ -1817,6 +1869,7 @@ export const valueTypes = [
 	'gamepadbutton', // 21-E5: pad trigger — the keypress model verbatim
 	'gamepadaxis', // 21-E5: a stick, read LOCALLY (never streamed)
 	'onimpact', // PFX-C: physics impact trigger
+	'ongrab', // 30b (core-games): a player picked it up
 	'onhit', // 24-A A2: the knock's trigger — a handle map: __default pulse + speed/byMe
 	'onenter', 'onexit', // CL-C: sensor overlap triggers
 	'velocity', // CL-C: live speed readout (m/s)
@@ -1828,6 +1881,7 @@ export const valueTypes = [
 	'hudinput', // 21-D4: the HUD as a SOURCE - what the player set on a slider/toggle/etc
 	// 21-D6 the game shell
 	'ongamestate', 'getvariable', 'gametime',
+	'storedvalue', // 30 P4: what Store Value saved on this device
 	// 24-A A4: `peervariable` was MISSING here since 21-G4, and the omission was silent in
 	// every direction that is easy to look at — it has an OUTPUT type in flowSockets, an
 	// evaluator case below, and the editor draws its source handle — but `resolveInputs`
@@ -2189,6 +2243,7 @@ function evalNodeBody(node, allNodes, allEdges, time, seen, ctx) {
 		}
 		case 'animfinished': // 17-E: fired locally when a clip reaches its end
 		case 'animmarker': // 17-E F5: fired locally when the playhead crosses one
+		case 'ongrab': // 30b (core-games): the On Click window, fired on a player's grab
 		case 'onclick': {
 			const trig = ctx && ctx.triggers ? ctx.triggers[node.id] : null;
 			const dt = trig ? time - trig.lastT : Infinity;
@@ -2368,6 +2423,16 @@ function evalNodeBody(node, allNodes, allEdges, time, seen, ctx) {
 			// LOCAL read of REPLICATED state, so every peer computes the same number and
 			// nothing about the read goes on the wire
 			return num(gameVar(String(d.name ?? ''), d.fallback ?? 0));
+		// --- 30 P4: what THIS device saved (never replicated, legitimately per-peer) ---
+		case 'storedvalue': {
+			const key = String(d.key ?? '').trim();
+			const held = key ? readStored(storedKey(key), undefined) : undefined;
+			if (d.output === 'text') {
+				if (held === undefined) return String(d.fallback ?? '');
+				return typeof held === 'string' ? held : JSON.stringify(held);
+			}
+			return held === undefined ? num(d.fallback ?? 0) : num(held);
+		}
 		// --- 21-G4: the PER-PLAYER half of the same idea ---
 		case 'peervariable': {
 			// Also a LOCAL read of REPLICATED state — every peer holds every peer's row —
@@ -2699,14 +2764,46 @@ export function fireModuleTrigger(type, match, opts) {
 }
 
 export function fireObjectClick(uuid) {
+	let fired = 0; // 30b: how many On Click nodes this reached (additive return)
 	nodes.forEach((node) => {
 		if (node.type !== 'onclick') return;
 		// H1: an unwired OnClick inside the clicked object's own graph also fires
-		if (reachesObjectSelector(node.id, uuid) || implicitOwnerOf(node) === uuid)
+		if (reachesObjectSelector(node.id, uuid) || implicitOwnerOf(node) === uuid) {
 			// 21-G4: a perPlayer On Click keeps its pulse LOCAL — that one bit is the
 			// whole per-player collectible (see replicatesPulse)
 			applyNodeTrigger(node.id, syncedNow(), replicatesPulse(node));
+			fired++;
+		}
 	});
+	return fired;
+}
+
+/**
+ * 30b (core-games): a PLAYER picked `uuid` up — the desktop play/interact carry
+ * (playInteract.beginGrab) or a VR Interact grip. Pulses every On Grab node wired to the
+ * object (or unwired inside its own graph), exactly as fireObjectClick does for a click; the
+ * stamp replicates (unless the node is perPlayer), so every peer hears the crate lift.
+ * Returns how many nodes it reached. @param {string} uuid @returns {number}
+ */
+export function fireObjectGrab(uuid) {
+	let fired = 0;
+	nodes.forEach((node) => {
+		if (node.type !== 'ongrab') return;
+		if (reachesObjectSelector(node.id, uuid) || implicitOwnerOf(node) === uuid) {
+			applyNodeTrigger(node.id, syncedNow(), replicatesPulse(node));
+			fired++;
+		}
+	});
+	return fired;
+}
+
+/** 30b (vr-play): would a click on `uuid` reach an On Click node? The same two rules
+ * fireObjectClick fires by — the VR hover tap and the sweep ask it before touching
+ * anything. @param {string} uuid @returns {boolean} */
+export function objectHasOnClick(uuid) {
+	return nodes.some(
+		(node) => node.type === 'onclick' && (reachesObjectSelector(node.id, uuid) || implicitOwnerOf(node) === uuid)
+	);
 }
 
 /**
@@ -3568,6 +3665,7 @@ export function startFlowRuntime() {
 	// knock.js imports physics, which imports this module.
 	import('./knock').then((m) => m.registerHitListener((hit, local) => fireObjectHit(hit, local)));
 	import('./gamePresence').then((m) => (presenceRef = m));
+	primeGameFeelActions(); // 30b: effectsBurst + vrControls, primed (see gameFeelActions)
 	flowGraphs.subscribe(() => {
 		nodes = allNodes();
 		edges = allEdges();

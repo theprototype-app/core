@@ -1,12 +1,15 @@
 <script lang="ts">
     import { onDestroy, untrack } from 'svelte'
     import { get } from 'svelte/store'
-    import { Euler, Camera } from 'three'
+    import { Euler, Camera, Vector3 } from 'three'
     import { useThrelte, useParent, useTask } from '@threlte/core'
     import { isLocked, playPointerFree, playerCam, editorCam, globalScene } from '../../stores/sceneStore'
     import { userdata, peers } from '../../stores/appStore'
     import { dungeonData, slideMove, spawnPointFor } from '$lib/dungeonPlay'
     import { resolvePlaySettings } from '$lib/playSettings'
+    import { spawnDesktopPlayer } from '$lib/playSpawn'
+    // 30 P3: free-cursor games never take the pointer — the real cursor aims
+    import { playCursorFree } from '$lib/playCursor'
     import { inputClaims, getGamepadAxes } from '$lib/inputRuntime'
     import { gamepadPrefs } from '$lib/gamepadPrefs'
     import { coarsePointer } from '$lib/inputDevice'
@@ -32,7 +35,8 @@
       effectiveSpeed,
       setJumpRequested,
       tickWalker,
-      walkStep
+      walkStep,
+      collideRigStep
     } from '$lib/charController'
 
     const { renderer, camera, invalidate } = useThrelte()
@@ -111,7 +115,7 @@
           if (document.pointerLockElement === domElement) document.exitPointerLock()
         } else if (!free && wasFree) {
           wasFree = false
-          if (!noPointerLock && $isLocked === true && document.pointerLockElement !== domElement) {
+          if (!noPointerLock && !playCursorFree() && $isLocked === true && document.pointerLockElement !== domElement) {
             const again: any = domElement.requestPointerLock({ unadjustedMovement: true })
             again?.catch?.(() => {})
           }
@@ -160,6 +164,10 @@
      */
     function requestLock(first: boolean) {
       if (noPointerLock) return cancelLockRetry()   // W4: nothing to lock on a touch device
+      // 30 P3: a FREE-CURSOR game (`play.cursor: 'free'`) enters play without a lock: the
+      // cursor stays visible and aims (playCursor.playAimNdc), movement keys still walk or
+      // fly, and Escape still leaves — PLC's Escape branch already handles "no lock held"
+      if (playCursorFree()) return cancelLockRetry()
       if (get(isLocked) !== true) return cancelLockRetry()
       if (get(playPointerFree)) return cancelLockRetry()   // 21-E3: the menu owns the pointer
       if (document.pointerLockElement === domElement) return cancelLockRetry()
@@ -185,6 +193,9 @@
         // in your seed-deterministic room (peers take consecutive rooms).
         // untracked: the effect must only depend on $isLocked.
         untrack(() => {
+          // 30b P4: a game's own spawn (the scene's play.spawn, or a module's api.setSpawn)
+          // wins; the dungeon's per-peer rooms below are what a scene without one gets
+          if (spawnDesktopPlayer()) return
           const data = dungeonData($globalScene)
           // resolve the rig ONCE and mutate the object: `$cameraParent.position.x = v`
           // compiles to store_mutate -> cameraParent.set(), and useParent() is a
@@ -276,6 +287,8 @@
 
       const beforeX = $cameraParent?.position.x ?? 0
       const beforeZ = $cameraParent?.position.z ?? 0
+      // 30b P3: the rig's WORLD pose before this frame's built-in step, for the collision pass
+      const beforeWorld: any = $isLocked === true && $cameraParent ? $cameraParent.getWorldPosition(new Vector3()) : null
 
       if (moveState.forward === 1) {
         $cameraParent.translateZ(-speed);
@@ -363,6 +376,10 @@
           rig.position.z = c.z
         }
       }
+
+      // 30b P3: ...and against the physics world's colliders while a simulation runs, so
+      // desktop Play stops at a game's walls as the VR walker does (no world, no change)
+      if ($isLocked === true && rig && beforeWorld) collideRigStep(rig, beforeWorld)
 
     },
     {
@@ -527,6 +544,7 @@
     // a programmatic exit, so this stays idle.)
     function onCanvasPointerDown() {
       if (noPointerLock) return   // W4: a touch tap is the look/interact gesture, not a re-lock
+      if (playCursorFree()) return   // 30 P3: a click in a free-cursor game is the game's
       if ($isLocked === true && !$playPointerFree && document.pointerLockElement !== domElement) {
         const again: any = domElement.requestPointerLock({ unadjustedMovement: true })
         again?.catch?.(() => {})

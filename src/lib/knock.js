@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { writable, get } from 'svelte/store';
-import { isLocked, isVRMode, objectsGroup } from '../stores/sceneStore';
+import { isLocked, isVRMode, objectsGroup, editorMode } from '../stores/sceneStore';
 import { peers } from '../stores/appStore';
 import { sceneKnock } from './scenePhysics';
 import { sessionNow } from './sessionClock'; // 25-E: `at` crosses the wire, so it is SESSION time
@@ -141,7 +141,10 @@ function armed() {
 	const cfg = get(sceneKnock);
 	if (!cfg?.enabled) return false;
 	if (!get(simulating) && !get(remoteSimulating)) return false;
-	return get(isLocked) === true || get(isVRMode) === true;
+	// 30b P2: in VR only a PLAYER's hands knock — an Edit hand is placing things, and a
+	// knock would fling the object it is reaching for (contract C1: grips grab/knock in
+	// Interact/Play; Edit moves things as it always has)
+	return get(isLocked) === true || (get(isVRMode) === true && get(editorMode) === 'interact');
 }
 
 /** @param {number} now @param {any} group */

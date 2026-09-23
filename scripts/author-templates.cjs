@@ -39,6 +39,84 @@
 //   editor camera the file opens on) · `thumb.camera` (render the card through a named
 //   camera object). A def with `music` exports WITH assets, so the bytes ride the .tpscene.
 //
+// ==== THE DEF SCHEMA (30 author-kit) — every field, one line each ======================
+// Colours are 0xRRGGBB numbers or '#rrggbb' strings; positions/rotations are [x, y, z]
+// (rotation in radians, Euler XYZ); lengths in metres. Every field is OPTIONAL unless marked *;
+// an absent field is the old behaviour, so a def only states what it means to change.
+//
+// DEF (the file / the card):
+//   kind*            'template' | 'example' | 'game' | 'contest' — decides the folder + index section
+//   seed             false keeps a template out of the bundled offline seed (30c: kit levels need the pack CDN)
+//   slug* title* description   identity + card text; author, license ('CC0-1.0'), tags []
+//   modules          [{id, version}] — the card's module list (games only; must match installModules)
+//   installModules   ['<id>'] — zips installed from MODULES_REPO before the build (the game shows)
+//   generate         a /command, {menu, moduleId?, waitMs?}, or a list of them — run after the build
+//   generateWaitMs   default wait after each generate step (2500)
+//   layout           [{kind, index?, pos, yaw?}] — place generated devices by userData.device.kind
+//   objects*         the scene: OBJECTS below
+//   env              '<preset>' | {preset, exposure} | a CUSTOM sky (ENV below)
+//   gravity          number (m/s², negative = down) · physics — a scenePhysics block, merged
+//   post             a scenePost document (effects: AO, tone mapping, bloom, SMAA, ...)
+//   graphs           {'scene' | <object name>: {nodes, edges}} — node data strings naming a def
+//                    object become its uuid (not label/format/text/placeholder/name); '$music' and
+//                    '$sound:<key>' become content hashes
+//   hud              a hudDocs map · shaders {'scene' | <object name>: shader graph document}
+//   animations       {<object name>: an authored animation set (clips of tracks of keys)}
+//   music            {url | file, sha256, name, volume?} — the scene's background track (+ Explorer)
+//   sounds           [{key, url | file, sha256, name}] — one-shot assets for Sound nodes
+//   view             {pos, target} — the editor camera the file opens on (also the card's camera)
+//   thumb            {camera?: <camera object name>, sceneGroups?: ['<scene-root group>'],
+//                     toneMapping?: 'agx'|'aces'|'neutral'|'reinhard'|'cineon'|'linear'|'none'}
+//   contest          (kind contest) {brief, rules, durationDays, opensAfterDays, judging, credits}
+//
+// OBJECTS — {type*, name*, pos?, rot?, ...}:
+//   box              size [w, h, d]; bevel (radius → a ROUNDED box, baked), bevelSegments (3)
+//   sphere           r                  · cylinder  r (top), r2 (bottom, = r), h
+//   cone             r, h               · torus     r, tube (r × 0.2)
+//   capsule          r, h (the straight part; `length` alias)
+//   plane            size [w, h] — faces +Z (rot [-π/2, 0, 0] to lie flat)
+//   ring             r (outer), inner (r × 0.5) — a flat annulus facing +Z
+//   icosahedron / dodecahedron   r, detail (0)
+//   light            kind 'point' (default: color, intensity, distance, decay — no shadow)
+//                    | 'spot' (angle π/6, penumbra 0.3, distance, decay, target) | 'directional'
+//                    (target; its shadow frustum is FITTED to the built meshes — `fit: false` to
+//                    keep three's) | 'hemisphere' (color = sky, groundColor, intensity).
+//                    spot/directional: castShadow (true), shadowMapSize, `target` = a WORLD point
+//                    aimed by rotation — place a directional OUTSIDE the scene on its sun side
+//   camera           lookAt, fov, aspect — the app's own /create Camera marker
+//   spline           points [{pos, radius}], closed, color
+//   group / empty    children [objects] (names resolve inside groups too)
+//   mirror           of (a named object/group), opacity (0.15), prefix — reflected across x = 0
+//   kit              pack*, item* (a pack item NAME, e.g. 'architecture-kit' / 'WallStone'), scale?
+//                    ([x,y,z] or a number) — a PACK PIECE as a reference (30c packRefs.js): written
+//                    as a stub the app refills from PACKS_BASE, so a level of 100 pieces stays small.
+//                    Kept TOP-LEVEL (physics only reads top-level objects); `physics` sets its
+//                    collider (custom compound boxes/wedges for doorways, stairs, trees)
+// MATERIAL (every mesh type): color, roughness (0.85), metalness (0), emissive +
+//   emissiveIntensity (1), opacity (< 1 → transparent), flatShading, side ('double' | 'back'),
+//   toon (MeshToonMaterial), physical (MeshPhysicalMaterial — also implied by any of:
+//   clearcoat, clearcoatRoughness, transmission, thickness, ior, sheen, sheenColor,
+//   sheenRoughness, iridescence, specularIntensity)
+// FLAGS (any object): physics {mode, mass, restitution, friction, ...} (userData.physics) ·
+//   shadow false (no cast/receive) · pick 'through' (select-through shells: walls, glass) ·
+//   origin [x, y, z] (the local pivot a Door preset swings about) · anim '<preset>' | [..]
+//   (door, drawer, elevator, turntable, pulse, fade — key or name; an AUTHORED clip, run it with
+//   a Play Animation node) · particles '<preset>' | {preset, ...overrides} (sparkles, fire,
+//   smoke, dust, confetti, sparks)
+// ENV — a custom sky: {preset: 'custom' | '<preset>', base?: '<preset>', exposure,
+//   background: '#hex' | {top, bottom} (a gradient; `background` keeps the bottom colour),
+//   fog: {color, near, far} | null, ground: {color, roughness?} (a solid ground disc that takes
+//   the shadows), sun: {color, intensity, dir (FROM the scene TOWARD the sun) | position} | null,
+//   hemi: {sky, ground, intensity} | null}. Any of those keys (or preset 'custom') builds a custom
+//   payload from the base preset (default: the named preset, else studio); exposure is applied once.
+// LOADER FLAGS: --out <dir> (scenes-repo tree + index.json) · --only <slug,..> (a subset, index
+//   MERGED) · --def <file.json,..> (defs from JSON; a same-slug def REPLACES the built-in one) ·
+//   env APP_URL, MODULES_REPO (the sibling modules checkout: zips + modules/<id>/<id>.def.json)
+// THE CARD: rendered with the scene's own look (background, fog, environment rig, authored
+//   lights, shadows), the post stack's tone curve else none, through thumb.camera, else view,
+//   else a 3/4 fit of the content (floor slabs excluded); the private studio pair only lights a
+//   scene with no light at all.
+//
 // 24-A A3 (the PR #192 follow-up): the node/edge helpers are ONE module-scope
 // `graphBuilder()` and `remapData` walks every own string field. Both are meant to leave
 // every earlier def byte-identical, and that is CHECKED, not believed — build the same def
@@ -95,6 +173,22 @@ const ONLY =
 				.split(',')
 				.filter(Boolean)
 		: null;
+// 30 author-kit: `--def <file.json[,file.json]>` adds defs from JSON files — each file holds
+// ONE def or an ARRAY of them. A file def whose slug matches a DEFS entry REPLACES it (so a
+// lane can iterate on a def without editing DEFS); any other slug is appended. Combine with
+// `--only <slug>` to author just that def. This is also how the author-kit suite authors its
+// def-under-test into a scratch folder.
+const defFlag = process.argv.indexOf('--def');
+const FILE_DEFS =
+	defFlag !== -1
+		? String(process.argv[defFlag + 1] ?? '')
+				.split(',')
+				.filter(Boolean)
+				.flatMap((file) => {
+					const parsed = JSON.parse(fs.readFileSync(path.resolve(file), 'utf8'));
+					return Array.isArray(parsed) ? parsed : [parsed];
+				})
+		: [];
 
 // ---- declarative scene definitions ------------------------------------------
 // objects: {type:'box'|'cylinder'|'sphere'|'cone', name, color, pos, rot?, ...dims,
@@ -187,6 +281,10 @@ function towersGraph() {
 	N('quithide', 'hudscreen', 'Close pause on quit', 520, 790, { screen: 'pause', action: 'hide' });
 	E('bquit', 'doquit', 'trigger');
 	E('bquit', 'quithide', 'trigger');
+	// 30: Round over offers Play again beside Menu — the Restart chain above, from `over`
+	N('breplay', 'hudbutton', 'Play again button', 40, 875, { element: 'replay-btn' });
+	E('breplay', 'restartreset', 'trigger');
+	E('breplay', 'restartdelay', 'trigger');
 
 	// ---- height: rung sensors -> perRound latches -> boolean*height -> max -> HUD
 	for (let i = 1; i <= 4; i++) {
@@ -210,16 +308,67 @@ function towersGraph() {
 	E('mx34', 'mxall', 'b');
 	N('hheight', 'hudtext', 'HUD height', 1480, 1030, { element: 'height-read', format: 'Best height: {v} m', decimals: 0, value: 0 });
 	E('mxall', 'hheight', 'value');
-	N('hfinal', 'hudtext', 'HUD final height', 1480, 1180, { element: 'final-height', format: 'Your best tower: {v} m', decimals: 0, value: 0 });
-	E('mxall', 'hfinal', 'value');
-	// reaching the top rung earns a sparkle burst on the pad
-	N('pfx', 'particle', '4m sparkle', 1000, 1400, {
-		mode: 'burst', count: 120, lifetime: 1.4, speed: 2.5, gravity: 0,
-		turbulence: 0.4, sizeStart: 0.12, opacity: 0.9, sprite: 'star', blending: 'additive', space: 'world'
-	});
-	N('selpad', 'objectselector', 'Build pad', 1240, 1400, { selected: 'Build pad' });
-	E('enr4', 'pfx', 'trigger');
-	E('pfx', 'selpad');
+	// ---- 30: the BEST HEIGHT, saved on THIS device (Store Value / Stored Value) --------
+	// Stored on every ring crossing, never on `over`: a perRound latch READS un-set the
+	// instant the round ends (the Infinity cutoff), so an `over` edge would store 0 — and
+	// that is also why the old Round-over line read "0 m" every time. `towers-last` is the
+	// same number for THIS round: `max` too (a crate jittering in a ring sensor re-fires
+	// the crossing after the round ends, when the height reads 0 — a `set` would wipe it),
+	// zeroed by its own `set` node when a round starts. Keys are game-specific because a
+	// Games-tab load leaves the scene unnamed, so every template shares tp:scene:untitled:*.
+	N('storebest', 'storevalue', 'Save best height', 1720, 1030, { key: 'towers-best', mode: 'max', value: 0 });
+	N('storelast', 'storevalue', 'Save this round', 1720, 1180, { key: 'towers-last', mode: 'max', value: 0 });
+	E('mxall', 'storebest', 'value');
+	E('mxall', 'storelast', 'value');
+	for (let i = 1; i <= 4; i++) {
+		E('enr' + i, 'storebest', 'trigger');
+		E('enr' + i, 'storelast', 'trigger');
+	}
+	N('onround', 'ongamestate', 'When a round starts', 1480, 1330, { state: 'playing', edge: 'enter', pulse: 0.3 });
+	N('zerolast', 'storevalue', 'New round: zero it', 1720, 1330, { key: 'towers-last', mode: 'set', value: 0 });
+	E('onround', 'zerolast', 'trigger');
+	N('storedbest', 'storedvalue', 'My best height', 1960, 1030, { key: 'towers-best', output: 'number', fallback: 0 });
+	N('hbest', 'hudtext', 'HUD best (menu)', 2200, 980, { element: 'best-read', format: 'Your best tower: {v} m', decimals: 0, value: 0 });
+	E('storedbest', 'hbest', 'value');
+	N('hbest2', 'hudtext', 'HUD best (over)', 2200, 1100, { element: 'over-best', format: 'Best ever: {v} m', decimals: 0, value: 0 });
+	E('storedbest', 'hbest2', 'value');
+	N('storedlast', 'storedvalue', 'This round', 1960, 1180, { key: 'towers-last', output: 'number', fallback: 0 });
+	N('hfinal', 'hudtext', 'HUD final height', 2200, 1220, { element: 'final-height', format: 'This round: {v} m', decimals: 0, value: 0 });
+	E('storedlast', 'hfinal', 'value');
+	// ---- 30b: the rings are MILESTONES. The first crossing of a ring in a round (a perRound
+	// Once — a crate re-entering the sensor must not re-announce) tells every player: a banner,
+	// a burst AT the ring, a chime from the ring, and a success buzz in VR. The gold ring at
+	// the top is the big one: confetti, the level-up fanfare, "Top of the tower!". The Game
+	// Feel nodes are LOCAL on every peer from the replicated stamp, so no message of their own.
+	// (It replaces 30's particle emitter on the pad: the burst pool costs no emitter slot.)
+	N('buzzring', 'hapticpulse', 'Buzz: a ring reached', 1720, 1480, { pattern: 'success', hand: 'both' });
+	for (let i = 1; i <= 4; i++) {
+		const y = 960 + (i - 1) * 150;
+		const top = i === 4;
+		N('first' + i, 'once', 'First time at ' + i + 'm', 2440, y, { perRound: true, pulse: 0.3 });
+		E('enr' + i, 'first' + i, 'trigger');
+		N('say' + i, 'announce', top ? 'Say: top!' : 'Say: ring ' + i, 2680, y, top
+			? { text: 'Top of the tower!', sub: '4 m — the gold ring', seconds: 2.6, color: '#ffc640', decimals: 0 }
+			: { text: 'Ring ' + i + ' reached', sub: i + ' m — keep stacking', seconds: 1.8, color: '#9ee6ff', decimals: 0 });
+		E('first' + i, 'say' + i, 'trigger');
+		N('fx' + i, 'effectburst', 'Burst at ring ' + i, 2920, y, { kind: top ? 'confetti' : 'sparkle', count: top ? 96 : 56, lift: 0, color: '' });
+		E('first' + i, 'fx' + i, 'trigger');
+		E('selr' + i, 'fx' + i, 'at');
+		// an additive sparkle alone is faint against a daylight sky: a small confetti puff
+		// beside it reads at any exposure (the top ring's burst IS confetti already)
+		if (!top) {
+			N('puff' + i, 'effectburst', 'Puff at ring ' + i, 2920, y + 70, { kind: 'confetti', count: 36, lift: 0.1, color: '' });
+			E('first' + i, 'puff' + i, 'trigger');
+			E('selr' + i, 'puff' + i, 'at');
+		}
+		N('chime' + i, 'gamesound', top ? 'Fanfare at the top' : 'Chime at ring ' + i, 3160, y, { sound: top ? 'levelup' : 'ring' });
+		E('first' + i, 'chime' + i, 'trigger');
+		E('selr' + i, 'chime' + i, 'at');
+		E('first' + i, 'buzzring', 'trigger');
+	}
+	N('topsparkle', 'effectburst', 'Sparkle at the top', 2920, 1560, { kind: 'sparkle', count: 80, lift: 0.4, color: '#ffe08a' });
+	E('first4', 'topsparkle', 'trigger');
+	E('selr4', 'topsparkle', 'at');
 
 	// ---- the stars — collectible-module touch pickups (shared team score) -------
 	for (let i = 1; i <= 3; i++) {
@@ -230,7 +379,16 @@ function towersGraph() {
 		});
 		N('selstar' + i, 'objectselector', 'Star ' + i, 280, y, { selected: 'Star ' + i });
 		E('colstar' + i, 'selstar' + i);
+		// 30: every star turns and breathes once a round starts (its authored `Star glow`
+		// clip: the Turntable + Pulse presets in ONE clip, since a transport plays one clip
+		// per object). Through a zero-second Delay: Play Animation reads a trigger VALUE and
+		// On Game State carries only a stamp (the beat-graph finding).
+		N('glow' + i, 'playanim', 'Star ' + i + ' glow', 1240, y, { clip: 'Star glow', action: 'restart', speed: 1 });
+		E('glowpulse', 'glow' + i, 'trigger');
+		E('glow' + i, 'selstar' + i);
 	}
+	N('glowpulse', 'delay', 'Round start pulse (0 s)', 1000, 1560, { seconds: 0, pulse: 0.3 });
+	E('onround', 'glowpulse', 'trigger');
 	N('cstars', 'collectiblecount', 'Stars left', 520, 1670, { variable: 'stars', read: 'left' });
 	N('hstars', 'hudtext', 'HUD stars', 760, 1670, { element: 'stars-read', format: 'Stars left: {v}', decimals: 0, value: 0 });
 	E('cstars', 'hstars', 'value');
@@ -245,7 +403,7 @@ function towersGraph() {
 
 	// ---- the round clock: ends the round on time -------------------------------
 	N('clock', 'gametime', 'Time left', 40, 2100, { read: 'remaining', length: 180 });
-	N('hclock', 'hudtext', 'HUD clock', 280, 2040, { element: 'clock', format: '{v}s', decimals: 0, value: 0 });
+	N('hclock', 'hudtext', 'HUD clock', 280, 2040, { element: 'clock', format: 'Time: {v}s', decimals: 0, value: 0 });
 	E('clock', 'hclock', 'value');
 	N('timeup', 'compare', 'Time up?', 280, 2190, { op: 'lte', a: 0, b: 0 });
 	E('clock', 'timeup', 'a');
@@ -258,28 +416,142 @@ function towersGraph() {
 	N('gotime', 'setgamestate', 'Time over', 1000, 2240, { state: 'over', outcome: "Time's up!", reset: false });
 	E('alltime', 'gotime', 'trigger');
 
+	// ---- 30b: the round's sound, and the crates' ------------------------------------------
+	// Music: the arcade loop while you are in the game (Interact or Play; never the editor).
+	N('music', 'gamemusic', 'Arcade music', 40, 2480, { preset: 'arcade', volume: 0.45, while: 'always' });
+	// Every menu button clicks.
+	N('click', 'gamesound', 'Button click', 280, 2480, { sound: 'click' });
+	for (const b of ['bstart', 'bagain', 'bresume', 'brestart', 'bquit', 'breplay']) E(b, 'click', 'trigger');
+	// A round starts with a whistle and a banner. It ENDS without one: the Round over panel is
+	// the result (a banner over it read twice), so the end is a cheer or a whistle + confetti.
+	N('saygo', 'announce', 'Say: build!', 1720, 1640, { text: 'Build!', sub: 'Stack crates on the glowing pad — reach the gold ring', seconds: 2.2, color: '#ffd45e', decimals: 0 });
+	E('onround', 'saygo', 'trigger');
+	N('whistle', 'gamesound', 'Round start whistle', 1720, 1720, { sound: 'whistle' });
+	E('onround', 'whistle', 'trigger');
+	N('cheer', 'gamesound', 'Cheer', 1240, 2080, { sound: 'cheer' });
+	E('allwin', 'cheer', 'trigger');
+	N('confetti', 'effectburst', 'Confetti for everyone', 1240, 2160, { kind: 'confetti', count: 96, lift: 0, color: '' });
+	E('allwin', 'confetti', 'trigger');
+	N('upwhistle', 'gamesound', 'Final whistle', 1240, 2380, { sound: 'whistle' });
+	E('alltime', 'upwhistle', 'trigger');
+	// Each crate: a pop when a player lifts it (On Grab) and a knock when it lands on
+	// something (On Impact past a gentle landing), both placed AT the crate.
+	TOWERS_CRATES.forEach((name, k) => {
+		const y = 2560 + k * 110;
+		N('csel' + k, 'objectselector', name, 280, y, { selected: name });
+		N('cgrab' + k, 'ongrab', name + ' grabbed', 40, y, { pulse: 0.3 });
+		E('cgrab' + k, 'csel' + k);
+		N('cpop' + k, 'gamesound', name + ' lift', 520, y, { sound: 'pop' });
+		E('cgrab' + k, 'cpop' + k, 'trigger');
+		E('csel' + k, 'cpop' + k, 'at');
+		N('cland' + k, 'onimpact', name + ' lands', 760, y, { pulse: 0.3, minStrength: 0.8 });
+		E('cland' + k, 'csel' + k);
+		N('cknock' + k, 'gamesound', name + ' knock', 1000, y, { sound: 'hit' });
+		E('cland' + k, 'cknock' + k, 'trigger');
+		E('csel' + k, 'cknock' + k, 'at');
+	});
+
 	return g.done();
 }
+/** the nine crates the sound chains above name (the objects below) */
+const TOWERS_CRATES = ['Cube 1', 'Cube 2', 'Cube 3', 'Cube 4', 'Cube 5', 'Cube 6', 'Plank 1', 'Plank 2', 'Plank 3'];
 
 const TOWERS_HUD_PANEL = {
-	bg: 'rgba(20, 26, 36, 0.92)',
-	radius: 16,
-	border: '1px solid rgba(136, 192, 208, 0.25)'
+	bg: 'rgba(14, 20, 32, 0.9)',
+	radius: 18,
+	border: '1px solid rgba(255, 212, 94, 0.28)'
+};
+const TOWERS_BTN = { size: 17, weight: '600', bg: '#3b7dd8', color: '#ffffff', radius: 10 };
+// 30: the finished look. Crates read as WOOD (a physical material with a sheen and a thin
+// clearcoat, chamfered edges), the floor carries a subtle 2 m tile from a shader graph, the
+// walls are chamfered with a glowing trim, and the height markers are thin glowing rings
+// beside a marked pole instead of stacked translucent squares.
+const TOWERS_WOOD = { physical: true, roughness: 0.6, sheen: 0.4, sheenColor: 0xffd7a0, sheenRoughness: 0.55, clearcoat: 0.12, clearcoatRoughness: 0.5 };
+const TOWERS_CRATE = { mode: 'dynamic', mass: 1, friction: 0.8, restitution: 0.03 };
+const TOWERS_PLANK = { mode: 'dynamic', mass: 0.9, friction: 0.8, restitution: 0.03 };
+/** a chamfered wooden crate (bevelSegments 1 keeps the baked geometry small)
+ * @param {string} name @param {number} color @param {number[]} size @param {number[]} pos @param {any} physics */
+const towersCrate = (name, color, size, pos, physics) => ({ type: 'box', name, color, size, bevel: 0.045, bevelSegments: 1, pos, ...TOWERS_WOOD, physics });
+/** the floor tile: a 13 x 13 grid of 2 m tiles with a thin grout line and a faint checker,
+ * MULTIPLYING the authored colour (albedo is `diffuseColor.rgb *= ` in the inject backend) */
+const TOWERS_FLOOR_SHADER = {
+	nodes: [
+		{ id: 'uv', type: 'uv', position: { x: 40, y: 80 }, data: {} },
+		{ id: 'xy', type: 'split', position: { x: 240, y: 80 }, data: {} },
+		{
+			id: 'tile',
+			type: 'glsl',
+			position: { x: 460, y: 80 },
+			data: {
+				type: 'vec3',
+				expression:
+					'vec3(1.0 - 0.3 * (1.0 - step(0.025, fract(a * 13.0)) * step(fract(a * 13.0), 0.975) * step(0.025, fract(b * 13.0)) * step(fract(b * 13.0), 0.975)) - 0.06 * mod(floor(a * 13.0) + floor(b * 13.0), 2.0))'
+			}
+		},
+		{ id: 's', type: 'surface', position: { x: 720, y: 80 }, data: {} }
+	],
+	edges: [
+		{ id: 'e-uv-xy', source: 'uv', sourceHandle: 'out', target: 'xy', targetHandle: 'value' },
+		{ id: 'e-xy-tile-a', source: 'xy', sourceHandle: 'x', target: 'tile', targetHandle: 'a' },
+		{ id: 'e-xy-tile-b', source: 'xy', sourceHandle: 'y', target: 'tile', targetHandle: 'b' },
+		{ id: 'e-tile-s', source: 'tile', sourceHandle: 'out', target: 's', targetHandle: 'albedo' }
+	]
+};
+/** the Turntable + Pulse presets folded into ONE clip (a transport plays one clip per
+ * object): a turn every 6 s, a breath every 1.5 s — scale and glow together */
+const STAR_GLOW_CLIP = {
+	active: 'glow',
+	changedAt: 0,
+	clips: {
+		glow: {
+			name: 'Star glow',
+			duration: 6,
+			loop: 'loop',
+			tracks: [
+				{ id: 'turn', channel: 'rot.y', keys: [{ t: 0, v: 0 }, { t: 6, v: 6.2832 }] },
+				{
+					id: 'breathe',
+					channel: 'scale',
+					keys: [0, 1.5, 3, 4.5, 6].flatMap((t, i, all) =>
+						i < all.length - 1
+							? [{ t, v: 1, ease: [0.42, 0, 0.58, 1] }, { t: t + 0.75, v: 1.18, ease: [0.42, 0, 0.58, 1] }]
+							: [{ t, v: 1 }]
+					)
+				},
+				{
+					id: 'shine',
+					channel: 'emissive',
+					keys: [0, 1.5, 3, 4.5, 6].flatMap((t, i, all) =>
+						i < all.length - 1 ? [{ t, v: 1.6 }, { t: t + 0.75, v: 3.2 }] : [{ t, v: 1.6 }]
+					)
+				}
+			]
+		}
+	}
 };
 const TOWERS_DEF = {
 	kind: 'game',
 	slug: 'towers',
 	title: 'Towers',
 	description:
-		'Co-op crate stacking: grab the crates, build the tallest tower on the glowing pad, climb to the stars. Press P to pause or restart.',
+		'Co-op crate stacking: grab the wooden crates, build the tallest tower on the glowing pad, climb to the stars. Your best height is saved. Press P to pause or restart.',
 	license: 'CC0-1.0',
 	author: 'theprototype',
 	tags: ['physics', 'stacking', 'co-op', 'vr'],
-	modules: [{ id: 'collectible', version: '1.0.0' }],
+	modules: [{ id: 'collectible', version: '1.1.2' }],
 	installModules: ['collectible'],
-	// daylight: the scene must READ, and a stacking game lives on seeing block edges.
-	// (night was black on the user's display; the emissive accents below still pop.)
-	env: { preset: 'daylight', exposure: 1 },
+	// 30: daylight under a real sky — a blue-to-haze gradient, a far fog that softens the
+	// horizon, and a solid ground disc around the arena (the infinite grid is editor chrome;
+	// it no longer shows in Play). Exposure above the 0.9 floor.
+	env: {
+		preset: 'daylight',
+		exposure: 1.05,
+		background: { top: '#4a7fc0', bottom: '#dbe8f2' },
+		// 30 integrate: the fog closes in past the arena wall, so the ground beyond the edge
+		// fades into the sky's own haze instead of ending in a flat olive band
+		fog: { color: '#dbe8f2', near: 16, far: 75 },
+		ground: { color: '#7b8866', roughness: 0.95 }
+	},
 	// ground ON — a solid floor the crates rest on. A crate knocked past the low wall
 	// falls to the bounds limit and RESPAWNS to its start pose (beforeStates), so the
 	// supply cannot be lost. Grab interaction, sim starts on Play.
@@ -288,20 +560,27 @@ const TOWERS_DEF = {
 		bounds: { limit: -20, action: 'respawn' },
 		material: { friction: 0.7, restitution: 0.05 },
 		damping: { linear: 0.05, angular: 0.3 },
-		play: { interaction: 'grab', grounded: false, simOnPlay: true }
+		// 30b: a SPAWN — Play (and Interact in VR) puts you 4.5 m in front of the pad, facing
+		// it, with a podium on each hand (yaw 0 faces -Z)
+		play: { interaction: 'grab', grounded: false, simOnPlay: true, spawn: { position: [0, 0, 4.5], yaw: 0 } }
 	},
-	// C9 Towers look, minimal + VR-safe: ao -> AgX -> low bloom -> smaa. No shader docs.
+	// the shell floor (fork 11): ao -> AgX -> bloom -> smaa, bloom a touch higher so the
+	// rings, the trim and the pad read as light
 	post: {
 		enabled: true,
 		effects: [
 			{ id: 'ao', kind: 'ao', enabled: true, params: {} },
 			{ id: 'tone', kind: 'tonemapping', enabled: true, params: { mode: 'AGX' } },
-			{ id: 'bloom', kind: 'bloom', enabled: true, params: { intensity: 0.5, luminanceThreshold: 0.85 } },
+			{ id: 'bloom', kind: 'bloom', enabled: true, params: { intensity: 0.75, luminanceThreshold: 0.8 } },
 			{ id: 'aa', kind: 'smaa', enabled: true, params: {} }
 		],
 		changedAt: 0
 	},
+	view: { pos: [7.5, 6.5, 12.5], target: [0, 1.4, 0] },
+	thumb: { camera: 'Card camera' },
 	graphs: { scene: towersGraph() },
+	shaders: { 'Arena floor': TOWERS_FLOOR_SHADER },
+	animations: { 'Star 1': STAR_GLOW_CLIP, 'Star 2': STAR_GLOW_CLIP, 'Star 3': STAR_GLOW_CLIP },
 	hud: {
 		scene: {
 			active: '',
@@ -313,11 +592,15 @@ const TOWERS_DEF = {
 					showWhile: 'menu',
 					input: 'menu',
 					elements: [
-						{ id: 'menu-panel', kind: 'panel', anchor: 'center', x: 0, y: 0, w: 460, h: 340, z: 0, label: '', style: TOWERS_HUD_PANEL },
-						{ id: 'title', kind: 'text', anchor: 'center', x: 0, y: -115, w: 400, h: 54, z: 1, label: 'TOWERS', style: { size: 40, weight: '700', color: '#ffd45e', align: 'center' } },
-						{ id: 'subtitle', kind: 'text', anchor: 'center', x: 0, y: -68, w: 430, h: 44, z: 1, label: 'Grab the crates and build the tallest tower on the glowing pad. Touch the floating stars.', style: { size: 14, color: '#d8dee9', align: 'center' }, wrap: true },
-						{ id: 'start-btn', kind: 'button', anchor: 'center', x: 0, y: 20, w: 220, h: 48, z: 1, label: 'Start round', enabled: true, style: { size: 17, weight: '600', bg: '#3b7dd8', color: '#ffffff', radius: 10 } },
-						{ id: 'menu-hint', kind: 'text', anchor: 'center', x: 0, y: 110, w: 430, h: 40, z: 1, label: 'Grab: hold click  ·  Push/pull: wheel  ·  Fly: Q/E  ·  Pause: P', style: { size: 12, color: '#8b97a8', align: 'center' }, wrap: true }
+						{ id: 'menu-panel', kind: 'panel', anchor: 'center', x: 0, y: 0, w: 500, h: 460, z: 0, label: '', style: TOWERS_HUD_PANEL },
+						{ id: 'title', kind: 'text', anchor: 'center', x: 0, y: -176, w: 420, h: 54, z: 1, label: 'TOWERS', style: { size: 42, weight: '700', color: '#ffd45e', align: 'center' } },
+						// 30b: HOW TO PLAY, said once, plainly — the goal, the milestones, the clock
+						{ id: 'howto-title', kind: 'text', anchor: 'center', x: 0, y: -132, w: 440, h: 20, z: 1, label: 'HOW TO PLAY', style: { size: 12, weight: '700', color: '#9ee6ff', align: 'center' } },
+						{ id: 'subtitle', kind: 'text', anchor: 'center', x: 0, y: -94, w: 450, h: 60, z: 1, label: 'Grab crates from the podiums and stack them on the glowing pad. Each ring your tower reaches is a milestone — the gold ring at 4 m is the top. Touch the three floating stars. Three minutes a round.', style: { size: 14, color: '#d8dee9', align: 'center' }, wrap: true },
+						{ id: 'best-read', kind: 'text', anchor: 'center', x: 0, y: -44, w: 420, h: 24, z: 1, label: 'Your best tower: 0 m', style: { size: 15, weight: '600', color: '#9ee6ff', align: 'center' } },
+						{ id: 'start-btn', kind: 'button', anchor: 'center', x: 0, y: 14, w: 240, h: 50, z: 1, label: 'Start round', enabled: true, style: TOWERS_BTN },
+						{ id: 'menu-hint', kind: 'text', anchor: 'center', x: 0, y: 88, w: 460, h: 36, z: 1, label: 'Desktop: hold click to grab  ·  wheel pushes/pulls  ·  Q/E fly  ·  P pause', style: { size: 12, color: '#8b97a8', align: 'center' }, wrap: true },
+						{ id: 'menu-hint-vr', kind: 'text', anchor: 'center', x: 0, y: 128, w: 460, h: 36, z: 1, label: 'VR: grip grabs a crate  ·  left stick walks  ·  Y switches to Edit mode', style: { size: 12, color: '#8b97a8', align: 'center' }, wrap: true }
 					]
 				},
 				{
@@ -326,10 +609,10 @@ const TOWERS_DEF = {
 					showWhile: 'playing',
 					input: 'game',
 					elements: [
-						{ id: 'height-read', kind: 'text', anchor: 'top-center', x: 0, y: 14, w: 280, h: 30, z: 1, label: '', style: { size: 18, weight: '600', color: '#e5e9f0', align: 'center' } },
-						{ id: 'clock', kind: 'text', anchor: 'top-center', x: 0, y: 46, w: 120, h: 22, z: 1, label: '', style: { size: 13, color: '#c8d0dc', align: 'center' } },
-						{ id: 'stars-read', kind: 'text', anchor: 'top-right', x: 16, y: 14, w: 200, h: 24, z: 1, label: '', style: { size: 14, color: '#ffd45e', align: 'right' } },
-						{ id: 'play-hint', kind: 'text', anchor: 'bottom-center', x: 0, y: 12, w: 520, h: 20, z: 1, label: 'Stack on the glowing pad — the rings mark your height.  Press P to pause.', style: { size: 11, color: '#8b97a8', align: 'center' } }
+						{ id: 'height-read', kind: 'text', anchor: 'top-center', x: 0, y: 14, w: 280, h: 30, z: 1, label: '', style: { size: 20, weight: '700', color: '#ffffff', align: 'center' } },
+						{ id: 'clock', kind: 'text', anchor: 'top-center', x: 0, y: 48, w: 120, h: 22, z: 1, label: '', style: { size: 13, weight: '600', color: '#e5e9f0', align: 'center' } },
+						{ id: 'stars-read', kind: 'text', anchor: 'top-right', x: 16, y: 14, w: 200, h: 24, z: 1, label: '', style: { size: 15, weight: '600', color: '#ffd45e', align: 'right' } },
+						{ id: 'play-hint', kind: 'text', anchor: 'bottom-center', x: 0, y: 12, w: 520, h: 20, z: 1, label: 'Stack on the glowing pad — the rings mark your height.  Press P to pause.', style: { size: 11, color: '#e5e9f0', align: 'center' } }
 					]
 				},
 				{
@@ -339,8 +622,8 @@ const TOWERS_DEF = {
 					elements: [
 						{ id: 'pause-panel', kind: 'panel', anchor: 'center', x: 0, y: 0, w: 380, h: 300, z: 0, label: '', style: TOWERS_HUD_PANEL },
 						{ id: 'pause-title', kind: 'text', anchor: 'center', x: 0, y: -95, w: 340, h: 36, z: 1, label: 'PAUSED', style: { size: 26, weight: '700', color: '#e5e9f0', align: 'center' } },
-						{ id: 'resume-btn', kind: 'button', anchor: 'center', x: 0, y: -30, w: 240, h: 42, z: 1, label: 'Resume', enabled: true, style: { size: 16, weight: '600', bg: '#3b7dd8', color: '#ffffff', radius: 10 } },
-						{ id: 'restart-btn', kind: 'button', anchor: 'center', x: 0, y: 22, w: 240, h: 42, z: 1, label: 'Restart round', enabled: true, style: { size: 16, weight: '600', bg: '#4c9e6a', color: '#ffffff', radius: 10 } },
+						{ id: 'resume-btn', kind: 'button', anchor: 'center', x: 0, y: -30, w: 240, h: 42, z: 1, label: 'Resume', enabled: true, style: { ...TOWERS_BTN, size: 16 } },
+						{ id: 'restart-btn', kind: 'button', anchor: 'center', x: 0, y: 22, w: 240, h: 42, z: 1, label: 'Restart round', enabled: true, style: { ...TOWERS_BTN, size: 16, bg: '#4c9e6a' } },
 						{ id: 'quit-btn', kind: 'button', anchor: 'center', x: 0, y: 74, w: 240, h: 42, z: 1, label: 'Quit to menu', enabled: true, style: { size: 15, weight: '500', bg: '#3a4150', color: '#e5e9f0', radius: 10 } }
 					]
 				},
@@ -350,76 +633,105 @@ const TOWERS_DEF = {
 					showWhile: 'over',
 					input: 'menu',
 					elements: [
-						{ id: 'over-panel', kind: 'panel', anchor: 'center', x: 0, y: 0, w: 420, h: 250, z: 0, label: '', style: TOWERS_HUD_PANEL },
-						{ id: 'over-title', kind: 'text', anchor: 'center', x: 0, y: -70, w: 380, h: 40, z: 1, label: 'ROUND OVER', style: { size: 30, weight: '700', color: '#ffd45e', align: 'center' } },
-						{ id: 'final-height', kind: 'text', anchor: 'center', x: 0, y: -18, w: 380, h: 26, z: 1, label: '', style: { size: 16, color: '#e5e9f0', align: 'center' } },
-						{ id: 'again-btn', kind: 'button', anchor: 'center', x: 0, y: 58, w: 220, h: 44, z: 1, label: 'Back to menu', enabled: true, style: { size: 16, weight: '600', bg: '#3b7dd8', color: '#ffffff', radius: 10 } }
+						{ id: 'over-panel', kind: 'panel', anchor: 'center', x: 0, y: 0, w: 440, h: 320, z: 0, label: '', style: TOWERS_HUD_PANEL },
+						{ id: 'over-title', kind: 'text', anchor: 'center', x: 0, y: -104, w: 400, h: 40, z: 1, label: 'ROUND OVER', style: { size: 30, weight: '700', color: '#ffd45e', align: 'center' } },
+						{ id: 'final-height', kind: 'text', anchor: 'center', x: 0, y: -56, w: 400, h: 28, z: 1, label: '', style: { size: 18, weight: '600', color: '#e5e9f0', align: 'center' } },
+						{ id: 'over-best', kind: 'text', anchor: 'center', x: 0, y: -24, w: 400, h: 22, z: 1, label: '', style: { size: 14, color: '#9ee6ff', align: 'center' } },
+						{ id: 'replay-btn', kind: 'button', anchor: 'center', x: 0, y: 40, w: 240, h: 46, z: 1, label: 'Play again', enabled: true, style: TOWERS_BTN },
+						{ id: 'again-btn', kind: 'button', anchor: 'center', x: 0, y: 96, w: 240, h: 42, z: 1, label: 'Menu', enabled: true, style: { size: 15, weight: '500', bg: '#3a4150', color: '#e5e9f0', radius: 10 } }
 					]
 				}
 			]
 		}
 	},
 	objects: [
-		// the arena — a lit floor with a low rim, built on the ground plane
-		{ type: 'box', name: 'Arena floor', color: 0x6b7280, size: [26, 0.5, 26], pos: [0, -0.25, 0], roughness: 0.95, physics: { mode: 'static', friction: 0.9 } },
-		{ type: 'box', name: 'Wall north', color: 0x565f6e, size: [26, 1, 0.5], pos: [0, 0.5, -13], physics: { mode: 'static' } },
-		{ type: 'box', name: 'Wall south', color: 0x565f6e, size: [26, 1, 0.5], pos: [0, 0.5, 13], physics: { mode: 'static' } },
-		{ type: 'box', name: 'Wall west', color: 0x565f6e, size: [0.5, 1, 26], pos: [-13, 0.5, 0], physics: { mode: 'static' } },
-		{ type: 'box', name: 'Wall east', color: 0x565f6e, size: [0.5, 1, 26], pos: [13, 0.5, 0], physics: { mode: 'static' } },
-		// build pad — glowing blue, SUNK so its bottom face is not coplanar with the floor
-		{ type: 'cylinder', name: 'Build pad', color: 0x3b6ea8, r: 1.7, h: 0.24, pos: [0, 0.08, 0], emissive: 0x2a5b8f, emissiveIntensity: 0.7, roughness: 0.5, physics: { mode: 'static', friction: 1 } },
+		// the arena — a tiled floor with a low chamfered rim and a glowing trim on top
+		{ type: 'box', name: 'Arena floor', color: 0xb4bbc4, size: [26, 0.5, 26], pos: [0, -0.25, 0], roughness: 0.78, physics: { mode: 'static', friction: 0.9 } },
+		{ type: 'box', name: 'Wall north', color: 0x7a8494, size: [26, 1, 0.5], bevel: 0.1, bevelSegments: 1, pos: [0, 0.5, -13], physical: true, roughness: 0.55, clearcoat: 0.3, physics: { mode: 'static' } },
+		{ type: 'box', name: 'Wall south', color: 0x7a8494, size: [26, 1, 0.5], bevel: 0.1, bevelSegments: 1, pos: [0, 0.5, 13], physical: true, roughness: 0.55, clearcoat: 0.3, physics: { mode: 'static' } },
+		{ type: 'box', name: 'Wall west', color: 0x7a8494, size: [0.5, 1, 26], bevel: 0.1, bevelSegments: 1, pos: [-13, 0.5, 0], physical: true, roughness: 0.55, clearcoat: 0.3, physics: { mode: 'static' } },
+		{ type: 'box', name: 'Wall east', color: 0x7a8494, size: [0.5, 1, 26], bevel: 0.1, bevelSegments: 1, pos: [13, 0.5, 0], physical: true, roughness: 0.55, clearcoat: 0.3, physics: { mode: 'static' } },
+		{ type: 'box', name: 'Trim north', color: 0x9fe8ff, size: [25.4, 0.05, 0.12], pos: [0, 1.02, -13], emissive: 0x4fcfff, emissiveIntensity: 2.4, shadow: false },
+		{ type: 'box', name: 'Trim south', color: 0x9fe8ff, size: [25.4, 0.05, 0.12], pos: [0, 1.02, 13], emissive: 0x4fcfff, emissiveIntensity: 2.4, shadow: false },
+		{ type: 'box', name: 'Trim west', color: 0x9fe8ff, size: [0.12, 0.05, 25.4], pos: [-13, 1.02, 0], emissive: 0x4fcfff, emissiveIntensity: 2.4, shadow: false },
+		{ type: 'box', name: 'Trim east', color: 0x9fe8ff, size: [0.12, 0.05, 25.4], pos: [13, 1.02, 0], emissive: 0x4fcfff, emissiveIntensity: 2.4, shadow: false },
+		// build pad — glowing blue under a clearcoat, SUNK so its bottom face is not coplanar
+		// with the floor, a bright rim, and a soft blue light spilling onto the tiles
+		{ type: 'cylinder', name: 'Build pad', color: 0x2f6fbf, r: 1.7, h: 0.24, pos: [0, 0.08, 0], emissive: 0x2f8fff, emissiveIntensity: 1.1, physical: true, roughness: 0.3, clearcoat: 0.8, physics: { mode: 'static', friction: 1 } },
+		{ type: 'torus', name: 'Pad rim', color: 0xbfefff, r: 1.72, tube: 0.045, pos: [0, 0.2, 0], rot: [-Math.PI / 2, 0, 0], emissive: 0x7fdcff, emissiveIntensity: 3, shadow: false },
+		{ type: 'light', name: 'Pad glow', kind: 'point', color: 0x5fb4ff, intensity: 4, distance: 7, pos: [0, 0.7, 0] },
 		// podiums where the crate supply sits, sunk into the floor by the same trick
-		{ type: 'cylinder', name: 'Cube podium', color: 0x4a5262, r: 1.1, h: 0.5, pos: [-5.5, 0.2, 0], physics: { mode: 'static', friction: 0.9 } },
-		{ type: 'cylinder', name: 'Plank podium', color: 0x4a5262, r: 1.1, h: 0.5, pos: [5.5, 0.2, 0], physics: { mode: 'static', friction: 0.9 } },
-		// PRE-PLACED crates: a tidy supply that rests until grabbed, then stays put.
+		{ type: 'cylinder', name: 'Cube podium', color: 0x5d6879, r: 1.1, h: 0.5, pos: [-5.5, 0.2, 0], physical: true, metalness: 0.1, roughness: 0.4, clearcoat: 0.5, physics: { mode: 'static', friction: 0.9 } },
+		{ type: 'cylinder', name: 'Plank podium', color: 0x5d6879, r: 1.1, h: 0.5, pos: [5.5, 0.2, 0], physical: true, metalness: 0.1, roughness: 0.4, clearcoat: 0.5, physics: { mode: 'static', friction: 0.9 } },
+		// PRE-PLACED wooden crates: a tidy supply that rests until grabbed, then stays put.
 		// Cubes on the left podium (podium top ~0.45; stack from just above it).
-		{ type: 'box', name: 'Cube 1', color: 0xd08770, size: [0.6, 0.6, 0.6], pos: [-5.5, 0.85, 0], physics: { mode: 'dynamic', mass: 1, friction: 0.8, restitution: 0.03 } },
-		{ type: 'box', name: 'Cube 2', color: 0xd0a070, size: [0.6, 0.6, 0.6], pos: [-5.5, 1.5, 0], physics: { mode: 'dynamic', mass: 1, friction: 0.8, restitution: 0.03 } },
-		{ type: 'box', name: 'Cube 3', color: 0xc98a5a, size: [0.6, 0.6, 0.6], pos: [-5.5, 2.15, 0], physics: { mode: 'dynamic', mass: 1, friction: 0.8, restitution: 0.03 } },
-		{ type: 'box', name: 'Cube 4', color: 0xd08770, size: [0.6, 0.6, 0.6], pos: [-5.5, 2.8, 0], physics: { mode: 'dynamic', mass: 1, friction: 0.8, restitution: 0.03 } },
+		towersCrate('Cube 1', 0xb57a45, [0.6, 0.6, 0.6], [-5.5, 0.85, 0], TOWERS_CRATE),
+		towersCrate('Cube 2', 0xc28d55, [0.6, 0.6, 0.6], [-5.5, 1.5, 0], TOWERS_CRATE),
+		towersCrate('Cube 3', 0xa86d3c, [0.6, 0.6, 0.6], [-5.5, 2.15, 0], TOWERS_CRATE),
+		towersCrate('Cube 4', 0xb57a45, [0.6, 0.6, 0.6], [-5.5, 2.8, 0], TOWERS_CRATE),
 		// planks on the right podium
-		{ type: 'box', name: 'Plank 1', color: 0xa3be8c, size: [1.4, 0.3, 0.6], pos: [5.5, 0.75, 0], physics: { mode: 'dynamic', mass: 0.9, friction: 0.8, restitution: 0.03 } },
-		{ type: 'box', name: 'Plank 2', color: 0x94b07e, size: [1.4, 0.3, 0.6], pos: [5.5, 1.2, 0], physics: { mode: 'dynamic', mass: 0.9, friction: 0.8, restitution: 0.03 } },
-		{ type: 'box', name: 'Plank 3', color: 0xa3be8c, size: [1.4, 0.3, 0.6], pos: [5.5, 1.65, 0], physics: { mode: 'dynamic', mass: 0.9, friction: 0.8, restitution: 0.03 } },
+		towersCrate('Plank 1', 0xd2a86e, [1.4, 0.3, 0.6], [5.5, 0.75, 0], TOWERS_PLANK),
+		towersCrate('Plank 2', 0xc49a60, [1.4, 0.3, 0.6], [5.5, 1.2, 0], TOWERS_PLANK),
+		towersCrate('Plank 3', 0xd2a86e, [1.4, 0.3, 0.6], [5.5, 1.65, 0], TOWERS_PLANK),
 		// a few loose cubes near the pad to start building right away
-		{ type: 'box', name: 'Cube 5', color: 0xd08770, size: [0.6, 0.6, 0.6], pos: [-2, 0.35, 2], physics: { mode: 'dynamic', mass: 1, friction: 0.8, restitution: 0.03 } },
-		{ type: 'box', name: 'Cube 6', color: 0xc98a5a, size: [0.6, 0.6, 0.6], pos: [2, 0.35, 2], physics: { mode: 'dynamic', mass: 1, friction: 0.8, restitution: 0.03 } },
-		// height rings over the pad — faint translucent bands, sensors a rising crate trips
-		{ type: 'box', name: 'Height ring 1m', color: 0x9ee6ff, size: [1.5, 0.05, 1.5], pos: [0, 1, 0], emissive: 0x2f6f8f, emissiveIntensity: 0.6, opacity: 0.28, physics: { mode: 'static', sensor: true, collider: 'box' } },
-		{ type: 'box', name: 'Height ring 2m', color: 0x9ee6ff, size: [1.5, 0.05, 1.5], pos: [0, 2, 0], emissive: 0x2f6f8f, emissiveIntensity: 0.6, opacity: 0.28, physics: { mode: 'static', sensor: true, collider: 'box' } },
-		{ type: 'box', name: 'Height ring 3m', color: 0x9ee6ff, size: [1.5, 0.05, 1.5], pos: [0, 3, 0], emissive: 0x2f6f8f, emissiveIntensity: 0.6, opacity: 0.28, physics: { mode: 'static', sensor: true, collider: 'box' } },
-		{ type: 'box', name: 'Height ring 4m', color: 0x9ee6ff, size: [1.5, 0.05, 1.5], pos: [0, 4, 0], emissive: 0x2f6f8f, emissiveIntensity: 0.6, opacity: 0.28, physics: { mode: 'static', sensor: true, collider: 'box' } },
-		// the stars — glowing collectible touch pickups at climbing heights
-		{ type: 'sphere', name: 'Star 1', color: 0xffe08a, r: 0.2, pos: [-3.5, 2.4, 3.5], emissive: 0xffcf50, emissiveIntensity: 0.9, roughness: 0.4 },
-		{ type: 'sphere', name: 'Star 2', color: 0xffe08a, r: 0.2, pos: [3.5, 3.2, -3.5], emissive: 0xffcf50, emissiveIntensity: 0.9, roughness: 0.4 },
-		{ type: 'sphere', name: 'Star 3', color: 0xffe08a, r: 0.2, pos: [0, 4.4, 0], emissive: 0xffcf50, emissiveIntensity: 0.9, roughness: 0.4 }
+		towersCrate('Cube 5', 0xc28d55, [0.6, 0.6, 0.6], [-2, 0.35, 2], TOWERS_CRATE),
+		towersCrate('Cube 6', 0xa86d3c, [0.6, 0.6, 0.6], [2, 0.35, 2], TOWERS_CRATE),
+		// height rings over the pad — thin glowing rings a rising crate trips (the sensor is
+		// the ring's box, so the hole still counts); select-through, so a click reaches the
+		// tower inside. The top ring is gold: the one worth a sparkle.
+		{ type: 'torus', name: 'Height ring 1m', color: 0xbff4ff, r: 0.9, tube: 0.035, pos: [0, 1, 0], rot: [-Math.PI / 2, 0, 0], emissive: 0x49d2ff, emissiveIntensity: 2.2, shadow: false, pick: 'through', physics: { mode: 'static', sensor: true, collider: 'box' } },
+		{ type: 'torus', name: 'Height ring 2m', color: 0xbff4ff, r: 0.9, tube: 0.035, pos: [0, 2, 0], rot: [-Math.PI / 2, 0, 0], emissive: 0x49d2ff, emissiveIntensity: 2.2, shadow: false, pick: 'through', physics: { mode: 'static', sensor: true, collider: 'box' } },
+		{ type: 'torus', name: 'Height ring 3m', color: 0xbff4ff, r: 0.9, tube: 0.035, pos: [0, 3, 0], rot: [-Math.PI / 2, 0, 0], emissive: 0x49d2ff, emissiveIntensity: 2.2, shadow: false, pick: 'through', physics: { mode: 'static', sensor: true, collider: 'box' } },
+		{ type: 'torus', name: 'Height ring 4m', color: 0xfff0b8, r: 0.9, tube: 0.04, pos: [0, 4, 0], rot: [-Math.PI / 2, 0, 0], emissive: 0xffc640, emissiveIntensity: 2.6, shadow: false, pick: 'through', physics: { mode: 'static', sensor: true, collider: 'box' } },
+		// the measuring pole beside the pad: one bright mark per metre, lined up with a ring
+		{ type: 'cylinder', name: 'Height pole', color: 0xe8edf3, r: 0.04, h: 4.3, pos: [2.2, 2.15, 0], physical: true, metalness: 0.6, roughness: 0.3, shadow: false },
+		{ type: 'torus', name: 'Pole mark 1m', color: 0xbff4ff, r: 0.1, tube: 0.025, pos: [2.2, 1, 0], rot: [-Math.PI / 2, 0, 0], emissive: 0x49d2ff, emissiveIntensity: 2.4, shadow: false },
+		{ type: 'torus', name: 'Pole mark 2m', color: 0xbff4ff, r: 0.1, tube: 0.025, pos: [2.2, 2, 0], rot: [-Math.PI / 2, 0, 0], emissive: 0x49d2ff, emissiveIntensity: 2.4, shadow: false },
+		{ type: 'torus', name: 'Pole mark 3m', color: 0xbff4ff, r: 0.1, tube: 0.025, pos: [2.2, 3, 0], rot: [-Math.PI / 2, 0, 0], emissive: 0x49d2ff, emissiveIntensity: 2.4, shadow: false },
+		{ type: 'torus', name: 'Pole mark 4m', color: 0xfff0b8, r: 0.1, tube: 0.03, pos: [2.2, 4, 0], rot: [-Math.PI / 2, 0, 0], emissive: 0xffc640, emissiveIntensity: 2.6, shadow: false },
+		// the stars — faceted glowing collectibles at climbing heights (touch pickups)
+		{ type: 'dodecahedron', name: 'Star 1', color: 0xffc640, r: 0.24, pos: [-3.5, 2.4, 3.5], emissive: 0xffb830, emissiveIntensity: 1.6, physical: true, roughness: 0.25, metalness: 0.1, clearcoat: 1, flatShading: true },
+		{ type: 'dodecahedron', name: 'Star 2', color: 0xffc640, r: 0.24, pos: [3.5, 3.2, -3.5], emissive: 0xffb830, emissiveIntensity: 1.6, physical: true, roughness: 0.25, metalness: 0.1, clearcoat: 1, flatShading: true },
+		{ type: 'dodecahedron', name: 'Star 3', color: 0xffc640, r: 0.24, pos: [0, 4.6, 0], emissive: 0xffb830, emissiveIntensity: 1.6, physical: true, roughness: 0.25, metalness: 0.1, clearcoat: 1, flatShading: true },
+		// the card's camera: a 3/4 view over the pad with the podiums either side
+		{ type: 'camera', name: 'Card camera', pos: [8.2, 6, 10.2], lookAt: [0, 1.5, 0], fov: 45 }
 	]
 };
 
 // ---- 24-A A4: Stars Room, the second GAME def -------------------------------------
 // The first game that needs NO module download: a zero-g room you knock stars around
-// in (A1's knock, A2's On Hit), pure core. Sandbox by default (locked fork 4): the sim
-// runs on Play, the stars react, the touch leaderboard counts; the P menu (or the
-// physical Start pad, for VR — F8: the DOM HUD is invisible in a headset) opens the
-// OPTIONAL round: light every star. Design notes worth keeping:
-//   · the default screen is \`input: 'game'\` — a \`menu\`-input screen visible while
+// in (A1's knock, A2's On Hit), pure core. Design notes worth keeping:
+//   · 30 visuals-core: a START SCREEN (menu) offers `Start round` or `Free play`. Free play is
+//     a game STATE of its own ('free' — setGameState keeps an unknown state verbatim), so its
+//     screen is state-bound and the P menu's Resume (a `hide`) falls back to it; a screen
+//     OVERRIDE would have fallen back to the start screen instead. A round is two minutes:
+//     light every star, or run out of time — Round over names which, from STORED values,
+//     because every perRound latch reads un-lit the instant the round ends;
+//   · the default free screen is `input: 'game'` — a `menu`-input screen visible while
 //     playing releases the pointer lock (21-E3), which would make free play unplayable
 //     on desktop; every button lives on the P menu, plus two onclick PADS for VR;
 //   · the lit colour rides latch -> Select -> Set Color. The editor would refuse to draw
 //     Select (number) into Set Color's colour input, but the runtime reads whatever the
 //     wire resolves to and Select passes a string through raw — recorded as a follow-up
-//     (a Select typed by its wired inputs, or a Select Colour node);
+//     (a Select typed by its wired inputs, or a Select Colour node). The Round-over title
+//     uses the same trick into HUD Text's `format`;
+//   · THE BURST (30b): 30 pooled ONE particle emitter on a `Burst anchor` a Script moved onto
+//     the star just hit, because a particle node wired to 24 stars is 24 of the runtime's 8
+//     emitters. The Game Feel Effect Burst is pooled by the CORE (twelve short-lived systems at
+//     the scene root, no emitter slot), so each star has its own burst node now and the anchor,
+//     the Script and the hit-index sum are gone;
 //   · the spawner RECYCLES oldest-out at maxAlive, it does not refuse — "More stars"
 //     therefore never fails, and the room holds at most 27 + 32 dynamic bodies;
-//   · the chime is a def-level \`sounds\` entry (A4, additive): fetched like \`music\`,
-//     dropped into the Explorer, addressed by \`'$sound:<key>'\` from a Sound node — NOT
-//     \`music\`, which would also fill the scene's background-music slot;
-//   · dark by nature, so authored on a LIT preset at low exposure + bloom (F14, the
-//     Towers finding); the look on the user's display is owed, never assumed.
+//   · the chime is a def-level `sounds` entry (A4, additive): fetched like `music`,
+//     dropped into the Explorer, addressed by `'$sound:<key>'` from a Sound node — NOT
+//     `music`, which would also fill the scene's background-music slot;
+//   · 30: a real space room — a deep-blue gradient sky, a starfield (one continuous emitter
+//     flung to a ~20 m shell and faded in only once it has left the room), glass walls on a
+//     glowing frame, crystal stars; the look on the user's display is owed, never assumed.
 const STARS_HUD_PANEL = {
-	bg: 'rgba(8, 10, 24, 0.9)',
-	radius: 16,
-	border: '1px solid rgba(255, 212, 94, 0.25)'
+	bg: 'rgba(8, 10, 28, 0.9)',
+	radius: 18,
+	border: '1px solid rgba(255, 212, 94, 0.3)'
 };
 const STARS_CHIME = {
 	key: 'chime',
@@ -430,6 +742,8 @@ const STARS_CHIME = {
 };
 const STAR_DIM = '#3b3f66';
 const STAR_LIT = '#ffe08a';
+/** the round length in seconds (Game Time `remaining`) */
+const STARS_ROUND = 120;
 /** a seeded LCG, so the lattice jitter is DATA and two builds place every star alike
  * @param {number} seed */
 function seeded(seed) {
@@ -439,14 +753,15 @@ function seeded(seed) {
 		return s / 4294967296;
 	};
 }
-/** 24 stars on a jittered 4 x 6 lattice at hand height (0.8-2.6 m), r 0.16-0.3 */
+/** 24 crystal stars on a jittered 4 x 6 lattice at hand height (0.8-2.6 m), r 0.16-0.3 —
+ * faceted icosahedra under a clearcoat, glowing in four colours, with SPHERE colliders */
 function starObjects() {
 	const rand = seeded(24);
 	const palette = [
-		{ color: 0xffe08a, emissive: 0xffcf50 },
-		{ color: 0x9ad0ff, emissive: 0x5aa8ff },
-		{ color: 0xffb0d8, emissive: 0xff6ab0 },
-		{ color: 0xc8ffb0, emissive: 0x8aff6a }
+		{ color: 0xffe08a, emissive: 0xffc040 },
+		{ color: 0x9ad0ff, emissive: 0x4a9cff },
+		{ color: 0xffb0d8, emissive: 0xff5aa8 },
+		{ color: 0xc8ffb0, emissive: 0x6aff5a }
 	];
 	/** @type {any[]} */ const out = [];
 	let i = 0;
@@ -459,10 +774,11 @@ function starObjects() {
 			const r = 0.16 + rand() * 0.14;
 			const p = palette[(i - 1) % palette.length];
 			out.push({
-				type: 'sphere', name: 'Star ' + i, color: p.color, r: +r.toFixed(3),
+				type: 'icosahedron', name: 'Star ' + i, color: p.color, r: +r.toFixed(3),
 				pos: [+x.toFixed(2), +y.toFixed(2), +z.toFixed(2)],
-				emissive: p.emissive, emissiveIntensity: 1.2, roughness: 0.4,
-				physics: { mode: 'dynamic', mass: 0.2, restitution: 0.9, friction: 0.1 }
+				emissive: p.emissive, emissiveIntensity: 1.1, physical: true, roughness: 0.15, metalness: 0.1,
+				clearcoat: 1, clearcoatRoughness: 0.1, flatShading: true,
+				physics: { mode: 'dynamic', mass: 0.2, restitution: 0.9, friction: 0.1, collider: 'sphere' }
 			});
 		}
 	return out;
@@ -471,25 +787,33 @@ function starObjects() {
 function starsGraph() {
 	const g = graphBuilder();
 	const { N, E } = g;
-	// ---- the round: Start (P menu or the VR pad) -> playing; Back to menu ------------
-	N('bstart', 'hudbutton', 'Start button', 40, 40, { element: 'start-btn' });
+	// ---- the start screen: Start round or Free play -----------------------------------
+	N('bstart0', 'hudbutton', 'Start screen: Start', 40, 40, { element: 'go-btn' });
 	N('gostart', 'setgamestate', 'Start round', 280, 40, { state: 'playing', outcome: '', reset: false });
+	E('bstart0', 'gostart', 'trigger');
+	N('bfree', 'hudbutton', 'Start screen: Free play', 40, 110, { element: 'free-btn' });
+	N('gofree', 'setgamestate', 'Free play', 280, 110, { state: 'free', outcome: '', reset: false });
+	E('bfree', 'gofree', 'trigger');
+	// ---- Start from the P menu or the VR pad -> playing ---------------------------------
+	N('bstart', 'hudbutton', 'Start button (menu)', 40, 190, { element: 'start-btn' });
 	E('bstart', 'gostart', 'trigger');
-	N('padstart', 'onclick', 'Start pad clicked', 40, 120, { pulse: 0.3 });
-	N('selstartpad', 'objectselector', 'Start pad', 280, 120, { selected: 'Start pad' });
+	N('padstart', 'onclick', 'Start pad clicked', 40, 260, { pulse: 0.3 });
+	N('selstartpad', 'objectselector', 'Start pad', 280, 260, { selected: 'Start pad' });
 	E('padstart', 'selstartpad');
 	E('padstart', 'gostart', 'trigger');
-	N('starthide', 'hudscreen', 'Close menu on start', 520, 40, { screen: 'pause', action: 'hide' });
+	N('starthide', 'hudscreen', 'Close menu on start', 520, 190, { screen: 'pause', action: 'hide' });
 	E('bstart', 'starthide', 'trigger');
-	N('bagain', 'hudbutton', 'Play again button', 40, 200, { element: 'again-btn' });
-	N('gomenu', 'setgamestate', 'Back to menu', 280, 200, { state: 'menu', outcome: '', reset: true });
+	// ---- Round over: Play again, or back to the start screen ------------------------------
+	N('bagain', 'hudbutton', 'Menu button (over)', 40, 330, { element: 'again-btn' });
+	N('gomenu', 'setgamestate', 'Back to menu', 280, 330, { state: 'menu', outcome: '', reset: true });
 	E('bagain', 'gomenu', 'trigger');
+	N('breplay', 'hudbutton', 'Play again button', 40, 400, { element: 'replay-btn' });
 	// ---- the P menu (Towers' pause, plus Start / More stars) --------------------------
-	N('pkey', 'keypress', 'Press P', 40, 340, { code: 'KeyP', edge: 'down', pulse: 0.3 });
-	N('pausetoggle', 'hudscreen', 'Toggle menu', 280, 340, { screen: 'pause', action: 'toggle' });
+	N('pkey', 'keypress', 'Press P', 40, 480, { code: 'KeyP', edge: 'down', pulse: 0.3 });
+	N('pausetoggle', 'hudscreen', 'Toggle menu', 280, 480, { screen: 'pause', action: 'toggle' });
 	E('pkey', 'pausetoggle', 'trigger');
-	N('bresume', 'hudbutton', 'Resume button', 40, 490, { element: 'resume-btn' });
-	N('resumehide', 'hudscreen', 'Close menu', 280, 490, { screen: 'pause', action: 'hide' });
+	N('bresume', 'hudbutton', 'Resume button', 40, 560, { element: 'resume-btn' });
+	N('resumehide', 'hudscreen', 'Close menu', 280, 560, { screen: 'pause', action: 'hide' });
 	E('bresume', 'resumehide', 'trigger');
 	N('brestart', 'hudbutton', 'Restart button', 40, 640, { element: 'restart-btn' });
 	N('restartreset', 'setgamestate', 'Restart: to menu', 280, 640, { state: 'menu', outcome: '', reset: true });
@@ -500,9 +824,11 @@ function starsGraph() {
 	E('brestart', 'restartdelay', 'trigger');
 	E('restartdelay', 'restartplay', 'trigger');
 	E('brestart', 'restarthide', 'trigger');
-	N('bquit', 'hudbutton', 'Quit to free play button', 40, 790, { element: 'quit-btn' });
-	N('doquit', 'setgamestate', 'Quit to free play', 280, 790, { state: 'menu', outcome: '', reset: true });
-	N('quithide', 'hudscreen', 'Close menu on quit', 520, 790, { screen: 'pause', action: 'hide' });
+	E('breplay', 'restartreset', 'trigger');
+	E('breplay', 'restartdelay', 'trigger');
+	N('bquit', 'hudbutton', 'Quit to menu button', 40, 840, { element: 'quit-btn' });
+	N('doquit', 'setgamestate', 'Quit to menu', 280, 840, { state: 'menu', outcome: '', reset: true });
+	N('quithide', 'hudscreen', 'Close menu on quit', 520, 840, { screen: 'pause', action: 'hide' });
 	E('bquit', 'doquit', 'trigger');
 	E('bquit', 'quithide', 'trigger');
 	// ---- More stars: the menu button or the VR pad spawns 3 copies of the template ----
@@ -511,7 +837,7 @@ function starsGraph() {
 	N('selmorepad', 'objectselector', 'More stars pad', 280, 1020, { selected: 'More stars pad' });
 	E('padmore', 'selmorepad');
 	N('seltpl', 'objectselector', 'Star template', 280, 940, { selected: 'Star template' });
-	// \`at\` is an OFFSET from the template (under the floor at y -2): y 4 lands copies at 2 m
+	// `at` is an OFFSET from the template (under the floor at y -2): y 4 lands copies at 2 m
 	N('spawn', 'spawn', 'Spawn 3 stars', 520, 940, { x: 0, y: 4, z: 0, count: 3, maxAlive: 32, interval: 0.5, spread: 1.5 });
 	E('bmore', 'spawn', 'trigger');
 	E('padmore', 'spawn', 'trigger');
@@ -526,31 +852,32 @@ function starsGraph() {
 	N('sumtouch', 'peervariable', 'All touches', 40, 1540, { name: 'touches', read: 'sum', peer: '', fallback: 0 });
 	N('hsum', 'hudtext', 'HUD all touches', 280, 1540, { element: 'total-read', format: 'Touches: {v}', decimals: 0, value: 0 });
 	E('sumtouch', 'hsum', 'value');
-	N('board', 'leaderboard', 'Touch leaderboard', 520, 1540, { element: 'board', variable: 'touches', order: 'desc', format: '{name} — {v}', decimals: 0, limit: 8 });
-	N('board2', 'leaderboard', 'Touch leaderboard (round)', 760, 1540, { element: 'board-2', variable: 'touches', order: 'desc', format: '{name} — {v}', decimals: 0, limit: 8 });
-	// ---- the round clock ---------------------------------------------------------
-	N('clock', 'gametime', 'Round clock', 40, 1690, { read: 'elapsed', length: 600 });
-	N('hclock', 'hudtext', 'HUD clock', 280, 1690, { element: 'clock', format: '{v}s', decimals: 0, value: 0 });
+	N('board', 'leaderboard', 'Touch leaderboard', 520, 1540, { element: 'board', variable: 'touches', order: 'desc', format: '{name} — {v}', decimals: 0, limit: 4 });
+	N('board2', 'leaderboard', 'Touch leaderboard (round)', 760, 1540, { element: 'board-2', variable: 'touches', order: 'desc', format: '{name} — {v}', decimals: 0, limit: 4 });
+	N('board3', 'leaderboard', 'Touch leaderboard (over)', 1000, 1540, { element: 'board-3', variable: 'touches', order: 'desc', format: '{name} — {v}', decimals: 0, limit: 5 });
+	// ---- the round clock: two minutes, counting down -----------------------------------
+	N('clock', 'gametime', 'Time left', 40, 1690, { read: 'remaining', length: STARS_ROUND });
+	N('hclock', 'hudtext', 'HUD clock', 280, 1690, { element: 'clock', format: '{v}s left', decimals: 0, value: 0 });
 	E('clock', 'hclock', 'value');
-	N('hfinal', 'hudtext', 'HUD final time', 520, 1690, { element: 'final-time', format: 'Every star lit in {v}s', decimals: 0, value: 0 });
-	E('clock', 'hfinal', 'value');
-	// ---- per star: burst + chime on any hit, a per-player touch on MY hit, a perRound
-	// latch that paints the star lit during a round ---------------------------------------
+	N('elapsed', 'gametime', 'Round time', 40, 1760, { read: 'elapsed', length: STARS_ROUND });
+	N('timeup', 'compare', 'Time up?', 280, 1760, { op: 'lte', a: 0, b: 0 });
+	E('clock', 'timeup', 'a');
+	N('playing', 'gametime', 'Is playing', 40, 1830, { read: 'playing', length: 60 });
+	N('timeandplay', 'gate', 'Time up & playing', 520, 1760, { op: 'and', a: false, b: false });
+	E('timeup', 'timeandplay', 'a');
+	E('playing', 'timeandplay', 'b');
+	N('alltime', 'allplayers', 'Everyone out of time', 760, 1760, { pulse: 0.3 });
+	E('timeandplay', 'alltime', 'condition');
+	N('gotime', 'setgamestate', 'Time over', 1000, 1760, { state: 'over', outcome: "Time's up!", reset: false });
+	E('alltime', 'gotime', 'trigger');
+	// ---- per star: a chime on any hit, a per-player touch on MY hit, and a perRound latch
+	// that paints the star lit during a round ------------------------------------------------
 	let prevSum = '';
 	for (let i = 1; i <= 24; i++) {
 		const y = 1900 + (i - 1) * 180;
 		N('sel' + i, 'objectselector', 'Star ' + i, 1000, y, { selected: 'Star ' + i });
 		N('hit' + i, 'onhit', 'Star ' + i + ' hit', 40, y, { pulse: 0.3, minSpeed: 0.3, who: 'anyone' });
 		E('hit' + i, 'sel' + i);
-		N('mulc' + i, 'math', 'Burst size ' + i, 280, y, { op: 'mul', a: 0, b: 15 });
-		E('hit' + i, 'mulc' + i, 'a', 'speed');
-		N('pfx' + i, 'particle', 'Star ' + i + ' burst', 520, y, {
-			mode: 'burst', count: 40, lifetime: 0.9, speed: 1.8, gravity: 0,
-			turbulence: 0.3, sizeStart: 0.08, opacity: 0.9, sprite: 'star', blending: 'additive', space: 'world'
-		});
-		E('hit' + i, 'pfx' + i, 'trigger');
-		E('mulc' + i, 'pfx' + i, 'count');
-		E('pfx' + i, 'sel' + i);
 		N('snd' + i, 'sound', 'Star ' + i + ' chime', 760, y, {
 			hash: '$sound:chime', file: STARS_CHIME.name, volume: 0.7, radius: 8, rolloff: 1, loop: false, playing: false
 		});
@@ -578,6 +905,24 @@ function starsGraph() {
 			prevSum = 'sum' + i;
 		}
 	}
+	// ---- 30b: each star SPARKLES where it is hit, and LIGHTING it (the first hit of the round,
+	// a perRound Once) pays a coin chime and a haptic tap. The Game Feel burst is POOLED by
+	// the core (twelve short-lived systems at the scene root, no emitter slot), so 24 of them
+	// cost nothing between hits — which retires 30's one-emitter-plus-Script anchor trick.
+	N('buzzlit', 'hapticpulse', 'Buzz: a star lit', 1960, 1400, { pattern: 'tap', hand: 'both' });
+	for (let i = 1; i <= 24; i++) {
+		const y = 1900 + (i - 1) * 180;
+		N('fx' + i, 'effectburst', 'Star ' + i + ' sparkle', 2200, y, { kind: 'sparkle', count: 28, lift: 0, color: '' });
+		E('hit' + i, 'fx' + i, 'trigger');
+		E('sel' + i, 'fx' + i, 'at');
+		N('first' + i, 'once', 'Star ' + i + ' first lit', 2440, y, { perRound: true, pulse: 0.3 });
+		E('hit' + i, 'first' + i, 'trigger');
+		N('coin' + i, 'gamesound', 'Star ' + i + ' coin', 2680, y, { sound: 'coin' });
+		E('first' + i, 'coin' + i, 'trigger');
+		E('sel' + i, 'coin' + i, 'at');
+		E('first' + i, 'buzzlit', 'trigger');
+	}
+	// ---- the round's result, kept where the round's end cannot erase it ------------------
 	N('hlit', 'hudtext', 'HUD lit', 2200, 2000, { element: 'lit-read', format: 'Lit: {v} / 24', decimals: 0, value: 0 });
 	E('sum24', 'hlit', 'value');
 	N('alllit', 'compare', 'All lit?', 2200, 2150, { op: 'gte', a: 0, b: 24 });
@@ -586,22 +931,110 @@ function starsGraph() {
 	E('alllit', 'allwin', 'condition');
 	N('gowin', 'setgamestate', 'Round won', 2680, 2150, { state: 'over', outcome: 'Every star lit!', reset: false });
 	E('allwin', 'gowin', 'trigger');
+	// Stored on every hit (never on `over`, when every perRound latch reads un-lit): the
+	// best round and this round's count as `max`, so a star knocked on the over screen
+	// (the sim still runs) cannot wipe them; the win time is `max` of a value that is 0
+	// until the 24th star lights. Each round zeroes its own two by `set` nodes.
+	N('winat', 'select', 'Time if every star is lit', 2200, 2300, { index: 0, a: 0, b: 0 });
+	E('alllit', 'winat', 'index');
+	E('elapsed', 'winat', 'b');
+	N('storebest', 'storevalue', 'Save best round', 2440, 2300, { key: 'stars-best', mode: 'max', value: 0 });
+	N('storelast', 'storevalue', 'Save this round', 2440, 2380, { key: 'stars-last', mode: 'max', value: 0 });
+	N('storetime', 'storevalue', 'Save the win time', 2440, 2460, { key: 'stars-time', mode: 'max', value: 0 });
+	E('sum24', 'storebest', 'value');
+	E('sum24', 'storelast', 'value');
+	E('winat', 'storetime', 'value');
+	for (let i = 1; i <= 24; i++) {
+		E('hit' + i, 'storebest', 'trigger');
+		E('hit' + i, 'storelast', 'trigger');
+		E('hit' + i, 'storetime', 'trigger');
+	}
+	N('onround', 'ongamestate', 'When a round starts', 2200, 2540, { state: 'playing', edge: 'enter', pulse: 0.3 });
+	N('zerolast', 'storevalue', 'New round: zero the count', 2440, 2540, { key: 'stars-last', mode: 'set', value: 0 });
+	N('zerotime', 'storevalue', 'New round: zero the time', 2440, 2620, { key: 'stars-time', mode: 'set', value: 0 });
+	E('onround', 'zerolast', 'trigger');
+	E('onround', 'zerotime', 'trigger');
+	N('storedlast', 'storedvalue', 'This round', 2680, 2380, { key: 'stars-last', output: 'number', fallback: 0 });
+	N('storedtime', 'storedvalue', 'Win time', 2680, 2460, { key: 'stars-time', output: 'number', fallback: 0 });
+	N('storedbest', 'storedvalue', 'Best round', 2680, 2300, { key: 'stars-best', output: 'number', fallback: 0 });
+	N('won', 'compare', 'Won?', 2920, 2380, { op: 'gte', a: 0, b: 24 });
+	E('storedlast', 'won', 'a');
+	N('titlepick', 'select', 'Over title', 3160, 2300, { index: 0, a: "TIME'S UP", b: 'EVERY STAR LIT' });
+	E('won', 'titlepick', 'index');
+	N('htitle', 'hudtext', 'HUD over title', 3400, 2300, { element: 'over-title', format: 'ROUND OVER', decimals: 0, value: 0 });
+	E('titlepick', 'htitle', 'format');
+	N('linepick', 'select', 'Over line', 3160, 2460, { index: 0, a: 'Lit {v} / 24 in time', b: 'Every star lit in {v}s' });
+	E('won', 'linepick', 'index');
+	N('pickvalue', 'select', 'Over number', 3160, 2540, { index: 0, a: 0, b: 0 });
+	E('won', 'pickvalue', 'index');
+	E('storedlast', 'pickvalue', 'a');
+	E('storedtime', 'pickvalue', 'b');
+	N('hfinal', 'hudtext', 'HUD over line', 3400, 2460, { element: 'final-time', format: 'Lit {v} / 24', decimals: 0, value: 0 });
+	E('linepick', 'hfinal', 'format');
+	E('pickvalue', 'hfinal', 'value');
+	N('hbest', 'hudtext', 'HUD best (over)', 3400, 2620, { element: 'over-best', format: 'Your best: {v} / 24 stars', decimals: 0, value: 0 });
+	E('storedbest', 'hbest', 'value');
+	N('hbest0', 'hudtext', 'HUD best (start)', 3400, 2700, { element: 'best-read', format: 'Your best round: {v} / 24 stars', decimals: 0, value: 0 });
+	E('storedbest', 'hbest0', 'value');
+
+	// ---- 30b: the round says what is happening, and sounds like it -----------------------
+	N('music', 'gamemusic', 'Space music', 40, 1240, { preset: 'space', volume: 0.45, while: 'always' });
+	N('click', 'gamesound', 'Button click', 280, 1100, { sound: 'click' });
+	for (const b of ['bstart0', 'bfree', 'bstart', 'bagain', 'breplay', 'bresume', 'brestart', 'bquit', 'bmore']) E(b, 'click', 'trigger');
+	N('saygo', 'announce', 'Say: light them', 2680, 2540, { text: 'Light every star!', sub: 'Two minutes — knock each one', seconds: 2.2, color: '#ffe08a', decimals: 0 });
+	E('onround', 'saygo', 'trigger');
+	N('whistle', 'gamesound', 'Round start whistle', 2680, 2620, { sound: 'whistle' });
+	E('onround', 'whistle', 'trigger');
+	N('sayfree', 'announce', 'Say: free play', 520, 110, { text: 'Free play', sub: 'Knock the stars around — P or the menu to start a round', seconds: 2, color: '#9ee6ff', decimals: 0 });
+	E('bfree', 'sayfree', 'trigger');
+	N('fanfare', 'gamesound', 'Win fanfare', 2920, 2230, { sound: 'levelup' });
+	E('allwin', 'fanfare', 'trigger');
+	N('upwhistle', 'gamesound', 'Final whistle', 1240, 1920, { sound: 'whistle' });
+	E('alltime', 'upwhistle', 'trigger');
+	// the round's end, whichever way: confetti in front of every player and a cheer, with the
+	// results on the Round over screen (the VR board in a headset) — NO banner at the end: it
+	// read twice over the results panel
+	N('onover', 'ongamestate', 'When the round ends', 3160, 2700, { state: 'over', edge: 'enter', pulse: 0.3 });
+	N('confetti', 'effectburst', 'Confetti', 3400, 2700, { kind: 'confetti', count: 96, lift: 0, color: '' });
+	E('onover', 'confetti', 'trigger');
+	N('cheer', 'gamesound', 'Cheer', 3400, 2780, { sound: 'cheer' });
+	E('onover', 'cheer', 'trigger');
 	return g.done();
 }
 
 const STARS_TEXT = { size: 13, color: '#d8dee9', align: 'center' };
 const STARS_BTN = { size: 16, weight: '600', bg: '#3b7dd8', color: '#ffffff', radius: 10 };
+const STARS_QUIET = { size: 15, weight: '500', bg: '#3a4150', color: '#e5e9f0', radius: 10 };
+/** a glass wall: nearly clear, glossy, faintly blue — select-through, so the stars behind
+ * it are what a click reaches @param {string} name @param {number[]} size @param {number[]} pos */
+const starsGlass = (name, size, pos) => ({
+	type: 'box', name, color: 0x8fb0ff, size, pos, opacity: 0.1, physical: true, roughness: 0.05, clearcoat: 1,
+	emissive: 0x1a2a5a, emissiveIntensity: 0.4, pick: 'through', shadow: false,
+	physics: { mode: 'static', friction: 0.1, restitution: 0.85 }
+});
+/** the glowing frame the glass hangs in @param {string} name @param {string} type @param {any} dims @param {number[]} pos */
+const starsFrame = (name, type, dims, pos) => ({ type, name, ...dims, pos, color: 0xbfe8ff, emissive: 0x58c8ff, emissiveIntensity: 2.2, shadow: false });
 const STARS_DEF = {
 	kind: 'game',
 	slug: 'stars-room',
 	title: 'Stars Room',
 	description:
-		'A zero-gravity room full of glowing stars. Knock them with your hands in VR or walk into them; press P for the round: light every star, and see who touched the most.',
+		'A zero-gravity glass room full of glowing crystal stars. Knock them with your hands in VR or walk into them. Start a round to light every star against the clock, or just play.',
 	license: 'CC0-1.0',
 	author: 'theprototype',
 	tags: ['zero-g', 'physics', 'sandbox', 'vr'],
 	// pure core — the first game that needs no download (no 'modules', no 'installModules')
-	env: { preset: 'studio', exposure: 0.55 },
+	// 30: a space room at a readable exposure (the 0.55 studio made it murky): a deep-blue
+	// gradient sky, a cool hemisphere and a soft key light for the crystals' facets
+	env: {
+		preset: 'custom',
+		base: 'studio',
+		exposure: 1.1,
+		background: { top: '#03040f', bottom: '#27408f' },
+		fog: null,
+		hemi: { sky: '#a8b8ff', ground: '#2c2058', intensity: 1.4 },
+		sun: { color: '#d4ddff', intensity: 1.5, dir: [0.35, 1, 0.3] }
+	},
 	physics: {
 		gravity: 0,
 		ground: { enabled: false },
@@ -609,7 +1042,8 @@ const STARS_DEF = {
 		material: { friction: 0.1, restitution: 0.85 },
 		damping: { linear: 0.35, angular: 0.2 },
 		ccd: false,
-		play: { interaction: 'grab', grounded: false, simOnPlay: true },
+		// 30b: a SPAWN just inside the south glass, facing the stars (yaw 0 faces -Z)
+		play: { interaction: 'grab', grounded: false, simOnPlay: true, spawn: { position: [0, 0, 5.2], yaw: 0 } },
 		knock: { enabled: true, gain: 1, maxSpeed: 10, radius: 0.12, spin: 0.6 }
 	},
 	post: {
@@ -617,7 +1051,7 @@ const STARS_DEF = {
 		effects: [
 			{ id: 'ao', kind: 'ao', enabled: true, params: {} },
 			{ id: 'tone', kind: 'tonemapping', enabled: true, params: { mode: 'AGX' } },
-			{ id: 'bloom', kind: 'bloom', enabled: true, params: { intensity: 1.2, luminanceThreshold: 0.55 } },
+			{ id: 'bloom', kind: 'bloom', enabled: true, params: { intensity: 1.3, luminanceThreshold: 0.5 } },
 			{ id: 'vig', kind: 'vignette', enabled: true, params: {} },
 			{ id: 'aa', kind: 'smaa', enabled: true, params: {} }
 		],
@@ -625,6 +1059,7 @@ const STARS_DEF = {
 	},
 	sounds: [STARS_CHIME],
 	view: { pos: [0, 3.4, 11], target: [0, 1.6, 0] },
+	thumb: { camera: 'Card camera' },
 	graphs: { scene: starsGraph() },
 	hud: {
 		scene: {
@@ -632,16 +1067,34 @@ const STARS_DEF = {
 			changedAt: 0,
 			screens: [
 				{
+					id: 'start',
+					name: 'Start',
+					showWhile: 'menu',
+					input: 'menu',
+					elements: [
+						{ id: 'start-panel', kind: 'panel', anchor: 'center', x: 0, y: 0, w: 460, h: 400, z: 0, label: '', style: STARS_HUD_PANEL },
+						{ id: 'start-title', kind: 'text', anchor: 'center', x: 0, y: -145, w: 420, h: 48, z: 1, label: 'STARS ROOM', style: { size: 36, weight: '700', color: '#ffd45e', align: 'center' } },
+						// 30b: HOW TO PLAY
+						{ id: 'howto-title', kind: 'text', anchor: 'center', x: 0, y: -112, w: 400, h: 18, z: 1, label: 'HOW TO PLAY', style: { size: 12, weight: '700', color: '#9ee6ff', align: 'center' } },
+						{ id: 'start-sub', kind: 'text', anchor: 'center', x: 0, y: -80, w: 420, h: 44, z: 1, label: 'Zero gravity. Knock every crystal star once to light it — in VR swing your hands through them, on a desktop walk into them.', style: STARS_TEXT, wrap: true },
+						{ id: 'best-read', kind: 'text', anchor: 'center', x: 0, y: -44, w: 400, h: 24, z: 1, label: 'Your best round: 0 / 24 stars', style: { size: 14, weight: '600', color: '#9ee6ff', align: 'center' } },
+						{ id: 'go-btn', kind: 'button', anchor: 'center', x: 0, y: 12, w: 260, h: 48, z: 1, label: 'Start round', enabled: true, style: { ...STARS_BTN, size: 17 } },
+						{ id: 'free-btn', kind: 'button', anchor: 'center', x: 0, y: 70, w: 260, h: 42, z: 1, label: 'Free play', enabled: true, style: STARS_QUIET },
+						{ id: 'start-hint', kind: 'text', anchor: 'center', x: 0, y: 128, w: 420, h: 22, z: 1, label: 'Light all 24 in two minutes  ·  P: menu', style: { size: 12, color: '#8b97a8', align: 'center' }, wrap: true },
+						{ id: 'start-hint-vr', kind: 'text', anchor: 'center', x: 0, y: 156, w: 420, h: 22, z: 1, label: 'VR: left stick walks  ·  grip grabs  ·  Y switches to Edit mode', style: { size: 12, color: '#8b97a8', align: 'center' }, wrap: true }
+					]
+				},
+				{
 					id: 'free',
 					name: 'Free play',
-					showWhile: 'menu',
+					showWhile: 'free',
 					input: 'game',
 					elements: [
 						{ id: 'free-title', kind: 'text', anchor: 'top-center', x: 0, y: 14, w: 420, h: 30, z: 1, label: 'STARS ROOM  ·  free play', style: { size: 18, weight: '700', color: '#ffd45e', align: 'center' } },
-						{ id: 'free-hint', kind: 'text', anchor: 'top-center', x: 0, y: 44, w: 520, h: 22, z: 1, label: 'Knock the stars.  P: menu (start a round, more stars)', style: { size: 12, color: '#8b97a8', align: 'center' } },
-						{ id: 'touches-read', kind: 'text', anchor: 'top-right', x: 16, y: 14, w: 220, h: 24, z: 1, label: '', style: { size: 14, color: '#ffd45e', align: 'right' } },
+						{ id: 'free-hint', kind: 'text', anchor: 'top-center', x: 0, y: 44, w: 520, h: 22, z: 1, label: 'Knock the stars.  P: menu (start a round, more stars)', style: { size: 12, color: '#c8d0dc', align: 'center' } },
+						{ id: 'touches-read', kind: 'text', anchor: 'top-right', x: 16, y: 14, w: 220, h: 24, z: 1, label: '', style: { size: 14, weight: '600', color: '#ffd45e', align: 'right' } },
 						{ id: 'total-read', kind: 'text', anchor: 'top-right', x: 16, y: 40, w: 220, h: 22, z: 1, label: '', style: { size: 12, color: '#c8d0dc', align: 'right' } },
-						{ id: 'board', kind: 'list', anchor: 'top-right', x: 16, y: 70, w: 220, h: 150, z: 1, label: '', title: 'Touches', rowsText: '', rows: 8, rowHeight: 18, style: { size: 12, bg: 'rgba(8, 10, 24, 0.6)', radius: 8, pad: 6 } }
+						{ id: 'board', kind: 'list', anchor: 'top-right', x: 16, y: 70, w: 180, h: 96, z: 1, label: '', title: 'Touches', rowsText: '', rows: 4, rowHeight: 18, style: { size: 12, bg: 'rgba(8, 10, 28, 0.62)', radius: 10, pad: 8 } }
 					]
 				},
 				{
@@ -650,11 +1103,11 @@ const STARS_DEF = {
 					showWhile: 'playing',
 					input: 'game',
 					elements: [
-						{ id: 'lit-read', kind: 'text', anchor: 'top-center', x: 0, y: 14, w: 280, h: 30, z: 1, label: '', style: { size: 18, weight: '600', color: '#ffe08a', align: 'center' } },
-						{ id: 'clock', kind: 'text', anchor: 'top-center', x: 0, y: 46, w: 120, h: 22, z: 1, label: '', style: { size: 13, color: '#c8d0dc', align: 'center' } },
-						{ id: 'touches-read-2', kind: 'text', anchor: 'top-right', x: 16, y: 14, w: 220, h: 24, z: 1, label: '', style: { size: 14, color: '#ffd45e', align: 'right' } },
-						{ id: 'board-2', kind: 'list', anchor: 'top-right', x: 16, y: 44, w: 220, h: 150, z: 1, label: '', title: 'Touches', rowsText: '', rows: 8, rowHeight: 18, style: { size: 12, bg: 'rgba(8, 10, 24, 0.6)', radius: 8, pad: 6 } },
-						{ id: 'play-hint', kind: 'text', anchor: 'bottom-center', x: 0, y: 12, w: 520, h: 20, z: 1, label: 'Light every star.  P: menu', style: { size: 11, color: '#8b97a8', align: 'center' } }
+						{ id: 'lit-read', kind: 'text', anchor: 'top-center', x: 0, y: 14, w: 280, h: 30, z: 1, label: '', style: { size: 20, weight: '700', color: '#ffe08a', align: 'center' } },
+						{ id: 'clock', kind: 'text', anchor: 'top-center', x: 0, y: 48, w: 140, h: 22, z: 1, label: '', style: { size: 13, weight: '600', color: '#e5e9f0', align: 'center' } },
+						{ id: 'touches-read-2', kind: 'text', anchor: 'top-right', x: 16, y: 14, w: 220, h: 24, z: 1, label: '', style: { size: 14, weight: '600', color: '#ffd45e', align: 'right' } },
+						{ id: 'board-2', kind: 'list', anchor: 'top-right', x: 16, y: 44, w: 180, h: 96, z: 1, label: '', title: 'Touches', rowsText: '', rows: 4, rowHeight: 18, style: { size: 12, bg: 'rgba(8, 10, 28, 0.62)', radius: 10, pad: 8 } },
+						{ id: 'play-hint', kind: 'text', anchor: 'bottom-center', x: 0, y: 12, w: 520, h: 20, z: 1, label: 'Light every star.  P: menu', style: { size: 11, color: '#c8d0dc', align: 'center' } }
 					]
 				},
 				{
@@ -668,8 +1121,8 @@ const STARS_DEF = {
 						{ id: 'start-btn', kind: 'button', anchor: 'center', x: 0, y: -50, w: 250, h: 42, z: 1, label: 'Start round: light every star', enabled: true, style: STARS_BTN },
 						{ id: 'restart-btn', kind: 'button', anchor: 'center', x: 0, y: 0, w: 250, h: 42, z: 1, label: 'Restart round', enabled: true, style: { ...STARS_BTN, bg: '#4c9e6a' } },
 						{ id: 'more-btn', kind: 'button', anchor: 'center', x: 0, y: 50, w: 250, h: 42, z: 1, label: 'More stars', enabled: true, style: { ...STARS_BTN, bg: '#b0863b' } },
-						{ id: 'resume-btn', kind: 'button', anchor: 'center', x: 0, y: 100, w: 250, h: 42, z: 1, label: 'Resume', enabled: true, style: { ...STARS_BTN, size: 15, weight: '500', bg: '#3a4150', color: '#e5e9f0' } },
-						{ id: 'quit-btn', kind: 'button', anchor: 'center', x: 0, y: 150, w: 250, h: 42, z: 1, label: 'Quit to free play', enabled: true, style: { ...STARS_BTN, size: 15, weight: '500', bg: '#3a4150', color: '#e5e9f0' } }
+						{ id: 'resume-btn', kind: 'button', anchor: 'center', x: 0, y: 100, w: 250, h: 42, z: 1, label: 'Resume', enabled: true, style: STARS_QUIET },
+						{ id: 'quit-btn', kind: 'button', anchor: 'center', x: 0, y: 150, w: 250, h: 42, z: 1, label: 'Quit to menu', enabled: true, style: STARS_QUIET }
 					]
 				},
 				{
@@ -678,32 +1131,60 @@ const STARS_DEF = {
 					showWhile: 'over',
 					input: 'menu',
 					elements: [
-						{ id: 'over-panel', kind: 'panel', anchor: 'center', x: 0, y: 0, w: 420, h: 250, z: 0, label: '', style: STARS_HUD_PANEL },
-						{ id: 'over-title', kind: 'text', anchor: 'center', x: 0, y: -70, w: 380, h: 40, z: 1, label: 'EVERY STAR LIT', style: { size: 30, weight: '700', color: '#ffd45e', align: 'center' } },
-						{ id: 'final-time', kind: 'text', anchor: 'center', x: 0, y: -18, w: 380, h: 26, z: 1, label: '', style: { size: 16, color: '#e5e9f0', align: 'center' } },
-						{ id: 'again-btn', kind: 'button', anchor: 'center', x: 0, y: 58, w: 220, h: 44, z: 1, label: 'Back to free play', enabled: true, style: STARS_BTN }
+						{ id: 'over-panel', kind: 'panel', anchor: 'center', x: 0, y: 0, w: 460, h: 400, z: 0, label: '', style: STARS_HUD_PANEL },
+						{ id: 'over-title', kind: 'text', anchor: 'center', x: 0, y: -150, w: 420, h: 42, z: 1, label: 'ROUND OVER', style: { size: 30, weight: '700', color: '#ffd45e', align: 'center' } },
+						{ id: 'final-time', kind: 'text', anchor: 'center', x: 0, y: -106, w: 420, h: 26, z: 1, label: '', style: { size: 17, weight: '600', color: '#e5e9f0', align: 'center' } },
+						{ id: 'over-best', kind: 'text', anchor: 'center', x: 0, y: -76, w: 420, h: 22, z: 1, label: '', style: { size: 14, color: '#9ee6ff', align: 'center' } },
+						{ id: 'board-3', kind: 'list', anchor: 'center', x: 0, y: 4, w: 280, h: 116, z: 1, label: '', title: 'Touches', rowsText: '', rows: 5, rowHeight: 18, style: { size: 12, bg: 'rgba(255, 255, 255, 0.05)', radius: 10, pad: 8 } },
+						{ id: 'replay-btn', kind: 'button', anchor: 'center', x: 0, y: 100, w: 240, h: 44, z: 1, label: 'Play again', enabled: true, style: STARS_BTN },
+						{ id: 'again-btn', kind: 'button', anchor: 'center', x: 0, y: 154, w: 240, h: 40, z: 1, label: 'Menu', enabled: true, style: STARS_QUIET }
 					]
 				}
 			]
 		}
 	},
 	objects: [
-		// the room: 12 x 7 x 12, walls you can see through and bounce off
-		{ type: 'box', name: 'Floor', color: 0x101626, size: [12, 0.5, 12], pos: [0, -0.25, 0], roughness: 0.9, physics: { mode: 'static', friction: 0.1, restitution: 0.85 } },
-		{ type: 'box', name: 'Ceiling', color: 0x101626, size: [12, 0.5, 12], pos: [0, 7.25, 0], roughness: 0.9, physics: { mode: 'static', friction: 0.1, restitution: 0.85 } },
-		{ type: 'box', name: 'Wall north', color: 0x2a3a6a, size: [12.5, 7, 0.5], pos: [0, 3.5, -6], emissive: 0x1a2a5a, emissiveIntensity: 0.5, opacity: 0.12, physics: { mode: 'static', friction: 0.1, restitution: 0.85 } },
-		{ type: 'box', name: 'Wall south', color: 0x2a3a6a, size: [12.5, 7, 0.5], pos: [0, 3.5, 6], emissive: 0x1a2a5a, emissiveIntensity: 0.5, opacity: 0.12, physics: { mode: 'static', friction: 0.1, restitution: 0.85 } },
-		{ type: 'box', name: 'Wall west', color: 0x2a3a6a, size: [0.5, 7, 12.5], pos: [-6, 3.5, 0], emissive: 0x1a2a5a, emissiveIntensity: 0.5, opacity: 0.12, physics: { mode: 'static', friction: 0.1, restitution: 0.85 } },
-		{ type: 'box', name: 'Wall east', color: 0x2a3a6a, size: [0.5, 7, 12.5], pos: [6, 3.5, 0], emissive: 0x1a2a5a, emissiveIntensity: 0.5, opacity: 0.12, physics: { mode: 'static', friction: 0.1, restitution: 0.85 } },
-		{ type: 'light', name: 'Room light', kind: 'point', color: 0x9fb4ff, intensity: 6, distance: 16, pos: [0, 5.5, 0] },
+		// the room: 12 x 7 x 12 — a glossy deck, a dark ceiling with a light ring, glass walls
+		// you can see (and click) through and bounce off, hung in a glowing frame
+		{ type: 'box', name: 'Floor', color: 0x4a62b8, size: [12, 0.5, 12], pos: [0, -0.25, 0], physical: true, roughness: 0.3, metalness: 0.2, clearcoat: 1, clearcoatRoughness: 0.2, physics: { mode: 'static', friction: 0.1, restitution: 0.85 } },
+		{ type: 'ring', name: 'Floor ring', color: 0xbfe8ff, r: 4.6, inner: 4.45, pos: [0, 0.01, 0], rot: [-Math.PI / 2, 0, 0], emissive: 0x58c8ff, emissiveIntensity: 2, shadow: false, pick: 'through' },
+		{ type: 'box', name: 'Ceiling', color: 0x1c2656, size: [12, 0.5, 12], pos: [0, 7.25, 0], physical: true, roughness: 0.5, clearcoat: 0.5, physics: { mode: 'static', friction: 0.1, restitution: 0.85 } },
+		{ type: 'torus', name: 'Ceiling ring', color: 0xeaf4ff, r: 2.2, tube: 0.05, pos: [0, 6.9, 0], rot: [-Math.PI / 2, 0, 0], emissive: 0xcfe6ff, emissiveIntensity: 3, shadow: false, pick: 'through' },
+		starsGlass('Wall north', [12.5, 7, 0.5], [0, 3.5, -6]),
+		starsGlass('Wall south', [12.5, 7, 0.5], [0, 3.5, 6]),
+		starsGlass('Wall west', [0.5, 7, 12.5], [-6, 3.5, 0]),
+		starsGlass('Wall east', [0.5, 7, 12.5], [6, 3.5, 0]),
+		starsFrame('Frame NW', 'cylinder', { r: 0.07, h: 7 }, [-6, 3.5, -6]),
+		starsFrame('Frame NE', 'cylinder', { r: 0.07, h: 7 }, [6, 3.5, -6]),
+		starsFrame('Frame SW', 'cylinder', { r: 0.07, h: 7 }, [-6, 3.5, 6]),
+		starsFrame('Frame SE', 'cylinder', { r: 0.07, h: 7 }, [6, 3.5, 6]),
+		starsFrame('Frame top north', 'box', { size: [12.1, 0.1, 0.1] }, [0, 7, -6]),
+		starsFrame('Frame top south', 'box', { size: [12.1, 0.1, 0.1] }, [0, 7, 6]),
+		starsFrame('Frame top west', 'box', { size: [0.1, 0.1, 12.1] }, [-6, 7, 0]),
+		starsFrame('Frame top east', 'box', { size: [0.1, 0.1, 12.1] }, [6, 7, 0]),
+		// the starfield: one continuous emitter flung to a ~20 m shell (speed / drag) that fades
+		// in only once it is out past the glass — the kit's particles, not a texture
+		{
+			type: 'empty', name: 'Starfield', pos: [0, 3.5, 0],
+			particles: {
+				preset: 'sparkles', mode: 'continuous', count: 450, lifetime: 9, lifeJitter: 0.3,
+				shape: 'sphere', radius: 0.5, speed: 60, speedJitter: 0.4, gravity: 0, drag: 3, turbulence: 0,
+				sizeStart: 0.18, sizeEnd: 0.18, colorStart: '#ffffff', colorEnd: '#a8bcff',
+				opacity: 1, fadeIn: 0.3, fadeOut: 0.25, sprite: 'star', blending: 'additive', spin: 0, space: 'local'
+			}
+		},
+		{ type: 'light', name: 'Room light', kind: 'point', color: 0xa8bcff, intensity: 20, distance: 18, pos: [0, 5.5, 0] },
+		{ type: 'light', name: 'Deck glow', kind: 'point', color: 0x7fd4ff, intensity: 4, distance: 9, pos: [0, 0.6, 0] },
 		// the two physical buttons (an onclick fires from a VR ray — the HUD is not in a headset)
-		{ type: 'box', name: 'Start pad', color: 0x3b7dd8, size: [0.6, 0.16, 0.6], pos: [-1, 0.08, -4.8], emissive: 0x1f4f9f, emissiveIntensity: 0.9, roughness: 0.4, physics: { mode: 'static' } },
-		{ type: 'box', name: 'More stars pad', color: 0xb0863b, size: [0.6, 0.16, 0.6], pos: [1, 0.08, -4.8], emissive: 0x7a5a1f, emissiveIntensity: 0.9, roughness: 0.4, physics: { mode: 'static' } },
+		{ type: 'box', name: 'Start pad', color: 0x3b7dd8, size: [0.6, 0.16, 0.6], bevel: 0.04, bevelSegments: 1, pos: [-1, 0.08, -4.8], emissive: 0x2f6fef, emissiveIntensity: 1.4, physical: true, roughness: 0.3, clearcoat: 1, physics: { mode: 'static' } },
+		{ type: 'box', name: 'More stars pad', color: 0xb0863b, size: [0.6, 0.16, 0.6], bevel: 0.04, bevelSegments: 1, pos: [1, 0.08, -4.8], emissive: 0xc07a1f, emissiveIntensity: 1.4, physical: true, roughness: 0.3, clearcoat: 1, physics: { mode: 'static' } },
 		// the stars, two planets for contrast, and the spawner's template under the floor
 		...starObjects(),
-		{ type: 'sphere', name: 'Planet Azure', color: 0x5b7fd6, r: 0.6, pos: [-3, 1.9, 2.2], emissive: 0x1f3f9f, emissiveIntensity: 0.35, roughness: 0.6, physics: { mode: 'dynamic', mass: 2, restitution: 0.7, friction: 0.2 } },
-		{ type: 'sphere', name: 'Planet Ember', color: 0xd68a5b, r: 0.6, pos: [3.2, 2.3, -2.4], emissive: 0x8f3a1a, emissiveIntensity: 0.35, roughness: 0.6, physics: { mode: 'dynamic', mass: 2, restitution: 0.7, friction: 0.2 } },
-		{ type: 'sphere', name: 'Star template', color: 0xffe08a, r: 0.22, pos: [0, -2, 0], emissive: 0xffcf50, emissiveIntensity: 1.2, roughness: 0.4, physics: { mode: 'dynamic', mass: 0.2, restitution: 0.9, friction: 0.1 } }
+		{ type: 'sphere', name: 'Planet Azure', color: 0x5b7fd6, r: 0.6, pos: [-3, 1.9, 2.2], emissive: 0x1f3f9f, emissiveIntensity: 0.4, physical: true, roughness: 0.45, sheen: 0.6, sheenColor: 0x9fc4ff, clearcoat: 0.4, physics: { mode: 'dynamic', mass: 2, restitution: 0.7, friction: 0.2, collider: 'sphere' } },
+		{ type: 'sphere', name: 'Planet Ember', color: 0xd68a5b, r: 0.6, pos: [3.2, 2.3, -2.4], emissive: 0x8f3a1a, emissiveIntensity: 0.4, physical: true, roughness: 0.45, sheen: 0.6, sheenColor: 0xffc49f, clearcoat: 0.4, physics: { mode: 'dynamic', mass: 2, restitution: 0.7, friction: 0.2, collider: 'sphere' } },
+		{ type: 'icosahedron', name: 'Star template', color: 0xffe08a, r: 0.22, pos: [0, -2, 0], emissive: 0xffc040, emissiveIntensity: 1.1, physical: true, roughness: 0.15, clearcoat: 1, flatShading: true, physics: { mode: 'dynamic', mass: 0.2, restitution: 0.9, friction: 0.1, collider: 'sphere' } },
+		// the card: through the south glass, across the lattice, the frame catching the light
+		{ type: 'camera', name: 'Card camera', pos: [9, 5.6, 13], lookAt: [0, 2.4, 0], fov: 46 }
 	]
 };
 
@@ -1162,6 +1643,402 @@ const BEAT_DEF = {
 //                    `thumb.sceneGroups: ['dungeon-module']` to get it onto the card
 //   untangle       — 21-C C7: the thin template (pose + level + room + HUD + graph); its
 //                    board is scene-root content too (`thumb.sceneGroups: ['untangle-module']`)
+// ---- 30 visuals-core: the Jam Room becomes a GAME -----------------------------------
+// It was a sandbox on one dark slab with no HUD: 23-D3's piano into a speaker, the beat lab
+// (transport, drum machine, sampler) and a pedal chain into a mixer, all cabled — built
+// from the modules' own menus, so the devices are always what those modules make. Now it
+// is a small studio (a wooden floor, rugs, plastered walls with acoustic panels, warm
+// lamps, a few props) and a shell: Start = a three-second COUNT-IN, then the goal on
+// screen — keep the band playing for EIGHT BARS.
+//   · WHAT THE GOAL IS BUILT ON: core's Transport node (musicClock's shared transport as a
+//     flow value — beat, bar, bpm, playing, identical on every peer). The music modules
+//     publish nothing to the flow (no notes-played count, no transport control), so the
+//     round cannot START the transport: the HUD says "press ▶ on the Transport", which is
+//     the device's own Play button, clicked with the FREE CURSOR (play.cursor 'free' — you
+//     play instruments with the pointer, no lock). The beat the count-in ends on is kept
+//     with Set Variable (a replicated sample-and-hold), so bars count from THIS round; a
+//     transport restarted mid-round counts from its own zero.
+//   · the SCORE is the tempo you finished at (the Transport's BPM −/+ buttons), saved on
+//     this device as the best with Store Value max — `jam-best-bpm`.
+//   · a device selector cannot be authored here: graphs are restored BEFORE `generate`
+//     makes the devices, so a def-local name cannot reach them (the builder is the kit's
+//     region). Nothing in the shell needs one — the Transport node reads the shared clock.
+const JAM_BARS = 8;
+const JAM_PANEL = { bg: 'rgba(28, 18, 12, 0.9)', radius: 18, border: '1px solid rgba(255, 176, 96, 0.35)' };
+const JAM_BTN = { size: 17, weight: '600', bg: '#d9772b', color: '#ffffff', radius: 10 };
+const JAM_QUIET = { size: 15, weight: '500', bg: '#4a3b32', color: '#f1e6dc', radius: 10 };
+function jamGraph() {
+	const g = graphBuilder();
+	const { N, E } = g;
+	// ---- starting: the Start button, or Play again / Restart after a reset ---------------
+	N('bgo', 'hudbutton', 'Start jam button', 40, 40, { element: 'go-btn' });
+	N('begin', 'delay', 'Begin (0 s)', 280, 40, { seconds: 0, pulse: 0.3 });
+	E('bgo', 'begin', 'trigger');
+	N('goplay', 'setgamestate', 'Start the round', 520, 40, { state: 'playing', outcome: '', reset: false });
+	E('begin', 'goplay', 'trigger');
+	// the count-in: its own screen over the round's HUD for three seconds
+	N('showcount', 'hudscreen', 'Show the count-in', 520, 120, { screen: 'countin', action: 'show' });
+	E('begin', 'showcount', 'trigger');
+	N('countdone', 'delay', 'Count-in: 3 s', 760, 120, { seconds: 3, pulse: 0.3 });
+	E('begin', 'countdone', 'trigger');
+	N('hidecount', 'hudscreen', 'Hide the count-in', 1000, 120, { screen: 'countin', action: 'hide' });
+	E('countdone', 'hidecount', 'trigger');
+	N('elapsed', 'gametime', 'Round time', 40, 200, { read: 'elapsed', length: 600 });
+	N('countval', 'math', '3.49 - time', 280, 200, { op: 'sub', a: 3.49, b: 0 });
+	E('elapsed', 'countval', 'b');
+	N('hcount', 'hudtext', 'HUD count', 520, 200, { element: 'count-read', format: '{v}', decimals: 0, value: 3 });
+	E('countval', 'hcount', 'value');
+	// ---- the transport, as numbers --------------------------------------------------------
+	N('tbeat', 'transportbeat', 'Transport beat', 40, 320, { read: 'beat' });
+	N('tbpm', 'transportbeat', 'Transport BPM', 40, 400, { read: 'bpm' });
+	N('tplaying', 'transportbeat', 'Transport playing', 40, 480, { read: 'playing' });
+	// the beat the count-in ended on: a replicated sample-and-hold
+	N('keepstart', 'setvariable', 'Remember the start beat', 1240, 120, { name: 'jamStartBeat', value: 0, op: 'set', scope: 'shared' });
+	E('countdone', 'keepstart', 'trigger');
+	E('tbeat', 'keepstart', 'value');
+	N('startbeat', 'getvariable', 'Start beat', 280, 320, { name: 'jamStartBeat', fallback: 0 });
+	N('since', 'math', 'Beats since the start', 520, 320, { op: 'sub', a: 0, b: 0 });
+	E('tbeat', 'since', 'a');
+	E('startbeat', 'since', 'b');
+	N('restarted', 'compare', 'Transport restarted?', 520, 400, { op: 'lt', a: 0, b: 0 });
+	E('tbeat', 'restarted', 'a');
+	E('startbeat', 'restarted', 'b');
+	N('beats', 'select', 'Beats this round', 760, 360, { index: 0, a: 0, b: 0 });
+	E('restarted', 'beats', 'index');
+	E('since', 'beats', 'a');
+	E('tbeat', 'beats', 'b');
+	N('bars', 'math', 'Bars (÷ 4)', 1000, 360, { op: 'div', a: 0, b: 4 });
+	E('beats', 'bars', 'a');
+	// shown as COMPLETED bars: round(x - 0.5) is floor(x) for the readout
+	N('barsfloor', 'math', 'Bars − 0.5', 1240, 320, { op: 'sub', a: 0, b: 0.5 });
+	E('bars', 'barsfloor', 'a');
+	N('barsshown', 'math', 'Not below 0', 1480, 320, { op: 'max', a: 0, b: 0 });
+	E('barsfloor', 'barsshown', 'a');
+	N('hbars', 'hudtext', 'HUD bars', 1720, 320, { element: 'bars-read', format: 'Bar {v} / ' + JAM_BARS, decimals: 0, value: 0 });
+	E('barsshown', 'hbars', 'value');
+	N('hbarbar', 'hudbar', 'HUD progress', 1720, 400, { element: 'bars-bar', min: 0, max: JAM_BARS, value: 0, format: '' });
+	E('bars', 'hbarbar', 'value');
+	N('beatmod', 'math', 'Beat in the bar', 280, 560, { op: 'mod', a: 0, b: 4 });
+	E('tbeat', 'beatmod', 'a');
+	N('beatshown', 'math', '+ 0.5 (1..4)', 520, 560, { op: 'add', a: 0, b: 0.5 });
+	E('beatmod', 'beatshown', 'a');
+	N('hbeat', 'hudtext', 'HUD beat', 760, 560, { element: 'beat-read', format: 'Beat {v}', decimals: 0, value: 0 });
+	E('beatshown', 'hbeat', 'value');
+	N('hintpick', 'select', 'Hint', 280, 640, { index: 0, a: 'Press ▶ on the Transport to start the beat', b: 'Keep the band going  ·  {v} BPM' });
+	E('tplaying', 'hintpick', 'index');
+	N('hhint', 'hudtext', 'HUD hint', 520, 640, { element: 'jam-hint', format: 'Press ▶ on the Transport to start the beat', decimals: 0, value: 0 });
+	E('hintpick', 'hhint', 'format');
+	E('tbpm', 'hhint', 'value');
+	// ---- the goal: eight bars, with the transport running, after the count-in -------------
+	N('enough', 'compare', JAM_BARS + ' bars?', 1240, 440, { op: 'gte', a: 0, b: JAM_BARS });
+	E('bars', 'enough', 'a');
+	N('pastcount', 'compare', 'Count-in over?', 280, 720, { op: 'gte', a: 0, b: 3.2 });
+	E('elapsed', 'pastcount', 'a');
+	N('isplaying', 'gametime', 'Round on', 40, 720, { read: 'playing', length: 600 });
+	N('g1', 'gate', 'Bars & transport', 1480, 440, { op: 'and', a: false, b: false });
+	E('enough', 'g1', 'a');
+	E('tplaying', 'g1', 'b');
+	N('g2', 'gate', 'Round on & counted in', 520, 720, { op: 'and', a: false, b: false });
+	E('isplaying', 'g2', 'a');
+	E('pastcount', 'g2', 'b');
+	N('g3', 'gate', 'Session complete?', 1720, 480, { op: 'and', a: false, b: false });
+	E('g1', 'g3', 'a');
+	E('g2', 'g3', 'b');
+	N('allwin', 'allplayers', 'Everyone agrees', 1960, 480, { pulse: 0.3 });
+	E('g3', 'allwin', 'condition');
+	N('gowin', 'setgamestate', 'Session complete', 2200, 480, { state: 'over', outcome: 'Session complete!', reset: false });
+	E('allwin', 'gowin', 'trigger');
+	// ---- the score: the tempo you finished at, the best kept on this device --------------
+	N('storebest', 'storevalue', 'Save best tempo', 2200, 560, { key: 'jam-best-bpm', mode: 'max', value: 0 });
+	N('storelast', 'storevalue', 'Save this tempo', 2200, 640, { key: 'jam-last-bpm', mode: 'set', value: 0 });
+	E('allwin', 'storebest', 'trigger');
+	E('allwin', 'storelast', 'trigger');
+	E('tbpm', 'storebest', 'value');
+	E('tbpm', 'storelast', 'value');
+	N('storedbest', 'storedvalue', 'Best tempo', 2440, 560, { key: 'jam-best-bpm', output: 'number', fallback: 0 });
+	N('storedlast', 'storedvalue', 'This tempo', 2440, 640, { key: 'jam-last-bpm', output: 'number', fallback: 0 });
+	N('hbest', 'hudtext', 'HUD best (start)', 2680, 560, { element: 'best-read', format: 'Your best tempo: {v} BPM', decimals: 0, value: 0 });
+	E('storedbest', 'hbest', 'value');
+	N('hbest2', 'hudtext', 'HUD best (over)', 2680, 640, { element: 'over-best', format: 'Your best tempo: {v} BPM', decimals: 0, value: 0 });
+	E('storedbest', 'hbest2', 'value');
+	N('hlast', 'hudtext', 'HUD this tempo', 2680, 720, { element: 'over-line', format: JAM_BARS + ' bars at {v} BPM', decimals: 0, value: 0 });
+	E('storedlast', 'hlast', 'value');
+	// ---- the P menu and Round over: Resume / Restart / Play again / Quit -----------------
+	N('pkey', 'keypress', 'Press P', 40, 880, { code: 'KeyP', edge: 'down', pulse: 0.3 });
+	N('pausetoggle', 'hudscreen', 'Toggle menu', 280, 880, { screen: 'pause', action: 'toggle' });
+	E('pkey', 'pausetoggle', 'trigger');
+	N('bresume', 'hudbutton', 'Resume button', 40, 960, { element: 'resume-btn' });
+	N('resumehide', 'hudscreen', 'Close menu', 280, 960, { screen: 'pause', action: 'hide' });
+	E('bresume', 'resumehide', 'trigger');
+	N('brestart', 'hudbutton', 'Restart button', 40, 1040, { element: 'restart-btn' });
+	N('breplay', 'hudbutton', 'Play again button', 40, 1120, { element: 'replay-btn' });
+	N('restartreset', 'setgamestate', 'Restart: to menu', 280, 1080, { state: 'menu', outcome: '', reset: true });
+	N('restarthide', 'hudscreen', 'Close menu on restart', 520, 1040, { screen: 'pause', action: 'hide' });
+	N('restartdelay', 'delay', 'Restart: wait', 520, 1120, { seconds: 0.2, pulse: 0.3 });
+	for (const b of ['brestart', 'breplay']) {
+		E(b, 'restartreset', 'trigger');
+		E(b, 'restartdelay', 'trigger');
+	}
+	E('brestart', 'restarthide', 'trigger');
+	E('restartdelay', 'begin', 'trigger');
+	N('bquit', 'hudbutton', 'Quit to menu button', 40, 1200, { element: 'quit-btn' });
+	N('bmenu', 'hudbutton', 'Menu button (over)', 40, 1280, { element: 'again-btn' });
+	N('doquit', 'setgamestate', 'Quit to menu', 280, 1240, { state: 'menu', outcome: '', reset: true });
+	N('quithide', 'hudscreen', 'Close menu on quit', 520, 1240, { screen: 'pause', action: 'hide' });
+	E('bquit', 'doquit', 'trigger');
+	E('bmenu', 'doquit', 'trigger');
+	E('bquit', 'quithide', 'trigger');
+
+	// ---- 30b: the shell sounds like a game — but never plays music over the band. The end
+	// of a session is confetti, the fanfare and a buzz; its words are the Session complete
+	// panel (a banner over the panel read twice) -----------------------------------------------
+	N('click', 'gamesound', 'Button click', 280, 1360, { sound: 'click' });
+	for (const b of ['bgo', 'bresume', 'brestart', 'breplay', 'bquit', 'bmenu']) E(b, 'click', 'trigger');
+	N('saygo', 'announce', 'Say: go', 1000, 40, { text: 'Go!', sub: 'Press ▶ on the Transport — keep it going for ' + JAM_BARS + ' bars', seconds: 2, color: '#ffb060', decimals: 0 });
+	E('countdone', 'saygo', 'trigger');
+	N('donefx', 'effectburst', 'Confetti', 2440, 400, { kind: 'confetti', count: 96, lift: 0, color: '' });
+	E('allwin', 'donefx', 'trigger');
+	N('donesnd', 'gamesound', 'Fanfare', 2680, 400, { sound: 'levelup' });
+	E('allwin', 'donesnd', 'trigger');
+	N('donebuzz', 'hapticpulse', 'Buzz: done', 2680, 480, { pattern: 'success', hand: 'both' });
+	E('allwin', 'donebuzz', 'trigger');
+	return g.done();
+}
+/** 30b: where a VR player stands in the Jam Room — the middle of the cockpit (feet) */
+const JAM_SPAWN = [1.0, 0, -1.0];
+/** 30b: a stand/desk under a device: a top slab and two end panels, dark wood, select-through
+ * @param {string} name @param {number[]} at the floor centre @param {number[]} size [w, top height, d] */
+const jamStand = (name, at, size) => {
+	const [w, h, d] = size;
+	const wood = { color: 0x3a2618, physical: true, roughness: 0.55, clearcoat: 0.3, pick: 'through' };
+	const alongX = w >= d;
+	return [
+		{ type: 'box', name: name, size: [w, 0.05, d], pos: [at[0], h - 0.025, at[2]], bevel: 0.015, bevelSegments: 1, ...wood },
+		{ type: 'box', name: name + ' end A', size: alongX ? [0.05, h - 0.05, d * 0.9] : [w * 0.9, h - 0.05, 0.05], pos: alongX ? [at[0] - w / 2 + 0.06, (h - 0.05) / 2, at[2]] : [at[0], (h - 0.05) / 2, at[2] - d / 2 + 0.06], ...wood },
+		{ type: 'box', name: name + ' end B', size: alongX ? [0.05, h - 0.05, d * 0.9] : [w * 0.9, h - 0.05, 0.05], pos: alongX ? [at[0] + w / 2 - 0.06, (h - 0.05) / 2, at[2]] : [at[0], (h - 0.05) / 2, at[2] + d / 2 - 0.06], ...wood }
+	];
+};
+/** a warm lamp: a pole, a glowing shade and its light, as ONE group
+ * @param {string} name @param {number[]} pos */
+const jamLamp = (name, pos) => ({
+	type: 'group', name, pos,
+	children: [
+		{ type: 'cylinder', name: name + ' base', color: 0x2b2420, r: 0.18, r2: 0.2, h: 0.04, pos: [0, 0.02, 0], physical: true, metalness: 0.6, roughness: 0.35 },
+		{ type: 'cylinder', name: name + ' pole', color: 0x2b2420, r: 0.02, h: 1.5, pos: [0, 0.77, 0], physical: true, metalness: 0.6, roughness: 0.35 },
+		{ type: 'cylinder', name: name + ' shade', color: 0xffe2b8, r: 0.16, r2: 0.26, h: 0.3, pos: [0, 1.6, 0], emissive: 0xffb060, emissiveIntensity: 1.6, side: 'double', shadow: false },
+		{ type: 'light', name: name + ' light', kind: 'point', color: 0xffb070, intensity: 8, distance: 9, pos: [0, 1.5, 0] }
+	]
+});
+const JAM_DEF = {
+	kind: 'game',
+	slug: 'jam-room',
+	title: 'Jam Room',
+	description:
+		'A small studio: a piano into a speaker, a beat lab (transport, drum machine, sampler pads) and a pedal chain into a mixer — all cabled. Press Start, then ▶ on the Transport, and keep the band going for eight bars. Play with the mouse; your best tempo is saved.',
+	license: 'CC0-1.0',
+	author: 'theprototype',
+	tags: ['music', 'vr'],
+	installModules: ['music-lab', 'music-fx'],
+	modules: [{ id: 'music-lab', version: '0.2.1' }, { id: 'music-fx', version: '0.2.0' }],
+	// warm, indoor, readable: a dark wood gradient behind the open front, a warm hemisphere,
+	// a soft key light, and the lamps doing the rest
+	env: {
+		preset: 'custom',
+		base: 'studio',
+		exposure: 1.25,
+		background: { top: '#1a120d', bottom: '#3a2a20' },
+		fog: null,
+		ground: { color: '#2a211c', roughness: 0.95 },
+		hemi: { sky: '#ffdcb8', ground: '#7a5a42', intensity: 1.8 },
+		sun: { color: '#ffe2c0', intensity: 1.6, dir: [0.4, 1, 0.7] }
+	},
+	// no simulation (nothing here has a body); a FREE cursor, because you play the
+	// instruments by pointing at them — no pointer lock, the real cursor clicks keys and pads.
+	// 30b: a VR-ONLY spawn INSIDE the band (see JAM_SPAWN): the headset stands at the
+	// cockpit, where the controller tip reaches the piano, the drums, the sampler, the
+	// transport and the mixer; a desktop keeps the overview it always had (a level eye at the
+	// cockpit would see only the piano).
+	physics: { play: { cursor: 'free', simOnPlay: false, spawn: { position: JAM_SPAWN, yaw: 0, vrOnly: true } } },
+	// 30b: NO Game Music node, on purpose — the room IS the music (the transport, the drums and
+	// the piano are what you hear), so a procedural `studio` loop would only fight the band.
+	post: {
+		enabled: true,
+		effects: [
+			{ id: 'ao', kind: 'ao', enabled: true, params: {} },
+			{ id: 'tone', kind: 'tonemapping', enabled: true, params: { mode: 'AGX' } },
+			{ id: 'bloom', kind: 'bloom', enabled: true, params: { intensity: 0.6, luminanceThreshold: 0.8 } },
+			{ id: 'vig', kind: 'vignette', enabled: true, params: {} },
+			{ id: 'aa', kind: 'smaa', enabled: true, params: {} }
+		],
+		changedAt: 0
+	},
+	// inside the room, a step back from the band: Play starts from the editor camera's spot
+	view: { pos: [1.0, 2.5, 2.2], target: [1.0, 0.7, -1.4] },
+	thumb: { camera: 'Card camera' },
+	graphs: { scene: jamGraph() },
+	hud: {
+		scene: {
+			active: '',
+			changedAt: 0,
+			screens: [
+				{
+					id: 'start',
+					name: 'Start',
+					showWhile: 'menu',
+					input: 'menu',
+					elements: [
+						{ id: 'start-panel', kind: 'panel', anchor: 'center', x: 0, y: 0, w: 480, h: 360, z: 0, label: '', style: JAM_PANEL },
+						{ id: 'start-title', kind: 'text', anchor: 'center', x: 0, y: -125, w: 420, h: 48, z: 1, label: 'JAM ROOM', style: { size: 38, weight: '700', color: '#ffb060', align: 'center' } },
+						// 30b: HOW TO PLAY
+						{ id: 'howto-title', kind: 'text', anchor: 'center', x: 0, y: -94, w: 420, h: 18, z: 1, label: 'HOW TO PLAY', style: { size: 12, weight: '700', color: '#ffd9a8', align: 'center' } },
+						{ id: 'start-sub', kind: 'text', anchor: 'center', x: 0, y: -62, w: 440, h: 44, z: 1, label: 'Press Start, then ▶ on the Transport, and keep the band going for eight bars. Play the piano, the drum grid and the pads on top of it.', style: { size: 14, color: '#f1e6dc', align: 'center' }, wrap: true },
+						{ id: 'best-read', kind: 'text', anchor: 'center', x: 0, y: -18, w: 420, h: 24, z: 1, label: 'Your best tempo: 0 BPM', style: { size: 15, weight: '600', color: '#ffd9a8', align: 'center' } },
+						{ id: 'go-btn', kind: 'button', anchor: 'center', x: 0, y: 40, w: 240, h: 50, z: 1, label: 'Start jam', enabled: true, style: JAM_BTN },
+						{ id: 'start-hint', kind: 'text', anchor: 'center', x: 0, y: 108, w: 440, h: 22, z: 1, label: 'Click keys, pads and the drum grid  ·  BPM −/+ on the Transport  ·  P: menu', style: { size: 12, color: '#b8a594', align: 'center' }, wrap: true },
+						{ id: 'start-hint-vr', kind: 'text', anchor: 'center', x: 0, y: 136, w: 440, h: 22, z: 1, label: 'VR: hold the trigger and sweep across keys and pads  ·  Y: Edit mode', style: { size: 12, color: '#b8a594', align: 'center' }, wrap: true }
+					]
+				},
+				{
+					id: 'countin',
+					name: 'Count-in',
+					input: 'game',
+					elements: [
+						{ id: 'count-read', kind: 'text', anchor: 'center', x: 0, y: -30, w: 200, h: 120, z: 1, label: '3', style: { size: 96, weight: '700', color: '#ffb060', align: 'center' } },
+						{ id: 'count-sub', kind: 'text', anchor: 'center', x: 0, y: 50, w: 420, h: 30, z: 1, label: 'Get ready…', style: { size: 20, weight: '600', color: '#f1e6dc', align: 'center' } }
+					]
+				},
+				{
+					id: 'hud',
+					name: 'Jam',
+					showWhile: 'playing',
+					input: 'game',
+					elements: [
+						{ id: 'bars-read', kind: 'text', anchor: 'top-center', x: 0, y: 14, w: 280, h: 30, z: 1, label: 'Bar 0 / ' + JAM_BARS, style: { size: 20, weight: '700', color: '#ffffff', align: 'center' } },
+						{ id: 'bars-bar', kind: 'bar', anchor: 'top-center', x: 0, y: 50, w: 260, h: 10, z: 1, label: '', min: 0, max: JAM_BARS, value: 0, orientation: 'horizontal', style: { color: '#ffb060', bg: 'rgba(255, 255, 255, 0.15)', radius: 5 } },
+						{ id: 'beat-read', kind: 'text', anchor: 'top-right', x: 18, y: 14, w: 160, h: 26, z: 1, label: '', style: { size: 16, weight: '600', color: '#ffd9a8', align: 'right' } },
+						{ id: 'jam-hint', kind: 'text', anchor: 'bottom-center', x: 0, y: 70, w: 560, h: 24, z: 1, label: '', style: { size: 14, weight: '600', color: '#f1e6dc', align: 'center' } }
+					]
+				},
+				{
+					id: 'pause',
+					name: 'Menu',
+					input: 'menu',
+					elements: [
+						{ id: 'pause-panel', kind: 'panel', anchor: 'center', x: 0, y: 0, w: 380, h: 300, z: 0, label: '', style: JAM_PANEL },
+						{ id: 'pause-title', kind: 'text', anchor: 'center', x: 0, y: -95, w: 340, h: 36, z: 1, label: 'PAUSED', style: { size: 26, weight: '700', color: '#f1e6dc', align: 'center' } },
+						{ id: 'resume-btn', kind: 'button', anchor: 'center', x: 0, y: -30, w: 240, h: 42, z: 1, label: 'Resume', enabled: true, style: { ...JAM_BTN, size: 16 } },
+						{ id: 'restart-btn', kind: 'button', anchor: 'center', x: 0, y: 22, w: 240, h: 42, z: 1, label: 'Restart', enabled: true, style: { ...JAM_BTN, size: 16, bg: '#4c9e6a' } },
+						{ id: 'quit-btn', kind: 'button', anchor: 'center', x: 0, y: 74, w: 240, h: 42, z: 1, label: 'Quit to menu', enabled: true, style: JAM_QUIET }
+					]
+				},
+				{
+					id: 'over',
+					name: 'Session complete',
+					showWhile: 'over',
+					input: 'menu',
+					elements: [
+						{ id: 'over-panel', kind: 'panel', anchor: 'center', x: 0, y: 0, w: 440, h: 300, z: 0, label: '', style: JAM_PANEL },
+						{ id: 'over-title', kind: 'text', anchor: 'center', x: 0, y: -100, w: 400, h: 40, z: 1, label: 'SESSION COMPLETE', style: { size: 30, weight: '700', color: '#ffb060', align: 'center' } },
+						{ id: 'over-line', kind: 'text', anchor: 'center', x: 0, y: -54, w: 400, h: 28, z: 1, label: '', style: { size: 18, weight: '600', color: '#f1e6dc', align: 'center' } },
+						{ id: 'over-best', kind: 'text', anchor: 'center', x: 0, y: -22, w: 400, h: 22, z: 1, label: '', style: { size: 14, color: '#ffd9a8', align: 'center' } },
+						{ id: 'replay-btn', kind: 'button', anchor: 'center', x: 0, y: 40, w: 240, h: 46, z: 1, label: 'Play again', enabled: true, style: JAM_BTN },
+						{ id: 'again-btn', kind: 'button', anchor: 'center', x: 0, y: 96, w: 240, h: 42, z: 1, label: 'Menu', enabled: true, style: JAM_QUIET }
+					]
+				}
+			]
+		}
+	},
+	objects: [
+		// the studio: a warm wooden floor (the devices sit on it at y 0), two rugs, plastered
+		// walls on three sides with acoustic panels — select-through, they are the room's shell
+		{ type: 'box', name: 'Floor', color: 0xb07a4a, size: [12, 0.3, 10], pos: [1.1, -0.15, -1.8], physical: true, roughness: 0.55, clearcoat: 0.35, clearcoatRoughness: 0.4 },
+		{ type: 'box', name: 'Rug', color: 0x7a2330, size: [5.4, 0.02, 3.4], pos: [0.9, 0.012, -2.7], physical: true, roughness: 0.95, sheen: 0.8, sheenColor: 0xd4606e, sheenRoughness: 0.7 },
+		{ type: 'cylinder', name: 'Round rug', color: 0x2f4d5a, r: 1.9, h: 0.02, pos: [3.6, 0.012, -0.9], physical: true, roughness: 0.95, sheen: 0.8, sheenColor: 0x7fb4c8, sheenRoughness: 0.7 },
+		{ type: 'box', name: 'Back wall', color: 0xe6cbaa, size: [12, 3.4, 0.2], pos: [1.1, 1.7, -6.8], roughness: 0.9, pick: 'through' },
+		{ type: 'box', name: 'Left wall', color: 0xdcbf9e, size: [0.2, 3.4, 10], pos: [-4.9, 1.7, -1.8], roughness: 0.9, pick: 'through' },
+		{ type: 'box', name: 'Right wall', color: 0xdcbf9e, size: [0.2, 3.4, 10], pos: [7.1, 1.7, -1.8], roughness: 0.9, pick: 'through' },
+		// a ceiling that casts no shadow (the key light comes from above), so the room reads as a
+		// room from the player's eye while the open front keeps the editor's view in
+		{ type: 'box', name: 'Ceiling', color: 0xf0dcc4, size: [12, 0.12, 10], pos: [1.1, 3.46, -1.8], roughness: 0.9, emissive: 0x8a6a50, emissiveIntensity: 0.9, shadow: false, pick: 'through' },
+		{ type: 'cylinder', name: 'Ceiling light 1', color: 0xfff2dc, r: 0.4, h: 0.04, pos: [-1.2, 3.38, -2.6], emissive: 0xffd8a8, emissiveIntensity: 3, shadow: false, pick: 'through' },
+		{ type: 'cylinder', name: 'Ceiling light 2', color: 0xfff2dc, r: 0.4, h: 0.04, pos: [3.2, 3.38, -2.6], emissive: 0xffd8a8, emissiveIntensity: 3, shadow: false, pick: 'through' },
+		{ type: 'box', name: 'Skirting', color: 0x3a2a20, size: [12, 0.14, 0.04], pos: [1.1, 0.07, -6.68], roughness: 0.6 },
+		// acoustic panels: fabric (sheen) in two colours, on the back wall behind the band
+		{ type: 'box', name: 'Panel 1', color: 0x2d4a52, size: [1.2, 1.5, 0.08], bevel: 0.03, bevelSegments: 1, pos: [-2.6, 1.8, -6.64], physical: true, roughness: 0.95, sheen: 0.7, sheenColor: 0x6fa0ac, pick: 'through' },
+		{ type: 'box', name: 'Panel 2', color: 0x8a3a2a, size: [1.2, 1.5, 0.08], bevel: 0.03, bevelSegments: 1, pos: [-0.9, 1.8, -6.64], physical: true, roughness: 0.95, sheen: 0.7, sheenColor: 0xd08a70, pick: 'through' },
+		{ type: 'box', name: 'Panel 3', color: 0x2d4a52, size: [1.2, 1.5, 0.08], bevel: 0.03, bevelSegments: 1, pos: [0.8, 1.8, -6.64], physical: true, roughness: 0.95, sheen: 0.7, sheenColor: 0x6fa0ac, pick: 'through' },
+		{ type: 'box', name: 'Panel 4', color: 0x8a3a2a, size: [1.2, 1.5, 0.08], bevel: 0.03, bevelSegments: 1, pos: [2.5, 1.8, -6.64], physical: true, roughness: 0.95, sheen: 0.7, sheenColor: 0xd08a70, pick: 'through' },
+		{ type: 'box', name: 'Panel 5', color: 0x2d4a52, size: [1.2, 1.5, 0.08], bevel: 0.03, bevelSegments: 1, pos: [4.2, 1.8, -6.64], physical: true, roughness: 0.95, sheen: 0.7, sheenColor: 0x6fa0ac, pick: 'through' },
+		// warm light: two floor lamps and a spot on the beat lab
+		jamLamp('Lamp left', [-4.1, 0, -5.4]),
+		jamLamp('Lamp right', [6.3, 0, -5.4]),
+		{ type: 'light', name: 'Stage spot', kind: 'spot', color: 0xffd9a8, intensity: 60, angle: 0.7, penumbra: 0.6, distance: 14, pos: [1, 5.2, 1.5], target: [1.0, 0.6, -1.3] },
+		// props: an amp stack, a plant, a stool
+		{
+			type: 'group', name: 'Amp', pos: [-3.6, 0, -3.4], rot: [0, 0.5, 0],
+			children: [
+				{ type: 'box', name: 'Amp cabinet', color: 0x1e1a18, size: [0.9, 0.9, 0.5], bevel: 0.04, bevelSegments: 1, pos: [0, 0.45, 0], physical: true, roughness: 0.7, clearcoat: 0.2 },
+				{ type: 'plane', name: 'Amp grille', color: 0x4a403a, size: [0.76, 0.56], pos: [0, 0.38, 0.252], roughness: 1 },
+				{ type: 'box', name: 'Amp head', color: 0x2a2420, size: [0.9, 0.24, 0.46], bevel: 0.03, bevelSegments: 1, pos: [0, 1.02, 0], physical: true, roughness: 0.6, clearcoat: 0.3 },
+				{ type: 'box', name: 'Amp light', color: 0xffc07a, size: [0.5, 0.03, 0.01], pos: [0, 1.03, 0.235], emissive: 0xffa040, emissiveIntensity: 2.5, shadow: false }
+			]
+		},
+		{
+			type: 'group', name: 'Plant', pos: [6.2, 0, -3.2],
+			children: [
+				{ type: 'cylinder', name: 'Pot', color: 0xb8674a, r: 0.26, r2: 0.2, h: 0.46, pos: [0, 0.23, 0], physical: true, roughness: 0.8, clearcoat: 0.2 },
+				{ type: 'icosahedron', name: 'Leaves', color: 0x3f7a3a, r: 0.5, detail: 1, pos: [0, 0.86, 0], roughness: 0.8, flatShading: true },
+				{ type: 'icosahedron', name: 'Leaves top', color: 0x4d8f45, r: 0.34, detail: 1, pos: [0.08, 1.3, 0.04], roughness: 0.8, flatShading: true }
+			]
+		},
+		{
+			type: 'group', name: 'Stool', pos: [-1.9, 0, -0.8],
+			children: [
+				{ type: 'cylinder', name: 'Stool seat', color: 0x6a3f22, r: 0.24, h: 0.06, pos: [0, 0.62, 0], physical: true, roughness: 0.5, clearcoat: 0.4 },
+				{ type: 'cylinder', name: 'Stool leg', color: 0x2b2420, r: 0.03, h: 0.6, pos: [0, 0.3, 0], physical: true, metalness: 0.6, roughness: 0.35 },
+				{ type: 'cylinder', name: 'Stool foot', color: 0x2b2420, r: 0.2, h: 0.03, pos: [0, 0.015, 0], physical: true, metalness: 0.6, roughness: 0.35 }
+			]
+		},
+		// 30b: the cockpit's furniture — what the devices stand on, at hand height. Select-
+		// through, so a press or the laser always reaches the device on top.
+		...jamStand('Keyboard stand', [1.0, 0, -2.0], [1.84, 0.74, 1.0]),
+		...jamStand('Drum desk', [0.1, 0, -0.85], [0.72, 0.78, 1.12]),
+		...jamStand('Right desk', [1.75, 0, -0.85], [0.56, 0.78, 1.2]),
+		...jamStand('Pedal board', [2.65, 0, -0.9], [0.36, 0.46, 1.9]),
+		// the speakers stand above the keys, so the laser (and the sound) clears the piano
+		...jamStand('Speaker stand left', [0.1, 0, -3.1], [0.44, 0.75, 0.44]),
+		...jamStand('Speaker stand right', [1.9, 0, -3.1], [0.44, 0.75, 0.44]),
+		{ type: 'camera', name: 'Card camera', pos: [4.2, 2.6, 2.6], lookAt: [1.0, 0.7, -1.3], fov: 55 }
+	],
+	// 30b: THE COCKPIT — a U of stands around the VR spawn (JAM_SPAWN, facing -Z): the piano
+	// straight ahead with its keys at hand height, the drum machine on the left desk, the
+	// sampler and the mixer on the right desk, the transport on its stand behind-left, all
+	// turned to face the player; the pedal chain on its board beyond the right desk and the
+	// two speakers on stands behind the piano, both in the laser's reach and line of sight. (30's
+	// semicircle faced a desktop view: in VR the piano sat on the FLOOR and the drums were
+	// two metres from anyone.) Each yaw turns the device's player side (+Z; the transport's
+	// panel is on -Z) toward the spawn.
+	layout: [
+		{ kind: 'mod-music-lab-piano', pos: [1.0, 0.8, -2.0], yaw: 0 },
+		{ kind: 'mod-music-lab-drums', pos: [0.1, 0.85, -0.85], yaw: Math.PI / 2 },
+		{ kind: 'mod-music-lab-transport', pos: [0.7, 0.5, -0.2], yaw: Math.atan2(-0.3, 0.8) },
+		{ kind: 'mod-music-lab-sampler', pos: [1.75, 0.85, -1.17], yaw: -Math.PI / 2 },
+		{ kind: 'mod-music-fx-mixer', pos: [1.75, 0.85, -0.6], yaw: -Math.PI / 2 },
+		{ kind: 'mod-music-lab-speaker', index: 0, pos: [0.1, 1.1, -3.1], yaw: Math.PI },
+		{ kind: 'mod-music-lab-speaker', index: 1, pos: [1.9, 1.1, -3.1], yaw: Math.PI },
+		{ kind: 'mod-music-fx-filter', pos: [2.65, 0.5, -1.7], yaw: -Math.PI / 2 },
+		{ kind: 'mod-music-fx-distortion', pos: [2.65, 0.5, -1.3], yaw: -Math.PI / 2 },
+		{ kind: 'mod-music-fx-bitcrush', pos: [2.65, 0.5, -0.9], yaw: -Math.PI / 2 },
+		{ kind: 'mod-music-fx-delay', pos: [2.65, 0.5, -0.5], yaw: -Math.PI / 2 },
+		{ kind: 'mod-music-fx-reverb', pos: [2.65, 0.5, -0.1], yaw: -Math.PI / 2 }
+	],
+	generate: [
+		{ menu: 'Music Lab: piano + speaker', moduleId: 'music-lab', waitMs: 1500 },
+		{ menu: 'Music Lab: beat lab', moduleId: 'music-lab', waitMs: 1500 },
+		{ menu: 'Music FX: demo chain', moduleId: 'music-fx', waitMs: 2000 }
+	]
+};
+
 const MODULE_DEFS = ['football', 'dungeon-realms', 'untangle', 'waves'];
 
 const DEFS = [
@@ -1268,55 +2145,35 @@ const DEFS = [
 			{ type: 'box', name: 'Jetty', color: 0x8a6f52, size: [1.2, 0.25, 5], pos: [-1.5, 0.12, 8.5] }
 		]
 	},
-	{
-		// 23-D3: the Jam Room - the fastest answer to "what is this app": a piano into a
-		// speaker, the beat lab (transport, drum machine, sampler pads), a pedal chain into a
-		// mixer, all cabled. Built from the modules' own menus, so the template is always what
-		// those modules make; the modules it needs ride the index row AND the payload (the
-		// device-kind requirement signal derives them from the objects).
-		kind: 'game',
-		slug: 'jam-room',
-		title: 'Jam Room',
-		description: 'A piano into a speaker, a beat lab (transport, drum machine, sampler pads) and a pedal chain into a mixer - all cabled. Press Play on the transport, paint the grid, plug things in.',
-		license: 'CC0-1.0',
-		author: 'theprototype',
-		tags: ['music', 'vr'],
-		installModules: ['music-lab', 'music-fx'],
-		modules: [{ id: 'music-lab', version: '0.2.0' }, { id: 'music-fx', version: '0.1.0' }],
-		objects: [{ type: 'box', name: 'Floor', color: 0x2b2f36, size: [9, 0.3, 7], pos: [1.2, -0.15, -2.4] }],
-		// a semicircle facing the spawn at the origin; both speakers turned to face the listener
-		layout: [
-			{ kind: 'mod-music-lab-transport', pos: [-2.6, 0.5, -1.8] },
-			{ kind: 'mod-music-lab-piano', pos: [-1.3, 0, -2.4] },
-			{ kind: 'mod-music-lab-drums', pos: [0.3, 0.8, -2.8] },
-			{ kind: 'mod-music-lab-sampler', pos: [1.5, 0.8, -2.8] },
-			{ kind: 'mod-music-lab-speaker', index: 0, pos: [-1.0, 0.35, -4.4], yaw: Math.PI },
-			{ kind: 'mod-music-lab-speaker', index: 1, pos: [1.6, 0.35, -4.4], yaw: Math.PI },
-			{ kind: 'mod-music-fx-mixer', pos: [3.2, 0.8, -2.6] },
-			{ kind: 'mod-music-fx-filter', pos: [2.4, 0.5, -0.9] },
-			{ kind: 'mod-music-fx-distortion', pos: [3.0, 0.5, -0.9] },
-			{ kind: 'mod-music-fx-bitcrush', pos: [3.6, 0.5, -0.9] },
-			{ kind: 'mod-music-fx-delay', pos: [4.2, 0.5, -0.9] },
-			{ kind: 'mod-music-fx-reverb', pos: [4.8, 0.5, -0.9] }
-		],
-		generate: [
-			{ menu: 'Music Lab: piano + speaker', moduleId: 'music-lab', waitMs: 1500 },
-			{ menu: 'Music Lab: beat lab', moduleId: 'music-lab', waitMs: 1500 },
-			{ menu: 'Music FX: demo chain', moduleId: 'music-fx', waitMs: 2000 }
-		]
-	},
+	// 23-D3's Jam Room, a game since 30 visuals-core (JAM_DEF above)
+	JAM_DEF,
 	TOWERS_DEF,
 	STARS_DEF,
 	MIRROR_DEF,
 	BEAT_DEF,
 	// the def is the module's (see moduleDef); a checkout without it cannot author it
-	...MODULE_DEFS.map((id) => moduleDef(id) ?? { slug: id, missingModuleDef: true })
+	...MODULE_DEFS.map((id) => moduleDef(id) ?? { slug: id, missingModuleDef: true }),
+	// 30c level design: three walkable GENERAL templates built from the kits (seed: false —
+	// kit references need the pack CDN); the layouts live in level-templates.cjs
+	...require('./level-templates.cjs').LEVEL_DEFS
 ];
 
 (async () => {
+	// 30 author-kit: the REAL GPU. `--use-angle=gl` fell back to SwiftShader on Linux, so every
+	// card was a software render. The ANGLE backend is per platform — tests/e2e/helpers.cjs
+	// GPU_ARGS, which is where the measurements behind it live.
+	const angle = process.platform === 'win32' ? 'd3d11' : process.platform === 'darwin' ? 'metal' : 'vulkan';
 	const browser = await chromium.launch({
 		headless: true,
-		args: ['--disable-background-timer-throttling', '--disable-renderer-backgrounding', '--use-gl=angle', '--use-angle=gl']
+		args: [
+			'--disable-background-timer-throttling',
+			'--disable-renderer-backgrounding',
+			'--use-gl=angle',
+			'--use-angle=' + angle,
+			...(angle === 'vulkan' ? ['--enable-features=Vulkan'] : []),
+			'--enable-gpu',
+			'--ignore-gpu-blocklist'
+		]
 	});
 	const ctx = await browser.newContext({ ignoreHTTPSErrors: true });
 	await ctx.addInitScript(() => {
@@ -1329,10 +2186,22 @@ const DEFS = [
 	await page.goto(URL, { waitUntil: 'domcontentloaded', timeout: 60000 });
 	await page.waitForFunction(() => window.__stores && !!window.__stores.sessions, { timeout: 40000 });
 	await page.waitForTimeout(2000);
+	// 30 author-kit: say which GPU the thumbnails are rendered on — a SwiftShader card is
+	// not the one a user's display would show, and nothing else in the run would tell
+	const gpu = await page.evaluate(() => {
+		const gl = document.createElement('canvas').getContext('webgl2');
+		const info = gl?.getExtension('WEBGL_debug_renderer_info');
+		return info ? gl.getParameter(info.UNMASKED_RENDERER_WEBGL) : 'unknown';
+	});
+	console.log('GPU: ' + gpu + (/swiftshader/i.test(gpu) ? '  (WARN software rendering)' : ''));
 
 	/** @type {Record<string, {entry: any, bytes: Buffer, thumb: Buffer|null}>} */
 	const built = {};
-	const defs = ONLY ? DEFS.filter((d) => ONLY.includes(d.slug)) : DEFS;
+	// 30 author-kit: `--def` files replace a same-slug DEFS entry in place, or append
+	const allDefs = DEFS.map((d) => FILE_DEFS.find((f) => f.slug === d.slug) ?? d).concat(
+		FILE_DEFS.filter((f) => !DEFS.some((d) => d.slug === f.slug))
+	);
+	const defs = ONLY ? allDefs.filter((d) => ONLY.includes(d.slug)) : allDefs;
 	if (ONLY && defs.length !== ONLY.length)
 		console.log('  WARN --only names a slug DEFS does not have: ' + ONLY.join(','));
 	// a module-owned def whose file is absent must not quietly drop its row from a full
@@ -1388,11 +2257,117 @@ const DEFS = [
 			const s = window.__stores;
 			const T = s.THREE;
 			s.commandsHandler.sceneCommand('/clear all');
+			// 30c: KIT pieces name a pack item; resolve each to its file path through the pack's
+			// own item list (default.json) on PACKS_BASE, once per pack, before anything builds
+			/** @type {Record<string, Record<string, string>>} */
+			const kitFiles = {};
+			/** @param {any[]} list @param {Set<string>} sink */
+			const kitPacks = (list, sink) => {
+				for (const o of list ?? []) {
+					if (o.type === 'kit') sink.add(o.pack);
+					if (o.children) kitPacks(o.children, sink);
+				}
+				return sink;
+			};
+			for (const pack of kitPacks(d.objects, new Set())) {
+				const base = String(s.packs.PACKS_BASE).replace(/\/+$/, '');
+				const res = await fetch(base + '/' + pack + '/default.json');
+				if (!res.ok) throw new Error('kit: pack "' + pack + '" is not served at ' + base + ' (HTTP ' + res.status + ')');
+				kitFiles[pack] = {};
+				for (const row of await res.json()) {
+					const file = row?.variants?.['glTF-Binary'];
+					if (row?.name && file) kitFiles[pack][row.name] = pack + '/' + row.name + '/glTF-Binary/' + file;
+				}
+			}
 			/** @type {any} */
 			let group;
 			s.objectsGroup.subscribe((g) => (group = g))();
 			/** @param {number} n */
 			const hex = (n) => '#' + Number(n).toString(16).padStart(6, '0');
+			// 30 author-kit: material fields only MeshPhysicalMaterial has (a def using any of
+			// them gets one), the directional lights whose shadow frustum is fitted once the
+			// whole scene is built, and the animation presets applied once objects have uuids
+			const PHYSICAL_KEYS = ['clearcoat', 'clearcoatRoughness', 'transmission', 'thickness', 'ior', 'sheen', 'sheenColor', 'sheenRoughness', 'iridescence', 'specularIntensity'];
+			/** @type {any[]} */ const fitShadows = [];
+			/** @type {{object: any, anim: any}[]} */ const animQueue = [];
+			// 30 author-kit: a ROUNDED box. Core's Box params carry no bevel, so this is a port of
+			// three/examples' RoundedBoxGeometry (MIT) — same vertex placement, normals and UVs —
+			// BAKED into a plain BufferGeometry: toJSON writes a subclass's `type` and ObjectLoader
+			// cannot rebuild 'RoundedBoxGeometry', while a plain BufferGeometry round-trips its
+			// buffers. @param {number} width @param {number} height @param {number} depth
+			// @param {number} segments @param {number} radius
+			const roundedBox = (width, height, depth, segments, radius) => {
+				const total = segments * 2 + 1;
+				radius = Math.min(width / 2, height / 2, depth / 2, radius);
+				const src = new T.BoxGeometry(1, 1, 1, total, total, total).toNonIndexed();
+				const positions = src.attributes.position.array;
+				const normals = src.attributes.normal.array;
+				const uvs = src.attributes.uv.array;
+				const position = new T.Vector3();
+				const normal = new T.Vector3();
+				const temp = new T.Vector3();
+				const faceDir = new T.Vector3();
+				const box = new T.Vector3(width, height, depth).divideScalar(2).subScalar(radius);
+				const faceTris = positions.length / 6;
+				const half = 0.5 / total;
+				/** @param {string} uvAxis @param {string} projAxis @param {number} side */
+				const getUv = (uvAxis, projAxis, side) => {
+					const arc = (2 * Math.PI * radius) / 4;
+					const centre = Math.max(side - 2 * radius, 0);
+					temp.copy(normal);
+					/** @type {any} */ (temp)[projAxis] = 0;
+					temp.normalize();
+					const arcUv = (0.5 * arc) / (arc + centre);
+					const arcAngle = 1.0 - temp.angleTo(faceDir) / (Math.PI / 4);
+					if (Math.sign(/** @type {any} */ (temp)[uvAxis]) === 1) return arcAngle * arcUv;
+					return centre / (arc + centre) + arcUv + arcUv * (1.0 - arcAngle);
+				};
+				for (let i = 0, j = 0; i < positions.length; i += 3, j += 2) {
+					position.fromArray(positions, i);
+					normal.copy(position);
+					normal.x -= Math.sign(normal.x) * half;
+					normal.y -= Math.sign(normal.y) * half;
+					normal.z -= Math.sign(normal.z) * half;
+					normal.normalize();
+					positions[i] = box.x * Math.sign(position.x) + normal.x * radius;
+					positions[i + 1] = box.y * Math.sign(position.y) + normal.y * radius;
+					positions[i + 2] = box.z * Math.sign(position.z) + normal.z * radius;
+					normals[i] = normal.x;
+					normals[i + 1] = normal.y;
+					normals[i + 2] = normal.z;
+					const face = Math.floor(i / faceTris);
+					if (face === 0) {
+						faceDir.set(1, 0, 0);
+						uvs[j] = getUv('z', 'y', depth);
+						uvs[j + 1] = 1.0 - getUv('y', 'z', height);
+					} else if (face === 1) {
+						faceDir.set(-1, 0, 0);
+						uvs[j] = 1.0 - getUv('z', 'y', depth);
+						uvs[j + 1] = 1.0 - getUv('y', 'z', height);
+					} else if (face === 2) {
+						faceDir.set(0, 1, 0);
+						uvs[j] = 1.0 - getUv('x', 'z', width);
+						uvs[j + 1] = getUv('z', 'x', depth);
+					} else if (face === 3) {
+						faceDir.set(0, -1, 0);
+						uvs[j] = 1.0 - getUv('x', 'z', width);
+						uvs[j + 1] = 1.0 - getUv('z', 'x', depth);
+					} else if (face === 4) {
+						faceDir.set(0, 0, 1);
+						uvs[j] = 1.0 - getUv('x', 'y', width);
+						uvs[j + 1] = 1.0 - getUv('y', 'x', height);
+					} else {
+						faceDir.set(0, 0, -1);
+						uvs[j] = getUv('x', 'y', width);
+						uvs[j + 1] = 1.0 - getUv('y', 'x', height);
+					}
+				}
+				const geo = new T.BufferGeometry();
+				geo.setAttribute('position', new T.BufferAttribute(positions, 3));
+				geo.setAttribute('normal', new T.BufferAttribute(normals, 3));
+				geo.setAttribute('uv', new T.BufferAttribute(uvs, 2));
+				return geo;
+			};
 			// 28-G: ONE recursive builder. The four original primitives take exactly the
 			// steps they always did, in the same order, so every earlier def is byte-identical.
 			// `mirror` reflects across x = 0: position x negated, yaw and roll NEGATED — a
@@ -1409,6 +2384,41 @@ const DEFS = [
 				if (o.type === 'group' || o.type === 'empty') {
 					object = new T.Group();
 					for (const child of o.children ?? []) object.add(build(child, opts));
+				} else if (o.type === 'kit') {
+					// 30c: a hollow STUB — the app's packRefs watcher refills it from the pack
+					// (awaited below, before the card renders and the file is written)
+					const path = kitFiles[o.pack]?.[o.item];
+					if (!path) throw new Error('kit "' + o.name + '": pack ' + o.pack + ' has no item "' + o.item + '"');
+					object = new T.Group();
+					object.userData.packRef = { pack: o.pack, item: o.item, path, kids: [] };
+					object.userData.packStub = true;
+					if (o.scale != null) {
+						const k = Array.isArray(o.scale) ? o.scale : [o.scale, o.scale, o.scale];
+						object.scale.set(k[0], k[1], k[2]);
+					}
+				} else if (o.type === 'light' && o.kind && o.kind !== 'point') {
+					// 30 author-kit: spot / directional / hemisphere. Spot and directional follow
+					// createLight's convention (cast shadows by default, the V-1 bias pair) and aim
+					// by ROTATION (24-E1: they shine along local -Z; lightHelpers places the target
+					// on that forward) — `target` is a WORLD point applied with lookAt once the
+					// position is set, below. A directional's ortho frustum is FITTED to the built
+					// scene after every object exists (`fitShadows`), unless `fit: false`.
+					if (o.kind === 'hemisphere') {
+						object = new T.HemisphereLight(o.color ?? 0xffffff, o.groundColor ?? 0x444444, o.intensity ?? 1);
+					} else if (o.kind === 'spot' || o.kind === 'directional') {
+						object =
+							o.kind === 'spot'
+								? new T.SpotLight(o.color ?? 0xffffff, o.intensity ?? 1, o.distance ?? 0, o.angle ?? Math.PI / 6, o.penumbra ?? 0.3, o.decay ?? 2)
+								: new T.DirectionalLight(o.color ?? 0xffffff, o.intensity ?? 1);
+						object.castShadow = o.castShadow ?? true;
+						object.shadow.bias = -0.0002;
+						object.shadow.normalBias = 0.02;
+						if (o.shadowMapSize) {
+							object.userData.shadowMapSize = o.shadowMapSize;
+							object.shadow.mapSize.set(o.shadowMapSize, o.shadowMapSize);
+						}
+						if (o.kind === 'directional' && object.castShadow && o.fit !== false) fitShadows.push(object);
+					} else throw new Error('light: unknown kind "' + o.kind + '" (point | spot | directional | hemisphere)');
 				} else if (o.type === 'light') {
 					// a point light: a viewpoint's worth of scenery it lights, no shadow map
 					object = new T.PointLight(o.color ?? 0xffffff, o.intensity ?? 1, o.distance ?? 0, o.decay ?? 2);
@@ -1449,16 +2459,44 @@ const DEFS = [
 					);
 				} else {
 					let geo;
-					if (o.type === 'box') geo = new T.BoxGeometry(o.size[0], o.size[1], o.size[2]);
+					if (o.type === 'box' && o.bevel > 0) geo = roundedBox(o.size[0], o.size[1], o.size[2], o.bevelSegments ?? 3, o.bevel);
+					else if (o.type === 'box') geo = new T.BoxGeometry(o.size[0], o.size[1], o.size[2]);
 					else if (o.type === 'cylinder') geo = new T.CylinderGeometry(o.r, o.r2 ?? o.r, o.h, 24);
 					else if (o.type === 'sphere') geo = new T.SphereGeometry(o.r, 24, 16);
 					else if (o.type === 'torus') geo = new T.TorusGeometry(o.r, o.tube ?? o.r * 0.2, 16, 40);
-					else geo = new T.ConeGeometry(o.r, o.h, 24);
-					const mat = new T.MeshStandardMaterial({
-						color: o.color,
-						roughness: o.roughness ?? 0.85,
-						metalness: o.metalness ?? 0
-					});
+					// 30 author-kit: four more primitives, all core three geometries ObjectLoader
+					// rebuilds from their parameters (so the .tpscene stays small). A plane faces +Z
+					// (rotate it -90deg on x to lie flat); a ring is the flat annulus, also +Z.
+					else if (o.type === 'capsule') geo = new T.CapsuleGeometry(o.r, o.h ?? o.length ?? 1, 8, 16);
+					else if (o.type === 'plane') geo = new T.PlaneGeometry(o.size[0], o.size[1]);
+					else if (o.type === 'ring') geo = new T.RingGeometry(o.inner ?? o.r * 0.5, o.r, 48);
+					else if (o.type === 'icosahedron') geo = new T.IcosahedronGeometry(o.r, o.detail ?? 0);
+					else if (o.type === 'dodecahedron') geo = new T.DodecahedronGeometry(o.r, o.detail ?? 0);
+					else if (o.type === 'cone') geo = new T.ConeGeometry(o.r, o.h, 24);
+					else throw new Error('object "' + o.name + '": unknown type "' + o.type + '"');
+					// 30 author-kit: MeshPhysicalMaterial when a def asks for `physical` or uses any
+					// field only it has; MeshToonMaterial for `toon`. Absent all of those it is the
+					// same MeshStandardMaterial as ever (byte-identical defs).
+					const physical = o.physical || PHYSICAL_KEYS.some((k) => o[k] != null);
+					/** @type {any} */
+					let mat;
+					if (o.toon) mat = new T.MeshToonMaterial({ color: o.color });
+					else if (physical) {
+						mat = new T.MeshPhysicalMaterial({ color: o.color, roughness: o.roughness ?? 0.85, metalness: o.metalness ?? 0 });
+						for (const k of PHYSICAL_KEYS) {
+							if (o[k] == null) continue;
+							if (k === 'sheenColor') mat.sheenColor = new T.Color(o[k]);
+							else mat[k] = o[k];
+						}
+					} else
+						mat = new T.MeshStandardMaterial({
+							color: o.color,
+							roughness: o.roughness ?? 0.85,
+							metalness: o.metalness ?? 0
+						});
+					if (o.flatShading) mat.flatShading = true;
+					if (o.side === 'double') mat.side = T.DoubleSide;
+					else if (o.side === 'back') mat.side = T.BackSide;
 					// B8: material EMISSIVE + opacity, so a game can glow a pad or float a
 					// translucent marker without a shader doc (which the user found "strange").
 					// emissiveIntensity multiplies the emissive COLOUR, so both are needed.
@@ -1482,6 +2520,35 @@ const DEFS = [
 				if (pos && o.type !== 'spline') object.position.set(pos[0], pos[1], pos[2]);
 				if (rot) object.rotation.set(rot[0], rot[1], rot[2]);
 				if (o.physics && !mirror) object.userData.physics = o.physics;
+				// 30 author-kit: object FLAGS. Each lands where the app itself keeps it, so the
+				// .tpscene carries it the ordinary way (userData rides toJSON; a clip rides the
+				// animations block). A mirror ghost takes none of them (it is decoration).
+				if (!mirror) {
+					// select-through: a shell (wall, ceiling, glass) the editor's pick passes by
+					if (o.pick === 'through') object.userData.pick = 'through';
+					// the transform ORIGIN (objectOrigin's local pivot offset) — a Door preset
+					// swings about it, so a hinge is authored here
+					if (Array.isArray(o.origin)) object.userData.origin = o.origin.map(Number);
+					// a particle emitter from a preset (particlePresets), optionally patched —
+					// the config addParticlesPreset writes to userData.particles
+					if (o.particles) {
+						const spec = typeof o.particles === 'string' ? { preset: o.particles } : o.particles;
+						if (!s.particlePresets.PARTICLE_PRESETS.some((/** @type {any} */ p) => p.key === spec.preset))
+							throw new Error('object "' + o.name + '": no particle preset "' + spec.preset + '"');
+						const base = s.particlePresets.particlePreset(spec.preset);
+						if (!base) throw new Error('object "' + o.name + '": no particle preset "' + spec.preset + '"');
+						const { preset: _preset, ...patch } = spec;
+						object.userData.particles = { ...structuredClone(base), ...patch };
+					}
+					// animation presets are applied once the object has a uuid in the scene
+					if (o.anim) animQueue.push({ object, anim: o.anim });
+				}
+				// a spot/directional aims by rotation at a WORLD point (see the light branch)
+				if (o.target && (object.isSpotLight || object.isDirectionalLight)) {
+					const t = o.target;
+					object.updateMatrixWorld(true);
+					object.lookAt(mirror ? -t[0] : t[0], t[1], t[2]);
+				}
 				if (o.shadow === false || opts.shadow === false) {
 					// shadowDefaults sweeps cast/receive back ON unless the object opts out
 					object.castShadow = false;
@@ -1508,12 +2575,122 @@ const DEFS = [
 				}
 				group.add(build(o));
 			}
+			// 30c: refill every kit stub from its pack BEFORE anything measures the scene (the
+			// shadow fit below, the card) — and refuse to write a level whose pack is unreachable
+			if (kitPacks(d.objects, new Set()).size) {
+				s.objectsGroup.update((v) => v);
+				await new Promise((r) => setTimeout(r, 200));
+				await s.packRefs.packRefsSettled();
+				const hollow = [];
+				group.traverse((/** @type {any} */ n) => {
+					if (n.userData?.packStub) hollow.push(n.name);
+				});
+				if (hollow.length) throw new Error('kit pieces did not load: ' + hollow.slice(0, 5).join(', '));
+			}
+			// 30 author-kit: FIT each shadow-casting directional light's ortho frustum to the
+			// meshes just built — the 8 corners of their world box carried into the light's own
+			// frame (it looks down -Z, and the shadow camera is posed from the light toward its
+			// target on that same forward). Saved with the light: LightShadow.toJSON carries the
+			// camera, so the fitted frustum is what the file (and every peer) renders with.
+			if (fitShadows.length) {
+				group.updateMatrixWorld(true);
+				const bounds = new T.Box3();
+				group.traverse((/** @type {any} */ n) => {
+					if (n.isMesh && !n.userData?.camera) bounds.expandByObject(n);
+				});
+				if (!bounds.isEmpty()) {
+					const corners = [];
+					for (const x of [bounds.min.x, bounds.max.x])
+						for (const y of [bounds.min.y, bounds.max.y])
+							for (const z of [bounds.min.z, bounds.max.z]) corners.push(new T.Vector3(x, y, z));
+					for (const light of fitShadows) {
+						light.updateMatrixWorld(true);
+						const inv = light.matrixWorld.clone().invert();
+						const local = new T.Box3().setFromPoints(corners.map((c) => c.clone().applyMatrix4(inv)));
+						const pad = Math.max(local.max.x - local.min.x, local.max.y - local.min.y) * 0.05 + 0.5;
+						const cam = light.shadow.camera;
+						// symmetric about the light's axis (the shadow camera is centred on it)
+						const rx = Math.max(Math.abs(local.min.x), Math.abs(local.max.x)) + pad;
+						const ry = Math.max(Math.abs(local.min.y), Math.abs(local.max.y)) + pad;
+						cam.left = -rx;
+						cam.right = rx;
+						cam.bottom = -ry;
+						cam.top = ry;
+						cam.near = Math.max(0.1, -local.max.z - pad);
+						cam.far = Math.max(cam.near + 1, -local.min.z + pad);
+						cam.updateProjectionMatrix();
+					}
+				}
+			}
 			s.objectsGroup.update((v) => v);
 
 			// ---- C5.3: the scene DATA a game carries beyond its objects -------------
 			// Each of these lands through the app's own write path, so what the script
 			// produces is exactly what a user authoring by hand would have saved.
-			if (d.env) s.environment.setEnvironment(d.env.preset ?? d.env, d.env.exposure ?? 1);
+			// 30 author-kit: a CUSTOM sky. `env` is still a preset name or {preset, exposure}
+			// (unchanged path, byte-identical); a def that says preset:'custom' or overrides any
+			// sky field builds a custom payload from a base preset (`base`, else the named
+			// preset, else studio) and commits it through the environment module's own custom
+			// path (applyCustomPreset), so the scene saves it as `customPreset` and a peer or a
+			// late joiner receives it on the environment singleton like any authored sky.
+			// The payload's own `exposure` stays 1 — the def's exposure is the STATE multiplier
+			// (applyCustomPreset would otherwise square it).
+			const SKY_KEYS = ['background', 'fog', 'ground', 'sun', 'hemi'];
+			const env = d.env && typeof d.env === 'object' ? d.env : null;
+			/** @param {any} c */
+			const col = (c) => (typeof c === 'number' ? hex(c) : c);
+			if (env && (env.preset === 'custom' || SKY_KEYS.some((k) => env[k] !== undefined))) {
+				const presets = s.environment.ENVIRONMENT_PRESETS;
+				const baseKey = env.base ?? (env.preset && env.preset !== 'custom' ? env.preset : 'studio');
+				if (!presets[baseKey]) throw new Error('env: no base preset "' + baseKey + '"');
+				const payload = JSON.parse(JSON.stringify(presets[baseKey]));
+				payload.label = env.label ?? 'Custom';
+				payload.exposure = 1;
+				if (env.background !== undefined) {
+					if (env.background && typeof env.background === 'object') {
+						// a GRADIENT sky: `background` keeps a flat colour beside it (the horizon)
+						// for the backgroundColor store and for an older peer that ignores it
+						payload.gradient = { top: col(env.background.top), bottom: col(env.background.bottom) };
+						payload.background = col(env.background.bottom);
+					} else payload.background = col(env.background);
+				}
+				if (env.fog !== undefined)
+					payload.fog =
+						env.fog === null
+							? null
+							: {
+									...(payload.fog ?? { color: payload.background, near: 30, far: 160 }),
+									...env.fog,
+									...(env.fog.color != null ? { color: col(env.fog.color) } : {})
+								};
+				if (env.ground) payload.ground = { color: col(env.ground.color), ...(env.ground.roughness != null ? { roughness: env.ground.roughness } : {}) };
+				if (env.sun !== undefined) {
+					if (env.sun === null) payload.sun = null;
+					else {
+						const prev = payload.sun ?? { color: '#ffffff', intensity: 1.8, position: [6, 10, 4] };
+						// `dir` points FROM the scene TOWARD the sun; the rig wants a position
+						const dir = env.sun.dir ? new T.Vector3(...env.sun.dir).normalize().multiplyScalar(16) : null;
+						payload.sun = {
+							color: env.sun.color != null ? col(env.sun.color) : prev.color,
+							intensity: env.sun.intensity ?? prev.intensity,
+							position: dir ? dir.toArray().map((v) => Math.round(v * 1000) / 1000) : env.sun.position ?? prev.position
+						};
+					}
+				}
+				if (env.hemi !== undefined) {
+					if (env.hemi === null) payload.hemi = null;
+					else {
+						const prev = payload.hemi ?? { sky: '#ffffff', ground: '#4c525c', intensity: 1 };
+						payload.hemi = {
+							sky: env.hemi.sky != null ? col(env.hemi.sky) : prev.sky,
+							ground: env.hemi.ground != null ? col(env.hemi.ground) : prev.ground,
+							intensity: env.hemi.intensity ?? prev.intensity
+						};
+					}
+				}
+				s.environment.applyCustomPreset(payload);
+				s.environment.setEnvironment('custom', env.exposure ?? 1);
+			} else if (d.env) s.environment.setEnvironment(d.env.preset ?? d.env, d.env.exposure ?? 1);
 			if (typeof d.gravity === 'number') s.scenePhysics.setSceneGravity(d.gravity);
 			// B8: the whole scenePhysics block (ground/bounds/material/damping/play), not
 			// just gravity — a physics GAME is authored in these numbers. setScenePhysics
@@ -1541,6 +2718,22 @@ const DEFS = [
 					sets[named[key]] = set;
 				}
 				s.animationPreview.animationsRestore(sets, false);
+			}
+			// 30 author-kit: `anim: '<preset>'` (or a list of them) — through applyPreset, the
+			// Animation window's own preset path, so each is an ORDINARY authored clip keyed
+			// from where the object stands (and, for a Door, about its `origin`). A clip is
+			// authored, not playing: a Play Animation node (or the Animation window) runs it.
+			if (animQueue.length && s.animationPreview) {
+				const presets = s.animationPreview.PRESETS;
+				for (const { object, anim } of animQueue) {
+					for (const name of Array.isArray(anim) ? anim : [anim]) {
+						const key = Object.keys(presets).find(
+							(k) => k === String(name).toLowerCase() || presets[k].name.toLowerCase() === String(name).toLowerCase()
+						);
+						if (!key) throw new Error('object "' + object.name + '": no animation preset "' + name + '" (' + Object.keys(presets).join(', ') + ')');
+						s.animationPreview.applyPreset(key, object.uuid, object);
+					}
+				}
 			}
 			// 28-G: THE TRACK. Into the Explorer (content-hashed, so re-runs dedupe) and into
 			// the scene's music slot with playing OFF — the graph plays it from Start. The
@@ -1676,40 +2869,139 @@ const DEFS = [
 			const bytes = await s.sessions.exportSessionZip(payload, { assets: !!music || sounds.length > 0, packs: false, flow: true });
 
 			// fitted offscreen thumbnail — the sessions.js renderSceneThumbnail
-			// approach at card size (480x270 webp)
+			// approach at card size (480x270 webp).
+			// 30 author-kit P2: THE CARD LOOKS LIKE THE GAME. It used to light the scene with a
+			// private hemisphere + directional pair on a fixed grey, which is why a sunset game
+			// read as a grey box. Now it renders with the scene's OWN look: the live background
+			// (flat colour or the gradient texture), its fog, the environment rig cloned from the
+			// scene root (hemi + sun + shadow catcher / ground + extra env lights, at the
+			// intensities the viewport uses) and the authored lights; the private pair is the
+			// fallback ONLY when the scene has no light at all. Shadows on (PCF). Tone mapping
+			// follows the post stack's Tone mapping curve when it has one, else the renderer's
+			// own ACES Filmic — what a play-mode frame shows — at the environment's exposure.
+			// The camera is `thumb.camera`, else `view`, else a 3/4 framing of the CONTENT: the
+			// objects' bounds without the camera markers and without floor-like slabs (a 30x40 m
+			// ground framed whole leaves every game piece a speck — the 1690-byte Waves card).
 			let thumb = null;
 			try {
 				const T = s.THREE;
+				/** @type {any} */ let liveScene;
+				s.globalScene.subscribe((v) => (liveScene = v))();
+				/** @type {any} */ let liveRenderer;
+				s.globalRenderer.subscribe((v) => (liveRenderer = v))();
 				const renderer = new T.WebGLRenderer({ antialias: true, alpha: true });
 				renderer.setSize(480, 270);
+				renderer.shadowMap.enabled = true;
+				renderer.shadowMap.type = T.PCFShadowMap;
+				/** @type {any} */ let post;
+				s.scenePost?.scenePost?.subscribe((/** @type {any} */ v) => (post = v))();
+				const tonemap = post?.enabled !== false ? (post?.effects ?? []).find((/** @type {any} */ fx) => fx.kind === 'tonemapping' && fx.enabled !== false) : null;
+				const CURVES = { AGX: T.AgXToneMapping, ACES_FILMIC: T.ACESFilmicToneMapping, NEUTRAL: T.NeutralToneMapping, REINHARD: T.ReinhardToneMapping, CINEON: T.CineonToneMapping, LINEAR: T.LinearToneMapping };
+				// what the DESKTOP frame shows: a composed frame (the default Shaded+AO view mode
+				// keeps the composer running) never receives the renderer's own ACES — only a stack
+				// Tone mapping entry maps it (the "renderer.toneMapping NEVER REACHES A COMPOSED
+				// FRAME" gotcha). So: the stack's curve, else none. `thumb.toneMapping` overrides.
+				const PICK = { agx: 'AGX', aces: 'ACES_FILMIC', neutral: 'NEUTRAL', reinhard: 'REINHARD', cineon: 'CINEON', linear: 'LINEAR' };
+				const forced = d.thumb?.toneMapping;
+				renderer.toneMapping =
+					forced === 'none'
+						? T.NoToneMapping
+						: forced
+							? (/** @type {any} */ (CURVES)[/** @type {any} */ (PICK)[forced] ?? ''] ?? T.NoToneMapping)
+							: tonemap
+								? (/** @type {any} */ (CURVES)[tonemap.params?.mode ?? 'AGX'] ?? T.AgXToneMapping)
+								: T.NoToneMapping;
+				renderer.toneMappingExposure = liveRenderer?.toneMappingExposure ?? 1;
 				const scene = new T.Scene();
-				scene.background = new T.Color('#232a33');
-				scene.add(new T.HemisphereLight(0xffffff, 0x444466, 2.2));
-				const sun = new T.DirectionalLight(0xffffff, 1.4);
-				sun.position.set(6, 10, 4);
-				scene.add(sun);
-				const clone = new T.ObjectLoader().parse(group.toJSON());
+				const bg = liveScene?.background;
+				scene.background = bg?.isColor ? bg.clone() : bg ?? new T.Color('#232a33');
+				if (liveScene?.fog) scene.fog = liveScene.fog.clone();
+				const envRoot = liveScene?.getObjectByName('environment-root');
+				if (envRoot) scene.add(envRoot.clone(true));
+				// 30c: a level of kit pieces is CLONED, not round-tripped — toJSON writes every
+				// piece's textures as PNG data URLs (7.9 MB for one wall), which is the very cost
+				// the kit references exist to avoid. Every other def renders exactly as before.
+				const clone = kitPacks(d.objects, new Set()).size ? group.clone(true) : new T.ObjectLoader().parse(group.toJSON());
 				scene.add(clone);
 				// 21-C C6-b: a module's WORLD lives at the scene root (golden rule 5), so a
 				// card rendered from objectsGroup alone shows a dungeon template as a lone
 				// arch. `thumb.sceneGroups` names scene-root groups to include — cloned into
 				// the offscreen scene, never moved; absent, the picture is what it always was.
-				/** @type {any} */ let liveScene;
-				s.globalScene.subscribe((v) => (liveScene = v))();
 				for (const name of d.thumb?.sceneGroups ?? []) {
 					const live = liveScene?.getObjectByName(name);
 					if (live) clone.add(live.clone(true));
 					else console.log('  WARN thumb.sceneGroups: no scene-root group named ' + name);
 				}
+				// camera markers are chrome, not scenery
+				clone.traverse((/** @type {any} */ n) => {
+					if (n.userData?.camera) n.visible = false;
+				});
+				scene.updateMatrixWorld(true);
+				// a spot/directional shines along its -Z (24-E1) — lightHelpers seats its target
+				// there every frame in the live app; nothing does in this offscreen scene
+				let lights = 0;
+				scene.traverse((/** @type {any} */ n) => {
+					if (!n.isLight || !n.visible || !(n.intensity > 0)) return;
+					let shown = true;
+					for (let p = n.parent; p; p = p.parent) if (!p.visible) shown = false;
+					if (!shown) return;
+					lights++;
+					if ((n.isSpotLight || n.isDirectionalLight) && n.parent !== scene.getObjectByName('environment-root')) {
+						const at = n.getWorldPosition(new T.Vector3());
+						const fwd = new T.Vector3(0, 0, -1).applyQuaternion(n.getWorldQuaternion(new T.Quaternion()));
+						n.target.position.copy(at).add(fwd.multiplyScalar(10));
+						scene.add(n.target);
+						n.target.updateMatrixWorld(true);
+					}
+				});
+				if (!lights) {
+					scene.add(new T.HemisphereLight(0xffffff, 0x444466, 2.2));
+					const sun = new T.DirectionalLight(0xffffff, 1.4);
+					sun.position.set(6, 10, 4);
+					scene.add(sun);
+				}
 				const box = new T.Box3().setFromObject(clone);
-				const size = Math.max(box.getSize(new T.Vector3()).length(), 1);
-				const center = box.getCenter(new T.Vector3());
-				let camera = new T.PerspectiveCamera(40, 480 / 270, size / 100, size * 10);
-				camera.position.copy(center).add(new T.Vector3(size * 0.55, size * 0.42, size * 0.72));
+				// the CONTENT box: every visible mesh except floor-like slabs (thin, and covering
+				// over a quarter of the whole footprint); the whole box when nothing else is left
+				const whole = box.getSize(new T.Vector3());
+				const footprint = Math.max(whole.x * whole.z, 1e-6);
+				const content = new T.Box3();
+				clone.traverse((/** @type {any} */ n) => {
+					if (!n.isMesh || !n.visible || n.userData?.camera) return;
+					const b = new T.Box3().setFromObject(n);
+					if (b.isEmpty()) return;
+					const sz = b.getSize(new T.Vector3());
+					const slab = sz.y < 0.05 * Math.max(sz.x, sz.z) && (sz.x * sz.z) / footprint > 0.25;
+					if (!slab) content.union(b);
+				});
+				const frame = content.isEmpty() ? box : content;
+				const center = frame.getCenter(new T.Vector3());
+				// FIT the box to the 16:9 frame from the 3/4 direction: every corner q (relative
+				// to the centre) needs |q.right| <= tanH * depth and |q.up| <= tanV * depth, where
+				// depth = dist - q.dir — so the distance is the max over the eight corners (a
+				// bounding sphere wastes the card's width on a box that is long and low)
+				const fov = 40;
+				const dir = new T.Vector3(0.55, 0.42, 0.72).normalize();
+				const fwd = dir.clone().negate();
+				const right = new T.Vector3().crossVectors(fwd, new T.Vector3(0, 1, 0)).normalize();
+				const up = new T.Vector3().crossVectors(right, fwd);
+				const tanV = Math.tan(((fov / 2) * Math.PI) / 180);
+				const tanH = tanV * (480 / 270);
+				let dist = 1;
+				for (const x of [frame.min.x, frame.max.x])
+					for (const y of [frame.min.y, frame.max.y])
+						for (const z of [frame.min.z, frame.max.z]) {
+							const q = new T.Vector3(x, y, z).sub(center);
+							const along = q.dot(dir);
+							dist = Math.max(dist, Math.abs(q.dot(right)) / tanH + along, Math.abs(q.dot(up)) / tanV + along);
+						}
+				dist *= 1.08;
+				const span = Math.max(whole.length(), dist * 2);
+				let camera = new T.PerspectiveCamera(fov, 480 / 270, Math.max(dist / 200, 0.01), dist + span * 4);
+				camera.position.copy(center).add(dir.clone().multiplyScalar(dist));
 				camera.lookAt(center);
 				// 28-G: `thumb.camera` renders the card THROUGH a named camera object — the
-				// hero shot the def already authored — instead of the fitted 3/4 view. Camera
-				// markers are chrome, not scenery, so they stay out of that picture.
+				// hero shot the def already authored — instead of the fitted 3/4 view.
 				const hero = d.thumb?.camera ? group.getObjectByName(d.thumb.camera) : null;
 				if (hero) {
 					group.updateMatrixWorld(true);
@@ -1717,9 +3009,13 @@ const DEFS = [
 					camera = new T.PerspectiveCamera(spec.fov ?? 50, 480 / 270, spec.near ?? 0.1, spec.far ?? 1000);
 					hero.getWorldPosition(camera.position);
 					hero.getWorldQuaternion(camera.quaternion);
-					clone.traverse((/** @type {any} */ n) => {
-						if (n.userData?.camera) n.visible = false;
-					});
+				} else if (d.view) {
+					// the editor view the file opens on — the author already chose it
+					/** @type {any} */ let editorCam;
+					s.globalCamera.subscribe((v) => (editorCam = v))();
+					camera = new T.PerspectiveCamera(editorCam?.fov ?? 50, 480 / 270, 0.1, 2000);
+					camera.position.set(d.view.pos[0], d.view.pos[1], d.view.pos[2]);
+					camera.lookAt(d.view.target[0], d.view.target[1], d.view.target[2]);
 				}
 				renderer.render(scene, camera);
 				thumb = renderer.domElement.toDataURL('image/webp', 0.82);
@@ -1731,7 +3027,9 @@ const DEFS = [
 			// leave no look or rule behind for the next def — a leaked sky or gravity is
 			// exactly the bug A6 exists to fix, and it would be baked into the next scene
 			s.commandsHandler.sceneCommand('/clear all');
-			s.environment.setEnvironment('studio', 1);
+			// 30 author-kit: the FULL reset — setEnvironment('studio') keeps a custom payload
+			// in the state, and environmentSnapshot would then save it into the NEXT def
+			s.environment.environmentRestore(null, false);
 			s.scenePhysics.resetSceneGravity();
 			s.restoreGraphs({});
 			// B8: every singleton a game def can now set — a null/empty restore is the
@@ -1789,7 +3087,9 @@ const DEFS = [
 	// with a partial one.
 	if (!ONLY) {
 		fs.mkdirSync(STATIC_OUT, { recursive: true });
-		const seedTemplates = defs.filter((d) => d.kind === 'template').map((d) => ({
+		// 30c: `seed: false` keeps a template OUT of the offline seed — a level built from kit
+		// references needs the pack CDN, so bundling it offline would promise an empty world
+		const seedTemplates = defs.filter((d) => d.kind === 'template' && d.seed !== false).map((d) => ({
 			...writeDef(STATIC_OUT, d),
 			scene: `/templates/${d.slug}/scene.tpscene`,
 			thumb: built[d.slug].thumb ? `/templates/${d.slug}/thumb.webp` : ''

@@ -2,7 +2,10 @@ import { keyOf, letterOf } from './keyOf';
 import { sessionNow } from './sessionClock'; // 25-E: stamps another peer compares
 import * as THREE from 'three';
 import { writable, get } from 'svelte/store';
-import { globalScene, objectsGroup, selectedObject, selectedObjects, globalCamera, isVRMode, isLocked } from '../stores/sceneStore';
+import { globalScene, objectsGroup, selectedObject, selectedObjects, globalCamera, isVRMode, isLocked, playPointerFree, editorMode } from '../stores/sceneStore';
+// 30 P4: the scene's play block decides whether play aims with a crosshair (a leaf chain)
+// 30 integrate: the ONE answer to "is this a free-cursor game" (30-core-flow's leaf)
+import { playCursorSetting } from './playCursor';
 import { peers, showToast, modulesOpen, userdata } from '../stores/appStore';
 import { syncedAnimations, flowGraphs, flowValues, flowTriggers, allNodes, findNodeAnyGraph, SCENE_GRAPH } from '../stores/flowStore';
 import { customGeometryBuilders } from './customGeometries';
@@ -42,7 +45,26 @@ import { APP_VERSION } from './version.js';
 import { ndcFromClient } from './canvasRect';
 // 27-B: recovery paths report through the diagnostics ring (hardening audit H4)
 import { log } from './diagnostics';
+// 30 P3: the object list's Module content registry — a LEAF, so no cycle
+import { noteModuleGroup, forgetModuleGroup } from './moduleContent';
+export { moduleContentDebug } from './moduleContent';
 import { safeStorage } from './safeStorage';
+// 30 P4: api.storage — a LEAF (safeStorage only), shared with the Store Value flow node
+import { makeModuleStorage } from './gameStorage';
+// 30b (vr-play) C5: the game sound set and game music — LEAVES (svelte/store, audioEngine,
+// safeStorage, sessionClock, sceneStore), so static edges close no cycle
+import { isGameSound, playGameSound } from './gameSfx';
+import { playGameMusic, stopGameMusic, gameMusicState, MUSIC_PRESET_IDS } from './gameMusic';
+// 30b (vr-play): api.announce's banner store — a LEAF (svelte/store only)
+import { announce as announceBanner, clearAnnouncement } from './gameAnnounce';
+/** the ping chimes `api.playSound` still reaches (pingAudio's PING_SOUNDS ids) */
+const PING_NAMES = new Set(['ding', 'chime', 'pluck', 'bell']);
+import { runtimeSpawn, setRuntimeSpawn } from './playSettings'; // 30b P4 (a leaf)
+import { spawnDesktopPlayer, currentSpawn, desktopSpawn, spawnEyePose } from './playSpawn'; // 30b P4 (a leaf)
+
+/** modules already told they hit the storage cap this session (ONE toast each, never
+ * one per write — a game saving every frame would otherwise bury the screen) */
+const storageCapWarned = new Set();
 
 // Module SDK v1 — in-repo modules under src/modules/<name>/ register through
 // the api object passed to their register(api). See MODULES.md for the guide.
@@ -69,8 +91,76 @@ export const moduleMenuItems = writable([]);
 export const moduleEffects = {};
 /** @type {Record<string, any>} node type -> Svelte component */
 export const moduleNodeComponents = {};
-/** @type {((object: any) => boolean)[]} */
+/** 30b: a handler also gets `ctx = {source, mode}` (see runClickHandlers)
+ * @type {((object: any, ctx?: {source: string, mode: string}) => boolean)[]} */
 export const moduleClickHandlers = [];
+
+/** 30 P1: the three places a viewport click can come from. */
+export const CLICK_MODES = ['edit', 'interact', 'play'];
+/** What an SDK handler hears when it names no modes: Interact and Play, NOT Edit —
+ * the behaviour change the user asked for (a piano or a puzzle piece used to swallow
+ * every EDITOR click, so it could never be selected). */
+export const DEFAULT_CLICK_MODES = ['interact', 'play'];
+/** handler -> the modes it runs in. A handler with NO entry runs everywhere: that is a
+ * core handler pushed straight into the array (vrPatch's plug click — patching a cable
+ * is authoring, so it must keep working in Edit), never an SDK one.
+ * @type {WeakMap<Function, string[]>} */
+const clickHandlerModes = new WeakMap();
+
+/** Normalise a `{modes}` option: known names only, the default when nothing usable is
+ * left. @param {any} modes @returns {string[]} */
+export function normalizeClickModes(modes) {
+	const list = Array.isArray(modes) ? modes : typeof modes === 'string' ? [modes] : [];
+	const known = [...new Set(list.filter((mode) => CLICK_MODES.includes(mode)))];
+	return known.length ? known : [...DEFAULT_CLICK_MODES];
+}
+
+/** 30b (C3): handlers that asked NOT to be swept (`{sweep: false}`) — a knob you drag, a
+ * dot you carry. They still hear the press itself; only the later entries of a held
+ * trigger skip them. @type {WeakSet<Function>} */
+const noSweepHandlers = new WeakSet();
+
+/** Does this handler run for a click in `mode`? A null mode is VR's trigger, which has
+ * no editor mode of its own yet and keeps offering every handler, as it always has.
+ * @param {Function} fn @param {string | null} mode */
+export function clickHandlerRunsIn(fn, mode) {
+	if (!mode) return true;
+	const modes = clickHandlerModes.get(fn);
+	return !modes || modes.includes(mode);
+}
+
+/**
+ * Offer a clicked mesh to every handler that runs in `mode`, in registration order; the
+ * first to return true consumes the click. ONE dispatch for the editor's pick, Interact
+ * and Play's tap, so the three can never disagree about who hears what.
+ *
+ * 30b (C3): every handler also gets `ctx = {source, mode}` — `source` is 'click' (the
+ * desktop / a VR release), 'trigger' (the VR press itself, fired on the press) or 'sweep'
+ * (a later entry while the trigger is held). A 'sweep' skips handlers registered with
+ * `{sweep: false}`. Additive: a one-argument handler is byte-unchanged.
+ * @param {any} object @param {string | null} mode @param {{source?: string}} [ctx]
+ * @returns {boolean}
+ */
+export function runClickHandlers(object, mode, ctx = {}) {
+	const source = ctx?.source ?? 'click';
+	const info = { source, mode: mode ?? 'vr' };
+	for (const handler of [...moduleClickHandlers]) {
+		if (!clickHandlerRunsIn(handler, mode)) continue;
+		if (source === 'sweep' && noSweepHandlers.has(handler)) continue;
+		try {
+			if (handler(object, info)) return true;
+		} catch (error) {
+			log('warn', 'module', 'click handler failed', String(error));
+		}
+	}
+	return false;
+}
+
+/** The modes a handler was registered with (tests / the debug view).
+ * @param {Function} fn @returns {string[] | null} */
+export function clickHandlerModesOf(fn) {
+	return clickHandlerModes.get(fn) ?? null;
+}
 /** 23-B1: a viewport click that hit NOTHING. `moduleClickHandlers` is only ever handed a
  * MESH, so a gesture armed by a plug click had no way to hear "the user clicked the sky":
  * the wire stayed armed for the rest of the session and a picked-up cable stayed HIDDEN
@@ -111,6 +201,9 @@ const sceneClearHandlers = [];
 
 /** Called by the clear-scene path (local and remote) */
 export function runSceneClearHandlers() {
+	// 30b: a cleared scene takes its game's bursts and banner with it
+	effectsRef?.clearBursts?.();
+	clearAnnouncement();
 	sceneClearHandlers.forEach((fn) => {
 		try {
 			fn();
@@ -188,6 +281,8 @@ let nodeCatalogRef = null;
 let knockRef = null;
 /** @type {Promise<any>} */
 let knockReady = Promise.resolve(null);
+/** 30b: primed for api.effects (effectsBurst imports moduleFrameTasks from here) @type {any} */
+let effectsRef = null;
 if (typeof window !== 'undefined') {
 	knockReady = import('./knock').then((m) => (knockRef = m));
 	import('./inputRuntime').then((m) => (inputRuntimeRef = m));
@@ -208,6 +303,8 @@ if (typeof window !== 'undefined') {
 	import('./flowRuntime').then((m) => (flowRuntimeRef = m));
 	import('./flowGraphs').then((m) => (flowGraphsRef = m));
 	import('./nodeCatalog').then((m) => (nodeCatalogRef = m));
+	// 30b (C6): the burst pool reads moduleFrameTasks from here, so the edge back is dynamic
+	import('./effectsBurst').then((m) => (effectsRef = m));
 }
 
 // --- api.pointerRay (190): where the user is POINTING, as a world ray --------
@@ -228,11 +325,38 @@ if (typeof window !== 'undefined') {
 		pointerClient.seen = true;
 	});
 }
+/** 30 P4: the CROSSHAIR ray, a fresh Raycaster through the centre of the view */
+const SCREEN_CENTRE = new THREE.Vector2(0, 0);
+
+/**
+ * 30 P4: does play aim with a CROSSHAIR right now? Under a pointer lock the cursor is
+ * pinned and its last client position is where the mouse happened to be when the lock
+ * began — a STALE ray that never moves again (untangle's carried dot followed it, so a
+ * drag in play went nowhere). So while playing, the pointer locked, and not in the menu
+ * substate (the pointer is free there, over the HUD), the ray is the view's centre —
+ * play mode's own NDC (0,0), the one playInteract aims with.
+ */
+function crosshairAims() {
+	if (get(isLocked) !== true || get(playPointerFree)) return false;
+	if (typeof document === 'undefined' || !document.pointerLockElement) return false;
+	// 30-core-flow: free cursor — a scene whose play block says `cursor: 'free'` (or a
+	// module publishing it through userData.play) plays with the real cursor and no lock,
+	// so its ray IS the mouse ray. Asked through playCursor, the leaf playInteract, PLC and
+	// PlayReticle ask too, so the four cannot disagree about where the player aims.
+	return playCursorSetting() !== 'free';
+}
+
 function pointerRayNow() {
 	if (get(isVRMode)) return vrControlsRef?.pointerHandRay?.() ?? null;
 	/** @type {any} */
 	const camera = get(globalCamera);
-	if (!camera || !pointerClient.seen) return null;
+	if (!camera) return null;
+	if (crosshairAims()) {
+		const centre = new THREE.Raycaster();
+		centre.setFromCamera(SCREEN_CENTRE, camera);
+		return centre;
+	}
+	if (!pointerClient.seen) return null;
 	const fresh = new THREE.Raycaster();
 	const ndc = ndcFromClient(pointerClient.x, pointerClient.y);
 	fresh.setFromCamera(new THREE.Vector2(ndc.x, ndc.y), camera);
@@ -251,6 +375,30 @@ function physicsApi() {
 	return physicsRef;
 }
 
+/**
+ * 30b P4: move the player to the spawn in force — VR moves the rig (vrControls), desktop
+ * Play moves the play camera, desktop Interact the editor view. Edit is never moved.
+ * @returns {boolean}
+ */
+function respawnPlayerNow() {
+	const spawn = currentSpawn();
+	if (!spawn) return false;
+	if (get(isVRMode)) {
+		if (get(editorMode) !== 'interact') return false;
+		return !!vrControlsRef?.spawnPlayer?.();
+	}
+	// 30b (core-games): a VR-only spawn leaves the desktop view where it is
+	const desk = desktopSpawn();
+	if (!desk) return false;
+	if (get(isLocked) === true) return spawnDesktopPlayer(desk);
+	if (get(editorMode) === 'interact') {
+		const { eye, lookAt } = spawnEyePose(desk);
+		objectActionsRef?.flyTo?.(eye, lookAt);
+		return !!objectActionsRef;
+	}
+	return false;
+}
+
 /** @param {string} moduleId @param {string} [moduleName] the DISPLAY name, needed while
  * register() runs: loadedModules is not appended until it RETURNS, so anything reading the
  * name from there during registration gets the raw id (which is how a module HUD kind was
@@ -259,6 +407,8 @@ function makeApi(moduleId, moduleName = moduleId) {
 	const disposals = (moduleDisposals[moduleId] ??= []);
 	/** record an undo thunk deactivateModule runs at teardown (A2) @param {() => void} fn */
 	const onDispose = (fn) => disposals.push(fn);
+	/** 30b P4: setSpawn journals its clear once per module */
+	let spawnDisposeHooked = false;
 	/** A value frozen for the undo stack, so a module mutating its patch object later
 	 * cannot rewrite history. @param {any} v */
 	const frozen = (v) => {
@@ -463,9 +613,24 @@ function makeApi(moduleId, moduleName = moduleId) {
 		/**
 		 * Intercept viewport clicks (desktop click + VR trigger). Receives the
 		 * exact mesh hit; return true to consume the click (no selection).
-		 * @param {(object: any) => boolean} fn
+		 *
+		 * 30 P1: `{modes}` says WHERE it runs — any of 'edit' | 'interact' | 'play'.
+		 * Absent means ['interact', 'play']: a handler that is part of the GAME (a key,
+		 * a pad, a puzzle piece) no longer eats the editor's select click. A handler
+		 * that is an editor TOOL (a toolbox pick) passes {modes: ['edit']}, or all three.
+		 * In Edit an 'edit' handler still runs BEFORE the selection, so it can consume.
+		 *
+		 * 30b: `fn(object, ctx)` — `ctx.source` is 'click', 'trigger' (the VR press) or
+		 * 'sweep' (VR, Interact/Play: the trigger HELD and the controller tip or laser
+		 * passing into this mesh — each entry clicks once, re-armed when it leaves). Pass
+		 * `{sweep: false}` for a control that must not be swept (a knob you drag, a dot you
+		 * carry); it still hears the press.
+		 * @param {(object: any, ctx?: {source: string, mode: string}) => boolean} fn
+		 * @param {{modes?: string[], sweep?: boolean}} [options]
 		 */
-		registerClickHandler(fn) {
+		registerClickHandler(fn, options = {}) {
+			clickHandlerModes.set(fn, normalizeClickModes(options?.modes));
+			if (options?.sweep === false) noSweepHandlers.add(fn);
 			moduleClickHandlers.push(fn);
 			onDispose(() => arrayRemove(moduleClickHandlers, fn));
 		},
@@ -493,19 +658,36 @@ function makeApi(moduleId, moduleName = moduleId) {
 		registerInteractiveGroup(name) {
 			moduleInteractiveGroups.push(name);
 			registerSystemGroup(name); // clickable module content is also listable
+			noteModuleGroup(name, { id: moduleId, name: moduleName }, 'interactive'); // 30 P3
 			onDispose(() => {
 				arrayRemove(moduleInteractiveGroups, name);
 				arrayRemove(systemGroupNames, name);
+				forgetModuleGroup(name, 'interactive');
 				removeSceneRootGroup(name); // module-owned viewport content goes with the module
 			});
 		},
 		/** List a scene-root group under the object list's System filter @param {string} name */
 		registerSystemGroup(name) {
 			registerSystemGroup(name);
+			noteModuleGroup(name, { id: moduleId, name: moduleName }, 'system'); // 30 P3
 			onDispose(() => {
 				arrayRemove(systemGroupNames, name);
+				forgetModuleGroup(name, 'system');
 				removeSceneRootGroup(name);
 			});
+		},
+		/**
+		 * 30 P3: list a scene-root group in the object list's "Module content" section under
+		 * a label a person can read (the group's own name is usually an id). Groups passed to
+		 * registerInteractiveGroup / registerSystemGroup are listed anyway; this names them,
+		 * or lists one that is neither. Read-only there: a click selects a PROXY and frames
+		 * it, and the Inspector points at your module's toolbox and nodes.
+		 * @param {string} name the scene-root group's object name
+		 * @param {{label?: string, icon?: string}} [options]
+		 */
+		registerListedGroup(name, options = {}) {
+			noteModuleGroup(name, { id: moduleId, name: moduleName }, 'listed', options ?? {});
+			onDispose(() => forgetModuleGroup(name, 'listed'));
 		},
 		/**
 		 * Runs when the scene is cleared (locally or by a peer) — remove your
@@ -517,9 +699,54 @@ function makeApi(moduleId, moduleName = moduleId) {
 			onDispose(() => arrayRemove(sceneClearHandlers, fn));
 		},
 		/**
+		 * 30 integrate (modules DEVX #35): the editor's click mode on THIS screen —
+		 * 'edit' | 'interact'. LOCAL and read-only; `isPlaying()` says whether Play is on
+		 * top of it. A module whose own pointer listeners run outside core's click routing
+		 * (untangle's drag) stands down while this reads 'edit' and nothing is playing, so an
+		 * Edit click selects its content like any object.
+		 * @returns {'edit' | 'interact'}
+		 */
+		editorMode() {
+			return get(editorMode) === 'interact' ? 'interact' : 'edit';
+		},
+		/**
+		 * 30b P4: where the player STARTS — entering Interact or Play puts them here (VR: the
+		 * rig so the FEET land on it facing `yaw`; desktop Play: the play camera; desktop
+		 * Interact: the editor view). `position` is [x, y, z] with y the FEET height; `yaw`
+		 * is radians, three's rotation.y (0 faces -Z, forward = (-sin yaw, 0, -cos yaw)).
+		 * Overrides the scene's authored `play.spawn`. LOCAL: every peer's module sets its
+		 * own from the same replicated state; never saved. `{teleport: true}` also moves the
+		 * player there NOW when Interact or Play is on (a new level, a new dungeon floor) —
+		 * without it a changed spawn is a checkpoint, used on the next entry.
+		 * `setSpawn(null)` clears it. Cleared when the module is disabled.
+		 * @param {number[] | null} position @param {number=} yaw
+		 * @param {{teleport?: boolean}=} options @returns {boolean} whether it was accepted
+		 */
+		setSpawn(position, yaw = 0, options = {}) {
+			const ok = setRuntimeSpawn(position, yaw, moduleId);
+			if (!spawnDisposeHooked) {
+				spawnDisposeHooked = true;
+				onDispose(() => {
+					if (get(runtimeSpawn)?.owner === moduleId) setRuntimeSpawn(null);
+				});
+			}
+			if (ok && position && options?.teleport) respawnPlayerNow();
+			return ok;
+		},
+		/**
+		 * 30b P4: move the player to the spawn in force now (see setSpawn) — only while
+		 * Interact or Play is on; the editor's Edit view is never moved.
+		 * @returns {boolean} whether the player was moved
+		 */
+		respawnPlayer() {
+			return respawnPlayerNow();
+		},
+		/**
 		 * Where the user is POINTING, as a THREE.Raycaster in world space —
 		 * desktop mouse over the viewport, or the VR pointer hand's ray. A fresh
 		 * instance per call (safe to keep). Null before the first pointer event.
+		 * 30 P4: in play under a pointer lock it is the CROSSHAIR ray (the view's
+		 * centre) — the mouse ray is frozen there; a free-cursor game keeps the mouse.
 		 * The drag recipe (190/untangle): click to pick, follow pointerRay() in a
 		 * frame task, click to drop. (190)
 		 */
@@ -766,7 +993,19 @@ function makeApi(moduleId, moduleName = moduleId) {
 		 * @param {'left'|'right'=} hand
 		 */
 		haptic(intensity = 0.5, durationMs = 50, hand = undefined) {
+			// 30b: silent in EDIT mode (core's own gate) — vibration is for playing
 			vrControlsRef?.hapticPulse?.(intensity, durationMs, hand);
+		},
+		/**
+		 * 30b: a named haptic PATTERN — 'tap' (hover), 'bump' (a press), 'hit' (a grab,
+		 * a contact), 'success', 'fail', 'rumble' (an engine, an explosion), 'heartbeat'.
+		 * On one hand ('left'|'right') or both. LOCAL, Interact/Play only (false in Edit,
+		 * on desktop nothing buzzes). Core already plays tap / bump / hit / knocks for
+		 * you; use this for the game's own moments.
+		 * @param {string} name @param {'left'|'right'=} hand @returns {boolean}
+		 */
+		hapticPattern(name, hand = undefined) {
+			return vrControlsRef?.hapticPattern?.(String(name), hand) ?? false;
 		},
 		/**
 		 * 24-A A2: every KNOCK this peer sees — its own hand's, and every peer's as the
@@ -890,10 +1129,61 @@ function makeApi(moduleId, moduleName = moduleId) {
 		flyTo(position, lookAt) {
 			objectActionsRef?.flyTo(position, lookAt ?? position);
 		},
-		/** A spatial UI chime (the ping sounds). LOCAL — broadcast your own op if
-		 * peers should hear it too. @param {string=} sound @param {number[]=} position */
+		/**
+		 * A sound, LOCAL to this device — broadcast your own op if peers should hear it.
+		 * 30b: the GAME set (procedural, no assets, the "Game sounds" volume): 'click',
+		 * 'pop', 'whoosh', 'success', 'fail', 'hit', 'kick', 'shoot', 'laser',
+		 * 'explosion', 'coin', 'levelup', 'goal', 'whistle', 'cheer', 'step', 'ring',
+		 * 'sparkle', 'hurt', 'portal'; plus the ping chimes 'ding' (the default),
+		 * 'chime', 'pluck', 'bell'. An unknown name is a quiet no-op. `position`
+		 * spatialises it. Returns whether a sound started.
+		 * @param {string=} sound @param {number[]=} position @returns {boolean}
+		 */
 		playSound(sound = 'ding', position = undefined) {
-			pingAudioRef?.playPing(sound, position ?? null);
+			const name = String(sound ?? 'ding');
+			if (isGameSound(name)) return playGameSound(name, position ?? null);
+			if (!PING_NAMES.has(name)) return false;
+			pingAudioRef?.playPing(name, position ?? null);
+			return !!pingAudioRef;
+		},
+		/**
+		 * 30b: game MUSIC — procedural loops, LOCAL to this device, tempo-synced to the
+		 * session clock (two peers on one preset hear the same bar), under the effects
+		 * and on the "Music" volume. Plays only in Interact/Play (a call from Edit returns
+		 * false) and stops by itself when the player leaves the game.
+		 * Presets: 'arcade', 'ambient', 'dungeon', 'stadium', 'space', 'puzzle', 'studio'.
+		 */
+		/**
+		 * 30b (C6): a short, pooled particle BURST at a world position — 'sparkle' (the
+		 * default), 'confetti', 'smoke' or 'sparks', an optional CSS colour and a count
+		 * (1..96). LOCAL: broadcast your own op if peers should see it too. Returns
+		 * whether a burst started.
+		 * @param {number[]} position @param {{kind?: string, color?: string, count?: number}=} options
+		 * @returns {boolean}
+		 */
+		effects: {
+			burst: (/** @type {number[]} */ position, /** @type {{kind?: string, color?: string, count?: number}} */ options = {}) =>
+				!!effectsRef?.burst?.(position, options ?? {}),
+			kinds: () => ['sparkle', 'confetti', 'smoke', 'sparks']
+		},
+		/**
+		 * 30b: a BIG centred banner — "GOAL!", "Level 3", "Ring 2 reached" — on the desktop
+		 * HUD and, in a headset, head-locked in front of the player. `sub` is a second,
+		 * smaller line; `ms` how long it stays (300..15000, default 1800); `color` the
+		 * title's colour. A new banner replaces the one showing. LOCAL. Returns its id.
+		 * @param {string} text @param {{sub?: string, ms?: number, color?: string}=} options
+		 * @returns {number}
+		 */
+		announce(text, options = {}) {
+			return announceBanner(text, options ?? {});
+		},
+		music: {
+			/** @param {string} preset @param {{volume?: number}=} options 0..1 @returns {boolean} */
+			play: (preset, options = {}) => playGameMusic(preset, options ?? {}),
+			stop: () => stopGameMusic(),
+			/** the preset playing now, or null @returns {string | null} */
+			current: () => get(gameMusicState)?.preset ?? null,
+			presets: () => [...MUSIC_PRESET_IDS]
 		},
 		/** Park the editor camera behind an object and follow it (the car's chase
 		 * cam) — LOCAL, no selection, no undo. @param {string} uuid */
@@ -1014,6 +1304,24 @@ function makeApi(moduleId, moduleName = moduleId) {
 		 * immune to the shared-scope add race. Rows replicate on the presence channel,
 		 * late joiners converge, a row drops with its owner's disconnect.
 		 */
+		/**
+		 * 30 P4 (roadmap 30 fork 7): what this module remembers ON THIS DEVICE — a best
+		 * score, unlocked levels, a settings choice. JSON values under
+		 * `tp:mod:<moduleId>:<key>` through safeStorage (never throws: a private window or a
+		 * full quota falls back to memory for the session), 256 KB per module (a `set` over
+		 * it returns false and says so ONCE), LOCAL: never replicated, never in a scene
+		 * file, never undone — and deliberately NOT cleared when the module is disabled or
+		 * removed (a reinstall keeps your progress; `clear()` is the module's own reset).
+		 * `get(key, fallback)` · `set(key, value) -> bool` · `remove(key)` · `keys()` ·
+		 * `clear()` · `bytes()`.
+		 */
+		storage: makeModuleStorage(moduleId, {
+			onOverCap: () => {
+				if (storageCapWarned.has(moduleId)) return;
+				storageCapWarned.add(moduleId);
+				showToast(`"${moduleName}" hit its 256 KB storage limit on this device — that value was not saved.`);
+			}
+		}),
 		peerVars: {
 			/** Write MY OWN row. @param {string} name @param {number} value */
 			setMine(name, value) {

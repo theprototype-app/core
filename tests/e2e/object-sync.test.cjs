@@ -66,7 +66,10 @@ const spyConns = (peer) =>
 const diag = (peer) => peer.page.evaluate(() => window.__diag || null);
 
 h.run(async () => {
-	const browser = await h.launch();
+	// GPU backend: three SOFTWARE-GL pages boot the third one past setupPage's 30 s on the 1.17
+	// union (the first two saturate the shared SwiftShader process; the programs, draw calls and
+	// boot script are identical to 1.17 round 1 — measured, 30b-integrate) — the newer suites' rule
+	const browser = await h.launch({ args: h.GPU_ARGS });
 	const A = await h.setupPage(browser, 'A');
 	await instrument(A, 'A');
 

@@ -2156,6 +2156,153 @@ loadable play content. Everything a user does must be visible to connected peers
   `#embed-play` (▶ while not playing, so an Esc inside the frame has a way back in). Absent = the
   old app. The community Worker's `/e/<id>` frames the app at `/?s=<id>&play=1&embed=1`; no
   separate viewer build. Suite `embed-boot` (20).
+- **ROADMAP 30 — EDIT / INTERACT, AND THE SELECTION THAT FINDS THINGS** (1.17.0; plan + as-built:
+  cloud `plans/core/roadmap-30-games-that-look-finished.md`). `sceneStore.editorMode`
+  ('edit' | 'interact', LOCAL — never replicated, never saved) + `objectActions.setEditorMode`; the
+  toggle is the `mode` cell at the RIGHT END of the default Controls bar (`#editor-mode-toggle`, a
+  `<button aria-pressed>` — loadLayout's own append rule for a default added later, which keeps the
+  play well's slot) and key **I** through the registry, which stands down in text fields, mesh
+  sessions and any session a module reports through the new `shortcuts.registerKeySessionProbe`
+  seam (sculpt/spline/draw use it). Edit always SELECTS. Interact is play's hands without play's
+  lock: `playInteract.editorInteractActive`/`cursorGrabStart`/`cursorGrabMove`/`cursorGrabEnd`
+  (a press on a dynamic body of a RUNNING sim carries it along the CURSOR ray with the exact hold
+  play uses — `grab.cursor` picks the cursor ray, otherwise the play aim) and `interactClick(ray)`
+  (module groups → the first opaque hit offered to 'interact' handlers → its On Click → the miss;
+  selects nothing, ever). `moduleSDK.runClickHandlers(object, mode)` is the ONE dispatch and
+  `registerClickHandler(fn, {modes})` defaults to `['interact','play']` — a game piece no longer
+  eats editor clicks; an editor TOOL passes `{modes:['edit']}`. VR's trigger has NO editor mode
+  (modules DEVX #33): it still offers every handler first.
+  · **THE POINTER-CAPTURE THROW (P0)**: three 0.185's OrbitControls calls `setPointerCapture`
+  unguarded, and the editor controls stayed MOUNTED in play — under a pointer lock that throws an
+  InvalidStateError per press (~100 in one Quest session, then "Something went wrong" on exit).
+  The editor OrbitControls stand down per frame while `isLocked === true` (restored after) and the
+  capture is guarded on the controls' element while a pointer lock exists. Suite
+  `pointer-capture-play`.
+  · **SELECT-THROUGH** (`selectThrough.js`, a pure LEAF, vitest): `pickStack(hits, topLevelOf)`
+  + `primaryIndex` — the pick prefers the first OPAQUE top-level target; see-through =
+  `userData.pick === 'through'`, effective opacity < 0.25, or a hidden node. A plain repeat at
+  ±4 px cycles DOWN the stack and wraps — only AFTER the 400 ms double-click window and within
+  1500 ms (inside 400 ms is the configurable double-click action; a cycle there would kill
+  open-properties wherever anything sits behind the cursor — QUESTIONS-30-core-modes fork 1). A
+  one-time "Click again to select behind" hint. Inspector ▸ Object "Click-through in the
+  viewport" (`#inspector-pick-through`) → `objectActions.setPickThrough` (props undo +
+  `objectParameters` 'pick', received in commandsHandler). Interact's click uses the same stack.
+  · **MODULE CONTENT IN THE OBJECT LIST** (`moduleContent.js`, a LEAF + `ModuleContent.svelte`
+  under the scene tree): one read-only row per module scene-root group (registered through
+  `registerInteractiveGroup`/`registerSystemGroup`, humanised — 'untangle-module' → 'Untangle
+  module' — or named by `api.registerListedGroup(name, {label, icon})`), children to depth 2
+  capped at 200 + "+N more", a LOCAL hide eye, a menu (Frame it / Open <toolbox> / Hide in
+  viewport) and an Inspector card (`#module-content-card`). Clicking selects a PROXY — a
+  scene-root `Box3Helper` on the helper layer, never in objectsGroup (golden rule 5 holds). An
+  EDIT viewport click on module content selects its proxy too.
+  · `api.pointerRay()` (P4): the CROSSHAIR ray while `isLocked === true`, a pointer lock is held
+  and not in the menu substate; the mouse ray otherwise — including a free-cursor game, decided by
+  `playCursor.playCursorSetting()` (the 30 integrate wired the two lanes' seam to the one leaf).
+  `api.editorMode()` is the module-side read of the store (DEVX #35, integrate).
+- **ROADMAP 30 — GAMES START ON START** (1.17.0). `hudDocs.isGameHud(docs)` / `hudIsGame`: a scene
+  IS a game when any HUD doc holds a screen with `showWhile` set (a `hudbutton→setgamestate`
+  wiring alone does not count — nothing masquerades without a state-bound screen, and it keeps
+  hudDocs a leaf). Outside Play `HudLayer` hides a game's screens; the HUD editor's preview eye
+  shows them INERT and fully CLICK-THROUGH (a preview is a picture of the menu — which also ended
+  HUD menus eating editor clicks). `GameChip.svelte` (App.svelte, beside HudLayer; ids
+  `#game-chip`/`#game-chip-preview`/`#game-chip-test`) says "Game · <state>" and ▶ Test play =
+  `gamePresence.testPlay()`: reset to the menu, enter Play, the Start screen in front (also the
+  play button's right-click row "Test play (start from the menu)"). THE ABANDON WATCH widened
+  (21-F3's host-only writer): every non-menu state is a round; SOLO leaving resets immediately;
+  with peers the 10 s window stands; ticks are edge-driven; leaving a game clears this peer's
+  screen overrides.
+  · **FREE-CURSOR GAMES** (`playCursor.js`, a LEAF: sceneStore + playSettings + canvasRect): the
+  ONE answer to "where does the player aim" — `playAimNdc()` (the cursor in free-cursor play, the
+  crosshair (0,0) otherwise), `playCursorFree()`, `cursorClient()`, `playCursorSetting()`.
+  `scenePhysics.play.cursor: 'free'` (OMITTED at the 'locked' default, so saves are
+  byte-identical), or a module publishes `userData.play.cursor = 'free'` on its scene-root group
+  (resolvePlaySettings, field by field). PLC never asks for a lock when free, PlayReticle hides,
+  playInteract aims and carries along the cursor ray and takes only VIEWPORT presses (a HUD
+  button, a toast, the ✕ are not world gestures). The editor GRID hides in Play
+  (`extensions/Grid.svelte`, mesh named `editor-grid`; `helpersInPlay` keeps it).
+  · **STORAGE** (`gameStorage.js`, a LEAF on safeStorage, vitest): `api.storage` get/set/remove/
+  keys/clear/bytes — JSON, key `tp:mod:<moduleId>:<key>`, 256 KB per module, LOCAL (never
+  replicated, never saved into a scene, survives disable/remove — `clear()` is the reset). Flow
+  nodes **Store Value** (op set/max/min/add on its trigger's stamp edge) and **Stored Value**
+  read `tp:scene:<scene name or 'untitled'>:<key>` — a Games-tab load leaves the scene unnamed,
+  so every template uses a GAME-SPECIFIC key (`towers-best`, `stars-best`, `jam-best-bpm`) or two
+  games' bests collide. hudActions "Save best score" (an additive `via` on the press role).
+  · **CONSOLE HYGIENE**: `<Canvas shadows={PCFShadowMap}>` (PCFSoft is deprecated in three
+  0.18x); the play back-marker is a SvelteKit shallow entry (`pushState` from `$app/navigation` +
+  `playMarkerState()`); rapier-compat's own init warning is filtered for that one call (the call is
+  inside the frozen dependency — exact prefix, restored in `finally`). helpers.cjs `page.__console`
+  captures every console message from BEFORE the first navigation (suite `console-hygiene`).
+- **ROADMAP 30 — THE AUTHOR KIT** (`scripts/author-templates.cjs`; THE DEF SCHEMA is the comment
+  block at its top and is the reference). New: primitives `capsule`, `plane`, `ring`,
+  `icosahedron`/`dodecahedron`, `box.bevel`; lights `spot`/`directional` (shadow frustum FITTED
+  to the built meshes, `fit:false` opts out)/`hemisphere`; `physical`/`toon`/`flatShading`/`side`
+  materials; flags `pick:'through'`, `origin`, `anim:'<preset>'` (an AUTHORED clip — wire a Play
+  Animation node to run it), `particles:'<preset>'`; an unknown object `type` THROWS (it silently
+  became a cone). CUSTOM SKY: `env: {preset:'custom'|<base>, exposure, background:'#hex'|{top,
+  bottom}, fog, ground:{color,roughness}, sun:{color,intensity,dir}, hemi}` builds a customPreset
+  saved + replicated as the ordinary environment singleton; environment.js grew two ADDITIVE
+  customPreset fields read only through `skyGradientOf`/`skyGroundOf` (a cached gradient
+  CanvasTexture background — older peers see the bottom colour flat — and an `env-ground` disc
+  in ENV_ROOT, hidden in wireframe and passthrough; the shadow catcher stands down while it
+  shows). `--def <file.json>` iterates on a def without editing DEFS (same slug replaces).
+  THE CARD: the scene's own look (sky, fog, env rig, authored lights, shadows), the post stack's
+  tone-mapping entry else NONE (what a composed desktop frame shows — the toneMapping gotcha),
+  camera = `thumb.camera` → `view` → a projected 3/4 fit (floor slabs and camera markers
+  excluded), on the REAL GPU (helpers.cjs per-platform ANGLE; the run prints `GPU: …`). A dark
+  game gets a dark card. `HudElement.svelte`: a text/timer box takes `justify-content` from
+  `style.align`, so a single centred line is centred (modules DEVX #28).
+
+- **ROADMAP 30b — THE QUEST ROUND (games in a headset)** (1.17.0; the user's Quest 3 feedback on the
+  round-1 preview is the acceptance test: cloud `plans/core/lanes/30b/user-feedback-2026-09-23.md`).
+  C1 MODES (vr-modes): `vrGrip.js` (pure: what a grip may hold — in Edit anything >= 4 m on an axis
+  or containing your head is SCENERY and the grip grabs the WORLD, which is what brought the Edit
+  world grab back in game scenes; Interact grabs only dynamic bodies, rigid, no select, no undo,
+  never the world), `locomotionPolicy.js` (pure: `play.locomotion {teleport?, fly?}` absent =
+  false in Interact/Play, Edit always flies/teleports; `normalizeSpawn` = `{position, yaw[,
+  vrOnly]}` and ALSO reads 30c's first `{pos, yaw}`), `charController.resolveWalk` shared by desktop
+  and VR (a capsule, gravity, 0.3 m autostep; the dungeon raster also clamps the rapier tier),
+  `playSpawn.js` (`desktopSpawn`/`spawnDesktopPlayer`; VR moves the rig so the FEET land on the
+  spawn facing yaw), `onVRSessionStart` puts a GAME (a showWhile screen, a spawn, or a
+  `userData.play` publisher) in Interact and LEFT Y toggles (right B when the radial menu is on
+  the left) with a forced haptic tick + the `vr-mode-label` wrist label, `moduleWorld.js`
+  re-homes every registered module group under `module-world-root` INSIDE the world rig so module
+  content follows world grabs (a `scene.remove` shim; playPublishers + moduleContent scan it), and
+  `helperLayer.helpersHiddenFor` hides helpers in Play OR Interact (see the HELPER_LAYER gotcha).
+  Suites vr-helper-eyes, interact-clean-view, vr-grips-by-mode, vr-walk-interact, vr-mode-spawn,
+  module-world-root (+ vitest vrGrip/locomotionPolicy); `tests/e2e/fakeXR.cjs` = a fake XR
+  session driving the REAL per-frame path (install/pose/button/stick/installSpace/head).
+  · C2-C6 GAME FEEL (vr-play), one debug name `__stores.gameKit`: `gameFeel.js` (the ONE
+  Interact/Play predicate), `gameSfx.js` (20 procedural sounds on the sfx bus, 24-voice cap, an
+  unknown name is a no-op), `gameMusic.js` + `gameMusicPresets.js` (7 presets on the SESSION
+  clock, REFUSED from Edit, stopped on leaving Interact/Play), Settings ▸ Interface ▸ Sound (two
+  safeStorage volumes), `hapticPatterns.js` + vrControls.hapticPattern/hapticKnock (hapticPulse is
+  SILENT in Edit through one funnel; a 4th `force` arg is the mode tick's), `vrGameInput.js` (hover
+  tap / press bump; the one "clickable" resolver), `effectsBurst.js` (a pooled 12×96 Points system
+  at scene root, local, `warmUp` compiles the material at build or the first burst of a session
+  is lost to a shader compile), `gameAnnounce.js` + HudLayer's `#game-announce` (desktop) / a
+  head-locked banner (VR), `vrGamePanel.js` (a menu-type screen — input 'menu', an enabled
+  control, or showWhile menu|paused|over — is drawn on a canvas BOARD 1.2 m ahead with lazy yaw
+  follow; every other screen's lines ride the LEFT-WRIST card and an optional head strip,
+  `vr:gameStrip`), and the hold-and-sweep (the tip fires the NEAREST touching clickable once, the
+  laser while held; click ctx `{source, mode}`, `{sweep:false}` opts out; Scene's VR trigger
+  fallthrough in Interact/Play is `interactClick`, never a select). `gameFeelActions.js`
+  (core-games) = the Announce / Game Sound / Effect Burst / Controller Buzz / Game Music / On Grab
+  flow nodes, LOCAL on every peer from the replicated stamp inside the actionSeenAt family; music
+  is a DECLARATION. Suites game-audio, game-haptics, game-effects, vr-game-panel, vr-sweep,
+  game-feel-nodes.
+- **ROADMAP 30c — THE MESHY ASSET ROUND** (1.17.0): four packs on packs `main` (architecture-kit,
+  nature-kit, props-kit, scifi-kit; `tools/meshy` spends the credits through one ledger) and
+  `src/lib/packRefs.js` (level-design): a piece placed from a pack carries `userData.packRef =
+  {pack, item, path, hash, kids}` and a PRISTINE one (a fingerprint over the descendants' geometry,
+  materials and an 8×8 texture sample, root transform free) travels and saves as a STUB that every
+  peer and every loader REFILLS from the pack url (fetched and parsed once per piece, textures
+  shared) — one WallStone is 7.9 MB as toJSON and 555 B as a stub. The four paths: save + wire use
+  stubs, autosave GLTF keeps the full tree, and undo keeps the stub through
+  `history.registerReferenceSnapshot` (registered from `startPackRefs` by a dynamic import;
+  restore needs nothing new — the stub scan refills it). Three walkable General templates
+  (`scripts/level-templates.cjs` via author-templates' `kit` type, `seed: false`); a scene load
+  now ends a running simulation first. Suites pack-refs, pack-undo, level-templates (`LIVE=1`
+  runs it against a build's own feed + pack CDN).
 
 ## Replication golden rules
 
@@ -2251,6 +2398,75 @@ loadable play content. Everything a user does must be visible to connected peers
 
 ## Hard-won gotchas (do not rediscover)
 
+- **HELPER_LAYER MUST NEVER BE 1 OR 2: three's WebXRManager gives the LEFT eye layer 1 and the
+  RIGHT eye layer 2.** Helpers on layer 1 drew into ONE eye in a headset — the Quest report "in the
+  middle of the world I see the light source helper, and only with one eye" (Towers, Stars Room,
+  Football). It is 30 now.
+- **three's `Euler.toArray()` IS `[x, y, z, 'XYZ']`**, and 27-A's wire validator accepted a
+  rotation of 3 or 4 FINITE NUMBERS only — so every `move` from the gizmo, Align to ground, an
+  Explorer drop and a dozen other senders was refused on arrival (`invalid:move`) and the peer kept
+  the old pose. `isQuatOrEuler` takes the order string now (suite move-wire-shape).
+- **A BLANKET SHAPE RENAME HITS EVERY KEY OF THAT SHAPE.** Unifying `play.spawn {pos}` ->
+  `{position}` with a textual `{ pos: [` replace also rewrote the level defs' camera `view: {pos}`,
+  and the authoring script died in the page (`reading '0'`) — the next suite would have been the
+  first to notice. Rename by the owning key (`spawn: { pos:`), and author once after any rename.
+- **A rapier collider with no body is FIXED AND SOLID.** The character controller's capsule was
+  `world.createCollider(capsule)`, teleported with the camera each frame: it depenetrated whatever
+  it was moved into and stood as an invisible pillar where the player last was. Harmless while
+  only walk mode made one; 30b's collideRigStep made every desktop Play + sim session drive it,
+  and a crate was flung 8 m before the first knock. A query shape takes `.setSolverGroups(0)`.
+- **A THIRD SOFTWARE-GL PAGE BOOTS PAST setupPage's 30 s ON THE 1.17 UNION** (7 s on round 1,
+  first bad from the vr-play merge in a noisy bisect) while its boot programs, draw calls and boot
+  script are identical — the page waits in shader links behind two pages saturating the shared
+  SwiftShader process. Three-page suites launch on the GPU backend (`h.GPU_ARGS`; modules:
+  `E2E_GPU=1`), where all three boot in < 2 s. Root cause still owed.
+- **An ADDITIVE burst vanishes against a bright sky** — pair it with a normal-blended one
+  (Towers' ring puff). **A banner at a round's END doubles the results panel** — the panel carries
+  the words.
+- **A module effect/click on a Quest cannot rely on the DOM HUD**: core draws no DOM HUD in a
+  headset, so a Start button that only exists there left Waves' round unstarted and "the enemies
+  do not move" (30b-waves P0). vrGamePanel is core's answer; a module may still add its own board.
+- **Known, not fixed (30c pack lanes):** a nested import (a Group with children) doubles its
+  offset on peers (the receiver parents it under the import root and adds the root position again
+  per level — kits ship FLAT to stay clear), and a `move` landing while the peer still shows the
+  loading placeholder is lost.
+- **`TubeGeometry` HANDED A 2D `Shape` BUILDS EVERY VERTEX AS NaN** — its Frenet frames come
+  from Vector2 tangents. Untangle 2.1.0's amber rim never drew, and worse, the board group's
+  `Box3.setFromObject` read NaN, so the object list's "Frame it" flew the camera into NaN and the
+  audio listener threw every frame. Sweep a closed `CatmullRomCurve3` through the shape's
+  `getSpacedPoints` instead. The tell: `setFromObject` on a module group returns NaN bounds.
+- **A rAF TIMESTAMP IS THE FRAME'S START, WHICH CAN PRECEDE THE CALL THAT SCHEDULED IT.** A tween
+  computing `(now - started) / duration` gets a NEGATIVE elapsed on its first frame, and with a
+  0 ms duration that is ±Infinity/NaN (`objectActions.flyTo(…, 0)` parked the camera there for a
+  frame). Clamp t to [0, 1]; a test reproduces it deterministically by stamping the first frame
+  20 ms before the call (object-list-modules 5.0).
+- **A HUD TEXT BOX IS A FLEX ROW, SO `text-align` ALONE NEVER CENTRED A SINGLE LINE.** The
+  anonymous text item shrank to its words and sat flush left in every game menu whatever `align`
+  said; the row takes `justify-content` from the same `align` now (text/timer, 30-visuals-core,
+  guarded in game-towers). Modules laid their 1.16 menus out left-aligned to dodge it (DEVX #28).
+- **A perRound LATCH READS UN-SET THE INSTANT THE ROUND ENDS**, so a Round-over screen must read
+  STORED values (Store Value `max` + a `set` 0 on round start — `max`, because a sensor re-firing
+  after the round writes 0). The old Towers "your best tower" line always read 0 m for this.
+- **PARTICLE EMITTERS ARE COUNTED PER PAIR**: one particle node wired to 24 selectors is 24 of
+  the scene's 8. Pool ONE emitter on an anchor a Script node moves onto the object just hit (the
+  Stars Room burst).
+- **`--use-angle=gl` IS SWIFTSHADER ON LINUX.** The authoring script rendered every Games-tab card
+  in software until roadmap 30; it now uses helpers.cjs's per-platform backend and PRINTS its
+  GPU. Trust no card size or pixel number whose run did not say which GPU it was.
+- **EVERY TOP-LEVEL OBJECT IN objectsGroup BECOMES A FIXED PHYSICS BODY, and a decoration GROUP's
+  default collider is the box of all its children** — a stadium's `Arena` group was one invisible
+  wall around the pitch. Give such a group an explicit custom collider (or none).
+- **DESKTOP PLAY SPAWNS AT Scene.svelte's FIXED `<Player position={[0, 2, 3]}>`** outside a
+  dungeon, whatever the def's `view` says (modules DEVX #27) — keep that eye line clear.
+- **THE EDITOR GRID DRAWS AT y = 0**, so a floor whose top is exactly 0 z-fights it (it showed
+  through the football pitch). Put a floor's top a hair above; the custom sky's ground disc sits
+  at -0.01, under the grid. The grid is hidden in Play since 1.17.
+- **A FLAT GROUND DISC ENDS IN A BAND, NOT A HORIZON**: past the arena a solid ground reads as an
+  olive strip under a plain sky. Close the fog in past the play space (Towers: near 16, far 75)
+  so the ground fades into the sky's own haze colour.
+- **THREE LANES NUMBERING ONE LIST FROM THE SAME BASE COLLIDE.** Each modules lane appended
+  DEVX-REQUESTS rows from #26; the merge renumbered them (#26-28 visuals, #29-32 untangle,
+  #33-35 audit). A merge that auto-resolves a numbered list silently duplicates ids — read it.
 - **jsDelivr PARSES `@v2` AS A SEMVER VERSION, AND A VERSION IS NEVER RE-RESOLVED.** The scenes
   feed is `scenes@v2` and the serving ritual retags `v2`; jsDelivr's data API lists the repo as
   `versions: ["1","2"], tags: {}`, the response says `x-jsd-version-type: version`, and a
@@ -4790,6 +5006,32 @@ override for e2e — never share 5173 (the user's main-checkout server).
   locked (replicate the INDEX per-item opt-in; ONE mesh with scenes as tags;
   scene-is-primary renaming), and the vocabulary settled: **session = the mesh, room =
   who is in a scene, PocketBase rooms stay DISCOVERY** — that naming blocks R4.
+- Status (2026-09-24): **1.17.0 round 2 + 3 — THE QUEST ROUND AND THE MESHY ASSETS, integrated
+  on `feat/1.17` (lane `30b-integrate`)**, held at the user's release gate with a new preview
+  (https://preview-1-17.theprototype.pages.dev). Core merged #244 vr-modes, #245 vr-play, #246
+  core-games, #247 level-templates (the two `play.spawn` shapes unified on `{position, yaw}`) +
+  integrate fixes: move-with-order-string, kit placement undo by reference, the character capsule
+  made a query shape (it flung bodies once every desktop Play + sim drove it), game-waves rewritten
+  for Waves 2.x, game-football 6.9, vr-sweep flips mixer mutes + footswitches, check 333/47. Modules dev merged #24 untangle, #21 football, #23 waves, #25
+  waves assets, #22 dungeon + integrate: DEVX renumber (#36/#38/#39/#40), build:waves on a fresh
+  clone, music-fx 0.2.0 (footswitch + mute buttons the sweep flips), the Kit's torches are the
+  props-kit WallTorch. Packs main: the four kits + the Meshy tool. Scenes `preview-1-17`: the seven
+  games + three General levels re-authored on the union. The per-feedback table, the suite table
+  and the owed-on-device list are in the lane handover.
+- Status (2026-09-23): **1.17.0 "Games that look finished" — ROADMAP 30, integrated on `feat/1.17`
+  (lane `30-integrate`).** Merged core #240 author-kit → #241 game-flow → #239 editor-modes (one
+  conflict, `playInteract.js`: the Interact cursor carry + the play aim, both kept) → #242
+  core-games; modules #19 untangle → #18 game-visuals → #17 modes-audit into `dev` (DEVX rows
+  renumbered: three lanes each started at #26). Integrate fixes: pointerRay asks the one playCursor
+  leaf; `api.editorMode()` (untangle's Edit stand-down had nothing to read); `flyTo(…, 0)` NaN;
+  untangle's NaN rim; the author-kit Waves-card check vs the custom sky; the four game suites
+  following their games; Towers' horizon fog + clock label, Stars Room's board size, untangle's
+  "Crossings: N" and wide centred titles. svelte-check **335/47** (ratcheted from 336), vitest 222,
+  the lanes' suites + held suites + the seven game suites green on the union scenes (details in
+  the cloud master's execution log). OWED on device: the seven games' look on a real display and
+  in the Quest browser, Untangle drag with a Quest controller in 2D mode and the globe feel, the
+  Edit/Interact toggle and the I key, Test play with two real people, a best score surviving an
+  Oculus Browser restart, the Football glass cost on Quest.
 - Status (2026-09-22): **1.16.0 "Waves, and one world to keep" — ROADMAP 29 ROUND 3, the follow-up
   round closed by the integrator (lane `29f-integrate`).** Merged: core #236 + modules #14 (the
   simulate-race rule, `simAuthority.js`: a peer receiving `simulate` while simulating yields to the
@@ -6301,3 +6543,34 @@ with in its OWN group and the generator publishes no markers itself. DEVX filed 
 #23 `api.teleportPlayer` (a play-mode respawn cannot move the rig; `flyTo` moves the editor
 camera) / play-mode menus as module DOM, #24 a live trigger count (`nodeValue` is ~6 Hz),
 #25 two clocks on the api.
+
+**R30 additions (1.17.0):** `api.registerClickHandler(fn, {modes})` — `modes` ⊆
+`['edit','interact','play']`, ABSENT = `['interact','play']`: a game piece is quiet in Edit (an
+Edit click selects it) and an editor TOOL passes `{modes:['edit']}`; every module in the modules
+repo declares it since 30-mod-audit. VR's trigger has no editor mode and still offers every
+handler (DEVX #33). `api.registerListedGroup(name, {label, icon?})` names a scene-root group's row
+in the object list's Module content section (groups registered as interactive/system are listed
+anyway, humanised; listing does NOT make a group pickable — register it as interactive for that,
+DEVX #34). `api.storage.get(key, fallback)` / `set(key, value) → bool` / `remove(key)` /
+`keys()` / `clear()` / `bytes()` — JSON under `tp:mod:<moduleId>:<key>`, 256 KB per module,
+LOCAL, never replicated; feature-detect it, and a 1.16 fallback writes the SAME key through
+localStorage (untangle's progress does). `api.pointerRay()` is the crosshair ray in play under a
+pointer lock and the cursor's ray in a free-cursor game; a board/puzzle/instrument module asks for
+the free cursor by publishing `userData.play.cursor = 'free'` on its scene-root group. `api.editorMode()`
+→ 'edit' | 'interact' (LOCAL, read-only; DEVX #35, added by the 30 integrate): a module whose
+own pointer listeners run outside core's click routing (untangle's window-capture drag) stands
+down while it reads 'edit' and nothing is playing, so an Edit click selects its content.
+
+**R30b additions (1.17.0, the Quest round):** `api.setSpawn([x, y, z], yaw, {teleport?})` (y = the
+FEET, yaw = three's rotation.y, a CHECKPOINT unless `teleport`; a module's overrides the scene's
+`play.spawn`) + `api.respawnPlayer()`; `api.playSound(name, pos?)` knows 20 procedural names
+(click pop whoosh success fail hit kick shoot laser explosion coin levelup goal whistle cheer step
+ring sparkle hurt portal; an unknown name is a no-op); `api.music.play(preset, {volume?})` /
+`stop()` / `current()` / `presets()` (arcade ambient dungeon stadium space puzzle studio; refused
+from Edit, stops on leaving Interact/Play); `api.hapticPattern(name, hand?)` (tap bump hit success
+fail rumble heartbeat; every haptic is silent in Edit); `api.effects.burst([x, y, z], {kind?,
+color?, count?})` (sparkle confetti smoke sparks, LOCAL); `api.announce(text, {sub?, ms?,
+color?})`; click handlers get `{source: 'click' | 'sweep', mode}` and
+`registerClickHandler(fn, {sweep: false})` opts out of the VR sweep. Feature-detect every one
+(`api.x?.()`). A scene's play block may say `play.locomotion {teleport?, fly?}` and
+`play.spawn {position, yaw, vrOnly?}`.

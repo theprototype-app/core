@@ -6,9 +6,8 @@
 	import * as THREE from 'three';
 	import { useThrelte, useTask } from '@threlte/core';
 	import { vrFlying, vrMenuOpen, vrObjectsPanelOpen, vrGrabbedHand } from '../../stores/sceneStore';
-	import { computeMoveOffset, worldScale, twoGripStretchActive, controllerIndexFor, vrNavigationSuppressed } from '$lib/vrControls';
+	import { computeMoveOffset, worldScale, twoGripStretchActive, controllerIndexFor, vrNavigationSuppressed, tickVRInteractLocomotion } from '$lib/vrControls';
 	import { inputClaims } from '$lib/inputRuntime';
-	import { dungeonData, slideMove } from '$lib/dungeonPlay';
 
 	const { renderer, camera, scene } = useThrelte();
 	const { xr } = renderer;
@@ -23,7 +22,7 @@
 	const cameraDir = new THREE.Vector3();
 	const aimDir = new THREE.Vector3();
 
-	useTask(() => {
+	useTask((delta) => {
 		const controller1 = xr.getController(0);
 		const controller2 = xr.getController(1);
 		// controls must live on the dolly or they will not move with it
@@ -35,12 +34,15 @@
 		const session = renderer.xr.getSession();
 		if (!session) return;
 		if ($vrMenuOpen || $vrObjectsPanelOpen) return; // menu/panel own the sticks (74/101)
+		if ($inputClaims.includes('locomotion')) return; // K-C: a module drives instead
+		// 30b P3: INTERACT walks like a game (collision, gravity, step-up; no fly or teleport
+		// unless the play block allows them) — a held object does not stop your feet
+		if (tickVRInteractLocomotion(delta, session)) return;
 		if ($vrGrabbedHand === 'left') return; // a left-hand grab owns its stick (100)
 		if (twoGripStretchActive()) return; // 186: both grips + sticks stretch, not move
 		// D9: world pan/grab write reference-space offsets themselves, and the
 		// mesh-edit gestures read the sticks for reel/scale — never also move
 		if (vrNavigationSuppressed()) return;
-		if ($inputClaims.includes('locomotion')) return; // K-C: a module drives instead
 		const space = xr.getReferenceSpace();
 		if (!space) return;
 
@@ -63,19 +65,10 @@
 				// grabbed-world scale (71): body-relative speed stays constant
 				speed: 0.05 * worldScale()
 			});
-			if (offset.x || offset.y || offset.z) {
-				// dungeon collision (58.5): clamp the viewer displacement against
-				// the raster (offset = -(viewer displacement) per convention)
-				const data = dungeonData(scene);
-				if (data) {
-					const viewer = xr.getCamera(camera.current).position;
-					const allowed = slideMove(data, viewer.x, viewer.z, -offset.x, -offset.z, 0.3);
-					offset.x = -(allowed.x - viewer.x);
-					offset.z = -(allowed.z - viewer.z);
-				}
-				if (offset.x || offset.y || offset.z)
-					xr.setReferenceSpace(space.getOffsetReferenceSpace(new XRRigidTransform(offset)));
-			}
+			// 30b P3: EDIT flies through walls (the dungeon raster clamp that stood here is the
+			// Interact walker's job now — the user's ask: "go through walls ... only in edit")
+			if (offset.x || offset.y || offset.z)
+				xr.setReferenceSpace(space.getOffsetReferenceSpace(new XRRigidTransform(offset)));
 		}
 	});
 </script>

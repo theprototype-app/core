@@ -2252,6 +2252,58 @@ loadable play content. Everything a user does must be visible to connected peers
   game gets a dark card. `HudElement.svelte`: a text/timer box takes `justify-content` from
   `style.align`, so a single centred line is centred (modules DEVX #28).
 
+- **ROADMAP 30b — THE QUEST ROUND (games in a headset)** (1.17.0; the user's Quest 3 feedback on the
+  round-1 preview is the acceptance test: cloud `plans/core/lanes/30b/user-feedback-2026-09-23.md`).
+  C1 MODES (vr-modes): `vrGrip.js` (pure: what a grip may hold — in Edit anything >= 4 m on an axis
+  or containing your head is SCENERY and the grip grabs the WORLD, which is what brought the Edit
+  world grab back in game scenes; Interact grabs only dynamic bodies, rigid, no select, no undo,
+  never the world), `locomotionPolicy.js` (pure: `play.locomotion {teleport?, fly?}` absent =
+  false in Interact/Play, Edit always flies/teleports; `normalizeSpawn` = `{position, yaw[,
+  vrOnly]}` and ALSO reads 30c's first `{pos, yaw}`), `charController.resolveWalk` shared by desktop
+  and VR (a capsule, gravity, 0.3 m autostep; the dungeon raster also clamps the rapier tier),
+  `playSpawn.js` (`desktopSpawn`/`spawnDesktopPlayer`; VR moves the rig so the FEET land on the
+  spawn facing yaw), `onVRSessionStart` puts a GAME (a showWhile screen, a spawn, or a
+  `userData.play` publisher) in Interact and LEFT Y toggles (right B when the radial menu is on
+  the left) with a forced haptic tick + the `vr-mode-label` wrist label, `moduleWorld.js`
+  re-homes every registered module group under `module-world-root` INSIDE the world rig so module
+  content follows world grabs (a `scene.remove` shim; playPublishers + moduleContent scan it), and
+  `helperLayer.helpersHiddenFor` hides helpers in Play OR Interact (see the HELPER_LAYER gotcha).
+  Suites vr-helper-eyes, interact-clean-view, vr-grips-by-mode, vr-walk-interact, vr-mode-spawn,
+  module-world-root (+ vitest vrGrip/locomotionPolicy); `tests/e2e/fakeXR.cjs` = a fake XR
+  session driving the REAL per-frame path (install/pose/button/stick/installSpace/head).
+  · C2-C6 GAME FEEL (vr-play), one debug name `__stores.gameKit`: `gameFeel.js` (the ONE
+  Interact/Play predicate), `gameSfx.js` (20 procedural sounds on the sfx bus, 24-voice cap, an
+  unknown name is a no-op), `gameMusic.js` + `gameMusicPresets.js` (7 presets on the SESSION
+  clock, REFUSED from Edit, stopped on leaving Interact/Play), Settings ▸ Interface ▸ Sound (two
+  safeStorage volumes), `hapticPatterns.js` + vrControls.hapticPattern/hapticKnock (hapticPulse is
+  SILENT in Edit through one funnel; a 4th `force` arg is the mode tick's), `vrGameInput.js` (hover
+  tap / press bump; the one "clickable" resolver), `effectsBurst.js` (a pooled 12×96 Points system
+  at scene root, local, `warmUp` compiles the material at build or the first burst of a session
+  is lost to a shader compile), `gameAnnounce.js` + HudLayer's `#game-announce` (desktop) / a
+  head-locked banner (VR), `vrGamePanel.js` (a menu-type screen — input 'menu', an enabled
+  control, or showWhile menu|paused|over — is drawn on a canvas BOARD 1.2 m ahead with lazy yaw
+  follow; every other screen's lines ride the LEFT-WRIST card and an optional head strip,
+  `vr:gameStrip`), and the hold-and-sweep (the tip fires the NEAREST touching clickable once, the
+  laser while held; click ctx `{source, mode}`, `{sweep:false}` opts out; Scene's VR trigger
+  fallthrough in Interact/Play is `interactClick`, never a select). `gameFeelActions.js`
+  (core-games) = the Announce / Game Sound / Effect Burst / Controller Buzz / Game Music / On Grab
+  flow nodes, LOCAL on every peer from the replicated stamp inside the actionSeenAt family; music
+  is a DECLARATION. Suites game-audio, game-haptics, game-effects, vr-game-panel, vr-sweep,
+  game-feel-nodes.
+- **ROADMAP 30c — THE MESHY ASSET ROUND** (1.17.0): four packs on packs `main` (architecture-kit,
+  nature-kit, props-kit, scifi-kit; `tools/meshy` spends the credits through one ledger) and
+  `src/lib/packRefs.js` (level-design): a piece placed from a pack carries `userData.packRef =
+  {pack, item, path, hash, kids}` and a PRISTINE one (a fingerprint over the descendants' geometry,
+  materials and an 8×8 texture sample, root transform free) travels and saves as a STUB that every
+  peer and every loader REFILLS from the pack url (fetched and parsed once per piece, textures
+  shared) — one WallStone is 7.9 MB as toJSON and 555 B as a stub. The four paths: save + wire use
+  stubs, autosave GLTF keeps the full tree, and undo keeps the stub through
+  `history.registerReferenceSnapshot` (registered from `startPackRefs` by a dynamic import;
+  restore needs nothing new — the stub scan refills it). Three walkable General templates
+  (`scripts/level-templates.cjs` via author-templates' `kit` type, `seed: false`); a scene load
+  now ends a running simulation first. Suites pack-refs, pack-undo, level-templates (`LIVE=1`
+  runs it against a build's own feed + pack CDN).
+
 ## Replication golden rules
 
 1. Every mutation = apply locally + `$peers.send({type, ...})`; receivers apply WITHOUT
@@ -2346,6 +2398,38 @@ loadable play content. Everything a user does must be visible to connected peers
 
 ## Hard-won gotchas (do not rediscover)
 
+- **HELPER_LAYER MUST NEVER BE 1 OR 2: three's WebXRManager gives the LEFT eye layer 1 and the
+  RIGHT eye layer 2.** Helpers on layer 1 drew into ONE eye in a headset — the Quest report "in the
+  middle of the world I see the light source helper, and only with one eye" (Towers, Stars Room,
+  Football). It is 30 now.
+- **three's `Euler.toArray()` IS `[x, y, z, 'XYZ']`**, and 27-A's wire validator accepted a
+  rotation of 3 or 4 FINITE NUMBERS only — so every `move` from the gizmo, Align to ground, an
+  Explorer drop and a dozen other senders was refused on arrival (`invalid:move`) and the peer kept
+  the old pose. `isQuatOrEuler` takes the order string now (suite move-wire-shape).
+- **A BLANKET SHAPE RENAME HITS EVERY KEY OF THAT SHAPE.** Unifying `play.spawn {pos}` ->
+  `{position}` with a textual `{ pos: [` replace also rewrote the level defs' camera `view: {pos}`,
+  and the authoring script died in the page (`reading '0'`) — the next suite would have been the
+  first to notice. Rename by the owning key (`spawn: { pos:`), and author once after any rename.
+- **A rapier collider with no body is FIXED AND SOLID.** The character controller's capsule was
+  `world.createCollider(capsule)`, teleported with the camera each frame: it depenetrated whatever
+  it was moved into and stood as an invisible pillar where the player last was. Harmless while
+  only walk mode made one; 30b's collideRigStep made every desktop Play + sim session drive it,
+  and a crate was flung 8 m before the first knock. A query shape takes `.setSolverGroups(0)`.
+- **A THIRD SOFTWARE-GL PAGE BOOTS PAST setupPage's 30 s ON THE 1.17 UNION** (7 s on round 1,
+  first bad from the vr-play merge in a noisy bisect) while its boot programs, draw calls and boot
+  script are identical — the page waits in shader links behind two pages saturating the shared
+  SwiftShader process. Three-page suites launch on the GPU backend (`h.GPU_ARGS`; modules:
+  `E2E_GPU=1`), where all three boot in < 2 s. Root cause still owed.
+- **An ADDITIVE burst vanishes against a bright sky** — pair it with a normal-blended one
+  (Towers' ring puff). **A banner at a round's END doubles the results panel** — the panel carries
+  the words.
+- **A module effect/click on a Quest cannot rely on the DOM HUD**: core draws no DOM HUD in a
+  headset, so a Start button that only exists there left Waves' round unstarted and "the enemies
+  do not move" (30b-waves P0). vrGamePanel is core's answer; a module may still add its own board.
+- **Known, not fixed (30c pack lanes):** a nested import (a Group with children) doubles its
+  offset on peers (the receiver parents it under the import root and adds the root position again
+  per level — kits ship FLAT to stay clear), and a `move` landing while the peer still shows the
+  loading placeholder is lost.
 - **`TubeGeometry` HANDED A 2D `Shape` BUILDS EVERY VERTEX AS NaN** — its Frenet frames come
   from Vector2 tangents. Untangle 2.1.0's amber rim never drew, and worse, the board group's
   `Box3.setFromObject` read NaN, so the object list's "Frame it" flew the camera into NaN and the
@@ -4922,6 +5006,18 @@ override for e2e — never share 5173 (the user's main-checkout server).
   locked (replicate the INDEX per-item opt-in; ONE mesh with scenes as tags;
   scene-is-primary renaming), and the vocabulary settled: **session = the mesh, room =
   who is in a scene, PocketBase rooms stay DISCOVERY** — that naming blocks R4.
+- Status (2026-09-24): **1.17.0 round 2 + 3 — THE QUEST ROUND AND THE MESHY ASSETS, integrated
+  on `feat/1.17` (lane `30b-integrate`)**, held at the user's release gate with a new preview
+  (https://preview-1-17.theprototype.pages.dev). Core merged #244 vr-modes, #245 vr-play, #246
+  core-games, #247 level-templates (the two `play.spawn` shapes unified on `{position, yaw}`) +
+  integrate fixes: move-with-order-string, kit placement undo by reference, the character capsule
+  made a query shape (it flung bodies once every desktop Play + sim drove it), game-waves rewritten
+  for Waves 2.x, game-football 6.9, vr-sweep flips mixer mutes + footswitches, check 333/47. Modules dev merged #24 untangle, #21 football, #23 waves, #25
+  waves assets, #22 dungeon + integrate: DEVX renumber (#36/#38/#39/#40), build:waves on a fresh
+  clone, music-fx 0.2.0 (footswitch + mute buttons the sweep flips), the Kit's torches are the
+  props-kit WallTorch. Packs main: the four kits + the Meshy tool. Scenes `preview-1-17`: the seven
+  games + three General levels re-authored on the union. The per-feedback table, the suite table
+  and the owed-on-device list are in the lane handover.
 - Status (2026-09-23): **1.17.0 "Games that look finished" — ROADMAP 30, integrated on `feat/1.17`
   (lane `30-integrate`).** Merged core #240 author-kit → #241 game-flow → #239 editor-modes (one
   conflict, `playInteract.js`: the Interact cursor carry + the play aim, both kept) → #242
@@ -6464,3 +6560,17 @@ the free cursor by publishing `userData.play.cursor = 'free'` on its scene-root 
 → 'edit' | 'interact' (LOCAL, read-only; DEVX #35, added by the 30 integrate): a module whose
 own pointer listeners run outside core's click routing (untangle's window-capture drag) stands
 down while it reads 'edit' and nothing is playing, so an Edit click selects its content.
+
+**R30b additions (1.17.0, the Quest round):** `api.setSpawn([x, y, z], yaw, {teleport?})` (y = the
+FEET, yaw = three's rotation.y, a CHECKPOINT unless `teleport`; a module's overrides the scene's
+`play.spawn`) + `api.respawnPlayer()`; `api.playSound(name, pos?)` knows 20 procedural names
+(click pop whoosh success fail hit kick shoot laser explosion coin levelup goal whistle cheer step
+ring sparkle hurt portal; an unknown name is a no-op); `api.music.play(preset, {volume?})` /
+`stop()` / `current()` / `presets()` (arcade ambient dungeon stadium space puzzle studio; refused
+from Edit, stops on leaving Interact/Play); `api.hapticPattern(name, hand?)` (tap bump hit success
+fail rumble heartbeat; every haptic is silent in Edit); `api.effects.burst([x, y, z], {kind?,
+color?, count?})` (sparkle confetti smoke sparks, LOCAL); `api.announce(text, {sub?, ms?,
+color?})`; click handlers get `{source: 'click' | 'sweep', mode}` and
+`registerClickHandler(fn, {sweep: false})` opts out of the VR sweep. Feature-detect every one
+(`api.x?.()`). A scene's play block may say `play.locomotion {teleport?, fly?}` and
+`play.spawn {position, yaw, vrOnly?}`.

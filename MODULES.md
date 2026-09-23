@@ -527,6 +527,12 @@ register(api) {
   "Level 3"): the desktop HUD, and in a headset a banner fixed in front of the
   player. A new one replaces the one showing; `ms` 300..15000 (default 1800).
 
+- **`api.setSpawn([x, y, z], yaw, {teleport?})`** — where the player starts: `y` is the
+  FEET, `yaw` is three's `rotation.y` (0 faces −Z). Entering Interact or Play puts the player
+  there (a headset's rig lands its feet on it, a desktop its camera); without `teleport` it is a
+  checkpoint and nobody moves until then. A module's spawn overrides the scene's
+  `play.spawn`. `api.respawnPlayer()` sends the player back to it now.
+
 **In VR, your game's HUD is in the player's hands.** A screen with `input: 'menu'`,
 a control on it, or bound to the `menu` / `paused` / `over` game state is drawn on
 a board ~1.2 m in front of the player that follows their head lazily; its buttons

@@ -18,6 +18,8 @@ import { velocityFromSamples } from './throwVelocity';
 import { resolvePlaySettings } from './playSettings';
 import { nameOf } from './lockControl';
 import { moduleClickHandlers, moduleInteractiveGroups, fireClickMiss } from './moduleSDK';
+// 30 P3: where play mode aims — the crosshair under a lock, the cursor in a free-cursor game
+import { playAimNdc, playCursorFree } from './playCursor';
 
 // 21-B B3: play mode becomes INTERACT mode — a crosshair grab at distance,
 // scroll to push and pull, and a release that throws with the velocity you
@@ -113,8 +115,13 @@ function dynamicUuids() {
 /** @param {any} camera */
 function aimFrom(camera) {
 	camera.getWorldPosition(camPos);
-	camera.getWorldDirection(camDir);
+	// 30 P3: the aim is the crosshair (NDC 0,0) under a lock and the CURSOR in a
+	// free-cursor game; `camDir` then follows the ray rather than the view axis, which is
+	// what makes a carried object follow the cursor
+	const aim = playAimNdc();
+	centre.set(aim.x, aim.y);
 	raycaster.setFromCamera(centre, camera);
+	camDir.copy(raycaster.ray.direction);
 	return sceneHits(raycaster, {}); // no tinyProxies: a proxy carries no `face`
 	// and is a SELECTION affordance — grabbing an invisible speck is not a feature
 }
@@ -218,6 +225,11 @@ function sendThrow(object, velocity, throwIt) {
 /** @param {PointerEvent} event */
 function onPointerDown(event) {
 	if (event.button !== 0) return;
+	// 30 P3: with a FREE cursor a press anywhere on the page reaches this window listener —
+	// a HUD button, a toast, the ✕ — so only a press on the VIEWPORT is a world gesture.
+	// Under a lock the target is the locked canvas anyway, which is why this is scoped to
+	// free mode (a synthesized window-level press keeps working there, as it always has).
+	if (playCursorFree() && !isViewportTarget(event)) return;
 	const mode = interactionMode();
 	if (mode === 'off' || !activeCamera) return;
 	const hits = aimFrom(activeCamera);
@@ -243,6 +255,13 @@ function onPointerDown(event) {
 		return;
 	}
 	beginGrab(target, activeCamera);
+}
+
+/** Is this event aimed at the 3D viewport (the renderer's canvas)? @param {Event} event */
+function isViewportTarget(event) {
+	/** @type {any} */
+	const target = event.target;
+	return !!target && target.tagName === 'CANVAS' && !!target.closest?.('.viewport');
 }
 
 /** @param {PointerEvent} event */
@@ -338,7 +357,11 @@ export function tickPlayInteract(delta, camera) {
 			return;
 		}
 		camera.getWorldPosition(camPos);
-		camera.getWorldDirection(camDir);
+		// 30 P3: along the AIM ray, so a free-cursor carry follows the cursor
+		const aim = playAimNdc();
+		centre.set(aim.x, aim.y);
+		raycaster.setFromCamera(centre, camera);
+		camDir.copy(raycaster.ray.direction);
 		targetPos.copy(camPos).addScaledVector(camDir, carryDistance);
 		// dt-based, so a throttled tab does not change the feel
 		const k = Math.min(SPRING_K_MAX, Math.max(SPRING_K_MIN, SPRING_K / Math.sqrt(Math.max(grab.mass, 1))));

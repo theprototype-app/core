@@ -366,10 +366,21 @@
 			.filter(Boolean)
 			.join('; ')
 	);
+	// A text box is a flex row (it centres vertically), so its line is an anonymous flex
+	// ITEM that shrinks to the text — `text-align` then aligns inside a box exactly as wide
+	// as the words and does nothing. Every 'center'/'right' single-line HUD text rendered
+	// flush left (measured on the Towers menu, 30 visuals-core). The row's own
+	// justify-content follows the same `align`; scoped to text/timer, because the list is a
+	// flex COLUMN, where justify-content would move the rows vertically.
+	const textStyle = $derived(
+		boxStyle +
+			'; justify-content: ' +
+			(style.align === 'center' ? 'center' : style.align === 'right' ? 'flex-end' : 'flex-start')
+	);
 </script>
 
 {#if kind === 'text' || kind === 'timer'}
-	<div class="hud-el hud-text" class:hud-wrap={element?.wrap} style={boxStyle}>{text}</div>
+	<div class="hud-el hud-text" class:hud-wrap={element?.wrap} style={textStyle}>{text}</div>
 {:else if kind === 'button'}
 	<!-- buttons are the ONE thing that opts INTO pointer events; the layer itself is
 	     pointer-events: none so the viewport keeps every click. In the editor the press is

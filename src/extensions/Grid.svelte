@@ -1,7 +1,11 @@
 <script lang="ts">
     import { Grid } from '@threlte/extras'
     import { T, useThrelte, useTask } from '@threlte/core'
-    import { orbitControls } from '../stores/sceneStore'
+    import { orbitControls, isLocked } from '../stores/sceneStore'
+    // 30 P3: the grid is an EDITOR helper — it drew under/through the ground in five of the
+    // seven Games-tab games. Hidden while playing, on every scene; the existing "Show
+    // helpers in Play (debug)" toggle is the one way to keep it (no new setting).
+    import { helpersInPlay } from '../lib/helperLayer'
     import { gridSettings, effectiveCell } from '../lib/gridSettings'
     import { snapSettings } from '../lib/snapping'
     let { showGrid } = $props()
@@ -71,8 +75,9 @@
     const fadeDistance = $derived($gridSettings.fadeMode === 'auto' ? fade : $gridSettings.fadeDistance)
   </script>
 
-   {#if showGrid}
+   {#if showGrid && ($isLocked !== true || $helpersInPlay)}
     <Grid
+      name="editor-grid"
       infiniteGrid={$gridSettings.infinite}
       gridSize={$gridSettings.infinite ? undefined : [$gridSettings.size, $gridSettings.size]}
       followCamera={$gridSettings.follow === 'camera'}

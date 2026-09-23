@@ -41,7 +41,11 @@ export function playPublishers(scene) {
  * The effective play settings: the scene's shared `play` block, overridden
  * FIELD BY FIELD by each publisher (a module only overrides what it declares).
  * @param {any} scene
- * @returns {{interaction: 'grab'|'click'|'off', grounded: boolean, eyeHeight: number}}
+ * 30 P3: `cursor` too — 'free' (the real cursor aims, no pointer lock) or 'locked' (the
+ * crosshair, today). A module publishing `userData.play.cursor` overrides the scene's, the
+ * way `grounded` does, which is how a board-game module asks for it without an authored
+ * scene field.
+ * @returns {{interaction: 'grab'|'click'|'off', grounded: boolean, eyeHeight: number, cursor: 'free'|'locked'}}
  */
 export function resolvePlaySettings(scene) {
 	const base = get(scenePlay);
@@ -49,7 +53,8 @@ export function resolvePlaySettings(scene) {
 	const out = {
 		interaction: base.interaction,
 		grounded: base.grounded,
-		eyeHeight: DEFAULT_EYE_HEIGHT
+		eyeHeight: DEFAULT_EYE_HEIGHT,
+		cursor: base.cursor === 'free' ? 'free' : 'locked'
 	};
 	const publishers = playPublishers(scene);
 	if (publishers.length > 1 && !warnedMultiple) {
@@ -67,6 +72,7 @@ export function resolvePlaySettings(scene) {
 			out.interaction = play.interaction;
 		if (typeof play.grounded === 'boolean') out.grounded = play.grounded;
 		if (typeof play.eyeHeight === 'number') out.eyeHeight = play.eyeHeight;
+		if (play.cursor === 'free' || play.cursor === 'locked') out.cursor = play.cursor;
 	}
 	return out;
 }

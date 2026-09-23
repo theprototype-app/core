@@ -43,6 +43,10 @@ export const DEFAULT_SCENE_PHYSICS = Object.freeze({
 });
 
 const BOUNDS_ACTIONS = ['freeze', 'respawn', 'delete'];
+// 30 P3: the play cursor. 'locked' (the crosshair under pointer lock) is the default and
+// is NEVER written — a normalized play block carries `cursor` only when it is 'free' — so
+// every scene saved before this, and every scene that does not use it, stays byte-identical.
+const PLAY_CURSORS = ['free', 'locked'];
 const INTERACTIONS = ['grab', 'click', 'off'];
 
 /** @param {any} v @param {number} lo @param {number} hi @param {number} fallback */
@@ -142,9 +146,11 @@ export function normalizeScenePhysics(raw) {
 			{
 				interaction: pick(playRaw.interaction, INTERACTIONS, d.play.interaction),
 				grounded: bool(playRaw.grounded, d.play.grounded),
-				simOnPlay: bool(playRaw.simOnPlay, d.play.simOnPlay)
+				simOnPlay: bool(playRaw.simOnPlay, d.play.simOnPlay),
+				// 30 P3: present only when free (see PLAY_CURSORS)
+				...(pick(playRaw.cursor, PLAY_CURSORS, 'locked') === 'free' ? { cursor: 'free' } : {})
 			},
-			['interaction', 'grounded', 'simOnPlay']
+			['interaction', 'grounded', 'simOnPlay', 'cursor']
 		),
 		// A1: the 20 ceiling is throwVelocity's MAX_LINVEL, restated rather than imported —
 		// this module is store-only and the response clamps through clampThrow anyway
@@ -189,7 +195,7 @@ scenePhysicsState_.subscribe((s) => sceneGravity.set(s.gravity));
 export const scenePhysicsGround = derived(scenePhysicsState_, (s) => s.ground);
 /** out-of-bounds config. NOT named `sceneBounds` — that is sceneBounds.js */
 export const scenePhysicsBounds = derived(scenePhysicsState_, (s) => s.bounds);
-/** play-mode block ({interaction, grounded, simOnPlay}) */
+/** play-mode block ({interaction, grounded, simOnPlay, cursor?: 'free'}) */
 export const scenePlay = derived(scenePhysicsState_, (s) => s.play);
 /** A1: the knock block ({enabled, gain, maxSpeed, minSpeed, radius, spin, predict}) */
 export const sceneKnock = derived(scenePhysicsState_, (s) => s.knock);

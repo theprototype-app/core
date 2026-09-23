@@ -214,6 +214,33 @@ export const nodeCatalog = [
 				defaults: { name: 'score', fallback: 0 },
 				params: [{ key: 'name', kind: 'text', placeholder: 'score', maxLength: 40 }]
 			},
+			// 30 P4 (roadmap 30 fork 7): what a game remembers ON THIS DEVICE — a best score,
+			// a level reached. Keyed `tp:scene:<scene name>:<key>` so a best belongs to its
+			// game. LOCAL by design: Store Value writes this peer's browser and sends
+			// nothing, so a REPLICATED trigger (an ordinary On Click) makes every peer save
+			// its own copy, while a per-player trigger saves only for the one who earned it.
+			{
+				type: 'storevalue',
+				label: 'Store Value',
+				defaults: { key: 'best', mode: 'max', value: 0 },
+				inputs: ['trigger', 'value'],
+				inputLabels: { value: 'value — wire a Counter, a variable, a score' },
+				params: [
+					{ key: 'key', kind: 'text', placeholder: 'best', maxLength: 60 },
+					{ key: 'mode', kind: 'select', options: ['set', 'max', 'min', 'add'] }
+				],
+				note: 'Saved on this device only — never sent to other players, never in the scene file.'
+			},
+			{
+				type: 'storedvalue',
+				label: 'Stored Value',
+				defaults: { key: 'best', output: 'number', fallback: 0 },
+				params: [
+					{ key: 'key', kind: 'text', placeholder: 'best', maxLength: 60 },
+					{ key: 'output', kind: 'select', options: ['number', 'text'] }
+				],
+				note: 'Reads what THIS device saved — each player sees their own.'
+			},
 			// the round clock, derived from the shared startedAt stamp — no clock of its own
 			{
 				type: 'gametime',

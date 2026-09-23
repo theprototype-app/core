@@ -203,7 +203,7 @@ h.run(async () => {
 	let a1 = await snap(A.page);
 	h.check(a1.dots === 5 + TEMPLATE_LEVEL, '1.7 level ' + TEMPLATE_LEVEL + ' has ' + (5 + TEMPLATE_LEVEL) + ' dots (' + a1.dots + ')');
 	h.check((await gameStateOf(A.page)) === 'menu' && (await screenOf(A.page)) === 'menu', '1.8 the game shell starts in menu with the menu screen');
-	h.check(/UNTANGLE/.test(await hudText(A.page)) && /Start/.test(await hudText(A.page)), '1.9 the menu renders its title and Start');
+	await h.eventually(() => A.page.evaluate(() => ({ chip: !!document.querySelector('#game-chip'), buttons: document.querySelectorAll('#hud-layer button').length })), (v) => v.chip && v.buttons === 0, '1.9 in the editor the game chip stands in for the menu (30 P1: no live menu over the editor)', 6000);
 
 	// 1c — the SAME file loaded AGAIN (Templates modal, twice): the node's data did not change, so
 	// only a node re-armed by the scene clear applies its level again. Without that the second load
@@ -236,6 +236,7 @@ h.run(async () => {
 	await A.page.locator('#play-button').click();
 	await B.page.locator('#play-button').click();
 	await A.page.waitForTimeout(500);
+	await h.eventually(async () => (await hudText(A.page)) ?? '', (t) => /UNTANGLE/.test(t) && /Start/.test(t), '4.0 in play the menu renders its title and Start');
 	await hudButton(A.page, 'Start').click();
 	await h.eventually(() => gameStateOf(A.page), (v) => v === 'playing', '4.1 Start flips the shell to playing');
 	await h.eventually(() => screenOf(A.page), (v) => v === 'hud', '4.2 A sees the HUD screen', 6000);

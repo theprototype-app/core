@@ -296,7 +296,7 @@ h.run(async () => {
 	h.check(phys.play?.interaction === 'grab' && phys.play?.grounded === true && phys.play?.simOnPlay === true, '1.7 play block: grab, grounded, sim on play (' + JSON.stringify(phys.play) + ')');
 	h.check(phys.knock?.enabled === true && phys.knock?.maxSpeed === 10, '1.8 the knock block is ON (a hand knocks an enemy) (' + JSON.stringify(phys.knock) + ')');
 	h.check((await gameStateOf(A.page)) === 'menu' && (await screenOf(A.page)) === 'menu', '1.9 the game shell starts in menu with the menu screen');
-	h.check(/WAVES/.test(await hudText(A.page)) && /Start/.test(await hudText(A.page)), '1.10 the menu renders its title and Start');
+	await h.eventually(() => A.page.evaluate(() => ({ chip: !!document.querySelector('#game-chip'), buttons: document.querySelectorAll('#hud-layer button').length })), (v) => v.chip && v.buttons === 0, '1.10 in the editor the game chip stands in for the menu (30 P1: no live menu over the editor)', 6000);
 	await h.eventually(() => snap(A.page), (s) => !!s && s.enemies.length === 4 && s.wave === 1 && !s.running && !!s.goal && s.spawns === 3 && s.waves === 3, '1.11 waves derives from the file: 4 enemies, wave 1 of 3, idle, a goal, three spawn points', 10000);
 	const a1 = await snap(A.page);
 	h.check(a1.enemies.map((e) => e.label).join() === ENEMIES.join(), '1.12 enemy order is by name (' + a1.enemies.map((e) => e.label).join(', ') + ')');
@@ -316,6 +316,7 @@ h.run(async () => {
 	await h.eventually(() => simOf(A.page), (v) => v.own === true, '3.1 A simulates on entering play (simOnPlay)', 15000);
 	await B.page.locator('#play-button').click();
 	await A.page.waitForTimeout(500);
+	await h.eventually(async () => (await hudText(A.page)) ?? '', (t) => /WAVES/.test(t) && /Start/.test(t), '3.1b in play the menu renders its title and Start');
 	await hudButton(A.page, 'Start').click();
 	await h.eventually(() => gameStateOf(A.page), (v) => v === 'playing', '3.2 Start flips the shell to playing on A');
 	await h.eventually(() => gameStateOf(B.page), (v) => v === 'playing', '3.3 ...and on B (the replicated state)');

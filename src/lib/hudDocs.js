@@ -21,7 +21,7 @@
 // computes the same string with no message of its own. Screen visibility is per-peer ON
 // PURPOSE — one player on the start menu while another plays.
 
-import { writable, get } from 'svelte/store';
+import { writable, derived, get } from 'svelte/store';
 import { sessionNow } from './sessionClock'; // 25-E: stamps another peer compares
 // 21-D1: the kind REGISTRY. hudKinds imports nothing, so this stays a leaf.
 import { HUD_KINDS as REGISTERED_KINDS, defaultsForKind, styleDefaultsForKind, kindDef } from './hudKinds';
@@ -74,6 +74,28 @@ export const activeHudDoc = writable(null);
  * never replicated. `null`/absent means "the document's own `active`".
  * @type {import('svelte/store').Writable<Record<string, string|null>>} */
 export const hudScreenOverride = writable({});
+
+/**
+ * 30 P1: IS THIS SCENE A GAME? The rule, and why it is this one: a scene is a game when ANY
+ * of its HUD documents holds a screen bound to a game state (`showWhile` set). That binding
+ * is the one thing that makes the editor MASQUERADE as the running game — the shared state
+ * picks the screen, so a menu whose state is `menu` paints itself over the editor with
+ * nobody in Play. Every Games-tab template has one; a hand-made HUD with no state-bound
+ * screen is a plain overlay and keeps its old behaviour (drawn in the editor, buttons live).
+ * A `hudbutton -> setgamestate` wiring alone was considered and NOT taken: with no
+ * state-bound screen nothing masquerades, and reading the graph here would put a flow edge
+ * into a leaf that keeps none.
+ * @param {Record<string, any>} docs @returns {boolean}
+ */
+export function isGameHud(docs) {
+	for (const doc of Object.values(docs ?? {}))
+		for (const screen of Array.isArray(doc?.screens) ? doc.screens : [])
+			if (typeof screen?.showWhile === 'string' && screen.showWhile) return true;
+	return false;
+}
+
+/** 30 P1: the rule above as a store — HudLayer and the game chip both read it. */
+export const hudIsGame = derived(hudDocs, (docs) => isGameHud(docs));
 
 /** The editor's current selection, per document key -> element ids. LOCAL.
  * @type {import('svelte/store').Writable<Record<string, string[]>>} */

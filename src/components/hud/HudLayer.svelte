@@ -12,7 +12,7 @@
 	// phase (the AnnotationPins / AnnotationMarkers split).
 	import { onMount } from 'svelte';
 	import HudElement from './HudElement.svelte';
-	import { hudDocs, hudRuntime, hudScreenOverride, hudPreviewInViewport, visibleScreen, activeHudKeys, setHudValue, hudValueOf } from '$lib/hudDocs';
+	import { hudDocs, hudRuntime, hudScreenOverride, hudPreviewInViewport, hudIsGame, visibleScreen, activeHudKeys, setHudValue, hudValueOf } from '$lib/hudDocs';
 	import { isVRMode, isLocked, playPointerFree } from '../../stores/sceneStore';
 	import { hudEditorClose } from '../../stores/appStore.js';
 	import { viewportOverrides, renderLayer } from '$lib/viewportOverrides';
@@ -62,6 +62,17 @@
 	// authoring. `=== false` would read the transient value and flip back a moment later.
 	const playing = $derived($isLocked === true);
 
+	// 30 P1: THE EDITOR STOPS MASQUERADING AS THE GAME. Outside Play a GAME's screens (the
+	// `hudIsGame` rule: a screen bound to a game state) are not drawn at all — the menu of
+	// a Games-tab game used to sit over the scene being built, with a LIVE Start that began
+	// the round for every peer with nobody in Play. The game chip (GameChip.svelte) stands
+	// in for them. The HUD editor's preview eye still draws them for authoring, and then
+	// every control is INERT (`editor` on HudElement — the artboard's own swallow), so
+	// laying out a menu can never fire the game. A HUD with no state-bound screen is a
+	// plain overlay and keeps its old behaviour exactly.
+	const gameInEditor = $derived(!playing && $hudIsGame);
+	const gameHidden = $derived(gameInEditor && !$hudPreviewInViewport);
+
 	// BOTH stores are read as dependencies. `visibleScreen` reaches the override through
 	// `get()`, and a `get()` inside a $derived registers NOTHING — so with only $hudDocs
 	// here, showing a screen wrote the store and the layer never re-rendered. It looked
@@ -103,7 +114,7 @@
 	// dropdowns, and under pointer lock the ring is the only hand a player has. A
 	// disabled control is skipped the way it ignores presses.
 	const focusables = $derived(elements.filter((el) => isInteractiveKind(el.kind) && el.enabled !== false));
-	const anyVisible = $derived(elements.length > 0 && !$isVRMode && layerAllowed && !authoringHidden);
+	const anyVisible = $derived(elements.length > 0 && !$isVRMode && layerAllowed && !authoringHidden && !gameHidden);
 
 	// ---- 21-E3: the MENU SUBSTATE - this component is the SINGLE WRITER ------------
 	// Visibility IS the state: any visible screen marked input:'menu' while playing
@@ -286,7 +297,8 @@
 	// Claim only while a screen with focusables is actually up, and release the moment it
 	// is not — a claim left standing pauses editor fly for good.
 	$effect(() => {
-		const wants = anyVisible && focusables.length > 0;
+		// 30 P1: an INERT preview has nothing to drive, so it must not pause editor flight
+		const wants = anyVisible && focusables.length > 0 && !gameInEditor;
 		if (!wants) return;
 		claimInput('keys');
 		return () => releaseInput('keys');
@@ -332,7 +344,7 @@
 </script>
 
 {#if anyVisible}
-	<div id="hud-layer" class="hud-layer" class:hud-authoring={!playing} data-authoring={!playing}>
+	<div id="hud-layer" class="hud-layer" class:hud-authoring={!playing} class:hud-inert={gameInEditor} data-authoring={!playing} data-inert={gameInEditor}>
 		{#each elements as el (el.__key + ':' + el.id)}
 			<div
 				class="hud-slot"
@@ -343,7 +355,7 @@
 				data-hud-kind={el.kind}
 				style="{place(el)}; {centering(el)}"
 			>
-				<HudElement element={el} runtime={$hudRuntime[el.id]} onpress={fireHudButton} />
+				<HudElement element={el} runtime={$hudRuntime[el.id]} editor={gameInEditor} onpress={fireHudButton} />
 			</div>
 		{/each}
 	</div>
@@ -367,6 +379,12 @@
 	}
 	.hud-slot {
 		position: absolute;
+	}
+	/* 30 P1: a previewed GAME screen is a picture of the menu, not the menu — every click
+	   goes through it to the viewport (the elements opt back INTO pointer events one by
+	   one, so the override has to reach them) */
+	.hud-inert :global(*) {
+		pointer-events: none !important;
 	}
 	/* the keyboard ring, so a player under pointer lock can see where they are */
 	.hud-focused {

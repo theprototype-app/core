@@ -61,6 +61,9 @@ const OUTPUT = {
 	ongamestate: 'event',
 	getvariable: 'number',
 	gametime: 'number',
+	// 30 P4: the readable half of Store Value (a number socket; `output: text` carries a
+	// string down the same channel, the hudtext precedent)
+	storedvalue: 'number',
 	// 21-F3's `collectcount` MOVED to the collectible module (R3a); a module value
 	// node's socket type comes from its registerValueNode `vtype`, so no entry here.
 	// 21-G4: one player's own number (mine / a named peer / the sum / the max)
@@ -168,6 +171,7 @@ const INPUT = {
 	setcamera: { trigger: 'event', camera: 'object' },
 	setlook: { trigger: 'event', camera: 'object', on: 'boolean' },
 	setvariable: { trigger: 'event', value: 'number' },
+	storevalue: { trigger: 'event', value: 'number' }, // 30 P4
 	gamestart: { camera: 'object' },
 	// 21-F4: travel fires on its trigger edge; allplayers takes each player's own
 	// boolean answer (a Latch, a Gate, a Compare — anything true/false)

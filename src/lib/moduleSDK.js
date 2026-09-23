@@ -51,6 +51,14 @@ export { moduleContentDebug } from './moduleContent';
 import { safeStorage } from './safeStorage';
 // 30 P4: api.storage — a LEAF (safeStorage only), shared with the Store Value flow node
 import { makeModuleStorage } from './gameStorage';
+// 30b (vr-play) C5: the game sound set and game music — LEAVES (svelte/store, audioEngine,
+// safeStorage, sessionClock, sceneStore), so static edges close no cycle
+import { isGameSound, playGameSound } from './gameSfx';
+import { playGameMusic, stopGameMusic, gameMusicState, MUSIC_PRESET_IDS } from './gameMusic';
+// 30b (vr-play): api.announce's banner store — a LEAF (svelte/store only)
+import { announce as announceBanner, clearAnnouncement } from './gameAnnounce';
+/** the ping chimes `api.playSound` still reaches (pingAudio's PING_SOUNDS ids) */
+const PING_NAMES = new Set(['ding', 'chime', 'pluck', 'bell']);
 import { runtimeSpawn, setRuntimeSpawn } from './playSettings'; // 30b P4 (a leaf)
 import { spawnDesktopPlayer, currentSpawn, spawnEyePose } from './playSpawn'; // 30b P4 (a leaf)
 
@@ -83,7 +91,8 @@ export const moduleMenuItems = writable([]);
 export const moduleEffects = {};
 /** @type {Record<string, any>} node type -> Svelte component */
 export const moduleNodeComponents = {};
-/** @type {((object: any) => boolean)[]} */
+/** 30b: a handler also gets `ctx = {source, mode}` (see runClickHandlers)
+ * @type {((object: any, ctx?: {source: string, mode: string}) => boolean)[]} */
 export const moduleClickHandlers = [];
 
 /** 30 P1: the three places a viewport click can come from. */
@@ -106,6 +115,11 @@ export function normalizeClickModes(modes) {
 	return known.length ? known : [...DEFAULT_CLICK_MODES];
 }
 
+/** 30b (C3): handlers that asked NOT to be swept (`{sweep: false}`) — a knob you drag, a
+ * dot you carry. They still hear the press itself; only the later entries of a held
+ * trigger skip them. @type {WeakSet<Function>} */
+const noSweepHandlers = new WeakSet();
+
 /** Does this handler run for a click in `mode`? A null mode is VR's trigger, which has
  * no editor mode of its own yet and keeps offering every handler, as it always has.
  * @param {Function} fn @param {string | null} mode */
@@ -119,13 +133,22 @@ export function clickHandlerRunsIn(fn, mode) {
  * Offer a clicked mesh to every handler that runs in `mode`, in registration order; the
  * first to return true consumes the click. ONE dispatch for the editor's pick, Interact
  * and Play's tap, so the three can never disagree about who hears what.
- * @param {any} object @param {string | null} mode @returns {boolean}
+ *
+ * 30b (C3): every handler also gets `ctx = {source, mode}` — `source` is 'click' (the
+ * desktop / a VR release), 'trigger' (the VR press itself, fired on the press) or 'sweep'
+ * (a later entry while the trigger is held). A 'sweep' skips handlers registered with
+ * `{sweep: false}`. Additive: a one-argument handler is byte-unchanged.
+ * @param {any} object @param {string | null} mode @param {{source?: string}} [ctx]
+ * @returns {boolean}
  */
-export function runClickHandlers(object, mode) {
+export function runClickHandlers(object, mode, ctx = {}) {
+	const source = ctx?.source ?? 'click';
+	const info = { source, mode: mode ?? 'vr' };
 	for (const handler of [...moduleClickHandlers]) {
 		if (!clickHandlerRunsIn(handler, mode)) continue;
+		if (source === 'sweep' && noSweepHandlers.has(handler)) continue;
 		try {
-			if (handler(object)) return true;
+			if (handler(object, info)) return true;
 		} catch (error) {
 			log('warn', 'module', 'click handler failed', String(error));
 		}
@@ -178,6 +201,9 @@ const sceneClearHandlers = [];
 
 /** Called by the clear-scene path (local and remote) */
 export function runSceneClearHandlers() {
+	// 30b: a cleared scene takes its game's bursts and banner with it
+	effectsRef?.clearBursts?.();
+	clearAnnouncement();
 	sceneClearHandlers.forEach((fn) => {
 		try {
 			fn();
@@ -255,6 +281,8 @@ let nodeCatalogRef = null;
 let knockRef = null;
 /** @type {Promise<any>} */
 let knockReady = Promise.resolve(null);
+/** 30b: primed for api.effects (effectsBurst imports moduleFrameTasks from here) @type {any} */
+let effectsRef = null;
 if (typeof window !== 'undefined') {
 	knockReady = import('./knock').then((m) => (knockRef = m));
 	import('./inputRuntime').then((m) => (inputRuntimeRef = m));
@@ -275,6 +303,8 @@ if (typeof window !== 'undefined') {
 	import('./flowRuntime').then((m) => (flowRuntimeRef = m));
 	import('./flowGraphs').then((m) => (flowGraphsRef = m));
 	import('./nodeCatalog').then((m) => (nodeCatalogRef = m));
+	// 30b (C6): the burst pool reads moduleFrameTasks from here, so the edge back is dynamic
+	import('./effectsBurst').then((m) => (effectsRef = m));
 }
 
 // --- api.pointerRay (190): where the user is POINTING, as a world ray --------
@@ -586,11 +616,18 @@ function makeApi(moduleId, moduleName = moduleId) {
 		 * a pad, a puzzle piece) no longer eats the editor's select click. A handler
 		 * that is an editor TOOL (a toolbox pick) passes {modes: ['edit']}, or all three.
 		 * In Edit an 'edit' handler still runs BEFORE the selection, so it can consume.
-		 * @param {(object: any) => boolean} fn
-		 * @param {{modes?: string[]}} [options]
+		 *
+		 * 30b: `fn(object, ctx)` — `ctx.source` is 'click', 'trigger' (the VR press) or
+		 * 'sweep' (VR, Interact/Play: the trigger HELD and the controller tip or laser
+		 * passing into this mesh — each entry clicks once, re-armed when it leaves). Pass
+		 * `{sweep: false}` for a control that must not be swept (a knob you drag, a dot you
+		 * carry); it still hears the press.
+		 * @param {(object: any, ctx?: {source: string, mode: string}) => boolean} fn
+		 * @param {{modes?: string[], sweep?: boolean}} [options]
 		 */
 		registerClickHandler(fn, options = {}) {
 			clickHandlerModes.set(fn, normalizeClickModes(options?.modes));
+			if (options?.sweep === false) noSweepHandlers.add(fn);
 			moduleClickHandlers.push(fn);
 			onDispose(() => arrayRemove(moduleClickHandlers, fn));
 		},
@@ -953,7 +990,19 @@ function makeApi(moduleId, moduleName = moduleId) {
 		 * @param {'left'|'right'=} hand
 		 */
 		haptic(intensity = 0.5, durationMs = 50, hand = undefined) {
+			// 30b: silent in EDIT mode (core's own gate) — vibration is for playing
 			vrControlsRef?.hapticPulse?.(intensity, durationMs, hand);
+		},
+		/**
+		 * 30b: a named haptic PATTERN — 'tap' (hover), 'bump' (a press), 'hit' (a grab,
+		 * a contact), 'success', 'fail', 'rumble' (an engine, an explosion), 'heartbeat'.
+		 * On one hand ('left'|'right') or both. LOCAL, Interact/Play only (false in Edit,
+		 * on desktop nothing buzzes). Core already plays tap / bump / hit / knocks for
+		 * you; use this for the game's own moments.
+		 * @param {string} name @param {'left'|'right'=} hand @returns {boolean}
+		 */
+		hapticPattern(name, hand = undefined) {
+			return vrControlsRef?.hapticPattern?.(String(name), hand) ?? false;
 		},
 		/**
 		 * 24-A A2: every KNOCK this peer sees — its own hand's, and every peer's as the
@@ -1077,10 +1126,61 @@ function makeApi(moduleId, moduleName = moduleId) {
 		flyTo(position, lookAt) {
 			objectActionsRef?.flyTo(position, lookAt ?? position);
 		},
-		/** A spatial UI chime (the ping sounds). LOCAL — broadcast your own op if
-		 * peers should hear it too. @param {string=} sound @param {number[]=} position */
+		/**
+		 * A sound, LOCAL to this device — broadcast your own op if peers should hear it.
+		 * 30b: the GAME set (procedural, no assets, the "Game sounds" volume): 'click',
+		 * 'pop', 'whoosh', 'success', 'fail', 'hit', 'kick', 'shoot', 'laser',
+		 * 'explosion', 'coin', 'levelup', 'goal', 'whistle', 'cheer', 'step', 'ring',
+		 * 'sparkle', 'hurt', 'portal'; plus the ping chimes 'ding' (the default),
+		 * 'chime', 'pluck', 'bell'. An unknown name is a quiet no-op. `position`
+		 * spatialises it. Returns whether a sound started.
+		 * @param {string=} sound @param {number[]=} position @returns {boolean}
+		 */
 		playSound(sound = 'ding', position = undefined) {
-			pingAudioRef?.playPing(sound, position ?? null);
+			const name = String(sound ?? 'ding');
+			if (isGameSound(name)) return playGameSound(name, position ?? null);
+			if (!PING_NAMES.has(name)) return false;
+			pingAudioRef?.playPing(name, position ?? null);
+			return !!pingAudioRef;
+		},
+		/**
+		 * 30b: game MUSIC — procedural loops, LOCAL to this device, tempo-synced to the
+		 * session clock (two peers on one preset hear the same bar), under the effects
+		 * and on the "Music" volume. Plays only in Interact/Play (a call from Edit returns
+		 * false) and stops by itself when the player leaves the game.
+		 * Presets: 'arcade', 'ambient', 'dungeon', 'stadium', 'space', 'puzzle', 'studio'.
+		 */
+		/**
+		 * 30b (C6): a short, pooled particle BURST at a world position — 'sparkle' (the
+		 * default), 'confetti', 'smoke' or 'sparks', an optional CSS colour and a count
+		 * (1..96). LOCAL: broadcast your own op if peers should see it too. Returns
+		 * whether a burst started.
+		 * @param {number[]} position @param {{kind?: string, color?: string, count?: number}=} options
+		 * @returns {boolean}
+		 */
+		effects: {
+			burst: (/** @type {number[]} */ position, /** @type {{kind?: string, color?: string, count?: number}} */ options = {}) =>
+				!!effectsRef?.burst?.(position, options ?? {}),
+			kinds: () => ['sparkle', 'confetti', 'smoke', 'sparks']
+		},
+		/**
+		 * 30b: a BIG centred banner — "GOAL!", "Level 3", "Ring 2 reached" — on the desktop
+		 * HUD and, in a headset, head-locked in front of the player. `sub` is a second,
+		 * smaller line; `ms` how long it stays (300..15000, default 1800); `color` the
+		 * title's colour. A new banner replaces the one showing. LOCAL. Returns its id.
+		 * @param {string} text @param {{sub?: string, ms?: number, color?: string}=} options
+		 * @returns {number}
+		 */
+		announce(text, options = {}) {
+			return announceBanner(text, options ?? {});
+		},
+		music: {
+			/** @param {string} preset @param {{volume?: number}=} options 0..1 @returns {boolean} */
+			play: (preset, options = {}) => playGameMusic(preset, options ?? {}),
+			stop: () => stopGameMusic(),
+			/** the preset playing now, or null @returns {string | null} */
+			current: () => get(gameMusicState)?.preset ?? null,
+			presets: () => [...MUSIC_PRESET_IDS]
 		},
 		/** Park the editor camera behind an object and follow it (the car's chase
 		 * cam) — LOCAL, no selection, no undo. @param {string} uuid */

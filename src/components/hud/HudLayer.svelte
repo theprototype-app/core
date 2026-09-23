@@ -26,6 +26,9 @@
 	import { claimInput, releaseInput, onInput } from '$lib/inputRuntime';
 	import { gamepadPrefs } from '$lib/gamepadPrefs';
 	import { fireHudButton } from '$lib/flowRuntime';
+	// 30b (vr-play): api.announce's banner — drawn here on the desktop, and by the VR game
+	// panel's head-locked banner in a headset (DOM is invisible there)
+	import { gameAnnouncement } from '$lib/gameAnnounce';
 
 	// 21-D5: WHICH documents are on screen — the scene HUD, plus the one keyed by the
 	// camera being looked through (attaching a HUD to a camera IS keying it by that
@@ -343,6 +346,15 @@
 	}
 </script>
 
+{#if $gameAnnouncement && !$isVRMode && layerAllowed}
+	{#key $gameAnnouncement.id}
+		<div id="game-announce" class="game-announce" role="status" aria-live="polite" style="--announce-ms: {$gameAnnouncement.ms}ms">
+			<div class="game-announce-title" style:color={$gameAnnouncement.color}>{$gameAnnouncement.text}</div>
+			{#if $gameAnnouncement.sub}<div class="game-announce-sub">{$gameAnnouncement.sub}</div>{/if}
+		</div>
+	{/key}
+{/if}
+
 {#if anyVisible}
 	<div id="hud-layer" class="hud-layer" class:hud-authoring={!playing} class:hud-inert={gameInEditor} data-authoring={!playing} data-inert={gameInEditor}>
 		{#each elements as el (el.__key + ':' + el.id)}
@@ -379,6 +391,50 @@
 	}
 	.hud-slot {
 		position: absolute;
+	}
+	/* 30b: api.announce — a big centred banner over the game, never clickable, gone by
+	   itself (the store clears it; the fade only dresses the exit) */
+	.game-announce {
+		position: fixed;
+		left: 50%;
+		top: 32%;
+		transform: translate(-50%, -50%);
+		z-index: var(--z-hud, 45);
+		pointer-events: none;
+		text-align: center;
+		padding: 18px 40px;
+		border-radius: 18px;
+		background: rgb(10 14 22 / 0.72);
+		box-shadow: 0 10px 40px rgb(0 0 0 / 0.45);
+		animation: game-announce-in 220ms ease-out, game-announce-out 300ms ease-in calc(var(--announce-ms, 1800ms) - 300ms) forwards;
+	}
+	.game-announce-title {
+		font-size: clamp(32px, 6vw, 72px);
+		font-weight: 800;
+		letter-spacing: 0.02em;
+		line-height: 1.05;
+		text-shadow: 0 2px 12px rgb(0 0 0 / 0.6);
+	}
+	.game-announce-sub {
+		margin-top: 6px;
+		font-size: clamp(14px, 2vw, 22px);
+		color: #e5e7eb;
+	}
+	@keyframes game-announce-in {
+		from {
+			opacity: 0;
+			transform: translate(-50%, -50%) scale(0.85);
+		}
+	}
+	@keyframes game-announce-out {
+		to {
+			opacity: 0;
+		}
+	}
+	@media (prefers-reduced-motion: reduce) {
+		.game-announce {
+			animation: none;
+		}
 	}
 	/* 30 P1: a previewed GAME screen is a picture of the menu, not the menu — every click
 	   goes through it to the viewport (the elements opt back INTO pointer events one by

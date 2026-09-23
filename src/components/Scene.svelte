@@ -55,7 +55,10 @@
 	// the annotation is TS syntax — a JSDoc @type cast is ignored here (the documented trap).
 	let knifeFrom: number[] | null = null;
 	import { peerScenes } from '$lib/peerScenes';
-	import { initVRControls, updateVRControls, raycastMenu, raycastPanel, raycastPalette, raycastProps, raycastPrefabs, raycastKeyboard, raycastChat, raycastEdit, raycastSnap, raycastSettings, raycastApprove, placePrefabGhost, vrFaceTrigger, vrVertexTrigger, vrVertexGrabStart, vrVertexGrabEnd, beginStretchSliderDrag, endStretchSliderDrag, executeVRMenuAction, resetWorldRig, onInputSourcesChange, worldToContentPose, boxSelectStart, boxSelectEnd, boxSelectActive, applyVRFrameRate, shouldSendHands, onHandPinchStart, onHandPinchEnd, pinchMenuToggledAt, firePingIfArmed, vrModuleTriggerStart, vrModuleTriggerEnd, vrModuleSelectSwallowed, handSnapshot, vrGrabbedUuid, hapticPulse, onVRSessionStart } from '$lib/vrControls';
+	import { initVRControls, updateVRControls, raycastMenu, raycastPanel, raycastPalette, raycastProps, raycastPrefabs, raycastKeyboard, raycastChat, raycastEdit, raycastSnap, raycastSettings, raycastApprove, placePrefabGhost, vrFaceTrigger, vrVertexTrigger, vrVertexGrabStart, vrVertexGrabEnd, beginStretchSliderDrag, endStretchSliderDrag, executeVRMenuAction, resetWorldRig, onInputSourcesChange, worldToContentPose, boxSelectStart, boxSelectEnd, boxSelectActive, applyVRFrameRate, shouldSendHands, onHandPinchStart, onHandPinchEnd, pinchMenuToggledAt, firePingIfArmed, vrModuleTriggerStart, vrModuleTriggerEnd, vrModuleSelectSwallowed, handSnapshot, vrGrabbedUuid, hapticKnock, hapticPulse, onVRSessionStart } from '$lib/vrControls';
+	// 30b (vr-play): the game in your hands — hover/press haptics (P1), the sweep (P4)
+	import { startVrGameInput, stopVrGameInput } from '$lib/vrGameInput';
+	import { gameFeelActive } from '$lib/gameFeel';
 	import { vrKeyboardTarget } from '$lib/vrKeyboard';
 	import { measureMode, measureClick } from '$lib/measure';
 	import { pinsGroup, openAnnotation, showNotePins } from '$lib/annotationsHandler';
@@ -1387,6 +1390,13 @@
 			tempMatrix.identity().extractRotation(controller.matrixWorld);
 			selectionRaycaster.ray.origin.setFromMatrixPosition(controller.matrixWorld);
 			selectionRaycaster.ray.direction.set(0, 0, -1).applyMatrix4(tempMatrix);
+			// 30b (C3): in Interact/Play a VR press is a CLICK — module handlers, On Click,
+			// the miss — and selects nothing, ever (the desktop Interact rule); the sweep
+			// already fired anything it knew was clickable and swallowed this release
+			if (gameFeelActive()) {
+				interactClick(selectionRaycaster);
+				return;
+			}
 			raycastSelect();
 		};
 		// 182: hold-to-move a vertex — grab on trigger press, drop on release
@@ -1420,7 +1430,9 @@
 		// this seam rather than an import (knock.js stays off vrControls' 3500 lines),
 		// and the two "what am I holding" reads keep a probe off its own carried object.
 		// A2: the hand that hit gets a buzz — LOCAL, the same seam shape as the hand poses
-		startKnock({ hands: handSnapshot, heldUuids: () => [carriedUuid(), vrGrabbedUuid()], haptic: hapticPulse });
+		startKnock({ hands: handSnapshot, heldUuids: () => [carriedUuid(), vrGrabbedUuid()], haptic: hapticKnock });
+		// 30b: game feel in VR (a frame hook + a trigger hook through vrControls' registries)
+		startVrGameInput();
 
 		xrControllers.forEach((controller) => {
 			controller.addEventListener('select', onXRSelect);
@@ -1435,6 +1447,7 @@
 			offKeyProbe(); // 30 P1
 			stopPlayInteract(); // 21-B B3 (releases any carried body with zero velocity)
 			stopKnock(); // 24-A A1
+			stopVrGameInput(); // 30b
 			element.removeEventListener('pointerdown', onPointerDown);
 			element.removeEventListener('contextmenu', onContextMenu);
 			element.removeEventListener('webglcontextlost', onContextLost);

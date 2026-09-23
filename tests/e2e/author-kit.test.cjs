@@ -391,15 +391,22 @@ h.run(async () => {
 		const waves = author('waves', 'p2');
 		const size = waves.thumb?.length ?? 0;
 		const card = await stats(waves.thumb);
-		const want = await page.evaluate((preset) => {
-			const hexc = window.__stores.environment.ENVIRONMENT_PRESETS[preset]?.background ?? '#000000';
-			const n = parseInt(hexc.slice(1), 16);
+		// the sky the def AUTHORS: a custom sky's own background (a gradient's TOP colour — the
+		// corner sampled is the card's top-left), else the named preset's (30-visuals-mod gave
+		// Waves a custom dusk gradient; the check predates it)
+		const authoredBg = typeof wavesEnv === 'object' && wavesEnv ? wavesEnv.background : null;
+		const want = await page.evaluate(({ preset, bg }) => {
+			const hexc = (bg && typeof bg === 'object' ? bg.top : bg) || window.__stores.environment.ENVIRONMENT_PRESETS[preset]?.background || '#000000';
+			const n = parseInt(String(hexc).replace('#', '').slice(0, 6), 16);
 			return [(n >> 16) & 255, (n >> 8) & 255, n & 255];
-		}, wavesEnv?.preset ?? wavesEnv);
+		}, { preset: wavesEnv?.preset ?? wavesEnv, bg: authoredBg });
 		console.log('waves card', size, JSON.stringify(card), 'scene background', want);
 		check(size > 1690 * 1.2, 'waves: the card carries more picture than the old 1690-byte render (' + size + ' B)');
 		check(!!card && card.corner.every((v, i) => Math.abs(v - want[i]) < 12),
 			"waves: the card's sky is the scene's OWN background " + JSON.stringify(want) + ', not a private grey (' + card?.corner.map((v) => v.toFixed(0)) + ')');
+		// QUESTIONS-30-author-kit fork 1: the 0.2 bar holds once Waves has a readable look of
+		// its own (30-visuals-mod) — asserted only when the def carries that look
+		if (authoredBg) check(!!card && card.lum > 0.2, 'waves: with its own readable look the card reads (centre luminance ' + card?.lum.toFixed(3) + ' > 0.2)');
 		if (process.env.AUTHOR_KIT_SAVE && waves.thumb) fs.writeFileSync(process.env.AUTHOR_KIT_SAVE, waves.thumb);
 	}
 

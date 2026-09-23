@@ -233,6 +233,26 @@ api.registerClickHandler((object) => {
 Handlers see desktop clicks and VR trigger presses (the exact mesh hit, not the
 top-level group). Return `false` to let normal selection continue.
 
+**Modes (1.17).** The editor has two click modes, Edit (every click selects) and
+Interact (play-style clicks and drags without starting the game), plus Play. A
+handler runs in Interact and Play by default, so an Edit click on your game piece
+selects it like any object. Say so when you want something else:
+
+```js
+api.registerClickHandler(pressKey, { modes: ['interact', 'play'] }); // the default, spelled out
+api.registerClickHandler(pickTool, { modes: ['edit'] });             // an editor TOOL
+```
+
+The VR trigger has no editor mode yet and still offers every handler.
+
+**Listed in the object list (1.17).** Content you build at the scene root shows in
+the object list's *Module content* section — a read-only row that frames it, hides
+it locally, or opens your toolbox. Give it a readable name:
+
+```js
+api.registerListedGroup('piano-module', { label: 'Piano' });
+```
+
 ```js
 api.registerFrameTask((time) => { /* runs every frame, synced time */ });
 
@@ -431,6 +451,30 @@ api.registerFrameTask(() => {
 	if (hit) carried.position.copy(hit);
 });
 ```
+
+### Free-cursor games (1.17)
+
+A board, puzzle or instrument game can play with the real mouse cursor and no
+pointer lock: publish `userData.play.cursor = 'free'` on your scene-root group
+(or the scene's physics block sets `play.cursor: 'free'`). `api.pointerRay()` is
+then the cursor's ray in play; in a locked game it is the CROSSHAIR ray (the view's
+centre), never the stale mouse position the lock pinned.
+
+### Storage (1.17)
+
+```js
+// JSON on THIS device, namespaced to your module (tp:mod:<id>:<key>), 256 KB per
+// module; never replicated, never saved into a scene, survives disable/remove.
+if (api.storage) {
+	const progress = api.storage.get('progress', { unlocked: 1 });
+	api.storage.set('progress', progress);   // -> true, or false over the quota
+	api.storage.keys(); api.storage.bytes(); api.storage.remove('progress');
+	api.storage.clear();                     // your "Reset progress"
+}
+```
+
+Feature-detect it; on an older app write the SAME key yourself
+(`localStorage['tp:mod:<id>:<key>'] = JSON.stringify(value)`) so progress carries over.
 
 ### Physics (P-A)
 

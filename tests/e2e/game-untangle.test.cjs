@@ -30,7 +30,8 @@ const path = require('path');
 const SCENES_BASE = (process.env.UNTANGLE_SCENES_BASE || 'https://cdn.jsdelivr.net/gh/theprototype-app/scenes@format-2').replace(/\/$/, '');
 const MODULES_BASE = (process.env.UNTANGLE_MODULES_BASE || 'https://cdn.jsdelivr.net/gh/theprototype-app/modules@main').replace(/\/$/, '');
 const ROOT = path.resolve(__dirname, '../../..');
-const TEMPLATE_LEVEL = 2;
+const TEMPLATE_LEVEL = 1; // 30-untangle: a new player has only level 1 open
+const dotsFor = (l) => 5 + Math.round(((Math.min(30, l) - 1) * 11) / 29); // the roadmap-30 curve
 
 async function fetchBytes(url) {
 	try {
@@ -195,13 +196,13 @@ h.run(async () => {
 		window.__stores.environment.environment.subscribe((v) => (e = v))();
 		return e?.preset ?? null;
 	});
-	h.check(env === 'sunset', '1.3 the sunset environment preset (' + env + ')');
+	h.check(env === 'custom', '1.3 the custom dusk sky (' + env + ')');
 	const phys = await A.page.evaluate(() => window.__stores.scenePhysics.scenePhysicsDebug());
 	h.check(phys.play?.interaction === 'click' && phys.play?.simOnPlay === false, '1.4 play block: click, no sim');
 	await h.eventually(() => snap(A.page), (s) => s.sceneClears === clearsBefore + 1, '1.5 applySession ran /clear all FIRST (the module saw one scene clear)');
 	await h.eventually(() => snap(A.page), (s) => s.level === TEMPLATE_LEVEL && s.nodeOwned && s.built, '1.6 ...then the Untangle Board node applied LEVEL ' + TEMPLATE_LEVEL + ' — not 1 (the clear) and not 5 (before the load)', 10000);
 	let a1 = await snap(A.page);
-	h.check(a1.dots === 5 + TEMPLATE_LEVEL, '1.7 level ' + TEMPLATE_LEVEL + ' has ' + (5 + TEMPLATE_LEVEL) + ' dots (' + a1.dots + ')');
+	h.check(a1.dots === dotsFor(TEMPLATE_LEVEL), '1.7 level ' + TEMPLATE_LEVEL + ' has ' + dotsFor(TEMPLATE_LEVEL) + ' dots (' + a1.dots + ')');
 	h.check((await gameStateOf(A.page)) === 'menu' && (await screenOf(A.page)) === 'menu', '1.8 the game shell starts in menu with the menu screen');
 	await h.eventually(() => A.page.evaluate(() => ({ chip: !!document.querySelector('#game-chip'), buttons: document.querySelectorAll('#hud-layer button').length })), (v) => v.chip && v.buttons === 0, '1.9 in the editor the game chip stands in for the menu (30 P1: no live menu over the editor)', 6000);
 
@@ -241,11 +242,13 @@ h.run(async () => {
 	await h.eventually(() => gameStateOf(A.page), (v) => v === 'playing', '4.1 Start flips the shell to playing');
 	await h.eventually(() => screenOf(A.page), (v) => v === 'hud', '4.2 A sees the HUD screen', 6000);
 	await h.eventually(() => hudRuntime(A.page), (r) => r['ut-level']?.text === 'LEVEL ' + TEMPLATE_LEVEL, '4.3 HUD Text reads the Untangle Value node: LEVEL ' + TEMPLATE_LEVEL);
-	await h.eventually(() => hudRuntime(A.page), (r) => r['ut-crossings']?.text === a1.crossings + ' crossings', '4.4 HUD Text reads the crossings count (' + a1.crossings + ')');
-	h.check(await A.page.evaluate(() => window.__untangle.move(0, [0.9, 0.9])), '4.5 A drops dot 0 in a corner');
+	await h.eventually(() => hudRuntime(A.page), (r) => r['ut-crossings']?.text === 'Crossings: ' + a1.crossings, '4.4 HUD Text reads the crossings count (' + a1.crossings + ')');
+	// a NUDGE: a far move can solve the 5-dot level 1 outright
+	h.check(await A.page.evaluate(() => { const p = window.__untangle.state().positions[0]; return window.__untangle.move(0, [p[0] + 0.01, p[1]]); }), '4.5 A nudges dot 0');
+	h.check((await snap(A.page)).crossings > 0, '4.5b (premise) still tangled');
 	const a2 = await snap(A.page);
-	await h.eventually(() => snap(B.page), (s) => s.positions[0][0] === 0.9 && s.crossings === a2.crossings, '4.6 B receives the move and derives the same crossings (' + a2.crossings + ')');
-	await h.eventually(() => hudRuntime(B.page), (r) => r['ut-crossings']?.text === a2.crossings + ' crossings', '4.7 B\'s HUD Text follows');
+	await h.eventually(() => snap(B.page), (s) => s.positions[0][0] === a2.positions[0][0] && s.crossings === a2.crossings, '4.6 B receives the move and derives the same crossings (' + a2.crossings + ')');
+	await h.eventually(() => hudRuntime(B.page), (r) => r['ut-crossings']?.text === 'Crossings: ' + a2.crossings, '4.7 B\'s HUD Text follows');
 
 	// ---- 5. a solve: trigger log, the Counter once, autoAdvance in lockstep -----------------------
 	const solvedNode = (await nodesOf(A.page, 'utevent')).find((n) => n.data.event === 'solved');
@@ -255,7 +258,12 @@ h.run(async () => {
 	await h.eventually(() => stampOf(B.page, solvedNode.id), (t) => t !== null && t !== solvedBefore, '5.3 B: the "On solved" stamp landed in the TRIGGER LOG');
 	await h.eventually(() => hudRuntime(A.page), (r) => r['ut-counter']?.text === '1 untangled', '5.4 A: Counter -> HUD Text counts the solve once');
 	await h.eventually(() => hudRuntime(B.page), (r) => r['ut-counter']?.text === '1 untangled', '5.5 B: counted ONCE, not once per peer');
-	await h.eventually(() => snap(A.page), (s) => s.level === TEMPLATE_LEVEL + 1, '5.6 A: autoAdvance to level ' + (TEMPLATE_LEVEL + 1), 6000);
+	// 30-untangle: no autoAdvance in the template — the solve shows the SOLVED screen (over) and
+	// Next starts the next level on every peer
+	await h.eventually(() => gameStateOf(A.page), (v) => v === 'over', '5.6a the solve moves the shell to over');
+	await h.eventually(() => screenOf(B.page), (v) => v === 'solved', '5.6b B sees the solved screen', 6000);
+	await hudButton(A.page, 'Next level').click();
+	await h.eventually(() => snap(A.page), (s) => s.level === TEMPLATE_LEVEL + 1, '5.6 A: Next -> level ' + (TEMPLATE_LEVEL + 1), 6000);
 	await h.eventually(() => snap(B.page), (s) => s.level === TEMPLATE_LEVEL + 1, '5.7 B: advanced in lockstep', 6000);
 	await h.eventually(() => hudRuntime(B.page), (r) => r['ut-level']?.text === 'LEVEL ' + (TEMPLATE_LEVEL + 1), '5.8 B\'s HUD Text reads LEVEL ' + (TEMPLATE_LEVEL + 1));
 	h.check((await snap(A.page)).nodeOwned === true, '5.9 the node still owns the board after the advance (its level is the STARTING level)');

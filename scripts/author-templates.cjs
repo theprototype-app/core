@@ -371,7 +371,7 @@ function towersGraph() {
 
 	// ---- the round clock: ends the round on time -------------------------------
 	N('clock', 'gametime', 'Time left', 40, 2100, { read: 'remaining', length: 180 });
-	N('hclock', 'hudtext', 'HUD clock', 280, 2040, { element: 'clock', format: '{v}s', decimals: 0, value: 0 });
+	N('hclock', 'hudtext', 'HUD clock', 280, 2040, { element: 'clock', format: 'Time: {v}s', decimals: 0, value: 0 });
 	E('clock', 'hclock', 'value');
 	N('timeup', 'compare', 'Time up?', 280, 2190, { op: 'lte', a: 0, b: 0 });
 	E('clock', 'timeup', 'a');
@@ -469,7 +469,7 @@ const TOWERS_DEF = {
 	license: 'CC0-1.0',
 	author: 'theprototype',
 	tags: ['physics', 'stacking', 'co-op', 'vr'],
-	modules: [{ id: 'collectible', version: '1.1.1' }],
+	modules: [{ id: 'collectible', version: '1.1.2' }],
 	installModules: ['collectible'],
 	// 30: daylight under a real sky — a blue-to-haze gradient, a far fog that softens the
 	// horizon, and a solid ground disc around the arena (the infinite grid is editor chrome;
@@ -478,8 +478,10 @@ const TOWERS_DEF = {
 		preset: 'daylight',
 		exposure: 1.05,
 		background: { top: '#4a7fc0', bottom: '#dbe8f2' },
-		fog: { color: '#dbe8f2', near: 40, far: 120 },
-		ground: { color: '#6e7a5e', roughness: 0.95 }
+		// 30 integrate: the fog closes in past the arena wall, so the ground beyond the edge
+		// fades into the sky's own haze instead of ending in a flat olive band
+		fog: { color: '#dbe8f2', near: 16, far: 75 },
+		ground: { color: '#7b8866', roughness: 0.95 }
 	},
 	// ground ON — a solid floor the crates rest on. A crate knocked past the low wall
 	// falls to the bounds limit and RESPAWNS to its start pose (beforeStates), so the
@@ -777,8 +779,8 @@ function starsGraph() {
 	N('sumtouch', 'peervariable', 'All touches', 40, 1540, { name: 'touches', read: 'sum', peer: '', fallback: 0 });
 	N('hsum', 'hudtext', 'HUD all touches', 280, 1540, { element: 'total-read', format: 'Touches: {v}', decimals: 0, value: 0 });
 	E('sumtouch', 'hsum', 'value');
-	N('board', 'leaderboard', 'Touch leaderboard', 520, 1540, { element: 'board', variable: 'touches', order: 'desc', format: '{name} — {v}', decimals: 0, limit: 8 });
-	N('board2', 'leaderboard', 'Touch leaderboard (round)', 760, 1540, { element: 'board-2', variable: 'touches', order: 'desc', format: '{name} — {v}', decimals: 0, limit: 8 });
+	N('board', 'leaderboard', 'Touch leaderboard', 520, 1540, { element: 'board', variable: 'touches', order: 'desc', format: '{name} — {v}', decimals: 0, limit: 4 });
+	N('board2', 'leaderboard', 'Touch leaderboard (round)', 760, 1540, { element: 'board-2', variable: 'touches', order: 'desc', format: '{name} — {v}', decimals: 0, limit: 4 });
 	N('board3', 'leaderboard', 'Touch leaderboard (over)', 1000, 1540, { element: 'board-3', variable: 'touches', order: 'desc', format: '{name} — {v}', decimals: 0, limit: 5 });
 	// ---- the round clock: two minutes, counting down -----------------------------------
 	N('clock', 'gametime', 'Time left', 40, 1690, { read: 'remaining', length: STARS_ROUND });
@@ -1004,7 +1006,7 @@ const STARS_DEF = {
 						{ id: 'free-hint', kind: 'text', anchor: 'top-center', x: 0, y: 44, w: 520, h: 22, z: 1, label: 'Knock the stars.  P: menu (start a round, more stars)', style: { size: 12, color: '#c8d0dc', align: 'center' } },
 						{ id: 'touches-read', kind: 'text', anchor: 'top-right', x: 16, y: 14, w: 220, h: 24, z: 1, label: '', style: { size: 14, weight: '600', color: '#ffd45e', align: 'right' } },
 						{ id: 'total-read', kind: 'text', anchor: 'top-right', x: 16, y: 40, w: 220, h: 22, z: 1, label: '', style: { size: 12, color: '#c8d0dc', align: 'right' } },
-						{ id: 'board', kind: 'list', anchor: 'top-right', x: 16, y: 70, w: 220, h: 150, z: 1, label: '', title: 'Touches', rowsText: '', rows: 8, rowHeight: 18, style: { size: 12, bg: 'rgba(8, 10, 28, 0.62)', radius: 10, pad: 8 } }
+						{ id: 'board', kind: 'list', anchor: 'top-right', x: 16, y: 70, w: 180, h: 96, z: 1, label: '', title: 'Touches', rowsText: '', rows: 4, rowHeight: 18, style: { size: 12, bg: 'rgba(8, 10, 28, 0.62)', radius: 10, pad: 8 } }
 					]
 				},
 				{
@@ -1016,7 +1018,7 @@ const STARS_DEF = {
 						{ id: 'lit-read', kind: 'text', anchor: 'top-center', x: 0, y: 14, w: 280, h: 30, z: 1, label: '', style: { size: 20, weight: '700', color: '#ffe08a', align: 'center' } },
 						{ id: 'clock', kind: 'text', anchor: 'top-center', x: 0, y: 48, w: 140, h: 22, z: 1, label: '', style: { size: 13, weight: '600', color: '#e5e9f0', align: 'center' } },
 						{ id: 'touches-read-2', kind: 'text', anchor: 'top-right', x: 16, y: 14, w: 220, h: 24, z: 1, label: '', style: { size: 14, weight: '600', color: '#ffd45e', align: 'right' } },
-						{ id: 'board-2', kind: 'list', anchor: 'top-right', x: 16, y: 44, w: 220, h: 150, z: 1, label: '', title: 'Touches', rowsText: '', rows: 8, rowHeight: 18, style: { size: 12, bg: 'rgba(8, 10, 28, 0.62)', radius: 10, pad: 8 } },
+						{ id: 'board-2', kind: 'list', anchor: 'top-right', x: 16, y: 44, w: 180, h: 96, z: 1, label: '', title: 'Touches', rowsText: '', rows: 4, rowHeight: 18, style: { size: 12, bg: 'rgba(8, 10, 28, 0.62)', radius: 10, pad: 8 } },
 						{ id: 'play-hint', kind: 'text', anchor: 'bottom-center', x: 0, y: 12, w: 520, h: 20, z: 1, label: 'Light every star.  P: menu', style: { size: 11, color: '#c8d0dc', align: 'center' } }
 					]
 				},
@@ -1724,7 +1726,7 @@ const JAM_DEF = {
 	author: 'theprototype',
 	tags: ['music', 'vr'],
 	installModules: ['music-lab', 'music-fx'],
-	modules: [{ id: 'music-lab', version: '0.2.0' }, { id: 'music-fx', version: '0.1.0' }],
+	modules: [{ id: 'music-lab', version: '0.2.1' }, { id: 'music-fx', version: '0.1.0' }],
 	// warm, indoor, readable: a dark wood gradient behind the open front, a warm hemisphere,
 	// a soft key light, and the lamps doing the rest
 	env: {

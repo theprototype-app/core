@@ -276,7 +276,7 @@ h.run(async () => {
 	const needs = (await A.page.locator('#templates-modal .tpl-needs[data-needs="waves"]').textContent().catch(() => '')) ?? '';
 	h.check(/health/i.test(needs) && /waves/i.test(needs), '1.2 the card names both modules it needs (' + needs.trim() + ')');
 	await card.click();
-	await h.eventually(() => namesOf(A.page).then((n) => Object.keys(n)), (n) => n.length === 10 && !n.includes('Box'), '1.3 picking the card loads the scene: the box is gone, 10 objects stand', 30000);
+	await h.eventually(() => namesOf(A.page).then((n) => Object.keys(n)), (n) => n.length === 11 && !n.includes('Box'), '1.3 picking the card loads the scene: the box is gone, 11 objects stand (10 + the Arena group)', 30000);
 	await A.page.waitForTimeout(1500);
 	const names = await namesOf(A.page);
 	h.check(OBJECTS.every((n) => !!names[n]), '1.4 the ground, the goal, three spawn pads, four enemies and the home pad (' + Object.keys(names).join(', ') + ')');
@@ -291,7 +291,7 @@ h.run(async () => {
 		window.__stores.environment.environment.subscribe((v) => (e = v))();
 		return e?.preset ?? null;
 	});
-	h.check(env === 'sunset', '1.6 the sunset environment preset (' + env + ')');
+	h.check(env === 'custom', '1.6 the custom sunset sky (' + env + ')');
 	const phys = await A.page.evaluate(() => window.__stores.scenePhysics.scenePhysicsDebug());
 	h.check(phys.play?.interaction === 'grab' && phys.play?.grounded === true && phys.play?.simOnPlay === true, '1.7 play block: grab, grounded, sim on play (' + JSON.stringify(phys.play) + ')');
 	h.check(phys.knock?.enabled === true && phys.knock?.maxSpeed === 10, '1.8 the knock block is ON (a hand knocks an enemy) (' + JSON.stringify(phys.knock) + ')');
@@ -306,7 +306,7 @@ h.run(async () => {
 
 	// ---- 2. B receives it over the handshake ------------------------------------------------------
 	await h.connect(A, B);
-	await h.eventually(() => namesOf(B.page).then((n) => ({ uuids: Object.values(n), count: Object.keys(n).length })), (v) => v.count === 10 && order.every((u) => v.uuids.includes(u)), '2.1 B received the 10 objects with the same enemy uuids', 30000);
+	await h.eventually(() => namesOf(B.page).then((n) => ({ uuids: Object.values(n), count: Object.keys(n).length })), (v) => v.count === 11 && order.every((u) => v.uuids.includes(u)), '2.1 B received the 11 objects with the same enemy uuids', 30000);
 	await h.eventually(() => snap(B.page), (s) => !!s && s.enemies.length === 4 && s.wave === 1 && !s.running && s.spawns === 3 && s.enemies.map((e) => e.uuid).join() === order.join(), '2.2 B: the graph replicated and its Waves node derives the SAME arena', 20000);
 	await h.eventually(() => healthSnap(B.page), (all) => all.length === 5, '2.3 B: five health rows');
 	await h.eventually(() => screenOf(B.page), (v) => v === 'menu', '2.4 B: the HUD document arrived (menu screen)', 10000);
@@ -365,7 +365,7 @@ h.run(async () => {
 	await installZip(C, 'waves', wavesZip.bytes, 'C');
 	await h.connect(C, A);
 	await A.page.locator('#play-button').click();
-	await h.eventually(() => namesOf(C.page).then((n) => Object.keys(n).length), (n) => n === 10, '5.1 C received the arena', 30000);
+	await h.eventually(() => namesOf(C.page).then((n) => Object.keys(n).length), (n) => n === 11, '5.1 C received the arena', 30000);
 	await h.eventually(() => snap(C.page), (s) => !!s && s.wave === 2 && s.enemies.length === 4 && s.enemies[0].hits === ENEMY_HP + 1 && s.enemies[0].heals === ENEMY_HP, '5.2 C reads WAVE 2 with the same ledger — the counts arrived in the triggers handshake', 30000);
 	await h.eventually(() => gameStateOf(C.page), (v) => v === 'playing', '5.3 C: the game shell reads playing');
 	h.check((await myVar(C.page, 'kills')) === null, '5.4 the joiner has no kills row yet');

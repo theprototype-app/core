@@ -582,7 +582,7 @@ export function duplicateObject(uuid, options = {}) {
 		clone.position.x += 0.5;
 		clone.position.z += 0.5;
 	}
-	if (options.transient) markTransient(clone);
+	if (options.transient) markTransient(clone, source.uuid);
 	source.parent.add(clone);
 	pokeScene();
 
@@ -687,7 +687,7 @@ export function applyRemoteDuplicate(sourceUuid, uuids, name, pos, transient = f
 	if (shareMaterial) linkMaterials(source, clone);
 	clone.name = name;
 	clone.position.fromArray(pos);
-	if (transient) markTransient(clone);
+	if (transient) markTransient(clone, sourceUuid);
 	source.parent.add(clone);
 	pokeScene();
 }

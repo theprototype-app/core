@@ -32,14 +32,17 @@ export function locomotionPolicy(mode, locomotion) {
 /**
  * `play.locomotion` at a store boundary: only booleans survive, and an empty block is
  * ABSENT (so a scene that never used it saves byte-identically).
- * @param {any} raw @returns {{teleport?: boolean, fly?: boolean} | null}
+ * 31 (contract K1): `worldGrab` joins them — the grips move/rotate/scale the world in a game
+ * (31-vr-core implements it; a scene authored with the flag before that lands keeps it).
+ * @param {any} raw @returns {{teleport?: boolean, fly?: boolean, worldGrab?: boolean} | null}
  */
 export function normalizeLocomotion(raw) {
 	if (!raw || typeof raw !== 'object') return null;
-	/** @type {{teleport?: boolean, fly?: boolean}} */
+	/** @type {{teleport?: boolean, fly?: boolean, worldGrab?: boolean}} */
 	const out = {};
 	if (typeof raw.teleport === 'boolean') out.teleport = raw.teleport;
 	if (typeof raw.fly === 'boolean') out.fly = raw.fly;
+	if (typeof raw.worldGrab === 'boolean') out.worldGrab = raw.worldGrab;
 	return Object.keys(out).length ? out : null;
 }
 

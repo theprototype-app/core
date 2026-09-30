@@ -71,8 +71,19 @@ export function fillValue(text, value, decimals = 0) {
 	return s.split('{v}').join(shown);
 }
 
-/** a named object's world position, or null @param {any} uuid @returns {number[] | null} */
+/** a named object's world position, or null. 31: a PLACE ([x, y, z] in the objects group's
+ * frame — the clap's point) is carried into world space the same way.
+ * @param {any} uuid @returns {number[] | null} */
 function worldPositionOf(uuid) {
+	if (Array.isArray(uuid) && uuid.length >= 3 && uuid.slice(0, 3).every((v) => Number.isFinite(Number(v)))) {
+		const group = get(objectsGroup);
+		const p = new THREE.Vector3(Number(uuid[0]), Number(uuid[1]), Number(uuid[2]));
+		if (group) {
+			group.updateWorldMatrix(true, false);
+			group.localToWorld(p);
+		}
+		return [p.x, p.y, p.z];
+	}
 	if (typeof uuid !== 'string' || !uuid) return null;
 	const object = get(objectsGroup)?.getObjectByProperty?.('uuid', uuid);
 	if (!object) return null;

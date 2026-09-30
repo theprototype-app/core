@@ -28,6 +28,12 @@ const OUTPUT = {
 	// 24-A A2: the pulse is the unnamed handle; `speed`/`byMe` are named handles that
 	// reach number/boolean inputs through the event coercion row (outputType is per NODE)
 	onhit: 'event',
+	// 31: the clap — the pulse unnamed, `point` (vector3) and `byMe` named (OUTPUT_HANDLES)
+	onclap: 'event',
+	// 31: a player's setting. Typed by its commonest kind (a toggle: true/false); a range's
+	// number or a choice's text rides the same socket — resolveInputs never coerces a value
+	gamesetting: 'boolean',
+	pointgrab: 'effect', // 31: a DECLARATION (the gamemusic shape) — it drives nothing
 	onenter: 'event', onexit: 'event', // CL-C: sensor overlap edges
 	animfinished: 'event', // 17-E: a clip reached its end
 	animmarker: 'event', // 17-E F5: the playhead crossed a named point in a clip
@@ -110,7 +116,7 @@ const INPUT = {
 	// precedent); `at` is an offset, so it takes the same vector3 a force does. Every
 	// range param keeps the numeric fallback, so only these three need declaring — an
 	// undeclared handle types as 'number', which would refuse an Object Selector.
-	spawn: { trigger: 'event', at: 'vector3', source: 'object' },
+	spawn: { trigger: 'event', at: 'vector3', source: 'object', position: 'vector3' }, // 31: + a place
 	random: { seed: 'number', reroll: 'event' }, // B6
 	animstate: { target: 'object' }, // 17-E F3: whose clip to read (or the graph owner)
 	math: { a: 'number', b: 'number' },
@@ -181,6 +187,8 @@ const INPUT = {
 	effectburst: { trigger: 'event', at: 'object' },
 	hapticpulse: { trigger: 'event' },
 	gamemusic: { on: 'boolean' },
+	onclap: { enabled: 'boolean' }, // 31
+	pointgrab: { enabled: 'boolean' }, // 31
 	gamestart: { camera: 'object' },
 	// 21-F4: travel fires on its trigger edge; allplayers takes each player's own
 	// boolean answer (a Latch, a Gate, a Compare — anything true/false)
@@ -195,6 +203,18 @@ const INPUT = {
 	camerafollow: { trigger: 'event', stop: 'event', target: 'object' },
 	movespeed: { set: 'event', value: 'number' }
 };
+
+/** 31: a NAMED source handle whose type is not its node's (outputType is per NODE): the
+ * clap's pulse is an event, but its `point` is a place and `byMe` a boolean. Only listed
+ * handles differ; every other handle keeps its node's type. @type {Record<string, Record<string, string>>} */
+const OUTPUT_HANDLES = {
+	onclap: { point: 'vector3', byMe: 'boolean' }
+};
+
+/** the type a source HANDLE carries @param {string} nodeType @param {string|null|undefined} handleId */
+export function outputHandleType(nodeType, handleId) {
+	return (handleId && OUTPUT_HANDLES[nodeType]?.[handleId]) || outputType(nodeType);
+}
 
 // what an OUTPUT type may feed into a differently-typed INPUT
 /** @type {Record<string, string[]>} */
@@ -286,7 +306,7 @@ export function isValidFlowConnection(connection, nodes) {
 	if (!source || !target) return false;
 	// H5: the object-flow interface types come from node DATA / the referenced
 	// graph's declarations, not the static type table
-	const from = source.type === 'flowinput' ? source.data?.vtype ?? 'number' : outputType(source.type);
+	const from = source.type === 'flowinput' ? source.data?.vtype ?? 'number' : outputHandleType(source.type, connection.sourceHandle);
 	if (source.type === 'objectflow') {
 		// embedded outputs carry whatever the flow's outputs compute — untyped v1,
 		// anything except the effect channel may consume them

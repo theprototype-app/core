@@ -72,6 +72,10 @@ import { safeStorage } from './safeStorage';
 import { sceneStorageKey, readStored, writeStored } from './gameStorage';
 // 30b (core-games): the game-feel nodes' runtime half (announce/sound/burst/haptic/music)
 import { GAME_FEEL_ACTIONS, runGameFeelAction, updateGameMusicNodes, primeGameFeelActions } from './gameFeelActions';
+// 31 (Stars Room): a scene's own settings rows (31-game-shell's leaf), and the pointing switch
+import { registerGameSetting, gameSettingValue } from './gameSettings';
+import { setPointGrabEnabled } from './pointGrab';
+import { spawnedFromOf } from './transientObjects'; // 31: a copy answers to its template (a leaf)
 
 // H3: inputRuntime is reached via a PRIMED dynamic import (the moduleSDK
 // pattern) — a static edge would close the TDZ cycle history -> flowRuntime ->
@@ -659,6 +663,134 @@ function warnNoSimulation(type) {
  * the level) @type {Map<string, number>} */
 const spawnActed = new Map();
 
+// --- 31 (Stars Room S2/S3): the clap, the pointing switch, a scene's own settings -------
+/**
+ * WHERE a trigger happened, for the few triggers that have a place (the clap). Runtime state
+ * keyed by node id: a local fire writes it with `byMe`, a received nodetrigger's `at` writes
+ * it without. @type {Map<string, {at: number[], byMe: boolean}>}
+ */
+const triggerPoints = new Map();
+
+/** a Game Setting node's row id (`setting`), trimmed; '' = not configured @param {any} d */
+function settingIdOf(d) {
+	return typeof d?.setting === 'string' ? d.setting.trim() : '';
+}
+
+/** node id -> the row it registered: a signature (re-register only on an edit) + off()
+ * @type {Map<string, {sig: string, off: (() => void) | null}>} */
+const settingRegistrations = new Map();
+/** the node array the registrations were last reconciled against @type {any[] | null} */
+let settingNodesSeen = null;
+
+/**
+ * THE GAME SETTING NODE'S DECLARATION: each node in the scene is one row in the game's
+ * settings (31-game-shell's panel, desktop and VR), registered with the node as its owner and
+ * dropped when the node leaves the graph. Reconciled only when the graph changes (the node
+ * array is replaced on every edit), so an ordinary frame does nothing here.
+ */
+function updateGameSettingNodes() {
+	if (nodes === settingNodesSeen) return;
+	settingNodesSeen = nodes;
+	const seen = new Set();
+	for (const node of nodes) {
+		if (node.type !== 'gamesetting') continue;
+		seen.add(node.id);
+		const d = node.data ?? {};
+		const kind = d.kind === 'range' || d.kind === 'choice' ? d.kind : 'toggle';
+		const row = {
+			id: settingIdOf(d),
+			label: String(d.title ?? d.setting ?? ''),
+			type: kind,
+			default: kind === 'toggle' ? d.value !== false && d.value !== 0 : d.value,
+			...(kind === 'range' ? { min: num(d.min ?? 0), max: num(d.max ?? 1), step: num(d.step ?? 0.1) } : {}),
+			...(kind === 'choice'
+				? { options: String(d.options ?? '').split(',').map((o) => o.trim()).filter(Boolean) }
+				: {})
+		};
+		const sig = JSON.stringify(row);
+		const held = settingRegistrations.get(node.id);
+		if (held && held.sig === sig) continue;
+		held?.off?.();
+		settingRegistrations.set(node.id, { sig, off: row.id ? registerGameSetting(row, 'node:' + node.id) : null });
+	}
+	for (const [id, held] of settingRegistrations) {
+		if (seen.has(id)) continue;
+		held.off?.();
+		settingRegistrations.delete(id);
+	}
+}
+
+/**
+ * THE POINT GRAB NODE: while any one reads `enabled` false, a player cannot pick objects up by
+ * pointing at them (the VR grip ray, the desktop carry) — only a hand touching them moves them.
+ * A DECLARATION evaluated per frame (the Game Music shape); no node = pointing allowed.
+ * @param {number} time @param {any} ctx
+ */
+function updatePointGrabNodes(time, ctx) {
+	let enabled = true;
+	for (const node of nodes) {
+		if (node.type !== 'pointgrab') continue;
+		const data = resolveInputs(node, nodes, edges, time, ctx);
+		if (data.enabled === false || data.enabled === 0) enabled = false;
+	}
+	setPointGrabEnabled(enabled);
+}
+
+/**
+ * THE CLAP landed on THIS peer (clap.js, from the local hands). Every enabled On Clap node
+ * pulses: `who: me` stays on this machine (a buzz in your own hands), `anyone` replicates as
+ * an ordinary nodetrigger that also carries the point, so every peer's burst and the
+ * initiator's spawner agree on where. `point` is in the objects group's frame.
+ * @param {number[]} point @returns {number} how many nodes fired
+ */
+export function fireClap(point) {
+	if (!Array.isArray(point) || point.length < 3 || !point.every((v) => Number.isFinite(v))) return 0;
+	const at = [point[0], point[1], point[2]];
+	const ctx = runtimeCtx();
+	const t = syncedNow();
+	let fired = 0;
+	for (const node of nodes) {
+		if (node.type !== 'onclap') continue;
+		const data = resolveInputs(node, nodes, edges, t, ctx);
+		if (data.enabled === false || data.enabled === 0) continue;
+		triggerPoints.set(node.id, { at, byMe: true });
+		const share = (data.who ?? 'anyone') !== 'me' && replicatesPulse(node);
+		applyNodeTrigger(node.id, t, false);
+		if (share) {
+			/** @type {any} */
+			const peer = get(peers);
+			if (peer) peer.send({ type: 'nodetrigger', id: node.id, t, at });
+		}
+		fired++;
+	}
+	return fired;
+}
+
+/** test/debug view: where a node's last trigger happened @param {string} nodeId */
+export function triggerPointOf(nodeId) {
+	const info = triggerPoints.get(nodeId);
+	return info ? { at: [...info.at], byMe: info.byMe } : null;
+}
+
+/** Does any graph listen for a clap right now (an On Clap node that is not switched off)?
+ * clap.js asks before it spends a frame on hands. */
+export function clapWanted() {
+	const ctx = runtimeCtx();
+	const t = syncedNow();
+	return nodes.some((node) => {
+		if (node.type !== 'onclap') return false;
+		const data = resolveInputs(node, nodes, edges, t, ctx);
+		return !(data.enabled === false || data.enabled === 0);
+	});
+}
+
+/** the On Clap node's own gesture options (the first enabled node's; defaults otherwise) */
+export function clapOptions() {
+	const node = nodes.find((n) => n.type === 'onclap');
+	const d = node?.data ?? {};
+	return { distance: d.distance, holdMs: Number(d.hold ?? 0.25) * 1000, cooldownMs: Number(d.cooldown ?? 1) * 1000 };
+}
+
 /**
  * B7: the TEMPLATE a spawn node copies. Same precedence as every other action node — an
  * explicit input, then an Object Selector this node feeds, then the owner of an object
@@ -704,6 +836,8 @@ function updateSpawnNodes(time, ctx) {
 		}
 		spawnerRef?.spawnFrom?.(node.id, template, {
 			at: vectorFrom(data.at, [data.x, data.y, data.z]),
+			// 31: a wired PLACE (the clap's point, objects-group frame) wins over the offset
+			...(isPlace(data.position) ? { position: [num(data.position[0]), num(data.position[1]), num(data.position[2])] } : {}),
 			count: data.count,
 			maxAlive: data.maxAlive,
 			interval: data.interval,
@@ -712,6 +846,11 @@ function updateSpawnNodes(time, ctx) {
 	}
 	// forget nodes that no longer exist, so a rebuilt node starts fresh
 	for (const id of [...spawnActed.keys()]) if (!nodes.some((n) => n.id === id)) spawnActed.delete(id);
+}
+
+/** a finite [x, y, z] @param {any} v */
+function isPlace(v) {
+	return Array.isArray(v) && v.length >= 3 && v.slice(0, 3).every((n) => Number.isFinite(Number(n)));
 }
 
 /** a wired vector3 wins over the node's own dialled fallback.
@@ -1871,6 +2010,8 @@ export const valueTypes = [
 	'onimpact', // PFX-C: physics impact trigger
 	'ongrab', // 30b (core-games): a player picked it up
 	'onhit', // 24-A A2: the knock's trigger — a handle map: __default pulse + speed/byMe
+	'onclap', // 31: two hands brought together — a handle map: __default pulse + point/byMe
+	'gamesetting', // 31: a scene's own settings row, read on this device
 	'onenter', 'onexit', // CL-C: sensor overlap triggers
 	'velocity', // CL-C: live speed readout (m/s)
 	'measure', // B6: an object's top / bottom / height / y / speed
@@ -2313,6 +2454,25 @@ function evalNodeBody(node, allNodes, allEdges, time, seen, ctx) {
 				__handles: { speed: info ? info.speed : 0, byMe: info && info.byMe ? 1 : 0 }
 			};
 		}
+		case 'onclap': {
+			// 31: the clap's trigger. The stamp is the ordinary trigger log; `point` (where
+			// the hands met, in the objects group's frame) rode the same nodetrigger message,
+			// so every peer holds the same point with no message of its own.
+			const trig = ctx && ctx.triggers ? ctx.triggers[node.id] : null;
+			const dt = trig ? time - trig.lastT : Infinity;
+			const info = triggerPoints.get(node.id);
+			return {
+				__default: dt >= 0 && dt < num(d.pulse ?? 0.3) ? 1 : 0,
+				__handles: { point: info ? [...info.at] : [0, 0, 0], byMe: info && info.byMe ? 1 : 0 }
+			};
+		}
+		case 'gamesetting': {
+			// 31: this DEVICE's value of the row the node declares (a toggle reads true/false,
+			// a range a number, a choice its option) — per player by design, never sent
+			const id = settingIdOf(d);
+			const v = id ? gameSettingValue(id) : undefined;
+			return v === undefined ? d.value ?? true : v;
+		}
 		case 'onenter':
 		case 'onexit': {
 			// CL-C: sensor overlap edges arrive as replicated trigger stamps
@@ -2594,8 +2754,15 @@ function syncedNow() {
  * so every existing caller is byte-unchanged.
  * @param {string} nodeId @param {number} t @param {boolean} replicate
  * @param {string|null} [sourceHandle]
+ * @param {any} [at] 31: where it happened ([x, y, z], objects-group frame), for a received clap
  */
-export function applyNodeTrigger(nodeId, t, replicate = true, sourceHandle = null) {
+export function applyNodeTrigger(nodeId, t, replicate = true, sourceHandle = null, at = null) {
+	// 31: a trigger may carry WHERE it happened (the clap's meeting point). Kept beside the
+	// log rather than in it, so the log's shape, its merge and its late-joiner reply are
+	// untouched — history fires nothing, so a joiner needs no point. A local fire records
+	// the point itself (fireClap), which is why only a received one lands here.
+	if (Array.isArray(at) && at.length === 3 && at.every((v) => Number.isFinite(v)))
+		triggerPoints.set(nodeId, { at: [at[0], at[1], at[2]], byMe: false });
 	flowTriggers.update((map) => {
 		const next = { ...map };
 		next[nodeId] = { count: next[nodeId]?.count ?? 0, lastT: t };
@@ -2683,6 +2850,10 @@ export function applyNodeTrigger(nodeId, t, replicate = true, sourceHandle = nul
  * Object Selector), so a trigger wired THROUGH an effect node still fires on the
  * click of the object that effect targets. @param {string} startId @param {string} uuid */
 function reachesObjectSelector(startId, uuid) {
+	// 31 (Stars Room S4): a spawned COPY answers to its template's selectors — a Spawn's
+	// copies are the template's kind of thing, so a graph written for it (an On Hit that
+	// counts, a chime) reaches every copy with no node per copy. Only for transient copies.
+	const from = spawnedFromOf(uuid);
 	const seen = new Set([startId]);
 	const stack = [startId];
 	while (stack.length) {
@@ -2692,7 +2863,7 @@ function reachesObjectSelector(startId, uuid) {
 			const target = nodes.find((n) => n.id === edge.target);
 			// an Object Selector is a sink — check its target, don't traverse past it
 			if (target?.type === 'objectselector') {
-				if (target.data?.selected === uuid) return true;
+				if (target.data?.selected === uuid || (from && target.data?.selected === from)) return true;
 				continue;
 			}
 			seen.add(edge.target);
@@ -3389,6 +3560,9 @@ function runTick(now) {
 	// this runs before the physics post-tick hook, so a body created this frame is
 	// stepped this frame instead of hanging for one.
 	updateSpawnNodes(time, ctx);
+	// 31: a scene's own settings rows (only when the graph changed) and the pointing switch
+	updateGameSettingNodes();
+	updatePointGrabNodes(time, ctx);
 
 	// A3: ONE HUD collection pass, on the sound/particle/playanim shape. What every
 	// element SAYS is computed here from the already-replicated graph, which is why the

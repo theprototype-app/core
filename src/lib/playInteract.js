@@ -21,6 +21,7 @@ import { nameOf } from './lockControl';
 import { moduleInteractiveGroups, fireClickMiss, runClickHandlers } from './moduleSDK';
 // 30 P3: where play mode aims — the crosshair under a lock, the cursor in a free-cursor game
 import { playAimNdc, playCursorFree } from './playCursor';
+import { pointGrabAllowed } from './pointGrab'; // 31 (Stars Room S2): pointing may be switched off
 
 // 21-B B3: play mode becomes INTERACT mode — a crosshair grab at distance,
 // scroll to push and pull, and a release that throws with the velocity you
@@ -172,6 +173,7 @@ export function cursorGrabStart(ray, ndc, camera) {
 	const hit = sceneHits(ray, {})[0];
 	const target = hit ? topLevelObjectOf(hit.object) : null;
 	if (!target || !dynamicUuids().has(target.uuid)) return false;
+	if (!pointGrabAllowed()) return false; // 31: the cursor carry is pointing too
 	if (get(lockedObjects).some((/** @type {any} */ entry) => entry[1] === target.uuid)) return false;
 	if (!canEditObject(target)) {
 		warnViewerReadOnly();
@@ -336,6 +338,9 @@ function onPointerDown(event) {
 	if (event.pointerType === 'touch') return;
 	if (!simRunning()) return; // nothing to hold; the tap path still works
 	if (!dynamicUuids().has(target.uuid)) return;
+	// 31: a crosshair carry is POINTING — a scene that switched pointing off moves its
+	// bodies by touch only (walk into them); the tap above still reaches On Click
+	if (!pointGrabAllowed()) return;
 	const lock = get(lockedObjects).find((/** @type {any} */ entry) => entry[1] === target.uuid);
 	if (lock) {
 		playInteractState.update((s) => ({ ...s, blocked: nameOf(lock[0]) }));

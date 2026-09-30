@@ -249,7 +249,7 @@ function moduleTriggerInfo(node, ctx) {
  * @param {string} id @returns {{stamp: number, age: number} | null}
  */
 export function nodeTriggerStamp(id) {
-	const node = nodes.find((n) => n.id === id);
+	const node = nodeById(nodes, id);
 	if (!node) return null;
 	return moduleTriggerInfo(node, { triggers: get(flowTriggers) });
 }
@@ -396,6 +396,49 @@ let possessRef = null;
 // Lives outside the Flow drawer so animations keep running when it is closed.
 
 let started = false;
+
+// 31-perf P1: ID INDEXES over the tick's node/edge arrays. Every consumer node resolved its
+// named inputs by scanning EVERY edge and, per wired edge, EVERY node (`resolveInputs`,
+// evalNode's `input()`), so a tick cost O(consumers x edges x nodes) — the second-biggest
+// CPU line in Football after the render itself. The arrays are rebuilt only when a graph
+// changes (the flowGraphs subscriber below), so an index keyed on the ARRAY is built once
+// per graph edit; the length check is a guard against an array somebody pushed onto.
+/** @type {WeakMap<any[], {n: number, map: Map<string, any>}>} */
+const nodeIndex = new WeakMap();
+/** @type {WeakMap<any[], {n: number, map: Map<string, any[]>}>} */
+const edgeIndex = new WeakMap();
+/** @param {any[]} list @param {string} id */
+function nodeById(list, id) {
+	let entry = nodeIndex.get(list);
+	if (!entry || entry.n !== list.length) {
+		const map = new Map();
+		for (const n of list) if (n && !map.has(n.id)) map.set(n.id, n);
+		entry = { n: list.length, map };
+		nodeIndex.set(list, entry);
+	}
+	const hit = entry.map.get(id);
+	// an id changed in place (never done, but cheap to refuse): fall back to the scan
+	return hit && hit.id === id ? hit : list.find((n) => n.id === id);
+}
+/** The edges INTO `id`, in array order. @param {any[]} list @param {string} id @returns {any[]} */
+function edgesInto(list, id) {
+	let entry = edgeIndex.get(list);
+	if (!entry || entry.n !== list.length) {
+		/** @type {Map<string, any[]>} */
+		const map = new Map();
+		for (const e of list) {
+			if (!e) continue;
+			const bucket = map.get(e.target);
+			if (bucket) bucket.push(e);
+			else map.set(e.target, [e]);
+		}
+		entry = { n: list.length, map };
+		edgeIndex.set(list, entry);
+	}
+	return entry.map.get(id) ?? NO_EDGES;
+}
+/** @type {any[]} */
+const NO_EDGES = [];
 
 /** @type {any[]} */ let nodes = [];
 /** @type {any[]} */ let edges = [];
@@ -1543,7 +1586,7 @@ const SEQUENCE_STEPS = ['step1', 'step2', 'step3', 'step4'];
  * @param {any} edge @param {any} ctx @param {Set<string>} seen @returns {number|null}
  */
 function stampOfSource(edge, ctx, seen) {
-	const source = nodes.find((n) => n.id === edge.source);
+	const source = nodeById(nodes, edge.source);
 	if (source && SCHEDULED_TYPES.includes(source.type))
 		return scheduledFireAt(source, edge.sourceHandle, ctx, seen);
 	return ctx?.triggers?.[edge.source]?.lastT ?? null;
@@ -1726,7 +1769,7 @@ function restoreBase(object, base) {
 // animation/color source -> objectselector node with a selected scene object
 /** @param {any} edge */
 function targetUuidOf(edge) {
-	const target = nodes.find((n) => n.id === edge.target);
+	const target = nodeById(nodes, edge.target);
 	if (target?.type !== 'objectselector') return null;
 	const selected = target.data?.selected;
 	if (!selected || selected === '-None-') return null;
@@ -1744,7 +1787,7 @@ function implicitOwnerOf(node) {
 	if (!graph || graph === SCENE_GRAPH) return null;
 	if (muted.includes(graph)) return null;
 	const wired = edges.some(
-		(e) => e.source === node.id && nodes.find((n) => n.id === e.target)?.type === 'objectselector'
+		(e) => e.source === node.id && nodeById(nodes, e.target)?.type === 'objectselector'
 	);
 	return wired ? null : graph;
 }
@@ -1752,7 +1795,7 @@ function implicitOwnerOf(node) {
 function applyColors() {
 	if (!sceneObjects) return;
 	edges.forEach((edge) => {
-		const source = nodes.find((n) => n.id === edge.source);
+		const source = nodeById(nodes, edge.source);
 		if (!source) return;
 		const uuid = targetUuidOf(edge);
 		if (!uuid) return;
@@ -1999,10 +2042,10 @@ function evalNodeBody(node, allNodes, allEdges, time, seen, ctx) {
 	const d = node.data || {};
 	/** a named input handle's value, falling back to a manual param @param {string} handle @param {any} fallback */
 	const input = (handle, fallback) => {
-		const edge = allEdges.find((e) => e.target === node.id && e.targetHandle === handle);
+		const edge = edgesInto(allEdges, node.id).find((e) => e.targetHandle === handle);
 		if (edge) {
 			const value = unwrapHandle(
-				evalNode(allNodes.find((n) => n.id === edge.source), allNodes, allEdges, time, seen, ctx),
+				evalNode(nodeById(allNodes, edge.source), allNodes, allEdges, time, seen, ctx),
 				edge
 			);
 			if (value !== undefined) return value;
@@ -2215,10 +2258,10 @@ function evalNodeBody(node, allNodes, allEdges, time, seen, ctx) {
 		case 'timer': {
 			// delay line: re-evaluate the wired input at a clock-shifted time
 			const delay = num(d.delay ?? 1);
-			const edge = allEdges.find((e) => e.target === node.id && e.targetHandle === 'a');
+			const edge = edgesInto(allEdges, node.id).find((e) => e.targetHandle === 'a');
 			if (edge) {
 				const v = evalNode(
-					allNodes.find((n) => n.id === edge.source),
+					nodeById(allNodes, edge.source),
 					allNodes,
 					allEdges,
 					time - delay,
@@ -2516,10 +2559,10 @@ function evalNodeBody(node, allNodes, allEdges, time, seen, ctx) {
  */
 export function resolveInputs(node, allNodes, allEdges, time, ctx = null) {
 	const data = { ...(node.data || {}) };
-	allEdges.forEach((edge) => {
-		if (edge.target !== node.id || !edge.targetHandle) return;
-		const source = allNodes.find((n) => n.id === edge.source);
-		if (!source) return;
+	for (const edge of edgesInto(allEdges, node.id)) {
+		if (!edge.targetHandle) continue;
+		const source = nodeById(allNodes, edge.source);
+		if (!source) continue;
 		// A1: a module value node is a third kind of source — without this a module
 		// value could never reach a consumer's named input, only a card readout
 		if (
@@ -2527,10 +2570,10 @@ export function resolveInputs(node, allNodes, allEdges, time, ctx = null) {
 			!sourceValueTypes.includes(source.type) &&
 			!moduleValueNodes[source.type]
 		)
-			return;
+			continue;
 		const value = unwrapHandle(evalNode(source, allNodes, allEdges, time, new Set(), ctx), edge);
 		if (value !== undefined) data[edge.targetHandle] = value;
-	});
+	}
 	return data;
 }
 
@@ -2607,7 +2650,7 @@ export function applyNodeTrigger(nodeId, t, replicate = true, sourceHandle = nul
 		edges.forEach((edge) => {
 			if (edge.source !== nodeId) return;
 			if (sourceHandle !== null && (edge.sourceHandle ?? null) !== sourceHandle) return;
-			const target = nodes.find((n) => n.id === edge.target);
+			const target = nodeById(nodes, edge.target);
 			if (!target) return;
 			const handle = edge.targetHandle ?? null;
 			if (target.type === 'counter') {
@@ -2689,7 +2732,7 @@ function reachesObjectSelector(startId, uuid) {
 		const cur = stack.pop();
 		for (const edge of edges) {
 			if (edge.source !== cur || seen.has(edge.target)) continue;
-			const target = nodes.find((n) => n.id === edge.target);
+			const target = nodeById(nodes, edge.target);
 			// an Object Selector is a sink — check its target, don't traverse past it
 			if (target?.type === 'objectselector') {
 				if (target.data?.selected === uuid) return true;
@@ -3209,7 +3252,7 @@ function runTick(now) {
 		const bucket = nextInputs[target] ?? (nextInputs[target] = {});
 		edges.forEach((e) => {
 			if (e.target !== embed.id || !e.targetHandle) return;
-			const src = nodes.find((n) => n.id === e.source);
+			const src = nodeById(nodes, e.source);
 			if (!src) return;
 			const v = unwrapHandle(evalNode(src, nodes, edges, time, new Set(), ctx), e);
 			if (v !== undefined) bucket[e.targetHandle] = v;
@@ -3244,7 +3287,7 @@ function runTick(now) {
 		!dormant(node);
 	if (sceneObjects) {
 		edges.forEach((edge) => {
-			const source = nodes.find((n) => n.id === edge.source);
+			const source = nodeById(nodes, edge.source);
 			if (!source || !isEffectNode(source)) return;
 			const uuid = targetUuidOf(edge);
 			if (!uuid) return;
@@ -3300,7 +3343,7 @@ function runTick(now) {
 	/** @type {{node: any, uuid: string, trigger?: number|null}[]} */
 	const soundPairs = [];
 	edges.forEach((edge) => {
-		const source = nodes.find((n) => n.id === edge.source);
+		const source = nodeById(nodes, edge.source);
 		if (source?.type !== 'sound') return;
 		const uuid = targetUuidOf(edge);
 		// resolve input-driven volume/radius (133) without touching soundRuntime
@@ -3333,7 +3376,7 @@ function runTick(now) {
 	/** @type {{node: any, uuid: string}[]} */
 	const particlePairs = [];
 	edges.forEach((edge) => {
-		const source = nodes.find((n) => n.id === edge.source);
+		const source = nodeById(nodes, edge.source);
 		if (source?.type !== 'particle') return;
 		const uuid = targetUuidOf(edge);
 		if (uuid) particlePairs.push({ node: { ...source, data: resolveInputs(source, nodes, edges, time, ctx) }, uuid });
@@ -3350,7 +3393,7 @@ function runTick(now) {
 	/** @type {{node: any, uuid: string}[]} */
 	const animPairs = [];
 	edges.forEach((edge) => {
-		const source = nodes.find((n) => n.id === edge.source);
+		const source = nodeById(nodes, edge.source);
 		if (source?.type !== 'playanim') return;
 		const uuid = targetUuidOf(edge);
 		if (uuid) animPairs.push({ node: { ...source, data: resolveInputs(source, nodes, edges, time, ctx) }, uuid });
@@ -3369,7 +3412,7 @@ function runTick(now) {
 	const physicsPairs = [];
 	const PHYSICS_ACTIONS = ['impulse', 'setvelocity', 'joint'];
 	edges.forEach((edge) => {
-		const source = nodes.find((n) => n.id === edge.source);
+		const source = nodeById(nodes, edge.source);
 		if (!source || !PHYSICS_ACTIONS.includes(source.type)) return;
 		const uuid = targetUuidOf(edge);
 		if (uuid)

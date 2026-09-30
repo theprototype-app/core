@@ -15,7 +15,9 @@
 //     ships them) or a directory (PERF_SCENES_DIR)
 //   3 press the real Play button, then the game's own HUD Play/Start button when it has one
 //     (else the shell is set to `playing`), and with `--vr` a fake XR session walks the left
-//     stick forward the whole time (tests/e2e/fakeXR.cjs — the real per-frame VR path)
+//     stick forward the whole time (tests/e2e/fakeXR.cjs — the real per-frame VR path) with
+//     the post stack + AO off, the nearest desktop analogue of a headset's direct render (a
+//     fake session cannot present, so it is still ONE eye at 1280x720 — not a Quest number)
 //   4 settle 2 s, then CPU-throttle x4 (CDP `Emulation.setCPUThrottlingRate`) for the
 //     measured window and record: every render() call's draw calls + triangles (summed per
 //     display frame), every rAF frame's duration, and the JS heap before/after
@@ -190,6 +192,10 @@ function readScene() {
 	}
 	let state = null;
 	s.gameState?.gameState?.subscribe((v) => (state = v?.state ?? null))();
+	// 31-perf: what LOD and the governor were doing (absent on a build without them)
+	const lod = s.lod?.lodStats?.() ?? null;
+	let quality = null;
+	s.qualityGovernor?.qualityState?.subscribe((v) => (quality = v?.level ?? null))();
 	return {
 		frames: rec.frames.length,
 		seconds: rec.frames.reduce((a, b) => a + b, 0) / 1000,
@@ -219,6 +225,9 @@ function readScene() {
 		pixelRatio: r.getPixelRatio(),
 		heapMB: performance.memory ? Math.round((performance.memory.usedJSHeapSize / 1048576) * 10) / 10 : null,
 		heapDeltaMB: performance.memory && rec.heap0 != null ? Math.round(((performance.memory.usedJSHeapSize - rec.heap0) / 1048576) * 10) / 10 : null,
+		lodMeshes: lod ? lod.entries : null,
+		lodCoarse: lod ? lod.drawnCoarse : null,
+		quality,
 		state
 	};
 }
@@ -242,6 +251,14 @@ async function probeGame(browser, game) {
 		if (VR) {
 			await fx.install(page);
 			await fx.installSpace(page, { head: [0, 1.6, 0] });
+			// a headset never runs the desktop post stack (Outline renders XR direct), and a
+			// fake session cannot present — so the nearest desktop analogue of the XR render is
+			// the same scene with post + AO off and a direct frame (A8's no-composite path)
+			await page.evaluate(() => {
+				const s = window.__stores;
+				s.viewMode.set('shaded');
+				s.viewportOverrides.setRenderLayer('post', false);
+			});
 		}
 		await page.locator('#play-button').click({ timeout: 10000 }).catch(() => page.evaluate(() => window.__stores.isLocked.set(true)));
 		await page.waitForTimeout(1500);
@@ -313,9 +330,38 @@ function topSelf(p) {
 		agg.set(k, (agg.get(k) ?? 0) + ms);
 		total += ms;
 	}
+	// WHO CALLS the heaviest functions: for the top 6, the nearest ancestor frame that is
+	// app code (src/ or a module blob) — a svelte runtime or three frame on its own says
+	// what is slow, never why it runs
+	const parent = new Map();
+	for (const n of p.nodes) for (const c of n.children || []) parent.set(c, n.id);
+	const top = [...agg].sort((a, b) => b[1] - a[1]).slice(0, 30);
+	const heavy = new Set(top.slice(0, 6).map(([k]) => k));
+	const callers = new Map();
+	for (const [id, ms] of self) {
+		const k = site(byId.get(id).callFrame);
+		if (!heavy.has(k)) continue;
+		let up = parent.get(id);
+		let found = null;
+		/** @type {string[]} */
+		const chain = [];
+		while (up != null) {
+			const cf = byId.get(up).callFrame;
+			if (/\/src\/|^blob:/.test(cf.url || '')) {
+				found = site(cf);
+				break;
+			}
+			if (cf.functionName !== byId.get(id).callFrame.functionName && chain.length < 4) chain.push(cf.functionName || '(anon)');
+			up = parent.get(up);
+		}
+		if (!found) found = 'no app frame; via ' + (chain.join(' < ') || '-');
+		const key = k + ' <- ' + found;
+		callers.set(key, (callers.get(key) ?? 0) + ms);
+	}
 	return {
 		totalMs: Math.round(total),
-		top: [...agg].sort((a, b) => b[1] - a[1]).slice(0, 30).map(([k, ms]) => ({ site: k, ms: Math.round(ms * 10) / 10, pct: Math.round((ms / total) * 1000) / 10 }))
+		top: top.map(([k, ms]) => ({ site: k, ms: Math.round(ms * 10) / 10, pct: Math.round((ms / total) * 1000) / 10 })),
+		callers: [...callers].sort((a, b) => b[1] - a[1]).slice(0, 20).map(([k, ms]) => ({ site: k, ms: Math.round(ms * 10) / 10 }))
 	};
 }
 
@@ -345,12 +391,12 @@ const over = (v, cap) => (v != null && v > cap ? ' ⚠' : '');
 
 function table(rows) {
 	const head =
-		'| game | calls/frame | tris/frame | geos | tex (MB) | lights (shadow) | cast meshes | meshes / inst / unculled | p50 ms | p95 ms | p99 ms | heap Δ MB | started |\n' +
-		'|---|---:|---:|---:|---:|---:|---:|---|---:|---:|---:|---:|---|';
+		'| game | calls/frame | tris/frame | geos | tex (MB) | lights (shadow) | cast meshes | meshes / inst / unculled | LOD (coarse) | quality | p50 ms | p95 ms | p99 ms | heap Δ MB | started |\n' +
+		'|---|---:|---:|---:|---:|---:|---:|---|---:|---:|---:|---:|---:|---:|---|';
 	const lines = rows.map((r) =>
 		r.skipped || r.error
-			? `| ${r.slug} | ${r.skipped ? 'SKIP: ' + r.skipped : 'ERROR: ' + r.error} |||||||||||| |`
-			: `| ${r.slug} | ${fmt(r.calls)}${over(r.calls, BUDGET.calls)} | ${fmt(r.triangles)}${over(r.triangles, BUDGET.triangles)} | ${fmt(r.geometries)} | ${fmt(r.textures)} (${fmt(r.textureMB, 1)}) | ${fmt(r.lights)}${over(r.lights, BUDGET.lights)} (${fmt(r.shadowLights)}) | ${fmt(r.castMeshes)} | ${fmt(r.meshes)} / ${fmt(r.instanced)} / ${fmt(r.unculled)} | ${fmt(r.p50, 1)} | ${fmt(r.p95, 1)} | ${fmt(r.p99, 1)} | ${fmt(r.heapDeltaMB, 1)} | ${r.started}${r.state ? ' → ' + r.state : ''} |`
+			? `| ${r.slug} | ${r.skipped ? 'SKIP: ' + r.skipped : 'ERROR: ' + r.error} |||||||||||||| |`
+			: `| ${r.slug} | ${fmt(r.calls)}${over(r.calls, BUDGET.calls)} | ${fmt(r.triangles)}${over(r.triangles, BUDGET.triangles)} | ${fmt(r.geometries)} | ${fmt(r.textures)} (${fmt(r.textureMB, 1)}) | ${fmt(r.lights)}${over(r.lights, BUDGET.lights)} (${fmt(r.shadowLights)}) | ${fmt(r.castMeshes)} | ${fmt(r.meshes)} / ${fmt(r.instanced)} / ${fmt(r.unculled)} | ${fmt(r.lodMeshes)} (${fmt(r.lodCoarse)}) | ${fmt(r.quality)} | ${fmt(r.p50, 1)} | ${fmt(r.p95, 1)} | ${fmt(r.p99, 1)} | ${fmt(r.heapDeltaMB, 1)} | ${r.started}${r.state ? ' → ' + r.state : ''} |`
 	);
 	return head + '\n' + lines.join('\n');
 }
@@ -407,6 +453,7 @@ function table(rows) {
 	let prof = '';
 	for (const r of rows.filter((r) => r.profile)) {
 		prof += `\n### ${r.slug} — CPU self time (${r.profile.cpu.totalMs} ms sampled)\n\n` + r.profile.cpu.top.map((t) => `- ${t.pct}% ${t.ms} ms — ${t.site}`).join('\n') + '\n';
+		prof += `\n### ${r.slug} — who calls the heaviest (nearest app frame)\n\n` + r.profile.cpu.callers.map((t) => `- ${t.ms} ms — ${t.site}`).join('\n') + '\n';
 		prof += `\n### ${r.slug} — sampled allocation incl. collected (${r.profile.alloc.totalKBps} KB/s)\n\n` + r.profile.alloc.top.map((t) => `- ${t.KBps} KB/s — ${t.site}`).join('\n') + '\n';
 	}
 	fs.writeFileSync(path.join(OUT, `perf-${LABEL}.md`), md + prof);

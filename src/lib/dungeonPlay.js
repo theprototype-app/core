@@ -3,9 +3,45 @@
 // ({grid, width, height, minX, minY, rooms, floorValue}). Pure math — the
 // module owns the data, players/VR/minimap consume it here.
 
+// 31-perf P1: the walker, the flier, the VR walk and the minimap each asked this EVERY
+// FRAME, and `getObjectByName` is a whole-scene traversal — in every game, dungeon or not
+// (a miss walks everything). A hit is cached and re-validated by walking UP its parents
+// (a few steps) to the scene it was asked about; a miss is remembered for MISS_MS, so a
+// scene with no dungeon pays one traversal four times a second instead of per frame.
+const MISS_MS = 250;
+/** @type {any} */ let cachedGroup = null;
+/** @type {any} */ let missScene = null;
+let missAt = -Infinity;
+
+/** @param {any} object @param {any} scene */
+function attachedTo(object, scene) {
+	let o = object;
+	while (o?.parent) o = o.parent;
+	return o === scene;
+}
+
 /** @param {any} scene @returns {any | null} the module's play payload */
 export function dungeonData(scene) {
-	return scene?.getObjectByName('dungeon-module')?.userData?.play ?? null;
+	if (!scene) return null;
+	if (cachedGroup && cachedGroup.name === 'dungeon-module' && attachedTo(cachedGroup, scene)) return cachedGroup.userData?.play ?? null;
+	cachedGroup = null;
+	const now = typeof performance !== 'undefined' ? performance.now() : Date.now();
+	if (missScene === scene && now - missAt < MISS_MS) return null;
+	const found = scene.getObjectByName?.('dungeon-module') ?? null;
+	if (found) {
+		cachedGroup = found;
+		missScene = null;
+		return found.userData?.play ?? null;
+	}
+	missScene = scene;
+	missAt = now;
+	return null;
+}
+
+/** Forget the cached lookup (a test swapping dungeons within the miss window). */
+export function forgetDungeonData() {
+	cachedGroup = null;
+	missScene = null;
 }
 
 /** Can a circle of radius r stand at (x, z)?
@@ -13,14 +49,11 @@ export function dungeonData(scene) {
 export function walkable(data, x, z, r = 0.3) {
 	if (!data) return true;
 	const { grid, width, height, minX, minY, floorValue } = data;
-	for (const [ox, oz] of [
-		[-r, -r],
-		[r, -r],
-		[-r, r],
-		[r, r]
-	]) {
-		const cx = Math.floor(x + ox - minX);
-		const cz = Math.floor(z + oz - minY);
+	// the four corners of the circle's box, without an array of arrays per call (this runs
+	// twice per walking frame)
+	for (let i = 0; i < 4; i++) {
+		const cx = Math.floor(x + (i & 1 ? r : -r) - minX);
+		const cz = Math.floor(z + (i & 2 ? r : -r) - minY);
 		if (cx < 0 || cz < 0 || cx >= width || cz >= height) return false;
 		if (grid[cz * width + cx] !== floorValue) return false;
 	}

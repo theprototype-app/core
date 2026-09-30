@@ -6,5 +6,7 @@ import hello from './hello/module.js';
 import button from './button/module.js';
 import pong from './pong/module.js';
 import vrsleeve from './vrsleeve/module.js';
+// 31-towers: the Towers game's levels, pieces and rules (dormant outside a Towers scene)
+import towers from './towers/module.js';
 
-export const coreModules = [hello, button, pong, vrsleeve];
+export const coreModules = [hello, button, pong, vrsleeve, towers];

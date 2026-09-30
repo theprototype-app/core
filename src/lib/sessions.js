@@ -64,6 +64,8 @@ import { disabledModules } from './moduleSDK';
 import { findNodeSpec } from './nodeCatalog';
 import { hudDocsSnapshot, hudDocsRestore } from './hudDocs';
 import { gameStateSnapshot, gameStateRestore } from './gameState';
+// 31 K3: which GAME a scene is decides whose per-game settings apply (a leaf)
+import { noteSceneFileName } from './gameSettings';
 import { sceneCommand, sendObjects, clearSceneLocal } from './commandsHandler.svelte';
 import { nameOf } from './lockControl';
 import { idbGet, idbPut, idbDelete, idbKeys } from './idb';
@@ -1296,6 +1298,9 @@ function reportUnknownNodes(payload) {
  */
 export async function applySession(payload, opts = {}) {
 	const { backup = true, replicate = true, game = true, workspace = true } = opts;
+	// 31 K3: the file's own name is the game's identity for its per-game settings (a
+	// Games-tab load is unnamed afterwards, but its session name is the game's title)
+	noteSceneFileName(payload?.name);
 	const group = get(objectsGroup);
 	if (backup && group?.children.length) await saveSession('Backup before "' + payload.name + '"');
 	// R22-R8: a session saved by "Save into session" carries the whole Explorer library

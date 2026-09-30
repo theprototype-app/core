@@ -11,7 +11,8 @@
 //     draws whole, never a stale level of the old one
 //   6 one asset, one set of levels: a second mesh sharing the content reuses the cache
 //   7 the quality bias: a governor step pulls the switch distance in
-//   8 api.lod on module content (scene-root, not objectsGroup) + teardown on deactivate
+//   8 api.lod on module content (scene-root, not objectsGroup) + teardown on deactivate,
+//     and api.quality's shape (level, max, onChange -> off)
 
 // Run: APP_URL=https://theprototype.app:5263/ npm run e2e -- lod
 const h = require('./helpers.cjs');
@@ -179,7 +180,7 @@ h.run(async () => {
 				id: 'lodtest',
 				name: 'LOD test',
 				version: '1.0.0',
-				description: 'api.lod',
+				description: 'api.lod + api.quality',
 				register(api) {
 					const THREE = api.THREE;
 					const group = new THREE.Group();
@@ -192,6 +193,9 @@ h.run(async () => {
 					const handle = api.lod(group, { ratios: [0.3], distances: [4] });
 					out.meshes = handle.meshes;
 					out.readyIsPromise = typeof handle.ready?.then === 'function';
+					out.q = { level: api.quality.level, max: api.quality.max, hasOnChange: typeof api.quality.onChange === 'function' };
+					window.__lodq = [];
+					out.off = typeof api.quality.onChange((level) => window.__lodq.push(level));
 				}
 			}
 		]);
@@ -200,12 +204,17 @@ h.run(async () => {
 		const r = window.__lodt;
 		// the module's ball is at z -30 at scene root: render from 60 m in front of it
 		out.far = r.renderFrom(60, [0, 1, -30]);
+		s.qualityGovernor.governorForTest.setLevel(2);
+		s.qualityGovernor.governorForTest.setLevel(0);
+		out.changes = window.__lodq.slice();
 		s.moduleSDK.deactivateModule('lodtest');
 		out.afterDeactivate = s.lod.lodStats().meshes.some((m) => m.name === 'lodtest-ball');
 		return out;
 	});
 	h.check(mod.meshes === 1 && mod.readyIsPromise, '8.1 api.lod(group) registers the module mesh and returns {meshes, ready, remove}');
 	h.check(!!mod.registered && mod.registered.explicit && Array.isArray(mod.registered.levels) && mod.registered.levels.length === 1, '8.2 the module mesh (scene-root, not objectsGroup) got its explicit level: ' + JSON.stringify(mod.registered));
+	h.check(mod.q.level === 0 && mod.q.max >= 9 && mod.q.hasOnChange && mod.off === 'function', '8.3 api.quality: level 0 (best), max ' + mod.q.max + ', onChange returns off()');
+	h.check(JSON.stringify(mod.changes) === '[2,0]', '8.4 api.quality.onChange heard the level move 2 then back to 0: ' + JSON.stringify(mod.changes));
 	h.check(mod.afterDeactivate === false, '8.5 deactivating the module drops its LOD entries (the teardown journal)');
 
 

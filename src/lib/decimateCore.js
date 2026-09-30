@@ -20,7 +20,7 @@
  * @typedef {{key: string, positions: Float32Array, normals?: Float32Array | null,
  *   uvs?: Float32Array | null, colors?: Float32Array | null, colorSize?: number,
  *   index?: Uint32Array | null, groups?: {start: number, count: number, materialIndex?: number}[],
- *   target: number}} MeshIn
+ *   target: number, errorCap?: number}} MeshIn
  * @typedef {{key: string, positions: Float32Array, normals: Float32Array | null,
  *   uvs: Float32Array | null, colors: Float32Array | null, colorSize: number, index: Uint32Array,
  *   groups: {start: number, count: number, materialIndex?: number}[], triangles: number,
@@ -144,6 +144,10 @@ export function simplifyMesh(simplifier, mesh) {
 	const groups = mesh.groups?.length ? mesh.groups : [{ start: 0, count: index.length }];
 	const multi = groups.length > 1;
 	const ratio = before > 0 ? Math.min(1, Math.max(0, mesh.target / before)) : 1;
+	// 31-perf: a LOD level asks for its own error ceiling (a far level may go as far as the
+	// count asks); absent = the import gate's ERROR_CAP, byte-identical
+	const cap = Number(mesh.errorCap);
+	const errorCap = Number.isFinite(cap) && cap > 0 ? cap : ERROR_CAP;
 	/** @type {Uint32Array[]} */
 	const pieces = [];
 	/** @type {{start: number, count: number, materialIndex?: number}[]} */
@@ -158,8 +162,8 @@ export function simplifyMesh(simplifier, mesh) {
 		const flags = multi ? ['LockBorder'] : [];
 		/** @type {[Uint32Array, number]} */
 		const [out, err] = attrs
-			? simplifier.simplifyWithAttributes(slice, positions, 3, attrs, stride, weights, null, Math.min(targetCount, slice.length), ERROR_CAP, flags)
-			: simplifier.simplify(slice, positions, 3, Math.min(targetCount, slice.length), ERROR_CAP, flags);
+			? simplifier.simplifyWithAttributes(slice, positions, 3, attrs, stride, weights, null, Math.min(targetCount, slice.length), errorCap, flags)
+			: simplifier.simplify(slice, positions, 3, Math.min(targetCount, slice.length), errorCap, flags);
 		pieces.push(out);
 		outGroups.push({ start: at, count: out.length, ...(group.materialIndex !== undefined ? { materialIndex: group.materialIndex } : {}) });
 		at += out.length;

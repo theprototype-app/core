@@ -51,6 +51,7 @@ export { moduleContentDebug } from './moduleContent';
 import { safeStorage } from './safeStorage';
 // 30 P4: api.storage — a LEAF (safeStorage only), shared with the Store Value flow node
 import { makeModuleStorage } from './gameStorage';
+import { lodObject } from './lod'; // 31-perf K4 (a leaf: three + stores)
 // 30b (vr-play) C5: the game sound set and game music — LEAVES (svelte/store, audioEngine,
 // safeStorage, sessionClock, sceneStore), so static edges close no cycle
 import { isGameSound, playGameSound } from './gameSfx';
@@ -1322,6 +1323,26 @@ function makeApi(moduleId, moduleName = moduleId) {
 				showToast(`"${moduleName}" hit its 256 KB storage limit on this device — that value was not saved.`);
 			}
 		}),
+		/**
+		 * 31-perf K4: LEVELS OF DETAIL for the module's own geometry (auto LOD already covers
+		 * dense meshes in objectsGroup and under the module world root). Every mesh under
+		 * `object` with at least 300 triangles gets meshoptimizer-simplified levels, built ONCE
+		 * per asset in a worker and drawn by distance — a RENDER-TIME swap, so the mesh keeps
+		 * its geometry for everything else (picking, physics, your own code). `opts`:
+		 * `{ratios?: number[], distances?: number[], minTriangles?: number}` — ratios are the
+		 * share of triangles each level keeps (default [0.5, 0.25, 0.1]), distances are in
+		 * world RADII of the mesh where each level takes over (default [8, 20, 50]); the quality
+		 * level pulls the distances in on a struggling device. Returns `{meshes, ready, remove}`;
+		 * LOCAL, never replicated, and released when the module is disabled. Skinned meshes and
+		 * morph targets are skipped (the simplifier cannot carry weights). Set
+		 * `mesh.userData.lod = false` on a mesh to keep it out of auto LOD.
+		 * @param {any} object @param {{ratios?: number[], distances?: number[], minTriangles?: number}} [opts]
+		 */
+		lod(object, opts = {}) {
+			const handle = lodObject(object, opts, moduleId);
+			onDispose(() => handle.remove());
+			return handle;
+		},
 		peerVars: {
 			/** Write MY OWN row. @param {string} name @param {number} value */
 			setMine(name, value) {

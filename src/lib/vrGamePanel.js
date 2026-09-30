@@ -341,8 +341,13 @@ export function drawPanel(g, entry, runtime, opts = {}) {
 		if (pressable) {
 			hits.push({ id: el.id, key: entry?.key ?? 'scene', kind: el.kind, x, y, w, h });
 			if (opts.hover === el.id) {
+				// 31 G5: the laser's button is FILLED as well as ringed — a 4 px outline on a
+				// 1.2 m-away board was too faint to tell which button the ray was on
+				roundRect(g, x, y, w, h, radius);
+				g.fillStyle = 'rgba(95, 208, 255, 0.28)';
+				g.fill();
 				roundRect(g, x - 4 * k, y - 4 * k, w + 8 * k, h + 8 * k, radius + 4 * k);
-				g.lineWidth = 4 * k;
+				g.lineWidth = 6 * k;
 				g.strokeStyle = '#5fd0ff';
 				g.stroke();
 			}
@@ -363,7 +368,7 @@ export function drawPanel(g, entry, runtime, opts = {}) {
 		const bx = W / 2 + (i === 0 ? -bw - 20 * k : 20 * k);
 		const by = fy + (FOOTER_H * k - bh) / 2;
 		roundRect(g, bx, by, bw, bh, 12 * k);
-		g.fillStyle = b.id === 'edit' ? '#1f2937' : '#111827';
+		g.fillStyle = opts.hover === 'footer:' + b.id ? '#1e4a63' : b.id === 'edit' ? '#1f2937' : '#111827';
 		g.fill();
 		g.lineWidth = (opts.hover === 'footer:' + b.id ? 5 : 2) * k;
 		g.strokeStyle = opts.hover === 'footer:' + b.id ? '#5fd0ff' : 'rgba(148,163,184,0.6)';

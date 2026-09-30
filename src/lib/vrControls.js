@@ -42,6 +42,8 @@ import {
 	editorMode,
 	peerHandStyle, pokeScene } from '../stores/sceneStore';
 import { isScenery, pickGripTarget, gripMovesWorld } from './vrGrip';
+import { moduleGroupList, moduleGroupsRevision } from './moduleContent';
+import { moduleWorldChildren } from './moduleWorld';
 import { resolvePlaySettings, playPublishers } from './playSettings';
 import { hudDocs, isGameHud } from './hudDocs';
 import { locomotionPolicy, vrSpawnOffsets, yawForward } from './locomotionPolicy';
@@ -276,8 +278,10 @@ let snapArmed = true;
 function ensureRayLines() {
 	if (rayLines.length > 0 || !renderer) return;
 	// a tapered cylinder along -Z (spans 0..-1) reads as a visible beam on-device
-	// where a 1px THREE.Line vanishes; additive blending gives it a soft glow
-	const beamGeo = new THREE.CylinderGeometry(0.0012, 0.0035, 1, 8, 1, true);
+	// where a 1px THREE.Line vanishes. 31 G5: NORMAL blending — the additive glow it had
+	// vanished against a bright sky ("i want to be able to see from controller ray where i
+	// point in menu"), the documented additive-burst trap
+	const beamGeo = new THREE.CylinderGeometry(0.0014, 0.004, 1, 8, 1, true);
 	beamGeo.rotateX(-Math.PI / 2); // axis +Y -> -Z (narrow top ends toward the tip)
 	beamGeo.translate(0, 0, -0.5); // span 0 (controller) .. -1 (tip)
 	for (let i = 0; i < 2; i++) {
@@ -286,8 +290,7 @@ function ensureRayLines() {
 			new THREE.MeshBasicMaterial({
 				color: RAY_IDLE,
 				transparent: true,
-				opacity: 0.6,
-				blending: THREE.AdditiveBlending,
+				opacity: 0.8,
 				depthWrite: false
 			})
 		);
@@ -310,6 +313,15 @@ function ensureRayLines() {
 		);
 		reticle.name = 'vr-ray-reticle';
 		reticle.visible = false;
+		// 31 G5: a solid DOT at the exact hit point inside the ring — the ring alone left the
+		// point itself empty, which is where a small button is
+		const dot = new THREE.Mesh(
+			new THREE.CircleGeometry(0.0075, 16),
+			new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.95, depthWrite: false, side: THREE.DoubleSide })
+		);
+		dot.name = 'vr-ray-dot';
+		dot.position.z = 0.0005;
+		reticle.add(dot);
 		renderer.xr.getController(i).add(reticle);
 		rayReticles.push(reticle);
 	}
@@ -517,6 +529,31 @@ function openPanelGroups() {
 	return list;
 }
 
+/** 31 G5: the registered INTERACTIVE module groups present in the scene (re-homed under
+ * module-world-root since 30b P5, or still at the scene root) @returns {any[]} */
+function moduleInteractiveRoots() {
+	const revision = get(moduleGroupsRevision);
+	if (revision !== interactiveNamesAt) {
+		interactiveNamesAt = revision;
+		interactiveNames = moduleGroupList()
+			.filter((entry) => entry.kinds.has('interactive'))
+			.map((entry) => entry.name);
+	}
+	interactiveRoots.length = 0;
+	if (!interactiveNames.length) return interactiveRoots;
+	const children = moduleWorldChildren();
+	for (const name of interactiveNames) {
+		let node = null;
+		for (const c of children) if (c.name === name) node = c;
+		node = node ?? /** @type {any} */ (get(globalScene))?.getObjectByName(name);
+		if (node && node.visible !== false) interactiveRoots.push(node);
+	}
+	return interactiveRoots;
+}
+let interactiveNamesAt = -1;
+/** @type {string[]} */ let interactiveNames = [];
+/** @type {any[]} */ const interactiveRoots = [];
+
 /** D5: where a beam terminates — the NEAREST hit among scene objects and any
  * open floating panel, so navigating menus shows the beam ending in a circle
  * on the hovered control (parity with object selection). Exported for
@@ -535,6 +572,19 @@ export function beamTarget(ray) {
 			hit = true;
 			object = topLevelObjectOf(hits[0].object);
 			info = hits[0];
+		}
+	}
+	// 31 G5: a module's INTERACTIVE scene-root content (its board, its buttons, its level
+	// picker) ends the beam too — it lives under module-world-root, outside objectsGroup, so
+	// the laser used to pass straight through a module's menu with no dot on it
+	for (const root of moduleInteractiveRoots()) {
+		const hits = ray.intersectObject(root, true);
+		const first = hits.find((/** @type {any} */ h) => h.object.visible !== false && !h.object.isLine && !h.object.isPoints);
+		if (first && first.distance < distance) {
+			distance = first.distance;
+			hit = true;
+			object = null;
+			info = first;
 		}
 	}
 	for (const panel of openPanelGroups()) {

@@ -309,6 +309,20 @@ h.run(async () => {
 		return ink;
 	});
 	h.check(canvasInk > 3000, '8.11 the VR board canvas holds the drawn menu (' + canvasInk + ' white px)');
+	if (process.env.EVIDENCE_DIR) {
+		for (const pg of ['main', 'levels', 'settings', 'help']) {
+			const url = await page.evaluate((pg) => {
+				const s = window.__stores;
+				s.gameKit.gameShell.openShellMenu(pg);
+				const THREE = s.THREE;
+				s.gameKit.vrGamePanel.vrGamePanelFrame({ head: { position: new THREE.Vector3(0, 1.6, 0), quaternion: new THREE.Quaternion() }, hands: [null, null] });
+				const url = s.gameKit.vrGamePanel.vrGameSurface('vr-game-panel').canvas.toDataURL('image/png');
+				s.gameKit.gameShell.closeShellMenu();
+				return url;
+			}, pg);
+			require('fs').writeFileSync(require('path').join(process.env.EVIDENCE_DIR, 'menu-vr-board-' + pg + '.png'), Buffer.from(url.split(',')[1], 'base64'));
+		}
+	}
 
 	console.log('\n=== 9. VR turning: Smooth turns continuously, Off never turns ===');
 	await xr.installSpace(page, { head: [0, 1.6, 0], yaw: 0 });

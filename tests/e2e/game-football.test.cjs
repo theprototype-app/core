@@ -219,6 +219,16 @@ const gameStateOf = (page) =>
 	});
 const screenOf = (page) => page.evaluate(() => window.__stores.hudDocs.visibleScreen('scene')?.id ?? null);
 const hudText = async (page) => (await page.locator('#hud-layer').textContent().catch(() => '')) ?? '';
+/** 30-visuals-mod: the playing HUD's score is the SCOREBOARD's two numbers (fb-red-score /
+ * fb-blue-score), no longer a "RED n — n BLUE" line; read them as that line */
+const scoreLine = (page) =>
+	page.evaluate(() => {
+		let r = {};
+		window.__stores.hudDocs.hudRuntime.subscribe((v) => (r = v || {}))();
+		const red = r['fb-red-score']?.text;
+		const blue = r['fb-blue-score']?.text;
+		return red == null || blue == null ? '' : 'RED ' + red + ' — ' + blue + ' BLUE';
+	});
 const pressP = (page) =>
 	page.evaluate(() => {
 		window.dispatchEvent(new KeyboardEvent('keydown', { code: 'KeyP', bubbles: true }));
@@ -272,7 +282,7 @@ h.run(async () => {
 	const ball = names['Football'];
 	const redGate = names['Red gate'];
 	const blueGate = names['Blue gate'];
-	h.check(Object.keys(names).length === 41, `1.1 the file restored 41 objects (${Object.keys(names).length})`);
+	h.check(Object.keys(names).length === 42, `1.1 the file restored 42 objects — 41 + the Arena decoration group (${Object.keys(names).length})`);
 	const phys = await A.page.evaluate(() => window.__stores.scenePhysics.scenePhysicsDebug());
 	h.check(phys.gravity === 0 && phys.ground?.enabled === false && phys.ccd === true, `1.2 zero-g, no ground, CCD on (${phys.gravity}, ${phys.ground?.enabled}, ${phys.ccd})`);
 	h.check(phys.knock?.enabled === true && phys.knock.maxSpeed === 10 && Math.abs(phys.knock.spin - 0.8) < 1e-9, `1.3 the knock block ON from the file — the ball curls (${JSON.stringify(phys.knock)})`);
@@ -328,7 +338,7 @@ h.run(async () => {
 	await h.eventually(() => screenOf(A.page), (v) => v === 'hud', '3.4 A sees the playing HUD', 6000);
 	await h.eventually(() => snap(A.page), (s) => s?.serves >= 1, '3.5 A served the kick-off (serveDelay)', 8000);
 	await h.eventually(() => speedOf(A.page, ball), (v) => v != null && v > 0.2, '3.6 the ball moves on the initiator');
-	await h.eventually(() => hudText(A.page), (t) => /RED 0 — 0 BLUE/.test(t), '3.7 the HUD score list reads RED 0 — 0 BLUE');
+	await h.eventually(() => scoreLine(A.page), (t) => /RED 0 — 0 BLUE/.test(t), '3.7 the HUD scoreboard reads RED 0 — 0 BLUE');
 
 	// ---- 3b. the P menu ------------------------------------------------------------------------
 	const simState = (pg) => pg.evaluate(() => { const p = window.__stores.physics; let a, b, l, f; p.simulating.subscribe((v) => (a = v))(); p.remoteSimulating.subscribe((v) => (b = v))(); window.__stores.isLocked.subscribe((v) => (l = v))(); window.__stores.playPointerFree?.subscribe?.((v) => (f = v))(); return { sim: a, remote: b, locked: l, free: f }; });
@@ -357,7 +367,7 @@ h.run(async () => {
 	await h.eventually(() => myVar(B.page, 'goals'), (v) => v === 1, '4.5 B\'s OWN goals row = 1');
 	h.check((await myVar(A.page, 'goals')) === 0, '4.6 A\'s goals row stays 0');
 	await h.eventually(() => rowOf(A.page, 'goals', B.id), (v) => v === 1, '4.7 A\'s leaderboard shows B = 1');
-	await h.eventually(() => hudText(A.page), (t) => /RED 0 — 1 BLUE/.test(t), '4.8 the DOM HUD score follows');
+	await h.eventually(() => scoreLine(A.page), (t) => /RED 0 — 1 BLUE/.test(t), '4.8 the HUD scoreboard follows');
 	const lamp = (page, name) =>
 		page.evaluate((uuid) => {
 			let g;
@@ -450,10 +460,10 @@ h.run(async () => {
 	await h.eventually(() => screenOf(A.page), (v) => v === 'over', '6.7 A sees the over screen', 6000);
 	h.check(/MATCH OVER/.test(await hudText(A.page)), '6.8 the over screen renders');
 
-	// New match on the over screen: back to the menu, the sheet survives
+	// Menu on the over screen (30b: Rematch + Menu; it was New match): back to the menu, the sheet survives
 	const newBefore = await stampOf(B.page, 'evnew');
-	await hudButton(A.page, 'New match').click();
-	await h.eventually(() => snap(B.page), (s) => s?.score.blue === 0 && s.started === false && s.outcome === null, '6.9 B: New match — score 0');
+	await hudButton(A.page, 'Menu').click();
+	await h.eventually(() => snap(B.page), (s) => s?.score.blue === 0 && s.started === false && s.outcome === null, '6.9 B: Menu on the over screen (30b: Rematch + Menu) — score 0');
 	await h.eventually(() => stampOf(B.page, 'evnew'), (t) => t !== null && t !== newBefore, '6.10 B: the "On new match" stamp landed in the trigger log');
 	await h.eventually(() => gameStateOf(C.page), (v) => v === 'menu', '6.11 C: the shell is back in menu');
 	await h.eventually(() => screenOf(A.page), (v) => v === 'menu', '6.12 A sees the menu again', 6000);

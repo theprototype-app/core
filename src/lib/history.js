@@ -185,6 +185,24 @@ export function recordTransformSet(items) {
 
 // --- create/delete: object presence, restored from a serialized snapshot ---
 
+/** @type {((object: any) => any) | null} */
+let referenceSnapshot = null;
+
+/**
+ * 30b integrate: content that can be REBUILT from where it came from is kept in history as
+ * that reference, not as its serialized bytes. A kit piece placed from a pack is ~0.8 MB of
+ * GLB and ~7.9 MB as toJSON (its textures come back as PNG data URLs), so every placement
+ * toasted "too large for undo history" and level building with the kits had no undo. The
+ * provider returns a toJSON element (packRefs' stub) or null for "not a reference"; the
+ * restore needs nothing new, because a stub added back to the scene is refilled by the
+ * same scan that refills a loaded file's or a peer's. Registered, never imported: packRefs
+ * reaches the Explorer, and nothing in history's import subtree may grow that edge.
+ * @param {((object: any) => any) | null} fn
+ */
+export function registerReferenceSnapshot(fn) {
+	referenceSnapshot = fn;
+}
+
 /**
  * Serialize an object (ObjectLoader JSON round-trip, same format the
  * `object` peer message uses for lights/parents) for create/delete entries.
@@ -199,7 +217,8 @@ export function captureObjectSnapshot(object, quiet = false) {
 	// re-broadcast hands one to every peer (editOverlays.js)
 	const unpark = parkEditOverlays(object);
 	try {
-		const element = object.toJSON();
+		const reference = referenceSnapshot ? referenceSnapshot(object) : null;
+		const element = reference ?? object.toJSON();
 		if (JSON.stringify(element).length > SNAPSHOT_LIMIT) {
 			if (!quiet) showToast('Object is too large for undo history — this step will not be undoable');
 			return null;

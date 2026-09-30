@@ -38,7 +38,17 @@ export function isVec3(v) {
 
 /** A rotation on the wire is an Euler triple or a quaternion. @param {unknown} v */
 export function isQuatOrEuler(v) {
-	return isFiniteArray(v, 3) || isFiniteArray(v, 4);
+	return isFiniteArray(v, 3) || isFiniteArray(v, 4) || isEulerWithOrder(v);
+}
+
+/**
+ * three's `Euler.toArray()` is `[x, y, z, order]` — the shape the gizmo, the Explorer drop,
+ * the Inspector and a dozen other senders put on the wire. The appliers read [0..2] only, so
+ * refusing it dropped every one of those moves on the receiving peer (`invalid:move`).
+ * @param {unknown} v
+ */
+export function isEulerWithOrder(v) {
+	return Array.isArray(v) && v.length === 4 && isFiniteArray(v.slice(0, 3), 3) && typeof v[3] === 'string' && /^[XYZ]{3}$/.test(v[3]);
 }
 
 /** @param {unknown} v */

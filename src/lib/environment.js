@@ -88,6 +88,7 @@ export const ENV_ROOT = 'environment-root';
 const RIG_HEMI = 'env-rig-hemi';
 const RIG_SUN = 'env-rig-sun';
 const CATCHER = 'env-shadow-catcher';
+const GROUND = 'env-ground';
 const EXTRA_PREFIX = 'env-extra-';
 let userLightFactor = 1;
 
@@ -159,6 +160,73 @@ function shadowCatcher(scene, create) {
 	return disc;
 }
 
+/**
+ * 30 author-kit: a custom payload may carry two ADDITIVE sky fields, both absent on every
+ * stock preset and every older save, so those render exactly as before:
+ *   gradient: {top, bottom}  — a vertical background gradient. `background` stays a plain
+ *     colour beside it (the `backgroundColor` store and an older peer, which ignores the
+ *     gradient, read that one — authors set it to the horizon colour).
+ *   ground: {color, roughness?} — a solid ground disc under the scene that RECEIVES the sun's
+ *     shadows (so the ShadowMaterial catcher stands down while it shows).
+ * Both are read through these two normalizers only — a malformed value reads as absent.
+ * @param {any} preset @returns {{top: string, bottom: string} | null} */
+export function skyGradientOf(preset) {
+	const g = preset?.gradient;
+	return g && typeof g.top === 'string' && typeof g.bottom === 'string' ? { top: g.top, bottom: g.bottom } : null;
+}
+
+/** @param {any} preset @returns {{color: string, roughness: number} | null} */
+export function skyGroundOf(preset) {
+	const g = preset?.ground;
+	if (!g || typeof g.color !== 'string') return null;
+	return { color: g.color, roughness: Number.isFinite(g.roughness) ? g.roughness : 1 };
+}
+
+/** @type {{key: string, texture: THREE.CanvasTexture} | null} one cached gradient texture */
+let gradientCache = null;
+
+/** A 2x256 vertical gradient as a screen-filling background texture (three stretches a
+ * plain texture background over the viewport). Cached by its two colours.
+ * @param {{top: string, bottom: string}} gradient */
+function gradientTexture(gradient) {
+	const key = gradient.top + '|' + gradient.bottom;
+	if (gradientCache?.key === key) return gradientCache.texture;
+	if (typeof document === 'undefined') return null;
+	const canvas = document.createElement('canvas');
+	canvas.width = 2;
+	canvas.height = 256;
+	const ctx = canvas.getContext('2d');
+	if (!ctx) return null;
+	const fill = ctx.createLinearGradient(0, 0, 0, 256);
+	fill.addColorStop(0, gradient.top);
+	fill.addColorStop(1, gradient.bottom);
+	ctx.fillStyle = fill;
+	ctx.fillRect(0, 0, 2, 256);
+	const texture = new THREE.CanvasTexture(canvas);
+	texture.colorSpace = THREE.SRGBColorSpace;
+	gradientCache?.texture.dispose();
+	gradientCache = { key, texture };
+	return texture;
+}
+
+/** The solid ground disc (a scene-root mesh in ENV_ROOT, like the catcher, so it never
+ * enters objectsGroup, sync or a save — the payload's `ground` field is what travels).
+ * @param {any} scene @param {boolean} create */
+function groundDisc(scene, create) {
+	const root = envRoot(scene);
+	let disc = scene.getObjectByName(GROUND);
+	if (!disc && create) {
+		disc = new THREE.Mesh(new THREE.CircleGeometry(1, 64), new THREE.MeshStandardMaterial({ color: '#808080', roughness: 1 }));
+		disc.name = GROUND;
+		disc.rotation.x = -Math.PI / 2;
+		// under the catcher's plane and a hair under y = 0, so a floor authored AT 0 wins
+		disc.position.y = -0.01;
+		disc.receiveShadow = true;
+		root.add(disc);
+	}
+	return disc;
+}
+
 /** Create/update/remove `env-extra-*` lights to mirror state.lights @param {any} scene @param {any[]} defs */
 function reconcileExtraLights(scene, defs) {
 	const root = envRoot(scene);
@@ -215,7 +283,9 @@ export function applyEnvironment() {
 		scene.background = null;
 		scene.fog = null;
 	} else {
-		scene.background = new THREE.Color(preset.background);
+		// 30 author-kit: a gradient sky when the payload carries one, else the flat colour
+		const gradient = skyGradientOf(preset);
+		scene.background = (gradient && gradientTexture(gradient)) || new THREE.Color(preset.background);
 		// fog never swallows a big scene: its reach grows with the scene bounds
 		scene.fog = preset.fog
 			? new THREE.Fog(
@@ -283,9 +353,24 @@ export function applyEnvironment() {
 	// object to a real table (the sky/fog lift above is the whole AR stand-down;
 	// the sun rig keeps casting untouched)
 	const shadowsOff = shadowsDisabled();
+	// 30 author-kit: an authored solid ground receives the shadows itself, so the catcher
+	// (which only darkens) stands down while the ground shows
+	// (and, like the sky, the ground lifts in passthrough: it would cover the real room)
+	const ground = skyGroundOf(preset);
+	const groundShown = !!ground && !wireframeActive() && !get(passthroughActive);
+	const disc = groundDisc(scene, !!ground);
+	if (disc) {
+		disc.visible = groundShown;
+		if (ground) {
+			disc.material.color.set(ground.color);
+			disc.material.roughness = ground.roughness;
+		}
+		const span = Math.max(200, sceneRadius() * 4);
+		disc.scale.set(span, span, span);
+	}
 	const catcher = shadowCatcher(scene, !!(preset.sun && !shadowsOff));
 	if (catcher) {
-		catcher.visible = !!(preset.sun && !shadowsOff) && !wireframeActive();
+		catcher.visible = !!(preset.sun && !shadowsOff) && !groundShown && !wireframeActive();
 		const span = Math.max(60, sceneRadius() * 2);
 		catcher.scale.set(span, span, span);
 	}

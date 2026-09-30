@@ -30,7 +30,9 @@
 	import { recordEntry, beginHistoryBatch, endHistoryBatch, recordTransformSet } from '$lib/history';
 	import { deviceOf, deviceSpec, isDeviceObject, setDeviceFor, previewDeviceParams } from '$lib/audioDevices';
 	import { MUSIC_TOOLBOX_ID, musicToolboxPick } from '$lib/musicToolbox';
-	import { openModuleToolbox } from '$lib/moduleToolboxes';
+	import { openModuleToolbox, moduleToolboxes } from '$lib/moduleToolboxes';
+	// 30 P3: a Module content row selected in the object list (a proxy, not an object)
+	import { moduleSelection } from '$lib/moduleContent';
 	import { canEditObject } from '$lib/objectPermissions';
 	import {
 		attachMultiPivot,
@@ -56,7 +58,7 @@
 	import { LIGHT_PARAMS, SHADOW_TYPES, SHADOW_SIZES, setShadowMapSize, cappedShadowSize } from '$lib/lightParams';
 	import { animatedObjects, setAnimationState } from '$lib/animatedImports';
 	import { captureAutoKey, playheadOf } from '$lib/animationPreview';
-	import { moveObjectToGroup, selectObject, flyTo } from '$lib/objectActions';
+	import { moveObjectToGroup, selectObject, flyTo, setPickThrough } from '$lib/objectActions';
 	import { listPhysicsObjects, enablePhysicsOnSelection, setPhysicsFor, PHYSICS_MATERIALS } from '$lib/physics';
 	import {
 		sceneGravity,
@@ -167,6 +169,7 @@
 		selectedObjects,
 		backgroundColor,
 		globalCamera,
+		orbitControls,
 		viewMode,
 		showGrid, pokeScene } from '../../stores/sceneStore';
 	// 16-P3: grid + snapping prefs (LOCAL, like the clip planes)
@@ -591,6 +594,16 @@
 			if (object?.uuid) captureAutoKey(object.uuid, playheadOf(object.uuid));
 		}
 	}
+	// 30 P3: the module toolbox a Module content card can open (null = the module has none)
+	const moduleToolbox = $derived(
+		$moduleSelection ? $moduleToolboxes.find((/** @type {any} */ box) => box.moduleId === $moduleSelection.moduleId) ?? null : null
+	);
+	// 30 P2: every member is click-through (a mixed set reads unchecked; ticking it marks them all)
+	const pickThroughAll = $derived.by(() => {
+		$selectedObject;
+		$objectsGroup;
+		return insTargets.length > 0 && insTargets.every((/** @type {any} */ object) => object?.userData?.pick === 'through');
+	});
 	/** @param {string} label @param {(object:any)=>void} fn */
 	function fan(label, fn) {
 		fanOn(insTargets, label, fn);
@@ -1391,6 +1404,28 @@
 			: new THREE.Vector3(-1, 1, 1).normalize();
 		if (!direction.lengthSq()) direction.set(-1, 1, 1).normalize();
 		flyTo(direction.multiplyScalar(distance).toArray(), [0, 0, 0]);
+	}
+	/**
+	 * 30c: the play SPAWN from the editor view — the point the view orbits around is where
+	 * the player's feet go, and the camera's heading toward it is the way they face (yaw 0
+	 * looks down -Z, the fixed start's direction).
+	 */
+	function setSpawnFromView() {
+		/** @type {any} */
+		const camera = $globalCamera;
+		/** @type {any} */
+		const controls = $orbitControls;
+		const target = controls?.target;
+		if (!camera || !target) return;
+		const yaw = Math.atan2(-(target.x - camera.position.x), -(target.z - camera.position.z));
+		const r2 = (/** @type {number} */ v) => Math.round(v * 100) / 100;
+		setScenePhysics({ play: { spawn: { position: [r2(target.x), r2(target.y), r2(target.z)], yaw: Math.round(yaw * 1000) / 1000 } } });
+	}
+	/** @param {any} spawn */
+	function spawnText(spawn) {
+		if (!spawn) return 'Default — (0, 2, 3), facing −Z';
+		const deg = Math.round((((spawn.yaw * 180) / Math.PI) % 360 + 360) % 360);
+		return '(' + spawn.position.map((/** @type {number} */ v) => v.toFixed(1)).join(', ') + '), facing ' + deg + '°';
 	}
 	/** shared look for the small bookmark row buttons */
 	const bmBtn = 'shrink-0 rounded-sm bg-gray-700 px-1.5 py-0.5 text-xs text-gray-300 hover:bg-gray-600 disabled:opacity-40';
@@ -2593,6 +2628,24 @@
 				>
 					Start the simulation when play mode opens
 				</Checkbox>
+				<!-- 30c: where desktop play starts — feet position + heading, shared scene data -->
+				<div class="ui-row items-center gap-2">
+					<span class="w-24 shrink-0 text-xs text-gray-300">Spawn point</span>
+					<span id="physics-spawn-readout" class="flex-1 text-xs text-gray-400">{spawnText($scenePlay.spawn)}</span>
+				</div>
+				<div class="ui-row gap-2">
+					<button
+						id="physics-spawn-set"
+						class="ui-button-quiet text-xs"
+						title="Play starts at the point the view orbits around, facing the way the camera looks at it"
+						onclick={setSpawnFromView}>Set to the view's focus</button
+					>
+					{#if $scenePlay.spawn}
+						<button id="physics-spawn-clear" class="ui-button-quiet text-xs" onclick={() => setScenePhysics({ play: { spawn: null } })}
+							>Clear</button
+						>
+					{/if}
+				</div>
 				<p class="text-[10px] italic text-gray-400">
 					Shared: everyone entering play mode in this scene gets these.
 				</p>
@@ -2654,6 +2707,25 @@
 					}}>Remove Fog</Button
 				>
 			</Section>
+		</div>
+	{:else if $moduleSelection && !$selectedObjects.length}
+		<!-- 30 P3: a Module content row (a PROXY, not an object): whose it is, and where it
+		     is edited — never transform rows the module would overwrite on its next rebuild -->
+		<div id="drawer-label" class="sticky top-0 z-10 -mx-4 rounded-tl-lg bg-gray-800 px-4">
+			<PanelHeader
+				title="Properties"
+				badge="Module content"
+				pinned={$inspectorPinned}
+				onpin={() => inspectorPinned.update((v) => !v)}
+				onclose={() => inspectorClose.set(true)}
+			/>
+		</div>
+		<div id="module-content-card" class="mt-2 flex flex-col gap-2 rounded-sm border border-gray-600/60 p-2 text-xs text-gray-300">
+			<p class="text-sm font-semibold text-gray-100">{$moduleSelection.label}</p>
+			<p>Made by the <strong>{$moduleSelection.moduleName}</strong> module — edit it with its toolbox or nodes.</p>
+			{#if moduleToolbox}
+				<button type="button" class="ui-button self-start" onclick={() => openModuleToolbox(moduleToolbox.id)}>Open {moduleToolbox.title}</button>
+			{/if}
 		</div>
 	{:else if $selectedObject?.name !== undefined}
 		<div id="drawer-label" class="sticky top-0 z-10 -mx-4 rounded-tl-lg bg-gray-800 px-4">
@@ -3094,6 +3166,19 @@
 						Frustum culled
 					</Checkbox>
 					<p class="text-[10px] text-gray-500">Higher render order draws later (over other objects). Disable culling for objects that vanish at screen edges.</p>
+					<!-- 30 P2: a wall, a ceiling or a glass case can stand aside for the editor's
+					     click — it picks the next opaque thing behind (click again to cycle back) -->
+					<Checkbox
+						id="inspector-pick-through"
+						checked={pickThroughAll}
+						onchange={(/** @type {any} */ e) => {
+							const on = e.target.checked;
+							fan('Click-through', (/** @type {any} */ object) => setPickThrough(object.uuid, on));
+							selectedObject.update((v) => v);
+						}}
+					>
+						Click-through in the viewport
+					</Checkbox>
 				</Section>
 			{/if}
 

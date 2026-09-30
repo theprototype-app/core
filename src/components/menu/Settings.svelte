@@ -3,6 +3,9 @@
 	import { HardDrive, Lock, RotateCcw, X } from '@lucide/svelte';
 	import ThemedSelect from '../ui/ThemedSelect.svelte';
 	import SettingRow from './SettingRow.svelte';
+	// 30b (vr-play) C5: the two LOCAL game-audio volumes
+	import { gameSoundVolume } from '$lib/gameSfx';
+	import { gameMusicVolume } from '$lib/gameMusic';
 	import { showGrid, vrOverride, vrMenuHand, vrSnapAngle, vrMirrorSnapTurn, vrTeleportEnabled, vrSleeveEnabled, vrVertexHold, vrFlying, vrPassthrough, vrMenuHold, vrTargetHz, peerHandStyle } from '../../stores/sceneStore.js';
 	import { applyVRFrameRate } from '$lib/vrControls';
 	import { settingsOpen, settingsSection, hidePanels, restorePanels, advancedMode, showEnvInList, objectSearchEnabled, showSimControls, showToast, showRoomsButton, toastsInDrawerOnly, mobileUndockAllowed, enableShiftAdd, noteDoubleClickToOpen, duplicateCarriesAnimation, duplicateCarriesFlow, duplicateCarriesShader, touchTools, floatingToolbar, toolbarAlwaysOnTop } from '../../stores/appStore.js';
@@ -766,6 +769,17 @@
 								{/each}
 							</span>
 						{/if}
+					</SettingRow>
+					<p class="ui-section-label">Sound</p>
+					<SettingRow name="Game sounds">
+						<svelte:fragment slot="control"><input id="setting-game-sound-volume" type="range" style="width: 100%" min="0" max="1" step="0.05" bind:value={$gameSoundVolume} aria-label="Game sounds volume" /></svelte:fragment>
+						How loud a game's effects are on this device — coins, goals, hits, the clicks a
+						game makes. Local to you; {Math.round($gameSoundVolume * 100)}%
+					</SettingRow>
+					<SettingRow name="Music">
+						<svelte:fragment slot="control"><input id="setting-game-music-volume" type="range" style="width: 100%" min="0" max="1" step="0.05" bind:value={$gameMusicVolume} aria-label="Game music volume" /></svelte:fragment>
+						The background music a game plays while you are in Interact or Play (it stops when
+						you go back to editing). Local to you; {Math.round($gameMusicVolume * 100)}%
 					</SettingRow>
 					<p class="ui-section-label">Notifications</p>
 					<SettingRow name="Welcome on start">

@@ -115,6 +115,10 @@ export const HUD_ACTIONS = [
 	// entry calls, so the two ways a game is reset are one function.
 	{ key: 'resetgame', label: 'Reset the game', group: 'Game', role: 'press', node: 'setgamestate', data: { state: 'menu', reset: true }, handle: 'trigger', hint: 'Back to the menu AND the round clock to zero — collectibles read un-collected again.' },
 	{ key: 'setvar', label: 'Set a variable', group: 'Game', role: 'press', node: 'setvariable', data: { name: 'score', op: 'add', value: 1 }, handle: 'trigger', hint: 'Add to, subtract from or set a shared number.' },
+	// 30 P4: keep the best on THIS device. The value is fed from the `score` variable by a
+	// `via` source (additive to the press role: absent everywhere else, so every other
+	// press action builds exactly what it built before).
+	{ key: 'savebest', label: 'Save best score', group: 'Game', role: 'press', node: 'storevalue', data: { key: 'best', mode: 'max' }, handle: 'trigger', via: { node: 'getvariable', data: { name: 'score' }, handle: 'value' }, hint: 'Keeps the highest “score” seen on this device (Store Value, max) — each player keeps their own.' },
 	// 21-F4: LEVEL COMPLETE — travel to a level. The destination is the AUTHOR'S PICK
 	// on the Travel card, deliberately not a "next by folder order": the Explorer
 	// library is LOCAL, so two peers can hold different orders and a computed "next"
@@ -309,6 +313,10 @@ export function describeNode(node, handle = null) {
 			return 'Only once';
 		case 'getvariable':
 			return 'Variable “' + (d.name ?? '') + '”';
+		case 'storevalue':
+			return 'Save “' + (d.key ?? '') + '” on this device (' + (d.mode ?? 'set') + ')';
+		case 'storedvalue':
+			return 'Saved “' + (d.key ?? '') + '” (this device)';
 		case 'gametime':
 			return 'Round time (' + (d.read ?? 'elapsed') + ')';
 		case 'hudtext':
@@ -521,6 +529,13 @@ export function addBinding(elementId, actionKey) {
 			const actionNode = makeNode(action.node, baseX + 220, baseY, action.data);
 			created.push(actionNode);
 			createdEdges.push(makeEdge(press, actionNode, action.handle));
+			// 30 P4: a press action may name the VALUE it acts on too (Save best score reads
+			// the score) — the drives role's `via`, one socket over
+			if (action.via) {
+				const source = makeNode(action.via.node, baseX, baseY + 120, action.via.data);
+				created.push(source);
+				createdEdges.push(makeEdge(source, actionNode, action.via.handle));
+			}
 		}
 	} else {
 		const displayType = /** @type {any} */ (DISPLAY_NODE)[String(action.role === 'drives' ? currentKindOf(elementId) : '')] ?? 'hudtext';

@@ -3,6 +3,12 @@ import { isLocked, isVRMode, vrOverride, vrPassthrough } from '../stores/sceneSt
 // appStore is a LEAF (svelte/store and nothing else — sceneStore already pulls in more
 // than it does), so this does not widen the cycle surface the note below is about.
 import { showToast } from '../stores/appStore';
+// 30 P0: the back-button marker goes through SvelteKit's shallow-routing entry, not a raw
+// `history.pushState` — the router patches the raw call in dev with a "will conflict with
+// SvelteKit's router" warning, and it is right: its own popstate handler reads the index
+// keys only ITS pushState writes. `$app/navigation` is SSR-safe to IMPORT (only a CALL on
+// the server throws, and the marker is only ever pushed from a browser play press).
+import { pushState } from '$app/navigation';
 
 // THE PLAY STATE MACHINE, lifted out of Controls.svelte so the play FAB, the FAB's
 // right-click mode menu and (next) a keyboard shortcut all press the same button.
@@ -154,20 +160,38 @@ export function exitPlay() {
 // no history to go back to, pushing and popping our own entry is invisible.
 //
 // It is safe to pop because the marker is ALWAYS the top entry when we hold one: this
-// app keeps no state in the URL and nothing else in it calls pushState (grep), so
-// there is no router to fight and nothing of the user's can be underneath ours. The
-// flag is the whole guard — see `consumePlayMarker` for the double-pop it prevents.
+// app keeps no state in the URL and nothing else in it pushes history entries (grep), so
+// nothing of the user's can be underneath ours. The flag is the whole guard — see
+// `consumePlayMarker` for the double-pop it prevents.
+//
+// 30 P0: the entry is a SvelteKit SHALLOW entry (`pushState` from $app/navigation) —
+// same url, same navigation index, so the router's popstate handler treats the Back
+// that spends it as a state change and never navigates; our listener below still sees
+// the popstate. The state object lands under the router's `sveltekit:states` key, which
+// is where `playMarkerState()` reads it.
 let backMarker = false;
 
 function pushPlayMarker() {
 	if (backMarker || typeof history === 'undefined') return;
 	try {
-		// the SAME url with a state object: no navigation, nothing for a router to
-		// resolve, and `history.state.tpPlay` is a readable answer to "is the marker up?"
-		history.pushState({ tpPlay: true }, '');
+		// the SAME url ('' resolves to the current one) with a state object: no
+		// navigation, nothing to load, and `playMarkerState()` is a readable answer to
+		// "is the marker up?"
+		pushState('', { tpPlay: true });
 		backMarker = true;
 	} catch {
-		/* a sandboxed frame can refuse pushState; play simply keeps its normal exits */
+		/* a sandboxed frame can refuse pushState (and the router refuses before it has
+		   started); play simply keeps its normal exits */
+	}
+}
+
+/** the marker's state object as the router stored it on the CURRENT entry (test/debug view) */
+export function playMarkerState() {
+	try {
+		const st = /** @type {any} */ (typeof history === 'undefined' ? null : history.state);
+		return !!st?.['sveltekit:states']?.tpPlay;
+	} catch {
+		return false;
 	}
 }
 

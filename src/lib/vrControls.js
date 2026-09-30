@@ -39,9 +39,18 @@ import {
 	vrToolMode,
 	vrTargetHz,
 	vrSleeveEnabled,
+	editorMode,
 	peerHandStyle, pokeScene } from '../stores/sceneStore';
+import { isScenery, pickGripTarget, gripMovesWorld } from './vrGrip';
+import { resolvePlaySettings, playPublishers } from './playSettings';
+import { hudDocs, isGameHud } from './hudDocs';
+import { locomotionPolicy, vrSpawnOffsets, yawForward } from './locomotionPolicy';
+import { resolveWalk } from './charController';
 import { activeRing, findMenuEntry, ringEntries, sectorFromStick, pushRing, popRing, resetRings, hubEntry } from './vrRadialMenu';
 import { paletteColorAt, barValueAt } from './vrPalette';
+// 30b (vr-play) C4: the ONE game-feel predicate (a leaf) + the pattern shapes (pure)
+import { gameFeelActive } from './gameFeel';
+import { hapticSchedule, knockHapticScale } from './hapticPatterns';
 import { recordMaterialChange, setMaterialParam } from './materialsHandler';
 import { prefabs, instantiatePrefab } from './prefabs';
 import {
@@ -117,17 +126,20 @@ import {
 	focusObject,
 	ungroupObject,
 	applySelectionSet,
-	selectionUuids
+	selectionUuids,
+	setEditorMode,
+	toggleEditorMode
 } from './objectActions';
 import { vrKeyboardTarget, openVRKeyboard, pressVRKey, closeVRKeyboard } from './vrKeyboard';
 import { sceneCommand } from './commandsHandler.svelte';
 import { sendPing, pingColor } from './ping';
 import { peerColor } from './lockControl';
 import { setVRAxes, setVRButtons } from './inputRuntime';
-import { suspendAnimation, resumeAnimation } from './flowRuntime';
+import { suspendAnimation, resumeAnimation, fireObjectGrab } from './flowRuntime';
 import { drawMode, toggleDrawMode, addStrokePoint, endStroke } from './drawMode';
 import { setPttHeld, cycleMicMode, vrMicMode, micActive, pttActive } from './voiceChat';
 import { safeStorage } from './safeStorage';
+import { helpersHidden } from './helperLayer';
 import {
 	HOLD_MS,
 	vrWindowAdjust,
@@ -233,7 +245,7 @@ vrChatPanelOpen.subscribe((open) => {
 });
 
 /** @type {any} */ let renderer = null;
-/** @type {{menu?: boolean, squeeze?: boolean, stick?: boolean, trigger?: boolean, a?: boolean}[]} */
+/** @type {{menu?: boolean, squeeze?: boolean, stick?: boolean, trigger?: boolean, a?: boolean, mode?: boolean}[]} */
 const previousButtons = [{}, {}];
 const raycaster = new THREE.Raycaster();
 const tempMatrix = new THREE.Matrix4();
@@ -310,6 +322,8 @@ function ensureRayLines() {
 export function updateHoverBox(object) {
 	const scene = get(globalScene);
 	if (!scene) return;
+	// 30b P1: the hover shell is editor scaffolding — none in Interact/Play
+	if (helpersHidden()) object = null;
 	if (!hoverBox) {
 		hoverBox = new THREE.Box3Helper(new THREE.Box3(), new THREE.Color(RAY_HOVER));
 		hoverBox.name = 'vr-hover-box';
@@ -329,6 +343,8 @@ function setHovered(object) {
 	// the shell is the primary, emissive-independent cue; the emissive tint is a
 	// secondary touch for materials that support it
 	updateHoverBox(object);
+	// 30b P1: ...and neither is the emissive hover tint (it paints a replicated material)
+	if (helpersHidden()) object = null;
 	if (hoveredObject === object) return;
 	if (hoveredObject?.material?.emissive) hoveredObject.material.emissive.setHex(hoveredEmissive);
 	hoveredObject = null;
@@ -381,9 +397,17 @@ export function registerVRTriggerHooks(hooks) {
 		if (i >= 0) triggerHooks.splice(i, 1);
 	};
 }
+/** 30b (C3): did SOME hook take the last trigger press on each slot? The sweep starts
+ * from a non-consuming hook, so it reads this on its next frame to stand down under a
+ * gesture another feature claimed (a knob drag, a cable, the sleeve). */
+const triggerClaims = [false, false];
+/** @param {number} index */
+export function triggerClaimed(index) {
+	return !!triggerClaims[index];
+}
 /** @param {number} index @returns {boolean} */
 export function vrModuleTriggerStart(index) {
-	return triggerHooks.some((h) => {
+	const claimed = triggerHooks.some((h) => {
 		try {
 			return !!h.start?.(index);
 		} catch (error) {
@@ -391,6 +415,8 @@ export function vrModuleTriggerStart(index) {
 			return false;
 		}
 	});
+	triggerClaims[index] = claimed;
+	return claimed;
 }
 /** @param {number} index @returns {boolean} */
 export function vrModuleTriggerEnd(index) {
@@ -800,7 +826,8 @@ export function updateTeleport(session) {
 	const y = source?.gamepad?.axes?.[3] ?? 0;
 
 	// 157: teleport can be disabled — reset any arm + hide the arc
-	if (!get(vrTeleportEnabled)) {
+	// 30b P3: ...and Interact allows it only when the scene's play block says so
+	if (!get(vrTeleportEnabled) || !vrLocomotionNow().teleport) {
 		teleportEngaged = false;
 		hideArc();
 		return;
@@ -926,22 +953,226 @@ export function initVRControls(r) {
 	renderer = r;
 }
 
+/** 30b: what the actuators were asked for (a ring, newest last) and how many pulses the
+ * Edit-mode gate swallowed — the suites' view, since no headset is attached headless */
+const hapticRing = /** @type {{intensity: number, ms: number, hand: string | null, at: number}[]} */ ([]);
+let hapticSuppressed = 0;
+
+// ---- 30b P3: WALK LIKE A GAME (Interact) ------------------------------------------------
+// Edit keeps the editor's stick (VRControls.svelte: fly/strafe, left-grip pan/elevate,
+// teleport, the world gestures). INTERACT walks: the left stick moves along the head's
+// yaw at a walking pace, the step resolves through charController.resolveWalk — the SAME
+// three tiers desktop's walker uses (the rapier capsule when a sim runs, a dungeon raster,
+// the ground plane) — gravity pulls the feet down, a ~0.3 m step is climbed (the
+// capsule's autostep), and nothing flies or teleports unless the play block allows it.
+// The rig moves the WebXR way: by offsetting the reference space (offset = -(the viewer's
+// displacement), the convention across this file).
+//
+// FEET. A headset reports the HEAD. The physical head height comes from the viewer pose in
+// the BASE reference space captured at session start (local-floor: y 0 is the real floor),
+// and the feet are the head's current world y minus it — robust to every offset any gesture
+// applied since. Without a base space (a fake session in a suite), a standing 1.6 m head.
+
+/** metres per second on a full stick */
+export const VR_WALK_SPEED = 2.2;
+/** a standing head when no base space can say better */
+const STANDING_HEAD = 1.6;
+/** @type {any} */ let xrBaseSpace = null;
+
+/** Scene's onsessionstart: remember the untouched reference space. */
+export function noteXRBaseSpace() {
+	xrBaseSpace = renderer?.xr?.getReferenceSpace?.() ?? null;
+}
+
+/** 30b P3: the locomotion rules in force right now (mode + the resolved play block). */
+export function vrLocomotionNow() {
+	const mode = get(editorMode) === 'interact' ? 'interact' : 'edit';
+	return locomotionPolicy(mode, resolvePlaySettings(get(globalScene)).locomotion);
+}
+
+/** the viewer pose in the current space, and the head's physical height @returns {any} */
+function viewerNow() {
+	const frame = renderer?.xr?.getFrame?.();
+	const space = renderer?.xr?.getReferenceSpace?.();
+	const pose = frame && space ? frame.getViewerPose?.(space) : null;
+	if (!pose) return null;
+	const base = xrBaseSpace ? frame.getViewerPose?.(xrBaseSpace) : null;
+	const p = pose.transform.position;
+	const o = pose.transform.orientation;
+	const q = new THREE.Quaternion(o.x, o.y, o.z, o.w);
+	const fwd = new THREE.Vector3(0, 0, -1).applyQuaternion(q);
+	return {
+		head: { x: p.x, y: p.y, z: p.z },
+		yaw: Math.atan2(-fwd.x, -fwd.z),
+		headHeight: base ? base.transform.position.y : STANDING_HEAD
+	};
+}
+
+/** @param {{x: number, y: number, z: number}} offset reference-space offset (-(displacement))
+ * @param {{x: number, y: number, z: number, w: number}} [orientation] */
+function offsetSpace(offset, orientation) {
+	const space = renderer?.xr?.getReferenceSpace?.();
+	if (!space) return false;
+	renderer.xr.setReferenceSpace(
+		space.getOffsetReferenceSpace(
+			orientation ? new XRRigidTransform(offset, orientation) : new XRRigidTransform(offset)
+		)
+	);
+	return true;
+}
+
+/**
+ * 30b P3: ONE walker step as data — the wanted displacement from the stick, resolved against
+ * the world. Exported so a suite drives it with a real simulation and no headset.
+ * @param {{head: {x: number, y: number, z: number}, headHeight: number, yaw: number,
+ *   stick: {x: number, y: number}, dt: number, fly?: boolean, aim?: {x: number, y: number, z: number}}} input
+ * @returns {{dx: number, dy: number, dz: number, feet: number, grounded: boolean, source: string}}
+ */
+export function vrWalkStep(input) {
+	const dead = (/** @type {number} */ v) => (Math.abs(v) > 0.15 ? v : 0);
+	const sx = dead(input.stick.x);
+	const sy = dead(input.stick.y);
+	const dt = Math.max(0, Math.min(input.dt, 0.1));
+	const speed = VR_WALK_SPEED * dt;
+	const fwd = input.fly && input.aim ? input.aim : yawForward(input.yaw);
+	const flat = yawForward(input.yaw);
+	// stick UP is negative y in xr-standard; strafe is always horizontal
+	const right = { x: -flat.z, z: flat.x };
+	const desired = {
+		dx: speed * (-sy * fwd.x + sx * right.x),
+		dz: speed * (-sy * fwd.z + sx * right.z),
+		...(input.fly ? { dy: speed * -sy * (fwd.y ?? 0) } : {})
+	};
+	// the capsule is quantised to 10 cm so a nodding head does not rebuild it every frame
+	const height = Math.min(2.1, Math.max(1, Math.round(input.headHeight * 10) / 10));
+	const feet = input.head.y - input.headHeight;
+	const r = resolveWalk({ x: input.head.x, y: feet, z: input.head.z }, height, dt, desired, {
+		gravity: !input.fly
+	});
+	return { dx: r.dx, dy: r.feet - feet, dz: r.dz, feet: r.feet, grounded: r.grounded, source: r.source };
+}
+
+/**
+ * 30b P3: the Interact half of VRControls.svelte's stick task. Returns false in Edit (the
+ * caller then runs the editor's own stick code unchanged).
+ * @param {number} dt seconds @param {any} session
+ */
+export function tickVRInteractLocomotion(dt, session) {
+	const policy = vrLocomotionNow();
+	if (!policy.walk) return false;
+	const viewer = viewerNow();
+	if (!viewer) return true;
+	const left = [...(session?.inputSources ?? [])].find((s) => s.handedness === 'left');
+	const axes = left?.gamepad?.axes ?? [];
+	/** @type {any} */
+	let aim = null;
+	if (policy.fly) {
+		const index = controllerIndexFor('left');
+		if (index >= 0) {
+			const v = new THREE.Vector3(0, 0, -1).applyQuaternion(
+				renderer.xr.getController(index).getWorldQuaternion(new THREE.Quaternion())
+			);
+			aim = { x: v.x, y: v.y, z: v.z };
+		}
+	}
+	const step = vrWalkStep({
+		head: viewer.head,
+		headHeight: viewer.headHeight,
+		yaw: viewer.yaw,
+		stick: { x: axes[2] ?? 0, y: axes[3] ?? 0 },
+		dt,
+		fly: policy.fly,
+		aim
+	});
+	// fell out of the world: back to the spawn (or the origin)
+	if (step.feet < -50) {
+		// no spawn: stand back up on the origin, feet at 0
+		if (!spawnPlayer())
+			offsetSpace({ x: viewer.head.x, y: viewer.head.y - viewer.headHeight, z: viewer.head.z });
+		return true;
+	}
+	if (step.dx || step.dy || step.dz) offsetSpace({ x: -step.dx, y: -step.dy, z: -step.dz });
+	return true;
+}
+
+/**
+ * 30b P4: put the player on the game's spawn — the runtime api.setSpawn, else the scene's
+ * `play.spawn` (resolvePlaySettings). In VR the FEET land on it facing its yaw; on the
+ * desktop the play camera does (PointerLockControls reads the same resolution). No spawn,
+ * no move. @returns {boolean} whether the player was moved
+ */
+export function spawnPlayer() {
+	const spawn = resolvePlaySettings(get(globalScene)).spawn;
+	if (!spawn || !renderer?.xr?.getSession?.()) return false;
+	const viewer = viewerNow();
+	if (!viewer) return false;
+	const { turn, move } = vrSpawnOffsets(viewer.head, viewer.yaw, viewer.headHeight, spawn);
+	offsetSpace(turn.position, turn.orientation);
+	offsetSpace(move);
+	return true;
+}
+
 /**
  * Buzz the VR controllers if the session's gamepads support it (no-op on
  * desktop). Used by modules for press feedback. Optional `hand` targets one
  * controller — matched by each inputSource's OWN handedness (never a raw slot
  * index, which diverges from the controller order after a hands<->controllers
  * swap — 194/210; axesForSlot resolves the same way).
+ *
+ * 30b (C4): a NO-OP IN EDIT MODE — "The vibration should be only interactive mode, not
+ * in edit mode" (the user, from a Quest). Every core pulse and a module's api.haptic
+ * funnel through here, so this one gate covers all of them.
  * @param {number} intensity 0..1 @param {number} durationMs
  * @param {'left'|'right'=} hand omit to pulse both
+ * @param {boolean=} force pulse even in Edit (the mode-switch tick only)
  */
-export function hapticPulse(intensity = 0.5, durationMs = 50, hand = undefined) {
+export function hapticPulse(intensity = 0.5, durationMs = 50, hand = undefined, force = false) {
+	// `force`: the one pulse that must be felt IN Edit — 30b-vr-modes' Edit/Interact switch
+	// tick, which confirms the switch INTO Edit
+	if (!force && !gameFeelActive()) {
+		hapticSuppressed++;
+		return;
+	}
 	const session = renderer?.xr?.getSession?.();
-	session?.inputSources?.forEach((source) => {
+	if (!session) return;
+	hapticRing.push({ intensity, ms: durationMs, hand: hand ?? null, at: performance.now() });
+	if (hapticRing.length > 64) hapticRing.shift();
+	session.inputSources?.forEach((/** @type {any} */ source) => {
 		if (hand && source.handedness !== hand) return;
 		const actuator = source.gamepad?.hapticActuators?.[0];
 		actuator?.pulse?.(intensity, durationMs);
 	});
+}
+
+/**
+ * 30b (C4): play a named PATTERN ('tap' 'bump' 'hit' 'success' 'fail' 'rumble'
+ * 'heartbeat' — hapticPatterns.js) as timed pulses. `scale` sizes every pulse (a knock's
+ * impulse). Returns false for an unknown name or outside Interact/Play; each pulse is
+ * gated again as it fires, so leaving the game mid-pattern stops it.
+ * @param {string} name @param {'left'|'right'=} hand @param {number=} scale
+ * @returns {boolean}
+ */
+export function hapticPattern(name, hand = undefined, scale = 1) {
+	const pulses = hapticSchedule(name, scale);
+	if (!pulses.length || !gameFeelActive()) return false;
+	for (const pulse of pulses) {
+		if (pulse.at <= 0) hapticPulse(pulse.intensity, pulse.ms, hand);
+		else setTimeout(() => hapticPulse(pulse.intensity, pulse.ms, hand), pulse.at);
+	}
+	return true;
+}
+
+/** 30b: the knock's haptic seam (Scene hands this to knock.js) — a `hit` sized by the
+ * knock's own strength, on the hand that hit. `intensity` arrives as knock.js computes
+ * it (0.2 + speed/10); read back as the speed it encodes.
+ * @param {number} intensity @param {number} _ms @param {'left'|'right'} hand */
+export function hapticKnock(intensity, _ms, hand) {
+	hapticPattern('hit', hand, knockHapticScale(Math.max(0, (Number(intensity) - 0.2) * 10)));
+}
+
+/** the suites' view of the actuators @returns {{pulses: any[], suppressed: number}} */
+export function hapticDebug() {
+	return { pulses: hapticRing.map((p) => ({ ...p })), suppressed: hapticSuppressed };
 }
 
 /** 194: resolve a controller slot by HANDEDNESS. three's getController(i) is a
@@ -1572,11 +1803,12 @@ function broadcastMove(object, force = false) {
 		});
 }
 
-/** @param {any} object @param {any} before */
+/** @param {any} object @param {any} before null = a PLAYER's grab (Interact): moved and
+ * thrown like any other, but not an edit, so no undo entry */
 function endGrab(object, before) {
 	broadcastMove(object, true);
 	const after = transformStateOf(object);
-	if (JSON.stringify(before) !== JSON.stringify(after))
+	if (before && JSON.stringify(before) !== JSON.stringify(after))
 		recordTransform({ uuid: object.uuid, before: before, after: after });
 	// PFX-C: mid-sim release = throw (velocity estimate from the hold samples)
 	import('./physics').then((m) => m.releaseBody(object.uuid));
@@ -1585,6 +1817,17 @@ function endGrab(object, before) {
 
 /** @type {{index: number, prev: any} | null} right-grip drag-the-world pan */
 let worldPan = null;
+
+/** 30b P2: test/debug view of what the grips are doing right now */
+export function vrGripDebug() {
+	return {
+		grab: grab?.object?.uuid ?? null,
+		grabInteract: !!grab?.interact,
+		worldGrab: !!worldGrab,
+		worldPan: !!worldPan,
+		emptyAir: [...emptyAirSqueeze]
+	};
+}
 
 // ---- 214: Box Select — a 3D drag-box marquee. Trigger-press anchors a corner,
 // the controller drags the opposite corner, release selects every top-level
@@ -2224,13 +2467,13 @@ function onSqueezeStart(index) {
 	}
 	if (!get(objectsGroup)) return;
 	const controller = renderer.xr.getController(index);
-	const hits = controllerRay(index).intersectObjects(get(objectsGroup).children, true);
-	let object = hits.length ? topLevelObjectOf(hits[0].object) : null;
+	// 30b P2: the grip takes what vrGrip.pickGripTarget says — scenery (floors, walls, the
+	// room you stand in) passes through, and in INTERACT only a player-holdable body counts
+	const mode = get(editorMode) === 'interact' ? 'interact' : 'edit';
+	let object = gripTargetOf(controllerRay(index), controller.getWorldPosition(new THREE.Vector3()), mode);
 	if (!object) {
-		// hand inside an object grabs it without a pointer (100.3)
-		object = containedTopLevel(controller.getWorldPosition(new THREE.Vector3()), get(objectsGroup));
-	}
-	if (!object) {
+		// 30b P2: Interact's grips never move the world (contract C1)
+		if (!gripMovesWorld(mode)) return;
 		emptyAirSqueeze[index] = true;
 		// 186: in stretch mode both grips drive the stretch, not a world grab
 		if (get(vrStretchObject)) return;
@@ -2250,6 +2493,8 @@ function onSqueezeStart(index) {
 	if (get(lockedObjects).find((lock) => lock[1] === object.uuid)) return;
 
 	if (grab && grab.object === object && grab.index !== index) {
+		// 30b P2: a player's second hand does not resize the thing it is holding
+		if (mode === 'interact') return;
 		// second hand on the same object -> two-hand scale
 		const distance = controllerDistance();
 		scaleGrab = {
@@ -2263,6 +2508,7 @@ function onSqueezeStart(index) {
 		return;
 	}
 
+	const interact = mode === 'interact';
 	suspendAnimation(object.uuid); // animated objects park at their base while held
 	// PFX-C: mid-sim, a VR-grabbed dynamic body follows the hand kinematically
 	// and RELEASE throws it with the estimated hand velocity — the exact desktop
@@ -2281,7 +2527,10 @@ function onSqueezeStart(index) {
 	grab = {
 		object,
 		index,
-		style: get(vrGrabStyle),
+		// 30b P2: a player's hand is RIGID (no gizmo-style move/rotate), and `interact`
+		// switches off the editor's extras in updateGrab/endGrab (snap, stick scale, undo)
+		interact,
+		style: interact ? 'rigid' : get(vrGrabStyle),
 		relPos: object.position.clone().sub(pPos).applyQuaternion(pQuat.clone().invert()),
 		relQuat: pQuat.clone().invert().multiply(object.quaternion),
 		startScale: object.scale.clone(),
@@ -2291,8 +2540,53 @@ function onSqueezeStart(index) {
 		before: transformStateOf(object)
 	};
 	vrGrabbedHand.set(renderer.xr.getController(index)?.userData?.handedness ?? null);
-	hapticPulse(0.25, 30);
-	selectObject(object.uuid); // locks it for peers, updates selection state
+	// 30b (C4): a grab lands with a `hit` (a gated no-op in Edit, like every pulse)
+	hapticPattern('hit', renderer.xr.getController(index)?.userData?.handedness ?? undefined);
+	// 30b P2: a player picking something up is not SELECTING it — no lock broadcast, no
+	// selection shell, no inspector (Edit keeps all three)
+	if (!interact) selectObject(object.uuid); // locks it for peers, updates selection state
+	// 30b (core-games): a PLAYER's grab reaches On Grab nodes (Edit moves things, it does not play)
+	else fireObjectGrab(object.uuid);
+}
+
+/**
+ * 30b P2: the top-level object a grip closes on, or null for empty air. Ray hits first
+ * (nearest first, each top-level object once), then the hand-inside test (100.3); both go
+ * through the vrGrip rule, so a floor, a wall or the room you stand in is never held.
+ * Exported for the headless suite. @param {any} ray a THREE.Raycaster
+ * @param {any} handPos the controller's world position @param {'edit'|'interact'} mode
+ */
+export function gripTargetOf(ray, handPos, mode) {
+	const group = get(objectsGroup);
+	if (!group) return null;
+	/** @type {any} */
+	const camera = get(globalCamera);
+	const head = camera ? camera.getWorldPosition(new THREE.Vector3()) : null;
+	const locked = get(lockedObjects);
+	const interaction = mode === 'interact' ? resolvePlaySettings(get(globalScene)).interaction : 'grab';
+	/** @param {any} object */
+	const describe = (object) => {
+		const box = new THREE.Box3().setFromObject(object);
+		return {
+			scenery: isScenery(box.isEmpty() ? null : box, head),
+			grabbable:
+				interaction === 'grab' &&
+				object.userData?.physics?.mode === 'dynamic' &&
+				!locked.find((/** @type {any} */ lock) => lock[1] === object.uuid)
+		};
+	};
+	/** @type {any[]} */
+	const order = [];
+	for (const hit of ray.intersectObjects(group.children, true)) {
+		const top = topLevelObjectOf(hit.object);
+		if (top && !order.includes(top)) order.push(top);
+	}
+	const picked = pickGripTarget(order.map(describe), mode);
+	if (picked >= 0) return order[picked];
+	// a hand INSIDE an object needs no pointer (100.3) — the same rule decides
+	const inside = containedTopLevel(handPos, group);
+	if (inside && pickGripTarget([describe(inside)], mode) === 0) return inside;
+	return null;
 }
 
 /** @param {number} index */
@@ -2359,7 +2653,7 @@ function onSqueezeEnd(index) {
 			hapticPulse(0.4, 60);
 			return;
 		}
-		endGrab(object, grab.before);
+		endGrab(object, grab.interact ? null : grab.before);
 		grab = null;
 		vrGrabbedHand.set(null);
 		hapticPulse(0.18, 24);
@@ -2419,7 +2713,7 @@ function updateGrab() {
 		const pPos = position.clone().applyMatrix4(parentInv);
 		const pQuat = parentQuat.clone().invert().multiply(quaternion);
 
-		const axes = axesForSlot(grab.index);
+		const axes = grab.interact ? [] : axesForSlot(grab.index); // 30b P2: no reel/scale in Interact
 		const adjusted = grabStickAdjust({
 			length: Math.max(grab.relPos.length(), 0.05),
 			scale: grab.scaleFactor,
@@ -2435,7 +2729,9 @@ function updateGrab() {
 		const pose = rigidGrabPose(pPos, pQuat, grab.relPos, grab.relQuat);
 		object.position.copy(pose.position);
 		object.quaternion.copy(pose.quaternion);
-		if (get(vrSnapMode) === 'surface') {
+		if (grab.interact) {
+			// 30b P2: a player's hand does not snap
+		} else if (get(vrSnapMode) === 'surface') {
 			dropToSurface(object, get(objectsGroup)); // 156: rest on the nearest surface under it
 		} else if (get(snapEnabled)) {
 			const step = get(snapSettings).translate;
@@ -3118,11 +3414,13 @@ export function updateVRControls() {
 			console.log('VR frame hook failed', error);
 		}
 	}
+	updateModeLabel(); // 30b P4: the wrist label follows the mode (hidden outside a session)
 	if (!session) {
 		hideArc();
 		teleportEngaged = false;
 		return;
 	}
+	payPendingSpawn(); // 30b P4
 	// open menu/panel are modal for the sticks: sector nav / scrolling own them;
 	// a RIGHT-hand grab owns the right stick too (reel/scale beats teleport, 100);
 	// D9: manipulation gestures + ANY held grip stand navigation down entirely
@@ -3184,6 +3482,13 @@ export function updateVRControls() {
 			}
 		}
 		prev.menu = menuPressed;
+
+		// 30b P4: the MODE button — Y on the LEFT hand (B on the right when the radial menu
+		// lives on the left, so the two never share a button): Edit <-> Interact, in VR
+		if (source.handedness === modeHand()) {
+			if (menuPressed && !prev.mode) toggleVRMode();
+			prev.mode = menuPressed;
+		}
 
 
 		// right A held = push-to-talk
@@ -3533,3 +3838,149 @@ export function updateVRControls() {
 		vrHovered.set(null);
 	}
 }
+
+// ---- 30b P4: ENTER INTERACT, SWITCH IN VR, SPAWN ------------------------------------------
+// Contract C1: pressing Play in VR on a GAME enters Interact; the left Y button toggles
+// Edit <-> Interact in the headset (a haptic tick + a label on that wrist says which); and
+// entering Interact puts the world back to 1:1 and the player on the game's spawn.
+
+/** Is this scene a game? A HUD screen bound to a game state (the GameChip rule), a spawn,
+ * or a module publishing the play contract (a dungeon). */
+export function sceneIsGame() {
+	const scene = get(globalScene);
+	if (isGameHud(get(hudDocs))) return true;
+	if (resolvePlaySettings(scene).spawn) return true;
+	return playPublishers(scene).length > 0;
+}
+
+/** which hand owns the mode button: the LEFT (Y), unless the radial menu lives there */
+export function modeHand() {
+	return get(vrMenuHand) === 'left' ? 'right' : 'left';
+}
+
+/** Scene's onsessionstart (after the base space is live). */
+export function onVRSessionStart() {
+	noteXRBaseSpace();
+	// a game is played, not edited: Play in VR lands in Interact (the stores follow below)
+	if (sceneIsGame() && get(editorMode) !== 'interact') setEditorMode('interact');
+	else if (get(editorMode) === 'interact') enterInteractVR();
+	updateModeLabel();
+}
+
+/** Interact starts at 1:1, on the spawn, with no editor gesture half-done. */
+function enterInteractVR() {
+	worldGrab = null;
+	worldPan = null;
+	emptyAirSqueeze[0] = emptyAirSqueeze[1] = false;
+	if (grab && !grab.interact) {
+		endGrab(grab.object, grab.before);
+		grab = null;
+		vrGrabbedHand.set(null);
+	}
+	resetWorldRig();
+	// at sessionstart no XR frame exists yet (so no viewer pose to move FROM): the spawn
+	// waits for the first frame that has one (updateVRControls)
+	spawnPending = true;
+	if (viewerNow()) {
+		spawnPending = false;
+		spawnPlayer();
+	}
+}
+
+/** The button: flip the mode, tick the hand, flash the label. @returns {'edit'|'interact'} */
+export function toggleVRMode() {
+	const next = toggleEditorMode();
+	hapticPulse(0.35, 40, /** @type {any} */ (modeHand()), true);
+	modeLabelFlashUntil = Date.now() + 500;
+	updateModeLabel();
+	return next;
+}
+
+let spawnPending = false;
+/** a spawn owed since enterInteractVR, paid on the first frame with a viewer pose */
+function payPendingSpawn() {
+	if (!spawnPending || !viewerNow()) return;
+	spawnPending = false;
+	spawnPlayer();
+}
+
+/** @type {any} */ let modeLabel = null;
+/** @type {any} */ let modeLabelCanvas = null;
+let modeLabelText = '';
+let modeLabelFlashUntil = 0;
+
+function ensureModeLabel() {
+	if (modeLabel || typeof document === 'undefined') return modeLabel;
+	modeLabelCanvas = document.createElement('canvas');
+	modeLabelCanvas.width = 256;
+	modeLabelCanvas.height = 80;
+	const texture = new THREE.CanvasTexture(modeLabelCanvas);
+	texture.colorSpace = THREE.SRGBColorSpace;
+	modeLabel = new THREE.Mesh(
+		new THREE.PlaneGeometry(0.075, 0.0234),
+		new THREE.MeshBasicMaterial({ map: texture, transparent: true, depthWrite: true })
+	);
+	modeLabel.name = 'vr-mode-label';
+	// on the back of the controller, tilted up toward the eyes (the wrist you glance at)
+	modeLabel.position.set(0, 0.03, 0.07);
+	modeLabel.rotation.set(-1.0, 0, 0);
+	modeLabel.renderOrder = 996;
+	return modeLabel;
+}
+
+/** redraw the label when the mode changes; re-parent it onto the mode hand's controller */
+function updateModeLabel() {
+	const label = ensureModeLabel();
+	if (!label || !renderer) return;
+	const presenting = !!renderer.xr.getSession?.();
+	const index = presenting ? controllerIndexFor(modeHand()) : -1;
+	label.visible = index >= 0;
+	if (index < 0) return;
+	const controller = renderer.xr.getController(index);
+	if (label.parent !== controller) controller.add(label);
+	const interact = get(editorMode) === 'interact';
+	const text = interact ? 'INTERACT' : 'EDIT';
+	label.scale.setScalar(Date.now() < modeLabelFlashUntil ? 1.35 : 1);
+	if (text === modeLabelText) return;
+	modeLabelText = text;
+	const ctx = modeLabelCanvas.getContext('2d');
+	if (!ctx) return;
+	ctx.clearRect(0, 0, 256, 80);
+	ctx.fillStyle = interact ? 'rgba(20, 110, 90, 0.9)' : 'rgba(150, 95, 10, 0.9)';
+	ctx.beginPath();
+	ctx.roundRect?.(4, 4, 248, 72, 18);
+	if (!ctx.roundRect) ctx.rect(4, 4, 248, 72);
+	ctx.fill();
+	ctx.fillStyle = '#ffffff';
+	ctx.font = 'bold 34px sans-serif';
+	ctx.textAlign = 'center';
+	ctx.textBaseline = 'middle';
+	ctx.fillText(text, 112, 42);
+	ctx.font = 'bold 22px sans-serif';
+	ctx.fillStyle = 'rgba(255,255,255,0.75)';
+	ctx.fillText(modeHand() === 'left' ? 'Y' : 'B', 228, 42);
+	label.material.map.needsUpdate = true;
+}
+
+/** test/debug view of the label */
+export function vrModeLabelDebug() {
+	return {
+		text: modeLabelText,
+		visible: !!modeLabel?.visible,
+		hand: modeLabel?.parent?.userData?.handedness ?? null,
+		flashing: Date.now() < modeLabelFlashUntil
+	};
+}
+
+// THE LAST STATEMENT IN THE FILE on purpose: a module-level subscribe runs its callback
+// synchronously at evaluation, so every `let` it reaches must already be declared (the
+// TDZ rule that took the whole app down twice). Entering Interact in a live session resets
+// the world and spawns; either way the label follows.
+let lastEditorMode = get(editorMode);
+editorMode.subscribe((mode) => {
+	if (mode === lastEditorMode) return;
+	lastEditorMode = mode;
+	if (!renderer?.xr?.getSession?.()) return;
+	if (mode === 'interact') enterInteractVR();
+	updateModeLabel();
+});

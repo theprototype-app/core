@@ -295,6 +295,7 @@
 		openPackLoading
 	} from '$lib/packs';
 	import { importFile, exportObjectsAsGltf, openScenePayload } from '$lib/fileHandler.svelte';
+	import { packRefFromUrl } from '$lib/packRefs';
 	// 21-H2: the Explorer is the prefab HOME (the Library modal is gone), so it owns
 	// their whole CRUD — add, export both ways, update, rename, properties, delete.
 	import {
@@ -5700,7 +5701,10 @@
 				dismiss();
 				return showToast('Could not fetch the pack item');
 			}
-			await importFile(new File([await res.blob()], item.name + '.glb'), item.name, 'glb');
+			// 30c: the placed piece carries its pack reference (packRefs.js)
+			await importFile(new File([await res.blob()], item.name + '.glb'), item.name, 'glb', undefined, undefined, {
+				packRef: packRefFromUrl(item.glbUrl, { pack: item.packName, item: item.name })
+			});
 			dismiss();
 		} catch {
 			dismiss();

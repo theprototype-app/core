@@ -23,7 +23,8 @@ import {
 	setTransformMode,
 	selectAllObjects,
 	clearIsolation,
-	isIsolated
+	isIsolated,
+	toggleEditorMode
 } from './objectActions';
 import { undo, redo } from './history';
 import { editingObject, enterEditMode, exitEditMode } from './meshEdit';
@@ -268,6 +269,18 @@ export const shortcuts = [
 			if (get(editingObject)) exitEditMode();
 			else if (get(selectedObject)?.uuid) enterEditMode(get(selectedObject).uuid);
 		}
+	},
+	{
+		// 30 P1: Edit / Interact. Free outside a mesh session (I is MESH_EDIT_KEYS' inset
+		// there, which is why the registry already stands down for it); `when` also stands
+		// it down while sculpt, spline or draw own the letter keys (their probes), so a
+		// stray I never flips the mode under a session.
+		id: 'editor.interact-mode',
+		keys: 'I',
+		group: 'Objects',
+		label: 'Edit / Interact mode (Interact: clicks play with the scene instead of selecting)',
+		when: () => !keySessionOpen(),
+		action: () => toggleEditorMode()
 	},
 	{
 		id: 'panels.object-list',
@@ -631,6 +644,35 @@ function slug(text) {
 		.toLowerCase()
 		.replace(/[^a-z0-9]+/g, '-')
 		.replace(/^-+|-+$/g, '');
+}
+
+/**
+ * 30 P1: editor SESSIONS that own the plain letter keys register a probe here — sculpt,
+ * spline edit and draw (Scene, which already imports all three) — so a mode key can stand
+ * down while one is open without this module importing them: shortcuts sits inside
+ * history's import family, and splineEdit reaches vrControls, which would close a cycle.
+ * @type {(() => boolean)[]} */
+const keySessionProbes = [];
+
+/** @param {() => boolean} probe @returns {() => void} unregister */
+export function registerKeySessionProbe(probe) {
+	keySessionProbes.push(probe);
+	return () => {
+		const index = keySessionProbes.indexOf(probe);
+		if (index >= 0) keySessionProbes.splice(index, 1);
+	};
+}
+
+/** Is any session holding the letter keys right now (mesh edit included)? */
+export function keySessionOpen() {
+	if (get(editingObject) || get(faceEditObject)) return true;
+	return keySessionProbes.some((probe) => {
+		try {
+			return !!probe();
+		} catch {
+			return false;
+		}
+	});
 }
 
 /**

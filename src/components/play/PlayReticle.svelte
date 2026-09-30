@@ -5,6 +5,7 @@
 	// playInteract.js.
 	import { isLocked, isVRMode } from '../../stores/sceneStore';
 	import { playInteractState } from '$lib/playInteract';
+	import { playCursorFree } from '$lib/playCursor';
 	import { safeStorage } from '$lib/safeStorage';
 
 	// the scroll hint is worth exactly one showing, so it is a LOCAL pref and
@@ -14,7 +15,10 @@
 	);
 
 	const reticle = $derived($playInteractState);
-	const visible = $derived($isLocked && !$isVRMode && reticle.mode !== 'off');
+	// 30 P3: a free-cursor game aims with the real cursor, so there is no crosshair to draw.
+	// $playInteractState is the dependency that re-reads it (it moves on every aim change,
+	// and playCursorFree reads its stores through get()).
+	const visible = $derived($isLocked && !$isVRMode && reticle.mode !== 'off' && !playCursorFree());
 	const carrying = $derived(reticle.mode === 'carrying');
 
 	$effect(() => {

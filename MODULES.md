@@ -557,6 +557,84 @@ itself) or `'sweep'` (a later entry while held). A control that must not be swep
 api.registerClickHandler(pickDot, { sweep: false }); // presses still reach it; sweeps do not
 ```
 
+### The game shell: pause menu, levels, per-game settings (1.18, roadmap 31 K3)
+
+Every game gets ONE pause menu from core — **Resume · Restart · Levels · Settings · How to
+play · Main menu** — on the desktop (Escape in Play, or the corner Menu button) and in VR
+(the left controller's **X**, or Menu on the game board / wrist card). You do not draw it;
+you feed it. A scene counts as a game when it has a state-bound HUD screen, a spawn, or a
+module publishing `userData.play` — or when your module registers levels. All of it is
+feature-detected (`api.game.levels?.(…)`), LOCAL, and torn down with your module.
+
+**Levels** — the picker on the desktop and on the VR board. Re-call it whenever a level
+unlocks or earns stars; `onPick` never hears a locked level.
+
+```js
+const refresh = () =>
+	api.game.levels?.({
+		list: LEVELS.map((l, i) => ({ id: l.id, label: 'Level ' + (i + 1), locked: i > unlocked, stars: best[l.id] ?? 0 })),
+		current: currentLevel.id,
+		onPick: (id) => loadLevel(id)
+	});
+refresh();
+onLevelWon(() => { unlocked++; refresh(); });
+```
+
+**Your own settings rows** — shown under the core rows, persisted per game on this device
+(`tp:game:<game>:<id>`). `type` is `'toggle'`, `'choice'` (`options`, optional `optionLabels`)
+or `'range'` (`min`, `max`, `step`). A core id is refused.
+
+```js
+api.game.addSetting?.({
+	id: 'board', label: 'Board', type: 'choice',
+	options: ['globe', '2d'], optionLabels: ['Globe', '2D board'], default: 'globe',
+	onChange: (v) => setBoard(v)
+});
+setBoard(api.game.setting?.('board') ?? 'globe');            // the stored choice at load
+api.game.setSetting?.('board', '2d');                        // your in-game button writes the same row
+api.game.onSettingsChange?.((values) => console.log(values.board, values.sfx));
+```
+
+**The core rows every game has** — `music`, `musicVolume` (0..100), `sfx`, `sfxVolume`,
+`haptics`, `showFps`, `turning` (`default` | `snap` | `smooth` | `off`), `turnAngle`
+(`default` | `15` | `30` | `45` | `90`), `vignette`, `quality` (`auto` | `low` | `medium` |
+`high`). Core obeys them itself: the per-game volumes land on the audio BUSES (so
+`api.playSound`, `api.music`, flow sound nodes and the scene's track all follow), haptics,
+VR turning, the comfort vignette and the quality governor read them live. A module that
+plays audio through its OWN WebAudio graph should read them:
+
+```js
+const gain = ctx.createGain();
+const apply = () => (gain.gain.value = api.game.setting?.('sfx') === false ? 0 : (api.game.setting?.('sfxVolume') ?? 100) / 100);
+apply();
+api.game.onSettingsChange?.(apply);
+```
+
+**How to play** — your words first, then the device's controls (keyboard or controllers).
+Without it the menu shows the game's Games-tab description.
+
+```js
+api.game.setHelp?.([
+	'Drag the dots until no two lines cross.',
+	'Finish a level to unlock the next — stars for fewer moves.'
+]);
+```
+
+**Restart** — the menu resets the game shell (host / alone; others carry on as it is),
+respawns the player and runs your hook:
+
+```js
+api.game.onRestart?.(() => { resetBoard(); spawnWave(1); });
+```
+
+**Your own Menu button** (a module HUD, a VR board of yours):
+
+```js
+api.game.openMenu?.();          // only while playing a game; false otherwise
+api.game.closeMenu?.();
+if (api.game.menuOpen?.()) pauseMyTimers();
+```
+
 ### Physics (P-A)
 
 All mutations are INITIATOR-ONLY — the peer that started the simulation steps

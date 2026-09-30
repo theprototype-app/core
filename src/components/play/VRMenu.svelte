@@ -57,15 +57,19 @@
 	// selectedObject is [] when nothing is selected — presence = has a uuid
 	$: hub = hubEntry($activeRing, !!$selectedObject?.uuid)
 
-	function sectorColor(entry: any) {
+	// 31 R1: the hovered id is a PARAMETER, never read inside. This file is legacy mode, where
+	// `color={sectorColor(s.entry, $vrHovered)}` compiles to untrack(() => sectorColor(...)) depending on
+	// `s` alone — so a $vrHovered read in here registered nothing and no sector ever lit up
+	// under the stick or the ray (the hub, which reads it inline, did). The Quest report.
+	function sectorColor(entry: any, hovered: string | null) {
 		if (entry.disabled?.()) return '#1b1f26' // D4: greyed out, hover never lights it
-		if ($vrHovered === entry.id) return '#ff4000'
+		if (hovered === entry.id) return '#ff4000'
 		if (entry.color) return entry.color
 		return entry.active?.() ? '#2f81f7' : '#2a2f38'
 	}
-	function labelColor(entry: any) {
+	function labelColor(entry: any, hovered: string | null) {
 		if (entry.disabled?.()) return '#6b7280'
-		return $vrHovered === entry.id ? '#ffffff' : '#e8ecf2'
+		return hovered === entry.id ? '#ffffff' : '#e8ecf2'
 	}
 
 	const controllerPosition = new THREE.Vector3()
@@ -105,7 +109,7 @@
 			<T.Mesh name={`vrmenu-${s.entry.id}`}>
 				<T.RingGeometry args={[RING_INNER, RING_OUTER, 20, 1, s.thetaStart, s.thetaLength]} />
 				<T.MeshBasicMaterial
-					color={sectorColor(s.entry)}
+					color={sectorColor(s.entry, $vrHovered)}
 					transparent
 					opacity={0.94}
 					side={THREE.DoubleSide}
@@ -114,7 +118,7 @@
 			{#if s.entry.label}
 				<Text
 					text={typeof s.entry.label === 'function' ? s.entry.label() : s.entry.label}
-					color={labelColor(s.entry)}
+					color={labelColor(s.entry, $vrHovered)}
 					outlineColor="#000000"
 					outlineWidth={0.0012}
 					fontSize={sectors.length > 8 ? 0.0095 : 0.0115}

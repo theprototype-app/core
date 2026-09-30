@@ -1405,6 +1405,15 @@ export function raycastMenu(index) {
 	return tile ? tile.object.name.slice('vrmenu-'.length) : null;
 }
 
+/** 31 R1: the radial sector a THUMBSTICK is holding highlighted this frame (null when the
+ * hover came from a ray or nothing). The trigger picks it when its own ray misses the ring —
+ * before, only a ray hit could be triggered, so a stick-lit sector fell through to a select. */
+let radialStickHover = /** @type {string | null} */ (null);
+/** @returns {string | null} */
+export function radialStickSelection() {
+	return get(vrMenuOpen) ? radialStickHover : null;
+}
+
 /** Raycast the objects panel rows (101) @param {number} index @returns {string|null} panel action */
 export function raycastPanel(index) {
 	const panel = get(vrPanelGroup);
@@ -3687,22 +3696,30 @@ export function updateVRControls() {
 		}
 	} else if (get(vrMenuOpen)) {
 		const sources = [...session.inputSources];
-		const menuIndex = sources.findIndex((s) => s.handedness === get(vrMenuHand));
-		const pointerIndex = controllerIndexFor(get(vrMenuHand) === 'right' ? 'left' : 'right');
+		const menuHand = get(vrMenuHand);
+		const pointerHand = menuHand === 'right' ? 'left' : 'right';
+		const pointerIndex = controllerIndexFor(pointerHand);
 		let hovered = pointerIndex >= 0 ? raycastMenu(pointerIndex) : null;
+		radialStickHover = null;
 		if (!hovered) {
 			const entries = ringEntries(get(activeRing));
-			for (const index of [menuIndex, pointerIndex]) {
-				if (index < 0) continue;
-				const axes = sources[index]?.gamepad?.axes ?? [];
+			// 31 R1: each stick is read from ITS OWN inputSource, found by handedness — the
+			// pointer's used to be `sources[<controller slot>]`, which is the other hand's
+			// source after a hands<->controllers swap (the 194/210 divergence)
+			for (const hand of [menuHand, pointerHand]) {
+				const axes = sources.find((s) => s.handedness === hand)?.gamepad?.axes ?? [];
 				const sector = sectorFromStick(axes[2] ?? 0, axes[3] ?? 0, entries.length);
 				if (sector !== null) {
-					hovered = entries[sector]?.id ?? null;
+					const entry = entries[sector];
+					// a greyed sector never lights (D4) — nor may a stick pick it
+					hovered = entry && !entry.disabled?.() ? entry.id : null;
+					radialStickHover = hovered;
 					break;
 				}
 			}
 		}
 		if (hovered !== get(vrHovered)) {
+			// one tick per sector change (Edit-silent through hapticPulse's own gate, C4)
 			if (hovered) hapticPulse(0.15, 18);
 			vrHovered.set(hovered);
 		}

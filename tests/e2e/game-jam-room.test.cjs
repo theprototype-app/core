@@ -241,5 +241,113 @@ h.run(async () => {
 
 	await page.evaluate(() => { window.__stores.musicClock.stopTransport(); window.__stores.isLocked.set(false); });
 	await page.waitForTimeout(400);
+
+	// 7 — 31 (J1): the user, on a Quest 3: "In Jam Room I would like to be able to fly around
+	// and also scale the entire environment with grips and move around same as in edit mode".
+	// The scene asks for it (K1 flags, 31-vr-core's to honour), and a scaled studio is still a
+	// playable one: the world is grown 1.5x by the Edit gesture's own maths (two grips spread
+	// 40 -> 60 cm), then a held trigger sweeps three piano keys and three drum steps.
+	console.log('\n=== 7. 31 J1: fly, world grab, bounded teleport; a 1.5x world still plays ===');
+	const play = await page.evaluate(() => {
+		let p; window.__stores.scenePhysics.scenePlay.subscribe((v) => (p = v))();
+		return p;
+	});
+	h.check(
+		play?.locomotion?.fly === true && play.locomotion.worldGrab === true && play.locomotion.teleport === true,
+		`31 J1: the play block asks for fly + world grab + teleport, and the load kept all three (${JSON.stringify(play?.locomotion)})`
+	);
+	const b = play?.bounds;
+	h.check(
+		!!b && Array.isArray(b.min) && Array.isArray(b.max) && b.min[0] < 1 && b.max[0] > 1 && b.min[2] < -1 && b.max[2] > -1,
+		`31 J1: teleport is bounded to the studio, the cockpit inside it (${JSON.stringify(b)})`
+	);
+	const scaled = await page.evaluate(async () => {
+		const s = window.__stores;
+		const THREE = s.THREE;
+		let r; s.globalRenderer.subscribe((v) => (r = v))();
+		let rig; s.worldRig.subscribe((v) => (rig = v))();
+		if (!rig) return { rig: false };
+		for (const i of [0, 1]) {
+			const c = r.xr.getController(i);
+			c.matrixAutoUpdate = true;
+			c.userData.handedness = i === 0 ? 'left' : 'right';
+		}
+		s.objectActions.setEditorMode('interact');
+		const rig0 = { pos: rig.position.toArray(), quat: rig.quaternion.toArray(), scale: rig.scale.x };
+		const next = s.vrControls.computeWorldGrabTransform(
+			{ a: [0.8, 1.2, -1.2], b: [1.2, 1.2, -1.2] },
+			{ a: [0.7, 1.2, -1.2], b: [1.3, 1.2, -1.2] },
+			rig0
+		);
+		rig.position.fromArray(next.pos);
+		rig.quaternion.fromArray(next.quat);
+		rig.scale.setScalar(next.scale);
+		rig.updateMatrixWorld(true);
+		let g; s.objectsGroup.subscribe((v) => (g = v))();
+		g.updateMatrixWorld(true);
+		const keys = [];
+		g.traverse((o) => o.isMesh && (/^key-\d+$/.test(o.name) || typeof o.userData?.midi === 'number') && keys.push(o));
+		keys.sort((a, c) => a.getWorldPosition(new THREE.Vector3()).x - c.getWorldPosition(new THREE.Vector3()).x);
+		const white = keys.filter((k) => ![1, 3, 6, 8, 10].includes(((Number(k.userData?.midi ?? k.name.slice(4)) % 12) + 12) % 12));
+		const cells = [];
+		g.traverse((o) => o.isMesh && /^step-0-\d+$/.test(o.name) && cells.push(o));
+		cells.sort((a, c) => Number(a.name.split('-')[2]) - Number(c.name.split('-')[2]));
+		const topOf = (o) => {
+			const box = new THREE.Box3().setFromObject(o);
+			return new THREE.Vector3((box.min.x + box.max.x) / 2, box.max.y + 0.01, (box.min.z + box.max.z) / 2);
+		};
+		const width = (o) => { const box = new THREE.Box3().setFromObject(o); return box.max.x - box.min.x; };
+		const consumed = [];
+		const handlers = s.moduleSDK.moduleClickHandlers;
+		for (let i = 0; i < handlers.length; i++) {
+			const fn = handlers[i];
+			if (fn.__spied31) continue;
+			const wrapped = (o, ctx) => {
+				const res = fn(o, ctx);
+				if (res) consumed.push({ name: o.name, source: ctx?.source });
+				return res;
+			};
+			wrapped.__spied31 = true;
+			handlers[i] = wrapped;
+		}
+		const aim = (from, to) => {
+			const c = r.xr.getController(1);
+			c.position.copy(from);
+			c.lookAt(from.clone().multiplyScalar(2).sub(to));
+			c.updateMatrixWorld(true);
+		};
+		const sweep = (list, frames) => {
+			aim(topOf(list[0]).add(new THREE.Vector3(0, 0.05, 0.2)), topOf(list[0]));
+			s.vrControls.vrModuleTriggerStart(1);
+			for (const o of list) for (let f = 0; f < frames; f++) s.gameKit.vrGameInput.sweepFrame(1, { tip: topOf(o), ray: null });
+			s.vrControls.vrModuleSelectSwallowed();
+			s.vrControls.vrModuleTriggerEnd(1);
+			return consumed.splice(0);
+		};
+		const pick = [white[2], white[3], white[4]].filter(Boolean);
+		const keyClicks = sweep(pick, 2);
+		const stepPick = cells.filter((c) => Number(c.name.split('-')[2]) % 2 === 0).slice(0, 3);
+		const stepClicks = stepPick.length ? sweep(stepPick, 1) : [];
+		const out = {
+			rig: true,
+			scale: rig.scale.x,
+			keyWidth: pick[0] ? +width(pick[0]).toFixed(4) : 0,
+			picked: pick.map((k) => k.name),
+			keyClicks,
+			stepClicks: stepClicks.length
+		};
+		rig.position.fromArray(rig0.pos);
+		rig.quaternion.fromArray(rig0.quat);
+		rig.scale.setScalar(rig0.scale);
+		rig.updateMatrixWorld(true);
+		s.objectActions.setEditorMode('edit');
+		return out;
+	});
+	h.check(scaled.rig && Math.abs(scaled.scale - 1.5) < 1e-6, `31 J1: (premise) two grips spread 40 -> 60 cm grow the world 1.5x (${scaled.scale})`);
+	h.check(
+		scaled.keyClicks?.length === 3 && scaled.keyClicks.every((c, i) => c.name === scaled.picked[i]),
+		`31 J1: in the 1.5x world a held sweep plays three piano keys, each once (${JSON.stringify(scaled.keyClicks)}, key ${scaled.keyWidth} m wide)`
+	);
+	h.check(scaled.stepClicks === 3, `31 J1: ...and flips three drum steps (${scaled.stepClicks})`);
 	await h.finish(browser);
 });

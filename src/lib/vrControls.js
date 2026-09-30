@@ -45,7 +45,8 @@ import { isScenery, pickGripTarget, gripMovesWorld } from './vrGrip';
 import { resolvePlaySettings, playPublishers } from './playSettings';
 import { hudDocs, isGameHud } from './hudDocs';
 import { locomotionPolicy, vrSpawnOffsets, yawForward } from './locomotionPolicy';
-import { resolveWalk } from './charController';
+import { resolveWalk, charControl, setJumpRequested } from './charController';
+import { withinReach } from './playReach'; // 31-towers P1
 import { activeRing, findMenuEntry, ringEntries, sectorFromStick, pushRing, popRing, resetRings, hubEntry } from './vrRadialMenu';
 import { paletteColorAt, barValueAt } from './vrPalette';
 // 30b (vr-play) C4: the ONE game-feel predicate (a leaf) + the pattern shapes (pure)
@@ -1024,8 +1025,11 @@ function offsetSpace(offset, orientation) {
 /**
  * 30b P3: ONE walker step as data — the wanted displacement from the stick, resolved against
  * the world. Exported so a suite drives it with a real simulation and no headset.
+ * 31-towers P1: `jumpHeight` (metres) lets a jump edge (right A, `setJumpRequested`) leave the
+ * ground — the Character Controller node's own jump, so desktop and VR share one authoring place.
  * @param {{head: {x: number, y: number, z: number}, headHeight: number, yaw: number,
- *   stick: {x: number, y: number}, dt: number, fly?: boolean, aim?: {x: number, y: number, z: number}}} input
+ *   stick: {x: number, y: number}, dt: number, fly?: boolean, aim?: {x: number, y: number, z: number},
+ *   jumpHeight?: number}} input
  * @returns {{dx: number, dy: number, dz: number, feet: number, grounded: boolean, source: string}}
  */
 export function vrWalkStep(input) {
@@ -1047,7 +1051,8 @@ export function vrWalkStep(input) {
 	const height = Math.min(2.1, Math.max(1, Math.round(input.headHeight * 10) / 10));
 	const feet = input.head.y - input.headHeight;
 	const r = resolveWalk({ x: input.head.x, y: feet, z: input.head.z }, height, dt, desired, {
-		gravity: !input.fly
+		gravity: !input.fly,
+		jumpHeight: input.fly ? 0 : Number(input.jumpHeight) || 0
 	});
 	return { dx: r.dx, dy: r.feet - feet, dz: r.dz, feet: r.feet, grounded: r.grounded, source: r.source };
 }
@@ -1082,7 +1087,8 @@ export function tickVRInteractLocomotion(dt, session) {
 		stick: { x: axes[2] ?? 0, y: axes[3] ?? 0 },
 		dt,
 		fly: policy.fly,
-		aim
+		aim,
+		jumpHeight: vrJumpHeight()
 	});
 	// fell out of the world: back to the spawn (or the origin)
 	if (step.feet < -50) {
@@ -1093,6 +1099,21 @@ export function tickVRInteractLocomotion(dt, session) {
 	}
 	if (step.dx || step.dy || step.dz) offsetSpace({ x: -step.dx, y: -step.dy, z: -step.dz });
 	return true;
+}
+
+/**
+ * 31-towers P1: the jump the VR walker has right now — the Character Controller node's
+ * `jumpHeight` while it declares WALK mode and Interact walks (not flies); 0 = no jump, and the
+ * right A button stays push-to-talk.
+ * @returns {number}
+ */
+export function vrJumpHeight() {
+	const control = get(charControl);
+	if (!control || control.mode !== 'walk') return 0;
+	const policy = vrLocomotionNow();
+	if (!policy.walk || policy.fly) return 0;
+	const h = Number(control.jumpHeight);
+	return Number.isFinite(h) && h > 0 ? h : 0;
 }
 
 /**
@@ -2472,6 +2493,8 @@ function onSqueezeStart(index) {
 	const mode = get(editorMode) === 'interact' ? 'interact' : 'edit';
 	let object = gripTargetOf(controllerRay(index), controller.getWorldPosition(new THREE.Vector3()), mode);
 	if (!object) {
+		// 31-towers P1: a piece beyond the scene's reach says so with a short buzz, no more
+		if (lastGripRefusal) hapticPattern('fail', renderer.xr.getController(index)?.userData?.handedness ?? undefined);
 		// 30b P2: Interact's grips never move the world (contract C1)
 		if (!gripMovesWorld(mode)) return;
 		emptyAirSqueeze[index] = true;
@@ -2557,36 +2580,70 @@ function onSqueezeStart(index) {
  * @param {any} handPos the controller's world position @param {'edit'|'interact'} mode
  */
 export function gripTargetOf(ray, handPos, mode) {
+	lastGripRefusal = null;
 	const group = get(objectsGroup);
 	if (!group) return null;
 	/** @type {any} */
 	const camera = get(globalCamera);
 	const head = camera ? camera.getWorldPosition(new THREE.Vector3()) : null;
 	const locked = get(lockedObjects);
-	const interaction = mode === 'interact' ? resolvePlaySettings(get(globalScene)).interaction : 'grab';
-	/** @param {any} object */
-	const describe = (object) => {
+	const settings = mode === 'interact' ? resolvePlaySettings(get(globalScene)) : null;
+	const interaction = settings ? settings.interaction : 'grab';
+	// 31-towers P1: a player's grip reaches `play.reach` from the BODY (head down to the feet)
+	const reach = settings?.reach ?? null;
+	const feetY = head ? head.y - (viewerNow()?.headHeight ?? STANDING_HEAD) : 0;
+	/** @param {any} object @param {any} point where the grip would take it */
+	const describe = (object, point) => {
 		const box = new THREE.Box3().setFromObject(object);
+		const holdable =
+			interaction === 'grab' &&
+			object.userData?.physics?.mode === 'dynamic' &&
+			!locked.find((/** @type {any} */ lock) => lock[1] === object.uuid);
+		const near = !holdable || reach == null || !head || withinReach(point, head, feetY, reach);
+		if (holdable && !near) lastGripRefusal = { uuid: object.uuid, reach };
 		return {
 			scenery: isScenery(box.isEmpty() ? null : box, head),
-			grabbable:
-				interaction === 'grab' &&
-				object.userData?.physics?.mode === 'dynamic' &&
-				!locked.find((/** @type {any} */ lock) => lock[1] === object.uuid)
+			grabbable: holdable && near
 		};
 	};
 	/** @type {any[]} */
 	const order = [];
+	/** @type {any[]} */
+	const points = [];
 	for (const hit of ray.intersectObjects(group.children, true)) {
 		const top = topLevelObjectOf(hit.object);
-		if (top && !order.includes(top)) order.push(top);
+		if (top && !order.includes(top)) {
+			order.push(top);
+			points.push(hit.point);
+		}
 	}
-	const picked = pickGripTarget(order.map(describe), mode);
-	if (picked >= 0) return order[picked];
+	const picked = pickGripTarget(
+		order.map((object, i) => describe(object, points[i])),
+		mode
+	);
+	if (picked >= 0) {
+		lastGripRefusal = null;
+		return order[picked];
+	}
 	// a hand INSIDE an object needs no pointer (100.3) — the same rule decides
 	const inside = containedTopLevel(handPos, group);
-	if (inside && pickGripTarget([describe(inside)], mode) === 0) return inside;
+	if (inside && pickGripTarget([describe(inside, handPos)], mode) === 0) {
+		lastGripRefusal = null;
+		return inside;
+	}
 	return null;
+}
+
+/** 31-towers P1: is push-to-talk open because A is held? (A jumps instead while the game's
+ * controller can jump — a switch mid-hold must not strand the mic open) */
+let pttByA = false;
+
+/** 31-towers P1: the grip the reach refused last ({uuid, reach}), for the buzz and the suite
+ * @type {{uuid: string, reach: number} | null} */
+let lastGripRefusal = null;
+/** @returns {{uuid: string, reach: number} | null} */
+export function lastGripRefusalDebug() {
+	return lastGripRefusal;
 }
 
 /** @param {number} index */
@@ -3491,9 +3548,20 @@ export function updateVRControls() {
 		}
 
 
-		// right A held = push-to-talk
+		// right A held = push-to-talk — or, 31-towers P1, JUMP while the game's Character
+		// Controller can jump (Interact walking). The edge is the charController's own, so a held
+		// A is one jump and landing with it down is none (no bunny-hopping).
 		const aPressed = !!buttons[4]?.pressed;
-		if (source.handedness === 'right' && aPressed !== !!prev.a) setPttHeld(aPressed);
+		if (source.handedness === 'right' && aPressed !== !!prev.a) {
+			if (vrJumpHeight() > 0) {
+				setJumpRequested(aPressed);
+				if (pttByA) setPttHeld(false);
+				pttByA = false;
+			} else {
+				setPttHeld(aPressed);
+				pttByA = aPressed;
+			}
+		}
 		prev.a = aPressed;
 
 		// K-C: publish this hand's stick + trigger/squeeze into the SDK input

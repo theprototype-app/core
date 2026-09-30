@@ -3,6 +3,7 @@ import { scenePlay } from './scenePhysics';
 import { showToast } from '../stores/appStore';
 import { normalizeLocomotion, normalizeSpawn } from './locomotionPolicy';
 import { moduleWorldChildren } from './moduleWorld';
+import { normalizeReach } from './playReach';
 
 /**
  * 30b P4: a spawn point set at RUNTIME by a module (`api.setSpawn(position, yaw)`) — a
@@ -74,8 +75,11 @@ export function playPublishers(scene) {
  * 30b P3/P4: `locomotion` ({teleport, fly}, both false unless the scene or a publisher
  * allows them — field by field, like `grounded`) and `spawn` (the runtime api.setSpawn,
  * else a publisher's `userData.play.spawn`, else the scene's `play.spawn`, else null).
+ * 31-towers P1: `reach` — how far from the player's BODY a grab may start (metres, playReach.js),
+ * null = no limit; a publisher's `userData.play.reach` overrides the scene's.
  * @returns {{interaction: 'grab'|'click'|'off', grounded: boolean, eyeHeight: number, cursor: 'free'|'locked',
- *   locomotion: {teleport: boolean, fly: boolean}, spawn: {position: [number, number, number], yaw: number} | null}}
+ *   locomotion: {teleport: boolean, fly: boolean}, spawn: {position: [number, number, number], yaw: number} | null,
+ *   reach: number | null}}
  */
 export function resolvePlaySettings(scene) {
 	const base = get(scenePlay);
@@ -86,7 +90,8 @@ export function resolvePlaySettings(scene) {
 		eyeHeight: DEFAULT_EYE_HEIGHT,
 		cursor: base.cursor === 'free' ? 'free' : 'locked',
 		locomotion: { teleport: false, fly: false },
-		spawn: normalizeSpawn(base.spawn)
+		spawn: normalizeSpawn(base.spawn),
+		reach: normalizeReach(base.reach)
 	};
 	const baseLoco = normalizeLocomotion(base.locomotion);
 	if (baseLoco) Object.assign(out.locomotion, baseLoco);
@@ -111,6 +116,8 @@ export function resolvePlaySettings(scene) {
 		if (loco) Object.assign(out.locomotion, loco);
 		const spawn = normalizeSpawn(play.spawn);
 		if (spawn) out.spawn = spawn;
+		const reach = normalizeReach(play.reach);
+		if (reach != null) out.reach = reach;
 	}
 	const runtime = get(runtimeSpawn);
 	if (runtime) out.spawn = { position: runtime.position, yaw: runtime.yaw };

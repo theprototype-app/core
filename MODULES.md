@@ -481,6 +481,61 @@ if (api.storage) {
 Feature-detect it; on an older app write the SAME key yourself
 (`localStorage['tp:mod:<id>:<key>'] = JSON.stringify(value)`) so progress carries over.
 
+### Performance: quality level, LOD, budgets (1.18, roadmap 31)
+
+```js
+// The adaptive quality level on THIS device: 0 = best ... api.quality.max (every step taken).
+// A headset session starts at 1 (shadows off) in auto mode; a game's Quality setting can pin it.
+if (api.quality) {
+	const apply = (level) => {
+		particles.maxCount = level >= 3 ? 40 : 200;   // cut YOUR effects, not shared state
+		torchLights.forEach((l, i) => (l.visible = i < (level >= 1 ? 2 : 6)));
+	};
+	apply(api.quality.level);
+	const off = api.quality.onChange((level, { labels, vr }) => apply(level)); // released on disable
+}
+
+// Levels of detail for your own dense geometry (auto LOD already covers dense meshes in the
+// shared scene and under the module world root). Built ONCE per asset in a worker
+// (meshoptimizer), drawn by distance through a render-time swap: the mesh keeps its full
+// geometry for picking, physics and your code. Distances are in the mesh's world RADII.
+if (api.lod) {
+	const lod = api.lod(enemyFigure, { ratios: [0.5, 0.2], distances: [6, 18] });
+	lod.ready.then((n) => console.log(n, "meshes have levels")); // lod.remove() undoes it
+}
+mesh.userData.lod = false; // keep one mesh out of auto LOD
+```
+
+Both are LOCAL (a fact about this machine) — never let them change replicated state, or two
+peers on different hardware disagree about the game. Skinned meshes and morph targets get no
+levels (the simplifier cannot carry weights): pre-decimate those offline.
+
+**The Quest budget** (roadmap 31, the planner's target for a scene in Interact/Play on a Quest 3):
+**<= 150 draw calls, <= 300k triangles visible, <= 2 real-time lights with shadows off, no
+per-frame allocations in the hot path.** Measure your game with the probe, the same way every time:
+
+```bash
+# dev server running; run it under the exclusive slot (frame times are the point)
+APP_URL=https://theprototype.app:5173/ ~/.local/bin/e2e-slot --exclusive -- \
+  node scripts/perf-games.cjs --label mine --only waves [--vr] [--profile]
+```
+
+It prints draw calls + triangles per frame (every render pass summed), geometries, textures and
+an MB estimate, lights (+ shadow casters), meshes / instanced / unculled, the LOD and quality
+state, and p50/p95/p99 frame ms at CPU throttle x4; `--profile` adds CPU self-time, the nearest
+app frame calling the heaviest functions, and allocation per function (garbage included).
+The things 1.18's round found, in the order they cost:
+
+- **Never keep a THREE object inside Svelte `$state`** (or pass one through an action parameter
+  that is a state proxy): Svelte deep-reads a proxy, which walks the whole scene graph through
+  `parent` — typed arrays included. Use `$state.raw`. This one line was 88% of a game's frame.
+- **No whole-scene lookups per frame** — `scene.getObjectByName` is a traversal; find once, keep
+  the reference, re-find when it leaves the scene.
+- **No allocation per frame**: reuse vectors/arrays; a `[a, b].map(...)` in a frame task is
+  garbage 60-90 times a second, and GC pauses are the stutter you feel in a headset.
+- **Lights and shadow casters are draw calls**: each shadow-casting light draws every caster
+  again; transmission (glass) renders the scene an extra time per camera, per eye.
+
 ### Game feel: sound, music, haptics, effects, banners (1.17, roadmap 30b)
 
 Everything here is LOCAL to the device it runs on — broadcast your own op

@@ -130,7 +130,9 @@ const snap = (page) =>
 			need: game?.gemTotals().need ?? 0,
 			total: game?.gemTotals().total ?? 0,
 			gameFloor: game?.state.floorIndex ?? null,
-			menu: !!document.getElementById('dr-menu'),
+			// 30-visuals-mod: the Start menu is a core HUD screen (input: 'menu'); the module's DOM
+			// card stays silenced in the template (drmenu show: 'never')
+			menu: window.__stores.hudDocs.visibleScreen('scene')?.id === 'menu' && !document.getElementById('dr-menu'),
 			resolvedGrounded: window.__stores.playSettings.resolvePlaySettings(scene).grounded
 		};
 	});
@@ -172,10 +174,11 @@ const pressP = (page) =>
 		window.dispatchEvent(new KeyboardEvent('keyup', { code: 'KeyP', bubbles: true }));
 	});
 const hudButton = (page, name) => page.getByRole('button', { name, exact: true });
-/** click a module MENU button by its action id (the module DOM menu) */
+/** click a MENU button by its action id (the HUD Start menu since 30-visuals-mod) */
 const clickMenu = (page, id) =>
 	page.evaluate((id) => {
-		const button = document.querySelector('#dr-menu .dr-btn[data-id="' + id + '"]');
+		const label = { 'join-p1': 'Join as Player 1', 'join-p2': 'Join as Player 2', start: 'Start adventure', 'new-dungeon': 'New dungeon' }[id];
+		const button = [...document.querySelectorAll('#hud-layer button')].find((b) => b.textContent.trim().startsWith(label));
 		if (!button) return false;
 		button.click();
 		return true;
@@ -240,13 +243,13 @@ h.run(async () => {
 	await A.page.waitForTimeout(2500);
 	h.check(payload.modules.includes('dungeon') && payload.modules.includes('dungeon-realms'), '1.1 the file\'s requirement list names BOTH modules (' + payload.modules.join(',') + ')');
 	const names = await namesOf(A.page);
-	h.check(Object.keys(names).length === 6 && !!names['Entrance plinth'] && !!names['Arch lintel'], '1.2 the file restored the 6 arch objects (' + Object.keys(names).length + ')');
+	h.check(Object.keys(names).length === 8 && !!names['Entrance plinth'] && !!names['Arch lintel'], '1.2 the file restored the 6 arch objects + Ground + Card camera (' + Object.keys(names).length + ')');
 	const env = await A.page.evaluate(() => {
 		let e;
 		window.__stores.environment.environment.subscribe((v) => (e = v))();
 		return e?.preset ?? null;
 	});
-	h.check(env === 'night', '1.3 the night environment preset (' + env + ')');
+	h.check(env === 'custom', '1.3 the custom dusk sky (' + env + ')');
 	const phys = await A.page.evaluate(() => window.__stores.scenePhysics.scenePhysicsDebug());
 	h.check(phys.play?.interaction === 'click' && phys.play?.grounded === true && phys.play?.simOnPlay === false, '1.4 play block: click, grounded, no sim (' + JSON.stringify(phys.play) + ')');
 	await h.eventually(() => snap(A.page), (s) => s.seed === SEED && s.floorInstances > 0 && s.overlay, '1.5 the Kit regenerated SEED ' + SEED + ' FROM THE NODE after /clear all (777 is gone) and Realms overlaid it', 15000);
@@ -255,7 +258,7 @@ h.run(async () => {
 	const dungeonNodes = await nodesOf(A.page, 'dkdungeon');
 	h.check(dungeonNodes.length === 1 && dungeonNodes[0].data.apply === true && dungeonNodes[0].data.seed === SEED, '1.7 ONE Dungeon node owns the recipe (apply on, seed ' + SEED + ')');
 	h.check((await gameStateOf(A.page)) === 'menu' && (await screenOf(A.page)) === 'menu', '1.8 the game shell starts in menu with the menu screen');
-	h.check(/DUNGEON REALMS/.test(await hudText(A.page)), '1.9 the HUD menu screen renders its title');
+	await h.eventually(() => A.page.evaluate(() => ({ chip: !!document.querySelector('#game-chip'), buttons: document.querySelectorAll('#hud-layer button').length })), (v) => v.chip && v.buttons === 0, '1.9 in the editor the game chip stands in for the menu (30 P1: no live menu over the editor)', 6000);
 	h.check(a1.resolvedGrounded === true && a1.grounded === true, '1.10 grounded resolves TRUE from the Kit contract (playSettings)');
 
 	// ---- 2. B receives it over the handshake ---------------------------------------------------
@@ -264,8 +267,8 @@ h.run(async () => {
 	// ("Entrance_plinth" — the light keeps its space), and the graph binds by uuid anyway
 	await h.eventually(
 		() => namesOf(B.page).then((n) => ({ uuids: Object.values(n), count: Object.keys(n).length })),
-		(v) => v.count === 6 && v.uuids.includes(names['Entrance plinth']),
-		'2.1 B received the 6 arch objects with the same plinth uuid',
+		(v) => v.count === 8 && v.uuids.includes(names['Entrance plinth']),
+		'2.1 B received the 8 objects with the same plinth uuid',
 		30000
 	);
 	await h.eventually(() => snap(B.page), (s) => s.seed === SEED && s.checksum === a1.checksum && s.campaignChecksum === a1.campaignChecksum && s.overlay, '2.2 B: the graph replicated and its Dungeon node built the SAME world (checksums match)', 20000);
@@ -276,6 +279,7 @@ h.run(async () => {
 	await A.page.locator('#play-button').click();
 	await B.page.locator('#play-button').click();
 	await h.eventually(() => snap(A.page), (s) => s.menu, '3.1 A: the module start menu appears in play mode');
+	await h.eventually(async () => (await hudText(A.page)) ?? '', (t) => /DUNGEON REALMS/.test(t), '3.1b in play the HUD menu screen renders its title');
 	await h.eventually(() => snap(B.page), (s) => s.menu, '3.2 B: the module start menu appears');
 	h.check(await clickMenu(A.page, 'join-p1'), '3.3 A joins as Player 1 (module menu)');
 	h.check(await clickMenu(B.page, 'join-p2'), '3.4 B joins as Player 2');
@@ -345,7 +349,7 @@ h.run(async () => {
 	await installZip(C, 'dungeon-realms', realmsZip.bytes, 'C');
 	await h.connect(C, A);
 	const aEnd = await snap(A.page);
-	await h.eventually(() => namesOf(C.page).then((n) => Object.keys(n).length), (n) => n === 6, '6.1 C received the arch', 30000);
+	await h.eventually(() => namesOf(C.page).then((n) => Object.keys(n).length), (n) => n === 8, '6.1 C received the arch', 30000);
 	await h.eventually(() => snap(C.page), (s) => s.seed === SEED && s.floorIndex === 5 && s.checksum === aEnd.checksum && s.overlay, '6.2 C: the Kit rebuilt seed ' + SEED + ' on floor 5 (same checksum) with the overlay', 30000);
 	await h.eventually(() => snap(C.page), (s) => s.collected === aEnd.collected && s.started && s.won, '6.3 C: the game state caught up (gems, started, won)', 20000);
 	await h.eventually(() => gameStateOf(C.page), (v) => v === 'over', '6.4 C: the game shell reads over');

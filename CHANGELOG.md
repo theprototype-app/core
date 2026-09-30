@@ -5,6 +5,131 @@
      per release, newest first. HTML comments like this one are stripped before
      rendering, so maintainer notes stay out of the user-facing window. -->
 
+## 1.17.0 — Games that look finished 🎨
+
+### 🖐️ Dragging, clicking and selecting that do what you meant
+
+- 🖐️ **Dragging in games no longer throws on Quest.** Every press in play logged a
+  `setPointerCapture` InvalidStateError (about a hundred in one Untangle session) and leaving play
+  could end in "Something went wrong": the editor's orbit controls stayed mounted in play and
+  captured the pointer under a pointer lock. They stand down while you play now, and the capture
+  is guarded.
+- 🔀 **Edit and Interact.** A new cell at the end of the bottom bar (or the **I** key) switches
+  the editor between Edit — every click selects, so every object can be moved — and Interact,
+  where clicks and drags work the way they do in play (piano keys play, crates carry) without
+  starting the game. Module click handlers say which modes they run in; by default a game piece
+  answers in Interact and Play and an Edit click selects it.
+- 👻 **Click through glass.** A see-through wall or a shell marked "Click-through in the viewport"
+  (Inspector ▸ Object) no longer steals the click from what is behind it, and clicking the same
+  spot again (after the double-click window) cycles down through everything under the cursor.
+- 🧩 **Every module's content is in the object list.** A new "Module content" section lists the
+  pieces a module builds outside the scene (the Untangle board, a piano, a dungeon) by name;
+  click a row to frame it, hide it locally, or open the module's toolbox.
+
+### 🎮 Games start when you press Start
+
+- ▶️ **Test play.** A game no longer paints its menu over the editor with live buttons. A small
+  "Game · menu" chip says the scene is a game, and ▶ Test play resets it to its menu, enters
+  Play and puts the Start screen in front of you (also on the play button's right-click menu).
+  The HUD editor's eye still previews the screens, inert.
+- 🔁 **The round resets when the last player leaves.** Alone, leaving Play returns the game to its
+  menu at once; with others, when the last player has been out for ten seconds.
+- 🖱️ **Free-cursor games.** A scene can play with the real mouse cursor and no pointer lock
+  (Untangle and the Jam Room do): the cursor aims, clicks fire On Click, press-drag carries. The
+  editor grid no longer shows in Play.
+- 💾 **Games remember things.** `api.storage` for modules and the new **Store Value** / **Stored
+  Value** nodes keep a best score or your unlocked levels on this device (never shared, never
+  saved into the scene). The HUD action "Save best score" wires one up.
+- 🔇 **A quieter console.** The PCFSoftShadowMap deprecation, the router pushState warning and
+  rapier's init warning are gone.
+
+### 🎨 Seven games that look finished
+
+- 🏗️ **Towers remembers your best height** — and looks finished: a sky, a tiled floor, wooden
+  crates, glowing height rings, turning stars; Round over shows this round and your best.
+- 🌌 **Stars Room is a space room** — a starfield behind glass, crystal stars, a start screen
+  with Start round or Free play, a two-minute round, your best round saved.
+- 🎸 **Jam Room is a game** — a small studio; press Start, then ▶ on the Transport, and keep the
+  band going for eight bars. Played with the mouse, your best tempo saved.
+- 🏟️ **Football** is a floodlit glass stadium with a live scoreboard.
+- 🏰 **Dungeon Realms** is torch-lit stone under a vault, with glowing gems, animated portals and
+  a Start menu you can click.
+- 🌅 **Waves** is a sunset arena with a crystal tower that dims with your health, portals,
+  readable enemies and hit flashes.
+- 🪢 **Untangle, finished:** a real drag (press-drag-release, or click then click), a redrawn
+  board, 30 levels per mode that unlock as you solve them (your progress stays on this device,
+  with a Reset), and a new 3D mode — untangle the graph around a globe.
+- Every game has a Start screen, Pause on **P**, and a restart.
+
+### 🥽 Games in a headset
+
+- 🎮 **Play in VR puts you in Interact.** A game opens in Interact in a headset: your grips grab
+  and knock things instead of the world, the stick WALKS you (walls stop you, gravity holds you,
+  small steps climb), and there is no flying or teleporting unless the scene allows it. The left
+  **Y** button switches to Edit and back (a tick in your hand and a small wrist label say which),
+  and the game can put you on its start spot. In Edit, grips move and scale the world again —
+  in game scenes too.
+- 👁️ **No more light helper in one eye.** Editor helpers drew into the left eye only in a
+  headset. Now they are in both eyes in Edit and gone in Interact and Play — together with the
+  grid, collider wireframes and selection outlines.
+- 📋 **The game menu in VR.** A game's menu, pause and results screens float in front of you and
+  answer your laser and trigger (or a poke); the score and timer sit on your left wrist and,
+  if you like, in a strip at the top of your view.
+- 🎹 **Hold the trigger and sweep.** Hold the trigger and brush across piano keys, drum steps,
+  pads or buttons — each one you pass fires once.
+- 🌍 **Module content follows the world.** Grab and turn the world and the Untangle board (and
+  every module's content) turns with it.
+
+### 🔊 Games that sound and feel like games
+
+- 🔔 20 built-in game sounds, 7 music loops (quiet under the sound effects, only while you
+  play), a big centred banner for moments like "GOAL!" or "Floor 3", sparkle / confetti / smoke /
+  spark bursts, and controller vibration patterns (in Interact and Play only). Settings ▸ Sound
+  has a "Game sounds" and a "Music" volume.
+- 🧩 New Game nodes: **Announce**, **Game Sound**, **Effect Burst**, **Controller Buzz**,
+  **Game Music** and the **On Grab** trigger.
+- 🏗️ **Towers** tells you when your tower reaches each ring (a banner, sparkles at the ring,
+  a chime), and the gold ring at the top is a fanfare with confetti. **Stars Room** sparkles where
+  you hit a star and pays a coin when it lights. **The Jam Room is a VR cockpit**: stand in the
+  middle and every instrument is in reach; a sweep also stomps the pedals and flips the mixer
+  mutes (Music FX 0.2.0).
+- ⚽ **Football plays like football**: your first touch kicks a match off, 3-2-1, GOAL! with
+  confetti and a crowd, the conceding team kicks off, first to 5 or 3:00 with a golden goal;
+  swing a controller through the ball to kick it; the consoles stand outside the court.
+- 🏰 **Dungeon Realms is lit everywhere**, with real wall torches, footsteps, gem chimes, a
+  "Floor N" banner and dungeon music; you can no longer walk through pillars, crates or chests.
+- 🔫 **Waves is a VR shooter**: a gun in your hand (Blaster, Scatter, Beam), an ability on your
+  grip (Shield, Slow-mo, Pulse), five levels of rigged grunts, runners and tanks walking at the
+  crystal, a menu with How to play / Loadout / Options, and a Start board you shoot in a headset.
+- 🪢 **Untangle** drags with a controller's trigger (laser or tip), lets you hold and turn the
+  globe in one hand, and lost its drone: one sound per event and a quiet puzzle loop.
+
+### 🧱 Kits and levels
+
+- 🧱 Four new packs in Explorer ▸ Packs — **Modular Architecture**, **Nature & Terrain**,
+  **Props & Interiors** and **Sci-fi & Modern** — over 120 pieces that snap to the 1 m grid (CC0,
+  made with Meshy.ai).
+- 🗺️ Three walkable example levels in Templates ▸ General: **Castle Courtyard**, **Forest
+  Clearing** and **Tavern Interior**. Kit pieces are saved as references to their pack, so a
+  level of 150 pieces is about 25 KB. Configure Scene ▸ Physics ▸ Play mode ▸ Spawn point.
+- ↩️ Placing a kit piece is undoable (it was "too large for undo history").
+- 🛠️ **Fixed:** moves made with the gizmo, Align to ground or an Explorer drop were refused by
+  peers (a rotation sent with its order letters); loading a scene while the simulation runs no
+  longer leaves the old physics world behind.
+
+### 🧰 For authors
+
+- 🧱 **Game and template defs can say more:** rounded boxes, capsules, rings, planes,
+  ico/dodecahedra; spot, directional (shadows fitted to the scene) and hemisphere lights; glass,
+  clearcoat, sheen and toon materials; animation and particle presets by name; click-through
+  shells; custom skies with a gradient, fog and a solid ground. Games-tab cards are rendered with
+  each game's own lighting.
+- 🔤 **Centred HUD text is centred.** A single-line HUD text sat flush left inside its box
+  whatever its alignment said.
+- 🧩 SDK: `registerClickHandler(fn, {modes})`, `api.registerListedGroup(name, {label})`,
+  `api.storage`, `api.editorMode()`, and `api.pointerRay()` is the crosshair ray under a pointer lock and the
+  cursor's ray in a free-cursor game.
+
 ## 1.16.0 — Waves, and one world to keep 🌊
 
 ### 🎮 A new game, and a Games tab that can move again

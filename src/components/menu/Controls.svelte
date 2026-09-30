@@ -1,7 +1,7 @@
 <script lang="ts">
-	import { Clapperboard, Code, Cog, Eye, FolderOpen, Grid2x2, List, Maximize2, MessageSquare, Monitor, Move, Palette, Pin, Play, RectangleGoggles, RotateCcw, SquarePen, Sun, Workflow } from '@lucide/svelte';
+	import { Clapperboard, Code, Cog, Eye, FolderOpen, Grid2x2, Hand, List, Maximize2, MessageSquare, Monitor, Move, Palette, Pin, Play, RectangleGoggles, RotateCcw, SquarePen, Sun, Workflow } from '@lucide/svelte';
 	import { Listgroup } from 'flowbite-svelte';
-	import { objectsGroup, TControls, transformMode, isLocked, lockedObjects, globalScene, vrPassthrough, vrOverride, selectedObject, selectedObjects } from '../../stores/sceneStore';
+	import { objectsGroup, TControls, transformMode, editorMode, isLocked, lockedObjects, globalScene, vrPassthrough, vrOverride, selectedObject, selectedObjects } from '../../stores/sceneStore';
 	import { chatHidden, flowGraphClose, flowCodeClose, animationClose, uvEditorClose, shaderEditorClose, hudEditorClose, explorerClose, objectListClose, objectContextMenu, renamingObject, advancedMode, showEnvInList, showLocalObjects, floatingToolbar, toolbarAlwaysOnTop, showSimControls, expandedObjects } from '../../stores/appStore.js';
 	// 24-B2: keyboard navigation in the object list (the Explorer's gridKeydown shape)
 	import { visibleObjectRows, withExpanded, typeAheadIndex } from '$lib/objectListNav';
@@ -13,7 +13,7 @@
 	import { ENV_ROOT } from '$lib/environment';
 	import { flyTo } from '$lib/objectActions';
 	import { mutedFlowObjects } from '../../stores/flowStore';
-	import { focusObject, duplicateObject, toggleObjectVisibility, moveObjectToGroup, setTransformMode, selectObject } from '$lib/objectActions';
+	import { focusObject, duplicateObject, toggleObjectVisibility, moveObjectToGroup, setTransformMode, selectObject, toggleEditorMode } from '$lib/objectActions';
 	import { registerWindowReset } from '$lib/dragWindow';
 	import { enterEditMode } from '$lib/meshEdit';
 	import { addAnnotation } from '$lib/annotationsHandler';
@@ -28,6 +28,7 @@
 	import { shareObject } from '$lib/objectPermissions';
 	import Objects from './Objects.svelte';
 	import LocalObjects from './LocalObjects.svelte';
+	import ModuleContent from './ModuleContent.svelte';
 	import ContextMenu from '../ContextMenu.svelte';
 	import MobileAddButton from './MobileAddButton.svelte';
 	import AiHudButton from './AiHudButton.svelte';
@@ -39,6 +40,9 @@
 	import { visibleDockKey, dockOccupants, bottomInset, FLOW_FAMILY, armDockMode, DOCK_TITLES } from '$lib/bottomDock';
 	import { togglePanel } from '$lib/panelToggles';
 	import { requestPlay, willEnterXR, willEnterAR, vrSupported, arSupported, xrSessionFailed } from '$lib/playMode';
+	// 30 P2: Test play — the play button's right-click row beside the game chip's button
+	import { testPlay } from '$lib/gamePresence';
+	import { hudIsGame } from '$lib/hudDocs';
 	import { DOCK_VIEWS } from '$lib/dockMenu';
 	import { safeStorage } from '$lib/safeStorage';
 	import { VRButton, XRButton } from '@threlte/xr'
@@ -916,6 +920,18 @@
 					requestPlay();
 				}
 			},
+			// 30 P2: TEST PLAY — back to the menu, into Play, the Start screen. Offered only
+			// where it means something: a scene with no game shell has no menu to start from.
+			...($hudIsGame
+				? [
+						{ section: 'Game' },
+						{
+							label: 'Test play (start from the menu)',
+							tooltip: 'Reset the game to its menu, enter Play, and start from the Start screen',
+							action: () => testPlay()
+						}
+					]
+				: []),
 			// the FAB is a toolbar cell like any other, so it carries the same tail —
 			// minus "Hide button" (there is no toolbar without a way to press play)
 			...toolbarTail(null)
@@ -952,7 +968,9 @@
 		collapsed: boolean;
 		posX: number | null;
 	};
-	type CellButton = { title: string; slot?: string; icon: any; tint: () => string; run: () => void };
+	// 30 P1: `pressed` makes the cell a TOGGLE — it renders as a real <button> carrying
+	// aria-pressed (a <p> cannot: the attribute is not supported on its role)
+	type CellButton = { title: string; slot?: string; icon: any; tint: () => string; run: () => void; pressed?: () => boolean };
 
 	/** the one PSEUDO-cell: the transparent well the play FAB sits in. It is not a
 	 *  roster entry (play is never hideable) but it IS a cell of the row, which is
@@ -963,7 +981,10 @@
 	 *  the FAB's own right-click menu (plus Settings' Reset window positions, which
 	 *  is the hatch for iOS Safari, where a long press fires no `contextmenu`). */
 	const SPACER = '__spacer';
-	const DEFAULT_ORDER = ['move', 'rotate', 'scale', 'objects', 'flow', 'explorer'];
+	// 30 P1: the Edit/Interact toggle ('mode') joins the default bar at the END — the same
+	// place loadLayout already appends a default id an older record has never heard of, so
+	// a fresh profile and an upgraded one agree, and the well keeps its slot after Scale
+	const DEFAULT_ORDER = ['move', 'rotate', 'scale', 'objects', 'flow', 'explorer', 'mode'];
 	const DEFAULT_SPACER = 3;
 
 	/** W8b: the roster is bigger than the bar. `DEFAULT_ORDER` is what a fresh profile
@@ -1005,6 +1026,14 @@
 	// reading `$transformMode` / the `$derived` flags inside it registers the
 	// dependency in the render effect exactly as the inline expressions used to.
 	const BUTTONS: Record<string, CellButton> = {
+		mode: {
+			title: 'Interact mode (I)',
+			slot: 'editor-mode-toggle',
+			icon: Hand,
+			tint: () => ($editorMode === 'interact' ? ICON_ON : ICON_OFF),
+			pressed: () => $editorMode === 'interact',
+			run: () => toggleEditorMode()
+		},
 		move: {
 			title: 'Move (1)',
 			icon: Move,
@@ -1059,6 +1088,22 @@
 			])
 		)
 	};
+
+	/** 30 P1: the toggle cell's click as a DIRECT listener — an `on:click` on a new element
+	 *  adds a deprecation warning in this runes-mode file (the openStats reasoning). */
+	function cellClick(node: HTMLElement, id: string) {
+		let current = id;
+		const click = () => runCell(current);
+		node.addEventListener('click', click);
+		return {
+			update(next: string) {
+				current = next;
+			},
+			destroy() {
+				node.removeEventListener('click', click);
+			}
+		};
+	}
 
 	function defaultLayout(): ControlsLayout {
 		return { order: [...DEFAULT_ORDER], hidden: [], spacerIndex: DEFAULT_SPACER, collapsed: false, posX: null };
@@ -2015,6 +2060,24 @@
 			{:else}
 				{@const btn = BUTTONS[cell.id]}
 				{@const Glyph = btn.icon}
+				{#if btn.pressed}
+				<!-- 30 P1: a TOGGLE cell is a real button, so it can say aria-pressed -->
+				<button
+					type="button"
+					id={btn.slot}
+					class={classActive +
+						' w-10' +
+						(i === 0 ? ' rounded-l-full' : '') +
+						(i === visibleCells.length - 1 ? ' rounded-r-full' : '')}
+					title={btn.title}
+					aria-label={btn.title}
+					aria-pressed={btn.pressed()}
+					use:cellClick={cell.id}
+					use:cellMenu={cell.id}
+				>
+					<Glyph size={18} class={btn.tint()} aria-hidden="true" />
+				</button>
+				{:else}
 				<!-- ONE template for every roster button: the six hand-written cells each
 				     carried their own copy of this element, so each one also carried its own
 				     copy of the same three a11y/deprecation warnings. -->
@@ -2030,6 +2093,7 @@
 				>
 					<Glyph size={18} class={btn.tint()} aria-hidden="true" />
 				</p>
+				{/if}
 			{/if}
 		{/each}
 	</div>
@@ -2360,6 +2424,8 @@
 						{/each}
 					{/if}
 				</div>
+				<!-- 30 P3: every module's scene-root content, listed read-only -->
+				<ModuleContent />
 			  {/if}
 			{/if}
 		</div>

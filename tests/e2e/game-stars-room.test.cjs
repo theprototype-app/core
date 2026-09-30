@@ -11,6 +11,12 @@
 // three and the room never holding more than 27 + maxAlive dynamic bodies (the spawner
 // RECYCLES at the cap — it does not refuse), one touch banked in MY row, and the optional
 // round: Start -> playing, every star swept -> "Lit: 24 / 24" -> over; P toggles the menu.
+//
+// 30 visuals-core: a START screen (Start round / Free play — free play is a game state of
+// its own, `free`), a two-minute round, Round over written from STORED values (every
+// perRound latch reads un-lit the instant the round ends), the best round saved on this
+// device, glass walls that clicks pass through, a starfield, and ONE pooled burst emitter a
+// Script node moves onto the star just hit — the fix for the emitter-cap toast on load.
 const h = require('./helpers.cjs');
 const fs = require('fs');
 const path = require('path');
@@ -117,14 +123,16 @@ h.run(async () => {
 	// 1 — the world arrived whole, with its physics block
 	let st = await snap();
 	const dyn = st.kids.filter((k) => k.dynamic);
-	h.check(st.kids.length === 36, `36 objects arrived (${st.kids.length})`);
+	// 30: 36 -> 50 (floor/ceiling rings, 8 frame pieces, starfield, burst anchor, deck light, card camera)
+	// 30b: -> 49, the burst anchor retired (the core's pooled Effect Burst replaced the trick)
+	h.check(st.kids.length === 49, `49 objects arrived (${st.kids.length})`);
 	h.check(dyn.length === 27, `27 dynamic bodies: 24 stars + 2 planets + the template (${dyn.length})`);
 	h.check(st.kids.filter((k) => /^Star \d+$/.test(k.name)).length === 24, 'the 24 stars are named Star 1..24');
 	h.check(st.gravity === 0 && st.ground?.enabled === false, `zero-g with the ground off (${st.gravity}, ground ${st.ground?.enabled})`);
 	h.check(st.knock?.enabled === true && Math.abs(st.knock.maxSpeed - 10) < 1e-9 && Math.abs(st.knock.spin - 0.6) < 1e-9, `the knock block restored ON from the file (${JSON.stringify(st.knock)})`);
 	h.check(Math.abs((st.damping?.linear ?? 0) - 0.35) < 1e-9, `damping 0.35 (${st.damping?.linear})`);
 	h.check(st.play?.simOnPlay === true && st.play?.interaction === 'grab' && st.play?.grounded === false, 'play block: grab, flying, simOnPlay');
-	h.check(st.state === 'menu' && st.screen === 'free', `starts in free play (${st.state}/${st.screen})`);
+	h.check(st.state === 'menu' && st.screen === 'start', `starts on the start screen (${st.state}/${st.screen})`);
 	const chime = await page.evaluate(() => {
 		const s = window.__stores;
 		const snd = s.allNodes().find((n) => n.type === 'sound');
@@ -134,19 +142,98 @@ h.run(async () => {
 	h.check(!!chime.hash && /^[0-9a-f]{16,}$/.test(chime.hash) && chime.held, `the chime's hash was remapped and its bytes rode the file into the Explorer (${chime.hash?.slice(0, 8)}, held ${chime.held})`);
 	h.check(chime.nodes > 200, `the graph is there (${chime.nodes} nodes)`);
 
+	// 1b — 30: the look and the emitter budget, measured
+	const look = await page.evaluate(() => {
+		const s = window.__stores;
+		const g = (st) => { let v; st.subscribe((x) => (v = x))(); return v; };
+		const group = g(s.objectsGroup);
+		const walls = ['Wall north', 'Wall south', 'Wall west', 'Wall east'].map((n) => group.getObjectByName(n));
+		const star = group.getObjectByName('Star 1');
+		let userEmitters = 0;
+		group.traverse((o) => { if (o.userData?.particles) userEmitters++; });
+		const env = g(s.environment.environment);
+		return {
+			glass: walls.every((w) => w?.userData?.pick === 'through' && w.material.opacity < 0.25),
+			star: star && { geo: star.geometry.type, mat: star.material.type, collider: star.userData.physics?.collider },
+			particleNodes: s.allNodes().filter((n) => n.type === 'particle').length,
+			userEmitters,
+			starfield: !!group.getObjectByName('Starfield')?.userData?.particles,
+			exposure: env?.exposure, gradient: !!env?.customPreset?.gradient
+		};
+	});
+	h.check(look.glass, 'the four walls are glass panels, select-through');
+	h.check(look.star?.geo === 'IcosahedronGeometry' && look.star.mat === 'MeshPhysicalMaterial' && look.star.collider === 'sphere', `the stars are crystals with sphere colliders (${JSON.stringify(look.star)})`);
+	h.check(look.starfield && look.exposure >= 0.9 && look.gradient, `a starfield under a gradient sky, exposure ${look.exposure}`);
+	h.check(look.particleNodes + look.userEmitters <= 8, `the emitters fit the runtime's cap of 8 (${look.particleNodes} nodes + ${look.userEmitters} on objects; it was 24 per-star bursts)`);
+	const loadToasts = await page.locator('.tp-toast').allTextContents().catch(() => []);
+	h.check(!loadToasts.some((t) => /emitter cap|cap \(8\)/i.test(t)), `no emitter-cap toast on load (${JSON.stringify(loadToasts).slice(0, 120)})`);
+
+	// 30b: the game-feel stores the suite reads (sound / burst / banner / music)
+	const feel = () =>
+		page.evaluate(() => {
+			const k = window.__stores.gameKit;
+			let music, ann;
+			k.gameMusic.gameMusicState.subscribe((v) => (music = v))();
+			k.gameAnnounce.gameAnnouncement.subscribe((v) => (ann = v))();
+			const d = k.gameFeelActions.gameFeelActionsDebug();
+			return { music: music?.preset ?? null, ann: ann?.text ?? null, last: d.last, fired: d.fired, sounds: d.sounds };
+		});
+	const resetFeel = () => page.evaluate(() => window.__stores.gameKit.gameFeelActions.resetGameFeelActionsDebug());
+	// 30b: what the VR wrist card / top strip would SAY right now (vr-play's overlay split)
+	const vrLines = () =>
+		page.evaluate(() => {
+			const s = window.__stores;
+			const k = s.gameKit.vrGamePanel;
+			let rt; s.hudDocs.hudRuntime.subscribe((v) => (rt = v))();
+			const { panel, overlay } = k.vrScreens();
+			return { panel: panel.map((p) => p.screen.id), lines: overlay.flatMap((o) => k.overlayLines(o.screen.elements, rt)) };
+		});
+
 	// 2 — entering play starts the sim (free play, no round)
 	await page.evaluate(() => window.__stores.isLocked.set(true));
 	await h.eventually(() => snap().then((v) => v.sim), (v) => v === true, 'entering play starts the sim', 10000);
 	await page.waitForTimeout(600);
 	st = await snap();
-	h.check(st.state === 'menu' && st.screen === 'free', 'free play: the sim runs while the game shell stays in menu');
+	h.check(st.state === 'menu' && st.screen === 'start', 'the start screen shows in play, the sim running behind it');
+	// 30b: the menu says how to play, the room has its music, and Play put you on the spawn
+	h.check(/HOW TO PLAY/.test(await hud()) && /Knock every crystal star once to light it/.test(await hud()), '30b: the start screen says HOW TO PLAY');
+	await h.eventually(() => feel().then((f) => f.music), (m) => m === 'space', '30b: the space music plays in Play', 6000);
+	const eye = await page.evaluate(() => {
+		const s = window.__stores;
+		let cam; s.playerCam.subscribe((v) => (cam = v))();
+		const p = cam.getWorldPosition(new s.THREE.Vector3());
+		return [p.x, p.y, p.z].map((n) => +n.toFixed(2));
+	});
+	h.check(Math.abs(eye[0]) < 0.05 && Math.abs(eye[1] - 1.7) < 0.05 && Math.abs(eye[2] - 5.2) < 0.05, `30b: Play put the eye on the spawn, inside the south glass (${eye})`);
+	h.check(/Start round/.test(await hud()) && /Free play/.test(await hud()) && /Your best round: 0 \/ 24/.test(await hud()), 'it offers Start round and Free play, and this device\'s best (none yet)');
+	await clickBtn('Free play');
+	await h.eventually(() => snap().then((v) => `${v.state}/${v.screen}`), (v) => v === 'free/free', 'Free play: the `free` state and its screen', 6000);
 	h.check(/STARS ROOM/.test(await hud()) && /free play/.test(await hud()), 'the free-play banner renders');
+	// 30: a READABLE frame in play — mean luminance of the centred 360 px square (fork 11)
+	await page.waitForTimeout(800);
+	const lum = await page.evaluate(async (b64) => {
+		const bmp = await createImageBitmap(await (await fetch('data:image/png;base64,' + b64)).blob());
+		const c = document.createElement('canvas'); c.width = bmp.width; c.height = bmp.height;
+		const x = c.getContext('2d'); x.drawImage(bmp, 0, 0);
+		const d = x.getImageData(Math.round(bmp.width / 2 - 180), Math.round(bmp.height / 2 - 180), 360, 360).data;
+		let sum = 0;
+		for (let i = 0; i < d.length; i += 4) sum += 0.2126 * d[i] + 0.7152 * d[i + 1] + 0.0722 * d[i + 2];
+		return sum / (d.length / 4) / 255;
+	}, (await page.screenshot()).toString('base64'));
+	h.check(lum >= 0.25, `the play frame reads: centre luminance ${lum.toFixed(3)} >= 0.25`);
 
 	// 3 — a hand knocks Star 1: it leaves at hand speed, and damping bleeds it
 	const k1 = await knockStar('Star 1', 4);
 	h.check(k1.hits === 1, `a 4 m/s pass knocks Star 1 once (${k1.hits})`);
 	h.check(!!k1.atHit && Math.abs(mag(k1.atHit) - 4) < 0.4, `...and it leaves at ~4 m/s (${mag(k1.atHit).toFixed(2)})`);
-	await page.waitForTimeout(500);
+	// 30b: the knocked star SPARKLES where it was hit — the core's pooled Effect Burst, at the
+	// star (the 30 anchor-and-Script trick is retired)
+	await page.waitForTimeout(250);
+	const star1At = (await snap()).kids.find((k) => k.name === 'Star 1')?.pos;
+	const sparkle = (await feel()).last.filter((e) => e.type === 'effectburst' && e.kind === 'sparkle' && e.fired);
+	const near = sparkle.find((e) => star1At && Math.hypot(e.where[0] - star1At[0], e.where[1] - star1At[1], e.where[2] - star1At[2]) < 1.2);
+	h.check(!!near, `the knocked star sparkled where it was hit (${JSON.stringify(sparkle.map((e) => e.where))}, star ${star1At})`);
+	await page.waitForTimeout(350);
 	const v05 = speedOf(await bodyOf(k1.uuid));
 	await page.waitForTimeout(2500);
 	const v3 = speedOf(await bodyOf(k1.uuid));
@@ -177,12 +264,26 @@ h.run(async () => {
 	h.check(alive <= 27 + 32 && alive >= before + 3, `twelve more presses never exceed 27 + maxAlive 32 (${alive}) — the spawner recycles, it does not pile up`);
 
 	// 6 — the round: Start -> playing; sweep every star -> Lit 24/24 -> over
+	await resetFeel();
 	await clickBtn('Start round: light every star');
 	await h.eventually(() => snap().then((v) => v.state), (v) => v === 'playing', 'Start flips to playing', 8000);
 	await h.eventually(() => snap().then((v) => v.screen), (v) => v === 'hud', 'the round HUD shows', 6000);
+	await h.eventually(() => feel(), (f) => f.last.some((e) => e.type === 'announce' && e.text === 'Light every star!') && f.last.some((e) => e.sound === 'whistle'), '30b: the round opens with a banner and a whistle', 4000);
 	await page.waitForTimeout(800);
+	await resetFeel();
 	await knockStar('Star 3', 3, 'q');
 	await h.eventually(async () => await hud(), (t) => /Lit: 1 \/ 24/.test(t), 'one hit lights one star (Lit: 1 / 24)', 8000);
+	// 30b: the score is readable in VR — the round HUD is an OVERLAY, so the wrist card and the
+	// top strip carry "Lit: 1 / 24" and the clock (the menu screens go to the VR board)
+	const vr = await vrLines();
+	h.check(vr.panel.length === 0 && vr.lines.some((l) => /^Lit: 1 \/ 24$/.test(l)) && vr.lines.some((l) => /\d+s left/.test(l)), `30b: the score and the clock read on the VR wrist/strip (${JSON.stringify(vr)})`);
+	// 30b: LIGHTING a star pays a coin chime at it and a tap in VR — once per star per round
+	await h.eventually(() => feel(), (f) => f.last.filter((e) => e.sound === 'coin' && e.spatial).length === 1 && (f.fired.hapticpulse ?? 0) === 1, '30b: lighting Star 3 plays one coin at it and asks one tap', 4000);
+	await page.waitForTimeout(1500); // let it drift, then knock it again inside the same round
+	await knockStar('Star 3', 3, 'q2');
+	await page.waitForTimeout(700);
+	const again = await feel();
+	h.check(again.last.filter((e) => e.sound === 'coin').length === 1 && again.last.filter((e) => e.type === 'effectburst').length >= 2, `30b: a second knock sparkles again but pays no second coin (coins ${again.last.filter((e) => e.sound === 'coin').length}, sparkles ${again.last.filter((e) => e.type === 'effectburst').length})`);
 	const lit3 = await page.evaluate(() => {
 		let group; window.__stores.objectsGroup.subscribe((v) => (group = v))();
 		return '#' + group.getObjectByName('Star 3').material.color.getHexString();
@@ -234,15 +335,30 @@ h.run(async () => {
 	});
 	await h.eventually(litThisRound, (n) => n >= 24, 'all 24 latches were set this round (hit stamps at or after startedAt)', 10000);
 	await h.eventually(() => snap().then((v) => v.state), (v) => v === 'over', 'every star lit ends the round (over)', 10000);
-	h.check(/EVERY STAR LIT/.test(await hud()) && /Every star lit in \d+s/.test(await hud()), 'the over screen names the time');
+	// 30b: the round ends in confetti and a cheer, and the win is announced
+	await h.eventually(() => feel(), (f) => f.last.some((e) => e.type === 'effectburst' && e.kind === 'confetti') && f.last.some((e) => e.sound === 'cheer') && (f.sounds.levelup ?? 0) === 1, '30b: over = confetti, a cheer and the win fanfare', 4000);
+	h.check(!(await feel()).last.some((e) => e.type === 'announce' && /lit!|up!/i.test(e.text)), '30b: and no banner over the results panel (it read twice)');
+	const coins = (await feel()).sounds.coin ?? 0;
+	h.check(coins === 24, `30b: the sweep paid exactly one coin per star lit (${coins} / 24)`);
+	await h.eventually(async () => await hud(), (t) => /EVERY STAR LIT/.test(t) && /Every star lit in \d+s/.test(t) && /Your best: 24 \/ 24/.test(t), 'the over screen names the time and the best, from storage');
+	const storedStars = await page.evaluate(() => {
+		const out = {};
+		for (let i = 0; i < localStorage.length; i++) {
+			const k = localStorage.key(i);
+			if (/^tp:scene:.*:stars-(best|last|time)$/.test(k)) out[k.split(':').pop()] = JSON.parse(localStorage.getItem(k));
+		}
+		return out;
+	});
+	h.check(storedStars['stars-best'] === 24 && storedStars['stars-last'] === 24 && storedStars['stars-time'] > 0, `the round was saved on this device (${JSON.stringify(storedStars)})`);
 
 	// 7 — a NEW round un-lights every star (the perRound reset, and the repaint that
 	// proves the paint tracks the round rather than sticking). Material colour is NOT
 	// base-managed — restoreBase carries pose and visibility only — so a star does not
 	// revert to its authored palette colour when the round ends; it is repainted when the
 	// next round starts, which is the behaviour worth asserting.
-	await clickBtn('Back to free play');
-	await h.eventually(() => snap().then((v) => v.state), (v) => v === 'menu', 'Back to free play returns to menu', 8000);
+	await clickBtn('Menu');
+	await h.eventually(() => snap().then((v) => `${v.state}/${v.screen}`), (v) => v === 'menu/start', 'Menu returns to the start screen', 8000);
+	h.check(/Your best round: 24 \/ 24/.test(await hud()), 'the start screen shows the saved best round (24 / 24)');
 	await pressP();
 	await h.eventually(() => snap().then((v) => v.screen), (v) => v === 'pause', 'the menu opens again', 6000);
 	await clickBtn('Start round: light every star');

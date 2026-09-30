@@ -119,6 +119,12 @@ async function setupPage(browser, name, options = {}) {
 		page.__errors.push(err.message ?? String(err));
 		console.log(`[${name} pageerror] ` + err.stack);
 	});
+	// 30 P0: every console message, from BEFORE the first navigation — a warning printed on
+	// the first frame (three's shadow-map deprecation) is invisible to a listener attached
+	// after boot. `{type, text}`; `console-hygiene` reads it.
+	/** @type {{type: string, text: string}[]} */
+	page.__console = [];
+	page.on('console', (message) => page.__console.push({ type: message.type(), text: message.text() }));
 	// 27-D: `options.hash` loads the app WITH a hash (`{ hash: '#safe' }`). It has to be
 	// on the initial navigation, not set afterwards: safe mode is read once during
 	// onMount, so a hash assigned to a live page arrives long after the decision.

@@ -2,6 +2,7 @@
 import * as THREE from 'three';
 import { get } from 'svelte/store';
 import { objectsGroup, globalScene, globalCamera, globalRenderer, selectedObjects } from '../stores/sceneStore';
+import { helpersHidden } from './helperLayer';
 
 // A dot for an object you can no longer see.
 //
@@ -74,6 +75,11 @@ export function updateTinyMarkers() {
 	const renderer = get(globalRenderer);
 	const height = renderer?.domElement?.clientHeight ?? 0;
 	if (!scene || !group || !camera?.isPerspectiveCamera || !height) return;
+	// 30b P1: an aiming aid for the EDITOR — Interact and Play draw no scaffolding
+	if (helpersHidden()) {
+		if (points) points.visible = false;
+		return;
+	}
 
 	/** @type {number[]} */
 	const spots = [];

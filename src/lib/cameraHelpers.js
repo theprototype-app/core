@@ -7,7 +7,7 @@ import { wireframeActive } from './viewMode';
 // 24-E2: frustums live on the helper layer; MARKERS hop onto it while hidden (Play
 // without the debug toggle, or a camera preview) — see helperLayer.js for the rule
 import { markHelper, setMarkersHidden, helpersHidden, helpersInPlay } from './helperLayer';
-import { isLocked } from '../stores/sceneStore';
+import { isLocked, editorMode } from '../stores/sceneStore';
 import { safeStorage } from './safeStorage';
 
 // 16-P5: frustum visualization for camera OBJECTS — the colliderHelpers pattern.
@@ -175,6 +175,7 @@ export function startCameraHelpers() {
 	// 24-E2: the marker hop follows Play, the debug toggle and the preview
 	if (!started && typeof window !== 'undefined') {
 		isLocked.subscribe(applyMarkerLayers);
+		editorMode.subscribe(applyMarkerLayers); // 30b: Interact hides markers like Play
 		helpersInPlay.subscribe(applyMarkerLayers);
 		frustumSuppressed.subscribe(applyMarkerLayers);
 	}

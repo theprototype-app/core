@@ -25,11 +25,15 @@
 // history's import subtree, and nothing here registers a history kind.
 
 import { writable, get } from 'svelte/store';
-import { peers } from '../stores/appStore';
+import { peers, showToast } from '../stores/appStore';
 import { isLocked } from '../stores/sceneStore';
 import { rolesInfo } from './cloudHooks';
 import { sessionHost } from './connectionState';
 import { gameState, resetGame } from './gameState';
+// 30 P2: both leaves (hudDocs: svelte/store + gameState + hudKinds + safeStorage; playMode:
+// sceneStore + appStore), so Test play lives here beside the reset permission it obeys
+import { hudIsGame, hudScreenOverride } from './hudDocs';
+import { requestPlay } from './playMode';
 
 /** The two modes. A third would be a protocol change, so the reader treats anything it
  * does not recognise as `editor` (the normalize-at-the-boundary rule). */
@@ -275,8 +279,11 @@ export function isSessionWriter() {
  */
 export function tickAbandonWatch(now = Date.now()) {
 	const game = get(gameState);
-	if (game.state !== 'playing') {
-		// nothing to abandon; forget the arming so the NEXT round starts clean
+	// 30 P2 (roadmap 30 fork 5): EVERY state but `menu` is a round a player can leave — a
+	// paused round and a finished one (`over`, the victory screen) used to linger on the
+	// editor forever, because only `playing` was watched. `menu` is the one state with
+	// nothing to abandon, and reaching it forgets the arming so the NEXT round starts clean.
+	if (game.state === 'menu') {
 		armedRound = null;
 		return 'idle';
 	}
@@ -287,7 +294,11 @@ export function tickAbandonWatch(now = Date.now()) {
 	}
 	// a round nobody has entered yet is not an abandoned round
 	if (armedRound !== game.round) return 'idle';
-	if (now - lastPlayingAt < ABANDON_MS) return 'waiting';
+	// 30 P2: ALONE, leaving IS abandoning — there is nobody whose reload or connect dance
+	// the ten-second window protects, and the round must not sit `playing` with its in-game
+	// HUD waiting for a player who is back in the editor. With peers the window stands.
+	const grace = livePeers().length ? ABANDON_MS : 0;
+	if (now - lastPlayingAt < grace) return 'waiting';
 	if (!isSessionWriter()) return 'notwriter';
 	// re-read through the single write path: `resetGame` is what the admin button calls,
 	// so the two ways a game ends up back at its menu are literally one function
@@ -342,6 +353,41 @@ export function requestResetGame() {
 
 /** @type {(()=>void)[]} */
 let disposers = [];
+/** was this peer in play at the last isLocked notification (the exit EDGE, not a state) */
+let wasPlaying = false;
+/** @type {any} */ let pokeTimer = null;
+
+/** One deferred watch pass; several notifications in one task coalesce into it. */
+function pokeWatch() {
+	if (pokeTimer || typeof setTimeout === 'undefined') return;
+	pokeTimer = setTimeout(() => {
+		pokeTimer = null;
+		tickAbandonWatch();
+	}, 0);
+}
+
+/**
+ * 30 P2 — ▶ TEST PLAY (roadmap 30 fork 4). What an author means by "try my game": back to
+ * the menu, into Play, the Start screen in front of them. Reached from the game chip and
+ * from the play button's right-click menu.
+ *
+ * The reset goes through `requestResetGame`, so it obeys the same rule as the Users
+ * popover's admin entry: the host (or anyone alone) may, an admin under a roles plugin
+ * may, and anybody else JOINS the game as it is — told so, never silently. This peer's
+ * own screen overrides are cleared either way (LOCAL), so the state-bound screen decides
+ * what shows. Play itself is the ordinary `requestPlay`, synchronously inside the click, so
+ * an immersive session is still requested within the gesture that asked for it.
+ * @returns {{ok: boolean, reason?: string}} the reset's verdict
+ */
+export function testPlay() {
+	const game = get(gameState);
+	const pristine = game.state === 'menu' && !game.startedAt;
+	const verdict = pristine ? { ok: true } : requestResetGame();
+	if (!verdict.ok) showToast((verdict.reason ?? 'The game cannot be reset.') + ' Joining the game as it is.');
+	hudScreenOverride.set({});
+	requestPlay();
+	return verdict;
+}
 
 /** Install the presence broadcast + the abandon watch. Idempotent. */
 export function startGamePresence() {
@@ -349,7 +395,26 @@ export function startGamePresence() {
 	// the subscribe lives HERE and not at module scope: a module-level subscribe runs
 	// its callback SYNCHRONOUSLY at module eval, and anything it reads that is declared
 	// below TDZ-crashes the SSR prerender (the documented meshEdit/faceEdit trap)
-	disposers.push(isLocked.subscribe(() => publishPlayMode()));
+	disposers.push(
+		isLocked.subscribe((v) => {
+			publishPlayMode();
+			// 30 P2: a screen THIS peer chose during play (the pause menu a P press opened, a
+			// hudscreen node's override) is play state — it must not follow the player back
+			// into the editor, or the next Play lands on a stale pause screen over a round
+			// that has since returned to its menu. Games only: a plain HUD's overrides are
+			// authored behaviour and keep their old lifetime.
+			if (v !== true && wasPlaying && get(hudIsGame)) hudScreenOverride.set({});
+			wasPlaying = v === true;
+			pokeWatch();
+		})
+	);
+	// 30 P2: the watch also runs on the EDGES, not only on its 1s beat: entering play arms
+	// the round even if the player leaves inside the first second, and the last player
+	// leaving resets a solo round on the spot. Deferred a macrotask, because a tick may
+	// WRITE the game state and these are store notifications (never write a store from
+	// inside a subscriber).
+	disposers.push(gameState.subscribe(() => pokeWatch()));
+	disposers.push(peerPlayModes.subscribe(() => pokeWatch()));
 	watchTimer = setInterval(() => tickAbandonWatch(), WATCH_MS);
 	disposers.push(() => {
 		clearInterval(watchTimer);
@@ -361,6 +426,9 @@ export function startGamePresence() {
 export function stopGamePresence() {
 	for (const dispose of disposers) dispose();
 	disposers = [];
+	if (pokeTimer) clearTimeout(pokeTimer);
+	pokeTimer = null;
+	wasPlaying = false;
 }
 
 /** Test/debug view — `abandonWrites` is the only way to tell WHICH peer wrote a

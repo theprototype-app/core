@@ -41,6 +41,16 @@ export const isLocked = writable(null);
  * @type {import("svelte/store").Writable<boolean>}
  */
 export const playPointerFree = writable(false);
+/**
+ * 30 P1: the editor's CLICK MODE, beside Play rather than inside it. 'edit' (the
+ * default): a viewport click SELECTS and the gizmo attaches. 'interact': a click reaches
+ * module click handlers, On Click nodes and the cursor grab — play-style, without the
+ * pointer lock and without starting the game — and selects nothing. LOCAL per peer:
+ * never replicated, never saved (the view-mode rule), so a reload is back in Edit.
+ * Written through objectActions.setEditorMode, which also puts the gizmo away.
+ * @type {import("svelte/store").Writable<'edit' | 'interact'>}
+ */
+export const editorMode = writable('edit');
 export const isVRMode = writable(false);
 export const vrOverride = writable(false);
 export const playerCam = writable(false);

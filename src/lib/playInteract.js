@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { writable, get } from 'svelte/store';
-import { isLocked, isVRMode, playPointerFree, objectsGroup, globalScene, lockedObjects, pokeScene } from '../stores/sceneStore';
+import { isLocked, isVRMode, playPointerFree, objectsGroup, globalScene, lockedObjects, pokeScene, editorMode } from '../stores/sceneStore';
 import { peers } from '../stores/appStore';
 import { sceneHits } from './scenePick';
 import { topLevelObjectOf } from './objectActions';
@@ -13,11 +13,14 @@ import {
 	remoteSimulating,
 	isInitiator
 } from './physics';
-import { suspendAnimation, resumeAnimation, fireObjectClick } from './flowRuntime';
+import { suspendAnimation, resumeAnimation, fireObjectClick, fireObjectGrab } from './flowRuntime';
 import { velocityFromSamples } from './throwVelocity';
 import { resolvePlaySettings } from './playSettings';
+import { pickStack, primaryIndex } from './selectThrough';
 import { nameOf } from './lockControl';
-import { moduleClickHandlers, moduleInteractiveGroups, fireClickMiss } from './moduleSDK';
+import { moduleInteractiveGroups, fireClickMiss, runClickHandlers } from './moduleSDK';
+// 30 P3: where play mode aims — the crosshair under a lock, the cursor in a free-cursor game
+import { playAimNdc, playCursorFree } from './playCursor';
 
 // 21-B B3: play mode becomes INTERACT mode — a crosshair grab at distance,
 // scroll to push and pull, and a release that throws with the velocity you
@@ -76,9 +79,14 @@ const yawQuat = new THREE.Quaternion();
 const desiredQuat = new THREE.Quaternion();
 const euler = new THREE.Euler(0, 0, 0, 'YXZ');
 
-/** @type {{object: any, relQuat: THREE.Quaternion, mass: number, held: boolean,
- *   samples: {t: number, pos: THREE.Vector3, quat: THREE.Quaternion}[], lastSent: number}|null} */
+/** `cursor`: 30 P1 — the carry follows the editor's CURSOR ray (Interact), not the
+ * crosshair. Everything else about the hold is the play-mode hold, unforked.
+ * @type {{object: any, relQuat: THREE.Quaternion, mass: number, held: boolean,
+ *   samples: {t: number, pos: THREE.Vector3, quat: THREE.Quaternion}[], lastSent: number,
+ *   cursor?: boolean}|null} */
 let grab = null;
+/** 30 P1: the cursor's NDC while an Interact carry runs (fed by Scene's pointermove) */
+const cursorNdc = new THREE.Vector2();
 let carryDistance = CARRY_DEFAULT;
 /** @type {{t: number, uuid: string|null, hit: any}|null} */ let press = null;
 let started = false;
@@ -113,8 +121,13 @@ function dynamicUuids() {
 /** @param {any} camera */
 function aimFrom(camera) {
 	camera.getWorldPosition(camPos);
-	camera.getWorldDirection(camDir);
+	// 30 P3: the aim is the crosshair (NDC 0,0) under a lock and the CURSOR in a
+	// free-cursor game; `camDir` then follows the ray rather than the view axis, which is
+	// what makes a carried object follow the cursor
+	const aim = playAimNdc();
+	centre.set(aim.x, aim.y);
 	raycaster.setFromCamera(centre, camera);
+	camDir.copy(raycaster.ray.direction);
 	return sceneHits(raycaster, {}); // no tinyProxies: a proxy carries no `face`
 	// and is a SELECTION affordance — grabbing an invisible speck is not a feature
 }
@@ -132,6 +145,89 @@ function moduleTap() {
 		if (hits.length > 0 && moduleHitTest(hits[0].object)) return true;
 	}
 	return false;
+}
+
+// --- 30 P1: INTERACT, the editor's play-style mode ----------------------------------
+// The editor's second click mode borrows play's hands without play's lock: the cursor
+// aims (not the crosshair), a press on a dynamic body while a sim runs CARRIES it with the
+// exact hold above, and a short click is play's TAP — module groups, module handlers
+// registered for 'interact', On Click nodes, the miss. Scene owns the canvas events and
+// calls in here, because the editor's own gestures (sessions, pings, pins) sit in front.
+
+/** Is the editor in INTERACT right now (outside play and VR)? */
+export function editorInteractActive() {
+	return get(editorMode) === 'interact' && get(isLocked) !== true && !get(isVRMode);
+}
+
+/**
+ * A press in Interact. Starts a cursor carry when the ray's first hit is a dynamic body
+ * of a running sim that nobody else holds; returns whether it did (Scene then stands the
+ * camera controls down for the gesture, or lets the press orbit as usual).
+ * @param {any} ray a THREE.Raycaster aimed through the cursor
+ * @param {{x: number, y: number}} ndc the cursor in NDC
+ * @param {any} camera
+ */
+export function cursorGrabStart(ray, ndc, camera) {
+	if (!editorInteractActive() || grab || !camera || !simRunning()) return false;
+	const hit = sceneHits(ray, {})[0];
+	const target = hit ? topLevelObjectOf(hit.object) : null;
+	if (!target || !dynamicUuids().has(target.uuid)) return false;
+	if (get(lockedObjects).some((/** @type {any} */ entry) => entry[1] === target.uuid)) return false;
+	if (!canEditObject(target)) {
+		warnViewerReadOnly();
+		return false;
+	}
+	activeCamera = camera;
+	cursorNdc.set(ndc.x, ndc.y);
+	camera.getWorldPosition(camPos);
+	beginGrab(target, camera);
+	// (TS narrowed `grab` to null at the guard above; beginGrab assigned it since)
+	const started = /** @type {any} */ (grab);
+	if (started) started.cursor = true;
+	return !!started;
+}
+
+/** The cursor moved while carrying. @param {{x: number, y: number}} ndc */
+export function cursorGrabMove(ndc) {
+	if (grab?.cursor) cursorNdc.set(ndc.x, ndc.y);
+}
+
+/** Release: a throw, like play's. @returns {boolean} whether a cursor carry ended */
+export function cursorGrabEnd() {
+	if (!grab?.cursor) return false;
+	endGrab(true);
+	return true;
+}
+
+/**
+ * A short click in Interact: play's tap, aimed by the cursor. Module scene-root groups
+ * first (as the editor pick always did), then the first scene hit offered to the module
+ * handlers that run in 'interact', then its On Click nodes; a click on nothing is the miss.
+ * Selects nothing, ever.
+ * @param {any} ray a THREE.Raycaster aimed through the cursor
+ * @returns {'module-group' | 'module-handler' | 'click' | 'miss'}
+ */
+export function interactClick(ray) {
+	const scene = /** @type {any} */ (get(globalScene));
+	for (const name of moduleInteractiveGroups) {
+		const root = scene?.getObjectByName(name);
+		if (!root) continue;
+		const hits = ray.intersectObject(root, true);
+		if (hits.length > 0 && runClickHandlers(hits[0].object, 'interact')) return 'module-group';
+	}
+	// 30 P2: the same see-through rule as the editor's pick — a 0.12-opacity wall in
+	// front of a star must not take the star's click here either
+	const stack = pickStack(sceneHits(ray, { tinyProxies: true }), topLevelObjectOf);
+	const entry = stack.length ? stack[primaryIndex(stack)] : null;
+	const hit = entry?.hit ?? null;
+	if (hit && runClickHandlers(hit.object, 'interact')) return 'module-handler';
+	const target = entry?.target ?? null;
+	if (target) {
+		fireObjectClick(target.uuid);
+		return 'click';
+	}
+	fireClickMiss();
+	return 'miss';
 }
 
 /** @param {any} object */
@@ -160,6 +256,8 @@ function beginGrab(object, camera) {
 	);
 	suspendAnimation(object.uuid);
 	playInteractState.set({ mode: 'carrying', distance: carryDistance, uuid: object.uuid, blocked: null });
+	// 30b (core-games): an On Grab node hears it (a crate's lift sound in Towers)
+	fireObjectGrab(object.uuid);
 }
 
 /**
@@ -218,6 +316,11 @@ function sendThrow(object, velocity, throwIt) {
 /** @param {PointerEvent} event */
 function onPointerDown(event) {
 	if (event.button !== 0) return;
+	// 30 P3: with a FREE cursor a press anywhere on the page reaches this window listener —
+	// a HUD button, a toast, the ✕ — so only a press on the VIEWPORT is a world gesture.
+	// Under a lock the target is the locked canvas anyway, which is why this is scoped to
+	// free mode (a synthesized window-level press keeps working there, as it always has).
+	if (playCursorFree() && !isViewportTarget(event)) return;
 	const mode = interactionMode();
 	if (mode === 'off' || !activeCamera) return;
 	const hits = aimFrom(activeCamera);
@@ -243,6 +346,13 @@ function onPointerDown(event) {
 		return;
 	}
 	beginGrab(target, activeCamera);
+}
+
+/** Is this event aimed at the 3D viewport (the renderer's canvas)? @param {Event} event */
+function isViewportTarget(event) {
+	/** @type {any} */
+	const target = event.target;
+	return !!target && target.tagName === 'CANVAS' && !!target.closest?.('.viewport');
 }
 
 /** @param {PointerEvent} event */
@@ -321,7 +431,15 @@ function onWheel(event) {
  */
 export function tickPlayInteract(delta, camera) {
 	activeCamera = camera ?? activeCamera;
-	const mode = interactionMode();
+	// 30 P1: an Interact carry lives OUTSIDE play, so play's 'off' must not cancel it —
+	// leaving Interact (or entering play/VR) is what ends it, through the same
+	// zero-velocity cancel every other path uses
+	const cursorCarry = !!grab?.cursor;
+	if (cursorCarry && (!editorInteractActive() || !camera)) {
+		endGrab(false);
+		return;
+	}
+	const mode = cursorCarry ? 'grab' : interactionMode();
 	if (mode === 'off' || !camera) {
 		if (grab) endGrab(false);
 		if (get(playInteractState).mode !== 'off')
@@ -337,8 +455,19 @@ export function tickPlayInteract(delta, camera) {
 			endGrab(false);
 			return;
 		}
-		camera.getWorldPosition(camPos);
-		camera.getWorldDirection(camDir);
+		if (grab.cursor) {
+			// the same carry point, along the CURSOR's ray instead of the view axis
+			raycaster.setFromCamera(cursorNdc, camera);
+			camPos.copy(raycaster.ray.origin);
+			camDir.copy(raycaster.ray.direction);
+		} else {
+			camera.getWorldPosition(camPos);
+			// 30 P3: along the AIM ray, so a free-cursor carry follows the cursor
+			const aim = playAimNdc();
+			centre.set(aim.x, aim.y);
+			raycaster.setFromCamera(centre, camera);
+			camDir.copy(raycaster.ray.direction);
+		}
 		targetPos.copy(camPos).addScaledVector(camDir, carryDistance);
 		// dt-based, so a throttled tab does not change the feel
 		const k = Math.min(SPRING_K_MAX, Math.max(SPRING_K_MIN, SPRING_K / Math.sqrt(Math.max(grab.mass, 1))));
@@ -438,6 +567,7 @@ export function playInteractDebug() {
 		started,
 		mode: interactionMode(),
 		carrying: grab?.object?.uuid ?? null,
+		cursor: !!grab?.cursor,
 		held: !!grab?.held,
 		distance: carryDistance,
 		lastUp,

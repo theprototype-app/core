@@ -1,6 +1,7 @@
 import { writable, derived, get } from 'svelte/store';
 import { sessionNow } from './sessionClock'; // 25-E: stamps another peer compares
 import { peers } from '../stores/appStore';
+import { normalizeLocomotion, normalizeSpawn } from './locomotionPolicy'; // 30b P3/P4
 
 // CL-A A6 / 21-B B1: scene-wide physics settings. ONE shared object for the
 // whole session, replicated as its OWN latest-wins singleton message (the
@@ -43,6 +44,10 @@ export const DEFAULT_SCENE_PHYSICS = Object.freeze({
 });
 
 const BOUNDS_ACTIONS = ['freeze', 'respawn', 'delete'];
+// 30 P3: the play cursor. 'locked' (the crosshair under pointer lock) is the default and
+// is NEVER written — a normalized play block carries `cursor` only when it is 'free' — so
+// every scene saved before this, and every scene that does not use it, stays byte-identical.
+const PLAY_CURSORS = ['free', 'locked'];
 const INTERACTIONS = ['grab', 'click', 'off'];
 
 /** @param {any} v @param {number} lo @param {number} hi @param {number} fallback */
@@ -59,6 +64,12 @@ function nullableNum(v, lo, hi) {
 	const n = Number(v);
 	if (!Number.isFinite(n)) return null;
 	return Math.max(lo, Math.min(hi, n));
+}
+
+/** `{[key]: value}` when there is a value, `{}` when not — for fields that are ABSENT at
+ * their default. @param {string} key @param {any} value */
+function optional(key, value) {
+	return value == null ? {} : { [key]: value };
 }
 
 /** @param {any} v @param {boolean} fallback */
@@ -142,9 +153,15 @@ export function normalizeScenePhysics(raw) {
 			{
 				interaction: pick(playRaw.interaction, INTERACTIONS, d.play.interaction),
 				grounded: bool(playRaw.grounded, d.play.grounded),
-				simOnPlay: bool(playRaw.simOnPlay, d.play.simOnPlay)
+				simOnPlay: bool(playRaw.simOnPlay, d.play.simOnPlay),
+				// 30 P3: present only when free (see PLAY_CURSORS)
+				...(pick(playRaw.cursor, PLAY_CURSORS, 'locked') === 'free' ? { cursor: 'free' } : {}),
+				// 30b P3/P4: present only when authored (locomotionPolicy's normalizers), so a
+				// scene that never used them stays byte-identical
+				...optional('locomotion', normalizeLocomotion(playRaw.locomotion)),
+				...optional('spawn', normalizeSpawn(playRaw.spawn))
 			},
-			['interaction', 'grounded', 'simOnPlay']
+			['interaction', 'grounded', 'simOnPlay', 'cursor', 'locomotion', 'spawn']
 		),
 		// A1: the 20 ceiling is throwVelocity's MAX_LINVEL, restated rather than imported —
 		// this module is store-only and the response clamps through clampThrow anyway
@@ -189,7 +206,7 @@ scenePhysicsState_.subscribe((s) => sceneGravity.set(s.gravity));
 export const scenePhysicsGround = derived(scenePhysicsState_, (s) => s.ground);
 /** out-of-bounds config. NOT named `sceneBounds` — that is sceneBounds.js */
 export const scenePhysicsBounds = derived(scenePhysicsState_, (s) => s.bounds);
-/** play-mode block ({interaction, grounded, simOnPlay}) */
+/** play-mode block ({interaction, grounded, simOnPlay, cursor?: 'free', spawn?: {position, yaw}}) */
 export const scenePlay = derived(scenePhysicsState_, (s) => s.play);
 /** A1: the knock block ({enabled, gain, maxSpeed, minSpeed, radius, spin, predict}) */
 export const sceneKnock = derived(scenePhysicsState_, (s) => s.knock);

@@ -6,6 +6,7 @@ import { serializeGraphs, copyGraphFrom } from './flowGraphs';
 import { serializeNode, serializeEdge, sendNodes } from './nodesHandler';
 import { parkAnimatedAtBase } from './flowRuntime';
 import { stripEditOverlays } from './editOverlays';
+import { isPristinePackRef, stubElementOf, stubNodeCount } from './packRefs';
 // B7: a spawner's copies exist only while the world runs — never in a scene file
 import { isTransient } from './transientObjects';
 import {
@@ -263,7 +264,9 @@ export function buildSessionPayload(name) {
 				// scene file as permanent content
 				objects: (group?.children ?? [])
 					.filter((/** @type {any} */ child) => !animatedUuids.includes(child.uuid) && !isTransient(child))
-					.map((/** @type {any} */ child) => child.toJSON()),
+					// 30c: a pristine KIT PIECE is written as a stub its pack refills (packRefs.js
+					// has the measurement: one wall is 7.9 MB as toJSON)
+					.map((/** @type {any} */ child) => (isPristinePackRef(child) ? stubElementOf(child) : child.toJSON())),
 				animated: animatedImportsSnapshot(group),
 				// authored movement tracks (the Animation window) were never saved
 				animations: animationsSnapshot(),
@@ -356,7 +359,7 @@ export function buildSelectionPayload(name, uuids) {
 		const objects = roots
 			.map((uuid) => group?.getObjectByProperty('uuid', uuid))
 			.filter((/** @type {any} */ object) => object && !animatedUuids.includes(object.uuid) && !isTransient(object))
-			.map((/** @type {any} */ object) => object.toJSON());
+			.map((/** @type {any} */ object) => (isPristinePackRef(object) ? stubElementOf(object) : object.toJSON()));
 		const clips = animationsSnapshot();
 		/** @type {any} */
 		const animations = {};
@@ -1201,6 +1204,9 @@ export function importObjects(payload, indices) {
 			uuidMap.set(node.uuid, fresh);
 			node.uuid = fresh;
 		});
+		// 30c: a kit-piece stub refills its children under the RECORDED uuids — which are
+		// the file's, and this import is a merge; let the refill derive fresh ones
+		if (object.userData?.packStub && object.userData.packRef) object.userData.packRef.kids = [];
 		group.add(object);
 		recordObjectPresence('create', object);
 		if (peer) peer.send({ type: 'object', element: object.toJSON() });
@@ -1300,6 +1306,18 @@ export async function applySession(payload, opts = {}) {
 	if (payload?.library) {
 		const restored = await restoreSessionLibrary(payload);
 		if (restored) showToast('Restored ' + restored + ' library file' + (restored === 1 ? '' : 's'));
+	}
+	// 30c: a scene REPLACE ends the run. The physics world holds bodies for the objects
+	// about to be wiped and none for the ones arriving, and sim-on-play skips a start while
+	// `simulating` is still true — so after playing one level, the next one loaded was
+	// walked THROUGH (measured: the walker crossed the tavern's walls and stairs as if they
+	// were not there). Stopped the quiet way a yielded run stops (no settling moves, no
+	// undo entry for a layout that is being thrown away); the next Play builds a new world.
+	try {
+		const physics = await import('./physics');
+		if (get(physics.simulating)) physics.stopSimulation({ yielded: true });
+	} catch {
+		/* physics failing to load must never block a scene load */
 	}
 	if (replicate) sceneCommand('/clear all'); // replicated clear (objects + module content)
 	else clearSceneLocal();
@@ -1436,6 +1454,8 @@ export function countPayloadObjects(payload) {
 	const walk = (node) => {
 		if (!node) return;
 		n++;
+		// 30c: a kit-piece stub stands for the nodes it refills to
+		n += stubNodeCount(node);
 		for (const kid of node.children ?? []) walk(kid);
 	};
 	for (const element of payload?.objects ?? []) {

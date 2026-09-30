@@ -36,6 +36,11 @@ describe('shape predicates', () => {
 		expect(isQuatOrEuler([0, 0, 0])).toBe(true);
 		expect(isQuatOrEuler([0, 0, 0, 1])).toBe(true);
 		expect(isQuatOrEuler([0, 0])).toBe(false);
+		// three's Euler.toArray() carries the order: every gizmo/drop move is sent this way
+		expect(isQuatOrEuler([0.1, 0.2, 0.3, 'XYZ'])).toBe(true);
+		expect(isQuatOrEuler([0.1, 0.2, NaN, 'XYZ'])).toBe(false);
+		expect(isQuatOrEuler([0.1, 0.2, 0.3, 'nope'])).toBe(false);
+		expect(validateWireMessage({ type: 'move', uuid: '6c4c8a2e-1111-4a2b-9c3d-0123456789ab', pos: [0, 1, 0], rot: [0, 0.5, 0, 'XYZ'], scale: [1, 1, 1] })).toBe(true);
 	});
 });
 

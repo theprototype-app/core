@@ -22,6 +22,8 @@
 import { writable, get } from 'svelte/store';
 import { ensureAudioContext, bus } from './audioEngine';
 import { safeStorage } from './safeStorage';
+// 31 K3: the per-game "Sound effects" switch (a leaf)
+import { sfxLevel } from './gameSettings';
 
 /** The names a game can play. Anything else is a quiet no-op (never an error). */
 export const GAME_SOUNDS = [
@@ -289,7 +291,7 @@ export function buildGameSound(ctx, dest, name, t0) {
 
 /** end times (context seconds) of the sounds still ringing @type {number[]} */
 const live = [];
-const debug = { played: 0, dropped: 0, unknown: 0, last: '' };
+const debug = { played: 0, dropped: 0, unknown: 0, muted: 0, last: '' };
 
 /**
  * Play a game sound, LOCAL to this device. Returns true when a sound started; false for
@@ -300,6 +302,12 @@ const debug = { played: 0, dropped: 0, unknown: 0, last: '' };
 export function playGameSound(name, position = null) {
 	if (!isGameSound(name)) {
 		debug.unknown++;
+		return false;
+	}
+	// 31 K3: this game's Sound effects are OFF — nothing starts (the bus is also at 0, so a
+	// sound already ringing falls silent too)
+	if (sfxLevel() <= 0) {
+		debug.muted++;
 		return false;
 	}
 	/** @type {AudioContext} */
@@ -368,7 +376,7 @@ export function gameSoundGainValue() {
 	return gameGain ? gameGain.gain.value : null;
 }
 
-/** counts for the suites @returns {{played: number, dropped: number, unknown: number, last: string, live: number}} */
+/** counts for the suites @returns {{played: number, dropped: number, unknown: number, muted: number, last: string, live: number}} */
 export function gameSfxDebug() {
 	return { ...debug, live: live.length };
 }

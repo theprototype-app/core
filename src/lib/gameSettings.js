@@ -115,7 +115,7 @@ export function normalizeSettingRow(row) {
 		const options = Array.isArray(row.options) ? row.options.map((/** @type {any} */ o) => String(o)).filter(Boolean).slice(0, 12) : [];
 		if (!options.length) return null;
 		out.options = options;
-		if (Array.isArray(row.optionLabels)) out.optionLabels = options.map((o, i) => String(row.optionLabels[i] ?? o));
+		if (Array.isArray(row.optionLabels)) out.optionLabels = options.map((/** @type {string} */ o, /** @type {number} */ i) => String(row.optionLabels[i] ?? o));
 	}
 	if (type === 'range') {
 		const min = Number.isFinite(Number(row.min)) ? Number(row.min) : 0;

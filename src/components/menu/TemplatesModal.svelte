@@ -5,7 +5,7 @@
 	import { untrack } from 'svelte';
 	import { Modal } from 'flowbite-svelte';
 	import { FilePlus, FolderDown, Image as ImageIcon, RefreshCw } from '@lucide/svelte';
-	import { templatesModalOpen, hidePanels, restorePanels } from '../../stores/appStore.js';
+	import { templatesModalOpen, templatesModalTab, hidePanels, restorePanels } from '../../stores/appStore.js';
 	import {
 		templates,
 		examples,
@@ -92,6 +92,12 @@
 			if (open) {
 				hidePanels();
 				loadTemplatesIndex();
+				// 31 K3: a caller asked for a tab (the game shell's Main menu -> Games)
+				const want = $templatesModalTab;
+				if (want) {
+					pickTab(want);
+					templatesModalTab.set(null);
+				}
 			} else if (open === false) {
 				restorePanels();
 			}

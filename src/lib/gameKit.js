@@ -11,3 +11,10 @@ export * as effectsBurst from './effectsBurst';
 export * as gameAnnounce from './gameAnnounce';
 export * as vrGamePanel from './vrGamePanel';
 export * as gameFeelActions from './gameFeelActions'; // 30b (core-games): the Game Feel flow nodes
+// 31 K3 (game-shell): the pause menu, the per-game settings, their wiring, the FPS counter
+export * as gameShell from './gameShell';
+export * as gameSettings from './gameSettings';
+export * as gameShellWire from './gameShellWire';
+export * as shellPanelDraw from './shellPanelDraw';
+export * as fpsMeter from './fpsMeter';
+export * as comfortVignette from './comfortVignette';

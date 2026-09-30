@@ -115,7 +115,7 @@ describe('values per game', () => {
 		noteSceneFileName('Stars Room');
 		/** @type {any[]} */
 		const heard = [];
-		const off = registerGameSetting({ id: 'stars-clap', label: 'Make stars with a clap', type: 'toggle', default: true, onChange: (v) => heard.push(v) }, 'node:n1');
+		const off = registerGameSetting({ id: 'stars-clap', label: 'Make stars with a clap', type: 'toggle', default: true, onChange: (/** @type {any} */ v) => heard.push(v) }, 'node:n1');
 		expect(typeof off).toBe('function');
 		expect(gameSettingValue('stars-clap')).toBe(true);
 		setGameSetting('stars-clap', false);

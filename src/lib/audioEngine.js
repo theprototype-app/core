@@ -31,6 +31,9 @@ let masterGain = null;
 let limiter = null;
 /** @type {Record<string, GainNode>} */
 const buses = {};
+/** 31 K3: a level per bus (the per-game Music / Sound effects settings), remembered so a
+ * bus built later starts at it. Absent = 1. @type {Record<string, number>} */
+const busLevels = {};
 
 /** The bus names the app ships with. A device asking for anything else lands on
  * `instruments` rather than erroring — an unknown bus is a routing decision, not
@@ -80,7 +83,7 @@ function buildBuses() {
 	if (typeof setInterval !== 'undefined') setInterval(sampleAudioClock, 25);
 	for (const name of BUS_NAMES) {
 		const gain = ctx.createGain();
-		gain.gain.value = 1;
+		gain.gain.value = busLevels[name] ?? 1;
 		gain.connect(masterGain);
 		buses[name] = gain;
 	}
@@ -93,6 +96,23 @@ function buildBuses() {
 export function bus(name = 'instruments') {
 	ensureAudioContext();
 	return buses[name] ?? buses.instruments;
+}
+
+/**
+ * 31 K3: set a bus's level (0..1) WITHOUT creating the audio context — the per-game
+ * Music / Sound effects settings apply to everything on that bus (game sounds, flow sound
+ * nodes, pings; game music and the scene's track), and a context built later starts at
+ * the level. @param {string} name @param {number} level
+ */
+export function setBusLevel(name, level) {
+	const v = Math.min(1, Math.max(0, Number.isFinite(Number(level)) ? Number(level) : 1));
+	busLevels[name] = v;
+	if (buses[name]) buses[name].gain.value = v;
+}
+
+/** the level a bus is set to (1 when never set) @param {string} name */
+export function busLevel(name) {
+	return busLevels[name] ?? 1;
 }
 
 /** The master gain, for a global volume or a meter tap. @returns {GainNode} */

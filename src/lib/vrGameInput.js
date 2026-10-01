@@ -75,7 +75,8 @@ export function clickTargetOf(hit) {
 	const top = topLevelObjectOf(mesh);
 	if (!top) return null;
 	if (deviceBetween(mesh, top)) return { kind: 'object', key: mesh.uuid, mesh, top, point: hit.point, distance: hit.distance ?? 0, group: null };
-	if (top.userData?.clickable === true || objectHasOnClick(top.uuid))
+	// 33 P2: a functional pack item (a door, a lever) is pressed like a button
+	if (top.userData?.clickable === true || top.userData?.behavior || objectHasOnClick(top.uuid))
 		return { kind: 'object', key: top.uuid, mesh, top, point: hit.point, distance: hit.distance ?? 0, group: null };
 	return null;
 }

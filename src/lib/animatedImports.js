@@ -8,6 +8,7 @@ import { objectsGroup, pokeScene } from '../stores/sceneStore';
 import { peers, showToast } from '../stores/appStore';
 import { registerHistoryKind, recordEntry } from './history';
 import { runtimeNow } from './moduleSDK';
+import { normalizeBehavior } from './behaviorCore';
 
 // Animated imports (GLTF/GLB and, since 17-D2, FBX). Rigs cannot survive the
 // per-node GLTF sync (bones are children and the exporter round-trip is lossy),
@@ -29,6 +30,70 @@ const fileBytes = new Map();
 const fileKinds = new Map();
 /** @type {Map<string, {mixer: any, actions: Record<string, any>, durations: Record<string, number>}>} */
 const mixers = new Map();
+
+// ---- 33 P2: animated FUNCTIONAL items (a door, a chest, a lever, a fan) ---------------
+// An import whose root carries a `behavior` (stamped from the pack item's row, or from the
+// GLB's own scene extras) is driven by packBehavior.js, never by the transport below: the
+// transport is a looping clip on the synced clock, which is exactly what a door must NOT do.
+// The spec travels WITH the bytes (objectfile / save entry / undo entry) because it lives
+// in the pack row, not in the file. packBehavior reaches in through the two hooks.
+/** @type {Map<string, import('./behaviorCore').BehaviorSpec>} rootUuid -> spec */
+const behaviors = new Map();
+/** @type {{state: ((uuid: string) => any) | null, apply: ((uuid: string, state: any) => void) | null, preview: ((uuid: string, clip?: string) => void) | null, registered: ((uuid: string) => void) | null}} */
+const behaviorHooks = { state: null, apply: null, preview: null, registered: null };
+
+/** packBehavior plugs in here (it imports this module, so the edge cannot run the other way)
+ * @param {Partial<typeof behaviorHooks>} hooks */
+export function setBehaviorHooks(hooks) {
+	Object.assign(behaviorHooks, hooks);
+}
+
+/** @param {string} uuid @returns {import('./behaviorCore').BehaviorSpec | null} */
+export function behaviorOf(uuid) {
+	return behaviors.get(uuid) ?? null;
+}
+
+/** every root driven by a behavior @returns {string[]} */
+export function behaviorUuids() {
+	return [...behaviors.keys()];
+}
+
+/** the live registry, for the per-frame tick (iterate, never mutate — no copy per frame)
+ * @returns {ReadonlyMap<string, import('./behaviorCore').BehaviorSpec>} */
+export function behaviorRegistry() {
+	return behaviors;
+}
+
+/** the live mixer record (packBehavior poses through it) @param {string} uuid */
+export function animatedRecordOf(uuid) {
+	return mixers.get(uuid) ?? null;
+}
+
+/** the spec + live state a message/save carries for this root (both absent = none) @param {string} uuid */
+function behaviorFields(uuid) {
+	const spec = behaviors.get(uuid);
+	if (!spec) return {};
+	const state = behaviorHooks.state?.(uuid) ?? null;
+	return { behavior: spec, ...(state ? { behaviorState: state } : {}) };
+}
+
+/**
+ * 33 (for 33-lod-editor): the root's LOD group (`userData.lod`, plain JSON validated by
+ * lodGroupCore on the reading side) travels beside the bytes for the same reason the
+ * behavior spec does — the peer RE-PARSES the file, so anything stamped on the root after
+ * the parse is otherwise lost on peers, after a reload and across an undo. Absent = none,
+ * so every message without one is byte-identical.
+ * @param {any} root @returns {{lod?: any}}
+ */
+function rootDataFields(root) {
+	const lod = root?.userData?.lod;
+	if (!lod || typeof lod !== 'object') return {};
+	try {
+		return { lod: JSON.parse(JSON.stringify(lod)) };
+	} catch {
+		return {};
+	}
+}
 
 /** GLTFLoader with draco + meshopt decoders wired */
 export function createGltfLoader() {
@@ -93,7 +158,11 @@ export function animatedImportPayload(uuid) {
 }
 
 /**
- * Track an imported animated root: keep bytes, build the mixer, autoplay.
+ * Track an imported animated root: keep bytes, build the mixer. 33 P2: NOTHING AUTOPLAYS
+ * any more — placing an animated GLB used to start (and loop) its FIRST clip at once, which
+ * is how a door swung forever the moment it landed. The clip is selected, not playing; the
+ * Animation panel's play button (or a Play Animation node) starts it. A root carrying a
+ * `behavior` is handed to packBehavior instead (see the block above).
  * @param {any} root @param {any[]} animations @param {ArrayBuffer} bytes
  * @param {'gltf'|'fbx'} [kind] which parser those bytes need (default gltf)
  */
@@ -111,12 +180,21 @@ export function registerAnimatedImport(root, animations, bytes, kind = 'gltf') {
 	});
 	mixers.set(root.uuid, { mixer, actions, durations });
 	root.userData.animatedClips = animations.map((c) => c.name);
-	const first = animations[0]?.name;
+	const spec = normalizeBehavior(root.userData.behavior);
+	if (spec && !actions[spec.clip]) {
+		// a behavior naming a clip the file does not have drives nothing — say so once
+		console.log('behavior clip "' + spec.clip + '" not in', root.name, Object.keys(actions));
+	}
+	if (spec && actions[spec.clip]) {
+		root.userData.behavior = spec;
+		behaviors.set(root.uuid, spec);
+	} else delete root.userData.behavior;
+	const first = spec && actions[spec.clip] ? spec.clip : animations[0]?.name;
 	animatedObjects.update((map) => ({
 		...map,
-		[root.uuid]: { clips: animations.map((c) => c.name), clip: first, playing: true, speed: 1 }
+		[root.uuid]: { clips: animations.map((c) => c.name), clip: first, playing: false, speed: 1 }
 	}));
-	if (first) actions[first].play();
+	if (behaviors.has(root.uuid)) behaviorHooks.registered?.(root.uuid);
 }
 
 /** Per-frame from the scene loop: pose = pure function of the synced clock */
@@ -124,6 +202,7 @@ export function tickAnimatedMixers() {
 	const states = get(animatedObjects);
 	const time = runtimeNow();
 	mixers.forEach(({ mixer, durations }, uuid) => {
+		if (behaviors.has(uuid)) return; // 33 P2: packBehavior poses these
 		const state = states[uuid];
 		if (!state || !state.playing || !state.clip) return;
 		const duration = durations[state.clip] || 1;
@@ -139,6 +218,13 @@ export function setAnimationState(uuid, next, replicate = true) {
 	const entry = get(animatedObjects)[uuid];
 	const record = mixers.get(uuid);
 	if (!entry || !record) return;
+	// 33 P2: a functional item has no transport. Pressing play on one in the Animation panel
+	// or the Inspector is a LOCAL PREVIEW — never sent, never saved, back to rest at the end
+	// (the user's rule: previewing a door in Edit must not leave it open in the file)
+	if (behaviors.has(uuid)) {
+		if (replicate && (next.playing || next.clip)) behaviorHooks.preview?.(uuid, next.clip ?? entry.clip);
+		return;
+	}
 	const state = { ...entry, ...next };
 	animatedObjects.update((map) => ({ ...map, [uuid]: state }));
 	if (next.clip && next.clip !== entry.clip) {
@@ -175,11 +261,13 @@ export async function applyObjectFile(data) {
 		// animation on every walk-in for no gain.
 		if (!data.override) return;
 		if (data.name) held.name = data.name;
+		if (data.lod && typeof data.lod === 'object') held.userData.lod = data.lod;
 		if (data.pos) held.position.fromArray(data.pos);
 		if (data.rot) held.rotation.set(data.rot[0], data.rot[1], data.rot[2]);
 		if (data.scale) held.scale.fromArray(data.scale);
 		pokeScene();
-		if (data.anim) setAnimationState(data.uuid, data.anim, false);
+		if (data.behaviorState && behaviors.has(data.uuid)) behaviorHooks.apply?.(data.uuid, data.behaviorState);
+		else if (data.anim) setAnimationState(data.uuid, data.anim, false);
 		return;
 	}
 	try {
@@ -188,13 +276,20 @@ export async function applyObjectFile(data) {
 		const { root, animations } = await parseAnimatedBytes(bytes, data.kind);
 		root.uuid = data.uuid;
 		root.name = data.name ?? 'Animated import';
+		// 33 P2: the spec rides the message (it lives in the pack row, not the file); absent =
+		// whatever the file's own extras say, or nothing
+		const spec = normalizeBehavior(data.behavior);
+		if (spec) root.userData.behavior = spec;
+		if (data.lod && typeof data.lod === 'object') root.userData.lod = data.lod;
 		if (data.pos) root.position.fromArray(data.pos);
 		if (data.rot) root.rotation.set(data.rot[0], data.rot[1], data.rot[2]);
 		if (data.scale) root.scale.fromArray(data.scale);
 		group.add(root);
 		pokeScene();
 		registerAnimatedImport(root, animations, bytes, data.kind === 'fbx' ? 'fbx' : 'gltf');
-		if (data.anim) setAnimationState(data.uuid, data.anim, false);
+		if (behaviors.has(data.uuid)) {
+			if (data.behaviorState) behaviorHooks.apply?.(data.uuid, data.behaviorState);
+		} else if (data.anim) setAnimationState(data.uuid, data.anim, false);
 	} catch (error) {
 		console.log('objectfile parse failed', error);
 		showToast('Could not load an animated model from a peer');
@@ -219,7 +314,10 @@ export function sendAnimatedImport(conn, root, opts = {}) {
 		pos: root.position.toArray(),
 		rot: [root.rotation.x, root.rotation.y, root.rotation.z],
 		scale: root.scale.toArray(),
-		anim: state ? { clip: state.clip, playing: state.playing, speed: state.speed } : null
+		anim: state ? { clip: state.clip, playing: state.playing, speed: state.speed } : null,
+		// 33 P2: additive — absent for every import without a behavior / a LOD group
+		...behaviorFields(root.uuid),
+		...rootDataFields(root)
 	});
 }
 
@@ -286,6 +384,10 @@ export function animatedImportsSnapshot(group) {
 			rot: [child.rotation.x, child.rotation.y, child.rotation.z],
 			scale: child.scale.toArray(),
 			anim: state ? { clip: state.clip, playing: state.playing, speed: state.speed } : null,
+			// 33 P2: the SPEC is saved (it is not in the bytes); the open/shut state is runtime
+			// and never is — a scene saved with its door open reopens shut
+			...(behaviors.has(child.uuid) ? { behavior: behaviors.get(child.uuid) } : {}),
+			...rootDataFields(child),
 			bytes: bytesToBase64(bytes)
 		});
 	}
@@ -320,7 +422,9 @@ export async function animatedImportsRestore(entries, replicate = true) {
 				pos: entry.pos,
 				rot: entry.rot,
 				scale: entry.scale,
-				anim: entry.anim
+				anim: entry.anim,
+				behavior: entry.behavior,
+				lod: entry.lod
 			});
 			const root = get(objectsGroup)?.getObjectByProperty('uuid', entry.uuid);
 			if (root && replicate && peer) sendAnimatedImport(peer, root); // peers reparse the same file
@@ -335,6 +439,7 @@ export async function animatedImportsRestore(entries, replicate = true) {
 
 /** Cleanup when the object is removed @param {string} uuid */
 export function dropAnimatedImport(uuid) {
+	behaviors.delete(uuid);
 	fileBytes.delete(uuid);
 	fileKinds.delete(uuid);
 	mixers.delete(uuid);
@@ -347,6 +452,7 @@ export function dropAnimatedImport(uuid) {
 
 /** Scene was wiped — forget every registry entry */
 export function dropAllAnimatedImports() {
+	behaviors.clear();
 	fileBytes.clear();
 	fileKinds.clear();
 	mixers.clear();
@@ -371,7 +477,9 @@ registerHistoryKind('animimport', (entry, state) => {
 			// `fileKind` — reusing `kind` would break the registry dispatch.
 			kind: entry.fileKind,
 			buffer: entry.buffer,
-			pos: entry.pos
+			pos: entry.pos,
+			behavior: entry.behavior,
+			lod: entry.lod
 		}).then(() => {
 			const root = get(objectsGroup)?.getObjectByProperty('uuid', entry.uuid);
 			if (root && peer) sendAnimatedImport(peer, root); // peer.send broadcasts
@@ -397,6 +505,8 @@ export function recordAnimatedImport(root) {
 		fileKind: animatedImportKind(root.uuid),
 		buffer: fileBytes.get(root.uuid),
 		pos: root.position.toArray(),
+		...(behaviors.has(root.uuid) ? { behavior: behaviors.get(root.uuid) } : {}),
+		...rootDataFields(root),
 		before: { present: false },
 		after: { present: true }
 	});

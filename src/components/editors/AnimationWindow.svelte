@@ -32,7 +32,7 @@
 	// posed from the synced clock) — the window used to ignore them entirely, so
 	// a rigged model showed "no movements yet" and its own animations were
 	// reachable only from the Inspector.
-	import { animatedObjects, setAnimationState, clipInfo } from '$lib/animatedImports';
+	import { animatedObjects, setAnimationState, clipInfo, behaviorOf } from '$lib/animatedImports';
 	import {
 		SkipBack, SkipForward, StepBack, StepForward, Play, Pause, Square, Rewind, ZoomIn, ZoomOut, Maximize2,
 		SquareDashed, Lasso, Ghost
@@ -141,6 +141,13 @@
 	const clips = $derived.by(() => {
 		$animatedObjects;
 		return target ? clipInfo(target.uuid) : [];
+	});
+	// 33 P2: a FUNCTIONAL item (a door, a lid) has no transport: its clip buttons PREVIEW
+	// locally (never sent, never saved, back to rest at the end) — it plays for real only
+	// on its trigger, in Interact or Play
+	const behavior = $derived.by(() => {
+		$animatedObjects;
+		return target ? behaviorOf(target.uuid) : null;
 	});
 
 	// transport is per object now (N objects can play at once); the playhead time
@@ -1863,7 +1870,7 @@
 							{#each clips as clip (clip.name)}
 								<button
 									class="flex w-full items-center justify-between gap-2 rounded-sm px-2 py-1 text-left text-xs hover:bg-gray-700/60 {clipState?.clip === clip.name ? 'bg-primary-900/40 text-primary-200' : 'text-gray-300'}"
-									title="Play this clip — on every peer"
+									title={behavior ? 'Preview this clip here — not sent, not saved' : 'Play this clip — on every peer'}
 									onclick={() => target && setAnimationState(target.uuid, { clip: clip.name, playing: true })}
 								>
 									<span class="min-w-0 truncate">{clip.name}</span>
@@ -1871,6 +1878,13 @@
 								</button>
 							{/each}
 						</div>
+						{#if behavior}
+							<p id="animation-behavior-note" class="px-2 pb-1 text-[10px] leading-snug text-amber-300/90">
+								{behavior.type === 'loop' && behavior.autoplay ? 'Ambient loop' : 'Functional item'} — runs in
+								Interact or Play{behavior.type === 'loop' && behavior.autoplay ? '' : ' on its ' + behavior.trigger}.
+								Here ▶ previews it once; nothing is sent or saved.
+							</p>
+						{/if}
 						<div class="flex items-center gap-2 px-2 pb-1">
 							<button
 								id="clip-play"

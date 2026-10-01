@@ -40,6 +40,7 @@
 	import { moduleInteractiveGroups, fireClickMiss, runClickHandlers } from '$lib/moduleSDK';
 	import { updateSpatialAudio } from '$lib/voiceChat';
 	import { tickAnimatedMixers } from '$lib/animatedImports';
+	import { startPackBehaviors, tickPackBehaviors } from '$lib/packBehavior';
 	import { tickAnimationPreview, captureAutoKey, playheadOf } from '$lib/animationPreview';
 	import { drawMode, drawTool, strokePointFromRay, endStroke, setDrawScene } from '$lib/drawMode';
 	import { splinePlaceFromRay, splineToolActive, finishSpline } from '$lib/splineTool';
@@ -388,6 +389,7 @@
 		updateVRControls(); // also manages ray/hover visibility outside sessions
 		updateSpatialAudio(camera.current, scene); // voices follow avatars (throttled)
 		tickAnimatedMixers(); // imported clips run on the synced clock
+		tickPackBehaviors(); // 33 P2: doors/lids/levers pose from their shared state (rest in Edit)
 		tickAnimationPreview(); // Animation window: local transform preview (not synced)
 		tickMeshEdit(); // vertex handles follow the object if it moves (119)
 		tickEditWireframe(); // ...and the edit wireframe stays parented to it (faceEdit)
@@ -1435,6 +1437,7 @@
 		// A2: the hand that hit gets a buzz — LOCAL, the same seam shape as the hand poses
 		startKnock({ hands: handSnapshot, heldUuids: () => [carriedUuid(), vrGrabbedUuid()], haptic: hapticKnock });
 		startClap({ hands: handSnapshot }); // 31: the same hand seam
+		startPackBehaviors({ hands: handSnapshot }); // 33 P2: functional pack items (the knock reads hands)
 		// 30b: game feel in VR (a frame hook + a trigger hook through vrControls' registries)
 		startVrGameInput();
 

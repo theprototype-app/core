@@ -1,4 +1,4 @@
-// 30b (vr-play) C5 — THE GAME SOUND SET. Twenty procedural WebAudio effects a game can
+// 30b (vr-play) C5 — THE GAME SOUND SET. Twenty (33 P2: twenty-five) procedural WebAudio effects a game can
 // name (`api.playSound('coin')`), with NO asset files: every sound is oscillators, a
 // shared noise buffer, filters and envelopes, built fresh per play on the app's one
 // AudioContext (audioEngine — a second context would have its own listener and clock).
@@ -46,7 +46,14 @@ export const GAME_SOUNDS = [
 	'ring',
 	'sparkle',
 	'hurt',
-	'portal'
+	'portal',
+	// 33 P2: the sounds a functional pack item names (a door, an iron gate, a sci-fi slide,
+	// a lever, a chest lid) — `click` covers buttons and plates
+	'door',
+	'gate',
+	'slide',
+	'lever',
+	'lid'
 ];
 const SOUND_SET = new Set(GAME_SOUNDS);
 
@@ -282,6 +289,37 @@ export function buildGameSound(ctx, dest, name, t0) {
 			tone(ctx, dest, { freq: 270, to: 1950, type: 'triangle', t0: t0 + 0.05, dur: 0.85, peak: 0.08, attack: 0.3 });
 			noise(ctx, dest, { t0, dur: 0.9, peak: 0.08, attack: 0.4, filter: 'bandpass', freq: 800, to: 4000, q: 2 });
 			return 0.95;
+		// 33 P2 — the functional-item set
+		case 'door':
+			// wood: a creak (a slow sawtooth wobble through a narrow band) then a soft thud
+			tone(ctx, dest, { freq: 210, to: 260, type: 'sawtooth', t0, dur: 0.5, peak: 0.06, attack: 0.08, vibrato: { rate: 23, depth: 18 } });
+			noise(ctx, dest, { t0, dur: 0.45, peak: 0.08, attack: 0.1, filter: 'bandpass', freq: 900, q: 6, flutter: 17 });
+			tone(ctx, dest, { freq: 110, to: 60, t0: t0 + 0.5, dur: 0.18, peak: 0.35, attack: 0.003 });
+			noise(ctx, dest, { t0: t0 + 0.5, dur: 0.08, peak: 0.2, freq: 700, to: 200, attack: 0.002 });
+			return 0.72;
+		case 'gate':
+			// iron: an inharmonic clank and a short scrape
+			[310, 310 * 2.32, 310 * 4.1].forEach((f, i) =>
+				tone(ctx, dest, { freq: f, t0, dur: 0.6 - i * 0.15, peak: 0.14 - i * 0.03, attack: 0.002 })
+			);
+			noise(ctx, dest, { t0: t0 + 0.04, dur: 0.35, peak: 0.12, attack: 0.02, filter: 'bandpass', freq: 2400, q: 3 });
+			return 0.65;
+		case 'slide':
+			// sci-fi: a pneumatic hiss over a gliding hum
+			noise(ctx, dest, { t0, dur: 0.6, peak: 0.25, attack: 0.03, filter: 'highpass', freq: 3500, to: 1500 });
+			tone(ctx, dest, { freq: 140, to: 220, type: 'triangle', t0, dur: 0.55, peak: 0.12, attack: 0.05 });
+			return 0.65;
+		case 'lever':
+			// a ratchet of clicks into a heavy clunk
+			[0, 0.05, 0.1].forEach((d) => noise(ctx, dest, { t0: t0 + d, dur: 0.03, peak: 0.15, filter: 'highpass', freq: 2500, attack: 0.001 }));
+			tone(ctx, dest, { freq: 130, to: 70, type: 'square', t0: t0 + 0.16, dur: 0.16, peak: 0.18, attack: 0.002 });
+			noise(ctx, dest, { t0: t0 + 0.16, dur: 0.1, peak: 0.25, freq: 900, to: 250, attack: 0.002 });
+			return 0.36;
+		case 'lid':
+			// a chest lid: a short high creak and a light knock
+			tone(ctx, dest, { freq: 420, to: 520, type: 'sawtooth', t0, dur: 0.3, peak: 0.05, attack: 0.05, vibrato: { rate: 31, depth: 25 } });
+			tone(ctx, dest, { freq: 180, to: 90, t0: t0 + 0.3, dur: 0.12, peak: 0.25, attack: 0.002 });
+			return 0.45;
 		default:
 			return -1;
 	}

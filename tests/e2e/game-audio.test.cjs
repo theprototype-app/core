@@ -29,11 +29,11 @@ h.run(async () => {
 		for (const name of k.GAME_SOUNDS) out.push(await k.renderGameSound(name));
 		return out;
 	});
-	h.check(renders.length === 20, '1.1 the set holds the 20 contract names (' + renders.length + ')');
+	h.check(renders.length === 25, '1.1 the set holds the 25 contract names (20 + the 33 P2 item sounds) (' + renders.length + ')');
 	const quiet = renders.filter((r) => !r || r.rms < 0.004 || r.peak < 0.02);
 	h.check(quiet.length === 0, '1.2 every name renders energy (quiet: ' + JSON.stringify(quiet.map((r) => r && r.name)) + ')');
 	const distinct = new Set(renders.map((r) => r && Math.round(r.rms * 1e5)));
-	h.check(distinct.size >= 18, '1.3 the sounds are distinct from each other (' + distinct.size + ' distinct levels)');
+	h.check(distinct.size >= 22, '1.3 the sounds are distinct from each other (' + distinct.size + ' distinct levels)');
 	const unknownRender = await page.evaluate(() => window.__stores.gameKit.gameSfx.renderGameSound('nope'));
 	h.check(unknownRender && unknownRender.seconds === -1 && unknownRender.rms === 0, '1.4 an unknown name builds nothing');
 

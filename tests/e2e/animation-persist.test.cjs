@@ -75,7 +75,10 @@ h.run(async () => {
 	// import it, and author a movement track on a second object
 	await A.page.evaluate(async (bytes) => {
 		const w = window.__stores;
-		await w.fileHandler.importFile(new File([new Uint8Array(bytes)], 'rig.glb'), 'Rig');
+		const rig = await w.fileHandler.importFile(new File([new Uint8Array(bytes)], 'rig.glb'), 'Rig');
+		// 33 P2: placement no longer autoplays — press play, as a user would, so the save
+		// below carries a PLAYING transport (what this suite round-trips)
+		w.animatedImports.setAnimationState(rig, { playing: true });
 		await new Promise((r) => setTimeout(r, 600));
 		w.commandsHandler.sceneCommand('/create Box 1 1 1');
 		await new Promise((r) => setTimeout(r, 300));
@@ -182,12 +185,17 @@ h.run(async () => {
 			if (m?.parameter === 'animation') window.__sent.push(m.playing);
 			return orig(m);
 		};
+		// 33 P2: an import no longer autoplays, so the first press PLAYS and the second pauses
+		document.querySelector('#clip-play')?.click();
+		await new Promise((r) => setTimeout(r, 400));
+		const mid = await new Promise((r) => w.animatedImports.animatedObjects.subscribe(r)());
 		document.querySelector('#clip-play')?.click();
 		await new Promise((r) => setTimeout(r, 400));
 		const imported = await new Promise((r) => w.animatedImports.animatedObjects.subscribe(r)());
-		return { sent: window.__sent.slice(), playing: Object.values(imported)[0]?.playing };
+		return { sent: window.__sent.slice(), started: Object.values(mid)[0]?.playing, playing: Object.values(imported)[0]?.playing };
 	});
-	h.check(picked.sent.length >= 1, `the clip transport replicates (${picked.sent.length} message(s))`);
+	h.check(picked.sent.length >= 2, `the clip transport replicates (${picked.sent.length} message(s))`);
+	h.check(picked.started === true, `the first press plays it (playing ${picked.started})`);
 	h.check(picked.playing === false, `and pausing actually paused it (playing ${picked.playing})`);
 
 	await h.finish(browser);

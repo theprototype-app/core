@@ -23,13 +23,19 @@
 	import { safeStorage } from '$lib/safeStorage';
 	import ContextMenu from '../ContextMenu.svelte';
 
+	// RAW, never a deep $state (31-perf P1): each row carries its THREE group (`row.object`),
+	// and `use:rowMenu={row}` makes svelte `deep_read` an action's parameter whenever it is a
+	// state proxy — which walked the ENTIRE scene graph through `object.parent`, every typed
+	// array index included, on every refresh (1 s + every pokeScene). MEASURED on the Waves
+	// template: 88% of the frame's CPU and ~200 MB/s of garbage (p50 700 ms at CPU x4).
+	// The rows are rebuilt whole by refresh(), so a raw array loses no reactivity.
 	/** @type {any[]} */
-	let rows = $state([]);
+	let rows = $state.raw([]);
 	let open = $state(safeStorage.getItem('objects:moduleContent') !== 'closed');
 	/** @type {Record<string, boolean>} */
 	let expanded = $state({});
 	/** @type {{x: number, y: number, row: any} | null} */
-	let menu = $state(null);
+	let menu = $state.raw(null);
 
 	function refresh() {
 		rows = moduleContentRows(get(globalScene));
@@ -40,7 +46,13 @@
 		refresh();
 	});
 	$effect(() => {
-		const timer = setInterval(refresh, 1000);
+		// the 1 s catch-up is for a list someone can SEE: hidden (object list closed, play
+		// mode), the pokes above still keep it right, and a module's own clock can wait
+		const timer = setInterval(() => {
+			const shown = document.getElementById('module-content');
+			if (rows.length && shown && shown.offsetParent === null) return;
+			refresh();
+		}, 1000);
 		return () => clearInterval(timer);
 	});
 

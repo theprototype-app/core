@@ -32,7 +32,7 @@ import { objectsGroup, pokeScene } from '../stores/sceneStore';
 // snaps exactly as before, so nothing outside a live stream changes.
 
 /** @typedef {{from: {pos: THREE.Vector3, quat: THREE.Quaternion},
- *   to: {pos: THREE.Vector3, quat: THREE.Quaternion}, t0: number, dur: number}} Ease */
+ *   to: {pos: THREE.Vector3, quat: THREE.Quaternion}, t0: number, dur: number, object?: any}} Ease */
 /** @type {Map<string, Ease>} */
 const eases = new Map();
 /** @type {Map<string, {last: number, interval: number}>} */
@@ -84,7 +84,8 @@ export function noteRemoteMove(uuid, object, before) {
 		from: { pos: before.pos.clone(), quat: before.quat.clone() },
 		to: { pos: object.position.clone(), quat: object.quaternion.clone() },
 		t0: now,
-		dur: interval
+		dur: interval,
+		object
 	});
 	// rewind: the ease starts where the eye last saw it
 	object.position.copy(before.pos);
@@ -113,12 +114,23 @@ export function noteRemoteMove(uuid, object, before) {
 
 /** Per frame, from Scene's useTask. Writes the exact target pose on the last
  * step, so an interrupted or finished ease never leaves the object short. */
+// 31-perf P1: this ran on EVERY watching peer, every frame a remote body moved — a
+// whole-tree `getObjectByProperty` per eased body plus a full pokeScene, which re-runs
+// every $objectsGroup subscriber in the app (~30 components) at the display rate. A pose
+// write is not a tree change: the ease keeps its object (re-found only if it left the
+// tree) and the UI hears about the motion at POKE_MS, plus once when the last ease lands.
+const POKE_MS = 100;
+let lastPokeAt = 0;
+
 export function tickMoveSmoothing() {
 	if (eases.size === 0) return;
-	const group = get(objectsGroup);
 	const now = performance.now();
-	for (const [uuid, ease] of [...eases.entries()]) {
-		const object = group?.getObjectByProperty('uuid', uuid);
+	for (const [uuid, ease] of eases) {
+		let object = ease.object;
+		if (!object?.parent) {
+			object = get(objectsGroup)?.getObjectByProperty('uuid', uuid);
+			ease.object = object;
+		}
 		if (!object) {
 			eases.delete(uuid);
 			continue;
@@ -133,7 +145,10 @@ export function tickMoveSmoothing() {
 		object.position.lerpVectors(ease.from.pos, ease.to.pos, t);
 		object.quaternion.slerpQuaternions(ease.from.quat, ease.to.quat, t);
 	}
-	pokeScene();
+	if (eases.size === 0 || now - lastPokeAt >= POKE_MS) {
+		lastPokeAt = now;
+		pokeScene();
+	}
 }
 
 /** the sim stopped, the peer left, the scene changed — land everything at once */

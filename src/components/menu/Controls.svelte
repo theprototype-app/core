@@ -647,6 +647,9 @@
 	});
 	let classActive =
 		'group inline-flex items-center justify-center hover:bg-primary-700 focus:outline-hidden focus:ring-4 focus:ring-primary-300';
+	// 33 E2: the toggle cell's twin of classActive — same hover, no click-focus ring
+	const cellToggleClass =
+		'group inline-flex items-center justify-center hover:bg-primary-700 focus:outline-hidden focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-primary-300';
 
 	// 18-B: object-list window size limits, shared with the clamp helpers
 	const OBJ_WIN_MIN = { minW: 250, minH: 200 };
@@ -981,11 +984,25 @@
 	 *  the FAB's own right-click menu (plus Settings' Reset window positions, which
 	 *  is the hatch for iOS Safari, where a long press fires no `contextmenu`). */
 	const SPACER = '__spacer';
-	// 30 P1: the Edit/Interact toggle ('mode') joins the default bar at the END — the same
-	// place loadLayout already appends a default id an older record has never heard of, so
-	// a fresh profile and an upgraded one agree, and the well keeps its slot after Scale
-	const DEFAULT_ORDER = ['move', 'rotate', 'scale', 'objects', 'flow', 'explorer', 'mode'];
-	const DEFAULT_SPACER = 3;
+	// 33 E1: THE USER'S ORDER — the transforms, then Interact, then Play (the well), then
+	// the views they open most: object list, node editor, Explorer, Animation. Interact
+	// sits beside Play because the two answer one question ("how am I touching the scene
+	// right now"), and Animation joined the default bar (it was an opt-in view before).
+	const DEFAULT_ORDER = ['move', 'rotate', 'scale', 'mode', 'objects', 'flow', 'explorer', 'animation'];
+	const DEFAULT_SPACER = 4;
+	/** 33 E1: the bars a profile could hold WITHOUT ever customizing — the default rows the
+	 *  app has shipped, read as the VISUAL row (the well as `__spacer`). A stored record
+	 *  that still IS one of these is a default nobody chose, so it migrates to the new
+	 *  default (keeping where the bar sits and whether it is collapsed); anything else is
+	 *  a custom bar and wins as saved. Pre-30 had no 'mode'; 30-31 appended it last. */
+	const LEGACY_DEFAULT_ROWS = [
+		'move,rotate,scale,__spacer,objects,flow,explorer',
+		'move,rotate,scale,__spacer,objects,flow,explorer,mode'
+	];
+	/** 33 E1: ids that became DEFAULT after having been opt-in. A custom record that does
+	 *  not list one LEFT it off on purpose (it was unticked), so it is not appended there —
+	 *  the append rule is for buttons new to the app, and these are not. */
+	const PROMOTED_DEFAULTS = ['animation'];
 
 	/** W8b: the roster is bigger than the bar. `DEFAULT_ORDER` is what a fresh profile
 	 *  puts ON the bar and has NOT changed — the same six ids, the same order, the same
@@ -999,7 +1016,10 @@
 	 *  Explorer (already a default button) — so the roster and the "+" cannot disagree
 	 *  about which views exist. Titles come from `DOCK_TITLES`, the dock's own names, so
 	 *  a button and its tab read the same word. */
-	const OPTIONAL_VIEWS = DOCK_VIEWS.filter((view) => view.key !== 'explorer').map((view) => view.key);
+	const VIEW_BUTTONS = DOCK_VIEWS.filter((view) => view.key !== 'explorer').map((view) => view.key);
+	// 33 E1: a view on the DEFAULT bar (Animation) is not also an optional one, or the
+	// Customize and Swap-with lists would carry it twice
+	const OPTIONAL_VIEWS = VIEW_BUTTONS.filter((key) => !DEFAULT_ORDER.includes(key));
 
 	/** the glyph for each optional view. Chosen from a rendered 18px sheet against the
 	 *  six already on the bar, not from the names — which is what caught the one real
@@ -1077,7 +1097,7 @@
 		// when it is the one on screen — which is the whole reason these are worth
 		// having as buttons: the "+" list can only ever open them.
 		...Object.fromEntries(
-			OPTIONAL_VIEWS.map((key) => [
+			VIEW_BUTTONS.map((key) => [
 				key,
 				{
 					title: DOCK_TITLES[key] ?? key,
@@ -1103,6 +1123,16 @@
 				node.removeEventListener('click', click);
 			}
 		};
+	}
+
+	/** 33 E1: is this stored record one of the default bars the app used to ship? */
+	function isLegacyDefault(order: string[], saved: any): boolean {
+		const hidden: string[] = Array.isArray(saved.hidden) ? saved.hidden : [];
+		if (hidden.some((id) => order.includes(id))) return false;
+		const row = [...order];
+		const at = Number.isFinite(saved.spacerIndex) ? Math.max(0, Math.min(saved.spacerIndex, row.length)) : 3;
+		row.splice(at, 0, SPACER);
+		return LEGACY_DEFAULT_ROWS.includes(row.join(','));
 	}
 
 	function defaultLayout(): ControlsLayout {
@@ -1132,7 +1162,11 @@
 						(id: any, at: number) => BUTTONS[id] && saved.order.indexOf(id) === at
 					)
 				: [];
-			for (const id of DEFAULT_ORDER) if (!order.includes(id)) order.push(id);
+			const posX0 = typeof saved.posX === 'number' && Number.isFinite(saved.posX) ? Math.max(0, Math.min(1, saved.posX)) : null;
+			// 33 E1: a record that is still a SHIPPED default migrates to today's default
+			if (isLegacyDefault(order, saved))
+				return { ...defaultLayout(), collapsed: saved.collapsed === true, posX: posX0 };
+			for (const id of DEFAULT_ORDER) if (!order.includes(id) && !PROMOTED_DEFAULTS.includes(id)) order.push(id);
 			const hidden: string[] = Array.isArray(saved.hidden)
 				? saved.hidden.filter((id: any) => order.includes(id))
 				: [];
@@ -1978,13 +2012,16 @@
 				       4b: the FAB is the well's own THIRD child now (see below), which is
 				     why the right half is addressed as `:nth-child(2)` rather than
 				     `:last-child` — the FAB would otherwise steal that position and the
-				     right-hand hover paint would silently stop appearing. -->
+				     right-hand hover paint would silently stop appearing.
+				       33 E3: the neighbour test is `*:hover`, never `p:hover` — the Interact
+				     toggle is a <button> (it carries aria-pressed), so beside the well it lit
+				     itself and left the two pill-coloured corners this paint exists to fill. -->
 				<div class="relative flex h-full w-10 items-stretch justify-center">
 					<div
-						class={'h-full w-5 [p:hover+div>&:first-child]:bg-primary-700' + (i === 0 ? ' rounded-l-full' : '')}
+						class={'h-full w-5 [*:hover+div>&:first-child]:bg-primary-700' + (i === 0 ? ' rounded-l-full' : '')}
 					></div>
 					<div
-						class={'h-full w-5 [div:has(+p:hover)>&:nth-child(2)]:bg-primary-700' +
+						class={'h-full w-5 [div:has(+*:hover)>&:nth-child(2)]:bg-primary-700' +
 							(i === visibleCells.length - 1 ? ' rounded-r-full' : '')}
 					></div>
 					<!-- QW (Controls Option A): the WHOLE button scales on hover anywhere on
@@ -2061,11 +2098,16 @@
 				{@const btn = BUTTONS[cell.id]}
 				{@const Glyph = btn.icon}
 				{#if btn.pressed}
-				<!-- 30 P1: a TOGGLE cell is a real button, so it can say aria-pressed -->
+				<!-- 30 P1: a TOGGLE cell is a real button, so it can say aria-pressed.
+				     33 E2: a <button> TAKES FOCUS on click where the <p> cells cannot, so
+				     classActive's `focus:ring-4` drew the theme's red ring on every press —
+				     the only cell that ever showed one. The ring is keyboard-only here
+				     (`focus-visible`, which a mouse press never matches), so a click looks
+				     like every other cell's. -->
 				<button
 					type="button"
 					id={btn.slot}
-					class={classActive +
+					class={cellToggleClass +
 						' w-10' +
 						(i === 0 ? ' rounded-l-full' : '') +
 						(i === visibleCells.length - 1 ? ' rounded-r-full' : '')}

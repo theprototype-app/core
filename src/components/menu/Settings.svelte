@@ -13,6 +13,7 @@
 	import { lightHelperLength } from '$lib/lightHelpers';
 	import { flowMouseBindings, FLOW_MOUSE_BINDINGS } from '$lib/flowPrefs';
 	import { helpersInPlay } from '$lib/helperLayer';
+	import { perfStatsShown } from '$lib/fpsMeter';
 	import { gamepadPrefs, setGamepadPrefs, DEADZONE_RANGE, SENSITIVITY_RANGE } from '$lib/gamepadPrefs';
 	import { drawerSlot, cloudPluginInfo } from '$lib/cloudHooks';
 	import { versionString } from '$lib/version.js';
@@ -841,6 +842,12 @@
 						Add a "Search objects…" entry to the viewport right-click menu — find a scene object and fly the camera to it
 					</SettingRow>
 					<p class="ui-section-label">Viewport</p>
+					<SettingRow name="Show FPS + draw calls">
+						<svelte:fragment slot="control"><Toggle id="show-perf-stats" bind:checked={$perfStatsShown} /></svelte:fragment>
+						A small counter with the frame rate, frame time, draw calls and triangles — in the
+						corner of the viewport and, in a headset, on a strip at the top of the view. The draw
+						calls turn amber past 120 and red past 150, the practical limit on a Quest
+					</SettingRow>
 					<SettingRow name="Dock resizes the viewport">
 						<svelte:fragment slot="control">
 							<Toggle

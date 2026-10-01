@@ -17,6 +17,7 @@ export * as gameSettings from './gameSettings';
 export * as gameShellWire from './gameShellWire';
 export * as shellPanelDraw from './shellPanelDraw';
 export * as fpsMeter from './fpsMeter';
+export * as vrPerfStrip from './vrPerfStrip';
 export * as comfortVignette from './comfortVignette';
 export * as clap from './clap'; // 31 (Stars Room S3): the clap runtime + its test hook
 export * as clapGesture from './clapGesture'; // 31: the pure detector

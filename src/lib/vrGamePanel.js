@@ -60,7 +60,7 @@ import {
 import { gameSettingValues } from './gameSettings';
 import { drawShellPage, SHELL_STAGE } from './shellPanelDraw';
 // 31 K3 G3: Show FPS in the headset (the strip + the wrist)
-import { fpsReading, fpsText, noteXrFrame } from './fpsMeter';
+import { fpsReading, fpsText, noteXrFrame, perfStatsShown } from './fpsMeter';
 import { vignetteFrame } from './comfortVignette';
 
 /** the HUD's authoring reference — the editor artboard's stage */
@@ -746,7 +746,8 @@ export function vrGamePanelFrame(opts = {}) {
 		runtime
 	);
 	// 31 K3 G3: this game's Show FPS puts the counter FIRST on the strip and the wrist
-	if (live && get(gameSettingValues).showFps) lines.unshift(fpsText(get(fpsReading)).main);
+	// 33 Q1: not twice — with the app-wide perf strip on, the head-locked strip carries it
+	if (live && get(gameSettingValues).showFps && !get(perfStatsShown)) lines.unshift(fpsText(get(fpsReading)).main);
 	const wrist = surface('vr-game-wrist', 320, 300, WRIST_W);
 	const leftHand = opts.hands?.[0] ?? null;
 	if (live && leftHand) {

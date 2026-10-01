@@ -1,12 +1,13 @@
 import * as THREE from 'three';
 import { writable, get } from 'svelte/store';
-import { objectsGroup, globalCamera, globalScene, globalRenderer, orbitControls, TControls, pokeScene } from '../stores/sceneStore';
+import { objectsGroup, globalCamera, globalScene, globalRenderer, orbitControls, TControls, pokeScene, beginSceneBatch, endSceneBatch } from '../stores/sceneStore';
 import { restoreGraphs, clearGraphs, SCENE_GRAPH, allNodes } from '../stores/flowStore';
 import { serializeGraphs, copyGraphFrom } from './flowGraphs';
 import { serializeNode, serializeEdge, sendNodes } from './nodesHandler';
 import { parkAnimatedAtBase } from './flowRuntime';
 import { stripEditOverlays } from './editOverlays';
-import { isPristinePackRef, stubElementOf, stubNodeCount } from './packRefs';
+import { isPristinePackRef, stubElementOf, stubNodeCount, fillPackRef } from './packRefs';
+import { beginLoad, endLoad, progress, slice, updateLoad, onCancel, isLive, LoadCancelled, throttledPoke } from './sceneLoader';
 // B7: a spawner's copies exist only while the world runs — never in a scene file
 import { isTransient } from './transientObjects';
 import {
@@ -1297,12 +1298,31 @@ function reportUnknownNodes(payload) {
  * @param {{backup?: boolean, replicate?: boolean, game?: boolean, workspace?: boolean}} [opts]
  */
 export async function applySession(payload, opts = {}) {
+	// 33 L1: ONE load at a time, and it says what it is doing. Starting this one supersedes
+	// a load still running (its loop stops at its next slice) — opening scene B while A is
+	// still arriving is how a user cancels A, and it must not leave A's objects in B.
+	const job = beginLoad(payload?.name ?? 'scene', (payload?.objects ?? []).length, { phase: 'preparing' });
+	try {
+		await applySessionNow(payload, opts, job);
+	} catch (error) {
+		// a load that FAILED must not leave its bar up (endLoad ignores a superseded job)
+		endLoad(job);
+		throw error;
+	}
+}
+
+/** @param {any} payload @param {{backup?: boolean, replicate?: boolean, game?: boolean, workspace?: boolean}} opts
+ * @param {import('./sceneLoader').LoadJob} job */
+async function applySessionNow(payload, opts, job) {
 	const { backup = true, replicate = true, game = true, workspace = true } = opts;
 	// 31 K3: the file's own name is the game's identity for its per-game settings (a
 	// Games-tab load is unnamed afterwards, but its session name is the game's title)
 	noteSceneFileName(payload?.name);
 	const group = get(objectsGroup);
-	if (backup && group?.children.length) await saveSession('Backup before "' + payload.name + '"');
+	// 33 L1: a load that interrupted another one still building finds HALF of that scene on
+	// screen — nothing anybody made, so no "Backup before" of it
+	const hadContent = !!group?.children.length && !job.interrupted;
+	if (backup && hadContent) await saveSession('Backup before "' + payload.name + '"');
 	// R22-R8: a session saved by "Save into session" carries the whole Explorer library
 	// beside the scene, because that gesture EMPTIES the library and the save is the only
 	// thing standing between the user and losing it. Restoring it is hash-deduped, so a
@@ -1324,30 +1344,68 @@ export async function applySession(payload, opts = {}) {
 	} catch {
 		/* physics failing to load must never block a scene load */
 	}
+	// a load superseded while the backup or the library restore awaited stops here
+	if (!isLive(job)) return;
 	if (replicate) sceneCommand('/clear all'); // replicated clear (objects + module content)
 	else clearSceneLocal();
+	updateLoad(job, { phase: 'objects' });
 	/** @type {any} */
 	const peer = get(peers);
-	for (const element of payload.objects ?? []) {
-		let object;
-		try {
-			object = new THREE.ObjectLoader().parse(element);
-		} catch {
-			continue;
+	// 33 L1: Cancel (the load bar) takes back what this load had added — clearing for the
+	// room as the load itself replicated. A load SUPERSEDED by another one is not cleared
+	// here: the newer load's own clear does that.
+	onCancel(() => {
+		if (replicate) sceneCommand('/clear all');
+		else clearSceneLocal();
+		showToast(
+			'Stopped loading "' + (payload?.name ?? 'scene') + '"' +
+				(backup && hadContent ? ' — your previous scene is in Sessions as "Backup before ' + payload.name + '"' : '')
+		);
+	});
+	/** @type {Promise<any>[]} kit pieces still refilling from their pack */
+	const refills = [];
+	const poke = throttledPoke(pokeScene);
+	beginSceneBatch();
+	try {
+		// 33 L1: TIME-SLICED. This loop used to build every object in one task — a castle of
+		// 180 pieces parsed, attached and broadcast before the window could paint again.
+		// `slice` yields whenever the ~10 ms budget is spent, and stops at a clean point
+		// between two objects when the load was cancelled or superseded.
+		for (const element of payload.objects ?? []) {
+			await slice(job);
+			let object;
+			try {
+				object = new THREE.ObjectLoader().parse(element);
+			} catch {
+				progress(job);
+				continue;
+			}
+			// A scene saved while a mesh-edit session was open carries the edit
+			// wireframe as a real child object — it comes back as a permanent,
+			// un-updatable wireframe nobody can switch off, and it accumulates on
+			// every save/load round trip (the reported "wireframe glitch"). Drop it
+			// on the way in; the peers do the same in `createObject`.
+			stripEditOverlays(object);
+			group.add(object); // keep original uuids — every peer converges on them
+			if (replicate && peer) peer.send({ type: 'object', element });
+			// a kit piece is not loaded until its pack refilled it: counted when it lands,
+			// and asked for NOW rather than on the scan's next debounce
+			if (object.userData?.packStub) refills.push(fillPackRef(object).finally(() => progress(job)));
+			else progress(job);
+			poke();
 		}
-		// A scene saved while a mesh-edit session was open carries the edit
-		// wireframe as a real child object — it comes back as a permanent,
-		// un-updatable wireframe nobody can switch off, and it accumulates on
-		// every save/load round trip (the reported "wireframe glitch"). Drop it
-		// on the way in; the peers do the same in `createObject`.
-		stripEditOverlays(object);
-		group.add(object); // keep original uuids — every peer converges on them
-		if (replicate && peer) peer.send({ type: 'object', element });
+	} catch (error) {
+		if (error instanceof LoadCancelled) return;
+		throw error;
+	} finally {
+		endSceneBatch();
 	}
 	pokeScene();
 	// animated imports come back from their original bytes (mixers rebuilt, peers
 	// reparse the same file) and authored tracks from the payload
 	await animatedImportsRestore(payload.animated ?? [], replicate);
+	// superseded while the rigs parsed: the newer load owns the scene now
+	if (!isLive(job)) return;
 	// replicate: a loaded scene's movements reach the peers already in the room,
 	// the way each restored joint is re-broadcast below
 	animationsRestore(payload.animations ?? {}, replicate);
@@ -1414,6 +1472,12 @@ export async function applySession(payload, opts = {}) {
 	// flow editor's badge is invisible when the dock is closed — which it is for most
 	// players loading a game. Runs after restoreGraphs, so the count is the real one.
 	reportUnknownNodes(payload);
+	// 33 L1: the bar stays up while kit pieces are still arriving from their pack, and it
+	// is no longer cancellable then — the scene is whole, only the models are on their way
+	if (refills.length) {
+		updateLoad(job, { phase: 'models', cancellable: false });
+		void Promise.allSettled(refills).then(() => endLoad(job));
+	} else endLoad(job);
 	showToast('Session loaded: ' + payload.name + ' (' + (payload.count ?? 0) + ' objects)');
 }
 

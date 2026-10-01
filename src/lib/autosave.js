@@ -629,6 +629,9 @@ async function applyRestore(snapshot, offer = null) {
 	/** @type {Promise<any>[]} */
 	const refills = [];
 	try {
+		// 33 L1: sky and lights before the objects, so pieces warming as their packs land
+		// compile for THIS scene's lights (see sessions.applySession)
+		environmentRestore(snapshot.environment, true);
 		if (snapshot.scene && group) {
 			const loader = new GLTFLoader();
 			/** @type {any} */
@@ -708,7 +711,7 @@ async function applyRestore(snapshot, offer = null) {
 		scenePostRestore(snapshot.post, true);
 		// A6.1: and so do the sky and the gravity (absent = the scene's default, which
 		// is what an older snapshot without these fields means)
-		environmentRestore(snapshot.environment, true);
+		// (the environment was restored before the objects — see the build loop)
 		scenePhysicsRestore(snapshot.physics, true);
 		// resume:false — a reload must not start the beat lab on its own, the same
 		// reasoning that keeps MUSIC out of this snapshot entirely
@@ -731,9 +734,9 @@ async function applyRestore(snapshot, offer = null) {
 				controls.update();
 			}
 		}
-		// the bar stays while kit pieces arrive from their packs (no longer cancellable)
+		// the bar stays (still cancellable) while kit pieces arrive from their packs
 		if (refills.length) {
-			updateLoad(job, { phase: 'models', cancellable: false });
+			updateLoad(job, { phase: 'models' });
 			void Promise.allSettled(refills).then(() => endLoad(job));
 		} else endLoad(job);
 		return true;

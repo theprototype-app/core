@@ -10,7 +10,7 @@
 //
 //   APP_URL=https://theprototype.app:5275/ node scripts/scene-load-trace.cjs
 //   SCENES_DIR=<scenes checkout>  PACKS_DIR=<packs mirror>  SLUGS=castle-courtyard,...  CPU=6
-//   OUT=<dir for the json + md>   PHASES=open,restore
+//   OUT=<dir for the json + md>   PHASES=open,restore   PACK_DELAY=1 (slow pack downloads)
 const fs = require('fs');
 const path = require('path');
 const h = require('../tests/e2e/helpers.cjs');
@@ -187,7 +187,7 @@ h.run(async () => {
 		}
 		const A = await h.setupPage(browser, slug, { context: MOBILE });
 		const page = A.page;
-		await page.route('**/cdn.jsdelivr.net/**', (route) => {
+		await page.route('**/cdn.jsdelivr.net/**', async (route) => {
 			const url = route.request().url();
 			const scenes = url.match(/\/theprototype-app\/scenes@[^/]+\/(.*)$/);
 			if (scenes) {
@@ -199,7 +199,16 @@ h.run(async () => {
 			const packs = url.match(/\/theprototype-app\/packs@[^/]+\/(.*)$/);
 			if (packs) {
 				const file = path.join(PACKS_DIR, decodeURIComponent(packs[1]));
-				if (fs.existsSync(file)) return route.fulfill({ body: fs.readFileSync(file) });
+				if (fs.existsSync(file)) {
+					// PACK_DELAY=1: a phone on a real link — each pack file lands 0.6-2.7 s later (the
+					// scene-load suite's staggered delay), so pieces arrive one file at a time
+					if (process.env.PACK_DELAY && /\.glb$/i.test(file)) {
+						let x = 0;
+						for (const ch of url) x = (x * 31 + ch.charCodeAt(0)) >>> 0;
+						await new Promise((r) => setTimeout(r, 600 + (x % 8) * 300));
+					}
+					return route.fulfill({ body: fs.readFileSync(file) }).catch(() => {});
+				}
 			}
 			return route.continue();
 		});

@@ -19,6 +19,11 @@
 //      progress, no long task > 200 ms, the castle is whole again (and the edited piece kept
 //      its edit).
 //
+// EVERY measured load starts from a FRESH page: packRefs keeps parsed pack files in memory, so a
+// re-open in the same page finishes before anything can be observed (the first version of this
+// suite measured exactly that and saw no bar at all). Pack files are served with a staggered
+// 0.6-2.7 s delay — a phone on a real link — so a load lasts long enough to watch and cancel.
+//
 // Feed + kits are served from local folders (the level-templates idiom):
 //   SCENES_DIR (default: the scenes checkout, any branch carrying templates/castle-courtyard)
 //   PACKS_DIR  (default: /home/deck/.code/lanes-30/levels-packs)
@@ -95,7 +100,13 @@ h.run(async () => {
 	const browser = await h.launch({ args: h.GPU_ARGS });
 	const A = await h.setupPage(browser, 'A', { context: MOBILE });
 	const page = A.page;
-	await page.route('**/cdn.jsdelivr.net/**', (route) => {
+	/** a stable per-file delay, so the models arrive one pack file at a time */
+	const delayOf = (url) => {
+		let x = 0;
+		for (const ch of url) x = (x * 31 + ch.charCodeAt(0)) >>> 0;
+		return 600 + (x % 8) * 300;
+	};
+	await page.route('**/cdn.jsdelivr.net/**', async (route) => {
 		const url = route.request().url();
 		const scenes = url.match(/\/theprototype-app\/scenes@[^/]+\/(.*)$/);
 		if (scenes) {
@@ -106,99 +117,137 @@ h.run(async () => {
 		const packs = url.match(/\/theprototype-app\/packs@[^/]+\/(.*)$/);
 		if (packs) {
 			const file = path.join(PACKS_DIR, decodeURIComponent(packs[1]));
-			if (fs.existsSync(file)) return route.fulfill({ body: fs.readFileSync(file) });
+			if (fs.existsSync(file)) {
+				if (/\.glb$/i.test(file)) await new Promise((r) => setTimeout(r, delayOf(url)));
+				return route.fulfill({ body: fs.readFileSync(file) }).catch(() => {});
+			}
 		}
 		return route.continue();
 	});
-	await page.evaluate(PROBE);
-	const cdp = await page.context().newCDPSession(page);
+	/** @type {any} */
+	let cdp = null;
 	const throttle = (rate) => cdp.send('Emulation.setCPUThrottlingRate', { rate });
+	/** a fresh page (empty pack-template cache), the probe armed-able, a CDP session */
+	const fresh = async ({ keepRestore = false } = {}) => {
+		if (cdp) await throttle(1).catch(() => {});
+		await page.reload({ waitUntil: 'domcontentloaded' });
+		await page.waitForFunction(() => window.__stores && !!window.__stores.moduleSDK, { timeout: 60000 });
+		await page.waitForTimeout(1500);
+		await page.evaluate(PROBE);
+		if (!keepRestore) await page.evaluate(() => window.__stores.autosave.dismissRestore());
+		cdp = await page.context().newCDPSession(page);
+	};
+	await fresh();
 	const urlOf = (rel) => page.evaluate((p) => window.__stores.sceneTemplates.resolveUrl(p, window.__stores.sceneTemplates.SCENES_BASE), rel);
 	const open = (url) => page.evaluate((url) => void window.__stores.sceneTemplates.loadRemoteScene({ slug: 'x', title: 'x', sceneUrl: url }), url);
 	const castleUrl = await urlOf(CASTLE);
 	const forestUrl = await urlOf(FOREST);
-
-	// warm the pack files once (a phone that opened the castle before has them in its HTTP
-	// cache too) — and the fetch itself is not what this suite measures
-	await open(castleUrl);
-	await h.eventually(() => sceneState(page, 'Castle gate'), whole, '0.0 (premise) the castle loads and every kit piece refills', 120000);
-	const pieces = (await sceneState(page, 'Castle gate')).top;
-	h.check(pieces > 150, '0.1 (premise) the castle is a big scene (' + pieces + ' top-level objects)');
+	/** sample the load job (store) and the bar (DOM) until `until` holds */
+	const watch = async (until, label, timeout = 180000) => {
+		/** @type {any[]} */
+		const jobs = [];
+		/** @type {string[]} */
+		const bars = [];
+		let last = null;
+		const t0 = Date.now();
+		while (Date.now() - t0 < timeout) {
+			const r = await page.evaluate(() => {
+				/** @type {any} */ let job;
+				window.__stores.sceneLoader.sceneLoad.subscribe((v) => (job = v))();
+				const el = document.querySelector('#scene-load-bar');
+				return { job, bar: el ? el.textContent?.replace(/\s+/g, ' ').trim() : '' };
+			});
+			if (r.job) jobs.push(r.job);
+			if (r.bar) bars.push(r.bar);
+			last = await sceneState(page, until.marker);
+			if (until.done(last)) break;
+			await page.waitForTimeout(120);
+		}
+		h.check(!!last && until.done(last), label);
+		if (!(last && until.done(last))) console.log('  last: ' + JSON.stringify(last));
+		return { jobs, bars, last };
+	};
 
 	// ---- 1. OPEN on the throttled phone -------------------------------------------------
 	await arm(page);
 	await throttle(CPU);
 	await open(castleUrl);
-	/** @type {any[]} */
-	const seen = [];
-	await h.eventually(
-		async () => {
-			const s = await sceneState(page, 'Castle gate');
-			const bar = await page.evaluate(() => {
-				const el = document.querySelector('#scene-load-bar');
-				return el ? { done: Number(el.getAttribute('data-done')), total: Number(el.getAttribute('data-total')), text: el.textContent?.replace(/\s+/g, ' ').trim() } : null;
-			});
-			if (bar) seen.push(bar);
-			return s;
-		},
-		whole,
-		'1.0 the castle opens on a CPU x' + CPU + ' phone and every piece refills',
-		180000
-	);
+	const one = await watch({ marker: 'Castle gate', done: whole }, '1.0 the castle opens on a CPU x' + CPU + ' phone and every kit piece refills');
 	await page.waitForTimeout(1500); // trailing frames: the first draw of the new pieces
 	await throttle(1);
 	let probe = await disarm(page);
-	h.check(seen.length > 0 && seen.some((b) => /Loading .*\d+ \/ \d+ objects/.test(b.text ?? '')), '1.1 the load bar says what loads and how far it is (' + (seen[0]?.text ?? 'never shown') + ')');
-	const dones = seen.map((b) => b.done);
-	h.check(seen.length > 0 && seen[0].total === pieces && new Set(dones).size >= 3 && dones.every((d, i) => i === 0 || d >= dones[i - 1]), '1.2 it counts up over the ' + pieces + ' objects (' + [...new Set(dones)].slice(0, 8).join(', ') + ' …)');
-	h.check(probe.max <= LONG_MS, `1.3 no long task over ${LONG_MS} ms while it loads (max ${probe.max} ms of ${probe.longtasks.length}; longest frame gap ${probe.maxGap} ms)`);
+	const pieces = one.last?.top ?? 0;
+	h.check(pieces > 150, '1.1 (premise) the castle is a big scene (' + pieces + ' top-level objects)');
+	h.check(one.bars.some((t) => /^Loading .+— \d+ \/ \d+ objects/.test(t)), '1.2 the load bar says what loads and how far it is ("' + (one.bars.find((t) => /objects/.test(t)) ?? one.bars[0] ?? 'never shown') + '")');
+	const dones = [...new Set(one.jobs.map((j) => j.done))];
+	h.check(one.jobs.length > 0 && one.jobs[0].total === pieces && dones.length >= 3 && dones.every((d, i) => i === 0 || d >= dones[i - 1]), '1.3 it counts up over the ' + pieces + ' objects (' + dones.slice(0, 10).join(', ') + ' …)');
+	h.check(probe.max <= LONG_MS, `1.4 no long task over ${LONG_MS} ms while it loads (max ${probe.max} ms of ${probe.longtasks.length}; longest frame gap ${probe.maxGap} ms)`);
 	console.log('   open long tasks: ' + JSON.stringify(probe.longtasks.slice().sort((a, b) => b - a).slice(0, 10)));
 
 	// ---- 2. the UI answers mid-load -----------------------------------------------------
+	// the reference: the same menu on the same throttled phone with NOTHING loading (a CPU x6
+	// page is slow at everything — the question is whether a load makes it slower)
+	await fresh();
 	await throttle(CPU);
+	const menuTime = async () => {
+		const t0 = Date.now();
+		await page.locator('#logo-menu').click({ timeout: 5000 });
+		const ms = await page
+			.waitForFunction(() => { const m = document.querySelector('#open-templates'); return !!m && m.getBoundingClientRect().height > 0; }, null, { timeout: 8000 })
+			.then(() => Date.now() - t0)
+			.catch(() => -1);
+		await page.keyboard.press('Escape').catch(() => {});
+		await page.locator('#logo-menu').click().catch(() => {});
+		await page.waitForTimeout(800);
+		return ms;
+	};
+	await menuTime(); // first open mounts the menu once
+	const idleMenu = await menuTime();
 	await open(castleUrl);
-	await h.eventually(() => page.evaluate(() => !!document.querySelector('#scene-load-bar')), (v) => v, '2.0 (premise) a load is under way (the bar is up)', 20000);
-	const t0 = Date.now();
-	await page.locator('#logo-menu').click({ timeout: 5000 });
-	const menuUp = await page
-		.waitForFunction(() => { const m = document.querySelector('#open-templates'); return !!m && m.getBoundingClientRect().height > 0; }, null, { timeout: 5000 })
-		.then(() => Date.now() - t0)
-		.catch(() => -1);
+	await h.eventually(() => page.evaluate(() => !!document.querySelector('#scene-load-bar')), (v) => v, '2.0 (premise) a load is under way (the bar is up)', 30000);
+	const menuUp = await menuTime();
 	const stillLoading = !!(await sceneState(page, null)).job;
-	h.check(menuUp >= 0 && menuUp < 2000 && stillLoading, `2.1 the logo menu opens in ${menuUp} ms while the scene is still loading (${stillLoading ? 'still loading' : 'load had ENDED — inconclusive'})`);
-	await page.keyboard.press('Escape');
-	await page.locator('#logo-menu').click().catch(() => {});
+	h.check(menuUp >= 0 && menuUp < idleMenu + 600 && stillLoading, `2.1 the logo menu opens in ${menuUp} ms while the scene is still loading (${idleMenu} ms with nothing loading; ${stillLoading ? 'still loading' : 'load had ENDED - inconclusive'})`);
 	await throttle(1);
-	await h.eventually(() => sceneState(page, 'Castle gate'), whole, '2.2 that load still completes', 180000);
+	await watch({ marker: 'Castle gate', done: whole }, '2.2 that load still completes');
 
 	// ---- 3. another scene SUPERSEDES the running one --------------------------------------
+	await fresh();
 	await throttle(CPU);
 	await open(castleUrl);
-	await h.eventually(() => sceneState(page, null), (s) => s.job && s.job.done > 5 && s.job.done < s.job.total - 20, '3.0 (premise) the castle is half-way in', 30000);
+	await h.eventually(() => sceneState(page, null), (s) => !!s.job && s.top > 20 && s.hollow > 20, '3.0 (premise) the castle is half-way in (objects built, models still arriving)', 30000);
 	await open(forestUrl);
 	await throttle(1);
-	await h.eventually(() => sceneState(page, 'Footbridge'), whole, '3.1 the forest opens and finishes', 180000);
-	await page.waitForTimeout(1500);
+	await watch({ marker: 'Footbridge', done: whole }, '3.1 the forest opens and finishes');
+	await page.waitForTimeout(3500); // the castle's pack files are still landing: none may attach
 	const after3 = await sceneState(page, 'Footbridge');
-	h.check(after3.forest && !after3.castle, '3.2 no castle piece survived into the forest (castle gate ' + (after3.castle ? 'PRESENT' : 'absent') + ')');
+	h.check(after3.forest && !after3.castle, '3.2 no castle piece survived into the forest (castle gate ' + (after3.castle ? 'PRESENT' : 'absent') + ', ' + after3.top + ' objects)');
 	h.check(!after3.job && !(await page.locator('#scene-load-bar').count()), '3.3 the bar is gone once the forest is whole');
 
 	// ---- 4. Cancel ------------------------------------------------------------------------
+	await fresh();
 	await throttle(CPU);
 	await open(castleUrl);
-	await h.eventually(() => page.evaluate(() => !!document.querySelector('#scene-load-cancel')), (v) => v, '4.0 (premise) the bar offers Cancel while objects are being built', 20000);
-	await page.locator('#scene-load-cancel').click();
+	await h.eventually(() => page.evaluate(() => !!document.querySelector('#scene-load-cancel')), (v) => v, '4.0 (premise) the bar offers Cancel while the scene loads', 30000);
+	const hit = await page.evaluate(() => {
+		const b = /** @type {HTMLElement} */ (document.querySelector('#scene-load-cancel'));
+		const r = b.getBoundingClientRect();
+		const at = document.elementFromPoint(r.x + r.width / 2, r.y + r.height / 2);
+		return at === b || b.contains(at) ? 'ok' : (at?.id || at?.className || String(at));
+	});
+	h.check(hit === 'ok', '4.1 Cancel is on top where it is drawn (elementFromPoint: ' + hit + ')');
+	await page.locator('#scene-load-cancel').click({ timeout: 5000 });
 	await throttle(1);
-	await h.eventually(() => sceneState(page, null), (s) => !s.job && s.top === 0, '4.1 Cancel stops the load and takes back what it had added', 20000);
-	await page.waitForTimeout(2500);
+	await h.eventually(() => sceneState(page, null), (s) => !s.job && s.top === 0, '4.2 Cancel stops the load and takes back what it had added', 20000);
+	await page.waitForTimeout(3500);
 	const after4 = await sceneState(page, null);
-	h.check(after4.top === 0, '4.2 nothing trickles in after the cancel (' + after4.top + ' objects 2.5 s later)');
+	h.check(after4.top === 0, '4.3 nothing trickles in after the cancel (' + after4.top + ' objects 3.5 s later)');
 	const toast = await page.evaluate(() => [...document.querySelectorAll('.tp-toast')].map((t) => t.textContent ?? '').join(' | '));
-	h.check(/Stopped loading/.test(toast), '4.3 a toast says the load was stopped');
+	h.check(/Stopped loading/.test(toast), '4.4 a toast says the load was stopped');
 
 	// ---- 5. AUTOSAVE writes pristine pieces as stubs --------------------------------------
 	await open(castleUrl);
-	await h.eventually(() => sceneState(page, 'Castle gate'), whole, '5.0 (premise) the castle is back', 180000);
+	await watch({ marker: 'Castle gate', done: whole }, '5.0 (premise) the castle is back');
 	// one EDITED piece: a pristine fingerprint no longer matches, so it must be written full
 	const edited = await page.evaluate(() => {
 		const s = window.__stores;
@@ -222,31 +271,17 @@ h.run(async () => {
 	h.check(snap.stubs > 100 && snap.bytes < 8_000_000, `5.2 the autosave is ${(snap.bytes / 1e6).toFixed(2)} MB with ${snap.stubs} stub pieces (it was 51 MB of full geometry)`);
 
 	// ---- 6. RESTORE after a reload, through the real button -------------------------------
-	await page.reload({ waitUntil: 'domcontentloaded' });
-	await page.waitForFunction(() => window.__stores && !!window.__stores.moduleSDK, { timeout: 60000 });
-	await page.evaluate(PROBE);
+	await fresh({ keepRestore: true });
 	const restoreBtn = page.locator('.tp-toast-action', { hasText: 'Restore' });
 	await h.eventually(() => restoreBtn.count(), (n) => n > 0, '6.0 (premise) the restore prompt is up after the reload', 30000);
-	const cdp2 = await page.context().newCDPSession(page);
 	await arm(page);
-	await cdp2.send('Emulation.setCPUThrottlingRate', { rate: CPU });
+	await throttle(CPU);
 	await restoreBtn.first().click();
-	/** @type {string[]} */
-	const texts = [];
-	await h.eventually(
-		async () => {
-			const t = await page.evaluate(() => document.querySelector('#scene-load-bar')?.textContent?.replace(/\s+/g, ' ').trim() ?? '');
-			if (t) texts.push(t);
-			return sceneState(page, 'Castle gate');
-		},
-		whole,
-		'6.1 Restore brings the whole castle back on the throttled phone',
-		180000
-	);
+	const six = await watch({ marker: 'Castle gate', done: whole }, '6.1 Restore brings the whole castle back on the throttled phone');
 	await page.waitForTimeout(1500);
-	await cdp2.send('Emulation.setCPUThrottlingRate', { rate: 1 });
+	await throttle(1);
 	probe = await disarm(page);
-	h.check(texts.some((t) => /^Restoring your last session/.test(t)), '6.2 the bar says it is restoring (' + (texts[texts.length - 1] ?? 'never shown') + ')');
+	h.check(six.bars.some((t) => /^Restoring your last session/.test(t)), '6.2 the bar says it is restoring ("' + (six.bars[six.bars.length - 1] ?? 'never shown') + '")');
 	h.check(probe.max <= LONG_MS, `6.3 no long task over ${LONG_MS} ms while it restores (max ${probe.max} ms of ${probe.longtasks.length}; longest frame gap ${probe.maxGap} ms)`);
 	console.log('   restore long tasks: ' + JSON.stringify(probe.longtasks.slice().sort((a, b) => b - a).slice(0, 10)));
 	const kept = await page.evaluate((e) => {
@@ -257,8 +292,7 @@ h.run(async () => {
 		return mesh ? mesh.material.color.getHex() : null;
 	}, edited);
 	h.check(kept === 0x12ab34, '6.4 the EDITED piece came back with its edit (colour ' + (kept == null ? 'missing' : '#' + kept.toString(16)) + ')');
-	const final = await sceneState(page, 'Castle gate');
-	h.check(final.top === pieces, `6.5 every object is back (${final.top} / ${pieces})`);
+	h.check(six.last?.top === pieces, `6.5 every object is back (${six.last?.top} / ${pieces})`);
 
 	await h.finish(browser);
 });

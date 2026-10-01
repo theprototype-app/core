@@ -1349,6 +1349,12 @@ async function applySessionNow(payload, opts, job) {
 	if (replicate) sceneCommand('/clear all'); // replicated clear (objects + module content)
 	else clearSceneLocal();
 	updateLoad(job, { phase: 'objects' });
+	// 33 L1: the SKY AND LIGHTS first. The scene's own environment decides how many lights a
+	// material is compiled for, and kit pieces warm their programs as their pack files land —
+	// during this loop. Restored after the objects (as it was), every piece compiled for the
+	// previous scene's lights and linked again on its first frame. It also shows the right sky
+	// at once instead of the old one under the arriving level. (A6.1: absent = the default.)
+	environmentRestore(payload.environment, replicate);
 	/** @type {any} */
 	const peer = get(peers);
 	// 33 L1: Cancel (the load bar) takes back what this load had added — clearing for the
@@ -1438,7 +1444,7 @@ async function applySessionNow(payload, opts, job) {
 	// A6.1: and so do the sky, the gravity and the music — a game template that
 	// loaded into the room's own sky and gravity was the reason this phase exists.
 	// Each is a no-op when the field is absent (= the scene wants the defaults).
-	environmentRestore(payload.environment, replicate);
+	// (the environment was restored before the objects — see the build loop)
 	scenePhysicsRestore(payload.physics, replicate);
 	musicRestore(payload.music, replicate);
 	// 23-A2: and the transport — absent means the default (stopped, 120), and a saved
@@ -1472,10 +1478,11 @@ async function applySessionNow(payload, opts, job) {
 	// flow editor's badge is invisible when the dock is closed — which it is for most
 	// players loading a game. Runs after restoreGraphs, so the count is the real one.
 	reportUnknownNodes(payload);
-	// 33 L1: the bar stays up while kit pieces are still arriving from their pack, and it
-	// is no longer cancellable then — the scene is whole, only the models are on their way
+	// 33 L1: the bar stays up while kit pieces are still arriving from their pack — still
+	// cancellable: a scene whose models crawl in over a slow link is exactly the one a user
+	// abandons, and Cancel takes the whole load back either way
 	if (refills.length) {
-		updateLoad(job, { phase: 'models', cancellable: false });
+		updateLoad(job, { phase: 'models' });
 		void Promise.allSettled(refills).then(() => endLoad(job));
 	} else endLoad(job);
 	showToast('Session loaded: ' + payload.name + ' (' + (payload.count ?? 0) + ' objects)');

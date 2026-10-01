@@ -1,9 +1,8 @@
 <script>
 	// 33 L1 — the scene-load bar. A load may take time; it says so instead of freezing:
-	// "Loading Castle Courtyard — 34 / 182 objects", a real progress bar, and Cancel while the
-	// objects are still being built (sceneLoader.cancelLoad runs the load's own undo). Once
-	// the scene is whole and only kit models are still arriving from their pack, the bar
-	// keeps counting but Cancel is gone — there is nothing half-built left to take back.
+	// "Loading Castle Courtyard — 34 / 182 objects", a real progress bar, and Cancel, which
+	// takes the whole load back (sceneLoader.cancelLoad runs the load's own undo) — while the
+	// objects are built and while kit models are still arriving from their pack.
 	//
 	// NON-MODAL by design: it lives in the toast stack's first slot (the spectator banner's
 	// spot, so arriving toasts never shove it), the rest of the UI stays usable, and opening
@@ -44,9 +43,7 @@
 	const what = $derived(
 		$sceneLoad?.phase === 'reading' || $sceneLoad?.phase === 'preparing'
 			? 'getting ready…'
-			: $sceneLoad?.phase === 'models'
-				? 'models ' + $sceneLoad.done + ' / ' + $sceneLoad.total
-				: ($sceneLoad?.done ?? 0) + ' / ' + ($sceneLoad?.total ?? 0) + ' objects'
+			: ($sceneLoad?.done ?? 0) + ' / ' + ($sceneLoad?.total ?? 0) + ' objects'
 	);
 </script>
 

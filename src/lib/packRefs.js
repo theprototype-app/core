@@ -211,6 +211,9 @@ export function loadPackTemplate(url) {
  * a failure here only means the first frame pays as it always did.
  * @param {any} scene
  */
+/** a 1x1 target that stands in for the composer's while compiling @type {any} */
+let warmTarget = null;
+
 async function warmTemplate(scene) {
 	/** @type {any} */
 	const renderer = get(globalRenderer);
@@ -224,7 +227,23 @@ async function warmTemplate(scene) {
 	try {
 		for (const texture of textures) await schedule(() => renderer.initTexture(texture));
 		const camera = get(globalCamera);
-		if (camera && typeof renderer.compileAsync === 'function') await renderer.compileAsync(scene, camera, get(globalScene) ?? null);
+		if (camera && typeof renderer.compileAsync === 'function') {
+			// BOTH variants. three keys a program by its OUTPUT too: drawn straight to the canvas
+			// it tone-maps and encodes sRGB, drawn into a render target (the post-processing
+			// composer — the editor's outline, the scene look) it does neither. Compiling only the
+			// canvas variant left the composer's programs to link inside the first frame that drew
+			// a new piece (measured: 260 ms of first-use links after the warm-up).
+			const previous = renderer.getRenderTarget();
+			const ready = [renderer.compileAsync(scene, camera, get(globalScene) ?? null)];
+			if (!warmTarget) warmTarget = new THREE.WebGLRenderTarget(1, 1);
+			renderer.setRenderTarget(warmTarget);
+			try {
+				ready.push(renderer.compileAsync(scene, camera, get(globalScene) ?? null));
+			} finally {
+				renderer.setRenderTarget(previous);
+			}
+			await Promise.all(ready);
+		}
 	} catch {
 		/* the first frame compiles instead */
 	}

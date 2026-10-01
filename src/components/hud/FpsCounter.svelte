@@ -20,13 +20,11 @@
 	<div id="game-fps-counter" class="fps" class:fps-play={playing} data-tier={parts.tier} aria-live="off">
 		<span class="fps-main">{parts.fps}</span>
 		{#if parts.ms || parts.calls || parts.tris}
-			<span class="fps-detail"
-				>{#if parts.ms}<span>{parts.ms}</span>{/if}{#if parts.calls}{#if parts.ms}
-						·
-					{/if}<span id="fps-calls" class="fps-calls" data-tier={parts.tier}>{parts.calls}</span>{/if}{#if parts.tris}{#if parts.ms || parts.calls}
-						·
-					{/if}<span>{parts.tris}</span>{/if}</span
-			>
+			<span class="fps-detail">
+				{#if parts.ms}<span>{parts.ms}</span>{/if}
+				{#if parts.calls}{#if parts.ms}{' · '}{/if}<span id="fps-calls" class="fps-calls" data-tier={parts.tier}>{parts.calls}</span>{/if}
+				{#if parts.tris}{#if parts.ms || parts.calls}{' · '}{/if}<span>{parts.tris}</span>{/if}
+			</span>
 		{/if}
 	</div>
 {/if}

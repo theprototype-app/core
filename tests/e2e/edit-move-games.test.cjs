@@ -52,12 +52,22 @@ const moveAll = (page) =>
 			targets.push(o);
 			for (const c of o.children) if (c.isMesh || c.isGroup) targets.push(c);
 		}
+		// an object a flow/module effect animates (Waves' Goal core bobs and spins) is judged by
+		// its BASE pose — the gizmo edits the base, the effect then plays about it
+		const fr = s.flowRuntime;
+		const poseOf = (o) => {
+			if (!fr.isAnimatedTarget(o.uuid)) return o.position.clone();
+			fr.suspendAnimation(o.uuid);
+			const p = o.position.clone();
+			fr.resumeAnimation(o.uuid);
+			return p;
+		};
 		const rows = [];
 		for (const o of targets.slice(0, 60)) {
 			s.objectActions.selectObject(o.uuid);
 			const tc = g(s.TControls);
 			const attached = tc?.object === o;
-			const before = o.position.clone();
+			const before = poseOf(o);
 			if (attached) {
 				tc.dispatchEvent({ type: 'dragging-changed', value: true });
 				o.position.x += 0.5;
@@ -71,15 +81,19 @@ const moveAll = (page) =>
 		}
 		s.objectActions.applySelectionSet([]);
 		await new Promise((r) => setTimeout(r, 1500));
-		return rows.map((r) => ({
-			uuid: r.o.uuid,
-			name: r.o.name || r.o.type,
-			attached: r.attached,
-			phys: r.phys,
-			dx: Math.round((r.o.position.x - r.before.x) * 100) / 100,
-			dy: Math.round((r.o.position.y - r.before.y) * 100) / 100,
-			dz: Math.round((r.o.position.z - r.before.z) * 100) / 100
-		}));
+		return rows.map((r) => {
+			const now = poseOf(r.o);
+			return {
+				uuid: r.o.uuid,
+				name: r.o.name || r.o.type,
+				attached: r.attached,
+				phys: r.phys,
+				animated: fr.isAnimatedTarget(r.o.uuid),
+				dx: Math.round((now.x - r.before.x) * 100) / 100,
+				dy: Math.round((now.y - r.before.y) * 100) / 100,
+				dz: Math.round((now.z - r.before.z) * 100) / 100
+			};
+		});
 	});
 const stayed = (r) => r.attached && Math.abs(r.dx - 0.5) <= 0.02 && Math.abs(r.dz - 0.25) <= 0.02 && Math.abs(r.dy) <= 0.02;
 
@@ -124,7 +138,7 @@ h.run(async () => {
 		await load(file);
 		let rows = await moveAll(page);
 		let bad = rows.filter((r) => !stayed(r));
-		h.check(rows.length > 0 && bad.length === 0, `${game.slug} A: fresh load, all ${rows.length} objects move and stay (${bad.map((r) => r.name).slice(0, 6).join(', ') || 'none'} failed)`);
+		h.check(rows.length > 0 && bad.length === 0, `${game.slug} A: fresh load, all ${rows.length} objects move and stay (${bad.map((r) => `${r.name} dx${r.dx} dy${r.dy}`).slice(0, 6).join(', ') || 'none'} failed)`);
 
 		// ---- §B the game RUNNING, then Edit
 		await load(file);

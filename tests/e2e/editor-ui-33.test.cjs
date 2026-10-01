@@ -102,8 +102,9 @@ h.run(async () => {
 	const box = await cell.boundingBox();
 	await page.mouse.move(box.x + box.width / 2, box.y - 120);
 	await page.waitForTimeout(200);
-	// a pixel just inside the cell's left edge, mid-height: the ring (box-shadow) would paint it
-	const edge = { x: box.x + 2, y: box.y + box.height / 2 };
+	// a pixel just OUTSIDE the cell's left edge, mid-height: the focus ring is an OUTER
+	// box-shadow, so it paints over the neighbour (Scale), not inside the cell
+	const edge = { x: box.x - 2, y: box.y + box.height / 2 };
 	const edgeBefore = await pixelAt(page, edge.x, edge.y);
 	await page.mouse.click(box.x + box.width / 2, box.y + box.height / 2);
 	await page.waitForTimeout(200);
@@ -112,7 +113,14 @@ h.run(async () => {
 	await page.mouse.move(box.x + box.width / 2, box.y - 120);
 	await page.waitForTimeout(250);
 	const shadow = await page.evaluate(() => getComputedStyle(document.getElementById('editor-mode-toggle')).boxShadow);
-	h.check(!/rgb/.test(shadow) || /0px 0px 0px 0px/.test(shadow.replace(/rgba?\([^)]*\)/g, '')), 'E2.1 a clicked Interact carries no focus ring (box-shadow ' + shadow + ')');
+	// a ring is a box-shadow layer with a visible colour and a non-zero spread or blur
+	const ringLayers = shadow === 'none' ? [] : shadow.split(/,(?![^(]*\))/).filter((layer) => {
+		const color = layer.match(/rgba?\([^)]*\)/)?.[0] ?? '';
+		const alpha = /rgba/.test(color) ? Number(color.split(',')[3]) : 1;
+		const nums = layer.replace(/rgba?\([^)]*\)/, '').match(/-?[\d.]+px/g)?.map(parseFloat) ?? [];
+		return alpha > 0.05 && nums.slice(2).some((n) => n !== 0);
+	});
+	h.check(ringLayers.length === 0, 'E2.1 a clicked Interact carries no focus ring (box-shadow ' + shadow + ')');
 	const edgeAfter = await pixelAt(page, edge.x, edge.y);
 	h.check(near(edgeBefore, edgeAfter, 4), 'E2.2 and its edge pixel is unchanged by the click (' + edgeBefore + ' -> ' + edgeAfter + ')');
 	h.check((await page.evaluate(() => getComputedStyle(document.getElementById('editor-mode-toggle')).outlineStyle)) === 'none', 'E2.3 no outline either');
@@ -133,7 +141,7 @@ h.run(async () => {
 	});
 	h.check(geo.leftTitle === 'Interact mode (I)', 'premise: Interact is the well\'s left neighbour (' + geo.leftTitle + ')');
 	// the corners of the well the 50 px FAB circle leaves uncovered: the integer pixel nearest
-	// each corner whose centre is >= 2 px outside the circle AND resolves to that half (not
+	// each corner whose centre is >= 1 px outside the circle AND resolves to that half (not
 	// the FAB, not its anti-aliased edge)
 	const corners = await page.evaluate(() => {
 		const fab = document.getElementById('play-button');
@@ -146,7 +154,7 @@ h.run(async () => {
 		const find = (half, xs, ys) => {
 			for (const y of ys)
 				for (const x of xs) {
-					if (Math.hypot(x + 0.5 - cx, y + 0.5 - cy) < r + 2) continue;
+					if (Math.hypot(x + 0.5 - cx, y + 0.5 - cy) < r + 1) continue;
 					if (document.elementFromPoint(x + 0.5, y + 0.5) === half) return { x, y };
 				}
 			return null;
@@ -208,19 +216,23 @@ h.run(async () => {
 	h.check(await page.locator('#game-fps-counter').isVisible(), 'Q1.3 the counter shows in the editor (app-wide, not only in a game)');
 	const text = ((await page.locator('#game-fps-counter').textContent()) ?? '').replace(/\s+/g, ' ').trim();
 	h.check(/\d+ fps/.test(text) && /ms/.test(text) && /calls/.test(text) && /tris/.test(text), 'Q1.4 fps, frame ms, draw calls and triangles (' + text + ')');
+	h.check(/ms · \d+ calls · \d+k? tris/.test(text), 'Q1.4b the parts are separated by " · " (' + text + ')');
 	// the budget colours, through the real reading store
-	const tierAt = async (calls) => {
-		await page.evaluate((calls) => window.__stores.gameKit.fpsMeter.fpsReading.set({ fps: 72, ms: 13.9, calls, tris: 120000, source: 'desktop' }), calls);
-		await page.waitForTimeout(60);
-		return page.evaluate(() => {
+	// set and read in ONE page task: the live meter republishes its own reading every 500 ms
+	// (calls ~14 here), and a gap between a synthetic set and the read loses that race
+	const tierAt = (calls) =>
+		page.evaluate(async (calls) => {
+			window.__stores.gameKit.fpsMeter.fpsReading.set({ fps: 72, ms: 13.9, calls, tris: 120000, source: 'desktop' });
+			// MICROTASKS only: svelte flushes the DOM in a microtask queued by the set, while the
+			// live meter republishes from a rAF / timer callback, which cannot run in between
+			for (let i = 0; i < 4; i++) await Promise.resolve();
 			const el = document.getElementById('fps-calls');
-			return { tier: el?.dataset.tier, color: el ? getComputedStyle(el).color : null };
-		});
-	};
+			return { tier: el?.dataset.tier, color: el ? getComputedStyle(el).color : null, text: el?.textContent };
+		}, calls);
 	const ok = await tierAt(98);
 	const warn = await tierAt(131);
 	const over = await tierAt(163);
-	h.check(ok.tier === 'ok' && warn.tier === 'warn' && over.tier === 'over', 'Q1.5 98 / 131 / 163 calls read ok / warn / over');
+	h.check(ok.tier === 'ok' && warn.tier === 'warn' && over.tier === 'over', 'Q1.5 98 / 131 / 163 calls read ok / warn / over (' + [ok, warn, over].map((t) => t.text + '=' + t.tier).join(', ') + ')');
 	h.check(warn.color === 'rgb(251, 191, 36)', 'Q1.6 past 120 the calls are AMBER (' + warn.color + ')');
 	h.check(over.color === 'rgb(248, 113, 113)', 'Q1.7 past 150 they are RED (' + over.color + ')');
 	h.check(ok.color !== warn.color && ok.color !== over.color, 'Q1.8 and in budget they are neither (' + ok.color + ')');

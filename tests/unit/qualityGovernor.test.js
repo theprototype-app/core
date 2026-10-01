@@ -193,7 +193,7 @@ describe('drawGapFor (the ingest rule)', () => {
 
 // 31-perf P3 — the headset: thresholds from the refresh rate, the override seam, and the
 // framebuffer scale handed to the next entry.
-import { xrThresholds, xrScaleAfter, XR_START_LEVEL } from '../../src/lib/qualityGovernorCore.js';
+import { xrThresholds, XR_FRAMEBUFFER_SCALE, XR_START_LEVEL } from '../../src/lib/qualityGovernorCore.js';
 
 describe('31-perf: XR thresholds', () => {
 	it('come from the refresh rate: a missed frame is over, an on-time session recovers', () => {
@@ -243,12 +243,9 @@ describe('31-perf: XR thresholds', () => {
 		g.setThresholds(null);
 		expect(g.thresholds()).toBe(null);
 	});
-	it('the entry floor is the shadows step, and the next entry gets the scale this one needed', () => {
+	it('the entry floor is the shadows step, and a headset eye buffer is never lowered (crisp panel text)', () => {
 		expect(GOVERNOR_STEPS[XR_START_LEVEL - 1].key).toBe('shadows');
-		expect(xrScaleAfter(1)).toBe(1);
-		expect(xrScaleAfter(0.72)).toBe(0.72);
-		expect(xrScaleAfter(0.3)).toBe(0.5);
-		expect(xrScaleAfter(NaN)).toBe(1);
+		expect(XR_FRAMEBUFFER_SCALE).toBe(1);
 	});
 });
 

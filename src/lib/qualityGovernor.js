@@ -17,7 +17,7 @@ import {
 import { renderPaused } from './overloadGuard';
 import { sceneBatchOpen } from '../stores/sceneStore';
 import { safeStorage } from './safeStorage';
-import { xrThresholds, XR_START_LEVEL, xrScaleAfter, PHONE_START_LEVEL, isPhoneLike } from './qualityGovernorCore';
+import { xrThresholds, XR_START_LEVEL, XR_FRAMEBUFFER_SCALE, PHONE_START_LEVEL, isPhoneLike } from './qualityGovernorCore';
 import { globalRenderer } from '../stores/sceneStore';
 import { lodBias } from './lod';
 import { lodBiasFor } from './lodCore';
@@ -311,8 +311,8 @@ registerLongTaskObserver(() => governor.noteLongTask(now()));
 //   · START: auto mode enters a session at XR_START_LEVEL (shadows off — the Quest budget) and
 //     gives the level it found back on exit; a lower level reached in the headset is kept
 //     only if it is still needed (the ordinary recovery walks it back)
-//   · RESOLUTION: an XR framebuffer's size is fixed at entry, so the scale a session needed is
-//     applied to the NEXT entry (xrScaleAfter) — three already runs maximum foveation
+//   · RESOLUTION: never lowered in a headset (XR_FRAMEBUFFER_SCALE = 1): a lowered eye buffer
+//     blurred every panel's text, and three already runs maximum foveation
 // The opt-out holds: with auto quality off, none of this changes a level.
 // A game's pinned Quality preset (31-game-shell, `gameForcedLevel`) WINS over the entry floor:
 // a pinned session takes no floor, and pinning mid-session drops it (applyGameQuality).
@@ -372,8 +372,8 @@ export function noteXRFrame(ms, t = now()) {
 	decideNow(t);
 }
 
-/** The session ended: desktop thresholds, the entry floor handed back, and the resolution
- * the headset needed saved for the next entry. Exported for the suite. @param {any} [r] */
+/** The session ended: desktop thresholds, the entry floor handed back, and the eye buffer kept
+ * at FULL scale for the next entry (crisp panel text). Exported for the suite. @param {any} [r] */
 export function endXRQuality(r = get(globalRenderer)) {
 	if (!xr.active) return;
 	xr.active = false;
@@ -381,7 +381,9 @@ export function endXRQuality(r = get(globalRenderer)) {
 	governor.setThresholds(null);
 	governor.setFloor(0);
 	governor.forget();
-	xr.nextScale = xrScaleAfter(xr.minScale);
+	// FULL resolution for the next entry, whatever this session needed (XR_FRAMEBUFFER_SCALE:
+	// a lowered eye buffer blurred every panel's text); `minScale` stays as a reading only
+	xr.nextScale = XR_FRAMEBUFFER_SCALE;
 	try {
 		// three refuses this while presenting; sessionend fires after it has stopped
 		r?.xr?.setFramebufferScaleFactor?.(xr.nextScale);

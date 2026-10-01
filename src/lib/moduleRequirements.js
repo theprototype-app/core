@@ -3,6 +3,7 @@ import { allNodes } from '../stores/flowStore';
 import { objectsGroup } from '../stores/sceneStore';
 import { deviceSpec } from './audioDevices';
 import { moduleNodeGroups, loadedModules, disabledModules } from './moduleSDK';
+import { versionNewer } from './moduleGallery'; // 31-integrate: the outdated check (pure)
 
 // A6.2: "which modules does this scene need?" — DERIVED from what the scene
 // actually USES, never from what happens to be installed. Installing everything
@@ -124,13 +125,20 @@ export function classifyRequirements(list) {
 	// index deliberately floats on @main so new modules can be listed without a core
 	// release, which means the delta has to be VISIBLE rather than prevented.
 	const mismatched = [];
+	// 31-integrate: installed but OLDER than the scene asks. A user module is installed ONCE
+	// per device and never updates itself, so a headset that installed Waves 2.1.0 for the
+	// 1.17 preview kept playing 2.1.0 on the 1.18 one — with the very bug 2.2.0 fixes ("as soon
+	// as I hit an enemy, all enemies return to their start"). The load prompt offers the update.
+	const outdated = [];
 	for (const entry of wanted) {
 		const local = loadedModules.find((m) => m.id === entry.id);
 		if (off.includes(entry.id)) disabled.push(entry);
 		else if (local) {
 			ready.push(entry);
-			if (entry.version && local.version && entry.version !== local.version)
+			if (entry.version && local.version && entry.version !== local.version) {
 				mismatched.push({ id: entry.id, want: entry.version, have: local.version });
+				if (versionNewer(entry.version, local.version)) outdated.push({ id: entry.id, version: entry.version, have: local.version });
+			}
 		} else missing.push(entry);
 	}
 	return {
@@ -139,6 +147,7 @@ export function classifyRequirements(list) {
 		disabled,
 		ready,
 		mismatched,
+		outdated,
 		satisfied: !missing.length && !disabled.length
 	};
 }

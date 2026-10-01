@@ -17,6 +17,8 @@ const h = require('./helpers.cjs');
 const fs = require('fs');
 const path = require('path');
 
+// the menu's start control: 1.17 Towers said "Start round"; 1.18 Towers (31-towers) starts a LEVEL
+const START = /Start round|1 · Stack/;
 const SCENES_REPO = [
 	path.resolve(__dirname, '../../../theprototype.app-scenes'),
 	path.resolve(__dirname, '../../../scenes')
@@ -105,7 +107,7 @@ h.run(async () => {
 		const s = window.__stores;
 		const doc = s.hudDocs.hudDocOf('scene');
 		const menu = doc.screens.find((sc) => sc.id === 'menu');
-		const el = menu.elements.find((e) => e.kind === 'button' && /start/i.test(String(e.label ?? e.text ?? '')));
+		const el = menu.elements.find((e) => e.kind === 'button' && /start|^1 · /i.test(String(e.label ?? e.text ?? '')));
 		if (!el) return null;
 		const r = s.hudDocs.rectInFrame(el, window.innerWidth, window.innerHeight);
 		return { x: r.left + r.w / 2, y: r.top + r.h / 2, id: el.id };
@@ -128,7 +130,7 @@ h.run(async () => {
 	st = await snap(page);
 	h.check(st.preview === true, 'the eye IS the HUD editor\'s preview store (one switch, two surfaces)');
 	const inert = await page.evaluate(() => {
-		const b = [...document.querySelectorAll('#hud-layer button')].find((x) => /start/i.test(x.textContent ?? ''));
+		const b = [...document.querySelectorAll('#hud-layer button')].find((x) => /start|^\s*1 · /i.test(x.textContent ?? ''));
 		if (!b) return null;
 		const r = b.getBoundingClientRect();
 		const x = r.left + r.width / 2;
@@ -161,9 +163,9 @@ h.run(async () => {
 	st = await snap(page);
 	h.check(st.state === 'menu', `...with the game reset to its menu (${st.state})`);
 	h.check(st.screen === 'menu', `...and the MENU screen showing, not the stale pause override (${st.screen})`);
-	await h.eventually(() => snap(page), (v) => /Start round/.test(v.layerText) && v.buttons > 0, 'the Start screen is in front of the player', 6000);
+	await h.eventually(() => snap(page), (v) => /Start round|1 · Stack/.test(v.layerText) && v.buttons > 0, 'the Start screen is in front of the player', 6000);
 	h.check(!st.chip, 'the chip is editor chrome — gone in Play');
-	await page.locator('#hud-layer button', { hasText: 'Start round' }).click();
+	await page.locator('#hud-layer button', { hasText: START }).first().click();
 	await h.eventually(() => snap(page), (v) => v.state === 'playing' && v.screen === 'hud', 'Start (in Play) starts the round', 8000);
 	await leavePlay(page);
 	await h.eventually(() => snap(page), (v) => v.locked !== true, 'the pause menu (Escape) returns to the editor', 6000);
@@ -196,7 +198,7 @@ h.run(async () => {
 	// A (the host) Test-plays and starts; B joins play
 	await page.locator('#game-chip-test').click();
 	await h.eventually(() => snap(page), (v) => v.locked === true, 'A enters Play through Test play', 6000);
-	await page.locator('#hud-layer button', { hasText: 'Start round' }).click();
+	await page.locator('#hud-layer button', { hasText: START }).first().click();
 	await h.eventually(() => both(), (v) => v.a.state === 'playing' && v.b.state === 'playing', 'Start in A\'s Play starts the round for both', 8000);
 	await B.page.evaluate(() => window.__stores.playMode.requestPlay());
 	await h.eventually(

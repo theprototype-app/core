@@ -127,18 +127,16 @@ export function isPhoneLike(d) {
 }
 
 /**
- * The XR framebuffer scale for the NEXT session, from the deepest level the last one needed.
- * `setPixelRatio` does nothing to an XR framebuffer and three's foveation already defaults to
- * the maximum (WebXRManager: `foveation = 1.0`), so the resolution half of the ladder can only
- * act through `setFramebufferScaleFactor` — which three refuses while a session is presenting.
- * So a session that had to step resolution down leaves the next entry (this tab) at that scale;
- * a session that never did gives full scale back. Never below 0.5.
- * @param {number} dprScale the smallest dprScale in force during the session @returns {number}
+ * The XR framebuffer scale, ALWAYS full. 31-perf first carried the resolution half of the ladder
+ * into the headset through `setFramebufferScaleFactor` (applied to the NEXT session, since three
+ * refuses it while presenting): any session that touched level 2 (a load hitch, or a game's
+ * Medium/Low Quality pin) left every later entry in that tab at 0.85..0.5 of the eye buffer, and
+ * EVERY panel's text went soft (the owner's Quest report on preview-1-18: "all text in VR menus
+ * became blurry", while frames were already good from the per-frame fixes). A headset's frame
+ * budget is defended by the steps that cost nothing to read (shadows at entry, particles,
+ * presence); the resolution steps are a desktop measure and are no-ops in a session.
  */
-export function xrScaleAfter(dprScale) {
-	const d = Number(dprScale);
-	return Number.isFinite(d) && d > 0 && d < 1 ? Math.max(0.5, d) : 1;
-}
+export const XR_FRAMEBUFFER_SCALE = 1;
 
 export const TIMING = {
 	/** p95 over this much recent time decides "overloaded" */

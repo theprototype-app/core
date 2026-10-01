@@ -75,9 +75,27 @@ const SETTLE_DEG = 2;
 const WRIST_W = 0.15;
 const STRIP_KEY = 'vr:gameStrip';
 
-/** the board canvas's pixels per stage pixel: ~1000 px across a metre-wide board, what a
- * headset's ~20 px per degree needs at 1.2 m */
-const SCALE = 1.5;
+/** the board canvas's pixels per stage pixel. 33 X1: 2, i.e. 1250 texels per metre — a Quest
+ * 3's ~25 px per degree at 1.2 m wants ~1190 (`texelRatio`); the 1.5 this was (937 per metre)
+ * magnified every board texel 1.27x, a soft board on a sharp eye buffer */
+const SCALE = 2;
+/** 33 X1: the wrist card is drawn at this many canvas px per layout px (320x300 layout): at
+ * ~0.4 m a Quest 3 wants ~3600 texels per metre and 320 px over 0.15 m was 2133 (0.6x) */
+const WRIST_RES = 2;
+/** a Quest 3's display density at the centre of the lens, px per degree (Meta's figure) */
+export const HEADSET_PPD = 25;
+
+/**
+ * 33 X1: how many canvas texels fall on one headset pixel at `distance` — 1 or more is crisp
+ * (no magnification), under 1 is a texture stretched over more pixels than it has. Pure.
+ * @param {number} canvasPx texels across the surface @param {number} worldW metres across
+ * @param {number} distance metres from the eye @param {number} [ppd]
+ */
+export function texelRatio(canvasPx, worldW, distance, ppd = HEADSET_PPD) {
+	const texelsPerMetre = canvasPx / worldW;
+	const pixelsPerMetre = (ppd * 180) / Math.PI / Math.max(0.05, distance);
+	return texelsPerMetre / pixelsPerMetre;
+}
 
 /* ------------------------------------------------------------ the classification --- */
 
@@ -510,12 +528,25 @@ function wrapText(g, text, max) {
  * A compact card of lines (+ optional footer buttons) — the wrist, the top strip and the
  * banner are all this. Returns the pressable rects.
  * @param {CanvasRenderingContext2D} g @param {string[]} lines
- * @param {{title?: string, row?: boolean, buttons?: boolean, strip?: boolean, hover?: string | null, big?: boolean, color?: string, menu?: 'open' | 'available' | null}} [opts]
+ * @param {{title?: string, row?: boolean, buttons?: boolean, strip?: boolean, hover?: string | null, big?: boolean, color?: string, menu?: 'open' | 'available' | null, res?: number}} [opts]
  * @returns {HitRect[]}
  */
 export function drawCard(g, lines, opts = {}) {
-	const W = g.canvas.width;
-	const H = g.canvas.height;
+	// 33 X1: `res` draws the same LAYOUT at res canvas px per layout px (the wrist card), hits
+	// returned in canvas px like every other surface
+	const res = Math.max(1, Number(opts.res) || 1);
+	g.setTransform(res, 0, 0, res, 0, 0);
+	try {
+		const hits = drawCardAt(g, g.canvas.width / res, g.canvas.height / res, lines, opts);
+		return res === 1 ? hits : hits.map((r) => ({ ...r, x: r.x * res, y: r.y * res, w: r.w * res, h: r.h * res }));
+	} finally {
+		g.setTransform(1, 0, 0, 1, 0, 0);
+	}
+}
+
+/** drawCard in layout units W x H @param {CanvasRenderingContext2D} g @param {number} W
+ * @param {number} H @param {string[]} lines @param {any} opts @returns {HitRect[]} */
+function drawCardAt(g, W, H, lines, opts) {
 	g.clearRect(0, 0, W, H);
 	roundRect(g, 0, 0, W, H, Math.min(24, H / 4));
 	g.fillStyle = 'rgba(12, 16, 26, 0.86)';
@@ -765,7 +796,7 @@ export function vrGamePanelFrame(opts = {}) {
 	);
 	// 31 K3 G3: this game's Show FPS puts the counter FIRST on the strip and the wrist
 	if (live && get(gameSettingValues).showFps) lines.unshift(fpsText(get(fpsReading)).main);
-	const wrist = surface('vr-game-wrist', 320, 300, WRIST_W);
+	const wrist = surface('vr-game-wrist', 320 * WRIST_RES, 300 * WRIST_RES, WRIST_W);
 	const leftHand = opts.hands?.[0] ?? null;
 	if (live && leftHand) {
 		const sig = JSON.stringify([lines, strip, hover, menuOffer, shellOpen]);
@@ -778,7 +809,8 @@ export function vrGamePanelFrame(opts = {}) {
 					buttons: true,
 					strip,
 					hover: hover[0] ?? hover[1],
-					menu: menuOffer ? (shellOpen ? 'open' : 'available') : null
+					menu: menuOffer ? (shellOpen ? 'open' : 'available') : null,
+					res: WRIST_RES
 				})
 			);
 			wrist.texture.needsUpdate = true;

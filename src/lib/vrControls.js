@@ -911,7 +911,17 @@ function meshBetween(/** @type {any} */ from, /** @type {any} */ to) {
 	_probeRay.far = length;
 	return _probeRay
 		.intersectObjects(teleportRoots(), true)
-		.some((/** @type {any} */ hit) => hit.object.isMesh && hit.object.visible !== false && hit.distance > 0.05);
+		.some((/** @type {any} */ hit) => hit.object.isMesh && hit.object.visible !== false && hit.distance > 0.05 && !movableBody(hit.object));
+}
+
+/** 31 K1: a DYNAMIC physics body (or a spawner's transient copy) is not a wall — a body you can
+ * knock aside never refuses a teleport. Found by 31-stars-jam: the Stars Room's 24 floating
+ * stars sit at 0.8-2.6 m, right on the 1.1 m probe, so any star in the line refused every
+ * landing across the room. Static and pick-through solids (the room's glass) still block.
+ * @param {any} mesh */
+function movableBody(mesh) {
+	const top = topLevelObjectOf(mesh);
+	return !!top && (top.userData?.physics?.mode === 'dynamic' || top.userData?.transient === true);
 }
 
 /**

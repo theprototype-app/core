@@ -58,6 +58,30 @@ h.run(async () => {
 	h.check(!v.outside.ok && v.outside.reason === 'outside', `beyond the bounds -> outside (${JSON.stringify(v.outside)})`);
 	h.check(!v.steep.ok && v.steep.reason === 'steep', `a wall face -> steep (${JSON.stringify(v.steep)})`);
 
+	// ---- 1a a DYNAMIC body in the line is not a wall (the Stars Room's floating stars, at the
+	// probe's height); the same box made static blocks
+	const dyn = await page.evaluate(async () => {
+		const s = window.__stores;
+		s.commandsHandler.sceneCommand('/create box');
+		await new Promise((r) => setTimeout(r, 500));
+		let g;
+		s.objectsGroup.subscribe((v) => (g = v))();
+		const star = g.children.filter((c) => c.name === 'Box').at(-1);
+		star.scale.setScalar(0.4);
+		star.position.set(0.8, 1.1, 0.8);
+		star.updateMatrixWorld(true);
+		s.objectActions.deselectObject();
+		const t = s.vrControls.teleportVerdict;
+		star.userData.physics = { mode: 'dynamic', mass: 1 };
+		const dynamic = t([0, 0, 0], [1.5, 0, 1.5]);
+		star.userData.physics = { mode: 'static' };
+		const fixed = t([0, 0, 0], [1.5, 0, 1.5]);
+		g.remove(star);
+		return { dynamic, fixed };
+	});
+	h.check(dyn.dynamic.ok, `a dynamic body in the line does not refuse the landing (${JSON.stringify(dyn.dynamic)})`);
+	h.check(!dyn.fixed.ok && dyn.fixed.reason === 'blocked', `the same box static blocks it (${JSON.stringify(dyn.fixed)})`);
+
 	// ---- 1b no play.bounds: the scene's content box pulled in 0.3 m (the floor spans x -5..9) --
 	const fb = await page.evaluate(() => {
 		const s = window.__stores;

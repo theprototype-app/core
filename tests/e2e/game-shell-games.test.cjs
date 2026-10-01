@@ -19,7 +19,7 @@ const sceneOf = (slug) => {
 	return p && fs.existsSync(p) ? p : null;
 };
 const GAMES = [
-	{ slug: 'towers', modules: ['collectible'] },
+	{ slug: 'towers', modules: [] }, // 31-towers: a core module now, no download
 	{ slug: 'stars-room', modules: [] },
 	{ slug: 'football', modules: ['football'] },
 	{ slug: 'jam-room', modules: ['music-lab', 'music-fx'] },

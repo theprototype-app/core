@@ -219,7 +219,7 @@ h.run(async () => {
 
 	// ---- 2. the pose is node data --------------------------------------------------------------
 	a1 = await snap(A.page);
-	h.check(a1.groupY === 1.6 && a1.board.radius === 1.1, '2.1 the board stands at the node\'s boardY 1.6, radius 1.1');
+	h.check(a1.groupY === 1.4 && a1.board.radius === 0.85, '2.1 the board stands at the node\'s boardY 1.4, radius 0.85 (untangle 2.3.0: sized and hung for a player in front of it)');
 	const boardNode = (await nodesOf(A.page, 'utboard'))[0];
 	h.check(!!boardNode && boardNode.data.level === TEMPLATE_LEVEL && boardNode.data.apply === true, '2.2 ONE Untangle Board node owns the board (level ' + TEMPLATE_LEVEL + ', apply on)');
 
@@ -229,8 +229,8 @@ h.run(async () => {
 	await h.eventually(() => snap(B.page), (s) => !!s && s.level === TEMPLATE_LEVEL && s.nodeOwned && JSON.stringify(s.positions) === JSON.stringify(a1.positions), '3.2 B: the graph replicated, its node built level ' + TEMPLATE_LEVEL + ' with the IDENTICAL scramble', 20000);
 	await setNodeData(A.page, boardNode.id, boardNode.graphId, { boardY: 2.1 });
 	await h.eventually(() => snap(B.page), (s) => s.groupY === 2.1, '3.3 editing boardY on A\'s node moves B\'s board to 2.1 (the replicated graph)');
-	await setNodeData(A.page, boardNode.id, boardNode.graphId, { boardY: 1.6 });
-	await h.eventually(() => snap(B.page), (s) => s.groupY === 1.6, '3.4 ...and back to 1.6');
+	await setNodeData(A.page, boardNode.id, boardNode.graphId, { boardY: 1.4 });
+	await h.eventually(() => snap(B.page), (s) => s.groupY === 1.4, '3.4 ...and back to 1.4');
 	await h.eventually(() => screenOf(B.page), (v) => v === 'menu', '3.5 B: the HUD document arrived (menu screen)', 10000);
 
 	// ---- 4. play + the HUD readouts --------------------------------------------------------------
@@ -278,8 +278,7 @@ h.run(async () => {
 
 	// ---- 7. the late joiner ------------------------------------------------------------------------------
 	h.check(await A.page.evaluate(() => window.__untangle.move(1, [-0.3, 0.2])), '7.0 A moves a dot before the joiner arrives');
-	await A.page.keyboard.press('Escape');
-	await A.page.waitForTimeout(500);
+	h.check(await h.leavePlay(A), '(premise) A stepped out of Play to approve the joiner (31 K3: through the pause menu)');
 	const C = await h.setupPage(browser, 'C');
 	await installZip(C, zip.bytes, 'C');
 	await h.connect(C, A);

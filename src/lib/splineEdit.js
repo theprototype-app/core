@@ -192,6 +192,7 @@ function rebuildHandles() {
 	}
 	const size = handleSize();
 	group = new THREE.Group();
+	group.userData.vrOverlay = false; // 31 K2: world handles, never drawn over the scene
 	group.name = 'spline-handles';
 	pointHandles = makeHandles(points.length, POINT_COLOR, size, 'spline-point-handles');
 	radiusHandles = makeHandles(points.length, RADIUS_COLOR, size * 0.6, 'spline-radius-handles');

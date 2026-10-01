@@ -55,7 +55,7 @@
 	// the annotation is TS syntax — a JSDoc @type cast is ignored here (the documented trap).
 	let knifeFrom: number[] | null = null;
 	import { peerScenes } from '$lib/peerScenes';
-	import { initVRControls, updateVRControls, raycastMenu, raycastPanel, raycastPalette, raycastProps, raycastPrefabs, raycastKeyboard, raycastChat, raycastEdit, raycastSnap, raycastSettings, raycastApprove, placePrefabGhost, vrFaceTrigger, vrVertexTrigger, vrVertexGrabStart, vrVertexGrabEnd, beginStretchSliderDrag, endStretchSliderDrag, executeVRMenuAction, resetWorldRig, onInputSourcesChange, worldToContentPose, boxSelectStart, boxSelectEnd, boxSelectActive, applyVRFrameRate, shouldSendHands, onHandPinchStart, onHandPinchEnd, pinchMenuToggledAt, firePingIfArmed, vrModuleTriggerStart, vrModuleTriggerEnd, vrModuleSelectSwallowed, handSnapshot, vrGrabbedUuid, hapticKnock, hapticPulse, onVRSessionStart } from '$lib/vrControls';
+	import { initVRControls, updateVRControls, raycastMenu, radialStickSelection, raycastPanel, raycastPalette, raycastProps, raycastPrefabs, raycastKeyboard, raycastChat, raycastEdit, raycastSnap, raycastSettings, raycastApprove, placePrefabGhost, vrFaceTrigger, vrVertexTrigger, vrVertexGrabStart, vrVertexGrabEnd, beginStretchSliderDrag, endStretchSliderDrag, executeVRMenuAction, resetWorldRig, onInputSourcesChange, worldToContentPose, boxSelectStart, boxSelectEnd, boxSelectActive, applyVRFrameRate, shouldSendHands, onHandPinchStart, onHandPinchEnd, pinchMenuToggledAt, firePingIfArmed, vrModuleTriggerStart, vrModuleTriggerEnd, vrModuleSelectSwallowed, handSnapshot, vrGrabbedUuid, hapticKnock, hapticPulse, onVRSessionStart } from '$lib/vrControls';
 	// 30b (vr-play): the game in your hands — hover/press haptics (P1), the sweep (P4)
 	import { startVrGameInput, stopVrGameInput } from '$lib/vrGameInput';
 	import { gameFeelActive } from '$lib/gameFeel';
@@ -1282,7 +1282,8 @@
 				return;
 			}
 			if ($vrMenuOpen) {
-				const action = raycastMenu(xrControllers.indexOf(controller));
+				// 31 R1: the ray's sector first, else the one a thumbstick holds highlighted
+				const action = raycastMenu(xrControllers.indexOf(controller)) ?? radialStickSelection();
 				if (action) {
 					executeVRMenuAction(action);
 					return;

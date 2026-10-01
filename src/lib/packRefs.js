@@ -206,12 +206,10 @@ export function loadPackTemplate(url) {
 let warmTarget = null;
 
 /**
- * 33 L1: upload a piece's textures and compile its programs BEFORE its copies are on screen.
+ * 33 L1: upload a piece's textures and link its programs BEFORE its copies are on screen.
  * Otherwise the first frame that draws a new piece does both inside the render call — on a
  * phone that one frame was the longest task of a whole load. `initTexture` is one upload per
- * scheduled slice; `compileAsync` (KHR_parallel_shader_compile where the driver has it) is
- * given the live scene as the target so the programs match its lights and fog. Best effort:
- * a failure here only means the first frame pays as it always did.
+ * scheduled slice; the programs go through `warmPrograms`.
  * @param {any} scene
  */
 async function warmTemplate(scene) {
@@ -226,24 +224,52 @@ async function warmTemplate(scene) {
 	});
 	try {
 		for (const texture of textures) await schedule(() => renderer.initTexture(texture));
-		const camera = get(globalCamera);
-		if (camera && typeof renderer.compileAsync === 'function') {
-			// BOTH variants. three keys a program by its OUTPUT too: drawn straight to the canvas
-			// it tone-maps and encodes sRGB, drawn into a render target (the post-processing
-			// composer — the editor's outline, the scene look) it does neither. Compiling only the
-			// canvas variant left the composer's programs to link inside the first frame that drew
-			// a new piece (measured: 260 ms of first-use links after the warm-up).
-			const previous = renderer.getRenderTarget();
-			const ready = [renderer.compileAsync(scene, camera, get(globalScene) ?? null)];
-			if (!warmTarget) warmTarget = new THREE.WebGLRenderTarget(1, 1);
-			renderer.setRenderTarget(warmTarget);
-			try {
-				ready.push(renderer.compileAsync(scene, camera, get(globalScene) ?? null));
-			} finally {
-				renderer.setRenderTarget(previous);
-			}
-			await Promise.all(ready);
-		}
+	} catch {
+		/* the first frame uploads instead */
+	}
+	await warmPrograms(scene);
+}
+
+/**
+ * 33 L1: compile every material under `root` for the live scene, and take each program's FIRST
+ * USE, all a slice at a time — so the frames that follow find their programs linked.
+ *
+ * BOTH variants: three keys a program by its OUTPUT too — drawn straight to the canvas it
+ * tone-maps and encodes sRGB, drawn into a render target (the post-processing composer: the
+ * editor's outline, the scene look) it does neither, and Outline.svelte switches between the
+ * two per frame. One compile per MESH per slice (a whole-scene `compile` is itself a long task).
+ * Then `getUniforms` per program: three reads the link result there, and without the
+ * parallel-compile extension that read WAITS for the link — measured as 100-270 ms of first-use
+ * links inside the first frame that drew a loaded scene, with the programs already created. It
+ * is a cached no-op for a program already used. Best effort: a failure means the first frame
+ * compiles, as it always did.
+ * @param {any} root
+ */
+export async function warmPrograms(root) {
+	/** @type {any} */
+	const renderer = get(globalRenderer);
+	const camera = get(globalCamera);
+	const target = get(globalScene) ?? null;
+	if (!renderer || !camera || !root || renderer.xr?.isPresenting || typeof renderer.compile !== 'function') return;
+	/** @type {any[]} */
+	const drawables = [];
+	root.traverse((/** @type {any} */ node) => {
+		if ((node.isMesh || node.isLine || node.isPoints || node.isSprite) && node.material) drawables.push(node);
+	});
+	try {
+		if (!warmTarget) warmTarget = new THREE.WebGLRenderTarget(1, 1);
+		for (const node of drawables)
+			await schedule(() => {
+				renderer.compile(node, camera, target);
+				const previous = renderer.getRenderTarget();
+				renderer.setRenderTarget(warmTarget);
+				try {
+					renderer.compile(node, camera, target);
+				} finally {
+					renderer.setRenderTarget(previous);
+				}
+			});
+		for (const program of [...(renderer.info?.programs ?? [])]) await schedule(() => program.getUniforms?.());
 	} catch {
 		/* the first frame compiles instead */
 	}

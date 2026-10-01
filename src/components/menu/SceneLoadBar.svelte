@@ -8,7 +8,6 @@
 	// spot, so arriving toasts never shove it), the rest of the UI stays usable, and opening
 	// another scene simply supersedes this load. It appears only after a short delay so a
 	// small scene that loads at once does not flash a bar.
-	import { fly } from 'svelte/transition';
 	import { sceneLoad, cancelLoad } from '$lib/sceneLoader';
 
 	const SHOW_AFTER_MS = 250;
@@ -48,7 +47,9 @@
 </script>
 
 {#if visible && $sceneLoad}
-	<div class="scene-load" transition:fly={{ y: -8, duration: 160 }}>
+	<!-- a CSS entrance, not svelte's `fly`: a JS transition reads getComputedStyle on mount, which
+	     forces a whole-document layout in the middle of a load (measured inside its longest task) -->
+	<div class="scene-load">
 		<div
 			id="scene-load-bar"
 			class="scene-load-card"
@@ -93,6 +94,7 @@
 	}
 	.scene-load-card {
 		pointer-events: auto;
+		animation: scene-load-in 0.16s ease-out;
 		width: min(420px, 94vw);
 		padding: 8px 10px 9px 12px;
 		border-radius: 12px;
@@ -158,6 +160,12 @@
 		width: 35% !important;
 		animation: scene-load-slide 1.1s ease-in-out infinite;
 	}
+	@keyframes scene-load-in {
+		from {
+			opacity: 0;
+			transform: translateY(-8px);
+		}
+	}
 	@keyframes scene-load-slide {
 		from {
 			transform: translateX(-100%);
@@ -167,7 +175,8 @@
 		}
 	}
 	@media (prefers-reduced-motion: reduce) {
-		.indeterminate .scene-load-fill {
+		.indeterminate .scene-load-fill,
+		.scene-load-card {
 			animation: none;
 		}
 		.scene-load-fill {

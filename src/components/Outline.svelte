@@ -37,6 +37,7 @@
 	import { viewPrefs } from '$lib/viewPrefs';
 	import { shadowQuality } from '$lib/lightParams';
 	import { useTask, useThrelte } from '@threlte/core';
+	import { framesHeld } from '$lib/sceneLoader';
 	import {
 		BlendFunction,
 		EffectComposer,
@@ -399,6 +400,8 @@
 	useTask(
 		(delta) => {
 			if (renderIsPaused && !renderer.xr.isPresenting) return;
+			// 33 L1: a scene load holds the last frame while its programs link off-frame (bounded)
+			if (framesHeld() && !renderer.xr.isPresenting) return;
 			if (drawGapMs > 0 && !renderer.xr.isPresenting) {
 				const drawNow = performance.now();
 				if (drawNow - lastDrawAt < drawGapMs) return;

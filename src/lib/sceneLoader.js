@@ -156,6 +156,32 @@ export function throttledPoke(poke) {
 	};
 }
 
+/** The longest the viewport may hold its last frame, whatever asked. */
+export const HOLD_MAX_MS = 2000;
+let holdUntil = 0;
+
+/**
+ * Hold the viewport on its last frame for a moment (bounded by HOLD_MAX_MS): a scene replace
+ * changes the environment — fog, light count — which re-keys EVERY material's program, and the
+ * first frame after it linked them all inside one render call (the last long task of a load).
+ * While held, Outline.svelte skips its render; the canvas keeps what it showed (a frame that
+ * draws nothing is not composited), and the DOM — the load bar, menus — carries on.
+ * @param {number} [ms]
+ */
+export function holdFrames(ms = HOLD_MAX_MS) {
+	holdUntil = Math.max(holdUntil, now() + Math.min(ms, HOLD_MAX_MS));
+}
+
+/** Let the viewport draw again. */
+export function releaseFrames() {
+	holdUntil = 0;
+}
+
+/** Is the viewport being held? Read per frame by Outline.svelte. */
+export function framesHeld() {
+	return holdUntil > 0 && now() < holdUntil;
+}
+
 let nextId = 0;
 /** @type {LoadJob | null} */
 let current = null;

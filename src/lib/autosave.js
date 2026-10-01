@@ -3,7 +3,7 @@ import * as THREE from 'three';
 import { get, writable } from 'svelte/store';
 import { GLTFExporter } from 'three/addons/exporters/GLTFExporter.js';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
-import { objectsGroup, globalCamera, orbitControls, pokeScene, beginSceneBatch, endSceneBatch } from '../stores/sceneStore';
+import { objectsGroup, globalCamera, globalScene, orbitControls, pokeScene, beginSceneBatch, endSceneBatch } from '../stores/sceneStore';
 import { flowGraphs, restoreGraphs, SCENE_GRAPH } from '../stores/flowStore';
 import { serializeGraphs } from './flowGraphs';
 import { serializeNode, serializeEdge } from './nodesHandler';
@@ -13,8 +13,8 @@ import { stripEditOverlays } from './editOverlays';
 // B7: a spawner's copies must never reach a snapshot — a crash mid-run would otherwise
 // restore them as permanent scene content
 import { isTransient, parkTransientObjects } from './transientObjects';
-import { parkPackPieces, fillPackRef, isPristinePackRef, stubElementOf } from './packRefs';
-import { beginLoad, endLoad, progress, slice, updateLoad, onCancel, isLive, LoadCancelled, throttledPoke, loading as sceneLoading, loadSettled } from './sceneLoader';
+import { parkPackPieces, fillPackRef, isPristinePackRef, stubElementOf, warmPrograms } from './packRefs';
+import { beginLoad, endLoad, progress, slice, updateLoad, onCancel, isLive, LoadCancelled, throttledPoke, holdFrames, releaseFrames, loading as sceneLoading, loadSettled } from './sceneLoader';
 import { animatedImportsSnapshot, animatedImportsRestore } from './animatedImports';
 import { animations, animationsSnapshot, animationsRestore } from './animationPreview';
 import { scenePost, scenePostSnapshot, scenePostRestore } from './scenePost';
@@ -598,8 +598,8 @@ function restoreMultiMaterial(entries) {
 		// the whole SCENE. That is deliberate, not an oversight: the scene root matters
 		// when a helper shares a real mesh's resources (an onion-skin ghost shares its
 		// source geometry), and a twin parsed seconds ago inside this function cannot be
-		// the source of one. autosave does not import globalScene, and adding an import
-		// for symmetry alone would be a worse trade than saying so here.
+		// the source of one. (autosave imports globalScene since 33 L1, for the program
+		// warm-up; the reasoning above is why this site still keys on the group.)
 		disposeTree(twin, { keep: keepSet(get(objectsGroup), twin) });
 	}
 	pokeScene();
@@ -632,6 +632,9 @@ async function applyRestore(snapshot, offer = null) {
 		// 33 L1: sky and lights before the objects, so pieces warming as their packs land
 		// compile for THIS scene's lights (see sessions.applySession)
 		environmentRestore(snapshot.environment, true);
+		// the viewport holds its last frame while programs re-link and the objects go in
+		holdFrames();
+		const warming = warmPrograms(get(globalScene));
 		if (snapshot.scene && group) {
 			const loader = new GLTFLoader();
 			/** @type {any} */
@@ -686,7 +689,10 @@ async function applyRestore(snapshot, offer = null) {
 				endSceneBatch();
 			}
 			pokeScene();
+			await warming;
+			await warmPrograms(group);
 		}
+		releaseFrames();
 		// multi-material meshes come back from their toJSON, REPLACING the Group of
 		// single-material children the GLTF export left behind (same twin-replacement
 		// shape as rigs below). Keyed by uuid, which the __uuid stamp above restored.
@@ -741,6 +747,7 @@ async function applyRestore(snapshot, offer = null) {
 		} else endLoad(job);
 		return true;
 	} catch (error) {
+		releaseFrames();
 		if (error instanceof LoadCancelled) return null;
 		endLoad(job);
 		log('warn', 'autosave', 'restore failed', String(error));

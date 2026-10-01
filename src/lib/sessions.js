@@ -6,8 +6,8 @@ import { serializeGraphs, copyGraphFrom } from './flowGraphs';
 import { serializeNode, serializeEdge, sendNodes } from './nodesHandler';
 import { parkAnimatedAtBase } from './flowRuntime';
 import { stripEditOverlays } from './editOverlays';
-import { isPristinePackRef, stubElementOf, stubNodeCount, fillPackRef } from './packRefs';
-import { beginLoad, endLoad, progress, slice, updateLoad, onCancel, isLive, LoadCancelled, throttledPoke } from './sceneLoader';
+import { isPristinePackRef, stubElementOf, stubNodeCount, fillPackRef, warmPrograms } from './packRefs';
+import { beginLoad, endLoad, progress, slice, updateLoad, onCancel, isLive, LoadCancelled, throttledPoke, holdFrames, releaseFrames } from './sceneLoader';
 // B7: a spawner's copies exist only while the world runs — never in a scene file
 import { isTransient } from './transientObjects';
 import {
@@ -1355,6 +1355,10 @@ async function applySessionNow(payload, opts, job) {
 	// previous scene's lights and linked again on its first frame. It also shows the right sky
 	// at once instead of the old one under the arriving level. (A6.1: absent = the default.)
 	environmentRestore(payload.environment, replicate);
+	// ...and the viewport holds its last frame while the scene's programs re-link for the new
+	// look a slice at a time and the objects are built; released below (bounded either way)
+	holdFrames();
+	const warming = warmPrograms(get(globalScene));
 	/** @type {any} */
 	const peer = get(peers);
 	// 33 L1: Cancel (the load bar) takes back what this load had added — clearing for the
@@ -1401,12 +1405,19 @@ async function applySessionNow(payload, opts, job) {
 			poke();
 		}
 	} catch (error) {
-		if (error instanceof LoadCancelled) return;
+		if (error instanceof LoadCancelled) {
+			releaseFrames();
+			return;
+		}
 		throw error;
 	} finally {
 		endSceneBatch();
 	}
 	pokeScene();
+	// the objects this load built (kit pieces warm themselves as their packs land) — then draw
+	await warming;
+	await warmPrograms(group);
+	releaseFrames();
 	// animated imports come back from their original bytes (mixers rebuilt, peers
 	// reparse the same file) and authored tracks from the payload
 	await animatedImportsRestore(payload.animated ?? [], replicate);

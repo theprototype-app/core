@@ -390,10 +390,15 @@ h.run(async () => {
 	const tv = await page.evaluate(() => {
 		const v = window.__stores.vrControls;
 		if (typeof v.teleportVerdict !== 'function') return null;
-		const at = (to) => !!v.teleportVerdict([0, 1.7, 5.2], to)?.ok;
-		return { inside: at([2, 0, -3]), outsideNorth: at([0, 0, -8]), outsideEast: at([8, 0, 0]) };
+		// from the spawn's FEET (teleportVerdict's `from` is feet, not the head)
+		const at = (to) => v.teleportVerdict([0, 0, 5.2], to)?.reason ?? 'none';
+		return { near: at([1.5, 0, 3.5]), across: at([2, 0, -3]), outsideNorth: at([0, 0, -8]), outsideEast: at([8, 0, 0]) };
 	});
-	if (tv) h.check(tv.inside && !tv.outsideNorth && !tv.outsideEast, `31 S1: bounded teleport — the floor inside lands, beyond the glass is refused (${JSON.stringify(tv)})`);
+	if (tv) {
+		h.check(tv.near === 'ok' && tv.outsideNorth !== 'ok' && tv.outsideEast !== 'ok', `31 S1: bounded teleport — the floor inside lands, beyond the glass is refused (${JSON.stringify(tv)})`);
+		// the floating stars are knockable bodies, not walls: a line through them must not refuse
+		h.check(tv.across === 'ok', `31 S1: ...and across the room, past floating stars, lands too (${tv.across})`);
+	}
 	else console.log('SKIP 31 S1 verdict: no vrControls.teleportVerdict (31-vr-core not merged)');
 	const rowOf = (id) => p31.rows.find((r) => r[0] === id);
 	h.check(JSON.stringify(rowOf('stars-point-grab')) === JSON.stringify(['stars-point-grab', 'Point to move stars', 'toggle', true]), `31 S2: "Point to move stars" is a game setting, on by default (${JSON.stringify(rowOf('stars-point-grab'))})`);

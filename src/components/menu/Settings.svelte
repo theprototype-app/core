@@ -30,6 +30,7 @@
 	import { spatialVoice } from '$lib/voiceChat';
 	import { shadowQuality } from '$lib/lightParams';
 	import { autoQuality } from '$lib/qualityGovernor';
+	import { lodEnabled } from '$lib/lod';
 	import { myHandModel, setMyHandModel } from '$lib/handModels';
 	import { explorerItems } from '$lib/explorer';
 	import { pingColor, pingSound } from '$lib/ping';
@@ -1052,6 +1053,10 @@
 					<SettingRow name="Reduce quality when the scene is heavy">
 						<svelte:fragment slot="control"><Checkbox id="auto-quality" bind:checked={$autoQuality} /></svelte:fragment>
 						When a heavy scene cannot keep 30 frames a second on THIS machine, drop shadows, then resolution, then effects, one step at a time, and give each back when frames recover. Never changes the scene for anyone else; the chip beside the object count says when it is active
+					</SettingRow>
+					<SettingRow name="Simplify distant models">
+						<svelte:fragment slot="control"><Checkbox id="lod-enabled" bind:checked={$lodEnabled} /></svelte:fragment>
+						Draw a lighter version of a dense model (a few thousand triangles or more) when it is far from you, built once per model on THIS machine. Nothing in the scene changes — the full model is what is saved, sent and edited
 					</SettingRow>
 					<SettingRow name="Simulation controls">
 						<svelte:fragment slot="control"><Checkbox bind:checked={$showSimControls} /></svelte:fragment>

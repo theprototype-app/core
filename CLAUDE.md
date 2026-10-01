@@ -2303,6 +2303,70 @@ loadable play content. Everything a user does must be visible to connected peers
   (`scripts/level-templates.cjs` via author-templates' `kit` type, `seed: false`); a scene load
   now ends a running simulation first. Suites pack-refs, pack-undo, level-templates (`LIVE=1`
   runs it against a build's own feed + pack CDN).
+- **ROADMAP 31 — TOWERS BECOMES A GAME** (31-towers; T1/T2 of the Quest feedback, "after the basic
+  level nothing happens, just like hooray"). Two core rules any game can use, and a core MODULE.
+  · `playReach.js` (pure leaf, vitest): `play.reach` (metres, OMITTED when absent) limits Interact /
+  Play grabs to that distance from the player's BODY — the segment feet..eye, never the eye (a crate
+  at your feet is 1.7 m from the eye). Desktop Play: `playInteractState.mode = 'toofar'` (the
+  crosshair says "Too far — get closer"), the press carries nothing, a carry is held inside the
+  reach (`carryLimit`); the editor's Interact cursor carry has no body and is unaffected. VR:
+  `gripTargetOf` refuses an out-of-reach body (`lastGripRefusalDebug`) and the grip buzzes `fail`.
+  Configure Scene ▸ Physics ▸ Play mode ▸ Limit grab reach.
+  · JUMP IN VR: the Character Controller node's `jumpHeight` jumps on right A in Interact walking
+  (`vrJumpHeight()`; A stays push-to-talk otherwise, `pttByA` so a switch mid-hold cannot strand the
+  mic). Desktop walk mode always jumped on Space. The capsule stands on dynamic pieces (a query
+  shape: it never shoves them).
+  · `src/modules/towers/` — a CORE module (the pong precedent: it may reach core internals through
+  PRIMED DYNAMIC imports; `api.spawn` still does not exist), dormant unless the scene holds the
+  `Towers game` marker. `levels.js` is the pure leaf (12 levels, stars = win + par pieces + par
+  time, unlock = a star on the level before, the rack layout, the tower measure, the judge, the
+  gust schedule, the outline cells). `module.js`: ONE AUTHORITY (the physics initiator, else the
+  lowest peer id) deals pieces as TRANSIENT duplicates of templates parked on a vault under the
+  floor, judges ~10x/s, pushes gusts and writes the `tw*` game variables; every peer derives the
+  rest (the HUD words through the `towersinfo` value node wired into HUD Text's FORMAT, the
+  moments, saving stars via `api.storage`). HUD presses carry no presser, so every peer watches the
+  hudbutton stamps (first sight = history, `age` > 2.5 s = a joiner's history) and only the
+  authority acts; unlocks read the AUTHORITY's progress. `towerswobble` is a module EFFECT so the
+  plate is a kinematic body — a module effect's `base` is `{pos, rot: [x,y,z], scale}` ARRAYS, not
+  THREE objects (reading `base.rotation` throws every frame into noteFrameFailure, silently). The
+  shell's `api.game.levels`/`setHelp`/`onRestart` are feature-detected. The template def is the
+  arena + templates + HUD + a small graph; `block` (Wedge/Arch/Corner/Stairs) and `thumb.dress`
+  (card-only objects) are new author-kit fields. Suites play-reach-jump, towers-levels, game-towers.
+- **ROADMAP 31 — THE SECOND QUEST ROUND** (1.18.0; acceptance test: cloud
+  `plans/core/lanes/31/user-feedback-2026-10-01.md`, items U1…A2). Contracts K1-K4:
+  · K1 `teleportRules.js` (pure leaf, vitest) + vrControls `teleportVerdict(from, to, normalY)`:
+  in Interact a teleport lands only on a WALKABLE surface (normal y ≥ 0.7), inside `play.bounds`
+  ({min, max}; a publisher's in its OWN frame — `boundsOwner`) else the content box shrunk 0.3 m,
+  on a dungeon raster floor cell, and with no collider/mesh in the 1.1 m line (a DYNAMIC body or a
+  transient copy never refuses — the Stars Room's floating stars). Red arc = refused, release does
+  nothing. `play.locomotion.worldGrab` gives Interact/Play the Edit world gestures when a grip
+  starts on no grabbable (`locomotionPolicy(...).worldGestures`). Probe: `api.locomotion`.
+  · K2 `vrPanelOverlay.js` (leaf): every VR panel joins the TRANSPARENT list at PANEL_ORDER 5000
+  behind ONE sentinel whose onBeforeRender CLEARS DEPTH — panels draw over the scene yet still
+  depth-test among themselves; the beam/reticle take BEAM_ORDER 5010 while they end on a panel;
+  `userData.vrOverlay = false` opts out; `api.vrPanel(group)` for module menus. The laser is
+  normal-blended with a solid hit dot and the board FILLS its hovered button; module content ends
+  the beam (vrGameInput resolves meshes under module-world-root). The radial menu lights the
+  sector under the stick and the trigger picks it.
+  · K3 `gameShell.js` (state + actions) + `gameSettings.js` (leaf: per-game rows persisted via
+  safeStorage `tp:game:<id>:shell`) + `gameShellWire.js` (buses, haptics, turning, quality) +
+  `shellPanelDraw.js` (the VR pages) + `fpsMeter.js` + `comfortVignette.js`: ONE pause menu in
+  every game — desktop Escape / corner Menu (`#game-shell-menu`, `[data-shell-item]`,
+  `[data-shell-setting]`, `#game-fps-counter`), VR board footer + LEFT X. LOCAL, replicates
+  nothing, never pauses the shared world. **Escape in a game opens the menu now; leaving Play from
+  a game is the menu's Back to editor** (suites that pressed Escape to leave a game moved).
+  `qualityGovernor.applyGameQuality` pins High 0 / Medium 3 / Low 7 and OUTRANKS the headset's
+  entry floor (integrate: no floor while pinned; back to Auto in a session re-takes it).
+  · K4 `lod.js` + `lodCore.js`: auto LOD for loaded meshes ≥ 3000 tris as a RENDER-TIME geometry
+  swap (scene.onBeforeRender/onAfterRender) — the tree and every serializer only ever see the
+  source; meshoptimizer levels built once per asset in the decimation worker; `api.lod`. The
+  governor now runs in XR off the session's own rAF (`xrThresholds(hz)`, entry floor level 1 =
+  shadows off, next-entry framebuffer scale); `api.quality {level, max, labels, vr, onChange}`.
+  `scripts/perf-games.cjs` = the Performance-protocol table for the seven games (`--vr`, `--only`,
+  PERF_SCENES_DIR/REF, PERF_MODULES_DIR; run under `e2e-slot --exclusive`).
+  · Stars Room: `clapGesture.js` (pure) + `clap.js` (On Clap node; a spawned copy answers to its
+  template — `transientObjects.spawnedFromOf`), `pointGrab.js` (Point Grab node gates the VR
+  grip RAY and the desktop carry; touch still holds), Game Setting node.
 
 ## Replication golden rules
 
@@ -2398,6 +2462,26 @@ loadable play content. Everything a user does must be visible to connected peers
 
 ## Hard-won gotchas (do not rediscover)
 
+- **A HEADSET'S EYE BUFFER IS NEVER LOWERED** (`XR_FRAMEBUFFER_SCALE = 1`, 31-integrate). 31-perf handed three a
+  0.85..0.5 framebuffer scale for the NEXT session after any session that reached the governor's resolution steps,
+  and every panel's text went soft ("ALL text in VR menus became blurry") while the panel textures were unchanged.
+  Suite vr-panel-sharpness measures the board's text edge energy at the scale the next entry gets.
+- **AN INSTALLED USER MODULE NEVER UPDATES ITSELF.** A Quest that installed Waves 2.1.0 for the 1.17 preview kept it on
+  the 1.18 preview, and its 1.17 bug read as a 1.18 regression. A scene asking for a NEWER version than installed now
+  gets an Update offer in the load prompt (`classifyRequirements().outdated`, suite module-update-on-load). When a
+  device report contradicts the union's tests, ask which MODULE VERSION the device ran before bisecting.
+- **A VITE STARTED INSIDE `e2e-slot` INHERITS FDS 8/9 AND HOLDS BOTH MACHINE-WIDE E2E LOCKS**
+  (every lane's suites blocked ~2 h on 2026-10-01). Start a dev server from a plain shell with
+  `8>&- 9>&-`, never from inside an e2e-slot command.
+- **A LEGACY-MODE TEMPLATE CALL `fn(x)` IS UNTRACKED BEYOND ITS ARGUMENTS** — VRMenu's
+  `sectorColor(s.entry)` read `$vrHovered` inside the helper, so no sector ever repainted (stick
+  OR ray). Pass the store value as a parameter.
+- **A `$state` (deep) PROXY OVER THREE OBJECTS IS A PER-FRAME COST**: ModuleContent.svelte held
+  module groups in deep `$state`, so every frame walked them (`deep_read`) — 88% of Waves' CPU, the
+  1 Hz Dungeon Realms hitch. `$state.raw` for anything holding scene objects.
+- **`a ?? b + '/'` IS `a ?? (b + '/')`** — the integrate's MODULES_REPO env override in helpers.cjs
+  lost its trailing slash and every suite "had no zips". Parenthesize a `??` whose result is
+  concatenated.
 - **HELPER_LAYER MUST NEVER BE 1 OR 2: three's WebXRManager gives the LEFT eye layer 1 and the
   RIGHT eye layer 2.** Helpers on layer 1 drew into ONE eye in a headset — the Quest report "in the
   middle of the world I see the light source helper, and only with one eye" (Towers, Stars Room,
@@ -5006,6 +5090,18 @@ override for e2e — never share 5173 (the user's main-checkout server).
   locked (replicate the INDEX per-item opt-in; ONE mesh with scenes as tags;
   scene-is-primary renaming), and the vocabulary settled: **session = the mesh, room =
   who is in a scene, PocketBase rooms stay DISCOVERY** — that naming blocks R4.
+- Status (2026-10-01): **1.18.0 PREVIEW — ROADMAP 31 "the second Quest round", integrated on `feat/1.18`
+  (lane `31-integrate`), HELD AT THE RELEASE GATE** (https://preview-1-18.theprototype.pages.dev, core a896b27, modules
+  dev 3c9bf77, scenes `preview-1-18` 35addc4, packs a39280a). Merged core #253 vr-core (K1 K2) · #251 game-shell (K3) ·
+  #249 perf (K4) · #252 towers · #250 stars-jam (unions in playSettings/scenePhysics/vrControls/gameKit/playInteract;
+  the governor pin-vs-XR-floor composed by hand, perf-governor §6c); modules #28 untangle, #27 waves, #26 fb-dungeon +
+  integrate fixes (waves def asks 2.2.0; untangle 2.3.1 fits its VR HUD line; flights leave a game through the menu;
+  door-keypad compares the final pose). THE TRAP OF THE ROUND: K3 made Escape in a game open the pause menu, so every
+  suite that pressed Escape to leave Play before a late joiner dialled left the host in Play — `h.leavePlay` (core and
+  modules helpers). Gates: svelte-check 333/47, vitest 378, build green, every lane's held suites green on the union,
+  modules flights + modes audit (63/0 + 64/0) green, preview proof 211/0 + the core VR/shell suites against the preview
+  build. Perf before/after: `lanes-30/after-31/31-integrate/perf/before-after.md` (Waves p50 700 -> 16.7 ms, Football
+  336 -> 123 calls, Dungeon p99 117 -> 17 ms). OWED on a Quest: every feel/fps line in the handover.
 - Status (2026-09-24): **1.17.0 round 2 + 3 — THE QUEST ROUND AND THE MESHY ASSETS, integrated
   on `feat/1.17` (lane `30b-integrate`)**, held at the user's release gate with a new preview
   (https://preview-1-17.theprototype.pages.dev). Core merged #244 vr-modes, #245 vr-play, #246
@@ -6574,3 +6670,14 @@ color?})`; click handlers get `{source: 'click' | 'sweep', mode}` and
 `registerClickHandler(fn, {sweep: false})` opts out of the VR sweep. Feature-detect every one
 (`api.x?.()`). A scene's play block may say `play.locomotion {teleport?, fly?}` and
 `play.spawn {position, yaw, vrOnly?}`.
+
+**R31 additions (1.18.0, the second Quest round):** `api.game.levels({list:[{id,label,locked?,stars?}],
+current, onPick(id)})` (re-callable; the shell draws the picker on desktop AND the VR board),
+`api.game.addSetting({id, label, type:'toggle'|'choice'|'range', options?, min?, max?, default,
+onChange?})` + `api.game.setting(id)` (rows in the per-game Settings page, persisted per game id),
+`api.game.setHelp(text)` (How to play), `api.game.onRestart(fn)` (after the shell's reset);
+`api.quality {level (getter, 0 best), max, labels, vr, onChange(fn) -> off}` (cut effects at a
+higher level); `api.lod(object, {ratios, distances, minTriangles})` -> `{meshes, ready, remove}`;
+`api.vrPanel(group)` (a module's VR menu drawn over the scene like core's panels);
+`api.locomotion = {boundedTeleport, worldGrab}` (the K1 probe). A scene's play block may say
+`play.locomotion.worldGrab`, `play.bounds {min, max}` and `play.reach` (metres). Feature-detect all.

@@ -36,6 +36,9 @@ import {
 // headers; nodesHandler reaches only flowStore + appStore), so none of these edges can
 // close the history cycle. flowGraphs/nodeCatalog are NOT leaves and stay primed below.
 import { roundCutoff, roundUnderway, gameVar, setGameVar, gameState } from './gameState';
+// 31 K3: the game shell — the pause menu's levels, settings, help and restart (leaves)
+import { setGameLevels, setGameHelp, onGameRestart, openShellMenu, closeShellMenu, shellMenu, markShellGame } from './gameShell';
+import { registerGameSetting, gameSettingValue, setGameSetting, gameSettingValues } from './gameSettings';
 import { setPeerVar, myPeerVar, leaderboardRows, peerVarsMine, peerVarsRemote } from './peerVars';
 // R29 S1/S2: both leaves import NOTHING, so neither edge can close a cycle
 import { freeRegion as freeRegionIn } from './flowLayout';
@@ -51,6 +54,8 @@ export { moduleContentDebug } from './moduleContent';
 import { safeStorage } from './safeStorage';
 // 30 P4: api.storage — a LEAF (safeStorage only), shared with the Store Value flow node
 import { makeModuleStorage } from './gameStorage';
+import { lodObject } from './lod'; // 31-perf K4 (a leaf: three + stores)
+import { qualityState, xrQualityDebug } from './qualityGovernor'; // 31-perf K4 (a leaf)
 // 30b (vr-play) C5: the game sound set and game music — LEAVES (svelte/store, audioEngine,
 // safeStorage, sessionClock, sceneStore), so static edges close no cycle
 import { isGameSound, playGameSound } from './gameSfx';
@@ -1044,6 +1049,14 @@ function makeApi(moduleId, moduleName = moduleId) {
 		hitLog() {
 			return knockRef?.hitLogSnapshot?.() ?? { last: {}, recent: [] };
 		},
+		/**
+		 * 31 K1: what this core's locomotion understands, for a module to feature-detect before
+		 * it publishes `userData.play.locomotion` / `play.bounds`. `boundedTeleport`: a
+		 * `teleport: true` in Interact/Play lands only on walkable ground inside `play.bounds`
+		 * (else the content bounds) and never through a wall; `worldGrab`: `worldGrab: true`
+		 * gives the grips Edit's world gestures in Interact/Play. An older core has no object.
+		 */
+		locomotion: Object.freeze({ boundedTeleport: true, worldGrab: true }),
 		/** In a VR session right now? (DEVX #6) @returns {boolean} */
 		isVR() {
 			return !!get(isVRMode);
@@ -1203,6 +1216,18 @@ function makeApi(moduleId, moduleName = moduleId) {
 			return vrControlsRef?.handSnapshot?.(hand) ?? null;
 		},
 		/**
+		 * 31 K2: make `object` (a group of meshes: your VR menu, level bar, buttons) a VR
+		 * PANEL — drawn OVER the scene so a floor or a base can never hide it, and a place the
+		 * controller beam ends with its dot. Hit testing is unchanged. Returns the undo (also
+		 * run when the module is disabled). Feature-detect: `api.vrPanel?.(group)`.
+		 * @param {any} object @returns {() => void}
+		 */
+		vrPanel(object) {
+			const off = vrControlsRef?.registerOverlayPanel?.(object) ?? (() => {});
+			onDispose(off);
+			return off;
+		},
+		/**
 		 * Fire the replicated flow click trigger on an object (DEVX #4, the
 		 * essentials pattern) — user graphs with an On Click node targeting the
 		 * object react to your module's events on every peer. @param {string} uuid
@@ -1296,6 +1321,79 @@ function makeApi(moduleId, moduleName = moduleId) {
 				const off = coalescedSubscribe([gameState], fn);
 				onDispose(off);
 				return off;
+			},
+			/**
+			 * 31 K3: this game's LEVELS in the shared pause menu (desktop + the VR panel).
+			 * `list` = [{id, label, locked?, stars?}] (stars 0..5), `current` = the id you are
+			 * on, `onPick(id)` = the player chose one (never called for a locked level). Call it
+			 * again to update (a level unlocked, stars earned). Cleared with the module.
+			 * @param {{list: {id: string, label: string, locked?: boolean, stars?: number}[], current?: string, onPick?: (id: string) => void}} spec
+			 * @returns {(() => void) | null} off, or null when the list is empty
+			 */
+			levels(spec) {
+				const off = setGameLevels(spec, moduleId);
+				if (off) onDispose(off);
+				return off;
+			},
+			/**
+			 * 31 K3: a row of this game's own in the pause menu's Settings (under the core
+			 * rows: music, sound effects, haptics, FPS, turning, vignette, quality). Persisted
+			 * per game on this device. `type` 'toggle' | 'choice' (with `options`, optional
+			 * `optionLabels`) | 'range' (`min`/`max`/`step`). `onChange(value)` hears a change.
+			 * @param {{id: string, label: string, type?: 'toggle'|'choice'|'range', options?: string[], optionLabels?: string[], min?: number, max?: number, step?: number, default: any, onChange?: (value: any) => void}} row
+			 * @returns {(() => void) | null} off, or null when refused (a core id, a bad row)
+			 */
+			addSetting(row) {
+				const off = registerGameSetting(row, moduleId);
+				if (off) onDispose(off);
+				return off;
+			},
+			/** 31 K3: the current value of a setting — one of yours, or a core row ('music',
+			 * 'musicVolume', 'sfx', 'sfxVolume', 'haptics', 'showFps', 'turning', 'turnAngle',
+			 * 'vignette', 'quality'), so a module playing its OWN audio can obey 'sfx'.
+			 * @param {string} id */
+			setting(id) {
+				return gameSettingValue(id);
+			},
+			/** 31 K3: write one of YOUR rows (a module's own in-game toggle). Core rows belong
+			 * to the player and are refused. @param {string} id @param {any} value */
+			setSetting(id, value) {
+				if (['music', 'musicVolume', 'sfx', 'sfxVolume', 'haptics', 'showFps', 'turning', 'turnAngle', 'vignette', 'quality'].includes(id)) return undefined;
+				return setGameSetting(id, value);
+			},
+			/** 31 K3: `fn(values)` hears every settings change (coalesced per frame).
+			 * @param {(values: Record<string, any>) => void} fn @returns {() => void} off */
+			onSettingsChange(fn) {
+				const off = coalescedSubscribe([gameSettingValues], () => fn({ ...get(gameSettingValues) }));
+				onDispose(off);
+				return off;
+			},
+			/** 31 K3: the How to play page — a string (lines split on \n) or an array of lines.
+			 * @param {string | string[]} text @returns {() => void} off */
+			setHelp(text) {
+				const off = setGameHelp(text, moduleId);
+				onDispose(off);
+				return off;
+			},
+			/** 31 K3: the pause menu's Restart also runs `fn` (reset your board, respawn your
+			 * enemies). @param {() => void} fn @returns {() => void} off */
+			onRestart(fn) {
+				const off = onGameRestart(fn);
+				onDispose(off);
+				return off;
+			},
+			/** 31 K3: open / close the pause menu (a module's own Menu button), and ask
+			 * whether it is open. Opening only works while playing a game. */
+			openMenu() {
+				markShellGame(true);
+				onDispose(() => markShellGame(false));
+				return openShellMenu('main');
+			},
+			closeMenu() {
+				closeShellMenu();
+			},
+			menuOpen() {
+				return get(shellMenu).open;
 			}
 		},
 		/**
@@ -1322,6 +1420,64 @@ function makeApi(moduleId, moduleName = moduleId) {
 				showToast(`"${moduleName}" hit its 256 KB storage limit on this device — that value was not saved.`);
 			}
 		}),
+		/**
+		 * 31-perf K4: LEVELS OF DETAIL for the module's own geometry (auto LOD already covers
+		 * dense meshes in objectsGroup and under the module world root). Every mesh under
+		 * `object` with at least 300 triangles gets meshoptimizer-simplified levels, built ONCE
+		 * per asset in a worker and drawn by distance — a RENDER-TIME swap, so the mesh keeps
+		 * its geometry for everything else (picking, physics, your own code). `opts`:
+		 * `{ratios?: number[], distances?: number[], minTriangles?: number}` — ratios are the
+		 * share of triangles each level keeps (default [0.5, 0.25, 0.1]), distances are in
+		 * world RADII of the mesh where each level takes over (default [8, 20, 50]); the quality
+		 * level pulls the distances in on a struggling device. Returns `{meshes, ready, remove}`;
+		 * LOCAL, never replicated, and released when the module is disabled. Skinned meshes and
+		 * morph targets are skipped (the simplifier cannot carry weights). Set
+		 * `mesh.userData.lod = false` on a mesh to keep it out of auto LOD.
+		 * @param {any} object @param {{ratios?: number[], distances?: number[], minTriangles?: number}} [opts]
+		 */
+		lod(object, opts = {}) {
+			const handle = lodObject(object, opts, moduleId);
+			onDispose(() => handle.remove());
+			return handle;
+		},
+		/**
+		 * 31-perf K4: the ADAPTIVE QUALITY LEVEL on this device, so a module can cut its own
+		 * effects/particles/draw distance when the frame rate cannot hold. `level` is 0 (best)
+		 * … `max` (every step taken); a headset session starts at 1 (shadows off) in auto mode
+		 * and a game's Quality setting can pin it. `labels` names the steps in force.
+		 * `onChange(fn)` calls `fn(level, {max, labels, reason, vr})` on every level CHANGE and
+		 * returns `off()` (also released when the module is disabled). LOCAL: a fact about this
+		 * machine right now — never make it change shared state.
+		 */
+		quality: {
+			get level() {
+				return get(qualityState).level;
+			},
+			get max() {
+				return get(qualityState).max;
+			},
+			get labels() {
+				return get(qualityState).labels.slice();
+			},
+			get vr() {
+				return xrQualityDebug().active;
+			},
+			/** @param {(level: number, info: {max: number, labels: string[], reason: string, vr: boolean}) => void} fn */
+			onChange(fn) {
+				let last = get(qualityState).level;
+				const off = qualityState.subscribe((q) => {
+					if (q.level === last) return;
+					last = q.level;
+					try {
+						fn(q.level, { max: q.max, labels: q.labels.slice(), reason: q.reason, vr: xrQualityDebug().active });
+					} catch (error) {
+						console.log('module quality listener failed', error);
+					}
+				});
+				onDispose(off);
+				return off;
+			}
+		},
 		peerVars: {
 			/** Write MY OWN row. @param {string} name @param {number} value */
 			setMine(name, value) {

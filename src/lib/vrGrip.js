@@ -66,9 +66,10 @@ export function pickGripTarget(candidates, mode) {
 }
 
 /**
- * Does an empty-air grip move the world in this mode? Only Edit's does.
- * @param {'edit' | 'interact'} mode
+ * Does an empty-air grip move the world in this mode? Edit's always does; Interact's only
+ * when the play block says `locomotion.worldGrab` (31 K1 — Untangle, Jam Room).
+ * @param {'edit' | 'interact'} mode @param {boolean} [worldGrab]
  */
-export function gripMovesWorld(mode) {
-	return mode !== 'interact';
+export function gripMovesWorld(mode, worldGrab = false) {
+	return mode !== 'interact' || worldGrab === true;
 }

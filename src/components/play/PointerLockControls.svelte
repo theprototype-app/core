@@ -10,6 +10,8 @@
     import { spawnDesktopPlayer } from '$lib/playSpawn'
     // 30 P3: free-cursor games never take the pointer — the real cursor aims
     import { playCursorFree } from '$lib/playCursor'
+    // 31 K3: in a game, Escape (and any lock loss) opens the pause menu instead of leaving play
+    import { shellMenu, shellMenuAvailable, openShellMenu, closeShellMenu } from '$lib/gameShell'
     import { inputClaims, getGamepadAxes } from '$lib/inputRuntime'
     import { gamepadPrefs } from '$lib/gamepadPrefs'
     import { coarsePointer } from '$lib/inputDevice'
@@ -115,10 +117,10 @@
           if (document.pointerLockElement === domElement) document.exitPointerLock()
         } else if (!free && wasFree) {
           wasFree = false
-          if (!noPointerLock && !playCursorFree() && $isLocked === true && document.pointerLockElement !== domElement) {
-            const again: any = domElement.requestPointerLock({ unadjustedMovement: true })
-            again?.catch?.(() => {})
-          }
+          // 31 K3: through the RETRY path — a menu closed by Escape (not an activation-
+          // triggering key) straight after a user Esc is refused for ~1s, and a single
+          // attempt left the player unlocked until their next click
+          if (!noPointerLock && !playCursorFree() && $isLocked === true && document.pointerLockElement !== domElement) requestLock(true)
         }
       })
     })
@@ -462,6 +464,11 @@
           // native pointer-lock Esc handles the normal case; this also rescues
           // the stuck state where play mode engaged but the lock never did
           if ($isLocked) {
+            // 31 K3: IN A GAME, Escape is the pause menu — open it, or close it (Resume).
+            // Leaving play is the menu's "Main menu" / "Back to editor". With a lock held
+            // the lock loss below opens it (the browser consumes that Esc anyway).
+            if (!document.pointerLockElement && get(shellMenu).open) { closeShellMenu(); break }
+            if (!document.pointerLockElement && shellMenuAvailable()) { openShellMenu(); break }
             if (document.pointerLockElement) document.exitPointerLock()
             // 21-E3: with the pointer FREE (menu mode) there is no lock to exit, so this
             // branch is the whole exit path - no pointerlockchange will fire; the camera
@@ -534,6 +541,9 @@
         // The weld between "lost the lock" and "left play mode" is the single line
         // this branch used to be.
         if ($playPointerFree) return
+        // 31 K3: in a game a lost lock (Escape, alt-tab) PAUSES into the shell menu — the
+        // menu's playPointerFree then owns the pointer, and Resume re-locks
+        if (openShellMenu()) return
         $isLocked = false
       }
     }

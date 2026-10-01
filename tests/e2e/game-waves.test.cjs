@@ -196,7 +196,7 @@ h.run(async () => {
 							tags: ['vr', 'co-op', 'survival'],
 							modules: [
 								{ id: 'health', version: '1.0.0' },
-								{ id: 'waves', version: '2.1.0' }
+								{ id: 'waves', version: '2.2.0' } // 31-waves: the union ships 2.2.0
 							],
 							bytes: scene.bytes.length,
 							scene: 'games/waves/scene.tpscene',
@@ -301,8 +301,7 @@ h.run(async () => {
 	// ---- 5. the late joiner ------------------------------------------------------------------------
 	// A approves the join, and a peer cannot approve from inside Play (the documented gotcha):
 	// A steps out; B still plays, so the shell stays playing (the 10 s window)
-	await A.page.keyboard.press('Escape');
-	await A.page.waitForTimeout(500);
+	h.check(await h.leavePlay(A), '(premise) A stepped out of Play to approve the joiner (31 K3: through the pause menu)');
 	const C = await h.setupPage(browser, 'C');
 	await installZip(C, 'health', healthZip.bytes, 'C');
 	await installZip(C, 'waves', wavesZip.bytes, 'C');

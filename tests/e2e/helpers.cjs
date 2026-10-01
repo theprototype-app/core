@@ -449,11 +449,13 @@ async function finish(browser) {
 // B8: the sibling modules checkout is `theprototype.app-modules` on some machines and
 // plain `modules` on others, and a LANE worktree sits beside both — probe, first hit
 // wins, and the historical name stays the fallback so the skip message names a path.
+// MODULES_REPO (env) wins: an integrator points every suite at its union checkout's zips
 const MODULES_REPO =
-	([
-		require('path').resolve(__dirname, '../../../theprototype.app-modules'),
-		require('path').resolve(__dirname, '../../../modules')
-	].find((p) => require('fs').existsSync(p)) ??
+	((process.env.MODULES_REPO ? require('path').resolve(process.env.MODULES_REPO) : null) ??
+		[
+			require('path').resolve(__dirname, '../../../theprototype.app-modules'),
+			require('path').resolve(__dirname, '../../../modules')
+		].find((p) => require('fs').existsSync(p)) ??
 		require('path').resolve(__dirname, '../../../theprototype.app-modules')) + '/';
 function moduleZipPath(id) {
 	return MODULES_REPO + id + '.zip';
@@ -480,6 +482,24 @@ async function installModule(peer, id) {
 	await peer.page.evaluate(() => window.__stores.modulesOpen.set(false));
 	await peer.page.waitForTimeout(300);
 	return true;
+}
+
+// 31 K3: in a GAME, Escape opens the shared pause menu instead of leaving Play — leave through
+// its Back to editor (a scene that is not a game, or a core without the shell: Escape leaves).
+// A host must be OUT of Play to approve a joiner (the documented gotcha), so every late-joiner
+// section steps out through here and asserts it did.
+async function leavePlay(peer) {
+	const page = peer.page ?? peer;
+	const locked = () => page.evaluate(() => { let v; window.__stores.isLocked.subscribe((x) => (v = x))(); return v; });
+	if ((await locked()) !== true) return true;
+	await page.keyboard.press('Escape');
+	const back = page.locator('#game-shell-menu [data-shell-item="editor"]');
+	if (await back.waitFor({ state: 'visible', timeout: 2500 }).then(() => true, () => false)) await back.click();
+	for (let i = 0; i < 20 && (await locked()) === true; i++) await page.waitForTimeout(150);
+	if ((await locked()) === true) await page.evaluate(() => window.__stores.gameKit?.gameShell?.leaveToEditor?.());
+	for (let i = 0; i < 20 && (await locked()) === true; i++) await page.waitForTimeout(150);
+	await page.waitForTimeout(300);
+	return (await locked()) !== true;
 }
 
 function run(body) {
@@ -844,4 +864,4 @@ function envelopeDelta(a, b) {
 	return { maxDelta, meanDelta: n ? sum / n : 0, worstSlice };
 }
 
-module.exports = { URL, GPU_ARGS, check, launch, setupPage, connect, eventually, projectPoint, freshReload, finish, run, installModule, moduleZipPath, makeCollectibleChains, pageErrors, grabFrame, centeredClip, frameDelta, framePixelsOffColor, AUDIO_ARGS, audioMetrics, renderOffline, envelopeDelta };
+module.exports = { URL, GPU_ARGS, check, launch, setupPage, connect, leavePlay, eventually, projectPoint, freshReload, finish, run, installModule, moduleZipPath, makeCollectibleChains, pageErrors, grabFrame, centeredClip, frameDelta, framePixelsOffColor, AUDIO_ARGS, audioMetrics, renderOffline, envelopeDelta };

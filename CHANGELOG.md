@@ -5,6 +5,81 @@
      per release, newest first. HTML comments like this one are stripped before
      rendering, so maintainer notes stay out of the user-facing window. -->
 
+## 1.18.0 — Menus, levels and smooth frames in a headset 🥽
+
+### ⏸️ Every game has a real menu
+
+- ⏸️ **Pause any game.** Escape (or the Menu button in the corner) opens the same menu in every
+  game: **Resume · Restart · Levels · Settings · How to play · Main menu**, plus Back to editor
+  on a desktop. In a headset it is on the game board, and the left **X** button opens it.
+- ⚙️ **Settings per game**, remembered on this device: music on/off and volume, sound effects
+  on/off and volume, controller vibration, turning (snap, smooth or off, and the snap angle), a
+  comfort vignette, Quality (Auto, Low, Medium, High) and **Show FPS** — a small frame counter
+  on the screen, or on your wrist and top strip in VR. Games add their own rows (Stars Room:
+  "Point to move stars", "Make stars with a clap"; Untangle: Globe or 2D board).
+- 🗺️ **Levels in the menu.** A game that has levels shows them in the menu, on a desktop and in
+  the headset (Towers' 12, Untangle's 30).
+
+### 🥽 Pointing and moving in VR
+
+- 🎯 **See where you point.** The controller laser is easier to see, ends in a solid dot, and the
+  button under it lights up — on every game board and module menu.
+- 🕹️ **The radial menu follows the thumbstick**: the sector you push towards lights up, and the
+  trigger or a stick click picks it.
+- 🪟 **Menus are never hidden** behind floors, pedestals or walls.
+- 🌍 **Games can let you move the world.** Untangle and the Jam Room let your grips move, turn and
+  scale the whole scene during the game, as in Edit (a grip on something you can hold still holds it).
+- 🚀 **Teleport that stays inside.** Dungeon Realms, the Stars Room and the Jam Room let you
+  teleport — onto floors only, inside the play area, never through a wall. The arc turns red where
+  you cannot land. The Jam Room also lets you fly.
+
+### 🎮 The games
+
+- 🏗️ **Towers is a real game now**: twelve levels with planks, wedges, barrels, arches, balls and a
+  heavy base, 1-3 stars a level and unlocks saved on your device. You can only grab what is close
+  to you, so build steps and jump (Space, or **A** in VR); wind, a wobbling plate, an outline to
+  fill and a star to deliver on top.
+- 🌌 **Stars Room**: clap your hands in VR to make a new star (with a sparkle and a sound) — it
+  flies and counts like the others; a setting to move stars only by touching them.
+- 🪢 **Untangle**: in VR you start in front of the board, not inside it; Globe or 2D board and the
+  level picker are in the headset menu; switching board keeps the level you have open, and one
+  progress counts across both; the level bar sits at your waist, drawn over the scene.
+- 🔫 **Waves**: the robots no longer stop and walk back to their portals when one of them is
+  killed; lighter robots (a far version of each, smaller textures).
+- 🏰 **Dungeon Realms** draws only the torches near you, with fewer lights in a headset.
+- ⚽ **Football** drops the glass's costly see-through pass, four of its lights and both shadow
+  maps; a goal's confetti follows the quality setting.
+
+### 🩹 Found on the preview
+
+- 🔤 **Crisp text in VR menus again.** After a heavy moment the headset could start the next VR
+  session at a lower resolution, which blurred every menu's text. A headset now always renders at
+  full resolution; the speed-ups below are what keep it smooth.
+- ⬆️ **Games update the modules they need.** Opening a game that was made for a newer version of
+  one of its modules than the one installed on your device now offers to update it (Waves on a
+  headset could still be the 1.17 version, whose robots all walked back to their portals when you
+  hit one).
+
+### ⚡ Smoother frames
+
+- ⚡ **Fixed the hitches**: the object list's module section re-read every module object every
+  frame — that one cost Waves almost all of its frame time and gave Dungeon Realms a hitch every
+  second. Four smaller per-frame costs are gone too.
+- 🔭 **Automatic level of detail**: big models get simpler versions for the distance, built once
+  and cached (Settings: "Simplify distant models").
+- 🥽 **Auto quality in the headset**: a VR session starts with shadows off and steps quality down
+  (and back up) by the headset's own frame rate; a game's Quality setting overrides it.
+
+### 🧰 For authors
+
+- `play.locomotion` gains `worldGrab`, and `teleport` is bounded by `play.bounds` (else the scene's
+  content); `play.reach` limits grab distance. Configure Scene ▸ Physics ▸ Play mode.
+- New nodes: **On Clap**, **Point Grab**, **Game Setting**; Spawn takes a place; a spawned copy
+  answers to its template's events.
+- Module SDK: `api.game.levels`, `addSetting`/`setting`, `setHelp`, `onRestart`, `api.quality`,
+  `api.lod`, `api.vrPanel`, `api.locomotion`. `node scripts/perf-games.cjs` measures the seven games.
+- 📦 Dependencies: three 0.186, Vite 8.3, Svelte 5.57.1, Playwright 1.63 and ten more minor updates.
+
 ## 1.17.0 — Games that look finished 🎨
 
 ### 🖐️ Dragging, clicking and selecting that do what you meant

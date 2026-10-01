@@ -42,14 +42,25 @@ import {
 	editorMode,
 	peerHandStyle, pokeScene } from '../stores/sceneStore';
 import { isScenery, pickGripTarget, gripMovesWorld } from './vrGrip';
+import { pointGrabAllowed } from './pointGrab'; // 31 (Stars Room S2)
+import { moduleGroupList, moduleGroupsRevision } from './moduleContent';
+import { overlayPanel, makeDepthSentinel, PANEL_ORDER, BEAM_ORDER } from './vrPanelOverlay';
+import { moduleWorldChildren } from './moduleWorld';
+import { teleportVerdictPure, shrinkBox, BOUNDS_INSET, PROBE_HEIGHT } from './teleportRules';
+import { walkable as dungeonWalkable } from './dungeonPlay';
 import { resolvePlaySettings, playPublishers } from './playSettings';
 import { hudDocs, isGameHud } from './hudDocs';
 import { locomotionPolicy, vrSpawnOffsets, yawForward } from './locomotionPolicy';
-import { resolveWalk } from './charController';
+import { resolveWalk, charControl, setJumpRequested } from './charController';
+import { withinReach } from './playReach'; // 31-towers P1
 import { activeRing, findMenuEntry, ringEntries, sectorFromStick, pushRing, popRing, resetRings, hubEntry } from './vrRadialMenu';
 import { paletteColorAt, barValueAt } from './vrPalette';
 // 30b (vr-play) C4: the ONE game-feel predicate (a leaf) + the pattern shapes (pure)
 import { gameFeelActive } from './gameFeel';
+// 31 K3: the per-game settings (haptics, turning) and the pause menu's controller button
+import { hapticsAllowed, resolveTurning, gameSettingValues } from './gameSettings';
+import { toggleShellMenu, shellMenuAvailable } from './gameShell';
+import { noteArtificialMotion } from './comfortVignette';
 import { hapticSchedule, knockHapticScale } from './hapticPatterns';
 import { recordMaterialChange, setMaterialParam } from './materialsHandler';
 import { prefabs, instantiatePrefab } from './prefabs';
@@ -245,7 +256,7 @@ vrChatPanelOpen.subscribe((open) => {
 });
 
 /** @type {any} */ let renderer = null;
-/** @type {{menu?: boolean, squeeze?: boolean, stick?: boolean, trigger?: boolean, a?: boolean, mode?: boolean}[]} */
+/** @type {{menu?: boolean, squeeze?: boolean, stick?: boolean, trigger?: boolean, a?: boolean, mode?: boolean, x?: boolean}[]} */
 const previousButtons = [{}, {}];
 const raycaster = new THREE.Raycaster();
 const tempMatrix = new THREE.Matrix4();
@@ -276,8 +287,10 @@ let snapArmed = true;
 function ensureRayLines() {
 	if (rayLines.length > 0 || !renderer) return;
 	// a tapered cylinder along -Z (spans 0..-1) reads as a visible beam on-device
-	// where a 1px THREE.Line vanishes; additive blending gives it a soft glow
-	const beamGeo = new THREE.CylinderGeometry(0.0012, 0.0035, 1, 8, 1, true);
+	// where a 1px THREE.Line vanishes. 31 G5: NORMAL blending — the additive glow it had
+	// vanished against a bright sky ("i want to be able to see from controller ray where i
+	// point in menu"), the documented additive-burst trap
+	const beamGeo = new THREE.CylinderGeometry(0.0014, 0.004, 1, 8, 1, true);
 	beamGeo.rotateX(-Math.PI / 2); // axis +Y -> -Z (narrow top ends toward the tip)
 	beamGeo.translate(0, 0, -0.5); // span 0 (controller) .. -1 (tip)
 	for (let i = 0; i < 2; i++) {
@@ -286,8 +299,7 @@ function ensureRayLines() {
 			new THREE.MeshBasicMaterial({
 				color: RAY_IDLE,
 				transparent: true,
-				opacity: 0.6,
-				blending: THREE.AdditiveBlending,
+				opacity: 0.8,
 				depthWrite: false
 			})
 		);
@@ -310,6 +322,15 @@ function ensureRayLines() {
 		);
 		reticle.name = 'vr-ray-reticle';
 		reticle.visible = false;
+		// 31 G5: a solid DOT at the exact hit point inside the ring — the ring alone left the
+		// point itself empty, which is where a small button is
+		const dot = new THREE.Mesh(
+			new THREE.CircleGeometry(0.0075, 16),
+			new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.95, depthWrite: false, side: THREE.DoubleSide })
+		);
+		dot.name = 'vr-ray-dot';
+		dot.position.z = 0.0005;
+		reticle.add(dot);
 		renderer.xr.getController(i).add(reticle);
 		rayReticles.push(reticle);
 	}
@@ -503,6 +524,8 @@ function openPanelGroups() {
 			if (panel) list.push(panel);
 		} catch {}
 	}
+	// 31 K2: a module's registered VR panels (api.vrPanel) — the beam ends on them too
+	for (const panel of overlayPanels) if (panel.visible !== false && panel.parent) list.push(panel);
 	add(get(vrMenuOpen), vrMenuGroup);
 	add(get(vrObjectsPanelOpen), vrPanelGroup);
 	add(get(vrPropsPanelOpen), vrPropsGroup);
@@ -517,11 +540,78 @@ function openPanelGroups() {
 	return list;
 }
 
+/** 31 K2: module-registered VR panels (api.vrPanel) @type {Set<any>} */
+const overlayPanels = new Set();
+/**
+ * 31 K2: make a module's object a VR PANEL — drawn over the scene like core's panels, and
+ * a beam end. Returns the undo. @param {any} object @returns {() => void}
+ */
+export function registerOverlayPanel(object) {
+	if (!object) return () => {};
+	overlayPanels.add(object);
+	overlayPanel(object);
+	return () => {
+		overlayPanels.delete(object);
+	};
+}
+/** @type {any} */ let depthSentinel = null;
+/**
+ * 31 K2 (U4): every open panel draws OVER the scene — see vrPanelOverlay.js for why a depth
+ * clear rather than depthTest:false. Core's panels (svelte trees whose children change as
+ * they re-render) are re-marked every frame (idempotent, allocation-free); the game surfaces
+ * and api.vrPanel objects are marked when made. The sentinel is in the scene only while a
+ * panel is open, so a frame without one is byte-for-byte the old frame.
+ */
+function updatePanelOverlay() {
+	const panels = openPanelGroups();
+	let any = false;
+	for (const panel of panels) {
+		if (panel.userData?.vrOverlay === false) continue; // a provider's world handles (spline, sleeve)
+		overlayPanel(panel);
+		any = true;
+	}
+	const scene = /** @type {any} */ (get(globalScene));
+	if (any && scene) {
+		if (!depthSentinel) depthSentinel = makeDepthSentinel(THREE);
+		if (depthSentinel.parent !== scene) scene.add(depthSentinel);
+		depthSentinel.visible = true;
+	} else if (depthSentinel) depthSentinel.visible = false;
+}
+/** 31 K2: how many times the panel depth clear ran (the suites' view) */
+export function panelOverlayDebug() {
+	return { clears: depthSentinel?.userData.clears ?? 0, visible: !!depthSentinel?.visible, order: PANEL_ORDER };
+}
+
+/** 31 G5: the registered INTERACTIVE module groups present in the scene (re-homed under
+ * module-world-root since 30b P5, or still at the scene root) @returns {any[]} */
+function moduleInteractiveRoots() {
+	const revision = get(moduleGroupsRevision);
+	if (revision !== interactiveNamesAt) {
+		interactiveNamesAt = revision;
+		interactiveNames = moduleGroupList()
+			.filter((entry) => entry.kinds.has('interactive'))
+			.map((entry) => entry.name);
+	}
+	interactiveRoots.length = 0;
+	if (!interactiveNames.length) return interactiveRoots;
+	const children = moduleWorldChildren();
+	for (const name of interactiveNames) {
+		let node = null;
+		for (const c of children) if (c.name === name) node = c;
+		node = node ?? /** @type {any} */ (get(globalScene))?.getObjectByName(name);
+		if (node && node.visible !== false) interactiveRoots.push(node);
+	}
+	return interactiveRoots;
+}
+let interactiveNamesAt = -1;
+/** @type {string[]} */ let interactiveNames = [];
+/** @type {any[]} */ const interactiveRoots = [];
+
 /** D5: where a beam terminates — the NEAREST hit among scene objects and any
  * open floating panel, so navigating menus shows the beam ending in a circle
  * on the hovered control (parity with object selection). Exported for
  * headless tests. @param {any} ray a THREE.Raycaster
- * @returns {{distance: number, hit: boolean, object: any, info: any}} */
+ * @returns {{distance: number, hit: boolean, object: any, info: any, panel: boolean}} */
 export function beamTarget(ray) {
 	const group = get(objectsGroup);
 	let distance = 5;
@@ -537,14 +627,36 @@ export function beamTarget(ray) {
 			info = hits[0];
 		}
 	}
+	// 31 G5: a module's INTERACTIVE scene-root content (its board, its buttons, its level
+	// picker) ends the beam too — it lives under module-world-root, outside objectsGroup, so
+	// the laser used to pass straight through a module's menu with no dot on it
+	for (const root of moduleInteractiveRoots()) {
+		const hits = safeIntersect(ray, root);
+		const first = hits.find((/** @type {any} */ h) => h.object.visible !== false && !h.object.isLine && !h.object.isPoints);
+		if (first && first.distance < distance) {
+			distance = first.distance;
+			hit = true;
+			object = null;
+			info = first;
+		}
+	}
+	// 31 K2: a VR panel is drawn OVER the scene (vrPanelOverlay), so a panel the ray reaches
+	// ends the beam even when a floor or a base stands in front of it — the press goes to the
+	// panel there too (a panel hit wins every trigger path), and the beam must agree with it
+	let panelDistance = Infinity;
+	/** @type {any} */ let panelInfo = null;
 	for (const panel of openPanelGroups()) {
 		const hits = ray.intersectObject(panel, true);
-		if (hits.length > 0 && hits[0].distance < distance) {
-			distance = hits[0].distance;
-			hit = true;
-			object = null; // a panel in front never highlights the object behind it
-			info = hits[0];
+		if (hits.length > 0 && hits[0].distance < panelDistance) {
+			panelDistance = hits[0].distance;
+			panelInfo = hits[0];
 		}
+	}
+	if (panelInfo) {
+		distance = panelDistance;
+		hit = true;
+		object = null; // a panel never highlights the object behind it
+		info = panelInfo;
 	}
 	// D8: while vertex-editing, the scene-root handle dots are beam targets too
 	// (they live OUTSIDE objectsGroup); a handle hit never highlights an object
@@ -558,7 +670,7 @@ export function beamTarget(ray) {
 			info = hits[0];
 		}
 	}
-	return { distance, hit, object, info };
+	return { distance, hit, object, info, panel: !!panelInfo && info === panelInfo };
 }
 
 /** D5: controller-local reticle pose — the ring sits at the beam tip, laid
@@ -605,8 +717,10 @@ function updateRaysAndHover(presenting) {
 	if (!presenting) {
 		rayReticles.forEach((r) => (r.visible = false));
 		setHovered(null);
+		if (depthSentinel) depthSentinel.visible = false;
 		return;
 	}
+	updatePanelOverlay();
 	const pointerIndex = controllerIndexFor(get(vrMenuHand) === 'right' ? 'left' : 'right');
 	// D6: an armed one-shot ping tints the beam + reticle with YOUR ping color
 	// so the arm state is visible in-headset
@@ -615,6 +729,14 @@ function updateRaysAndHover(presenting) {
 		: null;
 	for (let i = 0; i < 2; i++) {
 		const target = beamTarget(controllerRay(i));
+		// 31 K2: on a panel the pointer draws after the panels (seen on the button through the
+		// floor); anywhere else it depth-tests like the scene around it
+		const order = target.panel ? BEAM_ORDER : 0;
+		if (rayLines[i]) rayLines[i].renderOrder = order;
+		if (rayReticles[i]) {
+			rayReticles[i].renderOrder = order;
+			rayReticles[i].children[0] && (rayReticles[i].children[0].renderOrder = order + 1);
+		}
 		if (rayLines[i]) {
 			rayLines[i].scale.z = target.distance;
 			if (pingTint) rayLines[i].material.color.set(pingTint);
@@ -686,10 +808,16 @@ const arcRaycaster = new THREE.Raycaster();
 /**
  * Sample a ballistic arc from origin along direction; lands on the ground
  * plane (y=0) or an upward-facing surface of a scene object.
+ * 31 K1: `opts.bounded` (a game's teleport) stops at the FIRST surface the arc meets, of any
+ * slope — a wall face ends it (and is refused as too steep) instead of the arc passing
+ * through the wall to the floor behind — and `opts.roots` adds module content (a dungeon's
+ * walls live under module-world-root, not objectsGroup). `normalY` is the landing's world
+ * normal (1 on the floor plane).
  * @param {any} origin @param {any} direction @param {any=} group
- * @returns {{points: any[], target: any | null}}
+ * @param {{bounded?: boolean, roots?: any[]}} [opts]
+ * @returns {{points: any[], target: any | null, normalY: number}}
  */
-export function computeTeleportArc(origin, direction, group) {
+export function computeTeleportArc(origin, direction, group, opts = {}) {
 	const speed = 8;
 	const gravity = -9.8;
 	const step = 1 / 12;
@@ -698,6 +826,9 @@ export function computeTeleportArc(origin, direction, group) {
 	const points = [origin.clone()];
 	let previous = origin.clone();
 	let target = null;
+	let normalY = 1;
+	const bounded = !!opts.bounded;
+	const roots = group ? [...group.children, ...(opts.roots ?? [])] : (opts.roots ?? []);
 
 	for (let t = step; t <= maxT && !target; t += step) {
 		const point = new THREE.Vector3(
@@ -705,19 +836,25 @@ export function computeTeleportArc(origin, direction, group) {
 			origin.y + velocity.y * t + 0.5 * gravity * t * t,
 			origin.z + velocity.z * t
 		);
-		if (group) {
+		if (roots.length) {
 			const segment = point.clone().sub(previous);
 			const length = segment.length();
 			arcRaycaster.set(previous, segment.normalize());
 			arcRaycaster.far = length;
-			const hits = arcRaycaster.intersectObjects(group.children, true);
+			withRayCamera(arcRaycaster);
+			/** @type {any[]} */ const hits = [];
+			for (const root of roots) hits.push(...safeIntersect(arcRaycaster, root));
+			hits.sort((x, y) => x.distance - y.distance);
 			const landing = hits.find((hit) => {
 				if (!hit.face) return false;
+				if (bounded) return hit.object.visible !== false && !!(/** @type {any} */ (hit.object).isMesh);
 				const normal = hit.face.normal.clone().transformDirection(hit.object.matrixWorld);
 				return normal.y > 0.5; // only land on top-ish faces
 			});
 			if (landing) {
 				target = landing.point.clone();
+				// @ts-ignore - a face is present (the find above)
+				normalY = landing.face.normal.clone().transformDirection(landing.object.matrixWorld).y;
 				points.push(target.clone());
 				break;
 			}
@@ -735,7 +872,119 @@ export function computeTeleportArc(origin, direction, group) {
 		points.push(point.clone());
 		previous = point;
 	}
-	return { points, target };
+	return { points, target, normalY };
+}
+
+// ---- 31 K1 (D2/S1): THE BOUNDED TELEPORT -----------------------------------------------------
+// Edit's teleport lands wherever the arc does. A game's (Interact/Play with
+// `play.locomotion.teleport`) asks teleportRules for a verdict: walkable ground, inside the
+// play area, no wall cell on the way, no collider or mesh crossed. Each rule reads its data in
+// ITS OWN frame — a publisher's `play.bounds`/`play.colliders`/raster in the publisher group's
+// local frame, the scene's bounds in objectsGroup's — so a world grab never skews a verdict.
+
+/** content bounds per teleport engage (Box3 over the whole scene is not a per-frame cost) */
+/** @type {any} */ let contentBoundsCache = null;
+
+/** @param {any} object @param {{x: number, y: number, z: number}} p world -> the object's frame */
+function toFrame(object, p) {
+	const v = new THREE.Vector3(p.x, p.y, p.z);
+	if (object) object.worldToLocal(v);
+	return { x: v.x, y: v.y, z: v.z };
+}
+
+/** everything a teleport may land on or be stopped by: objectsGroup + registered module content */
+function teleportRoots() {
+	const group = get(objectsGroup);
+	return [...(group ? group.children : []), ...moduleWorldChildren()];
+}
+
+/** the scene's content bounds (world), shrunk by BOUNDS_INSET on x and z; null when empty */
+function contentBounds() {
+	if (contentBoundsCache) return contentBoundsCache;
+	const box = new THREE.Box3();
+	for (const root of teleportRoots()) if (root.visible !== false) box.expandByObject(root);
+	if (box.isEmpty()) return null;
+	contentBoundsCache = shrinkBox({ min: box.min.toArray(), max: box.max.toArray() }, BOUNDS_INSET);
+	return contentBoundsCache;
+}
+
+const _probeRay = new THREE.Raycaster();
+/** does a mesh stand between the two ends, PROBE_HEIGHT above both? (world) */
+function meshBetween(/** @type {any} */ from, /** @type {any} */ to) {
+	const a = new THREE.Vector3(from.x, from.y + PROBE_HEIGHT, from.z);
+	const b = new THREE.Vector3(to.x, to.y + PROBE_HEIGHT, to.z);
+	const d = b.clone().sub(a);
+	const length = d.length();
+	if (length < 1e-4) return false;
+	_probeRay.set(a, d.normalize());
+	_probeRay.far = length;
+	withRayCamera(_probeRay);
+	return teleportRoots()
+		.flatMap((root) => safeIntersect(_probeRay, root))
+		.some((/** @type {any} */ hit) => hit.object.isMesh && hit.object.visible !== false && hit.distance > 0.05 && !movableBody(hit.object));
+}
+
+/** 31 K1: a DYNAMIC physics body (or a spawner's transient copy) is not a wall — a body you can
+ * knock aside never refuses a teleport. Found by 31-stars-jam: the Stars Room's 24 floating
+ * stars sit at 0.8-2.6 m, right on the 1.1 m probe, so any star in the line refused every
+ * landing across the room. Static and pick-through solids (the room's glass) still block.
+ * @param {any} mesh */
+function movableBody(mesh) {
+	const top = topLevelObjectOf(mesh);
+	return !!top && (top.userData?.physics?.mode === 'dynamic' || top.userData?.transient === true);
+}
+
+/**
+ * 31 K1: may a player standing at `from` (feet, world) teleport to `to` (a landing, world)
+ * whose surface normal has y = `normalY`? The dungeon lane's e2e entry point too.
+ * @param {number[] | {x: number, y: number, z: number} | null} fromRaw
+ * @param {number[] | {x: number, y: number, z: number}} toRaw
+ * @param {number} [normalY]
+ * @returns {{ok: boolean, reason: string}}
+ */
+export function teleportVerdict(fromRaw, toRaw, normalY = 1) {
+	const pt = (/** @type {any} */ p) => (Array.isArray(p) ? { x: +p[0], y: +p[1], z: +p[2] } : p);
+	const from = fromRaw ? pt(fromRaw) : null;
+	const to = pt(toRaw);
+	const scene = /** @type {any} */ (get(globalScene));
+	const play = resolvePlaySettings(scene);
+	// 1 + 2: the surface and the play area
+	/** @type {any} */ let verdict;
+	if (play.bounds) {
+		const owner = play.boundsOwner ?? get(objectsGroup);
+		verdict = teleportVerdictPure({ to: toFrame(owner, to), normalY, bounds: play.bounds });
+	} else verdict = teleportVerdictPure({ to, normalY, bounds: contentBounds() });
+	if (!verdict.ok) return verdict;
+	// 3: a dungeon raster, in its group's frame
+	const dungeon = scene?.getObjectByName('dungeon-module');
+	const raster = dungeon?.userData?.play;
+	if (raster?.grid) {
+		verdict = teleportVerdictPure({
+			from: from ? toFrame(dungeon, from) : null,
+			to: toFrame(dungeon, to),
+			raster,
+			walkable: dungeonWalkable
+		});
+		if (!verdict.ok) return verdict;
+	}
+	// 4: published collider boxes (each publisher's frame), then real meshes
+	if (from) {
+		for (const publisher of playPublishers(scene)) {
+			const boxes = publisher.userData.play.colliders;
+			if (!Array.isArray(boxes) || !boxes.length) continue;
+			const colliders = boxes.filter((/** @type {any} */ b) => Array.isArray(b?.min) && Array.isArray(b?.max));
+			verdict = teleportVerdictPure({ from: toFrame(publisher, from), to: toFrame(publisher, to), colliders });
+			if (!verdict.ok) return verdict;
+		}
+		if (meshBetween(from, to)) return { ok: false, reason: 'blocked' };
+	}
+	return { ok: true, reason: 'ok' };
+}
+
+/** 31 K1: the live arc's verdict, for the suites @type {{engaged: boolean, bounded: boolean, valid: boolean, reason: string, target: number[] | null, color: number}} */
+let teleportPreviewState = { engaged: false, bounded: false, valid: false, reason: '', target: null, color: 0 };
+export function teleportPreview() {
+	return { ...teleportPreviewState, engaged: teleportEngaged };
 }
 
 let teleportEngaged = false;
@@ -773,6 +1022,7 @@ function showArc(points, valid, target) {
 	arcLine.geometry.dispose();
 	arcLine.geometry = new THREE.BufferGeometry().setFromPoints(points);
 	const color = valid ? 0x22cc66 : 0xcc3344;
+	teleportPreviewState.color = color;
 	arcLine.material.color.setHex(color);
 	arcDisc.material.color.setHex(color);
 	arcDisc.visible = !!target;
@@ -783,13 +1033,18 @@ function hideArc() {
 	if (arcGroup) arcGroup.visible = false;
 }
 
-/** @param {any} target */
-function executeTeleport(target) {
+/** @param {any} target @param {boolean} [bounded] 31 K1: a game's teleport lands the FEET on it */
+function executeTeleport(target, bounded = false) {
 	const space = renderer?.xr.getReferenceSpace();
 	if (!space) return;
-	const viewer = renderer.xr.getCamera().getWorldPosition(new THREE.Vector3());
-	// reference-space convention: offset = -(viewer displacement); height kept
-	const t = { x: viewer.x - target.x, y: 0, z: viewer.z - target.z };
+	const pose = bounded ? viewerNow() : null;
+	const viewer = pose
+		? new THREE.Vector3(pose.head.x, pose.head.y, pose.head.z)
+		: renderer.xr.getCamera().getWorldPosition(new THREE.Vector3());
+	// reference-space convention: offset = -(viewer displacement); Edit keeps its height, a
+	// game's teleport stands you ON the landing (a step up onto a platform is a step up)
+	const feet = pose ? pose.head.y - pose.headHeight : null;
+	const t = { x: viewer.x - target.x, y: feet === null ? 0 : feet - target.y, z: viewer.z - target.z };
 	renderer.xr.setReferenceSpace(space.getOffsetReferenceSpace(new XRRigidTransform(t)));
 	// blink to soften the jump
 	const camera = get(globalCamera);
@@ -835,15 +1090,17 @@ export function updateTeleport(session) {
 
 	if (!teleportEngaged) {
 		// stick pushed clearly UP and more up than sideways -> arm
-		if (teleportArms(x, y)) teleportEngaged = true;
-		else {
+		if (teleportArms(x, y)) {
+			teleportEngaged = true;
+			contentBoundsCache = null; // re-measured once per aim
+		} else {
 			hideArc();
 			return;
 		}
 	} else if (y > -0.4) {
-		// released -> blink if we had a valid landing
+		// released -> blink if we had a VALID landing (31 K1: an invalid, red one does nothing)
 		teleportEngaged = false;
-		if (lastArc?.target) executeTeleport(lastArc.target);
+		if (lastArc?.target && lastArc.valid) executeTeleport(lastArc.target, lastArc.bounded);
 		lastArc = null;
 		hideArc();
 		return;
@@ -854,8 +1111,26 @@ export function updateTeleport(session) {
 		hideArc();
 		return;
 	}
-	lastArc = computeTeleportArc(pose.origin, pose.direction, get(objectsGroup));
-	showArc(lastArc.points, !!lastArc.target, lastArc.target);
+	// 31 K1: a GAME's teleport (Interact/Play) is bounded; Edit's lands where the arc does
+	const bounded = get(editorMode) === 'interact';
+	lastArc = computeTeleportArc(pose.origin, pose.direction, get(objectsGroup), bounded ? { bounded, roots: moduleWorldChildren() } : {});
+	lastArc.bounded = bounded;
+	let verdict = { ok: !!lastArc.target, reason: lastArc.target ? 'ok' : 'off-floor' };
+	if (bounded && lastArc.target) {
+		const viewer = viewerNow();
+		const from = viewer ? { x: viewer.head.x, y: viewer.head.y - viewer.headHeight, z: viewer.head.z } : null;
+		verdict = teleportVerdict(from, lastArc.target, lastArc.normalY);
+	}
+	lastArc.valid = verdict.ok;
+	teleportPreviewState = {
+		engaged: true,
+		bounded,
+		valid: verdict.ok,
+		reason: verdict.reason,
+		target: lastArc.target ? lastArc.target.toArray() : null,
+		color: teleportPreviewState.color
+	};
+	showArc(lastArc.points, verdict.ok, lastArc.target);
 }
 
 /** D1 (roadmap 13): the teleport arc anchors to the RIGHT hand's controller
@@ -922,10 +1197,38 @@ export function snapTurnRadians(deg, x, mirror) {
 	return THREE.MathUtils.degToRad(deg) * dir;
 }
 
+/** 31 K3: the turning in force — a game's own setting while playing it (snap / smooth /
+ * off + angle), the device's snap angle everywhere else @returns {{mode: string, angle: number}} */
+export function turningInForce() {
+	const device = Number(get(vrSnapAngle)) || 0;
+	if (!gameFeelActive()) return device ? { mode: 'snap', angle: device } : { mode: 'off', angle: 0 };
+	return resolveTurning(get(gameSettingValues), device);
+}
+/** degrees per second at full stick for SMOOTH turning */
+export const SMOOTH_TURN_DPS = 90;
+let smoothTurnAt = 0;
+/** the smooth turn applied last frame, radians — the comfort vignette reads it */
+export let lastSmoothTurn = 0;
+
 function updateSnapTurn(session) {
+	lastSmoothTurn = 0;
 	if (teleportEngaged) return; // the stick is busy aiming a teleport
 	const source = [...session.inputSources].find((s) => s.handedness === 'right');
 	const x = source?.gamepad?.axes?.[2] ?? 0;
+	const turning = turningInForce();
+	if (turning.mode === 'smooth') {
+		// 31 K3: SMOOTH turning — a continuous yaw proportional to the stick past a deadzone
+		const now = performance.now();
+		const dt = smoothTurnAt ? Math.min(0.1, (now - smoothTurnAt) / 1000) : 0;
+		smoothTurnAt = now;
+		if (Math.abs(x) < 0.2 || !dt) return;
+		const mag = (Math.abs(x) - 0.2) / 0.8;
+		const dir = (x > 0 ? -1 : 1) * (get(vrMirrorSnapTurn) ? -1 : 1);
+		turnRigBy(THREE.MathUtils.degToRad(SMOOTH_TURN_DPS) * mag * dt * dir);
+		lastSmoothTurn = THREE.MathUtils.degToRad(SMOOTH_TURN_DPS) * mag * dt;
+		return;
+	}
+	smoothTurnAt = 0;
 	if (Math.abs(x) < 0.4) {
 		snapArmed = true;
 		return;
@@ -933,8 +1236,13 @@ function updateSnapTurn(session) {
 	if (!snapArmed || Math.abs(x) < 0.7) return;
 	snapArmed = false;
 
-	const angle = snapTurnRadians(get(vrSnapAngle), x, get(vrMirrorSnapTurn));
+	const angle = turning.mode === 'off' ? 0 : snapTurnRadians(turning.angle, x, get(vrMirrorSnapTurn));
 	if (!angle) return; // snap-turn off
+	turnRigBy(angle);
+}
+
+/** rotate the reference space about the viewer (turn in place) @param {number} angle radians */
+function turnRigBy(angle) {
 	const frame = renderer.xr.getFrame?.();
 	const space = renderer.xr.getReferenceSpace();
 	const pose = frame?.getViewerPose?.(space);
@@ -1024,8 +1332,11 @@ function offsetSpace(offset, orientation) {
 /**
  * 30b P3: ONE walker step as data — the wanted displacement from the stick, resolved against
  * the world. Exported so a suite drives it with a real simulation and no headset.
+ * 31-towers P1: `jumpHeight` (metres) lets a jump edge (right A, `setJumpRequested`) leave the
+ * ground — the Character Controller node's own jump, so desktop and VR share one authoring place.
  * @param {{head: {x: number, y: number, z: number}, headHeight: number, yaw: number,
- *   stick: {x: number, y: number}, dt: number, fly?: boolean, aim?: {x: number, y: number, z: number}}} input
+ *   stick: {x: number, y: number}, dt: number, fly?: boolean, aim?: {x: number, y: number, z: number},
+ *   jumpHeight?: number}} input
  * @returns {{dx: number, dy: number, dz: number, feet: number, grounded: boolean, source: string}}
  */
 export function vrWalkStep(input) {
@@ -1047,7 +1358,8 @@ export function vrWalkStep(input) {
 	const height = Math.min(2.1, Math.max(1, Math.round(input.headHeight * 10) / 10));
 	const feet = input.head.y - input.headHeight;
 	const r = resolveWalk({ x: input.head.x, y: feet, z: input.head.z }, height, dt, desired, {
-		gravity: !input.fly
+		gravity: !input.fly,
+		jumpHeight: input.fly ? 0 : Number(input.jumpHeight) || 0
 	});
 	return { dx: r.dx, dy: r.feet - feet, dz: r.dz, feet: r.feet, grounded: r.grounded, source: r.source };
 }
@@ -1082,7 +1394,8 @@ export function tickVRInteractLocomotion(dt, session) {
 		stick: { x: axes[2] ?? 0, y: axes[3] ?? 0 },
 		dt,
 		fly: policy.fly,
-		aim
+		aim,
+		jumpHeight: vrJumpHeight()
 	});
 	// fell out of the world: back to the spawn (or the origin)
 	if (step.feet < -50) {
@@ -1093,6 +1406,21 @@ export function tickVRInteractLocomotion(dt, session) {
 	}
 	if (step.dx || step.dy || step.dz) offsetSpace({ x: -step.dx, y: -step.dy, z: -step.dz });
 	return true;
+}
+
+/**
+ * 31-towers P1: the jump the VR walker has right now — the Character Controller node's
+ * `jumpHeight` while it declares WALK mode and Interact walks (not flies); 0 = no jump, and the
+ * right A button stays push-to-talk.
+ * @returns {number}
+ */
+export function vrJumpHeight() {
+	const control = get(charControl);
+	if (!control || control.mode !== 'walk') return 0;
+	const policy = vrLocomotionNow();
+	if (!policy.walk || policy.fly) return 0;
+	const h = Number(control.jumpHeight);
+	return Number.isFinite(h) && h > 0 ? h : 0;
 }
 
 /**
@@ -1129,7 +1457,8 @@ export function spawnPlayer() {
 export function hapticPulse(intensity = 0.5, durationMs = 50, hand = undefined, force = false) {
 	// `force`: the one pulse that must be felt IN Edit — 30b-vr-modes' Edit/Interact switch
 	// tick, which confirms the switch INTO Edit
-	if (!force && !gameFeelActive()) {
+	// 31 K3: and never when this game's "Controller vibration" setting is off
+	if (!force && (!gameFeelActive() || !hapticsAllowed())) {
 		hapticSuppressed++;
 		return;
 	}
@@ -1373,7 +1702,36 @@ function controllerRay(index) {
 	tempMatrix.identity().extractRotation(controller.matrixWorld);
 	raycaster.ray.origin.setFromMatrixPosition(controller.matrixWorld);
 	raycaster.ray.direction.set(0, 0, -1).applyMatrix4(tempMatrix);
-	return raycaster;
+	return withRayCamera(raycaster);
+}
+
+/**
+ * 31 (found by 31-untangle): a THREE.Sprite cannot be raycast without `raycaster.camera` —
+ * three warns and Sprite.raycast THROWS on the null camera. Since the VR rays reach module
+ * content (G5's beam ends, the bounded teleport's arc and wall probe), one Sprite in a module's
+ * group threw inside updateVRControls every frame and aborted it before the grips ran
+ * (worldGrab silently dead in Untangle's globe mode). Every VR ray carries the camera the
+ * viewer sees through — the XR camera in a session, the editor camera otherwise.
+ * @template T @param {T} ray @returns {T}
+ */
+export function withRayCamera(ray) {
+	const camera = renderer?.xr?.isPresenting ? renderer.xr.getCamera() : get(globalCamera);
+	if (camera) /** @type {any} */ (ray).camera = camera;
+	return ray;
+}
+
+/**
+ * Module content is not ours: a raycast into it must never take the VR frame down with it
+ * (a mesh with a custom raycast, a Sprite before the camera exists). Returns [] on a throw.
+ * @param {any} ray @param {any} root @returns {any[]}
+ */
+function safeIntersect(ray, root) {
+	try {
+		return ray.intersectObject(root, true);
+	} catch (error) {
+		console.log('VR raycast into module content failed', root?.name, error);
+		return [];
+	}
 }
 
 /**
@@ -1393,7 +1751,7 @@ export function pointerHandRay() {
 	const m = new THREE.Matrix4().identity().extractRotation(controller.matrixWorld);
 	fresh.ray.origin.setFromMatrixPosition(controller.matrixWorld);
 	fresh.ray.direction.set(0, 0, -1).applyMatrix4(m);
-	return fresh;
+	return withRayCamera(fresh);
 }
 
 /** Raycast the quick-menu tiles @param {number} index @returns {string|null} tile action name */
@@ -1403,6 +1761,15 @@ export function raycastMenu(index) {
 	const hits = controllerRay(index).intersectObject(menu, true);
 	const tile = hits.find((h) => h.object.name?.startsWith('vrmenu-'));
 	return tile ? tile.object.name.slice('vrmenu-'.length) : null;
+}
+
+/** 31 R1: the radial sector a THUMBSTICK is holding highlighted this frame (null when the
+ * hover came from a ray or nothing). The trigger picks it when its own ray misses the ring —
+ * before, only a ray hit could be triggered, so a stick-lit sector fell through to a select. */
+let radialStickHover = /** @type {string | null} */ (null);
+/** @returns {string | null} */
+export function radialStickSelection() {
+	return get(vrMenuOpen) ? radialStickHover : null;
 }
 
 /** Raycast the objects panel rows (101) @param {number} index @returns {string|null} panel action */
@@ -2472,8 +2839,11 @@ function onSqueezeStart(index) {
 	const mode = get(editorMode) === 'interact' ? 'interact' : 'edit';
 	let object = gripTargetOf(controllerRay(index), controller.getWorldPosition(new THREE.Vector3()), mode);
 	if (!object) {
-		// 30b P2: Interact's grips never move the world (contract C1)
-		if (!gripMovesWorld(mode)) return;
+		// 31-towers P1: a piece beyond the scene's reach says so with a short buzz, no more
+		if (lastGripRefusal) hapticPattern('fail', renderer.xr.getController(index)?.userData?.handedness ?? undefined);
+		// 30b P2: Interact's grips never move the world (contract C1) — 31 K1: unless the play
+		// block allows it (`locomotion.worldGrab`); a grip on a grabbable still took it above
+		if (!gripMovesWorld(mode, mode === 'interact' && vrLocomotionNow().worldGestures)) return;
 		emptyAirSqueeze[index] = true;
 		// 186: in stretch mode both grips drive the stretch, not a world grab
 		if (get(vrStretchObject)) return;
@@ -2557,36 +2927,73 @@ function onSqueezeStart(index) {
  * @param {any} handPos the controller's world position @param {'edit'|'interact'} mode
  */
 export function gripTargetOf(ray, handPos, mode) {
+	lastGripRefusal = null;
 	const group = get(objectsGroup);
 	if (!group) return null;
 	/** @type {any} */
 	const camera = get(globalCamera);
 	const head = camera ? camera.getWorldPosition(new THREE.Vector3()) : null;
 	const locked = get(lockedObjects);
-	const interaction = mode === 'interact' ? resolvePlaySettings(get(globalScene)).interaction : 'grab';
-	/** @param {any} object */
-	const describe = (object) => {
+	const settings = mode === 'interact' ? resolvePlaySettings(get(globalScene)) : null;
+	const interaction = settings ? settings.interaction : 'grab';
+	// 31-towers P1: a player's grip reaches `play.reach` from the BODY (head down to the feet)
+	const reach = settings?.reach ?? null;
+	const feetY = head ? head.y - (viewerNow()?.headHeight ?? STANDING_HEAD) : 0;
+	/** @param {any} object @param {any} point where the grip would take it */
+	const describe = (object, point) => {
 		const box = new THREE.Box3().setFromObject(object);
+		const holdable =
+			interaction === 'grab' &&
+			object.userData?.physics?.mode === 'dynamic' &&
+			!locked.find((/** @type {any} */ lock) => lock[1] === object.uuid);
+		const near = !holdable || reach == null || !head || withinReach(point, head, feetY, reach);
+		if (holdable && !near) lastGripRefusal = { uuid: object.uuid, reach };
 		return {
 			scenery: isScenery(box.isEmpty() ? null : box, head),
-			grabbable:
-				interaction === 'grab' &&
-				object.userData?.physics?.mode === 'dynamic' &&
-				!locked.find((/** @type {any} */ lock) => lock[1] === object.uuid)
+			grabbable: holdable && near
 		};
 	};
 	/** @type {any[]} */
 	const order = [];
-	for (const hit of ray.intersectObjects(group.children, true)) {
+	/** @type {any[]} */
+	const points = [];
+	// 31 (Stars Room S2): a scene may switch POINTING off for players — then only a hand
+	// inside the object holds it (below); the ray reaches nothing. Edit is never affected.
+	const byRay = mode !== 'interact' || pointGrabAllowed();
+	if (byRay) for (const hit of ray.intersectObjects(group.children, true)) {
 		const top = topLevelObjectOf(hit.object);
-		if (top && !order.includes(top)) order.push(top);
+		if (top && !order.includes(top)) {
+			order.push(top);
+			points.push(hit.point);
+		}
 	}
-	const picked = pickGripTarget(order.map(describe), mode);
-	if (picked >= 0) return order[picked];
+	const picked = pickGripTarget(
+		order.map((object, i) => describe(object, points[i])),
+		mode
+	);
+	if (picked >= 0) {
+		lastGripRefusal = null;
+		return order[picked];
+	}
 	// a hand INSIDE an object needs no pointer (100.3) — the same rule decides
 	const inside = containedTopLevel(handPos, group);
-	if (inside && pickGripTarget([describe(inside)], mode) === 0) return inside;
+	if (inside && pickGripTarget([describe(inside, handPos)], mode) === 0) {
+		lastGripRefusal = null;
+		return inside;
+	}
 	return null;
+}
+
+/** 31-towers P1: is push-to-talk open because A is held? (A jumps instead while the game's
+ * controller can jump — a switch mid-hold must not strand the mic open) */
+let pttByA = false;
+
+/** 31-towers P1: the grip the reach refused last ({uuid, reach}), for the buzz and the suite
+ * @type {{uuid: string, reach: number} | null} */
+let lastGripRefusal = null;
+/** @returns {{uuid: string, reach: number} | null} */
+export function lastGripRefusalDebug() {
+	return lastGripRefusal;
 }
 
 /** @param {number} index */
@@ -3491,15 +3898,36 @@ export function updateVRControls() {
 		}
 
 
-		// right A held = push-to-talk
+		// 31 K3: LEFT X = the game's pause menu (A on the right is push-to-talk, B/Y are
+		// the radial menu and the mode button, so X is the one face button left free)
+		const xPressed = !!buttons[4]?.pressed;
+		if (source.handedness === 'left') {
+			if (xPressed && !prev.x && gameFeelActive() && shellMenuAvailable()) toggleShellMenu();
+			prev.x = xPressed;
+		}
+
+		// right A held = push-to-talk — or, 31-towers P1, JUMP while the game's Character
+		// Controller can jump (Interact walking). The edge is the charController's own, so a held
+		// A is one jump and landing with it down is none (no bunny-hopping).
 		const aPressed = !!buttons[4]?.pressed;
-		if (source.handedness === 'right' && aPressed !== !!prev.a) setPttHeld(aPressed);
+		if (source.handedness === 'right' && aPressed !== !!prev.a) {
+			if (vrJumpHeight() > 0) {
+				setJumpRequested(aPressed);
+				if (pttByA) setPttHeld(false);
+				pttByA = false;
+			} else {
+				setPttHeld(aPressed);
+				pttByA = aPressed;
+			}
+		}
 		prev.a = aPressed;
 
 		// K-C: publish this hand's stick + trigger/squeeze into the SDK input
 		// layer (inputRuntime is store-only; this is the safe import direction)
 		if (source.handedness === 'left' || source.handedness === 'right') {
 			setVRAxes(source.handedness, source.gamepad.axes?.[2] ?? 0, source.gamepad.axes?.[3] ?? 0);
+			// 31 K3: the comfort vignette hears the locomotion stick + this frame's smooth turn
+			if (source.handedness === 'left') noteArtificialMotion(Math.hypot(source.gamepad.axes?.[2] ?? 0, source.gamepad.axes?.[3] ?? 0), lastSmoothTurn);
 			setVRButtons(source.handedness, !!buttons[0]?.pressed, !!buttons[1]?.pressed);
 		}
 
@@ -3687,22 +4115,30 @@ export function updateVRControls() {
 		}
 	} else if (get(vrMenuOpen)) {
 		const sources = [...session.inputSources];
-		const menuIndex = sources.findIndex((s) => s.handedness === get(vrMenuHand));
-		const pointerIndex = controllerIndexFor(get(vrMenuHand) === 'right' ? 'left' : 'right');
+		const menuHand = get(vrMenuHand);
+		const pointerHand = menuHand === 'right' ? 'left' : 'right';
+		const pointerIndex = controllerIndexFor(pointerHand);
 		let hovered = pointerIndex >= 0 ? raycastMenu(pointerIndex) : null;
+		radialStickHover = null;
 		if (!hovered) {
 			const entries = ringEntries(get(activeRing));
-			for (const index of [menuIndex, pointerIndex]) {
-				if (index < 0) continue;
-				const axes = sources[index]?.gamepad?.axes ?? [];
+			// 31 R1: each stick is read from ITS OWN inputSource, found by handedness — the
+			// pointer's used to be `sources[<controller slot>]`, which is the other hand's
+			// source after a hands<->controllers swap (the 194/210 divergence)
+			for (const hand of [menuHand, pointerHand]) {
+				const axes = sources.find((s) => s.handedness === hand)?.gamepad?.axes ?? [];
 				const sector = sectorFromStick(axes[2] ?? 0, axes[3] ?? 0, entries.length);
 				if (sector !== null) {
-					hovered = entries[sector]?.id ?? null;
+					const entry = entries[sector];
+					// a greyed sector never lights (D4) — nor may a stick pick it
+					hovered = entry && !entry.disabled?.() ? entry.id : null;
+					radialStickHover = hovered;
 					break;
 				}
 			}
 		}
 		if (hovered !== get(vrHovered)) {
+			// one tick per sector change (Edit-silent through hapticPulse's own gate, C4)
 			if (hovered) hapticPulse(0.15, 18);
 			vrHovered.set(hovered);
 		}

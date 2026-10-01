@@ -481,6 +481,61 @@ if (api.storage) {
 Feature-detect it; on an older app write the SAME key yourself
 (`localStorage['tp:mod:<id>:<key>'] = JSON.stringify(value)`) so progress carries over.
 
+### Performance: quality level, LOD, budgets (1.18, roadmap 31)
+
+```js
+// The adaptive quality level on THIS device: 0 = best ... api.quality.max (every step taken).
+// A headset session starts at 1 (shadows off) in auto mode; a game's Quality setting can pin it.
+if (api.quality) {
+	const apply = (level) => {
+		particles.maxCount = level >= 3 ? 40 : 200;   // cut YOUR effects, not shared state
+		torchLights.forEach((l, i) => (l.visible = i < (level >= 1 ? 2 : 6)));
+	};
+	apply(api.quality.level);
+	const off = api.quality.onChange((level, { labels, vr }) => apply(level)); // released on disable
+}
+
+// Levels of detail for your own dense geometry (auto LOD already covers dense meshes in the
+// shared scene and under the module world root). Built ONCE per asset in a worker
+// (meshoptimizer), drawn by distance through a render-time swap: the mesh keeps its full
+// geometry for picking, physics and your code. Distances are in the mesh's world RADII.
+if (api.lod) {
+	const lod = api.lod(enemyFigure, { ratios: [0.5, 0.2], distances: [6, 18] });
+	lod.ready.then((n) => console.log(n, "meshes have levels")); // lod.remove() undoes it
+}
+mesh.userData.lod = false; // keep one mesh out of auto LOD
+```
+
+Both are LOCAL (a fact about this machine) — never let them change replicated state, or two
+peers on different hardware disagree about the game. Skinned meshes and morph targets get no
+levels (the simplifier cannot carry weights): pre-decimate those offline.
+
+**The Quest budget** (roadmap 31, the planner's target for a scene in Interact/Play on a Quest 3):
+**<= 150 draw calls, <= 300k triangles visible, <= 2 real-time lights with shadows off, no
+per-frame allocations in the hot path.** Measure your game with the probe, the same way every time:
+
+```bash
+# dev server running; run it under the exclusive slot (frame times are the point)
+APP_URL=https://theprototype.app:5173/ ~/.local/bin/e2e-slot --exclusive -- \
+  node scripts/perf-games.cjs --label mine --only waves [--vr] [--profile]
+```
+
+It prints draw calls + triangles per frame (every render pass summed), geometries, textures and
+an MB estimate, lights (+ shadow casters), meshes / instanced / unculled, the LOD and quality
+state, and p50/p95/p99 frame ms at CPU throttle x4; `--profile` adds CPU self-time, the nearest
+app frame calling the heaviest functions, and allocation per function (garbage included).
+The things 1.18's round found, in the order they cost:
+
+- **Never keep a THREE object inside Svelte `$state`** (or pass one through an action parameter
+  that is a state proxy): Svelte deep-reads a proxy, which walks the whole scene graph through
+  `parent` — typed arrays included. Use `$state.raw`. This one line was 88% of a game's frame.
+- **No whole-scene lookups per frame** — `scene.getObjectByName` is a traversal; find once, keep
+  the reference, re-find when it leaves the scene.
+- **No allocation per frame**: reuse vectors/arrays; a `[a, b].map(...)` in a frame task is
+  garbage 60-90 times a second, and GC pauses are the stutter you feel in a headset.
+- **Lights and shadow casters are draw calls**: each shadow-casting light draws every caster
+  again; transmission (glass) renders the scene an extra time per camera, per eye.
+
 ### Game feel: sound, music, haptics, effects, banners (1.17, roadmap 30b)
 
 Everything here is LOCAL to the device it runs on — broadcast your own op
@@ -533,6 +588,53 @@ register(api) {
   checkpoint and nobody moves until then. A module's spawn overrides the scene's
   `play.spawn`. `api.respawnPlayer()` sends the player back to it now.
 
+### Moving around in a game: locomotion, bounds, VR panels (1.18, roadmap 31)
+
+In Interact and Play a VR player WALKS (collisions, gravity, a 0.3 m step, snap turn)
+and nothing else unless the scene's play block — or your module's `userData.play` on
+its scene-root group, field by field — allows more:
+
+```js
+// feature-detect: an older core has no api.locomotion and would ignore the bounds
+if (api.locomotion?.boundedTeleport) {
+	group.userData.play = {
+		locomotion: { teleport: true, worldGrab: false, fly: false },
+		bounds: { min: [-12, -0.5, -12], max: [12, 0.4, 12] }, // in THIS group's local frame
+		colliders: [{ min: [2, 0, -6], max: [2.3, 3, 6] }] // optional: solid boxes, same frame
+	};
+}
+```
+
+- **`locomotion.teleport: true`** — the right stick's arc teleport, BOUNDED: the arc stops
+  at the first surface it meets; the landing must face up (normal y ≥ 0.7) or be the floor
+  plane, must lie inside `bounds`, and the straight line 1.1 m above your feet and the
+  landing must not cross a collider box, a mesh, or (with a dungeon raster published) a wall
+  cell. A refused landing draws the arc RED and releasing the stick does nothing; a valid one
+  is green and puts your FEET on it. Without `bounds` the play area is the scene's content
+  box pulled in 0.3 m. Edit mode's teleport is unchanged (it lands anywhere).
+- **`locomotion.worldGrab: true`** — the grips move, rotate and SCALE the world the way they
+  do in Edit (two grips scale/rotate, the right grip alone pans) whenever a grip does NOT
+  start on something the player may hold (a grip on a dynamic body under
+  `interaction: 'grab'` still takes the body). For board games and instruments: Untangle,
+  the Jam Room.
+- **`locomotion.fly: true`** — the left stick flies along the controller's aim, no gravity.
+- **`bounds: {min: [x, y, z], max: [x, y, z]}`** — a sibling of `locomotion`. The scene's
+  play block gives it in scene coordinates; a module's `userData.play.bounds` is read in
+  that group's local frame. Keep `max.y` just above the floor if box tops and ledges must
+  not be landing spots.
+- `vrControls.teleportVerdict(from, to, normalY?)` (on the debug hook
+  `window.__stores.vrControls`) answers `{ok, reason}` — `ok` `steep` `outside` `off-floor`
+  `wall-cell` `blocked` — for your e2e; `from`/`to` are world FEET points `[x, y, z]`.
+  `vrControls.teleportPreview()` reads the live arc (`{engaged, bounded, valid, reason, target}`).
+
+**Your own VR menu is a panel.** A board, a level bar or buttons you draw in THREE for the
+headset should be registered with **`api.vrPanel?.(group)`** (returns the undo, also run
+when the module is disabled): it is then drawn OVER the scene — a floor, a base or a wall
+between the player and it can never hide its buttons — and the controller laser ends on it
+with its dot, even through whatever stands in front. Hit testing is unchanged. Core's own
+panels (the radial menu, the game board, the wrist card) already work this way, and the
+laser ends on your `registerInteractiveGroup` content too.
+
 **In VR, your game's HUD is in the player's hands.** A screen with `input: 'menu'`,
 a control on it, or bound to the `menu` / `paused` / `over` game state is drawn on
 a board ~1.2 m in front of the player that follows their head lazily; its buttons
@@ -555,6 +657,84 @@ itself) or `'sweep'` (a later entry while held). A control that must not be swep
 
 ```js
 api.registerClickHandler(pickDot, { sweep: false }); // presses still reach it; sweeps do not
+```
+
+### The game shell: pause menu, levels, per-game settings (1.18, roadmap 31 K3)
+
+Every game gets ONE pause menu from core — **Resume · Restart · Levels · Settings · How to
+play · Main menu** — on the desktop (Escape in Play, or the corner Menu button) and in VR
+(the left controller's **X**, or Menu on the game board / wrist card). You do not draw it;
+you feed it. A scene counts as a game when it has a state-bound HUD screen, a spawn, or a
+module publishing `userData.play` — or when your module registers levels. All of it is
+feature-detected (`api.game.levels?.(…)`), LOCAL, and torn down with your module.
+
+**Levels** — the picker on the desktop and on the VR board. Re-call it whenever a level
+unlocks or earns stars; `onPick` never hears a locked level.
+
+```js
+const refresh = () =>
+	api.game.levels?.({
+		list: LEVELS.map((l, i) => ({ id: l.id, label: 'Level ' + (i + 1), locked: i > unlocked, stars: best[l.id] ?? 0 })),
+		current: currentLevel.id,
+		onPick: (id) => loadLevel(id)
+	});
+refresh();
+onLevelWon(() => { unlocked++; refresh(); });
+```
+
+**Your own settings rows** — shown under the core rows, persisted per game on this device
+(`tp:game:<game>:<id>`). `type` is `'toggle'`, `'choice'` (`options`, optional `optionLabels`)
+or `'range'` (`min`, `max`, `step`). A core id is refused.
+
+```js
+api.game.addSetting?.({
+	id: 'board', label: 'Board', type: 'choice',
+	options: ['globe', '2d'], optionLabels: ['Globe', '2D board'], default: 'globe',
+	onChange: (v) => setBoard(v)
+});
+setBoard(api.game.setting?.('board') ?? 'globe');            // the stored choice at load
+api.game.setSetting?.('board', '2d');                        // your in-game button writes the same row
+api.game.onSettingsChange?.((values) => console.log(values.board, values.sfx));
+```
+
+**The core rows every game has** — `music`, `musicVolume` (0..100), `sfx`, `sfxVolume`,
+`haptics`, `showFps`, `turning` (`default` | `snap` | `smooth` | `off`), `turnAngle`
+(`default` | `15` | `30` | `45` | `90`), `vignette`, `quality` (`auto` | `low` | `medium` |
+`high`). Core obeys them itself: the per-game volumes land on the audio BUSES (so
+`api.playSound`, `api.music`, flow sound nodes and the scene's track all follow), haptics,
+VR turning, the comfort vignette and the quality governor read them live. A module that
+plays audio through its OWN WebAudio graph should read them:
+
+```js
+const gain = ctx.createGain();
+const apply = () => (gain.gain.value = api.game.setting?.('sfx') === false ? 0 : (api.game.setting?.('sfxVolume') ?? 100) / 100);
+apply();
+api.game.onSettingsChange?.(apply);
+```
+
+**How to play** — your words first, then the device's controls (keyboard or controllers).
+Without it the menu shows the game's Games-tab description.
+
+```js
+api.game.setHelp?.([
+	'Drag the dots until no two lines cross.',
+	'Finish a level to unlock the next — stars for fewer moves.'
+]);
+```
+
+**Restart** — the menu resets the game shell (host / alone; others carry on as it is),
+respawns the player and runs your hook:
+
+```js
+api.game.onRestart?.(() => { resetBoard(); spawnWave(1); });
+```
+
+**Your own Menu button** (a module HUD, a VR board of yours):
+
+```js
+api.game.openMenu?.();          // only while playing a game; false otherwise
+api.game.closeMenu?.();
+if (api.game.menuOpen?.()) pauseMyTimers();
 ```
 
 ### Physics (P-A)
@@ -746,6 +926,24 @@ How it replicates: the click writes `{pressed, at: api.now()}` into the node's
 data (replicated like any node edit); the slide is a pure function of
 `(data, time)` running on each peer — no motion messages at all. The
 `registerClickHandler` consumes the click so pressing doesn't select the button.
+
+## Walkthrough: the towers module (a game's rules as a core module)
+
+`src/modules/towers/` runs the **Towers** template's twelve levels. It shows how a game with
+real rules splits: the scene (the template) is the arena, the piece templates, the HUD and a
+small graph; the module is the rules. Worth copying:
+
+- **The rules as a pure leaf** (`levels.js`) — the level table, the star rule, the unlocks,
+  the verdict stepper — tested with vitest, no browser.
+- **One authority** decides anything shared (the physics initiator, else the lowest peer id):
+  it deals the pieces, judges the round and writes the result into game variables
+  (`api.game.setVar`); every peer derives its HUD words from those through a value node wired
+  into HUD Text's format (`api.registerValueNode`).
+- **HUD buttons without a presser**: a press is a replicated stamp on a `hudbutton` node, so
+  every peer watches `api.flow.triggerStamp` and only the authority acts (first sight = history).
+- **Progress on this device** with `api.storage` (stars, unlocks — never replicated).
+- **The shell's level picker, help and restart** (`api.game.levels`, `setHelp`, `onRestart`),
+  feature-detected so the module also runs on an app without them.
 
 ## Manager, dev mode & gallery (17-A2/A3)
 

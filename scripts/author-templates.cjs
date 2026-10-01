@@ -65,7 +65,8 @@
 //   music            {url | file, sha256, name, volume?} — the scene's background track (+ Explorer)
 //   sounds           [{key, url | file, sha256, name}] — one-shot assets for Sound nodes
 //   view             {pos, target} — the editor camera the file opens on (also the card's camera)
-//   thumb            {camera?: <camera object name>, sceneGroups?: ['<scene-root group>'],
+//   thumb            {camera?: <camera object name>, sceneGroups?: ['<scene-root group>'], dress?: [objects]
+//                     (card-only objects: built for the picture, never written into the file),
 //                     toneMapping?: 'agx'|'aces'|'neutral'|'reinhard'|'cineon'|'linear'|'none'}
 //   contest          (kind contest) {brief, rules, durationDays, opensAfterDays, judging, credits}
 //
@@ -77,6 +78,10 @@
 //   plane            size [w, h] — faces +Z (rot [-π/2, 0, 0] to lie flat)
 //   ring             r (outer), inner (r × 0.5) — a flat annulus facing +Z
 //   icosahedron / dodecahedron   r, detail (0)
+//   block            shape 'Wedge' | 'Arch' | 'Corner' (an L) | 'Stairs', args [w, h, d(, steps)] — the
+//                    app's building blocks (`/create Wedge 2 1 2`), bottom-anchored (origin on the floor).
+//                    A hull collider fits a wedge; give an arch or an L a custom compound collider
+//                    (physics.collider 'custom' + colliderVerts/colliderPieces — the Towers def's `compound`)
 //   light            kind 'point' (default: color, intensity, distance, decay — no shadow)
 //                    | 'spot' (angle π/6, penumbra 0.3, distance, decay, target) | 'directional'
 //                    (target; its shadow frustum is FITTED to the built meshes — `fit: false` to
@@ -231,247 +236,6 @@ function graphBuilder() {
 // literally "Build pad" must stay text, and a variable NAMED like an object is a name.
 const HUMAN_TEXT_KEYS = new Set(['label', 'format', 'text', 'placeholder', 'name']);
 
-// ---- B8: Towers, the first GAME def -------------------------------------------
-// A DATA-ONLY game: core nodes + a HUD document + the collectible module. Rebuilt
-// from the first playthrough's findings — the clever sensor-conveyor spawner cascaded
-// once you grabbed a crate (spawn -> falls into the zone -> jitters out -> spawns
-// again), the emissive shader docs read "strange", and the night look was black on the
-// user's display. So: crates are PRE-PLACED dynamic objects (grabbable, stable, no
-// churn — the plan's own "Towers pre-places crates"); the look is a lit preset plus
-// material emissive, no shader graphs; every node carries a label; and a pause menu
-// (P) gives a Restart-while-playing button.
-function towersGraph() {
-	const g = graphBuilder();
-	const { N, E } = g;
-
-	// ---- round control ---------------------------------------------------------
-	// Start from the menu: entering 'playing' from menu BUMPS the round and re-stamps
-	// startedAt, which is what clears the perRound latches — `reset:true` would instead
-	// call resetGame() and force state back to MENU (it is the Back-to-menu action).
-	N('bstart', 'hudbutton', 'Start button', 40, 40, { element: 'start-btn' });
-	N('gostart', 'setgamestate', 'Start round', 280, 40, { state: 'playing', outcome: '', reset: false });
-	E('bstart', 'gostart', 'trigger');
-	N('bagain', 'hudbutton', 'Play again button', 40, 190, { element: 'again-btn' });
-	N('gomenu', 'setgamestate', 'Back to menu', 280, 190, { state: 'menu', outcome: '', reset: true });
-	E('bagain', 'gomenu', 'trigger');
-
-	// ---- pause / restart while playing (P toggles a menu screen) ---------------
-	N('pkey', 'keypress', 'Press P', 40, 340, { code: 'KeyP', edge: 'down', pulse: 0.3 });
-	N('pausetoggle', 'hudscreen', 'Toggle pause menu', 280, 340, { screen: 'pause', action: 'toggle' });
-	E('pkey', 'pausetoggle', 'trigger');
-	N('bresume', 'hudbutton', 'Resume button', 40, 490, { element: 'resume-btn' });
-	N('resumehide', 'hudscreen', 'Close pause menu', 280, 490, { screen: 'pause', action: 'hide' });
-	E('bresume', 'resumehide', 'trigger');
-	// Restart while playing: to bump a FRESH round the state must ENTER 'playing' from
-	// elsewhere (setGameState is a no-op when already playing). So restart resets to
-	// menu, then a short Delay re-enters playing — that transition bumps the round and
-	// clears the latches. The Delay is sourced from the button (whose trigger entry
-	// persists), never from a Once (whose rearm would delete the entry it re-derives).
-	N('brestart', 'hudbutton', 'Restart button', 40, 640, { element: 'restart-btn' });
-	N('restartreset', 'setgamestate', 'Restart: to menu', 280, 640, { state: 'menu', outcome: '', reset: true });
-	N('restartdelay', 'delay', 'Restart: wait', 520, 640, { seconds: 0.2, pulse: 0.3 });
-	N('restartplay', 'setgamestate', 'Restart: play', 760, 640, { state: 'playing', outcome: '', reset: false });
-	N('restarthide', 'hudscreen', 'Close pause on restart', 280, 760, { screen: 'pause', action: 'hide' });
-	E('brestart', 'restartreset', 'trigger');
-	E('brestart', 'restartdelay', 'trigger');
-	E('restartdelay', 'restartplay', 'trigger');
-	E('brestart', 'restarthide', 'trigger');
-	N('bquit', 'hudbutton', 'Quit to menu button', 40, 790, { element: 'quit-btn' });
-	N('doquit', 'setgamestate', 'Quit to menu', 280, 790, { state: 'menu', outcome: '', reset: true });
-	N('quithide', 'hudscreen', 'Close pause on quit', 520, 790, { screen: 'pause', action: 'hide' });
-	E('bquit', 'doquit', 'trigger');
-	E('bquit', 'quithide', 'trigger');
-	// 30: Round over offers Play again beside Menu — the Restart chain above, from `over`
-	N('breplay', 'hudbutton', 'Play again button', 40, 875, { element: 'replay-btn' });
-	E('breplay', 'restartreset', 'trigger');
-	E('breplay', 'restartdelay', 'trigger');
-
-	// ---- height: rung sensors -> perRound latches -> boolean*height -> max -> HUD
-	for (let i = 1; i <= 4; i++) {
-		const y = 960 + (i - 1) * 150;
-		N('enr' + i, 'onenter', 'Reached ' + i + 'm', 40, y, { pulse: 0.3 });
-		N('selr' + i, 'objectselector', 'Ring ' + i + 'm', 280, y, { selected: 'Height ring ' + i + 'm' });
-		E('enr' + i, 'selr' + i);
-		N('lat' + i, 'latch', 'Held ' + i + 'm', 520, y, { initial: false, perRound: true });
-		E('enr' + i, 'lat' + i, 'set');
-		N('mul' + i, 'math', i + 'm value', 760, y, { op: 'mul', a: 0, b: i });
-		E('lat' + i, 'mul' + i, 'a');
-	}
-	N('mx12', 'math', 'Max 1-2m', 1000, 1000, { op: 'max', a: 0, b: 0 });
-	E('mul1', 'mx12', 'a');
-	E('mul2', 'mx12', 'b');
-	N('mx34', 'math', 'Max 3-4m', 1000, 1200, { op: 'max', a: 0, b: 0 });
-	E('mul3', 'mx34', 'a');
-	E('mul4', 'mx34', 'b');
-	N('mxall', 'math', 'Best height', 1240, 1100, { op: 'max', a: 0, b: 0 });
-	E('mx12', 'mxall', 'a');
-	E('mx34', 'mxall', 'b');
-	N('hheight', 'hudtext', 'HUD height', 1480, 1030, { element: 'height-read', format: 'Best height: {v} m', decimals: 0, value: 0 });
-	E('mxall', 'hheight', 'value');
-	// ---- 30: the BEST HEIGHT, saved on THIS device (Store Value / Stored Value) --------
-	// Stored on every ring crossing, never on `over`: a perRound latch READS un-set the
-	// instant the round ends (the Infinity cutoff), so an `over` edge would store 0 — and
-	// that is also why the old Round-over line read "0 m" every time. `towers-last` is the
-	// same number for THIS round: `max` too (a crate jittering in a ring sensor re-fires
-	// the crossing after the round ends, when the height reads 0 — a `set` would wipe it),
-	// zeroed by its own `set` node when a round starts. Keys are game-specific because a
-	// Games-tab load leaves the scene unnamed, so every template shares tp:scene:untitled:*.
-	N('storebest', 'storevalue', 'Save best height', 1720, 1030, { key: 'towers-best', mode: 'max', value: 0 });
-	N('storelast', 'storevalue', 'Save this round', 1720, 1180, { key: 'towers-last', mode: 'max', value: 0 });
-	E('mxall', 'storebest', 'value');
-	E('mxall', 'storelast', 'value');
-	for (let i = 1; i <= 4; i++) {
-		E('enr' + i, 'storebest', 'trigger');
-		E('enr' + i, 'storelast', 'trigger');
-	}
-	N('onround', 'ongamestate', 'When a round starts', 1480, 1330, { state: 'playing', edge: 'enter', pulse: 0.3 });
-	N('zerolast', 'storevalue', 'New round: zero it', 1720, 1330, { key: 'towers-last', mode: 'set', value: 0 });
-	E('onround', 'zerolast', 'trigger');
-	N('storedbest', 'storedvalue', 'My best height', 1960, 1030, { key: 'towers-best', output: 'number', fallback: 0 });
-	N('hbest', 'hudtext', 'HUD best (menu)', 2200, 980, { element: 'best-read', format: 'Your best tower: {v} m', decimals: 0, value: 0 });
-	E('storedbest', 'hbest', 'value');
-	N('hbest2', 'hudtext', 'HUD best (over)', 2200, 1100, { element: 'over-best', format: 'Best ever: {v} m', decimals: 0, value: 0 });
-	E('storedbest', 'hbest2', 'value');
-	N('storedlast', 'storedvalue', 'This round', 1960, 1180, { key: 'towers-last', output: 'number', fallback: 0 });
-	N('hfinal', 'hudtext', 'HUD final height', 2200, 1220, { element: 'final-height', format: 'This round: {v} m', decimals: 0, value: 0 });
-	E('storedlast', 'hfinal', 'value');
-	// ---- 30b: the rings are MILESTONES. The first crossing of a ring in a round (a perRound
-	// Once — a crate re-entering the sensor must not re-announce) tells every player: a banner,
-	// a burst AT the ring, a chime from the ring, and a success buzz in VR. The gold ring at
-	// the top is the big one: confetti, the level-up fanfare, "Top of the tower!". The Game
-	// Feel nodes are LOCAL on every peer from the replicated stamp, so no message of their own.
-	// (It replaces 30's particle emitter on the pad: the burst pool costs no emitter slot.)
-	N('buzzring', 'hapticpulse', 'Buzz: a ring reached', 1720, 1480, { pattern: 'success', hand: 'both' });
-	for (let i = 1; i <= 4; i++) {
-		const y = 960 + (i - 1) * 150;
-		const top = i === 4;
-		N('first' + i, 'once', 'First time at ' + i + 'm', 2440, y, { perRound: true, pulse: 0.3 });
-		E('enr' + i, 'first' + i, 'trigger');
-		N('say' + i, 'announce', top ? 'Say: top!' : 'Say: ring ' + i, 2680, y, top
-			? { text: 'Top of the tower!', sub: '4 m — the gold ring', seconds: 2.6, color: '#ffc640', decimals: 0 }
-			: { text: 'Ring ' + i + ' reached', sub: i + ' m — keep stacking', seconds: 1.8, color: '#9ee6ff', decimals: 0 });
-		E('first' + i, 'say' + i, 'trigger');
-		N('fx' + i, 'effectburst', 'Burst at ring ' + i, 2920, y, { kind: top ? 'confetti' : 'sparkle', count: top ? 96 : 56, lift: 0, color: '' });
-		E('first' + i, 'fx' + i, 'trigger');
-		E('selr' + i, 'fx' + i, 'at');
-		// an additive sparkle alone is faint against a daylight sky: a small confetti puff
-		// beside it reads at any exposure (the top ring's burst IS confetti already)
-		if (!top) {
-			N('puff' + i, 'effectburst', 'Puff at ring ' + i, 2920, y + 70, { kind: 'confetti', count: 36, lift: 0.1, color: '' });
-			E('first' + i, 'puff' + i, 'trigger');
-			E('selr' + i, 'puff' + i, 'at');
-		}
-		N('chime' + i, 'gamesound', top ? 'Fanfare at the top' : 'Chime at ring ' + i, 3160, y, { sound: top ? 'levelup' : 'ring' });
-		E('first' + i, 'chime' + i, 'trigger');
-		E('selr' + i, 'chime' + i, 'at');
-		E('first' + i, 'buzzring', 'trigger');
-	}
-	N('topsparkle', 'effectburst', 'Sparkle at the top', 2920, 1560, { kind: 'sparkle', count: 80, lift: 0.4, color: '#ffe08a' });
-	E('first4', 'topsparkle', 'trigger');
-	E('selr4', 'topsparkle', 'at');
-
-	// ---- the stars — collectible-module touch pickups (shared team score) -------
-	for (let i = 1; i <= 3; i++) {
-		const y = 1600 + (i - 1) * 150;
-		N('colstar' + i, 'collectible', 'Star ' + i + ' pickup', 40, y, {
-			variable: 'stars', scope: 'shared', trigger: 'touch', radius: 1.4,
-			respawn: 0, hide: 'on', perRound: true, whilePlaying: true
-		});
-		N('selstar' + i, 'objectselector', 'Star ' + i, 280, y, { selected: 'Star ' + i });
-		E('colstar' + i, 'selstar' + i);
-		// 30: every star turns and breathes once a round starts (its authored `Star glow`
-		// clip: the Turntable + Pulse presets in ONE clip, since a transport plays one clip
-		// per object). Through a zero-second Delay: Play Animation reads a trigger VALUE and
-		// On Game State carries only a stamp (the beat-graph finding).
-		N('glow' + i, 'playanim', 'Star ' + i + ' glow', 1240, y, { clip: 'Star glow', action: 'restart', speed: 1 });
-		E('glowpulse', 'glow' + i, 'trigger');
-		E('glow' + i, 'selstar' + i);
-	}
-	N('glowpulse', 'delay', 'Round start pulse (0 s)', 1000, 1560, { seconds: 0, pulse: 0.3 });
-	E('onround', 'glowpulse', 'trigger');
-	N('cstars', 'collectiblecount', 'Stars left', 520, 1670, { variable: 'stars', read: 'left' });
-	N('hstars', 'hudtext', 'HUD stars', 760, 1670, { element: 'stars-read', format: 'Stars left: {v}', decimals: 0, value: 0 });
-	E('cstars', 'hstars', 'value');
-
-	// ---- win: every star collected, agreed by everyone playing -----------------
-	N('starsdone', 'compare', 'All stars?', 520, 1900, { op: 'lte', a: 0, b: 0 });
-	E('cstars', 'starsdone', 'a');
-	N('allwin', 'allplayers', 'Everyone done', 760, 1900, { pulse: 0.3 });
-	E('starsdone', 'allwin', 'condition');
-	N('gowin', 'setgamestate', 'Win', 1000, 1900, { state: 'over', outcome: 'All stars collected!', reset: false });
-	E('allwin', 'gowin', 'trigger');
-
-	// ---- the round clock: ends the round on time -------------------------------
-	N('clock', 'gametime', 'Time left', 40, 2100, { read: 'remaining', length: 180 });
-	N('hclock', 'hudtext', 'HUD clock', 280, 2040, { element: 'clock', format: 'Time: {v}s', decimals: 0, value: 0 });
-	E('clock', 'hclock', 'value');
-	N('timeup', 'compare', 'Time up?', 280, 2190, { op: 'lte', a: 0, b: 0 });
-	E('clock', 'timeup', 'a');
-	N('playing', 'gametime', 'Is playing', 40, 2340, { read: 'playing', length: 60 });
-	N('timeandplay', 'gate', 'Time up & playing', 520, 2240, { op: 'and', a: false, b: false });
-	E('timeup', 'timeandplay', 'a');
-	E('playing', 'timeandplay', 'b');
-	N('alltime', 'allplayers', 'Everyone time up', 760, 2240, { pulse: 0.3 });
-	E('timeandplay', 'alltime', 'condition');
-	N('gotime', 'setgamestate', 'Time over', 1000, 2240, { state: 'over', outcome: "Time's up!", reset: false });
-	E('alltime', 'gotime', 'trigger');
-
-	// ---- 30b: the round's sound, and the crates' ------------------------------------------
-	// Music: the arcade loop while you are in the game (Interact or Play; never the editor).
-	N('music', 'gamemusic', 'Arcade music', 40, 2480, { preset: 'arcade', volume: 0.45, while: 'always' });
-	// Every menu button clicks.
-	N('click', 'gamesound', 'Button click', 280, 2480, { sound: 'click' });
-	for (const b of ['bstart', 'bagain', 'bresume', 'brestart', 'bquit', 'breplay']) E(b, 'click', 'trigger');
-	// A round starts with a whistle and a banner. It ENDS without one: the Round over panel is
-	// the result (a banner over it read twice), so the end is a cheer or a whistle + confetti.
-	N('saygo', 'announce', 'Say: build!', 1720, 1640, { text: 'Build!', sub: 'Stack crates on the glowing pad — reach the gold ring', seconds: 2.2, color: '#ffd45e', decimals: 0 });
-	E('onround', 'saygo', 'trigger');
-	N('whistle', 'gamesound', 'Round start whistle', 1720, 1720, { sound: 'whistle' });
-	E('onround', 'whistle', 'trigger');
-	N('cheer', 'gamesound', 'Cheer', 1240, 2080, { sound: 'cheer' });
-	E('allwin', 'cheer', 'trigger');
-	N('confetti', 'effectburst', 'Confetti for everyone', 1240, 2160, { kind: 'confetti', count: 96, lift: 0, color: '' });
-	E('allwin', 'confetti', 'trigger');
-	N('upwhistle', 'gamesound', 'Final whistle', 1240, 2380, { sound: 'whistle' });
-	E('alltime', 'upwhistle', 'trigger');
-	// Each crate: a pop when a player lifts it (On Grab) and a knock when it lands on
-	// something (On Impact past a gentle landing), both placed AT the crate.
-	TOWERS_CRATES.forEach((name, k) => {
-		const y = 2560 + k * 110;
-		N('csel' + k, 'objectselector', name, 280, y, { selected: name });
-		N('cgrab' + k, 'ongrab', name + ' grabbed', 40, y, { pulse: 0.3 });
-		E('cgrab' + k, 'csel' + k);
-		N('cpop' + k, 'gamesound', name + ' lift', 520, y, { sound: 'pop' });
-		E('cgrab' + k, 'cpop' + k, 'trigger');
-		E('csel' + k, 'cpop' + k, 'at');
-		N('cland' + k, 'onimpact', name + ' lands', 760, y, { pulse: 0.3, minStrength: 0.8 });
-		E('cland' + k, 'csel' + k);
-		N('cknock' + k, 'gamesound', name + ' knock', 1000, y, { sound: 'hit' });
-		E('cland' + k, 'cknock' + k, 'trigger');
-		E('csel' + k, 'cknock' + k, 'at');
-	});
-
-	return g.done();
-}
-/** the nine crates the sound chains above name (the objects below) */
-const TOWERS_CRATES = ['Cube 1', 'Cube 2', 'Cube 3', 'Cube 4', 'Cube 5', 'Cube 6', 'Plank 1', 'Plank 2', 'Plank 3'];
-
-const TOWERS_HUD_PANEL = {
-	bg: 'rgba(14, 20, 32, 0.9)',
-	radius: 18,
-	border: '1px solid rgba(255, 212, 94, 0.28)'
-};
-const TOWERS_BTN = { size: 17, weight: '600', bg: '#3b7dd8', color: '#ffffff', radius: 10 };
-// 30: the finished look. Crates read as WOOD (a physical material with a sheen and a thin
-// clearcoat, chamfered edges), the floor carries a subtle 2 m tile from a shader graph, the
-// walls are chamfered with a glowing trim, and the height markers are thin glowing rings
-// beside a marked pole instead of stacked translucent squares.
-const TOWERS_WOOD = { physical: true, roughness: 0.6, sheen: 0.4, sheenColor: 0xffd7a0, sheenRoughness: 0.55, clearcoat: 0.12, clearcoatRoughness: 0.5 };
-const TOWERS_CRATE = { mode: 'dynamic', mass: 1, friction: 0.8, restitution: 0.03 };
-const TOWERS_PLANK = { mode: 'dynamic', mass: 0.9, friction: 0.8, restitution: 0.03 };
-/** a chamfered wooden crate (bevelSegments 1 keeps the baked geometry small)
- * @param {string} name @param {number} color @param {number[]} size @param {number[]} pos @param {any} physics */
-const towersCrate = (name, color, size, pos, physics) => ({ type: 'box', name, color, size, bevel: 0.045, bevelSegments: 1, pos, ...TOWERS_WOOD, physics });
 /** the floor tile: a 13 x 13 grid of 2 m tiles with a thin grout line and a faint checker,
  * MULTIPLYING the authored colour (albedo is `diffuseColor.rgb *= ` in the inject backend) */
 const TOWERS_FLOOR_SHADER = {
@@ -497,75 +261,162 @@ const TOWERS_FLOOR_SHADER = {
 		{ id: 'e-tile-s', source: 'tile', sourceHandle: 'out', target: 's', targetHandle: 'albedo' }
 	]
 };
-/** the Turntable + Pulse presets folded into ONE clip (a transport plays one clip per
- * object): a turn every 6 s, a breath every 1.5 s — scale and glow together */
-const STAR_GLOW_CLIP = {
-	active: 'glow',
-	changedAt: 0,
-	clips: {
-		glow: {
-			name: 'Star glow',
-			duration: 6,
-			loop: 'loop',
-			tracks: [
-				{ id: 'turn', channel: 'rot.y', keys: [{ t: 0, v: 0 }, { t: 6, v: 6.2832 }] },
-				{
-					id: 'breathe',
-					channel: 'scale',
-					keys: [0, 1.5, 3, 4.5, 6].flatMap((t, i, all) =>
-						i < all.length - 1
-							? [{ t, v: 1, ease: [0.42, 0, 0.58, 1] }, { t: t + 0.75, v: 1.18, ease: [0.42, 0, 0.58, 1] }]
-							: [{ t, v: 1 }]
-					)
-				},
-				{
-					id: 'shine',
-					channel: 'emissive',
-					keys: [0, 1.5, 3, 4.5, 6].flatMap((t, i, all) =>
-						i < all.length - 1 ? [{ t, v: 1.6 }, { t: t + 0.75, v: 3.2 }] : [{ t, v: 1.6 }]
-					)
-				}
-			]
-		}
-	}
+
+// ---- B8 → 31-towers: Towers, a real game ----------------------------------------
+// The round was "stack crates to the gold ring, hooray" (the Quest note: "after finishing
+// basic level nothing happens"). It is TWELVE LEVELS now, each with its own piece shapes, a
+// limited supply dealt onto racks, a goal, par pieces and par time for 1-3 stars, an unlock
+// chain and logical rules: grab REACH is limited (play.reach, 1.3 m from your body), so the
+// high levels need steps and a JUMP (the Character Controller's jumpHeight, desktop Space /
+// VR A); pieces dropped outside the build yard are LOST; later levels add wind, a narrow
+// pedestal, a rocking plate, an outline to fill and a star to deliver.
+//
+// THE SPLIT: this def is the ARENA (every object the levels name — zones, racks, the ledge,
+// the perch, the piece TEMPLATES under the floor, the goal/yard/ghost markers), the HUD and a
+// small graph (buttons, P pause, click sounds, music, the controller, the wobble effect, and
+// the HUD words through the core `towers` module's `towersinfo` value node). The levels, the
+// dealing, the judge and the stars live in src/modules/towers (levels.js is the table).
+// No module download: the template needs only core.
+
+/** one wooden look for every piece */
+const TOWERS_WOOD = { physical: true, roughness: 0.6, sheen: 0.4, sheenColor: 0xffd7a0, sheenRoughness: 0.55, clearcoat: 0.12, clearcoatRoughness: 0.5 };
+/** the eight corners of a local box, flat — a custom compound collider piece
+ * @param {number} x0 @param {number} x1 @param {number} y0 @param {number} y1 @param {number} z0 @param {number} z1 */
+const boxVerts = (x0, x1, y0, y1, z0, z1) => {
+	const out = [];
+	for (const x of [x0, x1]) for (const y of [y0, y1]) for (const z of [z0, z1]) out.push(x, y, z);
+	return out;
 };
+/** a custom collider from box pieces @param {number[][]} boxes [x0,x1,y0,y1,z0,z1] each */
+const compound = (boxes) => {
+	const colliderVerts = [];
+	const colliderPieces = [];
+	for (const b of boxes) {
+		colliderPieces.push([colliderVerts.length, 24]);
+		colliderVerts.push(...boxVerts(...b));
+	}
+	return { collider: 'custom', colliderVerts, colliderPieces };
+};
+const piecePhysics = (mass, extra = {}) => ({ mode: 'dynamic', mass, friction: 0.85, restitution: 0.03, ...extra });
+/** the vault the templates rest on, far under the arena floor */
+const VAULT_TOP = -6.25;
+/** the piece TEMPLATES: dynamic (so every copy is), parked on the vault; the module copies
+ * them as transient pieces. Names are the module's `SHAPES[*].template`. */
+const TOWERS_TEMPLATES = [
+	{ type: 'box', name: 'Piece cube', color: 0xb57a45, size: [0.6, 0.6, 0.6], bevel: 0.045, bevelSegments: 1, pos: [-6, VAULT_TOP + 0.3, 0], ...TOWERS_WOOD, physics: piecePhysics(1) },
+	{ type: 'box', name: 'Piece plank', color: 0xd2a86e, size: [1.4, 0.3, 0.6], bevel: 0.04, bevelSegments: 1, pos: [-4.5, VAULT_TOP + 0.15, 0], ...TOWERS_WOOD, physics: piecePhysics(0.9) },
+	{ type: 'box', name: 'Piece beam', color: 0xc49a60, size: [2.0, 0.25, 0.4], bevel: 0.035, bevelSegments: 1, pos: [-2.4, VAULT_TOP + 0.125, 0], ...TOWERS_WOOD, physics: piecePhysics(1) },
+	{ type: 'block', shape: 'Wedge', args: [0.8, 0.6, 0.6], name: 'Piece wedge', color: 0x5f9fd8, pos: [-0.6, VAULT_TOP, 0], roughness: 0.55, physics: piecePhysics(0.7, { collider: 'hull' }) },
+	{ type: 'cylinder', name: 'Piece barrel', color: 0x9a5b2e, r: 0.3, h: 0.7, pos: [0.6, VAULT_TOP + 0.35, 0], ...TOWERS_WOOD, physics: piecePhysics(0.8, { collider: 'cylinder' }) },
+	{
+		type: 'block', shape: 'Arch', args: [1.2, 0.8, 0.5], name: 'Piece arch', color: 0xb8ad98, pos: [2.2, VAULT_TOP, 0], roughness: 0.8,
+		physics: piecePhysics(1.4, compound([[-0.6, -0.36, 0, 0.8, -0.25, 0.25], [0.36, 0.6, 0, 0.8, -0.25, 0.25], [-0.36, 0.36, 0.72, 0.8, -0.25, 0.25]]))
+	},
+	{
+		type: 'block', shape: 'Corner', args: [0.9, 0.45, 0.3], name: 'Piece L', color: 0x86b865, pos: [3.8, VAULT_TOP, 0], roughness: 0.6,
+		physics: piecePhysics(1, compound([[-0.45, 0.45, 0, 0.45, 0.15, 0.45], [-0.45, -0.15, 0, 0.45, -0.45, 0.45]]))
+	},
+	{ type: 'sphere', name: 'Piece ball', color: 0xe0604a, r: 0.3, pos: [5.2, VAULT_TOP + 0.3, 0], physical: true, roughness: 0.35, clearcoat: 0.6, physics: piecePhysics(0.8, { collider: 'sphere', friction: 0.6, restitution: 0.15 }) },
+	{ type: 'box', name: 'Piece base', color: 0x59616e, size: [1.4, 0.35, 1.4], bevel: 0.05, bevelSegments: 1, pos: [6.8, VAULT_TOP + 0.175, 0], physical: true, roughness: 0.7, clearcoat: 0.2, physics: piecePhysics(6, { friction: 1 }) },
+	{ type: 'dodecahedron', name: 'Piece star', color: 0xffc640, r: 0.26, pos: [8.4, VAULT_TOP + 0.26, 0], emissive: 0xffb830, emissiveIntensity: 1.6, physical: true, roughness: 0.25, metalness: 0.1, clearcoat: 1, flatShading: true, physics: piecePhysics(0.4, { collider: 'hull' }) }
+];
+
+const TOWERS_HUD_PANEL = { bg: 'rgba(14, 20, 32, 0.9)', radius: 18, border: '1px solid rgba(255, 212, 94, 0.28)' };
+const TOWERS_BTN = { size: 17, weight: '600', bg: '#3b7dd8', color: '#ffffff', radius: 10 };
+const TOWERS_LEVEL_NAMES = ['Stack', 'Planks', 'Climb', 'Wedges', 'Barrels', 'Arches', 'Narrow base', 'Gusts', 'Balls', 'Wobble', 'Outline', 'Summit'];
+
+function towersGraph() {
+	const g = graphBuilder();
+	const { N, E } = g;
+	// ---- the buttons: the core `towers` module watches their stamps; the graph adds the click
+	N('click', 'gamesound', 'Button click', 520, 40, { sound: 'click' });
+	const button = (id, element, label, x, y) => {
+		N(id, 'hudbutton', label, x, y, { element });
+		E(id, 'click', 'trigger');
+		return id;
+	};
+	for (let i = 1; i <= 12; i++) button('lvl' + i, 'lvl-' + i, 'Level ' + i + ' button', 40, 40 + (i - 1) * 70);
+	button('bnext', 'next-btn', 'Next level button', 40, 900);
+	button('bretry', 'retry-btn', 'Retry button', 40, 970);
+	button('blevels', 'levels-btn', 'Levels button', 40, 1040);
+	// ---- pause (P): Resume closes it; Restart and Levels are the module's, and close it too
+	N('pkey', 'keypress', 'Press P', 40, 1140, { code: 'KeyP', edge: 'down', pulse: 0.3 });
+	N('pausetoggle', 'hudscreen', 'Toggle pause menu', 280, 1140, { screen: 'pause', action: 'toggle' });
+	E('pkey', 'pausetoggle', 'trigger');
+	N('pausehide', 'hudscreen', 'Close pause menu', 520, 1240, { screen: 'pause', action: 'hide' });
+	button('bresume', 'resume-btn', 'Resume button', 40, 1210);
+	button('brestart', 'restart-btn', 'Restart level button', 40, 1280);
+	button('bquit', 'quit-btn', 'Levels (pause) button', 40, 1350);
+	for (const b of ['bresume', 'brestart', 'bquit']) E(b, 'pausehide', 'trigger');
+	// ---- the HUD's words, from the module's Towers info node into HUD Text's FORMAT
+	const text = (id, read, element, x, y, extra = {}) => {
+		N(id + 'i', 'towersinfo', 'Towers: ' + read, x, y, { read, ...extra });
+		N(id + 't', 'hudtext', 'HUD ' + element, x + 240, y, { element, format: '', decimals: 0, value: 0 });
+		E(id + 'i', id + 't', 'format');
+	};
+	text('mline', 'menuLine', 'menu-line', 800, 40);
+	for (let i = 1; i <= 12; i++) text('ls' + i, 'levelStars', 'lvl-' + i + '-stars', 800, 110 + (i - 1) * 70, { level: i });
+	text('title', 'title', 'tw-title', 1300, 40);
+	text('goal', 'goalText', 'tw-goal', 1300, 110);
+	text('pieces', 'pieces', 'tw-pieces', 1300, 180);
+	text('clock', 'clock', 'tw-clock', 1300, 250);
+	text('hold', 'hold', 'tw-hold', 1300, 320);
+	text('rule', 'rule', 'tw-rule', 1300, 390);
+	text('result', 'result', 'tw-result', 1300, 480);
+	text('rstars', 'resultStars', 'tw-stars', 1300, 550);
+	text('rline', 'resultLine', 'tw-line', 1300, 620);
+	text('rbest', 'resultBest', 'tw-best', 1300, 690);
+	N('progi', 'towersinfo', 'Towers: progress', 1300, 780, { read: 'progress' });
+	N('progbar', 'hudbar', 'HUD progress bar', 1540, 780, { element: 'tw-bar', value: 0, min: 0, max: 1, format: '' });
+	E('progi', 'progbar', 'value');
+	// ---- the world: music in the game, the player's body, the rocking plate
+	N('music', 'gamemusic', 'Arcade music', 40, 1460, { preset: 'arcade', volume: 0.4, while: 'always' });
+	// the Character Controller: WALK with gravity and a 1 m jump (Space on a desktop, A in VR),
+	// which is what lets a player climb onto pieces to reach a high goal
+	N('body', 'charcontroller', 'Player: walk + jump', 280, 1460, { mode: 'walk', speed: 0.06, jumpHeight: 1.0, eyeHeight: 1.7, gravity: true });
+	N('wobble', 'towerswobble', 'Wobble plate rocks (level 10)', 40, 1560, { amplitude: 0.07, period: 3.4 });
+	N('selwobble', 'objectselector', 'Wobble plate', 280, 1560, { selected: 'Wobble plate' });
+	E('wobble', 'selwobble');
+	return g.done();
+}
+
+/** a level-select cell: the button and the stars line under it @param {number} i 1..12 */
+const towersLevelCell = (i) => {
+	const col = (i - 1) % 4;
+	const row = Math.floor((i - 1) / 4);
+	const x = -216 + col * 144;
+	const y = -40 + row * 76;
+	return [
+		{ id: 'lvl-' + i, kind: 'button', anchor: 'center', x, y, w: 132, h: 42, z: 1, label: i + ' · ' + TOWERS_LEVEL_NAMES[i - 1], enabled: true, style: { ...TOWERS_BTN, size: 14 } },
+		{ id: 'lvl-' + i + '-stars', kind: 'text', anchor: 'center', x, y: y + 30, w: 132, h: 18, z: 1, label: '', style: { size: 13, weight: '600', color: '#ffd45e', align: 'center' } }
+	];
+};
+
 const TOWERS_DEF = {
 	kind: 'game',
 	slug: 'towers',
 	title: 'Towers',
 	description:
-		'Co-op crate stacking: grab the wooden crates, build the tallest tower on the glowing pad, climb to the stars. Your best height is saved. Press P to pause or restart.',
+		'Twelve levels of stacking: cubes, planks, wedges, barrels, arches and balls. You can only reach what is close to you, so build steps and jump. Wind, a wobbling plate and a star to deliver. 1-3 stars a level, saved on this device.',
 	license: 'CC0-1.0',
 	author: 'theprototype',
-	tags: ['physics', 'stacking', 'co-op', 'vr'],
-	modules: [{ id: 'collectible', version: '1.1.2' }],
-	installModules: ['collectible'],
-	// 30: daylight under a real sky — a blue-to-haze gradient, a far fog that softens the
-	// horizon, and a solid ground disc around the arena (the infinite grid is editor chrome;
-	// it no longer shows in Play). Exposure above the 0.9 floor.
+	tags: ['physics', 'stacking', 'puzzle', 'co-op', 'vr'],
+	modules: [],
 	env: {
 		preset: 'daylight',
 		exposure: 1.05,
 		background: { top: '#4a7fc0', bottom: '#dbe8f2' },
-		// 30 integrate: the fog closes in past the arena wall, so the ground beyond the edge
-		// fades into the sky's own haze instead of ending in a flat olive band
 		fog: { color: '#dbe8f2', near: 16, far: 75 },
 		ground: { color: '#7b8866', roughness: 0.95 }
 	},
-	// ground ON — a solid floor the crates rest on. A crate knocked past the low wall
-	// falls to the bounds limit and RESPAWNS to its start pose (beforeStates), so the
-	// supply cannot be lost. Grab interaction, sim starts on Play.
 	physics: {
 		ground: { enabled: true, height: 0, friction: 0.8, restitution: 0 },
 		bounds: { limit: -20, action: 'respawn' },
 		material: { friction: 0.7, restitution: 0.05 },
 		damping: { linear: 0.05, angular: 0.3 },
-		// 30b: a SPAWN — Play (and Interact in VR) puts you 4.5 m in front of the pad, facing
-		// it, with a podium on each hand (yaw 0 faces -Z)
-		play: { interaction: 'grab', grounded: false, simOnPlay: true, spawn: { position: [0, 0, 4.5], yaw: 0 } }
+		// 31-towers: REACH 1.3 m from your body — the puzzle's first rule
+		play: { interaction: 'grab', grounded: false, simOnPlay: true, spawn: { position: [0, 0, 5.4], yaw: 0 }, reach: 1.3 }
 	},
-	// the shell floor (fork 11): ao -> AgX -> bloom -> smaa, bloom a touch higher so the
-	// rings, the trim and the pad read as light
 	post: {
 		enabled: true,
 		effects: [
@@ -576,11 +427,28 @@ const TOWERS_DEF = {
 		],
 		changedAt: 0
 	},
-	view: { pos: [7.5, 6.5, 12.5], target: [0, 1.4, 0] },
-	thumb: { camera: 'Card camera' },
+	view: { pos: [9, 7.5, 13.5], target: [0, 1.4, -1] },
+	thumb: {
+		camera: 'Card camera',
+		// a round in progress: a half-built tower on the pad, the supply on the racks
+		dress: [
+			{ ...TOWERS_TEMPLATES[8], name: 'Card base', pos: [0, 0.375, 0], physics: undefined },
+			{ ...TOWERS_TEMPLATES[0], name: 'Card cube 1', pos: [-0.35, 0.86, 0.1], physics: undefined },
+			{ ...TOWERS_TEMPLATES[0], name: 'Card cube 2', pos: [0.35, 0.86, -0.1], rot: [0, 0.3, 0], physics: undefined },
+			{ ...TOWERS_TEMPLATES[1], name: 'Card plank', pos: [0, 1.32, 0], rot: [0, 0.4, 0], physics: undefined },
+			{ ...TOWERS_TEMPLATES[3], name: 'Card wedge', pos: [0, 1.47, 0], rot: [0, 0.4, 0], physics: undefined },
+			{ ...TOWERS_TEMPLATES[4], name: 'Card barrel', pos: [0.9, 0.35, 1.9], rot: [0, 0, Math.PI / 2], physics: undefined },
+			{ ...TOWERS_TEMPLATES[0], name: 'Card rack 1', pos: [4.4, 1.12, 0.9], physics: undefined },
+			{ ...TOWERS_TEMPLATES[0], name: 'Card rack 2', pos: [4.4, 1.12, 1.7], physics: undefined },
+			{ ...TOWERS_TEMPLATES[5], name: 'Card rack 3', pos: [4.4, 0.82, 2.8], physics: undefined },
+			{ ...TOWERS_TEMPLATES[1], name: 'Card rack 4', pos: [-4.4, 0.97, 1.0], physics: undefined },
+			{ ...TOWERS_TEMPLATES[6], name: 'Card rack 5', pos: [-4.4, 0.82, 2.4], physics: undefined },
+			{ ...TOWERS_TEMPLATES[0], name: 'Card ledge', pos: [0.6, 3.32, -3.0], physics: undefined },
+			{ ...TOWERS_TEMPLATES[9], name: 'Card star', pos: [2.4, 3.68, -2.2], physics: undefined }
+		]
+	},
 	graphs: { scene: towersGraph() },
 	shaders: { 'Arena floor': TOWERS_FLOOR_SHADER },
-	animations: { 'Star 1': STAR_GLOW_CLIP, 'Star 2': STAR_GLOW_CLIP, 'Star 3': STAR_GLOW_CLIP },
 	hud: {
 		scene: {
 			active: '',
@@ -588,19 +456,17 @@ const TOWERS_DEF = {
 			screens: [
 				{
 					id: 'menu',
-					name: 'Menu',
+					name: 'Levels',
 					showWhile: 'menu',
 					input: 'menu',
 					elements: [
-						{ id: 'menu-panel', kind: 'panel', anchor: 'center', x: 0, y: 0, w: 500, h: 460, z: 0, label: '', style: TOWERS_HUD_PANEL },
-						{ id: 'title', kind: 'text', anchor: 'center', x: 0, y: -176, w: 420, h: 54, z: 1, label: 'TOWERS', style: { size: 42, weight: '700', color: '#ffd45e', align: 'center' } },
-						// 30b: HOW TO PLAY, said once, plainly — the goal, the milestones, the clock
-						{ id: 'howto-title', kind: 'text', anchor: 'center', x: 0, y: -132, w: 440, h: 20, z: 1, label: 'HOW TO PLAY', style: { size: 12, weight: '700', color: '#9ee6ff', align: 'center' } },
-						{ id: 'subtitle', kind: 'text', anchor: 'center', x: 0, y: -94, w: 450, h: 60, z: 1, label: 'Grab crates from the podiums and stack them on the glowing pad. Each ring your tower reaches is a milestone — the gold ring at 4 m is the top. Touch the three floating stars. Three minutes a round.', style: { size: 14, color: '#d8dee9', align: 'center' }, wrap: true },
-						{ id: 'best-read', kind: 'text', anchor: 'center', x: 0, y: -44, w: 420, h: 24, z: 1, label: 'Your best tower: 0 m', style: { size: 15, weight: '600', color: '#9ee6ff', align: 'center' } },
-						{ id: 'start-btn', kind: 'button', anchor: 'center', x: 0, y: 14, w: 240, h: 50, z: 1, label: 'Start round', enabled: true, style: TOWERS_BTN },
-						{ id: 'menu-hint', kind: 'text', anchor: 'center', x: 0, y: 88, w: 460, h: 36, z: 1, label: 'Desktop: hold click to grab  ·  wheel pushes/pulls  ·  Q/E fly  ·  P pause', style: { size: 12, color: '#8b97a8', align: 'center' }, wrap: true },
-						{ id: 'menu-hint-vr', kind: 'text', anchor: 'center', x: 0, y: 128, w: 460, h: 36, z: 1, label: 'VR: grip grabs a crate  ·  left stick walks  ·  Y switches to Edit mode', style: { size: 12, color: '#8b97a8', align: 'center' }, wrap: true }
+						{ id: 'menu-panel', kind: 'panel', anchor: 'center', x: 0, y: 20, w: 640, h: 520, z: 0, label: '', style: TOWERS_HUD_PANEL },
+						{ id: 'title', kind: 'text', anchor: 'center', x: 0, y: -206, w: 520, h: 50, z: 1, label: 'TOWERS', style: { size: 40, weight: '700', color: '#ffd45e', align: 'center' } },
+						{ id: 'subtitle', kind: 'text', anchor: 'center', x: 0, y: -154, w: 580, h: 44, z: 1, label: 'Carry pieces from the racks to the glowing zone and build up to the gold ring. You can only grab what is close to you, so build steps and jump to reach higher. The tower must hold still for three seconds.', style: { size: 13, color: '#d8dee9', align: 'center' }, wrap: true },
+						{ id: 'menu-line', kind: 'text', anchor: 'center', x: 0, y: -110, w: 420, h: 22, z: 1, label: '', style: { size: 14, weight: '600', color: '#9ee6ff', align: 'center' } },
+						...Array.from({ length: 12 }, (_, k) => towersLevelCell(k + 1)).flat(),
+						{ id: 'menu-hint', kind: 'text', anchor: 'center', x: 0, y: 214, w: 600, h: 34, z: 1, label: 'Desktop: hold click to grab · wheel pushes/pulls · WASD walk · Space jumps · P pause', style: { size: 12, color: '#8b97a8', align: 'center' }, wrap: true },
+						{ id: 'menu-hint-vr', kind: 'text', anchor: 'center', x: 0, y: 244, w: 600, h: 34, z: 1, label: 'VR: grip grabs a piece · left stick walks · A jumps · Y switches to Edit', style: { size: 12, color: '#8b97a8', align: 'center' }, wrap: true }
 					]
 				},
 				{
@@ -609,10 +475,13 @@ const TOWERS_DEF = {
 					showWhile: 'playing',
 					input: 'game',
 					elements: [
-						{ id: 'height-read', kind: 'text', anchor: 'top-center', x: 0, y: 14, w: 280, h: 30, z: 1, label: '', style: { size: 20, weight: '700', color: '#ffffff', align: 'center' } },
-						{ id: 'clock', kind: 'text', anchor: 'top-center', x: 0, y: 48, w: 120, h: 22, z: 1, label: '', style: { size: 13, weight: '600', color: '#e5e9f0', align: 'center' } },
-						{ id: 'stars-read', kind: 'text', anchor: 'top-right', x: 16, y: 14, w: 200, h: 24, z: 1, label: '', style: { size: 15, weight: '600', color: '#ffd45e', align: 'right' } },
-						{ id: 'play-hint', kind: 'text', anchor: 'bottom-center', x: 0, y: 12, w: 520, h: 20, z: 1, label: 'Stack on the glowing pad — the rings mark your height.  Press P to pause.', style: { size: 11, color: '#e5e9f0', align: 'center' } }
+						{ id: 'tw-title', kind: 'text', anchor: 'top-center', x: 0, y: 12, w: 360, h: 28, z: 1, label: '', style: { size: 19, weight: '700', color: '#ffd45e', align: 'center' } },
+						{ id: 'tw-goal', kind: 'text', anchor: 'top-center', x: 0, y: 42, w: 420, h: 22, z: 1, label: '', style: { size: 14, weight: '600', color: '#ffffff', align: 'center' } },
+						{ id: 'tw-bar', kind: 'bar', anchor: 'top-center', x: 0, y: 68, w: 300, h: 10, z: 1, label: '', value: 0, min: 0, max: 1, style: { color: '#ffd45e', bg: 'rgba(255,255,255,0.18)', radius: 5 } },
+						{ id: 'tw-clock', kind: 'text', anchor: 'top-right', x: 16, y: 14, w: 120, h: 26, z: 1, label: '', style: { size: 20, weight: '700', color: '#e5e9f0', align: 'right' } },
+						{ id: 'tw-pieces', kind: 'text', anchor: 'top-right', x: 16, y: 44, w: 320, h: 20, z: 1, label: '', style: { size: 12, weight: '600', color: '#9ee6ff', align: 'right' } },
+						{ id: 'tw-hold', kind: 'text', anchor: 'center', x: 0, y: -120, w: 360, h: 40, z: 1, label: '', style: { size: 28, weight: '700', color: '#7dffb0', align: 'center' } },
+						{ id: 'tw-rule', kind: 'text', anchor: 'bottom-center', x: 0, y: 12, w: 620, h: 20, z: 1, label: '', style: { size: 12, color: '#e5e9f0', align: 'center' } }
 					]
 				},
 				{
@@ -623,28 +492,32 @@ const TOWERS_DEF = {
 						{ id: 'pause-panel', kind: 'panel', anchor: 'center', x: 0, y: 0, w: 380, h: 300, z: 0, label: '', style: TOWERS_HUD_PANEL },
 						{ id: 'pause-title', kind: 'text', anchor: 'center', x: 0, y: -95, w: 340, h: 36, z: 1, label: 'PAUSED', style: { size: 26, weight: '700', color: '#e5e9f0', align: 'center' } },
 						{ id: 'resume-btn', kind: 'button', anchor: 'center', x: 0, y: -30, w: 240, h: 42, z: 1, label: 'Resume', enabled: true, style: { ...TOWERS_BTN, size: 16 } },
-						{ id: 'restart-btn', kind: 'button', anchor: 'center', x: 0, y: 22, w: 240, h: 42, z: 1, label: 'Restart round', enabled: true, style: { ...TOWERS_BTN, size: 16, bg: '#4c9e6a' } },
-						{ id: 'quit-btn', kind: 'button', anchor: 'center', x: 0, y: 74, w: 240, h: 42, z: 1, label: 'Quit to menu', enabled: true, style: { size: 15, weight: '500', bg: '#3a4150', color: '#e5e9f0', radius: 10 } }
+						{ id: 'restart-btn', kind: 'button', anchor: 'center', x: 0, y: 22, w: 240, h: 42, z: 1, label: 'Restart level', enabled: true, style: { ...TOWERS_BTN, size: 16, bg: '#4c9e6a' } },
+						{ id: 'quit-btn', kind: 'button', anchor: 'center', x: 0, y: 74, w: 240, h: 42, z: 1, label: 'Levels', enabled: true, style: { size: 15, weight: '500', bg: '#3a4150', color: '#e5e9f0', radius: 10 } }
 					]
 				},
 				{
 					id: 'over',
-					name: 'Round over',
+					name: 'Results',
 					showWhile: 'over',
 					input: 'menu',
 					elements: [
-						{ id: 'over-panel', kind: 'panel', anchor: 'center', x: 0, y: 0, w: 440, h: 320, z: 0, label: '', style: TOWERS_HUD_PANEL },
-						{ id: 'over-title', kind: 'text', anchor: 'center', x: 0, y: -104, w: 400, h: 40, z: 1, label: 'ROUND OVER', style: { size: 30, weight: '700', color: '#ffd45e', align: 'center' } },
-						{ id: 'final-height', kind: 'text', anchor: 'center', x: 0, y: -56, w: 400, h: 28, z: 1, label: '', style: { size: 18, weight: '600', color: '#e5e9f0', align: 'center' } },
-						{ id: 'over-best', kind: 'text', anchor: 'center', x: 0, y: -24, w: 400, h: 22, z: 1, label: '', style: { size: 14, color: '#9ee6ff', align: 'center' } },
-						{ id: 'replay-btn', kind: 'button', anchor: 'center', x: 0, y: 40, w: 240, h: 46, z: 1, label: 'Play again', enabled: true, style: TOWERS_BTN },
-						{ id: 'again-btn', kind: 'button', anchor: 'center', x: 0, y: 96, w: 240, h: 42, z: 1, label: 'Menu', enabled: true, style: { size: 15, weight: '500', bg: '#3a4150', color: '#e5e9f0', radius: 10 } }
+						{ id: 'over-panel', kind: 'panel', anchor: 'center', x: 0, y: 0, w: 480, h: 360, z: 0, label: '', style: TOWERS_HUD_PANEL },
+						{ id: 'tw-result', kind: 'text', anchor: 'center', x: 0, y: -130, w: 440, h: 40, z: 1, label: '', style: { size: 28, weight: '700', color: '#ffd45e', align: 'center' } },
+						{ id: 'tw-stars', kind: 'text', anchor: 'center', x: 0, y: -84, w: 300, h: 46, z: 1, label: '', style: { size: 38, weight: '700', color: '#ffd45e', align: 'center' } },
+						{ id: 'tw-line', kind: 'text', anchor: 'center', x: 0, y: -36, w: 440, h: 40, z: 1, label: '', style: { size: 13, color: '#e5e9f0', align: 'center' }, wrap: true },
+						{ id: 'tw-best', kind: 'text', anchor: 'center', x: 0, y: -4, w: 440, h: 20, z: 1, label: '', style: { size: 12, color: '#9ee6ff', align: 'center' } },
+						{ id: 'next-btn', kind: 'button', anchor: 'center', x: 0, y: 50, w: 240, h: 46, z: 1, label: 'Next level', enabled: true, style: TOWERS_BTN },
+						{ id: 'retry-btn', kind: 'button', anchor: 'center', x: -64, y: 110, w: 116, h: 40, z: 1, label: 'Retry', enabled: true, style: { ...TOWERS_BTN, size: 15, bg: '#4c9e6a' } },
+						{ id: 'levels-btn', kind: 'button', anchor: 'center', x: 64, y: 110, w: 116, h: 40, z: 1, label: 'Levels', enabled: true, style: { size: 15, weight: '500', bg: '#3a4150', color: '#e5e9f0', radius: 10 } }
 					]
 				}
 			]
 		}
 	},
 	objects: [
+		// the marker that wakes the core `towers` module (an empty: no body, no draw)
+		{ type: 'empty', name: 'Towers game' },
 		// the arena — a tiled floor with a low chamfered rim and a glowing trim on top
 		{ type: 'box', name: 'Arena floor', color: 0xb4bbc4, size: [26, 0.5, 26], pos: [0, -0.25, 0], roughness: 0.78, physics: { mode: 'static', friction: 0.9 } },
 		{ type: 'box', name: 'Wall north', color: 0x7a8494, size: [26, 1, 0.5], bevel: 0.1, bevelSegments: 1, pos: [0, 0.5, -13], physical: true, roughness: 0.55, clearcoat: 0.3, physics: { mode: 'static' } },
@@ -655,46 +528,38 @@ const TOWERS_DEF = {
 		{ type: 'box', name: 'Trim south', color: 0x9fe8ff, size: [25.4, 0.05, 0.12], pos: [0, 1.02, 13], emissive: 0x4fcfff, emissiveIntensity: 2.4, shadow: false },
 		{ type: 'box', name: 'Trim west', color: 0x9fe8ff, size: [0.12, 0.05, 25.4], pos: [-13, 1.02, 0], emissive: 0x4fcfff, emissiveIntensity: 2.4, shadow: false },
 		{ type: 'box', name: 'Trim east', color: 0x9fe8ff, size: [0.12, 0.05, 25.4], pos: [13, 1.02, 0], emissive: 0x4fcfff, emissiveIntensity: 2.4, shadow: false },
-		// build pad — glowing blue under a clearcoat, SUNK so its bottom face is not coplanar
-		// with the floor, a bright rim, and a soft blue light spilling onto the tiles
+		// ZONE 1 — the build pad (most levels), sunk so its bottom is not coplanar with the floor
 		{ type: 'cylinder', name: 'Build pad', color: 0x2f6fbf, r: 1.7, h: 0.24, pos: [0, 0.08, 0], emissive: 0x2f8fff, emissiveIntensity: 1.1, physical: true, roughness: 0.3, clearcoat: 0.8, physics: { mode: 'static', friction: 1 } },
-		{ type: 'torus', name: 'Pad rim', color: 0xbfefff, r: 1.72, tube: 0.045, pos: [0, 0.2, 0], rot: [-Math.PI / 2, 0, 0], emissive: 0x7fdcff, emissiveIntensity: 3, shadow: false },
+		{ type: 'torus', name: 'Pad rim', color: 0xbfefff, r: 1.72, tube: 0.045, pos: [0, 0.2, 0], rot: [-Math.PI / 2, 0, 0], emissive: 0x7fdcff, emissiveIntensity: 3, shadow: false, pick: 'through', physics: { mode: 'static', sensor: true } },
 		{ type: 'light', name: 'Pad glow', kind: 'point', color: 0x5fb4ff, intensity: 4, distance: 7, pos: [0, 0.7, 0] },
-		// podiums where the crate supply sits, sunk into the floor by the same trick
-		{ type: 'cylinder', name: 'Cube podium', color: 0x5d6879, r: 1.1, h: 0.5, pos: [-5.5, 0.2, 0], physical: true, metalness: 0.1, roughness: 0.4, clearcoat: 0.5, physics: { mode: 'static', friction: 0.9 } },
-		{ type: 'cylinder', name: 'Plank podium', color: 0x5d6879, r: 1.1, h: 0.5, pos: [5.5, 0.2, 0], physical: true, metalness: 0.1, roughness: 0.4, clearcoat: 0.5, physics: { mode: 'static', friction: 0.9 } },
-		// PRE-PLACED wooden crates: a tidy supply that rests until grabbed, then stays put.
-		// Cubes on the left podium (podium top ~0.45; stack from just above it).
-		towersCrate('Cube 1', 0xb57a45, [0.6, 0.6, 0.6], [-5.5, 0.85, 0], TOWERS_CRATE),
-		towersCrate('Cube 2', 0xc28d55, [0.6, 0.6, 0.6], [-5.5, 1.5, 0], TOWERS_CRATE),
-		towersCrate('Cube 3', 0xa86d3c, [0.6, 0.6, 0.6], [-5.5, 2.15, 0], TOWERS_CRATE),
-		towersCrate('Cube 4', 0xb57a45, [0.6, 0.6, 0.6], [-5.5, 2.8, 0], TOWERS_CRATE),
-		// planks on the right podium
-		towersCrate('Plank 1', 0xd2a86e, [1.4, 0.3, 0.6], [5.5, 0.75, 0], TOWERS_PLANK),
-		towersCrate('Plank 2', 0xc49a60, [1.4, 0.3, 0.6], [5.5, 1.2, 0], TOWERS_PLANK),
-		towersCrate('Plank 3', 0xd2a86e, [1.4, 0.3, 0.6], [5.5, 1.65, 0], TOWERS_PLANK),
-		// a few loose cubes near the pad to start building right away
-		towersCrate('Cube 5', 0xc28d55, [0.6, 0.6, 0.6], [-2, 0.35, 2], TOWERS_CRATE),
-		towersCrate('Cube 6', 0xa86d3c, [0.6, 0.6, 0.6], [2, 0.35, 2], TOWERS_CRATE),
-		// height rings over the pad — thin glowing rings a rising crate trips (the sensor is
-		// the ring's box, so the hole still counts); select-through, so a click reaches the
-		// tower inside. The top ring is gold: the one worth a sparkle.
-		{ type: 'torus', name: 'Height ring 1m', color: 0xbff4ff, r: 0.9, tube: 0.035, pos: [0, 1, 0], rot: [-Math.PI / 2, 0, 0], emissive: 0x49d2ff, emissiveIntensity: 2.2, shadow: false, pick: 'through', physics: { mode: 'static', sensor: true, collider: 'box' } },
-		{ type: 'torus', name: 'Height ring 2m', color: 0xbff4ff, r: 0.9, tube: 0.035, pos: [0, 2, 0], rot: [-Math.PI / 2, 0, 0], emissive: 0x49d2ff, emissiveIntensity: 2.2, shadow: false, pick: 'through', physics: { mode: 'static', sensor: true, collider: 'box' } },
-		{ type: 'torus', name: 'Height ring 3m', color: 0xbff4ff, r: 0.9, tube: 0.035, pos: [0, 3, 0], rot: [-Math.PI / 2, 0, 0], emissive: 0x49d2ff, emissiveIntensity: 2.2, shadow: false, pick: 'through', physics: { mode: 'static', sensor: true, collider: 'box' } },
-		{ type: 'torus', name: 'Height ring 4m', color: 0xfff0b8, r: 0.9, tube: 0.04, pos: [0, 4, 0], rot: [-Math.PI / 2, 0, 0], emissive: 0xffc640, emissiveIntensity: 2.6, shadow: false, pick: 'through', physics: { mode: 'static', sensor: true, collider: 'box' } },
-		// the measuring pole beside the pad: one bright mark per metre, lined up with a ring
-		{ type: 'cylinder', name: 'Height pole', color: 0xe8edf3, r: 0.04, h: 4.3, pos: [2.2, 2.15, 0], physical: true, metalness: 0.6, roughness: 0.3, shadow: false },
-		{ type: 'torus', name: 'Pole mark 1m', color: 0xbff4ff, r: 0.1, tube: 0.025, pos: [2.2, 1, 0], rot: [-Math.PI / 2, 0, 0], emissive: 0x49d2ff, emissiveIntensity: 2.4, shadow: false },
-		{ type: 'torus', name: 'Pole mark 2m', color: 0xbff4ff, r: 0.1, tube: 0.025, pos: [2.2, 2, 0], rot: [-Math.PI / 2, 0, 0], emissive: 0x49d2ff, emissiveIntensity: 2.4, shadow: false },
-		{ type: 'torus', name: 'Pole mark 3m', color: 0xbff4ff, r: 0.1, tube: 0.025, pos: [2.2, 3, 0], rot: [-Math.PI / 2, 0, 0], emissive: 0x49d2ff, emissiveIntensity: 2.4, shadow: false },
-		{ type: 'torus', name: 'Pole mark 4m', color: 0xfff0b8, r: 0.1, tube: 0.03, pos: [2.2, 4, 0], rot: [-Math.PI / 2, 0, 0], emissive: 0xffc640, emissiveIntensity: 2.6, shadow: false },
-		// the stars — faceted glowing collectibles at climbing heights (touch pickups)
-		{ type: 'dodecahedron', name: 'Star 1', color: 0xffc640, r: 0.24, pos: [-3.5, 2.4, 3.5], emissive: 0xffb830, emissiveIntensity: 1.6, physical: true, roughness: 0.25, metalness: 0.1, clearcoat: 1, flatShading: true },
-		{ type: 'dodecahedron', name: 'Star 2', color: 0xffc640, r: 0.24, pos: [3.5, 3.2, -3.5], emissive: 0xffb830, emissiveIntensity: 1.6, physical: true, roughness: 0.25, metalness: 0.1, clearcoat: 1, flatShading: true },
-		{ type: 'dodecahedron', name: 'Star 3', color: 0xffc640, r: 0.24, pos: [0, 4.6, 0], emissive: 0xffb830, emissiveIntensity: 1.6, physical: true, roughness: 0.25, metalness: 0.1, clearcoat: 1, flatShading: true },
-		// the card's camera: a 3/4 view over the pad with the podiums either side
-		{ type: 'camera', name: 'Card camera', pos: [8.2, 6, 10.2], lookAt: [0, 1.5, 0], fov: 45 }
+		// ZONE 2 — the narrow pedestal (level 7), north-west
+		{ type: 'box', name: 'Pedestal', color: 0x6a7382, size: [0.8, 0.8, 0.8], bevel: 0.05, bevelSegments: 1, pos: [-6, 0.4, -4.5], physical: true, roughness: 0.5, clearcoat: 0.4, physics: { mode: 'static', friction: 1 } },
+		{ type: 'box', name: 'Pedestal cap', color: 0x9fe8ff, size: [0.84, 0.03, 0.84], pos: [-6, 0.815, -4.5], emissive: 0x4fcfff, emissiveIntensity: 1.6, shadow: false, pick: 'through', physics: { mode: 'static', sensor: true } },
+		// ZONE 3 — the wobble plate (level 10), north-east: it ROCKS through the module's effect
+		{ type: 'cone', name: 'Wobble pivot', color: 0x59616e, r: 0.5, h: 0.2, pos: [6, 0.1, -4.5], roughness: 0.5, physics: { mode: 'static' } },
+		{ type: 'box', name: 'Wobble plate', color: 0x3d7f6e, size: [2.2, 0.2, 2.2], bevel: 0.05, bevelSegments: 1, pos: [6, 0.25, -4.5], emissive: 0x2a8f6e, emissiveIntensity: 0.5, physical: true, roughness: 0.4, clearcoat: 0.5, physics: { mode: 'static', friction: 1 } },
+		// the SUPPLY: two low racks either side of the spawn (top 0.8), a high ledge north of the
+		// pad (top 3.0 — out of reach from the floor) and a star perch (top 3.4)
+		{ type: 'box', name: 'Rack west', color: 0x6b5a48, size: [1.6, 0.8, 4], bevel: 0.05, bevelSegments: 1, pos: [-4.4, 0.4, 2.2], ...TOWERS_WOOD, physics: { mode: 'static', friction: 0.9 } },
+		{ type: 'box', name: 'Rack east', color: 0x6b5a48, size: [1.6, 0.8, 4], bevel: 0.05, bevelSegments: 1, pos: [4.4, 0.4, 2.2], ...TOWERS_WOOD, physics: { mode: 'static', friction: 0.9 } },
+		{ type: 'box', name: 'High ledge', color: 0x7a8494, size: [3, 0.3, 0.9], bevel: 0.05, bevelSegments: 1, pos: [0, 2.85, -3.0], physical: true, roughness: 0.5, clearcoat: 0.3, physics: { mode: 'static', friction: 0.9 } },
+		{ type: 'cylinder', name: 'Ledge post west', color: 0x5d6879, r: 0.09, h: 2.7, pos: [-1.35, 1.35, -3.0], physical: true, metalness: 0.3, roughness: 0.4, physics: { mode: 'static' } },
+		{ type: 'cylinder', name: 'Ledge post east', color: 0x5d6879, r: 0.09, h: 2.7, pos: [1.35, 1.35, -3.0], physical: true, metalness: 0.3, roughness: 0.4, physics: { mode: 'static' } },
+		{ type: 'box', name: 'Star perch', color: 0x7a8494, size: [0.7, 0.2, 0.7], bevel: 0.04, bevelSegments: 1, pos: [2.4, 3.3, -2.2], physical: true, roughness: 0.5, physics: { mode: 'static', friction: 1 } },
+		{ type: 'cylinder', name: 'Perch post', color: 0x5d6879, r: 0.06, h: 3.2, pos: [2.4, 1.6, -2.2], physical: true, metalness: 0.3, roughness: 0.4, physics: { mode: 'static' } },
+		// the MOVING markers — the module puts them on the level's zone (a sensor each, so none
+		// is a wall: every top-level object becomes a fixed body at sim start)
+		{ type: 'torus', name: 'Goal ring', color: 0xfff0b8, r: 0.95, tube: 0.045, pos: [0, 1.8, 0], rot: [-Math.PI / 2, 0, 0], emissive: 0xffc640, emissiveIntensity: 2.8, shadow: false, pick: 'through', physics: { mode: 'static', sensor: true } },
+		{ type: 'ring', name: 'Yard ring', color: 0xbff4ff, r: 3.4, inner: 3.3, pos: [0, 0.02, 0], rot: [-Math.PI / 2, 0, 0], emissive: 0x49d2ff, emissiveIntensity: 1.2, shadow: false, side: 'double', pick: 'through', physics: { mode: 'static', sensor: true } },
+		{ type: 'box', name: 'Ghost wall', color: 0x9fe8ff, size: [1.8, 1.2, 0.62], pos: [0, -9, 0], emissive: 0x49d2ff, emissiveIntensity: 0.9, opacity: 0.22, shadow: false, pick: 'through', physics: { mode: 'static', sensor: true } },
+		// the measuring pole beside the pad: a bright mark per metre
+		{ type: 'cylinder', name: 'Height pole', color: 0xe8edf3, r: 0.04, h: 4.3, pos: [2.2, 2.15, 0.6], physical: true, metalness: 0.6, roughness: 0.3, shadow: false, physics: { mode: 'static' } },
+		...[1, 2, 3, 4].map((m) => ({ type: 'torus', name: 'Pole mark ' + m + 'm', color: 0xbff4ff, r: 0.1, tube: 0.025, pos: [2.2, m, 0.6], rot: [-Math.PI / 2, 0, 0], emissive: 0x49d2ff, emissiveIntensity: 2.4, shadow: false, physics: { mode: 'static', sensor: true } })),
+		// the piece TEMPLATES, parked on a vault slab far under the floor
+		{ type: 'box', name: 'Template vault', color: 0x333333, size: [18, 0.5, 3], pos: [1, VAULT_TOP - 0.25, 0], shadow: false, physics: { mode: 'static', friction: 1 } },
+		...TOWERS_TEMPLATES,
+		// the card's camera: a 3/4 view over the pad, the ledge and a rack
+		{ type: 'camera', name: 'Card camera', pos: [6.6, 4.9, 8.2], lookAt: [0, 1.3, -0.9], fov: 45 }
 	]
 };
 
@@ -833,6 +698,42 @@ function starsGraph() {
 	E('bquit', 'quithide', 'trigger');
 	// ---- More stars: the menu button or the VR pad spawns 3 copies of the template ----
 	N('bmore', 'hudbutton', 'More stars button', 40, 940, { element: 'more-btn' });
+	// ---- 31: the player's two settings (the game's Settings — desktop and the VR menu —
+	// through 31-game-shell's panel; Stars' own P menu carries the same two as toggles) -----
+	N('setpoint', 'gamesetting', 'Setting: point to move stars', 3700, 40, { setting: 'stars-point-grab', title: 'Point to move stars', kind: 'toggle', value: true });
+	N('setclap', 'gamesetting', 'Setting: make stars with a clap', 3700, 200, { setting: 'stars-clap', title: 'Make stars with a clap', kind: 'toggle', value: true });
+	// S2 — OFF: the VR grip ray and the desktop carry take nothing; a hand still knocks
+	N('pointgrab', 'pointgrab', 'Pointing moves stars', 3940, 40, {});
+	E('setpoint', 'pointgrab', 'enabled');
+	// S3 — a CLAP (both hands together, held a quarter second) makes a star between them,
+	// with a sparkle, a portal sound and a buzz in both hands. The pulse replicates with the
+	// point, so the host's spawner makes ONE star there for everyone; the buzz is `me` only.
+	N('clap', 'onclap', 'Clap: a new star', 3940, 200, { who: 'anyone', distance: 0.1, hold: 0.25, cooldown: 1, pulse: 0.3 });
+	E('setclap', 'clap', 'enabled');
+	N('clapme', 'onclap', 'My clap', 3940, 360, { who: 'me', distance: 0.1, hold: 0.25, cooldown: 1, pulse: 0.3 });
+	E('setclap', 'clapme', 'enabled');
+	// at most 40 clapped stars; the 41st recycles the oldest (the spawner's own rule)
+	N('clapspawn', 'spawn', 'Spawn a star at the clap', 4180, 200, { x: 0, y: 0, z: 0, count: 1, maxAlive: 40, interval: 0, spread: 0 });
+	E('clap', 'clapspawn', 'trigger');
+	E('clap', 'clapspawn', 'position', 'point');
+	N('clapfx', 'effectburst', 'Clap sparkle', 4180, 280, { kind: 'sparkle', count: 72, lift: 0, color: '#ffe08a' });
+	E('clap', 'clapfx', 'trigger');
+	E('clap', 'clapfx', 'at', 'point');
+	N('clapfx2', 'effectburst', 'Clap sparks', 4180, 340, { kind: 'sparks', count: 36, lift: 0, color: '' });
+	E('clap', 'clapfx2', 'trigger');
+	E('clap', 'clapfx2', 'at', 'point');
+	N('clapsnd', 'gamesound', 'Clap: portal', 4420, 280, { sound: 'portal' });
+	E('clap', 'clapsnd', 'trigger');
+	E('clap', 'clapsnd', 'at', 'point');
+	N('clapbuzz', 'hapticpulse', 'Clap: buzz both hands', 4180, 400, { pattern: 'success', hand: 'both' });
+	E('clapme', 'clapbuzz', 'trigger');
+	// S4 — a clapped star (and a More-stars copy) is a copy of the TEMPLATE, and a copy answers
+	// to its template's selector: a knock rings it and counts as one of MY touches, like any
+	// star. Unplaced sound (the template itself waits under the floor).
+	N('tplhit', 'onhit', 'A new star hit', 3940, 520, { pulse: 0.3, minSpeed: 0.3, who: 'anyone' });
+	N('tplme', 'onhit', 'A new star, my hit', 3940, 600, { pulse: 0.3, minSpeed: 0.3, who: 'me' });
+	N('tplsnd', 'gamesound', 'New star: ring', 4180, 520, { sound: 'ring' });
+	E('tplhit', 'tplsnd', 'trigger');
 	N('padmore', 'onclick', 'More pad clicked', 40, 1020, { pulse: 0.3 });
 	N('selmorepad', 'objectselector', 'More stars pad', 280, 1020, { selected: 'More stars pad' });
 	E('padmore', 'selmorepad');
@@ -842,8 +743,12 @@ function starsGraph() {
 	E('bmore', 'spawn', 'trigger');
 	E('padmore', 'spawn', 'trigger');
 	E('seltpl', 'spawn', 'source');
+	E('seltpl', 'clapspawn', 'source'); // 31
+	E('tplhit', 'seltpl');
+	E('tplme', 'seltpl');
 	// ---- touches: per-player rows (one writer each), the sum, the leaderboard ---------
 	N('touch', 'setvariable', 'Count my touch', 520, 1240, { name: 'touches', value: 1, op: 'add', scope: 'player' });
+	E('tplme', 'touch', 'trigger'); // 31: a new star's hit is a touch too
 	N('mytouch', 'peervariable', 'My touches', 40, 1390, { name: 'touches', read: 'mine', peer: '', fallback: 0 });
 	N('hmine', 'hudtext', 'HUD my touches', 280, 1390, { element: 'touches-read', format: 'Your touches: {v}', decimals: 0, value: 0 });
 	E('mytouch', 'hmine', 'value');
@@ -1019,7 +924,7 @@ const STARS_DEF = {
 	slug: 'stars-room',
 	title: 'Stars Room',
 	description:
-		'A zero-gravity glass room full of glowing crystal stars. Knock them with your hands in VR or walk into them. Start a round to light every star against the clock, or just play.',
+		'A zero-gravity glass room full of glowing crystal stars. Knock them with your hands in VR or walk into them, clap to make a new one. Start a round to light every star against the clock, or just play.',
 	license: 'CC0-1.0',
 	author: 'theprototype',
 	tags: ['zero-g', 'physics', 'sandbox', 'vr'],
@@ -1043,7 +948,14 @@ const STARS_DEF = {
 		damping: { linear: 0.35, angular: 0.2 },
 		ccd: false,
 		// 30b: a SPAWN just inside the south glass, facing the stars (yaw 0 faces -Z)
-		play: { interaction: 'grab', grounded: false, simOnPlay: true, spawn: { position: [0, 0, 5.2], yaw: 0 } },
+		// 31 (S1): TELEPORT, bounded to the room — `play.bounds` is the glass box's inside (the
+		// walls' inner faces sit at ±5.75), so the arc can never land you outside the scene
+		// (31-vr-core's bounded teleport; K1)
+		play: {
+			interaction: 'grab', grounded: false, simOnPlay: true, spawn: { position: [0, 0, 5.2], yaw: 0 },
+			locomotion: { teleport: true },
+			bounds: { min: [-5.55, -0.1, -5.55], max: [5.55, 6.9, 5.55] }
+		},
 		knock: { enabled: true, gain: 1, maxSpeed: 10, radius: 0.12, spin: 0.6 }
 	},
 	post: {
@@ -1081,7 +993,7 @@ const STARS_DEF = {
 						{ id: 'go-btn', kind: 'button', anchor: 'center', x: 0, y: 12, w: 260, h: 48, z: 1, label: 'Start round', enabled: true, style: { ...STARS_BTN, size: 17 } },
 						{ id: 'free-btn', kind: 'button', anchor: 'center', x: 0, y: 70, w: 260, h: 42, z: 1, label: 'Free play', enabled: true, style: STARS_QUIET },
 						{ id: 'start-hint', kind: 'text', anchor: 'center', x: 0, y: 128, w: 420, h: 22, z: 1, label: 'Light all 24 in two minutes  ·  P: menu', style: { size: 12, color: '#8b97a8', align: 'center' }, wrap: true },
-						{ id: 'start-hint-vr', kind: 'text', anchor: 'center', x: 0, y: 156, w: 420, h: 22, z: 1, label: 'VR: left stick walks  ·  grip grabs  ·  Y switches to Edit mode', style: { size: 12, color: '#8b97a8', align: 'center' }, wrap: true }
+						{ id: 'start-hint-vr', kind: 'text', anchor: 'center', x: 0, y: 156, w: 440, h: 22, z: 1, label: 'VR: stick walks or teleports  ·  clap for a new star  ·  Y: Edit mode', style: { size: 12, color: '#8b97a8', align: 'center' }, wrap: true }
 					]
 				},
 				{
@@ -1117,7 +1029,7 @@ const STARS_DEF = {
 					elements: [
 						{ id: 'pause-panel', kind: 'panel', anchor: 'center', x: 0, y: 0, w: 400, h: 400, z: 0, label: '', style: STARS_HUD_PANEL },
 						{ id: 'pause-title', kind: 'text', anchor: 'center', x: 0, y: -150, w: 360, h: 36, z: 1, label: 'STARS ROOM', style: { size: 28, weight: '700', color: '#ffd45e', align: 'center' } },
-						{ id: 'pause-sub', kind: 'text', anchor: 'center', x: 0, y: -112, w: 360, h: 40, z: 1, label: 'Zero gravity. Knock the stars with your hands in VR, or walk into them.', style: STARS_TEXT, wrap: true },
+						{ id: 'pause-sub', kind: 'text', anchor: 'center', x: 0, y: -112, w: 360, h: 40, z: 1, label: 'Zero gravity. Knock the stars with your hands in VR, or walk into them. Clap to make a star.', style: STARS_TEXT, wrap: true },
 						{ id: 'start-btn', kind: 'button', anchor: 'center', x: 0, y: -50, w: 250, h: 42, z: 1, label: 'Start round: light every star', enabled: true, style: STARS_BTN },
 						{ id: 'restart-btn', kind: 'button', anchor: 'center', x: 0, y: 0, w: 250, h: 42, z: 1, label: 'Restart round', enabled: true, style: { ...STARS_BTN, bg: '#4c9e6a' } },
 						{ id: 'more-btn', kind: 'button', anchor: 'center', x: 0, y: 50, w: 250, h: 42, z: 1, label: 'More stars', enabled: true, style: { ...STARS_BTN, bg: '#b0863b' } },
@@ -1858,7 +1770,18 @@ const JAM_DEF = {
 	// cockpit, where the controller tip reaches the piano, the drums, the sampler, the
 	// transport and the mixer; a desktop keeps the overview it always had (a level eye at the
 	// cockpit would see only the piano).
-	physics: { play: { cursor: 'free', simOnPlay: false, spawn: { position: JAM_SPAWN, yaw: 0, vrOnly: true } } },
+	// 31 (J1): the user, on a Quest 3: "In Jam Room I would like to be able to fly around and
+	// also scale the entire environment with grips and move around same as in edit mode". So the
+	// game FLIES (no gravity), the grips move/rotate/SCALE the world when they do not close on a
+	// device (worldGrab), and teleport lands inside the studio (`bounds` = inside the walls,
+	// the open front included) — all K1 flags, 31-vr-core's to implement.
+	physics: {
+		play: {
+			cursor: 'free', simOnPlay: false, spawn: { position: JAM_SPAWN, yaw: 0, vrOnly: true },
+			locomotion: { fly: true, worldGrab: true, teleport: true },
+			bounds: { min: [-4.7, -0.1, -6.6], max: [6.9, 3.3, 3.1] }
+		}
+	},
 	// 30b: NO Game Music node, on purpose — the room IS the music (the transport, the drums and
 	// the piano are what you hear), so a procedural `studio` loop would only fight the band.
 	post: {
@@ -2374,6 +2297,11 @@ const DEFS = [
 			// reflection flips handedness, and every primitive here is symmetric about its own
 			// axes, so the reflected shape is the same primitive posed (rx, -ry, -rz); a spline
 			// reflects its points. A ghost's material is faded and it casts no shadow.
+			// 31-towers: the app's own BUILDING BLOCKS (Wedge / Arch / Corner / Stairs) — the same
+			// builders `/create Wedge` uses, fetched only when a def asks for one
+			const blockBuilders = d.objects.some((/** @type {any} */ o) => o.type === 'block')
+				? (await import('/src/lib/customGeometries.js')).customGeometryBuilders
+				: null;
 			/** @param {any} o @param {{mirror?: boolean, prefix?: string, opacity?: number, shadow?: boolean}} [opts] */
 			const build = (o, opts = {}) => {
 				const mirror = !!opts.mirror;
@@ -2473,6 +2401,13 @@ const DEFS = [
 					else if (o.type === 'icosahedron') geo = new T.IcosahedronGeometry(o.r, o.detail ?? 0);
 					else if (o.type === 'dodecahedron') geo = new T.DodecahedronGeometry(o.r, o.detail ?? 0);
 					else if (o.type === 'cone') geo = new T.ConeGeometry(o.r, o.h, 24);
+					// 31-towers: a building block, bottom-anchored like `/create Wedge` (origin on the floor)
+					else if (o.type === 'block') {
+						const make = blockBuilders?.[o.shape];
+						if (!make || !['Wedge', 'Arch', 'Corner', 'Stairs'].includes(o.shape))
+							throw new Error('object "' + o.name + '": unknown block "' + o.shape + '" (Wedge | Arch | Corner | Stairs)');
+						geo = make(...(o.args ?? []));
+					}
 					else throw new Error('object "' + o.name + '": unknown type "' + o.type + '"');
 					// 30 author-kit: MeshPhysicalMaterial when a def asks for `physical` or uses any
 					// field only it has; MeshToonMaterial for `toon`. Absent all of those it is the
@@ -2932,6 +2867,10 @@ const DEFS = [
 					if (live) clone.add(live.clone(true));
 					else console.log('  WARN thumb.sceneGroups: no scene-root group named ' + name);
 				}
+				// 31-towers: CARD-ONLY dressing — objects built for the picture and never saved
+				// (the scene was exported above). A Towers level deals its pieces at play time, so
+				// an honest card of the FILE is an empty arena; the card shows a round in progress.
+				for (const o of d.thumb?.dress ?? []) clone.add(build(o));
 				// camera markers are chrome, not scenery
 				clone.traverse((/** @type {any} */ n) => {
 					if (n.userData?.camera) n.visible = false;

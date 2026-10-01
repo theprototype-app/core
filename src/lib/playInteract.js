@@ -21,6 +21,10 @@ import { nameOf } from './lockControl';
 import { moduleInteractiveGroups, fireClickMiss, runClickHandlers } from './moduleSDK';
 // 30 P3: where play mode aims — the crosshair under a lock, the cursor in a free-cursor game
 import { playAimNdc, playCursorFree } from './playCursor';
+// 31-towers P1: grab reach, measured from the player's body
+import { withinReach, carryLimit } from './playReach';
+import { charControl } from './charController';
+import { pointGrabAllowed } from './pointGrab'; // 31 (Stars Room S2): pointing may be switched off
 
 // 21-B B3: play mode becomes INTERACT mode — a crosshair grab at distance,
 // scroll to push and pull, and a release that throws with the velocity you
@@ -61,9 +65,14 @@ const TAP_MS = 400; // matches the editor's own short-click window (raycastSelec
 const MOVE_HZ = 20; // carry broadcasts (the car module's cadence; the floor is
 // 8 Hz, because EXTERNAL_HOLD_MS is 250)
 
-/** what the reticle renders from: aim + carry state, LOCAL and never on the wire */
+/** the eye above the feet when no Character Controller says otherwise (a standing person) */
+const BODY_EYE_HEIGHT = 1.7;
+
+/** what the reticle renders from: aim + carry state, LOCAL and never on the wire.
+ * 31-towers P1: 'toofar' = the crosshair is on something you could carry, beyond the scene's
+ * `play.reach` from your body. */
 export const playInteractState = writable({
-	/** @type {'off'|'idle'|'aiming'|'carrying'} */
+	/** @type {'off'|'idle'|'aiming'|'toofar'|'carrying'} */
 	mode: 'off',
 	distance: CARRY_DEFAULT,
 	/** @type {string|null} */ uuid: null,
@@ -108,6 +117,29 @@ function interactionMode() {
 function simRunning() {
 	return !!get(simulating) || !!get(remoteSimulating);
 }
+
+/** 31-towers P1: the scene's grab reach (metres from the body), or null for no limit */
+function playReach() {
+	return resolvePlaySettings(get(globalScene)).reach;
+}
+
+/** the eye above the feet: the Character Controller's own, else a standing person */
+function eyeHeightNow() {
+	const h = Number(get(charControl)?.eyeHeight);
+	return Number.isFinite(h) && h > 0 ? h : BODY_EYE_HEIGHT;
+}
+
+/** Is a hit point within reach of the player whose eye is `camera`? (always, with no reach)
+ * @param {any} point @param {any} camera */
+function inReach(point, camera) {
+	const reach = playReach();
+	if (reach == null || !point) return true;
+	const eye = camera.getWorldPosition(new THREE.Vector3());
+	return withinReach(point, eye, eye.y - eyeHeightNow(), reach);
+}
+
+/** the refusals the reach made (debug hook only) */
+let reachRefusals = 0;
 
 /** uuids that get a DYNAMIC body at sim start — scenery and static level
  * geometry can never be dragged, which is what makes 'grab' safe as a default */
@@ -172,6 +204,7 @@ export function cursorGrabStart(ray, ndc, camera) {
 	const hit = sceneHits(ray, {})[0];
 	const target = hit ? topLevelObjectOf(hit.object) : null;
 	if (!target || !dynamicUuids().has(target.uuid)) return false;
+	if (!pointGrabAllowed()) return false; // 31: the cursor carry is pointing too
 	if (get(lockedObjects).some((/** @type {any} */ entry) => entry[1] === target.uuid)) return false;
 	if (!canEditObject(target)) {
 		warnViewerReadOnly();
@@ -336,6 +369,15 @@ function onPointerDown(event) {
 	if (event.pointerType === 'touch') return;
 	if (!simRunning()) return; // nothing to hold; the tap path still works
 	if (!dynamicUuids().has(target.uuid)) return;
+	// 31: a crosshair carry is POINTING — a scene that switched pointing off moves its
+	// bodies by touch only (walk into them); the tap above still reaches On Click
+	if (!pointGrabAllowed()) return;
+	// 31-towers P1: beyond the scene's reach from your body — the reticle already says so
+	if (!inReach(hit.point, activeCamera)) {
+		reachRefusals++;
+		lastUp = 'too-far';
+		return;
+	}
 	const lock = get(lockedObjects).find((/** @type {any} */ entry) => entry[1] === target.uuid);
 	if (lock) {
 		playInteractState.update((s) => ({ ...s, blocked: nameOf(lock[0]) }));
@@ -468,7 +510,10 @@ export function tickPlayInteract(delta, camera) {
 			raycaster.setFromCamera(centre, camera);
 			camDir.copy(raycaster.ray.direction);
 		}
-		targetPos.copy(camPos).addScaledVector(camDir, carryDistance);
+		// 31-towers P1: a play carry is held WITHIN reach of the body (the editor's cursor
+		// carry has no body, so it keeps its distance)
+		const limit = grab.cursor ? carryDistance : carryLimit(camDir, eyeHeightNow(), playReach(), carryDistance);
+		targetPos.copy(camPos).addScaledVector(camDir, Math.min(carryDistance, limit));
 		// dt-based, so a throttled tab does not change the feel
 		const k = Math.min(SPRING_K_MAX, Math.max(SPRING_K_MIN, SPRING_K / Math.sqrt(Math.max(grab.mass, 1))));
 		const alpha = 1 - Math.exp(-k * Math.max(delta, 1e-3));
@@ -515,7 +560,7 @@ export function tickPlayInteract(delta, camera) {
 	const grabbable =
 		mode === 'grab' && !!target && simRunning() && dynamicUuids().has(target.uuid);
 	const state = get(playInteractState);
-	const next = grabbable ? 'aiming' : 'idle';
+	const next = grabbable ? (inReach(hit.point, camera) ? 'aiming' : 'toofar') : 'idle';
 	if (state.mode !== next || state.uuid !== (target?.uuid ?? null))
 		playInteractState.set({
 			mode: next,
@@ -571,6 +616,8 @@ export function playInteractDebug() {
 		held: !!grab?.held,
 		distance: carryDistance,
 		lastUp,
-		samples: grab?.samples.length ?? 0
+		samples: grab?.samples.length ?? 0,
+		reach: playReach(),
+		reachRefusals
 	};
 }

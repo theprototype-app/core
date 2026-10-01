@@ -39,10 +39,29 @@ import { fireHudButton, hudOptionsOf } from './flowRuntime';
 import { cameraPreview } from './cameraPreview';
 import { gameState } from './gameState';
 import { gameFeelActive } from './gameFeel';
+import { PANEL_ORDER } from './vrPanelOverlay';
 import { gameAnnouncement } from './gameAnnounce';
 import { playGameSound } from './gameSfx';
 import { hudImageFor, resolveHudImage } from './hudImages';
 import { safeStorage } from './safeStorage';
+// 31 K3: the game shell's pause menu — its pages are drawn onto this board
+import {
+	shellMenu,
+	shellMenuAvailable,
+	shellMenuItems,
+	gameLevels,
+	shellSettingViews,
+	shellPageTitle,
+	shellGameName,
+	shellHelpLines,
+	pressShellHit,
+	toggleShellMenu
+} from './gameShell';
+import { gameSettingValues } from './gameSettings';
+import { drawShellPage, SHELL_STAGE } from './shellPanelDraw';
+// 31 K3 G3: Show FPS in the headset (the strip + the wrist)
+import { fpsReading, fpsText, noteXrFrame } from './fpsMeter';
+import { vignetteFrame } from './comfortVignette';
 
 /** the HUD's authoring reference — the editor artboard's stage */
 export const STAGE_W = 1280;
@@ -206,7 +225,7 @@ let imageTick = 0;
  * laser is on. Pure over its arguments (the DOM is only touched for token colours and
  * image decode); exported for the suites.
  * @param {CanvasRenderingContext2D} g @param {{key: string, screen: any} | null} entry
- * @param {Record<string, any>} runtime @param {{hover?: string | null, strip?: boolean, mode?: string, crop?: {x: number, y: number, w: number, h: number}}} [opts]
+ * @param {Record<string, any>} runtime @param {{hover?: string | null, strip?: boolean, mode?: string, crop?: {x: number, y: number, w: number, h: number}, menu?: 'open' | 'available' | null}} [opts]
  * @returns {HitRect[]}
  */
 export function drawPanel(g, entry, runtime, opts = {}) {
@@ -341,29 +360,47 @@ export function drawPanel(g, entry, runtime, opts = {}) {
 		if (pressable) {
 			hits.push({ id: el.id, key: entry?.key ?? 'scene', kind: el.kind, x, y, w, h });
 			if (opts.hover === el.id) {
+				// 31 G5: the laser's button is FILLED as well as ringed — a 4 px outline on a
+				// 1.2 m-away board was too faint to tell which button the ray was on
+				roundRect(g, x, y, w, h, radius);
+				g.fillStyle = 'rgba(95, 208, 255, 0.28)';
+				g.fill();
 				roundRect(g, x - 4 * k, y - 4 * k, w + 8 * k, h + 8 * k, radius + 4 * k);
-				g.lineWidth = 4 * k;
+				g.lineWidth = 6 * k;
 				g.strokeStyle = '#5fd0ff';
 				g.stroke();
 			}
 		}
 	}
 	g.restore();
-	// the footer: OUR two buttons, always there
-	const fy = crop.h * k;
+	drawFooter(g, crop.h * k, k, opts, hits);
+	return hits;
+}
+
+/**
+ * The footer: OUR buttons, always there — 31 K3's Menu (while a game offers the pause
+ * menu), Edit mode and Top strip. @param {CanvasRenderingContext2D} g @param {number} fy
+ * @param {number} k @param {{hover?: string | null, strip?: boolean, menu?: 'open' | 'available' | null}} opts
+ * @param {HitRect[]} hits
+ */
+function drawFooter(g, fy, k, opts, hits) {
+	const W = g.canvas.width;
 	g.fillStyle = 'rgba(255,255,255,0.06)';
 	g.fillRect(0, fy, W, 2 * k);
 	const buttons = [
+		...(opts.menu ? [{ id: 'menu', label: opts.menu === 'open' ? 'Close menu' : 'Menu' }] : []),
 		{ id: 'edit', label: 'Edit mode' },
 		{ id: 'strip', label: opts.strip === false ? 'Top strip: off' : 'Top strip: on' }
 	];
-	const bw = 300 * k;
+	const bw = (buttons.length > 2 ? 240 : 300) * k;
 	const bh = 60 * k;
+	const gap = 20 * k;
+	const x0 = (W - (buttons.length * bw + (buttons.length - 1) * gap)) / 2;
 	buttons.forEach((b, i) => {
-		const bx = W / 2 + (i === 0 ? -bw - 20 * k : 20 * k);
+		const bx = x0 + i * (bw + gap);
 		const by = fy + (FOOTER_H * k - bh) / 2;
 		roundRect(g, bx, by, bw, bh, 12 * k);
-		g.fillStyle = b.id === 'edit' ? '#1f2937' : '#111827';
+		g.fillStyle = opts.hover === 'footer:' + b.id ? '#1e4a63' : b.id === 'edit' ? '#1f2937' : '#111827';
 		g.fill();
 		g.lineWidth = (opts.hover === 'footer:' + b.id ? 5 : 2) * k;
 		g.strokeStyle = opts.hover === 'footer:' + b.id ? '#5fd0ff' : 'rgba(148,163,184,0.6)';
@@ -375,7 +412,43 @@ export function drawPanel(g, entry, runtime, opts = {}) {
 		g.fillText(b.label, bx + bw / 2, by + bh / 2);
 		hits.push({ id: 'footer:' + b.id, key: '', kind: 'footer', footer: b.id, x: bx, y: by, w: bw, h: bh });
 	});
+}
+
+/**
+ * 31 K3: the pause menu page on the board (plate + page + footer), hits returned.
+ * @param {CanvasRenderingContext2D} g @param {{hover?: string | null, strip?: boolean}} opts
+ * @returns {HitRect[]}
+ */
+export function drawShellPanel(g, opts = {}) {
+	const W = g.canvas.width;
+	const H = g.canvas.height;
+	const k = W / SHELL_STAGE.w;
+	g.clearRect(0, 0, W, H);
+	roundRect(g, 0, 0, W, H, 28 * k);
+	g.fillStyle = 'rgba(12, 16, 26, 0.94)';
+	g.fill();
+	g.lineWidth = 3 * k;
+	g.strokeStyle = 'rgba(148, 163, 184, 0.55)';
+	g.stroke();
+	/** @type {HitRect[]} */
+	const hits = /** @type {HitRect[]} */ (drawShellPage(g, shellModel(), { k, hover: opts.hover }));
+	drawFooter(g, SHELL_STAGE.h * k, k, { ...opts, menu: 'open' }, hits);
 	return hits;
+}
+
+/** the model both renderers share, for the headset */
+function shellModel() {
+	const menu = get(shellMenu);
+	const levels = get(gameLevels);
+	return {
+		page: menu.page,
+		title: shellPageTitle(menu.page),
+		subtitle: shellGameName(),
+		items: shellMenuItems({ vr: true }),
+		levels: levels ? { list: levels.list, current: levels.current } : null,
+		settings: shellSettingViews({ vr: true }),
+		help: shellHelpLines({ vr: true })
+	};
 }
 
 /** a line cut to fit `max` pixels with an ellipsis @param {CanvasRenderingContext2D} g
@@ -420,7 +493,7 @@ function wrapText(g, text, max) {
  * A compact card of lines (+ optional footer buttons) — the wrist, the top strip and the
  * banner are all this. Returns the pressable rects.
  * @param {CanvasRenderingContext2D} g @param {string[]} lines
- * @param {{title?: string, row?: boolean, buttons?: boolean, strip?: boolean, hover?: string | null, big?: boolean, color?: string}} [opts]
+ * @param {{title?: string, row?: boolean, buttons?: boolean, strip?: boolean, hover?: string | null, big?: boolean, color?: string, menu?: 'open' | 'available' | null}} [opts]
  * @returns {HitRect[]}
  */
 export function drawCard(g, lines, opts = {}) {
@@ -474,10 +547,11 @@ export function drawCard(g, lines, opts = {}) {
 	}
 	if (opts.buttons) {
 		const labels = [
+			...(opts.menu ? [{ id: 'menu', label: opts.menu === 'open' ? 'Close' : 'Menu' }] : []),
 			{ id: 'edit', label: 'Edit' },
 			{ id: 'strip', label: opts.strip === false ? 'Strip off' : 'Strip on' }
 		];
-		const bw = (W - pad * 3) / 2;
+		const bw = (W - pad * (labels.length + 1)) / labels.length;
 		labels.forEach((b, i) => {
 			const bx = pad + i * (bw + pad);
 			const by = H - footer + 8;
@@ -488,7 +562,7 @@ export function drawCard(g, lines, opts = {}) {
 			g.strokeStyle = opts.hover === 'footer:' + b.id ? '#5fd0ff' : 'rgba(148,163,184,0.6)';
 			g.stroke();
 			g.fillStyle = '#f3f4f6';
-			g.font = `600 22px system-ui, sans-serif`;
+			g.font = `600 ${labels.length > 2 ? 17 : 22}px system-ui, sans-serif`;
 			g.textAlign = 'center';
 			g.fillText(b.label, bx + bw / 2, by + (footer - 22) / 2);
 			hits.push({ id: 'footer:' + b.id, key: '', kind: 'footer', footer: b.id, x: bx, y: by, w: bw, h: footer - 22 });
@@ -525,7 +599,9 @@ function surface(name, pxW, pxH, worldW) {
 			new THREE.MeshBasicMaterial({ map: texture, transparent: true, depthTest: false, depthWrite: false, side: THREE.DoubleSide })
 		);
 		mesh.name = name;
-		mesh.renderOrder = 1000;
+		// 31 K2: the overlay order, after the panel depth clear (vrPanelOverlay) — its own
+		// depthTest:false stays, so it is over the scene with or without the clear
+		mesh.renderOrder = PANEL_ORDER;
 		mesh.visible = false;
 		mesh.frustumCulled = false;
 		mesh.userData.localOnly = true;
@@ -623,6 +699,10 @@ export function followYaw(current, head, dt, state) {
  */
 export function vrGamePanelFrame(opts = {}) {
 	const head = opts.head === undefined ? headPose() : opts.head;
+	// 31 K3 G3: a LIVE XR frame (not a suite's synthetic head) is the FPS meter's VR source
+	if (opts.head === undefined && head) noteXrFrame();
+	// 31 K3: the comfort vignette rides the same per-frame call (it frames the view)
+	vignetteFrame(head, opts.dt ?? 1 / 72);
 	const live = !!head && (opts.force || gameFeelActive());
 	const { panel, overlay } = live ? vrScreens() : { panel: [], overlay: [] };
 	const runtime = get(hudRuntime);
@@ -631,17 +711,24 @@ export function vrGamePanelFrame(opts = {}) {
 	void get(hudScreenOverride);
 	void get(gameState);
 
-	// ---- the panel
-	const entry = panel[0] ?? null;
-	const crop = panelCrop(entry?.screen);
+	// ---- the panel (31 K3: the pause menu, when open, takes the board over the game's screen)
+	const shellOpen = live && get(shellMenu).open;
+	const menuOffer = live && shellMenuAvailable() ? 'available' : null;
+	const gameEntry = panel[0] ?? null;
+	const entry = shellOpen ? { key: 'shell', screen: null } : gameEntry;
+	const crop = shellOpen ? SHELL_STAGE : panelCrop(entry?.screen);
 	const board = surface('vr-game-panel', Math.round(crop.w * SCALE), Math.round((crop.h + FOOTER_H) * SCALE), crop.w * METRES_PER_PX);
 	board.mesh.visible = !!entry;
 	if (entry && head) {
-		const sig = JSON.stringify([entry.key, entry.screen, runtime, hover, strip, imageTick, valuesSig(entry.screen)]);
+		const sig = shellOpen
+			? JSON.stringify(['shell', get(shellMenu), get(gameLevels)?.list, get(gameLevels)?.current, get(gameSettingValues), hover, strip])
+			: JSON.stringify([entry.key, entry.screen, runtime, hover, strip, imageTick, valuesSig(entry.screen), menuOffer]);
 		if (sig !== board.sig) {
 			board.sig = sig;
 			resizeSurface(board, Math.round(crop.w * SCALE), Math.round((crop.h + FOOTER_H) * SCALE), crop.w * METRES_PER_PX);
-			board.hits = drawPanel(board.g, entry, runtime, { hover: hover[0] ?? hover[1], strip, crop });
+			board.hits = shellOpen
+				? drawShellPanel(board.g, { hover: hover[0] ?? hover[1], strip })
+				: drawPanel(board.g, entry, runtime, { hover: hover[0] ?? hover[1], strip, crop, menu: menuOffer });
 			board.texture.needsUpdate = true;
 		}
 		const headYaw = yawOf(head.quaternion);
@@ -658,14 +745,22 @@ export function vrGamePanelFrame(opts = {}) {
 		overlay.flatMap((o) => o.screen.elements ?? []),
 		runtime
 	);
+	// 31 K3 G3: this game's Show FPS puts the counter FIRST on the strip and the wrist
+	if (live && get(gameSettingValues).showFps) lines.unshift(fpsText(get(fpsReading)).main);
 	const wrist = surface('vr-game-wrist', 320, 300, WRIST_W);
 	const leftHand = opts.hands?.[0] ?? null;
 	if (live && leftHand) {
-		const sig = JSON.stringify([lines, strip, hover]);
+		const sig = JSON.stringify([lines, strip, hover, menuOffer, shellOpen]);
 		if (sig !== wrist.sig) {
 			// a line count change re-sizes the card
 			wrist.sig = sig;
-			wrist.hits = drawCard(wrist.g, lines.length ? lines : ['No score yet'], { title: 'Game', buttons: true, strip, hover: hover[0] ?? hover[1] });
+			wrist.hits = drawCard(wrist.g, lines.length ? lines : ['No score yet'], {
+				title: 'Game',
+				buttons: true,
+				strip,
+				hover: hover[0] ?? hover[1],
+				menu: menuOffer ? (shellOpen ? 'open' : 'available') : null
+			});
 			wrist.texture.needsUpdate = true;
 		}
 		// up the forearm, facing up off it — clear of 30b-vr-modes' mode label, which sits on
@@ -784,7 +879,12 @@ export function pressPanelTarget(target, opts = {}) {
 	debug.presses++;
 	debug.lastPress = hit.id;
 	playGameSound('click', target.point ? target.point.toArray() : null);
+	if (hit.kind === 'shell') return pressShellHit(hit.id);
 	if (hit.kind === 'footer') {
+		if (hit.footer === 'menu') {
+			toggleShellMenu();
+			return true;
+		}
 		if (hit.footer === 'edit') {
 			debug.edits++;
 			// the ONE Edit/Interact switch (30b-vr-modes' Y button calls it too); the store

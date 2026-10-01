@@ -371,6 +371,116 @@ h.run(async () => {
 	});
 	h.check(dim3.toLowerCase() === '#3b3f66', `...and Star 3 is painted unlit again (${dim3})`);
 
+	// 8 — 31 (S1-S4), the user on a Quest 3: "teleport but not outside the scene · in menu
+	// settings allow to disable pointing at stars · make a star by moving controllers or hands
+	// close to each other, with effect and sound · push it so it flies like the other stars"
+	console.log('\n=== 8. 31: bounded teleport, the two settings, a clapped star that is a real star ===');
+	const p31 = await page.evaluate(() => {
+		const s = window.__stores;
+		let play; s.scenePhysics.scenePlay.subscribe((v) => (play = v))();
+		let rows; s.gameKit.gameSettings.gameSettingRows.subscribe((v) => (rows = v))();
+		return { loco: play?.locomotion ?? null, bounds: play?.bounds ?? null, rows: rows.map((r) => [r.id, r.label, r.type, r.default]) };
+	});
+	h.check(p31.loco?.teleport === true, `31 S1: the play block allows teleport (${JSON.stringify(p31.loco)})`);
+	h.check(
+		!!p31.bounds && p31.bounds.min.every((v, i) => v < [0, 1, 5.2][i]) && p31.bounds.max.every((v, i) => v > [0, 1, 5.2][i]) && p31.bounds.max[0] < 5.75 && p31.bounds.min[2] > -5.75,
+		`31 S1: ...bounded INSIDE the glass (walls at ±5.75), the spawn within (${JSON.stringify(p31.bounds)})`
+	);
+	// with 31-vr-core merged (K1): the teleport rule itself, asked where it is going
+	const tv = await page.evaluate(() => {
+		const v = window.__stores.vrControls;
+		if (typeof v.teleportVerdict !== 'function') return null;
+		// from the spawn's FEET (teleportVerdict's `from` is feet, not the head)
+		const at = (to) => v.teleportVerdict([0, 0, 5.2], to)?.reason ?? 'none';
+		return { near: at([1.5, 0, 3.5]), across: at([2, 0, -3]), outsideNorth: at([0, 0, -8]), outsideEast: at([8, 0, 0]) };
+	});
+	if (tv) {
+		h.check(tv.near === 'ok' && tv.outsideNorth !== 'ok' && tv.outsideEast !== 'ok', `31 S1: bounded teleport — the floor inside lands, beyond the glass is refused (${JSON.stringify(tv)})`);
+		// the floating stars are knockable bodies, not walls: a line through them must not refuse
+		h.check(tv.across === 'ok', `31 S1: ...and across the room, past floating stars, lands too (${tv.across})`);
+	}
+	else console.log('SKIP 31 S1 verdict: no vrControls.teleportVerdict (31-vr-core not merged)');
+	const rowOf = (id) => p31.rows.find((r) => r[0] === id);
+	h.check(JSON.stringify(rowOf('stars-point-grab')) === JSON.stringify(['stars-point-grab', 'Point to move stars', 'toggle', true]), `31 S2: "Point to move stars" is a game setting, on by default (${JSON.stringify(rowOf('stars-point-grab'))})`);
+	h.check(JSON.stringify(rowOf('stars-clap')) === JSON.stringify(['stars-clap', 'Make stars with a clap', 'toggle', true]), `31 S3: "Make stars with a clap" is a game setting, on by default (${JSON.stringify(rowOf('stars-clap'))})`);
+	// a clap in front of the spawn (the game-feel gate: Play is on)
+	const CP = [0.5, 1.4, 3.2];
+	const clap31 = (t0, on = CP) =>
+		page.evaluate(({ t0, on }) => {
+			const k = window.__stores.gameKit.clap;
+			k.feedClap([-0.5, on[1], on[2]], [0.5, on[1], on[2]], t0 - 50); // apart first (re-arms)
+			const out = [];
+			for (let t = t0; t <= t0 + 400; t += 16) {
+				const p = k.feedClap([on[0] - 0.03, on[1], on[2]], [on[0] + 0.03, on[1], on[2]], t);
+				if (p) out.push(p);
+			}
+			return out;
+		}, { t0, on });
+	await resetFeel();
+	const claps = await clap31(9e6);
+	await page.waitForTimeout(500);
+	const made = await page.evaluate(() => {
+		const s = window.__stores;
+		let group; s.objectsGroup.subscribe((v) => (group = v))();
+		const uuids = s.spawner.spawnedBy('clapspawn');
+		const o = uuids.length ? group.getObjectByProperty('uuid', uuids[0]) : null;
+		const body = o ? s.physics.physicsDebug().find((b) => b.uuid === o.uuid) : null;
+		return { n: uuids.length, uuid: o?.uuid ?? null, pos: o?.position.toArray().map((v) => +v.toFixed(2)) ?? null, geo: o?.geometry?.type ?? null, body: body?.mode ?? null };
+	});
+	const f31 = await feel();
+	h.check(claps.length === 1 && made.n === 1 && made.pos && Math.hypot(made.pos[0] - CP[0], made.pos[1] - CP[1], made.pos[2] - CP[2]) < 0.1, `31 S3: a clap makes ONE star between the hands (${JSON.stringify(made)})`);
+	h.check(made.geo === 'IcosahedronGeometry' && made.body === 'dynamic', `31 S4: ...a crystal star with a live dynamic body (${made.geo}, ${made.body})`);
+	h.check(
+		f31.last.some((e) => e.type === 'effectburst' && e.kind === 'sparkle' && Math.hypot(e.where[0] - CP[0], e.where[1] - CP[1], e.where[2] - CP[2]) < 0.1) && f31.last.some((e) => e.sound === 'portal' && e.spatial) && (f31.fired.hapticpulse ?? 0) >= 1,
+		`31 S3: ...with a sparkle AT it, a portal sound there and a buzz in both hands (${JSON.stringify(f31.fired)})`
+	);
+	const touches = () => page.evaluate(() => { let v; window.__stores.flowValues.subscribe((x) => (v = x))(); return v['mytouch'] ?? 0; });
+	const t0 = await touches();
+	const push = await page.evaluate((uuid) => {
+		const s = window.__stores;
+		let group; s.objectsGroup.subscribe((v) => (group = v))();
+		const o = group.getObjectByProperty('uuid', uuid);
+		const [cx, cy, cz] = o.position.toArray();
+		s.knock.dropProbe('clap31');
+		let t = 7e6, hits = 0, v = null;
+		for (let z = cz + 1.2; z >= cz - 1e-9; z -= 0.064) {
+			const r = s.knock.feedProbe('clap31', [cx, cy, z], t);
+			if (r.hits && !v) { const b = s.physics.physicsDebug().find((e) => e.uuid === uuid); v = b?.linvel ? [b.linvel.x, b.linvel.y, b.linvel.z] : null; }
+			hits += r.hits;
+			t += 16;
+		}
+		return { hits, v };
+	}, made.uuid);
+	h.check(push.hits === 1 && !!push.v && push.v[2] < -3, `31 S4: a hand pushes the new star and it flies off at hand speed (${JSON.stringify(push)})`);
+	await h.eventually(touches, (n) => n === t0 + 1, `31 S4: ...and the push counts as one of my touches (${t0} -> ${t0 + 1})`, 4000);
+	// the clap setting off: the hands meet and nothing appears
+	await page.evaluate(() => window.__stores.gameKit.gameSettings.setGameSetting('stars-clap', false));
+	await page.waitForTimeout(300);
+	const offClaps = await clap31(9.1e6, [-1, 1.4, 3.2]);
+	await page.waitForTimeout(400);
+	const nOff = await page.evaluate(() => window.__stores.spawner.spawnedBy('clapspawn').length);
+	h.check(offClaps.length === 0 && nOff === 1, `31 S3: "Make stars with a clap" OFF — a clap makes nothing (${offClaps.length} claps, ${nOff} clapped stars)`);
+	await page.evaluate(() => window.__stores.gameKit.gameSettings.setGameSetting('stars-clap', true));
+	// pointing off: the VR grip ray at a star takes nothing; touching it still does
+	const aimAt = (name) =>
+		page.evaluate((name) => {
+			const s = window.__stores;
+			const THREE = s.THREE;
+			let group; s.objectsGroup.subscribe((v) => (group = v))();
+			const o = group.getObjectByName(name);
+			const target = o.getWorldPosition(new THREE.Vector3());
+			const hand = target.clone().add(new THREE.Vector3(0, 0, 1.5));
+			const ray = new THREE.Raycaster(hand, new THREE.Vector3(0, 0, -1));
+			return { ray: s.vrControls.gripTargetOf(ray, hand, 'interact')?.name ?? null, touch: s.vrControls.gripTargetOf(new THREE.Raycaster(target, new THREE.Vector3(0, 1, 0)), target, 'interact')?.name ?? null };
+		}, name);
+	const onAim = await aimAt('Star 5');
+	await page.evaluate(() => window.__stores.gameKit.gameSettings.setGameSetting('stars-point-grab', false));
+	await h.eventually(() => page.evaluate(() => window.__stores.gameKit.pointGrab.pointGrabAllowed()), (v) => v === false, '31 S2: "Point to move stars" OFF reaches the pointing switch', 3000);
+	const offAim = await aimAt('Star 5');
+	h.check(onAim.ray === 'Star 5' && offAim.ray === null, `31 S2: pointing OFF — the grip ray no longer takes a star (on: ${onAim.ray}, off: ${offAim.ray})`);
+	h.check(offAim.touch === 'Star 5', `31 S2: ...a hand touching it still does (${offAim.touch})`);
+	await page.evaluate(() => window.__stores.gameKit.gameSettings.setGameSetting('stars-point-grab', true));
+
 	await page.evaluate(() => window.__stores.isLocked.set(false));
 	await page.waitForTimeout(400);
 	await h.finish(browser);

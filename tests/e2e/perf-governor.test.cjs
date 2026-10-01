@@ -319,6 +319,79 @@ h.run(async () => {
 	h.check(gap.stillLevel === 0, 'a light scene receiving objects is not a quality step, only a drain');
 	h.check(gapAfter === 0, 'the drain ends, the gap ends');
 
+	// ---- 6b. 31-perf P3: THE HEADSET ------------------------------------------------------
+	// A headless page cannot present WebXR, so the session is driven through the same three
+	// entry points the sessionstart/end listeners and the session's own rAF call.
+	const vr = await A.page.evaluate(() => {
+		const s = window.__stores;
+		const q = s.qualityGovernor;
+		const g = window.__gov;
+		q.governorForTest.reset();
+		q.setAutoQuality(true);
+		g.metrics({ objects: 12, meshes: 12, triangles: 144, calls: 24 }); // a LIGHT scene: VR governs anyway
+		q.startXRQuality(null, 72);
+		const entered = { ...q.xrQualityDebug(), shadowsOff: g.read(q.qualityOverrides).shadowsOff, reason: g.read(q.qualityState).reason, bias: s.lod.lodStats().bias };
+		// 3 s at 72 Hz with every 5th frame missed (27.8 ms)
+		let t = (g.clock += 1000);
+		for (let i = 0; i < 220; i++) {
+			const ms = i % 5 === 0 ? 27.8 : 13.9;
+			t += ms;
+			q.noteXRFrame(ms, t);
+		}
+		const judged = { ...q.xrQualityDebug(), dpr: g.read(q.qualityOverrides).dprScale, bias: s.lod.lodStats().bias };
+		// then 25 s of on-time frames: recovery walks back down, but never below the floor
+		for (let i = 0; i < 1800; i++) {
+			t += 13.9;
+			q.noteXRFrame(13.9, t);
+		}
+		const recovered = { ...q.xrQualityDebug(), shadowsOff: g.read(q.qualityOverrides).shadowsOff };
+		g.clock = t;
+		q.endXRQuality();
+		const left = { ...q.xrQualityDebug(), shadowsOff: g.read(q.qualityOverrides).shadowsOff };
+		// COUNTERFACTUAL: with the opt-out the headset changes nothing
+		q.setAutoQuality(false);
+		q.startXRQuality(null, 90);
+		const optedOut = q.xrQualityDebug();
+		q.endXRQuality();
+		q.setAutoQuality(true);
+		localStorage.removeItem('autoQuality');
+		q.governorForTest.reset();
+		return { entered, judged, recovered, left, optedOut };
+	});
+	h.check(vr.entered.active && vr.entered.level === 1 && vr.entered.shadowsOff === true && /headset/.test(vr.entered.reason), `a headset session starts at level 1 — shadows off — even on a light scene (${JSON.stringify(vr.entered)})`);
+	h.check(Math.abs(vr.entered.thresholds.overMs - 18.06) < 0.1 && Math.abs(vr.entered.thresholds.underMs - 15.56) < 0.1, `it judges by the headset's own 72 Hz (${JSON.stringify(vr.entered.thresholds)})`);
+	h.check(vr.entered.bias < 1, `…and the LOD bias follows the level (${vr.entered.bias})`);
+	h.check(vr.judged.level >= 2 && vr.judged.dpr < 1 && vr.judged.bias < vr.entered.bias, `missed XR frames take the next step, fed by the session's frames (${JSON.stringify(vr.judged)})`);
+	h.check(vr.recovered.level === 1 && vr.recovered.shadowsOff === true, `on-time frames walk back down — to the floor, never past it: shadows stay off (${JSON.stringify(vr.recovered)})`);
+	h.check(!vr.left.active && vr.left.level === 0 && vr.left.shadowsOff === false && vr.left.thresholds === null, `leaving the headset gives the entry level back and the desktop thresholds (${JSON.stringify(vr.left)})`);
+	// 31-integrate: never a smaller eye buffer for the next entry — it blurred every panel's text (vr-panel-sharpness)
+	h.check(vr.left.nextScale === 1, `the next entry keeps a FULL eye buffer whatever the session needed (framebuffer scale ${vr.left.nextScale})`);
+	h.check(vr.optedOut.level === 0 && vr.optedOut.floor === 0 && Math.abs(vr.optedOut.thresholds.overMs - 14.44) < 0.1, `COUNTERFACTUAL: with auto quality off a headset changes no level (still judges 90 Hz): ${JSON.stringify(vr.optedOut)}`);
+
+	// ---- 6c. integrate: a game's pinned Quality (31-game-shell) outranks the entry floor ----
+	const pin = await A.page.evaluate(() => {
+		const q = window.__stores.qualityGovernor;
+		q.governorForTest.reset();
+		q.setAutoQuality(true);
+		q.applyGameQuality(0, 'high');
+		q.startXRQuality(null, 72);
+		const pinnedEntry = q.xrQualityDebug();
+		q.endXRQuality();
+		q.applyGameQuality(null);
+		q.startXRQuality(null, 72);
+		q.applyGameQuality(0, 'high');
+		const pinnedMid = q.xrQualityDebug();
+		q.applyGameQuality(null);
+		const released = q.xrQualityDebug();
+		q.endXRQuality();
+		localStorage.removeItem('autoQuality');
+		q.governorForTest.reset();
+		return { pinnedEntry, pinnedMid, released };
+	});
+	h.check(pin.pinnedEntry.level === 0 && pin.pinnedEntry.floor === 0, `a game pinned to High enters the headset at High, no floor (${JSON.stringify(pin.pinnedEntry)})`);
+	h.check(pin.pinnedMid.level === 0 && pin.pinnedMid.floor === 0, `pinning High mid-session drops the floor (${JSON.stringify(pin.pinnedMid)})`);
+	h.check(pin.released.level === 1 && pin.released.floor === 1, `back to Auto in the headset = the headset's auto again (${JSON.stringify(pin.released)})`);
+
 	// ---- 7. end to end on real frames --------------------------------------------------
 	const real = await A.page.evaluate(async () => {
 		const s = window.__stores;

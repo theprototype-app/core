@@ -2,7 +2,9 @@ import { get, writable } from 'svelte/store';
 import { scenePlay } from './scenePhysics';
 import { showToast } from '../stores/appStore';
 import { normalizeLocomotion, normalizeSpawn } from './locomotionPolicy';
+import { normalizeBounds } from './teleportRules';
 import { moduleWorldChildren } from './moduleWorld';
+import { normalizeReach } from './playReach';
 
 /**
  * 30b P4: a spawn point set at RUNTIME by a module (`api.setSpawn(position, yaw)`) — a
@@ -74,8 +76,14 @@ export function playPublishers(scene) {
  * 30b P3/P4: `locomotion` ({teleport, fly}, both false unless the scene or a publisher
  * allows them — field by field, like `grounded`) and `spawn` (the runtime api.setSpawn,
  * else a publisher's `userData.play.spawn`, else the scene's `play.spawn`, else null).
+ * 31-towers P1: `reach` — how far from the player's BODY a grab may start (metres, playReach.js),
+ * null = no limit; a publisher's `userData.play.reach` overrides the scene's.
  * @returns {{interaction: 'grab'|'click'|'off', grounded: boolean, eyeHeight: number, cursor: 'free'|'locked',
- *   locomotion: {teleport: boolean, fly: boolean}, spawn: {position: [number, number, number], yaw: number} | null}}
+ *   locomotion: {teleport: boolean, fly: boolean, worldGrab: boolean}, spawn: {position: [number, number, number], yaw: number} | null,
+ *   bounds: {min: [number, number, number], max: [number, number, number]} | null, boundsOwner: any, reach: number | null}}
+ * 31 K1: `locomotion.worldGrab` and `bounds` (`play.bounds {min, max}`, the bounded teleport's
+ * area) — a publisher's bounds are in its own LOCAL frame, which `boundsOwner` names (null =
+ * the scene's, in objectsGroup's frame).
  */
 export function resolvePlaySettings(scene) {
 	const base = get(scenePlay);
@@ -85,8 +93,12 @@ export function resolvePlaySettings(scene) {
 		grounded: base.grounded,
 		eyeHeight: DEFAULT_EYE_HEIGHT,
 		cursor: base.cursor === 'free' ? 'free' : 'locked',
-		locomotion: { teleport: false, fly: false },
-		spawn: normalizeSpawn(base.spawn)
+		locomotion: { teleport: false, fly: false, worldGrab: false },
+		spawn: normalizeSpawn(base.spawn),
+		// 31 K1: the teleport play area (scene frame), or a publisher's in ITS local frame
+		bounds: normalizeBounds(base.bounds),
+		boundsOwner: null,
+		reach: normalizeReach(base.reach)
 	};
 	const baseLoco = normalizeLocomotion(base.locomotion);
 	if (baseLoco) Object.assign(out.locomotion, baseLoco);
@@ -111,6 +123,13 @@ export function resolvePlaySettings(scene) {
 		if (loco) Object.assign(out.locomotion, loco);
 		const spawn = normalizeSpawn(play.spawn);
 		if (spawn) out.spawn = spawn;
+		const bounds = normalizeBounds(play.bounds);
+		if (bounds) {
+			out.bounds = bounds;
+			out.boundsOwner = publisher;
+		}
+		const reach = normalizeReach(play.reach);
+		if (reach != null) out.reach = reach;
 	}
 	const runtime = get(runtimeSpawn);
 	if (runtime) out.spawn = { position: runtime.position, yaw: runtime.yaw };

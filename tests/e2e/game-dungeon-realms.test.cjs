@@ -342,8 +342,7 @@ h.run(async () => {
 	h.check(/HOARD IS YOURS/.test(await hudText(A.page)), '5.16 the victory screen renders');
 
 	// ---- 6. the late joiner ------------------------------------------------------------------------
-	await A.page.keyboard.press('Escape');
-	await A.page.waitForTimeout(500);
+	h.check(await h.leavePlay(A), '(premise) A stepped out of Play to approve the joiner (31 K3: through the pause menu)');
 	const C = await h.setupPage(browser, 'C');
 	await installZip(C, 'dungeon', kitZip.bytes, 'C');
 	await installZip(C, 'dungeon-realms', realmsZip.bytes, 'C');

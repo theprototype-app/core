@@ -45,6 +45,10 @@ describe('normalizeLocomotion', () => {
 		expect(normalizeLocomotion(null)).toBe(null);
 		expect(normalizeLocomotion('fly')).toBe(null);
 	});
+	it('31: keeps a boolean worldGrab (K1), and nothing that is not one', () => {
+		expect(normalizeLocomotion({ fly: true, worldGrab: true, teleport: true })).toEqual({ fly: true, worldGrab: true, teleport: true });
+		expect(normalizeLocomotion({ worldGrab: 'yes' })).toBe(null);
+	});
 });
 
 describe('normalizeSpawn', () => {
@@ -123,5 +127,23 @@ describe('a VR-only spawn', () => {
 		expect(normalizeSpawn({ position: [1, 0, -1], yaw: 0, vrOnly: 'yes' })).toEqual({ position: [1, 0, -1], yaw: 0 });
 		expect(normalizeSpawn({ position: [1, 0, -1] })).toEqual({ position: [1, 0, -1], yaw: 0 });
 		expect(normalizeSpawn([1, 0, -1], 0.5)).toEqual({ position: [1, 0, -1], yaw: 0.5 });
+	});
+});
+
+// 31 K1: worldGrab gives Interact the world gestures; the normaliser keeps the typed flags only
+describe('31 K1 worldGrab', () => {
+	it('Interact gets the world gestures only when the play block asks', () => {
+		expect(locomotionPolicy('interact', null).worldGestures).toBe(false);
+		expect(locomotionPolicy('interact', { worldGrab: true }).worldGestures).toBe(true);
+		expect(locomotionPolicy('interact', { worldGrab: false }).worldGestures).toBe(false);
+		expect(locomotionPolicy('edit', null).worldGestures).toBe(true);
+	});
+	it('normalizeLocomotion keeps teleport, fly and worldGrab booleans and nothing else', () => {
+		expect(normalizeLocomotion({ worldGrab: true, teleport: false, fly: true, jet: true, bounds: {} })).toEqual({
+			teleport: false,
+			fly: true,
+			worldGrab: true
+		});
+		expect(normalizeLocomotion({ worldGrab: 'yes' })).toBe(null);
 	});
 });

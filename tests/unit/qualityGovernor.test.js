@@ -190,3 +190,61 @@ describe('drawGapFor (the ingest rule)', () => {
 		expect(drawGapFor({ ...base, engaged: true, draining: false })).toBe(0);
 	});
 });
+
+// 31-perf P3 — the headset: thresholds from the refresh rate, the override seam, and the
+// framebuffer scale handed to the next entry.
+import { xrThresholds, XR_FRAMEBUFFER_SCALE, XR_START_LEVEL } from '../../src/lib/qualityGovernorCore.js';
+
+describe('31-perf: XR thresholds', () => {
+	it('come from the refresh rate: a missed frame is over, an on-time session recovers', () => {
+		const t72 = xrThresholds(72);
+		expect(t72.overMs).toBeCloseTo(18.06, 1);
+		expect(t72.underMs).toBeCloseTo(15.56, 1);
+		// a healthy 72 Hz session reads 13.9 at every percentile: that must count as calm,
+		// which the static VR pair (under 11.1) never could
+		expect(1000 / 72).toBeLessThan(t72.underMs);
+		expect(1000 / 72).toBeLessThan(xrThresholds(72).overMs);
+		// one missed frame reads twice the budget: over
+		expect((2 * 1000) / 72).toBeGreaterThan(t72.overMs);
+		expect(xrThresholds(90).overMs).toBeCloseTo(14.44, 1);
+		expect(xrThresholds(0).hz).toBe(72); // nonsense falls back to 72
+	});
+	it('a governor judged by them steps on missed frames and recovers on on-time ones', () => {
+		const g = createGovernor();
+		g.setThresholds(xrThresholds(72));
+		let t = 1000;
+		// 3 s of frames where every 5th is missed (27.8 ms): p95 = 27.8 > 18
+		for (let i = 0; i < 180; i++) {
+			const ms = i % 5 === 0 ? 27.8 : 13.9;
+			t += ms;
+			g.noteFrame(ms, t);
+		}
+		expect(g.decide(t, { profile: 'vr', heavy: true }).moved).toBe('up');
+		// then on-time frames for the recovery window: back down
+		for (let i = 0; i < 1200; i++) {
+			t += 13.9;
+			g.noteFrame(13.9, t);
+		}
+		expect(g.decide(t, { profile: 'vr', heavy: true }).moved).toBe('down');
+	});
+	it('COUNTERFACTUAL: without the override, a healthy 72 Hz session could never recover', () => {
+		const g = createGovernor();
+		let t = 1000;
+		g.setLevel(1, t);
+		t += 700;
+		for (let i = 0; i < 1200; i++) {
+			t += 13.9;
+			g.noteFrame(13.9, t);
+		}
+		// the static vr pair (underMs 11.1) reads 13.9 as NOT calm: stuck at level 1
+		expect(g.decide(t, { profile: 'vr', heavy: true }).moved).toBe(null);
+		g.setThresholds(xrThresholds(72));
+		expect(g.decide(t, { profile: 'vr', heavy: true }).moved).toBe('down');
+		g.setThresholds(null);
+		expect(g.thresholds()).toBe(null);
+	});
+	it('the entry floor is the shadows step, and a headset eye buffer is never lowered (crisp panel text)', () => {
+		expect(GOVERNOR_STEPS[XR_START_LEVEL - 1].key).toBe('shadows');
+		expect(XR_FRAMEBUFFER_SCALE).toBe(1);
+	});
+});

@@ -40,7 +40,10 @@
 
 	$: topLevel = ($objectsGroup?.children ?? []) as any[]
 	// 215: flattened rows — expanded groups inline their children (indented)
-	$: visibleRows = flattenPanelRows(topLevel, $vrPanelExpanded)
+	// 31-perf P1: only while the panel is OPEN. This component is always mounted (desktop
+	// included) and every pokeScene re-ran the flatten and the row map for a panel nobody
+	// could see — at physics rates in a game
+	$: visibleRows = $vrObjectsPanelOpen ? flattenPanelRows(topLevel, $vrPanelExpanded) : []
 	$: maxScroll = Math.max(0, visibleRows.length - ROWS)
 	// the stick moves a ROW CURSOR (109.4); the page scrolls to keep it visible
 	$: cursor = Math.min(Math.max(0, $vrPanelCursor), Math.max(0, visibleRows.length - 1))

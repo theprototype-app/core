@@ -17,6 +17,10 @@ import {
 import { renderPaused } from './overloadGuard';
 import { sceneBatchOpen } from '../stores/sceneStore';
 import { safeStorage } from './safeStorage';
+import { xrThresholds, XR_START_LEVEL, XR_FRAMEBUFFER_SCALE } from './qualityGovernorCore';
+import { globalRenderer } from '../stores/sceneStore';
+import { lodBias } from './lod';
+import { lodBiasFor } from './lodCore';
 
 // 26-D (roadmap 26 section 4, Stage 1) — ADAPTIVE QUALITY: THE WIRING.
 //
@@ -75,6 +79,9 @@ const DECIDE_EVERY_MS = 250;
 export const RELEASE_SNOOZE_MS = 60000;
 
 const governor = createGovernor();
+/** 31-perf P3: the live XR session, as far as quality is concerned.
+ * @type {{active: boolean, session: any, hz: number, last: number, raised: boolean, before: number, minScale: number, nextScale: number}} */
+const xr = { active: false, session: null, hz: 72, last: 0, raised: false, before: 0, minScale: 1, nextScale: 1 };
 let lastDecideAt = 0;
 let wasHidden = false;
 let pinned = false;
@@ -101,6 +108,10 @@ function publish(level, reason) {
 	}
 	if (level === 0) qualityBaseline.set(null);
 	qualityOverrides.set(overridesAt(level));
+	// 31-perf P2/P3: every step also pulls the LOD switch distances in (a struggling device
+	// struggles with triangles too); lod.js reads the bias, never this module
+	lodBias.set(lodBiasFor(level));
+	if (xr.active && overridesAt(level).dprScale < xr.minScale) xr.minScale = overridesAt(level).dprScale;
 	lastReason = reason;
 	qualityState.set({
 		level,
@@ -116,6 +127,11 @@ function publish(level, reason) {
 /** The profile and heaviness the core needs, read off the last sample. */
 function context() {
 	const metrics = get(sceneMetrics);
+	// 31-perf P3: inside an XR session the sampler's window-rAF loop is asleep, so its last
+	// reading is a DESKTOP one from before entry. The session itself is the evidence: VR, and
+	// always worth governing — a missed headset frame is judder, not a slow chart, and the
+	// light-scene exemption (26-G's ruling) exists for a desktop that is merely slow
+	if (xr.active) return { metrics, profile: /** @type {'desktop'|'vr'} */ ('vr'), heavy: true };
 	const profile = metrics?.profile === 'vr' ? 'vr' : 'desktop';
 	return { metrics, profile: /** @type {'desktop'|'vr'} */ (profile), heavy: isHeavy(metrics, profile, get(qualityBaseline)) };
 }
@@ -152,6 +168,8 @@ export function noteFrameForQuality(ms) {
 /** One decision, now. Exported for the suite, which drives time it cannot wait out.
  * @param {number} [t] */
 export function decideNow(t = now()) {
+	// 31 K3: a game's Quality preset (Low / Medium / High) holds the level while it is played
+	if (gameForcedLevel !== null) return { level: governor.level(), moved: null, reason: 'game preset', p95: null };
 	const ctx = context();
 	const enabled = get(autoQuality);
 	// "Restore full quality" snoozes CLIMBING for a minute; it never blocks a walk back down
@@ -210,6 +228,42 @@ autoQuality.subscribe((on) => {
 	}
 });
 
+/* 31 K3 — a game's Quality setting. `null` = Auto (the governor decides, exactly as before);
+ * a number PINS that level while the game is played: `applyGameQuality(level, preset)` is
+ * called by the game shell's wiring whenever the setting or the in-game state changes. A
+ * per-game choice outranks the device's auto switch (it is explicit), and releasing it puts
+ * the governor back where the player found it. 31-perf's Quest-aware auto reads the same
+ * store (feature-detect `gameQualityState`). */
+/** @type {number | null} */
+let gameForcedLevel = null;
+/** @type {import('svelte/store').Writable<{preset: string, level: number | null}>} */
+export const gameQualityState = writable({ preset: 'auto', level: null });
+
+/**
+ * @param {number | null} level the level to hold, or null for Auto
+ * @param {string} [preset] the setting's name, for the chip's reason line
+ */
+export function applyGameQuality(level, preset = 'auto') {
+	const next = level === null || level === undefined || !Number.isFinite(Number(level)) ? null : Math.max(0, Math.min(MAX_LEVEL, Math.floor(Number(level))));
+	gameQualityState.set({ preset: String(preset), level: next });
+	if (next === gameForcedLevel) return;
+	const was = gameForcedLevel;
+	gameForcedLevel = next;
+	if (next !== null) {
+		// integrate (31-perf x 31-game-shell): the pin outranks the headset's entry floor
+		if (xr.active) governor.setFloor(0);
+		governor.setLevel(next, now());
+		publish(next, 'game quality: ' + preset);
+	} else if (was !== null) {
+		// back to Auto inside a headset = the headset's auto: its entry floor again
+		const base = xr.active && get(autoQuality) ? XR_START_LEVEL : 0;
+		if (xr.active && get(autoQuality)) governor.setFloor(XR_START_LEVEL);
+		governor.setLevel(base, now());
+		governor.forget();
+		publish(base, 'game quality: auto');
+	}
+}
+
 /** TEST-ONLY: feed a synthetic frame / long task at an explicit time, and reset. */
 export const governorForTest = {
 	/** @param {number} ms @param {number} t */
@@ -240,3 +294,105 @@ export const governorForTest = {
 
 registerFrameObserver(noteFrameForQuality);
 registerLongTaskObserver(() => governor.noteLongTask(now()));
+
+// ---- 31-perf P3: THE HEADSET -------------------------------------------------------------
+//
+// Until now the governor never ran in VR: its frames come from sceneBudget's window rAF, which
+// an immersive session suspends, so a Quest sat at full quality however badly it judged. Now:
+//   · FRAMES: the session's own requestAnimationFrame (a second callback beside three's, which
+//     the WebXR spec allows) feeds every frame interval, and decides every 250 ms
+//   · THRESHOLDS: from the headset's refresh rate (xrThresholds: 72 / 90 / 120 Hz), updated on
+//     `frameratechange` — see the core for why the static VR pair could never recover
+//   · START: auto mode enters a session at XR_START_LEVEL (shadows off — the Quest budget) and
+//     gives the level it found back on exit; a lower level reached in the headset is kept
+//     only if it is still needed (the ordinary recovery walks it back)
+//   · RESOLUTION: never lowered in a headset (XR_FRAMEBUFFER_SCALE = 1): a lowered eye buffer
+//     blurred every panel's text, and three already runs maximum foveation
+// The opt-out holds: with auto quality off, none of this changes a level.
+// A game's pinned Quality preset (31-game-shell, `gameForcedLevel`) WINS over the entry floor:
+// a pinned session takes no floor, and pinning mid-session drops it (applyGameQuality).
+
+/** @param {any} r */
+function hookXR(r) {
+	if (!r?.xr || r.__qualityXR) return;
+	r.__qualityXR = true;
+	r.xr.addEventListener?.('sessionstart', () => startXRQuality(r.xr.getSession?.()));
+	r.xr.addEventListener?.('sessionend', () => endXRQuality(r));
+}
+globalRenderer.subscribe((r) => hookXR(r));
+
+/** A session began: judge by its rate, feed its frames, take the entry floor.
+ * Exported for the suite (a headless page cannot present). @param {any} session @param {number} [hzOverride] */
+export function startXRQuality(session, hzOverride) {
+	if (xr.active && xr.session === session) return;
+	xr.active = true;
+	xr.session = session ?? null;
+	xr.last = 0;
+	xr.minScale = 1;
+	xr.hz = Number(hzOverride ?? session?.frameRate) || 72;
+	governor.setThresholds(xrThresholds(xr.hz));
+	governor.forget();
+	session?.addEventListener?.('frameratechange', () => {
+		xr.hz = Number(session.frameRate) || xr.hz;
+		governor.setThresholds(xrThresholds(xr.hz));
+		governor.forget();
+	});
+	xr.raised = false;
+	xr.before = governor.level();
+	if (get(autoQuality) && gameForcedLevel === null) {
+		// the floor HOLDS for the session: recovery must not switch shadows back on because
+		// frames were fine without them — that is the flap the floor exists to prevent
+		governor.setFloor(XR_START_LEVEL);
+		if (governor.level() < XR_START_LEVEL) {
+			governor.setLevel(XR_START_LEVEL, now());
+			xr.raised = true;
+			publish(XR_START_LEVEL, 'headset: shadows off');
+		}
+	}
+	const loop = (/** @type {number} */ t) => {
+		if (!xr.active || xr.session !== session) return;
+		session.requestAnimationFrame(loop);
+		if (xr.last) noteXRFrame(t - xr.last, t);
+		xr.last = t;
+	};
+	session?.requestAnimationFrame?.(loop);
+}
+
+/** One XR frame interval. Exported for the suite. @param {number} ms @param {number} [t] */
+export function noteXRFrame(ms, t = now()) {
+	if (!xr.active) return;
+	governor.noteFrame(ms, t);
+	if (t - lastDecideAt < DECIDE_EVERY_MS) return;
+	lastDecideAt = t;
+	decideNow(t);
+}
+
+/** The session ended: desktop thresholds, the entry floor handed back, and the eye buffer kept
+ * at FULL scale for the next entry (crisp panel text). Exported for the suite. @param {any} [r] */
+export function endXRQuality(r = get(globalRenderer)) {
+	if (!xr.active) return;
+	xr.active = false;
+	xr.session = null;
+	governor.setThresholds(null);
+	governor.setFloor(0);
+	governor.forget();
+	// FULL resolution for the next entry, whatever this session needed (XR_FRAMEBUFFER_SCALE:
+	// a lowered eye buffer blurred every panel's text); `minScale` stays as a reading only
+	xr.nextScale = XR_FRAMEBUFFER_SCALE;
+	try {
+		// three refuses this while presenting; sessionend fires after it has stopped
+		r?.xr?.setFramebufferScaleFactor?.(xr.nextScale);
+	} catch {
+		/* a renderer without XR */
+	}
+	if (xr.raised && get(autoQuality)) {
+		governor.setLevel(xr.before, now());
+		publish(xr.before, 'left the headset');
+	}
+	xr.raised = false;
+}
+
+/** For the suite and the stats plate. */
+export function xrQualityDebug() {
+	return { active: xr.active, hz: xr.hz, raised: xr.raised, minScale: xr.minScale, nextScale: xr.nextScale, floor: governor.floor(), thresholds: governor.thresholds(), level: governor.level() };
+}

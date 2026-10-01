@@ -29,6 +29,8 @@
 	// 30b (vr-play): api.announce's banner — drawn here on the desktop, and by the VR game
 	// panel's head-locked banner in a headset (DOM is invisible there)
 	import { gameAnnouncement } from '$lib/gameAnnounce';
+	// 31 K3: the game shell's pause menu frees the pointer through the SAME single writer
+	import { shellMenu } from '$lib/gameShell';
 
 	// 21-D5: WHICH documents are on screen — the scene HUD, plus the one keyed by the
 	// camera being looked through (attaching a HUD to a camera IS keying it by that
@@ -126,7 +128,12 @@
 	// the screen override are both local. An `inputmode` flow node was rejected for
 	// exactly this: replicated pulses vs a per-peer pointer is a desync, and a second
 	// source of truth strands the pointer free when the screen goes away.
-	const menuWanted = $derived(screens.some((entry) => entry.screen?.input === 'menu') && anyVisible && playing);
+	// 31 K3: the game shell's pause menu is a menu too — folded in HERE so this component
+	// stays the one writer of playPointerFree (it frees the pointer while the menu is open,
+	// and closing it by any path gives the game its pointer back by construction)
+	const menuWanted = $derived(
+		((screens.some((entry) => entry.screen?.input === 'menu') && anyVisible) || ($shellMenu.open && !$isVRMode)) && playing
+	);
 	$effect(() => {
 		playPointerFree.set(menuWanted);
 		return () => playPointerFree.set(false);
@@ -151,6 +158,8 @@
 	/** @param {KeyboardEvent} event */
 	function onKeyDown(event) {
 		if (!anyVisible || focusables.length === 0) return;
+		// 31 K3: the pause menu is on top and owns the keys (GameShellMenu's own handler)
+		if ($shellMenu.open) return;
 		// 21-E3: pointer-free, a control the player has natively focused gets native
 		// semantics - our Space on top of the browser's Space would double-fire it.
 		if (!document.pointerLockElement && /** @type {any} */ (event.target)?.closest?.('#hud-layer')) return;
@@ -284,7 +293,7 @@
 		// while playing. No text-entry guard and no lock check - a pad edge has no target
 		// element and no pointer, and this ring is precisely what a controller player has
 		// INSTEAD of a pointer, free or locked.
-		if (!anyVisible || focusables.length === 0 || !playing) return;
+		if (!anyVisible || focusables.length === 0 || !playing || $shellMenu.open) return;
 		ringAction(action);
 	}
 

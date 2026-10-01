@@ -80,6 +80,40 @@ export const THRESHOLDS = {
 	vr: { overMs: 13.9, underMs: 11.1 }
 };
 
+/**
+ * 31-perf P3 — THE THRESHOLDS OF A LIVE XR SESSION, from the headset's own refresh rate
+ * (72/80/90/120 on a Quest 3). An XR frame is VSYNC-QUANTISED exactly like the desktop's,
+ * so a session holding its rate reads the budget (13.9 ms at 72 Hz) at every percentile and
+ * a missed frame reads twice it. `overMs` = 1.3 budgets: the p95 only passes it when more
+ * than ~5% of frames were missed — the stutter a player feels. `underMs` = 1.12 budgets:
+ * recovery needs essentially EVERY frame on time for the whole recovery window (a flap is
+ * then caught by the doubling hold, which is what it is for). The static `vr` pair above
+ * would never recover at 72 Hz (a healthy frame reads 13.9, never under 11.1).
+ * @param {number} hz @returns {{overMs: number, underMs: number, hz: number}}
+ */
+export function xrThresholds(hz) {
+	const f = Number(hz) >= 30 && Number(hz) <= 240 ? Number(hz) : 72;
+	const budget = 1000 / f;
+	return { overMs: budget * 1.3, underMs: budget * 1.12, hz: f };
+}
+
+/** The level a headset session starts at in auto mode: step 1 = shadows off, the Quest
+ * budget's rule ("shadows off in Interact") — a shadow pass is a second draw of every
+ * caster, per eye, and a headset has a third of a desktop's frame time. */
+export const XR_START_LEVEL = 1;
+
+/**
+ * The XR framebuffer scale, ALWAYS full. 31-perf first carried the resolution half of the ladder
+ * into the headset through `setFramebufferScaleFactor` (applied to the NEXT session, since three
+ * refuses it while presenting): any session that touched level 2 (a load hitch, or a game's
+ * Medium/Low Quality pin) left every later entry in that tab at 0.85..0.5 of the eye buffer, and
+ * EVERY panel's text went soft (the owner's Quest report on preview-1-18: "all text in VR menus
+ * became blurry", while frames were already good from the per-frame fixes). A headset's frame
+ * budget is defended by the steps that cost nothing to read (shadows at entry, particles,
+ * presence); the resolution steps are a desktop measure and are no-ops in a session.
+ */
+export const XR_FRAMEBUFFER_SCALE = 1;
+
 export const TIMING = {
 	/** p95 over this much recent time decides "overloaded" */
 	triggerWindowMs: 2000,
@@ -135,6 +169,11 @@ export function createGovernor(opts = {}) {
 	let lastDownAt = -Infinity;
 	let recoverHoldMs = timing.recoverWindowMs;
 	let settleUntil = -Infinity;
+	/** 31-perf P3: a live XR session's thresholds (xrThresholds), null = the profile's
+	 * @type {{overMs: number, underMs: number} | null} */
+	let thresholdOverride = null;
+	/** 31-perf P3: recovery never walks below this (a headset's entry floor) */
+	let floor = 0;
 
 	function trim(/** @type {number} */ now) {
 		// keep enough for the LONGEST window any decision reads — the recovery hold grows
@@ -199,7 +238,7 @@ export function createGovernor(opts = {}) {
 		 */
 		decide(now, ctx) {
 			trim(now);
-			const t = THRESHOLDS[ctx.profile === 'vr' ? 'vr' : 'desktop'];
+			const t = thresholdOverride ?? THRESHOLDS[ctx.profile === 'vr' ? 'vr' : 'desktop'];
 			const p95 = p95Over(now, timing.triggerWindowMs);
 			const tasks = longTasks.filter((at) => at >= now - timing.longTaskWindowMs).length;
 			const overloaded = (p95 != null && p95 > t.overMs) || tasks > timing.longTasksOver;
@@ -211,7 +250,7 @@ export function createGovernor(opts = {}) {
 				change(level + 1, now);
 				return { level, moved: 'up', reason: p95 != null && p95 > t.overMs ? 'frames' : 'long tasks', p95 };
 			}
-			if (level > 0 && !ctx.pinned && since >= recoverHoldMs) {
+			if (level > floor && !ctx.pinned && since >= recoverHoldMs) {
 				// the scene is no longer heavy: a light scene is never governed, so give it back
 				if (!ctx.heavy) {
 					change(level - 1, now);
@@ -231,6 +270,18 @@ export function createGovernor(opts = {}) {
 			if (next !== level) change(next, now);
 			return level;
 		},
+		/** 31-perf P3: judge against these (an XR session's rate) until cleared with null.
+		 * @param {{overMs: number, underMs: number} | null} t */
+		setThresholds(t) {
+			thresholdOverride = t && Number.isFinite(t.overMs) && Number.isFinite(t.underMs) ? { overMs: t.overMs, underMs: t.underMs } : null;
+		},
+		thresholds: () => thresholdOverride,
+		/** 31-perf P3: the lowest level RECOVERY may reach (setLevel is not bound by it — the
+		 * chip's "restore full quality" still means it). @param {number} n */
+		setFloor(n) {
+			floor = Math.max(0, Math.min(MAX_LEVEL, Math.floor(Number(n)) || 0));
+		},
+		floor: () => floor,
 		level: () => level,
 		recoverHoldMs: () => recoverHoldMs
 	};

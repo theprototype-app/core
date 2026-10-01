@@ -7,7 +7,7 @@ import { serializeNode, serializeEdge, sendNodes } from './nodesHandler';
 import { parkAnimatedAtBase } from './flowRuntime';
 import { stripEditOverlays } from './editOverlays';
 import { isPristinePackRef, stubElementOf, stubNodeCount, fillPackRef, warmPrograms } from './packRefs';
-import { beginLoad, endLoad, progress, slice, updateLoad, onCancel, isLive, LoadCancelled, throttledPoke, holdFrames, releaseFrames } from './sceneLoader';
+import { beginLoad, endLoad, progress, slice, updateLoad, onCancel, isLive, LoadCancelled, throttledPoke, holdFrames, releaseFrames, nextFrames } from './sceneLoader';
 // B7: a spawner's copies exist only while the world runs — never in a scene file
 import { isTransient } from './transientObjects';
 import {
@@ -1355,8 +1355,14 @@ async function applySessionNow(payload, opts, job) {
 	// previous scene's lights and linked again on its first frame. It also shows the right sky
 	// at once instead of the old one under the arriving level. (A6.1: absent = the default.)
 	environmentRestore(payload.environment, replicate);
-	// ...and the viewport holds its last frame while the scene's programs re-link for the new
-	// look a slice at a time and the objects are built; released below (bounded either way)
+	// and its LOOK (the post stack), then two frames of the still-empty scene: the composite
+	// shader and the helpers re-keyed by the new fog/lights compile there, on a frame that has
+	// almost nothing else to draw, instead of on the first frame of the whole level
+	scenePostRestore(payload.post, replicate);
+	await nextFrames(2);
+	if (!isLive(job)) return;
+	// ...then the viewport holds its last frame while the remaining programs link a slice at a
+	// time and the objects are built; released below (bounded either way)
 	holdFrames();
 	const warming = warmPrograms(get(globalScene));
 	/** @type {any} */
@@ -1451,7 +1457,7 @@ async function applySessionNow(payload, opts, job) {
 	jointsRestore(payload.joints ?? []);
 	// the look replicates on restore too, so loading a scene into a live room
 	// brings its art direction along (the jointsRestore precedent below)
-	scenePostRestore(payload.post, replicate);
+	// (the look — post stack — was restored before the objects, with the environment)
 	// A6.1: and so do the sky, the gravity and the music — a game template that
 	// loaded into the room's own sky and gravity was the reason this phase exists.
 	// Each is a no-op when the field is absent (= the scene wants the defaults).

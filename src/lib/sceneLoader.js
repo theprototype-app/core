@@ -182,6 +182,25 @@ export function framesHeld() {
 	return holdUntil > 0 && now() < holdUntil;
 }
 
+/**
+ * Wait for `n` frames to be drawn (or ~100 ms each where rAF does not run — a background tab).
+ * A load applies the scene's LOOK first and lets a frame or two of the near-empty scene absorb
+ * the program changes it causes (the post stack's composite shader, the re-keyed helpers), so
+ * that work is not stacked onto the first frame of the full scene.
+ * @param {number} [n]
+ */
+export async function nextFrames(n = 2) {
+	for (let i = 0; i < n; i++)
+		await new Promise((resolve) => {
+			const timer = setTimeout(resolve, 100);
+			if (typeof requestAnimationFrame === 'function')
+				requestAnimationFrame(() => {
+					clearTimeout(timer);
+					resolve(true);
+				});
+		});
+}
+
 let nextId = 0;
 /** @type {LoadJob | null} */
 let current = null;

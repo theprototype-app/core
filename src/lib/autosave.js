@@ -14,7 +14,7 @@ import { stripEditOverlays } from './editOverlays';
 // restore them as permanent scene content
 import { isTransient, parkTransientObjects } from './transientObjects';
 import { parkPackPieces, fillPackRef, isPristinePackRef, stubElementOf, warmPrograms } from './packRefs';
-import { beginLoad, endLoad, progress, slice, updateLoad, onCancel, isLive, LoadCancelled, throttledPoke, holdFrames, releaseFrames, loading as sceneLoading, loadSettled } from './sceneLoader';
+import { beginLoad, endLoad, progress, slice, updateLoad, onCancel, isLive, LoadCancelled, throttledPoke, holdFrames, releaseFrames, nextFrames, loading as sceneLoading, loadSettled } from './sceneLoader';
 import { animatedImportsSnapshot, animatedImportsRestore } from './animatedImports';
 import { animations, animationsSnapshot, animationsRestore } from './animationPreview';
 import { scenePost, scenePostSnapshot, scenePostRestore } from './scenePost';
@@ -632,6 +632,10 @@ async function applyRestore(snapshot, offer = null) {
 		// 33 L1: sky and lights before the objects, so pieces warming as their packs land
 		// compile for THIS scene's lights (see sessions.applySession)
 		environmentRestore(snapshot.environment, true);
+		// and the look, with two frames of the empty scene to compile it (sessions.applySession)
+		scenePostRestore(snapshot.post, true);
+		await nextFrames(2);
+		if (!isLive(job)) return null;
 		// the viewport holds its last frame while programs re-link and the objects go in
 		holdFrames();
 		const warming = warmPrograms(get(globalScene));
@@ -714,7 +718,7 @@ async function applyRestore(snapshot, offer = null) {
 		if (snapshot.annotations?.length && annotationsRestorer) annotationsRestorer(snapshot.annotations);
 		// the restored look replicates alongside the objects this function just
 		// re-broadcast, so a restore into a live room is consistent
-		scenePostRestore(snapshot.post, true);
+		// (the look was restored before the objects, with the environment)
 		// A6.1: and so do the sky and the gravity (absent = the scene's default, which
 		// is what an older snapshot without these fields means)
 		// (the environment was restored before the objects — see the build loop)

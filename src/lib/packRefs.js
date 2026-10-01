@@ -202,6 +202,9 @@ export function loadPackTemplate(url) {
 	return job;
 }
 
+/** a 1x1 target that stands in for the composer's while compiling @type {any} */
+let warmTarget = null;
+
 /**
  * 33 L1: upload a piece's textures and compile its programs BEFORE its copies are on screen.
  * Otherwise the first frame that draws a new piece does both inside the render call — on a
@@ -211,9 +214,6 @@ export function loadPackTemplate(url) {
  * a failure here only means the first frame pays as it always did.
  * @param {any} scene
  */
-/** a 1x1 target that stands in for the composer's while compiling @type {any} */
-let warmTarget = null;
-
 async function warmTemplate(scene) {
 	/** @type {any} */
 	const renderer = get(globalRenderer);

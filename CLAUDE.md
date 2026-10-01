@@ -5082,6 +5082,18 @@ override for e2e — never share 5173 (the user's main-checkout server).
   locked (replicate the INDEX per-item opt-in; ONE mesh with scenes as tags;
   scene-is-primary renaming), and the vocabulary settled: **session = the mesh, room =
   who is in a scene, PocketBase rooms stay DISCOVERY** — that naming blocks R4.
+- Status (2026-10-01): **1.18.0 PREVIEW — ROADMAP 31 "the second Quest round", integrated on `feat/1.18`
+  (lane `31-integrate`), HELD AT THE RELEASE GATE** (https://preview-1-18.theprototype.pages.dev, core a896b27, modules
+  dev 3c9bf77, scenes `preview-1-18` 35addc4, packs a39280a). Merged core #253 vr-core (K1 K2) · #251 game-shell (K3) ·
+  #249 perf (K4) · #252 towers · #250 stars-jam (unions in playSettings/scenePhysics/vrControls/gameKit/playInteract;
+  the governor pin-vs-XR-floor composed by hand, perf-governor §6c); modules #28 untangle, #27 waves, #26 fb-dungeon +
+  integrate fixes (waves def asks 2.2.0; untangle 2.3.1 fits its VR HUD line; flights leave a game through the menu;
+  door-keypad compares the final pose). THE TRAP OF THE ROUND: K3 made Escape in a game open the pause menu, so every
+  suite that pressed Escape to leave Play before a late joiner dialled left the host in Play — `h.leavePlay` (core and
+  modules helpers). Gates: svelte-check 333/47, vitest 378, build green, every lane's held suites green on the union,
+  modules flights + modes audit (63/0 + 64/0) green, preview proof 211/0 + the core VR/shell suites against the preview
+  build. Perf before/after: `lanes-30/after-31/31-integrate/perf/before-after.md` (Waves p50 700 -> 16.7 ms, Football
+  336 -> 123 calls, Dungeon p99 117 -> 17 ms). OWED on a Quest: every feel/fps line in the handover.
 - Status (2026-09-24): **1.17.0 round 2 + 3 — THE QUEST ROUND AND THE MESHY ASSETS, integrated
   on `feat/1.17` (lane `30b-integrate`)**, held at the user's release gate with a new preview
   (https://preview-1-17.theprototype.pages.dev). Core merged #244 vr-modes, #245 vr-play, #246

@@ -1358,6 +1358,10 @@ async function applySessionNow(payload, opts, job) {
 	// and its LOOK (the post stack), then two frames of the still-empty scene: the composite
 	// shader and the helpers re-keyed by the new fog/lights compile there, on a frame that has
 	// almost nothing else to draw, instead of on the first frame of the whole level
+	// (one at a time: the new fog/lights re-key every helper's program, the post stack builds
+	// its own — measured ~60 + ~40 ms of links at CPU x6, too much for ONE frame together)
+	await nextFrames(2);
+	if (!isLive(job)) return;
 	scenePostRestore(payload.post, replicate);
 	await nextFrames(2);
 	if (!isLive(job)) return;
@@ -1498,11 +1502,19 @@ async function applySessionNow(payload, opts, job) {
 	// 33 L1: the bar stays up while kit pieces are still arriving from their pack — still
 	// cancellable: a scene whose models crawl in over a slow link is exactly the one a user
 	// abandons, and Cancel takes the whole load back either way
+	// The "loaded" toast waits for the models too: it would otherwise slide in while pieces are
+	// still arriving — saying "loaded" early, and its `fly` entrance forces a whole-document
+	// layout in the middle of the load (measured inside its longest task). A load that was
+	// cancelled or superseded meanwhile says nothing.
+	const loaded = () => {
+		if (!isLive(job)) return;
+		endLoad(job);
+		showToast('Session loaded: ' + payload.name + ' (' + (payload.count ?? 0) + ' objects)');
+	};
 	if (refills.length) {
 		updateLoad(job, { phase: 'models' });
-		void Promise.allSettled(refills).then(() => endLoad(job));
-	} else endLoad(job);
-	showToast('Session loaded: ' + payload.name + ' (' + (payload.count ?? 0) + ' objects)');
+		void Promise.allSettled(refills).then(loaded);
+	} else loaded();
 }
 
 // ---- proposal flow (50.3) --------------------------------------------------

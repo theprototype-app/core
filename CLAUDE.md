@@ -2130,6 +2130,40 @@ loadable play content. Everything a user does must be visible to connected peers
   not-on-this-device cards) routed through `travelToPeerScene` (the guarded Go-to path). The
   invite link carries NO scene hint — the link IS the session, where the host stands is presence.
   Suite `session-scenes` (36, three peers).
+- `src/lib/sceneLoader.js` (33 L1, a LEAF: svelte/store only) — A SCENE LOAD MAY TAKE TIME; IT
+  MAY NOT TAKE THE WINDOW. Measured on a CPU x6 phone: Restore of Castle Courtyard was ONE 80 s
+  task (`applyRestore` re-serialized every child with `toJSON()` for the wire — textures as PNG
+  data URLs — solo or not) on a 51 MB full-geometry snapshot, and the template open froze 2 s
+  (569 ms tasks: texture upload + sync program link in the first frame, every copy of a kit piece
+  cloned in the one task that resolved its template, the object list re-rendered per poke).
+  `slice(job)` = a cooperative yield for a LOOP (10 ms budget; throws `LoadCancelled` at a clean
+  point between two objects), `schedule(fn)` = the same budget for MANY promise continuations (a
+  burst that resolves together runs as queue items a slice at a time — N continuations each
+  checking a clock all run in the one task that resolved their promise), `sceneLoad` = the ONE
+  running job `{name, verb, total, done, phase: preparing|reading|objects|models, cancellable,
+  interrupted}` rendered by `menu/SceneLoadBar.svelte` (first slot of the toast stack, after
+  250 ms, `#scene-load-bar` data-done/total/phase, `#scene-load-cancel`). Starting a load
+  SUPERSEDES the running one (no hooks run; its loop stops at the next slice, every await in
+  `applySession`/`applyRestore` re-checks `isLive(job)`); Cancel runs the load's `onCancel` hook
+  (sessions: replicated clear + toast naming the Backup; restore: clear + RE-OFFER the prompt).
+  Cancel stays offered through `models` (kit pieces still arriving). A load that interrupts one still building writes no "Backup before" (that
+  scene is half of somebody's load). `throttledPoke` (250 ms) during the loop; refills poke at
+  most every 200 ms (packRefs `pokeSoon`). The debounced autosave WAITS OUT a load
+  (`saveNow` does not). packRefs: refill attach through `schedule`, `warmTemplate`
+  (`initTexture` per slice + `compileAsync` against the live scene TWICE — canvas AND a 1x1 render
+  target, because three keys a program by tone mapping + output colour space and the composer
+  draws into a target), the scene's ENVIRONMENT restored before the objects (its light count is
+  in every program key), the object list's plain tree mounting in chunks (Controls.svelte,
+  40 + 16/frame), `geometryKeys` cache of the
+  fingerprint checksums keyed by buffer versions, `packRef.box` (root-frame bounds, additive) +
+  ONE scene-root InstancedMesh of grey `kit-placeholders` for hollow stubs, and
+  `parkPackPieces` — **the autosave writes pristine kit pieces as STUBS now** (reverses 30c's
+  "autosave stays full"; hollowed before the GLTF export and put back on the exporter's
+  `afterParse` hook, i.e. once the tree is READ and before the async encode lets a frame draw a
+  hollow castle; `parkedRoots` keeps a scan from refilling one mid-export). The restore sends a
+  wire copy only with an OPEN peer, stubs for pristine pieces. Suite `scene-load` (CPU x6 phone,
+  no long task > 200 ms on open AND restore) + `scripts/scene-load-trace.cjs` (the P0 probe:
+  long tasks, longest frame gap, profile top-self + app call chains).
 - `src/lib/flowLayout.js` + `src/lib/coalesce.js` (R29 S1/S2, both LEAVES, vitest-covered):
   `freeRegion({w,h,graphId})` is the ONE placement rule for anything that authors nodes on the
   user's behalf (`hudActions.addBinding` calls it, side 'right', byte-identical); the SDK

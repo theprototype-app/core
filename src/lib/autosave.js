@@ -633,6 +633,8 @@ async function applyRestore(snapshot, offer = null) {
 		// compile for THIS scene's lights (see sessions.applySession)
 		environmentRestore(snapshot.environment, true);
 		// and the look, with two frames of the empty scene to compile it (sessions.applySession)
+		await nextFrames(2);
+		if (!isLive(job)) return null;
 		scenePostRestore(snapshot.post, true);
 		await nextFrames(2);
 		if (!isLive(job)) return null;

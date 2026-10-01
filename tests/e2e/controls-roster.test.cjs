@@ -702,8 +702,15 @@ h.run(async () => {
 	);
 	titles = await barTitles(A.page);
 	h.check(
-		titles.indexOf('Move (1)') === 2 && titles.indexOf('—') === 1,
-		`a second press walked it one further, across the play well (${titles.join(' | ')})`
+		titles.indexOf('Move (1)') === 2 && titles.indexOf('—') === 3,
+		`a second press walked it one further, past Interact (${titles.join(' | ')})`
+	);
+	// 33 E1: Interact sits before the well now, so the THIRD press is the one that crosses it
+	await rowArrow(A.page, 'Move Move (1) down');
+	titles = await barTitles(A.page);
+	h.check(
+		titles.indexOf('Move (1)') === 3 && titles.indexOf('—') === 2,
+		`a third press walked it across the play well (${titles.join(' | ')})`
 	);
 	// the two controls must be DISTINGUISHABLE: `Icon`'s map is `MAP[name] ?? Box`, and
 	// `chevron-left`/`chevron-right` were in no map at all, so both reorder controls had

@@ -18,6 +18,7 @@ import { setGameLevels, setGameHelp, gameLevels, gameHelp, resetGameShell, onGam
 import { registerGameSetting, gameSettingRows, gameSettingValue, debugResetGameSettings } from '../../src/lib/gameSettings.js';
 import { resolvePlaySettings, setRuntimeSpawn } from '../../src/lib/playSettings.js';
 import { safeStorage, debugResetStorage } from '../../src/lib/safeStorage.js';
+import { noteModuleGroup, forgetModuleGroup } from '../../src/lib/moduleContent.js';
 
 /** what the "scene on screen" uses, set by each test */
 let used = /** @type {string[]} */ ([]);
@@ -129,5 +130,17 @@ describe('what a left-behind module registered stops counting', () => {
 		expect(resolvePlaySettings(null).spawn?.position).toEqual([5, 0, 5]);
 		switchScene(['waves'], []);
 		expect(resolvePlaySettings(null).spawn ?? null).toBe(null);
+	});
+	it('play contract: a kept module group publishing userData.play stops overriding the scene', () => {
+		const group = { name: 'untangle-module', userData: { play: { cursor: 'free', locomotion: { worldGrab: true } } } };
+		const scene = { children: [group] };
+		noteModuleGroup('untangle-module', { id: 'untangle' }, 'interactive');
+		expect(resolvePlaySettings(scene).cursor).toBe('free');
+		switchScene(['untangle'], []);
+		expect(resolvePlaySettings(scene).cursor).toBe('locked');
+		expect(resolvePlaySettings(scene).locomotion.worldGrab).toBe(false);
+		switchScene([], ['untangle']);
+		expect(resolvePlaySettings(scene).cursor).toBe('free');
+		forgetModuleGroup('untangle-module', 'interactive');
 	});
 });

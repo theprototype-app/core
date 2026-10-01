@@ -226,6 +226,9 @@ const messageHandlers = {};
 /** @type {Record<string, {getState: () => any, applyState: (state: any) => void}>} */
 const stateSyncs = {};
 
+/** 33 (L4): which module last started the follow camera (api.followCam) @type {string | null} */
+let followingFor = null;
+
 /** A2: per-module teardown journal — every api.register* records an undo thunk
  * here so deactivateModule() can genuinely dispose a module (the dev-mode live
  * reload tears down and re-registers with fresh code, no page reload).
@@ -417,6 +420,8 @@ function makeApi(moduleId, moduleName = moduleId) {
 	let spawnDisposeHooked = false;
 	/** 33 (L4): api.music journals its stop once per module */
 	let musicDisposeHooked = false;
+	/** 33 (L4): api.followCam journals its stop once per module */
+	let followDisposeHooked = false;
 	/** A value frozen for the undo stack, so a module mutating its patch object later
 	 * cannot rewrite history. @param {any} v */
 	const frozen = (v) => {
@@ -1225,9 +1230,19 @@ function makeApi(moduleId, moduleName = moduleId) {
 		/** Park the editor camera behind an object and follow it (the car's chase
 		 * cam) — LOCAL, no selection, no undo. @param {string} uuid */
 		followCam(uuid) {
-			return possessRef?.startFollowCam(uuid) ?? false;
+			const ok = possessRef?.startFollowCam(uuid) ?? false;
+			// 33 (L4): a module unloaded mid-follow must not leave the camera chasing its car
+			if (ok && !followDisposeHooked) {
+				followDisposeHooked = true;
+				onDispose(() => {
+					if (followingFor === moduleId) possessRef?.stopFollowCam();
+				});
+			}
+			if (ok) followingFor = moduleId;
+			return ok;
 		},
 		stopFollowCam() {
+			if (followingFor === moduleId) followingFor = null;
 			possessRef?.stopFollowCam();
 		},
 		/**

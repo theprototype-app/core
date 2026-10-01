@@ -7,6 +7,7 @@ import { moduleWorldChildren } from './moduleWorld';
 import { normalizeReach } from './playReach';
 // 33 (L4): a module's runtime spawn counts only while the module belongs to the scene (a leaf)
 import { ownerInScope } from './sceneScope';
+import { moduleGroupOf } from './moduleContent';
 
 /**
  * 30b P4: a spawn point set at RUNTIME by a module (`api.setSpawn(position, yaw)`) — a
@@ -57,7 +58,11 @@ export function playPublishers(scene) {
 	if (!scene?.children) return [];
 	// 30b P5: registered module groups live under the world rig's module root now
 	const found = [...scene.children, ...moduleWorldChildren()].filter(
-		(/** @type {any} */ child) => child?.userData?.play
+		(/** @type {any} */ child) =>
+			// 33 (L4): a KEPT module's group is still in the scene, but a scene switch that left
+			// the module behind takes its play contract out of the next game (Untangle's free
+			// cursor and world grab must not become Stars Room's)
+			child?.userData?.play && ownerInScope(moduleGroupOf(child.name)?.moduleId)
 	);
 	found.sort((/** @type {any} */ a, /** @type {any} */ b) => {
 		if (a.name === 'dungeon-module') return -1;

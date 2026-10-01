@@ -157,6 +157,7 @@ h.run(async () => {
 	await page.waitForTimeout(150);
 
 	// ---- 7 the overlay --------------------------------------------------------------------------------
+	const msgs7 = await lodMsgs();
 	await page.locator('#lod-overlay').check();
 	const ovl = await page.evaluate(async (u) => {
 		window.__lg.renderFrom(400);
@@ -167,7 +168,7 @@ h.run(async () => {
 	await page.locator('#lod-overlay').uncheck();
 	const ovlOff = await page.evaluate((u) => window.__lg.drawnFrom(u, 4, [0, 1, 0]).seen.every((d) => d.ownMaterial), uuid);
 	h.check(ovlOff, '7.2 off again: the object wears its own material');
-	h.check((await lodMsgs()) === (await lodMsgs()), '7.3 (the overlay is LOCAL — checked by 2.5\'s rule: no lod write)');
+	h.check((await lodMsgs()) === msgs7 && !(await block(uuid)).overlay, '7.3 the overlay is LOCAL: toggling it on and off sent no lod message and wrote nothing into the block');
 
 	// ---- 8 replace a level with another object (a TREE level) ----------------------------------------
 	const standIn = await page.evaluate(() => {

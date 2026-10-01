@@ -861,7 +861,7 @@ export function lodGroupStats() {
 		radius: Number(e.radius.toFixed(4)),
 		levels: e.block.levels.map((l, i) => {
 			const s = /** @type {any} */ (i === 0 ? { status: 'ready' } : e.built.get(levelKey(l)));
-			return { source: l.source, status: s?.status ?? 'idle', tris: s?.tris ?? null, kind: s?.kind ?? null };
+			return { source: l.source, status: s?.status ?? 'idle', tris: s?.tris ?? null, kind: s?.kind ?? null, paired: s?.kind === 'swap' ? s.pairs.length / 3 : null, error: s?.error ?? null };
 		})
 	}));
 }

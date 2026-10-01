@@ -1044,6 +1044,14 @@ function makeApi(moduleId, moduleName = moduleId) {
 		hitLog() {
 			return knockRef?.hitLogSnapshot?.() ?? { last: {}, recent: [] };
 		},
+		/**
+		 * 31 K1: what this core's locomotion understands, for a module to feature-detect before
+		 * it publishes `userData.play.locomotion` / `play.bounds`. `boundedTeleport`: a
+		 * `teleport: true` in Interact/Play lands only on walkable ground inside `play.bounds`
+		 * (else the content bounds) and never through a wall; `worldGrab`: `worldGrab: true`
+		 * gives the grips Edit's world gestures in Interact/Play. An older core has no object.
+		 */
+		locomotion: Object.freeze({ boundedTeleport: true, worldGrab: true }),
 		/** In a VR session right now? (DEVX #6) @returns {boolean} */
 		isVR() {
 			return !!get(isVRMode);

@@ -63,3 +63,12 @@ describe('gripMovesWorld', () => {
 		expect(gripMovesWorld('interact')).toBe(false);
 	});
 });
+
+// 31 K1: an Interact grip moves the world only with the play block's worldGrab
+describe('31 K1 gripMovesWorld', () => {
+	it('Edit always, Interact only with worldGrab', () => {
+		expect(gripMovesWorld('edit')).toBe(true);
+		expect(gripMovesWorld('interact')).toBe(false);
+		expect(gripMovesWorld('interact', true)).toBe(true);
+	});
+});

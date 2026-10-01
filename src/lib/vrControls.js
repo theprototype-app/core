@@ -2595,8 +2595,9 @@ function onSqueezeStart(index) {
 	const mode = get(editorMode) === 'interact' ? 'interact' : 'edit';
 	let object = gripTargetOf(controllerRay(index), controller.getWorldPosition(new THREE.Vector3()), mode);
 	if (!object) {
-		// 30b P2: Interact's grips never move the world (contract C1)
-		if (!gripMovesWorld(mode)) return;
+		// 30b P2: Interact's grips never move the world (contract C1) — 31 K1: unless the play
+		// block allows it (`locomotion.worldGrab`); a grip on a grabbable still took it above
+		if (!gripMovesWorld(mode, mode === 'interact' && vrLocomotionNow().worldGestures)) return;
 		emptyAirSqueeze[index] = true;
 		// 186: in stretch mode both grips drive the stretch, not a world grab
 		if (get(vrStretchObject)) return;

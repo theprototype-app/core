@@ -386,6 +386,15 @@ h.run(async () => {
 		!!p31.bounds && p31.bounds.min.every((v, i) => v < [0, 1, 5.2][i]) && p31.bounds.max.every((v, i) => v > [0, 1, 5.2][i]) && p31.bounds.max[0] < 5.75 && p31.bounds.min[2] > -5.75,
 		`31 S1: ...bounded INSIDE the glass (walls at ±5.75), the spawn within (${JSON.stringify(p31.bounds)})`
 	);
+	// with 31-vr-core merged (K1): the teleport rule itself, asked where it is going
+	const tv = await page.evaluate(() => {
+		const v = window.__stores.vrControls;
+		if (typeof v.teleportVerdict !== 'function') return null;
+		const at = (to) => !!v.teleportVerdict([0, 1.7, 5.2], to)?.ok;
+		return { inside: at([2, 0, -3]), outsideNorth: at([0, 0, -8]), outsideEast: at([8, 0, 0]) };
+	});
+	if (tv) h.check(tv.inside && !tv.outsideNorth && !tv.outsideEast, `31 S1: bounded teleport — the floor inside lands, beyond the glass is refused (${JSON.stringify(tv)})`);
+	else console.log('SKIP 31 S1 verdict: no vrControls.teleportVerdict (31-vr-core not merged)');
 	const rowOf = (id) => p31.rows.find((r) => r[0] === id);
 	h.check(JSON.stringify(rowOf('stars-point-grab')) === JSON.stringify(['stars-point-grab', 'Point to move stars', 'toggle', true]), `31 S2: "Point to move stars" is a game setting, on by default (${JSON.stringify(rowOf('stars-point-grab'))})`);
 	h.check(JSON.stringify(rowOf('stars-clap')) === JSON.stringify(['stars-clap', 'Make stars with a clap', 'toggle', true]), `31 S3: "Make stars with a clap" is a game setting, on by default (${JSON.stringify(rowOf('stars-clap'))})`);

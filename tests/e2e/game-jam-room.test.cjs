@@ -261,6 +261,18 @@ h.run(async () => {
 		!!b && Array.isArray(b.min) && Array.isArray(b.max) && b.min[0] < 1 && b.max[0] > 1 && b.min[2] < -1 && b.max[2] > -1,
 		`31 J1: teleport is bounded to the studio, the cockpit inside it (${JSON.stringify(b)})`
 	);
+	const k1 = await page.evaluate(() => {
+		const s = window.__stores;
+		const v = s.vrControls;
+		if (typeof v.teleportVerdict !== 'function') return null;
+		let p; s.scenePhysics.scenePlay.subscribe((x) => (p = x))();
+		return {
+			inside: !!v.teleportVerdict([1, 1.6, -1], [3, 0, -3])?.ok,
+			outside: !!v.teleportVerdict([1, 1.6, -1], [10, 0, -3])?.ok
+		};
+	});
+	if (k1) h.check(k1.inside && !k1.outside, `31 J1: bounded teleport — the studio floor lands, past the right wall is refused (${JSON.stringify(k1)})`);
+	else console.log('SKIP 31 J1 verdict: no vrControls.teleportVerdict (31-vr-core not merged)');
 	const scaled = await page.evaluate(async () => {
 		const s = window.__stores;
 		const THREE = s.THREE;

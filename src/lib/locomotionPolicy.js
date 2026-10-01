@@ -7,10 +7,17 @@
 // unless the scene's play block allows it (`play.locomotion: {teleport?, fly?}`, absent =
 // false). The Quest report this answers: "In [the dungeon] I can go through walls,
 // teleport, I want to be able to do this only in edit mode and fly only in edit mode."
+//
+// 31 K1 adds `worldGrab`: in Interact/Play the grips move/rotate/SCALE the world exactly
+// like Edit's world gestures, whenever a grip does not start on something a player may hold
+// (a grip on a grabbable body still takes it). "Entangle game does not allow me to scale
+// scene with grips within game, only in edit mode" / "In Jam Room ... scale the entire
+// environment with grips and move around same as in edit mode". Teleport, when allowed, is
+// BOUNDED in Interact/Play (teleportRules.js).
 
 /**
  * @param {'edit' | 'interact'} mode
- * @param {{teleport?: boolean, fly?: boolean} | null | undefined} locomotion the resolved play block
+ * @param {{teleport?: boolean, fly?: boolean, worldGrab?: boolean} | null | undefined} locomotion the resolved play block
  * @returns {{walk: boolean, fly: boolean, teleport: boolean, collide: boolean, gravity: boolean, worldGestures: boolean}}
  */
 export function locomotionPolicy(mode, locomotion) {
@@ -25,15 +32,15 @@ export function locomotionPolicy(mode, locomotion) {
 		teleport: locomotion?.teleport === true,
 		collide: true,
 		gravity: !fly,
-		worldGestures: false
+		// 31 K1: the world gestures come back only when the scene or a module asks
+		worldGestures: locomotion?.worldGrab === true
 	};
 }
 
 /**
- * `play.locomotion` at a store boundary: only booleans survive, and an empty block is
- * ABSENT (so a scene that never used it saves byte-identically).
- * 31 (contract K1): `worldGrab` joins them — the grips move/rotate/scale the world in a game
- * (31-vr-core implements it; a scene authored with the flag before that lands keeps it).
+ * `play.locomotion` at a store boundary: only the typed booleans survive (`teleport`, `fly`,
+ * 31 K1's `worldGrab`), and an empty block is ABSENT (so a scene that never used it saves
+ * byte-identically). `play.bounds` is a SIBLING (teleportRules.normalizeBounds).
  * @param {any} raw @returns {{teleport?: boolean, fly?: boolean, worldGrab?: boolean} | null}
  */
 export function normalizeLocomotion(raw) {

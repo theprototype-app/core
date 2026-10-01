@@ -1044,6 +1044,14 @@ function makeApi(moduleId, moduleName = moduleId) {
 		hitLog() {
 			return knockRef?.hitLogSnapshot?.() ?? { last: {}, recent: [] };
 		},
+		/**
+		 * 31 K1: what this core's locomotion understands, for a module to feature-detect before
+		 * it publishes `userData.play.locomotion` / `play.bounds`. `boundedTeleport`: a
+		 * `teleport: true` in Interact/Play lands only on walkable ground inside `play.bounds`
+		 * (else the content bounds) and never through a wall; `worldGrab`: `worldGrab: true`
+		 * gives the grips Edit's world gestures in Interact/Play. An older core has no object.
+		 */
+		locomotion: Object.freeze({ boundedTeleport: true, worldGrab: true }),
 		/** In a VR session right now? (DEVX #6) @returns {boolean} */
 		isVR() {
 			return !!get(isVRMode);
@@ -1201,6 +1209,18 @@ function makeApi(moduleId, moduleName = moduleId) {
 		 */
 		vrHand(hand) {
 			return vrControlsRef?.handSnapshot?.(hand) ?? null;
+		},
+		/**
+		 * 31 K2: make `object` (a group of meshes: your VR menu, level bar, buttons) a VR
+		 * PANEL — drawn OVER the scene so a floor or a base can never hide it, and a place the
+		 * controller beam ends with its dot. Hit testing is unchanged. Returns the undo (also
+		 * run when the module is disabled). Feature-detect: `api.vrPanel?.(group)`.
+		 * @param {any} object @returns {() => void}
+		 */
+		vrPanel(object) {
+			const off = vrControlsRef?.registerOverlayPanel?.(object) ?? (() => {});
+			onDispose(off);
+			return off;
 		},
 		/**
 		 * Fire the replicated flow click trigger on an object (DEVX #4, the

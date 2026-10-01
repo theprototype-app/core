@@ -576,6 +576,59 @@ register(api) {
   "Level 3"): the desktop HUD, and in a headset a banner fixed in front of the
   player. A new one replaces the one showing; `ms` 300..15000 (default 1800).
 
+- **`api.setSpawn([x, y, z], yaw, {teleport?})`** — where the player starts: `y` is the
+  FEET, `yaw` is three's `rotation.y` (0 faces −Z). Entering Interact or Play puts the player
+  there (a headset's rig lands its feet on it, a desktop its camera); without `teleport` it is a
+  checkpoint and nobody moves until then. A module's spawn overrides the scene's
+  `play.spawn`. `api.respawnPlayer()` sends the player back to it now.
+
+### Moving around in a game: locomotion, bounds, VR panels (1.18, roadmap 31)
+
+In Interact and Play a VR player WALKS (collisions, gravity, a 0.3 m step, snap turn)
+and nothing else unless the scene's play block — or your module's `userData.play` on
+its scene-root group, field by field — allows more:
+
+```js
+// feature-detect: an older core has no api.locomotion and would ignore the bounds
+if (api.locomotion?.boundedTeleport) {
+	group.userData.play = {
+		locomotion: { teleport: true, worldGrab: false, fly: false },
+		bounds: { min: [-12, -0.5, -12], max: [12, 0.4, 12] }, // in THIS group's local frame
+		colliders: [{ min: [2, 0, -6], max: [2.3, 3, 6] }] // optional: solid boxes, same frame
+	};
+}
+```
+
+- **`locomotion.teleport: true`** — the right stick's arc teleport, BOUNDED: the arc stops
+  at the first surface it meets; the landing must face up (normal y ≥ 0.7) or be the floor
+  plane, must lie inside `bounds`, and the straight line 1.1 m above your feet and the
+  landing must not cross a collider box, a mesh, or (with a dungeon raster published) a wall
+  cell. A refused landing draws the arc RED and releasing the stick does nothing; a valid one
+  is green and puts your FEET on it. Without `bounds` the play area is the scene's content
+  box pulled in 0.3 m. Edit mode's teleport is unchanged (it lands anywhere).
+- **`locomotion.worldGrab: true`** — the grips move, rotate and SCALE the world the way they
+  do in Edit (two grips scale/rotate, the right grip alone pans) whenever a grip does NOT
+  start on something the player may hold (a grip on a dynamic body under
+  `interaction: 'grab'` still takes the body). For board games and instruments: Untangle,
+  the Jam Room.
+- **`locomotion.fly: true`** — the left stick flies along the controller's aim, no gravity.
+- **`bounds: {min: [x, y, z], max: [x, y, z]}`** — a sibling of `locomotion`. The scene's
+  play block gives it in scene coordinates; a module's `userData.play.bounds` is read in
+  that group's local frame. Keep `max.y` just above the floor if box tops and ledges must
+  not be landing spots.
+- `vrControls.teleportVerdict(from, to, normalY?)` (on the debug hook
+  `window.__stores.vrControls`) answers `{ok, reason}` — `ok` `steep` `outside` `off-floor`
+  `wall-cell` `blocked` — for your e2e; `from`/`to` are world FEET points `[x, y, z]`.
+  `vrControls.teleportPreview()` reads the live arc (`{engaged, bounded, valid, reason, target}`).
+
+**Your own VR menu is a panel.** A board, a level bar or buttons you draw in THREE for the
+headset should be registered with **`api.vrPanel?.(group)`** (returns the undo, also run
+when the module is disabled): it is then drawn OVER the scene — a floor, a base or a wall
+between the player and it can never hide its buttons — and the controller laser ends on it
+with its dot, even through whatever stands in front. Hit testing is unchanged. Core's own
+panels (the radial menu, the game board, the wrist card) already work this way, and the
+laser ends on your `registerInteractiveGroup` content too.
+
 **In VR, your game's HUD is in the player's hands.** A screen with `input: 'menu'`,
 a control on it, or bound to the `menu` / `paused` / `over` game state is drawn on
 a board ~1.2 m in front of the player that follows their head lazily; its buttons

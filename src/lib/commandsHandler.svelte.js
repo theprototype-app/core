@@ -33,6 +33,8 @@ import { safeStorage } from './safeStorage';
 // reach — it REGISTERS rather than importing us, the registerDiagnosticsSection shape.
 import { registerMetricSource, ingestVerdict, profileFor } from './sceneBudget';
 import { globalRenderer } from '../stores/sceneStore.js';
+// 33 (L4): the scene going away is when its modules may be left behind (a leaf)
+import { noteSceneLeaving } from './sceneScope';
 
 //Access scene Store
 let scene = $state();
@@ -265,6 +267,9 @@ function sceneRoot() {
 }
 
 export function clearSceneLocal() {
+    // 33 (L4): what the scene uses is read BEFORE anything is wiped — those are the
+    // modules a replacement may leave behind (sceneScope)
+    noteSceneLeaving();
     controls?.detach();
     // 26-B: anything still parked in the ingest queue belongs to the scene being wiped
     dropIngestQueue();

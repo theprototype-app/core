@@ -24,6 +24,9 @@ import { safeStorage } from './safeStorage';
 import { gameFeelOn, gameFeelActive } from './gameFeel';
 import { sfxTone, sfxNoise } from './gameSfx';
 import { musicPreset, stepSeconds, stepEvents, MUSIC_PRESET_IDS } from './gameMusicPresets';
+// 33 (L4): the track belongs to whoever started it — a module left behind by a scene switch
+// neither keeps its music playing nor starts a new track (a leaf)
+import { leftBehindModules, ownerInScope } from './sceneScope';
 
 export { MUSIC_PRESET_IDS };
 
@@ -42,13 +45,14 @@ function readVolume(raw, fallback) {
 /** "Music" volume, 0..1, LOCAL per device (Settings ▸ Interface ▸ Sound). */
 export const gameMusicVolume = writable(readVolume(safeStorage.getItem(VOLUME_KEY), 0.6));
 
-/** what is playing now: `{preset, volume}` or null @type {import('svelte/store').Writable<{preset: string, volume: number} | null>} */
+/** what is playing now: `{preset, volume, owner}` or null — `owner` is the module that
+ * started it ('' = core: a flow node, the shell) @type {import('svelte/store').Writable<{preset: string, volume: number, owner?: string} | null>} */
 export const gameMusicState = writable(null);
 
 /**
  * The running session. `gain` is PER PLAY: stopping fades and disconnects it, so any note
  * already scheduled into it goes silent with it — no voice bookkeeping needed.
- * @type {{preset: any, volume: number, gain: GainNode, timer: any, lastStep: number, scheduled: number} | null}
+ * @type {{preset: any, volume: number, gain: GainNode, timer: any, lastStep: number, scheduled: number, owner: string} | null}
  */
 let current = null;
 const debug = { steps: 0, notes: 0, refused: 0, stops: 0 };
@@ -66,6 +70,10 @@ gameMusicVolume.subscribe((v) => {
 // "music stops on leaving Play/Interact" — the falling edge of the one predicate
 gameFeelOn.subscribe((on) => {
 	if (!on && current) stopGameMusic();
+});
+// 33 (L4): "music from waves stays" — a scene switch that leaves the owner behind ends its track
+leftBehindModules.subscribe(() => {
+	if (current && !ownerInScope(current.owner)) stopGameMusic();
 });
 
 /** @param {number} midi */
@@ -141,12 +149,15 @@ function tick() {
 /**
  * Start (or switch to) a preset. Refused — false — outside Interact/Play, and for an
  * unknown preset name. The same preset already playing only takes the new volume.
- * @param {string} presetId @param {{volume?: number}} [options]
+ * 33 (L4): `owner` is the module asking ('' = core); a module left behind by a scene switch
+ * is refused, and the track remembers who started it.
+ * @param {string} presetId @param {{volume?: number}} [options] @param {string} [owner]
  * @returns {boolean}
  */
-export function playGameMusic(presetId, options = {}) {
+export function playGameMusic(presetId, options = {}, owner = '') {
 	const preset = musicPreset(presetId);
-	if (!preset || !gameFeelActive()) {
+	const who = String(owner || '');
+	if (!preset || !gameFeelActive() || !ownerInScope(who)) {
 		debug.refused++;
 		return false;
 	}
@@ -154,8 +165,9 @@ export function playGameMusic(presetId, options = {}) {
 	const volume = Number.isFinite(raw) ? Math.min(1, Math.max(0, raw)) : 1;
 	if (current && current.preset.id === preset.id) {
 		current.volume = volume;
+		current.owner = who;
 		current.gain.gain.value = levelFor(volume);
-		gameMusicState.set({ preset: preset.id, volume });
+		gameMusicState.set({ preset: preset.id, volume, owner: who });
 		return true;
 	}
 	if (current) stopGameMusic();
@@ -170,15 +182,19 @@ export function playGameMusic(presetId, options = {}) {
 	const gain = ctx.createGain();
 	gain.gain.value = levelFor(volume);
 	gain.connect(bus('music'));
-	current = { preset, volume, gain, timer: setInterval(tick, TICK_MS), lastStep: -1, scheduled: 0 };
+	current = { preset, volume, gain, timer: setInterval(tick, TICK_MS), lastStep: -1, scheduled: 0, owner: who };
 	tick();
-	gameMusicState.set({ preset: preset.id, volume });
+	gameMusicState.set({ preset: preset.id, volume, owner: who });
 	return true;
 }
 
-/** Stop whatever is playing (a short fade — a hard cut clicks). Safe to call anytime. */
-export function stopGameMusic() {
+/** Stop whatever is playing (a short fade — a hard cut clicks). Safe to call anytime.
+ * 33 (L4): with `owner`, only a track that owner started stops — a kept module's
+ * "my game is not on, stop my music" must not silence the game that IS on.
+ * @param {string} [owner] */
+export function stopGameMusic(owner = undefined) {
 	if (!current) return;
+	if (owner !== undefined && current.owner !== String(owner || '')) return;
 	const { gain, timer } = current;
 	current = null;
 	clearInterval(timer);

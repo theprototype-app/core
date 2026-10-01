@@ -24,6 +24,8 @@
 // leaves, vrControls and the HUD all read it, from every side of the history-cycle family.
 import { writable, get } from 'svelte/store';
 import { safeStorage } from './safeStorage';
+// 33 (L4): a row counts only while its owner module belongs to the scene on screen (a leaf)
+import { leftBehindModules, ownerInScope } from './sceneScope';
 
 /**
  * @typedef {{id: string, label: string, type: 'toggle' | 'choice' | 'range', options?: string[],
@@ -207,8 +209,26 @@ export function currentGameId() {
 
 /* ------------------------------------------------------------- rows and values ---- */
 
-/** The game rows declared right now (api.game.addSetting, flow nodes). @type {import('svelte/store').Writable<SettingRow[]>} */
+/** The game rows declared right now (api.game.addSetting, flow nodes) — 33 (L4): only the
+ * ones whose owner is in scope, so a kept module's rows stay out of another game's Settings.
+ * @type {import('svelte/store').Writable<SettingRow[]>} */
 export const gameSettingRows = writable([]);
+
+/** 33 (L4): every declared row, in or out of scope @type {SettingRow[]} */
+let allRows = [];
+/** publish the in-scope rows (and drop the values of rows that left) */
+function publishRows() {
+	const shown = allRows.filter((r) => ownerInScope(r.owner));
+	const before = get(gameSettingRows);
+	if (shown.length === before.length && shown.every((r, i) => r === before[i])) return;
+	gameSettingRows.set(shown);
+	gameSettingValues.update((values) => {
+		const next = { ...values };
+		for (const r of before) if (!shown.some((x) => x.id === r.id)) delete next[r.id];
+		for (const r of shown) if (!(r.id in next)) next[r.id] = readRow(r);
+		return next;
+	});
+}
 
 /** Every value for the current game, core + game rows. A store a $derived can depend on.
  * @type {import('svelte/store').Writable<Record<string, any>>} */
@@ -299,23 +319,24 @@ export function registerGameSetting(row, owner = '') {
 	const clean = normalizeSettingRow(row);
 	if (!clean || RESERVED_SETTING_IDS.has(clean.id)) return null;
 	clean.owner = String(owner || '');
-	gameSettingRows.update((rows) => [...rows.filter((r) => r.id !== clean.id), clean]);
-	gameSettingValues.update((values) => ({ ...values, [clean.id]: readRow(clean) }));
+	allRows = [...allRows.filter((r) => r.id !== clean.id), clean];
+	// a row re-declared with the same id takes its CURRENT stored value
+	gameSettingValues.update((values) => {
+		const { [clean.id]: _old, ...rest } = values;
+		return rest;
+	});
+	publishRows();
 	return () => {
-		gameSettingRows.update((rows) => rows.filter((r) => r !== clean));
-		gameSettingValues.update((values) => {
-			if (get(gameSettingRows).some((r) => r.id === clean.id)) return values;
-			const { [clean.id]: _gone, ...rest } = values;
-			return rest;
-		});
+		allRows = allRows.filter((r) => r !== clean);
+		publishRows();
 	};
 }
 
 /** Drop every row an owner declared (a module disabled, a graph replaced). @param {string} owner */
 export function unregisterGameSettingsOf(owner) {
-	const gone = get(gameSettingRows).filter((r) => r.owner === owner).map((r) => r.id);
-	if (!gone.length) return;
-	gameSettingRows.update((rows) => rows.filter((r) => r.owner !== owner));
+	if (!allRows.some((r) => r.owner === owner)) return;
+	allRows = allRows.filter((r) => r.owner !== owner);
+	publishRows();
 	reload();
 }
 
@@ -357,7 +378,12 @@ export function resolveTurning(values, deviceAngle) {
 /** Test seam: forget every row and source, back to 'untitled' defaults. */
 export function debugResetGameSettings() {
 	idSources.file = idSources.level = idSources.forced = null;
+	allRows = [];
 	gameSettingRows.set([]);
 	gameId.set('untitled');
 	reload();
 }
+
+// 33 (L4): a scene switch moves module rows in or out of scope. At the END of the module
+// (a module-level subscribe runs synchronously at evaluation — the TDZ rule).
+leftBehindModules.subscribe(() => publishRows());

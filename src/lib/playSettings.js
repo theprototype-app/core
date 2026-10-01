@@ -5,6 +5,8 @@ import { normalizeLocomotion, normalizeSpawn } from './locomotionPolicy';
 import { normalizeBounds } from './teleportRules';
 import { moduleWorldChildren } from './moduleWorld';
 import { normalizeReach } from './playReach';
+// 33 (L4): a module's runtime spawn counts only while the module belongs to the scene (a leaf)
+import { ownerInScope } from './sceneScope';
 
 /**
  * 30b P4: a spawn point set at RUNTIME by a module (`api.setSpawn(position, yaw)`) — a
@@ -132,7 +134,8 @@ export function resolvePlaySettings(scene) {
 		if (reach != null) out.reach = reach;
 	}
 	const runtime = get(runtimeSpawn);
-	if (runtime) out.spawn = { position: runtime.position, yaw: runtime.yaw };
+	// 33 (L4): Waves' spawn at its crystal must not put the Towers player there
+	if (runtime && ownerInScope(runtime.owner)) out.spawn = { position: runtime.position, yaw: runtime.yaw };
 	return out;
 }
 

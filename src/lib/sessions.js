@@ -616,15 +616,24 @@ async function confirmSessionFormat(payload) {
  * @param {any} payload @returns {Promise<boolean>} false = cancel the import
  */
 async function confirmModuleRequirements(payload) {
-	const { missing, disabled } = classifyRequirements(payload?.modules);
-	if (!missing.length && !disabled.length) return true;
+	const { missing, disabled, outdated } = classifyRequirements(payload?.modules);
+	if (!missing.length && !disabled.length && !outdated.length) return true;
 	const name = (/** @type {any} */ entry) => entry.id + (entry.version ? ' v' + entry.version : '');
 	const lines = [];
 	if (missing.length) lines.push('Not installed: ' + missing.map(name).join(', '));
+	if (outdated.length)
+		lines.push('Older version installed: ' + outdated.map((/** @type {any} */ e) => e.id + ' v' + e.have + ' (this scene needs v' + e.version + ')').join(', '));
 	if (disabled.length) lines.push('Switched off: ' + disabled.map(name).join(', '));
 	/** @type {{value: string, label: string, color?: string}[]} */
 	const choices = [];
-	if (missing.length) choices.push({ value: 'install', label: 'Install (' + missing.length + ')' });
+	// one button for both: an update IS an install from the gallery (installUrl replaces the
+	// installed copy live), and the suites/players already know `#confirm-dialog-install`
+	const fetchable = missing.length + outdated.length;
+	if (fetchable)
+		choices.push({
+			value: 'install',
+			label: (missing.length && outdated.length ? 'Install + update' : missing.length ? 'Install' : 'Update') + ' (' + fetchable + ')'
+		});
 	if (disabled.length) choices.push({ value: 'enable', label: 'Enable (' + disabled.length + ')' });
 	choices.push({ value: 'anyway', label: 'Load anyway', color: 'alternative' });
 	const answer = await showChoice({
@@ -636,7 +645,7 @@ async function confirmModuleRequirements(payload) {
 	});
 	if (!answer) return false; // Cancel / Esc / outside-close: nothing has been touched
 	if (answer === 'enable') enableRequired(disabled);
-	if (answer === 'install') await installRequired(missing);
+	if (answer === 'install') await installRequired([...missing, ...outdated]);
 	return true;
 }
 
@@ -675,7 +684,7 @@ async function installRequired(entries) {
 	}
 	if (installed)
 		showToast(
-			'Installed ' + installed + ' module' + (installed === 1 ? '' : 's') +
+			'Installed ' + installed + ' module' + (installed === 1 ? '' : 's') + ' from the gallery' +
 				' — every player needs their own copy'
 		);
 	if (absent.length)

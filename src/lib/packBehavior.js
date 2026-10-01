@@ -71,7 +71,14 @@ const near = new Map();
 const knockReady = new Map();
 /** @type {Map<string, {box: THREE.Box3, at: number}>} world boxes for proximity, refreshed */
 const boxCache = new Map();
-const stats = { triggers: 0, received: 0, stale: 0, poses: 0, sounds: 0, knocks: 0, colliderBuilds: 0 };
+const stats = { triggers: 0, received: 0, stale: 0, poses: 0, sounds: 0, knocks: 0, colliderBuilds: 0, clicks: 0 };
+/** the last click the handler heard and what it made of it (the suites' diagnosis) */
+let lastClick = /** @type {{mesh: string, result: string} | null} */ (null);
+/** @param {any} mesh @param {string} result @returns {false} */
+function noteClick(mesh, result) {
+	lastClick = { mesh: String(mesh?.name ?? mesh?.type ?? '?'), result };
+	return false;
+}
 
 /** the leftover after a clip end before a preview hands the pose back */
 const PREVIEW_HOLD = 0.4;
@@ -535,14 +542,16 @@ export function tickPackBehaviors() {
  * @param {any} mesh @returns {boolean}
  */
 function onBehaviorClick(mesh) {
-	if (!gameFeelActive()) return false;
+	stats.clicks++;
+	if (!gameFeelActive()) return noteClick(mesh, 'edit');
 	const root = behaviorRootOf(mesh);
-	if (!root) return false;
+	if (!root) return noteClick(mesh, 'not-functional');
 	const spec = behaviorOf(root.uuid);
-	if (!spec || (spec.type === 'loop' && spec.autoplay)) return false;
+	if (!spec || (spec.type === 'loop' && spec.autoplay)) return noteClick(mesh, 'ambient');
 	// proximity doors still answer a click (a toggle by hand); knock doors take a desktop
 	// click as the knock (a desktop has no hands)
-	if (!triggerBehavior(root.uuid)) return false;
+	if (!triggerBehavior(root.uuid)) return noteClick(mesh, 'unchanged');
+	noteClick(mesh, 'toggled');
 	try {
 		flowRef?.fireObjectClick?.(root.uuid);
 	} catch {}
@@ -587,6 +596,7 @@ export function startPackBehaviors(options = {}) {
 export function packBehaviorDebug() {
 	return {
 		...stats,
+		lastClick,
 		items: behaviorUuids().map((uuid) => ({
 			uuid,
 			spec: behaviorOf(uuid),

@@ -185,17 +185,13 @@ h.run(async () => {
 			if (m?.parameter === 'animation') window.__sent.push(m.playing);
 			return orig(m);
 		};
-		// 33 P2: an import no longer autoplays, so the first press PLAYS and the second pauses
-		document.querySelector('#clip-play')?.click();
-		await new Promise((r) => setTimeout(r, 400));
-		const mid = await new Promise((r) => w.animatedImports.animatedObjects.subscribe(r)());
+		// the clip is PLAYING here (pressed at import, restored playing), so one press pauses
 		document.querySelector('#clip-play')?.click();
 		await new Promise((r) => setTimeout(r, 400));
 		const imported = await new Promise((r) => w.animatedImports.animatedObjects.subscribe(r)());
-		return { sent: window.__sent.slice(), started: Object.values(mid)[0]?.playing, playing: Object.values(imported)[0]?.playing };
+		return { sent: window.__sent.slice(), playing: Object.values(imported)[0]?.playing };
 	});
-	h.check(picked.sent.length >= 2, `the clip transport replicates (${picked.sent.length} message(s))`);
-	h.check(picked.started === true, `the first press plays it (playing ${picked.started})`);
+	h.check(picked.sent.length >= 1, `the clip transport replicates (${picked.sent.length} message(s))`);
 	h.check(picked.playing === false, `and pausing actually paused it (playing ${picked.playing})`);
 
 	await h.finish(browser);

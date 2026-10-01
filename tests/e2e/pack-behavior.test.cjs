@@ -179,8 +179,50 @@ h.run(async () => {
 	await h.eventually(() => doorOf(B.page), (d) => Math.abs(d.qy - OPEN_QY) < 0.01, '6.3 B in Interact shows it open');
 
 	console.log('\n=== 7. the leaf collider follows: open passes, shut stops ===');
+	// THE FALLBACK GUARD: with nothing dynamic, a sim start simulates the (sticky) selected
+	// object — which used to be the door just placed, so it fell and every click carried it
+	await A.page.evaluate((uuid) => {
+		const s = window.__stores;
+		s.objectActions.selectObject(uuid);
+		s.objectActions.deselectObject(); // selectedObject stays the door (sticky)
+	}, door.uuid);
+	await A.page.evaluate(() => window.__stores.physics.toggleSimulation());
+	await A.page.waitForTimeout(1500);
+	const fallback = await A.page.evaluate((uuid) => {
+		const p = window.__stores.physics;
+		const running = !!p.physicsRuntime();
+		const dynamicDoor = running && p.physicsDebug().some((b) => b.uuid === uuid);
+		if (running) p.stopSimulation();
+		return { running, dynamicDoor };
+	}, door.uuid);
+	h.check(!fallback.dynamicDoor, '7.0a a sim start never makes the functional door the fallback dynamic body (' + JSON.stringify(fallback) + ')');
+	// a real dynamic body elsewhere, so a simulation runs
+	const crate = await A.page.evaluate(async () => {
+		const s = window.__stores;
+		s.commandsHandler.sceneCommand('/create Box 1 1 1');
+		await new Promise((r) => setTimeout(r, 800));
+		let g = null;
+		s.objectsGroup.subscribe((v) => (g = v))();
+		const box = [...g.children].reverse().find((c) => c.isMesh && !c.userData.behavior);
+		box.position.set(6, 3, 6);
+		box.updateMatrixWorld(true);
+		s.physics.setPhysicsFor(box.uuid, { mode: 'dynamic', mass: 1 });
+		s.objectActions.deselectObject();
+		return box.uuid;
+	});
 	await A.page.evaluate(() => window.__stores.physics.toggleSimulation());
 	await h.eventually(() => A.page.evaluate(() => !!window.__stores.physics.physicsRuntime()), (v) => v, '7.0 a simulation runs on A', 15000);
+	const bodies = await A.page.evaluate(() => {
+		const p = window.__stores.physics;
+		return {
+			dynamic: p.physicsDebug().map((b) => b.uuid),
+			fixed: p.physicsWorldDebug().fixed.find((f) => f.name === 'TestDoor') ?? null
+		};
+	});
+	h.check(
+		!bodies.dynamic.includes(door.uuid) && bodies.fixed && bodies.fixed.colliders >= 3,
+		'7.0b the door is a FIXED body of frame slabs, never the fallback dynamic one (' + JSON.stringify({ crate: bodies.dynamic.includes(crate), fixed: bodies.fixed }) + ')'
+	);
 	await A.page.waitForTimeout(400);
 	/** walk the capsule from in front of the door straight through the doorway */
 	const walk = () =>
@@ -210,7 +252,16 @@ h.run(async () => {
 	w = await walk();
 	h.check(w.z > -2.9, '7.5 SHUT: the leaf stops the capsule (z ' + w.z.toFixed(2) + ')');
 	// counterfactual: the whole-door box (no doorway cut) blocks even an OPEN door
+	const diagBefore = await A.page.evaluate(({ x, y }) => ({ under: document.elementFromPoint(x, y)?.tagName, dbg: window.__stores.packBehavior.packBehaviorDebug().clicks }), framePt);
 	await A.page.mouse.click(framePt.x, framePt.y);
+	await A.page.waitForTimeout(300);
+	const diag = await A.page.evaluate(() => {
+		const d = window.__stores.packBehavior.packBehaviorDebug();
+		let pi = null;
+		window.__stores.playInteract.playInteractState?.subscribe?.((v) => (pi = v))();
+		return { clicks: d.clicks, lastClick: d.lastClick, state: d.items[0]?.state, pi };
+	});
+	console.log('   7.6 diagnosis: before ' + JSON.stringify(diagBefore) + ' after ' + JSON.stringify(diag));
 	await h.eventually(() => doorOf(A.page), (d) => Math.abs(d.qy - OPEN_QY) < 0.01, '7.6 reopened');
 	await A.page.evaluate(async (uuid) => {
 		const s = window.__stores;
@@ -262,14 +313,19 @@ h.run(async () => {
 		const orig = peer.send.bind(peer);
 		peer.send = (msg) => (types.push(msg?.type), orig(msg));
 		s.animatedImports.setAnimationState(uuid, { playing: true, clip: 'open' });
-		await new Promise((r) => setTimeout(r, 500));
 		let root = null;
 		s.objectsGroup.subscribe((g) => (root = g?.getObjectByProperty('uuid', uuid)))();
-		const mid = root.getObjectByName('Leaf').quaternion.y;
+		// sample the whole preview window (1 s clip + the hold): one instant read on a loaded
+		// page can land before the first preview frame
+		let mid = 0;
+		for (let i = 0; i < 30; i++) {
+			await new Promise((r) => setTimeout(r, 50));
+			mid = Math.min(mid, root.getObjectByName('Leaf').quaternion.y);
+		}
 		peer.send = orig;
 		return { types, mid };
 	}, door.uuid);
-	h.check(sent.mid < -0.2, '10.1 the preview moves the leaf in Edit (qy ' + sent.mid.toFixed(3) + ')');
+	h.check(sent.mid < -0.2, '10.1 the preview moves the leaf in Edit (deepest qy ' + sent.mid.toFixed(3) + ')');
 	h.check(!sent.types.includes('objectParameters') && !sent.types.includes('behavior'), '10.2 nothing was sent (' + JSON.stringify(sent.types) + ')');
 	await h.eventually(() => doorOf(A.page), (d) => Math.abs(d.qy) < 1e-4 && !d.preview, '10.3 the preview hands the pose back to rest', 4000);
 	h.check((await doorOf(A.page)).state?.n === aState.n, '10.4 the shared state did not change');

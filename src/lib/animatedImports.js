@@ -231,6 +231,13 @@ export function setAnimationState(uuid, next, replicate = true) {
 		Object.values(record.actions).forEach((action) => action.stop());
 		record.actions[state.clip]?.play();
 	}
+	// 33 P2: nothing autoplays at registration any more, so the FIRST play is what schedules
+	// the action — without this a press (or a restored `playing: true`) changed the state and
+	// moved nothing
+	if (state.playing && state.clip && !record.actions[state.clip]?.isScheduled()) {
+		Object.values(record.actions).forEach((action) => action.stop());
+		record.actions[state.clip]?.play();
+	}
 	if (!state.playing && next.playing === false) record.mixer.setTime(0);
 	if (replicate) {
 		/** @type {any} */

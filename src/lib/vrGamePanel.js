@@ -39,6 +39,7 @@ import { fireHudButton, hudOptionsOf } from './flowRuntime';
 import { cameraPreview } from './cameraPreview';
 import { gameState } from './gameState';
 import { gameFeelActive } from './gameFeel';
+import { PANEL_ORDER } from './vrPanelOverlay';
 import { gameAnnouncement } from './gameAnnounce';
 import { playGameSound } from './gameSfx';
 import { hudImageFor, resolveHudImage } from './hudImages';
@@ -530,7 +531,9 @@ function surface(name, pxW, pxH, worldW) {
 			new THREE.MeshBasicMaterial({ map: texture, transparent: true, depthTest: false, depthWrite: false, side: THREE.DoubleSide })
 		);
 		mesh.name = name;
-		mesh.renderOrder = 1000;
+		// 31 K2: the overlay order, after the panel depth clear (vrPanelOverlay) — its own
+		// depthTest:false stays, so it is over the scene with or without the clear
+		mesh.renderOrder = PANEL_ORDER;
 		mesh.visible = false;
 		mesh.frustumCulled = false;
 		mesh.userData.localOnly = true;

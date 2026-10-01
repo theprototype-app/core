@@ -43,6 +43,7 @@ import {
 	peerHandStyle, pokeScene } from '../stores/sceneStore';
 import { isScenery, pickGripTarget, gripMovesWorld } from './vrGrip';
 import { moduleGroupList, moduleGroupsRevision } from './moduleContent';
+import { overlayPanel, makeDepthSentinel, PANEL_ORDER, BEAM_ORDER } from './vrPanelOverlay';
 import { moduleWorldChildren } from './moduleWorld';
 import { resolvePlaySettings, playPublishers } from './playSettings';
 import { hudDocs, isGameHud } from './hudDocs';
@@ -515,6 +516,8 @@ function openPanelGroups() {
 			if (panel) list.push(panel);
 		} catch {}
 	}
+	// 31 K2: a module's registered VR panels (api.vrPanel) — the beam ends on them too
+	for (const panel of overlayPanels) if (panel.visible !== false && panel.parent) list.push(panel);
 	add(get(vrMenuOpen), vrMenuGroup);
 	add(get(vrObjectsPanelOpen), vrPanelGroup);
 	add(get(vrPropsPanelOpen), vrPropsGroup);
@@ -527,6 +530,48 @@ function openPanelGroups() {
 	add(!!get(vrKeyboardTarget), vrKeyboardGroup);
 	add(get(vrPaletteOpen), vrPaletteGroup);
 	return list;
+}
+
+/** 31 K2: module-registered VR panels (api.vrPanel) @type {Set<any>} */
+const overlayPanels = new Set();
+/**
+ * 31 K2: make a module's object a VR PANEL — drawn over the scene like core's panels, and
+ * a beam end. Returns the undo. @param {any} object @returns {() => void}
+ */
+export function registerOverlayPanel(object) {
+	if (!object) return () => {};
+	overlayPanels.add(object);
+	overlayPanel(object);
+	return () => {
+		overlayPanels.delete(object);
+	};
+}
+/** @type {any} */ let depthSentinel = null;
+/**
+ * 31 K2 (U4): every open panel draws OVER the scene — see vrPanelOverlay.js for why a depth
+ * clear rather than depthTest:false. Core's panels (svelte trees whose children change as
+ * they re-render) are re-marked every frame (idempotent, allocation-free); the game surfaces
+ * and api.vrPanel objects are marked when made. The sentinel is in the scene only while a
+ * panel is open, so a frame without one is byte-for-byte the old frame.
+ */
+function updatePanelOverlay() {
+	const panels = openPanelGroups();
+	let any = false;
+	for (const panel of panels) {
+		if (panel.userData?.vrOverlay === false) continue; // a provider's world handles (spline, sleeve)
+		overlayPanel(panel);
+		any = true;
+	}
+	const scene = /** @type {any} */ (get(globalScene));
+	if (any && scene) {
+		if (!depthSentinel) depthSentinel = makeDepthSentinel(THREE);
+		if (depthSentinel.parent !== scene) scene.add(depthSentinel);
+		depthSentinel.visible = true;
+	} else if (depthSentinel) depthSentinel.visible = false;
+}
+/** 31 K2: how many times the panel depth clear ran (the suites' view) */
+export function panelOverlayDebug() {
+	return { clears: depthSentinel?.userData.clears ?? 0, visible: !!depthSentinel?.visible, order: PANEL_ORDER };
 }
 
 /** 31 G5: the registered INTERACTIVE module groups present in the scene (re-homed under
@@ -558,7 +603,7 @@ let interactiveNamesAt = -1;
  * open floating panel, so navigating menus shows the beam ending in a circle
  * on the hovered control (parity with object selection). Exported for
  * headless tests. @param {any} ray a THREE.Raycaster
- * @returns {{distance: number, hit: boolean, object: any, info: any}} */
+ * @returns {{distance: number, hit: boolean, object: any, info: any, panel: boolean}} */
 export function beamTarget(ray) {
 	const group = get(objectsGroup);
 	let distance = 5;
@@ -587,14 +632,23 @@ export function beamTarget(ray) {
 			info = first;
 		}
 	}
+	// 31 K2: a VR panel is drawn OVER the scene (vrPanelOverlay), so a panel the ray reaches
+	// ends the beam even when a floor or a base stands in front of it — the press goes to the
+	// panel there too (a panel hit wins every trigger path), and the beam must agree with it
+	let panelDistance = Infinity;
+	/** @type {any} */ let panelInfo = null;
 	for (const panel of openPanelGroups()) {
 		const hits = ray.intersectObject(panel, true);
-		if (hits.length > 0 && hits[0].distance < distance) {
-			distance = hits[0].distance;
-			hit = true;
-			object = null; // a panel in front never highlights the object behind it
-			info = hits[0];
+		if (hits.length > 0 && hits[0].distance < panelDistance) {
+			panelDistance = hits[0].distance;
+			panelInfo = hits[0];
 		}
+	}
+	if (panelInfo) {
+		distance = panelDistance;
+		hit = true;
+		object = null; // a panel never highlights the object behind it
+		info = panelInfo;
 	}
 	// D8: while vertex-editing, the scene-root handle dots are beam targets too
 	// (they live OUTSIDE objectsGroup); a handle hit never highlights an object
@@ -608,7 +662,7 @@ export function beamTarget(ray) {
 			info = hits[0];
 		}
 	}
-	return { distance, hit, object, info };
+	return { distance, hit, object, info, panel: !!panelInfo && info === panelInfo };
 }
 
 /** D5: controller-local reticle pose — the ring sits at the beam tip, laid
@@ -655,8 +709,10 @@ function updateRaysAndHover(presenting) {
 	if (!presenting) {
 		rayReticles.forEach((r) => (r.visible = false));
 		setHovered(null);
+		if (depthSentinel) depthSentinel.visible = false;
 		return;
 	}
+	updatePanelOverlay();
 	const pointerIndex = controllerIndexFor(get(vrMenuHand) === 'right' ? 'left' : 'right');
 	// D6: an armed one-shot ping tints the beam + reticle with YOUR ping color
 	// so the arm state is visible in-headset
@@ -665,6 +721,14 @@ function updateRaysAndHover(presenting) {
 		: null;
 	for (let i = 0; i < 2; i++) {
 		const target = beamTarget(controllerRay(i));
+		// 31 K2: on a panel the pointer draws after the panels (seen on the button through the
+		// floor); anywhere else it depth-tests like the scene around it
+		const order = target.panel ? BEAM_ORDER : 0;
+		if (rayLines[i]) rayLines[i].renderOrder = order;
+		if (rayReticles[i]) {
+			rayReticles[i].renderOrder = order;
+			rayReticles[i].children[0] && (rayReticles[i].children[0].renderOrder = order + 1);
+		}
 		if (rayLines[i]) {
 			rayLines[i].scale.z = target.distance;
 			if (pingTint) rayLines[i].material.color.set(pingTint);

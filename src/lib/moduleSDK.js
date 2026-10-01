@@ -1203,6 +1203,18 @@ function makeApi(moduleId, moduleName = moduleId) {
 			return vrControlsRef?.handSnapshot?.(hand) ?? null;
 		},
 		/**
+		 * 31 K2: make `object` (a group of meshes: your VR menu, level bar, buttons) a VR
+		 * PANEL — drawn OVER the scene so a floor or a base can never hide it, and a place the
+		 * controller beam ends with its dot. Hit testing is unchanged. Returns the undo (also
+		 * run when the module is disabled). Feature-detect: `api.vrPanel?.(group)`.
+		 * @param {any} object @returns {() => void}
+		 */
+		vrPanel(object) {
+			const off = vrControlsRef?.registerOverlayPanel?.(object) ?? (() => {});
+			onDispose(off);
+			return off;
+		},
+		/**
 		 * Fire the replicated flow click trigger on an object (DEVX #4, the
 		 * essentials pattern) — user graphs with an On Click node targeting the
 		 * object react to your module's events on every peer. @param {string} uuid

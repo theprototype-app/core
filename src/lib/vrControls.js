@@ -262,14 +262,27 @@ const raycaster = new THREE.Raycaster();
 const tempMatrix = new THREE.Matrix4();
 const tempVector = new THREE.Vector3();
 
-/** @type {any} single-hand grab: { object, index, prevPos, prevQuat, before } */
-let grab = null;
+/** @type {any[]} per-hand grabs, indexed by controller SLOT: each is { object, index, prevPos,
+ * prevQuat, before, ... }. 33 G4: one per hand, so two hands hold two things at once — a single
+ * shared slot let the second hand's grab overwrite the first, and the first hand's piece sat
+ * in its kinematic hold in mid-air until it was grabbed again (the Towers report). */
+const grabs = [null, null];
 /** @type {any} two-hand scale: { object, startDistance, startScale, before } */
 let scaleGrab = null;
 /** 24-A A1: the object a VR hand is holding right now, or null — the knock probe
  * skips it (a hand knocking the crate it is carrying would fight its own hold). */
 export function vrGrabbedUuid() {
-	return grab?.object?.uuid ?? scaleGrab?.object?.uuid ?? null;
+	return grabs[0]?.object?.uuid ?? grabs[1]?.object?.uuid ?? scaleGrab?.object?.uuid ?? null;
+}
+/** 33 G4: EVERY object a VR hand holds right now (both hands may each hold one) */
+export function vrGrabbedUuids() {
+	return [grabs[0]?.object?.uuid, grabs[1]?.object?.uuid, scaleGrab?.object?.uuid].filter(Boolean);
+}
+/** 33 G4: vrGrabbedHand = the hand holding something, or 'both' — the stick gates read it */
+function syncGrabbedHand() {
+	/** @type {any[]} */
+	const hands = grabs.filter(Boolean).map((g) => renderer?.xr?.getController(g.index)?.userData?.handedness ?? null);
+	vrGrabbedHand.set(hands.length === 0 ? null : hands.length === 1 ? hands[0] : 'both');
 }
 let lastMoveSent = 0;
 
@@ -1687,7 +1700,12 @@ export function onInputSourcesChange() {
 		vrEndHandleDrag();
 		vertexTriggerGrab = null;
 	}
-	grab = null;
+	// a dropped grab RELEASES its body (it used to leave it in its kinematic hold)
+	for (let i = 0; i < grabs.length; i++) {
+		const held = grabs[i];
+		grabs[i] = null;
+		if (held) endGrab(held.object, held.interact ? null : held.before);
+	}
 	scaleGrab = null;
 	worldGrab = null;
 	worldPan = null;
@@ -2188,8 +2206,10 @@ let worldPan = null;
 /** 30b P2: test/debug view of what the grips are doing right now */
 export function vrGripDebug() {
 	return {
-		grab: grab?.object?.uuid ?? null,
-		grabInteract: !!grab?.interact,
+		grab: (grabs[0] ?? grabs[1])?.object?.uuid ?? null,
+		grabInteract: !!(grabs[0] ?? grabs[1])?.interact,
+		grabs: grabs.map((g) => g?.object?.uuid ?? null),
+		scaleGrab: scaleGrab?.object?.uuid ?? null,
 		worldGrab: !!worldGrab,
 		worldPan: !!worldPan,
 		emptyAir: [...emptyAirSqueeze]
@@ -2862,7 +2882,8 @@ function onSqueezeStart(index) {
 	}
 	if (get(lockedObjects).find((lock) => lock[1] === object.uuid)) return;
 
-	if (grab && grab.object === object && grab.index !== index) {
+	const other = grabs[1 - index];
+	if (other && other.object === object) {
 		// 30b P2: a player's second hand does not resize the thing it is holding
 		if (mode === 'interact') return;
 		// second hand on the same object -> two-hand scale
@@ -2871,11 +2892,17 @@ function onSqueezeStart(index) {
 			object,
 			startDistance: Math.max(distance, 0.05),
 			startScale: object.scale.clone(),
-			before: grab.before
+			before: other.before
 		};
-		grab = null;
-		vrGrabbedHand.set(null);
+		grabs[1 - index] = null;
+		syncGrabbedHand();
 		return;
+	}
+	// 33 G4: the OTHER hand keeps whatever it holds; only this hand's slot changes
+	const previous = grabs[index];
+	if (previous) {
+		grabs[index] = null;
+		endGrab(previous.object, previous.interact ? null : previous.before);
 	}
 
 	const interact = mode === 'interact';
@@ -2894,7 +2921,7 @@ function onSqueezeStart(index) {
 	const parentInv = object.parent.matrixWorld.clone().invert();
 	const pPos = cPos.clone().applyMatrix4(parentInv);
 	const pQuat = parentQuat.clone().invert().multiply(cQuat);
-	grab = {
+	grabs[index] = {
 		object,
 		index,
 		// 30b P2: a player's hand is RIGID (no gizmo-style move/rotate), and `interact`
@@ -2909,7 +2936,7 @@ function onSqueezeStart(index) {
 		prevQuat: cQuat,
 		before: transformStateOf(object)
 	};
-	vrGrabbedHand.set(renderer.xr.getController(index)?.userData?.handedness ?? null);
+	syncGrabbedHand();
 	// 30b (C4): a grab lands with a `hit` (a gated no-op in Edit, like every pulse)
 	hapticPattern('hit', renderer.xr.getController(index)?.userData?.handedness ?? undefined);
 	// 30b P2: a player picking something up is not SELECTING it — no lock broadcast, no
@@ -3040,7 +3067,8 @@ function onSqueezeEnd(index) {
 		scaleGrab = null;
 		return;
 	}
-	if (grab && grab.index === index) {
+	const grab = grabs[index];
+	if (grab) {
 		// K2: a hook may consume the release (drop onto the sleeve = capture a
 		// slot; the hook restores the object's pose + animation itself, so no
 		// move commits — but the physics hold must still release)
@@ -3055,14 +3083,14 @@ function onSqueezeEnd(index) {
 		});
 		if (consumed) {
 			import('./physics').then((m) => m.releaseBody(object.uuid));
-			grab = null;
-			vrGrabbedHand.set(null);
+			grabs[index] = null;
+			syncGrabbedHand();
 			hapticPulse(0.4, 60);
 			return;
 		}
+		grabs[index] = null;
 		endGrab(object, grab.interact ? null : grab.before);
-		grab = null;
-		vrGrabbedHand.set(null);
+		syncGrabbedHand();
 		hapticPulse(0.18, 24);
 	}
 }
@@ -3105,7 +3133,8 @@ export function grabStickAdjust({ length, scale, x, y }) {
 	};
 }
 
-function updateGrab() {
+/** @param {any} grab one hand's grab (33 G4: each hand updates its own) */
+function updateGrab(grab) {
 	const controller = renderer.xr.getController(grab.index);
 	const position = controller.getWorldPosition(new THREE.Vector3());
 	const quaternion = controller.getWorldQuaternion(new THREE.Quaternion());
@@ -3839,6 +3868,7 @@ export function updateVRControls() {
 		!get(vrChatPanelOpen) &&
 		!get(vrKeyboardTarget) &&
 		get(vrGrabbedHand) !== 'right' &&
+		get(vrGrabbedHand) !== 'both' &&
 		!vrNavigationSuppressed({ grips: true })
 	) {
 		updateTeleport(session);
@@ -3997,7 +4027,7 @@ export function updateVRControls() {
 	});
 
 	if (scaleGrab) updateScaleGrab();
-	else if (grab) updateGrab();
+	else for (const held of grabs) if (held) updateGrab(held);
 
 	// window grab (111): the hold timer arms, then the grip drives the window
 	if (windowGrabPending && Date.now() - windowGrabPending.startedAt >= HOLD_MS)
@@ -4308,11 +4338,13 @@ function enterInteractVR() {
 	worldGrab = null;
 	worldPan = null;
 	emptyAirSqueeze[0] = emptyAirSqueeze[1] = false;
-	if (grab && !grab.interact) {
-		endGrab(grab.object, grab.before);
-		grab = null;
-		vrGrabbedHand.set(null);
+	for (let i = 0; i < grabs.length; i++) {
+		const held = grabs[i];
+		if (!held || held.interact) continue;
+		grabs[i] = null;
+		endGrab(held.object, held.before);
 	}
+	syncGrabbedHand();
 	resetWorldRig();
 	// at sessionstart no XR frame exists yet (so no viewer pose to move FROM): the spawn
 	// waits for the first frame that has one (updateVRControls)

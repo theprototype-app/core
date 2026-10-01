@@ -36,6 +36,9 @@ import {
 // headers; nodesHandler reaches only flowStore + appStore), so none of these edges can
 // close the history cycle. flowGraphs/nodeCatalog are NOT leaves and stay primed below.
 import { roundCutoff, roundUnderway, gameVar, setGameVar, gameState } from './gameState';
+// 31 K3: the game shell — the pause menu's levels, settings, help and restart (leaves)
+import { setGameLevels, setGameHelp, onGameRestart, openShellMenu, closeShellMenu, shellMenu, markShellGame } from './gameShell';
+import { registerGameSetting, gameSettingValue, setGameSetting, gameSettingValues } from './gameSettings';
 import { setPeerVar, myPeerVar, leaderboardRows, peerVarsMine, peerVarsRemote } from './peerVars';
 // R29 S1/S2: both leaves import NOTHING, so neither edge can close a cycle
 import { freeRegion as freeRegionIn } from './flowLayout';
@@ -1316,6 +1319,79 @@ function makeApi(moduleId, moduleName = moduleId) {
 				const off = coalescedSubscribe([gameState], fn);
 				onDispose(off);
 				return off;
+			},
+			/**
+			 * 31 K3: this game's LEVELS in the shared pause menu (desktop + the VR panel).
+			 * `list` = [{id, label, locked?, stars?}] (stars 0..5), `current` = the id you are
+			 * on, `onPick(id)` = the player chose one (never called for a locked level). Call it
+			 * again to update (a level unlocked, stars earned). Cleared with the module.
+			 * @param {{list: {id: string, label: string, locked?: boolean, stars?: number}[], current?: string, onPick?: (id: string) => void}} spec
+			 * @returns {(() => void) | null} off, or null when the list is empty
+			 */
+			levels(spec) {
+				const off = setGameLevels(spec, moduleId);
+				if (off) onDispose(off);
+				return off;
+			},
+			/**
+			 * 31 K3: a row of this game's own in the pause menu's Settings (under the core
+			 * rows: music, sound effects, haptics, FPS, turning, vignette, quality). Persisted
+			 * per game on this device. `type` 'toggle' | 'choice' (with `options`, optional
+			 * `optionLabels`) | 'range' (`min`/`max`/`step`). `onChange(value)` hears a change.
+			 * @param {{id: string, label: string, type?: 'toggle'|'choice'|'range', options?: string[], optionLabels?: string[], min?: number, max?: number, step?: number, default: any, onChange?: (value: any) => void}} row
+			 * @returns {(() => void) | null} off, or null when refused (a core id, a bad row)
+			 */
+			addSetting(row) {
+				const off = registerGameSetting(row, moduleId);
+				if (off) onDispose(off);
+				return off;
+			},
+			/** 31 K3: the current value of a setting — one of yours, or a core row ('music',
+			 * 'musicVolume', 'sfx', 'sfxVolume', 'haptics', 'showFps', 'turning', 'turnAngle',
+			 * 'vignette', 'quality'), so a module playing its OWN audio can obey 'sfx'.
+			 * @param {string} id */
+			setting(id) {
+				return gameSettingValue(id);
+			},
+			/** 31 K3: write one of YOUR rows (a module's own in-game toggle). Core rows belong
+			 * to the player and are refused. @param {string} id @param {any} value */
+			setSetting(id, value) {
+				if (['music', 'musicVolume', 'sfx', 'sfxVolume', 'haptics', 'showFps', 'turning', 'turnAngle', 'vignette', 'quality'].includes(id)) return undefined;
+				return setGameSetting(id, value);
+			},
+			/** 31 K3: `fn(values)` hears every settings change (coalesced per frame).
+			 * @param {(values: Record<string, any>) => void} fn @returns {() => void} off */
+			onSettingsChange(fn) {
+				const off = coalescedSubscribe([gameSettingValues], () => fn({ ...get(gameSettingValues) }));
+				onDispose(off);
+				return off;
+			},
+			/** 31 K3: the How to play page — a string (lines split on \n) or an array of lines.
+			 * @param {string | string[]} text @returns {() => void} off */
+			setHelp(text) {
+				const off = setGameHelp(text, moduleId);
+				onDispose(off);
+				return off;
+			},
+			/** 31 K3: the pause menu's Restart also runs `fn` (reset your board, respawn your
+			 * enemies). @param {() => void} fn @returns {() => void} off */
+			onRestart(fn) {
+				const off = onGameRestart(fn);
+				onDispose(off);
+				return off;
+			},
+			/** 31 K3: open / close the pause menu (a module's own Menu button), and ask
+			 * whether it is open. Opening only works while playing a game. */
+			openMenu() {
+				markShellGame(true);
+				onDispose(() => markShellGame(false));
+				return openShellMenu('main');
+			},
+			closeMenu() {
+				closeShellMenu();
+			},
+			menuOpen() {
+				return get(shellMenu).open;
 			}
 		},
 		/**

@@ -55,6 +55,10 @@ import { activeRing, findMenuEntry, ringEntries, sectorFromStick, pushRing, popR
 import { paletteColorAt, barValueAt } from './vrPalette';
 // 30b (vr-play) C4: the ONE game-feel predicate (a leaf) + the pattern shapes (pure)
 import { gameFeelActive } from './gameFeel';
+// 31 K3: the per-game settings (haptics, turning) and the pause menu's controller button
+import { hapticsAllowed, resolveTurning, gameSettingValues } from './gameSettings';
+import { toggleShellMenu, shellMenuAvailable } from './gameShell';
+import { noteArtificialMotion } from './comfortVignette';
 import { hapticSchedule, knockHapticScale } from './hapticPatterns';
 import { recordMaterialChange, setMaterialParam } from './materialsHandler';
 import { prefabs, instantiatePrefab } from './prefabs';
@@ -250,7 +254,7 @@ vrChatPanelOpen.subscribe((open) => {
 });
 
 /** @type {any} */ let renderer = null;
-/** @type {{menu?: boolean, squeeze?: boolean, stick?: boolean, trigger?: boolean, a?: boolean, mode?: boolean}[]} */
+/** @type {{menu?: boolean, squeeze?: boolean, stick?: boolean, trigger?: boolean, a?: boolean, mode?: boolean, x?: boolean}[]} */
 const previousButtons = [{}, {}];
 const raycaster = new THREE.Raycaster();
 const tempMatrix = new THREE.Matrix4();
@@ -1191,10 +1195,38 @@ export function snapTurnRadians(deg, x, mirror) {
 	return THREE.MathUtils.degToRad(deg) * dir;
 }
 
+/** 31 K3: the turning in force — a game's own setting while playing it (snap / smooth /
+ * off + angle), the device's snap angle everywhere else @returns {{mode: string, angle: number}} */
+export function turningInForce() {
+	const device = Number(get(vrSnapAngle)) || 0;
+	if (!gameFeelActive()) return device ? { mode: 'snap', angle: device } : { mode: 'off', angle: 0 };
+	return resolveTurning(get(gameSettingValues), device);
+}
+/** degrees per second at full stick for SMOOTH turning */
+export const SMOOTH_TURN_DPS = 90;
+let smoothTurnAt = 0;
+/** the smooth turn applied last frame, radians — the comfort vignette reads it */
+export let lastSmoothTurn = 0;
+
 function updateSnapTurn(session) {
+	lastSmoothTurn = 0;
 	if (teleportEngaged) return; // the stick is busy aiming a teleport
 	const source = [...session.inputSources].find((s) => s.handedness === 'right');
 	const x = source?.gamepad?.axes?.[2] ?? 0;
+	const turning = turningInForce();
+	if (turning.mode === 'smooth') {
+		// 31 K3: SMOOTH turning — a continuous yaw proportional to the stick past a deadzone
+		const now = performance.now();
+		const dt = smoothTurnAt ? Math.min(0.1, (now - smoothTurnAt) / 1000) : 0;
+		smoothTurnAt = now;
+		if (Math.abs(x) < 0.2 || !dt) return;
+		const mag = (Math.abs(x) - 0.2) / 0.8;
+		const dir = (x > 0 ? -1 : 1) * (get(vrMirrorSnapTurn) ? -1 : 1);
+		turnRigBy(THREE.MathUtils.degToRad(SMOOTH_TURN_DPS) * mag * dt * dir);
+		lastSmoothTurn = THREE.MathUtils.degToRad(SMOOTH_TURN_DPS) * mag * dt;
+		return;
+	}
+	smoothTurnAt = 0;
 	if (Math.abs(x) < 0.4) {
 		snapArmed = true;
 		return;
@@ -1202,8 +1234,13 @@ function updateSnapTurn(session) {
 	if (!snapArmed || Math.abs(x) < 0.7) return;
 	snapArmed = false;
 
-	const angle = snapTurnRadians(get(vrSnapAngle), x, get(vrMirrorSnapTurn));
+	const angle = turning.mode === 'off' ? 0 : snapTurnRadians(turning.angle, x, get(vrMirrorSnapTurn));
 	if (!angle) return; // snap-turn off
+	turnRigBy(angle);
+}
+
+/** rotate the reference space about the viewer (turn in place) @param {number} angle radians */
+function turnRigBy(angle) {
 	const frame = renderer.xr.getFrame?.();
 	const space = renderer.xr.getReferenceSpace();
 	const pose = frame?.getViewerPose?.(space);
@@ -1398,7 +1435,8 @@ export function spawnPlayer() {
 export function hapticPulse(intensity = 0.5, durationMs = 50, hand = undefined, force = false) {
 	// `force`: the one pulse that must be felt IN Edit — 30b-vr-modes' Edit/Interact switch
 	// tick, which confirms the switch INTO Edit
-	if (!force && !gameFeelActive()) {
+	// 31 K3: and never when this game's "Controller vibration" setting is off
+	if (!force && (!gameFeelActive() || !hapticsAllowed())) {
 		hapticSuppressed++;
 		return;
 	}
@@ -3799,6 +3837,14 @@ export function updateVRControls() {
 		}
 
 
+		// 31 K3: LEFT X = the game's pause menu (A on the right is push-to-talk, B/Y are
+		// the radial menu and the mode button, so X is the one face button left free)
+		const xPressed = !!buttons[4]?.pressed;
+		if (source.handedness === 'left') {
+			if (xPressed && !prev.x && gameFeelActive() && shellMenuAvailable()) toggleShellMenu();
+			prev.x = xPressed;
+		}
+
 		// right A held = push-to-talk
 		const aPressed = !!buttons[4]?.pressed;
 		if (source.handedness === 'right' && aPressed !== !!prev.a) setPttHeld(aPressed);
@@ -3808,6 +3854,8 @@ export function updateVRControls() {
 		// layer (inputRuntime is store-only; this is the safe import direction)
 		if (source.handedness === 'left' || source.handedness === 'right') {
 			setVRAxes(source.handedness, source.gamepad.axes?.[2] ?? 0, source.gamepad.axes?.[3] ?? 0);
+			// 31 K3: the comfort vignette hears the locomotion stick + this frame's smooth turn
+			if (source.handedness === 'left') noteArtificialMotion(Math.hypot(source.gamepad.axes?.[2] ?? 0, source.gamepad.axes?.[3] ?? 0), lastSmoothTurn);
 			setVRButtons(source.handedness, !!buttons[0]?.pressed, !!buttons[1]?.pressed);
 		}
 

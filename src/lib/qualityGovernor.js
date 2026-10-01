@@ -152,6 +152,8 @@ export function noteFrameForQuality(ms) {
 /** One decision, now. Exported for the suite, which drives time it cannot wait out.
  * @param {number} [t] */
 export function decideNow(t = now()) {
+	// 31 K3: a game's Quality preset (Low / Medium / High) holds the level while it is played
+	if (gameForcedLevel !== null) return { level: governor.level(), moved: null, reason: 'game preset', p95: null };
 	const ctx = context();
 	const enabled = get(autoQuality);
 	// "Restore full quality" snoozes CLIMBING for a minute; it never blocks a walk back down
@@ -209,6 +211,37 @@ autoQuality.subscribe((on) => {
 		drawGapEngaged = false;
 	}
 });
+
+/* 31 K3 — a game's Quality setting. `null` = Auto (the governor decides, exactly as before);
+ * a number PINS that level while the game is played: `applyGameQuality(level, preset)` is
+ * called by the game shell's wiring whenever the setting or the in-game state changes. A
+ * per-game choice outranks the device's auto switch (it is explicit), and releasing it puts
+ * the governor back where the player found it. 31-perf's Quest-aware auto reads the same
+ * store (feature-detect `gameQualityState`). */
+/** @type {number | null} */
+let gameForcedLevel = null;
+/** @type {import('svelte/store').Writable<{preset: string, level: number | null}>} */
+export const gameQualityState = writable({ preset: 'auto', level: null });
+
+/**
+ * @param {number | null} level the level to hold, or null for Auto
+ * @param {string} [preset] the setting's name, for the chip's reason line
+ */
+export function applyGameQuality(level, preset = 'auto') {
+	const next = level === null || level === undefined || !Number.isFinite(Number(level)) ? null : Math.max(0, Math.min(MAX_LEVEL, Math.floor(Number(level))));
+	gameQualityState.set({ preset: String(preset), level: next });
+	if (next === gameForcedLevel) return;
+	const was = gameForcedLevel;
+	gameForcedLevel = next;
+	if (next !== null) {
+		governor.setLevel(next, now());
+		publish(next, 'game quality: ' + preset);
+	} else if (was !== null) {
+		governor.setLevel(0, now());
+		governor.forget();
+		publish(0, 'game quality: auto');
+	}
+}
 
 /** TEST-ONLY: feed a synthetic frame / long task at an explicit time, and reset. */
 export const governorForTest = {

@@ -300,6 +300,9 @@ export const sessionsOpen = writable(false);
 
 // templates modal ("Templates" sidebar row: General / Examples / Community tabs)
 export const templatesModalOpen = writable(false);
+/** 31 K3: which tab the templates modal opens on next (read once, then cleared) — the game
+ * shell's Main menu lands on Games. @type {import('svelte/store').Writable<string | null>} */
+export const templatesModalTab = writable(null);
 
 /**
  * 15-B6: is ANY app modal open? App modals are non-modal native `<dialog>`s

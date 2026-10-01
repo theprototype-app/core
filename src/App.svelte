@@ -109,6 +109,10 @@ import { startMusicToolbox } from './lib/musicToolbox'
   import { startSceneIdentity } from '$lib/sceneIdentity'
   import GameChip from './components/hud/GameChip.svelte'
   import HudLayer from './components/hud/HudLayer.svelte'
+  // 31 K3: the game shell — the pause menu + its wiring
+  import GameShellMenu from './components/hud/GameShellMenu.svelte'
+  import FpsCounter from './components/hud/FpsCounter.svelte'
+  import { startGameShell } from '$lib/gameShellWire'
   import HudEditor from './components/editors/HudEditor.svelte'
   import { importFile, load } from '$lib/fileHandler.svelte'
   import { showToast, showInfoToast } from './stores/appStore'
@@ -239,6 +243,7 @@ import { startMusicToolbox } from './lib/musicToolbox'
     startGameSync()
     // 21-F3: publish our play mode when it changes, and watch for an abandoned round
     startGamePresence()
+    startGameShell()
     // CO2: the colocation calibration ritual — VR radial entries, trigger hooks,
     // markers, locomotion suppression and the colocated world-grab divert
     startColocationCalibration()
@@ -586,6 +591,9 @@ import { startMusicToolbox } from './lib/musicToolbox'
      editor's stand-in for a game's screens, which HudLayer no longer draws outside Play.
      Editor-only (it hides itself in Play, in VR and in embed mode). -->
 <GameChip />
+<!-- 31 K3: the pause menu every game shares (Esc / the corner Menu button) -->
+<GameShellMenu />
+<FpsCounter />
 
 <!-- W9: THE VIEWPORT IS A LAYOUT REGION.
      threlte's Canvas fills its parent (`width/height: 100%`) and sizes the renderer

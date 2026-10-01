@@ -61,6 +61,14 @@ const snap = (page) =>
 		};
 	});
 
+// 31 K3: in a GAME, Escape opens the shared pause menu instead of leaving Play; leaving is
+// the menu's "Back to editor" (a plain scene keeps Escape = exit — game-shell §7)
+async function leavePlay(p) {
+	await p.keyboard.press('Escape');
+	await p.locator('#game-shell-menu [data-shell-item="editor"]').waitFor({ state: 'visible', timeout: 6000 });
+	await p.locator('#game-shell-menu [data-shell-item="editor"]').click();
+}
+
 h.run(async () => {
 	if (!TPSCENE || !fs.existsSync(TPSCENE)) {
 		console.log('SKIP: no sibling scenes checkout with games/towers/scene.tpscene (or TOWERS_TPSCENE)');
@@ -157,8 +165,8 @@ h.run(async () => {
 	h.check(!st.chip, 'the chip is editor chrome — gone in Play');
 	await page.locator('#hud-layer button', { hasText: 'Start round' }).click();
 	await h.eventually(() => snap(page), (v) => v.state === 'playing' && v.screen === 'hud', 'Start (in Play) starts the round', 8000);
-	await page.keyboard.press('Escape');
-	await h.eventually(() => snap(page), (v) => v.locked !== true, 'Escape returns to the editor', 6000);
+	await leavePlay(page);
+	await h.eventually(() => snap(page), (v) => v.locked !== true, 'the pause menu (Escape) returns to the editor', 6000);
 	await h.eventually(() => snap(page), (v) => v.state === 'menu', 'ALONE, leaving play resets the round to its menu at once', 3000);
 	st = await snap(page);
 	h.check(st.buttons === 0 && !/Stack on the glowing pad/.test(st.layerText), `and no in-game HUD is left on the editor (${st.buttons} buttons)`);
@@ -170,7 +178,7 @@ h.run(async () => {
 	await h.eventually(() => row.count(), (n) => n === 1, 'the play button right-click menu offers "Test play (start from the menu)"', 4000);
 	await row.first().click();
 	await h.eventually(() => snap(page), (v) => v.locked === true && v.state === 'menu', 'and the row enters Play on the menu', 6000);
-	await page.keyboard.press('Escape');
+	await leavePlay(page);
 	await h.eventually(() => snap(page), (v) => v.locked !== true, 'back to the editor', 6000);
 
 	// =====================================================================
@@ -198,13 +206,13 @@ h.run(async () => {
 		8000
 	);
 	// A leaves while B plays: the round stays
-	await page.keyboard.press('Escape');
+	await leavePlay(page);
 	await h.eventually(() => snap(page), (v) => v.locked !== true, 'A back in the editor', 6000);
 	await page.waitForTimeout(12000); // past the ten-second window: B is still playing
 	let v2 = await both();
 	h.check(v2.a.state === 'playing' && v2.b.state === 'playing', `A left while B plays: the round is still on for both (${v2.a.state}/${v2.b.state})`);
 	// B leaves too: nobody is in play, so the host commits the menu after the window
-	await B.page.keyboard.press('Escape');
+	await leavePlay(B.page);
 	await h.eventually(() => snap(B.page), (v) => v.locked !== true, 'B back in the editor', 6000);
 	await h.eventually(() => both(), (v) => v.a.state === 'menu' && v.b.state === 'menu', 'the LAST player leaving resets the round to menu on BOTH (the host writes it)', 20000);
 	const writes = await Promise.all([page, B.page].map((p) => p.evaluate(() => window.__stores.gamePresence.gamePresenceDebug().abandonWrites)));

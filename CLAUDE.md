@@ -2303,6 +2303,35 @@ loadable play content. Everything a user does must be visible to connected peers
   (`scripts/level-templates.cjs` via author-templates' `kit` type, `seed: false`); a scene load
   now ends a running simulation first. Suites pack-refs, pack-undo, level-templates (`LIVE=1`
   runs it against a build's own feed + pack CDN).
+- **ROADMAP 31 — TOWERS BECOMES A GAME** (31-towers; T1/T2 of the Quest feedback, "after the basic
+  level nothing happens, just like hooray"). Two core rules any game can use, and a core MODULE.
+  · `playReach.js` (pure leaf, vitest): `play.reach` (metres, OMITTED when absent) limits Interact /
+  Play grabs to that distance from the player's BODY — the segment feet..eye, never the eye (a crate
+  at your feet is 1.7 m from the eye). Desktop Play: `playInteractState.mode = 'toofar'` (the
+  crosshair says "Too far — get closer"), the press carries nothing, a carry is held inside the
+  reach (`carryLimit`); the editor's Interact cursor carry has no body and is unaffected. VR:
+  `gripTargetOf` refuses an out-of-reach body (`lastGripRefusalDebug`) and the grip buzzes `fail`.
+  Configure Scene ▸ Physics ▸ Play mode ▸ Limit grab reach.
+  · JUMP IN VR: the Character Controller node's `jumpHeight` jumps on right A in Interact walking
+  (`vrJumpHeight()`; A stays push-to-talk otherwise, `pttByA` so a switch mid-hold cannot strand the
+  mic). Desktop walk mode always jumped on Space. The capsule stands on dynamic pieces (a query
+  shape: it never shoves them).
+  · `src/modules/towers/` — a CORE module (the pong precedent: it may reach core internals through
+  PRIMED DYNAMIC imports; `api.spawn` still does not exist), dormant unless the scene holds the
+  `Towers game` marker. `levels.js` is the pure leaf (12 levels, stars = win + par pieces + par
+  time, unlock = a star on the level before, the rack layout, the tower measure, the judge, the
+  gust schedule, the outline cells). `module.js`: ONE AUTHORITY (the physics initiator, else the
+  lowest peer id) deals pieces as TRANSIENT duplicates of templates parked on a vault under the
+  floor, judges ~10x/s, pushes gusts and writes the `tw*` game variables; every peer derives the
+  rest (the HUD words through the `towersinfo` value node wired into HUD Text's FORMAT, the
+  moments, saving stars via `api.storage`). HUD presses carry no presser, so every peer watches the
+  hudbutton stamps (first sight = history, `age` > 2.5 s = a joiner's history) and only the
+  authority acts; unlocks read the AUTHORITY's progress. `towerswobble` is a module EFFECT so the
+  plate is a kinematic body — a module effect's `base` is `{pos, rot: [x,y,z], scale}` ARRAYS, not
+  THREE objects (reading `base.rotation` throws every frame into noteFrameFailure, silently). The
+  shell's `api.game.levels`/`setHelp`/`onRestart` are feature-detected. The template def is the
+  arena + templates + HUD + a small graph; `block` (Wedge/Arch/Corner/Stairs) and `thumb.dress`
+  (card-only objects) are new author-kit fields. Suites play-reach-jump, towers-levels, game-towers.
 
 ## Replication golden rules
 

@@ -2614,6 +2614,26 @@
 						onchange={(/** @type {any} */ val) => setScenePhysics({ play: { interaction: val } })}
 					/>
 				</div>
+				<!-- 31-towers P1: grab REACH, measured from the player's body (absent = no limit) -->
+				<Checkbox
+					id="physics-play-reach-on"
+					checked={$scenePlay.reach != null}
+					onchange={(e) => setScenePhysics({ play: { reach: e.currentTarget.checked ? 1.3 : null } })}
+				>
+					Limit grab reach
+				</Checkbox>
+				{#if $scenePlay.reach != null}
+					<SliderRow
+						id="physics-play-reach"
+						label="Reach (m)"
+						min={0.5}
+						max={5}
+						step={0.1}
+						decimals={1}
+						value={$scenePlay.reach}
+						onchange={(v) => setScenePhysics({ play: { reach: v } })}
+					/>
+				{/if}
 				<Checkbox
 					id="physics-play-grounded"
 					checked={$scenePlay.grounded}

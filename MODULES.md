@@ -927,6 +927,24 @@ data (replicated like any node edit); the slide is a pure function of
 `(data, time)` running on each peer — no motion messages at all. The
 `registerClickHandler` consumes the click so pressing doesn't select the button.
 
+## Walkthrough: the towers module (a game's rules as a core module)
+
+`src/modules/towers/` runs the **Towers** template's twelve levels. It shows how a game with
+real rules splits: the scene (the template) is the arena, the piece templates, the HUD and a
+small graph; the module is the rules. Worth copying:
+
+- **The rules as a pure leaf** (`levels.js`) — the level table, the star rule, the unlocks,
+  the verdict stepper — tested with vitest, no browser.
+- **One authority** decides anything shared (the physics initiator, else the lowest peer id):
+  it deals the pieces, judges the round and writes the result into game variables
+  (`api.game.setVar`); every peer derives its HUD words from those through a value node wired
+  into HUD Text's format (`api.registerValueNode`).
+- **HUD buttons without a presser**: a press is a replicated stamp on a `hudbutton` node, so
+  every peer watches `api.flow.triggerStamp` and only the authority acts (first sight = history).
+- **Progress on this device** with `api.storage` (stars, unlocks — never replicated).
+- **The shell's level picker, help and restart** (`api.game.levels`, `setHelp`, `onRestart`),
+  feature-detected so the module also runs on an app without them.
+
 ## Manager, dev mode & gallery (17-A2/A3)
 
 User modules install, update, disable and remove **live** — `deactivateModule`

@@ -36,6 +36,7 @@
 			id="play-reticle"
 			class="reticle"
 			class:aiming={reticle.mode === 'aiming'}
+			class:toofar={reticle.mode === 'toofar'}
 			class:carrying
 		></div>
 		{#if carrying}
@@ -43,6 +44,9 @@
 				{reticle.distance.toFixed(1)} m
 				{#if !hintSeen}<span class="hint">· scroll to push / pull</span>{/if}
 			</div>
+		{:else if reticle.mode === 'toofar'}
+			<!-- 31-towers P1: the scene limits grab reach — say why the press will do nothing -->
+			<div id="play-reticle-toofar" class="reticle-note">Too far — get closer</div>
 		{:else if reticle.blocked}
 			<div class="reticle-note">held by {reticle.blocked}</div>
 		{/if}
@@ -81,6 +85,14 @@
 	}
 	.reticle.carrying {
 		border-color: var(--icon-strong, #e5e7eb);
+	}
+	/* 31-towers P1: grabbable, but out of reach — a smaller, dashed, warm ring */
+	.reticle.toofar {
+		width: 12px;
+		height: 12px;
+		background: transparent;
+		border: 2px dashed var(--icon-warning, #f59e0b);
+		opacity: 0.85;
 	}
 	.reticle-note {
 		font-size: 11px;

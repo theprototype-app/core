@@ -112,7 +112,101 @@ function whyNot(mesh, explicit) {
 	const morph = mesh.geometry.morphAttributes;
 	if (morph && Object.keys(morph).some((k) => morph[k]?.length)) return 'morph targets';
 	if (mesh.userData?.lod === false) return 'opted out';
+	if (groupPass?.owns(mesh)) return 'lod group';
 	return '';
+}
+
+// ---- 33: the LOD GROUP pass (lodGroup.js) + the overlay ----------------------------------
+//
+// A per-object LOD GROUP (userData.lod) runs inside the SAME render hooks, so both systems
+// share one swap/restore bracket and one nesting rule. lodGroup registers itself here — a
+// seam rather than an import, so this module keeps its two-store leaf shape.
+
+/**
+ * @typedef {{before: (camera: any, bias: number, enabled: boolean, overlay: boolean) => void,
+ *   after: () => void, owns: (mesh: any) => boolean}} LodPass
+ */
+/** @type {LodPass | null} */
+let groupPass = null;
+/** @param {LodPass} pass */
+export function registerLodPass(pass) {
+	groupPass = pass;
+	installHooks();
+}
+
+/** "Show LOD level": every LOD-managed mesh drawn in its level's colour. LOCAL, off. */
+export const lodShowLevels = writable(false);
+let overlay = false;
+lodShowLevels.subscribe((on) => (overlay = !!on));
+const OVERLAY_COLORS = [0x3fb950, 0xd4b106, 0xe07b1f, 0xd23f3f, 0xa052d9, 0x3b82f6];
+/** @type {any[]} */
+const overlayMats = [];
+/** The flat material the overlay paints level `level` with (-1 = culled). @param {number} level */
+export function overlayMaterial(level) {
+	const i = level < 0 ? OVERLAY_COLORS.length : Math.min(level, OVERLAY_COLORS.length - 1);
+	if (!overlayMats[i]) {
+		overlayMats[i] = new THREE.MeshLambertMaterial({ color: i === OVERLAY_COLORS.length ? 0x6b7280 : OVERLAY_COLORS[i] });
+		overlayMats[i].name = 'lod-overlay-' + i;
+	}
+	return overlayMats[i];
+}
+/** meshes whose MATERIAL the overlay swapped in this render pass: [mesh, material] pairs */
+/** @type {any[]} */
+const matSwapped = [];
+/** Swap a mesh's material for this render pass (the overlay, a group's per-level
+ * override). Restored with the geometry. @param {any} mesh @param {any} material */
+export function swapMaterialForPass(mesh, material) {
+	matSwapped.push(mesh, mesh.material);
+	mesh.material = material;
+}
+/** Swap a mesh's geometry for this render pass. @param {any} mesh @param {any} geometry */
+export function swapGeometryForPass(mesh, geometry) {
+	swapped.push(mesh, mesh.geometry);
+	mesh.geometry = geometry;
+}
+
+/** A LOCAL forced level per explicit mesh (`api.lod(...).force(n)`). @type {WeakMap<any, number>} */
+const forcedMeshes = new WeakMap();
+
+/**
+ * Coarser geometry for ONE mesh at ONE ratio, built in the worker and shared by every
+ * caller asking for the same content + ratio (the LOD group's 'generated' levels).
+ * Resolves the geometry or null; `release()` drops the share.
+ * @param {any} geometry @param {number} ratio
+ * @returns {{geometry: Promise<any|null>, release: () => void}}
+ */
+export function simplifiedGeometry(geometry, ratio) {
+	const sig = geometrySignature(geometry.attributes.position.array, geometry.index?.count ?? 0) + '|g' + ratio;
+	/** @type {any} */
+	let c = cache.get(sig);
+	if (!c) {
+		/** @type {any} */
+		const fresh = { levels: null, value: null, refs: 0, ratios: [ratio] };
+		fresh.levels = buildLevels(geometry, [ratio])
+			.then((levels) => {
+				fresh.value = levels;
+				return levels;
+			})
+			.catch(() => null);
+		cache.set(sig, fresh);
+		c = fresh;
+	}
+	c.refs++;
+	let released = false;
+	return {
+		geometry: c.levels.then((/** @type {any[]|null} */ levels) => levels?.[0] ?? null),
+		release() {
+			if (released) return;
+			released = true;
+			const cc = cache.get(sig);
+			if (!cc) return;
+			cc.refs--;
+			if (cc.refs <= 0) {
+				cache.delete(sig);
+				for (const level of cc.value ?? []) level.dispose();
+			}
+		}
+	};
 }
 
 // ---- the worker ------------------------------------------------------------------------
@@ -362,6 +456,18 @@ export function lodObject(object, opts = {}, owner = null) {
 	return {
 		meshes: meshes.length,
 		ready,
+		/** 33: draw level `n` on THIS screen whatever the distance (null = automatic again).
+		 * LOCAL, like every auto-LOD decision. @param {number | null} n */
+		force(n) {
+			for (const m of meshes) {
+				if (n === null || n === undefined || !Number.isFinite(Number(n))) forcedMeshes.delete(m);
+				else forcedMeshes.set(m, Math.max(0, Math.floor(Number(n))));
+			}
+		},
+		/** The level each mesh drew last (0 = source). */
+		levels() {
+			return meshes.map((m) => entries.get(m)?.current ?? 0);
+		},
 		remove() {
 			for (const m of meshes) if (entries.get(m)?.owner === owner) unregisterMesh(m);
 		}
@@ -376,8 +482,14 @@ export function releaseOwner(owner) {
 // ---- the swap -----------------------------------------------------------------------------
 
 function restoreSwapped() {
-	for (let i = 0; i < swapped.length; i += 2) swapped[i].geometry = swapped[i + 1];
+	// REVERSE: a mesh swapped twice in one pass (a group level, then anything after it)
+	// must end on the geometry it had before the FIRST swap
+	for (let i = swapped.length - 2; i >= 0; i -= 2) swapped[i].geometry = swapped[i + 1];
 	swapped.length = 0;
+	// materials in REVERSE: a mesh swapped twice (an override, then the overlay) must end on
+	// its own material, not on the override
+	for (let i = matSwapped.length - 2; i >= 0; i -= 2) matSwapped[i].material = matSwapped[i + 1];
+	matSwapped.length = 0;
 }
 
 /**
@@ -391,7 +503,12 @@ function beforeRender(renderer, scene, camera) {
 	restoreSwapped(); // a render that threw last time left a swap behind: never keep it
 	stats.drawnCoarse = 0;
 	stats.trianglesSaved = 0;
-	if (!enabled || !entries.size || !camera?.matrixWorld) return;
+	if (groupPass && camera?.matrixWorld) groupPass.before(camera, bias, enabled, overlay);
+	if (!entries.size || !camera?.matrixWorld) return;
+	if (!enabled) {
+		if (overlay) for (const entry of entries.values()) if (entry.mesh.visible) swapMaterialForPass(entry.mesh, overlayMaterial(0));
+		return;
+	}
 	const ce = camera.matrixWorld.elements;
 	const cx = ce[12];
 	const cy = ce[13];
@@ -399,6 +516,8 @@ function beforeRender(renderer, scene, camera) {
 	const t = now();
 	for (const entry of entries.values()) {
 		const mesh = entry.mesh;
+		// 33: a LOD group draws this mesh's levels (an auto entry is dropped on the next scan)
+		if (!entry.explicit && groupPass?.owns(mesh)) continue;
 		const geometry = mesh.geometry;
 		if (geometry !== entry.source || geometry.attributes.position.version !== entry.version) {
 			// swapped (meshgeo, undo) or edited in place (sculpt): stand down now, rebuild once
@@ -419,6 +538,7 @@ function beforeRender(renderer, scene, camera) {
 		}
 		if (!entry.levels) {
 			if (!entry.sig && t - entry.stableSince > STABLE_MS && trianglesOf(geometry) >= entry.opts.minTriangles) requestLevels(entry);
+			if (overlay && mesh.visible) swapMaterialForPass(mesh, overlayMaterial(0));
 			continue;
 		}
 		if (!mesh.visible) continue;
@@ -436,8 +556,11 @@ function beforeRender(renderer, scene, camera) {
 		const dx = wx - cx;
 		const dy = wy - cy;
 		const dz = wz - cz;
-		const level = pickLevel(Math.sqrt(dx * dx + dy * dy + dz * dz), radius, entry.edges, bias, entry.current, entry.opts.hysteresis);
+		const auto = pickLevel(Math.sqrt(dx * dx + dy * dy + dz * dz), radius, entry.edges, bias, entry.current, entry.opts.hysteresis);
+		const forced = forcedMeshes.get(mesh);
+		const level = forced === undefined ? auto : Math.min(forced, entry.levels.length);
 		entry.current = level;
+		if (overlay) swapMaterialForPass(mesh, overlayMaterial(level));
 		if (level > 0) {
 			const low = entry.levels[level - 1];
 			swapped.push(mesh, geometry);
@@ -452,6 +575,7 @@ function beforeRender(renderer, scene, camera) {
 function afterRender(...args) {
 	if (--renderDepth > 0) return;
 	renderDepth = 0;
+	groupPass?.after();
 	restoreSwapped();
 	prevAfter?.(...args);
 }
@@ -498,6 +622,8 @@ export function scanForLod() {
 		visit(group);
 		visit(scene?.getObjectByName?.('module-world-root'));
 	}
+	// 33: a mesh that joined a LOD GROUP leaves auto LOD (the group draws its levels)
+	if (groupPass) for (const [mesh, entry] of [...entries]) if (!entry.explicit && groupPass.owns(mesh)) unregisterMesh(mesh);
 	// an auto entry whose mesh left the scene is dropped; an explicit one stays until its
 	// owner says so (a module may park content off-scene and put it back)
 	for (const [mesh, entry] of [...entries]) {

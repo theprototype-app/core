@@ -5292,7 +5292,9 @@
 			kind: item.kind,
 			name: item.name,
 			prefabId: item.prefabId ?? null,
-			url: item.glbUrl ?? null
+			url: item.glbUrl ?? null,
+			// 33: a pack item's LOD files travel with the drag so the drop places the group
+			...(item.lods ? { lods: item.lods } : {})
 		};
 	}
 	/**
@@ -5702,8 +5704,10 @@
 				return showToast('Could not fetch the pack item');
 			}
 			// 30c: the placed piece carries its pack reference (packRefs.js)
+			const { placementGroupFor } = await import('$lib/lodGroup');
 			await importFile(new File([await res.blob()], item.name + '.glb'), item.name, 'glb', undefined, undefined, {
-				packRef: packRefFromUrl(item.glbUrl, { pack: item.packName, item: item.name })
+				packRef: packRefFromUrl(item.glbUrl, { pack: item.packName, item: item.name }),
+				lod: placementGroupFor(item.glbUrl, item.lods)
 			});
 			dismiss();
 		} catch {

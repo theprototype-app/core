@@ -287,6 +287,8 @@ export async function loadPackItems(pack) {
 					kind: 'object',
 					glbUrl: /^https?:\/\//.test(glb) ? glb : `${pack.base}/${o.name}/glTF-Binary/${glb}`,
 					thumbs: thumbCandidates(pack, o),
+					// 33 (contract P1): the item's offline LOD files, placed as its LOD group
+					...(Array.isArray(o.lods) && o.lods.length ? { lods: o.lods } : {}),
 					resolvedThumb: cachedThumb(pack.name, o.name), // P2: skip re-probing if known
 					packName: pack.name
 				};

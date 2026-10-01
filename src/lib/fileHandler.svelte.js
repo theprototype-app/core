@@ -668,7 +668,7 @@ function defaultImportName(extension, name) {
  * @param {any} file @param {string=} name @param {string=} ext - explicit extension when the blob has no name (Library)
  * @param {number[]=} position - world drop point (Explorer drag-out, 96)
  * @param {any[]=} extras - companion files picked/dropped alongside (.mtl + its textures)
- * @param {{reduce?: boolean | import('./importBudget').ReductionPlan, packRef?: import('./packRefs').PackRef | null}} [opts]
+ * @param {{reduce?: boolean | import('./importBudget').ReductionPlan, packRef?: import('./packRefs').PackRef | null, lod?: any}} [opts]
  *   26-F: `reduce` imports REDUCED. 30c: `packRef` names the PACK ITEM this file is — the
  *   placed root then carries the reference (packRefs.js), so a save and the wire write it
  *   as a small stub. Ignored for an animated or a reduced import (neither IS the file).
@@ -711,6 +711,12 @@ export async function importFile(file, name, ext, position, extras, opts = {}) {
 		// 30c: stamp the pack reference BEFORE addImported, which is what replicates it
 		if (opts.packRef && !parsed.animated && typeof file?.arrayBuffer === 'function')
 			stampPackRef(parsed.root, opts.packRef, await hashBytes(await file.arrayBuffer()));
+		// 33 (contract P1): a pack item's `lods` place as the object's LOD GROUP — on the
+		// root BEFORE it replicates, so the block rides the same object message / stub
+		if (opts.lod) {
+			const root = parsed.animated ? parsed.animated.result?.scene : parsed.root;
+			if (root) root.userData = { ...(root.userData ?? {}), lod: opts.lod };
+		}
 		if (parsed.animated) addAnimatedImport(parsed.animated.result, parsed.animated.buffer, label, parsed.animated.kind);
 		else addImported(parsed.root, label, position);
 		for (const note of parsed.notes) showToast(note);

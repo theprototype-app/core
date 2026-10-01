@@ -208,8 +208,10 @@ async function placeExplorerPayload(payload, target) {
 			}
 			// 30c: the placed piece carries its pack reference, so a save and the wire write it
 			// as a small stub instead of the whole model (packRefs.js)
+			const { placementGroupFor } = await import('./lodGroup');
 			importFile(new File([await res.blob()], name + '.glb'), name, undefined, target.point ?? undefined, undefined, {
-				packRef: packRefFromUrl(payload.url, { item: name })
+				packRef: packRefFromUrl(payload.url, { item: name }),
+				lod: placementGroupFor(payload.url, payload.lods)
 			});
 			dismiss();
 		} catch {

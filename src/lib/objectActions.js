@@ -747,6 +747,12 @@ registerHistoryKind('props', (entry, state) => {
 		else delete object.userData.pick;
 		if (peer) peer.send({ type: 'objectParameters', parameter: 'pick', uuid: entry.uuid, pick: state.pick ?? null });
 	}
+	if ('lod' in state) {
+		// 33: the object's LOD GROUP block (lodGroupActions.setLodGroup is the write path)
+		if (state.lod) object.userData.lod = state.lod;
+		else delete object.userData.lod;
+		if (peer) peer.send({ type: 'objectParameters', parameter: 'lod', uuid: entry.uuid, lod: state.lod ?? null });
+	}
 	if ('origin' in state) {
 		// 17-D: the per-object transform origin (pivot offset) is scene data, so
 		// moving it is undoable and replicated like any other userData write

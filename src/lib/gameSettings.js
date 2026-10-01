@@ -45,7 +45,7 @@ export const CORE_SETTINGS = [
 		label: 'Turning',
 		type: 'choice',
 		options: ['default', 'snap', 'smooth', 'off'],
-		optionLabels: ['Device default', 'Snap', 'Smooth', 'Off'],
+		optionLabels: ['Default', 'Snap', 'Smooth', 'Off'],
 		default: 'default',
 		vrOnly: true
 	},
@@ -54,7 +54,7 @@ export const CORE_SETTINGS = [
 		label: 'Snap angle',
 		type: 'choice',
 		options: ['default', '15', '30', '45', '90'],
-		optionLabels: ['Device default', '15°', '30°', '45°', '90°'],
+		optionLabels: ['Default', '15°', '30°', '45°', '90°'],
 		default: 'default',
 		vrOnly: true
 	},

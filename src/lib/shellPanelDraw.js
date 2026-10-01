@@ -134,7 +134,13 @@ export function drawShellPage(g, model, opts) {
 				button('shell:set:' + row.id + ':prev', '‹', cx, y + 2, 50, rowH - 4);
 				g.textAlign = 'center';
 				g.fillStyle = '#f3f4f6';
-				g.font = `600 ${Math.round(21 * k)}px system-ui, sans-serif`;
+				// the value fits BETWEEN the arrows (a game row's option label can be long)
+				let size = 21;
+				g.font = `600 ${Math.round(size * k)}px system-ui, sans-serif`;
+				while (size > 12 && g.measureText(row.display).width > 108 * k) {
+					size -= 1;
+					g.font = `600 ${Math.round(size * k)}px system-ui, sans-serif`;
+				}
 				g.fillText(row.display, (cx + 110) * k, (y + rowH / 2) * k);
 				button('shell:set:' + row.id + ':next', '›', cx + 170, y + 2, 50, rowH - 4);
 			}

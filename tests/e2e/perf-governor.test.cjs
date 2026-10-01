@@ -367,6 +367,30 @@ h.run(async () => {
 	h.check(vr.left.nextScale < 1 && vr.left.nextScale >= 0.5, `the resolution the session needed is kept for the next entry (framebuffer scale ${vr.left.nextScale})`);
 	h.check(vr.optedOut.level === 0 && vr.optedOut.floor === 0 && Math.abs(vr.optedOut.thresholds.overMs - 14.44) < 0.1, `COUNTERFACTUAL: with auto quality off a headset changes no level (still judges 90 Hz): ${JSON.stringify(vr.optedOut)}`);
 
+	// ---- 6c. integrate: a game's pinned Quality (31-game-shell) outranks the entry floor ----
+	const pin = await A.page.evaluate(() => {
+		const q = window.__stores.qualityGovernor;
+		q.governorForTest.reset();
+		q.setAutoQuality(true);
+		q.applyGameQuality(0, 'high');
+		q.startXRQuality(null, 72);
+		const pinnedEntry = q.xrQualityDebug();
+		q.endXRQuality();
+		q.applyGameQuality(null);
+		q.startXRQuality(null, 72);
+		q.applyGameQuality(0, 'high');
+		const pinnedMid = q.xrQualityDebug();
+		q.applyGameQuality(null);
+		const released = q.xrQualityDebug();
+		q.endXRQuality();
+		localStorage.removeItem('autoQuality');
+		q.governorForTest.reset();
+		return { pinnedEntry, pinnedMid, released };
+	});
+	h.check(pin.pinnedEntry.level === 0 && pin.pinnedEntry.floor === 0, `a game pinned to High enters the headset at High, no floor (${JSON.stringify(pin.pinnedEntry)})`);
+	h.check(pin.pinnedMid.level === 0 && pin.pinnedMid.floor === 0, `pinning High mid-session drops the floor (${JSON.stringify(pin.pinnedMid)})`);
+	h.check(pin.released.level === 1 && pin.released.floor === 1, `back to Auto in the headset = the headset's auto again (${JSON.stringify(pin.released)})`);
+
 	// ---- 7. end to end on real frames --------------------------------------------------
 	const real = await A.page.evaluate(async () => {
 		const s = window.__stores;

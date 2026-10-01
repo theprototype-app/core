@@ -250,12 +250,17 @@ export function applyGameQuality(level, preset = 'auto') {
 	const was = gameForcedLevel;
 	gameForcedLevel = next;
 	if (next !== null) {
+		// integrate (31-perf x 31-game-shell): the pin outranks the headset's entry floor
+		if (xr.active) governor.setFloor(0);
 		governor.setLevel(next, now());
 		publish(next, 'game quality: ' + preset);
 	} else if (was !== null) {
-		governor.setLevel(0, now());
+		// back to Auto inside a headset = the headset's auto: its entry floor again
+		const base = xr.active && get(autoQuality) ? XR_START_LEVEL : 0;
+		if (xr.active && get(autoQuality)) governor.setFloor(XR_START_LEVEL);
+		governor.setLevel(base, now());
 		governor.forget();
-		publish(0, 'game quality: auto');
+		publish(base, 'game quality: auto');
 	}
 }
 
@@ -304,7 +309,8 @@ registerLongTaskObserver(() => governor.noteLongTask(now()));
 //   · RESOLUTION: an XR framebuffer's size is fixed at entry, so the scale a session needed is
 //     applied to the NEXT entry (xrScaleAfter) — three already runs maximum foveation
 // The opt-out holds: with auto quality off, none of this changes a level.
-// MERGE NOTE (31-game-shell): a game's pinned Quality preset must win over the entry floor.
+// A game's pinned Quality preset (31-game-shell, `gameForcedLevel`) WINS over the entry floor:
+// a pinned session takes no floor, and pinning mid-session drops it (applyGameQuality).
 
 /** @param {any} r */
 function hookXR(r) {
@@ -333,7 +339,7 @@ export function startXRQuality(session, hzOverride) {
 	});
 	xr.raised = false;
 	xr.before = governor.level();
-	if (get(autoQuality)) {
+	if (get(autoQuality) && gameForcedLevel === null) {
 		// the floor HOLDS for the session: recovery must not switch shadows back on because
 		// frames were fine without them — that is the flap the floor exists to prevent
 		governor.setFloor(XR_START_LEVEL);

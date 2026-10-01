@@ -66,6 +66,14 @@ describe('validateWireMessage', () => {
 		expect(validateWireMessage({ ...good, uuid: 123 })).toBe(false);
 	});
 
+	it('31: a nodetrigger may carry a finite place, and nothing else there', () => {
+		expect(validateWireMessage({ type: 'nodetrigger', id: 'n1', t: 12.5 })).toBe(true); // every pre-31 pulse
+		expect(validateWireMessage({ type: 'nodetrigger', id: 'n1', t: 12.5, at: [0, 1.2, -0.4] })).toBe(true);
+		expect(validateWireMessage({ type: 'nodetrigger', id: 'n1', t: 12.5, at: [0, NaN, 1] })).toBe(false);
+		expect(validateWireMessage({ type: 'nodetrigger', id: 'n1', t: 12.5, at: [0, 1] })).toBe(false);
+		expect(validateWireMessage({ type: 'nodetrigger', id: 7, t: 12.5 })).toBe(false);
+	});
+
 	it('cannot itself be made to throw by a hostile shape', () => {
 		// a validator that throws IS a rejection, never an escape into the dispatcher
 		const nasty = {

@@ -124,6 +124,9 @@ export const VALIDATORS = {
 	nodedelete: (d) => isArray(d.ids),
 	edgecreate: (d) => !!d.edge && typeof d.edge === 'object',
 	edgedelete: (d) => isArray(d.ids),
+	// 31: a pulse, and (the clap) WHERE it happened — the point is read as a place the moment it
+	// lands, so a non-finite one would plant a star at NaN; absent is every pre-31 trigger
+	nodetrigger: (d) => typeof d.id === 'string' && (d.at === undefined || d.at === null || isVec3(d.at)),
 	nodedefs: (d) => isArray(d.defs),
 	verts: (d) => isUuid(d.uuid) && isArray(d.indices),
 	meshgeo: (d) => isUuid(d.uuid) && d.positions !== undefined,

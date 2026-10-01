@@ -42,6 +42,7 @@ import {
 	editorMode,
 	peerHandStyle, pokeScene } from '../stores/sceneStore';
 import { isScenery, pickGripTarget, gripMovesWorld } from './vrGrip';
+import { pointGrabAllowed } from './pointGrab'; // 31 (Stars Room S2)
 import { moduleGroupList, moduleGroupsRevision } from './moduleContent';
 import { overlayPanel, makeDepthSentinel, PANEL_ORDER, BEAM_ORDER } from './vrPanelOverlay';
 import { moduleWorldChildren } from './moduleWorld';
@@ -2956,7 +2957,10 @@ export function gripTargetOf(ray, handPos, mode) {
 	const order = [];
 	/** @type {any[]} */
 	const points = [];
-	for (const hit of ray.intersectObjects(group.children, true)) {
+	// 31 (Stars Room S2): a scene may switch POINTING off for players — then only a hand
+	// inside the object holds it (below); the ray reaches nothing. Edit is never affected.
+	const byRay = mode !== 'interact' || pointGrabAllowed();
+	if (byRay) for (const hit of ray.intersectObjects(group.children, true)) {
 		const top = topLevelObjectOf(hit.object);
 		if (top && !order.includes(top)) {
 			order.push(top);

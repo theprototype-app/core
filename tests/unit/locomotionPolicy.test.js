@@ -45,6 +45,10 @@ describe('normalizeLocomotion', () => {
 		expect(normalizeLocomotion(null)).toBe(null);
 		expect(normalizeLocomotion('fly')).toBe(null);
 	});
+	it('31: keeps a boolean worldGrab (K1), and nothing that is not one', () => {
+		expect(normalizeLocomotion({ fly: true, worldGrab: true, teleport: true })).toEqual({ fly: true, worldGrab: true, teleport: true });
+		expect(normalizeLocomotion({ worldGrab: 'yes' })).toBe(null);
+	});
 });
 
 describe('normalizeSpawn', () => {

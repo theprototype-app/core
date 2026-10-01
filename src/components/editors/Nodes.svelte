@@ -60,6 +60,7 @@
 	import PlayAnimNode from './nodes/PlayAnimNode.svelte';
 	import AnimStateNode from './nodes/AnimStateNode.svelte';
 	import OnHitNode from './nodes/OnHitNode.svelte';
+	import OnClapNode from './nodes/OnClapNode.svelte'; // 31 (Stars Room S3)
 	import UnknownNode from './nodes/UnknownNode.svelte';
 	import { flowNodes as flowNodesStore, flowEdges as flowEdgesStore, customNodeDefs, nodeDesignerOpen, flowGraphs, activeGraphId, SCENE_GRAPH, setActiveGraph } from '../../stores/flowStore';
 	import { createObjectGraph, requestDeleteObjectGraph } from '$lib/flowGraphs';
@@ -221,6 +222,11 @@
 		effectburst: AnimationNode,
 		hapticpulse: AnimationNode,
 		gamemusic: AnimationNode,
+		// 31 (Stars Room): a player's setting row, the pointing switch (both spec-driven) and
+		// the clap, whose `point`/`byMe` outputs need labelled rows (the On Hit card's shape)
+		gamesetting: AnimationNode,
+		pointgrab: AnimationNode,
+		onclap: OnClapNode,
 		gametime: AnimationNode,
 		// 21-F3's `collectcount` card MOVED to the collectible module (R3a) — an old
 		// scene's node renders as UnknownNode until the module is installed, honestly

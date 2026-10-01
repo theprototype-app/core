@@ -100,9 +100,11 @@ export const nodeCatalog = [
 					interval: 0,
 					spread: 0.5
 				},
-				inputs: ['trigger', 'at', 'source'],
+				inputs: ['trigger', 'at', 'source', 'position'],
 				inputLabels: {
 					at: 'at — offset from the template (wire a Vector 3)',
+					// 31: a PLACE (the On Clap point) wins over the offset
+					position: 'place — copies land exactly here (e.g. an On Clap point)',
 					source: 'template — the object copies are made from'
 				},
 				// `count`/`maxAlive` are CLAMPED again in spawner.js (20 and 200): a param is
@@ -314,6 +316,51 @@ export const nodeCatalog = [
 					{ key: 'while', kind: 'select', options: ['always', 'round'] }
 				],
 				note: 'Plays while you are in Interact or Play (never in the editor); each device hears its own.'
+			},
+			// 31 (Stars Room): three pieces a game made of settings and gestures is built from.
+			// GAME SETTING declares one row in the game's settings (desktop + the VR menu, the
+			// 31-game-shell panel) and outputs THIS player's value — per device, never sent, so
+			// "Point to move stars: off" is my choice and not everyone's.
+			{
+				type: 'gamesetting',
+				label: 'Game Setting',
+				defaults: { setting: 'my-setting', title: 'My setting', kind: 'toggle', value: true },
+				params: [
+					{ key: 'setting', kind: 'text', placeholder: 'id (unique to this game)', maxLength: 40, label: 'id' },
+					{ key: 'title', kind: 'text', placeholder: 'the row\'s label', maxLength: 60, label: 'label' },
+					{ key: 'kind', kind: 'select', options: ['toggle', 'range', 'choice'] },
+					{ key: 'value', kind: 'toggle', label: 'default (toggle)' },
+					{ key: 'min', kind: 'range', min: -100, max: 100, step: 1, label: 'min (range)' },
+					{ key: 'max', kind: 'range', min: -100, max: 100, step: 1, label: 'max (range)' },
+					{ key: 'options', kind: 'text', placeholder: 'a, b, c (choice)', maxLength: 120 }
+				],
+				note: 'One row in the game\'s Settings, saved on this device for this game. Wire it into anything that takes true/false or a number.'
+			},
+			// POINT GRAB: while `enabled` reads false, players cannot pick things up by POINTING
+			// at them (the VR grip ray, the desktop carry) — only a hand that touches moves them.
+			{
+				type: 'pointgrab',
+				label: 'Point Grab',
+				defaults: {},
+				inputs: ['enabled'],
+				inputLabels: { enabled: 'enabled - unwired = on (pointing picks things up)' },
+				note: 'Off = objects move only when a hand touches them. Each player\'s own switch; the editor is never affected.'
+			},
+			// ON CLAP: this player brought both VR hands together and held them there. The pulse
+			// replicates with the POINT where the hands met, so a Spawn wired to it makes one
+			// thing there for everyone; `who: me` keeps it on this device (a buzz in your hands).
+			{
+				type: 'onclap',
+				label: 'On Clap',
+				defaults: { pulse: 0.3, who: 'anyone', distance: 0.1, hold: 0.25, cooldown: 1 },
+				inputs: ['enabled'],
+				params: [
+					{ key: 'who', kind: 'select', options: ['anyone', 'me'] },
+					{ key: 'distance', kind: 'range', min: 0.03, max: 0.3, step: 0.01, label: 'hands closer than (m)' },
+					{ key: 'hold', kind: 'range', min: 0, max: 1, step: 0.05, label: 'held for (s)' },
+					{ key: 'cooldown', kind: 'range', min: 0.2, max: 5, step: 0.1, label: 'at most one per (s)' }
+				],
+				note: 'VR, in Interact or Play. `point` is where the hands met — wire it into a Spawn\'s place or an Effect Burst.'
 			},
 			// the round clock, derived from the shared startedAt stamp — no clock of its own
 			{

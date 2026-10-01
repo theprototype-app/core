@@ -37,9 +37,28 @@ export function isTransient(object) {
 }
 
 /** Stamp an object (and, for a group, only the root — the flag is about the whole
- * object's lifetime, and the tree travels with its root). @param {any} object */
-export function markTransient(object) {
-	if (object) object.userData.transient = true;
+ * object's lifetime, and the tree travels with its root).
+ * @param {any} object @param {string} [sourceUuid] 31: the template it copies */
+export function markTransient(object, sourceUuid) {
+	if (!object) return;
+	object.userData.transient = true;
+	// 31 (Stars Room S4): which object this is a COPY of. Derived on both sides of the
+	// `duplicate` message (the receiver knows the source uuid too), so nothing new travels;
+	// it lets a graph written for the template reach its copies (flowRuntime's selector walk).
+	if (typeof sourceUuid === 'string' && sourceUuid) {
+		object.userData.spawnedFrom = sourceUuid;
+		copiesOf.set(object.uuid, sourceUuid);
+	}
+}
+
+/** 31: copy uuid -> template uuid. A map, because the flow runtime asks per EVENT (a hit, a
+ * hover) and a scene walk per question would be the cost; pruned when a copy is removed.
+ * @type {Map<string, string>} */
+const copiesOf = new Map();
+
+/** 31: the template a transient copy was made from, or null @param {string} uuid @returns {string | null} */
+export function spawnedFromOf(uuid) {
+	return (typeof uuid === 'string' && copiesOf.get(uuid)) || null;
 }
 
 /** Every transient object currently in the scene, oldest-first in child order.
@@ -98,6 +117,7 @@ export function removeTransientObject(uuid, poke = true) {
 	const group = get(objectsGroup);
 	const object = group?.getObjectByProperty('uuid', uuid);
 	if (!object || !isTransient(object)) return false;
+	copiesOf.delete(uuid);
 	/** @type {any} */
 	const peer = get(peers);
 	object.parent?.remove(object);

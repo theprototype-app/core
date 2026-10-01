@@ -23,6 +23,7 @@
 // This module imports objectActions and physics, both of which reach `history`, so
 // flowRuntime must reach IT through a primed dynamic import (the physicsRef precedent).
 
+import * as THREE from 'three';
 import { get } from 'svelte/store';
 import { objectsGroup } from '../stores/sceneStore';
 import { showToast } from '../stores/appStore';
@@ -67,6 +68,25 @@ function livingOf(nodeId) {
 	return list;
 }
 
+/**
+ * 31: a place given in the objects group's frame, carried into the template's PARENT frame
+ * (a template inside a group), or null when there is none.
+ * @param {any} template @param {any} group @param {any} position
+ * @returns {{x: number, y: number, z: number} | null}
+ */
+function placeInParentOf(template, group, position) {
+	if (!Array.isArray(position) || position.length < 3) return null;
+	const p = position.slice(0, 3).map(Number);
+	if (!p.every((v) => Number.isFinite(v))) return null;
+	const parent = template.parent;
+	if (!parent || parent === group || !group) return { x: p[0], y: p[1], z: p[2] };
+	group.updateWorldMatrix(true, false);
+	parent.updateWorldMatrix(true, false);
+	const v = group.localToWorld(new THREE.Vector3(p[0], p[1], p[2]));
+	parent.worldToLocal(v);
+	return { x: v.x, y: v.y, z: v.z };
+}
+
 /** @param {string} uuid */
 function despawn(uuid) {
 	physicsRemoveBody(uuid); // free the body first: the object is about to leave the tree
@@ -77,7 +97,9 @@ function despawn(uuid) {
  * Fire one spawn node.
  * @param {string} nodeId
  * @param {string} templateUuid the object copies are made from
- * @param {{at?: number[], count?: number, maxAlive?: number, interval?: number, spread?: number}} opts
+ * @param {{at?: number[], position?: number[], count?: number, maxAlive?: number, interval?: number, spread?: number}} opts
+ *   `position` (31) is a PLACE in the objects group's frame (the clap's point): when given,
+ *   copies land there and `at` is ignored — `at` is an offset from the template.
  * @returns {{spawned: number, reason?: string}}
  */
 export function spawnFrom(nodeId, templateUuid, opts = {}) {
@@ -98,6 +120,7 @@ export function spawnFrom(nodeId, templateUuid, opts = {}) {
 	const spread = clampNum(opts.spread, 0, 20, 0);
 	const at = Array.isArray(opts.at) ? opts.at : [0, 0, 0];
 	const base = template.position;
+	const place = placeInParentOf(template, group, opts.position);
 	let list = livingOf(nodeId);
 	let spawned = 0;
 
@@ -129,11 +152,13 @@ export function spawnFrom(nodeId, templateUuid, opts = {}) {
 			transient: true,
 			// `at` is an OFFSET from the template, so an unwired node drops copies above a
 			// visible object rather than at the world origin
-			at: [
-				base.x + (Number(at[0]) || 0) + jitter(),
-				base.y + (Number(at[1]) || 0),
-				base.z + (Number(at[2]) || 0) + jitter()
-			]
+			at: place
+				? [place.x + jitter(), place.y, place.z + jitter()]
+				: [
+						base.x + (Number(at[0]) || 0) + jitter(),
+						base.y + (Number(at[1]) || 0),
+						base.z + (Number(at[2]) || 0) + jitter()
+					]
 		});
 		if (!clone) break;
 		// the whole point of B7: without this the copy is INERT — `startSimulation` walks

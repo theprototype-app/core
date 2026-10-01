@@ -35,6 +35,7 @@
 	import { startPlayInteract, tickPlayInteract, stopPlayInteract, carriedUuid, editorInteractActive, cursorGrabStart, cursorGrabMove, cursorGrabEnd, interactClick } from '$lib/playInteract';
 	import { registerKeySessionProbe } from '$lib/shortcuts';
 	import { startKnock, tickKnock, stopKnock } from '$lib/knock';
+	import { startClap, tickClap, stopClap } from '$lib/clap'; // 31: two hands together make something
 	import { tickMoveSmoothing } from '$lib/moveSmoothing';
 	import { moduleInteractiveGroups, fireClickMiss, runClickHandlers } from '$lib/moduleSDK';
 	import { updateSpatialAudio } from '$lib/voiceChat';
@@ -334,6 +335,7 @@
 		// 24-A A1: the knock probes (hands in VR, the camera on desktop) against every
 		// dynamic body — inert unless the scene's knock block is on and a sim runs
 		tickKnock(performance.now(), camera.current);
+		tickClap(performance.now()); // 31: the clap (VR hands, inert unless an On Clap node listens)
 		// 21-B: ease between a remote peer's ~10 Hz physics poses (no-op unless a
 		// remote peer is simulating and something is mid-ease)
 		tickMoveSmoothing();
@@ -1432,6 +1434,7 @@
 		// and the two "what am I holding" reads keep a probe off its own carried object.
 		// A2: the hand that hit gets a buzz — LOCAL, the same seam shape as the hand poses
 		startKnock({ hands: handSnapshot, heldUuids: () => [carriedUuid(), vrGrabbedUuid()], haptic: hapticKnock });
+		startClap({ hands: handSnapshot }); // 31: the same hand seam
 		// 30b: game feel in VR (a frame hook + a trigger hook through vrControls' registries)
 		startVrGameInput();
 
@@ -1448,6 +1451,7 @@
 			offKeyProbe(); // 30 P1
 			stopPlayInteract(); // 21-B B3 (releases any carried body with zero velocity)
 			stopKnock(); // 24-A A1
+			stopClap(); // 31
 			stopVrGameInput(); // 30b
 			element.removeEventListener('pointerdown', onPointerDown);
 			element.removeEventListener('contextmenu', onContextMenu);

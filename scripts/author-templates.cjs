@@ -698,6 +698,42 @@ function starsGraph() {
 	E('bquit', 'quithide', 'trigger');
 	// ---- More stars: the menu button or the VR pad spawns 3 copies of the template ----
 	N('bmore', 'hudbutton', 'More stars button', 40, 940, { element: 'more-btn' });
+	// ---- 31: the player's two settings (the game's Settings — desktop and the VR menu —
+	// through 31-game-shell's panel; Stars' own P menu carries the same two as toggles) -----
+	N('setpoint', 'gamesetting', 'Setting: point to move stars', 3700, 40, { setting: 'stars-point-grab', title: 'Point to move stars', kind: 'toggle', value: true });
+	N('setclap', 'gamesetting', 'Setting: make stars with a clap', 3700, 200, { setting: 'stars-clap', title: 'Make stars with a clap', kind: 'toggle', value: true });
+	// S2 — OFF: the VR grip ray and the desktop carry take nothing; a hand still knocks
+	N('pointgrab', 'pointgrab', 'Pointing moves stars', 3940, 40, {});
+	E('setpoint', 'pointgrab', 'enabled');
+	// S3 — a CLAP (both hands together, held a quarter second) makes a star between them,
+	// with a sparkle, a portal sound and a buzz in both hands. The pulse replicates with the
+	// point, so the host's spawner makes ONE star there for everyone; the buzz is `me` only.
+	N('clap', 'onclap', 'Clap: a new star', 3940, 200, { who: 'anyone', distance: 0.1, hold: 0.25, cooldown: 1, pulse: 0.3 });
+	E('setclap', 'clap', 'enabled');
+	N('clapme', 'onclap', 'My clap', 3940, 360, { who: 'me', distance: 0.1, hold: 0.25, cooldown: 1, pulse: 0.3 });
+	E('setclap', 'clapme', 'enabled');
+	// at most 40 clapped stars; the 41st recycles the oldest (the spawner's own rule)
+	N('clapspawn', 'spawn', 'Spawn a star at the clap', 4180, 200, { x: 0, y: 0, z: 0, count: 1, maxAlive: 40, interval: 0, spread: 0 });
+	E('clap', 'clapspawn', 'trigger');
+	E('clap', 'clapspawn', 'position', 'point');
+	N('clapfx', 'effectburst', 'Clap sparkle', 4180, 280, { kind: 'sparkle', count: 72, lift: 0, color: '#ffe08a' });
+	E('clap', 'clapfx', 'trigger');
+	E('clap', 'clapfx', 'at', 'point');
+	N('clapfx2', 'effectburst', 'Clap sparks', 4180, 340, { kind: 'sparks', count: 36, lift: 0, color: '' });
+	E('clap', 'clapfx2', 'trigger');
+	E('clap', 'clapfx2', 'at', 'point');
+	N('clapsnd', 'gamesound', 'Clap: portal', 4420, 280, { sound: 'portal' });
+	E('clap', 'clapsnd', 'trigger');
+	E('clap', 'clapsnd', 'at', 'point');
+	N('clapbuzz', 'hapticpulse', 'Clap: buzz both hands', 4180, 400, { pattern: 'success', hand: 'both' });
+	E('clapme', 'clapbuzz', 'trigger');
+	// S4 — a clapped star (and a More-stars copy) is a copy of the TEMPLATE, and a copy answers
+	// to its template's selector: a knock rings it and counts as one of MY touches, like any
+	// star. Unplaced sound (the template itself waits under the floor).
+	N('tplhit', 'onhit', 'A new star hit', 3940, 520, { pulse: 0.3, minSpeed: 0.3, who: 'anyone' });
+	N('tplme', 'onhit', 'A new star, my hit', 3940, 600, { pulse: 0.3, minSpeed: 0.3, who: 'me' });
+	N('tplsnd', 'gamesound', 'New star: ring', 4180, 520, { sound: 'ring' });
+	E('tplhit', 'tplsnd', 'trigger');
 	N('padmore', 'onclick', 'More pad clicked', 40, 1020, { pulse: 0.3 });
 	N('selmorepad', 'objectselector', 'More stars pad', 280, 1020, { selected: 'More stars pad' });
 	E('padmore', 'selmorepad');
@@ -707,8 +743,12 @@ function starsGraph() {
 	E('bmore', 'spawn', 'trigger');
 	E('padmore', 'spawn', 'trigger');
 	E('seltpl', 'spawn', 'source');
+	E('seltpl', 'clapspawn', 'source'); // 31
+	E('tplhit', 'seltpl');
+	E('tplme', 'seltpl');
 	// ---- touches: per-player rows (one writer each), the sum, the leaderboard ---------
 	N('touch', 'setvariable', 'Count my touch', 520, 1240, { name: 'touches', value: 1, op: 'add', scope: 'player' });
+	E('tplme', 'touch', 'trigger'); // 31: a new star's hit is a touch too
 	N('mytouch', 'peervariable', 'My touches', 40, 1390, { name: 'touches', read: 'mine', peer: '', fallback: 0 });
 	N('hmine', 'hudtext', 'HUD my touches', 280, 1390, { element: 'touches-read', format: 'Your touches: {v}', decimals: 0, value: 0 });
 	E('mytouch', 'hmine', 'value');
@@ -884,7 +924,7 @@ const STARS_DEF = {
 	slug: 'stars-room',
 	title: 'Stars Room',
 	description:
-		'A zero-gravity glass room full of glowing crystal stars. Knock them with your hands in VR or walk into them. Start a round to light every star against the clock, or just play.',
+		'A zero-gravity glass room full of glowing crystal stars. Knock them with your hands in VR or walk into them, clap to make a new one. Start a round to light every star against the clock, or just play.',
 	license: 'CC0-1.0',
 	author: 'theprototype',
 	tags: ['zero-g', 'physics', 'sandbox', 'vr'],
@@ -908,7 +948,14 @@ const STARS_DEF = {
 		damping: { linear: 0.35, angular: 0.2 },
 		ccd: false,
 		// 30b: a SPAWN just inside the south glass, facing the stars (yaw 0 faces -Z)
-		play: { interaction: 'grab', grounded: false, simOnPlay: true, spawn: { position: [0, 0, 5.2], yaw: 0 } },
+		// 31 (S1): TELEPORT, bounded to the room — `play.bounds` is the glass box's inside (the
+		// walls' inner faces sit at ±5.75), so the arc can never land you outside the scene
+		// (31-vr-core's bounded teleport; K1)
+		play: {
+			interaction: 'grab', grounded: false, simOnPlay: true, spawn: { position: [0, 0, 5.2], yaw: 0 },
+			locomotion: { teleport: true },
+			bounds: { min: [-5.55, -0.1, -5.55], max: [5.55, 6.9, 5.55] }
+		},
 		knock: { enabled: true, gain: 1, maxSpeed: 10, radius: 0.12, spin: 0.6 }
 	},
 	post: {
@@ -946,7 +993,7 @@ const STARS_DEF = {
 						{ id: 'go-btn', kind: 'button', anchor: 'center', x: 0, y: 12, w: 260, h: 48, z: 1, label: 'Start round', enabled: true, style: { ...STARS_BTN, size: 17 } },
 						{ id: 'free-btn', kind: 'button', anchor: 'center', x: 0, y: 70, w: 260, h: 42, z: 1, label: 'Free play', enabled: true, style: STARS_QUIET },
 						{ id: 'start-hint', kind: 'text', anchor: 'center', x: 0, y: 128, w: 420, h: 22, z: 1, label: 'Light all 24 in two minutes  ·  P: menu', style: { size: 12, color: '#8b97a8', align: 'center' }, wrap: true },
-						{ id: 'start-hint-vr', kind: 'text', anchor: 'center', x: 0, y: 156, w: 420, h: 22, z: 1, label: 'VR: left stick walks  ·  grip grabs  ·  Y switches to Edit mode', style: { size: 12, color: '#8b97a8', align: 'center' }, wrap: true }
+						{ id: 'start-hint-vr', kind: 'text', anchor: 'center', x: 0, y: 156, w: 440, h: 22, z: 1, label: 'VR: stick walks or teleports  ·  clap for a new star  ·  Y: Edit mode', style: { size: 12, color: '#8b97a8', align: 'center' }, wrap: true }
 					]
 				},
 				{
@@ -982,7 +1029,7 @@ const STARS_DEF = {
 					elements: [
 						{ id: 'pause-panel', kind: 'panel', anchor: 'center', x: 0, y: 0, w: 400, h: 400, z: 0, label: '', style: STARS_HUD_PANEL },
 						{ id: 'pause-title', kind: 'text', anchor: 'center', x: 0, y: -150, w: 360, h: 36, z: 1, label: 'STARS ROOM', style: { size: 28, weight: '700', color: '#ffd45e', align: 'center' } },
-						{ id: 'pause-sub', kind: 'text', anchor: 'center', x: 0, y: -112, w: 360, h: 40, z: 1, label: 'Zero gravity. Knock the stars with your hands in VR, or walk into them.', style: STARS_TEXT, wrap: true },
+						{ id: 'pause-sub', kind: 'text', anchor: 'center', x: 0, y: -112, w: 360, h: 40, z: 1, label: 'Zero gravity. Knock the stars with your hands in VR, or walk into them. Clap to make a star.', style: STARS_TEXT, wrap: true },
 						{ id: 'start-btn', kind: 'button', anchor: 'center', x: 0, y: -50, w: 250, h: 42, z: 1, label: 'Start round: light every star', enabled: true, style: STARS_BTN },
 						{ id: 'restart-btn', kind: 'button', anchor: 'center', x: 0, y: 0, w: 250, h: 42, z: 1, label: 'Restart round', enabled: true, style: { ...STARS_BTN, bg: '#4c9e6a' } },
 						{ id: 'more-btn', kind: 'button', anchor: 'center', x: 0, y: 50, w: 250, h: 42, z: 1, label: 'More stars', enabled: true, style: { ...STARS_BTN, bg: '#b0863b' } },
@@ -1723,7 +1770,18 @@ const JAM_DEF = {
 	// cockpit, where the controller tip reaches the piano, the drums, the sampler, the
 	// transport and the mixer; a desktop keeps the overview it always had (a level eye at the
 	// cockpit would see only the piano).
-	physics: { play: { cursor: 'free', simOnPlay: false, spawn: { position: JAM_SPAWN, yaw: 0, vrOnly: true } } },
+	// 31 (J1): the user, on a Quest 3: "In Jam Room I would like to be able to fly around and
+	// also scale the entire environment with grips and move around same as in edit mode". So the
+	// game FLIES (no gravity), the grips move/rotate/SCALE the world when they do not close on a
+	// device (worldGrab), and teleport lands inside the studio (`bounds` = inside the walls,
+	// the open front included) — all K1 flags, 31-vr-core's to implement.
+	physics: {
+		play: {
+			cursor: 'free', simOnPlay: false, spawn: { position: JAM_SPAWN, yaw: 0, vrOnly: true },
+			locomotion: { fly: true, worldGrab: true, teleport: true },
+			bounds: { min: [-4.7, -0.1, -6.6], max: [6.9, 3.3, 3.1] }
+		}
+	},
 	// 30b: NO Game Music node, on purpose — the room IS the music (the transport, the drums and
 	// the piano are what you hear), so a procedural `studio` loop would only fight the band.
 	post: {

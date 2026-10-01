@@ -30,7 +30,7 @@ import { topLevelObjectOf } from './objectActions';
 import { objectHasOnClick, fireObjectClick } from './flowRuntime';
 import { moduleInteractiveGroups, runClickHandlers } from './moduleSDK';
 import { isModuleTopLevel } from './moduleWorld';
-import { registerVRFrameHook, registerVRTriggerHooks, registerPanelGroupProvider, controllerIndexFor, hapticPattern, triggerClaimed } from './vrControls';
+import { registerVRFrameHook, registerVRTriggerHooks, registerPanelGroupProvider, controllerIndexFor, hapticPattern, triggerClaimed, withRayCamera } from './vrControls';
 // P3 (C2): the game UI in VR — the panel, the wrist card, the strip, the banner
 import { vrGamePanelFrame, panelTargetAlong, panelHover, pressPanelTarget, pokeFrame, uAcross, vrGameSurface, hideVrGamePanel } from './vrGamePanel';
 
@@ -116,7 +116,8 @@ export function controllerRayOf(index) {
 	_mat.identity().extractRotation(controller.matrixWorld);
 	ray.ray.origin.setFromMatrixPosition(controller.matrixWorld);
 	ray.ray.direction.set(0, 0, -1).applyMatrix4(_mat);
-	return ray;
+	// 31: a Sprite in module content needs the camera to be raycast (else three throws)
+	return withRayCamera(ray);
 }
 
 /** 'left' | 'right' | undefined for a controller slot @param {number} index */

@@ -625,7 +625,7 @@ export function beamTarget(ray) {
 	// picker) ends the beam too — it lives under module-world-root, outside objectsGroup, so
 	// the laser used to pass straight through a module's menu with no dot on it
 	for (const root of moduleInteractiveRoots()) {
-		const hits = ray.intersectObject(root, true);
+		const hits = safeIntersect(ray, root);
 		const first = hits.find((/** @type {any} */ h) => h.object.visible !== false && !h.object.isLine && !h.object.isPoints);
 		if (first && first.distance < distance) {
 			distance = first.distance;
@@ -835,7 +835,10 @@ export function computeTeleportArc(origin, direction, group, opts = {}) {
 			const length = segment.length();
 			arcRaycaster.set(previous, segment.normalize());
 			arcRaycaster.far = length;
-			const hits = arcRaycaster.intersectObjects(roots, true);
+			withRayCamera(arcRaycaster);
+			/** @type {any[]} */ const hits = [];
+			for (const root of roots) hits.push(...safeIntersect(arcRaycaster, root));
+			hits.sort((x, y) => x.distance - y.distance);
 			const landing = hits.find((hit) => {
 				if (!hit.face) return false;
 				if (bounded) return hit.object.visible !== false && !!(/** @type {any} */ (hit.object).isMesh);
@@ -909,8 +912,9 @@ function meshBetween(/** @type {any} */ from, /** @type {any} */ to) {
 	if (length < 1e-4) return false;
 	_probeRay.set(a, d.normalize());
 	_probeRay.far = length;
-	return _probeRay
-		.intersectObjects(teleportRoots(), true)
+	withRayCamera(_probeRay);
+	return teleportRoots()
+		.flatMap((root) => safeIntersect(_probeRay, root))
 		.some((/** @type {any} */ hit) => hit.object.isMesh && hit.object.visible !== false && hit.distance > 0.05 && !movableBody(hit.object));
 }
 
@@ -1638,7 +1642,36 @@ function controllerRay(index) {
 	tempMatrix.identity().extractRotation(controller.matrixWorld);
 	raycaster.ray.origin.setFromMatrixPosition(controller.matrixWorld);
 	raycaster.ray.direction.set(0, 0, -1).applyMatrix4(tempMatrix);
-	return raycaster;
+	return withRayCamera(raycaster);
+}
+
+/**
+ * 31 (found by 31-untangle): a THREE.Sprite cannot be raycast without `raycaster.camera` —
+ * three warns and Sprite.raycast THROWS on the null camera. Since the VR rays reach module
+ * content (G5's beam ends, the bounded teleport's arc and wall probe), one Sprite in a module's
+ * group threw inside updateVRControls every frame and aborted it before the grips ran
+ * (worldGrab silently dead in Untangle's globe mode). Every VR ray carries the camera the
+ * viewer sees through — the XR camera in a session, the editor camera otherwise.
+ * @template T @param {T} ray @returns {T}
+ */
+export function withRayCamera(ray) {
+	const camera = renderer?.xr?.isPresenting ? renderer.xr.getCamera() : get(globalCamera);
+	if (camera) /** @type {any} */ (ray).camera = camera;
+	return ray;
+}
+
+/**
+ * Module content is not ours: a raycast into it must never take the VR frame down with it
+ * (a mesh with a custom raycast, a Sprite before the camera exists). Returns [] on a throw.
+ * @param {any} ray @param {any} root @returns {any[]}
+ */
+function safeIntersect(ray, root) {
+	try {
+		return ray.intersectObject(root, true);
+	} catch (error) {
+		console.log('VR raycast into module content failed', root?.name, error);
+		return [];
+	}
 }
 
 /**
@@ -1658,7 +1691,7 @@ export function pointerHandRay() {
 	const m = new THREE.Matrix4().identity().extractRotation(controller.matrixWorld);
 	fresh.ray.origin.setFromMatrixPosition(controller.matrixWorld);
 	fresh.ray.direction.set(0, 0, -1).applyMatrix4(m);
-	return fresh;
+	return withRayCamera(fresh);
 }
 
 /** Raycast the quick-menu tiles @param {number} index @returns {string|null} tile action name */

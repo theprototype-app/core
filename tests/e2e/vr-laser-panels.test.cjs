@@ -191,6 +191,38 @@ h.run(async () => {
 	h.check(modBeam.reticle && Math.abs(modBeam.length - 1.49) < 0.02, `the beam ends ON the module's board (${modBeam.length?.toFixed(3)} m, reticle ${!!modBeam.reticle})`);
 	h.check(mod.group === 'laser31-board', `the laser resolves the module mesh to its interactive group (${mod.group})`);
 
+	console.log('\n=== a THREE.Sprite in module content (found by 31-untangle) ===');
+	// a Sprite cannot be raycast without raycaster.camera: three threw inside updateVRControls
+	// every frame, which aborted it before the grips ran (worldGrab dead in Untangle's globe)
+	const errorsBefore = h.pageErrors ? h.pageErrors(A).length : 0;
+	await page.evaluate(() => {
+		const s = window.__stores;
+		const THREE = s.THREE;
+		let scene;
+		s.globalScene.subscribe((v) => (scene = v))();
+		const board = scene.getObjectByName('laser31-board');
+		const sprite = new THREE.Sprite(new THREE.SpriteMaterial({ color: 0xffcc00 }));
+		sprite.name = 'laser31-sprite';
+		sprite.scale.set(0.3, 0.3, 1);
+		sprite.position.set(0, 0, 0.3); // 0.3 m in front of the board, on the beam
+		board.add(sprite);
+		board.updateMatrixWorld(true);
+	});
+	await frames(6);
+	const spriteBeam = await page.evaluate(() => {
+		const s = window.__stores;
+		return { beam: window.__L.beam(1), grip: s.vrControls.vrGripDebug() };
+	});
+	const errorsAfter = h.pageErrors ? h.pageErrors(A).length : 0;
+	h.check(errorsAfter === errorsBefore, `no page error from the Sprite (${errorsAfter - errorsBefore} new)`);
+	h.check(spriteBeam.beam.reticle && Math.abs(spriteBeam.beam.length - 1.19) < 0.03, `the beam ends ON the sprite (${spriteBeam.beam.length?.toFixed(3)} m)`);
+	await page.evaluate(() => {
+		let scene;
+		window.__stores.globalScene.subscribe((v) => (scene = v))();
+		const sp = scene.getObjectByName('laser31-sprite');
+		sp?.parent?.remove(sp);
+	});
+
 	console.log('\n=== the radial ring takes the reticle ===');
 	const ring = await page.evaluate(() => {
 		const s = window.__stores;

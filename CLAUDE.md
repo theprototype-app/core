@@ -2332,6 +2332,41 @@ loadable play content. Everything a user does must be visible to connected peers
   shell's `api.game.levels`/`setHelp`/`onRestart` are feature-detected. The template def is the
   arena + templates + HUD + a small graph; `block` (Wedge/Arch/Corner/Stairs) and `thumb.dress`
   (card-only objects) are new author-kit fields. Suites play-reach-jump, towers-levels, game-towers.
+- **ROADMAP 31 — THE SECOND QUEST ROUND** (1.18.0; acceptance test: cloud
+  `plans/core/lanes/31/user-feedback-2026-10-01.md`, items U1…A2). Contracts K1-K4:
+  · K1 `teleportRules.js` (pure leaf, vitest) + vrControls `teleportVerdict(from, to, normalY)`:
+  in Interact a teleport lands only on a WALKABLE surface (normal y ≥ 0.7), inside `play.bounds`
+  ({min, max}; a publisher's in its OWN frame — `boundsOwner`) else the content box shrunk 0.3 m,
+  on a dungeon raster floor cell, and with no collider/mesh in the 1.1 m line (a DYNAMIC body or a
+  transient copy never refuses — the Stars Room's floating stars). Red arc = refused, release does
+  nothing. `play.locomotion.worldGrab` gives Interact/Play the Edit world gestures when a grip
+  starts on no grabbable (`locomotionPolicy(...).worldGestures`). Probe: `api.locomotion`.
+  · K2 `vrPanelOverlay.js` (leaf): every VR panel joins the TRANSPARENT list at PANEL_ORDER 5000
+  behind ONE sentinel whose onBeforeRender CLEARS DEPTH — panels draw over the scene yet still
+  depth-test among themselves; the beam/reticle take BEAM_ORDER 5010 while they end on a panel;
+  `userData.vrOverlay = false` opts out; `api.vrPanel(group)` for module menus. The laser is
+  normal-blended with a solid hit dot and the board FILLS its hovered button; module content ends
+  the beam (vrGameInput resolves meshes under module-world-root). The radial menu lights the
+  sector under the stick and the trigger picks it.
+  · K3 `gameShell.js` (state + actions) + `gameSettings.js` (leaf: per-game rows persisted via
+  safeStorage `tp:game:<id>:shell`) + `gameShellWire.js` (buses, haptics, turning, quality) +
+  `shellPanelDraw.js` (the VR pages) + `fpsMeter.js` + `comfortVignette.js`: ONE pause menu in
+  every game — desktop Escape / corner Menu (`#game-shell-menu`, `[data-shell-item]`,
+  `[data-shell-setting]`, `#game-fps-counter`), VR board footer + LEFT X. LOCAL, replicates
+  nothing, never pauses the shared world. **Escape in a game opens the menu now; leaving Play from
+  a game is the menu's Back to editor** (suites that pressed Escape to leave a game moved).
+  `qualityGovernor.applyGameQuality` pins High 0 / Medium 3 / Low 7 and OUTRANKS the headset's
+  entry floor (integrate: no floor while pinned; back to Auto in a session re-takes it).
+  · K4 `lod.js` + `lodCore.js`: auto LOD for loaded meshes ≥ 3000 tris as a RENDER-TIME geometry
+  swap (scene.onBeforeRender/onAfterRender) — the tree and every serializer only ever see the
+  source; meshoptimizer levels built once per asset in the decimation worker; `api.lod`. The
+  governor now runs in XR off the session's own rAF (`xrThresholds(hz)`, entry floor level 1 =
+  shadows off, next-entry framebuffer scale); `api.quality {level, max, labels, vr, onChange}`.
+  `scripts/perf-games.cjs` = the Performance-protocol table for the seven games (`--vr`, `--only`,
+  PERF_SCENES_DIR/REF, PERF_MODULES_DIR; run under `e2e-slot --exclusive`).
+  · Stars Room: `clapGesture.js` (pure) + `clap.js` (On Clap node; a spawned copy answers to its
+  template — `transientObjects.spawnedFromOf`), `pointGrab.js` (Point Grab node gates the VR
+  grip RAY and the desktop carry; touch still holds), Game Setting node.
 
 ## Replication golden rules
 
@@ -2427,6 +2462,18 @@ loadable play content. Everything a user does must be visible to connected peers
 
 ## Hard-won gotchas (do not rediscover)
 
+- **A VITE STARTED INSIDE `e2e-slot` INHERITS FDS 8/9 AND HOLDS BOTH MACHINE-WIDE E2E LOCKS**
+  (every lane's suites blocked ~2 h on 2026-10-01). Start a dev server from a plain shell with
+  `8>&- 9>&-`, never from inside an e2e-slot command.
+- **A LEGACY-MODE TEMPLATE CALL `fn(x)` IS UNTRACKED BEYOND ITS ARGUMENTS** — VRMenu's
+  `sectorColor(s.entry)` read `$vrHovered` inside the helper, so no sector ever repainted (stick
+  OR ray). Pass the store value as a parameter.
+- **A `$state` (deep) PROXY OVER THREE OBJECTS IS A PER-FRAME COST**: ModuleContent.svelte held
+  module groups in deep `$state`, so every frame walked them (`deep_read`) — 88% of Waves' CPU, the
+  1 Hz Dungeon Realms hitch. `$state.raw` for anything holding scene objects.
+- **`a ?? b + '/'` IS `a ?? (b + '/')`** — the integrate's MODULES_REPO env override in helpers.cjs
+  lost its trailing slash and every suite "had no zips". Parenthesize a `??` whose result is
+  concatenated.
 - **HELPER_LAYER MUST NEVER BE 1 OR 2: three's WebXRManager gives the LEFT eye layer 1 and the
   RIGHT eye layer 2.** Helpers on layer 1 drew into ONE eye in a headset — the Quest report "in the
   middle of the world I see the light source helper, and only with one eye" (Towers, Stars Room,
@@ -6603,3 +6650,14 @@ color?})`; click handlers get `{source: 'click' | 'sweep', mode}` and
 `registerClickHandler(fn, {sweep: false})` opts out of the VR sweep. Feature-detect every one
 (`api.x?.()`). A scene's play block may say `play.locomotion {teleport?, fly?}` and
 `play.spawn {position, yaw, vrOnly?}`.
+
+**R31 additions (1.18.0, the second Quest round):** `api.game.levels({list:[{id,label,locked?,stars?}],
+current, onPick(id)})` (re-callable; the shell draws the picker on desktop AND the VR board),
+`api.game.addSetting({id, label, type:'toggle'|'choice'|'range', options?, min?, max?, default,
+onChange?})` + `api.game.setting(id)` (rows in the per-game Settings page, persisted per game id),
+`api.game.setHelp(text)` (How to play), `api.game.onRestart(fn)` (after the shell's reset);
+`api.quality {level (getter, 0 best), max, labels, vr, onChange(fn) -> off}` (cut effects at a
+higher level); `api.lod(object, {ratios, distances, minTriangles})` -> `{meshes, ready, remove}`;
+`api.vrPanel(group)` (a module's VR menu drawn over the scene like core's panels);
+`api.locomotion = {boundedTeleport, worldGrab}` (the K1 probe). A scene's play block may say
+`play.locomotion.worldGrab`, `play.bounds {min, max}` and `play.reach` (metres). Feature-detect all.

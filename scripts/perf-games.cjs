@@ -3,7 +3,13 @@
 // Games-tab games, measured the same way every time so a before/after means something.
 //
 //   node scripts/perf-games.cjs [--label baseline-1.17] [--only waves,football] [--vr]
-//                               [--seconds 10] [--throttle 4] [--out <dir>]
+//                               [--seconds 10] [--throttle 4] [--out <dir>] [--phone]
+//
+// 33 G1 `--phone`: a PHONE profile instead of the desktop one — a 412x915 viewport at
+// deviceScaleFactor 2.625, isMobile + hasTouch (what reproduces a phone's page scale and
+// `(pointer: coarse)`), and CPU x6 unless --throttle says otherwise. The GPU is still this
+// machine's, so the fill-rate half of a phone shows up only as the PIXELS it would push:
+// the table adds the drawing-buffer size and the post passes per frame.
 //
 // Per game, on a FRESH page against a running dev server (APP_URL, default this lane's
 // https://theprototype.app:5263/):
@@ -46,7 +52,8 @@ const flag = (name) => argv.includes('--' + name);
 
 const LABEL = arg('label', 'run');
 const SECONDS = Number(arg('seconds', '10'));
-const THROTTLE = Number(arg('throttle', '4'));
+const PHONE = flag('phone');
+const THROTTLE = Number(arg('throttle', PHONE ? '6' : '4'));
 const VR = flag('vr');
 const PROFILE = flag('profile');
 const OUT = arg('out', '/home/deck/.code/lanes-30/after-31/31-perf');
@@ -181,6 +188,16 @@ function readScene() {
 	});
 	if (scene?.background?.isTexture) textures.add(scene.background);
 	if (scene?.environment?.isTexture) textures.add(scene.environment);
+	// 33 G1: what a PHONE's GPU pays for — pixels per frame, and what shades them
+	let physical = 0;
+	let transparent = 0;
+	scene?.traverseVisible?.((o) => {
+		if (!o.isMesh) return;
+		const mats = Array.isArray(o.material) ? o.material : [o.material];
+		if (mats.some((m) => m?.isMeshPhysicalMaterial)) physical++;
+		if (mats.some((m) => m?.transparent)) transparent++;
+	});
+	const buffer = r.getDrawingBufferSize(new s.THREE.Vector2());
 	let bytes = 0;
 	for (const t of textures) {
 		const img = t.image;
@@ -222,7 +239,10 @@ function readScene() {
 		unculled,
 		points,
 		skinned,
-		pixelRatio: r.getPixelRatio(),
+		pixelRatio: Math.round(r.getPixelRatio() * 100) / 100,
+		bufferPx: Math.round((buffer.x * buffer.y) / 1000) / 1000,
+		physical,
+		transparent,
 		heapMB: performance.memory ? Math.round((performance.memory.usedJSHeapSize / 1048576) * 10) / 10 : null,
 		heapDeltaMB: performance.memory && rec.heap0 != null ? Math.round(((performance.memory.usedJSHeapSize - rec.heap0) / 1048576) * 10) / 10 : null,
 		lodMeshes: lod ? lod.entries : null,
@@ -238,7 +258,10 @@ async function probeGame(browser, game) {
 	const missing = (game.modules || []).filter((m) => !zipFor(m.id)).map((m) => m.id);
 	if (missing.length) return { slug: game.slug, skipped: 'no zip for ' + missing.join(', ') };
 
-	const peer = await h.setupPage(browser, game.slug, { context: { viewport: { width: 1280, height: 720 } } });
+	const context = PHONE
+		? { viewport: { width: 412, height: 915 }, deviceScaleFactor: 2.625, isMobile: true, hasTouch: true }
+		: { viewport: { width: 1280, height: 720 } };
+	const peer = await h.setupPage(browser, game.slug, { context });
 	const page = peer.page;
 	try {
 		for (const m of game.modules || []) await installZip(page, m.id, zipFor(m.id));
@@ -391,12 +414,12 @@ const over = (v, cap) => (v != null && v > cap ? ' ⚠' : '');
 
 function table(rows) {
 	const head =
-		'| game | calls/frame | tris/frame | geos | tex (MB) | lights (shadow) | cast meshes | meshes / inst / unculled | LOD (coarse) | quality | p50 ms | p95 ms | p99 ms | heap Δ MB | started |\n' +
-		'|---|---:|---:|---:|---:|---:|---:|---|---:|---:|---:|---:|---:|---:|---|';
+		'| game | calls/frame | tris/frame | geos | tex (MB) | lights (shadow) | cast meshes | meshes / inst / unculled | LOD (coarse) | quality | renders/frame | Mpx (dpr) | physical / transparent | p50 ms | p95 ms | p99 ms | heap Δ MB | started |\n' +
+		'|---|---:|---:|---:|---:|---:|---:|---|---:|---:|---:|---:|---|---:|---:|---:|---:|---|';
 	const lines = rows.map((r) =>
 		r.skipped || r.error
-			? `| ${r.slug} | ${r.skipped ? 'SKIP: ' + r.skipped : 'ERROR: ' + r.error} |||||||||||||| |`
-			: `| ${r.slug} | ${fmt(r.calls)}${over(r.calls, BUDGET.calls)} | ${fmt(r.triangles)}${over(r.triangles, BUDGET.triangles)} | ${fmt(r.geometries)} | ${fmt(r.textures)} (${fmt(r.textureMB, 1)}) | ${fmt(r.lights)}${over(r.lights, BUDGET.lights)} (${fmt(r.shadowLights)}) | ${fmt(r.castMeshes)} | ${fmt(r.meshes)} / ${fmt(r.instanced)} / ${fmt(r.unculled)} | ${fmt(r.lodMeshes)} (${fmt(r.lodCoarse)}) | ${fmt(r.quality)} | ${fmt(r.p50, 1)} | ${fmt(r.p95, 1)} | ${fmt(r.p99, 1)} | ${fmt(r.heapDeltaMB, 1)} | ${r.started}${r.state ? ' → ' + r.state : ''} |`
+			? `| ${r.slug} | ${r.skipped ? 'SKIP: ' + r.skipped : 'ERROR: ' + r.error} ||||||||||||||||| |`
+			: `| ${r.slug} | ${fmt(r.calls)}${over(r.calls, BUDGET.calls)} | ${fmt(r.triangles)}${over(r.triangles, BUDGET.triangles)} | ${fmt(r.geometries)} | ${fmt(r.textures)} (${fmt(r.textureMB, 1)}) | ${fmt(r.lights)}${over(r.lights, BUDGET.lights)} (${fmt(r.shadowLights)}) | ${fmt(r.castMeshes)} | ${fmt(r.meshes)} / ${fmt(r.instanced)} / ${fmt(r.unculled)} | ${fmt(r.lodMeshes)} (${fmt(r.lodCoarse)}) | ${fmt(r.quality)} | ${fmt(r.rendersPerFrame, 1)} | ${fmt(r.bufferPx, 2)} (${fmt(r.pixelRatio, 2)}) | ${fmt(r.physical)} / ${fmt(r.transparent)} | ${fmt(r.p50, 1)} | ${fmt(r.p95, 1)} | ${fmt(r.p99, 1)} | ${fmt(r.heapDeltaMB, 1)} | ${r.started}${r.state ? ' → ' + r.state : ''} |`
 	);
 	return head + '\n' + lines.join('\n');
 }
@@ -440,12 +463,12 @@ function table(rows) {
 		seconds: SECONDS,
 		cpuThrottle: THROTTLE,
 		vr: VR,
-		viewport: '1280x720',
+		viewport: PHONE ? '412x915@2.625 (phone)' : '1280x720',
 		budget: BUDGET
 	};
 	const md =
 		`## perf-games — ${LABEL}${VR ? ' (VR-emulated, walking)' : ''}\n\n` +
-		`${meta.at} · ${meta.app} · GPU: ${meta.gpu} · scenes ${meta.scenes} · ${SECONDS} s of Play at CPU x${THROTTLE} · 1280x720\n` +
+		`${meta.at} · ${meta.app} · GPU: ${meta.gpu} · scenes ${meta.scenes} · ${SECONDS} s of Play at CPU x${THROTTLE} · ${meta.viewport}\n` +
 		`Quest budget: ≤ ${BUDGET.calls} calls, ≤ ${BUDGET.triangles / 1000}k tris, ≤ ${BUDGET.lights} lights (⚠ = over). calls/tris are per display frame, every render() pass summed (shadow pass included).\n\n` +
 		table(rows) +
 		'\n';

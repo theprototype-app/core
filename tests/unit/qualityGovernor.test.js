@@ -251,3 +251,40 @@ describe('31-perf: XR thresholds', () => {
 		expect(xrScaleAfter(NaN)).toBe(1);
 	});
 });
+
+// 33 G1 — a phone starts lighter and is always governed.
+import { PHONE_START_LEVEL, isPhoneLike, overridesAt as phoneOverridesAt } from '../../src/lib/qualityGovernorCore.js';
+
+describe('33 G1: phones', () => {
+	it('a phone is a coarse pointer, no hover and a short screen side', () => {
+		expect(isPhoneLike({ coarse: true, hover: false, minSide: 412 })).toBe(true);
+		expect(isPhoneLike({ coarse: true, hover: false, minSide: 820 })).toBe(true); // a small tablet
+		expect(isPhoneLike({ coarse: true, hover: true, minSide: 412 })).toBe(false); // a touch laptop has hover
+		expect(isPhoneLike({ coarse: false, hover: false, minSide: 412 })).toBe(false);
+		expect(isPhoneLike({ coarse: true, hover: false, minSide: 1080 })).toBe(false);
+		expect(isPhoneLike({ coarse: true, hover: false, minSide: 0 })).toBe(false);
+		expect(isPhoneLike({})).toBe(false);
+	});
+	it('the phone start is shadows off, 72 % resolution and AO off — the post look stays', () => {
+		expect(GOVERNOR_STEPS.slice(0, PHONE_START_LEVEL).map((s) => s.key)).toEqual(['shadows', 'res85', 'res72', 'ao']);
+		const o = phoneOverridesAt(PHONE_START_LEVEL);
+		expect(o).toMatchObject({ shadowsOff: true, dprScale: 0.72, aoOff: true, postOff: false });
+	});
+	it('a LIGHT scene on slow frames: governed when judged heavy (the phone rule), never when not', () => {
+		const run = (/** @type {boolean} */ heavy) => {
+			const g = createGovernor();
+			let t = 1000;
+			g.setLevel(PHONE_START_LEVEL, t);
+			t += 700;
+			for (let i = 0; i < 100; i++) {
+				t += 50;
+				g.noteFrame(50, t);
+			}
+			return g.decide(t, { heavy });
+		};
+		expect(run(true).moved).toBe('up');
+		// the desktop rule: a light scene is never governed — and is walked back to full quality
+		const light = run(false);
+		expect(light.moved).not.toBe('up');
+	});
+});

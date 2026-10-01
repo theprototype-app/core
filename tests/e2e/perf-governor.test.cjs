@@ -364,7 +364,8 @@ h.run(async () => {
 	h.check(vr.judged.level >= 2 && vr.judged.dpr < 1 && vr.judged.bias < vr.entered.bias, `missed XR frames take the next step, fed by the session's frames (${JSON.stringify(vr.judged)})`);
 	h.check(vr.recovered.level === 1 && vr.recovered.shadowsOff === true, `on-time frames walk back down — to the floor, never past it: shadows stay off (${JSON.stringify(vr.recovered)})`);
 	h.check(!vr.left.active && vr.left.level === 0 && vr.left.shadowsOff === false && vr.left.thresholds === null, `leaving the headset gives the entry level back and the desktop thresholds (${JSON.stringify(vr.left)})`);
-	h.check(vr.left.nextScale < 1 && vr.left.nextScale >= 0.5, `the resolution the session needed is kept for the next entry (framebuffer scale ${vr.left.nextScale})`);
+	// 31-integrate: never a smaller eye buffer for the next entry — it blurred every panel's text (vr-panel-sharpness)
+	h.check(vr.left.nextScale === 1, `the next entry keeps a FULL eye buffer whatever the session needed (framebuffer scale ${vr.left.nextScale})`);
 	h.check(vr.optedOut.level === 0 && vr.optedOut.floor === 0 && Math.abs(vr.optedOut.thresholds.overMs - 14.44) < 0.1, `COUNTERFACTUAL: with auto quality off a headset changes no level (still judges 90 Hz): ${JSON.stringify(vr.optedOut)}`);
 
 	// ---- 6c. integrate: a game's pinned Quality (31-game-shell) outranks the entry floor ----

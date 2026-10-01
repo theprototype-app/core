@@ -50,6 +50,16 @@
 - ⚽ **Football** drops the glass's costly see-through pass, four of its lights and both shadow
   maps; a goal's confetti follows the quality setting.
 
+### 🩹 Found on the preview
+
+- 🔤 **Crisp text in VR menus again.** After a heavy moment the headset could start the next VR
+  session at a lower resolution, which blurred every menu's text. A headset now always renders at
+  full resolution; the speed-ups below are what keep it smooth.
+- ⬆️ **Games update the modules they need.** Opening a game that was made for a newer version of
+  one of its modules than the one installed on your device now offers to update it (Waves on a
+  headset could still be the 1.17 version, whose robots all walked back to their portals when you
+  hit one).
+
 ### ⚡ Smoother frames
 
 - ⚡ **Fixed the hitches**: the object list's module section re-read every module object every
@@ -68,6 +78,7 @@
   answers to its template's events.
 - Module SDK: `api.game.levels`, `addSetting`/`setting`, `setHelp`, `onRestart`, `api.quality`,
   `api.lod`, `api.vrPanel`, `api.locomotion`. `node scripts/perf-games.cjs` measures the seven games.
+- 📦 Dependencies: three 0.186, Vite 8.3, Svelte 5.57.1, Playwright 1.63 and ten more minor updates.
 
 ## 1.17.0 — Games that look finished 🎨
 

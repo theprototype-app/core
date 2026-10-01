@@ -2462,6 +2462,14 @@ loadable play content. Everything a user does must be visible to connected peers
 
 ## Hard-won gotchas (do not rediscover)
 
+- **A HEADSET'S EYE BUFFER IS NEVER LOWERED** (`XR_FRAMEBUFFER_SCALE = 1`, 31-integrate). 31-perf handed three a
+  0.85..0.5 framebuffer scale for the NEXT session after any session that reached the governor's resolution steps,
+  and every panel's text went soft ("ALL text in VR menus became blurry") while the panel textures were unchanged.
+  Suite vr-panel-sharpness measures the board's text edge energy at the scale the next entry gets.
+- **AN INSTALLED USER MODULE NEVER UPDATES ITSELF.** A Quest that installed Waves 2.1.0 for the 1.17 preview kept it on
+  the 1.18 preview, and its 1.17 bug read as a 1.18 regression. A scene asking for a NEWER version than installed now
+  gets an Update offer in the load prompt (`classifyRequirements().outdated`, suite module-update-on-load). When a
+  device report contradicts the union's tests, ask which MODULE VERSION the device ran before bisecting.
 - **A VITE STARTED INSIDE `e2e-slot` INHERITS FDS 8/9 AND HOLDS BOTH MACHINE-WIDE E2E LOCKS**
   (every lane's suites blocked ~2 h on 2026-10-01). Start a dev server from a plain shell with
   `8>&- 9>&-`, never from inside an e2e-slot command.

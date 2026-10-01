@@ -45,6 +45,8 @@ import { isScenery, pickGripTarget, gripMovesWorld } from './vrGrip';
 import { moduleGroupList, moduleGroupsRevision } from './moduleContent';
 import { overlayPanel, makeDepthSentinel, PANEL_ORDER, BEAM_ORDER } from './vrPanelOverlay';
 import { moduleWorldChildren } from './moduleWorld';
+import { teleportVerdictPure, shrinkBox, BOUNDS_INSET, PROBE_HEIGHT } from './teleportRules';
+import { walkable as dungeonWalkable } from './dungeonPlay';
 import { resolvePlaySettings, playPublishers } from './playSettings';
 import { hudDocs, isGameHud } from './hudDocs';
 import { locomotionPolicy, vrSpawnOffsets, yawForward } from './locomotionPolicy';
@@ -800,10 +802,16 @@ const arcRaycaster = new THREE.Raycaster();
 /**
  * Sample a ballistic arc from origin along direction; lands on the ground
  * plane (y=0) or an upward-facing surface of a scene object.
+ * 31 K1: `opts.bounded` (a game's teleport) stops at the FIRST surface the arc meets, of any
+ * slope — a wall face ends it (and is refused as too steep) instead of the arc passing
+ * through the wall to the floor behind — and `opts.roots` adds module content (a dungeon's
+ * walls live under module-world-root, not objectsGroup). `normalY` is the landing's world
+ * normal (1 on the floor plane).
  * @param {any} origin @param {any} direction @param {any=} group
- * @returns {{points: any[], target: any | null}}
+ * @param {{bounded?: boolean, roots?: any[]}} [opts]
+ * @returns {{points: any[], target: any | null, normalY: number}}
  */
-export function computeTeleportArc(origin, direction, group) {
+export function computeTeleportArc(origin, direction, group, opts = {}) {
 	const speed = 8;
 	const gravity = -9.8;
 	const step = 1 / 12;
@@ -812,6 +820,9 @@ export function computeTeleportArc(origin, direction, group) {
 	const points = [origin.clone()];
 	let previous = origin.clone();
 	let target = null;
+	let normalY = 1;
+	const bounded = !!opts.bounded;
+	const roots = group ? [...group.children, ...(opts.roots ?? [])] : (opts.roots ?? []);
 
 	for (let t = step; t <= maxT && !target; t += step) {
 		const point = new THREE.Vector3(
@@ -819,19 +830,22 @@ export function computeTeleportArc(origin, direction, group) {
 			origin.y + velocity.y * t + 0.5 * gravity * t * t,
 			origin.z + velocity.z * t
 		);
-		if (group) {
+		if (roots.length) {
 			const segment = point.clone().sub(previous);
 			const length = segment.length();
 			arcRaycaster.set(previous, segment.normalize());
 			arcRaycaster.far = length;
-			const hits = arcRaycaster.intersectObjects(group.children, true);
+			const hits = arcRaycaster.intersectObjects(roots, true);
 			const landing = hits.find((hit) => {
 				if (!hit.face) return false;
+				if (bounded) return hit.object.visible !== false && !!(/** @type {any} */ (hit.object).isMesh);
 				const normal = hit.face.normal.clone().transformDirection(hit.object.matrixWorld);
 				return normal.y > 0.5; // only land on top-ish faces
 			});
 			if (landing) {
 				target = landing.point.clone();
+				// @ts-ignore - a face is present (the find above)
+				normalY = landing.face.normal.clone().transformDirection(landing.object.matrixWorld).y;
 				points.push(target.clone());
 				break;
 			}
@@ -849,7 +863,108 @@ export function computeTeleportArc(origin, direction, group) {
 		points.push(point.clone());
 		previous = point;
 	}
-	return { points, target };
+	return { points, target, normalY };
+}
+
+// ---- 31 K1 (D2/S1): THE BOUNDED TELEPORT -----------------------------------------------------
+// Edit's teleport lands wherever the arc does. A game's (Interact/Play with
+// `play.locomotion.teleport`) asks teleportRules for a verdict: walkable ground, inside the
+// play area, no wall cell on the way, no collider or mesh crossed. Each rule reads its data in
+// ITS OWN frame — a publisher's `play.bounds`/`play.colliders`/raster in the publisher group's
+// local frame, the scene's bounds in objectsGroup's — so a world grab never skews a verdict.
+
+/** content bounds per teleport engage (Box3 over the whole scene is not a per-frame cost) */
+/** @type {any} */ let contentBoundsCache = null;
+
+/** @param {any} object @param {{x: number, y: number, z: number}} p world -> the object's frame */
+function toFrame(object, p) {
+	const v = new THREE.Vector3(p.x, p.y, p.z);
+	if (object) object.worldToLocal(v);
+	return { x: v.x, y: v.y, z: v.z };
+}
+
+/** everything a teleport may land on or be stopped by: objectsGroup + registered module content */
+function teleportRoots() {
+	const group = get(objectsGroup);
+	return [...(group ? group.children : []), ...moduleWorldChildren()];
+}
+
+/** the scene's content bounds (world), shrunk by BOUNDS_INSET on x and z; null when empty */
+function contentBounds() {
+	if (contentBoundsCache) return contentBoundsCache;
+	const box = new THREE.Box3();
+	for (const root of teleportRoots()) if (root.visible !== false) box.expandByObject(root);
+	if (box.isEmpty()) return null;
+	contentBoundsCache = shrinkBox({ min: box.min.toArray(), max: box.max.toArray() }, BOUNDS_INSET);
+	return contentBoundsCache;
+}
+
+const _probeRay = new THREE.Raycaster();
+/** does a mesh stand between the two ends, PROBE_HEIGHT above both? (world) */
+function meshBetween(/** @type {any} */ from, /** @type {any} */ to) {
+	const a = new THREE.Vector3(from.x, from.y + PROBE_HEIGHT, from.z);
+	const b = new THREE.Vector3(to.x, to.y + PROBE_HEIGHT, to.z);
+	const d = b.clone().sub(a);
+	const length = d.length();
+	if (length < 1e-4) return false;
+	_probeRay.set(a, d.normalize());
+	_probeRay.far = length;
+	return _probeRay
+		.intersectObjects(teleportRoots(), true)
+		.some((/** @type {any} */ hit) => hit.object.isMesh && hit.object.visible !== false && hit.distance > 0.05);
+}
+
+/**
+ * 31 K1: may a player standing at `from` (feet, world) teleport to `to` (a landing, world)
+ * whose surface normal has y = `normalY`? The dungeon lane's e2e entry point too.
+ * @param {number[] | {x: number, y: number, z: number} | null} fromRaw
+ * @param {number[] | {x: number, y: number, z: number}} toRaw
+ * @param {number} [normalY]
+ * @returns {{ok: boolean, reason: string}}
+ */
+export function teleportVerdict(fromRaw, toRaw, normalY = 1) {
+	const pt = (/** @type {any} */ p) => (Array.isArray(p) ? { x: +p[0], y: +p[1], z: +p[2] } : p);
+	const from = fromRaw ? pt(fromRaw) : null;
+	const to = pt(toRaw);
+	const scene = /** @type {any} */ (get(globalScene));
+	const play = resolvePlaySettings(scene);
+	// 1 + 2: the surface and the play area
+	/** @type {any} */ let verdict;
+	if (play.bounds) {
+		const owner = play.boundsOwner ?? get(objectsGroup);
+		verdict = teleportVerdictPure({ to: toFrame(owner, to), normalY, bounds: play.bounds });
+	} else verdict = teleportVerdictPure({ to, normalY, bounds: contentBounds() });
+	if (!verdict.ok) return verdict;
+	// 3: a dungeon raster, in its group's frame
+	const dungeon = scene?.getObjectByName('dungeon-module');
+	const raster = dungeon?.userData?.play;
+	if (raster?.grid) {
+		verdict = teleportVerdictPure({
+			from: from ? toFrame(dungeon, from) : null,
+			to: toFrame(dungeon, to),
+			raster,
+			walkable: dungeonWalkable
+		});
+		if (!verdict.ok) return verdict;
+	}
+	// 4: published collider boxes (each publisher's frame), then real meshes
+	if (from) {
+		for (const publisher of playPublishers(scene)) {
+			const boxes = publisher.userData.play.colliders;
+			if (!Array.isArray(boxes) || !boxes.length) continue;
+			const colliders = boxes.filter((/** @type {any} */ b) => Array.isArray(b?.min) && Array.isArray(b?.max));
+			verdict = teleportVerdictPure({ from: toFrame(publisher, from), to: toFrame(publisher, to), colliders });
+			if (!verdict.ok) return verdict;
+		}
+		if (meshBetween(from, to)) return { ok: false, reason: 'blocked' };
+	}
+	return { ok: true, reason: 'ok' };
+}
+
+/** 31 K1: the live arc's verdict, for the suites @type {{engaged: boolean, bounded: boolean, valid: boolean, reason: string, target: number[] | null, color: number}} */
+let teleportPreviewState = { engaged: false, bounded: false, valid: false, reason: '', target: null, color: 0 };
+export function teleportPreview() {
+	return { ...teleportPreviewState, engaged: teleportEngaged };
 }
 
 let teleportEngaged = false;
@@ -887,6 +1002,7 @@ function showArc(points, valid, target) {
 	arcLine.geometry.dispose();
 	arcLine.geometry = new THREE.BufferGeometry().setFromPoints(points);
 	const color = valid ? 0x22cc66 : 0xcc3344;
+	teleportPreviewState.color = color;
 	arcLine.material.color.setHex(color);
 	arcDisc.material.color.setHex(color);
 	arcDisc.visible = !!target;
@@ -897,13 +1013,18 @@ function hideArc() {
 	if (arcGroup) arcGroup.visible = false;
 }
 
-/** @param {any} target */
-function executeTeleport(target) {
+/** @param {any} target @param {boolean} [bounded] 31 K1: a game's teleport lands the FEET on it */
+function executeTeleport(target, bounded = false) {
 	const space = renderer?.xr.getReferenceSpace();
 	if (!space) return;
-	const viewer = renderer.xr.getCamera().getWorldPosition(new THREE.Vector3());
-	// reference-space convention: offset = -(viewer displacement); height kept
-	const t = { x: viewer.x - target.x, y: 0, z: viewer.z - target.z };
+	const pose = bounded ? viewerNow() : null;
+	const viewer = pose
+		? new THREE.Vector3(pose.head.x, pose.head.y, pose.head.z)
+		: renderer.xr.getCamera().getWorldPosition(new THREE.Vector3());
+	// reference-space convention: offset = -(viewer displacement); Edit keeps its height, a
+	// game's teleport stands you ON the landing (a step up onto a platform is a step up)
+	const feet = pose ? pose.head.y - pose.headHeight : null;
+	const t = { x: viewer.x - target.x, y: feet === null ? 0 : feet - target.y, z: viewer.z - target.z };
 	renderer.xr.setReferenceSpace(space.getOffsetReferenceSpace(new XRRigidTransform(t)));
 	// blink to soften the jump
 	const camera = get(globalCamera);
@@ -949,15 +1070,17 @@ export function updateTeleport(session) {
 
 	if (!teleportEngaged) {
 		// stick pushed clearly UP and more up than sideways -> arm
-		if (teleportArms(x, y)) teleportEngaged = true;
-		else {
+		if (teleportArms(x, y)) {
+			teleportEngaged = true;
+			contentBoundsCache = null; // re-measured once per aim
+		} else {
 			hideArc();
 			return;
 		}
 	} else if (y > -0.4) {
-		// released -> blink if we had a valid landing
+		// released -> blink if we had a VALID landing (31 K1: an invalid, red one does nothing)
 		teleportEngaged = false;
-		if (lastArc?.target) executeTeleport(lastArc.target);
+		if (lastArc?.target && lastArc.valid) executeTeleport(lastArc.target, lastArc.bounded);
 		lastArc = null;
 		hideArc();
 		return;
@@ -968,8 +1091,26 @@ export function updateTeleport(session) {
 		hideArc();
 		return;
 	}
-	lastArc = computeTeleportArc(pose.origin, pose.direction, get(objectsGroup));
-	showArc(lastArc.points, !!lastArc.target, lastArc.target);
+	// 31 K1: a GAME's teleport (Interact/Play) is bounded; Edit's lands where the arc does
+	const bounded = get(editorMode) === 'interact';
+	lastArc = computeTeleportArc(pose.origin, pose.direction, get(objectsGroup), bounded ? { bounded, roots: moduleWorldChildren() } : {});
+	lastArc.bounded = bounded;
+	let verdict = { ok: !!lastArc.target, reason: lastArc.target ? 'ok' : 'off-floor' };
+	if (bounded && lastArc.target) {
+		const viewer = viewerNow();
+		const from = viewer ? { x: viewer.head.x, y: viewer.head.y - viewer.headHeight, z: viewer.head.z } : null;
+		verdict = teleportVerdict(from, lastArc.target, lastArc.normalY);
+	}
+	lastArc.valid = verdict.ok;
+	teleportPreviewState = {
+		engaged: true,
+		bounded,
+		valid: verdict.ok,
+		reason: verdict.reason,
+		target: lastArc.target ? lastArc.target.toArray() : null,
+		color: teleportPreviewState.color
+	};
+	showArc(lastArc.points, verdict.ok, lastArc.target);
 }
 
 /** D1 (roadmap 13): the teleport arc anchors to the RIGHT hand's controller

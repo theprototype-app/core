@@ -536,6 +536,30 @@ The things 1.18's round found, in the order they cost:
 - **Lights and shadow casters are draw calls**: each shadow-casting light draws every caster
   again; transmission (glass) renders the scene an extra time per camera, per eye.
 
+### Functional pack items: doors, lids, levers — `api.behavior` (1.19, roadmap 33)
+
+A pack item can be FUNCTIONAL: a door that opens on a click, a chest lid, a lever, a fan
+(the `behavior` field, see PACKS.md). Core runs them. Nothing plays in Edit; a click, a
+knock or walking up triggers them in Interact/Play; the state replicates; a door's
+collider follows its leaf. A module can drive them too:
+
+```js
+if (api.behavior) {
+	for (const item of api.behavior.list()) {        // [{uuid, type, trigger, open}]
+		if (item.type === 'door' && !item.open) api.behavior.trigger(item.uuid, true); // open it
+	}
+	api.behavior.state(uuid);                          // {on, at, n} or null (never triggered)
+	api.behavior.trigger(uuid);                         // toggle, like a player's click
+}
+```
+
+`trigger` is REPLICATED (one `behavior` message; every peer poses the door from the same
+session-clock stamp), so call it on ONE peer: the authority, or the peer that saw the
+cause. It returns false when nothing changed (opening an open door). The state is
+runtime: it is never saved, and a peer in Edit shows the rest pose whatever it says. The
+item sounds are core game sounds: `door`, `gate`, `slide`, `lever`, `lid` (plus `click`),
+which `api.playSound` can play too.
+
 ### Game feel: sound, music, haptics, effects, banners (1.17, roadmap 30b)
 
 Everything here is LOCAL to the device it runs on — broadcast your own op

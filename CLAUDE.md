@@ -2154,8 +2154,7 @@ loadable play content. Everything a user does must be visible to connected peers
   target, because three keys a program by tone mapping + output colour space and the composer
   draws into a target), the scene's ENVIRONMENT restored before the objects (its light count is
   in every program key), the object list's plain tree mounting in chunks (Controls.svelte,
-  40 + 16/frame), `geometryKeys` cache of the
-  fingerprint checksums keyed by buffer versions, `packRef.box` (root-frame bounds, additive) +
+  40 + 16/frame), `packRef.box` (root-frame bounds, additive) +
   ONE scene-root InstancedMesh of grey `kit-placeholders` for hollow stubs, and
   `parkPackPieces` — **the autosave writes pristine kit pieces as STUBS now** (reverses 30c's
   "autosave stays full"; hollowed before the GLTF export and put back on the exporter's

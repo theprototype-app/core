@@ -1355,20 +1355,25 @@ async function applySessionNow(payload, opts, job) {
 	// previous scene's lights and linked again on its first frame. It also shows the right sky
 	// at once instead of the old one under the arriving level. (A6.1: absent = the default.)
 	environmentRestore(payload.environment, replicate);
-	// and its LOOK (the post stack), then two frames of the still-empty scene: the composite
-	// shader and the helpers re-keyed by the new fog/lights compile there, on a frame that has
-	// almost nothing else to draw, instead of on the first frame of the whole level
-	// (one at a time: the new fog/lights re-key every helper's program, the post stack builds
-	// its own — measured ~60 + ~40 ms of links at CPU x6, too much for ONE frame together)
-	await nextFrames(2);
-	if (!isLive(job)) return;
-	scenePostRestore(payload.post, replicate);
-	await nextFrames(2);
-	if (!isLive(job)) return;
-	// ...then the viewport holds its last frame while the remaining programs link a slice at a
-	// time and the objects are built; released below (bounded either way)
+	// The new fog/lights RE-KEY every program already in the scene (helpers, grid, sky), and the
+	// first frame after it linked them all at once: hold the viewport and link them a slice at a
+	// time first. Then the LOOK (post stack): its own shaders are built by the composer on its
+	// next frames and `compile` cannot reach them, so they get two frames of a near-empty scene
+	// to themselves. Then hold again for the build. (Measured on a CPU x6 phone: env and post
+	// links together on one frame were the last tasks over 200 ms.)
 	holdFrames();
-	const warming = warmPrograms(get(globalScene));
+	await warmPrograms(get(globalScene));
+	if (!isLive(job)) {
+		releaseFrames();
+		return;
+	}
+	scenePostRestore(payload.post, replicate);
+	releaseFrames();
+	await nextFrames(2);
+	if (!isLive(job)) return;
+	// ...then the viewport holds its last frame while the objects are built and warmed;
+	// released below (bounded either way)
+	holdFrames();
 	/** @type {any} */
 	const peer = get(peers);
 	// 33 L1: Cancel (the load bar) takes back what this load had added — clearing for the
@@ -1425,7 +1430,6 @@ async function applySessionNow(payload, opts, job) {
 	}
 	pokeScene();
 	// the objects this load built (kit pieces warm themselves as their packs land) — then draw
-	await warming;
 	await warmPrograms(group);
 	releaseFrames();
 	// animated imports come back from their original bytes (mixers rebuilt, peers

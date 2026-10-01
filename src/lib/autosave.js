@@ -632,15 +632,19 @@ async function applyRestore(snapshot, offer = null) {
 		// 33 L1: sky and lights before the objects, so pieces warming as their packs land
 		// compile for THIS scene's lights (see sessions.applySession)
 		environmentRestore(snapshot.environment, true);
-		// and the look, with two frames of the empty scene to compile it (sessions.applySession)
-		await nextFrames(2);
-		if (!isLive(job)) return null;
-		scenePostRestore(snapshot.post, true);
-		await nextFrames(2);
-		if (!isLive(job)) return null;
-		// the viewport holds its last frame while programs re-link and the objects go in
+		// the look off-frame, then two near-empty frames for the post stack's own shaders, then
+		// hold for the build (the reasoning is in sessions.applySession)
 		holdFrames();
-		const warming = warmPrograms(get(globalScene));
+		await warmPrograms(get(globalScene));
+		if (!isLive(job)) {
+			releaseFrames();
+			return null;
+		}
+		scenePostRestore(snapshot.post, true);
+		releaseFrames();
+		await nextFrames(2);
+		if (!isLive(job)) return null;
+		holdFrames();
 		if (snapshot.scene && group) {
 			const loader = new GLTFLoader();
 			/** @type {any} */
@@ -648,7 +652,10 @@ async function applyRestore(snapshot, offer = null) {
 				loader.parse(snapshot.scene, '', resolve, reject)
 			);
 			// cancelled or superseded (another scene opened) while the snapshot parsed
-			if (!isLive(job)) return null;
+			if (!isLive(job)) {
+				releaseFrames();
+				return null;
+			}
 			const container =
 				result.scene.getObjectByName('AuxScene')?.children?.[0] ??
 				result.scene.children[0] ??
@@ -695,7 +702,6 @@ async function applyRestore(snapshot, offer = null) {
 				endSceneBatch();
 			}
 			pokeScene();
-			await warming;
 			await warmPrograms(group);
 		}
 		releaseFrames();

@@ -296,30 +296,21 @@ function checksum(array) {
 	return num(a) + '/' + num(b);
 }
 
-/** 33 L1: the checksums of a geometry, kept until one of its buffers changes. A save asks
- * "is this piece still pristine?" of every kit piece, and summing every vertex of a 180-piece
- * castle on each autosave and each backup was a long task of its own. Keyed by the buffers'
- * `version`s, which every edit path bumps (needsUpdate) — an edit no renderer would see is
- * the only one this could miss.
- * @type {WeakMap<any, {ver: string, key: string}>} */
-const geometryKeys = new WeakMap();
-
 /** @param {any} geometry */
 function geometryKey(geometry) {
+	// NOT cached (33 L1 tried a cache keyed by buffer versions and pack-refs caught it): an
+	// in-place vertex move that has not been flagged needsUpdate yet would read as pristine and
+	// save an EDITED piece as a stub, i.e. lose the edit on reload. Correctness over the
+	// checksum's cost — which is still a fraction of the full-geometry export it replaced.
 	if (!geometry?.attributes) return '-';
 	const names = Object.keys(geometry.attributes).sort();
-	const ver = names.map((name) => name + geometry.attributes[name].version + ':' + geometry.attributes[name].array?.length).join(',') + '|' + (geometry.index ? geometry.index.version + ':' + geometry.index.array?.length : '-');
-	const groups = (geometry.groups ?? []).map((/** @type {any} */ g) => g.start + '+' + g.count + '@' + (g.materialIndex ?? 0)).join(';');
-	const cached = geometryKeys.get(geometry);
-	if (cached && cached.ver === ver) return cached.key + '|' + groups;
 	const parts = names.map((name) => {
 		const attr = geometry.attributes[name];
 		return name + ':' + attr.itemSize + ':' + attr.count + ':' + (attr.normalized ? 1 : 0) + ':' + checksum(attr.array);
 	});
 	const index = geometry.index ? 'i' + geometry.index.count + ':' + checksum(geometry.index.array) : 'noindex';
-	const key = parts.join(',') + '|' + index;
-	geometryKeys.set(geometry, { ver, key });
-	return key + '|' + groups;
+	const groups = (geometry.groups ?? []).map((/** @type {any} */ g) => g.start + '+' + g.count + '@' + (g.materialIndex ?? 0)).join(';');
+	return parts.join(',') + '|' + index + '|' + groups;
 }
 
 /** 8×8 RGBA of a texture's image, cached per image. Null when it cannot be read (no

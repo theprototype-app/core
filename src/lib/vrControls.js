@@ -145,7 +145,7 @@ import { vrKeyboardTarget, openVRKeyboard, pressVRKey, closeVRKeyboard } from '.
 import { sceneCommand } from './commandsHandler.svelte';
 import { sendPing, pingColor } from './ping';
 import { peerColor } from './lockControl';
-import { setVRAxes, setVRButtons } from './inputRuntime';
+import { setVRAxes, setVRButtons, isClaimed } from './inputRuntime';
 import { suspendAnimation, resumeAnimation, fireObjectGrab } from './flowRuntime';
 import { drawMode, toggleDrawMode, addStrokePoint, endStroke } from './drawMode';
 import { setPttHeld, cycleMicMode, vrMicMode, micActive, pttActive } from './voiceChat';
@@ -2182,8 +2182,37 @@ function endGrab(object, before) {
 	resumeAnimation(object.uuid); // release spot becomes the new animation base
 }
 
-/** @type {{index: number, prev: any} | null} right-grip drag-the-world pan */
+/** @type {{index: number, prev: any, reach: number} | null} right-grip drag-the-world pan
+ * (33: `reach` = how far along the hand's ray the gripped spot is — the stick reels it) */
 let worldPan = null;
+
+/** 33 (G2): a pan with nothing under the ray reels from this far (metres) */
+const WORLD_REEL_DEFAULT = 1.5;
+/**
+ * 33 (G2) — "stick up/down while holding it pushes it farther / pulls it closer, just as in
+ * edit mode for objects": one frame of the world-pan hand's stick. The SAME reel an Edit grab
+ * applies to a held object (grabStickAdjust: forward = y < 0 pushes away, back reels in, a
+ * share of the distance per frame) applied to `reach`, the distance to the gripped spot.
+ * Returns the new reach and the metres the world moves AWAY along the hand's ray (negative =
+ * toward you). Pure; exported for the suites. @param {number} reach @param {number} y stick Y
+ */
+export function worldReelStep(reach, y) {
+	const next = grabStickAdjust({ length: reach, scale: 1, x: 0, y }).length;
+	return { reach: next, push: next - reach };
+}
+/** where a pan's reel starts: the first world surface on the hand's ray, else the default
+ * @param {number} index */
+function panReach(index) {
+	try {
+		const root = get(worldRig) ?? get(objectsGroup);
+		const hit = root ? controllerRay(index).intersectObject(root, true).find((h) => h.object.visible !== false) : null;
+		return hit ? Math.min(Math.max(hit.distance, 0.3), 30) : WORLD_REEL_DEFAULT;
+	} catch {
+		return WORLD_REEL_DEFAULT;
+	}
+}
+const _reelDir = new THREE.Vector3();
+const _reelQuat = new THREE.Quaternion();
 
 /** 30b P2: test/debug view of what the grips are doing right now */
 export function vrGripDebug() {
@@ -2192,6 +2221,7 @@ export function vrGripDebug() {
 		grabInteract: !!grab?.interact,
 		worldGrab: !!worldGrab,
 		worldPan: !!worldPan,
+		panReach: worldPan ? worldPan.reach : null, // 33: the stick reel's distance
 		emptyAir: [...emptyAirSqueeze]
 	};
 }
@@ -2857,7 +2887,7 @@ function onSqueezeStart(index) {
 		// reference space, which would silently break a colocated alignment)
 		const handedness = renderer.xr.getController(index)?.userData?.handedness ?? null;
 		if (handedness === 'right' && !worldGestureDiverted())
-			worldPan = { index, prev: renderer.xr.getController(index).getWorldPosition(new THREE.Vector3()) };
+			worldPan = { index, prev: renderer.xr.getController(index).getWorldPosition(new THREE.Vector3()), reach: panReach(index) };
 		return;
 	}
 	if (get(lockedObjects).find((lock) => lock[1] === object.uuid)) return;
@@ -3030,7 +3060,7 @@ function onSqueezeEnd(index) {
 		if (emptyAirSqueeze[other]) {
 			const handedness = renderer.xr.getController(other)?.userData?.handedness ?? null;
 			if (handedness === 'right' && !worldGestureDiverted())
-				worldPan = { index: other, prev: renderer.xr.getController(other).getWorldPosition(new THREE.Vector3()) };
+				worldPan = { index: other, prev: renderer.xr.getController(other).getWorldPosition(new THREE.Vector3()), reach: panReach(other) };
 		}
 		return;
 	}
@@ -3789,6 +3819,9 @@ export function pingPointFromRay(ray, group) {
  * @param {{grips?: boolean}=} opts */
 export function vrNavigationSuppressed(opts = {}) {
 	if (worldPan || worldGrab || scaleGrab) return true;
+	// 33 (G2): a module that reads the sticks itself claimed them (`api.claimInput('sticks')`):
+	// move, turn and teleport all stand down — Untangle's held globe reels on Y, scales on X
+	if (isClaimed('sticks')) return true;
 	if (vertexGrab || vertexTriggerGrab) return true;
 	if (faceGrabHand || faceGesturePending()) return true;
 	if (stretchSliderDrag || boxSelect) return true;
@@ -4090,6 +4123,15 @@ export function updateVRControls() {
 	// drag-the-world: the grabbed spot follows the hand (prev stays fixed at
 	// grab start — the applied offset self-corrects the measured delta)
 	if (worldPan) {
+		// 33 (G2): the pan hand's stick reels the world along its ray, as an Edit grab reels a
+		// held object — moving the fixed `prev` makes the pan below apply the push itself
+		const reel = worldReelStep(worldPan.reach, axesForSlot(worldPan.index)[3] ?? 0);
+		if (reel.push) {
+			worldPan.reach = reel.reach;
+			renderer.xr.getController(worldPan.index).getWorldQuaternion(_reelQuat);
+			_reelDir.set(0, 0, -1).applyQuaternion(_reelQuat);
+			worldPan.prev.addScaledVector(_reelDir, -reel.push);
+		}
 		const current = renderer.xr.getController(worldPan.index).getWorldPosition(new THREE.Vector3());
 		const delta = current.sub(worldPan.prev);
 		if (delta.lengthSq() > 1e-8) {

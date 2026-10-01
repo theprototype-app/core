@@ -27,8 +27,38 @@ function roundRect(g, x, y, w, h, r) {
  *   items: {id: string, label: string}[],
  *   levels: {list: {id: string, label: string, locked?: boolean, stars?: number}[], current: string | null} | null,
  *   settings: {id: string, label: string, type: string, value: any, display: string, min?: number, max?: number, game?: boolean}[],
- *   help: string[], fps?: string | null}} ShellModel
+ *   help: string[], fps?: string | null,
+ *   tabs?: {id: string, label: string, options: {value: string, label: string}[], value: string}[],
+ *   levelPage?: number | null}} ShellModel
  */
+
+/** the sub-pages' content starts here, in stage px */
+const PAGE_TOP = 110;
+/** one tab row above the level grid (50 px tabs + the gap under them) */
+const TAB_ROW = 64;
+
+/**
+ * 33 (G3) — the headset's level grid. It drew `list.slice(0, 20)`: Untangle's levels 21-30 were
+ * unreachable in VR. Up to 20 levels and no tabs: the 5 x 4 of big tiles it always had. More, or
+ * tabs above the grid: 6 columns, as many rows of at least 64 px as fit; when even that is not
+ * enough, pages (the ‹ › arrows beside Back). `page` null = the page holding the current level.
+ * Pure; exported for the suites.
+ * @param {number} count @param {number} tabRows @param {number | null | undefined} page @param {number} currentIndex
+ */
+export function levelGridLayout(count, tabRows, page, currentIndex) {
+	const top = PAGE_TOP + tabRows * TAB_ROW;
+	if (!tabRows && count <= 20) return { cols: 5, rows: 4, tw: 190, th: 96, gap: 14, top, perPage: 20, pages: 1, page: 0 };
+	const cols = 6;
+	const gap = 12;
+	const bottom = SHELL_STAGE.h - 72 - 14; // above Back
+	const areaH = bottom - top;
+	const rows = Math.max(1, Math.floor((areaH + gap) / (64 + gap)));
+	const th = Math.min(96, (areaH - (rows - 1) * gap) / rows);
+	const perPage = cols * rows;
+	const pages = Math.max(1, Math.ceil(count / perPage));
+	const want = page ?? (currentIndex >= 0 ? Math.floor(currentIndex / perPage) : 0);
+	return { cols, rows, tw: 160, th, gap, top, perPage, pages, page: Math.min(Math.max(0, want), pages - 1) };
+}
 
 /**
  * Paint one shell page over the (already cleared + plated) board. `k` = canvas px per
@@ -76,7 +106,7 @@ export function drawShellPage(g, model, opts) {
 	g.font = `500 ${Math.round(20 * k)}px system-ui, sans-serif`;
 	g.fillText(model.subtitle + (model.fps ? '  ·  ' + model.fps : ''), W / 2, 84 * k);
 
-	const top = 110;
+	const top = PAGE_TOP;
 	if (model.page === 'main') {
 		const bw = 520;
 		const bh = 56;
@@ -93,22 +123,38 @@ export function drawShellPage(g, model, opts) {
 
 	if (model.page === 'levels') {
 		const list = model.levels?.list ?? [];
-		const cols = 5;
-		const tw = 190;
-		const th = 96;
-		const gap = 14;
-		const x0 = (SHELL_STAGE.w - (cols * tw + (cols - 1) * gap)) / 2;
-		list.slice(0, 20).forEach((level, i) => {
-			const x = x0 + (i % cols) * (tw + gap);
-			const y = top + Math.floor(i / cols) * (th + gap);
+		// 33 (G3): the game's level-picking choices as tabs (Untangle: Board  [Globe] [2D board])
+		const tabs = (model.tabs ?? []).slice(0, 2);
+		tabs.forEach((tab, t) => {
+			const y = top + t * TAB_ROW;
+			g.textAlign = 'right';
+			g.textBaseline = 'middle';
+			g.fillStyle = '#cbd5e1';
+			g.font = `600 ${Math.round(24 * k)}px system-ui, sans-serif`;
+			const tw = Math.min(260, (SHELL_STAGE.w - 400) / Math.max(1, tab.options.length));
+			const x0 = (SHELL_STAGE.w - tab.options.length * (tw + 12) + 12) / 2 + 70;
+			g.fillText(tab.label, (x0 - 20) * k, (y + 25) * k);
+			tab.options.forEach((option, o) => {
+				button('shell:tab:' + t + ':' + o, option.label, x0 + o * (tw + 12), y, tw, 50, { accent: option.value === tab.value });
+			});
+		});
+		const current = list.findIndex((level) => level.id === model.levels?.current);
+		const grid = levelGridLayout(list.length, tabs.length, model.levelPage, current);
+		const x0 = (SHELL_STAGE.w - (grid.cols * grid.tw + (grid.cols - 1) * grid.gap)) / 2;
+		list.slice(grid.page * grid.perPage, (grid.page + 1) * grid.perPage).forEach((level, i) => {
+			const x = x0 + (i % grid.cols) * (grid.tw + grid.gap);
+			const y = grid.top + Math.floor(i / grid.cols) * (grid.th + grid.gap);
 			const stars = level.stars ? '★'.repeat(level.stars) : '';
-			const current = model.levels?.current === level.id;
-			button('shell:level:' + level.id, level.label, x, y, tw, th, {
+			button('shell:level:' + level.id, level.label, x, y, grid.tw, grid.th, {
 				disabled: !!level.locked,
-				accent: current,
+				accent: model.levels?.current === level.id,
 				sub: level.locked ? 'Locked' : stars
 			});
 		});
+		// more pages: the arrows beside Back name the page they go to
+		const backX = (SHELL_STAGE.w - 300) / 2;
+		if (grid.page > 0) button('shell:lvpage:' + (grid.page - 1), '‹ Page ' + grid.page, backX - 12 - 200, backY, 200, 54);
+		if (grid.page < grid.pages - 1) button('shell:lvpage:' + (grid.page + 1), 'Page ' + (grid.page + 2) + ' ›', backX + 300 + 12, backY, 200, 54);
 		return hits;
 	}
 

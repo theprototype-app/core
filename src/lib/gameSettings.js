@@ -28,7 +28,7 @@ import { safeStorage } from './safeStorage';
 /**
  * @typedef {{id: string, label: string, type: 'toggle' | 'choice' | 'range', options?: string[],
  *   optionLabels?: string[], min?: number, max?: number, step?: number, default: any,
- *   help?: string, vrOnly?: boolean, onChange?: (value: any) => void, owner?: string}} SettingRow
+ *   help?: string, vrOnly?: boolean, onLevels?: boolean, onChange?: (value: any) => void, owner?: string}} SettingRow
  */
 
 /** The rows every game gets, in panel order. `vrOnly` rows are drawn only in a headset
@@ -129,6 +129,9 @@ export function normalizeSettingRow(row) {
 	if (typeof row.onChange === 'function') out.onChange = row.onChange;
 	if (row.help) out.help = String(row.help).slice(0, 200);
 	if (row.vrOnly) out.vrOnly = true;
+	// 33 (G3): a game's CHOICE that picks which levels you see (Untangle's Board: Globe / 2D) is
+	// also drawn as tabs above the Levels page's grid — desktop and headset
+	if (row.onLevels && type === 'choice') out.onLevels = true;
 	return out;
 }
 

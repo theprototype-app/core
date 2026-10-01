@@ -64,6 +64,8 @@ import { playGameMusic, stopGameMusic, gameMusicState, MUSIC_PRESET_IDS } from '
 import { announce as announceBanner, clearAnnouncement } from './gameAnnounce';
 /** the ping chimes `api.playSound` still reaches (pingAudio's PING_SOUNDS ids) */
 const PING_NAMES = new Set(['ding', 'chime', 'pluck', 'bell']);
+/** the input scopes `api.claimInput` pauses (33: 'sticks' = both VR sticks) */
+const INPUT_SCOPES = ['keys', 'locomotion', 'sticks'];
 import { runtimeSpawn, setRuntimeSpawn } from './playSettings'; // 30b P4 (a leaf)
 import { spawnDesktopPlayer, currentSpawn, desktopSpawn, spawnEyePose } from './playSpawn'; // 30b P4 (a leaf)
 
@@ -444,7 +446,7 @@ function makeApi(moduleId, moduleName = moduleId) {
 		flowGraphsRef?.recordFlowNodesEntry({ op: 'data', graphId: items[0].graphId, items, moduleId });
 	};
 	/** input scopes this module still holds — released at teardown
-	 * @type {Set<'keys'|'locomotion'>} */
+	 * @type {Set<'keys'|'locomotion'|'sticks'>} */
 	const claimedScopes = new Set();
 	let possessing = false;
 	/** list elements this module has pushed rows into, so teardown clears exactly those and
@@ -941,15 +943,19 @@ function makeApi(moduleId, moduleName = moduleId) {
 			return off;
 		},
 		/** Pause the host's own use of an input scope while your module drives:
-		 * 'keys' (WASD camera fly / play movement) or 'locomotion' (VR left stick).
-		 * ALWAYS release (module disable/error releases everything).
-		 * @param {'keys'|'locomotion'} scope */
+		 * 'keys' (WASD camera fly / play movement), 'locomotion' (VR left stick), or
+		 * 'sticks' (33: BOTH VR sticks — left-stick move, right-stick turn and teleport — for a
+		 * module that reads `input().axes` itself, e.g. reel/scale a held thing on the sticks).
+		 * ALWAYS release (module disable/error releases everything). Returns true when this
+		 * core knows the scope (an older core answers undefined: feature-detect 'sticks' so).
+		 * @param {'keys'|'locomotion'|'sticks'} scope */
 		claimInput(scope) {
 			claimedScopes.add(scope);
 			if (inputRuntimeRef) inputRuntimeRef.claimInput(scope);
 			else import('./inputRuntime').then((m) => m.claimInput(scope));
+			return INPUT_SCOPES.includes(scope);
 		},
-		/** @param {'keys'|'locomotion'} scope */
+		/** @param {'keys'|'locomotion'|'sticks'} scope */
 		releaseInput(scope) {
 			claimedScopes.delete(scope);
 			if (inputRuntimeRef) inputRuntimeRef.releaseInput(scope);
@@ -1340,7 +1346,9 @@ function makeApi(moduleId, moduleName = moduleId) {
 			 * rows: music, sound effects, haptics, FPS, turning, vignette, quality). Persisted
 			 * per game on this device. `type` 'toggle' | 'choice' (with `options`, optional
 			 * `optionLabels`) | 'range' (`min`/`max`/`step`). `onChange(value)` hears a change.
-			 * @param {{id: string, label: string, type?: 'toggle'|'choice'|'range', options?: string[], optionLabels?: string[], min?: number, max?: number, step?: number, default: any, onChange?: (value: any) => void}} row
+			 * 33: a choice with `onLevels: true` is ALSO drawn as tabs above the Levels page's
+			 * grid (desktop + VR) — a choice that decides which levels you see (Untangle's Board).
+			 * @param {{id: string, label: string, type?: 'toggle'|'choice'|'range', options?: string[], optionLabels?: string[], min?: number, max?: number, step?: number, default: any, onLevels?: boolean, onChange?: (value: any) => void}} row
 			 * @returns {(() => void) | null} off, or null when refused (a core id, a bad row)
 			 */
 			addSetting(row) {

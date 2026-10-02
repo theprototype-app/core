@@ -34,8 +34,8 @@ h.run(async () => {
 		'rotation steps convert degrees to radians'
 	);
 	h.check(
-		steps.rows.startsWith('pos:x,pos:y,pos:z,rot:x') && steps.rows.endsWith('opacity,visible'),
-		`row order: transforms, opacity, visible — 120 dropped color/dup/delete (${steps.rows})`
+		steps.rows.startsWith('pos:x,pos:y,pos:z,rot:x') && steps.rows.endsWith('opacity,visible,lod'),
+		`row order: transforms, opacity, visible, LOD (33) — 120 dropped color/dup/delete (${steps.rows})`
 	);
 	h.check(
 		steps.pressAxis === 'props:nudge:pos:x:1' &&
@@ -150,6 +150,46 @@ h.run(async () => {
 	});
 	h.check(actions.hidden, 'Visible row toggles the selection');
 	// color/dup/delete moved to the Edit ring (120) — covered by vr-radial + vr-palette
+
+	// --- 33 (K6, P3): the LOD row — readout + Force LOD cycling through the replicated path ---
+	const lod = await A.page.evaluate(async () => {
+		const s = window.__stores;
+		const v = s.vrControls;
+		const box = window.__box;
+		const out = { press: v.propsRowAction('lod'), none: v.lodReadout(box.uuid) };
+		out.noGroup = v.cycleForceLod(box.uuid, 1);
+		s.lodGroupActions.generateLodLevels(box.uuid, [0.5, 0.25]);
+		await new Promise((r) => setTimeout(r, 300));
+		out.auto = v.lodReadout(box.uuid);
+		const depth = (() => {
+			let n;
+			s.history.undoStack.subscribe((x) => (n = x.length))();
+			return n;
+		})();
+		v.executeVRMenuAction('props:lod:1');
+		out.f0 = v.lodReadout(box.uuid);
+		v.executeVRMenuAction('props:lod:1');
+		out.f1 = v.lodReadout(box.uuid);
+		v.executeVRMenuAction('props:lod:-1');
+		v.executeVRMenuAction('props:lod:-1');
+		out.back = v.lodReadout(box.uuid);
+		out.stored = JSON.parse(JSON.stringify(box.userData.lod));
+		out.entries = (() => {
+			let n;
+			s.history.undoStack.subscribe((x) => (n = x.length))();
+			return n;
+		})() - depth;
+		v.executeVRMenuAction('props:lod:-1'); // wraps: Auto -> the last level
+		out.wrap = v.lodReadout(box.uuid);
+		return out;
+	});
+	h.check(lod.press === 'props:lod:1', 'stick-press on the LOD row cycles Force LOD');
+	h.check(lod.none === 'none' && lod.noGroup === null, 'an object with no group reads "none" and the row does nothing (' + lod.none + ')');
+	h.check(lod.auto.startsWith('Auto'), 'with a group the row reads the level drawn (' + lod.auto + ')');
+	h.check(lod.f0 === 'LOD0 forced' && lod.f1 === 'LOD1 forced', 'right cycles Auto -> LOD0 -> LOD1 (' + lod.f0 + ', ' + lod.f1 + ')');
+	h.check(lod.back.startsWith('Auto') && lod.stored.mode === 'auto', 'left cycles back to Auto (' + lod.back + ')');
+	h.check(lod.entries === 4, 'each step is ONE undoable, replicated lod write (' + lod.entries + ' entries for 4 steps)');
+	h.check(lod.wrap === 'LOD2 forced', 'left from Auto wraps to the coarsest level (' + lod.wrap + ')');
 
 	await h.finish(browser);
 });

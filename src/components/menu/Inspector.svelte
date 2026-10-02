@@ -10,6 +10,7 @@
 	import ThemedSelect from '../ui/ThemedSelect.svelte';
 	import PanelHeader from '../ui/PanelHeader.svelte';
 	import Section from '../ui/Section.svelte';
+	import LodGroupPanel from './LodGroupPanel.svelte';
 	import SliderRow from '../ui/SliderRow.svelte';
 	import DragRow from '../ui/DragRow.svelte';
 	import ColorPicker, { ChromeVariant } from 'svelte-awesome-color-picker';
@@ -3199,6 +3200,13 @@
 					>
 						Click-through in the viewport
 					</Checkbox>
+				</Section>
+			{/if}
+
+			{#if !isLight && !multiCount && $selectedObject?.uuid}
+				<!-- 33 (K6): the object's LOD GROUP — levels, transitions, Force LOD, edit a level -->
+				<Section label="LOD">
+					<LodGroupPanel uuid={$selectedObject.uuid} />
 				</Section>
 			{/if}
 

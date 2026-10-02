@@ -52,6 +52,35 @@ CC0, OpenGameArt CC0). Keep each file under the 5 MB share cap so it round-trips
 peers. Installed audio items appear in the Explorer library and can be assigned to
 a **Sound** node (spatial) or the **Scene music** channel (global).
 
+### Levels of detail: the `lods` field (contract P1, 1.19)
+
+A model item in an item list (the `default.json` row beside `variants`) MAY list offline
+LOD files:
+
+```jsonc
+{ "name": "WallStone", "label": "Wall — sandstone (2 × 3 m)",
+  "variants": { "glTF-Binary": "wall-stone.glb" },
+  "lods": [ { "file": "wall-stone.lod1.glb", "ratio": 0.5 },
+            { "file": "wall-stone.lod2.glb", "ratio": 0.2 } ] }
+```
+
+- `file` is relative to the item's `glTF-Binary/` folder (no `..`, no absolute URLs);
+  `ratio` is the level's triangle count as a share of LOD0 (informational — the app sorts
+  levels finest first by it and shows it in the LOD panel).
+- **Keep the node names and hierarchy of LOD0.** The app matches each level mesh to the
+  placed object's mesh BY NODE NAME (falling back to traverse order when both have the same
+  mesh count) and draws the level's GEOMETRY with the object's OWN material — so a level
+  file's materials and textures are not used at all (ship them shared or tiny), and an
+  animated item keeps animating, because the mixer still drives the same nodes.
+- Bake the same node transforms as LOD0 where you can; a level mesh placed differently is
+  re-expressed in LOD0's frame on load, which costs a geometry copy per placement.
+- Placing an item writes its group into the object (`userData.lod`, refs as
+  PACKS_BASE-relative paths), so it saves, replicates and undoes with the object. A piece
+  placed BEFORE its pack gained `lods` picks them up from the pack row at runtime.
+- Levels are fetched LAZILY — only when an object is small enough on screen to need one —
+  and parsed once per file for every placement. Items without `lods` keep the automatic
+  runtime LOD (meshoptimizer, for meshes of 3000+ triangles).
+
 ## Repo / .zip structure
 
 ```

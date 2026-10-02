@@ -142,7 +142,11 @@ export const VALIDATORS = {
 	triggers: (d) => !!d.triggers && typeof d.triggers === 'object',
 	peervars: (d) => typeof d.peerId === 'string',
 	playmode: (d) => typeof d.peerId === 'string',
-	camera: (d) => typeof d.peerId === 'string' && isVec3(d.position) && isFiniteArray(d.rotation, 3)
+	camera: (d) => typeof d.peerId === 'string' && isVec3(d.position) && isFiniteArray(d.rotation, 3),
+	// 33: only the `lod` parameter is constrained (every other parameter predates this entry
+	// and keeps "absent means allow"): a block is an object with a levels ARRAY, or null
+	objectParameters: (d) =>
+		d.parameter !== 'lod' || (isUuid(d.uuid) && (d.lod === null || (!!d.lod && typeof d.lod === 'object' && isArray(d.lod.levels))))
 };
 
 /**

@@ -5,7 +5,7 @@
 	// @ts-ignore - the Text typing re-exports a const enum that clashes with verbatimModuleSyntax
 	import { Text } from '@threlte/extras'
 	import { vrPropsPanelOpen, vrMenuHand, selectedObject } from '../../stores/sceneStore'
-	import { vrHovered, vrPropsGroup, vrPropsCursor, PROPS_ROWS, controllerIndexFor } from '$lib/vrControls'
+	import { vrHovered, vrPropsGroup, vrPropsCursor, PROPS_ROWS, controllerIndexFor, lodReadout } from '$lib/vrControls'
 	import { applyWindowPose } from '$lib/vrWindowPoses'
 	import { menuPoseFromController } from '$lib/vrRadialMenu'
 
@@ -36,9 +36,12 @@
 	})
 
 	const AXIS_ROWS = PROPS_ROWS.filter((r: string) => r.includes(':') && r !== 'opacity')
+	// 33: the LOD row behaves like the opacity row (label · value · − / +)
+	const STEP_ROWS = ['opacity', 'lod']
 	const KIND_LABEL: Record<string, string> = { pos: 'Pos', rot: 'Rot', scale: 'Scale' }
 	function rowLabel(row: string) {
 		if (row === 'opacity') return 'Opacity'
+		if (row === 'lod') return 'LOD'
 		const [kind, axis] = row.split(':')
 		return `${KIND_LABEL[kind]} ${axis.toUpperCase()}`
 	}
@@ -57,6 +60,7 @@
 			else next[row] = object.scale[axis].toFixed(2)
 		}
 		next.opacity = (object.material?.opacity ?? 1).toFixed(1)
+		next.lod = lodReadout(object.uuid)
 		return next
 	}
 
@@ -169,24 +173,24 @@
 				<Text text={values[row] ?? ''} color="#e8ecf2" fontSize={0.009} anchorX="right" anchorY="middle"
 					position={[WIDTH / 2 - 0.062, rowY(i), 0.002]} />
 				<T.Mesh
-					name={row === 'opacity' ? 'vrprops-opacity:-1' : `vrprops-nudge:${row}:-1`}
+					name={STEP_ROWS.includes(row) ? `vrprops-${row}:-1` : `vrprops-nudge:${row}:-1`}
 					position={[WIDTH / 2 - 0.042, rowY(i), 0]}
 				>
 					<T.CircleGeometry args={[0.0075, 18]} />
 					<T.MeshBasicMaterial
-						color={buttonColor(row === 'opacity' ? 'opacity:-1' : `nudge:${row}:-1`)}
+						color={buttonColor(STEP_ROWS.includes(row) ? `${row}:-1` : `nudge:${row}:-1`)}
 						side={THREE.DoubleSide}
 					/>
 				</T.Mesh>
 				<Text text="−" color="#ffffff" fontSize={0.009} anchorX="center" anchorY="middle"
 					position={[WIDTH / 2 - 0.042, rowY(i), 0.002]} />
 				<T.Mesh
-					name={row === 'opacity' ? 'vrprops-opacity:1' : `vrprops-nudge:${row}:1`}
+					name={STEP_ROWS.includes(row) ? `vrprops-${row}:1` : `vrprops-nudge:${row}:1`}
 					position={[WIDTH / 2 - 0.016, rowY(i), 0]}
 				>
 					<T.CircleGeometry args={[0.0075, 18]} />
 					<T.MeshBasicMaterial
-						color={buttonColor(row === 'opacity' ? 'opacity:1' : `nudge:${row}:1`)}
+						color={buttonColor(STEP_ROWS.includes(row) ? `${row}:1` : `nudge:${row}:1`)}
 						side={THREE.DoubleSide}
 					/>
 				</T.Mesh>

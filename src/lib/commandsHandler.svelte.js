@@ -18,6 +18,7 @@ import { dropAllAnimations } from '$lib/animationPreview'
 import { parkAnimatedAtBase } from '$lib/flowRuntime'
 import { stripEditOverlays } from '$lib/editOverlays'
 import { isPristinePackRef, stubElementOf } from '$lib/packRefs'
+import { normalizeLodGroup } from '$lib/lodGroupCore'
 import { runSceneClearHandlers } from '$lib/moduleSDK'
 import { annotations } from '$lib/annotationsHandler'
 import { isViewer, warnViewerReadOnly } from '$lib/objectPermissions'
@@ -608,6 +609,16 @@ export async function objectParameters(data) {
         if (mesh) {
             if (data.pick === 'through') mesh.userData.pick = 'through';
             else delete mesh.userData.pick;
+            pokeScene();
+        }
+    } else if (data.parameter == 'lod') {
+        // 33: the object's LOD GROUP block. null = removed (back to the pack's implicit
+        // group / auto LOD). Normalized here — the one boundary every writer goes through.
+        let mesh = sceneObjects.getObjectByProperty('uuid', data.uuid);
+        if (mesh) {
+            const next = normalizeLodGroup(data.lod);
+            if (next) mesh.userData.lod = next;
+            else delete mesh.userData.lod;
             pokeScene();
         }
     } else if (data.parameter == 'origin') {

@@ -2131,38 +2131,46 @@ loadable play content. Everything a user does must be visible to connected peers
   invite link carries NO scene hint — the link IS the session, where the host stands is presence.
   Suite `session-scenes` (36, three peers).
 - `src/lib/sceneLoader.js` (33 L1, a LEAF: svelte/store only) — A SCENE LOAD MAY TAKE TIME; IT
-  MAY NOT TAKE THE WINDOW. Measured on a CPU x6 phone: Restore of Castle Courtyard was ONE 80 s
-  task (`applyRestore` re-serialized every child with `toJSON()` for the wire — textures as PNG
-  data URLs — solo or not) on a 51 MB full-geometry snapshot, and the template open froze 2 s
-  (569 ms tasks: texture upload + sync program link in the first frame, every copy of a kit piece
-  cloned in the one task that resolved its template, the object list re-rendered per poke).
-  `slice(job)` = a cooperative yield for a LOOP (10 ms budget; throws `LoadCancelled` at a clean
-  point between two objects), `schedule(fn)` = the same budget for MANY promise continuations (a
-  burst that resolves together runs as queue items a slice at a time — N continuations each
-  checking a clock all run in the one task that resolved their promise), `sceneLoad` = the ONE
-  running job `{name, verb, total, done, phase: preparing|reading|objects|models, cancellable,
-  interrupted}` rendered by `menu/SceneLoadBar.svelte` (first slot of the toast stack, after
-  250 ms, `#scene-load-bar` data-done/total/phase, `#scene-load-cancel`). Starting a load
-  SUPERSEDES the running one (no hooks run; its loop stops at the next slice, every await in
-  `applySession`/`applyRestore` re-checks `isLive(job)`); Cancel runs the load's `onCancel` hook
-  (sessions: replicated clear + toast naming the Backup; restore: clear + RE-OFFER the prompt).
-  Cancel stays offered through `models` (kit pieces still arriving). A load that interrupts one still building writes no "Backup before" (that
-  scene is half of somebody's load). `throttledPoke` (250 ms) during the loop; refills poke at
-  most every 200 ms (packRefs `pokeSoon`). The debounced autosave WAITS OUT a load
-  (`saveNow` does not). packRefs: refill attach through `schedule`, `warmTemplate`
-  (`initTexture` per slice + `compileAsync` against the live scene TWICE — canvas AND a 1x1 render
-  target, because three keys a program by tone mapping + output colour space and the composer
-  draws into a target), the scene's ENVIRONMENT restored before the objects (its light count is
-  in every program key), the object list's plain tree mounting in chunks (Controls.svelte,
-  40 + 16/frame), `packRef.box` (root-frame bounds, additive) +
-  ONE scene-root InstancedMesh of grey `kit-placeholders` for hollow stubs, and
-  `parkPackPieces` — **the autosave writes pristine kit pieces as STUBS now** (reverses 30c's
-  "autosave stays full"; hollowed before the GLTF export and put back on the exporter's
-  `afterParse` hook, i.e. once the tree is READ and before the async encode lets a frame draw a
-  hollow castle; `parkedRoots` keeps a scan from refilling one mid-export). The restore sends a
-  wire copy only with an OPEN peer, stubs for pristine pieces. Suite `scene-load` (CPU x6 phone,
-  no long task > 200 ms on open AND restore) + `scripts/scene-load-trace.cjs` (the P0 probe:
-  long tasks, longest frame gap, profile top-self + app call chains).
+  MAY NOT TAKE THE WINDOW. Measured on a CPU x6 phone (scripts/scene-load-trace.cjs): Restore of
+  Castle Courtyard was ONE 89 s task (`applyRestore` re-serialized every child with `toJSON()` for
+  the wire — textures as PNG data URLs — solo or not) on a 51 MB full-geometry snapshot (Forest's
+  was over the 50 MB cap: no crash recovery at all), and a template open froze 2 s (525 ms tasks).
+  Now every task of those loads is under 200 ms, asserted by suite `scene-load`.
+  · `slice(job)` = a cooperative yield for a LOOP (10 ms, throws `LoadCancelled` between two
+  objects); `schedule(fn)` = the same budget for queued sync work. **ONE SHARED CLOCK**: a loop that
+  awaits one scheduled item at a time starts a fresh pump per item through microtasks, and with a
+  per-run budget the whole loop was one task (an 881 ms warm-up). `sceneLoad` = the ONE job
+  `{name, verb, total, done, phase: preparing|reading|objects|models, cancellable, interrupted}`,
+  drawn by `menu/SceneLoadBar.svelte` (toast stack's first slot, after 250 ms, CSS entrance — a
+  svelte `fly` reads getComputedStyle = a whole-document layout mid-load; `#scene-load-bar`
+  data-done/total/phase, `#scene-load-cancel`). A new load SUPERSEDES the running one (no hooks;
+  every await in `applySession`/`applyRestore` re-checks `isLive(job)`); Cancel (also during
+  `models`) runs the load's `onCancel` (sessions: replicated clear + a toast naming the Backup;
+  restore: clear + RE-OFFER). A load interrupting one mid-BUILD writes no "Backup before".
+  · THE ORDER OF A LOAD (sessions + autosave): clear -> environment -> `holdFrames()` (Outline
+  skips its render; bounded 2 s) + `warmPrograms(scene)` (the fog/light change re-keys every
+  existing program) -> post stack + `warmComposer()` (Outline registers it: every pass's
+  fullscreen scene compiled against the target it draws into) -> release + `nextFrames(2)` ->
+  hold -> the sliced build -> `warmPrograms(objectsGroup)` -> release. Warm-ups are awaited at most
+  `WARM_WAIT_MS` (`within`): software GL links in hundreds of ms and a load must never wait on the
+  driver. "Session loaded" waits for the kit models.
+  · `packRefs.warmPrograms`: compile in BATCHES of throwaway twins sharing each mesh's geometry +
+  material (`compile` walks the whole scene for lights per call — per mesh was quadratic), canvas
+  AND render-target variants (three keys a program by tone mapping + output colour space), then
+  each program's FIRST USE (`getUniforms`) per slice: without KHR_parallel_shader_compile that read
+  WAITS for the link, and it was the cost left in the first frames. `warmTemplate` = initTexture
+  per slice + warmPrograms. Refill attach through `schedule`; refills poke at most every 200 ms;
+  `packRef.box` (root-frame bounds, additive) drawn as ONE scene-root InstancedMesh of grey
+  `kit-placeholders` while a piece is on its way.
+  · **The autosave writes pristine kit pieces as STUBS** (`parkPackPieces`, reverses 30c's
+  "autosave stays full"): hollowed for the GLTF export and put back on the exporter's `afterParse`
+  hook (once the tree is READ, before the async encode lets a frame draw a hollow castle;
+  `parkedRoots` keeps a scan from refilling one mid-export). The fingerprint is NOT cached — a
+  version-keyed cache read an in-place vertex move as pristine (pack-refs caught it: an edit
+  lost on reload). The restore sends a wire copy only with an OPEN peer, stubs for pristine pieces.
+  · Elsewhere: the object list's plain tree mounts in chunks (Controls.svelte, 40 + 16/frame);
+  `qualityGovernor` ignores frames while a load runs (its setPixelRatio->setSize was a 432 ms
+  task); the debounced autosave waits out a load (`saveNow` does not).
 - `src/lib/flowLayout.js` + `src/lib/coalesce.js` (R29 S1/S2, both LEAVES, vitest-covered):
   `freeRegion({w,h,graphId})` is the ONE placement rule for anything that authors nodes on the
   user's behalf (`hudActions.addBinding` calls it, side 'right', byte-identical); the SDK

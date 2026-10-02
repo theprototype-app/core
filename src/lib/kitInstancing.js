@@ -4,7 +4,7 @@ import { globalScene, objectsGroup, selectedObjects } from '../stores/sceneStore
 import { safeStorage } from './safeStorage';
 import { registerBatchPass } from './lod';
 import { kitMeshSource, warmPrograms } from './packRefs';
-import { cellKey, cellOf, materialSignature, ineligible, MIN_BATCH } from './kitInstancingCore';
+import { cellKey, cellOf, materialSignature, ineligible, MIN_BATCH, CELL_METRES } from './kitInstancingCore';
 
 // 33-scenes — KIT INSTANCING: every pristine copy of one pack piece drawn as ONE call.
 //
@@ -81,8 +81,19 @@ const shown = [];
 const warmed = new WeakSet();
 /** @type {any} */
 let holderRoot = null;
+// per-member culling temporaries (allocation-free per pass)
+const frustum = new THREE.Frustum();
+const viewProjection = new THREE.Matrix4();
+const sphere = new THREE.Sphere();
 const stats = { candidates: 0, batches: 0, members: 0, holders: 0, passes: 0, lastScanMs: 0 };
 let statsAt = 0;
+/** the column size in use (kitInstancingCore.CELL_METRES; the probe can try others) */
+let cellMetres = CELL_METRES;
+/** For the probe: re-cut the batches at another column size. @param {number} metres */
+export function setKitCellMetres(metres) {
+	cellMetres = Number.isFinite(metres) && metres > 0 ? metres : CELL_METRES;
+	clearBatches();
+}
 
 function holderParent() {
 	const scene = get(globalScene);
@@ -132,7 +143,7 @@ function ensureHolder(batch, n) {
 	holder.count = 0;
 	holder.raycast = () => {}; // never a pick target: the members are
 	holder.userData.local = true;
-	const { cast, receive } = cellOf(batch.key);
+	const { cast, receive } = cellOf(batch.key, cellMetres);
 	holder.castShadow = cast;
 	holder.receiveShadow = receive;
 	parent.add(holder);
@@ -163,6 +174,12 @@ function before(camera) {
 	for (let i = 0; i < allBatches.length; i++) {
 		allBatches[i].count = 0;
 	}
+	// a batch is culled as ONE object, so a member that is off screen must not join it — it
+	// would be drawn for every member of its batch that is on screen. Off-screen members stay
+	// ordinary meshes, which three culls itself (no call). This is what keeps the triangle
+	// count of an instanced level where the frustum puts it, and what lets the columns be wide
+	viewProjection.multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse);
+	frustum.setFromProjectionMatrix(viewProjection);
 	// 1 group the eligible meshes of this call
 	for (let i = 0; i < candidates.length; i++) {
 		const c = candidates[i];
@@ -172,8 +189,12 @@ function before(camera) {
 		if (!shownToRoot(mesh, c.root)) continue;
 		if ((mesh.layers.mask & camera.layers.mask) === 0) continue;
 		const geometry = mesh.geometry === c.source.geometry ? c.source.template.geometry : mesh.geometry;
+		if (mesh.frustumCulled !== false) {
+			if (!geometry.boundingSphere) geometry.computeBoundingSphere();
+			if (!frustum.intersectsSphere(sphere.copy(geometry.boundingSphere).applyMatrix4(mesh.matrixWorld))) continue;
+		}
 		const e = mesh.matrixWorld.elements;
-		const batch = batchFor(geometry, c.source.template.material, cellKey(e[12], e[14], mesh.castShadow, mesh.receiveShadow));
+		const batch = batchFor(geometry, c.source.template.material, cellKey(e[12], e[14], mesh.castShadow, mesh.receiveShadow, cellMetres));
 		if (batch.members.length <= batch.count) batch.members.push(mesh);
 		else batch.members[batch.count] = mesh;
 		batch.count++;

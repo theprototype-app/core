@@ -34,6 +34,7 @@ const OUT = arg('out', '/home/deck/.code/lanes-30/after-33/33-scenes');
 const LABEL = arg('label', 'run');
 // the counterfactual: the same views with kit instancing OFF (kitInstancing.js)
 const NO_INSTANCING = argv.includes('--no-instancing');
+const CELL = Number(arg('cell', '0')) || 0;
 const BUDGET = 150;
 const PI = Math.PI;
 
@@ -85,6 +86,7 @@ async function probe(browser, slug, bytes) {
 			if (payload) await s.sessions.requestLoadSession(payload.id);
 		}, Array.from(bytes));
 		if (NO_INSTANCING) await page.evaluate(() => window.__stores.kitInstancing?.kitInstancingEnabled.set(false));
+		if (CELL) await page.evaluate((c) => window.__stores.kitInstancing?.setKitCellMetres(c), CELL);
 		await page.waitForTimeout(1500);
 		await page.evaluate(() => window.__stores.packRefs.packRefsSettled());
 		await page.waitForTimeout(2500);

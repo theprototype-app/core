@@ -1,13 +1,15 @@
 // 33-scenes — the PURE half of kit instancing (kitInstancing.js is the runtime). No three,
 // no stores: the numbers here are what a suite can pin without a GL context.
 
-/** Batches are cut into square COLUMNS of this many metres, so a batch can still be culled:
- * one InstancedMesh holding every wall of a town is drawn or skipped as a whole, while a
- * column of walls behind you is skipped and the one in front is drawn. The columns are
- * CENTRED on the origin (-8..8, 8..24, …) because a level is authored around it: 8 m columns
- * cut the 12 × 10 m tavern into four and left a quarter of its batches with one member each
- * (measured: 117 groups for 45 pieces, 224 calls at the spawn). */
-export const CELL_METRES = 16;
+/** Batches are cut into square COLUMNS of this many metres, CENTRED on the origin (a level is
+ * authored around it). Since the pass also leaves every OFF-SCREEN member out of its batch
+ * (three culls it as an ordinary mesh), a column no longer costs triangles, only the one draw
+ * call a batch takes per column — so the columns are wide, and only a very big world is cut.
+ * MEASURED (perf-levels, headset analogue, the 33 Tavern's worst view): 8 m columns left a
+ * quarter of the batches with one member (224 calls on the 1.18 tavern), 16 m split a building
+ * from its own street (148), 32 m 120, 128 m 112 — the same 327k triangles from 32 m up once
+ * off-screen members stay out (460k before that). */
+export const CELL_METRES = 128;
 
 /** A batch is only worth an InstancedMesh with at least this many members — one member is
  * drawn as itself (instancing a single mesh would only cost a program variant). */

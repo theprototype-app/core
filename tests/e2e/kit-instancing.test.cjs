@@ -138,6 +138,15 @@ h.run(async () => {
 	const same = await h.frameDelta(page, frameOff, frameOn, 10);
 	h.check(!same.error && same.fraction < 0.003, `the instanced frame is the same picture (${same.changed} of ${same.total} pixels differ by > 10)`);
 
+	// off-screen members stay out of their batch (three culls them as themselves): a view of
+	// the row's west end batches only what it sees
+	await page.evaluate(() => window.__stores.objectActions.flyTo([-5, 1.6, -1], [-5, 1.2, -4], 0));
+	await settle();
+	const narrow = await calls();
+	h.check(narrow.stats.members > 0 && narrow.stats.members < on.stats.members, `an OFF-SCREEN piece is not drawn by its batch (members ${on.stats.members} in the full view -> ${narrow.stats.members} looking at the west end)`);
+	await page.evaluate(() => window.__stores.objectActions.flyTo([0, 2.2, 6], [0, 1, -3], 0));
+	await settle();
+
 	// ---- 2. the members are still the scene --------------------------------------------------
 	const tree = await page.evaluate(() => {
 		const s = window.__stores;

@@ -223,11 +223,20 @@ export function frameSlabs(staticBoxes, movingBoxes) {
 		}
 		pieces = next;
 	}
-	return pieces;
+	// 33-scenes: a leftover thinner than MIN_SLAB on any axis is the edge of a part that sits
+	// ON the moving one (a garden gate's iron straps are a static mesh 1 cm proud of the leaf):
+	// it draws nothing a player could stand against, and as a collider it was a 1.76 m wide wall
+	// in the open gateway (measured: the walker stopped at the open Garden gate)
+	return pieces.filter((b) => b[3] - b[0] >= MIN_SLAB && b[4] - b[1] >= MIN_SLAB && b[5] - b[2] >= MIN_SLAB);
 }
+
+/** a slab thinner than this on any axis is dropped (see frameSlabs) */
+const MIN_SLAB = 0.02;
 
 /** a frame no deeper than this is a wall/doorway the opening passes THROUGH */
 const PASSAGE_DEPTH = 0.6;
+/** 33-scenes: a passage under a frame this much taller than its leaf is open to the frame's top */
+const OPEN_ABOVE = 0.4;
 
 /**
  * A door leaf is thinner than the frame it hangs in (the frame is the wall's depth), so
@@ -246,6 +255,13 @@ export function passageThrough(piece, hole) {
 	const out = hole.slice();
 	out[thin] = piece[thin];
 	out[thin + 3] = piece[thin + 3];
+	// 33-scenes: a LOW leaf in a TALL frame (a garden gate under its crossbar, ~1 m of picket
+	// under a 2 m frame) leaves the frame box above the leaf as one solid slab across the
+	// gateway. The gap over a gate is air, so a vertical passage runs to the top of its frame
+	// box. A thin crossbar is not worth a collider: kept as a lintel slab it caught the walker's
+	// head on a raised path (the town kit's gate frame tops out at 1.96 m; capsule top 1.87 m).
+	// A door's leaf fills its frame, so a door keeps its lintel unchanged
+	if (thin !== 1 && piece[4] - out[4] > OPEN_ABOVE) out[4] = piece[4];
 	return out;
 }
 

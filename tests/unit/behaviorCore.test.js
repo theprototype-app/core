@@ -131,6 +131,25 @@ describe('the doorway', () => {
 		expect(slabs.filter((s) => s[0] < 0 && s[3] > 0 && s[2] < 0 && s[5] > 0)).toEqual([]);
 		expect(slabs.length).toBe(4);
 	});
+	it('33-scenes: a garden gate (a low leaf in a tall frame) opens up to its frame top', () => {
+		// town-kit FenceGate, measured: the oak frame box and the picket leaf
+		const gateFrame = [-1, 0, -0.06, 1, 1.96, 0.06];
+		const gateLeaf = [-0.87, 0.08, -0.05, 0.85, 1.05, 0.04];
+		const slabs = frameSlabs([gateFrame], [gateLeaf]);
+		// nothing across the gateway above the leaf, up to the frame's top
+		expect(slabs.filter((s) => s[0] < 0 && s[3] > 0 && s[4] > 1.05)).toEqual([]);
+		expect(slabs.some((s) => s[3] <= -0.87 + 1e-9) && slabs.some((s) => s[0] >= 0.85 - 1e-9)).toBe(true); // both posts stay
+		// a DOOR fills its frame: its lintel is exactly what it was
+		const door = frameSlabs([frame], [leaf]);
+		expect(door.filter((s) => s[1] >= 1.98 - 1e-9).length).toBe(1);
+		expect(door.find((s) => s[1] >= 1.98 - 1e-9)?.[1]).toBeCloseTo(1.98, 9);
+	});
+	it('33-scenes: a static part 1 cm proud of the leaf (a gate\'s iron straps) leaves no sliver wall', () => {
+		const iron = [-0.88, 0.26, 0.02, 0.88, 0.86, 0.05];
+		const gateLeaf = [-0.87, 0.08, -0.05, 0.85, 1.05, 0.04];
+		const slabs = frameSlabs([iron], [gateLeaf]);
+		expect(slabs.filter((s) => s[0] < 0 && s[3] > 0)).toEqual([]);
+	});
 	it('no overlap = the box unchanged; a hole covering it = nothing left', () => {
 		expect(boxMinusBox([0, 0, 0, 1, 1, 1], [2, 2, 2, 3, 3, 3])).toEqual([[0, 0, 0, 1, 1, 1]]);
 		expect(boxMinusBox([0, 0, 0, 1, 1, 1], [-1, -1, -1, 2, 2, 2])).toEqual([]);

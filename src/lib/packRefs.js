@@ -237,7 +237,7 @@ async function warmTemplate(scene) {
  * BOTH variants: three keys a program by its OUTPUT too — drawn straight to the canvas it
  * tone-maps and encodes sRGB, drawn into a render target (the post-processing composer: the
  * editor's outline, the scene look) it does neither, and Outline.svelte switches between the
- * two per frame. One compile per MESH per slice (a whole-scene `compile` is itself a long task).
+ * two per frame. One BATCH of twins per slice (a whole-scene `compile` is itself a long task).
  * Then `getUniforms` per program: three reads the link result there, and without the
  * parallel-compile extension that read WAITS for the link — measured as 100-270 ms of first-use
  * links inside the first frame that drew a loaded scene, with the programs already created. It
@@ -256,15 +256,46 @@ export async function warmPrograms(root) {
 	root.traverse((/** @type {any} */ node) => {
 		if ((node.isMesh || node.isLine || node.isPoints || node.isSprite) && node.material) drawables.push(node);
 	});
+	// BATCHED through TWINS. `compile(object, camera, scene)` walks the whole target scene for its
+	// lights on every call, so one call per mesh was quadratic (1200 meshes = 1200 walks of 1200
+	// nodes). A plain mesh's program depends on its material, geometry attributes and the
+	// scene, not on which Object3D holds them — so a throwaway Mesh sharing the SAME geometry and
+	// material prepares the real material, and a batch of them compiles in one walk. Skinned and
+	// instanced meshes (whose object IS part of the key) and anything else compile as themselves.
+	const BATCH = 48;
+	/** @type {any[][]} */
+	const batches = [];
+	/** @type {any[]} */
+	let twins = [];
+	for (const node of drawables) {
+		if (node.isMesh && !node.isSkinnedMesh && !node.isInstancedMesh && !node.isBatchedMesh && node.constructor === THREE.Mesh) {
+			twins.push(node);
+			if (twins.length === BATCH) {
+				batches.push(twins);
+				twins = [];
+			}
+		} else batches.push([node]);
+	}
+	if (twins.length) batches.push(twins);
 	try {
 		if (!warmTarget) warmTarget = new THREE.WebGLRenderTarget(1, 1);
-		for (const node of drawables)
+		for (const batch of batches)
 			await schedule(() => {
-				renderer.compile(node, camera, target);
+				/** @type {any} */
+				let subject = batch[0];
+				if (batch.length > 1 || batch[0].constructor === THREE.Mesh) {
+					subject = new THREE.Group();
+					for (const node of batch) {
+						const twin = new THREE.Mesh(node.geometry, node.material);
+						twin.matrixAutoUpdate = false;
+						subject.add(twin);
+					}
+				}
+				renderer.compile(subject, camera, target);
 				const previous = renderer.getRenderTarget();
 				renderer.setRenderTarget(warmTarget);
 				try {
-					renderer.compile(node, camera, target);
+					renderer.compile(subject, camera, target);
 				} finally {
 					renderer.setRenderTarget(previous);
 				}

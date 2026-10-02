@@ -101,16 +101,20 @@ async function pump() {
 	pumping = true;
 	try {
 		while (queue.length) {
-			const start = now();
-			while (queue.length && now() - start < SLICE_MS) {
-				const item = /** @type {any} */ (queue.shift());
-				try {
-					item.resolve(item.fn());
-				} catch (error) {
-					item.reject(error);
-				}
+			// the budget is SHARED with every other pump run and every `slice()`: a loop that
+			// awaits one scheduled item at a time starts a fresh pump per item, chained through
+			// microtasks — with a per-run budget that whole loop was ONE task (measured: an 881 ms
+			// task of program warm-up items, each well under the budget on its own)
+			if (now() - sliceStart >= SLICE_MS) {
+				await yieldToEventLoop();
+				sliceStart = now();
 			}
-			if (queue.length) await yieldToEventLoop();
+			const item = /** @type {any} */ (queue.shift());
+			try {
+				item.resolve(item.fn());
+			} catch (error) {
+				item.reject(error);
+			}
 		}
 	} finally {
 		pumping = false;
@@ -119,8 +123,8 @@ async function pump() {
 
 /**
  * Run a piece of SYNCHRONOUS work inside the shared slice budget. Items run in arrival
- * order, as many per task as fit in `SLICE_MS` (at least one), so a burst of continuations
- * spreads over several tasks instead of one.
+ * order, as many per task as fit in `SLICE_MS` — the same clock `slice()` keeps — so a burst
+ * of continuations, or a loop awaiting one item at a time, spreads over several tasks.
  * @template T @param {() => T} fn @returns {Promise<T>}
  */
 export function schedule(fn) {

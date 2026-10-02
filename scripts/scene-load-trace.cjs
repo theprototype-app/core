@@ -180,6 +180,33 @@ h.run(async () => {
 	const browser = await h.launch({ args: h.GPU_ARGS });
 	const results = [];
 	for (const slug of SLUGS) {
+		// MANY=1200: a synthetic scene of that many ordinary meshes (no kit references), opened
+		// through applySession — the case where the build loop itself is the cost
+		if (slug === 'many-boxes') {
+			const n = Number(process.env.MANY || 1200);
+			const A = await h.setupPage(browser, slug, { context: MOBILE });
+			const page = A.page;
+			await page.evaluate(PROBE);
+			await page.evaluate((n) => {
+				const s = window.__stores;
+				/** @type {any} */ let g;
+				s.objectsGroup.subscribe((v) => (g = v))();
+				for (let i = 0; i < n; i++) {
+					const m = new s.THREE.Mesh(new s.THREE.BoxGeometry(0.4, 0.4 + (i % 7) * 0.1, 0.4), new s.THREE.MeshStandardMaterial({ color: (i * 2654435761) & 0xffffff }));
+					m.name = 'box-' + i;
+					m.position.set((i % 40) - 20, 0.2, Math.floor(i / 40) - 15);
+					g.add(m);
+				}
+				s.pokeScene();
+				/** @type {any} */ (window).__many = s.sessions.buildSessionPayload('Many boxes');
+				s.sceneLoader.cancelLoad();
+			}, n);
+			await page.waitForTimeout(2000);
+			const cdp = await page.context().newCDPSession(page);
+			results.push({ slug, ...(await measure(page, cdp, slug + ' open', () => page.evaluate(() => void window.__stores.sessions.applySession(/** @type {any} */ (window).__many, { backup: false })), 'box-0')) });
+			await A.ctx.close();
+			continue;
+		}
 		const entry = [...(index.templates ?? []), ...(index.examples ?? []), ...(index.games ?? [])].find((t) => t.slug === slug);
 		if (!entry) {
 			console.log('no entry for ' + slug);

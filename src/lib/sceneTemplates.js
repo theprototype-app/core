@@ -2,7 +2,7 @@ import { writable, get } from 'svelte/store';
 import { showToast, closeSelectionInspector } from '../stores/appStore.js';
 import { objectsGroup } from '../stores/sceneStore';
 import { isViewer, warnViewerReadOnly } from './objectPermissions';
-import { contentBase } from './contentBase';
+import { contentBase, fetchIndex, onContentStale } from './contentBase';
 // 28-A6: the Community source a cloud plugin may install (store-only, no cycle — the
 // objectPermissions import above already reaches cloudHooks' family)
 import { communityProvider } from './cloudHooks';
@@ -139,15 +139,25 @@ export function matchesTags(entry, active) {
 	return (entry.tags ?? []).some((/** @type {string} */ tag) => active.includes(tag));
 }
 
+/** 1.19.1: an app update drops both index memos (contentBase.onContentStale), so reopening
+ * the modal in a tab that outlived a deploy re-fetches instead of showing the old list. */
+let templatesStale = false;
+let communityStale = false;
+onContentStale(() => {
+	templatesStale = true;
+	communityStale = true;
+});
+
 /** Load the General/Examples index: remote CDN first, the bundled
  * static/templates seed as the offline fallback (the loadPacks idiom).
  * Memoized — pass force to refetch (the Retry button). @param {boolean=} force */
 export async function loadTemplatesIndex(force = false) {
 	const state = get(templatesState);
-	if (!force && (state === 'ready' || state === 'fallback' || state === 'loading')) return;
+	if (!force && !templatesStale && (state === 'ready' || state === 'fallback' || state === 'loading')) return;
+	templatesStale = false;
 	templatesState.set('loading');
 	try {
-		const res = await fetch(`${SCENES_BASE}/index.json`);
+		const res = await fetchIndex(`${SCENES_BASE}/index.json`);
 		if (res.ok) {
 			const data = await res.json();
 			templates.set((data.templates || []).map((/** @type {any} */ e) => normalizeEntry(e, SCENES_BASE)));
@@ -212,7 +222,8 @@ function normalizeProviderEntry(e) {
  * way, so the modal needs no state work. */
 export async function loadCommunityGallery(force = false) {
 	const state = get(communityState);
-	if (!force && (state === 'ready' || state === 'empty' || state === 'loading')) return;
+	if (!force && !communityStale && (state === 'ready' || state === 'empty' || state === 'loading')) return;
+	communityStale = false;
 	communityState.set('loading');
 	const provider = get(communityProvider);
 	if (provider) {
@@ -240,7 +251,7 @@ export async function loadCommunityGallery(force = false) {
 	}
 	communityNotice.set(null);
 	try {
-		const res = await fetch(GALLERY_JSON_URL);
+		const res = await fetchIndex(GALLERY_JSON_URL);
 		if (res.ok) {
 			const data = await res.json();
 			const list = (data.entries || []).map((/** @type {any} */ e) => normalizeEntry(e, GALLERY_BASE));

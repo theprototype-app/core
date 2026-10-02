@@ -1,5 +1,5 @@
 import { writable, get } from 'svelte/store';
-import { contentBase } from './contentBase';
+import { contentBase, fetchIndex, onContentStale } from './contentBase';
 import { addItemFromBytes, createFolder, explorerFolders } from './explorer';
 import { safeStorage } from './safeStorage';
 import { normalizeBehavior } from './behaviorCore';
@@ -40,6 +40,11 @@ export const openPackLoading = writable(false);
 
 /** @type {Record<string, any[]>} per-pack item cache (fetched once on open) */
 const itemCache = {};
+// 1.19.1: an app update drops the item lists (contentBase.onContentStale) — a kit grows
+// items in place on the branch ref, so a tab that outlived a deploy re-fetches on next open
+onContentStale(() => {
+	for (const name of Object.keys(itemCache)) delete itemCache[name];
+});
 /** stale-response guard: only the LATEST loadPackItems call may publish results
  *  (switching packs quickly used to let a slow first fetch clobber the new pack) */
 let loadSeq = 0;
@@ -200,7 +205,7 @@ export async function installDefaultPackZip(pack) {
 export async function loadPacks() {
 	let defaults = [];
 	try {
-		const res = await fetch(`${PACKS_BASE}/index.json`);
+		const res = await fetchIndex(`${PACKS_BASE}/index.json`);
 		if (res.ok) defaults = (await res.json()).map((/** @type {any} */ e) => normalizeDefault(e, true));
 	} catch {
 		/* CDN unreachable — fall back to the bundled starter below */
@@ -271,7 +276,8 @@ export async function loadPackItems(pack) {
 	} else {
 		let raw = [];
 		try {
-			const res = await fetch(pack.listUrl);
+			// the item list is a LIST on the branch ref too (a kit grows items in place)
+			const res = await fetchIndex(pack.listUrl);
 			if (res.ok) raw = await res.json();
 		} catch {
 			/* pack list unreachable */

@@ -11,6 +11,7 @@ import { registerLodPass, simplifiedGeometry, swapGeometryForPass, swapMaterialF
 import { normalizeLodGroup, pickGroupLevel, thresholdsOf, groupFromPackLods } from './lodGroupCore';
 import { packRefOf, packRefUrl, loadPackFile } from './packRefs';
 import { PACKS_BASE } from './packs';
+import { fetchIndex } from './contentBase';
 import { explorerItems, itemByHash, itemBlob } from './explorer';
 
 // 33 (K2/K6) — LOD GROUPS: a per-object `userData.lod` block, drawn at render time.
@@ -216,7 +217,8 @@ function rowKeyOf(ref) {
 function fetchJson(url) {
 	let job = listFetches.get(url);
 	if (!job) {
-		job = fetch(url).then((r) => (r.ok ? r.json() : null));
+		// the packs index and each pack's item list: LISTS on a branch ref (contentBase.fetchIndex)
+		job = fetchIndex(url).then((r) => (r.ok ? r.json() : null));
 		listFetches.set(url, job);
 		job.catch(() => listFetches.delete(url));
 	}

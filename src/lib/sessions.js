@@ -70,6 +70,8 @@ import { sceneCommand, sendObjects, clearSceneLocal } from './commandsHandler.sv
 import { nameOf } from './lockControl';
 import { idbGet, idbPut, idbDelete, idbKeys } from './idb';
 import { showConfirm, showChoice } from './confirmDialog';
+// 33 (L2/L4): what happens to modules when the scene changes
+import { prepareSceneSwitch, sceneArrived } from './sceneSwitch';
 import { APP_VERSION } from './version.js';
 
 // Multi-slot sessions (phase 50) on top of the autosave format. Each session
@@ -635,18 +637,39 @@ async function confirmModuleRequirements(payload) {
 		choices
 	});
 	if (!answer) return false; // Cancel / Esc / outside-close: nothing has been touched
-	if (answer === 'enable') enableRequired(disabled);
+	if (answer === 'enable') await enableRequired(disabled);
 	if (answer === 'install') await installRequired(missing);
 	return true;
 }
 
-/** Switch requested modules back on (they are already installed).
+/** Switch requested modules back on (they are already installed) — LIVE, 33 (L2): a module
+ * the scene-switch ask unloaded comes back the moment a scene that needs it is opened,
+ * through this prompt, with no reload. A user module re-activates from its stored record,
+ * a core one re-registers from the app's own list.
  * @param {{id: string}[]} entries */
-function enableRequired(entries) {
+async function enableRequired(entries) {
 	const ids = entries.map((entry) => entry.id);
 	disabledModules.update((list) => list.filter((id) => !ids.includes(id)));
+	const late = [];
+	try {
+		const { userModules, activateUserModule } = await import('./userModules');
+		const { initModules, isModuleLoaded } = await import('./moduleSDK');
+		const { coreModules } = await import('../modules/index.js');
+		for (const id of ids) {
+			if (isModuleLoaded(id)) continue;
+			const record = get(userModules).find((/** @type {any} */ r) => r.id === id);
+			if (record) await activateUserModule(record);
+			else {
+				const core = coreModules.find((/** @type {any} */ m) => m.id === id);
+				if (core) initModules([core]);
+			}
+			if (!isModuleLoaded(id)) late.push(id);
+		}
+	} catch {
+		late.push(...ids);
+	}
 	showToast(
-		'Enabled ' + ids.join(', ') + ' — reload if a node still shows as missing'
+		'Enabled ' + ids.join(', ') + (late.length ? ' — reload if a node still shows as missing' : '')
 	);
 }
 
@@ -1293,11 +1316,13 @@ function reportUnknownNodes(payload) {
  *              travel, so the traveller re-asserts the live state after the load
  *   workspace  false skips the edit-resume — a level hop mid-game must not reopen the
  *              author's mesh-edit session
+ *   quiet      true skips the "Session loaded" toast — 33 (L3): a full Clear applies an EMPTY
+ *              payload, and "Session loaded: Untitled (0 objects)" is not what happened
  * @param {any} payload
- * @param {{backup?: boolean, replicate?: boolean, game?: boolean, workspace?: boolean}} [opts]
+ * @param {{backup?: boolean, replicate?: boolean, game?: boolean, workspace?: boolean, quiet?: boolean}} [opts]
  */
 export async function applySession(payload, opts = {}) {
-	const { backup = true, replicate = true, game = true, workspace = true } = opts;
+	const { backup = true, replicate = true, game = true, workspace = true, quiet = false } = opts;
 	// 31 K3: the file's own name is the game's identity for its per-game settings (a
 	// Games-tab load is unnamed afterwards, but its session name is the game's title)
 	noteSceneFileName(payload?.name);
@@ -1414,12 +1439,15 @@ export async function applySession(payload, opts = {}) {
 	// flow editor's badge is invisible when the dock is closed — which it is for most
 	// players loading a game. Runs after restoreGraphs, so the count is the real one.
 	reportUnknownNodes(payload);
-	showToast('Session loaded: ' + payload.name + ' (' + (payload.count ?? 0) + ' objects)');
+	// 33 (L4): the scene has arrived — modules the last one used and this one does not are
+	// LEFT BEHIND now (their menus, music and spawn stop counting; sceneScope)
+	sceneArrived(payload);
+	if (!quiet) showToast('Session loaded: ' + payload.name + ' (' + (payload.count ?? 0) + ' objects)');
 }
 
 // ---- proposal flow (50.3) --------------------------------------------------
 
-/** @type {{payload: any, accepts: Set<string>, needed: string[]} | null} */
+/** @type {{payload: any, accepts: Set<string>, needed: string[], beforeApply?: () => void} | null} */
 let pendingProposal = null;
 
 /** Load a session — solo applies immediately, with peers it becomes a proposal
@@ -1516,6 +1544,11 @@ export async function requestLoadPayload(payload) {
 	// a scene nobody saved, which the user would then re-save over their own file
 	// silently truncated — a stream is divisible, a document is not.
 	if (!(await confirmSceneSize(payload))) return false;
+	// 33 (L2): the modules the scene being LEFT brings along and this one does not need —
+	// keep or unload (Settings ▸ Scene decides when the person told us to remember). The
+	// unload itself waits for the load to really apply: a proposal may be declined.
+	const moduleSwitch = await prepareSceneSwitch(payload);
+	if (!moduleSwitch) return false;
 	/** @type {any} */
 	const peer = get(peers);
 	let connected = Object.keys(peer?.connections ?? {});
@@ -1536,10 +1569,11 @@ export async function requestLoadPayload(payload) {
 		}
 	} catch {}
 	if (!connected.length) {
+		moduleSwitch.run();
 		await applySession(payload);
 		return true;
 	}
-	pendingProposal = { payload, accepts: new Set(), needed: connected };
+	pendingProposal = { payload, accepts: new Set(), needed: connected, beforeApply: moduleSwitch.run };
 	peer.send({
 		type: 'sessionproposal',
 		name: payload.name,
@@ -2455,6 +2489,7 @@ export function applySessionAnswer(data) {
 	if (pendingProposal.needed.every((id) => pendingProposal?.accepts.has(id))) {
 		const proposal = pendingProposal;
 		pendingProposal = null;
+		proposal.beforeApply?.();
 		applySession(proposal.payload);
 	}
 }

@@ -44,6 +44,8 @@
 		removeCustomTheme
 	} from '$lib/themes';
 	import { autosaveEnabled, autoRestoreEnabled, clearSavedSession } from '$lib/autosave';
+	// 33 (L2): keep / unload a scene's modules when another scene opens
+	import { modulesOnOpen } from '$lib/sceneSwitch';
 	// 21-G7: how many past versions of each scene keep their bytes on this machine (0 = off)
 	import { keepVersionsSetting } from '$lib/projectManifest';
 	// R22 round 2: who may take a file out of the shared library (locked answer: anyone,
@@ -1105,6 +1107,21 @@
 							<Checkbox id="auto-restore" bind:checked={$autoRestoreEnabled} />
 						</svelte:fragment>
 						Restore that snapshot automatically at startup instead of asking. Only ever runs when the scene is still empty; a message tells you what was restored
+					</SettingRow>
+					<!-- 33 (L2): what a scene switch does with the modules the scene being left brought along -->
+					<SettingRow name="When opening another scene">
+						<svelte:fragment slot="control">
+							<ThemedSelect
+								id="modules-on-open"
+								items={[
+									{ value: 'ask', name: 'Ask' },
+									{ value: 'keep', name: 'Keep modules' },
+									{ value: 'unload', name: 'Unload modules' }
+								]}
+								bind:value={$modulesOnOpen}
+							/>
+						</svelte:fragment>
+						<span>Modules that came with the scene you are leaving (a game's Waves or Untangle) and that the next scene does not use. Ask (the default) shows them and lets you choose; Unload switches them off (back on any time in Modules, and a scene that needs them offers to). A new blank scene always unloads them</span>
 					</SettingRow>
 					<p class="ui-section-label">Selection</p>
 					<SettingRow name="Double-click action">

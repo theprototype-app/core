@@ -5,6 +5,15 @@
      per release, newest first. HTML comments like this one are stripped before
      rendering, so maintainer notes stay out of the user-facing window. -->
 
+## 1.19.1 — New levels show up straight away 🔄
+
+- 🔄 **The General tab, the packs list and the module gallery show what was just released.** They used to
+  keep the list your browser had fetched up to a week earlier, so a device that had opened Templates
+  before 1.19.0 did not see the Wizard's Tower or Market Town Square. Every list is now checked with the
+  server each time (an unchanged one costs almost nothing), and noticing a new version of the app
+  refreshes them even in a tab you never reloaded.
+- 🧩 **Installing a module from Browse gets the version Browse shows**, not an older copy the browser kept.
+
 ## 1.19.0 — Doors that open, scenes that load, games that switch 🚪
 
 ### 🧱 New packs and levels

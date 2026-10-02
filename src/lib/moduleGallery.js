@@ -1,5 +1,5 @@
 import { writable } from 'svelte/store';
-import { contentBase } from './contentBase';
+import { contentBase, fetchIndex, onContentStale } from './contentBase';
 
 // 17-A3: the module gallery — a Browse tab in ModulesManager listing the
 // community modules repo (github.com/theprototype-app/modules) off its
@@ -56,13 +56,17 @@ function normalizeEntry(entry) {
 
 
 let loaded = false;
+// 1.19.1: an app update drops the memo, so Browse re-fetches in a tab that outlived a deploy
+onContentStale(() => {
+	loaded = false;
+});
 /** Fetch + normalize the gallery index (once per session; force re-fetches).
  * @param {boolean=} force */
 export async function loadModuleGallery(force = false) {
 	if (loaded && !force) return;
 	galleryState.set('loading');
 	try {
-		const response = await fetch(`${MODULES_BASE}/index.json`);
+		const response = await fetchIndex(`${MODULES_BASE}/index.json`);
 		if (!response.ok) throw new Error('index.json ' + response.status);
 		const list = await response.json();
 		galleryModules.set((Array.isArray(list) ? list : []).map(normalizeEntry).filter(Boolean));

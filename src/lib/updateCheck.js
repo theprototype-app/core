@@ -4,6 +4,7 @@
 // per browser session. No modal, no peer blocking, no backup nag; dev skips.
 import { APP_VERSION, IS_DEV } from './version.js';
 import { showToast } from '../stores/appStore.js';
+import { markContentStale } from './contentBase.js';
 
 const SHOWN_KEY = 'updateToastShown';
 const POLL_MS = 15 * 60 * 1000;
@@ -16,6 +17,9 @@ async function poll() {
 		if (!res.ok) return;
 		const remote = await res.json();
 		if (!remote?.version || remote.version === APP_VERSION) return;
+		// 1.19.1: a deploy usually ships with new content — drop the index memos so the
+		// General tab / packs / Browse re-fetch on next open even before the user reloads
+		markContentStale();
 		sessionStorage.setItem(SHOWN_KEY, 'true');
 		showToast('New version ' + remote.version + ' available — reload to update.', [
 			{ label: 'Reload', action: () => location.reload() }

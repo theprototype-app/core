@@ -7,7 +7,7 @@ import { serializeNode, serializeEdge, sendNodes } from './nodesHandler';
 import { parkAnimatedAtBase } from './flowRuntime';
 import { stripEditOverlays } from './editOverlays';
 import { isPristinePackRef, stubElementOf, stubNodeCount, fillPackRef, warmPrograms } from './packRefs';
-import { beginLoad, endLoad, progress, slice, updateLoad, onCancel, isLive, LoadCancelled, throttledPoke, holdFrames, releaseFrames, nextFrames } from './sceneLoader';
+import { beginLoad, endLoad, progress, slice, updateLoad, onCancel, isLive, LoadCancelled, throttledPoke, holdFrames, releaseFrames, nextFrames, within, WARM_WAIT_MS } from './sceneLoader';
 // B7: a spawner's copies exist only while the world runs — never in a scene file
 import { isTransient } from './transientObjects';
 import {
@@ -1362,7 +1362,7 @@ async function applySessionNow(payload, opts, job) {
 	// to themselves. Then hold again for the build. (Measured on a CPU x6 phone: env and post
 	// links together on one frame were the last tasks over 200 ms.)
 	holdFrames();
-	await warmPrograms(get(globalScene));
+	await within(warmPrograms(get(globalScene)), WARM_WAIT_MS);
 	if (!isLive(job)) {
 		releaseFrames();
 		return;
@@ -1430,7 +1430,7 @@ async function applySessionNow(payload, opts, job) {
 	}
 	pokeScene();
 	// the objects this load built (kit pieces warm themselves as their packs land) — then draw
-	await warmPrograms(group);
+	await within(warmPrograms(group), WARM_WAIT_MS);
 	releaseFrames();
 	// animated imports come back from their original bytes (mixers rebuilt, peers
 	// reparse the same file) and authored tracks from the payload

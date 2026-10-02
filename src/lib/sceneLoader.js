@@ -201,6 +201,19 @@ export async function nextFrames(n = 2) {
 		});
 }
 
+/** How long a load waits for a program warm-up before going on regardless. */
+export const WARM_WAIT_MS = 1200;
+
+/**
+ * Wait for `promise`, but never longer than `ms`: the work it stands for carries on either way.
+ * A program warm-up on a slow driver (software GL links a program in hundreds of ms) must
+ * delay a load by a bounded moment, never by however long the driver takes.
+ * @param {Promise<any>} promise @param {number} ms
+ */
+export function within(promise, ms) {
+	return Promise.race([promise, new Promise((resolve) => setTimeout(resolve, ms))]);
+}
+
 let nextId = 0;
 /** @type {LoadJob | null} */
 let current = null;

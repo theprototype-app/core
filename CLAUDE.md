@@ -5241,6 +5241,19 @@ override for e2e — never share 5173 (the user's main-checkout server).
   locked (replicate the INDEX per-item opt-in; ONE mesh with scenes as tags;
   scene-is-primary renaming), and the vocabulary settled: **session = the mesh, room =
   who is in a scene, PocketBase rooms stay DISCOVERY** — that naming blocks R4.
+- Status (2026-10-02): **1.19.0 "Doors that open, scenes that load, games that switch" — ROADMAP 33, integrated + released
+  by lane `33-integrate`** (releases delegated by the owner; acceptance test: cloud
+  `plans/core/lanes/33/user-feedback-2026-10-01b.md`). Merged core #258 editor-ui · #257 lod-editor · #259 anim-core ·
+  #261 scene-load · #263 scene-switch · #260 games · #255 untangle-core · #262 scenes (lod-editor's resolved copies for
+  the anim-core conflicts; scene-switch's notes for `applySession`); modules #29 (untangle 2.4.0); packs #11 #8 #10 #9 #12
+  (four new kits, flicker fix, LODs). Integrate additions: the card actually titled "Architecture shell" rebuilt from the
+  kits (author-templates `remote: false` keeps the greybox as the offline seed), four suites taught about the union
+  (sliced loads, clock-based phase, three pages on the GPU, an exact "Restore"), the phone quality toast says "Use full
+  quality", packs ship `defight-report.json` + refreshed kit reports. Gates: svelte-check 332/47 (ratcheted), vitest 464,
+  build green; ~75 core suites + 31 modules flights + flicker 222/222 (STEPS=8 — the probe's limit is calibrated there;
+  its default 48 reads 3-6x higher on 1.18.0 too) green on the union; preview proof 211/0 + round-33 items 58/0.
+  Not regressions (A/B'd on 1.18.0): modes-audit "football play", sabers 10/2. OWED on device: the list in the cloud
+  roadmap-33 master.
 - Status (2026-10-01): **1.18.0 PREVIEW — ROADMAP 31 "the second Quest round", integrated on `feat/1.18`
   (lane `31-integrate`), HELD AT THE RELEASE GATE** (https://preview-1-18.theprototype.pages.dev, core a896b27, modules
   dev 3c9bf77, scenes `preview-1-18` 35addc4, packs a39280a). Merged core #253 vr-core (K1 K2) · #251 game-shell (K3) ·

@@ -5,6 +5,88 @@
      per release, newest first. HTML comments like this one are stripped before
      rendering, so maintainer notes stay out of the user-facing window. -->
 
+## 1.19.0 — Doors that open, scenes that load, games that switch 🚪
+
+### 🧱 New packs and levels
+
+- 📦 **Four new packs**: **Interiors** (furniture, kitchen, bar, lights and wall trims that snap to the
+  architecture walls), **Town & Market** (seamless street tiles, a fountain, stalls, a clock tower, an
+  opening garden gate), **Interactive** (doors WITH their frames, gates, a portcullis, a trapdoor,
+  shutters, chests, drawers, a lever, a pressure plate, an ambient banner, torch and fan) and
+  **Arcane Study** (a wizard's hero props).
+- 🏰 **Two new example levels** in Templates ▸ General — the **Wizard's Tower** (alchemy lab, study,
+  bedchamber, a roof telescope) and **Market Town Square** (fountain, stalls, a bakery you walk into) —
+  and the **Tavern Interior** rebuilt: its doors open, it is furnished from the Interiors kit and it
+  stands on a street. The **Architecture shell** template is built from the kits too, with a door
+  that opens.
+- 🧊 **No more flicker** on kit pieces while you move around (the modular block and twelve others).
+
+### 🚪 Things that move, only when asked
+
+- 🚪 **Doors, lids and levers work** in Interact and Play: click (or point the VR laser, poke, or knock)
+  and a door swings open with a sound, and you can walk through; click again and it shuts. Everyone in
+  the session sees the same door. A sliding door can open as you walk up to it.
+- 🛑 **Nothing animates by itself any more.** Placing or loading an animated model no longer starts it
+  looping; only ambient pieces (a banner, a fan, a torch) move, and only in Interact/Play. The
+  Animation panel can preview a clip in Edit without changing the scene. Animated pack items carry a
+  small ▶ badge in the Explorer.
+
+### 🔭 Levels of detail, like a pro tool
+
+- 🔭 **Every pack object has LODs**, and far-away pieces draw with far fewer triangles.
+- 🎚️ **Properties ▸ LOD**: a level bar whose edges you drag, Force LOD, select a level to preview and
+  move it, replace a level with another object, generate levels, a "Show LOD level" overlay — and a
+  LOD row in the VR properties panel.
+- 🧮 **Kit levels draw far fewer calls**: every copy of a pack piece is drawn in one go (Settings ▸
+  Performance ▸ Draw repeated kit pieces together) — the Tavern went from 394 to ~135 draw calls in a
+  headset.
+
+### ⏳ Scenes that load without freezing
+
+- ⏳ **Opening and restoring big scenes no longer freezes the app**: a progress bar with Cancel, pieces
+  stream in, and the autosave of a kit level is ~50× smaller (Castle Courtyard's restore on a phone
+  went from a 90-second freeze to a responsive load).
+- 🔁 **Opening another scene asks whether to keep the modules** the last one brought (Settings ▸ Scene:
+  Ask, Keep or Unload). **Clear scene** asks too: clear the objects, or everything including the game
+  setup and its modules. One game no longer leaks its music, gun, menu or spawn into the next.
+
+### 🎮 The games
+
+- 🙌 **Towers: two hands, two blocks** — hold a block in each hand; letting go of one never freezes
+  the other.
+- 📱 **Stars Room on phones**: phones start at a lighter quality (half the draw calls and render
+  passes), so it no longer lags.
+- 🪢 **Untangle 2.4.0**: in VR push the stick up/down to send the board or the held globe away or bring
+  it closer (as with an object in Edit); the level picker and the Globe / 2D tabs show over the menu
+  board.
+- 🔤 **Crisper VR menus** (the game board and the wrist card render at full headset resolution) and
+  the menu's **Menu / Top strip** buttons fit inside the board in every game.
+
+### 🛠️ Editor
+
+- 🧰 **Toolbar order**: Move, Rotate, Scale, **Interact**, **Play**, Object list, Node editor,
+  Explorer, Animation. The Interact button no longer shows a red border on click or leaves two
+  un-highlighted corners beside Play.
+- ✋ **Edit inside a game**: every object can be moved while a game runs — a dropped body stays where
+  you put it until you leave Edit. In VR, select a wall or floor first to grip it.
+- 📈 **FPS and draw calls** as a setting (Settings ▸ Interface ▸ Viewport, and in VR): fps, frame
+  time, draw calls (amber above 120, red above 150 — the Quest budget) and triangles.
+- 🕹️ **VR stick push/pull**: holding the world with one grip, the stick sends it away or brings it
+  closer, as with an object in Edit.
+
+### 🩹 Fixes
+
+- 🚶 In Play the walker no longer bumps into pass-through objects (grass, flowers, rugs); an open
+  garden gate lets you through.
+- 🚪 A door or chest from a pack saves as a reference to its pack file (a few hundred bytes instead of
+  up to 1.4 MB).
+
+### 🧩 For module makers
+
+- `api.behavior` (list / state / trigger functional items) · `api.lod` handles gain `force(n)` and
+  `levels()` · `api.claimInput('sticks')` · `addSetting({..., onLevels: true})` · `api.inScene()`
+  (false while your module is left behind by a scene switch).
+
 ## 1.18.0 — Menus, levels and smooth frames in a headset 🥽
 
 ### ⏸️ Every game has a real menu

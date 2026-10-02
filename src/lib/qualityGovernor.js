@@ -76,7 +76,7 @@ export const autoQuality = writable(safeStorage.getItem('autoQuality') !== 'fals
 
 /** A decision is taken at most this often; the frames themselves are noted every frame. */
 const DECIDE_EVERY_MS = 250;
-/** "Restore full quality" means it: no automatic step for this long afterwards. */
+/** "Use full quality" (the toast; the chip says "restore full quality") means it: no automatic step for this long afterwards. */
 export const RELEASE_SNOOZE_MS = 60000;
 
 const governor = createGovernor();

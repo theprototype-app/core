@@ -579,7 +579,9 @@
 			qualityToasted = true;
 			untrack(() =>
 				showQualityToast('Quality reduced — this scene is heavy for this device (' + q.labels.join(', ').toLowerCase() + '). It comes back on its own.', [
-					{ label: 'Restore full quality', action: () => releaseQuality() },
+					// 33 integrate: not "Restore …" — on a phone this toast now shows on every load, beside the
+					// session's own "Restore" (the L1 Restore path), and a tap on the wrong one undid the phone fix
+					{ label: 'Use full quality', action: () => releaseQuality() },
 					{ label: 'Keep it', action: () => pinQuality() }
 				])
 			);

@@ -451,6 +451,33 @@
 	);
 	const windowRows = $derived(virtualising ? treeRows.slice(windowStart, windowEnd) : []);
 
+	// 33 L1: the plain tree MOUNTS IN CHUNKS when it jumps. Under the virtualisation threshold
+	// every row is a component instance, and a scene load (Castle Courtyard: 182 pieces) handed
+	// the list all of them in one poke — measured as the longest task left in a load on a CPU x6
+	// phone (434-565 ms of row mounting). Rows beyond `rowsMounted` arrive a few frames later;
+	// a list that shrinks (a clear) starts the next load over from the first chunk.
+	const ROWS_FIRST = 40;
+	const ROWS_PER_FRAME = 16;
+	let rowsMounted = $state(ROWS_FIRST);
+	const plainRows = $derived(
+		$objectsGroup ? $objectsGroup.children.filter((c: any) => !c.userData?.__localOnly) : []
+	);
+	let growFrame = 0;
+	$effect(() => {
+		const total = plainRows.length;
+		if (total <= rowsMounted) {
+			if (rowsMounted > Math.max(ROWS_FIRST, total)) rowsMounted = Math.max(ROWS_FIRST, total);
+			return;
+		}
+		if (growFrame) return;
+		const grow = () => {
+			growFrame = 0;
+			rowsMounted = Math.min(plainRows.length, rowsMounted + ROWS_PER_FRAME);
+			if (rowsMounted < plainRows.length) growFrame = requestAnimationFrame(grow);
+		};
+		growFrame = requestAnimationFrame(grow);
+	});
+
 	/** Find the real scrolling ancestor by SCROLLABILITY, never by class name — the
 	 * scroller is flowbite's `Listgroup`, whose element we do not own (the deep-link
 	 * ruling in Section.svelte, same reason). */
@@ -2419,7 +2446,7 @@
 						{/each}
 						<div style={'height:' + (treeRows.length - windowEnd) * rowH + 'px'} aria-hidden="true"></div>
 					{:else if $objectsGroup.children.length > 0}
-						{#each $objectsGroup.children.filter((/** @type {any} */ c) => !c.userData?.__localOnly) as element}
+						{#each plainRows.slice(0, rowsMounted) as element}
 						<Objects {element} />
 						{/each}
 					{/if}

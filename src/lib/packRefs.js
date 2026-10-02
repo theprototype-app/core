@@ -7,10 +7,11 @@ import { DRACOLoader } from 'three/addons/loaders/DRACOLoader.js';
 // @ts-ignore
 import { MeshoptDecoder } from 'three/addons/libs/meshopt_decoder.module.js';
 import { writable, get } from 'svelte/store';
-import { objectsGroup, pokeScene } from '../stores/sceneStore';
+import { objectsGroup, pokeScene, globalRenderer, globalCamera, globalScene } from '../stores/sceneStore';
 import { showToast } from '../stores/appStore';
 import { PACKS_BASE } from './packs';
 import { hashBytes } from './explorer';
+import { schedule } from './sceneLoader';
 
 // 30c — KIT REFERENCES: a pack piece in a scene is a REFERENCE, not a copy.
 //
@@ -48,7 +49,7 @@ import { hashBytes } from './explorer';
 // commandsHandler import this; nothing here reaches back.
 
 /**
- * @typedef {{pack: string, item: string, path: string, hash?: string, kids?: string[]}} PackRef
+ * @typedef {{pack: string, item: string, path: string, hash?: string, kids?: string[], box?: number[]}} PackRef
  */
 
 /** How many refills are in flight — the author script and the suite wait on it.
@@ -67,6 +68,9 @@ const sharedTextures = new Map();
 /** root uuid -> its refill, so two scans never fill one root twice
  * @type {Map<string, Promise<boolean>>} */
 const filling = new Map();
+/** roots hollowed for an autosave export this very moment — never refilled meanwhile
+ * @type {WeakSet<any>} */
+const parkedRoots = new WeakSet();
 /** urls already reported as unreachable (one toast per piece, not per copy) */
 const reported = new Set();
 
@@ -189,6 +193,7 @@ export function loadPackTemplate(url) {
 			const scene = gltf.scene;
 			scene.updateMatrixWorld(true);
 			fingerprints.set(hash, fingerprintOf(scene));
+			await warmTemplate(scene);
 			return { hash, scene };
 		})();
 		templates.set(url, job);
@@ -227,6 +232,110 @@ export function loadPackFile(url) {
 	return job;
 }
 
+/** a 1x1 target that stands in for the composer's while compiling @type {any} */
+let warmTarget = null;
+
+/**
+ * 33 L1: upload a piece's textures and link its programs BEFORE its copies are on screen.
+ * Otherwise the first frame that draws a new piece does both inside the render call — on a
+ * phone that one frame was the longest task of a whole load. `initTexture` is one upload per
+ * scheduled slice; the programs go through `warmPrograms`.
+ * @param {any} scene
+ */
+async function warmTemplate(scene) {
+	/** @type {any} */
+	const renderer = get(globalRenderer);
+	if (!renderer || renderer.xr?.isPresenting) return;
+	const textures = new Set();
+	scene.traverse((/** @type {any} */ node) => {
+		if (!node.isMesh) return;
+		for (const material of Array.isArray(node.material) ? node.material : [node.material])
+			for (const slot of MAP_SLOTS) if (material?.[slot]) textures.add(material[slot]);
+	});
+	try {
+		for (const texture of textures) await schedule(() => renderer.initTexture(texture));
+	} catch {
+		/* the first frame uploads instead */
+	}
+	await warmPrograms(scene);
+}
+
+/**
+ * 33 L1: compile every material under `root` for the live scene, and take each program's FIRST
+ * USE, all a slice at a time — so the frames that follow find their programs linked.
+ *
+ * BOTH variants: three keys a program by its OUTPUT too — drawn straight to the canvas it
+ * tone-maps and encodes sRGB, drawn into a render target (the post-processing composer: the
+ * editor's outline, the scene look) it does neither, and Outline.svelte switches between the
+ * two per frame. One BATCH of twins per slice (a whole-scene `compile` is itself a long task).
+ * Then `getUniforms` per program: three reads the link result there, and without the
+ * parallel-compile extension that read WAITS for the link — measured as 100-270 ms of first-use
+ * links inside the first frame that drew a loaded scene, with the programs already created. It
+ * is a cached no-op for a program already used. Best effort: a failure means the first frame
+ * compiles, as it always did.
+ * @param {any} root
+ */
+export async function warmPrograms(root) {
+	/** @type {any} */
+	const renderer = get(globalRenderer);
+	const camera = get(globalCamera);
+	const target = get(globalScene) ?? null;
+	if (!renderer || !camera || !root || renderer.xr?.isPresenting || typeof renderer.compile !== 'function') return;
+	/** @type {any[]} */
+	const drawables = [];
+	root.traverse((/** @type {any} */ node) => {
+		if ((node.isMesh || node.isLine || node.isPoints || node.isSprite) && node.material) drawables.push(node);
+	});
+	// BATCHED through TWINS. `compile(object, camera, scene)` walks the whole target scene for its
+	// lights on every call, so one call per mesh was quadratic (1200 meshes = 1200 walks of 1200
+	// nodes). A plain mesh's program depends on its material, geometry attributes and the
+	// scene, not on which Object3D holds them — so a throwaway Mesh sharing the SAME geometry and
+	// material prepares the real material, and a batch of them compiles in one walk. Skinned and
+	// instanced meshes (whose object IS part of the key) and anything else compile as themselves.
+	const BATCH = 48;
+	/** @type {any[][]} */
+	const batches = [];
+	/** @type {any[]} */
+	let twins = [];
+	for (const node of drawables) {
+		if (node.isMesh && !node.isSkinnedMesh && !node.isInstancedMesh && !node.isBatchedMesh && node.constructor === THREE.Mesh) {
+			twins.push(node);
+			if (twins.length === BATCH) {
+				batches.push(twins);
+				twins = [];
+			}
+		} else batches.push([node]);
+	}
+	if (twins.length) batches.push(twins);
+	try {
+		if (!warmTarget) warmTarget = new THREE.WebGLRenderTarget(1, 1);
+		for (const batch of batches)
+			await schedule(() => {
+				/** @type {any} */
+				let subject = batch[0];
+				if (batch.length > 1 || batch[0].constructor === THREE.Mesh) {
+					subject = new THREE.Group();
+					for (const node of batch) {
+						const twin = new THREE.Mesh(node.geometry, node.material);
+						twin.matrixAutoUpdate = false;
+						subject.add(twin);
+					}
+				}
+				renderer.compile(subject, camera, target);
+				const previous = renderer.getRenderTarget();
+				renderer.setRenderTarget(warmTarget);
+				try {
+					renderer.compile(subject, camera, target);
+				} finally {
+					renderer.setRenderTarget(previous);
+				}
+			});
+		for (const program of [...(renderer.info?.programs ?? [])]) await schedule(() => program.getUniforms?.());
+	} catch {
+		/* the first frame compiles instead */
+	}
+}
+
 // ---- the fingerprint ---------------------------------------------------------
 
 /** Seven significant digits, and anything under 1e-6 is zero — a GLTF round trip turns a
@@ -250,6 +359,10 @@ function checksum(array) {
 
 /** @param {any} geometry */
 function geometryKey(geometry) {
+	// NOT cached (33 L1 tried a cache keyed by buffer versions and pack-refs caught it): an
+	// in-place vertex move that has not been flagged needsUpdate yet would read as pristine and
+	// save an EDITED piece as a stub, i.e. lose the edit on reload. Correctness over the
+	// checksum's cost — which is still a fraction of the full-geometry export it replaced.
 	if (!geometry?.attributes) return '-';
 	const names = Object.keys(geometry.attributes).sort();
 	const parts = names.map((name) => {
@@ -392,6 +505,30 @@ function descendantUuids(root) {
 }
 
 /**
+ * 33 L1: a piece's bounds in its ROOT's own frame, [minX, minY, minZ, maxX, maxY, maxZ] to
+ * the millimetre — carried on the reference (`packRef.box`) so a stub can be drawn as a grey
+ * block while its pack file is still on its way. Additive: a reference without one simply
+ * shows nothing until it fills, which is how every file written before 1.19 behaves.
+ * @param {any} root @returns {number[] | undefined}
+ */
+function boxOf(root) {
+	const box = new THREE.Box3();
+	const part = new THREE.Box3();
+	root.updateWorldMatrix(true, true);
+	const toRoot = new THREE.Matrix4().copy(root.matrixWorld).invert();
+	const m = new THREE.Matrix4();
+	root.traverse((/** @type {any} */ node) => {
+		if (!node.isMesh || !node.geometry) return;
+		if (!node.geometry.boundingBox) node.geometry.computeBoundingBox();
+		part.copy(node.geometry.boundingBox).applyMatrix4(m.multiplyMatrices(toRoot, node.matrixWorld));
+		box.union(part);
+	});
+	if (box.isEmpty()) return undefined;
+	const r = (/** @type {number} */ v) => Math.round(v * 1000) / 1000;
+	return [r(box.min.x), r(box.min.y), r(box.min.z), r(box.max.x), r(box.max.y), r(box.max.z)];
+}
+
+/**
  * Stamp a freshly imported pack piece BEFORE it replicates: its reference, its children's
  * uuids, and — since it IS the file right now — the pristine fingerprint for its hash.
  * @param {any} root @param {PackRef} ref @param {string} hash the bytes it was parsed from
@@ -399,7 +536,7 @@ function descendantUuids(root) {
 export function stampPackRef(root, ref, hash) {
 	if (!root || !ref) return;
 	root.updateMatrixWorld(true);
-	root.userData = { ...(root.userData ?? {}), packRef: { pack: ref.pack, item: ref.item, path: ref.path, hash, kids: descendantUuids(root) } };
+	root.userData = { ...(root.userData ?? {}), packRef: { pack: ref.pack, item: ref.item, path: ref.path, hash, kids: descendantUuids(root), box: boxOf(root) } };
 	if (hash && !fingerprints.has(hash)) fingerprints.set(hash, fingerprintOf(root));
 }
 
@@ -436,9 +573,60 @@ export function stubElementOf(root) {
 	hollow.renderOrder = root.renderOrder;
 	hollow.layers.mask = root.layers.mask;
 	const kids = root.userData.packStub ? ref.kids ?? [] : descendantUuids(root);
-	hollow.userData = JSON.parse(JSON.stringify({ ...root.userData, packRef: { ...ref, kids }, packStub: true }));
+	const box = ref.box ?? (root.userData.packStub ? undefined : boxOf(root));
+	hollow.userData = JSON.parse(JSON.stringify({ ...root.userData, packRef: { ...ref, kids, box }, packStub: true }));
 	hollow.updateMatrix();
 	return hollow.toJSON();
+}
+
+/**
+ * 33 L1 — THE AUTOSAVE WRITES KIT PIECES AS STUBS TOO. 30c kept the autosave's GLTF FULL,
+ * and that is what made Restore hang: Castle Courtyard's snapshot measured 51 MB (every
+ * piece's geometry, its textures as PNG data URIs), right at the 50 MB cap — a bigger level
+ * would silently get no crash recovery at all — and restoring it parsed all of that, then
+ * serialized every child again for the wire. The export has no per-child filter (the
+ * transient-objects ritual says the same), so a pristine piece is HOLLOWED for the export:
+ * its children detached, `packStub` set and its kids recorded, exactly the shape
+ * `stubElementOf` writes for a save, and put back afterwards. The restore refills it from
+ * the pack like any other stub (the browser has the file cached from the session it
+ * came from); an unreachable pack keeps the stub and says so, never dropping the piece.
+ * @param {any} group the tree about to be exported
+ * @returns {() => void} the unpark, to run once the export has read the tree
+ */
+export function parkPackPieces(group) {
+	/** @type {{root: any, children: any[], userData: any}[]} */
+	const parked = [];
+	if (!group) return () => {};
+	/** @type {any[]} */
+	const roots = [];
+	group.traverse((/** @type {any} */ node) => {
+		if (node !== group && packRefOf(node) && !node.userData.packStub && node.children.length) roots.push(node);
+	});
+	for (const root of roots) {
+		// a piece nested inside another piece is parked with its ancestor
+		if (parked.some((p) => p.children.some((c) => c === root || isAncestor(c, root)))) continue;
+		if (!isPristinePackRef(root)) continue;
+		const userData = root.userData;
+		const ref = /** @type {PackRef} */ (packRefOf(root));
+		const children = [...root.children];
+		root.userData = { ...userData, packRef: { ...ref, kids: descendantUuids(root), box: ref.box ?? boxOf(root) }, packStub: true };
+		for (const child of children) root.remove(child);
+		parkedRoots.add(root);
+		parked.push({ root, children, userData });
+	}
+	return () => {
+		for (const { root, children, userData } of parked) {
+			parkedRoots.delete(root);
+			for (const child of children) root.add(child);
+			root.userData = userData;
+		}
+	};
+}
+
+/** @param {any} ancestor @param {any} node */
+function isAncestor(ancestor, node) {
+	for (let up = node.parent; up; up = up.parent) if (up === ancestor) return true;
+	return false;
 }
 
 /** How many nodes a stub stands for (the root + what it refills to), for object budgets.
@@ -468,13 +656,66 @@ function instanceOf(scene) {
 }
 
 /**
+ * The synchronous half of a refill: clone the parsed piece and hang its children under the
+ * stub. Returns false when the stub was replaced (a clear, a reload of the same file) or
+ * filled while the template was on its way.
+ * @param {any} root @param {PackRef} ref @param {string} hash @param {any} scene
+ */
+function attachCopy(root, ref, hash, scene) {
+	if (!root.userData.packStub || root.children.length || parkedRoots.has(root)) return false;
+	// still in the scene? (an ancestor walk, not a tree search per piece)
+	const group = get(objectsGroup);
+	let up = root.parent;
+	while (up && up !== group) up = up.parent;
+	if (!group || up !== group) return false;
+	const copy = instanceOf(scene);
+	/** @type {any[]} */
+	const nodes = [];
+	copy.traverse((/** @type {any} */ node) => {
+		if (node !== copy) nodes.push(node);
+	});
+	const kids = Array.isArray(ref.kids) ? ref.kids : [];
+	// a stub that lost its kids (a merge import re-uuids the tree) still has to give
+	// every peer the SAME child uuids: derive them from the root's
+	nodes.forEach((node, i) => {
+		node.uuid = typeof kids[i] === 'string' && kids[i] ? kids[i] : derivedUuid(root.uuid, i);
+	});
+	const hideShadow = root.userData.shadow === false;
+	for (const child of [...copy.children]) root.add(child);
+	if (hideShadow)
+		root.traverse((/** @type {any} */ node) => {
+			if (!node.isMesh) return;
+			node.castShadow = false;
+			node.receiveShadow = false;
+			node.userData.shadow = false;
+		});
+	delete root.userData.packStub;
+	root.userData.packRef = { ...ref, hash, kids: nodes.map((node) => node.uuid), box: ref.box ?? boxOf(root) };
+	pokeSoon();
+	return true;
+}
+
+/** @type {any} */
+let pokeTimer = null;
+/** 33 L1: refills poke the scene at most ~5 times a second — a castle refills 180 pieces,
+ * and every poke re-runs every objectsGroup subscriber (the object list re-renders whole).
+ * A timer, so the last refill of a burst is always announced. */
+function pokeSoon() {
+	if (pokeTimer) return;
+	pokeTimer = setTimeout(() => {
+		pokeTimer = null;
+		pokeScene();
+	}, 200);
+}
+
+/**
  * Refill a stub from its pack. Resolves true when it filled, false when it could not (or
  * is no longer in the scene, or was filled meanwhile). The children take the recorded
  * uuids, so every peer converges on the same ones.
  * @param {any} root @returns {Promise<boolean>}
  */
 export function fillPackRef(root) {
-	if (!root?.userData?.packStub) return Promise.resolve(false);
+	if (!root?.userData?.packStub || parkedRoots.has(root)) return Promise.resolve(false);
 	const ref = packRefOf(root);
 	if (!ref) return Promise.resolve(false);
 	const inflight = filling.get(root.uuid);
@@ -484,34 +725,10 @@ export function fillPackRef(root) {
 	const job = (async () => {
 		try {
 			const { hash, scene } = await loadPackTemplate(url);
-			// replaced (a clear, a reload of the same file) or filled while we fetched
-			if (!root.userData.packStub || root.children.length) return false;
-			if (get(objectsGroup)?.getObjectByProperty('uuid', root.uuid) !== root) return false;
-			const copy = instanceOf(scene);
-			/** @type {any[]} */
-			const nodes = [];
-			copy.traverse((/** @type {any} */ node) => {
-				if (node !== copy) nodes.push(node);
-			});
-			const kids = Array.isArray(ref.kids) ? ref.kids : [];
-			// a stub that lost its kids (a merge import re-uuids the tree) still has to give
-			// every peer the SAME child uuids: derive them from the root's
-			nodes.forEach((node, i) => {
-				node.uuid = typeof kids[i] === 'string' && kids[i] ? kids[i] : derivedUuid(root.uuid, i);
-			});
-			const hideShadow = root.userData.shadow === false;
-			for (const child of [...copy.children]) root.add(child);
-			if (hideShadow)
-				root.traverse((/** @type {any} */ node) => {
-					if (!node.isMesh) return;
-					node.castShadow = false;
-					node.receiveShadow = false;
-					node.userData.shadow = false;
-				});
-			delete root.userData.packStub;
-			root.userData.packRef = { ...ref, hash, kids: nodes.map((node) => node.uuid) };
-			pokeScene();
-			return true;
+			// 33 L1: every copy of one piece waits on the SAME template promise, so without
+			// this all of them clone and attach inside the one task that resolved it (a
+			// castle's walls were one 500 ms block). The scheduler runs them a slice at a time.
+			return await schedule(() => attachCopy(root, ref, hash, scene));
 		} catch (error) {
 			if (!reported.has(url)) {
 				reported.add(url);
@@ -547,15 +764,92 @@ export function packRefsSettled() {
 function scan() {
 	const group = get(objectsGroup);
 	if (!group) return;
+	/** @type {any[]} */
+	const hollow = [];
 	group.traverse((/** @type {any} */ node) => {
 		const ref = packRefOf(node);
 		if (!ref) return;
 		if (node.userData.packStub) {
-			if (!node.children.length) fillPackRef(node);
+			if (!node.children.length) {
+				fillPackRef(node);
+				if (Array.isArray(ref.box) && ref.box.length === 6 && !parkedRoots.has(node)) hollow.push(node);
+			}
 		} else if (ref.hash && !fingerprints.has(ref.hash)) {
 			loadPackTemplate(packRefUrl(ref)).catch(() => {});
 		}
 	});
+	drawPlaceholders(hollow);
+}
+
+// ---- placeholders (33 L1) ----------------------------------------------------------------
+
+const PLACEHOLDER_NAME = 'kit-placeholders';
+/** @type {any} */
+let placeholders = null;
+
+/**
+ * A grey block where each kit piece will be, while its pack file is still on its way: a load
+ * shows the level's SHAPE at once and the real pieces replace the blocks as they arrive. ONE
+ * InstancedMesh at the SCENE ROOT (golden rule 5 — never inside objectsGroup, so never saved,
+ * sent or undone), not pickable, rebuilt on each scan (which every refill's poke triggers).
+ * @param {any[]} stubs hollow stubs carrying a `packRef.box`
+ */
+function drawPlaceholders(stubs) {
+	/** @type {any} */
+	const scene = get(globalScene);
+	if (!scene) return;
+	if (!stubs.length) {
+		if (placeholders) {
+			placeholders.parent?.remove(placeholders);
+			placeholders.geometry.dispose();
+			placeholders.material.dispose();
+			placeholders = null;
+		}
+		return;
+	}
+	if (!placeholders || placeholders.userData.capacity < stubs.length) {
+		if (placeholders) {
+			placeholders.parent?.remove(placeholders);
+			placeholders.geometry.dispose();
+			placeholders.material.dispose();
+		}
+		const capacity = Math.max(32, stubs.length);
+		placeholders = new THREE.InstancedMesh(
+			new THREE.BoxGeometry(1, 1, 1),
+			new THREE.MeshStandardMaterial({ color: 0x9aa0a8, roughness: 1, metalness: 0 }),
+			capacity
+		);
+		placeholders.name = PLACEHOLDER_NAME;
+		placeholders.frustumCulled = false;
+		placeholders.raycast = () => {};
+		placeholders.userData.capacity = capacity;
+	}
+	// beside objectsGroup (in its parent — the world rig a VR world-grab moves), never in it
+	/** @type {any} */
+	const host = get(objectsGroup)?.parent ?? scene;
+	if (placeholders.parent !== host) host.add(placeholders);
+	host.updateWorldMatrix(true, false);
+	const toHost = new THREE.Matrix4().copy(host.matrixWorld).invert();
+	const m = new THREE.Matrix4();
+	const local = new THREE.Matrix4();
+	const pos = new THREE.Vector3();
+	const size = new THREE.Vector3();
+	const q = new THREE.Quaternion();
+	stubs.forEach((stub, i) => {
+		const [x0, y0, z0, x1, y1, z1] = stub.userData.packRef.box;
+		stub.updateWorldMatrix(true, false);
+		pos.set((x0 + x1) / 2, (y0 + y1) / 2, (z0 + z1) / 2);
+		size.set(Math.max(0.01, x1 - x0), Math.max(0.01, y1 - y0), Math.max(0.01, z1 - z0));
+		local.compose(pos, q, size);
+		placeholders.setMatrixAt(i, m.multiplyMatrices(toHost, stub.matrixWorld).multiply(local));
+	});
+	placeholders.count = stubs.length;
+	placeholders.instanceMatrix.needsUpdate = true;
+}
+
+/** How many grey blocks are drawn (the suite reads it). */
+export function placeholderCount() {
+	return placeholders?.parent ? placeholders.count : 0;
 }
 
 let started = false;

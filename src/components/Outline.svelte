@@ -37,6 +37,9 @@
 	import { viewPrefs } from '$lib/viewPrefs';
 	import { shadowQuality } from '$lib/lightParams';
 	import { useTask, useThrelte } from '@threlte/core';
+	import { framesHeld, registerComposerWarm, schedule } from '$lib/sceneLoader';
+	import { WebGLRenderTarget } from 'three';
+	import { tick } from 'svelte';
 	import {
 		BlendFunction,
 		EffectComposer,
@@ -387,6 +390,43 @@
 	// frozen world strapped to their face with no overlay (DOM is invisible in VR).
 	let renderIsPaused = false;
 	const stopPauseWatch = renderPaused.subscribe((value) => (renderIsPaused = !!value));
+	// 33 L1: compile the composer's pass shaders OFF-FRAME. A scene load restores its look (the
+	// post stack) and the composer would otherwise build every pass's program — the effect pass,
+	// SMAA, bloom's internal passes — inside the next frame (the last >200 ms task of a load on a
+	// CPU x6 phone). Each pass carries its own fullscreen scene + camera once `addPass` has
+	// initialised it, and an effect's internal passes hang off the effect itself. Compiled one per
+	// slice against the target that pass draws into, then each program's first use per slice.
+	let warmComposerTarget: any = null;
+	async function warmComposerPasses() {
+		await tick(); // the post document's effect rebuilds the stack first
+		if (!warmComposerTarget) warmComposerTarget = new WebGLRenderTarget(1, 1);
+		const found: any[] = [];
+		const seen = new Set<any>();
+		const visit = (pass: any) => {
+			if (!pass || typeof pass !== 'object' || seen.has(pass)) return;
+			seen.add(pass);
+			if (pass.fullscreenMaterial && pass.scene && pass.camera) found.push(pass);
+			for (const effect of pass.effects ?? [])
+				for (const value of Object.values(effect)) if ((value as any)?.fullscreenMaterial) visit(value);
+		};
+		for (const pass of (composer as any).passes ?? []) visit(pass);
+		for (const pass of found)
+			await schedule(() => {
+				const previous = renderer.getRenderTarget();
+				renderer.setRenderTarget(pass.renderToScreen ? null : warmComposerTarget);
+				try {
+					renderer.compile(pass.scene, pass.camera);
+				} finally {
+					renderer.setRenderTarget(previous);
+				}
+			});
+		for (const program of [...((renderer.info as any)?.programs ?? [])]) await schedule(() => program.getUniforms?.());
+	}
+	registerComposerWarm(warmComposerPasses);
+	onDestroy(() => {
+		registerComposerWarm(null);
+		warmComposerTarget?.dispose?.();
+	});
 	onDestroy(stopPauseWatch);
 	// 26-D THE INGEST DRAW GAP (26-E's finding): while a big received scene drains through
 	// slow frames, draw at most one frame per gap — every object's parse waits for a frame to
@@ -399,6 +439,8 @@
 	useTask(
 		(delta) => {
 			if (renderIsPaused && !renderer.xr.isPresenting) return;
+			// 33 L1: a scene load holds the last frame while its programs link off-frame (bounded)
+			if (framesHeld() && !renderer.xr.isPresenting) return;
 			if (drawGapMs > 0 && !renderer.xr.isPresenting) {
 				const drawNow = performance.now();
 				if (drawNow - lastDrawAt < drawGapMs) return;

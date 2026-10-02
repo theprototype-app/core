@@ -32,5 +32,14 @@ module.exports = {
 		['the square from the bakery', [-4.5, 0.1, -9.2], PI],
 		['inside the bakery', [-2.7, 0.1, -8.8], 0.6],
 		['the road', [-8, 0.2, 11], -1.9]
+	],
+	// 33-integrate: the two rows with no views yet (spawn first, then the heaviest look)
+	'forest-clearing': [
+		['spawn', [0, 0.35, 5], 0],
+		['the clearing looking back south', [0, 0.35, -4], PI]
+	],
+	'architecture-shell': [
+		['spawn (outside the door)', [1, 0.3, 8.6], 0],
+		['inside, the whole room', [4.6, 0.1, 3.2], 0.9]
 	]
 };

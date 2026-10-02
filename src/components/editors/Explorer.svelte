@@ -5952,7 +5952,7 @@
 		// under a second scene called "Arena.tpscene": a duplicate card per open, and a
 		// history split in two. `travelToLevel` falls back to the payload's own `name`,
 		// which is the name the scene saved itself under and the key the manifest uses.
-		await travelToLevel(item.hash, '', { private: mode === 'private' });
+		await travelToLevel(item.hash, '', { private: mode === 'private', askModules: true, freshGame: true });
 	}
 	/**
 	 * P3: open a file that lives in a MOUNTED project. Its bytes come from the saved

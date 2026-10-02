@@ -65,6 +65,7 @@ import { announce as announceBanner, clearAnnouncement } from './gameAnnounce';
 /** the ping chimes `api.playSound` still reaches (pingAudio's PING_SOUNDS ids) */
 const PING_NAMES = new Set(['ding', 'chime', 'pluck', 'bell']);
 import { runtimeSpawn, setRuntimeSpawn } from './playSettings'; // 30b P4 (a leaf)
+import { ownerInScope } from './sceneScope'; // 33 (L4): api.inScene (a leaf)
 import { spawnDesktopPlayer, currentSpawn, desktopSpawn, spawnEyePose } from './playSpawn'; // 30b P4 (a leaf)
 
 /** modules already told they hit the storage cap this session (ONE toast each, never
@@ -224,6 +225,9 @@ export const loadedModules = [];
 const messageHandlers = {};
 /** @type {Record<string, {getState: () => any, applyState: (state: any) => void}>} */
 const stateSyncs = {};
+
+/** 33 (L4): which module last started the follow camera (api.followCam) @type {string | null} */
+let followingFor = null;
 
 /** A2: per-module teardown journal — every api.register* records an undo thunk
  * here so deactivateModule() can genuinely dispose a module (the dev-mode live
@@ -416,6 +420,10 @@ function makeApi(moduleId, moduleName = moduleId) {
 	const onDispose = (fn) => disposals.push(fn);
 	/** 30b P4: setSpawn journals its clear once per module */
 	let spawnDisposeHooked = false;
+	/** 33 (L4): api.music journals its stop once per module */
+	let musicDisposeHooked = false;
+	/** 33 (L4): api.followCam journals its stop once per module */
+	let followDisposeHooked = false;
 	/** A value frozen for the undo stack, so a module mutating its patch object later
 	 * cannot rewrite history. @param {any} v */
 	const frozen = (v) => {
@@ -704,6 +712,18 @@ function makeApi(moduleId, moduleName = moduleId) {
 		onSceneClear(fn) {
 			sceneClearHandlers.push(fn);
 			onDispose(() => arrayRemove(sceneClearHandlers, fn));
+		},
+		/**
+		 * 33 (L4): does the scene on screen still count this module? False once a scene switch
+		 * LEFT IT BEHIND — the person kept it loaded, but the scene now open does not use it
+		 * (Waves kept while Towers is open). Core already keeps such a module's levels, help,
+		 * settings rows, Restart, music and spawn out of the new game; what core cannot stop is
+		 * the module's OWN drawing and listening (a gun in the hand), so a game module stands
+		 * down while this reads false. True for a module no switch has left behind (a fresh
+		 * install in a blank scene is in scope). LOCAL, read-only. @returns {boolean}
+		 */
+		inScene() {
+			return ownerInScope(moduleId);
 		},
 		/**
 		 * 30 integrate (modules DEVX #35): the editor's click mode on THIS screen —
@@ -1192,10 +1212,19 @@ function makeApi(moduleId, moduleName = moduleId) {
 		announce(text, options = {}) {
 			return announceBanner(text, options ?? {});
 		},
+		// 33 (L4): the track is OWNED by this module — `stop` only stops ours, the module's
+		// teardown stops it ("music from waves stays" after Waves was unloaded), and a module a
+		// scene switch left behind cannot start one (gameMusic + sceneScope)
 		music: {
 			/** @param {string} preset @param {{volume?: number}=} options 0..1 @returns {boolean} */
-			play: (preset, options = {}) => playGameMusic(preset, options ?? {}),
-			stop: () => stopGameMusic(),
+			play: (preset, options = {}) => {
+				if (!musicDisposeHooked) {
+					musicDisposeHooked = true;
+					onDispose(() => stopGameMusic(moduleId));
+				}
+				return playGameMusic(preset, options ?? {}, moduleId);
+			},
+			stop: () => stopGameMusic(moduleId),
 			/** the preset playing now, or null @returns {string | null} */
 			current: () => get(gameMusicState)?.preset ?? null,
 			presets: () => [...MUSIC_PRESET_IDS]
@@ -1203,9 +1232,19 @@ function makeApi(moduleId, moduleName = moduleId) {
 		/** Park the editor camera behind an object and follow it (the car's chase
 		 * cam) — LOCAL, no selection, no undo. @param {string} uuid */
 		followCam(uuid) {
-			return possessRef?.startFollowCam(uuid) ?? false;
+			const ok = possessRef?.startFollowCam(uuid) ?? false;
+			// 33 (L4): a module unloaded mid-follow must not leave the camera chasing its car
+			if (ok && !followDisposeHooked) {
+				followDisposeHooked = true;
+				onDispose(() => {
+					if (followingFor === moduleId) possessRef?.stopFollowCam();
+				});
+			}
+			if (ok) followingFor = moduleId;
+			return ok;
 		},
 		stopFollowCam() {
+			if (followingFor === moduleId) followingFor = null;
 			possessRef?.stopFollowCam();
 		},
 		/**
@@ -1380,7 +1419,7 @@ function makeApi(moduleId, moduleName = moduleId) {
 			/** 31 K3: the pause menu's Restart also runs `fn` (reset your board, respawn your
 			 * enemies). @param {() => void} fn @returns {() => void} off */
 			onRestart(fn) {
-				const off = onGameRestart(fn);
+				const off = onGameRestart(fn, moduleId);
 				onDispose(off);
 				return off;
 			},

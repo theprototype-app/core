@@ -71,3 +71,46 @@ export function showChoice(opts) {
 		});
 	});
 }
+
+/**
+ * 33 (L2/L3): the choices dialog with two optional extras — `items`, a short list the
+ * message is about (the modules a scene switch would unload), and `checkbox`, ONE option
+ * that rides the answer ("Remember my choice", "Also reset the game setup"). A choice may
+ * carry `checkedLabel`, the label it wears while the box is ticked ("Clear objects" ->
+ * "Clear everything"), so the button always says what pressing it does.
+ *
+ * Resolves `{value, checked}` for a choice, `null` for cancel / Esc / outside-close.
+ * @param {{title?: string, message: string, items?: string[], checkbox?: {label: string, checked?: boolean, hint?: string},
+ *   choices: {value: string, label: string, checkedLabel?: string, color?: string}[], cancelLabel?: string, id?: string}} opts
+ * @returns {Promise<{value: string, checked: boolean} | null>}
+ */
+export function showChoiceEx(opts) {
+	return new Promise((resolve) => {
+		/** the box state lives on the dialog record; ConfirmModal writes it through setDialogChecked */
+		const record = {
+			id: opts.id || '',
+			title: opts.title || 'Choose',
+			message: opts.message || '',
+			items: Array.isArray(opts.items) ? opts.items.map(String) : [],
+			checkbox: opts.checkbox ? { label: String(opts.checkbox.label), hint: opts.checkbox.hint ? String(opts.checkbox.hint) : '' } : null,
+			checked: !!opts.checkbox?.checked,
+			choices: opts.choices ?? [],
+			cancelLabel: opts.cancelLabel || 'Cancel',
+			resolve: (/** @type {any} */ answer) =>
+				resolve(typeof answer === 'string' && answer ? { value: answer, checked: !!record.checked } : null)
+		};
+		confirmDialog.update((previous) => {
+			if (previous?.resolve) previous.resolve(false);
+			return record;
+		});
+	});
+}
+
+/** ConfirmModal: the dialog's checkbox changed. @param {boolean} on */
+export function setDialogChecked(on) {
+	confirmDialog.update((current) => {
+		if (!current) return current;
+		current.checked = !!on;
+		return current;
+	});
+}

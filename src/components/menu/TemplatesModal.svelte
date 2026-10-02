@@ -124,7 +124,8 @@
 
 	function pickBlank() {
 		templatesModalOpen.set(false);
-		confirmClearScene();
+		// 33 (L2/L3): a NEW scene — resets the game setup and unloads the scene's modules too
+		void confirmClearScene({ blank: true });
 	}
 	/** @param {any} entry */
 	function pickEntry(entry) {

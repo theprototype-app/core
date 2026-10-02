@@ -27,7 +27,9 @@ const moverX = (page, uuid) =>
 	);
 
 h.run(async () => {
-	const browser = await h.launch();
+	// three pages (A, B and the late joiner C): the GPU backend, or the third software-GL page boots
+	// past setupPage while two others saturate SwiftShader (the 1.17 three-page gotcha)
+	const browser = await h.launch({ args: h.GPU_ARGS });
 	const A = await h.setupPage(browser, 'A');
 	const B = await h.setupPage(browser, 'B');
 	await h.connect(B, A);

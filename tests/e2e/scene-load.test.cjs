@@ -286,7 +286,8 @@ h.run(async () => {
 
 	// ---- 6. RESTORE after a reload, through the real button -------------------------------
 	await fresh({ keepRestore: true });
-	const restoreBtn = page.locator('.tp-toast-action', { hasText: 'Restore' });
+	// EXACTLY 'Restore': on a phone 33-games' quality toast also offers 'Restore full quality'
+	const restoreBtn = page.locator('.tp-toast-action', { hasText: /^\s*Restore\s*$/ });
 	await h.eventually(() => restoreBtn.count(), (n) => n > 0, '6.0 (premise) the restore prompt is up after the reload', 30000);
 	await arm(page);
 	await throttle(CPU);

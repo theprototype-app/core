@@ -2177,7 +2177,13 @@ loadable play content. Everything a user does must be visible to connected peers
   `onChange` seams (`api.flow`/`game`/`peerVars`, each returning `off()`, journalled) coalesce
   to ONE call per frame (+100 ms timer fallback) because arriving peer edits are one task each.
   `flow.onChange` also fires on the trigger log (a collected-state list changes on a fire).
-- `scripts/author-templates.cjs` (21-C C6-b): a `MODULE_DEFS` LOADER region (`football`,
+- **`scripts/templates/` — ONE FILE PER TEMPLATE (34 R4 A3).** Each def is `scripts/templates/<slug>.cjs`
+  (exports the def), shared builders beside them (`_builders.cjs` gray + graphBuilder, `_contest.cjs`,
+  `_level-kit.cjs` for the kit levels), and ONE ordered table `templates/index.cjs` (TEMPLATE_FILES +
+  MODULE_DEFS; the level list is `level-templates.cjs`'s LEVEL_FILES). `author-templates.cjs` is the RUNNER
+  (schema doc, flags, browser drive) and `level-templates.cjs` a thin loader. A new template = a new file
+  + one row. The split was proven byte-identical on the DEFS dump and on authored output.
+- `scripts/author-templates.cjs` (21-C C6-b): a `MODULE_DEFS` LOADER region (now in `templates/index.cjs`; `football`,
   `dungeon-realms`, `untangle`) read from the sibling modules checkout as
   `modules/<id>/<id>.def.json` — a template's def is OWNED BY ITS MODULE so the card and the
   module cannot drift — and an additive `thumb.sceneGroups` (scene-root module groups cloned
@@ -2487,7 +2493,7 @@ loadable play content. Everything a user does must be visible to connected peers
   (`kitMeshSource`). Excluded: selected, hidden, transparent, recoloured/edited copies; members are frustum-culled one
   by one, 128 m columns. LOCAL pref Settings ▸ Performance "Draw repeated kit pieces together" (default on). The
   Tavern went 394 -> ~135 calls in the headset analogue. `scripts/perf-levels.cjs` / `level-views.cjs` measure the
-  General-tab levels per viewpoint. The levels live in `scripts/level-templates.cjs` (six since 33: Castle, Forest,
+  General-tab levels per viewpoint. The levels live in `scripts/templates/<slug>.cjs`, listed by `scripts/level-templates.cjs` (six since 33: Castle, Forest,
   Tavern, Wizard's Tower, Market Square, and the kit Architecture shell — whose greybox stays the OFFLINE seed via the
   author-templates `remote: false` def field).
 - **ROADMAP 33 — EDITOR UI + GAMES (33-editor-ui, 33-games, 33-untangle-core)**: the default Controls bar is

@@ -1,4 +1,4 @@
-// 30c level design — the three kit levels' DEFS (scripts/level-templates.cjs), checked with
+// 30c level design — the kit levels' DEFS (scripts/level-templates.cjs -> scripts/templates/), checked with
 // no browser: every piece names a real kit item, sits on the kit's grid, every custom
 // collider fits the 1200-float cap, and each level has a spawn and a walk controller.
 import { describe, it, expect } from 'vitest';
@@ -108,8 +108,13 @@ describe('level templates', () => {
 	});
 
 	it('are deterministic (a re-author writes the same layout)', () => {
-		delete require.cache[require.resolve('../../scripts/level-templates.cjs')];
+		// 34 R4 (A3): a level is one file under scripts/templates/ — drop every one of them from
+		// the cache too, or the re-require hands back the SAME objects and proves nothing
+		for (const key of Object.keys(require.cache))
+			if (key.includes(path.join('scripts', 'templates')) || key.endsWith('level-templates.cjs')) delete require.cache[key];
 		const again = require('../../scripts/level-templates.cjs').LEVEL_DEFS;
+		expect(again).not.toBe(LEVEL_DEFS);
+		expect(again[0]).not.toBe(LEVEL_DEFS[0]);
 		expect(JSON.stringify(again)).toBe(JSON.stringify(LEVEL_DEFS));
 	});
 });

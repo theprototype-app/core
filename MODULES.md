@@ -430,8 +430,11 @@ api.onInput((kind, code) => {});        // 'down'/'up' events; returns unsubscri
 // pause the HOST's use of an input scope while your module drives:
 //   'keys'       — WASD camera fly + play-mode movement
 //   'locomotion' — VR left-stick locomotion
+//   'sticks'     — (1.19) BOTH VR sticks: left-stick move, right-stick snap/smooth turn + teleport
+//                  (a held thing reeled on Y and scaled on X, the way an Edit grab does)
 api.claimInput('keys');                 // ALWAYS release when your mode ends
 api.releaseInput('keys');
+const sticksOk = api.claimInput('sticks') === true; // true = this core knows the scope (older: undefined)
 
 // reading a keydown YOURSELF (a toolbox's own handler)? resolve the key the way the
 // editor does — `event.key` when it is an ASCII letter/digit, the physical
@@ -728,6 +731,8 @@ api.game.addSetting?.({
 	onChange: (v) => setBoard(v)
 });
 setBoard(api.game.setting?.('board') ?? 'globe');            // the stored choice at load
+// (1.19) a CHOICE that decides which levels you see: `onLevels: true` also draws it as tabs
+// above the Levels page's grid (desktop + headset) — Untangle's Board [Globe] [2D board]
 api.game.setSetting?.('board', '2d');                        // your in-game button writes the same row
 api.game.onSettingsChange?.((values) => console.log(values.board, values.sfx));
 ```

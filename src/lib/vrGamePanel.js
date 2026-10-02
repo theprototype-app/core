@@ -51,6 +51,7 @@ import {
 	shellMenuItems,
 	gameLevels,
 	shellSettingViews,
+	shellLevelTabs,
 	shellPageTitle,
 	shellGameName,
 	shellHelpLines,
@@ -481,6 +482,8 @@ function shellModel() {
 		subtitle: shellGameName(),
 		items: shellMenuItems({ vr: true }),
 		levels: levels ? { list: levels.list, current: levels.current } : null,
+		tabs: shellLevelTabs(), // 33 (G3)
+		levelPage: menu.levelPage ?? null,
 		settings: shellSettingViews({ vr: true }),
 		help: shellHelpLines({ vr: true })
 	};

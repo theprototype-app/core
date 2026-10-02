@@ -56,12 +56,12 @@ function emit(kind, code) {
  * @type {import('svelte/store').Writable<string[]>} */
 export const inputClaims = writable([]);
 
-/** Is a scope currently claimed by any module? @param {'keys'|'locomotion'} scope */
+/** Is a scope currently claimed by any module? @param {'keys'|'locomotion'|'sticks'} scope */
 export function isClaimed(scope) {
 	return get(inputClaims).includes(scope);
 }
 
-/** @param {'keys'|'locomotion'} scope */
+/** @param {'keys'|'locomotion'|'sticks'} scope */
 // 21-E3: REFCOUNTED. The claim set used to be a plain membership list, so two
 // claimers of the same scope (a HUD menu + a module possess) dropped each other:
 // the first release removed the scope for both. editorNavigation refused to claim
@@ -78,7 +78,7 @@ export function claimInput(scope) {
 	if (next === 1) inputClaims.update((list) => (list.includes(scope) ? list : [...list, scope]));
 }
 
-/** @param {'keys'|'locomotion'} scope */
+/** @param {'keys'|'locomotion'|'sticks'} scope */
 /** @param {string} scope */
 export function releaseInput(scope) {
 	const next = Math.max(0, (claimCounts.get(scope) ?? 0) - 1);

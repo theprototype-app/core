@@ -36,18 +36,19 @@ import { leftBehindModules, ownerInScope } from './sceneScope';
 
 /** @typedef {'main' | 'levels' | 'settings' | 'help'} ShellPage */
 
-/** The menu: open, and which page. LOCAL. @type {import('svelte/store').Writable<{open: boolean, page: ShellPage}>} */
-export const shellMenu = writable({ open: false, page: /** @type {ShellPage} */ ('main') });
+/** The menu: open, which page, and (33) the headset's page of the level grid — null = the page
+ * holding the current level. LOCAL. @type {import('svelte/store').Writable<{open: boolean, page: ShellPage, levelPage?: number | null}>} */
+export const shellMenu = writable({ open: false, page: /** @type {ShellPage} */ ('main'), levelPage: /** @type {number | null} */ (null) });
 
 /** @param {ShellPage} [page] */
 export function openShellMenu(page = 'main') {
 	if (!shellMenuAvailable()) return false;
-	shellMenu.set({ open: true, page: normalizePage(page) });
+	shellMenu.set({ open: true, page: normalizePage(page), levelPage: null });
 	debug.opens++;
 	return true;
 }
 export function closeShellMenu() {
-	if (get(shellMenu).open) shellMenu.set({ open: false, page: 'main' });
+	if (get(shellMenu).open) shellMenu.set({ open: false, page: 'main', levelPage: null });
 }
 /** @returns {boolean} open after the toggle */
 export function toggleShellMenu() {
@@ -59,7 +60,7 @@ export function toggleShellMenu() {
 }
 /** @param {ShellPage} page */
 export function showShellPage(page) {
-	shellMenu.update((m) => ({ ...m, page: normalizePage(page) }));
+	shellMenu.update((m) => ({ ...m, page: normalizePage(page), levelPage: null }));
 }
 /** @param {any} page @returns {ShellPage} */
 function normalizePage(page) {
@@ -390,6 +391,28 @@ export function shellSettingViews(opts = {}) {
 }
 
 /**
+ * 33 (G3): the game's choices drawn as TABS above the Levels page (a setting registered with
+ * `onLevels: true` — Untangle's Board: Globe / 2D board), with the option on now. Both
+ * renderers read it. @returns {{id: string, label: string, options: {value: string, label: string}[], value: string}[]}
+ */
+export function shellLevelTabs() {
+	const values = get(gameSettingValues);
+	return get(gameSettingRows)
+		.filter((row) => row.onLevels && row.type === 'choice')
+		.map((row) => ({
+			id: row.id,
+			label: row.label,
+			options: (row.options ?? []).map((o, i) => ({ value: o, label: String(row.optionLabels?.[i] ?? o) })),
+			value: String(values[row.id] ?? row.default)
+		}));
+}
+
+/** 33: the headset's level grid shows page `n` (0-based; clamped where it is drawn). @param {number} n */
+export function showLevelPage(n) {
+	shellMenu.update((m) => ({ ...m, levelPage: Math.max(0, Math.floor(Number(n) || 0)) }));
+}
+
+/**
  * Step a setting the way a controller does: a toggle flips, a choice walks (dir ±1,
  * wrapping), a range moves by its step (clamped). Returns the new value.
  * @param {string} id @param {number} [dir]
@@ -442,6 +465,19 @@ export function pressShellHit(hitId) {
 	if (parts[1] === 'item') return runShellItem(parts.slice(2).join(':'));
 	if (parts[1] === 'back') return runShellItem('back');
 	if (parts[1] === 'level') return pickGameLevel(parts.slice(2).join(':'));
+	// 33: a tab above the grid (tab:<setting index>:<option index> of shellLevelTabs) and the
+	// headset grid's page arrows (lvpage:<page>)
+	if (parts[1] === 'tab') {
+		const tab = shellLevelTabs()[Number(parts[2])];
+		const option = tab?.options[Number(parts[3])];
+		if (!tab || !option) return false;
+		if (option.value !== tab.value) setGameSetting(tab.id, option.value);
+		return true;
+	}
+	if (parts[1] === 'lvpage') {
+		showLevelPage(Number(parts[2]));
+		return true;
+	}
 	if (parts[1] === 'set') {
 		const dir = parts[parts.length - 1] === 'prev' ? -1 : 1;
 		const id = parts.slice(2, parts.length - 1).join(':');

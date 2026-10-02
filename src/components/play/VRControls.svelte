@@ -34,7 +34,8 @@
 		const session = renderer.xr.getSession();
 		if (!session) return;
 		if ($vrMenuOpen || $vrObjectsPanelOpen) return; // menu/panel own the sticks (74/101)
-		if ($inputClaims.includes('locomotion')) return; // K-C: a module drives instead
+		// K-C: a module drives instead; 33: 'sticks' claims BOTH sticks (move, turn, teleport)
+		if ($inputClaims.includes('locomotion') || $inputClaims.includes('sticks')) return;
 		// 30b P3: INTERACT walks like a game (collision, gravity, step-up; no fly or teleport
 		// unless the play block allows them) — a held object does not stop your feet
 		if (tickVRInteractLocomotion(delta, session)) return;

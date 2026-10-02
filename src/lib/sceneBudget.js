@@ -632,8 +632,31 @@ export function registerFrameObserver(fn) {
 	return () => frameObservers.delete(fn);
 }
 
+/** when the window's own loop last ran (ms) — an external frame source stands down while it does */
+let lastLoopAt = 0;
+/** how long the window loop may be silent before an external source takes the count over */
+const LOOP_STALE_MS = 250;
+
+/**
+ * 33 Q1: a display frame from ANOTHER loop — an immersive session's XR frame, where the
+ * window's requestAnimationFrame does not run, so `loop` below never counts a frame and the
+ * per-frame render totals freeze. Ignored while the window loop is alive (an emulated
+ * session in a test runs both), so a frame is never counted twice.
+ * @param {number} now ms
+ */
+export function noteExternalFrame(now) {
+	if (!running || now - lastLoopAt < LOOP_STALE_MS) return;
+	renderFrames++;
+	countRenderCalls(get(globalRenderer));
+	if (now - lastSampleAt >= SAMPLE_MS) {
+		lastSampleAt = now;
+		sample();
+	}
+}
+
 function loop() {
 	const now = typeof performance !== 'undefined' ? performance.now() : Date.now();
+	lastLoopAt = now;
 	if (lastFrameAt) {
 		const ms = now - lastFrameAt;
 		noteFrame(ms);

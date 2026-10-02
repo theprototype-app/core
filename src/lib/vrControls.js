@@ -15,6 +15,7 @@ import {
 	vrVertexHold,
 	vrSettingsPanelOpen,
 	selectedObject,
+	selectedObjects,
 	isVRMode,
 	worldRig,
 	vrPassthrough,
@@ -57,6 +58,7 @@ import { activeRing, findMenuEntry, ringEntries, sectorFromStick, pushRing, popR
 import { paletteColorAt, barValueAt } from './vrPalette';
 // 30b (vr-play) C4: the ONE game-feel predicate (a leaf) + the pattern shapes (pure)
 import { gameFeelActive } from './gameFeel';
+import { perfStatsShown } from './fpsMeter'; // 33 Q1
 // 31 K3: the per-game settings (haptics, turning) and the pause menu's controller button
 import { hapticsAllowed, resolveTurning, gameSettingValues } from './gameSettings';
 import { toggleShellMenu, shellMenuAvailable } from './gameShell';
@@ -2844,6 +2846,7 @@ function onSqueezeStart(index) {
 		// 30b P2: Interact's grips never move the world (contract C1) — 31 K1: unless the play
 		// block allows it (`locomotion.worldGrab`); a grip on a grabbable still took it above
 		if (!gripMovesWorld(mode, mode === 'interact' && vrLocomotionNow().worldGestures)) return;
+		hintSceneryGrip();
 		emptyAirSqueeze[index] = true;
 		// 186: in stretch mode both grips drive the stretch, not a world grab
 		if (get(vrStretchObject)) return;
@@ -2934,6 +2937,7 @@ export function gripTargetOf(ray, handPos, mode) {
 	const camera = get(globalCamera);
 	const head = camera ? camera.getWorldPosition(new THREE.Vector3()) : null;
 	const locked = get(lockedObjects);
+	const selectedNow = get(selectedObjects);
 	const settings = mode === 'interact' ? resolvePlaySettings(get(globalScene)) : null;
 	const interaction = settings ? settings.interaction : 'grab';
 	// 31-towers P1: a player's grip reaches `play.reach` from the BODY (head down to the feet)
@@ -2950,7 +2954,9 @@ export function gripTargetOf(ray, handPos, mode) {
 		if (holdable && !near) lastGripRefusal = { uuid: object.uuid, reach };
 		return {
 			scenery: isScenery(box.isEmpty() ? null : box, head),
-			grabbable: holdable && near
+			grabbable: holdable && near,
+			// 33 E4: in Edit a SELECTED wall/floor/arena is held like any object
+			selected: selectedNow.includes(object.uuid)
 		};
 	};
 	/** @type {any[]} */
@@ -2967,10 +2973,11 @@ export function gripTargetOf(ray, handPos, mode) {
 			points.push(hit.point);
 		}
 	}
-	const picked = pickGripTarget(
-		order.map((object, i) => describe(object, points[i])),
-		mode
-	);
+	const described = order.map((object, i) => describe(object, points[i]));
+	const picked = pickGripTarget(described, mode);
+	// 33 E4: the first thing along the ray was a wall/floor the grip passed through — the
+	// hint below says how to move it instead (select it first)
+	lastGripPassedScenery = mode === 'edit' && picked !== 0 && !!described[0]?.scenery;
 	if (picked >= 0) {
 		lastGripRefusal = null;
 		return order[picked];
@@ -2987,6 +2994,19 @@ export function gripTargetOf(ray, handPos, mode) {
 /** 31-towers P1: is push-to-talk open because A is held? (A jumps instead while the game's
  * controller can jump — a switch mid-hold must not strand the mic open) */
 let pttByA = false;
+
+/** 33 E4: did the last Edit grip pass THROUGH scenery (an unselected wall/floor) first? */
+let lastGripPassedScenery = false;
+const SCENERY_HINT_KEY = 'hint:vrSelectScenery';
+/** Say ONCE (ever) how a wall or a floor moves in Edit: the grip that passed through it went
+ * to the world, which reads as "this object cannot be moved" unless something says so. */
+function hintSceneryGrip() {
+	if (!lastGripPassedScenery || safeStorage.getItem(SCENERY_HINT_KEY) === 'true') return;
+	safeStorage.setItem(SCENERY_HINT_KEY, 'true');
+	import('./gameAnnounce')
+		.then((m) => m.announce('Grip moves the world', { sub: 'To move a wall or a floor, select it with the trigger, then grip it', ms: 4500 }))
+		.catch(() => {});
+}
 
 /** 31-towers P1: the grip the reach refused last ({uuid, reach}), for the buzz and the suite
  * @type {{uuid: string, reach: number} | null} */
@@ -3432,6 +3452,9 @@ export function executeVRMenuAction(name) {
 			// K1: experimental forearm sleeve palette (default off)
 			vrSleeveEnabled.update((v) => !v);
 			try { safeStorage.setItem('vrSleeveEnabled', String(get(vrSleeveEnabled))); } catch {}
+		} else if (key === 'perf') {
+			// 33 Q1: the app-wide "Show FPS + draw calls" (fpsMeter persists it)
+			perfStatsShown.update((v) => !v);
 		} else if (key === 'resetpanels') {
 			resetWindowPoses();
 			showToast('VR panel positions reset');

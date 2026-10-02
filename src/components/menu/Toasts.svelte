@@ -36,6 +36,7 @@
     import { sceneCommand } from '$lib/commandsHandler.svelte';
 	import { objectsGroup, camSave, globalCamera, globalScene } from '../../stores/sceneStore.js';
 	import { Progressbar, Toast, Button } from 'flowbite-svelte';
+	import SceneLoadBar from './SceneLoadBar.svelte';
     import { fly } from 'svelte/transition';
     import { untrack } from 'svelte';
     // P2b: watching follows a peer's camera IN THIS WORLD, so it cannot survive them
@@ -465,6 +466,8 @@ $effect(() => {
      children's z-index, breaking "approvals above modals"), so it centres with
      auto margins. -->
 <div class="toasts-stack">
+<!-- 33 L1: a scene load's progress — the stack's first slot, like the mode banners below -->
+<SceneLoadBar />
 
 <!-- 15-P: SPECTATOR banner — a MODE indicator, not a toast. Modes belong in a
      stable, always-visible strip (the recording/impersonation-banner pattern):

@@ -13,6 +13,7 @@
 	import { lightHelperLength } from '$lib/lightHelpers';
 	import { flowMouseBindings, FLOW_MOUSE_BINDINGS } from '$lib/flowPrefs';
 	import { helpersInPlay } from '$lib/helperLayer';
+	import { perfStatsShown } from '$lib/fpsMeter';
 	import { gamepadPrefs, setGamepadPrefs, DEADZONE_RANGE, SENSITIVITY_RANGE } from '$lib/gamepadPrefs';
 	import { drawerSlot, cloudPluginInfo } from '$lib/cloudHooks';
 	import { versionString } from '$lib/version.js';
@@ -31,6 +32,7 @@
 	import { shadowQuality } from '$lib/lightParams';
 	import { autoQuality } from '$lib/qualityGovernor';
 	import { lodEnabled } from '$lib/lod';
+	import { kitInstancingEnabled } from '$lib/kitInstancing';
 	import { myHandModel, setMyHandModel } from '$lib/handModels';
 	import { explorerItems } from '$lib/explorer';
 	import { pingColor, pingSound } from '$lib/ping';
@@ -44,6 +46,8 @@
 		removeCustomTheme
 	} from '$lib/themes';
 	import { autosaveEnabled, autoRestoreEnabled, clearSavedSession } from '$lib/autosave';
+	// 33 (L2): keep / unload a scene's modules when another scene opens
+	import { modulesOnOpen } from '$lib/sceneSwitch';
 	// 21-G7: how many past versions of each scene keep their bytes on this machine (0 = off)
 	import { keepVersionsSetting } from '$lib/projectManifest';
 	// R22 round 2: who may take a file out of the shared library (locked answer: anyone,
@@ -841,6 +845,12 @@
 						Add a "Search objects…" entry to the viewport right-click menu — find a scene object and fly the camera to it
 					</SettingRow>
 					<p class="ui-section-label">Viewport</p>
+					<SettingRow name="Show FPS + draw calls">
+						<svelte:fragment slot="control"><Toggle id="show-perf-stats" bind:checked={$perfStatsShown} /></svelte:fragment>
+						A small counter with the frame rate, frame time, draw calls and triangles — in the
+						corner of the viewport and, in a headset, on a strip at the top of the view. The draw
+						calls turn amber past 120 and red past 150, the practical limit on a Quest
+					</SettingRow>
 					<SettingRow name="Dock resizes the viewport">
 						<svelte:fragment slot="control">
 							<Toggle
@@ -1058,6 +1068,10 @@
 						<svelte:fragment slot="control"><Checkbox id="lod-enabled" bind:checked={$lodEnabled} /></svelte:fragment>
 						Draw a lighter version of a dense model (a few thousand triangles or more) when it is far from you, built once per model on THIS machine. Nothing in the scene changes — the full model is what is saved, sent and edited
 					</SettingRow>
+					<SettingRow name="Draw repeated kit pieces together">
+						<svelte:fragment slot="control"><Checkbox id="kit-instancing" bind:checked={$kitInstancingEnabled} /></svelte:fragment>
+						Every copy of one pack piece (a wall, a floor tile, a battlement) is drawn in one go instead of one by one, which is what keeps a level built from the kits inside a headset's budget. Only on THIS machine; an edited or selected piece is always drawn on its own
+					</SettingRow>
 					<SettingRow name="Simulation controls">
 						<svelte:fragment slot="control"><Checkbox bind:checked={$showSimControls} /></svelte:fragment>
 						Show the physics transport (play/pause/stop/reset) at bottom-right. Off by default to avoid confusion with the main play button; the P key still starts/stops the simulation
@@ -1105,6 +1119,21 @@
 							<Checkbox id="auto-restore" bind:checked={$autoRestoreEnabled} />
 						</svelte:fragment>
 						Restore that snapshot automatically at startup instead of asking. Only ever runs when the scene is still empty; a message tells you what was restored
+					</SettingRow>
+					<!-- 33 (L2): what a scene switch does with the modules the scene being left brought along -->
+					<SettingRow name="When opening another scene">
+						<svelte:fragment slot="control">
+							<ThemedSelect
+								id="modules-on-open"
+								items={[
+									{ value: 'ask', name: 'Ask' },
+									{ value: 'keep', name: 'Keep modules' },
+									{ value: 'unload', name: 'Unload modules' }
+								]}
+								bind:value={$modulesOnOpen}
+							/>
+						</svelte:fragment>
+						<span>Modules that came with the scene you are leaving (a game's Waves or Untangle) and that the next scene does not use. Ask (the default) shows them and lets you choose; Unload switches them off (back on any time in Modules, and a scene that needs them offers to). A new blank scene always unloads them</span>
 					</SettingRow>
 					<p class="ui-section-label">Selection</p>
 					<SettingRow name="Double-click action">

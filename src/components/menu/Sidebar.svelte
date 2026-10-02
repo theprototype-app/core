@@ -135,7 +135,7 @@
 		closeMenu.update((value) => !value);
 	}
 
-	// 15-J viewer gate + confirm toast live in $lib/sceneTemplates.confirmClearScene
+	// 15-J viewer gate + 33 (L3) the Clear scene modal live in $lib/sceneTemplates.confirmClearScene
 	// now — shared with the Templates modal's "Blank scene" card.
 </script>
 
@@ -226,7 +226,7 @@
 			<span class="side-ico"><SlidersHorizontal size={16} aria-hidden="true" /></span>
 			<span class="flex-1 whitespace-nowrap">Configure Scene</span>
 		</button>
-		<button class="side-row" onclick={() => void confirmClearScene()}>
+		<button id="clear-scene" class="side-row" onclick={() => { closeMenu.set(true); void confirmClearScene(); }}>
 			<span class="side-ico"><Trash2 size={16} class="ico-danger" aria-hidden="true" /></span><span class="flex-1 whitespace-nowrap">Clear Scene</span>
 		</button>
 		<button id="open-modules-manager" class="side-row" onclick={() => { modulesOpen.set(true); closeMenu.set(true); }}>

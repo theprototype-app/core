@@ -2130,6 +2130,47 @@ loadable play content. Everything a user does must be visible to connected peers
   not-on-this-device cards) routed through `travelToPeerScene` (the guarded Go-to path). The
   invite link carries NO scene hint — the link IS the session, where the host stands is presence.
   Suite `session-scenes` (36, three peers).
+- `src/lib/sceneLoader.js` (33 L1, a LEAF: svelte/store only) — A SCENE LOAD MAY TAKE TIME; IT
+  MAY NOT TAKE THE WINDOW. Measured on a CPU x6 phone (scripts/scene-load-trace.cjs): Restore of
+  Castle Courtyard was ONE 89 s task (`applyRestore` re-serialized every child with `toJSON()` for
+  the wire — textures as PNG data URLs — solo or not) on a 51 MB full-geometry snapshot (Forest's
+  was over the 50 MB cap: no crash recovery at all), and a template open froze 2 s (525 ms tasks).
+  Now every task of those loads is under 200 ms, asserted by suite `scene-load`.
+  · `slice(job)` = a cooperative yield for a LOOP (10 ms, throws `LoadCancelled` between two
+  objects); `schedule(fn)` = the same budget for queued sync work. **ONE SHARED CLOCK**: a loop that
+  awaits one scheduled item at a time starts a fresh pump per item through microtasks, and with a
+  per-run budget the whole loop was one task (an 881 ms warm-up). `sceneLoad` = the ONE job
+  `{name, verb, total, done, phase: preparing|reading|objects|models, cancellable, interrupted}`,
+  drawn by `menu/SceneLoadBar.svelte` (toast stack's first slot, after 250 ms, CSS entrance — a
+  svelte `fly` reads getComputedStyle = a whole-document layout mid-load; `#scene-load-bar`
+  data-done/total/phase, `#scene-load-cancel`). A new load SUPERSEDES the running one (no hooks;
+  every await in `applySession`/`applyRestore` re-checks `isLive(job)`); Cancel (also during
+  `models`) runs the load's `onCancel` (sessions: replicated clear + a toast naming the Backup;
+  restore: clear + RE-OFFER). A load interrupting one mid-BUILD writes no "Backup before".
+  · THE ORDER OF A LOAD (sessions + autosave): clear -> environment -> `holdFrames()` (Outline
+  skips its render; bounded 2 s) + `warmPrograms(scene)` (the fog/light change re-keys every
+  existing program) -> post stack + `warmComposer()` (Outline registers it: every pass's
+  fullscreen scene compiled against the target it draws into) -> release + `nextFrames(2)` ->
+  hold -> the sliced build -> `warmPrograms(objectsGroup)` -> release. Warm-ups are awaited at most
+  `WARM_WAIT_MS` (`within`): software GL links in hundreds of ms and a load must never wait on the
+  driver. "Session loaded" waits for the kit models.
+  · `packRefs.warmPrograms`: compile in BATCHES of throwaway twins sharing each mesh's geometry +
+  material (`compile` walks the whole scene for lights per call — per mesh was quadratic), canvas
+  AND render-target variants (three keys a program by tone mapping + output colour space), then
+  each program's FIRST USE (`getUniforms`) per slice: without KHR_parallel_shader_compile that read
+  WAITS for the link, and it was the cost left in the first frames. `warmTemplate` = initTexture
+  per slice + warmPrograms. Refill attach through `schedule`; refills poke at most every 200 ms;
+  `packRef.box` (root-frame bounds, additive) drawn as ONE scene-root InstancedMesh of grey
+  `kit-placeholders` while a piece is on its way.
+  · **The autosave writes pristine kit pieces as STUBS** (`parkPackPieces`, reverses 30c's
+  "autosave stays full"): hollowed for the GLTF export and put back on the exporter's `afterParse`
+  hook (once the tree is READ, before the async encode lets a frame draw a hollow castle;
+  `parkedRoots` keeps a scan from refilling one mid-export). The fingerprint is NOT cached — a
+  version-keyed cache read an in-place vertex move as pristine (pack-refs caught it: an edit
+  lost on reload). The restore sends a wire copy only with an OPEN peer, stubs for pristine pieces.
+  · Elsewhere: the object list's plain tree mounts in chunks (Controls.svelte, 40 + 16/frame);
+  `qualityGovernor` ignores frames while a load runs (its setPixelRatio->setSize was a 432 ms
+  task); the debounced autosave waits out a load (`saveNow` does not).
 - `src/lib/flowLayout.js` + `src/lib/coalesce.js` (R29 S1/S2, both LEAVES, vitest-covered):
   `freeRegion({w,h,graphId})` is the ONE placement rule for anything that authors nodes on the
   user's behalf (`hudActions.addBinding` calls it, side 'right', byte-identical); the SDK
@@ -2368,6 +2409,101 @@ loadable play content. Everything a user does must be visible to connected peers
   template — `transientObjects.spawnedFromOf`), `pointGrab.js` (Point Grab node gates the VR
   grip RAY and the desktop carry; touch still holds), Game Setting node.
 
+- **ROADMAP 33 — MODULES ACROSS A SCENE SWITCH (33-scene-switch, L2/L3/L4)**. A module is a SCENE
+  SCRIPT more than an editor plugin, so the modules a scene came with are what a switch is about.
+  · `sceneScope.js` (a LEAF): the modules the scene USED when it was cleared (`noteSceneLeaving`,
+  first line of `clearSceneLocal`) and the next scene does not use are LEFT BEHIND
+  (`leftBehindModules`, `ownerInScope(owner)`); judged at applySession's end (`sceneArrived` ->
+  `settleScope(declared)`) and, for a peer's replacement (clear + objects + nodes, no applySession
+  here), by a debounced recompute on flowGraphs/objectsGroup/moduleNodeGroups while anything is
+  pending. "Used" = the payload's declared `modules` ∪ moduleRequirements() (registered by
+  sceneSwitch through `registerSceneUsage`). A fresh install in a blank scene is IN scope (nothing
+  left it behind), which is what keeps every existing suite/flow byte-unchanged.
+  · What a left-behind owner registered STOPS COUNTING and comes back with its scene, no
+  re-registration: gameShell levels/help kept PER OWNER (newest in-scope shows), restart hooks
+  carry an owner, gameSettings rows (`allRows` -> in-scope `gameSettingRows`), `gameMusic` tracks
+  are OWNED (`playGameMusic(preset, opts, owner)`, a left-behind owner's track stops and it cannot
+  start one, `stopGameMusic(owner)` stops only that owner's; core '' = flow nodes / the shell),
+  the runtime spawn, and `playPublishers` (a kept module's group `userData.play` — Untangle's free
+  cursor + world grab — no longer overrides the next game). `api.inScene()` lets a module stand
+  down its own drawing (Waves' gun) — the one thing core cannot scope.
+  · Teardown journal holes closed: `api.music` (a module's track outlived its unload),
+  `api.followCam`. Core Towers' onSceneClear now unregisters its levels/help (it reset `wasActive`
+  only, so its twelve levels stayed in the next game's menu).
+  · `sceneSwitch.js` (not a leaf; boot `startSceneSwitch`): the setting `modulesOnOpen`
+  (`scenes:modulesOnOpen`, ask default / keep / unload, Settings ▸ Scene `#modules-on-open`) and
+  `prepareSceneSwitch(payload)` — the ask `#confirm-keep-modules` lists loaded USER modules the
+  scene being left USES and the incoming one does not need (a tool no scene uses, and every core
+  module, is never asked about); Unload primary, Keep, "Remember my choice"; Cancel aborts the open.
+  It returns a `run()` the caller fires when the load really applies (`requestLoadPayload` solo,
+  or the proposal's `beforeApply`). Unload = `deactivateModule` + `disabledModules` (persisted) +
+  a toast with [Modules]; the "This scene uses modules" prompt's Enable is LIVE now
+  (`enableRequired` re-activates the user record / core module). The Explorer's Open passes
+  `travelToLevel(hash, '', {askModules: true, freshGame: true})` — the ask, and the file's OWN game
+  state instead of fork 3's carry (the carry stays for the travel NODE and Go-to).
+  · Clear scene (`sceneTemplates.confirmClearScene`, Sidebar `#clear-scene`) is ONE modal
+  (`#confirm-clear-scene`): "Clear objects" primary + one box "Also reset the game setup and unload
+  its modules" (OFF, ON when there are no objects) relabelling it "Clear everything" =
+  `sceneSwitch.clearSceneEverything` = unload the scene's modules + `applySession(emptySession
+  Payload, {backup:false, workspace:false, quiet:true})` (replicated: flow, HUD, game state, play
+  block, music, sky/look reset for everyone). Objects-only toasts "Still here: …" + [Clear those
+  too]. The Templates Blank card = `confirmClearScene({blank: true})` (`#confirm-blank-scene`,
+  always the full reset). `confirmDialog.showChoiceEx` = choices + `items` + one `checkbox` +
+  per-choice `checkedLabel`, resolving `{value, checked}`.
+  · Suites `scene-switch` / `-keep` / `-clear` / `-games` (shared `sceneSwitchShared.cjs`; real
+  .tpscene + zips) + vitest `sceneScope`. TIMING: an open into a non-empty world is 35-50 s on the
+  shared box, measured identical on pristine c7018be (the backup stash + load) — ≤5 opens a suite.
+- **ROADMAP 33 — LOD GROUPS (33-lod-editor, contract P1)** (`lodGroupCore.js` pure + vitest, `lodGroup.js` runtime,
+  `lodGroupActions.js` write path, `lodLevelEdit.js`, `menu/LodGroupPanel.svelte`). **No THREE.LOD node in the tree**
+  (objectsGroup is the replicated document, and an animated item's mixer binds by node NAME, so three copies would
+  freeze two): a group is `userData.lod = {mode: auto|forced, forced?, bias?, cull?, levels: [{source: self|pack|
+  generated|explorer|object, ref?, ratio?, screenSize, offset?, material?}]}` applied at RENDER time through lod.js's
+  `registerLodPass` seam — a level whose meshes match by node name is a per-mesh GEOMETRY SWAP on the same tree (LOD0's
+  own material, animation keeps playing, picking/physics/serializers see LOD0); an unrelated model is a scene-root
+  LOCAL substitute; culled = hidden for that render. `screenSize` = projected bounding-sphere height / viewport (Unity's
+  transition height), defaults 25 % / 10 % (0.30/0.12/0.04 for three levels), 15 % hysteresis (a head bob switches
+  once), the governor's `lodBias` divides every threshold. A pack row's `lods: [{file, ratio}]` becomes the placed
+  piece's group; a piece placed BEFORE its pack had lods gets an IMPLICIT group from the row (not saved). Replication =
+  `objectParameters {parameter: 'lod'}` (wireValidate constrains only that parameter), undo = the `props` kind's `lod`
+  key, a threshold drag = ONE entry + ONE message. The level preview, "Show LOD level" overlay and current level are
+  LOCAL. `api.lod` handles gain `force(n)`/`levels()`; VR props panel has a LOD row. Suites lod-group, lod-panel (two
+  peers), lod-real-packs (LOD_PACKS_DIR), vr-props-panel.
+- **ROADMAP 33 — FUNCTIONAL PACK ITEMS (33-anim-core, contract P2)** (`behaviorCore.js` pure + vitest, `packBehavior.js`).
+  **NOTHING AUTOPLAYS**: an animated import registers with its clip selected and NOT playing (the first play schedules
+  the action). A pack row (or a GLB's `scene.extras.behavior`; the row wins) may carry `behavior {type: door|toggle|
+  oneshot|loop, clip, closeClip?, trigger: click|proximity|knock, autoplay, sound?, collider?}`: rest pose in Edit,
+  triggers in Interact/Play through moduleSDK's ONE click dispatch (desktop click, Play tap, VR laser + poke), proximity
+  1.5 m, knock = a VR hand >= 0.6 m/s; `loop`+`autoplay` = ambient, Interact/Play only. State = the `behavior` message
+  `{uuid, on, at (sessionNow), from, n}`, latest-wins, ROOM_SCOPED, wireValidate shape, every peer derives the pose
+  from the stamp; a late joiner gets `behaviorState` on its `objectfile`; runtime only (never saved, never undone).
+  The frame becomes custom slab colliders with the doorway cut out, each moving node a following kinematic box (while
+  a sim runs). Five game sounds door/gate/slide/lever/lid; the Explorer's ▶ badge; the Animation panel previews LOCALLY;
+  `api.behavior {list, state, trigger}`. A sim's "simulate the selection" fallback skips functional items.
+  **`animRef` (33-scenes)**: an animated import that IS a pack file saves `animRef {pack, item, path}` instead of
+  0.5-1.4 MB of base64; restore fetches it once per url (an older core loads such a door as nothing).
+- **ROADMAP 33 — KIT INSTANCING (33-scenes)** (`kitInstancing.js` + pure `kitInstancingCore.js`): every pristine copy
+  of a pack piece draws as ONE InstancedMesh per template mesh, render-time only (lod.js `registerBatchPass`, AFTER the
+  LOD swaps) — tree, picking, physics and serializers untouched; packRefs records which template mesh each copy cloned
+  (`kitMeshSource`). Excluded: selected, hidden, transparent, recoloured/edited copies; members are frustum-culled one
+  by one, 128 m columns. LOCAL pref Settings ▸ Performance "Draw repeated kit pieces together" (default on). The
+  Tavern went 394 -> ~135 calls in the headset analogue. `scripts/perf-levels.cjs` / `level-views.cjs` measure the
+  General-tab levels per viewpoint. The levels live in `scripts/level-templates.cjs` (six since 33: Castle, Forest,
+  Tavern, Wizard's Tower, Market Square, and the kit Architecture shell — whose greybox stays the OFFLINE seed via the
+  author-templates `remote: false` def field).
+- **ROADMAP 33 — EDITOR UI + GAMES (33-editor-ui, 33-games, 33-untangle-core)**: the default Controls bar is
+  Move/Rotate/Scale, Interact, Play, list, nodes, Explorer, Animation (an untouched stored default MIGRATES, a
+  customised bar wins); the Interact toggle's ring is keyboard-only (`focus-visible`) and the well halves answer
+  `*:hover`. In Edit inside a GAME scene a gizmo release PARKS a dynamic body (physics hold `'edit'`), released at rest
+  on leaving Edit; in VR a SELECTED wall/floor is grip-held in Edit (unselected scenery still moves the world). Q1:
+  Settings ▸ Interface ▸ "FPS and draw calls" (`fpsMeter.perfStatsShown`, `#show-perf-stats`) — the one desktop
+  `FpsCounter`, a head-locked `vrPerfStrip.js` in VR, calls amber > 120 / red > 150; XR frames feed the draw-call sampler
+  (`sceneBudget.noteExternalFrame`) because the window rAF stops in a headset. Games: per-hand VR `grabs[]` (a second
+  hand's grab overwrote the one slot and FROZE the first block), `footerLayout`/`fitLabel` keep the VR board footer
+  inside a 720-px board, `PHONE_START_LEVEL` 4 (phones are judged heavy like headsets), board `SCALE` 2 + `WRIST_RES`
+  2 (every canvas panel >= 1 texel per Quest pixel). `api.claimInput('sticks')` + the world-pan stick REEL (stick Y
+  pushes/pulls a one-grip world, as Edit does an object); `addSetting({onLevels: true})` draws a choice as tabs on the
+  VR Levels page, which now lists every level.
+
 ## Replication golden rules
 
 1. Every mutation = apply locally + `$peers.send({type, ...})`; receivers apply WITHOUT
@@ -2462,6 +2598,21 @@ loadable play content. Everything a user does must be visible to connected peers
 
 ## Hard-won gotchas (do not rediscover)
 
+- **RAPIER'S KinematicCharacterController COLLIDES WITH SENSORS unless the query passes `EXCLUDE_SENSORS`** — the
+  walker treated every grass patch, flower bed, rug and trim of the 30c levels as a wall (33-scenes, suite
+  walker-sensors). And a frame box MINUS a low leaf leaves a wall OVER a garden gate: the passage runs to the frame top
+  and slivers under 2 cm are dropped (behaviorCore).
+- **HEADLESS GPU SCREENSHOTS ON THIS MACHINE (ANGLE/Vulkan, RADV) CAN MISS TEXTURED KIT MESHES** while the canvas read
+  inside the final render call shows them: compare frames with an in-render read, or on the software backend
+  (33-scenes QUESTIONS #8); kit-instancing's same-picture check read 39 % different ONCE under load and passed alone.
+- **A LEVEL WITH NO DYNAMIC BODY STARTS NO SIMULATION, so its walker collides with nothing** — every kit level ships a
+  crate or a barrel for that reason (levelTemplates unit test).
+- **A sliced load changes what "right after" means.** Since 33-scene-load, `applySession` empties the objects before
+  it replaces the HUD and the play block, so a check that reads `isGame` the instant the objects are gone reads the
+  OLD scene (scene-switch-clear 4.5 on the union) — wait for the state, never for the first observable side effect.
+- **A two-page "in phase" check must compare CLOCKS, not poses**: reading a pose on each page in two evaluates compares
+  frames rendered hundreds of ms apart on a loaded box (animated-models was red 3/3, the lane branch included); tick +
+  read the clock + wall time in ONE task per page.
 - **A HEADSET'S EYE BUFFER IS NEVER LOWERED** (`XR_FRAMEBUFFER_SCALE = 1`, 31-integrate). 31-perf handed three a
   0.85..0.5 framebuffer scale for the NEXT session after any session that reached the governor's resolution steps,
   and every panel's text went soft ("ALL text in VR menus became blurry") while the panel textures were unchanged.
@@ -5090,6 +5241,19 @@ override for e2e — never share 5173 (the user's main-checkout server).
   locked (replicate the INDEX per-item opt-in; ONE mesh with scenes as tags;
   scene-is-primary renaming), and the vocabulary settled: **session = the mesh, room =
   who is in a scene, PocketBase rooms stay DISCOVERY** — that naming blocks R4.
+- Status (2026-10-02): **1.19.0 "Doors that open, scenes that load, games that switch" — ROADMAP 33, integrated + released
+  by lane `33-integrate`** (releases delegated by the owner; acceptance test: cloud
+  `plans/core/lanes/33/user-feedback-2026-10-01b.md`). Merged core #258 editor-ui · #257 lod-editor · #259 anim-core ·
+  #261 scene-load · #263 scene-switch · #260 games · #255 untangle-core · #262 scenes (lod-editor's resolved copies for
+  the anim-core conflicts; scene-switch's notes for `applySession`); modules #29 (untangle 2.4.0); packs #11 #8 #10 #9 #12
+  (four new kits, flicker fix, LODs). Integrate additions: the card actually titled "Architecture shell" rebuilt from the
+  kits (author-templates `remote: false` keeps the greybox as the offline seed), four suites taught about the union
+  (sliced loads, clock-based phase, three pages on the GPU, an exact "Restore"), the phone quality toast says "Use full
+  quality", packs ship `defight-report.json` + refreshed kit reports. Gates: svelte-check 332/47 (ratcheted), vitest 464,
+  build green; ~75 core suites + 31 modules flights + flicker 222/222 (STEPS=8 — the probe's limit is calibrated there;
+  its default 48 reads 3-6x higher on 1.18.0 too) green on the union; preview proof 211/0 + round-33 items 58/0.
+  Not regressions (A/B'd on 1.18.0): modes-audit "football play", sabers 10/2. OWED on device: the list in the cloud
+  roadmap-33 master.
 - Status (2026-10-01): **1.18.0 PREVIEW — ROADMAP 31 "the second Quest round", integrated on `feat/1.18`
   (lane `31-integrate`), HELD AT THE RELEASE GATE** (https://preview-1-18.theprototype.pages.dev, core a896b27, modules
   dev 3c9bf77, scenes `preview-1-18` 35addc4, packs a39280a). Merged core #253 vr-core (K1 K2) · #251 game-shell (K3) ·
@@ -6678,6 +6842,6 @@ onChange?})` + `api.game.setting(id)` (rows in the per-game Settings page, persi
 `api.game.setHelp(text)` (How to play), `api.game.onRestart(fn)` (after the shell's reset);
 `api.quality {level (getter, 0 best), max, labels, vr, onChange(fn) -> off}` (cut effects at a
 higher level); `api.lod(object, {ratios, distances, minTriangles})` -> `{meshes, ready, remove}`;
-`api.vrPanel(group)` (a module's VR menu drawn over the scene like core's panels);
+`api.vrPanel(group)` (a module's VR menu drawn over the scene like core's panels); **33:** `api.inScene()` — false once a scene switch LEFT this module behind (the person kept it loaded; the open scene does not use it): stand your own drawing/listening down (Waves' gun); core already scopes your levels/help/settings/Restart/music/spawn/play contract; `api.music.stop()` only stops YOUR track;
 `api.locomotion = {boundedTeleport, worldGrab}` (the K1 probe). A scene's play block may say
 `play.locomotion.worldGrab`, `play.bounds {min, max}` and `play.reach` (metres). Feature-detect all.

@@ -331,10 +331,15 @@ export async function loadFile(url, name) {
  * message (rigs cannot survive the per-node pipeline).
  * @param {any} result @param {ArrayBuffer} buffer @param {string=} name
  * @param {'gltf'|'fbx'=} kind which parser the bytes need on the other side (17-D2)
+ * @param {number[]=} position 33 P2: the drop point
  */
-function addAnimatedImport(result, buffer, name, kind) {
+function addAnimatedImport(result, buffer, name, kind, position) {
 	const root = result.scene;
 	root.name = name ?? 'Animated import';
+	// 33 P2: an animated model lands where it was dropped, like every other import (the
+	// position used to be ignored on this path, so a door dropped at the cursor appeared at
+	// the origin). Set BEFORE the sync so peers receive the placed transform.
+	if (position) root.position.fromArray(position);
 	sceneObjects.add(root);
 	pokeScene();
 	controls.attach(root);
@@ -345,7 +350,12 @@ function addAnimatedImport(result, buffer, name, kind) {
 	// 15-K3: the selection SET drives the outline + Ctrl+D — keep it in sync
 	selectedObjects.set([root.uuid]);
 	peer.send({ type: 'lock', uuid: root.uuid, peerId: peer.peer.id });
-	showToast('Animated model: ' + result.animations.length + ' clip(s), playing the first');
+	// 33 P2: nothing autoplays any more (registerAnimatedImport); say what does play it
+	showToast(
+		root.userData.behavior
+			? 'Placed "' + root.name + '" — it opens with a click in Interact or Play'
+			: 'Animated model: ' + result.animations.length + ' clip(s) — play them from the Animation panel'
+	);
 }
 
 /** Shared tail for every import format: add to the scene, select, replicate.
@@ -668,7 +678,8 @@ function defaultImportName(extension, name) {
  * @param {any} file @param {string=} name @param {string=} ext - explicit extension when the blob has no name (Library)
  * @param {number[]=} position - world drop point (Explorer drag-out, 96)
  * @param {any[]=} extras - companion files picked/dropped alongside (.mtl + its textures)
- * @param {{reduce?: boolean | import('./importBudget').ReductionPlan, packRef?: import('./packRefs').PackRef | null}} [opts]
+ * @param {{reduce?: boolean | import('./importBudget').ReductionPlan, packRef?: import('./packRefs').PackRef | null, lod?: any, behavior?: any}} [opts]
+ *   `behavior` (33 P2): the pack item's functional spec — a door, a lid, a fan
  *   26-F: `reduce` imports REDUCED. 30c: `packRef` names the PACK ITEM this file is — the
  *   placed root then carries the reference (packRefs.js), so a save and the wire write it
  *   as a small stub. Ignored for an animated or a reduced import (neither IS the file).
@@ -711,7 +722,21 @@ export async function importFile(file, name, ext, position, extras, opts = {}) {
 		// 30c: stamp the pack reference BEFORE addImported, which is what replicates it
 		if (opts.packRef && !parsed.animated && typeof file?.arrayBuffer === 'function')
 			stampPackRef(parsed.root, opts.packRef, await hashBytes(await file.arrayBuffer()));
-		if (parsed.animated) addAnimatedImport(parsed.animated.result, parsed.animated.buffer, label, parsed.animated.kind);
+		// 33 (contract P1): a pack item's `lods` place as the object's LOD GROUP — on the
+		// root BEFORE it replicates, so the block rides the same object message / stub
+		if (opts.lod) {
+			const root = parsed.animated ? parsed.animated.result?.scene : parsed.root;
+			if (root) root.userData = { ...(root.userData ?? {}), lod: opts.lod };
+		}
+		// 33 P2: a pack item's `behavior` (its row) wins over one in the file's own extras
+		if (opts.behavior && parsed.animated) parsed.root.userData.behavior = opts.behavior;
+		// 33-scenes: an ANIMATED pack piece (a door, a chest) cannot be a kit stub — the mixer
+		// binds the parsed tree — but its bytes ARE the pack's file, so a save names that file
+		// instead of carrying it (animatedImports `animRef`; the wire still sends the bytes)
+		if (opts.packRef?.path && parsed.animated)
+			parsed.root.userData.animRef = { pack: opts.packRef.pack, item: opts.packRef.item, path: opts.packRef.path };
+		if (parsed.animated)
+			addAnimatedImport(parsed.animated.result, parsed.animated.buffer, label, parsed.animated.kind, position);
 		else addImported(parsed.root, label, position);
 		for (const note of parsed.notes) showToast(note);
 		return parsed.root.uuid;

@@ -50,15 +50,23 @@ export function isScenery(box, head) {
 
 /**
  * Which candidate a grip takes, in ray order.
- * @param {{scenery: boolean, grabbable: boolean}[]} candidates top-level objects along the
- *   ray, nearest first (each once)
+ *
+ * 33 E4 — "not all objects positions can be moved in edit mode when in game": scenery was
+ * held by NOTHING, so in a game scene every wall, floor, pitch and arena could not be moved
+ * with a grip at all. The fix keeps the world gesture and makes the intent explicit: in
+ * EDIT, scenery you have SELECTED (the trigger selects it) is held like any object — the
+ * select-then-manipulate rule every editor follows. Unselected scenery still passes through
+ * to the world grab, so grabbing a room you are standing in still moves the world.
+ * @param {{scenery: boolean, grabbable: boolean, selected?: boolean}[]} candidates
+ *   top-level objects along the ray, nearest first (each once)
  * @param {'edit' | 'interact'} mode
  * @returns {number} the index taken, or -1 for "nothing" (empty air in Edit = the world)
  */
 export function pickGripTarget(candidates, mode) {
 	for (let i = 0; i < candidates.length; i++) {
 		const c = candidates[i];
-		if (!c || c.scenery) continue;
+		if (!c) continue;
+		if (c.scenery && !(mode !== 'interact' && c.selected)) continue;
 		if (mode === 'interact') return c.grabbable ? i : -1;
 		return i;
 	}

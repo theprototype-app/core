@@ -213,6 +213,10 @@ let physicsPrimed = false;
 /** @type {any} */ let capsule = null;
 /** @type {any} */ let controller = null;
 /** @type {any} */ let capsuleWorld = null;
+/** the controller's query filter: sensors are pass-through (RAPIER.QueryFilterFlags.EXCLUDE_SENSORS,
+ * set when the capsule is built — the flag lives on the lazily loaded RAPIER module)
+ * @type {number | undefined} */
+let sensorsExcluded = undefined;
 let capsuleKey = '';
 
 /** The live world + rapier module, or null when no simulation is running. Primed
@@ -280,6 +284,7 @@ function ensureCapsule(rt, eyeHeight) {
 			controller.setMinSlopeSlideAngle?.((40 * Math.PI) / 180);
 			capsuleWorld = world;
 			capsuleKey = key;
+			sensorsExcluded = RAPIER.QueryFilterFlags?.EXCLUDE_SENSORS;
 		} catch (error) {
 			console.log('character capsule failed', error);
 			dropCapsule();
@@ -380,7 +385,10 @@ export function resolveWalk(feetPos, height, dt, desired, opts = {}) {
 		try {
 			// the capsule's CENTRE sits half a body above the feet
 			capsule.setTranslation({ x: _worldPos.x, y: feet + eyeHeight / 2, z: _worldPos.z });
-			controller.computeColliderMovement(capsule, { x: dx, y: dy, z: dz });
+			// 33-scenes: SENSORS are pass-through — a trigger volume, grass, flowers, a rug, a trim
+			// a level marks so. Without the flag the sweep treated every one as a wall (measured: the
+			// open front door of the Tavern held the walker at its threshold, a sensor trim there)
+			controller.computeColliderMovement(capsule, { x: dx, y: dy, z: dz }, sensorsExcluded);
 			const moved = controller.computedMovement();
 			dx = moved.x;
 			dy = moved.y;
@@ -476,7 +484,7 @@ export function collideRigStep(rig, before) {
 	if (Math.abs(d.x) + Math.abs(d.y) + Math.abs(d.z) < 1e-7) return false;
 	try {
 		capsule.setTranslation({ x: before.x, y: before.y - FLY_BODY / 2, z: before.z });
-		controller.computeColliderMovement(capsule, d);
+		controller.computeColliderMovement(capsule, d, sensorsExcluded);
 		const moved = controller.computedMovement();
 		_target.set(before.x + moved.x, before.y + moved.y, before.z + moved.z);
 		capsule.setTranslation({ x: _target.x, y: _target.y - FLY_BODY / 2, z: _target.z });

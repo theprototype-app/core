@@ -1088,10 +1088,17 @@ function resolveLevelItem(hash) {
  * the load. `gameStateRestore` stamps a fresh changedAt on purpose — each peer stamps
  * its own, the content is identical, and latest-wins converges.
  * @param {string} hash @param {string} [name] display name for the toast/store
- * @param {{private?: boolean}} [opts] R22 round 35: open it PRIVATELY — no C4 consent, no
+ * @param {{private?: boolean, askModules?: boolean, freshGame?: boolean}} [opts] R22 round 35: open it PRIVATELY — no C4 consent, no
  *   "save into project" nag, no arrival re-sync, and the record carries the flag that
  *   isolates it. Absent means today's behaviour byte for byte, which is what keeps the
  *   travel NODE and every other caller untouched.
+ *   33 (L2) `askModules`: a PERSON opening the scene (the Explorer's Open) — modules the
+ *   scene being left brings along and this one does not need go through the keep/unload
+ *   ask before anything is replaced. Never for the travel node (nobody at a dialog).
+ *   33 (L4) `freshGame`: the scene's OWN game state (the file's `game` field, or a pristine
+ *   menu) instead of fork 3's carry. The carry is campaign semantics for the travel NODE —
+ *   a level hop inside one game; a person opening another scene from the Explorer is opening
+ *   it fresh, and carrying Waves' round and variables into Towers was the L4 leak.
  * @returns {Promise<boolean>} did a load happen
  */
 export async function travelToLevel(hash, name = '', opts = {}) {
@@ -1120,11 +1127,19 @@ export async function travelToLevel(hash, name = '', opts = {}) {
 			showToast('That scene could not be read.');
 			return false;
 		}
-		// fork 3: capture the LIVE game before the world is replaced…
-		const carried = { ...get(gameState), vars: { ...get(gameState).vars } };
-		await applySession(payload, { backup: false, replicate: false, game: false, workspace: false });
+		if (opts.askModules === true) {
+			const { prepareSceneSwitch } = await import('./sceneSwitch');
+			const go = await prepareSceneSwitch(payload);
+			if (!go) return false;
+			go.run();
+		}
+		// fork 3: capture the LIVE game before the world is replaced… (33 L4: unless a person
+		// is opening this scene fresh — then the file's own game state applies)
+		const fresh = opts.freshGame === true;
+		const carried = fresh ? null : { ...get(gameState), vars: { ...get(gameState).vars } };
+		await applySession(payload, { backup: false, replicate: false, game: fresh, workspace: false });
 		// …and put it back. The level's own `game` field never applied (game: false).
-		gameStateRestore(carried, false);
+		if (carried) gameStateRestore(carried, false);
 		// R5: the graphs that just arrived from disk may name a scene by a name the
 		// project has since renamed — bring them up to date (idempotent, local)
 		applySceneRenames();

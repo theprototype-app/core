@@ -30,21 +30,25 @@ import { globalScene, isLocked, editorMode } from '../stores/sceneStore';
 import { hudDocs, isGameHud, hudScreenOverride } from './hudDocs';
 import { resolvePlaySettings, playPublishers } from './playSettings';
 import { CORE_SETTINGS, gameSettingRows, gameSettingValues, setGameSetting, settingRow, currentGameId } from './gameSettings';
+// 33 (L4): a registration belongs to its owner module, and counts only while that module
+// belongs to the scene on screen (a leaf)
+import { leftBehindModules, ownerInScope } from './sceneScope';
 
 /** @typedef {'main' | 'levels' | 'settings' | 'help'} ShellPage */
 
-/** The menu: open, and which page. LOCAL. @type {import('svelte/store').Writable<{open: boolean, page: ShellPage}>} */
-export const shellMenu = writable({ open: false, page: /** @type {ShellPage} */ ('main') });
+/** The menu: open, which page, and (33) the headset's page of the level grid — null = the page
+ * holding the current level. LOCAL. @type {import('svelte/store').Writable<{open: boolean, page: ShellPage, levelPage?: number | null}>} */
+export const shellMenu = writable({ open: false, page: /** @type {ShellPage} */ ('main'), levelPage: /** @type {number | null} */ (null) });
 
 /** @param {ShellPage} [page] */
 export function openShellMenu(page = 'main') {
 	if (!shellMenuAvailable()) return false;
-	shellMenu.set({ open: true, page: normalizePage(page) });
+	shellMenu.set({ open: true, page: normalizePage(page), levelPage: null });
 	debug.opens++;
 	return true;
 }
 export function closeShellMenu() {
-	if (get(shellMenu).open) shellMenu.set({ open: false, page: 'main' });
+	if (get(shellMenu).open) shellMenu.set({ open: false, page: 'main', levelPage: null });
 }
 /** @returns {boolean} open after the toggle */
 export function toggleShellMenu() {
@@ -56,7 +60,7 @@ export function toggleShellMenu() {
 }
 /** @param {ShellPage} page */
 export function showShellPage(page) {
-	shellMenu.update((m) => ({ ...m, page: normalizePage(page) }));
+	shellMenu.update((m) => ({ ...m, page: normalizePage(page), levelPage: null }));
 }
 /** @param {any} page @returns {ShellPage} */
 function normalizePage(page) {
@@ -103,8 +107,18 @@ export function markShellGame(on) {
  * @typedef {{list: ShellLevel[], current: string | null, onPick: ((id: string) => void) | null, owner: string, reg: object}} ShellLevels
  */
 
-/** What `api.game.levels` registered, or null. @type {import('svelte/store').Writable<ShellLevels | null>} */
+/** What `api.game.levels` registered, or null — the newest registration whose owner is IN
+ * SCOPE (33 L4: a kept module's levels do not appear in another game's menu).
+ * @type {import('svelte/store').Writable<ShellLevels | null>} */
 export const gameLevels = writable(null);
+
+/** 33 (L4): every live levels registration, oldest first (a re-register moves to the end).
+ * `gameLevels` is the newest one in scope. @type {ShellLevels[]} */
+let levelRegs = [];
+function publishLevels() {
+	const shown = [...levelRegs].reverse().find((r) => ownerInScope(r.owner)) ?? null;
+	if (get(gameLevels) !== shown) gameLevels.set(shown);
+}
 
 /**
  * Normalise a levels spec: every entry an id + label, `locked` a boolean, `stars` 0..5
@@ -141,17 +155,23 @@ export function normalizeLevels(spec) {
  */
 export function setGameLevels(spec, owner = '') {
 	const clean = normalizeLevels(spec);
+	const who = String(owner || '');
 	if (!clean) {
-		if (get(gameLevels)?.owner === owner) gameLevels.set(null);
+		// an empty list withdraws this owner's levels
+		levelRegs = levelRegs.filter((r) => r.owner !== who);
+		publishLevels();
 		return null;
 	}
 	// the registration TOKEN, not the object: a pick re-publishes a copy with the new current
 	const reg = {};
 	/** @type {ShellLevels} */
-	const next = { ...clean, onPick: typeof spec.onPick === 'function' ? spec.onPick : null, owner: String(owner || ''), reg };
-	gameLevels.set(next);
+	const next = { ...clean, onPick: typeof spec.onPick === 'function' ? spec.onPick : null, owner: who, reg };
+	// one entry per owner: a re-call UPDATES (the newest), it never stacks
+	levelRegs = [...levelRegs.filter((r) => r.owner !== who), next];
+	publishLevels();
 	return () => {
-		if (get(gameLevels)?.reg === reg) gameLevels.set(null);
+		levelRegs = levelRegs.filter((r) => r.reg !== reg);
+		publishLevels();
 	};
 }
 
@@ -169,7 +189,9 @@ export function pickGameLevel(id) {
 	} catch {
 		/* a game's callback throwing must not strand the player in the menu */
 	}
-	gameLevels.set({ ...levels, current: level.id });
+	const picked = { ...levels, current: level.id };
+	levelRegs = levelRegs.map((r) => (r.reg === levels.reg ? picked : r));
+	gameLevels.set(picked);
 	debug.picks.push(level.id);
 	closeShellMenu();
 	return true;
@@ -177,8 +199,16 @@ export function pickGameLevel(id) {
 
 /* ------------------------------------------------------------------- how to play --- */
 
-/** What a game says about itself (`api.game.setHelp`), keyed by owner. @type {import('svelte/store').Writable<{owner: string, lines: string[]} | null>} */
+/** What a game says about itself (`api.game.setHelp`) — the newest registration in scope.
+ * @type {import('svelte/store').Writable<{owner: string, lines: string[]} | null>} */
 export const gameHelp = writable(null);
+
+/** 33 (L4): every live help registration, oldest first @type {{owner: string, lines: string[]}[]} */
+let helpRegs = [];
+function publishHelp() {
+	const shown = [...helpRegs].reverse().find((r) => ownerInScope(r.owner)) ?? null;
+	if (get(gameHelp) !== shown) gameHelp.set(shown);
+}
 
 /** @param {any} text a string (lines split on \n) or an array of lines @param {string} [owner] */
 export function setGameHelp(text, owner = '') {
@@ -187,10 +217,14 @@ export function setGameHelp(text, owner = '') {
 		.filter(Boolean)
 		.slice(0, 16)
 		.map((l) => l.slice(0, 160));
-	const next = lines.length ? { owner: String(owner || ''), lines } : null;
-	gameHelp.set(next);
+	const who = String(owner || '');
+	const next = lines.length ? { owner: who, lines } : null;
+	helpRegs = helpRegs.filter((r) => r.owner !== who);
+	if (next) helpRegs.push(next);
+	publishHelp();
 	return () => {
-		if (get(gameHelp) === next) gameHelp.set(null);
+		helpRegs = helpRegs.filter((r) => r !== next);
+		publishHelp();
 	};
 }
 
@@ -202,11 +236,13 @@ export const COMMON_CONTROLS = {
 
 /* --------------------------------------------------------------------- restart --- */
 
-/** @type {Set<() => void>} */
-const restartHooks = new Set();
-/** A game's own restart (a module resetting its board). @param {() => void} fn @returns {() => void} */
-export function onGameRestart(fn) {
-	restartHooks.add(fn);
+/** @type {Map<() => void, string>} hook -> owner module ('' = core / anonymous) */
+const restartHooks = new Map();
+/** A game's own restart (a module resetting its board). 33 (L4): a hook whose owner was
+ * left behind by a scene switch does not run — a kept Waves must not reset itself when
+ * Towers restarts. @param {() => void} fn @param {string} [owner] @returns {() => void} */
+export function onGameRestart(fn, owner = '') {
+	restartHooks.set(fn, String(owner || ''));
 	return () => restartHooks.delete(fn);
 }
 
@@ -228,7 +264,8 @@ export function registerShellSeams(fns) {
 export function restartGame() {
 	const verdict = seams.reset ? seams.reset() : { ok: true };
 	if (!verdict.ok) seams.toast?.((verdict.reason ?? 'The game cannot be restarted.') + ' Carrying on with the game as it is.');
-	for (const fn of restartHooks) {
+	for (const [fn, owner] of restartHooks) {
+		if (!ownerInScope(owner)) continue;
 		try {
 			fn();
 		} catch {
@@ -354,6 +391,28 @@ export function shellSettingViews(opts = {}) {
 }
 
 /**
+ * 33 (G3): the game's choices drawn as TABS above the Levels page (a setting registered with
+ * `onLevels: true` — Untangle's Board: Globe / 2D board), with the option on now. Both
+ * renderers read it. @returns {{id: string, label: string, options: {value: string, label: string}[], value: string}[]}
+ */
+export function shellLevelTabs() {
+	const values = get(gameSettingValues);
+	return get(gameSettingRows)
+		.filter((row) => row.onLevels && row.type === 'choice')
+		.map((row) => ({
+			id: row.id,
+			label: row.label,
+			options: (row.options ?? []).map((o, i) => ({ value: o, label: String(row.optionLabels?.[i] ?? o) })),
+			value: String(values[row.id] ?? row.default)
+		}));
+}
+
+/** 33: the headset's level grid shows page `n` (0-based; clamped where it is drawn). @param {number} n */
+export function showLevelPage(n) {
+	shellMenu.update((m) => ({ ...m, levelPage: Math.max(0, Math.floor(Number(n) || 0)) }));
+}
+
+/**
  * Step a setting the way a controller does: a toggle flips, a choice walks (dir ±1,
  * wrapping), a range moves by its step (clamped). Returns the new value.
  * @param {string} id @param {number} [dir]
@@ -406,6 +465,19 @@ export function pressShellHit(hitId) {
 	if (parts[1] === 'item') return runShellItem(parts.slice(2).join(':'));
 	if (parts[1] === 'back') return runShellItem('back');
 	if (parts[1] === 'level') return pickGameLevel(parts.slice(2).join(':'));
+	// 33: a tab above the grid (tab:<setting index>:<option index> of shellLevelTabs) and the
+	// headset grid's page arrows (lvpage:<page>)
+	if (parts[1] === 'tab') {
+		const tab = shellLevelTabs()[Number(parts[2])];
+		const option = tab?.options[Number(parts[3])];
+		if (!tab || !option) return false;
+		if (option.value !== tab.value) setGameSetting(tab.id, option.value);
+		return true;
+	}
+	if (parts[1] === 'lvpage') {
+		showLevelPage(Number(parts[2]));
+		return true;
+	}
 	if (parts[1] === 'set') {
 		const dir = parts[parts.length - 1] === 'prev' ? -1 : 1;
 		const id = parts.slice(2, parts.length - 1).join(':');
@@ -441,6 +513,8 @@ export function gameShellDebug() {
 /** Test seam. */
 export function resetGameShell() {
 	closeShellMenu();
+	levelRegs = [];
+	helpRegs = [];
 	gameLevels.set(null);
 	gameHelp.set(null);
 	restartHooks.clear();
@@ -449,3 +523,11 @@ export function resetGameShell() {
 	debug.items = [];
 	debug.picks = [];
 }
+
+// 33 (L4): a scene switch moves modules in or out of scope — re-pick what the menu shows.
+// Declared at the END: the publishers read `levelRegs`/`helpRegs`, and a module-level
+// subscribe runs its callback synchronously at evaluation (the TDZ rule).
+leftBehindModules.subscribe(() => {
+	publishLevels();
+	publishHelp();
+});

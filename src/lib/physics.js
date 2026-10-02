@@ -4,7 +4,7 @@ import { createStreakWatch, PHYSICS_SLOW_MS, PHYSICS_SLOW_STEPS } from './overlo
 import { registerMetricSource } from './sceneBudget';
 import { writable, get } from 'svelte/store';
 import { flowGraphs, allNodes, allEdges, SCENE_GRAPH } from '../stores/flowStore';
-import { objectsGroup, lockedObjects, selectedObject, selectedObjects, pokeScene } from '../stores/sceneStore';
+import { objectsGroup, lockedObjects, selectedObject, selectedObjects, pokeScene, editorMode, isLocked } from '../stores/sceneStore';
 import { peers, showToast, openSceneSection } from '../stores/appStore';
 import { recordTransformSet, recordEntry } from './history';
 import {
@@ -25,8 +25,10 @@ import {
 	scenePhysicsGround,
 	scenePhysicsBounds,
 	scenePhysicsDefaults,
-	sceneKnock
+	sceneKnock,
+	scenePlay
 } from './scenePhysics';
+import { hudDocs, isGameHud } from './hudDocs'; // 33 E4: is this scene a game (a leaf)
 import { velocityFromSamples, clampThrow, MAX_LINVEL, MAX_ANGVEL } from './throwVelocity';
 // 29-F: the lower-id-keeps-the-world rule, as a leaf that imports nothing — the whole
 // decision is a pure function of four facts, so its truth table is a vitest unit.
@@ -69,7 +71,7 @@ export const remoteSimulating = writable(null);
 /** @type {any} */ let RAPIER = null;
 /** @type {any} */ let world = null;
 /** @typedef {{object: any, body: any, offset: THREE.Vector3, initialQuat: THREE.Quaternion,
- *   mode: 'dynamic'|'kinematic', hull: boolean, hold: 'user'|'external'|null, holdUntil: number,
+ *   mode: 'dynamic'|'kinematic', hull: boolean, hold: 'user'|'external'|'edit'|null, holdUntil: number,
  *   holdPeer?: string | null,
  *   samples: {t: number, pos: THREE.Vector3, quat: THREE.Quaternion}[],
  *   lastWritten: {pos: THREE.Vector3, quat: THREE.Quaternion},
@@ -210,6 +212,15 @@ function collectParams(group) {
 	// H1: physics nodes live in ANY graph (scene or per-object documents)
 	const nodes = allNodes();
 	const edges = allEdges();
+	// 33 G1: indexed once per call — the nested finds below were O(edges x nodes), and this
+	// runs on EVERY flowGraphs change mid-sim (onGraphChange); measured as the second app
+	// frame of the Stars Room on a phone profile
+	/** @type {Map<string, any>} */
+	const byId = new Map();
+	for (const n of nodes) if (!byId.has(n.id)) byId.set(n.id, n);
+	/** @type {Set<string>} edge sources that reach an Object Selector */
+	const toSelector = new Set();
+	for (const e of edges) if (byId.get(e.target)?.type === 'objectselector') toSelector.add(e.source);
 	/** apply one physics node's params onto an object's entry @param {any} source @param {string} uuid */
 	const applyPhysicsNode = (source, uuid) => {
 		map[uuid] ??= {};
@@ -243,15 +254,15 @@ function collectParams(group) {
 			if (source.data?.scale != null) map[uuid].colliderScale = source.data.scale;
 			if (source.data?.sensor) map[uuid].sensor = true;
 			const sourceEdge = edges.find((e) => e.target === source.id && e.targetHandle === 'source');
-			const sourceNode = sourceEdge ? nodes.find((n) => n.id === sourceEdge.source) : null;
+			const sourceNode = sourceEdge ? byId.get(sourceEdge.source) : null;
 			const sourceUuid = sourceNode?.type === 'objectselector' ? sourceNode.data?.selected : null;
 			if (sourceUuid && sourceUuid !== '-None-') map[uuid].colliderSource = sourceUuid;
 		}
 	};
 	edges.forEach((edge) => {
-		const source = nodes.find((n) => n.id === edge.source);
+		const source = byId.get(edge.source);
 		if (!source || !PHYSICS_TYPES.includes(source.type)) return;
-		const target = nodes.find((n) => n.id === edge.target);
+		const target = byId.get(edge.target);
 		if (target?.type !== 'objectselector') return;
 		const uuid = target.data?.selected;
 		if (!uuid || uuid === '-None-') return;
@@ -263,10 +274,7 @@ function collectParams(group) {
 		if (!PHYSICS_TYPES.includes(source.type)) return;
 		const graph = source.__graph;
 		if (!graph || graph === SCENE_GRAPH) return;
-		const wired = edges.some(
-			(e) => e.source === source.id && nodes.find((n) => n.id === e.target)?.type === 'objectselector'
-		);
-		if (!wired) applyPhysicsNode(source, graph);
+		if (!toSelector.has(source.id)) applyPhysicsNode(source, graph);
 	});
 	return map;
 }
@@ -826,7 +834,11 @@ async function startSimulation() {
 	);
 	if (dynamicUuids.length === 0) {
 		const selected = get(selectedObject);
-		if (selected && group.getObjectByProperty('uuid', selected.uuid) && !locked.includes(selected.uuid)) {
+		// 33 P2: never a FUNCTIONAL pack item (a door, a chest): its colliders are the frame
+		// slabs + the followed moving parts, and as the fallback body it fell over and took
+		// every click as a carry. `selectedObject` is sticky, so the door just placed (and
+		// deselected) was exactly what this picked.
+		if (selected && !selected.userData?.behavior && group.getObjectByProperty('uuid', selected.uuid) && !locked.includes(selected.uuid)) {
 			params[selected.uuid] = { ...(params[selected.uuid] ?? {}), mass: 1 };
 			delete params[selected.uuid].forceStatic;
 			dynamicUuids = [selected.uuid];
@@ -1193,8 +1205,61 @@ export function holdBody(uuid) {
 export function releaseBody(uuid, velocity = null) {
 	const entry = bodies.find((e) => e.object.uuid === uuid && e.hold === 'user');
 	if (!entry || !world) return false;
+	// 33 E4: in EDIT a release PARKS the body where it was put (see editParking)
+	if (editParking()) {
+		parkHold(entry);
+		return true;
+	}
 	releaseHold(entry, velocity);
 	return true;
+}
+
+// 33 E4 — "not all objects positions can be moved in edit mode when in game". A game's
+// simulation keeps running after you leave Play (maybeSimOnPlay starts, never stops), so in
+// EDIT every dynamic body was handed back to physics the moment the gizmo or a grip let go:
+// MEASURED across the seven games, Towers' pieces flung ~47 m off the map, Stars Room's stars
+// and planets drifted away, the football rolled off — 47 objects in four games that could not
+// be put anywhere. A game may re-assert positions only in Interact/Play, so in Edit a release
+// PARKS the body: it stays a kinematic at the pose it was put down at (hold 'edit' — the
+// write-back and the deviation detector both skip it, its kinematic target IS the object's
+// pose) until the editor leaves Edit, when every parked body is released with NO velocity and
+// physics takes it from where it was left. Scoped to a GAME scene (a state-bound HUD screen, or
+// a play block that runs the sim on Play): a plain physics playground keeps P-A's editor throw
+// — flinging a crate with the gizmo is that scene's whole point.
+
+/** is a release in this mode a placement rather than a throw? */
+function editParking() {
+	if (get(editorMode) !== 'edit' || get(isLocked) === true) return false;
+	return get(scenePlay)?.simOnPlay === true || isGameHud(get(hudDocs));
+}
+
+/** @param {BodyEntry} entry */
+function parkHold(entry) {
+	entry.hold = 'edit';
+	entry.holdUntil = 0;
+	entry.holdPeer = null;
+	entry.samples = [];
+	entry.body.setLinvel({ x: 0, y: 0, z: 0 }, true);
+	entry.body.setAngvel({ x: 0, y: 0, z: 0 }, true);
+	entry.lastWritten.pos.copy(entry.object.position);
+	entry.lastWritten.quat.copy(entry.object.quaternion);
+}
+
+/** Leaving Edit: every parked body goes back to physics, at rest, from where it was put.
+ * Exported for the suite. @returns {number} how many were released */
+export function releaseParkedBodies() {
+	let n = 0;
+	for (const entry of bodies) {
+		if (entry.hold !== 'edit') continue;
+		releaseHold(entry, { linvel: [0, 0, 0], angvel: [0, 0, 0] });
+		n++;
+	}
+	return n;
+}
+
+/** suites: the uuids parked right now */
+export function parkedBodies() {
+	return bodies.filter((e) => e.hold === 'edit').map((e) => e.object.uuid);
 }
 
 /**
@@ -1340,7 +1405,7 @@ export function applyHit(data) {
  * meets it at speed has hit it. 29-F: `held: !!entry.hold` folded the two together, so
  * the waves template's walkers could not be knocked on the one peer that steps the world.
  * @param {string} uuid
- * @returns {{linvel: number[], angvel: number[], held: boolean, hold: 'user'|'external'|null} | null}
+ * @returns {{linvel: number[], angvel: number[], held: boolean, hold: 'user'|'external'|'edit'|null} | null}
  */
 export function bodyVelocityOf(uuid) {
 	if (!world) return null;
@@ -1475,7 +1540,7 @@ function stepInner(now) {
 	// mechanism self-contained (the dev server can split module instances, so a
 	// hook called from peerHandler can land on a different physics instance).
 	bodies.forEach((entry) => {
-		if (entry.mode !== 'dynamic' || entry.hold === 'user') return;
+		if (entry.mode !== 'dynamic' || entry.hold === 'user' || entry.hold === 'edit') return;
 		const written = entry.lastWritten;
 		// component-wise compare — NOT quaternion dot: dot(q,q) = |q|^2, and
 		// rapier's f32 components leave the norm ~1e-9 off unit, which reads as
@@ -1989,3 +2054,14 @@ export function physicsDebug() {
 		bodyRot: entry.body?.rotation?.() ?? null
 	}));
 }
+
+// 33 E4: leaving Edit (to Interact, or into Play) hands every parked body back to physics.
+// Module-level and LAST: subscribe runs synchronously at eval, so `bodies` above must exist.
+let wasEditParking = false;
+function onModeChange() {
+	const now = editParking();
+	if (wasEditParking && !now) releaseParkedBodies();
+	wasEditParking = now;
+}
+editorMode.subscribe(onModeChange);
+isLocked.subscribe(onModeChange);

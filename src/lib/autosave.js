@@ -3,7 +3,7 @@ import * as THREE from 'three';
 import { get, writable } from 'svelte/store';
 import { GLTFExporter } from 'three/addons/exporters/GLTFExporter.js';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
-import { objectsGroup, globalCamera, orbitControls, pokeScene } from '../stores/sceneStore';
+import { objectsGroup, globalCamera, globalScene, orbitControls, pokeScene, beginSceneBatch, endSceneBatch } from '../stores/sceneStore';
 import { flowGraphs, restoreGraphs, SCENE_GRAPH } from '../stores/flowStore';
 import { serializeGraphs } from './flowGraphs';
 import { serializeNode, serializeEdge } from './nodesHandler';
@@ -13,6 +13,8 @@ import { stripEditOverlays } from './editOverlays';
 // B7: a spawner's copies must never reach a snapshot — a crash mid-run would otherwise
 // restore them as permanent scene content
 import { isTransient, parkTransientObjects } from './transientObjects';
+import { parkPackPieces, fillPackRef, isPristinePackRef, stubElementOf, warmPrograms } from './packRefs';
+import { beginLoad, endLoad, progress, slice, updateLoad, onCancel, isLive, LoadCancelled, throttledPoke, holdFrames, releaseFrames, nextFrames, within, WARM_WAIT_MS, warmComposer, loading as sceneLoading, loadSettled } from './sceneLoader';
 import { animatedImportsSnapshot, animatedImportsRestore } from './animatedImports';
 import { animations, animationsSnapshot, animationsRestore } from './animationPreview';
 import { scenePost, scenePostSnapshot, scenePostRestore } from './scenePost';
@@ -198,6 +200,17 @@ function exportScene() {
 		// is the documented trap in reverse. A crash mid-run must not leave forty crates in
 		// the snapshot to be restored as permanent scene content.
 		const unpark = parkTransientObjects(group);
+		// 33 L1: pristine kit pieces are written as STUBS (packRefs.parkPackPieces), and put
+		// back the moment the exporter has READ the tree — its `afterParse` hook — not when
+		// the export finishes: the bytes are encoded in later tasks, and a frame drawn in
+		// between must not show a hollow castle. The callbacks put them back too (an error).
+		const unparkPieces = parkPackPieces(group);
+		let piecesBack = false;
+		const putPiecesBack = () => {
+			if (piecesBack) return;
+			piecesBack = true;
+			unparkPieces();
+		};
 		// H1 fix: GLTFLoader assigns NEW uuids on parse, which orphans everything
 		// keyed by object uuid (object flows, annotations). Stamp each object's
 		// uuid into userData (GLTF extras round-trips it) so restoreSnapshot can
@@ -209,15 +222,19 @@ function exportScene() {
 			group.traverse((/** @type {any} */ child) => {
 				if (child.userData && '__uuid' in child.userData) delete child.userData.__uuid;
 			});
-		new GLTFExporter().parse(
+		const exporter = new GLTFExporter();
+		exporter.register(() => ({ afterParse: putPiecesBack }));
+		exporter.parse(
 			group,
 			(result) => {
+				putPiecesBack();
 				unpark(); // before unstamp, so the parked objects lose their __uuid too
 				unstamp();
 				restore();
 				done(result);
 			},
 			(error) => {
+				putPiecesBack();
 				unpark();
 				unstamp();
 				restore();
@@ -458,7 +475,21 @@ function markDirty() {
  */
 function schedule() {
 	clearTimeout(debounceTimer);
-	debounceTimer = setTimeout(saveSnapshot, get(autosaveStatus).debounceMs);
+	debounceTimer = setTimeout(scheduledSave, get(autosaveStatus).debounceMs);
+}
+
+/**
+ * 33 L1: the debounced save WAITS OUT a scene load. A snapshot is one export of the whole
+ * tree on the main thread, and taken mid-load it is both the longest task of the load and a
+ * picture of half a scene. An explicit `saveNow` is not deferred — its promise is "on disk
+ * when I resolve".
+ */
+function scheduledSave() {
+	if (sceneLoading()) {
+		void loadSettled().then(schedule);
+		return;
+	}
+	void saveSnapshot();
 }
 
 /** Phase 22 registers its annotations getter/setter here (avoids a hard dependency) */
@@ -518,7 +549,8 @@ async function checkRestore() {
  * @param {any} offer
  */
 async function autoRestore(offer) {
-	const ok = await applyRestore(offer.snapshot);
+	const ok = await applyRestore(offer.snapshot, offer);
+	if (ok === null) return;
 	if (!ok) return showToast('Could not restore the saved session');
 	const count = offer.objects ?? 0;
 	const when = new Date(offer.ts).toLocaleString();
@@ -566,8 +598,8 @@ function restoreMultiMaterial(entries) {
 		// the whole SCENE. That is deliberate, not an oversight: the scene root matters
 		// when a helper shares a real mesh's resources (an onion-skin ghost shares its
 		// source geometry), and a twin parsed seconds ago inside this function cannot be
-		// the source of one. autosave does not import globalScene, and adding an import
-		// for symmetry alone would be a worse trade than saying so here.
+		// the source of one. (autosave imports globalScene since 33 L1, for the program
+		// warm-up; the reasoning above is why this site still keys on the group.)
 		disposeTree(twin, { keep: keepSet(get(objectsGroup), twin) });
 	}
 	pokeScene();
@@ -577,9 +609,10 @@ function restoreMultiMaterial(entries) {
  * Put a snapshot back into the scene. Shared by the prompt and the 18-A
  * auto-restore path, which report the outcome differently.
  * @param {any} snapshot
- * @returns {Promise<boolean>} did it land?
+ * @param {any} [offer] the prompt's offer, re-armed when the user cancels
+ * @returns {Promise<boolean | null>} did it land? null = cancelled or superseded (33 L1)
  */
-async function applyRestore(snapshot) {
+async function applyRestore(snapshot, offer = null) {
 	// 27-D: arm BEFORE the restore, clear on the first clean flow tick (flowRuntime).
 	// A flag still set at the next boot means this snapshot never reached a working
 	// frame — so the next boot must not silently restore it again. Placed here rather
@@ -590,13 +623,40 @@ async function applyRestore(snapshot) {
 		/* private mode or a full quota: the guard degrades to the old behaviour */
 	}
 	const group = get(objectsGroup);
+	// 33 L1: the Restore button shows progress and keeps the window alive (see sceneLoader).
+	// The total is unknown until the snapshot is parsed, so the bar starts on "Reading".
+	const job = beginLoad('your last session', snapshot?.objects ?? 0, { phase: 'reading', verb: 'Restoring' });
+	/** @type {Promise<any>[]} */
+	const refills = [];
 	try {
+		// 33 L1: sky and lights before the objects, so pieces warming as their packs land
+		// compile for THIS scene's lights (see sessions.applySession)
+		environmentRestore(snapshot.environment, true);
+		// the look off-frame, then two near-empty frames for the post stack's own shaders, then
+		// hold for the build (the reasoning is in sessions.applySession)
+		holdFrames();
+		await within(warmPrograms(get(globalScene)), WARM_WAIT_MS);
+		if (!isLive(job)) {
+			releaseFrames();
+			return null;
+		}
+		scenePostRestore(snapshot.post, true);
+		await within(warmComposer(), WARM_WAIT_MS);
+		releaseFrames();
+		await nextFrames(2);
+		if (!isLive(job)) return null;
+		holdFrames();
 		if (snapshot.scene && group) {
 			const loader = new GLTFLoader();
 			/** @type {any} */
 			const result = await new Promise((resolve, reject) =>
 				loader.parse(snapshot.scene, '', resolve, reject)
 			);
+			// cancelled or superseded (another scene opened) while the snapshot parsed
+			if (!isLive(job)) {
+				releaseFrames();
+				return null;
+			}
 			const container =
 				result.scene.getObjectByName('AuxScene')?.children?.[0] ??
 				result.scene.children[0] ??
@@ -614,12 +674,38 @@ async function applyRestore(snapshot) {
 			});
 			/** @type {any} */
 			const peer = get(peers);
-			[...container.children].forEach((child) => {
-				group.add(child);
-				if (peer) peer.send({ type: 'object', element: child.toJSON() });
+			// 33 L1: the wire copy is built only when somebody can receive it — a toJSON
+			// re-encodes every texture as a PNG data URL, per child, and a solo restore paid
+			// that for nobody. A pristine kit piece travels as its stub, as on every other path.
+			const connected = !!peer && (peer.openedPeers?.size ?? Object.keys(peer.connections ?? {}).length) > 0;
+			const children = [...container.children];
+			updateLoad(job, { total: children.length, phase: 'objects' });
+			// Cancel takes back what had been added and offers the restore again — the
+			// snapshot is untouched in storage
+			onCancel(() => {
+				void import('./commandsHandler.svelte').then((m) => m.sceneCommand('/clear all'));
+				if (offer) restoreAvailable.set(offer);
+				showToast('Stopped restoring — your last session is still saved; press Restore to try again.');
 			});
+			const poke = throttledPoke(pokeScene);
+			beginSceneBatch();
+			try {
+				for (const child of children) {
+					await slice(job);
+					group.add(child);
+					if (connected)
+						peer.send({ type: 'object', element: isPristinePackRef(child) ? stubElementOf(child) : child.toJSON() });
+					if (child.userData?.packStub) refills.push(fillPackRef(child).finally(() => progress(job)));
+					else progress(job);
+					poke();
+				}
+			} finally {
+				endSceneBatch();
+			}
 			pokeScene();
+			await within(warmPrograms(group), WARM_WAIT_MS);
 		}
+		releaseFrames();
 		// multi-material meshes come back from their toJSON, REPLACING the Group of
 		// single-material children the GLTF export left behind (same twin-replacement
 		// shape as rigs below). Keyed by uuid, which the __uuid stamp above restored.
@@ -631,6 +717,7 @@ async function applyRestore(snapshot) {
 		// rigs come back from their ORIGINAL bytes — this also replaces the static
 		// twin the GLTF export wrote — and authored tracks from the snapshot
 		await animatedImportsRestore(snapshot.animated ?? []);
+		if (!isLive(job)) return null; // superseded while the rigs parsed
 		animationsRestore(snapshot.animations ?? {});
 		if (snapshot.graphs && typeof snapshot.graphs === 'object') {
 			restoreGraphs(snapshot.graphs); // H1 format: every graph document
@@ -640,10 +727,10 @@ async function applyRestore(snapshot) {
 		if (snapshot.annotations?.length && annotationsRestorer) annotationsRestorer(snapshot.annotations);
 		// the restored look replicates alongside the objects this function just
 		// re-broadcast, so a restore into a live room is consistent
-		scenePostRestore(snapshot.post, true);
+		// (the look was restored before the objects, with the environment)
 		// A6.1: and so do the sky and the gravity (absent = the scene's default, which
 		// is what an older snapshot without these fields means)
-		environmentRestore(snapshot.environment, true);
+		// (the environment was restored before the objects — see the build loop)
 		scenePhysicsRestore(snapshot.physics, true);
 		// resume:false — a reload must not start the beat lab on its own, the same
 		// reasoning that keeps MUSIC out of this snapshot entirely
@@ -666,8 +753,16 @@ async function applyRestore(snapshot) {
 				controls.update();
 			}
 		}
+		// the bar stays (still cancellable) while kit pieces arrive from their packs
+		if (refills.length) {
+			updateLoad(job, { phase: 'models' });
+			void Promise.allSettled(refills).then(() => endLoad(job));
+		} else endLoad(job);
 		return true;
 	} catch (error) {
+		releaseFrames();
+		if (error instanceof LoadCancelled) return null;
+		endLoad(job);
 		log('warn', 'autosave', 'restore failed', String(error));
 		return false;
 	}
@@ -678,7 +773,9 @@ export async function restoreSnapshot() {
 	const offer = get(restoreAvailable);
 	if (!offer) return;
 	restoreAvailable.set(null);
-	const ok = await applyRestore(offer.snapshot);
+	const ok = await applyRestore(offer.snapshot, offer);
+	// null: cancelled (it said so itself and re-offered) or superseded by another load
+	if (ok === null) return;
 	showToast(
 		ok
 			? 'Session restored (' + (offer.snapshot?.objects ?? 0) + ' objects)'

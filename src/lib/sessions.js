@@ -1,12 +1,13 @@
 import * as THREE from 'three';
 import { writable, get } from 'svelte/store';
-import { objectsGroup, globalCamera, globalScene, globalRenderer, orbitControls, TControls, pokeScene } from '../stores/sceneStore';
+import { objectsGroup, globalCamera, globalScene, globalRenderer, orbitControls, TControls, pokeScene, beginSceneBatch, endSceneBatch } from '../stores/sceneStore';
 import { restoreGraphs, clearGraphs, SCENE_GRAPH, allNodes } from '../stores/flowStore';
 import { serializeGraphs, copyGraphFrom } from './flowGraphs';
 import { serializeNode, serializeEdge, sendNodes } from './nodesHandler';
 import { parkAnimatedAtBase } from './flowRuntime';
 import { stripEditOverlays } from './editOverlays';
-import { isPristinePackRef, stubElementOf, stubNodeCount } from './packRefs';
+import { isPristinePackRef, stubElementOf, stubNodeCount, fillPackRef, warmPrograms } from './packRefs';
+import { beginLoad, endLoad, progress, slice, updateLoad, onCancel, isLive, LoadCancelled, throttledPoke, holdFrames, releaseFrames, nextFrames, within, WARM_WAIT_MS, warmComposer } from './sceneLoader';
 // B7: a spawner's copies exist only while the world runs — never in a scene file
 import { isTransient } from './transientObjects';
 import {
@@ -70,6 +71,8 @@ import { sceneCommand, sendObjects, clearSceneLocal } from './commandsHandler.sv
 import { nameOf } from './lockControl';
 import { idbGet, idbPut, idbDelete, idbKeys } from './idb';
 import { showConfirm, showChoice } from './confirmDialog';
+// 33 (L2/L4): what happens to modules when the scene changes
+import { prepareSceneSwitch, sceneArrived } from './sceneSwitch';
 import { APP_VERSION } from './version.js';
 
 // Multi-slot sessions (phase 50) on top of the autosave format. Each session
@@ -644,18 +647,39 @@ async function confirmModuleRequirements(payload) {
 		choices
 	});
 	if (!answer) return false; // Cancel / Esc / outside-close: nothing has been touched
-	if (answer === 'enable') enableRequired(disabled);
+	if (answer === 'enable') await enableRequired(disabled);
 	if (answer === 'install') await installRequired([...missing, ...outdated]);
 	return true;
 }
 
-/** Switch requested modules back on (they are already installed).
+/** Switch requested modules back on (they are already installed) — LIVE, 33 (L2): a module
+ * the scene-switch ask unloaded comes back the moment a scene that needs it is opened,
+ * through this prompt, with no reload. A user module re-activates from its stored record,
+ * a core one re-registers from the app's own list.
  * @param {{id: string}[]} entries */
-function enableRequired(entries) {
+async function enableRequired(entries) {
 	const ids = entries.map((entry) => entry.id);
 	disabledModules.update((list) => list.filter((id) => !ids.includes(id)));
+	const late = [];
+	try {
+		const { userModules, activateUserModule } = await import('./userModules');
+		const { initModules, isModuleLoaded } = await import('./moduleSDK');
+		const { coreModules } = await import('../modules/index.js');
+		for (const id of ids) {
+			if (isModuleLoaded(id)) continue;
+			const record = get(userModules).find((/** @type {any} */ r) => r.id === id);
+			if (record) await activateUserModule(record);
+			else {
+				const core = coreModules.find((/** @type {any} */ m) => m.id === id);
+				if (core) initModules([core]);
+			}
+			if (!isModuleLoaded(id)) late.push(id);
+		}
+	} catch {
+		late.push(...ids);
+	}
 	showToast(
-		'Enabled ' + ids.join(', ') + ' — reload if a node still shows as missing'
+		'Enabled ' + ids.join(', ') + (late.length ? ' — reload if a node still shows as missing' : '')
 	);
 }
 
@@ -1302,16 +1326,37 @@ function reportUnknownNodes(payload) {
  *              travel, so the traveller re-asserts the live state after the load
  *   workspace  false skips the edit-resume — a level hop mid-game must not reopen the
  *              author's mesh-edit session
+ *   quiet      true skips the "Session loaded" toast — 33 (L3): a full Clear applies an EMPTY
+ *              payload, and "Session loaded: Untitled (0 objects)" is not what happened
  * @param {any} payload
- * @param {{backup?: boolean, replicate?: boolean, game?: boolean, workspace?: boolean}} [opts]
+ * @param {{backup?: boolean, replicate?: boolean, game?: boolean, workspace?: boolean, quiet?: boolean}} [opts]
  */
 export async function applySession(payload, opts = {}) {
-	const { backup = true, replicate = true, game = true, workspace = true } = opts;
+	// 33 L1: ONE load at a time, and it says what it is doing. Starting this one supersedes
+	// a load still running (its loop stops at its next slice) — opening scene B while A is
+	// still arriving is how a user cancels A, and it must not leave A's objects in B.
+	const job = beginLoad(payload?.name ?? 'scene', (payload?.objects ?? []).length, { phase: 'preparing' });
+	try {
+		await applySessionNow(payload, opts, job);
+	} catch (error) {
+		// a load that FAILED must not leave its bar up (endLoad ignores a superseded job)
+		endLoad(job);
+		throw error;
+	}
+}
+
+/** @param {any} payload @param {{backup?: boolean, replicate?: boolean, game?: boolean, workspace?: boolean, quiet?: boolean}} opts
+ * @param {import('./sceneLoader').LoadJob} job */
+async function applySessionNow(payload, opts, job) {
+	const { backup = true, replicate = true, game = true, workspace = true, quiet = false } = opts;
 	// 31 K3: the file's own name is the game's identity for its per-game settings (a
 	// Games-tab load is unnamed afterwards, but its session name is the game's title)
 	noteSceneFileName(payload?.name);
 	const group = get(objectsGroup);
-	if (backup && group?.children.length) await saveSession('Backup before "' + payload.name + '"');
+	// 33 L1: a load that interrupted another one still building finds HALF of that scene on
+	// screen — nothing anybody made, so no "Backup before" of it
+	const hadContent = !!group?.children.length && !job.interrupted;
+	if (backup && hadContent) await saveSession('Backup before "' + payload.name + '"');
 	// R22-R8: a session saved by "Save into session" carries the whole Explorer library
 	// beside the scene, because that gesture EMPTIES the library and the save is the only
 	// thing standing between the user and losing it. Restoring it is hash-deduped, so a
@@ -1333,30 +1378,101 @@ export async function applySession(payload, opts = {}) {
 	} catch {
 		/* physics failing to load must never block a scene load */
 	}
+	// a load superseded while the backup or the library restore awaited stops here
+	if (!isLive(job)) return;
 	if (replicate) sceneCommand('/clear all'); // replicated clear (objects + module content)
 	else clearSceneLocal();
+	updateLoad(job, { phase: 'objects' });
+	// 33 L1: the SKY AND LIGHTS first. The scene's own environment decides how many lights a
+	// material is compiled for, and kit pieces warm their programs as their pack files land —
+	// during this loop. Restored after the objects (as it was), every piece compiled for the
+	// previous scene's lights and linked again on its first frame. It also shows the right sky
+	// at once instead of the old one under the arriving level. (A6.1: absent = the default.)
+	environmentRestore(payload.environment, replicate);
+	// The new fog/lights RE-KEY every program already in the scene (helpers, grid, sky), and the
+	// first frame after it linked them all at once: hold the viewport and link them a slice at a
+	// time first. Then the LOOK (post stack): its pass shaders are compiled off-frame through
+	// the composer seam Outline registers, and whatever that misses gets two frames of a
+	// near-empty scene to itself. Then hold again for the build. (Measured on a CPU x6 phone: env and post
+	// links together on one frame were the last tasks over 200 ms.)
+	holdFrames();
+	await within(warmPrograms(get(globalScene)), WARM_WAIT_MS);
+	if (!isLive(job)) {
+		releaseFrames();
+		return;
+	}
+	scenePostRestore(payload.post, replicate);
+	// the composer's own pass shaders, off-frame too (Outline registers the warm-up)
+	await within(warmComposer(), WARM_WAIT_MS);
+	releaseFrames();
+	await nextFrames(2);
+	if (!isLive(job)) return;
+	// ...then the viewport holds its last frame while the objects are built and warmed;
+	// released below (bounded either way)
+	holdFrames();
 	/** @type {any} */
 	const peer = get(peers);
-	for (const element of payload.objects ?? []) {
-		let object;
-		try {
-			object = new THREE.ObjectLoader().parse(element);
-		} catch {
-			continue;
+	// 33 L1: Cancel (the load bar) takes back what this load had added — clearing for the
+	// room as the load itself replicated. A load SUPERSEDED by another one is not cleared
+	// here: the newer load's own clear does that.
+	onCancel(() => {
+		if (replicate) sceneCommand('/clear all');
+		else clearSceneLocal();
+		showToast(
+			'Stopped loading "' + (payload?.name ?? 'scene') + '"' +
+				(backup && hadContent ? ' — your previous scene is in Sessions as "Backup before ' + payload.name + '"' : '')
+		);
+	});
+	/** @type {Promise<any>[]} kit pieces still refilling from their pack */
+	const refills = [];
+	const poke = throttledPoke(pokeScene);
+	beginSceneBatch();
+	try {
+		// 33 L1: TIME-SLICED. This loop used to build every object in one task — a castle of
+		// 180 pieces parsed, attached and broadcast before the window could paint again.
+		// `slice` yields whenever the ~10 ms budget is spent, and stops at a clean point
+		// between two objects when the load was cancelled or superseded.
+		for (const element of payload.objects ?? []) {
+			await slice(job);
+			let object;
+			try {
+				object = new THREE.ObjectLoader().parse(element);
+			} catch {
+				progress(job);
+				continue;
+			}
+			// A scene saved while a mesh-edit session was open carries the edit
+			// wireframe as a real child object — it comes back as a permanent,
+			// un-updatable wireframe nobody can switch off, and it accumulates on
+			// every save/load round trip (the reported "wireframe glitch"). Drop it
+			// on the way in; the peers do the same in `createObject`.
+			stripEditOverlays(object);
+			group.add(object); // keep original uuids — every peer converges on them
+			if (replicate && peer) peer.send({ type: 'object', element });
+			// a kit piece is not loaded until its pack refilled it: counted when it lands,
+			// and asked for NOW rather than on the scan's next debounce
+			if (object.userData?.packStub) refills.push(fillPackRef(object).finally(() => progress(job)));
+			else progress(job);
+			poke();
 		}
-		// A scene saved while a mesh-edit session was open carries the edit
-		// wireframe as a real child object — it comes back as a permanent,
-		// un-updatable wireframe nobody can switch off, and it accumulates on
-		// every save/load round trip (the reported "wireframe glitch"). Drop it
-		// on the way in; the peers do the same in `createObject`.
-		stripEditOverlays(object);
-		group.add(object); // keep original uuids — every peer converges on them
-		if (replicate && peer) peer.send({ type: 'object', element });
+	} catch (error) {
+		if (error instanceof LoadCancelled) {
+			releaseFrames();
+			return;
+		}
+		throw error;
+	} finally {
+		endSceneBatch();
 	}
 	pokeScene();
+	// the objects this load built (kit pieces warm themselves as their packs land) — then draw
+	await within(warmPrograms(group), WARM_WAIT_MS);
+	releaseFrames();
 	// animated imports come back from their original bytes (mixers rebuilt, peers
 	// reparse the same file) and authored tracks from the payload
 	await animatedImportsRestore(payload.animated ?? [], replicate);
+	// superseded while the rigs parsed: the newer load owns the scene now
+	if (!isLive(job)) return;
 	// replicate: a loaded scene's movements reach the peers already in the room,
 	// the way each restored joint is re-broadcast below
 	animationsRestore(payload.animations ?? {}, replicate);
@@ -1385,11 +1501,11 @@ export async function applySession(payload, opts = {}) {
 	jointsRestore(payload.joints ?? []);
 	// the look replicates on restore too, so loading a scene into a live room
 	// brings its art direction along (the jointsRestore precedent below)
-	scenePostRestore(payload.post, replicate);
+	// (the look — post stack — was restored before the objects, with the environment)
 	// A6.1: and so do the sky, the gravity and the music — a game template that
 	// loaded into the room's own sky and gravity was the reason this phase exists.
 	// Each is a no-op when the field is absent (= the scene wants the defaults).
-	environmentRestore(payload.environment, replicate);
+	// (the environment was restored before the objects — see the build loop)
 	scenePhysicsRestore(payload.physics, replicate);
 	musicRestore(payload.music, replicate);
 	// 23-A2: and the transport — absent means the default (stopped, 120), and a saved
@@ -1423,12 +1539,30 @@ export async function applySession(payload, opts = {}) {
 	// flow editor's badge is invisible when the dock is closed — which it is for most
 	// players loading a game. Runs after restoreGraphs, so the count is the real one.
 	reportUnknownNodes(payload);
-	showToast('Session loaded: ' + payload.name + ' (' + (payload.count ?? 0) + ' objects)');
+	// 33 (L4): the scene has arrived — modules the last one used and this one does not are
+	// LEFT BEHIND now (their menus, music and spawn stop counting; sceneScope)
+	sceneArrived(payload);
+	// 33 L1: the bar stays up while kit pieces are still arriving from their pack — still
+	// cancellable: a scene whose models crawl in over a slow link is exactly the one a user
+	// abandons, and Cancel takes the whole load back either way
+	// The "loaded" toast waits for the models too: it would otherwise slide in while pieces are
+	// still arriving — saying "loaded" early, and its `fly` entrance forces a whole-document
+	// layout in the middle of the load (measured inside its longest task). A load that was
+	// cancelled or superseded meanwhile says nothing.
+	const loaded = () => {
+		if (!isLive(job)) return;
+		endLoad(job);
+		if (!quiet) showToast('Session loaded: ' + payload.name + ' (' + (payload.count ?? 0) + ' objects)');
+	};
+	if (refills.length) {
+		updateLoad(job, { phase: 'models' });
+		void Promise.allSettled(refills).then(loaded);
+	} else loaded();
 }
 
 // ---- proposal flow (50.3) --------------------------------------------------
 
-/** @type {{payload: any, accepts: Set<string>, needed: string[]} | null} */
+/** @type {{payload: any, accepts: Set<string>, needed: string[], beforeApply?: () => void} | null} */
 let pendingProposal = null;
 
 /** Load a session — solo applies immediately, with peers it becomes a proposal
@@ -1525,6 +1659,11 @@ export async function requestLoadPayload(payload) {
 	// a scene nobody saved, which the user would then re-save over their own file
 	// silently truncated — a stream is divisible, a document is not.
 	if (!(await confirmSceneSize(payload))) return false;
+	// 33 (L2): the modules the scene being LEFT brings along and this one does not need —
+	// keep or unload (Settings ▸ Scene decides when the person told us to remember). The
+	// unload itself waits for the load to really apply: a proposal may be declined.
+	const moduleSwitch = await prepareSceneSwitch(payload);
+	if (!moduleSwitch) return false;
 	/** @type {any} */
 	const peer = get(peers);
 	let connected = Object.keys(peer?.connections ?? {});
@@ -1545,10 +1684,11 @@ export async function requestLoadPayload(payload) {
 		}
 	} catch {}
 	if (!connected.length) {
+		moduleSwitch.run();
 		await applySession(payload);
 		return true;
 	}
-	pendingProposal = { payload, accepts: new Set(), needed: connected };
+	pendingProposal = { payload, accepts: new Set(), needed: connected, beforeApply: moduleSwitch.run };
 	peer.send({
 		type: 'sessionproposal',
 		name: payload.name,
@@ -2464,6 +2604,7 @@ export function applySessionAnswer(data) {
 	if (pendingProposal.needed.every((id) => pendingProposal?.accepts.has(id))) {
 		const proposal = pendingProposal;
 		pendingProposal = null;
+		proposal.beforeApply?.();
 		applySession(proposal.payload);
 	}
 }

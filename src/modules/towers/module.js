@@ -710,6 +710,18 @@ export default {
 			moments(time);
 		});
 		api.onSceneClear(() => {
+			// 33 (L4): the scene that was a Towers game is going — its levels and How to play
+			// leave the shell WITH it. Resetting `wasActive` alone left both registered (the
+			// frame's edge saw false -> false), so the next game's pause menu showed Towers'
+			// twelve levels.
+			if (helpOff) {
+				helpOff();
+				helpOff = null;
+			}
+			if (typeof levelsOff === 'function') {
+				levelsOff();
+				levelsOff = null;
+			}
 			seenStamps.clear();
 			lastPose.clear();
 			outsideSince.clear();

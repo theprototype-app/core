@@ -86,6 +86,13 @@ h.run(async () => {
 	s = await state(A.page);
 	h.check(s.grab === null, `Edit: a grip on a wall does not hold the wall (grab ${s.grab})`);
 	h.check(s.worldGrab, 'Edit: two grips on scenery start the two-grip WORLD grab');
+	// 33 E4: and the headset says, once, how the wall WOULD move
+	const hint = await A.page.evaluate(() => {
+		let v;
+		window.__stores.gameKit.gameAnnounce.gameAnnouncement.subscribe((x) => (v = x))();
+		return v;
+	});
+	h.check(hint?.text === 'Grip moves the world' && /select it with the trigger/.test(hint?.sub ?? ''), `E4: a one-time hint names select-then-grip (${hint?.text} / ${hint?.sub})`);
 	// spread the hands: the world scales up
 	await xr.pose(A.page, 'left', [-0.6, 1.6, 0]);
 	await xr.pose(A.page, 'right', [0.6, 1.6, 0]);
@@ -122,6 +129,36 @@ h.run(async () => {
 	s = await state(A.page);
 	if (undoBefore !== null) h.check(s.undo === undoBefore + 1, `Edit: the move is one undo entry (${undoBefore} -> ${s.undo})`);
 	await A.page.evaluate(() => window.__stores.objectActions.deselectObject());
+
+	// ---- 3b. EDIT: a SELECTED wall is held (33 E4) ------------------------------------------------
+	// "not all objects positions can be moved in edit mode when in game": scenery was held by
+	// nothing, so in a game no wall/floor/arena could be moved with a grip. Select it first (the
+	// trigger) and the grip holds it like any object; unselected it is still the world (1 and 2).
+	await aimWall();
+	await A.page.evaluate((uuid) => window.__stores.objectActions.selectObject(uuid), ids.wall);
+	await A.page.waitForTimeout(150);
+	const wallSelBefore = await posOf(A.page, ids.wall);
+	await grip(A.page, 'right', true);
+	s = await state(A.page);
+	h.check(s.grab === ids.wall && !s.worldGrab && !s.worldPan, `E4: Edit, a grip on the SELECTED wall holds the wall (grab ${s.grab})`);
+	await xr.pose(A.page, 'right', [0.8, 1.6, 0]);
+	await A.page.waitForTimeout(250);
+	await grip(A.page, 'right', false);
+	const wallSelAfter = await posOf(A.page, ids.wall);
+	h.check(Math.abs(wallSelAfter[0] - wallSelBefore[0] - 0.5) < 0.06, `E4: ...and moves with the hand (x ${wallSelBefore[0].toFixed(2)} -> ${wallSelAfter[0].toFixed(2)})`);
+	s = await state(A.page);
+	h.check(Math.abs(s.rigScale - 1) < 1e-6 && s.rigPos.every((v) => Math.abs(v) < 1e-6), 'E4: ...and the world stayed put');
+	// put the fixture back for the sections below
+	await A.page.evaluate(({ uuid, pos }) => {
+		const s = window.__stores;
+		let g;
+		s.objectsGroup.subscribe((x) => (g = x))();
+		const wall = g.getObjectByProperty('uuid', uuid);
+		wall.position.fromArray(pos);
+		wall.updateMatrixWorld(true);
+		s.objectActions.deselectObject();
+	}, { uuid: ids.wall, pos: wallSelBefore });
+	await aimWall();
 
 	// ---- 4. INTERACT: scenery and air do nothing — the world never moves ------------------------
 	await A.page.evaluate(() => window.__stores.objectActions.setEditorMode('interact'));

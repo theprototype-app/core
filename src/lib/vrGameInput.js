@@ -32,6 +32,7 @@ import { moduleInteractiveGroups, runClickHandlers } from './moduleSDK';
 import { isModuleTopLevel } from './moduleWorld';
 import { registerVRFrameHook, registerVRTriggerHooks, registerPanelGroupProvider, controllerIndexFor, hapticPattern, triggerClaimed, withRayCamera } from './vrControls';
 // P3 (C2): the game UI in VR — the panel, the wrist card, the strip, the banner
+import { vrPerfStripFrame, hideVrPerfStrip } from './vrPerfStrip';
 import { vrGamePanelFrame, panelTargetAlong, panelHover, pressPanelTarget, pokeFrame, uAcross, vrGameSurface, hideVrGamePanel } from './vrGamePanel';
 
 const _mat = new THREE.Matrix4();
@@ -75,7 +76,8 @@ export function clickTargetOf(hit) {
 	const top = topLevelObjectOf(mesh);
 	if (!top) return null;
 	if (deviceBetween(mesh, top)) return { kind: 'object', key: mesh.uuid, mesh, top, point: hit.point, distance: hit.distance ?? 0, group: null };
-	if (top.userData?.clickable === true || objectHasOnClick(top.uuid))
+	// 33 P2: a functional pack item (a door, a lever) is pressed like a button
+	if (top.userData?.clickable === true || top.userData?.behavior || objectHasOnClick(top.uuid))
 		return { kind: 'object', key: top.uuid, mesh, top, point: hit.point, distance: hit.distance ?? 0, group: null };
 	return null;
 }
@@ -391,12 +393,16 @@ export function startVrGameInput() {
 			if (!renderer?.xr?.isPresenting) {
 				// the session ENDED: take the surfaces down once (this hook runs every desktop
 				// frame too, where there is nothing to do)
-				if (presenting) hideVrGamePanel();
+				if (presenting) {
+					hideVrGamePanel();
+					hideVrPerfStrip();
+				}
 				presenting = false;
 				return;
 			}
 			presenting = true;
 			vrGamePanelFrame({ hands: [handPose('left'), null] });
+			vrPerfStripFrame(); // 33 Q1: Settings' "Show FPS + draw calls", every mode
 			for (const index of [0, 1]) {
 				const ray = controllerRayOf(index);
 				// the laser on the board wins over the world behind it

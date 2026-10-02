@@ -1742,8 +1742,9 @@ function stampOfSource(edge, ctx, seen) {
 function handleStamp(node, handle, ctx, seen = new Set()) {
 	if (!ctx?.triggers || !node) return null;
 	let newest = null;
-	for (const edge of edges) {
-		if (edge.target !== node.id) continue;
+	// 33 G1: the indexed edges INTO the node — a scan of every edge per call was the Stars
+	// Room's top app frame on a phone profile (24 latches x 3 handles x ~700 edges a tick)
+	for (const edge of edgesInto(edges, node.id)) {
 		if ((edge.targetHandle ?? null) !== handle) continue;
 		const stamp = stampOfSource(edge, ctx, seen);
 		if (typeof stamp === 'number' && (newest === null || stamp > newest)) newest = stamp;
@@ -1881,8 +1882,7 @@ function updateDerivedPulses(ctx) {
 function triggerStampFor(nodeId, ctx) {
 	if (!ctx?.triggers) return null;
 	let newest = null;
-	for (const edge of edges) {
-		if (edge.target !== nodeId) continue;
+	for (const edge of edgesInto(edges, nodeId)) {
 		if (edge.targetHandle && edge.targetHandle !== 'trigger') continue;
 		// 21-E4: a Delay/Sequence source has NO entry in the trigger log - its stamp is
 		// derived - so reading the log directly here left those nodes unable to drive

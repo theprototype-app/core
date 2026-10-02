@@ -13,8 +13,12 @@ import {
 	setGameHelp,
 	shellHelpLines,
 	resetGameShell,
-	gameShellDebug
+	gameShellDebug,
+	shellLevelTabs,
+	shellMenu,
+	showShellPage
 } from '../../src/lib/gameShell.js';
+import { get } from 'svelte/store';
 import { gameSettingValue, setGameSetting, debugResetGameSettings, registerGameSetting } from '../../src/lib/gameSettings.js';
 import { fpsOf } from '../../src/lib/fpsMeter.js';
 import { vignetteTarget, easeVignette } from '../../src/lib/comfortVignette.js';
@@ -110,5 +114,33 @@ describe('fps + vignette', () => {
 		expect(vignetteTarget(0, (1.2 / 72) * 0.5, 1 / 72)).toBeCloseTo(0.5);
 		expect(easeVignette(0, 1, 1 / 72)).toBeGreaterThan(0);
 		expect(easeVignette(1, 0, 10)).toBe(0);
+	});
+});
+
+describe('33 (G3): level tabs + the headset grid pages', () => {
+	it('a choice registered onLevels is a tab row; others are not', () => {
+		registerGameSetting({ id: 'board', label: 'Board', type: 'choice', options: ['globe', '2d'], optionLabels: ['Globe', '2D board'], default: 'globe', onLevels: true }, 'm');
+		registerGameSetting({ id: 'hint', type: 'toggle', default: true, onLevels: true }, 'm');
+		registerGameSetting({ id: 'speed', type: 'choice', options: ['a', 'b'], default: 'a' }, 'm');
+		const tabs = shellLevelTabs();
+		expect(tabs.map((t) => t.id)).toEqual(['board']);
+		expect(tabs[0]).toEqual({ id: 'board', label: 'Board', options: [{ value: 'globe', label: 'Globe' }, { value: '2d', label: '2D board' }], value: 'globe' });
+	});
+	it('a tab press sets the choice (once), a bad index refuses', () => {
+		let heard = 0;
+		registerGameSetting({ id: 'board', type: 'choice', options: ['globe', '2d'], default: 'globe', onLevels: true, onChange: () => heard++ }, 'm');
+		expect(pressShellHit('shell:tab:0:1')).toBe(true);
+		expect(gameSettingValue('board')).toBe('2d');
+		expect(heard).toBe(1);
+		expect(pressShellHit('shell:tab:0:1')).toBe(true); // already on: nothing changes
+		expect(heard).toBe(1);
+		expect(pressShellHit('shell:tab:3:0')).toBe(false);
+		expect(pressShellHit('shell:tab:0:9')).toBe(false);
+	});
+	it('the page arrows set the grid page; a page change resets it to "where the current level is"', () => {
+		expect(pressShellHit('shell:lvpage:1')).toBe(true);
+		expect(get(shellMenu).levelPage).toBe(1);
+		showShellPage('settings');
+		expect(get(shellMenu).levelPage).toBe(null);
 	});
 });

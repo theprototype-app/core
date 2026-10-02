@@ -103,6 +103,30 @@ export function xrThresholds(hz) {
 export const XR_START_LEVEL = 1;
 
 /**
+ * 33 G1 — A PHONE STARTS LIGHTER, AND IS ALWAYS WORTH GOVERNING. The report: "Stars room is
+ * too heavy for mobile users, it lags". The governor never acted on a phone at all: it judges
+ * by the desktop budgets, where a game of 100 draw calls is LIGHT, and a light scene is never
+ * governed (and is walked back to full quality). So a phone drew the Stars Room at its native
+ * pixel ratio (2.6 measured on the phone profile = 2.6 Mpx per pass) through 32 render passes
+ * a frame — shadows, the authored AO, bloom, SMAA. A phone is bound by FILL, not by calls,
+ * so the size of the scene says nothing about whether stepping helps.
+ * The start = shadows off, resolution 72 %, AO off (the first four steps). No floor: a phone
+ * that holds its frames walks back up by the ordinary recovery rule.
+ */
+export const PHONE_START_LEVEL = 4;
+
+/**
+ * A phone or a small tablet: a coarse pointer, no hover, and a short screen side (CSS px).
+ * Pure; the wiring reads the three from matchMedia/screen. A desktop with a touch screen has
+ * hover; a laptop's short side is over the line.
+ * @param {{coarse?: boolean, hover?: boolean, minSide?: number}} d
+ */
+export function isPhoneLike(d) {
+	const side = Number(d?.minSide);
+	return !!d?.coarse && !d?.hover && Number.isFinite(side) && side > 0 && side <= 820;
+}
+
+/**
  * The XR framebuffer scale, ALWAYS full. 31-perf first carried the resolution half of the ladder
  * into the headset through `setFramebufferScaleFactor` (applied to the NEXT session, since three
  * refuses it while presenting): any session that touched level 2 (a load hitch, or a game's

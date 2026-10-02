@@ -2,6 +2,7 @@ import { writable, get } from 'svelte/store';
 import { contentBase } from './contentBase';
 import { addItemFromBytes, createFolder, explorerFolders } from './explorer';
 import { safeStorage } from './safeStorage';
+import { normalizeBehavior } from './behaviorCore';
 
 // N6 (roadmap 7 / ship-qa D1): object packs. Two sources, one normalized model:
 //  - DEFAULT packs from static/libraryList.json (bundled today; the model bytes
@@ -287,8 +288,13 @@ export async function loadPackItems(pack) {
 					kind: 'object',
 					glbUrl: /^https?:\/\//.test(glb) ? glb : `${pack.base}/${o.name}/glTF-Binary/${glb}`,
 					thumbs: thumbCandidates(pack, o),
+					// 33 (contract P1): the item's offline LOD files, placed as its LOD group
+					...(Array.isArray(o.lods) && o.lods.length ? { lods: o.lods } : {}),
 					resolvedThumb: cachedThumb(pack.name, o.name), // P2: skip re-probing if known
-					packName: pack.name
+					packName: pack.name,
+					// 33 P2: a functional item (door, lid, lever, fan) — null for a plain prop.
+					// Normalized HERE so the Explorer badge and the placement agree on one spec.
+					behavior: normalizeBehavior(o.behavior)
 				};
 			});
 	}

@@ -40,10 +40,12 @@
 	import { moduleInteractiveGroups, fireClickMiss, runClickHandlers } from '$lib/moduleSDK';
 	import { updateSpatialAudio } from '$lib/voiceChat';
 	import { tickAnimatedMixers } from '$lib/animatedImports';
+	import { startPackBehaviors, tickPackBehaviors } from '$lib/packBehavior';
 	import { tickAnimationPreview, captureAutoKey, playheadOf } from '$lib/animationPreview';
 	import { drawMode, drawTool, strokePointFromRay, endStroke, setDrawScene } from '$lib/drawMode';
 	import { splinePlaceFromRay, splineToolActive, finishSpline } from '$lib/splineTool';
 	import { flattenPicking, flattenPickClick } from '$lib/flattenActions';
+	import { onLodProxyMoved, onLodProxyDragChanged } from '$lib/lodLevelEdit';
 	import { splineEditObject, splineEditClick, splineEditRightClick, exitSplineEdit, beginRadiusDrag, radiusDragMove, endRadiusDrag, radiusDragActive, onSplineProxyMoved, onSplineProxyDragChanged, tickSplineEdit } from '$lib/splineEdit';
 	import { capturePathClick } from '$lib/pathCapture';
 	import { surfaceSnap, dropToSurface } from '$lib/snapping';
@@ -56,7 +58,7 @@
 	// the annotation is TS syntax — a JSDoc @type cast is ignored here (the documented trap).
 	let knifeFrom: number[] | null = null;
 	import { peerScenes } from '$lib/peerScenes';
-	import { initVRControls, updateVRControls, raycastMenu, radialStickSelection, raycastPanel, raycastPalette, raycastProps, raycastPrefabs, raycastKeyboard, raycastChat, raycastEdit, raycastSnap, raycastSettings, raycastApprove, placePrefabGhost, vrFaceTrigger, vrVertexTrigger, vrVertexGrabStart, vrVertexGrabEnd, beginStretchSliderDrag, endStretchSliderDrag, executeVRMenuAction, resetWorldRig, onInputSourcesChange, worldToContentPose, boxSelectStart, boxSelectEnd, boxSelectActive, applyVRFrameRate, shouldSendHands, onHandPinchStart, onHandPinchEnd, pinchMenuToggledAt, firePingIfArmed, vrModuleTriggerStart, vrModuleTriggerEnd, vrModuleSelectSwallowed, handSnapshot, vrGrabbedUuid, hapticKnock, hapticPulse, onVRSessionStart } from '$lib/vrControls';
+	import { initVRControls, updateVRControls, raycastMenu, radialStickSelection, raycastPanel, raycastPalette, raycastProps, raycastPrefabs, raycastKeyboard, raycastChat, raycastEdit, raycastSnap, raycastSettings, raycastApprove, placePrefabGhost, vrFaceTrigger, vrVertexTrigger, vrVertexGrabStart, vrVertexGrabEnd, beginStretchSliderDrag, endStretchSliderDrag, executeVRMenuAction, resetWorldRig, onInputSourcesChange, worldToContentPose, boxSelectStart, boxSelectEnd, boxSelectActive, applyVRFrameRate, shouldSendHands, onHandPinchStart, onHandPinchEnd, pinchMenuToggledAt, firePingIfArmed, vrModuleTriggerStart, vrModuleTriggerEnd, vrModuleSelectSwallowed, handSnapshot, vrGrabbedUuids, hapticKnock, hapticPulse, onVRSessionStart } from '$lib/vrControls';
 	// 30b (vr-play): the game in your hands — hover/press haptics (P1), the sweep (P4)
 	import { startVrGameInput, stopVrGameInput } from '$lib/vrGameInput';
 	import { gameFeelActive } from '$lib/gameFeel';
@@ -388,6 +390,7 @@
 		updateVRControls(); // also manages ray/hover visibility outside sessions
 		updateSpatialAudio(camera.current, scene); // voices follow avatars (throttled)
 		tickAnimatedMixers(); // imported clips run on the synced clock
+		tickPackBehaviors(); // 33 P2: doors/lids/levers pose from their shared state (rest in Edit)
 		tickAnimationPreview(); // Animation window: local transform preview (not synced)
 		tickMeshEdit(); // vertex handles follow the object if it moves (119)
 		tickEditWireframe(); // ...and the edit wireframe stays parented to it (faceEdit)
@@ -424,7 +427,7 @@
 			// multi-select pivot excludes EVERY member (P3: its drags snap too).
 			if (!event.value) endSnapDrag();
 			else if (object.userData?.isMultiPivot) beginSnapDrag([...$selectedObjects]);
-			else if (!object.userData?.isVertexProxy && !object.userData?.isFaceProxy)
+			else if (!object.userData?.isVertexProxy && !object.userData?.isFaceProxy && !object.userData?.isLodLevelProxy)
 				beginSnapDrag([object.uuid]);
 			// vertex handles record their own history entries
 			if (object.userData?.isVertexProxy) {
@@ -439,6 +442,11 @@
 			// 57.3: a spline control point — ONE spline undo entry per drag
 			if (object.userData?.isSplineProxy) {
 				onSplineProxyDragChanged(event.value);
+				return;
+			}
+			// 33: one LOD level's offset — ONE lod write per drag, never a move
+			if (object.userData?.isLodLevelProxy) {
+				onLodProxyDragChanged(event.value);
 				return;
 			}
 			// the multi-select pivot records per-member entries (multiTransform)
@@ -1433,8 +1441,9 @@
 		// this seam rather than an import (knock.js stays off vrControls' 3500 lines),
 		// and the two "what am I holding" reads keep a probe off its own carried object.
 		// A2: the hand that hit gets a buzz — LOCAL, the same seam shape as the hand poses
-		startKnock({ hands: handSnapshot, heldUuids: () => [carriedUuid(), vrGrabbedUuid()], haptic: hapticKnock });
+		startKnock({ hands: handSnapshot, heldUuids: () => [carriedUuid(), ...vrGrabbedUuids()], haptic: hapticKnock });
 		startClap({ hands: handSnapshot }); // 31: the same hand seam
+		startPackBehaviors({ hands: handSnapshot }); // 33 P2: functional pack items (the knock reads hands)
 		// 30b: game feel in VR (a frame hook + a trigger hook through vrControls' registries)
 		startVrGameInput();
 
@@ -1490,6 +1499,12 @@
 		if ($TControls.object?.userData?.isSplineProxy) {
 			$TControls.visible = true;
 			onSplineProxyMoved();
+			return;
+		}
+		// 33: a LOD level's proxy — the level follows locally; the release commits
+		if ($TControls.object?.userData?.isLodLevelProxy) {
+			$TControls.visible = true;
+			onLodProxyMoved();
 			return;
 		}
 		// multi-select pivot: multiTransform drives + broadcasts the members,

@@ -15,6 +15,7 @@ import {
 	vrVertexHold,
 	vrSettingsPanelOpen,
 	selectedObject,
+	selectedObjects,
 	isVRMode,
 	worldRig,
 	vrPassthrough,
@@ -57,6 +58,7 @@ import { activeRing, findMenuEntry, ringEntries, sectorFromStick, pushRing, popR
 import { paletteColorAt, barValueAt } from './vrPalette';
 // 30b (vr-play) C4: the ONE game-feel predicate (a leaf) + the pattern shapes (pure)
 import { gameFeelActive } from './gameFeel';
+import { perfStatsShown } from './fpsMeter'; // 33 Q1
 // 31 K3: the per-game settings (haptics, turning) and the pause menu's controller button
 import { hapticsAllowed, resolveTurning, gameSettingValues } from './gameSettings';
 import { toggleShellMenu, shellMenuAvailable } from './gameShell';
@@ -145,7 +147,7 @@ import { vrKeyboardTarget, openVRKeyboard, pressVRKey, closeVRKeyboard } from '.
 import { sceneCommand } from './commandsHandler.svelte';
 import { sendPing, pingColor } from './ping';
 import { peerColor } from './lockControl';
-import { setVRAxes, setVRButtons } from './inputRuntime';
+import { setVRAxes, setVRButtons, isClaimed } from './inputRuntime';
 import { suspendAnimation, resumeAnimation, fireObjectGrab } from './flowRuntime';
 import { drawMode, toggleDrawMode, addStrokePoint, endStroke } from './drawMode';
 import { setPttHeld, cycleMicMode, vrMicMode, micActive, pttActive } from './voiceChat';
@@ -262,14 +264,27 @@ const raycaster = new THREE.Raycaster();
 const tempMatrix = new THREE.Matrix4();
 const tempVector = new THREE.Vector3();
 
-/** @type {any} single-hand grab: { object, index, prevPos, prevQuat, before } */
-let grab = null;
+/** @type {any[]} per-hand grabs, indexed by controller SLOT: each is { object, index, prevPos,
+ * prevQuat, before, ... }. 33 G4: one per hand, so two hands hold two things at once — a single
+ * shared slot let the second hand's grab overwrite the first, and the first hand's piece sat
+ * in its kinematic hold in mid-air until it was grabbed again (the Towers report). */
+const grabs = [null, null];
 /** @type {any} two-hand scale: { object, startDistance, startScale, before } */
 let scaleGrab = null;
 /** 24-A A1: the object a VR hand is holding right now, or null — the knock probe
  * skips it (a hand knocking the crate it is carrying would fight its own hold). */
 export function vrGrabbedUuid() {
-	return grab?.object?.uuid ?? scaleGrab?.object?.uuid ?? null;
+	return grabs[0]?.object?.uuid ?? grabs[1]?.object?.uuid ?? scaleGrab?.object?.uuid ?? null;
+}
+/** 33 G4: EVERY object a VR hand holds right now (both hands may each hold one) */
+export function vrGrabbedUuids() {
+	return [grabs[0]?.object?.uuid, grabs[1]?.object?.uuid, scaleGrab?.object?.uuid].filter(Boolean);
+}
+/** 33 G4: vrGrabbedHand = the hand holding something, or 'both' — the stick gates read it */
+function syncGrabbedHand() {
+	/** @type {any[]} */
+	const hands = grabs.filter(Boolean).map((g) => renderer?.xr?.getController(g.index)?.userData?.handedness ?? null);
+	vrGrabbedHand.set(hands.length === 0 ? null : hands.length === 1 ? hands[0] : 'both');
 }
 let lastMoveSent = 0;
 
@@ -1687,7 +1702,12 @@ export function onInputSourcesChange() {
 		vrEndHandleDrag();
 		vertexTriggerGrab = null;
 	}
-	grab = null;
+	// a dropped grab RELEASES its body (it used to leave it in its kinematic hold)
+	for (let i = 0; i < grabs.length; i++) {
+		const held = grabs[i];
+		grabs[i] = null;
+		if (held) endGrab(held.object, held.interact ? null : held.before);
+	}
 	scaleGrab = null;
 	worldGrab = null;
 	worldPan = null;
@@ -1812,9 +1832,44 @@ export const PROPS_ROWS = [
 	'scale:y',
 	'scale:z',
 	'opacity',
-	'visible'
+	'visible',
+	// 33 (K6, P3): Force LOD + the level drawn — left/right (or press) cycles Auto, LOD0…
+	'lod'
 	// 120: color/duplicate/delete removed — they live on the Edit ring + palette
 ];
+
+/** 33: the LOD group actions, PRIMED (a static edge would pull the history family's
+ * importers through lodGroup's loaders into this module's graph) @type {any} */
+let lodActions = null;
+import('./lodGroupActions').then((m) => (lodActions = m));
+/** @type {any} */
+let lodRuntime = null;
+import('./lodGroup').then((m) => (lodRuntime = m));
+
+/**
+ * The VR props panel's LOD row: cycle Force LOD by `sign` through Auto, LOD0 … LODn.
+ * Returns the new choice ('auto' | level), or null when the object has no group.
+ * @param {string} uuid @param {number} sign
+ */
+export function cycleForceLod(uuid, sign) {
+	const info = lodRuntime?.lodGroupInfo(uuid);
+	if (!info || !lodActions) return null;
+	/** @type {('auto' | number)[]} */
+	const options = ['auto', ...info.levels.map((/** @type {any} */ _l, /** @type {number} */ i) => i)];
+	const now = info.block.mode === 'forced' ? info.block.forced : 'auto';
+	const at = Math.max(0, options.indexOf(now));
+	const next = options[(at + (sign < 0 ? -1 : 1) + options.length) % options.length];
+	lodActions.forceLodLevel(uuid, next);
+	return next;
+}
+
+/** The LOD row's readout for the VR panel. @param {string} uuid */
+export function lodReadout(uuid) {
+	const info = lodRuntime?.lodGroupInfo(uuid);
+	if (!info) return 'none';
+	if (info.block.mode === 'forced') return 'LOD' + info.block.forced + ' forced';
+	return 'Auto · ' + (info.current < 0 ? 'culled' : 'LOD' + info.current);
+}
 
 /** Raycast the props panel controls @param {number} index @returns {string|null} props action */
 export function raycastProps(index) {
@@ -1923,12 +1978,16 @@ function handlePropsAction(action) {
 	} else if (action.startsWith('nudge:')) {
 		const [kind, axis, sign] = action.slice('nudge:'.length).split(':');
 		if (['x', 'y', 'z'].includes(axis)) nudgeTransform(object, kind, axis, parseInt(sign) || 1);
+	} else if (action.startsWith('lod:')) {
+		if (cycleForceLod(object.uuid, parseInt(action.slice('lod:'.length)) || 1) === null)
+			showToast('This object has no LOD levels — generate them in its properties on the desktop');
 	}
 }
 
 /** Stick press / cursored activation for a PROPS_ROWS row @param {string} row */
 export function propsRowAction(row) {
 	if (row === 'opacity') return 'props:opacity:1';
+	if (row === 'lod') return 'props:lod:1';
 	if (row.includes(':')) return 'props:nudge:' + row + ':1';
 	return 'props:' + row;
 }
@@ -2182,16 +2241,48 @@ function endGrab(object, before) {
 	resumeAnimation(object.uuid); // release spot becomes the new animation base
 }
 
-/** @type {{index: number, prev: any} | null} right-grip drag-the-world pan */
+/** @type {{index: number, prev: any, reach: number} | null} right-grip drag-the-world pan
+ * (33: `reach` = how far along the hand's ray the gripped spot is — the stick reels it) */
 let worldPan = null;
+
+/** 33 (G2): a pan with nothing under the ray reels from this far (metres) */
+const WORLD_REEL_DEFAULT = 1.5;
+/**
+ * 33 (G2) — "stick up/down while holding it pushes it farther / pulls it closer, just as in
+ * edit mode for objects": one frame of the world-pan hand's stick. The SAME reel an Edit grab
+ * applies to a held object (grabStickAdjust: forward = y < 0 pushes away, back reels in, a
+ * share of the distance per frame) applied to `reach`, the distance to the gripped spot.
+ * Returns the new reach and the metres the world moves AWAY along the hand's ray (negative =
+ * toward you). Pure; exported for the suites. @param {number} reach @param {number} y stick Y
+ */
+export function worldReelStep(reach, y) {
+	const next = grabStickAdjust({ length: reach, scale: 1, x: 0, y }).length;
+	return { reach: next, push: next - reach };
+}
+/** where a pan's reel starts: the first world surface on the hand's ray, else the default
+ * @param {number} index */
+function panReach(index) {
+	try {
+		const root = get(worldRig) ?? get(objectsGroup);
+		const hit = root ? controllerRay(index).intersectObject(root, true).find((h) => h.object.visible !== false) : null;
+		return hit ? Math.min(Math.max(hit.distance, 0.3), 30) : WORLD_REEL_DEFAULT;
+	} catch {
+		return WORLD_REEL_DEFAULT;
+	}
+}
+const _reelDir = new THREE.Vector3();
+const _reelQuat = new THREE.Quaternion();
 
 /** 30b P2: test/debug view of what the grips are doing right now */
 export function vrGripDebug() {
 	return {
-		grab: grab?.object?.uuid ?? null,
-		grabInteract: !!grab?.interact,
+		grab: (grabs[0] ?? grabs[1])?.object?.uuid ?? null,
+		grabInteract: !!(grabs[0] ?? grabs[1])?.interact,
+		grabs: grabs.map((g) => g?.object?.uuid ?? null),
+		scaleGrab: scaleGrab?.object?.uuid ?? null,
 		worldGrab: !!worldGrab,
 		worldPan: !!worldPan,
+		panReach: worldPan ? worldPan.reach : null, // 33: the stick reel's distance
 		emptyAir: [...emptyAirSqueeze]
 	};
 }
@@ -2844,6 +2935,7 @@ function onSqueezeStart(index) {
 		// 30b P2: Interact's grips never move the world (contract C1) — 31 K1: unless the play
 		// block allows it (`locomotion.worldGrab`); a grip on a grabbable still took it above
 		if (!gripMovesWorld(mode, mode === 'interact' && vrLocomotionNow().worldGestures)) return;
+		hintSceneryGrip();
 		emptyAirSqueeze[index] = true;
 		// 186: in stretch mode both grips drive the stretch, not a world grab
 		if (get(vrStretchObject)) return;
@@ -2857,12 +2949,13 @@ function onSqueezeStart(index) {
 		// reference space, which would silently break a colocated alignment)
 		const handedness = renderer.xr.getController(index)?.userData?.handedness ?? null;
 		if (handedness === 'right' && !worldGestureDiverted())
-			worldPan = { index, prev: renderer.xr.getController(index).getWorldPosition(new THREE.Vector3()) };
+			worldPan = { index, prev: renderer.xr.getController(index).getWorldPosition(new THREE.Vector3()), reach: panReach(index) };
 		return;
 	}
 	if (get(lockedObjects).find((lock) => lock[1] === object.uuid)) return;
 
-	if (grab && grab.object === object && grab.index !== index) {
+	const other = grabs[1 - index];
+	if (other && other.object === object) {
 		// 30b P2: a player's second hand does not resize the thing it is holding
 		if (mode === 'interact') return;
 		// second hand on the same object -> two-hand scale
@@ -2871,11 +2964,17 @@ function onSqueezeStart(index) {
 			object,
 			startDistance: Math.max(distance, 0.05),
 			startScale: object.scale.clone(),
-			before: grab.before
+			before: other.before
 		};
-		grab = null;
-		vrGrabbedHand.set(null);
+		grabs[1 - index] = null;
+		syncGrabbedHand();
 		return;
+	}
+	// 33 G4: the OTHER hand keeps whatever it holds; only this hand's slot changes
+	const previous = grabs[index];
+	if (previous) {
+		grabs[index] = null;
+		endGrab(previous.object, previous.interact ? null : previous.before);
 	}
 
 	const interact = mode === 'interact';
@@ -2894,7 +2993,7 @@ function onSqueezeStart(index) {
 	const parentInv = object.parent.matrixWorld.clone().invert();
 	const pPos = cPos.clone().applyMatrix4(parentInv);
 	const pQuat = parentQuat.clone().invert().multiply(cQuat);
-	grab = {
+	grabs[index] = {
 		object,
 		index,
 		// 30b P2: a player's hand is RIGID (no gizmo-style move/rotate), and `interact`
@@ -2909,7 +3008,7 @@ function onSqueezeStart(index) {
 		prevQuat: cQuat,
 		before: transformStateOf(object)
 	};
-	vrGrabbedHand.set(renderer.xr.getController(index)?.userData?.handedness ?? null);
+	syncGrabbedHand();
 	// 30b (C4): a grab lands with a `hit` (a gated no-op in Edit, like every pulse)
 	hapticPattern('hit', renderer.xr.getController(index)?.userData?.handedness ?? undefined);
 	// 30b P2: a player picking something up is not SELECTING it — no lock broadcast, no
@@ -2934,6 +3033,7 @@ export function gripTargetOf(ray, handPos, mode) {
 	const camera = get(globalCamera);
 	const head = camera ? camera.getWorldPosition(new THREE.Vector3()) : null;
 	const locked = get(lockedObjects);
+	const selectedNow = get(selectedObjects);
 	const settings = mode === 'interact' ? resolvePlaySettings(get(globalScene)) : null;
 	const interaction = settings ? settings.interaction : 'grab';
 	// 31-towers P1: a player's grip reaches `play.reach` from the BODY (head down to the feet)
@@ -2950,7 +3050,9 @@ export function gripTargetOf(ray, handPos, mode) {
 		if (holdable && !near) lastGripRefusal = { uuid: object.uuid, reach };
 		return {
 			scenery: isScenery(box.isEmpty() ? null : box, head),
-			grabbable: holdable && near
+			grabbable: holdable && near,
+			// 33 E4: in Edit a SELECTED wall/floor/arena is held like any object
+			selected: selectedNow.includes(object.uuid)
 		};
 	};
 	/** @type {any[]} */
@@ -2967,10 +3069,11 @@ export function gripTargetOf(ray, handPos, mode) {
 			points.push(hit.point);
 		}
 	}
-	const picked = pickGripTarget(
-		order.map((object, i) => describe(object, points[i])),
-		mode
-	);
+	const described = order.map((object, i) => describe(object, points[i]));
+	const picked = pickGripTarget(described, mode);
+	// 33 E4: the first thing along the ray was a wall/floor the grip passed through — the
+	// hint below says how to move it instead (select it first)
+	lastGripPassedScenery = mode === 'edit' && picked !== 0 && !!described[0]?.scenery;
 	if (picked >= 0) {
 		lastGripRefusal = null;
 		return order[picked];
@@ -2987,6 +3090,19 @@ export function gripTargetOf(ray, handPos, mode) {
 /** 31-towers P1: is push-to-talk open because A is held? (A jumps instead while the game's
  * controller can jump — a switch mid-hold must not strand the mic open) */
 let pttByA = false;
+
+/** 33 E4: did the last Edit grip pass THROUGH scenery (an unselected wall/floor) first? */
+let lastGripPassedScenery = false;
+const SCENERY_HINT_KEY = 'hint:vrSelectScenery';
+/** Say ONCE (ever) how a wall or a floor moves in Edit: the grip that passed through it went
+ * to the world, which reads as "this object cannot be moved" unless something says so. */
+function hintSceneryGrip() {
+	if (!lastGripPassedScenery || safeStorage.getItem(SCENERY_HINT_KEY) === 'true') return;
+	safeStorage.setItem(SCENERY_HINT_KEY, 'true');
+	import('./gameAnnounce')
+		.then((m) => m.announce('Grip moves the world', { sub: 'To move a wall or a floor, select it with the trigger, then grip it', ms: 4500 }))
+		.catch(() => {});
+}
 
 /** 31-towers P1: the grip the reach refused last ({uuid, reach}), for the buzz and the suite
  * @type {{uuid: string, reach: number} | null} */
@@ -3030,7 +3146,7 @@ function onSqueezeEnd(index) {
 		if (emptyAirSqueeze[other]) {
 			const handedness = renderer.xr.getController(other)?.userData?.handedness ?? null;
 			if (handedness === 'right' && !worldGestureDiverted())
-				worldPan = { index: other, prev: renderer.xr.getController(other).getWorldPosition(new THREE.Vector3()) };
+				worldPan = { index: other, prev: renderer.xr.getController(other).getWorldPosition(new THREE.Vector3()), reach: panReach(other) };
 		}
 		return;
 	}
@@ -3040,7 +3156,8 @@ function onSqueezeEnd(index) {
 		scaleGrab = null;
 		return;
 	}
-	if (grab && grab.index === index) {
+	const grab = grabs[index];
+	if (grab) {
 		// K2: a hook may consume the release (drop onto the sleeve = capture a
 		// slot; the hook restores the object's pose + animation itself, so no
 		// move commits — but the physics hold must still release)
@@ -3055,14 +3172,14 @@ function onSqueezeEnd(index) {
 		});
 		if (consumed) {
 			import('./physics').then((m) => m.releaseBody(object.uuid));
-			grab = null;
-			vrGrabbedHand.set(null);
+			grabs[index] = null;
+			syncGrabbedHand();
 			hapticPulse(0.4, 60);
 			return;
 		}
+		grabs[index] = null;
 		endGrab(object, grab.interact ? null : grab.before);
-		grab = null;
-		vrGrabbedHand.set(null);
+		syncGrabbedHand();
 		hapticPulse(0.18, 24);
 	}
 }
@@ -3105,7 +3222,8 @@ export function grabStickAdjust({ length, scale, x, y }) {
 	};
 }
 
-function updateGrab() {
+/** @param {any} grab one hand's grab (33 G4: each hand updates its own) */
+function updateGrab(grab) {
 	const controller = renderer.xr.getController(grab.index);
 	const position = controller.getWorldPosition(new THREE.Vector3());
 	const quaternion = controller.getWorldQuaternion(new THREE.Quaternion());
@@ -3432,6 +3550,9 @@ export function executeVRMenuAction(name) {
 			// K1: experimental forearm sleeve palette (default off)
 			vrSleeveEnabled.update((v) => !v);
 			try { safeStorage.setItem('vrSleeveEnabled', String(get(vrSleeveEnabled))); } catch {}
+		} else if (key === 'perf') {
+			// 33 Q1: the app-wide "Show FPS + draw calls" (fpsMeter persists it)
+			perfStatsShown.update((v) => !v);
 		} else if (key === 'resetpanels') {
 			resetWindowPoses();
 			showToast('VR panel positions reset');
@@ -3789,6 +3910,9 @@ export function pingPointFromRay(ray, group) {
  * @param {{grips?: boolean}=} opts */
 export function vrNavigationSuppressed(opts = {}) {
 	if (worldPan || worldGrab || scaleGrab) return true;
+	// 33 (G2): a module that reads the sticks itself claimed them (`api.claimInput('sticks')`):
+	// move, turn and teleport all stand down — Untangle's held globe reels on Y, scales on X
+	if (isClaimed('sticks')) return true;
 	if (vertexGrab || vertexTriggerGrab) return true;
 	if (faceGrabHand || faceGesturePending()) return true;
 	if (stretchSliderDrag || boxSelect) return true;
@@ -3839,6 +3963,7 @@ export function updateVRControls() {
 		!get(vrChatPanelOpen) &&
 		!get(vrKeyboardTarget) &&
 		get(vrGrabbedHand) !== 'right' &&
+		get(vrGrabbedHand) !== 'both' &&
 		!vrNavigationSuppressed({ grips: true })
 	) {
 		updateTeleport(session);
@@ -3997,7 +4122,7 @@ export function updateVRControls() {
 	});
 
 	if (scaleGrab) updateScaleGrab();
-	else if (grab) updateGrab();
+	else for (const held of grabs) if (held) updateGrab(held);
 
 	// window grab (111): the hold timer arms, then the grip drives the window
 	if (windowGrabPending && Date.now() - windowGrabPending.startedAt >= HOLD_MS)
@@ -4090,6 +4215,15 @@ export function updateVRControls() {
 	// drag-the-world: the grabbed spot follows the hand (prev stays fixed at
 	// grab start — the applied offset self-corrects the measured delta)
 	if (worldPan) {
+		// 33 (G2): the pan hand's stick reels the world along its ray, as an Edit grab reels a
+		// held object — moving the fixed `prev` makes the pan below apply the push itself
+		const reel = worldReelStep(worldPan.reach, axesForSlot(worldPan.index)[3] ?? 0);
+		if (reel.push) {
+			worldPan.reach = reel.reach;
+			renderer.xr.getController(worldPan.index).getWorldQuaternion(_reelQuat);
+			_reelDir.set(0, 0, -1).applyQuaternion(_reelQuat);
+			worldPan.prev.addScaledVector(_reelDir, -reel.push);
+		}
 		const current = renderer.xr.getController(worldPan.index).getWorldPosition(new THREE.Vector3());
 		const delta = current.sub(worldPan.prev);
 		if (delta.lengthSq() > 1e-8) {
@@ -4200,11 +4334,11 @@ export function updateVRControls() {
 			// left/right adjusts the cursored row (axis nudges + opacity)
 			const row = PROPS_ROWS[get(vrPropsCursor)];
 			const sign = x > 0 ? 1 : -1;
-			if (row === 'opacity' || row.includes(':')) {
+			if (row === 'opacity' || row === 'lod' || row.includes(':')) {
 				panelScrollAt = now;
 				hapticPulse(0.1, 12);
 				executeVRMenuAction(
-					row === 'opacity' ? 'props:opacity:' + sign : 'props:nudge:' + row + ':' + sign
+					row === 'opacity' ? 'props:opacity:' + sign : row === 'lod' ? 'props:lod:' + sign : 'props:nudge:' + row + ':' + sign
 				);
 			}
 		}
@@ -4308,11 +4442,13 @@ function enterInteractVR() {
 	worldGrab = null;
 	worldPan = null;
 	emptyAirSqueeze[0] = emptyAirSqueeze[1] = false;
-	if (grab && !grab.interact) {
-		endGrab(grab.object, grab.before);
-		grab = null;
-		vrGrabbedHand.set(null);
+	for (let i = 0; i < grabs.length; i++) {
+		const held = grabs[i];
+		if (!held || held.interact) continue;
+		grabs[i] = null;
+		endGrab(held.object, held.before);
 	}
+	syncGrabbedHand();
 	resetWorldRig();
 	// at sessionstart no XR frame exists yet (so no viewer pose to move FROM): the spawn
 	// waits for the first frame that has one (updateVRControls)

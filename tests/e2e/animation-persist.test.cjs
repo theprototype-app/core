@@ -75,7 +75,10 @@ h.run(async () => {
 	// import it, and author a movement track on a second object
 	await A.page.evaluate(async (bytes) => {
 		const w = window.__stores;
-		await w.fileHandler.importFile(new File([new Uint8Array(bytes)], 'rig.glb'), 'Rig');
+		const rig = await w.fileHandler.importFile(new File([new Uint8Array(bytes)], 'rig.glb'), 'Rig');
+		// 33 P2: placement no longer autoplays — press play, as a user would, so the save
+		// below carries a PLAYING transport (what this suite round-trips)
+		w.animatedImports.setAnimationState(rig, { playing: true });
 		await new Promise((r) => setTimeout(r, 600));
 		w.commandsHandler.sceneCommand('/create Box 1 1 1');
 		await new Promise((r) => setTimeout(r, 300));
@@ -182,6 +185,7 @@ h.run(async () => {
 			if (m?.parameter === 'animation') window.__sent.push(m.playing);
 			return orig(m);
 		};
+		// the clip is PLAYING here (pressed at import, restored playing), so one press pauses
 		document.querySelector('#clip-play')?.click();
 		await new Promise((r) => setTimeout(r, 400));
 		const imported = await new Promise((r) => w.animatedImports.animatedObjects.subscribe(r)());

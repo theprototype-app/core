@@ -142,7 +142,20 @@ export const VALIDATORS = {
 	triggers: (d) => !!d.triggers && typeof d.triggers === 'object',
 	peervars: (d) => typeof d.peerId === 'string',
 	playmode: (d) => typeof d.peerId === 'string',
-	camera: (d) => typeof d.peerId === 'string' && isVec3(d.position) && isFiniteArray(d.rotation, 3)
+	// 33 P2: a functional pack item was triggered (a door opened). The state is evaluated
+	// as a POSE every frame, so a non-finite stamp would put a door at NaN forever.
+	behavior: (d) =>
+		isUuid(d.uuid) &&
+		typeof d.on === 'boolean' &&
+		Number.isFinite(d.at) &&
+		Number.isFinite(d.from) &&
+		Number.isInteger(d.n) &&
+		d.n >= 0,
+	camera: (d) => typeof d.peerId === 'string' && isVec3(d.position) && isFiniteArray(d.rotation, 3),
+	// 33: only the `lod` parameter is constrained (every other parameter predates this entry
+	// and keeps "absent means allow"): a block is an object with a levels ARRAY, or null
+	objectParameters: (d) =>
+		d.parameter !== 'lod' || (isUuid(d.uuid) && (d.lod === null || (!!d.lod && typeof d.lod === 'object' && isArray(d.lod.levels))))
 };
 
 /**

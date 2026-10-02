@@ -21,6 +21,14 @@
 const A = 'architecture-kit';
 const N = 'nature-kit';
 const P = 'props-kit';
+// 33-scenes: the round-33 kits — furniture and trims (Interiors), the street (Town & Market),
+// pieces that OPEN (Interactive: doors with their frames, chests, a lever, shutters — placed
+// through the Explorer's own import path, see author-templates' kit branch) and the Wizard's
+// Tower hero props (Arcane Study)
+const I = 'interior-kit';
+const TK = 'town-kit';
+const X = 'interactive-kit';
+const AR = 'arcane-kit';
 const PI = Math.PI;
 const H = PI / 2;
 
@@ -455,13 +463,82 @@ const FOREST_DEF = {
 	thumb: {}
 };
 
-// ---- 3. Tavern Interior ----------------------------------------------------------------
+// ---- shared: a 4 × 4 m cottage -------------------------------------------------------------
 //
-// A two-storey room 12 × 10 m: the HALL (x -6..2) rises the full 6 m with a BALCONY along its
-// north wall, the KITCHEN (x 2..6) sits behind a partition with a doorway and has a LOFT above
-// it that opens onto the balcony. An oak staircase climbs the west wall to the balcony; a bar
-// runs under it; tables, benches, barrels and a hearth fill the rooms, and lanterns and wall
-// torches light it warm. The front door is shut: you are inside.
+// kit.md's cottage (architecture kit), centred on its own origin so it can be dropped and turned
+// anywhere: walls on the lines x = ±2 and z = ±2, the doorway and a window on its FRONT (+Z,
+// local), a window on its +X side, a gable roof with a chimney. `at` [x, z] and `yaw` (a multiple
+// of 90°) place it; `door` is 'open' (the Interactive Kit's DoorWood — it opens), 'shut' (the
+// architecture kit's static Door) or 'none'; `inside(add)` furnishes it in LOCAL coordinates.
+/**
+ * @param {any[]} o the object list @param {(s: string) => string} n the namer
+ * @param {{at: number[], yaw?: number, name: string, plaster?: boolean, door?: 'open'|'shut'|'none',
+ *   shutters?: boolean, inside?: (add: (pack: string, item: string, name: string, p: number[], yaw?: number, extra?: any) => void) => void}} c
+ */
+function cottage(o, n, c) {
+	const yaw = c.yaw ?? 0;
+	const cos = Math.cos(yaw);
+	const sin = Math.sin(yaw);
+	const [ox, oz] = c.at;
+	/** local -> world (three's rotation.y: x' = x cos + z sin, z' = -x sin + z cos) */
+	const add = (/** @type {string} */ pack, /** @type {string} */ item, /** @type {string} */ name, /** @type {number[]} */ p, ry = 0, extra = {}) =>
+		o.push(piece(pack, item, name, [ox + p[0] * cos + p[2] * sin, p[1], oz - p[0] * sin + p[2] * cos], ry + yaw, extra));
+	const wall = c.plaster === false ? 'WallStone' : 'WallPlaster';
+	const tag = c.name;
+	for (const [x, z] of [[-1, -1], [1, -1], [-1, 1], [1, 1]]) add(A, 'FloorWood', n(tag + ' floor'), [x, 0, z]);
+	// the front (+Z): the doorway at x -1, a window at x 1
+	add(A, wall + 'Door', tag + ' doorway', [-1, 0, 2], 0, { physics: COLLIDERS.doorway });
+	if (c.door === 'open') add(X, 'DoorWood', tag + ' door', [-1, 0, 2]);
+	else if (c.door !== 'none') add(A, 'Door', tag + ' door', [-1, 0, 2]);
+	add(A, wall + 'Window', n(tag + ' window wall'), [1, 0, 2]);
+	if (c.shutters) add(X, 'Shutters', n(tag + ' shutters'), [1, 0, 2]);
+	else add(A, 'Window', n(tag + ' window'), [1, 0, 2]);
+	// the back and the sides; a window on the +X side
+	for (const x of [-1, 1]) add(A, wall, n(tag + ' wall'), [x, 0, -2], PI);
+	add(A, wall, n(tag + ' wall'), [-2, 0, -1], -H);
+	add(A, wall, n(tag + ' wall'), [-2, 0, 1], -H);
+	add(A, wall, n(tag + ' wall'), [2, 0, 1], H);
+	add(A, wall + 'Window', n(tag + ' window wall'), [2, 0, -1], H);
+	add(A, 'Window', n(tag + ' window'), [2, 0, -1], H);
+	for (const [x, z] of [[-2, -2], [2, -2], [-2, 2], [2, 2]]) add(A, 'CornerPostStone', n(tag + ' corner'), [x, 0, z]);
+	for (const x of [-1, 1]) {
+		add(A, 'RoofSlope', n(tag + ' roof'), [x, 3, 1]);
+		add(A, 'RoofSlope', n(tag + ' roof'), [x, 3, -1], PI);
+	}
+	for (const x of [-2, 2]) {
+		add(A, wall + 'Gable', n(tag + ' gable'), [x, 3, 1], H);
+		add(A, wall + 'Gable', n(tag + ' gable'), [x, 3, -1], -H);
+	}
+	add(A, 'Chimney', tag + ' chimney', [1, 3.7, -1]);
+	c.inside?.(add);
+}
+
+/** a street along X between `x0` and `x1` (tile centres every 2 m), its near sidewalk's inner
+ * edge on `z0`: sidewalk / curb / road / curb / sidewalk (town-kit kit.md's layout), with an
+ * optional pedestrian crossing at `crossAt` @param {any[]} o @param {(s: string) => string} n
+ * @param {{x0: number, x1: number, z0: number, crossAt?: number}} s */
+function street(o, n, s) {
+	for (let x = s.x0; x <= s.x1; x += 2) {
+		o.push(piece(TK, 'Sidewalk', n('Sidewalk'), [x, 0, s.z0 + 1]));
+		o.push(piece(TK, 'RoadCurb', n('Curb'), [x, 0, s.z0 + 3], PI));
+		o.push(piece(TK, x === s.crossAt ? 'RoadCrossing' : 'Road', n('Road'), [x, 0, s.z0 + 5]));
+		o.push(piece(TK, 'RoadCurb', n('Curb'), [x, 0, s.z0 + 7]));
+		o.push(piece(TK, 'Sidewalk', n('Sidewalk'), [x, 0, s.z0 + 9]));
+	}
+}
+
+// ---- 3. Tavern Interior (the architecture shell) ---------------------------------------
+//
+// A two-storey tavern 12 × 10 m on a market street: the HALL (x -6..2) rises the full 6 m with
+// a BALCONY along its north wall, the KITCHEN (x 2..6) sits behind a partition and has a LOFT
+// above it that opens onto the balcony. An oak staircase climbs the west wall to the balcony.
+// 33-scenes: the shell's doors WORK — the front door (DoorWood) and the kitchen door
+// (DoorStudded) open with a click in Interact or Play, the street window's shutters close, the
+// loft chest and drawers open — and it is furnished from the Interiors kit (a bar counter and
+// back-bar under the balcony, a stone fireplace, a tavern table set and a dining set, a
+// chandelier, a kitchen run, a double bed and a wardrobe in the loft, teal wainscot). Outside,
+// a cobbled street from the Town & Market kit (sidewalks, curbs, a crossing, lamp posts, a
+// cart) with two cottages across it. You arrive on the sidewalk, facing the front door.
 function tavernObjects() {
 	const n = namer();
 	/** @type {any[]} */
@@ -470,12 +547,13 @@ function tavernObjects() {
 	const ZS = [-5, -3, -1, 1, 3];
 	// ground floor, ceiling, balcony and loft ------------------------------------------
 	for (const x of XS) for (const z of ZS) o.push(piece(A, 'FloorWood', n('Floor'), [x, 0, z]));
-	for (const x of XS) for (const z of ZS) o.push(piece(A, 'FloorWood', n('Ceiling'), [x, 6, z]));
+	// the hall is open to the roof (its slopes and beams are the ceiling); the loft keeps one
+	for (const x of [3, 5]) for (const z of ZS) o.push(piece(A, 'FloorWood', n('Ceiling'), [x, 6, z]));
 	for (const x of [-5, -3, -1, 1]) o.push(piece(A, 'FloorWood', n('Balcony'), [x, 3, -5]));
 	for (const x of [3, 5]) for (const z of ZS) o.push(piece(A, 'FloorWood', n('Loft'), [x, 3, z]));
 	// outer walls, two storeys: sandstone below, plaster above --------------------------
-	/** @param {number} y @param {string} solid @param {string} win @param {string} winWall */
-	const shell = (y, solid, win, winWall) => {
+	/** @param {number} y @param {string} solid @param {string} winWall */
+	const shell = (y, solid, winWall) => {
 		// a window's shutters are its FRONT (+Z): every wall of the shell is turned so its
 		// front faces OUT (kit.md: the Window shares its wall's position and rotation)
 		for (const x of XS) {
@@ -486,9 +564,15 @@ function tavernObjects() {
 			} else o.push(piece(A, solid, n('Wall'), [x, y, -6], PI));
 			// south wall z = 4 (the front: the door, and windows)
 			if (y === 0 && x === -3) {
-				o.push(piece(A, 'WallStoneDoor', 'Front doorway', [x, y, 4]));
-				o.push(piece(A, 'Door', 'Front door', [x, y, 4]));
-			} else if ((y === 0 && (x === 1 || x === 5)) || (y === 3 && x === -3)) {
+				// the doorway takes its jambs-and-lintel collider (the walker comes in from the
+				// street now), and the DOOR opens (the Interactive Kit's door + frame)
+				o.push(piece(A, 'WallStoneDoor', 'Front doorway', [x, y, 4], 0, { physics: COLLIDERS.doorway }));
+				o.push(piece(X, 'DoorWood', 'Front door', [x, y, 4]));
+			} else if (y === 0 && x === 1) {
+				// the street window: shutters that close (placed open, flat against the wall)
+				o.push(piece(A, winWall, n('Window wall'), [x, y, 4]));
+				o.push(piece(X, 'Shutters', 'Street window shutters', [x, y, 4]));
+			} else if ((y === 0 && x === 5) || (y === 3 && x === -3)) {
 				o.push(piece(A, winWall, n('Window wall'), [x, y, 4]));
 				o.push(piece(A, 'Window', n('Window'), [x, y, 4]));
 			} else o.push(piece(A, solid, n('Wall'), [x, y, 4]));
@@ -505,12 +589,33 @@ function tavernObjects() {
 		}
 		for (const [x, z] of [[-6, -6], [6, -6], [-6, 4], [6, 4]]) o.push(piece(A, 'CornerPostStone', n('Corner post'), [x, y, z]));
 	};
-	shell(0, 'WallStone', 'Window', 'WallStoneWindow');
-	shell(3, 'WallPlaster', 'Window', 'WallPlasterWindow');
-	// the partition between hall and kitchen (x = 2), a doorway at z = 1 --------------------
+	shell(0, 'WallStone', 'WallStoneWindow');
+	shell(3, 'WallPlaster', 'WallPlasterWindow');
+	// the slate roof (33-scenes: the street sees the building now): a gable roof with its ridge
+	// along X over the 10 m depth — two rows of slopes a side (2 m run, 1.5 m rise each), a 2 m
+	// flat ridge of slate slabs at y 9, and the end walls closed with half walls + gables
+	for (const x of XS) {
+		o.push(piece(A, 'RoofSlope', n('Roof'), [x, 6, -5], PI));
+		o.push(piece(A, 'RoofSlope', n('Roof'), [x, 7.5, -3], PI));
+		o.push(piece(A, 'RoofSlope', n('Roof'), [x, 6, 3]));
+		o.push(piece(A, 'RoofSlope', n('Roof'), [x, 7.5, 1]));
+		o.push(piece(A, 'FloorSlate', n('Ridge'), [x, 8.9, -1]));
+	}
+	for (const x of [-6, 6]) {
+		for (const z of [-3, -1, 1]) o.push(piece(A, 'WallPlasterHalf', n('End wall'), [x, 6, z], H));
+		o.push(piece(A, 'WallPlasterHalf', n('End wall'), [x, 7.5, -1], H));
+		o.push(piece(A, 'WallPlasterGable', n('Gable'), [x, 6, 3], H));
+		o.push(piece(A, 'WallPlasterGable', n('Gable'), [x, 6, -5], -H));
+		o.push(piece(A, 'WallPlasterGable', n('Gable'), [x, 7.5, 1], H));
+		o.push(piece(A, 'WallPlasterGable', n('Gable'), [x, 7.5, -3], -H));
+	}
+	o.push(piece(A, 'Chimney', 'Chimney', [-1, 7.6, 1.1]));
+	// the partition between hall and kitchen (x = 2): a doorway at z = 1 with a door that opens
 	for (const z of ZS) {
-		if (z === 1) o.push(piece(A, 'WallPlasterDoor', 'Kitchen doorway', [2, 0, z], H, { physics: COLLIDERS.doorway }));
-		else o.push(piece(A, 'WallPlaster', n('Partition'), [2, 0, z], H));
+		if (z === 1) {
+			o.push(piece(A, 'WallPlasterDoor', 'Kitchen doorway', [2, 0, z], H, { physics: COLLIDERS.doorway }));
+			o.push(piece(X, 'DoorStudded', 'Kitchen door', [2, 0, z], H));
+		} else o.push(piece(A, 'WallPlaster', n('Partition'), [2, 0, z], H));
 	}
 	// the staircase up the west wall to the balcony, rails along the open edges ----------
 	o.push(piece(A, 'StairsWood', 'Balcony stairs', [-5, 0.1, -2], 0, { physics: COLLIDERS.stairs }));
@@ -520,48 +625,72 @@ function tavernObjects() {
 	o.push(piece(A, 'Column', n('Column'), [-2, 0.1, -4]));
 	for (const x of [-3, -1, 1]) o.push(piece(A, 'Beam', n('Balcony beam'), [x, 2.7, -4]));
 	for (const x of [-5, -3, -1, 1]) o.push(piece(A, 'Beam', n('Ceiling beam'), [x, 5.7, -0.5]));
-	// the bar, under the balcony: half walls (scaled to counter height) with a trim top --
+	// the bar under the balcony (Interiors kit: two counter sections, the back-bar on the north
+	// wall's room face — a wall-line piece takes the wall's line and faces into the room) ----
 	for (const x of [-2.2, -0.2]) {
-		o.push(piece(A, 'WallStoneHalf', n('Bar'), [x, 0.1, -2.6], 0, { scale: [1, 0.72, 1] }));
-		o.push(piece(A, 'Trim', n('Bar top'), [x, 1.18, -2.6]));
+		o.push(piece(I, 'BarCounter', n('Bar counter'), [x, 0.1, -3.4]));
+		o.push(piece(I, 'BackBar', n('Back-bar'), [x, 0.1, -6]));
 	}
-	o.push(piece(P, 'Bookcase', n('Shelf'), [-1.2, 0.1, -5.5]));
-	o.push(piece(P, 'Bookcase', n('Shelf'), [0.4, 0.1, -5.5]));
-	for (const [x, z] of [[-3.4, -5.2], [-3.6, -4.4], [1.4, -5.2]]) o.push(piece(P, 'Barrel', n('Barrel'), [x, 0.1, z], x, { physics: DYNAMIC(30) }));
-	o.push(piece(P, 'Candles', n('Candles'), [-1.6, 1.38, -2.6], 0, { physics: COLLIDERS.sensor }));
-	o.push(piece(P, 'Lantern', n('Lantern'), [-0.2, 1.38, -2.6], 0, { physics: COLLIDERS.sensor }));
-	for (const x of [-2.4, -1.2, 0]) o.push(piece(P, 'Chair', n('Bar stool'), [x, 0.1, -1.7], PI));
-	// the hall: two long tables with benches, a rug, a plant --------------------------
-	for (const [x, z] of [[-2.6, 1.2], [-0.2, 0.6]]) {
-		o.push(piece(P, 'Table', n('Table'), [x, 0.1, z], H));
-		o.push(piece(P, 'Bench', n('Bench'), [x - 0.75, 0.1, z], H));
-		o.push(piece(P, 'Bench', n('Bench'), [x + 0.75, 0.1, z], H));
-		o.push(piece(P, 'Candles', n('Candles'), [x, 0.88, z], 0, { physics: COLLIDERS.sensor }));
-	}
-	o.push(piece(P, 'Rug', 'Hall rug', [-1.2, 0.1, 1.0], H, { scale: 1.2, physics: COLLIDERS.sensor }));
-	o.push(piece(P, 'PottedPlant', n('Plant'), [1.4, 0.1, 3.3]));
+	for (const x of [-2.8, -1.7, -0.6, 0.5]) o.push(piece(I, 'BarStool', n('Bar stool'), [x, 0.1, -2.75], x));
+	for (const [x, z] of [[-3.75, -5.3], [-3.8, -4.55], [1.4, -5.2]]) o.push(piece(P, 'Barrel', n('Barrel'), [x, 0.1, z], x, { physics: DYNAMIC(30) }));
+	o.push(piece(P, 'Candles', n('Candles'), [-1.6, 1.2, -3.4], 0, { physics: COLLIDERS.sensor }));
+	o.push(piece(P, 'Lantern', n('Lantern'), [-0.2, 1.2, -3.4], 0, { physics: COLLIDERS.sensor }));
+	for (const x of [-3.6, 1.2]) o.push(piece(I, 'WallSconce', n('Sconce'), [x, 1.75, -6]));
+	// the hall: a tavern table set and a dining set, a fireplace on the front wall, a chandelier
+	o.push(piece(I, 'TavernTableSet', 'Tavern table', [-2.1, 0.1, 0.9]));
+	o.push(piece(I, 'DiningSet', 'Dining table', [0.35, 0.1, -0.7], H));
+	o.push(piece(P, 'Candles', n('Candles'), [0.35, 0.88, -0.7], 0, { physics: COLLIDERS.sensor }));
+	o.push(piece(I, 'Fireplace', 'Fireplace', [-1, 0.1, 4], PI));
+	o.push(piece(I, 'Chandelier', 'Chandelier', [-2, 5.75, -0.5], 0, { physics: COLLIDERS.sensor }));
+	o.push(piece(I, 'Plant', n('Plant'), [1.55, 0.1, 3.45]));
 	o.push(piece(P, 'PottedPlant', n('Plant'), [-5.3, 0.1, 3.3]));
 	o.push(piece(P, 'CrateTeal', n('Crate'), [-4.9, 0.1, 1.9], 0.2, { physics: DYNAMIC(12) }));
-	// the kitchen: a hearth, a cauldron, a workbench, stores -----------------------------
-	o.push(piece(A, 'Chimney', 'Hearth', [5.4, 0.1, -5.4]));
-	o.push(piece(P, 'Cauldron', 'Cauldron', [4.4, 0.1, -5], 0.4));
-	o.push(piece(P, 'Workbench', 'Workbench', [5.45, 0.1, -1.5], -H));
-	o.push(piece(P, 'Candles', n('Candles'), [5.45, 1.02, -1.2], 0, { physics: COLLIDERS.sensor }));
+	// teal wainscot on the hall's free walls (same line + rotation as the wall's room face).
+	// Pass-through: a trim's default collider is its bounding box, which for the DOORWAY trim
+	// spans the gap it leaves for the door — the walker stopped at the threshold of an open
+	// front door (measured, z 4.22); the wall behind a trim already holds the walker
+	const TRIM = { physics: COLLIDERS.sensor };
+	for (const x of [-5, 1]) o.push(piece(I, 'Wainscot', n('Wainscot'), [x, 0.1, 4], PI, TRIM));
+	o.push(piece(I, 'WainscotDoorway', 'Front wainscot', [-3, 0.1, 4], PI, TRIM));
+	for (const z of [1, 3]) o.push(piece(I, 'Wainscot', n('Wainscot'), [-6, 0.1, z], H, TRIM));
+	// the kitchen: a counter / range / counter run on the north wall, a long table, stores -----
+	o.push(piece(I, 'KitchenCounter', n('Kitchen counter'), [3.0, 0.1, -6]));
+	o.push(piece(I, 'Stove', 'Range', [3.95, 0.1, -6]));
+	o.push(piece(I, 'KitchenCounter', n('Kitchen counter'), [4.9, 0.1, -6]));
+	o.push(piece(I, 'LongTable', 'Kitchen table', [4.1, 0.1, -2.4], H));
+	for (const z of [-3.1, -1.7]) o.push(piece(I, 'Stool', n('Kitchen stool'), [3.35, 0.1, z]));
+	o.push(piece(I, 'CrateGoods', n('Fruit'), [5.5, 0.1, -4.3], 0.3));
 	o.push(piece(P, 'CrateStack', 'Kitchen crates', [4.6, 0.1, 3.2]));
 	o.push(piece(P, 'Sacks', 'Kitchen sacks', [5.2, 0.1, 1.4], 1.9));
-	o.push(piece(P, 'BarrelSmall', n('Barrel'), [3.1, 0.1, -5.3], 0, { physics: DYNAMIC(10) }));
-	// the loft: a bed, a chest, a rug, a tapestry, a plant --------------------------------
-	o.push(piece(P, 'Bed', 'Loft bed', [5, 3.1, -4.4]));
-	o.push(piece(P, 'Chest', 'Loft chest', [5.2, 3.1, 2.8], -H));
+	o.push(piece(P, 'BarrelSmall', n('Barrel'), [2.6, 0.1, -4.6], 0, { physics: DYNAMIC(10) }));
+	// the loft: a double bed and a wardrobe on its walls, a chest and drawers that open -----
+	o.push(piece(I, 'DoubleBed', 'Loft bed', [6, 3.1, -4], -H));
+	o.push(piece(I, 'Wardrobe', 'Loft wardrobe', [3.2, 3.1, -6]));
+	o.push(piece(X, 'Chest', 'Loft chest', [5.3, 3.1, 2.9], -H));
+	o.push(piece(X, 'Drawers', 'Loft drawers', [5.625, 3.1, -1.4], -H));
 	o.push(piece(P, 'Rug', 'Loft rug', [4.1, 3.1, -0.5], H, { physics: COLLIDERS.sensor }));
-	o.push(piece(P, 'Tapestry', n('Tapestry'), [5.875, 3.9, 0.5], -H, { physics: COLLIDERS.sensor }));
+	o.push(piece(P, 'Tapestry', n('Tapestry'), [5.875, 3.9, 0.9], -H, { physics: COLLIDERS.sensor }));
 	o.push(piece(P, 'Tapestry', n('Tapestry'), [-3, 3.9, -5.875], 0, { physics: COLLIDERS.sensor }));
 	o.push(piece(P, 'PottedPlant', n('Plant'), [1.3, 3.1, -5.3]));
-	// wall torches and lights ----------------------------------------------------------
-	for (const [x, z, yaw] of [[-5.875, 0.7, H], [-5.875, 2.8, H], [1.875, -1.8, -H], [-0.8, 3.875, PI], [5.875, 2, -H]])
-		o.push(piece(P, 'WallTorch', n('Wall torch'), [x, 1.55, z], yaw, { physics: COLLIDERS.sensor }));
-	for (const [x, y, z, i] of [[-3, 2.5, 1.2, 9], [0.2, 2.5, 1, 9], [-1, 2.4, -3.2, 7], [4, 2.4, -2.5, 8], [4, 5.2, -1, 8], [-2, 5.2, -5, 6], [-4.2, 2.3, -1, 5]])
-		o.push({ type: 'light', name: n('Lamp'), pos: [x, y, z], color: 0xffb060, intensity: i, distance: 11, decay: 2 });
+	// the street outside the front (its sidewalk starts at the wall's outer face) ----------
+	street(o, n, { x0: -10, x1: 10, z0: 4.125, crossAt: -3 });
+	for (const [x, z] of [[-6.5, 5.6], [3.5, 5.6], [-1, 12.7], [8, 12.7]]) o.push(piece(TK, 'LampPost', n('Lamp post'), [x, 0.35, z]));
+	for (const x of [-4.1, -1.9]) o.push(piece(P, 'WallTorch', n('Door torch'), [x, 1.6, 4.125], 0, { physics: COLLIDERS.sensor }));
+	o.push(piece(TK, 'BarrelCluster', 'Street barrels', [0.6, 0.35, 4.75]));
+	o.push(piece(TK, 'FlowerBox', n('Flower box'), [5, 1.0, 4.29]));
+	o.push(piece(TK, 'ParkBench', 'Street bench', [2.8, 0.35, 5.3], PI));
+	o.push(piece(TK, 'LoadedCart', 'Cart', [6.5, 0.2, 9.4], 0.08));
+	// across the street: two cottages, their fronts to the street (shut — scenery)
+	// (on the kit's grid: a cottage's centre on even metres, so its walls stand on grid lines)
+	cottage(o, n, { at: [-6, 18], yaw: PI, name: 'Cottage A', door: 'shut' });
+	cottage(o, n, { at: [4, 18], yaw: PI, name: 'Cottage B', door: 'shut', plaster: false });
+	for (const x of [-6, 4]) o.push(piece(TK, 'FlowerBox', n('Flower box'), [x - 1, 1.0, 15.715], PI));
+	// trees behind them and at the street's ends, so its ends fade into green, not the void
+	for (const [item, x, z, s] of [['Oak', -12, 23, 1], ['Birch', -1, 23, 1], ['Oak', 9, 23, 1.1], ['Pine', -14, 9, 1.1], ['Pine', 14, 8, 1.05], ['Birch', -13, -2, 1], ['Oak', 12, -4, 1]])
+		o.push(piece(N, /** @type {string} */ (item), n(/** @type {string} */ (item)), [/** @type {number} */ (x), 0, /** @type {number} */ (z)], /** @type {number} */ (x) * 0.4, { scale: s, physics: TRUNKS[/** @type {string} */ (item)] }));
+	// light: the hall and the kitchen (the chandelier and the fire glow carry the rest)
+	o.push({ type: 'light', name: 'Hall lamp', pos: [-1.4, 3.6, 0.4], color: 0xffb060, intensity: 16, distance: 16, decay: 2 });
+	o.push({ type: 'light', name: 'Kitchen lamp', pos: [4, 2.4, -2.5], color: 0xffb060, intensity: 8, distance: 11, decay: 2 });
 	return o;
 }
 
@@ -571,28 +700,378 @@ const TAVERN_DEF = {
 	slug: 'tavern-interior',
 	title: 'Tavern Interior',
 	description:
-		'A two-storey tavern: a hall with a bar under the balcony, a kitchen with a hearth, and a loft up the oak stairs, lit warm by lanterns and torches. Press Play to walk it.',
+		'A two-storey tavern on a market street: the doors open, the shutters close, the loft chest lifts its lid. A bar and back-bar, a fireplace, a kitchen and a loft, furnished from the Interiors kit. Press Play and walk in.',
 	author: 'theprototype',
 	license: 'CC0-1.0',
-	tags: ['level design', 'kits', 'interior', 'walkable'],
+	tags: ['level design', 'kits', 'interior', 'walkable', 'doors'],
 	objects: tavernObjects(),
-	// an early evening outside the windows; inside, the warm lamps do the work and a warm
-	// hemisphere keeps the corners from going black
+	// an early evening: a low warm sun down the street, a warm hemisphere so the corners inside
+	// never go black, a haze that swallows the ends of the street
 	env: {
 		preset: 'sunset',
 		exposure: 1.1,
 		background: { top: '#3f4a78', bottom: '#f0a766' },
-		fog: null,
+		fog: { color: '#e3a87c', near: 22, far: 60 },
 		ground: { color: '#5b5040', roughness: 1 },
-		sun: { color: '#ffb06a', intensity: 1.6, dir: [0.7, 0.35, 0.6] },
-		hemi: { sky: '#ffd9ae', ground: '#6b5236', intensity: 1.2 }
+		sun: { color: '#ffb06a', intensity: 1.8, dir: [0.7, 0.35, 0.6] },
+		hemi: { sky: '#ffd9ae', ground: '#6b5236', intensity: 1.35 }
 	},
-	// by the front door, the bar and the stairs ahead
-	physics: playPhysics([-1.4, 0.3, 3.3], -0.2),
+	// on the road, the tavern's front and its door ahead
+	physics: playPhysics([-3, 0.3, 10.4], 0),
 	post: lookPost(0.7),
 	graphs: { scene: walkGraph() },
-	view: { pos: [0.5, 2.1, 3.3], target: [-1.5, 1.6, -3] },
+	// the card: inside, from the kitchen doorway's corner, down the hall to the bar
+	view: { pos: [1.3, 2.3, 3.2], target: [-2.4, 1.2, -2.8] },
 	thumb: {}
 };
 
-module.exports = { LEVEL_DEFS: [CASTLE_DEF, FOREST_DEF, TAVERN_DEF], COLLIDERS, TRUNKS, BRIDGE_DECK, HILL_RINGS };
+// ---- 4. Wizard's Tower ------------------------------------------------------------------
+//
+// 33-scenes: a three-storey stone tower, 8 × 8 m, on a dusk hillside. Every storey is one room
+// and a staircase climbs to the next (they alternate sides, so each floor has a hole on one side
+// and a stair on the other): the ALCHEMY LAB on the ground (an alchemist's table, a shelf of
+// potions, a cauldron, a crystal ball, a trapdoor to the cellar, a chest, a lever), the STUDY
+// above (a rune rug, a lectern with an open spellbook, a desk, an armillary sphere, a chest of
+// drawers that opens, shutters that close), the BEDCHAMBER on top (a bed and a wardrobe that
+// opens), and a ROOF TERRACE behind battlements with a telescope. A path runs to the door
+// (it opens) through a garden gate (it opens). The hero props are the Arcane Study Kit's.
+function wizardObjects() {
+	const n = namer();
+	/** @type {any[]} */
+	const o = [];
+	const P4 = [-3, -1, 1, 3];
+	// floors: stone on the ground, oak above, stone on the roof; each skips its stairwell
+	/** @param {number} y @param {string} item @param {string} name @param {number[][]} holes */
+	const floor = (y, item, name, holes) => {
+		for (const x of P4) for (const z of P4) if (!holes.some(([hx, hz]) => hx === x && hz === z)) o.push(piece(A, item, n(name), [x, y, z]));
+	};
+	floor(0, 'FloorStone', 'Lab floor', []);
+	floor(3, 'FloorWood', 'Study floor', [[-3, -1], [-3, 1]]);
+	floor(6, 'FloorWood', 'Bedchamber floor', [[3, -1], [3, 1]]);
+	floor(9, 'FloorStone', 'Roof', [[-3, -1], [-3, 1]]);
+	// three storeys of sandstone walls (fronts out), windows on every side, the door south
+	/** @param {number} y @param {Record<string, string>} openings key 'side:pos' -> 'window' | 'shutters' | 'door' */
+	const storey = (y, openings) => {
+		/** @param {string} key @param {number[]} p @param {number} rot */
+		const panel = (key, p, rot) => {
+			const kind = openings[key];
+			if (kind === 'door') {
+				o.push(piece(A, 'WallStoneDoor', 'Tower doorway', p, rot, { physics: COLLIDERS.doorway }));
+				o.push(piece(X, 'DoorStudded', 'Tower door', p, rot));
+			} else if (kind === 'window' || kind === 'shutters') {
+				o.push(piece(A, 'WallStoneWindow', n('Window wall'), p, rot));
+				o.push(kind === 'shutters' ? piece(X, 'Shutters', n('Shutters'), p, rot) : piece(A, 'Window', n('Window'), p, rot));
+			} else o.push(piece(A, 'WallStone', n('Tower wall'), p, rot));
+		};
+		for (const x of P4) {
+			panel('n:' + x, [x, y, -4], PI);
+			panel('s:' + x, [x, y, 4], 0);
+		}
+		for (const z of P4) {
+			panel('w:' + z, [-4, y, z], -H);
+			panel('e:' + z, [4, y, z], H);
+		}
+		for (const [x, z] of [[-4, -4], [4, -4], [-4, 4], [4, 4]]) o.push(piece(A, 'CornerPostStone', n('Tower corner'), [x, y, z]));
+	};
+	storey(0, { 's:1': 'door', 'e:-1': 'window', 'w:-3': 'window', 'n:1': 'window' });
+	storey(3, { 'n:-1': 'shutters', 'e:1': 'window', 's:-1': 'window', 'w:-3': 'window' });
+	storey(6, { 's:-1': 'window', 'w:1': 'window', 'e:-3': 'window', 'n:1': 'window' });
+	// battlements round the roof terrace
+	for (const x of P4) {
+		o.push(piece(A, 'Battlement', n('Battlement'), [x, 9, -4], PI));
+		o.push(piece(A, 'Battlement', n('Battlement'), [x, 9, 4]));
+	}
+	for (const z of P4) {
+		o.push(piece(A, 'Battlement', n('Battlement'), [-4, 9, z], -H));
+		o.push(piece(A, 'Battlement', n('Battlement'), [4, 9, z], H));
+	}
+	// the stairs: up the west side to the study, the east side to the bedchamber, the west
+	// again to the roof (kit.md: pivot at the centre of the 2 × 4 slot, rising towards -Z)
+	o.push(piece(A, 'StairsWood', 'Stairs to the study', [-3, 0.1, 0], 0, { physics: COLLIDERS.stairs }));
+	o.push(piece(A, 'StairsWood', 'Stairs to the bedchamber', [3, 3.1, 0], PI, { physics: COLLIDERS.stairs }));
+	o.push(piece(A, 'StairsWood', 'Stairs to the roof', [-3, 6.1, 0], 0, { physics: COLLIDERS.stairs }));
+	// rails along each stairwell's open side
+	o.push(piece(A, 'Railing', n('Stairwell rail'), [-1.92, 3.1, -1], H));
+	o.push(piece(A, 'Railing', n('Stairwell rail'), [-1.92, 3.1, 1], H));
+	o.push(piece(A, 'Railing', n('Stairwell rail'), [1.92, 6.1, -1], H));
+	o.push(piece(A, 'Railing', n('Stairwell rail'), [1.92, 6.1, 1], H));
+	o.push(piece(A, 'Railing', n('Stairwell rail'), [-1.92, 9.1, -1], H));
+	o.push(piece(A, 'Railing', n('Stairwell rail'), [-1.92, 9.1, 1], H));
+	// the ALCHEMY LAB --------------------------------------------------------------------
+	o.push(piece(AR, 'AlchemyTable', 'Alchemist’s table', [0.6, 0.1, -3.43]));
+	o.push(piece(AR, 'PotionShelf', n('Potion shelf'), [3.655, 0.1, -2.6], -H));
+	o.push(piece(P, 'Cauldron', 'Cauldron', [-0.6, 0.1, -0.6], 0.6));
+	o.push(piece(I, 'RoundTable', 'Scrying table', [2.5, 0.1, 0.4]));
+	o.push(piece(AR, 'CrystalBall', 'Crystal ball', [2.5, 0.86, 0.4]));
+	o.push(piece(X, 'Trapdoor', 'Cellar trapdoor', [-0.4, 0.1, 1.9]));
+	o.push(piece(X, 'Chest', 'Lab chest', [3.4, 0.1, 2.9], -H));
+	o.push(piece(X, 'Lever', 'Lever', [-1.6, 0.1, -3.3]));
+	o.push(piece(P, 'Barrel', n('Barrel'), [3.4, 0.1, -0.7], 0.4, { physics: DYNAMIC(30) }));
+	for (const [x, z, yaw] of [[-1.6, 3.875, PI], [3.875, 1.6, -H]]) o.push(piece(P, 'WallTorch', n('Wall torch'), [x, 1.55, z], yaw, { physics: COLLIDERS.sensor }));
+	// the STUDY ----------------------------------------------------------------------------
+	o.push(piece(AR, 'RuneRug', 'Rune rug', [0.3, 3.1, 0.6], 0, { physics: COLLIDERS.sensor }));
+	o.push(piece(AR, 'Lectern', 'Lectern', [0.3, 3.1, 0.6], PI * 0.85));
+	o.push(piece(I, 'Desk', 'Study desk', [0.2, 3.1, -3.3]));
+	o.push(piece(I, 'Stool', n('Stool'), [0.2, 3.1, -2.5]));
+	o.push(piece(P, 'Candles', n('Candles'), [0.6, 3.86, -3.3], 0, { physics: COLLIDERS.sensor }));
+	o.push(piece(I, 'WallShelfBooks', 'Book shelf', [-1.6, 4.2, -4]));
+	o.push(piece(AR, 'Armillary', 'Armillary sphere', [1.6, 3.1, -2.3], 0.4));
+	o.push(piece(X, 'Drawers', 'Study drawers', [-0.2, 3.1, 3.625], PI));
+	o.push(piece(I, 'Armchair', 'Study armchair', [1.4, 3.1, 2.6], PI * 0.8));
+	o.push(piece(P, 'Bookcase', n('Bookcase'), [-1.6, 3.1, 3.55], PI));
+	// the BEDCHAMBER -----------------------------------------------------------------------
+	o.push(piece(I, 'DoubleBed', 'Wizard’s bed', [-0.4, 6.1, -4]));
+	o.push(piece(X, 'Cabinet', 'Wardrobe', [-1.4, 6.1, 3.625], PI));
+	o.push(piece(AR, 'PotionShelf', n('Potion shelf'), [0.6, 6.1, 3.655], PI));
+	o.push(piece(P, 'Rug', 'Bedchamber rug', [-0.2, 6.1, 0.4], H, { physics: COLLIDERS.sensor }));
+	o.push(piece(I, 'Plant', n('Plant'), [1.4, 6.1, -3.4]));
+	// the ROOF TERRACE ---------------------------------------------------------------------
+	o.push(piece(AR, 'Telescope', 'Telescope', [1.4, 9.1, 1.6], -0.6));
+	o.push(piece(P, 'Crate', n('Crate'), [2.9, 9.1, 2.9], 0.3, { physics: DYNAMIC(15) }));
+	// outside: torches either side of the door, a banner stirring above it (the Interactive
+	// Kit's one AMBIENT piece here: it loops on its own, in Interact and Play only)
+	for (const x of [0.1, 1.9]) o.push(piece(P, 'WallTorch', n('Door torch'), [x, 1.6, 4.125], 0, { physics: COLLIDERS.sensor }));
+	o.push(piece(X, 'Banner', 'Tower banner', [1, 3.4, 4.125]));
+	// a path to the door through a garden gate, a hillside of trees and stones -------------
+	for (const z of [5.5, 7.5, 9.5, 11.5]) o.push(piece(N, 'PathTile', n('Path'), [1, 0, z]));
+	for (const x of [-5, -3, -1, 3, 5]) o.push(piece(TK, 'Fence', n('Garden fence'), [x, 0, 10.5]));
+	o.push(piece(TK, 'FenceGate', 'Garden gate', [1, 0, 10.5]));
+	for (const [item, x, z, s] of [['Pine', -8, -5, 1.1], ['Pine', -10, 3, 1], ['DeadTree', 8, -6, 1], ['Oak', 9, 5, 1], ['Pine', 6, -12, 1.15], ['Pine', -6, -12, 1.05], ['Birch', -9, 9, 1], ['Pine', 12, 12, 1.1], ['Pine', -13, -1, 1.1]])
+		o.push(piece(N, /** @type {string} */ (item), n(/** @type {string} */ (item)), [/** @type {number} */ (x), 0, /** @type {number} */ (z)], /** @type {number} */ (x) * 0.5, { scale: s, physics: TRUNKS[/** @type {string} */ (item)] }));
+	for (const [item, x, z, yaw] of [['RockLarge', -6.5, 6.5, 0.4], ['RockMedium', 6.2, 7.5, 2], ['BoulderCluster', -7, -8, 1.1], ['Stump', 5, 2.5, 0.3]]) o.push(piece(N, /** @type {string} */ (item), n(/** @type {string} */ (item)), [/** @type {number} */ (x), 0, /** @type {number} */ (z)], /** @type {number} */ (yaw)));
+	for (const [x, z] of [[-2.8, 6.8], [4.3, 8.4], [-4.2, 8.9], [3.2, 5.6]]) o.push(piece(N, x < 0 ? 'Mushrooms' : 'FlowerPatch', n('Garden'), [x, 0, z], x, { physics: COLLIDERS.sensor }));
+	for (const [x, z] of [[-5.5, 5], [6, 4.8], [-2, 12.5], [5, 12]]) o.push(piece(N, 'Bush', n('Bush'), [x, 0, z], z));
+	// light: the lab and the study (the crystal ball, the torches and the moon do the rest)
+	o.push({ type: 'light', name: 'Lab lamp', pos: [0.8, 2.3, 0], color: 0xffa868, intensity: 9, distance: 10, decay: 2 });
+	o.push({ type: 'light', name: 'Study lamp', pos: [0.4, 5.3, 0], color: 0xc9a2ff, intensity: 9, distance: 11, decay: 2 });
+	return o;
+}
+
+const WIZARD_DEF = {
+	kind: 'template',
+	seed: false,
+	slug: 'wizards-tower',
+	title: 'Wizard’s Tower',
+	description:
+		'A three-storey stone tower at dusk: an alchemy lab with a trapdoor and a chest, a study with a lectern and drawers, a bedchamber, and a roof terrace with a telescope. Doors, lids and shutters open. Press Play and climb it.',
+	author: 'theprototype',
+	license: 'CC0-1.0',
+	tags: ['level design', 'kits', 'interior', 'walkable', 'doors', 'fantasy'],
+	objects: wizardObjects(),
+	// dusk: a violet sky over a warm horizon, a low cool moon, a soft haze past the trees
+	env: {
+		preset: 'sunset',
+		exposure: 1.1,
+		background: { top: '#2b2752', bottom: '#d09272' },
+		fog: { color: '#a98a96', near: 20, far: 60 },
+		ground: { color: '#4f6436', roughness: 1 },
+		sun: { color: '#c8c4ff', intensity: 1.5, dir: [-0.5, 0.55, 0.65] },
+		hemi: { sky: '#cbb8ff', ground: '#4f6436', intensity: 1.3 }
+	},
+	// on the path, the garden gate and the tower door ahead
+	physics: playPhysics([1, 0.3, 13], 0),
+	post: lookPost(0.8),
+	graphs: { scene: walkGraph() },
+	view: { pos: [11, 8, 17], target: [0, 4.5, 0] },
+	thumb: {}
+};
+
+// ---- 5. Market Town Square ---------------------------------------------------------------
+//
+// 33-scenes: a paved square in a market town (Town & Market kit + the architecture kit + nature):
+// a fountain in the middle, three market stalls with their goods, a well, benches, lamp posts,
+// a notice board, banner poles, a clock tower on the corner, a road along the south side with a
+// cart, cottages round the edges and trees beyond. The BAKERY on the north side is the one you
+// walk into: its door and shutters open, and inside a kitchen run, a table, a chest of drawers.
+function marketObjects() {
+	const n = namer();
+	/** @type {any[]} */
+	const o = [];
+	// the square: flagstones 16 × 16 m on ODD centres, so the fountain in the middle stands on
+	// four tiles (town-kit kit.md's plaza) and the square's edges fall on the architecture kit's
+	// grid lines (x/z ±8), where the buildings round it stand
+	const S8 = [-7, -5, -3, -1, 1, 3, 5, 7];
+	for (const x of S8) for (const z of S8) o.push(piece(TK, 'Sidewalk', n('Paving'), [x, 0, z]));
+	o.push(piece(TK, 'Fountain', 'Fountain', [0, 0.35, 0]));
+	// the road along the south side (curb, cobbles, curb) and a cart on it
+	for (let x = -13; x <= 13; x += 2) {
+		o.push(piece(TK, 'RoadCurb', n('Curb'), [x, 0, 9], PI));
+		o.push(piece(TK, 'Road', n('Road'), [x, 0, 11]));
+		o.push(piece(TK, 'RoadCurb', n('Curb'), [x, 0, 13]));
+	}
+	o.push(piece(TK, 'LoadedCart', 'Cart', [5.5, 0.2, 11.2], 0.05));
+	// the market: three stalls on the east side facing the fountain, goods beside them
+	for (const z of [-4, -0.6, 2.8]) o.push(piece(TK, 'MarketStall', n('Market stall'), [5.2, 0.35, z], -H));
+	o.push(piece(I, 'CrateGoods', n('Fruit'), [6.6, 0.35, -2.3], 0.4));
+	o.push(piece(TK, 'SacksBarrel', 'Sacks', [6.5, 0.35, 1.1], -H));
+	o.push(piece(TK, 'BarrelCluster', 'Barrels', [6.4, 0.35, 4.9]));
+	o.push(piece(TK, 'HayStack', 'Hay', [3.4, 0.35, 6.2], 0.6));
+	// loose goods you can pick up and throw (the square's dynamic bodies: a level with none
+	// would start no simulation on Play, and the walker only collides while one runs)
+	for (const [item, x, z, mass] of [['Crate', 6.9, -5.7, 15], ['CrateTeal', 4.2, -2.2, 12], ['Barrel', 4.1, 4.4, 30], ['BarrelSmall', -3.6, 5.2, 12]])
+		o.push(piece(P, /** @type {string} */ (item), n('Goods'), [/** @type {number} */ (x), 0.35, /** @type {number} */ (z)], /** @type {number} */ (x), { physics: DYNAMIC(/** @type {number} */ (mass)) }));
+	// the west side: the well, the notice board; benches round the fountain; lamps on the corners
+	o.push(piece(TK, 'Well', 'Well', [-4.6, 0.35, 3.6]));
+	o.push(piece(TK, 'NoticeBoard', 'Notice board', [-6.2, 0.35, -2.6], H));
+	o.push(piece(TK, 'ParkBench', n('Bench'), [0, 0.35, 3.1], PI));
+	o.push(piece(TK, 'ParkBench', n('Bench'), [-3.1, 0.35, 0], -H));
+	for (const [x, z] of [[-7.4, -7.4], [7.4, -7.4], [-7.4, 7.4], [7.4, 7.4]]) o.push(piece(TK, 'LampPost', n('Lamp post'), [x, 0.35, z]));
+	for (const x of [-2.6, 2.6]) o.push(piece(TK, 'BannerPole', n('Banner pole'), [x, 0.35, 7.4]));
+	o.push(piece(TK, 'FlowerBoxLong', n('Flowers'), [0.4, 0.35, -7.4]));
+	// the BAKERY: a plaster cottage on the north side, its front to the square — the door and the
+	// shutters open; inside a kitchen run on the back wall, a table, drawers, a plant
+	cottage(o, n, {
+		at: [-4, -10],
+		yaw: 0,
+		name: 'Bakery',
+		door: 'open',
+		shutters: true,
+		inside: (add) => {
+			add(I, 'KitchenCounter', n('Bakery counter'), [-1.3, 0.1, -2]);
+			add(I, 'Stove', 'Bakery oven', [-0.35, 0.1, -2]);
+			add(I, 'KitchenCounter', n('Bakery counter'), [0.6, 0.1, -2]);
+			add(I, 'RoundTable', 'Bakery table', [0.6, 0.1, 0.5]);
+			add(I, 'Stool', n('Bakery stool'), [1.2, 0.1, 0.9]);
+			add(I, 'Stool', n('Bakery stool'), [0.0, 0.1, 0.9]);
+			add(X, 'Drawers', 'Bakery drawers', [-1.625, 0.1, 0.4], H);
+			add(I, 'CrateGoods', n('Fruit'), [1.5, 0.1, -0.7]);
+			add(I, 'Plant', n('Plant'), [-1.55, 0.1, 1.55]);
+			add(I, 'Picture', 'Bakery picture', [-2, 1.4, -0.6], H);
+		}
+	});
+	o.push(piece(TK, 'FlowerBox', n('Flower box'), [-3, 1.0, -7.715]));
+	// the clock tower on the north-east corner: two storeys of sandstone, the clock top on them
+	{
+		const cx = 6;
+		const cz = -10;
+		for (const y of [0, 3]) {
+			for (const d of [-1, 1]) {
+				o.push(piece(A, y === 0 && d === -1 ? 'WallStoneDoor' : 'WallStone', n('Tower wall'), [cx + d, y, cz + 2]));
+				o.push(piece(A, 'WallStone', n('Tower wall'), [cx + d, y, cz - 2], PI));
+				o.push(piece(A, 'WallStone', n('Tower wall'), [cx - 2, y, cz + d], -H));
+				o.push(piece(A, 'WallStone', n('Tower wall'), [cx + 2, y, cz + d], H));
+			}
+			for (const [dx, dz] of [[-2, -2], [2, -2], [-2, 2], [2, 2]]) o.push(piece(A, 'CornerPostStone', n('Tower corner'), [cx + dx, y, cz + dz]));
+		}
+		o.push(piece(A, 'Door', 'Tower door', [cx - 1, 0, cz + 2]));
+		o.push(piece(TK, 'ClockTowerTop', 'Clock', [cx, 6, cz]));
+	}
+	// cottages round the square (shut — the scenery that makes it a town)
+	cottage(o, n, { at: [-10, -2], yaw: H, name: 'West cottage', door: 'shut', plaster: false });
+	cottage(o, n, { at: [-10, 4], yaw: H, name: 'Corner cottage', door: 'shut' });
+	cottage(o, n, { at: [10, 2], yaw: -H, name: 'East cottage', door: 'shut' });
+	// trees beyond, so the edges of the town fade into green
+	for (const [item, x, z, s] of [['Oak', -15, -9, 1.1], ['Pine', -16, 6, 1.1], ['Birch', 15, -6, 1], ['Oak', 16, 8, 1.05], ['Pine', -4, -17, 1.15], ['Pine', 10, -17, 1.1], ['Oak', -12, 16, 1], ['Birch', 12, 16, 1]])
+		o.push(piece(N, /** @type {string} */ (item), n(/** @type {string} */ (item)), [/** @type {number} */ (x), 0, /** @type {number} */ (z)], /** @type {number} */ (x) * 0.3, { scale: s, physics: TRUNKS[/** @type {string} */ (item)] }));
+	o.push({ type: 'light', name: 'Bakery lamp', pos: [-4, 2.4, -10.2], color: 0xffc080, intensity: 6, distance: 7, decay: 2 });
+	return o;
+}
+
+const MARKET_DEF = {
+	kind: 'template',
+	seed: false,
+	slug: 'market-square',
+	title: 'Market Town Square',
+	description:
+		'A market square built from the Town & Market kit: a fountain, stalls, a well, a clock tower and cottages round it — and a bakery whose door and shutters open. Press Play to walk it.',
+	author: 'theprototype',
+	license: 'CC0-1.0',
+	tags: ['level design', 'kits', 'town', 'walkable', 'doors'],
+	objects: marketObjects(),
+	// a bright morning: a high sun from the south-east, a pale sky, a haze past the town
+	env: {
+		preset: 'daylight',
+		exposure: 1.05,
+		background: { top: '#5a8fd0', bottom: '#e3ebef' },
+		fog: { color: '#e3ebef', near: 26, far: 80 },
+		ground: { color: '#6d7f45', roughness: 1 },
+		sun: { color: '#fff1d6', intensity: 2.5, dir: [0.5, 0.7, 0.45] },
+		hemi: { sky: '#d3e6ff', ground: '#6d7f45', intensity: 1.25 }
+	},
+	// on the south side of the square, the fountain and the bakery ahead
+	physics: playPhysics([0, 0.45, 6.3], 0),
+	post: lookPost(0.5),
+	graphs: { scene: walkGraph() },
+	view: { pos: [16, 11.5, 19], target: [0, 2.6, -3] },
+	thumb: {}
+};
+
+// ---- 6. Architecture shell ---------------------------------------------------------------
+//
+// 33-integrate: the General tab's "Architecture shell" card (until 1.18 a grey primitive room)
+// rebuilt from the kits, as the user asked ("update architecture shell scene"). Still a SHELL
+// to block interiors out in — a 12 × 8 m sandstone room on flagstones with a door that OPENS
+// (the Interactive Kit's studded door in its frame), a window with shutters that close and one
+// with glass, two round columns, oak ceiling beams and a slate half roof over the back — but a
+// walkable one now. The greybox it replaces stays the offline seed (author-templates).
+function shellObjects() {
+	const n = namer();
+	/** @type {any[]} */
+	const o = [];
+	const XS = [-5, -3, -1, 1, 3, 5];
+	const ZS = [-3, -1, 1, 3];
+	for (const x of XS) for (const z of ZS) o.push(piece(A, 'FloorStone', n('Floor'), [x, 0, z]));
+	// back wall and front wall (the door at x = 1)
+	for (const x of XS) {
+		o.push(piece(A, 'WallStone', n('Back wall'), [x, 0, -4], PI));
+		if (x === 1) {
+			o.push(piece(A, 'WallStoneDoor', 'Doorway', [x, 0, 4], 0, { physics: COLLIDERS.doorway }));
+			o.push(piece(X, 'DoorStudded', 'Front door', [x, 0, 4]));
+		} else o.push(piece(A, 'WallStone', n('Front wall'), [x, 0, 4]));
+	}
+	// the west wall is plain; the east wall has a shuttered window and a glazed one
+	for (const z of ZS) {
+		o.push(piece(A, 'WallStone', n('West wall'), [-6, 0, z], -H));
+		if (z === -1) {
+			o.push(piece(A, 'WallStoneWindow', n('Window wall'), [6, 0, z], H));
+			o.push(piece(X, 'Shutters', 'Shutters', [6, 0, z], H));
+		} else if (z === 1) {
+			o.push(piece(A, 'WallStoneWindow', n('Window wall'), [6, 0, z], H));
+			o.push(piece(A, 'Window', n('Window'), [6, 0, z], H));
+		} else o.push(piece(A, 'WallStone', n('East wall'), [6, 0, z], H));
+	}
+	for (const [x, z] of [[-6, -4], [6, -4], [-6, 4], [6, 4]]) o.push(piece(A, 'CornerPostStone', n('Corner'), [x, 0, z]));
+	// two round columns on the room's centre line, oak beams across at storey height
+	for (const x of [-2, 2]) o.push(piece(A, 'Column', n('Column'), [x, 0.1, 0]));
+	for (const x of [-4, -2, 0, 2, 4]) o.push(piece(A, 'Beam', n('Ceiling beam'), [x, 3, 0], H));
+	// the half roof: one row of slate slopes over the back, its eave over the back wall
+	for (const x of XS) o.push(piece(A, 'RoofSlope', n('Roof slope'), [x, 3, -3], PI));
+	// a path to the door, a wall sconce either side of it
+	for (const z of [5.4, 7.4]) o.push(piece(N, 'PathTile', n('Path'), [1, 0, z]));
+	for (const x of [-0.2, 2.2]) o.push(piece(P, 'WallTorch', n('Door torch'), [x, 1.6, 4.125], 0, { physics: COLLIDERS.sensor }));
+	// something to push about (the sim needs a dynamic body, or a Play starts no world)
+	for (const [x, z, yaw] of [[-4.6, -2.6, 0.3], [-4.6, -1.5, 1.1]]) o.push(piece(P, 'Crate', n('Crate'), [x, 0.1, z], yaw, { physics: DYNAMIC(15) }));
+	o.push(piece(P, 'Barrel', n('Barrel'), [4.4, 0.1, -2.7], 0.4, { physics: DYNAMIC(30) }));
+	o.push({ type: 'light', name: 'Room light', pos: [0, 2.6, 0], color: 0xffd2a0, intensity: 8, distance: 14, decay: 2 });
+	return o;
+}
+
+const SHELL_DEF = {
+	kind: 'template',
+	seed: false,
+	slug: 'architecture-shell',
+	title: 'Architecture shell',
+	description:
+		'A room shell built from the kits to block interiors out in: sandstone walls on flagstones, a door that opens, a window with shutters, columns, ceiling beams and a slate half roof. Press Play and walk in.',
+	author: 'theprototype',
+	license: 'CC0-1.0',
+	tags: ['greybox', 'architecture', 'kits', 'walkable', 'doors'],
+	objects: shellObjects(),
+	env: {
+		preset: 'daylight',
+		exposure: 1.05,
+		background: { top: '#5a8fd0', bottom: '#e3ebef' },
+		fog: { color: '#e3ebef', near: 30, far: 90 },
+		ground: { color: '#7d7462', roughness: 1 },
+		sun: { color: '#fff1d6', intensity: 2.5, dir: [0.55, 0.7, 0.5] },
+		hemi: { sky: '#d3e6ff', ground: '#7d7462', intensity: 1.3 }
+	},
+	// outside, the door ahead
+	physics: playPhysics([1, 0.3, 8.6], 0),
+	post: lookPost(0.5),
+	graphs: { scene: walkGraph() },
+	view: { pos: [11, 8, 13], target: [0, 1.2, 0] },
+	thumb: {}
+};
+
+module.exports = { LEVEL_DEFS: [CASTLE_DEF, FOREST_DEF, TAVERN_DEF, WIZARD_DEF, MARKET_DEF, SHELL_DEF], COLLIDERS, TRUNKS, BRIDGE_DECK, HILL_RINGS };

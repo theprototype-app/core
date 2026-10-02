@@ -21,6 +21,7 @@
 		shellMenuAvailable,
 		shellMenuItems,
 		shellSettingViews,
+		shellLevelTabs,
 		shellPageTitle,
 		shellGameName,
 		shellHelpLines,
@@ -43,6 +44,9 @@
 	const items = $derived(itemsFor($gameLevels));
 	const viewsFor = (/** @type {any[]} */ ..._deps) => shellSettingViews({ vr: false });
 	const settings = $derived(viewsFor($gameSettingValues, $gameSettingRows));
+	// 33 (G3): a game's level-picking choice (Untangle's Board) as tabs above the grid
+	const tabsFor = (/** @type {any[]} */ ..._deps) => shellLevelTabs();
+	const levelTabs = $derived(tabsFor($gameSettingValues, $gameSettingRows));
 	const vrViewsFor = (/** @type {any[]} */ ..._deps) => shellSettingViews({ vr: true }).filter((/** @type {any} */ r) => r.vrOnly);
 	const vrSettings = $derived(vrViewsFor($gameSettingValues));
 	const helpFor = (/** @type {any[]} */ ..._deps) => shellHelpLines({ vr: false });
@@ -150,6 +154,22 @@
 					{/each}
 				</div>
 			{:else if page === 'levels'}
+				{#each levelTabs as tab (tab.id)}
+					<div class="gs-tabs" role="tablist" aria-label={tab.label} data-shell-tabs={tab.id}>
+						<span class="gs-tabs-label">{tab.label}</span>
+						{#each tab.options as option (option.value)}
+							<button
+								type="button"
+								role="tab"
+								class="gs-tab"
+								class:gs-tab-on={option.value === tab.value}
+								aria-selected={option.value === tab.value}
+								data-shell-tab={tab.id + ':' + option.value}
+								onclick={() => option.value !== tab.value && setGameSetting(tab.id, option.value)}>{option.label}</button
+							>
+						{/each}
+					</div>
+				{/each}
 				<div class="gs-levels">
 					{#each $gameLevels?.list ?? [] as level (level.id)}
 						<button
@@ -340,6 +360,8 @@
 	}
 	.gs-item:hover,
 	.gs-item:focus-visible,
+	.gs-tab:hover:not(.gs-tab-on),
+	.gs-tab:focus-visible,
 	.gs-level:hover:not(:disabled),
 	.gs-level:focus-visible {
 		border-color: #5fd0ff;
@@ -361,6 +383,31 @@
 		font-weight: 500;
 		opacity: 0.75;
 		padding: 8px;
+	}
+	.gs-tabs {
+		display: flex;
+		align-items: center;
+		gap: 6px;
+		margin-bottom: 12px;
+	}
+	.gs-tabs-label {
+		margin-right: 6px;
+		font-size: 14px;
+		font-weight: 600;
+		opacity: 0.8;
+	}
+	.gs-tab {
+		flex: 1;
+		min-height: 40px;
+		padding: 6px 12px;
+		border-radius: 10px;
+		background: rgba(255, 255, 255, 0.07);
+		border: 1px solid transparent;
+		font-weight: 600;
+	}
+	.gs-tab-on {
+		background: var(--accent, #ef562f);
+		color: #fff;
 	}
 	.gs-levels {
 		display: grid;

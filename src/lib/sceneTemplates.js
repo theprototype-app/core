@@ -6,6 +6,8 @@ import { contentBase } from './contentBase';
 // 28-A6: the Community source a cloud plugin may install (store-only, no cycle — the
 // objectPermissions import above already reaches cloudHooks' family)
 import { communityProvider } from './cloudHooks';
+// 33 (L3): the Clear scene modal's setup check and full clear (see confirmClearScene)
+import * as sceneSwitch from './sceneSwitch';
 
 // Templates modal content (roadmap: "Templates" sidebar row → General/Examples/
 // Community tabs). Two content sources, no bytes in this repo beyond the bundled
@@ -345,35 +347,99 @@ export async function saveRemoteSceneToLibrary(entry) {
 }
 
 /**
- * Confirm-and-clear the scene for everyone (the Sidebar "Clear Scene" flow,
- * shared with the modal's Blank card). Viewer-gated like loadRemoteScene.
- * Synchronous up to the confirm toast (suites snapshot it right after the
- * click); only the clear itself defers into a dynamic import so this
- * store-only module adds no static edge into the commandsHandler/history
- * import subtree (TDZ-cycle family).
+ * 33 (L3) — CLEAR SCENE, ONE MODAL WITH ONE CHOICE. The user: "after hitting clear scene in
+ * an opened game example I still see the Menu button and the ability to play … so clear
+ * scene does not really clear. The modal should say clear only objects, or modules and
+ * everything else." The old flow was a toast ("Clear the scene for everyone?") that only
+ * ever removed OBJECTS — the flow nodes, the HUD menu, the game state, the play block, the
+ * music, the sky and the modules all stayed, which is why a cleared game still had a Menu.
+ *
+ * Now: "Clear objects" stays the primary (today's behaviour, nothing else touched), and ONE
+ * checkbox, "Also reset the game setup and unload its modules", turns it into "Clear
+ * everything" — an EMPTY scene applied the way any load applies (sceneSwitch). A checkbox,
+ * not an Advanced chevron: it is the only extra choice there is, and hiding the only choice
+ * behind a disclosure is what made the old Clear surprising. It defaults OFF (a Clear is
+ * usually about objects) unless there ARE no objects, when objects-only would do nothing.
+ * After an objects-only clear that left a setup or modules behind, a toast says so and
+ * offers the rest.
+ *
+ * `blank: true` is the Templates modal's "Blank scene" card — a NEW scene, so it always
+ * resets everything and unloads the scene's modules (the user: "if I open a new project …
+ * modules should not be kept"), and the dialog says so instead of offering a box.
+ *
+ * Viewer-gated like loadRemoteScene. The objects clear reaches commandsHandler through a
+ * dynamic import, so this module adds no static edge into the history import subtree
+ * (TDZ-cycle family); sceneSwitch is static (its graph is moduleSDK/stores, never history).
+ * @param {{blank?: boolean}} [opts]
+ * @returns {Promise<'objects' | 'everything' | 'nothing' | null>} what was cleared (null = cancelled / refused)
  */
-export function confirmClearScene() {
+export async function confirmClearScene(opts = {}) {
 	if (isViewer()) {
 		warnViewerReadOnly('View-only — ask an editor to clear the scene.');
-		return;
+		return null;
 	}
-	const clear = () =>
-		void import('./commandsHandler.svelte').then((m) => m.sceneCommand('/clear all'));
+	const blank = !!opts.blank;
+	const clearObjects = () => import('./commandsHandler.svelte').then((m) => m.sceneCommand('/clear all'));
+	// STATIC (sceneSwitch): the dialog must answer the click at once. Through a dynamic import
+	// it took ~9 frames before the modal existed — 5-15 s on a heavy game scene in a slow
+	// renderer (measured), which reads as a dead button. sceneSwitch's own graph never reaches
+	// this file, so the edge closes no cycle.
+	const sw = sceneSwitch;
+	const { showChoiceEx } = sw;
 	const count = get(objectsGroup)?.children.length ?? 0;
-	if (count === 0) {
-		clear(); // still clears module content
-		return;
+	const parts = sw.sceneSetupParts();
+	const mods = sw.sceneUserModules();
+	const extra = parts.length > 0 || mods.length > 0;
+	const objectsLine = count
+		? count + ' object' + (count === 1 ? '' : 's') + ' will be removed for everyone in the session.'
+		: 'There are no objects.';
+	const setupLine =
+		[parts.length ? 'Resets ' + parts.join(', ') : '', mods.length ? 'unloads ' + mods.map((m) => m.name).join(', ') : '']
+			.filter(Boolean)
+			.join('; ') + '.';
+	if (blank) {
+		if (!count && !extra) {
+			await clearObjects(); // still clears module content
+			return 'nothing';
+		}
+		const reply = await showChoiceEx({
+			id: 'blank-scene',
+			title: 'Start a blank scene?',
+			message: objectsLine + (extra ? '\n' + setupLine : ''),
+			choices: [{ value: 'blank', label: 'Start blank', color: 'red' }]
+		});
+		if (!reply) return null;
+		closeSelectionInspector();
+		await sw.clearSceneEverything(mods);
+		return 'everything';
 	}
-	showToast('Clear the scene for everyone? ' + count + ' object' + (count === 1 ? '' : 's') + ' will be removed.', [
-		{
-			label: 'Clear',
-			action: () => {
-				closeSelectionInspector();
-				clear();
-			}
-		},
-		{ label: 'Cancel', action: () => {} }
-	]);
+	if (!count && !extra) {
+		await clearObjects(); // still clears module content
+		return 'nothing';
+	}
+	const reply = await showChoiceEx({
+		id: 'clear-scene',
+		title: 'Clear scene',
+		message: objectsLine,
+		checkbox: extra
+			? { label: 'Also reset the game setup and unload its modules', hint: setupLine.charAt(0).toUpperCase() + setupLine.slice(1), checked: !count }
+			: undefined,
+		choices: [{ value: 'clear', label: 'Clear objects', checkedLabel: 'Clear everything', color: 'red' }]
+	});
+	if (!reply) return null;
+	closeSelectionInspector();
+	if (reply.checked) {
+		await sw.clearSceneEverything(mods);
+		return 'everything';
+	}
+	await clearObjects();
+	if (extra) {
+		const left = [...parts, ...mods.map((m) => m.name)];
+		showToast('Objects cleared. Still here: ' + left.join(', ') + '.', [
+			{ label: 'Clear those too', action: () => void sw.clearSceneEverything(sw.sceneUserModules()) }
+		]);
+	}
+	return 'objects';
 }
 
 // 28-A6: a provider swap (install, or null on logout) invalidates the memo — the tab

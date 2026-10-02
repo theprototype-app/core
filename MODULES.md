@@ -430,8 +430,11 @@ api.onInput((kind, code) => {});        // 'down'/'up' events; returns unsubscri
 // pause the HOST's use of an input scope while your module drives:
 //   'keys'       — WASD camera fly + play-mode movement
 //   'locomotion' — VR left-stick locomotion
+//   'sticks'     — (1.19) BOTH VR sticks: left-stick move, right-stick snap/smooth turn + teleport
+//                  (a held thing reeled on Y and scaled on X, the way an Edit grab does)
 api.claimInput('keys');                 // ALWAYS release when your mode ends
 api.releaseInput('keys');
+const sticksOk = api.claimInput('sticks') === true; // true = this core knows the scope (older: undefined)
 
 // reading a keydown YOURSELF (a toolbox's own handler)? resolve the key the way the
 // editor does — `event.key` when it is an ASCII letter/digit, the physical
@@ -502,9 +505,20 @@ if (api.quality) {
 if (api.lod) {
 	const lod = api.lod(enemyFigure, { ratios: [0.5, 0.2], distances: [6, 18] });
 	lod.ready.then((n) => console.log(n, "meshes have levels")); // lod.remove() undoes it
+	lod.force?.(2);     // 1.19: draw level 2 on THIS screen whatever the distance (null = auto)
+	lod.levels?.();     // 1.19: the level each mesh drew last (0 = full)
 }
 mesh.userData.lod = false; // keep one mesh out of auto LOD
 ```
+
+**1.19 — LOD groups on scene objects.** A replicated object may carry a LOD GROUP
+(`userData.lod`, edited in its Properties ▸ LOD section, or written by a pack item's `lods`):
+`{mode: 'auto'|'forced', forced?, bias?, cull?, levels: [{source: 'self'|'pack'|'generated'|
+'explorer'|'object', ref?, ratio?, screenSize, offset?, material?}]}` with thresholds by SCREEN
+SIZE (the share of the viewport height the object covers). It is scene data (saved, replicated,
+undone) and drawn at render time like `api.lod` — the tree never holds a level. A module that
+builds scene objects can write one through the same path the panel uses
+(`objectParameters {parameter: 'lod'}` is the wire shape); module-only geometry keeps `api.lod`.
 
 Both are LOCAL (a fact about this machine) — never let them change replicated state, or two
 peers on different hardware disagree about the game. Skinned meshes and morph targets get no
@@ -535,6 +549,30 @@ The things 1.18's round found, in the order they cost:
   garbage 60-90 times a second, and GC pauses are the stutter you feel in a headset.
 - **Lights and shadow casters are draw calls**: each shadow-casting light draws every caster
   again; transmission (glass) renders the scene an extra time per camera, per eye.
+
+### Functional pack items: doors, lids, levers — `api.behavior` (1.19, roadmap 33)
+
+A pack item can be FUNCTIONAL: a door that opens on a click, a chest lid, a lever, a fan
+(the `behavior` field, see PACKS.md). Core runs them. Nothing plays in Edit; a click, a
+knock or walking up triggers them in Interact/Play; the state replicates; a door's
+collider follows its leaf. A module can drive them too:
+
+```js
+if (api.behavior) {
+	for (const item of api.behavior.list()) {        // [{uuid, type, trigger, open}]
+		if (item.type === 'door' && !item.open) api.behavior.trigger(item.uuid, true); // open it
+	}
+	api.behavior.state(uuid);                          // {on, at, n} or null (never triggered)
+	api.behavior.trigger(uuid);                         // toggle, like a player's click
+}
+```
+
+`trigger` is REPLICATED (one `behavior` message; every peer poses the door from the same
+session-clock stamp), so call it on ONE peer: the authority, or the peer that saw the
+cause. It returns false when nothing changed (opening an open door). The state is
+runtime: it is never saved, and a peer in Edit shows the rest pose whatever it says. The
+item sounds are core game sounds: `door`, `gate`, `slide`, `lever`, `lid` (plus `click`),
+which `api.playSound` can play too.
 
 ### Game feel: sound, music, haptics, effects, banners (1.17, roadmap 30b)
 
@@ -693,6 +731,8 @@ api.game.addSetting?.({
 	onChange: (v) => setBoard(v)
 });
 setBoard(api.game.setting?.('board') ?? 'globe');            // the stored choice at load
+// (1.19) a CHOICE that decides which levels you see: `onLevels: true` also draws it as tabs
+// above the Levels page's grid (desktop + headset) — Untangle's Board [Globe] [2D board]
 api.game.setSetting?.('board', '2d');                        // your in-game button writes the same row
 api.game.onSettingsChange?.((values) => console.log(values.board, values.sfx));
 ```

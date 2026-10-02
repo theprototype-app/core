@@ -51,6 +51,19 @@ describe('pickGripTarget', () => {
 	it('Interact: only a grabbable body is taken, through scenery', () => {
 		expect(pickGripTarget([wall, ball], 'interact')).toBe(1);
 	});
+	// 33 E4: "not all objects positions can be moved in edit mode when in game" — a wall,
+	// a floor or an arena was held by NOTHING. Selected, it is held in Edit like any object.
+	it('Edit: SELECTED scenery is held (select-then-grab); unselected still passes through', () => {
+		const selectedWall = { scenery: true, grabbable: false, selected: true };
+		expect(pickGripTarget([selectedWall, ball], 'edit')).toBe(0);
+		expect(pickGripTarget([wall, selectedWall], 'edit')).toBe(1);
+		expect(pickGripTarget([wall, ball], 'edit')).toBe(1);
+	});
+	it('Interact: selection never makes scenery holdable (a player cannot pick up the room)', () => {
+		const selectedWall = { scenery: true, grabbable: false, selected: true };
+		expect(pickGripTarget([selectedWall, ball], 'interact')).toBe(1);
+		expect(pickGripTarget([selectedWall], 'interact')).toBe(-1);
+	});
 	it('Interact: a non-grabbable object in front blocks the grab', () => {
 		expect(pickGripTarget([podium, ball], 'interact')).toBe(-1);
 		expect(pickGripTarget([wall, podium], 'interact')).toBe(-1);

@@ -212,7 +212,8 @@ export function updateGameMusicNodes(nodes, resolve, gameStateName) {
 	}
 	if (debug.musicOwner !== null) {
 		if (playing) {
-			stopGameMusic();
+			// 33 (L4): only the track a node started (owner '' = core)
+			stopGameMusic('');
 			debug.musicStops++;
 		}
 		debug.musicOwner = null;

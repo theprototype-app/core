@@ -47,6 +47,7 @@
 // DEF (the file / the card):
 //   kind*            'template' | 'example' | 'game' | 'contest' — decides the folder + index section
 //   seed             false keeps a template out of the bundled offline seed (30c: kit levels need the pack CDN)
+//   remote           false keeps a template OUT of --out (33: a seed-only greybox whose online twin is a kit level)
 //   slug* title* description   identity + card text; author, license ('CC0-1.0'), tags []
 //   modules          [{id, version}] — the card's module list (games only; must match installModules)
 //   installModules   ['<id>'] — zips installed from MODULES_REPO before the build (the game shows)
@@ -96,7 +97,10 @@
 //                    ([x,y,z] or a number) — a PACK PIECE as a reference (30c packRefs.js): written
 //                    as a stub the app refills from PACKS_BASE, so a level of 100 pieces stays small.
 //                    Kept TOP-LEVEL (physics only reads top-level objects); `physics` sets its
-//                    collider (custom compound boxes/wedges for doorways, stairs, trees)
+//                    collider (custom compound boxes/wedges for doorways, stairs, trees).
+//                    33-scenes: an item whose pack row carries a `behavior` (a door, a chest, a
+//                    lever — contract P2) is placed through importFile like an Explorer drop: an
+//                    animated import with the row's behavior + LOD group, saved as an `animRef`
 // MATERIAL (every mesh type): color, roughness (0.85), metalness (0), emissive +
 //   emissiveIntensity (1), opacity (< 1 → transparent), flatShading, side ('double' | 'back'),
 //   toon (MeshToonMaterial), physical (MeshPhysicalMaterial — also implied by any of:
@@ -2023,7 +2027,10 @@ const DEFS = [
 	},
 	{
 		kind: 'template',
-		slug: 'architecture-shell',
+		// 33-integrate: the ONLINE 'Architecture shell' is the kit room in level-templates.cjs;
+		// this greybox stays the OFFLINE seed's copy (remote: false — never written to --out)
+		remote: false,
+		slug: 'architecture-shell-greybox',
 		title: 'Architecture shell',
 		description: 'Room shell with a door and window opening, columns and a half roof to block out interiors',
 		license: 'CC0-1.0',
@@ -2184,6 +2191,10 @@ const DEFS = [
 			// own item list (default.json) on PACKS_BASE, once per pack, before anything builds
 			/** @type {Record<string, Record<string, string>>} */
 			const kitFiles = {};
+			// 33-scenes: the item rows too — a row with a `behavior` (a door, a chest, a lever:
+			// contract P2) is an ANIMATED piece, placed through the Explorer's own import path
+			/** @type {Record<string, Record<string, any>>} */
+			const kitRows = {};
 			/** @param {any[]} list @param {Set<string>} sink */
 			const kitPacks = (list, sink) => {
 				for (const o of list ?? []) {
@@ -2197,9 +2208,11 @@ const DEFS = [
 				const res = await fetch(base + '/' + pack + '/default.json');
 				if (!res.ok) throw new Error('kit: pack "' + pack + '" is not served at ' + base + ' (HTTP ' + res.status + ')');
 				kitFiles[pack] = {};
+				kitRows[pack] = {};
 				for (const row of await res.json()) {
 					const file = row?.variants?.['glTF-Binary'];
 					if (row?.name && file) kitFiles[pack][row.name] = pack + '/' + row.name + '/glTF-Binary/' + file;
+					if (row?.name) kitRows[pack][row.name] = row;
 				}
 			}
 			/** @type {any} */
@@ -2495,6 +2508,8 @@ const DEFS = [
 				object.updateMatrix();
 				return object;
 			};
+			/** @type {any[]} */
+			const animatedKits = [];
 			for (const o of d.objects) {
 				if (o.type === 'mirror') {
 					const src = d.objects.find((/** @type {any} */ x) => x.name === o.of);
@@ -2508,7 +2523,43 @@ const DEFS = [
 					group.add(ghost);
 					continue;
 				}
+				// 33-scenes: a FUNCTIONAL kit piece (its row carries a `behavior`) is not a stub:
+				// an animated import is never a kit reference (fileHandler ignores packRef for it),
+				// so it is placed after the static build through importFile — the Explorer drop's
+				// own call, with the row's behavior and LOD group — and its bytes ride the file
+				if (o.type === 'kit' && kitRows[o.pack]?.[o.item]?.behavior) {
+					animatedKits.push(o);
+					continue;
+				}
 				group.add(build(o));
+			}
+			if (animatedKits.length) {
+				const base = String(s.packs.PACKS_BASE).replace(/\/+$/, '');
+				const { placementGroupFor } = await import('/src/lib/lodGroup.js');
+				for (const o of animatedKits) {
+					const row = kitRows[o.pack][o.item];
+					const url = base + '/' + kitFiles[o.pack][o.item];
+					const res = await fetch(url);
+					if (!res.ok) throw new Error('kit "' + o.name + '": ' + url + ' HTTP ' + res.status);
+					const uuid = await s.fileHandler.importFile(new File([await res.blob()], o.item + '.glb'), o.name, undefined, o.pos, undefined, {
+						// the reference makes the save NAME the pack file (animatedImports animRef)
+						// instead of carrying its bytes
+						packRef: { pack: o.pack, item: o.item, path: kitFiles[o.pack][o.item] },
+						lod: placementGroupFor(url, row.lods),
+						behavior: row.behavior
+					});
+					const root = uuid ? group.getObjectByProperty('uuid', uuid) : null;
+					if (!root) throw new Error('kit "' + o.name + '": the animated import did not land');
+					root.name = o.name;
+					if (o.rot) root.rotation.set(o.rot[0], o.rot[1], o.rot[2]);
+					if (o.scale != null) {
+						const k = Array.isArray(o.scale) ? o.scale : [o.scale, o.scale, o.scale];
+						root.scale.set(k[0], k[1], k[2]);
+					}
+					root.updateMatrix();
+				}
+				s.objectActions.deselectObject?.();
+				s.selectedObjects.set([]);
 			}
 			// 30c: refill every kit stub from its pack BEFORE anything measures the scene (the
 			// shadow fit below, the card) — and refuse to write a level whose pack is unreachable
@@ -3066,6 +3117,7 @@ const DEFS = [
 			}
 		}
 		for (const def of defs) {
+			if (def.remote === false) continue;
 			const section =
 				def.kind === 'template' ? 'templates' : def.kind === 'game' ? 'games' : def.kind === 'contest' ? 'contests' : 'examples';
 			const row = {

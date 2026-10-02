@@ -18,6 +18,7 @@ import { dropAllAnimations } from '$lib/animationPreview'
 import { parkAnimatedAtBase } from '$lib/flowRuntime'
 import { stripEditOverlays } from '$lib/editOverlays'
 import { isPristinePackRef, stubElementOf } from '$lib/packRefs'
+import { normalizeLodGroup } from '$lib/lodGroupCore'
 import { runSceneClearHandlers } from '$lib/moduleSDK'
 import { annotations } from '$lib/annotationsHandler'
 import { isViewer, warnViewerReadOnly } from '$lib/objectPermissions'
@@ -33,6 +34,8 @@ import { safeStorage } from './safeStorage';
 // reach — it REGISTERS rather than importing us, the registerDiagnosticsSection shape.
 import { registerMetricSource, ingestVerdict, profileFor } from './sceneBudget';
 import { globalRenderer } from '../stores/sceneStore.js';
+// 33 (L4): the scene going away is when its modules may be left behind (a leaf)
+import { noteSceneLeaving } from './sceneScope';
 
 //Access scene Store
 let scene = $state();
@@ -265,6 +268,9 @@ function sceneRoot() {
 }
 
 export function clearSceneLocal() {
+    // 33 (L4): what the scene uses is read BEFORE anything is wiped — those are the
+    // modules a replacement may leave behind (sceneScope)
+    noteSceneLeaving();
     controls?.detach();
     // 26-B: anything still parked in the ingest queue belongs to the scene being wiped
     dropIngestQueue();
@@ -608,6 +614,16 @@ export async function objectParameters(data) {
         if (mesh) {
             if (data.pick === 'through') mesh.userData.pick = 'through';
             else delete mesh.userData.pick;
+            pokeScene();
+        }
+    } else if (data.parameter == 'lod') {
+        // 33: the object's LOD GROUP block. null = removed (back to the pack's implicit
+        // group / auto LOD). Normalized here — the one boundary every writer goes through.
+        let mesh = sceneObjects.getObjectByProperty('uuid', data.uuid);
+        if (mesh) {
+            const next = normalizeLodGroup(data.lod);
+            if (next) mesh.userData.lod = next;
+            else delete mesh.userData.lod;
             pokeScene();
         }
     } else if (data.parameter == 'origin') {

@@ -52,6 +52,85 @@ CC0, OpenGameArt CC0). Keep each file under the 5 MB share cap so it round-trips
 peers. Installed audio items appear in the Explorer library and can be assigned to
 a **Sound** node (spatial) or the **Scene music** channel (global).
 
+### Levels of detail: the `lods` field (contract P1, 1.19)
+
+A model item in an item list (the `default.json` row beside `variants`) MAY list offline
+LOD files:
+
+```jsonc
+{ "name": "WallStone", "label": "Wall — sandstone (2 × 3 m)",
+  "variants": { "glTF-Binary": "wall-stone.glb" },
+  "lods": [ { "file": "wall-stone.lod1.glb", "ratio": 0.5 },
+            { "file": "wall-stone.lod2.glb", "ratio": 0.2 } ] }
+```
+
+- `file` is relative to the item's `glTF-Binary/` folder (no `..`, no absolute URLs);
+  `ratio` is the level's triangle count as a share of LOD0 (informational — the app sorts
+  levels finest first by it and shows it in the LOD panel).
+- **Keep the node names and hierarchy of LOD0.** The app matches each level mesh to the
+  placed object's mesh BY NODE NAME (falling back to traverse order when both have the same
+  mesh count) and draws the level's GEOMETRY with the object's OWN material — so a level
+  file's materials and textures are not used at all (ship them shared or tiny), and an
+  animated item keeps animating, because the mixer still drives the same nodes.
+- Bake the same node transforms as LOD0 where you can; a level mesh placed differently is
+  re-expressed in LOD0's frame on load, which costs a geometry copy per placement.
+- Placing an item writes its group into the object (`userData.lod`, refs as
+  PACKS_BASE-relative paths), so it saves, replicates and undoes with the object. A piece
+  placed BEFORE its pack gained `lods` picks them up from the pack row at runtime.
+- Levels are fetched LAZILY — only when an object is small enough on screen to need one —
+  and parsed once per file for every placement. Items without `lods` keep the automatic
+  runtime LOD (meshoptimizer, for meshes of 3000+ triangles).
+
+### Animated, functional items — `behavior` (roadmap 33, P2)
+
+An item row in a default pack's item list (`default.json`) MAY carry a `behavior`: a
+door you click open, a chest lid, a lever, a fan. The GLB holds the clips; the row says
+how they are used:
+
+```jsonc
+{
+  "name": "WoodDoor", "label": "Wooden door", "screenshot": "screenshot/screenshot.webp",
+  "variants": { "glTF-Binary": "WoodDoor.glb" },
+  "behavior": {
+    "type": "door",          // door | toggle | oneshot | loop
+    "clip": "open",          // the clip a trigger plays (its time 0 is the REST pose)
+    "closeClip": "close",    // optional (door/toggle): played to close; absent = `clip` backwards
+    "trigger": "click",      // click | proximity | knock
+    "autoplay": false,       // honoured ONLY for type "loop" (ambient: a fan, a flag, a flame)
+    "sound": "door",         // optional: a game-sound name (door gate slide lever lid click …)
+    "collider": "follow"     // optional; the default for a door
+  }
+}
+```
+
+**The rule.** Nothing plays on placement, on load, or in Edit, and nothing loops unless
+it is a `loop` with `autoplay: true`. A peer in Edit always sees the rest pose. A trigger
+works in Interact or Play: `door`/`toggle` alternate open ⇄ closed, `oneshot` plays once
+per trigger, and a `loop` without autoplay starts and stops. The Animation panel previews
+a clip in Edit, locally: nothing is sent or saved, and the item goes back to rest.
+
+- **Triggers.** `click` is the desktop click, the Play tap, and the VR laser, trigger and
+  poke. `proximity` opens when the player comes within 1.5 m and closes when they leave
+  (a click still works). `knock` is a VR hand moving into the part at ≥ 0.6 m/s (on a
+  desktop, a click).
+- **Shared state.** One `behavior` message per trigger, stamped with the session clock.
+  Every peer derives the pose from the stamp, so a door swings in step everywhere, and a
+  late joiner receives the state with the door. The state is runtime only: a scene saved
+  with a door open reopens shut.
+- **Frame and moving parts.** A door ALWAYS ships with its frame. The nodes the
+  behavior's clips animate are the MOVING parts (put the hinge pivot on the node's origin);
+  everything else is the static frame. With `collider: "follow"` the frame becomes slab
+  colliders with the opening cut out, and each moving part gets a box that follows it, so
+  you can walk through an open door and are stopped by a shut one (while a simulation
+  runs; that is when the walker collides at all).
+- **Authoring the GLB.** Use LINEAR TRS tracks on the moving nodes, with `clip` at time 0
+  being the closed pose. A static `idle` clip FIRST is harmless and keeps older app
+  builds (which autoplayed the first clip) still. `lods` files must keep the same node
+  names, hierarchy and clips. The same `behavior` object may also sit in the GLB's scene
+  extras (`scene.extras.behavior`); the pack row wins over it.
+- The Explorer marks such items with a small ▶ "animated" badge that says what they do
+  and what sets them off.
+
 ## Repo / .zip structure
 
 ```

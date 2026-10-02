@@ -18,6 +18,7 @@
 	} from '../../stores/sceneStore'
 	import { vrHovered, vrSettingsGroup, controllerIndexFor } from '$lib/vrControls'
 	import { applyWindowPose } from '$lib/vrWindowPoses'
+	import { perfStatsShown } from '$lib/fpsMeter'
 	import { menuPoseFromController } from '$lib/vrRadialMenu'
 
 	// VR Settings panel (187): a controller-stuck replica of the desktop VR
@@ -43,6 +44,7 @@
 		{ action: 'settings:mirror', label: 'Mirror snap turn', toggle: true, active: $vrMirrorSnapTurn },
 		{ action: 'settings:angle', label: 'Snap turn: ' + ($vrSnapAngle ? $vrSnapAngle + ' deg' : 'Off') },
 		{ action: 'settings:vertexhold', label: 'Hold to move vertex', toggle: true, active: $vrVertexHold },
+		{ action: 'settings:perf', label: 'FPS + draw calls', toggle: true, active: $perfStatsShown },
 		{ action: 'settings:hz', label: 'Refresh: ' + ($vrTargetHz === 'auto' ? 'Max' : $vrTargetHz + ' Hz') },
 		{ action: 'settings:handstyle', label: 'Peer hands: ' + ($peerHandStyle === 'model' ? 'Model' : $peerHandStyle === 'hands' ? 'Hands' : 'Spheres') },
 		{ action: 'settings:passthrough', label: 'Passthrough', toggle: true, active: $vrPassthrough },

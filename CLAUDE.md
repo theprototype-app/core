@@ -2368,6 +2368,51 @@ loadable play content. Everything a user does must be visible to connected peers
   template — `transientObjects.spawnedFromOf`), `pointGrab.js` (Point Grab node gates the VR
   grip RAY and the desktop carry; touch still holds), Game Setting node.
 
+- **ROADMAP 33 — MODULES ACROSS A SCENE SWITCH (33-scene-switch, L2/L3/L4)**. A module is a SCENE
+  SCRIPT more than an editor plugin, so the modules a scene came with are what a switch is about.
+  · `sceneScope.js` (a LEAF): the modules the scene USED when it was cleared (`noteSceneLeaving`,
+  first line of `clearSceneLocal`) and the next scene does not use are LEFT BEHIND
+  (`leftBehindModules`, `ownerInScope(owner)`); judged at applySession's end (`sceneArrived` ->
+  `settleScope(declared)`) and, for a peer's replacement (clear + objects + nodes, no applySession
+  here), by a debounced recompute on flowGraphs/objectsGroup/moduleNodeGroups while anything is
+  pending. "Used" = the payload's declared `modules` ∪ moduleRequirements() (registered by
+  sceneSwitch through `registerSceneUsage`). A fresh install in a blank scene is IN scope (nothing
+  left it behind), which is what keeps every existing suite/flow byte-unchanged.
+  · What a left-behind owner registered STOPS COUNTING and comes back with its scene, no
+  re-registration: gameShell levels/help kept PER OWNER (newest in-scope shows), restart hooks
+  carry an owner, gameSettings rows (`allRows` -> in-scope `gameSettingRows`), `gameMusic` tracks
+  are OWNED (`playGameMusic(preset, opts, owner)`, a left-behind owner's track stops and it cannot
+  start one, `stopGameMusic(owner)` stops only that owner's; core '' = flow nodes / the shell),
+  the runtime spawn, and `playPublishers` (a kept module's group `userData.play` — Untangle's free
+  cursor + world grab — no longer overrides the next game). `api.inScene()` lets a module stand
+  down its own drawing (Waves' gun) — the one thing core cannot scope.
+  · Teardown journal holes closed: `api.music` (a module's track outlived its unload),
+  `api.followCam`. Core Towers' onSceneClear now unregisters its levels/help (it reset `wasActive`
+  only, so its twelve levels stayed in the next game's menu).
+  · `sceneSwitch.js` (not a leaf; boot `startSceneSwitch`): the setting `modulesOnOpen`
+  (`scenes:modulesOnOpen`, ask default / keep / unload, Settings ▸ Scene `#modules-on-open`) and
+  `prepareSceneSwitch(payload)` — the ask `#confirm-keep-modules` lists loaded USER modules the
+  scene being left USES and the incoming one does not need (a tool no scene uses, and every core
+  module, is never asked about); Unload primary, Keep, "Remember my choice"; Cancel aborts the open.
+  It returns a `run()` the caller fires when the load really applies (`requestLoadPayload` solo,
+  or the proposal's `beforeApply`). Unload = `deactivateModule` + `disabledModules` (persisted) +
+  a toast with [Modules]; the "This scene uses modules" prompt's Enable is LIVE now
+  (`enableRequired` re-activates the user record / core module). The Explorer's Open passes
+  `travelToLevel(hash, '', {askModules: true, freshGame: true})` — the ask, and the file's OWN game
+  state instead of fork 3's carry (the carry stays for the travel NODE and Go-to).
+  · Clear scene (`sceneTemplates.confirmClearScene`, Sidebar `#clear-scene`) is ONE modal
+  (`#confirm-clear-scene`): "Clear objects" primary + one box "Also reset the game setup and unload
+  its modules" (OFF, ON when there are no objects) relabelling it "Clear everything" =
+  `sceneSwitch.clearSceneEverything` = unload the scene's modules + `applySession(emptySession
+  Payload, {backup:false, workspace:false, quiet:true})` (replicated: flow, HUD, game state, play
+  block, music, sky/look reset for everyone). Objects-only toasts "Still here: …" + [Clear those
+  too]. The Templates Blank card = `confirmClearScene({blank: true})` (`#confirm-blank-scene`,
+  always the full reset). `confirmDialog.showChoiceEx` = choices + `items` + one `checkbox` +
+  per-choice `checkedLabel`, resolving `{value, checked}`.
+  · Suites `scene-switch` / `-keep` / `-clear` / `-games` (shared `sceneSwitchShared.cjs`; real
+  .tpscene + zips) + vitest `sceneScope`. TIMING: an open into a non-empty world is 35-50 s on the
+  shared box, measured identical on pristine c7018be (the backup stash + load) — ≤5 opens a suite.
+
 ## Replication golden rules
 
 1. Every mutation = apply locally + `$peers.send({type, ...})`; receivers apply WITHOUT
@@ -6670,6 +6715,6 @@ onChange?})` + `api.game.setting(id)` (rows in the per-game Settings page, persi
 `api.game.setHelp(text)` (How to play), `api.game.onRestart(fn)` (after the shell's reset);
 `api.quality {level (getter, 0 best), max, labels, vr, onChange(fn) -> off}` (cut effects at a
 higher level); `api.lod(object, {ratios, distances, minTriangles})` -> `{meshes, ready, remove}`;
-`api.vrPanel(group)` (a module's VR menu drawn over the scene like core's panels);
+`api.vrPanel(group)` (a module's VR menu drawn over the scene like core's panels); **33:** `api.inScene()` — false once a scene switch LEFT this module behind (the person kept it loaded; the open scene does not use it): stand your own drawing/listening down (Waves' gun); core already scopes your levels/help/settings/Restart/music/spawn/play contract; `api.music.stop()` only stops YOUR track;
 `api.locomotion = {boundedTeleport, worldGrab}` (the K1 probe). A scene's play block may say
 `play.locomotion.worldGrab`, `play.bounds {min, max}` and `play.reach` (metres). Feature-detect all.

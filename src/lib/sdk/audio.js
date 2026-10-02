@@ -1,7 +1,13 @@
 // Module SDK — api.audio — voices, buses, samples, the transport, devices, cables, the mic.
 // One slice of the api object makeApi() assembles (sdk/index.js, the ONE table).
 
-import { audioEngineRef, musicClockRef, audioDevicesRef, audioPatchRef, soundRuntimeRef } from './refs.js';
+import {
+	audioEngineRef,
+	musicClockRef,
+	audioDevicesRef,
+	audioPatchRef,
+	soundRuntimeRef
+} from './refs.js';
 
 /** @param {import('./context.js').SdkContext} ctx */
 export function sdkAudio(ctx) {

@@ -2,8 +2,21 @@
 // One slice of the api object makeApi() assembles (sdk/index.js, the ONE table).
 
 import { coalescedSubscribe } from '../coalesce';
-import { registerGameSetting, gameSettingValue, setGameSetting, gameSettingValues } from '../gameSettings';
-import { setGameLevels, setGameHelp, onGameRestart, openShellMenu, closeShellMenu, shellMenu, markShellGame } from '../gameShell';
+import {
+	registerGameSetting,
+	gameSettingValue,
+	setGameSetting,
+	gameSettingValues
+} from '../gameSettings';
+import {
+	setGameLevels,
+	setGameHelp,
+	onGameRestart,
+	openShellMenu,
+	closeShellMenu,
+	shellMenu,
+	markShellGame
+} from '../gameShell';
 import { roundCutoff, roundUnderway, gameVar, setGameVar, gameState } from '../gameState';
 import { get } from 'svelte/store';
 import { flowRuntimeRef } from './refs.js';

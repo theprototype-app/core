@@ -1,7 +1,12 @@
 // Module SDK — api.hud and HUD element kinds.
 // One slice of the api object makeApi() assembles (sdk/index.js, the ONE table).
 
-import { registerModuleHudKind, unregisterModuleHudKind, registerModuleDebugLine, registerModuleHudAction } from '../moduleHudKinds';
+import {
+	registerModuleHudKind,
+	unregisterModuleHudKind,
+	registerModuleDebugLine,
+	registerModuleHudAction
+} from '../moduleHudKinds';
 import { flowRuntimeRef } from './refs.js';
 
 /** @param {import('./context.js').SdkContext} ctx */

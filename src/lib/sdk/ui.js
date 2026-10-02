@@ -2,7 +2,14 @@
 // One slice of the api object makeApi() assembles (sdk/index.js, the ONE table).
 
 import { modulesOpen } from '../../stores/appStore';
-import { registerModuleToolbox, unregisterModuleToolbox, openModuleToolbox, closeModuleToolbox, toggleModuleToolbox, isToolboxOpen } from '../moduleToolboxes';
+import {
+	registerModuleToolbox,
+	unregisterModuleToolbox,
+	openModuleToolbox,
+	closeModuleToolbox,
+	toggleModuleToolbox,
+	isToolboxOpen
+} from '../moduleToolboxes';
 import { moduleMenuItems } from './registries.js';
 
 /** @param {import('./context.js').SdkContext} ctx */

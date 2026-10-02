@@ -6,7 +6,21 @@ import { customGeometryBuilders } from '../customGeometries';
 import { noteModuleGroup, forgetModuleGroup } from '../moduleContent';
 import { ownerInScope } from '../sceneScope';
 import { get } from 'svelte/store';
-import { modulePrimitiveGroups, moduleClickHandlers, clickHandlerModes, normalizeClickModes, noSweepHandlers, moduleDropHandlers, moduleFrameTasks, moduleInteractiveGroups, systemGroupNames, registerSystemGroup, sceneClearHandlers, arrayRemove, removeSceneRootGroup } from './registries.js';
+import {
+	modulePrimitiveGroups,
+	moduleClickHandlers,
+	clickHandlerModes,
+	normalizeClickModes,
+	noSweepHandlers,
+	moduleDropHandlers,
+	moduleFrameTasks,
+	moduleInteractiveGroups,
+	systemGroupNames,
+	registerSystemGroup,
+	sceneClearHandlers,
+	arrayRemove,
+	removeSceneRootGroup
+} from './registries.js';
 
 /** @param {import('./context.js').SdkContext} ctx */
 export function sdkScene(ctx) {

@@ -1,7 +1,12 @@
 // Module SDK — flow-palette node groups, effects, value nodes and code-editable node defs.
 // One slice of the api object makeApi() assembles (sdk/index.js, the ONE table).
 
-import { registerModuleValueNode, unregisterModuleValueNode, registerModuleNodeInputs, unregisterModuleNodeInputs } from '../moduleNodeIO';
+import {
+	registerModuleValueNode,
+	unregisterModuleValueNode,
+	registerModuleNodeInputs,
+	unregisterModuleNodeInputs
+} from '../moduleNodeIO';
 import { moduleNodeGroups, moduleEffects, moduleNodeComponents } from './registries.js';
 
 /** @param {import('./context.js').SdkContext} ctx */

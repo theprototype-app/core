@@ -1861,7 +1861,11 @@ loadable play content. Everything a user does must be visible to connected peers
   all today (`registerMenu` is a sidebar button), and there is no `api.commitGeometry`,
   so making the CARVE a module too would mean designing both seams first),
   `pathCapture`, `ping` + `pingAudio` (synth chimes, spatial), `voiceChat`
-  (+spatial PannerNodes, VR PTT, setMicMode), `vrControls` (locomotion/teleport math,
+  (+spatial PannerNodes, VR PTT, setMicMode), `vrControls` (**34 R4 A5: a FAÇADE** — the code is `src/lib/vr/<concern>.js`: core, pointer, panels,
+  hooks, locomotion, haptics, input, grip, tools, radial, frame, modes; `vrControls.js` re-exports exactly the
+  147 names it always exported, so importers never change; a module-level `let` WRITTEN from two concern
+  files lives in `vr/state.js` as `S.<name>` (an ES module binding is only assignable in its own file);
+  new VR code goes in its concern's file, not in the façade — locomotion/teleport math,
   world pan, rigid grip grab, haptics, panel raycasts + the `executeVRMenuAction`
   dispatcher — namespaces panel:/props:/prefabs:/chat:/kbd:/face:) + `vrRadialMenu`
   (sector math, entry registry, ring nav STACK, controller-anchored pose) +

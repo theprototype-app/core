@@ -2,10 +2,23 @@
 // One slice of the api object makeApi() assembles (sdk/index.js, the ONE table).
 
 import { peers } from '../../stores/appStore';
-import { flowGraphs, flowValues, flowTriggers, allNodes, findNodeAnyGraph, SCENE_GRAPH } from '../../stores/flowStore';
+import {
+	flowGraphs,
+	flowValues,
+	flowTriggers,
+	allNodes,
+	findNodeAnyGraph,
+	SCENE_GRAPH
+} from '../../stores/flowStore';
 import { coalescedSubscribe } from '../coalesce';
 import { freeRegion as freeRegionIn } from '../flowLayout';
-import { createFlowNode, createFlowEdge, serializeNode, serializeEdge, setNodeData as sendNodeData } from '../nodesHandler';
+import {
+	createFlowNode,
+	createFlowEdge,
+	serializeNode,
+	serializeEdge,
+	setNodeData as sendNodeData
+} from '../nodesHandler';
 import { get } from 'svelte/store';
 import { flowRuntimeRef, flowGraphsRef, nodeCatalogRef } from './refs.js';
 

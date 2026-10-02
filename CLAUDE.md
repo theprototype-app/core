@@ -2453,6 +2453,56 @@ loadable play content. Everything a user does must be visible to connected peers
   · Suites `scene-switch` / `-keep` / `-clear` / `-games` (shared `sceneSwitchShared.cjs`; real
   .tpscene + zips) + vitest `sceneScope`. TIMING: an open into a non-empty world is 35-50 s on the
   shared box, measured identical on pristine c7018be (the backup stash + load) — ≤5 opens a suite.
+- **ROADMAP 33 — LOD GROUPS (33-lod-editor, contract P1)** (`lodGroupCore.js` pure + vitest, `lodGroup.js` runtime,
+  `lodGroupActions.js` write path, `lodLevelEdit.js`, `menu/LodGroupPanel.svelte`). **No THREE.LOD node in the tree**
+  (objectsGroup is the replicated document, and an animated item's mixer binds by node NAME, so three copies would
+  freeze two): a group is `userData.lod = {mode: auto|forced, forced?, bias?, cull?, levels: [{source: self|pack|
+  generated|explorer|object, ref?, ratio?, screenSize, offset?, material?}]}` applied at RENDER time through lod.js's
+  `registerLodPass` seam — a level whose meshes match by node name is a per-mesh GEOMETRY SWAP on the same tree (LOD0's
+  own material, animation keeps playing, picking/physics/serializers see LOD0); an unrelated model is a scene-root
+  LOCAL substitute; culled = hidden for that render. `screenSize` = projected bounding-sphere height / viewport (Unity's
+  transition height), defaults 25 % / 10 % (0.30/0.12/0.04 for three levels), 15 % hysteresis (a head bob switches
+  once), the governor's `lodBias` divides every threshold. A pack row's `lods: [{file, ratio}]` becomes the placed
+  piece's group; a piece placed BEFORE its pack had lods gets an IMPLICIT group from the row (not saved). Replication =
+  `objectParameters {parameter: 'lod'}` (wireValidate constrains only that parameter), undo = the `props` kind's `lod`
+  key, a threshold drag = ONE entry + ONE message. The level preview, "Show LOD level" overlay and current level are
+  LOCAL. `api.lod` handles gain `force(n)`/`levels()`; VR props panel has a LOD row. Suites lod-group, lod-panel (two
+  peers), lod-real-packs (LOD_PACKS_DIR), vr-props-panel.
+- **ROADMAP 33 — FUNCTIONAL PACK ITEMS (33-anim-core, contract P2)** (`behaviorCore.js` pure + vitest, `packBehavior.js`).
+  **NOTHING AUTOPLAYS**: an animated import registers with its clip selected and NOT playing (the first play schedules
+  the action). A pack row (or a GLB's `scene.extras.behavior`; the row wins) may carry `behavior {type: door|toggle|
+  oneshot|loop, clip, closeClip?, trigger: click|proximity|knock, autoplay, sound?, collider?}`: rest pose in Edit,
+  triggers in Interact/Play through moduleSDK's ONE click dispatch (desktop click, Play tap, VR laser + poke), proximity
+  1.5 m, knock = a VR hand >= 0.6 m/s; `loop`+`autoplay` = ambient, Interact/Play only. State = the `behavior` message
+  `{uuid, on, at (sessionNow), from, n}`, latest-wins, ROOM_SCOPED, wireValidate shape, every peer derives the pose
+  from the stamp; a late joiner gets `behaviorState` on its `objectfile`; runtime only (never saved, never undone).
+  The frame becomes custom slab colliders with the doorway cut out, each moving node a following kinematic box (while
+  a sim runs). Five game sounds door/gate/slide/lever/lid; the Explorer's ▶ badge; the Animation panel previews LOCALLY;
+  `api.behavior {list, state, trigger}`. A sim's "simulate the selection" fallback skips functional items.
+  **`animRef` (33-scenes)**: an animated import that IS a pack file saves `animRef {pack, item, path}` instead of
+  0.5-1.4 MB of base64; restore fetches it once per url (an older core loads such a door as nothing).
+- **ROADMAP 33 — KIT INSTANCING (33-scenes)** (`kitInstancing.js` + pure `kitInstancingCore.js`): every pristine copy
+  of a pack piece draws as ONE InstancedMesh per template mesh, render-time only (lod.js `registerBatchPass`, AFTER the
+  LOD swaps) — tree, picking, physics and serializers untouched; packRefs records which template mesh each copy cloned
+  (`kitMeshSource`). Excluded: selected, hidden, transparent, recoloured/edited copies; members are frustum-culled one
+  by one, 128 m columns. LOCAL pref Settings ▸ Performance "Draw repeated kit pieces together" (default on). The
+  Tavern went 394 -> ~135 calls in the headset analogue. `scripts/perf-levels.cjs` / `level-views.cjs` measure the
+  General-tab levels per viewpoint. The levels live in `scripts/level-templates.cjs` (six since 33: Castle, Forest,
+  Tavern, Wizard's Tower, Market Square, and the kit Architecture shell — whose greybox stays the OFFLINE seed via the
+  author-templates `remote: false` def field).
+- **ROADMAP 33 — EDITOR UI + GAMES (33-editor-ui, 33-games, 33-untangle-core)**: the default Controls bar is
+  Move/Rotate/Scale, Interact, Play, list, nodes, Explorer, Animation (an untouched stored default MIGRATES, a
+  customised bar wins); the Interact toggle's ring is keyboard-only (`focus-visible`) and the well halves answer
+  `*:hover`. In Edit inside a GAME scene a gizmo release PARKS a dynamic body (physics hold `'edit'`), released at rest
+  on leaving Edit; in VR a SELECTED wall/floor is grip-held in Edit (unselected scenery still moves the world). Q1:
+  Settings ▸ Interface ▸ "FPS and draw calls" (`fpsMeter.perfStatsShown`, `#show-perf-stats`) — the one desktop
+  `FpsCounter`, a head-locked `vrPerfStrip.js` in VR, calls amber > 120 / red > 150; XR frames feed the draw-call sampler
+  (`sceneBudget.noteExternalFrame`) because the window rAF stops in a headset. Games: per-hand VR `grabs[]` (a second
+  hand's grab overwrote the one slot and FROZE the first block), `footerLayout`/`fitLabel` keep the VR board footer
+  inside a 720-px board, `PHONE_START_LEVEL` 4 (phones are judged heavy like headsets), board `SCALE` 2 + `WRIST_RES`
+  2 (every canvas panel >= 1 texel per Quest pixel). `api.claimInput('sticks')` + the world-pan stick REEL (stick Y
+  pushes/pulls a one-grip world, as Edit does an object); `addSetting({onLevels: true})` draws a choice as tabs on the
+  VR Levels page, which now lists every level.
 
 ## Replication golden rules
 
@@ -2548,6 +2598,21 @@ loadable play content. Everything a user does must be visible to connected peers
 
 ## Hard-won gotchas (do not rediscover)
 
+- **RAPIER'S KinematicCharacterController COLLIDES WITH SENSORS unless the query passes `EXCLUDE_SENSORS`** — the
+  walker treated every grass patch, flower bed, rug and trim of the 30c levels as a wall (33-scenes, suite
+  walker-sensors). And a frame box MINUS a low leaf leaves a wall OVER a garden gate: the passage runs to the frame top
+  and slivers under 2 cm are dropped (behaviorCore).
+- **HEADLESS GPU SCREENSHOTS ON THIS MACHINE (ANGLE/Vulkan, RADV) CAN MISS TEXTURED KIT MESHES** while the canvas read
+  inside the final render call shows them: compare frames with an in-render read, or on the software backend
+  (33-scenes QUESTIONS #8); kit-instancing's same-picture check read 39 % different ONCE under load and passed alone.
+- **A LEVEL WITH NO DYNAMIC BODY STARTS NO SIMULATION, so its walker collides with nothing** — every kit level ships a
+  crate or a barrel for that reason (levelTemplates unit test).
+- **A sliced load changes what "right after" means.** Since 33-scene-load, `applySession` empties the objects before
+  it replaces the HUD and the play block, so a check that reads `isGame` the instant the objects are gone reads the
+  OLD scene (scene-switch-clear 4.5 on the union) — wait for the state, never for the first observable side effect.
+- **A two-page "in phase" check must compare CLOCKS, not poses**: reading a pose on each page in two evaluates compares
+  frames rendered hundreds of ms apart on a loaded box (animated-models was red 3/3, the lane branch included); tick +
+  read the clock + wall time in ONE task per page.
 - **A HEADSET'S EYE BUFFER IS NEVER LOWERED** (`XR_FRAMEBUFFER_SCALE = 1`, 31-integrate). 31-perf handed three a
   0.85..0.5 framebuffer scale for the NEXT session after any session that reached the governor's resolution steps,
   and every panel's text went soft ("ALL text in VR menus became blurry") while the panel textures were unchanged.

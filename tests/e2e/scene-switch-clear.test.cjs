@@ -86,8 +86,10 @@ h.run(async () => {
 		await ev(() => page.locator('#confirm-blank-scene').isVisible(), (v) => v, '4.3 "Start a blank scene?"', 10000);
 		await page.locator('#confirm-dialog-blank').click();
 		await ev(S.names, (n) => n.length === 0, '4.4 a blank scene', 20000);
+		// 33 integrate: since 33-scene-load the apply is SLICED — the objects empty before the HUD and
+		// play block are replaced, so wait for the state instead of reading the first instant
+		await ev(S.shell, (v) => v.isGame === false, '4.5 not a game any more', 15000);
 		const s = await S.shell();
-		h.check(s.isGame === false, '4.5 not a game any more');
 		h.check(s.levelsOwner === null && s.helpOwner === null, `4.6 Towers' levels and help left with its scene (${s.levelsOwner}, ${s.helpOwner})`);
 	});
 

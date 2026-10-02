@@ -82,8 +82,20 @@ h.run(async () => {
 	await B.page.waitForTimeout(400);
 	const b2 = await moverX(B.page, uuid);
 	h.check(b1 !== b2, 'clip animates on B');
-	const [ax, bx] = await Promise.all([moverX(A.page, uuid), moverX(B.page, uuid)]);
-	h.check(Math.abs(ax - bx) < 0.4, `peers in phase (A ${ax?.toFixed(2)}, B ${bx?.toFixed(2)})`);
+	// 33 integrate: the pose is a pure function of the synced clock, so 'in phase' means the two
+	// peers' clocks agree. Reading x on each page in two separate evaluates compared two frames
+	// rendered up to a few hundred ms apart on a loaded box (red 3/3 here, incl. the lane branch);
+	// read each page's clip time AND wall clock in one task, and compare the clocks instead.
+	const phaseOf = (page) =>
+		page.evaluate((uuid) => {
+			const s = window.__stores;
+			s.animatedImports.tickAnimatedMixers();
+			const g = (() => { let v; s.objectsGroup.subscribe((x) => (v = x))(); return v; })();
+			return { t: s.moduleSDK.runtimeNow(), wall: Date.now() / 1000, x: g.getObjectByProperty('uuid', uuid)?.getObjectByName('mover')?.position.x ?? null };
+		}, uuid);
+	const [pa, pb] = await Promise.all([phaseOf(A.page), phaseOf(B.page)]);
+	const skew = (pa.t - pa.wall) - (pb.t - pb.wall);
+	h.check(Math.abs(skew) < 0.15 && pa.x !== null && pb.x !== null, `peers in phase: their clip clocks agree within ${(skew * 1000).toFixed(0)} ms (A x ${pa.x?.toFixed(2)}, B x ${pb.x?.toFixed(2)})`);
 
 	// pause replicates and freezes
 	await A.page.evaluate((uuid) => window.__stores.animatedImports.setAnimationState(uuid, { playing: false }), uuid);

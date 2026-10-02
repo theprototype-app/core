@@ -828,7 +828,11 @@ async function startSimulation() {
 	);
 	if (dynamicUuids.length === 0) {
 		const selected = get(selectedObject);
-		if (selected && group.getObjectByProperty('uuid', selected.uuid) && !locked.includes(selected.uuid)) {
+		// 33 P2: never a FUNCTIONAL pack item (a door, a chest): its colliders are the frame
+		// slabs + the followed moving parts, and as the fallback body it fell over and took
+		// every click as a carry. `selectedObject` is sticky, so the door just placed (and
+		// deselected) was exactly what this picked.
+		if (selected && !selected.userData?.behavior && group.getObjectByProperty('uuid', selected.uuid) && !locked.includes(selected.uuid)) {
 			params[selected.uuid] = { ...(params[selected.uuid] ?? {}), mass: 1 };
 			delete params[selected.uuid].forceStatic;
 			dynamicUuids = [selected.uuid];

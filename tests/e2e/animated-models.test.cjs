@@ -1,4 +1,5 @@
-// Phase 51: animated model import — clips play on the synced clock everywhere,
+// Phase 51: animated model import — clips play on the synced clock everywhere (33 P2: once
+// PLAYED — placement no longer autoplays),
 // raw-bytes replication (incl. late joiners), pause/clip state syncs, undo works.
 const h = require('./helpers.cjs');
 
@@ -61,7 +62,15 @@ h.run(async () => {
 	await h.eventually(() => animState(A.page), (s) => s?.clips?.includes('slide'), 'animated import registered on A');
 	const { uuid } = await animState(A.page);
 
-	// the clip actually animates on A
+	// 33 P2: NOTHING AUTOPLAYS on placement any more — the clip is selected, not playing,
+	// and the model stands still until somebody presses play
+	h.check((await animState(A.page)).playing === false, '33: the import is NOT playing on placement');
+	const s1 = await moverX(A.page, uuid);
+	await A.page.waitForTimeout(400);
+	h.check(s1 === (await moverX(A.page, uuid)), '33: ...and the model stands still');
+	await A.page.evaluate((uuid) => window.__stores.animatedImports.setAnimationState(uuid, { playing: true }), uuid);
+
+	// the clip actually animates on A once played
 	const a1 = await moverX(A.page, uuid);
 	await A.page.waitForTimeout(400);
 	const a2 = await moverX(A.page, uuid);

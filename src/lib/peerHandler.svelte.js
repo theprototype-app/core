@@ -95,6 +95,7 @@ import { applySessionProposal, applySessionAnswer, deferUntilShareChoice, localS
 import { applyRemoteGeometry } from '$lib/geometryEdit';
 import { applyLightTarget } from '$lib/lightParams';
 import { applyObjectFile } from '$lib/animatedImports';
+import { applyRemoteBehavior } from '$lib/packBehavior';
 import { lockedObjects, selectedObject, peerHands, objectsGroup, pokeScene } from '../stores/sceneStore';
 import { addMessage, peers, userdata, pendingApprovals, waitingForApproval, showToast } from '../stores/appStore';
 import { get } from 'svelte/store';
@@ -936,6 +937,10 @@ export class PeerConnection {
 					});
 				} else if(data.type == 'objectfile') {
 					applyObjectFile(data);
+				} else if(data.type == 'behavior') {
+					// 33 P2: a functional pack item was triggered (a door, a lid, a lever).
+					// Latest-wins on the sessionNow stamp; every peer derives the pose itself.
+					applyRemoteBehavior(data);
 				} else if(data.type == 'object') {
 					createObject(data, data.uuids, data.override, data.groupuuid, data.pos, data.rot, data.scale);
 				} else if(data.type == 'objectParameters') {

@@ -166,7 +166,7 @@ function spreadPoint(point, i, count) {
  * shape, so this is the only consumer that had to learn anything. The raycast happens
  * ONCE and every item is placed relative to that one point: raycasting per item would
  * ask the scene where to put an object while the previous ones were still arriving.
- * @param {{id?: string, kind: string, name: string, prefabId?: string | null, url?: string | null, items?: any[]}} payload
+ * @param {{id?: string, kind: string, name: string, prefabId?: string | null, url?: string | null, behavior?: any, items?: any[]}} payload
  * @param {number} clientX @param {number} clientY
  */
 export async function dropExplorerItem(payload, clientX, clientY) {
@@ -211,7 +211,8 @@ async function placeExplorerPayload(payload, target) {
 			const { placementGroupFor } = await import('./lodGroup');
 			importFile(new File([await res.blob()], name + '.glb'), name, undefined, target.point ?? undefined, undefined, {
 				packRef: packRefFromUrl(payload.url, { item: name }),
-				lod: placementGroupFor(payload.url, payload.lods)
+				lod: placementGroupFor(payload.url, payload.lods),
+				behavior: payload.behavior ?? null // 33 P2
 			});
 			dismiss();
 		} catch {

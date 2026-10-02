@@ -264,6 +264,7 @@ function removeSceneRootGroup(name) {
 /** @type {any} */ let jointsRef = null;
 /** @type {any} */ let objectActionsRef = null;
 /** @type {any} */ let pingAudioRef = null;
+/** @type {any} */ let packBehaviorRef = null; // 33 P2 (api.behavior)
 /** @type {any} */ let audioEngineRef = null;
 /** @type {any} */ let musicClockRef = null;
 /** @type {any} */ let audioDevicesRef = null;
@@ -298,6 +299,7 @@ if (typeof window !== 'undefined') {
 	import('./joints').then((m) => (jointsRef = m));
 	import('./objectActions').then((m) => (objectActionsRef = m));
 	import('./pingAudio').then((m) => (pingAudioRef = m));
+	import('./packBehavior').then((m) => (packBehaviorRef = m));
 	// 23-A5: the audio stack — engine (a leaf, but kept dynamic with its siblings so the
 	// four resolve together), clock, devices, patch, and the sample loader
 	import('./audioEngine').then((m) => (audioEngineRef = m));
@@ -1439,6 +1441,36 @@ function makeApi(moduleId, moduleName = moduleId) {
 			const handle = lodObject(object, opts, moduleId);
 			onDispose(() => handle.remove());
 			return handle;
+		},
+		/**
+		 * 33 P2: FUNCTIONAL PACK ITEMS — a door, a chest lid, a lever, a fan placed from a pack
+		 * (an item carrying a `behavior`). `list()` -> `[{uuid, type, trigger, open}]`;
+		 * `state(uuid)` -> `{on, at, n}` or null before anything triggered it;
+		 * `trigger(uuid, open?)` toggles it (or forces `open` true/false) exactly as a player's
+		 * click would — REPLICATED (one `behavior` message, every peer poses it from the same
+		 * stamp), so call it on ONE peer. Returns whether anything changed. Nothing here moves in
+		 * Edit: a peer in Edit renders the rest pose whatever the state says.
+		 */
+		behavior: {
+			list() {
+				const ref = packBehaviorRef;
+				if (!ref) return [];
+				return ref.packBehaviorDebug().items.map((/** @type {any} */ it) => ({
+					uuid: it.uuid,
+					type: it.spec?.type,
+					trigger: it.spec?.trigger,
+					open: !!it.state?.on
+				}));
+			},
+			/** @param {string} uuid */
+			state(uuid) {
+				const s = packBehaviorRef?.behaviorState(uuid);
+				return s ? { on: s.on, at: s.at, n: s.n } : null;
+			},
+			/** @param {string} uuid @param {boolean} [open] */
+			trigger(uuid, open) {
+				return !!packBehaviorRef?.triggerBehavior(String(uuid), typeof open === 'boolean' ? open : undefined);
+			}
 		},
 		/**
 		 * 31-perf K4: the ADAPTIVE QUALITY LEVEL on this device, so a module can cut its own

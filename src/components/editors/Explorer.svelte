@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { Box, Boxes, Download, ExternalLink, Folder, FolderTree, Gift, Globe, HardDrive, House, LayoutGrid, List, LoaderCircle, PackageOpen, RefreshCw, Save, Share2, X } from '@lucide/svelte';
+	import { Box, Boxes, Download, ExternalLink, Folder, FolderTree, Gift, Globe, HardDrive, House, LayoutGrid, List, LoaderCircle, PackageOpen, Play, RefreshCw, Save, Share2, X } from '@lucide/svelte';
 	import Icon from '../ui/Icon.svelte';
 	// Explorer (95, tree v2 in 106): dockable asset browser — real file-manager
 	// tree on the left (inline create/rename, expand/collapse, drag re-parent,
@@ -962,6 +962,26 @@
 	});
 	// pack-item thumbnail: imported items carry a dataURL; default items resolve
 	// webp -> png -> screenshot via the <img> onerror cursor, else a placeholder icon
+	// 33 P2: the "animated" badge's words — what the item does and what sets it off, so a
+	// door reads differently from a fan before anyone places it
+	const BEHAVIOR_WORDS: Record<string, string> = {
+		door: 'Opens and closes',
+		toggle: 'Switches on and off',
+		oneshot: 'Plays once',
+		loop: 'Loops'
+	};
+	const TRIGGER_WORDS: Record<string, string> = {
+		click: 'on a click',
+		proximity: 'when you walk up to it',
+		knock: 'when you knock on it'
+	};
+	function behaviorTitle(spec: any): string {
+		if (!spec) return '';
+		const what = BEHAVIOR_WORDS[spec.type] ?? 'Animated';
+		const when = spec.type === 'loop' && spec.autoplay ? 'by itself' : (TRIGGER_WORDS[spec.trigger] ?? 'on a click');
+		return 'Animated — ' + what.toLowerCase() + ' ' + when + ' in Interact or Play (never in Edit)';
+	}
+
 	function packThumb(item: any): string | null {
 		if (item.resolvedThumb) return item.resolvedThumb; // P2: cached resolution
 		if (item.thumbnail) return item.thumbnail;
@@ -5294,7 +5314,9 @@
 			prefabId: item.prefabId ?? null,
 			url: item.glbUrl ?? null,
 			// 33: a pack item's LOD files travel with the drag so the drop places the group
-			...(item.lods ? { lods: item.lods } : {})
+			...(item.lods ? { lods: item.lods } : {}),
+			// 33 P2: a functional pack item's spec rides the drag to the drop
+			...(item.behavior ? { behavior: item.behavior } : {})
 		};
 	}
 	/**
@@ -5707,7 +5729,8 @@
 			const { placementGroupFor } = await import('$lib/lodGroup');
 			await importFile(new File([await res.blob()], item.name + '.glb'), item.name, 'glb', undefined, undefined, {
 				packRef: packRefFromUrl(item.glbUrl, { pack: item.packName, item: item.name }),
-				lod: placementGroupFor(item.glbUrl, item.lods)
+				lod: placementGroupFor(item.glbUrl, item.lods),
+				behavior: item.behavior ?? null // 33 P2
 			});
 			dismiss();
 		} catch {
@@ -6370,6 +6393,13 @@
 						<!-- the same status the card carries in its corners, folded into ONE inline dot:
 						     a row has no corners, and four possible dots on one line is noise. The
 						     precedence is the card's own, top to bottom. -->
+						{#if !isFolder && item.behavior}
+							<span
+								class="explorer-animated shrink-0 text-amber-300"
+								title={behaviorTitle(item.behavior)}
+								data-behavior={item.behavior.type}
+							><Play size={10} aria-hidden="true" /></span>
+						{/if}
 						{#if !isFolder}
 							{#if item.volumeItem}
 								<span
@@ -7482,6 +7512,16 @@
 										<span>{rosterCount(roster)}</span>
 									</span>
 								{/if}
+							{/if}
+							{#if item.behavior}
+								<!-- 33 P2: an ANIMATED, functional item (a door, a lid, a fan). Top LEFT: a
+								     pack card has no scene dots, so that corner is free on every card that
+								     can carry this. -->
+								<span
+									class="explorer-animated absolute left-1 top-1 flex h-4 w-4 items-center justify-center rounded-full bg-gray-900/80 text-amber-300"
+									title={behaviorTitle(item.behavior)}
+									data-behavior={item.behavior.type}
+								><Play size={9} aria-hidden="true" /></span>
 							{/if}
 							{#if item.packEntry}
 								{#if packThumb(item)}

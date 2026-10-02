@@ -214,6 +214,23 @@ export function within(promise, ms) {
 	return Promise.race([promise, new Promise((resolve) => setTimeout(resolve, ms))]);
 }
 
+/** @type {(() => Promise<any>) | null} */
+let composerWarm = null;
+
+/**
+ * The post-processing composer's warm-up, registered by Outline.svelte (which owns the
+ * composer — a seam, the registerToneMappingOwner shape, so no module imports the component).
+ * @param {(() => Promise<any>) | null} fn
+ */
+export function registerComposerWarm(fn) {
+	composerWarm = fn;
+}
+
+/** Compile the composer's pass shaders off-frame (a no-op with no composer registered). */
+export function warmComposer() {
+	return composerWarm ? composerWarm().catch(() => {}) : Promise.resolve();
+}
+
 let nextId = 0;
 /** @type {LoadJob | null} */
 let current = null;

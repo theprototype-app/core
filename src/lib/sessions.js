@@ -7,7 +7,7 @@ import { serializeNode, serializeEdge, sendNodes } from './nodesHandler';
 import { parkAnimatedAtBase } from './flowRuntime';
 import { stripEditOverlays } from './editOverlays';
 import { isPristinePackRef, stubElementOf, stubNodeCount, fillPackRef, warmPrograms } from './packRefs';
-import { beginLoad, endLoad, progress, slice, updateLoad, onCancel, isLive, LoadCancelled, throttledPoke, holdFrames, releaseFrames, nextFrames, within, WARM_WAIT_MS } from './sceneLoader';
+import { beginLoad, endLoad, progress, slice, updateLoad, onCancel, isLive, LoadCancelled, throttledPoke, holdFrames, releaseFrames, nextFrames, within, WARM_WAIT_MS, warmComposer } from './sceneLoader';
 // B7: a spawner's copies exist only while the world runs — never in a scene file
 import { isTransient } from './transientObjects';
 import {
@@ -1357,9 +1357,9 @@ async function applySessionNow(payload, opts, job) {
 	environmentRestore(payload.environment, replicate);
 	// The new fog/lights RE-KEY every program already in the scene (helpers, grid, sky), and the
 	// first frame after it linked them all at once: hold the viewport and link them a slice at a
-	// time first. Then the LOOK (post stack): its own shaders are built by the composer on its
-	// next frames and `compile` cannot reach them, so they get two frames of a near-empty scene
-	// to themselves. Then hold again for the build. (Measured on a CPU x6 phone: env and post
+	// time first. Then the LOOK (post stack): its pass shaders are compiled off-frame through
+	// the composer seam Outline registers, and whatever that misses gets two frames of a
+	// near-empty scene to itself. Then hold again for the build. (Measured on a CPU x6 phone: env and post
 	// links together on one frame were the last tasks over 200 ms.)
 	holdFrames();
 	await within(warmPrograms(get(globalScene)), WARM_WAIT_MS);
@@ -1368,6 +1368,8 @@ async function applySessionNow(payload, opts, job) {
 		return;
 	}
 	scenePostRestore(payload.post, replicate);
+	// the composer's own pass shaders, off-frame too (Outline registers the warm-up)
+	await within(warmComposer(), WARM_WAIT_MS);
 	releaseFrames();
 	await nextFrames(2);
 	if (!isLive(job)) return;

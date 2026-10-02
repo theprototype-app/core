@@ -18,6 +18,10 @@
 //   6. RESTORE (the real button in the restore toast) after a reload: "Restoring …" with
 //      progress, no long task > 200 ms, the castle is whole again (and the edited piece kept
 //      its edit).
+//   7. 1200 ORDINARY meshes (no kit references) build with no long task > 200 ms — the case where
+//      the time-sliced build loop itself is what keeps the window alive.
+// Counterfactuals measured (one guard removed each): autosave stubs off -> 5.2 + 6.3 red (51 MB,
+// a 1 212 ms restore task); object-list chunking off -> 1.4 + 6.3 red (307 / 328 ms).
 //
 // EVERY measured load starts from a FRESH page: packRefs keeps parsed pack files in memory, so a
 // re-open in the same page finishes before anything can be observed (the first version of this
@@ -303,6 +307,37 @@ h.run(async () => {
 	}, edited);
 	h.check(kept === 0x12ab34, '6.4 the EDITED piece came back with its edit (colour ' + (kept == null ? 'missing' : '#' + kept.toString(16)) + ')');
 	h.check(six.last?.top === pieces, `6.5 every object is back (${six.last?.top} / ${pieces})`);
+
+	// ---- 7. a scene of ORDINARY objects: the build loop itself is time-sliced --------------
+	// The kit levels are references (cheap stubs) — this is the scene they are not: 1200 plain
+	// meshes, each parsed, added and announced on its own. Unsliced, that loop is one task (300
+	// was measured too small to tell: 166 ms unsliced at CPU x6).
+	await fresh();
+	const many = await page.evaluate(() => {
+		const s = window.__stores;
+		/** @type {any} */ let g;
+		s.objectsGroup.subscribe((v) => (g = v))();
+		for (let i = 0; i < 1200; i++) {
+			const m = new s.THREE.Mesh(new s.THREE.BoxGeometry(0.4, 0.4 + (i % 7) * 0.1, 0.4), new s.THREE.MeshStandardMaterial({ color: (i * 2654435761) & 0xffffff }));
+			m.name = 'box-' + i;
+			m.position.set((i % 40) - 20, 0.2, Math.floor(i / 40) - 15);
+			g.add(m);
+		}
+		s.pokeScene();
+		const payload = s.sessions.buildSessionPayload('Many boxes');
+		window.__manyPayload = payload;
+		return payload.objects.length;
+	});
+	await page.evaluate(() => window.__stores.sceneLoader.cancelLoad());
+	await arm(page);
+	await throttle(CPU);
+	await page.evaluate(() => void window.__stores.sessions.applySession(window.__manyPayload, { backup: false }));
+	await h.eventually(() => sceneState(page, null), (s) => s.top === many && !s.job, '7.0 a scene of ' + many + ' ordinary meshes loads', 120000);
+	await page.waitForTimeout(1500);
+	await throttle(1);
+	probe = await disarm(page);
+	h.check(probe.max <= LONG_MS, `7.1 no long task over ${LONG_MS} ms while ${many} ordinary objects are built (max ${probe.max} ms of ${probe.longtasks.length})`);
+	console.log('   ordinary long tasks: ' + JSON.stringify(probe.longtasks.slice().sort((a, b) => b - a).slice(0, 10)));
 
 	await h.finish(browser);
 });

@@ -14,7 +14,7 @@ import { stripEditOverlays } from './editOverlays';
 // restore them as permanent scene content
 import { isTransient, parkTransientObjects } from './transientObjects';
 import { parkPackPieces, fillPackRef, isPristinePackRef, stubElementOf, warmPrograms } from './packRefs';
-import { beginLoad, endLoad, progress, slice, updateLoad, onCancel, isLive, LoadCancelled, throttledPoke, holdFrames, releaseFrames, nextFrames, within, WARM_WAIT_MS, loading as sceneLoading, loadSettled } from './sceneLoader';
+import { beginLoad, endLoad, progress, slice, updateLoad, onCancel, isLive, LoadCancelled, throttledPoke, holdFrames, releaseFrames, nextFrames, within, WARM_WAIT_MS, warmComposer, loading as sceneLoading, loadSettled } from './sceneLoader';
 import { animatedImportsSnapshot, animatedImportsRestore } from './animatedImports';
 import { animations, animationsSnapshot, animationsRestore } from './animationPreview';
 import { scenePost, scenePostSnapshot, scenePostRestore } from './scenePost';
@@ -641,6 +641,7 @@ async function applyRestore(snapshot, offer = null) {
 			return null;
 		}
 		scenePostRestore(snapshot.post, true);
+		await within(warmComposer(), WARM_WAIT_MS);
 		releaseFrames();
 		await nextFrames(2);
 		if (!isLive(job)) return null;

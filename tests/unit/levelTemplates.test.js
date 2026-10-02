@@ -22,9 +22,9 @@ function itemsOf(pack) {
 const kits = (def) => def.objects.filter((/** @type {any} */ o) => o.type === 'kit');
 
 describe('level templates', () => {
-	it('are five general-tab templates kept out of the offline seed', () => {
-		// 33-scenes added the Wizard's Tower and the Market Town Square
-		expect(LEVEL_DEFS.map((/** @type {any} */ d) => d.slug)).toEqual(['castle-courtyard', 'forest-clearing', 'tavern-interior', 'wizards-tower', 'market-square']);
+	it('are six general-tab templates kept out of the offline seed', () => {
+		// 33-scenes added the Wizard's Tower and the Market Town Square; 33-integrate the kit Architecture shell
+		expect(LEVEL_DEFS.map((/** @type {any} */ d) => d.slug)).toEqual(['castle-courtyard', 'forest-clearing', 'tavern-interior', 'wizards-tower', 'market-square', 'architecture-shell']);
 		for (const def of LEVEL_DEFS) {
 			expect(def.kind).toBe('template');
 			expect(def.seed).toBe(false);
@@ -41,7 +41,8 @@ describe('level templates', () => {
 
 	it('build from the kits, and only from items the kits ship', () => {
 		for (const def of LEVEL_DEFS) {
-			expect(kits(def).length).toBeGreaterThan(90);
+			// a level is a whole place; the architecture shell is one room to block out in
+			expect(kits(def).length).toBeGreaterThan(def.slug === 'architecture-shell' ? 60 : 90);
 			for (const o of kits(def)) {
 				const items = itemsOf(o.pack);
 				if (items) expect(items.has(o.item), def.slug + ': ' + o.pack + '/' + o.item).toBe(true);

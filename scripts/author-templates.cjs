@@ -47,6 +47,7 @@
 // DEF (the file / the card):
 //   kind*            'template' | 'example' | 'game' | 'contest' — decides the folder + index section
 //   seed             false keeps a template out of the bundled offline seed (30c: kit levels need the pack CDN)
+//   remote           false keeps a template OUT of --out (33: a seed-only greybox whose online twin is a kit level)
 //   slug* title* description   identity + card text; author, license ('CC0-1.0'), tags []
 //   modules          [{id, version}] — the card's module list (games only; must match installModules)
 //   installModules   ['<id>'] — zips installed from MODULES_REPO before the build (the game shows)
@@ -2026,7 +2027,10 @@ const DEFS = [
 	},
 	{
 		kind: 'template',
-		slug: 'architecture-shell',
+		// 33-integrate: the ONLINE 'Architecture shell' is the kit room in level-templates.cjs;
+		// this greybox stays the OFFLINE seed's copy (remote: false — never written to --out)
+		remote: false,
+		slug: 'architecture-shell-greybox',
 		title: 'Architecture shell',
 		description: 'Room shell with a door and window opening, columns and a half roof to block out interiors',
 		license: 'CC0-1.0',
@@ -3113,6 +3117,7 @@ const DEFS = [
 			}
 		}
 		for (const def of defs) {
+			if (def.remote === false) continue;
 			const section =
 				def.kind === 'template' ? 'templates' : def.kind === 'game' ? 'games' : def.kind === 'contest' ? 'contests' : 'examples';
 			const row = {

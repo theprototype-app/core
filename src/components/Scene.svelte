@@ -45,6 +45,7 @@
 	import { drawMode, drawTool, strokePointFromRay, endStroke, setDrawScene } from '$lib/drawMode';
 	import { splinePlaceFromRay, splineToolActive, finishSpline } from '$lib/splineTool';
 	import { flattenPicking, flattenPickClick } from '$lib/flattenActions';
+	import { onLodProxyMoved, onLodProxyDragChanged } from '$lib/lodLevelEdit';
 	import { splineEditObject, splineEditClick, splineEditRightClick, exitSplineEdit, beginRadiusDrag, radiusDragMove, endRadiusDrag, radiusDragActive, onSplineProxyMoved, onSplineProxyDragChanged, tickSplineEdit } from '$lib/splineEdit';
 	import { capturePathClick } from '$lib/pathCapture';
 	import { surfaceSnap, dropToSurface } from '$lib/snapping';
@@ -426,7 +427,7 @@
 			// multi-select pivot excludes EVERY member (P3: its drags snap too).
 			if (!event.value) endSnapDrag();
 			else if (object.userData?.isMultiPivot) beginSnapDrag([...$selectedObjects]);
-			else if (!object.userData?.isVertexProxy && !object.userData?.isFaceProxy)
+			else if (!object.userData?.isVertexProxy && !object.userData?.isFaceProxy && !object.userData?.isLodLevelProxy)
 				beginSnapDrag([object.uuid]);
 			// vertex handles record their own history entries
 			if (object.userData?.isVertexProxy) {
@@ -441,6 +442,11 @@
 			// 57.3: a spline control point — ONE spline undo entry per drag
 			if (object.userData?.isSplineProxy) {
 				onSplineProxyDragChanged(event.value);
+				return;
+			}
+			// 33: one LOD level's offset — ONE lod write per drag, never a move
+			if (object.userData?.isLodLevelProxy) {
+				onLodProxyDragChanged(event.value);
 				return;
 			}
 			// the multi-select pivot records per-member entries (multiTransform)
@@ -1493,6 +1499,12 @@
 		if ($TControls.object?.userData?.isSplineProxy) {
 			$TControls.visible = true;
 			onSplineProxyMoved();
+			return;
+		}
+		// 33: a LOD level's proxy — the level follows locally; the release commits
+		if ($TControls.object?.userData?.isLodLevelProxy) {
+			$TControls.visible = true;
+			onLodProxyMoved();
 			return;
 		}
 		// multi-select pivot: multiTransform drives + broadcasts the members,

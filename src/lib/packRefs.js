@@ -197,6 +197,36 @@ export function loadPackTemplate(url) {
 	return job;
 }
 
+/** url -> a parsed LOD level file (33). Kept apart from `templates`: a level is never a
+ * reference target, so it registers no fingerprint, and an ANIMATED item's level (a door's
+ * leaf) is fine here — only its geometry is used.
+ * @type {Map<string, Promise<any>>} */
+const levelFiles = new Map();
+
+/**
+ * Fetch + parse a pack LOD file ONCE per url (textures shared with the kit through the same
+ * image-bytes key). Resolves the parsed scene; a failure is forgotten so a retry can win.
+ * @param {string} url @returns {Promise<any>}
+ */
+export function loadPackFile(url) {
+	let job = levelFiles.get(url);
+	if (!job) {
+		job = (async () => {
+			const res = await fetch(url);
+			if (!res.ok) throw new Error('HTTP ' + res.status);
+			const buffer = await res.arrayBuffer();
+			/** @type {any} */
+			const gltf = await new Promise((resolve, reject) => createLoader().parse(buffer, '', resolve, reject));
+			await shareTextures(gltf, buffer);
+			gltf.scene.updateMatrixWorld(true);
+			return gltf.scene;
+		})();
+		levelFiles.set(url, job);
+		job.catch(() => levelFiles.delete(url));
+	}
+	return job;
+}
+
 // ---- the fingerprint ---------------------------------------------------------
 
 /** Seven significant digits, and anything under 1e-6 is zero — a GLTF round trip turns a

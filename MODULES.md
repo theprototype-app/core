@@ -502,9 +502,20 @@ if (api.quality) {
 if (api.lod) {
 	const lod = api.lod(enemyFigure, { ratios: [0.5, 0.2], distances: [6, 18] });
 	lod.ready.then((n) => console.log(n, "meshes have levels")); // lod.remove() undoes it
+	lod.force?.(2);     // 1.19: draw level 2 on THIS screen whatever the distance (null = auto)
+	lod.levels?.();     // 1.19: the level each mesh drew last (0 = full)
 }
 mesh.userData.lod = false; // keep one mesh out of auto LOD
 ```
+
+**1.19 — LOD groups on scene objects.** A replicated object may carry a LOD GROUP
+(`userData.lod`, edited in its Properties ▸ LOD section, or written by a pack item's `lods`):
+`{mode: 'auto'|'forced', forced?, bias?, cull?, levels: [{source: 'self'|'pack'|'generated'|
+'explorer'|'object', ref?, ratio?, screenSize, offset?, material?}]}` with thresholds by SCREEN
+SIZE (the share of the viewport height the object covers). It is scene data (saved, replicated,
+undone) and drawn at render time like `api.lod` — the tree never holds a level. A module that
+builds scene objects can write one through the same path the panel uses
+(`objectParameters {parameter: 'lod'}` is the wire shape); module-only geometry keeps `api.lod`.
 
 Both are LOCAL (a fact about this machine) — never let them change replicated state, or two
 peers on different hardware disagree about the game. Skinned meshes and morph targets get no

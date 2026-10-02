@@ -1812,9 +1812,44 @@ export const PROPS_ROWS = [
 	'scale:y',
 	'scale:z',
 	'opacity',
-	'visible'
+	'visible',
+	// 33 (K6, P3): Force LOD + the level drawn — left/right (or press) cycles Auto, LOD0…
+	'lod'
 	// 120: color/duplicate/delete removed — they live on the Edit ring + palette
 ];
+
+/** 33: the LOD group actions, PRIMED (a static edge would pull the history family's
+ * importers through lodGroup's loaders into this module's graph) @type {any} */
+let lodActions = null;
+import('./lodGroupActions').then((m) => (lodActions = m));
+/** @type {any} */
+let lodRuntime = null;
+import('./lodGroup').then((m) => (lodRuntime = m));
+
+/**
+ * The VR props panel's LOD row: cycle Force LOD by `sign` through Auto, LOD0 … LODn.
+ * Returns the new choice ('auto' | level), or null when the object has no group.
+ * @param {string} uuid @param {number} sign
+ */
+export function cycleForceLod(uuid, sign) {
+	const info = lodRuntime?.lodGroupInfo(uuid);
+	if (!info || !lodActions) return null;
+	/** @type {('auto' | number)[]} */
+	const options = ['auto', ...info.levels.map((/** @type {any} */ _l, /** @type {number} */ i) => i)];
+	const now = info.block.mode === 'forced' ? info.block.forced : 'auto';
+	const at = Math.max(0, options.indexOf(now));
+	const next = options[(at + (sign < 0 ? -1 : 1) + options.length) % options.length];
+	lodActions.forceLodLevel(uuid, next);
+	return next;
+}
+
+/** The LOD row's readout for the VR panel. @param {string} uuid */
+export function lodReadout(uuid) {
+	const info = lodRuntime?.lodGroupInfo(uuid);
+	if (!info) return 'none';
+	if (info.block.mode === 'forced') return 'LOD' + info.block.forced + ' forced';
+	return 'Auto · ' + (info.current < 0 ? 'culled' : 'LOD' + info.current);
+}
 
 /** Raycast the props panel controls @param {number} index @returns {string|null} props action */
 export function raycastProps(index) {
@@ -1923,12 +1958,16 @@ function handlePropsAction(action) {
 	} else if (action.startsWith('nudge:')) {
 		const [kind, axis, sign] = action.slice('nudge:'.length).split(':');
 		if (['x', 'y', 'z'].includes(axis)) nudgeTransform(object, kind, axis, parseInt(sign) || 1);
+	} else if (action.startsWith('lod:')) {
+		if (cycleForceLod(object.uuid, parseInt(action.slice('lod:'.length)) || 1) === null)
+			showToast('This object has no LOD levels — generate them in its properties on the desktop');
 	}
 }
 
 /** Stick press / cursored activation for a PROPS_ROWS row @param {string} row */
 export function propsRowAction(row) {
 	if (row === 'opacity') return 'props:opacity:1';
+	if (row === 'lod') return 'props:lod:1';
 	if (row.includes(':')) return 'props:nudge:' + row + ':1';
 	return 'props:' + row;
 }
@@ -4200,11 +4239,11 @@ export function updateVRControls() {
 			// left/right adjusts the cursored row (axis nudges + opacity)
 			const row = PROPS_ROWS[get(vrPropsCursor)];
 			const sign = x > 0 ? 1 : -1;
-			if (row === 'opacity' || row.includes(':')) {
+			if (row === 'opacity' || row === 'lod' || row.includes(':')) {
 				panelScrollAt = now;
 				hapticPulse(0.1, 12);
 				executeVRMenuAction(
-					row === 'opacity' ? 'props:opacity:' + sign : 'props:nudge:' + row + ':' + sign
+					row === 'opacity' ? 'props:opacity:' + sign : row === 'lod' ? 'props:lod:' + sign : 'props:nudge:' + row + ':' + sign
 				);
 			}
 		}

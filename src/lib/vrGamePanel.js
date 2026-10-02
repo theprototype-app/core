@@ -58,7 +58,7 @@ import {
 	toggleShellMenu
 } from './gameShell';
 import { gameSettingValues } from './gameSettings';
-import { drawShellPage, SHELL_STAGE } from './shellPanelDraw';
+import { drawShellPage, SHELL_STAGE, fitLabel, collectOverflow } from './shellPanelDraw';
 // 31 K3 G3: Show FPS in the headset (the strip + the wrist)
 import { fpsReading, fpsText, noteXrFrame, perfStatsShown } from './fpsMeter';
 import { vignetteFrame } from './comfortVignette';
@@ -75,9 +75,27 @@ const SETTLE_DEG = 2;
 const WRIST_W = 0.15;
 const STRIP_KEY = 'vr:gameStrip';
 
-/** the board canvas's pixels per stage pixel: ~1000 px across a metre-wide board, what a
- * headset's ~20 px per degree needs at 1.2 m */
-const SCALE = 1.5;
+/** the board canvas's pixels per stage pixel. 33 X1: 2, i.e. 1250 texels per metre — a Quest
+ * 3's ~25 px per degree at 1.2 m wants ~1190 (`texelRatio`); the 1.5 this was (937 per metre)
+ * magnified every board texel 1.27x, a soft board on a sharp eye buffer */
+const SCALE = 2;
+/** 33 X1: the wrist card is drawn at this many canvas px per layout px (320x300 layout): at
+ * ~0.4 m a Quest 3 wants ~3600 texels per metre and 320 px over 0.15 m was 2133 (0.6x) */
+const WRIST_RES = 2;
+/** a Quest 3's display density at the centre of the lens, px per degree (Meta's figure) */
+export const HEADSET_PPD = 25;
+
+/**
+ * 33 X1: how many canvas texels fall on one headset pixel at `distance` — 1 or more is crisp
+ * (no magnification), under 1 is a texture stretched over more pixels than it has. Pure.
+ * @param {number} canvasPx texels across the surface @param {number} worldW metres across
+ * @param {number} distance metres from the eye @param {number} [ppd]
+ */
+export function texelRatio(canvasPx, worldW, distance, ppd = HEADSET_PPD) {
+	const texelsPerMetre = canvasPx / worldW;
+	const pixelsPerMetre = (ppd * 180) / Math.PI / Math.max(0.05, distance);
+	return texelsPerMetre / pixelsPerMetre;
+}
 
 /* ------------------------------------------------------------ the classification --- */
 
@@ -345,8 +363,11 @@ export function drawPanel(g, entry, runtime, opts = {}) {
 			}
 		} else if (el.kind === 'crosshair' || el.kind === 'minimap' || el.kind === 'debug' || el.kind === 'custom' || el.kind === 'damageflash') {
 			// a crosshair, a plot, a debug pill and a module's own DOM have no VR form here
+		} else if (text && el.kind === 'button' && !el.wrap) {
+			// 33 G5: a button's label fits the button (the desktop's CSS box never overflows)
+			g.fillText(fitLabel(g, text, w - 10 * k, weight, size), tx, y + h / 2);
 		} else if (text) {
-			// text, timer, button, panel, richtext and anything else that says something
+			// text, timer, panel, richtext and anything else that says something
 			const lines = el.wrap || el.kind === 'richtext' ? wrapText(g, text.replace(/\[[^\]]*\]/g, ''), w - 8 * k) : [text];
 			const lh = size * 1.25;
 			let yy = y + h / 2 - ((lines.length - 1) * lh) / 2;
@@ -378,6 +399,23 @@ export function drawPanel(g, entry, runtime, opts = {}) {
 }
 
 /**
+ * 33 G5: where the footer's n buttons go on a board W canvas px wide — "Menu" and "Top strip"
+ * ran OFF the board: three 240-stage-px buttons need 760 while a cropped game menu can be
+ * 720 wide, so the row hung past both edges. The buttons keep their natural width when it
+ * fits and share the board (inside a side margin) when it does not. Pure; exported.
+ * @param {number} W @param {number} k canvas px per stage px @param {number} n
+ * @returns {{x: number, w: number}[]}
+ */
+export function footerLayout(W, k, n) {
+	const margin = 32 * k;
+	const gap = 20 * k;
+	const natural = (n > 2 ? 240 : 300) * k;
+	const bw = Math.max(0, Math.min(natural, (W - 2 * margin - (n - 1) * gap) / n));
+	const x0 = (W - (n * bw + (n - 1) * gap)) / 2;
+	return Array.from({ length: n }, (_, i) => ({ x: x0 + i * (bw + gap), w: bw }));
+}
+
+/**
  * The footer: OUR buttons, always there — 31 K3's Menu (while a game offers the pause
  * menu), Edit mode and Top strip. @param {CanvasRenderingContext2D} g @param {number} fy
  * @param {number} k @param {{hover?: string | null, strip?: boolean, menu?: 'open' | 'available' | null}} opts
@@ -392,12 +430,10 @@ function drawFooter(g, fy, k, opts, hits) {
 		{ id: 'edit', label: 'Edit mode' },
 		{ id: 'strip', label: opts.strip === false ? 'Top strip: off' : 'Top strip: on' }
 	];
-	const bw = (buttons.length > 2 ? 240 : 300) * k;
 	const bh = 60 * k;
-	const gap = 20 * k;
-	const x0 = (W - (buttons.length * bw + (buttons.length - 1) * gap)) / 2;
+	const slots = footerLayout(W, k, buttons.length);
 	buttons.forEach((b, i) => {
-		const bx = x0 + i * (bw + gap);
+		const { x: bx, w: bw } = slots[i];
 		const by = fy + (FOOTER_H * k - bh) / 2;
 		roundRect(g, bx, by, bw, bh, 12 * k);
 		g.fillStyle = opts.hover === 'footer:' + b.id ? '#1e4a63' : b.id === 'edit' ? '#1f2937' : '#111827';
@@ -406,10 +442,9 @@ function drawFooter(g, fy, k, opts, hits) {
 		g.strokeStyle = opts.hover === 'footer:' + b.id ? '#5fd0ff' : 'rgba(148,163,184,0.6)';
 		g.stroke();
 		g.fillStyle = '#f3f4f6';
-		g.font = `600 ${26 * k}px system-ui, sans-serif`;
 		g.textAlign = 'center';
 		g.textBaseline = 'middle';
-		g.fillText(b.label, bx + bw / 2, by + bh / 2);
+		g.fillText(fitLabel(g, b.label, bw - 24 * k, 600, 26 * k), bx + bw / 2, by + bh / 2);
 		hits.push({ id: 'footer:' + b.id, key: '', kind: 'footer', footer: b.id, x: bx, y: by, w: bw, h: bh });
 	});
 }
@@ -493,12 +528,25 @@ function wrapText(g, text, max) {
  * A compact card of lines (+ optional footer buttons) — the wrist, the top strip and the
  * banner are all this. Returns the pressable rects.
  * @param {CanvasRenderingContext2D} g @param {string[]} lines
- * @param {{title?: string, row?: boolean, buttons?: boolean, strip?: boolean, hover?: string | null, big?: boolean, color?: string, menu?: 'open' | 'available' | null}} [opts]
+ * @param {{title?: string, row?: boolean, buttons?: boolean, strip?: boolean, hover?: string | null, big?: boolean, color?: string, menu?: 'open' | 'available' | null, res?: number}} [opts]
  * @returns {HitRect[]}
  */
 export function drawCard(g, lines, opts = {}) {
-	const W = g.canvas.width;
-	const H = g.canvas.height;
+	// 33 X1: `res` draws the same LAYOUT at res canvas px per layout px (the wrist card), hits
+	// returned in canvas px like every other surface
+	const res = Math.max(1, Number(opts.res) || 1);
+	g.setTransform(res, 0, 0, res, 0, 0);
+	try {
+		const hits = drawCardAt(g, g.canvas.width / res, g.canvas.height / res, lines, opts);
+		return res === 1 ? hits : hits.map((r) => ({ ...r, x: r.x * res, y: r.y * res, w: r.w * res, h: r.h * res }));
+	} finally {
+		g.setTransform(1, 0, 0, 1, 0, 0);
+	}
+}
+
+/** drawCard in layout units W x H @param {CanvasRenderingContext2D} g @param {number} W
+ * @param {number} H @param {string[]} lines @param {any} opts @returns {HitRect[]} */
+function drawCardAt(g, W, H, lines, opts) {
 	g.clearRect(0, 0, W, H);
 	roundRect(g, 0, 0, W, H, Math.min(24, H / 4));
 	g.fillStyle = 'rgba(12, 16, 26, 0.86)';
@@ -562,9 +610,8 @@ export function drawCard(g, lines, opts = {}) {
 			g.strokeStyle = opts.hover === 'footer:' + b.id ? '#5fd0ff' : 'rgba(148,163,184,0.6)';
 			g.stroke();
 			g.fillStyle = '#f3f4f6';
-			g.font = `600 ${labels.length > 2 ? 17 : 22}px system-ui, sans-serif`;
 			g.textAlign = 'center';
-			g.fillText(b.label, bx + bw / 2, by + (footer - 22) / 2);
+			g.fillText(fitLabel(g, b.label, bw - 12, 600, labels.length > 2 ? 18 : 22, 12), bx + bw / 2, by + (footer - 22) / 2);
 			hits.push({ id: 'footer:' + b.id, key: '', kind: 'footer', footer: b.id, x: bx, y: by, w: bw, h: footer - 22 });
 		});
 	}
@@ -575,7 +622,7 @@ export function drawCard(g, lines, opts = {}) {
 
 /**
  * @typedef {{name: string, mesh: THREE.Mesh, canvas: HTMLCanvasElement, g: CanvasRenderingContext2D,
- *   texture: THREE.CanvasTexture, w: number, h: number, hits: HitRect[], sig: string}} Surface
+ *   texture: THREE.CanvasTexture, w: number, h: number, hits: HitRect[], sig: string, overflow?: string[]}} Surface
  */
 
 /** @type {Record<string, Surface>} */
@@ -726,9 +773,11 @@ export function vrGamePanelFrame(opts = {}) {
 		if (sig !== board.sig) {
 			board.sig = sig;
 			resizeSurface(board, Math.round(crop.w * SCALE), Math.round((crop.h + FOOTER_H) * SCALE), crop.w * METRES_PER_PX);
-			board.hits = shellOpen
-				? drawShellPanel(board.g, { hover: hover[0] ?? hover[1], strip })
-				: drawPanel(board.g, entry, runtime, { hover: hover[0] ?? hover[1], strip, crop, menu: menuOffer });
+			[board.hits, board.overflow] = collectOverflow(() =>
+				shellOpen
+					? drawShellPanel(board.g, { hover: hover[0] ?? hover[1], strip })
+					: drawPanel(board.g, entry, runtime, { hover: hover[0] ?? hover[1], strip, crop, menu: menuOffer })
+			);
 			board.texture.needsUpdate = true;
 		}
 		const headYaw = yawOf(head.quaternion);
@@ -748,20 +797,23 @@ export function vrGamePanelFrame(opts = {}) {
 	// 31 K3 G3: this game's Show FPS puts the counter FIRST on the strip and the wrist
 	// 33 Q1: not twice — with the app-wide perf strip on, the head-locked strip carries it
 	if (live && get(gameSettingValues).showFps && !get(perfStatsShown)) lines.unshift(fpsText(get(fpsReading)).main);
-	const wrist = surface('vr-game-wrist', 320, 300, WRIST_W);
+	const wrist = surface('vr-game-wrist', 320 * WRIST_RES, 300 * WRIST_RES, WRIST_W);
 	const leftHand = opts.hands?.[0] ?? null;
 	if (live && leftHand) {
 		const sig = JSON.stringify([lines, strip, hover, menuOffer, shellOpen]);
 		if (sig !== wrist.sig) {
 			// a line count change re-sizes the card
 			wrist.sig = sig;
-			wrist.hits = drawCard(wrist.g, lines.length ? lines : ['No score yet'], {
-				title: 'Game',
-				buttons: true,
-				strip,
-				hover: hover[0] ?? hover[1],
-				menu: menuOffer ? (shellOpen ? 'open' : 'available') : null
-			});
+			[wrist.hits, wrist.overflow] = collectOverflow(() =>
+				drawCard(wrist.g, lines.length ? lines : ['No score yet'], {
+					title: 'Game',
+					buttons: true,
+					strip,
+					hover: hover[0] ?? hover[1],
+					menu: menuOffer ? (shellOpen ? 'open' : 'available') : null,
+					res: WRIST_RES
+				})
+			);
 			wrist.texture.needsUpdate = true;
 		}
 		// up the forearm, facing up off it — clear of 30b-vr-modes' mode label, which sits on
@@ -977,12 +1029,14 @@ export function pokeFrame(index, tip) {
 	return pressed;
 }
 
-/** @returns {{presses: number, pokes: number, lastPress: string | null, edits: number, hover: (string | null)[], strip: boolean, hits: Record<string, HitRect[]>}} */
+/** @returns {{presses: number, pokes: number, lastPress: string | null, edits: number, hover: (string | null)[], strip: boolean, hits: Record<string, HitRect[]>, overflow: string[]}} */
 export function vrGamePanelDebug() {
 	/** @type {Record<string, HitRect[]>} */
 	const hits = {};
 	for (const [name, s] of Object.entries(surfaces)) hits[name] = s.hits.map((h) => ({ ...h }));
-	return { ...debug, hover: [...hover], strip: stripOn(), hits };
+	// 33 G5: the labels the visible surfaces had to cut to fit (a layout defect)
+	const overflow = Object.values(surfaces).flatMap((s) => (s.mesh.visible ? (s.overflow ?? []).map((t) => s.name + ': ' + t) : []));
+	return { ...debug, hover: [...hover], strip: stripOn(), hits, overflow };
 }
 
 /** the surfaces' meshes (suites read visibility, poses and canvases) @param {string} name */

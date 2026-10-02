@@ -212,6 +212,15 @@ function collectParams(group) {
 	// H1: physics nodes live in ANY graph (scene or per-object documents)
 	const nodes = allNodes();
 	const edges = allEdges();
+	// 33 G1: indexed once per call — the nested finds below were O(edges x nodes), and this
+	// runs on EVERY flowGraphs change mid-sim (onGraphChange); measured as the second app
+	// frame of the Stars Room on a phone profile
+	/** @type {Map<string, any>} */
+	const byId = new Map();
+	for (const n of nodes) if (!byId.has(n.id)) byId.set(n.id, n);
+	/** @type {Set<string>} edge sources that reach an Object Selector */
+	const toSelector = new Set();
+	for (const e of edges) if (byId.get(e.target)?.type === 'objectselector') toSelector.add(e.source);
 	/** apply one physics node's params onto an object's entry @param {any} source @param {string} uuid */
 	const applyPhysicsNode = (source, uuid) => {
 		map[uuid] ??= {};
@@ -245,15 +254,15 @@ function collectParams(group) {
 			if (source.data?.scale != null) map[uuid].colliderScale = source.data.scale;
 			if (source.data?.sensor) map[uuid].sensor = true;
 			const sourceEdge = edges.find((e) => e.target === source.id && e.targetHandle === 'source');
-			const sourceNode = sourceEdge ? nodes.find((n) => n.id === sourceEdge.source) : null;
+			const sourceNode = sourceEdge ? byId.get(sourceEdge.source) : null;
 			const sourceUuid = sourceNode?.type === 'objectselector' ? sourceNode.data?.selected : null;
 			if (sourceUuid && sourceUuid !== '-None-') map[uuid].colliderSource = sourceUuid;
 		}
 	};
 	edges.forEach((edge) => {
-		const source = nodes.find((n) => n.id === edge.source);
+		const source = byId.get(edge.source);
 		if (!source || !PHYSICS_TYPES.includes(source.type)) return;
-		const target = nodes.find((n) => n.id === edge.target);
+		const target = byId.get(edge.target);
 		if (target?.type !== 'objectselector') return;
 		const uuid = target.data?.selected;
 		if (!uuid || uuid === '-None-') return;
@@ -265,10 +274,7 @@ function collectParams(group) {
 		if (!PHYSICS_TYPES.includes(source.type)) return;
 		const graph = source.__graph;
 		if (!graph || graph === SCENE_GRAPH) return;
-		const wired = edges.some(
-			(e) => e.source === source.id && nodes.find((n) => n.id === e.target)?.type === 'objectselector'
-		);
-		if (!wired) applyPhysicsNode(source, graph);
+		if (!toSelector.has(source.id)) applyPhysicsNode(source, graph);
 	});
 	return map;
 }

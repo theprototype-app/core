@@ -38,7 +38,7 @@
 		// 30b P3: INTERACT walks like a game (collision, gravity, step-up; no fly or teleport
 		// unless the play block allows them) — a held object does not stop your feet
 		if (tickVRInteractLocomotion(delta, session)) return;
-		if ($vrGrabbedHand === 'left') return; // a left-hand grab owns its stick (100)
+		if ($vrGrabbedHand === 'left' || $vrGrabbedHand === 'both') return; // a left-hand grab owns its stick (100)
 		if (twoGripStretchActive()) return; // 186: both grips + sticks stretch, not move
 		// D9: world pan/grab write reference-space offsets themselves, and the
 		// mesh-edit gestures read the sticks for reel/scale — never also move

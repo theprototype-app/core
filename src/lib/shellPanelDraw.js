@@ -10,6 +10,54 @@
 /** The board's stage size while the menu is up, in stage pixels (the panel scales it). */
 export const SHELL_STAGE = { x: 0, y: 0, w: 1100, h: 640 };
 
+/** 33 G5: the labels that did not fit their button while `collectOverflow` ran (a suite reads
+ * them; a label that has to be cut is a layout defect even when the cut keeps it legible)
+ * @type {string[] | null} */
+let overflowSink = null;
+
+/**
+ * Run a draw and return [its result, the labels it had to cut]. @template T
+ * @param {() => T} draw @returns {[T, string[]]}
+ */
+export function collectOverflow(draw) {
+	const outer = overflowSink;
+	/** @type {string[]} */
+	const sink = [];
+	overflowSink = sink;
+	try {
+		return [draw(), sink];
+	} finally {
+		overflowSink = outer;
+	}
+}
+
+/**
+ * 33 G5: set a font that makes `text` FIT `maxW` canvas px — shrink the size down to `min`,
+ * and only then cut it with an ellipsis (and report the cut). Returns the text to draw.
+ * A button label drawn at a fixed size ran past its button on the narrow boards.
+ * @param {CanvasRenderingContext2D} g @param {string} text @param {number} maxW
+ * @param {string | number} weight @param {number} size px @param {number} [min] px
+ */
+export function fitLabel(g, text, maxW, weight, size, min = Math.max(10, size * 0.7)) {
+	let px = size;
+	const font = () => (g.font = `${weight} ${Math.round(px)}px system-ui, sans-serif`);
+	font();
+	while (px > min && g.measureText(text).width > maxW) {
+		px -= Math.max(1, size * 0.04);
+		font();
+	}
+	if (g.measureText(text).width <= maxW) return text;
+	overflowSink?.push(text);
+	let lo = 0;
+	let hi = text.length;
+	while (lo < hi) {
+		const mid = (lo + hi + 1) >> 1;
+		if (g.measureText(text.slice(0, mid) + '…').width <= maxW) lo = mid;
+		else hi = mid - 1;
+	}
+	return text.slice(0, lo).trimEnd() + '…';
+}
+
 /** @param {CanvasRenderingContext2D} g @param {number} x @param {number} y @param {number} w @param {number} h @param {number} r */
 function roundRect(g, x, y, w, h, r) {
 	const rr = Math.max(0, Math.min(r, w / 2, h / 2));
@@ -56,8 +104,8 @@ export function drawShellPage(g, model, opts) {
 		g.fillStyle = o.disabled ? 'rgba(243,244,246,0.5)' : '#f3f4f6';
 		g.textAlign = 'center';
 		g.textBaseline = 'middle';
-		g.font = `600 ${Math.round(26 * k)}px system-ui, sans-serif`;
-		g.fillText(label, (x + w / 2) * k, (y + (o.sub ? h * 0.4 : h / 2)) * k);
+		const shown = fitLabel(g, label, (w - 20) * k, 600, 26 * k);
+		g.fillText(shown, (x + w / 2) * k, (y + (o.sub ? h * 0.4 : h / 2)) * k);
 		if (o.sub) {
 			g.font = `500 ${Math.round(18 * k)}px system-ui, sans-serif`;
 			g.fillStyle = '#fbbf24';

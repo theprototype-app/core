@@ -18,7 +18,7 @@ import { renderPaused } from './overloadGuard';
 import { sceneBatchOpen } from '../stores/sceneStore';
 import { loading as sceneLoading } from './sceneLoader';
 import { safeStorage } from './safeStorage';
-import { xrThresholds, XR_START_LEVEL, XR_FRAMEBUFFER_SCALE } from './qualityGovernorCore';
+import { xrThresholds, XR_START_LEVEL, XR_FRAMEBUFFER_SCALE, PHONE_START_LEVEL, isPhoneLike } from './qualityGovernorCore';
 import { globalRenderer } from '../stores/sceneStore';
 import { lodBias } from './lod';
 import { lodBiasFor } from './lodCore';
@@ -90,6 +90,8 @@ let snoozedUntil = 0;
 let drawGapEngaged = false;
 /** @type {string} */
 let lastReason = '';
+/** 33 G1: this device is a phone (decided once at load, see the bottom of the file) */
+let phone = false;
 
 function now() {
 	return typeof performance !== 'undefined' ? performance.now() : Date.now();
@@ -133,6 +135,9 @@ function context() {
 	// always worth governing — a missed headset frame is judder, not a slow chart, and the
 	// light-scene exemption (26-G's ruling) exists for a desktop that is merely slow
 	if (xr.active) return { metrics, profile: /** @type {'desktop'|'vr'} */ ('vr'), heavy: true };
+	// 33 G1: a phone is fill-bound — a scene "light" by the desktop's call budget still misses
+	// frames there, so it is always worth governing (the headset's rule, desktop thresholds)
+	if (phone) return { metrics, profile: /** @type {'desktop'|'vr'} */ ('desktop'), heavy: true };
 	const profile = metrics?.profile === 'vr' ? 'vr' : 'desktop';
 	return { metrics, profile: /** @type {'desktop'|'vr'} */ (profile), heavy: isHeavy(metrics, profile, get(qualityBaseline)) };
 }
@@ -409,4 +414,34 @@ export function endXRQuality(r = get(globalRenderer)) {
 /** For the suite and the stats plate. */
 export function xrQualityDebug() {
 	return { active: xr.active, hz: xr.hz, raised: xr.raised, minScale: xr.minScale, nextScale: xr.nextScale, floor: governor.floor(), thresholds: governor.thresholds(), level: governor.level() };
+}
+
+// ---- 33 G1: A PHONE ------------------------------------------------------------------------
+// Decided once: a coarse pointer, no hover, a short screen side (isPhoneLike). Auto mode then
+// starts at PHONE_START_LEVEL — shadows off, 72 % resolution, AO off — instead of drawing the
+// first seconds of every scene at a phone's full pixel ratio and waiting to be told. With auto
+// quality off nothing changes; a game's pinned Quality preset still wins (applyGameQuality).
+
+/** @returns {boolean} */
+function detectPhone() {
+	try {
+		if (typeof window === 'undefined' || typeof window.matchMedia !== 'function') return false;
+		return isPhoneLike({
+			coarse: window.matchMedia('(pointer: coarse)').matches,
+			hover: window.matchMedia('(hover: hover)').matches,
+			minSide: Math.min(window.screen?.width ?? 0, window.screen?.height ?? 0)
+		});
+	} catch {
+		return false;
+	}
+}
+phone = detectPhone();
+if (phone && get(autoQuality)) {
+	governor.setLevel(PHONE_START_LEVEL, now());
+	publish(PHONE_START_LEVEL, 'phone: a lighter start');
+}
+
+/** 33 G1: is this device judged as a phone (for the suite and the chip) */
+export function phoneQuality() {
+	return phone;
 }

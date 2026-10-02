@@ -1,5 +1,6 @@
-// 30c level design — the three GENERAL-tab levels built from the kits (Castle Courtyard,
-// Forest Clearing, Tavern Interior; defs in scripts/level-templates.cjs). For each one:
+// 30c level design — the GENERAL-tab levels built from the kits (Castle Courtyard, Forest
+// Clearing; defs in scripts/level-templates.cjs — the Tavern Interior moved to
+// level-templates-33 when its doors started to open). For each one:
 //   1. it loads from the Templates modal (the real card click) and every kit piece refills
 //      from its pack (packRefs.js), with the file a fraction of what the pieces weigh;
 //   2. Play puts you on the level's SPAWN (scenePhysics play.spawn) with the sim running;
@@ -30,7 +31,9 @@ const ONLY = (process.env.LEVELS || '').split(',').filter(Boolean);
 const PI = Math.PI;
 // an object only that level has — what the load waits for, so a check never reads the
 // PREVIOUS level while the new one is still arriving
-const MARKER = { 'castle-courtyard': 'Castle gate', 'forest-clearing': 'Footbridge', 'tavern-interior': 'Balcony stairs' };
+// 33-scenes: the Tavern Interior moved to level-templates-33 — its doors OPEN now, so its walks
+// need a door opened first (and that suite also reads its frames from the canvas)
+const MARKER = { 'castle-courtyard': 'Castle gate', 'forest-clearing': 'Footbridge' };
 const WALKS = {
 	'castle-courtyard': [
 		{ label: 'the walker cannot walk through the south wall by the gate', at: [0, 3], yaw: PI, ms: 2500, pass: (e) => e.z < 5.8, moved: (b, e) => e.z - b.z > 1.2 },
@@ -42,12 +45,6 @@ const WALKS = {
 		{ label: 'the walker cannot walk through the hut wall', at: [16, -7], yaw: PI / 2, ms: 2500, pass: (e) => e.x > 14.1, moved: (b, e) => b.x - e.x > 1 },
 		{ label: 'the walker crosses the FOOTBRIDGE over the pond neck', at: [0, -6], yaw: -PI / 2, ms: 3000, pass: (e) => e.x > 5.3, moved: (b, e) => e.x - b.x > 5 },
 		{ label: 'the walker enters the hut through its DOORWAY', at: [8, -6], yaw: -PI / 2, ms: 2200, pass: (e) => e.x > 10.6, moved: (b, e) => e.x - b.x > 2.5 }
-	],
-	'tavern-interior': [
-		{ label: 'the walker cannot walk through the front wall', at: [0, 3], yaw: PI, ms: 2000, pass: (e) => e.z < 3.9, moved: (b, e) => e.z - b.z > 0.3 },
-		{ label: 'the walker cannot walk through the east wall of the kitchen', at: [3.4, -2.6], yaw: -PI / 2, ms: 2500, pass: (e) => e.x < 5.9, moved: (b, e) => e.x - b.x > 1 },
-		{ label: 'the walker climbs the oak STAIRS to the balcony', at: [-5, 1.3], yaw: 0, ms: 4500, pass: (e) => e.feet > 2.7 && e.z < -3.2, moved: (b, e) => b.z - e.z > 3.5 },
-		{ label: 'the walker goes through the kitchen DOORWAY', at: [1.1, 1], yaw: -PI / 2, ms: 2200, pass: (e) => e.x > 2.6, moved: (b, e) => e.x - b.x > 1.5 }
 	]
 };
 

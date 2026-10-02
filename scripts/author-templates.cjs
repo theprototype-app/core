@@ -96,7 +96,10 @@
 //                    ([x,y,z] or a number) — a PACK PIECE as a reference (30c packRefs.js): written
 //                    as a stub the app refills from PACKS_BASE, so a level of 100 pieces stays small.
 //                    Kept TOP-LEVEL (physics only reads top-level objects); `physics` sets its
-//                    collider (custom compound boxes/wedges for doorways, stairs, trees)
+//                    collider (custom compound boxes/wedges for doorways, stairs, trees).
+//                    33-scenes: an item whose pack row carries a `behavior` (a door, a chest, a
+//                    lever — contract P2) is placed through importFile like an Explorer drop: an
+//                    animated import with the row's behavior + LOD group, saved as an `animRef`
 // MATERIAL (every mesh type): color, roughness (0.85), metalness (0), emissive +
 //   emissiveIntensity (1), opacity (< 1 → transparent), flatShading, side ('double' | 'back'),
 //   toon (MeshToonMaterial), physical (MeshPhysicalMaterial — also implied by any of:
@@ -2535,7 +2538,9 @@ const DEFS = [
 					const res = await fetch(url);
 					if (!res.ok) throw new Error('kit "' + o.name + '": ' + url + ' HTTP ' + res.status);
 					const uuid = await s.fileHandler.importFile(new File([await res.blob()], o.item + '.glb'), o.name, undefined, o.pos, undefined, {
-						packRef: null,
+						// the reference makes the save NAME the pack file (animatedImports animRef)
+						// instead of carrying its bytes
+						packRef: { pack: o.pack, item: o.item, path: kitFiles[o.pack][o.item] },
 						lod: placementGroupFor(url, row.lods),
 						behavior: row.behavior
 					});

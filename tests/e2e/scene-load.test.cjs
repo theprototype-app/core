@@ -18,7 +18,7 @@
 //   6. RESTORE (the real button in the restore toast) after a reload: "Restoring …" with
 //      progress, no long task > 200 ms, the castle is whole again (and the edited piece kept
 //      its edit).
-//   7. 1200 ORDINARY meshes (no kit references) build with no long task > 200 ms — the case where
+//   7. 1000 ORDINARY meshes (960 vertices each) (no kit references) build with no long task > 200 ms — the case where
 //      the time-sliced build loop itself is what keeps the window alive.
 // Counterfactuals measured (one guard removed each): autosave stubs off -> 5.2 + 6.3 red (51 MB,
 // a 1 212 ms restore task); object-list chunking off -> 1.4 + 6.3 red (307 / 328 ms).
@@ -309,16 +309,17 @@ h.run(async () => {
 	h.check(six.last?.top === pieces, `6.5 every object is back (${six.last?.top} / ${pieces})`);
 
 	// ---- 7. a scene of ORDINARY objects: the build loop itself is time-sliced --------------
-	// The kit levels are references (cheap stubs) — this is the scene they are not: 1200 plain
-	// meshes, each parsed, added and announced on its own. Unsliced, that loop is one task (300
-	// was measured too small to tell: 166 ms unsliced at CPU x6).
+	// The kit levels are references (cheap stubs) — this is the scene they are not: 1000 plain
+	// meshes with real vertex data, each parsed, added and announced on its own. Unsliced, that
+	// loop is one task (300 and 1200 bare boxes were measured too cheap to tell, 166 ms unsliced).
 	await fresh();
 	const many = await page.evaluate(() => {
 		const s = window.__stores;
 		/** @type {any} */ let g;
 		s.objectsGroup.subscribe((v) => (g = v))();
-		for (let i = 0; i < 1200; i++) {
-			const m = new s.THREE.Mesh(new s.THREE.BoxGeometry(0.4, 0.4 + (i % 7) * 0.1, 0.4), new s.THREE.MeshStandardMaterial({ color: (i * 2654435761) & 0xffffff }));
+		for (let i = 0; i < 1000; i++) {
+			// real vertex data per object (an icosphere: 960 vertices) — parsing is the per-object cost
+			const m = new s.THREE.Mesh(new s.THREE.IcosahedronGeometry(0.3, 2), new s.THREE.MeshStandardMaterial({ color: (i * 2654435761) & 0xffffff }));
 			m.name = 'box-' + i;
 			m.position.set((i % 40) - 20, 0.2, Math.floor(i / 40) - 15);
 			g.add(m);

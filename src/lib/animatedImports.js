@@ -288,6 +288,9 @@ export async function applyObjectFile(data) {
 		const spec = normalizeBehavior(data.behavior);
 		if (spec) root.userData.behavior = spec;
 		if (data.lod && typeof data.lod === 'object') root.userData.lod = data.lod;
+		// 33-scenes: the pack file these bytes are, so this copy SAVES as a reference too
+		const ref = animRefOf({ userData: { animRef: data.animRef } });
+		if (ref) root.userData.animRef = ref;
 		if (data.pos) root.position.fromArray(data.pos);
 		if (data.rot) root.rotation.set(data.rot[0], data.rot[1], data.rot[2]);
 		if (data.scale) root.scale.fromArray(data.scale);
@@ -324,7 +327,9 @@ export function sendAnimatedImport(conn, root, opts = {}) {
 		anim: state ? { clip: state.clip, playing: state.playing, speed: state.speed } : null,
 		// 33 P2: additive — absent for every import without a behavior / a LOD group
 		...behaviorFields(root.uuid),
-		...rootDataFields(root)
+		...rootDataFields(root),
+		// 33-scenes: additive — absent for every import that is not a pack piece
+		...(animRefOf(root) ? { animRef: animRefOf(root) } : {})
 	});
 }
 
@@ -378,7 +383,8 @@ export function animatedImportsSnapshot(group) {
 	for (const child of group?.children ?? []) {
 		const bytes = fileBytes.get(child.uuid);
 		if (!bytes) continue;
-		if (bytes.byteLength > MAX_SAVED_BYTES) {
+		const ref = animRefOf(child);
+		if (!ref && bytes.byteLength > MAX_SAVED_BYTES) {
 			showToast('"' + (child.name || 'Model') + '" is too large to save with its animation');
 			continue;
 		}
@@ -395,10 +401,51 @@ export function animatedImportsSnapshot(group) {
 			// and never is — a scene saved with its door open reopens shut
 			...(behaviors.has(child.uuid) ? { behavior: behaviors.get(child.uuid) } : {}),
 			...rootDataFields(child),
-			bytes: bytesToBase64(bytes)
+			// 33-scenes: a pack piece names its file (fetched back on restore, once per url);
+			// anything else carries its bytes, as always
+			...(ref ? { animRef: ref } : { bytes: bytesToBase64(bytes) })
 		});
 	}
 	return out;
+}
+
+// ---- 33-scenes: ANIMATED PACK REFERENCES ----------------------------------------------
+// A door from the interactive kit is an animated import (its mixer binds the parsed tree,
+// so it cannot be packRefs' hollow stub), and a save used to carry its whole GLB — 0.5 to
+// 1.4 MB of base64 per door, in every .tpscene and every autosave. Its bytes ARE the pack's
+// file, byte for byte (an animated import always saves its ORIGINAL bytes, whatever was
+// edited on the live tree), so the entry names the file instead: `animRef = {pack, item,
+// path}`, path relative to PACKS_BASE exactly like a kit stub's. The restore fetches it
+// (once per url, shared by every copy) and parses it as before. The wire is unchanged —
+// a peer still receives the bytes — and an entry with bytes restores as it always did.
+// Offline with the pack uncached, the piece cannot come back; that is said once per file,
+// the kit stubs' rule.
+
+/** the reference an animated pack piece saves as, or null @param {any} root */
+function animRefOf(root) {
+	const ref = root?.userData?.animRef;
+	return ref && typeof ref.path === 'string' && ref.path ? { pack: String(ref.pack ?? ''), item: String(ref.item ?? ''), path: ref.path } : null;
+}
+
+/** url -> the file's bytes (a failure is forgotten so a retry can win) @type {Map<string, Promise<ArrayBuffer>>} */
+const refFiles = new Map();
+/** paths already reported as unreachable (one toast per file, not per copy) */
+const refFailures = new Set();
+
+/** The pack file an `animRef` names, fetched once per url. @param {{pack: string, item: string, path: string}} ref */
+async function fetchAnimRef(ref) {
+	const { packRefUrl } = await import('./packRefs');
+	const url = packRefUrl(ref);
+	let job = refFiles.get(url);
+	if (!job) {
+		job = fetch(url).then((res) => {
+			if (!res.ok) throw new Error('HTTP ' + res.status + ' ' + url);
+			return res.arrayBuffer();
+		});
+		refFiles.set(url, job);
+		job.catch(() => refFiles.delete(url));
+	}
+	return job;
 }
 
 /**
@@ -417,15 +464,30 @@ export async function animatedImportsRestore(entries, replicate = true) {
 	const peer = get(peers);
 	let restored = 0;
 	for (const entry of entries ?? []) {
-		if (!entry?.bytes) continue;
+		if (!entry?.bytes && !entry?.animRef?.path) continue;
 		const stale = group?.getObjectByProperty('uuid', entry.uuid);
 		if (stale) stale.parent?.remove(stale);
 		try {
+			/** @type {ArrayBuffer} */
+			let buffer;
+			if (entry.bytes) buffer = base64ToBytes(entry.bytes);
+			else {
+				try {
+					buffer = await fetchAnimRef(entry.animRef);
+				} catch (error) {
+					if (!refFailures.has(entry.animRef.path)) {
+						refFailures.add(entry.animRef.path);
+						showToast('Could not load "' + (entry.animRef.item || entry.name || 'a pack piece') + '" — its pack is unreachable.');
+					}
+					throw error;
+				}
+			}
 			await applyObjectFile({
 				uuid: entry.uuid,
 				name: entry.name,
 				kind: entry.kind,
-				buffer: base64ToBytes(entry.bytes),
+				buffer,
+				animRef: entry.animRef,
 				pos: entry.pos,
 				rot: entry.rot,
 				scale: entry.scale,
@@ -486,7 +548,8 @@ registerHistoryKind('animimport', (entry, state) => {
 			buffer: entry.buffer,
 			pos: entry.pos,
 			behavior: entry.behavior,
-			lod: entry.lod
+			lod: entry.lod,
+			animRef: entry.animRef
 		}).then(() => {
 			const root = get(objectsGroup)?.getObjectByProperty('uuid', entry.uuid);
 			if (root && peer) sendAnimatedImport(peer, root); // peer.send broadcasts
@@ -514,6 +577,7 @@ export function recordAnimatedImport(root) {
 		pos: root.position.toArray(),
 		...(behaviors.has(root.uuid) ? { behavior: behaviors.get(root.uuid) } : {}),
 		...rootDataFields(root),
+		...(animRefOf(root) ? { animRef: animRefOf(root) } : {}),
 		before: { present: false },
 		after: { present: true }
 	});

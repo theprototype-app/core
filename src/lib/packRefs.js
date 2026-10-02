@@ -647,12 +647,40 @@ function derivedUuid(rootUuid, index) {
  * @param {any} scene */
 function instanceOf(scene) {
 	const copy = scene.clone(true);
+	/** @type {any[]} */
+	const originals = [];
+	scene.traverse((/** @type {any} */ node) => {
+		if (node.isMesh) originals.push(node);
+	});
+	let i = 0;
 	copy.traverse((/** @type {any} */ node) => {
 		if (!node.isMesh) return;
+		const original = originals[i++];
 		node.geometry = node.geometry.clone();
 		node.material = Array.isArray(node.material) ? node.material.map((/** @type {any} */ m) => m.clone()) : node.material.clone();
+		// 33-scenes: remember what this copy was cloned FROM, so kitInstancing can draw every
+		// pristine copy of one piece as ONE instanced call with the template's own geometry
+		// and material (clone() keeps the traverse order, so the i-th mesh is its original)
+		if (original && !Array.isArray(original.material))
+			kitSources.set(node, {
+				geometry: node.geometry,
+				version: node.geometry.attributes?.position?.version ?? 0,
+				material: node.material,
+				template: original,
+				sig: ''
+			});
 	});
 	return copy;
+}
+
+/** 33-scenes: copy mesh -> {geometry, version, material} it had when it was cloned, and the
+ * TEMPLATE mesh it was cloned from (kitInstancing.js). A WeakMap: a removed piece frees it.
+ * @type {WeakMap<any, {geometry: any, version: number, material: any, template: any, sig: string}>} */
+const kitSources = new WeakMap();
+
+/** The kit source record of a placed pack-piece mesh, or null (kitInstancing.js) @param {any} mesh */
+export function kitMeshSource(mesh) {
+	return kitSources.get(mesh) ?? null;
 }
 
 /**

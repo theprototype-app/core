@@ -32,6 +32,7 @@
 	import { shadowQuality } from '$lib/lightParams';
 	import { autoQuality } from '$lib/qualityGovernor';
 	import { lodEnabled } from '$lib/lod';
+	import { kitInstancingEnabled } from '$lib/kitInstancing';
 	import { myHandModel, setMyHandModel } from '$lib/handModels';
 	import { explorerItems } from '$lib/explorer';
 	import { pingColor, pingSound } from '$lib/ping';
@@ -1066,6 +1067,10 @@
 					<SettingRow name="Simplify distant models">
 						<svelte:fragment slot="control"><Checkbox id="lod-enabled" bind:checked={$lodEnabled} /></svelte:fragment>
 						Draw a lighter version of a dense model (a few thousand triangles or more) when it is far from you, built once per model on THIS machine. Nothing in the scene changes — the full model is what is saved, sent and edited
+					</SettingRow>
+					<SettingRow name="Draw repeated kit pieces together">
+						<svelte:fragment slot="control"><Checkbox id="kit-instancing" bind:checked={$kitInstancingEnabled} /></svelte:fragment>
+						Every copy of one pack piece (a wall, a floor tile, a battlement) is drawn in one go instead of one by one, which is what keeps a level built from the kits inside a headset's budget. Only on THIS machine; an edited or selected piece is always drawn on its own
 					</SettingRow>
 					<SettingRow name="Simulation controls">
 						<svelte:fragment slot="control"><Checkbox bind:checked={$showSimControls} /></svelte:fragment>

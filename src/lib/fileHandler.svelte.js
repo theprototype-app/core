@@ -730,6 +730,11 @@ export async function importFile(file, name, ext, position, extras, opts = {}) {
 		}
 		// 33 P2: a pack item's `behavior` (its row) wins over one in the file's own extras
 		if (opts.behavior && parsed.animated) parsed.root.userData.behavior = opts.behavior;
+		// 33-scenes: an ANIMATED pack piece (a door, a chest) cannot be a kit stub — the mixer
+		// binds the parsed tree — but its bytes ARE the pack's file, so a save names that file
+		// instead of carrying it (animatedImports `animRef`; the wire still sends the bytes)
+		if (opts.packRef?.path && parsed.animated)
+			parsed.root.userData.animRef = { pack: opts.packRef.pack, item: opts.packRef.item, path: opts.packRef.path };
 		if (parsed.animated)
 			addAnimatedImport(parsed.animated.result, parsed.animated.buffer, label, parsed.animated.kind, position);
 		else addImported(parsed.root, label, position);

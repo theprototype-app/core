@@ -134,6 +134,19 @@ export function registerLodPass(pass) {
 	installHooks();
 }
 
+// 33-scenes: a pass that runs AFTER every level swap of a render call (kitInstancing.js
+// batches pristine kit pieces into instanced draws, and it must see the geometry each mesh
+// will actually draw with — its LOD level, not its source). Its `after` runs FIRST on the
+// way out, so every bracket unwinds in reverse.
+/** @typedef {{before: (camera: any) => void, after: () => void}} BatchPass */
+/** @type {BatchPass | null} */
+let batchPass = null;
+/** @param {BatchPass} pass */
+export function registerBatchPass(pass) {
+	batchPass = pass;
+	installHooks();
+}
+
 /** "Show LOD level": every LOD-managed mesh drawn in its level's colour. LOCAL, off. */
 export const lodShowLevels = writable(false);
 let overlay = false;
@@ -500,7 +513,14 @@ function restoreSwapped() {
 function beforeRender(renderer, scene, camera) {
 	prevBefore?.(renderer, scene, camera);
 	if (renderDepth++ > 0) return; // a nested render (a probe inside a pass) keeps the outer swap
+	batchPass?.after(); // a render that threw last time left members hidden: never keep that
 	restoreSwapped(); // a render that threw last time left a swap behind: never keep it
+	swapLevels(camera);
+	if (batchPass && camera?.matrixWorld) batchPass.before(camera);
+}
+
+/** The level swaps of one render call (beforeRender's body). @param {any} camera */
+function swapLevels(camera) {
 	stats.drawnCoarse = 0;
 	stats.trianglesSaved = 0;
 	if (groupPass && camera?.matrixWorld) groupPass.before(camera, bias, enabled, overlay);
@@ -575,6 +595,7 @@ function beforeRender(renderer, scene, camera) {
 function afterRender(...args) {
 	if (--renderDepth > 0) return;
 	renderDepth = 0;
+	batchPass?.after();
 	groupPass?.after();
 	restoreSwapped();
 	prevAfter?.(...args);
@@ -592,6 +613,7 @@ function installHooks() {
 }
 
 function uninstallHooks() {
+	batchPass?.after();
 	restoreSwapped();
 	if (!hookedScene) return;
 	if (hookedScene.onBeforeRender === beforeRender) hookedScene.onBeforeRender = prevBefore ?? THREE.Object3D.prototype.onBeforeRender;

@@ -22,8 +22,9 @@ function itemsOf(pack) {
 const kits = (def) => def.objects.filter((/** @type {any} */ o) => o.type === 'kit');
 
 describe('level templates', () => {
-	it('are three general-tab templates kept out of the offline seed', () => {
-		expect(LEVEL_DEFS.map((/** @type {any} */ d) => d.slug)).toEqual(['castle-courtyard', 'forest-clearing', 'tavern-interior']);
+	it('are five general-tab templates kept out of the offline seed', () => {
+		// 33-scenes added the Wizard's Tower and the Market Town Square
+		expect(LEVEL_DEFS.map((/** @type {any} */ d) => d.slug)).toEqual(['castle-courtyard', 'forest-clearing', 'tavern-interior', 'wizards-tower', 'market-square']);
 		for (const def of LEVEL_DEFS) {
 			expect(def.kind).toBe('template');
 			expect(def.seed).toBe(false);

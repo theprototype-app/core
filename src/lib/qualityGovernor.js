@@ -16,6 +16,7 @@ import {
 } from './sceneBudget';
 import { renderPaused } from './overloadGuard';
 import { sceneBatchOpen } from '../stores/sceneStore';
+import { loading as sceneLoading } from './sceneLoader';
 import { safeStorage } from './safeStorage';
 import { xrThresholds, XR_START_LEVEL, XR_FRAMEBUFFER_SCALE } from './qualityGovernorCore';
 import { globalRenderer } from '../stores/sceneStore';
@@ -156,6 +157,14 @@ export function noteFrameForQuality(ms) {
 	}
 	// paused by 26-G: no frames are being drawn, so none of these describe drawing
 	if (get(renderPaused)) {
+		governor.forget();
+		return;
+	}
+	// 33 L1: a SCENE LOAD's frames describe the load, not the scene — they are slow because
+	// programs link and pieces arrive, and the governor answered them by dropping the pixel
+	// ratio, whose `setSize` then reallocated every buffer: measured as the single longest task
+	// of a phone Restore (432 ms of setSize at CPU x6). It judges the scene once it is loaded.
+	if (sceneLoading()) {
 		governor.forget();
 		return;
 	}
@@ -361,6 +370,11 @@ export function startXRQuality(session, hzOverride) {
 /** One XR frame interval. Exported for the suite. @param {number} ms @param {number} [t] */
 export function noteXRFrame(ms, t = now()) {
 	if (!xr.active) return;
+	// a scene load (a level hop in the headset) is not the scene being slow — see above
+	if (sceneLoading()) {
+		governor.forget();
+		return;
+	}
 	governor.noteFrame(ms, t);
 	if (t - lastDecideAt < DECIDE_EVERY_MS) return;
 	lastDecideAt = t;

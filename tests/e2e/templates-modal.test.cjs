@@ -228,18 +228,19 @@ h.run(async () => {
 		`backup stashed + imported slot kept (${sessionNames.join(' | ')})`
 	);
 
-	// -- 7: blank card = the shared clear-scene confirm flow
+	// -- 7: blank card = a NEW scene (33 L2/L3: the "Start a blank scene?" modal, which resets
+	// the game setup and unloads the scene's modules too)
 	await A.page.locator('#logo-menu').click();
 	await A.page.waitForTimeout(300);
 	await A.page.locator('#open-templates').click();
 	await A.page.waitForTimeout(400);
 	await A.page.locator('#template-blank').click();
 	await h.eventually(
-		() => A.page.getByText('Clear the scene for everyone?').isVisible(),
+		() => A.page.locator('#confirm-blank-scene').isVisible(),
 		(v) => v === true,
-		'Blank asks the clear-scene confirm'
+		'Blank asks the start-a-blank-scene confirm'
 	);
-	await A.page.getByRole('button', { name: 'Clear', exact: true }).click();
+	await A.page.locator('#confirm-dialog-blank').click();
 	await h.eventually(
 		() =>
 			A.page.evaluate(() => {

@@ -96,7 +96,28 @@
 			}
 		});
 
+		/** 34 R2 kit pieces: each piece's FIRST event listener (`on<Event>`), counted in the kit */
+		const kitFixtures = {};
+		const kitRt = M.kitRuntime;
+		for (const spec of kitRt ? kitRt.kit.specs() : []) {
+			const ev = spec.calls.find((c) => c.kind === 'event');
+			if (!ev) continue;
+			const method = 'on' + ev.name.charAt(0).toUpperCase() + ev.name.slice(1);
+			const key = spec.piece + '.' + ev.name;
+			// the entity pieces keep their listeners in the entities runtime (kit/entityHub.js)
+			const count = () => kitRt.kit.listenerCount(key) + (kitRt.kitEntitiesRuntime?.()?.listenerCount?.() ?? 0);
+			kitFixtures['kit.' + spec.piece] = {
+				needs: ['kitRuntime'],
+				call(api, t) {
+					t.data.before = count();
+					api.kit[spec.piece][method](() => {});
+				},
+				present: (t) => count() > t.data.before
+			};
+		}
+
 		return {
+			...kitFixtures,
 			// ---- nodes ---------------------------------------------------------------------
 			registerNodeGroup: {
 				call: (api, t) => api.registerNodeGroup({ group: 'LC ' + t.id, items: [{ type: 'lc-node-' + t.id, label: 'x' }] }),

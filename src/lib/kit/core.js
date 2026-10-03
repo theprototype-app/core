@@ -378,6 +378,10 @@ export function createKit(host, pieces) {
 		onChange,
 		stats,
 		pending,
+		/** live listeners on `piece.event` (every key when none is named) — the lifecycle contract
+		 * (T2) and 34-behaviours read it @param {string} [key] */
+		listenerCount: (key) =>
+			key ? listeners.get(key)?.size ?? 0 : [...listeners.values()].reduce((n, set) => n + set.size, 0),
 		/** the current document (read-only by convention) */
 		doc: () => doc,
 		/** @param {string} piece */

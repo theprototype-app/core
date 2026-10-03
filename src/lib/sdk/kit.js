@@ -10,6 +10,7 @@
 // the game singleton) and survives an unload.
 
 import { kit } from '../kit/runtime.js';
+import { KIT_PIECES } from '../kit/index.js';
 
 /** @param {import('./context.js').SdkContext} ctx */
 export function sdkKit(ctx) {
@@ -23,3 +24,8 @@ export function sdkKit(ctx) {
 		kit: kit.api({ onDispose: track, moduleId: ctx.moduleId })
 	};
 }
+
+/** 34 R6 (T2): what each member does to the module's lifecycle — see SURFACE_KINDS in
+ * sdk/lifecycle.js. Each piece is one member (the walk stops at depth 1): every piece's
+ * `on<Event>` and tracked extras REGISTER, so each piece has a teardown fixture. */
+sdkKit.surface = Object.fromEntries(KIT_PIECES.map((row) => ['kit.' + row.name, 'registers']));

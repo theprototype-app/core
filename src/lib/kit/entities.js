@@ -736,6 +736,8 @@ export function createKitEntities(host, opts = {}) {
 		spawner,
 		health,
 		mover,
+		/** live listeners (every event) — the lifecycle contract (T2) reads it */
+		listenerCount: () => Object.values(listeners).reduce((n, set) => n + set.size, 0),
 		/** the flat code face this lane's harness and the debug hook use */
 		api: {
 			spawner: {

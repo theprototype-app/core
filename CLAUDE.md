@@ -2500,6 +2500,32 @@ loadable play content. Everything a user does must be visible to connected peers
   General-tab levels per viewpoint. The levels live in `scripts/templates/<slug>.cjs`, listed by `scripts/level-templates.cjs` (six since 33: Castle, Forest,
   Tavern, Wizard's Tower, Market Square, and the kit Architecture shell — whose greybox stays the OFFLINE seed via the
   author-templates `remote: false` def field).
+- **ROADMAP 34 — THE GAME KIT, part 1 (34-kit-core, contract T3)** (`src/lib/kit/`, `api.kit`, the logic sim). ONE
+  replicated kit DOCUMENT `{rev, at, by, rids, slices: {piece: slice}}` written ONLY by the authority
+  (`kit/authority.js` `pickAuthority`: host, else physics initiator, else smallest OPEN peer id — the app passes no
+  host, so it is the peer Towers/football already pick); an action elsewhere is a `kitreq` the authority applies
+  ONCE (a request id kept in a 64-entry `rids` window, re-sent every 1.2 s until a document acknowledges it, adopted
+  by the NEXT authority when the host leaves). Latest-wins on the session-clock `at`; a scene clear resets the kit
+  on every peer, stamped fresh so a stale handshake document loses. Events (`ev` on the `kit` message) fire every
+  peer's listeners; the node pulse (`fireModuleTrigger kit-<piece>-<event>`) only where witnessed; a spec call
+  `local: true` stays on its peer (`emitLocal`, replicate:false). Timers (an intro, a limit, a respawn) are DERIVED
+  from document stamps and turned into ops by the authority's tick. Wire types `kit`/`kitreq` (wireValidate rows,
+  ROOM_SCOPED, handshake + pushWorldState push). **ONE SPEC PER PIECE** (`<piece>.spec.js`) generates BOTH
+  `api.kit.<piece>` (`kitApi`: events -> `on<Name>`, `tracked` extras / `owned` calls journal teardown = the T2
+  seam) AND the node group (`kitNodeItems`, type `kit-<piece>-<name>`, AnimationNode cards, nodeCatalog groups
+  `Kit: …`, docs from the spec `doc`). A kit ACTION node acts on its stamp edge inside updateGameNodes with request
+  id `node:<id>:<stamp>`, so a press seen by every peer is ONE change; an unwired object input means the graph's
+  owner. Pieces: `rules` (reach/jump/bounds laid over the scene play block by resolvePlaySettings, so every grab
+  path + the VR teleport/jump obey; `kitCheckGrab` = reach + game vetoes asked BEFORE the grab by playInteract and
+  the VR grip), `round` (menu/intro/playing/paused/won/lost/results; drives AND adopts core's gameState; restart
+  while playing; the pause menu's Restart), `levels` (code table, unlock/stars rules, per-DEVICE progress or a
+  game's own `store`, session results, modes keep the level, feeds the K3 picker), `score` (once, per-player,
+  device best per game/level, leaderboard), `pickups` (once, derived respawn, grants into score/round, TOUCH by
+  the player's own body ~10 Hz). 34-kit-entities appends spawner/health/mover rows. Towers is PORTED (its levels,
+  round, score, reach/jump on the kit, its own save key kept). **THE LOGIC SIM** (`tests/unit/sim/logicSim.js`):
+  N fake peers, a fake clock, an in-memory wire that runs every message through the real `validateWireMessage`
+  (a refusal fails the sim), per-peer fake gameState + storage, join/leave/partition — rule proofs in ms. Suites:
+  vitest `sim/*` (~110), e2e `kit-core` (two peers + a joiner, the real wire), towers-levels/game-towers.
 - **ROADMAP 33 — EDITOR UI + GAMES (33-editor-ui, 33-games, 33-untangle-core)**: the default Controls bar is
   Move/Rotate/Scale, Interact, Play, list, nodes, Explorer, Animation (an untouched stored default MIGRATES, a
   customised bar wins); the Interact toggle's ring is keyboard-only (`focus-visible`) and the well halves answer

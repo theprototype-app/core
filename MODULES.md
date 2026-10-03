@@ -777,6 +777,63 @@ api.game.closeMenu?.();
 if (api.game.menuOpen?.()) pauseMyTimers();
 ```
 
+### The game kit: rules, round, levels, score, pickups — `api.kit` (1.20, roadmap 34)
+
+The logic every game used to re-build, done ONCE in core. Each piece is `api.kit.<piece>` AND a
+**Kit: <Piece>** node group, both generated from one spec (`src/lib/kit/<piece>.spec.js`), so a
+graph author and a code author get the same behaviour and the same words.
+
+**The model — one writer.** The kit's shared state is ONE document that only the **authority**
+peer changes (the physics initiator, else the lowest peer id — the peer Towers and Football
+already pick). Call an action on ANY peer: elsewhere it is a request the authority applies,
+exactly once. A kit **node** on a replicated pulse is asked by every peer with the same id, so
+one press is one change (the `setvariable add` double count cannot happen). Reads are
+replicated values; `on<Event>(fn)` fires on EVERY peer (play your sound there) and returns
+`off`; registrations (`levels.define`, `pickups.register`, `rules.onGrabRequest`) are torn down
+with your module. Late joiners get the document in the handshake and hear no history. A scene
+clear resets the kit.
+
+```js
+const { round, levels, score, pickups, rules } = api.kit;
+rules.set({ reach: 1.3, jump: 1.0 });                 // every grab path + the VR jump obey
+rules.onGrabRequest((req) => { if (req.name === 'Star' && !starFree) req.refuse('Build to the ring first'); });
+levels.define({ id: 'mygame', list: [{ id: '1', label: 'Easy', par: { time: 60 } }, { id: '2', label: 'Hard' }] });
+round.configure(3, 120, 'lose', 2);                   // 3 s intro, 2 min limit, lose on time, 2 s outro
+round.onGo(() => api.announce('Go!'));
+pickups.register({ id: gem.uuid, score: 10, respawn: 8, grants: { time: 5 } });
+pickups.onCollected(({ by }) => api.playSound('coin'));
+round.onWon(() => levels.complete(true, score.total()));   // stars, unlocks, saved per device
+levels.select('1'); round.start();
+```
+
+| piece | actions | reads | events |
+|---|---|---|---|
+| `rules` | `setReach(m)` `setJump(m)` `setBounds(min, max)` `clearRules()` · `set({reach, jump, bounds})` | `reach()` `jump()` `current()` `inside(p)` `clamp(p)` `checkGrab(req)` | `refused` (local) · `onGrabRequest(fn)` veto |
+| `round` | `configure(intro, limit, 'lose'\|'win', outro)` `start()` `restart()` `pause()` `resume()` `win(reason)` `lose(reason)` `extend(s)` `toMenu()` | `phase()` `playing()` `elapsed()` `remaining()` `countdown()` `number()` `outcome()` `state()` `running()` | `started` `go` `paused` `resumed` `won` `lost` `results` `menu` |
+| `levels` | `select(id)` `next()` `complete(won, score, time, level?, detail?)` `setMode(m)` · `define({id, list, unlock?, stars?, store?, merge?})` | `current()` `currentLabel()` `index()` `starsOf(id)` `unlocked(id)` `totalStars()` `mode()` `table()` `progress()` `resumeLevel()` | `selected` `completed` `unlockedNext` |
+| `score` | `add(n, player?)` `set(n, player?)` `reset()` · `configure({autoReset})` `useGame(id)` | `total()` `mine()` `best()` `leader()` `of(id)` `leaderboard(n)` `results()` | `scored` `newBest` (local) |
+| `pickups` | `collect(id, score?, respawn?)` `resetPickups()` · `register({id, score, respawn, radius, grants})` | `available(id)` `taken()` `left()` `takenBy(id)` | `collected` `respawned` `allCollected` |
+
+- **`round` drives core's game singleton** (`intro`/`playing` → playing with a fresh core round,
+  so perRound content resets; `paused`; `won`/`lost` → over with the reason as outcome; `menu`),
+  so HUD `showWhile` screens and the pause menu keep working, and it ADOPTS a change it did not
+  make (a Set Game State node pausing). `restart()` works while playing; the pause menu's Restart
+  restarts a kit round by itself.
+- **`levels`**: progress is per DEVICE (every peer saves what it saw earned); unlocks read it
+  merged with this session's results; `setMode` keeps the current level (progress belongs to the
+  level, not the mode). The table feeds the pause menu's level picker — do not also call
+  `api.game.levels`. `store: {get, set}` keeps your own save key (Towers keeps
+  `tp:mod:towers:progress`).
+- **`score`** credits the asking peer unless a player is named (a shared pulse is asked by every
+  peer — name the player, or use a per-player trigger, when it matters who). A new kit round
+  zeroes it; the device best is checked when a round ends.
+- **`pickups`**: TOUCH is built in — a player walking into a registered pickup takes it (their
+  own body, ~10x a second, in Interact/Play). A `Kit: Pickups ▸ Collect pickup` node with no
+  object wired takes its own graph's object.
+- Prove your rules on the **headless logic sim** (`tests/unit/sim/logicSim.js`: N fake peers, a
+  fake clock, the real wire validator) — `createSim({peers: ['a', 'b']})`, then
+  `sim.peer('a').kit.impls.round.start(); sim.advance(3000)` — milliseconds, not e2e minutes.
+
 ### Physics (P-A)
 
 All mutations are INITIATOR-ONLY — the peer that started the simulation steps
@@ -984,6 +1041,10 @@ small graph; the module is the rules. Worth copying:
 - **Progress on this device** with `api.storage` (stars, unlocks — never replicated).
 - **The shell's level picker, help and restart** (`api.game.levels`, `setHelp`, `onRestart`),
   feature-detected so the module also runs on an app without them.
+- **Since 1.20 it runs on the game kit** (`api.kit`): its levels, unlock chain, stars and saved
+  progress are `kit.levels` (with Towers' own store and star rule), its round is `kit.round`
+  (Restart while playing), its tallest tower is the round's `kit.score`, and its reach + jump
+  are `kit.rules` — what stays in the module is Towers itself.
 
 ## Manager, dev mode & gallery (17-A2/A3)
 

@@ -149,6 +149,23 @@ function walk(code, start, visit) {
 }
 
 /**
+ * 34 D3: `code` with everything that is NOT real code — strings, templates, comments,
+ * regex literals — blanked to spaces, newlines kept, so every offset and line number still
+ * points into the original. The scanner above is the one place that tells code from a
+ * string; the script lint (`scriptLint.js`) reads this instead of growing a second one.
+ * Null when the source is malformed (an unterminated string or comment).
+ * @param {string} code @returns {string | null}
+ */
+export function codeMask(code) {
+	const src = String(code ?? '');
+	const out = src.replace(/[^\n]/g, ' ').split('');
+	const bad = walk(src, 0, (i, ch) => {
+		out[i] = ch;
+	});
+	return bad === null ? null : out.join('');
+}
+
+/**
  * Index of the bracket matching the one at `open`, or -1. Strings and comments inside are
  * skipped, which is the entire point of doing this with the scanner rather than a regex.
  * @param {string} code @param {number} open

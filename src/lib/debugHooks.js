@@ -243,7 +243,9 @@ export const DEBUG_HOOKS = [
 	['sceneLoader', () => import('./sceneLoader')],
 	['sceneSwitch', () => import('./sceneSwitch')],
 	['sceneScope', () => import('./sceneScope')],
-	['kitInstancing', () => import('./kitInstancing')]
+	['kitInstancing', () => import('./kitInstancing')],
+	['scriptSockets', () => import('./scriptSockets')],
+	['scriptLint', () => import('./scriptLint')]
 ];
 
 /** hooks published at runtime through registerDebugHook @type {Record<string, any>} */

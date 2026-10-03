@@ -60,6 +60,7 @@ export const NODE_DOCS = {
 	hudrows: "Appends or replaces rows in a HUD rows element from a pulse - a log, a chat, a scoreboard feed.",
 	hudinput: "Reads what the player typed into a HUD input element as a value.",
 	hudset: "Writes a value into a HUD input element when a pulse arrives - to prefill, clear or correct it.",
+	script: "Your own JavaScript - an effect that moves its object every frame, or (with declared typed inputs and outputs) a small pure function whose return feeds other nodes.",
 	math: "Combines two numbers with an arithmetic operation.",
 	compare: "Compares two numbers and outputs true or false.",
 	gate: "Boolean logic on two inputs - AND, OR, NOT, XOR.",

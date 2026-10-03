@@ -10,7 +10,8 @@ import { animationTypes } from './nodeCatalog';
 import { isIndexValuedKind } from './hudKinds';
 import { moduleEffects, moduleFrameTasks } from './moduleSDK';
 import { moduleValueNodes, moduleNodeInputs, evalModuleValueNode } from './moduleNodeIO';
-import { runScript } from './scriptRuntime';
+import { runScript, runScriptValue } from './scriptRuntime';
+import { scriptInputs, scriptOutputs, isScriptValue, coerceInput } from './scriptIO'; // 34 D3: a leaf
 import { findNodeDef } from './customNodes';
 import { updateSounds } from './soundRuntime';
 import { colliderSpecOf } from './colliderSpec'; // B6: pure THREE leaf
@@ -2151,6 +2152,30 @@ function pointOf(v, ctx) {
 	return null;
 }
 
+// --- 34 D3: script node v2 -----------------------------------------------------
+/** per node: the tick time + data its value was computed for @type {Map<string, {time: number, data: any, value: any}>} */
+const scriptValueMemo = new Map();
+
+/**
+ * A declared input's value as the script sees it. An OBJECT socket carries a uuid on the
+ * wire; the script gets a read-only VIEW instead — {uuid, name, position} — so a reach rule
+ * reads `inputs.piece.position` rather than reaching into the scene (which the lint forbids
+ * and which a value script has no handle on anyway).
+ * @param {{name: string, type: string}} socket @param {any} raw @param {any} ctx
+ */
+function scriptInputValue(socket, raw, ctx) {
+	if (socket.type !== 'object') return coerceInput(socket.type, raw);
+	const uuid = typeof raw === 'string' ? raw : null;
+	if (!uuid) return null;
+	const object = sceneObjects?.getObjectByProperty('uuid', uuid);
+	const p = ctx?.pos?.(uuid);
+	return Object.freeze({
+		uuid,
+		name: object?.name ?? '',
+		position: p ? [p.x, p.y, p.z] : [0, 0, 0]
+	});
+}
+
 // --- 21-F3's collectible chain walk (edgeIndex / collectibleLatches / collectibleStats /
 // collectibleCountsFor) MOVED to the collectible module in R3a: it was the one core
 // reader that knew the recipe's chain shape, and the module owns that shape now. The
@@ -2687,6 +2712,25 @@ function evalNodeBody(node, allNodes, allEdges, time, seen, ctx) {
 			// the embedded node exposes the target flow's outputs as named handles,
 			// computed at the END of the previous tick (one-frame latency)
 			return { __handles: graphOutputs[d.flowUuid] ?? {} };
+		case 'script': {
+			// 34 D3: a Script node with declared OUTPUTS is a value node — a pure function of
+			// its declared inputs and the synced clock, read through a handle map exactly like
+			// objectflow's. Without outputs it is an effect (applyAnimation) and has no value.
+			const outputs = scriptOutputs(d);
+			if (!outputs.length) return undefined;
+			// one run per node per tick: the card readout, and every consumer of every
+			// handle, would otherwise each run the code again at the same instant
+			const memo = scriptValueMemo.get(node.id);
+			if (memo && memo.time === time && memo.data === node.data) return memo.value;
+			/** @type {Record<string, any>} */
+			const inputs = {};
+			for (const socket of scriptInputs(d) ?? [])
+				inputs[socket.name] = scriptInputValue(socket, input(socket.name, socket.value), ctx);
+			const value = runScriptValue(node.id, d.code ?? '', inputs, time, outputs);
+			if (scriptValueMemo.size > 500) scriptValueMemo.clear(); // deleted nodes' entries
+			scriptValueMemo.set(node.id, { time, data: node.data, value });
+			return value;
+		}
 		default: {
 			// A1: a module VALUE node. Pure function of (data, time) — the script-node
 			// rule — so every peer computes the same value from the replicated node data
@@ -2728,7 +2772,8 @@ export function resolveInputs(node, allNodes, allEdges, time, ctx = null) {
 		if (
 			!valueTypes.includes(source.type) &&
 			!sourceValueTypes.includes(source.type) &&
-			!moduleValueNodes[source.type]
+			!moduleValueNodes[source.type] &&
+			!(source.type === 'script' && isScriptValue(source.data)) // 34 D3
 		)
 			continue;
 		const value = unwrapHandle(evalNode(source, allNodes, allEdges, time, new Set(), ctx), edge);
@@ -3173,7 +3218,16 @@ export function fireObjectExit(uuid, otherUuid) {
 function applyAnimation(object, base, anim, time, ctx) {
 	const data = resolveInputs(anim, nodes, edges, time, ctx);
 	if (anim.type === 'script') {
-		runScript(anim.id, data.code ?? '', object, base, data, time);
+		// 34 D3: declared inputs = a v2 effect — `inputs` beside `data`, linted
+		const declared = scriptInputs(data);
+		if (!declared) runScript(anim.id, data.code ?? '', object, base, data, time);
+		else {
+			/** @type {Record<string, any>} */
+			const inputs = {};
+			for (const socket of declared)
+				inputs[socket.name] = scriptInputValue(socket, data[socket.name] ?? socket.value, ctx);
+			runScript(anim.id, data.code ?? '', object, base, data, time, inputs);
+		}
 		return;
 	}
 	if (anim.type === 'customnode') {
@@ -3453,7 +3507,7 @@ function runTick(now) {
 	const isEffectNode = (node) =>
 		(animationTypes.includes(node.type) ||
 			!!moduleEffects[node.type] ||
-			node.type === 'script' ||
+			(node.type === 'script' && !isScriptValue(node.data)) || // 34 D3: outputs = a value
 			node.type === 'customnode') &&
 		!dormant(node);
 	if (sceneObjects) {
@@ -3641,8 +3695,10 @@ function runTick(now) {
 			// H5: objectflow returns a handle MAP, not a scalar — no card readout
 			// A1: a module value node gets the same on-card live readout for free
 			if (
-				(valueTypes.includes(node.type) || moduleValueNodes[node.type]) &&
-				node.type !== 'objectflow'
+				((valueTypes.includes(node.type) || moduleValueNodes[node.type]) &&
+					node.type !== 'objectflow') ||
+				// 34 D3: a value script's card shows its outputs (a handle map, read per name)
+				(node.type === 'script' && isScriptValue(node.data))
 			)
 				values[node.id] = evalNode(node, nodes, edges, time, new Set(), ctx);
 		}

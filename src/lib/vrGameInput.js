@@ -33,6 +33,7 @@ import { isModuleTopLevel } from './moduleWorld';
 import { registerVRFrameHook, registerVRTriggerHooks, registerPanelGroupProvider, controllerIndexFor, hapticPattern, triggerClaimed, withRayCamera } from './vrControls';
 // P3 (C2): the game UI in VR — the panel, the wrist card, the strip, the banner
 import { vrPerfStripFrame, hideVrPerfStrip } from './vrPerfStrip';
+import { vrRecIndicatorFrame, hideVrRecIndicator } from './vrRecIndicator';
 import { vrGamePanelFrame, panelTargetAlong, panelHover, pressPanelTarget, pokeFrame, uAcross, vrGameSurface, hideVrGamePanel } from './vrGamePanel';
 
 const _mat = new THREE.Matrix4();
@@ -396,6 +397,7 @@ export function startVrGameInput() {
 				if (presenting) {
 					hideVrGamePanel();
 					hideVrPerfStrip();
+					hideVrRecIndicator();
 				}
 				presenting = false;
 				return;
@@ -403,6 +405,7 @@ export function startVrGameInput() {
 			presenting = true;
 			vrGamePanelFrame({ hands: [handPose('left'), null] });
 			vrPerfStripFrame(); // 33 Q1: Settings' "Show FPS + draw calls", every mode
+			vrRecIndicatorFrame(); // 34 PF: "● REC" / "◉ LIVE" while recording or a desktop peer watches
 			for (const index of [0, 1]) {
 				const ray = controllerRayOf(index);
 				// the laser on the board wins over the world behind it

@@ -115,9 +115,10 @@ h.run(async () => {
 	const entry = await page.evaluate(() => {
 		const radial = window.__stores.vrRadialMenu;
 		const e = radial.findMenuEntry('moment');
-		return { label: e?.label, closes: e?.closes, action: typeof e?.action, ring: radial.ringEntries('system').map((x) => x.id) };
+		return { label: e?.label, closes: e?.closes, action: typeof e?.action, ring: radial.ringEntries('profile').map((x) => x.id), system: radial.ringEntries('system').map((x) => x.id) };
 	});
-	h.check(entry.label === 'Report moment' && entry.closes === true && entry.action === 'function' && entry.ring.includes('moment'), `3.2 the VR menu's System ring has "Report moment" (${entry.ring.join(', ')})`);
+	// 34 profiler-xr: "Report moment" lives in System ▸ Profile ▸ beside Record / Stop
+	h.check(entry.label === 'Report moment' && entry.closes === true && entry.action === 'function' && entry.ring.includes('moment') && entry.system.includes('nav:profile'), `3.2 the VR menu's System ▸ Profile ring has "Report moment" (${entry.ring.join(', ')})`);
 
 	// ---- 4. the eye screenshot in a (simulated) headset
 	const eye = await page.evaluate(async () => {

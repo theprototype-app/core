@@ -25,6 +25,7 @@ export const DEBUG_HOOKS = [
 	['perfBeacon', () => import('./perf/beacon')],
 	['staleModules', () => import('./staleModules')],
 	['perfMoment', () => import('./perf/moment')],
+	['vrRecIndicator', () => import('./vrRecIndicator')],
 	['vrControls', () => import('./vrControls')],
 	['autosave', () => import('./autosave')],
 	['voiceChat', () => import('./voiceChat')],

@@ -30,7 +30,7 @@ import { gameId } from '../gameSettings';
 import { idbGet, idbPut, idbDelete } from '../idb';
 import { APP_VERSION, COMMIT_SHA, IS_DEV } from '../version.js';
 import { createTrack } from './perfTrack.js';
-import { onPerfMark, perfContext } from './perfMarks.js';
+import { onPerfMark, perfContext, registerPerfContext } from './perfMarks.js';
 import { STALL_MS, MOMENT_MS, TPPROF_VERSION, CPU_PHASES, encodeTpprof, decodeTpprof, summarize, windowOf } from './tpprof.js';
 
 /** the light ring: ~32 s at 144 Hz, ~64 s at 72 Hz */
@@ -204,6 +204,9 @@ export function startPerfRecorder() {
 	started = true;
 	offs.push(registerMeterFrame(onFrame));
 	offs.push(onPerfMark((kind, detail) => noteEvent(kind, detail)));
+	// 34 PF (profiler-xr): the VR menu's Record/Stop labels and the headset's recording
+	// indicator read this through the leaf — the VR import family never imports the recorder
+	offs.push(registerPerfContext('recording', recordingInfo));
 	offs.push(
 		registerLongTaskObserver((ms) => {
 			lastLongTask = { at: now(), ms };

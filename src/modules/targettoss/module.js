@@ -776,6 +776,8 @@ export default {
 				}
 				return n;
 			},
+			/** a suite's short clock: the running stage's limit becomes `seconds` (the kit's time-up) */
+			shortenClock: (/** @type {number} */ seconds) => kit.round.configure(2, seconds, 'lose', 2),
 			finishNow: (/** @type {boolean} */ won) => {
 				const s = stage();
 				if (s) finish(s, won !== false);

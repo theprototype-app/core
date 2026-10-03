@@ -123,6 +123,13 @@ h.run(async () => {
 	await h.eventually(() => tt('vars').then((v) => Number(v.ttStage)), (n) => n === 2, 'Next stage opens stage 2 (unlocked by the win)', 8000);
 	await h.eventually(() => tt('cans').then((c) => c.length), (n) => n === 12, 'stage 2 deals two pyramids (12 cans)', 8000);
 
+	// 5a — the clock running out LOSES the stage: results say so, no stars
+	await page.waitForTimeout(2600);
+	await tt('shortenClock', [1]);
+	await h.eventually(() => snap().then((v) => v.state), (v) => v === 'over', 'the clock runs out -> the stage ends', 8000);
+	await h.eventually(() => tt('vars').then((v) => Number(v.ttStatus)), (n) => n === 3, 'recorded as lost', 4000);
+	await h.eventually(hud, (t) => /Time is up/.test(t) && /☆☆☆/.test(t) && /left standing/.test(t), 'the results: Time is up, no stars, what was left standing', 6000);
+
 	// 5b — the moving targets: stage 3 swingers, stage 4 pop-ups, stage 5 the cart, each hit by a
 	// ball thrown from just in front of it (the judge, the points, the target dropping away)
 	const posOf = (name) => page.evaluate((n) => {

@@ -89,6 +89,58 @@ export function sanitizeTransform(pos, rot, scale, current) {
 	};
 }
 
+/** 34 R2: a finite number @param {unknown} v */
+function isNum(v) {
+	return typeof v === 'number' && Number.isFinite(v);
+}
+
+/** 34 R2: the most rows one `kitentity` message may carry (the kit's entity ceiling, 200, + slack) */
+export const KIT_ENTITY_MAX_ROWS = 256;
+
+/**
+ * 34 R2: one full kit entity record. Its pose and hp are applied the moment it lands (a NaN
+ * would park an enemy at NaN forever, the move rule), and its tags / data are bounded so one
+ * message cannot carry a megabyte of junk per entity.
+ * @param {any} r
+ */
+export function isKitEntityRecord(r) {
+	if (!r || typeof r !== 'object' || Array.isArray(r)) return false;
+	if (
+		!isUuid(r.id) ||
+		!isVec3(r.pos) ||
+		!isNum(r.yaw) ||
+		!isNum(r.hp) ||
+		!isNum(r.max) ||
+		typeof r.dead !== 'boolean'
+	)
+		return false;
+	for (const k of ['kind', 'tpl', 'own'])
+		if (r[k] !== undefined && (typeof r[k] !== 'string' || r[k].length > 64)) return false;
+	if (r.regen !== undefined && !isNum(r.regen)) return false;
+	if (r.born !== undefined && !isNum(r.born)) return false;
+	if (r.rm !== undefined && !isNum(r.rm)) return false;
+	if (
+		r.tags !== undefined &&
+		!(
+			isArray(r.tags) &&
+			r.tags.length <= 16 &&
+			r.tags.every((/** @type {any} */ t) => typeof t === 'string' && t.length <= 32)
+		)
+	)
+		return false;
+	if (r.data !== undefined) {
+		if (!r.data || typeof r.data !== 'object' || Array.isArray(r.data)) return false;
+		if (JSON.stringify(r.data).length > 2048) return false;
+	}
+	if (r.mv !== undefined && (!r.mv || typeof r.mv !== 'object')) return false;
+	return true;
+}
+
+/** 34 R2: one compact pose row `[id, x, y, z, yaw, hp, flags]` @param {any} row */
+export function isKitEntityRow(row) {
+	return isArray(row) && row.length === 7 && isUuid(row[0]) && row.slice(1).every(isNum);
+}
+
 /**
  * Per-type shape tests. ABSENT MEANS ALLOW — see the header. Deliberately shallow: this
  * is the difference between "will this throw inside an applier" and "is this message
@@ -152,6 +204,20 @@ export const VALIDATORS = {
 		Number.isInteger(d.n) &&
 		d.n >= 0,
 	camera: (d) => typeof d.peerId === 'string' && isVec3(d.position) && isFiniteArray(d.rotation, 3),
+	// 34 R2 (kit-entities): the ONE wire type kit entities replicate on — written by the
+	// authority peer only (the applier refuses anyone else), applied straight into poses and
+	// hit points, so every row is checked here: finite numbers, bounded counts, bounded strings
+	kitentity: (d) =>
+		Number.isInteger(d.seq) &&
+		d.seq >= 0 &&
+		isNum(d.at) &&
+		(d.snap === undefined || typeof d.snap === 'boolean') &&
+		(d.put === undefined ||
+			(isArray(d.put) && d.put.length <= KIT_ENTITY_MAX_ROWS && d.put.every(isKitEntityRecord))) &&
+		(d.upd === undefined ||
+			(isArray(d.upd) && d.upd.length <= KIT_ENTITY_MAX_ROWS && d.upd.every(isKitEntityRow))) &&
+		(d.del === undefined ||
+			(isArray(d.del) && d.del.length <= KIT_ENTITY_MAX_ROWS && d.del.every(isUuid))),
 	// 33: only the `lod` parameter is constrained (every other parameter predates this entry
 	// and keeps "absent means allow"): a block is an object with a levels ARRAY, or null
 	objectParameters: (d) =>

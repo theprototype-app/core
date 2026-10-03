@@ -1,3 +1,4 @@
+// @ts-nocheck — plain fixtures; the module under test is typed
 // 34 B2 — the budget gate's RULE (scripts/perfBudget.cjs): what passes, what is red, what an
 // allow-list entry buys and what it never does. The browser half (perf-games.cjs --check) only
 // produces the rows judged here.

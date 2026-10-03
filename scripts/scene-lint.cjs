@@ -47,7 +47,7 @@ const path = require('path');
 const { unzipSync, strFromU8 } = require('fflate');
 
 const ROOT = path.join(__dirname, '..');
-const read = (rel) => fs.readFileSync(path.join(ROOT, rel), 'utf8');
+const read = (/** @type {string} */ rel) => fs.readFileSync(path.join(ROOT, rel), 'utf8');
 
 // ---- the catalogs, read from core's own sources (so they cannot drift) ----------------------
 /** every flow node type core renders or runs */
@@ -71,7 +71,7 @@ function envPresets() {
 	for (const m of body.matchAll(/^\t([a-z]+): \{/gm)) out.add(m[1]);
 	return out;
 }
-const HELPER_LAYER = Number(/export const HELPER_LAYER = (\d+)/.exec(read('src/lib/helperLayer.js'))[1]);
+const HELPER_LAYER = Number(/export const HELPER_LAYER = (\d+)/.exec(read('src/lib/helperLayer.js'))?.[1] ?? NaN);
 // three's ObjectLoader.parseObject switch (an unknown type silently becomes an Object3D)
 const OBJECT_TYPES = new Set(
 	('Scene PerspectiveCamera OrthographicCamera AmbientLight DirectionalLight PointLight RectAreaLight SpotLight HemisphereLight ' +
@@ -79,18 +79,20 @@ const OBJECT_TYPES = new Set(
 		.split(' ')
 );
 
+/** @type {{nodes: Set<string>, env: Set<string>} | null} */
 let CATALOGS = null;
 const catalogs = () => (CATALOGS ??= { nodes: coreNodeTypes(), env: envPresets() });
 
 // ---- small math (column-major 4x4, three's layout) ------------------------------------------
 const IDENTITY = [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1];
+/** @param {number[]} a @param {number[]} b @returns {number[]} */
 function mul(a, b) {
 	const o = new Array(16).fill(0);
 	for (let c = 0; c < 4; c++) for (let r = 0; r < 4; r++) for (let k = 0; k < 4; k++) o[c * 4 + r] += a[k * 4 + r] * b[c * 4 + k];
 	return o;
 }
-const apply = (m, [x, y, z]) => [m[0] * x + m[4] * y + m[8] * z + m[12], m[1] * x + m[5] * y + m[9] * z + m[13], m[2] * x + m[6] * y + m[10] * z + m[14]];
-/** world AABB of a local box under a matrix @returns {number[]} [minx,miny,minz,maxx,maxy,maxz] */
+const apply = (/** @type {number[]} */ m, /** @type {number[]} */ [x, y, z]) => [m[0] * x + m[4] * y + m[8] * z + m[12], m[1] * x + m[5] * y + m[9] * z + m[13], m[2] * x + m[6] * y + m[10] * z + m[14]];
+/** world AABB of a local box under a matrix @param {number[]} m @param {number[]} b @returns {number[]} [minx,miny,minz,maxx,maxy,maxz] */
 function boxToWorld(m, b) {
 	const out = [Infinity, Infinity, Infinity, -Infinity, -Infinity, -Infinity];
 	for (const x of [b[0], b[3]]) for (const y of [b[1], b[4]]) for (const z of [b[2], b[5]]) {
@@ -102,11 +104,12 @@ function boxToWorld(m, b) {
 	}
 	return out;
 }
-/** a geometry JSON's local box + triangle estimate, or null */
+/** a geometry JSON's local box + triangle estimate, or null
+ * @param {any} g @returns {{box: number[], tris: number, solid: boolean} | null} */
 function geometryInfo(g) {
 	if (!g) return null;
 	const t = g.type;
-	const n = (v, d) => (Number.isFinite(v) ? v : d);
+	const n = (/** @type {any} */ v, /** @type {number} */ d) => (Number.isFinite(v) ? v : d);
 	if (t === 'BoxGeometry') {
 		const [w, h, d] = [n(g.width, 1), n(g.height, 1), n(g.depth, 1)];
 		return { box: [-w / 2, -h / 2, -d / 2, w / 2, h / 2, d / 2], tris: 12, solid: true };
@@ -142,11 +145,13 @@ function geometryInfo(g) {
 }
 
 // ---- pack metadata (optional: a packs checkout) ----------------------------------------------
+/** @param {string | null} dir @returns {string | null} */
 function findPacks(dir) {
-	const cands = dir ? [dir] : [process.env.PACKS_DIR, path.join(ROOT, '..', 'packs'), path.join(ROOT, '..', 'theprototype.app-packs')].filter(Boolean);
+	const cands = /** @type {string[]} */ (dir ? [dir] : [process.env.PACKS_DIR, path.join(ROOT, '..', 'packs'), path.join(ROOT, '..', 'theprototype.app-packs')].filter(Boolean));
 	return cands.find((p) => fs.existsSync(path.join(p, 'index.json'))) ?? null;
 }
-/** a GLB's JSON chunk → triangles drawn + double-sided materials */
+/** a GLB's JSON chunk → triangles drawn + double-sided materials
+ * @param {string} file @returns {{tris: number, doubleSided: string[]} | null} */
 function glbInfo(file) {
 	try {
 		const b = fs.readFileSync(file);
@@ -162,17 +167,19 @@ function glbInfo(file) {
 				tris += Math.round((acc?.count ?? 0) / 3);
 			}
 		}
-		const doubleSided = (j.materials ?? []).filter((m) => m.doubleSided).map((m) => m.name || '(unnamed)');
+		const doubleSided = (j.materials ?? []).filter((/** @type {any} */ m) => m.doubleSided).map((/** @type {any} */ m) => m.name || '(unnamed)');
 		return { tris, doubleSided };
 	} catch {
 		return null;
 	}
 }
+/** @param {string | null} dir */
 function makePackIndex(dir) {
 	if (!dir) return null;
+	/** @type {Map<string, any>} */
 	const rows = new Map();
 	const tool = path.join(dir, 'tools', 'kit-build');
-	const json = (f) => {
+	const json = (/** @type {string} */ f) => {
 		try {
 			return JSON.parse(fs.readFileSync(f, 'utf8'));
 		} catch {
@@ -186,17 +193,18 @@ function makePackIndex(dir) {
 		dir,
 		lodOver: policy?.limits?.lodRequiredOver ?? 2000,
 		hasTool: !!policy,
+		/** @param {string} pack @param {string} item */
 		row(pack, item) {
 			const key = pack + '/' + item;
 			if (!rows.has(key)) {
 				const list = json(path.join(dir, pack, 'default.json'));
-				rows.set(key, Array.isArray(list) ? (list.find((r) => r.name === item) ?? null) : null);
+				rows.set(key, Array.isArray(list) ? (list.find((/** @type {any} */ r) => r.name === item) ?? null) : null);
 			}
 			return rows.get(key);
 		},
-		glb: (rel) => glbInfo(path.join(dir, rel)),
-		lodAllowed: (pack, item) => allow.find((a) => a.pack === pack && a.item === item && a.check === 'lods') ?? null,
-		flicker: (rel) => flicker[rel] ?? null
+		glb: (/** @type {string} */ rel) => glbInfo(path.join(dir, rel)),
+		lodAllowed: (/** @type {string} */ pack, /** @type {string} */ item) => allow.find((/** @type {any} */ a) => a.pack === pack && a.item === item && a.check === 'lods') ?? null,
+		flicker: (/** @type {string} */ rel) => flicker[rel] ?? null
 	};
 }
 
@@ -208,16 +216,22 @@ function makePackIndex(dir) {
  */
 function lintSession(session, opts = {}) {
 	const { nodes: NODE_TYPES, env: ENV } = catalogs();
+	/** @type {{rule: string, severity: 'error'|'warn'|'info', where: string, message: string}[]} */
 	const out = [];
+	/** @param {string} rule @param {'error'|'warn'|'info'} severity @param {string} where @param {string} message */
 	const add = (rule, severity, where, message) => out.push({ rule, severity, where, message });
-	const modules = (session.modules ?? []).map((m) => (typeof m === 'string' ? m : m?.id)).filter(Boolean);
+	/** @type {string[]} */
+	const modules = (session.modules ?? []).map((/** @type {any} */ m) => (typeof m === 'string' ? m : m?.id)).filter(Boolean);
 
 	// -- graphs
+	/** @type {[string, any][]} */
 	const graphs = Object.entries(session.graphs ?? {});
 	if (!graphs.length && Array.isArray(session.nodes)) graphs.push(['scene', { nodes: session.nodes, edges: session.edges }]);
+	/** @type {Set<string>} */
 	const moduleTypes = new Set();
 	for (const [gid, g] of graphs) {
 		const gname = gid === 'scene' ? 'scene graph' : `graph ${gid.slice(0, 8)}`;
+		/** @type {string | null} */
 		let pause = null;
 		for (const n of g?.nodes ?? []) {
 			const where = `${gname} node ${n.id} (${n.type})`;
@@ -245,10 +259,13 @@ function lintSession(session, opts = {}) {
 	if (env?.preset === 'custom' && !env.customPreset) add('env-unknown', 'error', 'environment', 'preset "custom" without a customPreset — it falls back to studio silently');
 
 	// -- objects: types, layers, boxes, triangles
+	/** @type {{box: number[], solid: boolean, where: string, sensor: boolean, visible: boolean}[]} */
 	const boxes = [];
 	let drawn = 0;
 	let tris = 0;
+	/** @type {Map<string, {ref: any, count: number}>} */
 	const kit = new Map();
+	/** @param {any} o @param {Map<string, any>} geos @param {number[]} parentM @param {any} top */
 	const walk = (o, geos, parentM, top) => {
 		const m = mul(parentM, o.matrix ?? IDENTITY);
 		const where = `object "${o.name || o.uuid}"` + (top !== o ? ` (in "${top.name || top.uuid}")` : '');
@@ -277,7 +294,7 @@ function lintSession(session, opts = {}) {
 	for (const entry of session.objects ?? []) {
 		const o = entry?.object;
 		if (!o) continue;
-		const geos = new Map((entry.geometries ?? []).map((g) => [g.uuid, g]));
+		const geos = new Map((entry.geometries ?? []).map((/** @type {any} */ g) => [g.uuid, g]));
 		walk(o, geos, IDENTITY, o);
 	}
 
@@ -306,7 +323,9 @@ function lintSession(session, opts = {}) {
 	const packs = opts.packs ?? null;
 	let kitTris = 0;
 	let kitTrisKnown = true;
+	/** @type {string[]} */
 	const flick = [];
+	/** @type {string[]} */
 	const dbl = [];
 	for (const [k, { ref, count }] of kit) {
 		if (!packs) {
@@ -332,7 +351,7 @@ function lintSession(session, opts = {}) {
 		if (f) flick.push(`${k} (${f.cm2 ?? '?'} cm², ${f.px ?? '?'} px)`);
 		if (g.doubleSided.length) dbl.push(`${k} [${g.doubleSided.join(', ')}]`);
 	}
-	const few = (list) => list.slice(0, 6).join('; ') + (list.length > 6 ? `; … ${list.length - 6} more` : '');
+	const few = (/** @type {string[]} */ list) => list.slice(0, 6).join('; ') + (list.length > 6 ? `; … ${list.length - 6} more` : '');
 	if (flick.length) add('pack-flicker', 'info', 'kit pieces', `${flick.length} piece type(s) with known coplanar overlap (render-judged by the pack tool): ${few(flick)}`);
 	if (dbl.length) add('pack-flicker', 'info', 'kit pieces', `${dbl.length} of ${kit.size} piece type(s) with double-sided materials: ${few(dbl)}`);
 	if (kit.size && !packs) add('pack-data', 'info', 'kit pieces', `${kit.size} kit piece type(s) not checked — no packs checkout (--packs <dir> or PACKS_DIR)`);
@@ -352,6 +371,7 @@ function lintSession(session, opts = {}) {
  */
 function lintDef(def) {
 	const { env: ENV } = catalogs();
+	/** @type {ReturnType<typeof lintSession>} */
 	const out = [];
 	const env = def?.env;
 	const preset = typeof env === 'string' ? env : env?.preset;
@@ -372,8 +392,10 @@ function lintBytes(bytes, opts) {
 	return lintSession(sessionOf(bytes), opts);
 }
 
-/** print findings for one scene; returns the counts */
+/** print findings for one scene; returns the counts
+ * @param {string} label @param {ReturnType<typeof lintSession>} findings @param {{quiet?: boolean}} [opts] */
 function print(label, findings, { quiet = false } = {}) {
+	/** @type {Record<string, number>} */
 	const n = { error: 0, warn: 0, info: 0 };
 	for (const f of findings) n[f.severity]++;
 	if (!quiet || n.error || n.warn) {
@@ -383,6 +405,7 @@ function print(label, findings, { quiet = false } = {}) {
 	return n;
 }
 
+/** @param {string} p @returns {string[]} */
 function scenesUnder(p) {
 	const st = fs.statSync(p);
 	if (st.isFile()) return [p];
@@ -400,11 +423,11 @@ module.exports = { lintSession, lintBytes, lintDef, sessionOf, print, makePackIn
 
 if (require.main === module) {
 	const argv = process.argv.slice(2);
-	const val = (name) => {
+	const val = (/** @type {string} */ name) => {
 		const i = argv.indexOf('--' + name);
 		return i >= 0 ? argv.splice(i, 2)[1] : null;
 	};
-	const flag = (name) => {
+	const flag = (/** @type {string} */ name) => {
 		const i = argv.indexOf('--' + name);
 		return i >= 0 ? (argv.splice(i, 1), true) : false;
 	};
@@ -419,8 +442,10 @@ if (require.main === module) {
 	const packs = makePackIndex(packsDir);
 	const files = argv.flatMap((p) => scenesUnder(path.resolve(p)));
 	const report = [];
+	/** @type {Record<string, number>} */
 	const total = { error: 0, warn: 0, info: 0 };
 	for (const f of files) {
+		/** @type {ReturnType<typeof lintSession>} */
 		let findings;
 		try {
 			findings = lintBytes(fs.readFileSync(f), { packs });

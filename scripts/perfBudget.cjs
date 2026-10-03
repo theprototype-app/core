@@ -42,7 +42,7 @@ function validateBudgets(b) {
 		}
 	}
 	const seen = new Set();
-	(b?.allow ?? []).forEach((a, i) => {
+	(b?.allow ?? []).forEach((/** @type {any} */ a, /** @type {number} */ i) => {
 		const at = `allow[${i}]`;
 		for (const k of ALLOW_KEYS) if (a?.[k] === undefined || a?.[k] === '') errors.push(`${at}.${k} is required`);
 		if (a?.target && !/^(game|level):[a-z0-9-]+$/.test(a.target)) errors.push(`${at}.target must be game:<slug> or level:<slug> (got ${a.target})`);
@@ -66,10 +66,11 @@ function limitsFor(b, kind, slug) {
 	return out;
 }
 
-/** a view-specific entry wins over a target-wide one */
+/** a view-specific entry wins over a target-wide one
+ * @param {any} b @param {string} target @param {string} metric @param {string | undefined} view @returns {any} */
 function allowFor(b, target, metric, view) {
-	const list = (b.allow ?? []).filter((a) => a.target === target && a.metric === metric);
-	return list.find((a) => view && a.view === view) ?? list.find((a) => a.view === undefined) ?? null;
+	const list = (b.allow ?? []).filter((/** @type {any} */ a) => a.target === target && a.metric === metric);
+	return list.find((/** @type {any} */ a) => view && a.view === view) ?? list.find((/** @type {any} */ a) => a.view === undefined) ?? null;
 }
 
 /**
@@ -131,7 +132,7 @@ function report(verdict) {
 		if (!byRow.has(k)) byRow.set(k, { target: c.target, view: c.view, cells: {} });
 		byRow.get(k).cells[c.metric] = c;
 	}
-	const cell = (c) => (!c ? '—' : `${c.value}${c.status === 'over' ? ' ❌' : c.status === 'allowed' ? ' (allowed ≤ ' + c.limit + ')' : ''}`);
+	const cell = (/** @type {any} */ c) => (!c ? '—' : `${c.value}${c.status === 'over' ? ' ❌' : c.status === 'allowed' ? ' (allowed ≤ ' + c.limit + ')' : ''}`);
 	let md = '| target | view | ' + METRICS.join(' | ') + ' |\n|---|---|' + METRICS.map(() => '---:').join('|') + '|\n';
 	for (const r of byRow.values()) md += `| ${r.target} | ${r.view ?? ''} | ${METRICS.map((m) => cell(r.cells[m])).join(' | ')} |\n`;
 	md += '\n' + (verdict.ok ? '**BUDGET GATE: GREEN**' : '**BUDGET GATE: RED**') + '\n';

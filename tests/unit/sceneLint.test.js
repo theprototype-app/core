@@ -1,3 +1,4 @@
+// @ts-nocheck — plain fixtures; the module under test is typed
 // 34 B3 — scene-lint's rules (scripts/scene-lint.cjs), each PLANTED in a minimal session and each
 // silent on the clean one — the counterfactual per rule. The catalogs are read from core's own
 // sources, so these also fail if a catalog moves and the extraction stops finding it.

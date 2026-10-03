@@ -6,5 +6,9 @@
 // rule. 34-kit-core owns this file and kit-core's rows; 34-kit-entities ADDS rows (spawner,
 // health, mover) and owns those files.
 
+import rules from './rules.js';
+
 /** @type {{name: string, piece: any}[]} */
-export const KIT_PIECES = [];
+export const KIT_PIECES = [
+	{ name: 'rules', piece: rules } // reach, jump, bounds, the grab veto
+];

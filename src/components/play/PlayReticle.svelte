@@ -46,7 +46,8 @@
 			</div>
 		{:else if reticle.mode === 'toofar'}
 			<!-- 31-towers P1: the scene limits grab reach — say why the press will do nothing -->
-			<div id="play-reticle-toofar" class="reticle-note">Too far — get closer</div>
+			<!-- 34 R2: or a game's kit.rules veto, which names its own reason -->
+			<div id="play-reticle-toofar" class="reticle-note">{reticle.reason ?? 'Too far — get closer'}</div>
 		{:else if reticle.blocked}
 			<div class="reticle-note">held by {reticle.blocked}</div>
 		{/if}

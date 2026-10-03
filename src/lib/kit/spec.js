@@ -29,7 +29,9 @@
  * @typedef {{key: string, type: KitArgType, label?: string, default?: any, min?: number,
  *   max?: number, step?: number, options?: string[]}} KitArg
  * @typedef {{name: string, kind: 'action'|'value'|'event', label: string, doc?: string,
- *   args?: KitArg[], vtype?: string, authority?: boolean, node?: boolean}} KitCall
+ *   args?: KitArg[], vtype?: string, authority?: boolean, node?: boolean, local?: boolean}} KitCall
+ * `local` (events only): the event is witnessed on ONE peer and stays there — its listeners
+ * and its node pulse (kept local, the perPlayer rule) — e.g. "your grab was refused".
  * @typedef {{piece: string, group: string, calls: KitCall[]}} KitSpec
  */
 

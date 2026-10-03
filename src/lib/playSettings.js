@@ -5,6 +5,8 @@ import { normalizeLocomotion, normalizeSpawn } from './locomotionPolicy';
 import { normalizeBounds } from './teleportRules';
 import { moduleWorldChildren } from './moduleWorld';
 import { normalizeReach } from './playReach';
+// 34 R2: the kit's play rules lie OVER the scene's block and every publisher (kit/rules.js)
+import { kitPlayRules } from './kit/runtime.js';
 // 33 (L4): a module's runtime spawn counts only while the module belongs to the scene (a leaf)
 import { ownerInScope } from './sceneScope';
 import { moduleGroupOf } from './moduleContent';
@@ -137,6 +139,15 @@ export function resolvePlaySettings(scene) {
 		}
 		const reach = normalizeReach(play.reach);
 		if (reach != null) out.reach = reach;
+	}
+	// 34 R2: a game's kit.rules (session-wide, authority-written) wins over the scene and its
+	// publishers, so every grab path and the VR teleport obey a rule set from code or a node.
+	// Kit bounds are in SCENE coordinates (the objects group's frame), like the scene's own.
+	const kitRules = kitPlayRules();
+	if (kitRules.reach != null) out.reach = kitRules.reach;
+	if (kitRules.bounds) {
+		out.bounds = { min: [...kitRules.bounds.min], max: [...kitRules.bounds.max] };
+		out.boundsOwner = null;
 	}
 	const runtime = get(runtimeSpawn);
 	// 33 (L4): Waves' spawn at its crystal must not put the Towers player there

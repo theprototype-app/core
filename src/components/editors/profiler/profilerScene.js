@@ -35,7 +35,7 @@ function find(uuid) {
 /** @param {any} geometry */
 function trianglesOf(geometry) {
 	if (!geometry) return 0;
-	const n = geometry.index ? geometry.index.count : geometry.attributes?.position?.count ?? 0;
+	const n = geometry.index ? geometry.index.count : (geometry.attributes?.position?.count ?? 0);
 	return Math.floor(n / 3);
 }
 
@@ -68,7 +68,11 @@ export function selectDrawn(uuid) {
 		// outside the replicated objects: module content or an editor helper
 		let owner = o;
 		while (owner?.parent && owner.parent.type !== 'Scene') owner = owner.parent;
-		return { ok: false, reason: 'not-selectable', owner: owner?.name || owner?.type || 'the editor' };
+		return {
+			ok: false,
+			reason: 'not-selectable',
+			owner: owner?.name || owner?.type || 'the editor'
+		};
 	}
 	selectObject(top.uuid, true);
 	let lod = false;

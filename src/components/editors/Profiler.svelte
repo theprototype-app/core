@@ -26,7 +26,15 @@
 	import { dragWindow } from '$lib/dragWindow';
 	import { focusStack } from '$lib/windowFocus';
 	import { tabbable, resizeGroup, tabGroups } from '$lib/windowTabs';
-	import { setDockOccupant, dockHeight, visibleDockKey, dockMinimized, activateDock, dockModeArm, forgetDockTab } from '$lib/bottomDock';
+	import {
+		setDockOccupant,
+		dockHeight,
+		visibleDockKey,
+		dockMinimized,
+		activateDock,
+		dockModeArm,
+		forgetDockTab
+	} from '$lib/bottomDock';
 	import { bottomDockable } from '$lib/bottomDockDrop';
 	import { safeStorage } from '$lib/safeStorage';
 	import {
@@ -83,13 +91,30 @@
 	});
 	const dockVisible = $derived($visibleDockKey === 'profiler' && !$dockMinimized);
 
-	const clampH = (/** @type {number} */ h) => Math.min(Math.max(h || 320, 200), Math.round(window.innerHeight * 0.8));
+	const clampH = (/** @type {number} */ h) =>
+		Math.min(Math.max(h || 320, 200), Math.round(window.innerHeight * 0.8));
 	let resizing = $state(false);
 	let winResizing = $state(false);
-	function startResize(/** @type {any} */ e) { resizing = true; e.currentTarget.setPointerCapture(e.pointerId); e.preventDefault(); }
-	function doResize(/** @type {any} */ e) { if (resizing) dockHeight.update((h) => clampH(h - e.movementY)); }
-	function endResize(/** @type {any} */ e) { if (resizing) { resizing = false; e.currentTarget.releasePointerCapture?.(e.pointerId); } }
-	function startWinResize(/** @type {any} */ e) { winResizing = true; e.currentTarget.setPointerCapture(e.pointerId); e.preventDefault(); e.stopPropagation(); }
+	function startResize(/** @type {any} */ e) {
+		resizing = true;
+		e.currentTarget.setPointerCapture(e.pointerId);
+		e.preventDefault();
+	}
+	function doResize(/** @type {any} */ e) {
+		if (resizing) dockHeight.update((h) => clampH(h - e.movementY));
+	}
+	function endResize(/** @type {any} */ e) {
+		if (resizing) {
+			resizing = false;
+			e.currentTarget.releasePointerCapture?.(e.pointerId);
+		}
+	}
+	function startWinResize(/** @type {any} */ e) {
+		winResizing = true;
+		e.currentTarget.setPointerCapture(e.pointerId);
+		e.preventDefault();
+		e.stopPropagation();
+	}
 	function doWinResize(/** @type {any} */ e) {
 		if (!winResizing) return;
 		const baseW = myGroup ? myGroup.rect.width : winW;
@@ -139,7 +164,8 @@
 	async function loadKey(key) {
 		if (!key) return null;
 		if (key.startsWith('rec:')) return /** @type {any} */ (await getRecording(key.slice(4)));
-		if (key.startsWith('live:')) return get(liveSources).find((s) => s.id === key.slice(5))?.doc ?? null;
+		if (key.startsWith('live:'))
+			return get(liveSources).find((s) => s.id === key.slice(5))?.doc ?? null;
 		if (key === 'doc') return extraDoc;
 		return null;
 	}
@@ -153,7 +179,8 @@
 		sel = null;
 		picked = null;
 		view = d ? spanOf(d) : { from: 0, to: 1 };
-		if (!d && key.startsWith('rec:')) say('That recording could not be read (it may have been cleared).', 'warn');
+		if (!d && key.startsWith('rec:'))
+			say('That recording could not be read (it may have been cleared).', 'warn');
 	}
 
 	// keep a selected LIVE source current (the stream may update many times a second)
@@ -225,7 +252,8 @@
 		// the first time the Profiler docks, give the (shared) dock room for five graphs and a tree
 		if (docked && !safeStorage.getItem('profilerDockSized')) {
 			safeStorage.setItem('profilerDockSized', '1');
-			if (get(dockHeight) < 400) dockHeight.set(Math.min(440, Math.round(window.innerHeight * 0.55)));
+			if (get(dockHeight) < 400)
+				dockHeight.set(Math.min(440, Math.round(window.innerHeight * 0.55)));
 		}
 		void refresh().then(() => {
 			if (!selected && rows.length) void select('rec:' + rows[0].id);
@@ -234,8 +262,14 @@
 
 	// ---------------------------------------------------------------- recording controls
 
-	let recMode = $state(/** @type {'light' | 'detailed'} */ (safeStorage.getItem('profilerRecMode') === 'detailed' ? 'detailed' : 'light'));
-	let detailedSecs = $state(parseInt(safeStorage.getItem('profilerDetailedSecs') ?? '') || DETAILED_MS / 1000);
+	let recMode = $state(
+		/** @type {'light' | 'detailed'} */ (
+			safeStorage.getItem('profilerRecMode') === 'detailed' ? 'detailed' : 'light'
+		)
+	);
+	let detailedSecs = $state(
+		parseInt(safeStorage.getItem('profilerDetailedSecs') ?? '') || DETAILED_MS / 1000
+	);
 	const recording = $derived($perfState.recording);
 	let now = $state(Date.now());
 	$effect(() => {
@@ -247,10 +281,17 @@
 	function record() {
 		safeStorage.setItem('profilerRecMode', recMode);
 		safeStorage.setItem('profilerDetailedSecs', String(detailedSecs));
-		const id = startRecording({ mode: recMode, durationMs: recMode === 'detailed' ? detailedSecs * 1000 : 0 });
+		const id = startRecording({
+			mode: recMode,
+			durationMs: recMode === 'detailed' ? detailedSecs * 1000 : 0
+		});
 		startedHere = id;
 		wasRecording = id;
-		say(recMode === 'detailed' ? `Recording in detail${detailedSecs ? ` for ${detailedSecs} s` : ''} — per-object captures every second cost frame time.` : 'Recording. Stop when you have what you need.');
+		say(
+			recMode === 'detailed'
+				? `Recording in detail${detailedSecs ? ` for ${detailedSecs} s` : ''} — per-object captures every second cost frame time.`
+				: 'Recording. Stop when you have what you need.'
+		);
 	}
 	async function stop() {
 		const id = await stopRecording();
@@ -264,8 +305,11 @@
 	async function lastThirty() {
 		const at = new Date();
 		const pad = (/** @type {number} */ n) => String(n).padStart(2, '0');
-		const d = lightWindow(MOMENT_MS, { name: `Last 30 s ${pad(at.getHours())}:${pad(at.getMinutes())}:${pad(at.getSeconds())}` });
-		if (!d.frames.length) return say('Nothing recorded yet — the app has not drawn a frame.', 'warn');
+		const d = lightWindow(MOMENT_MS, {
+			name: `Last 30 s ${pad(at.getHours())}:${pad(at.getMinutes())}:${pad(at.getSeconds())}`
+		});
+		if (!d.frames.length)
+			return say('Nothing recorded yet — the app has not drawn a frame.', 'warn');
 		const id = await saveDocument(d);
 		await refresh();
 		await select('rec:' + id);
@@ -321,14 +365,19 @@
 		if (key.startsWith('live:')) {
 			// a live stream is saved as a copy (it keeps changing; the copy does not)
 			const copy = structuredClone(d);
-			copy.meta.name = (copy.meta.name || get(liveSources).find((s) => 'live:' + s.id === key)?.label || 'Live') + ' (copy)';
+			copy.meta.name =
+				(copy.meta.name || get(liveSources).find((s) => 'live:' + s.id === key)?.label || 'Live') +
+				' (copy)';
 			const id = await saveDocument(copy);
 			await refresh();
 			say('Saved a copy of the stream.');
 			await select('rec:' + id);
 			return;
 		}
-		download(new Blob([/** @type {BlobPart} */ (encodeTpprof(d))], { type: 'application/x-tpprof' }), d.meta.name || extraLabel || 'report');
+		download(
+			new Blob([/** @type {BlobPart} */ (encodeTpprof(d))], { type: 'application/x-tpprof' }),
+			d.meta.name || extraLabel || 'report'
+		);
 	}
 
 	/** @type {HTMLInputElement | null} */
@@ -356,7 +405,8 @@
 	let dropping = $state(false);
 	/** files dropped on the panel are recordings (direct listeners: the window's own drop handler must not see them) @param {HTMLElement} node */
 	function fileDrop(node) {
-		const isFiles = (/** @type {DragEvent} */ e) => !!e.dataTransfer && Array.from(e.dataTransfer.types).includes('Files');
+		const isFiles = (/** @type {DragEvent} */ e) =>
+			!!e.dataTransfer && Array.from(e.dataTransfer.types).includes('Files');
 		/** @param {DragEvent} e */
 		const over = (e) => {
 			if (!isFiles(e)) return;
@@ -424,7 +474,8 @@
 	function labelOf(key) {
 		if (!key) return '–';
 		if (key.startsWith('rec:')) return rows.find((r) => 'rec:' + r.id === key)?.name ?? key;
-		if (key.startsWith('live:')) return $liveSources.find((s) => 'live:' + s.id === key)?.label ?? key;
+		if (key.startsWith('live:'))
+			return $liveSources.find((s) => 'live:' + s.id === key)?.label ?? key;
 		return extraLabel;
 	}
 
@@ -436,8 +487,16 @@
 		if (!row.uuid) return say(`${row.label} is a material — pick an object to select it.`);
 		const r = selectDrawn(row.uuid);
 		if (r.ok) say(`Selected ${r.name}${r.lod ? ' — its LOD group is in the properties' : ''}.`);
-		else if (r.reason === 'missing') say(`${row.label} is not in the open scene (the recording was made elsewhere, or it was deleted).`, 'warn');
-		else say(`${row.label} belongs to ${r.owner} — module and editor content cannot be selected.`, 'warn');
+		else if (r.reason === 'missing')
+			say(
+				`${row.label} is not in the open scene (the recording was made elsewhere, or it was deleted).`,
+				'warn'
+			);
+		else
+			say(
+				`${row.label} belongs to ${r.owner} — module and editor content cannot be selected.`,
+				'warn'
+			);
 	}
 	/** @param {number} t */
 	function jump(t) {
@@ -467,12 +526,33 @@
 	 * @param {HTMLElement} node
 	 */
 	function ownKeys(node) {
-		const OWN = new Set(['Tab', 'Enter', ' ', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'Home', 'End', 'PageUp', 'PageDown', 'Escape', 'Delete', 'Backspace']);
+		const OWN = new Set([
+			'Tab',
+			'Enter',
+			' ',
+			'ArrowUp',
+			'ArrowDown',
+			'ArrowLeft',
+			'ArrowRight',
+			'Home',
+			'End',
+			'PageUp',
+			'PageDown',
+			'Escape',
+			'Delete',
+			'Backspace'
+		]);
 		/** @param {KeyboardEvent} e */
 		const key = (e) => {
 			if (e.ctrlKey || e.metaKey || e.altKey || !OWN.has(e.key)) return;
 			const t = e.target instanceof HTMLElement ? e.target : null;
-			if (t && t !== node && node.contains(t) && t.closest('button, select, input, a, [role="slider"], [tabindex]')) e.stopPropagation();
+			if (
+				t &&
+				t !== node &&
+				node.contains(t) &&
+				t.closest('button, select, input, a, [role="slider"], [tabindex]')
+			)
+				e.stopPropagation();
 		};
 		document.addEventListener('keydown', key);
 		return { destroy: () => document.removeEventListener('keydown', key) };
@@ -489,7 +569,9 @@
 	}
 
 	const meta = $derived(doc?.meta ?? null);
-	const moduleList = $derived(meta ? Object.entries(meta.modules ?? {}).map(([id, v]) => `${id} ${v}`) : []);
+	const moduleList = $derived(
+		meta ? Object.entries(meta.modules ?? {}).map(([id, v]) => `${id} ${v}`) : []
+	);
 	/** a short device name out of a user agent @param {string} ua */
 	function deviceName(ua) {
 		if (/OculusBrowser|Quest/i.test(ua)) return (ua.match(/Quest[ \w]*/i)?.[0] ?? 'Quest').trim();
@@ -504,7 +586,9 @@
 		if (!doc) return '';
 		let lo = Infinity;
 		let hi = -Infinity;
-		for (const f of doc.frames) if (typeof f.quality === 'number') ((lo = Math.min(lo, f.quality)), (hi = Math.max(hi, f.quality)));
+		for (const f of doc.frames)
+			if (typeof f.quality === 'number')
+				((lo = Math.min(lo, f.quality)), (hi = Math.max(hi, f.quality)));
 		return lo === Infinity ? '–' : lo === hi ? String(lo) : `${lo}–${hi}`;
 	});
 	const recElapsed = $derived(recording ? Math.max(0, now - recording.startedAt) : 0);
@@ -517,13 +601,32 @@
 			Recording {recording.mode} · {fmtSec(recElapsed)} · {fmtCount(recording.frames)} frames
 		</span>
 		{#if recording.mode === 'detailed'}
-			<button class="ui-button-quiet" title="Take a per-object capture now" onclick={() => void captureNow()}><Camera size={12} class="inline" aria-hidden="true" /> Capture</button>
+			<button
+				class="ui-button-quiet"
+				title="Take a per-object capture now"
+				onclick={() => void captureNow()}
+				><Camera size={12} class="inline" aria-hidden="true" /> Capture</button
+			>
 		{/if}
-		<button id="profiler-stop" class="ui-button-quiet pf-stop" onclick={stop}><Square size={11} class="inline" aria-hidden="true" /> Stop</button>
+		<button id="profiler-stop" class="ui-button-quiet pf-stop" onclick={stop}
+			><Square size={11} class="inline" aria-hidden="true" /> Stop</button
+		>
 	{:else}
 		<div class="tp-seg" role="group" aria-label="Recording mode">
-			<button class="tp-seg-btn" id="profiler-mode-light" aria-pressed={recMode === 'light'} title="Frame time, draw calls, triangles and quality — always cheap" onclick={() => (recMode = 'light')}>Light</button>
-			<button class="tp-seg-btn" id="profiler-mode-detailed" aria-pressed={recMode === 'detailed'} title="Also per-object draw attribution and CPU phases — costs frame time" onclick={() => (recMode = 'detailed')}>Detailed</button>
+			<button
+				class="tp-seg-btn"
+				id="profiler-mode-light"
+				aria-pressed={recMode === 'light'}
+				title="Frame time, draw calls, triangles and quality — always cheap"
+				onclick={() => (recMode = 'light')}>Light</button
+			>
+			<button
+				class="tp-seg-btn"
+				id="profiler-mode-detailed"
+				aria-pressed={recMode === 'detailed'}
+				title="Also per-object draw attribution and CPU phases — costs frame time"
+				onclick={() => (recMode = 'detailed')}>Detailed</button
+			>
 		</div>
 		{#if recMode === 'detailed'}
 			<select class="pf-select" aria-label="Detailed recording length" bind:value={detailedSecs}>
@@ -533,16 +636,44 @@
 				<option value={0}>until stopped</option>
 			</select>
 		{/if}
-		<button id="profiler-record" class="ui-button-quiet pf-record" onclick={record}><Circle size={11} class="inline" aria-hidden="true" /> Record</button>
-		<button id="profiler-last30" class="ui-button-quiet" title="Save the last 30 seconds the app always keeps (light)" onclick={lastThirty}><History size={12} class="inline" aria-hidden="true" /> Last 30 s</button>
+		<button id="profiler-record" class="ui-button-quiet pf-record" onclick={record}
+			><Circle size={11} class="inline" aria-hidden="true" /> Record</button
+		>
+		<button
+			id="profiler-last30"
+			class="ui-button-quiet"
+			title="Save the last 30 seconds the app always keeps (light)"
+			onclick={lastThirty}><History size={12} class="inline" aria-hidden="true" /> Last 30 s</button
+		>
 	{/if}
-	<button id="profiler-import" class="ui-button-quiet" title="Open .tpprof recordings or beacon exports (or drop them on the panel)" onclick={() => fileInput?.click()}><Upload size={12} class="inline" aria-hidden="true" /> Import</button>
-	<button id="profiler-compare-toggle" class="ui-button-quiet" aria-pressed={compareOn} class:pf-on={compareOn} onclick={toggleCompare}><GitCompare size={12} class="inline" aria-hidden="true" /> Compare</button>
-	<input bind:this={fileInput} id="profiler-file" type="file" multiple accept=".tpprof,.json,.gz,application/json,application/gzip" class="hidden" onchange={(e) => {
-		const input = /** @type {HTMLInputElement} */ (e.currentTarget);
-		if (input.files?.length) void importFiles(input.files);
-		input.value = '';
-	}} />
+	<button
+		id="profiler-import"
+		class="ui-button-quiet"
+		title="Open .tpprof recordings or beacon exports (or drop them on the panel)"
+		onclick={() => fileInput?.click()}
+		><Upload size={12} class="inline" aria-hidden="true" /> Import</button
+	>
+	<button
+		id="profiler-compare-toggle"
+		class="ui-button-quiet"
+		aria-pressed={compareOn}
+		class:pf-on={compareOn}
+		onclick={toggleCompare}
+		><GitCompare size={12} class="inline" aria-hidden="true" /> Compare</button
+	>
+	<input
+		bind:this={fileInput}
+		id="profiler-file"
+		type="file"
+		multiple
+		accept=".tpprof,.json,.gz,application/json,application/gzip"
+		class="hidden"
+		onchange={(e) => {
+			const input = /** @type {HTMLInputElement} */ (e.currentTarget);
+			if (input.files?.length) void importFiles(input.files);
+			input.value = '';
+		}}
+	/>
 {/snippet}
 
 {#snippet body()}
@@ -563,20 +694,34 @@
 				oncompare={setCompare}
 			/>
 			{#if selected === 'doc' && extraDoc}
-				<p class="pf-extra">Showing <b>{extraLabel}</b> (not saved) <button class="ui-button-quiet" onclick={async () => {
-					if (!extraDoc) return;
-					const id = await saveDocument(structuredClone(extraDoc));
-					await refresh();
-					await select('rec:' + id);
-				}}>Save</button></p>
+				<p class="pf-extra">
+					Showing <b>{extraLabel}</b> (not saved)
+					<button
+						class="ui-button-quiet"
+						onclick={async () => {
+							if (!extraDoc) return;
+							const id = await saveDocument(structuredClone(extraDoc));
+							await refresh();
+							await select('rec:' + id);
+						}}>Save</button
+					>
+				</p>
 			{/if}
 		</aside>
 		<section class="pf-main" use:measure aria-label="Recording">
 			{#if compareOn}
 				{#if docA && docB}
-					<ProfilerCompare a={docA} b={docB} aLabel={labelOf(compareA)} bLabel={labelOf(compareB)} onpick={pick} />
+					<ProfilerCompare
+						a={docA}
+						b={docB}
+						aLabel={labelOf(compareA)}
+						bLabel={labelOf(compareB)}
+						onpick={pick}
+					/>
 				{:else}
-					<p class="pf-hint">Pick <b>A</b> (the baseline) and <b>B</b> (the new one) in the list.</p>
+					<p class="pf-hint">
+						Pick <b>A</b> (the baseline) and <b>B</b> (the new one) in the list.
+					</p>
 				{/if}
 			{:else if doc && meta}
 				<div id="profiler-meta" class="pf-meta" title={meta.device}>
@@ -584,7 +729,9 @@
 					<span>{meta.mode}{meta.kind && meta.kind !== 'recording' ? ' · ' + meta.kind : ''}</span>
 					<span>{fmtSec(meta.durationMs ?? spanOf(doc).to)} · {doc.frames.length} frames</span>
 					<span>v{meta.version} · {String(meta.build).slice(0, 7)}</span>
-					<span title={moduleList.join('\n') || 'no modules'}>{moduleList.length} module{moduleList.length === 1 ? '' : 's'}</span>
+					<span title={moduleList.join('\n') || 'no modules'}
+						>{moduleList.length} module{moduleList.length === 1 ? '' : 's'}</span
+					>
 					<span>{deviceName(meta.device)}{meta.gpu ? ' · ' + meta.gpu.slice(0, 40) : ''}</span>
 					{#if meta.xr}<span>VR</span>{/if}
 					{#if meta.refreshRate}<span>{meta.refreshRate} Hz</span>{/if}
@@ -595,7 +742,13 @@
 				</div>
 				<div class="pf-split" class:pf-wide={wide}>
 					<div class="pf-tl">
-						<ProfilerTimeline {doc} {view} {sel} onview={(v) => (view = v)} onselect={(s) => (sel = s)} />
+						<ProfilerTimeline
+							{doc}
+							{view}
+							{sel}
+							onview={(v) => (view = v)}
+							onselect={(s) => (sel = s)}
+						/>
 					</div>
 					<div class="pf-detail">
 						<ProfilerDetail {doc} {sel} {tab} ontab={setTab} onpick={pick} onjump={jump} {picked} />
@@ -603,12 +756,19 @@
 				</div>
 			{:else}
 				<p class="pf-hint">
-					Record a few seconds of the scene — <b>Light</b> costs nothing, <b>Detailed</b> also says which objects
-					the draw calls go to. Or import a <code>.tpprof</code>.
+					Record a few seconds of the scene — <b>Light</b> costs nothing, <b>Detailed</b> also says
+					which objects the draw calls go to. Or import a <code>.tpprof</code>.
 				</p>
 			{/if}
 			{#if status}
-				<p id="profiler-status" class="pf-status" class:pf-warn={statusTone === 'warn'} role="status">{status}</p>
+				<p
+					id="profiler-status"
+					class="pf-status"
+					class:pf-warn={statusTone === 'warn'}
+					role="status"
+				>
+					{status}
+				</p>
 			{/if}
 		</section>
 	</div>
@@ -619,12 +779,14 @@
 		<div
 			id="profiler-dock"
 			use:ownKeys
-			class="fixed inset-x-0 bottom-0 flex flex-col bg-white p-2 dark:bg-gray-800 {dockVisible ? '' : 'hidden'}"
+			class="fixed inset-x-0 bottom-0 flex flex-col bg-white p-2 dark:bg-gray-800 {dockVisible
+				? ''
+				: 'hidden'}"
 			style="z-index: var(--z-bottom); height: {$dockHeight}px; border-top: 1px solid rgb(55 65 81 / 0.6)"
 		>
 			<!-- svelte-ignore a11y_no_static_element_interactions -->
 			<div
-				class="resize-cue absolute -top-1 left-0 right-0 z-30 h-2 cursor-ns-resize hover:bg-primary-600/30"
+				class="resize-cue hover:bg-primary-600/30 absolute -top-1 right-0 left-0 z-30 h-2 cursor-ns-resize"
 				style="touch-action: none"
 				title="Drag to resize"
 				onpointerdown={startResize}
@@ -637,8 +799,18 @@
 				<span class="w-2"></span>
 				{@render controls()}
 				<span class="flex-1"></span>
-				<button class="ui-button-quiet" title="Undock into a floating window" aria-label="Undock the Profiler" onclick={() => setDocked(false)}>⧉</button>
-				<button class="ui-button-quiet" title="Close" aria-label="Close the Profiler" onclick={() => profilerClose.set(true)}>✕</button>
+				<button
+					class="ui-button-quiet"
+					title="Undock into a floating window"
+					aria-label="Undock the Profiler"
+					onclick={() => setDocked(false)}>⧉</button
+				>
+				<button
+					class="ui-button-quiet"
+					title="Close"
+					aria-label="Close the Profiler"
+					onclick={() => profilerClose.set(true)}>✕</button
+				>
 			</div>
 			<div class="flex min-h-0 flex-1 flex-col">
 				{@render body()}
@@ -651,28 +823,45 @@
 			class="ui-panel fixed flex flex-col overflow-hidden"
 			use:dragWindow={{ key: 'profilerWin', defaultRect: { left: 120, top: 100 } }}
 			use:focusStack={'profiler'}
-			use:tabbable={{ key: 'profiler', title: 'Profiler', openStore: profilerClose, isOpen: (v) => !v, close: () => profilerClose.set(true) }}
+			use:tabbable={{
+				key: 'profiler',
+				title: 'Profiler',
+				openStore: profilerClose,
+				isOpen: (v) => !v,
+				close: () => profilerClose.set(true)
+			}}
 			use:bottomDockable={{ key: 'profiler' }}
 			style="z-index: var(--z-window); max-width: 98vw; max-height: 90vh"
 			style:width="{effW}px"
 			style:height="{effH}px"
 		>
-			<div class="ui-panel-header move-handle shrink-0 cursor-move select-none flex-wrap py-1.5">
+			<div class="ui-panel-header move-handle shrink-0 cursor-move flex-wrap py-1.5 select-none">
 				<span>Profiler</span>
 				{#if !myGroup}{@render controls()}{/if}
 				<span class="flex-1"></span>
-				<button class="ui-button-quiet" title="Dock to the bottom" onclick={() => setDocked(true)}>⇩ Dock</button>
-				<button class="ui-button-quiet" title="Close" aria-label="Close the Profiler" onclick={() => profilerClose.set(true)}>✕</button>
+				<button class="ui-button-quiet" title="Dock to the bottom" onclick={() => setDocked(true)}
+					>⇩ Dock</button
+				>
+				<button
+					class="ui-button-quiet"
+					title="Close"
+					aria-label="Close the Profiler"
+					onclick={() => profilerClose.set(true)}>✕</button
+				>
 			</div>
 			{#if myGroup}
-				<div class="flex shrink-0 flex-wrap items-center gap-1 border-b border-gray-700/60 px-2 py-1">{@render controls()}</div>
+				<div
+					class="flex shrink-0 flex-wrap items-center gap-1 border-b border-gray-700/60 px-2 py-1"
+				>
+					{@render controls()}
+				</div>
 			{/if}
 			<div class="flex min-h-0 flex-1 flex-col p-2">
 				{@render body()}
 			</div>
 			<!-- svelte-ignore a11y_no_static_element_interactions -->
 			<div
-				class="resize-cue absolute bottom-0 right-0 z-10 h-3.5 w-3.5 cursor-se-resize rounded-tl bg-gray-500/40"
+				class="resize-cue absolute right-0 bottom-0 z-10 h-3.5 w-3.5 cursor-se-resize rounded-tl bg-gray-500/40"
 				style="touch-action: none"
 				title="Drag to resize"
 				onpointerdown={startWinResize}

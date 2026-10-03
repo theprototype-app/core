@@ -16,9 +16,26 @@
 	 *   onexport: (key: string) => void, oncompare: (slot: 'a' | 'b', key: string) => void
 	 * }}
 	 */
-	let { rows, live, selected, compareOn, compareA, compareB, onselect, onrename, ondelete, onpin, onexport, oncompare } = $props();
+	let {
+		rows,
+		live,
+		selected,
+		compareOn,
+		compareA,
+		compareB,
+		onselect,
+		onrename,
+		ondelete,
+		onpin,
+		onexport,
+		oncompare
+	} = $props();
 
-	const ordered = $derived([...rows].sort((x, y) => Number(!!y.pinned) - Number(!!x.pinned) || (y.startedAt ?? 0) - (x.startedAt ?? 0)));
+	const ordered = $derived(
+		[...rows].sort(
+			(x, y) => Number(!!y.pinned) - Number(!!x.pinned) || (y.startedAt ?? 0) - (x.startedAt ?? 0)
+		)
+	);
 
 	let renaming = $state(/** @type {string | null} */ (null));
 	let draft = $state('');
@@ -72,21 +89,50 @@
 		{@const key = 'live:' + src.id}
 		<li class="pf-rec" class:pf-sel={selected === key} data-key={key}>
 			<button class="pf-rec-main" aria-current={selected === key} onclick={() => onselect(key)}>
-				<span class="pf-rec-name"><span class="pf-live" class:pf-live-on={src.live} aria-hidden="true"></span>{src.label}</span>
-				<span class="pf-rec-meta">{src.live ? 'live' : 'stream ended'} · {src.doc ? `${src.doc.frames.length} frames` : 'waiting for frames'}</span>
+				<span class="pf-rec-name"
+					><span class="pf-live" class:pf-live-on={src.live} aria-hidden="true"
+					></span>{src.label}</span
+				>
+				<span class="pf-rec-meta"
+					>{src.live ? 'live' : 'stream ended'} · {src.doc
+						? `${src.doc.frames.length} frames`
+						: 'waiting for frames'}</span
+				>
 			</button>
 			<div class="pf-rec-acts">
 				{#if compareOn}
-					<button class="pf-ab" aria-pressed={compareA === key} aria-label="Use {src.label} as A" onclick={() => oncompare('a', key)}>A</button>
-					<button class="pf-ab" aria-pressed={compareB === key} aria-label="Use {src.label} as B" onclick={() => oncompare('b', key)}>B</button>
+					<button
+						class="pf-ab"
+						aria-pressed={compareA === key}
+						aria-label="Use {src.label} as A"
+						onclick={() => oncompare('a', key)}>A</button
+					>
+					<button
+						class="pf-ab"
+						aria-pressed={compareB === key}
+						aria-label="Use {src.label} as B"
+						onclick={() => oncompare('b', key)}>B</button
+					>
 				{/if}
-				<button class="pf-icon" aria-label="Save a copy of {src.label} as a recording" title="Save a copy" disabled={!src.doc} onclick={() => onexport(key)}><Download size={13} aria-hidden="true" /></button>
+				<button
+					class="pf-icon"
+					aria-label="Save a copy of {src.label} as a recording"
+					title="Save a copy"
+					disabled={!src.doc}
+					onclick={() => onexport(key)}><Download size={13} aria-hidden="true" /></button
+				>
 			</div>
 		</li>
 	{/each}
 	{#each ordered as row (row.id)}
 		{@const key = 'rec:' + row.id}
-		<li class="pf-rec" class:pf-sel={selected === key} data-key={key} data-id={row.id} data-mode={row.mode}>
+		<li
+			class="pf-rec"
+			class:pf-sel={selected === key}
+			data-key={key}
+			data-id={row.id}
+			data-mode={row.mode}
+		>
 			{#if renaming === row.id}
 				<input
 					class="ui-input pf-rename w-full"
@@ -101,36 +147,88 @@
 					onblur={commitRename}
 				/>
 			{:else}
-				<button class="pf-rec-main" aria-current={selected === key} ondblclick={() => startRename(row)} onclick={() => onselect(key)}>
-					<span class="pf-rec-name">{#if row.pinned}<Pin size={11} aria-label="pinned" class="pf-pin-mark" />{/if}{row.name}</span>
+				<button
+					class="pf-rec-main"
+					aria-current={selected === key}
+					ondblclick={() => startRename(row)}
+					onclick={() => onselect(key)}
+				>
+					<span class="pf-rec-name"
+						>{#if row.pinned}<Pin
+								size={11}
+								aria-label="pinned"
+								class="pf-pin-mark"
+							/>{/if}{row.name}</span
+					>
 					<span class="pf-rec-meta">
 						<span class="pf-badge pf-badge-{row.mode}">{kindLabel(row)}</span>
 						{fmtSec(row.durationMs || row.summary?.durationMs || 0)}
 						{#if row.summary?.fpsP50}· {Math.round(row.summary.fpsP50)} fps{/if}
-						{#if row.summary?.callsP50 !== null && row.summary?.callsP50 !== undefined}· {row.summary.callsP50} calls{/if}
-						{#if row.summary?.stalls}· <span class="text-red-400">{row.summary.stalls} stall{row.summary.stalls === 1 ? '' : 's'}</span>{/if}
-						· {when(row.startedAt)}{#if row.xr} · VR{/if}{#if row.scene} · {row.scene}{/if}
+						{#if row.summary?.callsP50 !== null && row.summary?.callsP50 !== undefined}· {row
+								.summary.callsP50} calls{/if}
+						{#if row.summary?.stalls}· <span class="text-red-400"
+								>{row.summary.stalls} stall{row.summary.stalls === 1 ? '' : 's'}</span
+							>{/if}
+						· {when(row.startedAt)}{#if row.xr}
+							· VR{/if}{#if row.scene}
+							· {row.scene}{/if}
 					</span>
 				</button>
 			{/if}
 			<div class="pf-rec-acts">
 				{#if compareOn}
-					<button class="pf-ab" aria-pressed={compareA === key} aria-label="Use {row.name} as A" onclick={() => oncompare('a', key)}>A</button>
-					<button class="pf-ab" aria-pressed={compareB === key} aria-label="Use {row.name} as B" onclick={() => oncompare('b', key)}>B</button>
+					<button
+						class="pf-ab"
+						aria-pressed={compareA === key}
+						aria-label="Use {row.name} as A"
+						onclick={() => oncompare('a', key)}>A</button
+					>
+					<button
+						class="pf-ab"
+						aria-pressed={compareB === key}
+						aria-label="Use {row.name} as B"
+						onclick={() => oncompare('b', key)}>B</button
+					>
 				{/if}
-				<button class="pf-icon" aria-label={row.pinned ? `Unpin ${row.name}` : `Pin ${row.name} (kept when old recordings are cleared)`} aria-pressed={!!row.pinned} onclick={() => onpin(row.id, !row.pinned)}>
-					{#if row.pinned}<PinOff size={13} aria-hidden="true" />{:else}<Pin size={13} aria-hidden="true" />{/if}
+				<button
+					class="pf-icon"
+					aria-label={row.pinned
+						? `Unpin ${row.name}`
+						: `Pin ${row.name} (kept when old recordings are cleared)`}
+					aria-pressed={!!row.pinned}
+					onclick={() => onpin(row.id, !row.pinned)}
+				>
+					{#if row.pinned}<PinOff size={13} aria-hidden="true" />{:else}<Pin
+							size={13}
+							aria-hidden="true"
+						/>{/if}
 				</button>
-				<button class="pf-icon" aria-label="Rename {row.name}" onclick={() => startRename(row)}><Pencil size={13} aria-hidden="true" /></button>
-				<button class="pf-icon" aria-label="Export {row.name} as .tpprof" onclick={() => onexport(key)}><Download size={13} aria-hidden="true" /></button>
-				<button class="pf-icon" class:pf-danger={confirmDelete === row.id} aria-label={confirmDelete === row.id ? `Press again to delete ${row.name}` : `Delete ${row.name}`} onclick={() => askDelete(row.id)}>
-					{#if confirmDelete === row.id}<span class="text-[10px] font-semibold">Delete?</span>{:else}<Trash2 size={13} aria-hidden="true" />{/if}
+				<button class="pf-icon" aria-label="Rename {row.name}" onclick={() => startRename(row)}
+					><Pencil size={13} aria-hidden="true" /></button
+				>
+				<button
+					class="pf-icon"
+					aria-label="Export {row.name} as .tpprof"
+					onclick={() => onexport(key)}><Download size={13} aria-hidden="true" /></button
+				>
+				<button
+					class="pf-icon"
+					class:pf-danger={confirmDelete === row.id}
+					aria-label={confirmDelete === row.id
+						? `Press again to delete ${row.name}`
+						: `Delete ${row.name}`}
+					onclick={() => askDelete(row.id)}
+				>
+					{#if confirmDelete === row.id}<span class="text-[10px] font-semibold">Delete?</span
+						>{:else}<Trash2 size={13} aria-hidden="true" />{/if}
 				</button>
 			</div>
 		</li>
 	{:else}
 		{#if !live.length}
-			<li class="pf-empty-list">No recordings yet. Record one, or take the last 30 seconds the app always keeps.</li>
+			<li class="pf-empty-list">
+				No recordings yet. Record one, or take the last 30 seconds the app always keeps.
+			</li>
 		{/if}
 	{/each}
 </ul>

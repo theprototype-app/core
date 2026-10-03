@@ -48,16 +48,115 @@ function capture(t = 500, scale = 1) {
 		t,
 		frames: 3,
 		objects: [
-			{ uuid: 'heavy', name: 'Heavy', path: 'Scene/Heavy', module: null, calls: 1, tris: 60000 * scale, material: 'MeshStandardMaterial', shadow: false, ms: 0.4 },
-			{ uuid: 'heavy', name: 'Heavy', path: 'Scene/Heavy', module: null, calls: 1, tris: 60000 * scale, material: 'MeshDepthMaterial', shadow: true },
-			{ uuid: 'boxA', name: 'Box A', path: 'Scene/Box A', module: null, calls: 1, tris: 12, material: 'Red', shadow: false, ms: 0.02 },
-			{ uuid: 'wheel', name: 'Wheel', path: 'Scene/Car/Wheel', module: null, calls: 2, tris: 400, material: 'Rubber+Chrome', shadow: false, ms: 0.05 },
-			{ uuid: 'body', name: 'Body', path: 'Scene/Car/Body', module: null, calls: 1, tris: 900, material: 'Paint', shadow: false, ms: 0.04 },
-			{ uuid: 'glass', name: 'Glass', path: 'Scene/Car/Glass', module: null, calls: 1, tris: 300, material: 'Glass', shadow: false, transparent: true, ms: 0.01 },
-			{ uuid: 'ball', name: 'Ball', path: 'football-module/Ball', module: 'football', calls: 3, tris: 2000, material: 'Leather', shadow: false, ms: 0.1 },
-			{ uuid: 'grid', name: 'editor-grid', path: 'editor-grid', module: null, calls: 1, tris: 2, material: 'LineBasicMaterial', shadow: false, ms: 0 },
-			...['X', 'Y', 'Z', 'XY', 'YZ', 'XZ', 'XYZ'].map((a) => ({ uuid: 'g' + a, name: a, path: 'Object3D/TransformControlsGizmo/Object3D/' + a, module: null, calls: 3, tris: 72, material: 'MeshBasicMaterial', shadow: false, ms: 0.01 })),
-			{ uuid: 'lh', name: 'DirectionalLightHelper', path: 'DirectionalLightHelper/Line', module: null, calls: 1, tris: 0, material: 'LineBasicMaterial', shadow: false }
+			{
+				uuid: 'heavy',
+				name: 'Heavy',
+				path: 'Scene/Heavy',
+				module: null,
+				calls: 1,
+				tris: 60000 * scale,
+				material: 'MeshStandardMaterial',
+				shadow: false,
+				ms: 0.4
+			},
+			{
+				uuid: 'heavy',
+				name: 'Heavy',
+				path: 'Scene/Heavy',
+				module: null,
+				calls: 1,
+				tris: 60000 * scale,
+				material: 'MeshDepthMaterial',
+				shadow: true
+			},
+			{
+				uuid: 'boxA',
+				name: 'Box A',
+				path: 'Scene/Box A',
+				module: null,
+				calls: 1,
+				tris: 12,
+				material: 'Red',
+				shadow: false,
+				ms: 0.02
+			},
+			{
+				uuid: 'wheel',
+				name: 'Wheel',
+				path: 'Scene/Car/Wheel',
+				module: null,
+				calls: 2,
+				tris: 400,
+				material: 'Rubber+Chrome',
+				shadow: false,
+				ms: 0.05
+			},
+			{
+				uuid: 'body',
+				name: 'Body',
+				path: 'Scene/Car/Body',
+				module: null,
+				calls: 1,
+				tris: 900,
+				material: 'Paint',
+				shadow: false,
+				ms: 0.04
+			},
+			{
+				uuid: 'glass',
+				name: 'Glass',
+				path: 'Scene/Car/Glass',
+				module: null,
+				calls: 1,
+				tris: 300,
+				material: 'Glass',
+				shadow: false,
+				transparent: true,
+				ms: 0.01
+			},
+			{
+				uuid: 'ball',
+				name: 'Ball',
+				path: 'football-module/Ball',
+				module: 'football',
+				calls: 3,
+				tris: 2000,
+				material: 'Leather',
+				shadow: false,
+				ms: 0.1
+			},
+			{
+				uuid: 'grid',
+				name: 'editor-grid',
+				path: 'editor-grid',
+				module: null,
+				calls: 1,
+				tris: 2,
+				material: 'LineBasicMaterial',
+				shadow: false,
+				ms: 0
+			},
+			...['X', 'Y', 'Z', 'XY', 'YZ', 'XZ', 'XYZ'].map((a) => ({
+				uuid: 'g' + a,
+				name: a,
+				path: 'Object3D/TransformControlsGizmo/Object3D/' + a,
+				module: null,
+				calls: 3,
+				tris: 72,
+				material: 'MeshBasicMaterial',
+				shadow: false,
+				ms: 0.01
+			})),
+			{
+				uuid: 'lh',
+				name: 'DirectionalLightHelper',
+				path: 'DirectionalLightHelper/Line',
+				module: null,
+				calls: 1,
+				tris: 0,
+				material: 'LineBasicMaterial',
+				shadow: false
+			}
 		]
 	};
 }
@@ -65,9 +164,23 @@ function capture(t = 500, scale = 1) {
 function doc(extra = {}) {
 	return {
 		tpprof: 1,
-		meta: { build: 'abc', version: '1.20.0', modules: {}, device: 'test', xr: false, startedAt: 1_800_000_000_000, mode: 'detailed', scene: 'Test scene' },
-		frames: frames(60, (i) => ({ cpu: { input: 0.1, physics: 0.5, modules: 0.2, flow: 0.3, render: 4 + (i % 2), other: 1 } })),
-		events: [{ t: 100, kind: 'mark', detail: { text: 'go' } }, { t: 600, kind: 'stall', detail: { ms: 140 } }],
+		meta: {
+			build: 'abc',
+			version: '1.20.0',
+			modules: {},
+			device: 'test',
+			xr: false,
+			startedAt: 1_800_000_000_000,
+			mode: 'detailed',
+			scene: 'Test scene'
+		},
+		frames: frames(60, (i) => ({
+			cpu: { input: 0.1, physics: 0.5, modules: 0.2, flow: 0.3, render: 4 + (i % 2), other: 1 }
+		})),
+		events: [
+			{ t: 100, kind: 'mark', detail: { text: 'go' } },
+			{ t: 600, kind: 'stall', detail: { ms: 140 } }
+		],
 		captures: [capture(300), capture(700)],
 		...extra
 	};
@@ -115,14 +228,26 @@ describe('timeline series and buckets', () => {
 		expect(peak).toBe(250);
 		expect(Math.min(...Array.from(b.min).filter((_, c) => b.has[c]))).toBeCloseTo(13.9, 4);
 		// a null value (no calls) leaves its column empty rather than drawing a 0
-		const holes = bucketize(frames(10, () => ({ calls: null })), 0, 200, 10, (x) => x.calls ?? null);
+		const holes = bucketize(
+			frames(10, () => ({ calls: null })),
+			0,
+			200,
+			10,
+			(x) => x.calls ?? null
+		);
 		expect(Array.from(holes.has).every((h) => h === 0)).toBe(true);
 	});
 
 	it('scales a series to a round number above both its max and its budget line', () => {
 		const f = frames(5, () => ({ calls: 80 }));
 		expect(scaleOf(f, (x) => x.calls, 150)).toBeGreaterThanOrEqual(150 * 1.15);
-		expect(scaleOf(frames(5, () => ({ calls: 420 })), (x) => x.calls, 150)).toBe(500);
+		expect(
+			scaleOf(
+				frames(5, () => ({ calls: 420 })),
+				(x) => x.calls,
+				150
+			)
+		).toBe(500);
 		expect(scaleOf([], (x) => x.calls, null)).toBe(1);
 		// one outlier (a 2.5 ms frame = 400 fps) does not flatten the lane
 		const spiky = frames(300, (i) => ({ ms: i === 7 ? 2.5 : 16.7 }));
@@ -139,7 +264,14 @@ describe('a frame or a range', () => {
 		const render = s.cpu?.phases.find((p) => p.phase === 'render');
 		expect(render?.mean).toBeCloseTo(4.5, 3);
 		expect(render?.max).toBe(5);
-		expect(s.cpu?.phases.map((p) => p.phase)).toEqual(['input', 'physics', 'modules', 'flow', 'render', 'other']);
+		expect(s.cpu?.phases.map((p) => p.phase)).toEqual([
+			'input',
+			'physics',
+			'modules',
+			'flow',
+			'render',
+			'other'
+		]);
 		const shares = (s.cpu?.phases ?? []).reduce((n, p) => n + p.share, 0);
 		expect(shares).toBeCloseTo(1, 2);
 		expect(s.events.map((e) => e.kind)).toEqual(['mark']);
@@ -181,14 +313,38 @@ describe('captures behind a selection', () => {
 
 describe('the tree: scene → module/game → object → mesh/material', () => {
 	it('places a row by owner and top-level object', () => {
-		expect(placeOfRow({ uuid: 'x', path: 'Scene/Car/Wheel', calls: 1, tris: 1 })).toEqual({ group: SCENE_GROUP, object: 'Car', scene: true, depth: 2, editor: false });
-		expect(placeOfRow({ uuid: 'x', path: 'football-module/Ball', module: 'football', calls: 1, tris: 1 }).group).toBe('football');
-		expect(placeOfRow({ uuid: 'x', path: 'editor-grid', calls: 1, tris: 1 }).group).toBe(EDITOR_GROUP);
-		expect(placeOfRow({ uuid: 'x', path: 'Object3D/TransformControlsGizmo/Object3D/X', calls: 3, tris: 72 })).toMatchObject({ group: EDITOR_GROUP, object: 'TransformControlsGizmo', editor: true });
-		expect(placeOfRow({ uuid: 'x', path: 'sky-dome', helper: true, calls: 1, tris: 1 }).group).toBe(EDITOR_GROUP);
+		expect(placeOfRow({ uuid: 'x', path: 'Scene/Car/Wheel', calls: 1, tris: 1 })).toEqual({
+			group: SCENE_GROUP,
+			object: 'Car',
+			scene: true,
+			depth: 2,
+			editor: false
+		});
+		expect(
+			placeOfRow({ uuid: 'x', path: 'football-module/Ball', module: 'football', calls: 1, tris: 1 })
+				.group
+		).toBe('football');
+		expect(placeOfRow({ uuid: 'x', path: 'editor-grid', calls: 1, tris: 1 }).group).toBe(
+			EDITOR_GROUP
+		);
+		expect(
+			placeOfRow({
+				uuid: 'x',
+				path: 'Object3D/TransformControlsGizmo/Object3D/X',
+				calls: 3,
+				tris: 72
+			})
+		).toMatchObject({ group: EDITOR_GROUP, object: 'TransformControlsGizmo', editor: true });
+		expect(placeOfRow({ uuid: 'x', path: 'sky-dome', helper: true, calls: 1, tris: 1 }).group).toBe(
+			EDITOR_GROUP
+		);
 		// a module's content and the scene's own objects are never the editor's, whatever their names
-		expect(placeOfRow({ uuid: 'x', path: 'Scene/Light helper prop', calls: 1, tris: 1 }).group).toBe(SCENE_GROUP);
-		expect(placeOfRow({ uuid: 'x', path: 'mod/AxesHelper', module: 'mod', calls: 1, tris: 1 }).group).toBe('mod');
+		expect(
+			placeOfRow({ uuid: 'x', path: 'Scene/Light helper prop', calls: 1, tris: 1 }).group
+		).toBe(SCENE_GROUP);
+		expect(
+			placeOfRow({ uuid: 'x', path: 'mod/AxesHelper', module: 'mod', calls: 1, tris: 1 }).group
+		).toBe('mod');
 		expect(placeOfRow({ uuid: 'x', path: 'env-rig/Sun', calls: 1, tris: 1 }).group).toBe('env-rig');
 	});
 
@@ -226,7 +382,16 @@ describe('the tree: scene → module/game → object → mesh/material', () => {
 	});
 
 	it('the planted heavy object is first even when every object costs one draw call', () => {
-		const rows = ['Light A', 'Heavy', 'Light B'].map((name, i) => ({ uuid: 'u' + i, name, path: 'Scene/' + name, calls: 1, tris: name === 'Heavy' ? 60000 : 12, material: 'M', shadow: false, ms: 0.01 }));
+		const rows = ['Light A', 'Heavy', 'Light B'].map((name, i) => ({
+			uuid: 'u' + i,
+			name,
+			path: 'Scene/' + name,
+			calls: 1,
+			tris: name === 'Heavy' ? 60000 : 12,
+			material: 'M',
+			shadow: false,
+			ms: 0.01
+		}));
 		const t = buildTree(rows);
 		expect(t.children[0].children[0].label).toBe('Heavy');
 	});
@@ -263,7 +428,19 @@ describe('comparing two recordings', () => {
 	it('per object and per owner when both are detailed; objects match by owner + name', () => {
 		const a = doc();
 		const b = doc({ captures: [capture(300, 0.5), capture(700, 0.5)] });
-		b.captures.forEach((c) => c.objects.push({ uuid: 'new', name: 'Tree', path: 'Scene/Tree', module: null, calls: 4, tris: 8000, material: 'Leaf', shadow: false, ms: 0.2 }));
+		b.captures.forEach((c) =>
+			c.objects.push({
+				uuid: 'new',
+				name: 'Tree',
+				path: 'Scene/Tree',
+				module: null,
+				calls: 4,
+				tris: 8000,
+				material: 'Leaf',
+				shadow: false,
+				ms: 0.2
+			})
+		);
 		b.frames = frames(60, (i) => ({ calls: 140, ms: 20, cpu: { render: 9 + (i % 2), other: 1 } }));
 		const c = compareDocs(a, b);
 		expect(c.detailed).toBe(true);

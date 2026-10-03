@@ -17,7 +17,16 @@
 	// (Ctrl ×10), Shift extends the range, Home/End, +/− zoom, 0 fits, Z zooms to the
 	// selection, Esc selects the whole recording again.
 	import { untrack } from 'svelte';
-	import { SERIES, bucketize, scaleOf, spanOf, frameIndexAt, fmtCount, fmtMs, fmtSec } from '$lib/perf/profilerModel.js';
+	import {
+		SERIES,
+		bucketize,
+		scaleOf,
+		spanOf,
+		frameIndexAt,
+		fmtCount,
+		fmtMs,
+		fmtSec
+	} from '$lib/perf/profilerModel.js';
 
 	/**
 	 * @type {{
@@ -183,7 +192,11 @@
 				g.setLineDash([]);
 				g.fillStyle = '#ef4444';
 				g.textAlign = 'right';
-				g.fillText(`${s.key === 'tris' ? fmtCount(s.budget) : s.budget}${s.unit ? ' ' + s.unit : ''}`, width - 4, y(s.budget) - 11);
+				g.fillText(
+					`${s.key === 'tris' ? fmtCount(s.budget) : s.budget}${s.unit ? ' ' + s.unit : ''}`,
+					width - 4,
+					y(s.budget) - 11
+				);
 				g.globalAlpha = 1;
 			}
 			// the lane's name + its scale
@@ -252,13 +265,20 @@
 	// ---------------------------------------------------------------- the readout
 
 	const readT = $derived(hoverT ?? frames[cursor]?.t ?? null);
-	const readFrame = $derived(readT === null || !frames.length ? null : frames[frameIndexAt(frames, readT)]);
+	const readFrame = $derived(
+		readT === null || !frames.length ? null : frames[frameIndexAt(frames, readT)]
+	);
 	/** the nearest event within 4 px of the hover */
 	const readEvent = $derived.by(() => {
 		if (hoverT === null) return null;
 		const tol = (4 / width) * (view.to - view.from);
 		let best = null;
-		for (const e of events) if (Math.abs(e.t - hoverT) <= tol && (!best || Math.abs(e.t - hoverT) < Math.abs(best.t - hoverT))) best = e;
+		for (const e of events)
+			if (
+				Math.abs(e.t - hoverT) <= tol &&
+				(!best || Math.abs(e.t - hoverT) < Math.abs(best.t - hoverT))
+			)
+				best = e;
 		return best;
 	});
 
@@ -266,9 +286,11 @@
 	function eventText(e) {
 		const d = e.detail;
 		if (!d || typeof d !== 'object') return e.kind;
-		if (e.kind === 'stall') return `stall ${d.ms} ms${Array.isArray(d.doing) && d.doing.length ? ' — ' + d.doing.join(', ') : ''}`;
+		if (e.kind === 'stall')
+			return `stall ${d.ms} ms${Array.isArray(d.doing) && d.doing.length ? ' — ' + d.doing.join(', ') : ''}`;
 		if (e.kind === 'quality') return `quality → ${d.level}${d.reason ? ' (' + d.reason + ')' : ''}`;
-		if (e.kind === 'scene-load') return `scene load ${d.phase ?? ''} ${d.scene ?? ''}${d.ms ? ' ' + d.ms + ' ms' : ''}`;
+		if (e.kind === 'scene-load')
+			return `scene load ${d.phase ?? ''} ${d.scene ?? ''}${d.ms ? ' ' + d.ms + ' ms' : ''}`;
 		if (d.text) return `${e.kind}: ${d.text}`;
 		return e.kind + ' ' + JSON.stringify(d).slice(0, 80);
 	}
@@ -318,7 +340,8 @@
 	function gestures(node) {
 		/** @type {null | {kind: 'select' | 'pan', x0: number, t0: number, view0: {from: number, to: number}, moved: boolean, id: number}} */
 		let drag = null;
-		const xOf = (/** @type {PointerEvent | WheelEvent | MouseEvent} */ e) => e.clientX - node.getBoundingClientRect().left;
+		const xOf = (/** @type {PointerEvent | WheelEvent | MouseEvent} */ e) =>
+			e.clientX - node.getBoundingClientRect().left;
 		/** @param {PointerEvent} e */
 		const down = (e) => {
 			if (e.button !== 0 && e.button !== 1) return;
@@ -326,7 +349,14 @@
 			node.focus();
 			node.setPointerCapture(e.pointerId);
 			const x = xOf(e);
-			drag = { kind: e.button === 1 || e.shiftKey ? 'pan' : 'select', x0: x, t0: tAt(x), view0: { ...view }, moved: false, id: e.pointerId };
+			drag = {
+				kind: e.button === 1 || e.shiftKey ? 'pan' : 'select',
+				x0: x,
+				t0: tAt(x),
+				view0: { ...view },
+				moved: false,
+				id: e.pointerId
+			};
 		};
 		/** @param {PointerEvent} e */
 		const move = (e) => {
@@ -410,8 +440,10 @@
 			else if (e.key === 'ArrowLeft') walk(cursor - by);
 			else if (e.key === 'Home') walk(0);
 			else if (e.key === 'End') walk(n - 1);
-			else if (e.key === '+' || e.key === '=') zoom(1 / 1.5, frames[cursor]?.t ?? (view.from + view.to) / 2);
-			else if (e.key === '-' || e.key === '_') zoom(1.5, frames[cursor]?.t ?? (view.from + view.to) / 2);
+			else if (e.key === '+' || e.key === '=')
+				zoom(1 / 1.5, frames[cursor]?.t ?? (view.from + view.to) / 2);
+			else if (e.key === '-' || e.key === '_')
+				zoom(1.5, frames[cursor]?.t ?? (view.from + view.to) / 2);
 			else if (e.key === '0') fit();
 			else if (e.key === 'z' || e.key === 'Z') zoomToSelection();
 			else if (e.key === 'Escape' && sel) {
@@ -429,7 +461,9 @@
 
 	const cursorFrame = $derived(frames[cursor] ?? null);
 	const valueText = $derived(
-		cursorFrame ? `frame ${cursor + 1} of ${frames.length} at ${fmtSec(cursorFrame.t)}: ${fmtMs(cursorFrame.ms)}, ${cursorFrame.calls ?? '–'} draw calls` : 'no frames'
+		cursorFrame
+			? `frame ${cursor + 1} of ${frames.length} at ${fmtSec(cursorFrame.t)}: ${fmtMs(cursorFrame.ms)}, ${cursorFrame.calls ?? '–'} draw calls`
+			: 'no frames'
 	);
 </script>
 
@@ -438,7 +472,7 @@
 	<div
 		bind:this={wrap}
 		id="profiler-timeline"
-		class="pf-timeline relative min-h-0 flex-1 cursor-crosshair select-none rounded-sm outline-none focus-visible:ring-1 focus-visible:ring-primary-400"
+		class="pf-timeline focus-visible:ring-primary-400 relative min-h-0 flex-1 cursor-crosshair rounded-sm outline-none select-none focus-visible:ring-1"
 		role="slider"
 		tabindex="0"
 		aria-label="Recording timeline: arrow keys pick a frame, Shift extends a range, plus and minus zoom, 0 fits"
@@ -454,12 +488,17 @@
 		use:gestures
 		use:keys
 	>
-		<canvas bind:this={canvas} class="pf-canvas absolute inset-0 h-full w-full" aria-hidden="true"></canvas>
+		<canvas bind:this={canvas} class="pf-canvas absolute inset-0 h-full w-full" aria-hidden="true"
+		></canvas>
 	</div>
-	<div class="pf-readout flex h-5 shrink-0 items-center gap-3 overflow-hidden whitespace-nowrap px-1 text-[11px] text-gray-400">
+	<div
+		class="pf-readout flex h-5 shrink-0 items-center gap-3 overflow-hidden px-1 text-[11px] whitespace-nowrap text-gray-400"
+	>
 		{#if readFrame}
 			<span class="text-gray-300">{fmtSec(readFrame.t)}</span>
-			<span>{fmtMs(readFrame.ms)} ({readFrame.ms > 0 ? Math.round(1000 / readFrame.ms) : '–'} fps)</span>
+			<span
+				>{fmtMs(readFrame.ms)} ({readFrame.ms > 0 ? Math.round(1000 / readFrame.ms) : '–'} fps)</span
+			>
 			<span>{readFrame.calls ?? '–'} calls</span>
 			<span>{fmtCount(readFrame.tris)} tris</span>
 			<span>Q{readFrame.quality ?? '–'}</span>

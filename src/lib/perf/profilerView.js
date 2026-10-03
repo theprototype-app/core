@@ -31,9 +31,14 @@ export const profilerRequest = writable(null);
 export function registerLiveSource(opts) {
 	const id = String(opts.id);
 	const label = String(opts.label || id).slice(0, 80);
-	liveSources.update((list) => [...list.filter((s) => s.id !== id), { id, label, doc: null, live: true, updatedAt: Date.now() }]);
+	liveSources.update((list) => [
+		...list.filter((s) => s.id !== id),
+		{ id, label, doc: null, live: true, updatedAt: Date.now() }
+	]);
 	const patch = (/** @type {Partial<LiveSource>} */ p) =>
-		liveSources.update((list) => list.map((s) => (s.id === id ? { ...s, ...p, updatedAt: Date.now() } : s)));
+		liveSources.update((list) =>
+			list.map((s) => (s.id === id ? { ...s, ...p, updatedAt: Date.now() } : s))
+		);
 	return {
 		id,
 		/** @param {import('./tpprof.js').Tpprof} doc */

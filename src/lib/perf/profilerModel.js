@@ -48,11 +48,36 @@ const EDITOR_SEGMENT = /^(TransformControls\w*|editor-grid|.*helpers?|.*-helper-
  * @type {ReadonlyArray<{key: string, label: string, unit: string, budget: number | null, of: (f: import('./tpprof.js').TpFrame) => number | null, higherIsBetter?: boolean}>}
  */
 export const SERIES = Object.freeze([
-	{ key: 'fps', label: 'FPS', unit: '', budget: BUDGET.fps, higherIsBetter: true, of: (f) => (f.ms > 0 ? 1000 / f.ms : null) },
+	{
+		key: 'fps',
+		label: 'FPS',
+		unit: '',
+		budget: BUDGET.fps,
+		higherIsBetter: true,
+		of: (f) => (f.ms > 0 ? 1000 / f.ms : null)
+	},
 	{ key: 'ms', label: 'Frame ms', unit: 'ms', budget: BUDGET.ms, of: (f) => f.ms },
-	{ key: 'calls', label: 'Draw calls', unit: '', budget: BUDGET.calls, of: (f) => (typeof f.calls === 'number' ? f.calls : null) },
-	{ key: 'tris', label: 'Triangles', unit: '', budget: BUDGET.tris, of: (f) => (typeof f.tris === 'number' ? f.tris : null) },
-	{ key: 'quality', label: 'Quality', unit: '', budget: null, of: (f) => (typeof f.quality === 'number' ? f.quality : null) }
+	{
+		key: 'calls',
+		label: 'Draw calls',
+		unit: '',
+		budget: BUDGET.calls,
+		of: (f) => (typeof f.calls === 'number' ? f.calls : null)
+	},
+	{
+		key: 'tris',
+		label: 'Triangles',
+		unit: '',
+		budget: BUDGET.tris,
+		of: (f) => (typeof f.tris === 'number' ? f.tris : null)
+	},
+	{
+		key: 'quality',
+		label: 'Quality',
+		unit: '',
+		budget: null,
+		of: (f) => (typeof f.quality === 'number' ? f.quality : null)
+	}
 ]);
 
 /** @param {number} v */
@@ -210,7 +235,8 @@ export function cpuPhases(frames) {
 	if (!withCpu.length) return null;
 	/** @type {string[]} */
 	const keys = [...CPU_PHASES];
-	for (const f of withCpu) for (const k of Object.keys(/** @type {any} */ (f.cpu))) if (!keys.includes(k)) keys.push(k);
+	for (const f of withCpu)
+		for (const k of Object.keys(/** @type {any} */ (f.cpu))) if (!keys.includes(k)) keys.push(k);
 	const sum = new Map(keys.map((k) => [k, 0]));
 	const max = new Map(keys.map((k) => [k, 0]));
 	for (const f of withCpu) {
@@ -225,7 +251,12 @@ export function cpuPhases(frames) {
 	return {
 		frames: withCpu.length,
 		total: r3(total),
-		phases: keys.map((phase, i) => ({ phase, mean: r3(means[i]), max: r3(/** @type {number} */ (max.get(phase))), share: total > 0 ? r3(means[i] / total) : 0 }))
+		phases: keys.map((phase, i) => ({
+			phase,
+			mean: r3(means[i]),
+			max: r3(/** @type {number} */ (max.get(phase))),
+			share: total > 0 ? r3(means[i] / total) : 0
+		}))
 	};
 }
 
@@ -267,7 +298,13 @@ export function mergeCaptures(captures) {
 			const key = o.uuid + (o.shadow ? ':s' : '');
 			let row = rows.get(key);
 			if (!row) rows.set(key, (row = { ...o, calls: 0, tris: 0, ...(o.shadow ? {} : { ms: 0 }) }));
-			else Object.assign(row, { name: o.name ?? row.name, path: o.path ?? row.path, module: o.module ?? row.module, material: o.material ?? row.material });
+			else
+				Object.assign(row, {
+					name: o.name ?? row.name,
+					path: o.path ?? row.path,
+					module: o.module ?? row.module,
+					material: o.material ?? row.material
+				});
 			row.calls += o.calls;
 			row.tris += o.tris;
 			if (!o.shadow && typeof o.ms === 'number') row.ms += o.ms;
@@ -291,7 +328,14 @@ export function placeOfRow(row) {
 	const parts = (scene ? path.slice(6) : path).split('/').filter(Boolean);
 	if (!scene && !row.module) {
 		const mark = parts.find((p) => EDITOR_SEGMENT.test(p));
-		if (row.helper === true || mark) return { group: EDITOR_GROUP, object: mark || parts[0] || row.name || row.uuid, scene: false, depth: parts.length, editor: true };
+		if (row.helper === true || mark)
+			return {
+				group: EDITOR_GROUP,
+				object: mark || parts[0] || row.name || row.uuid,
+				scene: false,
+				depth: parts.length,
+				editor: true
+			};
 	}
 	const group = row.module ? String(row.module) : scene ? SCENE_GROUP : parts[0] || 'Other';
 	const object = parts[0] || row.name || row.uuid;
@@ -312,7 +356,19 @@ export const isEditorRow = (row) => placeOfRow(row).editor;
 
 /** @param {string} id @param {TreeNode['kind']} kind @param {string} label @returns {TreeNode} */
 function node(id, kind, label) {
-	return { id, kind, label, calls: 0, tris: 0, ms: 0, shadowCalls: 0, uuid: null, top: false, scene: false, children: [] };
+	return {
+		id,
+		kind,
+		label,
+		calls: 0,
+		tris: 0,
+		ms: 0,
+		shadowCalls: 0,
+		uuid: null,
+		top: false,
+		scene: false,
+		children: []
+	};
 }
 
 /** the sort keys a tree / ranking column offers @type {Record<string, (a: any, b: any) => number>} */
@@ -359,7 +415,11 @@ export function buildTree(rows, opts = {}) {
 			o.uuid = row.uuid;
 			o.top = true;
 		} else if (!o.uuid) o.uuid = row.uuid;
-		const leaf = node('m:' + row.uuid + (row.shadow ? ':s' : ''), 'mesh', (row.name || row.uuid) + (row.shadow ? ' (shadow)' : ''));
+		const leaf = node(
+			'm:' + row.uuid + (row.shadow ? ':s' : ''),
+			'mesh',
+			(row.name || row.uuid) + (row.shadow ? ' (shadow)' : '')
+		);
 		Object.assign(leaf, {
 			uuid: row.uuid,
 			scene,
@@ -420,7 +480,18 @@ export function rankings(rows, limit = 20) {
 	rows = all.filter((r) => !isEditorRow(r));
 	const tree = buildTree(rows);
 	const objects = tree.children
-		.flatMap((g) => g.children.map((o) => ({ label: o.label, group: g.label, uuid: o.uuid, scene: o.scene, calls: o.calls, tris: o.tris, ms: o.ms, shadowCalls: o.shadowCalls })))
+		.flatMap((g) =>
+			g.children.map((o) => ({
+				label: o.label,
+				group: g.label,
+				uuid: o.uuid,
+				scene: o.scene,
+				calls: o.calls,
+				tris: o.tris,
+				ms: o.ms,
+				shadowCalls: o.shadowCalls
+			}))
+		)
 		.sort(SORTS.cost)
 		.slice(0, limit);
 	/** @type {Map<string, {label: string, calls: number, tris: number, ms: number, objects: number, uuid: string | null}>} */
@@ -435,18 +506,39 @@ export function rankings(rows, limit = 20) {
 		m.ms += row.ms ?? 0;
 		m.objects++;
 	}
-	const materials = [...mats.values()].map((m) => ({ ...m, calls: Math.round(m.calls * 100) / 100, ms: r3(m.ms) })).sort(SORTS.cost).slice(0, limit);
+	const materials = [...mats.values()]
+		.map((m) => ({ ...m, calls: Math.round(m.calls * 100) / 100, ms: r3(m.ms) }))
+		.sort(SORTS.cost)
+		.slice(0, limit);
 	const shadowRows = rows.filter((r) => r.shadow);
 	const shadows = shadowRows
-		.map((r) => ({ label: r.name || r.uuid, group: placeOfRow(r).group, uuid: r.uuid, scene: placeOfRow(r).scene, calls: r.calls, tris: r.tris, ms: 0 }))
+		.map((r) => ({
+			label: r.name || r.uuid,
+			group: placeOfRow(r).group,
+			uuid: r.uuid,
+			scene: placeOfRow(r).scene,
+			calls: r.calls,
+			tris: r.tris,
+			ms: 0
+		}))
 		.sort(SORTS.cost)
 		.slice(0, limit);
 	const transparent = rows
 		.filter((r) => r.transparent && !r.shadow)
-		.map((r) => ({ label: r.name || r.uuid, group: placeOfRow(r).group, uuid: r.uuid, scene: placeOfRow(r).scene, calls: r.calls, tris: r.tris, ms: r.ms ?? 0, material: r.material ?? '' }))
+		.map((r) => ({
+			label: r.name || r.uuid,
+			group: placeOfRow(r).group,
+			uuid: r.uuid,
+			scene: placeOfRow(r).scene,
+			calls: r.calls,
+			tris: r.tris,
+			ms: r.ms ?? 0,
+			material: r.material ?? ''
+		}))
 		.sort(SORTS.tris)
 		.slice(0, limit);
-	const sum = (/** @type {any[]} */ list, /** @type {string} */ k) => list.reduce((n, r) => n + (r[k] ?? 0), 0);
+	const sum = (/** @type {any[]} */ list, /** @type {string} */ k) =>
+		list.reduce((n, r) => n + (r[k] ?? 0), 0);
 	return {
 		objects,
 		materials,
@@ -504,7 +596,10 @@ export function delta(a, b, higherIsBetter = false) {
 export function compareDocs(a, b) {
 	const sa = summarize(a);
 	const sb = summarize(b);
-	const summary = COMPARE_KEYS.map((k) => ({ ...k, ...delta(/** @type {any} */ (sa)[k.key], /** @type {any} */ (sb)[k.key], !!k.higherIsBetter) }));
+	const summary = COMPARE_KEYS.map((k) => ({
+		...k,
+		...delta(/** @type {any} */ (sa)[k.key], /** @type {any} */ (sb)[k.key], !!k.higherIsBetter)
+	}));
 	const detailed = !!(a.captures?.length && b.captures?.length);
 	/** @type {any[]} */
 	let groups = [];
@@ -519,7 +614,8 @@ export function compareDocs(a, b) {
 			/** @type {Map<string, any>} */ const o = new Map();
 			for (const gn of t.children) {
 				g.set(gn.label, gn);
-				for (const on of gn.children) o.set(gn.label + '\u0000' + on.label, { ...on, group: gn.label });
+				for (const on of gn.children)
+					o.set(gn.label + '\u0000' + on.label, { ...on, group: gn.label });
 			}
 			return { g, o };
 		};
@@ -542,7 +638,9 @@ export function compareDocs(a, b) {
 				};
 			});
 		const byChange = (/** @type {any} */ p, /** @type {any} */ q) =>
-			Math.abs(q.calls.delta ?? 0) - Math.abs(p.calls.delta ?? 0) || Math.abs(q.tris.delta ?? 0) - Math.abs(p.tris.delta ?? 0) || String(p.label).localeCompare(q.label);
+			Math.abs(q.calls.delta ?? 0) - Math.abs(p.calls.delta ?? 0) ||
+			Math.abs(q.tris.delta ?? 0) - Math.abs(p.tris.delta ?? 0) ||
+			String(p.label).localeCompare(q.label);
 		groups = pair(ia.g, ib.g).sort(byChange);
 		objects = pair(ia.o, ib.o).sort(byChange);
 	}
@@ -550,10 +648,15 @@ export function compareDocs(a, b) {
 	const cb = cpuPhases(b.frames ?? []);
 	const cpu =
 		ca && cb
-			? [...new Set([...ca.phases.map((p) => p.phase), ...cb.phases.map((p) => p.phase)])].map((phase) => ({
-					phase,
-					...delta(ca.phases.find((p) => p.phase === phase)?.mean ?? 0, cb.phases.find((p) => p.phase === phase)?.mean ?? 0)
-				}))
+			? [...new Set([...ca.phases.map((p) => p.phase), ...cb.phases.map((p) => p.phase)])].map(
+					(phase) => ({
+						phase,
+						...delta(
+							ca.phases.find((p) => p.phase === phase)?.mean ?? 0,
+							cb.phases.find((p) => p.phase === phase)?.mean ?? 0
+						)
+					})
+				)
 			: null;
 	return { a: sa, b: sb, summary, detailed, groups, objects, cpu };
 }

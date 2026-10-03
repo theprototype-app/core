@@ -30,7 +30,8 @@
 		return d.pct === null ? s : `${s} (${d.pct > 0 ? '+' : ''}${d.pct}%)`;
 	}
 	/** lower is better for every per-object column @param {number | null} delta */
-	const tone = (delta) => (delta === null || Math.abs(delta) < 1e-9 ? '' : delta > 0 ? 'pf-worse' : 'pf-better');
+	const tone = (delta) =>
+		delta === null || Math.abs(delta) < 1e-9 ? '' : delta > 0 ? 'pf-worse' : 'pf-better';
 	let showAll = $state(false);
 	const objects = $derived(showAll ? cmp.objects : cmp.objects.slice(0, 25));
 </script>
@@ -38,7 +39,11 @@
 <div id="profiler-compare" class="h-full min-h-0 overflow-auto pr-1 text-[11.5px]">
 	<table class="pf-cmp" aria-label="Headline numbers, A against B">
 		<thead>
-			<tr><th></th><th class="num">A · {aLabel}</th><th class="num">B · {bLabel}</th><th class="num">Change</th></tr>
+			<tr
+				><th></th><th class="num">A · {aLabel}</th><th class="num">B · {bLabel}</th><th class="num"
+					>Change</th
+				></tr
+			>
 		</thead>
 		<tbody>
 			{#each cmp.summary as s (s.key)}
@@ -46,7 +51,9 @@
 					<td>{s.label}</td>
 					<td class="num">{fmt(s.key, s.a)}</td>
 					<td class="num">{fmt(s.key, s.b)}</td>
-					<td class="num pf-{s.verdict ?? 'na'}">{signed(s, (n) => fmt(s.key, n))}{s.verdict === 'same' ? ' ·same' : ''}</td>
+					<td class="num pf-{s.verdict ?? 'na'}"
+						>{signed(s, (n) => fmt(s.key, n))}{s.verdict === 'same' ? ' ·same' : ''}</td
+					>
 				</tr>
 			{/each}
 		</tbody>
@@ -57,14 +64,24 @@
 	{:else}
 		<h4 class="pf-h">By module / game</h4>
 		<table class="pf-cmp" id="profiler-compare-groups">
-			<thead><tr><th>Owner</th><th class="num">Calls</th><th class="num">Tris</th><th class="num">CPU ms</th></tr></thead>
+			<thead
+				><tr
+					><th>Owner</th><th class="num">Calls</th><th class="num">Tris</th><th class="num"
+						>CPU ms</th
+					></tr
+				></thead
+			>
 			<tbody>
 				{#each cmp.groups as g (g.key)}
 					<tr data-label={g.label} data-status={g.status}>
-						<td>{g.label}{#if g.status !== 'both'}<span class="pf-sub"> ({g.status})</span>{/if}</td>
+						<td
+							>{g.label}{#if g.status !== 'both'}<span class="pf-sub"> ({g.status})</span>{/if}</td
+						>
 						<td class="num {tone(g.calls.delta)}">{signed(g.calls)}</td>
 						<td class="num {tone(g.tris.delta)}">{signed(g.tris)}</td>
-						<td class="num {tone(g.ms.delta)}">{signed(g.ms, (n) => fmtMs(n).replace(' ms', ''))}</td>
+						<td class="num {tone(g.ms.delta)}"
+							>{signed(g.ms, (n) => fmtMs(n).replace(' ms', ''))}</td
+						>
 					</tr>
 				{/each}
 			</tbody>
@@ -72,30 +89,54 @@
 
 		<h4 class="pf-h">By object <span class="pf-sub">biggest change first</span></h4>
 		<table class="pf-cmp" id="profiler-compare-objects">
-			<thead><tr><th>Object</th><th class="num">Calls</th><th class="num">Tris</th><th class="num">CPU ms</th></tr></thead>
+			<thead
+				><tr
+					><th>Object</th><th class="num">Calls</th><th class="num">Tris</th><th class="num"
+						>CPU ms</th
+					></tr
+				></thead
+			>
 			<tbody>
 				{#each objects as o (o.key)}
-					<tr data-label={o.label} data-status={o.status} data-calls-delta={o.calls.delta} data-tris-delta={o.tris.delta}>
+					<tr
+						data-label={o.label}
+						data-status={o.status}
+						data-calls-delta={o.calls.delta}
+						data-tris-delta={o.tris.delta}
+					>
 						<td>
-							<button class="pf-link" onclick={() => onpick({ uuid: o.uuid, label: o.label, scene: o.group === 'Scene objects' })}>{o.label}</button>
+							<button
+								class="pf-link"
+								onclick={() =>
+									onpick({ uuid: o.uuid, label: o.label, scene: o.group === 'Scene objects' })}
+								>{o.label}</button
+							>
 							<span class="pf-sub"> · {o.group}{o.status !== 'both' ? ` · ${o.status}` : ''}</span>
 						</td>
 						<td class="num {tone(o.calls.delta)}">{signed(o.calls)}</td>
 						<td class="num {tone(o.tris.delta)}">{signed(o.tris)}</td>
-						<td class="num {tone(o.ms.delta)}">{signed(o.ms, (n) => fmtMs(n).replace(' ms', ''))}</td>
+						<td class="num {tone(o.ms.delta)}"
+							>{signed(o.ms, (n) => fmtMs(n).replace(' ms', ''))}</td
+						>
 					</tr>
 				{/each}
 			</tbody>
 		</table>
 		{#if cmp.objects.length > 25}
-			<button class="ui-button-quiet mt-1" onclick={() => (showAll = !showAll)}>{showAll ? 'Show the top 25' : `Show all ${cmp.objects.length}`}</button>
+			<button class="ui-button-quiet mt-1" onclick={() => (showAll = !showAll)}
+				>{showAll ? 'Show the top 25' : `Show all ${cmp.objects.length}`}</button
+			>
 		{/if}
 	{/if}
 
 	{#if cmp.cpu}
 		<h4 class="pf-h">CPU phases (mean per frame)</h4>
 		<table class="pf-cmp">
-			<thead><tr><th>Phase</th><th class="num">A</th><th class="num">B</th><th class="num">Change</th></tr></thead>
+			<thead
+				><tr
+					><th>Phase</th><th class="num">A</th><th class="num">B</th><th class="num">Change</th></tr
+				></thead
+			>
 			<tbody>
 				{#each cmp.cpu as p (p.phase)}
 					<tr data-phase={p.phase}>

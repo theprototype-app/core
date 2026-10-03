@@ -57,7 +57,7 @@ export function sdkPlayer(ctx) {
 				spawnDisposeHooked = true;
 				onDispose(() => {
 					if (get(runtimeSpawn)?.owner === moduleId) setRuntimeSpawn(null);
-				});
+				}, 'spawn');
 			}
 			if (ok && position && options?.teleport) respawnPlayerNow();
 			return ok;
@@ -84,3 +84,12 @@ export function sdkPlayer(ctx) {
 		}
 	};
 }
+
+/** 34 R6 (T2): what each member does to the module's lifecycle — see SURFACE_KINDS in
+ * sdk/lifecycle.js. tests/unit/moduleLifecycle.test.js holds every 'registers' member to a
+ * teardown path; a member missing here fails it. */
+sdkPlayer.surface = {
+	setSpawn: 'registers',
+	respawnPlayer: 'action',
+	pointerRay: 'read'
+};

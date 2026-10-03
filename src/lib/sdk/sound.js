@@ -72,7 +72,7 @@ export function sdkSound(ctx) {
 			play: (preset, options = {}) => {
 				if (!musicDisposeHooked) {
 					musicDisposeHooked = true;
-					onDispose(() => stopGameMusic(moduleId));
+					onDispose(() => stopGameMusic(moduleId), 'music');
 				}
 				return playGameMusic(preset, options ?? {}, moduleId);
 			},
@@ -83,3 +83,17 @@ export function sdkSound(ctx) {
 		}
 	};
 }
+
+/** 34 R6 (T2): what each member does to the module's lifecycle — see SURFACE_KINDS in
+ * sdk/lifecycle.js. tests/unit/moduleLifecycle.test.js holds every 'registers' member to a
+ * teardown path; a member missing here fails it. */
+sdkSound.surface = {
+	playSound: 'action',
+	'effects.burst': 'action',
+	'effects.kinds': 'read',
+	announce: 'action',
+	'music.play': 'registers',
+	'music.stop': 'action',
+	'music.current': 'read',
+	'music.presets': 'read'
+};

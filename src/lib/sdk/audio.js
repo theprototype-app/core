@@ -11,7 +11,55 @@ import {
 
 /** @param {import('./context.js').SdkContext} ctx */
 export function sdkAudio(ctx) {
-	const { moduleId, scheduledCancels } = ctx;
+	const { moduleId, scheduledCancels, onDispose } = ctx;
+	/** T2: the engine voices this module made and has not disposed — a voice left connected
+	 * (a held note, a looping sample) outlived its module @type {Set<any>} */
+	const voices = new Set();
+	let voicesHooked = false;
+	/** @param {any} voice */
+	const trackVoice = (voice) => {
+		if (!voice) return voice;
+		// a voice that ENDED on its own can never play again: disconnect it and let it go
+		// before the set grows (a sequencer makes a voice per note all session)
+		if (voices.size >= 64) for (const v of voices) if (v.ended) v.dispose();
+		voices.add(voice);
+		if (!voicesHooked) {
+			voicesHooked = true;
+			onDispose(() => {
+				voicesHooked = false;
+				for (const v of voices) {
+					try {
+						v.dispose();
+					} catch {}
+				}
+				voices.clear();
+			}, 'audio.voice');
+		}
+		const dispose = voice.dispose;
+		voice.dispose = () => {
+			voices.delete(voice);
+			dispose.call(voice);
+		};
+		return voice;
+	};
+	/** T2: the mic streams handed out (each a CLONE of the shared raw stream, so stopping
+	 * this module's copy never cuts a Mic device's) @type {Set<MediaStream>} */
+	const micStreams = new Set();
+	let micHooked = false;
+	/** @param {MediaStream} stream */
+	const trackMic = (stream) => {
+		const mine = stream.clone();
+		micStreams.add(mine);
+		if (!micHooked) {
+			micHooked = true;
+			onDispose(() => {
+				micHooked = false;
+				for (const s of micStreams) s.getTracks().forEach((t) => t.stop());
+				micStreams.clear();
+			}, 'audio.mic');
+		}
+		return mine;
+	};
 	return {
 		/**
 		 * 23-A5: the audio engine, the musical clock and the patch, for a device's own
@@ -22,7 +70,8 @@ export function sdkAudio(ctx) {
 			/** an engine voice: `sampleVoice` when `opts.buffer` is set, else `oscVoice` —
 			 * `{output, start(at), stop(at), dispose()}`; connect `output` where you want
 			 * it heard, or pass `destination` (a node or a bus name). @param {any} [opts] */
-			voice: (opts = {}) => (opts.buffer ? audioEngineRef?.sampleVoice(opts) : audioEngineRef?.oscVoice(opts)) ?? null,
+			voice: (opts = {}) =>
+				trackVoice((opts.buffer ? audioEngineRef?.sampleVoice(opts) : audioEngineRef?.oscVoice(opts)) ?? null),
 			/** a named bus (music / sfx / voice / instruments) to connect a source to,
 			 * instead of `ctx.destination` @param {string} [name] */
 			bus: (name = 'instruments') => audioEngineRef?.bus(name) ?? null,
@@ -47,6 +96,15 @@ export function sdkAudio(ctx) {
 				if (!musicClockRef) return () => {};
 				const cancel = musicClockRef.schedule(beat, fn, opts);
 				scheduledCancels.add(cancel);
+				// ONE entry for every event still scheduled (a sequencer schedules thousands)
+				onDispose(
+					() => {
+						scheduledCancels.forEach((c) => c());
+						scheduledCancels.clear();
+					},
+					'audio.schedule',
+					{ key: 'audio.schedule' }
+				);
 				return () => {
 					scheduledCancels.delete(cancel);
 					cancel();
@@ -84,12 +142,32 @@ export function sdkAudio(ctx) {
 			/** 23-D1: the RAW microphone as a MediaStream - a separate capture from voice chat
 			 * (no echo cancellation / noise suppression / auto gain, and never gated by
 			 * push-to-talk). Rejects when the browser refuses. @param {MediaTrackConstraints} [constraints] */
-			captureMic: (constraints) => import('../micCapture').then((m) => m.captureMicStream(constraints)),
+			captureMic: (constraints) => import('../micCapture').then((m) => m.captureMicStream(constraints)).then(trackMic),
 			/** record a take from the raw mic into the Explorer and share it by hash; resolves to
 			 * the item, or null when refused BEFORE starting (over the visible cap, over the share
 			 * limit, no recorder). `opts.stream` bounces THAT stream instead of the mic (a
 			 * MediaStreamAudioDestinationNode's, for a looper). @param {{maxSeconds?: number, name?: string, stream?: MediaStream}} [opts] */
-			record: (opts) => import('../micCapture').then((m) => m.startRecording(opts)),
+			record: (opts) => {
+				// T2: a take this module started stops with it (the item is still kept). Journaled
+				// SYNCHRONOUSLY: recorded inside the `.then`, an unload landing first put the stop
+				// into the module's NEXT journal and the take ran on
+				/** @type {(() => void) | null} */
+				let stop = null;
+				let gone = false;
+				const release = onDispose(
+					() => {
+						gone = true;
+						stop?.();
+					},
+					'audio.record',
+					{ key: 'audio.record' }
+				);
+				return import('../micCapture').then((m) => {
+					if (gone) return null;
+					stop = () => m.stopRecording();
+					return m.startRecording(opts).finally(release);
+				});
+			},
 			/** end the running take (the record() promise resolves with the item) */
 			stopRecording: () => import('../micCapture').then((m) => m.stopRecording()),
 			/** the recorder's state `{active, startedAt, maxSeconds, name}` as a store */
@@ -97,3 +175,29 @@ export function sdkAudio(ctx) {
 		}
 	};
 }
+
+/** 34 R6 (T2): what each member does to the module's lifecycle — see SURFACE_KINDS in
+ * sdk/lifecycle.js. tests/unit/moduleLifecycle.test.js holds every 'registers' member to a
+ * teardown path; a member missing here fails it. */
+sdkAudio.surface = {
+	'audio.voice': 'registers',
+	'audio.bus': 'read',
+	'audio.context': 'read',
+	'audio.sample': 'read',
+	'audio.timeFor': 'read',
+	'audio.schedule': 'registers',
+	'audio.transport': 'read',
+	'audio.play': 'content',
+	'audio.setBpm': 'content',
+	'audio.addDevice': 'content',
+	'audio.device': 'read',
+	'audio.setParams': 'content',
+	'audio.previewParams': 'content',
+	'audio.note': 'action',
+	'audio.cable': 'content',
+	'audio.uncable': 'content',
+	'audio.captureMic': 'registers',
+	'audio.record': 'registers',
+	'audio.stopRecording': 'action',
+	'audio.recording': 'read'
+};

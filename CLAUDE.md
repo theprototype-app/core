@@ -1964,7 +1964,7 @@ loadable play content. Everything a user does must be visible to connected peers
   custom Svelte node UI, pong, vrsleeve = a thin shell over `$lib/vrSleeve` — LOCAL-only, register()
   just wires the vrControls hook registries, so disabling the module removes
   the sleeve entirely) + `index.js` `coreModules` list; manager enables/disables
-  (live enable; core still needs a reload to disable, USER modules disable live).
+  LIVE in both directions (34 R6: core modules unload as completely as user ones).
   **17-A moved piano/avatar/essentials/car/DUNGEON OUT to `theprototype-app/modules`**
   (installable from the manager's Browse tab) — they were pure demo content and
   are now the flagship gallery entries; the SDK grew what they needed
@@ -6725,9 +6725,20 @@ must never move your camera) and VR `isVR()`, `vrHand('left'|'right')`,
 mouseLook})` + the `possessModes` capability probe. All reached via PRIMED
 dynamic imports (addObjects/joints/objectActions/pingAudio alongside inputRuntime/
 physics/possess/vrControls) — a static edge closes a cycle into history.
-**Every `register*` must record its disposal** in the same edit: makeApi keeps a
-per-module teardown JOURNAL and `deactivateModule(id)` runs it in reverse, which
-is what makes user modules install/update/disable/remove and DEV-RELOAD live.
+**Every `register*` must record its disposal** in the same edit — **34 R6 (contract T2):
+ONE lifecycle registry** (`sdk/lifecycle.js`, keyed by module id): a slice journals through
+`ctx.onDispose(undo, kind, {key?})` (returns `release()`; a `key` makes a re-registration
+REPLACE its entry) or `ctx.owned(kind, off)` (an `off` that also drops the entry), and
+`unloadModule(id)` (33's `deactivateModule`) replays it newest-first — core AND user modules
+unload/reload live. Async registrations journal SYNCHRONOUSLY (a disposer recorded inside an
+`import().then` lands in the NEXT journal when an unload comes first). Every member declares
+`sdkX.surface = {member: 'registers'|'action'|'content'|'read'|'value'}`, and a `registers`
+member needs a fixture in `tests/fixtures/sdkLifecycleFixtures.js` (vitest `moduleLifecycle`
+fails otherwise; e2e `module-lifecycle` runs the browser-only ones + the 3x leak test).
+`api.onUnload/timers/listen/own` (`sdk/own.js`); installed (zip/URL) modules get bare timers
+and window/document listeners tracked by `sdk/moduleScope.js` (a line-1 prologue + stack
+attribution, adopted at registration); core subsystems acting for a module use
+`trackModuleResource(moduleId, kind, undo)`.
 api surface: registerNodeGroup (+custom components), registerEffect
 (base-managed per-frame), registerPrimitive (replicated `/create`), registerClickHandler
 (desktop+VR), registerInteractiveGroup (scene-root click targets), registerFrameTask,

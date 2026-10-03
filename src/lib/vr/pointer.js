@@ -199,6 +199,10 @@ export function registerOverlayPanel(object) {
 		overlayPanels.delete(object);
 	};
 }
+/** 34 R6: the registered module panels (the lifecycle contract checks a module's go with it) */
+export function overlayPanelsDebug() {
+	return [...overlayPanels];
+}
 /** @type {any} */ let depthSentinel = null;
 /**
  * 31 K2 (U4): every open panel draws OVER the scene — see vrPanelOverlay.js for why a depth

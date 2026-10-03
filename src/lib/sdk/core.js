@@ -41,3 +41,18 @@ export function sdkCore(ctx) {
 		assetUrl: (path) => moduleAssets[moduleId]?.[path] ?? null
 	};
 }
+
+/** 34 R6 (T2): what each member does to the module's lifecycle — see SURFACE_KINDS in
+ * sdk/lifecycle.js. tests/unit/moduleLifecycle.test.js holds every 'registers' member to a
+ * teardown path; a member missing here fails it. */
+sdkCore.surface = {
+	selectedUuid: 'read',
+	scene: 'read',
+	objectsGroup: 'read',
+	sceneAssets: 'read',
+	peerId: 'read',
+	toast: 'action',
+	now: 'read',
+	THREE: 'value',
+	assetUrl: 'read'
+};

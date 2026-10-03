@@ -5,7 +5,7 @@ import { vrControlsRef, knockRef, knockReady } from './refs.js';
 
 /** @param {import('./context.js').SdkContext} ctx */
 export function sdkFeel(ctx) {
-	const { onDispose } = ctx;
+	const { owned } = ctx;
 	return {
 		/**
 		 * Buzz the VR controllers (press feedback). No-op on desktop / when
@@ -50,13 +50,11 @@ export function sdkFeel(ctx) {
 			knockReady.then((m) => {
 				if (m && !gone) off = m.registerHitListener(wrapped);
 			});
-			const stop = () => {
+			return owned('hitListener', () => {
 				gone = true;
 				off?.();
 				off = null;
-			};
-			onDispose(stop);
-			return stop;
+			});
 		},
 		/**
 		 * 24-A A2: the knock log as a COPY — `last` = the most recent hit per live body
@@ -70,3 +68,13 @@ export function sdkFeel(ctx) {
 		}
 	};
 }
+
+/** 34 R6 (T2): what each member does to the module's lifecycle — see SURFACE_KINDS in
+ * sdk/lifecycle.js. tests/unit/moduleLifecycle.test.js holds every 'registers' member to a
+ * teardown path; a member missing here fails it. */
+sdkFeel.surface = {
+	haptic: 'action',
+	hapticPattern: 'action',
+	onHit: 'registers',
+	hitLog: 'read'
+};

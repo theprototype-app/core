@@ -6,7 +6,7 @@ import { setPeerVar, myPeerVar, leaderboardRows, peerVarsMine, peerVarsRemote } 
 
 /** @param {import('./context.js').SdkContext} ctx */
 export function sdkPeerVars(ctx) {
-	const { onDispose } = ctx;
+	const { owned } = ctx;
 	return {
 		peerVars: {
 			/** Write MY OWN row. @param {string} name @param {number} value */
@@ -27,10 +27,18 @@ export function sdkPeerVars(ctx) {
 			 * coalesced to one call per frame, torn down with the module or by the returned
 			 * `off`. @param {() => void} fn @returns {() => void} off */
 			onChange(fn) {
-				const off = coalescedSubscribe([peerVarsMine, peerVarsRemote], fn);
-				onDispose(off);
-				return off;
+				return owned('peerVars.onChange', coalescedSubscribe([peerVarsMine, peerVarsRemote], fn));
 			}
 		}
 	};
 }
+
+/** 34 R6 (T2): what each member does to the module's lifecycle — see SURFACE_KINDS in
+ * sdk/lifecycle.js. tests/unit/moduleLifecycle.test.js holds every 'registers' member to a
+ * teardown path; a member missing here fails it. */
+sdkPeerVars.surface = {
+	'peerVars.setMine': 'content',
+	'peerVars.mine': 'read',
+	'peerVars.all': 'read',
+	'peerVars.onChange': 'registers'
+};

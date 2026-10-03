@@ -35,7 +35,7 @@ export function sdkScene(ctx) {
 			customGeometryBuilders[name] = builder;
 			onDispose(() => {
 				if (customGeometryBuilders[name] === builder) delete customGeometryBuilders[name];
-			});
+			}, 'primitive');
 			if (!entry) return;
 			const tagged = { ...entry, moduleId };
 			modulePrimitiveGroups.update((list) => {
@@ -52,7 +52,8 @@ export function sdkScene(ctx) {
 					list
 						.map((g) => ({ ...g, items: g.items.filter((/** @type {any} */ item) => item !== tagged) }))
 						.filter((g) => g.items.length > 0)
-				)
+				),
+				'primitive.entry'
 			);
 		},
 		/**
@@ -77,7 +78,7 @@ export function sdkScene(ctx) {
 			clickHandlerModes.set(fn, normalizeClickModes(options?.modes));
 			if (options?.sweep === false) noSweepHandlers.add(fn);
 			moduleClickHandlers.push(fn);
-			onDispose(() => arrayRemove(moduleClickHandlers, fn));
+			onDispose(() => arrayRemove(moduleClickHandlers, fn), 'clickHandler');
 		},
 		/**
 		 * 23-C2: an Explorer item dropped ON a scene object - audio and text items, the ones
@@ -88,12 +89,12 @@ export function sdkScene(ctx) {
 		 */
 		registerDropHandler(fn) {
 			moduleDropHandlers.push(fn);
-			onDispose(() => arrayRemove(moduleDropHandlers, fn));
+			onDispose(() => arrayRemove(moduleDropHandlers, fn), 'dropHandler');
 		},
 		/** Runs every frame with the synced time (seconds) @param {(time: number) => void} fn */
 		registerFrameTask(fn) {
 			moduleFrameTasks.push(fn);
-			onDispose(() => arrayRemove(moduleFrameTasks, fn));
+			onDispose(() => arrayRemove(moduleFrameTasks, fn), 'frameTask');
 		},
 		/**
 		 * Click handlers only see the replicated objects root by default;
@@ -109,7 +110,7 @@ export function sdkScene(ctx) {
 				arrayRemove(systemGroupNames, name);
 				forgetModuleGroup(name, 'interactive');
 				removeSceneRootGroup(name); // module-owned viewport content goes with the module
-			});
+			}, 'interactiveGroup');
 		},
 		/** List a scene-root group under the object list's System filter @param {string} name */
 		registerSystemGroup(name) {
@@ -119,7 +120,7 @@ export function sdkScene(ctx) {
 				arrayRemove(systemGroupNames, name);
 				forgetModuleGroup(name, 'system');
 				removeSceneRootGroup(name);
-			});
+			}, 'systemGroup');
 		},
 		/**
 		 * 30 P3: list a scene-root group in the object list's "Module content" section under
@@ -132,7 +133,7 @@ export function sdkScene(ctx) {
 		 */
 		registerListedGroup(name, options = {}) {
 			noteModuleGroup(name, { id: moduleId, name: moduleName }, 'listed', options ?? {});
-			onDispose(() => forgetModuleGroup(name, 'listed'));
+			onDispose(() => forgetModuleGroup(name, 'listed'), 'listedGroup');
 		},
 		/**
 		 * Runs when the scene is cleared (locally or by a peer) — remove your
@@ -141,7 +142,7 @@ export function sdkScene(ctx) {
 		 */
 		onSceneClear(fn) {
 			sceneClearHandlers.push(fn);
-			onDispose(() => arrayRemove(sceneClearHandlers, fn));
+			onDispose(() => arrayRemove(sceneClearHandlers, fn), 'sceneClear');
 		},
 		/**
 		 * 33 (L4): does the scene on screen still count this module? False once a scene switch
@@ -168,3 +169,19 @@ export function sdkScene(ctx) {
 		}
 	};
 }
+
+/** 34 R6 (T2): what each member does to the module's lifecycle — see SURFACE_KINDS in
+ * sdk/lifecycle.js. tests/unit/moduleLifecycle.test.js holds every 'registers' member to a
+ * teardown path; a member missing here fails it. */
+sdkScene.surface = {
+	registerPrimitive: 'registers',
+	registerClickHandler: 'registers',
+	registerDropHandler: 'registers',
+	registerFrameTask: 'registers',
+	registerInteractiveGroup: 'registers',
+	registerSystemGroup: 'registers',
+	registerListedGroup: 'registers',
+	onSceneClear: 'registers',
+	inScene: 'read',
+	editorMode: 'read'
+};

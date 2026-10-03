@@ -71,7 +71,7 @@ h.run(async () => {
 		const p = cam.getWorldPosition(new s.THREE.Vector3());
 		return [p.x, p.y, p.z].map((n) => +n.toFixed(2));
 	});
-	h.check(Math.abs(eye[0]) < 0.05 && Math.abs(eye[1] - 1.7) < 0.15 && Math.abs(eye[2] - 2.65) < 0.1, `Play puts the eye at the counter, within reach of the shelf (${eye})`);
+	h.check(Math.abs(eye[0]) < 0.05 && Math.abs(eye[1] - 1.7) < 0.15 && Math.abs(eye[2] - 3.25) < 0.1, `desktop Play puts the eye behind the counter (the module's desktop spawn; VR keeps the scene's 2.65, in arm's reach) (${eye})`);
 	if (SHOTS) await page.screenshot({ path: path.join(SHOTS, 'menu.png') });
 
 	// 3 — stage 1 from its button: six cans on the left table, six balls on the shelf

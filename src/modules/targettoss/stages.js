@@ -10,7 +10,7 @@
 
 /** @type {Stage[]} */
 export const STAGES = [
-	{ id: 1, name: 'Tin cans', limit: 45, intro: 'Knock every can off the table', cans: [{ table: 'Table left', rows: 3 }], swing: 0, swingSpeed: 0, popups: 0, popTime: 0, cart: 0, cartSpeed: 0 },
+	{ id: 1, name: 'Tin cans', limit: 45, intro: 'Knock every can down — off the table or over', cans: [{ table: 'Table left', rows: 3 }], swing: 0, swingSpeed: 0, popups: 0, popTime: 0, cart: 0, cartSpeed: 0 },
 	{ id: 2, name: 'Two stacks', limit: 50, intro: 'Two pyramids — clear both tables', cans: [{ table: 'Table left', rows: 3 }, { table: 'Table right', rows: 3 }], swing: 0, swingSpeed: 0, popups: 0, popTime: 0, cart: 0, cartSpeed: 0 },
 	{ id: 3, name: 'Swingers', limit: 45, intro: 'Hit the three swinging targets', cans: [], swing: 3, swingSpeed: 1.1, popups: 0, popTime: 0, cart: 0, cartSpeed: 0 },
 	{ id: 4, name: 'Pop-ups', limit: 45, intro: 'Hit 6 targets before they drop', cans: [], swing: 0, swingSpeed: 0, popups: 6, popTime: 2.2, cart: 0, cartSpeed: 0 },

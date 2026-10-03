@@ -252,7 +252,10 @@ export default {
 			for (const can of cans()) {
 				const p = can.position;
 				const on = tables.some((/** @type {any} */ b) => p.x >= b.min.x - 0.02 && p.x <= b.max.x + 0.02 && p.z >= b.min.z - 0.02 && p.z <= b.max.z + 0.02 && p.y > b.max.y);
-				if (on) standing++;
+				// a can knocked OVER counts as down too (lying on the table is not standing)
+				const q = can.quaternion;
+				const upright = 1 - 2 * (q.x * q.x + q.z * q.z) > 0.6;
+				if (on && upright && !scored.has(can.uuid)) standing++;
 				else if (!scored.has(can.uuid)) {
 					scored.add(can.uuid);
 					score(can.uuid, POINTS.can, [p.x, p.y, p.z], 'can');
@@ -664,7 +667,7 @@ export default {
 			resetVars(s);
 		});
 		const HELP = [
-			'Knock down every target before the clock runs out: tin cans off their tables, swinging targets, pop-ups and a moving cart.',
+			'Knock down every target before the clock runs out: tin cans (off the table or over), swinging targets, pop-ups and a moving cart.',
 			'VR: grab a ball from the shelf with the grip and throw it. Desktop: HOLD the mouse to charge, RELEASE to throw (or grab a ball and flick it).',
 			'Hits in quick succession build a COMBO (up to x5). Balls come back to the shelf by themselves.',
 			'Stars: clear the stage for one, with half the clock left for three. A star opens the next stage.'
@@ -674,6 +677,8 @@ export default {
 
 		// ---- the frame ----------------------------------------------------------------------
 		let wasActive = false;
+		let spawnMode = '';
+		const DESK_SPAWN = [0, 0, 3.25];
 		api.registerFrameTask(() => {
 			if (!gs || !stores) return;
 			const on = active();
@@ -696,6 +701,14 @@ export default {
 					levelsOff();
 					levelsOff = null;
 				}
+			}
+			// the scene's spawn (at the counter) is for a headset, where the shelf must be in arm's
+			// reach; a desktop player throws from half a metre further back, which keeps the six
+			// balls from filling the bottom of a wide desktop view (a LOCAL runtime spawn)
+			const want = on && !api.isVR() ? 'desk' : '';
+			if (want !== spawnMode) {
+				spawnMode = want;
+				api.setSpawn?.(want ? DESK_SPAWN : null, 0);
 			}
 			if (!on) return;
 			watchButtons();
@@ -728,6 +741,8 @@ export default {
 			announcedRound = -1;
 			finishedRound = -1;
 			wasActive = false;
+			if (spawnMode) api.setSpawn?.(null);
+			spawnMode = '';
 		});
 
 		/** the suites' window onto the module */

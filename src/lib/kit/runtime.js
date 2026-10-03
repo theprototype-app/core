@@ -17,7 +17,10 @@
 // peerHandler through PRIMED dynamic imports where a static edge would close a cycle; this file
 // itself imports only leaves.
 
+import * as THREE from 'three';
 import { get } from 'svelte/store';
+import { globalCamera, objectsGroup } from '../../stores/sceneStore';
+import { gameFeelActive } from '../gameFeel';
 import { peers, userdata } from '../../stores/appStore';
 import { sessionNow } from '../sessionClock';
 import { readStored, writeStored } from '../gameStorage';
@@ -132,6 +135,32 @@ export function kitPayload() {
 /** per frame (flowRuntime's tick) */
 export function tickKit() {
 	kit.tick();
+	touchPickups();
+}
+
+/** 34 R2: kit.pickups' TOUCH — this player walking into a registered pickup takes it. ~10x a
+ * second, only while this peer plays (Interact or Play: an editor camera flying past a gem takes
+ * nothing), and only this player's own position: every peer asks only for itself. */
+let lastTouch = 0;
+const _eye = new THREE.Vector3();
+const _at = new THREE.Vector3();
+function touchPickups() {
+	const pickups = kit.impls.pickups?.extra;
+	if (!pickups || !pickups.ids().length) return;
+	const now = sessionNow();
+	if (now - lastTouch < 100) return;
+	lastTouch = now;
+	if (!gameFeelActive()) return;
+	/** @type {any} */
+	const camera = get(globalCamera);
+	/** @type {any} */
+	const group = get(objectsGroup);
+	if (!camera?.getWorldPosition || !group) return;
+	camera.getWorldPosition(_eye);
+	pickups.touchCheck([_eye.x, _eye.y, _eye.z], (/** @type {string} */ id) => {
+		const object = group.getObjectByProperty('uuid', id);
+		return object ? object.getWorldPosition(_at).toArray() : null;
+	});
 }
 
 /** a scene clear / load: the next game starts from nothing (local; every peer clears too) */

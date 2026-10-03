@@ -26,7 +26,11 @@ export function installKitNodes() {
 	installed = true;
 	for (const item of kitItems()) {
 		if (item.kit.kind === 'value') {
-			registerModuleValueNode(item.type, (/** @type {any} */ data) => kit.evalNodeValue(item.type, data), item.io.output);
+			registerModuleValueNode(
+				item.type,
+				(/** @type {any} */ data, /** @type {any} */ _t, /** @type {any} */ ctx) => kit.evalNodeValue(item.type, withOwner(item.type, data, ctx?.graphId)),
+				item.io.output
+			);
 		} else if (item.kit.kind === 'event') {
 			// a source: what downstream reads is its trigger stamp, which fireModuleTrigger writes
 			registerModuleValueNode(item.type, (/** @type {any} */ _d, /** @type {any} */ _t, /** @type {any} */ ctx) => ctx?.trigger?.stamp ?? 0, 'event');
@@ -39,8 +43,22 @@ export function installKitNodes() {
 /**
  * A kit action node saw a fresh trigger stamp (flowRuntime, every peer).
  * @param {string} type @param {Record<string, any>} data the resolved inputs
- * @param {string} nodeId @param {number} stamp
+ * @param {string} nodeId @param {number} stamp @param {string | null} [owner] the graph's owner object
  */
-export function runKitNodeAction(type, data, nodeId, stamp) {
-	return kit.runNodeAction(type, data, { rid: 'node:' + nodeId + ':' + stamp });
+export function runKitNodeAction(type, data, nodeId, stamp, owner = null) {
+	return kit.runNodeAction(type, withOwner(type, data, owner), { rid: 'node:' + nodeId + ':' + stamp });
 }
+
+/** an UNWIRED object input means the graph's owner (the #13-H implicit-owner rule): a Collect
+ * pickup node inside a gem's own flow takes that gem
+ * @param {string} type @param {Record<string, any>} data @param {string | null | undefined} owner */
+function withOwner(type, data, owner) {
+	if (!owner || owner === 'scene') return data;
+	let filled = data;
+	for (const [key, socket] of Object.entries(objectArgs.get(type) ?? {}))
+		if (socket === 'object' && (filled?.[key] === undefined || filled?.[key] === null || filled?.[key] === '')) filled = { ...filled, [key]: owner };
+	return filled;
+}
+
+/** type -> its named inputs (for the implicit-owner fill) */
+const objectArgs = new Map(kitItems().map((i) => [i.type, i.io.inputs]));

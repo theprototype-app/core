@@ -1424,7 +1424,7 @@ function updateGameNodes(time, ctx) {
 			// 34 R2: a kit action. EVERY peer that sees the stamp asks the kit with an id derived
 			// from it (node + stamp), so the authority applies one press once however many peers
 			// saw it — and a perPlayer pulse, seen only by its player, still reaches it
-			runKitNodeAction(type, data, node.id, stamp);
+			runKitNodeAction(type, data, node.id, stamp, node.__graph && node.__graph !== SCENE_GRAPH ? node.__graph : null);
 		} else if (GAME_FEEL_ACTIONS.includes(type)) {
 			// 30b (core-games): a banner, a sound, a burst or a buzz — LOCAL on every peer from
 			// the replicated stamp, inside the actionSeenAt family above like storevalue (a

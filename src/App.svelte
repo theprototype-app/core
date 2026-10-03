@@ -37,6 +37,7 @@
   // 26-A: the desktop Statistics window + the sampler that feeds it and the status-line
   // budget meter. `renderer.info` had exactly one reader before this (the VR plate).
   import StatsOverlay from './components/menu/StatsOverlay.svelte'
+  import MomentReport from './components/menu/MomentReport.svelte'
   import { startSceneMetrics, budgetSummary } from './lib/sceneBudget'
   import { startPerfRecorder } from './lib/perf/recorder'
   import { startDetailedProbe } from './lib/perf/detailed'
@@ -383,6 +384,7 @@ import { startMusicToolbox } from './lib/musicToolbox'
 <ModulesManager />
 <DungeonMinimap />
 <StatsOverlay />
+<MomentReport />
 <PlayReticle />
 <!-- W4: the touch play controls (virtual stick, look drag, exit). Beside PlayReticle
      and outside the {#if !$isLocked} block for the same reason: they exist ONLY while

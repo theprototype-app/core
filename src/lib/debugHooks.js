@@ -22,6 +22,7 @@ export const DEBUG_HOOKS = [
 	['meshEdit', () => import('./meshEdit')],
 	['perf', () => import('./perf/recorder')],
 	['perfDetailed', () => import('./perf/detailed')],
+	['perfBeacon', () => import('./perf/beacon')],
 	['vrControls', () => import('./vrControls')],
 	['autosave', () => import('./autosave')],
 	['voiceChat', () => import('./voiceChat')],

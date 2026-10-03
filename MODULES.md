@@ -52,6 +52,130 @@ Peers exchange `{id, version}` lists when they connect and warn when a module is
 missing or a different version on the other side. That's advisory — the session
 still works, but replicated behavior of that module may differ.
 
+## The lifecycle: load, unload, reload (34 R6)
+
+A module can be **unloaded and loaded again while the app runs** — switched off in the
+Modules manager (core modules too, since 1.20), removed, updated, dev-reloaded from its Dev
+URL, or unloaded by a scene switch. `unloadModule(id)` takes down **everything the module
+registered**, newest first, and `register(api)` can then run again with fresh code. Nothing
+needs a page reload, and nothing is left running for a module that is gone.
+
+**What is undone for you.** Every registration you make through `api` is recorded in the
+module's lifecycle registry (one registry, keyed by your module id — `src/lib/sdk/lifecycle.js`)
+and undone at unload: node groups, effects, value nodes, node defs you seeded and the user did
+not edit, primitives, click/drop handlers, frame tasks, scene-clear hooks, interactive / system /
+listed groups (the scene-root group is removed AND its geometries, materials and textures are
+freed), the spawn override, message handlers and state sync, menus, toolboxes (closed) and their
+shortcuts, VR menu entries, key bindings, input listeners and claims, possess, the follow camera,
+VR panels, hit listeners, your music track, game levels / settings rows / help / restart hooks /
+the forced menu, LOD handles, quality / flow / game / settings / peer-variable listeners, unwrap /
+shader / post backends, post effects, audio device kinds, engine voices (`api.audio.voice`),
+transport events (`api.audio.schedule`), your copy of the mic stream, a recording you started,
+HUD rows / debug lines / actions / element kinds.
+
+Every `off()` the api hands you still works, and calling it early also drops the registry
+entry — subscribe and unsubscribe as often as you like. A call that REPLACES (`api.game.levels`
+called on every unlock, `setHelp`, `addSetting` with the same id, a toolbox or VR menu entry
+re-registered under the same id) replaces its entry rather than stacking one per call.
+
+**What stays.** What your module created in the SHARED scene (`api.create`, objects in
+`objectsGroup`, nodes from `api.flow.addNodes`, audio devices and cables, node data you wrote)
+is user content: it stays, replicated, like anything a person made. So do the shared game
+variables and your peer-variable row, and what you saved on this device with `api.storage`
+(a reinstall keeps progress; `storage.clear()` is your reset).
+
+**What only you know about — four tools:**
+
+```js
+// your own teardown: a DOM overlay you appended, a worker, a cache, a raw WebAudio graph
+// you built on api.audio.context(). Runs at unload (newest first, so a hook added at the
+// end of register() runs while everything before it is still in place). Returns cancel().
+api.onUnload(() => overlay.remove());
+
+// timers that die with the module (the window's signatures) + what is pending right now
+const h = api.timers.setInterval(refresh, 500);
+api.timers.clearInterval(h);
+api.timers.setTimeout(fn, ms); api.timers.requestAnimationFrame(loop);
+api.timers.pending(); // {timeouts, intervals, frames}
+
+// an event listener removed at unload — window, document, the canvas, anything; returns off()
+const off = api.listen(window, 'keydown', onKey, true);
+
+// a scene-root object that is YOURS: removed at unload, its GPU resources freed (shared
+// ones kept). Returns the object, so: api.scene().add(api.own(group)). Never for content
+// inside objectsGroup (that is shared — it is left alone).
+api.own(group);
+```
+
+**Installed modules (zip / URL) get timers and window listeners tracked automatically.** The
+entry is evaluated with its bare `setTimeout` / `clearTimeout` / `setInterval` /
+`clearInterval` / `requestAnimationFrame` / `cancelAnimationFrame` bound to tracked ones (a
+one-line prologue on line 1, so line numbers in stack traces are unchanged), and a listener
+your code adds to `window` or `document` is recorded too — at unload they are cleared and
+removed. Two edges: `window.setTimeout(...)` (or a listener on any other target) is not
+tracked — use `api.timers` / `api.listen`; and a module that declares one of those six names
+itself at top level is loaded without the prologue (its timers then untracked). A core module
+(in `src/modules/`) uses `api.timers` / `api.listen` explicitly.
+
+**Keep state inside `register()`.** The browser keeps every imported module's TOP-LEVEL scope
+for the life of the page (an ES module is never unloaded), so module-level variables, caches and
+DOM survive an unload — the next load starts from them. State declared inside `register()` is
+fresh every time; module-level state you must reset belongs in `api.onUnload`. Each reload
+of an installed module also keeps the evaluated source itself, so a large module costs some
+heap per reload — fine for a development loop, not something to do every second. (Measured
+with `module-lifecycle-repo`, 3 cycles each: 19 of the 20 repo modules reload flat; Waves keeps
+one DOM node and ~0.3 MB of heap per reload.)
+
+### Adding an SDK surface (core contributors)
+
+Every member of the api declares what it does to a module's lifecycle, beside its slice
+(`src/lib/sdk/<name>.js`):
+
+```js
+export function sdkThing(ctx) {
+	const { moduleId, onDispose, owned } = ctx;
+	return {
+		registerThing(spec) {
+			thingRegistry.set(key, spec);
+			// the undo, journaled with a KIND (the debug view names it); `{key}` makes a
+			// re-registration under the same key REPLACE its entry
+			onDispose(() => thingRegistry.delete(key), 'thing', { key: 'thing:' + key });
+		},
+		onThing(fn) {
+			// a registration that hands back an off(): owned() returns an off that also
+			// drops the journal entry
+			return owned('thing.listener', subscribe(fn));
+		},
+		thingCount: () => thingRegistry.size
+	};
+}
+sdkThing.surface = { registerThing: 'registers', onThing: 'registers', thingCount: 'read' };
+```
+
+- Kinds: `registers` (leaves something behind: MUST journal its undo), `action` (does
+  something now, leaves nothing of the module's), `content` (shared, replicated content that
+  deliberately survives an unload), `read`, `value` (a non-function).
+- A `registers` member needs a fixture in `tests/fixtures/sdkLifecycleFixtures.js`: register
+  it from a real module, read CORE's registry (never the journal), unload, read it gone. The
+  vitest `moduleLifecycle` fails for an undeclared member, a stale declaration, a `registers`
+  member with no fixture, and a fixture whose registration survives `unloadModule`; the
+  browser suite `module-lifecycle` runs the members node cannot load.
+- **Async registrations journal SYNCHRONOUSLY.** A disposer recorded inside an
+  `import().then` lands in the module's NEXT journal whenever an unload comes first — the
+  registration then outlives the unload. Record it before the import and let a late
+  registration undo itself:
+  `let off = null, gone = false; onDispose(() => { gone = true; off?.(); }, 'kind');
+  import('../x').then((m) => { off = m.register(...); if (gone) off(); });`
+- A core subsystem acting FOR a module outside the api (kit entities, loaded models) records
+  its undo with `trackModuleResource(moduleId, kind, undo)` from `moduleSDK.js`.
+- Debug: `__stores.moduleSDK.registrationsOf(id)` / `allRegistrations()` (live entries by
+  kind), `moduleScopeDebug()` (an installed module's tracked timers + listeners),
+  `unloadModule(id)` returns what it disposed, by kind.
+- Tests: vitest `moduleLifecycle`; e2e `module-lifecycle` (the browser contract, an installed
+  probe module, and the leak test: each bundled module unloaded/loaded 3x with handlers,
+  nodes, audio connections, timers, meshes, materials, GPU memory, DOM, JS listeners and the
+  heap measured) and `module-lifecycle-repo` (every zip in the modules repo through 3 cycles).
+
 ## API reference (v1)
 
 ### Flow nodes
@@ -987,10 +1111,10 @@ small graph; the module is the rules. Worth copying:
 
 ## Manager, dev mode & gallery (17-A2/A3)
 
-User modules install, update, disable and remove **live** — `deactivateModule`
-runs the per-module teardown journal (every `api.register*` records an undo
-thunk), so nothing needs a page reload. Core modules keep reload-to-disable
-(they may wire core registries outside the api surface, e.g. vrsleeve).
+Modules install, update, disable and remove **live** — `unloadModule` (33's
+`deactivateModule`) runs the module's lifecycle registry (see **The lifecycle**
+above), so nothing needs a page reload. Since 1.20 that includes CORE modules: their
+hooks outside the api (vrsleeve's VR hook registries) undo through `api.onUnload`.
 
 Every user-module card carries a **Dev URL** row: **Reload** fetches fresh code
 (cache-busted), evaluates it FIRST, then tears down + re-registers — a broken
@@ -1010,3 +1134,6 @@ the dev reload keep working on gallery installs.
 - [ ] No `Math.random()` without a broadcast seed; no accumulation in effects.
 - [ ] Receiving a message never re-broadcasts it.
 - [ ] `id` unique, node `type`s unique, version bumped on behavior changes.
+- [ ] Switch it off and on again in the Modules manager (or dev-reload it): no timer,
+      listener, sound, overlay or scene object of the old instance is left, and the new one
+      works from scratch (`__stores.moduleSDK.registrationsOf(id)` is `{}` while it is off).

@@ -65,12 +65,23 @@ h.run(async () => {
 		`example zip has the package layout (${entries.join(', ')})`
 	);
 
-	// disable button -> persists -> gone after reload
+	// disable button -> unloads live -> persists -> still gone after reload
 	await A.page.locator('#module-card-button input[type="checkbox"]').click({ force: true });
 	await A.page.waitForTimeout(300);
 	const disabled = await A.page.evaluate(() => localStorage.getItem('disabledModules'));
 	h.check(disabled?.includes("button"), "disable persisted");
-	h.check((await loadedIds(A.page)).includes('button'), 'still loaded until reload');
+	// 34 R6: a CORE module unloads LIVE now (it used to stay loaded until a reload) — and
+	// completely: its primitive leaves the sidebar with it
+	h.check(!(await loadedIds(A.page)).includes('button'), 'unloaded live, no reload needed');
+	const primitiveGone = await A.page.evaluate(
+		() =>
+			new Promise((r) =>
+				window.__stores.moduleSDK.modulePrimitiveGroups.subscribe((groups) =>
+					r(!groups.some((g) => g.items.some((i) => i.moduleId === 'button')))
+				)()
+			)
+	);
+	h.check(primitiveGone, 'its primitive is gone with it');
 
 	await A.page.reload({ waitUntil: 'domcontentloaded' });
 	await A.page.waitForTimeout(4000);

@@ -1,5 +1,10 @@
 <script>
 	import { safeStorage } from '$lib/safeStorage';
+  // 34 R4 (A2): the debug hook's table. A STATIC import on purpose (the module has no static
+  // deps, only lazy loaders): the install must start synchronously in onMount, before the first
+  // frames' blocking shader links. A dynamic import here queued it behind them (a third e2e page
+  // took 34 s instead of 8 s to publish __stores).
+  import { installDebugHooks } from '$lib/debugHooks'
   import { onMount } from 'svelte'
   import { Canvas } from '@threlte/core'
   // 30 P0: threlte's Canvas defaults `shadows` to PCFSoftShadowMap, which three 0.185
@@ -284,7 +289,7 @@ import { startMusicToolbox } from './lib/musicToolbox'
     // store access for automated tests, opt-in via localStorage
     if (safeStorage.getItem('debugStores')) {
       // 34 R4 (A2): one row per hook in $lib/debugHooks.js (no positional tails here any more)
-      import('$lib/debugHooks').then((m) => m.installDebugHooks())
+      installDebugHooks()
     }
   })
 

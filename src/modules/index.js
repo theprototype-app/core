@@ -8,5 +8,7 @@ import pong from './pong/module.js';
 import vrsleeve from './vrsleeve/module.js';
 // 31-towers: the Towers game's levels, pieces and rules (dormant outside a Towers scene)
 import towers from './towers/module.js';
+// 35-mini-golf: the Mini Golf game's holes, putting and scorecard (dormant outside a Mini Golf scene)
+import minigolf from './minigolf/module.js';
 
-export const coreModules = [hello, button, pong, vrsleeve, towers];
+export const coreModules = [hello, button, pong, vrsleeve, towers, minigolf];

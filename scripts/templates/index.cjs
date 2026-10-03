@@ -23,7 +23,9 @@ const TEMPLATE_FILES = [
 	'towers',
 	'stars-room',
 	'make-a-mirror',
-	'follow-the-beat'
+	'follow-the-beat',
+	// 35: Mini Golf (the core `minigolf` module holds the rules)
+	'mini-golf'
 ];
 
 /** games whose def is OWNED BY ITS MODULE (modules/<id>/<id>.def.json, read by moduleDef) */

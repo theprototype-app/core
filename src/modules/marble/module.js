@@ -131,6 +131,9 @@ export default {
 		/** the VR grab: hand quats + tilt when the grips closed */
 		/** @type {any} */ let grab = null;
 		const keyTilt = { x: 0, z: 0 };
+		/** where a VR hand is read from (a suite swaps it: headless XR never PRESENTS, so the SDK's
+		 * vrHand answers null there) @type {(hand: 'left'|'right') => any} */
+		let handSource = (hand) => api.vrHand?.(hand) ?? null;
 
 		api.onMessage((/** @type {any} */ msg) => {
 			if (msg?.op === 'tilt' && Number.isFinite(msg.x) && Number.isFinite(msg.z))
@@ -187,8 +190,8 @@ export default {
 			const sx = Number(ax.lx) || 0;
 			const sy = Number(ax.ly) || 0;
 			if (Math.abs(sx) > 0.15 || Math.abs(sy) > 0.15) mine = { x: sy * MAX_TILT, z: -sx * MAX_TILT };
-			const L = api.vrHand?.('left');
-			const R = api.vrHand?.('right');
+			const L = handSource('left');
+			const R = handSource('right');
 			const near = (/** @type {any} */ h) =>
 				h?.gripped && h.position && Math.hypot(h.position[0] - BOARD[0], h.position[2] - BOARD[2]) < 0.75 && Math.abs(h.position[1] - BOARD[1]) < 0.5;
 			const hands = [L, R].filter(near);
@@ -657,6 +660,7 @@ export default {
 			toMenu,
 			info,
 			tilt: () => ({ ...cur }),
+			setHandSource: (/** @type {any} */ fn) => (handSource = fn ?? ((/** @type {'left'|'right'} */ hand) => api.vrHand?.(hand) ?? null)),
 			setTilt: (/** @type {number} */ x, /** @type {number} */ z) => (remote = { x, z, at: performance.now() + 1e6 }),
 			vars: () => Object.fromEntries(Object.values(V).map((k) => [k, api.game.getVar(k, null)])),
 			marbleLocal: () => marbleLocal()?.toArray() ?? null,

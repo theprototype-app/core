@@ -17,8 +17,11 @@
 // peerHandler through PRIMED dynamic imports where a static edge would close a cycle; this file
 // itself imports only leaves.
 
+import * as THREE from 'three';
 import { get } from 'svelte/store';
-import { peers } from '../../stores/appStore';
+import { globalCamera, objectsGroup } from '../../stores/sceneStore';
+import { gameFeelActive } from '../gameFeel';
+import { peers, userdata } from '../../stores/appStore';
 import { sessionNow } from '../sessionClock';
 import { readStored, writeStored } from '../gameStorage';
 import { gameState, setGameState, commitGameState } from '../gameState';
@@ -35,7 +38,22 @@ export { KIT_DOC, KIT_REQ };
 export function primeKitRuntime() {
 	import('../physics').then((m) => (physicsRef = m)).catch(() => {});
 	import('../flowRuntime').then((m) => (flowRef = m)).catch(() => {});
+	// the K3 pause menu's Restart restarts a kit round (a game using kit.round needs no hook of
+	// its own); a game that never started one is left alone. Dynamic: gameShell reaches
+	// playSettings, which reads this file.
+	import('../gameShell')
+		.then((m) => {
+			if (restartHooked) return;
+			restartHooked = true;
+			m.onGameRestart(() => {
+				if (kit.impls.round?.number?.() > 0) kit.impls.round.restart();
+			}, '');
+			// kit.levels publishes its table to the shell's level picker (desktop + the VR board)
+			kit.impls.levels?.extra?.attachShell?.((/** @type {any} */ spec, /** @type {string} */ owner) => m.setGameLevels(spec, owner));
+		})
+		.catch(() => {});
 }
+let restartHooked = false;
 
 const me = () => /** @type {any} */ (get(peers))?.peer?.id ?? null;
 /** the peers whose data channel is OPEN (never the dial-time roster — the userdata trap) */
@@ -65,6 +83,12 @@ const host = {
 		const id = me();
 		return !id || kitAuthorityId() === id;
 	},
+	authorityId: () => kitAuthorityId(),
+	// the roster's nickname (slot 1 of a userdata row), else the id — what api.peerNames reads
+	nameOf: (id) => {
+		const row = (/** @type {any[]} */ (get(userdata)) ?? []).find((r) => r?.[0] === id);
+		return (row && typeof row[1] === 'string' && row[1]) || id;
+	},
 	storage: {
 		get: (key, fallback = null) => readStored('tp:kit:' + key, fallback),
 		set: (key, value) => writeStored('tp:kit:' + key, value) !== null
@@ -85,10 +109,12 @@ const host = {
 				...(opts.vars ? { vars: opts.vars } : {})
 			})
 	},
-	emit(piece, event) {
+	emit(piece, event, _payload, opts) {
 		const type = kitNodeType(piece, event);
-		if (flowRef) flowRef.fireModuleTrigger(type);
-		else import('../flowRuntime').then((m) => m.fireModuleTrigger(type)).catch(() => {});
+		// a LOCAL event keeps its pulse in this peer's trigger log (the perPlayer rule)
+		const fireOpts = opts?.local ? { replicate: false } : undefined;
+		if (flowRef) flowRef.fireModuleTrigger(type, undefined, fireOpts);
+		else import('../flowRuntime').then((m) => m.fireModuleTrigger(type, undefined, fireOpts)).catch(() => {});
 	}
 };
 
@@ -109,11 +135,49 @@ export function kitPayload() {
 /** per frame (flowRuntime's tick) */
 export function tickKit() {
 	kit.tick();
+	touchPickups();
+}
+
+/** 34 R2: kit.pickups' TOUCH — this player walking into a registered pickup takes it. ~10x a
+ * second, only while this peer plays (Interact or Play: an editor camera flying past a gem takes
+ * nothing), and only this player's own position: every peer asks only for itself. */
+let lastTouch = 0;
+const _eye = new THREE.Vector3();
+const _at = new THREE.Vector3();
+function touchPickups() {
+	const pickups = kit.impls.pickups?.extra;
+	if (!pickups || !pickups.ids().length) return;
+	const now = sessionNow();
+	if (now - lastTouch < 100) return;
+	lastTouch = now;
+	if (!gameFeelActive()) return;
+	/** @type {any} */
+	const camera = get(globalCamera);
+	/** @type {any} */
+	const group = get(objectsGroup);
+	if (!camera?.getWorldPosition || !group) return;
+	camera.getWorldPosition(_eye);
+	pickups.touchCheck([_eye.x, _eye.y, _eye.z], (/** @type {string} */ id) => {
+		const object = group.getObjectByProperty('uuid', id);
+		return object ? object.getWorldPosition(_at).toArray() : null;
+	});
 }
 
 /** a scene clear / load: the next game starts from nothing (local; every peer clears too) */
 export function resetKit() {
 	kit.reset();
+}
+
+/** 34 R2: the grab question every grab path asks (kit.rules.checkGrab): reach + vetoes.
+ * @param {any} req @returns {{ok: boolean, reason?: string, distance: number} | null} */
+export function kitCheckGrab(req) {
+	return kit.impls.rules?.extra?.checkGrab?.(req) ?? null;
+}
+
+/** 34 R2: the rules resolvePlaySettings lays OVER the scene's play block: `{reach, jump,
+ * bounds}`, null = the kit sets none */
+export function kitPlayRules() {
+	return kit.impls.rules?.extra?.current?.() ?? { reach: null, jump: null, bounds: null };
 }
 
 /** the debug hook / suites */

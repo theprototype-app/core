@@ -223,4 +223,24 @@ describe('entity pieces in the logic sim (2 peers)', () => {
 		expect(z1.every((z, i) => z > z0[i] + 1)).toBe(true);
 		expect(agreeAfterFlush(sim, 'a')).toBe(true);
 	});
+	it('a NEW ROUND (kit.round start / restart) clears the wave on every peer', () => {
+		const sim = createSim({ peers: ['a', 'b'], latency: 0 });
+		const a = sim.peer('a').kit.api({});
+		a.round.configure(0);
+		a.round.start();
+		sim.settle();
+		a.spawner.spawn({ kind: 'robot', count: 5, spread: 2 });
+		sim.settle();
+		expect(rt(sim, 'b').store.ents.size).toBe(5);
+		sim.peer('b').kit.api({}).round.restart();
+		sim.settle();
+		expect(rt(sim, 'a').store.ents.size).toBe(0);
+		expect(rt(sim, 'b').store.ents.size).toBe(0);
+		// and the same round going on (pause / resume) keeps them
+		a.spawner.spawn({ kind: 'robot', count: 3, spread: 2 });
+		a.round.pause();
+		a.round.resume();
+		sim.settle();
+		expect(rt(sim, 'b').store.ents.size).toBe(3);
+	});
 });

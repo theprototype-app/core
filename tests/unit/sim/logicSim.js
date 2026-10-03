@@ -153,10 +153,11 @@ export function createSim(opts = {}) {
 					clock: { now },
 					send,
 					isAuthority: () => pickAuthority({ me: id, peers: [...p.connected], host: sim.host, initiator: sim.initiator }) === id,
+					authorityId: () => pickAuthority({ me: id, peers: [...p.connected], host: sim.host, initiator: sim.initiator }),
 					storage: p.storage,
 					game: p.game,
 					rules: opts.rules ?? null,
-					emit: (piece, event, payload) => (p.emitted ??= []).push({ piece, event, payload, at: clock })
+					emit: (piece, event, payload, o) => (p.emitted ??= []).push({ piece, event, payload, at: clock, ...(o?.local ? { local: true } : {}) })
 				},
 				pieces
 			);

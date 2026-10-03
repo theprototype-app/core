@@ -63,20 +63,25 @@ export default {
 			name: 'damaged',
 			kind: 'event',
 			label: 'On entity damaged',
-			doc: 'An entity lost hit points.'
+			doc: 'An entity lost hit points (heard on every peer).'
 		},
 		{
 			name: 'healed',
 			kind: 'event',
 			label: 'On entity healed',
-			doc: 'An entity got hit points back.'
+			doc: 'An entity got hit points back (heard on every peer).'
 		},
 		{
 			name: 'died',
 			kind: 'event',
 			label: 'On entity died',
-			doc: 'An entity reached 0 hit points.'
+			doc: 'An entity reached 0 hit points and died.'
 		},
-		{ name: 'revived', kind: 'event', label: 'On entity revived', doc: 'A dead entity came back.' }
+		{
+			name: 'revived',
+			kind: 'event',
+			label: 'On entity revived',
+			doc: 'A dead entity came back to life.'
+		}
 	]
 };

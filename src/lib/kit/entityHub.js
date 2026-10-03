@@ -18,6 +18,8 @@
 //             joiner asking the authority for the whole set
 //   snapshot  (spawner only) the handshake's whole set, authority only
 //   reset     a scene clear drops every entity (every peer clears; nothing is sent)
+//   round     a new kit.round (its number moves: start / restart) clears the entities on the
+//             authority (replicated as ordinary removals) — a restarted game starts wave-free
 //
 // WORLD HOOKS the app adapter sets per kit (`setEntityHost`): resolveTarget (an object uuid /
 // 'player' / 'nearestPlayer' -> a place), world (obstacles + bounds for the movers), pulse (an
@@ -31,6 +33,8 @@ import { createKitEntities } from './entities.js';
 const runtimes = new WeakMap();
 /** kit -> the world hooks @type {WeakMap<object, any>} */
 const hooks = new WeakMap();
+/** kit -> the kit.round number the entities last saw @type {WeakMap<object, number>} */
+const roundSeen = new WeakMap();
 /** kit -> each entity piece's ctx (its request path) @type {WeakMap<object, Record<string, any>>} */
 const ctxs = new WeakMap();
 
@@ -102,7 +106,15 @@ export function entityPiece(spec, opsList, primary) {
 	if (primary) {
 		/** the authority's frame (kit/core.js calls tick on the authority only) */
 		piece.tick = (/** @type {any} */ _slice, /** @type {any} */ ctx) => {
-			entitiesFor(ctx).tick();
+			const rt = entitiesFor(ctx);
+			// a NEW ROUND (kit.round's number moved: start / restart) clears the entities, the
+			// way score and pickups reset on it — a restarted game does not keep the last wave
+			const round = ctx.read?.('round')?.round;
+			const kit = ctx.kit();
+			if (round !== undefined && roundSeen.has(kit) && roundSeen.get(kit) !== round)
+				rt.applyOp('spawner', 'clear', [''], null);
+			if (round !== undefined) roundSeen.set(kit, round);
+			rt.tick();
 			return [];
 		};
 		piece.receive = (

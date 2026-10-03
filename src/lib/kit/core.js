@@ -44,9 +44,11 @@ export const RESEND_MS = 1200;
  *   clock?: {now: () => number},
  *   send: (msg: any) => void,
  *   isAuthority: () => boolean,
+ *   authorityId?: () => string | null,
+ *   nameOf?: (id: string) => string,
  *   storage?: {get: (key: string, fallback?: any) => any, set: (key: string, value: any) => any},
  *   game?: {get: () => any, set: (state: string, opts?: any) => any, restart?: (opts?: any) => any},
- *   emit?: (piece: string, event: string, payload: any) => void,
+ *   emit?: (piece: string, event: string, payload: any, opts?: {local?: boolean}) => void,
  *   rules?: any
  * }} KitHost
  */
@@ -142,6 +144,10 @@ export function createKit(host, pieces) {
 		now,
 		me: () => host.me(),
 		isAuthority: () => host.isAuthority(),
+		/** a peer's display name (the roster's; the id when the host has none) @param {string} id */
+		nameOf: (id) => host.nameOf?.(id) || id,
+		/** the authority's id as this peer sees it (null when the host cannot say) */
+		authorityId: () => host.authorityId?.() ?? null,
 		slice: () => doc.slices[piece],
 		/** another piece's slice (read-only) @param {string} other */
 		read: (other) => doc.slices[other],
@@ -155,6 +161,13 @@ export function createKit(host, pieces) {
 		request: (op, args = []) => request(piece, op, args),
 		/** @param {string} name @param {(payload: any) => void} fn */
 		on: (name, fn) => on(piece + '.' + name, fn),
+		/** a LOCAL event (a spec call with `local: true`): this peer's listeners, and this peer's
+		 * node pulse kept local (the per-player rule) — nothing goes on the wire
+		 * @param {string} name @param {any} [payload] */
+		emitLocal: (name, payload = null) => {
+			fire(piece + '.' + name, payload);
+			host.emit?.(piece, name, payload, { local: true });
+		},
 		onChange,
 		kit: () => kit
 	});
@@ -342,6 +355,13 @@ export function createKit(host, pieces) {
 		// an authoritative LOCAL write: stamped fresh so it beats a stale document on arrival
 		doc = { ...freshDoc(), at: Math.max(now(), (doc.at ?? 0) + 1), by: host.me() ?? '' };
 		pending.clear();
+		for (const [name, def] of Object.entries(defs)) {
+			try {
+				def.reset?.(ctxFor(name));
+			} catch (error) {
+				console.warn('kit: ' + name + ' reset failed', error);
+			}
+		}
 		deliver([], false);
 	};
 
@@ -366,7 +386,7 @@ export function createKit(host, pieces) {
 		impls,
 		/** the specs, in table order */
 		specs: () => pieces.map((row) => row.piece.spec),
-		/** build the SDK face of every piece for one module @param {{onDispose?: (fn: () => void) => any}} [ctx] */
+		/** build the SDK face of every piece for one module @param {{onDispose?: (fn: () => void) => any, moduleId?: string}} [ctx] */
 		api: (ctx) => Object.fromEntries(pieces.map((row) => [row.name, kitApi(row.piece.spec, impls[row.name], ctx)])),
 		/** every generated node item */
 		nodeItems: () => pieces.flatMap((row) => kitNodeItems(row.piece.spec)),

@@ -57,7 +57,12 @@ export default {
 			doc: 'How many entities of a KIND are alive (empty = every kind).',
 			args: [{ key: 'kind', type: 'string', default: '' }]
 		},
-		{ name: 'spawned', kind: 'event', label: 'On entity spawned', doc: 'An entity appeared.' },
+		{
+			name: 'spawned',
+			kind: 'event',
+			label: 'On entity spawned',
+			doc: 'An entity appeared (on every peer; the node pulses once, on the authority).'
+		},
 		{
 			name: 'despawned',
 			kind: 'event',

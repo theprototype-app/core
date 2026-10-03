@@ -43,8 +43,8 @@ const dial = (n, x) => ({
 	rot: [PI / 2, 0, 0],
 	physics: SENSOR,
 	children: [
-		{ type: 'cylinder', name: 'Dial ' + n + ' face', r: 0.17, h: 0.08, pos: [0, 0, 0], color: 0xc9a25a, metalness: 0.7, roughness: 0.35 },
-		{ type: 'box', name: 'Dial ' + n + ' notch', size: [0.035, 0.05, 0.12], pos: [0, 0.05, -0.1], color: 0xff5a3a, emissive: 0xff3a1a, emissiveIntensity: 1.2 }
+		{ type: 'cylinder', name: 'Dial ' + n + ' face', r: 0.17, h: 0.08, pos: [0, 0, 0], color: 0xe0b860, metalness: 0.5, roughness: 0.35, emissive: 0x6a4a10, emissiveIntensity: 0.6 },
+		{ type: 'box', name: 'Dial ' + n + ' notch', size: [0.04, 0.06, 0.14], pos: [0, 0.05, -0.09], color: 0xfff4e0, emissive: 0xffffff, emissiveIntensity: 1.4 }
 	]
 });
 /** a lever on the workshop's south wall (pulled = rotated toward the room) @param {string} which @param {number} x */
@@ -66,7 +66,7 @@ const pedestal = (gem, x, color) => [
 		pos: [x, 0, -2.7],
 		physics: { mode: 'static', collider: 'cylinder' },
 		children: [
-			{ type: 'cylinder', name: 'Pedestal ' + gem + ' column', r: 0.22, r2: 0.3, h: 1.0, pos: [0, 0.5, 0], color: 0x5c5a66, roughness: 0.6 },
+			{ type: 'cylinder', name: 'Pedestal ' + gem + ' column', r: 0.22, r2: 0.3, h: 1.0, pos: [0, 0.5, 0], color: 0x9a96a8, roughness: 0.5 },
 			{ type: 'cylinder', name: 'Pedestal ' + gem + ' cap', r: 0.27, h: 0.06, pos: [0, 1.03, 0], color, emissive: color, emissiveIntensity: 0.9 }
 		]
 	},
@@ -203,7 +203,7 @@ const ESCAPE_DEF = {
 		// ---- the shell: three floors, a ceiling, the outer walls, two inner walls with doorways
 		{ type: 'box', name: 'Study floor', size: [8, 0.2, 8], pos: [-8, -0.1, 0], color: 0x6b4a30, ...WOOD, physics: S },
 		{ type: 'box', name: 'Workshop floor', size: [8, 0.2, 8], pos: [0, -0.1, 0], color: 0x585350, roughness: 0.9, physics: S },
-		{ type: 'box', name: 'Vault floor', size: [8, 0.2, 8], pos: [8, -0.1, 0], color: 0x2e2a36, roughness: 0.35, physical: true, clearcoat: 0.5, physics: S },
+		{ type: 'box', name: 'Vault floor', size: [8, 0.2, 8], pos: [8, -0.1, 0], color: 0x4a4458, roughness: 0.35, physical: true, clearcoat: 0.5, physics: S },
 		{ type: 'box', name: 'Exit floor', size: [2.4, 0.2, 2], pos: [13.3, -0.1, 0], color: 0x2a4a38, emissive: 0x1a6a40, emissiveIntensity: 0.5, physics: S },
 		{ type: 'box', name: 'Ceiling', size: [24.6, 0.2, 8.6], pos: [0, H + 0.1, 0], color: 0x3a2e24, roughness: 0.95, shadow: false, physics: S },
 		{ type: 'box', name: 'Wall north', size: [24.6, H, T], pos: [0, H / 2, -4.15], ...STONE, physics: S },
@@ -278,18 +278,19 @@ const ESCAPE_DEF = {
 		// ONE lamp (the lights budget is two): the module carries it into the room you stand in
 		{ type: 'light', name: 'Room lamp', kind: 'point', color: 0xffc890, intensity: 14, distance: 12, decay: 1.2, pos: [-8, 2.8, 0] },
 		// ---- ROOM 2: the workshop
-		{ type: 'box', name: 'Dial panel', size: [1.6, 0.8, 0.06], pos: [-1.2, 1.35, -3.97], color: 0x3a2e24, metalness: 0.3, roughness: 0.6, physics: S },
+		{ type: 'box', name: 'Dial panel', size: [1.6, 0.8, 0.06], pos: [-1.2, 1.35, -3.97], color: 0x7a5636, metalness: 0.3, roughness: 0.6, physics: S },
+		...[-1.7, -1.2, -0.7].map((x, i) => ({ type: 'cone', name: 'Dial mark ' + (i + 1), r: 0.035, h: 0.06, pos: [x, 1.6, -3.92], rot: [PI, 0, 0], color: 0xfff4e0, emissive: 0xffe0a0, emissiveIntensity: 1, physics: SENSOR })),
 		dial(1, -1.7),
 		dial(2, -1.2),
 		dial(3, -0.7),
 		{ type: 'box', name: 'Hatch niche', size: [0.56, 0.46, 0.08], pos: [0.5, 1.4, -3.97], color: 0x101010, roughness: 1, physics: S },
 		{ type: 'icosahedron', name: 'Moon gem', r: 0.12, pos: [0.5, 1.4, -3.88], color: 0xd8ecff, emissive: 0x88c8ff, emissiveIntensity: 2.2, flatShading: true, physics: SENSOR },
 		{ type: 'box', name: 'Dial hatch', size: [0.52, 0.42, 0.04], pos: [0.5, 1.4, -3.8], color: 0x6b5a48, metalness: 0.5, roughness: 0.5, physics: SENSOR },
-		{ type: 'box', name: 'Lever plate', size: [1.6, 0.6, 0.06], pos: [-0.5, 1.2, 3.97], color: 0x3a2e24, metalness: 0.3, roughness: 0.6, physics: S },
+		{ type: 'box', name: 'Lever plate', size: [1.6, 0.6, 0.06], pos: [-0.5, 1.2, 3.97], color: 0x7a5636, metalness: 0.3, roughness: 0.6, physics: S },
 		lever('left', 0),
 		lever('middle', -0.5),
 		lever('right', -1.0),
-		{ type: 'box', name: 'Star tray', size: [0.5, 0.08, 0.34], pos: [1.3, 0.9, 3.82], color: 0x4a4f58, metalness: 0.6, roughness: 0.4, physics: S },
+		{ type: 'box', name: 'Star tray', size: [0.5, 0.08, 0.34], pos: [1.3, 0.9, 3.82], color: 0x8a8f99, metalness: 0.6, roughness: 0.4, physics: S },
 		{ type: 'icosahedron', name: 'Star gem', r: 0.13, pos: [1.3, 1.04, 3.82], color: 0xd6b8ff, emissive: 0xa060ff, emissiveIntensity: 2.2, flatShading: true, physics: SENSOR },
 		{ type: 'cylinder', name: 'Crank socket', r: 0.13, h: 0.1, pos: [3.82, 1.2, -1.4], rot: [0, 0, PI / 2], color: 0x5a5f68, metalness: 0.8, roughness: 0.35, physics: SENSOR },
 		{

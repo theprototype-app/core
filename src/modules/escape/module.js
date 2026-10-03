@@ -103,7 +103,7 @@ export default {
 		const amLowest = () => {
 			const me = String(api.peerId?.() ?? '');
 			const ids = (api.peerIds?.() ?? []).map(String);
-			return ids.every((id) => !me || me <= id);
+			return ids.every((/** @type {string} */ id) => !me || me <= id);
 		};
 		/** where the player is (camera / VR head), [x, y, z] */
 		const playerPos = () => {
@@ -112,7 +112,8 @@ export default {
 		};
 		const roomOf = (/** @type {number} */ x) => (x < -4 ? 0 : x < 4 ? 1 : 2);
 		const say = (/** @type {string} */ text, /** @type {any} */ opts = {}) => api.announce?.(text, { ms: 2600, color: '#ffd9a0', ...opts });
-		const sound = (/** @type {string} */ s, /** @type {any} */ pos) => api.playSound?.(s, pos);
+		/** @param {string} s @param {any} [pos] */
+		const sound = (s, pos) => api.playSound?.(s, pos);
 		const posOf = (/** @type {string} */ name) => {
 			const o = byName(name);
 			if (!o) return undefined;
@@ -420,7 +421,8 @@ export default {
 			// the one lamp follows the player from room to room (a lights budget of two)
 			const lamp = byName('Room lamp');
 			if (lamp) {
-				const lx = [-8, 0, 8][running() ? curRoom : 0];
+				const pp = playerPos();
+				const lx = [-8, 0, 8][pp ? roomOf(Math.min(pp[0], 11.9)) : curRoom];
 				lamp.position.x += (lx - lamp.position.x) * Math.min(1, dt * 3);
 			}
 		};
@@ -632,7 +634,7 @@ export default {
 				roomSince = [0, 0, 0];
 				prevFlags = -1;
 				api.setSpawn?.(ROOMS[stage].spawn, ROOMS[stage].yaw, { teleport: stage > 0 });
-				say("The Alchemist's Escape", { sub: 'Find the three gems and get out.', ms: 3200, color: '#ffd45e' });
+				say(stage ? ROOMS[stage].name + ' (practice)' : "The Alchemist's Escape", { sub: stage ? 'The rooms before it are already open.' : 'Find the three gems and get out.', ms: 2400, color: '#ffd45e' });
 				api.music?.play?.('dungeon', { volume: 0.35 });
 			}
 			if (g && g.state !== prevState) {

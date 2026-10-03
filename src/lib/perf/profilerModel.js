@@ -34,6 +34,16 @@ export function costOf(n) {
 export const SCENE_GROUP = 'Scene objects';
 
 /**
+ * The editor's own drawing — the transform gizmo, the grid, light/camera/collider helpers.
+ * Real draw calls while you edit, none in Play (helpers hide there), so they get their own
+ * owner, sorted LAST, and stay out of the rankings: "who draws most" is about what ships.
+ * A row may say so itself (`helper: true`, forward compatible); older rows are recognised by
+ * the names three and the editor give those objects.
+ */
+export const EDITOR_GROUP = 'Editor (not in Play)';
+const EDITOR_SEGMENT = /^(TransformControls\w*|editor-grid|.*helpers?|.*-helper-.*)$/i;
+
+/**
  * The timeline's stacked graphs, top to bottom. `of` reads one frame (null = no value).
  * @type {ReadonlyArray<{key: string, label: string, unit: string, budget: number | null, of: (f: import('./tpprof.js').TpFrame) => number | null, higherIsBetter?: boolean}>}
  */
@@ -85,18 +95,33 @@ export function frameIndexAt(frames, t) {
 	return Math.min(lo, frames.length - 1);
 }
 
+/** index of the first frame whose end time is AFTER t @param {import('./tpprof.js').TpFrame[]} frames @param {number} t */
+function firstAfter(frames, t) {
+	let lo = 0;
+	let hi = frames.length;
+	while (lo < hi) {
+		const mid = (lo + hi) >> 1;
+		if (frames[mid].t <= t) lo = mid + 1;
+		else hi = mid;
+	}
+	return lo;
+}
+
 /**
- * The frames that END inside [from, to] — a range selection. A range narrower than one frame
- * yields the single frame under `to`, so a click is never an empty selection.
+ * The frames that END inside (from, to] — a range selection. A frame covers (t - ms, t], so a
+ * selection of exactly one frame's span ({from: t - ms, to: t}) is that frame and not also the
+ * one ending at `from`. A range narrower than one frame yields the single frame under `to`, so
+ * a click is never an empty selection.
  * @param {import('./tpprof.js').TpFrame[]} frames @param {number} from @param {number} to
  */
 export function framesIn(frames, from, to) {
 	if (!frames.length) return [];
 	if (to < from) [from, to] = [to, from];
-	const a = frameIndexAt(frames, from);
-	let b = a;
-	while (b < frames.length && frames[b].t <= to) b++;
-	return b > a ? frames.slice(a, b) : [frames[a]];
+	// t and ms are each rounded to 0.1 ms in a recording, so one frame's own span can start a
+	// hair before the previous frame's end: half a tenth of slack keeps that frame out
+	const a = firstAfter(frames, from + 0.15);
+	const b = firstAfter(frames, to);
+	return b > a ? frames.slice(a, b) : [frames[frameIndexAt(frames, to)]];
 }
 
 /**
@@ -137,16 +162,21 @@ export function bucketize(frames, from, to, columns, of) {
 }
 
 /**
- * A series' drawing scale: 0 .. a round number above its max (and above its budget line, so
- * the line is always on screen — the point of drawing it is to see how far below it you are).
+ * A series' drawing scale: 0 .. a round number above its 99th percentile (one 400-fps frame
+ * after a tab switch must not flatten the whole lane; the few values above it draw clipped at
+ * the top) and above its budget line, so the line is always on screen — the point of drawing
+ * it is to see how far below it you are.
  * @param {import('./tpprof.js').TpFrame[]} frames @param {(f: any) => number | null} of @param {number | null} budget
  */
 export function scaleOf(frames, of, budget) {
-	let max = 0;
+	/** @type {number[]} */
+	const vals = [];
 	for (const f of frames) {
 		const v = of(f);
-		if (v !== null && Number.isFinite(v) && v > max) max = v;
+		if (v !== null && Number.isFinite(v)) vals.push(v);
 	}
+	vals.sort((a, b) => a - b);
+	let max = vals.length ? vals[Math.min(vals.length - 1, Math.ceil(vals.length * 0.99) - 1)] : 0;
 	if (budget) max = Math.max(max, budget * 1.15);
 	if (max <= 0) return 1;
 	const mag = Math.pow(10, Math.floor(Math.log10(max)));
@@ -254,21 +284,28 @@ export function mergeCaptures(captures) {
 
 // ---------------------------------------------------------------- the tree
 
-/** @param {import('./tpprof.js').TpDrawn} row */
+/** @param {import('./tpprof.js').TpDrawn & {helper?: boolean}} row */
 export function placeOfRow(row) {
 	const path = String(row.path ?? row.name ?? '');
 	const scene = path.startsWith('Scene/');
 	const parts = (scene ? path.slice(6) : path).split('/').filter(Boolean);
+	if (!scene && !row.module) {
+		const mark = parts.find((p) => EDITOR_SEGMENT.test(p));
+		if (row.helper === true || mark) return { group: EDITOR_GROUP, object: mark || parts[0] || row.name || row.uuid, scene: false, depth: parts.length, editor: true };
+	}
 	const group = row.module ? String(row.module) : scene ? SCENE_GROUP : parts[0] || 'Other';
 	const object = parts[0] || row.name || row.uuid;
-	return { group, object, scene, depth: parts.length };
+	return { group, object, scene, depth: parts.length, editor: false };
 }
+
+/** @param {import('./tpprof.js').TpDrawn} row */
+export const isEditorRow = (row) => placeOfRow(row).editor;
 
 /**
  * @typedef {{
  *   id: string, kind: 'scene' | 'group' | 'object' | 'mesh', label: string,
  *   calls: number, tris: number, ms: number, shadowCalls: number,
- *   uuid: string | null, top: boolean, scene: boolean, material?: string, shadow?: boolean, transparent?: boolean,
+ *   uuid: string | null, top: boolean, scene: boolean, editor?: boolean, material?: string, shadow?: boolean, transparent?: boolean,
  *   objects?: number, children: TreeNode[]
  * }} TreeNode
  */
@@ -303,11 +340,12 @@ export function buildTree(rows, opts = {}) {
 	/** @type {Map<string, TreeNode>} */
 	const objects = new Map();
 	for (const row of rows) {
-		const { group, object, scene, depth } = placeOfRow(row);
+		const { group, object, scene, depth, editor } = placeOfRow(row);
 		let g = groups.get(group);
 		if (!g) {
 			groups.set(group, (g = node('g:' + group, 'group', group)));
 			g.scene = scene;
+			g.editor = editor;
 			root.children.push(g);
 		}
 		const oKey = group + '\u0000' + object;
@@ -361,6 +399,8 @@ export function sortTree(tree, key) {
 		n.children.forEach(walk);
 	};
 	walk(tree);
+	// the editor's own drawing goes last whatever it costs (it does not ship)
+	tree.children.sort((a, b) => Number(!!a.editor) - Number(!!b.editor));
 	return tree;
 }
 
@@ -375,6 +415,9 @@ export function sortTree(tree, key) {
  * @param {import('./tpprof.js').TpDrawn[]} rows @param {number} [limit]
  */
 export function rankings(rows, limit = 20) {
+	const all = rows;
+	const editorRows = all.filter((r) => isEditorRow(r));
+	rows = all.filter((r) => !isEditorRow(r));
 	const tree = buildTree(rows);
 	const objects = tree.children
 		.flatMap((g) => g.children.map((o) => ({ label: o.label, group: g.label, uuid: o.uuid, scene: o.scene, calls: o.calls, tris: o.tris, ms: o.ms, shadowCalls: o.shadowCalls })))
@@ -413,7 +456,9 @@ export function rankings(rows, limit = 20) {
 			calls: Math.round(sum(rows, 'calls') * 100) / 100,
 			tris: sum(rows, 'tris'),
 			shadowCalls: Math.round(sum(shadowRows, 'calls') * 100) / 100,
-			transparentRows: rows.filter((r) => r.transparent && !r.shadow).length
+			transparentRows: rows.filter((r) => r.transparent && !r.shadow).length,
+			editorCalls: Math.round(sum(editorRows, 'calls') * 100) / 100,
+			editorTris: sum(editorRows, 'tris')
 		}
 	};
 }

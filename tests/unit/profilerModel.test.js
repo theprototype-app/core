@@ -4,6 +4,8 @@ import {
 	costOf,
 	SERIES,
 	SCENE_GROUP,
+	EDITOR_GROUP,
+	isEditorRow,
 	spanOf,
 	frameIndexAt,
 	framesIn,
@@ -53,7 +55,9 @@ function capture(t = 500, scale = 1) {
 			{ uuid: 'body', name: 'Body', path: 'Scene/Car/Body', module: null, calls: 1, tris: 900, material: 'Paint', shadow: false, ms: 0.04 },
 			{ uuid: 'glass', name: 'Glass', path: 'Scene/Car/Glass', module: null, calls: 1, tris: 300, material: 'Glass', shadow: false, transparent: true, ms: 0.01 },
 			{ uuid: 'ball', name: 'Ball', path: 'football-module/Ball', module: 'football', calls: 3, tris: 2000, material: 'Leather', shadow: false, ms: 0.1 },
-			{ uuid: 'grid', name: 'editor-grid', path: 'editor-grid', module: 'editor-grid', calls: 1, tris: 2, material: 'LineBasicMaterial', shadow: false, ms: 0 }
+			{ uuid: 'grid', name: 'editor-grid', path: 'editor-grid', module: null, calls: 1, tris: 2, material: 'LineBasicMaterial', shadow: false, ms: 0 },
+			...['X', 'Y', 'Z', 'XY', 'YZ', 'XZ', 'XYZ'].map((a) => ({ uuid: 'g' + a, name: a, path: 'Object3D/TransformControlsGizmo/Object3D/' + a, module: null, calls: 3, tris: 72, material: 'MeshBasicMaterial', shadow: false, ms: 0.01 })),
+			{ uuid: 'lh', name: 'DirectionalLightHelper', path: 'DirectionalLightHelper/Line', module: null, calls: 1, tris: 0, material: 'LineBasicMaterial', shadow: false }
 		]
 	};
 }
@@ -95,6 +99,10 @@ describe('timeline series and buckets', () => {
 		expect(framesIn(f, 21, 40).map((x) => x.t)).toEqual([30, 40]);
 		expect(framesIn(f, 40, 21).map((x) => x.t)).toEqual([30, 40]);
 		expect(framesIn(f, 25, 25).length).toBe(1);
+		// one frame's own span is that frame, not also the one ending where it starts
+		expect(framesIn(f, 20, 30).map((x) => x.t)).toEqual([30]);
+		// rounding: t and ms are rounded separately, so a span may start 0.1 ms early
+		expect(framesIn(f, 19.9, 30).map((x) => x.t)).toEqual([30]);
 		expect(framesIn([], 0, 10)).toEqual([]);
 	});
 
@@ -116,6 +124,9 @@ describe('timeline series and buckets', () => {
 		expect(scaleOf(f, (x) => x.calls, 150)).toBeGreaterThanOrEqual(150 * 1.15);
 		expect(scaleOf(frames(5, () => ({ calls: 420 })), (x) => x.calls, 150)).toBe(500);
 		expect(scaleOf([], (x) => x.calls, null)).toBe(1);
+		// one outlier (a 2.5 ms frame = 400 fps) does not flatten the lane
+		const spiky = frames(300, (i) => ({ ms: i === 7 ? 2.5 : 16.7 }));
+		expect(scaleOf(spiky, (x) => 1000 / x.ms, 72)).toBeLessThan(150);
 	});
 });
 
@@ -170,16 +181,22 @@ describe('captures behind a selection', () => {
 
 describe('the tree: scene → module/game → object → mesh/material', () => {
 	it('places a row by owner and top-level object', () => {
-		expect(placeOfRow({ uuid: 'x', path: 'Scene/Car/Wheel', calls: 1, tris: 1 })).toEqual({ group: SCENE_GROUP, object: 'Car', scene: true, depth: 2 });
+		expect(placeOfRow({ uuid: 'x', path: 'Scene/Car/Wheel', calls: 1, tris: 1 })).toEqual({ group: SCENE_GROUP, object: 'Car', scene: true, depth: 2, editor: false });
 		expect(placeOfRow({ uuid: 'x', path: 'football-module/Ball', module: 'football', calls: 1, tris: 1 }).group).toBe('football');
-		expect(placeOfRow({ uuid: 'x', path: 'editor-grid', calls: 1, tris: 1 }).group).toBe('editor-grid');
+		expect(placeOfRow({ uuid: 'x', path: 'editor-grid', calls: 1, tris: 1 }).group).toBe(EDITOR_GROUP);
+		expect(placeOfRow({ uuid: 'x', path: 'Object3D/TransformControlsGizmo/Object3D/X', calls: 3, tris: 72 })).toMatchObject({ group: EDITOR_GROUP, object: 'TransformControlsGizmo', editor: true });
+		expect(placeOfRow({ uuid: 'x', path: 'sky-dome', helper: true, calls: 1, tris: 1 }).group).toBe(EDITOR_GROUP);
+		// a module's content and the scene's own objects are never the editor's, whatever their names
+		expect(placeOfRow({ uuid: 'x', path: 'Scene/Light helper prop', calls: 1, tris: 1 }).group).toBe(SCENE_GROUP);
+		expect(placeOfRow({ uuid: 'x', path: 'mod/AxesHelper', module: 'mod', calls: 1, tris: 1 }).group).toBe('mod');
+		expect(placeOfRow({ uuid: 'x', path: 'env-rig/Sun', calls: 1, tris: 1 }).group).toBe('env-rig');
 	});
 
 	it('every level sums what is under it, and the heaviest object comes first', () => {
 		const t = buildTree(capture().objects, { scene: 'Test scene' });
 		expect(t.label).toBe('Test scene');
-		expect(t.calls).toBe(11);
-		expect(t.tris).toBe(60000 * 2 + 12 + 400 + 900 + 300 + 2000 + 2);
+		expect(t.calls).toBe(11 + 21 + 1);
+		expect(t.tris).toBe(60000 * 2 + 12 + 400 + 900 + 300 + 2000 + 2 + 7 * 72);
 		const scene = t.children.find((g) => g.label === SCENE_GROUP);
 		expect(scene?.children[0].label).toBe('Heavy');
 		expect(scene?.children[0].calls).toBe(2);
@@ -191,8 +208,13 @@ describe('the tree: scene → module/game → object → mesh/material', () => {
 		expect(car?.children.length).toBe(3);
 		expect(car?.top).toBe(false); // the mesh rows are children; selecting reaches Car through any of them
 		expect(t.children.find((g) => g.label === 'football')?.calls).toBe(3);
-		// the groups sort by cost too: Scene objects (8 calls) before football (3)
+		// the groups sort by cost too: Scene objects (8 calls) before football (3) — and the editor's
+		// own drawing (the gizmo: 23 calls, more than either) LAST, because it does not ship
 		expect(t.children[0].label).toBe(SCENE_GROUP);
+		const ed = t.children[t.children.length - 1];
+		expect(ed.label).toBe(EDITOR_GROUP);
+		expect(ed.calls).toBe(23);
+		expect(ed.editor).toBe(true);
 	});
 
 	it('re-sorts every level by the chosen column', () => {
@@ -220,7 +242,10 @@ describe('who draws most', () => {
 		expect(r.shadows.map((s) => s.label)).toEqual(['Heavy']);
 		expect(r.transparent.map((s) => s.label)).toEqual(['Glass']);
 		expect(r.totals.shadowCalls).toBe(1);
-		expect(r.totals.calls).toBe(11);
+		expect(r.totals.calls).toBe(10); // the editor's 23 calls are not in the rankings...
+		expect(r.totals.editorCalls).toBe(23); // ...they are counted on their own
+		expect(r.objects.some((o) => o.label === 'TransformControlsGizmo')).toBe(false);
+		expect(isEditorRow({ uuid: 'x', path: 'editor-grid', calls: 1, tris: 1 })).toBe(true);
 		expect(rankings(capture().objects, 2).objects.length).toBe(2);
 	});
 });

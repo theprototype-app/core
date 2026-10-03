@@ -10,5 +10,7 @@ import vrsleeve from './vrsleeve/module.js';
 import towers from './towers/module.js';
 // 35-escape-room: The Alchemist's Escape (dormant outside an `Escape game` scene)
 import escape from './escape/module.js';
+// 35: the Marble Maze game's mazes, tilt and judge (dormant outside a Marble Maze scene)
+import marble from './marble/module.js';
 
-export const coreModules = [hello, button, pong, vrsleeve, towers, escape];
+export const coreModules = [hello, button, pong, vrsleeve, towers, escape, marble];

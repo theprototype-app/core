@@ -25,7 +25,9 @@ const TEMPLATE_FILES = [
 	'make-a-mirror',
 	'follow-the-beat',
 	// 35-escape-room: The Alchemist's Escape (rules in the core `escape` module)
-	'escape-room'
+	'escape-room',
+	// 35: tilt the board, roll the marble (rules: the core `marble` module)
+	'marble-maze'
 ];
 
 /** games whose def is OWNED BY ITS MODULE (modules/<id>/<id>.def.json, read by moduleDef) */

@@ -21,6 +21,7 @@ export function createKitSim(opts) {
 	const peers = new Map();
 	const host = opts.host ?? opts.peers[0];
 	const stats = { sent: 0, refused: 0, requests: 0, bytes: 0 };
+	let ridN = 0;
 
 	function authorityId() {
 		const live = [...peers.values()].filter((p) => p.connected).map((p) => p.id);
@@ -61,7 +62,7 @@ export function createKitSim(opts) {
 			request: (piece, op, args) => {
 				stats.requests++;
 				const auth = authorityId();
-				if (auth) deliver(id, { type: 'kitreq', piece, op, args }, auth);
+				if (auth) deliver(id, { type: 'kitreq', rid: id + ':' + ++ridN, piece, op, args, from: id }, auth);
 			},
 			resolveTarget: (ref) => {
 				if (typeof ref !== 'string') return null;

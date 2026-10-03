@@ -108,7 +108,9 @@ function makeStorage(now) {
 
 /**
  * @param {{peers?: string[], latency?: number, host?: string | null, initiator?: string | null,
- *   pieces?: any[], rules?: any}} [opts]
+ *   pieces?: any[], rules?: any, onPeer?: (p: any, sim: any) => void}} [opts]
+ *   `onPeer`: called for every peer as it is added — a test layer (34-behaviours' behaviourSim)
+ *   hangs `p.extra = {receive(msg, from) -> handled, tick(), snapshot() -> msgs}` on it
  */
 export function createSim(opts = {}) {
 	let clock = 1_000_000; // session ms; non-zero so "never" (0) is distinguishable
@@ -163,6 +165,7 @@ export function createSim(opts = {}) {
 			);
 			p.send = send;
 			peers.set(id, p);
+			opts.onPeer?.(p, sim);
 			return p;
 		},
 		/**
@@ -181,8 +184,10 @@ export function createSim(opts = {}) {
 				if (other.id === id) continue;
 				for (const msg of other.kit.snapshots()) queue.push({ at: clock + latency, from: other.id, to: id, msg });
 				queue.push({ at: clock + latency, from: other.id, to: id, msg: { type: 'game', ...other.game.get() } });
+				for (const msg of other.extra?.snapshot?.() ?? []) queue.push({ at: clock + latency, from: other.id, to: id, msg });
 				for (const msg of p.kit.snapshots()) queue.push({ at: clock + latency, from: id, to: other.id, msg });
 				queue.push({ at: clock + latency, from: id, to: other.id, msg: { type: 'game', ...p.game.get() } });
+				for (const msg of p.extra?.snapshot?.() ?? []) queue.push({ at: clock + latency, from: id, to: other.id, msg });
 			}
 			return p;
 		},
@@ -212,6 +217,7 @@ export function createSim(opts = {}) {
 						throw new Error('wireValidate refused a ' + m.msg?.type + ' from ' + m.from + ': ' + JSON.stringify(m.msg).slice(0, 300));
 					}
 					to.received++;
+					if (to.extra?.receive?.(m.msg, m.from)) continue;
 					if (m.msg.type === 'game') to.game.receive(m.msg);
 					else to.kit.receive(m.msg, m.from);
 				}
@@ -221,7 +227,10 @@ export function createSim(opts = {}) {
 		step(ms = FRAME_MS) {
 			clock += ms;
 			sim.deliver();
-			for (const p of [...peers.values()]) p.kit.tick();
+			for (const p of [...peers.values()]) {
+				p.kit.tick();
+				p.extra?.tick?.();
+			}
 			sim.deliver();
 		},
 		/** run the sim forward @param {number} ms @param {number} [frame] */

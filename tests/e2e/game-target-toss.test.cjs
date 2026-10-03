@@ -80,7 +80,7 @@ h.run(async () => {
 	await h.eventually(() => tt('cans').then((c) => c.length), (n) => n === 6, 'stage 1 deals a six-can pyramid', 8000);
 	await h.eventually(() => tt('balls').then((b) => b.length), (n) => n === 6, 'six balls on the shelf', 8000);
 	await page.waitForTimeout(2600); // the intro countdown
-	await h.eventually(hud, (t) => /Stage 1 · Tin cans/.test(t) && /Cans 0\/6/.test(t), 'the HUD names the stage and counts the cans', 6000);
+	await h.eventually(hud, (t) => /Stage 1 · Tin cans/.test(t) && /Cans 0\/6/.test(t) && /Hold to charge/.test(t), 'the HUD names the stage, counts the cans, says how to throw', 6000);
 	const cansStanding = await tt('cans');
 	h.check(cansStanding.every((c) => c.pos[1] > 0.9), `the pyramid stands on the table (${cansStanding.map((c) => c.pos[1].toFixed(2)).join(',')})`);
 
@@ -207,6 +207,7 @@ h.run(async () => {
 		knocked = 6 - Number((await tt('vars')).ttCans);
 	}
 	h.check(knocked > 0, `VR: a throw knocks cans (${knocked} down)`);
+	h.check((await tt('info', [{ read: 'hint' }])) === 'Grip a ball · throw it', 'VR: the hint line says grip and throw (not hold the mouse)');
 	await page.evaluate(() => window.__stores.isVRMode.set(false));
 	await xr.uninstall(page);
 

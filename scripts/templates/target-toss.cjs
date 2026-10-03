@@ -51,6 +51,7 @@ function tossGraph() {
 	text('rstars', 'resultStars', 'tt-stars', 1300, 480);
 	text('rline', 'resultLine', 'tt-line', 1300, 550);
 	text('rbest', 'best', 'tt-best', 1300, 620);
+	text('hint', 'hint', 'tt-hint', 800, 480);
 	N('progi', 'tossinfo', 'Toss: progress', 1300, 710, { read: 'progress' });
 	N('progbar', 'hudbar', 'HUD progress bar', 1540, 710, { element: 'tt-bar', value: 0, min: 0, max: 1, format: '' });
 	E('progi', 'progbar', 'value');
@@ -188,7 +189,7 @@ const TARGET_TOSS_DEF = {
 						{ id: 'tt-score', kind: 'text', anchor: 'top-left', x: 16, y: 14, w: 220, h: 26, z: 1, label: '', style: { size: 20, weight: '700', color: '#ffd45e', align: 'left' } },
 						{ id: 'tt-combo', kind: 'text', anchor: 'top-left', x: 16, y: 44, w: 220, h: 24, z: 1, label: '', style: { size: 17, weight: '700', color: '#ff8a5c', align: 'left' } },
 						{ id: 'tt-charge', kind: 'bar', anchor: 'bottom-center', x: 0, y: 44, w: 220, h: 10, z: 1, label: '', value: 0, min: 0, max: 1, style: { color: '#ff8a5c', bg: 'rgba(255,255,255,0.15)', radius: 5 } },
-						{ id: 'tt-hint', kind: 'text', anchor: 'bottom-center', x: 0, y: 14, w: 620, h: 20, z: 1, label: 'Hold to charge · release to throw · Esc menu', style: { size: 12, color: '#f5ece6', align: 'center' } }
+						{ id: 'tt-hint', kind: 'text', anchor: 'bottom-center', x: 0, y: 14, w: 620, h: 20, z: 1, label: '', style: { size: 12, color: '#f5ece6', align: 'center' } }
 					]
 				},
 				{

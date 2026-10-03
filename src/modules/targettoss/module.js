@@ -533,6 +533,8 @@ export default {
 				return 'Stars earned: ' + total + ' / ' + STAGES.length * 3;
 			}
 			if (read === 'charge') return charging ? Math.min(1, (now() - chargeStart) / CHARGE_FULL) : 0;
+			// LOCAL words: a headset grips and throws, a desktop holds and releases
+			if (read === 'hint') return api.isVR() ? 'Grip a ball · throw it' : 'Hold to charge · release to throw · Esc menu';
 			if (!s) return read === 'progress' ? 0 : '';
 			switch (read) {
 				case 'title':
@@ -598,7 +600,7 @@ export default {
 					label: 'Target Toss info',
 					defaults: { read: 'title', level: 1 },
 					params: [
-						{ key: 'read', kind: 'select', options: ['title', 'targets', 'progress', 'score', 'combo', 'clock', 'charge', 'result', 'resultStars', 'resultLine', 'best', 'levelStars', 'menuLine'] },
+						{ key: 'read', kind: 'select', options: ['title', 'targets', 'progress', 'score', 'combo', 'clock', 'charge', 'hint', 'result', 'resultStars', 'resultLine', 'best', 'levelStars', 'menuLine'] },
 						{ key: 'level', kind: 'range', min: 1, max: STAGES.length, step: 1 }
 					]
 				},

@@ -958,6 +958,67 @@ levels.select('1'); round.start();
   fake clock, the real wire validator) — `createSim({peers: ['a', 'b']})`, then
   `sim.peer('a').kit.impls.round.start(); sim.advance(3000)` — milliseconds, not e2e minutes.
 
+### Behaviours: game logic as a small file, with a live node view (1.20, roadmap 34 R3)
+
+A **behaviour** is game logic written as ONE self-contained JavaScript file — the code half of
+"nodes vs code" (proposal §4): plain JS for what is a loop or a rule, a derived node view for
+seeing it run. Add a **Behaviour** node (palette: Logic) to the scene graph (or an object's
+graph — then `this.object` is that object) and write the file into it; **Open view** shows it.
+
+```js
+export default behaviour({
+	name: 'Waves spawner',
+	params: { interval: { value: 3, min: 0, max: 30, step: 0.5, unit: 's' }, waves: 5 },
+	state: { wave: 0, alive: 0 },                      // replicated: every peer reads it
+	on: {
+		go() { this.startWave(1); },                   // kit.round's "go"
+		died({ entity }) {                             // kit.health's "died", typed payload
+			if (!entity.is('robot')) return;
+			if (--this.state.alive === 0) this.after(this.params.interval, 'startWave', this.state.wave + 1);
+		}
+	},
+	startWave(n) {
+		if (n > this.params.waves) return kit.round.win('All waves cleared');
+		this.state.wave = n;
+		this.state.alive = n + 1;
+		kit.spawner.spawn({ kind: 'robot', template: this.find('Robot')?.uuid, count: n + 1, mover: { speed: 1.3 } });
+	}
+});
+```
+
+- **params** — a literal (`waves: 5`) or `{value, min, max, step, unit}`; read as `this.params.x`.
+  In the node view each is a KNOB: dragging previews on your device, releasing rewrites the
+  literal in the file (one edit, one undo entry) and every peer reloads with it.
+- **state** — plain JSON. Handlers run on ONE peer, the kit's **authority**; after each one the
+  state is sent to everybody (`bhv`, latest-wins). A late joiner gets it in the handshake; when
+  the authority leaves, the next one carries on from it. A source edit keeps it.
+- **on** — event handlers: `start` (once per session), `grabRequest({piece, distance, refuse})`
+  (the kit.rules veto, asked on the GRABBING peer — read-only there), and every kit event as
+  `'piece.event'`, `pieceEvent` or a short alias (`roundStart`, `go`, `won`, `lost`, `died`,
+  `damaged`, `spawned`, `emptied`, `scored`, `collected`, `stuck`, `grabRefused`). An entity in a
+  payload has `is(glob)` / `hasTag(tag)`.
+- **methods** — any other function: `this.name(...)`.
+- **this** — `params`, `state`, `kit` (also bare `kit`), `after(s, 'method', ...args)` (session
+  clock; a method NAME survives the authority leaving, a closure does not), `cancel(key)`,
+  `rand()` / `randInt(a, b)` / `pick(list)` (seeded per event — never `Math.random`), `now()`,
+  `find(glob)` / `findAll(glob)` (scene objects by name or tag: `{uuid, name, pos, tags}`),
+  `object`, `isAuthority()`, `me()`, `log(...)`. Bare helpers: `dist(a, b)`, `clamp`, `lerp`.
+- **The lint** stops a file from loading (on every peer, with the line) when it uses what would
+  make peers disagree or reach outside the game: `Math.random`, `Date`/`Date.now`/
+  `performance.now`, storage, the DOM/`window`/`globalThis`, network, `eval`/`Function`, bare
+  timers, `import`. Loops run under the loop guard (a runaway handler throws, the game goes on).
+- **Lifecycle (T2)** — each behaviour is a module of its own (`behaviour:<nodeId>`): its kit
+  listeners and the entities it spawned are tracked; deleting or stopping the node takes them
+  away. Editing the source does NOT: the definition is swapped, the game keeps running.
+- **The node view** (derived, read-only): ⚡ events → ƒ handlers/methods → ▣ state, ⊕ kit calls
+  (named exactly as the generated **Kit:** nodes), ⏱ timers, ✋ payload actions; ◆ params with
+  knobs. Live values 10x a second, a glow on what just fired (on every peer), timer countdowns,
+  errors with their line. Logic edits happen in the code (the view's **Code** panel).
+- Prove a behaviour on the **logic sim**: `tests/unit/sim/behaviourSim.js` —
+  `const sim = createBehaviourSim({peers: ['a', 'b']}); await sim.load('w', source);` then drive
+  the kit and assert `sim.states('w')`. Examples: `static/behaviours/waves-spawner.js`,
+  `static/behaviours/towers-reach.js`.
+
 ### Physics (P-A)
 
 All mutations are INITIATOR-ONLY — the peer that started the simulation steps

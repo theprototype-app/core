@@ -18,6 +18,7 @@ Verdicts: OK · FIX(ed this batch) · DOC(umented quirk).
 | time | Input | number | — | OK (sin/cos/linear × rate) |
 | objectselector | Scene | — (sink) | effect | OK — THE effect sink; anything not ending here is silently inert (DOC). |
 | script | Logic | effect (drives a Selector; value readable) | a b c | OK (side panel editor; deterministic pure fn) |
+| behaviour | Logic | — (no sockets) | — | NEW (34 R3): game logic as ONE .js file in `data.code` (`export default behaviour({params, state, on, …methods})`), run on the kit's authority with replicated state; its card opens the DERIVED live node view (events, params as knobs that rewrite the source literal, handlers, state, kit calls). See MODULES.md "Behaviours". |
 | math | Logic | number | a b | OK (BinaryNode) |
 | compare | Logic | boolean | a b | OK |
 | gate | Logic | boolean | a b | DOC: op NOT ignores `b` (vestigial handle; harmless). 21-E4 AUDIT: `not` was on the SPEC's wanted list and is in fact ALREADY SHIPPED — the runtime case, the BinaryNode option and the hidden `b` checkbox all predate it, so the "inverting a boolean takes a compare trick" premise is stale. The socket is deliberately still drawn for `not`: hiding a handle that a saved edge might target strands that edge, and the value is ignored either way. |

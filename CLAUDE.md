@@ -2526,6 +2526,39 @@ loadable play content. Everything a user does must be visible to connected peers
   N fake peers, a fake clock, an in-memory wire that runs every message through the real `validateWireMessage`
   (a refusal fails the sim), per-peer fake gameState + storage, join/leave/partition — rule proofs in ms. Suites:
   vitest `sim/*` (~110), e2e `kit-core` (two peers + a joiner, the real wire), towers-levels/game-towers.
+- **ROADMAP 34 R3 — BEHAVIOURS, code-first game logic with a DERIVED live node view (34-behaviours, D1+D2)**
+  (`src/lib/behaviours/`). A behaviour is `export default behaviour({params, state, on, …methods})`, ONE file held in
+  a `behaviour` flow node's `data.code` — so persistence, replication, late joiners, undo and the Explorer `.js`
+  listing (sceneAssets) are the node-data paths that already exist. PURE core (`define/events/core/source/analyze/
+  graph.js`, the kit/core.js host-adapter shape) + `app.js` (the app adapter). RUNTIME: handlers run on the KIT's
+  authority only (`kitAuthorityId`); LOCAL events (grabRequest = kit.rules veto, spec `local` events) run where they
+  happen and a state write there is PUT BACK; after every handler the authority diffs `this.state` (JSON) and sends
+  the whole document `bhv` `{id, rev, at, by, state, started, seq, timers, fired}` (wireValidate row, ROOM_SCOPED,
+  dispatch + handshake push), latest-wins on (at, rev, by). `this.after(s, 'method', …args)` timers LIVE IN THE
+  DOCUMENT (the next authority fires them); a closure timer is local. `rand()` is mulberry32 seeded per dispatch by
+  (id, handler, doc.seq). THE JOINER TRAP: a peer that has not heard a document may not act as its authority until
+  it hears one, is alone, or `GRACE_MS` (2 s) after its last connection change — under the smallest-id rule a
+  joiner IS the authority on connect, and its initial state would overwrite the game. LOADING: `analyze` (acorn;
+  the LINT bans Math.random/Date/performance.now/storage/DOM/globalThis/network/eval/bare timers/import — an error
+  stops the load on EVERY peer), then the MODULE LOADER (`userModules.importModuleText`, a fresh blob import) with
+  `source.js`'s one-line prologue ON line 1 (`behaviour, kit, dist, clamp, lerp`; `kit` is a proxy bound to the
+  behaviour's traced kit face when it starts) and the 27-D loop guard (counter reset per dispatch by an appended
+  epilogue line). T2: one lifecycle module per behaviour, `behaviour:<nodeId>`, with ONE kit face for its whole
+  life (its listeners are tracked; an early off RELEASES its registry entry); removal/Stop/scene clear =
+  `disposeRegistrations` + `kit.impls.spawner.disown` asked directly (kitApi journals an `owned` disown only on the
+  peer that CALLED spawn — a promoted authority never had one). A SOURCE EDIT is not an unload: the definition is
+  swapped, state and entities carried (a knob turn must not wipe the wave). Behaviour modules stay OUT of
+  `loadedModules` (no module-version toasts, no Modules manager rows). THE VIEW (`BehaviourView.svelte`, an overlay
+  over the Node editor inside Flow.svelte with its OWN SvelteFlowProvider; `behaviourViewOpen` in flowStore; the
+  card's Open view): `deriveGraph` columns ⚡events/◆params → ƒhandlers+methods → ▣state/⊕kit calls (labelled as the
+  generated `kit-<piece>-<call>` node, T3)/⏱timers/✋payload actions; edges reads (dashed) / writes / calls; rebuilt
+  only when the STRUCTURE changes. Live layer 10 Hz from `runtime.live(id)`; THE GLOW is what this view SAW change
+  (a fired count arriving in the document), never another peer's stamp against our clock. A KNOB previews with
+  `runtime.setParam` and on release `setParamLiteral` rewrites ONE literal + `recordFlowNodesEntry` op 'data' =
+  ONE undo entry. kit-entities fix carried here: `entityHub` counts a kit.round number change only once the kit
+  document is real (rev > 0) — a lowest-id joiner read the session's round arriving as a new round and cleared the
+  wave. Suites: vitest `sim/behaviours` (14, on logicSim via `behaviourSim.js` + its `onPeer/extra` hooks),
+  `behaviourAnalyze` (23); e2e `behaviours` (two peers + a joiner; proof ports side by side with kit-node versions).
 - **ROADMAP 33 — EDITOR UI + GAMES (33-editor-ui, 33-games, 33-untangle-core)**: the default Controls bar is
   Move/Rotate/Scale, Interact, Play, list, nodes, Explorer, Animation (an untouched stored default MIGRATES, a
   customised bar wins); the Interact toggle's ring is keyboard-only (`focus-visible`) and the well halves answer

@@ -38,9 +38,11 @@
   // budget meter. `renderer.info` had exactly one reader before this (the VR plate).
   import StatsOverlay from './components/menu/StatsOverlay.svelte'
   import MomentReport from './components/menu/MomentReport.svelte'
+  import ProfilerLive from './components/menu/ProfilerLive.svelte'
   import { startSceneMetrics, budgetSummary } from './lib/sceneBudget'
   import { startPerfRecorder } from './lib/perf/recorder'
   import { startDetailedProbe } from './lib/perf/detailed'
+  import { startPerfLive } from './lib/perf/live'
   import { startPerfBeacon } from './lib/perf/beacon'
   import { startStaleModuleWatch } from './lib/staleModules'
   import { startLod } from './lib/lod'
@@ -158,6 +160,8 @@ import { startMusicToolbox } from './lib/musicToolbox'
     // 34 PF/R1: the always-on light ring (moments, beacon windows) + user recordings
     startPerfRecorder()
     startDetailedProbe()
+    // 34 PF (profiler-xr): stream this device's frames to a peer that asks (and watch theirs)
+    startPerfLive()
     // 34 R1: performance reports (opt-in; inert without VITE_PERF_REPORTS_URL)
     startPerfBeacon()
     // 34 R1: an installed module older than this build expects -> toast + a Modules row
@@ -390,6 +394,7 @@ import { startMusicToolbox } from './lib/musicToolbox'
 <DungeonMinimap />
 <StatsOverlay />
 <MomentReport />
+<ProfilerLive />
 <PlayReticle />
 <!-- W4: the touch play controls (virtual stick, look drag, exit). Beside PlayReticle
      and outside the {#if !$isLocked} block for the same reason: they exist ONLY while

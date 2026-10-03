@@ -56,6 +56,11 @@ export function isArray(v) {
 	return Array.isArray(v);
 }
 
+/** Every element a finite number (any length). @param {unknown} v */
+export function isNumberArray(v) {
+	return Array.isArray(v) && v.every((x) => typeof x === 'number' && Number.isFinite(x));
+}
+
 /**
  * Keep a transform APPLICABLE: every non-finite component falls back to the value the
  * object already has, so a partly-broken message moves what it can and poisons nothing.
@@ -239,6 +244,26 @@ export const VALIDATORS = {
 			(isArray(d.upd) && d.upd.length <= KIT_ENTITY_MAX_ROWS && d.upd.every(isKitEntityRow))) &&
 		(d.del === undefined ||
 			(isArray(d.del) && d.del.length <= KIT_ENTITY_MAX_ROWS && d.del.every(isUuid))),
+	// 34 PF (profiler-xr): the live perf stream. The packed columns are read as numbers into a
+	// recording on arrival, so a frames batch must be finite numbers in whole frames; a capture
+	// is read as an object list. Ops this build does not know pass (a newer peer's addition).
+	perflive: (d) => {
+		if (typeof d.op !== 'string') return false;
+		if (d.op === 'watch') return d.mode === 'light' || d.mode === 'detailed';
+		if (d.op === 'frames')
+			return (
+				Number.isFinite(d.base) &&
+				Number.isFinite(d.t0) &&
+				isNumberArray(d.f) &&
+				d.f.length % 5 === 0 &&
+				d.f.length <= 5 * 4096 &&
+				(d.c === undefined || (isNumberArray(d.c) && d.c.length === (d.f.length / 5) * 6)) &&
+				(d.ev === undefined || isArray(d.ev))
+			);
+		if (d.op === 'capture') return Number.isFinite(d.base) && Number.isFinite(d.t) && !!d.cap && typeof d.cap === 'object' && isArray(d.cap.objects);
+		if (d.op === 'hello') return Number.isFinite(d.base) && !!d.meta && typeof d.meta === 'object';
+		return true;
+	},
 	// 33: only the `lod` parameter is constrained (every other parameter predates this entry
 	// and keeps "absent means allow"): a block is an object with a levels ARRAY, or null
 	objectParameters: (d) =>

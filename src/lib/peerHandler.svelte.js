@@ -29,6 +29,7 @@ import { canApply, getAuthProvider, dispatchCloudMessage, rolesInfo } from '$lib
 // 27-A (audit H1): shape validation + per-peer failure counters. Both are LEAVES, so the
 // dispatcher can reject a malformed message before any applier sees it.
 import { validateWireMessage } from '$lib/wireValidate';
+import { routePerfLive, perfLivePeerGone } from '$lib/perf/liveWire.js'; // 34 PF: the live perf stream (an import-free leaf)
 import { noteWireError } from '$lib/wireErrors';
 import { noteWire } from '$lib/sceneBudget';
 import { applyAnnotation, applyAnnotationsSnapshot, sendAnnotations } from '$lib/annotationsHandler';
@@ -1150,6 +1151,10 @@ export class PeerConnection {
 				} else if(data.type == 'splineedit') {
 					// 57.3: only the RECORD travels — the receiver rebuilds the tube
 					applySplineEdit(data.uuid, data.spline);
+				} else if(data.type == 'perflive') {
+					// 34 PF (profiler-xr): a peer's live perf stream, or a request to stream ours.
+					// LOCAL presence-like data: never re-broadcast, never saved, never undone.
+					routePerfLive(conn.peer, data);
 				} else if(data.type == 'vrhands') {
 					peerHands.update((map) => ({
 						...map,
@@ -1648,6 +1653,7 @@ export class PeerConnection {
 		this.openedPeers.delete(peerId);
 		handleDisconnected(peerId);
 		clearPeerPreview(peerId); // 16-P5
+		perfLivePeerGone(peerId); // 34 PF
 		dropPeerLook(peerId); // P2
 		dropPeerPlayMode(peerId); // 21-F3
 		dropPeerScene(peerId); // P2b
@@ -1683,6 +1689,7 @@ export class PeerConnection {
 				this.openedPeers.delete(peerId);
 				handleDisconnected(peerId);
 				clearPeerPreview(peerId); // 16-P5
+				perfLivePeerGone(peerId); // 34 PF
 				dropPeerLook(peerId); // P2
 				dropPeerPlayMode(peerId); // 21-F3
 				dropPeerScene(peerId); // P2b

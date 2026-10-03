@@ -30,7 +30,7 @@ import { gameId } from '../gameSettings';
 import { idbGet, idbPut, idbDelete } from '../idb';
 import { APP_VERSION, COMMIT_SHA, IS_DEV } from '../version.js';
 import { createTrack } from './perfTrack.js';
-import { onPerfMark, perfContext } from './perfMarks.js';
+import { onPerfMark, perfContext, registerPerfContext } from './perfMarks.js';
 import { STALL_MS, MOMENT_MS, TPPROF_VERSION, CPU_PHASES, encodeTpprof, decodeTpprof, summarize, windowOf } from './tpprof.js';
 
 /** the light ring: ~32 s at 144 Hz, ~64 s at 72 Hz */
@@ -102,6 +102,43 @@ let active = null;
  */
 export const perfState = writable({ recording: null, saved: 0, version: 0 });
 
+/**
+ * 34 profiler-xr: one frame handed to the live stream as it happens (ring time, the light
+ * columns, and the CPU phases while a detailed recording runs — null otherwise).
+ * @typedef {(t: number, ms: number, calls: number, tris: number, quality: number, cpu: ArrayLike<number> | null) => void} LiveTap
+ */
+/** @type {LiveTap | null} */
+let liveTap = null;
+/** one-shot captures in flight (captureOnce) */
+let onceCapturing = 0;
+/** Install (or clear) the live stream's frame tap. One at a time. @param {LiveTap | null} fn */
+export function setLiveTap(fn) {
+	liveTap = typeof fn === 'function' ? fn : null;
+}
+
+/** @type {Set<(cap: import('./tpprof.js').TpCapture, src: 'recording' | 'once') => void>} */
+const captureObservers = new Set();
+/** Hear every detailed capture as it is taken (the live stream forwards them). @param {(cap: import('./tpprof.js').TpCapture, src: 'recording' | 'once') => void} fn */
+export function onPerfCapture(fn) {
+	captureObservers.add(fn);
+	return () => captureObservers.delete(fn);
+}
+/** @param {import('./tpprof.js').TpCapture} cap @param {'recording' | 'once'} src */
+function tellCapture(cap, src) {
+	for (const fn of captureObservers) {
+		try {
+			fn(cap, src);
+		} catch {
+			/* isolated */
+		}
+	}
+}
+
+/** The ring's clock: ring time t is `epoch0 + t` in wall time. */
+export function ringClock() {
+	return { perf0: ringPerf0, epoch0: ringEpoch0 };
+}
+
 // ---------------------------------------------------------------- the hot path
 
 let overheadOn = false;
@@ -123,8 +160,10 @@ function onFrame(ms, from, at) {
 	const calls = drawn.calls;
 	const tris = drawn.triangles;
 	ring.push(at - ringPerf0, ms, calls, tris, qualityLevel);
+	/** @type {ArrayLike<number> | null} */
+	let cpu = null;
 	if (active) {
-		const cpu = active.mode === 'detailed' && detailedProbe ? detailedProbe.frameCpu() : null;
+		cpu = active.mode === 'detailed' && detailedProbe ? detailedProbe.frameCpu() : null;
 		const gpu = active.mode === 'detailed' && detailedProbe ? detailedProbe.frameGpu() : null;
 		if (!active.track.push(at - active.perf0, ms, calls, tris, qualityLevel, cpu, gpu)) {
 			noteEvent('mark', { text: 'recording reached its 10-minute cap' }, at);
@@ -134,6 +173,13 @@ function onFrame(ms, from, at) {
 			publishState();
 		}
 	}
+	// 34 profiler-xr: a ONE-SHOT capture (captureOnce) counts its frames through the probe's
+	// frameCpu — which only a detailed recording drains otherwise, so without this tick the
+	// capture waited out its 2-s guard and divided two seconds of draws by one frame
+	if (onceCapturing && detailedProbe && !cpu) detailedProbe.frameCpu();
+	// 34 profiler-xr: the live stream's tap (one null test when nobody streams; the tap writes
+	// typed columns of its own, never objects)
+	if (liveTap) liveTap(at - ringPerf0, ms, calls, tris, qualityLevel, cpu);
 	if (ms > STALL_MS) noteEvent('stall', { ms: Math.round(ms), doing: doingAt(at), source: from, calls, quality: qualityLevel }, at);
 	if (overheadOn) {
 		const spent = now() - t0;
@@ -204,6 +250,9 @@ export function startPerfRecorder() {
 	started = true;
 	offs.push(registerMeterFrame(onFrame));
 	offs.push(onPerfMark((kind, detail) => noteEvent(kind, detail)));
+	// 34 PF (profiler-xr): the VR menu's Record/Stop labels and the headset's recording
+	// indicator read this through the leaf — the VR import family never imports the recorder
+	offs.push(registerPerfContext('recording', recordingInfo));
 	offs.push(
 		registerLongTaskObserver((ms) => {
 			lastLongTask = { at: now(), ms };
@@ -436,6 +485,32 @@ export async function captureNow(frames = 3) {
 	cap.t = Math.round((at - rec.perf0) * 10) / 10;
 	rec.captures.push(cap);
 	noteEvent('capture', { objects: cap.objects.length });
+	tellCapture(cap, 'recording');
+	return cap;
+}
+
+/**
+ * 34 profiler-xr: a detailed capture on request — into the running detailed recording when
+ * there is one, else a ONE-SHOT probe capture that records nothing (a light recording keeps
+ * running untouched). `t` is ring time for a one-shot. Null without a probe.
+ * @param {number} [frames]
+ */
+export async function captureOnce(frames = 3) {
+	if (active && active.mode === 'detailed') return captureNow(frames);
+	if (!detailedProbe) return null;
+	const at = now();
+	onceCapturing++;
+	/** @type {import('./tpprof.js').TpCapture | null} */
+	let cap = null;
+	try {
+		cap = await detailedProbe.capture(frames);
+	} finally {
+		onceCapturing--;
+	}
+	if (!cap) return null;
+	cap.t = Math.round((at - ringPerf0) * 10) / 10;
+	noteEvent('capture', { objects: cap.objects.length, once: true });
+	tellCapture(cap, 'once');
 	return cap;
 }
 

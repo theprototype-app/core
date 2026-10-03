@@ -12,5 +12,7 @@ import towers from './towers/module.js';
 import escape from './escape/module.js';
 // 35: the Marble Maze game's mazes, tilt and judge (dormant outside a Marble Maze scene)
 import marble from './marble/module.js';
+// 35-mini-golf: the Mini Golf game's holes, putting and scorecard (dormant outside a Mini Golf scene)
+import minigolf from './minigolf/module.js';
 
-export const coreModules = [hello, button, pong, vrsleeve, towers, escape, marble];
+export const coreModules = [hello, button, pong, vrsleeve, towers, escape, marble, minigolf];

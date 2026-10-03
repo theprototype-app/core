@@ -12,6 +12,7 @@
 //     the walker stands on, and the pose comes from the synced clock, so no message moves it;
 //   · coins, flags, the portal and the clouds are SENSORS — every top-level object becomes a
 //     fixed body at sim start, and the walker's capsule ignores sensors (EXCLUDE_SENSORS);
+//   · the HUD sits top-CENTRE: the game shell's Menu button owns the top-right corner;
 //   · a dynamic crate on stage 1's pad, because a scene with no dynamic body starts no
 //     simulation and a walker with no simulation collides with nothing;
 //   · the physics ground is OFF (you fall into the clouds) and the module catches a fall 7 m
@@ -146,13 +147,8 @@ coin(3, -1.6, 17.5, -52.6);
 coin(3, 1.6, 17.5, -52.6);
 portal(3, 0, 17.5, -55.1);
 
-// ---- the sky dressing: a few big soft clouds far below and beside the course (sensors) ---
-const CLOUDS = [
-	[-12, 4, -10, 6], [14, 2, -30, 7], [45, 3, -18, 6], [75, 4, -40, 7], [-8, 3, -45, 5], [92, 2, -12, 6], [38, 5, -55, 5], [20, 6, 8, 4]
-];
-CLOUDS.forEach(([x, y, z, r], i) => {
-	OBJECTS.push({ type: 'sphere', name: 'Cloud ' + (i + 1), color: 0xffffff, r, scale: [1.6, 0.45, 1.1], pos: [x, y, z], emissive: 0xdfefff, emissiveIntensity: 0.35, roughness: 1, shadow: false, pick: 'through', physics: { mode: 'static', sensor: true } });
-});
+// ---- the sky dressing: the clouds are the GROUND — a white sea far below that the fog
+// fades into the horizon (an earlier pass of sphere clouds read as snowballs) ----------------
 
 function skyGraph() {
 	const g = graphBuilder();
@@ -231,8 +227,8 @@ const SKY_RUN_DEF = {
 		preset: 'daylight',
 		exposure: 1.1,
 		background: { top: '#3d8fe0', bottom: '#e8f4ff' },
-		fog: { color: '#e8f4ff', near: 40, far: 140 },
-		ground: { color: '#f4f8ff', roughness: 1 }
+		fog: { color: '#eef6ff', near: 30, far: 110 },
+		ground: { color: '#ffffff', roughness: 1 }
 	},
 	physics: {
 		ground: { enabled: false, height: -30, friction: 0.8, restitution: 0 },
@@ -279,11 +275,12 @@ const SKY_RUN_DEF = {
 					showWhile: 'playing',
 					input: 'game',
 					elements: [
-						{ id: 'sr-title', kind: 'text', anchor: 'top-center', x: 0, y: 12, w: 380, h: 28, z: 1, label: '', style: { size: 19, weight: '700', color: '#ffffff', align: 'center' } },
-						{ id: 'sr-clock', kind: 'text', anchor: 'top-right', x: 16, y: 14, w: 140, h: 28, z: 1, label: '', style: { size: 22, weight: '700', color: '#ffffff', align: 'right' } },
-						{ id: 'sr-coins', kind: 'text', anchor: 'top-right', x: 16, y: 46, w: 200, h: 20, z: 1, label: '', style: { size: 14, weight: '600', color: '#ffd45e', align: 'right' } },
-						{ id: 'sr-best', kind: 'text', anchor: 'top-right', x: 16, y: 70, w: 200, h: 18, z: 1, label: '', style: { size: 12, color: '#d8eeff', align: 'right' } },
-						{ id: 'sr-cp', kind: 'text', anchor: 'top-left', x: 16, y: 14, w: 220, h: 22, z: 1, label: '', style: { size: 14, weight: '600', color: '#7dffb0', align: 'left' } },
+						{ id: 'sr-hud-panel', kind: 'panel', anchor: 'top-center', x: 0, y: 8, w: 420, h: 84, z: 0, label: '', style: { bg: 'rgba(12, 22, 48, 0.55)', radius: 14 } },
+						{ id: 'sr-title', kind: 'text', anchor: 'top-center', x: 0, y: 12, w: 400, h: 26, z: 1, label: '', style: { size: 18, weight: '700', color: '#ffffff', align: 'center' } },
+						{ id: 'sr-clock', kind: 'text', anchor: 'top-center', x: 0, y: 38, w: 200, h: 30, z: 1, label: '', style: { size: 26, weight: '800', color: '#ffffff', align: 'center' } },
+						{ id: 'sr-coins', kind: 'text', anchor: 'top-center', x: -130, y: 68, w: 150, h: 20, z: 1, label: '', style: { size: 14, weight: '600', color: '#ffd45e', align: 'center' } },
+						{ id: 'sr-cp', kind: 'text', anchor: 'top-center', x: 0, y: 68, w: 150, h: 20, z: 1, label: '', style: { size: 13, weight: '600', color: '#7dffb0', align: 'center' } },
+						{ id: 'sr-best', kind: 'text', anchor: 'top-center', x: 130, y: 68, w: 150, h: 20, z: 1, label: '', style: { size: 13, color: '#d8eeff', align: 'center' } },
 						{ id: 'sr-count', kind: 'text', anchor: 'center', x: 0, y: -90, w: 200, h: 90, z: 1, label: '', style: { size: 72, weight: '800', color: '#ffffff', align: 'center' } }
 					]
 				},

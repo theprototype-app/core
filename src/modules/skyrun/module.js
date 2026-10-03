@@ -190,7 +190,8 @@ export default {
 					run.flag = k;
 					f.getWorldPosition(tmpV);
 					const b = boxOf(f);
-					run.checkpoint = [tmpV.x, b.min.y + 0.05, tmpV.z + 0.8];
+					// the pole stands 1.2 m left of the platform's middle: respawn on the middle
+					run.checkpoint = [tmpV.x + 1.2, b.min.y + 0.05, tmpV.z + 0.8];
 					api.setSpawn(run.checkpoint, 0);
 					api.playSound('ring');
 					api.hapticPattern?.('success');
@@ -259,7 +260,12 @@ export default {
 			// slide / bob: a smooth back-and-forth
 			const off = Math.sin(u * Math.PI * 2) * d * 0.5;
 			object.position.set(pos[0] + (axis === 'x' ? off : 0), pos[1] + (axis === 'y' ? off : 0), pos[2] + (axis === 'z' ? off : 0));
-			if (kind === 'coin') object.rotation.set(rot[0], rot[1] + time * 2.4, rot[2]);
+			if (kind === 'coin') {
+				object.rotation.set(rot[0], rot[1] + time * 2.4, rot[2]);
+				// the effect runtime restores the base (visibility too) every frame: a coin THIS
+				// player took stays hidden here, and only here
+				if (run.taken.has(object.uuid)) object.visible = false;
+			}
 		});
 
 		// ---- the HUD words ---------------------------------------------------------------------
@@ -274,7 +280,7 @@ export default {
 				case 'coins':
 					return 'Coins ' + run.coins + ' / ' + (run.coinsTotal || allNamed('Sky S' + id + ' coin').length);
 				case 'checkpoint':
-					return run.flag ? 'Checkpoint ' + run.flag : 'No checkpoint yet';
+					return run.flag ? 'Flag ' + run.flag : 'No flag yet';
 				case 'best':
 					return run.best > 0 ? 'Best ' + formatTime(run.best) : 'Best —';
 				case 'result':
@@ -404,12 +410,12 @@ export default {
 			info,
 			phase,
 			stage: stageNo,
-			/** walk the course for a test: teleport the player onto a named object */
+			/** walk the course for a test: put the player on top of a named platform */
 			teleportTo: (/** @type {string} */ name) => {
 				const o = byName(name);
 				if (!o) return false;
 				const b = boxOf(o);
-				api.setSpawn([(b.min.x + b.max.x) / 2, b.min.y + 0.05, (b.min.z + b.max.z) / 2], 0, { teleport: true });
+				api.setSpawn([(b.min.x + b.max.x) / 2, b.max.y + 0.05, (b.min.z + b.max.z) / 2], 0, { teleport: true });
 				return true;
 			}
 		};

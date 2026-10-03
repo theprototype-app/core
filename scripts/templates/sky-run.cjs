@@ -16,7 +16,8 @@
 //   · a dynamic crate on stage 1's pad, because a scene with no dynamic body starts no
 //     simulation and a walker with no simulation collides with nothing;
 //   · the physics ground is OFF (you fall into the clouds) and the module catches a fall 7 m
-//     under the stage's start pad; ~70 meshes in all, well under the 150-call budget.
+//     under the stage's start pad; ~70 meshes in all, well under the 150-call budget, and NO
+//     authored light (the env rig lights it; the portals glow through bloom — budget: 2 lights).
 const { graphBuilder } = require('./_builders.cjs');
 
 const PANEL = { bg: 'rgba(12, 22, 48, 0.9)', radius: 18, border: '1px solid rgba(160, 220, 255, 0.35)' };
@@ -79,7 +80,6 @@ function portal(s, x, top, z) {
 	const X = STAGE_X[s - 1] + x;
 	OBJECTS.push({ type: 'torus', name: 'Sky S' + s + ' portal', color: 0xb8f0ff, r: 1.3, tube: 0.16, pos: [X, top + 1.45, z], emissive: 0x49d2ff, emissiveIntensity: 3, shadow: false, pick: 'through', physics: { mode: 'static', sensor: true } });
 	OBJECTS.push({ type: 'cylinder', name: 'Sky S' + s + ' portal glow', color: 0xd8f8ff, r: 1.15, h: 0.04, pos: [X, top + 1.45, z], rot: [Math.PI / 2, 0, 0], emissive: 0x7fe4ff, emissiveIntensity: 1.4, opacity: 0.35, shadow: false, pick: 'through', physics: { mode: 'static', sensor: true } });
-	OBJECTS.push({ type: 'light', name: 'Sky S' + s + ' portal light', kind: 'point', color: 0x7fe4ff, intensity: 6, distance: 8, pos: [X, top + 1.5, z + 0.8] });
 	MOVERS.push({ name: 'Sky S' + s + ' portal', data: { kind: 'spin', axis: 'y', distance: 0, period: 6, phase: 0, dir: 1 } });
 }
 
@@ -304,7 +304,6 @@ const SKY_RUN_DEF = {
 	objects: [
 		// the marker that wakes the core `skyrun` module (an empty: no body, no draw)
 		{ type: 'empty', name: 'Sky Run game' },
-		{ type: 'light', name: 'Sun', kind: 'directional', color: 0xfff4e0, intensity: 2.2, pos: [30, 40, 20], target: [30, 12, -25] },
 		...OBJECTS,
 		// a crate on stage 1's pad: a dynamic body, so pressing Play starts the simulation
 		{ type: 'box', name: 'Sky crate', color: 0xb57a45, size: [0.6, 0.6, 0.6], bevel: 0.04, bevelSegments: 1, pos: [2.2, 12.3, 2.2], roughness: 0.6, physics: { mode: 'dynamic', mass: 1, friction: 0.8 } },

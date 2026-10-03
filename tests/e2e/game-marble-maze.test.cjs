@@ -75,7 +75,25 @@ const CANDIDATES = [
 	await page.waitForTimeout(1500);
 	st = await snap();
 	h.check(st.local && Math.abs(st.local[1]) < 0.06, `the marble sits on the board (local ${st.local?.map((n) => n.toFixed(3))})`);
+	const eye = await page.evaluate(() => window.__marble.eye());
+	h.check(eye && Math.abs(eye[1] - 1.82) < 0.1 && Math.abs(eye[2] + 0.13) < 0.1, `desktop: the eye stands over the board (${eye?.map((n) => n.toFixed(2))})`);
 	await h.eventually(hud, (t) => /Maze 1 · First roll/.test(t) && /Coins 0 \/ 3/.test(t), 'the HUD names the maze and the coins', 4000);
+
+	// the draw calls while a maze runs: every VISIBLE mesh in the scene is at most one call
+	// (renderer.info resets per composer pass, so it reads the last pass only)
+	const calls = await page.evaluate(() => {
+		let scene;
+		window.__stores.globalScene.subscribe((v) => (scene = v))();
+		let n = 0;
+		const walk = (o) => {
+			if (!o.visible) return;
+			if (o.isMesh || o.isInstancedMesh || o.isPoints || o.isLine) n++;
+			for (const c of o.children) walk(c);
+		};
+		walk(scene);
+		return n;
+	});
+	h.check(calls > 0 && calls <= 150, `visible meshes while a maze runs: ${calls} (<= 150 draw calls)`);
 
 	// 3 — the tilt rolls the marble (desktop keys)
 	const before = (await snap()).local;

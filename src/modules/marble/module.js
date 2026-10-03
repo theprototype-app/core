@@ -432,13 +432,27 @@ export default {
 				aimDesktopCamera();
 			}
 		};
-		/** desktop: look DOWN at the board (the free cursor never turns the view) */
+		/** desktop: stand at the board and look DOWN at it (the free cursor never turns the view).
+		 * Applied for a few frames after a run starts — the shell respawns the player on a restart. */
+		let aimFrames = 0;
 		const aimDesktopCamera = () => {
+			aimFrames = 20;
+		};
+		/** the desktop eye: 0.62 m back from the board and 0.72 m above it */
+		const DESK_EYE = [BOARD[0], BOARD[1] + 0.72, BOARD[2] + 0.62];
+		const applyAim = () => {
+			if (aimFrames <= 0) return;
+			aimFrames--;
 			if (isVR() || !scene || !stores) return;
 			const cam = stores.get(scene.playerCam);
 			if (!cam?.isObject3D) return;
-			const eye = cam.getWorldPosition(new THREE.Vector3());
-			const pitch = -Math.atan2(eye.y - BOARD[1], Math.max(0.3, eye.z - BOARD[2]));
+			const target = new THREE.Vector3(...DESK_EYE);
+			if (cam.parent) {
+				cam.parent.updateWorldMatrix(true, false);
+				cam.parent.worldToLocal(target);
+			}
+			cam.position.copy(target);
+			const pitch = -Math.atan2(DESK_EYE[1] - BOARD[1], DESK_EYE[2] - BOARD[2]);
 			cam.quaternion.setFromEuler(new THREE.Euler(pitch, 0, 0, 'YXZ'));
 			cam.updateMatrixWorld(true);
 		};
@@ -639,6 +653,7 @@ export default {
 			watchButtons();
 			if (authority()) judge();
 			moments();
+			applyAim();
 		});
 		api.onSceneClear(() => {
 			helpOff?.();
@@ -660,6 +675,7 @@ export default {
 			toMenu,
 			info,
 			tilt: () => ({ ...cur }),
+			eye: () => (scene && stores ? stores.get(scene.playerCam)?.getWorldPosition?.(new THREE.Vector3())?.toArray() : null),
 			setHandSource: (/** @type {any} */ fn) => (handSource = fn ?? ((/** @type {'left'|'right'} */ hand) => api.vrHand?.(hand) ?? null)),
 			setTilt: (/** @type {number} */ x, /** @type {number} */ z) => (remote = { x, z, at: performance.now() + 1e6 }),
 			vars: () => Object.fromEntries(Object.values(V).map((k) => [k, api.game.getVar(k, null)])),

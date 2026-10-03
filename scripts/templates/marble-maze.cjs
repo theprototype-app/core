@@ -262,7 +262,7 @@ function buildMaze(k, at) {
 		...walls.map((b, i) => boxOf(tag('Wall', i + 1), b, WALL_LOOK)),
 		...rim.map((b, i) => boxOf(tag('Rim', i + 1), b, RIM_LOOK)),
 		// the pit under the floor that a hole shows (no collider: a child has no body)
-		boxOf('Pit ' + k, [-H + 0.01, H - 0.01, -0.13, -0.11, -H + 0.01, H - 0.01], { color: 0x0b0d14, roughness: 1, shadow: false }),
+		boxOf('Pit ' + k, [-H + T, H - T, -0.12, -0.105, -H + T, H - T], { color: 0x1a120c, roughness: 1, shadow: false }),
 		// the grips: a handle either side, for both hands in VR
 		{ type: 'cylinder', name: 'Handle ' + k + ' left', r: 0.022, h: 0.36, pos: [-H - 0.07, 0.02, 0], rot: [Math.PI / 2, 0, 0], color: 0x2b2f3a, metalness: 0.6, roughness: 0.35, physical: true },
 		{ type: 'cylinder', name: 'Handle ' + k + ' right', r: 0.022, h: 0.36, pos: [H + 0.07, 0.02, 0], rot: [Math.PI / 2, 0, 0], color: 0x2b2f3a, metalness: 0.6, roughness: 0.35, physical: true },
@@ -386,9 +386,9 @@ const MARBLE_DEF = {
 	env: {
 		preset: 'custom',
 		base: 'sunset',
-		exposure: 1.0,
+		exposure: 1.15,
 		background: { top: '#2a3550', bottom: '#d9a877' },
-		fog: { color: '#c7987a', near: 8, far: 40 },
+		fog: { color: '#e0c7a8', near: 10, far: 45 },
 		ground: { color: '#5b4a3c', roughness: 0.95 }
 	},
 	physics: {
@@ -440,8 +440,8 @@ const MARBLE_DEF = {
 					elements: [
 						{ id: 'mm-title', kind: 'text', anchor: 'top-center', x: 0, y: 12, w: 360, h: 28, z: 1, label: '', style: { size: 19, weight: '700', color: '#ffd45e', align: 'center' } },
 						{ id: 'mm-coins', kind: 'text', anchor: 'top-center', x: 0, y: 42, w: 420, h: 22, z: 1, label: '', style: { size: 14, weight: '600', color: '#ffffff', align: 'center' } },
-						{ id: 'mm-clock', kind: 'text', anchor: 'top-right', x: 16, y: 14, w: 160, h: 26, z: 1, label: '', style: { size: 20, weight: '700', color: '#e5e9f0', align: 'right' } },
-						{ id: 'mm-falls', kind: 'text', anchor: 'top-right', x: 16, y: 44, w: 200, h: 20, z: 1, label: '', style: { size: 12, weight: '600', color: '#ffb0a0', align: 'right' } },
+						{ id: 'mm-clock', kind: 'text', anchor: 'top-left', x: 16, y: 14, w: 240, h: 26, z: 1, label: '', style: { size: 20, weight: '700', color: '#e5e9f0', align: 'left' } },
+						{ id: 'mm-falls', kind: 'text', anchor: 'top-left', x: 16, y: 44, w: 200, h: 20, z: 1, label: '', style: { size: 13, weight: '600', color: '#ffb0a0', align: 'left' } },
 						{ id: 'mm-hint', kind: 'text', anchor: 'bottom-center', x: 0, y: 12, w: 620, h: 20, z: 1, label: '', style: { size: 12, color: '#e5e9f0', align: 'center' } }
 					]
 				},
@@ -468,8 +468,9 @@ const MARBLE_DEF = {
 		// the marker that wakes the core `marble` module (an empty: no body, no draw)
 		{ type: 'empty', name: 'Marble Maze game' },
 		// the room: a wooden floor, a low back wall, the table the board hovers over
-		{ type: 'box', name: 'Room floor', color: 0x6b4f3a, size: [12, 0.2, 12], pos: [0, -0.098, -1], roughness: 0.85, physics: { mode: 'static', friction: 0.9 } },
-		{ type: 'box', name: 'Back wall', color: 0x8a6a52, size: [12, 3, 0.2], pos: [0, 1.5, -4], roughness: 0.9, physics: { mode: 'static' } },
+		{ type: 'box', name: 'Room floor', color: 0x9a8670, size: [12, 0.2, 12], pos: [0, -0.098, -1], roughness: 0.85, physics: { mode: 'static', friction: 0.9 } },
+		{ type: 'cylinder', name: 'Rug', color: 0x2f5d73, r: 1.6, h: 0.01, pos: [0, 0.006, -0.6], roughness: 1, shadow: false, physics: { mode: 'static', sensor: true } },
+		{ type: 'box', name: 'Back wall', color: 0xd8c7ad, size: [12, 3, 0.2], pos: [0, 1.5, -5], roughness: 0.9, physics: { mode: 'static' } },
 		{ type: 'cylinder', name: 'Table column', color: 0x3a2a1e, r: 0.09, h: 0.8, pos: [0, 0.4, -0.75], metalness: 0.4, roughness: 0.4, physical: true, physics: { mode: 'static' } },
 		{ type: 'cylinder', name: 'Table foot', color: 0x3a2a1e, r: 0.35, h: 0.04, pos: [0, 0.02, -0.75], metalness: 0.4, roughness: 0.4, physical: true, physics: { mode: 'static' } },
 		{ type: 'sphere', name: 'Gimbal', color: 0x2b2f3a, r: 0.07, pos: [0, 0.86, -0.75], metalness: 0.7, roughness: 0.3, physical: true, physics: { mode: 'static', sensor: true } },

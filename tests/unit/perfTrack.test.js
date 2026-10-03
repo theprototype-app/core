@@ -14,6 +14,12 @@ describe('a ring', () => {
 		expect(r.firstT).toBe(40);
 		expect(r.lastT).toBe(80);
 	});
+	it('recentMs reads the newest frame times without building frames', () => {
+		const r = createTrack({ capacity: 4, ring: true });
+		for (let i = 1; i <= 6; i++) r.push(i, i * 2, 1, 1, 0);
+		expect(Array.from(r.recentMs(3))).toEqual([8, 10, 12]);
+		expect(r.recentMs(10).length).toBe(4);
+	});
 	it('a time window is from < t <= to', () => {
 		const r = createTrack({ capacity: 10, ring: true });
 		for (let i = 1; i <= 6; i++) r.push(i * 10, 10, 1, 1, 0);

@@ -123,6 +123,17 @@ export function createTrack({ capacity, ring = false, cpu = false }) {
 			}
 			return out;
 		},
+		/** the newest `n` frame times (ms) as a small typed copy — no frame objects @param {number} n */
+		recentMs(n) {
+			const held = ring ? Math.min(written, capacity) : written;
+			const k = Math.min(n, held);
+			const out = new Float32Array(k);
+			for (let i = 0; i < k; i++) {
+				const { c, j } = slot(written - k + i);
+				out[i] = c.ms[j];
+			}
+			return out;
+		},
 		/** forget everything (keeps the first chunk's memory) */
 		clear() {
 			chunks.length = 1;

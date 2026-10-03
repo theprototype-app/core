@@ -271,15 +271,22 @@ export function makeId() {
 	return Date.now().toString(36) + '-' + rand;
 }
 
+/** @type {WeakMap<object, string | null>} one lookup per renderer */
+const gpuNames = new WeakMap();
 /** The GPU's name where the browser says it (Chromium does; Quest's browser may not). */
 function gpuName() {
+	if (!renderer) return null;
+	if (gpuNames.has(renderer)) return /** @type {string | null} */ (gpuNames.get(renderer));
+	let name = null;
 	try {
-		const gl = renderer?.getContext?.();
+		const gl = renderer.getContext?.();
 		const ext = gl?.getExtension?.('WEBGL_debug_renderer_info');
-		return ext ? String(gl.getParameter(ext.UNMASKED_RENDERER_WEBGL)).slice(0, 200) : null;
+		name = ext ? String(gl.getParameter(ext.UNMASKED_RENDERER_WEBGL)).slice(0, 200) : null;
 	} catch {
-		return null;
+		name = null;
 	}
+	gpuNames.set(renderer, name);
+	return name;
 }
 
 /** the display rate: an XR session's own, else the median frame of the ring */
@@ -289,11 +296,7 @@ function refreshRate() {
 		const hz = Number(xr.getSession?.()?.frameRate);
 		if (hz) return hz;
 	}
-	const ms = ring
-		.frames(-Infinity, Infinity)
-		.slice(-120)
-		.map((f) => f.ms)
-		.sort((a, b) => a - b);
+	const ms = ring.recentMs(120).sort();
 	return ms.length ? Math.round(1000 / ms[Math.floor(ms.length / 2)]) : null;
 }
 

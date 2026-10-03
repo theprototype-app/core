@@ -33,15 +33,7 @@ function tossGraph() {
 	button('bnext', 'next-btn', 'Next stage button', 40, 420);
 	button('bretry', 'retry-btn', 'Retry button', 40, 490);
 	button('blevels', 'levels-btn', 'Stages button', 40, 560);
-	// ---- pause (P): Resume closes it; Restart and Stages are the module's, and close it too
-	N('pkey', 'keypress', 'Press P', 40, 660, { code: 'KeyP', edge: 'down', pulse: 0.3 });
-	N('pausetoggle', 'hudscreen', 'Toggle pause menu', 280, 660, { screen: 'pause', action: 'toggle' });
-	E('pkey', 'pausetoggle', 'trigger');
-	N('pausehide', 'hudscreen', 'Close pause menu', 520, 760, { screen: 'pause', action: 'hide' });
-	button('bresume', 'resume-btn', 'Resume button', 40, 730);
-	button('brestart', 'restart-btn', 'Restart stage button', 40, 800);
-	button('bquit', 'quit-btn', 'Stages (pause) button', 40, 870);
-	for (const b of ['bresume', 'brestart', 'bquit']) E(b, 'pausehide', 'trigger');
+	// (no pause menu of our own: the game shell's Esc / VR menu gives Resume / Restart / Stages)
 	// ---- the HUD's words, from the module's info node into HUD Text's FORMAT
 	const text = (id, read, element, x, y, extra = {}) => {
 		N(id + 'i', 'tossinfo', 'Toss: ' + read, x, y, { read, ...extra });
@@ -179,7 +171,7 @@ const TARGET_TOSS_DEF = {
 						{ id: 'subtitle', kind: 'text', anchor: 'center', x: 0, y: -94, w: 580, h: 44, z: 1, label: 'Grab a ball from the shelf and knock everything down before the clock runs out: tin cans, swinging targets, pop-ups and a moving cart. Quick hits build a combo.', style: { size: 13, color: '#f0e2d8', align: 'center' }, wrap: true },
 						{ id: 'menu-line', kind: 'text', anchor: 'center', x: 0, y: -50, w: 420, h: 22, z: 1, label: '', style: { size: 14, weight: '600', color: '#ffc48a', align: 'center' } },
 						...Array.from({ length: 5 }, (_, k) => stageCell(k + 1)).flat(),
-						{ id: 'menu-hint', kind: 'text', anchor: 'center', x: 0, y: 104, w: 600, h: 34, z: 1, label: 'Desktop: HOLD the mouse to charge, RELEASE to throw · P pause', style: { size: 12, color: '#c9b3a8', align: 'center' }, wrap: true },
+						{ id: 'menu-hint', kind: 'text', anchor: 'center', x: 0, y: 104, w: 600, h: 34, z: 1, label: 'Desktop: HOLD the mouse to charge, RELEASE to throw · Esc menu', style: { size: 12, color: '#c9b3a8', align: 'center' }, wrap: true },
 						{ id: 'menu-hint-vr', kind: 'text', anchor: 'center', x: 0, y: 134, w: 600, h: 34, z: 1, label: 'VR: grip a ball from the shelf and throw it · Y switches to Edit', style: { size: 12, color: '#c9b3a8', align: 'center' }, wrap: true }
 					]
 				},
@@ -196,19 +188,7 @@ const TARGET_TOSS_DEF = {
 						{ id: 'tt-score', kind: 'text', anchor: 'top-left', x: 16, y: 14, w: 220, h: 26, z: 1, label: '', style: { size: 20, weight: '700', color: '#ffd45e', align: 'left' } },
 						{ id: 'tt-combo', kind: 'text', anchor: 'top-left', x: 16, y: 44, w: 220, h: 24, z: 1, label: '', style: { size: 17, weight: '700', color: '#ff8a5c', align: 'left' } },
 						{ id: 'tt-charge', kind: 'bar', anchor: 'bottom-center', x: 0, y: 44, w: 220, h: 10, z: 1, label: '', value: 0, min: 0, max: 1, style: { color: '#ff8a5c', bg: 'rgba(255,255,255,0.15)', radius: 5 } },
-						{ id: 'tt-hint', kind: 'text', anchor: 'bottom-center', x: 0, y: 14, w: 620, h: 20, z: 1, label: 'Hold to charge · release to throw · P pause', style: { size: 12, color: '#f5ece6', align: 'center' } }
-					]
-				},
-				{
-					id: 'pause',
-					name: 'Pause',
-					input: 'menu',
-					elements: [
-						{ id: 'pause-panel', kind: 'panel', anchor: 'center', x: 0, y: 0, w: 380, h: 300, z: 0, label: '', style: TOSS_PANEL },
-						{ id: 'pause-title', kind: 'text', anchor: 'center', x: 0, y: -95, w: 340, h: 36, z: 1, label: 'PAUSED', style: { size: 26, weight: '700', color: '#f5ece6', align: 'center' } },
-						{ id: 'resume-btn', kind: 'button', anchor: 'center', x: 0, y: -30, w: 240, h: 42, z: 1, label: 'Resume', enabled: true, style: { ...TOSS_BTN, size: 16 } },
-						{ id: 'restart-btn', kind: 'button', anchor: 'center', x: 0, y: 22, w: 240, h: 42, z: 1, label: 'Restart stage', enabled: true, style: { ...TOSS_BTN, size: 16, bg: '#4c9e6a' } },
-						{ id: 'quit-btn', kind: 'button', anchor: 'center', x: 0, y: 74, w: 240, h: 42, z: 1, label: 'Stages', enabled: true, style: { size: 15, weight: '500', bg: '#4a3a3e', color: '#f5ece6', radius: 10 } }
+						{ id: 'tt-hint', kind: 'text', anchor: 'bottom-center', x: 0, y: 14, w: 620, h: 20, z: 1, label: 'Hold to charge · release to throw · Esc menu', style: { size: 12, color: '#f5ece6', align: 'center' } }
 					]
 				},
 				{
@@ -263,7 +243,7 @@ const TARGET_TOSS_DEF = {
 		// the TEMPLATES, parked on a vault slab far under the floor
 		{ type: 'box', name: 'Template vault', color: 0x333333, size: [4, 0.5, 2], pos: [0, VAULT_TOP - 0.25, 0], shadow: false, physics: { mode: 'static', friction: 1 } },
 		...TEMPLATES,
-		{ type: 'camera', name: 'Card camera', pos: [2.6, 2.4, 4.4], lookAt: [-0.3, 1.2, -3.2], fov: 50 }
+		{ type: 'camera', name: 'Card camera', pos: [-0.5, 2.0, 3.3], lookAt: [0.1, 1.2, -4.2], fov: 55 }
 	]
 };
 

@@ -1,3 +1,4 @@
+// @ts-nocheck — plain fixtures; the module under test (src/lib/perf/profilerModel.js) is typed
 import { describe, it, expect } from 'vitest';
 import {
 	BUDGET,

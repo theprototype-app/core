@@ -60,3 +60,9 @@ export function sdkModels(ctx) {
 		}
 	};
 }
+
+/** 34 R6 (T2): what each member does to the module's lifecycle — see SURFACE_KINDS in
+ * sdk/lifecycle.js. A loaded model is held per module and released on unload. */
+sdkModels.surface = {
+	loadModel: 'registers'
+};

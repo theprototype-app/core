@@ -569,6 +569,15 @@
 					return t.data.calls > before;
 				}
 			},
+			// 34 R7: a model loaded for the module is held under its id until the unload releases it
+			// (a real file fetch: the browser runs it)
+			loadModel: {
+				needs: ['modelLoader', 'browser'],
+				async call(api, t) {
+					t.data.handle = await api.loadModel('/library/default/ThePrototypeLogo/glTF-Binary/ThePrototype-Logo.glb', { lod: false });
+				},
+				present: (t) => (M.modelLoader.modelStats().owners[t.id] ?? []).length > 0
+			},
 			own: {
 				call(api, t) {
 					const parent = new THREE.Group();

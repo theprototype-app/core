@@ -657,6 +657,43 @@ if (api.storage) {
 Feature-detect it; on an older app write the SAME key yourself
 (`localStorage['tp:mod:<id>:<key>'] = JSON.stringify(value)`) so progress carries over.
 
+### Models: `api.loadModel` (1.20, roadmap 34 R7)
+
+Load a `.glb` / `.gltf` through core's OWN loader — the scene's `THREE` (never bundle three's
+`GLTFLoader` into a module: it drags in a second three whose classes are not the scene's), with
+Draco, Meshopt and KTX2 decoders (the Basis transcoder is fetched only for a file that carries
+`KHR_texture_basisu`), parsed ONCE per URL and shared by every module that asks.
+
+```js
+// a file your module PACKAGED (list it in manifest.json `files`) — or any URL
+const enemy = await api.loadModel('assets/enemy.glb', { castShadow: false });
+group.add(enemy.scene);                       // your own copy (another module's tweaks never reach it)
+const next = enemy.instance({ ownMaterials: true }); // another copy: its OWN bones when skinned,
+group.add(next);                                     // its own materials (a hit flash paints one)
+const mixer = new api.THREE.AnimationMixer(next);
+mixer.clipAction(enemy.animations.find((c) => c.name === 'walk')).play();
+enemy.info;            // {meshes, triangles, materials, textures, skinned}
+enemy.release(next);   // forget one copy now (out of the scene, LOD dropped, own materials freed)
+enemy.dispose();       // forget them all — your module's unload does this for you
+```
+
+Options (all optional): `lod` — absent / `'auto'` = automatic levels (31-perf, meshes over 3000
+triangles; a URL that is a PACK item whose row lists `lods` uses those files instead), `false` =
+none, `{ratios, distances, minTriangles}` = tuned automatic levels, `[{file, ratio}]` = pre-built
+level FILES beside the model (contract P1: `'tree.lod1.glb'` next to `'assets/tree.glb'`), drawn
+as a LOD group wherever you put the copy. `castShadow` / `receiveShadow` = every mesh (absent =
+as the file says, which is off). `collider: 'box'|'sphere'|'capsule'|'cylinder'|'cone'|'hull'` =
+the physics shape a copy takes once it is SCENE content with physics (`userData.colliderHint`;
+your scene-root visuals have no colliders — publish a `userData.play` raster for walls).
+`ownMaterials` = every copy gets its own materials.
+
+Lifetime: everything a module loaded is released when it is disabled or unloaded (a copy you put
+in `objectsGroup` stays — it is the scene's). A copy you drop WITHOUT `release()` (its wrapper
+removed) is noticed within ~2 s, its LOD entry dropped and only weakly held, so it is collected;
+put back, it is picked up again. A load still in flight when the module unloads rejects.
+Rejects with the reason when the file is missing or cannot be parsed — keep a fallback look.
+Feature-detect it (`typeof api.loadModel === 'function'`): 1.19 and older cores do not have it.
+
 ### Performance: quality level, LOD, budgets (1.18, roadmap 31)
 
 ```js

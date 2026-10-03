@@ -56,6 +56,7 @@ export async function lifecycleEnv() {
 		micCapture,
 		musicClock,
 		kitRuntime,
+		modelLoader,
 		coreModuleIndex
 	] = await Promise.all([
 		import('../moduleSDK.js'),
@@ -95,6 +96,7 @@ export async function lifecycleEnv() {
 		tryLoad(import('../micCapture')),
 		tryLoad(import('../musicClock')),
 		tryLoad(import('../kit/runtime.js')),
+		tryLoad(import('../modelLoader')),
 		// the bundled modules, for the leak suite's load/unload cycles (a .svelte import: browser only)
 		tryLoad(import('../../modules/index.js'))
 	]);
@@ -142,7 +144,8 @@ export async function lifecycleEnv() {
 			audioEngine: browser && typeof AudioContext !== 'undefined' ? audioEngine : null,
 			micCapture: browser && typeof navigator !== 'undefined' && navigator.mediaDevices ? micCapture : null,
 			musicClock,
-			kitRuntime
+			kitRuntime,
+			modelLoader
 		}
 	};
 }

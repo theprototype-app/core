@@ -35,7 +35,20 @@ export { KIT_DOC, KIT_REQ };
 export function primeKitRuntime() {
 	import('../physics').then((m) => (physicsRef = m)).catch(() => {});
 	import('../flowRuntime').then((m) => (flowRef = m)).catch(() => {});
+	// the K3 pause menu's Restart restarts a kit round (a game using kit.round needs no hook of
+	// its own); a game that never started one is left alone. Dynamic: gameShell reaches
+	// playSettings, which reads this file.
+	import('../gameShell')
+		.then((m) => {
+			if (restartHooked) return;
+			restartHooked = true;
+			m.onGameRestart(() => {
+				if (kit.impls.round?.number?.() > 0) kit.impls.round.restart();
+			}, '');
+		})
+		.catch(() => {});
 }
+let restartHooked = false;
 
 const me = () => /** @type {any} */ (get(peers))?.peer?.id ?? null;
 /** the peers whose data channel is OPEN (never the dial-time roster — the userdata trap) */

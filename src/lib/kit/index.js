@@ -7,8 +7,10 @@
 // health, mover) and owns those files.
 
 import rules from './rules.js';
+import round from './round.js';
 
 /** @type {{name: string, piece: any}[]} */
 export const KIT_PIECES = [
-	{ name: 'rules', piece: rules } // reach, jump, bounds, the grab veto
+	{ name: 'rules', piece: rules }, // reach, jump, bounds, the grab veto
+	{ name: 'round', piece: round } // the phase machine menu -> intro -> playing <-> paused -> won/lost -> results
 ];

@@ -1,12 +1,12 @@
 {
 	"generated": "2026-10-03",
-	"source": "modules@3f7346d (origin/dev)",
+	"source": "modules@d37cb44 (origin/dev)",
 	"modules": {
 		"avatar": "1.1.0",
 		"car": "1.2.1",
 		"collectible": "1.1.2",
 		"door-keypad": "1.0.1",
-		"dungeon": "2.3.0",
+		"dungeon": "2.4.0",
 		"dungeon-realms": "2.3.0",
 		"essentials": "1.1.1",
 		"flow-toolkit": "1.0.0",
@@ -21,6 +21,6 @@
 		"sabers": "1.0.1",
 		"tutorial-room": "1.1.0",
 		"untangle": "2.4.0",
-		"waves": "2.2.0"
+		"waves": "2.3.0"
 	}
 }

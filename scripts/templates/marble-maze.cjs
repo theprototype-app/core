@@ -493,4 +493,15 @@ const MARBLE_DEF = {
 };
 
 module.exports = MARBLE_DEF;
+// the solution paths in each maze's LOCAL frame (board centre, floor top = 0) — the suite's
+// autopilot rolls the marble along one through real physics. NOT enumerable: the runner and the
+// lint read the def's own keys only.
+Object.defineProperty(module.exports, 'solutionPaths', {
+	enumerable: false,
+	value: MAZES.map((m) => {
+		const s = cellSize(m.n);
+		const c = (/** @type {number} */ i) => -m.n * s / 2 + i * s + s / 2;
+		return solve(m.n, carve(m.n, m.seed, m.braid)).map(([i, j]) => [+c(i).toFixed(4), +c(j).toFixed(4)]);
+	})
+});
 

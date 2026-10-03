@@ -147,12 +147,27 @@ export function sdkAudio(ctx) {
 			 * the item, or null when refused BEFORE starting (over the visible cap, over the share
 			 * limit, no recorder). `opts.stream` bounces THAT stream instead of the mic (a
 			 * MediaStreamAudioDestinationNode's, for a looper). @param {{maxSeconds?: number, name?: string, stream?: MediaStream}} [opts] */
-			record: (opts) =>
-				import('../micCapture').then((m) => {
-					// T2: a take this module started stops with it (the item is still kept)
-					const release = onDispose(() => m.stopRecording(), 'audio.record', { key: 'audio.record' });
+			record: (opts) => {
+				// T2: a take this module started stops with it (the item is still kept). Journaled
+				// SYNCHRONOUSLY: recorded inside the `.then`, an unload landing first put the stop
+				// into the module's NEXT journal and the take ran on
+				/** @type {(() => void) | null} */
+				let stop = null;
+				let gone = false;
+				const release = onDispose(
+					() => {
+						gone = true;
+						stop?.();
+					},
+					'audio.record',
+					{ key: 'audio.record' }
+				);
+				return import('../micCapture').then((m) => {
+					if (gone) return null;
+					stop = () => m.stopRecording();
 					return m.startRecording(opts).finally(release);
-				}),
+				});
+			},
 			/** end the running take (the record() promise resolves with the item) */
 			stopRecording: () => import('../micCapture').then((m) => m.stopRecording()),
 			/** the recorder's state `{active, startedAt, maxSeconds, name}` as a store */

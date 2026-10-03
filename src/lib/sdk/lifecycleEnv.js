@@ -54,7 +54,8 @@ export async function lifecycleEnv() {
 		moduleHudKinds,
 		audioEngine,
 		micCapture,
-		musicClock
+		musicClock,
+		coreModuleIndex
 	] = await Promise.all([
 		import('../moduleSDK.js'),
 		import('./index.js'),
@@ -91,7 +92,9 @@ export async function lifecycleEnv() {
 		tryLoad(import('../moduleHudKinds')),
 		tryLoad(import('../audioEngine')),
 		tryLoad(import('../micCapture')),
-		tryLoad(import('../musicClock'))
+		tryLoad(import('../musicClock')),
+		// the bundled modules, for the leak suite's load/unload cycles (a .svelte import: browser only)
+		tryLoad(import('../../modules/index.js'))
 	]);
 	const browser = typeof window !== 'undefined' && typeof document !== 'undefined';
 	return {
@@ -103,6 +106,7 @@ export async function lifecycleEnv() {
 		makeContext: context.makeModuleContext,
 		registries,
 		lifecycle,
+		coreModules: coreModuleIndex?.coreModules ?? [],
 		mods: {
 			sceneStore,
 			flowStore,

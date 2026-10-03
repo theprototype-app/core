@@ -21,6 +21,7 @@ import { safeStorage } from './safeStorage';
 import { makeApi } from './sdk/index.js';
 import { loadedModules, messageHandlers, stateSyncs, moduleAssets } from './sdk/registries.js';
 import { disposeRegistrations, track } from './sdk/lifecycle.js';
+import { moduleScopeOf } from './sdk/moduleScope.js';
 export {
 	moduleNodeGroups,
 	modulePrimitiveGroups,
@@ -50,6 +51,7 @@ export { runtimeNow } from './sdk/core.js';
 export { moduleContentDebug } from './moduleContent';
 export { SDK_TABLE } from './sdk/index.js';
 export { registrationsOf, allRegistrations, registrationCount } from './sdk/lifecycle.js';
+export { moduleScopeDebug } from './sdk/moduleScope.js';
 
 /** Used by the user-module loader to expose packaged files @param {string} id @param {Record<string, string>} assets */
 export function registerModuleAssets(id, assets) {
@@ -66,6 +68,10 @@ export function initModules(modules) {
 	modules.forEach((mod) => {
 		if (loadedModules.some((m) => m.id === mod.id)) return;
 		try {
+			// T2: an installed module's timers + window/document listeners (sdk/moduleScope.js)
+			// join its registry now — at REGISTRATION, so a live update's new entry, evaluated
+			// before the old one unloads, never has its timers taken down with the old one's
+			moduleScopeOf(mod)?.adopt((kind, undo) => track(mod.id, kind, undo));
 			mod.register(makeApi(mod.id, mod.name || mod.id));
 			loadedModules.push({ id: mod.id, name: mod.name, version: mod.version, description: mod.description });
 			log('info', 'module', 'loaded ' + mod.id + ' v' + mod.version);

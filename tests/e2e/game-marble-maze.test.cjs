@@ -8,6 +8,41 @@ const fs = require('fs');
 const path = require('path');
 const h = require('./helpers.cjs');
 const xr = require('./fakeXR.cjs');
+// the def's solution paths (board-local x/z per cell, start -> goal): the autopilot rolls them
+const PATHS = require('../../scripts/templates/marble-maze.cjs').solutionPaths;
+
+/** roll the marble along `path` by TILTING the board (a PD controller through the module's tilt
+ * input — real physics, no teleport); resolves when the maze is won or `limit` ms pass */
+const autopilot = (page, path, limit) =>
+	page.evaluate(
+		async ({ path, limit }) => {
+			const M = window.__marble;
+			const MAX = 0.26;
+			let i = 1;
+			let last = M.marbleLocal();
+			const t0 = performance.now();
+			try {
+				while (performance.now() - t0 < limit) {
+					await new Promise((res) => setTimeout(res, 30));
+					if (M.vars().mmStatus === 2) return { won: true, t: (performance.now() - t0) / 1000 };
+					const p = M.marbleLocal();
+					if (!p) continue;
+					const vx = (p[0] - last[0]) / 0.03;
+					const vz = (p[2] - last[2]) / 0.03;
+					last = p;
+					const [tx, tz] = path[Math.min(i, path.length - 1)];
+					const dx = tx - p[0];
+					const dz = tz - p[2];
+					if (Math.hypot(dx, dz) < 0.035 && i < path.length - 1) i++;
+					M.setTilt(Math.max(-MAX, Math.min(MAX, 2.2 * dz - 0.9 * vz)), Math.max(-MAX, Math.min(MAX, -(2.2 * dx - 0.9 * vx))));
+				}
+				return { won: false, i, p: M.marbleLocal() };
+			} finally {
+				M.setTilt(0, 0);
+			}
+		},
+		{ path, limit }
+	);
 
 const CANDIDATES = [
 	process.env.MARBLE_TPSCENE,
@@ -107,12 +142,11 @@ const CANDIDATES = [
 	h.check(tilt.z < -0.05, `D lowers the right side (tilt z ${tilt.z.toFixed(3)})`);
 	if (process.env.SHOTS) await page.screenshot({ path: path.join(process.env.SHOTS, 'play.png') });
 
-	// 4 — a scripted win of maze 1 with all three coins: results, stars, Next
-	await page.evaluate(() => {
-		window.__marble.takeCoins();
-		window.__marble.toGoal();
-	});
-	await h.eventually(snap, (v) => v.state === 'over' && v.vars.mmStatus === 2, 'the marble on the goal wins the maze', 6000);
+	// 4 — a scripted win of maze 1 (the coins marked taken, then a real roll): results, stars, Next
+	await page.evaluate(() => window.__marble.takeCoins());
+	const run = await autopilot(page, PATHS[0], 40000);
+	h.check(run.won, `TILTING the board rolls the marble through maze 1 to the goal — real physics (${JSON.stringify(run)})`);
+	await h.eventually(snap, (v) => v.state === 'over' && v.vars.mmStatus === 2, 'reaching the goal wins the maze', 6000);
 	st = await snap();
 	h.check(st.vars.mmStars >= 2, `three coins + the goal: at least two stars (${st.vars.mmStars})`);
 	await h.eventually(hud, (t) => /Maze 1 cleared!/.test(t) && /Next maze/.test(t), 'the results screen: cleared + Next maze', 4000);

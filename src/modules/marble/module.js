@@ -23,7 +23,9 @@ const MARKER = 'Marble Maze game';
 const BOARD = [0, 1.1, -0.75];
 /** the tilt limit, radians (±15°) */
 const MAX_TILT = (15 * Math.PI) / 180;
-const WALL_H = 0.07;
+const WALL_H = 0.09;
+/** the most the board turns per second (rad/s): a faster swing throws the marble over the walls */
+const MAX_RATE = 2.0;
 /** a button stamp older than this (seconds) when first noticed is history, not a press */
 const FRESH_PRESS = 2.5;
 /** the maze table: names and par times (seconds) — the geometry is the def's */
@@ -225,8 +227,9 @@ export default {
 			if (mine) target = { x: clamp(mine.x, -MAX_TILT, MAX_TILT), z: clamp(mine.z, -MAX_TILT, MAX_TILT) };
 			else if (now - remote.at < 400) target = remote;
 			const k = Math.min(1, dt * 12);
-			cur.x += (target.x - cur.x) * k;
-			cur.z += (target.z - cur.z) * k;
+			const step = MAX_RATE * dt;
+			cur.x += clamp((target.x - cur.x) * k, -step, step);
+			cur.z += clamp((target.z - cur.z) * k, -step, step);
 			// tell the others (only while I touch, plus one zero when I let go)
 			if (mine && now - lastSent > 66) {
 				lastSent = now;

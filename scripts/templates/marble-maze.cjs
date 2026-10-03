@@ -23,7 +23,7 @@ const { graphBuilder } = require('./_builders.cjs');
 const BOARD = [0, 1.1, -0.75];
 /** wall thickness / height, floor thickness (metres) */
 const T = 0.02;
-const WALL_H = 0.07;
+const WALL_H = 0.09;
 const FLOOR_T = 0.03;
 const MARBLE_R = 0.035;
 const COLLIDER_BOX_CAP = 50;

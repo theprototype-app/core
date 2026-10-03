@@ -288,6 +288,23 @@ describe('one spec -> the api AND the nodes', () => {
 		sim.settle();
 		expect(sim.peer('c').kit.impls.tally.total()).toBe(2);
 	});
+	it('an `owned` call gets the module id and journals ONE disown per module', () => {
+		/** @type {any[]} */
+		const calls = [];
+		/** @type {string[]} */
+		const disowned = [];
+		const spec = { piece: 'own', group: 'G', calls: [{ name: 'spawn', kind: 'action', label: 'S', owned: true, args: [{ key: 'n', type: 'number' }] }] };
+		const impl = { spawn: (/** @type {any[]} */ ...a) => calls.push(a), disown: (/** @type {string} */ id) => disowned.push(id), on: () => () => {} };
+		/** @type {(() => void)[]} */
+		const journal = [];
+		const api = kitApi(/** @type {any} */ (spec), impl, { onDispose: (fn) => journal.push(fn), moduleId: 'waves' });
+		api.spawn(2);
+		api.spawn();
+		expect(calls).toEqual([[2, 'waves'], [undefined, 'waves']]);
+		expect(journal.length).toBe(1);
+		journal[0]();
+		expect(disowned).toEqual(['waves']);
+	});
 	it('a node runs the SAME function the api calls (node path == code path)', () => {
 		const sim = createSim({ peers: ['a', 'b'], pieces: PIECES });
 		sim.peer('b').kit.runNodeAction(kitNodeType('tally', 'add'), { amount: 4 });

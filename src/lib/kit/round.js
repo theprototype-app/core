@@ -15,7 +15,7 @@
 // THE GAME SINGLETON (core's gameState) is DRIVEN from here, so the K3 shell, HUD `showWhile`
 // screens, perRound latches and every existing Set Game State node keep working:
 //   intro/playing -> 'playing' (a fresh core round at `start`, so perRound content resets)
-//   paused -> 'paused' · won/lost/results -> 'over' (outcome 'won'/'lost' + reason) · menu -> 'menu'
+//   paused -> 'paused' · won/lost/results -> 'over' (outcome = the reason, else 'won'/'lost') · menu -> 'menu'
 // and the other way: a game-state change the kit did not make (a Set Game State node, the
 // shell's admin reset) is ADOPTED by the authority — playing⇄paused and back to the menu.
 //
@@ -231,7 +231,8 @@ function end(s, phase, reason, ctx) {
 	const why = typeof reason === 'string' ? reason.slice(0, 120) : '';
 	// a pause still open is banked first, so the round's play time stops where it was
 	const pausedMs = s.phase === 'paused' ? s.pausedMs + Math.max(0, now - s.pausedAt) : s.pausedMs;
-	writeGame(ctx, () => ctx.game?.set?.('over', { outcome: phase === 'won' ? 'won' : 'lost' }));
+	// core's game singleton says WHY (a Round-over screen binds its outcome), else won / lost
+	writeGame(ctx, () => ctx.game?.set?.('over', { outcome: why || (phase === 'won' ? 'won' : 'lost') }));
 	const next = { ...s, phase, phaseAt: now, pausedAt: 0, pausedMs, outcome: why || phase };
 	return {
 		slice: next,

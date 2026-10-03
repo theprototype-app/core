@@ -101,7 +101,7 @@ describe('kit.round — pause, the clock and the limit', () => {
 		expect(phases(sim)).toEqual(['lost', 'lost']);
 		expect(R(sim, 'b').outcome()).toBe('time');
 		expect(R(sim, 'b').elapsed()).toBeCloseTo(15, 0);
-		expect(sim.peer('b').game.get()).toMatchObject({ state: 'over', outcome: 'lost' });
+		expect(sim.peer('b').game.get()).toMatchObject({ state: 'over', outcome: 'time' });
 	});
 	it('a survive-the-timer game WINS when the clock runs out', () => {
 		const sim = createSim({ peers: ['a'] });

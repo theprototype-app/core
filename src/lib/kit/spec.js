@@ -29,7 +29,9 @@
  * @typedef {{key: string, type: KitArgType, label?: string, default?: any, min?: number,
  *   max?: number, step?: number, options?: string[]}} KitArg
  * @typedef {{name: string, kind: 'action'|'value'|'event', label: string, doc?: string,
- *   args?: KitArg[], vtype?: string, authority?: boolean, node?: boolean, local?: boolean}} KitCall
+ *   args?: KitArg[], vtype?: string, authority?: boolean, node?: boolean, local?: boolean, owned?: boolean}} KitCall
+ * `owned` (actions): the SDK face appends the calling module's id after the spec args and
+ * journals ONE `impl.disown(moduleId)` per module per piece (the node path passes no owner).
  * `local` (events only): the event is witnessed on ONE peer and stays there — its listeners
  * and its node pulse (kept local, the perPlayer rule) — e.g. "your grab was refused".
  * @typedef {{piece: string, group: string, calls: KitCall[]}} KitSpec
@@ -118,6 +120,8 @@ export function argsFromData(call, data) {
 export function kitApi(spec, impl, ctx) {
 	/** @type {Record<string, any>} */
 	const api = {};
+	/** has an owned call journaled this module's disown yet? */
+	let owned = false;
 	for (const call of spec.calls) {
 		if (call.kind === 'event') {
 			const method = eventMethodName(call.name);
@@ -130,7 +134,22 @@ export function kitApi(spec, impl, ctx) {
 		}
 		const fn = impl[call.name];
 		if (typeof fn !== 'function') throw new Error('kit.' + spec.piece + '.' + call.name + ' has no implementation');
-		api[call.name] = (/** @type {any[]} */ ...args) => fn(...args);
+		if (!call.owned) {
+			api[call.name] = (/** @type {any[]} */ ...args) => fn(...args);
+			continue;
+		}
+		// an OWNED call (34-kit-entities' spawn): the calling module's id after the spec args, and
+		// ONE teardown per module per piece — `impl.disown(moduleId)` drops what it owns (T2)
+		api[call.name] = (/** @type {any[]} */ ...args) => {
+			const padded = args.slice(0, call.args?.length ?? 0);
+			while (padded.length < (call.args?.length ?? 0)) padded.push(undefined);
+			const r = fn(...padded, ctx?.moduleId ?? '');
+			if (!owned) {
+				owned = true;
+				ctx?.onDispose?.(() => impl.disown?.(ctx?.moduleId ?? ''));
+			}
+			return r;
+		};
 	}
 	// the piece's code-only extras (a level table, a pickup registration…) ride along under
 	// their own names; a spec row is what makes something ALSO a node. A TRACKED extra

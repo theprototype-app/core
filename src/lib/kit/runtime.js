@@ -46,7 +46,8 @@ export function primeKitRuntime() {
 			if (restartHooked) return;
 			restartHooked = true;
 			m.onGameRestart(() => {
-				if (kit.impls.round?.number?.() > 0) kit.impls.round.restart();
+				// only a round that is running or just ended: from the menu there is nothing to restart
+				if (kit.impls.round?.number?.() > 0 && kit.impls.round.phase() !== 'menu') kit.impls.round.restart();
 			}, '');
 			// kit.levels publishes its table to the shell's level picker (desktop + the VR board)
 			kit.impls.levels?.extra?.attachShell?.((/** @type {any} */ spec, /** @type {string} */ owner) => m.setGameLevels(spec, owner));

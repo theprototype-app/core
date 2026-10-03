@@ -97,8 +97,7 @@ h.run(async () => {
 	st = await snap();
 	h.check((st.flags & (2 | 4 | 8 | 16 | 32 | 64)) === (2 | 4 | 8 | 16 | 32 | 64), `stage 1 solved: key, chest, crank, note, sun gem, study door (flags ${st.flags})`);
 	await h.eventually(hud, (t) => /Crank/.test(t) && /Sun gem/.test(t) && /Gems 1 \/ 3/.test(t), 'the inventory lists the crank and the sun gem; 1 of 3 gems', 4000);
-	const doorZ = await page.evaluate(() => { let g; window.__stores.objectsGroup.subscribe((v) => (g = v))(); return g.getObjectByName('Study door').position.z; });
-	h.check(doorZ > 1, `the study door slid open (z ${doorZ.toFixed(2)})`);
+	await h.eventually(() => page.evaluate(() => { let g; window.__stores.objectsGroup.subscribe((v) => (g = v))(); return g.getObjectByName('Study door').position.z; }), (z) => z > 1, 'the study door slides open', 4000);
 
 	// 5 — the workshop: dials 3 7 1, levers right/left/middle (a wrong one resets), the crank x8
 	for (const [d, n] of [['Dial 1', 3], ['Dial 2', 7], ['Dial 3', 1]]) for (let i = 0; i < n; i++) await press(d);
@@ -146,8 +145,11 @@ h.run(async () => {
 	await xr.install(page);
 	await xr.setOn(page, true);
 	await page.evaluate(() => window.__stores.gameState.setGameState('menu'));
-	const boards = await page.evaluate(async () => (await import('/src/lib/vrGamePanel.js')).vrScreens().map((s) => s.id ?? s.screen?.id ?? '?')).catch((e) => ['err ' + e.message]);
-	h.check(boards.length >= 0, `VR boards for the menu (${JSON.stringify(boards)})`);
+	const board = await page.evaluate(() => {
+		const sc = window.__stores.hudDocs.visibleScreen('scene');
+		return { id: sc?.id, menuInput: sc?.input === 'menu' };
+	});
+	h.check(board.id === 'menu' && board.menuInput, `the Start menu is a menu-input screen, which a headset draws as the VR board (${JSON.stringify(board)})`);
 	await page.evaluate(() => window.__stores.isLocked.set(true));
 	await page.waitForTimeout(800);
 	await page.evaluate(() => window.__stores.gameState.setGameState('playing'));

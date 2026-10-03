@@ -25,9 +25,9 @@ const BTN = { size: 17, weight: '600', bg: '#2f8fe0', color: '#ffffff', radius: 
 const STAGE_NAMES = ['Cloud Steps', 'Spin Cycle', 'Sky Gauntlet'];
 const STAGE_X = [0, 30, 60];
 const STAGE_COLORS = [
-	{ top: 0x8fd3ff, side: 0x4a90c8 },
-	{ top: 0xffc58f, side: 0xc8804a },
-	{ top: 0xd3a6ff, side: 0x8a5ac8 }
+	{ top: 0x6fcf5a, side: 0x2f7f2a, rock: 0x8a6a4c },
+	{ top: 0xf0b54a, side: 0xa86a1a, rock: 0x7a5a44 },
+	{ top: 0xa88cff, side: 0x5a3ac8, rock: 0x5e5470 }
 ];
 
 /** @type {any[]} */ const OBJECTS = [];
@@ -40,10 +40,19 @@ function plat(s, name, x, top, z, w, d, extra = {}) {
 	OBJECTS.push({
 		type: 'box', name, color: extra.color ?? c.top, size: [w, THICK, d], bevel: 0.08, bevelSegments: 1,
 		pos: [STAGE_X[s - 1] + x, top - THICK / 2, z], physical: true, roughness: 0.45, clearcoat: 0.4,
-		emissive: extra.emissive ?? c.side, emissiveIntensity: extra.glow ?? 0.12,
+		emissive: extra.emissive ?? c.side, emissiveIntensity: extra.glow ?? 0.18,
 		physics: { mode: 'static', friction: 0.9 }
 	});
 	if (extra.move) MOVERS.push({ name, data: extra.move });
+	else
+		// a fixed platform is a floating ISLAND: a rock cone hangs under it (shadowless and a
+		// sensor — it is dressing, nothing stands on it). Movers go without: a cone left behind
+		// by a vanished tile reads as a bug
+		OBJECTS.push({
+			type: 'cone', name: name + ' rock', color: c.rock, r: +(Math.min(w, d) * 0.5).toFixed(2), h: +(Math.min(w, d) * 0.55 + 0.6).toFixed(2),
+			pos: [STAGE_X[s - 1] + x, top - THICK - (Math.min(w, d) * 0.55 + 0.6) / 2 + 0.02, z], rot: [Math.PI, 0, 0], roughness: 0.95,
+			flatShading: true, shadow: false, pick: 'through', physics: { mode: 'static', sensor: true }
+		});
 	return name;
 }
 let coinN = [0, 0, 0];
@@ -225,9 +234,9 @@ const SKY_RUN_DEF = {
 	modules: [],
 	env: {
 		preset: 'daylight',
-		exposure: 1.1,
+		exposure: 1.0,
 		background: { top: '#3d8fe0', bottom: '#e8f4ff' },
-		fog: { color: '#eef6ff', near: 30, far: 110 },
+		fog: { color: '#eef6ff', near: 45, far: 170 },
 		ground: { color: '#ffffff', roughness: 1 }
 	},
 	physics: {

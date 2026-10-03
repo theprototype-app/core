@@ -113,7 +113,7 @@ export function argsFromData(call, data) {
  * `ctx.onDispose` (T2: the one line the lifecycle registry replaces), so an unloaded module
  * leaves no listener behind. Reads and actions pass straight through.
  * @param {KitSpec} spec @param {Record<string, any>} impl
- * @param {{onDispose?: (fn: () => void) => any}} [ctx]
+ * @param {{onDispose?: (fn: () => void) => any, moduleId?: string}} [ctx]
  */
 export function kitApi(spec, impl, ctx) {
 	/** @type {Record<string, any>} */
@@ -133,9 +133,23 @@ export function kitApi(spec, impl, ctx) {
 		api[call.name] = (/** @type {any[]} */ ...args) => fn(...args);
 	}
 	// the piece's code-only extras (a level table, a pickup registration…) ride along under
-	// their own names; a spec row is what makes something ALSO a node
+	// their own names; a spec row is what makes something ALSO a node. A TRACKED extra
+	// (`impl.tracked = {name: argCount}`) is a registration: it gets the calling module's id after
+	// its own args (its owner, for scoping) and the `off` it returns is journaled for teardown.
 	for (const [name, fn] of Object.entries(impl.extra ?? {})) {
-		if (!(name in api)) api[name] = fn;
+		if (name in api) continue;
+		const argc = impl.tracked?.[name];
+		if (argc === undefined) {
+			api[name] = fn;
+			continue;
+		}
+		api[name] = (/** @type {any[]} */ ...args) => {
+			const padded = args.slice(0, argc);
+			while (padded.length < argc) padded.push(undefined);
+			const off = fn(...padded, ctx?.moduleId ?? '');
+			if (typeof off === 'function') ctx?.onDispose?.(off);
+			return off;
+		};
 	}
 	return api;
 }

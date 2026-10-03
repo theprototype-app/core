@@ -45,6 +45,8 @@ export function primeKitRuntime() {
 			m.onGameRestart(() => {
 				if (kit.impls.round?.number?.() > 0) kit.impls.round.restart();
 			}, '');
+			// kit.levels publishes its table to the shell's level picker (desktop + the VR board)
+			kit.impls.levels?.extra?.attachShell?.((/** @type {any} */ spec, /** @type {string} */ owner) => m.setGameLevels(spec, owner));
 		})
 		.catch(() => {});
 }

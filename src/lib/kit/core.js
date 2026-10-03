@@ -383,7 +383,7 @@ export function createKit(host, pieces) {
 		impls,
 		/** the specs, in table order */
 		specs: () => pieces.map((row) => row.piece.spec),
-		/** build the SDK face of every piece for one module @param {{onDispose?: (fn: () => void) => any}} [ctx] */
+		/** build the SDK face of every piece for one module @param {{onDispose?: (fn: () => void) => any, moduleId?: string}} [ctx] */
 		api: (ctx) => Object.fromEntries(pieces.map((row) => [row.name, kitApi(row.piece.spec, impls[row.name], ctx)])),
 		/** every generated node item */
 		nodeItems: () => pieces.flatMap((row) => kitNodeItems(row.piece.spec)),

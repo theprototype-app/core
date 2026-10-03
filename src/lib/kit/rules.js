@@ -110,6 +110,7 @@ export default {
 			reach: () => s().reach ?? 0,
 			jump: () => s().jump ?? 0,
 			on: ctx.on,
+			tracked: { onGrabRequest: 1 },
 			extra: {
 				/** set several rules in one call: `{reach?, jump?, bounds?: {min, max} | null}`
 				 * (`null` clears that rule; an absent key leaves it) @param {any} rules */

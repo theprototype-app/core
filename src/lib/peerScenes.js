@@ -628,7 +628,7 @@ export const ROOM_SCOPED = new Set([
 	// scene object, the 'nodetrigger' case - a peer standing elsewhere plays none of it
 	'environment', 'music', 'transport', 'patch', 'devicenote', 'scenephysics', 'scenepost', 'shadergraph',
 	'shadergraphdelete', 'shadergraphs', 'hud', 'huddelete', 'huds', 'hudvalue',
-	'hudvalues', 'game', 'animdata', 'animplay', 'animations', 'jointcreate',
+	'hudvalues', 'game', 'kit', 'kitreq', 'animdata', 'animplay', 'animations', 'jointcreate',
 	'jointdelete', 'joints', 'annotation', 'annotations',
 	// coordination
 	'lock', 'locked', 'lockrequest', 'unlock', 'lockdenied', 'sessionproposal',

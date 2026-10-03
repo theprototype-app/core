@@ -72,6 +72,9 @@ import { safeStorage } from './safeStorage';
 import { sceneStorageKey, readStored, writeStored } from './gameStorage';
 // 30b (core-games): the game-feel nodes' runtime half (announce/sound/burst/haptic/music)
 import { GAME_FEEL_ACTIONS, runGameFeelAction, updateGameMusicNodes, primeGameFeelActions } from './gameFeelActions';
+// 34 R2 (T3): the game kit — its action nodes act on the stamp edge here, its document ticks here
+import { KIT_ACTION_TYPES, runKitNodeAction, installKitNodes } from './kit/nodes.js';
+import { tickKit, primeKitRuntime } from './kit/runtime.js';
 // 31 (Stars Room): a scene's own settings rows (31-game-shell's leaf), and the pointing switch
 import { registerGameSetting, gameSettingValue } from './gameSettings';
 import { setPointGrabEnabled } from './pointGrab';
@@ -1374,7 +1377,7 @@ function updateGameNodes(time, ctx) {
 	// 1. the ACTIONS, on a fresh trigger stamp only
 	for (const node of nodes) {
 		const type = node.type;
-		if (type !== 'setgamestate' && type !== 'setcamera' && type !== 'setvariable' && type !== 'setlook' && type !== 'travel' && type !== 'storevalue' && !GAME_FEEL_ACTIONS.includes(type))
+		if (type !== 'setgamestate' && type !== 'setcamera' && type !== 'setvariable' && type !== 'setlook' && type !== 'travel' && type !== 'storevalue' && !GAME_FEEL_ACTIONS.includes(type) && !KIT_ACTION_TYPES.has(type))
 			continue;
 		seeActionNode(node, time);
 		const stamp = triggerStampFor(node.id, ctx);
@@ -1417,6 +1420,11 @@ function updateGameNodes(time, ctx) {
 			const hash = typeof data.level === 'string' ? data.level : '';
 			if (sceneName && levelsRef?.travelToScene) levelsRef.travelToScene(sceneName);
 			else if (hash && levelsRef) levelsRef.travelToLevel(hash, String(data.levelName ?? ''));
+		} else if (KIT_ACTION_TYPES.has(type)) {
+			// 34 R2: a kit action. EVERY peer that sees the stamp asks the kit with an id derived
+			// from it (node + stamp), so the authority applies one press once however many peers
+			// saw it — and a perPlayer pulse, seen only by its player, still reaches it
+			runKitNodeAction(type, data, node.id, stamp);
 		} else if (GAME_FEEL_ACTIONS.includes(type)) {
 			// 30b (core-games): a banner, a sound, a burst or a buzz — LOCAL on every peer from
 			// the replicated stamp, inside the actionSeenAt family above like storevalue (a
@@ -3614,6 +3622,9 @@ function runTick(now) {
 	// 21-D6: the game shell. Runs BEFORE the HUD pass would matter next frame, and reads
 	// the same replicated trigger stamps, so every peer takes the same decisions.
 	updateGameNodes(time, ctx);
+	// 34 R2: the kit's authority turns due moments into changes; everyone re-sends what was
+	// never acknowledged (after the game nodes, so a press this frame is already asked)
+	tickKit();
 	// 21-E6: the character controller, beside the game shell and for the same reason —
 	// it reads the already-replicated graph and the same trigger stamps, so every peer
 	// declares the same controller and reacts to the same pulses with no message.
@@ -3883,6 +3894,8 @@ export function startFlowRuntime() {
 	import('./knock').then((m) => m.registerHitListener((hit, local) => fireObjectHit(hit, local)));
 	import('./gamePresence').then((m) => (presenceRef = m));
 	primeGameFeelActions(); // 30b: effectsBurst + vrControls, primed (see gameFeelActions)
+	primeKitRuntime(); // 34 R2: physics (the initiator) + flowRuntime (the event pulse), primed
+	installKitNodes(); // 34 R2: the kit nodes' outputs and named inputs, declared once
 	flowGraphs.subscribe(() => {
 		nodes = allNodes();
 		edges = allEdges();

@@ -1,6 +1,7 @@
 // The flow node MANUAL: one line per node, the single source the palette tooltip, the
 // editor's info pane, the docs-site reference table and the no-browser guard test all read
-// (23-D4, the shaderCatalog DOCS precedent). PURE - no imports - so a node script can load it.
+// (23-D4, the shaderCatalog DOCS precedent). PURE - the one import is the kit's pure catalog leaf -
+// so a node script can load it.
 //
 // Documentation drifts by omission: someone adds a node and nobody notices it has no
 // description until a user asks what it does. tests/e2e/flow-node-docs.test.cjs asserts every
@@ -8,6 +9,8 @@
 //
 // Say what the node DOES and what it is FOR, in one sentence a newcomer can act on; never
 // merely restate the label.
+
+import { kitNodeDoc } from './kit/catalog.js';
 
 /** @type {Record<string, string>} type -> one line */
 export const NODE_DOCS = {
@@ -117,5 +120,7 @@ export const NODE_DOCS = {
 
 /** the one-line manual for a node type, or '' for a type without one (a module's node) @param {string} type */
 export function nodeDoc(type) {
-	return NODE_DOCS[typeof type === 'string' ? type : ''] ?? '';
+	const key = typeof type === 'string' ? type : '';
+	// 34 R2: a kit node's line is its piece spec's `doc` (the one spec the api and the node share)
+	return NODE_DOCS[key] ?? (key.startsWith('kit-') ? kitNodeDoc(key) : '') ?? '';
 }

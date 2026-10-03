@@ -1,6 +1,7 @@
 <script lang="ts">
-	import { Archive, BookOpen, FileInput, Flag, FolderOpen, Gauge, LayoutTemplate, Puzzle, Save, Settings, SlidersHorizontal, Trash2, Wrench } from '@lucide/svelte';
+	import { Activity, Archive, BookOpen, FileInput, Flag, FolderOpen, Gauge, LayoutTemplate, Puzzle, Save, Settings, SlidersHorizontal, Trash2, Wrench } from '@lucide/svelte';
 	import { openMomentReport } from '$lib/perf/moment';
+	import { profilerLiveOpen } from '$lib/perf/liveSink';
 	import '../../app.css';
 	import { moduleToolboxes, openToolboxes, buildToolboxItems } from '$lib/moduleToolboxes';
 	import '../../styles/menu.css';
@@ -268,6 +269,10 @@
 			recording (and sent when performance reports are on) -->
 		<button id="report-moment" class="side-row" onclick={() => { closeMenu.set(true); void openMomentReport(); }}>
 			<span class="side-ico"><Flag size={16} aria-hidden="true" /></span><span class="flex-1 whitespace-nowrap">Report this moment</span>
+		</button>
+		<!-- 34 PF (profiler-xr): watch a peer's frames live (a headset, from this desktop) -->
+		<button id="open-profiler-live" class="side-row" onclick={() => { profilerLiveOpen.set(true); closeMenu.set(true); }}>
+			<span class="side-ico"><Activity size={16} aria-hidden="true" /></span><span class="flex-1 whitespace-nowrap">Live profiler</span>
 		</button>
 		<button class="side-row" onclick={() => { settingsOpen.set(!$settingsOpen); closeMenu.set(true); }}>
 			<span class="side-ico"><Settings size={16} aria-hidden="true" /></span><span class="flex-1 whitespace-nowrap">Settings</span>

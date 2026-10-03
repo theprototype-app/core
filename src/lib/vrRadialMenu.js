@@ -327,6 +327,18 @@ function registerBuiltins() {
 		}
 	});
 	registerVRMenuEntry({ id: 'stats', group: 'system', label: 'Statistics', order: 4 });
+	// 34 R1: "Report this moment" — 30 s of frame data + the eye screenshot + an optional note
+	// (the VR keyboard asks). Dynamic: the perf modules stay out of the VR import family.
+	registerVRMenuEntry({
+		id: 'moment',
+		group: 'system',
+		label: 'Report moment',
+		order: 4.5,
+		closes: true,
+		action: () => {
+			void Promise.all([import('./perf/moment.js'), import('./vrKeyboard.js')]).then(([m, k]) => m.vrReportMoment(k.openVRKeyboard));
+		}
+	});
 	registerVRMenuEntry({ id: 'grabmode', group: 'system', label: 'Grab mode', order: 5 });
 	registerVRMenuEntry({ id: 'nav:mic', label: 'Mic ▸', group: 'system', order: 6, ring: 'mic' });
 	registerVRMenuEntry({ id: 'exitvr', group: 'system', label: 'Exit VR', order: 7 });

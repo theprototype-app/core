@@ -1,0 +1,26 @@
+{
+	"generated": "2026-10-03",
+	"source": "modules@3f7346d (origin/dev)",
+	"modules": {
+		"avatar": "1.1.0",
+		"car": "1.2.1",
+		"collectible": "1.1.2",
+		"door-keypad": "1.0.1",
+		"dungeon": "2.3.0",
+		"dungeon-realms": "2.3.0",
+		"essentials": "1.1.1",
+		"flow-toolkit": "1.0.0",
+		"football": "1.3.0",
+		"fps-player": "1.0.0",
+		"health": "1.0.0",
+		"music-dj": "0.1.1",
+		"music-fx": "0.2.0",
+		"music-lab": "0.2.1",
+		"music-voice": "0.1.1",
+		"piano": "1.1.1",
+		"sabers": "1.0.1",
+		"tutorial-room": "1.1.0",
+		"untangle": "2.4.0",
+		"waves": "2.2.0"
+	}
+}

@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { sessionNow, onSessionClockJump } from './sessionClock'; // 25-E: the synced clock is the SESSION's
 import { get } from 'svelte/store';
+import { phaseBegin, phaseEnd, PHASE_INPUT, PHASE_FLOW, PHASE_MODULES, PHASE_PHYSICS } from './perf/perfMarks.js'; // 34 PF: an import-free leaf
 import { flowGraphs, mutedFlowObjects, syncedAnimations, flowValues, flowTriggers, SCENE_GRAPH, startGraphMirror, allNodes, allEdges, flowPaused} from '../stores/flowStore';
 // 21-F2: `isLocked` is the LOCAL play substate the recipe gate reads — see gamePlayActive
 import { objectsGroup, isLocked } from '../stores/sceneStore';
@@ -3407,7 +3408,10 @@ function runTick(now) {
 	// reached this frame's graph. Doing it before runtimeCtx() means an edge published
 	// now lands in THIS tick's trigger snapshot, exactly as a keydown arriving between
 	// frames would. (It also rides pumpFlowTick, so a pad works in a headset for free.)
+	phaseBegin(PHASE_INPUT); // 34 PF: CPU phases (one boolean test unless a detailed recording runs)
 	inputRuntimeRef?.pollGamepads();
+	phaseEnd(PHASE_INPUT);
+	phaseBegin(PHASE_FLOW);
 	const time = synced ? (sessionNow() % 86400000) / 1000 : now / 1000;
 	const ctx = runtimeCtx(); // 134: scene + trigger state for the evaluators
 
@@ -3684,7 +3688,9 @@ function runTick(now) {
 		(nextOutputs[node.__graph] ??= {})[name] = evalNode(node, nodes, edges, time, new Set(), ctx);
 	});
 	graphOutputs = nextOutputs;
+	phaseEnd(PHASE_FLOW);
 
+	phaseBegin(PHASE_MODULES);
 	moduleFrameTasks.forEach((task) => {
 		try {
 			task(time);
@@ -3695,6 +3701,7 @@ function runTick(now) {
 			noteFrameFailure('module frame task', error);
 		}
 	});
+	phaseEnd(PHASE_MODULES);
 
 	// P-A: physics steps AFTER the animation pass in the SAME frame, so the
 	// order is deterministic: flow poses objects -> physics reads kinematic
@@ -3702,11 +3709,13 @@ function runTick(now) {
 	// dedicated hook, not a moduleFrameTask: those have no removal or ordering
 	// guarantee); physics sets it on sim start and clears it on stop.
 	if (postTick) {
+		phaseBegin(PHASE_PHYSICS);
 		try {
 			postTick(now);
 		} catch (error) {
 			noteFrameFailure('post-tick hook', error);
 		}
+		phaseEnd(PHASE_PHYSICS);
 	}
 }
 

@@ -1,5 +1,6 @@
 <script lang="ts">
-	import { Archive, BookOpen, FileInput, FolderOpen, Gauge, LayoutTemplate, Puzzle, Save, Settings, SlidersHorizontal, Trash2, Wrench } from '@lucide/svelte';
+	import { Archive, BookOpen, FileInput, Flag, FolderOpen, Gauge, LayoutTemplate, Puzzle, Save, Settings, SlidersHorizontal, Trash2, Wrench } from '@lucide/svelte';
+	import { openMomentReport } from '$lib/perf/moment';
 	import '../../app.css';
 	import { moduleToolboxes, openToolboxes, buildToolboxItems } from '$lib/moduleToolboxes';
 	import '../../styles/menu.css';
@@ -262,6 +263,11 @@
 		     because it is something you WATCH while working, not something you set. -->
 		<button id="open-stats" class="side-row" onclick={() => { statsOpen.set(true); closeMenu.set(true); }}>
 			<span class="side-ico"><Gauge size={16} aria-hidden="true" /></span><span class="flex-1 whitespace-nowrap">Statistics</span>
+		</button>
+		<!-- 34 R1: the last 30 s of frame data + what the viewport shows + a note, kept as a
+			recording (and sent when performance reports are on) -->
+		<button id="report-moment" class="side-row" onclick={() => { closeMenu.set(true); void openMomentReport(); }}>
+			<span class="side-ico"><Flag size={16} aria-hidden="true" /></span><span class="flex-1 whitespace-nowrap">Report this moment</span>
 		</button>
 		<button class="side-row" onclick={() => { settingsOpen.set(!$settingsOpen); closeMenu.set(true); }}>
 			<span class="side-ico"><Settings size={16} aria-hidden="true" /></span><span class="flex-1 whitespace-nowrap">Settings</span>

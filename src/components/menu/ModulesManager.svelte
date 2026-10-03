@@ -79,7 +79,16 @@
 		loadModuleGallery,
 		versionNewer
 	} from '$lib/moduleGallery';
+	import { staleModuleList, updatingModules, updateStaleModule } from '$lib/staleModules';
 	let tab = 'core';
+	// 34 R1: an installed module older than this build expects — opening the manager lands
+	// on the User tab, where the row with its Update button is (once per open)
+	let staleLanded = false;
+	$: if (!$modulesOpen) staleLanded = false;
+	$: if ($modulesOpen && $staleModuleList.length && !staleLanded) {
+		staleLanded = true;
+		tab = 'user';
+	}
 	let installUrlValue = '';
 	let galleryBusy = '';
 	let installBusy = false;
@@ -450,6 +459,27 @@
 				{/if}
 			</div>
 
+			{#if $staleModuleList.length}
+				<div id="stale-modules" class="rounded-lg border border-yellow-500/60 p-3 text-sm">
+					<p class="font-semibold text-yellow-300">Older than this app expects</p>
+					<p class="pb-1 text-xs text-gray-400">
+						An installed module never updates itself, and an old one can bring back a bug this version already fixed.
+					</p>
+					{#each $staleModuleList as stale (stale.id)}
+						<div class="flex items-center justify-between gap-2 py-1" data-stale={stale.id}>
+							<span class="text-gray-200">{stale.name} <span class="text-gray-400">v{stale.installed} → v{stale.expected}</span></span>
+							<Button
+								size="xs"
+								id={'update-stale-' + stale.id}
+								disabled={$updatingModules.includes(stale.id)}
+								onclick={() => updateStaleModule(stale.id)}
+							>
+								{$updatingModules.includes(stale.id) ? 'Updating…' : 'Update'}
+							</Button>
+						</div>
+					{/each}
+				</div>
+			{/if}
 			{#key $loadedModulesChanged}
 				{#each $userModules as record (record.id)}
 					<div id={'user-module-card-' + record.id} class="rounded-lg border border-gray-600 p-3">

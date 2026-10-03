@@ -41,6 +41,7 @@
   import { startPerfRecorder } from './lib/perf/recorder'
   import { startDetailedProbe } from './lib/perf/detailed'
   import { startPerfBeacon } from './lib/perf/beacon'
+  import { startStaleModuleWatch } from './lib/staleModules'
   import { startLod } from './lib/lod'
   import { startLodGroups } from './lib/lodGroup'
   import { startKitInstancing } from './lib/kitInstancing'
@@ -156,6 +157,8 @@ import { startMusicToolbox } from './lib/musicToolbox'
     startDetailedProbe()
     // 34 R1: performance reports (opt-in; inert without VITE_PERF_REPORTS_URL)
     startPerfBeacon()
+    // 34 R1: an installed module older than this build expects -> toast + a Modules row
+    startStaleModuleWatch()
     // 31-perf P2: automatic levels of detail (a render-time swap; see lod.js)
     startLod()
     // 33: per-object LOD GROUPS (userData.lod / a pack item's `lods`) ride the same render pass

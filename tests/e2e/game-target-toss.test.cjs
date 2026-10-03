@@ -65,6 +65,13 @@ h.run(async () => {
 	await h.eventually(() => snap().then((v) => v.sim), (v) => v === true, 'entering play starts the sim', 10000);
 	await h.eventually(hud, (t) => /TARGET TOSS/.test(t) && /1 · Tin cans/.test(t) && /5 · The cart/.test(t), 'the stage select renders: five stages', 6000);
 	await h.eventually(() => page.evaluate(() => { let m; window.__stores.gameKit.gameMusic.gameMusicState.subscribe((v) => (m = v))(); return m?.preset ?? null; }), (m) => m === 'arcade', 'the fairground music plays', 6000);
+	const eye = await page.evaluate(() => {
+		const s = window.__stores;
+		let cam; s.playerCam.subscribe((v) => (cam = v))();
+		const p = cam.getWorldPosition(new s.THREE.Vector3());
+		return [p.x, p.y, p.z].map((n) => +n.toFixed(2));
+	});
+	h.check(Math.abs(eye[0]) < 0.05 && Math.abs(eye[1] - 1.7) < 0.15 && Math.abs(eye[2] - 2.65) < 0.1, `Play puts the eye at the counter, within reach of the shelf (${eye})`);
 	if (SHOTS) await page.screenshot({ path: path.join(SHOTS, 'menu.png') });
 
 	// 3 — stage 1 from its button: six cans on the left table, six balls on the shelf

@@ -125,7 +125,7 @@ const TARGET_TOSS_DEF = {
 		bounds: { limit: -20, action: 'respawn' },
 		material: { friction: 0.6, restitution: 0.2 },
 		damping: { linear: 0.02, angular: 0.2 },
-		play: { interaction: 'grab', grounded: false, simOnPlay: true, spawn: { position: [0, 0, 3.1], yaw: 0 }, reach: 1.6 }
+		play: { interaction: 'grab', grounded: false, simOnPlay: true, spawn: { position: [0, 0, 2.65], yaw: 0 }, reach: 1.6 }
 	},
 	post: {
 		enabled: true,

@@ -8,5 +8,7 @@ import pong from './pong/module.js';
 import vrsleeve from './vrsleeve/module.js';
 // 31-towers: the Towers game's levels, pieces and rules (dormant outside a Towers scene)
 import towers from './towers/module.js';
+// 35-escape-room: The Alchemist's Escape (dormant outside an `Escape game` scene)
+import escape from './escape/module.js';
 
-export const coreModules = [hello, button, pong, vrsleeve, towers];
+export const coreModules = [hello, button, pong, vrsleeve, towers, escape];

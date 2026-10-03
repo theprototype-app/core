@@ -23,7 +23,9 @@ const TEMPLATE_FILES = [
 	'towers',
 	'stars-room',
 	'make-a-mirror',
-	'follow-the-beat'
+	'follow-the-beat',
+	// 35-escape-room: The Alchemist's Escape (rules in the core `escape` module)
+	'escape-room'
 ];
 
 /** games whose def is OWNED BY ITS MODULE (modules/<id>/<id>.def.json, read by moduleDef) */

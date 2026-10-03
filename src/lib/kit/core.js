@@ -149,6 +149,8 @@ export function createKit(host, pieces) {
 		game: host.game ?? null,
 		rules: host.rules ?? null,
 		local: (locals[piece] ??= {}),
+		/** broadcast a piece's OWN wire message (34-kit-entities' `kitentity`) @param {any} msg */
+		send: (msg) => host.send(msg),
 		/** change shared state through the authority @param {string} op @param {any[]} [args] */
 		request: (op, args = []) => request(piece, op, args),
 		/** @param {string} name @param {(payload: any) => void} fn */
@@ -260,9 +262,16 @@ export function createKit(host, pieces) {
 		};
 	};
 
-	/** an incoming kit message (already shape-checked by wireValidate) @param {any} msg */
-	const receive = (msg) => {
+	/** an incoming kit message (already shape-checked by wireValidate). A type that is neither
+	 * `kit` nor `kitreq` is OFFERED to the pieces (`def.receive(msg, from, ctx)` -> handled), with
+	 * the sender's id for a piece that checks its single writer.
+	 * @param {any} msg @param {string | null} [from] */
+	const receive = (msg, from = null) => {
 		if (!msg || typeof msg !== 'object') return false;
+		if (msg.type !== KIT_DOC && msg.type !== KIT_REQ) {
+			for (const [name, def] of Object.entries(defs)) if (def.receive?.(msg, from ?? null, ctxFor(name))) return true;
+			return false;
+		}
 		if (msg.type === KIT_DOC) {
 			stats.received++;
 			if (!newerDoc(msg.doc, doc)) {
@@ -320,6 +329,13 @@ export function createKit(host, pieces) {
 
 	/** the handshake payload for a joiner (no events: arriving history fires nothing) */
 	const snapshot = () => ({ type: KIT_DOC, doc: clone(doc), ev: [] });
+	/** every handshake message: the document, then each piece's own (`def.snapshot(ctx)`, null = none) */
+	const snapshots = () => [
+		snapshot(),
+		...Object.entries(defs)
+			.map(([name, def]) => (typeof def.snapshot === 'function' ? def.snapshot(ctxFor(name)) : null))
+			.filter(Boolean)
+	];
 
 	/** forget everything (a scene clear: every peer clears too) — local, sends nothing */
 	const reset = () => {
@@ -336,6 +352,7 @@ export function createKit(host, pieces) {
 		receive,
 		tick,
 		snapshot,
+		snapshots,
 		reset,
 		on,
 		onChange,

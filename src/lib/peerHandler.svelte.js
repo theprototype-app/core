@@ -860,7 +860,7 @@ export class PeerConnection {
 				} else if(data.type == 'kit' || data.type == 'kitreq') {
 					// 34 R2: the kit document (authority-written, latest-wins) and a request
 					// to the authority; the shapes were checked by wireValidate
-					receiveKitMessage(data);
+					receiveKitMessage(data, conn.peer);
 				} else if(data.type == 'envpresets') {
 					applyRemoteEnvPresets(data);
 				} else if(data.type == 'geometry') {

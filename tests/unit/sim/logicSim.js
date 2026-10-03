@@ -178,9 +178,9 @@ export function createSim(opts = {}) {
 			}
 			for (const other of peers.values()) {
 				if (other.id === id) continue;
-				queue.push({ at: clock + latency, from: other.id, to: id, msg: other.kit.snapshot() });
+				for (const msg of other.kit.snapshots()) queue.push({ at: clock + latency, from: other.id, to: id, msg });
 				queue.push({ at: clock + latency, from: other.id, to: id, msg: { type: 'game', ...other.game.get() } });
-				queue.push({ at: clock + latency, from: id, to: other.id, msg: p.kit.snapshot() });
+				for (const msg of p.kit.snapshots()) queue.push({ at: clock + latency, from: id, to: other.id, msg });
 				queue.push({ at: clock + latency, from: id, to: other.id, msg: { type: 'game', ...p.game.get() } });
 			}
 			return p;
@@ -212,7 +212,7 @@ export function createSim(opts = {}) {
 					}
 					to.received++;
 					if (m.msg.type === 'game') to.game.receive(m.msg);
-					else to.kit.receive(m.msg);
+					else to.kit.receive(m.msg, m.from);
 				}
 			}
 		},

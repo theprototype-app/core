@@ -167,6 +167,17 @@ h.run(async () => {
 	h.check(fresh.coins === 0 && fresh.flag === 0 && !fresh.finished, `a fresh run: coins and checkpoint reset (${fresh.coins}/${fresh.flag})`);
 	await page.waitForTimeout(600);
 	await page.screenshot({ path: '/home/deck/.code/lanes-30/after-35/sky-run/play.png' }).catch(() => {});
+	// finish again, then Next stage: stage 2 starts and the player stands on ITS start pad
+	await page.evaluate(() => window.__skyrun.teleportTo('Sky S1 finish'));
+	await h.eventually(() => snap().then((v) => v.state), (v) => v === 'over', 'the portal ends the round again', 8000);
+	await page.locator('#hud-layer button', { hasText: 'Next stage' }).first().click();
+	await h.eventually(() => snap().then((v) => v.stage + '/' + v.phase), (v) => v === '2/playing', 'Next stage runs stage 2', 10000);
+	const eye2 = await page.evaluate(() => {
+		const s = window.__stores;
+		let cam; s.playerCam.subscribe((v) => (cam = v))();
+		return cam.getWorldPosition(new s.THREE.Vector3()).toArray().map((n) => +n.toFixed(2));
+	});
+	h.check(Math.abs(eye2[0] - 30) < 3 && eye2[1] > 12.5, `and the player stands on stage 2's start pad (${eye2})`);
 	await page.evaluate(() => window.__stores.isLocked.set(false));
 	await page.waitForTimeout(800);
 

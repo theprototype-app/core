@@ -181,6 +181,9 @@ function skyGraph() {
 	N('bnext', 'hudbutton', 'Next stage button', 40, 500, { element: 'next-btn' });
 	N('next', 'kit-levels-next', 'Next stage', 280, 500, {});
 	E('bnext', 'next', 'trigger');
+	// and starts the round from the results (the stage buttons' select + start pair)
+	N('nextgo', 'kit-round-start', 'Start (next stage)', 520, 500, {});
+	E('bnext', 'nextgo', 'trigger');
 	E('bnext', 'click', 'trigger');
 	N('bmenu', 'hudbutton', 'Menu button', 40, 580, { element: 'menu-btn' });
 	N('tomenu', 'kit-round-toMenu', 'Back to menu', 280, 580, {});

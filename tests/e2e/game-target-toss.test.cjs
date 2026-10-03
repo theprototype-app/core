@@ -77,6 +77,21 @@ h.run(async () => {
 	const cansStanding = await tt('cans');
 	h.check(cansStanding.every((c) => c.pos[1] > 0.9), `the pyramid stands on the table (${cansStanding.map((c) => c.pos[1].toFixed(2)).join(',')})`);
 
+	// 3b — the desktop throw with the REAL mouse: hold to charge, release to throw
+	const shelfBefore = await tt('balls');
+	const box = await page.evaluate(() => { let r; window.__stores.globalRenderer.subscribe((v) => (r = v))(); const b = r.domElement.getBoundingClientRect(); return { x: b.left, y: b.top, width: b.width, height: b.height }; });
+	await page.mouse.move(box.x + box.width / 2, box.y + box.height * 0.35);
+	await page.mouse.down();
+	await page.waitForTimeout(500);
+	const charge = await tt('info', [{ read: 'charge' }]);
+	await page.mouse.up();
+	await page.waitForTimeout(300);
+	const shelfAfter = await tt('balls');
+	const moved = shelfAfter.filter((b) => { const was = shelfBefore.find((x) => x.uuid === b.uuid); return was && Math.hypot(b.pos[0] - was.pos[0], b.pos[1] - was.pos[1], b.pos[2] - was.pos[2]) > 0.5; });
+	h.check(charge > 0.3 && charge < 1, `holding the mouse charges the throw (${(+charge).toFixed(2)})`);
+	h.check(moved.length === 1, `releasing throws ONE ball from the shelf along the view (${moved.length})`);
+	await page.waitForTimeout(1800);
+
 	// 4 — a real throw: a ball leaves the shelf and knocks cans (retry a few, a throw can miss)
 	let knocked = 0;
 	for (let i = 0; i < 4 && knocked === 0; i++) {

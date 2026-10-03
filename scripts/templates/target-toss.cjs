@@ -222,6 +222,8 @@ const TARGET_TOSS_DEF = {
 		{ type: 'cylinder', name: 'Post west', color: 0xfff4e0, r: 0.06, h: 3.0, pos: [-1.95, 1.5, 1.9], roughness: 0.6, physics: { mode: 'static' } },
 		{ type: 'cylinder', name: 'Post east', color: 0xfff4e0, r: 0.06, h: 3.0, pos: [1.95, 1.5, 1.9], roughness: 0.6, physics: { mode: 'static' } },
 		...STRIPES,
+		// a string of bulbs along the awning's front edge (emissive, no shadow, no body)
+		...Array.from({ length: 9 }, (_, k) => ({ type: 'sphere', name: 'Bulb ' + (k + 1), r: 0.045, color: k % 3 === 0 ? 0xffe08a : k % 3 === 1 ? 0xff9a6a : 0x9ad0ff, emissive: k % 3 === 0 ? 0xffc040 : k % 3 === 1 ? 0xff6a3a : 0x4a9cff, emissiveIntensity: 2.6, pos: [-1.9 + k * 0.475, 2.78, 2.33], shadow: false })),
 		// the TABLES for the tin cans
 		{ type: 'box', name: 'Table left', color: 0x4f7fbf, size: [1.2, 0.9, 0.6], bevel: 0.03, bevelSegments: 1, pos: [-1.2, 0.45, -2.8], ...WOOD, physics: { mode: 'static', friction: 0.8 } },
 		{ type: 'box', name: 'Table right', color: 0x4fa36f, size: [1.4, 0.9, 0.6], bevel: 0.03, bevelSegments: 1, pos: [1.3, 0.45, -3.8], ...WOOD, physics: { mode: 'static', friction: 0.8 } },
@@ -240,7 +242,6 @@ const TARGET_TOSS_DEF = {
 		// the back curtain and one warm light
 		{ type: 'box', name: 'Back curtain', color: 0x7a1f2e, size: [10, 3.6, 0.2], pos: [0, 1.8, -8], roughness: 0.95, physics: { mode: 'static' } },
 		{ type: 'light', name: 'Booth light', kind: 'point', color: 0xffc98a, intensity: 9, distance: 16, pos: [0, 3.0, -2.2] },
-		{ type: 'light', name: 'Target light', kind: 'point', color: 0xfff0d8, intensity: 7, distance: 10, pos: [0, 3.0, -5.6] },
 		// the TEMPLATES, parked on a vault slab far under the floor
 		{ type: 'box', name: 'Template vault', color: 0x333333, size: [4, 0.5, 2], pos: [0, VAULT_TOP - 0.25, 0], shadow: false, physics: { mode: 'static', friction: 1 } },
 		...TEMPLATES,

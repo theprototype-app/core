@@ -446,7 +446,9 @@ export default {
 		};
 		/** @param {MouseEvent} e */
 		const onDown = (e) => {
-			if (e.button !== 0 || !canCharge() || aimingAtBall()) return;
+			// a press on the HUD or the menu is not a throw: only a press on the viewport canvas
+			const target = /** @type {any} */ (e.target);
+			if (e.button !== 0 || target?.tagName !== 'CANVAS' || !canCharge() || aimingAtBall()) return;
 			charging = true;
 			chargeStart = now();
 		};

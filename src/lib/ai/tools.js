@@ -504,7 +504,10 @@ export function repairToolCall(rawName, rawArgs) {
 	const snake = key.replace(/([a-z0-9])([A-Z])/g, '$1_$2').toLowerCase();
 	for (const candidate of [key, snake]) {
 		if (TOOL_NAMES.includes(candidate)) return { name: candidate, args, repaired: true };
-		if (hasHost && BEHAVIOUR_ALIASES[candidate]) return { name: BEHAVIOUR_ALIASES[candidate], args, repaired: true };
+		// a behaviour spelling carrying FLOW-NODE arguments (`nodes` / graph `text`) still means flow
+		// nodes — the meaning it had before behaviours, and what small models send (34-integrate)
+		const flowShaped = Array.isArray(args.nodes) || (typeof args.text === 'string' && typeof args.source !== 'string');
+		if (hasHost && BEHAVIOUR_ALIASES[candidate] && !flowShaped) return { name: BEHAVIOUR_ALIASES[candidate], args, repaired: true };
 		if (NAME_ALIASES[candidate]) return withActionFill(NAME_ALIASES[candidate], candidate, args);
 	}
 

@@ -191,12 +191,24 @@ h.run(async () => {
 
 	// ---- 3. agreement: after a flush the reader's records equal the writer's -----------------
 	await ev(W, () => window.__stores.kitEntities.kitEntitiesApi().mover.halt('robot'));
-	await W.page.waitForTimeout(2500); // everyone at rest, the last flush delivered
-	const [ea, eb] = await Promise.all([dbg(W), dbg(R)]);
 	const key = (d) =>
 		JSON.stringify(
 			d.entities.map((e) => [e.id, e.hp, e.dead, e.pos.map((v) => v.toFixed(3))]).sort()
 		);
+	// halted movers still brake (accel-limited) and a crowd still separates, so "at rest" is
+	// when the WRITER stops changing (two looks 600 ms apart agree), then one flush for the reader
+	{
+		let prev = '';
+		const until = Date.now() + 15000;
+		for (;;) {
+			await W.page.waitForTimeout(600);
+			const k = key(await dbg(W));
+			if (k === prev || Date.now() > until) break;
+			prev = k;
+		}
+		await W.page.waitForTimeout(1500); // the last flush delivered
+	}
+	const [ea, eb] = await Promise.all([dbg(W), dbg(R)]);
 	h.check(key(ea) === key(eb), 'at rest, both peers hold the SAME entities (id, hp, dead, pose)');
 
 	// ---- 4. damage from the reader reaches the authority; both see the hp -----------------------

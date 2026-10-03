@@ -29,7 +29,8 @@ function catalogItems() {
 		let depth = 1, i = groupRe.lastIndex;
 		while (i < src.length && depth > 0) { if (src[i] === '[') depth++; else if (src[i] === ']') depth--; i++; }
 		const body = src.slice(groupRe.lastIndex, i - 1);
-		const objRe = /\{[^{}]*(?:\{[^{}]*\}[^{}]*)*\}/g;
+		// three levels: an item, its defaults, and braces inside a default STRING (Script's code)
+		const objRe = /\{[^{}]*(?:\{[^{}]*(?:\{[^{}]*\}[^{}]*)*\}[^{}]*)*\}/g;
 		let m;
 		const items = [];
 		while ((m = objRe.exec(body))) {

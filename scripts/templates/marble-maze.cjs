@@ -248,7 +248,10 @@ function buildMaze(k, at) {
 		if (H > x0 + 1e-6) floor.push([x0, H, -FLOOR_T, 0, j === 0 ? -H : bx(j), j === n - 1 ? H : bx(j + 1)]);
 	}
 	flush(n);
-	const pieces = [...floor, ...walls, ...rim];
+	// the COLLIDER floor is ONE box: separate strips leave internal edges a rolling marble catches on
+	// (measured: stuck at a strip seam on maze 2). The holes are judged by the module instead —
+	// the marble's centre over a `Hole N.i` drops it through (the visual floor keeps the gaps).
+	const pieces = [[-H, H, -FLOOR_T, 0, -H, H], ...walls, ...rim];
 	if (pieces.length > COLLIDER_BOX_CAP) throw new Error('marble-maze: maze ' + k + ' needs ' + pieces.length + ' collider boxes (cap ' + COLLIDER_BOX_CAP + ') — change its seed or braid');
 	const colliderVerts = [];
 	const colliderPieces = [];
@@ -263,6 +266,11 @@ function buildMaze(k, at) {
 		...rim.map((b, i) => boxOf(tag('Rim', i + 1), b, RIM_LOOK)),
 		// the pit under the floor that a hole shows (no collider: a child has no body)
 		boxOf('Pit ' + k, [-H + T, H - T, -0.12, -0.105, -H + T, H - T], { color: 0x1a120c, roughness: 1, shadow: false }),
+		// the holes the module judges: a dark plate down in each gap
+		...[...holes].map((hk, i) => {
+			const [hi2, hj] = hk.split(',').map(Number);
+			return { type: 'box', name: tag('Hole', i + 1), size: [+(s - T).toFixed(4), 0.004, +(s - T).toFixed(4)], pos: [+cx(hi2).toFixed(4), -0.1, +cx(hj).toFixed(4)], color: 0x050505, roughness: 1, shadow: false, pick: 'through' };
+		}),
 		// the grips: a handle either side, for both hands in VR
 		{ type: 'cylinder', name: 'Handle ' + k + ' left', r: 0.022, h: 0.36, pos: [-H - 0.07, 0.02, 0], rot: [Math.PI / 2, 0, 0], color: 0x2b2f3a, metalness: 0.6, roughness: 0.35, physical: true },
 		{ type: 'cylinder', name: 'Handle ' + k + ' right', r: 0.022, h: 0.36, pos: [H + 0.07, 0.02, 0], rot: [Math.PI / 2, 0, 0], color: 0x2b2f3a, metalness: 0.6, roughness: 0.35, physical: true },

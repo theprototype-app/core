@@ -254,8 +254,9 @@ export default {
 			if (!active()) return;
 			const k = Number(data?.maze) || 1;
 			if (k !== shownMaze()) {
-				// parked where the def put it, and not drawn
-				const p = base?.pos ?? [0, -4, 0];
+				// parked under the floor (the def's parking spots: maze 1 is AUTHORED at the board, so its
+				// base would leave an invisible collider under every other maze) and not drawn
+				const p = data?.gate ? base?.pos ?? [0, -4, 0] : [(k - 3) * 1.2, -4, 2];
 				object.position.set(p[0], p[1], p[2]);
 				object.rotation.set(0, 0, 0);
 				object.visible = false;
@@ -284,8 +285,12 @@ export default {
 		};
 		/** local -> world on the board @param {any} p */
 		const toWorld = (p) => new THREE.Vector3(p.x, p.y, p.z).applyMatrix4(boardMatrix());
-		/** uuid -> release the hold next frame */
-		/** @type {Set<string>} */ const releaseNext = new Set();
+		/** held marbles to let go: a hold must outlive at least one PHYSICS STEP (the step reads the
+		 * kinematic target from the object), so it is released after a few frames — releasing on the
+		 * next frame task ran before the step and the body snapped back (measured: no reset landed)
+		 * @type {Map<string, number>} */
+		const holds = new Map();
+		const releaseNext = { add: (/** @type {string} */ uuid) => holds.set(uuid, 4) };
 		const resetMarble = (k = shownMaze()) => {
 			const m = marble();
 			const start = byName('Maze ' + k)?.getObjectByName('Start ' + k)?.position ?? null;
@@ -355,17 +360,75 @@ export default {
 			for (let i = 0; i < 3; i++) if (n & (1 << i)) c++;
 			return c;
 		};
+		/** maze k's holes: local centre + the half size the marble's centre must be inside
+		 * @type {Map<number, any>} */
+		const holeCache = new Map();
+		/** @param {number} k */
+		const holesOf = (k) => {
+			const mz = byName('Maze ' + k);
+			if (!mz) return [];
+			if (!holeCache.has(k) || holeCache.get(k)?.mz !== mz) {
+				/** @type {any} */ const list = [];
+				list.mz = mz;
+				for (const c of mz.children) {
+					if (!/^Hole \d+\.\d+$/.test(String(c.name))) continue;
+					c.geometry?.computeBoundingBox?.();
+					const bb = c.geometry?.boundingBox;
+					const size = bb ? (bb.max.x - bb.min.x) * c.scale.x : 0.1;
+					list.push({ x: c.position.x, z: c.position.z, half: Math.max(0.01, size / 2 - 0.012) });
+				}
+				holeCache.set(k, list);
+			}
+			return holeCache.get(k) ?? [];
+		};
+		/** a marble dropping through a hole: held, sunk along the board's down for 300 ms
+		 * @type {null | {at: number, x: number, z: number, uuid: string}} */
+		let falling = null;
 		const judge = () => {
-			if (!playingNow()) return;
+			if (!playingNow()) {
+				if (falling) {
+					releaseNext.add(falling.uuid);
+					falling = null;
+				}
+				return;
+			}
 			const now = performance.now();
+			if (falling) {
+				const t = (now - falling.at) / 300;
+				const m = marble();
+				if (m && t < 1) {
+					m.position.copy(toWorld({ x: falling.x, y: 0.035 - t * 0.12, z: falling.z }));
+					m.updateMatrixWorld();
+					return;
+				}
+				falling = null;
+				resetMarble();
+				settleUntil = now + 500;
+				return;
+			}
 			const p = marbleLocal();
 			if (!p) return;
 			if (now < settleUntil) {
-				// the first moments of a run: hold the marble on the start pad while the sim wakes
-				if (p.y < -0.03 || Math.hypot(p.x - (localOf('Start ' + shownMaze())?.x ?? 0), p.z - (localOf('Start ' + shownMaze())?.z ?? 0)) > 0.2) resetMarble();
+				// the first moments of a run: HOLD the marble on the start pad (kinematic) while the new
+				// maze swings in — a maze arriving from its parking spot moves through the marble's
+				// place in one step, and a dynamic marble there is launched over the walls
+				resetMarble();
 				return;
 			}
-			// fell through a hole (or off the board)
+			// over a hole: the marble DROPS through it (a short fall), then back to the start
+			const k0 = shownMaze();
+			for (const hole of holesOf(k0)) {
+				if (Math.abs(p.x - hole.x) < hole.half && Math.abs(p.z - hole.z) < hole.half && p.y < 0.06) {
+					const m = marble();
+					if (m && phys?.holdBody?.(m.uuid)) {
+						falling = { at: now, x: hole.x, z: hole.z, uuid: m.uuid };
+						setV(V.falls, v(V.falls) + 1);
+						setV(V.coins, 0);
+						return;
+					}
+				}
+			}
+			// off the board (a hop over the rim)
 			if (p.y < -0.08 || Math.abs(p.x) > 0.7 || Math.abs(p.z) > 0.7) {
 				setV(V.falls, v(V.falls) + 1);
 				setV(V.coins, 0);
@@ -644,9 +707,14 @@ export default {
 				}
 			}
 			if (!on) return;
-			for (const uuid of releaseNext) {
+			for (const [uuid, n] of holds) {
+				if (falling?.uuid === uuid) continue;
+				if (n > 1) {
+					holds.set(uuid, n - 1);
+					continue;
+				}
 				phys?.releaseBody?.(uuid, { linvel: new THREE.Vector3(), angvel: new THREE.Vector3() });
-				releaseNext.delete(uuid);
+				holds.delete(uuid);
 			}
 			readInput(dt);
 			updateTilt(dt);
@@ -692,6 +760,19 @@ export default {
 				if (held) releaseNext.add(m.uuid);
 				return true;
 			},
+			/** put the marble over hole i of the maze on the board (the judge drops it) */
+			toHole: (/** @type {number} */ i) => {
+				const m = marble();
+				const hole = holesOf(shownMaze())[i];
+				if (!m || !hole) return false;
+				settleUntil = 0;
+				const w = toWorld({ x: hole.x, y: 0.04, z: hole.z });
+				const held = phys?.holdBody?.(m.uuid);
+				m.position.copy(w);
+				if (held) releaseNext.add(m.uuid);
+				return true;
+			},
+			holes: () => holesOf(shownMaze()).map((/** @type {any} */ h) => ({ x: h.x, z: h.z, half: h.half })),
 			/** a coin taken, for a scripted three-star win */
 			takeCoins: () => setV(V.coins, 7),
 			/** a suite's shortcut to a progress state (written through api.storage like a win) */

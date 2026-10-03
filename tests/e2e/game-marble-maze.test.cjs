@@ -153,17 +153,11 @@ const CANDIDATES = [
 	await xr.uninstall(page);
 	await page.evaluate(() => window.__stores.isVRMode.set(false));
 
-	// 6 — a hole sends the marble back: drop it under the floor
-	await page.evaluate(() => {
-		let g;
-		window.__stores.objectsGroup.subscribe((v) => (g = v))();
-		const m = g.getObjectByName('Marble');
-		window.__stores.physics.holdBody(m.uuid);
-		m.position.y -= 0.3;
-		setTimeout(() => window.__stores.physics.releaseBody(m.uuid), 50);
-	});
-	await page.waitForTimeout(2000);
-	await h.eventually(snap, (v) => v.vars.mmFalls >= 1 && v.local && v.local[1] > -0.06, 'a fall counts and the marble is back on the board', 6000);
+	// 6 — a hole: the marble over it drops through and comes back on the start, a fall counted
+	h.check((await page.evaluate(() => window.__marble.holes().length)) === 2, 'maze 2 has two holes the module judges');
+	await page.evaluate(() => window.__marble.toHole(0));
+	await h.eventually(snap, (v) => v.vars.mmFalls >= 1, 'the marble over a hole falls (counted)', 4000);
+	await h.eventually(snap, (v) => v.local && v.local[1] > -0.02 && v.local[0] < -0.25 && v.local[2] > 0.25, 'and is back on the start pad', 4000);
 
 	h.check(h.pageErrors(A).length === 0, `no page errors (${h.pageErrors(A).slice(0, 2).join(' | ')})`);
 	await h.finish(browser);

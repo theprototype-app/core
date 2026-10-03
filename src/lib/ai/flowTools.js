@@ -22,6 +22,8 @@ import {
 	remoteSimulating
 } from '$lib/physics';
 import { createJoint } from '$lib/joints';
+import { parseGraphText } from '$lib/graphText';
+import { scriptInputs, scriptOutputs } from '$lib/scriptIO';
 import { activeAiConfig } from './providers.js';
 
 // AI flow + physics executors (assistant v3). The behavior counterpart to
@@ -144,6 +146,21 @@ export function aiNodeTypes(physics) {
 	);
 }
 
+/**
+ * 34 D5: the same vocabulary GROUPED the way the palette groups it — the assistant's node
+ * reference. It replaces the 100-name enum the create_flow_nodes schema used to carry: the
+ * names are said ONCE, in the system prompt, where the group is context a model can use
+ * ("Triggers" are sources, "Logic" holds state), and the executor still validates every
+ * type (normalizeNodeType + the allowed list), so dropping the enum loses no safety.
+ * @param {boolean} physics @returns {{group: string, types: string[]}[]}
+ */
+export function aiNodeVocabulary(physics) {
+	const allowed = new Set(aiNodeTypes(physics));
+	return nodeCatalog
+		.map((g) => ({ group: g.group, types: g.items.map((i) => i.type).filter((t) => allowed.has(t)) }))
+		.filter((g) => g.types.length);
+}
+
 /** @param {any} raw @returns {string|null} a real catalog type or null */
 function normalizeNodeType(raw) {
 	const flat = String(raw ?? '')
@@ -228,6 +245,16 @@ function buildNodeData(type, spec, raw, errors) {
 			if (typeof value === 'string' && value) data.code = value;
 			continue;
 		}
+		// 34 D3: a script's declared sockets (normalized: bad names/types dropped)
+		if (key === 'inputs' && type === 'script') {
+			const inputs = scriptInputs({ inputs: value });
+			if (inputs) data.inputs = inputs;
+			continue;
+		}
+		if (key === 'outputs' && type === 'script') {
+			data.outputs = scriptOutputs({ outputs: value });
+			continue;
+		}
 		if (key in (spec?.defaults ?? {})) data[key] = value;
 		// unknown keys are dropped silently — defaults render fine without them
 	}
@@ -245,9 +272,14 @@ export function createFlowNodesTool(args) {
 	const graphId = resolveGraph(args?.graph);
 	if (graphId === null)
 		return { error: 'unknown graph "' + args?.graph + '" — pass "scene" or an existing object uuid' };
-	const specs = Array.isArray(args?.nodes) ? args.nodes : [];
-	if (!specs.length)
-		return { error: 'no nodes provided — pass nodes: [{ type, data? }] (one graph per call)' };
+	// 34 D5: `text` is the compact graph text (the scene summary's own format) — node lines
+	// describe NEW nodes, their ids are local refs; edge lines may also name existing ids
+	const fromText = textToSpecs(args?.text);
+	if ('error' in fromText) return { error: fromText.error };
+	const specs = [...(Array.isArray(args?.nodes) ? args.nodes : []), ...fromText.nodes];
+	const textEdges = fromText.edges;
+	if (!specs.length && !textEdges.length)
+		return { error: 'no nodes provided — pass text: \'id = type {params}\' lines, or nodes: [{ type, data? }] (one graph per call)' };
 
 	const physics = physicsToolsEnabled();
 	const allowed = aiNodeTypes(physics);
@@ -295,7 +327,7 @@ export function createFlowNodesTool(args) {
 	}
 
 	/** @type {any[]} */ const createdEdges = [];
-	const edgeSpecs = Array.isArray(args?.edges) ? args.edges : [];
+	const edgeSpecs = [...(Array.isArray(args?.edges) ? args.edges : []), ...textEdges];
 	if (edgeSpecs.length) {
 		const inGraph = new Set((graphOf(graphId)?.nodes ?? []).map((/** @type {any} */ n) => n.id));
 		for (const e of edgeSpecs) {
@@ -334,6 +366,40 @@ export function createFlowNodesTool(args) {
 		edges: createdEdges.length,
 		...(errors.length ? { errors } : {})
 	};
+}
+
+/**
+ * 34 D5: compact graph text -> create_flow_nodes specs. A node line's id becomes its `ref`,
+ * its label + params its data (buildNodeData then lays the catalog defaults under them, so a
+ * line need only say what differs); an edge line becomes {from, to, fromHandle, toHandle}.
+ * Positions and classes in the text are ignored — the tool lays new nodes out itself.
+ * @param {any} text
+ * @returns {{nodes: any[], edges: any[]} | {error: string}}
+ */
+function textToSpecs(text) {
+	if (text === undefined || text === null || text === '') return { nodes: [], edges: [] };
+	if (typeof text !== 'string') return { error: 'text must be a string of graph lines' };
+	const { graphs, order, errors } = parseGraphText(text);
+	if (errors.length)
+		return { error: 'could not read the graph text: ' + errors.slice(0, 5).map((e) => e.message).join('; ') };
+	const nodes = [];
+	const edges = [];
+	for (const key of order) {
+		for (const n of graphs[key].nodes) {
+			if (!n || typeof n !== 'object') continue;
+			nodes.push({ ref: n.id, type: n.type, data: n.data });
+		}
+		for (const e of graphs[key].edges) {
+			if (!e || typeof e !== 'object') continue;
+			edges.push({
+				from: e.source,
+				to: e.target,
+				...(e.sourceHandle ? { fromHandle: e.sourceHandle } : {}),
+				...(e.targetHandle ? { toHandle: e.targetHandle } : {})
+			});
+		}
+	}
+	return { nodes, edges };
 }
 
 /**

@@ -229,11 +229,15 @@ export function createKitEntities(host, opts = {}) {
 				const t = now();
 				const count = Math.max(1, Math.min(KIT_MAX_PER_SPAWN, Math.round(Number(spec.count) || 1)));
 				const spread = Math.max(0, Math.min(20, Number(spec.spread) || 0));
+				const tplRef = spec.tpl ?? spec.template;
+				// unplaced: where the template stands (a node with nothing wired into `at`)
 				const at = Array.isArray(spec.at)
 					? spec.at
 					: Array.isArray(spec.pos)
 						? spec.pos
-						: [0, 0, 0];
+						: ((typeof tplRef === 'string' && tplRef ? host.resolveTarget?.(tplRef) : null) ?? [
+								0, 0, 0
+							]);
 				/** @type {string[]} */
 				const ids = [];
 				for (let i = 0; i < count; i++) {
@@ -246,7 +250,7 @@ export function createKitEntities(host, opts = {}) {
 						Number(at[1]) || 0,
 						(Number(at[2]) || 0) + Math.sin(ang) * rad
 					];
-					const e = spawnEntity(store, { ...spec, tpl: spec.tpl ?? spec.template, pos }, t);
+					const e = spawnEntity(store, { ...spec, tpl: tplRef, pos }, t);
 					if (!e) {
 						emit('limit', { refused: count - i, ceiling: store.ceiling, authority: true });
 						break;

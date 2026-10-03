@@ -131,6 +131,8 @@ import { startMusicToolbox } from './lib/musicToolbox'
   import HudEditor from './components/editors/HudEditor.svelte'
   import { importFile, load } from '$lib/fileHandler.svelte'
   import { showToast, showInfoToast } from './stores/appStore'
+  // 34 PF: the Profiler dock tab, loaded the first time it opens (it is closed by default)
+  import { profilerClose } from './stores/appStore'
   import { peers, userdata } from './stores/appStore'
   import { get } from 'svelte/store'
   import { initModules, disabledModules } from '$lib/moduleSDK'
@@ -344,6 +346,9 @@ import { startMusicToolbox } from './lib/musicToolbox'
 <SvelteFlowProvider><ShaderEditor /></SvelteFlowProvider>
 <HudEditor />
 <Explorer />
+{#if !$profilerClose}
+{#await import('./components/editors/Profiler.svelte') then m}<m.default />{/await}
+{/if}
 <TextEditorWindow />
 <!-- R22 round 12: ONE INSTANCE PER OPEN PREVIEW. With the multi-window pref off the list
      never holds more than one, so this renders exactly what it always did. -->

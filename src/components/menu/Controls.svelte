@@ -1,8 +1,8 @@
 <script lang="ts">
-	import { Clapperboard, Code, Cog, Eye, FolderOpen, Grid2x2, Hand, List, Maximize2, MessageSquare, Monitor, Move, Palette, Pin, Play, RectangleGoggles, RotateCcw, SquarePen, Sun, Workflow } from '@lucide/svelte';
+	import { Activity, Clapperboard, Code, Cog, Eye, FolderOpen, Grid2x2, Hand, List, Maximize2, MessageSquare, Monitor, Move, Palette, Pin, Play, RectangleGoggles, RotateCcw, SquarePen, Sun, Workflow } from '@lucide/svelte';
 	import { Listgroup } from 'flowbite-svelte';
 	import { objectsGroup, TControls, transformMode, editorMode, isLocked, lockedObjects, globalScene, vrPassthrough, vrOverride, selectedObject, selectedObjects } from '../../stores/sceneStore';
-	import { chatHidden, flowGraphClose, flowCodeClose, animationClose, uvEditorClose, shaderEditorClose, hudEditorClose, explorerClose, objectListClose, objectContextMenu, renamingObject, advancedMode, showEnvInList, showLocalObjects, floatingToolbar, toolbarAlwaysOnTop, showSimControls, expandedObjects } from '../../stores/appStore.js';
+	import { chatHidden, flowGraphClose, flowCodeClose, animationClose, uvEditorClose, shaderEditorClose, hudEditorClose, explorerClose, profilerClose, objectListClose, objectContextMenu, renamingObject, advancedMode, showEnvInList, showLocalObjects, floatingToolbar, toolbarAlwaysOnTop, showSimControls, expandedObjects } from '../../stores/appStore.js';
 	// 24-B2: keyboard navigation in the object list (the Explorer's gridKeydown shape)
 	import { visibleObjectRows, withExpanded, typeAheadIndex } from '$lib/objectListNav';
 	import { sceneMetrics, statsOpen, worstTier, budgetRows } from '$lib/sceneBudget';
@@ -82,7 +82,8 @@
 			uv: $uvEditorClose,
 			shader: $shaderEditorClose,
 			hud: $hudEditorClose,
-			explorer: $explorerClose
+			explorer: $explorerClose,
+			profiler: $profilerClose
 		};
 		const out: Record<string, boolean> = {};
 		for (const key of Object.keys(closed))
@@ -1064,7 +1065,9 @@
 		animation: Clapperboard,
 		uv: Grid2x2,
 		shader: Palette,
-		hud: Monitor
+		hud: Monitor,
+		// 34 PF: a pulse trace reads as "performance" beside the five editor glyphs
+		profiler: Activity
 	};
 
 	// The six roster buttons. Every title and every handler is VERBATIM what the

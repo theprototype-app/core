@@ -5,7 +5,8 @@ import {
 	uvEditorClose,
 	shaderEditorClose,
 	hudEditorClose,
-	explorerClose
+	explorerClose,
+	profilerClose
 } from '../stores/appStore';
 import { get } from 'svelte/store';
 import { activateDock, armDockMode, dockOccupants, dockTabs, moveDockTab, DOCK_TITLES } from './bottomDock';
@@ -53,7 +54,8 @@ export const DOCK_VIEWS = [
 	{ key: 'uv', tooltip: 'Edit the selected mesh’s UV map and textures' },
 	{ key: 'shader', tooltip: 'Drive this material from a node graph' },
 	{ key: 'hud', tooltip: 'Lay out the on-screen HUD its nodes drive' },
-	{ key: 'explorer', tooltip: 'Browse the asset library' }
+	{ key: 'explorer', tooltip: 'Browse the asset library' },
+	{ key: 'profiler', tooltip: 'Record frame time and draw calls, and find what draws most' }
 ];
 
 /**
@@ -171,7 +173,8 @@ export const DOCK_CLOSERS = {
 	uv: uvEditorClose,
 	shader: shaderEditorClose,
 	hud: hudEditorClose,
-	explorer: explorerClose
+	explorer: explorerClose,
+	profiler: profilerClose
 };
 
 /** @param {string} key @returns {import('svelte/store').Writable<boolean>|null} */

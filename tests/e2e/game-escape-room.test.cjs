@@ -129,6 +129,7 @@ h.run(async () => {
 	await h.eventually(() => snap().then((v) => v.state + ':' + v.flags), (v) => v === 'playing:0', 'Play again resets every lock', 8000);
 	await page.waitForTimeout(1200);
 	h.check(!(await visible('Exit portal')) && (await visible('Sun gem')), 'the exit is shut again and the sun gem is back on the shelf');
+	await page.waitForTimeout(2600);
 	await page.screenshot({ path: process.env.ESCAPE_SHOTS ? path.join(process.env.ESCAPE_SHOTS, 'study.png') : '/tmp/claude-1000/escape-study.png' });
 	const helpers = await page.evaluate(() => {
 		let sc; window.__stores.globalScene.subscribe((v) => (sc = v))();

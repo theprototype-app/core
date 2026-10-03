@@ -205,7 +205,7 @@ const ESCAPE_DEF = {
 		{ type: 'box', name: 'Workshop floor', size: [8, 0.2, 8], pos: [0, -0.1, 0], color: 0x585350, roughness: 0.9, physics: S },
 		{ type: 'box', name: 'Vault floor', size: [8, 0.2, 8], pos: [8, -0.1, 0], color: 0x4a4458, roughness: 0.35, physical: true, clearcoat: 0.5, physics: S },
 		{ type: 'box', name: 'Exit floor', size: [2.4, 0.2, 2], pos: [13.3, -0.1, 0], color: 0x2a4a38, emissive: 0x1a6a40, emissiveIntensity: 0.5, physics: S },
-		{ type: 'box', name: 'Ceiling', size: [24.6, 0.2, 8.6], pos: [0, H + 0.1, 0], color: 0x3a2e24, roughness: 0.95, shadow: false, physics: S },
+		{ type: 'box', name: 'Ceiling', size: [24.6, 0.2, 8.6], pos: [0, H + 0.1, 0], color: 0x6e5c48, roughness: 0.95, shadow: false, physics: S },
 		{ type: 'box', name: 'Wall north', size: [24.6, H, T], pos: [0, H / 2, -4.15], ...STONE, physics: S },
 		{ type: 'box', name: 'Wall south', size: [24.6, H, T], pos: [0, H / 2, 4.15], ...STONE, physics: S },
 		{ type: 'box', name: 'Wall west', size: [T, H, 8.6], pos: [-12.15, H / 2, 0], ...STONE, physics: S },
@@ -274,9 +274,9 @@ const ESCAPE_DEF = {
 		{ type: 'box', name: 'Book row', size: [0.7, 0.28, 0.24], pos: [-6.7, 1.67, -3.86], color: 0x7a2a22, roughness: 0.8, physics: S },
 		{ type: 'dodecahedron', name: 'Sun gem', r: 0.12, pos: [-6.0, 1.66, -3.8], color: 0xffcf4a, emissive: 0xffa520, emissiveIntensity: 2.2, flatShading: true, physics: SENSOR },
 		{ type: 'box', name: 'Rug', size: [3, 0.02, 2], pos: [-8, 0.01, 0.5], color: 0x7a2e2a, roughness: 1, shadow: false, physics: SENSOR },
-		...crystal(1, [-11.4, 0, 3.4]),
+		...crystal(1, [-5.0, 0, -3.3]),
 		// ONE lamp (the lights budget is two): the module carries it into the room you stand in
-		{ type: 'light', name: 'Room lamp', kind: 'point', color: 0xffc890, intensity: 14, distance: 12, decay: 1.2, pos: [-8, 2.8, 0] },
+		{ type: 'light', name: 'Room lamp', kind: 'point', color: 0xffc890, intensity: 14, distance: 12, decay: 1.2, pos: [-8, 2.5, 0] },
 		// ---- ROOM 2: the workshop
 		{ type: 'box', name: 'Dial panel', size: [1.6, 0.8, 0.06], pos: [-1.2, 1.35, -3.97], color: 0x7a5636, metalness: 0.3, roughness: 0.6, physics: S },
 		...[-1.7, -1.2, -0.7].map((x, i) => ({ type: 'cone', name: 'Dial mark ' + (i + 1), r: 0.035, h: 0.06, pos: [x, 1.6, -3.92], rot: [PI, 0, 0], color: 0xfff4e0, emissive: 0xffe0a0, emissiveIntensity: 1, physics: SENSOR })),
@@ -313,7 +313,7 @@ const ESCAPE_DEF = {
 		...crystal(3, [5, 0, 3.4]),
 		// ---- pack dressing (references, refilled from the pack CDN)
 		piece(P, 'Bookcase', 'Study bookcase', [-11.72, 0, 1.6], HALF),
-		piece(I, 'Armchair', 'Study armchair', [-10.3, 0, 0.2], PI * 0.6),
+		piece(I, 'Armchair', 'Study armchair', [-10.8, 0, 3.0], PI * 0.75),
 		piece(P, 'WallTorch', 'Study torch', [-8, 1.6, 3.98], PI, { physics: SENSOR }),
 		piece(AR, 'AlchemyTable', 'Alchemist table', [2.2, 0, -3.43]),
 		piece(AR, 'PotionShelf', 'Potion shelf', [-3.7, 0, -2.6], HALF),

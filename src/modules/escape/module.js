@@ -461,10 +461,13 @@ export default {
 			else if (!(f & F.vault)) limit = 11.85;
 			if (x > limit && now - fenceAt > 1) {
 				fenceAt = now;
+				// a BUMP: back to just before the shut door, facing it, then the room's spawn again
 				const r = roomOf(Math.min(x, limit - 0.5));
-				api.setSpawn?.(ROOMS[r].spawn, ROOMS[r].yaw);
+				api.setSpawn?.([limit - 0.75, 0, Math.max(-0.6, Math.min(0.6, p[2]))], -Math.PI / 2);
 				api.respawnPlayer?.();
+				api.setSpawn?.(ROOMS[r].spawn, ROOMS[r].yaw);
 				say('The way is shut.', { ms: 1400, color: '#ffb86b' });
+				api.hapticPattern?.('bump');
 			}
 			if (f & F.vault && x > 12.7) win();
 			const room = roomOf(x);

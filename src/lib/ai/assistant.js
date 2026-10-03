@@ -92,7 +92,13 @@ function toolStatusLabel(name, args) {
 	if (name === 'group_objects') return 'Grouping objects';
 	if (name === 'clear_scene') return 'Clearing the scene';
 	if (name === 'list_scene') return 'Reading the scene';
-	if (name === 'create_flow_nodes') return 'Adding ' + (args?.nodes?.length ?? 0) + ' behavior node(s)';
+	if (name === 'create_flow_nodes') {
+		// 34 D5: a call may carry its nodes as graph text instead of an array
+		const fromText = typeof args?.text === 'string' ? (args.text.match(/^\s*[^\s/]+\s*=/gm) ?? []).length : 0;
+		return 'Adding ' + ((args?.nodes?.length ?? 0) + fromText) + ' behavior node(s)';
+	}
+	if (name === 'create_behaviour') return 'Writing behaviour ' + (args?.name ?? '');
+	if (name === 'edit_behaviour') return 'Editing behaviour ' + (args?.name ?? '');
 	if (name === 'update_flow_nodes') {
 		const removing = args?.remove?.length ?? 0;
 		const updating = args?.updates?.length ?? 0;

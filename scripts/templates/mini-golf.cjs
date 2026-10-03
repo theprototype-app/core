@@ -30,7 +30,7 @@ const CUPS = [
 	[LANE_X[5], 0.1, -5.2]
 ];
 /** rail height per hole (the ramp and the hump need taller sides) */
-const RAIL_H = [0.3, 0.9, 0.3, 0.3, 0.3, 0.5];
+const RAIL_H = [0.3, 0.3, 0.3, 0.3, 0.3, 0.5];
 
 /** one lane: green, rails, tee, cup, flag, putter @param {number} i 0..5 */
 function lane(i) {
@@ -49,9 +49,8 @@ function lane(i) {
 		{ type: 'cylinder', name: 'Cup ' + n, r: 0.12, h: 0.012, pos: [cup[0], cup[1] + 0.006, cup[2]], color: 0x101410, roughness: 1, shadow: false, physics: deco },
 		{ type: 'cylinder', name: 'Flagpole ' + n, r: 0.012, h: 1.1, pos: [cup[0], cup[1] + 0.55, cup[2]], color: 0xf2f2f2, metalness: 0.5, roughness: 0.3, shadow: false, physics: deco },
 		{ type: 'box', name: 'Flag ' + n, size: [0.34, 0.22, 0.01], pos: [cup[0] + 0.18, cup[1] + 0.98, cup[2]], color: flagColor, emissive: flagColor, emissiveIntensity: 0.35, side: 'double', shadow: false, physics: deco },
-		{ type: 'box', name: 'Number ' + n, size: [0.5, 0.5, 0.06], pos: [x - 1.05, 0.6, 5.65], color: flagColor, emissive: flagColor, emissiveIntensity: 0.5, shadow: false, physics: deco },
 		// the putter (VR): a shaft lying beside the tee; grip it and swing the low end through the ball
-		{ type: 'box', name: 'Putter ' + n, size: [0.045, 0.95, 0.045], pos: [x + 1.2, 0.13, 3.6], rot: [Math.PI / 2, 0, 0], color: 0x9aa4b2, physical: true, metalness: 0.8, roughness: 0.3, physics: { mode: 'dynamic', mass: 0.4, friction: 0.8, restitution: 0.1 } }
+		{ type: 'box', name: 'Putter ' + n, size: [0.045, 0.95, 0.045], pos: [x + 1.2, 0.13, 3.6], rot: [Math.PI / 2, 0, 0], color: 0x9aa4b2, physical: true, metalness: 0.8, roughness: 0.3, shadow: false, physics: { mode: 'dynamic', mass: 0.4, friction: 0.8, restitution: 0.1 } }
 	];
 }
 
@@ -60,13 +59,20 @@ const OBSTACLES = [
 	// 2 — a ramp up to the high green
 	{ type: 'box', name: 'High green', size: [3, 0.6, 3], pos: [LANE_X[1], 0.3, -5], ...GREEN, physics: greenPhysics },
 	{ type: 'box', name: 'Ramp', size: [3, 0.1, 3.06], pos: [LANE_X[1], 0.3, -2], rot: [0.165, 0, 0], color: 0x358a40, roughness: 0.9, physics: greenPhysics },
+	// rails that climb with the ramp and ring the high green (the lane rails stop at 0.3 m)
+	{ type: 'box', name: 'Ramp rail west', size: [0.2, 0.4, 3.06], pos: [LANE_X[1] - 1.6, 0.55, -2], rot: [0.165, 0, 0], ...RAIL, physics: railPhysics },
+	{ type: 'box', name: 'Ramp rail east', size: [0.2, 0.4, 3.06], pos: [LANE_X[1] + 1.6, 0.55, -2], rot: [0.165, 0, 0], ...RAIL, physics: railPhysics },
+	{ type: 'box', name: 'High rail west', size: [0.2, 0.4, 3.2], pos: [LANE_X[1] - 1.6, 0.8, -5], ...RAIL, physics: railPhysics },
+	{ type: 'box', name: 'High rail east', size: [0.2, 0.4, 3.2], pos: [LANE_X[1] + 1.6, 0.8, -5], ...RAIL, physics: railPhysics },
+	{ type: 'box', name: 'High rail back', size: [3.4, 0.4, 0.2], pos: [LANE_X[1], 0.8, -6.6], ...RAIL, physics: railPhysics },
 	// 3 — the windmill: a house with a gap, blades sweeping through it (the graph's Spin)
 	{ type: 'box', name: 'Windmill west', size: [1.1, 0.6, 0.6], pos: [LANE_X[2] - 0.95, 0.4, -1.2], color: 0xc65b3c, roughness: 0.7, physics: railPhysics },
 	{ type: 'box', name: 'Windmill east', size: [1.1, 0.6, 0.6], pos: [LANE_X[2] + 0.95, 0.4, -1.2], color: 0xc65b3c, roughness: 0.7, physics: railPhysics },
 	{ type: 'box', name: 'Windmill house', size: [3, 1.2, 0.6], pos: [LANE_X[2], 1.3, -1.2], color: 0xe3d3b0, roughness: 0.8, physics: deco },
 	{ type: 'cone', name: 'Windmill roof', r: 1.2, h: 0.9, pos: [LANE_X[2], 2.35, -1.2], color: 0x7a3b2a, roughness: 0.7, physics: deco },
-	{ type: 'box', name: 'Windmill blade A', size: [2.6, 0.16, 0.05], pos: [LANE_X[2], 1.2, -0.84], color: 0xf4efe2, roughness: 0.6, physics: { mode: 'static' } },
-	{ type: 'box', name: 'Windmill blade B', size: [0.16, 2.6, 0.05], pos: [LANE_X[2], 1.2, -0.84], color: 0xf4efe2, roughness: 0.6, physics: { mode: 'static' } },
+	{ type: 'box', name: 'Windmill blade A', size: [2.6, 0.16, 0.05], pos: [LANE_X[2], 1.2, -0.72], color: 0x6b4128, roughness: 0.6, physics: { mode: 'static' } },
+	{ type: 'box', name: 'Windmill blade B', size: [0.16, 2.6, 0.05], pos: [LANE_X[2], 1.2, -0.72], color: 0x6b4128, roughness: 0.6, physics: { mode: 'static' } },
+	{ type: 'cylinder', name: 'Windmill hub', r: 0.14, h: 0.12, pos: [LANE_X[2], 1.2, -0.8], rot: [Math.PI / 2, 0, 0], color: 0x5a3a2a, roughness: 0.6, physics: deco },
 	// 4 — the wall that makes it a bank shot
 	{ type: 'box', name: 'Bank wall', size: [2.2, 0.3, 0.2], pos: [LANE_X[3] - 0.4, 0.25, -1], ...RAIL, physics: railPhysics },
 	{ type: 'block', shape: 'Wedge', args: [0.6, 0.3, 0.8], name: 'Bank bumper', pos: [LANE_X[3] + 1.2, 0.1, 1.2], rot: [0, -Math.PI / 2, 0], color: 0xd2a86e, roughness: 0.6, physics: { mode: 'static', collider: 'hull', restitution: 0.6 } },
@@ -138,7 +144,7 @@ const MINI_GOLF_DEF = {
 		exposure: 1.05,
 		background: { top: '#5b9be0', bottom: '#e3f0f7' },
 		fog: { color: '#e3f0f7', near: 22, far: 80 },
-		ground: { color: '#6f8f55', roughness: 0.95 }
+		ground: { color: '#8fb36a', roughness: 0.95 }
 	},
 	physics: {
 		ground: { enabled: true, height: 0, friction: 0.8, restitution: 0 },
@@ -159,7 +165,14 @@ const MINI_GOLF_DEF = {
 		changedAt: 0
 	},
 	view: { pos: [-6, 9, 14], target: [-4, 0, -1] },
-	thumb: { camera: 'Card camera' },
+	thumb: {
+		camera: 'Card camera',
+		// a putt in progress on the windmill hole: the ball rolling at the gap, a second near hole 4's cup
+		dress: [
+			{ type: 'sphere', name: 'Card ball', r: 0.06, pos: [LANE_X[2] + 0.1, 0.16, 0.6], color: 0xffffff, physical: true, roughness: 0.25, clearcoat: 0.8 },
+			{ type: 'sphere', name: 'Card ball 2', r: 0.06, pos: [LANE_X[3] + 0.55, 0.16, -4.6], color: 0xff6b6b, physical: true, roughness: 0.25, clearcoat: 0.8 }
+		]
+	},
 	graphs: { scene: golfGraph() },
 	hud: {
 		scene: {
@@ -221,7 +234,7 @@ const MINI_GOLF_DEF = {
 		...OBSTACLES,
 		// the ball (holes.js BALL_R), on hole 1's tee
 		{ type: 'sphere', name: 'Golf ball', r: 0.06, pos: [LANE_X[0], 0.19, 4.4], color: 0xffffff, physical: true, roughness: 0.25, clearcoat: 0.8, physics: { mode: 'dynamic', mass: 0.05, collider: 'sphere', friction: 0.5, restitution: 0.35 } },
-		{ type: 'camera', name: 'Card camera', pos: [-6.5, 5.2, 7.5], lookAt: [-5.5, 0, -2], fov: 50 }
+		{ type: 'camera', name: 'Card camera', pos: [0.9, 1.9, 3.6], lookAt: [-2.2, 0.7, -1.6], fov: 58 }
 	]
 };
 

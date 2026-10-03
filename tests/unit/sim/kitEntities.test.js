@@ -273,4 +273,26 @@ describe('entity pieces in the logic sim (2 peers)', () => {
 			'other'
 		]);
 	});
+	it("T2 through the SDK face: a module's spawn is owned, and its teardown clears exactly its entities", () => {
+		const sim = createSim({ peers: ['a', 'b'], latency: 0 });
+		/** @type {(() => void)[]} */
+		const journal = [];
+		const mod = sim
+			.peer('a')
+			.kit.api({
+				moduleId: 'waves',
+				onDispose: (/** @type {() => void} */ fn) => journal.push(fn)
+			});
+		mod.spawner.spawn({ kind: 'robot', count: 4, spread: 1 });
+		mod.spawner.spawn({ kind: 'robot', count: 2, spread: 1 });
+		sim
+			.peer('a')
+			.kit.api({ moduleId: 'other', onDispose: () => {} })
+			.spawner.spawn({ kind: 'bat', count: 1 });
+		sim.settle();
+		expect(rt(sim, 'b').store.ents.size).toBe(7);
+		for (const fn of journal) fn(); // the module unloads
+		sim.settle();
+		expect([...rt(sim, 'b').store.ents.values()].map((e) => e.own)).toEqual(['other']);
+	});
 });

@@ -14,6 +14,8 @@ export default {
 			label: 'Spawn entities',
 			doc: 'Make COUNT entities of a KIND, drawn as copies of the TEMPLATE object, at a place (unwired: where the template stands). Each carries its own health and, with a speed above 0, a mover. Code: spawn({kind, template, at, count, spread, hp, speed, removeAfter, tags, data, mover}) -> ids.',
 			authority: true,
+			// T2: a module's call carries its id (kitApi), so its entities leave with it
+			owned: true,
 			args: [
 				{ key: 'kind', type: 'string', default: 'enemy' },
 				{ key: 'template', type: 'object', label: 'template — the object each entity is drawn as' },

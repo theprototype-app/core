@@ -138,6 +138,17 @@ h.run(async () => {
 		return seen;
 	});
 	h.check(!helpers.includes('editor-grid'), `no editor grid in Play (${helpers.join(', ') || 'none'})`);
+
+	// 7b — the Levels page: start in the vault (practice) — the earlier rooms come pre-solved
+	await page.evaluate(() => window.__escape.startStage(2));
+	await h.eventually(() => snap().then((v) => v.state + ':' + ((v.flags & 4096) !== 0)), (v) => v === 'playing:true', 'a stage pick starts a round in the vault with the gate already up', 6000);
+	h.check(await page.evaluate(() => window.__escape.room()) === 2, 'the stage start puts you in the vault');
+	await h.eventually(hud, (t) => /Sun gem/.test(t) && /Moon gem/.test(t) && /Star gem/.test(t), 'carrying all three gems', 4000);
+	const bestBefore = await page.evaluate(() => window.__escape.best());
+	for (const p of ['Pedestal sun', 'Pedestal moon', 'Pedestal star']) await press(p);
+	await press('Exit portal');
+	await h.eventually(() => snap().then((v) => v.state), (v) => v === 'over', 'the vault stage wins too', 6000);
+	h.check(await page.evaluate(() => window.__escape.best()) === bestBefore, 'a practice stage does not touch the best time');
 	await page.evaluate(() => window.__stores.isLocked.set(false));
 	await page.waitForTimeout(600);
 

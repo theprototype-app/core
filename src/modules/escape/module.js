@@ -43,7 +43,12 @@ const P = { sun: 1, moon: 2, star: 4 };
 const CODE = [3, 7, 1];
 const LEVER_ORDER = ['right', 'left', 'middle'];
 const TURNS = 8;
-const V = { flags: 'esFlags', placed: 'esPlaced', d1: 'esD1', d2: 'esD2', d3: 'esD3', lev: 'esLev', turns: 'esTurns' };
+const V = { flags: 'esFlags', placed: 'esPlaced', d1: 'esD1', d2: 'esD2', d3: 'esD3', lev: 'esLev', turns: 'esTurns', start: 'esStart' };
+/** the state a stage starts from (the Levels page: practise one room) */
+const STAGE_FLAGS = [0, F.drawer | F.key | F.chest | F.crank | F.studyDoor | F.sun | F.note, 0];
+STAGE_FLAGS[2] = STAGE_FLAGS[1] | F.fitted | F.hatch | F.moon | F.levers | F.star | F.gate;
+/** how long the button is held on the crank per quarter turn (hold-to-twist) */
+const TWIST_STEP = 0.32;
 
 const ROOMS = [
 	{ name: 'The Study', spawn: [-8, 0, 2.6], yaw: 0, hint: 'The desk drawer sticks, but it opens. A key opens more than one lock.' },
@@ -524,6 +529,77 @@ export default {
 			for (const k of Object.values(V)) setV(k, 0);
 		};
 
+		/** start a fresh round in a stage (0 study, 1 workshop, 2 vault) — the Levels page */
+		const startStage = (/** @type {number} */ stage) => {
+			if (!gs) return;
+			pendingStage = stage;
+			if (game()?.state === 'playing') gs.setGameState('menu');
+			gs.setGameState('playing');
+		};
+		let pendingStage = -1;
+		const applyStage = (/** @type {number} */ stage) => {
+			resetPuzzle();
+			setV(V.start, stage);
+			if (stage <= 0) return;
+			setV(V.flags, STAGE_FLAGS[stage]);
+			if (stage >= 2) {
+				setV(V.d1, CODE[0]);
+				setV(V.d2, CODE[1]);
+				setV(V.d3, CODE[2]);
+				setV(V.lev, 3);
+				setV(V.turns, TURNS);
+			}
+		};
+		/** @type {any} */ let levelsOff = null;
+		const defineLevels = () => {
+			if (typeof api.game?.levels !== 'function') return;
+			levelsOff = api.game.levels({
+				list: ROOMS.map((r, i) => ({ id: String(i + 1), label: i + 1 + ' · ' + r.name + (i ? ' (practice)' : '') })),
+				current: String(curRoom + 1),
+				onPick: (/** @type {string} */ id) => startStage(Number(id) - 1)
+			});
+		};
+
+		// HOLD TO TWIST: the button held on the fitted crank keeps turning it (a quarter turn
+		// every TWIST_STEP s); a click is still one turn, and a VR trigger press is one turn
+		let twisting = false;
+		let twistHeld = 0;
+		const onCrank = () => {
+			const ray = api.pointerRay?.();
+			const crank = byName('Fitted crank');
+			if (!ray || !crank || !crank.visible) return false;
+			const hit = ray.intersectObject(crank, true)[0];
+			return !!hit && hit.distance < 4;
+		};
+		const down = (/** @type {PointerEvent} */ e) => {
+			if (e.button !== 0 || !active() || game()?.state !== 'playing' || !has(F.fitted) || has(F.gate)) return;
+			if (onCrank()) {
+				twisting = true;
+				twistHeld = 0;
+			}
+		};
+		const up = () => (twisting = false);
+		window.addEventListener('pointerdown', down, true);
+		window.addEventListener('pointerup', up, true);
+		api.onUnload?.(() => {
+			window.removeEventListener('pointerdown', down, true);
+			window.removeEventListener('pointerup', up, true);
+		});
+		const twist = (/** @type {number} */ dt) => {
+			if (!twisting) return;
+			if (has(F.gate) || game()?.state !== 'playing') {
+				twisting = false;
+				return;
+			}
+			twistHeld += dt;
+			// the first turn is the click's own; the hold adds one per step after it
+			if (twistHeld >= TWIST_STEP) {
+				twistHeld -= TWIST_STEP;
+				if (onCrank()) act('Fitted crank');
+				else twisting = false;
+			}
+		};
+
 		let wasActive = false;
 		api.registerFrameTask((/** @type {number} */ time) => {
 			if (!gs || !stores) return;
@@ -535,7 +611,12 @@ export default {
 					helpOff();
 					helpOff = null;
 				}
-				if (on) api.game?.onRestart?.(() => amLowest() && resetPuzzle());
+				if (on) api.game?.onRestart?.(() => amLowest() && applyStage(v(V.start)));
+				if (on) defineLevels();
+				if (!on && typeof levelsOff === 'function') {
+					levelsOff();
+					levelsOff = null;
+				}
 			}
 			if (!on) return;
 			const dt = Math.min(0.1, Math.max(0, time - lastT));
@@ -544,11 +625,13 @@ export default {
 			// a fresh round (Start / Restart): the lowest peer id zeroes the puzzle
 			if (g && g.state === 'playing' && g.round !== prevRound) {
 				prevRound = g.round;
-				if (amLowest()) resetPuzzle();
-				curRoom = 0;
+				const stage = Math.max(0, pendingStage);
+				pendingStage = -1;
+				if (amLowest()) applyStage(stage);
+				curRoom = stage;
 				roomSince = [0, 0, 0];
 				prevFlags = -1;
-				api.setSpawn?.(ROOMS[0].spawn, ROOMS[0].yaw);
+				api.setSpawn?.(ROOMS[stage].spawn, ROOMS[stage].yaw, { teleport: stage > 0 });
 				say("The Alchemist's Escape", { sub: 'Find the three gems and get out.', ms: 3200, color: '#ffd45e' });
 				api.music?.play?.('dungeon', { volume: 0.35 });
 			}
@@ -556,7 +639,7 @@ export default {
 				if (g.state === 'over' && prevState === 'playing' && g.outcome === 'won') {
 					lastTime = gs.gameElapsed();
 					const b = best();
-					if (!(b > 0) || lastTime < b) api.storage?.set?.('best', Math.round(lastTime * 10) / 10);
+					if (v(V.start) === 0 && (!(b > 0) || lastTime < b)) api.storage?.set?.('best', Math.round(lastTime * 10) / 10);
 					api.music?.stop?.();
 					sound('cheer');
 					api.announce?.('You escaped!', { sub: 'in ' + fmt(lastTime), ms: 4000, color: '#7dffb0' });
@@ -565,11 +648,17 @@ export default {
 				if (g.state === 'menu') api.music?.stop?.();
 				prevState = g.state;
 			}
+			twist(dt);
 			world(dt);
 			moments();
 			fence(time);
 		});
 		api.onSceneClear(() => {
+			if (typeof levelsOff === 'function') {
+				levelsOff();
+				levelsOff = null;
+			}
+			twisting = false;
 			if (helpOff) {
 				helpOff();
 				helpOff = null;
@@ -589,6 +678,8 @@ export default {
 			info,
 			room: () => curRoom,
 			best,
+			startStage,
+			twisting: () => twisting,
 			solve: () => {
 				for (const n of ['Desk drawer', 'Brass key', 'Chest lid', 'Crank', 'Old note', 'Sun gem', 'Study door']) act(n);
 			}

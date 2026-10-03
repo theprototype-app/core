@@ -3,6 +3,7 @@
 import { globalScene, objectsGroup } from '../../stores/sceneStore';
 import { log } from '../diagnostics';
 import { clearAnnouncement } from '../gameAnnounce';
+import { resetKit } from '../kit/runtime.js';
 import { writable, get } from 'svelte/store';
 import { effectsRef } from './refs.js';
 
@@ -136,6 +137,8 @@ export function runSceneClearHandlers() {
 	// 30b: a cleared scene takes its game's bursts and banner with it
 	effectsRef?.clearBursts?.();
 	clearAnnouncement();
+	// 34 R2: the next game starts with a fresh kit document (every peer clears; nothing is sent)
+	resetKit();
 	sceneClearHandlers.forEach((fn) => {
 		try {
 			fn();

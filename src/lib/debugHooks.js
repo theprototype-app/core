@@ -19,6 +19,8 @@ export const DEBUG_HOOKS = [
 	['*', () => import('../stores/sceneStore')],
 	['*', () => import('../stores/appStore')],
 	['*', () => import('../stores/flowStore')],
+	// 34 R2: the game kit (kit, kitDebug, kitAuthorityId)
+	['kit', () => import('./kit/runtime.js')],
 	['meshEdit', () => import('./meshEdit')],
 	['vrControls', () => import('./vrControls')],
 	['autosave', () => import('./autosave')],

@@ -33,6 +33,7 @@ import { sdkBackends } from './backends.js';
 import { sdkAudio } from './audio.js';
 import { sdkPost } from './post.js';
 import { sdkHud } from './hud.js';
+import { sdkKit } from './kit.js';
 
 /** The api, slice by slice, in key order. @type {[string, (ctx: import('./context.js').SdkContext) => object][]} */
 export const SDK_TABLE = [
@@ -60,7 +61,8 @@ export const SDK_TABLE = [
 	['backends', sdkBackends], // registerUnwrapBackend, registerShaderBackend, registerAudioDevice
 	['audio', sdkAudio], // api.audio
 	['post', sdkPost], // registerPostEffect, registerPostBackend
-	['hud', sdkHud] // api.hud, registerHudElement
+	['hud', sdkHud], // api.hud, registerHudElement
+	['kit', sdkKit] // api.kit (34 R2: the game kit, one namespace per piece)
 ];
 
 /** @param {string} moduleId @param {string} [moduleName] the DISPLAY name, needed while

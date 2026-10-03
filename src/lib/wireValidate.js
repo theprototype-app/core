@@ -203,6 +203,27 @@ export const VALIDATORS = {
 		Number.isFinite(d.from) &&
 		Number.isInteger(d.n) &&
 		d.n >= 0,
+	// 34 R2 (T3): the game kit's ONE document (written by the authority peer only) and a
+	// request to it. The slices are read as objects and the stamps compared as numbers the
+	// moment a document lands, so a malformed one is dropped here rather than poisoning the
+	// latest-wins order; what a slice HOLDS is each piece's own normalize's business.
+	kit: (d) =>
+		!!d.doc &&
+		typeof d.doc === 'object' &&
+		Number.isFinite(d.doc.rev) &&
+		Number.isFinite(d.doc.at) &&
+		isArray(d.doc.rids) &&
+		!!d.doc.slices &&
+		typeof d.doc.slices === 'object' &&
+		!Array.isArray(d.doc.slices) &&
+		(d.ev === undefined || isArray(d.ev)),
+	kitreq: (d) =>
+		typeof d.rid === 'string' &&
+		d.rid.length > 0 &&
+		d.rid.length <= 128 &&
+		typeof d.piece === 'string' &&
+		typeof d.op === 'string' &&
+		isArray(d.args),
 	camera: (d) => typeof d.peerId === 'string' && isVec3(d.position) && isFiniteArray(d.rotation, 3),
 	// 34 R2 (kit-entities): the ONE wire type kit entities replicate on — written by the
 	// authority peer only (the applier refuses anyone else), applied straight into poses and

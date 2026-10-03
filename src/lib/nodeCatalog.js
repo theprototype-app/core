@@ -19,6 +19,8 @@ import { GAMEPAD_BUTTONS, GAMEPAD_AXES } from './gamepadPrefs';
 import { GAME_SOUNDS as GAME_SOUND_NAMES } from './gameSfx';
 import { HAPTIC_PATTERN_NAMES } from './hapticPatterns';
 import { MUSIC_PRESET_IDS } from './gameMusicPresets';
+// 34 R2: the kit's node groups (a pure leaf over the piece specs)
+import { kitCatalogGroups } from './kit/catalog.js';
 /** Announce's value mark, spelled once OUTSIDE the catalog literals: a brace inside a node's
  * strings breaks the brace-matching scan flow-node-docs reads this file with */
 const V_MARK = '{v}';
@@ -1091,7 +1093,10 @@ export const nodeCatalog = [
 			// peer synthesizes the note itself (once per pulse per peer)
 			{ type: 'notetrigger', label: 'Note Trigger', defaults: { note: 60, velocity: 0.9 } }
 		]
-	}
+	},
+	// 34 R2 (T3): the game kit — one group per piece, GENERATED from the piece specs
+	// (src/lib/kit/<piece>.spec.js), the same spec that builds api.kit.<piece>
+	...kitCatalogGroups()
 ];
 
 // Node types the animation runtime evaluates every frame (134 adds the base-

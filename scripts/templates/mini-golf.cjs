@@ -15,7 +15,8 @@ const { graphBuilder } = require('./_builders.cjs');
 /** lane x centres (holes.js LANE_X) */
 const LANE_X = [-12.5, -7.5, -2.5, 2.5, 7.5, 12.5];
 const GREEN = { color: 0x3f9b4a, roughness: 0.92 };
-const RAIL = { color: 0xe9e2d0, physical: true, roughness: 0.45, clearcoat: 0.3 };
+// rails, flags, poles and signs cast no shadow: the shadow pass is half the draw-call budget
+const RAIL = { color: 0xe9e2d0, physical: true, roughness: 0.45, clearcoat: 0.3, shadow: false };
 const railPhysics = { mode: 'static', friction: 0.2, restitution: 0.65 };
 const greenPhysics = { mode: 'static', friction: 0.6, restitution: 0.05 };
 const deco = { mode: 'static', sensor: true };
@@ -48,9 +49,9 @@ function lane(i) {
 		{ type: 'box', name: 'Rail front ' + n, size: [3.4, 0.3, 0.2], pos: [x, 0.15, 5.6], ...RAIL, physics: railPhysics },
 		{ type: 'box', name: 'Tee ' + n, size: [0.7, 0.012, 0.7], pos: [x, 0.106, 4.4], color: 0x2c6e34, roughness: 0.95, shadow: false, physics: deco },
 		{ type: 'cylinder', name: 'Cup ' + n, r: 0.12, h: 0.012, pos: [cup[0], cup[1] + 0.006, cup[2]], color: 0x101410, roughness: 1, shadow: false, physics: deco },
-		{ type: 'cylinder', name: 'Flagpole ' + n, r: 0.012, h: 1.1, pos: [cup[0], cup[1] + 0.55, cup[2]], color: 0xf2f2f2, metalness: 0.5, roughness: 0.3, physics: deco },
+		{ type: 'cylinder', name: 'Flagpole ' + n, r: 0.012, h: 1.1, pos: [cup[0], cup[1] + 0.55, cup[2]], color: 0xf2f2f2, metalness: 0.5, roughness: 0.3, shadow: false, physics: deco },
 		{ type: 'box', name: 'Flag ' + n, size: [0.34, 0.22, 0.01], pos: [cup[0] + 0.18, cup[1] + 0.98, cup[2]], color: flagColor, emissive: flagColor, emissiveIntensity: 0.35, side: 'double', shadow: false, physics: deco },
-		{ type: 'box', name: 'Number ' + n, size: [0.5, 0.5, 0.06], pos: [x - 1.05, 0.6, 5.65], color: flagColor, emissive: flagColor, emissiveIntensity: 0.5, physics: deco },
+		{ type: 'box', name: 'Number ' + n, size: [0.5, 0.5, 0.06], pos: [x - 1.05, 0.6, 5.65], color: flagColor, emissive: flagColor, emissiveIntensity: 0.5, shadow: false, physics: deco },
 		// the putter (VR): a shaft lying beside the tee; grip it and swing the low end through the ball
 		{ type: 'box', name: 'Putter ' + n, size: [0.045, 0.95, 0.045], pos: [x + 1.2, 0.13, 3.6], rot: [Math.PI / 2, 0, 0], color: 0x9aa4b2, physical: true, metalness: 0.8, roughness: 0.3, physics: { mode: 'dynamic', mass: 0.4, friction: 0.8, restitution: 0.1 } }
 	];

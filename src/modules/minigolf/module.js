@@ -589,6 +589,12 @@ export default {
 			startRound,
 			setupHole,
 			putt: requestPutt,
+			/** a raw velocity, y included (a suite's out-of-bounds lob) @param {number[]} vel */
+			lob: (vel) => {
+				const b = ball();
+				if (!b || !authority() || !simRunning()) return false;
+				return phys.setBodyVelocity(b.uuid, vel, null);
+			},
 			/** aim straight at the cup with a speed (a scripted putt) @param {number} speed */
 			puttAtCup: (speed = 3) => {
 				const hole = currentHole();

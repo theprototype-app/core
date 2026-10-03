@@ -3896,6 +3896,8 @@ export function startFlowRuntime() {
 	primeGameFeelActions(); // 30b: effectsBurst + vrControls, primed (see gameFeelActions)
 	primeKitRuntime(); // 34 R2: physics (the initiator) + flowRuntime (the event pulse), primed
 	installKitNodes(); // 34 R2: the kit nodes' outputs and named inputs, declared once
+	// 34 R2 (kit-entities): draw the kit's entities, give the movers the scene (primed: three + stores)
+	import('./kit/entityApp.js').then((m) => m.startKitEntities()).catch(() => {});
 	flowGraphs.subscribe(() => {
 		nodes = allNodes();
 		edges = allEdges();

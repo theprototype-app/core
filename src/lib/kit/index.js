@@ -11,6 +11,9 @@ import round from './round.js';
 import levels from './levels.js';
 import score from './score.js';
 import pickups from './pickups.js';
+import { spawnerPiece } from './spawner.js';
+import { healthPiece } from './health.js';
+import { moverPiece } from './mover.js';
 
 /** @type {{name: string, piece: any}[]} */
 export const KIT_PIECES = [
@@ -18,5 +21,9 @@ export const KIT_PIECES = [
 	{ name: 'round', piece: round }, // the phase machine menu -> intro -> playing <-> paused -> won/lost -> results
 	{ name: 'levels', piece: levels }, // the level table, unlocks, stars, per-device progress, modes
 	{ name: 'score', piece: score }, // the shared score, per-player rows, device best, leaderboard
-	{ name: 'pickups', piece: pickups } // collect once, respawn, grants (score, time, …), touch
+	{ name: 'pickups', piece: pickups }, // collect once, respawn, grants (score, time, …), touch
+	// 34-kit-entities (one runtime shared through kit/entityHub.js; spawner is the primary row)
+	{ name: 'spawner', piece: spawnerPiece }, // entities with per-copy state, the kitentity wire
+	{ name: 'health', piece: healthPiece }, // hit points on entities, death as an event
+	{ name: 'mover', piece: moverPiece } // steering, separation, stuck recovery, knock-back
 ];

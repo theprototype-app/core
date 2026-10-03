@@ -21,6 +21,8 @@ export const DEBUG_HOOKS = [
 	['*', () => import('../stores/flowStore')],
 	// 34 R2: the game kit (kit, kitDebug, kitAuthorityId)
 	['kit', () => import('./kit/runtime.js')],
+	// 34 R2 (kit-entities): entities drawn / world / api (kitEntitiesDebug, kitEntitiesApi, entityOfObject)
+	['kitEntities', () => import('./kit/entityApp.js')],
 	['meshEdit', () => import('./meshEdit')],
 	['perf', () => import('./perf/recorder')],
 	['perfDetailed', () => import('./perf/detailed')],

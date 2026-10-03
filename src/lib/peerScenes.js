@@ -634,6 +634,9 @@ export const ROOM_SCOPED = new Set([
 	'lock', 'locked', 'lockrequest', 'unlock', 'lockdenied', 'sessionproposal',
 	'sessionanswer', 'ping', 'sceneadopt'
 ]);
+// 34 R2 (kit-entities): the kit's entities are room content like the kit document
+ROOM_SCOPED.add('kitentity');
+ROOM_SCOPED.add('getkitentities');
 
 /**
  * THE ONE PREDICATE, used on both sides of the wire: `broadcast` will not SEND a

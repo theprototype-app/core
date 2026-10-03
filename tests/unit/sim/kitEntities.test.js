@@ -243,4 +243,34 @@ describe('entity pieces in the logic sim (2 peers)', () => {
 		sim.settle();
 		expect(rt(sim, 'b').store.ents.size).toBe(3);
 	});
+	it("T2: a module's entities carry its id and leave with it (disown on the authority only)", () => {
+		const sim = createSim({ peers: ['a', 'b'], latency: 0 });
+		const sp = sim.peer('a').kit.impls.spawner;
+		// what kitApi's `owned` wrapper hands the impl: the spec's 8 args, then the module id
+		sp.spawn(
+			{ kind: 'robot', count: 3, spread: 1 },
+			undefined,
+			undefined,
+			undefined,
+			undefined,
+			undefined,
+			undefined,
+			undefined,
+			'waves'
+		);
+		sp.spawn('bat', '', [0, 0, 0], 2, 1, 5, 0, 1, 'other');
+		sp.spawn({ kind: 'crate' }); // a node / core call: no owner
+		sim.settle();
+		expect([...rt(sim, 'b').store.ents.values()].filter((e) => e.own === 'waves').length).toBe(3);
+		// a non-authority unloading its copy of the module leaves the session's entities alone
+		expect(sim.peer('b').kit.impls.spawner.disown('waves')).toBe(0);
+		expect(sp.disown('waves')).toBe(3);
+		sim.settle();
+		expect(rt(sim, 'b').store.ents.size).toBe(3);
+		expect([...rt(sim, 'b').store.ents.values()].map((e) => e.own).sort()).toEqual([
+			'',
+			'other',
+			'other'
+		]);
+	});
 });

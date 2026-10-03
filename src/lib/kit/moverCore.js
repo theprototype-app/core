@@ -51,6 +51,10 @@ export const MOVER_DEFAULTS = Object.freeze({
 /** a mover's MODE */
 export const MOVER_MODES = ['idle', 'seek', 'arrive', 'patrol'];
 
+/** grid re-plans one step may run: a crowd that jams at once queues its plans over the next
+ * frames instead of spiking one (measured: 200 movers piling onto a wall, 8 ms -> see suite) */
+export const MAX_PLANS_PER_STEP = 2;
+
 /** knock velocity below this (m/s) has ended: re-seat */
 const KNOCK_END = 0.15;
 /** knock-back decays as exp(-KNOCK_DAMP · t) */
@@ -99,6 +103,7 @@ export function createMover(opts = {}) {
 	m.route = [];
 	m.routeUntil = -1;
 	m.losAt = 0;
+	m.noPlanUntil = 0;
 	m.repaths = 0;
 	m.stuckCount = 0;
 	// knock-back
@@ -319,6 +324,7 @@ export function stepMovers(ents, dt, t, world = {}) {
 	if (!(dt > 0)) return 0;
 	dt = Math.min(dt, 0.1); // a stalled frame must not teleport through a wall
 	let movedCount = 0;
+	let plans = 0;
 	for (let i = 0; i < ents.length; i++) {
 		const e = ents[i];
 		const m = e.mover;
@@ -554,7 +560,9 @@ export function stepMovers(ents, dt, t, world = {}) {
 		m.best = d;
 		// a WALL in front (not a body): sidestepping along it is a guess, re-path straight away
 		const wall = obstacleAhead(e.pos, hx, hz, m.radius, m.radius * 3 + 0.3, world);
-		if (m.tries <= m.maxSidesteps && !wall) {
+		// over this step's plan budget: a sidestep now, the plan on its next stuck
+		const planNow = plans < MAX_PLANS_PER_STEP && t >= m.noPlanUntil;
+		if ((m.tries <= m.maxSidesteps && !wall) || !planNow) {
 			// sidestep AWAY from the blocker; first try uses the blocker's side, later tries
 			// alternate so a mover in a pocket does not keep stepping into the same wall
 			const bs = blockerSide(e, hx, hz, ents, world);
@@ -566,11 +574,14 @@ export function stepMovers(ents, dt, t, world = {}) {
 			// wall between the mover and its goal). No route (the goal is walled in) -> a detour
 			// waypoint out to the side and back, alternating per attempt.
 			const goal = m.mode === 'patrol' ? m.path[m.wp] : m.goal;
+			plans++;
 			const route = goal ? planPath([e.pos[0], e.pos[2]], goal, world, m.radius) : null;
 			m.repaths++;
 			if (route && route.length) {
 				m.route = route;
 			} else {
+				// no way through: do not search again for a while (the detour below instead)
+				m.noPlanUntil = t + 2;
 				m.side = m.side ? -m.side : idSide(e.id);
 				const out = m.detour;
 				const p = [
@@ -755,6 +766,9 @@ export function obstacleAhead(pos, hx, hz, r, look, world) {
 
 /** most grid cells one plan may span per axis */
 const PLAN_MAX_CELLS = 128;
+/** most cells one plan may EXPAND before it gives up (a walled-in goal would otherwise search
+ * the whole grid: measured 2.8 ms per call on the Deck, vs 0.3 ms for an ordinary plan) */
+const PLAN_MAX_EXPAND = 5000;
 
 /**
  * RE-PATH: a route from `from` to `goal` ([x, z] each) around the static obstacles, on a coarse
@@ -922,7 +936,7 @@ export function planPath(from, goal, world, radius) {
 			found = true;
 			break;
 		}
-		if (++expanded > N) break;
+		if (++expanded > Math.min(N, PLAN_MAX_EXPAND)) break;
 		const cx = c % W;
 		const cz = Math.floor(c / W);
 		for (let dz = -1; dz <= 1; dz++) {

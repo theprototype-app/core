@@ -210,7 +210,10 @@ export function createKitEntities(host, opts = {}) {
 	 * face takes one options object, the node face its positional args @param {any[]} args */
 	function spawnSpec(args) {
 		const a0 = args[0];
-		if (a0 && typeof a0 === 'object' && !Array.isArray(a0)) return a0;
+		// T2: a module's call carries its id AFTER the spec's eight args (kitApi `owned`), so the
+		// module's entities can leave with it (disown)
+		const owner = typeof args[8] === 'string' ? args[8] : '';
+		if (a0 && typeof a0 === 'object' && !Array.isArray(a0)) return { ...a0, own: a0.own ?? owner };
 		const [kind, template, at, count, spread, hp, speed, removeAfter] = args;
 		/** @type {any} */
 		const spec = {
@@ -220,7 +223,8 @@ export function createKitEntities(host, opts = {}) {
 			count,
 			spread,
 			hp,
-			removeAfter
+			removeAfter,
+			own: owner
 		};
 		if (Number(speed) > 0) spec.mover = { speed: Number(speed) };
 		return spec;
@@ -281,6 +285,14 @@ export function createKitEntities(host, opts = {}) {
 				let n = 0;
 				for (const e of [...store.ents.values()])
 					if (!k || e.kind === k) n += OPS.spawner.despawn([e.id], '') ? 1 : 0;
+				return n;
+			},
+			/** T2: every entity a module owns (its unload) @param {any[]} args */
+			clearOwned([own]) {
+				if (typeof own !== 'string' || !own) return 0;
+				let n = 0;
+				for (const e of [...store.ents.values()])
+					if (e.own === own) n += OPS.spawner.despawn([e.id], '') ? 1 : 0;
 				return n;
 			},
 			setTags([id, tags]) {
@@ -657,6 +669,11 @@ export function createKitEntities(host, opts = {}) {
 		clear: mut('spawner', 'clear'),
 		count: countOf,
 		on: onFor('spawner'),
+		/** T2: a module unloaded — on the authority its entities go (replicated as removals); a
+		 * non-authority unloading its copy of the module leaves the session's entities alone
+		 * @param {string} moduleId */
+		disown: (moduleId) =>
+			authority() ? (applyOp('spawner', 'clearOwned', [moduleId], null) ?? 0) : 0,
 		extra: {
 			setTags: mut('spawner', 'setTags'),
 			setData: mut('spawner', 'setData'),

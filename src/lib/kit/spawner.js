@@ -6,6 +6,6 @@ import { entityPiece } from './entityHub.js';
 
 export const spawnerPiece = entityPiece(
 	spec,
-	['spawn', 'despawn', 'clear', 'setTags', 'setData'],
+	['spawn', 'despawn', 'clear', 'clearOwned', 'setTags', 'setData'],
 	true
 );

@@ -1,14 +1,18 @@
 <script>
-	// Flow Code: an editable JSON view of the flow graph. DOCKED mode is a Flow-family
+	// Flow Code: an editable view of the flow graph. DOCKED mode is a Flow-family
 	// tab in the bottom dock (Apply + Reload buttons in its toolbar); UNDOCKED mode is a
 	// floating, resizable window. Apply parses the text and REPLACES the graph locally +
 	// broadcasts so peers converge.
+	// 34 D4: two FORMATS of the same data — the compact graph text (`id = type "label"
+	// {params} @x,y` / `a.out -> b.in`, the default: 2.1-2.4x shorter and lossless, see
+	// graphText.js) and the pretty JSON it always was. The choice is a LOCAL pref.
 	import { untrack } from 'svelte';
 	import { get } from 'svelte/store';
 	import CodeEditor from './CodeEditor.svelte';
 	import { flowNodes, flowEdges } from '../../stores/flowStore';
 	import { flowCodeClose, peers } from '../../stores/appStore.js';
 	import { serializeNode, serializeEdge } from '$lib/nodesHandler';
+	import { graphToText, parseGraphText } from '$lib/graphText';
 	import DockTabs from '../DockTabs.svelte';
 	import { dragWindow } from '$lib/dragWindow';
 	import { focusStack } from '$lib/windowFocus';
@@ -22,7 +26,10 @@
 	let docked = $state(true);
 	let winW = $state(460);
 	let winH = $state(440);
+	/** @type {'text' | 'json'} */
+	let format = $state('text');
 	if (typeof localStorage !== 'undefined') {
+		format = safeStorage.getItem('flowCodeFormat') === 'json' ? 'json' : 'text';
 		docked = safeStorage.getItem('flowCodeDocked') !== 'false'; // start docked
 		winW = parseInt(safeStorage.getItem('flowCodeWinW') ?? '460') || 460;
 		winH = parseInt(safeStorage.getItem('flowCodeWinH') ?? '440') || 440;
@@ -55,11 +62,33 @@
 	const effH = $derived(myGroup ? myGroup.rect.height : winH);
 
 	function snapshot() {
-		return JSON.stringify(
-			{ nodes: get(flowNodes).map(serializeNode), edges: get(flowEdges).map(serializeEdge) },
-			null,
-			2
-		);
+		const graph = { nodes: get(flowNodes).map(serializeNode), edges: get(flowEdges).map(serializeEdge) };
+		return format === 'text' ? graphToText(graph) : JSON.stringify(graph, null, 2);
+	}
+	/** switch formats; the text is re-read from the live graph, so unapplied edits in the
+	 * other format are dropped (said in the button's title) @param {'text' | 'json'} next */
+	function setFormat(next) {
+		if (next === format) return;
+		format = next;
+		safeStorage.setItem('flowCodeFormat', next);
+		text = snapshot();
+		error = '';
+	}
+	/** what the text describes, or an error string @returns {{nodes: any[], edges: any[]} | string} */
+	function parseText() {
+		if (format === 'json') {
+			try {
+				return JSON.parse(text);
+			} catch (e) {
+				return 'Invalid JSON: ' + (/** @type {any} */ (e)?.message ?? e);
+			}
+		}
+		const { graphs, order, errors } = parseGraphText(text);
+		if (errors.length)
+			return errors.slice(0, 3).map((e) => e.message).join(' · ') + (errors.length > 3 ? ' (+' + (errors.length - 3) + ' more)' : '');
+		const keys = order.filter((k) => graphs[k].nodes.length || graphs[k].edges.length);
+		if (keys.length > 1) return 'This view edits ONE graph; remove the @graph sections';
+		return graphs[keys[0] ?? ''] ?? { nodes: [], edges: [] };
 	}
 	// (re)seed the text from the live graph whenever the view opens
 	$effect(() => {
@@ -78,23 +107,28 @@
 	const dockVisible = $derived($visibleDockKey === 'flowcode' && !$dockMinimized);
 
 	function apply() {
-		let parsed;
-		try {
-			parsed = JSON.parse(text);
-		} catch (e) {
-			error = 'Invalid JSON: ' + (/** @type {any} */ (e)?.message ?? e);
+		const parsed = parseText();
+		if (typeof parsed === 'string') {
+			error = parsed;
 			return;
 		}
 		if (!parsed || !Array.isArray(parsed.nodes)) {
 			error = 'Expected an object like { "nodes": [...], "edges": [...] }';
 			return;
 		}
-		const newNodes = parsed.nodes;
 		const newEdges = Array.isArray(parsed.edges) ? parsed.edges : [];
-		if (newNodes.some((/** @type {any} */ n) => !n || !n.id || !n.type)) {
+		if (parsed.nodes.some((/** @type {any} */ n) => !n || !n.id || !n.type)) {
 			error = 'Every node needs at least an "id" and a "type"';
 			return;
 		}
+		// a node typed WITHOUT a position (a new line with no @x,y) keeps the one it had, or
+		// takes a free grid slot below the graph — xyflow dereferences node.position on adopt
+		const had = new Map(get(flowNodes).map((n) => [n.id, n.position]));
+		let row = 0;
+		const bottom = Math.max(0, ...parsed.nodes.filter((/** @type {any} */ n) => n.position).map((/** @type {any} */ n) => Number(n.position.y) || 0));
+		const newNodes = parsed.nodes.map((/** @type {any} */ n) =>
+			n.position ? n : { ...n, position: had.get(n.id) ?? { x: 60 + (row % 4) * 190, y: bottom + 130 + Math.floor(row++ / 4) * 130 } }
+		);
 		const newNodeIds = new Set(newNodes.map((/** @type {any} */ n) => n.id));
 		const newEdgeIds = new Set(newEdges.map((/** @type {any} */ e) => e.id));
 		const removedNodes = get(flowNodes).map((n) => n.id).filter((id) => !newNodeIds.has(id));
@@ -136,6 +170,10 @@
 </script>
 
 {#snippet actions()}
+	<span class="tp-seg" role="group" aria-label="Code format">
+		<button id="flow-code-format-text" class="tp-seg-btn" aria-pressed={format === 'text'} title="Compact text: id = type &quot;label&quot; params @x,y and a.out -> b.in (unapplied edits are dropped)" onclick={() => setFormat('text')}>Text</button>
+		<button id="flow-code-format-json" class="tp-seg-btn" aria-pressed={format === 'json'} title="The graph as JSON (unapplied edits are dropped)" onclick={() => setFormat('json')}>JSON</button>
+	</span>
 	<button class="ui-button-quiet" title="Reload the text from the graph" onclick={() => (text = snapshot())}>↻ Reload</button>
 	<button class="ui-button-quiet text-primary-400" title="Apply the text to the graph (replaces it)" onclick={apply}>Apply</button>
 {/snippet}

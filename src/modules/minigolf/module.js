@@ -153,9 +153,28 @@ export default {
 			setV(V.oob, 0);
 			setV(V.sunk, 0);
 			kit.round.configure(0, 0, 'lose', 1);
-			kit.round.restart();
+			starting = true;
+			try {
+				kit.round.restart();
+			} finally {
+				starting = false;
+			}
 			setupHole(holeById(from) ? from : 1);
 		};
+		/** startRound is restarting the kit round itself */
+		let starting = false;
+		// the shell's Restart (pause menu): after its reset, a fresh round from hole 1
+		api.game?.onRestart?.(() => {
+			if (!active()) return;
+			if (authority()) startRound(1);
+			else api.send({ op: 'pick', hole: 1 });
+		});
+		// a kit round restarted some other way (a Kit node): a fresh card from hole 1
+		kit.round.onStarted?.(() => {
+			if (starting || !active() || !authority()) return;
+			for (const h of HOLES) setV(S(h.id), 0);
+			setupHole(1);
+		});
 		const toMenu = () => {
 			setV(V.hole, 0);
 			kit.round.toMenu();

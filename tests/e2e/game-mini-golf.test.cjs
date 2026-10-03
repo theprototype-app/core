@@ -206,6 +206,10 @@ h.run(async () => {
 	await h.eventually(() => snap(), (v) => v.state === 'playing' && v.vars?.mgHole === 4, 'picking hole 4 starts a round there', 6000);
 	await h.eventually(() => snap().then((v) => v.ball), (b) => b && Math.abs(b[0] - 2.5) < 0.05 && b[2] > 3.5, 'the ball waits on hole 4 tee', 4000);
 
+	// 7c — the pause menu's Restart: a fresh card from hole 1
+	await page.evaluate(() => window.__stores.gameKit.gameShell.restartGame());
+	await h.eventually(() => snap(), (v) => v.state === 'playing' && v.vars?.mgHole === 1 && v.vars?.mgStrokes === 0 && v.vars?.mgS1 === 0, 'the shell Restart starts a fresh round on hole 1', 6000);
+
 	// 8 — VR: a fake session lands the game in Interact; start; a hand knock is a stroke
 	await page.evaluate(() => window.__stores.isLocked.set(null));
 	await page.waitForTimeout(600);

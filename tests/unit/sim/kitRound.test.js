@@ -37,7 +37,9 @@ describe('kit.round — start, intro, go', () => {
 		const sim = createSim({ peers: ['a', 'b'] });
 		for (const id of ['a', 'b']) sim.peer(id).kit.runNodeAction('kit-round-start', {}, { rid: 'node:s:5' });
 		sim.settle();
-		expect(sim.peer('a').kit.stats.applied).toBe(1);
+		expect(sim.peer('a').kit.doc().rids.filter((/** @type {string} */ r) => r === 'node:s:5').length).toBe(1);
+		expect(sim.peer('b').game.get().round).toBe(1);
+		expect(sim.peer('b').kit.stats.duplicate + sim.peer('a').kit.stats.duplicate).toBeGreaterThan(0);
 	});
 	it('with no intro, Start goes straight to play (both events)', () => {
 		const sim = createSim({ peers: ['a', 'b'] });

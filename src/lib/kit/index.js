@@ -9,10 +9,12 @@
 import rules from './rules.js';
 import round from './round.js';
 import levels from './levels.js';
+import score from './score.js';
 
 /** @type {{name: string, piece: any}[]} */
 export const KIT_PIECES = [
 	{ name: 'rules', piece: rules }, // reach, jump, bounds, the grab veto
 	{ name: 'round', piece: round }, // the phase machine menu -> intro -> playing <-> paused -> won/lost -> results
-	{ name: 'levels', piece: levels } // the level table, unlocks, stars, per-device progress, modes
+	{ name: 'levels', piece: levels }, // the level table, unlocks, stars, per-device progress, modes
+	{ name: 'score', piece: score } // the shared score, per-player rows, device best, leaderboard
 ];

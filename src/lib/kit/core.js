@@ -45,6 +45,7 @@ export const RESEND_MS = 1200;
  *   send: (msg: any) => void,
  *   isAuthority: () => boolean,
  *   authorityId?: () => string | null,
+ *   nameOf?: (id: string) => string,
  *   storage?: {get: (key: string, fallback?: any) => any, set: (key: string, value: any) => any},
  *   game?: {get: () => any, set: (state: string, opts?: any) => any, restart?: (opts?: any) => any},
  *   emit?: (piece: string, event: string, payload: any, opts?: {local?: boolean}) => void,
@@ -143,6 +144,8 @@ export function createKit(host, pieces) {
 		now,
 		me: () => host.me(),
 		isAuthority: () => host.isAuthority(),
+		/** a peer's display name (the roster's; the id when the host has none) @param {string} id */
+		nameOf: (id) => host.nameOf?.(id) || id,
 		/** the authority's id as this peer sees it (null when the host cannot say) */
 		authorityId: () => host.authorityId?.() ?? null,
 		slice: () => doc.slices[piece],

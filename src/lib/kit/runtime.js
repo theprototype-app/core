@@ -18,7 +18,7 @@
 // itself imports only leaves.
 
 import { get } from 'svelte/store';
-import { peers } from '../../stores/appStore';
+import { peers, userdata } from '../../stores/appStore';
 import { sessionNow } from '../sessionClock';
 import { readStored, writeStored } from '../gameStorage';
 import { gameState, setGameState, commitGameState } from '../gameState';
@@ -81,6 +81,11 @@ const host = {
 		return !id || kitAuthorityId() === id;
 	},
 	authorityId: () => kitAuthorityId(),
+	// the roster's nickname (slot 1 of a userdata row), else the id — what api.peerNames reads
+	nameOf: (id) => {
+		const row = (/** @type {any[]} */ (get(userdata)) ?? []).find((r) => r?.[0] === id);
+		return (row && typeof row[1] === 'string' && row[1]) || id;
+	},
 	storage: {
 		get: (key, fallback = null) => readStored('tp:kit:' + key, fallback),
 		set: (key, value) => writeStored('tp:kit:' + key, value) !== null

@@ -6,7 +6,7 @@ import { get } from 'svelte/store';
 
 /** @param {import('./context.js').SdkContext} ctx */
 export function sdkQuality(ctx) {
-	const { onDispose } = ctx;
+	const { owned } = ctx;
 	return {
 		/**
 		 * 31-perf K4: the ADAPTIVE QUALITY LEVEL on this device, so a module can cut its own
@@ -42,9 +42,19 @@ export function sdkQuality(ctx) {
 						console.log('module quality listener failed', error);
 					}
 				});
-				onDispose(off);
-				return off;
+				return owned('quality.onChange', off);
 			}
 		}
 	};
 }
+
+/** 34 R6 (T2): what each member does to the module's lifecycle — see SURFACE_KINDS in
+ * sdk/lifecycle.js. tests/unit/moduleLifecycle.test.js holds every 'registers' member to a
+ * teardown path; a member missing here fails it. */
+sdkQuality.surface = {
+	'quality.level': 'value',
+	'quality.max': 'value',
+	'quality.labels': 'value',
+	'quality.vr': 'value',
+	'quality.onChange': 'registers'
+};

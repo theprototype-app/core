@@ -12,7 +12,12 @@ export function sdkNet(ctx) {
 		/** Handle messages other peers sent with api.send() @param {(data: any) => void} fn */
 		onMessage(fn) {
 			(messageHandlers[moduleId] ??= []).push(fn);
-			onDispose(() => arrayRemove(messageHandlers[moduleId] ?? [], fn));
+			onDispose(() => {
+				const list = messageHandlers[moduleId];
+				if (!list) return;
+				arrayRemove(list, fn);
+				if (!list.length) delete messageHandlers[moduleId];
+			}, 'message');
 		},
 		/** Broadcast to all peers; arrives at their onMessage handlers @param {any} payload */
 		send(payload) {
@@ -29,7 +34,16 @@ export function sdkNet(ctx) {
 			stateSyncs[moduleId] = sync;
 			onDispose(() => {
 				if (stateSyncs[moduleId] === sync) delete stateSyncs[moduleId];
-			});
+			}, 'stateSync', { key: 'stateSync' });
 		}
 	};
 }
+
+/** 34 R6 (T2): what each member does to the module's lifecycle — see SURFACE_KINDS in
+ * sdk/lifecycle.js. tests/unit/moduleLifecycle.test.js holds every 'registers' member to a
+ * teardown path; a member missing here fails it. */
+sdkNet.surface = {
+	onMessage: 'registers',
+	send: 'action',
+	registerStateSync: 'registers'
+};

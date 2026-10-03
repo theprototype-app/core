@@ -688,6 +688,15 @@ export function registerShortcut(shortcut) {
 	applyOverrides();
 }
 
+/** T2 (34 R6): drop ONE registered shortcut by id — a module toolbox's shortcut lives in
+ * the shared 'Modules' group, so a group-wide unregister would take every module's with it.
+ * @param {string} id */
+export function unregisterShortcut(id) {
+	for (let i = shortcuts.length - 1; i >= 0; i--) {
+		if (shortcuts[i].id === id) shortcuts.splice(i, 1);
+	}
+}
+
 /** A2: drop every registered shortcut of one group (module-binding teardown
  * for the dev-mode reload — a re-register lists them fresh). @param {string} group */
 export function unregisterShortcutGroup(group) {

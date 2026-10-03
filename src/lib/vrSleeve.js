@@ -29,6 +29,7 @@ import { resumeAnimation } from './flowRuntime';
 import { instantiatePrefab } from './prefabs';
 import { getInput } from './inputRuntime';
 import { idbGet, idbPut } from './idb';
+import { disposeTree } from './disposeTree.js';
 
 // K (roadmap 13): VR sleeve palette — a FLAT STRIP of ghost mini-primitives
 // riding up the sleeve-hand forearm like a bracer (slots wrist → elbow).
@@ -573,20 +574,36 @@ export function sleeveState() {
 }
 
 /** Wire the sleeve into the VR interaction loop (called by the vrsleeve core
- * module's register — if the module is disabled, none of this exists). */
+ * module's register — if the module is disabled, none of this exists).
+ * 34 R6: returns the UNDO — every hook removed, a held preview cancelled, the strip taken
+ * off the controller and its GPU resources freed — so the module unloads live.
+ * @returns {() => void} */
 export function registerVRSleeve() {
-	if (registered) return;
+	if (registered) return () => {};
 	registered = true;
-	registerNavSuppressor(() => !!hold);
-	registerPanelGroupProvider(() =>
-		get(vrSleeveEnabled) && sleeveGroup?.parent && sleeveGroup.visible ? sleeveGroup : null
-	);
-	registerVRTriggerHooks({
-		start: vrSleeveTriggerStart,
-		end: vrSleeveTriggerEnd,
-		swallow: vrSleeveSwallowSelect
-	});
-	registerGripDropHook(sleeveGripDrop);
-	registerVRFrameHook(updateVRSleeve);
+	const offs = [
+		registerNavSuppressor(() => !!hold),
+		registerPanelGroupProvider(() =>
+			get(vrSleeveEnabled) && sleeveGroup?.parent && sleeveGroup.visible ? sleeveGroup : null
+		),
+		registerVRTriggerHooks({
+			start: vrSleeveTriggerStart,
+			end: vrSleeveTriggerEnd,
+			swallow: vrSleeveSwallowSelect
+		}),
+		registerGripDropHook(sleeveGripDrop),
+		registerVRFrameHook(updateVRSleeve)
+	];
 	loadSleeveSlots();
+	return () => {
+		if (!registered) return;
+		registered = false;
+		offs.forEach((off) => off());
+		releaseSleeveHold(false);
+		if (sleeveGroup) {
+			sleeveGroup.parent?.remove(sleeveGroup);
+			disposeTree(sleeveGroup);
+			sleeveGroup = null;
+		}
+	};
 }

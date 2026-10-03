@@ -36,7 +36,7 @@ export function sdkPost(ctx) {
 			onDispose(() => {
 				disposed = true;
 				if (off) off();
-			});
+			}, 'postEffect');
 			return import('../scenePost').then((m) => {
 				off = m.registerPostEffect(full, def);
 				if (disposed) off();
@@ -63,7 +63,7 @@ export function sdkPost(ctx) {
 			onDispose(() => {
 				disposed = true;
 				if (off) off();
-			});
+			}, 'postBackend');
 			return import('../postBackends').then((m) => {
 				off = m.registerPostBackend(full, label, compile);
 				if (disposed) off();
@@ -71,3 +71,11 @@ export function sdkPost(ctx) {
 		}
 	};
 }
+
+/** 34 R6 (T2): what each member does to the module's lifecycle — see SURFACE_KINDS in
+ * sdk/lifecycle.js. tests/unit/moduleLifecycle.test.js holds every 'registers' member to a
+ * teardown path; a member missing here fails it. */
+sdkPost.surface = {
+	registerPostEffect: 'registers',
+	registerPostBackend: 'registers'
+};

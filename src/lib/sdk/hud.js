@@ -43,10 +43,12 @@ export function sdkHud(ctx) {
 				else import('../flowRuntime').then((m) => m.setHudRows(id, rows));
 				if (!hudRowsOwned.has(id)) {
 					hudRowsOwned.add(id);
-					onDispose(() =>
-						flowRuntimeRef
-							? flowRuntimeRef.clearHudRows(id)
-							: import('../flowRuntime').then((m) => m.clearHudRows(id))
+					onDispose(
+						() =>
+							flowRuntimeRef
+								? flowRuntimeRef.clearHudRows(id)
+								: import('../flowRuntime').then((m) => m.clearHudRows(id)),
+						'hud.rows'
 					);
 				}
 			},
@@ -65,7 +67,7 @@ export function sdkHud(ctx) {
 			 */
 			registerDebugLine(fn) {
 				const off = registerModuleDebugLine(moduleId, fn);
-				onDispose(off);
+				onDispose(off, 'hud.debugLine');
 			},
 			/**
 			 * R3a: an entry in the HUD editor's ACTION catalog (the Actions section's picker).
@@ -78,7 +80,7 @@ export function sdkHud(ctx) {
 			registerAction(entry) {
 				const key = 'mod-' + moduleId + '-' + String(entry?.key ?? 'action');
 				const off = registerModuleHudAction(moduleId, entry);
-				onDispose(off);
+				onDispose(off, 'hud.action', { key: 'hud.action:' + key });
 				return key;
 			}
 		},
@@ -110,8 +112,19 @@ export function sdkHud(ctx) {
 				moduleName: def?.moduleName || moduleName,
 				...(def ?? {})
 			});
-			onDispose(() => unregisterModuleHudKind(full));
+			onDispose(() => unregisterModuleHudKind(full), 'hudElement', { key: 'hudElement:' + full });
 			return full;
 		}
 	};
 }
+
+/** 34 R6 (T2): what each member does to the module's lifecycle — see SURFACE_KINDS in
+ * sdk/lifecycle.js. tests/unit/moduleLifecycle.test.js holds every 'registers' member to a
+ * teardown path; a member missing here fails it. */
+sdkHud.surface = {
+	'hud.rows': 'registers',
+	'hud.clearRows': 'action',
+	'hud.registerDebugLine': 'registers',
+	'hud.registerAction': 'registers',
+	registerHudElement: 'registers'
+};

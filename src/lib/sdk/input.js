@@ -9,7 +9,10 @@ const INPUT_SCOPES = ['keys', 'locomotion', 'sticks'];
 
 /** @param {import('./context.js').SdkContext} ctx */
 export function sdkInput(ctx) {
-	const { moduleId, onDispose, claimedScopes } = ctx;
+	const { moduleId, onDispose, owned, claimedScopes } = ctx;
+	/** scope -> its journal entry's release, so an explicit releaseInput drops the entry
+	 * @type {Map<string, () => void>} */
+	const claimEntries = new Map();
 	return {
 		/**
 		 * Declare key bindings so they list in Settings ▸ Shortcuts under this
@@ -19,6 +22,15 @@ export function sdkInput(ctx) {
 		registerBindings(bindings) {
 			if (inputRuntimeRef) inputRuntimeRef.registerBindings(moduleId, bindings);
 			else import('../inputRuntime').then((m) => m.registerBindings(moduleId, bindings));
+			// one entry however often it is called: unregisterBindings drops the module's group
+			onDispose(
+				() =>
+					inputRuntimeRef
+						? inputRuntimeRef.unregisterBindings(moduleId)
+						: import('../inputRuntime').then((m) => m.unregisterBindings(moduleId)),
+				'bindings',
+				{ key: 'bindings' }
+			);
 		},
 		/** Per-frame input snapshot: {codes: Set<'KeyW'...>, axes: {lx,ly,rx,ry}, vrButtons} */
 		input() {
@@ -54,12 +66,10 @@ export function sdkInput(ctx) {
 					if (!dead) unsub = m.onInput(fn);
 				});
 			}
-			const off = () => {
+			return owned('inputListener', () => {
 				dead = true;
 				unsub(); // idempotent (Set.delete)
-			};
-			onDispose(off);
-			return off;
+			});
 		},
 		/** Pause the host's own use of an input scope while your module drives:
 		 * 'keys' (WASD camera fly / play movement), 'locomotion' (VR left stick), or
@@ -72,13 +82,41 @@ export function sdkInput(ctx) {
 			claimedScopes.add(scope);
 			if (inputRuntimeRef) inputRuntimeRef.claimInput(scope);
 			else import('../inputRuntime').then((m) => m.claimInput(scope));
+			// SYNCHRONOUS through the primed ref at teardown: an unload followed at once by
+			// a re-register (a dev reload) must not have the release land after the new claim
+			const release = onDispose(
+				() => {
+					claimEntries.delete(scope);
+					if (!claimedScopes.delete(scope)) return;
+					if (inputRuntimeRef) inputRuntimeRef.releaseInput(scope);
+					else import('../inputRuntime').then((m) => m.releaseInput(scope));
+				},
+				'inputClaim',
+				{ key: 'claim:' + scope }
+			);
+			claimEntries.set(scope, release);
 			return INPUT_SCOPES.includes(scope);
 		},
 		/** @param {'keys'|'locomotion'|'sticks'} scope */
 		releaseInput(scope) {
+			claimEntries.get(scope)?.();
+			claimEntries.delete(scope);
 			claimedScopes.delete(scope);
 			if (inputRuntimeRef) inputRuntimeRef.releaseInput(scope);
 			else import('../inputRuntime').then((m) => m.releaseInput(scope));
 		}
 	};
 }
+
+/** 34 R6 (T2): what each member does to the module's lifecycle — see SURFACE_KINDS in
+ * sdk/lifecycle.js. tests/unit/moduleLifecycle.test.js holds every 'registers' member to a
+ * teardown path; a member missing here fails it. */
+sdkInput.surface = {
+	registerBindings: 'registers',
+	input: 'read',
+	keyOf: 'read',
+	letterOf: 'read',
+	onInput: 'registers',
+	claimInput: 'registers',
+	releaseInput: 'action'
+};

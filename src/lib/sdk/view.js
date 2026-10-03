@@ -8,7 +8,7 @@ let followingFor = null;
 
 /** @param {import('./context.js').SdkContext} ctx */
 export function sdkView(ctx) {
-	const { moduleId, onDispose } = ctx;
+	const { moduleId, onDispose, owned } = ctx;
 	/** 33 (L4): api.followCam journals its stop once per module */
 	let followDisposeHooked = false;
 	return {
@@ -21,7 +21,7 @@ export function sdkView(ctx) {
 				followDisposeHooked = true;
 				onDispose(() => {
 					if (followingFor === moduleId) possessRef?.stopFollowCam();
-				});
+				}, 'followCam');
 			}
 			if (ok) followingFor = moduleId;
 			return ok;
@@ -47,9 +47,17 @@ export function sdkView(ctx) {
 		 * @param {any} object @returns {() => void}
 		 */
 		vrPanel(object) {
-			const off = vrControlsRef?.registerOverlayPanel?.(object) ?? (() => {});
-			onDispose(off);
-			return off;
+			return owned('vrPanel', vrControlsRef?.registerOverlayPanel?.(object) ?? (() => {}));
 		}
 	};
 }
+
+/** 34 R6 (T2): what each member does to the module's lifecycle — see SURFACE_KINDS in
+ * sdk/lifecycle.js. tests/unit/moduleLifecycle.test.js holds every 'registers' member to a
+ * teardown path; a member missing here fails it. */
+sdkView.surface = {
+	followCam: 'registers',
+	stopFollowCam: 'action',
+	vrHand: 'read',
+	vrPanel: 'registers'
+};

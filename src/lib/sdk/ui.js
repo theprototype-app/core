@@ -20,7 +20,7 @@ export function sdkUi(ctx) {
 		registerMenu(label, action) {
 			const item = { moduleId, label, action };
 			moduleMenuItems.update((list) => [...list, item]);
-			onDispose(() => moduleMenuItems.update((list) => list.filter((entry) => entry !== item)));
+			onDispose(() => moduleMenuItems.update((list) => list.filter((entry) => entry !== item)), 'menu');
 		},
 		/**
 		 * A5: a real UI surface — a floating TOOLBOX on the app's own shared shell.
@@ -64,20 +64,36 @@ export function sdkUi(ctx) {
 			const id = registerModuleToolbox({ ...box, moduleId });
 			// hoisted: the `if` narrowing does not reach inside the closure below
 			const keys = box.shortcut;
+			// force-close + unregister, so disable / update / dev-reload never leave a
+			// window on screen backed by a mount fn that no longer exists. KEYED: a
+			// re-register under the same id replaces the box, so the older undo must not run
+			// (it would close the new one)
+			onDispose(() => unregisterModuleToolbox(id), 'toolbox', { key: 'toolbox:' + id });
 			if (keys) {
+				// T2: the shortcut carries its OWN id so teardown drops exactly it (it was
+				// never removed before — a reload listed it twice, a removal kept it)
+				const shortcutId = 'module:' + moduleId + ':toolbox:' + id;
+				let disposed = false;
+				onDispose(
+					() => {
+						disposed = true;
+						import('../shortcuts').then((m) => m.unregisterShortcut(shortcutId));
+					},
+					'shortcut',
+					{ key: 'shortcut:' + shortcutId }
+				);
 				// dynamic: shortcuts' subtree reaches history, the TDZ cycle family
-				import('../shortcuts').then((m) =>
+				import('../shortcuts').then((m) => {
+					if (disposed) return;
 					m.registerShortcut({
+						id: shortcutId,
 						keys,
 						group: 'Modules',
 						label: box.title,
 						action: () => import('../moduleToolboxes').then((t) => t.toggleModuleToolbox(id))
-					})
-				);
+					});
+				});
 			}
-			// force-close + unregister, so disable / update / dev-reload never leave a
-			// window on screen backed by a mount fn that no longer exists
-			onDispose(() => unregisterModuleToolbox(id));
 			return id;
 		},
 		/**
@@ -122,9 +138,23 @@ export function sdkUi(ctx) {
 			import('../vrRadialMenu').then((menu) => menu.registerVRMenuEntry({ ...entry, id }));
 			// same-module import promises resolve in .then order, so this always
 			// runs after the registration even when teardown fires immediately
-			onDispose(() =>
-				import('../vrRadialMenu').then((menu) => menu.unregisterVRMenuEntry(id, entry.group ?? 'root'))
+			onDispose(
+				() => import('../vrRadialMenu').then((menu) => menu.unregisterVRMenuEntry(id, entry.group ?? 'root')),
+				'vrMenu',
+				{ key: 'vrMenu:' + id }
 			);
 		}
 	};
 }
+
+/** 34 R6 (T2): what each member does to the module's lifecycle — see SURFACE_KINDS in
+ * sdk/lifecycle.js. tests/unit/moduleLifecycle.test.js holds every 'registers' member to a
+ * teardown path; a member missing here fails it. */
+sdkUi.surface = {
+	registerMenu: 'registers',
+	registerToolbox: 'registers',
+	openToolbox: 'action',
+	closeToolbox: 'action',
+	toggleToolbox: 'action',
+	registerVRMenuEntry: 'registers'
+};

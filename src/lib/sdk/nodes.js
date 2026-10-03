@@ -46,7 +46,7 @@ export function sdkNodes(ctx) {
 						.filter((g) => g.items.length > 0)
 				);
 				Object.keys(components ?? {}).forEach((type) => delete moduleNodeComponents[type]);
-			});
+			}, 'nodeGroup');
 		},
 		/**
 		 * Per-frame effect for edges `your-node -> objectselector`. The runtime
@@ -69,7 +69,7 @@ export function sdkNodes(ctx) {
 			onDispose(() => {
 				if (moduleEffects[type] === fn) delete moduleEffects[type];
 				if (opts?.inputs) unregisterModuleNodeInputs(type, opts.inputs);
-			});
+			}, 'effect');
 		},
 		/**
 		 * A1 (DEVX #9): a node that OUTPUTS a value, so module state can drive core
@@ -96,7 +96,7 @@ export function sdkNodes(ctx) {
 			onDispose(() => {
 				unregisterModuleValueNode(type, fn);
 				if (opts?.inputs) unregisterModuleNodeInputs(type, opts.inputs);
-			});
+			}, 'valueNode');
 		},
 		/**
 		 * H2 (flow v2): ship CODE-EDITABLE node definitions with the module. Each
@@ -111,7 +111,18 @@ export function sdkNodes(ctx) {
 		 * @param {{key: string, name: string, params?: any[], code: string}[]} defs
 		 */
 		registerNodeDefs(defs) {
+			// T2: the disposer is journaled SYNCHRONOUSLY and a seeding that resolves after
+			// teardown seeds nothing (the registerPostEffect shape) — recorded inside the
+			// `.then`, an unload landing first left the seeded defs behind for good
+			/** @type {(() => void)[]} */
+			const undo = [];
+			let disposed = false;
+			onDispose(() => {
+				disposed = true;
+				undo.splice(0).forEach((fn) => fn());
+			}, 'nodeDef');
 			import('../customNodes').then((m) => {
+				if (disposed) return;
 				for (const def of defs ?? []) {
 					const id = 'mod-' + moduleId + '-' + def.key;
 					if (m.findNodeDef(id)) continue; // user edits win over reseeds
@@ -121,7 +132,7 @@ export function sdkNodes(ctx) {
 					// teardown removes ONLY a def still byte-equal to what we seeded —
 					// a user-edited def survives (mirrors the absent-only seeding rule),
 					// and the re-register then leaves it alone too.
-					onDispose(() => {
+					undo.push(() => {
 						const current = m.findNodeDef(id);
 						if (!current) return;
 						const snapshot = JSON.stringify({
@@ -137,3 +148,13 @@ export function sdkNodes(ctx) {
 		}
 	};
 }
+
+/** 34 R6 (T2): what each member does to the module's lifecycle — see SURFACE_KINDS in
+ * sdk/lifecycle.js. tests/unit/moduleLifecycle.test.js holds every 'registers' member to a
+ * teardown path; a member missing here fails it. */
+sdkNodes.surface = {
+	registerNodeGroup: 'registers',
+	registerEffect: 'registers',
+	registerValueNode: 'registers',
+	registerNodeDefs: 'registers'
+};

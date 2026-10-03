@@ -88,6 +88,8 @@ h.run(async () => {
 		let cam; s.playerCam.subscribe((v) => (cam = v))();
 		return cam.getWorldPosition(new s.THREE.Vector3()).toArray().map((n) => +n.toFixed(2));
 	});
+	const vignette = await page.evaluate(() => { let v; window.__stores.gameKit.gameSettings?.gameSettingValues?.subscribe((x) => (v = x))(); return v?.vignette ?? null; });
+	h.check(vignette === true, `the comfort vignette defaults ON for this game (${vignette})`);
 	h.check(eye0[1] > 12.5 && Math.abs(eye0[0]) < 3, `Play put the player on stage 1's start pad, up in the sky (${eye0})`);
 
 	console.log('\n=== 3. a scripted run of stage 1 ===');

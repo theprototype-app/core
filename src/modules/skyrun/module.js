@@ -58,6 +58,23 @@ export default {
 		import('../../lib/charController.js').then((m) => (walk = m));
 		/** slider uuid -> its last world position (the carry is the frame's delta) */
 		/** @type {Map<string, number[]>} */ const sliderWas = new Map();
+		/** @type {any} */ let settings = null; // primed: gameSettings (a leaf)
+		/** @type {any} */ let store = null; // primed: safeStorage (where gameSettings keeps its rows)
+		import('../../lib/gameSettings.js').then((m) => (settings = m));
+		import('../../lib/safeStorage.js').then((m) => (store = m.safeStorage));
+		/** the brief's COMFORT default: a platformer walks with the stick constantly, so the
+		 * vignette starts ON for this game — once per device, and only where the player never
+		 * chose (no stored shell row yet); Settings > Comfort vignette turns it off */
+		const comfortDefault = () => {
+			try {
+				if (!settings || !store || api.storage?.get?.('vignette-defaulted', false)) return;
+				const raw = store.getItem(settings.shellKey(settings.currentGameId()));
+				if (!raw) settings.setGameSetting('vignette', true);
+				api.storage?.set?.('vignette-defaulted', true);
+			} catch {
+				/* storage refused: the default stays off */
+			}
+		};
 		/** @type {any} */ let kitRt = null; // primed: the kit's authority (the towers rule: never a static edge)
 		import('../../lib/kit/runtime.js').then((m) => (kitRt = m));
 		const amAuthority = () => {
@@ -398,6 +415,7 @@ export default {
 					if (typeof api.game?.setHelp === 'function') helpOff = api.game.setHelp(HELP);
 					const s = startOf(stageNo());
 					api.setSpawn(s.pos, s.yaw);
+					comfortDefault();
 				} else {
 					if (helpOff) helpOff();
 					helpOff = null;

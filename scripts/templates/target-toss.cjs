@@ -94,7 +94,7 @@ const disc = (name, r, pos, color, emissive) => ({
 });
 
 const TEMPLATES = [
-	{ type: 'sphere', name: 'Ball template', color: 0xffd45e, r: 0.1, pos: [-1, VAULT_TOP + 0.1, 0], physical: true, roughness: 0.45, clearcoat: 0.3, physics: { mode: 'dynamic', mass: 0.35, collider: 'sphere', friction: 0.7, restitution: 0.45 } },
+	{ type: 'sphere', name: 'Ball template', color: 0xfff0b0, r: 0.1, pos: [-1, VAULT_TOP + 0.1, 0], emissive: 0x6a4a10, emissiveIntensity: 0.6, physical: true, roughness: 0.4, clearcoat: 0.5, physics: { mode: 'dynamic', mass: 0.35, collider: 'sphere', friction: 0.7, restitution: 0.45 } },
 	{ type: 'cylinder', name: 'Can template', color: 0xe8483c, r: 0.105, h: 0.28, pos: [1, VAULT_TOP + 0.14, 0], physical: true, metalness: 0.55, roughness: 0.35, clearcoat: 0.5, physics: { mode: 'dynamic', mass: 0.12, collider: 'cylinder', friction: 0.6, restitution: 0.15 } }
 ];
 
@@ -237,8 +237,13 @@ const TARGET_TOSS_DEF = {
 		...[1, 2, 3, 4, 5, 6].map((i) => disc('Popup target ' + i, 0.24, [-3 + (i - 1) * 1.2, 1.32, -6.6], 0xff5a4e, 0xff2a1e)),
 		// the CART runs on a track in front of the wall, a bullseye on top
 		{ type: 'box', name: 'Cart track', color: 0x3b3b44, size: [7.6, 0.03, 0.24], pos: [0, 0.015, -5.9], metalness: 0.6, roughness: 0.4, shadow: false },
-		{ type: 'box', name: 'Cart', color: 0x2e6fd8, size: [1.0, 0.5, 0.5], bevel: 0.05, bevelSegments: 1, pos: [0, 0.3, -5.9], physical: true, roughness: 0.4, clearcoat: 0.6, physics: { mode: 'static' } },
-		disc('Cart target', 0.34, [0, 0.95, -5.9], 0xfff4e0, 0xffc640),
+		{ type: 'box', name: 'Cart', color: 0x2e6fd8, size: [1.0, 0.5, 0.5], bevel: 0.05, bevelSegments: 1, pos: [0, 0.55, -5.9], physical: true, roughness: 0.4, clearcoat: 0.6, physics: { mode: 'static' } },
+		disc('Cart target', 0.34, [0, 1.2, -5.9], 0xfff4e0, 0xffc640),
+		// the gallery's side walls and a sign over the targets frame the throw
+		{ type: 'box', name: 'Gallery wall west', color: 0x8a2a36, size: [0.2, 2.6, 10], pos: [-4.3, 1.3, -3], roughness: 0.9, physics: { mode: 'static' } },
+		{ type: 'box', name: 'Gallery wall east', color: 0x8a2a36, size: [0.2, 2.6, 10], pos: [4.3, 1.3, -3], roughness: 0.9, physics: { mode: 'static' } },
+		{ type: 'box', name: 'Gallery sign', color: 0xffd45e, size: [3.4, 0.5, 0.08], pos: [0, 3.15, -7.85], emissive: 0xffb830, emissiveIntensity: 1.4, roughness: 0.4, shadow: false },
+		{ type: 'box', name: 'Target lane', color: 0x6a5240, size: [8.4, 0.02, 9], pos: [0, 0.01, -3.3], roughness: 0.85, shadow: false },
 		// the back curtain and one warm light
 		{ type: 'box', name: 'Back curtain', color: 0x7a1f2e, size: [10, 3.6, 0.2], pos: [0, 1.8, -8], roughness: 0.95, physics: { mode: 'static' } },
 		{ type: 'light', name: 'Booth light', kind: 'point', color: 0xffc98a, intensity: 9, distance: 16, pos: [0, 3.0, -2.2] },

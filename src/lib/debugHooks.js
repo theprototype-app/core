@@ -23,6 +23,8 @@ export const DEBUG_HOOKS = [
 	['kit', () => import('./kit/runtime.js')],
 	// 34 R2 (kit-entities): entities drawn / world / api (kitEntitiesDebug, kitEntitiesApi, entityOfObject)
 	['kitEntities', () => import('./kit/entityApp.js')],
+	// 34 R3 (D1/D2): behaviours (runtime, behaviourStatus, behavioursDebug)
+	['behaviours', () => import('./behaviours/app.js')],
 	['meshEdit', () => import('./meshEdit')],
 	['perf', () => import('./perf/recorder')],
 	['perfDetailed', () => import('./perf/detailed')],

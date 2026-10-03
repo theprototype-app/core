@@ -33,6 +33,7 @@
 	import SequenceNode from './nodes/SequenceNode.svelte';
 	import MoveInputNode from './nodes/MoveInputNode.svelte';
 	import ScriptNode from './nodes/ScriptNode.svelte';
+	import BehaviourNode from './nodes/BehaviourNode.svelte';
 	import MapRangeNode from './nodes/MapRangeNode.svelte';
 	import SelectNode from './nodes/SelectNode.svelte';
 	import CustomNode from './nodes/CustomNode.svelte';
@@ -127,6 +128,7 @@
 		pulse: AnimationNode,
 		blink: AnimationNode,
 		script: ScriptNode,
+		behaviour: BehaviourNode, // 34 R3
 		maprange: MapRangeNode,
 		select: SelectNode,
 		customnode: CustomNode,

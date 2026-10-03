@@ -72,11 +72,12 @@ function compute() {
 				derived: false
 			});
 		}
-		if (node.type === 'script' && node.data?.code?.trim()) {
+		// 34 R3: a behaviour node's file is a .js asset of the scene the same way
+		if ((node.type === 'script' || node.type === 'behaviour') && node.data?.code?.trim()) {
 			out.push({
 				id: 'config:script:' + node.id,
 				group: 'config',
-				name: (node.data.name || 'script-' + String(node.id).slice(0, 5)) + '.js',
+				name: (node.data.name || node.type + '-' + String(node.id).slice(0, 5)) + '.js',
 				kind: 'text',
 				nodeId: node.id,
 				derived: true

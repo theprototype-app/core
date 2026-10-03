@@ -111,9 +111,14 @@ export function entityPiece(spec, opsList, primary) {
 			// way score and pickups reset on it — a restarted game does not keep the last wave
 			const round = ctx.read?.('round')?.round;
 			const kit = ctx.kit();
-			if (round !== undefined && roundSeen.has(kit) && roundSeen.get(kit) !== round)
+			// 34-behaviours: only a round number from a REAL document counts — a joiner that is the
+			// authority the moment it connects (the smallest-id rule) ticks on its fresh rev-0 document
+			// first, and the session's round arriving next must not read as "a new round" and clear
+			// the wave everyone is playing
+			const known = (kit.doc?.()?.rev ?? 1) > 0;
+			if (round !== undefined && known && roundSeen.has(kit) && roundSeen.get(kit) !== round)
 				rt.applyOp('spawner', 'clear', [''], null);
-			if (round !== undefined) roundSeen.set(kit, round);
+			if (round !== undefined && known) roundSeen.set(kit, round);
 			rt.tick();
 			return [];
 		};

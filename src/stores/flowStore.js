@@ -236,6 +236,10 @@ export const customNodeDefs = writable([]);
 /** @type {import('svelte/store').Writable<string | null>} */
 export const scriptEditorOpen = writable(null);
 
+// 34 R3 (D2): the behaviour whose derived live view covers the Node editor — {id, graphId} (null = closed)
+/** @type {import('svelte/store').Writable<{id: string, graphId: string} | null>} */
+export const behaviourViewOpen = writable(null);
+
 // node designer modal: def being edited (null = closed, 'new' = create)
 /** @type {import('svelte/store').Writable<any>} */
 export const nodeDesignerOpen = writable(null);

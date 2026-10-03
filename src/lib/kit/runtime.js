@@ -29,6 +29,7 @@ import { pickAuthority } from './authority.js';
 import { createKit, KIT_DOC, KIT_REQ } from './core.js';
 import { KIT_PIECES } from './index.js';
 import { kitNodeType } from './spec.js';
+import { entitiesOfKit } from './entityHub.js';
 
 export { KIT_DOC, KIT_REQ };
 
@@ -179,6 +180,11 @@ export function kitCheckGrab(req) {
  * bounds}`, null = the kit sets none */
 export function kitPlayRules() {
 	return kit.impls.rules?.extra?.current?.() ?? { reach: null, jump: null, bounds: null };
+}
+
+/** the entities runtime of THE kit (null until an entity piece is made) — the lifecycle contract */
+export function kitEntitiesRuntime() {
+	return entitiesOfKit(kit);
 }
 
 /** the debug hook / suites */

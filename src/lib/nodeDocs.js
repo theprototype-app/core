@@ -14,6 +14,7 @@ import { kitNodeDoc } from './kit/catalog.js';
 
 /** @type {Record<string, string>} type -> one line */
 export const NODE_DOCS = {
+	behaviour: "Game logic written as a small JavaScript file (params, replicated state, event handlers, kit calls) - run once on the authority peer, with a live node view of its events, state and knobs.",
 	slider: "An interactive slider that outputs a number - the quickest way to hand-tune any numeric input live.",
 	colorpicker: "Outputs a color chosen with a swatch - the color source for anything that paints.",
 	switcher: "A radio-button list that outputs the index of the selected item - a hand-operated multi-way switch.",

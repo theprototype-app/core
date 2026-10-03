@@ -229,6 +229,25 @@ export const VALIDATORS = {
 		typeof d.piece === 'string' &&
 		typeof d.op === 'string' &&
 		isArray(d.args),
+	// 34 R3 (D1): a behaviour's replicated document — written by the authority peer only,
+	// latest-wins on (at, rev, by). The state is the behaviour's own JSON (its handlers read it);
+	// the stamps are compared and the timers fired by the next authority, so those are checked
+	bhv: (d) =>
+		isUuid(d.id) &&
+		Number.isFinite(d.rev) &&
+		Number.isFinite(d.at) &&
+		typeof d.by === 'string' &&
+		!!d.state &&
+		typeof d.state === 'object' &&
+		!Array.isArray(d.state) &&
+		typeof d.started === 'boolean' &&
+		Number.isFinite(d.seq) &&
+		isArray(d.timers) &&
+		d.timers.length <= 64 &&
+		d.timers.every(
+			(/** @type {any} */ t) => !!t && typeof t.k === 'string' && Number.isFinite(t.at) && typeof t.m === 'string' && isArray(t.a)
+		) &&
+		(d.fired === undefined || (!!d.fired && typeof d.fired === 'object' && !Array.isArray(d.fired))),
 	camera: (d) => typeof d.peerId === 'string' && isVec3(d.position) && isFiniteArray(d.rotation, 3),
 	// 34 R2 (kit-entities): the ONE wire type kit entities replicate on — written by the
 	// authority peer only (the applier refuses anyone else), applied straight into poses and

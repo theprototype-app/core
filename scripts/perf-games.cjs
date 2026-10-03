@@ -42,6 +42,7 @@ const fs = require('fs');
 const { execFileSync } = require('child_process');
 const h = require('../tests/e2e/helpers.cjs');
 const fx = require('../tests/e2e/fakeXR.cjs');
+const { startRecorder, readScene, settleLod, settleScene } = require('./perfProbe.cjs');
 
 const argv = process.argv.slice(2);
 const arg = (name, fallback) => {
@@ -50,16 +51,26 @@ const arg = (name, fallback) => {
 };
 const flag = (name) => argv.includes('--' + name);
 
-const LABEL = arg('label', 'run');
-const SECONDS = Number(arg('seconds', '10'));
+// 34 B2 `--check`: THE BUDGET GATE (see the header of perfBudget.cjs and perf/README.md) —
+// counts only, in ONE pinned profile, games AND levels, judged against perf/budgets.json;
+// exit 1 when red. `--games-only` / `--levels-only` narrow it, `--budgets <file>` swaps the file.
+const CHECK = flag('check');
+const budgetLib = require('./perfBudget.cjs');
+const BUDGETS = CHECK ? budgetLib.loadBudgets(arg('budgets', budgetLib.BUDGETS_FILE)) : null;
+
+const LABEL = arg('label', CHECK ? 'check' : 'run');
+const SECONDS = Number(arg('seconds', CHECK ? '3' : '10'));
 const PHONE = flag('phone');
-const THROTTLE = Number(arg('throttle', PHONE ? '6' : '4'));
-const VR = flag('vr');
+// the gate reads counts, which a throttle does not change — it only makes a runner slower
+const THROTTLE = Number(arg('throttle', CHECK ? '1' : PHONE ? '6' : '4'));
+// the gate's profile IS the headset analogue (the Quest budget's own column), standing still
+const VR = flag('vr') || CHECK;
+const WALK = VR && !CHECK;
 const PROFILE = flag('profile');
-const OUT = arg('out', '/home/deck/.code/lanes-30/after-31/31-perf');
+const OUT = arg('out', CHECK ? path.join(__dirname, '..', 'perf', 'out') : '/home/deck/.code/lanes-30/after-31/31-perf');
 const ONLY = (arg('only', '') || '').split(',').filter(Boolean);
 const ROOT = path.resolve(__dirname, '../..');
-const SCENES_REF = process.env.PERF_SCENES_REF || 'preview-1-17';
+const SCENES_REF = process.env.PERF_SCENES_REF || BUDGETS?.scenes?.ref || 'preview-1-17';
 const SCENES_DIR = process.env.PERF_SCENES_DIR || null;
 const SCENES_REPO = process.env.PERF_SCENES_REPO || [path.join(ROOT, 'scenes'), path.join(ROOT, 'theprototype.app-scenes')].find((p) => fs.existsSync(p));
 const MODULES_DIR = process.env.PERF_MODULES_DIR || null;
@@ -102,155 +113,9 @@ async function installZip(page, id, file) {
 	await page.waitForTimeout(300);
 }
 
-/** In-page: start the recorder (render wrapper + rAF frame times). */
-function startRecorder() {
-	const s = window.__stores;
-	let r;
-	s.globalRenderer.subscribe((v) => (r = v))();
-	const rec = { calls: 0, triangles: 0, renders: 0, frames: [], last: 0, on: true, heap0: performance.memory?.usedJSHeapSize ?? null };
-	const inner = r.render;
-	r.render = function (...a) {
-		const out = inner.apply(this, a);
-		const i = this.info?.render;
-		if (rec.on && i) {
-			rec.calls += i.calls;
-			rec.triangles += i.triangles;
-			rec.renders++;
-		}
-		return out;
-	};
-	const tick = (t) => {
-		if (!rec.on) return;
-		if (rec.last) rec.frames.push(t - rec.last);
-		rec.last = t;
-		requestAnimationFrame(tick);
-	};
-	requestAnimationFrame(tick);
-	rec.stop = () => {
-		rec.on = false;
-		r.render = inner;
-	};
-	window.__perfRec = rec;
-}
-
-/** In-page: stop the recorder and read the scene. */
-function readScene() {
-	const s = window.__stores;
-	const rec = window.__perfRec;
-	rec.stop();
-	let r;
-	s.globalRenderer.subscribe((v) => (r = v))();
-	let scene;
-	s.globalScene?.subscribe?.((v) => (scene = v))();
-	if (!scene) {
-		let g;
-		s.objectsGroup.subscribe((v) => (g = v))();
-		scene = g;
-		while (scene?.parent) scene = scene.parent;
-	}
-	const frames = rec.frames.slice().sort((a, b) => a - b);
-	const pct = (q) => (frames.length ? frames[Math.min(frames.length - 1, Math.max(0, Math.ceil(q * frames.length) - 1))] : null);
-	const n = rec.frames.length || 1;
-	let lights = 0,
-		shadowLights = 0,
-		meshes = 0,
-		instanced = 0,
-		instances = 0,
-		unculled = 0,
-		castMeshes = 0,
-		points = 0,
-		objects = 0,
-		skinned = 0;
-	const textures = new Set();
-	scene?.traverseVisible?.((o) => {
-		objects++;
-		if (o.isLight && !o.isAmbientLight && !o.isHemisphereLight) {
-			lights++;
-			if (o.castShadow && r.shadowMap.enabled) shadowLights++;
-		}
-		if (o.isMesh || o.isPoints || o.isLine || o.isSprite) {
-			if (o.isMesh) meshes++;
-			if (o.isPoints) points++;
-			if (o.isSkinnedMesh) skinned++;
-			if (o.isInstancedMesh) {
-				instanced++;
-				instances += o.count;
-			}
-			if (o.frustumCulled === false) unculled++;
-			if (o.isMesh && o.castShadow && r.shadowMap.enabled) castMeshes++;
-			const mats = Array.isArray(o.material) ? o.material : [o.material];
-			for (const m of mats) {
-				if (!m) continue;
-				for (const k in m) if (m[k]?.isTexture) textures.add(m[k]);
-				for (const k in m.uniforms ?? {}) if (m.uniforms[k]?.value?.isTexture) textures.add(m.uniforms[k].value);
-			}
-		}
-	});
-	if (scene?.background?.isTexture) textures.add(scene.background);
-	if (scene?.environment?.isTexture) textures.add(scene.environment);
-	// 33 G1: what a PHONE's GPU pays for — pixels per frame, and what shades them
-	let physical = 0;
-	let transparent = 0;
-	scene?.traverseVisible?.((o) => {
-		if (!o.isMesh) return;
-		const mats = Array.isArray(o.material) ? o.material : [o.material];
-		if (mats.some((m) => m?.isMeshPhysicalMaterial)) physical++;
-		if (mats.some((m) => m?.transparent)) transparent++;
-	});
-	const buffer = r.getDrawingBufferSize(new s.THREE.Vector2());
-	let bytes = 0;
-	for (const t of textures) {
-		const img = t.image;
-		const one = Array.isArray(img) ? img[0] : img;
-		const w = one?.naturalWidth || one?.videoWidth || one?.width || 0;
-		const h = one?.naturalHeight || one?.videoHeight || one?.height || 0;
-		const faces = Array.isArray(img) ? img.length : 1;
-		bytes += w * h * 4 * faces * (t.generateMipmaps === false ? 1 : 4 / 3);
-	}
-	let state = null;
-	s.gameState?.gameState?.subscribe((v) => (state = v?.state ?? null))();
-	// 31-perf: what LOD and the governor were doing (absent on a build without them)
-	const lod = s.lod?.lodStats?.() ?? null;
-	let quality = null;
-	s.qualityGovernor?.qualityState?.subscribe((v) => (quality = v?.level ?? null))();
-	return {
-		frames: rec.frames.length,
-		seconds: rec.frames.reduce((a, b) => a + b, 0) / 1000,
-		p50: pct(0.5),
-		p95: pct(0.95),
-		p99: pct(0.99),
-		max: frames[frames.length - 1] ?? null,
-		calls: Math.round(rec.calls / n),
-		triangles: Math.round(rec.triangles / n),
-		rendersPerFrame: Math.round((rec.renders / n) * 10) / 10,
-		geometries: r.info.memory.geometries,
-		textures: r.info.memory.textures,
-		sceneTextures: textures.size,
-		textureMB: Math.round((bytes / 1048576) * 10) / 10,
-		programs: r.info.programs?.length ?? null,
-		lights,
-		shadowLights,
-		castMeshes,
-		shadowMap: r.shadowMap.enabled,
-		objects,
-		meshes,
-		instanced,
-		instances,
-		unculled,
-		points,
-		skinned,
-		pixelRatio: Math.round(r.getPixelRatio() * 100) / 100,
-		bufferPx: Math.round((buffer.x * buffer.y) / 1000) / 1000,
-		physical,
-		transparent,
-		heapMB: performance.memory ? Math.round((performance.memory.usedJSHeapSize / 1048576) * 10) / 10 : null,
-		heapDeltaMB: performance.memory && rec.heap0 != null ? Math.round(((performance.memory.usedJSHeapSize - rec.heap0) / 1048576) * 10) / 10 : null,
-		lodMeshes: lod ? lod.entries : null,
-		lodCoarse: lod ? lod.drawnCoarse : null,
-		quality,
-		state
-	};
-}
+// 34 B2: the profile's one stored setting — the adaptive governor OFF, so a slow runner cannot
+// step quality down (shadows, LOD bias) and count a different scene than a fast desk does
+const CHECK_STORAGE = { autoQuality: 'false' };
 
 async function probeGame(browser, game) {
 	const bytes = sceneFile(game.scene);
@@ -261,7 +126,7 @@ async function probeGame(browser, game) {
 	const context = PHONE
 		? { viewport: { width: 412, height: 915 }, deviceScaleFactor: 2.625, isMobile: true, hasTouch: true }
 		: { viewport: { width: 1280, height: 720 } };
-	const peer = await h.setupPage(browser, game.slug, { context });
+	const peer = await h.setupPage(browser, game.slug, { context, storage: CHECK ? CHECK_STORAGE : undefined });
 	const page = peer.page;
 	try {
 		for (const m of game.modules || []) await installZip(page, m.id, zipFor(m.id));
@@ -271,6 +136,7 @@ async function probeGame(browser, game) {
 			if (payload) await s.sessions.requestLoadSession(payload.id);
 		}, Array.from(bytes));
 		await page.waitForTimeout(3000);
+		if (CHECK) await settleScene(page);
 		if (VR) {
 			await fx.install(page);
 			await fx.installSpace(page, { head: [0, 1.6, 0] });
@@ -283,6 +149,9 @@ async function probeGame(browser, game) {
 				s.viewportOverrides.setRenderLayer('post', false);
 			});
 		}
+		// the gate: a headset ENTERS with shadows off (the governor's XR entry floor, step 1) —
+		// the protocol's "shadows off in Interact"; the governor itself is off (CHECK_STORAGE)
+		if (CHECK) await page.evaluate(() => window.__stores.lightParams.shadowQuality.set('off'));
 		await page.locator('#play-button').click({ timeout: 10000 }).catch(() => page.evaluate(() => window.__stores.isLocked.set(true)));
 		await page.waitForTimeout(1500);
 		const start = page.locator('#hud-layer button', { hasText: /^\W*(Play|Start)\b/i }).first();
@@ -299,8 +168,9 @@ async function probeGame(browser, game) {
 			await page.evaluate(() => window.__stores.gameState.setGameState('playing'));
 			started = started === 'hud' ? 'hud+shell' : 'shell';
 		}
-		if (VR) await fx.stick(page, 'left', 0, -1);
+		if (WALK) await fx.stick(page, 'left', 0, -1);
 		await page.waitForTimeout(2000);
+		if (CHECK) await settleLod(page);
 		const cdp = await page.context().newCDPSession(page);
 		await cdp.send('Emulation.setCPUThrottlingRate', { rate: THROTTLE });
 		if (PROFILE) {
@@ -424,7 +294,68 @@ function table(rows) {
 	return head + '\n' + lines.join('\n');
 }
 
-(async () => {
+/**
+ * 34 B2 — THE GATE: every game and every level with viewpoints, counted in the pinned profile,
+ * judged against perf/budgets.json. Exit 0 green, 1 red, 2 when it could not run at all.
+ */
+async function runCheck() {
+	const index = JSON.parse((sceneFile('index.json') || '{}').toString());
+	const gamesOnly = flag('games-only');
+	const levelsOnly = flag('levels-only');
+	const pick = (slug) => !ONLY.length || ONLY.includes(slug);
+	const { checkLevel, VIEWS } = require('./perf-levels.cjs');
+	const games = levelsOnly ? [] : (index.games || []).filter((g) => pick(g.slug)).map((g) => ({ slug: g.slug, title: g.title, scene: g.scene, modules: g.modules || [] }));
+	const levels = gamesOnly ? [] : (index.templates || []).filter((t) => VIEWS[t.slug] && pick(t.slug));
+	if (!games.length && !levels.length) {
+		console.error('budget gate: nothing to measure (scenes ' + (SCENES_DIR || SCENES_REPO + '@' + SCENES_REF) + ')');
+		process.exit(2);
+	}
+	// SWIFTSHADER=1 measures without the GPU — what a GitHub runner does (the determinism proof)
+	const browser = await h.launch({ args: process.env.SWIFTSHADER ? [] : h.GPU_ARGS });
+	/** @type {any[]} */
+	const rows = [];
+	const counts = (m) => ({ calls: m.medianCalls, triangles: m.medianTriangles, lights: m.lights, textureMB: m.textureMB, maxCalls: m.maxCalls, castLights: m.castLights, frames: m.renderedFrames });
+	for (const g of games) {
+		const t0 = Date.now();
+		let r = await probeGame(browser, g);
+		// one retry: a page that lost its recorder or WebGL context is the runner, not the scene
+		if (r.error) r = await probeGame(browser, g);
+		rows.push(r.skipped || r.error ? { kind: 'game', slug: g.slug, error: r.skipped ?? r.error } : { kind: 'game', slug: g.slug, ...counts(r), started: r.started, state: r.state });
+		const last = rows[rows.length - 1];
+		console.log(`game ${g.slug}: ${last.error ? 'NOT MEASURED ' + last.error : `${last.calls} calls (max ${last.maxCalls}), ${last.triangles} tris, ${last.lights} lights, ${last.textureMB} MB over ${last.frames} frames`} (${Math.round((Date.now() - t0) / 1000)}s)`);
+	}
+	for (const t of levels) {
+		const t0 = Date.now();
+		const bytes = sceneFile(t.scene || `templates/${t.slug}/scene.tpscene`);
+		const once = () => checkLevel(browser, t.slug, /** @type {Buffer} */ (bytes), { seconds: SECONDS, storage: CHECK_STORAGE, settle: settleScene });
+		let r = bytes ? await once() : { slug: t.slug, error: 'no scene file' };
+		if (bytes && r.error) r = await once();
+		if (r.error || !r.views?.length) rows.push({ kind: 'level', slug: t.slug, error: r.error ?? 'no views measured' });
+		else for (const v of r.views) rows.push({ kind: 'level', slug: t.slug, view: v.label, ...counts(v) });
+		console.log(`level ${t.slug}: ${r.error ?? r.views.map((v) => `${v.label} ${v.medianCalls}`).join(' · ')} (${Math.round((Date.now() - t0) / 1000)}s)`);
+	}
+	await browser.close();
+	const verdict = budgetLib.judge(BUDGETS, rows);
+	const head =
+		`## perf budget gate — ${LABEL}\n\n${new Date().toISOString()} · ${h.URL} · scenes ${SCENES_DIR || SCENES_REF} · ` +
+		`profile: headset analogue (1280x720, post off, Shaded, shadows off, governor off), standing at the spawn/viewpoint, ` +
+		`median display frame over ${SECONDS} s · ${process.env.SWIFTSHADER ? 'SwiftShader' : 'GPU args'}\n\n`;
+	const md = head + budgetLib.report(verdict);
+	fs.mkdirSync(OUT, { recursive: true });
+	fs.writeFileSync(path.join(OUT, `budget-${LABEL}.md`), md);
+	fs.writeFileSync(path.join(OUT, `budget-${LABEL}.json`), JSON.stringify({ rows, verdict: { ok: verdict.ok, failures: verdict.failures, warnings: verdict.warnings } }, null, 1));
+	console.log('\n' + md);
+	console.log('wrote ' + path.join(OUT, `budget-${LABEL}.{md,json}`));
+	if (process.env.GITHUB_STEP_SUMMARY) fs.appendFileSync(process.env.GITHUB_STEP_SUMMARY, md);
+	process.exit(verdict.ok ? 0 : 1);
+}
+
+if (CHECK)
+	runCheck().catch((e) => {
+		console.error(e);
+		process.exit(2);
+	});
+else (async () => {
 	const index = JSON.parse((sceneFile('index.json') || '{}').toString());
 	let games = (index.games || []).map((g) => ({ slug: g.slug, title: g.title, scene: g.scene, modules: g.modules || [] }));
 	if (ONLY.length) games = games.filter((g) => ONLY.includes(g.slug));

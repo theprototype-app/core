@@ -142,7 +142,74 @@ async function probe(browser, slug, bytes) {
 	return out;
 }
 
-(async () => {
+/**
+ * 34 B2 — ONE level for the budget gate (`perf-games.cjs --check`): the `vr` mode only (the
+ * column the Quest budget applies to), every viewpoint, counted with the shared probe
+ * (perfProbe.cjs) so a level row and a game row mean the same thing. `storage` seeds the
+ * gate's profile (the governor off) before the app boots.
+ * @returns {Promise<{slug: string, views?: any[], error?: string}>}
+ */
+async function checkLevel(browser, slug, bytes, { seconds = 3, storage, settle } = {}) {
+	const { startRecorder: start, readScene, settleLod } = require('./perfProbe.cjs');
+	const peer = await h.setupPage(browser, slug, { context: { viewport: { width: 1280, height: 720 } }, storage });
+	const page = peer.page;
+	const out = { slug, views: /** @type {any[]} */ ([]) };
+	try {
+		await page.evaluate(async (arr) => {
+			const s = window.__stores;
+			const payload = await s.sessions.importSessionZip(new Uint8Array(arr).buffer);
+			if (payload) await s.sessions.requestLoadSession(payload.id);
+		}, Array.from(bytes));
+		await page.waitForTimeout(1500);
+		if (settle) await settle(page);
+		await page.locator('#play-button').click({ timeout: 10000 }).catch(() => page.evaluate(() => window.__stores.isLocked.set(true)));
+		await page.waitForTimeout(2500);
+		await page.evaluate(() => {
+			const s = window.__stores;
+			s.viewportOverrides.setRenderLayer('post', false);
+			s.viewMode.set('shaded');
+			s.lightParams.shadowQuality.set('off');
+		});
+		const views = VIEWS[slug]?.length ? VIEWS[slug] : [['spawn', null, 0]];
+		for (const [label, feet, yaw] of views) {
+			if (feet) await placeCamera(page, feet, yaw);
+			await page.waitForTimeout(600);
+			// a view can ask for LOD levels no earlier view needed: count only once they are in
+			const lodPending = await settleLod(page);
+			await page.waitForTimeout(300);
+			await page.evaluate(start);
+			await page.waitForTimeout(seconds * 1000);
+			out.views.push({ label, ...(await page.evaluate(readScene)), ...(lodPending ? { lodPending } : {}) });
+		}
+		if (h.pageErrors && h.pageErrors(peer).length) out.pageErrors = h.pageErrors(peer).length;
+	} catch (e) {
+		out.error = String(/** @type {any} */ (e)?.message ?? e).split('\n')[0];
+	} finally {
+		await page.context().close().catch(() => {});
+	}
+	return out;
+}
+
+/** put the Play camera at a viewpoint's feet + 1.7 m, looking along `yaw` */
+async function placeCamera(page, feet, yaw) {
+	await page.evaluate(
+		({ feet, yaw }) => {
+			const s = window.__stores;
+			let cam;
+			s.playerCam.subscribe((c) => (cam = c))();
+			const v = new s.THREE.Vector3(feet[0], feet[1] + 1.7, feet[2]);
+			cam.parent?.worldToLocal(v);
+			cam.position.copy(v);
+			cam.quaternion.setFromEuler(new s.THREE.Euler(0, yaw, 0, 'YXZ'));
+			cam.updateMatrixWorld(true);
+		},
+		{ feet, yaw }
+	);
+}
+
+module.exports = { checkLevel, placeCamera, VIEWS };
+
+if (require.main === module) (async () => {
 	if (!DIR) throw new Error('--dir <scenes tree> is required');
 	const index = JSON.parse(fs.readFileSync(path.join(DIR, 'index.json'), 'utf8'));
 	const rows = (index.templates ?? []).filter((r) => (ONLY.length ? ONLY.includes(r.slug) : VIEWS[r.slug]));

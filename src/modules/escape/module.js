@@ -227,6 +227,18 @@ export default {
 					if (now === 7) setFlag(F.vault);
 					return true;
 				}
+				case 'Workshop gate':
+					if (!has(F.gate)) {
+						say('The iron gate is down.', { sub: has(F.fitted) ? 'Keep turning the crank.' : 'There is an empty square socket in the wall beside it.' });
+						sound('fail', posOf('Workshop gate'));
+					}
+					return true;
+				case 'Vault door':
+					if (!has(F.vault)) {
+						say('The vault door will not move.', { sub: 'Three pedestals wait for three gems.' });
+						sound('fail', posOf('Vault door'));
+					} else win();
+					return true;
 				case 'Hint crystal 1':
 				case 'Hint crystal 2':
 				case 'Hint crystal 3':
@@ -418,6 +430,16 @@ export default {
 			for (const [gem, bit] of Object.entries(P)) show('Placed ' + gem, (pl & bit) !== 0);
 			pose('Vault door', [0, 0, f & F.vault ? -1.55 : 0], [0, 0, 0], dt);
 			show('Exit portal', (f & F.vault) !== 0);
+			// a hint crystal breathes once its room's hint is ready
+			const el = gs && running() ? gs.gameElapsed() : 0;
+			for (let r = 0; r < 3; r++) {
+				const c = byName('Hint crystal ' + (r + 1));
+				if (!c) continue;
+				const ready = running() && r === curRoom && el - roomSince[r] >= HINT_AFTER;
+				const k = ready ? 1 + 0.25 * Math.sin(el * 4) : 1;
+				c.scale.setScalar(k);
+				c.rotation.y += dt * (ready ? 2 : 0.4);
+			}
 			// the one lamp follows the player from room to room (a lights budget of two)
 			const lamp = byName('Room lamp');
 			if (lamp) {
@@ -587,7 +609,19 @@ export default {
 			window.removeEventListener('pointerdown', down, true);
 			window.removeEventListener('pointerup', up, true);
 		});
+		let vrHeldBefore = false;
 		const twist = (/** @type {number} */ dt) => {
+			// VR: a trigger or GRIP held while pointing at the fitted crank twists it, like the mouse
+			if (api.isVR?.()) {
+				const b = api.input?.()?.vrButtons ?? {};
+				const held = !!(b.rtrigger || b.ltrigger || b.rsqueeze || b.lsqueeze);
+				if (held && !vrHeldBefore && has(F.fitted) && !has(F.gate) && game()?.state === 'playing' && onCrank()) {
+					twisting = true;
+					twistHeld = 0;
+				}
+				if (!held && vrHeldBefore) twisting = false;
+				vrHeldBefore = held;
+			}
 			if (!twisting) return;
 			if (has(F.gate) || game()?.state !== 'playing') {
 				twisting = false;

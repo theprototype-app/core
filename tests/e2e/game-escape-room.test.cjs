@@ -121,8 +121,7 @@ h.run(async () => {
 	await press('Exit portal');
 	await h.eventually(() => snap().then((v) => v.state + '/' + v.screen), (v) => v === 'over/over', 'stepping through wins: the results screen', 6000);
 	await h.eventually(hud, (t) => /YOU ESCAPED/.test(t) && /You escaped in \d+:\d\d/.test(t) && /Play again/.test(t), 'the results name the time and offer Play again', 5000);
-	const best = await page.evaluate(() => window.__escape.best());
-	h.check(best > 0, `a best time is saved on this device (${best} s)`);
+	const best = await h.eventually(() => page.evaluate(() => window.__escape.best()), (b) => b > 0, 'a best time is saved on this device', 3000);
 	await page.screenshot({ path: process.env.ESCAPE_SHOTS ? path.join(process.env.ESCAPE_SHOTS, 'won.png') : '/tmp/claude-1000/escape-won.png' });
 
 	// 7 — Play again resets the house

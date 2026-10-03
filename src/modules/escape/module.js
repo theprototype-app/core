@@ -507,7 +507,11 @@ export default {
 					return 'Gems ' + [F.sun, F.moon, F.star].filter((b) => f & b).length + ' / 3';
 				case 'goal': {
 					if (!(f & F.studyDoor)) return 'Find a way out of the study';
-					if (!(f & F.gate)) return 'Open the iron gate · dials ' + dials().join(' · ') + ' · crank ' + Math.min(v(V.turns), TURNS) + '/' + TURNS;
+					if (!(f & F.gate))
+						return (
+							'Open the iron gate · dials ' + dials().join(' · ') + ' · crank ' + Math.min(v(V.turns), TURNS) + '/' + TURNS +
+							(f & F.note ? '  —  note: ' + CODE.join('·') + ', levers ' + LEVER_ORDER.map((w) => w[0].toUpperCase()).join('·') : '')
+						);
 					if (!(f & F.vault)) return 'Place the three gems on their pedestals';
 					return 'The door is open — escape!';
 				}

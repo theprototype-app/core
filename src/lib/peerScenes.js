@@ -637,6 +637,8 @@ export const ROOM_SCOPED = new Set([
 // 34 R2 (kit-entities): the kit's entities are room content like the kit document
 ROOM_SCOPED.add('kitentity');
 ROOM_SCOPED.add('getkitentities');
+// 34 R3 (D1): a behaviour's document is room content like the kit's
+ROOM_SCOPED.add('bhv');
 
 /**
  * THE ONE PREDICATE, used on both sides of the wire: `broadcast` will not SEND a

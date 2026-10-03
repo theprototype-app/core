@@ -18,7 +18,7 @@
 // (`uuid, name, point, hasTag(tag), is(pattern)`). PAYLOAD_TYPES is what the derived node view
 // draws as the event node's outputs.
 
-/** short names -> [piece, event] (the proposal §4.3 spelling) */
+/** short names -> [piece, event] (the proposal §4.3 spelling) @type {Record<string, [string, string]>} */
 export const ALIASES = {
 	roundStart: ['round', 'started'],
 	go: ['round', 'go'],
@@ -75,7 +75,7 @@ export function resolveEvent(name, specs) {
 		return { name, key: name, piece: null, event: null, local: special.local, label: special.label, payload: { ...(/** @type {any} */ (PAYLOAD_TYPES)[name] ?? {}) } };
 	/** @type {[string, string] | null} */
 	let pair = null;
-	const alias = /** @type {Record<string, [string, string]>} */ (ALIASES)[name];
+	const alias = ALIASES[name];
 	if (alias) pair = alias;
 	else if (name.includes('.')) {
 		const [piece, event] = name.split('.');

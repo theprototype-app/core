@@ -75,6 +75,8 @@ import { GAME_FEEL_ACTIONS, runGameFeelAction, updateGameMusicNodes, primeGameFe
 // 34 R2 (T3): the game kit — its action nodes act on the stamp edge here, its document ticks here
 import { KIT_ACTION_TYPES, runKitNodeAction, installKitNodes } from './kit/nodes.js';
 import { tickKit, primeKitRuntime } from './kit/runtime.js';
+/** 34 R3: behaviours/app.js, primed in startFlowRuntime @type {any} */
+let behavioursRef = null;
 // 31 (Stars Room): a scene's own settings rows (31-game-shell's leaf), and the pointing switch
 import { registerGameSetting, gameSettingValue } from './gameSettings';
 import { setPointGrabEnabled } from './pointGrab';
@@ -3625,6 +3627,8 @@ function runTick(now) {
 	// 34 R2: the kit's authority turns due moments into changes; everyone re-sends what was
 	// never acknowledged (after the game nodes, so a press this frame is already asked)
 	tickKit();
+	// 34 R3 (D1): behaviours after the kit — the authority's due timers, every handler's state flush
+	behavioursRef?.tickBehaviours();
 	// 21-E6: the character controller, beside the game shell and for the same reason —
 	// it reads the already-replicated graph and the same trigger stamps, so every peer
 	// declares the same controller and reacts to the same pulses with no message.
@@ -3898,6 +3902,13 @@ export function startFlowRuntime() {
 	installKitNodes(); // 34 R2: the kit nodes' outputs and named inputs, declared once
 	// 34 R2 (kit-entities): draw the kit's entities, give the movers the scene (primed: three + stores)
 	import('./kit/entityApp.js').then((m) => m.startKitEntities()).catch(() => {});
+	// 34 R3 (D1): behaviour nodes load + tick (primed: the module loader reaches the SDK)
+	import('./behaviours/app.js')
+		.then((m) => {
+			behavioursRef = m;
+			m.startBehaviours();
+		})
+		.catch((error) => console.warn('behaviours failed to start', error));
 	flowGraphs.subscribe(() => {
 		nodes = allNodes();
 		edges = allEdges();

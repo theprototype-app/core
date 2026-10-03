@@ -99,7 +99,7 @@ export function createBehaviourRuntime(host) {
 	/** change listeners (the live view) @type {Set<() => void>} */
 	const listeners = new Set();
 	const stats = { dispatched: 0, refusedWrites: 0, sent: 0, received: 0, stale: 0, errors: 0, skippedNotAuthority: 0 };
-	const warn = (/** @type {string} */ msg, /** @type {any} */ detail) => (host.warn ? host.warn(msg, detail) : console.warn('behaviour: ' + msg, detail ?? ''));
+	const warn = (/** @type {string} */ msg, /** @type {any} */ detail = undefined) => (host.warn ? host.warn(msg, detail) : console.warn('behaviour: ' + msg, detail ?? ''));
 	const changed = () => {
 		for (const fn of [...listeners]) {
 			try {

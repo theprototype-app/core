@@ -71,6 +71,8 @@ export function createBehaviourSim(opts = {}) {
 			p.bhv.forget(id);
 			for (const fn of (modules.get(id)?.list ?? []).reverse()) fn();
 			modules.delete(id);
+			// what behaviours/app.js does: the authority NOW drops the behaviour's entities
+			p.kit.impls.spawner?.disown?.('behaviour:' + id);
 		};
 		const track = () => {
 			if (p.connected.size !== lastSize) {

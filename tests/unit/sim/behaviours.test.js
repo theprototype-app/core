@@ -104,6 +104,42 @@ describe('behaviours — a Waves-style spawner on kit entities', () => {
 		expect(JSON.parse(sim.states('waves')[2]).wave).toBe(2);
 	});
 
+	it('the GRACE: a lowest-id joiner whose handshake is slow does not start the behaviour over the session', async () => {
+		const sim = createBehaviourSim({ peers: ['m', 'n'], objects: OBJECTS, latency: 600 });
+		await sim.load('waves', WAVES);
+		sim.advance(100);
+		sim.peer('n').kit.impls.round.start();
+		sim.advance(5000);
+		sim.settle();
+		expect(JSON.parse(sim.states('waves')[0]).wave).toBe(1);
+		const a = await sim.joinWithBehaviours('a');
+		sim.advance(300); // 'a' ticks as the authority before any document can reach it
+		expect(a.bhv.live('waves').synced).toBe(false);
+		expect(a.bhv.live('waves').started).toBe(false);
+		sim.advance(1500);
+		sim.settle();
+		expect(sim.states('waves')).toEqual(Array(3).fill(JSON.stringify({ wave: 1, alive: 2 })));
+		expect(a.bhv.live('waves').fired['on.start']).toBeUndefined();
+	});
+
+	it('removed on every peer while a promoted joiner is the authority: its entities still leave (T2)', async () => {
+		const sim = createBehaviourSim({ peers: ['m', 'n'], objects: OBJECTS });
+		await sim.load('waves', WAVES);
+		sim.advance(100);
+		sim.peer('n').kit.impls.round.start();
+		sim.advance(3300);
+		sim.settle();
+		await sim.joinWithBehaviours('a');
+		sim.advance(3000);
+		sim.settle();
+		expect(sim.authorityPeer().id).toBe('a');
+		expect(robots(sim, 'a')).toBe(2);
+		for (const id of ['m', 'n', 'a']) sim.peer(id).unloadBehaviour('waves');
+		sim.advance(500);
+		sim.settle();
+		expect([robots(sim, 'a'), robots(sim, 'm'), robots(sim, 'n')]).toEqual([0, 0, 0]);
+	});
+
 	it('a source edit (reload) keeps the replicated state; a new param applies at once', async () => {
 		const sim = createBehaviourSim({ peers: ['a', 'b'], objects: OBJECTS });
 		await sim.load('waves', WAVES);

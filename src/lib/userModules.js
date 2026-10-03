@@ -128,6 +128,12 @@ async function importBlob(source, scope) {
 	}
 }
 
+/** 34 R3: evaluate ES module TEXT through this loader (a behaviour file, behaviours/app.js) —
+ * the same fresh-blob import an installed module's entry takes. @param {string} source */
+export function importModuleText(source) {
+	return importBlob(source, null);
+}
+
 /** Import a record's entry file as a module object and validate its shape.
  * A fresh blob URL per call, so re-imports always evaluate fresh code (A2).
  * 34 R6: evaluated inside a lifecycle SCOPE (sdk/moduleScope.js) — its bare timer names are

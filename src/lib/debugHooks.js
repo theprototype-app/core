@@ -87,6 +87,7 @@ export const DEBUG_HOOKS = [
 	['assetShare', () => import('./assetShare')],
 	['soundRuntime', () => import('./soundRuntime')],
 	['dungeonPlay', () => import('./dungeonPlay')],
+	['modelLoader', () => import('./modelLoader')],
 	['sceneAssets', () => import('./sceneAssets')],
 	['THREE', () => import('three')],
 	['GLTFExporterModule', () => import('three/addons/exporters/GLTFExporter.js')],

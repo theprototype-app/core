@@ -412,6 +412,12 @@ export default {
 			for (const [gem, bit] of Object.entries(P)) show('Placed ' + gem, (pl & bit) !== 0);
 			pose('Vault door', [0, 0, f & F.vault ? -1.55 : 0], [0, 0, 0], dt);
 			show('Exit portal', (f & F.vault) !== 0);
+			// the one lamp follows the player from room to room (a lights budget of two)
+			const lamp = byName('Room lamp');
+			if (lamp) {
+				const lx = [-8, 0, 8][running() ? curRoom : 0];
+				lamp.position.x += (lx - lamp.position.x) * Math.min(1, dt * 3);
+			}
 		};
 
 		/** keep the player in the rooms they have opened (desktop walking, VR stick) */

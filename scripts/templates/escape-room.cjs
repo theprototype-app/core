@@ -2,6 +2,7 @@
 // the def schema is the comment block at the top of that file; the table is ./index.cjs.
 
 const { graphBuilder } = require('./_builders.cjs');
+const { P, I, AR, H: HALF, piece } = require('./_level-kit.cjs');
 
 // ---- 35-escape-room: THE ALCHEMIST'S ESCAPE ------------------------------------------------
 // Three rooms in a row along +x (study -12..-4, workshop -4..4, vault 4..12, the exit beyond):
@@ -16,7 +17,7 @@ const { graphBuilder } = require('./_builders.cjs');
 const PI = Math.PI;
 const H = 3.2; // wall height
 const T = 0.3; // wall thickness
-const STONE = { color: 0x8a7f72, roughness: 0.92 };
+const STONE = { color: 0x9c8b74, roughness: 0.92 };
 const WOOD = { roughness: 0.62, physical: true, sheen: 0.3, sheenColor: 0xffd7a0, sheenRoughness: 0.6 };
 const S = { mode: 'static' };
 const SENSOR = { mode: 'static', sensor: true };
@@ -116,11 +117,11 @@ const ESCAPE_DEF = {
 	env: {
 		preset: 'custom',
 		base: 'studio',
-		exposure: 0.9,
+		exposure: 1.1,
 		background: { top: '#140d08', bottom: '#2a1c12' },
 		fog: null,
 		sun: null,
-		hemi: { sky: '#ffe2bd', ground: '#3a2a1c', intensity: 0.55 }
+		hemi: { sky: '#ffe2bd', ground: '#4a3a2c', intensity: 1.1 }
 	},
 	physics: {
 		ground: { enabled: true, height: 0, friction: 0.9, restitution: 0 },
@@ -137,7 +138,6 @@ const ESCAPE_DEF = {
 	post: {
 		enabled: true,
 		effects: [
-			{ id: 'ao', kind: 'ao', enabled: true, params: {} },
 			{ id: 'tone', kind: 'tonemapping', enabled: true, params: { mode: 'AGX' } },
 			{ id: 'bloom', kind: 'bloom', enabled: true, params: { intensity: 0.8, luminanceThreshold: 0.75 } },
 			{ id: 'aa', kind: 'smaa', enabled: true, params: {} }
@@ -175,7 +175,7 @@ const ESCAPE_DEF = {
 					elements: [
 						{ id: 'es-room', kind: 'text', anchor: 'top-left', x: 18, y: 14, w: 260, h: 28, z: 1, label: '', style: { size: 20, weight: '700', color: '#ffd9a0', align: 'left' } },
 						{ id: 'es-gems', kind: 'text', anchor: 'top-left', x: 18, y: 44, w: 260, h: 20, z: 1, label: '', style: { size: 14, weight: '600', color: '#d6b8ff', align: 'left' } },
-						{ id: 'es-clock', kind: 'text', anchor: 'top-right', x: 18, y: 14, w: 120, h: 28, z: 1, label: '', style: { size: 22, weight: '700', color: '#f3eadc', align: 'right' } },
+						{ id: 'es-clock', kind: 'text', anchor: 'top-right', x: 18, y: 58, w: 120, h: 28, z: 1, label: '', style: { size: 22, weight: '700', color: '#f3eadc', align: 'right' } },
 						{ id: 'es-inv', kind: 'text', anchor: 'top-center', x: 0, y: 14, w: 520, h: 22, z: 1, label: '', style: { size: 15, weight: '600', color: '#f3eadc', align: 'center', bg: 'rgba(24,16,10,0.55)', radius: 8 } },
 						{ id: 'es-goal', kind: 'text', anchor: 'bottom-center', x: 0, y: 18, w: 640, h: 22, z: 1, label: '', style: { size: 14, color: '#ffe6c0', align: 'center' } }
 					]
@@ -247,7 +247,6 @@ const ESCAPE_DEF = {
 		},
 		{ type: 'plane', name: 'Old note', size: [0.3, 0.4], pos: [-8.45, 0.77, -3.55], rot: [-PI / 2, 0, 0.25], color: 0xf0e2c0, roughness: 0.95, side: 'double', physics: SENSOR },
 		{ type: 'cylinder', name: 'Candle', r: 0.035, h: 0.18, pos: [-9.6, 0.85, -3.6], color: 0xf4ead8, emissive: 0xffc070, emissiveIntensity: 0.4, physics: SENSOR },
-		{ type: 'light', name: 'Candle light', kind: 'point', color: 0xffb060, intensity: 2.2, distance: 4, pos: [-9.6, 1.05, -3.45] },
 		{ type: 'box', name: 'Chest body', size: [0.9, 0.5, 0.55], pos: [-10.9, 0.25, -1.4], color: 0x4a2e18, ...WOOD, physics: S },
 		{
 			type: 'group',
@@ -276,7 +275,8 @@ const ESCAPE_DEF = {
 		{ type: 'dodecahedron', name: 'Sun gem', r: 0.12, pos: [-6.0, 1.66, -3.8], color: 0xffcf4a, emissive: 0xffa520, emissiveIntensity: 2.2, flatShading: true, physics: SENSOR },
 		{ type: 'box', name: 'Rug', size: [3, 0.02, 2], pos: [-8, 0.01, 0.5], color: 0x7a2e2a, roughness: 1, shadow: false, physics: SENSOR },
 		...crystal(1, [-11.4, 0, 3.4]),
-		{ type: 'light', name: 'Study lamp', kind: 'point', color: 0xffc890, intensity: 9, distance: 11, pos: [-8, 2.8, 0] },
+		// ONE lamp (the lights budget is two): the module carries it into the room you stand in
+		{ type: 'light', name: 'Room lamp', kind: 'point', color: 0xffc890, intensity: 14, distance: 12, decay: 1.2, pos: [-8, 2.8, 0] },
 		// ---- ROOM 2: the workshop
 		{ type: 'box', name: 'Dial panel', size: [1.6, 0.8, 0.06], pos: [-1.2, 1.35, -3.97], color: 0x3a2e24, metalness: 0.3, roughness: 0.6, physics: S },
 		dial(1, -1.7),
@@ -303,17 +303,23 @@ const ESCAPE_DEF = {
 				{ type: 'cylinder', name: 'Fitted grip', r: 0.03, h: 0.14, pos: [-0.22, 0.27, 0], rot: [0, 0, PI / 2], color: 0x6a3d1e, roughness: 0.6 }
 			]
 		},
-		{ type: 'box', name: 'Workbench', size: [2, 0.85, 0.8], pos: [2.4, 0.425, -3.5], color: 0x5a4632, ...WOOD, physics: S },
 		{ type: 'box', name: 'Crate', size: [0.6, 0.6, 0.6], bevel: 0.03, bevelSegments: 1, pos: [2.6, 0.3, 2.9], color: 0x8a6438, ...WOOD, physics: { mode: 'dynamic', mass: 3, friction: 0.9 } },
 		...crystal(2, [-3.4, 0, 3.4]),
-		{ type: 'light', name: 'Workshop lamp', kind: 'point', color: 0xffd9a8, intensity: 9, distance: 11, pos: [0, 2.8, 0] },
 		// ---- ROOM 3: the vault
 		...pedestal('sun', 6.5, 0xffb830),
 		...pedestal('moon', 8, 0x88c8ff),
 		...pedestal('star', 9.5, 0xa060ff),
 		...crystal(3, [5, 0, 3.4]),
-		{ type: 'light', name: 'Vault lamp', kind: 'point', color: 0xc8b0ff, intensity: 8, distance: 11, pos: [8, 2.8, 0] },
-		{ type: 'light', name: 'Exit glow', kind: 'point', color: 0x7dffb0, intensity: 5, distance: 5, pos: [13.4, 2, 0] },
+		// ---- pack dressing (references, refilled from the pack CDN)
+		piece(P, 'Bookcase', 'Study bookcase', [-11.72, 0, 1.6], HALF),
+		piece(I, 'Armchair', 'Study armchair', [-10.3, 0, 0.2], PI * 0.6),
+		piece(P, 'WallTorch', 'Study torch', [-8, 1.6, 3.98], PI, { physics: SENSOR }),
+		piece(AR, 'AlchemyTable', 'Alchemist table', [2.2, 0, -3.43]),
+		piece(AR, 'PotionShelf', 'Potion shelf', [-3.7, 0, -2.6], HALF),
+		piece(P, 'WallTorch', 'Workshop torch', [-2.6, 1.6, -3.98], 0, { physics: SENSOR }),
+		piece(AR, 'RuneRug', 'Vault rug', [8, 0, 0.4], 0, { physics: SENSOR }),
+		piece(AR, 'Armillary', 'Vault armillary', [10.8, 0, 2.8], 0.4),
+		piece(P, 'WallTorch', 'Vault torch', [8, 1.6, 3.98], PI, { physics: SENSOR }),
 		// the card: from the study's door corner over the desk, chest and shelf
 		{ type: 'camera', name: 'Card camera', pos: [-5.6, 2.2, 3.2], lookAt: [-9.4, 0.7, -2.4], fov: 55 }
 	]

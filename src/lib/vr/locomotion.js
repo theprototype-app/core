@@ -17,6 +17,7 @@ import { walkable as dungeonWalkable } from '../dungeonPlay';
 import { resolvePlaySettings, playPublishers } from '../playSettings';
 import { locomotionPolicy, vrSpawnOffsets, yawForward } from '../locomotionPolicy';
 import { resolveWalk, charControl } from '../charController';
+import { kitPlayRules } from '../kit/runtime.js';
 import { gameFeelActive } from '../gameFeel';
 import { resolveTurning, gameSettingValues } from '../gameSettings';
 import { topLevelObjectOf } from '../objectActions';
@@ -650,7 +651,8 @@ export function vrJumpHeight() {
 	if (!control || control.mode !== 'walk') return 0;
 	const policy = vrLocomotionNow();
 	if (!policy.walk || policy.fly) return 0;
-	const h = Number(control.jumpHeight);
+	// 34 R2: a kit.rules jump height (session-wide) overrides the controller node's
+	const h = Number(kitPlayRules().jump ?? control.jumpHeight);
 	return Number.isFinite(h) && h > 0 ? h : 0;
 }
 

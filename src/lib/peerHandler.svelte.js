@@ -90,6 +90,8 @@ import {
 	sendHudValues
 } from '$lib/hudSync';
 import { applyRemoteGameState, sendGameState, gameStatePayload } from '$lib/gameSync';
+// 34 R2 (T3): the game kit's document + requests (kit/runtime.js; a leaf-side module)
+import { receiveKitMessage, kitPayload } from '$lib/kit/runtime.js';
 import { applyRemoteTriggers, sendTriggers } from '$lib/triggerSync';
 import { applySessionProposal, applySessionAnswer, deferUntilShareChoice, localSceneCount, gateHolds, registerWorldStatePush, connectDecisionApplies, noteHandshakeDeferred } from '$lib/sessions';
 import { applyRemoteGeometry } from '$lib/geometryEdit';
@@ -855,6 +857,10 @@ export class PeerConnection {
 					applyRemoteGameState(data);
 				} else if(data.type == 'getgame') {
 					if (sameRoomOrUnknown(conn.peer)) sendGameState(data.sender);
+				} else if(data.type == 'kit' || data.type == 'kitreq') {
+					// 34 R2: the kit document (authority-written, latest-wins) and a request
+					// to the authority; the shapes were checked by wireValidate
+					receiveKitMessage(data, conn.peer);
 				} else if(data.type == 'envpresets') {
 					applyRemoteEnvPresets(data);
 				} else if(data.type == 'geometry') {
@@ -1358,6 +1364,8 @@ export class PeerConnection {
 		if (getobjects && !holdContent) this.requestFullState(conn)
 		// singleton PUSH, like environmentState/scenePhysicsState above
 		if (!holdContent) conn.send(gameStatePayload())
+		// 34 R2: the kit document, the same singleton push (its events are NOT sent: history fires nothing)
+		if (!holdContent) conn.send(kitPayload())
 		// 24-A A2: WHETHER A SIM IS RUNNING HERE, for a late joiner. `simulate` went out at
 		// start/stop only, so a peer joining mid-run kept `remoteSimulating` null and neither
 		// the knock probes nor play-mode grab armed until the sim restarted (A1's finding;
@@ -1811,5 +1819,6 @@ function pushWorldState(peerId) {
 	// L-C: one per post DOCUMENT — the scene look and any camera looks
 	for (const state of scenePostStates()) conn.send(state);
 	conn.send(gameStatePayload());
+	conn.send(kitPayload());
 }
 registerWorldStatePush(pushWorldState);

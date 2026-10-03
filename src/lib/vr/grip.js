@@ -22,6 +22,7 @@ import { isScenery, pickGripTarget, gripMovesWorld } from '../vrGrip';
 import { pointGrabAllowed } from '../pointGrab';
 import { resolvePlaySettings } from '../playSettings';
 import { withinReach } from '../playReach';
+import { kitCheckGrab } from '../kit/runtime.js'; // 34 R2: the kit's grab question
 import {
 	editingObject,
 	vrRaycastHandle,
@@ -464,7 +465,7 @@ export function onSqueezeStart(index) {
 	// 30b P2: the grip takes what vrGrip.pickGripTarget says — scenery (floors, walls, the
 	// room you stand in) passes through, and in INTERACT only a player-holdable body counts
 	const mode = get(editorMode) === 'interact' ? 'interact' : 'edit';
-	let object = gripTargetOf(controllerRay(index), controller.getWorldPosition(new THREE.Vector3()), mode);
+	let object = gripTargetOf(controllerRay(index), controller.getWorldPosition(new THREE.Vector3()), mode, controller.userData?.handedness === 'left' ? 'left' : 'right');
 	if (!object) {
 		// 31-towers P1: a piece beyond the scene's reach says so with a short buzz, no more
 		if (lastGripRefusal) hapticPattern('fail', renderer.xr.getController(index)?.userData?.handedness ?? undefined);
@@ -561,8 +562,9 @@ export function onSqueezeStart(index) {
  * through the vrGrip rule, so a floor, a wall or the room you stand in is never held.
  * Exported for the headless suite. @param {any} ray a THREE.Raycaster
  * @param {any} handPos the controller's world position @param {'edit'|'interact'} mode
+ * @param {string} [gripHand] 34 R2: which hand asks (a kit.rules veto hears it)
  */
-export function gripTargetOf(ray, handPos, mode) {
+export function gripTargetOf(ray, handPos, mode, gripHand = 'right') {
 	lastGripRefusal = null;
 	const group = get(objectsGroup);
 	if (!group) return null;
@@ -583,8 +585,17 @@ export function gripTargetOf(ray, handPos, mode) {
 			interaction === 'grab' &&
 			object.userData?.physics?.mode === 'dynamic' &&
 			!locked.find((/** @type {any} */ lock) => lock[1] === object.uuid);
-		const near = !holdable || reach == null || !head || withinReach(point, head, feetY, reach);
-		if (holdable && !near) lastGripRefusal = { uuid: object.uuid, reach };
+		// 34 R2: the kit's ONE grab question (reach + every game veto); a press of the grip asks
+		// it, so a refusal here is a real refusal (the `refused` event fires for this player)
+		let near = true;
+		/** @type {string | undefined} */
+		let reason;
+		if (holdable && head) {
+			const verdict = kitCheckGrab({ point, eye: head, feetY, reach, uuid: object.uuid, name: object.name, hand: gripHand });
+			near = verdict ? verdict.ok : reach == null || withinReach(point, head, feetY, reach);
+			reason = verdict?.reason;
+		}
+		if (holdable && !near) lastGripRefusal = { uuid: object.uuid, reach, reason };
 		return {
 			scenery: isScenery(box.isEmpty() ? null : box, head),
 			grabbable: holdable && near,
@@ -637,10 +648,11 @@ function hintSceneryGrip() {
 		.catch(() => {});
 }
 
-/** 31-towers P1: the grip the reach refused last ({uuid, reach}), for the buzz and the suite
- * @type {{uuid: string, reach: number} | null} */
+/** 31-towers P1: the grip the reach refused last ({uuid, reach}), for the buzz and the suite.
+ * 34 R2: or a kit.rules veto refused it (`reason`; `reach` may then be null)
+ * @type {{uuid: string, reach: number | null, reason?: string} | null} */
 let lastGripRefusal = null;
-/** @returns {{uuid: string, reach: number} | null} */
+/** @returns {{uuid: string, reach: number | null, reason?: string} | null} */
 export function lastGripRefusalDebug() {
 	return lastGripRefusal;
 }

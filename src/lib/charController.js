@@ -4,6 +4,7 @@ import * as THREE from 'three';
 import { globalScene } from '../stores/sceneStore';
 import { sceneGravity, scenePhysicsGround } from './scenePhysics';
 import { dungeonData, slideMove } from './dungeonPlay';
+import { kitPlayRules } from './kit/runtime.js'; // 34 R2: kit.rules' jump height
 
 // 21-E6 — THE CHARACTER CONTROLLER, as data a graph can own.
 //
@@ -324,7 +325,8 @@ export function tickWalker(rig, settings, dt, desired) {
 		eyeHeight,
 		dt,
 		desired,
-		{ gravity: settings?.gravity !== false, jumpHeight: settings?.jumpHeight }
+		// 34 R2: a kit.rules jump height (session-wide) overrides the controller node's
+		{ gravity: settings?.gravity !== false, jumpHeight: kitPlayRules().jump ?? settings?.jumpHeight }
 	);
 	// write back through the rig's PARENT: the camera lives in a group at y = 0.9, so a
 	// world target has to be converted rather than assigned

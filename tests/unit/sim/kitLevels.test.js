@@ -184,6 +184,33 @@ describe('kit.levels — the K3 level picker feed', () => {
 	});
 });
 
+describe("kit.levels — a game's own save (the port path: players keep their stars)", () => {
+	it('define({store, merge}) reads and writes the game\'s key, with its own numbers in the row', () => {
+		const sim = createSim({ peers: ['a', 'b'] });
+		/** @type {Record<string, any>} */
+		const saves = { a: { levels: { 1: { stars: 1, time: 50, pieces: 6 } } }, b: null };
+		const fewestPieces = (/** @type {any} */ was, /** @type {any} */ now) =>
+			!was ? now : { ...now, stars: Math.max(was.stars, now.stars), pieces: Math.min(was.pieces || Infinity, now.pieces || Infinity) };
+		for (const id of ['a', 'b'])
+			L(sim, id).extra.define({
+				...TABLE,
+				stars: (/** @type {any} */ _row, /** @type {any} */ r) => (r.won ? (r.pieces <= 3 ? 3 : 1) : 0),
+				merge: fewestPieces,
+				store: { get: () => saves[id], set: (/** @type {any} */ v) => (saves[id] = JSON.parse(JSON.stringify(v))) }
+			});
+		// a's old save already opens level 2; b's empty one does not
+		expect([L(sim, 'a').unlocked('2'), L(sim, 'b').unlocked('2')]).toEqual([true, false]);
+		L(sim, 'a').select('1');
+		L(sim, 'a').complete(true, 0, 40, '1', { pieces: 3 });
+		sim.settle();
+		expect(saves.a.levels['1']).toMatchObject({ stars: 3, pieces: 3 });
+		expect(saves.b.levels['1']).toMatchObject({ stars: 3, pieces: 3 });
+		L(sim, 'a').complete(true, 0, 30, '1', { pieces: 5 });
+		sim.settle();
+		expect(saves.a.levels['1']).toMatchObject({ stars: 3, pieces: 3 });
+	});
+});
+
 describe('kit.levels — pure helpers', () => {
 	it('default stars: win, par time, par score (three for a win with no par)', () => {
 		expect(defaultStars({ data: { par: { time: 45, score: 100 } } }, { won: true, time: 50, score: 120 })).toBe(2);

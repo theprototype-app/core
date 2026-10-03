@@ -47,14 +47,20 @@ function normalizeList(list) {
 
 /** a progress record at the storage boundary @param {any} raw */
 export function normalizeProgress(raw) {
-	/** @type {Record<string, {stars: number, time: number, score: number}>} */
+	/** @type {Record<string, any>} */
 	const levels = {};
 	const src = raw?.levels && typeof raw.levels === 'object' ? raw.levels : {};
 	for (const [id, row] of Object.entries(src)) {
-		const stars = Math.max(0, Math.min(5, Math.round(Number(/** @type {any} */ (row)?.stars) || 0)));
-		const time = Number(/** @type {any} */ (row)?.time);
-		const score = Number(/** @type {any} */ (row)?.score);
-		levels[String(id)] = { stars, time: Number.isFinite(time) && time > 0 ? time : 0, score: Number.isFinite(score) ? score : 0 };
+		const r = /** @type {any} */ (row);
+		const stars = Math.max(0, Math.min(5, Math.round(Number(r?.stars) || 0)));
+		const time = Number(r?.time);
+		const score = Number(r?.score);
+		// a game's own numbers (Towers' `pieces`) ride along beside the kit's three
+		/** @type {Record<string, number>} */
+		const extra = {};
+		if (r && typeof r === 'object')
+			for (const [k, v] of Object.entries(r)) if (!['stars', 'time', 'score'].includes(k) && Number.isFinite(Number(v))) extra[k] = Number(v);
+		levels[String(id)] = { ...extra, stars, time: Number.isFinite(time) && time > 0 ? time : 0, score: Number.isFinite(score) ? score : 0 };
 	}
 	return { levels, last: str(raw?.last), mode: str(raw?.mode) };
 }
@@ -66,7 +72,9 @@ export function betterResult(a, b) {
 	if (!b) return a;
 	const stars = Math.max(a.stars ?? 0, b.stars ?? 0);
 	const times = [a.time, b.time].filter((t) => t > 0);
-	return { stars, time: times.length ? Math.min(...times) : 0, score: Math.max(a.score ?? 0, b.score ?? 0) };
+	// a game's own numbers come from the better run (more stars; the newer on a tie)
+	const base = (b.stars ?? 0) >= (a.stars ?? 0) ? { ...a, ...b } : { ...b, ...a };
+	return { ...base, stars, time: times.length ? Math.min(...times) : 0, score: Math.max(a.score ?? 0, b.score ?? 0) };
 }
 
 /**
@@ -136,7 +144,7 @@ export default {
 			return { slice: { ...s, current: next.id }, events: [['selected', { game: def.id, level: next.id }]] };
 		},
 		/** @param {any} s @param {any[]} args @param {any} ctx */
-		complete(s, [won, score, time, level], ctx) {
+		complete(s, [won, score, time, level, detail], ctx) {
 			const def = defOf(ctx, s.game);
 			if (!def) return { result: { ok: false, reason: 'no levels are defined' } };
 			const id = str(level) || s.current;
@@ -146,19 +154,25 @@ export default {
 			// the time defaults to the kit round's play clock when the round runs it
 			let seconds = Number(time) || 0;
 			if (!seconds) seconds = ctx.kit?.()?.impls?.round?.elapsed?.() ?? 0;
-			const result = { won: !!won, time: seconds, score: Number(score) || 0 };
+			// `detail`: a game's own numbers (Towers' pieces) for its star rule and its saved row
+			/** @type {Record<string, number>} */
+			const extra = {};
+			for (const [k, v] of Object.entries(detail && typeof detail === 'object' ? detail : {}))
+				if (!['won', 'stars', 'time', 'score'].includes(k) && Number.isFinite(Number(v))) extra[k] = Number(v);
+			const result = { ...extra, won: !!won, time: seconds, score: Number(score) || 0 };
 			let stars = 0;
 			try {
 				stars = Math.max(0, Math.min(5, Math.round(Number((def.stars ?? defaultStars)(row, result)) || 0)));
 			} catch {
 				stars = result.won ? 1 : 0;
 			}
-			const entry = { stars, time: result.won ? result.time : 0, score: result.score };
-			const best = betterResult(s.results[id] ?? before.levels[id], entry);
-			const results = { ...s.results, [id]: betterResult(s.results[id], entry) };
+			const entry = { ...extra, stars, time: result.won ? result.time : 0, score: result.score };
+			const merge = def.merge ?? betterResult;
+			const best = merge(s.results[id] ?? before.levels[id], entry);
+			const results = { ...s.results, [id]: merge(s.results[id], entry) };
 			const after = { ...before, levels: { ...before.levels, [id]: best } };
 			/** @type {[string, any][]} */
-			const events = [['completed', { game: def.id, level: id, won: result.won, stars, time: entry.time, score: entry.score, best }]];
+			const events = [['completed', { game: def.id, level: id, won: result.won, stars, time: entry.time, score: entry.score, entry, best }]];
 			for (const l of def.list)
 				if (!isUnlockedBy(def.list, before, l.id, def.unlock) && isUnlockedBy(def.list, after, l.id, def.unlock))
 					events.push(['unlockedNext', { game: def.id, level: l.id }]);
@@ -178,7 +192,7 @@ export default {
 		/** the definition in play: the document's game, else the newest defined */
 		const active = () => defs.get(s().game) ?? [...defs.values()].at(-1) ?? null;
 		/** this device's progress for a game @param {any} def */
-		const progressOf = (def) => normalizeProgress(ctx.storage?.get?.('levels:' + def.id, null));
+		const progressOf = (def) => readProgress(ctx, def);
 		const view = () => {
 			const def = active();
 			return def ? merged(ctx, def, s()) : normalizeProgress(null);
@@ -210,24 +224,25 @@ export default {
 		// every peer saves what it saw earned, and remembers where it was (resume + modes)
 		ctx.on('completed', (/** @type {any} */ p) => {
 			const def = defs.get(p?.game);
-			if (!def || !ctx.storage) return;
+			if (!def || (!ctx.storage && !def.store)) return;
 			const progress = progressOf(def);
-			progress.levels[p.level] = betterResult(progress.levels[p.level], { stars: p.stars, time: p.time, score: p.score });
-			ctx.storage.set('levels:' + def.id, progress);
+			progress.levels[p.level] = (def.merge ?? betterResult)(progress.levels[p.level], p.entry ?? { stars: p.stars, time: p.time, score: p.score });
+			writeProgress(ctx, def, progress);
 		});
 		ctx.on('selected', (/** @type {any} */ p) => {
 			const def = defs.get(p?.game);
-			if (!def || !ctx.storage) return;
+			if (!def || (!ctx.storage && !def.store)) return;
 			const progress = progressOf(def);
-			ctx.storage.set('levels:' + def.id, { ...progress, last: p.level, mode: s().mode });
+			writeProgress(ctx, def, { ...progress, last: p.level, mode: s().mode });
 		});
 		ctx.onChange(() => publish());
 		return {
 			/** @param {string} level */
 			select: (level) => ctx.request('select', [str(level), active()?.id ?? '']),
 			next: () => ctx.request('next', []),
-			/** @param {boolean} [won] @param {number} [score] @param {number} [time] @param {string} [level] */
-			complete: (won = true, score = 0, time = 0, level = '') => ctx.request('complete', [won, score, time, level]),
+			/** @param {boolean} [won] @param {number} [score] @param {number} [time] @param {string} [level]
+			 * @param {Record<string, number>} [detail] the game's own numbers (its star rule + saved row) */
+			complete: (won = true, score = 0, time = 0, level = '', detail = {}) => ctx.request('complete', [won, score, time, level, detail]),
 			/** @param {string} mode */
 			setMode: (mode) => ctx.request('setMode', [mode]),
 			current: () => s().current,
@@ -265,7 +280,19 @@ export default {
 					const prev = defs.get(id);
 					prev?.shellOff?.();
 					/** @type {any} */
-					const entry = { id, list, unlock: def.unlock ?? 'sequential', stars: typeof def.stars === 'function' ? def.stars : null, modes: Array.isArray(def.modes) ? def.modes.map(str) : [], owner: def.owner ?? owner };
+					const entry = {
+						id,
+						list,
+						unlock: def.unlock ?? 'sequential',
+						stars: typeof def.stars === 'function' ? def.stars : null,
+						modes: Array.isArray(def.modes) ? def.modes.map(str) : [],
+						owner: def.owner ?? owner,
+						// the game's OWN save (Towers keeps `tp:mod:towers:progress`, so every player
+						// keeps the stars they earned before the port): {get() -> raw, set(progress)}
+						store: def.store && typeof def.store.get === 'function' && typeof def.store.set === 'function' ? def.store : null,
+						// how a new result folds into a saved row (default betterResult)
+						merge: typeof def.merge === 'function' ? def.merge : null
+					};
 					defs.set(id, entry);
 					publish();
 					return () => {
@@ -297,7 +324,7 @@ export default {
 				/** forget this device's progress for the active game (a "reset progress" button) */
 				resetProgress: () => {
 					const def = active();
-					if (def && ctx.storage) ctx.storage.set('levels:' + def.id, normalizeProgress(null));
+					if (def) writeProgress(ctx, def, normalizeProgress(null));
 					if (def) def.shellKey = null;
 					publish();
 				},
@@ -307,7 +334,12 @@ export default {
 					for (const def of defs.values()) def.shellKey = null;
 					publish();
 				},
-				progress: () => view()
+				progress: () => view(),
+				/** re-publish the picker (the game changed its saved progress behind the kit's back) */
+				refresh: () => {
+					for (const def of defs.values()) def.shellKey = null;
+					publish();
+				}
 			}
 		};
 	}
@@ -325,10 +357,30 @@ function labelOf(def, id) {
 	return def.list.find((/** @type {any} */ l) => l.id === id)?.label ?? id;
 }
 
+/** this device's saved progress for a definition (its own store, else `levels:<id>`)
+ * @param {any} ctx @param {any} def */
+function readProgress(ctx, def) {
+	try {
+		return normalizeProgress(def.store ? def.store.get() : ctx.storage?.get?.('levels:' + def.id, null));
+	} catch {
+		return normalizeProgress(null);
+	}
+}
+
+/** @param {any} ctx @param {any} def @param {any} progress */
+function writeProgress(ctx, def, progress) {
+	try {
+		if (def.store) def.store.set(progress);
+		else ctx.storage?.set?.('levels:' + def.id, progress);
+	} catch (error) {
+		console.warn('kit.levels: saving progress failed', error);
+	}
+}
+
 /** this device's progress merged with the session's results @param {any} ctx @param {any} def @param {any} s */
 function merged(ctx, def, s) {
-	const progress = normalizeProgress(ctx.storage?.get?.('levels:' + def.id, null));
+	const progress = readProgress(ctx, def);
 	if (s.game === def.id)
-		for (const [id, row] of Object.entries(s.results ?? {})) progress.levels[id] = betterResult(progress.levels[id], row);
+		for (const [id, row] of Object.entries(s.results ?? {})) progress.levels[id] = (def.merge ?? betterResult)(progress.levels[id], row);
 	return progress;
 }

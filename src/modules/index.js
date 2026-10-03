@@ -8,5 +8,7 @@ import pong from './pong/module.js';
 import vrsleeve from './vrsleeve/module.js';
 // 31-towers: the Towers game's levels, pieces and rules (dormant outside a Towers scene)
 import towers from './towers/module.js';
+// 35: the Marble Maze game's mazes, tilt and judge (dormant outside a Marble Maze scene)
+import marble from './marble/module.js';
 
-export const coreModules = [hello, button, pong, vrsleeve, towers];
+export const coreModules = [hello, button, pong, vrsleeve, towers, marble];

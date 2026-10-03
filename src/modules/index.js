@@ -8,5 +8,7 @@ import pong from './pong/module.js';
 import vrsleeve from './vrsleeve/module.js';
 // 31-towers: the Towers game's levels, pieces and rules (dormant outside a Towers scene)
 import towers from './towers/module.js';
+// 35: the Target Toss game's stages and judge (dormant outside a Target Toss scene)
+import targettoss from './targettoss/module.js';
 
-export const coreModules = [hello, button, pong, vrsleeve, towers];
+export const coreModules = [hello, button, pong, vrsleeve, towers, targettoss];

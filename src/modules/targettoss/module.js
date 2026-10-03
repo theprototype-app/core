@@ -247,11 +247,11 @@ export default {
 			const bodies = new Map((phys.physicsDebug?.() ?? []).map((/** @type {any} */ b) => [b.uuid, b]));
 			const t = now();
 			// the cans: on a table = inside its box in x/z and above its top; anything else is down
-			const tables = s.cans.map((c) => byName(c.table)).filter(Boolean).map((o) => worldBox(o));
+			const tables = s.cans.map((/** @type {any} */ c) => byName(c.table)).filter(Boolean).map((/** @type {any} */ o) => worldBox(o));
 			let standing = 0;
 			for (const can of cans()) {
 				const p = can.position;
-				const on = tables.some((b) => p.x >= b.min.x - 0.02 && p.x <= b.max.x + 0.02 && p.z >= b.min.z - 0.02 && p.z <= b.max.z + 0.02 && p.y > b.max.y);
+				const on = tables.some((/** @type {any} */ b) => p.x >= b.min.x - 0.02 && p.x <= b.max.x + 0.02 && p.z >= b.min.z - 0.02 && p.z <= b.max.z + 0.02 && p.y > b.max.y);
 				if (on) standing++;
 				else if (!scored.has(can.uuid)) {
 					scored.add(can.uuid);

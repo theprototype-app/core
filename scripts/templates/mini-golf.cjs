@@ -29,8 +29,6 @@ const CUPS = [
 	[LANE_X[4], 0.1, -5],
 	[LANE_X[5], 0.1, -5.2]
 ];
-const NAMES = ['Straight', 'The ramp', 'Windmill', 'Bank shot', 'Sand trap', 'The hump'];
-const PARS = [2, 3, 3, 3, 3, 4];
 /** rail height per hole (the ramp and the hump need taller sides) */
 const RAIL_H = [0.3, 0.9, 0.3, 0.3, 0.3, 0.5];
 
@@ -79,8 +77,7 @@ const OBSTACLES = [
 	{ type: 'box', name: 'Hump up', size: [3, 0.1, 1.52], pos: [LANE_X[5], 0.175, 0.25], rot: [0.165, 0, 0], color: 0x358a40, roughness: 0.9, physics: greenPhysics },
 	{ type: 'box', name: 'Hump down', size: [3, 0.1, 1.52], pos: [LANE_X[5], 0.175, -1.25], rot: [-0.165, 0, 0], color: 0x358a40, roughness: 0.9, physics: greenPhysics },
 	{ type: 'cylinder', name: 'Post 1', r: 0.13, h: 0.4, pos: [LANE_X[5] - 0.6, 0.3, -3.6], ...RAIL, physics: { ...railPhysics, collider: 'cylinder' } },
-	{ type: 'cylinder', name: 'Post 2', r: 0.13, h: 0.4, pos: [LANE_X[5] + 0.6, 0.3, -3.6], ...RAIL, physics: { ...railPhysics, collider: 'cylinder' } },
-	{ type: 'cylinder', name: 'Post 3', r: 0.13, h: 0.4, pos: [LANE_X[5], 0.3, -4.3], ...RAIL, physics: { ...railPhysics, collider: 'cylinder' } }
+	{ type: 'cylinder', name: 'Post 2', r: 0.13, h: 0.4, pos: [LANE_X[5] + 0.6, 0.3, -3.6], ...RAIL, physics: { ...railPhysics, collider: 'cylinder' } }
 ];
 
 const PANEL = { bg: 'rgba(16, 38, 24, 0.9)', radius: 18, border: '1px solid rgba(255, 224, 102, 0.3)' };
@@ -193,7 +190,7 @@ const MINI_GOLF_DEF = {
 						{ id: 'mg-title', kind: 'text', anchor: 'top-center', x: 0, y: 12, w: 420, h: 28, z: 1, label: '', style: { size: 20, weight: '700', color: '#ffe066', align: 'center' } },
 						{ id: 'mg-par', kind: 'text', anchor: 'top-center', x: -90, y: 44, w: 160, h: 24, z: 1, label: '', style: { size: 16, weight: '600', color: '#ffffff', align: 'center' } },
 						{ id: 'mg-strokes', kind: 'text', anchor: 'top-center', x: 90, y: 44, w: 160, h: 24, z: 1, label: '', style: { size: 16, weight: '600', color: '#9ee6ff', align: 'center' } },
-						{ id: 'mg-total', kind: 'text', anchor: 'top-right', x: 16, y: 14, w: 260, h: 24, z: 1, label: '', style: { size: 15, weight: '600', color: '#e5e9f0', align: 'right' } },
+						{ id: 'mg-total', kind: 'text', anchor: 'top-left', x: 90, y: 16, w: 260, h: 24, z: 1, label: '', style: { size: 15, weight: '600', color: '#e5e9f0', align: 'left' } },
 						{ id: 'mg-tip', kind: 'text', anchor: 'bottom-center', x: 0, y: 14, w: 640, h: 20, z: 1, label: '', style: { size: 13, color: '#e5e9f0', align: 'center' } }
 					]
 				},

@@ -199,6 +199,13 @@ h.run(async () => {
 	await page.locator('#hud-layer button', { hasText: 'Menu' }).click();
 	await h.eventually(() => snap().then((v) => v.state), (s) => s === 'menu', 'Menu goes back to the start menu', 6000);
 
+	// 7b — the shell's Levels page lists every hole and starts a round on the one picked
+	const lv = await page.evaluate(() => window.__stores.gameKit.gameShell.gameShellDebug().levels);
+	h.check(lv?.list?.length === 6 && /Windmill/.test(lv.list[2].label), `the Levels page lists the six holes (${lv?.list?.map((l) => l.label).join(' | ')})`);
+	await page.evaluate(() => window.__stores.gameKit.gameShell.pickGameLevel('4'));
+	await h.eventually(() => snap(), (v) => v.state === 'playing' && v.vars?.mgHole === 4, 'picking hole 4 starts a round there', 6000);
+	await h.eventually(() => snap().then((v) => v.ball), (b) => b && Math.abs(b[0] - 2.5) < 0.05 && b[2] > 3.5, 'the ball waits on hole 4 tee', 4000);
+
 	// 8 — VR: a fake session lands the game in Interact; start; a hand knock is a stroke
 	await page.evaluate(() => window.__stores.isLocked.set(null));
 	await page.waitForTimeout(600);

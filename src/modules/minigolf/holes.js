@@ -32,7 +32,7 @@ export const HOLES = [
 	{ id: 3, name: 'Windmill', par: 3, x: LANE_X[2], cup: [LANE_X[2], GREEN_TOP, -5], tip: 'Time your putt between the windmill blades.' },
 	{ id: 4, name: 'Bank shot', par: 3, x: LANE_X[3], cup: [LANE_X[3] + 0.8, GREEN_TOP, -5], tip: 'A wall blocks the middle — bank it off the rail.' },
 	{ id: 5, name: 'Sand trap', par: 3, x: LANE_X[4], cup: [LANE_X[4], GREEN_TOP, -5], tip: 'Sand eats speed. Go around it, or hit hard.', sand: { min: [LANE_X[4] - 1.5, -2.6], max: [LANE_X[4] + 0.6, -1.2] } },
-	{ id: 6, name: 'The hump', par: 4, x: LANE_X[5], cup: [LANE_X[5], GREEN_TOP, -5.2], tip: 'Over the hump and around the posts.' }
+	{ id: 6, name: 'The hump', par: 3, x: LANE_X[5], cup: [LANE_X[5], GREEN_TOP, -5.2], tip: 'Over the hump and through the gate.' }
 ];
 
 /** @param {number} id @returns {Hole | null} */

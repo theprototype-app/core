@@ -133,6 +133,9 @@ export default {
 		let restSince = -1;
 		let sunkAt = -1;
 		let lastSimAsk = -10;
+		/** when the last putt was applied (ms) — a ball that starts rolling on its own (it
+		 * came to rest on a slope) is SETTLING, not a stroke */
+		let lastPuttAt = -1e9;
 		/** @param {number} id */
 		const setupHole = (id) => {
 			const hole = holeById(id);
@@ -143,14 +146,15 @@ export default {
 			sunkAt = -1;
 			placeBall(teeOf(hole));
 		};
-		const startRound = () => {
+		/** @param {number} [from] the first hole (the Levels page starts a round anywhere) */
+		const startRound = (from = 1) => {
 			if (!gs) return;
 			for (const h of HOLES) setV(S(h.id), 0);
 			setV(V.oob, 0);
 			setV(V.sunk, 0);
 			kit.round.configure(0, 0, 'lose', 1);
 			kit.round.restart();
-			setupHole(1);
+			setupHole(holeById(from) ? from : 1);
 		};
 		const toMenu = () => {
 			setV(V.hole, 0);
@@ -178,6 +182,7 @@ export default {
 		};
 		/** a putt: the ball takes this velocity (authority, ball at rest) @param {number[]} vel */
 		const putt = (vel) => {
+			lastPuttAt = performance.now();
 			const b = ball();
 			if (!b || !playing() || v(V.phase) !== READY) return false;
 			if (!simRunning()) return false;
@@ -196,7 +201,22 @@ export default {
 		};
 		api.onMessage((/** @type {any} */ msg) => {
 			if (msg?.op === 'putt' && Array.isArray(msg.vel) && authority()) putt(msg.vel.map(Number));
+			if (msg?.op === 'pick' && authority()) startRound(Number(msg.hole) || 1);
 		});
+		/** the shell's Levels page (desktop + VR board): every hole, start a round there */
+		/** @type {any} */ let levelsOff = null;
+		const defineLevels = () => {
+			if (typeof api.game?.levels !== 'function') return;
+			levelsOff = api.game.levels({
+				list: HOLES.map((h) => ({ id: String(h.id), label: h.id + ' · ' + h.name + ' (par ' + h.par + ')' })),
+				current: String(v(V.hole, 0) || 1),
+				onPick: (/** @type {any} */ id) => {
+					const hole = Number(id) || 1;
+					if (authority()) startRound(hole);
+					else api.send({ op: 'pick', hole });
+				}
+			});
+		};
 
 		/** putters held in VR: the club head touching the ball at speed is a putt */
 		/** @type {Map<string, {p: number[], t: number}>} */ const headPrev = new Map();
@@ -251,7 +271,9 @@ export default {
 			clubs(time);
 			if (phase === READY) {
 				if (speed > 0.3) {
-					setV(V.strokes, v(V.strokes) + 1);
+					// a putt, a putter or a hand knock (fast) is a stroke; a slow creep off a
+					// slope after the rest snap is the ball settling, and costs nothing
+					if (performance.now() - lastPuttAt < 1000 || speed > 1) setV(V.strokes, v(V.strokes) + 1);
 					setV(V.phase, ROLLING);
 					restSince = -1;
 				}
@@ -294,7 +316,7 @@ export default {
 			if (aim) return aim;
 			aim = new THREE.Group();
 			aim.name = AIM;
-			const mat = new THREE.MeshBasicMaterial({ color: 0xffe066, transparent: true, opacity: 0.9, depthTest: false });
+			const mat = new THREE.MeshBasicMaterial({ color: 0xffe066, transparent: true, opacity: 0.95, depthTest: false, toneMapped: false });
 			const shaft = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.01, 1), mat);
 			shaft.position.z = -0.5;
 			shaft.name = 'golf-aim-shaft';
@@ -359,7 +381,7 @@ export default {
 				a.children[0].position.z = -shown / 2;
 				a.children[1].position.z = -shown - 0.1;
 				const t = shown / 2.5;
-				a.children[0].material.color.setRGB(1, 1 - 0.7 * t, 0.4 * (1 - t));
+				a.children[0].material.color.setRGB(1, 0.95 - 0.75 * t, 0.25 * (1 - t));
 			}
 			e.stopPropagation();
 		};
@@ -553,9 +575,14 @@ export default {
 			if (on !== wasActive) {
 				wasActive = on;
 				if (on && typeof api.game?.setHelp === 'function') helpOff = api.game.setHelp(HELP);
+				if (on) defineLevels();
 				if (!on && helpOff) {
 					helpOff();
 					helpOff = null;
+				}
+				if (!on && typeof levelsOff === 'function') {
+					levelsOff();
+					levelsOff = null;
 				}
 			}
 			if (!on) return;
@@ -568,6 +595,10 @@ export default {
 			if (helpOff) {
 				helpOff();
 				helpOff = null;
+			}
+			if (typeof levelsOff === 'function') {
+				levelsOff();
+				levelsOff = null;
 			}
 			seenStamps.clear();
 			headPrev.clear();

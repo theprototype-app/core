@@ -463,9 +463,33 @@ export default {
 		let seenSunk = -1;
 		let seenStrokes = -1;
 		let finishedRound = -1;
-		const moments = () => {
+		/** a bounce off a rail or an obstacle: the ball turned sharply at speed (every peer, from the
+		 * pose it sees) */
+		let bounce = /** @type {null | {p: number[], v: number[], t: number}} */ (null);
+		let lastBounce = -10;
+		/** @param {number} time */
+		const bounces = (time) => {
+			const p = ballPos();
+			if (!bounce || time <= bounce.t) {
+				bounce = { p, v: [0, 0, 0], t: time };
+				return;
+			}
+			const dt = time - bounce.t;
+			const v = [(p[0] - bounce.p[0]) / dt, 0, (p[2] - bounce.p[2]) / dt];
+			const was = bounce.v;
+			const a = Math.hypot(was[0], was[2]);
+			const b = Math.hypot(v[0], v[2]);
+			if (a > 1.2 && b > 0.2 && b < 12 && time - lastBounce > 0.15 && (was[0] * v[0] + was[2] * v[2]) / (a * b) < 0.5) {
+				lastBounce = time;
+				api.playSound('hit', p);
+			}
+			bounce = { p, v, t: time };
+		};
+		/** @param {number} time */
+		const moments = (time) => {
 			const g = game();
 			if (!g) return;
+			if (g.state === 'playing') bounces(time);
 			const hole = currentHole();
 			if (g.state === 'playing' && hole && (seenHole !== hole.id || seenRound !== g.round)) {
 				seenHole = hole.id;
@@ -607,7 +631,7 @@ export default {
 			if (!on) return;
 			watchButtons();
 			if (authority()) judge(time);
-			moments();
+			moments(time);
 			roundEnd();
 		});
 		api.onSceneClear(() => {

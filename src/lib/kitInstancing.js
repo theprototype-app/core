@@ -42,7 +42,7 @@ import { cellKey, cellOf, materialSignature, ineligible, MIN_BATCH, CELL_METRES 
 // `kitInstancingEnabled` pref (default ON, Settings ▸ Performance) is the opt-out.
 
 /** The opt-out. LOCAL, default ON. */
-export const kitInstancingEnabled = writable(safeStorage.getItem('kitInstancing') !== 'false');
+export const kitInstancingEnabled = writable(false); // PLANTED regression (34-budget-gate counterfactual — never merge)
 let enabledSeen = false;
 let enabled = true;
 kitInstancingEnabled.subscribe((on) => {

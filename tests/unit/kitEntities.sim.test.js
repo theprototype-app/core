@@ -41,19 +41,19 @@ function playRound(o = {}) {
 	const watch = (id) => {
 		const k = sim.kit(id);
 		seen[id] = { spawn: 0, death: 0, despawn: 0, damage: 0, stuck: 0 };
-		k.spawner.onSpawn(() => seen[id].spawn++);
-		k.spawner.onDespawn(() => seen[id].despawn++);
-		k.health.onDeath(() => seen[id].death++);
-		k.health.onDamage(() => seen[id].damage++);
-		k.mover.onStuck(() => seen[id].stuck++);
+		k.api.spawner.onSpawn(() => seen[id].spawn++);
+		k.api.spawner.onDespawn(() => seen[id].despawn++);
+		k.api.health.onDeath(() => seen[id].death++);
+		k.api.health.onDamage(() => seen[id].damage++);
+		k.api.mover.onStuck(() => seen[id].stuck++);
 		// knock-back on every hit, applied by the authority from its own event
-		k.health.onDamage((/** @type {any} */ p) => {
+		k.api.health.onDamage((/** @type {any} */ p) => {
 			if (!p.authority || p.entity.dead) return;
 			const shooter = sim.players[p.by] ?? sim.players.A;
 			const dx = p.entity.pos[0] - shooter[0];
 			const dz = p.entity.pos[2] - shooter[2];
 			const d = Math.hypot(dx, dz) || 1;
-			k.mover.knock(p.entity.id, [(dx / d) * 3, (dz / d) * 3]);
+			k.api.mover.knock(p.entity.id, [(dx / d) * 3, (dz / d) * 3]);
 		});
 	};
 	for (const id of peerIds) watch(id);
@@ -69,7 +69,7 @@ function playRound(o = {}) {
 		const authId = sim.authorityId();
 		const auth = authId ? sim.kit(authId) : null;
 		if (auth && !spawned && t >= 0.5) {
-			const ids = auth.spawner.spawn({
+			const ids = auth.api.spawner.spawn({
 				kind: 'robot',
 				at: PORTAL,
 				count: 20,
@@ -86,7 +86,7 @@ function playRound(o = {}) {
 		if (auth && t >= nextRetarget) {
 			nextRetarget = t + 0.5;
 			const live = [...sim.peers.values()].filter((p) => p.connected).map((p) => p.id);
-			for (const r of auth.spawner.list({ kind: 'robot', alive: true })) {
+			for (const r of auth.api.spawner.list({ kind: 'robot', alive: true })) {
 				let best = live[0];
 				let bd = Infinity;
 				for (const pid of live) {
@@ -97,7 +97,7 @@ function playRound(o = {}) {
 						best = pid;
 					}
 				}
-				auth.mover.seek(r.id, 'player:' + best);
+				auth.api.mover.seek(r.id, 'player:' + best);
 			}
 		}
 		// THE PLAYERS (every peer, from its own view): shoot the nearest robot in range
@@ -107,14 +107,14 @@ function playRound(o = {}) {
 			const me = sim.players[p.id];
 			let target = null;
 			let bd = SHOT_RANGE;
-			for (const r of p.kit.spawner.list({ alive: true })) {
+			for (const r of p.kit.api.spawner.list({ alive: true })) {
 				const d = Math.hypot(r.pos[0] - me[0], r.pos[2] - me[2]);
 				if (d < bd) {
 					bd = d;
 					target = r;
 				}
 			}
-			if (target) p.kit.health.damage(target.id, 10, p.id);
+			if (target) p.kit.api.health.damage(target.id, 10, p.id);
 		}
 		sim.step(DT);
 		o.onStep?.(sim);
@@ -131,8 +131,8 @@ function agree(a, b) {
 		const x = a.kit.store.ents.get(id);
 		const y = b.kit.store.ents.get(id);
 		if (x.dead !== y.dead) return id + ' dead ' + x.dead + ' vs ' + y.dead;
-		if (Math.abs(a.kit.health.hp(id) - b.kit.health.hp(id)) > 1e-9)
-			return id + ' hp ' + a.kit.health.hp(id) + ' vs ' + b.kit.health.hp(id);
+		if (Math.abs(a.kit.api.health.hp(id) - b.kit.api.health.hp(id)) > 1e-9)
+			return id + ' hp ' + a.kit.api.health.hp(id) + ' vs ' + b.kit.api.health.hp(id);
 		for (let k = 0; k < 3; k++)
 			if (Math.abs(x.pos[k] - y.pos[k]) > 1e-9) return id + ' pos ' + x.pos + ' vs ' + y.pos;
 	}
@@ -217,7 +217,7 @@ describe('Waves-like round: 20 robots, 2 peers', () => {
 		expect(seen.A.death).toBeLessThan(20);
 		const pinned = sim
 			.kit('A')
-			.spawner.list({ alive: true })
+			.api.spawner.list({ alive: true })
 			.filter((/** @type {any} */ r) => r.pos[2] < 0.6);
 		expect(pinned.length).toBeGreaterThan(0);
 	});
@@ -242,8 +242,8 @@ describe('Waves-like round: a late joiner and the host leaving mid-wave', () => 
 					joined = true;
 					s.join('C');
 					const c = s.kit('C');
-					c.health.onDeath(() => cSeen.death++);
-					c.spawner.onDespawn(() => cSeen.despawn++);
+					c.api.health.onDeath(() => cSeen.death++);
+					c.api.spawner.onDespawn(() => cSeen.despawn++);
 					const why = agree(s.peers.get('A'), s.peers.get('C'));
 					if (why) bad.push('join: ' + why);
 				}
@@ -274,8 +274,8 @@ describe('Waves-like round: a late joiner and the host leaving mid-wave', () => 
 		expect(bad).toEqual([]);
 		// every robot alive at the hand-over still died: B and C saw the whole wave end
 		expect(seen.B.death).toBe(20);
-		expect(sim.kit('B').spawner.count()).toBe(0);
-		expect(sim.kit('C').spawner.count()).toBe(0);
+		expect(sim.kit('B').api.spawner.count()).toBe(0);
+		expect(sim.kit('C').api.spawner.count()).toBe(0);
 		// C saw every death that happened after it joined, and every departure
 		expect(cSeen.death).toBeGreaterThan(0);
 		expect(cSeen.despawn).toBeGreaterThanOrEqual(cSeen.death);

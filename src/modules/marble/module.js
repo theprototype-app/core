@@ -286,9 +286,9 @@ export default {
 		const toWorld = (p) => new THREE.Vector3(p.x, p.y, p.z).applyMatrix4(boardMatrix());
 		/** uuid -> release the hold next frame */
 		/** @type {Set<string>} */ const releaseNext = new Set();
-		const resetMarble = () => {
+		const resetMarble = (k = shownMaze()) => {
 			const m = marble();
-			const start = localOf('Start ' + shownMaze());
+			const start = byName('Maze ' + k)?.getObjectByName('Start ' + k)?.position ?? null;
 			if (!m || !start) return;
 			const w = toWorld({ x: start.x, y: 0.045, z: start.z });
 			const held = phys?.holdBody?.(m.uuid);
@@ -327,7 +327,7 @@ export default {
 			}
 			ensureSim();
 			settleUntil = performance.now() + 900;
-			resetMarble();
+			resetMarble(id);
 			return true;
 		};
 		let starting = false;
@@ -335,7 +335,7 @@ export default {
 			setV(V.status, STATUS.none);
 			setV(V.level, 0);
 			kit.round.toMenu();
-			resetMarble();
+			resetMarble(1);
 		};
 		const finish = () => {
 			const m = currentMaze();
@@ -427,7 +427,7 @@ export default {
 			if (g?.state === 'playing' && status === STATUS.playing && announcedRound !== g.round) {
 				announcedRound = g.round;
 				const m = currentMaze();
-				if (m) api.announce('Maze ' + m.id + ' · ' + m.name, { sub: 'Roll to the gold ring — par ' + formatTime(m.par), ms: 2600, color: '#ffd45e' });
+				if (m) api.announce('Maze ' + m.id, { sub: m.name + ' — roll to the gold ring, par ' + formatTime(m.par), ms: 2400, color: '#ffd45e' });
 				api.playSound('whistle');
 				aimDesktopCamera();
 			}
@@ -694,6 +694,12 @@ export default {
 			},
 			/** a coin taken, for a scripted three-star win */
 			takeCoins: () => setV(V.coins, 7),
+			/** a suite's shortcut to a progress state (written through api.storage like a win) */
+			setProgress: (/** @type {any} */ raw) => {
+				api.storage?.set?.('progress', raw);
+				kit.levels.refresh?.();
+				return prog();
+			},
 			resetProgress: () => {
 				api.storage?.remove?.('progress');
 				kit.levels.refresh?.();

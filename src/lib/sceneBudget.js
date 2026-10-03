@@ -510,6 +510,9 @@ function walkScene() {
 // on the instance leaves `info` byte-identical for everyone and works in XR too.
 
 const renderAcc = { calls: 0, triangles: 0, renders: 0 };
+/** 34 PF: the same totals PER FRAME, drained by the perf recorder at each frame end (one
+ * reader; `takeFrameRender` resets it). Two numbers on a shared object: no allocation. */
+const frameAcc = { calls: 0, triangles: 0 };
 /** Display frames the sampler loop counted since the last sample. */
 let renderFrames = 0;
 
@@ -533,6 +536,8 @@ export function countRenderCalls(renderer) {
 			renderAcc.calls += info.calls - baseCalls;
 			renderAcc.triangles += info.triangles - baseTris;
 			renderAcc.renders++;
+			frameAcc.calls += info.calls - baseCalls;
+			frameAcc.triangles += info.triangles - baseTris;
 		}
 		return result;
 	};
@@ -545,6 +550,18 @@ export function uncountRenderCalls(renderer) {
 	if (!renderer?.__budgetRender) return;
 	renderer.render = renderer.__budgetRender;
 	delete renderer.__budgetRender;
+}
+
+/** What every render() pass drew since the last call — one display frame when the caller
+ * drains it once per frame (the perf recorder does). The returned object is REUSED: read
+ * it before the next call. @returns {{calls: number, triangles: number}} */
+const frameOut = { calls: 0, triangles: 0 };
+export function takeFrameRender() {
+	frameOut.calls = frameAcc.calls;
+	frameOut.triangles = frameAcc.triangles;
+	frameAcc.calls = 0;
+	frameAcc.triangles = 0;
+	return frameOut;
 }
 
 /** @type {{calls: number, triangles: number, rendersPerFrame: number} | null} */

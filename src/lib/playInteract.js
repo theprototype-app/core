@@ -56,6 +56,7 @@ import { pointGrabAllowed } from './pointGrab'; // 31 (Stars Room S2): pointing 
 const REACH = 6; // m: how far the crosshair can start a grab
 const CARRY_DEFAULT = 2.5; // m
 const CARRY_MIN = 0.8;
+import { perfMark } from './perf/perfMarks.js';
 const CARRY_MAX = 6;
 const CARRY_STEP = 0.25;
 const SPRING_K = 14; // 1/s, scaled by 1/sqrt(mass) and clamped
@@ -271,6 +272,7 @@ function massOf(object) {
 
 /** Begin carrying. @param {any} object @param {any} camera */
 function beginGrab(object, camera) {
+	perfMark('grab', { source: 'play' }); // 34 PF: a profiler marker
 	// the object's rotation relative to the camera's YAW, so carrying does not
 	// tip the object when you look up or down
 	euler.setFromQuaternion(camera.getWorldQuaternion(desiredQuat), 'YXZ');

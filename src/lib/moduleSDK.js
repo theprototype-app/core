@@ -20,6 +20,7 @@ import { log } from './diagnostics';
 import { safeStorage } from './safeStorage';
 import { makeApi } from './sdk/index.js';
 import { loadedModules, messageHandlers, stateSyncs, moduleDisposals, moduleAssets } from './sdk/registries.js';
+import { registerPerfContext } from './perf/perfMarks.js';
 export {
 	moduleNodeGroups,
 	modulePrimitiveGroups,
@@ -109,6 +110,9 @@ export function deactivateModule(id) {
 
 /** bumps whenever loadedModules changes (loadedModules is a plain array) */
 export const loadedModulesChanged = writable(0);
+
+// 34 PF/R1: a performance recording (and a beacon report) names every loaded module's version
+registerPerfContext('modules', () => Object.fromEntries(loadedModules.map((m) => [String(m.id), String(m.version ?? '')])));
 
 /** @param {string} id */
 export function isModuleLoaded(id) {

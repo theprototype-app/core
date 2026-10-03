@@ -14,5 +14,7 @@ import escape from './escape/module.js';
 import marble from './marble/module.js';
 // 35-mini-golf: the Mini Golf game's holes, putting and scorecard (dormant outside a Mini Golf scene)
 import minigolf from './minigolf/module.js';
+// 35-sky-obby: the Sky Run game's movers and run rules (dormant outside a Sky Run scene)
+import skyrun from './skyrun/module.js';
 
-export const coreModules = [hello, button, pong, vrsleeve, towers, escape, marble, minigolf];
+export const coreModules = [hello, button, pong, vrsleeve, towers, escape, marble, minigolf, skyrun];

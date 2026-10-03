@@ -85,6 +85,19 @@ let grounded = false;
 let jumpHeld = false;
 /** an unconsumed jump edge, spent only when we are actually on the ground */
 let jumpRequested = false;
+/** 35-sky-obby: a carry the NEXT walk step adds — a moving platform under the feet (the
+ * kinematic character controller does not inherit a platform's motion, so a player standing
+ * still on a slider was left behind). One frame's worth; consumed by resolveWalk. Additive: with
+ * no caller nothing changes. */
+let carryX = 0;
+let carryZ = 0;
+/** @param {number} dx @param {number} dz world metres this frame */
+export function addWalkCarry(dx, dz) {
+	if (Number.isFinite(dx) && Number.isFinite(dz) && Math.abs(dx) < 1 && Math.abs(dz) < 1) {
+		carryX += dx;
+		carryZ += dz;
+	}
+}
 
 // ---- the speed override -----------------------------------------------------
 
@@ -378,8 +391,10 @@ export function resolveWalk(feetPos, height, dt, desired, opts = {}) {
 
 	/** @type {'rapier'|'dungeon'|'plane'} */
 	let source = 'plane';
-	let dx = desired?.dx ?? 0;
-	let dz = desired?.dz ?? 0;
+	let dx = (desired?.dx ?? 0) + carryX;
+	let dz = (desired?.dz ?? 0) + carryZ;
+	carryX = 0;
+	carryZ = 0;
 	let dy = useGravity ? vy * step : Number(desired?.dy ?? 0) || 0;
 
 	const built = ensureCapsule(physicsRuntime(), eyeHeight);

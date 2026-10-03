@@ -29,7 +29,9 @@ const TEMPLATE_FILES = [
 	// 35: tilt the board, roll the marble (rules: the core `marble` module)
 	'marble-maze',
 	// 35: Mini Golf (the core `minigolf` module holds the rules)
-	'mini-golf'
+	'mini-golf',
+	// 35-sky-obby: Sky Run, the floating obstacle course (the core `skyrun` module plays it)
+	'sky-run'
 ];
 
 /** games whose def is OWNED BY ITS MODULE (modules/<id>/<id>.def.json, read by moduleDef) */

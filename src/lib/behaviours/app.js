@@ -35,6 +35,9 @@ import { createBehaviourRuntime, BHV } from './core.js';
 import { compileBehaviour } from './source.js';
 import { analyze } from './analyze.js';
 import { globMatch } from './events.js';
+// 34 D5 (34-graph-ai): the assistant's create_behaviour / edit_behaviour reach behaviours here
+import { registerBehaviourHost } from '../ai/aiExtensions.js';
+import { makeBehaviourHost } from './aiHost.js';
 
 /** the flow node type that holds a behaviour */
 export const BEHAVIOUR_NODE = 'behaviour';
@@ -254,6 +257,7 @@ let scheduled = false;
 export function startBehaviours() {
 	if (started) return;
 	started = true;
+	registerBehaviourHost(makeBehaviourHost(() => get(behaviourStatus)));
 	flowGraphs.subscribe(() => {
 		if (scheduled) return;
 		scheduled = true;

@@ -249,6 +249,27 @@ h.run(async () => {
 	});
 	await h.eventually(() => Promise.all([bots(A), bots(B)]), (v) => v[0] === 3 && v[1] === 3, 'node version: emptied -> 3 s -> wave 2 (counter 1 + 2 = 3) — the same rule the behaviour states in one file', 12000);
 
+	// ---- 10. the assistant's seam (34-graph-ai D5): the REAL host is registered; create/edit reach every peer
+	const hostInfo = await B_(A, () => {
+		const host = /** @type {any} */ (window).__stores.aiExtensions.behaviourHost();
+		return host ? { format: host.format, ref: host.reference().length } : null;
+	});
+	h.check(hostInfo?.format === 'behaviour/1' && hostInfo.ref > 200, 'the behaviour host is registered for create_behaviour/edit_behaviour (' + JSON.stringify(hostInfo) + ')');
+	const SCORE = "export default behaviour({ name: 'Scorer', state: { kills: 0 }, on: { died() { this.state.kills += 1; } } });";
+	const made = await B_(A, (src) => /** @type {any} */ (window).__stores.aiExtensions.behaviourHost().create('Scorer', src, { target: 'scene' }), SCORE);
+	h.check(made?.ok === true, 'host.create made a behaviour node (' + JSON.stringify(made) + ')');
+	const scorerId = await B_(B, () => /** @type {any} */ (window).__stores.findNodeAnyGraph((/** @type {any} */ n) => n.type === 'behaviour' && n.data?.name === 'Scorer')?.node?.id ?? null);
+	await h.eventually(() => Promise.all([A, B].map((p) => dbg(p))), (v) => !!scorerId && v.every((d) => d.status[scorerId]?.status === 'running'), 'the created behaviour runs on both peers', 12000);
+	const edited = await B_(A, (src) => /** @type {any} */ (window).__stores.aiExtensions.behaviourHost().edit('Scorer', src.replace('kills += 1', 'kills += 2')), SCORE);
+	h.check(edited?.ok === true, 'host.edit replaced its source');
+	await h.eventually(() => codeOf(B, scorerId), (c) => typeof c === 'string' && c.includes('kills += 2'), 'the edit reached the other peer', 8000);
+	await h.eventually(
+		() => B_(B, () => /** @type {any} */ (window).__stores.aiExtensions.behaviourHost().list()),
+		(listed) => listed.some((/** @type {any} */ b) => b.name === 'Scorer' && /running/.test(b.summary) && /on died/.test(b.summary)),
+		'host.list() names it with its status and handlers for the scene summary',
+		8000
+	);
+
 	const errs = [A, B, C].flatMap((p) => h.pageErrors(p));
 	h.check(errs.length === 0, 'no page errors (' + errs.slice(0, 3).join(' | ') + ')');
 	await h.finish(browser);

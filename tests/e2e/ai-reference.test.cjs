@@ -89,7 +89,9 @@ h.run(async () => {
 	h.check(JSON.stringify(view.required) === '["graph"]', 'graph is the only required arg (nodes OR text)');
 	h.check(view.groups === 5, 'the vocabulary is in the prompt, grouped like the palette (' + view.groups + ' of the 5 probed groups)');
 	h.check(view.graphText, 'the prompt teaches the graph text format');
-	h.check(view.behaviourTools === 0, 'no behaviour host registered -> no behaviour tools offered');
+	// 34-behaviours registers the REAL host at flow-runtime start (behaviours/aiHost.js), so a build
+	// with behaviours offers the two tools from the first turn (§3 below swaps in a fake host)
+	h.check(view.behaviourTools === 2, 'the real behaviour host is registered (34-behaviours) -> create_behaviour / edit_behaviour offered');
 	h.check(typeof view.sceneFlow === 'string' && view.sceneFlow.includes(' -> ') && /= hudbutton "/.test(view.sceneFlow), 'the scene summary carries the graph as compact text');
 	// the old summary dropped every label and showed 12 nodes; the text keeps the labels (a
 	// Towers button is "Level 1 button", its id "lvl1") and is still the smaller of the two

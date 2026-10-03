@@ -2415,6 +2415,18 @@ loadable play content. Everything a user does must be visible to connected peers
   shadows off, next-entry framebuffer scale); `api.quality {level, max, labels, vr, onChange}`.
   `scripts/perf-games.cjs` = the Performance-protocol table for the seven games (`--vr`, `--only`,
   PERF_SCENES_DIR/REF, PERF_MODULES_DIR; run under `e2e-slot --exclusive`).
+  **34 R5:** `perf-games.cjs --check` is THE budget gate (perf/README.md; `perf/budgets.json` = Quest budgets + a
+  dated, owned allow-list; counts only — frame ms is never gated; CI perf-budget.yml + release.yml `needs: budget`).
+  `scripts/scene-lint.cjs` (author-templates runs it; `--no-lint`; CI scene-lint job). `tests/e2e/vrEyes.cjs` +
+  `scripts/eye-shots.cjs` render both headset eyes off-screen (the eye target must NOT be multisampled — MSAA
+  reads back as zeros).
+  **34 PF/R1 — `src/lib/perf/`** (recorder, perfTrack, perfMarks, detailed, tpprof, beacon, moment, liveWire/
+  liveSource/liveSink, profilerModel/profilerView): the hot path writes typed arrays only; markers + context providers
+  go through the import-free `perfMarks.js` leaf (`perfMark(kind, detail)`); detailed captures hook onBeforeRender/
+  onAfterRender/onBeforeShadow and restore them EXACTLY. Format T1 = `perf/tpprof.schema.json` + `validateTpprof`.
+  The beacon exists only with `VITE_PERF_REPORTS_URL` (preview + production env). `perflive` is presence-like
+  LOCAL data: direct sends to watchers, never re-broadcast/saved/undone (wireValidate row). `moduleVersions.json` =
+  the stale-module table: regenerate with `node scripts/module-versions.cjs` at every release.
   · Stars Room: `clapGesture.js` (pure) + `clap.js` (On Clap node; a spawned copy answers to its
   template — `transientObjects.spawnedFromOf`), `pointGrab.js` (Point Grab node gates the VR
   grip RAY and the desktop carry; touch still holds), Game Setting node.
@@ -6791,6 +6803,10 @@ must never move your camera) and VR `isVR()`, `vrHand('left'|'right')`,
 mouseLook})` + the `possessModes` capability probe. All reached via PRIMED
 dynamic imports (addObjects/joints/objectActions/pingAudio alongside inputRuntime/
 physics/possess/vrControls) — a static edge closes a cycle into history.
+**34 R7 — `api.loadModel(url, opts)`** (sdk/models.js → `modelLoader.js`) returns a handle (MODULES.md);
+`gltfLoader.js` is THE loader (never `new GLTFLoader()` elsewhere); lodGroup `addLodRoot/removeLodRoot` draws a
+`userData.lod` block outside objectsGroup; `packLodGroupFor(url, rowKey)`; teardown `releaseModelsOf(moduleId)`.
+
 **Every `register*` must record its disposal** in the same edit — **34 R6 (contract T2):
 ONE lifecycle registry** (`sdk/lifecycle.js`, keyed by module id): a slice journals through
 `ctx.onDispose(undo, kind, {key?})` (returns `release()`; a `key` makes a re-registration

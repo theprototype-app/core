@@ -38,6 +38,7 @@
   // budget meter. `renderer.info` had exactly one reader before this (the VR plate).
   import StatsOverlay from './components/menu/StatsOverlay.svelte'
   import { startSceneMetrics, budgetSummary } from './lib/sceneBudget'
+  import { startPerfRecorder } from './lib/perf/recorder'
   import { startLod } from './lib/lod'
   import { startLodGroups } from './lib/lodGroup'
   import { startKitInstancing } from './lib/kitInstancing'
@@ -148,6 +149,8 @@ import { startMusicToolbox } from './lib/musicToolbox'
     // it keeps measuring while the canvas is remounting — which is exactly when a
     // report about the app freezing tends to be written.
     startSceneMetrics()
+    // 34 PF/R1: the always-on light ring (moments, beacon windows) + user recordings
+    startPerfRecorder()
     // 31-perf P2: automatic levels of detail (a render-time swap; see lod.js)
     startLod()
     // 33: per-object LOD GROUPS (userData.lod / a pack item's `lods`) ride the same render pass

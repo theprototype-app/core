@@ -97,6 +97,7 @@ import { sessionHost } from './connectionState';
 // armSaveIntoProject). sceneStore is a leaf; sceneEntry answers "does the project know
 // this exact file", which is what makes a dragged-in .tpscene loose.
 import { isLocked } from '../stores/sceneStore';
+import { registerPerfContext } from './perf/perfMarks.js';
 
 /** 21-G1: the name of the conventional scenes folder. It is freely renamable and
  * deletable, because it is NOT how a scene is found: `levelItems()` discovers by KIND
@@ -122,6 +123,8 @@ export const SCENES_FOLDER = 'Scenes';
  * it by construction: travelling elsewhere, or `set(null)`, is leaving the private scene.
  * @type {import('svelte/store').Writable<{hash: string, name: string, signature?: string, unsaved?: boolean, private?: boolean} | null>} */
 export const currentLevel = writable(null);
+// 34 PF: a performance recording says which scene it was taken in (the recorder cannot import us)
+registerPerfContext('scene', () => get(currentLevel)?.name || null);
 
 /**
  * 21-G2: the CONTENT identity of a scene payload — what "has this scene changed" means.

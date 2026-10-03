@@ -67,6 +67,7 @@ import {
 } from './panels.js';
 import { controllerRay } from './pointer.js';
 import { stretch } from './tools.js';
+import { perfMark } from '../perf/perfMarks.js';
 
 /** @type {any[]} per-hand grabs, indexed by controller SLOT: each is { object, index, prevPos,
  * prevQuat, before, ... }. 33 G4: one per hand, so two hands hold two things at once — a single
@@ -528,6 +529,7 @@ export function onSqueezeStart(index) {
 	const parentInv = object.parent.matrixWorld.clone().invert();
 	const pPos = cPos.clone().applyMatrix4(parentInv);
 	const pQuat = parentQuat.clone().invert().multiply(cQuat);
+	perfMark('grab', { hand: index, interact: !!interact }); // 34 PF: a profiler marker
 	grabs[index] = {
 		object,
 		index,

@@ -25,6 +25,7 @@ import { renderer } from './core.js';
 import { hapticPulse } from './haptics.js';
 import { controllerIndexFor } from './input.js';
 import { withRayCamera, safeIntersect } from './pointer.js';
+import { perfMark } from '../perf/perfMarks.js'; // 34 PF: a profiler marker, a leaf
 
 /**
  * Pure locomotion math (agreed VR map): left stick moves/strafes — toward the
@@ -360,7 +361,10 @@ export function updateTeleport(session) {
 	} else if (y > -0.4) {
 		// released -> blink if we had a VALID landing (31 K1: an invalid, red one does nothing)
 		S.teleportEngaged = false;
-		if (lastArc?.target && lastArc.valid) executeTeleport(lastArc.target, lastArc.bounded);
+		if (lastArc?.target && lastArc.valid) {
+			perfMark('teleport', { bounded: !!lastArc.bounded });
+			executeTeleport(lastArc.target, lastArc.bounded);
+		}
 		lastArc = null;
 		hideArc();
 		return;

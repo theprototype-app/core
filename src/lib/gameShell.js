@@ -33,6 +33,7 @@ import { CORE_SETTINGS, gameSettingRows, gameSettingValues, setGameSetting, sett
 // 33 (L4): a registration belongs to its owner module, and counts only while that module
 // belongs to the scene on screen (a leaf)
 import { leftBehindModules, ownerInScope } from './sceneScope';
+import { perfMark } from './perf/perfMarks.js';
 
 /** @typedef {'main' | 'levels' | 'settings' | 'help'} ShellPage */
 
@@ -45,6 +46,7 @@ export function openShellMenu(page = 'main') {
 	if (!shellMenuAvailable()) return false;
 	shellMenu.set({ open: true, page: normalizePage(page), levelPage: null });
 	debug.opens++;
+	perfMark('menu', { page: normalizePage(page) }); // 34 PF: a profiler marker
 	return true;
 }
 export function closeShellMenu() {

@@ -102,8 +102,31 @@ function publish() {
 	fpsReading.set({ fps, ms, calls: m?.calls ?? null, tris: m?.triangles ?? null, source });
 }
 
+// 34 PF: every frame from EITHER source, unfiltered (a 3-s freeze is the frame a recorder
+// most needs; `note` drops anything past 1 s for the fps reading). The perf recorder is the
+// reader; registered, never imported, so this stays a leaf.
+/** @type {Set<(ms: number, from: 'desktop' | 'xr', now: number) => void>} */
+const meterFrameObservers = new Set();
+/** @param {(ms: number, from: 'desktop' | 'xr', now: number) => void} fn @returns {() => void} */
+export function registerMeterFrame(fn) {
+	meterFrameObservers.add(fn);
+	return () => meterFrameObservers.delete(fn);
+}
+/** @param {number} ms @param {'desktop' | 'xr'} from @param {number} now */
+function emitFrame(ms, from, now) {
+	if (!Number.isFinite(ms) || ms <= 0) return;
+	for (const fn of meterFrameObservers) {
+		try {
+			fn(ms, from, now);
+		} catch {
+			/* isolated */
+		}
+	}
+}
+
 /** One XR frame (the VR game panel's per-frame call). @param {number} [now] ms */
 export function noteXrFrame(now = typeof performance !== 'undefined' ? performance.now() : Date.now()) {
+	if (lastXrAt) emitFrame(now - lastXrAt, 'xr', now);
 	if (lastXrAt) note(now - lastXrAt, 'xr');
 	lastXrAt = now;
 	// 33 Q1: the draw calls/triangles are averaged over DISPLAY frames, which sceneBudget
@@ -115,6 +138,7 @@ export function noteXrFrame(now = typeof performance !== 'undefined' ? performan
 registerFrameObserver((ms) => {
 	if (presenting()) return; // the XR source owns a presenting session
 	lastXrAt = 0;
+	emitFrame(ms, 'desktop', typeof performance !== 'undefined' ? performance.now() : Date.now());
 	note(ms, 'desktop');
 });
 

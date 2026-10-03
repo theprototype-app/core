@@ -14,7 +14,8 @@ import {
 // 34 R1/PF — contract T1. The schema file and the validator must agree, a beacon window must
 // stay inside what the cloud hook accepts, and a `.tpprof` must round-trip.
 
-/** a small valid light recording: n frames at `ms` each, with one stall in the middle */
+/** a small valid light recording: n frames at `ms` each, with one stall in the middle
+ * @returns {any} (tests mutate it into invalid shapes on purpose) */
 function rec(n = 20, ms = 16.7, extra = {}) {
 	const frames = [];
 	let t = 0;

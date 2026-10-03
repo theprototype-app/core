@@ -80,7 +80,7 @@ h.run(async () => {
 	// 4 — a real throw: a ball leaves the shelf and knocks cans (retry a few, a throw can miss)
 	let knocked = 0;
 	for (let i = 0; i < 4 && knocked === 0; i++) {
-		await tt('throwAt', [[-0.6, 1.5, 1.4], [-1.3, 1.25 + i * 0.05, -3.2], 13]);
+		await tt('throwAt', [[-0.6, 1.5, 1.4], [-1.2, 1.3 + i * 0.05, -2.8], 13]);
 		await page.waitForTimeout(1800);
 		knocked = 6 - Number((await tt('vars')).ttCans);
 	}
@@ -100,6 +100,54 @@ h.run(async () => {
 	await page.locator('#hud-layer button', { hasText: 'Next stage' }).first().click();
 	await h.eventually(() => tt('vars').then((v) => Number(v.ttStage)), (n) => n === 2, 'Next stage opens stage 2 (unlocked by the win)', 8000);
 	await h.eventually(() => tt('cans').then((c) => c.length), (n) => n === 12, 'stage 2 deals two pyramids (12 cans)', 8000);
+
+	// 5b — the moving targets: stage 3 swingers, stage 4 pop-ups, stage 5 the cart, each hit by a
+	// ball thrown from just in front of it (the judge, the points, the target dropping away)
+	const posOf = (name) => page.evaluate((n) => {
+		let g; window.__stores.objectsGroup.subscribe((v) => (g = v))();
+		const o = g.getObjectByName(n);
+		o.updateMatrixWorld(true);
+		const p = new window.__stores.THREE.Vector3().setFromMatrixPosition(o.matrixWorld);
+		return [p.x, p.y, p.z];
+	}, name);
+	const hitFromFront = async (name) => {
+		const p = await posOf(name);
+		await tt('throwAt', [[p[0], p[1], p[2] + 0.55], p, 9]);
+		await page.waitForTimeout(400);
+	};
+	await tt('startStage', [3, true]);
+	await h.eventually(() => tt('vars').then((v) => Number(v.ttStage) + '/' + v.ttStatus), (v) => v === '3/1', 'stage 3 (forced) starts', 8000);
+	await page.waitForTimeout(2600);
+	const sw1 = await posOf('Swing target 1');
+	await page.waitForTimeout(400);
+	const sw2 = await posOf('Swing target 1');
+	h.check(sw1[1] > 1.5 && Math.abs(sw1[0] - sw2[0]) > 0.01, `stage 3: the targets hang in view and SWING (${sw1.map((n) => n.toFixed(2))} -> ${sw2[0].toFixed(2)})`);
+	for (let i = 0; i < 3 && (Number((await tt('vars')).ttSwing) & 1) === 0; i++) await hitFromFront('Swing target 1');
+	h.check((Number((await tt('vars')).ttSwing) & 1) === 1, `a ball hits swinging target 1 (mask ${(await tt('vars')).ttSwing})`);
+	h.check(/Swingers 1\/3/.test(await hud()), 'the HUD counts it: Swingers 1/3');
+	await tt('startStage', [4, true]);
+	await h.eventually(() => tt('vars').then((v) => Number(v.ttStage) + '/' + v.ttStatus), (v) => v === '4/1', 'stage 4 (forced) starts', 8000);
+	await page.waitForTimeout(2600);
+	let up = [];
+	for (let i = 0; i < 20 && !up.length; i++) {
+		up = [];
+		for (let k = 1; k <= 6; k++) if ((await posOf('Popup target ' + k))[1] > 1.2) up.push(k);
+		if (!up.length) await page.waitForTimeout(250);
+	}
+	h.check(up.length >= 1 && up.length <= 2, `stage 4: pop-ups rise above the wall (${up})`);
+	if (up.length) await hitFromFront('Popup target ' + up[0]);
+	await h.eventually(() => tt('vars').then((v) => Number(v.ttPops)), (n) => n >= 1, 'a ball hits a pop-up', 3000);
+	await tt('startStage', [5, true]);
+	await h.eventually(() => tt('vars').then((v) => Number(v.ttStage) + '/' + v.ttStatus), (v) => v === '5/1', 'stage 5 (forced) starts', 8000);
+	await h.eventually(() => tt('cans').then((c) => c.length), (n) => n === 10, 'stage 5 deals the big pyramid (10 cans)', 8000);
+	await page.waitForTimeout(2600);
+	const c1 = await posOf('Cart target');
+	await page.waitForTimeout(300);
+	const c2 = await posOf('Cart target');
+	h.check(c1[1] > 0.6 && Math.abs(c1[0] - c2[0]) > 0.02, `stage 5: the cart rolls (${c1[0].toFixed(2)} -> ${c2[0].toFixed(2)})`);
+	for (let i = 0; i < 3 && Number((await tt('vars')).ttCart) === 0; i++) await hitFromFront('Cart target');
+	h.check(Number((await tt('vars')).ttCart) >= 1, `a ball hits the moving cart (${(await tt('vars')).ttCart})`);
+	if (SHOTS) await page.screenshot({ path: path.join(SHOTS, 'stage5.png') });
 
 	// 6 — no editor helper in Play
 	const helpers = await page.evaluate(() => {
@@ -125,7 +173,7 @@ h.run(async () => {
 	await page.waitForTimeout(2600);
 	knocked = 0;
 	for (let i = 0; i < 4 && knocked === 0; i++) {
-		await tt('throwAt', [[-0.6, 1.5, 1.4], [-1.3, 1.25 + i * 0.05, -3.2], 13]);
+		await tt('throwAt', [[-0.6, 1.5, 1.4], [-1.2, 1.3 + i * 0.05, -2.8], 13]);
 		await page.waitForTimeout(1800);
 		knocked = 6 - Number((await tt('vars')).ttCans);
 	}

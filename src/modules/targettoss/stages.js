@@ -25,7 +25,7 @@ export const POPUP_COUNT = 6;
 /** the swinging targets */
 export const SWING_COUNT = 3;
 /** can size (the template is authored to match) */
-export const CAN = { r: 0.09, h: 0.24 };
+export const CAN = { r: 0.105, h: 0.28 };
 /** the ball shelf slots: x offsets from the shelf centre */
 export const BALL_SLOTS = [-0.75, -0.45, -0.15, 0.15, 0.45, 0.75];
 /** points */

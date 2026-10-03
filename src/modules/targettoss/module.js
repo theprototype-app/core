@@ -165,12 +165,12 @@ export default {
 			lastHitAt.clear();
 			lastComboAt = -99;
 		};
-		/** @param {number} id */
-		const startStage = (id) => {
+		/** @param {number} id @param {boolean=} force skip the unlock rule (suites, evidence) */
+		const startStage = (id, force = false) => {
 			const s = stageById(id);
 			if (!s || !gs) return false;
 			const row = kit.levels.table?.().find((/** @type {any} */ r) => r.id === String(id));
-			if (row?.locked) {
+			if (row?.locked && !force) {
 				api.announce('Stage ' + id + ' is locked', { sub: 'Clear stage ' + (id - 1) + ' first', ms: 2200, color: '#ffb86b' });
 				return false;
 			}

@@ -94,13 +94,13 @@ const disc = (name, r, pos, color, emissive) => ({
 });
 
 const TEMPLATES = [
-	{ type: 'sphere', name: 'Ball template', color: 0xf2f2f2, r: 0.1, pos: [-1, VAULT_TOP + 0.1, 0], physical: true, roughness: 0.45, clearcoat: 0.3, physics: { mode: 'dynamic', mass: 0.35, collider: 'sphere', friction: 0.7, restitution: 0.45 } },
-	{ type: 'cylinder', name: 'Can template', color: 0xc8ccd2, r: 0.09, h: 0.24, pos: [1, VAULT_TOP + 0.12, 0], physical: true, metalness: 0.85, roughness: 0.3, physics: { mode: 'dynamic', mass: 0.12, collider: 'cylinder', friction: 0.6, restitution: 0.15 } }
+	{ type: 'sphere', name: 'Ball template', color: 0xffd45e, r: 0.1, pos: [-1, VAULT_TOP + 0.1, 0], physical: true, roughness: 0.45, clearcoat: 0.3, physics: { mode: 'dynamic', mass: 0.35, collider: 'sphere', friction: 0.7, restitution: 0.45 } },
+	{ type: 'cylinder', name: 'Can template', color: 0xe8483c, r: 0.105, h: 0.28, pos: [1, VAULT_TOP + 0.14, 0], physical: true, metalness: 0.55, roughness: 0.35, clearcoat: 0.5, physics: { mode: 'dynamic', mass: 0.12, collider: 'cylinder', friction: 0.6, restitution: 0.15 } }
 ];
 
 const STRIPES = Array.from({ length: 8 }, (_, k) => ({
 	type: 'box', name: 'Awning stripe ' + (k + 1), color: k % 2 ? 0xfff4e0 : 0xd8453b, size: [0.5, 0.06, 1.3],
-	pos: [-1.75 + k * 0.5, 2.7, 1.6], rot: [0.28, 0, 0], roughness: 0.8, shadow: false
+	pos: [-1.75 + k * 0.5, 3.05, 1.7], rot: [0.22, 0, 0], roughness: 0.8, shadow: false
 }));
 
 const TARGET_TOSS_DEF = {
@@ -115,8 +115,8 @@ const TARGET_TOSS_DEF = {
 	modules: [],
 	env: {
 		preset: 'daylight',
-		exposure: 1.0,
-		background: { top: '#2b2f6e', bottom: '#f0a868' },
+		exposure: 1.2,
+		background: { top: '#3a4a9a', bottom: '#ffc38a' },
 		fog: { color: '#e8a06c', near: 14, far: 60 },
 		ground: { color: '#6b8a4e', roughness: 0.95 }
 	},
@@ -140,12 +140,12 @@ const TARGET_TOSS_DEF = {
 	thumb: {
 		camera: 'Card camera',
 		dress: [
-			...[[-1.3, 0.9, -3.2]].flatMap(([cx, top, cz]) => {
+			...[[-1.2, 0.9, -2.8]].flatMap(([cx, top, cz]) => {
 				const out = [];
 				let k = 0;
 				for (let row = 0; row < 3; row++)
 					for (let i = 0; i < 3 - row; i++)
-						out.push({ ...TEMPLATES[1], name: 'Card can ' + ++k, pos: [cx + (i - (2 - row) / 2) * 0.192, top + 0.123 + row * 0.244, cz], physics: undefined });
+						out.push({ ...TEMPLATES[1], name: 'Card can ' + ++k, pos: [cx + (i - (2 - row) / 2) * 0.222, top + 0.143 + row * 0.284, cz], physics: undefined });
 				return out;
 			}),
 			{ ...TEMPLATES[0], name: 'Card ball 1', pos: [-0.75, 1.195, 1.9], physics: undefined },
@@ -219,12 +219,12 @@ const TARGET_TOSS_DEF = {
 		{ type: 'box', name: 'Ball shelf', color: 0xe8c98a, size: [2.0, 0.08, 0.42], pos: [0, 1.04, 1.9], ...WOOD, physics: { mode: 'static', friction: 1, restitution: 0 } },
 		{ type: 'box', name: 'Shelf lip front', color: 0xe8c98a, size: [2.0, 0.05, 0.03], pos: [0, 1.105, 2.1], ...WOOD, physics: { mode: 'static' } },
 		{ type: 'box', name: 'Shelf lip back', color: 0xe8c98a, size: [2.0, 0.05, 0.03], pos: [0, 1.105, 1.7], ...WOOD, physics: { mode: 'static' } },
-		{ type: 'cylinder', name: 'Post west', color: 0xfff4e0, r: 0.06, h: 2.7, pos: [-1.95, 1.35, 1.9], roughness: 0.6, physics: { mode: 'static' } },
-		{ type: 'cylinder', name: 'Post east', color: 0xfff4e0, r: 0.06, h: 2.7, pos: [1.95, 1.35, 1.9], roughness: 0.6, physics: { mode: 'static' } },
+		{ type: 'cylinder', name: 'Post west', color: 0xfff4e0, r: 0.06, h: 3.0, pos: [-1.95, 1.5, 1.9], roughness: 0.6, physics: { mode: 'static' } },
+		{ type: 'cylinder', name: 'Post east', color: 0xfff4e0, r: 0.06, h: 3.0, pos: [1.95, 1.5, 1.9], roughness: 0.6, physics: { mode: 'static' } },
 		...STRIPES,
 		// the TABLES for the tin cans
-		{ type: 'box', name: 'Table left', color: 0x4f7fbf, size: [1.2, 0.9, 0.6], bevel: 0.03, bevelSegments: 1, pos: [-1.3, 0.45, -3.2], ...WOOD, physics: { mode: 'static', friction: 0.8 } },
-		{ type: 'box', name: 'Table right', color: 0x4fa36f, size: [1.4, 0.9, 0.6], bevel: 0.03, bevelSegments: 1, pos: [1.4, 0.45, -4.4], ...WOOD, physics: { mode: 'static', friction: 0.8 } },
+		{ type: 'box', name: 'Table left', color: 0x4f7fbf, size: [1.2, 0.9, 0.6], bevel: 0.03, bevelSegments: 1, pos: [-1.2, 0.45, -2.8], ...WOOD, physics: { mode: 'static', friction: 0.8 } },
+		{ type: 'box', name: 'Table right', color: 0x4fa36f, size: [1.4, 0.9, 0.6], bevel: 0.03, bevelSegments: 1, pos: [1.3, 0.45, -3.8], ...WOOD, physics: { mode: 'static', friction: 0.8 } },
 		// the SWINGING targets hang from a beam (the module's effect swings them; hidden when unused)
 		{ type: 'box', name: 'Swing beam', color: 0x6b4a32, size: [7, 0.16, 0.16], pos: [0, 3.5, -5.4], ...WOOD, physics: { mode: 'static' } },
 		disc('Swing target 1', 0.28, [-2.2, 2.3, -5.4], 0xffd45e, 0xff9a2e),
@@ -239,7 +239,8 @@ const TARGET_TOSS_DEF = {
 		disc('Cart target', 0.34, [0, 0.95, -5.9], 0xfff4e0, 0xffc640),
 		// the back curtain and one warm light
 		{ type: 'box', name: 'Back curtain', color: 0x7a1f2e, size: [10, 3.6, 0.2], pos: [0, 1.8, -8], roughness: 0.95, physics: { mode: 'static' } },
-		{ type: 'light', name: 'Booth light', kind: 'point', color: 0xffc98a, intensity: 6, distance: 14, pos: [0, 3.2, -1.5] },
+		{ type: 'light', name: 'Booth light', kind: 'point', color: 0xffc98a, intensity: 9, distance: 16, pos: [0, 3.0, -2.2] },
+		{ type: 'light', name: 'Target light', kind: 'point', color: 0xfff0d8, intensity: 7, distance: 10, pos: [0, 3.0, -5.6] },
 		// the TEMPLATES, parked on a vault slab far under the floor
 		{ type: 'box', name: 'Template vault', color: 0x333333, size: [4, 0.5, 2], pos: [0, VAULT_TOP - 0.25, 0], shadow: false, physics: { mode: 'static', friction: 1 } },
 		...TEMPLATES,

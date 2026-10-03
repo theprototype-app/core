@@ -2794,6 +2794,13 @@ loadable play content. Everything a user does must be visible to connected peers
   `String.replace(from, to)` with a STRING `to` expands `$\``, `$'`, `$&` — a doc edit whose
   replacement text quoted a regex ending in `$` followed by a backtick pasted 2255 lines of
   this file into itself. Use `split(from).join(to)` for literal replacement.
+- **A jsDelivr BRANCH ref is `max-age=604800` IN THE BROWSER** (s-maxage 12 h on the CDN), so a list fetched with
+  the default cache mode stays a week old on any device that already opened it — 1.19.0's new General levels were
+  invisible there while a fresh browser (the production proof) saw them. Every CDN LIST goes through
+  `contentBase.fetchIndex` (`cache: 'no-cache'`, a 304 on the ETag when unchanged); content a list points at keeps
+  the default cache. `updateCheck` calls `markContentStale()` on a new version to re-open the per-session memos.
+  Suite `content-index-cache` runs a REAL local HTTPS CDN (host-resolver MAP + SPKI-pinned cert) because
+  page.route turns the HTTP cache off; vitest `contentIndex` refuses a bare `fetch(`${X_BASE}/….json`)` in src.
 - **flowbite-svelte's `Button` FREEZES its class string at mount.** `Button.svelte:34` reads
   the theme through a DESTRUCTURING `$derived` declaration, which evaluates its object ONCE
   — so a button BORN disabled wears `cursor-not-allowed opacity-50` forever, even after its

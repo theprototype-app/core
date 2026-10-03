@@ -35,3 +35,52 @@
 export function contentBase(value, fallback) {
 	return typeof value === 'string' && value ? value.replace(/\/+$/, '') : fallback;
 }
+
+/**
+ * Fetch a content INDEX — a list that lives on a BRANCH ref (`scenes@format-2/index.json`,
+ * `packs@format-1/index.json` and each pack's item list, `modules@main/index.json`, the
+ * community gallery manifest).
+ *
+ * 1.19.1: jsDelivr answers a branch ref with `cache-control: max-age=604800` — SEVEN DAYS
+ * in the browser. With the default cache mode every device that had opened the tab in the
+ * last week kept the old list after a release (1.19.0 shipped three new General levels
+ * that those devices could not see; a fresh browser saw them, which is why the
+ * production proof passed). `no-cache` = revalidate every time: jsDelivr answers a
+ * conditional request with a 304 on its ETag, so an unchanged index costs a header
+ * round trip, not the body.
+ *
+ * ONLY for lists. Content a list points at (GLBs, thumbnails, a scene file by path) keeps
+ * the default cache — those are the bulk of the bytes, and a stale list is what hides
+ * new content.
+ *
+ * @param {string} url @returns {Promise<Response>}
+ */
+export function fetchIndex(url) {
+	return fetch(url, { cache: 'no-cache' });
+}
+
+/** @type {Set<() => void>} */
+const staleHandlers = new Set();
+
+/**
+ * Register a memo to drop when the deployed content may have moved on (an app update was
+ * noticed): the loaders memoize their index per session, so without this a tab left open
+ * across a release kept the old list until a reload, Retry or not.
+ * @param {() => void} handler @returns {() => void} unsubscribe
+ */
+export function onContentStale(handler) {
+	staleHandlers.add(handler);
+	return () => staleHandlers.delete(handler);
+}
+
+/** Drop every registered index memo (updateCheck calls this when it sees a new version);
+ * the next open of a tab re-fetches. A throwing handler never stops the others. */
+export function markContentStale() {
+	for (const handler of staleHandlers) {
+		try {
+			handler();
+		} catch {
+			/* one loader's memo must not keep the others stale */
+		}
+	}
+}

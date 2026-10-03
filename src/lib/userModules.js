@@ -4,6 +4,7 @@ import { idbGet, idbPut } from './idb';
 import { showToast } from '../stores/appStore';
 import { showConfirm } from './confirmDialog';
 import { APP_VERSION } from './version.js';
+import { fetchIndex } from './contentBase';
 import {
 	initModules,
 	isModuleLoaded,
@@ -272,14 +273,19 @@ export async function installZip(file) {
 	}
 }
 
-/** Install from a URL serving manifest.json (+ listed files) @param {string} url */
+/** Install from a URL serving manifest.json (+ listed files) @param {string} url
+ *
+ * 1.19.1: the manifest AND its files are revalidated (`no-cache`). A Browse install reads
+ * `modules@main/<id>/`, a branch ref jsDelivr lets the browser keep for 7 days, and the
+ * files change IN PLACE between versions — a cached manifest installed last week's
+ * version, a cached entry under a fresh manifest a mix of two. */
 export async function installUrl(url) {
 	const base = normalizeRepoUrl(url);
 	try {
 		setStatus('busy', 'Fetching manifest.json…', base);
 		let manifestResponse;
 		try {
-			manifestResponse = await fetch(base + '/manifest.json');
+			manifestResponse = await fetchIndex(base + '/manifest.json');
 		} catch (error) {
 			throw new Error(networkHint(base + '/manifest.json', error));
 		}
@@ -303,7 +309,7 @@ export async function installUrl(url) {
 			setStatus('busy', 'Downloading ' + path + '…', manifest.name + ' v' + manifest.version);
 			let response;
 			try {
-				response = await fetch(base + '/' + path);
+				response = await fetch(base + '/' + path, { cache: 'no-cache' });
 			} catch (error) {
 				throw new Error(networkHint(base + '/' + path, error));
 			}

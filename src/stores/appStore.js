@@ -39,6 +39,8 @@ export const uvEditorClose = writable(true);
 export const shaderEditorClose = writable(true);
 // A4: the HUD editor, the 6th FLOW_FAMILY dock tab
 export const hudEditorClose = writable(true);
+// 34 PF: the Profiler — recordings, timeline, who draws most (a dock tab, Explorer-like: not a Flow-family view)
+export const profilerClose = writable(true);
 
 /**
  * 21-D7: DEEP LINK into a flow node — "show me the node that drives this HUD element".

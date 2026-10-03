@@ -23,7 +23,9 @@ import { flowRuntimeRef } from './refs.js';
 
 /** @param {import('./context.js').SdkContext} ctx */
 export function sdkGame(ctx) {
-	const { moduleId, onDispose } = ctx;
+	const { moduleId, onDispose, owned } = ctx;
+	/** 31 K3: openMenu's markShellGame is journaled once per module */
+	let menuHooked = false;
 	return {
 		/**
 		 * R3a: THE GAME SHELL, read-mostly. The round reads are what `perRound` content
@@ -61,9 +63,7 @@ export function sdkGame(ctx) {
 			 * store tick; torn down with the module (or earlier, by calling what it returns).
 			 * Read what you need inside it. @param {() => void} fn @returns {() => void} off */
 			onChange(fn) {
-				const off = coalescedSubscribe([gameState], fn);
-				onDispose(off);
-				return off;
+				return owned('game.onChange', coalescedSubscribe([gameState], fn));
 			},
 			/**
 			 * 31 K3: this game's LEVELS in the shared pause menu (desktop + the VR panel).
@@ -74,9 +74,10 @@ export function sdkGame(ctx) {
 			 * @returns {(() => void) | null} off, or null when the list is empty
 			 */
 			levels(spec) {
+				// KEYED: a re-call replaces this module's list in the shell, so it replaces
+				// its journal entry too (Towers re-calls on every unlock)
 				const off = setGameLevels(spec, moduleId);
-				if (off) onDispose(off);
-				return off;
+				return off ? owned('game.levels', off, { key: 'game.levels' }) : null;
 			},
 			/**
 			 * 31 K3: a row of this game's own in the pause menu's Settings (under the core
@@ -90,8 +91,7 @@ export function sdkGame(ctx) {
 			 */
 			addSetting(row) {
 				const off = registerGameSetting(row, moduleId);
-				if (off) onDispose(off);
-				return off;
+				return off ? owned('game.setting', off, { key: 'game.setting:' + String(row?.id) }) : null;
 			},
 			/** 31 K3: the current value of a setting — one of yours, or a core row ('music',
 			 * 'musicVolume', 'sfx', 'sfxVolume', 'haptics', 'showFps', 'turning', 'turnAngle',
@@ -109,29 +109,27 @@ export function sdkGame(ctx) {
 			/** 31 K3: `fn(values)` hears every settings change (coalesced per frame).
 			 * @param {(values: Record<string, any>) => void} fn @returns {() => void} off */
 			onSettingsChange(fn) {
-				const off = coalescedSubscribe([gameSettingValues], () => fn({ ...get(gameSettingValues) }));
-				onDispose(off);
-				return off;
+				return owned('game.onSettingsChange', coalescedSubscribe([gameSettingValues], () => fn({ ...get(gameSettingValues) })));
 			},
 			/** 31 K3: the How to play page — a string (lines split on \n) or an array of lines.
 			 * @param {string | string[]} text @returns {() => void} off */
 			setHelp(text) {
-				const off = setGameHelp(text, moduleId);
-				onDispose(off);
-				return off;
+				return owned('game.help', setGameHelp(text, moduleId), { key: 'game.help' });
 			},
 			/** 31 K3: the pause menu's Restart also runs `fn` (reset your board, respawn your
 			 * enemies). @param {() => void} fn @returns {() => void} off */
 			onRestart(fn) {
-				const off = onGameRestart(fn, moduleId);
-				onDispose(off);
-				return off;
+				return owned('game.onRestart', onGameRestart(fn, moduleId));
 			},
 			/** 31 K3: open / close the pause menu (a module's own Menu button), and ask
 			 * whether it is open. Opening only works while playing a game. */
 			openMenu() {
 				markShellGame(true);
-				onDispose(() => markShellGame(false));
+				// once: it journaled an entry per CALL before (a menu button pressed all session)
+				if (!menuHooked) {
+					menuHooked = true;
+					onDispose(() => markShellGame(false), 'game.menu');
+				}
 				return openShellMenu('main');
 			},
 			closeMenu() {
@@ -143,3 +141,25 @@ export function sdkGame(ctx) {
 		}
 	};
 }
+
+/** 34 R6 (T2): what each member does to the module's lifecycle — see SURFACE_KINDS in
+ * sdk/lifecycle.js. tests/unit/moduleLifecycle.test.js holds every 'registers' member to a
+ * teardown path; a member missing here fails it. */
+sdkGame.surface = {
+	'game.roundCutoff': 'read',
+	'game.roundUnderway': 'read',
+	'game.playActive': 'read',
+	'game.getVar': 'read',
+	'game.setVar': 'content',
+	'game.onChange': 'registers',
+	'game.levels': 'registers',
+	'game.addSetting': 'registers',
+	'game.setting': 'read',
+	'game.setSetting': 'action',
+	'game.onSettingsChange': 'registers',
+	'game.setHelp': 'registers',
+	'game.onRestart': 'registers',
+	'game.openMenu': 'registers',
+	'game.closeMenu': 'action',
+	'game.menuOpen': 'read'
+};

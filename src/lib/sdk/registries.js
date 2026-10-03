@@ -6,6 +6,7 @@ import { clearAnnouncement } from '../gameAnnounce';
 import { resetKit } from '../kit/runtime.js';
 import { writable, get } from 'svelte/store';
 import { effectsRef } from './refs.js';
+import { removeAndDispose } from '../disposeTree.js';
 
 // --- registries the host app consumes ---
 
@@ -155,11 +156,8 @@ export const messageHandlers = {};
 /** @type {Record<string, {getState: () => any, applyState: (state: any) => void}>} */
 export const stateSyncs = {};
 
-/** A2: per-module teardown journal — every api.register* records an undo thunk
- * here so deactivateModule() can genuinely dispose a module (the dev-mode live
- * reload tears down and re-registers with fresh code, no page reload).
- * @type {Record<string, (() => void)[]>} */
-export const moduleDisposals = {};
+// The per-module teardown journal moved to sdk/lifecycle.js (T2, 34 R6): one registry keyed
+// by module id that every SDK registration path records into, replayed by unloadModule.
 
 /** remove one value from a plain registry array, in place
  * @param {any[]} arr @param {any} value */
@@ -170,6 +168,9 @@ export function arrayRemove(arr, value) {
 
 /** A2: drop a module-owned viewport group at teardown. SCENE-ROOT only (golden
  * rule 5) — anything inside objectsGroup is replicated user content and stays.
+ * T2: and give its GPU memory back — removing a group frees NOTHING on the GPU
+ * (disposeTree's header), so a module loaded and unloaded ten times held ten copies of
+ * its meshes. Resources something else in the scene still draws with are kept.
  * @param {string} name */
 export function removeSceneRootGroup(name) {
 	const scene = get(globalScene);
@@ -179,7 +180,7 @@ export function removeSceneRootGroup(name) {
 	for (let node = target; node; node = node.parent) {
 		if (objects && node === objects) return;
 	}
-	target.parent?.remove(target);
+	removeAndDispose(scene, target);
 }
 
 /** @type {Record<string, Record<string, string>>} moduleId -> {path: blobUrl} */

@@ -60,7 +60,7 @@ export function sdkFlowTriggers(ctx) {
 
 /** @param {import('./context.js').SdkContext} ctx */
 export function sdkFlow(ctx) {
-	const { moduleId, onDispose } = ctx;
+	const { moduleId, owned } = ctx;
 	/** A value frozen for the undo stack, so a module mutating its patch object later
 	 * cannot rewrite history. @param {any} v */
 	const frozen = (v) => {
@@ -144,9 +144,7 @@ export function sdkFlow(ctx) {
 			 * @param {() => void} fn @returns {() => void} off
 			 */
 			onChange(fn) {
-				const off = coalescedSubscribe([flowGraphs, flowTriggers], fn);
-				onDispose(off);
-				return off;
+				return owned('flow.onChange', coalescedSubscribe([flowGraphs, flowTriggers], fn));
 			},
 			/** Every edge, graph-tagged: `{id, source, target, sourceHandle, targetHandle,
 			 * graphId}`. @returns {any[]} */
@@ -287,3 +285,26 @@ export function sdkFlow(ctx) {
 		}
 	};
 }
+
+/** 34 R6 (T2): what each member does to the module's lifecycle — see SURFACE_KINDS in
+ * sdk/lifecycle.js. tests/unit/moduleLifecycle.test.js holds every 'registers' member to a
+ * teardown path; a member missing here fails it. */
+sdkFlowTriggers.surface = {
+	fireObjectClick: 'action',
+	fireNodeTrigger: 'action'
+};
+
+/** 34 R6 (T2): what each member does to the module's lifecycle — see SURFACE_KINDS in
+ * sdk/lifecycle.js. tests/unit/moduleLifecycle.test.js holds every 'registers' member to a
+ * teardown path; a member missing here fails it. */
+sdkFlow.surface = {
+	'flow.nodes': 'read',
+	'flow.freeRegion': 'read',
+	'flow.onChange': 'registers',
+	'flow.edges': 'read',
+	'flow.nodeValue': 'read',
+	'flow.triggerStamp': 'read',
+	'flow.setNodeData': 'content',
+	'flow.setNodesData': 'content',
+	'flow.addNodes': 'content'
+};

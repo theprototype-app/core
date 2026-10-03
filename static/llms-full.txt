@@ -101,6 +101,130 @@ Peers exchange `{id, version}` lists when they connect and warn when a module is
 missing or a different version on the other side. That's advisory — the session
 still works, but replicated behavior of that module may differ.
 
+## The lifecycle: load, unload, reload (34 R6)
+
+A module can be **unloaded and loaded again while the app runs** — switched off in the
+Modules manager (core modules too, since 1.20), removed, updated, dev-reloaded from its Dev
+URL, or unloaded by a scene switch. `unloadModule(id)` takes down **everything the module
+registered**, newest first, and `register(api)` can then run again with fresh code. Nothing
+needs a page reload, and nothing is left running for a module that is gone.
+
+**What is undone for you.** Every registration you make through `api` is recorded in the
+module's lifecycle registry (one registry, keyed by your module id — `src/lib/sdk/lifecycle.js`)
+and undone at unload: node groups, effects, value nodes, node defs you seeded and the user did
+not edit, primitives, click/drop handlers, frame tasks, scene-clear hooks, interactive / system /
+listed groups (the scene-root group is removed AND its geometries, materials and textures are
+freed), the spawn override, message handlers and state sync, menus, toolboxes (closed) and their
+shortcuts, VR menu entries, key bindings, input listeners and claims, possess, the follow camera,
+VR panels, hit listeners, your music track, game levels / settings rows / help / restart hooks /
+the forced menu, LOD handles, quality / flow / game / settings / peer-variable listeners, unwrap /
+shader / post backends, post effects, audio device kinds, engine voices (`api.audio.voice`),
+transport events (`api.audio.schedule`), your copy of the mic stream, a recording you started,
+HUD rows / debug lines / actions / element kinds.
+
+Every `off()` the api hands you still works, and calling it early also drops the registry
+entry — subscribe and unsubscribe as often as you like. A call that REPLACES (`api.game.levels`
+called on every unlock, `setHelp`, `addSetting` with the same id, a toolbox or VR menu entry
+re-registered under the same id) replaces its entry rather than stacking one per call.
+
+**What stays.** What your module created in the SHARED scene (`api.create`, objects in
+`objectsGroup`, nodes from `api.flow.addNodes`, audio devices and cables, node data you wrote)
+is user content: it stays, replicated, like anything a person made. So do the shared game
+variables and your peer-variable row, and what you saved on this device with `api.storage`
+(a reinstall keeps progress; `storage.clear()` is your reset).
+
+**What only you know about — four tools:**
+
+```js
+// your own teardown: a DOM overlay you appended, a worker, a cache, a raw WebAudio graph
+// you built on api.audio.context(). Runs at unload (newest first, so a hook added at the
+// end of register() runs while everything before it is still in place). Returns cancel().
+api.onUnload(() => overlay.remove());
+
+// timers that die with the module (the window's signatures) + what is pending right now
+const h = api.timers.setInterval(refresh, 500);
+api.timers.clearInterval(h);
+api.timers.setTimeout(fn, ms); api.timers.requestAnimationFrame(loop);
+api.timers.pending(); // {timeouts, intervals, frames}
+
+// an event listener removed at unload — window, document, the canvas, anything; returns off()
+const off = api.listen(window, 'keydown', onKey, true);
+
+// a scene-root object that is YOURS: removed at unload, its GPU resources freed (shared
+// ones kept). Returns the object, so: api.scene().add(api.own(group)). Never for content
+// inside objectsGroup (that is shared — it is left alone).
+api.own(group);
+```
+
+**Installed modules (zip / URL) get timers and window listeners tracked automatically.** The
+entry is evaluated with its bare `setTimeout` / `clearTimeout` / `setInterval` /
+`clearInterval` / `requestAnimationFrame` / `cancelAnimationFrame` bound to tracked ones (a
+one-line prologue on line 1, so line numbers in stack traces are unchanged), and a listener
+your code adds to `window` or `document` is recorded too — at unload they are cleared and
+removed. Two edges: `window.setTimeout(...)` (or a listener on any other target) is not
+tracked — use `api.timers` / `api.listen`; and a module that declares one of those six names
+itself at top level is loaded without the prologue (its timers then untracked). A core module
+(in `src/modules/`) uses `api.timers` / `api.listen` explicitly.
+
+**Keep state inside `register()`.** The browser keeps every imported module's TOP-LEVEL scope
+for the life of the page (an ES module is never unloaded), so module-level variables, caches and
+DOM survive an unload — the next load starts from them. State declared inside `register()` is
+fresh every time; module-level state you must reset belongs in `api.onUnload`. Each reload
+of an installed module also keeps the evaluated source itself, so a large module costs some
+heap per reload — fine for a development loop, not something to do every second. (Measured
+with `module-lifecycle-repo`, 3 cycles each: 19 of the 20 repo modules reload flat; Waves keeps
+one DOM node and ~0.3 MB of heap per reload.)
+
+### Adding an SDK surface (core contributors)
+
+Every member of the api declares what it does to a module's lifecycle, beside its slice
+(`src/lib/sdk/<name>.js`):
+
+```js
+export function sdkThing(ctx) {
+	const { moduleId, onDispose, owned } = ctx;
+	return {
+		registerThing(spec) {
+			thingRegistry.set(key, spec);
+			// the undo, journaled with a KIND (the debug view names it); `{key}` makes a
+			// re-registration under the same key REPLACE its entry
+			onDispose(() => thingRegistry.delete(key), 'thing', { key: 'thing:' + key });
+		},
+		onThing(fn) {
+			// a registration that hands back an off(): owned() returns an off that also
+			// drops the journal entry
+			return owned('thing.listener', subscribe(fn));
+		},
+		thingCount: () => thingRegistry.size
+	};
+}
+sdkThing.surface = { registerThing: 'registers', onThing: 'registers', thingCount: 'read' };
+```
+
+- Kinds: `registers` (leaves something behind: MUST journal its undo), `action` (does
+  something now, leaves nothing of the module's), `content` (shared, replicated content that
+  deliberately survives an unload), `read`, `value` (a non-function).
+- A `registers` member needs a fixture in `tests/fixtures/sdkLifecycleFixtures.js`: register
+  it from a real module, read CORE's registry (never the journal), unload, read it gone. The
+  vitest `moduleLifecycle` fails for an undeclared member, a stale declaration, a `registers`
+  member with no fixture, and a fixture whose registration survives `unloadModule`; the
+  browser suite `module-lifecycle` runs the members node cannot load.
+- **Async registrations journal SYNCHRONOUSLY.** A disposer recorded inside an
+  `import().then` lands in the module's NEXT journal whenever an unload comes first — the
+  registration then outlives the unload. Record it before the import and let a late
+  registration undo itself:
+  `let off = null, gone = false; onDispose(() => { gone = true; off?.(); }, 'kind');
+  import('../x').then((m) => { off = m.register(...); if (gone) off(); });`
+- A core subsystem acting FOR a module outside the api (kit entities, loaded models) records
+  its undo with `trackModuleResource(moduleId, kind, undo)` from `moduleSDK.js`.
+- Debug: `__stores.moduleSDK.registrationsOf(id)` / `allRegistrations()` (live entries by
+  kind), `moduleScopeDebug()` (an installed module's tracked timers + listeners),
+  `unloadModule(id)` returns what it disposed, by kind.
+- Tests: vitest `moduleLifecycle`; e2e `module-lifecycle` (the browser contract, an installed
+  probe module, and the leak test: each bundled module unloaded/loaded 3x with handlers,
+  nodes, audio connections, timers, meshes, materials, GPU memory, DOM, JS listeners and the
+  heap measured) and `module-lifecycle-repo` (every zip in the modules repo through 3 cycles).
+
 ## API reference (v1)
 
 ### Flow nodes
@@ -479,8 +603,11 @@ api.onInput((kind, code) => {});        // 'down'/'up' events; returns unsubscri
 // pause the HOST's use of an input scope while your module drives:
 //   'keys'       — WASD camera fly + play-mode movement
 //   'locomotion' — VR left-stick locomotion
+//   'sticks'     — (1.19) BOTH VR sticks: left-stick move, right-stick snap/smooth turn + teleport
+//                  (a held thing reeled on Y and scaled on X, the way an Edit grab does)
 api.claimInput('keys');                 // ALWAYS release when your mode ends
 api.releaseInput('keys');
+const sticksOk = api.claimInput('sticks') === true; // true = this core knows the scope (older: undefined)
 
 // reading a keydown YOURSELF (a toolbox's own handler)? resolve the key the way the
 // editor does — `event.key` when it is an ASCII letter/digit, the physical
@@ -529,6 +656,96 @@ if (api.storage) {
 
 Feature-detect it; on an older app write the SAME key yourself
 (`localStorage['tp:mod:<id>:<key>'] = JSON.stringify(value)`) so progress carries over.
+
+### Performance: quality level, LOD, budgets (1.18, roadmap 31)
+
+```js
+// The adaptive quality level on THIS device: 0 = best ... api.quality.max (every step taken).
+// A headset session starts at 1 (shadows off) in auto mode; a game's Quality setting can pin it.
+if (api.quality) {
+	const apply = (level) => {
+		particles.maxCount = level >= 3 ? 40 : 200;   // cut YOUR effects, not shared state
+		torchLights.forEach((l, i) => (l.visible = i < (level >= 1 ? 2 : 6)));
+	};
+	apply(api.quality.level);
+	const off = api.quality.onChange((level, { labels, vr }) => apply(level)); // released on disable
+}
+
+// Levels of detail for your own dense geometry (auto LOD already covers dense meshes in the
+// shared scene and under the module world root). Built ONCE per asset in a worker
+// (meshoptimizer), drawn by distance through a render-time swap: the mesh keeps its full
+// geometry for picking, physics and your code. Distances are in the mesh's world RADII.
+if (api.lod) {
+	const lod = api.lod(enemyFigure, { ratios: [0.5, 0.2], distances: [6, 18] });
+	lod.ready.then((n) => console.log(n, "meshes have levels")); // lod.remove() undoes it
+	lod.force?.(2);     // 1.19: draw level 2 on THIS screen whatever the distance (null = auto)
+	lod.levels?.();     // 1.19: the level each mesh drew last (0 = full)
+}
+mesh.userData.lod = false; // keep one mesh out of auto LOD
+```
+
+**1.19 — LOD groups on scene objects.** A replicated object may carry a LOD GROUP
+(`userData.lod`, edited in its Properties ▸ LOD section, or written by a pack item's `lods`):
+`{mode: 'auto'|'forced', forced?, bias?, cull?, levels: [{source: 'self'|'pack'|'generated'|
+'explorer'|'object', ref?, ratio?, screenSize, offset?, material?}]}` with thresholds by SCREEN
+SIZE (the share of the viewport height the object covers). It is scene data (saved, replicated,
+undone) and drawn at render time like `api.lod` — the tree never holds a level. A module that
+builds scene objects can write one through the same path the panel uses
+(`objectParameters {parameter: 'lod'}` is the wire shape); module-only geometry keeps `api.lod`.
+
+Both are LOCAL (a fact about this machine) — never let them change replicated state, or two
+peers on different hardware disagree about the game. Skinned meshes and morph targets get no
+levels (the simplifier cannot carry weights): pre-decimate those offline.
+
+**The Quest budget** (roadmap 31, the planner's target for a scene in Interact/Play on a Quest 3):
+**<= 150 draw calls, <= 300k triangles visible, <= 2 real-time lights with shadows off, no
+per-frame allocations in the hot path.** Measure your game with the probe, the same way every time:
+
+```bash
+# dev server running; run it under the exclusive slot (frame times are the point)
+APP_URL=https://theprototype.app:5173/ ~/.local/bin/e2e-slot --exclusive -- \
+  node scripts/perf-games.cjs --label mine --only waves [--vr] [--profile]
+```
+
+It prints draw calls + triangles per frame (every render pass summed), geometries, textures and
+an MB estimate, lights (+ shadow casters), meshes / instanced / unculled, the LOD and quality
+state, and p50/p95/p99 frame ms at CPU throttle x4; `--profile` adds CPU self-time, the nearest
+app frame calling the heaviest functions, and allocation per function (garbage included).
+The things 1.18's round found, in the order they cost:
+
+- **Never keep a THREE object inside Svelte `$state`** (or pass one through an action parameter
+  that is a state proxy): Svelte deep-reads a proxy, which walks the whole scene graph through
+  `parent` — typed arrays included. Use `$state.raw`. This one line was 88% of a game's frame.
+- **No whole-scene lookups per frame** — `scene.getObjectByName` is a traversal; find once, keep
+  the reference, re-find when it leaves the scene.
+- **No allocation per frame**: reuse vectors/arrays; a `[a, b].map(...)` in a frame task is
+  garbage 60-90 times a second, and GC pauses are the stutter you feel in a headset.
+- **Lights and shadow casters are draw calls**: each shadow-casting light draws every caster
+  again; transmission (glass) renders the scene an extra time per camera, per eye.
+
+### Functional pack items: doors, lids, levers — `api.behavior` (1.19, roadmap 33)
+
+A pack item can be FUNCTIONAL: a door that opens on a click, a chest lid, a lever, a fan
+(the `behavior` field, see PACKS.md). Core runs them. Nothing plays in Edit; a click, a
+knock or walking up triggers them in Interact/Play; the state replicates; a door's
+collider follows its leaf. A module can drive them too:
+
+```js
+if (api.behavior) {
+	for (const item of api.behavior.list()) {        // [{uuid, type, trigger, open}]
+		if (item.type === 'door' && !item.open) api.behavior.trigger(item.uuid, true); // open it
+	}
+	api.behavior.state(uuid);                          // {on, at, n} or null (never triggered)
+	api.behavior.trigger(uuid);                         // toggle, like a player's click
+}
+```
+
+`trigger` is REPLICATED (one `behavior` message; every peer poses the door from the same
+session-clock stamp), so call it on ONE peer: the authority, or the peer that saw the
+cause. It returns false when nothing changed (opening an open door). The state is
+runtime: it is never saved, and a peer in Edit shows the rest pose whatever it says. The
+item sounds are core game sounds: `door`, `gate`, `slide`, `lever`, `lid` (plus `click`),
+which `api.playSound` can play too.
 
 ### Game feel: sound, music, haptics, effects, banners (1.17, roadmap 30b)
 
@@ -651,6 +868,86 @@ itself) or `'sweep'` (a later entry while held). A control that must not be swep
 
 ```js
 api.registerClickHandler(pickDot, { sweep: false }); // presses still reach it; sweeps do not
+```
+
+### The game shell: pause menu, levels, per-game settings (1.18, roadmap 31 K3)
+
+Every game gets ONE pause menu from core — **Resume · Restart · Levels · Settings · How to
+play · Main menu** — on the desktop (Escape in Play, or the corner Menu button) and in VR
+(the left controller's **X**, or Menu on the game board / wrist card). You do not draw it;
+you feed it. A scene counts as a game when it has a state-bound HUD screen, a spawn, or a
+module publishing `userData.play` — or when your module registers levels. All of it is
+feature-detected (`api.game.levels?.(…)`), LOCAL, and torn down with your module.
+
+**Levels** — the picker on the desktop and on the VR board. Re-call it whenever a level
+unlocks or earns stars; `onPick` never hears a locked level.
+
+```js
+const refresh = () =>
+	api.game.levels?.({
+		list: LEVELS.map((l, i) => ({ id: l.id, label: 'Level ' + (i + 1), locked: i > unlocked, stars: best[l.id] ?? 0 })),
+		current: currentLevel.id,
+		onPick: (id) => loadLevel(id)
+	});
+refresh();
+onLevelWon(() => { unlocked++; refresh(); });
+```
+
+**Your own settings rows** — shown under the core rows, persisted per game on this device
+(`tp:game:<game>:<id>`). `type` is `'toggle'`, `'choice'` (`options`, optional `optionLabels`)
+or `'range'` (`min`, `max`, `step`). A core id is refused.
+
+```js
+api.game.addSetting?.({
+	id: 'board', label: 'Board', type: 'choice',
+	options: ['globe', '2d'], optionLabels: ['Globe', '2D board'], default: 'globe',
+	onChange: (v) => setBoard(v)
+});
+setBoard(api.game.setting?.('board') ?? 'globe');            // the stored choice at load
+// (1.19) a CHOICE that decides which levels you see: `onLevels: true` also draws it as tabs
+// above the Levels page's grid (desktop + headset) — Untangle's Board [Globe] [2D board]
+api.game.setSetting?.('board', '2d');                        // your in-game button writes the same row
+api.game.onSettingsChange?.((values) => console.log(values.board, values.sfx));
+```
+
+**The core rows every game has** — `music`, `musicVolume` (0..100), `sfx`, `sfxVolume`,
+`haptics`, `showFps`, `turning` (`default` | `snap` | `smooth` | `off`), `turnAngle`
+(`default` | `15` | `30` | `45` | `90`), `vignette`, `quality` (`auto` | `low` | `medium` |
+`high`). Core obeys them itself: the per-game volumes land on the audio BUSES (so
+`api.playSound`, `api.music`, flow sound nodes and the scene's track all follow), haptics,
+VR turning, the comfort vignette and the quality governor read them live. A module that
+plays audio through its OWN WebAudio graph should read them:
+
+```js
+const gain = ctx.createGain();
+const apply = () => (gain.gain.value = api.game.setting?.('sfx') === false ? 0 : (api.game.setting?.('sfxVolume') ?? 100) / 100);
+apply();
+api.game.onSettingsChange?.(apply);
+```
+
+**How to play** — your words first, then the device's controls (keyboard or controllers).
+Without it the menu shows the game's Games-tab description.
+
+```js
+api.game.setHelp?.([
+	'Drag the dots until no two lines cross.',
+	'Finish a level to unlock the next — stars for fewer moves.'
+]);
+```
+
+**Restart** — the menu resets the game shell (host / alone; others carry on as it is),
+respawns the player and runs your hook:
+
+```js
+api.game.onRestart?.(() => { resetBoard(); spawnWave(1); });
+```
+
+**Your own Menu button** (a module HUD, a VR board of yours):
+
+```js
+api.game.openMenu?.();          // only while playing a game; false otherwise
+api.game.closeMenu?.();
+if (api.game.menuOpen?.()) pauseMyTimers();
 ```
 
 ### Physics (P-A)
@@ -843,12 +1140,30 @@ data (replicated like any node edit); the slide is a pure function of
 `(data, time)` running on each peer — no motion messages at all. The
 `registerClickHandler` consumes the click so pressing doesn't select the button.
 
+## Walkthrough: the towers module (a game's rules as a core module)
+
+`src/modules/towers/` runs the **Towers** template's twelve levels. It shows how a game with
+real rules splits: the scene (the template) is the arena, the piece templates, the HUD and a
+small graph; the module is the rules. Worth copying:
+
+- **The rules as a pure leaf** (`levels.js`) — the level table, the star rule, the unlocks,
+  the verdict stepper — tested with vitest, no browser.
+- **One authority** decides anything shared (the physics initiator, else the lowest peer id):
+  it deals the pieces, judges the round and writes the result into game variables
+  (`api.game.setVar`); every peer derives its HUD words from those through a value node wired
+  into HUD Text's format (`api.registerValueNode`).
+- **HUD buttons without a presser**: a press is a replicated stamp on a `hudbutton` node, so
+  every peer watches `api.flow.triggerStamp` and only the authority acts (first sight = history).
+- **Progress on this device** with `api.storage` (stars, unlocks — never replicated).
+- **The shell's level picker, help and restart** (`api.game.levels`, `setHelp`, `onRestart`),
+  feature-detected so the module also runs on an app without them.
+
 ## Manager, dev mode & gallery (17-A2/A3)
 
-User modules install, update, disable and remove **live** — `deactivateModule`
-runs the per-module teardown journal (every `api.register*` records an undo
-thunk), so nothing needs a page reload. Core modules keep reload-to-disable
-(they may wire core registries outside the api surface, e.g. vrsleeve).
+Modules install, update, disable and remove **live** — `unloadModule` (33's
+`deactivateModule`) runs the module's lifecycle registry (see **The lifecycle**
+above), so nothing needs a page reload. Since 1.20 that includes CORE modules: their
+hooks outside the api (vrsleeve's VR hook registries) undo through `api.onUnload`.
 
 Every user-module card carries a **Dev URL** row: **Reload** fetches fresh code
 (cache-busted), evaluates it FIRST, then tears down + re-registers — a broken
@@ -868,3 +1183,6 @@ the dev reload keep working on gallery installs.
 - [ ] No `Math.random()` without a broadcast seed; no accumulation in effects.
 - [ ] Receiving a message never re-broadcasts it.
 - [ ] `id` unique, node `type`s unique, version bumped on behavior changes.
+- [ ] Switch it off and on again in the Modules manager (or dev-reload it): no timer,
+      listener, sound, overlay or scene object of the old instance is left, and the new one
+      works from scratch (`__stores.moduleSDK.registrationsOf(id)` is `{}` while it is off).

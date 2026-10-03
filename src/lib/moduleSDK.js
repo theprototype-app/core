@@ -19,7 +19,9 @@ import { APP_VERSION } from './version.js';
 import { log } from './diagnostics';
 import { safeStorage } from './safeStorage';
 import { makeApi } from './sdk/index.js';
-import { loadedModules, messageHandlers, stateSyncs, moduleDisposals, moduleAssets } from './sdk/registries.js';
+import { loadedModules, messageHandlers, stateSyncs, moduleAssets } from './sdk/registries.js';
+import { disposeRegistrations, track } from './sdk/lifecycle.js';
+import { moduleScopeOf } from './sdk/moduleScope.js';
 export {
 	moduleNodeGroups,
 	modulePrimitiveGroups,
@@ -48,6 +50,8 @@ export { pointerRayNow } from './sdk/pointer.js';
 export { runtimeNow } from './sdk/core.js';
 export { moduleContentDebug } from './moduleContent';
 export { SDK_TABLE } from './sdk/index.js';
+export { registrationsOf, allRegistrations, registrationCount } from './sdk/lifecycle.js';
+export { moduleScopeDebug } from './sdk/moduleScope.js';
 
 /** Used by the user-module loader to expose packaged files @param {string} id @param {Record<string, string>} assets */
 export function registerModuleAssets(id, assets) {
@@ -56,18 +60,25 @@ export function registerModuleAssets(id, assets) {
 
 /**
  * Register modules. Re-callable: already-loaded ids are skipped, so the
- * manager can live-enable additional modules after boot. Disabling only
- * takes effect on reload (SDK v1 registries have no unregister).
+ * manager can live-enable additional modules after boot, and a module
+ * `unloadModule` took down registers again with fresh code.
  * @param {any[]} modules
  */
 export function initModules(modules) {
 	modules.forEach((mod) => {
 		if (loadedModules.some((m) => m.id === mod.id)) return;
 		try {
+			// T2: an installed module's timers + window/document listeners (sdk/moduleScope.js)
+			// join its registry now — at REGISTRATION, so a live update's new entry, evaluated
+			// before the old one unloads, never has its timers taken down with the old one's
+			moduleScopeOf(mod)?.adopt((kind, undo) => track(mod.id, kind, undo));
 			mod.register(makeApi(mod.id, mod.name || mod.id));
 			loadedModules.push({ id: mod.id, name: mod.name, version: mod.version, description: mod.description });
 			log('info', 'module', 'loaded ' + mod.id + ' v' + mod.version);
 		} catch (error) {
+			// T2: whatever register() managed before it threw is still registered — take it
+			// down, or a half-registered module keeps its handlers with no way to unload them
+			disposeRegistrations(mod.id);
 			log('warn', 'module', mod.id + ' failed to register', String(error));
 			showToast('Module "' + mod.id + '" failed to load');
 		}
@@ -76,26 +87,28 @@ export function initModules(modules) {
 }
 
 /**
- * A2: genuinely unload a module — run its teardown journal in reverse
- * (registries, message/state-sync handlers, input claims + bindings, VR menu
- * entries, module-owned scene-root viewport groups), then drop its assets and
- * loadedModules entry so initModules can re-register fresh code. Scene objects
- * the module CREATED inside objectsGroup stay (replicated user content).
- * Used by the user-module dev reload / live disable; CORE modules keep
- * reload-to-disable — they may wire registries outside the api surface
- * (vrsleeve's vrControls hook registries).
- * @param {string} id
+ * T2 (34 R6): a core subsystem acting FOR a module outside the api object (kit entities,
+ * loaded models, …) records its undo in the module's lifecycle registry, so
+ * `unloadModule` disposes it with everything else. Returns `release()`.
+ * @param {string} moduleId @param {string} kind @param {() => void} undo @param {{key?: string}} [opts]
  */
-export function deactivateModule(id) {
-	const disposals = moduleDisposals[id] ?? [];
-	moduleDisposals[id] = [];
-	for (let i = disposals.length - 1; i >= 0; i--) {
-		try {
-			disposals[i]();
-		} catch (error) {
-			log('warn', 'module', id + ' teardown step failed', String(error));
-		}
-	}
+export function trackModuleResource(moduleId, kind, undo, opts) {
+	return track(moduleId, kind, undo, opts);
+}
+
+/**
+ * T2 (34 R6): genuinely unload a module — every registration it made, newest first
+ * (handlers, node types, effects, menus, toolboxes, input claims + bindings, timers,
+ * listeners, music, spawn, game levels/settings/help, owned objects with their GPU
+ * resources, module-owned scene-root groups, …: everything in its lifecycle registry,
+ * sdk/lifecycle.js), then its assets and its loadedModules entry, so initModules can
+ * register it again with fresh code. Scene objects the module CREATED inside objectsGroup
+ * stay (replicated user content), and so does what it stored on this device
+ * (`api.storage`). Works for core and user modules alike.
+ * @param {string} id @returns {Record<string, number>} what was disposed, by kind
+ */
+export function unloadModule(id) {
+	const disposed = disposeRegistrations(id);
 	Object.values(moduleAssets[id] ?? {}).forEach((url) => {
 		try {
 			URL.revokeObjectURL(url);
@@ -105,6 +118,13 @@ export function deactivateModule(id) {
 	const index = loadedModules.findIndex((m) => m.id === id);
 	if (index >= 0) loadedModules.splice(index, 1);
 	loadedModulesChanged.update((n) => n + 1);
+	log('info', 'module', 'unloaded ' + id, JSON.stringify(disposed));
+	return disposed;
+}
+
+/** 17-A2 / 33's name for {@link unloadModule}. @param {string} id */
+export function deactivateModule(id) {
+	return unloadModule(id);
 }
 
 /** bumps whenever loadedModules changes (loadedModules is a plain array) */
@@ -135,8 +155,8 @@ disabledModules.subscribe((list) => {
 });
 
 /**
- * Toggle a module. Enabling registers it live (pass the module object);
- * disabling persists and asks for a reload.
+ * Toggle a module. Both directions act LIVE (34 R6: every registration is tracked, so a
+ * core module unloads as completely as a user one); the choice persists.
  * @param {any} mod @param {boolean} enabled
  */
 export function setModuleEnabled(mod, enabled) {
@@ -146,7 +166,8 @@ export function setModuleEnabled(mod, enabled) {
 	if (enabled) {
 		if (!isModuleLoaded(mod.id)) initModules([mod]);
 	} else if (isModuleLoaded(mod.id)) {
-		showToast('"' + mod.name + '" disabled — reload the page to fully remove it');
+		unloadModule(mod.id);
+		showToast('"' + mod.name + '" disabled');
 	}
 }
 

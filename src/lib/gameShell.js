@@ -506,6 +506,9 @@ export function gameShellDebug() {
 		menu: { ...get(shellMenu) },
 		available: shellMenuAvailable(),
 		isGame: shellSceneIsGame(),
+		// 34 R6: the lifecycle contract reads these (a module's hooks must go with it)
+		restartHooks: restartHooks.size,
+		forcedGame,
 		levels: get(gameLevels) ? { list: get(gameLevels)?.list.map((l) => ({ ...l })), current: get(gameLevels)?.current } : null
 	};
 }

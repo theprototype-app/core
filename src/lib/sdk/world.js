@@ -104,3 +104,18 @@ export function sdkWorld(ctx) {
 		}
 	};
 }
+
+/** 34 R6 (T2): what each member does to the module's lifecycle — see SURFACE_KINDS in
+ * sdk/lifecycle.js. tests/unit/moduleLifecycle.test.js holds every 'registers' member to a
+ * teardown path; a member missing here fails it. */
+sdkWorld.surface = {
+	'locomotion.boundedTeleport': 'value',
+	'locomotion.worldGrab': 'value',
+	isVR: 'read',
+	isPlaying: 'read',
+	peerIds: 'read',
+	peerNames: 'read',
+	create: 'content',
+	moveObject: 'content',
+	flyTo: 'action'
+};

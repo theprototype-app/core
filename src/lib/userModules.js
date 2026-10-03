@@ -11,6 +11,8 @@ import {
 	registerModuleAssets,
 	deactivateModule
 } from './moduleSDK';
+import { createModuleScope, modulePrologue, attachModuleScope, releasePrologue } from './sdk/moduleScope.js';
+/** @typedef {import('./sdk/moduleScope.js').ModuleScope} ModuleScope */
 
 // User-installed modules: a zip upload or a URL pointing at a folder with
 // manifest.json + a SELF-CONTAINED entry module (no import statements — the
@@ -113,21 +115,55 @@ async function confirmModuleFormat(manifest) {
 	});
 }
 
+/** Evaluate entry source from a fresh blob URL. @param {any} source @param {ModuleScope | null} scope */
+async function importBlob(source, scope) {
+	const blobUrl = URL.createObjectURL(new Blob([source], { type: 'text/javascript' }));
+	// the URL is what stack frames of this module's code carry — its window/document
+	// listeners are attributed by it, so the scope learns it before any code runs
+	scope?.setUrl(blobUrl);
+	try {
+		return await import(/* @vite-ignore */ blobUrl);
+	} finally {
+		URL.revokeObjectURL(blobUrl);
+	}
+}
+
 /** Import a record's entry file as a module object and validate its shape.
  * A fresh blob URL per call, so re-imports always evaluate fresh code (A2).
- * @param {Record<string, any>} files @param {string} entry */
-async function importModuleObject(files, entry) {
+ * 34 R6: evaluated inside a lifecycle SCOPE (sdk/moduleScope.js) — its bare timer names are
+ * the module's tracked ones and its window/document listeners are recorded — so unloading
+ * the module stops them. The scope is adopted when initModules registers the module, and
+ * disposed here if the import is discarded.
+ * @param {Record<string, any>} files @param {string} entry @param {string} [id] */
+async function importModuleObject(files, entry, id) {
 	const entryBytes = files[entry];
 	if (!entryBytes) throw new Error('entry file "' + entry + '" missing');
-	const blobUrl = URL.createObjectURL(new Blob([entryBytes], { type: 'text/javascript' }));
+	const scope = id ? createModuleScope(id) : null;
 	try {
-		const imported = await import(/* @vite-ignore */ blobUrl);
+		let imported = null;
+		if (scope) {
+			// the prologue goes ON line 1 (no newline), so every line number is unchanged
+			const source = modulePrologue(scope.nonce) + strFromU8(entryBytes);
+			try {
+				imported = await importBlob(source, scope);
+			} catch (error) {
+				// a module that declares `setTimeout` (or a sibling) itself cannot take the
+				// prologue: run it as written, its timers untracked
+				if (!(error instanceof SyntaxError)) throw error;
+				console.log('module ' + id + ': evaluated without the timer prologue', String(error));
+			}
+		}
+		if (!imported) imported = await importBlob(entryBytes, scope);
 		const mod = imported.default;
 		if (!mod?.id || typeof mod.register !== 'function')
 			throw new Error('entry must default-export { id, name, version, register }');
+		if (scope) attachModuleScope(mod, scope);
 		return mod;
+	} catch (error) {
+		scope?.dispose();
+		throw error;
 	} finally {
-		URL.revokeObjectURL(blobUrl);
+		if (scope) releasePrologue(scope);
 	}
 }
 
@@ -147,7 +183,7 @@ function registerRecordAssets(record) {
 export async function activateUserModule(record) {
 	if (isModuleLoaded(record.id)) return true;
 	try {
-		const mod = await importModuleObject(record.files, record.entry);
+		const mod = await importModuleObject(record.files, record.entry, record.id);
 		if (mod.id !== record.id) throw new Error('manifest id and module id differ');
 		registerRecordAssets(record);
 		initModules([mod]);
@@ -170,7 +206,7 @@ async function storeAndActivate(record) {
 	if (isModuleLoaded(record.id)) {
 		// A2: live-swap — evaluate the new entry FIRST, only then tear down
 		try {
-			const mod = await importModuleObject(record.files, record.entry);
+			const mod = await importModuleObject(record.files, record.entry, record.id);
 			if (mod.id !== record.id) throw new Error('manifest id and module id differ');
 			deactivateModule(record.id);
 			registerRecordAssets(record);
@@ -353,7 +389,7 @@ export async function reloadUserModule(record) {
 			files[path] = new Uint8Array(await response.arrayBuffer());
 		}
 		// evaluate BEFORE teardown — any error above leaves the old instance running
-		const mod = await importModuleObject(files, manifest.entry);
+		const mod = await importModuleObject(files, manifest.entry, current.id);
 		if (mod.id !== current.id) throw new Error('manifest id and module id differ');
 		deactivateModule(current.id);
 		const updated = { ...current, ...manifest, files, updatedAt: Date.now(), appVersion: APP_VERSION };

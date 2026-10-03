@@ -11,7 +11,7 @@ const storageCapWarned = new Set();
 
 /** @param {import('./context.js').SdkContext} ctx */
 export function sdkStorage(ctx) {
-	const { moduleId, moduleName, onDispose } = ctx;
+	const { moduleId, moduleName } = ctx;
 	return {
 		/**
 		 * R3a: PEER-OWNED variables (21-G4). One writer per row BY CONSTRUCTION — this api
@@ -54,8 +54,22 @@ export function sdkStorage(ctx) {
 		 */
 		lod(object, opts = {}) {
 			const handle = lodObject(object, opts, moduleId);
-			onDispose(() => handle.remove());
-			return handle;
+			// the handle's own remove() also drops the journal entry
+			const remove = ctx.owned('lod', () => handle.remove());
+			return { ...handle, remove };
 		}
 	};
 }
+
+/** 34 R6 (T2): what each member does to the module's lifecycle — see SURFACE_KINDS in
+ * sdk/lifecycle.js. tests/unit/moduleLifecycle.test.js holds every 'registers' member to a
+ * teardown path; a member missing here fails it. */
+sdkStorage.surface = {
+	'storage.get': 'read',
+	'storage.set': 'action',
+	'storage.remove': 'action',
+	'storage.keys': 'read',
+	'storage.clear': 'action',
+	'storage.bytes': 'read',
+	lod: 'registers'
+};

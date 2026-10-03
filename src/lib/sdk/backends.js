@@ -19,12 +19,23 @@ export function sdkBackends(ctx) {
 		 * @param {string} key @param {string} label
 		 * @param {(faces: any[], options: any) => any} run
 		 */
-		registerUnwrapBackend: (key, label, run) =>
+		registerUnwrapBackend: (key, label, run) => {
+			// T2: it had NO teardown — an unloaded module's unwrapper stayed in the UV
+			// editor's menu, running code from a module that was gone. Disposer journaled
+			// synchronously, a late registration undoes itself (the registerPostEffect shape)
+			let off = /** @type {(() => void)|null} */ (null);
+			let disposed = false;
+			onDispose(() => {
+				disposed = true;
+				if (off) off();
+			}, 'unwrapBackend');
 			// dynamic, like the other late imports here: uvUnwrap stays out of the SDK's static
 			// graph (the cycle guard)
-			import('../uvUnwrap').then((m) =>
-				m.registerUnwrapBackend(`mod-${moduleId}-${key}`, label, run)
-			),
+			return import('../uvUnwrap').then((m) => {
+				off = m.registerUnwrapBackend(`mod-${moduleId}-${key}`, label, run);
+				if (disposed) off();
+			});
+		},
 
 		/**
 		 * SH6: supply a shader-graph COMPILE BACKEND. `compile(ir, ctx)` receives the same IR
@@ -46,18 +57,24 @@ export function sdkBackends(ctx) {
 		 */
 		registerShaderBackend: (key, label, compile) => {
 			const full = `mod-${moduleId}-${key}`;
+			// T2: journaled SYNCHRONOUSLY (the registerPostEffect shape). Recording the
+			// disposer inside the `.then` put it into the module's NEXT journal whenever an
+			// unload landed first — the backend stayed registered after the unload.
+			let off = /** @type {(() => void)|null} */ (null);
+			let disposed = false;
+			onDispose(() => {
+				disposed = true;
+				if (off) off();
+				// a graph still naming this backend must not be left compiling against
+				// nothing: re-compile those graphs so they fall back to the built-in rather
+				// than silently keeping a stale material
+				import('../shaderGraph').then((m) => m.fallBackFromBackend(full, label));
+			}, 'shaderBackend');
 			// dynamic for the same cycle reason as every other late import here
-			const job = import('../shaderBackends').then((m) => {
-				const off = m.registerShaderBackend(full, label, compile);
-				// same-module import promises resolve in .then order, so the disposer is
-				// recorded even when teardown fires immediately after registration
-				onDispose(() => off());
+			return import('../shaderBackends').then((m) => {
+				off = m.registerShaderBackend(full, label, compile);
+				if (disposed) off();
 			});
-			// a graph still naming this backend must not be left compiling against nothing:
-			// once the registration is gone, re-compile those graphs so they fall back to the
-			// built-in rather than silently keeping a stale material
-			onDispose(() => import('../shaderGraph').then((m) => m.fallBackFromBackend(full, label)));
-			return job;
 		},
 
 		/**
@@ -85,7 +102,7 @@ export function sdkBackends(ctx) {
 			onDispose(() => {
 				disposed = true;
 				if (off) off();
-			});
+			}, 'audioDevice');
 			const install = (/** @type {any} */ m) => {
 				// moduleId rides the installed spec (23-D3): moduleRequirements resolves a
 				// device KIND back to the module a scene needs through it
@@ -101,3 +118,12 @@ export function sdkBackends(ctx) {
 		}
 	};
 }
+
+/** 34 R6 (T2): what each member does to the module's lifecycle — see SURFACE_KINDS in
+ * sdk/lifecycle.js. tests/unit/moduleLifecycle.test.js holds every 'registers' member to a
+ * teardown path; a member missing here fails it. */
+sdkBackends.surface = {
+	registerUnwrapBackend: 'registers',
+	registerShaderBackend: 'registers',
+	registerAudioDevice: 'registers'
+};

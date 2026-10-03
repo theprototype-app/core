@@ -39,6 +39,7 @@ export const DEBUG_HOOKS = [
 	['objectActions', () => import('./objectActions')],
 	['commandsHandler', () => import('./commandsHandler.svelte')],
 	['moduleSDK', () => import('./moduleSDK')],
+	['moduleLifecycle', () => import('./sdk/lifecycleEnv.js')],
 	['drawMode', () => import('./drawMode')],
 	['pathCapture', () => import('./pathCapture')],
 	['lockControl', () => import('./lockControl')],

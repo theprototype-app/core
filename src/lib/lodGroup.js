@@ -1,10 +1,5 @@
 import * as THREE from 'three';
-// @ts-ignore - three addons ship no declarations here (project-wide)
-import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
-// @ts-ignore
-import { DRACOLoader } from 'three/addons/loaders/DRACOLoader.js';
-// @ts-ignore
-import { MeshoptDecoder } from 'three/addons/libs/meshopt_decoder.module.js';
+import { createGltfLoader } from './gltfLoader';
 import { writable, get } from 'svelte/store';
 import { globalScene, objectsGroup } from '../stores/sceneStore';
 import { registerLodPass, simplifiedGeometry, swapGeometryForPass, swapMaterialForPass, overlayMaterial } from './lod';
@@ -70,6 +65,10 @@ let owned = new WeakSet();
 const implicitGroups = new Map();
 /** @type {Map<string, Promise<any>>} */
 const listFetches = new Map();
+/** 34 R7: roots OUTSIDE objectsGroup that carry a block (api.loadModel instances a module
+ * keeps at the scene root) — scanned beside objectsGroup, never serialized
+ * @type {Set<any>} */
+const extraRoots = new Set();
 /** @type {any} */
 let preview = null;
 lodPreview.subscribe((p) => (preview = p));
@@ -176,7 +175,8 @@ function levelKey(level) {
  * @param {any} root @param {string} ref @returns {string | null}
  */
 export function packLevelUrl(root, ref) {
-	if (/^https?:\/\//.test(ref)) return ref;
+	// 34 R7: blob:/data: too — api.loadModel's P1 levels of a PACKAGED model are module blobs
+	if (/^(https?:\/\/|blob:|data:)/.test(ref)) return ref;
 	if (ref.includes('/')) return String(PACKS_BASE).replace(/\/+$/, '') + '/' + ref.replace(/^\/+/, '');
 	const pr = packRefOf(root);
 	if (!pr) return null;
@@ -223,19 +223,24 @@ function fetchJson(url) {
 	return job;
 }
 
+/** A pack row (`<pack>/<item folder>`) from the pack's own list, or null. @param {string} key */
+async function packRowFor(key) {
+	const base = String(PACKS_BASE).replace(/\/+$/, '');
+	const [packName, folder] = key.split('/');
+	const index = await fetchJson(base + '/index.json');
+	const row = Array.isArray(index) ? index.find((/** @type {any} */ e) => e?.name === packName) : null;
+	if (!row?.value) return null;
+	const listUrl = /^https?:\/\//.test(row.value) ? row.value : base + '/' + String(row.value).replace(/^\//, '');
+	const list = await fetchJson(listUrl);
+	return Array.isArray(list) ? (list.find((/** @type {any} */ o) => o?.name === folder) ?? null) : null;
+}
+
 /** Look a piece's pack row up and remember its implicit group. @param {string} key */
 async function lookupImplicit(key) {
 	if (implicitGroups.has(key)) return;
 	implicitGroups.set(key, null); // in flight = nothing, so a scan never asks twice
 	try {
-		const base = String(PACKS_BASE).replace(/\/+$/, '');
-		const [packName, folder] = key.split('/');
-		const index = await fetchJson(base + '/index.json');
-		const row = Array.isArray(index) ? index.find((/** @type {any} */ e) => e?.name === packName) : null;
-		if (!row?.value) return;
-		const listUrl = /^https?:\/\//.test(row.value) ? row.value : base + '/' + String(row.value).replace(/^\//, '');
-		const list = await fetchJson(listUrl);
-		const item = Array.isArray(list) ? list.find((/** @type {any} */ o) => o?.name === folder) : null;
+		const item = await packRowFor(key);
 		const group = item ? groupFromPackLods(item) : null;
 		if (group) {
 			implicitGroups.set(key, group);
@@ -246,20 +251,44 @@ async function lookupImplicit(key) {
 	}
 }
 
+/**
+ * 34 R7: the group a model loaded from `url` takes when that URL is a pack item whose row
+ * carries P1 `lods` (null otherwise, or when the CDN cannot be read). Refs come back
+ * PACKS_BASE-relative beside the file (placementGroupFor), so any root resolves them.
+ * @param {string} url @param {string} rowKey `<pack>/<item folder>` (modelLoaderCore.packRowKeyOf)
+ * @returns {Promise<LodGroup | null>}
+ */
+export async function packLodGroupFor(url, rowKey) {
+	if (!rowKey) return null;
+	try {
+		const item = await packRowFor(rowKey);
+		return item?.lods ? placementGroupFor(url, item.lods) : null;
+	} catch {
+		return null;
+	}
+}
+
+/** 34 R7: draw `root`'s userData.lod block although it lives outside objectsGroup. LOCAL.
+ * @param {any} root */
+export function addLodRoot(root) {
+	if (!root) return;
+	extraRoots.add(root);
+	scheduleScan();
+}
+
+/** @param {any} root */
+export function removeLodRoot(root) {
+	if (!extraRoots.delete(root)) return;
+	const entry = entries.get(root);
+	if (entry) dropEntry(entry);
+}
+
 // ---- building levels --------------------------------------------------------------------
 
 const loader = (() => {
 	/** @type {any} */
 	let l = null;
-	return () => {
-		if (l) return l;
-		l = new GLTFLoader();
-		const draco = new DRACOLoader();
-		draco.setDecoderPath('/draco/');
-		l.setDRACOLoader(draco);
-		l.setMeshoptDecoder(MeshoptDecoder);
-		return l;
-	};
+	return () => (l ??= createGltfLoader());
 })();
 
 /** @param {string} a */
@@ -558,8 +587,14 @@ export function scanLodGroups() {
 	const group = get(objectsGroup);
 	/** @type {Set<any>} */
 	const seen = new Set();
+	for (const root of extraRoots) {
+		const block = normalizeLodGroup(root.userData?.lod);
+		if (!block) continue;
+		seen.add(root);
+		ensureEntry(root, block, false);
+	}
 	group?.traverse((/** @type {any} */ node) => {
-		if (node === group) return;
+		if (node === group || seen.has(node)) return;
 		if (node.userData?.lod) {
 			const block = normalizeLodGroup(node.userData.lod);
 			if (block) {
@@ -886,6 +921,7 @@ export const lodGroupForTest = {
 		for (const entry of [...entries.values()]) dropEntry(entry);
 		implicitGroups.clear();
 		listFetches.clear();
+		extraRoots.clear();
 	},
 	entries: () => entries
 };

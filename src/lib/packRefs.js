@@ -1,11 +1,6 @@
 // @ts-ignore - no bundled three type declarations (project-wide)
 import * as THREE from 'three';
-// @ts-ignore - three addons ship no declarations here (project-wide)
-import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
-// @ts-ignore
-import { DRACOLoader } from 'three/addons/loaders/DRACOLoader.js';
-// @ts-ignore
-import { MeshoptDecoder } from 'three/addons/libs/meshopt_decoder.module.js';
+import { createGltfLoader } from './gltfLoader';
 import { writable, get } from 'svelte/store';
 import { objectsGroup, pokeScene, globalRenderer, globalCamera, globalScene } from '../stores/sceneStore';
 import { showToast } from '../stores/appStore';
@@ -103,14 +98,7 @@ export function packRefFromUrl(url, names = {}) {
 	return { pack, item, path };
 }
 
-function createLoader() {
-	const loader = new GLTFLoader();
-	const draco = new DRACOLoader();
-	draco.setDecoderPath('/draco/');
-	loader.setDRACOLoader(draco);
-	loader.setMeshoptDecoder(MeshoptDecoder);
-	return loader;
-}
+const createLoader = createGltfLoader;
 
 /**
  * The bytes of every IMAGE in a GLB, by glTF image index — read from the file's own JSON

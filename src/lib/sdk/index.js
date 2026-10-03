@@ -33,6 +33,7 @@ import { sdkBackends } from './backends.js';
 import { sdkAudio } from './audio.js';
 import { sdkPost } from './post.js';
 import { sdkHud } from './hud.js';
+import { sdkModels } from './models.js';
 
 /** The api, slice by slice, in key order. @type {[string, (ctx: import('./context.js').SdkContext) => object][]} */
 export const SDK_TABLE = [
@@ -60,7 +61,8 @@ export const SDK_TABLE = [
 	['backends', sdkBackends], // registerUnwrapBackend, registerShaderBackend, registerAudioDevice
 	['audio', sdkAudio], // api.audio
 	['post', sdkPost], // registerPostEffect, registerPostBackend
-	['hud', sdkHud] // api.hud, registerHudElement
+	['hud', sdkHud], // api.hud, registerHudElement
+	['models', sdkModels] // loadModel (34 R7)
 ];
 
 /** @param {string} moduleId @param {string} [moduleName] the DISPLAY name, needed while

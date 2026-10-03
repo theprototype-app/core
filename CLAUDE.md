@@ -1861,7 +1861,11 @@ loadable play content. Everything a user does must be visible to connected peers
   all today (`registerMenu` is a sidebar button), and there is no `api.commitGeometry`,
   so making the CARVE a module too would mean designing both seams first),
   `pathCapture`, `ping` + `pingAudio` (synth chimes, spatial), `voiceChat`
-  (+spatial PannerNodes, VR PTT, setMicMode), `vrControls` (locomotion/teleport math,
+  (+spatial PannerNodes, VR PTT, setMicMode), `vrControls` (**34 R4 A5: a FAÇADE** — the code is `src/lib/vr/<concern>.js`: core, pointer, panels,
+  hooks, locomotion, haptics, input, grip, tools, radial, frame, modes; `vrControls.js` re-exports exactly the
+  147 names it always exported, so importers never change; a module-level `let` WRITTEN from two concern
+  files lives in `vr/state.js` as `S.<name>` (an ES module binding is only assignable in its own file);
+  new VR code goes in its concern's file, not in the façade — locomotion/teleport math,
   world pan, rigid grip grab, haptics, panel raycasts + the `executeVRMenuAction`
   dispatcher — namespaces panel:/props:/prefabs:/chat:/kbd:/face:) + `vrRadialMenu`
   (sector math, entry registry, ring nav STACK, controller-anchored pose) +
@@ -2177,7 +2181,13 @@ loadable play content. Everything a user does must be visible to connected peers
   `onChange` seams (`api.flow`/`game`/`peerVars`, each returning `off()`, journalled) coalesce
   to ONE call per frame (+100 ms timer fallback) because arriving peer edits are one task each.
   `flow.onChange` also fires on the trigger log (a collected-state list changes on a fire).
-- `scripts/author-templates.cjs` (21-C C6-b): a `MODULE_DEFS` LOADER region (`football`,
+- **`scripts/templates/` — ONE FILE PER TEMPLATE (34 R4 A3).** Each def is `scripts/templates/<slug>.cjs`
+  (exports the def), shared builders beside them (`_builders.cjs` gray + graphBuilder, `_contest.cjs`,
+  `_level-kit.cjs` for the kit levels), and ONE ordered table `templates/index.cjs` (TEMPLATE_FILES +
+  MODULE_DEFS; the level list is `level-templates.cjs`'s LEVEL_FILES). `author-templates.cjs` is the RUNNER
+  (schema doc, flags, browser drive) and `level-templates.cjs` a thin loader. A new template = a new file
+  + one row. The split was proven byte-identical on the DEFS dump and on authored output.
+- `scripts/author-templates.cjs` (21-C C6-b): a `MODULE_DEFS` LOADER region (now in `templates/index.cjs`; `football`,
   `dungeon-realms`, `untangle`) read from the sibling modules checkout as
   `modules/<id>/<id>.def.json` — a template's def is OWNED BY ITS MODULE so the card and the
   module cannot drift — and an additive `thumb.sceneGroups` (scene-root module groups cloned
@@ -2487,7 +2497,7 @@ loadable play content. Everything a user does must be visible to connected peers
   (`kitMeshSource`). Excluded: selected, hidden, transparent, recoloured/edited copies; members are frustum-culled one
   by one, 128 m columns. LOCAL pref Settings ▸ Performance "Draw repeated kit pieces together" (default on). The
   Tavern went 394 -> ~135 calls in the headset analogue. `scripts/perf-levels.cjs` / `level-views.cjs` measure the
-  General-tab levels per viewpoint. The levels live in `scripts/level-templates.cjs` (six since 33: Castle, Forest,
+  General-tab levels per viewpoint. The levels live in `scripts/templates/<slug>.cjs`, listed by `scripts/level-templates.cjs` (six since 33: Castle, Forest,
   Tavern, Wizard's Tower, Market Square, and the kit Architecture shell — whose greybox stays the OFFLINE seed via the
   author-templates `remote: false` def field).
 - **ROADMAP 33 — EDITOR UI + GAMES (33-editor-ui, 33-games, 33-untangle-core)**: the default Controls bar is
@@ -3309,10 +3319,15 @@ loadable play content. Everything a user does must be visible to connected peers
   broken. Park it kinematic/static or move it after the re-seat settles.
 - **A peer cannot approve a connection request while in play mode** — the Approve
   button renders but the click times out. Approve first, then enter play.
-- **The debugStores destructure is POSITIONAL.** A missing binding does not fail - it
-  SHIFTS every later one onto the wrong module, mis-wiring dozens of namespaces
-  silently. Fold new entries into all THREE tails at the same index and assert the
-  import/destructure counts equal (the assertion caught a mis-fold twice in 21-G).
+- **THE DEBUG HOOK IS ONE TABLE (34 R4 A2): `src/lib/debugHooks.js`, one row per hook,
+  `['name', () => import('./x')]`, name and loader on the SAME line.** It replaced App.svelte's
+  three POSITIONAL tails (a `Promise.all` import list, a destructured parameter list, the
+  `window.__stores` object), where a missing binding SHIFTED every later one onto the wrong
+  module with no error (caught twice in 21-G, once more by a `checkout --theirs`). Add a row
+  anywhere — order does not matter, `'*'` spreads a module's exports (the three stores), names
+  must be unique (vitest `debugHooks` checks uniqueness, the one-line shape, that every loader
+  file exists, and that no tail crept back into App.svelte). Code holding an object can call
+  `registerDebugHook(name, obj)` instead. A merge of two lanes' rows is a plain union.
 - **A derived cutoff consulted on both the READ and the MUTATE side needs TWO rules.**
   21-F2's round cutoff returns Infinity in menu/over so latches READ as un-collected
   there (the locked fork) — but `applyNodeTrigger`'s re-arm honoured it too, so in menu
@@ -3427,11 +3442,9 @@ loadable play content. Everything a user does must be visible to connected peers
   with emptiness"), so a scene with no objects and no nodes never produces one and
   `isDirty()` can never settle. Any autosave test needs at least one real object as its
   premise, not as decoration.
-- **The debug hook's `Promise.all` array order MUST match its destructure order.**
-  Appending an `import()` in the middle of the array while appending the binding at the
-  END of the parameter list silently shifts every entry after it, mis-wiring ~60 debug
-  namespaces with no error anywhere. Add to BOTH tails, and assert the two counts match
-  (`imports N, destructured N`) before trusting a run.
+- **(historical) The debug hook's `Promise.all` array order had to match its destructure
+  order** — appending mid-array while appending the binding at the END shifted ~60 namespaces
+  silently. Gone since 34 R4: the hook is one table of named rows (`$lib/debugHooks.js`).
 
 
 - **`renderer.toneMapping` NEVER REACHES A COMPOSED FRAME.** three applies it to a
@@ -4355,8 +4368,8 @@ loadable play content. Everything a user does must be visible to connected peers
   first, then mutate (also applies inside test `evaluate`).
 - **Vite HMR module identity**: a page-side dynamic `import('/src/lib/x.js')` can bind a
   SECOND module instance once vite timestamps the app's copy (empty stores, false
-  fails). Singletons are only reachable via the `window.__stores` debug hook — extend
-  the hook in App.svelte when a test needs a new module.
+  fails). Singletons are only reachable via the `window.__stores` debug hook — add a
+  row to `$lib/debugHooks.js` when a test needs a new module.
 - flowbite: Modal has no `onopen` (react to the bound store); Dropdown anchors to its
   previous sibling; toasts container keeps `pointer-events: none` (children re-enable).
 - `event.code` (`Digit1`) for digit shortcuts — `event.key` breaks with Shift.
@@ -4817,12 +4830,11 @@ loadable play content. Everything a user does must be visible to connected peers
   SVGAnimatedString — e2e reads `getAttribute('class')` and selects `svg`, not `i`.
 
 - **`git checkout --theirs -- <file>` during a merge discards the WHOLE ours side of that
-  file, not just the conflicted hunk.** Resolving App.svelte's debug-hook tails that way
+  file, not just the conflicted hunk.** Resolving App.svelte's (old) debug-hook tails that way
   silently dropped the one `import('./lib/knock')` line that had auto-merged cleanly 100 lines
   above, leaving a destructure with one more name than the import list — every module after it
-  bound to its neighbour. The three tails (the `Promise.all` import list, the destructured
-  parameter list, the `window.__stores` object) must always COUNT EQUAL and be in the same
-  order; check that after any merge that touches them.
+  bound to its neighbour. The tails are gone (34 R4: `$lib/debugHooks.js`, one named row per
+  hook), but the rule stands for any file: never resolve a conflict with --theirs/--ours.
 - **An attribute INDEX recorded before a `meshgeo` commit addresses a DIFFERENT vertex after
   it** — the commit rebuilds the mesh index-expanded (81 entries → 384 in triangle order). Any
   fixture or handle map captured before it must be re-found by POSITION, not carried over.
@@ -6687,6 +6699,18 @@ override for e2e — never share 5173 (the user's main-checkout server).
   per-phase plans in docs/plan/done/.
 
 ## Module SDK (implemented — extend, don't fork)
+
+**WHERE THE API LIVES (34 R4 A1): `src/lib/sdk/`.** `sdk/index.js`'s `SDK_TABLE` assembles a
+module's `register(api)` object from one file per namespace/method group (nodes, scene, player,
+net, ui, input, physics, feel, world, sound, view, flow, viewer, game, storage, behavior,
+quality, peerVars, possess, core, backends, audio, post, hud); each slice is
+`sdkX(ctx) => ({...members})` over the per-module context (`sdk/context.js`: moduleId/name,
+`onDispose`, the shared bits). A NEW namespace is a NEW FILE plus ONE table row — never another
+block in a shared file. Shared state: `sdk/registries.js` (the registries the host consumes, the
+teardown journal), `sdk/refs.js` (the primed dynamic-import refs as live `export let`s — assign
+them only there). `moduleSDK.js` keeps the lifecycle (init/deactivate/enable) + peer plumbing and
+re-exports every name, so importers never change. Slices merge by property DESCRIPTOR (a getter
+such as `possessModes` must stay live).
 
 `src/modules/<id>/module.js` default-exports `{id, name, version, description,
 register(api)}`. **#17-A world api** (modules build shared content without reaching

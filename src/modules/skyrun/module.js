@@ -54,6 +54,10 @@ export default {
 	register(api) {
 		const THREE = api.THREE;
 		const kit = api.kit;
+		/** @type {any} */ let walk = null; // primed: charController's platform carry
+		import('../../lib/charController.js').then((m) => (walk = m));
+		/** slider uuid -> its last world position (the carry is the frame's delta) */
+		/** @type {Map<string, number[]>} */ const sliderWas = new Map();
 		/** @type {any} */ let kitRt = null; // primed: the kit's authority (the towers rule: never a static edge)
 		import('../../lib/kit/runtime.js').then((m) => (kitRt = m));
 		const amAuthority = () => {
@@ -171,6 +175,18 @@ export default {
 			if (feet[1] < (start.floor ?? start.pos[1]) - FALL_DEPTH) {
 				backToCheckpoint('You fell!');
 				return;
+			}
+			// a moving platform under the feet carries the player with it
+			for (const sl of allNamed('Sky S' + id + ' slider')) {
+				sl.getWorldPosition(tmpV);
+				const now = tmpV.toArray();
+				const was = sliderWas.get(sl.uuid);
+				sliderWas.set(sl.uuid, now);
+				if (!was) continue;
+				const b = boxOf(sl);
+				const above = eye[1] - b.max.y;
+				if (feet[0] > b.min.x - 0.2 && feet[0] < b.max.x + 0.2 && feet[2] > b.min.z - 0.2 && feet[2] < b.max.z + 0.2 && above > 0.8 && above < 2.3)
+					walk?.addWalkCarry?.(now[0] - was[0], now[2] - was[2]);
 			}
 			// a spinner
 			if (time - run.lastHit > 1.2)

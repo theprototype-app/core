@@ -106,6 +106,21 @@ h.run(async () => {
 	// the flag
 	await page.evaluate(() => window.__skyrun.teleportTo('Sky S1 rest'));
 	await h.eventually(() => run().then((r) => r.flag), (n) => n === 1, 'touching the flag saves checkpoint 1', 4000);
+	// a moving platform carries a player who stands still on it
+	await page.evaluate(() => window.__skyrun.teleportTo('Sky S1 slider'));
+	await page.waitForTimeout(300);
+	const ride = await page.evaluate(async () => {
+		const s = window.__stores;
+		let cam; s.playerCam.subscribe((v) => (cam = v))();
+		let g; s.objectsGroup.subscribe((v) => (g = v))();
+		const sl = g.getObjectByName('Sky S1 slider');
+		const read = () => ({ eye: cam.getWorldPosition(new s.THREE.Vector3()).x, pad: sl.getWorldPosition(new s.THREE.Vector3()).x });
+		const a = read();
+		await new Promise((r) => setTimeout(r, 1500));
+		const b = read();
+		return { padMoved: b.pad - a.pad, eyeMoved: b.eye - a.eye, onIt: Math.abs(b.eye - b.pad), y: cam.getWorldPosition(new s.THREE.Vector3()).y };
+	});
+	h.check(Math.abs(ride.padMoved) > 0.2 && Math.sign(ride.eyeMoved) === Math.sign(ride.padMoved) && ride.onIt < 1.2 && ride.y > 13.5, `standing still on the slider rides it (${JSON.stringify(ride)})`);
 	// a fall: step off into the sky -> back on the flag
 	await page.evaluate(() => {
 		const s = window.__stores;

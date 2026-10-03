@@ -29,6 +29,7 @@ import { canApply, getAuthProvider, dispatchCloudMessage, rolesInfo } from '$lib
 // 27-A (audit H1): shape validation + per-peer failure counters. Both are LEAVES, so the
 // dispatcher can reject a malformed message before any applier sees it.
 import { validateWireMessage } from '$lib/wireValidate';
+import { routePerfLive, perfLivePeerGone } from '$lib/perf/liveWire.js'; // 34 PF: the live perf stream (an import-free leaf)
 import { noteWireError } from '$lib/wireErrors';
 import { noteWire } from '$lib/sceneBudget';
 import { applyAnnotation, applyAnnotationsSnapshot, sendAnnotations } from '$lib/annotationsHandler';
@@ -90,6 +91,11 @@ import {
 	sendHudValues
 } from '$lib/hudSync';
 import { applyRemoteGameState, sendGameState, gameStatePayload } from '$lib/gameSync';
+// 34 R2 (T3): the game kit's document + requests (kit/runtime.js; a leaf-side module)
+import { receiveKitMessage, kitPayload } from '$lib/kit/runtime.js';
+import { kitEntityPayloads } from '$lib/kit/entityApp.js'; // 34 R2 (kit-entities)
+// 34 R3 (D1): behaviours' replicated documents (behaviours/app.js)
+import { receiveBehaviourMessage, behaviourPayloads } from '$lib/behaviours/app.js';
 import { applyRemoteTriggers, sendTriggers } from '$lib/triggerSync';
 import { applySessionProposal, applySessionAnswer, deferUntilShareChoice, localSceneCount, gateHolds, registerWorldStatePush, connectDecisionApplies, noteHandshakeDeferred } from '$lib/sessions';
 import { applyRemoteGeometry } from '$lib/geometryEdit';
@@ -855,6 +861,17 @@ export class PeerConnection {
 					applyRemoteGameState(data);
 				} else if(data.type == 'getgame') {
 					if (sameRoomOrUnknown(conn.peer)) sendGameState(data.sender);
+				} else if(data.type == 'kit' || data.type == 'kitreq') {
+					// 34 R2: the kit document (authority-written, latest-wins) and a request
+					// to the authority; the shapes were checked by wireValidate
+					receiveKitMessage(data, conn.peer);
+				} else if(data.type == 'bhv') {
+					// 34 R3 (D1): a behaviour's document (authority-written, latest-wins; behaviours/app.js)
+					receiveBehaviourMessage(data)
+				} else if(data.type == 'kitentity' || data.type == 'getkitentities') {
+					// 34 R2 (kit-entities): the kit's entities (authority-written; the applier
+					// refuses any other sender) and a joiner's ask for the whole set
+					receiveKitMessage(data, conn.peer);
 				} else if(data.type == 'envpresets') {
 					applyRemoteEnvPresets(data);
 				} else if(data.type == 'geometry') {
@@ -1139,6 +1156,10 @@ export class PeerConnection {
 				} else if(data.type == 'splineedit') {
 					// 57.3: only the RECORD travels — the receiver rebuilds the tube
 					applySplineEdit(data.uuid, data.spline);
+				} else if(data.type == 'perflive') {
+					// 34 PF (profiler-xr): a peer's live perf stream, or a request to stream ours.
+					// LOCAL presence-like data: never re-broadcast, never saved, never undone.
+					routePerfLive(conn.peer, data);
 				} else if(data.type == 'vrhands') {
 					peerHands.update((map) => ({
 						...map,
@@ -1358,6 +1379,12 @@ export class PeerConnection {
 		if (getobjects && !holdContent) this.requestFullState(conn)
 		// singleton PUSH, like environmentState/scenePhysicsState above
 		if (!holdContent) conn.send(gameStatePayload())
+		// 34 R2: the kit document, the same singleton push (its events are NOT sent: history fires nothing)
+		if (!holdContent) conn.send(kitPayload())
+		// 34 R2 (kit-entities): the entity set, from every peer that holds one (kit.snapshots)
+		if (!holdContent) for (const msg of kitEntityPayloads()) conn.send(msg)
+		// 34 R3 (D1): every behaviour document this peer holds (a joiner takes the newer)
+		if (!holdContent) for (const msg of behaviourPayloads()) conn.send(msg)
 		// 24-A A2: WHETHER A SIM IS RUNNING HERE, for a late joiner. `simulate` went out at
 		// start/stop only, so a peer joining mid-run kept `remoteSimulating` null and neither
 		// the knock probes nor play-mode grab armed until the sim restarted (A1's finding;
@@ -1633,6 +1660,7 @@ export class PeerConnection {
 		this.openedPeers.delete(peerId);
 		handleDisconnected(peerId);
 		clearPeerPreview(peerId); // 16-P5
+		perfLivePeerGone(peerId); // 34 PF
 		dropPeerLook(peerId); // P2
 		dropPeerPlayMode(peerId); // 21-F3
 		dropPeerScene(peerId); // P2b
@@ -1668,6 +1696,7 @@ export class PeerConnection {
 				this.openedPeers.delete(peerId);
 				handleDisconnected(peerId);
 				clearPeerPreview(peerId); // 16-P5
+				perfLivePeerGone(peerId); // 34 PF
 				dropPeerLook(peerId); // P2
 				dropPeerPlayMode(peerId); // 21-F3
 				dropPeerScene(peerId); // P2b
@@ -1811,5 +1840,8 @@ function pushWorldState(peerId) {
 	// L-C: one per post DOCUMENT — the scene look and any camera looks
 	for (const state of scenePostStates()) conn.send(state);
 	conn.send(gameStatePayload());
+	conn.send(kitPayload());
+	for (const msg of kitEntityPayloads()) conn.send(msg);
+	for (const msg of behaviourPayloads()) conn.send(msg);
 }
 registerWorldStatePush(pushWorldState);

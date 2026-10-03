@@ -14,9 +14,13 @@ import { notifyExternalMove } from '$lib/flowRuntime';
 import { meshGenReady } from './meshProviders.js';
 import { graphOf, SCENE_GRAPH } from '../../stores/flowStore';
 import { sceneJoints } from '$lib/joints';
+import { graphToText } from '$lib/graphText';
+import { findNodeSpec } from '$lib/nodeCatalog';
+import { aiReferences, behaviourHost } from './aiExtensions.js';
+import { behaviourToolSchemas, behaviourTool, summarizeBehaviours } from './behaviourTools.js';
 import {
 	physicsToolsEnabled,
-	aiNodeTypes,
+	aiNodeVocabulary,
 	createFlowNodesTool,
 	updateFlowNodesTool,
 	setPhysicsTool,
@@ -127,19 +131,19 @@ function describeObject(object) {
 	return out;
 }
 
-/** Node data compacted for the model: label/type dupes stripped, big point
- * lists reduced to a count, long strings clipped. @param {any} node */
+/** Node data compacted for the model: big point lists reduced to a count, long strings
+ * (script code) clipped. Key order is kept, so the text's `label`/`type+` shorthands apply.
+ * @param {any} node */
 function compactNodeData(node) {
 	/** @type {any} */
 	const out = {};
 	for (const [key, value] of Object.entries(node.data ?? {})) {
-		if (key === 'label' || key === 'type') continue;
 		if (key === 'points' && Array.isArray(value) && value.length > 6) {
 			out.points = value.length + ' points';
 			continue;
 		}
-		if (typeof value === 'string' && value.length > 80) {
-			out[key] = value.slice(0, 77) + '…';
+		if (typeof value === 'string' && value.length > 160) {
+			out[key] = value.slice(0, 157) + '…';
 			continue;
 		}
 		out[key] = value;
@@ -147,31 +151,52 @@ function compactNodeData(node) {
 	return out;
 }
 
+/** 34 D5: one graph's summary may spend this many characters (~2k tokens) */
+const GRAPH_SUMMARY_CHARS = 6000;
+
+/** the catalog's defaults / label, for the AI view's "say only what differs" @param {string} type */
+const specDefaults = (type) => findNodeSpec(type)?.defaults;
+/** @param {string} type */
+const specLabel = (type) => findNodeSpec(type)?.label ?? '';
+
 /**
- * Compact one graph document for the scene summary ("make the spider faster"
- * needs the node ids + data). Capped per graph so a node-heavy scene can't
- * blow the context.
- * @param {string} graphId @param {number} [cap]
- * @returns {{nodes: any[], edges?: any[], truncatedNodes?: number}|null}
+ * One graph for the scene summary ("make the spider faster" needs the node ids + data), as
+ * 34 D4's COMPACT GRAPH TEXT in its AI view — `id = type "label" {params}` per node with
+ * catalog defaults and default labels left out, `a.out -> b.in` per wire. It replaced a JSON
+ * shape capped at 12 nodes; the text says the same in well under half the characters, so the
+ * cap is now on characters and a whole small game fits. update_flow_nodes takes these ids.
+ * @param {string} graphId @param {number} [cap] characters
+ * @returns {string | null}
  */
-function summarizeGraph(graphId, cap = 12) {
+function summarizeGraph(graphId, cap = GRAPH_SUMMARY_CHARS) {
 	const graph = graphOf(graphId);
 	if (!graph || (!graph.nodes.length && !graph.edges.length)) return null;
-	/** @type {any} */
-	const out = {
-		nodes: graph.nodes
-			.slice(0, cap)
-			.map((/** @type {any} */ n) => ({ id: n.id, type: n.type, ...compactNodeData(n) }))
-	};
-	if (graph.nodes.length > cap) out.truncatedNodes = graph.nodes.length - cap;
-	if (graph.edges.length)
-		out.edges = graph.edges.map((/** @type {any} */ e) => ({
-			from: e.source,
-			to: e.target,
-			...(e.sourceHandle ? { fromHandle: e.sourceHandle } : {}),
-			...(e.targetHandle ? { toHandle: e.targetHandle } : {})
-		}));
-	return out;
+	const opts = { positions: false, defaults: specDefaults, defaultLabel: specLabel };
+	// each node is followed by the wires LEAVING it, so a summary cut at the budget still
+	// shows complete local wiring for every node it shows — nodes-then-edges order spent a
+	// big game's whole budget on node lines and handed the model no wiring at all
+	/** @type {Map<string, any[]>} */
+	const out = new Map();
+	for (const e of graph.edges) {
+		if (!out.has(e.source)) out.set(e.source, []);
+		out.get(e.source)?.push(e);
+	}
+	const known = new Set(graph.nodes.map((/** @type {any} */ n) => n.id));
+	const blocks = graph.nodes.map((/** @type {any} */ n) =>
+		graphToText({ nodes: [{ id: n.id, type: n.type, data: compactNodeData(n) }], edges: out.get(n.id) ?? [] }, opts)
+	);
+	const orphans = graph.edges.filter((/** @type {any} */ e) => !known.has(e.source));
+	if (orphans.length) blocks.push(graphToText({ nodes: [], edges: orphans }, opts));
+	let text = '';
+	let shown = 0;
+	for (const block of blocks) {
+		if (text.length + block.length > cap) break;
+		text += block;
+		shown++;
+	}
+	if (shown === blocks.length) return text;
+	const dropped = blocks.slice(shown).join('').split('\n').filter(Boolean).length;
+	return text + '// … ' + dropped + ' more lines not shown\n';
 }
 
 /**
@@ -200,6 +225,8 @@ export function summarizeScene(cap = 200) {
 	const out = truncated ? { objects, truncated } : { objects };
 	const sceneFlow = summarizeGraph(SCENE_GRAPH);
 	if (sceneFlow) out.sceneFlow = sceneFlow;
+	const behaviours = summarizeBehaviours();
+	if (behaviours) out.behaviours = behaviours;
 	const joints = get(sceneJoints);
 	if (joints.length)
 		out.joints = joints.map((/** @type {any} */ j) => ({ id: j.id, kind: j.kind, a: j.a, b: j.b }));
@@ -345,8 +372,25 @@ const TOOL_NAMES = [
 	'update_flow_nodes',
 	'set_physics',
 	'create_joints',
-	'control_simulation'
+	'control_simulation',
+	'create_behaviour',
+	'edit_behaviour'
 ];
+
+/** 34 D5: the behaviour family's spellings. They map to the behaviour tools only while a
+ * behaviour host is registered — otherwise "add a behavior" still means flow nodes, the
+ * meaning the alias table gave it before behaviours existed. */
+const BEHAVIOUR_ALIASES = /** @type {Record<string,string>} */ ({
+	create_behavior: 'create_behaviour',
+	add_behavior: 'create_behaviour',
+	add_behaviour: 'create_behaviour',
+	new_behaviour: 'create_behaviour',
+	write_behaviour: 'create_behaviour',
+	edit_behavior: 'edit_behaviour',
+	update_behaviour: 'edit_behaviour',
+	update_behavior: 'edit_behaviour',
+	modify_behaviour: 'edit_behaviour'
+});
 
 const SIM_ACTIONS = ['start', 'stop', 'pause', 'resume', 'reset'];
 
@@ -452,6 +496,7 @@ export function repairToolCall(rawName, rawArgs) {
 	const args = rawArgs && typeof rawArgs === 'object' ? rawArgs : {};
 	const original = String(rawName || '');
 	if (TOOL_NAMES.includes(original)) return { name: original, args, repaired: false };
+	const hasHost = !!behaviourHost();
 
 	// `functions.create_objects`, `tool:create_objects`, "Create Objects", camelCase…
 	const bare = original.split(/[.:]/).pop() || original;
@@ -459,12 +504,18 @@ export function repairToolCall(rawName, rawArgs) {
 	const snake = key.replace(/([a-z0-9])([A-Z])/g, '$1_$2').toLowerCase();
 	for (const candidate of [key, snake]) {
 		if (TOOL_NAMES.includes(candidate)) return { name: candidate, args, repaired: true };
+		// a behaviour spelling carrying FLOW-NODE arguments (`nodes` / graph `text`) still means flow
+		// nodes — the meaning it had before behaviours, and what small models send (34-integrate)
+		const flowShaped = Array.isArray(args.nodes) || (typeof args.text === 'string' && typeof args.source !== 'string');
+		if (hasHost && BEHAVIOUR_ALIASES[candidate] && !flowShaped) return { name: BEHAVIOUR_ALIASES[candidate], args, repaired: true };
 		if (NAME_ALIASES[candidate]) return withActionFill(NAME_ALIASES[candidate], candidate, args);
 	}
 
 	// name is invention — infer from the argument shape
 	if (Array.isArray(args.objects)) return { name: 'create_objects', args, repaired: true };
 	if (Array.isArray(args.nodes)) return { name: 'create_flow_nodes', args, repaired: true };
+	if (hasHost && typeof args.source === 'string' && typeof args.name === 'string')
+		return { name: 'create_behaviour', args, repaired: true };
 	if (Array.isArray(args.joints)) return { name: 'create_joints', args, repaired: true };
 	if (typeof args.action === 'string' && SIM_ACTIONS.includes(args.action.toLowerCase()))
 		return { name: 'control_simulation', args, repaired: true };
@@ -576,6 +627,10 @@ export async function executeAiTool(rawName, rawArgs) {
 
 			case 'update_flow_nodes':
 				return updateFlowNodesTool(args);
+
+			case 'create_behaviour':
+			case 'edit_behaviour':
+				return await behaviourTool(name, args);
 
 			case 'set_physics': {
 				if (!physicsToolsEnabled()) return { error: PHYSICS_DISABLED };
@@ -788,24 +843,32 @@ export const MESH_TOOL = {
 	}
 };
 
-/** Flow-node tool schemas. Built per call — the node-type enum tracks the
- * physics gate (physics node types absent when gated off).
+/** Flow-node tool schemas. Built per call.
+ * 34 D5: the node TYPE is a plain string now — the vocabulary lives once, grouped, in the
+ * system prompt (aiNodeVocabulary), not as a 100-name enum here; the executor validates
+ * every type exactly as before, physics gate included. And a call may describe its nodes as
+ * compact graph TEXT (the scene summary's own format) instead of a nodes array.
  * @param {boolean} physics @returns {any[]} */
 function flowToolSchemas(physics) {
-	const types = aiNodeTypes(physics);
+	void physics; // the gate is applied by the executor and the prompt's vocabulary
 	return [
 		{
 			type: 'function',
 			function: {
 				name: 'create_flow_nodes',
 				description:
-					'Add behavior (flow) nodes to a node graph — this is how objects get MOTION and interactivity: spin, bounce, patrol a path, pulse, blink, react to clicks. graph is "scene" or an object uuid (ONE graph per call). KEY RULE: a behavior node placed in an OBJECT\'s graph with no edges automatically drives that object — most behaviors are one node, zero edges, so usually OMIT edges.',
+					'Add behavior (flow) nodes to a node graph — this is how objects get MOTION and interactivity: spin, bounce, patrol a path, pulse, blink, react to clicks. graph is "scene" or an object uuid (ONE graph per call). KEY RULE: a behavior node placed in an OBJECT\'s graph with no edges automatically drives that object — most behaviors are one node, zero edges, so usually OMIT edges. Describe nodes EITHER as text (graph lines, see the system prompt) OR as nodes/edges arrays.',
 				parameters: {
 					type: 'object',
 					properties: {
 						graph: {
 							type: 'string',
 							description: '"scene" or an existing object uuid (nodes in an object\'s graph drive that object)'
+						},
+						text: {
+							type: 'string',
+							description:
+								'graph lines: `ref = type "label" {params}` per new node (omitted params = defaults), `ref.out -> other.in` per wire (refs or existing node ids). e.g. "c = onclick\\nl = latch {initial: false}\\nc -> l.set"'
 						},
 						nodes: {
 							type: 'array',
@@ -816,7 +879,7 @@ function flowToolSchemas(physics) {
 										type: 'string',
 										description: 'local key so edges in THIS call can reference the new node'
 									},
-									type: { type: 'string', enum: types },
+									type: { type: 'string', description: 'a node type from the system prompt\'s Node types' },
 									data: {
 										type: 'object',
 										description:
@@ -842,7 +905,7 @@ function flowToolSchemas(physics) {
 							}
 						}
 					},
-					required: ['graph', 'nodes']
+					required: ['graph']
 				}
 			}
 		},
@@ -964,7 +1027,7 @@ const PHYSICS_AI_TOOLS = [
  * Call this per turn (readiness can change). @returns {any[]} */
 export function getAiTools() {
 	const physics = physicsToolsEnabled();
-	const tools = [...AI_TOOLS, ...flowToolSchemas(physics)];
+	const tools = [...AI_TOOLS, ...flowToolSchemas(physics), ...behaviourToolSchemas()];
 	if (physics) tools.push(...PHYSICS_AI_TOOLS);
 	if (meshGenReady()) tools.push(MESH_TOOL);
 	return tools;
@@ -981,8 +1044,13 @@ export function buildSystemPrompt() {
 		'Behaviors (flow nodes): objects MOVE via behavior nodes. create_flow_nodes adds them;',
 		"the graph argument picks whose: \"scene\" or an object's uuid. KEY RULE: a behavior node",
 		"in an OBJECT's graph with no edges drives that object — one node, zero edges is the",
-		'normal case, so usually OMIT edges. Node types: ' + aiNodeTypes(physics).join(', ') + '.',
-		'pathpatrol walks world waypoints: data.points = [[x,y,z],…] (at least 2).',
+		'normal case, so usually OMIT edges.',
+		'Node types by group:',
+		...aiNodeVocabulary(physics).map((g) => '  ' + g.group + ': ' + g.types.join(', ')),
+		'GRAPH TEXT — the scene summary shows graphs, and create_flow_nodes accepts `text`, as lines:',
+		'  id = type "label" {params}   one node; params omitted = the node\'s defaults',
+		'  a.out -> b.in                one wire, from a node\'s output to another\'s input',
+		'pathpatrol walks world waypoints: points = [[x,y,z],…] (at least 2).',
 		'Logic + timing (latch, delay, sequence, once, counter) are THE EXCEPTION to that',
 		'rule: they do nothing unwired, so they always need edges with toHandle. latch',
 		'toHandle "set"/"reset"/"toggle" turns a ~0.3s pulse into a boolean that HOLDS',
@@ -991,10 +1059,32 @@ export function buildSystemPrompt() {
 		'pending one; once fires only the first time (rearm allows it again); sequence fans',
 		'one pulse into step1..step4 by fromHandle; counter toHandle "pulse" counts and',
 		'"reset" zeroes it.',
+		'script {code, inputs: [{name, type}], outputs: [{name, type}]}: a small deterministic',
+		'JS function — `return { out: inputs.a * 2 }` feeds its outputs; no Math.random/Date.now.',
 		'Moving-creature recipe (e.g. "a moving spider"): create the body parts, group them, put',
 		"ONE pathpatrol node on the GROUP's graph, and a bounce node on each leg's graph.",
 		'Existing node ids/data appear in the scene summary ("flow"/"sceneFlow") — tune or remove',
 		'them with update_flow_nodes.'
+	].join('\n');
+	// 34 D5: what other lanes registered — the kit's API, code behaviours — feature-detected
+	const host = behaviourHost();
+	let hostReference = '';
+	try {
+		hostReference = host?.reference?.() ?? '';
+	} catch {
+		hostReference = '';
+	}
+	const extraBlock = [
+		...(host
+			? [
+					'',
+					'Code behaviours: game LOGIC (rules, waves, scores, reach limits, win/lose) is best',
+					'written as a behaviour with create_behaviour — plain JS, run on one authority peer and',
+					'replicated; keep flow nodes for small per-object wiring. Edits: edit_behaviour.',
+					...(typeof hostReference === 'string' && hostReference.trim() ? [hostReference.trim()] : [])
+				]
+			: []),
+		...aiReferences().flatMap((r) => ['', r.text])
 	].join('\n');
 	const physicsBlock = physics
 		? [
@@ -1032,6 +1122,6 @@ export function buildSystemPrompt() {
 		"an object's name as the tool name — the name of a thing you create belongs in that object's",
 		'`name` field inside create_objects. Every call takes effect immediately, so never repeat a',
 		'call that already came back without an error — once the scene matches the request, stop',
-		'calling tools and write the summary.' + meshLine + flowBlock + physicsBlock
+		'calling tools and write the summary.' + meshLine + flowBlock + extraBlock + physicsBlock
 	].join('\n');
 }

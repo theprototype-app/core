@@ -1,0 +1,142 @@
+{
+	"$schema": "http://json-schema.org/draft-07/schema#",
+	"$id": "https://theprototype.app/schemas/tpprof-1.json",
+	"title": "tpprof 1 — theprototype performance recording (contract T1, roadmap 34)",
+	"description": "One format for a profiler recording (light or detailed), a beacon report (a light recording's 10-s window, same keys) and a 'Report this moment' (30 s of light data + notes). Exported gzip-compressed as `.tpprof`. Times `t` are milliseconds since meta.startedAt. Validator: src/lib/perf/tpprof.js (validateTpprof). Unknown keys are allowed everywhere (forward compatible); known keys are typed.",
+	"type": "object",
+	"required": ["tpprof", "meta", "frames", "events"],
+	"properties": {
+		"tpprof": { "const": 1 },
+		"meta": { "$ref": "#/definitions/meta" },
+		"frames": { "type": "array", "items": { "$ref": "#/definitions/frame" } },
+		"events": { "type": "array", "items": { "$ref": "#/definitions/event" } },
+		"captures": { "type": "array", "items": { "$ref": "#/definitions/capture" } },
+		"notes": { "type": "array", "items": { "$ref": "#/definitions/note" } },
+		"summary": { "$ref": "#/definitions/summary" }
+	},
+	"definitions": {
+		"meta": {
+			"type": "object",
+			"required": ["build", "version", "modules", "device", "xr", "startedAt", "mode"],
+			"properties": {
+				"build": { "type": "string", "maxLength": 64, "description": "the commit sha the app was built from (COMMIT_SHA)" },
+				"version": { "type": "string", "maxLength": 32, "description": "the app version (APP_VERSION), '-dev' suffixed under vite dev" },
+				"modules": {
+					"type": "object",
+					"description": "every loaded/installed user module: {id: version}",
+					"additionalProperties": { "type": "string", "maxLength": 32 }
+				},
+				"device": { "type": "string", "maxLength": 300, "description": "navigator.userAgent (+ GPU renderer string when exposed), clipped" },
+				"gpu": { "type": ["string", "null"], "maxLength": 200, "description": "WEBGL_debug_renderer_info renderer string, when the browser exposes it" },
+				"xr": { "type": "boolean", "description": "an immersive session presented when the recording started (a later entry is an `xr-start` event)" },
+				"refreshRate": { "type": ["number", "null"], "minimum": 0, "description": "XR session frameRate (Hz) or the display's estimate; null = unknown" },
+				"framebufferScale": { "type": ["number", "null"], "minimum": 0, "description": "XR framebuffer scale factor, or the renderer pixel ratio on a flat screen" },
+				"scene": { "type": ["string", "null"], "maxLength": 120, "description": "the scene's name/id" },
+				"game": { "type": ["string", "null"], "maxLength": 80, "description": "the game/template id when one is playing" },
+				"startedAt": { "type": "number", "description": "epoch ms (Date.now()) of t = 0" },
+				"mode": { "enum": ["light", "detailed"] },
+				"name": { "type": "string", "maxLength": 120, "description": "user-facing recording name (Profiler rename)" },
+				"pinned": { "type": "boolean" },
+				"durationMs": { "type": "number", "minimum": 0 },
+				"session": { "type": "string", "maxLength": 64, "description": "beacon only: random id per app run (no account id)" },
+				"kind": { "enum": ["recording", "sample", "stall", "moment"], "description": "what produced it; absent = recording" },
+				"gpuTimer": { "type": "boolean", "description": "EXT_disjoint_timer_query_webgl2 was available, so frame.gpu is measured" }
+			}
+		},
+		"frame": {
+			"type": "object",
+			"required": ["t", "ms"],
+			"properties": {
+				"t": { "type": "number", "description": "ms since meta.startedAt at the END of the frame" },
+				"ms": { "type": "number", "minimum": 0, "description": "frame interval (ms), rounded to 0.1" },
+				"calls": { "type": ["integer", "null"], "minimum": 0, "description": "draw calls this frame, summed over every renderer.render() pass" },
+				"tris": { "type": ["integer", "null"], "minimum": 0, "description": "triangles this frame, same summing" },
+				"quality": { "type": ["integer", "null"], "minimum": 0, "description": "quality governor level (0 = full quality)" },
+				"cpu": {
+					"type": "object",
+					"description": "detailed mode only: CPU ms per phase. Known phases: input, physics, modules, flow, render, other",
+					"additionalProperties": { "type": "number", "minimum": 0 }
+				},
+				"gpu": { "type": "number", "minimum": 0, "description": "detailed mode only, and only with EXT_disjoint_timer_query_webgl2: GPU ms" }
+			}
+		},
+		"event": {
+			"type": "object",
+			"required": ["t", "kind"],
+			"properties": {
+				"t": { "type": "number" },
+				"kind": {
+					"type": "string",
+					"maxLength": 40,
+					"description": "known: scene-load, teleport, grab, menu, stall, quality, xr-start, xr-end, mode, capture, moment, mark, stale-module. Unknown kinds are kept and drawn as generic markers."
+				},
+				"detail": {
+					"description": "kind-specific. stall: {ms, doing: string[]}; scene-load: {scene, ms?}; quality: {level, reason}; stale-module: {id, installed, expected}; mark/moment: {text}"
+				}
+			}
+		},
+		"capture": {
+			"type": "object",
+			"required": ["t", "objects"],
+			"properties": {
+				"t": { "type": "number" },
+				"frames": { "type": "integer", "minimum": 1, "description": "how many frames the per-object numbers are averaged over" },
+				"objects": { "type": "array", "items": { "$ref": "#/definitions/drawn" } },
+				"cpu": { "type": "object", "additionalProperties": { "type": "number", "minimum": 0 }, "description": "mean CPU ms per phase over the capture" },
+				"memory": {
+					"type": "object",
+					"properties": {
+						"heap": { "type": ["number", "null"], "description": "performance.memory.usedJSHeapSize (bytes), null where unavailable" },
+						"geometries": { "type": ["integer", "null"] },
+						"textures": { "type": ["integer", "null"] },
+						"programs": { "type": ["integer", "null"] }
+					}
+				}
+			}
+		},
+		"drawn": {
+			"type": "object",
+			"required": ["uuid", "calls", "tris"],
+			"properties": {
+				"uuid": { "type": "string" },
+				"name": { "type": "string" },
+				"path": { "type": "string", "description": "scene path, '/'-joined names from the scene root (the profiler tree: scene → module → object → mesh)" },
+				"module": { "type": ["string", "null"], "description": "the user module that owns it, when known" },
+				"calls": { "type": "number", "minimum": 0, "description": "draw calls per frame (mean over the capture)" },
+				"tris": { "type": "number", "minimum": 0, "description": "triangles per frame (mean)" },
+				"material": { "type": "string", "description": "material name or type; '+'-joined for a multi-material mesh" },
+				"shadow": { "type": "boolean", "description": "true = these calls were shadow-map passes" },
+				"transparent": { "type": "boolean" },
+				"ms": { "type": "number", "minimum": 0, "description": "CPU ms in onBeforeRender→onAfterRender (submission cost; GPU cost is not separable)" }
+			}
+		},
+		"note": {
+			"type": "object",
+			"required": ["t"],
+			"properties": {
+				"t": { "type": "number" },
+				"text": { "type": "string", "maxLength": 1000 },
+				"screenshot": { "type": "string", "description": "a local recording: a data:image/jpeg URL; a beacon report: the uploaded file's name (the image rides the PocketBase `screenshot` field)" }
+			}
+		},
+		"summary": {
+			"type": "object",
+			"description": "derived (summarize()), never required; readers may recompute it",
+			"properties": {
+				"frames": { "type": "integer" },
+				"durationMs": { "type": "number" },
+				"fpsP50": { "type": ["number", "null"] },
+				"fpsP5": { "type": ["number", "null"], "description": "1000 / p95 frame ms (the slow end)" },
+				"msP50": { "type": ["number", "null"] },
+				"msP95": { "type": ["number", "null"] },
+				"msP99": { "type": ["number", "null"] },
+				"msMax": { "type": ["number", "null"] },
+				"callsP50": { "type": ["number", "null"] },
+				"callsMax": { "type": ["number", "null"] },
+				"trisP50": { "type": ["number", "null"] },
+				"trisMax": { "type": ["number", "null"] },
+				"stalls": { "type": "integer" }
+			}
+		}
+	}
+}

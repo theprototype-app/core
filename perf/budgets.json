@@ -1,0 +1,196 @@
+{
+	"version": 1,
+	"comment": "34 B2 — the Quest budget per Games-tab game and General-tab level, held by `node scripts/perf-games.cjs --check` (CI: .github/workflows/perf-budget.yml). Counts only, in the headset-analogue profile. See perf/README.md.",
+	"scenes": {
+		"repo": "theprototype-app/scenes",
+		"ref": "preview-1-20"
+	},
+	"modules": {
+		"repo": "theprototype-app/modules",
+		"ref": "dev"
+	},
+	"defaults": {
+		"calls": 150,
+		"triangles": 300000,
+		"lights": 2,
+		"textureMB": 64
+	},
+	"games": {},
+	"levels": {},
+	"allow": [
+		{
+			"target": "game:jam-room",
+			"metric": "calls",
+			"max": 330,
+			"measured": 314,
+			"since": "2026-10-03",
+			"review": "2026-12-01",
+			"owner": "Jam Room (scripts/templates/jam-room.cjs + the music-lab/music-fx modules)",
+			"note": "~300 separately drawn pad/key/rack meshes (scene-lint budget-static: 303); 910 on the desktop table = this + the shadow pass + post. Fix: instance or merge the pads"
+		},
+		{
+			"target": "game:jam-room",
+			"metric": "lights",
+			"max": 4,
+			"measured": 4,
+			"since": "2026-10-03",
+			"review": "2026-12-01",
+			"owner": "Jam Room (scripts/templates/jam-room.cjs + the music-lab/music-fx modules)",
+			"note": "4 real-time lights (2 cast shadows on desktop); the Quest budget is 2"
+		},
+		{
+			"target": "game:stars-room",
+			"metric": "lights",
+			"max": 3,
+			"measured": 3,
+			"since": "2026-10-03",
+			"review": "2026-12-01",
+			"owner": "Stars Room (scripts/templates/stars-room.cjs)",
+			"note": "3 real-time lights; fold one into the environment or bake it"
+		},
+		{
+			"target": "game:dungeon-realms",
+			"metric": "lights",
+			"max": 5,
+			"measured": 5,
+			"since": "2026-10-03",
+			"review": "2026-12-01",
+			"owner": "Dungeon Realms (the dungeon + dungeon-realms modules)",
+			"note": "5 torch point lights (no shadows); light probes or an emissive-only torch would fit the budget"
+		},
+		{
+			"target": "game:untangle",
+			"metric": "lights",
+			"max": 3,
+			"measured": 3,
+			"since": "2026-10-03",
+			"review": "2026-12-01",
+			"owner": "Untangle (the untangle module scene)",
+			"note": "3 real-time lights"
+		},
+		{
+			"target": "level:tavern-interior",
+			"metric": "lights",
+			"max": 3,
+			"measured": 3,
+			"since": "2026-10-03",
+			"review": "2026-12-01",
+			"owner": "Tavern level (scripts/templates/tavern-interior.cjs)",
+			"note": "3 real-time lights (hearth + lanterns)"
+		},
+		{
+			"target": "level:wizards-tower",
+			"metric": "lights",
+			"max": 3,
+			"measured": 3,
+			"since": "2026-10-03",
+			"review": "2026-12-01",
+			"owner": "Wizard's Tower level (scripts/templates/wizards-tower.cjs)",
+			"note": "3 real-time lights"
+		},
+		{
+			"target": "level:tavern-interior",
+			"metric": "triangles",
+			"view": "spawn (the road)",
+			"max": 339000,
+			"measured": 322804,
+			"since": "2026-10-03",
+			"review": "2026-12-01",
+			"owner": "Tavern level (scripts/templates/tavern-interior.cjs) + pack LODs",
+			"note": "the street + facade in one view; pack LOD1/LOD2 on the facade pieces would bring it under"
+		},
+		{
+			"target": "level:tavern-interior",
+			"metric": "triangles",
+			"view": "the front door",
+			"max": 331000,
+			"measured": 314471,
+			"since": "2026-10-03",
+			"review": "2026-12-01",
+			"owner": "Tavern level (scripts/templates/tavern-interior.cjs) + pack LODs",
+			"note": "facade from the door"
+		},
+		{
+			"target": "level:tavern-interior",
+			"metric": "triangles",
+			"view": "back corner over the hall",
+			"max": 343000,
+			"measured": 326574,
+			"since": "2026-10-03",
+			"review": "2026-12-01",
+			"owner": "Tavern level (scripts/templates/tavern-interior.cjs) + pack LODs",
+			"note": "the whole hall + furniture sets in one view"
+		},
+		{
+			"target": "level:wizards-tower",
+			"metric": "triangles",
+			"view": "spawn (the path)",
+			"max": 352000,
+			"measured": 334866,
+			"since": "2026-10-03",
+			"review": "2026-12-01",
+			"owner": "Wizard's Tower level (scripts/templates/wizards-tower.cjs) + pack LODs",
+			"note": "the tower + forest from the path"
+		},
+		{
+			"target": "level:architecture-shell",
+			"metric": "textureMB",
+			"max": 190.4,
+			"measured": 181.3,
+			"since": "2026-10-03",
+			"review": "2026-12-01",
+			"owner": "the kit packs: KTX2 through api.loadModel (34-model-loader) or a lower per-pack texture cap (packs tools/kit-build)",
+			"note": "uncompressed GPU estimate (w*h*4 + mips, one per image source) of the distinct 1024² kit maps the level uses — decoded JPEG/PNG, so every distinct piece costs ~5-20 MB on the Quest"
+		},
+		{
+			"target": "level:castle-courtyard",
+			"metric": "textureMB",
+			"max": 431.3,
+			"measured": 410.8,
+			"since": "2026-10-03",
+			"review": "2026-12-01",
+			"owner": "the kit packs: KTX2 through api.loadModel (34-model-loader) or a lower per-pack texture cap (packs tools/kit-build)",
+			"note": "uncompressed GPU estimate (w*h*4 + mips, one per image source) of the distinct 1024² kit maps the level uses — decoded JPEG/PNG, so every distinct piece costs ~5-20 MB on the Quest"
+		},
+		{
+			"target": "level:forest-clearing",
+			"metric": "textureMB",
+			"max": 536.7,
+			"measured": 511.1,
+			"since": "2026-10-03",
+			"review": "2026-12-01",
+			"owner": "the kit packs: KTX2 through api.loadModel (34-model-loader) or a lower per-pack texture cap (packs tools/kit-build)",
+			"note": "uncompressed GPU estimate (w*h*4 + mips, one per image source) of the distinct 1024² kit maps the level uses — decoded JPEG/PNG, so every distinct piece costs ~5-20 MB on the Quest"
+		},
+		{
+			"target": "level:tavern-interior",
+			"metric": "textureMB",
+			"max": 814.8,
+			"measured": 776,
+			"since": "2026-10-03",
+			"review": "2026-12-01",
+			"owner": "the kit packs: KTX2 through api.loadModel (34-model-loader) or a lower per-pack texture cap (packs tools/kit-build)",
+			"note": "uncompressed GPU estimate (w*h*4 + mips, one per image source) of the distinct 1024² kit maps the level uses — decoded JPEG/PNG, so every distinct piece costs ~5-20 MB on the Quest"
+		},
+		{
+			"target": "level:wizards-tower",
+			"metric": "textureMB",
+			"max": 782.0,
+			"measured": 744.8,
+			"since": "2026-10-03",
+			"review": "2026-12-01",
+			"owner": "the kit packs: KTX2 through api.loadModel (34-model-loader) or a lower per-pack texture cap (packs tools/kit-build)",
+			"note": "uncompressed GPU estimate (w*h*4 + mips, one per image source) of the distinct 1024² kit maps the level uses — decoded JPEG/PNG, so every distinct piece costs ~5-20 MB on the Quest"
+		},
+		{
+			"target": "level:market-square",
+			"metric": "textureMB",
+			"max": 600.6,
+			"measured": 572,
+			"since": "2026-10-03",
+			"review": "2026-12-01",
+			"owner": "the kit packs: KTX2 through api.loadModel (34-model-loader) or a lower per-pack texture cap (packs tools/kit-build)",
+			"note": "uncompressed GPU estimate (w*h*4 + mips, one per image source) of the distinct 1024² kit maps the level uses — decoded JPEG/PNG, so every distinct piece costs ~5-20 MB on the Quest"
+		}
+	]
+}

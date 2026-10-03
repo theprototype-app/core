@@ -5,7 +5,7 @@
 // capture it as a personal prefab slot (LOCAL persistence, never replicated).
 // This shell only wires the feature in; the logic lives in $lib/vrSleeve.js
 // and stays DORMANT until Settings ▸ VR ▸ "VR sleeve palette" is enabled
-// (default off). Disabling this module removes the hooks entirely (reload).
+// (default off). Disabling this module removes the hooks entirely, live (34 R6).
 
 export default {
 	id: 'vrsleeve',
@@ -16,9 +16,21 @@ export default {
 	/** @param {any} api */
 	register(api) {
 		// the sleeve is LOCAL-ONLY (nothing replicates through the module channel);
-		// core VR hooks are reached via dynamic import — the moduleSDK pattern.
+		// core VR hooks are reached via dynamic import — the moduleSDK pattern. Its hooks
+		// live outside the api, so their undo goes through onUnload (34 R6), journaled
+		// BEFORE the import so an unload landing first still wins.
+		/** @type {(() => void) | null} */
+		let off = null;
+		let gone = false;
+		api.onUnload(() => {
+			gone = true;
+			off?.();
+		});
 		import('../../lib/vrSleeve')
-			.then((sleeve) => sleeve.registerVRSleeve())
+			.then((sleeve) => {
+				off = sleeve.registerVRSleeve();
+				if (gone) off();
+			})
 			.catch((error) => console.log('vrsleeve module failed to load', error));
 	}
 };

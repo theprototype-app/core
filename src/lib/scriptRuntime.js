@@ -2,6 +2,8 @@ import { get } from 'svelte/store';
 import { scriptErrors } from '../stores/flowStore';
 import { showToast } from '../stores/appStore';
 import { instrument } from './loopGuard';
+import { lintScript } from './scriptLint';
+import { SCRIPT_HELPERS, harvestOutputs } from './scriptIO';
 
 // Compiles and runs user script code for Script nodes and custom node defs.
 // Scripts run on EVERY peer independently — they must be pure functions of
@@ -20,35 +22,48 @@ import { instrument } from './loopGuard';
 /** @type {Map<string, {fn?: Function, error?: string}>} */
 const compiled = new Map();
 
-/** @param {string} code */
-function compile(code) {
-	let entry = compiled.get(code);
+// 34 D3: the three shapes a script compiles to. 'v1' is today's signature, byte-identical
+// (a v1 body declaring its own `inputs` must keep compiling, which is why the v2 names are
+// not simply appended to it). The two v2 shapes go through the LINT first: a v2 node is new
+// code written against the determinism rule, so it is held to it; a v1 node is not, because
+// refusing a scene that ran yesterday is a regression nobody asked for.
+/** @type {Record<string, string[]>} */
+const SIGNATURES = {
+	v1: ['object', 'base', 'data', 'time', 'params'],
+	effect: ['object', 'base', 'data', 'time', 'params', 'inputs', 'dist', 'lerp', 'clamp'],
+	value: ['inputs', 'time', 'dist', 'lerp', 'clamp']
+};
+
+/** @param {string} code @param {'v1' | 'effect' | 'value'} [shape] */
+function compile(code, shape = 'v1') {
+	const key = shape === 'v1' ? code : shape + ':' + code;
+	let entry = compiled.get(key);
 	if (entry) return entry;
 	if (compiled.size > 100) compiled.clear(); // stale codes from live editing
 	// Guard the loops BEFORE the code becomes a function. Here rather than at the call
 	// site because this map is keyed by the CODE STRING: each distinct script is
 	// transformed exactly once, and an edit re-instruments it and clears the old badge.
+	if (shape !== 'v1') {
+		const issues = lintScript(code);
+		if (issues.length) {
+			const more = issues.length > 1 ? ' (+' + (issues.length - 1) + ' more)' : '';
+			entry = { error: 'lint, line ' + issues[0].line + ': ' + issues[0].message + more };
+			compiled.set(key, entry);
+			return entry;
+		}
+	}
 	const guarded = instrument(code);
 	if ('error' in guarded) {
 		entry = { error: 'Could not guard this script: ' + guarded.error };
-		compiled.set(code, entry);
+		compiled.set(key, entry);
 		return entry;
 	}
 	try {
-		entry = {
-			fn: new Function(
-				'object',
-				'base',
-				'data',
-				'time',
-				'params',
-				'"use strict";\n' + guarded.code
-			)
-		};
+		entry = { fn: new Function(...SIGNATURES[shape], '"use strict";\n' + guarded.code) };
 	} catch (error) {
 		entry = { error: String(error) };
 	}
-	compiled.set(code, entry);
+	compiled.set(key, entry);
 	return entry;
 }
 
@@ -83,15 +98,15 @@ function reportError(nodeId, error) {
 }
 
 /**
- * Run one script frame; records/clears the node's error badge.
- * @param {string} nodeId @param {string} code
- * @param {any} object @param {any} base @param {any} data @param {number} time
+ * Time one call against the node's budget; records/clears the node's error badge.
+ * Returns the call's result, or undefined when it failed, was refused or is paused.
+ * @param {string} nodeId @param {string} code @param {{fn?: Function, error?: string}} entry
+ * @param {(fn: Function) => any} call
  */
-export function runScript(nodeId, code, object, base, data, time) {
-	const entry = compile(code || '');
+function timed(nodeId, code, entry, call) {
 	if (entry.error) {
 		reportError(nodeId, entry.error);
-		return;
+		return undefined;
 	}
 	// Per-node time budget. A SUSTAINED run is what matters: one slow frame is a GC pause
 	// or a tab waking up, and pausing a node for that would be its own bug. Keyed by the
@@ -104,27 +119,72 @@ export function runScript(nodeId, code, object, base, data, time) {
 	}
 	if (b.paused) {
 		reportError(nodeId, PAUSED_BADGE);
-		return;
+		return undefined;
 	}
 	const fn = entry.fn;
 	if (!fn) {
 		reportError(nodeId, 'Script could not be compiled');
-		return;
+		return undefined;
 	}
 	const started = performance.now();
 	try {
-		fn(object, base, data, time, data);
+		const result = call(fn);
 		const ms = performance.now() - started;
 		if (ms > SLOW_MS) {
 			b.slow++;
 			if (b.slow >= SLOW_FRAMES) {
 				b.paused = true;
 				reportError(nodeId, PAUSED_BADGE);
-				return;
+				return undefined;
 			}
 		} else b.slow = 0;
 		reportError(nodeId, null);
+		return result;
 	} catch (error) {
 		reportError(nodeId, String(error));
+		return undefined;
 	}
+}
+
+/**
+ * Run one script frame; records/clears the node's error badge.
+ * 34 D3: `inputs` present = a v2 EFFECT (declared sockets, linted, `inputs` + helpers in
+ * scope); absent = v1, byte-identical.
+ * @param {string} nodeId @param {string} code
+ * @param {any} object @param {any} base @param {any} data @param {number} time
+ * @param {Record<string, any>} [inputs]
+ */
+export function runScript(nodeId, code, object, base, data, time, inputs) {
+	const v2 = inputs !== undefined;
+	const entry = compile(code || '', v2 ? 'effect' : 'v1');
+	timed(nodeId, code, entry, (fn) =>
+		v2
+			? fn(object, base, data, time, data, inputs, SCRIPT_HELPERS.dist, SCRIPT_HELPERS.lerp, SCRIPT_HELPERS.clamp)
+			: fn(object, base, data, time, data)
+	);
+}
+
+/**
+ * 34 D3: run a v2 VALUE script — a pure function of (inputs, time) whose return feeds its
+ * declared output handles. Returns the runtime's handle map ({__handles, __default}), or
+ * undefined when the script failed (a consumer then keeps its own dialled value, exactly as
+ * for an unwired input). A return that is missing a declared output is a badge, not a throw.
+ * @param {string} nodeId @param {string} code @param {Record<string, any>} inputs
+ * @param {number} time @param {import('./scriptIO').ScriptSocket[]} outputs
+ */
+export function runScriptValue(nodeId, code, inputs, time, outputs) {
+	const entry = compile(code || '', 'value');
+	let problems = /** @type {string[]} */ ([]);
+	const value = timed(nodeId, code, entry, (fn) => {
+		const harvested = harvestOutputs(
+			fn(inputs, time, SCRIPT_HELPERS.dist, SCRIPT_HELPERS.lerp, SCRIPT_HELPERS.clamp),
+			outputs
+		);
+		problems = harvested.problems;
+		return harvested.value;
+	});
+	// after timed() cleared the badge for a clean RUN: a run that returned the wrong shape
+	// still needs saying
+	if (value && problems.length) reportError(nodeId, problems.join('; '));
+	return value;
 }

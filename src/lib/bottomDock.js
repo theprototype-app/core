@@ -15,9 +15,9 @@ import { viewPrefs } from './viewPrefs';
 
 export const FLOW_FAMILY = ['flow', 'flowcode', 'animation', 'uv', 'shader', 'hud'];
 /** every panel that can be a dock tab, in strip order (Node editor first) */
-export const DOCK_FAMILY = [...FLOW_FAMILY, 'explorer'];
+export const DOCK_FAMILY = [...FLOW_FAMILY, 'explorer', 'profiler'];
 /** @type {Record<string, string>} */
-export const DOCK_TITLES = { flow: 'Node editor', flowcode: 'Flow Code', animation: 'Animation', uv: 'UV editor', shader: 'Shader editor', hud: 'HUD editor', explorer: 'Explorer' };
+export const DOCK_TITLES = { flow: 'Node editor', flowcode: 'Flow Code', animation: 'Animation', uv: 'UV editor', shader: 'Shader editor', hud: 'HUD editor', explorer: 'Explorer', profiler: 'Profiler' };
 
 const ls = typeof localStorage !== 'undefined' ? localStorage : null;
 

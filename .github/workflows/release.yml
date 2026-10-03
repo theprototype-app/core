@@ -9,7 +9,12 @@ on:
 permissions:
   contents: write
 jobs:
+  # 34 B2: the perf budget gate (counts only, perf/budgets.json) — a tag cannot ship a game or
+  # level that broke the Quest budget past its allow-list ceiling
+  budget:
+    uses: ./.github/workflows/perf-budget.yml
   release:
+    needs: budget
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4

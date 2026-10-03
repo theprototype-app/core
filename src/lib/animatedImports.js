@@ -1,9 +1,7 @@
 import * as THREE from 'three';
 import { writable, get } from 'svelte/store';
-import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { FBXLoader } from 'three/addons/loaders/FBXLoader.js';
-import { DRACOLoader } from 'three/addons/loaders/DRACOLoader.js';
-import { MeshoptDecoder } from 'three/addons/libs/meshopt_decoder.module.js';
+import { createGltfLoader } from './gltfLoader';
 import { objectsGroup, pokeScene } from '../stores/sceneStore';
 import { peers, showToast } from '../stores/appStore';
 import { registerHistoryKind, recordEntry } from './history';
@@ -95,15 +93,8 @@ function rootDataFields(root) {
 	}
 }
 
-/** GLTFLoader with draco + meshopt decoders wired */
-export function createGltfLoader() {
-	const loader = new GLTFLoader();
-	const draco = new DRACOLoader();
-	draco.setDecoderPath('/draco/');
-	loader.setDRACOLoader(draco);
-	loader.setMeshoptDecoder(MeshoptDecoder);
-	return loader;
-}
+/** GLTFLoader with draco + meshopt decoders wired — 34 R7: the app's one (gltfLoader.js) */
+export { createGltfLoader };
 
 /**
  * Parse animated-import bytes with the parser that file format needs.

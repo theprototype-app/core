@@ -27,22 +27,15 @@ h.run(async () => {
 	h.check(hook.math === 'function', '0.2 the nudge maths is on the colocation leaf');
 	h.check(hook.colo && hook.anchors && hook.calib, '0.3 its neighbour slots still resolve');
 
-	// the three App.svelte tails must still agree — a missing entry SHIFTS every later
-	// binding onto the wrong module, silently. Read from DISK: the served module is
-	// vite-compiled, so the source shape only exists on the filesystem.
-	const src = require("fs").readFileSync(require("path").join(__dirname, "..", "..", "src", "App.svelte"), "utf8");
-	const arrStart = src.indexOf("Promise.all([");
-	const arrEnd = src.indexOf("]).then(([", arrStart);
-	const importCount = (src.slice(arrStart, arrEnd).match(/import\(/g) || []).length;
-	const destrMatch = src.slice(arrEnd).match(/\]\)\.then\(\(\[([^\]]+)\]\)/);
-	const destrCount = destrMatch ? destrMatch[1].split(",").map((x) => x.trim()).filter(Boolean).length : -1;
+	// 34 R4 (A2): the hook is ONE table now ($lib/debugHooks.js, one row per hook), so the old
+	// positional-tail count is gone; what is left to assert from disk is that this suite's row is
+	// there, named once (vitest debugHooks covers the whole table).
+	const hooksSrc = require("fs").readFileSync(require("path").join(__dirname, "..", "..", "src", "lib", "debugHooks.js"), "utf8");
+	const rows = hooksSrc.split("\n").filter((l) => /^\t\['/.test(l));
+	h.check(rows.length > 100, `0.4 the debug-hook table has its rows (${rows.length})`);
 	h.check(
-		importCount === destrCount && importCount > 100,
-		`0.4 App.svelte import/destructure tails agree (${importCount}/${destrCount})`
-	);
-	h.check(
-		destrMatch ? /colocationNudgeLib/.test(destrMatch[1]) : false,
-		"0.5 colocationNudge is in the destructure tail"
+		rows.filter((l) => l.startsWith("\t['colocationNudge', ")).length === 1,
+		"0.5 colocationNudge has exactly one row in the debug-hook table"
 	);
 	// ---- 1. the pure maths ------------------------------------------------------------
 	const math = await page.evaluate(() => {

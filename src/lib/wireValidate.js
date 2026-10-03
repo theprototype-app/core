@@ -56,6 +56,11 @@ export function isArray(v) {
 	return Array.isArray(v);
 }
 
+/** Every element a finite number (any length). @param {unknown} v */
+export function isNumberArray(v) {
+	return Array.isArray(v) && v.every((x) => typeof x === 'number' && Number.isFinite(x));
+}
+
 /**
  * Keep a transform APPLICABLE: every non-finite component falls back to the value the
  * object already has, so a partly-broken message moves what it can and poisons nothing.
@@ -87,6 +92,58 @@ export function sanitizeTransform(pos, rot, scale, current) {
 		scale: fix(scale, current.scale, 3),
 		repaired
 	};
+}
+
+/** 34 R2: a finite number @param {unknown} v */
+function isNum(v) {
+	return typeof v === 'number' && Number.isFinite(v);
+}
+
+/** 34 R2: the most rows one `kitentity` message may carry (the kit's entity ceiling, 200, + slack) */
+export const KIT_ENTITY_MAX_ROWS = 256;
+
+/**
+ * 34 R2: one full kit entity record. Its pose and hp are applied the moment it lands (a NaN
+ * would park an enemy at NaN forever, the move rule), and its tags / data are bounded so one
+ * message cannot carry a megabyte of junk per entity.
+ * @param {any} r
+ */
+export function isKitEntityRecord(r) {
+	if (!r || typeof r !== 'object' || Array.isArray(r)) return false;
+	if (
+		!isUuid(r.id) ||
+		!isVec3(r.pos) ||
+		!isNum(r.yaw) ||
+		!isNum(r.hp) ||
+		!isNum(r.max) ||
+		typeof r.dead !== 'boolean'
+	)
+		return false;
+	for (const k of ['kind', 'tpl', 'own'])
+		if (r[k] !== undefined && (typeof r[k] !== 'string' || r[k].length > 64)) return false;
+	if (r.regen !== undefined && !isNum(r.regen)) return false;
+	if (r.born !== undefined && !isNum(r.born)) return false;
+	if (r.rm !== undefined && !isNum(r.rm)) return false;
+	if (
+		r.tags !== undefined &&
+		!(
+			isArray(r.tags) &&
+			r.tags.length <= 16 &&
+			r.tags.every((/** @type {any} */ t) => typeof t === 'string' && t.length <= 32)
+		)
+	)
+		return false;
+	if (r.data !== undefined) {
+		if (!r.data || typeof r.data !== 'object' || Array.isArray(r.data)) return false;
+		if (JSON.stringify(r.data).length > 2048) return false;
+	}
+	if (r.mv !== undefined && (!r.mv || typeof r.mv !== 'object')) return false;
+	return true;
+}
+
+/** 34 R2: one compact pose row `[id, x, y, z, yaw, hp, flags]` @param {any} row */
+export function isKitEntityRow(row) {
+	return isArray(row) && row.length === 7 && isUuid(row[0]) && row.slice(1).every(isNum);
 }
 
 /**
@@ -151,7 +208,81 @@ export const VALIDATORS = {
 		Number.isFinite(d.from) &&
 		Number.isInteger(d.n) &&
 		d.n >= 0,
+	// 34 R2 (T3): the game kit's ONE document (written by the authority peer only) and a
+	// request to it. The slices are read as objects and the stamps compared as numbers the
+	// moment a document lands, so a malformed one is dropped here rather than poisoning the
+	// latest-wins order; what a slice HOLDS is each piece's own normalize's business.
+	kit: (d) =>
+		!!d.doc &&
+		typeof d.doc === 'object' &&
+		Number.isFinite(d.doc.rev) &&
+		Number.isFinite(d.doc.at) &&
+		isArray(d.doc.rids) &&
+		!!d.doc.slices &&
+		typeof d.doc.slices === 'object' &&
+		!Array.isArray(d.doc.slices) &&
+		(d.ev === undefined || isArray(d.ev)),
+	kitreq: (d) =>
+		typeof d.rid === 'string' &&
+		d.rid.length > 0 &&
+		d.rid.length <= 128 &&
+		typeof d.piece === 'string' &&
+		typeof d.op === 'string' &&
+		isArray(d.args),
+	// 34 R3 (D1): a behaviour's replicated document — written by the authority peer only,
+	// latest-wins on (at, rev, by). The state is the behaviour's own JSON (its handlers read it);
+	// the stamps are compared and the timers fired by the next authority, so those are checked
+	bhv: (d) =>
+		isUuid(d.id) &&
+		Number.isFinite(d.rev) &&
+		Number.isFinite(d.at) &&
+		typeof d.by === 'string' &&
+		!!d.state &&
+		typeof d.state === 'object' &&
+		!Array.isArray(d.state) &&
+		typeof d.started === 'boolean' &&
+		Number.isFinite(d.seq) &&
+		isArray(d.timers) &&
+		d.timers.length <= 64 &&
+		d.timers.every(
+			(/** @type {any} */ t) => !!t && typeof t.k === 'string' && Number.isFinite(t.at) && typeof t.m === 'string' && isArray(t.a)
+		) &&
+		(d.fired === undefined || (!!d.fired && typeof d.fired === 'object' && !Array.isArray(d.fired))),
 	camera: (d) => typeof d.peerId === 'string' && isVec3(d.position) && isFiniteArray(d.rotation, 3),
+	// 34 R2 (kit-entities): the ONE wire type kit entities replicate on — written by the
+	// authority peer only (the applier refuses anyone else), applied straight into poses and
+	// hit points, so every row is checked here: finite numbers, bounded counts, bounded strings
+	kitentity: (d) =>
+		Number.isInteger(d.seq) &&
+		d.seq >= 0 &&
+		isNum(d.at) &&
+		(d.snap === undefined || typeof d.snap === 'boolean') &&
+		(d.put === undefined ||
+			(isArray(d.put) && d.put.length <= KIT_ENTITY_MAX_ROWS && d.put.every(isKitEntityRecord))) &&
+		(d.upd === undefined ||
+			(isArray(d.upd) && d.upd.length <= KIT_ENTITY_MAX_ROWS && d.upd.every(isKitEntityRow))) &&
+		(d.del === undefined ||
+			(isArray(d.del) && d.del.length <= KIT_ENTITY_MAX_ROWS && d.del.every(isUuid))),
+	// 34 PF (profiler-xr): the live perf stream. The packed columns are read as numbers into a
+	// recording on arrival, so a frames batch must be finite numbers in whole frames; a capture
+	// is read as an object list. Ops this build does not know pass (a newer peer's addition).
+	perflive: (d) => {
+		if (typeof d.op !== 'string') return false;
+		if (d.op === 'watch') return d.mode === 'light' || d.mode === 'detailed';
+		if (d.op === 'frames')
+			return (
+				Number.isFinite(d.base) &&
+				Number.isFinite(d.t0) &&
+				isNumberArray(d.f) &&
+				d.f.length % 5 === 0 &&
+				d.f.length <= 5 * 4096 &&
+				(d.c === undefined || (isNumberArray(d.c) && d.c.length === (d.f.length / 5) * 6)) &&
+				(d.ev === undefined || isArray(d.ev))
+			);
+		if (d.op === 'capture') return Number.isFinite(d.base) && Number.isFinite(d.t) && !!d.cap && typeof d.cap === 'object' && isArray(d.cap.objects);
+		if (d.op === 'hello') return Number.isFinite(d.base) && !!d.meta && typeof d.meta === 'object';
+		return true;
+	},
 	// 33: only the `lod` parameter is constrained (every other parameter predates this entry
 	// and keeps "absent means allow"): a block is an object with a levels ARRAY, or null
 	objectParameters: (d) =>

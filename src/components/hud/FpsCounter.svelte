@@ -9,16 +9,26 @@
 	import { isLocked, isVRMode, editorMode } from '../../stores/sceneStore';
 	import { gameSettingValues } from '$lib/gameSettings';
 	import { fpsReading, perfParts, perfStatsShown } from '$lib/fpsMeter';
+	import { perfReportsOn, perfReportsAvailable, perfReportStatus } from '$lib/perf/beacon';
 
 	const playing = $derived($isLocked === true);
 	const gameShown = $derived(!!$gameSettingValues.showFps && (playing || $editorMode === 'interact'));
 	const shown = $derived(!$isVRMode && ($perfStatsShown || gameShown));
 	const parts = $derived(perfParts($fpsReading));
+	// 34 R1: the reporting dot — performance reports are being sent from this device
+	const reporting = $derived($perfReportsOn && $perfReportsAvailable);
 </script>
 
 {#if shown}
 	<div id="game-fps-counter" class="fps" class:fps-play={playing} data-tier={parts.tier} aria-live="off">
-		<span class="fps-main">{parts.fps}</span>
+		<span class="fps-main"
+			>{#if reporting}<span
+					id="perf-report-dot"
+					class="report-dot"
+					data-state={$perfReportStatus.state}
+					title="Sending performance reports (Settings ▸ Interface)"
+				></span>{/if}{parts.fps}</span
+		>
 		{#if parts.ms || parts.calls || parts.tris}
 			<span class="fps-detail">
 				{#if parts.ms}<span>{parts.ms}</span>{/if}
@@ -54,6 +64,22 @@
 	}
 	.fps-main {
 		font-size: 14px;
+	}
+	/* 34 R1: reports on — grey until the first send, green after one landed, amber after a failure */
+	.report-dot {
+		display: inline-block;
+		width: 7px;
+		height: 7px;
+		margin-right: 5px;
+		border-radius: 50%;
+		vertical-align: 1px;
+		background: #9ca3af;
+	}
+	.report-dot[data-state='sent'] {
+		background: #34d399;
+	}
+	.report-dot[data-state='failed'] {
+		background: #fbbf24;
 	}
 	.fps-detail {
 		color: #d1d5db;

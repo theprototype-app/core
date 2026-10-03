@@ -8,6 +8,7 @@
 	import { SvelteFlowProvider } from '@xyflow/svelte';
 	import ContextMenu from './ContextMenu.svelte';
 	import Nodes from './editors/Nodes.svelte';
+	import BehaviourView from './editors/behaviours/BehaviourView.svelte';
 	import ScriptPanel from './editors/ScriptPanel.svelte';
 	import NodeDesigner from './editors/NodeDesigner.svelte';
 	import DockTabs from './DockTabs.svelte';
@@ -188,9 +189,13 @@
 				title="Undock into a floating window"
 				onclick={() => setDocked(false)}>⧉</button
 			>
-			<div style="height: {$dockHeight - 16}px">
+			<div class="relative" style="height: {$dockHeight - 16}px">
 				<SvelteFlowProvider>
 					<Nodes bind:paletteOpen />
+				</SvelteFlowProvider>
+				<!-- 34 R3 (D2): a behaviour's derived live view covers the graph while open -->
+				<SvelteFlowProvider>
+					<BehaviourView />
 				</SvelteFlowProvider>
 			</div>
 		</div>
@@ -221,9 +226,12 @@
 				<button id="flow-dock" class="ui-button-quiet" title="Dock to the bottom" onclick={() => setDocked(true)}>⇩ Dock</button>
 				<button class="ui-button-quiet" title="Close (N)" onclick={() => flowGraphClose.set(true)}>✕</button>
 			</div>
-			<div class="min-h-0 flex-1">
+			<div class="relative min-h-0 flex-1">
 				<SvelteFlowProvider>
 					<Nodes bind:paletteOpen />
+				</SvelteFlowProvider>
+				<SvelteFlowProvider>
+					<BehaviourView />
 				</SvelteFlowProvider>
 			</div>
 			<div

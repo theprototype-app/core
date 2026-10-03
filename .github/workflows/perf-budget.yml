@@ -1,0 +1,104 @@
+# 34 B2 — THE PERF BUDGET GATE. Every Games-tab game and every General-tab level is loaded in a
+# real (headless) app and its COUNTS are held to perf/budgets.json: draw calls ≤ 150, triangles
+# ≤ 300k, ≤ 2 real-time lights, a texture-MB cap — the Quest budget — with a dated, owned
+# allow-list for what is over today. `node scripts/perf-games.cjs --check` is the whole gate;
+# this file only fetches what it measures (the scenes + module refs named IN budgets.json) and
+# serves the app.
+#
+# WHY IT CAN GATE ON A GPU-LESS RUNNER: counts come from three's bookkeeping, not the GPU, so
+# SwiftShader reads the same numbers as a desk (proved in the PR that added this: two GPU runs and
+# one SwiftShader run, identical). Frame ms is NOT gated — it is the one thing a runner cannot
+# reproduce. The profile is pinned (governor off, shadows off, post off, fixed viewpoints).
+#
+# release.yml calls this workflow, so a tag cannot ship a scene that broke the budget.
+name: perf-budget
+
+on:
+  pull_request:
+  push:
+    branches: [main, release/next]
+  workflow_call:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: perf-budget-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  budget:
+    name: perf-budget
+    runs-on: ubuntu-latest
+    timeout-minutes: 75
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: npm
+
+      - run: npm ci
+
+      - name: the scenes + modules refs the budget is about (perf/budgets.json)
+        id: refs
+        run: |
+          echo "scenes=$(node -p "require('./perf/budgets.json').scenes.ref")" >> "$GITHUB_OUTPUT"
+          echo "scenes_repo=$(node -p "require('./perf/budgets.json').scenes.repo")" >> "$GITHUB_OUTPUT"
+          echo "modules=$(node -p "require('./perf/budgets.json').modules.ref")" >> "$GITHUB_OUTPUT"
+          echo "modules_repo=$(node -p "require('./perf/budgets.json').modules.repo")" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/checkout@v7
+        with:
+          repository: ${{ steps.refs.outputs.scenes_repo }}
+          ref: ${{ steps.refs.outputs.scenes }}
+          path: .perf-deps/scenes
+
+      - uses: actions/checkout@v7
+        with:
+          repository: ${{ steps.refs.outputs.modules_repo }}
+          ref: ${{ steps.refs.outputs.modules }}
+          path: .perf-deps/modules
+
+      # out of the app's tree before vite starts (its watcher would walk them)
+      - name: pack the modules the games need
+        run: |
+          mv .perf-deps "$RUNNER_TEMP/perf-deps"
+          cd "$RUNNER_TEMP/perf-deps/modules"
+          npm ci --no-audit --no-fund
+          node scripts/pack.cjs --all --force
+
+      - run: npx playwright install --with-deps chromium
+
+      # WebXR needs HTTPS, so the dev server serves TLS from certs/ (gitignored, generated per clone)
+      - run: npm run certs
+
+      - name: start the dev server
+        run: |
+          npm run dev -- --port 5173 --strictPort --host localhost > /tmp/dev.log 2>&1 &
+          for i in $(seq 1 90); do
+            curl -sk -o /dev/null https://localhost:5173/ && break
+            sleep 1
+          done
+          curl -sk -o /dev/null -w 'dev server: %{http_code}\n' https://localhost:5173/
+
+      - name: budget gate (counts only)
+        env:
+          APP_URL: https://localhost:5173/
+          PERF_SCENES_DIR: ${{ runner.temp }}/perf-deps/scenes
+          PERF_MODULES_DIR: ${{ runner.temp }}/perf-deps/modules
+        run: node scripts/perf-games.cjs --check --label ci --out perf/out
+
+      - name: the table
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: perf-budget
+          path: perf/out/
+          if-no-files-found: ignore
+
+      - name: dev server log on failure
+        if: failure()
+        run: tail -60 /tmp/dev.log

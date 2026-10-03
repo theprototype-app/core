@@ -6,6 +6,7 @@
 
 import { graphOf } from '../stores/flowStore';
 import { moduleValueTypes, moduleNodeInputs } from './moduleNodeIO';
+import { scriptSocketType } from './scriptIO'; // 34 D3: a Script node's DECLARED sockets
 
 /** output type of a node's source handle @type {Record<string,string>} */
 const OUTPUT = {
@@ -306,7 +307,12 @@ export function isValidFlowConnection(connection, nodes) {
 	if (!source || !target) return false;
 	// H5: the object-flow interface types come from node DATA / the referenced
 	// graph's declarations, not the static type table
-	const from = source.type === 'flowinput' ? source.data?.vtype ?? 'number' : outputHandleType(source.type, connection.sourceHandle);
+	const from =
+		source.type === 'flowinput'
+			? source.data?.vtype ?? 'number'
+			: // 34 D3: a script output's type is DATA (its declaration), like flowinput's vtype
+				scriptSocketType(source.type, source.data, connection.sourceHandle, 'output') ??
+				outputHandleType(source.type, connection.sourceHandle);
 	if (source.type === 'objectflow') {
 		// embedded outputs carry whatever the flow's outputs compute — untyped v1,
 		// anything except the effect channel may consume them
@@ -326,6 +332,9 @@ export function isValidFlowConnection(connection, nodes) {
 export function resolvedInputType(targetNode, handleId) {
 	if (!targetNode) return 'number';
 	if (targetNode.type === 'flowoutput') return 'any';
+	// 34 D3: a v2 Script node's inputs are declared in its data
+	const declared = scriptSocketType(targetNode.type, targetNode.data, handleId, 'input');
+	if (declared) return declared;
 	if (targetNode.type === 'objectflow') {
 		const graph = graphOf(targetNode.data?.flowUuid ?? '');
 		const decl = graph?.nodes.find(

@@ -6,6 +6,7 @@
 //
 //   npx vite dev --port 5174
 //   APP_URL=http://localhost:5174/ node scripts/author-templates.cjs [--out <scenes-repo-dir>]
+//   (34 B3: every scene is scene-linted before anything is written; --no-lint skips it)
 //
 // A def may be kind:'template' | 'example' | 'game'. A GAME carries the scene data a
 // playable scene needs on top of its objects — flow `graphs`, an `env` preset,
@@ -169,6 +170,11 @@ function moduleDef(id) {
 	return fs.existsSync(file) ? JSON.parse(fs.readFileSync(file, 'utf8')) : null;
 }
 const STATIC_OUT = path.join(__dirname, '../static/templates');
+// 34 B3: the scene-lint every written scene passes (the pack rules use a packs checkout when found)
+const sceneLint = require('./scene-lint.cjs');
+const NO_LINT = process.argv.includes('--no-lint');
+const lintPacks = NO_LINT ? null : sceneLint.makePackIndex(sceneLint.findPacks(null));
+let lintErrors = 0;
 const outFlag = process.argv.indexOf('--out');
 const REPO_OUT = outFlag !== -1 ? path.resolve(process.argv[outFlag + 1]) : null;
 // B8: `--only <slug[,slug]>` rebuilds a subset. The bundled seed is SKIPPED in that
@@ -1216,8 +1222,20 @@ const DEFS = require('./templates/index.cjs').loadDefs(moduleDef);
 		const thumb = out.thumb ? Buffer.from(out.thumb.split(',')[1], 'base64') : null;
 		built[def.slug] = { entry: def, bytes, thumb };
 		console.log(`${def.kind} ${def.slug}: scene ${bytes.length} B, thumb ${thumb ? thumb.length : 0} B`);
+		// 34 B3: every scene this writes is linted first (scripts/scene-lint.cjs) — an unknown
+		// node, env preset, helper/eye layer, spawn in a wall, a nondeterministic script... is an
+		// ERROR and nothing is written; warnings print. `--no-lint` skips it (say why in the PR).
+		if (!NO_LINT) {
+			const findings = [...sceneLint.lintDef(def), ...sceneLint.lintBytes(bytes, { packs: lintPacks })];
+			const n = sceneLint.print(`  scene-lint ${def.slug}`, findings, { quiet: true });
+			lintErrors += n.error;
+		}
 	}
 	await browser.close();
+	if (lintErrors) {
+		console.error(`\nscene-lint: ${lintErrors} error(s) — nothing written (fix the defs, or --no-lint to override)`);
+		process.exit(1);
+	}
 
 	/** write one built def under a root dir @param {string} root @param {any} def */
 	const writeDef = (root, def) => {

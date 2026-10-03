@@ -193,4 +193,34 @@ describe('entity pieces in the logic sim (2 peers)', () => {
 		expect(after.every((z, i) => z > before[i] + 2)).toBe(true);
 		expect(agreeAfterFlush(sim, 'b')).toBe(true);
 	});
+	it('a joiner with a LOWER id becomes the authority on connect: it adopts the wave instead of wiping it', () => {
+		const sim = createSim({ peers: ['m', 'n'], latency: 0 });
+		const players = { p: [0, 0, 30] };
+		const hostFor = (/** @type {string} */ id) =>
+			setEntityHost(sim.peer(id).kit, {
+				resolveTarget: (ref) => (ref === 'player' ? players.p : null)
+			});
+		hostFor('m');
+		hostFor('n');
+		sim
+			.peer('m')
+			.kit.api({})
+			.spawner.spawn({ kind: 'robot', count: 4, spread: 2, mover: { speed: 2 } });
+		sim.settle();
+		sim.peer('m').kit.api({}).mover.chase('robot', 'player');
+		sim.advance(1000);
+		sim.add('a');
+		hostFor('a');
+		sim.join('a'); // 'a' < 'm': the authority moves to the newcomer the moment it connects
+		sim.settle();
+		expect(rt(sim, 'a').debug().authority).toBe(true);
+		for (const id of ['a', 'm', 'n']) expect(rt(sim, id).store.ents.size).toBe(4);
+		// and the new authority keeps the wave walking (game logic re-issues its order there)
+		const z0 = [...rt(sim, 'n').store.ents.values()].map((e) => e.pos[2]);
+		sim.peer('a').kit.api({}).mover.chase('robot', 'player');
+		sim.advance(1500);
+		const z1 = [...rt(sim, 'n').store.ents.values()].map((e) => e.pos[2]);
+		expect(z1.every((z, i) => z > z0[i] + 1)).toBe(true);
+		expect(agreeAfterFlush(sim, 'a')).toBe(true);
+	});
 });

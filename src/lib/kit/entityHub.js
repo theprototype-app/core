@@ -34,7 +34,7 @@ const hooks = new WeakMap();
 /** kit -> each entity piece's ctx (its request path) @type {WeakMap<object, Record<string, any>>} */
 const ctxs = new WeakMap();
 
-/** the app adapter's per-kit world hooks @param {object} kit @param {{resolveTarget?: (ref: any) => number[] | null, world?: () => any, pulse?: (piece: string, event: string, payload: any) => void}} h */
+/** the app adapter's per-kit world hooks @param {object} kit @param {{resolveTarget?: (ref: any, from?: number[]) => number[] | null, world?: () => any, pulse?: (piece: string, event: string, payload: any) => void, entityOf?: (object: any) => string | null}} h */
 export function setEntityHost(kit, h) {
 	hooks.set(kit, { ...(hooks.get(kit) ?? {}), ...h });
 }
@@ -56,10 +56,13 @@ export function entitiesFor(ctx) {
 		send: (msg) => ctx.send(msg),
 		// mutations ride the kit's request path of THEIR piece (once per request id)
 		call: (piece, op, args) => (ctxs.get(kit)?.[piece] ?? ctx).request(op, args),
-		resolveTarget: (ref) => hooks.get(kit)?.resolveTarget?.(ref) ?? null,
+		resolveTarget: (ref, from) => hooks.get(kit)?.resolveTarget?.(ref, from) ?? null,
 		world: () => hooks.get(kit)?.world?.() ?? {},
 		pulse: (piece, event, payload) => hooks.get(kit)?.pulse?.(piece, event, payload)
 	});
+	// the app's click path: a drawn copy (or any child of one) -> its entity id
+	rt.spawner.extra.entityOf = (/** @type {any} */ object) =>
+		hooks.get(kit)?.entityOf?.(object) ?? null;
 	runtimes.set(kit, rt);
 	return rt;
 }

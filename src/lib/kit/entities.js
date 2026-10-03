@@ -83,7 +83,7 @@ export const EVENT_SPEC = {
 };
 
 /**
- * @param {{now: () => number, isAuthority: () => boolean, authorityId?: () => string | null, me?: () => string | null, send: (msg: any) => void, call?: (piece: string, op: string, args: any[]) => any, request?: (piece: string, op: string, args: any[]) => void, resolveTarget?: (ref: any) => number[] | null, world?: () => any, pulse?: (piece: string, event: string, payload: any) => void}} host
+ * @param {{now: () => number, isAuthority: () => boolean, authorityId?: () => string | null, me?: () => string | null, send: (msg: any) => void, call?: (piece: string, op: string, args: any[]) => any, request?: (piece: string, op: string, args: any[]) => void, resolveTarget?: (ref: any, from?: number[]) => number[] | null, world?: () => any, pulse?: (piece: string, event: string, payload: any) => void}} host
  * @param {{ceiling?: number}} [opts]
  */
 export function createKitEntities(host, opts = {}) {
@@ -91,6 +91,11 @@ export function createKitEntities(host, opts = {}) {
 	/** @type {Record<string, Set<Function>>} */
 	const listeners = {};
 	let wasAuthority = false;
+	/** does this peer KNOW the entity set — it wrote some, or took some peer's word for it? A peer
+	 * that does not (a fresh joiner) must never assert its empty store as the truth: under the
+	 * smallest-id rule a joiner with a lower id becomes the authority the moment it connects,
+	 * and its first snapshot would wipe the wave everyone else is playing */
+	let synced = false;
 	let lastFlushAt = -Infinity;
 	let lastTickAt = /** @type {number | null} */ (null);
 	/** living entities after the last change (the `emptied` edge) */
@@ -188,7 +193,7 @@ export function createKitEntities(host, opts = {}) {
 		}
 		if (typeof target === 'string' && target) {
 			follow.set(id, { target, mode });
-			setGoal(e.mover, targetPos(target), mode, now());
+			setGoal(e.mover, targetPos(target, e.pos), mode, now());
 			return true;
 		}
 		follow.delete(id);
@@ -259,6 +264,7 @@ export function createKitEntities(host, opts = {}) {
 					emit('spawn', { entity: entityView(e, t), authority: true });
 				}
 				livingBefore = living();
+				if (ids.length) synced = true;
 				return ids;
 			},
 			despawn([id]) {
@@ -453,9 +459,26 @@ export function createKitEntities(host, opts = {}) {
 
 	/** RECEIVER: a `kitentity` message from `from` @param {any} msg @param {string | null} from */
 	function receive(msg, from) {
-		if (authority()) return false; // the one writer never takes another's word
-		const out = applyEntityMessage(store, msg, String(from ?? ''), host.authorityId?.() ?? null);
+		// the one writer never takes another's word — EXCEPT an authority that knows nothing yet
+		// (a joiner promoted on connect): it adopts the first whole set it is offered, then speaks
+		const adopting = authority() && !synced && msg?.snap === true;
+		if (authority() && !adopting) return false;
+		const out = applyEntityMessage(
+			store,
+			msg,
+			String(from ?? ''),
+			adopting ? null : (host.authorityId?.() ?? null)
+		);
 		if (!out) return false;
+		synced = true;
+		if (adopting) {
+			// the next tick re-runs "became the authority": movers rebuilt, our snapshot sent
+			wasAuthority = false;
+			const t = now();
+			for (const e of out.spawned) emit('spawn', { entity: entityView(e, t), authority: false });
+			livingBefore = living();
+			return true;
+		}
 		if (wasAuthority) {
 			// somebody else writes now (a returning host): our movers are no longer the truth
 			wasAuthority = false;
@@ -478,12 +501,13 @@ export function createKitEntities(host, opts = {}) {
 
 	// ---- the tick -------------------------------------------------------------------------
 
-	/** resolve a follow target to [x, z] @param {any} ref */
-	function targetPos(ref) {
+	/** resolve a follow target to [x, z]; `from` = the follower's place (for 'nearestPlayer')
+	 * @param {any} ref @param {number[]} [from] */
+	function targetPos(ref, from) {
 		if (typeof ref === 'string') {
 			const e = store.ents.get(ref);
 			if (e) return e.dead ? null : toXZ(e.pos);
-			const p = host.resolveTarget?.(ref);
+			const p = host.resolveTarget?.(ref, from);
 			return p ? toXZ(p) : null;
 		}
 		return toXZ(ref);
@@ -505,7 +529,9 @@ export function createKitEntities(host, opts = {}) {
 			adoptAuthority(store, t);
 			lastFlushAt = -Infinity;
 			wasAuthority = true;
-			host.send(snapshotMessage(store, t));
+			// speak first with the whole set — unless we know nothing yet (an empty store nobody
+			// gave us is not the truth: wait for a peer's handshake snapshot, see `synced`)
+			if (synced || store.ents.size) host.send(snapshotMessage(store, t));
 			emit('authority', { authority: true });
 		} else if (!isAuth && wasAuthority) {
 			wasAuthority = false;
@@ -519,7 +545,7 @@ export function createKitEntities(host, opts = {}) {
 		for (const [id, ref] of follow) {
 			const e = store.ents.get(id);
 			if (!e?.mover || e.dead) continue;
-			setGoal(e.mover, targetPos(ref.target), ref.mode, t);
+			setGoal(e.mover, targetPos(ref.target, e.pos), ref.mode, t);
 		}
 		// step every living mover, mark the ones that moved
 		ents.length = 0;
@@ -569,9 +595,13 @@ export function createKitEntities(host, opts = {}) {
 		}
 	}
 
-	/** a late joiner asked: the whole set (authority only, null elsewhere) */
+	/** the handshake: the whole set from the authority, and from any peer that holds entities
+	 * (a receiver refuses a non-authority's set unless it is an authority that knows nothing —
+	 * the joiner-promoted-on-connect case); null when there is nothing worth saying */
 	function snapshot() {
-		return authority() ? snapshotMessage(store, now()) : null;
+		if (authority() ? synced || store.ents.size > 0 : store.ents.size > 0)
+			return snapshotMessage(store, now());
+		return null;
 	}
 
 	/** forget everything (a scene clear — every peer clears; nothing is sent) */
@@ -582,6 +612,7 @@ export function createKitEntities(host, opts = {}) {
 		store.removed.clear();
 		follow.clear();
 		livingBefore = 0;
+		synced = false;
 	}
 
 	/** @param {any} [filter] */
@@ -735,6 +766,7 @@ export function createKitEntities(host, opts = {}) {
 			ceiling: store.ceiling,
 			refused: store.refused,
 			seq: store.seq,
+			synced,
 			follow: follow.size
 		})
 	};

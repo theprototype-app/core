@@ -4,6 +4,54 @@
 // so every importer of ./vrControls is unchanged; a new VR feature goes in the concern file it belongs to
 // (or a new one) and is listed here only if code outside src/lib/vr/ needs it.
 
+// The ORIGINAL dependency order of vrControls.js, as side-effect imports: an ES module evaluates its
+// imports in order, so these keep every dependency first-evaluated exactly when it was before the split
+// (the concern files below import them again; a module is evaluated once).
+import 'three';
+import 'svelte/store';
+import '../stores/sceneStore';
+import './vrGrip';
+import './pointGrab';
+import './moduleContent';
+import './vrPanelOverlay';
+import './moduleWorld';
+import './teleportRules';
+import './dungeonPlay';
+import './playSettings';
+import './hudDocs';
+import './locomotionPolicy';
+import './charController';
+import './playReach';
+import './vrRadialMenu';
+import './vrPalette';
+import './gameFeel';
+import './fpsMeter';
+import './gameSettings';
+import './gameShell';
+import './comfortVignette';
+import './hapticPatterns';
+import './materialsHandler';
+import './prefabs';
+import './meshEdit';
+import './editSession';
+import './faceEdit';
+import '../stores/appStore';
+import './peerApproval';
+import './history';
+import './snapping';
+import './objectActions';
+import './vrKeyboard';
+import './commandsHandler.svelte';
+import './ping';
+import './lockControl';
+import './inputRuntime';
+import './flowRuntime';
+import './drawMode';
+import './voiceChat';
+import './safeStorage';
+import './helperLayer';
+import './vrWindowPoses';
+
 export {
 	initVRControls
 } from './vr/core.js';

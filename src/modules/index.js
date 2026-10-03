@@ -16,5 +16,7 @@ import marble from './marble/module.js';
 import minigolf from './minigolf/module.js';
 // 35-sky-obby: the Sky Run game's movers and run rules (dormant outside a Sky Run scene)
 import skyrun from './skyrun/module.js';
+// 35: the Target Toss game's stages and judge (dormant outside a Target Toss scene)
+import targettoss from './targettoss/module.js';
 
-export const coreModules = [hello, button, pong, vrsleeve, towers, escape, marble, minigolf, skyrun];
+export const coreModules = [hello, button, pong, vrsleeve, towers, escape, marble, minigolf, skyrun, targettoss];

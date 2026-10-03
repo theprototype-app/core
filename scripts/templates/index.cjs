@@ -31,7 +31,9 @@ const TEMPLATE_FILES = [
 	// 35: Mini Golf (the core `minigolf` module holds the rules)
 	'mini-golf',
 	// 35-sky-obby: Sky Run, the floating obstacle course (the core `skyrun` module plays it)
-	'sky-run'
+	'sky-run',
+	// 35: Target Toss (the core `targettoss` module judges it)
+	'target-toss'
 ];
 
 /** games whose def is OWNED BY ITS MODULE (modules/<id>/<id>.def.json, read by moduleDef) */

@@ -39,6 +39,7 @@
   import StatsOverlay from './components/menu/StatsOverlay.svelte'
   import { startSceneMetrics, budgetSummary } from './lib/sceneBudget'
   import { startPerfRecorder } from './lib/perf/recorder'
+  import { startDetailedProbe } from './lib/perf/detailed'
   import { startLod } from './lib/lod'
   import { startLodGroups } from './lib/lodGroup'
   import { startKitInstancing } from './lib/kitInstancing'
@@ -151,6 +152,7 @@ import { startMusicToolbox } from './lib/musicToolbox'
     startSceneMetrics()
     // 34 PF/R1: the always-on light ring (moments, beacon windows) + user recordings
     startPerfRecorder()
+    startDetailedProbe()
     // 31-perf P2: automatic levels of detail (a render-time swap; see lod.js)
     startLod()
     // 33: per-object LOD GROUPS (userData.lod / a pack item's `lods`) ride the same render pass

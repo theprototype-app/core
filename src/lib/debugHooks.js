@@ -21,6 +21,7 @@ export const DEBUG_HOOKS = [
 	['*', () => import('../stores/flowStore')],
 	['meshEdit', () => import('./meshEdit')],
 	['perf', () => import('./perf/recorder')],
+	['perfDetailed', () => import('./perf/detailed')],
 	['vrControls', () => import('./vrControls')],
 	['autosave', () => import('./autosave')],
 	['voiceChat', () => import('./voiceChat')],

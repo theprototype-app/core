@@ -35,6 +35,9 @@ import { STALL_MS, MOMENT_MS, TPPROF_VERSION, CPU_PHASES, encodeTpprof, decodeTp
 
 /** the light ring: ~32 s at 144 Hz, ~64 s at 72 Hz */
 export const RING_FRAMES = 4608;
+/** a DETAILED recording's default length (it costs frame time) and its capture cadence */
+export const DETAILED_MS = 10000;
+export const CAPTURE_EVERY_MS = 1000;
 /** a recording's hard cap: 10 minutes at 120 Hz (it stops itself there, with an event) */
 export const MAX_RECORD_FRAMES = 72000;
 /** events kept in the ring's side list (they are rare; a stall storm is bounded here) */
@@ -357,9 +360,16 @@ export function ringWindow(from, to, metaPatch = {}) {
 
 // ---------------------------------------------------------------- recordings
 
+/** @type {any} */
+let captureTimer = null;
+/** @type {any} */
+let stopTimer = null;
+
 /**
- * Start a recording. A second call while one runs returns the running one's id.
- * @param {{mode?: 'light' | 'detailed', name?: string}} [opts]
+ * Start a recording. A second call while one runs returns the running one's id. A DETAILED
+ * recording takes a per-object capture every CAPTURE_EVERY_MS and stops itself after
+ * `durationMs` (default DETAILED_MS; 0 = run until stopped).
+ * @param {{mode?: 'light' | 'detailed', name?: string, durationMs?: number}} [opts]
  * @returns {string} id
  */
 export function startRecording(opts = {}) {
@@ -387,6 +397,17 @@ export function startRecording(opts = {}) {
 		gpuTimer
 	};
 	noteEvent('mark', { text: 'recording started', mode });
+	if (mode === 'detailed') {
+		const rec = active;
+		const loop = async () => {
+			if (active !== rec) return;
+			await captureNow();
+			if (active === rec) captureTimer = setTimeout(loop, CAPTURE_EVERY_MS);
+		};
+		captureTimer = setTimeout(loop, 200);
+		const ms = opts.durationMs ?? DETAILED_MS;
+		if (ms > 0) stopTimer = setTimeout(() => active === rec && void stopRecording(), ms);
+	}
 	publishState();
 	return active.id;
 }
@@ -430,6 +451,8 @@ export async function stopRecording() {
 	if (!active) return null;
 	const rec = active;
 	active = null;
+	clearTimeout(captureTimer);
+	clearTimeout(stopTimer);
 	if (rec.mode === 'detailed' && detailedProbe) {
 		try {
 			detailedProbe.stop();

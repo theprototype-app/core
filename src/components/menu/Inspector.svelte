@@ -10,6 +10,7 @@
 	import ThemedSelect from '../ui/ThemedSelect.svelte';
 	import PanelHeader from '../ui/PanelHeader.svelte';
 	import Section from '../ui/Section.svelte';
+	import CameraHoldSetting from './scene/CameraHoldSetting.svelte';
 	import LodGroupPanel from './LodGroupPanel.svelte';
 	import LoadStatePanel from './LoadStatePanel.svelte';
 	import SliderRow from '../ui/SliderRow.svelte';
@@ -1797,7 +1798,8 @@
 
 			<!-- 16-P4: everything about the VIEWPORT camera in one place (it used to be a
 			     "Camera lens" sub-label buried in View): lens, clip planes, orbit feel,
-			     framing shortcuts and the saved views. All LOCAL, never replicated. -->
+			     framing shortcuts and the saved views. All LOCAL, never replicated —
+			     except 36 L2's start-view hold, which is scene data (CameraHoldSetting). -->
 			<Section label="Camera">
 				<div id="lens-presets" class="flex flex-wrap gap-1">
 					{#each LENS_PRESETS as p (p.label)}
@@ -1908,6 +1910,7 @@
 						Reset feel
 					</button>
 				</div>
+				<CameraHoldSetting /><!-- 36 L2: scene data, saved + replicated -->
 				<p class="ui-section-label" data-anchor="Saved views">Saved views</p>
 				<div class="ui-row items-center gap-2">
 					<button id="bookmark-save" class="ui-chip bg-gray-600 text-gray-200 hover:bg-gray-500" onclick={() => saveBookmark()}>

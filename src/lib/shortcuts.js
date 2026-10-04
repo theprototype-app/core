@@ -30,6 +30,8 @@ import { undo, redo } from './history';
 import { editingObject, enterEditMode, exitEditMode } from './meshEdit';
 import { faceEditObject, meshEditHotkeys } from './faceEdit';
 import { recallBookmark } from './cameraBookmarks';
+// 36 L2: Home = the scene's start view (startView imports no history-family module)
+import { backToStartView } from './startView';
 import { snapTargets } from './snapping';
 import { togglePanel, toggleDock } from './panelToggles';
 // Phase 5: the play FAB's own entry point. playMode.js imports sceneStore +
@@ -207,6 +209,15 @@ export const shortcuts = [
 		label: 'Fly 3x faster',
 		fixed: true,
 		fixedReason: 'hold modifier, handled by fly navigation'
+	},
+	{
+		// 36 L2: back to where the scene opened (its saved view). Quiet when no scene with
+		// a saved view was loaded, so Home stays free for the lists that claim it
+		id: 'camera.start-view',
+		keys: 'Home',
+		group: 'Camera',
+		label: "Back to the scene's start view",
+		action: () => backToStartView()
 	},
 	{
 		id: 'camera.focus',

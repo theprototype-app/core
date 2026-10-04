@@ -103,6 +103,7 @@
 	import { safeStorage } from '$lib/safeStorage';
 	import Outline from './Outline.svelte'
 	import Player from './play/Player.svelte'
+	import { tickStartView } from '$lib/startView'
 	import { Mesh, Vector3 } from 'three'
 
 
@@ -406,6 +407,7 @@
 		updateTinyMarkers(); // R2: a dot to aim at when an object has no size left
 		tickModuleProxy(); // 30 P3: a selected module group's proxy box follows its content
 		if (!renderer.xr.isPresenting) updateEditorNavigation(delta, camera.current, $activeOrbit);
+		tickStartView(); // 36 L2: last — a held camera undoes this frame's input before it is drawn
 	});
 
 	// --- undo/redo: record one history entry per gizmo drag ---

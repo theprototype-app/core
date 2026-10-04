@@ -12,6 +12,8 @@ import {
 	visualState,
 	progressOf,
 	loadNow,
+	currentStuckMs,
+	VIS_LOADING,
 	VIS_FAILED
 } from './loadStates';
 
@@ -481,6 +483,17 @@ export function placeholderInstances() {
 	if (!body) return [];
 	const info = body.geometry.attributes.aInfo.array;
 	return entries.map((entry, i) => ({ uuid: entry.stub.uuid, progress: info[i * 4], state: info[i * 4 + 1], selected: info[i * 4 + 2] }));
+}
+
+/**
+ * 36 L2: is EVERY piece still waiting stuck (amber) or failed (red)? A camera hold ends on
+ * it — a broken piece never extends a hold. False while nothing is drawn: no placeholder is
+ * not evidence that everything stalled.
+ */
+export function allPlaceholdersStalled(now = loadNow(), stuckMs = currentStuckMs()) {
+	if (!entries.length) return false;
+	for (let i = 0; i < entries.length; i++) if (visualState(loadOf(entries[i].url), now, stuckMs) === VIS_LOADING) return false;
+	return true;
 }
 
 /** for the per-frame allocation probe: the frame body, callable on its own */

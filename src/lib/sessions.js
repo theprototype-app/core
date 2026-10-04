@@ -7,6 +7,8 @@ import { serializeNode, serializeEdge, sendNodes } from './nodesHandler';
 import { parkAnimatedAtBase } from './flowRuntime';
 import { stripEditOverlays } from './editOverlays';
 import { isPristinePackRef, stubElementOf, stubNodeCount, fillPackRef, warmPrograms } from './packRefs';
+// 36 L2: the scene's saved view is applied at the START of a load (startView.js)
+import { beginStartView, settleStartView, sceneHoldsCamera } from './startView';
 import { beginLoad, endLoad, progress, slice, updateLoad, onCancel, isLive, LoadCancelled, throttledPoke, holdFrames, releaseFrames, nextFrames, within, WARM_WAIT_MS, warmComposer } from './sceneLoader';
 // B7: a spawner's copies exist only while the world runs — never in a scene file
 import { isTransient } from './transientObjects';
@@ -1383,6 +1385,9 @@ async function applySessionNow(payload, opts, job) {
 	if (replicate) sceneCommand('/clear all'); // replicated clear (objects + module content)
 	else clearSceneLocal();
 	updateLoad(job, { phase: 'objects' });
+	// 36 L2: the START VIEW, now — it is in the payload before any object exists. Applied at
+	// the end (as it was) it landed seconds into a heavy scene and overrode the user's moves.
+	beginStartView(job, payload.camera, { hold: sceneHoldsCamera(payload.physics) });
 	// 33 L1: the SKY AND LIGHTS first. The scene's own environment decides how many lights a
 	// material is compiled for, and kit pieces warm their programs as their pack files land —
 	// during this loop. Restored after the objects (as it was), every piece compiled for the
@@ -1521,17 +1526,8 @@ async function applySessionNow(payload, opts, job) {
 	// hop (campaign semantics), so the traveller re-asserts the live state after this.
 	if (game) gameStateRestore(payload.game ?? null, replicate);
 	if (replicate && peer) for (const joint of payload.joints ?? []) peer.send({ type: 'jointcreate', joint });
-	/** @type {any} */
-	const camera = get(globalCamera);
-	/** @type {any} */
-	const controls = get(orbitControls);
-	if (payload.camera && camera) {
-		camera.position.fromArray(payload.camera.position);
-		if (controls) {
-			controls.target.fromArray(payload.camera.target);
-			controls.update();
-		}
-	}
+	// 36 L2: the view went on at the start; put it back only if nobody moved the camera since
+	settleStartView(job);
 	// P5: last, once the objects exist and the camera is parked — a selection applied
 	// before the tree is populated selects nothing, and a session entry needs its object
 	if (workspace && payload.workspace) applyEditResume(payload.workspace);

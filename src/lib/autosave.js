@@ -15,6 +15,8 @@ import { stripEditOverlays } from './editOverlays';
 import { isTransient, parkTransientObjects } from './transientObjects';
 import { parkPackPieces, fillPackRef, isPristinePackRef, stubElementOf, warmPrograms } from './packRefs';
 import { beginLoad, endLoad, progress, slice, updateLoad, onCancel, isLive, LoadCancelled, throttledPoke, holdFrames, releaseFrames, nextFrames, within, WARM_WAIT_MS, warmComposer, loading as sceneLoading, loadSettled } from './sceneLoader';
+// 36 L2: the saved view is applied at the START of a restore (startView.js)
+import { beginStartView, settleStartView, sceneHoldsCamera } from './startView';
 import { animatedImportsSnapshot, animatedImportsRestore } from './animatedImports';
 import { animations, animationsSnapshot, animationsRestore } from './animationPreview';
 import { scenePost, scenePostSnapshot, scenePostRestore } from './scenePost';
@@ -629,6 +631,8 @@ async function applyRestore(snapshot, offer = null) {
 	/** @type {Promise<any>[]} */
 	const refills = [];
 	try {
+		// 36 L2: the saved view first, before any object exists (startView.js)
+		beginStartView(job, snapshot.camera, { hold: sceneHoldsCamera(snapshot.physics) });
 		// 33 L1: sky and lights before the objects, so pieces warming as their packs land
 		// compile for THIS scene's lights (see sessions.applySession)
 		environmentRestore(snapshot.environment, true);
@@ -742,17 +746,8 @@ async function applyRestore(snapshot, offer = null) {
 		// #20 P5: windows, selection and edit mode — the EXPLICIT-restore path. A plain
 		// reload never reaches here, which is exactly the point.
 		if (snapshot.workspace) applyEditResume(snapshot.workspace);
-		/** @type {any} */
-		const camera = get(globalCamera);
-		/** @type {any} */
-		const controls = get(orbitControls);
-		if (snapshot.camera && camera) {
-			camera.position.fromArray(snapshot.camera.position);
-			if (controls) {
-				controls.target.fromArray(snapshot.camera.target);
-				controls.update();
-			}
-		}
+		// 36 L2: put the view back only if nobody moved the camera since the start
+		settleStartView(job);
 		// the bar stays (still cancellable) while kit pieces arrive from their packs
 		if (refills.length) {
 			updateLoad(job, { phase: 'models' });

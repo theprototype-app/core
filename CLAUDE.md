@@ -2427,6 +2427,19 @@ loadable play content. Everything a user does must be visible to connected peers
   The beacon exists only with `VITE_PERF_REPORTS_URL` (preview + production env). `perflive` is presence-like
   LOCAL data: direct sends to watchers, never re-broadcast/saved/undone (wireValidate row). `moduleVersions.json` =
   the stale-module table: regenerate with `node scripts/module-versions.cjs` at every release.
+  **36 (1.21) — export, touch, loading, theme tokens.** `src/lib/export/` = ONE builder (E1) for the itch.io / static
+  host / embed presets: `{index.html, assets/…, scene.tpscene, play.js}`, relative paths only; it reads
+  `build/export-manifest.json` (postbuild `scripts/export-manifest.cjs`), so a dev server cannot export;
+  `scripts/check-export.cjs` = the itch-shape validator. The "Made with ThePrototype" badge is drawn by the RUNTIME
+  (`MadeWithBadge.svelte`), never by page HTML, and lifts above any `[data-hud-avoid]` rect (`src/lib/play/hudAvoid.js`).
+  `touchActions.js` (leaf: catalog, presets, layouts/textures via safeStorage, press edges) + `api.input.actions(list,
+  opts) -> off` (lifecycle-tracked); buttons come from the game's input actions. `loadStates.js` (per-URL load phase/
+  bytes/error + the Loading settings) + `placeholders.js` (two instanced calls, allocation-free) + `replaceModel.js`
+  (pack item in place = delete+object in one batch, same uuid). Settings search (I4, `$lib/settingsSearch`) reads row
+  text + group + section + the `data-keywords` of any ANCESTOR — a section in its own file puts its `keywords` on its
+  root element. New UI colours = theme tokens (`--ink-bad/--ink-warn/--ink-good`, `--accent-fill/--on-accent`), checked
+  by the e2e contrast suites `profiler-themes` + `theme-text-sweep`. The phone quality governor judges against the
+  measured refresh rate and holds while the scene is trivially light (`qualityGovernorPhone` unit test).
   · Stars Room: `clapGesture.js` (pure) + `clap.js` (On Clap node; a spawned copy answers to its
   template — `transientObjects.spawnedFromOf`), `pointGrab.js` (Point Grab node gates the VR
   grip RAY and the desktop carry; touch still holds), Game Setting node.

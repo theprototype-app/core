@@ -23,6 +23,7 @@ import {
 	resetLoadsForTest,
 	normalizeGrid,
 	normalizeStyle,
+	initialPlaceholderStyle,
 	normalizeStuckSeconds,
 	DEFAULT_GRID
 } from '../../src/lib/loadStates.js';
@@ -111,7 +112,8 @@ describe('which failures retry', () => {
 describe('settings normalize', () => {
 	it('style, grid and stuck seconds', () => {
 		expect(normalizeStyle('modern')).toBe('modern');
-		expect(normalizeStyle('nonsense')).toBe('boxes');
+		expect(normalizeStyle('boxes')).toBe('boxes');
+		expect(normalizeStyle('nonsense')).toBe('modern');
 		expect(normalizeGrid(null)).toEqual(DEFAULT_GRID);
 		expect(normalizeGrid({ on: false, size: 99, color: 'red', opacity: -1, speed: 2 })).toEqual({
 			on: false,
@@ -123,5 +125,25 @@ describe('settings normalize', () => {
 		expect(normalizeStuckSeconds(0)).toBe(1);
 		expect(normalizeStuckSeconds('15')).toBe(15);
 		expect(normalizeStuckSeconds(undefined)).toBe(10);
+	});
+});
+
+// 36 L1: Modern is the default; an explicit pick (1.21's stored value included) is kept.
+describe('placeholder style default', () => {
+	/** @param {Record<string, string>} kv */
+	const reader = (kv) => (/** @type {string} */ k) => (k in kv ? kv[k] : null);
+	it('never chose -> Modern', () => {
+		expect(initialPlaceholderStyle(reader({}))).toBe('modern');
+	});
+	it('an explicit "Colored boxes" from 1.21 (no flag) stays boxes', () => {
+		expect(initialPlaceholderStyle(reader({ placeholderStyle: '"boxes"' }))).toBe('boxes');
+	});
+	it('a 1.22 pick (flag set) is kept either way', () => {
+		expect(initialPlaceholderStyle(reader({ placeholderStyle: '"boxes"', placeholderStyleChosen: '1' }))).toBe('boxes');
+		expect(initialPlaceholderStyle(reader({ placeholderStyle: '"modern"', placeholderStyleChosen: '1' }))).toBe('modern');
+	});
+	it('garbage falls back to the default', () => {
+		expect(initialPlaceholderStyle(reader({ placeholderStyle: '{oops' }))).toBe('modern');
+		expect(initialPlaceholderStyle(() => { throw new Error('storage blocked'); })).toBe('modern');
 	});
 });

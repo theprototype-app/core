@@ -185,6 +185,10 @@ export function normalizeScenePhysics(raw) {
 			},
 			['enabled', 'gain', 'maxSpeed', 'minSpeed', 'radius', 'spin', 'predict']
 		),
+		// 36 L2: "Hold camera until loaded" (startView.js) — present only when on, so a scene
+		// that never used it stays byte-identical. Scene-wide like the rest of this block, and
+		// housed here for the same reason the play block is: zero new wire surface.
+		...(source.holdCamera === true ? { holdCamera: true } : {}),
 		changedAt: typeof source.changedAt === 'number' ? source.changedAt : 0
 	};
 	return withUnknown(source, state, [
@@ -197,6 +201,7 @@ export function normalizeScenePhysics(raw) {
 		'timeScale',
 		'play',
 		'knock',
+		'holdCamera',
 		'changedAt',
 		'type' // the wire envelope's own field, never state
 	]);

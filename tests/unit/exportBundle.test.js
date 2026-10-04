@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { normalizeExportConfig, EXPORT_QUALITIES } from '../../src/lib/export/exportBoot.js';
 import { badgeHref } from '../../src/lib/export/badge.js';
 import { liftAbove } from '../../src/lib/play/hudAvoid.js';
-import { rewriteIndexHtml, stripHostInjected, makePlayJs, embedSnippet, collectPackRefs, slugify } from '../../src/lib/export/exportCore.js';
+import { rewriteIndexHtml, stripHostInjected, hostRemovalNotes, makePlayJs, embedSnippet, collectPackRefs, slugify } from '../../src/lib/export/exportCore.js';
 import { validateExport, parsePlayJs, htmlRefs, ITCH_LIMITS } from '../../src/lib/export/exportValidate.js';
 import { coerceExportPrefs, DEFAULT_EXPORT_PREFS } from '../../src/lib/export/exportStores.js';
 
@@ -272,6 +272,23 @@ describe('host-injected tags (36-int-121)', () => {
 		expect(r.html).toContain('<link rel="icon" href="./logo.svg" />');
 		expect(r.html).toContain('<link href="./_app/immutable/entry/start.X.js" rel="modulepreload">');
 		expect(r.html).toContain('import("./_app/immutable/entry/app.Y.js")');
-		expect(stripHostInjected(INDEX)).toEqual({ html: INDEX, removed: [] });
+		expect(stripHostInjected(INDEX)).toEqual({ html: INDEX, removed: [], known: [] });
+	});
+	// 36 L3: a KNOWN host script (the Cloudflare beacon) is removed quietly — Details only; an
+	// unknown external script still shows a visible warning
+	it('the beacon goes to the Details, an unknown script stays a warning', () => {
+		const html = SERVED.replace('</head>', '<script src="http://x.example/a.js"></script></head>');
+		const r = stripHostInjected(html);
+		expect(r.known).toEqual(['https://static.cloudflareinsights.com/beacon.min.js']);
+		const notes = hostRemovalNotes('index.html', r);
+		expect(notes.warnings).toHaveLength(1);
+		expect(notes.warnings[0]).toMatch(/^Removed http:\/\/x\.example\/a\.js from index\.html/);
+		expect(notes.details).toHaveLength(1);
+		expect(notes.details[0]).toMatch(/^Removed https:\/\/static\.cloudflareinsights\.com\/beacon\.min\.js from index\.html/);
+	});
+	it('the served page alone produces no visible warning at all', () => {
+		const notes = hostRemovalNotes('index.html', stripHostInjected(SERVED));
+		expect(notes.warnings).toEqual([]);
+		expect(notes.details.length).toBeGreaterThan(0);
 	});
 });

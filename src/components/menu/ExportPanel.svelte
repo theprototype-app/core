@@ -196,12 +196,23 @@
 					engine {fmtBytes(result.breakdown.runtime)} · scene {fmtBytes(result.breakdown.scene)}{result.breakdown.packs ? ' · packs ' + fmtBytes(result.breakdown.packs) : ''}{result.breakdown.modules ? ' · modules ' + fmtBytes(result.breakdown.modules) : ''}
 				</div>
 				{#each result.warnings as w (w)}<div class="ex-warn">{w}</div>{/each}
+				<!-- 36 L3: what was done for you that needs no action (a host's analytics beacon removed) -->
+				{#if result.details?.length}
+					<details id="export-details" class="ex-details">
+						<summary>Details</summary>
+						{#each result.details as d (d)}<div class="ex-dim">{d}</div>{/each}
+					</details>
+				{/if}
 			</div>
 		{/if}
 	{/if}
 </div>
 
 <style>
+	.ex-details summary {
+		cursor: pointer;
+		color: var(--muted, #9ca3af);
+	}
 	.ex-panel {
 		display: flex;
 		flex-direction: column;

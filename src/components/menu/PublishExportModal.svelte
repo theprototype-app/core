@@ -48,6 +48,8 @@
 	class="tp-modal-frame"
 	classes={{ header: 'tp-modal-header', body: 'tp-modal-body flex-1' }}
 >
+	<!-- the tabs mount only while open, so a plugin's Publish flow starts fresh on every open -->
+	{#if $publishExportOpen}
 	<div id="publish-export-modal" class="pe-wrap" data-tab={$publishExportTab}>
 		<div class="pe-tabs" role="tablist">
 			{#each TABS as t (t.id)}
@@ -79,6 +81,7 @@
 			<div role="tabpanel"><ExportSettingsSection /></div>
 		{/if}
 	</div>
+	{/if}
 </Modal>
 
 <style>

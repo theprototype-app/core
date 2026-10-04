@@ -19,7 +19,8 @@
 //   6. a play link (`?s=<id>&play=1&embed=1`) draws the badge with g=<id>; the editor does not
 //
 // Scenes: MINIGOLF_TPSCENE / SKY_RUN_TPSCENE (else the sibling scenes checkout). Skip, never
-// fail, when neither is found. Evidence: EXPORT_SHOTS=<dir> writes screenshots there.
+// fail, when neither is found. Evidence: EXPORT_SHOTS=<dir> writes screenshots there; EXPORT_KEEP=<dir>
+// keeps the two zips.
 const h = require('./helpers.cjs');
 const fs = require('fs');
 const os = require('os');
@@ -186,6 +187,12 @@ h.run(async () => {
 	h.check(skyB64.name === 'sky-run-web.zip', `the static-host preset names its zip (${skyB64.name})`);
 	await A.ctx.close();
 
+	// EXPORT_KEEP=<dir>: keep both zips (the real butler push uploads the itch.io one)
+	if (process.env.EXPORT_KEEP) {
+		fs.mkdirSync(process.env.EXPORT_KEEP, { recursive: true });
+		fs.copyFileSync(golfZip, path.join(process.env.EXPORT_KEEP, path.basename(golfZip)));
+		fs.copyFileSync(skyZip, path.join(process.env.EXPORT_KEEP, path.basename(skyZip)));
+	}
 	const golfCheck = checkExport(golfZip, 'itch');
 	console.log(golfCheck.out);
 	h.check(golfCheck.ok, 'scripts/check-export.cjs passes the Mini Golf itch.io zip');

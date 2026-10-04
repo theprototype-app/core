@@ -148,7 +148,9 @@ h.run(async () => {
 			slot: true,
 			row: true,
 			afterFormat: slot.previousElementSibling === (optional ?? formatRow),
-			beforeDivider: !!slot.nextElementSibling?.classList.contains('side-div'),
+			// 36-export: core's own "Publish / Export" row follows the slot, then the divider
+			beforeDivider:
+				slot.nextElementSibling?.id === 'open-publish-export' && !!slot.nextElementSibling?.nextElementSibling?.classList.contains('side-div'),
 			display: cs.display,
 			padding: cs.padding,
 			fontSize: cs.fontSize,
@@ -162,7 +164,7 @@ h.run(async () => {
 	});
 	check(slot.slot && slot.row, 'A5: the plugin row mounts in #sidebar-cloud-slot');
 	check(slot.afterFormat, 'A5: the slot sits DIRECTLY under the Save format segment');
-	check(slot.beforeDivider, 'A5: ...and above the section divider');
+	check(slot.beforeDivider, 'A5: ...then core\'s Publish / Export row, then the section divider (36-export)');
 	check(
 		slot.display === 'flex' && slot.padding === slot.nativePadding && slot.fontSize === slot.nativeFontSize,
 		`A5: the .side-row look reaches the plugin button — computed, not the class string (${slot.display} ${slot.padding} ${slot.fontSize} vs native ${slot.nativePadding} ${slot.nativeFontSize})`

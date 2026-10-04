@@ -198,6 +198,12 @@ export default {
 	/** @param {any} api */
 	register(api) {
 		apiRef = api;
+		// module-level state outlives an unload; a re-register starts from no table (the
+		// table GROUP itself goes with registerInteractiveGroup's teardown)
+		api.onUnload(() => {
+			state = null;
+			lastSimTime = null;
+		});
 
 		api.registerInteractiveGroup(GROUP_NAME);
 
@@ -224,7 +230,9 @@ export default {
 			return true;
 		});
 
-		if (typeof window !== 'undefined') window.addEventListener('pointermove', onPointerMove);
+		// 34 R6: through api.listen, so an unload removes it (a raw window listener outlived
+		// the module and kept steering a paddle on a table that was gone)
+		if (typeof window !== 'undefined') api.listen(window, 'pointermove', onPointerMove);
 
 		api.registerFrameTask(() => {
 			if (!state || state.spawnerId !== api.peerId()) return;
@@ -261,8 +269,9 @@ export default {
 
 		api.onSceneClear(() => removeTable());
 
-		// free paddles (or drop the table) when their peer leaves
-		userdata.subscribe((users) => {
+		// free paddles (or drop the table) when their peer leaves — a store subscription is
+		// the module's to end (34 R6: it was never unsubscribed, one more per reload)
+		const offRoster = userdata.subscribe((users) => {
 			if (!state) return;
 			const alive = new Set((users ?? []).map((entry) => entry[0]));
 			alive.add(api.peerId());
@@ -277,6 +286,7 @@ export default {
 				}
 			});
 		});
+		api.onUnload(offRoster);
 
 		api.registerStateSync({
 			getState: () => (state ? { ...state, ball: [ball.x, ball.z] } : null),

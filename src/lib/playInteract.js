@@ -25,6 +25,7 @@ import { playAimNdc, playCursorFree } from './playCursor';
 import { withinReach, carryLimit } from './playReach';
 import { charControl } from './charController';
 import { pointGrabAllowed } from './pointGrab'; // 31 (Stars Room S2): pointing may be switched off
+import { kitCheckGrab } from './kit/runtime.js'; // 34 R2: the kit's grab question (reach + vetoes)
 
 // 21-B B3: play mode becomes INTERACT mode — a crosshair grab at distance,
 // scroll to push and pull, and a release that throws with the velocity you
@@ -56,6 +57,7 @@ import { pointGrabAllowed } from './pointGrab'; // 31 (Stars Room S2): pointing 
 const REACH = 6; // m: how far the crosshair can start a grab
 const CARRY_DEFAULT = 2.5; // m
 const CARRY_MIN = 0.8;
+import { perfMark } from './perf/perfMarks.js';
 const CARRY_MAX = 6;
 const CARRY_STEP = 0.25;
 const SPRING_K = 14; // 1/s, scaled by 1/sqrt(mass) and clamped
@@ -71,12 +73,16 @@ const BODY_EYE_HEIGHT = 1.7;
 /** what the reticle renders from: aim + carry state, LOCAL and never on the wire.
  * 31-towers P1: 'toofar' = the crosshair is on something you could carry, beyond the scene's
  * `play.reach` from your body. */
+/** @typedef {{mode: 'off'|'idle'|'aiming'|'toofar'|'carrying', distance: number, uuid: string|null,
+ *   blocked: string|null, reason?: string|null}} PlayInteractState
+ * `reason` (34 R2): why a 'toofar' grab is refused — the reach, or a game's kit.rules veto */
+/** @type {import('svelte/store').Writable<PlayInteractState>} */
 export const playInteractState = writable({
-	/** @type {'off'|'idle'|'aiming'|'toofar'|'carrying'} */
 	mode: 'off',
 	distance: CARRY_DEFAULT,
-	/** @type {string|null} */ uuid: null,
-	/** @type {string|null} */ blocked: null
+	uuid: null,
+	blocked: null,
+	reason: null
 });
 
 const raycaster = new THREE.Raycaster();
@@ -129,13 +135,20 @@ function eyeHeightNow() {
 	return Number.isFinite(h) && h > 0 ? h : BODY_EYE_HEIGHT;
 }
 
-/** Is a hit point within reach of the player whose eye is `camera`? (always, with no reach)
- * @param {any} point @param {any} camera */
-function inReach(point, camera) {
+/** May the player whose eye is `camera` take hold of `target` at `point`? 34 R2: the kit's ONE
+ * grab question (kit.rules.checkGrab) — the reach (the kit's, else the scene's `play.reach`) and
+ * then every veto a game registered. `silent` = the per-frame hover read, which must not emit
+ * the kit's `refused` event (the press asks without it).
+ * @param {any} point @param {any} camera @param {any} [target] @param {boolean} [silent]
+ * @returns {{ok: boolean, reason?: string}} */
+function inReach(point, camera, target = null, silent = false) {
+	if (!point) return { ok: true };
 	const reach = playReach();
-	if (reach == null || !point) return true;
 	const eye = camera.getWorldPosition(new THREE.Vector3());
-	return withinReach(point, eye, eye.y - eyeHeightNow(), reach);
+	const feetY = eye.y - eyeHeightNow();
+	const verdict = kitCheckGrab({ point, eye, feetY, reach, uuid: target?.uuid, name: target?.name, hand: 'desktop', silent });
+	// the kit is always present in the app; withinReach is the fallback a stripped build keeps
+	return verdict ?? { ok: reach == null || withinReach(point, eye, feetY, reach) };
 }
 
 /** the refusals the reach made (debug hook only) */
@@ -271,6 +284,7 @@ function massOf(object) {
 
 /** Begin carrying. @param {any} object @param {any} camera */
 function beginGrab(object, camera) {
+	perfMark('grab', { source: 'play' }); // 34 PF: a profiler marker
 	// the object's rotation relative to the camera's YAW, so carrying does not
 	// tip the object when you look up or down
 	euler.setFromQuaternion(camera.getWorldQuaternion(desiredQuat), 'YXZ');
@@ -373,7 +387,7 @@ function onPointerDown(event) {
 	// bodies by touch only (walk into them); the tap above still reaches On Click
 	if (!pointGrabAllowed()) return;
 	// 31-towers P1: beyond the scene's reach from your body — the reticle already says so
-	if (!inReach(hit.point, activeCamera)) {
+	if (!inReach(hit.point, activeCamera, target).ok) {
 		reachRefusals++;
 		lastUp = 'too-far';
 		return;
@@ -560,13 +574,17 @@ export function tickPlayInteract(delta, camera) {
 	const grabbable =
 		mode === 'grab' && !!target && simRunning() && dynamicUuids().has(target.uuid);
 	const state = get(playInteractState);
-	const next = grabbable ? (inReach(hit.point, camera) ? 'aiming' : 'toofar') : 'idle';
-	if (state.mode !== next || state.uuid !== (target?.uuid ?? null))
+	const verdict = grabbable ? inReach(hit.point, camera, target, true) : null;
+	const next = grabbable ? (verdict?.ok ? 'aiming' : 'toofar') : 'idle';
+	// 34 R2: a game's veto names its reason ("Only the top piece"); the reach says "Too far"
+	const reason = verdict && !verdict.ok ? verdict.reason ?? null : null;
+	if (state.mode !== next || state.uuid !== (target?.uuid ?? null) || (state.reason ?? null) !== reason)
 		playInteractState.set({
 			mode: next,
 			distance: carryDistance,
 			uuid: target?.uuid ?? null,
-			blocked: null
+			blocked: null,
+			reason
 		});
 }
 

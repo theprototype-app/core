@@ -31,7 +31,13 @@ const backends = new Map();
  * @param {string} key @param {string} label @param {UnwrapBackend} run
  */
 export function registerUnwrapBackend(key, label, run) {
-	backends.set(key, { label, run });
+	const entry = { label, run };
+	backends.set(key, entry);
+	// T2 (34 R6): the undo, guarded by identity — a module's OLD teardown must never remove
+	// the NEW registration a reload put under the same key
+	return () => {
+		if (backends.get(key) === entry) backends.delete(key);
+	};
 }
 
 /** the backends currently available, for the UI to list

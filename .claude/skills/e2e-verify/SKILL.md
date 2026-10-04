@@ -1323,6 +1323,28 @@ your files). Two-peer verification is required for anything touching replication
 VR features: cover the extracted math/state headlessly (computeMoveOffset,
 computeTeleportArc pattern) and note that on-device feel is the user's manual check.
 
+## VR-eye screenshots (34 B4) — "which eye sees it" and "is it occluded" as pictures
+
+`tests/e2e/vrEyes.cjs` renders the two headset eyes OFF-SCREEN the way three's WebXRManager
+does: eye cameras ±IPD/2 from the head, layer masks by three's formula (left eye = layer 1,
+right eye = layer 2), an `isXRRenderTarget` sRGB target (tone mapping + encode as in the
+headset), and a plain `renderer.render(scene, eye)` so every onBeforeRender seam (LOD, kit
+instancing, the VR panel overlay's depth clear) runs with the EYE camera. Use it with
+`fakeXR.install` in any vr-* suite:
+
+- `eyes.shoot(page, {size})` → `{left, right, pair}` PNG Buffers + the masks;
+  `eyes.save(page, prefix)` writes `prefix-left/right/pair.png` — LOOK at them.
+- `eyes.visibility(page, nameOrUuidOrType)` → per eye `{visiblePx, footprintPx, fraction}`:
+  pixels that change when the object is hidden vs. its footprint drawn alone. 1 = fully
+  visible, 0 = occluded or not drawn by that eye.
+- The head is `globalCamera` unless `{head: {position, yaw, pitch}}`.
+- TRAP: the eye target is NOT multisampled — an MSAA target read back as all zeros.
+
+`scripts/eye-shots.cjs <scene.tpscene> [--mode play|interact|edit] [--views <level>]` takes eye
+pairs of any scene file (spawn, or every level viewpoint) for a lane's evidence. Proof suite:
+`vr-eye-shots` (helper both eyes in Edit / neither in Interact / left only when planted on
+layer 1; a plain mesh behind a box hidden vs. the same mesh as `api.vrPanel` on top).
+
 ## Roadmap 22 round 30 — `scene-isolation` (72), and the rooms battery
 
 - **PROVE A SEND GATE AND A RECEIVE GUARD INDEPENDENTLY.** They look like one mechanism

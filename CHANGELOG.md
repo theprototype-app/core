@@ -5,6 +5,89 @@
      per release, newest first. HTML comments like this one are stripped before
      rendering, so maintainer notes stay out of the user-facing window. -->
 
+## 1.20.0 — Five new games, a profiler, and a kit to build games from 🎮
+
+### 🎮 Five new games in the Games tab (no download needed)
+
+- 🧪 **The Alchemist's Escape** — an escape room in three rooms: open the drawer, find the key, unlock the chest, set the
+  dials, pull the levers in the right order and twist the crank to raise the gate, then place three gems to open the
+  vault. Hints after a minute in a room, three stages to practise, best time saved on this device. Desktop and VR.
+- 🔮 **Marble Maze** — tilt the board (WASD/arrows or drag; in VR grip the handles and twist) and roll the marble through
+  five mazes to the gold ring; holes send you back, three coins and a par time per maze for 1-3 stars.
+- ⛳ **Mini Golf** — six holes (a ramp, a windmill, a bank shot, sand and a hump); putt by dragging back from the ball or
+  swing a putter in VR; par, a scorecard, your best round saved. Any hole from the Levels page.
+- ☁️ **Sky Run** — a floating obstacle course: jumps, moving platforms, vanishing tiles, spinning arms; flags save your
+  spot, coins and par times earn stars; best time per stage saved. Comfort vignette on by default in VR.
+- 🎯 **Target Toss** — tin-can pyramids, swinging targets, pop-ups and a moving cart; five stages against the clock,
+  combos, 1-3 stars. VR grab-and-throw; desktop hold-to-charge.
+- 🛗 Moving platforms now carry a walking player.
+
+### 📈 See how it runs on YOUR device
+
+- 📈 **The Profiler tab** (dock ＋ menu): record *Light* (frame time, draw calls, triangles, quality — costs
+  nothing) or *Detailed* (which objects, materials and shadow casters the draws went to, CPU time per phase).
+  Read it on a timeline against the Quest budget (72 fps, 150 calls, 300k triangles), drag a range or click a
+  frame for a tree (scene → module → object → mesh) and a ranked *Who draws most*; click a row to select the
+  object. Compare two recordings; export/import `.tpprof` files.
+- 🥽 **Profile the headset from the desktop**: in VR, System ▸ Profile ▸ Record / Record detailed / Stop /
+  Report moment (a small "● REC" pill while recording). On the desktop, menu ▸ Live profiler watches a
+  headset in your room live (~2 KB/s); Detailed asks it for a 10-s detailed recording.
+- 🧾 **Always-on light recorder**: the last ~30 s of frame data with markers for scene loads, teleports, grabs,
+  menus, quality changes, XR entry/exit and every stall over 100 ms (with what was happening).
+- 📮 **Send performance reports** (Settings ▸ Interface, off by default; a preview build offers it once,
+  production never asks): anonymous 10-s windows of frame times, draw calls and module versions — no account,
+  no scene content — with a dot on the FPS counter while it is on.
+- 📸 **Report this moment** (menu, and VR System ▸ Profile): the last 30 s + what your eye saw + a note,
+  saved as a recording and sent when you agree.
+- ⚠️ **Stale-module warning**: an installed module older than the one this release shipped with gets a toast
+  and an Update row in Modules.
+
+### 🧰 Build games from a kit
+
+- 🧰 **The game kit** — `api.kit.*` for modules and a **Kit:** node group per piece, both from one spec:
+  *rules* (grab reach, a grab veto, play bounds, jump height that every grab path obeys), *round* (intro
+  countdown, time limit, pause, win/lose, results — Restart works while playing), *levels* (unlocks, stars,
+  progress per device, feeds the pause-menu level picker), *score* (counted once, per-player rows, device best,
+  leaderboard), *pickups* (taken once, respawn, grants, walk-into-it).
+- 👾 **Entities**: *spawner* copies of a template with their own health, tags and data; *health* (damage once on
+  the authority, area damage, heal, revive, regen, armour); *mover* (chase / patrol / arrive with avoidance, STUCK
+  detection and recovery round walls, crowds queue at the goal, knock-back). A host leaving mid-wave hands
+  everything over.
+- 🗼 **Towers runs on the kit** (no behaviour change; saved stars kept). One authority decides every kit change,
+  so a press seen by every peer counts once.
+
+### ✍️ Game logic as code, seen as nodes
+
+- ✍️ **Behaviours**: write game logic as one small JavaScript file in a Behaviour node (params, replicated state,
+  event handlers, kit calls). It runs on the session's authority and its state reaches everyone; timers survive
+  the host leaving; random numbers are seeded. A lint refuses code that would make peers disagree and names the line.
+- 🔭 **The live node view**: *Open view* draws a behaviour as read-only nodes with live values, a glow on whatever
+  just fired, timer countdowns and errors; param knobs rewrite the number in the code (one undo step) for everyone.
+- 🧮 **Script node v2**: typed inputs and outputs (`return { … }`), live output values, a determinism lint.
+- 📝 **Flow Code view as compact text** (2.1–2.4× shorter than JSON, lossless) with a JSON toggle.
+- 🤖 **AI assistant** reads graphs as compact text (Stars Room: 4.5× less per turn), adds nodes from text, and
+  creates/edits behaviours (linted before they apply).
+
+### 🧩 Modules
+
+- 🧹 **Modules unload completely and live**: every handler, node, menu, input claim, music, timer, listener, game
+  level/setting and owned object a module registers is taken down when it is switched off, removed, updated or
+  reloaded; core modules disable without a reload. New for authors: `api.onUnload`, `api.timers`, `api.listen`,
+  `api.own`.
+- 📦 **`api.loadModel`**: the app's own glTF loader for modules (Draco, Meshopt, KTX2 on demand), cached per file,
+  automatic LODs, released with the module. Waves 2.3.0 (24 % smaller) and Dungeon Kit 2.4.0 (65 % smaller) use it.
+
+### 🛠️ For contributors
+
+- 🚦 **Perf budgets are a CI gate**: every game and level is held to the Quest budget (≤150 draw calls, ≤300k
+  triangles, ≤2 lights, texture MB) in a headset-analogue profile — counts only; known offenders sit on a dated,
+  owned allow-list (`perf/budgets.json`). `scripts/scene-lint.cjs` checks saved scenes in the author scripts and
+  CI; VR-eye screenshots (`scripts/eye-shots.cjs`) render both headset eyes off-screen.
+- 🗂️ The four files every change collided in are split: the module SDK (`src/lib/sdk/`, one table), the test
+  debug hooks (`src/lib/debugHooks.js`), one file per template (`scripts/templates/`) and the VR controls
+  (`src/lib/vr/`). No behaviour change.
+- 🧪 A headless logic sim (`tests/unit/sim`) proves game rules with fake peers in milliseconds.
+
 ## 1.19.1 — New levels show up straight away 🔄
 
 - 🔄 **The General tab, the packs list and the module gallery show what was just released.** They used to

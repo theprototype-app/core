@@ -35,7 +35,7 @@
 
 import {
 	LEVELS, SHAPES, ZONES, RACKS, STATUS, levelById, nextLevelId, supplyCount, goalHeight, starsFor,
-	starsText, formatTime, normalizeProgress, mergeResult, isUnlocked, totalStars, layoutSupply, towerPieces,
+	starsText, formatTime, normalizeProgress, isUnlocked, totalStars, layoutSupply, towerPieces,
 	towerTop, isOutside, outlineCells, cellsFilled, gustAt, gust, windFrom, judge, verdictTitle, statusName,
 	LOST_AFTER, REST_SPEED
 } from './levels.js';
@@ -119,7 +119,20 @@ export default {
 		let announcedRound = -1;
 		let finishedRound = -1;
 		let starLostRound = -1;
-		let progress = normalizeProgress(api.storage?.get?.('progress', null));
+		// 34 R2: TOWERS ON THE GAME KIT. The level table, its unlock chain, the stars and the saved
+		// progress are kit.levels (the K3 picker is fed by the kit); the round is kit.round
+		// (Restart while playing, the shell's Restart, pause adoption); the tower height is the
+		// kit.score of the round (device best per level); the reach + jump are kit.rules. What
+		// stays here is Towers itself: dealing, judging, gusts, the wobble plate, the HUD words.
+		const kit = api.kit;
+		/** the player's grab reach and jump height for every Towers level (metres) */
+		const TOWERS_REACH = 1.3;
+		const TOWERS_JUMP = 1.0;
+		/** this device's progress (+ this session's results), in Towers' own shape */
+		const prog = () => normalizeProgress(kit.levels.progress());
+		/** startLevel is restarting the kit round itself (its `started` must not reset twice) */
+		let starting = false;
+		kit.score.useGame('towers');
 
 		// ---- reading the world --------------------------------------------------------------
 		const group = () => api.objectsGroup();
@@ -234,28 +247,39 @@ export default {
 		const startLevel = (id) => {
 			const level = levelById(id);
 			if (!level || !gs) return false;
-			if (!isUnlocked(progress, id)) {
+			if (!isUnlocked(prog(), id)) {
 				api.announce('Level ' + id + ' is locked', { sub: 'Earn a star on level ' + (id - 1) + ' first', ms: 2200, color: '#ffb86b' });
 				return false;
 			}
-			setV(V.level, id);
+			resetLevelVars(level);
+			// the picker's current level, then a FRESH kit round (restart works while playing — the
+			// menu -> playing detour this used to take is the kit's job now); Towers announces its
+			// own intro and judges its own clock, so the kit round has neither
+			kit.levels.select(String(id));
+			kit.round.configure(0, 0, 'lose', 2);
+			starting = true;
+			try {
+				kit.round.restart();
+			} finally {
+				starting = false;
+			}
+			placeMarkers(level);
+			return true;
+		};
+		/** a level's variables at its start (startLevel, and a kit round restarted by the shell)
+		 * @param {any} level */
+		const resetLevelVars = (level) => {
+			setV(V.level, level.id);
 			setV(V.status, STATUS.playing);
 			for (const key of [V.height, V.peak, V.lost, V.hold, V.stars, V.time, V.used, V.filled]) setV(key, 0);
 			setV(V.dealt, -1);
 			setV(V.left, supplyCount(level));
-			// ENTER playing from elsewhere so the round bumps and the clock restarts (setGameState
-			// is a no-op when already playing — the Restart chain's own reason for a detour)
-			const state = game()?.state;
-			if (state === 'playing' || state === 'paused') gs.setGameState('menu', { outcome: '' });
-			gs.setGameState('playing', { outcome: '' });
-			placeMarkers(level);
-			return true;
 		};
 		const toMenu = () => {
 			if (!gs) return;
 			setV(V.status, STATUS.none);
 			setV(V.level, 0);
-			gs.setGameState('menu', { outcome: '' });
+			kit.round.toMenu();
 			// the level select stands in an empty arena: the last level's pieces go
 			clearPieces();
 			place(GOAL_RING, [0, goalHeight(levelById(1)), 0]);
@@ -374,6 +398,8 @@ export default {
 			memo = r.memo;
 			setV(V.height, Math.round(top * 100));
 			setV(V.peak, Math.round(r.memo.peak * 100));
+			// the round's SCORE is the best tower height (cm): kit.score files a device best per level
+			kit.score.set(Math.round(r.memo.peak * 100));
 			setV(V.hold, r.hold);
 			setV(V.filled, filled);
 			// pieces still on the racks = resting over a rack box, above it
@@ -411,7 +437,11 @@ export default {
 			setV(V.used, result.pieces);
 			setV(V.hold, 0);
 			setV(V.status, STATUS[/** @type {keyof typeof STATUS} */ (verdict)] ?? STATUS.time);
-			gs.setGameState('over', { outcome: verdictTitle(verdict) });
+			// the kit records the level (stars by Towers' rule, saved on every device that saw it)
+			// and ends the round (core's game state goes 'over' with the verdict as its outcome)
+			kit.levels.complete(won, v(V.peak), result.elapsed, String(level.id), { pieces: result.pieces });
+			if (won) kit.round.win(verdictTitle(verdict));
+			else kit.round.lose(verdictTitle(verdict));
 		};
 
 		// ---- the buttons: every peer watches the stamps, the authority acts ------------------
@@ -424,7 +454,7 @@ export default {
 			if (element === 'retry-btn' || element === 'restart-btn') return level ? startLevel(level) : false;
 			if (element === 'next-btn') {
 				const next = nextLevelId(level);
-				if (next && isUnlocked(progress, next)) return startLevel(next);
+				if (next && isUnlocked(prog(), next)) return startLevel(next);
 				if (!next) {
 					api.announce('That was the last level', { sub: 'Every level is yours — try for three stars', ms: 2400, color: '#ffd45e' });
 					return toMenu();
@@ -455,7 +485,7 @@ export default {
 				// a locked level says so on the peer that sees it, whoever decides
 				const lvl = /^lvl-(\d+)$/.exec(element);
 				if (!fresh) continue;
-				if (lvl && !amAuthority && !isUnlocked(progress, Number(lvl[1])))
+				if (lvl && !amAuthority && !isUnlocked(prog(), Number(lvl[1])))
 					api.announce('Level ' + lvl[1] + ' is locked', { sub: 'Earn a star on level ' + (Number(lvl[1]) - 1) + ' first', ms: 2200, color: '#ffb86b' });
 				if (amAuthority) onPress(element);
 			}
@@ -497,10 +527,7 @@ export default {
 			if (g.state === 'over' && finishedRound !== g.round && status >= STATUS.won) {
 				finishedRound = g.round;
 				if (status === STATUS.won) {
-					const stars = v(V.stars);
-					progress = mergeResult(progress, level.id, { stars, time: v(V.time) / 10, pieces: v(V.used) });
-					api.storage?.set?.('progress', progress);
-					publishLevels();
+					// the stars were saved by kit.levels' `completed` (every peer, through Towers' store)
 					api.playSound('levelup');
 					api.hapticPattern('success');
 					const zone = zoneOf(level);
@@ -539,6 +566,7 @@ export default {
 			if (read === 'levelStars') {
 				const id = Number(data?.level) || 0;
 				if (!levelById(id)) return '';
+				const progress = prog();
 				if (!isUnlocked(progress, id)) return '🔒 locked';
 				const row = progress.levels[String(id)];
 				return row ? starsText(row.stars) : '☆☆☆';
@@ -547,7 +575,7 @@ export default {
 				const l = levelById(Number(data?.level) || 0);
 				return l ? l.id + ' · ' + l.name : '';
 			}
-			if (read === 'menuLine') return 'Stars earned: ' + totalStars(progress) + ' / ' + LEVELS.length * 3;
+			if (read === 'menuLine') return 'Stars earned: ' + totalStars(prog()) + ' / ' + LEVELS.length * 3;
 			if (!level) return read === 'progress' || read === 'height' || read === 'goal' ? 0 : '';
 			const goal = goalHeight(level);
 			const height = v(V.height) / 100;
@@ -589,8 +617,13 @@ export default {
 					}
 					return 'Time ' + formatTime(v(V.time) / 10) + ' (par ' + formatTime(level.par.time) + ')   ·   ' + v(V.used) + ' pieces (par ' + level.par.pieces + ')';
 				}
+				case 'bestTower': {
+					// 34 R2: kit.score's device best for this level (the tallest tower, cm)
+					const best = kit.score.best();
+					return best > 0 ? 'Tallest tower here: ' + (best / 100).toFixed(1) + ' m' : '';
+				}
 				case 'resultBest': {
-					const row = progress.levels[String(level.id)];
+					const row = prog().levels[String(level.id)];
 					return row ? 'Best on this device: ' + starsText(row.stars) + '  ' + formatTime(row.time) : '';
 				}
 				default:
@@ -628,7 +661,7 @@ export default {
 					label: 'Towers info',
 					defaults: { read: 'title', level: 1 },
 					params: [
-						{ key: 'read', kind: 'select', options: ['title', 'goalText', 'goal', 'height', 'progress', 'pieces', 'clock', 'hold', 'rule', 'result', 'resultStars', 'resultLine', 'resultBest', 'levelName', 'levelStars', 'menuLine'] },
+						{ key: 'read', kind: 'select', options: ['title', 'goalText', 'goal', 'height', 'progress', 'pieces', 'clock', 'hold', 'rule', 'result', 'resultStars', 'resultLine', 'resultBest', 'bestTower', 'levelName', 'levelStars', 'menuLine'] },
 						{ key: 'level', kind: 'range', min: 1, max: LEVELS.length, step: 1 }
 					]
 				},
@@ -644,37 +677,55 @@ export default {
 			]
 		});
 
-		// ---- the game shell's level picker, when the app has one (31-game-shell) -------------
+		// ---- the levels: kit.levels (the table, unlocks, stars, the K3 picker) -----------------
+		/** Towers' saved row: the most stars, the fastest time, the fewest pieces; a loss changes
+		 * nothing (mergeResult's rule, row by row) @param {any} was @param {any} now */
+		const mergeRow = (was, now) => {
+			if (!(now?.stars > 0)) return was ?? { ...now, stars: 0 };
+			if (!was || !(was.stars > 0)) return now;
+			return {
+				...now,
+				stars: Math.max(was.stars, now.stars),
+				time: was.time > 0 ? Math.min(was.time, now.time) : now.time,
+				pieces: was.pieces > 0 ? Math.min(was.pieces, now.pieces ?? 0) : now.pieces
+			};
+		};
 		/** @type {any} */ let levelsOff = null;
-		const publishLevels = () => {
-			if (typeof api.game?.levels !== 'function' || !active()) return;
-			try {
-				levelsOff = api.game.levels({
-					list: LEVELS.map((l) => ({
-						id: String(l.id),
-						label: l.id + ' · ' + l.name,
-						locked: !isUnlocked(progress, l.id),
-						stars: progress.levels[String(l.id)]?.stars ?? 0
-					})),
-					current: v(V.level, 0) ? String(v(V.level, 0)) : undefined,
-					onPick: (/** @type {any} */ id) => pick(Number(id))
-				});
-			} catch (error) {
-				console.log('towers: level picker', error);
-			}
-		};
-		/** a level chosen on THIS peer outside the HUD (the shell's picker, its Restart) — the
-		 * authority applies it, so a non-authority forwards it @param {number} id */
-		const pick = (id) => {
-			if (!levelById(id)) return;
-			if (authority()) startLevel(id);
-			else api.send({ op: 'pick', level: id });
-		};
-		// the shell's Restart restarts the level you are on; its How to play is ours
-		if (typeof api.game?.onRestart === 'function')
-			api.game.onRestart(() => {
-				if (active() && v(V.level, 0)) pick(v(V.level, 0));
+		const defineLevels = () => {
+			if (!active()) return;
+			if (typeof levelsOff === 'function') levelsOff();
+			levelsOff = kit.levels.define({
+				id: 'towers',
+				list: LEVELS.map((l) => ({ id: String(l.id), label: l.id + ' · ' + l.name })),
+				// a star on the level before (Towers' isUnlocked, the kit's 'sequential')
+				unlock: 'sequential',
+				stars: (/** @type {any} */ row, /** @type {any} */ r) => starsFor(levelById(Number(row.id)), { won: r.won, time: r.time, pieces: r.pieces ?? 0 }),
+				merge: mergeRow,
+				// Towers' OWN save: every player keeps the stars earned before the port
+				store: {
+					get: () => api.storage?.get?.('progress', null),
+					set: (/** @type {any} */ progress) => api.storage?.set?.('progress', normalizeProgress(progress))
+				}
 			});
+		};
+		// a level made current through the kit (the K3 picker, a Go to level node) starts it — on
+		// the authority, which is the kit's own (initiator, else the lowest id: the same peer)
+		kit.levels.onSelected((/** @type {any} */ p) => {
+			if (p?.game !== 'towers' || !active() || !authority()) return;
+			const id = Number(p.level);
+			if (levelById(id) && v(V.level, 0) !== id) startLevel(id);
+		});
+		// a kit round restarted by somebody else (the shell's Restart) restarts the level you are on
+		kit.round.onStarted(() => {
+			if (starting || !active() || !authority()) return;
+			const level = currentLevel();
+			if (!level) {
+				kit.round.toMenu();
+				return;
+			}
+			resetLevelVars(level);
+			placeMarkers(level);
+		});
 		const HELP = [
 			'Build a tower to the gold ring. Carry pieces from the racks to the glowing zone.',
 			'You can only grab what is close to your body (about 1.3 m): build steps, climb them, and JUMP (Space / A) to reach higher.',
@@ -682,9 +733,21 @@ export default {
 			'Stars: one for finishing, one for par pieces, one for par time. A star opens the next level.'
 		];
 		/** @type {null | (() => void)} */ let helpOff = null;
+		// an OLDER peer forwards a shell pick as a message (the kit routes this build's picks)
 		api.onMessage((/** @type {any} */ msg) => {
 			if (msg?.op === 'pick' && authority()) startLevel(Number(msg.level));
 		});
+		/** the play rules every Towers level shares, as kit.rules (session-wide; every grab path) */
+		let rulesSet = false;
+		const setRules = (/** @type {boolean} */ on) => {
+			if (on) {
+				kit.rules.set({ reach: TOWERS_REACH, jump: TOWERS_JUMP });
+				rulesSet = true;
+			} else if (rulesSet) {
+				kit.rules.clearRules();
+				rulesSet = false;
+			}
+		};
 
 		// ---- the frame --------------------------------------------------------------------------
 		let wasActive = false;
@@ -693,7 +756,8 @@ export default {
 			const on = active();
 			if (on !== wasActive) {
 				wasActive = on;
-				if (on) publishLevels();
+				if (on) defineLevels();
+				setRules(on);
 				if (on && typeof api.game?.setHelp === 'function') helpOff = api.game.setHelp(HELP);
 				if (!on && helpOff) {
 					helpOff();
@@ -713,7 +777,7 @@ export default {
 			// 33 (L4): the scene that was a Towers game is going — its levels and How to play
 			// leave the shell WITH it. Resetting `wasActive` alone left both registered (the
 			// frame's edge saw false -> false), so the next game's pause menu showed Towers'
-			// twelve levels.
+			// twelve levels. (The kit document — rules, round, score — resets with the clear.)
 			if (helpOff) {
 				helpOff();
 				helpOff = null;
@@ -722,6 +786,7 @@ export default {
 				levelsOff();
 				levelsOff = null;
 			}
+			rulesSet = false;
 			seenStamps.clear();
 			lastPose.clear();
 			outsideSince.clear();
@@ -734,29 +799,26 @@ export default {
 		// the suites' window onto the module (read-only, plus a scripted start)
 		/** @type {any} */ (globalThis).__towers = {
 			levels: LEVELS,
-			progress: () => progress,
+			progress: () => prog(),
 			resetProgress: () => {
-				progress = normalizeProgress(null);
 				api.storage?.remove?.('progress');
-				publishLevels();
+				kit.levels.refresh();
 			},
 			/** a suite's shortcut to a progress state, written through api.storage like a win */
 			setProgress: (/** @type {any} */ raw) => {
-				progress = normalizeProgress(raw);
-				api.storage?.set?.('progress', progress);
-				publishLevels();
-				return progress;
+				api.storage?.set?.('progress', normalizeProgress(raw));
+				kit.levels.refresh();
+				return prog();
 			},
-			reloadProgress: () => {
-				progress = normalizeProgress(api.storage?.get?.('progress', null));
-				return progress;
-			},
+			reloadProgress: () => prog(),
 			authority,
 			pieces: () => pieces().map((/** @type {any} */ o) => ({ uuid: o.uuid, name: o.name, shape: shapeOf(o), pos: o.position.toArray() })),
 			info,
 			vars: () => Object.fromEntries(Object.values(V).map((k) => [k, api.game.getVar(k, null)])),
 			zone: () => zoneOf(currentLevel()),
 			startLevel,
+			/** 34 R2: what the kit holds for Towers (the port's proof) */
+			kit: () => ({ round: kit.round.state(), level: kit.levels.current(), score: kit.score.total(), best: kit.score.best(), rules: kit.rules.current(), table: kit.levels.table() }),
 			/** evidence shots: end the running level with a verdict, the judge's own path */
 			finishNow: (/** @type {string} */ verdict) => {
 				const level = currentLevel();

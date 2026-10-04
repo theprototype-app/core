@@ -274,6 +274,7 @@ export function updateListener(camera) {
  * @property {(t?: number) => void} start   note-on at an audio-clock time
  * @property {(t?: number) => void} stop    note-off; release runs from here
  * @property {() => void} dispose
+ * @property {boolean} [ended] the source finished playing (34 R6: a module's voice set prunes these)
  */
 
 /** Exponential ramps cannot reach 0, so silence is this instead. */
@@ -330,8 +331,13 @@ export function oscVoice(opts = {}) {
 	amp.connect(resolveDestination(destination));
 	let started = false;
 	let stopped = false;
+	let ended = false;
+	osc.addEventListener('ended', () => (ended = true));
 	return {
 		output: amp,
+		get ended() {
+			return ended;
+		},
 		start(t) {
 			if (started) return;
 			started = true;
@@ -396,8 +402,13 @@ export function sampleVoice(opts) {
 	source.connect(amp);
 	amp.connect(resolveDestination(destination));
 	let started = false;
+	let ended = false;
+	source.addEventListener('ended', () => (ended = true));
 	return {
 		output: amp,
+		get ended() {
+			return ended;
+		},
 		start(t) {
 			if (started) return;
 			started = true;

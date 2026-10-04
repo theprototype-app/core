@@ -19,6 +19,9 @@ import { GAMEPAD_BUTTONS, GAMEPAD_AXES } from './gamepadPrefs';
 import { GAME_SOUNDS as GAME_SOUND_NAMES } from './gameSfx';
 import { HAPTIC_PATTERN_NAMES } from './hapticPatterns';
 import { MUSIC_PRESET_IDS } from './gameMusicPresets';
+// 34 R2: the kit's node groups (a pure leaf over the piece specs)
+import { kitCatalogGroups } from './kit/catalog.js';
+import { BEHAVIOUR_STARTER } from './behaviours/starter.js';
 /** Announce's value mark, spelled once OUTSIDE the catalog literals: a brace inside a node's
  * strings breaks the brace-matching scan flow-node-docs reads this file with */
 const V_MARK = '{v}';
@@ -636,6 +639,10 @@ export const nodeCatalog = [
 						'object.position.y = base.pos[1] + Math.sin(time * 2) * 0.5;\n'
 				}
 			},
+			// 34 R3 (D1): a BEHAVIOUR — game logic as a .js file in data.code (behaviours/app.js
+			// loads it; the node has no sockets: it listens to kit events, and Open view shows its
+			// derived live node view)
+			{ type: 'behaviour', label: 'Behaviour', defaults: { name: 'Behaviour', enabled: true, code: BEHAVIOUR_STARTER } },
 			// 133: pure logic on wired inputs (deterministic, no streaming)
 			{ type: 'math', label: 'Math', defaults: { op: 'add', a: 0, b: 0 } },
 			{ type: 'compare', label: 'Compare', defaults: { op: 'gt', a: 0, b: 0 } },
@@ -1091,7 +1098,10 @@ export const nodeCatalog = [
 			// peer synthesizes the note itself (once per pulse per peer)
 			{ type: 'notetrigger', label: 'Note Trigger', defaults: { note: 60, velocity: 0.9 } }
 		]
-	}
+	},
+	// 34 R2 (T3): the game kit — one group per piece, GENERATED from the piece specs
+	// (src/lib/kit/<piece>.spec.js), the same spec that builds api.kit.<piece>
+	...kitCatalogGroups()
 ];
 
 // Node types the animation runtime evaluates every frame (134 adds the base-

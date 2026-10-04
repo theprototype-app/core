@@ -1,8 +1,9 @@
 <script lang="ts">
-	import { Handle, Position, type NodeProps } from '@xyflow/svelte';
+	import { Position, type NodeProps } from '@xyflow/svelte';
 	import Socket from './Socket.svelte';
 	import NodeWrapper from './NodeWrapper.svelte';
-	import { scriptEditorOpen, scriptErrors } from '../../../stores/flowStore';
+	import { scriptEditorOpen, scriptErrors, flowValues } from '../../../stores/flowStore';
+	import { scriptInputs, scriptOutputs } from '$lib/scriptIO';
 
 	type $$Props = NodeProps;
 	export let id: string;
@@ -10,18 +11,51 @@
 
 	$: error = $scriptErrors[id];
 	$: lines = (data.code ?? '').split('\n').filter((l) => l.trim() && !l.trim().startsWith('//')).length;
+	// 34 D3: declared sockets make it v2. With no declaration the card is the v1 card,
+	// byte-for-byte: the a/b/c inputs and the effect output.
+	$: inputs = scriptInputs(data);
+	$: outputs = scriptOutputs(data);
+	$: live = ($flowValues[id] as any)?.__handles ?? null;
+
+	function fmt(v: any) {
+		if (v === undefined || v === null) return '–';
+		if (typeof v === 'number') return String(Math.round(v * 1000) / 1000);
+		if (Array.isArray(v)) return v.map((n) => Math.round(Number(n) * 100) / 100).join(', ');
+		return String(v);
+	}
 </script>
 
 <NodeWrapper type={data.type} label={data.label}>
-	<Socket kind="source" nodeType={data.type} position={Position.Right} />
-	<!-- 133: wire value nodes into data.a / data.b / data.c for the code to read -->
-	<Socket kind="target" nodeType={data.type} position={Position.Left} id="a" style="top: 30px" />
-	<Socket kind="target" nodeType={data.type} position={Position.Left} id="b" style="top: 52px" />
-	<Socket kind="target" nodeType={data.type} position={Position.Left} id="c" style="top: 74px" />
+	{#if !inputs}
+		<!-- 133: wire value nodes into data.a / data.b / data.c for the code to read -->
+		<Socket kind="target" nodeType={data.type} position={Position.Left} id="a" style="top: 30px" />
+		<Socket kind="target" nodeType={data.type} position={Position.Left} id="b" style="top: 52px" />
+		<Socket kind="target" nodeType={data.type} position={Position.Left} id="c" style="top: 74px" />
+	{/if}
+	{#if !outputs.length}
+		<Socket kind="source" nodeType={data.type} position={Position.Right} />
+	{/if}
 	<div class="flex w-full flex-col gap-1">
 		{#if data.name}
 			<span class="overflow-hidden text-ellipsis whitespace-nowrap text-xs text-gray-200" title={data.name}>{data.name}</span>
 		{/if}
+		{#if inputs}
+			<!-- one labelled ROW per declared socket, the handle anchored to its row (the
+			     ObjectFlowNode shape) so the card stretches with the declaration -->
+			{#each inputs as socket (socket.name)}
+				<div class="script-in relative -mx-3 flex h-5 items-center px-3" data-socket={socket.name}>
+					<Socket kind="target" nodeType="script" id={socket.name} position={Position.Left} forceType={socket.type} style="top: 50%;" />
+					<span class="max-w-full truncate text-[10px] text-gray-300">{socket.name} <span class="text-gray-500">{socket.type}</span></span>
+				</div>
+			{/each}
+		{/if}
+		{#each outputs as socket (socket.name)}
+			<div class="script-out relative -mx-3 flex h-5 items-center justify-end gap-1 px-3" data-socket={socket.name}>
+				<span class="max-w-[90px] truncate font-mono text-[10px] text-sky-300" title="live value">{fmt(live?.[socket.name])}</span>
+				<span class="truncate text-[10px] text-gray-300">{socket.name}</span>
+				<Socket kind="source" nodeType="script" id={socket.name} position={Position.Right} forceType={socket.type} style="top: 50%;" />
+			</div>
+		{/each}
 		<span class="text-[10px] text-gray-400">{lines} line{lines === 1 ? '' : 's'} of code</span>
 		<button
 			class="nodrag rounded-sm bg-[#ff4000] px-2 py-0.5 text-white"

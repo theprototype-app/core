@@ -1,6 +1,7 @@
 // The flow node MANUAL: one line per node, the single source the palette tooltip, the
 // editor's info pane, the docs-site reference table and the no-browser guard test all read
-// (23-D4, the shaderCatalog DOCS precedent). PURE - no imports - so a node script can load it.
+// (23-D4, the shaderCatalog DOCS precedent). PURE - the one import is the kit's pure catalog leaf -
+// so a node script can load it.
 //
 // Documentation drifts by omission: someone adds a node and nobody notices it has no
 // description until a user asks what it does. tests/e2e/flow-node-docs.test.cjs asserts every
@@ -9,8 +10,11 @@
 // Say what the node DOES and what it is FOR, in one sentence a newcomer can act on; never
 // merely restate the label.
 
+import { kitNodeDoc } from './kit/catalog.js';
+
 /** @type {Record<string, string>} type -> one line */
 export const NODE_DOCS = {
+	behaviour: "Game logic written as a small JavaScript file (params, replicated state, event handlers, kit calls) - run once on the authority peer, with a live node view of its events, state and knobs.",
 	slider: "An interactive slider that outputs a number - the quickest way to hand-tune any numeric input live.",
 	colorpicker: "Outputs a color chosen with a swatch - the color source for anything that paints.",
 	switcher: "A radio-button list that outputs the index of the selected item - a hand-operated multi-way switch.",
@@ -54,12 +58,16 @@ export const NODE_DOCS = {
 	camerafollow: "Makes the camera follow the connected object at a set distance and height - a third-person or chase view.",
 	movespeed: "Overrides the character's walking speed while a value is wired - sprint, mud, slow motion.",
 	hudscreen: "Shows or hides a whole HUD screen (a named layer of elements) while its condition holds.",
+	hudtext: "Writes a number into a HUD text element through a format such as 'Gems: {v}' - a score, a count, a readout.",
+	hudtimer: "Runs a countdown in a HUD text element from its duration, formatted like '{v}s' - starts by itself or on a pulse.",
 	hudbar: "Drives a HUD bar element's fill from a number - health, fuel, progress.",
 	hudbutton: "Fires a pulse when a HUD button is pressed - the on-screen counterpart of On Click.",
 	hudlist: "Fills a HUD list element with the items a value provides - an inventory, objectives, players.",
+	leaderboard: "Ranks the players by their own per-player variable (laps, score) into a HUD element, highest or lowest first, top N rows.",
 	hudrows: "Appends or replaces rows in a HUD rows element from a pulse - a log, a chat, a scoreboard feed.",
 	hudinput: "Reads what the player typed into a HUD input element as a value.",
 	hudset: "Writes a value into a HUD input element when a pulse arrives - to prefill, clear or correct it.",
+	script: "Your own JavaScript - an effect that moves its object every frame, or (with declared typed inputs and outputs) a small pure function whose return feeds other nodes.",
 	math: "Combines two numbers with an arithmetic operation.",
 	compare: "Compares two numbers and outputs true or false.",
 	gate: "Boolean logic on two inputs - AND, OR, NOT, XOR.",
@@ -117,5 +125,7 @@ export const NODE_DOCS = {
 
 /** the one-line manual for a node type, or '' for a type without one (a module's node) @param {string} type */
 export function nodeDoc(type) {
-	return NODE_DOCS[typeof type === 'string' ? type : ''] ?? '';
+	const key = typeof type === 'string' ? type : '';
+	// 34 R2: a kit node's line is its piece spec's `doc` (the one spec the api and the node share)
+	return NODE_DOCS[key] ?? (key.startsWith('kit-') ? kitNodeDoc(key) : '') ?? '';
 }

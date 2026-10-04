@@ -100,22 +100,14 @@ h.run(async () => {
 	);
 	h.check(hook.registered === true, '0.4 startColocationAnchors ran at boot (App.svelte onMount)');
 
-	// the three tails of App.svelte's debug hook must have the same length — read the
-	// SOURCE, because a shifted destructure is exactly the failure the page cannot see
-	const appSrc = fs.readFileSync(path.join(__dirname, '..', '..', 'src', 'App.svelte'), 'utf8');
-	const block = appSrc.slice(appSrc.indexOf('Promise.all(['), appSrc.indexOf('window.__stores'));
-	const imports = (block.match(/import\(/g) || []).length;
-	const destructured = block
-		.slice(block.indexOf('.then(([') + 8, block.indexOf(']) => {'))
-		.split(',').length;
-	const objLine = appSrc.slice(
-		appSrc.indexOf('window.__stores = {'),
-		appSrc.indexOf('\n', appSrc.indexOf('window.__stores = {'))
-	);
-	const storeKeys = objLine.slice(objLine.indexOf('{') + 1, objLine.lastIndexOf('}')).split(',').length;
+	// 34 R4 (A2): the hook is ONE table ($lib/debugHooks.js, one row per hook) — no positional
+	// tails left to shift; assert this suite's two rows are there, named once
+	const hooksSrc = fs.readFileSync(path.join(__dirname, '..', '..', 'src', 'lib', 'debugHooks.js'), 'utf8');
+	const rows = hooksSrc.split('\n').filter((l) => /^\t\['/.test(l));
+	const once = (/** @type {string} */ name) => rows.filter((l) => l.startsWith("\t['" + name + "', ")).length === 1;
 	h.check(
-		imports === destructured && storeKeys === imports,
-		'0.5 the three tails agree (' + imports + '/' + destructured + '/' + storeKeys + ')'
+		rows.length > 100 && once('xrAnchors') && once('colocationAnchors'),
+		'0.5 the debug-hook table lists xrAnchors + colocationAnchors once each (' + rows.length + ' rows)'
 	);
 
 	// ---------------------------------------------------------------- section 1

@@ -1,5 +1,5 @@
 // Roadmap #9 + dock rework: the Flow tab "+" adds views; "Flow Code" opens an editable
-// JSON view of the graph as a DOCKED tab (starts docked). Verifies the "+" menu, the
+// view of the graph as a DOCKED tab (starts docked) — compact text by default since 34 D4. Verifies the "+" menu, the
 // docked view opening, and that it seeds from the live graph. (Apply round-trip is
 // exercised manually — CodeMirror auto-close makes raw-JSON typing unreliable headless.)
 const h = require('./helpers.cjs');
@@ -36,9 +36,14 @@ h.run(async () => {
 	});
 	h.check(win, 'clicking Flow Code opens the Flow Code docked tab');
 
+	// 34 D4: the view opens in the compact TEXT format by default; JSON is one click away
 	const seeded = await A.page.evaluate(() => (document.querySelector('#flow-code-dock .cm-content')?.textContent || ''));
-	h.check(seeded.includes('seedNode'), 'Flow Code seeds the current graph as JSON');
-	h.check(seeded.includes('"nodes"') && seeded.includes('"edges"'), 'the JSON has nodes + edges keys');
+	h.check(seeded.includes('seedNode = number+ {value: 5} @10,10 noclass'), 'Flow Code seeds the current graph as compact text: ' + JSON.stringify(seeded.slice(0, 80)));
+	await A.page.locator('#flow-code-dock #flow-code-format-json').click();
+	await A.page.waitForTimeout(400);
+	const json = await A.page.evaluate(() => (document.querySelector('#flow-code-dock .cm-content')?.textContent || ''));
+	h.check(json.includes('seedNode') && json.includes('"nodes"') && json.includes('"edges"'), 'the JSON format still has nodes + edges keys');
+	await A.page.locator('#flow-code-dock #flow-code-format-text').click();
 
 	await h.finish(browser);
 });

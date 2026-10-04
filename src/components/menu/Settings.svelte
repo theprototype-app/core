@@ -14,6 +14,7 @@
 	import { flowMouseBindings, FLOW_MOUSE_BINDINGS } from '$lib/flowPrefs';
 	import { helpersInPlay } from '$lib/helperLayer';
 	import { perfStatsShown } from '$lib/fpsMeter';
+	import { perfReportsOn, perfReportsAvailable } from '$lib/perf/beacon';
 	import { gamepadPrefs, setGamepadPrefs, DEADZONE_RANGE, SENSITIVITY_RANGE } from '$lib/gamepadPrefs';
 	import { drawerSlot, cloudPluginInfo } from '$lib/cloudHooks';
 	import { versionString } from '$lib/version.js';
@@ -851,6 +852,14 @@
 						corner of the viewport and, in a headset, on a strip at the top of the view. The draw
 						calls turn amber past 120 and red past 150, the practical limit on a Quest
 					</SettingRow>
+					{#if $perfReportsAvailable}
+						<SettingRow name="Send performance reports">
+							<svelte:fragment slot="control"><Toggle id="send-perf-reports" bind:checked={$perfReportsOn} /></svelte:fragment>
+							Every 10 seconds, send this device's frame times, draw calls, triangles, quality level and
+							module versions (no account, no scene content) so slow spots on real devices get fixed.
+							A dot on the FPS counter shows it is on. Off by default
+						</SettingRow>
+					{/if}
 					<SettingRow name="Dock resizes the viewport">
 						<svelte:fragment slot="control">
 							<Toggle

@@ -15,6 +15,7 @@ import { setMicMode, vrMicMode } from './voiceChat';
 import { duplicateSelection, deleteSelection, groupSelection, selectionUuids } from './objectActions';
 import { savePrefab, savePrefabSelection } from './prefabs';
 import { safeStorage } from './safeStorage';
+import { perfContext } from './perf/perfMarks.js'; // 34 PF: an import-free leaf
 
 // D4 (roadmap 13): selection-set helpers for the Edit ring — counted labels
 // act on the whole SET (parity with the desktop object menu, U-2)
@@ -327,6 +328,50 @@ function registerBuiltins() {
 		}
 	});
 	registerVRMenuEntry({ id: 'stats', group: 'system', label: 'Statistics', order: 4 });
+	// 34 PF: Profile ▸ — record the headset (light / detailed), stop, and "Report this moment"
+	// (34 R1: 30 s of frame data + the eye screenshot + an optional note the VR keyboard asks
+	// for). Labels and visibility read the recorder through the perfMarks LEAF, and every
+	// action is a dynamic import: the perf modules stay out of the VR import family.
+	registerVRMenuEntry({ id: 'nav:profile', group: 'system', label: 'Profile ▸', order: 4.5, ring: 'profile', active: () => !!perfContext('recording') });
+	const recording = () => !!perfContext('recording');
+	registerVRMenuEntry({
+		id: 'perf:record',
+		group: 'profile',
+		label: 'Record',
+		order: 0,
+		closes: true,
+		visible: () => !recording(),
+		action: () => void import('./perf/recorder.js').then((r) => r.startRecording({ mode: 'light' }))
+	});
+	registerVRMenuEntry({
+		id: 'perf:detailed',
+		group: 'profile',
+		label: 'Record detailed',
+		order: 1,
+		closes: true,
+		visible: () => !recording(),
+		action: () => void import('./perf/recorder.js').then((r) => r.startRecording({ mode: 'detailed' }))
+	});
+	registerVRMenuEntry({
+		id: 'perf:stop',
+		group: 'profile',
+		label: 'Stop recording',
+		order: 0,
+		closes: true,
+		active: () => true,
+		visible: recording,
+		action: () => void import('./perf/recorder.js').then((r) => r.stopRecording())
+	});
+	registerVRMenuEntry({
+		id: 'moment',
+		group: 'profile',
+		label: 'Report moment',
+		order: 2,
+		closes: true,
+		action: () => {
+			void Promise.all([import('./perf/moment.js'), import('./vrKeyboard.js')]).then(([m, k]) => m.vrReportMoment(k.openVRKeyboard));
+		}
+	});
 	registerVRMenuEntry({ id: 'grabmode', group: 'system', label: 'Grab mode', order: 5 });
 	registerVRMenuEntry({ id: 'nav:mic', label: 'Mic ▸', group: 'system', order: 6, ring: 'mic' });
 	registerVRMenuEntry({ id: 'exitvr', group: 'system', label: 'Exit VR', order: 7 });

@@ -403,7 +403,8 @@ h.run(async () => {
 	await clickAdd();
 	await A.page.waitForTimeout(400);
 	let rows = await menuRows();
-	h.check(rows.length === 5, `7.1 with flow + Explorer docked the ＋ menu lists 5 views (${rows.length})`);
+	// 34 PF: six since the Profiler joined the dock views
+	h.check(rows.length === 6, `7.1 with flow + Explorer docked the ＋ menu lists 6 views (${rows.length})`);
 	h.check(
 		!rows.some((r) => /Explorer/.test(r.label)) && !rows.some((r) => /Node editor/.test(r.label)),
 		`7.2 ...and neither of the two already in the dock (${rows.map((r) => r.label).join(' | ')})`
@@ -420,7 +421,7 @@ h.run(async () => {
 	await A.page.waitForTimeout(400);
 	rows = await menuRows();
 	h.check(
-		rows.length === 4 && !rows.some((r) => /Flow Code/.test(r.label)),
+		rows.length === 5 && !rows.some((r) => /Flow Code/.test(r.label)),
 		`7.3 docking Flow Code drops it from the list too (${rows.length}: ${rows.map((r) => r.label).join(' | ')})`
 	);
 	await closeMenu();

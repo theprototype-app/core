@@ -52,6 +52,130 @@ Peers exchange `{id, version}` lists when they connect and warn when a module is
 missing or a different version on the other side. That's advisory — the session
 still works, but replicated behavior of that module may differ.
 
+## The lifecycle: load, unload, reload (34 R6)
+
+A module can be **unloaded and loaded again while the app runs** — switched off in the
+Modules manager (core modules too, since 1.20), removed, updated, dev-reloaded from its Dev
+URL, or unloaded by a scene switch. `unloadModule(id)` takes down **everything the module
+registered**, newest first, and `register(api)` can then run again with fresh code. Nothing
+needs a page reload, and nothing is left running for a module that is gone.
+
+**What is undone for you.** Every registration you make through `api` is recorded in the
+module's lifecycle registry (one registry, keyed by your module id — `src/lib/sdk/lifecycle.js`)
+and undone at unload: node groups, effects, value nodes, node defs you seeded and the user did
+not edit, primitives, click/drop handlers, frame tasks, scene-clear hooks, interactive / system /
+listed groups (the scene-root group is removed AND its geometries, materials and textures are
+freed), the spawn override, message handlers and state sync, menus, toolboxes (closed) and their
+shortcuts, VR menu entries, key bindings, input listeners and claims, possess, the follow camera,
+VR panels, hit listeners, your music track, game levels / settings rows / help / restart hooks /
+the forced menu, LOD handles, quality / flow / game / settings / peer-variable listeners, unwrap /
+shader / post backends, post effects, audio device kinds, engine voices (`api.audio.voice`),
+transport events (`api.audio.schedule`), your copy of the mic stream, a recording you started,
+HUD rows / debug lines / actions / element kinds.
+
+Every `off()` the api hands you still works, and calling it early also drops the registry
+entry — subscribe and unsubscribe as often as you like. A call that REPLACES (`api.game.levels`
+called on every unlock, `setHelp`, `addSetting` with the same id, a toolbox or VR menu entry
+re-registered under the same id) replaces its entry rather than stacking one per call.
+
+**What stays.** What your module created in the SHARED scene (`api.create`, objects in
+`objectsGroup`, nodes from `api.flow.addNodes`, audio devices and cables, node data you wrote)
+is user content: it stays, replicated, like anything a person made. So do the shared game
+variables and your peer-variable row, and what you saved on this device with `api.storage`
+(a reinstall keeps progress; `storage.clear()` is your reset).
+
+**What only you know about — four tools:**
+
+```js
+// your own teardown: a DOM overlay you appended, a worker, a cache, a raw WebAudio graph
+// you built on api.audio.context(). Runs at unload (newest first, so a hook added at the
+// end of register() runs while everything before it is still in place). Returns cancel().
+api.onUnload(() => overlay.remove());
+
+// timers that die with the module (the window's signatures) + what is pending right now
+const h = api.timers.setInterval(refresh, 500);
+api.timers.clearInterval(h);
+api.timers.setTimeout(fn, ms); api.timers.requestAnimationFrame(loop);
+api.timers.pending(); // {timeouts, intervals, frames}
+
+// an event listener removed at unload — window, document, the canvas, anything; returns off()
+const off = api.listen(window, 'keydown', onKey, true);
+
+// a scene-root object that is YOURS: removed at unload, its GPU resources freed (shared
+// ones kept). Returns the object, so: api.scene().add(api.own(group)). Never for content
+// inside objectsGroup (that is shared — it is left alone).
+api.own(group);
+```
+
+**Installed modules (zip / URL) get timers and window listeners tracked automatically.** The
+entry is evaluated with its bare `setTimeout` / `clearTimeout` / `setInterval` /
+`clearInterval` / `requestAnimationFrame` / `cancelAnimationFrame` bound to tracked ones (a
+one-line prologue on line 1, so line numbers in stack traces are unchanged), and a listener
+your code adds to `window` or `document` is recorded too — at unload they are cleared and
+removed. Two edges: `window.setTimeout(...)` (or a listener on any other target) is not
+tracked — use `api.timers` / `api.listen`; and a module that declares one of those six names
+itself at top level is loaded without the prologue (its timers then untracked). A core module
+(in `src/modules/`) uses `api.timers` / `api.listen` explicitly.
+
+**Keep state inside `register()`.** The browser keeps every imported module's TOP-LEVEL scope
+for the life of the page (an ES module is never unloaded), so module-level variables, caches and
+DOM survive an unload — the next load starts from them. State declared inside `register()` is
+fresh every time; module-level state you must reset belongs in `api.onUnload`. Each reload
+of an installed module also keeps the evaluated source itself, so a large module costs some
+heap per reload — fine for a development loop, not something to do every second. (Measured
+with `module-lifecycle-repo`, 3 cycles each: 19 of the 20 repo modules reload flat; Waves keeps
+one DOM node and ~0.3 MB of heap per reload.)
+
+### Adding an SDK surface (core contributors)
+
+Every member of the api declares what it does to a module's lifecycle, beside its slice
+(`src/lib/sdk/<name>.js`):
+
+```js
+export function sdkThing(ctx) {
+	const { moduleId, onDispose, owned } = ctx;
+	return {
+		registerThing(spec) {
+			thingRegistry.set(key, spec);
+			// the undo, journaled with a KIND (the debug view names it); `{key}` makes a
+			// re-registration under the same key REPLACE its entry
+			onDispose(() => thingRegistry.delete(key), 'thing', { key: 'thing:' + key });
+		},
+		onThing(fn) {
+			// a registration that hands back an off(): owned() returns an off that also
+			// drops the journal entry
+			return owned('thing.listener', subscribe(fn));
+		},
+		thingCount: () => thingRegistry.size
+	};
+}
+sdkThing.surface = { registerThing: 'registers', onThing: 'registers', thingCount: 'read' };
+```
+
+- Kinds: `registers` (leaves something behind: MUST journal its undo), `action` (does
+  something now, leaves nothing of the module's), `content` (shared, replicated content that
+  deliberately survives an unload), `read`, `value` (a non-function).
+- A `registers` member needs a fixture in `tests/fixtures/sdkLifecycleFixtures.js`: register
+  it from a real module, read CORE's registry (never the journal), unload, read it gone. The
+  vitest `moduleLifecycle` fails for an undeclared member, a stale declaration, a `registers`
+  member with no fixture, and a fixture whose registration survives `unloadModule`; the
+  browser suite `module-lifecycle` runs the members node cannot load.
+- **Async registrations journal SYNCHRONOUSLY.** A disposer recorded inside an
+  `import().then` lands in the module's NEXT journal whenever an unload comes first — the
+  registration then outlives the unload. Record it before the import and let a late
+  registration undo itself:
+  `let off = null, gone = false; onDispose(() => { gone = true; off?.(); }, 'kind');
+  import('../x').then((m) => { off = m.register(...); if (gone) off(); });`
+- A core subsystem acting FOR a module outside the api (kit entities, loaded models) records
+  its undo with `trackModuleResource(moduleId, kind, undo)` from `moduleSDK.js`.
+- Debug: `__stores.moduleSDK.registrationsOf(id)` / `allRegistrations()` (live entries by
+  kind), `moduleScopeDebug()` (an installed module's tracked timers + listeners),
+  `unloadModule(id)` returns what it disposed, by kind.
+- Tests: vitest `moduleLifecycle`; e2e `module-lifecycle` (the browser contract, an installed
+  probe module, and the leak test: each bundled module unloaded/loaded 3x with handlers,
+  nodes, audio connections, timers, meshes, materials, GPU memory, DOM, JS listeners and the
+  heap measured) and `module-lifecycle-repo` (every zip in the modules repo through 3 cycles).
+
 ## API reference (v1)
 
 ### Flow nodes
@@ -484,6 +608,43 @@ if (api.storage) {
 Feature-detect it; on an older app write the SAME key yourself
 (`localStorage['tp:mod:<id>:<key>'] = JSON.stringify(value)`) so progress carries over.
 
+### Models: `api.loadModel` (1.20, roadmap 34 R7)
+
+Load a `.glb` / `.gltf` through core's OWN loader — the scene's `THREE` (never bundle three's
+`GLTFLoader` into a module: it drags in a second three whose classes are not the scene's), with
+Draco, Meshopt and KTX2 decoders (the Basis transcoder is fetched only for a file that carries
+`KHR_texture_basisu`), parsed ONCE per URL and shared by every module that asks.
+
+```js
+// a file your module PACKAGED (list it in manifest.json `files`) — or any URL
+const enemy = await api.loadModel('assets/enemy.glb', { castShadow: false });
+group.add(enemy.scene);                       // your own copy (another module's tweaks never reach it)
+const next = enemy.instance({ ownMaterials: true }); // another copy: its OWN bones when skinned,
+group.add(next);                                     // its own materials (a hit flash paints one)
+const mixer = new api.THREE.AnimationMixer(next);
+mixer.clipAction(enemy.animations.find((c) => c.name === 'walk')).play();
+enemy.info;            // {meshes, triangles, materials, textures, skinned}
+enemy.release(next);   // forget one copy now (out of the scene, LOD dropped, own materials freed)
+enemy.dispose();       // forget them all — your module's unload does this for you
+```
+
+Options (all optional): `lod` — absent / `'auto'` = automatic levels (31-perf, meshes over 3000
+triangles; a URL that is a PACK item whose row lists `lods` uses those files instead), `false` =
+none, `{ratios, distances, minTriangles}` = tuned automatic levels, `[{file, ratio}]` = pre-built
+level FILES beside the model (contract P1: `'tree.lod1.glb'` next to `'assets/tree.glb'`), drawn
+as a LOD group wherever you put the copy. `castShadow` / `receiveShadow` = every mesh (absent =
+as the file says, which is off). `collider: 'box'|'sphere'|'capsule'|'cylinder'|'cone'|'hull'` =
+the physics shape a copy takes once it is SCENE content with physics (`userData.colliderHint`;
+your scene-root visuals have no colliders — publish a `userData.play` raster for walls).
+`ownMaterials` = every copy gets its own materials.
+
+Lifetime: everything a module loaded is released when it is disabled or unloaded (a copy you put
+in `objectsGroup` stays — it is the scene's). A copy you drop WITHOUT `release()` (its wrapper
+removed) is noticed within ~2 s, its LOD entry dropped and only weakly held, so it is collected;
+put back, it is picked up again. A load still in flight when the module unloads rejects.
+Rejects with the reason when the file is missing or cannot be parsed — keep a fallback look.
+Feature-detect it (`typeof api.loadModel === 'function'`): 1.19 and older cores do not have it.
+
 ### Performance: quality level, LOD, budgets (1.18, roadmap 31)
 
 ```js
@@ -777,6 +938,124 @@ api.game.closeMenu?.();
 if (api.game.menuOpen?.()) pauseMyTimers();
 ```
 
+### The game kit: rules, round, levels, score, pickups — `api.kit` (1.20, roadmap 34)
+
+The logic every game used to re-build, done ONCE in core. Each piece is `api.kit.<piece>` AND a
+**Kit: <Piece>** node group, both generated from one spec (`src/lib/kit/<piece>.spec.js`), so a
+graph author and a code author get the same behaviour and the same words.
+
+**The model — one writer.** The kit's shared state is ONE document that only the **authority**
+peer changes (the physics initiator, else the lowest peer id — the peer Towers and Football
+already pick). Call an action on ANY peer: elsewhere it is a request the authority applies,
+exactly once. A kit **node** on a replicated pulse is asked by every peer with the same id, so
+one press is one change (the `setvariable add` double count cannot happen). Reads are
+replicated values; `on<Event>(fn)` fires on EVERY peer (play your sound there) and returns
+`off`; registrations (`levels.define`, `pickups.register`, `rules.onGrabRequest`) are torn down
+with your module. Late joiners get the document in the handshake and hear no history. A scene
+clear resets the kit.
+
+```js
+const { round, levels, score, pickups, rules } = api.kit;
+rules.set({ reach: 1.3, jump: 1.0 });                 // every grab path + the VR jump obey
+rules.onGrabRequest((req) => { if (req.name === 'Star' && !starFree) req.refuse('Build to the ring first'); });
+levels.define({ id: 'mygame', list: [{ id: '1', label: 'Easy', par: { time: 60 } }, { id: '2', label: 'Hard' }] });
+round.configure(3, 120, 'lose', 2);                   // 3 s intro, 2 min limit, lose on time, 2 s outro
+round.onGo(() => api.announce('Go!'));
+pickups.register({ id: gem.uuid, score: 10, respawn: 8, grants: { time: 5 } });
+pickups.onCollected(({ by }) => api.playSound('coin'));
+round.onWon(() => levels.complete(true, score.total()));   // stars, unlocks, saved per device
+levels.select('1'); round.start();
+```
+
+| piece | actions | reads | events |
+|---|---|---|---|
+| `rules` | `setReach(m)` `setJump(m)` `setBounds(min, max)` `clearRules()` · `set({reach, jump, bounds})` | `reach()` `jump()` `current()` `inside(p)` `clamp(p)` `checkGrab(req)` | `refused` (local) · `onGrabRequest(fn)` veto |
+| `round` | `configure(intro, limit, 'lose'\|'win', outro)` `start()` `restart()` `pause()` `resume()` `win(reason)` `lose(reason)` `extend(s)` `toMenu()` | `phase()` `playing()` `elapsed()` `remaining()` `countdown()` `number()` `outcome()` `state()` `running()` | `started` `go` `paused` `resumed` `won` `lost` `results` `menu` |
+| `levels` | `select(id)` `next()` `complete(won, score, time, level?, detail?)` `setMode(m)` · `define({id, list, unlock?, stars?, store?, merge?})` | `current()` `currentLabel()` `index()` `starsOf(id)` `unlocked(id)` `totalStars()` `mode()` `table()` `progress()` `resumeLevel()` | `selected` `completed` `unlockedNext` |
+| `score` | `add(n, player?)` `set(n, player?)` `reset()` · `configure({autoReset})` `useGame(id)` | `total()` `mine()` `best()` `leader()` `of(id)` `leaderboard(n)` `results()` | `scored` `newBest` (local) |
+| `pickups` | `collect(id, score?, respawn?)` `resetPickups()` · `register({id, score, respawn, radius, grants})` | `available(id)` `taken()` `left()` `takenBy(id)` | `collected` `respawned` `allCollected` |
+
+- **`round` drives core's game singleton** (`intro`/`playing` → playing with a fresh core round,
+  so perRound content resets; `paused`; `won`/`lost` → over with the reason as outcome; `menu`),
+  so HUD `showWhile` screens and the pause menu keep working, and it ADOPTS a change it did not
+  make (a Set Game State node pausing). `restart()` works while playing; the pause menu's Restart
+  restarts a kit round by itself.
+- **`levels`**: progress is per DEVICE (every peer saves what it saw earned); unlocks read it
+  merged with this session's results; `setMode` keeps the current level (progress belongs to the
+  level, not the mode). The table feeds the pause menu's level picker — do not also call
+  `api.game.levels`. `store: {get, set}` keeps your own save key (Towers keeps
+  `tp:mod:towers:progress`).
+- **`score`** credits the asking peer unless a player is named (a shared pulse is asked by every
+  peer — name the player, or use a per-player trigger, when it matters who). A new kit round
+  zeroes it; the device best is checked when a round ends.
+- **`pickups`**: TOUCH is built in — a player walking into a registered pickup takes it (their
+  own body, ~10x a second, in Interact/Play). A `Kit: Pickups ▸ Collect pickup` node with no
+  object wired takes its own graph's object.
+- Prove your rules on the **headless logic sim** (`tests/unit/sim/logicSim.js`: N fake peers, a
+  fake clock, the real wire validator) — `createSim({peers: ['a', 'b']})`, then
+  `sim.peer('a').kit.impls.round.start(); sim.advance(3000)` — milliseconds, not e2e minutes.
+
+### Behaviours: game logic as a small file, with a live node view (1.20, roadmap 34 R3)
+
+A **behaviour** is game logic written as ONE self-contained JavaScript file — the code half of
+"nodes vs code" (proposal §4): plain JS for what is a loop or a rule, a derived node view for
+seeing it run. Add a **Behaviour** node (palette: Logic) to the scene graph (or an object's
+graph — then `this.object` is that object) and write the file into it; **Open view** shows it.
+
+```js
+export default behaviour({
+	name: 'Waves spawner',
+	params: { interval: { value: 3, min: 0, max: 30, step: 0.5, unit: 's' }, waves: 5 },
+	state: { wave: 0, alive: 0 },                      // replicated: every peer reads it
+	on: {
+		go() { this.startWave(1); },                   // kit.round's "go"
+		died({ entity }) {                             // kit.health's "died", typed payload
+			if (!entity.is('robot')) return;
+			if (--this.state.alive === 0) this.after(this.params.interval, 'startWave', this.state.wave + 1);
+		}
+	},
+	startWave(n) {
+		if (n > this.params.waves) return kit.round.win('All waves cleared');
+		this.state.wave = n;
+		this.state.alive = n + 1;
+		kit.spawner.spawn({ kind: 'robot', template: this.find('Robot')?.uuid, count: n + 1, mover: { speed: 1.3 } });
+	}
+});
+```
+
+- **params** — a literal (`waves: 5`) or `{value, min, max, step, unit}`; read as `this.params.x`.
+  In the node view each is a KNOB: dragging previews on your device, releasing rewrites the
+  literal in the file (one edit, one undo entry) and every peer reloads with it.
+- **state** — plain JSON. Handlers run on ONE peer, the kit's **authority**; after each one the
+  state is sent to everybody (`bhv`, latest-wins). A late joiner gets it in the handshake; when
+  the authority leaves, the next one carries on from it. A source edit keeps it.
+- **on** — event handlers: `start` (once per session), `grabRequest({piece, distance, refuse})`
+  (the kit.rules veto, asked on the GRABBING peer — read-only there), and every kit event as
+  `'piece.event'`, `pieceEvent` or a short alias (`roundStart`, `go`, `won`, `lost`, `died`,
+  `damaged`, `spawned`, `emptied`, `scored`, `collected`, `stuck`, `grabRefused`). An entity in a
+  payload has `is(glob)` / `hasTag(tag)`.
+- **methods** — any other function: `this.name(...)`.
+- **this** — `params`, `state`, `kit` (also bare `kit`), `after(s, 'method', ...args)` (session
+  clock; a method NAME survives the authority leaving, a closure does not), `cancel(key)`,
+  `rand()` / `randInt(a, b)` / `pick(list)` (seeded per event — never `Math.random`), `now()`,
+  `find(glob)` / `findAll(glob)` (scene objects by name or tag: `{uuid, name, pos, tags}`),
+  `object`, `isAuthority()`, `me()`, `log(...)`. Bare helpers: `dist(a, b)`, `clamp`, `lerp`.
+- **The lint** stops a file from loading (on every peer, with the line) when it uses what would
+  make peers disagree or reach outside the game: `Math.random`, `Date`/`Date.now`/
+  `performance.now`, storage, the DOM/`window`/`globalThis`, network, `eval`/`Function`, bare
+  timers, `import`. Loops run under the loop guard (a runaway handler throws, the game goes on).
+- **Lifecycle (T2)** — each behaviour is a module of its own (`behaviour:<nodeId>`): its kit
+  listeners and the entities it spawned are tracked; deleting or stopping the node takes them
+  away. Editing the source does NOT: the definition is swapped, the game keeps running.
+- **The node view** (derived, read-only): ⚡ events → ƒ handlers/methods → ▣ state, ⊕ kit calls
+  (named exactly as the generated **Kit:** nodes), ⏱ timers, ✋ payload actions; ◆ params with
+  knobs. Live values 10x a second, a glow on what just fired (on every peer), timer countdowns,
+  errors with their line. Logic edits happen in the code (the view's **Code** panel).
+- Prove a behaviour on the **logic sim**: `tests/unit/sim/behaviourSim.js` —
+  `const sim = createBehaviourSim({peers: ['a', 'b']}); await sim.load('w', source);` then drive
+  the kit and assert `sim.states('w')`. Examples: `static/behaviours/waves-spawner.js`,
+  `static/behaviours/towers-reach.js`.
+
 ### Physics (P-A)
 
 All mutations are INITIATOR-ONLY — the peer that started the simulation steps
@@ -984,13 +1263,17 @@ small graph; the module is the rules. Worth copying:
 - **Progress on this device** with `api.storage` (stars, unlocks — never replicated).
 - **The shell's level picker, help and restart** (`api.game.levels`, `setHelp`, `onRestart`),
   feature-detected so the module also runs on an app without them.
+- **Since 1.20 it runs on the game kit** (`api.kit`): its levels, unlock chain, stars and saved
+  progress are `kit.levels` (with Towers' own store and star rule), its round is `kit.round`
+  (Restart while playing), its tallest tower is the round's `kit.score`, and its reach + jump
+  are `kit.rules` — what stays in the module is Towers itself.
 
 ## Manager, dev mode & gallery (17-A2/A3)
 
-User modules install, update, disable and remove **live** — `deactivateModule`
-runs the per-module teardown journal (every `api.register*` records an undo
-thunk), so nothing needs a page reload. Core modules keep reload-to-disable
-(they may wire core registries outside the api surface, e.g. vrsleeve).
+Modules install, update, disable and remove **live** — `unloadModule` (33's
+`deactivateModule`) runs the module's lifecycle registry (see **The lifecycle**
+above), so nothing needs a page reload. Since 1.20 that includes CORE modules: their
+hooks outside the api (vrsleeve's VR hook registries) undo through `api.onUnload`.
 
 Every user-module card carries a **Dev URL** row: **Reload** fetches fresh code
 (cache-busted), evaluates it FIRST, then tears down + re-registers — a broken
@@ -1010,3 +1293,6 @@ the dev reload keep working on gallery installs.
 - [ ] No `Math.random()` without a broadcast seed; no accumulation in effects.
 - [ ] Receiving a message never re-broadcasts it.
 - [ ] `id` unique, node `type`s unique, version bumped on behavior changes.
+- [ ] Switch it off and on again in the Modules manager (or dev-reload it): no timer,
+      listener, sound, overlay or scene object of the old instance is left, and the new one
+      works from scratch (`__stores.moduleSDK.registrationsOf(id)` is `{}` while it is off).

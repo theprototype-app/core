@@ -54,6 +54,35 @@ jobs:
       - name: no bare localStorage
         run: node scripts/check-storage.cjs
 
+  # 34 B3: scene-lint over every scene core ships (the seed) and every scene of the scenes ref
+  # the perf budget is about (perf/budgets.json), with the packs checkout for the kit rules.
+  # Static, no browser: seconds. Errors fail; warnings print.
+  scene-lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - name: the scenes ref (perf/budgets.json)
+        id: refs
+        run: |
+          echo "scenes=$(node -p "require('./perf/budgets.json').scenes.ref")" >> "$GITHUB_OUTPUT"
+          echo "scenes_repo=$(node -p "require('./perf/budgets.json').scenes.repo")" >> "$GITHUB_OUTPUT"
+      - uses: actions/checkout@v4
+        with:
+          repository: ${{ steps.refs.outputs.scenes_repo }}
+          ref: ${{ steps.refs.outputs.scenes }}
+          path: .perf-deps/scenes
+      - uses: actions/checkout@v4
+        with:
+          repository: theprototype-app/packs
+          path: .perf-deps/packs
+      - name: scene-lint
+        run: node scripts/scene-lint.cjs static/templates .perf-deps/scenes --packs .perf-deps/packs
+
   unit:
     runs-on: ubuntu-latest
     steps:

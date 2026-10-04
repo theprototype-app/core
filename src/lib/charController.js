@@ -4,6 +4,7 @@ import * as THREE from 'three';
 import { globalScene } from '../stores/sceneStore';
 import { sceneGravity, scenePhysicsGround } from './scenePhysics';
 import { dungeonData, slideMove } from './dungeonPlay';
+import { kitPlayRules } from './kit/runtime.js'; // 34 R2: kit.rules' jump height
 
 // 21-E6 — THE CHARACTER CONTROLLER, as data a graph can own.
 //
@@ -84,6 +85,19 @@ let grounded = false;
 let jumpHeld = false;
 /** an unconsumed jump edge, spent only when we are actually on the ground */
 let jumpRequested = false;
+/** 35-sky-obby: a carry the NEXT walk step adds — a moving platform under the feet (the
+ * kinematic character controller does not inherit a platform's motion, so a player standing
+ * still on a slider was left behind). One frame's worth; consumed by resolveWalk. Additive: with
+ * no caller nothing changes. */
+let carryX = 0;
+let carryZ = 0;
+/** @param {number} dx @param {number} dz world metres this frame */
+export function addWalkCarry(dx, dz) {
+	if (Number.isFinite(dx) && Number.isFinite(dz) && Math.abs(dx) < 1 && Math.abs(dz) < 1) {
+		carryX += dx;
+		carryZ += dz;
+	}
+}
 
 // ---- the speed override -----------------------------------------------------
 
@@ -324,7 +338,8 @@ export function tickWalker(rig, settings, dt, desired) {
 		eyeHeight,
 		dt,
 		desired,
-		{ gravity: settings?.gravity !== false, jumpHeight: settings?.jumpHeight }
+		// 34 R2: a kit.rules jump height (session-wide) overrides the controller node's
+		{ gravity: settings?.gravity !== false, jumpHeight: kitPlayRules().jump ?? settings?.jumpHeight }
 	);
 	// write back through the rig's PARENT: the camera lives in a group at y = 0.9, so a
 	// world target has to be converted rather than assigned
@@ -376,8 +391,10 @@ export function resolveWalk(feetPos, height, dt, desired, opts = {}) {
 
 	/** @type {'rapier'|'dungeon'|'plane'} */
 	let source = 'plane';
-	let dx = desired?.dx ?? 0;
-	let dz = desired?.dz ?? 0;
+	let dx = (desired?.dx ?? 0) + carryX;
+	let dz = (desired?.dz ?? 0) + carryZ;
+	carryX = 0;
+	carryZ = 0;
 	let dy = useGravity ? vy * step : Number(desired?.dy ?? 0) || 0;
 
 	const built = ensureCapsule(physicsRuntime(), eyeHeight);

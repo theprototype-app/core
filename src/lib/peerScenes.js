@@ -628,12 +628,17 @@ export const ROOM_SCOPED = new Set([
 	// scene object, the 'nodetrigger' case - a peer standing elsewhere plays none of it
 	'environment', 'music', 'transport', 'patch', 'devicenote', 'scenephysics', 'scenepost', 'shadergraph',
 	'shadergraphdelete', 'shadergraphs', 'hud', 'huddelete', 'huds', 'hudvalue',
-	'hudvalues', 'game', 'animdata', 'animplay', 'animations', 'jointcreate',
+	'hudvalues', 'game', 'kit', 'kitreq', 'animdata', 'animplay', 'animations', 'jointcreate',
 	'jointdelete', 'joints', 'annotation', 'annotations',
 	// coordination
 	'lock', 'locked', 'lockrequest', 'unlock', 'lockdenied', 'sessionproposal',
 	'sessionanswer', 'ping', 'sceneadopt'
 ]);
+// 34 R2 (kit-entities): the kit's entities are room content like the kit document
+ROOM_SCOPED.add('kitentity');
+ROOM_SCOPED.add('getkitentities');
+// 34 R3 (D1): a behaviour's document is room content like the kit's
+ROOM_SCOPED.add('bhv');
 
 /**
  * THE ONE PREDICATE, used on both sides of the wire: `broadcast` will not SEND a

@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { sessionNow, onSessionClockJump } from './sessionClock'; // 25-E: the synced clock is the SESSION's
 import { get } from 'svelte/store';
+import { phaseBegin, phaseEnd, PHASE_INPUT, PHASE_FLOW, PHASE_MODULES, PHASE_PHYSICS } from './perf/perfMarks.js'; // 34 PF: an import-free leaf
 import { flowGraphs, mutedFlowObjects, syncedAnimations, flowValues, flowTriggers, SCENE_GRAPH, startGraphMirror, allNodes, allEdges, flowPaused} from '../stores/flowStore';
 // 21-F2: `isLocked` is the LOCAL play substate the recipe gate reads — see gamePlayActive
 import { objectsGroup, isLocked } from '../stores/sceneStore';
@@ -10,7 +11,8 @@ import { animationTypes } from './nodeCatalog';
 import { isIndexValuedKind } from './hudKinds';
 import { moduleEffects, moduleFrameTasks } from './moduleSDK';
 import { moduleValueNodes, moduleNodeInputs, evalModuleValueNode } from './moduleNodeIO';
-import { runScript } from './scriptRuntime';
+import { runScript, runScriptValue } from './scriptRuntime';
+import { scriptInputs, scriptOutputs, isScriptValue, coerceInput } from './scriptIO'; // 34 D3: a leaf
 import { findNodeDef } from './customNodes';
 import { updateSounds } from './soundRuntime';
 import { colliderSpecOf } from './colliderSpec'; // B6: pure THREE leaf
@@ -72,6 +74,11 @@ import { safeStorage } from './safeStorage';
 import { sceneStorageKey, readStored, writeStored } from './gameStorage';
 // 30b (core-games): the game-feel nodes' runtime half (announce/sound/burst/haptic/music)
 import { GAME_FEEL_ACTIONS, runGameFeelAction, updateGameMusicNodes, primeGameFeelActions } from './gameFeelActions';
+// 34 R2 (T3): the game kit — its action nodes act on the stamp edge here, its document ticks here
+import { KIT_ACTION_TYPES, runKitNodeAction, installKitNodes } from './kit/nodes.js';
+import { tickKit, primeKitRuntime } from './kit/runtime.js';
+/** 34 R3: behaviours/app.js, primed in startFlowRuntime @type {any} */
+let behavioursRef = null;
 // 31 (Stars Room): a scene's own settings rows (31-game-shell's leaf), and the pointing switch
 import { registerGameSetting, gameSettingValue } from './gameSettings';
 import { setPointGrabEnabled } from './pointGrab';
@@ -1374,7 +1381,7 @@ function updateGameNodes(time, ctx) {
 	// 1. the ACTIONS, on a fresh trigger stamp only
 	for (const node of nodes) {
 		const type = node.type;
-		if (type !== 'setgamestate' && type !== 'setcamera' && type !== 'setvariable' && type !== 'setlook' && type !== 'travel' && type !== 'storevalue' && !GAME_FEEL_ACTIONS.includes(type))
+		if (type !== 'setgamestate' && type !== 'setcamera' && type !== 'setvariable' && type !== 'setlook' && type !== 'travel' && type !== 'storevalue' && !GAME_FEEL_ACTIONS.includes(type) && !KIT_ACTION_TYPES.has(type))
 			continue;
 		seeActionNode(node, time);
 		const stamp = triggerStampFor(node.id, ctx);
@@ -1417,6 +1424,11 @@ function updateGameNodes(time, ctx) {
 			const hash = typeof data.level === 'string' ? data.level : '';
 			if (sceneName && levelsRef?.travelToScene) levelsRef.travelToScene(sceneName);
 			else if (hash && levelsRef) levelsRef.travelToLevel(hash, String(data.levelName ?? ''));
+		} else if (KIT_ACTION_TYPES.has(type)) {
+			// 34 R2: a kit action. EVERY peer that sees the stamp asks the kit with an id derived
+			// from it (node + stamp), so the authority applies one press once however many peers
+			// saw it — and a perPlayer pulse, seen only by its player, still reaches it
+			runKitNodeAction(type, data, node.id, stamp, node.__graph && node.__graph !== SCENE_GRAPH ? node.__graph : null);
 		} else if (GAME_FEEL_ACTIONS.includes(type)) {
 			// 30b (core-games): a banner, a sound, a burst or a buzz — LOCAL on every peer from
 			// the replicated stamp, inside the actionSeenAt family above like storevalue (a
@@ -2151,6 +2163,30 @@ function pointOf(v, ctx) {
 	return null;
 }
 
+// --- 34 D3: script node v2 -----------------------------------------------------
+/** per node: the tick time + data its value was computed for @type {Map<string, {time: number, data: any, value: any}>} */
+const scriptValueMemo = new Map();
+
+/**
+ * A declared input's value as the script sees it. An OBJECT socket carries a uuid on the
+ * wire; the script gets a read-only VIEW instead — {uuid, name, position} — so a reach rule
+ * reads `inputs.piece.position` rather than reaching into the scene (which the lint forbids
+ * and which a value script has no handle on anyway).
+ * @param {{name: string, type: string}} socket @param {any} raw @param {any} ctx
+ */
+function scriptInputValue(socket, raw, ctx) {
+	if (socket.type !== 'object') return coerceInput(socket.type, raw);
+	const uuid = typeof raw === 'string' ? raw : null;
+	if (!uuid) return null;
+	const object = sceneObjects?.getObjectByProperty('uuid', uuid);
+	const p = ctx?.pos?.(uuid);
+	return Object.freeze({
+		uuid,
+		name: object?.name ?? '',
+		position: p ? [p.x, p.y, p.z] : [0, 0, 0]
+	});
+}
+
 // --- 21-F3's collectible chain walk (edgeIndex / collectibleLatches / collectibleStats /
 // collectibleCountsFor) MOVED to the collectible module in R3a: it was the one core
 // reader that knew the recipe's chain shape, and the module owns that shape now. The
@@ -2687,6 +2723,25 @@ function evalNodeBody(node, allNodes, allEdges, time, seen, ctx) {
 			// the embedded node exposes the target flow's outputs as named handles,
 			// computed at the END of the previous tick (one-frame latency)
 			return { __handles: graphOutputs[d.flowUuid] ?? {} };
+		case 'script': {
+			// 34 D3: a Script node with declared OUTPUTS is a value node — a pure function of
+			// its declared inputs and the synced clock, read through a handle map exactly like
+			// objectflow's. Without outputs it is an effect (applyAnimation) and has no value.
+			const outputs = scriptOutputs(d);
+			if (!outputs.length) return undefined;
+			// one run per node per tick: the card readout, and every consumer of every
+			// handle, would otherwise each run the code again at the same instant
+			const memo = scriptValueMemo.get(node.id);
+			if (memo && memo.time === time && memo.data === node.data) return memo.value;
+			/** @type {Record<string, any>} */
+			const inputs = {};
+			for (const socket of scriptInputs(d) ?? [])
+				inputs[socket.name] = scriptInputValue(socket, input(socket.name, socket.value), ctx);
+			const value = runScriptValue(node.id, d.code ?? '', inputs, time, outputs);
+			if (scriptValueMemo.size > 500) scriptValueMemo.clear(); // deleted nodes' entries
+			scriptValueMemo.set(node.id, { time, data: node.data, value });
+			return value;
+		}
 		default: {
 			// A1: a module VALUE node. Pure function of (data, time) — the script-node
 			// rule — so every peer computes the same value from the replicated node data
@@ -2728,7 +2783,8 @@ export function resolveInputs(node, allNodes, allEdges, time, ctx = null) {
 		if (
 			!valueTypes.includes(source.type) &&
 			!sourceValueTypes.includes(source.type) &&
-			!moduleValueNodes[source.type]
+			!moduleValueNodes[source.type] &&
+			!(source.type === 'script' && isScriptValue(source.data)) // 34 D3
 		)
 			continue;
 		const value = unwrapHandle(evalNode(source, allNodes, allEdges, time, new Set(), ctx), edge);
@@ -3173,7 +3229,16 @@ export function fireObjectExit(uuid, otherUuid) {
 function applyAnimation(object, base, anim, time, ctx) {
 	const data = resolveInputs(anim, nodes, edges, time, ctx);
 	if (anim.type === 'script') {
-		runScript(anim.id, data.code ?? '', object, base, data, time);
+		// 34 D3: declared inputs = a v2 effect — `inputs` beside `data`, linted
+		const declared = scriptInputs(data);
+		if (!declared) runScript(anim.id, data.code ?? '', object, base, data, time);
+		else {
+			/** @type {Record<string, any>} */
+			const inputs = {};
+			for (const socket of declared)
+				inputs[socket.name] = scriptInputValue(socket, data[socket.name] ?? socket.value, ctx);
+			runScript(anim.id, data.code ?? '', object, base, data, time, inputs);
+		}
 		return;
 	}
 	if (anim.type === 'customnode') {
@@ -3407,7 +3472,10 @@ function runTick(now) {
 	// reached this frame's graph. Doing it before runtimeCtx() means an edge published
 	// now lands in THIS tick's trigger snapshot, exactly as a keydown arriving between
 	// frames would. (It also rides pumpFlowTick, so a pad works in a headset for free.)
+	phaseBegin(PHASE_INPUT); // 34 PF: CPU phases (one boolean test unless a detailed recording runs)
 	inputRuntimeRef?.pollGamepads();
+	phaseEnd(PHASE_INPUT);
+	phaseBegin(PHASE_FLOW);
 	const time = synced ? (sessionNow() % 86400000) / 1000 : now / 1000;
 	const ctx = runtimeCtx(); // 134: scene + trigger state for the evaluators
 
@@ -3453,7 +3521,7 @@ function runTick(now) {
 	const isEffectNode = (node) =>
 		(animationTypes.includes(node.type) ||
 			!!moduleEffects[node.type] ||
-			node.type === 'script' ||
+			(node.type === 'script' && !isScriptValue(node.data)) || // 34 D3: outputs = a value
 			node.type === 'customnode') &&
 		!dormant(node);
 	if (sceneObjects) {
@@ -3614,6 +3682,11 @@ function runTick(now) {
 	// 21-D6: the game shell. Runs BEFORE the HUD pass would matter next frame, and reads
 	// the same replicated trigger stamps, so every peer takes the same decisions.
 	updateGameNodes(time, ctx);
+	// 34 R2: the kit's authority turns due moments into changes; everyone re-sends what was
+	// never acknowledged (after the game nodes, so a press this frame is already asked)
+	tickKit();
+	// 34 R3 (D1): behaviours after the kit — the authority's due timers, every handler's state flush
+	behavioursRef?.tickBehaviours();
 	// 21-E6: the character controller, beside the game shell and for the same reason —
 	// it reads the already-replicated graph and the same trigger stamps, so every peer
 	// declares the same controller and reacts to the same pulses with no message.
@@ -3641,8 +3714,10 @@ function runTick(now) {
 			// H5: objectflow returns a handle MAP, not a scalar — no card readout
 			// A1: a module value node gets the same on-card live readout for free
 			if (
-				(valueTypes.includes(node.type) || moduleValueNodes[node.type]) &&
-				node.type !== 'objectflow'
+				((valueTypes.includes(node.type) || moduleValueNodes[node.type]) &&
+					node.type !== 'objectflow') ||
+				// 34 D3: a value script's card shows its outputs (a handle map, read per name)
+				(node.type === 'script' && isScriptValue(node.data))
 			)
 				values[node.id] = evalNode(node, nodes, edges, time, new Set(), ctx);
 		}
@@ -3684,7 +3759,9 @@ function runTick(now) {
 		(nextOutputs[node.__graph] ??= {})[name] = evalNode(node, nodes, edges, time, new Set(), ctx);
 	});
 	graphOutputs = nextOutputs;
+	phaseEnd(PHASE_FLOW);
 
+	phaseBegin(PHASE_MODULES);
 	moduleFrameTasks.forEach((task) => {
 		try {
 			task(time);
@@ -3695,6 +3772,7 @@ function runTick(now) {
 			noteFrameFailure('module frame task', error);
 		}
 	});
+	phaseEnd(PHASE_MODULES);
 
 	// P-A: physics steps AFTER the animation pass in the SAME frame, so the
 	// order is deterministic: flow poses objects -> physics reads kinematic
@@ -3702,11 +3780,13 @@ function runTick(now) {
 	// dedicated hook, not a moduleFrameTask: those have no removal or ordering
 	// guarantee); physics sets it on sim start and clears it on stop.
 	if (postTick) {
+		phaseBegin(PHASE_PHYSICS);
 		try {
 			postTick(now);
 		} catch (error) {
 			noteFrameFailure('post-tick hook', error);
 		}
+		phaseEnd(PHASE_PHYSICS);
 	}
 }
 
@@ -3883,6 +3963,17 @@ export function startFlowRuntime() {
 	import('./knock').then((m) => m.registerHitListener((hit, local) => fireObjectHit(hit, local)));
 	import('./gamePresence').then((m) => (presenceRef = m));
 	primeGameFeelActions(); // 30b: effectsBurst + vrControls, primed (see gameFeelActions)
+	primeKitRuntime(); // 34 R2: physics (the initiator) + flowRuntime (the event pulse), primed
+	installKitNodes(); // 34 R2: the kit nodes' outputs and named inputs, declared once
+	// 34 R2 (kit-entities): draw the kit's entities, give the movers the scene (primed: three + stores)
+	import('./kit/entityApp.js').then((m) => m.startKitEntities()).catch(() => {});
+	// 34 R3 (D1): behaviour nodes load + tick (primed: the module loader reaches the SDK)
+	import('./behaviours/app.js')
+		.then((m) => {
+			behavioursRef = m;
+			m.startBehaviours();
+		})
+		.catch((error) => console.warn('behaviours failed to start', error));
 	flowGraphs.subscribe(() => {
 		nodes = allNodes();
 		edges = allEdges();

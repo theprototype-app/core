@@ -711,8 +711,11 @@ h.run(async () => {
 	const aiView = await A.page.evaluate(() => {
 		const tools = window.__stores.aiTools.getAiTools();
 		const flow = tools.find((t) => t.function?.name === 'create_flow_nodes');
-		const enumTypes = flow?.function?.parameters?.properties?.nodes?.items?.properties?.type?.enum ?? [];
 		const prompt = window.__stores.aiTools.buildSystemPrompt();
+		// 34 D5: the vocabulary moved from a schema enum into the prompt, grouped by palette
+		// group — the Logic line is what the model is handed now
+		const logicLine = (prompt.match(/^ {2}Logic: (.*)$/m)?.[1] ?? '').split(', ');
+		const enumTypes = logicLine;
 		return {
 			enumHas: ['latch', 'delay', 'sequence', 'once'].filter((t) => enumTypes.includes(t)),
 			dataHint: flow?.function?.parameters?.properties?.nodes?.items?.properties?.data?.description ?? '',
@@ -722,7 +725,7 @@ h.run(async () => {
 	});
 	h.check(
 		aiView.enumHas.length === 4,
-		`all four are in the enum the model is handed (${JSON.stringify(aiView.enumHas)})`
+		`all four are in the Logic vocabulary line the model is handed (${JSON.stringify(aiView.enumHas)})`
 	);
 	h.check(
 		aiView.dataHint.includes('latch {initial') && aiView.dataHint.includes('delay {seconds'),

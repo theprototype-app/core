@@ -33,6 +33,7 @@
 	import SequenceNode from './nodes/SequenceNode.svelte';
 	import MoveInputNode from './nodes/MoveInputNode.svelte';
 	import ScriptNode from './nodes/ScriptNode.svelte';
+	import BehaviourNode from './nodes/BehaviourNode.svelte';
 	import MapRangeNode from './nodes/MapRangeNode.svelte';
 	import SelectNode from './nodes/SelectNode.svelte';
 	import CustomNode from './nodes/CustomNode.svelte';
@@ -62,6 +63,7 @@
 	import OnHitNode from './nodes/OnHitNode.svelte';
 	import OnClapNode from './nodes/OnClapNode.svelte'; // 31 (Stars Room S3)
 	import UnknownNode from './nodes/UnknownNode.svelte';
+	import { kitNodeTypes } from '$lib/kit/catalog.js';
 	import { flowNodes as flowNodesStore, flowEdges as flowEdgesStore, customNodeDefs, nodeDesignerOpen, flowGraphs, activeGraphId, SCENE_GRAPH, setActiveGraph } from '../../stores/flowStore';
 	import { createObjectGraph, requestDeleteObjectGraph } from '$lib/flowGraphs';
 	import { deselectObject } from '$lib/objectActions';
@@ -126,6 +128,7 @@
 		pulse: AnimationNode,
 		blink: AnimationNode,
 		script: ScriptNode,
+		behaviour: BehaviourNode, // 34 R3
 		maprange: MapRangeNode,
 		select: SelectNode,
 		customnode: CustomNode,
@@ -251,6 +254,9 @@
 		camerafollow: AnimationNode,
 		movespeed: AnimationNode,
 		moveinput: MoveInputNode,
+		// 34 R2 (T3): every generated kit node renders from its spec params (the card a node
+		// in nodeCatalog but NOT here would get is UnknownNode)
+		...Object.fromEntries(kitNodeTypes().map((type) => [type, AnimationNode])),
 	};
 
 	// module node types default to the spec-driven AnimationNode unless the

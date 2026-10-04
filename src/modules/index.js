@@ -8,5 +8,15 @@ import pong from './pong/module.js';
 import vrsleeve from './vrsleeve/module.js';
 // 31-towers: the Towers game's levels, pieces and rules (dormant outside a Towers scene)
 import towers from './towers/module.js';
+// 35-escape-room: The Alchemist's Escape (dormant outside an `Escape game` scene)
+import escape from './escape/module.js';
+// 35: the Marble Maze game's mazes, tilt and judge (dormant outside a Marble Maze scene)
+import marble from './marble/module.js';
+// 35-mini-golf: the Mini Golf game's holes, putting and scorecard (dormant outside a Mini Golf scene)
+import minigolf from './minigolf/module.js';
+// 35-sky-obby: the Sky Run game's movers and run rules (dormant outside a Sky Run scene)
+import skyrun from './skyrun/module.js';
+// 35: the Target Toss game's stages and judge (dormant outside a Target Toss scene)
+import targettoss from './targettoss/module.js';
 
-export const coreModules = [hello, button, pong, vrsleeve, towers];
+export const coreModules = [hello, button, pong, vrsleeve, towers, escape, marble, minigolf, skyrun, targettoss];

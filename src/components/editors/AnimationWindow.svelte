@@ -2035,7 +2035,7 @@
 
 			<!-- CENTRE: the timeline (dope sheet / value graph) -->
 			<!-- svelte-ignore a11y_no_noninteractive_tabindex -->
-			<div class="flex min-w-0 flex-1 flex-col" tabindex="-1" bind:this={plotHost} use:keyNav>
+			<div class="flex min-w-0 flex-1 flex-col" data-key-scope="animation" tabindex="-1" bind:this={plotHost} use:keyNav>
 				<div class="flex shrink-0 items-center gap-2 border-b border-gray-700/60 px-2 py-1 text-[11px] text-gray-400">
 					<button
 						class="rounded-sm border px-1.5 py-0.5 {view === 'sheet' ? 'border-primary-500 text-primary-300' : 'border-gray-600'}"

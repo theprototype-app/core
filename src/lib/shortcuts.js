@@ -1,9 +1,11 @@
 import { get, writable } from 'svelte/store';
-import { TControls, isLocked } from '../stores/sceneStore';
+import { TControls, isLocked, isVRMode } from '../stores/sceneStore';
 // 24-A1: the layout-independent key token (zero-import leaf, see keyOf.js)
 import { keyOf } from './keyOf';
+// 36 U11: which panel owns the keyboard (zero-import leaves)
+import { scopeOfEvent, pickForScope, startKeyScope, setVrScopeProbe } from './keyScope';
+import { runNodeAction, hasNodeAction, nodeEditorInsideGroup } from './nodeEditorActions';
 import {
-	flowGraphClose,
 	chatHidden,
 	settingsOpen,
 	anyModalOpen,
@@ -105,7 +107,9 @@ import { safeStorage } from './safeStorage';
  * fields + locked views are already excluded by handleKeydown. Groups confirm.
  */
 function deleteFromViewport() {
-	if (get(flowGraphClose) === false) return; // node editor owns the key while open
+	// 36 U11: the node editor no longer "owns Delete while open" — a key fires in the
+	// scope that has focus, so Delete in the viewport deletes objects whether or not
+	// the Flow pane happens to be open, and Delete in the Flow pane deletes nodes.
 	if (get(editingObject) || get(faceEditObject) || get(specatorMode)) return;
 	requestDeleteSelection();
 }
@@ -128,6 +132,27 @@ function toggleAiPrompt() {
 	aiPromptBarOpen.set(true);
 }
 
+/** I3: the `?` cheat sheet overlay (ShortcutSheet.svelte renders it from `shortcuts`). */
+export const cheatSheetOpen = writable(false);
+
+/**
+ * 36 U11: build the node-editor rows from a compact table. Each row reaches the mounted
+ * editor by NAME (nodeEditorActions) and declines the key when no editor is mounted.
+ * @param {[string, string, string, string, any?][]} table [id, keys, action, label, arg?]
+ * @returns {Shortcut[]}
+ */
+function nodeRows(table) {
+	return table.map(([id, keys, name, label, arg]) => ({
+		id,
+		keys,
+		group: 'Node editor',
+		scope: 'nodes',
+		label,
+		when: () => hasNodeAction(name),
+		action: () => runNodeAction(name, arg)
+	}));
+}
+
 /** @type {Shortcut[]} */
 export const shortcuts = [
 	// transform hotkeys live on 1/2/3 — W/E/R belong to fly navigation now
@@ -135,6 +160,7 @@ export const shortcuts = [
 		id: 'transform.move',
 		keys: '1',
 		group: 'Transform',
+		scope: 'viewport',
 		label: 'Move (translate)',
 		action: () => setTransformMode('translate')
 	},
@@ -142,6 +168,7 @@ export const shortcuts = [
 		id: 'transform.rotate',
 		keys: '2',
 		group: 'Transform',
+		scope: 'viewport',
 		label: 'Rotate',
 		action: () => setTransformMode('rotate')
 	},
@@ -149,6 +176,7 @@ export const shortcuts = [
 		id: 'transform.scale',
 		keys: '3',
 		group: 'Transform',
+		scope: 'viewport',
 		label: 'Scale',
 		action: () => setTransformMode('scale')
 	},
@@ -162,6 +190,7 @@ export const shortcuts = [
 		id: 'transform.grab',
 		keys: 'G',
 		group: 'Transform',
+		scope: 'viewport',
 		label: 'Move (grab) — same as 1',
 		action: () => setTransformMode('translate')
 	},
@@ -188,6 +217,7 @@ export const shortcuts = [
 		id: 'movement.fly',
 		keys: 'W A S D',
 		group: 'Movement',
+		scope: 'viewport',
 		label: 'Fly the camera (horizontal)',
 		fixed: true,
 		fixedReason: 'movement keys, handled by fly navigation'
@@ -196,6 +226,7 @@ export const shortcuts = [
 		id: 'movement.fly-vertical',
 		keys: 'Q / E',
 		group: 'Movement',
+		scope: 'viewport',
 		label: 'Fly down / up',
 		fixed: true,
 		fixedReason: 'movement keys, handled by fly navigation'
@@ -204,6 +235,7 @@ export const shortcuts = [
 		id: 'movement.fly-fast',
 		keys: 'Shift (hold)',
 		group: 'Movement',
+		scope: 'viewport',
 		label: 'Fly 3x faster',
 		fixed: true,
 		fixedReason: 'hold modifier, handled by fly navigation'
@@ -212,6 +244,7 @@ export const shortcuts = [
 		id: 'camera.focus',
 		keys: 'F',
 		group: 'Camera',
+		scope: 'viewport',
 		label: 'Focus selected object',
 		action: () => focusObject()
 	},
@@ -219,6 +252,7 @@ export const shortcuts = [
 		id: 'objects.duplicate',
 		keys: 'Ctrl+D',
 		group: 'Objects',
+		scope: 'viewport',
 		label: 'Duplicate selection (whole set)',
 		action: () => duplicateSelection()
 	},
@@ -229,6 +263,7 @@ export const shortcuts = [
 		id: 'objects.select-all',
 		keys: 'Ctrl+A',
 		group: 'Objects',
+		scope: 'viewport',
 		label: 'Select all objects',
 		action: () => {
 			if (get(editingObject) || get(faceEditObject)) return;
@@ -242,6 +277,7 @@ export const shortcuts = [
 		id: 'objects.leave-isolation',
 		keys: 'Escape',
 		group: 'Objects',
+		scope: 'viewport',
 		label: 'Leave isolation (double-click view)',
 		when: () => isIsolated(),
 		action: () => clearIsolation()
@@ -250,6 +286,7 @@ export const shortcuts = [
 		id: 'objects.delete',
 		keys: 'Delete',
 		group: 'Objects',
+		scope: 'viewport',
 		label: 'Delete selection (a group asks first)',
 		action: () => deleteFromViewport()
 	},
@@ -257,6 +294,7 @@ export const shortcuts = [
 		id: 'objects.delete-backspace',
 		keys: 'Backspace',
 		group: 'Objects',
+		scope: 'viewport',
 		label: 'Delete selection (Backspace)',
 		action: () => deleteFromViewport()
 	},
@@ -264,6 +302,7 @@ export const shortcuts = [
 		id: 'objects.edit-mesh',
 		keys: 'Tab',
 		group: 'Objects',
+		scope: 'viewport',
 		label: 'Enter mesh edit mode (inside it Tab cycles Vertices/Edges/Faces; Esc exits)',
 		action: () => {
 			if (get(editingObject)) exitEditMode();
@@ -278,6 +317,7 @@ export const shortcuts = [
 		id: 'editor.interact-mode',
 		keys: 'I',
 		group: 'Objects',
+		scope: 'viewport',
 		label: 'Edit / Interact mode (Interact: clicks play with the scene instead of selecting)',
 		when: () => !keySessionOpen(),
 		action: () => toggleEditorMode()
@@ -286,6 +326,7 @@ export const shortcuts = [
 		id: 'panels.object-list',
 		keys: 'O',
 		group: 'Panels',
+		scope: 'viewport',
 		// the key IS the toolbar button now (one tree in panelToggles): a buried
 		// window is raised first and only closes on the next press
 		label: 'Object list: show / bring to front / hide',
@@ -295,6 +336,7 @@ export const shortcuts = [
 		id: 'panels.node-editor',
 		keys: 'N',
 		group: 'Panels',
+		scope: 'viewport',
 		label: 'Node editor: show / bring to front / hide',
 		action: () => togglePanel('flow')
 	},
@@ -327,6 +369,7 @@ export const shortcuts = [
 		id: 'panels.dock',
 		keys: 'T',
 		group: 'Panels',
+		scope: 'viewport',
 		// the tool dock: the strip that holds the Node editor, Explorer, Flow Code,
 		// Animation, UV, Shader and HUD tabs. Minimizing leaves every tab open, and
 		// since a minimized dock draws nothing at all, this key is one of the only
@@ -338,6 +381,7 @@ export const shortcuts = [
 		id: 'panels.explorer',
 		keys: 'Alt+E',
 		group: 'Panels',
+		scope: 'global',
 		label: 'Explorer: show / bring to front / hide',
 		action: () => togglePanel('explorer')
 	},
@@ -345,6 +389,7 @@ export const shortcuts = [
 		id: 'panels.flow-code',
 		keys: 'Alt+F',
 		group: 'Panels',
+		scope: 'global',
 		label: 'Flow Code: show / bring to front / hide',
 		action: () => togglePanel('flowcode')
 	},
@@ -352,6 +397,7 @@ export const shortcuts = [
 		id: 'panels.animation',
 		keys: 'Alt+A',
 		group: 'Panels',
+		scope: 'global',
 		label: 'Animation: show / bring to front / hide',
 		action: () => togglePanel('animation')
 	},
@@ -359,6 +405,7 @@ export const shortcuts = [
 		id: 'panels.uv-editor',
 		keys: 'Alt+U',
 		group: 'Panels',
+		scope: 'global',
 		label: 'UV editor: show / bring to front / hide',
 		action: () => togglePanel('uv')
 	},
@@ -366,6 +413,7 @@ export const shortcuts = [
 		id: 'panels.shader-editor',
 		keys: 'Alt+S',
 		group: 'Panels',
+		scope: 'global',
 		label: 'Shader editor: show / bring to front / hide',
 		action: () => togglePanel('shader')
 	},
@@ -373,6 +421,7 @@ export const shortcuts = [
 		id: 'panels.hud-editor',
 		keys: 'Alt+H',
 		group: 'Panels',
+		scope: 'global',
 		label: 'HUD editor: show / bring to front / hide',
 		action: () => togglePanel('hud')
 	},
@@ -380,6 +429,7 @@ export const shortcuts = [
 		id: 'panels.chat',
 		keys: 'C',
 		group: 'Panels',
+		scope: 'viewport',
 		label: 'Toggle chat',
 		action: () => chatHidden.update((value) => (value === 'hidden' ? '' : 'hidden'))
 	},
@@ -387,6 +437,7 @@ export const shortcuts = [
 		id: 'panels.ai-prompt',
 		keys: '`',
 		group: 'Panels',
+		scope: 'viewport',
 		label: 'Toggle AI prompt bar',
 		action: () => toggleAiPrompt()
 	},
@@ -394,6 +445,7 @@ export const shortcuts = [
 		id: 'objects.quick-add',
 		keys: 'Shift+A',
 		group: 'Objects',
+		scope: 'viewport',
 		label: 'Add object at the cursor (enable in Settings)',
 		action: () =>
 			import('../stores/appStore').then(({ addMenu, addMenuOpener, enableShiftAdd }) => {
@@ -415,6 +467,7 @@ export const shortcuts = [
 		id: 'scene.save',
 		keys: 'Ctrl+S',
 		group: 'Scene',
+		scope: 'global',
 		label: 'Save scene',
 		/**
 		 * User report: "Ctrl+S now saves session, instead it should save current open
@@ -452,6 +505,7 @@ export const shortcuts = [
 		id: 'history.undo',
 		keys: 'Ctrl+Z',
 		group: 'History',
+		scope: 'global',
 		label: 'Undo',
 		action: () => undo()
 	},
@@ -459,6 +513,7 @@ export const shortcuts = [
 		id: 'history.redo',
 		keys: 'Ctrl+Y',
 		group: 'History',
+		scope: 'global',
 		label: 'Redo',
 		action: () => redo()
 	},
@@ -466,6 +521,7 @@ export const shortcuts = [
 		id: 'history.redo-alt',
 		keys: 'Ctrl+Shift+Z',
 		group: 'History',
+		scope: 'global',
 		label: 'Redo (alternative)',
 		action: () => redo()
 	},
@@ -473,6 +529,7 @@ export const shortcuts = [
 		id: `camera.bookmark-${slot}`,
 		keys: `Shift+${slot}`,
 		group: 'Camera',
+		scope: 'viewport',
 		label: `Recall camera bookmark ${slot}`,
 		action: () => recallBookmark(slot - 1)
 	})),
@@ -480,6 +537,7 @@ export const shortcuts = [
 		id: 'scene.physics',
 		keys: 'P',
 		group: 'Scene',
+		scope: 'viewport',
 		label: 'Simulate physics (toggle)',
 		action: () => {
 			if (get(editingObject) || get(faceEditObject) || get(specatorMode)) return;
@@ -513,6 +571,7 @@ export const shortcuts = [
 		id: 'scene.play',
 		keys: 'Ctrl+Enter',
 		group: 'Scene',
+		scope: 'global',
 		label: 'Play / Enter VR·AR (right-click the play button for modes)',
 		action: () => requestPlay()
 	},
@@ -522,6 +581,7 @@ export const shortcuts = [
 		id: 'scene.snapping',
 		keys: 'M',
 		group: 'Scene',
+		scope: 'viewport',
 		label: 'Toggle element snapping (vertex/face/surface targets)',
 		action: () => {
 			let enabled = false;
@@ -536,6 +596,7 @@ export const shortcuts = [
 		id: 'voice.push-to-talk',
 		keys: 'V (hold)',
 		group: 'Voice',
+		scope: 'global',
 		label: 'Push to talk while the mic toggle is off',
 		// handled by voiceChat.js (needs keyup); listed here for discoverability
 		fixed: true,
@@ -545,6 +606,7 @@ export const shortcuts = [
 		id: 'mesh-edit.ops',
 		keys: 'E I G S B F X / W',
 		group: 'Mesh edit',
+		scope: 'viewport',
 		label: 'Mesh edit ops, only in Edit Mesh (toggle on the toolbar)',
 		// handled by MeshEditPopup's local keydown; ONE bundled display row
 		fixed: true,
@@ -554,15 +616,81 @@ export const shortcuts = [
 		id: 'mesh-edit.loops',
 		keys: 'L / Ctrl+ +- / Ctrl+A / Ctrl+I',
 		group: 'Mesh edit',
+		scope: 'viewport',
 		label: 'M2/M3: loop select · loop cut (C) · grow/shrink · select all/invert (faces)',
 		// same local handler, same bundling reason as the row above
 		fixed: true,
 		fixedReason: 'owned by the mesh-edit session'
 	},
+	/*
+	 * 36 U11 — THE NODE EDITOR'S KEYMAP (scope 'nodes'). These fire only while the node
+	 * editor holds keyboard focus (a press landed in it last), so they can reuse letters
+	 * the viewport spends on something else: F frames nodes there and focuses the object
+	 * here, N adds a note there and opens the editor here, Delete deletes whichever the
+	 * user is looking at. Blender/Unreal conventions where they don't clash. Each row
+	 * declines the key (`when`) unless a node editor is mounted, so a press in an empty
+	 * scope is left alone.
+	 */
+	...nodeRows([
+		['nodes.frame-selected', 'F', 'frame', 'Frame the selected nodes (all when none are selected)'],
+		['nodes.frame-all', 'A', 'frameAll', 'Frame all nodes'],
+		['nodes.frame-all-home', 'Home', 'frameAll', 'Frame all nodes (Home)'],
+		['nodes.add-search', 'Shift+A', 'addSearch', 'Add a node at the cursor (search)'],
+		['nodes.add-search-space', 'Space', 'addSearch', 'Add a node at the cursor (search) — Space'],
+		['nodes.delete', 'Delete', 'delete', 'Delete the selected nodes and wires'],
+		['nodes.delete-x', 'X', 'delete', 'Delete the selected nodes and wires (X)'],
+		['nodes.delete-backspace', 'Backspace', 'delete', 'Delete the selected nodes and wires (Backspace)'],
+		['nodes.duplicate', 'Ctrl+D', 'duplicate', 'Duplicate the selection (wires between copies kept)'],
+		['nodes.select-all', 'Ctrl+A', 'selectAll', 'Select all nodes'],
+		['nodes.copy', 'Ctrl+C', 'copy', 'Copy the selection'],
+		['nodes.cut', 'Ctrl+X', 'cut', 'Cut the selection'],
+		['nodes.paste', 'Ctrl+V', 'paste', 'Paste at the cursor'],
+		['nodes.mute', 'M', 'mute', 'Mute / unmute the selection (a muted node does nothing)'],
+		['nodes.collapse', 'H', 'collapse', 'Collapse / expand the selected nodes'],
+		['nodes.group', 'Ctrl+G', 'group', 'Group the selection'],
+		['nodes.ungroup', 'Ctrl+Shift+G', 'ungroup', 'Ungroup (the selected group, or the one you are in)'],
+		['nodes.enter-group', 'Tab', 'toggleGroup', 'Enter the selected group / leave the one you are in'],
+		['nodes.add-note', 'N', 'addNote', 'Add a note at the cursor'],
+		['nodes.note-around', 'Shift+N', 'noteAround', 'Add a note around the selection (a frame)'],
+		['nodes.align-column', 'Q', 'alignColumn', 'Align the selection into a column (left edges)'],
+		['nodes.align-row', 'E', 'alignRow', 'Align the selection into a row (top edges)'],
+		['nodes.distribute-v', 'Shift+Q', 'distributeV', 'Distribute the selection evenly top to bottom'],
+		['nodes.distribute-h', 'Shift+E', 'distributeH', 'Distribute the selection evenly left to right'],
+		['nodes.nudge-left', 'ArrowLeft', 'nudge', 'Nudge the selection left (Shift: ×5)', [-1, 0]],
+		['nodes.nudge-right', 'ArrowRight', 'nudge', 'Nudge the selection right', [1, 0]],
+		['nodes.nudge-up', 'ArrowUp', 'nudge', 'Nudge the selection up', [0, -1]],
+		['nodes.nudge-down', 'ArrowDown', 'nudge', 'Nudge the selection down', [0, 1]],
+		['nodes.nudge-left-far', 'Shift+ArrowLeft', 'nudge', 'Nudge the selection left ×5', [-5, 0]],
+		['nodes.nudge-right-far', 'Shift+ArrowRight', 'nudge', 'Nudge the selection right ×5', [5, 0]],
+		['nodes.nudge-up-far', 'Shift+ArrowUp', 'nudge', 'Nudge the selection up ×5', [0, -5]],
+		['nodes.nudge-down-far', 'Shift+ArrowDown', 'nudge', 'Nudge the selection down ×5', [0, 5]]
+	]),
+	{
+		// Esc leaves a group, but only while one is entered: `when` leaves the key alone
+		// the rest of the time (Escape belongs to a dozen local handlers).
+		id: 'nodes.leave-group',
+		keys: 'Escape',
+		group: 'Node editor',
+		scope: 'nodes',
+		label: 'Leave the group you are in',
+		when: () => nodeEditorInsideGroup() && hasNodeAction('leaveGroup'),
+		action: () => runNodeAction('leaveGroup')
+	},
+	{
+		// I3: the cheat sheet, generated FROM this registry so it can never go stale.
+		// Global (it describes every scope), and opens on the scope that has focus.
+		id: 'help.cheatsheet',
+		keys: '?',
+		group: 'Help',
+		scope: 'global',
+		label: 'Keyboard cheat sheet (every scope; the focused one first)',
+		action: () => cheatSheetOpen.update((open) => !open)
+	},
 	{
 		id: 'help.shortcuts',
 		keys: 'Ctrl+/',
 		group: 'Help',
+		scope: 'global',
 		label: 'Show this shortcut list',
 		action: () => {
 			settingsSection.set('shortcuts');
@@ -730,7 +858,23 @@ export function bindingOf(id) {
 
 /** Where a row's combo means something; absent = global. @param {string=} id */
 function scopeOf(id) {
-	return shortcuts.find((s) => s.id === id)?.scope ?? null;
+	return shortcuts.find((s) => s.id === id)?.scope || 'global';
+}
+
+/**
+ * 36 U11: can two rows hear the same press? Same scope always; a GLOBAL row also
+ * collides with any scoped REGISTRY row, because in that scope the scoped row shadows
+ * it (a key that silently does nothing there is the conflict worth warning about). An
+ * `external` row is exempt from the global half: its editor's capture handler stops the
+ * event before the registry sees it, which is the W5 rule that lets G be Move here and
+ * Arm Move in two editors.
+ * @param {Shortcut} a @param {string} scopeA @param {Shortcut} b
+ */
+function scopesCollide(a, scopeA, b) {
+	const sb = b.scope || 'global';
+	if (scopeA === sb) return true;
+	if (a.external || b.external) return false;
+	return scopeA === 'global' || sb === 'global';
 }
 
 /**
@@ -752,9 +896,10 @@ function scopeOf(id) {
  * @returns {{ shortcut: Shortcut | null, meshEdit: boolean }}
  */
 export function conflictOf(keys, excludeId, scope) {
-	const mine = scope === undefined ? scopeOf(excludeId) : scope;
+	const mine = (scope === undefined ? scopeOf(excludeId) : scope) || 'global';
+	const self = shortcuts.find((s) => s.id === excludeId) ?? /** @type {Shortcut} */ ({ scope: mine });
 	const other = shortcuts.find(
-		(s) => s.id !== excludeId && isRebindable(s) && s.keys === keys && (s.scope ?? null) === (mine ?? null)
+		(s) => s.id !== excludeId && isRebindable(s) && s.keys === keys && scopesCollide(self, mine, s)
 	);
 	return { shortcut: other ?? null, meshEdit: MESH_EDIT_KEYS.includes(keys) };
 }
@@ -861,14 +1006,19 @@ export function comboOf(event) {
 	// the one that was missing: a NON-ASCII character (a Cyrillic/Greek/Hebrew layout)
 	// resolves to the physical key, so `G`, `F`, `Ctrl+Z` work on every layout. Latin
 	// layouts produce byte-identical combos (the hotkeys-layout suite pins the registry).
-	const key = keyOf(event);
+	let key = keyOf(event);
+	// 36 I3: a SHIFTED SYMBOL already says Shift (`?` is Shift+/ on a US layout and a
+	// different key elsewhere), so the modifier is not part of its name — `?` must match
+	// `?` on every layout. Letters and digits keep it (Shift+A, Shift+1). Space gets a name.
+	if (key === ' ') key = 'Space';
+	const symbol = key.length === 1 && !/[a-z0-9]/i.test(key);
 	return (
 		(event.ctrlKey || event.metaKey ? 'Ctrl+' : '') +
 		// Phase 5: Alt was previously unrepresentable, so no default uses it — every
 		// existing combo is Alt-free and comes out byte-identical. It exists for
 		// rebinding, where it roughly doubles the free space.
 		(event.altKey ? 'Alt+' : '') +
-		(event.shiftKey ? 'Shift+' : '') +
+		(event.shiftKey && !symbol ? 'Shift+' : '') +
 		key
 	);
 }
@@ -889,17 +1039,11 @@ function handleKeydown(event) {
 	// Settings is recording this press as a binding — the registry must not also
 	// ACT on it.
 	if (capturing) return;
-	/** @type {any} */
-	const target = event.target;
-	// never steal keys from text entry (chat, node widgets, property inputs)
-	if (
-		target &&
-		(target.tagName === 'INPUT' ||
-			target.tagName === 'TEXTAREA' ||
-			target.tagName === 'SELECT' ||
-			target.isContentEditable)
-	)
-		return;
+	// 36 U11: WHERE the press happened. Text entry (chat, node widgets, property inputs)
+	// and code editors never reach a registry action; every other press belongs to the
+	// pane that last took a pointer press or focus (keyScope.js).
+	const focused = scopeOfEvent(event);
+	if (focused === 'text' || focused === 'code') return;
 	// play mode owns the keyboard (WASD)
 	if (get(isLocked)) return;
 
@@ -908,6 +1052,7 @@ function handleKeydown(event) {
 	// match the registry — F would ALSO focus the object mid-edit. Delete
 	// self-guards; 1/2/3 intentionally stay (gizmo mode on the proxy).
 	if (
+		(focused === 'viewport' || focused === 'vr') &&
 		MESH_EDIT_KEYS.includes(combo) &&
 		(get(editingObject) || get(faceEditObject)) &&
 		get(meshEditHotkeys)
@@ -918,19 +1063,25 @@ function handleKeydown(event) {
 	// combos with global rows on purpose — G is Move here and Arm Move in two editors
 	// — and a bare `find` on `keys` could return one of them and shadow the real
 	// command depending on where it happened to sit in the array.
-	const shortcut = shortcuts.find((s) => s.keys === combo && !s.external);
+	// 36 U11: of the rows bound to this combo, the FOCUSED scope's own row wins, a global
+	// row answers otherwise (keyScope.pickForScope). A row that declines (`when`) is not a
+	// candidate, so it never blocks a row further down the chain.
+	const live = shortcuts.filter(
+		(s) => s.keys === combo && !s.external && typeof s.action === 'function' && (!s.when || s.when())
+	);
+	const shortcut = pickForScope(live, focused);
 	if (!shortcut || !shortcut.action) return;
 	// 15-B6: app modals are non-modal <dialog>s, so the page behind them is NOT
 	// inert and these window handlers still fire — every modal now mutes them
 	// (was Settings only, which is also why panel toggles couldn't fight the
 	// hidePanels snapshot). The help list stays live — by ID since Phase 5, so
 	// the exemption follows the command when a user rebinds it.
-	if (get(anyModalOpen) && shortcut.id !== 'help.shortcuts') return;
+	if (get(anyModalOpen) && shortcut.id !== 'help.shortcuts' && shortcut.id !== 'help.cheatsheet') return;
 	// A binding may decline the key (85: Escape only means "leave isolation" WHILE
-	// something is isolated). Checked BEFORE preventDefault, so a declined key is
-	// left completely untouched for whoever else handles it — registering Escape
-	// would otherwise swallow the browser default on every press in the app.
-	if (shortcut.when && !shortcut.when()) return;
+	// something is isolated). Declining rows were filtered out above, BEFORE
+	// preventDefault, so a declined key is left completely untouched for whoever else
+	// handles it — registering Escape would otherwise swallow the browser default on
+	// every press in the app.
 
 	event.preventDefault();
 	shortcut.action();
@@ -945,5 +1096,7 @@ export function startShortcuts() {
 	// no localStorage to read from
 	overrides = loadOverrides();
 	applyOverrides();
+	startKeyScope();
+	setVrScopeProbe(() => !!get(isVRMode));
 	window.addEventListener('keydown', handleKeydown);
 }

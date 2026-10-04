@@ -1,4 +1,5 @@
 <script>
+	import { viewportHasKeys } from '$lib/keyScope'; // 36 U11
 	// Desktop mesh-edit toolbar (135 -> 144 pinned strip -> CL-B B5 floating
 	// strip -> M0 TOOLBOX): a professional tool-palette window on the shared
 	// ToolboxWindow shell — header-drag, width-resize reflows the square icon
@@ -647,6 +648,9 @@
 	/** @param {KeyboardEvent} event */
 	function onKeydown(event) {
 		if (!active) return;
+		// 36 U11: a mesh session's letters (E/I/G/C/L…) and Escape belong to the VIEWPORT;
+		// typed in the node editor they mean the node editor's own commands
+		if (!viewportHasKeys(event)) return;
 		if (event.key === 'Escape') {
 			// M9b: a pending knife cut owns Escape first. ALL THREE Escape handlers
 			// (here, meshEdit's and faceEdit's) have to ask, since whichever runs

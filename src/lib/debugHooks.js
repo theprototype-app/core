@@ -34,6 +34,9 @@ export const DEBUG_HOOKS = [
 	['profilerView', () => import('./perf/profilerView')],
 	['profilerModel', () => import('./perf/profilerModel.js')],
 	['vrRecIndicator', () => import('./vrRecIndicator')],
+	// 36 U3b/I5: the tour engine (tours, activeTour, toursDebug) + the built-in tours
+	['tours', () => import('./tours/index.js')],
+	['toursBuiltin', () => import('./tours/builtin.js')],
 	['perfLiveSource', () => import('./perf/liveSource')],
 	['perfLiveSink', () => import('./perf/liveSink')],
 	['perfLiveWire', () => import('./perf/liveWire')],

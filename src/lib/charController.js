@@ -5,6 +5,7 @@ import { globalScene } from '../stores/sceneStore';
 import { sceneGravity, scenePhysicsGround } from './scenePhysics';
 import { dungeonData, slideMove } from './dungeonPlay';
 import { kitPlayRules } from './kit/runtime.js'; // 34 R2: kit.rules' jump height
+import { playerInteractionGroups } from './collisionGroups'; // 36 X5: a leaf
 
 // 21-E6 — THE CHARACTER CONTROLLER, as data a graph can own.
 //
@@ -290,7 +291,13 @@ function ensureCapsule(rt, eyeHeight) {
 			// was moved into (30b-integrate: desktop Play + a sim flung a crate 8 m before the
 			// first knock) and stood as an invisible pillar where the player last was. Solver
 			// groups 0 = no contact forces with anything; computeColliderMovement still sweeps it.
-			capsule = world.createCollider(RAPIER.ColliderDesc.capsule(half, CAPSULE_RADIUS).setSolverGroups(0));
+			// 36 X5: the capsule is IN the Player group, so a ghost wall (one whose
+			// "collides with" leaves Player out) is passed through by the sweep below
+			capsule = world.createCollider(
+				RAPIER.ColliderDesc.capsule(half, CAPSULE_RADIUS)
+					.setSolverGroups(0)
+					.setCollisionGroups(playerInteractionGroups())
+			);
 			controller = world.createCharacterController(0.02);
 			controller.enableAutostep?.(0.3, 0.2, true);
 			controller.enableSnapToGround?.(0.3);
@@ -405,7 +412,7 @@ export function resolveWalk(feetPos, height, dt, desired, opts = {}) {
 			// 33-scenes: SENSORS are pass-through — a trigger volume, grass, flowers, a rug, a trim
 			// a level marks so. Without the flag the sweep treated every one as a wall (measured: the
 			// open front door of the Tavern held the walker at its threshold, a sensor trim there)
-			controller.computeColliderMovement(capsule, { x: dx, y: dy, z: dz }, sensorsExcluded);
+			controller.computeColliderMovement(capsule, { x: dx, y: dy, z: dz }, sensorsExcluded, playerInteractionGroups());
 			const moved = controller.computedMovement();
 			dx = moved.x;
 			dy = moved.y;
@@ -501,7 +508,7 @@ export function collideRigStep(rig, before) {
 	if (Math.abs(d.x) + Math.abs(d.y) + Math.abs(d.z) < 1e-7) return false;
 	try {
 		capsule.setTranslation({ x: before.x, y: before.y - FLY_BODY / 2, z: before.z });
-		controller.computeColliderMovement(capsule, d, sensorsExcluded);
+		controller.computeColliderMovement(capsule, d, sensorsExcluded, playerInteractionGroups());
 		const moved = controller.computedMovement();
 		_target.set(before.x + moved.x, before.y + moved.y, before.z + moved.z);
 		capsule.setTranslation({ x: _target.x, y: _target.y - FLY_BODY / 2, z: _target.z });

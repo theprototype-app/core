@@ -134,6 +134,7 @@ export const DEBUG_HOOKS = [
 	['playSettings', () => import('./playSettings')],
 	['colliderSpec', () => import('./colliderSpec')],
 	['colliderHelpers', () => import('./colliderHelpers')],
+	['colliderDecompose', () => import('./colliderDecompose')], // 36 X3
 	['colliderEdit', () => import('./colliderEdit')],
 	['editSession', () => import('./editSession')],
 	['trackpadNav', () => import('./trackpadNav')],

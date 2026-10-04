@@ -183,7 +183,11 @@ export const VALIDATORS = {
 	edgedelete: (d) => isArray(d.ids),
 	// 31: a pulse, and (the clap) WHERE it happened — the point is read as a place the moment it
 	// lands, so a non-finite one would plant a star at NaN; absent is every pre-31 trigger
-	nodetrigger: (d) => typeof d.id === 'string' && (d.at === undefined || d.at === null || isVec3(d.at)),
+	nodetrigger: (d) =>
+		typeof d.id === 'string' &&
+		(d.at === undefined || d.at === null || isVec3(d.at)) &&
+		// 36 X6: a contact's OTHER body (a uuid, '' = the ground); older peers ignore it
+		(d.other === undefined || d.other === null || d.other === '' || isUuid(d.other)),
 	nodedefs: (d) => isArray(d.defs),
 	verts: (d) => isUuid(d.uuid) && isArray(d.indices),
 	meshgeo: (d) => isUuid(d.uuid) && d.positions !== undefined,

@@ -104,6 +104,10 @@ import {
 } from './panels.js';
 import { controllerRay } from './pointer.js';
 import { boxSelectEnd, beginStretch, commitStretch } from './tools.js';
+// 36 X4: the collider session, PRIMED (colliderEdit reaches faceEdit/history — a static
+// edge from here is the documented cycle family); every use below is null-safe
+/** @type {any} */ let colliderEditRef = null;
+if (typeof window !== 'undefined') import('../colliderEdit').then((m) => (colliderEditRef = m));
 
 /** Raycast the quick-menu tiles @param {number} index @returns {string|null} tile action name */
 export function raycastMenu(index) {
@@ -235,7 +239,34 @@ export function executeVRMenuAction(name) {
 		}
 		return;
 	}
+	if (name.startsWith('collider:')) {
+		// 36 X4: the collider session's rows in the edit side-menu
+		const cmd = name.slice('collider:'.length);
+		const ce = colliderEditRef;
+		if (!ce || !get(ce.colliderEditObject)) return;
+		if (cmd === 'add:box' || cmd === 'add:sphere') ce.addColliderPiece(cmd.slice(4));
+		else if (cmd === 'done') {
+			if (ce.commitColliderEdit()) vrEditMenuOpen.set(false); // false = over the cap, stays open
+		} else if (cmd === 'cancel') {
+			ce.exitColliderEdit();
+			vrEditMenuOpen.set(false);
+		} else if (cmd === 'decompose') {
+			// X3 from the headset: leave the hand-edit session, decompose the mesh instead
+			const target = ce.colliderTargetUuid();
+			ce.exitColliderEdit(false);
+			vrEditMenuOpen.set(false);
+			if (target) import('../colliderDecompose').then((m) => m.decomposeCollider(target));
+		}
+		return;
+	}
 	if (name === 'edit:close') {
+		// 36 X4: closing the side-menu during a collider session CANCELS it (the proxy
+		// must not outlive its menu); Done is the explicit save
+		if (colliderEditRef && get(colliderEditRef.colliderEditObject)) {
+			colliderEditRef.exitColliderEdit();
+			vrEditMenuOpen.set(false);
+			return;
+		}
 		// side-menu close = exit mesh edit (137); bake a pending stretch (161)
 		commitStretch();
 		vrFaceCreateMode.set(false);
@@ -248,6 +279,20 @@ export function executeVRMenuAction(name) {
 	if (name.startsWith('edit:mode:')) {
 		// switch Vertices / Faces / Stretch from the side-menu (137/161)
 		const mode = name.slice('edit:mode:'.length);
+		// 36 X4: inside a collider session the tabs drive the PROXY (the real object is
+		// never mesh-edited by it), and Stretch has no meaning there
+		const proxyUuid = colliderEditRef && get(colliderEditRef.colliderEditObject) ? colliderEditRef.colliderProxyUuid() : null;
+		if (proxyUuid) {
+			vrFaceCreateMode.set(false);
+			if (mode === 'vertices') {
+				exitFaceEdit();
+				enterEditMode(proxyUuid);
+			} else if (mode === 'faces') {
+				exitEditMode();
+				enterFaceEdit(proxyUuid);
+			}
+			return;
+		}
 		const object = /** @type {any} */ (get(selectedObject));
 		if (!object?.uuid) return;
 		vrFaceCreateMode.set(false); // leaving/re-entering a mode exits create-face

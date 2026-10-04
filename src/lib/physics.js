@@ -20,6 +20,8 @@ import {
 	noteObjectPose
 } from './flowRuntime';
 import { colliderSpecOf } from './colliderSpec';
+import { colliderDescsFor } from './colliderDescs';
+import { groupOf, interactionGroups, isGroupId } from './collisionGroups';
 import {
 	sceneGravity,
 	scenePhysicsGround,
@@ -112,7 +114,7 @@ let oobCount = 0;
 /** @type {string} */ let oobAction = 'respawn';
 /** @type {Map<string, number>} uuid -> last impact stamp (step-now ms) */
 let lastImpactAt = new Map();
-/** @type {{uuid: string, strength: number}[]} contacts collected inside the substep loop */
+/** @type {{uuid: string, strength: number, other: string}[]} contacts collected inside the substep loop (36 X6: + the other body) */
 let pendingImpacts = [];
 /** CL-A: colliders attached to FIXED scenery bodies (rebuild bookkeeping —
  * BodyEntry only exists for dynamic/kinematic). @type {Map<string, any[]>} */
@@ -199,8 +201,13 @@ function collectParams(group) {
 	const map = {};
 	group?.children.forEach((/** @type {any} */ object) => {
 		const p = object.userData?.physics;
+		// 36 X5: a W1 water volume takes part even with no physics block — as a
+		// pass-through trigger in the Water group (below), never a solid box
+		const water = object.userData?.water;
+		if (!p && !(water && typeof water === 'object')) return;
+		map[object.uuid] = { group: groupOf(p, water) };
+		if (Array.isArray(p?.collidesWith)) map[object.uuid].collidesWith = p.collidesWith;
 		if (!p) return;
-		map[object.uuid] = {};
 		if (p.mode === 'dynamic') map[object.uuid].mass = p.mass ?? 1;
 		if (p.mode === 'static') map[object.uuid].forceStatic = true;
 		if (p.restitution != null) map[object.uuid].restitution = p.restitution;
@@ -251,6 +258,8 @@ function collectParams(group) {
 		// hulls the object wired into the node's `source` handle
 		if (source.type === 'collider') {
 			map[uuid].collider = source.data?.shape ?? 'box';
+			// 36 X5: the node's group wins too ('inherit' keeps the Inspector's)
+			if (isGroupId(source.data?.group)) map[uuid].group = source.data.group;
 			if (source.data?.scale != null) map[uuid].colliderScale = source.data.scale;
 			if (source.data?.sensor) map[uuid].sensor = true;
 			const sourceEdge = edges.find((e) => e.target === source.id && e.targetHandle === 'source');
@@ -276,25 +285,10 @@ function collectParams(group) {
 		if (!graph || graph === SCENE_GRAPH) return;
 		if (!toSelector.has(source.id)) applyPhysicsNode(source, graph);
 	});
+	// 36 X5: the Water/trigger group IS pass-through — whatever put an object in it
+	// (a W1 volume, the Inspector, a collider node), it is a sensor
+	for (const uuid of Object.keys(map)) if (map[uuid].group === 'water') map[uuid].sensor = true;
 	return map;
-}
-
-/**
- * Collider shape from the Inspector's collider pick + the object's LOCAL half
- * extents (PFX-C follow-up: sphere/capsule/cylinder join box + hull; 15-A3
- * adds cone). Capsule, cylinder and cone stand along the object's local Y;
- * sphere takes the largest extent so nothing pokes through.
- * @param {string|undefined} kind @param {THREE.Vector3} he half extents
- */
-function shapeDesc(kind, he) {
-	if (kind === 'sphere') return RAPIER.ColliderDesc.ball(Math.max(he.x, he.y, he.z));
-	if (kind === 'capsule') {
-		const radius = Math.max(he.x, he.z, 0.02);
-		return RAPIER.ColliderDesc.capsule(Math.max(he.y - radius, 0.01), radius);
-	}
-	if (kind === 'cylinder') return RAPIER.ColliderDesc.cylinder(he.y, Math.max(he.x, he.z, 0.02));
-	if (kind === 'cone') return RAPIER.ColliderDesc.cone(he.y, Math.max(he.x, he.z, 0.02));
-	return RAPIER.ColliderDesc.cuboid(he.x, he.y, he.z);
 }
 
 /** LOCAL axis letter -> WORLD angvel vector for setAngvel (bodies report/step in
@@ -347,7 +341,7 @@ function liveParamsJson() {
 	const out = {};
 	Object.keys(params).forEach((uuid) => {
 		const p = params[uuid];
-		if (p.angvel || p.motor || p.collider || p.sensor || p.freeze || p.restitution != null || p.friction != null || p.mass != null)
+		if (p.angvel || p.motor || p.collider || p.sensor || p.freeze || p.restitution != null || p.friction != null || p.mass != null || (p.group && p.group !== 'default') || p.collidesWith)
 			out[uuid] = {
 				angvel: p.angvel,
 				motor: p.motor,
@@ -479,7 +473,10 @@ export function listPhysicsObjects() {
  * @param {string} uuid
  * @param {{mode?: 'auto'|'static'|'dynamic', mass?: number, restitution?: number,
  *   friction?: number, collider?: string, sensor?: boolean|null,
- *   freeze?: any, material?: string}} patch — 21-C4: sensor/freeze/material were
+ *   freeze?: any, material?: string, group?: string|null,
+ *   collidesWith?: string[]|null, colliderVerts?: number[],
+ *   colliderPieces?: number[][]}} patch — 36 X5: collision group + filter; 36 X3: a
+ *   decomposed custom collider — 21-C4: sensor/freeze/material were
  *   missing from this type while the Inspector had been writing all three since
  *   CL-A (its collider row, its Sensor checkbox and its material presets), so any
  *   NEW caller passing them failed the type check for a param the function has
@@ -574,17 +571,29 @@ function shapeKeyOf(p, object) {
 		fr: p?.friction ?? null,
 		m: p?.mass ?? null,
 		cs: p?.colliderScale ?? null, // CL-C: node shape scale
+		g: p?.group ?? null, // 36 X5: collision group + filter
+		cw: p?.collidesWith ?? null,
 		src: p?.colliderSource ?? null // CL-C: 'object' shape source uuid
 	});
 }
 
 /** CL-C: node params may hull ANOTHER object ('object' source) and scale the
- * shape — resolve those extras into the shared spec. @param {any} object @param {any} p */
-function specOf(object, p) {
+ * shape — resolve those extras into the shared spec. 36 X2: `dynamic` turns an
+ * exact (trimesh) pick into its hull. @param {any} object @param {any} p @param {boolean} dynamic */
+function specOf(object, p, dynamic) {
 	const sourceObject = p?.colliderSource
 		? get(objectsGroup)?.getObjectByProperty('uuid', p.colliderSource)
 		: null;
-	return colliderSpecOf(object, p?.collider, { sourceObject, scale: p?.colliderScale });
+	return colliderSpecOf(object, p?.collider, { sourceObject, scale: p?.colliderScale, dynamic });
+}
+
+/** 36 X2: the toast for a spec that could not be built as asked. @param {any} spec @param {any} p @param {any} object */
+function fallbackMessage(spec, p, object) {
+	const name = '"' + (object.name || object.type) + '"';
+	if (spec.reason === 'dynamic')
+		return 'Exact mesh collider is for static bodies — ' + name + ' is dynamic, so it uses a convex hull';
+	const what = p?.collider === 'custom' ? 'Custom collider' : spec.reason ? 'Exact mesh collider' : 'Convex hull';
+	return what + ' unavailable for ' + name + (spec.reason ? ' (' + spec.reason + ')' : '') + ' — using a box';
 }
 
 /**
@@ -601,15 +610,9 @@ function specOf(object, p) {
  * @returns {{colliders: any[], spec: any} | null}
  */
 function createCollidersFor(object, body, p, dynamic, entry, knownSpec) {
-	const spec = knownSpec ?? specOf(object, p);
+	const spec = knownSpec ?? specOf(object, p, dynamic);
 	if (!spec) return null;
-	if (spec.fallback)
-		showToast(
-			(p?.collider === 'custom' ? 'Custom collider' : 'Convex hull') +
-				' unavailable for "' +
-				(object.name || object.type) +
-				'" — using a box'
-		);
+	if (spec.fallback) showToast(fallbackMessage(spec, p, object));
 	const t = body.translation();
 	const r = body.rotation();
 	const bodyQuat = new THREE.Quaternion(r.x, r.y, r.z, r.w);
@@ -618,33 +621,14 @@ function createCollidersFor(object, body, p, dynamic, entry, knownSpec) {
 	/** world point -> body-local @param {any} world */
 	const localOf = (world) => world.clone().sub(bodyPos).applyQuaternion(invBody);
 	const relQuat = invBody.clone().multiply(spec.quat); // object rotation in the body frame
-	/** @type {any[]} */
-	const descs = [];
-	if (spec.pieces) {
-		// hull/custom: verts are scale-baked around the OBJECT ORIGIN — bake the
-		// relative rotation per-vert, carry the origin offset on the desc
-		const origin = localOf(object.position);
-		const v = new THREE.Vector3();
-		for (const piece of spec.pieces) {
-			const baked = new Float32Array(piece.verts.length);
-			for (let i = 0; i < piece.verts.length; i += 3) {
-				v.set(piece.verts[i], piece.verts[i + 1], piece.verts[i + 2]).applyQuaternion(relQuat);
-				baked[i] = v.x;
-				baked[i + 1] = v.y;
-				baked[i + 2] = v.z;
-			}
-			const desc = RAPIER.ColliderDesc.convexHull(baked);
-			if (desc) descs.push(desc.setTranslation(origin.x, origin.y, origin.z));
-		}
-	}
-	if (!descs.length) {
-		const local = localOf(spec.center);
-		descs.push(
-			shapeDesc(spec.pieces ? 'box' : spec.kind, spec.halfExtents)
-				.setTranslation(local.x, local.y, local.z)
-				.setRotation({ x: relQuat.x, y: relQuat.y, z: relQuat.z, w: relQuat.w })
-		);
-	}
+	// hull/custom/trimesh pieces are scale-baked around the OBJECT ORIGIN (the
+	// relative rotation is baked per-vert, the origin offset rides the desc);
+	// primitives sit at the AABB centre (36 X2: lifted into colliderDescs.js)
+	const descs = colliderDescsFor(RAPIER, spec, {
+		origin: localOf(object.position),
+		center: localOf(spec.center),
+		relQuat
+	});
 	/** @type {any[]} */
 	const colliders = [];
 	// B4: the SCENE default material fills in wherever the object says nothing —
@@ -660,6 +644,11 @@ function createCollidersFor(object, body, p, dynamic, entry, knownSpec) {
 		// PFX-C: dynamics report contact starts; CL-A: sensors need events too
 		if (dynamic || p?.sensor) desc.setActiveEvents(RAPIER.ActiveEvents.COLLISION_EVENTS);
 		if (p?.sensor) desc.setSensor(true);
+		// 36 X5: every collider carries its groups — the default (in Default,
+		// colliding with everything) behaves exactly as no groups at all, and it
+		// has to be explicit or a default body (rapier: member of EVERY group)
+		// would slip through any filter that names one group
+		desc.setCollisionGroups(interactionGroups(p?.group ?? 'default', p?.collidesWith));
 		const collider = world.createCollider(desc, body);
 		colliders.push(collider);
 		colliderOwner.set(collider.handle, { uuid: object.uuid, entry, sensor: !!p?.sensor });
@@ -704,9 +693,9 @@ function createBodyFor(object, p, opts) {
 	// Colliders stay ORIENTED: primitives fit the LOCAL AABB (rotation stripped
 	// for the measure) and carry the rotation on the desc; hull/custom pieces
 	// bake it into the verts — so every body starts WORLD-ALIGNED.
-	const spec = opts.spec ?? specOf(object, p);
-	if (!spec) return null; // lights/empties
 	const { dynamic, kinematic } = opts;
+	const spec = opts.spec ?? specOf(object, p, dynamic);
+	if (!spec) return null; // lights/empties
 	// hull/custom bodies sit at the OBJECT ORIGIN (verts are origin-relative);
 	// primitives at the AABB center (center-offset bookkeeping)
 	const at = spec.pieces ? object.position : spec.center;
@@ -863,9 +852,8 @@ async function startSimulation() {
 	colliderOwner = new Map();
 	lastImpactAt = new Map();
 	pendingImpacts = [];
-	// NOTE for later phases: static scenery would benefit from
-	// ColliderDesc.trimesh (fixed bodies only) and terrain from a heightfield —
-	// both deferred; every collider today is a cuboid AABB or an opt-in hull.
+	// 36 X2: static/kinematic scenery may pick the EXACT mesh (ColliderDesc.trimesh,
+	// colliderSpec kind 'trimesh'); terrain from a heightfield is still deferred.
 	bodies = [];
 	stepTimes = []; // 26-E: a new run's cost is not the last run's
 	beforeStates = [];
@@ -1705,7 +1693,9 @@ function queueContact(h1, h2, now) {
 		const uuid = entry.object.uuid;
 		if (now - (lastImpactAt.get(uuid) ?? -Infinity) < IMPACT_COOLDOWN_MS) continue;
 		lastImpactAt.set(uuid, now);
-		pendingImpacts.push({ uuid, strength: down });
+		// 36 X6: and what it hit — the other collider's owner, '' for the ground
+		const other = handle === h1 ? h2 : h1;
+		pendingImpacts.push({ uuid, strength: down, other: other === groundHandle ? '' : colliderOwner.get(other)?.uuid ?? '' });
 	}
 }
 
@@ -1748,10 +1738,10 @@ function dispatchImpacts() {
 	const impacts = pendingImpacts;
 	pendingImpacts = [];
 	const group = get(objectsGroup);
-	impacts.forEach(({ uuid, strength }) => {
+	impacts.forEach(({ uuid, strength, other }) => {
 		// flow path: pulse On Impact nodes targeting this object — the trigger
 		// stamp replicates (nodetrigger), so every peer computes the same pulse
-		fireObjectImpact(uuid, strength);
+		fireObjectImpact(uuid, strength, other);
 		// zero-flow path: an emitter set to "On impact" bursts for everyone
 		// (replicated particleburst timestamp) — userData emitters checked on
 		// the object, NODE emitters through the runtime
@@ -1999,6 +1989,11 @@ export function physicsRuntime() {
 }
 
 /** B4: test/debug view of the world-level state (ground, bounds, timing) */
+/** 36 X2: a collider's rapier shape type by NAME ('TriMesh', 'Cuboid' …) for the debug views. @param {any} c */
+function shapeNameOf(c) {
+	return RAPIER?.ShapeType?.[c.shapeType?.()] ?? null;
+}
+
 export function physicsWorldDebug() {
 	return {
 		running: !!world,
@@ -2013,6 +2008,7 @@ export function physicsWorldDebug() {
 		fixed: [...fixedBodies.keys()].map((uuid) => ({
 			name: get(objectsGroup)?.getObjectByProperty('uuid', uuid)?.name ?? uuid,
 			colliders: (fixedColliders.get(uuid) ?? []).length,
+			shapes: (fixedColliders.get(uuid) ?? []).map(shapeNameOf), // 36 X2
 			shapeKey: fixedShapeKeys.get(uuid) ?? null
 		})),
 		beforeStates: beforeStates.length,
@@ -2050,6 +2046,7 @@ export function physicsDebug() {
 		oob: !!entry.oob,
 		holdPeer: entry.holdPeer ?? null,
 		colliders: entry.colliders.map((/** @type {any} */ c) => c.handle),
+		shapes: entry.colliders.map(shapeNameOf), // 36 X2: what rapier really holds
 		ccd: entry.body?.isCcdEnabled?.() ?? null,
 		bodyRot: entry.body?.rotation?.() ?? null
 	}));

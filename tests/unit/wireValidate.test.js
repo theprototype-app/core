@@ -74,6 +74,15 @@ describe('validateWireMessage', () => {
 		expect(validateWireMessage({ type: 'nodetrigger', id: 7, t: 12.5 })).toBe(false);
 	});
 
+	it('36 X6: a nodetrigger may carry the contact\'s other body (a uuid, or empty for the ground)', () => {
+		const other = '2bfe3770-7caa-4037-87ee-ca9c557993a7';
+		expect(validateWireMessage({ type: 'nodetrigger', id: 'n1', t: 1, other })).toBe(true);
+		expect(validateWireMessage({ type: 'nodetrigger', id: 'n1', t: 1, other: '' })).toBe(true);
+		expect(validateWireMessage({ type: 'nodetrigger', id: 'n1', t: 1, other: null })).toBe(true);
+		expect(validateWireMessage({ type: 'nodetrigger', id: 'n1', t: 1, other: 'x'.repeat(100) })).toBe(false); // isUuid is plausibility, not a format check
+		expect(validateWireMessage({ type: 'nodetrigger', id: 'n1', t: 1, other: { evil: true } })).toBe(false);
+	});
+
 	it('cannot itself be made to throw by a hostile shape', () => {
 		// a validator that throws IS a rejection, never an escape into the dispatcher
 		const nasty = {

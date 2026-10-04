@@ -82,6 +82,8 @@
 	import { showColliders, colliderVizObjects, setColliderViz } from '$lib/colliderHelpers';
 	import { enterColliderEdit } from '$lib/colliderEdit';
 	import { inferredColliderKind } from '$lib/colliderSpec';
+	import PhysicsGroupRow from './PhysicsGroupRow.svelte'; // 36 X5
+	import ColliderDecomposeRow from './ColliderDecomposeRow.svelte'; // 36 X3
 	// 57.5: a spline's record is editable right here — same write path the
 	// viewport handles use (apply + broadcast + one 'spline' undo entry)
 	import {
@@ -3873,6 +3875,10 @@
 								{ value: 'cylinder', name: 'Cylinder' },
 									{ value: 'cone', name: 'Cone' },
 								{ value: 'hull', name: 'Convex hull' },
+								// 36 X2: exact trimesh — static/kinematic only, so a dynamic body is not offered it
+								...(($selectedObject.userData.physics?.mode ?? 'auto') !== 'dynamic'
+									? [{ value: 'trimesh', name: 'Exact mesh (static)' }]
+									: []),
 							{ value: 'custom', name: 'Custom (edit…)' }
 							]}
 							value={$selectedObject.userData.physics?.collider ?? inferredColliderKind($selectedObject) ?? 'box'}
@@ -3892,6 +3898,7 @@
 							Edit collider…
 						</button>
 					{/if}
+					{#if $selectedObject.isMesh || $selectedObject.children?.length}<ColliderDecomposeRow uuid={$selectedObject.uuid} />{/if}
 					<!-- CL-A A3: sensor = trigger volume; overlaps fire On Enter / On Exit -->
 					<Checkbox
 						id="physics-sensor"
@@ -3899,6 +3906,7 @@
 						onchange={(/** @type {any} */ e) => setPhysics({ sensor: e.currentTarget.checked || null })}
 						>Sensor — no collision, fires On Enter / On Exit</Checkbox
 					>
+					<PhysicsGroupRow physics={$selectedObject.userData.physics} water={$selectedObject.userData.water} onchange={setPhysics} />
 					{#if ($selectedObject.userData.physics?.mode ?? 'auto') === 'dynamic'}
 						<!-- CL-A A5: freeze axes (dynamic bodies only) -->
 						<div id="physics-freeze-rot" class="ui-row items-center gap-2 text-xs text-gray-300">

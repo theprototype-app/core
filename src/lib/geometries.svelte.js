@@ -131,7 +131,10 @@ export function createGeometry(command, uuid) {
         // 15-A3: the baked building blocks have no geometryParams to infer a
         // collider from — stamp an explicit hint (rides toJSON/GLTF extras like
         // the terrain flag) so a rename can't flip their inferred hull to a box.
-        if (['Wedge', 'Stairs', 'Arch', 'Corner'].includes(geometry)) object.userData.colliderHint = 'hull';
+        // 36 X2/A6: the concave two (arch opening, inside corner) take the EXACT mesh —
+        // colliderSpec downgrades it to the hull while the block is dynamic
+        if (['Wedge', 'Stairs', 'Arch', 'Corner'].includes(geometry))
+            object.userData.colliderHint = geometry === 'Arch' || geometry === 'Corner' ? 'trimesh' : 'hull';
         sceneObjects.add(object);
         //Trigger reactivity for UI list of objects
         pokeScene();

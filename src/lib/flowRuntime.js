@@ -721,6 +721,44 @@ const spawnActed = new Map();
  */
 const triggerPoints = new Map();
 
+/**
+ * 36 X6: WHICH body the last contact of an On Impact / On Enter / On Exit node was with
+ * (a uuid, '' = the ground). Runtime state beside the log like triggerPoints: the
+ * initiator writes it as it fires, a received nodetrigger's `other` writes it on every
+ * other peer, so the node's `other` output agrees everywhere. @type {Map<string, string>}
+ */
+const contactOthers = new Map();
+
+/** test/debug view: the other body of a contact node's last pulse @param {string} nodeId */
+export function contactOtherOf(nodeId) {
+	return contactOthers.has(nodeId) ? contactOthers.get(nodeId) : null;
+}
+
+/**
+ * 36 X6: a contact node's `filter` (an object wired into it) — fire only when the
+ * other body is that object, or a transient COPY of it (the reachesObjectSelector rule).
+ * No filter wired = every contact passes. @param {any} data resolved inputs @param {string} other
+ */
+function contactPasses(data, other) {
+	const filter = data?.filter;
+	if (typeof filter !== 'string' || filter === '' || filter === '-None-') return true;
+	return other === filter || (!!other && spawnedFromOf(other) === filter);
+}
+
+/** 36 X6: pulse a contact node and carry the other body with the stamp.
+ * @param {any} node @param {string} other */
+function fireContact(node, other) {
+	const t = syncedNow();
+	contactOthers.set(node.id, other);
+	const share = replicatesPulse(node);
+	applyNodeTrigger(node.id, t, false);
+	if (share) {
+		/** @type {any} */
+		const peer = get(peers);
+		if (peer) peer.send({ type: 'nodetrigger', id: node.id, t, other });
+	}
+}
+
 /** a Game Setting node's row id (`setting`), trimmed; '' = not configured @param {any} d */
 function settingIdOf(d) {
 	return typeof d?.setting === 'string' ? d.setting.trim() : '';
@@ -2516,10 +2554,14 @@ function evalNodeBody(node, allNodes, allEdges, time, seen, ctx) {
 			return d.invert ? -scaled : scaled;
 		}
 		case 'onimpact': {
-			// PFX-C: physics impacts arrive as replicated trigger stamps too
+			// PFX-C: physics impacts arrive as replicated trigger stamps too; 36 X6: the
+			// OTHER body rides a named `other` output (the onhit shape)
 			const trig = ctx && ctx.triggers ? ctx.triggers[node.id] : null;
 			const dt = trig ? time - trig.lastT : Infinity;
-			return dt >= 0 && dt < num(d.pulse ?? 0.3) ? 1 : 0;
+			return {
+				__default: dt >= 0 && dt < num(d.pulse ?? 0.3) ? 1 : 0,
+				__handles: { other: contactOthers.get(node.id) ?? '' }
+			};
 		}
 		case 'onhit': {
 			// 24-A A2: the knock's trigger. fireObjectHit stamps this node on EVERY peer
@@ -2555,10 +2597,13 @@ function evalNodeBody(node, allNodes, allEdges, time, seen, ctx) {
 		case 'onenter':
 		case 'onexit': {
 			// CL-C: sensor overlap edges arrive as replicated trigger stamps
-			// (initiator-detected in physics, same as onimpact)
+			// (initiator-detected in physics, same as onimpact); 36 X6: + `other`
 			const trig = ctx && ctx.triggers ? ctx.triggers[node.id] : null;
 			const dt = trig ? time - trig.lastT : Infinity;
-			return dt >= 0 && dt < num(d.pulse ?? 0.3) ? 1 : 0;
+			return {
+				__default: dt >= 0 && dt < num(d.pulse ?? 0.3) ? 1 : 0,
+				__handles: { other: contactOthers.get(node.id) ?? '' }
+			};
 		}
 		case 'measure': {
 			// B6: the numbers a rule graph actually asks for — how tall is the
@@ -2571,7 +2616,9 @@ function evalNodeBody(node, allNodes, allEdges, time, seen, ctx) {
 			const object = sceneObjects?.getObjectByProperty('uuid', target);
 			if (!object) return 0;
 			if (read === 'y') return object.position.y;
-			const spec = colliderSpecOf(object, object.userData?.physics?.collider);
+			// only the measured AABB is read, which every kind shares — asking for
+			// 'box' never builds a hull or a 20k-triangle trimesh per frame (36 X2)
+			const spec = colliderSpecOf(object, 'box');
 			if (!spec) return object.position.y;
 			const half = spec.halfExtents?.y ?? 0;
 			const centre = spec.center?.y ?? object.position.y;
@@ -2855,7 +2902,9 @@ function syncedNow() {
  * @param {string|null} [sourceHandle]
  * @param {any} [at] 31: where it happened ([x, y, z], objects-group frame), for a received clap
  */
-export function applyNodeTrigger(nodeId, t, replicate = true, sourceHandle = null, at = null) {
+export function applyNodeTrigger(nodeId, t, replicate = true, sourceHandle = null, at = null, other = undefined) {
+	// 36 X6: a contact's other body, received with the stamp (see contactOthers)
+	if (typeof other === 'string') contactOthers.set(nodeId, other);
 	// 31: a trigger may carry WHERE it happened (the clap's meeting point). Kept beside the
 	// log rather than in it, so the log's shape, its merge and its late-joiner reply are
 	// untouched — history fires nothing, so a joiner needs no point. A local fire records
@@ -3080,16 +3129,19 @@ export function objectHasOnClick(uuid) {
  * PFX-C: the physics INITIATOR detected a ground/object impact — pulse any On
  * Impact node targeting the object whose min-strength gate passes. The trigger
  * stamp replicates (nodetrigger), so every peer computes the identical pulse.
+ * 36 X6: `otherUuid` = the body it hit ('' = the ground) — gated by the node's
+ * `filter` input and carried to every peer for its `other` output.
  * @param {string} uuid @param {number} strength downward speed at contact (m/s)
+ * @param {string=} otherUuid
  */
-export function fireObjectImpact(uuid, strength) {
+export function fireObjectImpact(uuid, strength, otherUuid = '') {
 	const ctx = runtimeCtx();
 	nodes.forEach((node) => {
 		if (node.type !== 'onimpact') return;
 		const data = resolveInputs(node, nodes, edges, syncedNow(), ctx);
 		if (strength < num(data.minStrength ?? 0)) return;
-		if (reachesObjectSelector(node.id, uuid) || implicitOwnerOf(node) === uuid)
-			applyNodeTrigger(node.id, syncedNow(), replicatesPulse(node));
+		if (!contactPasses(data, otherUuid)) return;
+		if (reachesObjectSelector(node.id, uuid) || implicitOwnerOf(node) === uuid) fireContact(node, otherUuid);
 	});
 }
 
@@ -3208,10 +3260,13 @@ export function fireHudButton(elementId) {
  * the node types). @param {string} type @param {string} uuid @param {string} otherUuid
  */
 function fireSensorEdge(type, uuid, otherUuid) {
+	const ctx = runtimeCtx();
 	nodes.forEach((node) => {
 		if (node.type !== type) return;
-		if (reachesObjectSelector(node.id, uuid) || implicitOwnerOf(node) === uuid)
-			applyNodeTrigger(node.id, syncedNow(), replicatesPulse(node));
+		if (!(reachesObjectSelector(node.id, uuid) || implicitOwnerOf(node) === uuid)) return;
+		// 36 X6: the filter input gates on the other body; the other rides the stamp
+		if (!contactPasses(resolveInputs(node, nodes, edges, syncedNow(), ctx), otherUuid ?? '')) return;
+		fireContact(node, otherUuid ?? '');
 	});
 }
 

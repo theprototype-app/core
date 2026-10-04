@@ -30,8 +30,10 @@ h.run(async () => {
 		['Plane', 'box'],
 		['Wedge', 'hull'],
 		['Stairs', 'hull'],
-		['Arch', 'hull'],
-		['Corner', 'hull']
+		// 36 X2/A6: the concave blocks infer the EXACT mesh (a static spec; a dynamic
+		// body gets the hull — asserted below)
+		['Arch', 'trimesh'],
+		['Corner', 'trimesh']
 	];
 	for (const [name, kind] of cases) {
 		const s = await specOf(name);

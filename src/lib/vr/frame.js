@@ -33,7 +33,8 @@ import {
 	highlightFaceByTriangle,
 	applyFaceGrab,
 	adjustFaceGesture,
-	faceGesturePending
+	faceGesturePending,
+	lookupEditable
 } from '../faceEdit';
 import { snapEnabled, snapSettings } from '../snapping';
 import { selectObject } from '../objectActions';
@@ -401,7 +402,7 @@ export function updateVRControls() {
 			const controller = renderer.xr.getController(faceGrabHand.index);
 			const pos1 = controller.getWorldPosition(new THREE.Vector3());
 			const quat1 = controller.getWorldQuaternion(new THREE.Quaternion());
-			const edited = get(objectsGroup)?.getObjectByProperty('uuid', get(faceEditObject));
+			const edited = lookupEditable(get(faceEditObject) ?? '') /* 36 X4: the collider proxy too */;
 			// world delta since grab-start, converted into the object's local frame
 			const objQuatInv = edited
 				? edited.getWorldQuaternion(new THREE.Quaternion()).invert()
@@ -435,7 +436,7 @@ export function updateVRControls() {
 			// idle: the pointer ray highlights the face under it (121)
 			const pointerIndex = controllerIndexFor(get(vrMenuHand) === 'right' ? 'left' : 'right');
 			if (pointerIndex >= 0) {
-				const edited = get(objectsGroup)?.getObjectByProperty('uuid', get(faceEditObject));
+				const edited = lookupEditable(get(faceEditObject) ?? '') /* 36 X4: the collider proxy too */;
 				if (edited) {
 					const hits = controllerRay(pointerIndex).intersectObject(edited, false);
 					const tri = hits.length && hits[0].faceIndex != null ? hits[0].faceIndex : -1;

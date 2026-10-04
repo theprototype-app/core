@@ -961,10 +961,24 @@ const PHYSICS_AI_TOOLS = [
 								mass: { type: 'number', description: 'kg; implies mode dynamic' },
 								restitution: { type: 'number', description: 'bounciness 0..1' },
 								friction: { type: 'number', description: '0..2' },
-								collider: { type: 'string', enum: ['box', 'sphere', 'capsule', 'cylinder', 'hull'] },
+								collider: {
+									type: 'string',
+									enum: ['box', 'sphere', 'capsule', 'cylinder', 'hull', 'trimesh'],
+									description: 'trimesh = the exact mesh, for static scenery (tunnels, pools, arches); a dynamic body gets its hull'
+								},
 								sensor: {
 									type: 'boolean',
 									description: 'true = a trigger volume: no collision response, fires On Enter/On Exit nodes'
+								},
+								group: {
+									type: 'string',
+									enum: ['default', 'a', 'b', 'c', 'd', 'water'],
+									description: 'collision group; water = a pass-through trigger volume'
+								},
+								collidesWith: {
+									type: 'array',
+									items: { type: 'string', enum: ['default', 'a', 'b', 'c', 'd', 'water', 'player'] },
+									description: 'groups this object collides with (omit = all); leave out player for a ghost wall the player walks through'
 								}
 							},
 							required: ['uuid']

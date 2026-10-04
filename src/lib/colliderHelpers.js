@@ -56,6 +56,16 @@ function buildWireframe(spec, sensor) {
 	const geometries = [];
 	if (spec.pieces) {
 		for (const piece of spec.pieces) {
+			if (piece.indices) {
+				// 36 X2: the exact mesh IS the collider — draw its feature edges (a
+				// 20° crease threshold keeps a tessellated bowl readable)
+				const mesh = new THREE.BufferGeometry();
+				mesh.setAttribute('position', new THREE.BufferAttribute(piece.verts, 3));
+				mesh.setIndex(new THREE.BufferAttribute(piece.indices, 1));
+				geometries.push(new THREE.EdgesGeometry(mesh, 20));
+				mesh.dispose();
+				continue;
+			}
 			const points = [];
 			for (let i = 0; i < piece.verts.length; i += 3)
 				points.push(new THREE.Vector3(piece.verts[i], piece.verts[i + 1], piece.verts[i + 2]));
@@ -202,7 +212,8 @@ function sync() {
 		const object = group.getObjectByProperty('uuid', uuid);
 		if (!object) return;
 		const p = object.userData?.physics;
-		const spec = colliderSpecOf(object, p?.collider);
+		// 36 X2: a dynamic body's exact pick is shown as the hull it will get
+		const spec = colliderSpecOf(object, p?.collider, { dynamic: p?.mode === 'dynamic' });
 		if (!spec) return;
 		const sensor = !!p?.sensor;
 		const key = keyOf(object, spec, sensor);

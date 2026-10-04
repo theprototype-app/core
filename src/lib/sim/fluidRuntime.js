@@ -7,7 +7,8 @@ import { sceneGravity } from '../scenePhysics';
 import { qualityOverrides } from '../qualityGovernor';
 import { simulating, applyImpulse } from '../physics';
 import { inferredColliderKind } from '../colliderSpec';
-import { normalizeFloats, DEFAULT_BODY_DENSITY } from './buoyancy.js';
+import { normalizeFloats } from './buoyancy.js';
+import { setTankVolumes } from './waterQuery.js';
 
 // 36-sim U2b: FLUID TANKS — the runtime between a tank object (`userData.fluid`, made by
 // Create ▸ Simulation ▸ Fluid tank), the solver (a Web Worker running fluidCore) and the
@@ -27,7 +28,7 @@ export const QUEST_CAP = 1500;
 /** @typedef {{object: any, key: string, spec: ReturnType<typeof normalizeFluid>, visual: FluidVisual, capacity: number,
  *   pending: boolean, sentAt: number, steps: number, ms: number, count: number, visible: boolean,
  *   min: number[], max: number[], frame: THREE.Matrix4, frameQuat: THREE.Quaternion, prevPos: THREE.Vector3 | null,
- *   prevVel: THREE.Vector3, accel: THREE.Vector3, lastAt: number, lastDt: number, local?: {solver: FluidSolver, acc: {carry: number, drainCarry: number}},
+ *   prevVel: THREE.Vector3, accel: THREE.Vector3, lastAt: number, lastDt: number, surfaceLocal?: number | null, gen?: number, local?: {solver: FluidSolver, acc: {carry: number, drainCarry: number}},
  *   spare: ArrayBuffer | null}} Tank */
 
 /** @type {Map<string, Tank>} */
@@ -59,6 +60,9 @@ function onFrame(data) {
 	if (data?.op !== 'frame') return;
 	const tank = tanks.get(data.id);
 	if (!tank) return;
+	// a frame from the solver BEFORE a re-init (count/fill/size changed) is a different
+	// capacity: drop it (measured: 'offset is out of bounds' copying 3000 into 1500)
+	if (data.gen !== tank.gen) return;
 	tank.pending = false;
 	tank.count = data.count;
 	tank.ms = tank.ms ? tank.ms * 0.9 + data.ms * 0.1 : data.ms;
@@ -66,17 +70,63 @@ function onFrame(data) {
 	const positions = /** @type {Float32Array} */ (data.positions);
 	if (tank.object.parent) tank.visual.update(positions, data.count, tank.frame, visualParentOf(tank.object));
 	tank.spare = /** @type {ArrayBuffer} */ (positions.buffer);
+	tank.surfaceLocal = surfaceOf(positions, data.count, tank);
 	applyPush(tank, data.impulses);
+}
+
+/**
+ * The fluid's free surface in the tank frame: the 92nd percentile of particle heights (a
+ * spray of drops above the body of water must not count) plus a particle radius. A
+ * 64-bin histogram, not a sort — this runs every solver frame.
+ * @param {Float32Array} pos @param {number} n @param {Tank} tank
+ */
+function surfaceOf(pos, n, tank) {
+	if (!n) return tank.min[1];
+	const lo = tank.min[1];
+	const span = Math.max(tank.max[1] - lo, 1e-3);
+	const bins = new Uint32Array(64);
+	for (let i = 0; i < n; i++) bins[Math.min(63, Math.max(0, Math.floor(((pos[i * 3 + 1] - lo) / span) * 64)))]++;
+	let acc = 0;
+	const want = n * 0.92;
+	for (let b = 0; b < 64; b++) {
+		acc += bins[b];
+		if (acc >= want) return lo + ((b + 1) / 64) * span + tank.visual.radius * 0.5;
+	}
+	return tank.max[1];
+}
+
+/** every live tank as a water volume for buoyancy (waterQuery) */
+function publishTankVolumes() {
+	/** @type {any[]} */
+	const list = [];
+	for (const t of tanks.values()) {
+		if (!t.count || t.surfaceLocal == null) continue;
+		const inv = t.frame.clone().invert();
+		const p = new THREE.Vector3();
+		const surfaceY = new THREE.Vector3(0, t.surfaceLocal, 0).applyMatrix4(t.frame).y;
+		const { min, max } = t;
+		list.push({
+			uuid: t.object.uuid,
+			tank: true,
+			surfaceY,
+			spec: { density: 1000 * Math.max(0.2, 1 + t.spec.viscosity * 0.4), linearDrag: 1.5 + t.spec.viscosity * 8, angularDrag: 1 + t.spec.viscosity * 4 },
+			contains: (/** @type {number} */ x, /** @type {number} */ y, /** @type {number} */ z) => {
+				p.set(x, y, z).applyMatrix4(inv);
+				return p.x >= min[0] && p.x <= max[0] && p.z >= min[2] && p.z <= max[2] && p.y >= min[1];
+			}
+		});
+	}
+	setTankVolumes(list);
 }
 
 /**
  * The fluid's push on dynamic bodies, initiator-only (physics authority).
  *
- * CAPPED BY BUOYANCY. The solver's reaction is honest for water-mass particles, but scene
- * masses are authored for feel (1 kg for a 1 m crate), so the raw sum launched a 0.5 kg
- * ball 25 m out of the tank (measured). The push per step is held to what the same body
- * would get from buoyancy fully under (I1's model: m g rho_w/rho_body x the Floats
- * multiplier) x 1.5 for the flow — so a toy in the tank floats as it would in a pool.
+ * CAPPED. The solver's reaction is honest for water-mass particles, but scene masses are
+ * authored for feel (1 kg for a 1 m crate), so the raw sum launched a 0.5 kg ball 25 m out
+ * of the tank, and a buoyancy-sized cap still threw foam ducks over the glass (both
+ * measured). Floating is now I1's job — the tank publishes itself as a water volume — and
+ * the particles only stir: at most half the body's weight per step.
  * @param {Tank} tank @param {Record<string, number[]>} impulses
  */
 function applyPush(tank, impulses) {
@@ -89,8 +139,9 @@ function applyPush(tank, impulses) {
 		if (!p) continue;
 		const floats = normalizeFloats(p.floats);
 		if (floats.off) continue;
-		const rho = typeof floats.density === 'number' ? floats.density : DEFAULT_BODY_DENSITY;
-		const cap = (p.mass ?? 1) * 9.81 * (1000 / rho) * floats.multiplier * tank.lastDt * 1.5;
+		// floating itself is buoyancy's job (the tank is a water volume, publishTankVolumes);
+		// the particles only STIR: at most half the body's weight, sideways or up
+		const cap = (p.mass ?? 1) * 9.81 * 0.5 * floats.multiplier * tank.lastDt;
 		v.set(j[0], j[1], j[2]).applyQuaternion(tank.frameQuat).clampLength(0, cap);
 		applyImpulse(uuid, [v.x, v.y, v.z]);
 	}
@@ -140,6 +191,7 @@ function initTank(tank, count) {
 	const size = [0, 1, 2].map((a) => tank.max[a] - tank.min[a]);
 	const spacing = spacingFor(size, count, tank.spec.fill || 0.4);
 	tank.capacity = count;
+	tank.gen = (tank.gen ?? 0) + 1;
 	tank.visual?.dispose();
 	tank.visual = new FluidVisual({ capacity: count, radius: spacing * 0.62, size });
 	tank.visual.setLook(tank.spec.color, tank.spec.clarity);
@@ -147,7 +199,7 @@ function initTank(tank, count) {
 	tank.count = 0;
 	tank.spare = null;
 	const w = ensureWorker();
-	const init = { op: 'init', id: tank.object.uuid, min: tank.min, max: tank.max, capacity: count, spacing, fill: tank.spec.fill, count };
+	const init = { op: 'init', id: tank.object.uuid, gen: tank.gen, min: tank.min, max: tank.max, capacity: count, spacing, fill: tank.spec.fill, count };
 	if (w) {
 		w.postMessage(init);
 		tank.local = undefined;
@@ -220,6 +272,7 @@ export function tickFluid(root, camera, renderer, now) {
 			dropTank(tank);
 			tanks.delete(uuid);
 		}
+	publishTankVolumes();
 }
 
 /** @param {any} root @param {any} object @param {any} camera @param {any} renderer @param {number} now */
@@ -303,7 +356,7 @@ function tickTank(root, object, camera, renderer, now) {
 		const t0 = performance.now();
 		pourAndDrain(tank.local.solver, msg.spec, dt, tank.local.acc);
 		tank.local.solver.step(dt, msg);
-		onFrame({ op: 'frame', id: object.uuid, count: tank.local.solver.count, positions: tank.local.solver.x, impulses: tank.local.solver.impulses, ms: performance.now() - t0 });
+		onFrame({ op: 'frame', id: object.uuid, gen: tank.gen, count: tank.local.solver.count, positions: tank.local.solver.x, impulses: tank.local.solver.impulses, ms: performance.now() - t0 });
 		return;
 	}
 	const w = ensureWorker();

@@ -10,6 +10,19 @@
 import { waterVolumes } from '../water/volumes.js';
 
 /** @type {any[]} */ let frameVolumes = [];
+/**
+ * FLUID TANKS as water (36-sim): each tank publishes its particles' surface, so a toy in a
+ * tank floats through the SAME buoyancy model as one in a pool (fraction-aware, damped),
+ * instead of being shoved by raw particle reactions (measured: ducks thrown out of the tank).
+ * @type {{uuid: string, tank: true, contains: (x: number, y: number, z: number) => boolean,
+ *   surfaceY: number, spec: {density: number, linearDrag: number, angularDrag: number}}[]}
+ */
+let tankVolumes = [];
+
+/** fluidRuntime publishes its tanks every frame @param {typeof tankVolumes} list */
+export function setTankVolumes(list) {
+	tankVolumes = list;
+}
 /** @type {any} */ let lastRoot = null;
 const point = { x: 0, y: 0, z: 0 };
 const opts = { volumes: /** @type {any[]} */ ([]) };
@@ -31,12 +44,12 @@ export function ensureWaterRoot(root) {
 export function beginWaterFrame() {
 	frameVolumes = lastRoot ? waterVolumes.list() : [];
 	opts.volumes = frameVolumes;
-	return frameVolumes.length > 0;
+	return frameVolumes.length > 0 || tankVolumes.length > 0;
 }
 
 /** is there any water this frame (after beginWaterFrame) */
 export function waterActive() {
-	return frameVolumes.length > 0;
+	return frameVolumes.length > 0 || tankVolumes.length > 0;
 }
 
 /**
@@ -46,12 +59,20 @@ export function waterActive() {
  * @returns {import('./buoyancy.js').WaterHit | null}
  */
 export function queryWater(x, y, z) {
-	if (!frameVolumes.length) return null;
-	point.x = x;
-	point.y = y;
-	point.z = z;
-	const hit = waterVolumes.query(point, opts);
-	if (!hit) return null;
+	const hit = frameVolumes.length ? ((point.x = x), (point.y = y), (point.z = z), waterVolumes.query(point, opts)) : null;
+	if (!hit) {
+		for (const t of tankVolumes) {
+			if (y > t.surfaceY || !t.contains(x, y, z)) continue;
+			hitOut.surfaceY = t.surfaceY;
+			hitOut.flow = null;
+			hitOut.density = t.spec.density;
+			hitOut.linearDrag = t.spec.linearDrag;
+			hitOut.angularDrag = t.spec.angularDrag;
+			hitOut.volume = t;
+			return hitOut;
+		}
+		return null;
+	}
 	const spec = hit.volume.spec;
 	hitOut.surfaceY = hit.surfaceY;
 	hitOut.flow = hit.flow;
@@ -82,11 +103,14 @@ export function waterSurfaceAt(x, y, z) {
 		if (!waterVolumes.query(point, one)) continue;
 		if (!best || sy > best.surfaceY) best = { surfaceY: sy, volume: v };
 	}
+	for (const t of tankVolumes)
+		if (t.contains(x, Math.min(y, t.surfaceY - 0.01), z) && (!best || t.surfaceY > best.surfaceY)) best = { surfaceY: t.surfaceY, volume: t };
 	return best;
 }
 
 /** W2: a local ripple (never replicated). @param {any} volume @param {number[]} at @param {number} radius @param {number} strength */
 export function disturbWater(volume, at, radius, strength) {
+	if (volume?.tank) return false; // a tank's splash is its particles
 	return waterVolumes.disturb(volume, at, radius, strength);
 }
 
@@ -94,5 +118,6 @@ export function disturbWater(volume, at, radius, strength) {
 export function resetWaterQuery() {
 	frameVolumes = [];
 	opts.volumes = [];
+	tankVolumes = [];
 	lastRoot = null;
 }

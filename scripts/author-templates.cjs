@@ -498,6 +498,10 @@ const DEFS = require('./templates/index.cjs').loadDefs(moduleDef);
 			const blockBuilders = d.objects.some((/** @type {any} */ o) => o.type === 'block')
 				? (await import('/src/lib/customGeometries.js')).customGeometryBuilders
 				: null;
+			// 36-sim: the app's Fluid tank (`/create FluidTank w h d`), fetched only when a def asks
+			const simTank = d.objects.some((/** @type {any} */ o) => o.type === 'fluidtank')
+				? await import('/src/lib/sim/fluidTank.js')
+				: null;
 			/** @param {any} o @param {{mirror?: boolean, prefix?: string, opacity?: number, shadow?: boolean}} [opts] */
 			const build = (o, opts = {}) => {
 				const mirror = !!opts.mirror;
@@ -604,6 +608,8 @@ const DEFS = require('./templates/index.cjs').loadDefs(moduleDef);
 							throw new Error('object "' + o.name + '": unknown block "' + o.shape + '" (Wedge | Arch | Corner | Stairs)');
 						geo = make(...(o.args ?? []));
 					}
+					// 36-sim: a fluid tank — open glass box; userData.fluid + its compound collider below
+					else if (o.type === 'fluidtank') geo = simTank.fluidTankGeometry(...(o.size ?? []));
 					else throw new Error('object "' + o.name + '": unknown type "' + o.type + '"');
 					// 30 author-kit: MeshPhysicalMaterial when a def asks for `physical` or uses any
 					// field only it has; MeshToonMaterial for `toon`. Absent all of those it is the
@@ -646,6 +652,10 @@ const DEFS = require('./templates/index.cjs').loadDefs(moduleDef);
 				if (opts.opacity != null && object.material) {
 					object.material.transparent = true;
 					object.material.opacity = opts.opacity;
+				}
+				if (o.type === 'fluidtank') {
+					simTank.stampFluidTank(object, ...(o.size ?? []));
+					if (o.fluid) object.userData.fluid = { ...object.userData.fluid, ...o.fluid };
 				}
 				object.name = (opts.prefix ?? '') + o.name;
 				if (pos && o.type !== 'spline') object.position.set(pos[0], pos[1], pos[2]);

@@ -7,7 +7,7 @@
 //   {op:'drop', id}
 import { FluidSolver, pourAndDrain } from './fluidCore.js';
 
-/** @type {Map<string, {solver: FluidSolver, acc: {carry: number, drainCarry: number}}>} */
+/** @type {Map<string, {solver: FluidSolver, gen: number, acc: {carry: number, drainCarry: number}}>} */
 const tanks = new Map();
 
 self.onmessage = (/** @type {MessageEvent} */ e) => {
@@ -15,7 +15,7 @@ self.onmessage = (/** @type {MessageEvent} */ e) => {
 	if (m.op === 'init') {
 		const solver = new FluidSolver({ min: m.min, max: m.max, capacity: m.capacity, spacing: m.spacing });
 		solver.fillBlock(m.fill, m.count);
-		tanks.set(m.id, { solver, acc: { carry: 0, drainCarry: 0 } });
+		tanks.set(m.id, { solver, gen: m.gen, acc: { carry: 0, drainCarry: 0 } });
 		return;
 	}
 	if (m.op === 'drop') {
@@ -33,7 +33,7 @@ self.onmessage = (/** @type {MessageEvent} */ e) => {
 		const out = m.buffer && m.buffer.byteLength >= n * 12 ? new Float32Array(m.buffer, 0, tank.solver.capacity * 3) : new Float32Array(tank.solver.capacity * 3);
 		out.set(tank.solver.x.subarray(0, n * 3));
 		/** @type {any} */ (self).postMessage(
-			{ op: 'frame', id: m.id, count: n, positions: out, impulses: tank.solver.impulses, ms: performance.now() - t0 },
+			{ op: 'frame', id: m.id, gen: tank.gen, count: n, positions: out, impulses: tank.solver.impulses, ms: performance.now() - t0 },
 			[out.buffer]
 		);
 	}

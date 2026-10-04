@@ -46,7 +46,9 @@ h.run(async () => {
 		let g;
 		window.__stores.objectsGroup.subscribe((v) => (g = v))();
 		const tank = g.children[g.children.length - 1];
-		tank.position.set(0, 0.7, 0);
+		// OFF the world origin on purpose: a depth pass drawn in the wrong frame (at the origin)
+		// still overlapped a tank at the origin enough to look right
+		tank.position.set(-1.2, 0.7, 0);
 		tank.updateMatrixWorld(true);
 		window.__tank = tank;
 		return tank.uuid;
@@ -59,13 +61,28 @@ h.run(async () => {
 	}));
 	h.check(stamped.fluid && stamped.name === 'Fluid tank', `the tank carries userData.fluid (${JSON.stringify(stamped)})`);
 	h.check(stamped.collider === 'custom' && stamped.pieces === 5, 'the tank is a 5-slab compound collider (a toy lands INSIDE)');
-	await look(A.page, [0, 2.6, 4.2], [0, 0.5, 0]);
+	await look(A.page, [-1.2, 2.6, 4.2], [-1.2, 0.5, 0]);
 
 	await h.eventually(() => fluid(A.page), (f) => !!f && f.count > 1000 && f.steps > 30, 'the tank fills and steps', 20000);
 	const f1 = await fluid(A.page);
 	h.check(f1.worker === 'worker', `the solver runs in a Web Worker (${f1.worker})`);
 	h.check(f1.mode === 'ssf' && f1.ssfRuns > 10, `desktop draws screen-space fluid (${f1.mode}, passes ran ${f1.ssfRuns}x)`);
 	console.log('fluid', JSON.stringify(f1));
+	// the composite really DRAWS: the frame with the fluid visual differs from one without it
+	await A.page.waitForTimeout(800);
+	const withFluid = await h.grabFrame(A);
+	const setVis = (on) =>
+		A.page.evaluate((v) => {
+			let g;
+			window.__stores.objectsGroup.subscribe((x) => (g = x))();
+			g.parent.children.filter((c) => c.userData?.__fluidVisual).forEach((c) => (c.visible = v));
+		}, on);
+	await setVis(false);
+	await A.page.waitForTimeout(300);
+	const without = await h.grabFrame(A);
+	await setVis(true);
+	const drawn = await h.frameDelta(A.page, without, withFluid, 30);
+	h.check(drawn.changed > 15000, `the screen-space fluid covers the tank on screen (${drawn.changed} px differ)`);
 	await A.page.waitForTimeout(1500);
 	await shot(A.page, '03-fluid-tank-ssf.png');
 
@@ -79,7 +96,7 @@ h.run(async () => {
 		let g;
 		window.__stores.objectsGroup.subscribe((v) => (g = v))();
 		const ball = g.children[g.children.length - 1];
-		ball.position.set(0.3, 2.2, 0);
+		ball.position.set(-0.9, 2.2, 0);
 		ball.userData.physics = { mode: 'dynamic', mass: 0.5, collider: 'sphere' };
 		ball.updateMatrixWorld(true);
 		window.__ball = ball;
@@ -98,13 +115,13 @@ h.run(async () => {
 	await A.page.evaluate(() => window.__stores.physics.stopSimulation());
 
 	// ---------- pause when off-screen ----------
-	await look(A.page, [0, 2.6, 4.2], [0, 2.6, 40]); // look away
+	await look(A.page, [-1.2, 2.6, 4.2], [-1.2, 2.6, 40]); // look away
 	await A.page.waitForTimeout(600);
 	const s0 = (await fluid(A.page)).steps;
 	await A.page.waitForTimeout(1500);
 	const off = await fluid(A.page);
 	h.check(!off.visible && off.steps - s0 <= 1, `off-screen the tank is paused (steps +${off.steps - s0}, visible ${off.visible})`);
-	await look(A.page, [0, 2.6, 4.2], [0, 0.5, 0]);
+	await look(A.page, [-1.2, 2.6, 4.2], [-1.2, 0.5, 0]);
 	await h.eventually(() => fluid(A.page), (f) => f.visible && f.steps > off.steps + 10, 'back on screen it resumes', 8000);
 
 	// ---------- settings replicate through the write path; points tier; drain ----------

@@ -262,6 +262,10 @@ export class FluidVisual {
 		this.passPoints = new THREE.Points(this.geometry, this.depthMaterial);
 		this.passPoints.frustumCulled = false;
 		this.passPoints.matrixAutoUpdate = false;
+		// the pass scene's update must never recompute this: runPasses copies the tank frame
+		// in, and a recompute (parent identity x identity matrix) put the depth pass at the
+		// world origin — the fluid vanished for any tank not near (0, 0, 0)
+		this.passPoints.matrixWorldAutoUpdate = false;
 		this.passScene.add(this.passPoints);
 		this.blurMaterial = new THREE.ShaderMaterial({
 			vertexShader: QUAD_VS,
@@ -299,6 +303,7 @@ export class FluidVisual {
 		const pad = this.radius * 2;
 		this.composite = new THREE.Mesh(new THREE.BoxGeometry(this.size[0] + pad, this.size[1] + pad, this.size[2] + pad), this.compositeMaterial);
 		this.composite.userData.__fluidVisual = true;
+		this.composite.userData.visual = this; // debug/test reach (never serialized: outside objectsGroup)
 		this.composite.renderOrder = 10;
 		this.composite.onBeforeRender = (/** @type {any} */ renderer, /** @type {any} */ _scene, /** @type {any} */ camera) => this.runPasses(renderer, camera);
 		this.group.add(this.composite);
@@ -330,6 +335,7 @@ export class FluidVisual {
 	 * @param {Float32Array} positions @param {number} count @param {THREE.Matrix4} frameWorld @param {any} parent
 	 */
 	update(positions, count, frameWorld, parent) {
+		count = Math.min(count, this.capacity);
 		this.positions.set(positions.subarray(0, count * 3));
 		const attr = this.geometry.getAttribute('position');
 		attr.needsUpdate = true;
@@ -376,6 +382,8 @@ export class FluidVisual {
 		const scale = this.pointScale(camera, h);
 		this.depthMaterial.uniforms.uScale.value = scale;
 		this.depthMaterial.uniforms.uProj.value.copy(camera.projectionMatrix);
+		this.group.updateWorldMatrix(true, false);
+		this.passPoints.matrix.copy(this.group.matrixWorld);
 		this.passPoints.matrixWorld.copy(this.group.matrixWorld);
 		const xrWas = renderer.xr.enabled;
 		const autoClearWas = renderer.autoClear;

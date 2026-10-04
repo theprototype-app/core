@@ -88,13 +88,21 @@ h.run(async () => {
 		const body = [...document.querySelectorAll('h2')].find((x) => /Scene/.test(x.textContent || ''))?.nextElementSibling;
 		const root = document.createElement('div');
 		root.id = 'zz-lane-section';
-		root.setAttribute('data-keywords', 'hologram placeholder stuck');
+		root.setAttribute('data-keywords', 'zzquokka placeholder stuck');
 		root.innerHTML = '<p class="ui-section-label">Loading</p><div class="setting-row">Loading placeholders</div>';
 		body?.appendChild(root);
 	});
-	await search('hologram');
+	await search('zzquokka');
 	rows = await visibleRows();
 	h.check(rows.length === 1 && /Loading placeholders/.test(rows[0]), `a lane's section is found by the words on its root (${JSON.stringify(rows)})`);
+	await page.evaluate(() => document.getElementById('zz-lane-section')?.remove());
+	// 36-int-121: the REAL lane sections carry their keywords on their roots (Loading: "hologram")
+	await search('hologram');
+	rows = await visibleRows();
+	h.check(rows.length > 0 && rows.every((r) => /placeholder|grid|stuck|loading/i.test(r)), `the real Loading section is found by its keywords (${JSON.stringify(rows)})`);
+	await search('itch');
+	rows = await visibleRows();
+	h.check(rows.length > 0, `the real Export section is found by its keywords (${rows.length} rows)`);
 
 	// ---- Esc clears the search and keeps Settings open; the next Esc closes it
 	await page.focus('#settings-search');

@@ -476,6 +476,13 @@ export function placeholderStats() {
 	};
 }
 
+/** What each instance carries right now — the values the GPU draws (the suites read it). */
+export function placeholderInstances() {
+	if (!body) return [];
+	const info = body.geometry.attributes.aInfo.array;
+	return entries.map((entry, i) => ({ uuid: entry.stub.uuid, progress: info[i * 4], state: info[i * 4 + 1], selected: info[i * 4 + 2] }));
+}
+
 /** for the per-frame allocation probe: the frame body, callable on its own */
 export function placeholderFrameForTest() {
 	syncFrame();

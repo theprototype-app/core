@@ -22,6 +22,8 @@
   // and OUTSIDE the {#if !$isLocked} block is deliberately NOT wanted - it is an editor
   // panel, so it sits with ConfirmModal where every entry point can reach it.
   import StorageModal from './components/menu/StorageModal.svelte'
+  import ReplaceModelModal from './components/menu/ReplaceModelModal.svelte'
+  import PlaceholderTooltip from './components/menu/PlaceholderTooltip.svelte'
   import Flow from './components/Flow.svelte'
   import FlowCode from './components/editors/FlowCode.svelte'
   import AnimationWindow from './components/editors/AnimationWindow.svelte'
@@ -384,6 +386,9 @@ import { startMusicToolbox } from './lib/musicToolbox'
 <RenderPausedOverlay />
 <ImportDuplicatesModal />
 <StorageModal />
+<!-- 36 U9: Replace model… for a loading/failed placeholder, and the hover tooltip over one -->
+<ReplaceModelModal />
+<PlaceholderTooltip />
 <DrawToolbar />
 <SculptToolbar />
 <SplineToolbar />

@@ -2,6 +2,7 @@
 	import { Accordion, AccordionItem, Modal, Button, Checkbox, Toggle } from 'flowbite-svelte';
 	import { HardDrive, Lock, RotateCcw, X } from '@lucide/svelte';
 	import ThemedSelect from '../ui/ThemedSelect.svelte';
+	import LoadingSettings from './settings/LoadingSettings.svelte';
 	import SettingRow from './SettingRow.svelte';
 	// 30b (vr-play) C5: the two LOCAL game-audio volumes
 	import { gameSoundVolume } from '$lib/gameSfx';
@@ -1272,6 +1273,7 @@
 						</svelte:fragment>
 						Back to the defaults ({DEFAULT_VIEW_PREFS.wireColor} / {DEFAULT_VIEW_PREFS.outlineColor} / auto). Per-device, never shared
 					</SettingRow>
+					<LoadingSettings />
 				</AccordionItem>
 				<AccordionItem bind:open={explorerExpanded}>
 					{#snippet header()}Explorer{/snippet}

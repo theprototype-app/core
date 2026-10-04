@@ -54,6 +54,8 @@ export const THEME_TOKENS = [
 	'--icon-object',
 	'--icon-prefab',
 	'--icon-danger',
+	// 36 U9: amber for a load that is stuck or retrying
+	'--icon-warning',
 	// 18-C4: the duotone TOOL-icon accent (what a tool changes). A custom theme
 	// that omits it falls through :root and then --accent, so old .theme.json
 	// files still get a coherent icon set.

@@ -1041,6 +1041,14 @@ export function retryPlaceholder(object) {
 	return info ? retryFile(info.url) : false;
 }
 
+/** A double-click on a RED placeholder retries it; anything else is not ours. @param {any} object */
+export function retryIfFailed(object) {
+	const info = stubLoadInfo(object);
+	if (info?.load?.phase !== 'failed') return false;
+	retryFile(info.url);
+	return true;
+}
+
 /** Retry every file that gave up. @returns {number} how many files were retried */
 export function retryAllPlaceholders() {
 	const urls = new Set();
@@ -1049,6 +1057,11 @@ export function retryAllPlaceholders() {
 	return urls.size;
 }
 setRetryAllHook(() => retryAllPlaceholders());
+
+/** the stub OBJECTS drawn now (the hover tooltip raycasts them) */
+export function placeholderStubObjects() {
+	return stubList.map((entry) => entry.stub);
+}
 
 /** the drawn stubs, for the suites: [{uuid, url, state}] */
 export function placeholderStubs() {

@@ -11,6 +11,7 @@
 	import PanelHeader from '../ui/PanelHeader.svelte';
 	import Section from '../ui/Section.svelte';
 	import LodGroupPanel from './LodGroupPanel.svelte';
+	import LoadStatePanel from './LoadStatePanel.svelte';
 	import SliderRow from '../ui/SliderRow.svelte';
 	import DragRow from '../ui/DragRow.svelte';
 	import ColorPicker, { ChromeVariant } from 'svelte-awesome-color-picker';
@@ -1433,6 +1434,12 @@
 	function resetView() {
 		// the editor camera's mount defaults (Scene.svelte)
 		flyTo([-10, 10, 10], [0, 1.5, 0]);
+	}
+	/** 36 U9: the selection is a kit piece still waiting for its file. `_group` is the
+	 * objectsGroup store passed so the template re-checks on every poke (a refill adds the
+	 * children in place). @param {any} o @param {any} _group */
+	function isLoadingStubOf(o, _group) {
+		return !!(o?.uuid && o.userData?.packStub && o.userData?.packRef && !o.children?.length);
 	}
 </script>
 
@@ -2983,6 +2990,12 @@
 					<p class="text-[10px] italic text-gray-400">
 						The camera itself is shared; previewing and the frustum lines are yours alone.
 					</p>
+				</Section>
+			{/if}
+			<!-- 36 U9: a kit piece still loading — its file, its progress, Retry / Replace / Remove -->
+			{#if !multiCount && isLoadingStubOf($selectedObject, $objectsGroup)}
+				<Section label="Loading">
+					<LoadStatePanel object={$selectedObject} />
 				</Section>
 			{/if}
 			<Section label="Transform">

@@ -265,6 +265,24 @@ export async function loadPackItems(pack) {
 	// loading — leaving the old list up during the fetch was the stale-flash bug
 	openPackItems.set([]);
 	openPackLoading.set(true);
+	const items = await listPackItems(pack);
+	if (seq === loadSeq) {
+		// still the pack the user is looking at — a newer open supersedes this one
+		openPackItems.set(items);
+		openPackLoading.set(false);
+	}
+	return items;
+}
+
+/**
+ * A pack's normalized items, fetched once and cached — WITHOUT publishing them to the
+ * Explorer's open-pack view (36 U9: the Replace-model picker lists a pack while the
+ * Explorer shows another). `loadPackItems` is this plus the publish.
+ * @param {any} pack @returns {Promise<any[]>}
+ */
+export async function listPackItems(pack) {
+	if (!pack) return [];
+	if (itemCache[pack.name]) return itemCache[pack.name];
 	let items = [];
 	if (pack.source === 'imported') {
 		// imported packs already hold real Explorer item ids
@@ -305,11 +323,6 @@ export async function loadPackItems(pack) {
 			});
 	}
 	itemCache[pack.name] = items;
-	if (seq === loadSeq) {
-		// still the pack the user is looking at — a newer open supersedes this one
-		openPackItems.set(items);
-		openPackLoading.set(false);
-	}
 	return items;
 }
 

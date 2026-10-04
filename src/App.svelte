@@ -66,6 +66,7 @@
   // 26-G: the frame-freeze half of Stage 4 (the context-loss half is the overlay above)
   import RenderPausedOverlay from './components/RenderPausedOverlay.svelte'
   import './lib/overloadGuard'
+  import './lib/textSelection' // 36 U6: chrome text is not selectable; viewport drags never select
   // 27-D: safe mode pauses the runtime BEFORE it is started, so a scene whose scripts
   // hang on load can still be opened and edited.
   import { flowPaused } from './stores/flowStore'

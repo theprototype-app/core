@@ -297,3 +297,38 @@ kbd {
 	white-space: nowrap;
 	color: inherit;
 }
+
+/* 36 I4: the settings search marks what matched (CSS Custom Highlight API — Settings.svelte
+   registers the ranges; no DOM is rewritten). A warm wash under the theme's own ink, readable in
+   every theme; the ink is left alone so the row's contrast is the row's. */
+::highlight(settings-match) {
+	background-color: color-mix(in srgb, var(--ink-warn, #fbbf24) 45%, transparent);
+	color: inherit;
+}
+
+/* 36 U6: the chrome is not text. A drag across a menu, a toolbar or a panel label selects
+   nothing (textSelection.js holds the setting and the viewport/node-editor guard); text is
+   selectable where it is CONTENT. `:where` keeps the allow-list at zero specificity, so a
+   component's own `select-none` inside it still wins. "Allow text selection everywhere"
+   (Settings > Interface) adds `.allow-text-select` to <html>. */
+html:not(.allow-text-select) body {
+	-webkit-user-select: none;
+	user-select: none;
+}
+html:not(.allow-text-select)
+	:where(
+		input,
+		textarea,
+		[contenteditable='true'],
+		[contenteditable=''],
+		.cm-editor,
+		#chat-messages,
+		#ai-assistant-window li,
+		.wn-body,
+		.tx-log-body,
+		.sr-desc,
+		.tp-selectable
+	) {
+	-webkit-user-select: text;
+	user-select: text;
+}

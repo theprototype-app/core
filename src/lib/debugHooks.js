@@ -82,6 +82,7 @@ export const DEBUG_HOOKS = [
 	['inputRuntime', () => import('./inputRuntime')],
 	['shortcutsRegistry', () => import('./shortcuts')],
 	['themes', () => import('./themes')],
+	['textSelection', () => import('./textSelection')],
 	['vrRadialMenu', () => import('./vrRadialMenu')],
 	['vrPalette', () => import('./vrPalette')],
 	['vrWindowPoses', () => import('./vrWindowPoses')],

@@ -27,7 +27,10 @@ export const MAIN_GRAPH = 'scene';
 /** What the Flow list and the editor call it. */
 export const MAIN_GRAPH_LABEL = 'Main';
 
-/** Node types reserved for 36-node-ux (contract N1). The runtime treats them as inert. */
+/** Node types reserved for 36-node-ux (contract N1) — the KIND is the node's `type` (N1 confirmed
+ * 2026-10-05). The runtime never evaluates them, nor a node whose `data.muted === true` (36-node-ux's
+ * mute: not evaluated, its wires dropped, no pass-through) — one filter, `flowStore.runtimeGraph`,
+ * owned by 36-node-ux, applied where flowRuntime takes its node/edge arrays. */
 export const VIEW_NODE_TYPES = Object.freeze(['group', 'note']);
 
 /** Socket types a value wire can carry (flowSockets' set, spelled once for consumers). */
@@ -95,31 +98,42 @@ export const SOCKET_TYPES = Object.freeze([
 /** Node types whose code lives in their own data. */
 export const CODE_NODE_TYPES = Object.freeze(['script', 'behaviour']);
 
+/** A kit node's type is `kit-<piece>-<call>`; its code is the piece's file in core. */
+const KIT_TYPE = /^kit-([a-z]+)-/;
+
 /** Does this node carry user-visible code (and so answer double-click with "Open code")?
- * @param {any} node */
-export function nodeHasCode(node) {
+ * `spec` (findNodeSpec(node.type), optional) tells a MODULE's node type by its `moduleId` tag.
+ * @param {any} node @param {any} [spec] */
+export function nodeHasCode(node, spec) {
 	if (!node) return false;
 	if (CODE_NODE_TYPES.includes(node.type)) return true;
 	if (node.type === 'customnode') return true; // the def's code (NodeDesigner)
 	if (node.type === 'coderef') return true; // a Main-graph link to a module's source
+	if (KIT_TYPE.test(String(node.type))) return true; // the kit piece's source
+	if (spec?.moduleId) return true; // a module's node: the module's source
 	return !!node.data?.src;
 }
 
 /**
  * The OpenCodeRequest for a node, or null when it has no code.
- * @param {any} node @param {string} [graphId] @returns {OpenCodeRequest | null}
+ * @param {any} node @param {string} [graphId] @param {any} [spec] findNodeSpec(node.type)
+ * @returns {OpenCodeRequest | null}
  */
-export function openCodeRequestFor(node, graphId) {
-	if (!nodeHasCode(node)) return null;
+export function openCodeRequestFor(node, graphId, spec) {
+	if (!nodeHasCode(node, spec)) return null;
 	const src = node.data?.src;
 	if (src?.kind === 'module' || node.type === 'coderef')
 		return {
 			source: 'module',
-			ref: (src?.module ?? node.data?.module ?? '') + (src?.file ? '/' + src.file : ''),
+			ref: (src?.module ?? node.data?.module ?? '') + ((src?.file ?? node.data?.file) ? '/' + (src?.file ?? node.data?.file) : ''),
 			graphId,
-			line: src?.line,
+			line: src?.line ?? node.data?.line,
 			readonly: true
 		};
+	const kit = String(node.type).match(KIT_TYPE);
+	if (kit) return { source: 'module', ref: 'kit/' + kit[1] + '.js', graphId, readonly: true };
+	if (spec?.moduleId && !CODE_NODE_TYPES.includes(node.type) && node.type !== 'customnode')
+		return { source: 'module', ref: String(spec.moduleId), graphId, readonly: true };
 	if (node.type === 'customnode') return { source: 'customnode', ref: String(node.data?.defId ?? ''), graphId };
 	return {
 		source: node.type === 'behaviour' ? 'behaviour' : 'script',

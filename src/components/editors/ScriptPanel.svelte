@@ -3,7 +3,9 @@
 	import { setNodeData } from '$lib/nodesHandler';
 	import { focusStack } from '$lib/windowFocus';
 	import { tabbable } from '$lib/windowTabs';
-	import { scriptInputs, scriptOutputs, SCRIPT_INPUT_TYPES, SCRIPT_OUTPUT_TYPES } from '$lib/scriptIO';
+	import { scriptInputs, scriptOutputs, SCRIPT_INPUT_TYPES, SCRIPT_OUTPUT_TYPES, RESERVED } from '$lib/scriptIO';
+	import { followCode } from '$lib/scriptDerive'; // 36: sockets follow the code
+	import { codeIsReadOnly, forkNodeSource } from '$lib/codeOpen'; // 36 (G1): module-bound code
 	import { setScriptSockets, upgradeScriptToV2 } from '$lib/scriptSockets';
 	import { lintScript } from '$lib/scriptLint';
 	import CodeEditor from './CodeEditor.svelte';
@@ -27,12 +29,38 @@
 	// findings, as advice rather than a refusal
 	$: advice = node && !v2 ? lintScript(node.data.code ?? '') : [];
 
+	// 36 (G1): a node bound to a module file is read-only until forked
+	$: readOnly = codeIsReadOnly(node);
+	let forking = false;
+	async function makeEditable() {
+		if (!node || forking) return;
+		forking = true;
+		try {
+			await forkNodeSource(node.id);
+		} finally {
+			forking = false;
+		}
+	}
+
+	/** @type {ReturnType<typeof setTimeout> | undefined} */
 	let timer;
+	/** @param {string} code */
 	function onChange(code) {
 		clearTimeout(timer);
 		const id = node?.id;
-		if (!id) return;
-		timer = setTimeout(() => setNodeData(id, { code: code }), 400);
+		if (!id || readOnly) return;
+		timer = setTimeout(() => {
+			setNodeData(id, { code: code });
+			// 36: a v2 node grows the sockets its code now uses (never removes one — wires may
+			// hang on it); the same commit, so peers see code and sockets together
+			const current = $flowNodes.find((n) => n.id === id);
+			if (!current) return;
+			const ins = scriptInputs(current.data);
+			const outs = scriptOutputs(current.data);
+			if (!ins && !outs.length) return;
+			const next = followCode(code, ins, outs, RESERVED);
+			if (next.changed) setScriptSockets(id, { inputs: next.inputs, outputs: next.outputs });
+		}, 400);
 	}
 
 	/** @param {'inputs' | 'outputs'} kind @param {any[]} list */
@@ -115,14 +143,23 @@
 				<button id="script-back-v1" class="self-start text-[11px] text-gray-400 underline" on:click={backToV1}>Back to a, b, c</button>
 			{/if}
 		</div>
+		{#if readOnly}
+			<div id="script-readonly" class="flex items-center gap-2 rounded-sm bg-gray-700 px-2 py-1 text-xs">
+				<span class="flex-1">Module source ({node.data.src?.module}/{node.data.src?.file}) — read-only</span>
+				<button id="script-make-editable" class="rounded-sm bg-primary-700 px-2 py-0.5 text-white" disabled={forking} on:click={makeEditable}>Make editable copy</button>
+			</div>
+		{/if}
 		<div class="min-h-0 flex-1">
-			<CodeEditor value={node.data.code ?? ''} {onChange} />
+			{#key readOnly}
+				<CodeEditor value={node.data.code ?? ''} {onChange} readonly={readOnly} />
+			{/key}
 		</div>
 		{#if error}
 			<p class="text-xs text-red-400">⚠ {error}</p>
 		{:else if v2}
 			<p class="text-xs text-gray-400">
-				inputs.&lt;name&gt;, time, dist/lerp/clamp — {outputs.length ? 'return { ' + outputs.map((o) => o.name).join(', ') + ' }' : 'drives its object (object, base, data)'}.
+				inputs.&lt;name&gt;, time, dist/lerp/clamp, api — {outputs.length ? 'return { ' + outputs.map((o) => o.name).join(', ') + ' }' : 'drives its object (object, base, data)'}.
+				A new inputs.x or returned key adds its socket when you stop typing.
 				No DOM, Math.random, Date.now or storage: peers must agree.
 			</p>
 		{:else}

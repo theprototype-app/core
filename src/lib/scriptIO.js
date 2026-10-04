@@ -24,7 +24,7 @@ export const SCRIPT_OUTPUT_TYPES = ['number', 'boolean', 'vector3', 'color', 'ob
 /** names the v2 function binds itself, plus the node-data keys an effect's \`data\` already
  * holds (a socket named `code` would read the script's own source), so a socket may not
  * take them */
-const RESERVED = new Set([
+export const RESERVED = new Set([
 	'inputs', 'time', 'object', 'base', 'data', 'params', 'dist', 'lerp', 'clamp',
 	'code', 'label', 'type', 'name', 'outputs',
 	'api' // 36 (56.3): the script API object

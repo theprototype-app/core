@@ -6,15 +6,22 @@
 
 	export let value = '';
 	export let onChange = (/** @type {string} */ code) => {};
+	// 36 (G1): a module's source is shown, never edited in place; `line` scrolls to a line
+	export let readonly = false;
+	/** @type {number | undefined} */
+	export let line = undefined;
 
+	/** @type {HTMLDivElement} */
 	let host;
+	/** @type {any} */
 	let view = null;
 	let lastEmitted = value;
 
 	onMount(async () => {
-		const [{ EditorView, basicSetup }, { javascript }] = await Promise.all([
+		const [{ EditorView, basicSetup }, { javascript }, { EditorState }] = await Promise.all([
 			import('codemirror'),
-			import('@codemirror/lang-javascript')
+			import('@codemirror/lang-javascript'),
+			import('@codemirror/state')
 		]);
 		view = new EditorView({
 			doc: value,
@@ -22,6 +29,7 @@
 			extensions: [
 				basicSetup,
 				javascript(),
+				...(readonly ? [EditorState.readOnly.of(true), EditorView.editable.of(false)] : []),
 				EditorView.updateListener.of((update) => {
 					if (!update.docChanged) return;
 					lastEmitted = update.state.doc.toString();
@@ -48,6 +56,15 @@
 		});
 	});
 
+	// 36: put the cursor on `line` (1-based) and scroll it into view, once per line asked for
+	let shownLine = 0;
+	$: if (view && line && line !== shownLine) {
+		shownLine = line;
+		const n = Math.min(Math.max(1, line), view.state.doc.lines);
+		const at = view.state.doc.line(n).from;
+		view.dispatch({ selection: { anchor: at }, scrollIntoView: true });
+	}
+
 	// external updates (a peer edited the same node) replace the doc — but not
 	// our own edits echoing back, that would fight the cursor
 	$: if (view && value !== lastEmitted && value !== view.state.doc.toString()) {
@@ -58,4 +75,4 @@
 	onDestroy(() => view?.destroy());
 </script>
 
-<div bind:this={host} class="h-full overflow-auto rounded-sm border border-gray-600 bg-gray-900 text-left"></div>
+<div bind:this={host} data-readonly={readonly ? 'true' : undefined} class="h-full overflow-auto rounded-sm border border-gray-600 bg-gray-900 text-left"></div>

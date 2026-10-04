@@ -36,9 +36,11 @@ function catalogTypes() {
 		const t = lines[i].match(/\btype: '([a-z0-9_-]+)'/);
 		if (!t || !group) continue;
 		// the item literal: from this line to the line that closes it (brace depth back to 0)
-		let depth = 0;
+		// a one-line item opens its brace on this line; a multi-line item opened it on the line
+		// above (`{` alone), so the walk starts inside it at depth 1
+		const start = lines[i].lastIndexOf('{', lines[i].indexOf('type:'));
+		let depth = start < 0 ? 1 : 0;
 		let body = '';
-		let start = lines[i].lastIndexOf('{', lines[i].indexOf('type:'));
 		for (let j = i; j < lines.length && j < i + 60; j++) {
 			const chunk = j === i ? lines[j].slice(Math.max(0, start)) : lines[j];
 			body += chunk + '\n';

@@ -151,8 +151,10 @@ h.run(async () => {
 	// --- evidence: the decomposed pieces as the collider viz draws them
 	try {
 		fs.mkdirSync(EVIDENCE, { recursive: true });
+		// re-decompose (an undo here would undo the run's layout entry, not the collider)
+		await A.page.evaluate(() => window.__stores.colliderDecompose.decomposeCollider(window.__arch.uuid, 8));
 		await A.page.evaluate(() => {
-			window.__stores.history.undo(); // back to the decomposed collider
+			window.__stores.toastStore.set([]);
 			window.__stores.colliderHelpers.showColliders.set(true);
 			window.__arch.visible = false;
 			window.__ball.visible = false;

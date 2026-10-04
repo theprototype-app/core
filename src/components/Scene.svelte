@@ -95,6 +95,10 @@
 	import VRSettingsPanel from './play/VRSettingsPanel.svelte';
 	import VRPeerApprove from './play/VRPeerApprove.svelte';
 	import VRSelectionShell from './play/VRSelectionShell.svelte';
+	// 36 U3b: the VR welcome tour's world-space panel
+	import TourVRPanel from './tours/TourVRPanel.svelte';
+	// 36 A2: the headset browser's own "Enter VR" offer — decided by us, not threlte's default
+	import { xrOfferMode } from '$lib/xrOffer';
 	import MeasureOverlay from './MeasureOverlay.svelte';
 	import AnnotationPins from './AnnotationPins.svelte';
 	import PingMarkers from './PingMarkers.svelte';
@@ -1683,8 +1687,10 @@ position={[0, 2, 3]}
 <VRPeerApprove />
 <VRKeyboard />
 <VRSelectionShell />
+<TourVRPanel />
 
 <XR
+	offerSession={$xrOfferMode}
 	onsessionstart={() => {
 		// passthrough (90): AR sessions blend with the room — drop the local sky
 		const session = renderer.xr.getSession();

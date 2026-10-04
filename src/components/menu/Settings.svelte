@@ -11,6 +11,7 @@
 	// 36-export: the export defaults section (its own file; also the Publish / Export modal's Settings tab)
 	import ExportSettingsSection from './ExportSettingsSection.svelte';
 	import WaterSettings from '../water/WaterSettings.svelte';
+	import ToursSettings from './settings/ToursSettings.svelte'; // 36 U3b/I5
 	import VRSettingsSection from './VRSettingsSection.svelte';
 	// 30b (vr-play) C5: the two LOCAL game-audio volumes
 	import { gameSoundVolume } from '$lib/gameSfx';
@@ -890,6 +891,7 @@
 						<svelte:fragment slot="control"><Toggle bind:checked={$toastsInDrawerOnly} /></svelte:fragment>
 						Hide ALL pop-up toasts in the viewport — including connection requests — so they appear only in the connection drawer's Toasts tab (the notification bell still keeps the full history). Pin the drawer to keep the Toasts tab handy
 					</SettingRow>
+					<ToursSettings />
 					<p class="ui-section-label">Windows & chrome</p>
 					{#if $drawerSlot}
 						<SettingRow name="Show Rooms button">

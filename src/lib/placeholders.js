@@ -17,9 +17,9 @@ import {
 
 // 36 U9 — THE PLACEHOLDERS A LOADING KIT PIECE SHOWS, drawn as TWO instanced calls whatever
 // the count (500 boxes = 2 draw calls, the Quest budget's whole point):
-//   the BODY   one InstancedMesh of a unit box. 'boxes' (the default, 33 L1's grey blocks) is a
+//   the BODY   one InstancedMesh of a unit box. 'boxes' (33 L1's grey blocks) is a
 //              MeshStandardMaterial tinted per instance (grey / amber stuck / red failed);
-//              'modern' is ONE ShaderMaterial — a translucent blue hologram with a fresnel rim, a
+//              'modern' (the default since 36 L1) is ONE ShaderMaterial — a translucent blue hologram with a fresnel rim, a
 //              slow pulse, a scan band sweeping up, depth fade, a FILL LEVEL that is the piece's
 //              byte progress and an optional triplanar world-space grid/checker.
 //   the ICONS  one InstancedMesh of quads, a screen-constant "!" disc over every FAILED box

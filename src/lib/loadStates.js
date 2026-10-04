@@ -18,7 +18,7 @@ import * as safeStorage from './safeStorage';
 
 // ---- settings ----------------------------------------------------------------------------
 
-/** 'boxes' = the 33 L1 grey blocks (the default); 'modern' = the hologram boxes */
+/** 'modern' = the hologram boxes (the default since 36 L1, 1.22); 'boxes' = the 33 L1 grey blocks */
 export const PLACEHOLDER_STYLES = /** @type {const} */ (['boxes', 'modern']);
 
 /**
@@ -46,9 +46,32 @@ function persisted(key, fallback, normalize) {
 	return store;
 }
 
+/** the style a person who never picked one gets (36 L1: Modern, was Colored boxes in 1.21) */
+export const DEFAULT_PLACEHOLDER_STYLE = /** @type {'boxes'|'modern'} */ ('modern');
+
 /** @param {any} v @returns {'boxes'|'modern'} */
 export function normalizeStyle(v) {
-	return v === 'modern' ? 'modern' : 'boxes';
+	return v === 'boxes' || v === 'modern' ? v : DEFAULT_PLACEHOLDER_STYLE;
+}
+
+/** written with every pick: the stored style is a CHOICE, not a snapshot of the default */
+const STYLE_CHOSEN_KEY = 'placeholderStyleChosen';
+
+/**
+ * 36 L1 — the stored style only exists when it was CHOSEN: nothing writes `placeholderStyle`
+ * except the settings picker (1.21 never wrote it on first run, and neither does this), and each
+ * pick also sets `placeholderStyleChosen`. So an explicit "Colored boxes" from 1.21 stays boxes,
+ * and a person who never chose follows the default (Modern now) instead of a frozen copy of it.
+ * @param {(key: string) => string | null} read @returns {'boxes'|'modern'}
+ */
+export function initialPlaceholderStyle(read) {
+	try {
+		const raw = read('placeholderStyle');
+		if (raw === null) return DEFAULT_PLACEHOLDER_STYLE;
+		return normalizeStyle(JSON.parse(raw));
+	} catch {
+		return DEFAULT_PLACEHOLDER_STYLE;
+	}
 }
 
 /**
@@ -82,7 +105,18 @@ export function normalizeStuckSeconds(v) {
 	return Math.round(clampNum(v, 1, 120, 10));
 }
 
-export const placeholderStyle = persisted('placeholderStyle', /** @type {'boxes'|'modern'} */ ('boxes'), normalizeStyle);
+export const placeholderStyle = writable(initialPlaceholderStyle((k) => safeStorage.getItem(k)));
+{
+	let first = true;
+	placeholderStyle.subscribe((value) => {
+		if (first) {
+			first = false;
+			return;
+		}
+		safeStorage.setItem('placeholderStyle', JSON.stringify(normalizeStyle(value)));
+		safeStorage.setItem(STYLE_CHOSEN_KEY, '1');
+	});
+}
 export const placeholderGrid = persisted('placeholderGrid', DEFAULT_GRID, normalizeGrid);
 /** no new byte for this long -> amber; 3x this -> the attempt is abandoned and retried */
 export const placeholderStuckSeconds = persisted('placeholderStuckSeconds', 10, normalizeStuckSeconds);

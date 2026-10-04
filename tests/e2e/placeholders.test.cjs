@@ -148,9 +148,14 @@ h.run(async () => {
 		window.__stores.loadStates.placeholderStyle.subscribe((x) => (v = x))();
 		return v;
 	});
-	h.check(defaultStyle === 'boxes', `the default style is the colored boxes (${defaultStyle})`);
+	h.check(defaultStyle === 'modern', `the default style is Modern (36 L1) (${defaultStyle})`);
+	h.check((await A.page.evaluate(() => localStorage.getItem('placeholderStyle'))) === null, 'the default is not written until the person picks');
 	await A.page.locator('#placeholder-style').click();
-	await A.page.getByRole('option', { name: 'Modern' }).click();
+	await A.page.getByRole('option', { name: 'Colored boxes' }).click();
+	await A.page.waitForTimeout(200);
+	h.check((await A.page.evaluate(() => localStorage.getItem('placeholderStyleChosen'))) === '1', 'a pick is recorded as a choice');
+	await A.page.locator('#placeholder-style').click();
+	await A.page.getByRole('option', { name: 'Modern (default)' }).click();
 	await A.page.waitForTimeout(200);
 	const stored = await A.page.evaluate(() => localStorage.getItem('placeholderStyle'));
 	h.check(stored === '"modern"', `choosing Modern in the UI persists it (${stored})`);

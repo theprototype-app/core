@@ -18,6 +18,14 @@ module.exports = {
 	tags: ['simulation', 'fluid', 'toy'],
 	env: { preset: 'studio', background: { top: '#dfeaf2', bottom: '#c9d7e2' } },
 	view: { pos: [0, 2.6, 4.4], target: [0, 0.9, 0] },
+	// the card is rendered offscreen before any fluid exists (it is each peer's runtime
+	// simulation): dress the picture with the two fills, never written into the file
+	thumb: {
+		dress: [
+			{ type: 'box', name: 'Card water', color: 0x2f8fd8, size: [1.52, 0.34, 0.82], pos: [-1, 0.81, 0], roughness: 0.15, opacity: 0.85 },
+			{ type: 'box', name: 'Card honey', color: 0xd89a1c, size: [0.82, 0.38, 0.82], pos: [1.4, 0.83, 0], roughness: 0.25, opacity: 0.9 }
+		]
+	},
 	objects: [
 		{ type: 'box', name: 'Table', color: 0x8a6a4c, size: [5, 0.12, 2], pos: [0, 0.54, 0], roughness: 0.7, physics: { mode: 'static' } },
 		{ type: 'box', name: 'Table leg 1', color: 0x6d5139, size: [0.12, 0.5, 0.12], pos: [-2.3, 0.25, -0.85], physics: { mode: 'static' } },

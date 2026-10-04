@@ -246,6 +246,12 @@ export function createTourEngine({ storage, onChange = () => {} }) {
 		return true;
 	}
 
+	/** Re-resolve the current step (its text/controls are functions of settings — a VR button remap
+	 * mid-step must reach the surfaces, which only hear `onChange`). */
+	function refresh() {
+		if (current) emit();
+	}
+
 	/** @param {string} id */
 	const seen = (id) => status(id) === 'done';
 	/** forget one tour's record, or every registered one's @param {string} [id] */
@@ -272,6 +278,7 @@ export function createTourEngine({ storage, onChange = () => {} }) {
 		finish,
 		dontShowAgain,
 		close,
+		refresh,
 		signal,
 		seen,
 		status,

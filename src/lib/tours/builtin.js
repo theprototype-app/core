@@ -16,7 +16,7 @@ import { get } from 'svelte/store';
 import { tours, activeTour } from './index.js';
 import { safeStorage } from '../safeStorage';
 import { isVRMode, vrMenuOpen, editorMode } from '../../stores/sceneStore';
-import { bindingOf, bindingLabel } from '../vr/bindings.js';
+import { bindingOf, bindingLabel, vrBindings } from '../vr/bindings.js';
 import { templatesModalOpen, showToast } from '../../stores/appStore.js';
 import { welcomeOpen } from '../whatsNew';
 import { coarsePointer } from '../inputDevice';
@@ -258,6 +258,8 @@ export function installTours() {
 			}
 		})
 	);
+	// a remap mid-step re-words and re-lights the step on whatever shows it
+	teardown.push(vrBindings.subscribe(() => tours.refresh()));
 	// the radial opening and Interact are actions the VR tour waits for
 	teardown.push(
 		vrMenuOpen.subscribe((open) => {

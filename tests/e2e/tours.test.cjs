@@ -160,6 +160,8 @@ async function vrPart(browser) {
 	menuStep = await active(page);
 	h.check(menuStep.step.hint === 'Press Left stick press' && menuStep.step.body.includes('left stick press'), 'U3b+55: …and the step now says the left stick press (' + menuStep.step.hint + ')');
 	h.check(menuStep.step.controls.left.includes('stick') && menuStep.step.controls.right.length === 0, 'U3b+55: …and the diagram lights the left stick, nothing on the right');
+	// …and the PANEL redrew it (the surface, not just the engine's answer)
+	await h.eventually(() => vrDebug(page), (dd) => dd.drawn?.hint === 'Press Left stick press' && dd.drawn.lit?.left.includes('stick') && dd.drawn.lit.right.length === 0, 'U3b+55: the headset panel redraws the remapped step');
 	await shotCanvas(page, '06b-vr-menu-remapped');
 	await click(page, 'left', 3); // the REMAPPED control opens the radial
 	await waitStep(page, 'play', 'U3b+55: opening the radial with the remapped control completes "your menu"');

@@ -65,7 +65,7 @@ let yaw = NaN;
 const follow = { following: false };
 let lastT = 0;
 /** the suites' view */
-const debug = { presses: 0, lastPress: /** @type {string | null} */ (null), draws: 0, signals: /** @type {string[]} */ ([]) };
+const debug = { presses: 0, lastPress: /** @type {string | null} */ (null), draws: 0, signals: /** @type {string[]} */ ([]), drawn: /** @type {{hint?: string, body: string, lit: any} | null} */ (null) };
 
 /** rasterised diagrams by svg string (an <img> per distinct step drawing) @type {Map<string, HTMLImageElement>} */
 const artCache = new Map();
@@ -192,6 +192,7 @@ function redraw(/** @type {any} */ tour, /** @type {string} */ family) {
 	hits = drawTourPanel(g, tour, { art, artW: 432, artH: 308, hover: hovered, family });
 	texture.needsUpdate = true;
 	debug.draws++;
+	debug.drawn = { hint: tour.step.hint, body: tour.step.body, lit: controls ? litFor(controls) : null };
 }
 
 /** One frame: show/hide, place, hover, presses, signals. */

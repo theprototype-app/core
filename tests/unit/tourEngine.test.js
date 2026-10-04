@@ -162,6 +162,22 @@ describe('tour engine', () => {
 	});
 });
 
+describe('tour refresh', () => {
+	it('re-emits the current step re-resolved (a setting it reads changed mid-step)', () => {
+		const storage = memoryStorage();
+		const changes = [];
+		const t = createTourEngine({ storage, onChange: (a) => changes.push(a) });
+		let button = 'B';
+		t.register('vr', { title: 'VR', steps: [{ id: 'menu', title: 'Menu', body: () => 'Press ' + button }] });
+		t.refresh(); // nothing running: nothing emitted
+		expect(changes.length).toBe(0);
+		t.start('vr');
+		button = 'X';
+		t.refresh();
+		expect(changes.map((c) => c.step.body)).toEqual(['Press B', 'Press X']);
+	});
+});
+
 describe('tour preview', () => {
 	it('a preview never reads or writes the record (the VR welcome read on a screen stays owed)', () => {
 		const { t, storage } = engine();

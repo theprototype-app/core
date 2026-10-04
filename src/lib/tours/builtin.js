@@ -100,7 +100,7 @@ export const VR_STEPS = [
 		id: 'exit',
 		title: 'Leaving VR',
 		body: 'Press the Meta button on your right controller and choose Exit — or open the menu: System ▸ Exit VR. Replay this tour any time from the menu: System ▸ Welcome tour.',
-		hint: 'Exit VR, or press Done',
+		hint: 'Exit VR',
 		advanceOn: 'vr-exit',
 		controls: { hand: 'right', parts: ['meta'] }
 	}

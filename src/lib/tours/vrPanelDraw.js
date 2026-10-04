@@ -125,7 +125,7 @@ export function drawTourPanel(g, tour, opts = {}) {
 		g.font = '400 22px system-ui, sans-serif';
 		g.fillStyle = C.dim;
 		g.textAlign = 'right';
-		g.fillText('or press Next', W - 40, 508);
+		g.fillText(tour.last ? 'or press Done' : 'or press Next', W - 40, 508);
 		g.textAlign = 'left';
 	}
 

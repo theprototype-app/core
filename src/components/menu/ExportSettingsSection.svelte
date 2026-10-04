@@ -19,7 +19,7 @@
 	const checked = (e) => /** @type {HTMLInputElement} */ (e.currentTarget).checked;
 </script>
 
-<div id="export-settings-section">
+<div id="export-settings-section" data-keywords={keywords.join(' ')}>
 	<SettingRow name="Show Made with ThePrototype badge">
 		<svelte:fragment slot="control"
 			><input id="export-badge" class="tp-check" type="checkbox" checked disabled aria-label="Show Made with ThePrototype badge (always on)" /></svelte:fragment

@@ -397,6 +397,7 @@
 					id={'touch-btn-' + action.id.replace(/[^\w-]/g, '_')}
 					class="touch-btn"
 					data-touch-btn={action.id}
+					data-hud-avoid
 					aria-label={action.label}
 					title={action.label}
 					style:left="{placed(item.x, viewW, item.size)}px"

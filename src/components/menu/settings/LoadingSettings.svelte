@@ -34,6 +34,8 @@
 	$: modern = $placeholderStyle === 'modern';
 </script>
 
+<!-- 36-int-121: the I4 search reads a section's keywords from its root element -->
+<div class="contents" data-keywords={keywords.join(' ')}>
 <p class="ui-section-label" data-tour="settings-loading">Loading</p>
 <SettingRow name="Loading placeholders">
 	<svelte:fragment slot="control">
@@ -130,3 +132,4 @@
 	</svelte:fragment>
 	A loading piece with no new data for this long turns amber; three times this long and the download is restarted (up to three retries, then it turns red)
 </SettingRow>
+</div>

@@ -42,8 +42,9 @@ const TARGET_TOSS = scene('target-toss', 'TARGET_TOSS_TPSCENE');
 const PHONE = { hasTouch: true, isMobile: true, deviceScaleFactor: 2.7, viewport: { width: 390, height: 844 } };
 // OPPO Find N6 — ESTIMATED from the N5's panels (cover 1140x2616, inner 2480x2248) at an
 // Android DPR of ~2.75; 36-ui-polish (U7) owns the researched numbers.
-const N6_FOLDED = { hasTouch: true, isMobile: true, deviceScaleFactor: 2.75, viewport: { width: 412, height: 944 } };
-const N6_UNFOLDED = { hasTouch: true, isMobile: true, deviceScaleFactor: 2.75, viewport: { width: 902, height: 817 } };
+// 36-int-121: the researched Find N6 CSS viewports (36-ui-polish, menu-mobile-scroll: DPR 3, minus browser chrome)
+const N6_FOLDED = { hasTouch: true, isMobile: true, deviceScaleFactor: 3, viewport: { width: 380, height: 792 } };
+const N6_UNFOLDED = { hasTouch: true, isMobile: true, deviceScaleFactor: 3, viewport: { width: 749, height: 747 } };
 
 const nap = (ms) => new Promise((r) => setTimeout(r, ms));
 const g = (page, expr) => page.evaluate(expr);

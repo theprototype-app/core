@@ -4,6 +4,7 @@ import { writable, get } from 'svelte/store';
 import { globalScene, globalRenderer, objectsGroup, backgroundColor, TControls, passthroughActive, pokeScene } from '../stores/sceneStore';
 import { peers } from '../stores/appStore';
 import { sceneRadius } from './sceneBounds';
+import { fogFarFor, mergeFogPatch } from './fogReach';
 import { registerSystemGroup } from './moduleSDK';
 import { createLight } from './geometries.svelte';
 import { cappedShadowSize, shadowsDisabled } from './lightParams';
@@ -286,13 +287,10 @@ export function applyEnvironment() {
 		// 30 author-kit: a gradient sky when the payload carries one, else the flat colour
 		const gradient = skyGradientOf(preset);
 		scene.background = (gradient && gradientTexture(gradient)) || new THREE.Color(preset.background);
-		// fog never swallows a big scene: its reach grows with the scene bounds
+		// fog never swallows a big scene: a PRESET's reach grows with the scene bounds; a fog the
+		// user set by hand (`fit: false`) keeps its own (36 A5, fogReach.js)
 		scene.fog = preset.fog
-			? new THREE.Fog(
-					preset.fog.color,
-					preset.fog.near,
-					Math.max(preset.fog.far, sceneRadius() * 2.5)
-				)
+			? new THREE.Fog(preset.fog.color, preset.fog.near, fogFarFor(preset.fog, sceneRadius()))
 			: null;
 	}
 	backgroundColor.set(preset.background);
@@ -378,11 +376,12 @@ export function applyEnvironment() {
 	reconcileExtraLights(scene, state.lights ?? []);
 }
 
-/** Apply a state change locally, persist and replicate @param {any} partial */
-function commit(partial) {
+/** Apply a state change locally, persist and replicate @param {any} partial @param {boolean} [replicate] */
+function commit(partial, replicate = true) {
 	const state = { ...get(environment), ...partial, changedAt: sessionNow() };
 	environment.set(state);
 	applyEnvironment();
+	if (!replicate) return;
 	/** @type {any} */
 	const peer = get(peers);
 	if (peer) peer.send({ type: 'environment', ...state });
@@ -415,14 +414,19 @@ export function applyCustomPreset(payload) {
  * ran at all.) Editing the sky now detaches into a live custom payload, exactly
  * like editRigComponent: it sticks, persists and replicates.
  * @param {{background?: string, fog?: {color?: string, near?: number, far?: number} | null}} patch
+ * @param {{replicate?: boolean}} [opts]
  */
-export function editEnvSky(patch) {
+export function editEnvSky(patch, opts = {}) {
 	const payload = JSON.parse(JSON.stringify(presetPayload()));
 	payload.label = 'Custom';
 	if (patch.background !== undefined) payload.background = patch.background;
-	if (patch.fog !== undefined)
-		payload.fog = patch.fog === null ? null : { ...(payload.fog ?? {}), ...patch.fog };
-	commit({ preset: 'custom', customPreset: payload });
+	// 36 A5: a patch naming near/far makes the fog AUTHORED (`fit: false`): applyEnvironment
+	// then keeps its exact reach instead of growing it to the scene's (fogReach.js)
+	if (patch.fog !== undefined) payload.fog = mergeFogPatch(payload.fog, patch.fog);
+	// `replicate: false` = a RECEIVER applying a peer's sky (the legacy `color` message for
+	// 'background'/'fog'): it lands in the environment like any edit, so it survives the next
+	// applyEnvironment, but is not sent on (golden rule 1)
+	commit({ preset: 'custom', customPreset: payload }, opts.replicate !== false);
 }
 
 /** Editing a rig component detaches into a live custom payload

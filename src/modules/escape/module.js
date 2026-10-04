@@ -556,6 +556,8 @@ export default {
 			'Stuck? Touch the blue hint crystal in each room, or press H — a hint arrives after a minute in a room.'
 		];
 		/** @type {null | (() => void)} */ let helpOff = null;
+		// 36 U8: touch — tap to use what the crosshair is on, and the hint key as a button
+		/** @type {null | (() => void)} */ let touchOff = null;
 		const resetPuzzle = () => {
 			for (const k of Object.values(V)) setV(k, 0);
 		};
@@ -650,6 +652,11 @@ export default {
 			if (on !== wasActive) {
 				wasActive = on;
 				if (on && typeof api.game?.setHelp === 'function') helpOff = api.game.setHelp(HELP);
+				if (on) touchOff = api.input?.actions?.(['interact', { id: 'hint', label: 'Hint', keys: ['KeyH'] }], { preset: 'explore' }) ?? null;
+				if (!on && touchOff) {
+					touchOff();
+					touchOff = null;
+				}
 				if (!on && helpOff) {
 					helpOff();
 					helpOff = null;
@@ -706,6 +713,8 @@ export default {
 				helpOff();
 				helpOff = null;
 			}
+			touchOff?.();
+			touchOff = null;
 			base.clear();
 			wasActive = false;
 			prevFlags = -1;

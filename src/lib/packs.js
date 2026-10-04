@@ -2,6 +2,7 @@ import { writable, get } from 'svelte/store';
 import { contentBase, fetchIndex, onContentStale } from './contentBase';
 import { addItemFromBytes, createFolder, explorerFolders } from './explorer';
 import { safeStorage } from './safeStorage';
+import { exportPacksBase } from './export/exportBoot.js';
 import { normalizeBehavior } from './behaviorCore';
 
 // N6 (roadmap 7 / ship-qa D1): object packs. Two sources, one normalized model:
@@ -25,7 +26,10 @@ import { normalizeBehavior } from './behaviorCore';
  * `scenes@v2` (jsDelivr parses `v1` as a semver VERSION and caches it immutably, so a
  * retag would have been a no-op the first time it was tried) and moved in the same
  * change; see the SCENES_BASE note in sceneTemplates.js for the measurement. */
-export const PACKS_BASE = contentBase(import.meta.env.VITE_PACKS_BASE, 'https://cdn.jsdelivr.net/gh/theprototype-app/packs@format-1');
+// 36-export: an exported game carries the pack files its scene uses beside index.html
+// (`assets/packs/…`, the same repo-relative paths), so its stubs refill with no CDN — that
+// base wins over the build's override exactly the way an override wins over the pinned ref
+export const PACKS_BASE = contentBase(exportPacksBase || import.meta.env.VITE_PACKS_BASE, 'https://cdn.jsdelivr.net/gh/theprototype-app/packs@format-1');
 
 const INSTALLED_KEY = 'installedPacks';
 
@@ -265,6 +269,24 @@ export async function loadPackItems(pack) {
 	// loading — leaving the old list up during the fetch was the stale-flash bug
 	openPackItems.set([]);
 	openPackLoading.set(true);
+	const items = await listPackItems(pack);
+	if (seq === loadSeq) {
+		// still the pack the user is looking at — a newer open supersedes this one
+		openPackItems.set(items);
+		openPackLoading.set(false);
+	}
+	return items;
+}
+
+/**
+ * A pack's normalized items, fetched once and cached — WITHOUT publishing them to the
+ * Explorer's open-pack view (36 U9: the Replace-model picker lists a pack while the
+ * Explorer shows another). `loadPackItems` is this plus the publish.
+ * @param {any} pack @returns {Promise<any[]>}
+ */
+export async function listPackItems(pack) {
+	if (!pack) return [];
+	if (itemCache[pack.name]) return itemCache[pack.name];
 	let items = [];
 	if (pack.source === 'imported') {
 		// imported packs already hold real Explorer item ids
@@ -305,11 +327,6 @@ export async function loadPackItems(pack) {
 			});
 	}
 	itemCache[pack.name] = items;
-	if (seq === loadSeq) {
-		// still the pack the user is looking at — a newer open supersedes this one
-		openPackItems.set(items);
-		openPackLoading.set(false);
-	}
 	return items;
 }
 

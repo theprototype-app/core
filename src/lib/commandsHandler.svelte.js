@@ -12,7 +12,7 @@ import { dropPeerQuality } from '$lib/networkQuality'
 import { dropPeerClock } from '$lib/musicClock'
 import { applyRemoteDevice } from '$lib/audioDevices'
 import { sessionHost, dropPeerJoined } from '$lib/connectionState'
-import { environment } from '$lib/environment'
+import { environment, editEnvSky } from '$lib/environment'
 import { hasAnimatedImport, sendAnimatedImport, setAnimationState, dropAllAnimatedImports } from '$lib/animatedImports'
 import { dropAllAnimations } from '$lib/animationPreview'
 import { parkAnimatedAtBase } from '$lib/flowRuntime'
@@ -543,13 +543,13 @@ export async function createLoader(count, uuids, senderId) {
 }
 
 export async function colorObject(uuid, color, near, far) {
+    // 36 A5: the sky is ENVIRONMENT state. Writing scene.background / scene.fog here was undone
+    // by the next applyEnvironment() (the 15-C trap, receive side); landing it in the environment
+    // makes it stick. A receiver: applied locally, never sent on.
     if (uuid == 'background') {
-        scene.background = new THREE.Color(color);
+        editEnvSky({ background: color }, { replicate: false });
     } else if (uuid == 'fog') {
-        if (near != null && far != null)
-        scene.fog = new THREE.Fog(color, near, far);
-        else
-        scene.fog = null;
+        editEnvSky(near != null && far != null ? { fog: { color, near, far } } : { fog: null }, { replicate: false });
     } else {
         let mesh = sceneObjects.getObjectByProperty('uuid', uuid);
         if (mesh) mesh.material.color.set(color);

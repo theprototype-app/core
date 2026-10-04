@@ -670,12 +670,36 @@ export default {
 		});
 		const HELP = [
 			'Knock down every target before the clock runs out: tin cans (off the table or over), swinging targets, pop-ups and a moving cart.',
-			'VR: grab a ball from the shelf with the grip and throw it. Desktop: HOLD the mouse to charge, RELEASE to throw (or grab a ball and flick it).',
+			'VR: grab a ball from the shelf with the grip and throw it. Desktop: HOLD the mouse to charge, RELEASE to throw (or grab a ball and flick it). Touch: drag to aim, HOLD the Throw button to charge, let go to throw.',
 			'Hits in quick succession build a COMBO (up to x5). Balls come back to the shelf by themselves.',
 			'Stars: clear the stage for one, with half the clock left for three. A star opens the next stage.'
 		];
 		/** @type {null | (() => void)} */ let helpOff = null;
 		let rulesSet = false;
+		/** 36 U8: the touch Throw button — the desktop charge (hold, release) on a button, aimed
+		 * by the look drag (the whole screen looks: there is nothing to walk to) */
+		/** @type {null | (() => void)} */ let touchOff = null;
+		const touchActions = () =>
+			api.input?.actions?.(
+				[
+					{
+						id: 'fire',
+						label: 'Throw',
+						icon: 'fire',
+						onPress: () => {
+							if (!canCharge()) return;
+							charging = true;
+							chargeStart = now();
+						},
+						onRelease: () => {
+							if (!charging) return;
+							charging = false;
+							if (canCharge()) throwNow(Math.min(1, (now() - chargeStart) / CHARGE_FULL));
+						}
+					}
+				],
+				{ preset: 'toss' }
+			) ?? null;
 
 		// ---- the frame ----------------------------------------------------------------------
 		let wasActive = false;
@@ -695,6 +719,11 @@ export default {
 					rulesSet = false;
 				}
 				if (on && typeof api.game?.setHelp === 'function') helpOff = api.game.setHelp(HELP);
+				if (on) touchOff = touchActions();
+				if (!on && touchOff) {
+					touchOff();
+					touchOff = null;
+				}
 				if (!on && helpOff) {
 					helpOff();
 					helpOff = null;
@@ -731,6 +760,10 @@ export default {
 			if (helpOff) {
 				helpOff();
 				helpOff = null;
+			}
+			if (touchOff) {
+				touchOff();
+				touchOff = null;
 			}
 			if (typeof levelsOff === 'function') {
 				levelsOff();

@@ -472,10 +472,10 @@
 	.pf-note {
 		margin: 6px 2px;
 		font-size: 12px;
-		color: #9ca3af;
+		color: var(--tp-muted);
 	}
 	.pf-note {
-		color: #fbbf24;
+		color: var(--ink-warn);
 	}
 	.pf-table {
 		width: 100%;
@@ -487,17 +487,17 @@
 		position: sticky;
 		top: 0;
 		z-index: 1;
-		background: var(--surface, #1f2937);
+		background: var(--tp-surface);
 		text-align: left;
 		font-weight: 600;
-		color: #9ca3af;
+		color: var(--tp-muted);
 		padding: 2px 4px;
 		white-space: nowrap;
 	}
 	.pf-table td {
 		padding: 1px 4px;
 		white-space: nowrap;
-		border-top: 1px solid rgb(55 65 81 / 0.35);
+		border-top: 1px solid color-mix(in srgb, var(--tp-line) 60%, transparent);
 	}
 	.pf-table .num {
 		text-align: right;
@@ -520,10 +520,10 @@
 	.pf-twist-sp {
 		display: inline-block;
 		width: 14px;
-		color: #9ca3af;
+		color: var(--tp-muted);
 	}
 	.pf-name {
-		color: #e5e7eb;
+		color: var(--tp-ink);
 		text-align: left;
 		max-width: 260px;
 		overflow: hidden;
@@ -534,7 +534,7 @@
 	.pf-name:focus-visible,
 	.pf-rank-row:focus-visible,
 	.pf-events button:focus-visible {
-		outline: 1px solid var(--accent, #3b82f6);
+		outline: 1px solid var(--tp-accent);
 	}
 	.pf-kind {
 		display: inline-block;
@@ -542,11 +542,11 @@
 		font-size: 9px;
 		text-transform: uppercase;
 		letter-spacing: 0.04em;
-		color: #6b7280;
+		color: var(--tp-muted);
 	}
 	.pf-mat,
 	.pf-sub {
-		color: #6b7280;
+		color: var(--tp-muted);
 		font-size: 10.5px;
 		font-weight: 400;
 	}
@@ -555,13 +555,13 @@
 	}
 	.pf-picked td,
 	.pf-rank-row.pf-picked {
-		background: rgb(59 130 246 / 0.18);
+		background: color-mix(in srgb, var(--tp-accent) 16%, transparent);
 	}
 	/* the share of the Quest budget as a bar BEHIND the number (a background, so it never covers it) */
 	.pf-budget {
 		background: linear-gradient(
 			to left,
-			rgb(239 68 68 / 0.28) var(--pf-share, 0%),
+			color-mix(in srgb, var(--ink-bad) 28%, transparent) var(--pf-share, 0%),
 			transparent var(--pf-share, 0%)
 		);
 	}
@@ -573,7 +573,7 @@
 	.pf-rank h4 {
 		font-size: 11px;
 		font-weight: 600;
-		color: #d1d5db;
+		color: var(--tp-ink-2);
 		margin: 2px 0;
 	}
 	.pf-rank-row {
@@ -588,10 +588,10 @@
 		font-variant-numeric: tabular-nums;
 	}
 	.pf-rank-row:hover {
-		background: rgb(75 85 99 / 0.35);
+		background: var(--tp-hover);
 	}
 	.pf-rank-n {
-		color: #6b7280;
+		color: var(--tp-muted);
 		text-align: right;
 	}
 	.pf-rank-label {
@@ -632,19 +632,19 @@
 		border-radius: 2px;
 	}
 	.pf-events button:hover {
-		background: rgb(75 85 99 / 0.35);
+		background: var(--tp-hover);
 	}
 	.pf-ev-t {
-		color: #9ca3af;
+		color: var(--tp-muted);
 		min-width: 44px;
 		font-variant-numeric: tabular-nums;
 	}
 	.pf-ev-k {
 		min-width: 70px;
-		color: #d1d5db;
+		color: var(--tp-ink-2);
 	}
 	.pf-ev-stall {
-		color: #f87171;
+		color: var(--ink-bad);
 	}
 	.pf-shot {
 		max-height: 90px;

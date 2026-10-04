@@ -582,7 +582,7 @@
 		cursor: pointer;
 	}
 	.gal-chip:hover {
-		color: rgb(229 231 235);
+		color: var(--text, rgb(229 231 235));
 		border-color: var(--color-primary-600, #2563eb);
 	}
 	.gal-chip.active {
@@ -629,7 +629,7 @@
 		padding: 0.4rem 1.1rem;
 		font-size: 0.82rem;
 		font-weight: 600;
-		color: rgb(156 163 175);
+		color: var(--muted, rgb(156 163 175));
 		background: none;
 		border: 0;
 		border-bottom: 2px solid transparent;
@@ -637,7 +637,7 @@
 		cursor: pointer;
 	}
 	.mod-tab:hover {
-		color: rgb(229 231 235);
+		color: var(--text, rgb(229 231 235));
 	}
 	.mod-tab.active {
 		color: #fff;

@@ -2,7 +2,14 @@
 	import { Accordion, AccordionItem, Modal, Button, Checkbox, Toggle } from 'flowbite-svelte';
 	import { HardDrive, Lock, RotateCcw, X } from '@lucide/svelte';
 	import ThemedSelect from '../ui/ThemedSelect.svelte';
+	import LoadingSettings from './settings/LoadingSettings.svelte';
 	import SettingRow from './SettingRow.svelte';
+	import TextSelectionSettings from './settings/TextSelectionSettings.svelte'; // 36 U6
+	// 36 I4: what a row is known by (its text, group, section, keywords) + the highlight spans
+	import { rowMatches, matchSpans } from '$lib/settingsSearch';
+	import TouchControlsSettings from './TouchControlsSettings.svelte'; // 36 U8
+	// 36-export: the export defaults section (its own file; also the Publish / Export modal's Settings tab)
+	import ExportSettingsSection from './ExportSettingsSection.svelte';
 	// 30b (vr-play) C5: the two LOCAL game-audio volumes
 	import { gameSoundVolume } from '$lib/gameSfx';
 	import { gameMusicVolume } from '$lib/gameMusic';
@@ -264,6 +271,9 @@
 		shortcutsVersion++;
 	}
 	let aiExpanded = false;
+	// 36-export: Settings ▸ Export — opened by a search (the filter needs mounted rows) or a deep link
+	let exportExpanded = false;
+	$: if ((settingsQuery || '').trim() || ($settingsOpen && $settingsSection === 'export')) exportExpanded = true;
 	let sceneExpanded = false;
 	let explorerExpanded = false;
 	let connectionExpanded = false;
@@ -617,33 +627,102 @@
 	 */
 	function filterSettings(node: HTMLElement, query: string) {
 		let needle = (query || '').trim().toLowerCase();
+		/** 36 I4: the words an ancestor section declares (`data-keywords` on its root) */
+		const ancestorKeywords = (el: Element) => {
+			const out: string[] = [];
+			for (let e: Element | null = el; e && e !== node; e = e.parentElement) {
+				const k = e.getAttribute('data-keywords');
+				if (k) out.push(k);
+			}
+			return out;
+		};
 		const apply = () => {
-			// each section is an <h2> header followed by its body element
+			/** @type {Element[]} what the highlight walks: visible rows, group labels, headers */
+			const shown: Element[] = [];
+			// every row with what it is known by; each section is an <h2> header + its body
+			type RowInfo = { el: HTMLElement; info: { text: string; name: string; group: string; section: string; extra: string[] } };
+			const sections: { header: HTMLElement; body: HTMLElement; rows: RowInfo[] }[] = [];
 			node.querySelectorAll('h2').forEach((header) => {
 				const body = header.nextElementSibling;
 				if (!(body instanceof HTMLElement) || !(header instanceof HTMLElement)) return;
-				const rows = [...body.querySelectorAll('.setting-row')];
-				const sectionText = (header.textContent || '').toLowerCase();
-				let visible = 0;
+				const section = header.textContent || '';
+				const rows: RowInfo[] = [];
 				let group = ''; // nearest `ui-section-label` above the row ("GRID", "SNAPPING"…)
 				body.querySelectorAll('.ui-section-label, .setting-row').forEach((el) => {
 					if (!el.classList.contains('setting-row')) {
-						group = (el.textContent || '').toLowerCase();
+						group = el.textContent || '';
 						return;
 					}
-					// searching "grid" should find the whole Grid group and "vr" the VR
-					// section, not only rows whose own label happens to contain the word
-					const haystack = (el.textContent || '').toLowerCase() + ' ' + group + ' ' + sectionText;
-					const show = !needle || haystack.includes(needle);
-					(el as HTMLElement).style.display = show ? '' : 'none';
-					if (show) visible++;
+					rows.push({
+						el: el as HTMLElement,
+						info: {
+							text: el.textContent || '',
+							name: el.querySelector('.sr-name')?.textContent || '',
+							group,
+							section,
+							extra: ancestorKeywords(el)
+						}
+					});
 				});
+				sections.push({ header, body, rows });
+			});
+			// searching "grid" finds the whole Grid group and "vr" the VR section; 36 I4: "dark" finds
+			// the Theme row (its keywords), and a SECTION's own words count only when no row
+			// matched directly — a section-wide word would otherwise list the whole section
+			const direct = (r: RowInfo) => rowMatches(needle, r.info);
+			const anyDirect = !!needle && sections.some((sec) => sec.rows.some(direct));
+			const match = (r: RowInfo) => !needle || (anyDirect ? direct(r) : rowMatches(needle, r.info, { fallback: true }));
+			for (const { header, body, rows } of sections) {
+				let visible = 0;
+				for (const r of rows) {
+					const show = match(r);
+					r.el.style.display = show ? '' : 'none';
+					if (show) {
+						visible++;
+						if (needle) shown.push(r.el);
+					}
+				}
 				// hide a section only when we KNOW it has rows and none of them matched;
 				// an unmounted body (0 rows) is unknown, and the observer will revisit it
 				const hide = !!needle && rows.length > 0 && visible === 0;
 				body.style.display = hide ? 'none' : '';
 				header.style.display = hide ? 'none' : '';
-			});
+				if (needle && !hide) {
+					shown.push(header);
+					body.querySelectorAll('.ui-section-label').forEach((l) => shown.push(l));
+				}
+			}
+			highlight(shown);
+		};
+		/**
+		 * 36 I4: mark every occurrence of the query in what is shown — through the CSS Custom
+		 * Highlight API, so no text node svelte owns is ever split or wrapped (a <mark> injected
+		 * into a label would be wiped, or worse, kept, on svelte's next update).
+		 * @param {Element[]} els
+		 */
+		const highlight = (els: Element[]) => {
+			const H = (globalThis as any).Highlight;
+			const reg = (globalThis as any).CSS?.highlights;
+			if (!H || !reg) return;
+			if (!needle) {
+				reg.delete('settings-match');
+				return;
+			}
+			const ranges: Range[] = [];
+			for (const el of els) {
+				const walker = document.createTreeWalker(el, NodeFilter.SHOW_TEXT);
+				for (let t = walker.nextNode() as Text | null; t; t = walker.nextNode() as Text | null) {
+					const parent = t.parentElement;
+					if (!parent || parent.closest('input, textarea, select, option, button[role="switch"]')) continue;
+					for (const [a, b] of matchSpans(t.data, needle)) {
+						const r = document.createRange();
+						r.setStart(t, a);
+						r.setEnd(t, b);
+						ranges.push(r);
+					}
+				}
+			}
+			reg.set('settings-match', new H(...ranges));
 		};
 		const observer = new MutationObserver(() => apply());
 		// childList only: our own style writes are attribute changes, so re-entry
@@ -655,7 +734,10 @@
 				needle = (next || '').trim().toLowerCase();
 				apply();
 			},
-			destroy: () => observer.disconnect()
+			destroy: () => {
+				observer.disconnect();
+				(globalThis as any).CSS?.highlights?.delete('settings-match');
+			}
 		};
 	}
 
@@ -687,7 +769,17 @@
 <Modal
 	title="Settings"
 	bind:open={$settingsOpen}
-	modal={false} onkeydown={(e) => { if (e.key === 'Escape') settingsOpen.set(false); }}
+	modal={false} onkeydown={(e) => {
+		if (e.key !== 'Escape') return;
+		// 36 I4: Esc first CLEARS a search (and keeps you where you are); the next one closes
+		if ((settingsQuery || '').trim()) {
+			e.stopPropagation();
+			settingsQuery = '';
+			searchInput?.focus();
+			return;
+		}
+		settingsOpen.set(false);
+	}}
 	outsideclose
 	size="xl"
 	class="tp-modal-frame"
@@ -728,6 +820,7 @@
 				<AccordionItem bind:open={interfaceExpanded}>
 					{#snippet header()}Interface{/snippet}
 					<p class="ui-section-label">Appearance</p>
+					<TextSelectionSettings />
 					<SettingRow name="Theme">
 						<svelte:fragment slot="control">
 							<ThemedSelect
@@ -1027,6 +1120,7 @@
 						<span>Classic (the default): a left drag on the node editor's canvas pans and <kbd>Shift</kbd>+drag draws a selection box. Select-first: a left drag selects, dragging any selected node moves the whole selection, <kbd>Shift</kbd>+click adds to or removes from it, and the middle or right button pans — a right click that does not move still opens the menu</span>
 					</SettingRow>
 				</AccordionItem>
+				<TouchControlsSettings searching={!!settingsQuery.trim()} />
 				<AccordionItem bind:open={sceneExpanded}>
 					{#snippet header()}Scene{/snippet}
 					<SettingRow name="Show grid">
@@ -1272,6 +1366,7 @@
 						</svelte:fragment>
 						Back to the defaults ({DEFAULT_VIEW_PREFS.wireColor} / {DEFAULT_VIEW_PREFS.outlineColor} / auto). Per-device, never shared
 					</SettingRow>
+					<LoadingSettings />
 				</AccordionItem>
 				<AccordionItem bind:open={explorerExpanded}>
 					{#snippet header()}Explorer{/snippet}
@@ -2089,6 +2184,10 @@
 					<SettingRow name="Storage" noControl>
 						API keys are stored <span class="font-semibold">unencrypted</span> in this browser's local storage (like all settings) and never leave your device except in requests to the provider you configure. "Reset settings" clears them.
 					</SettingRow>
+				</AccordionItem>
+				<AccordionItem bind:open={exportExpanded}>
+					{#snippet header()}Export{/snippet}
+					<ExportSettingsSection />
 				</AccordionItem>
 				<AccordionItem bind:open={connectionExpanded}>
 					{#snippet header()}Connection{/snippet}

@@ -154,13 +154,14 @@ export function resetTouchInput() {
  * Clamped to the unit disc rather than per axis: clamping the components separately
  * makes the diagonal 1.41x faster than a cardinal, so a player walks fastest at 45
  * degrees (the same reasoning as throwVelocity's magnitude clamp).
- * @param {number} dx @param {number} dy
+ * 36 U8: `radius` is the stick's own size from the player's layout (default = W4's).
+ * @param {number} dx @param {number} dy @param {number} [radius]
  * @returns {{x: number, y: number}}
  */
-export function stickAxes(dx, dy) {
+export function stickAxes(dx, dy, radius = TOUCH_STICK_RADIUS) {
 	const distance = Math.hypot(dx, dy);
 	if (distance < 1) return { x: 0, y: 0 };
-	const scale = Math.min(1, distance / TOUCH_STICK_RADIUS) / distance;
+	const scale = Math.min(1, distance / Math.max(8, radius)) / distance;
 	return { x: dx * scale, y: dy * scale };
 }
 

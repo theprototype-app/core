@@ -179,7 +179,7 @@
 		border-radius: 9999px;
 		border: 1px solid rgb(55 65 81 / 0.6);
 		background: var(--surface, rgb(31 41 55 / 0.9));
-		color: rgb(229 231 235);
+		color: var(--text, rgb(229 231 235));
 		box-shadow:
 			0 10px 15px -3px rgb(0 0 0 / 0.1),
 			0 4px 6px -4px rgb(0 0 0 / 0.1);

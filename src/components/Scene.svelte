@@ -23,6 +23,7 @@
 	} from '$lib/objectActions';
 	// 85: what a double-click does (a LOCAL pref; store-only leaf, no cycle)
 	import { doubleClickAction } from '$lib/selectionPrefs';
+	import { retryIfFailed } from '$lib/packRefs';
 	import { noteXRSessionStarted } from '$lib/playMode';
 	import { recordTransform } from '$lib/history';
 	import { suspendAnimation, resumeAnimation, pumpFlowTick } from '$lib/flowRuntime';
@@ -580,6 +581,11 @@
 				// because a modelling session wants something else from the same
 				// gesture. The SELECT happens either way — the action follows it
 				// rather than replacing it.
+				// 36 U9: a double-click on a RED placeholder retries its file (and only selects it)
+				if (isDouble && retryIfFailed(target)) {
+					selectObject(target.uuid, false, additive);
+					return true;
+				}
 				const action = $doubleClickAction;
 				selectObject(target.uuid, isDouble && action === 'properties', additive);
 				if (isDouble && action === 'meshedit') enterFaceEdit(target.uuid);

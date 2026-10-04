@@ -15,7 +15,8 @@
 	// the headset lane streams into `liveSources` (profilerView.js).
 	import { onMount, untrack } from 'svelte';
 	import { get } from 'svelte/store';
-	import { Circle, Square, History, Upload, GitCompare, Camera } from '@lucide/svelte';
+	import { Circle, Square, History, Upload, GitCompare, Camera, Activity } from '@lucide/svelte';
+	import { profilerLiveOpen } from '$lib/perf/liveSink';
 	import DockTabs from '../DockTabs.svelte';
 	import ProfilerTimeline from './profiler/ProfilerTimeline.svelte';
 	import ProfilerDetail from './profiler/ProfilerDetail.svelte';
@@ -661,6 +662,15 @@
 		onclick={toggleCompare}
 		><GitCompare size={12} class="inline" aria-hidden="true" /> Compare</button
 	>
+	<!-- 36 U5: the Live view (a peer's frames as they arrive) opens from here now — it used to be
+	     a burger-menu row, away from the tool it belongs to -->
+	<button
+		id="profiler-open-live"
+		class="ui-button-quiet"
+		title="Watch a peer's frames live (a headset in your room)"
+		onclick={() => profilerLiveOpen.set(true)}
+		><Activity size={12} class="inline" aria-hidden="true" /> Live</button
+	>
 	<input
 		bind:this={fileInput}
 		id="profiler-file"
@@ -779,10 +789,10 @@
 		<div
 			id="profiler-dock"
 			use:ownKeys
-			class="fixed inset-x-0 bottom-0 flex flex-col bg-white p-2 dark:bg-gray-800 {dockVisible
+			class="tp-themed fixed inset-x-0 bottom-0 flex flex-col bg-white p-2 dark:bg-gray-800 {dockVisible
 				? ''
 				: 'hidden'}"
-			style="z-index: var(--z-bottom); height: {$dockHeight}px; border-top: 1px solid rgb(55 65 81 / 0.6)"
+			style="z-index: var(--z-bottom); height: {$dockHeight}px; border-top: 1px solid var(--tp-line)"
 		>
 			<!-- svelte-ignore a11y_no_static_element_interactions -->
 			<div
@@ -820,7 +830,7 @@
 		<div
 			id="profiler-window"
 			use:ownKeys
-			class="ui-panel fixed flex flex-col overflow-hidden"
+			class="ui-panel tp-themed pf-surface fixed flex flex-col overflow-hidden"
 			use:dragWindow={{ key: 'profilerWin', defaultRect: { left: 120, top: 100 } }}
 			use:focusStack={'profiler'}
 			use:tabbable={{
@@ -889,7 +899,7 @@
 	.pf-side {
 		min-height: 0;
 		overflow-y: auto;
-		border-right: 1px solid rgb(55 65 81 / 0.5);
+		border-right: 1px solid var(--tp-line);
 		padding-right: 4px;
 	}
 	.pf-main {
@@ -903,14 +913,14 @@
 		flex-wrap: wrap;
 		gap: 2px 10px;
 		font-size: 10.5px;
-		color: #9ca3af;
+		color: var(--tp-muted);
 		padding-bottom: 3px;
 		flex: 0 0 auto;
 		max-height: 32px;
 		overflow: hidden;
 	}
 	.pf-meta-name {
-		color: #e5e7eb;
+		color: var(--tp-ink);
 		font-weight: 600;
 	}
 	.pf-split {
@@ -932,20 +942,20 @@
 	.pf-hint {
 		margin: 12px 4px;
 		font-size: 12px;
-		color: #9ca3af;
+		color: var(--tp-muted);
 	}
 	.pf-status {
 		flex: 0 0 auto;
 		font-size: 11px;
-		color: #9ca3af;
+		color: var(--tp-muted);
 		padding-top: 2px;
 	}
 	.pf-warn {
-		color: #fbbf24;
+		color: var(--ink-warn);
 	}
 	.pf-extra {
 		font-size: 11px;
-		color: #9ca3af;
+		color: var(--tp-muted);
 		margin-top: 6px;
 	}
 	.pf-select {
@@ -954,27 +964,27 @@
 		padding: 0 4px;
 		font-size: 11px;
 		border-radius: 3px;
-		background: rgb(17 24 39 / 0.6);
-		border: 1px solid var(--border, #374151);
-		color: #e5e7eb;
+		background: var(--tp-field);
+		border: 1px solid var(--tp-line);
+		color: var(--tp-ink);
 	}
 	.pf-record :global(svg) {
-		color: #ef4444;
-		fill: #ef4444;
+		color: var(--ink-bad);
+		fill: var(--ink-bad);
 	}
 	.pf-rec-on {
 		display: inline-flex;
 		align-items: center;
 		gap: 5px;
 		font-size: 11px;
-		color: #fca5a5;
+		color: var(--ink-bad);
 		font-variant-numeric: tabular-nums;
 	}
 	.pf-rec-dot {
 		width: 8px;
 		height: 8px;
 		border-radius: 50%;
-		background: #ef4444;
+		background: var(--ink-bad);
 		animation: pf-pulse 1s ease-in-out infinite;
 	}
 	@keyframes pf-pulse {
@@ -983,7 +993,14 @@
 		}
 	}
 	.pf-on {
-		background: var(--accent, #3b82f6);
-		color: #fff;
+		background: var(--accent-fill, #2563eb);
+		color: var(--on-accent, #fff);
+	}
+	/* 36 U1: `ui-panel` is `@apply bg-gray-800`, which no theme remap reaches — the floating
+	   window owns its surface like the toolbox shell does */
+	.pf-surface {
+		background: var(--tp-surface);
+		color: var(--tp-ink);
+		border-color: var(--tp-line);
 	}
 </style>

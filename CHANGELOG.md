@@ -5,6 +5,56 @@
      per release, newest first. HTML comments like this one are stripped before
      rendering, so maintainer notes stay out of the user-facing window. -->
 
+## 1.21.0 — Publish anywhere, touch buttons, readable themes 📦
+
+### 📦 Publish / Export
+
+- 📦 **Publish / Export** (the menu item that was "Publish") opens one window with three tabs: Publish, Export and
+  Settings.
+- ▶️ **A play link that starts the game**: publishing gives a `/p/<id>` link (and a QR code) that opens straight into
+  Play — no editor, a start card, fullscreen and Enter VR when the device can.
+- 🗜️ **Export a game as a zip** that runs anywhere static files are served: presets for **itch.io** (upload the zip as
+  is, Kind = HTML), **a static host**, or **an embed snippet** for your own page. Everything is inside the zip, with
+  relative paths — no calls back to us.
+- 🏷️ A small **"Made with ThePrototype"** badge sits in the bottom-right corner of play links, embeds and exports —
+  a see-through T with solid dark-grey accents, so a game's colours never tint the logo.
+
+### 👆 Touch screens
+
+- 🕹️ **On-screen action buttons** (Jump, Throw, Grab…) next to the move stick, taken from the game's own controls.
+  Move, resize, fade and re-skin them (pressed/released pictures) in **Settings ▸ Touch controls** or from the pause
+  menu; Auto / Always / Never. Sky Run, Target Toss, Mini Golf, Marble Maze, Towers and the Escape room come with
+  layouts. Modules declare theirs with `api.input.actions`.
+- 🤏 Safari trackpad pinch now zooms the editor viewport.
+- 📱 **The menu fits short and folding phone screens** and scrolls by touch (OPPO Find N6 folded and unfolded); folding
+  or unfolding no longer leaves the page zoomed out.
+- 🔋 **Phone quality no longer steps down on a steady menu**: it is judged against the phone's own refresh rate and left
+  alone while the scene is trivially light.
+
+### ⏳ Loading you can see
+
+- 🧊 **Modern loading placeholders** (Settings ▸ Scene ▸ Loading; coloured boxes stay the default): a translucent
+  hologram with a grid that fills as the file downloads.
+- ✋ **Move, select and edit pieces while they load** — the model lands where you put it, for everyone.
+- 🔁 **Stuck or failed pieces tell you**: amber after 10 s without data, retried three times, then red with Retry,
+  Replace model… and Delete (right-click or double-click), plus a "Retry all" toast.
+
+### 🎨 Easier to read and use
+
+- 🎨 **The Profiler is readable in every theme** — and the same fix across number fields, the Explorer, the shader
+  editor and the light-theme drawers.
+- 🔎 **Settings search** also finds keywords ("dark" finds Theme), highlights what matched, and Esc clears it.
+- 🖱️ **No accidental text selection** in menus and panels; **Settings ▸ Interface ▸ Allow text selection everywhere**
+  turns it back on.
+- 📊 **Live profiler** moved into the Profiler tab (the **Live** button in its header).
+- 🌫️ Fog near/far you set by hand stay set.
+- 🐑 Ctrl+D with nothing selected never duplicates a stale object.
+
+### 📚 Docs
+
+- 📚 New pages for Publish & Export, Touch controls, Loading placeholders, Colliders, the HUD editor and Themes, plus
+  a backfill of everything from 1.0 to 1.20 that the docs had missed.
+
 ## 1.20.0 — Five new games, a profiler, and a kit to build games from 🎮
 
 ### 🎮 Five new games in the Games tab (no download needed)

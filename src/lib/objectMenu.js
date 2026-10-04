@@ -56,7 +56,9 @@ export function buildObjectMenuItems(uuid, opts = {}) {
 	const multi = selection.length > 1 && selection.includes(uuid);
 	const targets = multi ? selection : [uuid];
 	const suffix = multi ? ` (${targets.length})` : '';
-	const isGroup = object?.type === 'Group';
+	// 36 U9: a kit piece still loading is an empty Group (its stub) — not a group to ungroup
+	const loadingStub = !!(object?.userData?.packStub && object?.userData?.packRef && !object.children?.length);
+	const isGroup = object?.type === 'Group' && !loadingStub;
 
 	/** run a per-object action across the target set */
 	const forEach = (/** @type {(u: string) => void} */ fn) => () => targets.forEach(fn);
@@ -231,6 +233,24 @@ export function buildObjectMenuItems(uuid, opts = {}) {
 						disabled: locked,
 						tooltip: locked ? lockedTooltip : 'Move this camera to where you are looking from',
 						action: () => import('./cameraObjects').then((m) => m.setCameraFromView(uuid))
+					}
+				]
+			: []),
+		// 36 U9: a placeholder whose piece is late or failed — retry its file, or swap the piece
+		...(loadingStub && !multi
+			? [
+					{ section: 'Loading' },
+					{
+						label: 'Retry loading',
+						icon: 'refresh-cw',
+						tooltip: "Fetch this piece's file again — every copy of the same piece comes back with it",
+						action: () => import('./packRefs').then((m) => m.retryPlaceholder(object))
+					},
+					{
+						label: 'Replace model…',
+						icon: 'folder-input',
+						tooltip: 'Put a different pack item or library model here, keeping the position, rotation and scale',
+						action: () => import('./replaceModel').then((m) => m.openReplaceModel(uuid))
 					}
 				]
 			: []),

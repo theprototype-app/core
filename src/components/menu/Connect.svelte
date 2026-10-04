@@ -278,7 +278,7 @@
 		<!-- your invite id (click to copy the share link) -->
 		<Button
 			color="primary"
-			class="nob shrink-0 rounded-lg bg-gray-400 text-white ring-0 dark:bg-gray-600 dark:text-gray-200"
+			class="nob shrink-0 rounded-lg bg-gray-600 text-gray-900 ring-0 dark:bg-gray-600 dark:text-gray-200"
 			onclick={copy}
 			title="Copy your invite link"><span class="inline-flex items-center gap-1.5" style="white-space: nowrap;"><Copy size={14} aria-hidden="true" />{myidcap}</span></Button
 		>

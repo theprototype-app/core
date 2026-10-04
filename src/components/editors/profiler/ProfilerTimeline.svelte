@@ -17,6 +17,8 @@
 	// (Ctrl ×10), Shift extends the range, Home/End, +/− zoom, 0 fits, Z zooms to the
 	// selection, Esc selects the whole recording again.
 	import { untrack } from 'svelte';
+	// 36 U1: the canvas reads its colours from the theme, so a theme switch is a redraw
+	import { theme, customThemes } from '$lib/themes';
 	import {
 		SERIES,
 		bucketize,
@@ -53,6 +55,9 @@
 		'stale-module': '#f97316'
 	});
 	const SERIES_COLORS = ['#34d399', '#60a5fa', '#f472b6', '#fbbf24', '#a78bfa'];
+	/** 36 U1: the same hues a shade deeper, for a LIGHT plot — the pastel set measured under
+	 *  2:1 against the light theme's field, too faint to read a line by */
+	const SERIES_COLORS_ON_LIGHT = ['#047857', '#1d4ed8', '#be185d', '#b45309', '#6d28d9'];
 	const MARKER_H = 12;
 	const MIN_SPAN = 30;
 
@@ -104,12 +109,19 @@
 	let raf = 0;
 	$effect(() => {
 		// every input the picture depends on, read here so the effect re-runs on each
-		void [doc, view.from, view.to, sel?.from, sel?.to, width, height, hoverT, cursor, scales];
+		void [doc, view.from, view.to, sel?.from, sel?.to, width, height, hoverT, cursor, scales, $theme, $customThemes];
 		if (!canvas) return;
 		cancelAnimationFrame(raf);
 		raf = requestAnimationFrame(draw);
 		return () => cancelAnimationFrame(raf);
 	});
+
+	/** is this CSS colour a light ink (i.e. the plot behind it is dark)? @param {string} c */
+	function isLightInk(c) {
+		const m = /(\d+(?:\.\d+)?)[ ,]+(\d+(?:\.\d+)?)[ ,]+(\d+(?:\.\d+)?)/.exec(c);
+		if (!m) return true;
+		return 0.299 * +m[1] + 0.587 * +m[2] + 0.114 * +m[3] > 140;
+	}
 
 	function draw() {
 		if (!canvas) return;
@@ -122,9 +134,14 @@
 		if (!g) return;
 		g.setTransform(dpr, 0, 0, dpr, 0, 0);
 		g.clearRect(0, 0, width, height);
+		// 36 U1: every colour the canvas draws comes from the theme (a canvas cannot take a
+		// var(), so they are read off the element — custom properties inherit to it)
 		const css = getComputedStyle(canvas);
 		const ink = css.color || '#d1d5db';
-		const accent = css.getPropertyValue('--accent').trim() || '#3b82f6';
+		const muted = css.getPropertyValue('--tp-muted').trim() || '#9ca3af';
+		const bad = css.getPropertyValue('--ink-bad').trim() || '#f87171';
+		const accent = css.getPropertyValue('--tp-accent').trim() || '#3b82f6';
+		const series = isLightInk(ink) ? SERIES_COLORS : SERIES_COLORS_ON_LIGHT;
 		g.font = '10px system-ui, sans-serif';
 		g.textBaseline = 'top';
 
@@ -153,7 +170,7 @@
 			// min..max per column
 			for (let c = 0; c < cols; c++) {
 				if (!b.has[c]) continue;
-				g.fillStyle = over(c) ? '#ef4444' : SERIES_COLORS[i];
+				g.fillStyle = over(c) ? bad : series[i];
 				g.globalAlpha = over(c) ? 0.7 : 0.35;
 				const y1 = Math.max(top + 12, y(b.max[c]));
 				const y2 = y(b.min[c]);
@@ -166,7 +183,7 @@
 			g.rect(0, top, width, laneH);
 			g.clip();
 			g.globalAlpha = 1;
-			g.strokeStyle = SERIES_COLORS[i];
+			g.strokeStyle = series[i];
 			g.lineWidth = 1.5;
 			g.beginPath();
 			let pen = false;
@@ -182,7 +199,7 @@
 			g.restore();
 			// the budget line
 			if (s.budget !== null) {
-				g.strokeStyle = '#ef4444';
+				g.strokeStyle = bad;
 				g.globalAlpha = 0.8;
 				g.setLineDash([4, 3]);
 				g.beginPath();
@@ -190,7 +207,8 @@
 				g.lineTo(width, Math.round(y(s.budget)) + 0.5);
 				g.stroke();
 				g.setLineDash([]);
-				g.fillStyle = '#ef4444';
+				g.globalAlpha = 1;
+				g.fillStyle = bad;
 				g.textAlign = 'right';
 				g.fillText(
 					`${s.key === 'tris' ? fmtCount(s.budget) : s.budget}${s.unit ? ' ' + s.unit : ''}`,
@@ -200,12 +218,14 @@
 				g.globalAlpha = 1;
 			}
 			// the lane's name + its scale
+			// label + scale at FULL strength in theme ink: an alpha-faded label drops under 4:1
 			g.fillStyle = ink;
 			g.textAlign = 'left';
-			g.globalAlpha = 0.85;
+			g.globalAlpha = 1;
 			g.fillText(s.label, 4, top + 2);
-			g.globalAlpha = 0.5;
+			g.fillStyle = muted;
 			g.fillText(fmtCount(max), 4 + g.measureText(s.label).width + 6, top + 2);
+			g.fillStyle = ink;
 			g.globalAlpha = 0.15;
 			g.fillRect(0, top + laneH - 1, width, 1);
 			g.globalAlpha = 1;
@@ -504,7 +524,7 @@
 			<span>Q{readFrame.quality ?? '–'}</span>
 		{/if}
 		{#if readEvent}
-			<span class="truncate text-amber-300">◆ {eventText(readEvent)}</span>
+			<span class="pf-ev-ink truncate">◆ {eventText(readEvent)}</span>
 		{/if}
 		<span class="flex-1"></span>
 		<span>{fmtSec(view.to - view.from)} shown</span>
@@ -514,7 +534,10 @@
 <style>
 	.pf-timeline {
 		/* the canvas reads its ink from `color` (a canvas cannot take a var()) */
-		color: #d1d5db;
-		background: rgb(17 24 39 / 0.45);
+		color: var(--tp-ink-2, #d1d5db);
+		background: var(--tp-field, #111827);
+	}
+	.pf-ev-ink {
+		color: var(--ink-warn);
 	}
 </style>

@@ -105,6 +105,50 @@ import { applyRemoteBehavior } from '$lib/packBehavior';
 import { lockedObjects, selectedObject, peerHands, objectsGroup, pokeScene } from '../stores/sceneStore';
 import { addMessage, peers, userdata, pendingApprovals, waitingForApproval, showToast } from '../stores/appStore';
 import { get } from 'svelte/store';
+import { exportMode } from './export/exportBoot.js';
+
+/**
+ * 36-export: the Peer an exported game holds — the same shape the rest of the app reads
+ * (`id`, `open`, `connections`, `on`/`connect`/`call`/`destroy`…) with nothing behind it.
+ * It never opens and never dials, so the app runs exactly as it does with signaling down.
+ * @param {string} id @returns {any}
+ */
+export function offlinePeer(id) {
+	const peer = {
+		id,
+		open: false,
+		disconnected: true,
+		destroyed: false,
+		connections: {},
+		on() {
+			return peer;
+		},
+		off() {
+			return peer;
+		},
+		once() {
+			return peer;
+		},
+		removeAllListeners() {
+			return peer;
+		},
+		connect() {
+			return undefined;
+		},
+		call() {
+			return undefined;
+		},
+		reconnect() {},
+		disconnect() {},
+		destroy() {
+			peer.destroyed = true;
+		},
+		listAllPeers(/** @type {any} */ cb) {
+			if (typeof cb === 'function') cb([]);
+		}
+	};
+	return peer;
+}
 
 export function createPeer() {
 	return 'xxxxx'.replace(/[xy]/g, function (c) {
@@ -256,7 +300,10 @@ export class PeerConnection {
 			// Publish the resolved server for the Connect indicator (I5); carry the
 			// fallback flag once we've switched to the public cloud.
 			peerServerStatus.set({ ...describePeerServer({ isLocalDev, forcePublic }), didFallback: this.didFallback });
-			this.peer = new Peer(this.myId, options);
+			// 36-export: an exported game is single-player and opens NO signaling socket — a stub
+			// Peer that never opens (`connect()` answers undefined, which every dial site already
+			// guards, the signaling-down rule), so `$peers.peer.id` and every send stay valid
+			this.peer = exportMode ? /** @type {Peer} */ (offlinePeer(this.myId)) : new Peer(this.myId, options);
 		};
 
 		// 27-F (audit H2): THE recreate ritual, in one place. Four callers had their own

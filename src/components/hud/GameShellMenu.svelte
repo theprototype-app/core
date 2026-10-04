@@ -31,6 +31,7 @@
 		pickGameLevel,
 		stepGameSetting
 	} from '$lib/gameShell';
+	import { touchControlsVisible } from '$lib/touchActions'; // 36 U8: the Touch controls row
 	import { gameSettingValues, gameSettingRows, setGameSetting } from '$lib/gameSettings';
 
 	const playing = $derived($isLocked === true);
@@ -41,7 +42,7 @@
 	const open = $derived($shellMenu.open && offered);
 	const page = $derived($shellMenu.page);
 	const itemsFor = (/** @type {any[]} */ ..._deps) => shellMenuItems({ vr: false });
-	const items = $derived(itemsFor($gameLevels));
+	const items = $derived(itemsFor($gameLevels, $touchControlsVisible));
 	const viewsFor = (/** @type {any[]} */ ..._deps) => shellSettingViews({ vr: false });
 	const settings = $derived(viewsFor($gameSettingValues, $gameSettingRows));
 	// 33 (G3): a game's level-picking choice (Untangle's Board) as tabs above the grid

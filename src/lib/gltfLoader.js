@@ -7,6 +7,8 @@ import { MeshoptDecoder } from 'three/addons/libs/meshopt_decoder.module.js';
 import { get } from 'svelte/store';
 import { globalRenderer } from '../stores/sceneStore';
 import { gltfUsesExtension } from './modelLoaderCore';
+// 36-export: decoder paths resolve against the PAGE, so an export served from a subpath finds them
+import { pageUrl } from './export/exportBoot.js';
 
 // 34 R7 (E1) — THE app's glTF loader, configured in ONE place. Four files used to build
 // their own (packRefs, lodGroup, animatedImports, api.loadModel's predecessors in modules
@@ -29,7 +31,7 @@ const stats = { parses: 0, ktx2Files: 0 };
 function sharedDraco() {
 	if (draco) return draco;
 	draco = new DRACOLoader();
-	draco.setDecoderPath('/draco/');
+	draco.setDecoderPath(pageUrl('draco/'));
 	return draco;
 }
 
@@ -51,7 +53,7 @@ function ktx2Loader() {
 			// @ts-ignore
 			const { KTX2Loader } = await import('three/addons/loaders/KTX2Loader.js');
 			const loader = new KTX2Loader();
-			loader.setTranscoderPath('/basis/');
+			loader.setTranscoderPath(pageUrl('basis/'));
 			loader.detectSupport(renderer);
 			return loader;
 		})().catch((error) => {

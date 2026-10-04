@@ -373,7 +373,7 @@
 	   problem, and colouring it like one would be the indicator crying wolf. */
 	.tx-off {
 		border-color: rgb(75 85 99 / 0.5);
-		color: rgb(107 114 128);
+		color: var(--muted, rgb(107 114 128));
 	}
 	.tx-idle {
 		border-color: rgb(75 85 99 / 0.5);
@@ -428,7 +428,7 @@
 		justify-content: space-between;
 		gap: 6px;
 		font-size: 11px;
-		color: rgb(229 231 235);
+		color: var(--text, rgb(229 231 235));
 	}
 	.tx-pop-pct {
 		font-variant-numeric: tabular-nums;
@@ -457,7 +457,7 @@
 		gap: 6px;
 		padding-top: 3px;
 		font-size: 10px;
-		color: rgb(209 213 219);
+		color: var(--text-2, rgb(209 213 219));
 	}
 	.tx-pop-name {
 		min-width: 0;
@@ -507,7 +507,7 @@
 	}
 	.tx-log-title {
 		font-weight: 600;
-		color: rgb(229 231 235);
+		color: var(--text, rgb(229 231 235));
 	}
 	.tx-log-sub {
 		color: rgb(148 163 184);
@@ -523,7 +523,7 @@
 		font-size: 10.5px;
 		font-style: italic;
 		line-height: 1.4;
-		color: rgb(107 114 128);
+		color: var(--muted, rgb(107 114 128));
 	}
 	.tx-row {
 		display: grid;
@@ -532,7 +532,7 @@
 		gap: 5px;
 		padding: 2px 6px;
 		font-size: 10px;
-		color: rgb(209 213 219);
+		color: var(--text-2, rgb(209 213 219));
 	}
 	.tx-row:hover {
 		background: rgb(55 65 81 / 0.5);
@@ -545,7 +545,7 @@
 		justify-content: center;
 	}
 	.tx-s-queued {
-		color: rgb(107 114 128);
+		color: var(--muted, rgb(107 114 128));
 	}
 	.tx-s-active {
 		color: rgb(56 189 248);
@@ -574,11 +574,11 @@
 		color: rgb(148 163 184);
 	}
 	.tx-row-more {
-		color: rgb(107 114 128);
+		color: var(--muted, rgb(107 114 128));
 		line-height: 1;
 	}
 	.tx-row-more:hover {
-		color: rgb(229 231 235);
+		color: var(--text, rgb(229 231 235));
 	}
 	.tx-row-bar {
 		grid-column: 1 / -1;

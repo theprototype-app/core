@@ -11,6 +11,7 @@
 	import PanelHeader from '../ui/PanelHeader.svelte';
 	import Section from '../ui/Section.svelte';
 	import LodGroupPanel from './LodGroupPanel.svelte';
+	import LoadStatePanel from './LoadStatePanel.svelte';
 	import SliderRow from '../ui/SliderRow.svelte';
 	import DragRow from '../ui/DragRow.svelte';
 	import ColorPicker, { ChromeVariant } from 'svelte-awesome-color-picker';
@@ -1326,22 +1327,17 @@
 		);
 	}
 
-	// ---- scene target (fog state is local, like the old scene panel) --------
-	// fogColor is INITIALIZED: svelte 5.56 hard-errors on `bind:hex={undefined}`
-	// when the prop has a fallback (props_invalid_value) — undefined here
-	// CRASHED the whole scene drawer (pre-existing on release/1.1, deps bump).
-	// 15-C: the pickers pass `hex` ONE-WAY now (color-picker v4 writes its own
-	// snapshot back through a binding and clobbers external writes — an env
-	// preset or a selection change); `onInput` is the input channel.
-	/** @type {any} */
-	let fogColor = $state('#ffffff');
-	/** @type {any} */
-	let fogNear = $state(0);
-	/** @type {any} */
-	let fogFar = $state(50);
+	// ---- scene target: fog --------------------------------------------------
+	// 36 A5: the fog controls READ the environment (they used to keep their own 0 / 50 / white,
+	// so a Near drag also sent that stale Far + colour and the fog snapped back to the slider's
+	// defaults; a preset change never reached them either). Every edit is a PARTIAL patch through
+	// editEnvSky, which marks a hand-set near/far as authored (`fit: false`) so applyEnvironment
+	// keeps it instead of growing it to the scene's reach.
 
 	// ---- environment v2 (70) -------------------------------------------------
 	const envPayload = $derived(presetPayload($environment));
+	/** @type {any} */
+	const envFog = $derived(envPayload?.fog ?? null);
 	const selectedIsSceneLight = $derived(
 		!!$selectedObject?.isLight &&
 			!!$objectsGroup?.getObjectByProperty?.('uuid', $selectedObject.uuid)
@@ -1382,13 +1378,6 @@
 		if (sameHex(hex, $backgroundColor)) return; // mount echo, not an edit
 		backgroundColor.set(hex);
 		editEnvSky({ background: hex });
-	}
-	function applyFog() {
-		editEnvSky(
-			fogNear === null || fogFar === null
-				? { fog: null }
-				: { fog: { color: fogColor ?? '#ffffff', near: fogNear, far: fogFar } }
-		);
 	}
 
 	// 16-P4: framing helpers for the Camera section. Both reuse the existing flyTo
@@ -1433,6 +1422,12 @@
 	function resetView() {
 		// the editor camera's mount defaults (Scene.svelte)
 		flyTo([-10, 10, 10], [0, 1.5, 0]);
+	}
+	/** 36 U9: the selection is a kit piece still waiting for its file. `_group` is the
+	 * objectsGroup store passed so the template re-checks on every poke (a refill adds the
+	 * children in place). @param {any} o @param {any} _group */
+	function isLoadingStubOf(o, _group) {
+		return !!(o?.uuid && o.userData?.packStub && o.userData?.packRef && !o.children?.length);
 	}
 </script>
 
@@ -2523,7 +2518,8 @@
 								onclick={() => selectObject(row.uuid)}
 							>
 								<span class="truncate">{row.name}</span>
-								<span class="shrink-0 text-[10px] opacity-75">
+								<!-- 36 U1: no fade on the selected row's accent fill (2.6:1 with it) -->
+								<span class={'shrink-0 text-[10px] ' + ($selectedObject?.uuid === row.uuid ? '' : 'opacity-75')}>
 									{row.mode === 'dynamic'
 										? 'dynamic · ' + row.mass + ' kg'
 										: row.mode === 'static'
@@ -2707,25 +2703,20 @@
 					--picker-height="70px"
 					--picker-width="50px"
 					--slider-width="10px"
-					hex={fogColor}
+					hex={envFog?.color ?? '#ffffff'}
 					onInput={(/** @type {any} */ c) => {
-						if (sameHex(c.hex, fogColor)) return; // mount echo, not an edit
-						fogColor = c.hex;
-						applyFog();
+						if (sameHex(c.hex, envFog?.color ?? '#ffffff')) return; // mount echo, not an edit
+						editEnvSky({ fog: { color: c.hex } });
 					}}
 				/>
-				<SliderRow label="Near" min={0} max={10} step={0.1} decimals={1} value={fogNear ?? 0}
-					onchange={(v) => { fogNear = v; applyFog(); }} />
-				<SliderRow label="Far" min={0} max={100} step={0.1} decimals={1} value={fogFar ?? 0}
-					onchange={(v) => { fogFar = v; applyFog(); }} />
+				<SliderRow id="fog-near" label="Near" min={0} max={Math.max(10, Math.ceil(envFog?.near ?? 0))} step={0.1} decimals={1} value={envFog?.near ?? 0}
+					onchange={(v) => editEnvSky({ fog: { near: v } })} />
+				<SliderRow id="fog-far" label="Far" min={0} max={Math.max(100, Math.ceil(envFog?.far ?? 0))} step={0.1} decimals={1} value={envFog?.far ?? 0}
+					onchange={(v) => editEnvSky({ fog: { far: v } })} />
 				<Button
 					size="xs"
 					color="alternative"
-					onclick={() => {
-						fogNear = null;
-						fogFar = null;
-						editEnvSky({ fog: null });
-					}}>Remove Fog</Button
+					onclick={() => editEnvSky({ fog: null })}>Remove Fog</Button
 				>
 			</Section>
 		</div>
@@ -2983,6 +2974,12 @@
 					<p class="text-[10px] italic text-gray-400">
 						The camera itself is shared; previewing and the frustum lines are yours alone.
 					</p>
+				</Section>
+			{/if}
+			<!-- 36 U9: a kit piece still loading — its file, its progress, Retry / Replace / Remove -->
+			{#if !multiCount && isLoadingStubOf($selectedObject, $objectsGroup)}
+				<Section label="Loading">
+					<LoadStatePanel object={$selectedObject} />
 				</Section>
 			{/if}
 			<Section label="Transform">
@@ -4268,7 +4265,8 @@
 	.snap-sub-hint {
 		font-size: 10px;
 		font-style: italic;
-		color: rgb(156 163 175);
+		/* 36 U1: theme ink (2.5:1 on the light theme's white drawer) */
+		color: var(--muted, rgb(156 163 175));
 	}
 	/* five PEER toggles, not presets: right-aligning them in the numeric grid
 	   stranded the fifth chip on a line of its own against the right edge */
@@ -4291,14 +4289,14 @@
 		width: 100%;
 		padding: 0.3rem 0.5rem;
 		border-radius: 0.375rem;
-		border: 1px dashed rgb(255 255 255 / 0.25);
+		border: 1px dashed var(--border, rgb(255 255 255 / 0.25));
 		background: rgb(255 255 255 / 0.04);
-		color: rgb(209 213 219);
+		color: var(--text-2, rgb(209 213 219));
 		font-size: 11px;
 	}
 	.snap-action:hover {
 		background: rgb(255 255 255 / 0.09);
-		color: #fff;
+		color: var(--text, #fff);
 	}
 	.snap-action-armed,
 	.snap-action-armed:hover {
@@ -4319,7 +4317,7 @@
 	.snap-group-hint {
 		font-size: 10px;
 		font-style: italic;
-		color: rgb(156 163 175);
+		color: var(--muted, rgb(156 163 175));
 	}
 	.snap-status {
 		display: flex;

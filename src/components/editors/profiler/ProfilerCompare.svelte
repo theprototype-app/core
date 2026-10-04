@@ -160,16 +160,16 @@
 	.pf-cmp th {
 		position: sticky;
 		top: 0;
-		background: var(--surface, #1f2937);
+		background: var(--tp-surface);
 		text-align: left;
 		font-weight: 600;
-		color: #9ca3af;
+		color: var(--tp-muted);
 		padding: 2px 4px;
 		white-space: nowrap;
 	}
 	.pf-cmp td {
 		padding: 1px 4px;
-		border-top: 1px solid rgb(55 65 81 / 0.35);
+		border-top: 1px solid color-mix(in srgb, var(--tp-line) 60%, transparent);
 		white-space: nowrap;
 	}
 	.num {
@@ -179,24 +179,24 @@
 		margin: 10px 0 2px;
 		font-size: 11px;
 		font-weight: 600;
-		color: #d1d5db;
+		color: var(--tp-ink-2);
 	}
 	.pf-sub {
-		color: #6b7280;
+		color: var(--tp-muted);
 		font-size: 10.5px;
 	}
 	.pf-better {
-		color: #34d399;
+		color: var(--ink-good);
 	}
 	.pf-worse {
-		color: #f87171;
+		color: var(--ink-bad);
 	}
 	.pf-same,
 	.pf-na {
-		color: #9ca3af;
+		color: var(--tp-muted);
 	}
 	.pf-link {
-		color: #e5e7eb;
+		color: var(--tp-ink);
 		text-align: left;
 	}
 	.pf-link:hover,

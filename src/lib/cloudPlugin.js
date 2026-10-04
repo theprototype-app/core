@@ -30,6 +30,8 @@ import { safeStorage } from './safeStorage';
 import { aiProviders, aiActiveProvider, aiEnabled, addAiProvider, updateAiProvider, removeAiProvider, setAiActiveProvider, setAiEnabled } from './ai/providers';
 import { meshProviders, meshActiveProvider, meshGenEnabled, addMeshProvider, updateMeshProvider, removeMeshProvider, setMeshActiveProvider, setMeshGenEnabled } from './ai/meshProviders';
 import { meshJobStatus } from './cloudHooks';
+import { exportMode } from './export/exportBoot.js';
+import { publishSlot, publishedLink, openPublishExport } from './export/exportStores.js';
 
 // 28-A (roadmap #28, publish · play · remix): the seams below reach cycle-sensitive
 // modules — sessions is history-family, cameraBookmarks imports objectActions, playMode is
@@ -60,6 +62,8 @@ async function primeSeams() {
  * bundle and can close a module cycle — the moduleSDK rule).
  */
 export async function startCloudPlugin() {
+	// 36-export: an exported game is the OSS runtime alone — the hosted tier never loads there
+	if (exportMode) return;
 	let url = '';
 	try {
 		url =
@@ -438,6 +442,23 @@ export function makeCloudApi() {
 		 *  …</button>` — the sidebar's row look reaches the slot. Null unmounts. */
 		mountSidebar: (/** @type {any} */ mountFn) =>
 			sidebarSlot.set(typeof mountFn === 'function' ? mountFn : null),
+
+		// --- 36-export (U4): the Publish / Export modal — ADDITIVE, typeof-probed, no bump ---
+		/** Mount the plugin's Publish flow as the modal's Publish TAB. Mount fn: (el) => cleanup
+		 *  (the CloudSlot shape); null unmounts. A plugin that finds this seam should NOT also
+		 *  mount a `mountSidebar` row — core draws the one "Publish / Export" burger item. */
+		mountPublish: (/** @type {any} */ mountFn) => publishSlot.set(typeof mountFn === 'function' ? mountFn : null),
+		/** Open the modal on a tab ('publish' | 'export' | 'settings'; default: Publish when a
+		 *  plugin mounted it, else Export). */
+		openPublishExport: (/** @type {string | undefined} */ tab) => openPublishExport(tab),
+		/** What the plugin just published from this scene — `{id, title, playUrl, pageUrl}` — so
+		 *  the Export tab's Embed preset can point its iframe at the play link. Null clears. */
+		setPublishedLink: (/** @type {any} */ info) =>
+			publishedLink.set(
+				info && typeof info === 'object' && typeof info.playUrl === 'string'
+					? { id: String(info.id || ''), title: String(info.title || ''), playUrl: String(info.playUrl), pageUrl: String(info.pageUrl || '') }
+					: null
+			),
 
 		/** A6: swap the Templates modal's Community source. Pass
 		 *  `{ list(opts), load(entry), notice?(), submit? }` (see cloudHooks.communityProvider

@@ -9,6 +9,8 @@ import { showToast } from '../stores/appStore';
 // keys only ITS pushState writes. `$app/navigation` is SSR-safe to IMPORT (only a CALL on
 // the server throws, and the marker is only ever pushed from a browser play press).
 import { pushState } from '$app/navigation';
+// 36-export: an exported game is an embed for its whole life too (a leaf, read once at eval)
+import { exportMode } from './export/exportBoot.js';
 
 // THE PLAY STATE MACHINE, lifted out of Controls.svelte so the play FAB, the FAB's
 // right-click mode menu and (next) a keyboard shortcut all press the same button.
@@ -91,8 +93,9 @@ function readEmbedBoot() {
 	}
 }
 const embedBoot = readEmbedBoot();
-/** true for the whole life of a page opened with `?embed=1` */
-export const embedMode = writable(embedBoot.on);
+/** true for the whole life of a page opened with `?embed=1` — or of an EXPORTED game (36-export),
+ *  which hides the same editor chrome and draws the same player chrome */
+export const embedMode = writable(embedBoot.on || exportMode);
 /** the `?s=<id>` the embed opened with ('' when none) — the corner link's target */
 export const embedSceneId = embedBoot.scene;
 /** the same scene in the full app: `/?s=<id>`, or `/` when the embed carried no scene */
@@ -305,8 +308,11 @@ export function xrSessionFailed() {
  * It must stay SYNCHRONOUS on the XR path: `requestSession` is only granted inside
  * the user gesture that asked for it, so nothing here may await.
  */
-export function requestPlay() {
-	if (get(willEnterXR) && typeof document !== 'undefined') {
+export function requestPlay(/** @type {{flat?: boolean}} */ opts = {}) {
+	// 36-export: `flat` = play on the screen even where a headset session is available — what
+	// an AUTOPLAY does (no gesture, so an XR request would be refused anyway); the player's own
+	// ▶ / Enter VR presses go through the XR branch as before
+	if (!opts.flat && get(willEnterXR) && typeof document !== 'undefined') {
 		// Both hidden XR buttons are mounted permanently (Controls.svelte), so the aimed
 		// one is already in the DOM even when the preference was flipped by the menu item
 		// that is calling us — there is no remount to wait for.

@@ -89,7 +89,7 @@
 		gap: 8px;
 		padding: 14px;
 		background: var(--surface, #1f2937);
-		color: #e5e7eb;
+		color: var(--text, #e5e7eb);
 		font-size: 13px;
 	}
 	.title {
@@ -104,7 +104,7 @@
 		background: #000;
 	}
 	.muted {
-		color: #9ca3af;
+		color: var(--muted, #9ca3af);
 		font-size: 12px;
 	}
 	.field {

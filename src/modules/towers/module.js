@@ -733,6 +733,8 @@ export default {
 			'Stars: one for finishing, one for par pieces, one for par time. A star opens the next level.'
 		];
 		/** @type {null | (() => void)} */ let helpOff = null;
+		// 36 U8: touch — a held Grab button carries a block at the crosshair (a touch press never carries)
+		/** @type {null | (() => void)} */ let touchOff = null;
 		// an OLDER peer forwards a shell pick as a message (the kit routes this build's picks)
 		api.onMessage((/** @type {any} */ msg) => {
 			if (msg?.op === 'pick' && authority()) startLevel(Number(msg.level));
@@ -759,6 +761,11 @@ export default {
 				if (on) defineLevels();
 				setRules(on);
 				if (on && typeof api.game?.setHelp === 'function') helpOff = api.game.setHelp(HELP);
+				if (on) touchOff = api.input?.actions?.(['grab'], { preset: 'explore' }) ?? null;
+				if (!on && touchOff) {
+					touchOff();
+					touchOff = null;
+				}
 				if (!on && helpOff) {
 					helpOff();
 					helpOff = null;
@@ -782,6 +789,8 @@ export default {
 				helpOff();
 				helpOff = null;
 			}
+			touchOff?.();
+			touchOff = null;
 			if (typeof levelsOff === 'function') {
 				levelsOff();
 				levelsOff = null;

@@ -136,6 +136,28 @@ function toggleAiPrompt() {
 export const cheatSheetOpen = writable(false);
 
 /**
+ * 36 B8: the mesh-edit commands — real combos, run by the mesh session's own handler.
+ * @param {[string, string, string][]} table [id, keys, label] @returns {Shortcut[]}
+ */
+function meshRows(table) {
+	return table.map(([id, keys, label]) => ({ id, keys, group: 'Mesh edit', scope: 'mesh', label, external: true }));
+}
+
+/**
+ * Which mesh-edit command a combo means right now (overrides included), or null.
+ * `Ctrl++` / `Ctrl+_` stay aliases of grow / shrink while those keep their defaults
+ * (the shifted spellings of the same two keys).
+ * @param {string} combo @returns {string | null}
+ */
+export function meshCommandFor(combo) {
+	const row = shortcuts.find((s) => s.scope === 'mesh' && s.keys === combo);
+	if (row) return row.id;
+	if (combo === 'Ctrl++' && bindingOf('mesh.grow') === 'Ctrl+=') return 'mesh.grow';
+	if (combo === 'Ctrl+_' && bindingOf('mesh.shrink') === 'Ctrl+-') return 'mesh.shrink';
+	return null;
+}
+
+/**
  * 36 U11: build the node-editor rows from a compact table. Each row reaches the mounted
  * editor by NAME (nodeEditorActions) and declines the key when no editor is mounted.
  * @param {[string, string, string, string, any?][]} table [id, keys, action, label, arg?]
@@ -602,26 +624,31 @@ export const shortcuts = [
 		fixed: true,
 		fixedReason: 'hold key, handled by voiceChat'
 	},
-	{
-		id: 'mesh-edit.ops',
-		keys: 'E I G S B F X / W',
-		group: 'Mesh edit',
-		scope: 'viewport',
-		label: 'Mesh edit ops, only in Edit Mesh (toggle on the toolbar)',
-		// handled by MeshEditPopup's local keydown; ONE bundled display row
-		fixed: true,
-		fixedReason: 'owned by the mesh-edit session'
-	},
-	{
-		id: 'mesh-edit.loops',
-		keys: 'L / Ctrl+ +- / Ctrl+A / Ctrl+I',
-		group: 'Mesh edit',
-		scope: 'viewport',
-		label: 'M2/M3: loop select · loop cut (C) · grow/shrink · select all/invert (faces)',
-		// same local handler, same bundling reason as the row above
-		fixed: true,
-		fixedReason: 'owned by the mesh-edit session'
-	},
+	/*
+	 * 36 B8 — THE MESH-EDIT KEYMAP, rebindable. These were two bundled DISPLAY rows
+	 * ('E I G S B F X / W'); each command is its own `external` row now (scope 'mesh'),
+	 * so Settings ▸ Shortcuts can move it. MeshEditPopup's own keydown still runs them —
+	 * it asks `meshCommandFor(combo)` which command a press means — and the registry's
+	 * stand-down during a session follows the CURRENT keys (`meshEditKeys`).
+	 */
+	...meshRows([
+		['mesh.mode-next', 'Tab', 'Next element mode (Vertices - Edges - Faces)'],
+		['mesh.mode-prev', 'Shift+Tab', 'Previous element mode'],
+		['mesh.select-all', 'Ctrl+A', 'Select all (any mode)'],
+		['mesh.select-invert', 'Ctrl+I', 'Invert the selection (any mode)'],
+		['mesh.grow', 'Ctrl+=', 'Grow the selection (faces)'],
+		['mesh.shrink', 'Ctrl+-', 'Shrink the selection (faces)'],
+		['mesh.move', 'G', 'Arm Move (faces)'],
+		['mesh.extrude', 'E', 'Arm Extrude (faces)'],
+		['mesh.inset', 'I', 'Arm Inset (faces)'],
+		['mesh.subdivide', 'S', 'Subdivide (faces)'],
+		['mesh.loopcut', 'C', 'Loop cut (faces)'],
+		['mesh.bridge', 'B', 'Bridge (faces)'],
+		['mesh.flip', 'F', 'Flip normals (faces)'],
+		['mesh.delete', 'X', 'Delete the selection (faces; Delete too)'],
+		['mesh.loop', 'L', 'Loop select (faces: again = perpendicular; edges: the chain)'],
+		['mesh.weld', 'W', 'Weld the selected vertices (vertices)']
+	]),
 	/*
 	 * 36 U11 — THE NODE EDITOR'S KEYMAP (scope 'nodes'). These fire only while the node
 	 * editor holds keyboard focus (a press landed in it last), so they can reuse letters
@@ -901,7 +928,7 @@ export function conflictOf(keys, excludeId, scope) {
 	const other = shortcuts.find(
 		(s) => s.id !== excludeId && isRebindable(s) && s.keys === keys && scopesCollide(self, mine, s)
 	);
-	return { shortcut: other ?? null, meshEdit: MESH_EDIT_KEYS.includes(keys) };
+	return { shortcut: other ?? null, meshEdit: mine !== 'mesh' && meshEditKeys().includes(keys) };
 }
 
 /**
@@ -980,7 +1007,12 @@ export function shortcutOverrides() {
 // pressed — never against a shortcut id. So it keeps standing down correctly for
 // whatever a user rebinds onto one of these keys, and stops standing down for a
 // command they move OFF one. `conflictOf` warns about the first case.
-const MESH_EDIT_KEYS = ['E', 'I', 'G', 'S', 'B', 'F', 'X', 'W', 'L', 'C', 'Tab', 'Shift+Tab'];
+// 36 B8: DERIVED from the mesh-edit rows' current combos (unmodified ones — the Ctrl
+// selection chords never collided: the viewport's own Ctrl+A stands down in a session),
+// so a rebound mesh key moves the stand-down with it.
+function meshEditKeys() {
+	return shortcuts.filter((s) => s.scope === 'mesh' && !/^(Ctrl|Alt)\+/.test(s.keys)).map((s) => s.keys);
+}
 
 /** True while Settings is listening for the next combo to bind. The registry has
  * to stand down for that press: it must be RECORDED, not executed. (Settings is a
@@ -1053,7 +1085,7 @@ function handleKeydown(event) {
 	// self-guards; 1/2/3 intentionally stay (gizmo mode on the proxy).
 	if (
 		(focused === 'viewport' || focused === 'vr') &&
-		MESH_EDIT_KEYS.includes(combo) &&
+		meshEditKeys().includes(combo) &&
 		(get(editingObject) || get(faceEditObject)) &&
 		get(meshEditHotkeys)
 	)

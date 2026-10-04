@@ -27,6 +27,7 @@
 export const SCOPE_LABELS = /** @type {Record<string, string>} */ ({
 	global: 'Everywhere',
 	viewport: '3D viewport',
+	mesh: 'Edit Mesh session',
 	nodes: 'Node editor',
 	code: 'Code editor',
 	vr: 'VR',

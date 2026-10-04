@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { nodeCatalog } from '$lib/nodeCatalog';
+	import { disabledNodeTypes, enabledCatalog } from '$lib/nodeTypePrefs'; // 36 B7: the node manager
 	import { nodeDoc } from '$lib/nodeDocs';
 	import { moduleNodeGroups } from '$lib/moduleSDK';
 	import { customNodeDefs } from '../../stores/flowStore';
@@ -79,8 +80,7 @@
 	let filter = '';
 
 	$: catalog = [
-		...nodeCatalog,
-		...$moduleNodeGroups,
+		...enabledCatalog([...nodeCatalog, ...$moduleNodeGroups], $disabledNodeTypes),
 		...($customNodeDefs.length > 0
 			? [
 					{
@@ -93,7 +93,7 @@
 		.map((group) => ({
 			...group,
 			items: group.items.filter(
-				(item) =>
+				(item: any) =>
 					!filter.trim() ||
 					(item.label + ' ' + item.type + ' ' + group.group)
 						.toLowerCase()

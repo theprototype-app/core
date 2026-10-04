@@ -113,6 +113,10 @@
 	import { bindingOf } from '$lib/shortcuts';
 	import { beginHistoryBatch, endHistoryBatch } from '$lib/history';
 	import { nodeHasCode, openNodeCode } from '$lib/nodeCode';
+	// 36 B7: the node manager (types switched off on this device) + the .tpnode group file
+	import { disabledNodeTypes, enabledCatalog } from '$lib/nodeTypePrefs';
+	import { buildTpnode, parseTpnode, tpnodeFileName } from '$lib/tpnode';
+	import { APP_VERSION } from '$lib/version';
 
 	// 21-D7: DEEP LINK — 'show me the node that drives this HUD element'. A write-once
 	// request that we act on and CLEAR, the inspectorScrollTo shape, so it cannot re-fire
@@ -888,6 +892,13 @@
 		event.preventDefault();
 		if (!event.dataTransfer) return;
 
+		// 36 B7: a .tpnode file dropped on the canvas lands where it was dropped
+		const file = [...(event.dataTransfer.files ?? [])].find((f) => f.name.toLowerCase().endsWith('.tpnode'));
+		if (file) {
+			const at = screenToFlowPosition({ x: event.clientX, y: event.clientY });
+			file.text().then((text) => importTpnodeText(text, at));
+			return;
+		}
 		const type = event.dataTransfer.getData('application/svelteflow');
 		if (!type) return;
 
@@ -1328,6 +1339,49 @@
 		if (!target || !openNodeCode(target, activeId)) showToast('This node has no code to open');
 	}
 
+	// --- 36 B7: a group (or any selection) as a .tpnode file -----------------------------
+	function exportTpnode(ids?: string[]) {
+		const pick = ids ?? selectedVisible().map((n) => n.id);
+		if (!pick.length) return;
+		const sn = storeNodesNow();
+		const first = sn.find((n) => n.id === pick[0]);
+		const name = pick.length === 1 && isGroup(first) ? first.data?.label ?? 'Node group' : 'Node group';
+		const file = buildTpnode(copyPayload(sn, storeEdgesNow(), pick, serializeNode, serializeEdge), name, { app: APP_VERSION });
+		const blob = new Blob([JSON.stringify(file, null, 1)], { type: 'application/json' });
+		const a = document.createElement('a');
+		a.href = URL.createObjectURL(blob);
+		a.download = tpnodeFileName(name);
+		document.body.appendChild(a);
+		a.click();
+		a.remove();
+		setTimeout(() => URL.revokeObjectURL(a.href), 2000);
+		showToast('Saved ' + a.download);
+	}
+	/** Read .tpnode text and place it at `at` (flow coordinates) — one undo step. */
+	function importTpnodeText(text: string, at?: { x: number; y: number }) {
+		const parsed = parseTpnode(text);
+		if (!parsed.ok) {
+			showToast(parsed.error);
+			return false;
+		}
+		const out = instantiatePayload(parsed.payload, () => crypto.randomUUID(), { at: at ?? cursorFlowPos() });
+		commitCreate(out.nodes, out.edges);
+		showToast(`Added "${parsed.name}" (${out.nodes.length} node${out.nodes.length === 1 ? '' : 's'})`);
+		return true;
+	}
+	let tpnodeInput: HTMLInputElement | null = $state(null);
+	let tpnodeAt: { x: number; y: number } | null = null;
+	function pickTpnode(at?: { x: number; y: number }) {
+		tpnodeAt = at ?? cursorFlowPos();
+		tpnodeInput?.click();
+	}
+	async function onTpnodePicked(event: Event) {
+		const input = event.currentTarget as HTMLInputElement;
+		const file = input.files?.[0];
+		input.value = '';
+		if (file) importTpnodeText(await file.text(), tpnodeAt ?? undefined);
+	}
+
 	/** Shift+A / Space: the pane menu at the cursor, already searching */
 	function addSearch() {
 		const p = lastPointer ?? paneCentre();
@@ -1417,7 +1471,7 @@
 
 	function addNodeItems(flowPos: { x: number; y: number }) {
 		return [
-			...[...nodeCatalog, ...$moduleNodeGroups].map((group) => ({
+			...enabledCatalog([...nodeCatalog, ...$moduleNodeGroups], $disabledNodeTypes).map((group) => ({
 				label: group.group,
 				children: group.items.map((item: any) => ({
 					label: item.label,
@@ -1458,6 +1512,7 @@
 					: []),
 				{ label: 'Select all', hint: hint('nodes.select-all'), action: selectAll },
 				{ label: 'Frame all', icon: 'scan', hint: hint('nodes.frame-all'), action: frameAll },
+				{ label: 'Import node group (.tpnode)…', icon: 'file-input', action: () => pickTpnode(flowPos) },
 				...(level
 					? [
 							{ label: 'Leave group', icon: 'log-out', hint: 'Esc', action: leaveGroup },
@@ -1488,6 +1543,7 @@
 		items.push({ label: n > 1 ? `Group ${n} nodes` : 'Group', icon: 'group', hint: hint('nodes.group'), action: groupSelection });
 		if (groups.length) items.push({ label: groups.length > 1 ? `Ungroup ${groups.length}` : 'Ungroup', icon: 'ungroup', hint: hint('nodes.ungroup'), action: () => ungroup() });
 		items.push({ label: 'Add note around', icon: 'sticky-note', hint: hint('nodes.note-around'), action: noteAroundSelection });
+		items.push({ label: one && isGroup(one) ? 'Export group (.tpnode)…' : 'Export as node group (.tpnode)…', icon: 'file-output', action: () => exportTpnode(list.map((x) => x.id)) });
 		items.push({ section: ' ' });
 		items.push({ label: 'Duplicate', icon: 'copy-plus', hint: hint('nodes.duplicate'), action: duplicateSelection });
 		items.push({ label: 'Copy', icon: 'clipboard-copy', hint: hint('nodes.copy'), action: () => copySelection(false) });
@@ -1549,6 +1605,7 @@
 <div class="flex h-full w-full" data-key-scope="nodes">
 	<!-- muted / collapsed cards (generated, keyed by node id) -->
 	{@html '<style>' + flagsCss + '</style>'}
+	<input id="flow-tpnode-input" type="file" accept=".tpnode,application/json" class="hidden" bind:this={tpnodeInput} onchange={onTpnodePicked} />
 	{#if paletteOpen}
 		<div
 			class="flex h-full w-40 shrink-0 flex-col overflow-hidden"

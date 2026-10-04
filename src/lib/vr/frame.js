@@ -63,13 +63,15 @@ import { hapticPulse } from './haptics.js';
 import { navSuppressors, vrFrameHooks } from './hooks.js';
 import { controllerIndexFor, axesForSlot } from './input.js';
 import { actionPressed, handOf, CONTROL_INDEX } from './bindings.js';
+import { settingsPanelRows, vrSettingsPage, vrSettingsCursor, neighbourTab, activateVRSetting } from './settingsSchema.js';
 import {
 	hideArc,
 	updateTeleport,
 	updateBlink,
 	lastSmoothTurn,
 	updateSnapTurn,
-	vrJumpHeight
+	vrJumpHeight,
+	updateHeightLift
 } from './locomotion.js';
 import { modeHand, toggleVRMode, payPendingSpawn, updateModeLabel } from './modes.js';
 import {
@@ -207,6 +209,7 @@ export function updateVRControls() {
 		return;
 	}
 	payPendingSpawn(); // 30b P4
+	updateHeightLift(); // 36: Settings ▸ VR ▸ Body (seated / height), applied once per change
 	// open menu/panel are modal for the sticks: sector nav / scrolling own them;
 	// a RIGHT-hand grab owns the right stick too (reel/scale beats teleport, 100);
 	// D9: manipulation gestures + ANY held grip stand navigation down entirely
@@ -216,6 +219,7 @@ export function updateVRControls() {
 		!get(vrPropsPanelOpen) &&
 		!get(vrPrefabsPanelOpen) &&
 		!get(vrChatPanelOpen) &&
+		!get(vrSettingsPanelOpen) && // 36: its row cursor owns the sticks
 		!get(vrKeyboardTarget) &&
 		// 36 (plan 55): a grab owns ITS hand's stick — the turn/teleport stick stands down when that hand holds
 		get(vrGrabbedHand) !== handOf('turn') &&
@@ -366,6 +370,12 @@ export function updateVRControls() {
 				// ray hover wins; otherwise the stick-press opens the input (117)
 				const action = get(vrHovered) ?? 'chat:input';
 				executeVRMenuAction(action);
+			} else if (get(vrSettingsPanelOpen)) {
+				// 36 (S23): ray hover wins; otherwise press the cursored row (the tab strip pages on)
+				const rows = settingsPanelRows(get(vrSettingsPage));
+				const row = rows[Math.min(Math.max(0, get(vrSettingsCursor)), rows.length - 1)];
+				const action = get(vrHovered) ?? (row?.kind === 'tabs' ? 'vrset:page:' + neighbourTab(get(vrSettingsPage), 1) : row?.action || null);
+				if (action) executeVRMenuAction(action);
 			}
 			// D10: the ping fires from the hand that pressed — its ray is what you aimed (D6 briefly
 			// routed it through the "pointer hand", the on-device report). 36: that hand is the
@@ -638,12 +648,36 @@ export function updateVRControls() {
 			vrHovered.set(hovered);
 		}
 	} else if (get(vrSettingsPanelOpen)) {
-		// VR Settings panel (187): the pointer ray highlights its rows
+		// VR Settings panel (187): the pointer ray highlights its rows. 36 (S23): EITHER stick walks a row
+		// cursor (the Objects/Props panel pattern) — up/down moves it, left/right changes the cursored
+		// choice (or the page, on the tab strip); a stick press presses (the chain above)
+		const sources = [...session.inputSources];
 		const pointerIndex = controllerIndexFor(get(vrMenuHand) === 'right' ? 'left' : 'right');
 		const hovered = pointerIndex >= 0 ? raycastSettings(pointerIndex) : null;
 		if (hovered !== get(vrHovered)) {
 			if (hovered) hapticPulse(0.12, 14);
 			vrHovered.set(hovered);
+		}
+		let x = 0;
+		let y = 0;
+		for (const src of sources) {
+			const axes = src?.gamepad?.axes ?? [];
+			if (Math.abs(axes[3] ?? 0) > Math.abs(y)) y = axes[3];
+			if (Math.abs(axes[2] ?? 0) > Math.abs(x)) x = axes[2];
+		}
+		const now = Date.now();
+		if (now - S.panelScrollAt > 220 && (Math.abs(x) > 0.6 || Math.abs(y) > 0.6)) {
+			const rows = settingsPanelRows(get(vrSettingsPage));
+			const at = Math.min(Math.max(0, get(vrSettingsCursor)), rows.length - 1);
+			S.panelScrollAt = now;
+			hapticPulse(0.08, 10);
+			if (Math.abs(y) >= Math.abs(x)) vrSettingsCursor.set(Math.min(Math.max(0, at + (y > 0 ? 1 : -1)), rows.length - 1));
+			else {
+				const row = rows[at];
+				const dir = x > 0 ? 1 : -1;
+				if (row?.kind === 'tabs') vrSettingsPage.set(neighbourTab(get(vrSettingsPage), dir));
+				else if (row?.rowId && (row.kind === 'choice' || row.kind === 'range')) activateVRSetting(row.rowId, dir);
+			}
 		}
 	} else if (get(vrApprovePanelOpen)) {
 		// VR peer-approval panel (211): the pointer ray highlights Approve / Deny

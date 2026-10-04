@@ -28,6 +28,7 @@ import { controllerIndexFor } from './input.js';
 import { withRayCamera, safeIntersect } from './pointer.js';
 import { perfMark } from '../perf/perfMarks.js'; // 34 PF: a profiler marker, a leaf
 import { stickOf, handOf } from './bindings.js';
+import { vrSmoothTurn, vrSmoothTurnSpeed, vrStance, vrHeightOffset } from './prefs.js';
 
 /**
  * Pure locomotion math (agreed VR map): left stick moves/strafes — toward the
@@ -440,11 +441,18 @@ export function snapTurnRadians(deg, x, mirror) {
 }
 
 /** 31 K3: the turning in force — a game's own setting while playing it (snap / smooth /
- * off + angle), the device's snap angle everywhere else @returns {{mode: string, angle: number}} */
+ * off + angle), the device's snap angle everywhere else. 36: the device can turn SMOOTHLY too
+ * (Settings ▸ VR ▸ Comfort), and a game left on "Default" takes it. @returns {{mode: string, angle: number}} */
 export function turningInForce() {
 	const device = Number(get(vrSnapAngle)) || 0;
-	if (!gameFeelActive()) return device ? { mode: 'snap', angle: device } : { mode: 'off', angle: 0 };
-	return resolveTurning(get(gameSettingValues), device);
+	const smooth = get(vrSmoothTurn);
+	if (!gameFeelActive()) {
+		if (smooth) return { mode: 'smooth', angle: device || 45 };
+		return device ? { mode: 'snap', angle: device } : { mode: 'off', angle: 0 };
+	}
+	const values = get(gameSettingValues);
+	if (smooth && String(values?.turning ?? 'default') === 'default') return { mode: 'smooth', angle: device || 45 };
+	return resolveTurning(values, device);
 }
 /** degrees per second at full stick for SMOOTH turning */
 export const SMOOTH_TURN_DPS = 90;
@@ -465,8 +473,9 @@ export function updateSnapTurn(session) {
 		if (Math.abs(x) < 0.2 || !dt) return;
 		const mag = (Math.abs(x) - 0.2) / 0.8;
 		const dir = (x > 0 ? -1 : 1) * (get(vrMirrorSnapTurn) ? -1 : 1);
-		turnRigBy(THREE.MathUtils.degToRad(SMOOTH_TURN_DPS) * mag * dt * dir);
-		lastSmoothTurn = THREE.MathUtils.degToRad(SMOOTH_TURN_DPS) * mag * dt;
+		const dps = Number(get(vrSmoothTurnSpeed)) || SMOOTH_TURN_DPS; // 36: Comfort ▸ Smooth speed
+		turnRigBy(THREE.MathUtils.degToRad(dps) * mag * dt * dir);
+		lastSmoothTurn = THREE.MathUtils.degToRad(dps) * mag * dt;
 		return;
 	}
 	smoothTurnAt = 0;
@@ -521,6 +530,53 @@ export const STANDING_HEAD = 1.6;
 /** Scene's onsessionstart: remember the untouched reference space. */
 export function noteXRBaseSpace() {
 	xrBaseSpace = renderer?.xr?.getReferenceSpace?.() ?? null;
+	// 36: a fresh session starts on the real floor; the frame loop re-applies stance + height
+	appliedLift = 0;
+	seatedLift = null;
+}
+
+// ---- 36: SEATED / STANDING + HEIGHT (Settings ▸ VR ▸ Body) --------------------------------------
+// The view is LIFTED by offsetting the reference space (the same lever every move here uses), and the
+// lift is folded into `headHeight` — so the Interact walker, a teleport and a spawn all keep putting
+// the FEET on the floor while the eyes sit higher. Seated measures the head once (the first frame of
+// the session or of being seated) and lifts it to a standing eye height.
+/** metres the reference space lifts the viewer right now */
+let appliedLift = 0;
+/** the measured seated lift (null = not measured yet in this session) @type {number | null} */
+let seatedLift = null;
+/** the eye height seated mode lifts to */
+export const STANDING_EYE = 1.6;
+
+/**
+ * The lift a stance + offset asks for, given the physical head height. Pure (exported for the suites).
+ * @param {'standing' | 'seated'} stance @param {number} offset metres @param {number | null} baseHead metres (null = unknown)
+ */
+export function heightLiftFor(stance, offset, baseHead) {
+	const seated = stance === 'seated' ? Math.max(0, Math.min(1, STANDING_EYE - (baseHead ?? STANDING_EYE - 0.45))) : 0;
+	return Math.round((seated + (Number(offset) || 0)) * 1000) / 1000;
+}
+
+/** One frame: move the rig so the applied lift matches the setting (a no-op when it already does). */
+export function updateHeightLift() {
+	const frame = renderer?.xr?.getFrame?.();
+	const space = renderer?.xr?.getReferenceSpace?.();
+	if (!frame || !space) return;
+	const stance = get(vrStance);
+	if (stance === 'seated' && seatedLift === null) {
+		const base = xrBaseSpace ? frame.getViewerPose?.(xrBaseSpace) : null;
+		seatedLift = base ? base.transform.position.y : null;
+		if (seatedLift === null) seatedLift = STANDING_EYE - 0.45; // no base space: a typical seated head
+	}
+	if (stance !== 'seated') seatedLift = null;
+	const want = heightLiftFor(stance, get(vrHeightOffset), seatedLift);
+	const delta = want - appliedLift;
+	if (Math.abs(delta) < 1e-4) return;
+	if (offsetSpace({ x: 0, y: -delta, z: 0 })) appliedLift = want;
+}
+
+/** the suites' view of the lift */
+export function heightLiftDebug() {
+	return { applied: appliedLift, seatedHead: seatedLift, stance: get(vrStance), offset: get(vrHeightOffset) };
 }
 
 /** 30b P3: the locomotion rules in force right now (mode + the resolved play block). */
@@ -543,7 +599,8 @@ export function viewerNow() {
 	return {
 		head: { x: p.x, y: p.y, z: p.z },
 		yaw: Math.atan2(-fwd.x, -fwd.z),
-		headHeight: base ? base.transform.position.y : STANDING_HEAD
+		// 36: the Body lift counts as height — the feet stay on the floor while the eyes rise
+		headHeight: (base ? base.transform.position.y : STANDING_HEAD) + appliedLift
 	};
 }
 

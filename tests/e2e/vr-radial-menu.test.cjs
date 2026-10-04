@@ -61,6 +61,7 @@ h.run(async () => {
 		return {
 			root: m.ringEntries('root').map((e) => e.id),
 			system: m.ringEntries('system').map((e) => e.id),
+			settings: m.ringEntries('settings').map((e) => e.id),
 			addCount: m.ringEntries('add').length,
 			tools: m.ringEntries('tools').map((e) => e.id),
 			// PFX-C follow-up: presets moved into the nested Environment ▸ ring;
@@ -72,46 +73,63 @@ h.run(async () => {
 			faces: m.ringEntries('faces').map((e) => e.id),
 			hubClose: m.hubEntry('root', false).id,
 			hubObject: m.hubEntry('root', true).id,
-			hubBack: m.hubEntry('add', true).id
+			hubBack: m.hubEntry('add', true).id,
+			...(() => {
+				// 36: icons + depth over every ring reachable from root (BFS over ▸ sectors)
+				const depth = { root: 0 };
+				const queue = ['root'];
+				const missing = [];
+				for (let i = 0; i < queue.length; i++) {
+					for (const e of m.ringEntries(queue[i])) {
+						if (!e.icon && !e.id.startsWith('env:') && !e.id.startsWith('colo:') && !e.id.includes(':possess')) missing.push(e.id);
+						if (e.ring && depth[e.ring] === undefined) {
+							depth[e.ring] = depth[queue[i]] + 1;
+							queue.push(e.ring);
+						}
+					}
+				}
+				return { allIconed: missing.length === 0, missingIcons: missing, maxDepth: Math.max(...Object.values(depth)) };
+			})()
 		};
 	});
+	// 36 (U3): the revised rings — desktop names/order, Settings ▸ replaces System ▸, every entry at most
+	// two rings deep
 	h.check(
-		registry.root.join(',') === 'objects,nav:add,nav:scene,nav:tools,redo,undo,chat,nav:system',
-		`base ring is the 109 remap + 214 Tools submenu (${registry.root.join(',')})`
+		registry.root.join(',') === 'objects,nav:add,nav:scene,nav:tools,redo,undo,chat,nav:settings',
+		`base ring: Settings ▸ replaces System ▸ (${registry.root.join(',')})`
 	);
 	h.check(
-		registry.tools.join(',') === 'tool:select,tool:box,tool:draw,ping',
-		`Tools submenu lists Select / Box Select / Draw / Ping (${registry.tools.join(',')})`
+		registry.tools.join(',') === 'tool:select,tool:box,tool:draw,ping,physics,nav:profile',
+		`Tools: Select / Box select / Draw mode / Ping / Simulate physics / Profile ▸ (${registry.tools.join(',')})`
 	);
 	h.check(
-		registry.system.includes('nav:mic') &&
-			registry.system.includes('settings') &&
-			registry.system.includes('exitvr') &&
-			registry.system.includes('stats') &&
-			registry.system.includes('grabmode') &&
-			!registry.system.includes('snap') &&
-			!registry.system.includes('redo'),
-		'System ring: Mic nests here, Snap left for the Edit ring'
+		registry.settings.slice(0, 5).join(',') === 'nav:settings:comfort,nav:settings:body,nav:settings:controls,nav:settings:display,nav:settings:editing' &&
+			registry.settings.includes('set:mic') &&
+			registry.settings.includes('settings') &&
+			registry.settings.includes('exitvr'),
+		`Settings ring: the five pages, Microphone, All settings, Exit VR (${registry.settings.join(',')})`
 	);
-	h.check(registry.objectOps.includes('snap'), 'Edit ring gained Snap');
+	h.check(registry.system.length === 0, 'no System ring is left (a module filing under "system" lands in Settings)');
+	h.check(registry.objectOps.includes('snap'), 'Selected ring keeps Snapping');
 	h.check(registry.addCount === 7 && registry.sceneHasEnv, 'Add ring: 6 primitives + Prefabs (115)');
 	h.check(
 		registry.sceneRing.includes('nav:environment') &&
-			registry.sceneRing.includes('physics') &&
-			registry.sceneRing.includes('snapangle') &&
+			registry.sceneRing.includes('grid') &&
+			registry.sceneRing.includes('world') &&
+			!registry.sceneRing.includes('physics') &&
 			!registry.sceneRing.some((id) => id.startsWith('env:')),
-		`Scene ring: Environment ▸ nests the presets + Physics toggle (${registry.sceneRing.join(',')})`
+		`Scene ring: Environment ▸ + Grid + World 1:1; Physics moved to Tools like the desktop (${registry.sceneRing.join(',')})`
 	);
-	h.check(registry.micModes.join(',') === 'mic:ptt,mic:open,mic:off', 'Mic ring lists explicit modes');
+	h.check(registry.micModes.join(',') === 'mic:ptt,mic:open,mic:off', 'mic mode ids still resolve');
 	// D4: modules may append entries (avatar:possess from the default-on avatar
-	// module) — assert the built-in prefix, not an exact list
+	// module) — assert the built-in prefix, not an exact list. 36: the desktop object menu's order
 	h.check(
 		registry.objectOps.slice(0, 8).join(',') ===
-			'obj:duplicate,obj:delete,obj:color,wireframe,obj:props,obj:prefab,obj:editmesh,snap' &&
+			'obj:duplicate,obj:editmesh,obj:props,obj:color,snap,wireframe,obj:prefab,obj:delete' &&
 			!registry.objectOps.includes('obj:visible') &&
 			!registry.objectOps.includes('obj:vertices') &&
 			!registry.objectOps.includes('nav:faces'),
-		`Edit ring 137: Show/Hide + Vertices + Faces▸ gone, Edit Mesh in (${registry.objectOps.join(',')})`
+		`Selected ring in the desktop order, Delete last (${registry.objectOps.join(',')})`
 	);
 	h.check(
 		registry.faces.join(',') === 'face:extrude,face:inset,face:move,face:delete',
@@ -119,10 +137,12 @@ h.run(async () => {
 	);
 	h.check(
 		registry.hubClose === 'close' && registry.hubObject === 'nav:object' && registry.hubBack === 'back',
-		'hub is context-aware (close / Edit / back)'
+		'hub is context-aware (close / Selected / back)'
 	);
+	h.check(registry.allIconed, `every built-in sector has a desktop icon (${registry.missingIcons.join(',') || 'none missing'})`);
+	h.check(registry.maxDepth <= 2, `no entry is deeper than two rings (deepest ${registry.maxDepth})`);
 	const hubLabel = await A.page.evaluate(() => window.__stores.vrRadialMenu.hubEntry('root', true).label);
-	h.check(hubLabel === 'Edit', `selection hub reads Edit, not Object (${hubLabel})`);
+	h.check(hubLabel === 'Selected', `selection hub reads Selected, the desktop menu's word (${hubLabel})`);
 
 	// 109: nav STACK — System ▸ Mic ▸ Back pops to System, then to root; the
 	// Chat sector opens its panel store and closes the ring
@@ -136,8 +156,8 @@ h.run(async () => {
 					return r;
 				};
 				window.__stores.vrMenuOpen.set(true);
-				v.executeVRMenuAction('nav:system');
-				v.executeVRMenuAction('nav:mic');
+				v.executeVRMenuAction('nav:settings');
+				v.executeVRMenuAction('nav:settings:comfort');
 				const inMic = ring();
 				v.executeVRMenuAction('back');
 				const afterBack = ring();
@@ -152,7 +172,7 @@ h.run(async () => {
 			})
 	);
 	h.check(
-		stack.inMic === 'mic' && stack.afterBack === 'system' && stack.atRoot === 'root',
+		stack.inMic === 'settings:comfort' && stack.afterBack === 'settings' && stack.atRoot === 'root',
 		`Back pops one nav level (${stack.inMic} → ${stack.afterBack} → ${stack.atRoot})`
 	);
 	h.check(stack.chatOpen === true && stack.menuOpen === false, 'Chat sector opens the panel store and closes the ring');
@@ -193,7 +213,7 @@ h.run(async () => {
 
 	// closing the menu resets navigation to root
 	await A.page.evaluate(() => {
-		window.__stores.vrControls.executeVRMenuAction('nav:system');
+		window.__stores.vrControls.executeVRMenuAction('nav:settings');
 		window.__stores.vrMenuOpen.set(false);
 	});
 	const ringAfterClose = await A.page.evaluate(

@@ -36,7 +36,9 @@ import {
 	peerHandStyle,
 	pokeScene
 } from '../../stores/sceneStore';
-import { activeRing, findMenuEntry, pushRing, popRing } from '../vrRadialMenu';
+import { activeRing, findMenuEntry, pushRing, popRing, vrMenuPressed } from '../vrRadialMenu';
+import { registerSettingsRings } from './settingsRings.js';
+import { activateVRSetting, vrSettingsPage, openVRSettingsPage, cycleBinding, vrSettingsCursor } from './settingsSchema.js';
 import { perfStatsShown } from '../fpsMeter';
 import {
 	editingObject,
@@ -153,7 +155,22 @@ function spawnPrimitive(command) {
 export function executeVRMenuAction(name) {
 	// D4: a disabled registry entry (greyed sector) never activates, whether
 	// its behavior lives in a registry action or the built-in switch below
-	if (findMenuEntry(name)?.disabled?.()) return;
+	const menuEntry = findMenuEntry(name);
+	if (menuEntry?.disabled?.()) return;
+	// 36 (R11): press feedback — the sector flashes (VRMenu) and the hand ticks (silent in Edit, C4)
+	if (menuEntry || name === 'back' || name === 'close' || name === 'nav:object') {
+		vrMenuPressed.set({ id: name, at: performance.now() });
+		hapticPulse(0.3, 25);
+	}
+	// 36: the in-headset Settings panel (rows from the one settings table)
+	if (name.startsWith('vrset:')) {
+		handleSettingsPanelAction(name.slice('vrset:'.length));
+		return;
+	}
+	if (name.startsWith('vrbind:')) {
+		cycleBinding(name.slice('vrbind:'.length));
+		return;
+	}
 	// ring navigation + close (109: a STACK — Back pops one level)
 	if (name === 'close') {
 		vrMenuOpen.set(false);
@@ -633,7 +650,14 @@ export function executeVRMenuAction(name) {
 	} else if (name === 'world') {
 		resetWorldRig(); // back to 1:1 mid-session
 	} else if (name === 'settings') {
-		// 187: System > Settings opens the VR settings panel (passthrough moved inside)
+		// 187: Settings ▸ All settings opens the VR settings panel. 36 (R9): it REPLACES the ring on
+		// screen like every other panel — the ring left open used to own the pointer, so the panel's
+		// rows could not be hovered until B closed the ring
+		vrObjectsPanelOpen.set(false);
+		vrPaletteOpen.set(false);
+		vrPropsPanelOpen.set(false);
+		vrChatPanelOpen.set(false);
+		vrMenuOpen.set(false);
 		vrSettingsPanelOpen.set(true);
 	} else if (name === 'exitvr') {
 		vrMenuOpen.set(false);
@@ -704,3 +728,36 @@ export function pingPointFromRay(ray, group) {
 		? planePoint
 		: null;
 }
+
+/** 36: the Settings panel's own actions — pages, the − / + of a range, back to the ring, close
+ * @param {string} key */
+function handleSettingsPanelAction(key) {
+	if (key === 'close') {
+		vrSettingsPanelOpen.set(false);
+		return;
+	}
+	if (key === 'back') {
+		// Back to the radial's Settings ring — the place the panel is reached from
+		vrSettingsPanelOpen.set(false);
+		vrMenuOpen.set(true);
+		pushRing('settings');
+		return;
+	}
+	if (key.startsWith('page:')) {
+		vrSettingsPage.set(key.slice('page:'.length));
+		vrSettingsCursor.set(0);
+		return;
+	}
+	const minus = key.endsWith(':-');
+	const plus = key.endsWith(':+');
+	const id = minus || plus ? key.slice(0, -2) : key;
+	if (id === 'remap') {
+		openVRSettingsPage('buttons');
+		return;
+	}
+	activateVRSetting(id, minus ? -1 : 1);
+}
+
+// 36: the Settings rings (built from the settings table) — registered here, where the settings' own
+// modules (faceEdit, meshEdit, voiceChat…) are already loaded
+registerSettingsRings();

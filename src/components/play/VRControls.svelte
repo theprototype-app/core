@@ -6,7 +6,7 @@
 <script lang="ts">
 	import * as THREE from 'three';
 	import { useThrelte, useTask } from '@threlte/core';
-	import { vrFlying, vrMenuOpen, vrObjectsPanelOpen, vrGrabbedHand } from '../../stores/sceneStore';
+	import { vrFlying, vrMenuOpen, vrObjectsPanelOpen, vrSettingsPanelOpen, vrGrabbedHand } from '../../stores/sceneStore';
 	import { computeMoveOffset, worldScale, twoGripStretchActive, controllerIndexFor, vrNavigationSuppressed, tickVRInteractLocomotion } from '$lib/vrControls';
 	import { inputClaims } from '$lib/inputRuntime';
 	import { handOf } from '$lib/vr/bindings.js';
@@ -35,7 +35,7 @@
 
 		const session = renderer.xr.getSession();
 		if (!session) return;
-		if ($vrMenuOpen || $vrObjectsPanelOpen) return; // menu/panel own the sticks (74/101)
+		if ($vrMenuOpen || $vrObjectsPanelOpen || $vrSettingsPanelOpen) return; // menu/panel own the sticks (74/101; 36 settings)
 		// K-C: a module drives instead; 33: 'sticks' claims BOTH sticks (move, turn, teleport)
 		if ($inputClaims.includes('locomotion') || $inputClaims.includes('sticks')) return;
 		// 30b P3: INTERACT walks like a game (collision, gravity, step-up; no fly or teleport

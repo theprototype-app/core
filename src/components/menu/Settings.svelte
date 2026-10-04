@@ -2,6 +2,7 @@
 	import { Accordion, AccordionItem, Modal, Button, Checkbox, Toggle } from 'flowbite-svelte';
 	import { HardDrive, Lock, RotateCcw, X } from '@lucide/svelte';
 	import ThemedSelect from '../ui/ThemedSelect.svelte';
+	import LoadingSettings from './settings/LoadingSettings.svelte';
 	import SettingRow from './SettingRow.svelte';
 	import TextSelectionSettings from './settings/TextSelectionSettings.svelte'; // 36 U6
 	// 36 I4: what a row is known by (its text, group, section, keywords) + the highlight spans
@@ -1358,6 +1359,7 @@
 						</svelte:fragment>
 						Back to the defaults ({DEFAULT_VIEW_PREFS.wireColor} / {DEFAULT_VIEW_PREFS.outlineColor} / auto). Per-device, never shared
 					</SettingRow>
+					<LoadingSettings />
 				</AccordionItem>
 				<AccordionItem bind:open={explorerExpanded}>
 					{#snippet header()}Explorer{/snippet}

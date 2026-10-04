@@ -25,6 +25,7 @@
 	--icon-object: #6ee7a0;
 	--icon-prefab: #f0a35e;
 	--icon-danger: #f87171;
+	--icon-warning: #fbbf24; /* 36 U9: stuck / retrying (amber) */
 	--icon-accent: #60a5fa;
 }
 
@@ -36,6 +37,7 @@
 	--icon-object: #16a34a;
 	--icon-prefab: #ea580c;
 	--icon-danger: #dc2626;
+	--icon-warning: #b45309; /* 36 U9: stuck / retrying (amber) */
 	--icon-accent: #2563eb;
 	--surface-deep: #eef0f3;
 	--surface-deep-rgb: 238 240 243;
@@ -60,6 +62,7 @@
 	--icon-object: #4ade80;
 	--icon-prefab: #a7f3d0;
 	--icon-danger: #f87171;
+	--icon-warning: #facc15; /* 36 U9: stuck / retrying (amber) */
 	--icon-accent: #4ade80;
 	--surface-deep: #020f06;
 	--surface-deep-rgb: 2 15 6;
@@ -86,6 +89,7 @@
 	--icon-object: #4ade80;
 	--icon-prefab: #fb923c;
 	--icon-danger: #f43f5e;
+	--icon-warning: #fb923c; /* 36 U9: stuck / retrying (amber) */
 	--icon-accent: #f472b6;
 	--surface-deep: #16123a;
 	--surface-deep-rgb: 22 18 58;
@@ -112,6 +116,7 @@
 	--icon-object: #00ff88;
 	--icon-prefab: #ff9933;
 	--icon-danger: #ff5555;
+	--icon-warning: #ffb000; /* 36 U9: stuck / retrying (amber) */
 	--icon-accent: #ffd400;
 	--surface-deep: #000000;
 	--surface-deep-rgb: 0 0 0;

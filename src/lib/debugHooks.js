@@ -255,6 +255,10 @@ export const DEBUG_HOOKS = [
 	['moduleWorld', () => import('./moduleWorld')],
 	['playSpawn', () => import('./playSpawn')],
 	['packRefs', () => import('./packRefs')],
+	// 36 U9: per-file load states + the placeholder renderer
+	['loadStates', () => import('./loadStates')],
+	['placeholders', () => import('./placeholders')],
+	['replaceModel', () => import('./replaceModel')],
 	['lod', () => import('./lod')],
 	['lodGroup', () => import('./lodGroup')],
 	['lodGroupActions', () => import('./lodGroupActions')],

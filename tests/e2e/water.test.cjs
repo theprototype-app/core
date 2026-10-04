@@ -79,6 +79,55 @@ h.run(async () => {
 	await A.page.evaluate(() => window.__stores.waterActions.applyWaterPreset(window.__pool.uuid, 'pool'));
 	await h.eventually(() => dbg(A.page), (x) => x.volumes === 1, 'water comes back on a preset write');
 
+	// ---- 2b. W-BUG-1: the gizmo never enters the refraction (it was drawn twice) ---------
+	// Read the pre-pass colour target back and count gizmo-coloured pixels (saturated
+	// primaries) with the gizmo on an object INSIDE the pool vs the same view with nothing
+	// selected. With the helpers baked into the pre-pass the attached count is thousands
+	// higher; with them hidden for the nested render the two match.
+	const gizmoPixels = () =>
+		A.page.evaluate(() => {
+			const s = window.__stores;
+			let r;
+			s.globalRenderer.subscribe((x) => (r = x))();
+			const t = s.waterRuntime.waterPrepassTarget();
+			if (!t) return -1;
+			const buf = new Uint16Array(t.width * t.height * 4);
+			r.readRenderTargetPixels(t, 0, 0, t.width, t.height, buf);
+			const f = s.THREE.DataUtils.fromHalfFloat;
+			let n = 0;
+			for (let i = 0; i < buf.length; i += 4) {
+				const c = [f(buf[i]), f(buf[i + 1]), f(buf[i + 2])].sort((a, b) => b - a);
+				if (c[0] > 0.55 && c[2] < 0.12 && c[0] - c[1] > 0.4) n++;
+			}
+			return n;
+		});
+	const inside = await A.page.evaluate(async () => {
+		const s = window.__stores;
+		s.commandsHandler.sceneCommand('/create Box 0.6 0.6 0.6');
+		await new Promise((r) => setTimeout(r, 400));
+		const o = await new Promise((r) => s.selectedObject.subscribe(r)());
+		o.position.set(0.4, 0.1, 0.2);
+		delete o.userData.physics;
+		if (o.material?.color) o.material.color.set('#808080');
+		window.__inside = o;
+		s.objectActions.flyTo([3.2, 3.2, 3.2], [0.4, 0.1, 0.2], 0);
+		return o.uuid;
+	});
+	await A.page.evaluate((u) => window.__stores.objectActions.selectObject(u), inside);
+	await A.page.waitForTimeout(1500);
+	const withGizmo = await gizmoPixels();
+	const hiddenNow = (await dbg(A.page)).helpersHidden;
+	await A.page.screenshot({ path: process.env.GIZMO_SHOT || '/tmp/water-gizmo-desktop.png' });
+	await A.page.evaluate(() => {
+		window.__stores.objectActions.deselectObject?.();
+		window.__stores.selectedObjects.set([]);
+		window.__stores.TControls.subscribe((tc) => tc?.detach?.())();
+	});
+	await A.page.waitForTimeout(1200);
+	const noGizmo = await gizmoPixels();
+	h.check(withGizmo >= 0 && hiddenNow >= 1, `the pre-pass hides the editor helpers (${hiddenNow} hidden)`);
+	h.check(withGizmo - noGizmo < 300, `the gizmo is not in the refraction texture (gizmo-coloured pixels ${withGizmo} with vs ${noGizmo} without)`);
+
 	// ---- 3. Quest tier ----------------------------------------------------------------
 	await A.page.evaluate(() => window.__stores.waterPrefs.waterQuality.set('low'));
 	await h.eventually(() => dbg(A.page), (x) => x.tier === 'quest' && !x.entries[0].defines.includes('WATER_SS'), 'Low = Quest tier, no screen-space program');

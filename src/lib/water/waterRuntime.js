@@ -1,6 +1,9 @@
 // @ts-ignore - no bundled three type declarations (project-wide)
 import * as THREE from 'three';
-import { objectsGroup } from '../../stores/sceneStore';
+import { get } from 'svelte/store';
+import { objectsGroup, TControls } from '../../stores/sceneStore';
+import { HELPER_LAYER } from '../helperLayer';
+import { isEditOverlay } from '../editOverlays';
 import { qualityOverrides, phoneQuality } from '../qualityGovernor';
 import { sessionNow } from '../sessionClock';
 import { waterVolumes, invertAffine } from './volumes.js';
@@ -729,6 +732,79 @@ function emitterBubbles(em, t) {
 	});
 }
 
+// ── editor helpers never enter the water's own renders (W-BUG-1) ─────────────────────
+// The pre-pass and the planar reflection draw the scene through the MAIN camera, so every
+// editor helper it sees used to land in the refraction texture: the gizmo was drawn once on
+// top and once more refracted a few pixels off ("the gizmo looks doubled"). For the nested
+// renders the helper layer is switched off and every named editor helper is hidden; the
+// outer render then draws them once, as always. (The selection outline is a post pass, not
+// in the scene, so it never reached the pre-pass.)
+const EDITOR_HELPER_NAMES = new Set([
+	'editor-grid',
+	'camera-frustums',
+	'collider-proxies',
+	'collider-edit-proxy',
+	'collider-ground',
+	'lock-highlights',
+	'ping-highlights',
+	'vertex-handles',
+	'face-edit-overlay',
+	'face-edit-hover',
+	'edge-edit-overlay',
+	'mesh-pivot-marker',
+	'proportional-ring',
+	'sculpt-cursor',
+	'slide-landing-marker',
+	'snap-anchor-marker',
+	'spline-handles',
+	'draw-preview',
+	'module-content-proxy',
+	'lod-level-proxy',
+	'vr-selection-shell',
+	'vrsleeve-preview',
+	'vr-patch-preview'
+]);
+const EDITOR_HELPER_PREFIXES = ['spline-preview', 'lod-overlay-', 'light-proxy', 'camera-frustum'];
+/** @param {any} n */
+function isEditorHelper(n) {
+	const name = n.name;
+	if (typeof name !== 'string' || !name) return false;
+	if (EDITOR_HELPER_NAMES.has(name) || isEditOverlay(n)) return true;
+	for (const p of EDITOR_HELPER_PREFIXES) if (name.startsWith(p)) return true;
+	return false;
+}
+/** named helpers found by the last scan (gizmo + edit sessions come and go: rescanned ≤ 1 s) @type {any[]} */
+let helperNodes = [];
+function collectHelpers() {
+	/** @type {any[]} */
+	const found = [];
+	sceneRef?.traverse((/** @type {any} */ n) => {
+		if (n !== root && isEditorHelper(n)) found.push(n);
+	});
+	helperNodes = found;
+}
+/** hide every editor helper for a nested render; returns the undo @param {any} camera */
+function hideEditorHelpers(camera) {
+	/** @type {any[]} */
+	const hidden = [];
+	const tc = /** @type {any} */ (get(TControls));
+	const gizmo = tc?.getHelper?.() ?? tc;
+	for (const n of [gizmo, ...helperNodes]) {
+		if (n?.visible) {
+			n.visible = false;
+			hidden.push(n);
+		}
+	}
+	const mask = camera?.layers?.mask;
+	camera?.layers?.disable(HELPER_LAYER);
+	lastHiddenHelpers = hidden.length;
+	return () => {
+		for (const n of hidden) n.visible = true;
+		if (camera?.layers && mask !== undefined) camera.layers.mask = mask;
+	};
+}
+let lastHiddenHelpers = 0;
+
 // ── the pre-pass (desktop tiers) ──────────────────────────────────────────────────────
 const prepass = {
 	/** @type {any} */ target: null,
@@ -798,6 +874,7 @@ function runPrepass(renderer, scene, camera) {
 	if (trigger?.visible) hidden.push(trigger);
 	if (overlay?.visible) hidden.push(overlay);
 	for (const m of hidden) m.visible = false;
+	const showHelpers = hideEditorHelpers(camera);
 	renderer.xr.enabled = false;
 	renderer.shadowMap.autoUpdate = false;
 	renderer.setRenderTarget(target);
@@ -811,6 +888,7 @@ function runPrepass(renderer, scene, camera) {
 	renderer.xr.enabled = xrOn;
 	renderer.shadowMap.autoUpdate = shadowAuto;
 	for (const m of hidden) m.visible = true;
+	showHelpers();
 	scene.fog = fog;
 	scene.background = bg;
 	prepass.frame = frameNo;
@@ -1122,6 +1200,7 @@ function scan() {
 		}
 	}
 	findLights();
+	collectHelpers();
 }
 
 /** @type {any} */ let objectsRoot = null;
@@ -1305,6 +1384,11 @@ objectsGroup.subscribe((g) => {
 	if (root) waterVolumes.setRoot(g);
 });
 
+/** The pre-pass colour + depth target (the suite reads it back). */
+export function waterPrepassTarget() {
+	return prepass.target;
+}
+
 /** For the suite and the profiler: what the renderer is doing right now. */
 export function waterDebug() {
 	return {
@@ -1319,6 +1403,7 @@ export function waterDebug() {
 			size: prepass.target ? [prepass.target.width, prepass.target.height] : null
 		},
 		planar: [...entries.values()].filter((e) => e.planar).map((e) => e.uuid),
+		helpersHidden: lastHiddenHelpers,
 		drawCalls:
 			[...entries.values()].reduce(
 				(n, e) => n + (e.visible ? 1 + (e.body ? 1 : 0) + (e.bubbles?.visible ? 1 : 0) : 0),

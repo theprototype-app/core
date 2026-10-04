@@ -3,6 +3,7 @@
 
 import { keyOf, letterOf } from '../keyOf';
 import { inputRuntimeRef, inputApi } from './refs.js';
+import { declareTouchActions } from '../touchActions';
 
 /** the input scopes `api.claimInput` pauses (33: 'sticks' = both VR sticks) */
 const INPUT_SCOPES = ['keys', 'locomotion', 'sticks'];
@@ -13,6 +14,23 @@ export function sdkInput(ctx) {
 	/** scope -> its journal entry's release, so an explicit releaseInput drops the entry
 	 * @type {Map<string, () => void>} */
 	const claimEntries = new Map();
+	/** Per-frame input snapshot: {codes: Set<'KeyW'...>, axes: {lx,ly,rx,ry}, vrButtons} */
+	const input = () => inputApi().getInput();
+	/**
+	 * 36 U8: declare the game's INPUT ACTIONS — what a touch screen draws as on-screen buttons
+	 * (and the layout editor lets the player move). Each is a built-in id ('jump', 'fire',
+	 * 'interact', 'crouch', 'sprint', 'reload', 'up', 'down') or
+	 * `{id, label?, icon?, keys?: ['KeyF'], pointer?: 'press'|'tap', onPress?, onRelease?}`.
+	 * `keys` are dispatched as real key events while the button is held (so anything that
+	 * reads the keyboard just works); `onPress`/`onRelease` run on THIS peer only. The preset
+	 * frames the buttons: 'platformer' (stick + jump), 'shooter' (stick + look + fire +
+	 * jump), 'toss' / 'golf' (the action alone), 'fly', 'explore', 'custom'.
+	 * Re-callable (a second call replaces this module's set); torn down with the module.
+	 * @param {any[]} actions @param {{preset?: string, stick?: boolean, look?: boolean}} [opts]
+	 * @returns {() => void} off
+	 */
+	input.actions = (actions, opts) =>
+		owned('input.actions', declareTouchActions(moduleId, actions, opts), { key: 'input.actions' });
 	return {
 		/**
 		 * Declare key bindings so they list in Settings ▸ Shortcuts under this
@@ -32,10 +50,7 @@ export function sdkInput(ctx) {
 				{ key: 'bindings' }
 			);
 		},
-		/** Per-frame input snapshot: {codes: Set<'KeyW'...>, axes: {lx,ly,rx,ry}, vrButtons} */
-		input() {
-			return inputApi().getInput();
-		},
+		input,
 		/**
 		 * 24-A1: the key token the EDITOR's shortcuts resolve by — `event.key` when it is
 		 * an ASCII letter/digit, else the physical `event.code` position — so a module
@@ -114,6 +129,7 @@ export function sdkInput(ctx) {
 sdkInput.surface = {
 	registerBindings: 'registers',
 	input: 'read',
+	'input.actions': 'registers',
 	keyOf: 'read',
 	letterOf: 'read',
 	onInput: 'registers',

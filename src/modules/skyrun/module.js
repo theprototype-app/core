@@ -397,11 +397,12 @@ export default {
 		});
 		const HELP = [
 			'Run and jump from platform to platform to the glowing portal at the end of the stage.',
-			'Desktop: WASD to move, Space to jump, mouse to look. VR: left stick walks, A jumps (turn on the Comfort vignette in Settings if motion bothers you).',
+			'Desktop: WASD to move, Space to jump, mouse to look. Touch: the left stick walks, drag on the right to look, the Jump button jumps. VR: left stick walks, A jumps (turn on the Comfort vignette in Settings if motion bothers you).',
 			'Touch a flag to save your spot: fall off, or get hit by a spinner, and you start again from the last flag.',
 			'Tiles that shake are about to vanish — keep moving. Collect every coin and beat the par time for three stars.'
 		];
 		/** @type {null | (() => void)} */ let helpOff = null;
+		/** 36 U8: the touch buttons (a stick and Jump) @type {null | (() => void)} */ let touchOff = null;
 
 		let wasActive = false;
 		api.registerFrameTask((/** @type {number} */ time) => {
@@ -413,12 +414,15 @@ export default {
 					kit.rules.set?.({ jump: 1.3 });
 					kit.round.configure?.(3, 0, 'lose', 2.5);
 					if (typeof api.game?.setHelp === 'function') helpOff = api.game.setHelp(HELP);
+					touchOff = api.input?.actions?.(['jump'], { preset: 'platformer' }) ?? null;
 					const s = startOf(stageNo());
 					api.setSpawn(s.pos, s.yaw);
 					comfortDefault();
 				} else {
 					if (helpOff) helpOff();
 					helpOff = null;
+					if (touchOff) touchOff();
+					touchOff = null;
 					if (typeof levelsOff === 'function') levelsOff();
 					levelsOff = null;
 				}
@@ -429,6 +433,8 @@ export default {
 		api.onSceneClear?.(() => {
 			if (helpOff) helpOff();
 			helpOff = null;
+			if (touchOff) touchOff();
+			touchOff = null;
 			if (typeof levelsOff === 'function') levelsOff();
 			levelsOff = null;
 			run.key = '';

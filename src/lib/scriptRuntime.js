@@ -30,8 +30,10 @@ const compiled = new Map();
 /** @type {Record<string, string[]>} */
 const SIGNATURES = {
 	v1: ['object', 'base', 'data', 'time', 'params'],
-	effect: ['object', 'base', 'data', 'time', 'params', 'inputs', 'dist', 'lerp', 'clamp'],
-	value: ['inputs', 'time', 'dist', 'lerp', 'clamp']
+	// 36 (plan 56.3): `api` (object / raycast / keys / spawn) is appended LAST, so a v2 body
+	// compiled before it existed binds exactly the names it did
+	effect: ['object', 'base', 'data', 'time', 'params', 'inputs', 'dist', 'lerp', 'clamp', 'api'],
+	value: ['inputs', 'time', 'dist', 'lerp', 'clamp', 'api']
 };
 
 /** @param {string} code @param {'v1' | 'effect' | 'value'} [shape] */
@@ -153,13 +155,14 @@ function timed(nodeId, code, entry, call) {
  * @param {string} nodeId @param {string} code
  * @param {any} object @param {any} base @param {any} data @param {number} time
  * @param {Record<string, any>} [inputs]
+ * @param {any} [api] 36 (56.3): flowRuntime.scriptApi(…, 'effect')
  */
-export function runScript(nodeId, code, object, base, data, time, inputs) {
+export function runScript(nodeId, code, object, base, data, time, inputs, api) {
 	const v2 = inputs !== undefined;
 	const entry = compile(code || '', v2 ? 'effect' : 'v1');
 	timed(nodeId, code, entry, (fn) =>
 		v2
-			? fn(object, base, data, time, data, inputs, SCRIPT_HELPERS.dist, SCRIPT_HELPERS.lerp, SCRIPT_HELPERS.clamp)
+			? fn(object, base, data, time, data, inputs, SCRIPT_HELPERS.dist, SCRIPT_HELPERS.lerp, SCRIPT_HELPERS.clamp, api)
 			: fn(object, base, data, time, data)
 	);
 }
@@ -171,13 +174,14 @@ export function runScript(nodeId, code, object, base, data, time, inputs) {
  * for an unwired input). A return that is missing a declared output is a badge, not a throw.
  * @param {string} nodeId @param {string} code @param {Record<string, any>} inputs
  * @param {number} time @param {import('./scriptIO').ScriptSocket[]} outputs
+ * @param {any} [api] 36 (56.3): flowRuntime.scriptApi(…, 'value')
  */
-export function runScriptValue(nodeId, code, inputs, time, outputs) {
+export function runScriptValue(nodeId, code, inputs, time, outputs, api) {
 	const entry = compile(code || '', 'value');
 	let problems = /** @type {string[]} */ ([]);
 	const value = timed(nodeId, code, entry, (fn) => {
 		const harvested = harvestOutputs(
-			fn(inputs, time, SCRIPT_HELPERS.dist, SCRIPT_HELPERS.lerp, SCRIPT_HELPERS.clamp),
+			fn(inputs, time, SCRIPT_HELPERS.dist, SCRIPT_HELPERS.lerp, SCRIPT_HELPERS.clamp, api),
 			outputs
 		);
 		problems = harvested.problems;

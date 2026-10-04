@@ -26,7 +26,8 @@ export const SCRIPT_OUTPUT_TYPES = ['number', 'boolean', 'vector3', 'color', 'ob
  * take them */
 const RESERVED = new Set([
 	'inputs', 'time', 'object', 'base', 'data', 'params', 'dist', 'lerp', 'clamp',
-	'code', 'label', 'type', 'name', 'outputs'
+	'code', 'label', 'type', 'name', 'outputs',
+	'api' // 36 (56.3): the script API object
 ]);
 const IDENT = /^[A-Za-z_$][\w$]*$/;
 

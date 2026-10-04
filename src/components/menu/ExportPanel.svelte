@@ -212,9 +212,10 @@
 	.ex-label {
 		margin-top: 6px;
 		font-size: 10px;
+		font-weight: 600;
 		text-transform: uppercase;
 		letter-spacing: 0.05em;
-		color: var(--muted, #9ca3af);
+		color: var(--text-2, #d1d5db);
 	}
 	.ex-presets {
 		display: grid;
@@ -255,7 +256,7 @@
 		width: 84px;
 	}
 	.ex-dim {
-		color: var(--muted, #9ca3af);
+		color: var(--text-2, #d1d5db);
 		font-size: 11px;
 	}
 	.ex-checks {
@@ -274,7 +275,7 @@
 	.ex-notes {
 		margin: 2px 0 0;
 		font-size: 11px;
-		color: var(--muted, #9ca3af);
+		color: var(--text-2, #d1d5db);
 	}
 	.ex-notes {
 		padding-left: 16px;
@@ -304,7 +305,7 @@
 		flex-direction: column;
 		gap: 4px;
 		font-size: 11px;
-		color: var(--muted, #9ca3af);
+		color: var(--text-2, #d1d5db);
 	}
 	.ex-bar {
 		height: 6px;

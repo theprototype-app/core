@@ -89,7 +89,8 @@
 		padding: 0.4rem 1.1rem;
 		font-size: 0.82rem;
 		font-weight: 600;
-		color: var(--muted, rgb(156 163 175));
+		color: var(--text-2, rgb(209 213 219));
+		opacity: 0.75;
 		background: none;
 		border: 0;
 		border-bottom: 2px solid transparent;
@@ -100,6 +101,7 @@
 		color: var(--text, rgb(229 231 235));
 	}
 	.pe-tab.active {
+		opacity: 1;
 		color: var(--text, #fff);
 		border-bottom-color: var(--accent, #2563eb);
 	}

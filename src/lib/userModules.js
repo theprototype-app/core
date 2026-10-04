@@ -233,6 +233,26 @@ async function storeAndActivate(record) {
 	return activateUserModule(record);
 }
 
+/**
+ * 36-export: run a module an EXPORTED game carries (`assets/modules/<id>.zip`, written by the
+ * exporter from this device's installed record) — activated for this page only: no store, no
+ * persist, no install UI. An exported game is a player's page on somebody else's site, and its
+ * origin (an itch.io CDN host) is shared with every other game served there.
+ * @param {ArrayBuffer | Uint8Array} bytes @returns {Promise<boolean>} true when it registered
+ */
+export async function activateModuleZip(bytes) {
+	const entries = unzipSync(bytes instanceof Uint8Array ? bytes : new Uint8Array(bytes));
+	const manifestBytes = entries['manifest.json'];
+	if (!manifestBytes) throw new Error('no manifest.json in the bundled module');
+	const manifest = validateManifest(JSON.parse(strFromU8(manifestBytes)));
+	/** @type {Record<string, Uint8Array>} */
+	const files = {};
+	Object.entries(entries).forEach(([path, data]) => {
+		if (!path.endsWith('/')) files[path] = data;
+	});
+	return activateUserModule({ ...manifest, files, source: 'export', installedAt: Date.now(), appVersion: APP_VERSION });
+}
+
 /** Install from a .zip file @param {File} file */
 export async function installZip(file) {
 	try {

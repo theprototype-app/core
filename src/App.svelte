@@ -59,7 +59,14 @@
   import { isLocked } from './stores/sceneStore'
   // 29-E: `?embed=1` — the editor windows and the dock inset stand down for the page's
   // life; a corner link and a ▶ button are the only chrome an embed draws
-  import { embedMode, embedOpenUrl, requestPlay } from './lib/playMode'
+  import { embedMode } from './lib/playMode'
+  import EmbedChrome from './components/play/EmbedChrome.svelte'
+  import MadeWithBadge from './components/play/MadeWithBadge.svelte'
+  // 36-export: the Publish / Export modal (core owns the shell + Export tab; a cloud plugin mounts
+  // Publish into it) and the exported game's boot (inert on every normal page load)
+  import { publishExportOpen } from '$lib/export/exportStores.js'
+  import { exportMode } from '$lib/export/exportBoot.js'
+  import { startExportRuntime } from '$lib/export/exportRuntime.js'
   import { objectsGroup, globalRenderer } from './stores/sceneStore'
   import { startFlowRuntime, resumeFlowRuntime } from '$lib/flowRuntime'
   // 27-G: the one overlay that must sit above everything, because nothing else on
@@ -214,7 +221,8 @@ import { startMusicToolbox } from './lib/musicToolbox'
     // 15-N: register the PWA service worker (a no-cache passthrough — see
     // static/sw.js) so mobile browsers offer "Install app". Dev is skipped: a
     // SW in front of vite's HMR only causes confusion.
-    if ('serviceWorker' in navigator && import.meta.env.PROD)
+    // 36-export: an export ships NO service worker (and has no sw.js to register)
+    if ('serviceWorker' in navigator && import.meta.env.PROD && !exportMode)
       navigator.serviceWorker.register('/sw.js').catch(() => {})
     // 27-D (audit C1): SAFE MODE. A scene whose scripts hang on load cannot be repaired,
     // because the editor never gets a frame to repair it in. Opening the same URL with
@@ -262,6 +270,8 @@ import { startMusicToolbox } from './lib/musicToolbox'
     startUpdateCheck()
     // open-core (M1): load a configured cloud plugin (no-op in the OSS build)
     startCloudPlugin()
+    // 36-export: an exported game loads its bundled scene + modules and starts playing
+    if (exportMode) startExportRuntime()
     // QW: trackpad two-finger pan + pinch page-zoom guards (desktop + mobile)
     startTrackpadNav()
     // 24-D1: an invite link pasted into the open tab (hashchange → dial / ask)
@@ -365,18 +375,10 @@ import { startMusicToolbox } from './lib/musicToolbox'
 <ModelPreviewWindow />
 {/if}
 <Menu />
-{#if $embedMode}
-  <!-- 29-E: the embed's only chrome. The link opens the same scene in the full app (a
-       new tab — the iframe stays where it is); the ▶ shows only when not playing, so an
-       Esc inside the frame has a way back in (browsers grant the pointer lock only in a
-       gesture, which this click is). --z-hud: above the canvas, below modals. -->
-  <div id="embed-chrome" class="pointer-events-none fixed inset-x-0 bottom-3 flex items-end justify-between px-3" style="z-index: var(--z-hud)">
-    <a id="embed-open-link" class="pointer-events-auto rounded-md bg-gray-900/80 px-2.5 py-1 text-[11px] font-semibold text-gray-100 shadow backdrop-blur-sm hover:bg-gray-800" href={embedOpenUrl()} target="_blank" rel="noopener">Open in theprototype.app ↗</a>
-    {#if $isLocked !== true}
-      <button id="embed-play" type="button" class="pointer-events-auto rounded-md bg-orange-600/90 px-3 py-1 text-[12px] font-semibold text-white shadow hover:bg-orange-500" on:click={() => requestPlay()}>▶ Play</button>
-    {/if}
-  </div>
-{/if}
+<!-- 29-E + 36-export: the player's chrome on a play link / embed / exported game (start card,
+     fullscreen, the open-in-app link) and the runtime-drawn "Made with ThePrototype" badge -->
+<EmbedChrome />
+<MadeWithBadge />
 {#if $isLocked && $helpersInPlay}
   <!-- 24-E2: helpers are rendering inside Play on purpose — say so, so a screenshot
        cannot be mistaken for the game (the SimControls chip corner) -->
@@ -397,6 +399,11 @@ import { startMusicToolbox } from './lib/musicToolbox'
      into playMode has to survive Play mode, and the layer decides per box. -->
 <ModuleToolboxLayer />
 <ModulesManager />
+<!-- 36-export: loaded and mounted only while open (the Profiler idiom) — a closed modal costs
+     the boot nothing and the editor runs exactly as before until somebody asks to export -->
+{#if $publishExportOpen}
+{#await import('./components/menu/PublishExportModal.svelte') then m}<m.default />{/await}
+{/if}
 <DungeonMinimap />
 <StatsOverlay />
 <MomentReport />

@@ -1,5 +1,6 @@
 <script lang="ts">
-	import { Archive, BookOpen, FileInput, Flag, FolderOpen, Gauge, LayoutTemplate, Puzzle, Save, Settings, SlidersHorizontal, Trash2, Wrench } from '@lucide/svelte';
+	import { Archive, BookOpen, FileInput, Flag, FolderOpen, Gauge, LayoutTemplate, Puzzle, Save, Settings, SlidersHorizontal, Trash2, Upload, Wrench } from '@lucide/svelte';
+	import { openPublishExport } from '$lib/export/exportStores.js';
 	import { openMomentReport } from '$lib/perf/moment';
 	import '../../app.css';
 	import { moduleToolboxes, openToolboxes, buildToolboxItems } from '$lib/moduleToolboxes';
@@ -216,6 +217,11 @@
 				<CloudSlot mount={$sidebarSlot} />
 			</div>
 		{/if}
+		<!-- 36-export (U4): ONE burger item for getting a scene out — the modal's Publish tab (a cloud
+		     plugin's), Export tab (core's: itch.io / static host / embed) and Settings tab -->
+		<button id="open-publish-export" class="side-row" data-tour="publish-export" onclick={() => { openPublishExport(); closeMenu.set(true); }}>
+			<span class="side-ico"><Upload size={16} aria-hidden="true" /></span><span class="flex-1 whitespace-nowrap">Publish / Export</span>
+		</button>
 
 		<div class="side-div"></div>
 

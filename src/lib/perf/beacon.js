@@ -26,6 +26,7 @@ import { globalRenderer } from '../../stores/sceneStore';
 import { ringNow, ringWindow } from './recorder.js';
 import { validateTpprof, WINDOW_MS, REPORT_LIMITS } from './tpprof.js';
 import { registerPerfContext } from './perfMarks.js';
+import { exportMode } from '../export/exportBoot.js';
 
 /** the batch cadence */
 export const BATCH_MS = 30000;
@@ -264,7 +265,8 @@ export function maybeOffer() {
 let booted = false;
 /** Boot: follow the switch, hook XR end, make the offer on a preview. Idempotent. */
 export function startPerfBeacon() {
-	if (booted) return;
+	// 36-export: an exported game reports nothing anywhere (no reports URL, no offer toast)
+	if (booted || exportMode) return;
 	booted = true;
 	perfReportsAvailable.set(!!reportsUrl());
 	perfReportsOn.subscribe((on) => (on && reportsUrl() ? start() : stop()));

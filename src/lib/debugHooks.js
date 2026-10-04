@@ -232,6 +232,12 @@ export const DEBUG_HOOKS = [
 	['touchActions', () => import('./touchActions')],
 	['touchSpec', () => import('./touchSpec')],
 	['playMode', () => import('./playMode')],
+	// 36-export: the export builder, its stores, the export boot + runtime state
+	['exportBuilder', () => import('./export/exportBuilder.js')],
+	['exportStores', () => import('./export/exportStores.js')],
+	['exportBoot', () => import('./export/exportBoot.js')],
+	['exportRuntime', () => import('./export/exportRuntime.js')],
+	['gameSettings', () => import('./gameSettings')],
 	['objectListNav', () => import('./objectListNav')],
 	['inviteLinks', () => import('./inviteLinks')],
 	['helperLayer', () => import('./helperLayer')],

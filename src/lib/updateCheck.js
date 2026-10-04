@@ -3,6 +3,7 @@
 // version differs from the one this page was built with, show ONE reload toast
 // per browser session. No modal, no peer blocking, no backup nag; dev skips.
 import { APP_VERSION, IS_DEV } from './version.js';
+import { exportMode } from './export/exportBoot.js';
 import { showToast } from '../stores/appStore.js';
 import { markContentStale } from './contentBase.js';
 
@@ -32,7 +33,8 @@ async function poll() {
 /** Start polling (called once from App.svelte). The page is fresh at boot, so the
  * first check waits a full interval; a tab coming back to focus checks early. */
 export function startUpdateCheck() {
-	if (IS_DEV || typeof window === 'undefined') return;
+	// 36-export: an export has no version.json to poll and nothing to reload into
+	if (IS_DEV || exportMode || typeof window === 'undefined') return;
 	setInterval(poll, POLL_MS);
 	document.addEventListener('visibilitychange', () => {
 		if (!document.hidden) poll();

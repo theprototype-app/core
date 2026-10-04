@@ -141,7 +141,7 @@ function initTank(tank, count) {
 	const spacing = spacingFor(size, count, tank.spec.fill || 0.4);
 	tank.capacity = count;
 	tank.visual?.dispose();
-	tank.visual = new FluidVisual({ capacity: count, radius: spacing * 0.75, size });
+	tank.visual = new FluidVisual({ capacity: count, radius: spacing * 0.62, size });
 	tank.visual.setLook(tank.spec.color, tank.spec.clarity);
 	tank.pending = false;
 	tank.count = 0;

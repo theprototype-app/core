@@ -115,6 +115,7 @@ uniform vec3 uColor;
 uniform vec3 uDeep;
 uniform float uClarity;
 uniform vec3 uSky;
+uniform float uNormalStep;
 vec3 viewPos(vec2 uv, float d) {
 	vec4 ndc = vec4(uv * 2.0 - 1.0, 0.0, 1.0);
 	vec4 v = uProjInv * ndc;
@@ -125,7 +126,9 @@ void main() {
 	vec2 uv = gl_FragCoord.xy / uResolution;
 	float d = texture2D(tDepth, uv).r;
 	if (d <= 0.0) discard;
-	vec2 px = 1.0 / uResolution;
+	// normals from a few pixels apart: one-pixel differences of a blurred half-float depth
+	// are mostly quantisation noise, which read as glittering white specks
+	vec2 px = uNormalStep / uResolution;
 	vec3 p = viewPos(uv, d);
 	// normal from the smoothed depth (pick the smaller difference per axis: edge-safe)
 	float dxp = texture2D(tDepth, uv + vec2(px.x, 0.0)).r;
@@ -151,7 +154,7 @@ void main() {
 	float fres = 0.04 + 0.96 * pow(1.0 - max(dot(n, v), 0.0), 5.0);
 	vec3 l = normalize(vec3(0.3, 0.9, 0.4));
 	vec3 h = normalize(l + v);
-	float spec = pow(max(dot(n, h), 0.0), 120.0) * 1.5;
+	float spec = pow(max(dot(n, h), 0.0), 60.0) * 0.6;
 	vec3 col = mix(body, uSky, fres) + vec3(spec);
 	float alpha = clamp(mix(0.55, 0.97, absorb) + fres * 0.3, 0.0, 1.0);
 	gl_FragColor = vec4(col, alpha);
@@ -280,7 +283,8 @@ export class FluidVisual {
 				uColor: { value: this.color },
 				uDeep: { value: this.deep },
 				uClarity: { value: this.clarity },
-				uSky: { value: new THREE.Color('#cfe6ff') }
+				uSky: { value: new THREE.Color('#cfe6ff') },
+				uNormalStep: { value: 2 }
 			},
 			transparent: true,
 			depthWrite: false,
@@ -400,6 +404,7 @@ export class FluidVisual {
 		renderer.xr.enabled = xrWas;
 		const u = this.compositeMaterial.uniforms;
 		u.uResolution.value.set(w, h);
+		u.uNormalStep.value = Math.max(1.5, stepPx);
 		u.uProj.value.copy(camera.projectionMatrix);
 		u.uProjInv.value.copy(camera.projectionMatrixInverse);
 		this.passStats.runs++;

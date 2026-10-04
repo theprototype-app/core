@@ -204,6 +204,62 @@ h.run(async () => {
 	await A.page.evaluate((uuid) => window.__stores.flowGraphs.update((graphs) => ({ ...graphs, [uuid]: { nodes: [], edges: [] } })), jig);
 	await h.eventually(() => A.page.evaluate(() => window.__jelly.material === window.__jellyMat), (v) => v === true, 'removing the Jiggle node restores the original material', 5000);
 
+	// ---------- JIGGLE on a skinned bone chain (a tail), parked for serializers ----------
+	const bones = await A.page.evaluate(async () => {
+		const THREE = window.__stores.THREE;
+		const b0 = new THREE.Bone();
+		const b1 = new THREE.Bone();
+		const b2 = new THREE.Bone();
+		b1.position.y = 0.5;
+		b2.position.y = 0.5;
+		b0.add(b1);
+		b1.add(b2);
+		const geo = new THREE.CylinderGeometry(0.08, 0.08, 1, 6, 4).translate(0, 0.5, 0);
+		const n = geo.attributes.position.count;
+		const si = new Uint16Array(n * 4);
+		const sw = new Float32Array(n * 4);
+		for (let i = 0; i < n; i++) {
+			const y = geo.attributes.position.getY(i);
+			si[i * 4] = y < 0.33 ? 0 : y < 0.66 ? 1 : 2;
+			sw[i * 4] = 1;
+		}
+		geo.setAttribute('skinIndex', new THREE.Uint16BufferAttribute(si, 4));
+		geo.setAttribute('skinWeight', new THREE.Float32BufferAttribute(sw, 4));
+		const mesh = new THREE.SkinnedMesh(geo, new THREE.MeshStandardMaterial({ color: '#c08040' }));
+		const tail = new THREE.Group();
+		tail.name = 'Tail';
+		tail.add(b0);
+		tail.add(mesh);
+		mesh.bind(new THREE.Skeleton([b0, b1, b2]));
+		tail.position.set(-1.5, 0.5, 0);
+		let g;
+		window.__stores.objectsGroup.subscribe((v) => (g = v))();
+		g.add(tail);
+		window.__tail = { tail, b1, b2, rest1: b1.quaternion.clone(), rest2: b2.quaternion.clone() };
+		window.__stores.flowGraphs.update((graphs) => ({
+			...graphs,
+			[tail.uuid]: { nodes: [{ id: 'jigT', type: 'jiggle', position: { x: 0, y: 0 }, data: { stiffness: 60, damping: 0.1 } }], edges: [] }
+		}));
+		for (let i = 0; i < 10; i++) await new Promise((r) => requestAnimationFrame(r));
+		const dbg = window.__stores.sim.jiggleDebug().find((d) => d.uuid === tail.uuid);
+		let swing = 0;
+		for (let i = 0; i < 20; i++) {
+			tail.position.x += 0.1;
+			tail.updateMatrixWorld(true);
+			await new Promise((r) => requestAnimationFrame(r));
+			swing = Math.max(swing, window.__tail.b2.quaternion.angleTo(window.__tail.rest2));
+		}
+		// a serializer parks the chain at rest, then puts the swing back
+		const restore = window.__stores.flowRuntime.parkAnimatedAtBase();
+		const parked = window.__tail.b2.quaternion.angleTo(window.__tail.rest2);
+		restore();
+		const after = window.__tail.b2.quaternion.angleTo(window.__tail.rest2);
+		return { bones: dbg?.bones ?? 0, swing, parked, after };
+	});
+	h.check(bones.bones === 2, `a skinned chain gets bone springs on its tail end (${bones.bones} bones)`);
+	h.check(bones.swing > 0.05, `moving it swings the tail bones (${bones.swing.toFixed(3)} rad)`);
+	h.check(bones.parked < 1e-6 && bones.after > 1e-4, `parkAnimatedAtBase puts the bones at rest for a save, then back (${bones.parked.toExponential(1)} / ${bones.after.toFixed(3)})`);
+
 	h.check(h.pageErrors(A).length === 0, `no page errors (${JSON.stringify(h.pageErrors(A).slice(0, 2))})`);
 	await browser.close();
 });

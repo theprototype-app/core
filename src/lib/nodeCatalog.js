@@ -758,14 +758,6 @@ export const nodeCatalog = [
 				defaults: { code: 'KeyR', pulse: 0.3, edge: 'down' },
 				params: [{ key: 'edge', kind: 'select', options: ['down', 'up', 'held'] }]
 			},
-			// PFX-C: fires when the physics sim lands this object on the ground /
-			// another object (initiator-detected, replicated trigger stamp)
-			{
-				type: 'onimpact',
-				label: 'On Impact',
-				defaults: { pulse: 0.3, minStrength: 1 },
-				params: [{ key: 'minStrength', kind: 'range', min: 0, max: 10, step: 0.1 }]
-			},
 			// 24-A A2: a hand (VR controller) or a walking player KNOCKED this body (A1's
 			// probe). Fired on EVERY peer as the `hit` message is applied, stamped from the
 			// message's own `at` — one message per knock, identical stamps everywhere, no
@@ -782,9 +774,6 @@ export const nodeCatalog = [
 					{ key: 'who', kind: 'select', options: ['anyone', 'me', 'others'] }
 				]
 			},
-			// CL-C C2: sensor overlap edges (initiator-detected, replicated stamps)
-			{ type: 'onenter', label: 'On Enter', defaults: { pulse: 0.3 } },
-			{ type: 'onexit', label: 'On Exit', defaults: { pulse: 0.3 } },
 			// B6: fires once when a body settles, and re-arms when it moves again.
 			// Initiator-detected, replicated stamp — the On Impact shape.
 			{
@@ -927,6 +916,20 @@ export const nodeCatalog = [
 	{
 		group: 'Physics',
 		items: [
+			// 36 X6: the CONTACT triggers moved here from Triggers — they gained a `filter`
+			// input (only fire for that other object) and an `other` output, and Triggers
+			// holds only input-less sources (the palette rule). Palette-only: no wire change.
+			// PFX-C: fires when the physics sim lands this object on the ground /
+			// another object (initiator-detected, replicated trigger stamp)
+			{
+				type: 'onimpact',
+				label: 'On Impact',
+				defaults: { pulse: 0.3, minStrength: 1 },
+				params: [{ key: 'minStrength', kind: 'range', min: 0, max: 10, step: 0.1 }]
+			},
+			// CL-C C2: sensor overlap edges (initiator-detected, replicated stamps)
+			{ type: 'onenter', label: 'On Enter', defaults: { pulse: 0.3 } },
+			{ type: 'onexit', label: 'On Exit', defaults: { pulse: 0.3 } },
 			{
 				type: 'mass',
 				label: 'Mass',

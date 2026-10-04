@@ -114,7 +114,7 @@ let oobCount = 0;
 /** @type {string} */ let oobAction = 'respawn';
 /** @type {Map<string, number>} uuid -> last impact stamp (step-now ms) */
 let lastImpactAt = new Map();
-/** @type {{uuid: string, strength: number}[]} contacts collected inside the substep loop */
+/** @type {{uuid: string, strength: number, other: string}[]} contacts collected inside the substep loop (36 X6: + the other body) */
 let pendingImpacts = [];
 /** CL-A: colliders attached to FIXED scenery bodies (rebuild bookkeeping —
  * BodyEntry only exists for dynamic/kinematic). @type {Map<string, any[]>} */
@@ -1691,7 +1691,9 @@ function queueContact(h1, h2, now) {
 		const uuid = entry.object.uuid;
 		if (now - (lastImpactAt.get(uuid) ?? -Infinity) < IMPACT_COOLDOWN_MS) continue;
 		lastImpactAt.set(uuid, now);
-		pendingImpacts.push({ uuid, strength: down });
+		// 36 X6: and what it hit — the other collider's owner, '' for the ground
+		const other = handle === h1 ? h2 : h1;
+		pendingImpacts.push({ uuid, strength: down, other: other === groundHandle ? '' : colliderOwner.get(other)?.uuid ?? '' });
 	}
 }
 
@@ -1734,10 +1736,10 @@ function dispatchImpacts() {
 	const impacts = pendingImpacts;
 	pendingImpacts = [];
 	const group = get(objectsGroup);
-	impacts.forEach(({ uuid, strength }) => {
+	impacts.forEach(({ uuid, strength, other }) => {
 		// flow path: pulse On Impact nodes targeting this object — the trigger
 		// stamp replicates (nodetrigger), so every peer computes the same pulse
-		fireObjectImpact(uuid, strength);
+		fireObjectImpact(uuid, strength, other);
 		// zero-flow path: an emitter set to "On impact" bursts for everyone
 		// (replicated particleburst timestamp) — userData emitters checked on
 		// the object, NODE emitters through the runtime

@@ -6803,6 +6803,10 @@ must never move your camera) and VR `isVR()`, `vrHand('left'|'right')`,
 mouseLook})` + the `possessModes` capability probe. All reached via PRIMED
 dynamic imports (addObjects/joints/objectActions/pingAudio alongside inputRuntime/
 physics/possess/vrControls) — a static edge closes a cycle into history.
+**35 — FIVE CORE GAME MODULES** `src/modules/{escape,marble,minigolf,skyrun,targettoss}` (the Towers pattern: core
+modules, dormant without their scene's marker; templates `scripts/templates/<slug>.cjs`); moving platforms carry the
+walker through the `charController.addWalkCarry` seam.
+
 **34 R7 — `api.loadModel(url, opts)`** (sdk/models.js → `modelLoader.js`) returns a handle (MODULES.md);
 `gltfLoader.js` is THE loader (never `new GLTFLoader()` elsewhere); lodGroup `addLodRoot/removeLodRoot` draws a
 `userData.lod` block outside objectsGroup; `packLodGroupFor(url, rowKey)`; teardown `releaseModelsOf(moduleId)`.

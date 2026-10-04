@@ -3,7 +3,7 @@
 	"comment": "34 B2 — the Quest budget per Games-tab game and General-tab level, held by `node scripts/perf-games.cjs --check` (CI: .github/workflows/perf-budget.yml). Counts only, in the headset-analogue profile. See perf/README.md.",
 	"scenes": {
 		"repo": "theprototype-app/scenes",
-		"ref": "preview-1-20"
+		"ref": "preview-1-21"
 	},
 	"modules": {
 		"repo": "theprototype-app/modules",
@@ -18,6 +18,16 @@
 	"games": {},
 	"levels": {},
 	"allow": [
+		{
+			"target": "game:escape-room",
+			"metric": "textureMB",
+			"max": 127.4,
+			"measured": 121.3,
+			"since": "2026-10-04",
+			"review": "2026-12-01",
+			"owner": "The Alchemist's Escape (src/modules/escape + scripts/templates/escape-room.cjs) / the kit packs: KTX2 through api.loadModel or a lower per-pack texture cap (packs tools/kit-build)",
+			"note": "uncompressed GPU estimate of the distinct 1024\u00b2 kit maps its props use (arcane-kit AlchemyTable/Armillary/PotionShelf/RuneRug, interior-kit Armchair, props-kit Bookcase/WallTorch) \u2014 the levels' texture class; calls 48, tris 12k are within budget"
+		},
 		{
 			"target": "game:jam-room",
 			"metric": "calls",

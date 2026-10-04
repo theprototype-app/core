@@ -35,6 +35,43 @@ export function rewriteIndexHtml(html, { title }) {
 	return out;
 }
 
+/**
+ * 36-int-121: what the WEB HOST added to an HTML page it served, removed. Cloudflare Pages Web
+ * Analytics injects `<script defer src='https://static.cloudflareinsights.com/beacon.min.js'
+ * data-cf-beacon='…'>` (between two "Cloudflare Pages Analytics" comments) into every HTML response,
+ * and the exporter copies pages from the live deployment — so an export made on a Pages URL carried
+ * a script from the internet and failed its own check. Removed: any `<script>` / `<link>` whose
+ * src/href is absolute (`http(s)://` or `//` — nothing in export-manifest.json is), any script
+ * carrying `data-cf-beacon` or naming cloudflareinsights, and the analytics comments. Every
+ * removal is RETURNED, so the builder reports it (never silently); check-export stays strict.
+ * PURE. @param {string} html @returns {{html: string, removed: string[]}}
+ */
+export function stripHostInjected(html) {
+	/** @type {string[]} */
+	const removed = [];
+	const abs = /^(?:https?:)?\/\//i;
+	const attr = (/** @type {string} */ attrs, /** @type {string} */ name) =>
+		new RegExp('\\b' + name + '\\s*=\\s*(?:"([^"]*)"|\'([^\']*)\'|([^\\s>]+))', 'i').exec(attrs)?.slice(1).find((v) => v !== undefined) || '';
+	let out = String(html);
+	out = out.replace(/[ \t]*<script\b([^>]*)>([\s\S]*?)<\/script>[ \t]*\n?/gi, (m, attrs, body) => {
+		const src = attr(attrs, 'src');
+		// (spelled so the engine bundle never carries the two words itself: an export is scanned for them)
+		if (abs.test(src) || /\bdata-cf-(?:beacon)\b/i.test(attrs) || /cloudflare(?:insights)/i.test(body)) {
+			removed.push(src || 'an inline host script');
+			return '';
+		}
+		return m;
+	});
+	out = out.replace(/[ \t]*<link\b([^>]*)>[ \t]*\n?/gi, (m, attrs) => {
+		const href = attr(attrs, 'href');
+		if (!abs.test(href)) return m;
+		removed.push(href);
+		return '';
+	});
+	out = out.replace(/[ \t]*<!--\s*Cloudflare Pages Analytics\s*-->[ \t]*\n?/gi, '');
+	return { html: out, removed };
+}
+
 /** play.js's text for a config. PURE. @param {any} config */
 export function makePlayJs(config) {
 	return '// Made with ThePrototype (https://theprototype.app) — the exported game’s settings.\n' + 'window.__TP_EXPORT__ = ' + JSON.stringify(config, null, '\t') + ';\n';

@@ -25,9 +25,9 @@ import { objectsGroup, globalRenderer, globalScene, globalCamera } from '../../s
 import { pageUrl } from './exportBoot.js';
 import { validateExport, ITCH_LIMITS } from './exportValidate.js';
 import { APP_VERSION } from '../version.js';
-import { slugify, rewriteIndexHtml, makePlayJs, embedSnippet, collectPackRefs, fmtBytes } from './exportCore.js';
+import { slugify, rewriteIndexHtml, stripHostInjected, makePlayJs, embedSnippet, collectPackRefs, fmtBytes } from './exportCore.js';
 
-export { slugify, rewriteIndexHtml, makePlayJs, embedSnippet, collectPackRefs, fmtBytes };
+export { slugify, rewriteIndexHtml, stripHostInjected, makePlayJs, embedSnippet, collectPackRefs, fmtBytes };
 
 export const EXPORT_PRESETS = Object.freeze({
 	itch: { id: 'itch', label: 'itch.io', zip: true },
@@ -172,6 +172,12 @@ export async function buildExport(opts, onProgress = () => {}) {
 	const title = String(opts.title || '').trim() || 'Game';
 	/** @type {string[]} */
 	const warnings = [];
+	/** strip what the web host injected into a page it served; every removal is reported @param {string} path @param {string} html */
+	const fromHost = (path, html) => {
+		const r = stripHostInjected(html);
+		for (const url of r.removed) warnings.push(`Removed ${url} from ${path}: the web host added it to the page it served, and an export loads nothing from the internet.`);
+		return r.html;
+	};
 	/** @type {Record<string, Uint8Array>} */
 	const out = {};
 	const enc = new TextEncoder();
@@ -256,7 +262,8 @@ export async function buildExport(opts, onProgress = () => {}) {
 	await fetchAll(
 		runtime.map((f) => pageUrl(f.path)),
 		(i, bytes) => {
-			out[runtime[i].path] = bytes;
+			// a page the host served may carry what the host injected (36-int-121) — the same strip as index.html
+			out[runtime[i].path] = /\.html?$/i.test(runtime[i].path) ? enc.encode(fromHost(runtime[i].path, new TextDecoder().decode(bytes))) : bytes;
 			breakdown.runtime += bytes.byteLength;
 			fetched += runtime[i].bytes;
 			onProgress({ phase: 'Copying the engine', done: fetched, total: runtimeBytes });
@@ -264,7 +271,7 @@ export async function buildExport(opts, onProgress = () => {}) {
 	);
 	const indexRes = await fetch(pageUrl('index.html'));
 	if (!indexRes.ok) throw new Error('index.html — HTTP ' + indexRes.status);
-	const indexHtml = rewriteIndexHtml(await indexRes.text(), { title });
+	const indexHtml = rewriteIndexHtml(fromHost('index.html', await indexRes.text()), { title });
 	out['index.html'] = enc.encode(indexHtml);
 
 	// 5. the config, the cover, the readme

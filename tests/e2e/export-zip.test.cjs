@@ -155,6 +155,19 @@ h.run(async () => {
 	h.check(/mini-golf-itch\.zip$/.test(dl.suggestedFilename()), `Build & download gives mini-golf-itch.zip (${dl.suggestedFilename()})`);
 	await page.locator('#export-result').waitFor({ state: 'visible', timeout: 20000 });
 	h.check(/checked OK/.test((await page.locator('#export-result').textContent()) || ''), 'the result says the zip passed its own check');
+	// 36-int-121: a host that injects into the HTML it serves (Cloudflare Pages Web Analytics; serve-build
+	// --inject-cf-beacon stands in for it) leaves no trace in the zip, and the removal is reported
+	const zipText = (() => {
+		const dir = path.join(WORK, 'scan-golf');
+		unzipTo(new Uint8Array(fs.readFileSync(golfZip)), dir);
+		const walk = (/** @type {string} */ d) => fs.readdirSync(d, { withFileTypes: true }).flatMap((e) => (e.isDirectory() ? walk(path.join(d, e.name)) : /\.(html?|js|css|json)$/i.test(e.name) ? [fs.readFileSync(path.join(d, e.name), 'utf8')] : []));
+		return walk(dir).join('\n');
+	})();
+	h.check(!/cloudflareinsights|data-cf-beacon/i.test(zipText), 'no host-injected beacon anywhere in the zip');
+	if (process.env.EXPECT_CF_BEACON) {
+		const resultText = (await page.locator('#export-result').textContent()) || '';
+		h.check(/Removed https:\/\/static\.cloudflareinsights\.com\/beacon\.min\.js from index\.html/.test(resultText), 'the export reports the beacon it removed from index.html');
+	}
 	if (SHOTS) await page.screenshot({ path: path.join(SHOTS, '03-export-result-dark.png') });
 
 	// light theme screenshot of the same tab

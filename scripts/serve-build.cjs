@@ -5,7 +5,10 @@
 // export-manifest.json, which the in-app exporter reads — are not there. The export suites and
 // a manual export proof run against this instead:
 //
-//   node scripts/serve-build.cjs [--port 5323] [--dir build] [--http]
+//   node scripts/serve-build.cjs [--port 5323] [--dir build] [--http] [--inject-cf-beacon]
+//
+// --inject-cf-beacon (36-int-121) does what Cloudflare Pages Web Analytics does to every HTML
+// response: the beacon <script> before </body>. The export must strip it (exportCore.stripHostInjected).
 //   LANE_DEV_CMD='node scripts/serve-build.cjs --port $PORT' e2e-slot --dev <dir> <port> -- …
 //
 // Unknown paths answer 404 (no SPA fallback): the app is one page at `/`, and a static host that
@@ -25,6 +28,9 @@ const arg = (name, def) => {
 const PORT = Number(arg('--port', process.env.PORT || '5323'));
 const DIR = path.resolve(ROOT, arg('--dir', 'build'));
 const PLAIN = args.includes('--http');
+const CF_BEACON = args.includes('--inject-cf-beacon')
+	? "<!-- Cloudflare Pages Analytics --><script defer src='https://static.cloudflareinsights.com/beacon.min.js' data-cf-beacon='{\"token\": \"0123456789abcdef0123456789abcdef\"}'></script><!-- Cloudflare Pages Analytics -->"
+	: '';
 
 /** @type {Record<string, string>} */
 const MIME = {
@@ -71,6 +77,7 @@ function handle(req, res) {
 		'Cache-Control': immutable ? 'public, max-age=31536000, immutable' : 'no-cache'
 	});
 	if (req.method === 'HEAD') return res.end();
+	if (CF_BEACON && /\.html?$/i.test(file)) return res.end(fs.readFileSync(file, 'utf8').replace(/<\/body>/i, CF_BEACON + '</body>'));
 	fs.createReadStream(file).pipe(res);
 }
 

@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { normalizeExportConfig, EXPORT_QUALITIES } from '../../src/lib/export/exportBoot.js';
 import { badgeHref } from '../../src/lib/export/badge.js';
 import { liftAbove } from '../../src/lib/play/hudAvoid.js';
-import { rewriteIndexHtml, makePlayJs, embedSnippet, collectPackRefs, slugify } from '../../src/lib/export/exportCore.js';
+import { rewriteIndexHtml, stripHostInjected, makePlayJs, embedSnippet, collectPackRefs, slugify } from '../../src/lib/export/exportCore.js';
 import { validateExport, parsePlayJs, htmlRefs, ITCH_LIMITS } from '../../src/lib/export/exportValidate.js';
 import { coerceExportPrefs, DEFAULT_EXPORT_PREFS } from '../../src/lib/export/exportStores.js';
 
@@ -235,5 +235,43 @@ describe('export prefs', () => {
 		expect(c.vrButton).toBe(true);
 		expect(c.embedUrl).toBe('');
 		expect(Object.keys(coerceExportPrefs({ badge: false }))).not.toContain('badge');
+	});
+});
+
+// 36-int-121: the line Cloudflare Pages Web Analytics injects into every HTML page it serves (the user's
+// export on a preview Pages URL failed with "index.html loads an absolute URL: …beacon.min.js")
+const CF_BEACON =
+	"<!-- Cloudflare Pages Analytics --><script defer src='https://static.cloudflareinsights.com/beacon.min.js' data-cf-beacon='{\"token\": \"0123456789abcdef0123456789abcdef\"}'></script><!-- Cloudflare Pages Analytics -->";
+const SERVED = INDEX.replace('</body>', CF_BEACON + '</body>');
+
+describe('host-injected tags (36-int-121)', () => {
+	/** the bundle with index.html built from what the host SERVED @param {boolean} strip */
+	const served = (strip) => {
+		const files = bundle();
+		const src = strip ? stripHostInjected(SERVED).html : SERVED;
+		const html = rewriteIndexHtml(src, { title: 'Mini Golf' });
+		files[0] = { path: 'index.html', bytes: html.length, text: html };
+		return files;
+	};
+	it('counterfactual: the served page as-is fails the check', () => {
+		const r = validateExport(served(false), { preset: 'itch' });
+		expect(r.ok).toBe(false);
+		expect(r.errors.some((e) => /absolute URL: https:\/\/static\.cloudflareinsights\.com\/beacon\.min\.js/.test(e))).toBe(true);
+	});
+	it('stripped, it passes and no trace of the beacon is left', () => {
+		const files = served(true);
+		const r = validateExport(files, { preset: 'itch' });
+		expect(r.errors).toEqual([]);
+		expect(r.ok).toBe(true);
+		expect(files[0].text).not.toMatch(/cloudflareinsights|data-cf-beacon|Cloudflare Pages Analytics/i);
+	});
+	it('reports every removal and keeps the app\'s own tags', () => {
+		const html = SERVED.replace('</head>', '<link rel="preconnect" href="//cdn.example.com"><script src="http://x.example/a.js"></script></head>');
+		const r = stripHostInjected(html);
+		expect(r.removed).toEqual(['http://x.example/a.js', 'https://static.cloudflareinsights.com/beacon.min.js', '//cdn.example.com']);
+		expect(r.html).toContain('<link rel="icon" href="./logo.svg" />');
+		expect(r.html).toContain('<link href="./_app/immutable/entry/start.X.js" rel="modulepreload">');
+		expect(r.html).toContain('import("./_app/immutable/entry/app.Y.js")');
+		expect(stripHostInjected(INDEX)).toEqual({ html: INDEX, removed: [] });
 	});
 });

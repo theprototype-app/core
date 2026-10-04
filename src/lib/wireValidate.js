@@ -175,7 +175,9 @@ export const VALIDATORS = {
 	group: (d) => d.uuid !== undefined,
 	duplicate: (d) => isUuid(d.sourceUuid) && isArray(d.uuids),
 	nodes: (d) => isArray(d.nodes) && isArray(d.edges),
-	nodesync: (d) => typeof d.hash === 'string' && typeof d.count === 'number',
+	// 36-sim (found proving B2): graphHash() returns a NUMBER (djb2 >>> 0). Requiring a string
+	// rejected EVERY nodesync since 27-A, so graph drift between peers was never noticed.
+	nodesync: (d) => (typeof d.hash === 'string' || Number.isFinite(d.hash)) && typeof d.count === 'number',
 	nodecreate: (d) => !!d.node && typeof d.node === 'object',
 	nodedata: (d) => typeof d.id === 'string' && !!d.data && typeof d.data === 'object',
 	nodedelete: (d) => isArray(d.ids),

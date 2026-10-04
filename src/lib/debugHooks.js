@@ -60,6 +60,8 @@ export const DEBUG_HOOKS = [
 	['lockControl', () => import('./lockControl')],
 	['prefabs', () => import('./prefabs')],
 	['physics', () => import('./physics')],
+	// 36-sim: buoyancy/jiggle/fluid/splash state
+	['sim', () => import('./sim/debug.js')],
 	['joints', () => import('./joints')],
 	['possess', () => import('./possess')],
 	['handModels', () => import('./handModels')],

@@ -1081,6 +1081,27 @@ export const nodeCatalog = [
 					{ key: 'blending', kind: 'select', options: ['additive', 'normal'] },
 					{ key: 'space', kind: 'select', options: ['local', 'world'] }
 				]
+			},
+			// 36-sim U2b: secondary motion + soft-body wobble on the connected object (or the
+			// graph owner). LOCAL per peer from the pose every peer sees — the jiggle runtime
+			// (sim/jiggleRuntime.js), not animationTypes: it never writes the transform.
+			{
+				type: 'jiggle',
+				label: 'Jiggle',
+				defaults: { stiffness: 120, damping: 0.15, gravity: 0.3, maxOffset: 0.35, wind: 0, amplitude: 0.08, frequency: 3, falloff: 1.5, pivot: 'bottom', bones: '' },
+				note: 'Each player sees their own wobble; the settings are shared.',
+				params: [
+					{ key: 'stiffness', kind: 'range', min: 5, max: 600, step: 5 },
+					{ key: 'damping', kind: 'range', min: 0, max: 1, step: 0.01 },
+					{ key: 'gravity', kind: 'range', min: 0, max: 2, step: 0.05 },
+					{ key: 'maxOffset', kind: 'range', label: 'max offset', min: 0, max: 1, step: 0.01 },
+					{ key: 'wind', kind: 'range', min: 0, max: 20, step: 0.5 },
+					{ key: 'amplitude', kind: 'range', label: 'wobble', min: 0, max: 0.4, step: 0.01 },
+					{ key: 'frequency', kind: 'range', label: 'wobble Hz', min: 0.5, max: 10, step: 0.1 },
+					{ key: 'falloff', kind: 'range', min: 0.25, max: 4, step: 0.05 },
+					{ key: 'pivot', kind: 'select', options: ['bottom', 'center', 'top'] },
+					{ key: 'bones', kind: 'text', label: 'bones (globs)', placeholder: 'hair*, tail*', maxLength: 200 }
+				]
 			}
 		]
 	},

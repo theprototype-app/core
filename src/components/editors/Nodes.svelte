@@ -136,6 +136,7 @@
 		pathpatrol: PathPatrolNode,
 		sound: SoundNode,
 		particle: ParticleNode,
+		jiggle: AnimationNode, // 36-sim U2b
 		mass: AnimationNode,
 		bounciness: AnimationNode,
 		friction: AnimationNode,

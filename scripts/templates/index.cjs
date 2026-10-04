@@ -37,7 +37,10 @@ const TEMPLATE_FILES = [
 	// 36-water: the three water examples
 	'aquarium',
 	'pool-party',
-	'island-ocean'
+	'island-ocean',
+	// 36-sim: Jiggle + Fluid tank examples
+	'jelly-room',
+	'fluid-tank-toy'
 ];
 
 /** games whose def is OWNED BY ITS MODULE (modules/<id>/<id>.def.json, read by moduleDef) */

@@ -43,8 +43,9 @@ const bakeVertex = new THREE.Vector3();
  * the body frame. Hull/custom/trimesh pieces get `relQuat` baked into their
  * verts; primitives carry it on the desc. An empty piece list (every hull
  * degenerate) degrades to a box, exactly as the inline construction did.
+ * `onHull` (36-sim buoyancy) sees each convex piece's baked verts that made a desc.
  * @param {any} RAPIER @param {any} spec colliderSpecOf result
- * @param {{origin: any, center: any, relQuat: any}} frame
+ * @param {{origin: any, center: any, relQuat: any, onHull?: (baked: Float32Array) => void}} frame
  * @returns {any[]}
  */
 export function colliderDescsFor(RAPIER, spec, frame) {
@@ -63,7 +64,9 @@ export function colliderDescsFor(RAPIER, spec, frame) {
 			const desc = piece.indices
 				? RAPIER.ColliderDesc.trimesh(baked, piece.indices, trimeshFlags(RAPIER))
 				: RAPIER.ColliderDesc.convexHull(baked);
-			if (desc) descs.push(desc.setTranslation(origin.x, origin.y, origin.z));
+			if (!desc) continue;
+			descs.push(desc.setTranslation(origin.x, origin.y, origin.z));
+			if (!piece.indices) frame.onHull?.(baked);
 		}
 	}
 	if (!descs.length) {

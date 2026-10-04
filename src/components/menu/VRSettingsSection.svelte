@@ -21,7 +21,7 @@
 	import { Checkbox, Toggle } from 'flowbite-svelte';
 	import SettingRow from './SettingRow.svelte';
 	import ThemedSelect from '../ui/ThemedSelect.svelte';
-	import { VR_SETTING_PAGES, VR_SETTINGS, vrSettingsVersion, settingValueText } from '$lib/vr/settingsSchema.js';
+	import { vrSettingsVersion, settingValueText } from '$lib/vr/settingsSchema.js'; // VR_SETTINGS / VR_SETTING_PAGES: the module script's import
 	import { VR_ACTIONS, CONTROLS_FOR, vrBindings, setBinding, resetBindings, controlName, actionInfo } from '$lib/vr/bindings.js';
 	import { showToast } from '../../stores/appStore.js';
 

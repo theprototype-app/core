@@ -82,6 +82,7 @@
 	import { enterColliderEdit } from '$lib/colliderEdit';
 	import { inferredColliderKind } from '$lib/colliderSpec';
 	import PhysicsGroupRow from './PhysicsGroupRow.svelte'; // 36 X5
+	import ColliderDecomposeRow from './ColliderDecomposeRow.svelte'; // 36 X3
 	// 57.5: a spline's record is editable right here — same write path the
 	// viewport handles use (apply + broadcast + one 'spline' undo entry)
 	import {
@@ -3900,6 +3901,7 @@
 							Edit collider…
 						</button>
 					{/if}
+					{#if $selectedObject.isMesh || $selectedObject.children?.length}<ColliderDecomposeRow uuid={$selectedObject.uuid} />{/if}
 					<!-- CL-A A3: sensor = trigger volume; overlaps fire On Enter / On Exit -->
 					<Checkbox
 						id="physics-sensor"

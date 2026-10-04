@@ -474,7 +474,9 @@ export function listPhysicsObjects() {
  * @param {{mode?: 'auto'|'static'|'dynamic', mass?: number, restitution?: number,
  *   friction?: number, collider?: string, sensor?: boolean|null,
  *   freeze?: any, material?: string, group?: string|null,
- *   collidesWith?: string[]|null}} patch — 36 X5: collision group + filter — 21-C4: sensor/freeze/material were
+ *   collidesWith?: string[]|null, colliderVerts?: number[],
+ *   colliderPieces?: number[][]}} patch — 36 X5: collision group + filter; 36 X3: a
+ *   decomposed custom collider — 21-C4: sensor/freeze/material were
  *   missing from this type while the Inspector had been writing all three since
  *   CL-A (its collider row, its Sensor checkbox and its material presets), so any
  *   NEW caller passing them failed the type check for a param the function has

@@ -34,6 +34,8 @@ import { CORE_SETTINGS, gameSettingRows, gameSettingValues, setGameSetting, sett
 // belongs to the scene on screen (a leaf)
 import { leftBehindModules, ownerInScope } from './sceneScope';
 import { perfMark } from './perf/perfMarks.js';
+// 36 U8: the touch layout editor is a leaf too (svelte/store + safeStorage)
+import { touchControlsVisible, openTouchLayoutEditor } from './touchActions';
 
 /** @typedef {'main' | 'levels' | 'settings' | 'help'} ShellPage */
 
@@ -318,7 +320,9 @@ export function shellMenuItems(opts = {}) {
 		{ id: 'restart', label: 'Restart' }
 	];
 	if (get(gameLevels)) items.push({ id: 'levels', label: 'Levels' });
-	items.push({ id: 'settings', label: 'Settings' }, { id: 'help', label: 'How to play' }, { id: 'mainmenu', label: 'Main menu' });
+	items.push({ id: 'settings', label: 'Settings' }, { id: 'help', label: 'How to play' });
+	if (!opts.vr && get(touchControlsVisible)) items.push({ id: 'touchlayout', label: 'Touch controls' });
+	items.push({ id: 'mainmenu', label: 'Main menu' });
 	if (!opts.vr) items.push({ id: 'editor', label: 'Back to editor' });
 	return items;
 }
@@ -340,6 +344,10 @@ export function runShellItem(id) {
 			return true;
 		case 'back':
 			showShellPage('main');
+			return true;
+		case 'touchlayout':
+			closeShellMenu();
+			openTouchLayoutEditor();
 			return true;
 		case 'mainmenu':
 			leaveToMainMenu();

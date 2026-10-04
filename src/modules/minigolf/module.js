@@ -611,6 +611,8 @@ export default {
 			'Out of bounds costs a stroke and puts the ball back where it last stopped. Eight strokes and the ball is picked up.'
 		];
 		/** @type {null | (() => void)} */ let helpOff = null;
+		// 36 U8: touch — the stick walks to the ball, the look aims, the putt is the module's own drag on the ball
+		/** @type {null | (() => void)} */ let touchOff = null;
 		let wasActive = false;
 		api.registerFrameTask((/** @type {number} */ time) => {
 			if (!gs || !stores || !phys) return;
@@ -618,6 +620,11 @@ export default {
 			if (on !== wasActive) {
 				wasActive = on;
 				if (on && typeof api.game?.setHelp === 'function') helpOff = api.game.setHelp(HELP);
+				if (on) touchOff = api.input?.actions?.([], { preset: 'golf' }) ?? null;
+				if (!on && touchOff) {
+					touchOff();
+					touchOff = null;
+				}
 				if (on) defineLevels();
 				if (!on && helpOff) {
 					helpOff();
@@ -639,6 +646,8 @@ export default {
 				helpOff();
 				helpOff = null;
 			}
+			touchOff?.();
+			touchOff = null;
 			if (typeof levelsOff === 'function') {
 				levelsOff();
 				levelsOff = null;

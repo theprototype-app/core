@@ -16,7 +16,8 @@ import { safeStorage } from './safeStorage';
 //      jump, fly mode means up/down, and every Key Press node's key that the stick does
 //      not already cover becomes a labelled key button.
 // A preset picks the frame around the buttons: platformer = stick + jump, shooter =
-// stick + look + fire + jump, toss/golf = the action alone (the whole screen looks).
+// stick + look + fire + jump, toss = the action alone (the whole screen looks), golf = the
+// stick and the look (the putt is the module's own drag on the ball).
 //
 // WHAT A PRESS DOES — no second input pipeline, the W4 integration rule one step on. A
 // button that names `keys` dispatches the same KeyboardEvent a keyboard would, on the
@@ -45,11 +46,15 @@ export const BUILTIN_ACTIONS = /** @type {Record<string, {label: string, icon: s
 	jump: { label: 'Jump', icon: 'jump', keys: ['Space'] },
 	fire: { label: 'Fire', icon: 'fire', pointer: 'press' },
 	interact: { label: 'Use', icon: 'interact', pointer: 'tap' },
+	// a held primary press at the crosshair WITHOUT the touch flag, so playInteract carries
+	// what it hits for as long as the button is down (a touch press never carries — W4)
+	grab: { label: 'Grab', icon: 'grab', pointer: 'press' },
 	crouch: { label: 'Crouch', icon: 'crouch', keys: ['KeyC'] },
 	sprint: { label: 'Sprint', icon: 'sprint', keys: ['ShiftLeft'] },
 	reload: { label: 'Reload', icon: 'reload', keys: ['KeyR'] },
-	up: { label: 'Up', icon: 'up', keys: ['KeyQ'] },
-	down: { label: 'Down', icon: 'down', keys: ['KeyE'] }
+	// E rises and Q sinks — PointerLockControls' and editorNavigation's own convention
+	up: { label: 'Up', icon: 'up', keys: ['KeyE'] },
+	down: { label: 'Down', icon: 'down', keys: ['KeyQ'] }
 });
 
 /**
@@ -61,7 +66,8 @@ export const TOUCH_PRESETS = /** @type {Record<string, {stick: boolean, look: bo
 	platformer: { stick: true, look: true, buttons: ['jump'] },
 	shooter: { stick: true, look: true, buttons: ['fire', 'jump'] },
 	toss: { stick: false, look: true, buttons: ['fire'] },
-	golf: { stick: false, look: true, buttons: ['fire'] },
+	// the putt is a drag ON the ball (the module stops that press), so golf adds no button
+	golf: { stick: true, look: true, buttons: [] },
 	fly: { stick: true, look: true, buttons: ['up', 'down'] },
 	explore: { stick: true, look: true, buttons: [] },
 	custom: { stick: true, look: true, buttons: [] }
@@ -253,6 +259,11 @@ export function setTouchPrefs(patch) {
 /** A touch has landed on this device this session — 'auto' then shows the controls even
  * where the media query says the pointer is fine (a touchscreen laptop). */
 export const touchSeen = writable(false);
+
+/** The overlay publishes whether this device shows touch controls right now (prefs +
+ * pointer + a touch seen), so the pause menu can offer "Touch controls" only where it
+ * means something. */
+export const touchControlsVisible = writable(false);
 
 /**
  * Does this device want the touch overlay at all? PURE.

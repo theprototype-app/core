@@ -678,6 +678,8 @@ export default {
 		// ---- the frame --------------------------------------------------------------------------
 		let wasActive = false;
 		/** @type {null | (() => void)} */ let helpOff = null;
+		// 36 U8: touch — no stick and no look: a drag on the canvas IS the tilt (the module's own drag)
+		/** @type {null | (() => void)} */ let touchOff = null;
 		let claimed = false;
 		let lastT = performance.now();
 		api.registerFrameTask(() => {
@@ -690,6 +692,11 @@ export default {
 				wasActive = on;
 				if (on) defineLevels();
 				if (on && typeof api.game?.setHelp === 'function') helpOff = api.game.setHelp(HELP);
+				if (on) touchOff = api.input?.actions?.([], { preset: 'custom', stick: false, look: false }) ?? null;
+				if (!on && touchOff) {
+					touchOff();
+					touchOff = null;
+				}
 				if (!on) {
 					helpOff?.();
 					helpOff = null;
@@ -729,6 +736,8 @@ export default {
 		api.onSceneClear(() => {
 			helpOff?.();
 			helpOff = null;
+			touchOff?.();
+			touchOff = null;
 			if (typeof levelsOff === 'function') levelsOff();
 			levelsOff = null;
 			seenStamps.clear();

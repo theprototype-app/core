@@ -954,10 +954,14 @@ async function applyCreateObject(object, uuid, override, groupuuid, pos, rot, sc
                     mesh.rotation.set(rot[0], rot[1], rot[2]);
                     mesh.scale.set(scale[0], scale[1], scale[2]);
                 }
-            } else if (override && pos && rot && scale) {
-                // a heal of a TOP-LEVEL mesh: the exported bytes carry the sender's pose,
-                // but the message says it in numbers and this is the one path that exists
-                // to converge a pose — say it with the numbers.
+            } else if (pos && rot && scale) {
+                // A TOP-LEVEL mesh takes the pose IN NUMBERS. 36-sim B2: the sender parks
+                // animated objects at their base and captures pos/rot/scale synchronously
+                // (88), but GLTFExporter.parse is ASYNC — it reads the node transform AFTER
+                // the park was restored, so under load the BYTES carried a mid-swing pose and
+                // the joiner baked it as its animation base (measured: a Bounce base 0.235 m
+                // off). The numbers are the parked pose; the bytes are whenever the exporter
+                // got to it. (This used to apply only to an override heal.)
                 mesh.position.set(pos[0], pos[1], pos[2]);
                 mesh.rotation.set(rot[0], rot[1], rot[2]);
                 mesh.scale.set(scale[0], scale[1], scale[2]);

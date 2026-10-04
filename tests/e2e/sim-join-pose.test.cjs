@@ -101,6 +101,24 @@ h.run(async () => {
 		const d = diff(pa.base[u], pb.base[u]);
 		h.check(d < 1e-3, `${label}: B captured the TRUE base — no join offset (max |Δ| ${d.toExponential(2)})`);
 	}
+	// DETERMINISTIC half of B2: a top-level GLTF 'object' whose BYTES carry a swung pose but
+	// whose NUMBERS carry the parked base lands at the numbers. (The async exporter reads the
+	// transform after the sender's park is restored — that race is what made the join above
+	// fail intermittently under load: Bounce base 0.235 m off.)
+	const landed = await B.page.evaluate(async () => {
+		const THREE = window.__stores.THREE;
+		const { GLTFExporter } = await import('/node_modules/three/examples/jsm/exporters/GLTFExporter.js');
+		const box = new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.5, 0.5), new THREE.MeshStandardMaterial());
+		box.position.set(0, 5, 0); // the "mid-swing" pose inside the bytes
+		const element = await new Promise((r, j) => new GLTFExporter().parse(box, r, j, { onlyVisible: false }));
+		const uuid = box.uuid;
+		await window.__stores.commandsHandler.createObject({ element }, [uuid], false, undefined, [0, 1, 0], [0, 0, 0], [1, 1, 1]);
+		let g;
+		window.__stores.objectsGroup.subscribe((v) => (g = v))();
+		return g.getObjectByProperty('uuid', uuid)?.position.toArray() ?? null;
+	});
+	h.check(!!landed && Math.abs(landed[1] - 1) < 1e-6, `a joined GLTF object lands at the sender's parked pose, not the bytes' (y ${landed?.[1]})`);
+
 	// GRAPH DRIFT HEALS (the nodesync path, dead since 27-A: graphHash() is a number and the
 	// validator wanted a string). B silently loses the Bounce node; within a nodesync round
 	// (10 s) + a resync it is back, so a joiner whose graph diverged does not stay diverged.

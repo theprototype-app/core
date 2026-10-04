@@ -3,10 +3,25 @@ import * as THREE from 'three';
 import { createGltfLoader } from './gltfLoader';
 import { writable, get } from 'svelte/store';
 import { objectsGroup, pokeScene, globalRenderer, globalCamera, globalScene } from '../stores/sceneStore';
-import { showToast } from '../stores/appStore';
 import { PACKS_BASE } from './packs';
 import { hashBytes } from './explorer';
 import { schedule } from './sceneLoader';
+import {
+	noteAttempt,
+	noteBytes,
+	noteParsing,
+	noteRetryWait,
+	noteFailed,
+	noteDone,
+	loadOf,
+	describeLoadError,
+	currentStuckMs,
+	HttpError,
+	StallError,
+	RETRY_DELAYS,
+	STALL_ABORT_FACTOR
+} from './loadStates';
+import { drawPlaceholders as drawPlaceholderBoxes, placeholderBoxOf, setRetryAllHook } from './placeholders';
 
 // 30c — KIT REFERENCES: a pack piece in a scene is a REFERENCE, not a copy.
 //
@@ -161,31 +176,146 @@ async function shareTextures(gltf, buffer) {
 }
 
 /**
+ * 36 U9: the bytes of `url`, read as a STREAM so every chunk reports progress (the
+ * placeholder's fill level) and re-arms a silence watchdog: no byte for `STALL_ABORT_FACTOR`
+ * x the stuck setting abandons the attempt with a StallError (it is then retried) — a socket
+ * that simply stops would otherwise hold its piece amber forever.
+ * @param {string} url @param {{abort: ((reason?: any) => void) | null}} control
+ * @returns {Promise<ArrayBuffer>}
+ */
+async function fetchWithProgress(url, control) {
+	const controller = new AbortController();
+	/** @type {any} */
+	let watchdog = null;
+	let abandoned = false;
+	const stallMs = () => currentStuckMs() * STALL_ABORT_FACTOR;
+	const arm = () => {
+		clearTimeout(watchdog);
+		watchdog = setTimeout(() => {
+			abandoned = true;
+			controller.abort();
+		}, stallMs());
+	};
+	control.abort = (reason) => controller.abort(reason);
+	arm();
+	try {
+		const res = await fetch(url, { signal: controller.signal });
+		if (!res.ok) throw new HttpError(res.status);
+		const total = Number(res.headers.get('content-length')) || 0;
+		noteBytes(url, 0, total);
+		if (!res.body || typeof res.body.getReader !== 'function') {
+			const buffer = await res.arrayBuffer();
+			noteBytes(url, buffer.byteLength, total || buffer.byteLength);
+			return buffer;
+		}
+		const reader = res.body.getReader();
+		/** @type {Uint8Array[]} */
+		const chunks = [];
+		let loaded = 0;
+		for (;;) {
+			const { done, value } = await reader.read();
+			if (done) break;
+			chunks.push(value);
+			loaded += value.byteLength;
+			noteBytes(url, loaded, total);
+			arm();
+		}
+		const out = new Uint8Array(loaded);
+		let at = 0;
+		for (const chunk of chunks) {
+			out.set(chunk, at);
+			at += chunk.byteLength;
+		}
+		return out.buffer;
+	} catch (error) {
+		if (abandoned) throw new StallError(stallMs());
+		throw error;
+	} finally {
+		clearTimeout(watchdog);
+		control.abort = null;
+	}
+}
+
+/** url -> the live attempt's handles: abort the fetch / cut a backoff wait short
+ * @type {Map<string, {abort: ((reason?: any) => void) | null, wake: (() => void) | null, manual: boolean}>} */
+const controls = new Map();
+
+/** the wait between two attempts, cut short by a manual Retry @param {number} ms @param {{wake: (() => void) | null}} control */
+function backoff(ms, control) {
+	return new Promise((resolve) => {
+		const timer = setTimeout(done, ms);
+		function done() {
+			clearTimeout(timer);
+			control.wake = null;
+			resolve(true);
+		}
+		control.wake = done;
+	});
+}
+
+/**
  * Fetch + parse a pack file ONCE per url, and register the fingerprint of a pristine copy
- * under the hash of the bytes actually fetched.
+ * under the hash of the bytes actually fetched. 36 U9: a failed fetch is retried three times
+ * (1 / 3 / 9 s) when retrying can help (loadStates.describeLoadError decides), and every
+ * phase is published per url for the placeholders.
  * @param {string} url @returns {Promise<{hash: string, scene: any}>}
  */
 export function loadPackTemplate(url) {
 	let job = templates.get(url);
 	if (!job) {
+		const control = { abort: /** @type {any} */ (null), wake: /** @type {any} */ (null), manual: false };
+		controls.set(url, control);
 		job = (async () => {
-			const res = await fetch(url);
-			if (!res.ok) throw new Error('HTTP ' + res.status);
-			const buffer = await res.arrayBuffer();
-			const hash = await hashBytes(buffer);
-			/** @type {any} */
-			const gltf = await new Promise((resolve, reject) => createLoader().parse(buffer, '', resolve, reject));
-			// an animated rig replicates as its BYTES (animatedImports) — never a reference
-			if (gltf.animations?.length) throw new Error('animated models are not referenced');
-			await shareTextures(gltf, buffer);
-			const scene = gltf.scene;
-			scene.updateMatrixWorld(true);
-			fingerprints.set(hash, fingerprintOf(scene));
-			await warmTemplate(scene);
-			return { hash, scene };
+			for (let attempt = 0; ; attempt++) {
+				noteAttempt(url, attempt);
+				/** @type {ArrayBuffer} */
+				let buffer;
+				try {
+					buffer = await fetchWithProgress(url, control);
+				} catch (error) {
+					const info = describeLoadError(error);
+					// a manual Retry aborted this attempt on purpose: start over at once
+					if (control.manual) {
+						control.manual = false;
+						attempt = -1;
+						continue;
+					}
+					if (info.retryable && attempt < RETRY_DELAYS.length) {
+						noteRetryWait(url, info, RETRY_DELAYS[attempt]);
+						await backoff(RETRY_DELAYS[attempt], control);
+						if (control.manual) {
+							control.manual = false;
+							attempt = -1;
+						}
+						continue;
+					}
+					noteFailed(url, info);
+					throw error;
+				}
+				try {
+					noteParsing(url);
+					const hash = await hashBytes(buffer);
+					/** @type {any} */
+					const gltf = await new Promise((resolve, reject) => createLoader().parse(buffer, '', resolve, reject));
+					// an animated rig replicates as its BYTES (animatedImports) — never a reference
+					if (gltf.animations?.length) throw new Error('animated models are not referenced');
+					await shareTextures(gltf, buffer);
+					const scene = gltf.scene;
+					scene.updateMatrixWorld(true);
+					fingerprints.set(hash, fingerprintOf(scene));
+					await warmTemplate(scene);
+					noteDone(url);
+					return { hash, scene };
+				} catch (error) {
+					noteFailed(url, describeLoadError(error));
+					throw error;
+				}
+			}
 		})();
 		templates.set(url, job);
-		job.catch(() => templates.delete(url));
+		job.catch(() => templates.delete(url)).finally(() => {
+			if (controls.get(url) === control) controls.delete(url);
+		});
 	}
 	return job;
 }
@@ -706,6 +836,7 @@ function attachCopy(root, ref, hash, scene) {
 			node.userData.shadow = false;
 		});
 	delete root.userData.packStub;
+	if (Object.prototype.hasOwnProperty.call(root, 'raycast')) delete root.raycast; // 36 U9: the real meshes pick now
 	root.userData.packRef = { ...ref, hash, kids: nodes.map((node) => node.uuid), box: ref.box ?? boxOf(root) };
 	pokeSoon();
 	return true;
@@ -746,10 +877,11 @@ export function fillPackRef(root) {
 			// castle's walls were one 500 ms block). The scheduler runs them a slice at a time.
 			return await schedule(() => attachCopy(root, ref, hash, scene));
 		} catch (error) {
+			// 36 U9: the piece stays a (red) placeholder with the reason on it, and the scene's
+			// "N objects failed — Retry all" toast replaces the old one-toast-per-file
 			if (!reported.has(url)) {
 				reported.add(url);
 				console.log('kit piece could not be loaded: ' + url, error);
-				showToast('Could not load the kit piece "' + (ref.item || ref.path) + '" — its pack is unreachable. It stays in the scene as a placeholder.');
 			}
 			return false;
 		} finally {
@@ -780,7 +912,7 @@ export function packRefsSettled() {
 function scan() {
 	const group = get(objectsGroup);
 	if (!group) return;
-	/** @type {any[]} */
+	/** @type {{stub: any, url: string, box: number[]}[]} */
 	const hollow = [];
 	group.traverse((/** @type {any} */ node) => {
 		const ref = packRefOf(node);
@@ -788,84 +920,139 @@ function scan() {
 		if (node.userData.packStub) {
 			if (!node.children.length) {
 				fillPackRef(node);
-				if (Array.isArray(ref.box) && ref.box.length === 6 && !parkedRoots.has(node)) hollow.push(node);
+				if (!parkedRoots.has(node)) {
+					// 36 U9: a stub with no box (a file saved before 1.19) gets a 1 m block, so
+					// it can be seen, selected and recovered like every other
+					hollow.push({ stub: node, url: packRefUrl(ref), box: placeholderBoxOf(node) });
+					node.raycast = stubRaycast;
+				}
 			}
 		} else if (ref.hash && !fingerprints.has(ref.hash)) {
 			loadPackTemplate(packRefUrl(ref)).catch(() => {});
 		}
 	});
-	drawPlaceholders(hollow);
+	stubList = hollow;
+	drawPlaceholderBoxes(hollow);
 }
 
-// ---- placeholders (33 L1) ----------------------------------------------------------------
+// ---- placeholders (33 L1, 36 U9) ----------------------------------------------------------
+//
+// A block where each kit piece will be, while its pack file is on its way: a load shows the
+// level's SHAPE at once and the real pieces replace the blocks as they arrive. The drawing is
+// placeholders.js (two instanced calls, the boxes or the hologram style); THIS side makes the
+// STUB itself pickable — an empty Group has nothing for a raycast to hit — so a placeholder
+// is selected, moved, multi-selected and right-clicked through the ordinary object paths,
+// and the piece lands where the stub is when it arrives (its children hang under the stub).
 
-const PLACEHOLDER_NAME = 'kit-placeholders';
-/** @type {any} */
-let placeholders = null;
+/** the stubs drawn by the last scan @type {{stub: any, url: string, box: number[]}[]} */
+let stubList = [];
+
+const _inv = new THREE.Matrix4();
+const _ray = new THREE.Ray();
+const _hitBox = new THREE.Box3();
+const _hit = new THREE.Vector3();
 
 /**
- * A grey block where each kit piece will be, while its pack file is still on its way: a load
- * shows the level's SHAPE at once and the real pieces replace the blocks as they arrive. ONE
- * InstancedMesh at the SCENE ROOT (golden rule 5 — never inside objectsGroup, so never saved,
- * sent or undone), not pickable, rebuilt on each scan (which every refill's poke triggers).
- * @param {any[]} stubs hollow stubs carrying a `packRef.box`
+ * A stub's raycast: its placeholder box, with a face normal so a drop or a snap can rest on
+ * it. Installed per instance by `scan` and removed when the piece arrives (attachCopy).
+ * @this {any} @param {any} raycaster @param {any[]} intersects
  */
-function drawPlaceholders(stubs) {
-	/** @type {any} */
-	const scene = get(globalScene);
-	if (!scene) return;
-	if (!stubs.length) {
-		if (placeholders) {
-			placeholders.parent?.remove(placeholders);
-			placeholders.geometry.dispose();
-			placeholders.material.dispose();
-			placeholders = null;
+function stubRaycast(raycaster, intersects) {
+	if (!this.userData?.packStub || this.children.length) return;
+	const box = placeholderBoxOf(this);
+	_inv.copy(this.matrixWorld).invert();
+	_ray.copy(raycaster.ray).applyMatrix4(_inv);
+	_hitBox.min.set(box[0], box[1], box[2]);
+	_hitBox.max.set(box[3], box[4], box[5]);
+	if (!_ray.intersectBox(_hitBox, _hit)) return;
+	// the face the ray entered: the axis where the hit sits on the box's boundary
+	const normal = new THREE.Vector3();
+	let best = Infinity;
+	for (let axis = 0; axis < 3; axis++) {
+		const v = _hit.getComponent(axis);
+		const toMin = Math.abs(v - _hitBox.min.getComponent(axis));
+		const toMax = Math.abs(v - _hitBox.max.getComponent(axis));
+		if (toMin < best) {
+			best = toMin;
+			normal.set(0, 0, 0).setComponent(axis, -1);
 		}
-		return;
-	}
-	if (!placeholders || placeholders.userData.capacity < stubs.length) {
-		if (placeholders) {
-			placeholders.parent?.remove(placeholders);
-			placeholders.geometry.dispose();
-			placeholders.material.dispose();
+		if (toMax < best) {
+			best = toMax;
+			normal.set(0, 0, 0).setComponent(axis, 1);
 		}
-		const capacity = Math.max(32, stubs.length);
-		placeholders = new THREE.InstancedMesh(
-			new THREE.BoxGeometry(1, 1, 1),
-			new THREE.MeshStandardMaterial({ color: 0x9aa0a8, roughness: 1, metalness: 0 }),
-			capacity
-		);
-		placeholders.name = PLACEHOLDER_NAME;
-		placeholders.frustumCulled = false;
-		placeholders.raycast = () => {};
-		placeholders.userData.capacity = capacity;
 	}
-	// beside objectsGroup (in its parent — the world rig a VR world-grab moves), never in it
-	/** @type {any} */
-	const host = get(objectsGroup)?.parent ?? scene;
-	if (placeholders.parent !== host) host.add(placeholders);
-	host.updateWorldMatrix(true, false);
-	const toHost = new THREE.Matrix4().copy(host.matrixWorld).invert();
-	const m = new THREE.Matrix4();
-	const local = new THREE.Matrix4();
-	const pos = new THREE.Vector3();
-	const size = new THREE.Vector3();
-	const q = new THREE.Quaternion();
-	stubs.forEach((stub, i) => {
-		const [x0, y0, z0, x1, y1, z1] = stub.userData.packRef.box;
-		stub.updateWorldMatrix(true, false);
-		pos.set((x0 + x1) / 2, (y0 + y1) / 2, (z0 + z1) / 2);
-		size.set(Math.max(0.01, x1 - x0), Math.max(0.01, y1 - y0), Math.max(0.01, z1 - z0));
-		local.compose(pos, q, size);
-		placeholders.setMatrixAt(i, m.multiplyMatrices(toHost, stub.matrixWorld).multiply(local));
-	});
-	placeholders.count = stubs.length;
-	placeholders.instanceMatrix.needsUpdate = true;
+	const point = _hit.clone().applyMatrix4(this.matrixWorld);
+	const distance = raycaster.ray.origin.distanceTo(point);
+	if (distance < raycaster.near || distance > raycaster.far) return;
+	intersects.push({ distance, point, object: this, face: { a: 0, b: 0, c: 0, normal, materialIndex: 0 }, faceIndex: 0, placeholder: true });
 }
 
-/** How many grey blocks are drawn (the suite reads it). */
+/** How many placeholder blocks are drawn (the suites read it). */
 export function placeholderCount() {
-	return placeholders?.parent ? placeholders.count : 0;
+	return stubList.length;
+}
+
+/** @param {any} object @returns {boolean} a kit piece still waiting for its file */
+export function isLoadingStub(object) {
+	return !!(object?.userData?.packStub && packRefOf(object) && !object.children?.length);
+}
+
+/**
+ * What a placeholder's piece is doing, for the Inspector, the context menu and the tooltip.
+ * @param {any} object
+ * @returns {null | {url: string, item: string, pack: string, load: import('./loadStates').FileLoad | null}}
+ */
+export function stubLoadInfo(object) {
+	if (!isLoadingStub(object)) return null;
+	const ref = /** @type {PackRef} */ (packRefOf(object));
+	const url = packRefUrl(ref);
+	return { url, item: ref.item, pack: ref.pack, load: loadOf(url) };
+}
+
+/**
+ * Retry a placeholder's FILE now — every copy of the piece comes back together (one template
+ * per url). A file that gave up is fetched afresh; one waiting out its backoff stops waiting;
+ * one stalled mid-stream is abandoned and started over.
+ * @param {string} url
+ */
+export function retryFile(url) {
+	reported.delete(url);
+	const control = controls.get(url);
+	if (control && templates.has(url)) {
+		// mid-parse there is nothing to cut short: the file is already here
+		if (!control.wake && !control.abort) return true;
+		control.manual = true;
+		if (control.wake) control.wake();
+		else control.abort?.(new DOMException('retry', 'AbortError'));
+		return true;
+	}
+	let any = false;
+	for (const { stub, url: u } of stubList) {
+		if (u !== url) continue;
+		fillPackRef(stub);
+		any = true;
+	}
+	return any;
+}
+
+/** Retry the file behind one stub (the context menu, a double-click on a red box). @param {any} object */
+export function retryPlaceholder(object) {
+	const info = stubLoadInfo(object);
+	return info ? retryFile(info.url) : false;
+}
+
+/** Retry every file that gave up. @returns {number} how many files were retried */
+export function retryAllPlaceholders() {
+	const urls = new Set();
+	for (const { url } of stubList) if (loadOf(url)?.phase === 'failed') urls.add(url);
+	for (const url of urls) retryFile(url);
+	return urls.size;
+}
+setRetryAllHook(() => retryAllPlaceholders());
+
+/** the drawn stubs, for the suites: [{uuid, url, state}] */
+export function placeholderStubs() {
+	return stubList.map(({ stub, url }) => ({ uuid: stub.uuid, url, phase: loadOf(url)?.phase ?? 'loading' }));
 }
 
 let started = false;

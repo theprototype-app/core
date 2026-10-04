@@ -13,6 +13,7 @@
 	import LodGroupPanel from './LodGroupPanel.svelte';
 	import SliderRow from '../ui/SliderRow.svelte';
 	import PhysicsFloats from '../sim/PhysicsFloats.svelte'; // 36-sim I1
+	import FluidTankSection from '../sim/FluidTankSection.svelte'; // 36-sim U2b
 	import DragRow from '../ui/DragRow.svelte';
 	import ColorPicker, { ChromeVariant } from 'svelte-awesome-color-picker';
 	import CustomWrapper from '$lib/ColorWrapper.svelte';
@@ -3817,6 +3818,7 @@
 				</Section>
 			{/if}
 
+			{#if $selectedObject.userData?.fluid}<FluidTankSection object={$selectedObject} />{/if}<!-- 36-sim U2b -->
 			{#if !$selectedObject.isLight}
 				<Section label="Physics">
 					{#if multiCount}

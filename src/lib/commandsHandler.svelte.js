@@ -19,6 +19,7 @@ import { parkAnimatedAtBase } from '$lib/flowRuntime'
 import { stripEditOverlays } from '$lib/editOverlays'
 import { isPristinePackRef, stubElementOf } from '$lib/packRefs'
 import { normalizeLodGroup } from '$lib/lodGroupCore'
+import { normalizeFluid } from '$lib/sim/fluidCore.js'; // 36-sim
 import { runSceneClearHandlers } from '$lib/moduleSDK'
 import { annotations } from '$lib/annotationsHandler'
 import { isViewer, warnViewerReadOnly } from '$lib/objectPermissions'
@@ -607,6 +608,15 @@ export async function objectParameters(data) {
             else delete mesh.userData.physics;
             pokeScene(); // collider viz re-syncs
             physicsShapeChanged(data.uuid); // CL-A A2: live mid-sim rebuild
+        }
+    } else if (data.parameter == 'fluid') {
+        // 36-sim U2b: a fluid tank's settings (the particles are each peer's own).
+        // Normalized here — the one boundary a peer's bytes go through.
+        let mesh = sceneObjects.getObjectByProperty('uuid', data.uuid);
+        if (mesh) {
+            if (data.fluid) mesh.userData.fluid = normalizeFluid(data.fluid);
+            else delete mesh.userData.fluid;
+            pokeScene();
         }
     } else if (data.parameter == 'pick') {
         // 30 P2: click-through in the viewport. null = cleared (the default).

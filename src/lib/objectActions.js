@@ -753,6 +753,12 @@ registerHistoryKind('props', (entry, state) => {
 		else delete object.userData.lod;
 		if (peer) peer.send({ type: 'objectParameters', parameter: 'lod', uuid: entry.uuid, lod: state.lod ?? null });
 	}
+	if ('fluid' in state) {
+		// 36-sim U2b: a fluid tank's settings (fluidActions.setFluidFor is the write path)
+		if (state.fluid) object.userData.fluid = state.fluid;
+		else delete object.userData.fluid;
+		if (peer) peer.send({ type: 'objectParameters', parameter: 'fluid', uuid: entry.uuid, fluid: state.fluid ?? null });
+	}
 	if ('origin' in state) {
 		// 17-D: the per-object transform origin (pivot offset) is scene data, so
 		// moving it is undoable and replicated like any other userData write

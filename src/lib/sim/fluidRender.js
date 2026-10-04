@@ -192,6 +192,10 @@ export class FluidVisual {
 		/** @type {'ssf' | 'points'} */
 		this.mode = 'points';
 		this.size = o.size;
+		/** the runtime's frame number (runPasses runs once per frame per camera) */
+		this.frame = 0;
+		this.passFrame = -1;
+		/** @type {any} */ this.passCamera = null;
 		// built by buildPoints/buildSSF below
 		/** @type {any} */ this.pointsMaterial = null;
 		/** @type {any} */ this.points = null;
@@ -348,8 +352,22 @@ export class FluidVisual {
 	runPasses(renderer, camera) {
 		if (this.mode !== 'ssf') return;
 		const target = renderer.getRenderTarget();
-		const w = target ? target.width : renderer.getDrawingBufferSize(this.passSize).x;
-		const h = target ? target.height : renderer.getDrawingBufferSize(this.passSize).y;
+		const tw = target ? target.width : renderer.getDrawingBufferSize(this.passSize).x;
+		const th = target ? target.height : renderer.getDrawingBufferSize(this.passSize).y;
+		const u = this.compositeMaterial.uniforms;
+		u.uResolution.value.set(tw, th);
+		u.uProj.value.copy(camera.projectionMatrix);
+		u.uProjInv.value.copy(camera.projectionMatrixInverse);
+		// ONCE PER FRAME PER CAMERA. The desktop pipeline renders the scene several times a
+		// frame (the main pass, the post stack's normal/depth passes, the outline at half
+		// size) and each one reaches this hook; re-running the passes there was 6 extra
+		// draw calls per scene render (measured 94 vs 76 calls a frame). Later renders reuse
+		// the textures — the composite samples them by normalized screen uv.
+		if (this.passFrame === this.frame && this.passCamera === camera) return;
+		this.passFrame = this.frame;
+		this.passCamera = camera;
+		const w = tw;
+		const h = th;
 		if (this.rtDepth.width !== w || this.rtDepth.height !== h) {
 			this.rtDepth.setSize(w, h);
 			this.rtBlur.setSize(w, h);
@@ -402,16 +420,13 @@ export class FluidVisual {
 		renderer.autoClear = autoClearWas;
 		renderer.shadowMap.autoUpdate = shadowWas;
 		renderer.xr.enabled = xrWas;
-		const u = this.compositeMaterial.uniforms;
-		u.uResolution.value.set(w, h);
 		u.uNormalStep.value = Math.max(1.5, stepPx);
-		u.uProj.value.copy(camera.projectionMatrix);
-		u.uProjInv.value.copy(camera.projectionMatrixInverse);
 		this.passStats.runs++;
 	}
 
 	/** per-frame camera uniforms for the points tier @param {any} camera @param {number} heightPx */
 	prepare(camera, heightPx) {
+		this.frame++;
 		this.pointsMaterial.uniforms.uScale.value = this.pointScale(camera, heightPx);
 	}
 

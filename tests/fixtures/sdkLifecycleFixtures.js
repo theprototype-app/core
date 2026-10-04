@@ -34,8 +34,13 @@
 					continue;
 				}
 				const v = d.value;
-				if (typeof v === 'function') out.push(path);
-				else if (v && typeof v === 'object' && depth < 1 && !v.isObject3D && k !== 'THREE') walk(v, path + '.', depth + 1);
+				if (typeof v === 'function') {
+					out.push(path);
+					// 36 U8: a member may hang a sub-member off a function (`api.input.actions` —
+					// `api.input()` stays the snapshot). Enumerable own props only: length/name/
+					// prototype are not, so plain methods add nothing here.
+					if (depth < 1) for (const fk of Object.keys(v)) if (typeof v[fk] === 'function') out.push(path + '.' + fk);
+				} else if (v && typeof v === 'object' && depth < 1 && !v.isObject3D && k !== 'THREE') walk(v, path + '.', depth + 1);
 				else out.push(path);
 			}
 		};
@@ -258,6 +263,11 @@
 				needs: ['shortcuts'],
 				call: (api) => api.registerBindings([{ label: 'LC', keys: 'Ctrl+Alt+Shift+F8' }]),
 				present: (t) => M.shortcuts.shortcuts.some((s) => s.group === 'Module: ' + t.id)
+			},
+			'input.actions': {
+				needs: ['touchActions'],
+				call: (api) => api.input.actions(['jump', { id: 'lc', label: 'LC', keys: ['F21'] }], { preset: 'platformer' }),
+				present: (t) => get(M.touchActions.touchDeclarations).some((d) => d.owner === t.id)
 			},
 			onInput: {
 				needs: ['inputRuntime', 'browser'],

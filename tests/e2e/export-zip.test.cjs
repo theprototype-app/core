@@ -311,6 +311,26 @@ h.run(async () => {
 		h.check(bh.h <= 32 && bh.right >= 8 && bh.right <= 16 && bh.bottom >= 8 && bh.bottom <= 16, `bottom-right, ≤ 32 px tall (h ${bh.h}, right ${bh.right}, bottom ${bh.bottom})`);
 		h.check(Math.abs(Number(bh.opacity) - 0.4) < 0.05, `~40% opacity at rest (${bh.opacity})`);
 	}
+	// 36-int-121 (user, 1.21.0): the logo's two accent parts (left leg + right triangle) are an OPAQUE
+	// dark grey — no scene shows through them; only the T stays currentColor
+	const accents = await G.frame.evaluate(() =>
+		[...document.querySelectorAll('#made-with-tp .mwt-accent')].map((p) => {
+			const cs = getComputedStyle(p);
+			return { part: p.getAttribute('data-part'), fill: cs.fill, opacity: cs.opacity, fillOpacity: cs.fillOpacity };
+		})
+	);
+	const greyOk = (/** @type {string} */ f) => {
+		const m = f.match(/rgba?\(([\d.]+),\s*([\d.]+),\s*([\d.]+)(?:,\s*([\d.]+))?\)/);
+		if (!m) return false;
+		const [r, g, b] = [m[1], m[2], m[3]].map(Number);
+		const a = m[4] === undefined ? 1 : Number(m[4]);
+		return a === 1 && Math.max(r, g, b) - Math.min(r, g, b) <= 8 && Math.max(r, g, b) <= 110;
+	};
+	h.check(
+		accents.length === 2 && accents.map((a) => a.part).sort().join() === 'leg,triangle' &&
+			accents.every((a) => greyOk(a.fill) && Number(a.opacity) === 1 && Number(a.fillOpacity) === 1),
+		`both logo accent parts are an opaque dark grey (${JSON.stringify(accents)})`
+	);
 	if (SHOTS) await G.p.screenshot({ path: path.join(SHOTS, '05-itch-iframe-mini-golf-menu.png') });
 
 	// play: Tee off + a real mouse putt

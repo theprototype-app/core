@@ -16,7 +16,8 @@
 - 🗜️ **Export a game as a zip** that runs anywhere static files are served: presets for **itch.io** (upload the zip as
   is, Kind = HTML), **a static host**, or **an embed snippet** for your own page. Everything is inside the zip, with
   relative paths — no calls back to us.
-- 🏷️ A small **"Made with ThePrototype"** badge sits in the bottom-right corner of play links, embeds and exports.
+- 🏷️ A small **"Made with ThePrototype"** badge sits in the bottom-right corner of play links, embeds and exports —
+  a see-through T with solid dark-grey accents, so a game's colours never tint the logo.
 
 ### 👆 Touch screens
 

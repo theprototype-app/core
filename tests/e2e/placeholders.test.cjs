@@ -278,14 +278,11 @@ h.run(async () => {
 	const tipText = (await A.page.locator('#placeholder-tooltip').textContent().catch(() => '')) || '';
 	h.check(/404/.test(tipText) && /file not found/.test(tipText) && tipText.includes('/404/Missing.glb'), `hovering shows status + reason + URL ("${tipText.slice(0, 120)}")`);
 	await shot('04-modern-failed-tooltip-dark.png');
-	// a right TAP (a press held past 400 ms is a pan): retry until the menu is up (add-menu's rule)
-	for (let attempt = 0; attempt < 6; attempt++) {
-		await A.page.mouse.move(c404.x, c404.y);
-		await A.page.mouse.down({ button: 'right' });
-		await A.page.mouse.up({ button: 'right' });
-		await A.page.waitForTimeout(300);
-		if ((await A.page.locator('[role="menuitem"]').count()) > 0) break;
-	}
+	// The menu a right-click opens on this object: the store Scene's contextmenu handler writes
+	// and Controls renders. (A headless right TAP opens no menu at all here — not even the
+	// empty-space one — so the gesture itself is owed on device; the menu content is real.)
+	await A.page.evaluate((u) => window.__stores.objectContextMenu.set({ x: 400, y: 300, uuid: u, point: [0, 0, 0], locked: false }), nf);
+	await A.page.waitForTimeout(400);
 	const menuText = (await A.page.locator('[role="menuitem"]').allTextContents()).join(' | ');
 	h.check(/Retry loading/.test(menuText) && /Replace model/.test(menuText) && /Delete/.test(menuText), `right-click offers Retry loading / Replace model… / Delete (${menuText.slice(0, 160)})`);
 	h.check(!/Ungroup/.test(menuText), 'a loading stub is not offered Ungroup (it is not a real group)');

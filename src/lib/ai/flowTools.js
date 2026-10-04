@@ -22,6 +22,7 @@ import {
 	remoteSimulating
 } from '$lib/physics';
 import { createJoint } from '$lib/joints';
+import { isGroupId, normalizeCollidesWith } from '$lib/collisionGroups'; // 36 X5
 import { parseGraphText } from '$lib/graphText';
 import { scriptInputs, scriptOutputs } from '$lib/scriptIO';
 import { activeAiConfig } from './providers.js';
@@ -516,6 +517,8 @@ export function setPhysicsTool(args) {
 		if (typeof u.collider === 'string' && COLLIDER_KINDS.includes(u.collider))
 			patch.collider = u.collider;
 		if (typeof u.sensor === 'boolean') patch.sensor = u.sensor; // CL-A A3 trigger volume
+		if (isGroupId(u.group)) patch.group = u.group === 'default' ? null : u.group; // 36 X5
+		if (Array.isArray(u.collidesWith)) patch.collidesWith = normalizeCollidesWith(u.collidesWith);
 		if (!Object.keys(patch).length)
 			return { uuid, error: 'no physics keys — pass mode/mass/restitution/friction/collider' };
 		setPhysicsFor(uuid, patch);

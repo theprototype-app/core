@@ -81,6 +81,7 @@
 	import { showColliders, colliderVizObjects, setColliderViz } from '$lib/colliderHelpers';
 	import { enterColliderEdit } from '$lib/colliderEdit';
 	import { inferredColliderKind } from '$lib/colliderSpec';
+	import PhysicsGroupRow from './PhysicsGroupRow.svelte'; // 36 X5
 	// 57.5: a spline's record is editable right here — same write path the
 	// viewport handles use (apply + broadcast + one 'spline' undo entry)
 	import {
@@ -3906,6 +3907,7 @@
 						onchange={(/** @type {any} */ e) => setPhysics({ sensor: e.currentTarget.checked || null })}
 						>Sensor — no collision, fires On Enter / On Exit</Checkbox
 					>
+					<PhysicsGroupRow physics={$selectedObject.userData.physics} water={$selectedObject.userData.water} onchange={setPhysics} />
 					{#if ($selectedObject.userData.physics?.mode ?? 'auto') === 'dynamic'}
 						<!-- CL-A A5: freeze axes (dynamic bodies only) -->
 						<div id="physics-freeze-rot" class="ui-row items-center gap-2 text-xs text-gray-300">

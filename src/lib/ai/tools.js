@@ -969,6 +969,16 @@ const PHYSICS_AI_TOOLS = [
 								sensor: {
 									type: 'boolean',
 									description: 'true = a trigger volume: no collision response, fires On Enter/On Exit nodes'
+								},
+								group: {
+									type: 'string',
+									enum: ['default', 'a', 'b', 'c', 'd', 'water'],
+									description: 'collision group; water = a pass-through trigger volume'
+								},
+								collidesWith: {
+									type: 'array',
+									items: { type: 'string', enum: ['default', 'a', 'b', 'c', 'd', 'water', 'player'] },
+									description: 'groups this object collides with (omit = all); leave out player for a ghost wall the player walks through'
 								}
 							},
 							required: ['uuid']

@@ -21,6 +21,7 @@ import {
 } from './flowRuntime';
 import { colliderSpecOf } from './colliderSpec';
 import { colliderDescsFor } from './colliderDescs';
+import { groupOf, interactionGroups, isGroupId } from './collisionGroups';
 import {
 	sceneGravity,
 	scenePhysicsGround,
@@ -200,8 +201,13 @@ function collectParams(group) {
 	const map = {};
 	group?.children.forEach((/** @type {any} */ object) => {
 		const p = object.userData?.physics;
+		// 36 X5: a W1 water volume takes part even with no physics block — as a
+		// pass-through trigger in the Water group (below), never a solid box
+		const water = object.userData?.water;
+		if (!p && !(water && typeof water === 'object')) return;
+		map[object.uuid] = { group: groupOf(p, water) };
+		if (Array.isArray(p?.collidesWith)) map[object.uuid].collidesWith = p.collidesWith;
 		if (!p) return;
-		map[object.uuid] = {};
 		if (p.mode === 'dynamic') map[object.uuid].mass = p.mass ?? 1;
 		if (p.mode === 'static') map[object.uuid].forceStatic = true;
 		if (p.restitution != null) map[object.uuid].restitution = p.restitution;
@@ -252,6 +258,8 @@ function collectParams(group) {
 		// hulls the object wired into the node's `source` handle
 		if (source.type === 'collider') {
 			map[uuid].collider = source.data?.shape ?? 'box';
+			// 36 X5: the node's group wins too ('inherit' keeps the Inspector's)
+			if (isGroupId(source.data?.group)) map[uuid].group = source.data.group;
 			if (source.data?.scale != null) map[uuid].colliderScale = source.data.scale;
 			if (source.data?.sensor) map[uuid].sensor = true;
 			const sourceEdge = edges.find((e) => e.target === source.id && e.targetHandle === 'source');
@@ -277,6 +285,9 @@ function collectParams(group) {
 		if (!graph || graph === SCENE_GRAPH) return;
 		if (!toSelector.has(source.id)) applyPhysicsNode(source, graph);
 	});
+	// 36 X5: the Water/trigger group IS pass-through — whatever put an object in it
+	// (a W1 volume, the Inspector, a collider node), it is a sensor
+	for (const uuid of Object.keys(map)) if (map[uuid].group === 'water') map[uuid].sensor = true;
 	return map;
 }
 
@@ -330,7 +341,7 @@ function liveParamsJson() {
 	const out = {};
 	Object.keys(params).forEach((uuid) => {
 		const p = params[uuid];
-		if (p.angvel || p.motor || p.collider || p.sensor || p.freeze || p.restitution != null || p.friction != null || p.mass != null)
+		if (p.angvel || p.motor || p.collider || p.sensor || p.freeze || p.restitution != null || p.friction != null || p.mass != null || (p.group && p.group !== 'default') || p.collidesWith)
 			out[uuid] = {
 				angvel: p.angvel,
 				motor: p.motor,
@@ -462,7 +473,8 @@ export function listPhysicsObjects() {
  * @param {string} uuid
  * @param {{mode?: 'auto'|'static'|'dynamic', mass?: number, restitution?: number,
  *   friction?: number, collider?: string, sensor?: boolean|null,
- *   freeze?: any, material?: string}} patch — 21-C4: sensor/freeze/material were
+ *   freeze?: any, material?: string, group?: string|null,
+ *   collidesWith?: string[]|null}} patch — 36 X5: collision group + filter — 21-C4: sensor/freeze/material were
  *   missing from this type while the Inspector had been writing all three since
  *   CL-A (its collider row, its Sensor checkbox and its material presets), so any
  *   NEW caller passing them failed the type check for a param the function has
@@ -557,6 +569,8 @@ function shapeKeyOf(p, object) {
 		fr: p?.friction ?? null,
 		m: p?.mass ?? null,
 		cs: p?.colliderScale ?? null, // CL-C: node shape scale
+		g: p?.group ?? null, // 36 X5: collision group + filter
+		cw: p?.collidesWith ?? null,
 		src: p?.colliderSource ?? null // CL-C: 'object' shape source uuid
 	});
 }
@@ -628,6 +642,11 @@ function createCollidersFor(object, body, p, dynamic, entry, knownSpec) {
 		// PFX-C: dynamics report contact starts; CL-A: sensors need events too
 		if (dynamic || p?.sensor) desc.setActiveEvents(RAPIER.ActiveEvents.COLLISION_EVENTS);
 		if (p?.sensor) desc.setSensor(true);
+		// 36 X5: every collider carries its groups — the default (in Default,
+		// colliding with everything) behaves exactly as no groups at all, and it
+		// has to be explicit or a default body (rapier: member of EVERY group)
+		// would slip through any filter that names one group
+		desc.setCollisionGroups(interactionGroups(p?.group ?? 'default', p?.collidesWith));
 		const collider = world.createCollider(desc, body);
 		colliders.push(collider);
 		colliderOwner.set(collider.handle, { uuid: object.uuid, entry, sensor: !!p?.sensor });

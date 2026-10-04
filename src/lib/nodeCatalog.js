@@ -961,11 +961,13 @@ export const nodeCatalog = [
 			{
 				type: 'collider',
 				label: 'Collider',
-				defaults: { shape: 'box', sensor: false, scale: 1 },
+				defaults: { shape: 'box', sensor: false, scale: 1, group: 'inherit' },
 				params: [
 					{ key: 'shape', kind: 'select', options: ['box', 'sphere', 'capsule', 'cylinder', 'cone', 'hull', 'trimesh', 'custom', 'object'] },
 					{ key: 'scale', kind: 'range', min: 0.25, max: 4, step: 0.05 },
-					{ key: 'sensor', kind: 'toggle' }
+					{ key: 'sensor', kind: 'toggle' },
+					// 36 X5: collision group ('inherit' keeps the Inspector's pick)
+					{ key: 'group', kind: 'select', options: ['inherit', 'default', 'a', 'b', 'c', 'd', 'water'] }
 				]
 			},
 			{

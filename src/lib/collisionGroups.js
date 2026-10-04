@@ -30,6 +30,7 @@ export const PLAYER_GROUP = Object.freeze({ id: 'player', label: 'Player', bit: 
 /** every group a filter can name (the "collides with" chips) */
 export const COLLIDES_WITH_GROUPS = Object.freeze([...COLLISION_GROUPS, PLAYER_GROUP]);
 
+/** @type {Map<string, number>} */
 const BIT = new Map(COLLIDES_WITH_GROUPS.map((g) => [g.id, g.bit]));
 /** a filter of "everything" — every known bit and the ones a newer build may add */
 export const ALL_FILTER = 0xffff;

@@ -82,9 +82,9 @@ h.run(async () => {
 	await h.eventually(() => sess(), (x) => !!x.recording, '2.1 the desktop heard "recording" (one state message)');
 
 	// ---- 3. the Live profiler on the desktop
-	await dp.locator('#logo-menu').click();
-	await dp.waitForTimeout(400);
-	await dp.locator('#open-profiler-live').click();
+	// 36 U5: the Live view opens from the Profiler tab's header (it left the burger menu)
+	await dp.evaluate(() => window.__stores.profilerView.openProfiler());
+	await dp.locator('#profiler-open-live').click({ timeout: 15000 });
 	await dp.locator('#profiler-live').waitFor({ state: 'visible', timeout: 8000 });
 	const row = dp.locator(`#profiler-live-peers [data-peer="${H.id}"]`);
 	h.check((await row.count()) === 1, '3.1 the headset is listed in the room');

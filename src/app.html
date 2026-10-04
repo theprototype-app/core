@@ -5,7 +5,11 @@
 	<head>
 		<meta charset="utf-8" />
 		<link rel="icon" href="%sveltekit.assets%/logo.svg" />
-		<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+		<!-- 36 U7: minimum-scale=1 — a phone browser otherwise ZOOMS OUT to fit anything wider than
+		     the screen, and a foldable's posture change makes something briefly wider (the Connect
+		     pill, before it re-docks): folded -> unfolded -> folded left a 380 px screen laid out at
+		     479 px, the docked bar then filled those 479 px, and the zoom never came back. -->
+		<meta name="viewport" content="width=device-width, initial-scale=1, minimum-scale=1, viewport-fit=cover" />
 		<!-- 15-N: installable as a PWA. `standalone` drops the browser chrome,
 		     which matters most on a phone where viewport height is the scarce
 		     resource. iOS ignores the manifest for that, hence the apple-* trio. -->

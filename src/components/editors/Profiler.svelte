@@ -15,7 +15,8 @@
 	// the headset lane streams into `liveSources` (profilerView.js).
 	import { onMount, untrack } from 'svelte';
 	import { get } from 'svelte/store';
-	import { Circle, Square, History, Upload, GitCompare, Camera } from '@lucide/svelte';
+	import { Circle, Square, History, Upload, GitCompare, Camera, Activity } from '@lucide/svelte';
+	import { profilerLiveOpen } from '$lib/perf/liveSink';
 	import DockTabs from '../DockTabs.svelte';
 	import ProfilerTimeline from './profiler/ProfilerTimeline.svelte';
 	import ProfilerDetail from './profiler/ProfilerDetail.svelte';
@@ -660,6 +661,15 @@
 		class:pf-on={compareOn}
 		onclick={toggleCompare}
 		><GitCompare size={12} class="inline" aria-hidden="true" /> Compare</button
+	>
+	<!-- 36 U5: the Live view (a peer's frames as they arrive) opens from here now — it used to be
+	     a burger-menu row, away from the tool it belongs to -->
+	<button
+		id="profiler-open-live"
+		class="ui-button-quiet"
+		title="Watch a peer's frames live (a headset in your room)"
+		onclick={() => profilerLiveOpen.set(true)}
+		><Activity size={12} class="inline" aria-hidden="true" /> Live</button
 	>
 	<input
 		bind:this={fileInput}

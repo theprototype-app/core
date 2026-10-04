@@ -339,6 +339,43 @@ function onWheel(e) {
  *  way to stop page zoom there. @param {Event} e */
 function onGestureStart(e) {
 	if (!get(allowBrowserZoom)) e.preventDefault();
+	gestureScale = 1;
+}
+
+// 36 A4: macOS Safari delivers a trackpad pinch as gesturestart/gesturechange (with a
+// cumulative `scale`) INSTEAD of ctrlKey wheels, so over the canvas the pinch zoomed
+// nothing there. Dolly the orbit camera by the scale RATIO between two events (the same
+// distance math OrbitControls' own dolly uses), clamped to its min/max distance. Over UI
+// the event only keeps its page-zoom guard.
+/** the previous event's cumulative scale within one gesture */
+let gestureScale = 1;
+
+/** @param {number} factor >1 moves the camera closer (a pinch out) */
+function dollyBy(factor) {
+	const camera = get(globalCamera);
+	const controls = get(orbitControls);
+	if (!camera || !controls || controls.enabled === false || !(factor > 0)) return;
+	const offset = camera.position.clone().sub(controls.target);
+	const distance = offset.length();
+	if (!(distance > 0)) return;
+	const min = Number.isFinite(controls.minDistance) ? controls.minDistance : 0;
+	const max = Number.isFinite(controls.maxDistance) ? controls.maxDistance : Infinity;
+	const next = Math.min(max, Math.max(min, distance / factor));
+	camera.position.copy(controls.target).add(offset.multiplyScalar(next / distance));
+	controls.update?.();
+}
+
+/** @param {Event} e */
+function onGestureChange(e) {
+	if (!get(allowBrowserZoom)) e.preventDefault();
+	const scale = Number(/** @type {any} */ (e).scale);
+	if (!Number.isFinite(scale) || scale <= 0) return;
+	const canvas = get(globalRenderer)?.domElement;
+	const overCanvas = !!canvas && e.target === canvas;
+	const ratio = scale / (gestureScale || 1);
+	gestureScale = scale;
+	if (!overCanvas || document.pointerLockElement || !get(pinchZoomEnabled)) return;
+	dollyBy(ratio);
 }
 
 let installed = false;
@@ -349,6 +386,7 @@ export function startTrackpadNav() {
 	installed = true;
 	window.addEventListener('wheel', onWheel, { passive: false, capture: true });
 	document.addEventListener('gesturestart', onGestureStart, { passive: false });
+	document.addEventListener('gesturechange', onGestureChange, { passive: false });
 	allowBrowserZoom.subscribe((allow) => {
 		// pan-x pan-y lets panels scroll but removes the browser's pinch-zoom and
 		// double-tap-zoom on the chrome; the canvas manages its own touch-action

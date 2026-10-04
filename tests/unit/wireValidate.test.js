@@ -127,3 +127,12 @@ describe('sanitizeTransform', () => {
 		expect(sanitizeTransform(undefined, undefined, undefined, current)).toBe(null);
 	});
 });
+
+describe('nodesync (36-sim)', () => {
+	it('accepts the NUMBER hash graphHash() sends (it was rejected since 27-A)', () => {
+		expect(validateWireMessage({ type: 'nodesync', peerId: 'a', hash: 2873119002, count: 5 })).toBe(true);
+		expect(validateWireMessage({ type: 'nodesync', peerId: 'a', hash: 'abc', count: 5 })).toBe(true);
+		expect(validateWireMessage({ type: 'nodesync', peerId: 'a', hash: NaN, count: 5 })).toBe(false);
+		expect(validateWireMessage({ type: 'nodesync', peerId: 'a', hash: {}, count: 5 })).toBe(false);
+	});
+});

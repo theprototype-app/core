@@ -98,6 +98,29 @@ loadable play content. Everything a user does must be visible to connected peers
   carries the bump) — it seeds the dedupe key and refuses, while a moment still in the
   FUTURE completes normally. No `handleDisconnected` cleanup, deliberately: the log is
   keyed by NODE, not peer.
+- `src/lib/sim/` (36-sim, 1.22): buoyancy, jiggle, fluid tanks. ONE per-frame entry
+  `sim/runtime.js tickSim` (a single Scene useTask line). **Buoyancy** (`buoyancy.js`,
+  leaf) = per-collider sample grids (body frame, built in `createCollidersFor` with the
+  colliders) as vertical SLABS, force applied AT each sample (righting torque for free),
+  drag toward the W1 flow, heave damped 4x; applied per SUBSTEP in physics `stepInner`
+  (initiator only — authority). Density is its OWN knob (`userData.physics.floats`,
+  default 500 kg/m³): scene masses are authored for feel, so mass/volume would float a
+  1 kg crate like a bubble; the force is scaled by mass so the draft is mass-independent.
+  `waterQuery.js` is the ONE adapter to W1 — one `waterVolumes.list()` per frame
+  (W1's query walks the scene without one) and the slab BOTTOM is probed (W1 answers null
+  above the surface). Water objects with no physics are not fixed colliders.
+  `splashWatch.js` ripples (W2) from POSES on every peer, no message. **Jiggle**
+  (`jiggleCore` leaf + `jiggleRuntime`): a spring in the object's accelerating frame,
+  drawn as a per-object vertex displacement (each jiggling mesh gets a MATERIAL CLONE —
+  three re-uploads material uniforms only when the material changes between draws) and
+  as bone springs; never writes the transform (works on physics bodies/VR grabs), bones
+  parked through `parkAnimatedAtBase`. Source of truth = `jiggle` nodes (not
+  animationTypes; the `particle` precedent). **Fluid** (`fluidCore` PBF leaf, run in
+  `fluid.worker.js`; `fluidRender` SSF/points; `fluidRuntime`): `userData.fluid` replicates
+  (objectParameters 'fluid', props undo), the particles are each peer's own; the SSF
+  passes run inside the composite's onBeforeRender ONCE per frame per camera (the desktop
+  pipeline renders the scene ~4x); the push on dynamic bodies is capped by the buoyancy
+  model (raw water-mass reaction launched a 0.5 kg ball 25 m).
 - `src/lib/spawner.js` + `src/lib/transientObjects.js` (21-B B7): mid-sim body creation,
   which did not exist at all before — `startSimulation` walked `group.children` once, so
   an object created during a run was INERT. `createBodyFor` was extracted VERBATIM and is

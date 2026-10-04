@@ -12,6 +12,7 @@
 	import Section from '../ui/Section.svelte';
 	import LodGroupPanel from './LodGroupPanel.svelte';
 	import SliderRow from '../ui/SliderRow.svelte';
+	import PhysicsFloats from '../sim/PhysicsFloats.svelte'; // 36-sim I1
 	import DragRow from '../ui/DragRow.svelte';
 	import ColorPicker, { ChromeVariant } from 'svelte-awesome-color-picker';
 	import CustomWrapper from '$lib/ColorWrapper.svelte';
@@ -3924,6 +3925,7 @@
 								>
 							{/each}
 						</div>
+						<PhysicsFloats object={$selectedObject} {setPhysics} /><!-- 36-sim I1 -->
 					{/if}
 					<!-- CL-A A7: per-object collider preview (local, this device) -->
 					<Checkbox

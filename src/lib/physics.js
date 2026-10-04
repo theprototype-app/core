@@ -41,6 +41,10 @@ import { burstObjectParticles } from './particleActions';
 import { hasImpactEmitter } from './particleRuntime';
 import { nameOf } from './lockControl';
 import { sceneJoints } from './joints';
+// 36-sim I1: buoyancy + drag + flow in water volumes (W1). Both leaves import nothing
+// from the app, so these edges close no cycle.
+import { bodySamples, applyBuoyancy, buoyancyOut, normalizeFloats } from './sim/buoyancy.js';
+import { waterActive, queryWater } from './sim/waterQuery.js';
 
 // Physics preview (P-A rework): the INITIATOR runs rapier and broadcasts plain
 // `move` messages (~10/s per awake body) — peers just watch standard moves.
@@ -78,7 +82,8 @@ export const remoteSimulating = writable(null);
  *   lastSent?: {pos: THREE.Vector3, quat: THREE.Quaternion},
  *   colliders: any[], shapeKey: string,
  *   oob?: boolean, restSince?: number | null,
- *   preVy?: number}} BodyEntry */
+ *   preVy?: number,
+ *   buoy?: {points: Float32Array, weights: Float32Array, volume: number, cellH: number}}} BodyEntry */
 /** @type {BodyEntry[]} */
 let bodies = [];
 /** @type {{uuid: string, before: any}[]} */ let beforeStates = [];
@@ -620,6 +625,9 @@ function createCollidersFor(object, body, p, dynamic, entry, knownSpec) {
 	const relQuat = invBody.clone().multiply(spec.quat); // object rotation in the body frame
 	/** @type {any[]} */
 	const descs = [];
+	/** 36-sim I1: the same shapes in the body frame, for the buoyancy samples
+	 * @type {{kind: string, he: {x: number, y: number, z: number}, t: number[], q: number[]}[]} */
+	const buoyParts = [];
 	if (spec.pieces) {
 		// hull/custom: verts are scale-baked around the OBJECT ORIGIN — bake the
 		// relative rotation per-vert, carry the origin offset on the desc
@@ -634,11 +642,21 @@ function createCollidersFor(object, body, p, dynamic, entry, knownSpec) {
 				baked[i + 2] = v.z;
 			}
 			const desc = RAPIER.ColliderDesc.convexHull(baked);
-			if (desc) descs.push(desc.setTranslation(origin.x, origin.y, origin.z));
+			if (desc) {
+				descs.push(desc.setTranslation(origin.x, origin.y, origin.z));
+				if (dynamic) buoyParts.push(hullPart(baked, origin));
+			}
 		}
 	}
 	if (!descs.length) {
 		const local = localOf(spec.center);
+		if (dynamic)
+			buoyParts.push({
+				kind: spec.pieces ? 'box' : spec.kind,
+				he: spec.halfExtents,
+				t: [local.x, local.y, local.z],
+				q: [relQuat.x, relQuat.y, relQuat.z, relQuat.w]
+			});
 		descs.push(
 			shapeDesc(spec.pieces ? 'box' : spec.kind, spec.halfExtents)
 				.setTranslation(local.x, local.y, local.z)
@@ -674,8 +692,31 @@ function createCollidersFor(object, body, p, dynamic, entry, knownSpec) {
 		entry.colliders = colliders;
 		entry.hull = !!spec.pieces;
 		entry.shapeKey = shapeKeyOf(p, object);
+		// 36-sim I1: rebuilt with the colliders, so a mid-sim shape swap floats right
+		entry.buoy = dynamic && buoyParts.length ? bodySamples(buoyParts) : undefined;
 	}
 	return { colliders, spec };
+}
+
+/**
+ * 36-sim I1: a baked hull piece as a buoyancy part — its AABB in the body frame (the
+ * sampler scales the AABB volume down to a hull's typical fill).
+ * @param {Float32Array} baked body-frame-rotated verts @param {THREE.Vector3} origin
+ */
+function hullPart(baked, origin) {
+	const min = [Infinity, Infinity, Infinity];
+	const max = [-Infinity, -Infinity, -Infinity];
+	for (let i = 0; i < baked.length; i += 3)
+		for (let a = 0; a < 3; a++) {
+			if (baked[i + a] < min[a]) min[a] = baked[i + a];
+			if (baked[i + a] > max[a]) max[a] = baked[i + a];
+		}
+	return {
+		kind: 'hull',
+		he: { x: (max[0] - min[0]) / 2, y: (max[1] - min[1]) / 2, z: (max[2] - min[2]) / 2 },
+		t: [origin.x + (min[0] + max[0]) / 2, origin.y + (min[1] + max[1]) / 2, origin.z + (min[2] + max[2]) / 2],
+		q: [0, 0, 0, 1]
+	};
 }
 
 /**
@@ -704,6 +745,10 @@ function createBodyFor(object, p, opts) {
 	// Colliders stay ORIENTED: primitives fit the LOCAL AABB (rotation stripped
 	// for the measure) and carry the rotation on the desc; hull/custom pieces
 	// bake it into the verts — so every body starts WORLD-ALIGNED.
+	// 36-sim: a WATER VOLUME (W1: userData.water) is not scenery — a fixed box there
+	// would be a solid lid every floating thing lands on. Explicit physics still wins
+	// (a tank whose walls the author made a collider on purpose).
+	if (object.userData?.water && !object.userData?.physics && !opts.dynamic) return null;
 	const spec = opts.spec ?? specOf(object, p);
 	if (!spec) return null; // lights/empties
 	const { dynamic, kinematic } = opts;
@@ -1418,6 +1463,7 @@ export function bodyVelocityOf(uuid) {
 
 const FIXED_DT = 1 / 60;
 const MAX_SUBSTEPS = 8;
+const buoyOut = buoyancyOut(); // 36-sim I1: one scratch result for every body
 
 /** @param {number} now */
 // 27-C (audit M7): rapier steps inside a WASM boundary, and a NaN transform off the wire
@@ -1589,6 +1635,17 @@ function stepInner(now) {
 
 	world.timestep = FIXED_DT;
 	sensorEventSeen.clear(); // A3: per-frame dedupe window
+	// 36-sim I1: the bodies that may float this frame (normalized once per frame, applied
+	// per substep — the force must follow the body as it sinks within the frame)
+	/** @type {{entry: BodyEntry, floats: ReturnType<typeof normalizeFloats>}[]} */
+	const floaters = [];
+	if (waterActive())
+		for (const entry of bodies)
+			if (entry.mode === 'dynamic' && entry.buoy) {
+				const floats = normalizeFloats(entry.object.userData?.physics?.floats);
+				if (!floats.off) floaters.push({ entry, floats });
+			}
+	const gravityY = floaters.length ? get(sceneGravity) : 0;
 	const stepPos = new THREE.Vector3();
 	const stepQuat = new THREE.Quaternion();
 	for (let k = 1; k <= substeps; k++) {
@@ -1605,6 +1662,9 @@ function stepInner(now) {
 		bodies.forEach((entry) => {
 			if (entry.mode === 'dynamic' && !entry.hold) entry.preVy = entry.body.linvel().y;
 		});
+		for (const f of floaters)
+			if (!f.entry.hold && f.entry.buoy)
+				applyBuoyancy(f.entry.body, f.entry.buoy, queryWater, f.floats, gravityY, FIXED_DT, buoyOut);
 		world.step(eventQueue);
 		// drain per SUBSTEP or events from early substeps get merged/lost
 		eventQueue.drainCollisionEvents((/** @type {number} */ h1, /** @type {number} */ h2, /** @type {boolean} */ started) => {

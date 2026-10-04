@@ -189,6 +189,24 @@ export class FluidVisual {
 		/** @type {'ssf' | 'points'} */
 		this.mode = 'points';
 		this.size = o.size;
+		// built by buildPoints/buildSSF below
+		/** @type {any} */ this.pointsMaterial = null;
+		/** @type {any} */ this.points = null;
+		/** @type {any} */ this.rtDepth = null;
+		/** @type {any} */ this.rtBlur = null;
+		/** @type {any} */ this.rtThick = null;
+		/** @type {any} */ this.depthMaterial = null;
+		/** @type {any} */ this.thickMaterial = null;
+		/** @type {any} */ this.passScene = null;
+		/** @type {any} */ this.passPoints = null;
+		/** @type {any} */ this.blurMaterial = null;
+		/** @type {any} */ this.quadScene = null;
+		/** @type {any} */ this.quad = null;
+		/** @type {any} */ this.quadCamera = null;
+		/** @type {any} */ this.compositeMaterial = null;
+		/** @type {any} */ this.composite = null;
+		/** @type {any} */ this.passSize = null;
+		/** @type {any} */ this.passStats = null;
 		this.buildPoints();
 		this.buildSSF();
 		this.setMode('points');
@@ -307,8 +325,8 @@ export class FluidVisual {
 		this.positions.set(positions.subarray(0, count * 3));
 		const attr = this.geometry.getAttribute('position');
 		attr.needsUpdate = true;
-		attr.clearUpdateRanges?.();
-		attr.addUpdateRange?.(0, count * 3);
+		/** @type {any} */ (attr).clearUpdateRanges?.();
+		/** @type {any} */ (attr).addUpdateRange?.(0, count * 3);
 		this.geometry.setDrawRange(0, count);
 		// the visual lives OUTSIDE objectsGroup: express the tank frame in the parent's space
 		parent.updateWorldMatrix(true, false);

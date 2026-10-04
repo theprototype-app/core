@@ -135,6 +135,9 @@ export class FluidSolver {
 		this.poly6K = 315 / (64 * Math.PI * h ** 9);
 		this.spikyK = -45 / (Math.PI * h ** 6);
 		this.h2 = h * h;
+		this.wallRho = new Float32Array(1);
+		this.wallGrad = new Float32Array(1);
+		this.wallBins = 1;
 		this.rho0 = this.restDensity();
 		this.eps = RELAX * this.restGradSum();
 		this.buildWallTables();

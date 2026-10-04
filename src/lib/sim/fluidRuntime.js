@@ -65,7 +65,7 @@ function onFrame(data) {
 	tank.steps++;
 	const positions = /** @type {Float32Array} */ (data.positions);
 	if (tank.object.parent) tank.visual.update(positions, data.count, tank.frame, visualParentOf(tank.object));
-	tank.spare = positions.buffer;
+	tank.spare = /** @type {ArrayBuffer} */ (positions.buffer);
 	applyPush(tank, data.impulses);
 }
 

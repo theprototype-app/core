@@ -20,7 +20,7 @@ function slabs(w, h, d) {
 	];
 }
 
-/** @param {any=} a @param {number} d */
+/** @param {any} a @param {number} d */
 const dim = (a, d) => (typeof a === 'number' && Number.isFinite(a) && a > 0.1 ? Math.min(a, 20) : d);
 
 /** `/create FluidTank w h d` @param {any=} a @param {any=} b @param {any=} c */

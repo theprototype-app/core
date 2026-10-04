@@ -335,7 +335,7 @@ h.run(async () => {
 	h.check(corsRed?.status === 0 && /CORS/.test(corsRed?.reason || ''), `the reason names CORS (${corsRed?.reason})`);
 	h.check(fsrv.counts['/cors/Cors.glb'] === 4, `1 + 3 auto-retries (${fsrv.counts['/cors/Cors.glb']} requests)`);
 	fsrv.setMode('/cors/Cors.glb', 'ok');
-	await A.page.locator('.tp-toast', { hasText: 'failed to load' }).getByText('Retry all').click();
+	await A.page.locator('.tp-toast', { hasText: 'failed to load' }).getByText('Retry all').first().click();
 	await until(() => facts(A, cors), (f) => f && !f.stub && f.children > 0, "the toast's Retry all brings it back");
 	await wipe(A);
 

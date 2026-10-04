@@ -39,34 +39,37 @@
 	}
 </script>
 
-<p class="ui-section-label">Tours</p>
-<SettingRow name="Show tours automatically">
-	<svelte:fragment slot="control"><Toggle id="setting-tours-auto" checked={autoStart} onchange={onAutoStart} /></svelte:fragment>
-	Start the short first-run tours by themselves: the editor tour after the welcome card, and
-	"Welcome to ThePrototype VR" the first time you enter VR. "Don't show again" on a tour turns
-	this off
-</SettingRow>
-<SettingRow name="VR welcome">
-	<svelte:fragment slot="control"><Button id="setting-tour-vr" size="xs" color="alternative" onclick={vr}>Start VR welcome</Button></svelte:fragment>
-	Your controllers, moving, pointing, grabbing, the radial menu, playing and leaving VR. In a
-	headset it starts now (also: radial menu ▸ Settings ▸ Welcome tour); on a screen it plays the
-	next time you enter VR, with a preview offered. <span class="tours-status">{statusText(VR_TOUR, $tourRecords)}</span>
-</SettingRow>
-<SettingRow name="Editor tour">
-	<svelte:fragment slot="control"><Button id="setting-tour-editor" size="xs" color="alternative" onclick={editor}>Start editor tour</Button></svelte:fragment>
-	Six steps around the editor — adding things, looking around, the tools, Play, building
-	together and the logo menu ({editorTourId() === 'editor-touch' ? 'the touch-screen version on this device' : 'mouse and keyboard'}).
-	<span class="tours-status">{statusText(editorTourId(), $tourRecords)}</span>
-</SettingRow>
-<SettingRow name="Offer Enter VR">
-	<svelte:fragment slot="control"><Toggle id="setting-xr-offer" bind:checked={$xrOfferEnabled} /></svelte:fragment>
-	In a headset's browser (Quest), let the browser show its own "Enter VR" button for this page, once
-	per visit. Declining it is remembered on this device; switching this off and on asks again
-</SettingRow>
-<SettingRow name="Reset tours">
-	<svelte:fragment slot="control"><Button id="setting-tours-reset" size="xs" color="alternative" onclick={resetAllTours}>Reset all</Button></svelte:fragment>
-	Forget which tours you have seen or skipped and turn automatic tours back on
-</SettingRow>
+<!-- 36-int-122: the I4 search reads a section's keywords from its root element -->
+<div class="contents" data-keywords={keywords.join(' ')}>
+	<p class="ui-section-label">Tours</p>
+	<SettingRow name="Show tours automatically">
+		<svelte:fragment slot="control"><Toggle id="setting-tours-auto" checked={autoStart} onchange={onAutoStart} /></svelte:fragment>
+		Start the short first-run tours by themselves: the editor tour after the welcome card, and
+		"Welcome to ThePrototype VR" the first time you enter VR. "Don't show again" on a tour turns
+		this off
+	</SettingRow>
+	<SettingRow name="VR welcome">
+		<svelte:fragment slot="control"><Button id="setting-tour-vr" size="xs" color="alternative" onclick={vr}>Start VR welcome</Button></svelte:fragment>
+		Your controllers, moving, pointing, grabbing, the radial menu, playing and leaving VR. In a
+		headset it starts now (also: radial menu ▸ Settings ▸ Welcome tour); on a screen it plays the
+		next time you enter VR, with a preview offered. <span class="tours-status">{statusText(VR_TOUR, $tourRecords)}</span>
+	</SettingRow>
+	<SettingRow name="Editor tour">
+		<svelte:fragment slot="control"><Button id="setting-tour-editor" size="xs" color="alternative" onclick={editor}>Start editor tour</Button></svelte:fragment>
+		Six steps around the editor — adding things, looking around, the tools, Play, building
+		together and the logo menu ({editorTourId() === 'editor-touch' ? 'the touch-screen version on this device' : 'mouse and keyboard'}).
+		<span class="tours-status">{statusText(editorTourId(), $tourRecords)}</span>
+	</SettingRow>
+	<SettingRow name="Offer Enter VR">
+		<svelte:fragment slot="control"><Toggle id="setting-xr-offer" bind:checked={$xrOfferEnabled} /></svelte:fragment>
+		In a headset's browser (Quest), let the browser show its own "Enter VR" button for this page, once
+		per visit. Declining it is remembered on this device; switching this off and on asks again
+	</SettingRow>
+	<SettingRow name="Reset tours">
+		<svelte:fragment slot="control"><Button id="setting-tours-reset" size="xs" color="alternative" onclick={resetAllTours}>Reset all</Button></svelte:fragment>
+		Forget which tours you have seen or skipped and turn automatic tours back on
+	</SettingRow>
+</div>
 
 <style>
 	.tours-status {

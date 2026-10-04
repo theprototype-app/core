@@ -12,20 +12,23 @@
 	import { waterQuality } from '$lib/water/waterPrefs.js';
 </script>
 
-<SettingRow name="Water quality">
-	<svelte:fragment slot="control">
-		<ThemedSelect
-			id="water-quality"
-			items={[
-				{ value: 'auto', name: 'Auto' },
-				{ value: 'high', name: 'High' },
-				{ value: 'medium', name: 'Medium' },
-				{ value: 'low', name: 'Low (headset)' }
-			]}
-			bind:value={$waterQuality}
-		/>
-	</svelte:fragment>
-	High draws refraction, caustics, shoreline foam and planar mirrors at full resolution; Medium at half; Low is the
-	headset look (waves and ripples, no screen-space passes). Auto picks Low in a headset, on a phone or when the
-	scene is heavy. Only on THIS machine
-</SettingRow>
+<!-- 36-int-122: the I4 search reads a section's keywords from its root element -->
+<div class="contents" data-keywords={keywords.join(' ')}>
+	<SettingRow name="Water quality">
+		<svelte:fragment slot="control">
+			<ThemedSelect
+				id="water-quality"
+				items={[
+					{ value: 'auto', name: 'Auto' },
+					{ value: 'high', name: 'High' },
+					{ value: 'medium', name: 'Medium' },
+					{ value: 'low', name: 'Low (headset)' }
+				]}
+				bind:value={$waterQuality}
+			/>
+		</svelte:fragment>
+		High draws refraction, caustics, shoreline foam and planar mirrors at full resolution; Medium at half; Low is the
+		headset look (waves and ripples, no screen-space passes). Auto picks Low in a headset, on a phone or when the
+		scene is heavy. Only on THIS machine
+	</SettingRow>
+</div>

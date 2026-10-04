@@ -1,7 +1,14 @@
 <script module>
-	import { vrSettingsKeywords } from '$lib/vr/settingsSchema.js';
+	import { vrSettingsKeywords, VR_SETTINGS, VR_SETTING_PAGES } from '$lib/vr/settingsSchema.js';
+	import { registerSettingsKeywords } from '$lib/settingsSearch';
 	/** I4 settings search: every label + keyword of the VR section */
 	export const keywords = vrSettingsKeywords();
+	// 36-int-122: the I4 search reads keywords by ROW NAME (a word on the whole section would list
+	// every VR row) — each row answers to its own words + its page's name ("snap comfort" → Comfort)
+	for (const r of VR_SETTINGS) {
+		const page = VR_SETTING_PAGES.find((p) => p.id === r.page);
+		registerSettingsKeywords(r.label, [...(r.keywords ?? []), ...(page ? [page.label] : [])]);
+	}
 </script>
 
 <script>

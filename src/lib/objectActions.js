@@ -149,6 +149,10 @@ function applyMemberTints(group, uuids) {
 let lastSelection = null;
 
 /** What a mode key would bring back (tests, and the toast copy). */
+/** 36 B1: the object being VIEWED while a peer holds it (selectObject's locked branch) — the one
+ * empty-set state in which Ctrl+D may still act. null = no locked view. @type {string | null} */
+let lockedViewUuid = null;
+
 export function lastSelectionMemory() {
 	return lastSelection;
 }
@@ -156,6 +160,7 @@ export function lastSelectionMemory() {
 /** Make a uuid set the current selection. Primary = last entry.
  * @param {string[]} uuids @param {boolean=} openProperties */
 export function applySelectionSet(uuids, openProperties = false) {
+	lockedViewUuid = null; // 36 B1: a real selection ends any locked VIEW
 	const group = get(objectsGroup);
 	/** @type {any} */
 	const controls = get(TControls);
@@ -283,6 +288,7 @@ export function selectObject(uuid, openProperties = false, additive = false) {
 
 	if (isLockedByPeer) {
 		// keep the original locked-view behavior: show it, no gizmo, no lock
+		lockedViewUuid = uuid; // 36 B1: Ctrl+D may duplicate what is being VIEWED, and only that
 		releaseMultiPivot();
 		applyMemberTints(group, []);
 		broadcastSelectionRelease(get(selectedObjects)); // 16-P6: let go of what we held
@@ -314,6 +320,7 @@ export function broadcastSelectionRelease(uuids) {
 }
 
 export function deselectObject() {
+	lockedViewUuid = null; // 36 B1: a deselect ends a locked view too
 	/** @type {any} */
 	const controls = get(TControls);
 	releaseMultiPivot();
@@ -630,7 +637,13 @@ export function duplicateSelection() {
 	// through to selectionUuids' primary and duplicate an editable copy.
 	if (!get(selectedObjects).length) {
 		const primary = get(selectedObject)?.uuid;
-		const lockedView = primary && get(lockedObjects).some((lock) => lock[1] === primary);
+		// 36 B1: "the primary is locked by a peer" is not the same as "I am viewing it": the
+		// primary is STICKY after a deselect, so selecting A, deselecting, and a peer then
+		// locking A made Ctrl+D duplicate A with nothing selected. The view is a recorded state
+		// (`lockedViewUuid`, set only by selectObject's locked branch, cleared by any selection
+		// or deselect) and must still be locked by that peer.
+		const lockedView =
+			!!primary && primary === lockedViewUuid && get(lockedObjects).some((lock) => lock[1] === primary);
 		if (!lockedView) {
 			showToast('Nothing selected to duplicate');
 			return [];

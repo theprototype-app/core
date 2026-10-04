@@ -5,7 +5,7 @@
 //    advances it (stick → move, trigger off the panel → point, grip → grab, B → the radial,
 //    Y → Interact, leaving VR → done) and the panel's own buttons press with the trigger;
 //    re-entering (and a reload) shows nothing; Skip persists; an interrupted tour resumes;
-//    the radial's System ▸ Welcome tour and Settings ▸ Tours ▸ Reset bring it back.
+//    the radial's Settings ▸ Welcome tour and Settings ▸ Tours ▸ Reset bring it back.
 //  Screen: the editor tour follows the first-visit Welcome card (and NOT under test without
 //    the opt-in — the guard that keeps the battery clean), its card never covers its target,
 //    Settings / the logo menu start it, "Don't show again" turns auto-start off, the VR
@@ -151,9 +151,20 @@ async function vrPart(browser) {
 	await click(page, 'right', 1);
 	await waitStep(page, 'menu', 'U3b: squeezing a grip completes "grab"');
 	await shotCanvas(page, '06-vr-menu');
-	await click(page, 'right', 5); // B on the menu hand opens the radial
-	await waitStep(page, 'play', 'U3b: opening the radial (B) completes "your menu"');
-	await click(page, 'right', 5); // close it again
+	// 36-vr plan 55: the buttons are remappable — the step names and lights what the action is bound to NOW
+	let menuStep = await active(page);
+	h.check(menuStep.step.body.includes('B on your right hand') && menuStep.step.hint === 'Press B', 'U3b+55: the menu step names the bound button (default: B, right)');
+	const remap = await page.evaluate(() => window.__stores.vrBindings.setBinding('menu', { hand: 'left', control: 'stickClick' }));
+	h.check(remap.ok, 'U3b+55: remap the radial menu to the left stick press');
+	await page.waitForTimeout(300);
+	menuStep = await active(page);
+	h.check(menuStep.step.hint === 'Press Left stick press' && menuStep.step.body.includes('left stick press'), 'U3b+55: …and the step now says the left stick press (' + menuStep.step.hint + ')');
+	h.check(menuStep.step.controls.left.includes('stick') && menuStep.step.controls.right.length === 0, 'U3b+55: …and the diagram lights the left stick, nothing on the right');
+	await shotCanvas(page, '06b-vr-menu-remapped');
+	await click(page, 'left', 3); // the REMAPPED control opens the radial
+	await waitStep(page, 'play', 'U3b+55: opening the radial with the remapped control completes "your menu"');
+	await click(page, 'left', 3); // close it again
+	await page.evaluate(() => window.__stores.vrBindings.resetBindings());
 	await shotCanvas(page, '07-vr-play');
 	await click(page, 'left', 5); // Y = Edit ↔ Interact
 	await waitStep(page, 'exit', 'U3b: switching to Interact (Y) completes "play a game"');
@@ -169,13 +180,13 @@ async function vrPart(browser) {
 	h.check((await stepId(page)) === null, 'U3b: entering VR again shows nothing');
 	await setVR(page, false);
 
-	// ---- the radial's System ▸ Welcome tour replays it from the top -------------------
+	// ---- the radial's Settings ▸ Welcome tour replays it from the top -------------------
 	await setVR(page, true);
 	const entry = await page.evaluate(() => {
 		const s = window.__stores;
-		return s.vrRadialMenu.ringEntries('system').map((e) => e.id);
+		return s.vrRadialMenu.ringEntries('settings').map((e) => e.id);
 	});
-	h.check(entry.includes('tour:vr'), 'U3b: the radial System ring carries "Welcome tour"');
+	h.check(entry.includes('tour:vr'), 'U3b: the radial Settings ring carries "Welcome tour" (36-vr layout)');
 	await page.evaluate(() => window.__stores.vrControls.executeVRMenuAction('tour:vr'));
 	await waitStep(page, 'welcome', 'U3b: radial ▸ Welcome tour restarts it in VR');
 	// ---- Skip persists ----------------------------------------------------------------

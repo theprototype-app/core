@@ -67,5 +67,9 @@ describe('litFor', () => {
 		expect(litFor({ hand: 'both', parts: ['grip'] })).toEqual({ left: ['grip'], right: ['grip'] });
 		expect(litFor({ hand: 'right', parts: ['meta'] })).toEqual({ left: [], right: ['meta'] });
 		expect(litFor(undefined)).toEqual({ left: [], right: [] });
+		// the per-hand form (built from the VR bindings) passes through as a copy
+		const lit = { left: ['face-upper'], right: ['stick'] };
+		expect(litFor(lit)).toEqual(lit);
+		expect(litFor(lit)).not.toBe(lit);
 	});
 });

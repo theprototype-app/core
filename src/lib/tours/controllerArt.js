@@ -204,14 +204,20 @@ export function controllerSvg({ family = 'quest3', hands = 'both', lit = {}, col
 }
 
 /**
- * Which parts a diagram lights for a step's `controls` ({hand, parts}).
- * @param {{hand: 'left' | 'right' | 'both', parts: string[]} | undefined} controls
+ * Which parts a diagram lights for a step's `controls`: {hand, parts}, or already per hand
+ * ({left, right} — what builtin's controlsOf builds from the VR bindings).
+ * @param {{hand: 'left' | 'right' | 'both', parts: string[]} | {left: string[], right: string[]} | undefined} controls
  * @returns {{left: string[], right: string[]}}
  */
 export function litFor(controls) {
 	const lit = { left: /** @type {string[]} */ ([]), right: /** @type {string[]} */ ([]) };
 	if (!controls) return lit;
-	if (controls.hand === 'left' || controls.hand === 'both') lit.left = controls.parts.slice();
-	if (controls.hand === 'right' || controls.hand === 'both') lit.right = controls.parts.slice();
+	if ('left' in controls || 'right' in controls) {
+		const c = /** @type {{left?: string[], right?: string[]}} */ (controls);
+		return { left: (c.left ?? []).slice(), right: (c.right ?? []).slice() };
+	}
+	const c = /** @type {{hand: string, parts: string[]}} */ (controls);
+	if (c.hand === 'left' || c.hand === 'both') lit.left = c.parts.slice();
+	if (c.hand === 'right' || c.hand === 'both') lit.right = c.parts.slice();
 	return lit;
 }

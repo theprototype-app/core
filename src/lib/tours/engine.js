@@ -38,7 +38,7 @@
  * diagram lights up. `when`: the step only exists while it answers true (evaluated at start).
  * title/body/hint/controls may be functions (a hand that depends on a setting): `active()`
  * resolves them, so surfaces only ever see plain values.
- * @typedef {{hand: 'left' | 'right' | 'both', parts: string[]}} Controls
+ * @typedef {{hand: 'left' | 'right' | 'both', parts: string[]} | {left: string[], right: string[]}} Controls
  * @typedef {{id: string, title: string, body: string, target?: string, placement?: string,
  *   hint?: string, controls?: Controls, waiting: string[]}} ShownStep
  */

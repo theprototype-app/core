@@ -49,7 +49,7 @@
 <SettingRow name="VR welcome">
 	<svelte:fragment slot="control"><Button id="setting-tour-vr" size="xs" color="alternative" onclick={vr}>Start VR welcome</Button></svelte:fragment>
 	Your controllers, moving, pointing, grabbing, the radial menu, playing and leaving VR. In a
-	headset it starts now (also: radial menu ▸ System ▸ Welcome tour); on a screen it plays the
+	headset it starts now (also: radial menu ▸ Settings ▸ Welcome tour); on a screen it plays the
 	next time you enter VR, with a preview offered. <span class="tours-status">{statusText(VR_TOUR, $tourRecords)}</span>
 </SettingRow>
 <SettingRow name="Editor tour">

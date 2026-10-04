@@ -34,10 +34,11 @@ import {
 import { followYaw } from '../vrGamePanel';
 import { registerVRMenuEntry, unregisterVRMenuEntry } from '../vrRadialMenu';
 import { safeStorage } from '../safeStorage';
+import { actionPressed } from '../vr/bindings.js';
 
-/** the radial entry that replays the welcome: the System ring, before Exit VR (36-vr owns the
- * ring layout — if it moves settings into their own ring, this is the one line to change) */
-export const RADIAL_ENTRY = { id: 'tour:vr', group: 'system', order: 6.5 };
+/** the radial entry that replays the welcome: Settings ▸, between All settings (20) and Exit VR (30) —
+ * 36-vr's ring layout (vr/settingsRings.js) */
+export const RADIAL_ENTRY = { id: 'tour:vr', group: 'settings', order: 25 };
 
 /** panel size in metres, and where it sits relative to the head */
 export const PANEL_M = { w: 0.6, h: 0.375 };
@@ -226,8 +227,9 @@ function frame() {
 		const button = buttonAt(index);
 		hover[index] = button?.id ?? null;
 		const pads = source.gamepad;
-		const trigger = !!pads.buttons?.[0]?.pressed;
-		const grip = !!pads.buttons?.[1]?.pressed;
+		// plan 55: every controller read goes through a named action (select / grab are the locked rows)
+		const trigger = actionPressed('select', source);
+		const grip = actionPressed('grab', source);
 		const stick = Math.hypot(pads.axes?.[2] ?? 0, pads.axes?.[3] ?? 0) > STICK_PUSH;
 		const was = prev[hand];
 		if (trigger && !was.trigger) {
@@ -276,6 +278,7 @@ export function mountTourVRPanel() {
 	registerVRMenuEntry({
 		...RADIAL_ENTRY,
 		label: 'Welcome tour',
+		icon: 'compass',
 		closes: true,
 		action: () => tours.start(VR_TOUR, { from: 'start' })
 	});

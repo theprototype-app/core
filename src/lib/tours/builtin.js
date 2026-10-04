@@ -15,7 +15,8 @@
 import { get } from 'svelte/store';
 import { tours, activeTour } from './index.js';
 import { safeStorage } from '../safeStorage';
-import { isVRMode, vrMenuHand, vrMenuOpen, editorMode } from '../../stores/sceneStore';
+import { isVRMode, vrMenuOpen, editorMode } from '../../stores/sceneStore';
+import { bindingOf, bindingLabel } from '../vr/bindings.js';
 import { templatesModalOpen, showToast } from '../../stores/appStore.js';
 import { welcomeOpen } from '../whatsNew';
 import { coarsePointer } from '../inputDevice';
@@ -35,10 +36,30 @@ export function autoStartAllowed() {
 	return safeStorage.getItem('toursUnderTest') === 'true';
 }
 
-const menuHand = () => /** @type {'left' | 'right'} */ (get(vrMenuHand) === 'left' ? 'left' : 'right');
-const otherHand = () => (menuHand() === 'left' ? 'right' : 'left');
-const upperName = (/** @type {'left' | 'right'} */ hand) => (hand === 'left' ? 'Y' : 'B');
-const handName = (/** @type {'left' | 'right'} */ hand) => (hand === 'left' ? 'left' : 'right');
+// 36-vr plan 55: the buttons are REMAPPABLE, so every step names and lights the control its action is
+// bound to now (bindingOf / bindingLabel), never a hard-coded B or Y.
+/** @type {Record<string, string>} binding control → controllerArt part */
+const PART = { stick: 'stick', stickClick: 'stick', trigger: 'trigger', grip: 'grip', primary: 'face-lower', secondary: 'face-upper' };
+/** the controller parts lit for these actions, per hand @param {...string} ids */
+export function controlsOf(...ids) {
+	/** @type {{left: string[], right: string[]}} */
+	const lit = { left: [], right: [] };
+	for (const id of ids) {
+		const b = bindingOf(id);
+		const part = PART[b.control] ?? 'trigger';
+		for (const hand of /** @type {('left' | 'right')[]} */ (b.hand === 'both' ? ['left', 'right'] : [b.hand])) {
+			if (!lit[hand].includes(part)) lit[hand].push(part);
+		}
+	}
+	return lit;
+}
+/** "B (right)" → "B on your right hand"; "Left stick" stays @param {string} id */
+function said(id) {
+	const m = /^(.+) \((left|right)\)$/.exec(bindingLabel(id));
+	return m ? `${m[1]} on your ${m[2]} hand` : bindingLabel(id).replace(/^([A-Z])/, (c) => c.toLowerCase());
+}
+/** the short form for a hint ("B", "Right stick press") @param {string} id */
+const short = (id) => bindingLabel(id).replace(/ \((left|right)\)$/, '');
 
 /** @type {import('./engine.js').TourStep[]} */
 export const VR_STEPS = [
@@ -51,16 +72,17 @@ export const VR_STEPS = [
 	{
 		id: 'controllers',
 		title: 'Your controllers',
-		body: 'Trigger (index finger) points and clicks. Grip (middle finger) grabs. The thumbsticks move and turn, and the face buttons open menus.',
+		body: 'Trigger (index finger) points and clicks. Grip (middle finger) grabs. The thumbsticks move and turn, and the face buttons open menus. Settings ▸ Controls lets you remap them.',
 		controls: { hand: 'both', parts: ['trigger', 'grip', 'stick'] }
 	},
 	{
 		id: 'move',
 		title: 'Move and turn',
-		body: 'Right thumbstick: push forward to aim a teleport, let go to jump there; flick left or right to turn. You can also squeeze a grip in empty air and pull to drag the world. In a game, the left thumbstick walks.',
+		body: () =>
+			`The ${said('move')} moves you. The ${said('turn')} turns — flick it sideways — and pushed forward it aims a teleport: let go to jump there. You can also squeeze the ${said('worldPan')} in empty air and pull to drag the world.`,
 		hint: 'Push a thumbstick',
 		advanceOn: 'vr-move',
-		controls: { hand: 'both', parts: ['stick'] }
+		controls: () => controlsOf('move', 'turn')
 	},
 	{
 		id: 'point',
@@ -68,7 +90,7 @@ export const VR_STEPS = [
 		body: 'Point a controller at an object, a menu or a button: the laser shows where. Pull the trigger to select or press it.',
 		hint: 'Pull a trigger',
 		advanceOn: 'vr-trigger',
-		controls: { hand: 'both', parts: ['trigger'] }
+		controls: () => controlsOf('select')
 	},
 	{
 		id: 'grab',
@@ -76,30 +98,35 @@ export const VR_STEPS = [
 		body: 'Squeeze the grip on an object to pick it up, move your hand, and let go to drop it. Two grips on one object scale it.',
 		hint: 'Squeeze a grip',
 		advanceOn: 'vr-grip',
-		controls: { hand: 'both', parts: ['grip'] }
+		controls: () => controlsOf('grab')
 	},
 	{
 		id: 'menu',
 		title: 'Your menu',
 		body: () =>
-			`Press ${upperName(menuHand())} on your ${handName(menuHand())} hand to open the radial menu: add things, tools, the scene and System ▸ Settings. Choose a slice with the thumbstick or point at it and pull the trigger.`,
-		hint: () => `Press ${upperName(menuHand())}`,
+			`Press ${said('menu')} to open the radial menu: add things, tools, the scene, and Settings (every VR setting, and Exit VR). Choose a slice with that hand's thumbstick, or point at it and pull the trigger.`,
+		hint: () => `Press ${short('menu')}`,
 		advanceOn: 'vr-menu',
-		controls: () => ({ hand: menuHand(), parts: ['face-upper', 'stick'] })
+		controls: () => {
+			const lit = controlsOf('menu');
+			const hand = bindingOf('menu').hand === 'left' ? 'left' : 'right';
+			if (!lit[hand].includes('stick')) lit[hand].push('stick');
+			return lit;
+		}
 	},
 	{
 		id: 'play',
 		title: 'Play a game',
 		body: () =>
-			`Open a game (Templates on the desktop, or a shared link), then press ${upperName(otherHand())} on your ${handName(otherHand())} hand to switch between Edit and Interact — Interact is where you play. In a game, X opens its pause menu.`,
-		hint: () => `Press ${upperName(otherHand())} to switch to Interact`,
+			`Open a game (Templates on the desktop, or a shared link), then press ${said('mode')} to switch between Edit and Interact — Interact is where you play. In a game, ${short('pause')} opens its pause menu.`,
+		hint: () => `Press ${short('mode')} to switch to Interact`,
 		advanceOn: 'vr-interact',
-		controls: () => ({ hand: otherHand(), parts: ['face-upper'] })
+		controls: () => controlsOf('mode')
 	},
 	{
 		id: 'exit',
 		title: 'Leaving VR',
-		body: 'Press the Meta button on your right controller and choose Exit — or open the menu: System ▸ Exit VR. Replay this tour any time from the menu: System ▸ Welcome tour.',
+		body: 'Press the Meta button on your right controller and choose Exit — or open the menu: Settings ▸ Exit VR. Replay this tour any time from the menu: Settings ▸ Welcome tour.',
 		hint: 'Exit VR',
 		advanceOn: 'vr-exit',
 		controls: { hand: 'right', parts: ['meta'] }

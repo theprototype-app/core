@@ -18,10 +18,24 @@
 	let lastEmitted = value;
 
 	onMount(async () => {
-		const [{ EditorView, basicSetup }, { javascript }, { EditorState }] = await Promise.all([
+		const [{ EditorView, basicSetup }, { javascript }, { EditorState }, { HighlightStyle, syntaxHighlighting }, { tags: t }] = await Promise.all([
 			import('codemirror'),
 			import('@codemirror/lang-javascript'),
-			import('@codemirror/state')
+			import('@codemirror/state'),
+			import('@codemirror/language'),
+			import('@lezer/highlight')
+		]);
+		// 36: basicSetup's default highlight style is for a LIGHT editor — identifiers came out dark
+		// blue on this dark one (unreadable in the read-only module source); colours that read on it
+		const darkHighlight = HighlightStyle.define([
+			{ tag: [t.keyword, t.controlKeyword, t.moduleKeyword, t.operatorKeyword], color: '#c792ea' },
+			{ tag: [t.variableName, t.propertyName, t.attributeName], color: '#e5e7eb' },
+			{ tag: [t.definition(t.variableName), t.function(t.variableName), t.function(t.propertyName)], color: '#82aaff' },
+			{ tag: [t.number, t.bool, t.null, t.atom], color: '#f78c6c' },
+			{ tag: [t.string, t.special(t.string), t.regexp], color: '#c3e88d' },
+			{ tag: [t.comment, t.lineComment, t.blockComment, t.docComment], color: '#7c8799', fontStyle: 'italic' },
+			{ tag: [t.typeName, t.className], color: '#ffcb6b' },
+			{ tag: [t.operator, t.punctuation, t.bracket], color: '#9ca3af' }
 		]);
 		view = new EditorView({
 			doc: value,
@@ -29,6 +43,7 @@
 			extensions: [
 				basicSetup,
 				javascript(),
+				syntaxHighlighting(darkHighlight),
 				...(readonly ? [EditorState.readOnly.of(true), EditorView.editable.of(false)] : []),
 				EditorView.updateListener.of((update) => {
 					if (!update.docChanged) return;
@@ -66,10 +81,19 @@
 	}
 
 	// external updates (a peer edited the same node) replace the doc — but not
-	// our own edits echoing back, that would fight the cursor
-	$: if (view && value !== lastEmitted && value !== view.state.doc.toString()) {
-		lastEmitted = value;
-		view.dispatch({ changes: { from: 0, to: view.state.doc.length, insert: value } });
+	// our own edits echoing back, that would fight the cursor.
+	// 36: this block must react to the `value` PROP changing and nothing else. It used to read
+	// `lastEmitted`, which the update listener assigns on every keystroke — an assignment is an
+	// invalidation, so each keystroke re-ran the block, found the (debounced, still old) prop
+	// different from the doc and put the old text back: typing in the Script panel did nothing.
+	let syncedValue = value;
+	$: if (view && value !== syncedValue) syncFromProp(value);
+	/** @param {string} next */
+	function syncFromProp(next) {
+		syncedValue = next;
+		if (next === lastEmitted || next === view.state.doc.toString()) return;
+		lastEmitted = next;
+		view.dispatch({ changes: { from: 0, to: view.state.doc.length, insert: next } });
 	}
 
 	onDestroy(() => view?.destroy());

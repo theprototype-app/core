@@ -149,7 +149,7 @@
 				<button id="script-make-editable" class="rounded-sm bg-primary-700 px-2 py-0.5 text-white" disabled={forking} on:click={makeEditable}>Make editable copy</button>
 			</div>
 		{/if}
-		<div class="min-h-0 flex-1">
+		<div class="min-h-0 flex-1" id="script-panel-editor">
 			{#key readOnly}
 				<CodeEditor value={node.data.code ?? ''} {onChange} readonly={readOnly} />
 			{/key}

@@ -154,12 +154,14 @@ h.run(async () => {
 		"it lists minigolf's real files (module.js, holes.js)",
 		6000
 	);
-	await h.eventually(
-		() => A.page.evaluate(() => document.querySelector('#module-source-window .cm-content')?.textContent ?? ''),
-		(t) => /PUTT_MAX\s*=\s*7/.test(t),
-		'holes.js opens on the file the link names — PUTT_MAX = 7 is readable from the graph',
-		6000
+	// CodeMirror renders only the lines in view, so the FILE is read through the same loader the
+	// window uses, and the open TAB is the one the link names
+	h.check(
+		(await A.page.locator('#module-source-window [data-file="holes.js"][aria-selected="true"]').count()) === 1,
+		'the window opens on the file the link names (holes.js)'
 	);
+	const holes = await A.page.evaluate(async () => (await window.__stores.codeOpen.moduleSourceFiles('minigolf')).find((f) => f.file === 'holes.js')?.text ?? '');
+	h.check(/PUTT_MAX\s*=\s*7/.test(holes), 'PUTT_MAX = 7 (the shot power) is readable from the graph');
 	h.check((await A.page.locator('#module-source-window [data-readonly="true"]').count()) === 1, 'the module source is read-only');
 	if (SHOTS) await A.page.screenshot({ path: path.join(SHOTS, '22-module-source-readonly.png') });
 	await A.page.locator('#module-source-close').click();
@@ -197,13 +199,19 @@ h.run(async () => {
 	// --- 4: sockets follow the code --------------------------------------------------------
 	await A.page.evaluate(() => window.__stores.scriptEditorOpen.set('cn-script'));
 	await A.page.waitForTimeout(800);
-	await A.page.locator('.cm-content').first().click();
+	await A.page.locator('#script-panel-editor .cm-content').click();
 	await A.page.keyboard.press('Control+End');
-	await A.page.keyboard.type('\n// later: inputs.extra');
-	await A.page.waitForTimeout(300);
-	// a comment adds nothing — the scanner masks it
-	await A.page.keyboard.type('\nconst e = inputs.extra;');
-	await h.eventually(() => dataOf(B, 'cn-script'), (d) => (d?.inputs ?? []).some((s) => s.name === 'extra') && d.inputs.length === 2, 'typing inputs.extra adds the socket on both peers (B)', 5000);
+	// one line, no Enter: an open autocomplete popup would take an Enter as "accept"
+	await A.page.keyboard.type(' /* inputs.ghost */ const e = inputs.extra;');
+	await A.page.keyboard.press('Escape');
+	await h.eventually(
+		() => dataOf(B, 'cn-script'),
+		(d) => (d?.inputs ?? []).map((s) => s.name).join(',') === 'power,extra',
+		'typing inputs.extra adds that socket on both peers — and the commented inputs.ghost does not (B)',
+		5000
+	);
+	const after = await dataOf(B, 'cn-script');
+	if (!(after?.inputs ?? []).some((s) => s.name === 'extra')) console.log('diag code:', JSON.stringify(after?.code), JSON.stringify(after?.inputs));
 	await A.page.locator('#script-panel-close').click();
 
 	// --- 5: module-bound code is read-only until forked ------------------------------------

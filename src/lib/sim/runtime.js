@@ -4,6 +4,7 @@
 // userData), never the results.
 import { tickJiggle } from './jiggleRuntime.js';
 import { tickSplashes } from './splashWatch.js';
+import { ensureWaterRoot, beginWaterFrame } from './waterQuery.js';
 
 /**
  * @param {any} root the scene objects group
@@ -13,5 +14,7 @@ import { tickSplashes } from './splashWatch.js';
  */
 export function tickSim(root, camera, renderer, now) {
 	tickJiggle(root, now);
+	ensureWaterRoot(root);
+	beginWaterFrame();
 	tickSplashes(root, now);
 }

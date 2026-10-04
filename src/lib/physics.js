@@ -44,7 +44,7 @@ import { sceneJoints } from './joints';
 // 36-sim I1: buoyancy + drag + flow in water volumes (W1). Both leaves import nothing
 // from the app, so these edges close no cycle.
 import { bodySamples, applyBuoyancy, buoyancyOut, normalizeFloats } from './sim/buoyancy.js';
-import { waterActive, queryWater } from './sim/waterQuery.js';
+import { beginWaterFrame, ensureWaterRoot, queryWater } from './sim/waterQuery.js';
 
 // Physics preview (P-A rework): the INITIATOR runs rapier and broadcasts plain
 // `move` messages (~10/s per awake body) — peers just watch standard moves.
@@ -1639,7 +1639,8 @@ function stepInner(now) {
 	// per substep — the force must follow the body as it sinks within the frame)
 	/** @type {{entry: BodyEntry, floats: ReturnType<typeof normalizeFloats>}[]} */
 	const floaters = [];
-	if (waterActive())
+	ensureWaterRoot(get(objectsGroup));
+	if (beginWaterFrame())
 		for (const entry of bodies)
 			if (entry.mode === 'dynamic' && entry.buoy) {
 				const floats = normalizeFloats(entry.object.userData?.physics?.floats);

@@ -208,9 +208,11 @@ export function buoyancyStep(body, samples, query, floats, out) {
 		const wx = p[0] + body.pos[0];
 		const wy = p[1] + body.pos[1];
 		const wz = p[2] + body.pos[2];
-		const hit = query(wx, wy, wz);
+		// the sample is a slab cellH tall centred on the point: ask about its BOTTOM, so
+		// a slab whose centre is still dry but whose lower half is wet counts (W1's query
+		// answers null above the surface)
+		const hit = query(wx, wy - samples.cellH * 0.5, wz);
 		if (!hit) continue;
-		// the sample is a slab cellH tall centred on the point
 		const frac = Math.min(1, Math.max(0, (hit.surfaceY - wy) / samples.cellH + 0.5));
 		if (frac <= 0) continue;
 		const share = samples.weights[s] * frac;

@@ -1,3 +1,4 @@
+// @ts-nocheck — plain fixtures (rapier + W1 stand-ins); the modules under test are typed
 // 36-sim I1: buoyancy — the maths, then HEADLESS PROOFS on a real rapier world through the
 // same `applyBuoyancy` physics.js calls: a crate floats at the expected draft (±10%), a
 // stone sinks, a ball in a river drifts downstream.
@@ -13,6 +14,8 @@ import {
 	expectedDraft,
 	FLOAT_PRESETS
 } from '../../src/lib/sim/buoyancy.js';
+import { waterVolumes } from '../../src/lib/water/volumes.js';
+import { ensureWaterRoot, beginWaterFrame, queryWater, waterSurfaceAt, resetWaterQuery } from '../../src/lib/sim/waterQuery.js';
 
 beforeAll(async () => {
 	const warn = console.warn;
@@ -26,7 +29,8 @@ beforeAll(async () => {
 function pool(flow) {
 	const vol = { id: 'pool' };
 	return (/** @type {number} */ x, /** @type {number} */ y, /** @type {number} */ z) =>
-		Math.abs(x) <= 10 && Math.abs(z) <= 10 && y >= -3 && y <= 0.5
+		// W1 semantics: null above the surface
+		Math.abs(x) <= 10 && Math.abs(z) <= 10 && y >= -3 && y <= 0
 			? { surfaceY: 0, flow: flow ?? null, density: 1000, linearDrag: 1, angularDrag: 1, volume: vol }
 			: null;
 }
@@ -34,7 +38,7 @@ function pool(flow) {
 /**
  * Run one body in a pool for `seconds` at 60 Hz through applyBuoyancy.
  * @param {{kind: 'box'|'sphere', he: {x:number,y:number,z:number}, mass: number, at: number[],
- *   floats?: any, flow?: number[], seconds?: number, rot?: number[]}} o
+ *   floats?: any, flow?: number[], seconds?: number, rot?: number[], query?: any, perStep?: () => void}} o
  */
 function run(o) {
 	const world = new RAPIER.World({ x: 0, y: -9.81, z: 0 });
@@ -48,11 +52,12 @@ function run(o) {
 	world.createCollider(cd.setMass(o.mass), body);
 	const samples = bodySamples([{ kind: o.kind, he: o.he, t: [0, 0, 0], q: [0, 0, 0, 1] }]);
 	const floats = normalizeFloats(o.floats);
-	const query = pool(o.flow);
+	const query = o.query ?? pool(o.flow);
 	const out = buoyancyOut();
 	/** @type {number[]} */ const ys = [];
 	const steps = Math.round((o.seconds ?? 10) * 60);
 	for (let i = 0; i < steps; i++) {
+		o.perStep?.();
 		applyBuoyancy(body, samples, query, floats, -9.81, 1 / 60, out);
 		world.step();
 		ys.push(body.translation().y);
@@ -168,5 +173,48 @@ describe('headless proofs on rapier', () => {
 		const a = run({ kind: 'box', he: { x: 0.5, y: 0.5, z: 0.5 }, mass: 1, at: [30, 10, 0], seconds: 0.5 });
 		const b = run({ kind: 'box', he: { x: 0.5, y: 0.5, z: 0.5 }, mass: 1, at: [30, 10, 0], floats: { off: true }, seconds: 0.5 });
 		expect(a.pos[1]).toBe(b.pos[1]);
+	});
+});
+
+describe('through the real W1 volumes (36-water) and the adapter', () => {
+	/** a 20 x 4 x 20 m box pool whose surface sits at world y=0 (level = local top) */
+	function scene(water) {
+		const pool = {
+			uuid: 'pool',
+			userData: { water: { version: 1, shape: 'box', ...water } },
+			matrixWorld: { elements: [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, -2, 0, 1] },
+			matrix: { elements: [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, -2, 0, 1] },
+			geometry: { boundingBox: { min: { x: -10, y: -2, z: -10 }, max: { x: 10, y: 2, z: 10 } } },
+			children: []
+		};
+		return { uuid: 'root', userData: {}, children: [pool] };
+	}
+	it('a wooden crate floats at the expected draft in a W1 box volume', () => {
+		waterVolumes.reset();
+		resetWaterQuery();
+		ensureWaterRoot(scene({}));
+		expect(beginWaterFrame()).toBe(true);
+		const { pos } = run({ kind: 'box', he: { x: 0.5, y: 0.5, z: 0.5 }, mass: 30, at: [0, 2, 0], floats: { density: 600 }, seconds: 12, query: queryWater, perStep: beginWaterFrame });
+		const draft = 0.5 - pos[1];
+		expect(Math.abs(draft - 0.6) / 0.6).toBeLessThan(0.1);
+	});
+	it('a W1 river (flow in the blob) carries a ball; the splash surface is found from the air', () => {
+		waterVolumes.reset();
+		resetWaterQuery();
+		ensureWaterRoot(scene({ flow: [0, 0, -1.2] }));
+		beginWaterFrame();
+		const { pos } = run({ kind: 'sphere', he: { x: 0.25, y: 0.25, z: 0.25 }, mass: 1, at: [0, 0.5, 0], seconds: 4, query: queryWater, perStep: beginWaterFrame });
+		expect(pos[2]).toBeLessThan(-2.5);
+		const above = waterSurfaceAt(1, 3, 1);
+		expect(above?.surfaceY).toBeCloseTo(0, 5);
+		expect(above?.volume?.uuid).toBe('pool');
+		expect(waterSurfaceAt(50, 3, 0)).toBeNull();
+	});
+	it('no water in the scene: beginWaterFrame says so and queries are null', () => {
+		waterVolumes.reset();
+		resetWaterQuery();
+		ensureWaterRoot({ uuid: 'root', userData: {}, children: [] });
+		expect(beginWaterFrame()).toBe(false);
+		expect(queryWater(0, -1, 0)).toBeNull();
 	});
 });

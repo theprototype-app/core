@@ -1,5 +1,6 @@
 import { writable } from 'svelte/store';
 import { safeStorage } from './safeStorage';
+import { exportMode } from './export/exportBoot.js';
 
 // 15-M: the repo's GitHub star count, for the Welcome overlay's GitHub link.
 // Deliberately tiny and FAIL-QUIET: unauthenticated api.github.com allows 60
@@ -34,7 +35,8 @@ function cached() {
  * UI never flickers), then a background refresh once the TTL has passed.
  */
 export function loadGithubStars() {
-	if (started || typeof window === 'undefined') return;
+	// 36-export: an exported game talks to nobody but its own origin
+	if (started || exportMode || typeof window === 'undefined') return;
 	started = true;
 	const entry = cached();
 	if (entry) githubStars.set(entry.n);

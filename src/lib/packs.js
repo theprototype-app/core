@@ -2,6 +2,7 @@ import { writable, get } from 'svelte/store';
 import { contentBase, fetchIndex, onContentStale } from './contentBase';
 import { addItemFromBytes, createFolder, explorerFolders } from './explorer';
 import { safeStorage } from './safeStorage';
+import { exportPacksBase } from './export/exportBoot.js';
 import { normalizeBehavior } from './behaviorCore';
 
 // N6 (roadmap 7 / ship-qa D1): object packs. Two sources, one normalized model:
@@ -25,7 +26,10 @@ import { normalizeBehavior } from './behaviorCore';
  * `scenes@v2` (jsDelivr parses `v1` as a semver VERSION and caches it immutably, so a
  * retag would have been a no-op the first time it was tried) and moved in the same
  * change; see the SCENES_BASE note in sceneTemplates.js for the measurement. */
-export const PACKS_BASE = contentBase(import.meta.env.VITE_PACKS_BASE, 'https://cdn.jsdelivr.net/gh/theprototype-app/packs@format-1');
+// 36-export: an exported game carries the pack files its scene uses beside index.html
+// (`assets/packs/…`, the same repo-relative paths), so its stubs refill with no CDN — that
+// base wins over the build's override exactly the way an override wins over the pinned ref
+export const PACKS_BASE = contentBase(exportPacksBase || import.meta.env.VITE_PACKS_BASE, 'https://cdn.jsdelivr.net/gh/theprototype-app/packs@format-1');
 
 const INSTALLED_KEY = 'installedPacks';
 

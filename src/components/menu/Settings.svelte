@@ -3,6 +3,8 @@
 	import { HardDrive, Lock, RotateCcw, X } from '@lucide/svelte';
 	import ThemedSelect from '../ui/ThemedSelect.svelte';
 	import SettingRow from './SettingRow.svelte';
+	// 36-export: the export defaults section (its own file; also the Publish / Export modal's Settings tab)
+	import ExportSettingsSection from './ExportSettingsSection.svelte';
 	// 30b (vr-play) C5: the two LOCAL game-audio volumes
 	import { gameSoundVolume } from '$lib/gameSfx';
 	import { gameMusicVolume } from '$lib/gameMusic';
@@ -264,6 +266,9 @@
 		shortcutsVersion++;
 	}
 	let aiExpanded = false;
+	// 36-export: Settings ▸ Export — opened by a search (the filter needs mounted rows) or a deep link
+	let exportExpanded = false;
+	$: if ((settingsQuery || '').trim() || ($settingsOpen && $settingsSection === 'export')) exportExpanded = true;
 	let sceneExpanded = false;
 	let explorerExpanded = false;
 	let connectionExpanded = false;
@@ -2089,6 +2094,10 @@
 					<SettingRow name="Storage" noControl>
 						API keys are stored <span class="font-semibold">unencrypted</span> in this browser's local storage (like all settings) and never leave your device except in requests to the provider you configure. "Reset settings" clears them.
 					</SettingRow>
+				</AccordionItem>
+				<AccordionItem bind:open={exportExpanded}>
+					{#snippet header()}Export{/snippet}
+					<ExportSettingsSection />
 				</AccordionItem>
 				<AccordionItem bind:open={connectionExpanded}>
 					{#snippet header()}Connection{/snippet}

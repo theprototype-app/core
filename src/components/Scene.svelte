@@ -92,6 +92,8 @@
 	import VRSettingsPanel from './play/VRSettingsPanel.svelte';
 	import VRPeerApprove from './play/VRPeerApprove.svelte';
 	import VRSelectionShell from './play/VRSelectionShell.svelte';
+	// 36 U3b: the VR welcome tour's world-space panel
+	import TourVRPanel from './tours/TourVRPanel.svelte';
 	import MeasureOverlay from './MeasureOverlay.svelte';
 	import AnnotationPins from './AnnotationPins.svelte';
 	import PingMarkers from './PingMarkers.svelte';
@@ -1672,6 +1674,7 @@ position={[0, 2, 3]}
 <VRPeerApprove />
 <VRKeyboard />
 <VRSelectionShell />
+<TourVRPanel />
 
 <XR
 	onsessionstart={() => {

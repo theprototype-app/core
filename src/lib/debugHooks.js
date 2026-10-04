@@ -37,6 +37,7 @@ export const DEBUG_HOOKS = [
 	// 36 U3b/I5: the tour engine (tours, activeTour, toursDebug) + the built-in tours
 	['tours', () => import('./tours/index.js')],
 	['toursBuiltin', () => import('./tours/builtin.js')],
+	['tourVR', () => import('./tours/vrPanel.js')],
 	['perfLiveSource', () => import('./perf/liveSource')],
 	['perfLiveSink', () => import('./perf/liveSink')],
 	['perfLiveWire', () => import('./perf/liveWire')],

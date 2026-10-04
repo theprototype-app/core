@@ -42,7 +42,9 @@ vec3 gerstner(vec2 p, inout vec3 nrm, inout float crest) {
 		ampSum += B.x;
 	}
 	nrm = normalize(vec3(nx, 1.0 + ny, nz));
-	crest = ampSum > 0.0 ? clamp(o.y / ampSum, -1.0, 1.0) : 0.0;
+	// steepness (the Gerstner Jacobian term): reaches 1 only where crests fold, so a calm
+	// pool never foams and a choppy ocean does
+	crest = clamp(-ny, 0.0, 1.0) * step(0.0, o.y + ampSum * 0.2);
 	return o;
 }
 
@@ -329,7 +331,7 @@ void main() {
 	// foam: crests + the shoreline band, broken up by the map's foam channel
 	float foamMask = 0.0;
 	if (uBody < 0.5 && front) {
-		float crestF = smoothstep(0.45, 0.95, vCrest);
+		float crestF = smoothstep(0.3, 0.75, vCrest);
 		foamMask = max(crestF * 0.9, shore) * uFoam;
 		foamMask *= smoothstep(0.25, 0.75, foamNoise + foamMask * 0.4);
 	}

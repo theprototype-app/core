@@ -127,6 +127,7 @@ export const DEBUG_HOOKS = [
 	['waterRuntime', () => import('./water/waterRuntime.js')],
 	['waterPresets', () => import('./water/presets.js')],
 	['waterActions', () => import('./water/waterActions.js')],
+	['waterPrefs', () => import('./water/waterPrefs.js')],
 	['version', () => import('./version')],
 	['whatsNew', () => import('./whatsNew')],
 	['confirmDialog', () => import('./confirmDialog')],

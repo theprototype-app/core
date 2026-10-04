@@ -367,7 +367,12 @@ function surfaceMaterial(uniforms, body, t, planar) {
 		transparent: !ss,
 		depthWrite: ss
 	});
-	m.extensions = { clipCullDistance: false, multiDraw: false };
+	if (body) {
+		// a tank floor usually lies ON the ground: lose that tie rather than z-fight it
+		m.polygonOffset = true;
+		m.polygonOffsetFactor = 1;
+		m.polygonOffsetUnits = 4;
+	}
 	return m;
 }
 
@@ -784,8 +789,15 @@ function runPrepass(renderer, scene, camera) {
 		scene.fog = underwater.savedFog;
 		scene.background = underwater.savedBg;
 	}
-	const rootWas = root.visible;
-	root.visible = false;
+	// hide the water SURFACES (and the trigger/overlay) but keep the bubbles: from outside a
+	// tank they are only ever seen through the refraction, so they belong in the pre-pass
+	/** @type {any[]} */
+	const hidden = [];
+	for (const e of entries.values())
+		for (const m of [e.surface, e.body]) if (m?.visible) hidden.push(m);
+	if (trigger?.visible) hidden.push(trigger);
+	if (overlay?.visible) hidden.push(overlay);
+	for (const m of hidden) m.visible = false;
 	renderer.xr.enabled = false;
 	renderer.shadowMap.autoUpdate = false;
 	renderer.setRenderTarget(target);
@@ -798,7 +810,7 @@ function runPrepass(renderer, scene, camera) {
 	renderer.setRenderTarget(rt);
 	renderer.xr.enabled = xrOn;
 	renderer.shadowMap.autoUpdate = shadowAuto;
-	root.visible = rootWas;
+	for (const m of hidden) m.visible = true;
 	scene.fog = fog;
 	scene.background = bg;
 	prepass.frame = frameNo;
@@ -938,7 +950,13 @@ function beforeSceneRender(renderer, scene, camera, target) {
 			scene.background = fogColor;
 		}
 	}
-	for (const e of entries.values()) e.uniforms.uUnderwater.value = underwater?.entry === e ? 1 : 0;
+	for (const e of entries.values()) {
+		const inside = underwater?.entry === e;
+		e.uniforms.uUnderwater.value = inside ? 1 : 0;
+		// the tank body shows its OUTER faces from outside and its INNER ones from inside, so
+		// a floor lying on the ground is culled from above (no z-fight with the ground)
+		if (e.body) e.body.material.side = inside ? THREE.BackSide : THREE.FrontSide;
+	}
 	if (overlay) {
 		overlay.visible = !!underwater;
 		if (underwater) {

@@ -54,7 +54,7 @@ h.run(async () => {
 		return { hasSettings, noPassthru, opened, teleToggled, holdToggled, angChanged, ptToggled, poseReset };
 	});
 
-	h.check(res.hasSettings && res.noPassthru, 'System ring offers Settings, not Passthru');
+	h.check(res.hasSettings && res.noPassthru, 'Settings ring offers All settings, not Passthru');
 	h.check(res.opened === true, 'the Settings action opens the VR settings panel');
 	h.check(res.teleToggled, 'settings:teleport toggles the teleport store');
 	h.check(res.holdToggled, 'settings:vertexhold toggles the vertex-hold store');
@@ -74,7 +74,8 @@ h.run(async () => {
 		});
 		return names;
 	});
-	h.check(meshes.includes('vrsettings-settings:teleport') && meshes.includes('vrsettings-settings:close'), `the panel mounts its control meshes (${meshes.length})`);
+	// 36: the rows come from the settings table (`vrset:<row id>`), Comfort is the first page
+	h.check(meshes.includes('vrsettings-vrset:teleport') && meshes.includes('vrsettings-vrset:close') && meshes.includes('vrsettings-vrset:page:buttons'), `the panel mounts its control meshes (${meshes.length})`);
 
 	await A.page.evaluate(() => window.__stores.vrControls.executeVRMenuAction('settings:close'));
 	await A.page.waitForTimeout(150);

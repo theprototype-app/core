@@ -1,5 +1,6 @@
 <script lang="ts">
 	import * as THREE from 'three'
+	import { onDestroy } from 'svelte'
 	import { T, useTask, useThrelte } from '@threlte/core'
 	// @ts-ignore - the Text typing re-exports a const enum that clashes with verbatimModuleSyntax
 	import { Text } from '@threlte/extras'
@@ -11,7 +12,9 @@
 	import { simulating, remoteSimulating } from '$lib/physics'
 	import { vrHovered, vrMenuGroup, vrChatUnread, controllerIndexFor } from '$lib/vrControls'
 	import { applyWindowPose } from '$lib/vrWindowPoses'
-	import { activeRing, ringEntries, ringVersion, sectorLayout, hubEntry, menuPoseFromController, RING_INNER, RING_OUTER, HUB_RADIUS } from '$lib/vrRadialMenu'
+	import { activeRing, ringEntries, ringVersion, sectorLayout, hubEntry, menuPoseFromController, RING_INNER, RING_OUTER, HUB_RADIUS, vrMenuPressed, ringTitle, radialTourId, entryLabel, entryIcon } from '$lib/vrRadialMenu'
+	import { vrIconTexture } from '$lib/vr/icons.js'
+	import { vrSettingsVersion } from '$lib/vr/settingsSchema.js'
 
 	// The in-world radial menu (74, anchored in 99): an 8-sector ring riding ON
 	// the menu-hand controller — centered at the thumbstick, tilted into the
@@ -44,14 +47,48 @@
 		$simulating,
 		$remoteSimulating, // PFX-C: the Physics sector label/dot tracks the sim
 		$selectedObject,
-		$selectedObjects // D4: counted labels + Make Group re-derive on the SET
+		$selectedObjects, // D4: counted labels + Make Group re-derive on the SET
+		$vrSettingsVersion // 36: a setting's value line follows any VR setting change
 	)
+	// 36: label / icon / value are resolved HERE (a function label read inside the template would be
+	// untracked — the legacy-mode rule the 31 R1 note below describes)
 	function deriveSectors(ring: string, ..._deps: any[]) {
 		const entries = ringEntries(ring)
+		const n = entries.length
+		// the text box a sector can hold: its chord at the label radius, less a margin
+		const rMid = (RING_INNER + RING_OUTER) / 2
+		const chord = 2 * rMid * Math.sin(Math.PI / Math.max(n, 2)) * 0.88
 		return entries.map((entry: any, index: number) => ({
 			entry,
-			...sectorLayout(index, entries.length)
+			label: entryLabel(entry),
+			icon: entryIcon(entry),
+			value: entry.value ? entry.value() : '',
+			nav: !!entry.ring,
+			maxWidth: Math.min(chord, 0.07),
+			fontSize: n > 8 ? 0.0078 : 0.0088,
+			...sectorLayout(index, n)
 		}))
+	}
+	$: title = ringTitle($activeRing)
+
+	// 36 (R11): press feedback — the activated sector flashes for a moment
+	let flashId = ''
+	let flashTimer: any = null
+	const offPressed = vrMenuPressed.subscribe((p) => {
+		if (!p?.id) return
+		flashId = p.id
+		clearTimeout(flashTimer)
+		flashTimer = setTimeout(() => (flashId = ''), 180)
+	})
+	onDestroy(() => {
+		offPressed()
+		clearTimeout(flashTimer)
+	})
+	/** stamp the T1 tour id on a sector mesh (onto userData, never replacing it) */
+	function tourTag(id: string) {
+		return (ref: any) => {
+			if (ref) ref.userData.tour = radialTourId(id)
+		}
 	}
 
 	// selectedObject is [] when nothing is selected — presence = has a uuid
@@ -61,8 +98,9 @@
 	// `color={sectorColor(s.entry, $vrHovered)}` compiles to untrack(() => sectorColor(...)) depending on
 	// `s` alone — so a $vrHovered read in here registered nothing and no sector ever lit up
 	// under the stick or the ray (the hub, which reads it inline, did). The Quest report.
-	function sectorColor(entry: any, hovered: string | null) {
+	function sectorColor(entry: any, hovered: string | null, flash: string) {
 		if (entry.disabled?.()) return '#1b1f26' // D4: greyed out, hover never lights it
+		if (flash === entry.id) return '#ffd2bf' // 36: the press flash
 		if (hovered === entry.id) return '#ff4000'
 		if (entry.color) return entry.color
 		return entry.active?.() ? '#2f81f7' : '#2a2f38'
@@ -102,34 +140,70 @@
 	<T.Group bind:ref={group} name="vr-quick-menu">
 		<!-- backdrop disc -->
 		<T.Mesh position={[0, 0, -0.004]}>
-			<T.CircleGeometry args={[RING_OUTER + 0.012, 48]} />
-			<T.MeshBasicMaterial color="#11151c" transparent opacity={0.82} side={THREE.DoubleSide} />
+			<T.CircleGeometry args={[RING_OUTER + 0.012, 64]} />
+			<T.MeshBasicMaterial color="#11151c" transparent opacity={0.86} side={THREE.DoubleSide} />
 		</T.Mesh>
+		<!-- 36: which ring this is (Settings ▸ Comfort reads "Comfort") -->
+		{#if title}
+			<Text
+				text={title}
+				color="#c9d1dc"
+				outlineColor="#000000"
+				outlineWidth={0.0008}
+				fontSize={0.0085}
+				anchorX="center"
+				anchorY="bottom"
+				position={[0, RING_OUTER + 0.016, 0.003]}
+			/>
+		{/if}
 		{#each sectors as s (s.entry.id)}
-			<T.Mesh name={`vrmenu-${s.entry.id}`}>
-				<T.RingGeometry args={[RING_INNER, RING_OUTER, 20, 1, s.thetaStart, s.thetaLength]} />
+			<!-- 36 (R11): the hovered sector lifts toward the eye -->
+			<T.Mesh name={`vrmenu-${s.entry.id}`} position={[0, 0, $vrHovered === s.entry.id ? 0.002 : 0]} oncreate={tourTag(s.entry.id)}>
+				<T.RingGeometry args={[RING_INNER, RING_OUTER, 24, 1, s.thetaStart, s.thetaLength]} />
 				<T.MeshBasicMaterial
-					color={sectorColor(s.entry, $vrHovered)}
+					color={sectorColor(s.entry, $vrHovered, flashId)}
 					transparent
 					opacity={0.94}
 					side={THREE.DoubleSide}
 				/>
 			</T.Mesh>
-			{#if s.entry.label}
+			<!-- 36 (R1): the desktop's icon for the same command, above the label -->
+			{#if s.icon && vrIconTexture(s.icon)}
+				<T.Mesh name={`vricon-${s.entry.id}`} position={[s.labelX, s.labelY + (s.value ? 0.016 : 0.012), 0.0035]}>
+					<T.PlaneGeometry args={[0.014, 0.014]} />
+					<T.MeshBasicMaterial map={vrIconTexture(s.icon)} color={labelColor(s.entry, $vrHovered)} transparent depthWrite={false} side={THREE.DoubleSide} />
+				</T.Mesh>
+			{/if}
+			{#if s.label}
 				<Text
-					text={typeof s.entry.label === 'function' ? s.entry.label() : s.entry.label}
+					text={s.nav ? s.label + ' ›' : s.label}
 					color={labelColor(s.entry, $vrHovered)}
 					outlineColor="#000000"
-					outlineWidth={0.0012}
-					fontSize={sectors.length > 8 ? 0.0095 : 0.0115}
+					outlineWidth={0.0009}
+					fontSize={s.fontSize}
+					maxWidth={s.maxWidth}
+					textAlign="center"
+					lineHeight={1.05}
 					anchorX="center"
-					anchorY="middle"
-					position={[s.labelX, s.labelY, 0.003]}
+					anchorY={s.icon ? 'top' : 'middle'}
+					position={[s.labelX, s.icon ? s.labelY + (s.value ? 0.006 : 0.002) : s.labelY, 0.003]}
+				/>
+			{/if}
+			{#if s.value}
+				<Text
+					text={s.value}
+					color={$vrHovered === s.entry.id ? '#ffffff' : '#9fb3c8'}
+					fontSize={0.0072}
+					maxWidth={s.maxWidth}
+					textAlign="center"
+					anchorX="center"
+					anchorY="top"
+					position={[s.labelX, s.labelY - 0.012, 0.003]}
 				/>
 			{/if}
 			<!-- unread chat badge (117): a red dot + count on the Chat sector -->
 			{#if s.entry.id === 'chat' && $vrChatUnread > 0}
-				<T.Mesh name="vrmenu-chat-badge" position={[s.labelX + 0.014, s.labelY + 0.012, 0.004]}>
+				<T.Mesh name="vrmenu-chat-badge" position={[s.labelX + 0.016, s.labelY + 0.02, 0.004]}>
 					<T.CircleGeometry args={[0.008, 20]} />
 					<T.MeshBasicMaterial color="#e5484d" side={THREE.DoubleSide} />
 				</T.Mesh>
@@ -139,29 +213,35 @@
 					fontSize={0.008}
 					anchorX="center"
 					anchorY="middle"
-					position={[s.labelX + 0.014, s.labelY + 0.012, 0.005]}
+					position={[s.labelX + 0.016, s.labelY + 0.02, 0.005]}
 				/>
 			{/if}
 		{/each}
-		<!-- center hub: Close / Object ▸ / Back -->
-		<T.Mesh name={`vrmenu-${hub.id}`}>
-			<T.CircleGeometry args={[HUB_RADIUS, 32]} />
+		<!-- center hub: Close / Selected / Back (36: icon + word, the same in every ring) -->
+		<T.Mesh name={`vrmenu-${hub.id}`} position={[0, 0, $vrHovered === hub.id ? 0.002 : 0]} oncreate={(ref: any) => ref && (ref.userData.tour = 'radial:hub')}>
+			<T.CircleGeometry args={[HUB_RADIUS, 40]} />
 			<T.MeshBasicMaterial
-				color={$vrHovered === hub.id ? '#ff4000' : '#39404d'}
+				color={flashId === hub.id ? '#ffd2bf' : $vrHovered === hub.id ? '#ff4000' : '#39404d'}
 				transparent
 				opacity={0.96}
 				side={THREE.DoubleSide}
 			/>
 		</T.Mesh>
+		{#if vrIconTexture(hub.icon)}
+			<T.Mesh name="vricon-hub" position={[0, 0.006, 0.0035]}>
+				<T.PlaneGeometry args={[0.013, 0.013]} />
+				<T.MeshBasicMaterial map={vrIconTexture(hub.icon)} color="#ffffff" transparent depthWrite={false} side={THREE.DoubleSide} />
+			</T.Mesh>
+		{/if}
 		<Text
 			text={hub.label}
 			color="#ffffff"
 			outlineColor="#000000"
-			outlineWidth={0.001}
-			fontSize={0.009}
+			outlineWidth={0.0007}
+			fontSize={0.0062}
 			anchorX="center"
 			anchorY="middle"
-			position={[0, 0, 0.003]}
+			position={[0, -0.009, 0.003]}
 		/>
 	</T.Group>
 {/if}

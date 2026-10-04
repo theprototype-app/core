@@ -27,6 +27,8 @@ import { hapticPulse } from './haptics.js';
 import { controllerIndexFor } from './input.js';
 import { withRayCamera, safeIntersect } from './pointer.js';
 import { perfMark } from '../perf/perfMarks.js'; // 34 PF: a profiler marker, a leaf
+import { stickOf, handOf } from './bindings.js';
+import { vrSmoothTurn, vrSmoothTurnSpeed, vrStance, vrHeightOffset } from './prefs.js';
 
 /**
  * Pure locomotion math (agreed VR map): left stick moves/strafes — toward the
@@ -337,10 +339,8 @@ export function teleportState() {
 
 /** @param {any} session */
 export function updateTeleport(session) {
-	const sources = [...session.inputSources];
-	const source = sources.find((s) => s.handedness === 'right');
-	const x = source?.gamepad?.axes?.[2] ?? 0;
-	const y = source?.gamepad?.axes?.[3] ?? 0;
+	// 36 (plan 55): the TELEPORT stick (the right one by default)
+	const { x, y } = stickOf('teleport', session);
 
 	// 157: teleport can be disabled — reset any arm + hide the arc
 	// 30b P3: ...and Interact allows it only when the scene's play block says so
@@ -406,9 +406,10 @@ export function updateTeleport(session) {
  * to the CALLER's session inputSources order (also keeps fake-session tests
  * working). @param {any=} session @returns {{index: number, origin: any, direction: any} | null} */
 export function teleportArcPose(session) {
-	let index = controllerIndexFor('right');
+	const hand = handOf('teleport'); // 36: the teleport binding's hand (right by default)
+	let index = controllerIndexFor(hand);
 	if (index < 0 && session)
-		index = [...session.inputSources].findIndex((s) => s.handedness === 'right');
+		index = [...session.inputSources].findIndex((s) => s.handedness === hand);
 	if (index < 0) return null;
 	const controller = renderer.xr.getController(index);
 	const origin = controller.getWorldPosition(new THREE.Vector3());
@@ -440,11 +441,18 @@ export function snapTurnRadians(deg, x, mirror) {
 }
 
 /** 31 K3: the turning in force — a game's own setting while playing it (snap / smooth /
- * off + angle), the device's snap angle everywhere else @returns {{mode: string, angle: number}} */
+ * off + angle), the device's snap angle everywhere else. 36: the device can turn SMOOTHLY too
+ * (Settings ▸ VR ▸ Comfort), and a game left on "Default" takes it. @returns {{mode: string, angle: number}} */
 export function turningInForce() {
 	const device = Number(get(vrSnapAngle)) || 0;
-	if (!gameFeelActive()) return device ? { mode: 'snap', angle: device } : { mode: 'off', angle: 0 };
-	return resolveTurning(get(gameSettingValues), device);
+	const smooth = get(vrSmoothTurn);
+	if (!gameFeelActive()) {
+		if (smooth) return { mode: 'smooth', angle: device || 45 };
+		return device ? { mode: 'snap', angle: device } : { mode: 'off', angle: 0 };
+	}
+	const values = get(gameSettingValues);
+	if (smooth && String(values?.turning ?? 'default') === 'default') return { mode: 'smooth', angle: device || 45 };
+	return resolveTurning(values, device);
 }
 /** degrees per second at full stick for SMOOTH turning */
 export const SMOOTH_TURN_DPS = 90;
@@ -455,8 +463,7 @@ export let lastSmoothTurn = 0;
 export function updateSnapTurn(session) {
 	lastSmoothTurn = 0;
 	if (S.teleportEngaged) return; // the stick is busy aiming a teleport
-	const source = [...session.inputSources].find((s) => s.handedness === 'right');
-	const x = source?.gamepad?.axes?.[2] ?? 0;
+	const x = stickOf('turn', session).x; // 36 (plan 55): the TURN stick (right by default)
 	const turning = turningInForce();
 	if (turning.mode === 'smooth') {
 		// 31 K3: SMOOTH turning — a continuous yaw proportional to the stick past a deadzone
@@ -466,8 +473,9 @@ export function updateSnapTurn(session) {
 		if (Math.abs(x) < 0.2 || !dt) return;
 		const mag = (Math.abs(x) - 0.2) / 0.8;
 		const dir = (x > 0 ? -1 : 1) * (get(vrMirrorSnapTurn) ? -1 : 1);
-		turnRigBy(THREE.MathUtils.degToRad(SMOOTH_TURN_DPS) * mag * dt * dir);
-		lastSmoothTurn = THREE.MathUtils.degToRad(SMOOTH_TURN_DPS) * mag * dt;
+		const dps = Number(get(vrSmoothTurnSpeed)) || SMOOTH_TURN_DPS; // 36: Comfort ▸ Smooth speed
+		turnRigBy(THREE.MathUtils.degToRad(dps) * mag * dt * dir);
+		lastSmoothTurn = THREE.MathUtils.degToRad(dps) * mag * dt;
 		return;
 	}
 	smoothTurnAt = 0;
@@ -522,6 +530,53 @@ export const STANDING_HEAD = 1.6;
 /** Scene's onsessionstart: remember the untouched reference space. */
 export function noteXRBaseSpace() {
 	xrBaseSpace = renderer?.xr?.getReferenceSpace?.() ?? null;
+	// 36: a fresh session starts on the real floor; the frame loop re-applies stance + height
+	appliedLift = 0;
+	seatedLift = null;
+}
+
+// ---- 36: SEATED / STANDING + HEIGHT (Settings ▸ VR ▸ Body) --------------------------------------
+// The view is LIFTED by offsetting the reference space (the same lever every move here uses), and the
+// lift is folded into `headHeight` — so the Interact walker, a teleport and a spawn all keep putting
+// the FEET on the floor while the eyes sit higher. Seated measures the head once (the first frame of
+// the session or of being seated) and lifts it to a standing eye height.
+/** metres the reference space lifts the viewer right now */
+let appliedLift = 0;
+/** the measured seated lift (null = not measured yet in this session) @type {number | null} */
+let seatedLift = null;
+/** the eye height seated mode lifts to */
+export const STANDING_EYE = 1.6;
+
+/**
+ * The lift a stance + offset asks for, given the physical head height. Pure (exported for the suites).
+ * @param {'standing' | 'seated'} stance @param {number} offset metres @param {number | null} baseHead metres (null = unknown)
+ */
+export function heightLiftFor(stance, offset, baseHead) {
+	const seated = stance === 'seated' ? Math.max(0, Math.min(1, STANDING_EYE - (baseHead ?? STANDING_EYE - 0.45))) : 0;
+	return Math.round((seated + (Number(offset) || 0)) * 1000) / 1000;
+}
+
+/** One frame: move the rig so the applied lift matches the setting (a no-op when it already does). */
+export function updateHeightLift() {
+	const frame = renderer?.xr?.getFrame?.();
+	const space = renderer?.xr?.getReferenceSpace?.();
+	if (!frame || !space) return;
+	const stance = get(vrStance);
+	if (stance === 'seated' && seatedLift === null) {
+		const base = xrBaseSpace ? frame.getViewerPose?.(xrBaseSpace) : null;
+		seatedLift = base ? base.transform.position.y : null;
+		if (seatedLift === null) seatedLift = STANDING_EYE - 0.45; // no base space: a typical seated head
+	}
+	if (stance !== 'seated') seatedLift = null;
+	const want = heightLiftFor(stance, get(vrHeightOffset), seatedLift);
+	const delta = want - appliedLift;
+	if (Math.abs(delta) < 1e-4) return;
+	if (offsetSpace({ x: 0, y: -delta, z: 0 })) appliedLift = want;
+}
+
+/** the suites' view of the lift */
+export function heightLiftDebug() {
+	return { applied: appliedLift, seatedHead: seatedLift, stance: get(vrStance), offset: get(vrHeightOffset) };
 }
 
 /** 30b P3: the locomotion rules in force right now (mode + the resolved play block). */
@@ -544,7 +599,8 @@ export function viewerNow() {
 	return {
 		head: { x: p.x, y: p.y, z: p.z },
 		yaw: Math.atan2(-fwd.x, -fwd.z),
-		headHeight: base ? base.transform.position.y : STANDING_HEAD
+		// 36: the Body lift counts as height — the feet stay on the floor while the eyes rise
+		headHeight: (base ? base.transform.position.y : STANDING_HEAD) + appliedLift
 	};
 }
 
@@ -606,12 +662,14 @@ export function tickVRInteractLocomotion(dt, session) {
 	if (!policy.walk) return false;
 	const viewer = viewerNow();
 	if (!viewer) return true;
-	const left = [...(session?.inputSources ?? [])].find((s) => s.handedness === 'left');
-	const axes = left?.gamepad?.axes ?? [];
+	// 36 (plan 55): the MOVE stick (the left one by default)
+	const move = stickOf('move', session);
+	const stickX = move.x;
+	const stickY = move.y;
 	/** @type {any} */
 	let aim = null;
 	if (policy.fly) {
-		const index = controllerIndexFor('left');
+		const index = controllerIndexFor(handOf('move'));
 		if (index >= 0) {
 			const v = new THREE.Vector3(0, 0, -1).applyQuaternion(
 				renderer.xr.getController(index).getWorldQuaternion(new THREE.Quaternion())
@@ -623,7 +681,7 @@ export function tickVRInteractLocomotion(dt, session) {
 		head: viewer.head,
 		headHeight: viewer.headHeight,
 		yaw: viewer.yaw,
-		stick: { x: axes[2] ?? 0, y: axes[3] ?? 0 },
+		stick: { x: stickX, y: stickY },
 		dt,
 		fly: policy.fly,
 		aim,

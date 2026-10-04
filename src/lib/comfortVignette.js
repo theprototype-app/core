@@ -9,12 +9,13 @@
 // never in objectsGroup. One mesh and one canvas texture, built once: nothing allocates per
 // frame.
 //
-// A LEAF: three + svelte/store + gameSettings + gameFeel + sceneStore.
+// A LEAF: three + svelte/store + gameSettings + gameFeel + sceneStore + vr/prefs (36).
 import * as THREE from 'three';
 import { get } from 'svelte/store';
 import { globalScene } from '../stores/sceneStore';
 import { gameSettingValues } from './gameSettings';
 import { gameFeelActive } from './gameFeel';
+import { vrComfortVignette } from './vr/prefs.js';
 
 let stick = 0;
 let turn = 0;
@@ -79,7 +80,9 @@ const _fwd = new THREE.Vector3();
  * strength shown. @param {{position: any, quaternion: any} | null} head @param {number} [dt]
  */
 export function vignetteFrame(head, dt = 1 / 72) {
-	const on = !!head && gameFeelActive() && get(gameSettingValues).vignette === true;
+	// 36: the DEVICE setting (Settings ▸ VR ▸ Comfort) rings it everywhere — Edit, Interact, any scene;
+	// a game can still turn it on for itself through its own setting
+	const on = !!head && (get(vrComfortVignette) || (gameFeelActive() && get(gameSettingValues).vignette === true));
 	const target = on ? vignetteTarget(stick, turn, dt) : 0;
 	strength = on ? easeVignette(strength, target, dt) : 0;
 	if (!on && !mesh) return 0;

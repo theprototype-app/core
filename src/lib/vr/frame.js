@@ -63,13 +63,16 @@ import {
 import { hapticPulse } from './haptics.js';
 import { navSuppressors, vrFrameHooks } from './hooks.js';
 import { controllerIndexFor, axesForSlot } from './input.js';
+import { actionPressed, handOf, CONTROL_INDEX } from './bindings.js';
+import { settingsPanelRows, vrSettingsPage, vrSettingsCursor, neighbourTab, activateVRSetting } from './settingsSchema.js';
 import {
 	hideArc,
 	updateTeleport,
 	updateBlink,
 	lastSmoothTurn,
 	updateSnapTurn,
-	vrJumpHeight
+	vrJumpHeight,
+	updateHeightLift
 } from './locomotion.js';
 import { modeHand, toggleVRMode, payPendingSpawn, updateModeLabel } from './modes.js';
 import {
@@ -168,6 +171,27 @@ export function vrNavigationSuppressed(opts = {}) {
 	return false;
 }
 
+/** 36: the Settings panel's sideways flick fires once per flick (re-armed at centre) */
+let settingsFlickArmed = true;
+
+/** 36: a sector id that moves through the rings (a ▸ sector or the Back hub) rather than acting @param {string} id */
+function navigatesRing(id) {
+	return id.startsWith('nav:') || id === 'back';
+}
+
+/** 36: is something up that owns the stick press (the radial, the keyboard, a list panel)? */
+function panelModal() {
+	return !!(
+		get(vrKeyboardTarget) ||
+		get(vrMenuOpen) ||
+		get(vrObjectsPanelOpen) ||
+		get(vrPropsPanelOpen) ||
+		get(vrPrefabsPanelOpen) ||
+		get(vrChatPanelOpen) ||
+		get(vrSettingsPanelOpen)
+	);
+}
+
 /** Per-frame update while presenting (called from Scene's useTask) */
 export function updateVRControls() {
 	const session = renderer?.xr.getSession();
@@ -189,6 +213,7 @@ export function updateVRControls() {
 		return;
 	}
 	payPendingSpawn(); // 30b P4
+	updateHeightLift(); // 36: Settings ▸ VR ▸ Body (seated / height), applied once per change
 	// open menu/panel are modal for the sticks: sector nav / scrolling own them;
 	// a RIGHT-hand grab owns the right stick too (reel/scale beats teleport, 100);
 	// D9: manipulation gestures + ANY held grip stand navigation down entirely
@@ -198,8 +223,11 @@ export function updateVRControls() {
 		!get(vrPropsPanelOpen) &&
 		!get(vrPrefabsPanelOpen) &&
 		!get(vrChatPanelOpen) &&
+		!get(vrSettingsPanelOpen) && // 36: its row cursor owns the sticks
 		!get(vrKeyboardTarget) &&
-		get(vrGrabbedHand) !== 'right' &&
+		// 36 (plan 55): a grab owns ITS hand's stick — the turn/teleport stick stands down when that hand holds
+		get(vrGrabbedHand) !== handOf('turn') &&
+		get(vrGrabbedHand) !== handOf('teleport') &&
 		get(vrGrabbedHand) !== 'both' &&
 		!vrNavigationSuppressed({ grips: true })
 	) {
@@ -227,10 +255,10 @@ export function updateVRControls() {
 		if (index < 0) index = srcIndex;
 		const prev = previousButtons[index];
 
-		// B/Y on the menu hand: toggle the radial menu, or (hold mode, 74) hold
-		// to show + release over a sector to activate it
-		const menuPressed = !!buttons[5]?.pressed;
-		if (source.handedness === get(vrMenuHand)) {
+		// the MENU button (B on the menu hand by default; 36: any binding, plan 55): toggle the radial menu,
+		// or (hold mode, 74) hold to show + release over a sector to activate it
+		const menuPressed = actionPressed('menu', source);
+		if (source.handedness === handOf('menu')) {
 			if (get(vrMenuHold)) {
 				if (menuPressed && !prev.menu) {
 					vrObjectsPanelOpen.set(false); // ring replaces the panel (101)
@@ -239,9 +267,14 @@ export function updateVRControls() {
 					vrMenuOpen.set(true);
 				}
 				if (!menuPressed && prev.menu) {
+					// 36 (R8): releasing over a ▸ sector (or the Back hub) NAVIGATES and keeps the ring up;
+					// it used to close the menu and leave the sub-ring pushed for the next open
 					const hovered = get(vrHovered);
-					vrMenuOpen.set(false);
-					if (hovered) executeVRMenuAction(hovered);
+					if (hovered && navigatesRing(hovered)) executeVRMenuAction(hovered);
+					else {
+						vrMenuOpen.set(false);
+						if (hovered) executeVRMenuAction(hovered);
+					}
 				}
 			} else if (menuPressed && !prev.menu) {
 				vrObjectsPanelOpen.set(false);
@@ -255,15 +288,16 @@ export function updateVRControls() {
 		// 30b P4: the MODE button — Y on the LEFT hand (B on the right when the radial menu
 		// lives on the left, so the two never share a button): Edit <-> Interact, in VR
 		if (source.handedness === modeHand()) {
-			if (menuPressed && !prev.mode) toggleVRMode();
-			prev.mode = menuPressed;
+			const modePressed = actionPressed('mode', source);
+			if (modePressed && !prev.mode) toggleVRMode();
+			prev.mode = modePressed;
 		}
 
 
 		// 31 K3: LEFT X = the game's pause menu (A on the right is push-to-talk, B/Y are
 		// the radial menu and the mode button, so X is the one face button left free)
-		const xPressed = !!buttons[4]?.pressed;
-		if (source.handedness === 'left') {
+		if (source.handedness === handOf('pause')) {
+			const xPressed = actionPressed('pause', source);
 			if (xPressed && !prev.x && gameFeelActive() && shellMenuAvailable()) toggleShellMenu();
 			prev.x = xPressed;
 		}
@@ -271,8 +305,8 @@ export function updateVRControls() {
 		// right A held = push-to-talk — or, 31-towers P1, JUMP while the game's Character
 		// Controller can jump (Interact walking). The edge is the charController's own, so a held
 		// A is one jump and landing with it down is none (no bunny-hopping).
-		const aPressed = !!buttons[4]?.pressed;
-		if (source.handedness === 'right' && aPressed !== !!prev.a) {
+		const aPressed = actionPressed('ptt', source);
+		if (source.handedness === handOf('ptt') && aPressed !== !!prev.a) {
 			if (vrJumpHeight() > 0) {
 				setJumpRequested(aPressed);
 				if (pttByA) setPttHeld(false);
@@ -282,19 +316,19 @@ export function updateVRControls() {
 				pttByA = aPressed;
 			}
 		}
-		prev.a = aPressed;
+		if (source.handedness === handOf('ptt')) prev.a = aPressed;
 
 		// K-C: publish this hand's stick + trigger/squeeze into the SDK input
 		// layer (inputRuntime is store-only; this is the safe import direction)
 		if (source.handedness === 'left' || source.handedness === 'right') {
 			setVRAxes(source.handedness, source.gamepad.axes?.[2] ?? 0, source.gamepad.axes?.[3] ?? 0);
 			// 31 K3: the comfort vignette hears the locomotion stick + this frame's smooth turn
-			if (source.handedness === 'left') noteArtificialMotion(Math.hypot(source.gamepad.axes?.[2] ?? 0, source.gamepad.axes?.[3] ?? 0), lastSmoothTurn);
+			if (source.handedness === handOf('move')) noteArtificialMotion(Math.hypot(source.gamepad.axes?.[2] ?? 0, source.gamepad.axes?.[3] ?? 0), lastSmoothTurn);
 			setVRButtons(source.handedness, !!buttons[0]?.pressed, !!buttons[1]?.pressed);
 		}
 
-		// squeeze grabs
-		const squeezePressed = !!buttons[1]?.pressed;
+		// squeeze grabs (the 'grab' row of the bindings table: either grip, the platform convention)
+		const squeezePressed = !!buttons[CONTROL_INDEX.grip]?.pressed;
 		gripHeld[index] = squeezePressed; // 186: track for the two-grip stretch
 		if (squeezePressed && !prev.squeeze) onSqueezeStart(index);
 		if (!squeezePressed && prev.squeeze) onSqueezeEnd(index);
@@ -303,7 +337,12 @@ export function updateVRControls() {
 		// thumbstick CLICK (buttons[3] — the press, not the axes): with the menu
 		// open it activates the hovered sector (74); otherwise the RIGHT stick
 		// pings the pointed spot with the v2 visual/chime + a haptic tick (87.6)
-		const stickPressed = !!buttons[3]?.pressed;
+		// 36 (plan 55): a stick PRESS still activates whatever panel is up, from either hand; with
+		// nothing up, the PING binding fires (the right stick press by default)
+		const stickPressed = !!buttons[CONTROL_INDEX.stickClick]?.pressed;
+		const pingPressed = actionPressed('ping', source);
+		if (pingPressed && !prev.ping && !panelModal()) pingFromController(index);
+		prev.ping = pingPressed;
 		if (stickPressed && !prev.stick) {
 			if (get(vrKeyboardTarget)) {
 				// keyboard is modal on top (116): stick-press taps the hovered key
@@ -335,18 +374,21 @@ export function updateVRControls() {
 				// ray hover wins; otherwise the stick-press opens the input (117)
 				const action = get(vrHovered) ?? 'chat:input';
 				executeVRMenuAction(action);
-			} else if (source.handedness === 'right') {
-				// D10: ping from the hand that CLICKED the stick — its ray is what
-				// you aimed. (D6 briefly routed this through the "pointer hand",
-				// which sent the ping down the LEFT ray whenever the menu sat on
-				// the right hand — the on-device report.)
-				pingFromController(index);
+			} else if (get(vrSettingsPanelOpen)) {
+				// 36 (S23): ray hover wins; otherwise press the cursored row (the tab strip pages on)
+				const rows = settingsPanelRows(get(vrSettingsPage));
+				const row = rows[Math.min(Math.max(0, get(vrSettingsCursor)), rows.length - 1)];
+				const action = get(vrHovered) ?? (row?.kind === 'tabs' ? 'vrset:page:' + neighbourTab(get(vrSettingsPage), 1) : row?.action || null);
+				if (action) executeVRMenuAction(action);
 			}
+			// D10: the ping fires from the hand that pressed — its ray is what you aimed (D6 briefly
+			// routed it through the "pointer hand", the on-device report). 36: that hand is the
+			// ping binding's, handled above.
 		}
 		prev.stick = stickPressed;
 
 		// draw mode: holding the trigger draws at the controller tip
-		const triggerPressed = !!buttons[0]?.pressed;
+		const triggerPressed = !!buttons[CONTROL_INDEX.trigger]?.pressed;
 		if (get(drawMode)) {
 			if (triggerPressed)
 				addStrokePoint(renderer.xr.getController(index).getWorldPosition(new THREE.Vector3()));
@@ -616,12 +658,41 @@ export function updateVRControls() {
 			vrHovered.set(hovered);
 		}
 	} else if (get(vrSettingsPanelOpen)) {
-		// VR Settings panel (187): the pointer ray highlights its rows
+		// VR Settings panel (187): the pointer ray highlights its rows. 36 (S23): EITHER stick walks a row
+		// cursor (the Objects/Props panel pattern) — up/down moves it, left/right changes the cursored
+		// choice (or the page, on the tab strip); a stick press presses (the chain above)
+		const sources = [...session.inputSources];
 		const pointerIndex = controllerIndexFor(get(vrMenuHand) === 'right' ? 'left' : 'right');
 		const hovered = pointerIndex >= 0 ? raycastSettings(pointerIndex) : null;
 		if (hovered !== get(vrHovered)) {
 			if (hovered) hapticPulse(0.12, 14);
 			vrHovered.set(hovered);
+		}
+		let x = 0;
+		let y = 0;
+		for (const src of sources) {
+			const axes = src?.gamepad?.axes ?? [];
+			if (Math.abs(axes[3] ?? 0) > Math.abs(y)) y = axes[3];
+			if (Math.abs(axes[2] ?? 0) > Math.abs(x)) x = axes[2];
+		}
+		const now = Date.now();
+		// a sideways flick changes a value ONCE per flick (the stick must come back to centre): a repeat
+		// would cycle a two-option choice straight back to where it was. Up/down repeats like a list.
+		if (Math.abs(x) < 0.4) settingsFlickArmed = true;
+		const rows = settingsPanelRows(get(vrSettingsPage));
+		const at = Math.min(Math.max(0, get(vrSettingsCursor)), rows.length - 1);
+		if (Math.abs(y) > 0.6 && Math.abs(y) >= Math.abs(x) && now - S.panelScrollAt > 220) {
+			S.panelScrollAt = now;
+			hapticPulse(0.08, 10);
+			vrSettingsCursor.set(Math.min(Math.max(0, at + (y > 0 ? 1 : -1)), rows.length - 1));
+		} else if (Math.abs(x) > 0.6 && Math.abs(x) > Math.abs(y) && settingsFlickArmed) {
+			settingsFlickArmed = false;
+			S.panelScrollAt = now;
+			hapticPulse(0.08, 10);
+			const row = rows[at];
+			const dir = x > 0 ? 1 : -1;
+			if (row?.kind === 'tabs') vrSettingsPage.set(neighbourTab(get(vrSettingsPage), dir));
+			else if (row?.rowId && (row.kind === 'choice' || row.kind === 'range')) activateVRSetting(row.rowId, dir);
 		}
 	} else if (get(vrApprovePanelOpen)) {
 		// VR peer-approval panel (211): the pointer ray highlights Approve / Deny

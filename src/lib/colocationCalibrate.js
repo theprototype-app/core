@@ -516,7 +516,8 @@ export function startColocationCalibration() {
 	registerVRMenuEntry({
 		id: 'nav:colocate',
 		group: 'scene',
-		label: () => (get(roomAlignment) ? 'Colocated ▸' : 'Colocate ▸'),
+		label: () => (get(roomAlignment) ? 'Colocated' : 'Colocate'),
+		icon: 'users',
 		order: 2,
 		ring: 'colocate'
 	});

@@ -83,6 +83,7 @@ export const DEBUG_HOOKS = [
 	['shortcutsRegistry', () => import('./shortcuts')],
 	['themes', () => import('./themes')],
 	['vrRadialMenu', () => import('./vrRadialMenu')],
+	['vrBindings', () => import('./vr/bindings.js')],
 	['vrPalette', () => import('./vrPalette')],
 	['vrWindowPoses', () => import('./vrWindowPoses')],
 	['vrKeyboard', () => import('./vrKeyboard')],

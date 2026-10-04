@@ -27,6 +27,7 @@ import { hapticPulse } from './haptics.js';
 import { controllerIndexFor } from './input.js';
 import { withRayCamera, safeIntersect } from './pointer.js';
 import { perfMark } from '../perf/perfMarks.js'; // 34 PF: a profiler marker, a leaf
+import { stickOf, handOf } from './bindings.js';
 
 /**
  * Pure locomotion math (agreed VR map): left stick moves/strafes — toward the
@@ -337,10 +338,8 @@ export function teleportState() {
 
 /** @param {any} session */
 export function updateTeleport(session) {
-	const sources = [...session.inputSources];
-	const source = sources.find((s) => s.handedness === 'right');
-	const x = source?.gamepad?.axes?.[2] ?? 0;
-	const y = source?.gamepad?.axes?.[3] ?? 0;
+	// 36 (plan 55): the TELEPORT stick (the right one by default)
+	const { x, y } = stickOf('teleport', session);
 
 	// 157: teleport can be disabled — reset any arm + hide the arc
 	// 30b P3: ...and Interact allows it only when the scene's play block says so
@@ -406,9 +405,10 @@ export function updateTeleport(session) {
  * to the CALLER's session inputSources order (also keeps fake-session tests
  * working). @param {any=} session @returns {{index: number, origin: any, direction: any} | null} */
 export function teleportArcPose(session) {
-	let index = controllerIndexFor('right');
+	const hand = handOf('teleport'); // 36: the teleport binding's hand (right by default)
+	let index = controllerIndexFor(hand);
 	if (index < 0 && session)
-		index = [...session.inputSources].findIndex((s) => s.handedness === 'right');
+		index = [...session.inputSources].findIndex((s) => s.handedness === hand);
 	if (index < 0) return null;
 	const controller = renderer.xr.getController(index);
 	const origin = controller.getWorldPosition(new THREE.Vector3());
@@ -455,8 +455,7 @@ export let lastSmoothTurn = 0;
 export function updateSnapTurn(session) {
 	lastSmoothTurn = 0;
 	if (S.teleportEngaged) return; // the stick is busy aiming a teleport
-	const source = [...session.inputSources].find((s) => s.handedness === 'right');
-	const x = source?.gamepad?.axes?.[2] ?? 0;
+	const x = stickOf('turn', session).x; // 36 (plan 55): the TURN stick (right by default)
 	const turning = turningInForce();
 	if (turning.mode === 'smooth') {
 		// 31 K3: SMOOTH turning — a continuous yaw proportional to the stick past a deadzone
@@ -606,12 +605,14 @@ export function tickVRInteractLocomotion(dt, session) {
 	if (!policy.walk) return false;
 	const viewer = viewerNow();
 	if (!viewer) return true;
-	const left = [...(session?.inputSources ?? [])].find((s) => s.handedness === 'left');
-	const axes = left?.gamepad?.axes ?? [];
+	// 36 (plan 55): the MOVE stick (the left one by default)
+	const move = stickOf('move', session);
+	const stickX = move.x;
+	const stickY = move.y;
 	/** @type {any} */
 	let aim = null;
 	if (policy.fly) {
-		const index = controllerIndexFor('left');
+		const index = controllerIndexFor(handOf('move'));
 		if (index >= 0) {
 			const v = new THREE.Vector3(0, 0, -1).applyQuaternion(
 				renderer.xr.getController(index).getWorldQuaternion(new THREE.Quaternion())
@@ -623,7 +624,7 @@ export function tickVRInteractLocomotion(dt, session) {
 		head: viewer.head,
 		headHeight: viewer.headHeight,
 		yaw: viewer.yaw,
-		stick: { x: axes[2] ?? 0, y: axes[3] ?? 0 },
+		stick: { x: stickX, y: stickY },
 		dt,
 		fly: policy.fly,
 		aim,

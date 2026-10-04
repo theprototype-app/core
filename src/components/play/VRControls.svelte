@@ -1,13 +1,15 @@
 <!-- VR stick locomotion (agreed map): LEFT stick moves/strafes — toward the
      controller aim when "VR flying" is on, horizontally otherwise; holding
      the LEFT grip switches the stick to pan/elevate. The right stick does
-     snap turn + teleport (vrControls.js); right grip drags the world. -->
+     snap turn + teleport (vrControls.js); right grip drags the world.
+     36 (plan 55): "left" is the MOVE binding's hand — Settings ▸ VR ▸ Controls. -->
 <script lang="ts">
 	import * as THREE from 'three';
 	import { useThrelte, useTask } from '@threlte/core';
 	import { vrFlying, vrMenuOpen, vrObjectsPanelOpen, vrGrabbedHand } from '../../stores/sceneStore';
 	import { computeMoveOffset, worldScale, twoGripStretchActive, controllerIndexFor, vrNavigationSuppressed, tickVRInteractLocomotion } from '$lib/vrControls';
 	import { inputClaims } from '$lib/inputRuntime';
+	import { handOf } from '$lib/vr/bindings.js';
 
 	const { renderer, camera, scene } = useThrelte();
 	const { xr } = renderer;
@@ -39,7 +41,8 @@
 		// 30b P3: INTERACT walks like a game (collision, gravity, step-up; no fly or teleport
 		// unless the play block allows them) — a held object does not stop your feet
 		if (tickVRInteractLocomotion(delta, session)) return;
-		if ($vrGrabbedHand === 'left' || $vrGrabbedHand === 'both') return; // a left-hand grab owns its stick (100)
+		const moveHand = handOf('move');
+		if ($vrGrabbedHand === moveHand || $vrGrabbedHand === 'both') return; // a grab owns its hand's stick (100)
 		if (twoGripStretchActive()) return; // 186: both grips + sticks stretch, not move
 		// D9: world pan/grab write reference-space offsets themselves, and the
 		// mesh-edit gestures read the sticks for reel/scale — never also move
@@ -50,12 +53,12 @@
 		xr.getCamera(camera.current).getWorldDirection(cameraDir);
 
 		for (const source of session.inputSources) {
-			if (!source.gamepad || source.handedness !== 'left') continue;
+			if (!source.gamepad || source.handedness !== moveHand) continue;
 			const axes = source.gamepad.axes;
 			const grip = !!source.gamepad.buttons[1]?.pressed;
 			// aim of the left controller (pitch included) for flying — 194/210: the
 			// controller SLOT by handedness, not the inputSources order (they diverge)
-			aimDir.set(0, 0, -1).applyQuaternion(xr.getController(controllerIndexFor('left')).getWorldQuaternion(new THREE.Quaternion()));
+			aimDir.set(0, 0, -1).applyQuaternion(xr.getController(controllerIndexFor(moveHand)).getWorldQuaternion(new THREE.Quaternion()));
 			const offset = computeMoveOffset({
 				x: axes[2] ?? 0,
 				y: axes[3] ?? 0,

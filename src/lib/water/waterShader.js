@@ -241,6 +241,12 @@ void main() {
 		vec2 dn = (a.xy * 2.0 - 1.0) + (b.xy * 2.0 - 1.0);
 		N = normalize(N + vec3(dn.x, 0.0, dn.y) * uDetail * 0.6);
 		foamNoise = a.w * 0.6 + b.w * 0.4;
+	} else {
+		// the walls get the same noise, wrapped round them (a glowing lava tank is not one flat colour)
+		float sp = uDetailSpeed * (1.0 - uFrozen);
+		vec3 gn = normalize(vNormalW);
+		vec2 wuv = abs(gn.y) > 0.7 ? vWorld.xz : abs(gn.x) > abs(gn.z) ? vWorld.zy : vWorld.xy;
+		foamNoise = texture2D(uNormalMap, wuv / uDetailScale + vec2(0.3, 0.6) * t * sp * 0.1).w;
 	}
 	if (!front) N = -N;
 	float NdV = clamp(dot(N, V), 0.0, 1.0);
@@ -338,7 +344,15 @@ void main() {
 	vec3 lit = uSkyTop * 0.45 + uSunColor * (0.35 + 0.65 * max(dot(N, L), 0.0));
 	col = mix(col, uFoamColor * lit, clamp(foamMask, 0.0, 1.0));
 	alpha = max(alpha, foamMask);
-	col += uEmissive * (front ? 1.0 : 0.6) * (0.75 + 0.25 * foamNoise);
+	// glow (lava, toxic): bright veins where the noise is high, a dark cooled crust where it is low
+	float emit = max(max(uEmissive.r, uEmissive.g), uEmissive.b);
+	if (emit > 0.0) {
+		float vein = smoothstep(0.38, 0.72, foamNoise);
+		// an opaque glow (no refraction: lava) cools into a crust; a see-through one (toxic) only pulses
+		bool molten = uRefraction <= 0.0;
+		if (molten) col = mix(col * 0.35 + uDeep * 0.25, col, vein);
+		col += uEmissive * (front ? 1.0 : 0.7) * (molten ? mix(0.12, 1.5, vein) : mix(0.6, 1.15, vein));
+	}
 
 	gl_FragColor = vec4(col, alpha);
 	#include <tonemapping_fragment>

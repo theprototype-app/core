@@ -188,8 +188,8 @@
 		<button
 			data-dock-tab={tab.key}
 			class="tab-note h-5.5 shrink-0 select-none px-4 pb-0.5 pt-1 text-xs font-semibold {$bottomDockActive === tab.key
-				? 'bg-gray-700 text-white'
-				: 'bg-gray-900/70 text-gray-400 hover:text-gray-200'} {dragKey === tab.key
+				? 'dt-on'
+				: 'dt-off'} {dragKey === tab.key
 				? 'opacity-40 ring-1 ring-primary-400'
 				: ''}"
 			title="{tab.title} — drag to reorder, or out of the strip to undock"
@@ -233,3 +233,20 @@
 {#if tabMenu}
 	<ContextMenu x={tabMenu.x} y={tabMenu.y} items={tabMenu.items} on:close={() => (tabMenu = null)} />
 {/if}
+
+<style>
+	/* 36 U1: the strip's two states in theme tokens (dark keeps its exact grays). The idle tab
+	   was gray-900/70 — a class no light remap covers — under the light theme's muted ink:
+	   1.4:1. Opaque fills, because the strip floats over the 3D view. */
+	.dt-on {
+		background: var(--surface-3, #374151);
+		color: var(--text, #fff);
+	}
+	.dt-off {
+		background: var(--surface-2, rgb(17 24 39 / 0.7));
+		color: var(--text-2, #9ca3af);
+	}
+	.dt-off:hover {
+		color: var(--text, #e5e7eb);
+	}
+</style>

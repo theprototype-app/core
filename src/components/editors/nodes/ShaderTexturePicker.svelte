@@ -309,7 +309,7 @@
 		text-overflow: ellipsis;
 		white-space: nowrap;
 		font-size: 9px;
-		color: #9ca3af;
+		color: var(--muted, #9ca3af);
 	}
 	/* CLAMPED on the node card: xyflow sizes a node to its content, so an unbounded
 	   filename would stretch the whole card. The hover card carries the full name. */
@@ -321,11 +321,11 @@
 	}
 	.shader-tex-clear {
 		flex: 0 0 auto;
-		color: #9ca3af;
+		color: var(--muted, #9ca3af);
 		line-height: 1;
 	}
 	.shader-tex-clear:hover {
-		color: #f3f4f6;
+		color: var(--text, #f3f4f6);
 	}
 
 	/* the portaled hover card sits above every panel: it is transient and pointer-inert */
@@ -373,12 +373,12 @@
 	}
 	.shader-tex-card-empty {
 		font-size: 10px;
-		color: #6b7280;
+		color: var(--muted, #6b7280);
 	}
 	.shader-tex-card-name {
 		font-size: 11px;
 		font-weight: 600;
-		color: #f3f4f6;
+		color: var(--text, #f3f4f6);
 		/* the FULL name, wrapped rather than clipped — this is where it is readable */
 		overflow-wrap: anywhere;
 		line-height: 1.25;
@@ -391,11 +391,11 @@
 		font-size: 9.5px;
 	}
 	.shader-tex-card-meta dt {
-		color: #6b7280;
+		color: var(--muted, #6b7280);
 	}
 	.shader-tex-card-meta dd {
 		margin: 0;
-		color: #d1d5db;
+		color: var(--text-2, #d1d5db);
 		text-align: right;
 	}
 	.shader-tex-card-hash {

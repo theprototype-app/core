@@ -129,6 +129,45 @@
 	--accent-2: #eab308;
 }
 
+/* ---- 36 U1: READABLE STATE INK. Text that says "over budget" / "careful" / "fine" and a
+        filled accent with text ON it. The dark-authored literals (#fbbf24 amber, #ef4444 red,
+        white on #3b82f6) measured 1.6:1 to 3.7:1 against the light theme's white and the
+        green theme's accent, so every theme states its own: each pair reaches WCAG AA 4.5:1
+        on that theme's surfaces. Dark keeps the old hues (it had no token block) — they were
+        always fine on gray-800. ---- */
+:root {
+	--ink-bad: #f87171;
+	--ink-warn: #fbbf24;
+	--ink-good: #34d399;
+	--accent-fill: #2563eb;
+	--on-accent: #ffffff;
+}
+:root[data-theme='light'] {
+	--ink-bad: #b91c1c;
+	--ink-warn: #92400e;
+	--ink-good: #047857;
+	--accent-fill: #2563eb;
+}
+:root[data-theme='green'] {
+	--ink-bad: #fca5a5;
+	--ink-warn: #fde047;
+	--ink-good: #86efac;
+	--accent-fill: #15803d;
+}
+:root[data-theme='bit8'] {
+	--ink-bad: #fda4af;
+	--ink-warn: #fde68a;
+	--ink-good: #6ee7b7;
+	--accent-fill: #be185f;
+}
+:root[data-theme='contrast'] {
+	--ink-bad: #ff8080;
+	--ink-warn: #ffd400;
+	--ink-good: #00ff88;
+	--accent-fill: #ffd400;
+	--on-accent: #000000;
+}
+
 /* ---- themed dropdown + scrollbar tokens (146/148) — feed the ThemedSelect
         popup + the global scrollbar style so both recolor per theme instead of
         the white/OS native chrome. Base = the dark-authored look; each theme
@@ -228,6 +267,65 @@
 :root:not([data-theme='dark']) .bg-gray-800\/90 {
 	background-color: rgb(var(--surface-rgb) / 0.9) !important;
 }
+/* 36 U1: EVERY opacity variant the chrome uses. The list above covered a few, and the text
+   remaps below apply to all — so an unlisted `bg-gray-800/85` kept its dark fill under the
+   light theme's dark ink (the node editor's scope chip read 1.6:1). */
+:root:not([data-theme='dark']) .bg-gray-900\/50 {
+	background-color: rgb(var(--surface-deep-rgb) / 0.5) !important;
+}
+:root:not([data-theme='dark']) .bg-gray-900\/70 {
+	background-color: rgb(var(--surface-deep-rgb) / 0.7) !important;
+}
+:root:not([data-theme='dark']) .bg-gray-900\/85 {
+	background-color: rgb(var(--surface-deep-rgb) / 0.85) !important;
+}
+:root:not([data-theme='dark']) .bg-gray-900\/90 {
+	background-color: rgb(var(--surface-deep-rgb) / 0.9) !important;
+}
+:root:not([data-theme='dark']) .bg-gray-900\/95 {
+	background-color: rgb(var(--surface-deep-rgb) / 0.95) !important;
+}
+:root:not([data-theme='dark']) .bg-gray-800\/40 {
+	background-color: rgb(var(--surface-rgb) / 0.4) !important;
+}
+:root:not([data-theme='dark']) .bg-gray-800\/60 {
+	background-color: rgb(var(--surface-rgb) / 0.6) !important;
+}
+:root:not([data-theme='dark']) .bg-gray-800\/85 {
+	background-color: rgb(var(--surface-rgb) / 0.85) !important;
+}
+:root:not([data-theme='dark']) .bg-gray-800\/95 {
+	background-color: rgb(var(--surface-rgb) / 0.95) !important;
+}
+:root:not([data-theme='dark']) .bg-gray-700\/50,
+:root:not([data-theme='dark']) .hover\:bg-gray-700\/50:hover {
+	background-color: color-mix(in srgb, var(--surface-2) 50%, transparent) !important;
+}
+:root:not([data-theme='dark']) .bg-gray-700\/60,
+:root:not([data-theme='dark']) .hover\:bg-gray-700\/60:hover {
+	background-color: color-mix(in srgb, var(--surface-2) 60%, transparent) !important;
+}
+:root:not([data-theme='dark']) .bg-gray-700\/70,
+:root:not([data-theme='dark']) .hover\:bg-gray-700\/70:hover {
+	background-color: color-mix(in srgb, var(--surface-2) 70%, transparent) !important;
+}
+:root:not([data-theme='dark']) .bg-gray-700\/80,
+:root:not([data-theme='dark']) .hover\:bg-gray-700\/80:hover {
+	background-color: color-mix(in srgb, var(--surface-2) 80%, transparent) !important;
+}
+:root:not([data-theme='dark']) .bg-gray-700\/85,
+:root:not([data-theme='dark']) .hover\:bg-gray-700\/85:hover {
+	background-color: color-mix(in srgb, var(--surface-2) 85%, transparent) !important;
+}
+:root:not([data-theme='dark']) .bg-gray-600\/40 {
+	background-color: color-mix(in srgb, var(--surface-3) 40%, transparent) !important;
+}
+:root:not([data-theme='dark']) .bg-gray-600\/50 {
+	background-color: color-mix(in srgb, var(--surface-3) 50%, transparent) !important;
+}
+:root:not([data-theme='dark']) .bg-gray-600\/60 {
+	background-color: color-mix(in srgb, var(--surface-3) 60%, transparent) !important;
+}
 :root:not([data-theme='dark']) .bg-gray-700,
 :root:not([data-theme='dark']) .hover\:bg-gray-700:hover {
 	background-color: var(--surface-2) !important;
@@ -258,6 +356,36 @@
 :root:not([data-theme='dark']) .border-gray-700\/60,
 :root:not([data-theme='dark']) .border-gray-500 {
 	border-color: var(--border) !important;
+}
+/* 36 U1: `ui-panel-header` / `ui-section-label` are @apply'd dark-panel inks (gray-100 /
+   gray-400). Inside a `ui-panel` (dark in every theme) they are right; OUTSIDE one — the
+   Inspector drawer is bg-white on light — the drawer title read 1.1:1 and its section
+   labels 2.6:1. */
+:root[data-theme='light'] .ui-panel-header:not(.ui-panel *) {
+	color: var(--text) !important;
+	border-color: var(--border) !important;
+}
+:root[data-theme='light'] .ui-section-label:not(.ui-panel *) {
+	color: var(--muted) !important;
+}
+/* 36 U1: the pale primary inks (an armed mode button's label on its primary tint) are
+   written for a dark panel; on the light theme they sat on white at 1.2-1.3:1 */
+/* (never on a `ui-button-quiet`, which keeps its gray-700 fill in every theme) */
+:root[data-theme='light'] .text-primary-50:not(.ui-button-quiet),
+:root[data-theme='light'] .text-primary-100:not(.ui-button-quiet),
+:root[data-theme='light'] .text-primary-200:not(.ui-button-quiet),
+:root[data-theme='light'] .text-primary-300:not(.ui-button-quiet),
+:root[data-theme='light'] .text-primary-400:not(.ui-button-quiet) {
+	color: var(--color-primary-900, #a5371b) !important;
+}
+/* ...and the deep primary TINTS they sit on (a selected object-list row) become a light
+   wash, or the ink above lands on a muddy 50% primary-900 at 2:1 */
+:root[data-theme='light'] .bg-primary-900\/20,
+:root[data-theme='light'] .bg-primary-900\/30,
+:root[data-theme='light'] .bg-primary-900\/40,
+:root[data-theme='light'] .bg-primary-900\/50,
+:root[data-theme='light'] .bg-primary-900\/60 {
+	background-color: color-mix(in srgb, var(--color-primary-500, #fe795d) 22%, transparent) !important;
 }
 :root:not([data-theme='dark']) .placeholder-gray-500::placeholder {
 	color: var(--muted) !important;
@@ -323,7 +451,17 @@
 :root:not([data-theme='dark']):not([data-theme='light']) .bg-primary-600,
 :root:not([data-theme='dark']):not([data-theme='light']) .bg-primary-700,
 :root:not([data-theme='dark']):not([data-theme='light']) .ui-badge-type {
-	background-color: var(--accent) !important;
+	/* 36 U1: the FILL + the ink made for it. The `.text-white` remap above turned the label
+	   of every armed chip into the theme's text colour ON its accent — green-on-green 2.6:1,
+	   white-on-yellow 1.4:1 in High contrast — so an armed chip states its own pair, and
+	   comes AFTER that remap to win it. */
+	background-color: var(--accent-fill, var(--accent)) !important;
+	color: var(--on-accent, #fff) !important;
+}
+:root:not([data-theme='dark']):not([data-theme='light'])
+	:is(.bg-primary-600, .bg-primary-700, .ui-badge-type)
+	:is(.text-white, .dark\:text-white) {
+	color: var(--on-accent, #fff) !important;
 }
 :root:not([data-theme='dark']):not([data-theme='light']) .hover\:bg-primary-700:hover,
 :root:not([data-theme='dark']):not([data-theme='light']) .hover\:bg-primary-800:hover {

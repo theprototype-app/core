@@ -97,6 +97,65 @@ export function xrThresholds(hz) {
 	return { overMs: budget * 1.3, underMs: budget * 1.12, hz: f };
 }
 
+/**
+ * 36 G1 — A PHONE IS JUDGED AGAINST ITS OWN REFRESH RATE. The 1.20 beacon caught a phone on a
+ * menu (steady 16.6 ms at 60 Hz, 3 draw calls) stepping 0 -> 1 -> 2 -> 3 -> 4: the phone path
+ * governs every scene as heavy (33 G1) against the DESKTOP thresholds, so the only thing that
+ * could move it was the long-task rule — and a menu's own UI work (the beacon recorded stalls
+ * of 100-274 ms while editing) reads as "overloaded" there. Two rules, both pure:
+ *   - thresholds from the MEASURED refresh rate (60 / 90 / 120 Hz panels — the 1.20 phone
+ *     was a 60-90 Hz LTPO panel), the XR shape: over = 1.3 budgets (the p95 passes it only
+ *     when more than ~5% of frames were missed), recovery = 1.12 budgets;
+ *   - a TRIVIALLY LIGHT scene is never stepped: fewer than TRIVIAL_CALLS draw calls and a p95
+ *     within TRIVIAL_SLACK budgets — nothing the ladder takes away (shadows, resolution, AO,
+ *     post) can help a frame that is already on time, and a long task there is UI, not drawing.
+ * @param {number} hz @returns {{overMs: number, underMs: number, hz: number, budgetMs: number}}
+ */
+export function phoneThresholds(hz) {
+	const f = Number(hz) >= 30 && Number(hz) <= 240 ? Number(hz) : 60;
+	const budget = 1000 / f;
+	return { overMs: budget * 1.3, underMs: budget * 1.12, hz: f, budgetMs: budget };
+}
+
+/** below this many draw calls a scene is "trivially light" (36 G1) */
+export const TRIVIAL_CALLS = 20;
+/** ...when its p95 is also within this many refresh periods */
+export const TRIVIAL_SLACK = 1.1;
+
+/** the refresh rates a panel actually runs at (a measured interval snaps to the nearest) */
+export const REFRESH_RATES = [30, 48, 50, 60, 72, 75, 90, 96, 100, 120, 144, 165, 240];
+
+/**
+ * The display's refresh rate from frame intervals. A frame is VSYNC-QUANTISED: a scene keeping
+ * up reads exactly the period, a missed frame reads a multiple of it — so the FAST end of the
+ * distribution (the 20th percentile) is the period, whatever the misses. Snapped to the nearest
+ * real rate within 8 %; null with too few frames (under 30) or nothing near a real rate.
+ * @param {number[]} frameMs @returns {number | null}
+ */
+export function measureRefreshHz(frameMs) {
+	const ok = (frameMs ?? []).filter((m) => Number.isFinite(m) && m > 2 && m < 100);
+	if (ok.length < 30) return null;
+	const sorted = [...ok].sort((a, b) => a - b);
+	const fast = percentile(sorted, 0.2);
+	if (!fast) return null;
+	const hz = 1000 / fast;
+	let best = null;
+	for (const r of REFRESH_RATES) if (best === null || Math.abs(r - hz) < Math.abs(best - hz)) best = r;
+	return best !== null && Math.abs(best - hz) / best <= 0.08 ? best : null;
+}
+
+/**
+ * Is this scene too light to govern? (36 G1) @param {{calls?: number|null, p95?: number|null, budgetMs?: number|null}} d
+ */
+export function isTriviallyLight(d) {
+	const calls = Number(d?.calls);
+	const p95 = Number(d?.p95);
+	const budget = Number(d?.budgetMs);
+	if (!Number.isFinite(calls) || !Number.isFinite(p95) || !Number.isFinite(budget) || budget <= 0) return false;
+	if (d?.calls == null || d?.p95 == null) return false;
+	return calls < TRIVIAL_CALLS && p95 <= budget * TRIVIAL_SLACK;
+}
+
 /** The level a headset session starts at in auto mode: step 1 = shadows off, the Quest
  * budget's rule ("shadows off in Interact") — a shadow pass is a second draw of every
  * caster, per eye, and a headset has a third of a desktop's frame time. */
@@ -193,8 +252,9 @@ export function createGovernor(opts = {}) {
 	let lastDownAt = -Infinity;
 	let recoverHoldMs = timing.recoverWindowMs;
 	let settleUntil = -Infinity;
-	/** 31-perf P3: a live XR session's thresholds (xrThresholds), null = the profile's
-	 * @type {{overMs: number, underMs: number} | null} */
+	/** 31-perf P3: a live XR session's thresholds (xrThresholds), null = the profile's;
+	 * 36 G1: a phone's (phoneThresholds) carry `budgetMs`, which arms the trivially-light rule
+	 * @type {{overMs: number, underMs: number, budgetMs?: number} | null} */
 	let thresholdOverride = null;
 	/** 31-perf P3: recovery never walks below this (a headset's entry floor) */
 	let floor = 0;
@@ -257,7 +317,7 @@ export function createGovernor(opts = {}) {
 		},
 		/**
 		 * @param {number} now
-		 * @param {{profile?: 'desktop'|'vr', heavy: boolean, pinned?: boolean}} ctx
+		 * @param {{profile?: 'desktop'|'vr', heavy: boolean, pinned?: boolean, calls?: number|null}} ctx
 		 * @returns {{level: number, moved: 'up'|'down'|null, reason: string, p95: number|null}}
 		 */
 		decide(now, ctx) {
@@ -265,7 +325,12 @@ export function createGovernor(opts = {}) {
 			const t = thresholdOverride ?? THRESHOLDS[ctx.profile === 'vr' ? 'vr' : 'desktop'];
 			const p95 = p95Over(now, timing.triggerWindowMs);
 			const tasks = longTasks.filter((at) => at >= now - timing.longTaskWindowMs).length;
-			const overloaded = (p95 != null && p95 > t.overMs) || tasks > timing.longTasksOver;
+			// 36 G1: a trivially light scene on a refresh-judged device is never overloaded —
+			// not by its frames (they are on time) and not by long tasks (they are UI, and no
+			// step of the ladder makes UI work cheaper)
+			const budgetMs = /** @type {any} */ (t).budgetMs;
+			const trivial = budgetMs != null && isTriviallyLight({ calls: ctx.calls, p95, budgetMs });
+			const overloaded = !trivial && ((p95 != null && p95 > t.overMs) || tasks > timing.longTasksOver);
 			const since = now - changedAt;
 
 			// UP: overloaded, the scene is heavy enough that setting quality aside could help,
@@ -286,7 +351,7 @@ export function createGovernor(opts = {}) {
 					return { level, moved: 'down', reason: 'recovered', p95: calm };
 				}
 			}
-			return { level, moved: null, reason: overloaded ? 'overloaded' : 'steady', p95 };
+			return { level, moved: null, reason: overloaded ? 'overloaded' : trivial ? 'trivially light' : 'steady', p95 };
 		},
 		/** Set the level directly (the chip's "restore full quality"). @param {number} to @param {number} now */
 		setLevel(to, now) {
@@ -295,9 +360,14 @@ export function createGovernor(opts = {}) {
 			return level;
 		},
 		/** 31-perf P3: judge against these (an XR session's rate) until cleared with null.
-		 * @param {{overMs: number, underMs: number} | null} t */
+		 * @param {{overMs: number, underMs: number, budgetMs?: number} | null} t */
 		setThresholds(t) {
-			thresholdOverride = t && Number.isFinite(t.overMs) && Number.isFinite(t.underMs) ? { overMs: t.overMs, underMs: t.underMs } : null;
+			thresholdOverride =
+				t && Number.isFinite(t.overMs) && Number.isFinite(t.underMs)
+					? Number.isFinite(/** @type {any} */ (t).budgetMs)
+						? { overMs: t.overMs, underMs: t.underMs, budgetMs: /** @type {any} */ (t).budgetMs }
+						: { overMs: t.overMs, underMs: t.underMs }
+					: null;
 		},
 		thresholds: () => thresholdOverride,
 		/** 31-perf P3: the lowest level RECOVERY may reach (setLevel is not bound by it — the

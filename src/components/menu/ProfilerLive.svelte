@@ -15,6 +15,8 @@
 	import { peerScenes, sameRoomOrUnknown } from '$lib/peerScenes';
 	import { perfLive, profilerLiveOpen, watchPeer, unwatchPeer, requestCapture, saveLive, forgetPeer, liveDoc } from '$lib/perf/liveSink';
 	import { LIGHT_BUDGET_BPS } from '$lib/perf/liveWire';
+	// 36 U1: the graphs read their ink from the theme; the theme rides the action arg so a switch redraws
+	import { theme } from '$lib/themes';
 
 	/** the Quest budget lines (roadmap 34 PF): 72 Hz frame time and 150 draw calls */
 	const MS_BUDGET = 13.9;
@@ -57,7 +59,7 @@
 	 * Draw one series of the last GRAPH_MS against a budget line. Re-runs when the session's
 	 * frame count moves (2x a second), never per frame.
 	 * @param {HTMLCanvasElement} canvas
-	 * @param {{peerId: string, key: 'ms' | 'calls', budget: number, frames: number}} arg
+	 * @param {{peerId: string, key: 'ms' | 'calls', budget: number, frames: number, theme?: string}} arg
 	 */
 	function graph(canvas, arg) {
 		const draw = (/** @type {typeof arg} */ a) => {
@@ -79,14 +81,16 @@
 				if (v != null && v > max) max = v;
 			}
 			const y = (/** @type {number} */ v) => H - (v / max) * (H - 2) - 1;
-			g.strokeStyle = 'rgba(248, 113, 113, 0.8)';
+			// 36 U1: theme ink, read off the canvas (custom properties inherit; a canvas takes no var())
+			const css = getComputedStyle(canvas);
+			g.strokeStyle = css.getPropertyValue('--ink-bad').trim() || '#f87171';
 			g.setLineDash([4, 3]);
 			g.beginPath();
 			g.moveTo(0, y(a.budget));
 			g.lineTo(W, y(a.budget));
 			g.stroke();
 			g.setLineDash([]);
-			g.strokeStyle = a.key === 'ms' ? '#60a5fa' : '#a7f3d0';
+			g.strokeStyle = (a.key === 'ms' ? css.getPropertyValue('--tp-accent') : css.getPropertyValue('--ink-good')).trim() || (a.key === 'ms' ? '#60a5fa' : '#a7f3d0');
 			g.lineWidth = 1;
 			g.beginPath();
 			let started = false;
@@ -108,7 +112,7 @@
 {#if $profilerLiveOpen}
 	<div
 		id="profiler-live"
-		class="ui-panel fixed flex flex-col overflow-hidden outline-hidden"
+		class="ui-panel tp-themed live-surface fixed flex flex-col overflow-hidden outline-hidden"
 		tabindex="-1"
 		use:dragWindow={{ key: 'profilerLiveWindow', defaultRect: { left: 140, top: 110 }, resizable: true }}
 		use:focusStack={'profilerLive'}
@@ -123,13 +127,13 @@
 		</div>
 
 		<div class="min-h-0 flex-1 overflow-y-auto px-2 py-1.5 text-xs">
-			<p class="mb-1.5 text-[11px] text-gray-400">
+			<p class="live-muted mb-1.5 text-[11px]">
 				Watch a peer in your room — a headset, usually — and see its frame time and draw calls here as it plays.
 				<strong>Detailed</strong> also asks for CPU phases and per-object captures; it costs that device frame time.
 			</p>
 
 			{#if roomPeers.length === 0}
-				<p id="profiler-live-empty" class="italic text-gray-500">Nobody else is in this room yet. Connect a headset to watch it.</p>
+				<p id="profiler-live-empty" class="live-muted italic">Nobody else is in this room yet. Connect a headset to watch it.</p>
 			{/if}
 			<ul id="profiler-live-peers" class="mb-2">
 				{#each roomPeers as p (p.id)}
@@ -155,7 +159,7 @@
 				<section class="live-session" data-peer={s.peerId} data-mode={s.mode} data-watching={s.watching}>
 					<header class="flex items-center gap-2">
 						<span class="flex-1 font-semibold">{s.name}{s.ended ? ' (left)' : ''}</span>
-						<span class="text-gray-400" title="Measured on this device">{s.watching ? (s.waiting ? 'waiting…' : 'live') : 'stopped'}</span>
+						<span class="live-muted" title="Measured on this device">{s.watching ? (s.waiting ? 'waiting…' : 'live') : 'stopped'}</span>
 					</header>
 					<div class="live-nums font-mono tabular-nums">
 						<span>{num(s.latest?.fps)} fps</span>
@@ -164,9 +168,9 @@
 						<span>{num(s.latest?.tris)} tris</span>
 						<span>Q{num(s.latest?.quality)}</span>
 					</div>
-					<canvas class="live-graph" width="380" height="54" aria-label="Frame time, last 10 seconds" use:graph={{ peerId: s.peerId, key: 'ms', budget: MS_BUDGET, frames: s.frames }}></canvas>
-					<canvas class="live-graph" width="380" height="40" aria-label="Draw calls, last 10 seconds" use:graph={{ peerId: s.peerId, key: 'calls', budget: CALLS_BUDGET, frames: s.frames }}></canvas>
-					<p class="live-meta text-gray-400">
+					<canvas class="live-graph" width="380" height="54" aria-label="Frame time, last 10 seconds" use:graph={{ peerId: s.peerId, key: 'ms', budget: MS_BUDGET, frames: s.frames, theme: $theme }}></canvas>
+					<canvas class="live-graph" width="380" height="40" aria-label="Draw calls, last 10 seconds" use:graph={{ peerId: s.peerId, key: 'calls', budget: CALLS_BUDGET, frames: s.frames, theme: $theme }}></canvas>
+					<p class="live-meta live-muted">
 						<span class="live-frames">{s.frames} frames</span> · {s.mode} ·
 						<span class="live-bw" data-over={s.mode === 'light' && s.bytesPerSec > LIGHT_BUDGET_BPS}>{(s.bytesPerSec / 1024).toFixed(1)} KB/s</span>
 						{#if s.dropped}· {s.dropped} dropped{/if}
@@ -179,7 +183,7 @@
 					{/if}
 					{#if s.lastCapture}
 						<div class="live-capture">
-							<p class="text-gray-300">Capture at {(s.lastCapture.t / 1000).toFixed(1)} s — {s.lastCapture.objects} objects, who draws most:</p>
+							<p class="live-ink-2">Capture at {(s.lastCapture.t / 1000).toFixed(1)} s — {s.lastCapture.objects} objects, who draws most:</p>
 							<ol>
 								{#each s.lastCapture.top as o, i (i)}
 									<li class="font-mono text-[11px]" title={o.path}>{o.name} — {num(o.calls)} calls · {num(o.tris)} tris</li>
@@ -191,7 +195,7 @@
 						{#if s.watching}<button class="live-btn" data-act="capture" onclick={() => requestCapture(s.peerId)}>Capture now</button>{/if}
 						<button class="live-btn" data-act="save" disabled={!s.frames} onclick={() => save(s.peerId)}>Save recording</button>
 						<button class="live-btn" data-act="forget" onclick={() => forgetPeer(s.peerId)}>Clear</button>
-						{#if saved[s.peerId]}<span class="live-saved text-gray-400">{saved[s.peerId]}</span>{/if}
+						{#if saved[s.peerId]}<span class="live-saved live-muted">{saved[s.peerId]}</span>{/if}
 					</div>
 				</section>
 			{/each}
@@ -205,27 +209,28 @@
 		align-items: center;
 		gap: 6px;
 		padding: 3px 0;
-		border-bottom: 1px solid rgba(107, 114, 128, 0.25);
+		border-bottom: 1px solid color-mix(in srgb, var(--tp-line) 60%, transparent);
 	}
 	.chip {
 		font-size: 10px;
 		padding: 0 5px;
 		border-radius: 9999px;
-		background: rgba(96, 165, 250, 0.18);
-		color: #93c5fd;
+		background: color-mix(in srgb, var(--tp-accent) 22%, transparent);
+		color: var(--tp-ink);
 	}
 	.chip.rec {
-		background: rgba(248, 113, 113, 0.18);
-		color: #fca5a5;
+		background: color-mix(in srgb, var(--ink-bad) 22%, transparent);
+		color: var(--tp-ink);
 	}
 	.live-btn {
 		font-size: 11px;
 		padding: 1px 8px;
 		border-radius: 6px;
-		background: rgba(255, 255, 255, 0.08);
+		border: 1px solid var(--tp-line);
+		background: color-mix(in srgb, var(--tp-hover) 60%, transparent);
 	}
 	.live-btn:hover:not(:disabled) {
-		background: rgba(255, 255, 255, 0.16);
+		background: var(--tp-hover);
 	}
 	.live-btn:disabled {
 		opacity: 0.45;
@@ -234,7 +239,7 @@
 		margin-top: 6px;
 		padding: 6px;
 		border-radius: 8px;
-		background: rgba(0, 0, 0, 0.18);
+		background: color-mix(in srgb, var(--tp-field) 70%, transparent);
 	}
 	.live-nums {
 		display: flex;
@@ -243,21 +248,33 @@
 		margin: 3px 0;
 	}
 	.live-nums [data-tier='over'] {
-		color: #f87171;
+		color: var(--ink-bad);
 	}
 	.live-graph {
 		display: block;
 		width: 100%;
 		height: auto;
 		margin-top: 3px;
-		background: rgba(0, 0, 0, 0.25);
+		background: var(--tp-field);
 		border-radius: 4px;
 	}
 	.live-meta {
 		margin-top: 3px;
 	}
 	.live-bw[data-over='true'] {
-		color: #fbbf24;
+		color: var(--ink-warn);
+	}
+	/* 36 U1: `ui-panel` paints bg-gray-800 in every theme (an @apply no remap reaches) */
+	.live-surface {
+		background: var(--tp-surface);
+		color: var(--tp-ink);
+		border-color: var(--tp-line);
+	}
+	.live-muted {
+		color: var(--tp-muted);
+	}
+	.live-ink-2 {
+		color: var(--tp-ink-2);
 	}
 	.live-capture ol {
 		margin: 2px 0 0 16px;

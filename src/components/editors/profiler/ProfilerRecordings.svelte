@@ -245,11 +245,11 @@
 		padding: 2px 2px 2px 4px;
 	}
 	.pf-rec:hover {
-		background: rgb(75 85 99 / 0.3);
+		background: color-mix(in srgb, var(--tp-hover) 70%, transparent);
 	}
 	.pf-sel {
-		background: rgb(59 130 246 / 0.22);
-		box-shadow: inset 2px 0 0 var(--accent, #3b82f6);
+		background: color-mix(in srgb, var(--tp-accent) 18%, transparent);
+		box-shadow: inset 2px 0 0 var(--tp-accent);
 	}
 	.pf-rec-main {
 		display: flex;
@@ -262,11 +262,11 @@
 	.pf-rec-main:focus-visible,
 	.pf-icon:focus-visible,
 	.pf-ab:focus-visible {
-		outline: 1px solid var(--accent, #3b82f6);
+		outline: 1px solid var(--tp-accent);
 	}
 	.pf-rec-name {
 		font-size: 12px;
-		color: #e5e7eb;
+		color: var(--tp-ink);
 		overflow: hidden;
 		text-overflow: ellipsis;
 		white-space: nowrap;
@@ -276,10 +276,14 @@
 	}
 	.pf-rec-meta {
 		font-size: 10.5px;
-		color: #9ca3af;
+		color: var(--tp-muted);
 		overflow: hidden;
 		text-overflow: ellipsis;
 		white-space: nowrap;
+	}
+	/* on the selected row's accent tint the muted ink drops under 4.5:1 (light, green) */
+	.pf-sel .pf-rec-meta {
+		color: var(--tp-ink-2);
 	}
 	.pf-rec-acts {
 		display: flex;
@@ -301,28 +305,28 @@
 		height: 18px;
 		padding: 0 3px;
 		border-radius: 3px;
-		color: #9ca3af;
+		color: var(--tp-muted);
 	}
 	.pf-icon:hover,
 	.pf-ab:hover {
-		color: #e5e7eb;
-		background: rgb(75 85 99 / 0.5);
+		color: var(--tp-ink);
+		background: var(--tp-hover);
 	}
 	.pf-icon:disabled {
 		opacity: 0.4;
 	}
 	.pf-danger {
 		color: #fff;
-		background: #dc2626;
+		background: #b91c1c;
 	}
 	.pf-ab {
 		font-size: 10px;
 		font-weight: 700;
-		border: 1px solid var(--border, #374151);
+		border: 1px solid var(--tp-line);
 	}
 	.pf-ab[aria-pressed='true'] {
-		background: var(--accent, #3b82f6);
-		color: #fff;
+		background: var(--accent-fill, #2563eb);
+		color: var(--on-accent, #fff);
 	}
 	.pf-badge {
 		display: inline-block;
@@ -331,21 +335,21 @@
 		font-size: 9.5px;
 		text-transform: uppercase;
 		letter-spacing: 0.03em;
-		background: rgb(75 85 99 / 0.6);
-		color: #e5e7eb;
+		background: color-mix(in srgb, var(--tp-muted) 30%, transparent);
+		color: var(--tp-ink);
 	}
 	.pf-badge-detailed {
-		background: rgb(126 34 206 / 0.6);
+		background: color-mix(in srgb, #a855f7 38%, transparent);
 	}
 	.pf-live {
 		display: inline-block;
 		width: 7px;
 		height: 7px;
 		border-radius: 50%;
-		background: #6b7280;
+		background: var(--tp-muted);
 	}
 	.pf-live-on {
-		background: #ef4444;
+		background: var(--ink-bad);
 		animation: pf-blink 1.2s ease-in-out infinite;
 	}
 	@keyframes pf-blink {
@@ -355,11 +359,11 @@
 	}
 	.pf-empty-list {
 		font-size: 11.5px;
-		color: #9ca3af;
+		color: var(--tp-muted);
 		padding: 6px 4px;
 	}
 	:global(.pf-pin-mark) {
 		flex: 0 0 auto;
-		color: var(--accent, #3b82f6);
+		color: var(--tp-accent);
 	}
 </style>

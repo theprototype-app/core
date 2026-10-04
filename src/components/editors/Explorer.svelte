@@ -8196,10 +8196,10 @@
 	}
 	.ex-confirm-title {
 		font-weight: 600;
-		color: #e5e7eb;
+		color: var(--text, #e5e7eb);
 	}
 	.ex-confirm-detail {
-		color: #9ca3af;
+		color: var(--muted, #9ca3af);
 	}
 	.ex-confirm-yes,
 	.ex-confirm-no {
@@ -8217,7 +8217,7 @@
 	}
 	.ex-confirm-no {
 		border: 1px solid var(--border, #374151);
-		color: #d1d5db;
+		color: var(--text-2, #d1d5db);
 	}
 	.ex-confirm-no:hover {
 		background: rgb(255 255 255 / 6%);
@@ -8257,11 +8257,11 @@
 		flex: 0 0 auto;
 		align-items: center;
 		gap: 6px;
-		color: #9ca3af;
+		color: var(--muted, #9ca3af);
 		cursor: pointer;
 	}
 	.ex-ask-remember:hover {
-		color: #d1d5db;
+		color: var(--text-2, #d1d5db);
 	}
 	.ex-ask-icon {
 		color: #93c5fd;
@@ -8277,11 +8277,11 @@
 		flex: 0 0 auto;
 		border-radius: 3px;
 		padding: 3px 8px;
-		color: #9ca3af;
+		color: var(--muted, #9ca3af);
 		text-decoration: underline;
 	}
 	.ex-confirm-settings:hover {
-		color: #e5e7eb;
+		color: var(--text, #e5e7eb);
 	}
 	/* R22 round 36: the cleaned-up toggle, at the END of the breadcrumb row. `margin-left:
 	   auto` is the whole layout — the row is a flex line that already exists and already has
@@ -8295,7 +8295,7 @@
 		align-items: center;
 		border-radius: 3px;
 		padding: 2px 4px;
-		color: #9ca3af;
+		color: var(--muted, #9ca3af);
 	}
 	.ex-crumb-toggle:hover:not(:disabled) {
 		background: rgba(55, 65, 81, 0.9);
@@ -8392,11 +8392,11 @@
 		align-items: center;
 		gap: 3px;
 		padding: 3px 6px;
-		color: #9ca3af;
+		color: var(--muted, #9ca3af);
 		text-align: inherit;
 	}
 	.ex-th-btn:hover {
-		color: #e5e7eb;
+		color: var(--text, #e5e7eb);
 	}
 	.ex-sort {
 		font-size: 9px;
@@ -8448,10 +8448,10 @@
 	}
 	.ex-group-caret {
 		width: 8px;
-		color: #9ca3af;
+		color: var(--muted, #9ca3af);
 	}
 	.ex-group-n {
-		color: #6b7280;
+		color: var(--muted, #6b7280);
 		font-weight: 400;
 	}
 	.ex-new {

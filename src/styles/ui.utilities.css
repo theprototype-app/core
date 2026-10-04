@@ -96,13 +96,16 @@
   gap: 4px;
   padding: 2px 6px;
   font-size: 11px;
-  color: #9ca3af;
+  /* 36 U1: the resting/hover ink follows the theme (the literals read 2.5:1 on light) and
+     the armed half is the theme's accent FILL with the ink made for it — white on the
+     plain accent was 3.3-3.7:1 everywhere and unreadable on High contrast's yellow */
+  color: var(--muted, #9ca3af);
   &:hover {
-    color: #e5e7eb;
+    color: var(--text, #e5e7eb);
   }
   &[aria-pressed='true'] {
-    background: var(--accent, #3b82f6);
-    color: #fff;
+    background: var(--accent-fill, #2563eb);
+    color: var(--on-accent, #fff);
   }
   /*
     R22 round 13: a HALF that is switched off. The Explorer's Bin|Log control is the first
@@ -118,7 +121,28 @@
     opacity: 0.45;
   }
   &:disabled:hover {
-    color: #9ca3af;
+    color: var(--muted, #9ca3af);
+  }
+}
+
+/* 36 U1: a panel that paints its own surface must also say what colour its TEXT is — the
+   Profiler's dock set a background and no colour, so its numbers inherited the page's black
+   (1.4:1 on the dark theme). `tp-themed` is that statement plus the scoped ink a panel's own
+   rules read, every one a theme token with the dark-authored fallback (dark defines none). */
+@utility tp-themed {
+  --tp-ink: var(--text, #e5e7eb);
+  --tp-ink-2: var(--text-2, #d1d5db);
+  --tp-muted: var(--muted, #9ca3af);
+  --tp-surface: var(--surface, #1f2937);
+  --tp-field: var(--field, #111827);
+  --tp-line: var(--border, #374151);
+  --tp-hover: var(--hover, #374151);
+  --tp-accent: var(--accent, #3b82f6);
+  color: var(--tp-ink);
+  /* a themed panel's own header follows it (ui-panel-header is @apply'd gray-100 text) */
+  & .ui-panel-header {
+    color: var(--tp-ink);
+    border-color: var(--tp-line);
   }
 }
 

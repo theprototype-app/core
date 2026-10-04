@@ -1719,7 +1719,8 @@
 		border-radius: 0.25rem;
 	}
 	.hud-screen-on {
-		background: rgb(75 85 99 / 0.5);
+		/* 36 U1: the theme's hover fill (the sidebar follows the theme since WindowShell does) */
+		background: var(--hover, rgb(75 85 99 / 0.5));
 	}
 	.hud-screen-name {
 		display: flex;
@@ -1737,7 +1738,14 @@
 		opacity: 0.7;
 	}
 	.hud-mini[aria-pressed='true'] {
-		color: var(--accent, #ef562f);
+		/* 36 U1: the start-screen star in the theme's gold at full strength — the accent read
+		   2.3:1 on the selected row */
+		color: var(--ink-warn, #fbbf24);
+		opacity: 1;
+	}
+	/* 36 U1: a faded red ✕ on the selected row was 2.6:1 — destructive, so legible */
+	.hud-mini.hud-danger {
+		color: var(--ink-bad, #f87171);
 		opacity: 1;
 	}
 	.hud-add-screen {
@@ -1779,7 +1787,8 @@
 		min-width: 0;
 		flex: 1;
 		border-radius: 0.2rem;
-		background: rgb(17 24 39 / 0.6);
+		background: var(--field, rgb(17 24 39 / 0.6));
+		color: var(--text, inherit);
 		padding: 0.1rem 0.3rem;
 		font-size: 11px;
 	}

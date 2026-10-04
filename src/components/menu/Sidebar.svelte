@@ -1,7 +1,6 @@
 <script lang="ts">
-	import { Activity, Archive, BookOpen, FileInput, Flag, FolderOpen, Gauge, LayoutTemplate, Puzzle, Save, Settings, SlidersHorizontal, Trash2, Wrench } from '@lucide/svelte';
+	import { Archive, BookOpen, FileInput, Flag, FolderOpen, Gauge, LayoutTemplate, Puzzle, Save, Settings, SlidersHorizontal, Trash2, Wrench } from '@lucide/svelte';
 	import { openMomentReport } from '$lib/perf/moment';
-	import { profilerLiveOpen } from '$lib/perf/liveSink';
 	import '../../app.css';
 	import { moduleToolboxes, openToolboxes, buildToolboxItems } from '$lib/moduleToolboxes';
 	import '../../styles/menu.css';
@@ -163,7 +162,7 @@
 		id="sidebar70"
 		transition:fade={{ duration: 130 }}
 		class="app-sidebar fixed rounded-xl border border-gray-200 bg-white/95 p-1.5 text-gray-900 shadow-xl backdrop-blur-sm dark:border-gray-700 dark:bg-gray-800/95 dark:text-gray-100"
-		style={$connectDocked ? `top: ${$connectBarHeight + 64}px` : ''}
+		style="--side-top: {$connectDocked ? $connectBarHeight + 64 : 64}px"
 	>
 		<!-- multiple + the companion types so an .obj can be picked TOGETHER with its
 		     .mtl and textures (17-D2); a lone model file behaves exactly as before -->
@@ -270,10 +269,8 @@
 		<button id="report-moment" class="side-row" onclick={() => { closeMenu.set(true); void openMomentReport(); }}>
 			<span class="side-ico"><Flag size={16} aria-hidden="true" /></span><span class="flex-1 whitespace-nowrap">Report this moment</span>
 		</button>
-		<!-- 34 PF (profiler-xr): watch a peer's frames live (a headset, from this desktop) -->
-		<button id="open-profiler-live" class="side-row" onclick={() => { profilerLiveOpen.set(true); closeMenu.set(true); }}>
-			<span class="side-ico"><Activity size={16} aria-hidden="true" /></span><span class="flex-1 whitespace-nowrap">Live profiler</span>
-		</button>
+		<!-- 36 U5: "Live profiler" left the menu — it is a Profiler tool, opened from the
+		     Profiler tab's own header (#profiler-open-live) beside Record and Import -->
 		<button class="side-row" onclick={() => { settingsOpen.set(!$settingsOpen); closeMenu.set(true); }}>
 			<span class="side-ico"><Settings size={16} aria-hidden="true" /></span><span class="flex-1 whitespace-nowrap">Settings</span>
 		</button>
@@ -377,7 +374,11 @@
 	}
 	/* the logo menu opens above everything (Connect, toasts) */
 	.app-sidebar {
-		top: 64px;
+		/* 36 U5: the menu's top is a variable (it drops below a docked Connect bar), so the
+		   height it may take can subtract it — the old cap subtracted a fixed 72px from the
+		   LARGE viewport (100vh), and a docked bar or a phone's URL bar left the last rows
+		   below the screen where no swipe could bring them back */
+		top: var(--side-top, 64px);
 		left: 8px;
 		z-index: var(--z-menu);
 		/* size to the widest row so wider-font themes (e.g. 8-bit) never overflow
@@ -385,12 +386,17 @@
 		width: max-content;
 		min-width: 12.5rem;
 		max-width: 17rem;
-		/* short viewports: touch-scroll the menu, but with no visible scrollbar */
-		max-height: calc(100vh - 72px);
+		/* short viewports: touch-scroll the menu, but with no visible scrollbar. 100dvh = the
+		   viewport you can SEE (URL bar and fold posture included); 100vh is the fallback */
+		max-height: calc(100vh - var(--side-top, 64px) - 8px);
+		max-height: calc(100dvh - var(--side-top, 64px) - 8px);
 		overflow-y: auto;
 		overflow-x: hidden;
 		scrollbar-width: none; /* Firefox */
 		-webkit-overflow-scrolling: touch;
+		/* a swipe that reaches the end stops here instead of dragging the page/canvas */
+		overscroll-behavior: contain;
+		touch-action: pan-y;
 	}
 	.app-sidebar::-webkit-scrollbar {
 		display: none; /* Chrome/Safari — scroll, no bar */

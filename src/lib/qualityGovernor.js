@@ -18,7 +18,7 @@ import { renderPaused } from './overloadGuard';
 import { sceneBatchOpen } from '../stores/sceneStore';
 import { loading as sceneLoading } from './sceneLoader';
 import { safeStorage } from './safeStorage';
-import { xrThresholds, XR_START_LEVEL, XR_FRAMEBUFFER_SCALE, PHONE_START_LEVEL, isPhoneLike } from './qualityGovernorCore';
+import { xrThresholds, XR_START_LEVEL, XR_FRAMEBUFFER_SCALE, PHONE_START_LEVEL, isPhoneLike, phoneThresholds, measureRefreshHz } from './qualityGovernorCore';
 import { globalRenderer } from '../stores/sceneStore';
 import { lodBias } from './lod';
 import { lodBiasFor } from './lodCore';
@@ -92,6 +92,13 @@ let drawGapEngaged = false;
 let lastReason = '';
 /** 33 G1: this device is a phone (decided once at load, see the bottom of the file) */
 let phone = false;
+/** 36 G1: the phone's measured refresh rate (null until enough frames) and the recent frame
+ * intervals it is measured from (a ring, newest last) */
+/** @type {number | null} */
+let phoneHz = null;
+/** @type {number[]} */
+const recentFrameMs = [];
+const REFRESH_SAMPLE = 180;
 
 function now() {
 	return typeof performance !== 'undefined' ? performance.now() : Date.now();
@@ -137,7 +144,7 @@ function context() {
 	if (xr.active) return { metrics, profile: /** @type {'desktop'|'vr'} */ ('vr'), heavy: true };
 	// 33 G1: a phone is fill-bound — a scene "light" by the desktop's call budget still misses
 	// frames there, so it is always worth governing (the headset's rule, desktop thresholds)
-	if (phone) return { metrics, profile: /** @type {'desktop'|'vr'} */ ('desktop'), heavy: true };
+	if (phone) return { metrics, profile: /** @type {'desktop'|'vr'} */ ('desktop'), heavy: true, calls: Number(metrics?.calls) };
 	const profile = metrics?.profile === 'vr' ? 'vr' : 'desktop';
 	return { metrics, profile: /** @type {'desktop'|'vr'} */ (profile), heavy: isHeavy(metrics, profile, get(qualityBaseline)) };
 }
@@ -174,9 +181,23 @@ export function noteFrameForQuality(ms) {
 		return;
 	}
 	governor.noteFrame(ms, t);
+	if (phone) notePhoneFrame(ms);
 	if (t - lastDecideAt < DECIDE_EVERY_MS) return;
 	lastDecideAt = t;
 	decideNow(t);
+}
+
+/** 36 G1: a phone judges itself against its own refresh rate, re-measured as it runs (an LTPO
+ * panel moves between 60, 90 and 120 Hz) @param {number} ms */
+function notePhoneFrame(ms) {
+	recentFrameMs.push(ms);
+	if (recentFrameMs.length > REFRESH_SAMPLE) recentFrameMs.shift();
+	if (xr.active || recentFrameMs.length % 30 !== 0) return;
+	const hz = measureRefreshHz(recentFrameMs);
+	if (hz !== null && hz !== phoneHz) {
+		phoneHz = hz;
+		governor.setThresholds(phoneThresholds(hz));
+	}
 }
 
 /** One decision, now. Exported for the suite, which drives time it cannot wait out.
@@ -189,7 +210,7 @@ export function decideNow(t = now()) {
 	// "Restore full quality" snoozes CLIMBING for a minute; it never blocks a walk back down
 	const snoozed = Date.now() < snoozedUntil;
 	const d = enabled
-		? governor.decide(t, { profile: ctx.profile, heavy: ctx.heavy && !snoozed, pinned })
+		? governor.decide(t, { profile: ctx.profile, heavy: ctx.heavy && !snoozed, pinned, calls: /** @type {any} */ (ctx).calls })
 		: { level: governor.level(), moved: null, reason: 'off', p95: null };
 	if (d.moved) publish(d.level, d.reason);
 
@@ -392,7 +413,8 @@ export function endXRQuality(r = get(globalRenderer)) {
 	if (!xr.active) return;
 	xr.active = false;
 	xr.session = null;
-	governor.setThresholds(null);
+	// 36 G1: a phone in a session (Cardboard) goes back to its own refresh-judged thresholds
+	governor.setThresholds(phone ? phoneThresholds(phoneHz ?? 60) : null);
 	governor.setFloor(0);
 	governor.forget();
 	// FULL resolution for the next entry, whatever this session needed (XR_FRAMEBUFFER_SCALE:
@@ -436,6 +458,8 @@ function detectPhone() {
 	}
 }
 phone = detectPhone();
+// 36 G1: a phone is judged against a 60 Hz panel until its own frames say otherwise
+if (phone) governor.setThresholds(phoneThresholds(60));
 if (phone && get(autoQuality)) {
 	governor.setLevel(PHONE_START_LEVEL, now());
 	publish(PHONE_START_LEVEL, 'phone: a lighter start');
@@ -444,4 +468,9 @@ if (phone && get(autoQuality)) {
 /** 33 G1: is this device judged as a phone (for the suite and the chip) */
 export function phoneQuality() {
 	return phone;
+}
+
+/** 36 G1: the refresh rate a phone is judged against (null = not yet measured / not a phone) */
+export function phoneRefreshHz() {
+	return phone ? phoneHz : null;
 }

@@ -3,7 +3,7 @@ import * as THREE from 'three';
 import { createStreakWatch, PHYSICS_SLOW_MS, PHYSICS_SLOW_STEPS } from './overloadGuard';
 import { registerMetricSource } from './sceneBudget';
 import { writable, get } from 'svelte/store';
-import { flowGraphs, allNodes, allEdges, SCENE_GRAPH } from '../stores/flowStore';
+import { flowGraphs, allNodes, allEdges, SCENE_GRAPH, runtimeGraph } from '../stores/flowStore';
 import { objectsGroup, lockedObjects, selectedObject, selectedObjects, pokeScene, editorMode, isLocked } from '../stores/sceneStore';
 import { peers, showToast, openSceneSection } from '../stores/appStore';
 import { recordTransformSet, recordEntry } from './history';
@@ -210,8 +210,8 @@ function collectParams(group) {
 		if (p.freeze) map[object.uuid].freeze = p.freeze; // CL-A A5: axis locks
 	});
 	// H1: physics nodes live in ANY graph (scene or per-object documents)
-	const nodes = allNodes();
-	const edges = allEdges();
+	// 36 U11: a muted physics node does nothing (runtimeGraph drops it and its wires)
+	const { nodes, edges } = runtimeGraph(allNodes(), allEdges());
 	// 33 G1: indexed once per call — the nested finds below were O(edges x nodes), and this
 	// runs on EVERY flowGraphs change mid-sim (onGraphChange); measured as the second app
 	// frame of the Stars Room on a phone profile

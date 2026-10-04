@@ -165,6 +165,22 @@ export function chainOf(focused) {
 	return [focused, 'global'];
 }
 
+/**
+ * Does a press / focus on this element move the keyboard to another pane? Not when it is a
+ * TEXT FIELD (the field decides per event, and leaving it for the same pane must still mean
+ * that pane — the node editor's search menu focuses its own filter input) and not inside a
+ * TRANSIENT overlay (a context menu, a dialog, a listbox): those are portaled to <body>,
+ * so they would read as the viewport, and closing one must hand the keys back to the pane
+ * that opened it.
+ * @param {any} el
+ */
+export function movesScope(el) {
+	if (!el || typeof el.closest !== 'function') return true;
+	if (isTextEntry(el) && !el.closest('.cm-editor')) return false;
+	if (el.closest('[role="menu"], [role="dialog"], [role="listbox"], dialog, [data-key-scope-transient]')) return false;
+	return true;
+}
+
 let started = false;
 
 /** Track where presses land. Capture phase, so a pane that stops propagation still
@@ -175,8 +191,7 @@ export function startKeyScope() {
 	/** @param {Event} event */
 	const note = (event) => {
 		const target = /** @type {any} */ (event.target);
-		// a press into a text field leaves the pane's scope standing: the field decides per
-		// event, and clicking OUT of it into the same pane must still mean that pane
+		if (!movesScope(target)) return;
 		setLastScope(hostScopeOf(target));
 	};
 	window.addEventListener('pointerdown', note, true);

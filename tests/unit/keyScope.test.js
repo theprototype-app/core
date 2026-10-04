@@ -11,7 +11,8 @@ import {
 	lastScope,
 	setVrScopeProbe,
 	onScopeChange,
-	viewportHasKeys
+	viewportHasKeys,
+	movesScope
 } from '../../src/lib/keyScope.js';
 
 /** A minimal element: `closest` walks a parent chain by attribute/class. */
@@ -27,6 +28,7 @@ function el({ tag = 'DIV', scope = null, cls = '', editable = false, parent = nu
 			let at = node;
 			while (at) {
 				if (selector === '.cm-editor' && at.cls?.includes('cm-editor')) return at;
+				if (selector.startsWith('[role="menu"]') && at.cls?.includes('overlay')) return at;
 				if (selector === '[data-key-scope]' && at.scopeAttr) return at;
 				at = at.parent;
 			}
@@ -122,5 +124,12 @@ describe('keyScope', () => {
 		setLastScope('nodes');
 		expect(seen).toEqual(['nodes', 'viewport']);
 		expect(lastScope()).toBe('nodes');
+	});
+
+	it('a text field or a transient overlay does not move the keyboard to another pane', () => {
+		expect(movesScope(el({ tag: 'INPUT' }))).toBe(false);
+		expect(movesScope(el({ parent: el({ cls: 'overlay' }) }))).toBe(false);
+		expect(movesScope(el({ editable: true, parent: el({ cls: 'cm-editor' }) }))).toBe(true);
+		expect(movesScope(el())).toBe(true);
 	});
 });

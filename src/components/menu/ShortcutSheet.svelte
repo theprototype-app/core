@@ -90,7 +90,7 @@
 
 {#if $cheatSheetOpen}
 	<!-- svelte-ignore a11y_no_static_element_interactions, a11y_click_events_have_key_events -->
-	<div id="shortcut-sheet-backdrop" class="sheet-backdrop" onclick={close}>
+	<div id="shortcut-sheet-backdrop" class="sheet-backdrop" data-key-scope-transient onclick={close}>
 		<!-- svelte-ignore a11y_no_static_element_interactions, a11y_click_events_have_key_events -->
 		<div
 			id="shortcut-sheet"
@@ -120,7 +120,7 @@
 				{#each visible as section (section.scope)}
 					<section class="sheet-scope" data-scope={section.scope}>
 						<h3 class:focused={section.scope === focusedScope}>
-							{section.label}{#if section.scope === focusedScope}<span class="sheet-here"> · has focus</span>{/if}
+							{section.label}{#if section.scope === focusedScope}<span class="sheet-here">&nbsp;· has focus</span>{/if}
 						</h3>
 						{#each section.groups as group (group.group)}
 							<div class="sheet-group">

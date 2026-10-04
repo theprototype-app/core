@@ -180,6 +180,13 @@ export const PROPS_ROWS = [
 	// 120: color/duplicate/delete removed — they live on the Edit ring + palette
 ];
 
+/** 36-water: the rows the panel shows for the CURRENT selection — PROPS_ROWS plus the
+ * Water rows (waterVR.waterRowsFor); the panel writes it, the stick cursor reads it */
+export const vrPropsRows = writable(/** @type {string[]} */ ([...PROPS_ROWS]));
+/** 36-water: PRIMED (waterVR reaches the history family through waterActions) @type {any} */
+let waterVR = null;
+import('../water/waterVR.js').then((m) => (waterVR = m));
+
 /** 33: the LOD group actions, PRIMED (a static edge would pull the history family's
  * importers through lodGroup's loaders into this module's graph) @type {any} */
 let lodActions = null;
@@ -305,6 +312,12 @@ export function handlePropsAction(action) {
 	}
 	const object = /** @type {any} */ (get(selectedObject));
 	if (!object?.uuid) return;
+	if (action.startsWith('water:')) {
+		// 36-water: 'water:<row>:<sign>' — a press is +1
+		const [, name, sign] = action.split(':');
+		waterVR?.handleWaterRow(object, 'water:' + name, parseInt(sign) || 1);
+		return;
+	}
 	if (action === 'visible') toggleObjectVisibility(object.uuid);
 	else if (action === 'duplicate') duplicateObject(undefined);
 	else if (action === 'delete') {
@@ -330,6 +343,7 @@ export function handlePropsAction(action) {
 export function propsRowAction(row) {
 	if (row === 'opacity') return 'props:opacity:1';
 	if (row === 'lod') return 'props:lod:1';
+	if (row.startsWith('water:')) return 'props:' + row + ':1';
 	if (row.includes(':')) return 'props:nudge:' + row + ':1';
 	return 'props:' + row;
 }

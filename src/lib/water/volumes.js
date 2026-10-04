@@ -403,6 +403,12 @@ function refresh() {
 	return true;
 }
 
+/** Tell every listener now, changed or not (a consumer that just attached, or a test). */
+function notify() {
+	lastSignature = '\u0000'; // matches no real signature, the empty one included
+	return refresh();
+}
+
 /** @param {(list: Volume[]) => void} fn @returns {() => void} unsubscribe */
 function onChange(fn) {
 	listeners.add(fn);
@@ -471,6 +477,7 @@ export const waterVolumes = {
 	surfaceY,
 	onChange,
 	refresh,
+	notify,
 	disturb,
 	ripplesOf,
 	get: resolve,

@@ -33,7 +33,11 @@ const TEMPLATE_FILES = [
 	// 35-sky-obby: Sky Run, the floating obstacle course (the core `skyrun` module plays it)
 	'sky-run',
 	// 35: Target Toss (the core `targettoss` module judges it)
-	'target-toss'
+	'target-toss',
+	// 36-water: the three water examples
+	'aquarium',
+	'pool-party',
+	'island-ocean'
 ];
 
 /** games whose def is OWNED BY ITS MODULE (modules/<id>/<id>.def.json, read by moduleDef) */

@@ -80,7 +80,7 @@ import {
 	vrPanelCursorAction,
 	raycastPanel,
 	vrPropsCursor,
-	PROPS_ROWS,
+	vrPropsRows,
 	raycastProps,
 	raycastEdit,
 	raycastSnap,
@@ -324,7 +324,7 @@ export function updateVRControls() {
 				if (action) executeVRMenuAction(action);
 			} else if (get(vrPropsPanelOpen)) {
 				// ray hover wins; otherwise activate the cursored row (112)
-				const action = get(vrHovered) ?? propsRowAction(PROPS_ROWS[get(vrPropsCursor)]);
+				const action = get(vrHovered) ?? propsRowAction(get(vrPropsRows)[get(vrPropsCursor)]);
 				if (action) executeVRMenuAction(action);
 			} else if (get(vrPrefabsPanelOpen)) {
 				// ray hover wins; otherwise arm the cursored cell (115)
@@ -565,17 +565,23 @@ export function updateVRControls() {
 			S.panelScrollAt = now;
 			hapticPulse(0.08, 10);
 			vrPropsCursor.update((v) =>
-				Math.min(Math.max(0, v + (y > 0 ? 1 : -1)), PROPS_ROWS.length - 1)
+				Math.min(Math.max(0, v + (y > 0 ? 1 : -1)), get(vrPropsRows).length - 1)
 			);
 		} else if (Math.abs(x) > 0.6 && Math.abs(x) > Math.abs(y) && now - S.panelScrollAt > 220) {
 			// left/right adjusts the cursored row (axis nudges + opacity)
-			const row = PROPS_ROWS[get(vrPropsCursor)];
+			const row = get(vrPropsRows)[get(vrPropsCursor)] ?? '';
 			const sign = x > 0 ? 1 : -1;
 			if (row === 'opacity' || row === 'lod' || row.includes(':')) {
 				S.panelScrollAt = now;
 				hapticPulse(0.1, 12);
 				executeVRMenuAction(
-					row === 'opacity' ? 'props:opacity:' + sign : row === 'lod' ? 'props:lod:' + sign : 'props:nudge:' + row + ':' + sign
+					row === 'opacity'
+						? 'props:opacity:' + sign
+						: row === 'lod'
+							? 'props:lod:' + sign
+							: row.startsWith('water:') // 36-water
+								? 'props:' + row + ':' + sign
+								: 'props:nudge:' + row + ':' + sign
 				);
 			}
 		}

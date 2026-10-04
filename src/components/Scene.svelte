@@ -67,6 +67,7 @@
 	import { measureMode, measureClick } from '$lib/measure';
 	import { pinsGroup, openAnnotation, showNotePins } from '$lib/annotationsHandler';
 	import { setParticleRoot } from '$lib/particleRuntime';
+	import WaterLayer from './water/WaterLayer.svelte';
 	import { registerEditResumeSources } from '$lib/editResume';
 	import { sendPing } from '$lib/ping';
 	import { startLightHelpers, updateLightHelpers, lightProxiesGroup } from '$lib/lightHelpers';
@@ -1640,6 +1641,8 @@
 	     sceneObjects — they'd leak into GLTF sync). oncreate passes the ref
 	     DIRECTLY (the { ref } destructure trap, N1). -->
 	<T.Group name="particle-root" oncreate={(ref: any) => setParticleRoot(ref)} />
+	<!-- 36-water: water surfaces/bodies/bubbles (scene root, local) + the render hooks -->
+	<WaterLayer />
 
 	<!-- 30b P5: module viewport content (registered scene-root groups) is re-homed here so
 	     the VR world gestures carry it too — Untangle's dots spin with the world. Not in

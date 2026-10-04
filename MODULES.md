@@ -1056,6 +1056,28 @@ export default behaviour({
   the kit and assert `sim.states('w')`. Examples: `static/behaviours/waves-spawner.js`,
   `static/behaviours/towers-reach.js`.
 
+### Water: `api.water` (1.22, roadmap 36)
+
+```js
+if (api.water) {
+	// a tank in the shared scene (replicated like Create -> Water; kinds tank | pool | ocean | cylinder)
+	const tank = await api.water.create({ kind: 'tank', preset: 'aquarium', size: [3, 1.5, 1.2], at: [0, 0.75, 0] });
+	api.water.configure(tank, { look: { deepColor: '#0b3d4f' }, bubbles: { enabled: true, rate: 12 } });
+	api.water.preset(tank, 'toxic');              // lava, swamp, toxic, ice, ocean, lake, river, pool, aquarium
+	const hit = api.water.query([0, 0.5, 0]);       // {uuid, depth, surfaceY, flow} | null (waves included)
+	api.water.disturb(tank, [0.2, 1.5, 0], 0.4, 0.8); // a LOCAL ripple — call it on every peer
+	const off = api.water.onChange((volumes) => {}); // appear / edit / move / remove; off() or module unload
+}
+```
+
+An object is water when `userData.water` holds a water blob (contract W1, `src/lib/water/volumes.js`): `{version: 1,
+shape: 'box'|'plane'|'cylinder', level (local Y; null = top), density, linearDrag, angularDrag, flow: [x,y,z] (local
+m/s), preset, look, waves, bubbles}`. `configure` merges a patch (look/waves/bubbles one level deep) and is replicated
+and undoable like an Inspector edit; on a dry object it takes a whole blob. `query` is deterministic (the waves run
+on the shared clock), so every peer's buoyancy agrees. `disturb` is visual only and NOT sent — drive it from shared
+physics on every peer. `burst(uuid)` fires the bubble burst for everyone (the moment rides the blob). Feature-detect
+it (`api.water`): 1.21 and older cores do not have it.
+
 ### Physics (P-A)
 
 All mutations are INITIATOR-ONLY — the peer that started the simulation steps

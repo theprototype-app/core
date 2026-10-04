@@ -734,10 +734,9 @@ function createBodyFor(object, p, opts) {
 	// Colliders stay ORIENTED: primitives fit the LOCAL AABB (rotation stripped
 	// for the measure) and carry the rotation on the desc; hull/custom pieces
 	// bake it into the verts — so every body starts WORLD-ALIGNED.
-	// 36-sim: a WATER VOLUME (W1: userData.water) is not scenery — a fixed box there
-	// would be a solid lid every floating thing lands on. Explicit physics still wins
-	// (a tank whose walls the author made a collider on purpose).
-	if (object.userData?.water && !object.userData?.physics && !opts.dynamic) return null;
+	// 36-sim + 36 X5 (union, 36-int-122): a WATER VOLUME (W1: userData.water) is never a solid
+	// lid — collectParams puts it in the Water group, which is always a SENSOR, so bodies fall
+	// in (buoyancy comes from the water itself) and On Enter / On Exit still fire on it.
 	const { dynamic, kinematic } = opts;
 	const spec = opts.spec ?? specOf(object, p, dynamic);
 	if (!spec) return null; // lights/empties

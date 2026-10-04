@@ -183,12 +183,18 @@ h.run(async () => {
 		});
 	const solid = await drop();
 	h.check(solid.y > 1, `COUNTERFACTUAL: a plain box catches the ball on its lid (y ${solid.y.toFixed(2)})`);
+	// 1.22 union: water also makes things FLOAT (36-sim buoyancy) — the pass-through proof uses a
+	// ball that ignores water (Floats Off); a default ball then floats at the surface (y ≈ 1)
 	await A.page.evaluate(() => {
 		window.__tank.userData.water = { version: 1, shape: 'box', level: null };
+		window.__stores.physics.setPhysicsFor(window.__ball.uuid, { floats: { off: true } });
 	});
 	const wet = await drop();
-	h.check(wet.y < 0.4, `the same box as a W1 water volume lets the ball fall in (y ${wet.y.toFixed(2)})`);
+	h.check(wet.y < 0.4, `the same box as a W1 water volume lets the ball fall in (Floats Off: y ${wet.y.toFixed(2)})`);
 	h.check(wet.key?.g === 'water' && wet.key?.s === true, `the volume is built as a Water-group sensor (${JSON.stringify(wet.key)})`);
+	await A.page.evaluate(() => window.__stores.physics.setPhysicsFor(window.__ball.uuid, { floats: undefined }));
+	const afloat = await drop();
+	h.check(afloat.y > 0.5 && afloat.y < 1.4 && afloat.key?.s === true, `with buoyancy on, the ball falls in and floats at the surface (y ${afloat.y.toFixed(2)}, sensor ${afloat.key?.s})`);
 
 	await h.finish(browser);
 });

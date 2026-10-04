@@ -53,13 +53,27 @@ export function controlsOf(...ids) {
 	}
 	return lit;
 }
-/** "B (right)" → "B on your right hand"; "Left stick" stays @param {string} id */
+/** the control an action is bound to, as words: "B on your right hand", "the left stick" @param {string} id */
 function said(id) {
-	const m = /^(.+) \((left|right)\)$/.exec(bindingLabel(id));
-	return m ? `${m[1]} on your ${m[2]} hand` : bindingLabel(id).replace(/^([A-Z])/, (c) => c.toLowerCase());
+	const b = bindingOf(id);
+	const label = bindingLabel(id);
+	if (b.control === 'primary' || b.control === 'secondary') return `${label.replace(/ \((left|right)\)$/, '')} on your ${b.hand} hand`;
+	if (b.control === 'stickClick') return `the ${b.hand} stick`;
+	return label.replace(/^([A-Z])/, (c) => c.toLowerCase());
 }
-/** the short form for a hint ("B", "Right stick press") @param {string} id */
+/** what to DO with it: "press B on your right hand", "click the left stick in" @param {string} id */
+function instruction(id) {
+	return bindingOf(id).control === 'stickClick' ? `click ${said(id)} in` : `press ${said(id)}`;
+}
+/** the short imperative for a hint: "Press B", "Click the left stick in" @param {string} id */
+function hintFor(id) {
+	const b = bindingOf(id);
+	if (b.control === 'stickClick') return `Click the ${b.hand} stick in`;
+	return 'Press ' + bindingLabel(id).replace(/ \((left|right)\)$/, '');
+}
+/** the short name of a button ("X") @param {string} id */
 const short = (id) => bindingLabel(id).replace(/ \((left|right)\)$/, '');
+const cap = (/** @type {string} */ t) => t.charAt(0).toUpperCase() + t.slice(1);
 
 /** @type {import('./engine.js').TourStep[]} */
 export const VR_STEPS = [
@@ -104,8 +118,8 @@ export const VR_STEPS = [
 		id: 'menu',
 		title: 'Your menu',
 		body: () =>
-			`Press ${said('menu')} to open the radial menu: add things, tools, the scene, and Settings (every VR setting, and Exit VR). Choose a slice with that hand's thumbstick, or point at it and pull the trigger.`,
-		hint: () => `Press ${short('menu')}`,
+			`${cap(instruction('menu'))} to open the radial menu: add things, tools, the scene, and Settings (every VR setting, and Exit VR). Choose a slice with that hand's thumbstick, or point at it and pull the trigger.`,
+		hint: () => hintFor('menu'),
 		advanceOn: 'vr-menu',
 		controls: () => {
 			const lit = controlsOf('menu');
@@ -118,8 +132,8 @@ export const VR_STEPS = [
 		id: 'play',
 		title: 'Play a game',
 		body: () =>
-			`Open a game (Templates on the desktop, or a shared link), then press ${said('mode')} to switch between Edit and Interact — Interact is where you play. In a game, ${short('pause')} opens its pause menu.`,
-		hint: () => `Press ${short('mode')} to switch to Interact`,
+			`Open a game (Templates on the desktop, or a shared link), then ${instruction('mode')} to switch between Edit and Interact — Interact is where you play. In a game, ${short('pause')} opens its pause menu.`,
+		hint: () => `${hintFor('mode')} to switch to Interact`,
 		advanceOn: 'vr-interact',
 		controls: () => controlsOf('mode')
 	},

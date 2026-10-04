@@ -36,6 +36,7 @@ import { sdkHud } from './hud.js';
 import { sdkOwn } from './own.js';
 import { sdkKit } from './kit.js';
 import { sdkModels } from './models.js';
+import { sdkWater } from './water.js';
 
 /** The api, slice by slice, in key order. @type {[string, (ctx: import('./context.js').SdkContext) => object][]} */
 export const SDK_TABLE = [
@@ -66,7 +67,8 @@ export const SDK_TABLE = [
 	['hud', sdkHud], // api.hud, registerHudElement
 	['kit', sdkKit], // api.kit (34 R2: the game kit, one namespace per piece)
 	['own', sdkOwn], // onUnload, timers, listen, own (34 R6)
-	['models', sdkModels] // loadModel (34 R7)
+	['models', sdkModels], // loadModel (34 R7)
+	['water', sdkWater] // api.water (36-water: W1 volumes + W2 disturbances)
 ];
 
 /** @param {string} moduleId @param {string} [moduleName] the DISPLAY name, needed while

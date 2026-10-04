@@ -285,8 +285,16 @@ export const VALIDATORS = {
 	},
 	// 33: only the `lod` parameter is constrained (every other parameter predates this entry
 	// and keeps "absent means allow"): a block is an object with a levels ARRAY, or null
-	objectParameters: (d) =>
-		d.parameter !== 'lod' || (isUuid(d.uuid) && (d.lod === null || (!!d.lod && typeof d.lod === 'object' && isArray(d.lod.levels))))
+	// 36-water: `water` / `bubbles` are a plain object or null (the appliers spread nothing
+	// else onto userData)
+	objectParameters: (d) => {
+		if (d.parameter === 'lod') return isUuid(d.uuid) && (d.lod === null || (!!d.lod && typeof d.lod === 'object' && isArray(d.lod.levels)));
+		if (d.parameter === 'water' || d.parameter === 'bubbles') {
+			const v = d[d.parameter];
+			return isUuid(d.uuid) && (v === null || (!!v && typeof v === 'object' && !isArray(v)));
+		}
+		return true;
+	}
 };
 
 /**

@@ -7,6 +7,8 @@
 	import { vrPropsPanelOpen, vrMenuHand, selectedObject } from '../../stores/sceneStore'
 	import { vrHovered, vrPropsGroup, vrPropsCursor, PROPS_ROWS, controllerIndexFor, lodReadout } from '$lib/vrControls'
 	import { applyWindowPose } from '$lib/vrWindowPoses'
+	import { vrPropsRows } from '$lib/vr/panels'
+	import { waterRowsFor, waterRowLabel, waterRowValue, waterRowIsButton } from '$lib/water/waterVR.js'
 	import { menuPoseFromController } from '$lib/vrRadialMenu'
 
 	// VR properties panel (112, quiz: core editable set): name + transform
@@ -48,8 +50,12 @@
 	function rowY(index: number) {
 		return panelH / 2 - ROW_H * 1.6 - index * ROW_H
 	}
-	const rows = PROPS_ROWS as string[]
-	const panelH = (rows.length + 2.2) * ROW_H
+	// 36-water: the rows follow the selection (PROPS_ROWS + its Water rows)
+	const rows = $derived($vrPropsRows as string[])
+	const panelH = $derived((rows.length + 2.2) * ROW_H)
+	function rowsFor(object: any): string[] {
+		return object?.uuid ? [...(PROPS_ROWS as string[]), ...waterRowsFor(object)] : [...(PROPS_ROWS as string[])]
+	}
 
 	function readValues(object: any) {
 		const next: Record<string, string> = {}
@@ -61,6 +67,7 @@
 		}
 		next.opacity = (object.material?.opacity ?? 1).toFixed(1)
 		next.lod = lodReadout(object.uuid)
+		for (const row of waterRowsFor(object)) next[row] = waterRowValue(object, row)
 		return next
 	}
 
@@ -78,6 +85,11 @@
 			if (object?.uuid) {
 				title = object.name || object.type || 'Properties'
 				values = readValues(object)
+				const nextRows = rowsFor(object)
+				if (nextRows.join() !== ($vrPropsRows as string[]).join()) {
+					vrPropsRows.set(nextRows)
+					if ($vrPropsCursor >= nextRows.length) vrPropsCursor.set(nextRows.length - 1)
+				}
 				visibleState = object.visible !== false
 				if (object.material?.color) liveHex = '#' + object.material.color.getHexString()
 			} else {
@@ -157,6 +169,31 @@
 				<Text text={visibleState ? '✓' : '✗'} color={visibleState ? '#9fe8a9' : '#e8a0a0'}
 					fontSize={0.01} anchorX="center" anchorY="middle"
 					position={[WIDTH / 2 - 0.02, rowY(i), 0.002]} />
+			{:else if row.startsWith('water:') && waterRowIsButton(row)}
+				<!-- 36-water: a press row (Make it water / Remove water) -->
+				<T.Mesh name={`vrprops-${row}:1`} position={[0, rowY(i), 0.0005]}>
+					<T.PlaneGeometry args={[WIDTH - 0.01, ROW_H - 0.006]} />
+					<T.MeshBasicMaterial color={$vrHovered === `props:${row}:1` ? '#5a2a12' : rowBg(i)} transparent opacity={0.92} side={THREE.DoubleSide} />
+				</T.Mesh>
+				<Text text={waterRowLabel(row)} color={row === 'water:remove' ? '#e8a0a0' : '#9fd8ff'} fontSize={0.009} anchorX="left" anchorY="middle"
+					position={[-WIDTH / 2 + 0.008, rowY(i), 0.002]} />
+			{:else if row.startsWith('water:')}
+				<Text text={waterRowLabel(row)} color="#9fd8ff" fontSize={0.009} anchorX="left" anchorY="middle"
+					position={[-WIDTH / 2 + 0.008, rowY(i), 0.002]} />
+				<Text text={values[row] ?? ''} color="#e8ecf2" fontSize={0.009} anchorX="right" anchorY="middle"
+					position={[WIDTH / 2 - 0.062, rowY(i), 0.002]} />
+				<T.Mesh name={`vrprops-${row}:-1`} position={[WIDTH / 2 - 0.042, rowY(i), 0]}>
+					<T.CircleGeometry args={[0.0075, 18]} />
+					<T.MeshBasicMaterial color={buttonColor(`${row}:-1`)} side={THREE.DoubleSide} />
+				</T.Mesh>
+				<Text text="−" color="#ffffff" fontSize={0.009} anchorX="center" anchorY="middle"
+					position={[WIDTH / 2 - 0.042, rowY(i), 0.002]} />
+				<T.Mesh name={`vrprops-${row}:1`} position={[WIDTH / 2 - 0.016, rowY(i), 0]}>
+					<T.CircleGeometry args={[0.0075, 18]} />
+					<T.MeshBasicMaterial color={buttonColor(`${row}:1`)} side={THREE.DoubleSide} />
+				</T.Mesh>
+				<Text text="+" color="#ffffff" fontSize={0.009} anchorX="center" anchorY="middle"
+					position={[WIDTH / 2 - 0.016, rowY(i), 0.002]} />
 			{:else if row === 'duplicate' || row === 'delete'}
 				<Text
 					text={row === 'duplicate' ? '⧉ Duplicate' : 'Delete'}

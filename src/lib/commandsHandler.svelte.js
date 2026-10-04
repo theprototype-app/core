@@ -655,6 +655,16 @@ export async function objectParameters(data) {
             else delete mesh.userData.particles;
             pokeScene();
         }
+    } else if (data.parameter == 'water' || data.parameter == 'bubbles') {
+        // 36-water: userData.water is a water volume (W1), userData.bubbles a standalone
+        // bubble emitter; the water renderer re-scans on the poke. null = removed
+        let mesh = sceneObjects.getObjectByProperty('uuid', data.uuid);
+        if (mesh) {
+            const value = data[data.parameter];
+            if (value && typeof value === 'object') mesh.userData[data.parameter] = value;
+            else delete mesh.userData[data.parameter];
+            pokeScene();
+        }
     } else if (data.parameter == 'device') {
         // 23-A3: userData.device is a device object's whole configuration ({kind,
         // params}); the runtime rebuilds its WebAudio subgraph from it. null = removed.

@@ -3,6 +3,7 @@
 	import { HardDrive, Lock, RotateCcw, X } from '@lucide/svelte';
 	import ThemedSelect from '../ui/ThemedSelect.svelte';
 	import SettingRow from './SettingRow.svelte';
+	import WaterSettings from '../water/WaterSettings.svelte';
 	// 30b (vr-play) C5: the two LOCAL game-audio volumes
 	import { gameSoundVolume } from '$lib/gameSfx';
 	import { gameMusicVolume } from '$lib/gameMusic';
@@ -1081,6 +1082,7 @@
 						<svelte:fragment slot="control"><Checkbox id="kit-instancing" bind:checked={$kitInstancingEnabled} /></svelte:fragment>
 						Every copy of one pack piece (a wall, a floor tile, a battlement) is drawn in one go instead of one by one, which is what keeps a level built from the kits inside a headset's budget. Only on THIS machine; an edited or selected piece is always drawn on its own
 					</SettingRow>
+					<WaterSettings />
 					<SettingRow name="Simulation controls">
 						<svelte:fragment slot="control"><Checkbox bind:checked={$showSimControls} /></svelte:fragment>
 						Show the physics transport (play/pause/stop/reset) at bottom-right. Off by default to avoid confusion with the main play button; the P key still starts/stops the simulation

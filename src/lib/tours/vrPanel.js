@@ -21,7 +21,7 @@ import * as THREE from 'three';
 import { get } from 'svelte/store';
 import { globalScene, globalRenderer, isVRMode } from '../../stores/sceneStore';
 import { activeTour, tours } from './index.js';
-import { FAMILY_KEY } from './builtin.js';
+import { FAMILY_KEY, VR_TOUR } from './builtin.js';
 import { controllerSvg, litFor, sessionFamily } from './controllerArt.js';
 import { drawTourPanel, hitAtUv, PANEL_PX } from './vrPanelDraw.js';
 import {
@@ -32,7 +32,12 @@ import {
 	hapticPulse
 } from '../vrControls';
 import { followYaw } from '../vrGamePanel';
+import { registerVRMenuEntry, unregisterVRMenuEntry } from '../vrRadialMenu';
 import { safeStorage } from '../safeStorage';
+
+/** the radial entry that replays the welcome: the System ring, before Exit VR (36-vr owns the
+ * ring layout — if it moves settings into their own ring, this is the one line to change) */
+export const RADIAL_ENTRY = { id: 'tour:vr', group: 'system', order: 6.5 };
 
 /** panel size in metres, and where it sits relative to the head */
 export const PANEL_M = { w: 0.6, h: 0.375 };
@@ -268,6 +273,13 @@ export function mountTourVRPanel() {
 			drawnSig = '';
 		})
 	];
+	registerVRMenuEntry({
+		...RADIAL_ENTRY,
+		label: 'Welcome tour',
+		closes: true,
+		action: () => tours.start(VR_TOUR, { from: 'start' })
+	});
+	undo.push(() => unregisterVRMenuEntry(RADIAL_ENTRY.id, RADIAL_ENTRY.group));
 	return () => {
 		for (const fn of undo) fn();
 		panel.parent?.remove(panel);

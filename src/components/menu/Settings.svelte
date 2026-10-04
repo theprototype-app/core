@@ -3,6 +3,7 @@
 	import { HardDrive, Lock, RotateCcw, X } from '@lucide/svelte';
 	import ThemedSelect from '../ui/ThemedSelect.svelte';
 	import SettingRow from './SettingRow.svelte';
+	import ToursSettings from './settings/ToursSettings.svelte'; // 36 U3b/I5
 	// 30b (vr-play) C5: the two LOCAL game-audio volumes
 	import { gameSoundVolume } from '$lib/gameSfx';
 	import { gameMusicVolume } from '$lib/gameMusic';
@@ -803,6 +804,7 @@
 						<svelte:fragment slot="control"><Toggle bind:checked={$toastsInDrawerOnly} /></svelte:fragment>
 						Hide ALL pop-up toasts in the viewport — including connection requests — so they appear only in the connection drawer's Toasts tab (the notification bell still keeps the full history). Pin the drawer to keep the Toasts tab handy
 					</SettingRow>
+					<ToursSettings />
 					<p class="ui-section-label">Windows & chrome</p>
 					{#if $drawerSlot}
 						<SettingRow name="Show Rooms button">

@@ -38,6 +38,8 @@ export const DEBUG_HOOKS = [
 	['tours', () => import('./tours/index.js')],
 	['toursBuiltin', () => import('./tours/builtin.js')],
 	['tourVR', () => import('./tours/vrPanel.js')],
+	// 36 A2: the offerSession decision (xrOfferMode, xrOfferEnabled, xrOfferDebug)
+	['xrOffer', () => import('./xrOffer')],
 	['perfLiveSource', () => import('./perf/liveSource')],
 	['perfLiveSink', () => import('./perf/liveSink')],
 	['perfLiveWire', () => import('./perf/liveWire')],

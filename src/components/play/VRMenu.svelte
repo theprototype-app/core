@@ -58,16 +58,30 @@
 		// the text box a sector can hold: its chord at the label radius, less a margin
 		const rMid = (RING_INNER + RING_OUTER) / 2
 		const chord = 2 * rMid * Math.sin(Math.PI / Math.max(n, 2)) * 0.88
-		return entries.map((entry: any, index: number) => ({
-			entry,
-			label: entryLabel(entry),
-			icon: entryIcon(entry),
-			value: entry.value ? entry.value() : '',
-			nav: !!entry.ring,
-			maxWidth: Math.min(chord, 0.07),
-			fontSize: n > 8 ? 0.0078 : 0.0088,
-			...sectorLayout(index, n)
-		}))
+		return entries.map((entry: any, index: number) => {
+			const label = entryLabel(entry)
+			const fontSize = n > 8 ? 0.0078 : 0.0088
+			const maxWidth = Math.min(chord, 0.07)
+			// will the label wrap? (troika lays text out later; ~0.55 em per glyph is close enough) — a
+			// two-line label pushes the icon up and the value down so the three never collide
+			const two = (label.length + (entry.ring ? 2 : 0)) * 0.55 * fontSize > maxWidth
+			const value = entry.value ? entry.value() : ''
+			const layout = sectorLayout(index, n)
+			const shift = two ? 0.005 : 0
+			return {
+				entry,
+				label,
+				icon: entryIcon(entry),
+				value,
+				nav: !!entry.ring,
+				maxWidth,
+				fontSize,
+				iconY: layout.labelY + (value ? 0.016 : 0.012) + shift,
+				textY: layout.labelY + (value ? 0.006 : 0.002) + shift,
+				valueY: layout.labelY - 0.012 - (two ? 0.007 : 0),
+				...layout
+			}
+		})
 	}
 	$: title = ringTitle($activeRing)
 
@@ -169,7 +183,7 @@
 			</T.Mesh>
 			<!-- 36 (R1): the desktop's icon for the same command, above the label -->
 			{#if s.icon && vrIconTexture(s.icon)}
-				<T.Mesh name={`vricon-${s.entry.id}`} position={[s.labelX, s.labelY + (s.value ? 0.016 : 0.012), 0.0035]}>
+				<T.Mesh name={`vricon-${s.entry.id}`} position={[s.labelX, s.iconY, 0.0035]}>
 					<T.PlaneGeometry args={[0.014, 0.014]} />
 					<T.MeshBasicMaterial map={vrIconTexture(s.icon)} color={labelColor(s.entry, $vrHovered)} transparent depthWrite={false} side={THREE.DoubleSide} />
 				</T.Mesh>
@@ -186,19 +200,19 @@
 					lineHeight={1.05}
 					anchorX="center"
 					anchorY={s.icon ? 'top' : 'middle'}
-					position={[s.labelX, s.icon ? s.labelY + (s.value ? 0.006 : 0.002) : s.labelY, 0.003]}
+					position={[s.labelX, s.icon ? s.textY : s.labelY, 0.003]}
 				/>
 			{/if}
 			{#if s.value}
 				<Text
 					text={s.value}
-					color={$vrHovered === s.entry.id ? '#ffffff' : '#9fb3c8'}
+					color={$vrHovered === s.entry.id || s.entry.active?.() ? '#ffffff' : '#b4c4d6'}
 					fontSize={0.0072}
 					maxWidth={s.maxWidth}
 					textAlign="center"
 					anchorX="center"
 					anchorY="top"
-					position={[s.labelX, s.labelY - 0.012, 0.003]}
+					position={[s.labelX, s.valueY, 0.003]}
 				/>
 			{/if}
 			<!-- unread chat badge (117): a red dot + count on the Chat sector -->

@@ -273,6 +273,8 @@ export const DEBUG_HOOKS = [
 	['lodLevelEdit', () => import('./lodLevelEdit')],
 	['packBehavior', () => import('./packBehavior')],
 	['sceneLoader', () => import('./sceneLoader')],
+	// 36 L2: the scene start view + the camera hold (startViewDebug, releaseHold, backToStartView)
+	['startView', () => import('./startView')],
 	['sceneSwitch', () => import('./sceneSwitch')],
 	['sceneScope', () => import('./sceneScope')],
 	['kitInstancing', () => import('./kitInstancing')],

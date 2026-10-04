@@ -32,12 +32,16 @@
 // camera. A hold suspends VR locomotion the same way (teleport, turn, the walk stick and the
 // world grab) through the existing nav-suppressor and world-grab-divert registries. Games are
 // unchanged: Play places the player at `play.spawn` when Play starts, which this never touches.
+// A load that runs WHILE PLAYING (a travel node) or while watching a peer is not about the editor
+// camera at all — there the view is applied at the end exactly as 1.21 did, and nothing is held;
+// a hold also ends the moment Play starts.
 //
 // LOCAL: nothing here is saved, sent or undone — the scene setting lives in scenePhysics (the
 // replicated scene-settings singleton); this module only reads it out of the payload it loads.
 
 import { writable, get } from 'svelte/store';
-import { globalCamera, orbitControls, isVRMode } from '../stores/sceneStore';
+import { globalCamera, orbitControls, isVRMode, isLocked } from '../stores/sceneStore';
+import { specatorMode } from '../stores/appStore';
 import { currentJob } from './sceneLoader';
 import { currentStuckMs } from './loadStates';
 import { allPlaceholdersStalled } from './placeholders';
@@ -64,9 +68,13 @@ let view = null;
 let job = null;
 let holding = false;
 let holdSince = 0;
-/** why the last hold ended ('loaded' | 'stalled' | 'cap' | 'user' | 'cancelled') */
+/** when the last hold ended (the suites read how long it lasted) */
+let releasedAt = 0;
+/** why the last hold ended ('loaded' | 'stalled' | 'cap' | 'user' | 'cancelled' | 'play') */
 let releasedBy = '';
 let moved = false;
+/** the load began while playing or spectating: the 1.21 rule (apply at the end, no hold) */
+let legacy = false;
 let backTimer = /** @type {any} */ (null);
 /** @type {{enabled: boolean, controls: any} | null} what the hold switched off */
 let stoodDown = null;
@@ -117,6 +125,11 @@ function cameraAndControls() {
 	return { camera: /** @type {any} */ (get(globalCamera)), controls: /** @type {any} */ (get(orbitControls)) };
 }
 
+/** Playing (the player camera is live) or watching a peer (their camera drives ours)? */
+function notEditorCamera() {
+	return get(isLocked) === true || !!get(specatorMode);
+}
+
 /** Is the user's camera input being ignored right now (the VR registries and the suites read it)? */
 export function startViewHeld() {
 	return holding;
@@ -148,6 +161,7 @@ export function releaseHold(reason = 'user') {
 	if (!holding) return;
 	holding = false;
 	releasedBy = reason;
+	releasedAt = clock();
 	restoreControls();
 	if (typeof window !== 'undefined') window.removeEventListener('keydown', onKey, true);
 	if (get(startViewHint)?.kind === 'held') startViewHint.set(null);
@@ -166,9 +180,11 @@ export function beginStartView(loadJob, rawView, opts = {}) {
 	job = loadJob;
 	moved = false;
 	releasedBy = '';
+	releasedAt = 0;
 	view = normalizeStartView(rawView);
-	if (!view) {
-		job = null;
+	legacy = notEditorCamera();
+	if (!view || legacy) {
+		if (!view) job = null;
 		return;
 	}
 	const { camera, controls } = cameraAndControls();
@@ -191,6 +207,11 @@ export function settleStartView(loadJob) {
 	if (!view || loadJob !== job) return;
 	const { camera, controls } = cameraAndControls();
 	if (!camera || get(isVRMode)) return;
+	if (legacy) {
+		// playing / spectating: 1.21's rule, unchanged
+		placeCamera(camera, controls, view);
+		return;
+	}
 	if (holding || !moved) {
 		if (!onView(camera, controls, view)) {
 			if (holding) placeCamera(camera, controls, view);
@@ -204,7 +225,7 @@ function finish() {
 	const ended = job && !job.cancelled;
 	if (holding) releaseHold(ended ? 'loaded' : 'cancelled');
 	job = null;
-	if (!ended || !view || !moved) return;
+	if (!ended || !view || !moved || legacy) return;
 	const until = clock() + BACK_BUTTON_MS;
 	startViewHint.set({ kind: 'back', until });
 	clearTimeout(backTimer);
@@ -221,7 +242,8 @@ export function tickStartView() {
 		return;
 	}
 	const { camera, controls } = cameraAndControls();
-	if (!camera || !view) return;
+	if (!camera || !view || legacy) return;
+	if (holding && notEditorCamera()) releaseHold('play');
 	if (holding) {
 		const now = clock();
 		const stalled = job.phase === 'models' && allPlaceholdersStalled();
@@ -263,7 +285,16 @@ registerWorldGrabDivert({ active: () => holding, apply: () => holding });
 
 /** for the suites */
 export function startViewDebug() {
-	return { view: currentStartView(), loading: !!job, holding, holdSince, releasedBy, moved, hint: get(startViewHint) };
+	return {
+		view: currentStartView(),
+		loading: !!job,
+		holding,
+		holdSince,
+		releasedBy,
+		heldFor: releasedAt >= holdSince && releasedBy ? releasedAt - holdSince : null,
+		moved,
+		hint: get(startViewHint)
+	};
 }
 
 /** @param {() => number} fn */
@@ -275,7 +306,7 @@ export function resetStartViewForTest() {
 	releaseHold('reset');
 	clearTimeout(backTimer);
 	view = job = null;
-	moved = false;
+	moved = legacy = false;
 	releasedBy = '';
 	startViewHint.set(null);
 }

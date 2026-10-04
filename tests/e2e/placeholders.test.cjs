@@ -149,6 +149,8 @@ h.run(async () => {
 		return v;
 	});
 	h.check(defaultStyle === 'modern', `the default style is Modern (36 L1) (${defaultStyle})`);
+	await A.page.locator('#placeholder-style').scrollIntoViewIfNeeded();
+	await shot('00-loading-settings-default-dark.png');
 	h.check((await A.page.evaluate(() => localStorage.getItem('placeholderStyle'))) === null, 'the default is not written until the person picks');
 	await A.page.locator('#placeholder-style').click();
 	await A.page.getByRole('option', { name: 'Colored boxes' }).click();

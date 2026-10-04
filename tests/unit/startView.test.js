@@ -6,7 +6,8 @@ import { describe, it, expect, beforeEach, vi } from 'vitest';
 let stalled = false;
 vi.mock('../../src/lib/placeholders.js', () => ({ allPlaceholdersStalled: () => stalled }));
 
-const { globalCamera, orbitControls, isVRMode } = await import('../../src/stores/sceneStore.js');
+const { globalCamera, orbitControls, isVRMode, isLocked } = await import('../../src/stores/sceneStore.js');
+const { specatorMode } = await import('../../src/stores/appStore.js');
 const { beginLoad, endLoad, cancelLoad, updateLoad } = await import('../../src/lib/sceneLoader.js');
 const { placeholderStuckSeconds } = await import('../../src/lib/loadStates.js');
 const { navSuppressors, worldGrabDiverts } = await import('../../src/lib/vr/hooks.js');
@@ -63,6 +64,8 @@ beforeEach(() => {
 	globalCamera.set(camera);
 	orbitControls.set(controls);
 	isVRMode.set(false);
+	isLocked.set(null);
+	specatorMode.set(false);
 	placeholderStuckSeconds.set(10);
 });
 
@@ -223,6 +226,42 @@ describe('hold camera until loaded', () => {
 		camera.position.set(9, 9, 9);
 		sv.settleStartView(job);
 		expect(pose()).toEqual([4, 3, 8]);
+	});
+});
+
+describe('playing or spectating: the 1.21 rule, unchanged', () => {
+	it('a load while playing (a travel node) applies the view at the end and never holds', () => {
+		isLocked.set(true);
+		const job = beginLoad('Level 2', 50);
+		sv.beginStartView(job, VIEW, { hold: true });
+		expect(pose()).toEqual([-10, 10, 10]);
+		expect(sv.startViewHeld()).toBe(false);
+		camera.position.set(2, 2, 2); // the player walks
+		sv.tickStartView();
+		sv.settleStartView(job);
+		expect(pose()).toEqual([4, 3, 8]);
+		endLoad(job);
+		sv.tickStartView();
+		expect(sv.startViewDebug().hint).toBe(null);
+	});
+	it('watching a peer: nothing is placed until the end, nothing held', () => {
+		specatorMode.set(true);
+		const job = beginLoad('Tavern', 50);
+		sv.beginStartView(job, VIEW, { hold: true });
+		expect(sv.startViewHeld()).toBe(false);
+		expect(pose()).toEqual([-10, 10, 10]);
+	});
+	it('a hold ends the moment Play starts (a play link)', () => {
+		const job = beginLoad('Market', 100);
+		sv.beginStartView(job, VIEW, { hold: true });
+		expect(sv.startViewHeld()).toBe(true);
+		isLocked.set(true);
+		camera.position.set(1, 1, 1); // the player camera
+		sv.tickStartView();
+		expect(sv.startViewHeld()).toBe(false);
+		expect(sv.startViewDebug().releasedBy).toBe('play');
+		expect(pose()).toEqual([1, 1, 1]);
+		void job;
 	});
 });
 

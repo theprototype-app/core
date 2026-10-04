@@ -17,6 +17,8 @@ import { findNodeDef } from './customNodes';
 import { updateSounds } from './soundRuntime';
 import { colliderSpecOf } from './colliderSpec'; // B6: pure THREE leaf
 import { updateParticles } from './particleRuntime';
+// 36-sim: jiggle's park (a leaf over three + flowStore; closes no cycle)
+import { parkJiggle } from './sim/jiggleRuntime.js';
 import { startObjectFlowWatcher } from './objectFlow';
 import { parkEditOverlays } from './editOverlays';
 // A3: hudDocs is a LEAF (svelte/store only), so a static edge to it closes no cycle
@@ -2027,6 +2029,8 @@ export function parkAnimatedAtBase() {
 	// custom shader outright and toJSON would write our injected material as if it
 	// were the object's own. Same one-ritual reasoning as the parks above.
 	const unpark3 = shaderRef?.parkShaderMaterials?.() ?? null;
+	// 36-sim: a jiggling bone chain is posed on top of its rest pose — park it too
+	const unpark4 = parkJiggle();
 	let restored = false;
 	return () => {
 		if (restored) return;
@@ -2035,6 +2039,7 @@ export function parkAnimatedAtBase() {
 		unpark?.();
 		unpark2();
 		unpark3?.();
+		unpark4();
 	};
 }
 

@@ -30,7 +30,7 @@ export function sdkModels(ctx) {
 		 * lists `lods` uses those files), `false` = none, `{ratios, distances, minTriangles}` =
 		 * tuned automatic levels, `[{file, ratio}]` = pre-built level files beside the model;
 		 * `castShadow`/`receiveShadow` (every mesh; absent = as the file says, which is off);
-		 * `collider: 'box'|'sphere'|'capsule'|'cylinder'|'cone'|'hull'` = the physics shape a
+		 * `collider: 'box'|'sphere'|'capsule'|'cylinder'|'cone'|'hull'|'trimesh'` = the physics shape a
 		 * copy takes once it is SCENE content with physics; `ownMaterials`. Rejects when the
 		 * file is missing or cannot be parsed. LOCAL; everything is released when the module
 		 * is disabled or unloaded (copies you put in objectsGroup stay — they are the scene's).

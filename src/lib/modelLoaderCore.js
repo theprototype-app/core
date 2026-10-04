@@ -10,7 +10,7 @@
 //                [{file, ratio}, ...]       -> contract P1: pre-built level FILES beside the
 //                                             model (resolved like the model's own path)
 //   castShadow / receiveShadow   boolean, applied to every mesh; absent = as the file says
-//   collider     'box'|'sphere'|'capsule'|'cylinder'|'cone'|'hull' -> the physics shape the
+//   collider     'box'|'sphere'|'capsule'|'cylinder'|'cone'|'hull'|'trimesh' -> the physics shape the
 //                instance takes WHEN it is scene content with physics (userData.colliderHint,
 //                which rides the wire); anything else = none
 //   ownMaterials true -> each instance gets its own material copies (a hit flash paints
@@ -23,7 +23,7 @@
  */
 
 /** the collider kinds a userData.colliderHint may request (colliderSpec's HINT_KINDS) */
-export const COLLIDER_KINDS = Object.freeze(['box', 'sphere', 'capsule', 'cylinder', 'cone', 'hull']);
+export const COLLIDER_KINDS = Object.freeze(['box', 'sphere', 'capsule', 'cylinder', 'cone', 'hull', 'trimesh']);
 
 /** @param {unknown} v */
 const finiteList = (v) => Array.isArray(v) && v.length > 0 && v.every((n) => typeof n === 'number' && Number.isFinite(n));

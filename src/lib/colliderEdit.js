@@ -71,9 +71,12 @@ function seedGeometry(object) {
 		// the spec — unbake so the proxy (which carries the scale) matches
 		/** @type {number[]} */
 		const positions = [];
-		for (const piece of spec.pieces)
-			for (let i = 0; i < piece.verts.length; i += 3)
-				positions.push(piece.verts[i] / sx, piece.verts[i + 1] / sy, piece.verts[i + 2] / sz);
+		for (const piece of spec.pieces) {
+			// 36 X2: an exact (trimesh) piece is indexed — expand it to the soup
+			const order = piece.indices ?? Array.from({ length: piece.verts.length / 3 }, (_, i) => i);
+			for (const i of order)
+				positions.push(piece.verts[i * 3] / sx, piece.verts[i * 3 + 1] / sy, piece.verts[i * 3 + 2] / sz);
+		}
 		const geometry = new THREE.BufferGeometry();
 		geometry.setAttribute('position', new THREE.BufferAttribute(new Float32Array(positions), 3));
 		geometry.computeVertexNormals();

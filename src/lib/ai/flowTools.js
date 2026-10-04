@@ -488,7 +488,7 @@ export function updateFlowNodesTool(args) {
 }
 
 const PHYSICS_MODES = ['auto', 'static', 'dynamic'];
-const COLLIDER_KINDS = ['box', 'sphere', 'capsule', 'cylinder', 'hull'];
+const COLLIDER_KINDS = ['box', 'sphere', 'capsule', 'cylinder', 'hull', 'trimesh'];
 
 /**
  * set_physics: merge body params onto objects' userData.physics via the shared

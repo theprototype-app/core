@@ -20,6 +20,7 @@ import {
 	noteObjectPose
 } from './flowRuntime';
 import { colliderSpecOf } from './colliderSpec';
+import { colliderDescsFor } from './colliderDescs';
 import {
 	sceneGravity,
 	scenePhysicsGround,
@@ -277,24 +278,6 @@ function collectParams(group) {
 		if (!toSelector.has(source.id)) applyPhysicsNode(source, graph);
 	});
 	return map;
-}
-
-/**
- * Collider shape from the Inspector's collider pick + the object's LOCAL half
- * extents (PFX-C follow-up: sphere/capsule/cylinder join box + hull; 15-A3
- * adds cone). Capsule, cylinder and cone stand along the object's local Y;
- * sphere takes the largest extent so nothing pokes through.
- * @param {string|undefined} kind @param {THREE.Vector3} he half extents
- */
-function shapeDesc(kind, he) {
-	if (kind === 'sphere') return RAPIER.ColliderDesc.ball(Math.max(he.x, he.y, he.z));
-	if (kind === 'capsule') {
-		const radius = Math.max(he.x, he.z, 0.02);
-		return RAPIER.ColliderDesc.capsule(Math.max(he.y - radius, 0.01), radius);
-	}
-	if (kind === 'cylinder') return RAPIER.ColliderDesc.cylinder(he.y, Math.max(he.x, he.z, 0.02));
-	if (kind === 'cone') return RAPIER.ColliderDesc.cone(he.y, Math.max(he.x, he.z, 0.02));
-	return RAPIER.ColliderDesc.cuboid(he.x, he.y, he.z);
 }
 
 /** LOCAL axis letter -> WORLD angvel vector for setAngvel (bodies report/step in
@@ -579,12 +562,22 @@ function shapeKeyOf(p, object) {
 }
 
 /** CL-C: node params may hull ANOTHER object ('object' source) and scale the
- * shape — resolve those extras into the shared spec. @param {any} object @param {any} p */
-function specOf(object, p) {
+ * shape — resolve those extras into the shared spec. 36 X2: `dynamic` turns an
+ * exact (trimesh) pick into its hull. @param {any} object @param {any} p @param {boolean} dynamic */
+function specOf(object, p, dynamic) {
 	const sourceObject = p?.colliderSource
 		? get(objectsGroup)?.getObjectByProperty('uuid', p.colliderSource)
 		: null;
-	return colliderSpecOf(object, p?.collider, { sourceObject, scale: p?.colliderScale });
+	return colliderSpecOf(object, p?.collider, { sourceObject, scale: p?.colliderScale, dynamic });
+}
+
+/** 36 X2: the toast for a spec that could not be built as asked. @param {any} spec @param {any} p @param {any} object */
+function fallbackMessage(spec, p, object) {
+	const name = '"' + (object.name || object.type) + '"';
+	if (spec.reason === 'dynamic')
+		return 'Exact mesh collider is for static bodies — ' + name + ' is dynamic, so it uses a convex hull';
+	const what = p?.collider === 'custom' ? 'Custom collider' : spec.reason ? 'Exact mesh collider' : 'Convex hull';
+	return what + ' unavailable for ' + name + (spec.reason ? ' (' + spec.reason + ')' : '') + ' — using a box';
 }
 
 /**
@@ -601,15 +594,9 @@ function specOf(object, p) {
  * @returns {{colliders: any[], spec: any} | null}
  */
 function createCollidersFor(object, body, p, dynamic, entry, knownSpec) {
-	const spec = knownSpec ?? specOf(object, p);
+	const spec = knownSpec ?? specOf(object, p, dynamic);
 	if (!spec) return null;
-	if (spec.fallback)
-		showToast(
-			(p?.collider === 'custom' ? 'Custom collider' : 'Convex hull') +
-				' unavailable for "' +
-				(object.name || object.type) +
-				'" — using a box'
-		);
+	if (spec.fallback) showToast(fallbackMessage(spec, p, object));
 	const t = body.translation();
 	const r = body.rotation();
 	const bodyQuat = new THREE.Quaternion(r.x, r.y, r.z, r.w);
@@ -618,33 +605,14 @@ function createCollidersFor(object, body, p, dynamic, entry, knownSpec) {
 	/** world point -> body-local @param {any} world */
 	const localOf = (world) => world.clone().sub(bodyPos).applyQuaternion(invBody);
 	const relQuat = invBody.clone().multiply(spec.quat); // object rotation in the body frame
-	/** @type {any[]} */
-	const descs = [];
-	if (spec.pieces) {
-		// hull/custom: verts are scale-baked around the OBJECT ORIGIN — bake the
-		// relative rotation per-vert, carry the origin offset on the desc
-		const origin = localOf(object.position);
-		const v = new THREE.Vector3();
-		for (const piece of spec.pieces) {
-			const baked = new Float32Array(piece.verts.length);
-			for (let i = 0; i < piece.verts.length; i += 3) {
-				v.set(piece.verts[i], piece.verts[i + 1], piece.verts[i + 2]).applyQuaternion(relQuat);
-				baked[i] = v.x;
-				baked[i + 1] = v.y;
-				baked[i + 2] = v.z;
-			}
-			const desc = RAPIER.ColliderDesc.convexHull(baked);
-			if (desc) descs.push(desc.setTranslation(origin.x, origin.y, origin.z));
-		}
-	}
-	if (!descs.length) {
-		const local = localOf(spec.center);
-		descs.push(
-			shapeDesc(spec.pieces ? 'box' : spec.kind, spec.halfExtents)
-				.setTranslation(local.x, local.y, local.z)
-				.setRotation({ x: relQuat.x, y: relQuat.y, z: relQuat.z, w: relQuat.w })
-		);
-	}
+	// hull/custom/trimesh pieces are scale-baked around the OBJECT ORIGIN (the
+	// relative rotation is baked per-vert, the origin offset rides the desc);
+	// primitives sit at the AABB centre (36 X2: lifted into colliderDescs.js)
+	const descs = colliderDescsFor(RAPIER, spec, {
+		origin: localOf(object.position),
+		center: localOf(spec.center),
+		relQuat
+	});
 	/** @type {any[]} */
 	const colliders = [];
 	// B4: the SCENE default material fills in wherever the object says nothing —
@@ -704,9 +672,9 @@ function createBodyFor(object, p, opts) {
 	// Colliders stay ORIENTED: primitives fit the LOCAL AABB (rotation stripped
 	// for the measure) and carry the rotation on the desc; hull/custom pieces
 	// bake it into the verts — so every body starts WORLD-ALIGNED.
-	const spec = opts.spec ?? specOf(object, p);
-	if (!spec) return null; // lights/empties
 	const { dynamic, kinematic } = opts;
+	const spec = opts.spec ?? specOf(object, p, dynamic);
+	if (!spec) return null; // lights/empties
 	// hull/custom bodies sit at the OBJECT ORIGIN (verts are origin-relative);
 	// primitives at the AABB center (center-offset bookkeeping)
 	const at = spec.pieces ? object.position : spec.center;
@@ -863,9 +831,8 @@ async function startSimulation() {
 	colliderOwner = new Map();
 	lastImpactAt = new Map();
 	pendingImpacts = [];
-	// NOTE for later phases: static scenery would benefit from
-	// ColliderDesc.trimesh (fixed bodies only) and terrain from a heightfield —
-	// both deferred; every collider today is a cuboid AABB or an opt-in hull.
+	// 36 X2: static/kinematic scenery may pick the EXACT mesh (ColliderDesc.trimesh,
+	// colliderSpec kind 'trimesh'); terrain from a heightfield is still deferred.
 	bodies = [];
 	stepTimes = []; // 26-E: a new run's cost is not the last run's
 	beforeStates = [];
@@ -1999,6 +1966,11 @@ export function physicsRuntime() {
 }
 
 /** B4: test/debug view of the world-level state (ground, bounds, timing) */
+/** 36 X2: a collider's rapier shape type by NAME ('TriMesh', 'Cuboid' …) for the debug views. @param {any} c */
+function shapeNameOf(c) {
+	return RAPIER?.ShapeType?.[c.shapeType?.()] ?? null;
+}
+
 export function physicsWorldDebug() {
 	return {
 		running: !!world,
@@ -2013,6 +1985,7 @@ export function physicsWorldDebug() {
 		fixed: [...fixedBodies.keys()].map((uuid) => ({
 			name: get(objectsGroup)?.getObjectByProperty('uuid', uuid)?.name ?? uuid,
 			colliders: (fixedColliders.get(uuid) ?? []).length,
+			shapes: (fixedColliders.get(uuid) ?? []).map(shapeNameOf), // 36 X2
 			shapeKey: fixedShapeKeys.get(uuid) ?? null
 		})),
 		beforeStates: beforeStates.length,
@@ -2050,6 +2023,7 @@ export function physicsDebug() {
 		oob: !!entry.oob,
 		holdPeer: entry.holdPeer ?? null,
 		colliders: entry.colliders.map((/** @type {any} */ c) => c.handle),
+		shapes: entry.colliders.map(shapeNameOf), // 36 X2: what rapier really holds
 		ccd: entry.body?.isCcdEnabled?.() ?? null,
 		bodyRot: entry.body?.rotation?.() ?? null
 	}));

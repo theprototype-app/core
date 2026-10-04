@@ -3876,6 +3876,10 @@
 								{ value: 'cylinder', name: 'Cylinder' },
 									{ value: 'cone', name: 'Cone' },
 								{ value: 'hull', name: 'Convex hull' },
+								// 36 X2: exact trimesh — static/kinematic only, so a dynamic body is not offered it
+								...(($selectedObject.userData.physics?.mode ?? 'auto') !== 'dynamic'
+									? [{ value: 'trimesh', name: 'Exact mesh (static)' }]
+									: []),
 							{ value: 'custom', name: 'Custom (edit…)' }
 							]}
 							value={$selectedObject.userData.physics?.collider ?? inferredColliderKind($selectedObject) ?? 'box'}

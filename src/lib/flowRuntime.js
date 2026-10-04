@@ -2571,7 +2571,9 @@ function evalNodeBody(node, allNodes, allEdges, time, seen, ctx) {
 			const object = sceneObjects?.getObjectByProperty('uuid', target);
 			if (!object) return 0;
 			if (read === 'y') return object.position.y;
-			const spec = colliderSpecOf(object, object.userData?.physics?.collider);
+			// only the measured AABB is read, which every kind shares — asking for
+			// 'box' never builds a hull or a 20k-triangle trimesh per frame (36 X2)
+			const spec = colliderSpecOf(object, 'box');
 			if (!spec) return object.position.y;
 			const half = spec.halfExtents?.y ?? 0;
 			const centre = spec.center?.y ?? object.position.y;

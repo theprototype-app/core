@@ -34,6 +34,10 @@ const TEMPLATE_FILES = [
 	'sky-run',
 	// 35: Target Toss (the core `targettoss` module judges it)
 	'target-toss',
+	// 36-water: the three water examples
+	'aquarium',
+	'pool-party',
+	'island-ocean',
 	// 36-sim: Jiggle + Fluid tank examples
 	'jelly-room',
 	'fluid-tank-toy'

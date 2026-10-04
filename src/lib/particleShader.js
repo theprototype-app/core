@@ -29,7 +29,7 @@ export const particleVertexShader = /* glsl */ `
 	uniform float uCount;
 	uniform float uLifetime;
 	uniform float uLifeJitter;
-	uniform float uShape;     // 0 cone, 1 sphere, 2 disc
+	uniform float uShape;     // 0 cone, 1 sphere, 2 disc, 3 box (36 B3: a weather AREA)
 	uniform float uAngle;     // cone half-angle (rad)
 	uniform float uRadius;
 	uniform float uSpeed;
@@ -44,8 +44,13 @@ export const particleVertexShader = /* glsl */ `
 	uniform vec3 uOffset;     // emission point offset in the object's local frame
 	uniform vec4 uQuat;       // emitter world quaternion (world mode)
 	uniform float uWorldSpace;
+	uniform vec2 uArea;       // 36 B3: box half-extents (x, z) in the emitter frame
+	uniform vec3 uWind;       // 36 B3: constant drift, m/s
+	uniform float uFall;      // 36 B3: the ground this far below the emitter (0 = none)
+	uniform float uGround;    // 36 B3: on landing 1 = splash (rain), 2 = settle (snow)
 
 	varying float vLife;
+	varying float vLanded;
 	varying float vRot;
 	varying float vSeed;
 
@@ -73,7 +78,13 @@ export const particleVertexShader = /* glsl */ `
 		float ph = aRand.y * 6.2831853;
 		vec3 dir;
 		vec3 posBase = vec3(0.0);
-		if (uShape > 1.5) {
+		if (uShape > 2.5) {
+			// box AREA (weather): anywhere on the emitter's x/z rectangle, falling straight down
+			posBase = vec3((aRand.z * 2.0 - 1.0) * uArea.x, 0.0, (aRand2.x * 2.0 - 1.0) * uArea.y);
+			float ca = mix(1.0, cos(uAngle), aRand.x);
+			float sa = sqrt(max(1.0 - ca * ca, 0.0));
+			dir = vec3(sa * cos(ph), -ca, sa * sin(ph));
+		} else if (uShape > 1.5) {
 			// disc: ring in xz, cone-up directions
 			posBase = vec3(cos(ph), 0.0, sin(ph)) * uRadius * sqrt(max(aRand.z, 0.001));
 			float ca = mix(1.0, cos(uAngle), aRand.x);
@@ -108,11 +119,23 @@ export const particleVertexShader = /* glsl */ `
 				sin(age * f2 * 2.2 + aRand2.y * 6.2831853),
 				cos(age * f1 * 2.6 + aRand2.z * 6.2831853));
 		}
+		disp += uWind * age;
 		vec3 p = posBase + disp;
+		// 36 B3: the ground. The fall is close to monotonic, so the landing moment is found by
+		// proportion; x/z stop there, and the age past it drives the splash / the settled fade
+		vLanded = 0.0;
+		if (uFall > 0.0 && p.y < -uFall) {
+			float drop = max(-disp.y, 1e-4);
+			float hitAge = age * clamp((uFall + posBase.y) / drop, 0.0, 1.0);
+			p.xz = posBase.xz + disp.xz * (hitAge / max(age, 1e-4));
+			p.y = -uFall + 0.01;
+			vLanded = uGround > 1.5 ? 1.0 : clamp((age - hitAge) / 0.18, 0.0, 1.0) + 0.001;
+		}
 		if (uWorldSpace > 0.5) p = aOrigin + qrot(uQuat, p);
 
 		vec4 mv = modelViewMatrix * vec4(p, 1.0);
 		float size = mix(uSizeStart, uSizeEnd, t) * (0.8 + 0.4 * aRand2.z);
+		if (vLanded > 0.0 && uGround < 1.5) size *= 1.0 + 3.0 * vLanded; // a rain splash grows
 		gl_PointSize = alive > 0.5 ? min(size * uSizeScale / max(-mv.z, 0.1), 256.0) : 0.0;
 		gl_Position = alive > 0.5 ? projectionMatrix * mv : vec4(0.0, 0.0, 2.0, 1.0);
 		vLife = t;
@@ -133,6 +156,8 @@ export const particleFragmentShader = /* glsl */ `
 	varying float vLife;
 	varying float vRot;
 	varying float vSeed;
+	varying float vLanded;
+	uniform float uGround;
 
 	void main() {
 		vec2 c = gl_PointCoord - 0.5;
@@ -143,6 +168,7 @@ export const particleFragmentShader = /* glsl */ `
 		float fadeOut = uFadeOut > 0.0 ? 1.0 - smoothstep(1.0 - uFadeOut, 1.0, vLife) : 1.0;
 		vec3 col = mix(uColorStart, uColorEnd, uColorMode > 0.5 ? vSeed : vLife);
 		float a = tex.a * uOpacity * fadeIn * fadeOut;
+		if (vLanded > 0.0 && uGround < 1.5) a *= (1.0 - vLanded) * 0.8; // the splash fades out
 		if (a < 0.01) discard;
 		gl_FragColor = vec4(col * tex.rgb, a);
 		#include <tonemapping_fragment>

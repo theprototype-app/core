@@ -102,6 +102,12 @@ export function buildAddChildren(pointOf) {
 					delete object.userData.physics;
 					if (peer) peer.send({ type: 'objectParameters', parameter: 'physics', uuid: object.uuid, physics: null });
 					addParticlesPreset(object.uuid, preset.key);
+					// 36 B3: a weather emitter hangs at cloud height over the clicked ground
+					const fall = Number(/** @type {any} */ (preset.config).fall) || 0;
+					if (fall > 0) {
+						object.position.y += fall;
+						if (peer) peer.send({ type: 'move', uuid: object.uuid, pos: object.position.toArray(), rot: object.rotation.toArray(), scale: object.scale.toArray() });
+					}
 				}
 			}))
 		},

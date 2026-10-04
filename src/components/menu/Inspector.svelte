@@ -4147,6 +4147,32 @@
 							onchange={(v) => setParticles({ speed: v })} />
 						<SliderRow label="Gravity" min={-10} max={10} step={0.1} value={p.gravity ?? 0}
 							onchange={(v) => setParticles({ gravity: v })} />
+						{#if p.shape === 'box'}
+							<!-- 36 B3: a weather area (rain / snow) -->
+							<SliderRow label="Area width" min={0.5} max={60} step={0.5} value={p.area?.[0] ?? 8}
+								onchange={(v) => setParticles({ area: [v, p.area?.[1] ?? 8] })} />
+							<SliderRow label="Area depth" min={0.5} max={60} step={0.5} value={p.area?.[1] ?? 8}
+								onchange={(v) => setParticles({ area: [p.area?.[0] ?? 8, v] })} />
+							<SliderRow label="Wind X" min={-10} max={10} step={0.05} value={p.wind?.[0] ?? 0}
+								onchange={(v) => setParticles({ wind: [v, 0, p.wind?.[2] ?? 0] })} />
+							<SliderRow label="Wind Z" min={-10} max={10} step={0.05} value={p.wind?.[2] ?? 0}
+								onchange={(v) => setParticles({ wind: [p.wind?.[0] ?? 0, 0, v] })} />
+							<SliderRow label="Ground below" min={0} max={40} step={0.1} value={p.fall ?? 0}
+								onchange={(v) => setParticles({ fall: v })} />
+							<div class="ui-row items-center gap-2">
+								<span class="w-20 shrink-0 text-xs text-gray-400">On landing</span>
+								<ThemedSelect
+									id="particles-ground"
+									items={[
+										{ value: 'splash', name: 'Splash (rain)' },
+										{ value: 'settle', name: 'Settle (snow)' },
+										{ value: 'none', name: 'Fall through' }
+									]}
+									value={p.ground ?? 'none'}
+									onchange={(/** @type {any} */ v) => setParticles({ ground: v })}
+								/>
+							</div>
+						{/if}
 						<SliderRow label="Turbulence" min={0} max={1} step={0.05} value={p.turbulence ?? 0.2}
 							onchange={(v) => setParticles({ turbulence: v })} />
 						<SliderRow label="Size start" min={0.01} max={1} step={0.01} value={p.sizeStart ?? 0.1}

@@ -21,6 +21,9 @@
 //  blending    'additive' | 'normal'
 //  spin        sprite rotation speed (rad/s)
 //  space       'local' (particles ride the object) | 'world' (trail behind)
+//  36 B3 (weather): shape 'box' + area [w, d] (emit anywhere on the rectangle, falling
+//  down), wind [x, y, z] m/s, fall = metres to the ground below the emitter (0 = none),
+//  ground 'splash' (a growing, fading ring — rain) | 'settle' (lies there and fades — snow)
 
 /** @type {any} */
 export const PARTICLE_DEFAULTS = {
@@ -133,6 +136,35 @@ export const PARTICLE_PRESETS = [
 			colorStart: '#fff6c8', colorEnd: '#ff7a1a',
 			opacity: 1, fadeIn: 0.02, fadeOut: 0.4,
 			sprite: 'streak', blending: 'additive', spin: 0, space: 'world'
+		}
+	},
+	{
+		// 36 B3: rain over an area; place the emitter at cloud height (Add ▸ Effects lifts it)
+		key: 'rain',
+		name: 'Rain',
+		config: {
+			count: 500, lifetime: 1.05, lifeJitter: 0.15,
+			shape: 'box', area: [8, 8], angle: 2, radius: 0,
+			speed: 5, speedJitter: 0.25, gravity: -9.8, drag: 0, turbulence: 0,
+			sizeStart: 0.16, sizeEnd: 0.16,
+			colorStart: '#8aa6c1', colorEnd: '#7d99b5',
+			opacity: 0.8, fadeIn: 0.05, fadeOut: 0.05,
+			sprite: 'streak', blending: 'normal', spin: 0, space: 'world',
+			wind: [0.8, 0, 0.2], fall: 6, ground: 'splash'
+		}
+	},
+	{
+		key: 'snow',
+		name: 'Snow',
+		config: {
+			count: 400, lifetime: 7.5, lifeJitter: 0.2,
+			shape: 'box', area: [8, 8], angle: 10, radius: 0,
+			speed: 0.35, speedJitter: 0.5, gravity: -0.28, drag: 0.4, turbulence: 0.7,
+			sizeStart: 0.06, sizeEnd: 0.05,
+			colorStart: '#ffffff', colorEnd: '#eef4ff',
+			opacity: 0.9, fadeIn: 0.05, fadeOut: 0.3,
+			sprite: 'dot', blending: 'normal', spin: 0.5, space: 'world',
+			wind: [0.35, 0, 0.12], fall: 6, ground: 'settle'
 		}
 	}
 ];

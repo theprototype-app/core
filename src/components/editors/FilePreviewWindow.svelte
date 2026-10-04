@@ -1020,7 +1020,7 @@
 		align-items: center;
 		gap: 4px;
 		font-size: 10px;
-		color: #6b7280;
+		color: var(--muted, #6b7280);
 		pointer-events: none;
 	}
 	/*
@@ -1079,7 +1079,7 @@
 	}
 	.pv-label {
 		flex: 0 0 auto;
-		color: #d1d5db;
+		color: var(--text-2, #d1d5db);
 	}
 	.pv-grow {
 		flex: 1;
@@ -1088,7 +1088,7 @@
 		flex: 0 0 34px;
 		text-align: right;
 		font-variant-numeric: tabular-nums;
-		color: #9ca3af;
+		color: var(--muted, #9ca3af);
 	}
 	.pv-row input[type='range'] {
 		height: 4px;
@@ -1107,7 +1107,7 @@
 		background: var(--accent, #3b82f6);
 	}
 	.pv-note {
-		color: #6b7280;
+		color: var(--muted, #6b7280);
 	}
 	.pv-audio {
 		display: flex;
@@ -1133,10 +1133,10 @@
 		align-items: center;
 		justify-content: center;
 		gap: 8px;
-		color: #6b7280;
+		color: var(--muted, #6b7280);
 	}
 	.pv-folder-name {
 		font-size: 12px;
-		color: #d1d5db;
+		color: var(--text-2, #d1d5db);
 	}
 </style>

@@ -57,7 +57,14 @@ export const THEME_TOKENS = [
 	// 18-C4: the duotone TOOL-icon accent (what a tool changes). A custom theme
 	// that omits it falls through :root and then --accent, so old .theme.json
 	// files still get a coherent icon set.
-	'--icon-accent'
+	'--icon-accent',
+	// 36 U1: state ink + the filled-accent pair (theme.css "READABLE STATE INK"). A custom
+	// theme that omits them falls back to the :root (dark) values.
+	'--ink-bad',
+	'--ink-warn',
+	'--ink-good',
+	'--accent-fill',
+	'--on-accent'
 ];
 
 function loadCustomThemes() {

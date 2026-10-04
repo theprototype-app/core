@@ -2523,7 +2523,8 @@
 								onclick={() => selectObject(row.uuid)}
 							>
 								<span class="truncate">{row.name}</span>
-								<span class="shrink-0 text-[10px] opacity-75">
+								<!-- 36 U1: no fade on the selected row's accent fill (2.6:1 with it) -->
+								<span class={'shrink-0 text-[10px] ' + ($selectedObject?.uuid === row.uuid ? '' : 'opacity-75')}>
 									{row.mode === 'dynamic'
 										? 'dynamic · ' + row.mass + ' kg'
 										: row.mode === 'static'
@@ -4268,7 +4269,8 @@
 	.snap-sub-hint {
 		font-size: 10px;
 		font-style: italic;
-		color: rgb(156 163 175);
+		/* 36 U1: theme ink (2.5:1 on the light theme's white drawer) */
+		color: var(--muted, rgb(156 163 175));
 	}
 	/* five PEER toggles, not presets: right-aligning them in the numeric grid
 	   stranded the fifth chip on a line of its own against the right edge */
@@ -4291,14 +4293,14 @@
 		width: 100%;
 		padding: 0.3rem 0.5rem;
 		border-radius: 0.375rem;
-		border: 1px dashed rgb(255 255 255 / 0.25);
+		border: 1px dashed var(--border, rgb(255 255 255 / 0.25));
 		background: rgb(255 255 255 / 0.04);
-		color: rgb(209 213 219);
+		color: var(--text-2, rgb(209 213 219));
 		font-size: 11px;
 	}
 	.snap-action:hover {
 		background: rgb(255 255 255 / 0.09);
-		color: #fff;
+		color: var(--text, #fff);
 	}
 	.snap-action-armed,
 	.snap-action-armed:hover {
@@ -4319,7 +4321,7 @@
 	.snap-group-hint {
 		font-size: 10px;
 		font-style: italic;
-		color: rgb(156 163 175);
+		color: var(--muted, rgb(156 163 175));
 	}
 	.snap-status {
 		display: flex;

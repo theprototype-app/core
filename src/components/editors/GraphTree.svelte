@@ -154,7 +154,7 @@
 
 <style>
 	.gt-wrap {
-		border-bottom: 1px solid rgb(75 85 99 / 0.5);
+		border-bottom: 1px solid var(--border, rgb(75 85 99 / 0.5));
 		flex: 0 0 auto;
 	}
 	.gt-head {
@@ -167,10 +167,11 @@
 		font-weight: 600;
 		text-transform: uppercase;
 		letter-spacing: 0.04em;
-		color: rgb(156 163 175);
+		/* 36 U1: theme tokens with the dark-authored fallbacks (dark defines none) */
+		color: var(--muted, rgb(156 163 175));
 	}
 	.gt-head:hover {
-		color: rgb(229 231 235);
+		color: var(--text, rgb(229 231 235));
 	}
 	.gt-body {
 		/* bounded by the grip's height (inline), so a scene with fifty flows can never
@@ -180,8 +181,8 @@
 	.gt-grip {
 		height: 6px;
 		cursor: ns-resize;
-		border-top: 1px solid rgb(75 85 99 / 0.6);
-		background: rgb(31 41 55 / 0.4);
+		border-top: 1px solid var(--border, rgb(75 85 99 / 0.6));
+		background: var(--surface-2, rgb(31 41 55 / 0.4));
 	}
 	.gt-grip:hover,
 	.gt-grip-on {
@@ -194,18 +195,18 @@
 		width: 100%;
 		padding: 2px 6px;
 		font-size: 11px;
-		color: rgb(209 213 219);
+		color: var(--text-2, rgb(209 213 219));
 		min-width: 0;
 	}
 	.gt-row:hover:not(:disabled) {
-		background: rgb(55 65 81 / 0.7);
+		background: var(--hover, rgb(55 65 81 / 0.7));
 	}
 	.gt-child {
 		padding-left: 20px;
 	}
 	.gt-active {
-		background: rgb(37 99 235 / 0.25);
-		color: #fff;
+		background: color-mix(in srgb, var(--accent, rgb(37 99 235)) 25%, transparent);
+		color: var(--text, #fff);
 	}
 	.gt-missing {
 		opacity: 0.45;
@@ -213,16 +214,16 @@
 	}
 	.gt-ico {
 		display: inline-flex;
-		color: rgb(156 163 175);
+		color: var(--muted, rgb(156 163 175));
 	}
 	.gt-count {
 		font-size: 9px;
-		color: rgb(107 114 128);
+		color: var(--muted, rgb(156 163 175));
 		font-variant-numeric: tabular-nums;
 	}
 	.gt-empty {
 		padding: 4px 8px 6px 20px;
 		font-size: 10px;
-		color: rgb(107 114 128);
+		color: var(--muted, rgb(156 163 175));
 	}
 </style>

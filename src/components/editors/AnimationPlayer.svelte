@@ -236,7 +236,7 @@
 		background: var(--surface, #1f2937);
 		padding: 1px 4px;
 		font-size: 10px;
-		color: #d1d5db;
+		color: var(--text-2, #d1d5db);
 	}
 	/* the two readings are the first thing to go when there is no room for them: the
 	   transport itself has to survive a narrow window, the numbers beside it need not */

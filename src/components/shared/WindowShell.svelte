@@ -266,8 +266,11 @@
 <style>
 	.ws-panel {
 		width: 14rem;
-		background: var(--ws-panel-bg, rgb(31 41 55));
-		color: var(--ws-panel-fg, rgb(229 231 235));
+		/* 36 U1: the theme's surface + ink (dark keeps its literals — it defines no tokens). The
+		   panel was gray-800 in every theme while the remapped text utilities inside it turned
+		   dark on the light theme: the Explorer's root rows read 1:1 */
+		background: var(--ws-panel-bg, var(--surface-2, rgb(31 41 55)));
+		color: var(--ws-panel-fg, var(--text, rgb(229 231 235)));
 		border-inline: 1px solid rgb(255 255 255 / 0.06);
 	}
 	.ws-edge {
@@ -334,7 +337,7 @@
 		justify-content: center;
 		border-radius: 0.25rem;
 		font-size: 0.75rem;
-		color: rgb(203 213 225);
+		color: var(--text-2, rgb(203 213 225));
 	}
 	.ws-mini:hover {
 		background: rgb(255 255 255 / 0.1);

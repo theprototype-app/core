@@ -54,7 +54,7 @@
 		padding: 20px 22px;
 		border-radius: 10px;
 		background: var(--surface, #1f2937);
-		color: #fff;
+		color: var(--text, #fff);
 		box-shadow: 0 18px 48px rgba(0, 0, 0, 0.5);
 	}
 	.gl-lost-card h2 {
@@ -66,7 +66,7 @@
 		margin: 0 0 16px;
 		font-size: 13px;
 		line-height: 1.5;
-		color: #d1d5db;
+		color: var(--text-2, #d1d5db);
 	}
 	.gl-lost-actions {
 		display: flex;

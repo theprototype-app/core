@@ -1010,7 +1010,7 @@
 	}
 	.shader-scope {
 		font-size: 11px;
-		color: #9ca3af;
+		color: var(--muted, #9ca3af);
 		white-space: nowrap;
 		overflow: hidden;
 		text-overflow: ellipsis;
@@ -1050,12 +1050,12 @@
 	.shader-divider {
 		flex: 0 0 12px;
 		background: rgba(255, 255, 255, 0.04);
-		color: #9ca3af;
+		color: var(--muted, #9ca3af);
 		font-size: 10px;
 	}
 	.shader-divider:hover {
 		background: rgba(255, 255, 255, 0.1);
-		color: #e5e7eb;
+		color: var(--text, #e5e7eb);
 	}
 	.shader-canvas {
 		position: relative;
@@ -1066,7 +1066,7 @@
 		flex: 0 0 auto;
 		background: rgba(180, 40, 40, 0.18);
 		border-bottom: 1px solid rgba(220, 60, 60, 0.4);
-		color: #fca5a5;
+		color: var(--ink-bad, #fca5a5);
 		font-size: 11px;
 		padding: 3px 8px;
 		max-height: 64px;
@@ -1083,7 +1083,7 @@
 		background: var(--surface, #1f2937);
 		padding: 0 0.35rem;
 		font-size: 0.7rem;
-		color: #e5e7eb;
+		color: var(--text, #e5e7eb);
 	}
 	.shader-preset-row {
 		display: flex;
@@ -1132,11 +1132,11 @@
 	.shader-props-tabs button {
 		padding: 3px 7px;
 		border-radius: 3px;
-		color: #9ca3af;
+		color: var(--muted, #9ca3af);
 	}
 	.shader-props-tabs button.active {
-		background: rgba(255, 255, 255, 0.1);
-		color: #f3f4f6;
+		background: var(--hover, rgba(255, 255, 255, 0.1));
+		color: var(--text, #f3f4f6);
 	}
 	.shader-props-body {
 		display: flex;
@@ -1147,7 +1147,7 @@
 	.shader-props-title {
 		font-size: 11px;
 		font-weight: 600;
-		color: #e5e7eb;
+		color: var(--text, #e5e7eb);
 	}
 	.shader-field {
 		display: flex;
@@ -1155,17 +1155,17 @@
 		justify-content: space-between;
 		gap: 6px;
 		font-size: 10px;
-		color: #d1d5db;
+		color: var(--text-2, #d1d5db);
 	}
 	.shader-field input[type='text'],
 		.shader-field select {
 		width: 88px;
-		background: rgba(0, 0, 0, 0.35);
-		border: 1px solid rgba(255, 255, 255, 0.15);
+		background: var(--field, rgba(0, 0, 0, 0.35));
+		border: 1px solid var(--border, rgba(255, 255, 255, 0.15));
 		border-radius: 3px;
 		padding: 1px 3px;
 		font-size: 10px;
-		color: #f3f4f6;
+		color: var(--text, #f3f4f6);
 	}
 	.shader-field input[type='color'] {
 		width: 34px;
@@ -1177,12 +1177,12 @@
 	.shader-hint {
 		font-size: 9px;
 		line-height: 1.35;
-		color: #6b7280;
+		color: var(--muted, #6b7280);
 	}
 	.shader-doc {
 		font-size: 10px;
 		line-height: 1.4;
-		color: #cbd5e1;
+		color: var(--text-2, #cbd5e1);
 		background: rgba(255, 255, 255, 0.04);
 		border-left: 2px solid rgba(255, 255, 255, 0.18);
 		border-radius: 0 3px 3px 0;

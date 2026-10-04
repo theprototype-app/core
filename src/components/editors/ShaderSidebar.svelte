@@ -70,7 +70,7 @@
 		font-size: 9px;
 		text-transform: uppercase;
 		letter-spacing: 0.05em;
-		color: #6b7280;
+		color: var(--muted, #6b7280);
 		padding: 6px 4px 2px;
 	}
 	.dot {
@@ -82,7 +82,7 @@
 	.shader-palette-item {
 		text-align: left;
 		font-size: 11px;
-		color: #e5e7eb;
+		color: var(--text, #e5e7eb);
 		padding: 3px 6px;
 		border-radius: 3px;
 		cursor: grab;

@@ -300,8 +300,13 @@
 		min-width: 0;
 		flex: 1 1 auto;
 		border-radius: 3px;
-		border: 1px solid rgb(75 85 99 / 0.6);
-		background: rgb(55 65 81 / 0.6);
+		/* 36 U1: the well follows the theme (dark keeps its exact grays: dark defines no
+		   tokens) and states its own ink — the label used to INHERIT, which read black
+		   (1.8:1) wherever a panel set a background and no colour (Configure Scene ▸
+		   Physics ▸ Height). An accent class on the label still wins over the inherited ink. */
+		border: 1px solid var(--border, rgb(75 85 99 / 0.6));
+		background: var(--field, rgb(55 65 81 / 0.6));
+		color: var(--text-2, rgb(209 213 219));
 		padding: 1px 6px;
 	}
 	.dn-wrap:hover {
@@ -344,7 +349,7 @@
 		font-size: 0.75rem;
 		line-height: 1.15rem;
 		text-align: right;
-		color: rgb(243 244 246);
+		color: var(--text, rgb(243 244 246));
 		/* the field IS the drag handle when you are not typing */
 		cursor: ew-resize;
 		touch-action: none;

@@ -456,6 +456,29 @@ function registerBuiltins() {
 				else m.enterSplineEdit(uuid);
 			})
 	});
+	// 36 X4: Edit Collider — the custom-collider session in the headset. It runs the
+	// SAME face/vertex tools on a scene-root proxy and opens the edit side-menu, which
+	// gains the collider rows (+ Box / + Sphere piece, Decompose, Done, Cancel).
+	registerVRMenuEntry({
+		id: 'obj:editcollider',
+		group: 'object',
+		label: 'Edit Collider',
+		order: 8,
+		closes: true,
+		visible: () =>
+			selCount() <= 1 &&
+			/** @type {any} */ (get(selectedObject))?.type !== 'Group' &&
+			!isSplineSelection(),
+		action: () =>
+			import('./colliderEdit').then((m) => {
+				const uuid = /** @type {any} */ (get(selectedObject))?.uuid;
+				if (!uuid) return;
+				if (get(m.colliderEditObject)) {
+					m.exitColliderEdit();
+					vrEditMenuOpen.set(false);
+				} else if (m.enterColliderEdit(uuid)) vrEditMenuOpen.set(true);
+			})
+	});
 	// 216: Ungroup (dissolve the group, move children up) — replaces Edit Mesh
 	// when the selection is a Group
 	registerVRMenuEntry({

@@ -45,7 +45,8 @@ import {
 	faceEditMulti,
 	faceEditHoverTri,
 	toggleFaceSelection,
-	currentTargetFace
+	currentTargetFace,
+	lookupEditable
 } from '../faceEdit';
 import { peers } from '../../stores/appStore';
 import { recordTransform } from '../history';
@@ -419,7 +420,7 @@ export function onSqueezeStart(index) {
 	// face edit mode (122): grip the face under the ray to grab it (rigid
 	// move/rotate; stick reels along the normal + scales). Exits are hub/Back.
 	if (get(faceEditObject)) {
-		const edited = get(objectsGroup)?.getObjectByProperty('uuid', get(faceEditObject));
+		const edited = lookupEditable(get(faceEditObject) ?? '') /* 36 X4: the collider proxy too */;
 		const hit = edited ? controllerRay(index).intersectObject(edited, false)[0] : null;
 		const fi = hit && hit.faceIndex != null ? faceIndexForTriangle(hit.faceIndex) : -1;
 		if (fi >= 0 && beginFaceGrab(fi)) {

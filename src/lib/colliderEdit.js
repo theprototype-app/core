@@ -273,6 +273,17 @@ export function exitColliderEdit(toast = true) {
 	if (toast) showToast('Collider edit cancelled');
 }
 
+/** 36 X4: the proxy the session edits (VR's mode tabs must target IT, never the
+ * real object), or null outside a session */
+export function colliderProxyUuid() {
+	return proxy?.uuid ?? null;
+}
+
+/** 36 X4: the object whose collider is being edited, or null */
+export function colliderTargetUuid() {
+	return targetUuid;
+}
+
 /** test/debug view */
 export function colliderEditDebug() {
 	return { target: targetUuid, proxyUuid: proxy?.uuid ?? null, shells: proxy ? colliderShellCount() : 0 };

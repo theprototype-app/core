@@ -389,6 +389,19 @@
 					return t.data.calls > before;
 				}
 			},
+			// 36-water: a volume listener; notify() fires every listener with the current list
+			'water.onChange': {
+				needs: ['waterVolumes'],
+				call(api, t) {
+					t.data.calls = 0;
+					api.water.onChange(() => t.data.calls++);
+				},
+				present(t) {
+					const before = t.data.calls;
+					M.waterVolumes.waterVolumes.notify();
+					return t.data.calls > before;
+				}
+			},
 			'peerVars.onChange': listenerFixture(
 				['peerVars'],
 				(api, fn) => api.peerVars.onChange(fn),

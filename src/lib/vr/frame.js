@@ -170,6 +170,9 @@ export function vrNavigationSuppressed(opts = {}) {
 	return false;
 }
 
+/** 36: the Settings panel's sideways flick fires once per flick (re-armed at centre) */
+let settingsFlickArmed = true;
+
 /** 36: a sector id that moves through the rings (a ▸ sector or the Back hub) rather than acting @param {string} id */
 function navigatesRing(id) {
 	return id.startsWith('nav:') || id === 'back';
@@ -666,18 +669,23 @@ export function updateVRControls() {
 			if (Math.abs(axes[2] ?? 0) > Math.abs(x)) x = axes[2];
 		}
 		const now = Date.now();
-		if (now - S.panelScrollAt > 220 && (Math.abs(x) > 0.6 || Math.abs(y) > 0.6)) {
-			const rows = settingsPanelRows(get(vrSettingsPage));
-			const at = Math.min(Math.max(0, get(vrSettingsCursor)), rows.length - 1);
+		// a sideways flick changes a value ONCE per flick (the stick must come back to centre): a repeat
+		// would cycle a two-option choice straight back to where it was. Up/down repeats like a list.
+		if (Math.abs(x) < 0.4) settingsFlickArmed = true;
+		const rows = settingsPanelRows(get(vrSettingsPage));
+		const at = Math.min(Math.max(0, get(vrSettingsCursor)), rows.length - 1);
+		if (Math.abs(y) > 0.6 && Math.abs(y) >= Math.abs(x) && now - S.panelScrollAt > 220) {
 			S.panelScrollAt = now;
 			hapticPulse(0.08, 10);
-			if (Math.abs(y) >= Math.abs(x)) vrSettingsCursor.set(Math.min(Math.max(0, at + (y > 0 ? 1 : -1)), rows.length - 1));
-			else {
-				const row = rows[at];
-				const dir = x > 0 ? 1 : -1;
-				if (row?.kind === 'tabs') vrSettingsPage.set(neighbourTab(get(vrSettingsPage), dir));
-				else if (row?.rowId && (row.kind === 'choice' || row.kind === 'range')) activateVRSetting(row.rowId, dir);
-			}
+			vrSettingsCursor.set(Math.min(Math.max(0, at + (y > 0 ? 1 : -1)), rows.length - 1));
+		} else if (Math.abs(x) > 0.6 && Math.abs(x) > Math.abs(y) && settingsFlickArmed) {
+			settingsFlickArmed = false;
+			S.panelScrollAt = now;
+			hapticPulse(0.08, 10);
+			const row = rows[at];
+			const dir = x > 0 ? 1 : -1;
+			if (row?.kind === 'tabs') vrSettingsPage.set(neighbourTab(get(vrSettingsPage), dir));
+			else if (row?.rowId && (row.kind === 'choice' || row.kind === 'range')) activateVRSetting(row.rowId, dir);
 		}
 	} else if (get(vrApprovePanelOpen)) {
 		// VR peer-approval panel (211): the pointer ray highlights Approve / Deny

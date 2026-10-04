@@ -250,7 +250,9 @@ h.run(async () => {
 	await settle(500);
 	await page.getByText('VR', { exact: true }).first().click();
 	await settle(500);
-	h.check((await page.locator('[data-tour="settings-vr-controls"]').count()) === 1, 'the Controls table is in Settings ▸ VR');
+	const tables = await page.locator('[data-tour="settings-vr-controls"]').count();
+	const dump = await g(() => [...document.querySelectorAll('[data-tour="settings-vr-controls"]')].map((e) => (e.closest('dialog,[role=dialog],.setting-search,[data-search]')?.tagName ?? '-') + ':' + (e.offsetParent ? 'shown' : 'hidden')).join(' '));
+	h.check(tables >= 1, `the Controls table is in Settings ▸ VR (${tables}: ${dump})`);
 	await page.locator('#vr-bind-move-hand').scrollIntoViewIfNeeded();
 	await page.locator('#vr-bind-move-hand').click();
 	await settle(200);

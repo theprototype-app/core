@@ -62,7 +62,7 @@
   import MadeWithBadge from './components/play/MadeWithBadge.svelte'
   // 36-export: the Publish / Export modal (core owns the shell + Export tab; a cloud plugin mounts
   // Publish into it) and the exported game's boot (inert on every normal page load)
-  import PublishExportModal from './components/menu/PublishExportModal.svelte'
+  import { publishExportOpen } from '$lib/export/exportStores.js'
   import { exportMode } from '$lib/export/exportBoot.js'
   import { startExportRuntime } from '$lib/export/exportRuntime.js'
   import { objectsGroup, globalRenderer } from './stores/sceneStore'
@@ -393,7 +393,11 @@ import { startMusicToolbox } from './lib/musicToolbox'
      into playMode has to survive Play mode, and the layer decides per box. -->
 <ModuleToolboxLayer />
 <ModulesManager />
-<PublishExportModal />
+<!-- 36-export: loaded and mounted only while open (the Profiler idiom) — a closed modal costs
+     the boot nothing and the editor runs exactly as before until somebody asks to export -->
+{#if $publishExportOpen}
+{#await import('./components/menu/PublishExportModal.svelte') then m}<m.default />{/await}
+{/if}
 <DungeonMinimap />
 <StatsOverlay />
 <MomentReport />

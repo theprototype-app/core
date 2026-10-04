@@ -19,20 +19,11 @@
 		{ id: 'settings', label: 'Settings' }
 	];
 
-	// hide the editor panels while open, put them back only if WE hid them (a mount with the
-	// modal closed must not restore somebody else's layout)
-	let hid = false;
+	// App mounts this only while the modal is open (lazy, the Profiler idiom): hide the editor
+	// panels for its life and put them back when it goes
 	$effect(() => {
-		const open = $publishExportOpen;
-		untrack(() => {
-			if (open && !hid) {
-				hidePanels();
-				hid = true;
-			} else if (!open && hid) {
-				restorePanels();
-				hid = false;
-			}
-		});
+		untrack(() => hidePanels());
+		return () => untrack(() => restorePanels());
 	});
 </script>
 

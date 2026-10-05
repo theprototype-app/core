@@ -55,6 +55,9 @@ import {
 	startScriptAssets
 } from './scriptAssets';
 import { itemByHash, itemById, itemBlob, explorerItems, loadExplorer } from './explorer';
+import { scriptInputs, scriptOutputs, RESERVED } from './scriptIO';
+import { setScriptSockets } from './scriptSockets';
+import { followCode } from './scriptDerive';
 
 /** @typedef {import('./codeTabs').CodeTab} CodeTab */
 
@@ -192,8 +195,12 @@ async function resolve(req) {
 			};
 		}
 		const behaviour = node.type === 'behaviour';
-		const title = (node.data?.name || node.data?.label || (behaviour ? 'Behaviour' : 'Script')) + (behaviour ? '.behaviour.js' : '.js');
-		return { id, kind: behaviour ? 'behaviour' : 'node', title, lang: 'js', code, saved: code, nodeId: node.id, graphId };
+		// G1: a node bound to a MODULE's file shows it read-only until "Make editable copy"
+		const fromModule = node.data?.src?.kind === 'module';
+		const title = fromModule
+			? String(node.data.src.module ?? 'module') + '/' + String(node.data.src.file ?? 'source.js')
+			: (node.data?.name || node.data?.label || (behaviour ? 'Behaviour' : 'Script')) + (behaviour ? '.behaviour.js' : '.js');
+		return { id, kind: behaviour ? 'behaviour' : 'node', title, lang: 'js', code, saved: code, nodeId: node.id, graphId, ...(fromModule ? { readOnly: true } : {}) };
 	}
 	await loadExplorer();
 	const item = (ref.itemId ? itemById(ref.itemId) : null) ?? (ref.hash ? itemByHash(ref.hash) : null);
@@ -228,7 +235,8 @@ export async function openCode(request) {
 	}
 	const tab = await resolve(req);
 	if (!tab) {
-		showToast('Nothing to open: that source is gone');
+		// a module file we cannot read is declined quietly: the Module source window takes it
+		if (req.source !== 'module') showToast('Nothing to open: that source is gone');
 		return null;
 	}
 	const spec = tab.kind === 'node' || tab.kind === 'behaviour' ? { kind: tab.kind, nodeId: tab.nodeId, graphId: tab.graphId } : tab;
@@ -374,6 +382,7 @@ async function saveNow(id, opts) {
 		const out = await saveScriptFile({ hash: tab.hash ?? '', name: tab.name ?? tab.title, itemId: tab.itemId }, code);
 		patchTab(id, (t) => ({ ...t, hash: out.hash, itemId: out.itemId, saved: code, error: null, stale: false, external: undefined }));
 		markNodes(ids, null);
+		followSockets(nodesBoundTo(out.hash), code);
 		return { ok: true, nodes: out.nodes };
 	}
 
@@ -388,6 +397,7 @@ async function saveNow(id, opts) {
 		const out = await saveScriptFile({ hash: ref.hash, name: ref.name }, code);
 		patchTab(id, (t) => ({ ...t, saved: code, error: null, stale: false, external: undefined }));
 		markNodes(ids, null);
+		followSockets(nodesBoundTo(out.hash), code);
 		return { ok: true, nodes: out.nodes };
 	}
 	const before = String(target.node.data?.code ?? '');
@@ -397,7 +407,38 @@ async function saveNow(id, opts) {
 	}
 	patchTab(id, (t) => ({ ...t, saved: code, error: null, stale: false, external: undefined }));
 	markNodes(ids, null);
+	followSockets([target], code);
 	return { ok: true, nodes: 1 };
+}
+
+/**
+ * 36-dataflow (56.3): a v2 Script node grows the sockets its code now uses (`inputs.x`, a
+ * returned key) — never removes one, wires may hang on it. Run after a save reached the nodes.
+ * @param {{node: any, graphId: string}[]} targets @param {string} code
+ */
+function followSockets(targets, code) {
+	for (const { node, graphId } of targets) {
+		if (node.type !== 'script') continue;
+		const ins = scriptInputs(node.data);
+		const outs = scriptOutputs(node.data);
+		if (!ins && !outs.length) continue; // v1: a, b, c — nothing to grow
+		const next = followCode(code, ins, outs, RESERVED);
+		if (next.changed) setScriptSockets(node.id, { inputs: next.inputs, outputs: next.outputs }, graphId);
+	}
+}
+
+/** "Make editable copy" of a MODULE-BOUND node tab (G1 src.kind 'module'): 36-dataflow's fork
+ * makes the Explorer asset and re-points `data.src`; the tab then reopens as that file's tab.
+ * @param {string} id */
+export async function forkNodeTab(id) {
+	const tab = tabById(id);
+	if (!tab?.nodeId || !tab.readOnly) return null;
+	const { forkNodeSource } = await import('./codeOpen');
+	const src = await forkNodeSource(tab.nodeId, tab.graphId);
+	if (!src) return null;
+	const ref = { nodeId: tab.nodeId, graphId: tab.graphId };
+	closeCodeTab(id, { force: true });
+	return openCode({ source: 'script', ref });
 }
 
 // ---------------------------------------------------------------- files <-> nodes
@@ -540,6 +581,17 @@ export function startCodeWorkspace() {
 	explorerItems.subscribe(() => {
 		followItems().catch(() => {});
 	});
+	// G1 (36-dataflow's codeOpen seam): double-click / "Open code" on any code node lands here.
+	// A request this workspace cannot satisfy is DECLINED (false) so the built-in fallback opens
+	// it — a module file we cannot read goes to the read-only Module source window.
+	import('./codeOpen')
+		.then((m) =>
+			m.registerCodeOpener(async (req) => {
+				if (req.source === 'customnode') return false; // NodeDesigner is the def's editor
+				return (await openCode(/** @type {any} */ (req))) !== null;
+			})
+		)
+		.catch(() => {});
 	// "Edit code" on a Script node, and anyone else still using the ScriptPanel seam
 	scriptEditorOpen.subscribe((nodeId) => {
 		if (!nodeId) return;

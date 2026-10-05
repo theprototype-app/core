@@ -8,6 +8,8 @@
 	// CodeMirror owns the key while it has focus), `reveal` ({line, token}: scroll to and put
 	// the cursor on a line, once per token) and `diagnostic` ({line, message} | null: the
 	// error underline + gutter mark on that line).
+	// 36-dataflow (G1) added `readonly` (same as readOnly) and `line` (scroll to a 1-based line,
+	// once per line asked for) for the Script panel / module-source window; both are honoured.
 
 	export let value = '';
 	export let onChange = (/** @type {string} */ code) => {};
@@ -18,6 +20,9 @@
 	export let reveal = null;
 	/** @type {null | {line: number, message: string}} */
 	export let diagnostic = null;
+	export let readonly = false;
+	/** @type {number | undefined} */
+	export let line = undefined;
 
 	/** @type {any} */ let host;
 	/** @type {any} */ let view = null;
@@ -53,8 +58,8 @@
 				basicSetup,
 				javascript(),
 				lint.lintGutter(),
-				state.EditorState.readOnly.of(!!readOnly),
-				EditorView.editable.of(!readOnly),
+				state.EditorState.readOnly.of(!!(readOnly || readonly)),
+				EditorView.editable.of(!(readOnly || readonly)),
 				EditorView.updateListener.of((update) => {
 					if (!update.docChanged) return;
 					lastEmitted = update.state.doc.toString();
@@ -93,6 +98,13 @@
 		const doc = view.state.doc;
 		const n = Math.min(Math.max(1, Math.floor(line) || 1), doc.lines);
 		return doc.line(n);
+	}
+
+	let shownLine = 0;
+	$: if (view && line && line !== shownLine) {
+		shownLine = line;
+		const l = lineRange(line);
+		view.dispatch({ selection: { anchor: l.from }, effects: cm.EditorView.scrollIntoView(l.from, { y: 'center' }) });
 	}
 
 	$: if (view && reveal && reveal.token !== revealed) {

@@ -17,6 +17,7 @@
 	import { analyze, setParamLiteral } from '$lib/behaviours/analyze.js';
 	import { deriveGraph, formatValue } from '$lib/behaviours/graph.js';
 	import CodeEditor from '../CodeEditor.svelte';
+	import { codeIsReadOnly, forkNodeSource } from '$lib/codeOpen'; // 36 (G1): module-bound source
 	import BViewNode from './BViewNode.svelte';
 
 	const nodeTypes = { bview: BViewNode };
@@ -27,6 +28,10 @@
 	let nodes: any[] = $state.raw([]);
 	let edges: any[] = $state.raw([]);
 	let showCode = $state(false);
+	// 36 (G1): "Open code" (double-click) opens the view WITH its source shown
+	$effect(() => {
+		if ((open as any)?.code) showCode = true;
+	});
 	let lastModelKey = '';
 	/** nodeId -> the last signature seen and when it changed (performance.now) */
 	const seen = new Map<string, { key: string; at: number }>();
@@ -38,6 +43,18 @@
 		return g?.nodes?.find((n: any) => n.id === open.id) ?? null;
 	});
 	const code = $derived(String(graphNode?.data?.code ?? ''));
+	// 36 (G1): a behaviour bound to a module file is read-only until "Make editable copy"
+	const readOnly = $derived(codeIsReadOnly(graphNode));
+	let forking = $state(false);
+	async function makeEditable() {
+		if (!open || forking) return;
+		forking = true;
+		try {
+			await forkNodeSource(open.id, open.graphId);
+		} finally {
+			forking = false;
+		}
+	}
 	const status = $derived(open ? (allStatus[open.id] ?? null) : null);
 
 	let offStatus = () => {};
@@ -68,7 +85,7 @@
 	function onKnob(key: string, value: any, final: boolean) {
 		if (!open || !app) return;
 		app.runtime.setParam(open.id, key, value);
-		if (!final) return;
+		if (!final || readOnly) return; // 36: a module's source is previewed, never rewritten
 		const before = code;
 		const r = setParamLiteral(before, key, value);
 		if (!r.changed) return;
@@ -80,7 +97,7 @@
 	let editTimer: any = null;
 	let editBase: string | null = null;
 	function onCodeChange(next: string) {
-		if (!open) return;
+		if (!open || readOnly) return;
 		editBase ??= code;
 		clearTimeout(editTimer);
 		const id = open.id;
@@ -195,9 +212,15 @@
 			</div>
 			{#if showCode && graphNode}
 				<div class="flex w-[44%] min-w-[280px] flex-col border-l border-gray-700">
+					{#if readOnly}
+						<div id="behaviour-readonly" class="flex items-center gap-2 bg-gray-800 px-2 py-1 text-xs text-gray-200">
+							<span class="flex-1">Module source ({graphNode.data.src?.module}/{graphNode.data.src?.file}) — read-only</span>
+							<button id="behaviour-make-editable" class="rounded-sm bg-primary-700 px-2 py-0.5 text-white" disabled={forking} onclick={makeEditable}>Make editable copy</button>
+						</div>
+					{/if}
 					<div class="min-h-0 flex-1" id="behaviour-view-editor">
-						{#key open.id}
-							<CodeEditor value={code} onChange={onCodeChange} />
+						{#key open.id + (readOnly ? ':ro' : '')}
+							<CodeEditor value={code} onChange={onCodeChange} readonly={readOnly} />
 						{/key}
 					</div>
 				</div>

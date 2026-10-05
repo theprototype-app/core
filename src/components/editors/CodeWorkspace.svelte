@@ -31,6 +31,7 @@
 		bindTabToFile,
 		unbindTab,
 		forkCodeTab,
+		forkNodeTab,
 		canFork,
 		tabById,
 		openCode
@@ -332,7 +333,13 @@
 		<div id="code-ws-toolbar" class="flex shrink-0 flex-wrap items-center gap-1 px-1 pb-1 text-xs">
 			<span class="code-kind" data-kind={active.kind}>{kindLabel(active)}</span>
 			<span class="flex-1"></span>
-			{#if active.kind === 'module'}
+			{#if active.readOnly && (active.kind === 'node' || active.kind === 'behaviour')}
+				<span id="script-readonly" class="code-muted">a module's code — read-only</span>
+				<button id="script-make-editable" class="ui-button-quiet" title="Copy this code into a script file you own; the node then runs your copy" onclick={() => forkNodeTab(active.id)}><Copy size={14} aria-hidden="true" />Make editable copy</button>
+				{#if bound.length}
+					<button id="code-ws-goto" class="ui-button-quiet" title="Show the node in the Node editor" onclick={openGoto}><Crosshair size={14} aria-hidden="true" />Go to node</button>
+				{/if}
+			{:else if active.kind === 'module'}
 				{#if canFork('module')}
 					<button id="code-ws-fork" class="ui-button-quiet" title="Copy this source into an editable script the scene owns" onclick={() => forkCodeTab(active.id)}><Copy size={14} aria-hidden="true" />Make editable copy</button>
 				{/if}
@@ -419,7 +426,7 @@
 	{/if}
 	<div class="relative min-h-0 flex-1 p-1">
 		{#each tabs as tab (tab.id)}
-			<div class="code-pane h-full" class:hidden={active?.id !== tab.id} data-pane={tab.id}>
+			<div class="code-pane h-full" class:hidden={active?.id !== tab.id} data-pane={tab.id} data-readonly={!!tab.readOnly}>
 				<CodeEditor
 					value={tab.code}
 					readOnly={!!tab.readOnly}

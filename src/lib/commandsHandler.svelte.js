@@ -20,6 +20,8 @@ import { stripEditOverlays } from '$lib/editOverlays'
 import { isPristinePackRef, stubElementOf } from '$lib/packRefs'
 import { normalizeLodGroup } from '$lib/lodGroupCore'
 import { normalizeFluid } from '$lib/sim/fluidCore.js'; // 36-sim
+import { normalizeEmitter, normalizeInteraction } from '$lib/sim/fluidEmitterCore.js'; // 36-fb F23
+import { applyFlowPathTo } from '$lib/sim/flowPathObject.js'; // 36-fb F24
 import { runSceneClearHandlers } from '$lib/moduleSDK'
 import { annotations } from '$lib/annotationsHandler'
 import { isViewer, warnViewerReadOnly } from '$lib/objectPermissions'
@@ -616,6 +618,31 @@ export async function objectParameters(data) {
         if (mesh) {
             if (data.fluid) mesh.userData.fluid = normalizeFluid(data.fluid);
             else delete mesh.userData.fluid;
+            pokeScene();
+        }
+    } else if (data.parameter == 'fluidEmitter') {
+        // 36-fb F23: a Fluid emitter's settings, normalized at the boundary (the particles stay local)
+        let mesh = sceneObjects.getObjectByProperty('uuid', data.uuid);
+        if (mesh) {
+            if (data.fluidEmitter) mesh.userData.fluidEmitter = normalizeEmitter(data.fluidEmitter);
+            else delete mesh.userData.fluidEmitter;
+            pokeScene();
+        }
+    } else if (data.parameter == 'flowPath') {
+        // 36-fb F24: a flow path's record; every peer rebuilds the same ribbon from it
+        let mesh = sceneObjects.getObjectByProperty('uuid', data.uuid);
+        if (mesh) {
+            if (data.flowPath) applyFlowPathTo(mesh, data.flowPath);
+            else delete mesh.userData.flowPath;
+            pokeScene();
+        }
+    } else if (data.parameter == 'fluidInteraction') {
+        // 36-fb F23: how a mesh meets particle fluid (absent = auto)
+        let mesh = sceneObjects.getObjectByProperty('uuid', data.uuid);
+        if (mesh) {
+            const v = normalizeInteraction(data.fluidInteraction);
+            if (data.fluidInteraction && v !== 'auto') mesh.userData.fluidInteraction = v;
+            else delete mesh.userData.fluidInteraction;
             pokeScene();
         }
     } else if (data.parameter == 'pick') {

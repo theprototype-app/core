@@ -85,6 +85,7 @@ let behavioursRef = null;
 import { registerGameSetting, gameSettingValue } from './gameSettings';
 import { setPointGrabEnabled } from './pointGrab';
 import { spawnedFromOf } from './transientObjects'; // 31: a copy answers to its template (a leaf)
+import { applyRotor, applyFlowFloat } from './sim/motionNodes.js'; // 36-fb F25/F24 (a three leaf)
 
 // H3: inputRuntime is reached via a PRIMED dynamic import (the moduleSDK
 // pattern) — a static edge would close the TDZ cycle history -> flowRuntime ->
@@ -484,7 +485,8 @@ const suspended = new Set();
  * restore is exactly what a suspended object must not get), module effects, scripts and
  * custom nodes (all of them may write a pose).
  */
-const POSE_FREE_EFFECTS = new Set(['setcolor', 'setuniform', 'deviceparam', 'notetrigger']);
+// 36-fb F25: a rotor on a DYNAMIC body during a run drives it with torque (no pose write)
+const POSE_FREE_EFFECTS = new Set(['setcolor', 'setuniform', 'deviceparam', 'notetrigger', 'rotor']);
 
 /** @param {any} object */
 function captureBase(object) {
@@ -3562,6 +3564,21 @@ function applyAnimation(object, base, anim, time, ctx) {
 				pivotVec.z + Math.sin(time * speed) * radius
 			);
 		}
+		return;
+	}
+	// 36-fb F25/F24: the water machinery (sim/motionNodes.js, a leaf)
+	if (anim.type === 'rotor') {
+		applyRotor(object, base, data, time, {
+			suspended: suspended.has(object.uuid),
+			physics: physicsRef,
+			pivot: originOffsetOf(object) ? originPivotOf(object, base).clone() : null,
+			key: anim.id + '|' + object.uuid,
+			now: performance.now()
+		});
+		return;
+	}
+	if (anim.type === 'flowfloat') {
+		applyFlowFloat(object, base, data, time, { root: sceneObjects, key: anim.id + '|' + object.uuid });
 		return;
 	}
 	if (anim.type === 'shake') {

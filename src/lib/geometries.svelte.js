@@ -5,6 +5,8 @@ import { customGeometryBuilders } from '$lib/customGeometries';
 import { stampGeometryParams } from '$lib/geometryEdit';
 import { paletteColorFor } from '$lib/palette';
 import { stampFluidTank } from '$lib/sim/fluidTank.js';
+import { stampFluidEmitter } from '$lib/sim/fluidEmitterObject.js';
+import { stampFlowPath } from '$lib/sim/flowPathObject.js';
 
 // RectAreaLight renders black on Standard/Physical materials until the
 // uniforms lib initializes — once per session is enough (79)
@@ -123,6 +125,8 @@ export function createGeometry(command, uuid) {
         }
         // 36-sim U2b: a fluid tank = glass + userData.fluid + a compound collider
         if (geometry === 'FluidTank') stampFluidTank(object, options[0], options[1], options[2]);
+        if (geometry === 'FluidEmitter') stampFluidEmitter(object); // 36-fb F23
+        if (geometry === 'FlowPath') stampFlowPath(object); // 36-fb F24
         // PFX-C follow-up: standard primitives are DYNAMIC by default (mass 1) so
         // a fresh cube falls, collides and THROWS the moment a sim runs — fun by
         // default. Explicit allow-list: Terrain + module-registered primitives

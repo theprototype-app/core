@@ -6,6 +6,8 @@ import { tickJiggle } from './jiggleRuntime.js';
 import { tickSplashes } from './splashWatch.js';
 import { ensureWaterRoot, beginWaterFrame } from './waterQuery.js';
 import { tickFluid } from './fluidRuntime.js';
+import { tickFluidEmitters } from './fluidEmitterRuntime.js';
+import { tickFlowPaths } from './flowPaths.js';
 
 /**
  * @param {any} root the scene objects group
@@ -19,4 +21,6 @@ export function tickSim(root, camera, renderer, now) {
 	beginWaterFrame();
 	tickSplashes(root, now);
 	tickFluid(root, camera, renderer, now);
+	tickFluidEmitters(root, camera, renderer, now); // 36-fb F23
+	tickFlowPaths(root, now); // 36-fb F24
 }

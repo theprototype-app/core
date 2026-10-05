@@ -44,6 +44,17 @@ export function spawnAtPoint(command, point) {
 	return object;
 }
 
+/** 36-fb F23: a Fluid emitter 1.6 m above the clicked point, pouring down onto it @param {number[] | null} point */
+function placeFluidEmitter(point) {
+	const object = spawnAtPoint('/create FluidEmitter', point);
+	if (!object?.uuid || !point) return object;
+	object.position.y += 1.6;
+	/** @type {any} */
+	const peer = get(peers);
+	peer?.send({ type: 'move', uuid: object.uuid, pos: object.position.toArray(), rot: object.rotation.toArray(), scale: object.scale.toArray() });
+	return object;
+}
+
 /** The Devices group(s) of the Add menu, from the registry. @param {() => number[] | null} pointOf */
 function deviceMenuGroups(pointOf) {
 	const catalog = devicesRef?.deviceCatalog?.() ?? [];
@@ -124,6 +135,18 @@ export function buildAddChildren(pointOf) {
 					label: 'Bubbles',
 					tooltip: 'Place a bubble emitter (rises to the surface of the water it sits in)',
 					action: () => waterRef?.makeBubbles(spawnAtPoint('/create Sphere 0.08', pointOf()))
+				},
+				{
+					// 36-fb F23: particle fluid poured into the scene (a spout 1.6 m above the click)
+					label: 'Fluid',
+					tooltip: 'Place a fluid emitter: real particle water that pours, splashes and pools (hard caps keep it bounded)',
+					action: () => placeFluidEmitter(pointOf())
+				},
+				{
+					// 36-fb F24: a flow path streams water and floating things toward its end
+					label: 'Flow path',
+					tooltip: 'Place a flow path: a river, chute or pipe that carries fluid (and floating objects) toward its end',
+					action: () => spawnAtPoint('/create FlowPath', pointOf())
 				}
 			]
 		},

@@ -42,6 +42,7 @@ import { clearModuleSelection } from './moduleContent';
 import { desktopSpawn, spawnEyePose } from './playSpawn'; // 30b P4 (+ vrOnly: core-games)
 // D2: a LEAF (svelte stores + THREE), so a static import here closes no cycle
 import { shareDuplicatedMaterials, linkMaterials } from './materialSharing';
+import { applyFlowPathTo } from './sim/flowPathObject.js'; // 36-fb F24 (a three leaf)
 import {
 	duplicateCarriesAnimation,
 	duplicateCarriesFlow,
@@ -783,6 +784,24 @@ registerHistoryKind('props', (entry, state) => {
 		if (state.fluid) object.userData.fluid = state.fluid;
 		else delete object.userData.fluid;
 		if (peer) peer.send({ type: 'objectParameters', parameter: 'fluid', uuid: entry.uuid, fluid: state.fluid ?? null });
+	}
+	if ('fluidEmitter' in state) {
+		// 36-fb F23: a Fluid emitter's settings (fluidEmitterActions.setFluidEmitterFor is the write path)
+		if (state.fluidEmitter) object.userData.fluidEmitter = state.fluidEmitter;
+		else delete object.userData.fluidEmitter;
+		if (peer) peer.send({ type: 'objectParameters', parameter: 'fluidEmitter', uuid: entry.uuid, fluidEmitter: state.fluidEmitter ?? null });
+	}
+	if ('flowPath' in state) {
+		// 36-fb F24: a flow path's record — the geometry is rebuilt from it (applyFlowPathTo)
+		if (state.flowPath) applyFlowPathTo(object, state.flowPath);
+		else delete object.userData.flowPath;
+		if (peer) peer.send({ type: 'objectParameters', parameter: 'flowPath', uuid: entry.uuid, flowPath: state.flowPath ?? null });
+	}
+	if ('fluidInteraction' in state) {
+		// 36-fb F23: how a mesh meets particle fluid (none / collide / float; absent = auto)
+		if (state.fluidInteraction) object.userData.fluidInteraction = state.fluidInteraction;
+		else delete object.userData.fluidInteraction;
+		if (peer) peer.send({ type: 'objectParameters', parameter: 'fluidInteraction', uuid: entry.uuid, fluidInteraction: state.fluidInteraction ?? null });
 	}
 	if ('origin' in state) {
 		// 17-D: the per-object transform origin (pivot offset) is scene data, so

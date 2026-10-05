@@ -189,6 +189,11 @@ export function normalizeScenePhysics(raw) {
 		// that never used it stays byte-identical. Scene-wide like the rest of this block, and
 		// housed here for the same reason the play block is: zero new wire surface.
 		...(source.holdCamera === true ? { holdCamera: true } : {}),
+		// 36-fb S3: ONE particle budget across every Fluid emitter — present only when set
+		// (a scene that never touched it stays byte-identical); 200..20000
+		...(typeof source.fluidBudget === 'number' && Number.isFinite(source.fluidBudget)
+			? { fluidBudget: Math.round(Math.max(200, Math.min(20000, source.fluidBudget))) }
+			: {}),
 		changedAt: typeof source.changedAt === 'number' ? source.changedAt : 0
 	};
 	return withUnknown(source, state, [
@@ -202,6 +207,7 @@ export function normalizeScenePhysics(raw) {
 		'play',
 		'knock',
 		'holdCamera',
+		'fluidBudget',
 		'changedAt',
 		'type' // the wire envelope's own field, never state
 	]);

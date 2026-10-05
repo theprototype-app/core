@@ -7,3 +7,9 @@ export { normalizeFluid, FLUID_DEFAULTS } from './fluidCore.js';
 export { normalizeFloats, FLOAT_PRESETS, expectedDraft } from './buoyancy.js';
 export { queryWater, waterSurfaceAt, beginWaterFrame, ensureWaterRoot } from './waterQuery.js';
 export { waterVolumes } from '../water/volumes.js';
+// 36-fb F23-F25: fluid emitters, flow paths, the rotor
+export { fluidEmitterDebug, fluidEmitterParticles, resetFluidEmitters, setFluidTierForTest } from './fluidEmitterRuntime.js';
+export { setFluidEmitterFor, setFluidInteractionFor, setFlowPathFor } from './fluidEmitterActions.js';
+export { flowPathDebug } from './flowPaths.js';
+export { normalizeFlowPath, floatAt } from './flowPathCore.js';
+export { normalizeEmitter, EMITTER_DEFAULTS } from './fluidEmitterCore.js';

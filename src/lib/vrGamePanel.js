@@ -495,6 +495,9 @@ function surface(name, pxW, pxH, worldW) {
 			new THREE.PlaneGeometry(worldW, worldH),
 			new THREE.MeshBasicMaterial({ map: texture, transparent: true, depthTest: false, depthWrite: false, side: THREE.DoubleSide })
 		);
+		// 36 B12: three draws a transparent DoubleSide material in TWO passes (back faces, then
+		// front) — two draw calls for a flat card that has no back-face ordering to get right
+		/** @type {any} */ (mesh.material).forceSinglePass = true;
 		mesh.name = name;
 		// 31 K2: the overlay order, after the panel depth clear (vrPanelOverlay) — its own
 		// depthTest:false stays, so it is over the scene with or without the clear

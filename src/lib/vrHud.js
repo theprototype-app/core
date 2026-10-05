@@ -325,9 +325,11 @@ export function vrHudFrame(opts) {
 	if (probeIn <= 0 || !Number.isFinite(radius)) {
 		probeIn = PROBE_EVERY;
 		s0.mesh.updateMatrixWorld(true);
-		radius = easeRadius(radius, pickRadius(probeDepth(head)), Number.isFinite(radius) ? PROBE_EVERY : 0);
+		probeDepth(head);
 		debug.target = pickRadius(debug.lastDistances);
-	} else radius = easeRadius(radius, pickRadius(debug.lastDistances), dt);
+	}
+	// eased per FRAME toward the latest probe (a probe is a new target, never a step)
+	radius = easeRadius(radius, pickRadius(debug.lastDistances), dt);
 	s0.mesh.scale.setScalar(radius);
 	s0.mesh.updateMatrixWorld(true);
 	s0.mesh.visible = true;

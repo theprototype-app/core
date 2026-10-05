@@ -60,7 +60,8 @@ export async function lifecycleEnv() {
 		waterVolumes,
 		coreModuleIndex,
 		touchActions,
-		engines
+		engines,
+		vrSeat
 	] = await Promise.all([
 		import('../moduleSDK.js'),
 		import('./index.js'),
@@ -104,7 +105,8 @@ export async function lifecycleEnv() {
 		// the bundled modules, for the leak suite's load/unload cycles (a .svelte import: browser only)
 		tryLoad(import('../../modules/index.js')),
 		tryLoad(import('../touchActions')),
-		tryLoad(import('../behaviours/engines.js'))
+		tryLoad(import('../behaviours/engines.js')),
+		tryLoad(import('../vr/seat.js'))
 	]);
 	const browser = typeof window !== 'undefined' && typeof document !== 'undefined';
 	return {
@@ -154,7 +156,8 @@ export async function lifecycleEnv() {
 			modelLoader,
 			touchActions,
 			engines,
-			waterVolumes
+			waterVolumes,
+			vrSeat
 		}
 	};
 }

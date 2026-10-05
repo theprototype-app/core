@@ -17,7 +17,8 @@ import { safeStorage } from './safeStorage';
 //      not already cover becomes a labelled key button.
 // A preset picks the frame around the buttons: platformer = stick + jump, shooter =
 // stick + look + fire + jump, toss = the action alone (the whole screen looks), golf = the
-// stick and the look (the putt is the module's own drag on the ball).
+// stick and the look (the putt is the module's own drag on the ball), drive = the stick
+// steers and the game's pedals sit under the right thumb (Race).
 //
 // WHAT A PRESS DOES — no second input pipeline, the W4 integration rule one step on. A
 // button that names `keys` dispatches the same KeyboardEvent a keyboard would, on the
@@ -69,6 +70,10 @@ export const TOUCH_PRESETS = /** @type {Record<string, {stick: boolean, look: bo
 	// the putt is a drag ON the ball (the module stops that press), so golf adds no button
 	golf: { stick: true, look: true, buttons: [] },
 	fly: { stick: true, look: true, buttons: ['up', 'down'] },
+	// 37 (21-C Race touch): a vehicle — the stick steers, the look drag stands down (the chase
+	// camera frames the car), and the pedals come from the game's own actions (gas first, so it
+	// takes the big bottom-right slot under the right thumb, brake beside it)
+	drive: { stick: true, look: false, buttons: [] },
 	explore: { stick: true, look: true, buttons: [] },
 	custom: { stick: true, look: true, buttons: [] }
 });

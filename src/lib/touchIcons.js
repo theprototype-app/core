@@ -25,6 +25,9 @@ export const TOUCH_ICONS = {
 	reload: svg('<path d="M20 12a8 8 0 1 1-2.34-5.66"/><path d="M20 4v5h-5"/>'),
 	// a hand closing
 	grab: svg('<path d="M8 13V6a1.5 1.5 0 0 1 3 0v5"/><path d="M11 11V4.5a1.5 1.5 0 0 1 3 0V11"/><path d="M14 11V6a1.5 1.5 0 0 1 3 0v7a6 6 0 0 1-6 6h-1a5 5 0 0 1-4.2-2.3L4 14a1.5 1.5 0 0 1 2.4-1.8L8 14"/>'),
+	// 37: a vehicle's pedals — gas = a tall pedal with a forward chevron, brake = a wide pedal with a bar
+	gas: svg('<rect x="8" y="3" width="8" height="18" rx="2"/><path d="M10 12l2-2 2 2"/><path d="M10 16l2-2 2 2"/>'),
+	brake: svg('<rect x="4" y="7" width="16" height="12" rx="2"/><path d="M8 13h8"/>'),
 	up: svg('<path d="M6 15l6-6 6 6"/>'),
 	down: svg('<path d="M6 9l6 6 6-6"/>'),
 	// the stick's own glyph, for lists that name every control

@@ -144,6 +144,7 @@ export {
 	vrJumpHeight,
 	spawnPlayer
 } from './vr/locomotion.js';
+export { seatViewer, unseatViewer, seatedOn, seatDebug } from './vr/seat.js';
 export {
 	hapticPulse,
 	hapticPattern,

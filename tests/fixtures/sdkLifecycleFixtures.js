@@ -335,6 +335,17 @@
 				absent: (t) => get(M.possess.followingCam) !== t.data.scratch.uuid,
 				cleanup: dropScratch
 			},
+			vrSeat: {
+				// 37: reached through the primed vrControls ref, which only the app's boot primes
+				needs: ['vrSeat', 'objects', 'browser'],
+				call(api, t) {
+					const mesh = scratch(t);
+					t.data.ok = api.vrSeat(mesh.uuid);
+				},
+				present: (t) => t.data.ok && M.vrSeat.seatedOn() === t.data.scratch.uuid,
+				absent: (t) => M.vrSeat.seatedOn() !== t.data.scratch.uuid,
+				cleanup: dropScratch
+			},
 			vrPanel: {
 				needs: ['vrPointer'],
 				call(api, t) {

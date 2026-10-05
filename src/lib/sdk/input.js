@@ -24,7 +24,9 @@ export function sdkInput(ctx) {
 	 * `keys` are dispatched as real key events while the button is held (so anything that
 	 * reads the keyboard just works); `onPress`/`onRelease` run on THIS peer only. The preset
 	 * frames the buttons: 'platformer' (stick + jump), 'shooter' (stick + look + fire +
-	 * jump), 'toss' / 'golf' (the action alone), 'fly', 'explore', 'custom'.
+	 * jump), 'toss' / 'golf' (the action alone), 'fly', 'explore', 'drive' (the stick steers,
+	 * no look drag, your pedals under the right thumb — read the stick as `api.input().touch`),
+	 * 'custom'.
 	 * Re-callable (a second call replaces this module's set); torn down with the module.
 	 * @param {any[]} actions @param {{preset?: string, stick?: boolean, look?: boolean}} [opts]
 	 * @returns {() => void} off

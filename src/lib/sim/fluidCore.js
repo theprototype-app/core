@@ -23,6 +23,10 @@ const MAX_NEIGHBORS = 48;
 const ITERATIONS = 3;
 const RELAX = 0.05; // ε in λ = -C / (Σ|∇C|² + ε), as a fraction of a full neighbourhood's Σ|∇C|²
 const MAX_SPEED = 12; // m/s: a particle never outruns this (no tunnelling through the glass)
+/** 36-fb: escaped particles handed back per takeEscaped() call (the rest are counted, not kept) */
+export const ESCAPE_CAP = 2048;
+/** wall order of the mask: [xlo, xhi, ylo, yhi, zlo, zhi] */
+export const ALL_WALLS = Object.freeze([true, true, true, true, true, true]);
 
 /** @typedef {{version: number, generation: number, count: number, fill: number, viscosity: number, surfaceTension: number,
  *   gravityScale: number, color: string, clarity: number, quality: 'auto'|'high'|'points',
@@ -98,7 +102,10 @@ export function spacingFor(size, count, fill) {
 
 /**
  * @typedef {{kind: 'box'|'sphere', center: number[], half: number[], quat: number[],
- *   vel?: number[], id?: string, dynamic?: boolean}} FluidCollider  tank-local
+ *   vel?: number[], omega?: number[], id?: string, dynamic?: boolean, carry?: number}} FluidCollider  tank-local.
+ *   36-fb F25: `vel` (m/s) + `omega` (rad/s about `center`) = the collider's motion; a
+ *   particle it touches takes `carry` (0..1, default 0.8) of the surface's displacement, so a
+ *   turning paddle lifts and drags water instead of only shoving it aside.
  */
 
 /**
@@ -146,6 +153,36 @@ export class FluidSolver {
 		this.impulses = {};
 		/** particle mass in kg if the fluid were water: spacing^3 x 1000 */
 		this.particleMass = 1000 * o.spacing ** 3;
+		// 36-fb (F16 spill, F23 emitter): which glass walls exist, the particles that left
+		// through a missing one, and each particle's age (lifetime caps)
+		/** @type {boolean[]} [xlo, xhi, ylo, yhi, zlo, zhi] */
+		this.walls = ALL_WALLS.slice();
+		this.age = new Float32Array(n);
+		/** 1 = the particle is in a flow path's tube (flowPathCore sets it): no contact/floor friction */
+		this.flowing = new Uint8Array(n);
+		this.escaped = new Float32Array(ESCAPE_CAP * 6);
+		this.escapedCount = 0;
+		this.escapedDropped = 0;
+		/** particles removed by the lifetime cap since construction */
+		this.expired = 0;
+		/** friction on resting collider contacts this step (step's floorFriction / ITERATIONS) */
+		this.contactFriction = 0;
+	}
+
+	/** @param {any} mask 6 booleans [xlo, xhi, ylo, yhi, zlo, zhi]; anything else = all walls */
+	setWalls(mask) {
+		this.walls = Array.isArray(mask) && mask.length === 6 ? mask.map((w) => w !== false) : ALL_WALLS.slice();
+	}
+
+	/**
+	 * The particles that left through a missing wall since the last call, as
+	 * [x, y, z, vx, vy, vz]* (solver-local). The buffer is a COPY (transferable).
+	 * @returns {Float32Array}
+	 */
+	takeEscaped() {
+		const out = this.escaped.slice(0, this.escapedCount * 6);
+		this.escapedCount = 0;
+		return out;
 	}
 
 	/** @param {number} r2 */
@@ -245,6 +282,7 @@ export class FluidSolver {
 					this.x[i + 1] = y + rand();
 					this.x[i + 2] = z + rand();
 					this.v[i] = this.v[i + 1] = this.v[i + 2] = 0;
+					this.age[i / 3] = 0;
 				}
 		}
 		return this.count;
@@ -253,22 +291,28 @@ export class FluidSolver {
 	/** add one particle (an emitter) @param {number[]} at @param {number[]} vel */
 	spawn(at, vel) {
 		if (this.count >= this.capacity) return false;
-		const i = this.count++ * 3;
+		const n = this.count++;
+		const i = n * 3;
 		for (let a = 0; a < 3; a++) {
 			this.x[i + a] = Math.min(this.max[a] - this.radius, Math.max(this.min[a] + this.radius, at[a]));
 			this.v[i + a] = vel[a];
 		}
+		this.age[n] = 0;
+		this.flowing[n] = 0;
 		return true;
 	}
 
 	/** swap-remove particle i @param {number} i */
 	remove(i) {
 		const last = --this.count;
-		if (i !== last)
+		if (i !== last) {
 			for (let a = 0; a < 3; a++) {
 				this.x[i * 3 + a] = this.x[last * 3 + a];
 				this.v[i * 3 + a] = this.v[last * 3 + a];
 			}
+			this.age[i] = this.age[last];
+			this.flowing[i] = this.flowing[last];
+		}
 	}
 
 	/** counting-sort the predicted positions into the dense grid, then gather neighbours */
@@ -327,11 +371,23 @@ export class FluidSolver {
 		const p = this.p;
 		const r = this.radius;
 		const k = i * 3;
+		const walls = this.walls;
 		for (let a = 0; a < 3; a++) {
-			if (p[k + a] < this.min[a] + r) p[k + a] = this.min[a] + r;
-			else if (p[k + a] > this.max[a] - r) p[k + a] = this.max[a] - r;
+			if (p[k + a] < this.min[a] + r) {
+				if (walls[a * 2]) p[k + a] = this.min[a] + r;
+			} else if (p[k + a] > this.max[a] - r) {
+				if (walls[a * 2 + 1]) p[k + a] = this.max[a] - r;
+			}
 		}
+		// how far this particle moves this step (the swept box test below needs it)
+		const tx = p[k] - this.x[k], ty = p[k + 1] - this.x[k + 1], tz = p[k + 2] - this.x[k + 2];
+		const travel = Math.sqrt(tx * tx + ty * ty + tz * tz);
 		for (const c of colliders) {
+			// 36-fb: a bounding-sphere early-out (an emitter carries dozens of colliders);
+			// the reach is measured once per collider (prepareColliders)
+			const ex0 = p[k] - c.center[0], ey0 = p[k + 1] - c.center[1], ez0 = p[k + 2] - c.center[2];
+			const reach = (/** @type {any} */ (c).__reach ?? 1e9) + travel;
+			if (ex0 * ex0 + ey0 * ey0 + ez0 * ez0 > reach * reach) continue;
 			// into the collider's frame (inverse quat)
 			const qx = -c.quat[0], qy = -c.quat[1], qz = -c.quat[2], qw = c.quat[3];
 			const lx0 = p[k] - c.center[0], ly0 = p[k + 1] - c.center[1], lz0 = p[k + 2] - c.center[2];
@@ -345,24 +401,103 @@ export class FluidSolver {
 				p[k + 1] += ly0 * push;
 				p[k + 2] += lz0 * push;
 				if (c.dynamic && c.id) this.react(c.id, -lx0 * push, -ly0 * push, -lz0 * push, dt);
+				if (this.contactFriction) this.rub(k, lx0 / d, ly0 / d, lz0 / d);
+				if (c.vel || c.omega) this.carry(k, c, lx0, ly0, lz0, lx0 / d, ly0 / d, lz0 / d, dt);
 				continue;
 			}
 			// box: rotate into box space
 			let [lx, ly, lz] = rotq(qx, qy, qz, qw, lx0, ly0, lz0);
 			const ex = c.half[0] + r, ey = c.half[1] + r, ez = c.half[2] + r;
-			if (Math.abs(lx) >= ex || Math.abs(ly) >= ey || Math.abs(lz) >= ez) continue;
-			// out along the axis of least penetration
-			const px = ex - Math.abs(lx), py = ey - Math.abs(ly), pz = ez - Math.abs(lz);
+			if (Math.abs(lx) >= ex || Math.abs(ly) >= ey || Math.abs(lz) >= ez) {
+				// 36-fb: SWEPT — a fast particle can jump a thin wall in one step (start and end
+				// both outside). If the step's segment crossed the box, stop it at the entry face.
+				// Only possible when the step is longer than the box's thinnest half.
+				if (travel < (/** @type {any} */ (c).__thin ?? 0)) continue;
+				const [sx, sy, sz] = rotq(qx, qy, qz, qw, this.x[k] - c.center[0], this.x[k + 1] - c.center[1], this.x[k + 2] - c.center[2]);
+				const hit = sweptEntry(sx, sy, sz, lx - sx, ly - sy, lz - sz, ex, ey, ez);
+				if (!hit) continue;
+				let ox = 0, oy = 0, oz = 0;
+				if (hit.axis === 0) ox = hit.face - lx;
+				else if (hit.axis === 1) oy = hit.face - ly;
+				else oz = hit.face - lz;
+				const [wx, wy, wz] = rotq(c.quat[0], c.quat[1], c.quat[2], c.quat[3], ox, oy, oz);
+				p[k] += wx;
+				p[k + 1] += wy;
+				p[k + 2] += wz;
+				if (c.dynamic && c.id) this.react(c.id, -wx, -wy, -wz, dt);
+				const wl = Math.hypot(wx, wy, wz) || 1;
+				if (this.contactFriction) this.rub(k, wx / wl, wy / wl, wz / wl);
+				continue;
+			}
+			// 36-fb: out the side the particle CAME FROM (its start-of-step position) when it was
+			// outside; only a particle that started inside takes the least-penetration face. A
+			// thin wall under pressure was crossed past its middle in one step, and the nearest-
+			// face rule pushed the water out of the FAR side (measured: a pond leaking onto grass)
 			let ox = 0, oy = 0, oz = 0;
-			if (px <= py && px <= pz) ox = lx > 0 ? px : -px;
-			else if (py <= pz) oy = ly > 0 ? py : -py;
-			else oz = lz > 0 ? pz : -pz;
+			const [bx, by, bz] = rotq(qx, qy, qz, qw, this.x[k] - c.center[0], this.x[k + 1] - c.center[1], this.x[k + 2] - c.center[2]);
+			const fx = Math.abs(bx) - ex, fy = Math.abs(by) - ey, fz = Math.abs(bz) - ez;
+			// "on the face" counts as outside: last step's projection left resting water there
+			const ON = -1e-4;
+			if (fx > ON || fy > ON || fz > ON) {
+				if (fx >= fy && fx >= fz) ox = (bx > 0 ? ex : -ex) - lx;
+				else if (fy >= fz) oy = (by > 0 ? ey : -ey) - ly;
+				else oz = (bz > 0 ? ez : -ez) - lz;
+			} else {
+				const px = ex - Math.abs(lx), py = ey - Math.abs(ly), pz = ez - Math.abs(lz);
+				if (px <= py && px <= pz) ox = lx > 0 ? px : -px;
+				else if (py <= pz) oy = ly > 0 ? py : -py;
+				else oz = lz > 0 ? pz : -pz;
+			}
 			const [wx, wy, wz] = rotq(c.quat[0], c.quat[1], c.quat[2], c.quat[3], ox, oy, oz);
 			p[k] += wx;
 			p[k + 1] += wy;
 			p[k + 2] += wz;
 			if (c.dynamic && c.id) this.react(c.id, -wx, -wy, -wz, dt);
+			const wl = Math.hypot(wx, wy, wz) || 1;
+			if (this.contactFriction) this.rub(k, wx / wl, wy / wl, wz / wl);
+			if (c.vel || c.omega) this.carry(k, c, lx0, ly0, lz0, wx / wl, wy / wl, wz / wl, dt);
 		}
+	}
+
+	/**
+	 * 36-fb: friction on a collider a particle RESTS on (an upward-facing contact): part of
+	 * its sideways travel this step is taken away, so a puddle on a box or in a basin settles
+	 * instead of skating. Off for the tank (contactFriction 0 = today's behaviour).
+	 * @param {number} k particle index × 3 @param {number} nx @param {number} ny @param {number} nz contact normal
+	 */
+	rub(k, nx, ny, nz) {
+		if (ny < 0.6 || this.flowing[k / 3]) return;
+		const f = this.contactFriction;
+		const dx = this.p[k] - this.x[k], dy = this.p[k + 1] - this.x[k + 1], dz = this.p[k + 2] - this.x[k + 2];
+		const dn = dx * nx + dy * ny + dz * nz;
+		this.p[k] -= (dx - dn * nx) * f;
+		this.p[k + 1] -= (dy - dn * ny) * f;
+		this.p[k + 2] -= (dz - dn * nz) * f;
+	}
+
+	/**
+	 * F25: a touching particle rides along with a MOVING collider — it takes `carry` of the
+	 * surface's TANGENTIAL displacement this step (v + ω × r, minus its part along the contact
+	 * normal: the projection above already did the normal push, and adding it again shoves a
+	 * particle under a rising paddle back into it). Without it a turning wheel only parts the
+	 * water and a paddle sliding under it drags nothing.
+	 * @param {number} k particle index × 3 @param {FluidCollider} c @param {number} rx @param {number} ry @param {number} rz offset from the collider centre
+	 * @param {number} nx @param {number} ny @param {number} nz the contact normal (unit, out of the collider)
+	 * @param {number} dt
+	 */
+	carry(k, c, rx, ry, rz, nx, ny, nz, dt) {
+		const f = (c.carry ?? 0.8) * dt;
+		const v = c.vel, w = c.omega;
+		let sx = v ? v[0] : 0, sy = v ? v[1] : 0, sz = v ? v[2] : 0;
+		if (w) {
+			sx += w[1] * rz - w[2] * ry;
+			sy += w[2] * rx - w[0] * rz;
+			sz += w[0] * ry - w[1] * rx;
+		}
+		const sn = sx * nx + sy * ny + sz * nz;
+		this.p[k] += (sx - sn * nx) * f;
+		this.p[k + 1] += (sy - sn * ny) * f;
+		this.p[k + 2] += (sz - sn * nz) * f;
 	}
 
 	/** @param {string} id @param {number} dx @param {number} dy @param {number} dz @param {number} dt */
@@ -378,14 +513,20 @@ export class FluidSolver {
 	/**
 	 * One frame. `gravity` is tank-local (the tank may be tilted). Returns the active count.
 	 * @param {number} dt
-	 * @param {{gravity: number[], viscosity: number, surfaceTension: number, colliders?: FluidCollider[]}} o
+	 * @param {{gravity: number[], viscosity: number, surfaceTension: number, colliders?: FluidCollider[],
+	 *   walls?: boolean[], lifetime?: number, cohesion?: number, floorFriction?: number}} o  36-fb: `walls` = the wall mask
+	 *   (setWalls), `lifetime` (s, 0 = forever), `cohesion` 0..1 (open fluids gather into drops/puddles), `floorFriction` 0..1
 	 */
 	step(dt, o) {
 		const { x, v, p, lambda, dp, nbr, nbrCount } = this;
 		const n = this.count;
 		const colliders = o.colliders ?? [];
+		if (o.walls) this.setWalls(o.walls);
+		const walls = this.walls;
 		// the reaction on dynamic bodies is counted once, in the final pass
-		const quiet = colliders.map((c) => (c.dynamic ? { ...c, dynamic: false } : c));
+		prepareColliders(colliders, this.radius);
+		// (and a moving collider's carry, once per step — not once per iteration)
+		const quiet = colliders.map((c) => (c.dynamic || c.vel || c.omega ? { ...c, dynamic: false, vel: undefined, omega: undefined } : c));
 		this.impulses = {};
 		if (!n) return 0;
 		dt = Math.min(dt, 1 / 30);
@@ -415,6 +556,9 @@ export class FluidSolver {
 		const p6k = this.poly6K;
 		const h2 = this.h2;
 		const scorrK = 0.0012 * o.surfaceTension * this.h2;
+		const cohesionFloor = -0.2 * Math.min(1, Math.max(0, o.cohesion ?? 0));
+		// per-iteration share of the floor friction, applied to resting collider contacts
+		this.contactFriction = Math.min(1, Math.max(0, o.floorFriction ?? 0)) / ITERATIONS;
 		const invScorrW = 1 / this.scorrW;
 		// 3. density constraint iterations
 		for (let it = 0; it < ITERATIONS; it++) {
@@ -443,13 +587,13 @@ export class FluidSolver {
 				// the six walls of the glass (an open top is still a wall: the lid is the
 				// tank's top face; the fluid never reaches it in a sane fill)
 				for (let a = 0; a < 3; a++) {
-					const lo = this.wallBin(p[k + a] - this.min[a]);
+					const lo = walls[a * 2] ? this.wallBin(p[k + a] - this.min[a]) : -1;
 					if (lo >= 0) {
 						rho += this.wallRho[lo];
 						const w = this.wallGrad[lo];
 						if (a === 0) gx += w; else if (a === 1) gy += w; else gz += w;
 					}
-					const hi = this.wallBin(this.max[a] - p[k + a]);
+					const hi = walls[a * 2 + 1] ? this.wallBin(this.max[a] - p[k + a]) : -1;
 					if (hi >= 0) {
 						rho += this.wallRho[hi];
 						const w = -this.wallGrad[hi];
@@ -460,7 +604,11 @@ export class FluidSolver {
 				// clamped: a free surface is under-dense, and letting C go negative pulls it
 				// together into a boiling skin (measured mean |v| 0.5 m/s at rest unclamped,
 				// 0.09 clamped); the surface-tension term below is what holds drops together
-				const C = Math.max(rho / rho0 - 1, 0);
+				// 36-fb: an OPEN fluid (an emitter) has no glass to hold it together, and with the
+				// clamp a puddle sprays into a single layer of loose drops (measured 3.7 mean
+				// neighbours). `cohesion` lets C go a little NEGATIVE — a bounded pull between
+				// under-dense neighbours, far below the unclamped "boiling" — so drops gather
+				const C = Math.max(rho / rho0 - 1, cohesionFloor);
 				lambda[i] = -C / (sum2 + this.eps);
 			}
 			for (let i = 0; i < n; i++) {
@@ -484,8 +632,8 @@ export class FluidSolver {
 				}
 				// the walls push back with the particle's own λ (a mirrored neighbour)
 				for (let a = 0; a < 3; a++) {
-					const lo = this.wallBin(p[k + a] - this.min[a]);
-					const hi = this.wallBin(this.max[a] - p[k + a]);
+					const lo = walls[a * 2] ? this.wallBin(p[k + a] - this.min[a]) : -1;
+					const hi = walls[a * 2 + 1] ? this.wallBin(this.max[a] - p[k + a]) : -1;
 					let w = 0;
 					if (lo >= 0) w += this.wallGrad[lo];
 					if (hi >= 0) w -= this.wallGrad[hi];
@@ -514,6 +662,18 @@ export class FluidSolver {
 			v[k + 1] = (p[k + 1] - x[k + 1]) * inv;
 			v[k + 2] = (p[k + 2] - x[k + 2]) * inv;
 		}
+		// 36-fb: friction on the FLOOR wall (an emitter's area floor) — a puddle that settles
+		// instead of skating to the open edge of the area
+		const ff = Math.min(1, Math.max(0, o.floorFriction ?? 0));
+		if (ff > 0 && this.walls[2]) {
+			const floorY = this.min[1] + this.radius * 1.3;
+			for (let i = 0; i < n; i++) {
+				const k = i * 3;
+				if (p[k + 1] > floorY || this.flowing[i]) continue;
+				v[k] *= 1 - ff;
+				v[k + 2] *= 1 - ff;
+			}
+		}
 		const visc = o.viscosity * 0.5;
 		if (visc > 0) {
 			const w0 = 1 / this.poly6(0);
@@ -538,7 +698,42 @@ export class FluidSolver {
 			for (let i = 0; i < n * 3; i++) v[i] += c * dp[i];
 		}
 		x.set(p.subarray(0, n * 3));
-		return n;
+		this.cull(dt, o.lifetime ?? 0);
+		return this.count;
+	}
+
+	/**
+	 * 36-fb: the hard caps after a step — a particle past a MISSING wall by more than h is
+	 * handed to takeEscaped(); one older than `lifetime` s (0 = forever) expires.
+	 * @param {number} dt @param {number} lifetime
+	 */
+	cull(dt, lifetime) {
+		const { x, v, age, walls, min, max, h } = this;
+		const open = !walls.every(Boolean);
+		for (let i = this.count - 1; i >= 0; i--) {
+			age[i] += dt;
+			const k = i * 3;
+			if (open) {
+				let out = false;
+				for (let a = 0; a < 3 && !out; a++)
+					out = (!walls[a * 2] && x[k + a] < min[a] - h) || (!walls[a * 2 + 1] && x[k + a] > max[a] + h);
+				if (out) {
+					if (this.escapedCount < ESCAPE_CAP) {
+						const e = this.escapedCount++ * 6;
+						for (let a = 0; a < 3; a++) {
+							this.escaped[e + a] = x[k + a];
+							this.escaped[e + 3 + a] = v[k + a];
+						}
+					} else this.escapedDropped++;
+					this.remove(i);
+					continue;
+				}
+			}
+			if (lifetime > 0 && age[i] > lifetime) {
+				this.remove(i);
+				this.expired++;
+			}
+		}
 	}
 }
 
@@ -549,6 +744,46 @@ function rotq(/** @type {number} */ qx, /** @type {number} */ qy, /** @type {num
 	const iz = qw * z + qx * y - qy * x;
 	const iw = -qx * x - qy * y - qz * z;
 	return [ix * qw + iw * -qx + iy * -qz - iz * -qy, iy * qw + iw * -qy + iz * -qx - ix * -qz, iz * qw + iw * -qz + ix * -qy - iy * -qx];
+}
+
+/**
+ * 36-fb: per-collider constants for the per-particle tests, once per step: the bounding
+ * sphere's reach (+ the particle radius) and the thinnest half-extent (a step longer than it
+ * could tunnel through the box). @param {FluidCollider[]} colliders @param {number} r
+ */
+function prepareColliders(colliders, r) {
+	for (const c of colliders) {
+		const a = /** @type {any} */ (c);
+		a.__reach = (c.kind === 'sphere' ? c.half[0] : Math.sqrt(c.half[0] * c.half[0] + c.half[1] * c.half[1] + c.half[2] * c.half[2])) + r;
+		a.__thin = c.kind === 'sphere' ? c.half[0] : Math.min(c.half[0], c.half[1], c.half[2]);
+	}
+}
+
+/**
+ * 36-fb: where a segment (start s, displacement d, box-local) first enters the box of half-size
+ * e — the slab method. Null when it misses or starts inside.
+ * @returns {{axis: number, face: number} | null} the entry axis and the face coordinate on it
+ */
+function sweptEntry(/** @type {number} */ sx, /** @type {number} */ sy, /** @type {number} */ sz, /** @type {number} */ dx, /** @type {number} */ dy, /** @type {number} */ dz, /** @type {number} */ ex, /** @type {number} */ ey, /** @type {number} */ ez) {
+	let tEnter = -Infinity, tExit = Infinity, axis = -1;
+	const S = [sx, sy, sz], D = [dx, dy, dz], E = [ex, ey, ez];
+	for (let a = 0; a < 3; a++) {
+		if (Math.abs(D[a]) < 1e-12) {
+			if (Math.abs(S[a]) >= E[a]) return null;
+			continue;
+		}
+		let t1 = (-E[a] - S[a]) / D[a], t2 = (E[a] - S[a]) / D[a];
+		if (t1 > t2) [t1, t2] = [t2, t1];
+		if (t1 > tEnter) {
+			tEnter = t1;
+			axis = a;
+		}
+		tExit = Math.min(tExit, t2);
+		if (tEnter > tExit) return null;
+	}
+	// a start ON the face (where last step left it) is a hair inside or out: still an entry
+	if (axis < 0 || tEnter < -1e-3 || tEnter > 1) return null;
+	return { axis, face: D[axis] > 0 ? -E[axis] : E[axis] };
 }
 
 /**

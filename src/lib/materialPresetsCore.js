@@ -372,9 +372,15 @@ export function capLibrary(list, cap = MAT_PRESETS_BROADCAST_CAP) {
 
 /** CSS for a swatch: a lit-sphere look from the numbers alone (no render, no WebGL).
  * Roughness widens and dims the highlight, metalness tints it with the base colour,
- * emissive adds a glow, opacity shows the checker through.
+ * emissive adds a glow, opacity lets the swatch's own backdrop show through.
  * @param {any} p @returns {string} a `background` value */
 export function swatchBackground(p) {
+	return swatchLayers(p).join(', ');
+}
+
+/** the same, as its layer list (top first; the LAST layer is the base colour)
+ * @param {any} p @returns {string[]} */
+export function swatchLayers(p) {
 	const base = p?.color ?? '#cccccc';
 	const rough = typeof p?.roughness === 'number' ? p.roughness : p?.type === 'MeshPhongMaterial' ? 0.4 : 0.6;
 	const metal = typeof p?.metalness === 'number' ? p.metalness : 0;
@@ -393,5 +399,5 @@ export function swatchBackground(p) {
 			? `linear-gradient(color-mix(in srgb, ${base} ${Math.round(alpha * 100)}%, transparent), color-mix(in srgb, ${base} ${Math.round(alpha * 100)}%, transparent))`
 			: `linear-gradient(${base}, ${base})`
 	);
-	return layers.join(', ');
+	return layers;
 }

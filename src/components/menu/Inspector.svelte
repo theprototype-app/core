@@ -88,6 +88,7 @@
 	import { viewportOverrides, setRenderLayer, OVERRIDES } from '$lib/viewportOverrides';
 	// D2: the shared-material notice and its way out
 	import { fanTargets as fanMaterialTargets, unlinkMaterial } from '$lib/materialSharing';
+	import MaterialPresetsRow from './MaterialPresetsRow.svelte'; // 37 R5
 	import PostStack from './PostStack.svelte';
 	import { showColliders, colliderVizObjects, setColliderViz } from '$lib/colliderHelpers';
 	import { enterColliderEdit } from '$lib/colliderEdit';
@@ -3613,6 +3614,7 @@
 					{/if}
 
 					{#if !allShaderDriven}
+					<MaterialPresetsRow {material} count={matCount} fan={fanMat} primaryUuid={$selectedObject?.uuid ?? ''} />
 					<ThemedSelect
 						id="select-material"
 						items={materials}

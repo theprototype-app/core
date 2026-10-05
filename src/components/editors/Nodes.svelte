@@ -87,6 +87,8 @@
 	import { findNodeSpec, nodeCatalog } from '$lib/nodeCatalog';
 	import { nodeDoc } from '$lib/nodeDocs';
 	import { isValidFlowConnection, typeColor, replaceableInputEdges, groupSocketType } from '$lib/flowSockets';
+	import { variadicSocketExists, switcherItems, MAX_SWITCHER_ITEMS, SWITCHER_TYPES, switcherVType } from '$lib/variadicNodes.js'; // 37 (R6)
+	import { removeVariadicSocket, setSwitcherType, addSwitcherItem } from '$lib/variadicEdit.js'; // 37 (R6)
 	import { moduleNodeGroups, moduleNodeComponents } from '$lib/moduleSDK';
 	import { peers, username, modulesOpen, flowFocus, showToast } from '../../stores/appStore';
 	import { safeStorage } from '$lib/safeStorage';
@@ -598,7 +600,7 @@
 		const parents = parentMap(sn);
 		const ids = new Set(sn.map((n) => n.id));
 		for (const g of sn.filter(isGroup)) {
-			const io = computeGroupIO(sn, se, g, { parents, typeOf: socketTypeOf });
+			const io = computeGroupIO(sn, se, g, { parents, typeOf: socketTypeOf, socketExists: variadicSocketExists });
 			const children = (g.data?.children ?? []).filter((c: string) => ids.has(c));
 			const patch: any = {};
 			if (!sameIO(io.inputs, g.data?.inputs ?? [])) patch.inputs = io.inputs;
@@ -2061,18 +2063,26 @@
 										items[i] = e.currentTarget.value;
 										setNodeData(selectedNode.id, { items });
 									}} />
+								<!-- 37 (R6): removing an item removes its input socket; wires into later items move
+								     down with them, the radio keeps its item, groups follow — ONE undo step -->
 								<button class="rounded-sm bg-gray-600 px-1.5 hover:bg-red-700" title="Remove item"
-									onclick={() => {
-										const items = (selectedNode.data?.items ?? ['cube', 'pyramid']).filter((_: any, x: number) => x !== i);
-										if (items.length) setNodeData(selectedNode.id, { items, index: 0, shape: items[0] });
-									}}>✕</button>
+									onclick={() => removeVariadicSocket(selectedNode.id, i, activeId)}>✕</button>
 							</div>
 						{/each}
-						<button id="param-switcher-add" class="rounded-sm bg-gray-600 px-2 py-1 hover:bg-gray-500"
-							onclick={() => {
-								const items = [...(selectedNode.data?.items ?? ['cube', 'pyramid']), 'item ' + ((selectedNode.data?.items?.length ?? 2) + 1)];
-								setNodeData(selectedNode.id, { items });
-							}}>＋ Add item</button>
+						{#if switcherItems(selectedNode.data).length < MAX_SWITCHER_ITEMS}
+							<button id="param-switcher-add" class="rounded-sm bg-gray-600 px-2 py-1 hover:bg-gray-500"
+								onclick={() => addSwitcherItem(selectedNode.id, undefined, activeId)}>＋ Add item</button>
+						{/if}
+						<!-- 37 (R6): what the item sockets and the `value` output carry -->
+						<label class="flex items-center justify-between gap-2">Inputs carry
+							<ThemedSelect
+								id="param-switcher-vtype"
+								items={SWITCHER_TYPES.map((t) => ({ value: t, name: t }))}
+								value={switcherVType(selectedNode.data)}
+								onchange={(v) => {
+									const removed = setSwitcherType(selectedNode.id, v, activeId);
+									if (removed > 0) showToast(removed + (removed === 1 ? ' wire' : ' wires') + ' removed — they cannot carry ' + v + '.');
+								}} /></label>
 					{:else if selectedNode.type === 'number'}
 						<label class="flex items-center justify-between gap-2">Step
 							<input id="param-number-step" class="ui-input w-16" type="number" min="0" value={selectedNode.data?.step ?? 1}

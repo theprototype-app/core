@@ -87,6 +87,8 @@ import { registerGameSetting, gameSettingValue } from './gameSettings';
 import { setPointGrabEnabled } from './pointGrab';
 import { spawnedFromOf } from './transientObjects'; // 31: a copy answers to its template (a leaf)
 import { applyRotor, applyFlowFloat } from './sim/motionNodes.js'; // 36-fb F25/F24 (a three leaf)
+// 37 (R6): variadic math/gate + the Switcher multiplexer (a leaf, no imports)
+import { INPUT_LETTERS, socketCount, opFolds, foldMath, foldGate, switcherItems, switcherHandle, switcherIndexOf, switcherRadioIndex } from './variadicNodes.js';
 
 // H3: inputRuntime is reached via a PRIMED dynamic import (the moduleSDK
 // pattern) — a static edge would close the TDZ cycle history -> flowRuntime ->
@@ -2236,6 +2238,24 @@ function unwrapHandle(value, edge) {
 	return value;
 }
 
+/**
+ * 37 (R6): the values on a variadic node's WIRED extra sockets (c..h, up to its count), in socket
+ * order. An unwired extra has no manual value, so it is skipped rather than read as a zero (a zero
+ * would poison mul/min/and).
+ * @param {any} node @param {any[]} allEdges @param {(handle: string, fallback: any) => any} input
+ */
+function variadicExtras(node, allEdges, input) {
+	const wired = new Set(edgesInto(allEdges, node.id).map((e) => e.targetHandle));
+	/** @type {any[]} */
+	const out = [];
+	for (const handle of INPUT_LETTERS.slice(2, socketCount(node.data))) {
+		if (!wired.has(handle)) continue;
+		const v = input(handle, undefined);
+		if (v !== undefined) out.push(v);
+	}
+	return out;
+}
+
 /** Typed zero for a Flow Input with nothing injected. @param {string} vtype */
 function typedFallback(vtype) {
 	if (vtype === 'boolean') return false;
@@ -2488,9 +2508,22 @@ function evalNodeBody(node, allNodes, allEdges, time, seen, ctx) {
 			const hi = num(d.max ?? 40);
 			return Math.min(Math.max(num(d.value ?? 20), Math.min(lo, hi)), Math.max(lo, hi));
 		}
-		case 'switcher':
-			// 4.4: a real value source — the selected item INDEX (pairs with select/compare)
-			return num(d.index ?? Math.max((Array.isArray(d.items) ? d.items : ['cube', 'pyramid']).indexOf(d.shape ?? 'cube'), 0));
+		case 'switcher': {
+			// 4.4: a real value source — the selected item INDEX (pairs with select/compare).
+			// 37 (R6): an N-way MULTIPLEXER as well. A wired `index` overrides the radio (rounded and
+			// clamped, the Select rule), and the named `value` output carries the selected item's
+			// input socket `in<i>`. The unnamed output stays the INDEX (`__default`), so every saved
+			// Switcher wire reads exactly what it read before. A switcher with nothing wired into it
+			// keeps returning the plain number, byte-identical.
+			const items = switcherItems(d);
+			const into = edgesInto(allEdges, node.id);
+			const indexWired = into.some((e) => e.targetHandle === 'index');
+			const at = indexWired
+				? Math.min(Math.max(Math.round(num(input('index', 0))), 0), items.length - 1)
+				: switcherRadioIndex(d);
+			if (!indexWired && !into.some((e) => switcherIndexOf(e.targetHandle) >= 0)) return at;
+			return { __handles: { value: input(switcherHandle(at), undefined), index: at }, __default: at };
+		}
 		case 'maprange': {
 			// 4.6: remap a from [inMin..inMax] to [outMin..outMax] (optional clamp)
 			const a = num(input('a', d.a ?? 0));
@@ -2566,6 +2599,9 @@ function evalNodeBody(node, allNodes, allEdges, time, seen, ctx) {
 		case 'math': {
 			const a = num(input('a', d.a ?? 0));
 			const b = num(input('b', d.b ?? 0));
+			// 37 (R6): a foldable op takes every WIRED extra socket (c..h) too; an unwired extra is
+			// skipped (it has no manual value). Two sockets = the 133 arithmetic, byte-identical.
+			if (socketCount(d) > 2 && opFolds('math', d.op)) return foldMath(d.op ?? 'add', [a, b, ...variadicExtras(node, allEdges, input).map(num)]);
 			switch (d.op ?? 'add') {
 				case 'sub': return a - b;
 				case 'mul': return a * b;
@@ -2602,6 +2638,8 @@ function evalNodeBody(node, allNodes, allEdges, time, seen, ctx) {
 		case 'gate': {
 			const a = bool(input('a', d.a ?? false));
 			const b = bool(input('b', d.b ?? false));
+			// 37 (R6): AND/OR/XOR over every wired extra socket (XOR = odd parity)
+			if (socketCount(d) > 2 && opFolds('gate', d.op)) return foldGate(d.op ?? 'and', [a, b, ...variadicExtras(node, allEdges, input).map(bool)]);
 			switch (d.op ?? 'and') {
 				case 'or': return a || b;
 				case 'not': return !a;
@@ -4043,7 +4081,9 @@ function runTick(now) {
 				// 34 D3: a value script's card shows its outputs (a handle map, read per name)
 				(node.type === 'script' && isScriptValue(node.data)) ||
 				// 36 (U10): a behaviour's state outputs (the ⓘ panel's wired rows read them)
-				node.type === 'behaviour'
+				node.type === 'behaviour' ||
+				// 37 (R6): the multiplexer card shows what its `value` output carries
+				node.type === 'switcher'
 			)
 				values[node.id] = evalNode(node, nodes, edges, time, new Set(), ctx);
 		}

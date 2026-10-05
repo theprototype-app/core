@@ -147,6 +147,7 @@ export const DEBUG_HOOKS = [
 	['meshProviders', () => import('./ai/meshProviders')],
 	['meshJobs', () => import('./ai/meshJobs')],
 	['flowGraphsCtl', () => import('./flowGraphs')],
+	['variadic', () => import('./variadicEdit.js')], // 37 (R6): socket add/remove + the switcher type
 	// 36 F10: where the node editor opens (saved views, the setting)
 	['flowView', () => import('./flowView')],
 	['objectFlow', () => import('./objectFlow')],

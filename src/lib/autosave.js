@@ -710,6 +710,8 @@ async function applyRestore(snapshot, offer = null) {
 			await within(warmPrograms(group), WARM_WAIT_MS);
 		}
 		releaseFrames();
+		// 36 F20: superseded while the programs warmed — the newer load owns the scene
+		if (!isLive(job)) return null;
 		// multi-material meshes come back from their toJSON, REPLACING the Group of
 		// single-material children the GLTF export left behind (same twin-replacement
 		// shape as rigs below). Keyed by uuid, which the __uuid stamp above restored.
@@ -720,7 +722,7 @@ async function applyRestore(snapshot, offer = null) {
 		shaderGraphsRestore(snapshot.shaderGraphs ?? {});
 		// rigs come back from their ORIGINAL bytes — this also replaces the static
 		// twin the GLTF export wrote — and authored tracks from the snapshot
-		await animatedImportsRestore(snapshot.animated ?? []);
+		await animatedImportsRestore(snapshot.animated ?? [], true, () => isLive(job));
 		if (!isLive(job)) return null; // superseded while the rigs parsed
 		animationsRestore(snapshot.animations ?? {});
 		if (snapshot.graphs && typeof snapshot.graphs === 'object') {

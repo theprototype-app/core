@@ -4,6 +4,7 @@ import { peers } from '../stores/appStore';
 import { normalizeLocomotion, normalizeSpawn } from './locomotionPolicy'; // 30b P3/P4
 import { normalizeBounds } from './teleportRules'; // 31 K1
 import { normalizeReach } from './playReach'; // 31-towers P1
+import { normalizePassThrough, PASS_DEFAULTS } from './selectThrough'; // 36 F22 (a leaf)
 
 // CL-A A6 / 21-B B1: scene-wide physics settings. ONE shared object for the
 // whole session, replicated as its OWN latest-wins singleton message (the
@@ -66,6 +67,26 @@ function nullableNum(v, lo, hi) {
 	const n = Number(v);
 	if (!Number.isFinite(n)) return null;
 	return Math.max(lo, Math.min(hi, n));
+}
+
+/** 36 F22: the editor's "Selection passes through" — null at the defaults (omitted).
+ * @param {any} raw */
+function normalizePick(raw) {
+	if (!raw || typeof raw !== 'object') return null;
+	const pass = normalizePassThrough(raw);
+	const same = pass.water === PASS_DEFAULTS.water && pass.transparent === PASS_DEFAULTS.transparent && pass.triggers === PASS_DEFAULTS.triggers;
+	return same ? null : pass;
+}
+
+/** 36 F22: what a GAME's rays opt back in to hitting ({water?: true, triggers?: true});
+ * null when nothing is (omitted). @param {any} raw */
+function normalizeRayHits(raw) {
+	if (!raw || typeof raw !== 'object') return null;
+	/** @type {any} */
+	const out = {};
+	if (raw.water === true) out.water = true;
+	if (raw.triggers === true) out.triggers = true;
+	return Object.keys(out).length ? out : null;
 }
 
 /** `{[key]: value}` when there is a value, `{}` when not — for fields that are ABSENT at
@@ -166,9 +187,11 @@ export function normalizeScenePhysics(raw) {
 				...optional('bounds', normalizeBounds(playRaw.bounds)),
 				// 31-towers P1: grab REACH in metres from the player's body — present only when
 				// authored (absent = no limit, every scene before it)
-				...optional('reach', normalizeReach(playRaw.reach))
+				...optional('reach', normalizeReach(playRaw.reach)),
+				// 36 F22: a game's rays skip water + triggers unless it opts back in here
+				...optional('rayHits', normalizeRayHits(playRaw.rayHits))
 			},
-			['interaction', 'grounded', 'simOnPlay', 'cursor', 'locomotion', 'spawn', 'bounds', 'reach']
+			['interaction', 'grounded', 'simOnPlay', 'cursor', 'locomotion', 'spawn', 'bounds', 'reach', 'rayHits']
 		),
 		// A1: the 20 ceiling is throwVelocity's MAX_LINVEL, restated rather than imported —
 		// this module is store-only and the response clamps through clampThrow anyway
@@ -189,6 +212,9 @@ export function normalizeScenePhysics(raw) {
 		// that never used it stays byte-identical. Scene-wide like the rest of this block, and
 		// housed here for the same reason the play block is: zero new wire surface.
 		...(source.holdCamera === true ? { holdCamera: true } : {}),
+		// 36 F22: Configure Scene ▸ Advanced ▸ "Selection passes through" — present only when it
+		// differs from the defaults (water on, transparent + triggers off)
+		...optional('pick', normalizePick(source.pick)),
 		changedAt: typeof source.changedAt === 'number' ? source.changedAt : 0
 	};
 	return withUnknown(source, state, [
@@ -202,6 +228,7 @@ export function normalizeScenePhysics(raw) {
 		'play',
 		'knock',
 		'holdCamera',
+		'pick',
 		'changedAt',
 		'type' // the wire envelope's own field, never state
 	]);

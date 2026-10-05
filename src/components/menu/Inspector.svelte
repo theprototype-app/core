@@ -11,6 +11,7 @@
 	import PanelHeader from '../ui/PanelHeader.svelte';
 	import Section from '../ui/Section.svelte';
 	import CameraHoldSetting from './scene/CameraHoldSetting.svelte';
+	import SelectionPassSetting from './scene/SelectionPassSetting.svelte'; // 36 F22 / S8
 	import LodGroupPanel from './LodGroupPanel.svelte';
 	import LoadStatePanel from './LoadStatePanel.svelte';
 	import WaterPanel from '../water/WaterPanel.svelte';
@@ -2730,6 +2731,8 @@
 					onclick={() => editEnvSky({ fog: null })}>Remove Fog</Button
 				>
 			</Section>
+			<!-- 36 F22 / S8: scene data, saved + replicated -->
+			<Section label="Advanced" aliases={['Selection']}><SelectionPassSetting /></Section>
 		</div>
 	{:else if $moduleSelection && !$selectedObjects.length}
 		<!-- 30 P3: a Module content row (a PROXY, not an object): whose it is, and where it

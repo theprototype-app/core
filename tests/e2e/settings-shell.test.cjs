@@ -52,7 +52,7 @@ h.run(async () => {
 	const proofs = {
 		Interface: '#allow-text-select', // 1.21 U6
 		Input: '#flow-mouse-bindings',
-		'Touch controls': '#settings-touch-header', // 1.21 U8 (own file)
+		'Touch controls': '#touch-visibility-never', // 1.21 U8 (own file; its header id lives in the sidebar row)
 		Scene: '#checkpoints-open-timeline', // 1.24 B14 + the 1.21 Loading rows below
 		Explorer: '#recycle-bin',
 		VR: '[data-tour="settings-vr-controls"]', // 1.22 U3

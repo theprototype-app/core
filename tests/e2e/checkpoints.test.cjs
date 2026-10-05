@@ -92,10 +92,10 @@ h.run(async () => {
 	fs.mkdirSync(EVIDENCE, { recursive: true });
 	await page.evaluate(() => window.__stores.themes.theme.set('dark'));
 	await page.waitForTimeout(300);
-	await page.locator('#checkpoint-timeline').screenshot({ path: EVIDENCE + '/01-timeline-compare-dark.png' });
+	await page.screenshot({ path: EVIDENCE + '/01-timeline-compare-dark.png' });
 	await page.evaluate(() => window.__stores.themes.theme.set('light'));
 	await page.waitForTimeout(300);
-	await page.locator('#checkpoint-timeline').screenshot({ path: EVIDENCE + '/02-timeline-compare-light.png' });
+	await page.screenshot({ path: EVIDENCE + '/02-timeline-compare-light.png' });
 	await page.evaluate(() => window.__stores.themes.theme.set('dark'));
 	// one picked row compares with "now"
 	await page.locator('.cp-pick').nth(0).uncheck();
@@ -229,6 +229,8 @@ h.run(async () => {
 	// the reloads above left autosave's Restore/Dismiss offer up on A; it sits where the Approve card lands
 	await page.evaluate(() => window.__stores.autosave.dismissRestore());
 	await page.waitForTimeout(300);
+	// a reload is a new Peer, so A's id from setupPage is stale — B must dial the current one
+	A.id = await page.evaluate(() => new Promise((r) => window.__stores.peers.subscribe((p) => r(p?.peer?.id))()));
 	const B = await h.setupPage(browser, 'B');
 	await h.connect(B, A);
 	await page.waitForTimeout(800);

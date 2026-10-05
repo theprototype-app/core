@@ -34,6 +34,8 @@ import { meshJobStatus, onExportBuilt, onTemplateOpen, setSceneHeart } from './c
 import { gameIdentity, ensureGameId, forkGameId } from './gameIdentity.js';
 import { exportMode } from './export/exportBoot.js';
 import { publishSlot, publishedLink, openPublishExport } from './export/exportStores.js';
+// CL-5 (37-continuity): a zero-import leaf — the scene-change feed over autosave's dirtyPulse
+import { sceneChangeFeed } from './sceneChangeFeed.js';
 
 // 28-A (roadmap #28, publish · play · remix): the seams below reach cycle-sensitive
 // modules — sessions is history-family, cameraBookmarks imports objectActions, playMode is
@@ -46,9 +48,15 @@ import { publishSlot, publishedLink, openPublishExport } from './export/exportSt
 let cameraBookmarksLib = null;
 /** @type {any} */
 let playModeLib = null;
+/** CL-5: autosave is history-family (it imports the whole snapshot machinery), so its `dirtyPulse`
+ *  arrives through the same primed dynamic import as the two above. App already loaded it at boot.
+ *  @type {any} */
+let autosaveLib = null;
 async function primeSeams() {
-	[cameraBookmarksLib, playModeLib] = await Promise.all([import('./cameraBookmarks'), import('./playMode')]);
+	[cameraBookmarksLib, playModeLib, autosaveLib] = await Promise.all([import('./cameraBookmarks'), import('./playMode'), import('./autosave')]);
 }
+/** CL-5: `sceneRevision()` / `onSceneChange(fn)` — nothing subscribes until a plugin asks */
+const sceneFeed = sceneChangeFeed(() => autosaveLib?.dirtyPulse ?? null);
 
 /**
  * Open-core plugin loader (roadmap #13 batch M1). At boot, if a cloud plugin URL is
@@ -514,6 +522,56 @@ export function makeCloudApi() {
 		/** C6: the heart for the scene on screen (play-link start card + pause menu):
 		 *  `{count, liked, toggle() → Promise<{liked, count} | null>}`, or null to remove it. */
 		setSceneHeart: (/** @type {any} */ info) => setSceneHeart(info),
+
+		// --- CL-5 continuity (roadmap 37 / R13, 37-continuity): ADDITIVE, typeof-probed, no bump ---
+		/** A counter that moves on EVERY scene change — objects, graphs, animation, looks, sky, physics,
+		 *  music, HUD, game state; local or replicated from a peer (autosave's own dirty signal). Compare
+		 *  two reads to know whether anything changed in between. 0 before boot. @returns {number} */
+		sceneRevision: () => sceneFeed.revision(),
+		/** `fn(revision)` after every scene change from now on (never for the current value). Returns
+		 *  `off`. What a room keeper autosaves from. @param {(revision: number) => void} fn */
+		onSceneChange: (/** @type {any} */ fn) => sceneFeed.onChange(fn),
+		/** The whole PROJECT as a `.tp` — the Explorer's own "Export project" bytes (exportProject: the
+		 *  manifest, every scene and library item; the stored "include versions" preference unless
+		 *  `versions` says otherwise). Never downloads, names or changes anything locally.
+		 *  @param {{versions?: boolean}} [opts]
+		 *  @returns {Promise<{blob: Blob, meta: {name: string, scenes: number, assets: number, items: number, bytes: number, appVersion: string}}>} */
+		buildProjectBundle: async ({ versions } = {}) => {
+			const { exportProject } = await import('./projectFile');
+			const { projectName } = await import('./projectManifest');
+			const { APP_VERSION } = await import('./version.js');
+			const r = await exportProject(typeof versions === 'boolean' ? { versions } : {});
+			const blob = new Blob([/** @type {BlobPart} */ (r.bytes)], { type: 'application/zip' });
+			return {
+				blob,
+				meta: { name: String(projectName() || ''), scenes: r.scenes, assets: r.assets, items: r.items, bytes: blob.size, appVersion: String(APP_VERSION) }
+			};
+		},
+		/** Fetch a remote `.tp` and OPEN it through core's own path — its format gate and its "This
+		 *  replaces your current project" confirm (openProject). Viewer-gated like loadRemoteScene.
+		 *  Resolves the open's counts, or null when refused / declined / failed (the user saw why).
+		 *  @param {{url: string, title?: string}} entry
+		 *  @returns {Promise<{scenes: number, assets: number, items: number} | null>} */
+		openRemoteProject: async ({ url, title = '' } = /** @type {any} */ ({})) => {
+			if (!url) return null;
+			const { isViewer, warnViewerReadOnly } = await import('./objectPermissions');
+			if (isViewer()) {
+				warnViewerReadOnly('View-only — ask an editor to open a project.');
+				return null;
+			}
+			try {
+				const res = await fetch(String(url));
+				if (!res.ok) {
+					showToast(`Could not fetch "${title || 'the project'}" (${res.status})`);
+					return null;
+				}
+				const { openProject } = await import('./projectFile');
+				return await openProject(await res.arrayBuffer());
+			} catch {
+				showToast(`Could not open "${title || 'the project'}" — check your connection`);
+				return null;
+			}
+		},
 
 		// --- utilities ---
 		toast: showToast

@@ -405,6 +405,10 @@ void main() {
 	vec3 lit = uSkyTop * 0.45 + uSunColor * (0.35 + 0.65 * max(dot(N, L), 0.0));
 	col = mix(col, uFoamColor * lit, clamp(foamMask, 0.0, 1.0));
 	alpha = max(alpha, foamMask);
+	// 36-fb-water F13: from INSIDE the water its own walls and surface fade with distance like
+	// everything else down there (the scene fog skips these surfaces underwater, so Visibility did
+	// nothing to them — an opaque liquid's walls never changed at all). Three's linear fog curve.
+	if (uUnderwater > 0.5) col = mix(col, uFogColor, clamp((thickness - 0.05) / max(uFogDistance - 0.05, 0.01), 0.0, 1.0));
 	gl_FragColor = vec4(col, alpha);
 	#include <tonemapping_fragment>
 	#include <colorspace_fragment>

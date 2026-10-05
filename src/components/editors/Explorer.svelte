@@ -52,6 +52,7 @@
 		duplicateFolder
 	} from '$lib/explorer';
 	import { decodeMeta } from '$lib/audioEngine';
+	import { videoMeta } from '$lib/recording/videoMeta.js';
 	import {
 		openTextEditor,
 		openImagePreview,
@@ -1003,6 +1004,7 @@
 	const KIND_ICONS: Record<string, string> = {
 		image: 'image',
 		audio: 'music',
+		video: 'video', // 36-share: a recording
 		text: 'file-text',
 		object: 'box',
 		prefab: 'boxes',
@@ -1014,6 +1016,7 @@
 	const KIND_LABELS: Record<string, string> = {
 		image: 'Images',
 		audio: 'Audio',
+		video: 'Videos',
 		text: 'Text and config',
 		object: '3D models',
 		prefab: 'Prefabs',
@@ -1021,10 +1024,11 @@
 	};
 	/** R22-R7: the filter's fixed order. Every kind the Explorer can hold, so the menu is
 	 * a statement about the app rather than about this library's current contents. */
-	const FILTER_KINDS = ['image', 'object', 'audio', 'text', 'scene', 'prefab'];
+	const FILTER_KINDS = ['image', 'object', 'audio', 'video', 'text', 'scene', 'prefab'];
 	const KIND_COLORS: Record<string, string> = {
 		image: 'ico-image',
 		audio: 'ico-audio',
+		video: 'ico-image', // a moving picture takes the picture tint
 		text: 'ico-doc',
 		object: 'ico-object',
 		prefab: 'ico-prefab',
@@ -1640,6 +1644,9 @@
 				} else if (item.kind === 'audio') {
 					const meta = await decodeMeta(blob);
 					itemDetails = meta.duration.toFixed(2) + ' s · ' + meta.channels + ' ch';
+				} else if (item.kind === 'video') {
+					const meta = await videoMeta(blob);
+					if (meta && selItem?.id === item.id) itemDetails = meta.duration.toFixed(2) + ' s · ' + meta.width + ' × ' + meta.height;
 				}
 			} catch {}
 		});
@@ -6154,6 +6161,18 @@
 				name: item.name,
 				onClose: () => gridEl?.focus()
 			});
+		} else if (item.kind === 'video') {
+			// 36-share: a recording plays in the same window (a <video> face)
+			const blob = await itemBlob(item.id);
+			if (blob)
+				openFilePreview({
+					title: item.name,
+					kind: 'video',
+					itemId: item.id,
+					name: item.name,
+					url: URL.createObjectURL(blob),
+					onClose: () => gridEl?.focus()
+				});
 		} else if (item.kind === 'object' && !item.packEntry) {
 			// R22 round 12 (user): "double click on 3d objects should open same preview as
 			// when opening image". ONE window for every kind, so the arrows walk from a

@@ -29,13 +29,13 @@ import { safeStorage } from './safeStorage';
  * `.tpscene` opens a world, so neither belongs in a walk through pictures — stepping onto
  * one would either do nothing or replace the scene, and both are worse than skipping it.
  */
-export const PREVIEW_KINDS = ['image', 'audio', 'object', 'prefab'];
+export const PREVIEW_KINDS = ['image', 'audio', 'video', 'object', 'prefab'];
 
 /**
  * Which face the window draws for a row. Returns null for anything it cannot show, which
  * is also what excludes that row from the walk.
  * @param {any} entry a grid entry `{kind: 'folder', folder}` or `{kind: 'item', item}`
- * @returns {'folder'|'image'|'audio'|'object'|null}
+ * @returns {'folder'|'image'|'audio'|'video'|'object'|null}
  */
 export function previewFaceOf(entry) {
 	if (!entry) return null;
@@ -47,6 +47,7 @@ export function previewFaceOf(entry) {
 	if (item?.packEntry || item?.sceneEntry || item?.remoteItem || item?.deletedEntry) return null;
 	if (item?.kind === 'image') return 'image';
 	if (item?.kind === 'audio') return 'audio';
+	if (item?.kind === 'video') return 'video';
 	if (item?.kind === 'object' || item?.kind === 'prefab') return 'object';
 	return null;
 }

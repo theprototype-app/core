@@ -61,6 +61,7 @@
 		Undo2,
 		Ungroup,
 		Users,
+		Video,
 		Workflow,
 		Wrench,
 		X
@@ -123,6 +124,7 @@
 		'undo-2': Undo2,
 		ungroup: Ungroup,
 		users: Users,
+		video: Video,
 		workflow: Workflow,
 		wrench: Wrench,
 		x: X

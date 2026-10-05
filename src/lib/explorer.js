@@ -70,6 +70,8 @@ const EXTENSIONS = {
 	// 23-D1: the containers the app's own recorder writes (MediaRecorder: webm/opus,
 	// ogg/opus, mp4) - decoding is decodeAudioData, which handles what the browser records
 	audio: ['mp3', 'wav', 'ogg', 'webm', 'weba', 'opus', 'm4a', 'flac'],
+	// 36-share: a dropped .webm stays audio (above wins); the recorder stamps its own webm `video`
+	video: ['mp4', 'm4v', 'mov'],
 	text: ['txt', 'json', 'md', 'cfg', 'js'],
 	object: ['glb', 'gltf', 'obj', 'stl', 'fbx'],
 	// 21-F4: a LEVEL — a .tpscene zip the travel node loads by content hash. Its own
@@ -604,7 +606,7 @@ async function writeItemNow(buffer, name, folderId, meta) {
  * through `importFiles` / the duplicate resolver instead.
  * @param {ArrayBuffer} buffer @param {string} name
  * @param {string | null} folderId
- * @param {{imported?: boolean, allowDuplicate?: boolean, id?: string, share?: string, owner?: any, thumbnail?: string | null}} [opts]
+ * @param {{imported?: boolean, allowDuplicate?: boolean, id?: string, share?: string, owner?: any, thumbnail?: string | null, kind?: string, type?: string}} [opts]
  *   loose-scenes fix: stamp provenance — see `writeItem`. Absent means "this app minted
  *   it", so nothing already stored changes. `allowDuplicate` (24-C1): skip the hash dedupe
  *   and mint a SECOND record for bytes we already hold — a copy is a record, its bytes are
@@ -613,6 +615,8 @@ async function writeItemNow(buffer, name, folderId, meta) {
  *   as-is (idempotent, the `createFolder` rule). `share`/`owner` ride onto the record.
  *   `thumbnail` (24-C3): a scene copy carries its source card's picture rather than
  *   decoding one (a .tpscene decodes to none anyway); undefined = derive as before.
+ *   `kind` (36-share): the record's kind when the NAME cannot say it — a recorded `.webm` is a
+ *   `video`, while `kindOf` maps that extension to audio (the mic recorder writes webm too).
  */
 export async function addItemFromBytes(buffer, name, folderId = null, opts = {}) {
 	const wantId = String(opts.id ?? '').trim();
@@ -648,7 +652,7 @@ async function mintOnce(id, fn) {
 
 /** the body of addItemFromBytes, once any id lock is held
  * @param {ArrayBuffer} buffer @param {string} name @param {string | null} folderId
- * @param {{imported?: boolean, allowDuplicate?: boolean, id?: string, share?: string, owner?: any, thumbnail?: string | null}} opts
+ * @param {{imported?: boolean, allowDuplicate?: boolean, id?: string, share?: string, owner?: any, thumbnail?: string | null, kind?: string, type?: string}} opts
  * @param {string} wantId */
 async function addItemFromBytesNow(buffer, name, folderId, opts, wantId) {
 	if (wantId) {
@@ -670,7 +674,11 @@ async function addItemFromBytesNow(buffer, name, folderId, opts, wantId) {
 			return shelved;
 		}
 	}
-	const thumb = opts.thumbnail !== undefined ? { thumbnail: opts.thumbnail } : {};
+	const thumb = {
+		...(opts.thumbnail !== undefined ? { thumbnail: opts.thumbnail } : {}),
+		...(opts.kind ? { kind: opts.kind } : {}),
+		...(opts.type ? { type: opts.type } : {})
+	};
 	const item =
 		opts.allowDuplicate || wantId
 			? await writeItemNow(buffer, name, folderId, {

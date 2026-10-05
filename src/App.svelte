@@ -65,6 +65,7 @@
   // 36-export: the Publish / Export modal (core owns the shell + Export tab; a cloud plugin mounts
   // Publish into it) and the exported game's boot (inert on every normal page load)
   import { publishExportOpen } from '$lib/export/exportStores.js'
+  import { recordingOpen, recordingState } from '$lib/recording/recordingStores.js'
   import { exportMode } from '$lib/export/exportBoot.js'
   import { startExportRuntime } from '$lib/export/exportRuntime.js'
   import { objectsGroup, globalRenderer } from './stores/sceneStore'
@@ -403,6 +404,10 @@ import { startMusicToolbox } from './lib/musicToolbox'
      the boot nothing and the editor runs exactly as before until somebody asks to export -->
 {#if $publishExportOpen}
 {#await import('./components/menu/PublishExportModal.svelte') then m}<m.default />{/await}
+{/if}
+<!-- 36-share: Tools ▸ Recording — mounted while open or while a recording runs (its progress bar) -->
+{#if $recordingOpen || $recordingState.status !== 'idle'}
+{#await import('./components/menu/RecordingDialog.svelte') then m}<m.default />{/await}
 {/if}
 <DungeonMinimap />
 <StatsOverlay />

@@ -448,9 +448,16 @@ export function makeCloudApi() {
 		 *  (the CloudSlot shape); null unmounts. A plugin that finds this seam should NOT also
 		 *  mount a `mountSidebar` row — core draws the one "Publish / Export" burger item. */
 		mountPublish: (/** @type {any} */ mountFn) => publishSlot.set(typeof mountFn === 'function' ? mountFn : null),
-		/** Open the modal on a tab ('publish' | 'export' | 'settings'; default: Publish when a
-		 *  plugin mounted it, else Export). */
+		/** Open the modal on a tab ('publish' | 'export' | 'gallery' | 'settings'; default: Publish
+		 *  when a plugin mounted it, else Export). */
 		openPublishExport: (/** @type {string | undefined} */ tab) => openPublishExport(tab),
+		/** 36-share (B13): the community-gallery submission zip in the repo's own shape —
+		 *  `<slug>/scene.tpscene + thumb + entry.json` + `gallery-row.json` + HOW-TO-SUBMIT.txt —
+		 *  so the plugin's GitHub destination and core's Gallery tab build the SAME files.
+		 *  `{title, author, license, description?, tags?, slug?, thumb?: {blob, name}}` →
+		 *  `{ok: true, blob, fileName, slug, entry, row, rowText, uploadUrl, …} | {ok: false, errors}`.
+		 *  It sends nothing; `uploadUrl` is GitHub's upload page for the person to open. */
+		buildGallerySubmission: async (/** @type {any} */ meta) => (await import('./export/gallerySubmit.js')).buildGallerySubmission(meta),
 		/** What the plugin just published from this scene — `{id, title, playUrl, pageUrl}` — so
 		 *  the Export tab's Embed preset can point its iframe at the play link. Null clears. */
 		setPublishedLink: (/** @type {any} */ info) =>

@@ -38,6 +38,10 @@ export const DEBUG_HOOKS = [
 	['tours', () => import('./tours/index.js')],
 	['toursBuiltin', () => import('./tours/builtin.js')],
 	['tourVR', () => import('./tours/vrPanel.js')],
+	// 36-share (B13): the recorder + its stores
+	['recording', () => import('./recording/recorder.js')],
+	['recordingStores', () => import('./recording/recordingStores.js')],
+	['webmDuration', () => import('./recording/webmDuration.js')],
 	// 36 A2: the offerSession decision (xrOfferMode, xrOfferEnabled, xrOfferDebug)
 	['xrOffer', () => import('./xrOffer')],
 	['perfLiveSource', () => import('./perf/liveSource')],

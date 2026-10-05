@@ -78,6 +78,8 @@ export const DEBUG_HOOKS = [
 	['physics', () => import('./physics')],
 	// 36-sim: buoyancy/jiggle/fluid/splash state
 	['sim', () => import('./sim/debug.js')],
+	// 36-fb-water S8: the undoable "Start simulation on load"
+	['simOnLoad', () => import('./sim/simOnLoadHistory.js')],
 	['joints', () => import('./joints')],
 	['possess', () => import('./possess')],
 	['handModels', () => import('./handModels')],

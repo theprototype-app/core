@@ -12,6 +12,7 @@
 	import Section from '../ui/Section.svelte';
 	import CameraHoldSetting from './scene/CameraHoldSetting.svelte';
 	import SelectionPassSetting from './scene/SelectionPassSetting.svelte'; // 36 F22 / S8
+	import SimOnLoadSetting from './scene/SimOnLoadSetting.svelte';
 	import LodGroupPanel from './LodGroupPanel.svelte';
 	import LoadStatePanel from './LoadStatePanel.svelte';
 	import WaterPanel from '../water/WaterPanel.svelte';
@@ -1920,6 +1921,7 @@
 					</button>
 				</div>
 				<CameraHoldSetting /><!-- 36 L2: scene data, saved + replicated -->
+				<SimOnLoadSetting /><!-- 36-fb-water F14: scene data, saved + replicated -->
 				<p class="ui-section-label" data-anchor="Saved views">Saved views</p>
 				<div class="ui-row items-center gap-2">
 					<button id="bookmark-save" class="ui-chip bg-gray-600 text-gray-200 hover:bg-gray-500" onclick={() => saveBookmark()}>

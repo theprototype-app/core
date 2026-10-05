@@ -44,6 +44,10 @@ const MIN_DENSITY = 10;
 const MAX_DENSITY = 20000;
 const MAX_MULTIPLIER = 10;
 const HEAVE_DRAG = 4;
+/** 36-fb-water F12: ADDED MASS — a body accelerating through water drags some water with it
+ * (a sphere: half its displaced volume). Without it a foam block released at the pool floor
+ * reached 5.7 g and left the water like a rocket (measured: 2.9 m above the surface). */
+const ADDED_MASS = 0.5;
 
 /**
  * The ONE boundary for `userData.physics.floats` (replicated bytes from a peer or a
@@ -147,7 +151,7 @@ function rotate(q, x, y, z, out) {
  * (`kind`, half extents, body-local translation + rotation).
  * @param {{kind: string, he: {x: number, y: number, z: number}, t: number[], q: number[]}[]} parts
  * @param {number} [res]
- * @returns {{points: Float32Array, weights: Float32Array, volume: number, cellH: number}}
+ * @returns {{points: Float32Array, weights: Float32Array, volume: number, cellH: number, span: number}}
  */
 export function bodySamples(parts, res = 3) {
 	/** @type {number[]} */ const pts = [];
@@ -168,12 +172,22 @@ export function bodySamples(parts, res = 3) {
 	}
 	const weights = new Float32Array(vols.length);
 	for (let i = 0; i < vols.length; i++) weights[i] = volume > 0 ? vols[i] / volume : 1 / vols.length;
-	return { points: new Float32Array(pts), weights, volume, cellH: Number.isFinite(cellH) ? cellH : 0.1 };
+	// 36-fb-water F15: the hull's horizontal size (the waves shorter than it average out)
+	let x0 = Infinity, x1 = -Infinity, z0 = Infinity, z1 = -Infinity;
+	for (const part of parts) {
+		const r = Math.hypot(part.he.x, part.he.z);
+		x0 = Math.min(x0, part.t[0] - r);
+		x1 = Math.max(x1, part.t[0] + r);
+		z0 = Math.min(z0, part.t[2] - r);
+		z1 = Math.max(z1, part.t[2] + r);
+	}
+	const span = parts.length ? Math.max(x1 - x0, z1 - z0) * 0.75 : 0;
+	return { points: new Float32Array(pts), weights, volume, cellH: Number.isFinite(cellH) ? cellH : 0.1, span };
 }
 
 /**
  * @typedef {{surfaceY: number, flow?: number[] | null, density?: number,
- *   linearDrag?: number, angularDrag?: number, volume?: any}} WaterHit
+ *   linearDrag?: number, angularDrag?: number, heaveDrag?: number, volume?: any}} WaterHit
  */
 
 /**
@@ -181,8 +195,8 @@ export function bodySamples(parts, res = 3) {
  * writes the result into `out` (no allocation on the hot path).
  * @param {{pos: number[], quat: number[], com: number[], linvel: number[], angvel: number[],
  *   mass: number, gravity: number, dt: number}} body  rapier state (world frame)
- * @param {{points: Float32Array, weights: Float32Array, volume: number, cellH: number}} samples
- * @param {(x: number, y: number, z: number) => WaterHit | null} query  W1's waterVolumes.query, adapted
+ * @param {{points: Float32Array, weights: Float32Array, volume: number, cellH: number, span?: number}} samples
+ * @param {(x: number, y: number, z: number, span?: number) => WaterHit | null} query  W1's waterVolumes.query, adapted
  * @param {{off: boolean, density: number | 'mass', multiplier: number}} floats normalized
  * @param {{impulse: number[], torque: number[], linvel: number[], angvel: number[],
  *   submerged: number, volume: any, surfaceY: number}} out
@@ -200,7 +214,7 @@ export function buoyancyStep(body, samples, query, floats, out) {
 	let ix = 0, iy = 0, iz = 0;
 	let tx = 0, ty = 0, tz = 0;
 	let fx = 0, fy = 0, fz = 0; // submerged-weighted flow
-	let linDrag = 0, angDrag = 0;
+	let linDrag = 0, angDrag = 0, heave = 0;
 	let submerged = 0;
 	/** @type {WaterHit | null} */ let lastHit = null;
 	for (let i = 0, s = 0; i < pts.length; i += 3, s++) {
@@ -211,7 +225,7 @@ export function buoyancyStep(body, samples, query, floats, out) {
 		// the sample is a slab cellH tall centred on the point: ask about its BOTTOM, so
 		// a slab whose centre is still dry but whose lower half is wet counts (W1's query
 		// answers null above the surface)
-		const hit = query(wx, wy - samples.cellH * 0.5, wz);
+		const hit = query(wx, wy - samples.cellH * 0.5, wz, samples.span ?? 0);
 		if (!hit) continue;
 		const frac = Math.min(1, Math.max(0, (hit.surfaceY - wy) / samples.cellH + 0.5));
 		if (frac <= 0) continue;
@@ -233,7 +247,19 @@ export function buoyancyStep(body, samples, query, floats, out) {
 			fz += flow[2] * share;
 		}
 		linDrag += (hit.linearDrag ?? 1) * share;
+		heave += (hit.linearDrag ?? 1) * (hit.heaveDrag ?? HEAVE_DRAG) * share;
 		angDrag += (hit.angularDrag ?? 1) * share;
+	}
+	// ADDED MASS (36-fb-water): the net vertical acceleration is g (rS - 1) / (1 + Ca rS), not
+	// g (rS - 1) — r = rho_water / rho_body, S = the submerged share. Rapier adds -g itself, so the
+	// buoyant impulse is scaled by (1 + Ca) / (1 + Ca rS): exactly 1 at rest (the draft is
+	// unchanged), < 1 for a light body (it rises slower), > 1 for a heavy one (it sinks slower).
+	if (submerged > 0 && lastHit) {
+		const rS = ((lastHit.density ?? WATER_DENSITY) / rhoBody) * submerged * floats.multiplier;
+		const f = (1 + ADDED_MASS) / (1 + ADDED_MASS * rS);
+		iy *= f;
+		tx *= f;
+		tz *= f;
 	}
 	out.impulse[0] = ix;
 	out.impulse[1] = iy;
@@ -264,7 +290,8 @@ export function buoyancyStep(body, samples, query, floats, out) {
 	// water out of the way (added mass + the waves it radiates), and with the plain drag
 	// a crate kept bouncing for ten seconds. HEAVE_DRAG x the drag puts a 1 m crate near
 	// critical damping (ω = sqrt(g / draft) ≈ 4 rad/s).
-	const kv = 1 - Math.exp(-linDrag * HEAVE_DRAG * body.dt);
+	// (36-fb-water: the water's own "Bob damping" scales it; the default is HEAVE_DRAG)
+	const kv = 1 - Math.exp(-heave * body.dt);
 	out.linvel[0] = body.linvel[0] + (flowX - body.linvel[0]) * kl;
 	out.linvel[1] = body.linvel[1] + (flowY - body.linvel[1]) * kv;
 	out.linvel[2] = body.linvel[2] + (flowZ - body.linvel[2]) * kl;
@@ -298,8 +325,8 @@ const scratchState = { pos: [0, 0, 0], quat: [0, 0, 0, 1], com: [0, 0, 0], linve
  * linvel/angvel/mass + the setters) — the ONE integration both physics.js and the
  * headless proof call, so the proof measures the shipped path.
  * @param {any} rb rapier RigidBody
- * @param {{points: Float32Array, weights: Float32Array, volume: number, cellH: number}} samples
- * @param {(x: number, y: number, z: number) => WaterHit | null} query
+ * @param {{points: Float32Array, weights: Float32Array, volume: number, cellH: number, span?: number}} samples
+ * @param {(x: number, y: number, z: number, span?: number) => WaterHit | null} query
  * @param {{off: boolean, density: number | 'mass', multiplier: number}} floats
  * @param {number} gravity world gravity Y (negative)
  * @param {number} dt substep seconds

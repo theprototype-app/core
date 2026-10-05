@@ -655,7 +655,7 @@ export async function objectParameters(data) {
             else delete mesh.userData.particles;
             pokeScene();
         }
-    } else if (data.parameter == 'water' || data.parameter == 'bubbles') {
+    } else if (data.parameter == 'water' || data.parameter == 'bubbles' || data.parameter == 'pour') {
         // 36-water: userData.water is a water volume (W1), userData.bubbles a standalone
         // bubble emitter; the water renderer re-scans on the poke. null = removed
         let mesh = sceneObjects.getObjectByProperty('uuid', data.uuid);

@@ -111,7 +111,13 @@ describe('buoyancyStep', () => {
 		body.com = [0, -2, 0];
 		expect(buoyancyStep(body, samples, pool(), normalizeFloats({ density: 250 }), out)).toBe(true);
 		expect(out.submerged).toBeCloseTo(1, 5);
-		expect(out.impulse[1]).toBeCloseTo(2 * 10 * (1000 / 250), 3); // m g rho_w/rho_b
+		// m g rho_w/rho_b, scaled by the added mass (36-fb-water): (1 + 0.5) / (1 + 0.5 r)
+		expect(out.impulse[1]).toBeCloseTo(2 * 10 * (1000 / 250) * (1.5 / 3), 3);
+		// net acceleration = g (r - 1) / (1 + Ca r): 10 * 3 / 3 = 10 m/s^2 up (raw: 30)
+		expect(out.impulse[1] / 2 - 10).toBeCloseTo(10, 3);
+		// a heavy body (r = 0.4) sinks at g (0.4 - 1) / 1.2 = -5 m/s^2, not -6
+		buoyancyStep(body, samples, pool(), normalizeFloats({ density: 2500 }), out);
+		expect(out.impulse[1] / 2 - 10).toBeCloseTo(-5, 3);
 		// symmetric body, upright: no torque
 		expect(Math.abs(out.torque[0]) + Math.abs(out.torque[2])).toBeLessThan(1e-6);
 	});

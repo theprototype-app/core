@@ -21,6 +21,8 @@ module.exports = {
 	tags: ['physics', 'jiggle', 'toy'],
 	env: { preset: 'studio', background: { top: '#f6e8f0', bottom: '#e9d2e2' } },
 	view: { pos: [0, 4.2, 8.5], target: [0, 1, 0] },
+	// 36-fb-water F14: a simulation scene runs when it opens (Configure Scene ▸ Start simulation on load)
+	physics: { simOnLoad: true },
 	objects: [
 		{ type: 'box', name: 'Floor', color: 0xf3e3ec, size: [12, 0.4, 9], pos: [0, -0.2, 0], roughness: 0.9, physics: { mode: 'static', friction: 0.8 } },
 		{ type: 'box', name: 'Back wall', color: 0xf0d6e4, size: [12, 5, 0.3], pos: [0, 2.5, -4.6], physics: { mode: 'static' } },

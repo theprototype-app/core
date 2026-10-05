@@ -50,10 +50,11 @@ export function showPickPreview(scene, target, x, y, index, of) {
 	pickCycleHint.set({ x, y, index, of, name: pickName(target), mode: 'preview' });
 }
 
-/** Hide the preview box and chip. */
+/** Hide the preview box and the PREVIEW chip — a chip confirming an Alt+click stays for its
+ * moment (releasing Alt right after the click must not take the confirmation with it). */
 export function hidePickPreview() {
 	if (box) box.visible = false;
-	pickCycleHint.set(null);
+	pickCycleHint.update((hint) => (hint?.mode === 'picked' ? hint : null));
 }
 
 /**

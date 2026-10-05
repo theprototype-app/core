@@ -56,7 +56,7 @@ h.run(async () => {
 					phase: job ? job.phase : null,
 					bar: !!document.querySelector('#scene-load-bar'),
 					objs: group?.children.length ?? 0,
-					held: s.sceneLoader.framesHeld(),
+					held: s.sceneLoader.framesHeld?.() ?? null,
 					water: wd.entries.map((e) => (e.visible ? 'V' : e.ready ? 'r' : '-')).join(''),
 					fluid: s.sim.fluidDebug().length
 				});
@@ -73,11 +73,12 @@ h.run(async () => {
 			const bytes = Uint8Array.from(atob(b64), (c) => c.charCodeAt(0));
 			const s = w.__stores;
 			// the person route: the click claims the load, then the bytes arrive (as from the CDN)
-			const job = s.sceneLoader.claimLoad('Island ocean');
+			// (claimLoad is absent on 1.23.0 — the before-run then loads the plain way)
+			const job = s.sceneLoader.claimLoad ? s.sceneLoader.claimLoad('Island ocean') : undefined;
 			w.__rec = { ...w.__rec, on: true, t0: performance.now(), frames: [], longtasks: [] };
 			await new Promise((r) => setTimeout(r, 300));
 			const payload = await s.sessions.readSessionZip(bytes.buffer);
-			s.sessions.requestLoadPayload(payload, { job });
+			s.sessions.requestLoadPayload(payload, job ? { job } : undefined);
 		}, b64);
 	};
 

@@ -252,7 +252,16 @@ h.run(async () => {
 	// ---- 5: Fluid tank toy --------------------------------------------------------------------
 	if (fs.existsSync(FLUID)) {
 		await loadScene(page, FLUID);
-		// look at the duck from the side, level with it, so the tank's wall is in front of it
+		// the ducks are SAVED above the tank (y 1.6 / 1.7; the glass spans 0.6-1.5) and drop into
+		// the water when the simulation runs — run it until Duck 1 floats inside the glass
+		await page.evaluate(() => window.__stores.physics.toggleSimulation());
+		await h.eventually(
+			() => centreOf(page, 'Duck 1'),
+			(c) => c[1] < 1.42,
+			'premise: Duck 1 has dropped into the tank (simulation running)',
+			15000
+		);
+		await page.waitForTimeout(2500); // let it settle on the surface
 		const duck = await centreOf(page, 'Duck 1');
 		const tank = await centreOf(page, 'Water tank');
 		await page.evaluate(({ duck, tank }) => {
@@ -279,6 +288,7 @@ h.run(async () => {
 			await page.keyboard.up('Alt');
 			h.check(first === 'Water tank' && second === 'Duck 1', 'Alt+click cycles tank → duck (' + first + ' → ' + second + ')');
 		}
+		await page.evaluate(() => window.__stores.physics.toggleSimulation());
 	} else console.log('SKIP 5: no ' + FLUID);
 
 	h.check(h.pageErrors(A).length === 0, 'no page errors (' + h.pageErrors(A).join(' | ') + ')');

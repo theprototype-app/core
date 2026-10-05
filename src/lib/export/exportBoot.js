@@ -19,6 +19,7 @@
  * @typedef {{
  *   version: number,
  *   id: string,
+ *   gameId: string,
  *   title: string,
  *   scene: string,
  *   packsBase: string,
@@ -53,6 +54,8 @@ export function normalizeExportConfig(raw) {
 	return {
 		version: Number(raw.version) || 1,
 		id: String(raw.id ?? '').replace(/[^\w-]/g, '').slice(0, 64),
+		// 36-community (C4): the game's permanent id ('' in an export made before game ids)
+		gameId: String(raw.gameId ?? '').replace(/[^\w-]/g, '').slice(0, 64),
 		title: String(raw.title ?? '').slice(0, 120),
 		scene: relPath(raw.scene, 'scene.tpscene'),
 		packsBase: relPath(raw.packsBase, ''),

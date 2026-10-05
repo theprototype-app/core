@@ -85,11 +85,20 @@ export const willEnterAR = derived(
  */
 function readEmbedBoot() {
 	try {
-		if (typeof location === 'undefined') return { on: false, scene: '' };
+		if (typeof location === 'undefined') return { on: false, scene: '', src: '', build: '' };
 		const q = new URLSearchParams(location.search);
-		return { on: q.get('embed') === '1', scene: q.get('s') || '' };
+		// 36-community (C4): the frame says where the visit came from (`src` = play | embed) and which
+		// published version it shows (`b` = v<n>) — the badge inside counts both
+		const src = q.get('src') || '';
+		const build = q.get('b') || '';
+		return {
+			on: q.get('embed') === '1',
+			scene: q.get('s') || '',
+			src: /^[a-z]{1,16}$/.test(src) ? src : '',
+			build: /^[A-Za-z0-9_-]{1,64}$/.test(build) ? build : ''
+		};
 	} catch {
-		return { on: false, scene: '' };
+		return { on: false, scene: '', src: '', build: '' };
 	}
 }
 const embedBoot = readEmbedBoot();
@@ -98,6 +107,9 @@ const embedBoot = readEmbedBoot();
 export const embedMode = writable(embedBoot.on || exportMode);
 /** the `?s=<id>` the embed opened with ('' when none) — the corner link's target */
 export const embedSceneId = embedBoot.scene;
+/** 36-community (C4): the visit source and published build the frame was opened with ('' when none) */
+export const embedSource = embedBoot.src;
+export const embedBuild = embedBoot.build;
 /** the same scene in the full app: `/?s=<id>`, or `/` when the embed carried no scene */
 export function embedOpenUrl() {
 	return embedSceneId ? `/?s=${encodeURIComponent(embedSceneId)}` : '/';

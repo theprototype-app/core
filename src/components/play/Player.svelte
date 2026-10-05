@@ -5,7 +5,7 @@
     import PointerLockControls from './PointerLockControls.svelte'
     import AvatarRig from './AvatarRig.svelte'
     import { playerCam, peerHands, worldRig, peerHandStyle } from '../../stores/sceneStore'
-    import { userdata, peers } from '../../stores/appStore'
+    import { userdata, peers, username } from '../../stores/appStore'
     // P2b: a peer standing in ANOTHER scene is looking at a different world, so their
     // avatar and hands have no business floating in this one. Same evidence rule as
     // the Watch gate: an unknown or unnamed scene on either side is not evidence.
@@ -17,6 +17,9 @@
     import { peerHandModels, handModelCache } from '$lib/handModels'
     import { colocatedPeers, colocatedGhostHands, GHOST_HAND_OPACITY } from '$lib/colocationPresence'
     import { Text } from '@threlte/extras'
+    // 36-avatars: a side whose hand the rigged body holds with its IK draws no floating box (the
+    // body's hand IS the marker); the customise panel's preview of YOUR character renders here too
+    import { avatarIkPeers, avatarPreview } from '$lib/avatars/avatarState'
 
     // CO5 — A COLOCATED PEER IS RENDERED AS A GHOST, and the whole rule lives in this
     // component because it is PRESENTATION. `$colocatedPeers` is a peer id set derived
@@ -169,7 +172,7 @@
                       </T.Mesh>
                     {/each}
                   {/if}
-                {:else}
+                {:else if !$avatarIkPeers[user[0]]?.[side]}
                   <T.Mesh>
                     <T.BoxGeometry args={[0.06, 0.06, 0.14]} />
                     <T.MeshStandardMaterial
@@ -196,3 +199,12 @@
       {/if}
   {/each}
   </T.Group>
+
+  <!-- 36-avatars: YOUR character, while the customise panel is open (local, scene root) -->
+  {#if $avatarPreview}
+    <AvatarRig
+      user={['avatar-preview', $username || $userdata.find((u) => u[0] == $peers.peer?.id)?.[1] || 'You', $avatarPreview.photo, null, null, $avatarPreview.config]}
+      lookId={$peers.peer?.id ?? ''}
+      preview={{ position: $avatarPreview.position, yaw: $avatarPreview.yaw }}
+    />
+  {/if}

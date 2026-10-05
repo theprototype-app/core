@@ -19,6 +19,7 @@
 	import { trackpadMode } from '$lib/trackpadNav';
 	import { helpersInPlay } from '$lib/helperLayer';
 	import { safeStorage } from '$lib/safeStorage';
+	import { openRecording } from '$lib/recording/recordingStores.js';
 
 	// Scene.svelte routes right-TAPS here (77): empty viewport → this menu with
 	// the clicked ground point; an object under the cursor → its own context
@@ -167,6 +168,13 @@
 					checked: $drawMode,
 					tooltip: 'Drag on surfaces to draw 3D strokes (Esc exits)',
 					action: toggleDrawMode
+				},
+				{
+					// 36-share (B13): a turntable or flythrough of the viewport, as a webm
+					label: 'Recording…',
+					icon: 'video',
+					tooltip: 'Record a turntable or a flythrough of the viewport (webm)',
+					action: () => openRecording()
 				},
 				{
 					label: $measureMode ? 'Stop measuring' : 'Measure distance',

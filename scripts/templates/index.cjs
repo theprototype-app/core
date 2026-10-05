@@ -40,7 +40,9 @@ const TEMPLATE_FILES = [
 	'island-ocean',
 	// 36-sim: Jiggle + Fluid tank examples
 	'jelly-room',
-	'fluid-tank-toy'
+	'fluid-tank-toy',
+	// 36-backlog-21c (21-C8): Race (the core `race` module drives it)
+	'race'
 ];
 
 /** games whose def is OWNED BY ITS MODULE (modules/<id>/<id>.def.json, read by moduleDef) */

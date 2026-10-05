@@ -1,6 +1,6 @@
 {
 	"name": "theprototype.app",
-	"version": "1.23.0",
+	"version": "1.24.0",
 	"license": "MIT",
 	"repository": {
 		"type": "git",
@@ -63,6 +63,7 @@
 		"postprocessing": "^6.39.5",
 		"svelte-hamburgers": "^5.0.0",
 		"three": "^0.186.1",
+		"three-bvh-csg": "^0.0.18",
 		"three-mesh-bvh": "^0.9.15"
 	},
 	"engines": {

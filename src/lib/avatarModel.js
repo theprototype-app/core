@@ -1,8 +1,13 @@
 // Avatar model (129): pure config resolution + per-shape geometry helpers,
-// shared by AvatarRig (rendering) and CharacterModal (editing). The config
+// shared by AvatarRig (rendering) and CharacterPanel (editing). The config
 // rides userdata slot 5 and replicates like any avatar field.
 
 export const AVATAR_DEFAULTS = {
+	// 36-avatars: a rigged character ('auto' = picked from the peer id, 'classic' = the floating head),
+	// its head ('character' = its own, or a stylised shape), and an outfit colour ('' = its own colours)
+	character: 'auto',
+	head: 'character',
+	outfit: '',
 	body: '#4f83cc',
 	hat: 'none',
 	face: 'label',

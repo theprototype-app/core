@@ -7,7 +7,8 @@ import { contentBase, fetchIndex, onContentStale } from './contentBase';
 import { claimLoad, isLive, endLoad, updateLoad } from './sceneLoader';
 // 28-A6: the Community source a cloud plugin may install (store-only, no cycle — the
 // objectPermissions import above already reaches cloudHooks' family)
-import { communityProvider } from './cloudHooks';
+import { communityProvider, notifyTemplateOpen } from './cloudHooks';
+import { primeLoadOrigin } from './gameIdentity.js';
 // 33 (L3): the Clear scene modal's setup check and full clear (see confirmClearScene)
 import * as sceneSwitch from './sceneSwitch';
 
@@ -210,6 +211,11 @@ function normalizeProviderEntry(e) {
 	if (e?.href) extra.href = String(e.href);
 	if (e?.likeCount != null && Number.isFinite(Number(e.likeCount))) extra.likeCount = Number(e.likeCount);
 	if (e?.remixOf) extra.remixOf = typeof e.remixOf === 'object' ? e.remixOf : { id: String(e.remixOf) };
+	// 36-community: the viewer's own heart (C6), "this is mine" for the Mine chip (C5), and one
+	// line the provider wants on the card (an author's "Hidden by moderation: …")
+	if (typeof e?.liked === 'boolean') extra.liked = e.liked;
+	if (e?.mine === true) extra.mine = true;
+	if (e?.notice) extra.notice = String(e.notice).slice(0, 200);
 	return { ...row, ...extra };
 }
 
@@ -279,7 +285,7 @@ export async function loadCommunityGallery(force = false) {
  */
 export async function loadCommunityEntry(entry) {
 	const provider = get(communityProvider);
-	if (!provider || typeof provider.load !== 'function') return loadRemoteScene(entry);
+	if (!provider || typeof provider.load !== 'function') return loadRemoteScene(entry, { origin: 'community' });
 	loadingSlug.set(entry?.slug ?? null);
 	try {
 		return (await provider.load(entry)) === true;
@@ -294,9 +300,15 @@ export async function loadCommunityEntry(entry) {
 /**
  * Fetch a remote .tpscene and load it through the existing session path
  * (format confirm → backup stash → replicated replace / peer proposal).
- * @param {any} entry a normalized entry @returns {Promise<boolean>} applied
+ * 36-community (C4): a remote scene is somebody else's game — `opts.origin` says which tab it came
+ * from, and the load is primed as a REMIX (the file's game id stays while it is only played and
+ * forks at the first save) unless `keepGameId` (the owner opening their own published scene). A
+ * template remembers its slug as the game's `template`; a Games-tab start is one "template open".
+ * @param {any} entry a normalized entry
+ * @param {{origin?: string, keepGameId?: boolean}} [opts]
+ * @returns {Promise<boolean>} applied
  */
-export async function loadRemoteScene(entry) {
+export async function loadRemoteScene(entry, opts = {}) {
 	// viewers can't replace the shared scene — peers drop the broadcasts (cloud
 	// capability gate), which would leave this client desynced. Inert without a
 	// roles plugin (isViewer() is false when no rolesInfo).
@@ -328,7 +340,13 @@ export async function loadRemoteScene(entry) {
 			endLoad(job);
 			return false; // V4: user declined a newer-format confirm — silent
 		}
-		return await requestLoadSession(payload.id, { job });
+		const origin = String(opts.origin || '');
+		const isTemplate = origin === 'games' || origin === 'general' || origin === 'examples';
+		primeLoadOrigin(payload.id, { remote: true, keep: opts.keepGameId === true, template: isTemplate ? String(entry.slug || '') : '' });
+		const applied = await requestLoadSession(payload.id, { job });
+		// (not for a click a newer one superseded — that template never opened)
+		if (origin === 'games' && entry.slug && !job.cancelled) notifyTemplateOpen(String(entry.slug));
+		return applied;
 	} catch {
 		const mine = isLive(job);
 		endLoad(job);

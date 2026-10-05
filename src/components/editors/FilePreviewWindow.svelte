@@ -436,7 +436,7 @@
 		// Scene-derived row already carries a data: url; a library item is a blob in idb,
 		// which is why this step is async — the Explorer's own opener does exactly this.
 		let url = '';
-		if (kind === 'image') {
+		if (kind === 'image' || kind === 'video') {
 			// a row whose bytes are not on this device shows nothing rather than a broken
 			// image — the card already says so, and stepping past it is the sane answer
 			const blob = item.dataUrl
@@ -806,6 +806,12 @@
 						? 'pixelated'
 						: 'auto'}"
 				/>
+			{:else if face === 'video'}
+				<!-- 36-share: a recording plays with the browser's own controls; it loops, because a
+				     turntable is made to loop -->
+				{#key target.url}
+					<video id="preview-video" class="pv-video" src={target.url} controls autoplay muted loop playsinline></video>
+				{/key}
 			{:else if face === 'audio'}
 				<!-- SLIM AND WIDE, whatever the window's height: the strip sits at the bottom and
 				     the space above it is left empty rather than stretched (the user's words). -->
@@ -1108,6 +1114,14 @@
 	}
 	.pv-note {
 		color: var(--muted, #6b7280);
+	}
+	.pv-video {
+		position: absolute;
+		inset: 0;
+		width: 100%;
+		height: 100%;
+		object-fit: contain;
+		background: var(--surface-2, #000);
 	}
 	.pv-audio {
 		display: flex;

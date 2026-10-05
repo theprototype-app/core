@@ -134,6 +134,8 @@ export const vrMenuHold = writable(
 export const vrObjectsPanelOpen = writable(false);
 // VR chat panel (117), opened from the radial Chat sector
 export const vrChatPanelOpen = writable(false);
+// VR AI chat panel (36-vr-ai, plan F1), opened from the radial Tools ▸ AI
+export const vrAiPanelOpen = writable(false);
 // VR color palette (110), opened from Edit ▸ Color
 export const vrPaletteOpen = writable(false);
 // VR properties panel (112), opened from Edit ▸ Properties

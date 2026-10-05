@@ -83,6 +83,12 @@ export const edgeExtrudeDistance = writable(0.5);
 export const smoothFactor = writable(0.5);
 /** 19-A P5b: Smooth/relax passes per click (each pass re-reads the evolving mesh). */
 export const smoothIterations = writable(1);
+/** 19-A P6: Edge slide position — 0 = where the edges are, ±1 = onto either
+ * neighbouring line (the side the sign picks). */
+export const edgeSlideFactor = writable(0);
+/** 19-A P6: Solidify thickness (world units; positive = the back goes INTO the
+ * surface, negative = it grows outward). */
+export const solidifyThickness = writable(0.1);
 /** 19-A P7b: vertex slide clamps to the edge's ENDS by default (today's
  * behaviour). OFF lets the slide EXTRAPOLATE past either end, continuing the
  * edge's direction — a landing marker shows where the vertex will go whenever
@@ -125,7 +131,9 @@ const WITH_OPTIONS = new Set([
 	'proportional',
 	'slide',
 	'edge-extrude',
-	'smooth'
+	'smooth',
+	'edge-slide',
+	'solidify'
 ]);
 
 /** @param {string} tool */
@@ -163,6 +171,8 @@ export function resetToolParams() {
 	edgeExtrudeDistance.set(0.5);
 	smoothFactor.set(0.5);
 	smoothIterations.set(1);
+	edgeSlideFactor.set(0);
+	solidifyThickness.set(0.1);
 	slideClamp.set(true);
 	mergeDistance.set(0.001);
 	symAxis.set('x');
@@ -190,6 +200,8 @@ export function toolParams() {
 		edgeExtrudeDistance: get(edgeExtrudeDistance),
 		smoothFactor: get(smoothFactor),
 		smoothIterations: get(smoothIterations),
+		edgeSlideFactor: get(edgeSlideFactor),
+		solidifyThickness: get(solidifyThickness),
 		slideClamp: get(slideClamp),
 		mergeDistance: get(mergeDistance),
 		symAxis: get(symAxis),

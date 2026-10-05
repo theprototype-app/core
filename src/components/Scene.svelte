@@ -92,6 +92,7 @@
 	import VRPrefabsPanel from './play/VRPrefabsPanel.svelte';
 	import VRKeyboard from './play/VRKeyboard.svelte';
 	import VRChatPanel from './play/VRChatPanel.svelte';
+	import VRAiPanel from './play/VRAiPanel.svelte';
 	import VREditMenu from './play/VREditMenu.svelte';
 	import VRSnapMenu from './play/VRSnapMenu.svelte';
 	import VRSettingsPanel from './play/VRSettingsPanel.svelte';
@@ -110,6 +111,7 @@
 	import Grid from '../extensions/Grid.svelte';
 	import { safeStorage } from '$lib/safeStorage';
 	import Outline from './Outline.svelte'
+	import RecordingDriver from './RecordingDriver.svelte'
 	import Player from './play/Player.svelte'
 	import { tickStartView } from '$lib/startView'
 	import { Mesh, Vector3 } from 'three'
@@ -1746,6 +1748,8 @@
 {#if !$isVRMode || $vrPostEnabled}
 <Outline />
 {/if}
+<!-- 36-share: the turntable/flythrough recorder's pose + capture stages -->
+<RecordingDriver />
 
 <Player
 bind:playerMesh
@@ -1759,6 +1763,7 @@ position={[0, 2, 3]}
 <VRPropertiesPanel />
 <VRPrefabsPanel />
 <VRChatPanel />
+<VRAiPanel />
 <VREditMenu />
 <VRSnapMenu />
 <VRSettingsPanel />

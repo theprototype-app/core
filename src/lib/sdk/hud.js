@@ -8,6 +8,7 @@ import {
 	registerModuleHudAction
 } from '../moduleHudKinds';
 import { flowRuntimeRef } from './refs.js';
+import { vrHudState } from '../vrHudPrefs';
 
 /** @param {import('./context.js').SdkContext} ctx */
 export function sdkHud(ctx) {
@@ -70,6 +71,17 @@ export function sdkHud(ctx) {
 				onDispose(off, 'hud.debugLine');
 			},
 			/**
+			 * 36 B12: THE HEADSET HUD PROBE. Core draws the scene's playing HUD screen in a
+			 * headset (a curved band, or the wrist card — the player's setting), so a module
+			 * that feeds the core HUD no longer needs a VR readout of its own: feature-detect
+			 * this and drop it. Your own element kind (`registerHudElement`) says what it reads
+			 * there through its def's `vrText(element, runtime) => string`.
+			 * @returns {{placement: 'head' | 'world' | 'wrist', visible: boolean}}
+			 */
+			vrHud() {
+				return vrHudState();
+			},
+			/**
 			 * R3a: an entry in the HUD editor's ACTION catalog (the Actions section's picker).
 			 * `entry` is the exact HudActionDef shape hudActions.js documents — {key, label,
 			 * group, role: 'press'|'drives'|'value'|'writes', node, data?, handle?, via?,
@@ -126,5 +138,6 @@ sdkHud.surface = {
 	'hud.clearRows': 'action',
 	'hud.registerDebugLine': 'registers',
 	'hud.registerAction': 'registers',
+	'hud.vrHud': 'read',
 	registerHudElement: 'registers'
 };

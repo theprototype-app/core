@@ -1,16 +1,34 @@
 <script lang="ts">
-	import { Accordion, AccordionItem, Modal, Button, Checkbox, Toggle } from 'flowbite-svelte';
+	import { Modal, Button, Checkbox, Toggle } from 'flowbite-svelte';
+	// 36 B14: Settings on WindowShell. The sections REGISTER into the sidebar (settingsNav); the two
+	// components keep flowbite's names, so every `<AccordionItem>` block below is untouched and a
+	// section another lane adds appears in the sidebar with no second edit
+	import Accordion from './settings/SettingsSections.svelte';
+	import AccordionItem from './settings/SettingsSection.svelte';
+	import SettingsNav from './settings/SettingsNav.svelte';
+	import WindowShell from '../shared/WindowShell.svelte';
+	import { setContext } from 'svelte';
+	import { createSettingsNav, NAV_CONTEXT } from '$lib/settingsNav';
+	const settingsNav = createSettingsNav();
+	setContext(NAV_CONTEXT, settingsNav);
+	// a phone shows the sections as a chip strip over the rows instead of a sidebar beside them
+	const narrowQuery = typeof window === 'undefined' ? null : window.matchMedia?.('(max-width: 640px)');
+	let narrowSettings = !!narrowQuery?.matches;
+	narrowQuery?.addEventListener?.('change', (e) => (narrowSettings = e.matches));
 	import { HardDrive, Lock, RotateCcw, X } from '@lucide/svelte';
 	import ThemedSelect from '../ui/ThemedSelect.svelte';
 	import LoadingSettings from './settings/LoadingSettings.svelte';
+	import CheckpointSettings from './settings/CheckpointSettings.svelte'; // 36 B14
 	import SettingRow from './SettingRow.svelte';
 	import TextSelectionSettings from './settings/TextSelectionSettings.svelte'; // 36 U6
+	import AvatarSettings from './settings/AvatarSettings.svelte'; // 36-avatars
 	// 36 I4: what a row is known by (its text, group, section, keywords) + the highlight spans
 	import { rowMatches, matchSpans } from '$lib/settingsSearch';
 	import TouchControlsSettings from './TouchControlsSettings.svelte'; // 36 U8
 	// 36-export: the export defaults section (its own file; also the Publish / Export modal's Settings tab)
 	import ExportSettingsSection from './ExportSettingsSection.svelte';
 	import NodeTypesSection from './NodeTypesSection.svelte'; // 36 B7
+	import AiSttSettings from './AiSttSettings.svelte';
 	import WaterSettings from '../water/WaterSettings.svelte';
 	import ToursSettings from './settings/ToursSettings.svelte'; // 36 U3b/I5
 	import VRSettingsSection from './VRSettingsSection.svelte';
@@ -579,6 +597,7 @@
 	/** @type {any} */
 	let savedExpansion: any = null;
 	$: syncSearchExpansion(settingsQuery);
+	$: settingsNav.setSearching(!!(settingsQuery || '').trim()); // 36 B14
 
 	// CO3: which stored room anchor the Forget button offers — the current room when
 	// aligned (only if it has a record), else the newest record (the LAST room)
@@ -792,8 +811,10 @@
 	class="tp-modal-frame"
 	classes={{ header: 'tp-modal-header', body: 'tp-modal-body flex-1' }}
 >
-	<div class="modal-content p-4">
-		<div class="relative mb-3">
+	<div class="modal-content settings-shell">
+	<WindowShell key="settings" primaryLabel="sections" primaryDefaultWidth={168} secondaryModes={[]} hidePrimary={narrowSettings}>
+	{#snippet topbar()}
+		<div class="relative mb-2 px-3 pt-2">
 			<input
 				id="settings-search"
 				type="text"
@@ -817,17 +838,20 @@
 				</button>
 			{/if}
 		</div>
-		<div use:filterSettings={settingsQuery}>
-		<!-- `multiple`: sections no longer close each other. Required for search — the
-		     filter can only see rows flowbite has MOUNTED, and a single-selection
-		     accordion keeps all but one body unmounted no matter what the open flags
-		     say (it reads `multiple` untracked at init, so this cannot be per-query).
-		     Several open sections is also the norm for a settings panel. -->
+		{#if narrowSettings}<div class="px-3"><SettingsNav nav={settingsNav} layout="chips" /></div>{/if}
+	{/snippet}
+	{#snippet primary()}<SettingsNav nav={settingsNav} />{/snippet}
+	{#snippet main()}
+		<div id="settings-main" class="settings-main" use:filterSettings={settingsQuery}>
+		<!-- 36 B14: a section's open flag is still its MOUNT switch (the filter can only see
+		     mounted rows, so a search opens them all). Outside a search the sidebar keeps
+		     exactly one open — the one on screen (settingsNav). -->
 		<Accordion multiple>
 				<AccordionItem bind:open={interfaceExpanded}>
 					{#snippet header()}Interface{/snippet}
 					<p class="ui-section-label">Appearance</p>
 					<TextSelectionSettings />
+					<AvatarSettings />
 					<SettingRow name="Theme">
 						<svelte:fragment slot="control">
 							<ThemedSelect
@@ -1232,6 +1256,7 @@
 						</svelte:fragment>
 						Restore that snapshot automatically at startup instead of asking. Only ever runs when the scene is still empty; a message tells you what was restored
 					</SettingRow>
+					<CheckpointSettings />
 					<!-- 33 (L2): what a scene switch does with the modules the scene being left brought along -->
 					<SettingRow name="When opening another scene">
 						<svelte:fragment slot="control">
@@ -1943,6 +1968,7 @@
 							</span>
 						</SettingRow>
 					{/if}
+					<AiSttSettings />
 					<SettingRow name="Mesh generation">
 						<svelte:fragment slot="control"><Toggle bind:checked={$meshGenEnabled} onchange={() => setMeshGenEnabled($meshGenEnabled)} /></svelte:fragment>
 						<span class="font-semibold">Text → 3D mesh</span> — generate custom models from prompts (Add menu → “✨ Generate 3D model”, or the assistant). Backends: a self-hosted <span class="font-mono">ComfyUI</span> running TRELLIS, or a hosted API (Meshy). See the Console/AI docs for setup.
@@ -2254,6 +2280,8 @@
 				</AccordionItem>
 			</Accordion>
 		</div>
+	{/snippet}
+	</WindowShell>
 	</div>
 	{#snippet footer()}
 		<Button onclick={() => safeStorage.clear()}>Reset settings</Button>
@@ -2262,3 +2290,22 @@
 	{/snippet}
 </Modal>
 
+<style>
+	/* 36 B14: the WindowShell needs a definite height; the main pane scrolls, the sidebar stays */
+	.settings-shell {
+		height: min(78vh, 880px);
+	}
+	.settings-main {
+		height: 100%;
+		overflow-y: auto;
+		padding: 4px 16px 16px;
+	}
+	@media (max-width: 640px) {
+		.settings-shell {
+			height: calc(100dvh - var(--connect-bottom, 0px) - 72px);
+		}
+		.settings-main {
+			padding: 4px 8px 12px;
+		}
+	}
+</style>

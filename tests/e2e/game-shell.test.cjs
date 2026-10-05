@@ -15,7 +15,7 @@
 //  9 VR turning: a game's Smooth turning turns continuously; Off never turns
 // 10 haptics off in this game: no pulse
 // 11 quality preset pins the governor while playing, Auto releases
-// 12 Show FPS: the desktop counter + the VR strip line
+// 12 Show FPS: the desktop counter + the VR wrist line + the HUD band's row (36 B12)
 const h = require('./helpers.cjs');
 const xr = require('./fakeXR.cjs');
 
@@ -407,11 +407,12 @@ h.run(async () => {
 		const T = s.THREE;
 		const hand = { position: new T.Vector3(-0.1, 1.2, -0.35), quaternion: new T.Quaternion().setFromEuler(new T.Euler(0.9, 0, 0, 'YXZ')) };
 		const f = k.vrGamePanel.vrGamePanelFrame({ head: { position: new T.Vector3(0, 1.6, 0), quaternion: new T.Quaternion() }, hands: [hand, null] });
+		const band = k.vrHud.vrHudDebug().hints; // 36 B12: the HUD band's row leads with it (the strip it replaced did)
 		k.gameSettings.setGameSetting('showFps', false);
 		const f2 = k.vrGamePanel.vrGamePanelFrame({ head: { position: new T.Vector3(0, 1.6, 0), quaternion: new T.Quaternion() }, hands: [hand, null] });
-		return { lines: f.lines, strip: f.stripLines, lines2: f2.lines };
+		return { lines: f.lines, band, hud: f.hud, lines2: f2.lines };
 	});
-	h.check(/^\d+ fps$/.test(vfps.lines[0] ?? '') && vfps.strip[0] === vfps.lines[0], '12.1 the fps counter leads the wrist AND the strip (' + JSON.stringify(vfps.strip) + ')');
+	h.check(/^\d+ fps$/.test(vfps.lines[0] ?? '') && (!vfps.hud || String(vfps.band ?? '').startsWith(vfps.lines[0])), '12.1 the fps counter leads the wrist AND the HUD band (' + JSON.stringify(vfps) + ')');
 	h.check(!vfps.lines2.some((l) => /fps$/.test(l)), '12.2 and goes when Show FPS is off');
 
 	await xr.uninstall(page);

@@ -3,6 +3,7 @@
 	//   Publish  — the cloud plugin's flow, mounted into the tab (cloudApi `mountPublish`); the
 	//              OSS app has none and says where publishing lives instead
 	//   Export   — core's own: a self-contained static game (itch.io / static host / embed)
+	//   Community gallery — 36-share: a pull-request submission to the community-gallery repo
 	//   Settings — the export defaults (ExportSettingsSection, also in Settings ▸ Export)
 	// Non-modal like every app dialog (the chrome above --z-modal stays clickable).
 	import { untrack } from 'svelte';
@@ -12,10 +13,12 @@
 	import CloudSlot from '../CloudSlot.svelte';
 	import ExportPanel from './ExportPanel.svelte';
 	import ExportSettingsSection from './ExportSettingsSection.svelte';
+	import GallerySubmitPanel from './GallerySubmitPanel.svelte';
 
 	const TABS = [
 		{ id: 'publish', label: 'Publish' },
 		{ id: 'export', label: 'Export' },
+		{ id: 'gallery', label: 'Community gallery' },
 		{ id: 'settings', label: 'Settings' }
 	];
 
@@ -68,6 +71,8 @@
 			</div>
 		{:else if $publishExportTab === 'export'}
 			<div role="tabpanel"><ExportPanel /></div>
+		{:else if $publishExportTab === 'gallery'}
+			<div role="tabpanel"><GallerySubmitPanel /></div>
 		{:else}
 			<div role="tabpanel"><ExportSettingsSection /></div>
 		{/if}
@@ -81,6 +86,7 @@
 	}
 	.pe-tabs {
 		display: flex;
+		flex-wrap: wrap;
 		gap: 0.25rem;
 		margin-bottom: 0.85rem;
 		border-bottom: 1px solid var(--border, rgb(75 85 99 / 0.6));

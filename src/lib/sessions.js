@@ -80,6 +80,8 @@ import { showConfirm, showChoice } from './confirmDialog';
 import { prepareSceneSwitch, sceneArrived } from './sceneSwitch';
 import { APP_VERSION } from './version.js';
 import { oldRulesGame, RETIRED_GAME_NODES } from './oldGameScene.js';
+// 36-community (C4): the scene's permanent game id rides session.json; a load takes it from the file
+import { gameFields, noteLoadedGame } from './gameIdentity.js';
 
 // Multi-slot sessions (phase 50) on top of the autosave format. Each session
 // stores its top-level objects as individual ObjectLoader jsons — that makes
@@ -123,7 +125,7 @@ export const sessions = writable(/** @type {any[]} */ ([]));
  * buffer is cleared after compositing, so it has to be read in the same tick it is drawn.
  * @param {number} maxW @returns {string|null} a dataURL, or null
  */
-function viewportThumbnail(maxW = 256) {
+export function viewportThumbnail(maxW = 256) {
 	/** @type {any} */
 	const renderer = get(globalRenderer);
 	const scene = get(globalScene);
@@ -265,6 +267,9 @@ export function buildSessionPayload(name) {
 			// appVersion is display-only provenance
 			format: SESSION_FORMAT,
 			appVersion: APP_VERSION,
+			// 36-community (C4): `gameId` / `parentGameId` / `template` — READ ONLY here (a payload is
+			// built for autosave and the dirty check too); the deliberate saves mint it first
+			...gameFields(),
 			count: (group?.children ?? []).filter((/** @type {any} */ child) => !isTransient(child)).length,
 			thumbnail: renderSceneThumbnail(group),
 			// animated imports are saved as their ORIGINAL bytes below instead:
@@ -1412,6 +1417,9 @@ async function applySessionNow(payload, opts, job) {
 	// screen — nothing anybody made, so no "Backup before" of it
 	const hadContent = !!group?.children.length && !job.interrupted;
 	if (backup && hadContent) await saveSession('Backup before "' + payload.name + '"');
+	// 36-community (C4): the arriving scene's game identity — AFTER the backup, which saves the
+	// scene being LEFT under its own id
+	noteLoadedGame(payload);
 	// R22-R8: a session saved by "Save into session" carries the whole Explorer library
 	// beside the scene, because that gesture EMPTIES the library and the save is the only
 	// thing standing between the user and losing it. Restoring it is hash-deduped, so a
@@ -1620,7 +1628,7 @@ async function applySessionNow(payload, opts, job) {
 
 // ---- proposal flow (50.3) --------------------------------------------------
 
-/** @type {{payload: any, accepts: Set<string>, needed: string[], beforeApply?: () => void} | null} */
+/** @type {{payload: any, opts?: any, accepts: Set<string>, needed: string[], beforeApply?: () => void} | null} */
 let pendingProposal = null;
 
 /** Load a session — solo applies immediately, with peers it becomes a proposal
@@ -1709,16 +1717,18 @@ async function confirmSceneSize(payload) {
 	}
 }
 
-/** @param {any} payload @param {{job?: any}} [opts] 36 F20: the claim the click opened
- * (absent = claimed here); every await below is followed by `isLive(job)` — a click that a
- * newer load superseded never applies
- * @returns {Promise<boolean>} see the block comment above */
+/** @param {any} payload @returns {Promise<boolean>} see the block comment above
+ * @param {{backup?: boolean, quiet?: boolean, job?: any}} [opts] applySession's, carried through a proposal too
+ * (36 B14: a checkpoint restore cuts its own backup into the timeline, so it asks for none here).
+ * 36 F20: `job` = the claim the click opened (absent = claimed here); every await below is
+ * followed by `isLive(job)` — a click that a newer load superseded never applies */
 export async function requestLoadPayload(payload, opts = {}) {
 	if (!payload) {
 		if (opts.job) endLoad(opts.job);
 		return false;
 	}
 	const job = opts.job ?? claimLoad(payload.name ?? 'scene');
+	const { job: _claim, ...applyOpts } = opts;
 	/** @param {boolean} go */
 	const stillGo = (go) => {
 		if (go && isLive(job)) return true;
@@ -1763,11 +1773,11 @@ export async function requestLoadPayload(payload, opts = {}) {
 	if (!stillGo(true)) return false;
 	if (!connected.length) {
 		moduleSwitch.run();
-		return await applySession(payload, { job });
+		return await applySession(payload, { ...applyOpts, job });
 	}
 	// a proposal applies later, through its own load (acceptance runs applySession)
 	endLoad(job);
-	pendingProposal = { payload, accepts: new Set(), needed: connected, beforeApply: moduleSwitch.run };
+	pendingProposal = { payload, opts: applyOpts, accepts: new Set(), needed: connected, beforeApply: moduleSwitch.run };
 	peer.send({
 		type: 'sessionproposal',
 		name: payload.name,
@@ -2684,6 +2694,6 @@ export function applySessionAnswer(data) {
 		const proposal = pendingProposal;
 		pendingProposal = null;
 		proposal.beforeApply?.();
-		applySession(proposal.payload);
+		applySession(proposal.payload, proposal.opts);
 	}
 }

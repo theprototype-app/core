@@ -288,3 +288,70 @@ export function ownerStamp(peerId, name) {
 	if (who?.username) out.account = String(who.username);
 	return out;
 }
+
+// --- 36-community (C4/C2/C6): game identity events + hearts --------------------------------
+//
+// All ADDITIVE and typeof-probed (no CLOUD_HOOKS_VERSION bump): without a plugin nothing
+// listens, both stores stay null, and every reader renders nothing — the OSS build is
+// byte-identical (the open-core rule).
+
+/** @typedef {{ gameId: string, buildId: string, preset: string, title: string, template: string,
+ *   parentGameId: string, appVersion: string }} ExportBuilt */
+
+/** @type {Set<(info: ExportBuilt) => void>} */
+const exportBuiltListeners = new Set();
+/** @type {Set<(slug: string) => void>} */
+const templateOpenListeners = new Set();
+
+/** cloudApi `onExportBuilt(fn)` — an export zip was built (a signed-in plugin registers the build).
+ *  @param {(info: ExportBuilt) => void} fn @returns {() => void} off */
+export function onExportBuilt(fn) {
+	if (typeof fn !== 'function') return () => {};
+	exportBuiltListeners.add(fn);
+	return () => exportBuiltListeners.delete(fn);
+}
+/** core → plugin: the exporter's last step. A throwing listener never fails an export.
+ *  @param {ExportBuilt} info */
+export function notifyExportBuilt(info) {
+	for (const fn of exportBuiltListeners) {
+		try {
+			fn({ ...info });
+		} catch (e) {
+			console.error('export-built listener threw:', e);
+		}
+	}
+}
+
+/** cloudApi `onTemplateOpen(fn)` — a Games-tab template was started (C2's "template opens").
+ *  @param {(slug: string) => void} fn @returns {() => void} off */
+export function onTemplateOpen(fn) {
+	if (typeof fn !== 'function') return () => {};
+	templateOpenListeners.add(fn);
+	return () => templateOpenListeners.delete(fn);
+}
+/** core → plugin: the Games tab started `slug` @param {string} slug */
+export function notifyTemplateOpen(slug) {
+	for (const fn of templateOpenListeners) {
+		try {
+			fn(String(slug));
+		} catch (e) {
+			console.error('template-open listener threw:', e);
+		}
+	}
+}
+
+/**
+ * C6: THE HEART FOR THE SCENE ON SCREEN — the play-link start card and a published game's pause
+ * menu render a heart toggle while this is set. The plugin sets it after loading a published
+ * scene and clears it when the scene is replaced. Shape (the plugin owns the logic):
+ *   { count: number, liked: boolean, toggle(): Promise<{liked: boolean, count: number} | null> }
+ * `toggle` resolving null = refused (signed out → the plugin already asked to sign in; a failed
+ * write) and the button rolls its optimistic flip back.
+ * @type {import('svelte/store').Writable<any>} */
+export const sceneHeart = writable(null);
+
+/** Plugin seam for the above (cloudApi.setSceneHeart). Anything without a `toggle` reads as null.
+ * @param {any} info */
+export function setSceneHeart(info) {
+	sceneHeart.set(info && typeof info === 'object' && typeof info.toggle === 'function' ? info : null);
+}

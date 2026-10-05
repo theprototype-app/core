@@ -163,8 +163,31 @@ h.run(async () => {
 	console.log('PERF quest-tier ' + JSON.stringify(quest));
 	h.check(quest.mode === 'points' && quest.particles <= 1400, `Quest tier: drops, within the headset budget (${quest.particles} ≤ 1400, cap ${quest.cap})`);
 	h.check(quest.surfaces >= 2, `Quest tier keeps the animated water surfaces (${quest.surfaces} flow ribbons)`);
-	h.check(quest.calls <= 150, `Quest tier inside the 150-call budget (${quest.calls} calls/frame, desktop pipeline renders the scene several times; the headset renders once per eye)`);
-	h.check(quest.tris <= 300000, `Quest tier inside 300k triangles (${quest.tris})`);
+	// THE HEADSET FRAME, as the budget gate counts it (every render pass summed): no post stack,
+	// shadows off (the headset's entry quality floor), the scene drawn once per EYE. The desktop
+	// pipeline numbers above render the scene several times a frame and are not comparable.
+	const eye = await A.page.evaluate(() => {
+		let ren, scene, cam;
+		const s = window.__stores;
+		s.globalRenderer.subscribe((v) => (ren = v))();
+		s.globalScene.subscribe((v) => (scene = v))();
+		s.editorCam.subscribe((v) => (cam = v))();
+		const auto = ren.info.autoReset, sh = ren.shadowMap.enabled;
+		ren.info.autoReset = false;
+		ren.shadowMap.enabled = false;
+		ren.info.reset();
+		ren.render(scene, cam);
+		const out = { calls: ren.info.render.calls, tris: ren.info.render.triangles };
+		ren.shadowMap.enabled = sh;
+		ren.shadowMap.needsUpdate = true;
+		ren.info.autoReset = auto;
+		return out;
+	});
+	quest.headsetCalls = eye.calls * 2;
+	quest.headsetTris = eye.tris * 2;
+	console.log('PERF headset-frame ' + JSON.stringify(eye) + ' ×2 eyes');
+	h.check(quest.headsetCalls <= 150, `Quest tier inside the 150-call budget (${eye.calls} per eye × 2 = ${quest.headsetCalls})`);
+	h.check(quest.headsetTris <= 300000, `Quest tier inside 300k triangles (${quest.headsetTris})`);
 	if (SHOTS) await A.page.screenshot({ path: path.join(SHOTS, '11-water-works-quest-tier.png') });
 	if (SHOTS) fs.writeFileSync(path.join(SHOTS, '../perf-water-works.json'), JSON.stringify({ desktop: desk, quest }, null, 1));
 	await A.page.evaluate(() => window.__stores.sim.setFluidTierForTest(null));

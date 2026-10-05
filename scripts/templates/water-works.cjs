@@ -48,12 +48,13 @@ const post = (name, x, z, top) => ({ type: 'box', name, color: WOOD_DARK, size: 
 function noria(pos) {
 	const children = [
 		{ type: 'cylinder', name: 'Noria hub', color: WOOD_DARK, r: 0.12, h: 0.42, pos: [0, 0, 0], rot: [Math.PI / 2, 0, 0], roughness: 0.8 },
-		{ type: 'torus', name: 'Noria rim front', color: WOOD, r: 0.78, tube: 0.03, pos: [0, 0, 0.15], roughness: 0.8 },
-		{ type: 'torus', name: 'Noria rim back', color: WOOD, r: 0.78, tube: 0.03, pos: [0, 0, -0.15], roughness: 0.8 }
+		// ONE rim and four full-diameter spokes: the Quest budget is per eye (two eyes ≤ 150 calls)
+		{ type: 'torus', name: 'Noria rim', color: WOOD, r: 0.78, tube: 0.04, pos: [0, 0, 0], roughness: 0.8 }
 	];
+	for (let i = 0; i < 4; i++)
+		children.push({ type: 'box', name: 'Noria spoke ' + (i + 1), color: WOOD_DARK, size: [1.56, 0.04, 0.05], pos: [0, 0, 0], rot: [0, 0, (i / 4) * Math.PI], roughness: 0.85 });
 	for (let i = 0; i < 8; i++) {
 		const a = (i / 8) * Math.PI * 2;
-		children.push({ type: 'box', name: 'Noria spoke ' + (i + 1), color: WOOD_DARK, size: [0.74, 0.04, 0.04], pos: [Math.cos(a) * 0.4, Math.sin(a) * 0.4, 0], rot: [0, 0, a], roughness: 0.85 });
 		// a scoop paddle at the rim, standing out along the radius
 		children.push({ type: 'box', name: 'Noria paddle ' + (i + 1), color: WOOD, size: [0.26, 0.05, 0.32], pos: [Math.cos(a) * 0.82, Math.sin(a) * 0.82, 0], rot: [0, 0, a], roughness: 0.8 });
 	}
@@ -66,8 +67,7 @@ const boat = (name, pos, color) => ({
 	type: 'group', name, pos, fluid: 'none',
 	children: [
 		{ type: 'box', name: name + ' hull', color, size: [0.26, 0.07, 0.12], pos: [0, 0, 0], roughness: 0.6, bevel: 0.02 },
-		{ type: 'cylinder', name: name + ' mast', color: 0xf1ead8, r: 0.008, h: 0.22, pos: [0, 0.13, 0] },
-		{ type: 'box', name: name + ' sail', color: 0xfaf6ea, size: [0.12, 0.14, 0.006], pos: [0.04, 0.15, 0], roughness: 0.9 }
+		{ type: 'box', name: name + ' sail', color: 0xfaf6ea, size: [0.12, 0.16, 0.006], pos: [0.02, 0.12, 0], roughness: 0.9 }
 	],
 	physics: { mode: 'static', sensor: true }
 });
@@ -80,8 +80,7 @@ const one = (id, type, data) => ({ nodes: [{ id, type, position: { x: 40, y: 40 
 /** a tree: trunk + two cones @param {string} name @param {number[]} at (x, z) @param {number} s scale */
 const tree = (name, at, s) => [
 	{ type: 'cylinder', name: name + ' trunk', color: 0x5c3f28, r: 0.06 * s, h: 0.5 * s, pos: [at[0], G + 0.25 * s, at[1]] },
-	{ type: 'cone', name: name + ' crown', color: 0x3f7a3a, r: 0.42 * s, h: 0.9 * s, pos: [at[0], G + 0.85 * s, at[1]], roughness: 0.9 },
-	{ type: 'cone', name: name + ' top', color: 0x4a8a42, r: 0.3 * s, h: 0.6 * s, pos: [at[0], G + 1.2 * s, at[1]], roughness: 0.9 }
+	{ type: 'cone', name: name + ' crown', color: 0x3f7a3a, r: 0.45 * s, h: 1.3 * s, pos: [at[0], G + 1.05 * s, at[1]], roughness: 0.9 }
 ];
 const rock = (name, pos, r, rot) => ({ type: 'dodecahedron', name, color: STONE_DARK, r, pos, rot, roughness: 0.95, flatShading: true });
 
@@ -121,13 +120,11 @@ module.exports = {
 		{ type: 'box', name: 'Pond water', color: 0x3a7fb8, size: [2.6, 0.3, 1.6], pos: [-1.6, G + 0.04 + 0.15, 0.9], water: { preset: 'lake', waves: { amplitude: 0.006 } } },
 		// the noria and its frame
 		noria([-2.2, 1.22, 0.5]),
-		{ type: 'cylinder', name: 'Noria axle', color: WOOD_DARK, r: 0.035, h: 0.78, pos: [-2.2, 1.22, 0.5], rot: [Math.PI / 2, 0, 0], physics: { mode: 'static' } },
 		post('Noria post N', -2.2, 0.08, 1.24),
 		post('Noria post S', -2.2, 0.92, 1.24),
 		// the head-race: an elevated trough from the wheel's top to the fountain basin
 		...channel('Head-race', [-0.2, 1.62, 0.5], 2.9, 0.36, 0),
 		post('Head-race post 1', -1.3, 0.5, 1.6),
-		post('Head-race post 2', -0.1, 0.5, 1.6),
 		post('Head-race post 3', 1.0, 0.5, 1.6),
 		// the fountain basin (right) with its pedestal
 		...basin('Fountain basin', [1.8, 0.4], [1.6, 0.42, 1.6], STONE),
@@ -136,7 +133,6 @@ module.exports = {
 		{ type: 'cylinder', name: 'Fountain bowl', color: STONE, r: 0.22, r2: 0.12, h: 0.08, pos: [1.8, G + 0.54, 0.4], roughness: 0.9, physics: { mode: 'static' } },
 		// the chute home: from the basin's front down into the pond
 		...channel('Chute', [0.3, 0.64, 1.4], 1.5, 0.28, 0.075),
-		post('Chute post', 0.9, 1.4, 0.62),
 		// the flow paths (water machinery)
 		{ type: 'flowpath', name: 'Noria lift', pos: [0, 0, 0], flowPath: { kind: 'pipe', points: [[-2.0, 0.48, 0.9], [-2.2, 2.05, 0.5], [-1.6, 1.8, 0.5]], width: 1.3, speed: 0.8, show: false } },
 		{ type: 'flowpath', name: 'Head-race flow', pos: [0, 0, 0], flowPath: { kind: 'river', points: [[-1.65, 1.69, 0.5], [1.35, 1.69, 0.5]], width: 0.34, depth: 0.1, speed: 1.2, strength: 10, color: '#4a9fd8', opacity: 0.55 } },
@@ -154,14 +150,13 @@ module.exports = {
 				area: { size: [6.4, 2.4, 2.4], offset: [0.8, 0.15, 0.6] } }
 		},
 		{ type: 'box', name: 'Spring wall', color: STONE, size: [1.1, 0.95, 0.35], pos: [-0.85, G + 0.475, -0.18], bevel: 0.05, roughness: 0.95, physics: { mode: 'static' } },
-		rock('Spring cap', [-0.85, G + 1.0, -0.18], 0.3, [0.2, 0.4, 0.1]),
+
 		// floaters
 		boat('Boat red', [-1.4, 0.69, 1.45], 0xc8463a),
 		boat('Boat blue', [-2.4, 0.69, 1.0], 0x3d6fb6),
 		leaf('Leaf 1', [-1.2, 1.9, 0.5], 0xd99a2b),
 		leaf('Leaf 2', [0.6, 1.9, 0.5], 0xb85b2a),
 		leaf('Leaf 3', [0.6, 0.71, 1.4], 0x7aa83a),
-		leaf('Leaf 4', [-0.9, 0.7, 1.0], 0xc9b23a),
 		// the mill house + dressing
 		{ type: 'box', name: 'Mill house', color: 0xe2d4b8, size: [1.4, 1.0, 1.0], pos: [-1.9, G + 0.5, -1.45], roughness: 0.9, physics: { mode: 'static' } },
 		{ type: 'block', name: 'Mill roof', shape: 'Wedge', args: [1.6, 0.5, 0.62], color: 0x9a4430, pos: [-1.9, G + 1.0, -1.14], roughness: 0.8 },
@@ -170,12 +165,9 @@ module.exports = {
 		{ type: 'box', name: 'Mill window', color: 0x2e3a44, size: [0.26, 0.22, 0.02], pos: [-2.2, G + 0.62, -0.94], emissive: 0xffc070, emissiveIntensity: 0.5 },
 		...tree('Tree 1', [2.7, -1.5], 1.1),
 		...tree('Tree 2', [-0.5, -1.7], 0.9),
-		...tree('Tree 3', [3.1, 1.6], 0.75),
 		{ type: 'sphere', name: 'Bush 1', color: 0x4f8a3e, r: 0.25, pos: [0.6, G + 0.15, -0.9], scale: [1.3, 0.8, 1], roughness: 0.95 },
-		{ type: 'sphere', name: 'Bush 2', color: 0x5a9545, r: 0.2, pos: [-3.2, G + 0.12, 1.9], scale: [1.2, 0.8, 1], roughness: 0.95 },
 		rock('Rock 1', [-0.15, G + 0.08, 1.9], 0.14, [0.3, 0.5, 0.1]),
 		rock('Rock 2', [-3.15, G + 0.1, 0.1], 0.18, [0.1, 1.2, 0.4]),
-		rock('Rock 3', [2.8, G + 0.07, -0.4], 0.12, [0.8, 0.2, 0.3]),
 		{ type: 'light', kind: 'directional', name: 'Sun', color: 0xffe3bd, intensity: 2.4, pos: [5, 8, 4.5], target: [0, 0.8, 0] }
 	],
 	graphs: {
@@ -184,7 +176,7 @@ module.exports = {
 		'Boat blue': one('fb2', 'flowfloat', { label: 'Float Along Flow', speed: 1, bob: 0.012, align: true }),
 		'Leaf 1': one('fl1', 'flowfloat', { label: 'Float Along Flow', speed: 1, bob: 0.005, align: true }),
 		'Leaf 2': one('fl2', 'flowfloat', { label: 'Float Along Flow', speed: 1, bob: 0.005, align: true }),
-		'Leaf 3': one('fl3', 'flowfloat', { label: 'Float Along Flow', speed: 1, bob: 0.005, align: true }),
-		'Leaf 4': one('fl4', 'flowfloat', { label: 'Float Along Flow', speed: 1, bob: 0.008, align: true })
+		'Leaf 3': one('fl3', 'flowfloat', { label: 'Float Along Flow', speed: 1, bob: 0.005, align: true })
+
 	}
 };

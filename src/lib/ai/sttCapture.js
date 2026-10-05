@@ -23,10 +23,18 @@ export const MIN_DICTATION_MS = 250;
 /** @type {MediaRecorder | null} */ let recorder = null;
 /** @type {MediaStream | null} */ let stream = null;
 /** @type {Blob[]} */ let chunks = [];
-let startedAt = 0;
+/** when the person PRESSED (the hold is theirs, not the recorder's) */
+let pressedAt = 0;
 /** @type {any} */ let capTimer = null;
 /** @type {Promise<boolean> | null} */ let starting = null;
 let cancelled = false;
+/** the last few start/stop calls with their hold lengths (the voice suite reads it when a dictation misbehaves) */
+export const dictationTrace = [];
+/** @param {string} what */
+function trace(what) {
+	dictationTrace.push(Math.round(performance.now()) + ' ' + what);
+	if (dictationTrace.length > 20) dictationTrace.shift();
+}
 
 /** the best container this browser records (Quest/Chrome: webm/opus; Safari: mp4) */
 function pickMime() {
@@ -69,7 +77,6 @@ async function begin(source) {
 			if (event.data?.size) chunks.push(event.data);
 		};
 		recorder.start();
-		startedAt = performance.now();
 		// the cap stops the RECORDER only; the release that comes later still transcribes what was heard
 		capTimer = setTimeout(() => {
 			if (recorder?.state === 'recording') recorder.stop();
@@ -92,6 +99,8 @@ async function begin(source) {
  * @param {string} source who asked ('vr', 'vr-ptt', 'desktop') @returns {Promise<boolean>} */
 export function startDictation(source) {
 	if (get(dictation).state !== 'idle') return Promise.resolve(false);
+	pressedAt = performance.now();
+	trace('start ' + source);
 	starting = begin(source);
 	return starting;
 }
@@ -99,6 +108,11 @@ export function startDictation(source) {
 /** Stop recording and transcribe. Resolves the transcript, or '' (a tap, a cancel, or an error — the error
  * is on the store). @returns {Promise<string>} */
 export async function stopDictation() {
+	// the hold is the PERSON'S: press to release, read before anything is awaited. Opening the mic and the
+	// recorder's stop event can each take hundreds of ms; timing from either misreads a tap as speech (the
+	// stop event) or a real sentence as a tap (a slow getUserMedia)
+	const heldMs = performance.now() - pressedAt;
+	trace('stop held ' + Math.round(heldMs));
 	if (starting) await starting;
 	starting = null;
 	const rec = recorder;
@@ -108,9 +122,6 @@ export async function stopDictation() {
 		if (get(dictation).state === 'recording') dictation.set({ state: 'idle', source, error: '' });
 		return '';
 	}
-	// the hold is measured at the RELEASE: the recorder's stop event can take hundreds of ms to arrive, and a
-	// tap measured after it read as speech (and was sent a second later)
-	const heldMs = performance.now() - startedAt;
 	await new Promise((resolve) => {
 		if (rec.state === 'inactive') resolve(null);
 		else {

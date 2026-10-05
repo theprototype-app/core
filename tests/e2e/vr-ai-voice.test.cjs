@@ -158,14 +158,22 @@ h.run(async () => {
 			return v;
 		};
 		const count = get(s.aiAssistant.aiMessages).length;
-		s.vrControls.vrModuleTriggerStart(0);
-		await new Promise((r) => setTimeout(r, 60));
-		s.vrControls.vrModuleTriggerEnd(0);
-		await new Promise((r) => setTimeout(r, 800));
-		return { sent: get(s.aiAssistant.aiMessages).length - count };
+		const t0 = performance.now();
+		window.__dictLog = [];
+		window.__dictOff = s.sttCapture.dictation.subscribe((d) => window.__dictLog.push(Math.round(performance.now() - t0) + ' ' + d.state + ' ' + d.source));
+		// press and release in ONE task: a page busy opening the fake mic stretches a 60 ms timer to ~800 ms,
+		// which made the "tap" a real hold (measured: held 773 ms)
+		const took = s.vrControls.vrModuleTriggerStart(0);
+		const ended = s.vrControls.vrModuleTriggerEnd(0);
+		for (let i = 0; i < 80; i++) {
+			if (get(s.sttCapture.dictation).state === 'idle') break;
+			await new Promise((r) => setTimeout(r, 100));
+		}
+		await new Promise((r) => setTimeout(r, 300));
+		return { took, ended, sent: get(s.aiAssistant.aiMessages).length - count, state: get(s.sttCapture.dictation).state, log: window.__dictLog.slice() };
 	});
 	const callsBeforeTalk = sttCalls.length;
-	h.check(tap.sent === 0, 'a quick tap on the mic sends nothing');
+	h.check(tap.sent === 0 && tap.state === 'idle', `a quick tap on the mic sends nothing (${JSON.stringify(tap)})`);
 
 	// --- 4. the talk binding (A by default) dictates while the panel is up; peers hear nothing ---
 	const talk = await A.page.evaluate(async () => {
@@ -185,7 +193,9 @@ h.run(async () => {
 			if (get(s.aiAssistant.aiMessages).length > count) break;
 			await new Promise((r) => setTimeout(r, 100));
 		}
-		return { label, claimed, released, ptt, sent: get(s.aiAssistant.aiMessages).slice(count)[0]?.content, dictation: get(s.sttCapture.dictation), busy: get(s.aiAssistant.aiBusy) };
+		const log = window.__dictLog.slice().concat(s.sttCapture.dictationTrace);
+		window.__dictOff?.();
+		return { label, claimed, released, ptt, sent: get(s.aiAssistant.aiMessages).slice(count)[0]?.content, dictation: get(s.sttCapture.dictation), busy: get(s.aiAssistant.aiBusy), log };
 	});
 	h.check(talk.claimed && talk.released && talk.sent === 'make a red cube', `holding the talk binding (${talk.label}) dictates and sends (${JSON.stringify(talk)})`);
 	h.check(talk.ptt === false, 'push-to-talk to peers stays off while you talk to the AI');

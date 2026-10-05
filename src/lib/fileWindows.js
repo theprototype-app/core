@@ -28,7 +28,7 @@ export function openTextEditor(target) {
  * a reader looking for the audio player can find it.
  *
  * ADDITIVE: a target with no kind is an image, which is what every pre-round-11 caller passes.
- * @type {import('svelte/store').Writable<{title: string, url: string, kind?: 'image'|'audio'|'object'|'folder', itemId?: string, prefabId?: string, name?: string, folderId?: string, onClose?: () => void} | null>}
+ * @type {import('svelte/store').Writable<{title: string, url: string, kind?: 'image'|'audio'|'video'|'object'|'folder', itemId?: string, prefabId?: string, name?: string, folderId?: string, onClose?: () => void} | null>}
  */
 /**
  * R22 round 12 — EVERY OPEN PREVIEW WINDOW, oldest first. `{id, ...target}`.
@@ -119,7 +119,7 @@ export function openImagePreview(target) {
 /**
  * The general opener: a file of any previewable kind. 'openImagePreview' stays as the
  * image-shaped front door so nothing that already calls it has to change.
- * @param {{title: string, url?: string, kind?: 'image'|'audio'|'object'|'folder', itemId?: string, prefabId?: string, name?: string, folderId?: string, onClose?: () => void}} target
+ * @param {{title: string, url?: string, kind?: 'image'|'audio'|'video'|'object'|'folder', itemId?: string, prefabId?: string, name?: string, folderId?: string, onClose?: () => void}} target
  */
 export function openFilePreview(target) {
 	const spec = { url: '', ...target };

@@ -108,6 +108,7 @@
 	import Grid from '../extensions/Grid.svelte';
 	import { safeStorage } from '$lib/safeStorage';
 	import Outline from './Outline.svelte'
+	import RecordingDriver from './RecordingDriver.svelte'
 	import Player from './play/Player.svelte'
 	import { tickStartView } from '$lib/startView'
 	import { Mesh, Vector3 } from 'three'
@@ -1670,6 +1671,8 @@
 {#if !$isVRMode || $vrPostEnabled}
 <Outline />
 {/if}
+<!-- 36-share: the turntable/flythrough recorder's pose + capture stages -->
+<RecordingDriver />
 
 <Player
 bind:playerMesh

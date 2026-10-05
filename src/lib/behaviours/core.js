@@ -627,8 +627,10 @@ export function createBehaviourRuntime(host) {
 		},
 		/**
 		 * 36 (U10): a flow trigger reached the node's input `name` (flowRuntime, every peer, once per
-		 * fresh stamp) — its `on.<name>` handler runs on the authority. @param {string} id
-		 * @param {string} name @param {any} [payload] @returns {boolean} false = no such input
+		 * fresh stamp) — its `on.<name>` handler runs on the authority, once per stamp (held a moment
+		 * on a peer that is not the authority yet). @param {string} id @param {string} name
+		 * @param {any} [payload] @param {number} [stamp] the trigger stamp
+		 * @returns {boolean} false = no such input
 		 */
 		input(id, name, payload = {}, stamp = undefined) {
 			const inst = instances.get(id);

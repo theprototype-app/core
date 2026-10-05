@@ -722,11 +722,9 @@ const DEFS = require('./templates/index.cjs').loadDefs(moduleDef);
 					object.scale.set(k[0], k[1], k[2]);
 				}
 				if (o.physics && !mirror) object.userData.physics = o.physics;
-				// 36-fb-water F15: `children` on ANY primitive, built in its LOCAL frame — they ride
-				// its body (a boat's stripe and mast on a floating hull) while the parent's own
-				// collider stays its own shape (collider: 'hull' reads the parent mesh only)
-				if (o.type !== 'group' && o.type !== 'empty' && Array.isArray(o.children))
-					for (const child of o.children) object.add(build(child, opts));
+				// 36-fb-water F15's `children` on any primitive is the 36-backlog-21c block above (both lanes
+				// added one; the 1.25 union built every child twice — 36-int-125). The parent's collider stays
+				// its own shape (collider: 'hull' reads the parent mesh only)
 				// 30 author-kit: object FLAGS. Each lands where the app itself keeps it, so the
 				// .tpscene carries it the ordinary way (userData rides toJSON; a clip rides the
 				// animations block). A mirror ghost takes none of them (it is decoration).

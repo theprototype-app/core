@@ -10,7 +10,7 @@ import { stripEditOverlays } from './editOverlays';
 import { isPristinePackRef, stubElementOf, stubNodeCount, fillPackRef, warmPrograms } from './packRefs';
 // 36 L2: the scene's saved view is applied at the START of a load (startView.js)
 import { beginStartView, settleStartView, sceneHoldsCamera } from './startView';
-import { beginLoad, endLoad, progress, slice, updateLoad, onCancel, isLive, LoadCancelled, throttledPoke, holdFrames, releaseFrames, nextFrames, within, WARM_WAIT_MS, warmComposer } from './sceneLoader';
+import { beginLoad, claimLoad, adoptLoad, scenesCleared, endLoad, progress, slice, updateLoad, onCancel, isLive, LoadCancelled, throttledPoke, holdFrames, releaseFrames, nextFrames, within, WARM_WAIT_MS, warmComposer } from './sceneLoader';
 // B7: a spawner's copies exist only while the world runs — never in a scene file
 import { isTransient } from './transientObjects';
 import {
@@ -1372,15 +1372,27 @@ function reportOldRulesGame(payload) {
  *   quiet      true skips the "Session loaded" toast — 33 (L3): a full Clear applies an EMPTY
  *              payload, and "Session loaded: Untitled (0 objects)" is not what happened
  * @param {any} payload
- * @param {{backup?: boolean, replicate?: boolean, game?: boolean, workspace?: boolean, quiet?: boolean}} [opts]
+ *   job        36 F20: the claim a person's click opened (`claimLoad`) — adopted, or nothing
+ *              happens when a newer load superseded it meanwhile
+ * @param {{backup?: boolean, replicate?: boolean, game?: boolean, workspace?: boolean, quiet?: boolean, job?: any}} [opts]
+ * @returns {Promise<boolean>} false when a newer load (or Cancel) took over before it finished
  */
 export async function applySession(payload, opts = {}) {
 	// 33 L1: ONE load at a time, and it says what it is doing. Starting this one supersedes
 	// a load still running (its loop stops at its next slice) — opening scene B while A is
 	// still arriving is how a user cancels A, and it must not leave A's objects in B.
-	const job = beginLoad(payload?.name ?? 'scene', (payload?.objects ?? []).length, { phase: 'preparing' });
+	// 36 F20: a person's click CLAIMED its job before downloading/asking (`claimLoad`); the
+	// apply adopts that claim — and a claim a newer load has superseded applies NOTHING.
+	const name = payload?.name ?? 'scene';
+	const total = (payload?.objects ?? []).length;
+	/** @type {any} */
+	const job = opts.job ?? beginLoad(name, total, { phase: 'preparing' });
+	if (opts.job && !adoptLoad(job, { name, total })) return false;
 	try {
 		await applySessionNow(payload, opts, job);
+		// false = superseded or cancelled on the way: what follows a load (the level record,
+		// the unsaved marker) must not describe a scene that is not on screen (36 F20)
+		return !job.cancelled;
 	} catch (error) {
 		// a load that FAILED must not leave its bar up (endLoad ignores a superseded job)
 		endLoad(job);
@@ -1425,6 +1437,7 @@ async function applySessionNow(payload, opts, job) {
 	if (!isLive(job)) return;
 	if (replicate) sceneCommand('/clear all'); // replicated clear (objects + module content)
 	else clearSceneLocal();
+	scenesCleared(job); // 36 F20: a superseded load's half scene went with the clear
 	updateLoad(job, { phase: 'objects' });
 	// 36 L2: the START VIEW, now — it is in the payload before any object exists. Applied at
 	// the end (as it was) it landed seconds into a heavy scene and overrode the user's moves.
@@ -1514,9 +1527,13 @@ async function applySessionNow(payload, opts, job) {
 	// the objects this load built (kit pieces warm themselves as their packs land) — then draw
 	await within(warmPrograms(group), WARM_WAIT_MS);
 	releaseFrames();
+	// 36 F20: superseded while the programs warmed — nothing below may touch the newer scene
+	if (!isLive(job)) return;
 	// animated imports come back from their original bytes (mixers rebuilt, peers
-	// reparse the same file) and authored tracks from the payload
-	await animatedImportsRestore(payload.animated ?? [], replicate);
+	// reparse the same file) and authored tracks from the payload. Each one awaits a
+	// download and a parse: `live` stops the restore the moment a newer load takes over,
+	// so no rig of this scene lands in the next one (36 F20)
+	await animatedImportsRestore(payload.animated ?? [], replicate, () => isLive(job));
 	// superseded while the rigs parsed: the newer load owns the scene now
 	if (!isLive(job)) return;
 	// replicate: a loaded scene's movements reach the peers already in the room,
@@ -1609,13 +1626,19 @@ let pendingProposal = null;
 /** Load a session — solo applies immediately, with peers it becomes a proposal
  * every connected peer must accept.
  * @param {string} id
+ * @param {{job?: any}} [opts] 36 F20: a claim the caller already opened
  * @returns {Promise<boolean>} true when the load APPLIED NOW (solo path); false when
  *   it became a proposal (or the session was missing) — 21-G8's "opened as the
  *   current scene, unsaved" marker only makes sense for a load that actually happened */
-export async function requestLoadSession(id) {
+export async function requestLoadSession(id, opts = {}) {
+	// 36 F20: the click owns its load from here (the idb read is an await like any other)
+	const job = opts.job ?? claimLoad(get(sessions).find((entry) => entry.id === id)?.name ?? 'scene');
 	const payload = await getSession(id);
-	if (!payload) return false;
-	return requestLoadPayload(payload);
+	if (!payload) {
+		endLoad(job);
+		return false;
+	}
+	return requestLoadPayload(payload, { job });
 }
 
 /**
@@ -1686,9 +1709,22 @@ async function confirmSceneSize(payload) {
 	}
 }
 
-/** @param {any} payload @returns {Promise<boolean>} see the block comment above */
-export async function requestLoadPayload(payload) {
-	if (!payload) return false;
+/** @param {any} payload @param {{job?: any}} [opts] 36 F20: the claim the click opened
+ * (absent = claimed here); every await below is followed by `isLive(job)` — a click that a
+ * newer load superseded never applies
+ * @returns {Promise<boolean>} see the block comment above */
+export async function requestLoadPayload(payload, opts = {}) {
+	if (!payload) {
+		if (opts.job) endLoad(opts.job);
+		return false;
+	}
+	const job = opts.job ?? claimLoad(payload.name ?? 'scene');
+	/** @param {boolean} go */
+	const stillGo = (go) => {
+		if (go && isLive(job)) return true;
+		endLoad(job); // declined (or superseded: endLoad ignores a job that is not current)
+		return false;
+	};
 	// 26-C (roadmap 26 Stage 2, last bullet): SAY HOW BIG IT IS BEFORE REPLACING THE
 	// SCENE. This is the file half of the ingest gate, and it sits HERE rather than in
 	// `applySession` on purpose: travel, a peer's proposal, an autosave restore and the
@@ -1699,12 +1735,12 @@ export async function requestLoadPayload(payload) {
 	// TWO ways out, not the wire's three. "Load the first N objects of this file" makes
 	// a scene nobody saved, which the user would then re-save over their own file
 	// silently truncated — a stream is divisible, a document is not.
-	if (!(await confirmSceneSize(payload))) return false;
+	if (!stillGo(await confirmSceneSize(payload))) return false;
 	// 33 (L2): the modules the scene being LEFT brings along and this one does not need —
 	// keep or unload (Settings ▸ Scene decides when the person told us to remember). The
 	// unload itself waits for the load to really apply: a proposal may be declined.
 	const moduleSwitch = await prepareSceneSwitch(payload);
-	if (!moduleSwitch) return false;
+	if (!stillGo(!!moduleSwitch) || !moduleSwitch) return false;
 	/** @type {any} */
 	const peer = get(peers);
 	let connected = Object.keys(peer?.connections ?? {});
@@ -1724,11 +1760,13 @@ export async function requestLoadPayload(payload) {
 			connected = connected.filter((id) => here.has(id));
 		}
 	} catch {}
+	if (!stillGo(true)) return false;
 	if (!connected.length) {
 		moduleSwitch.run();
-		await applySession(payload);
-		return true;
+		return await applySession(payload, { job });
 	}
+	// a proposal applies later, through its own load (acceptance runs applySession)
+	endLoad(job);
 	pendingProposal = { payload, accepts: new Set(), needed: connected, beforeApply: moduleSwitch.run };
 	peer.send({
 		type: 'sessionproposal',

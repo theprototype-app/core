@@ -3,6 +3,8 @@ import { showToast, closeSelectionInspector } from '../stores/appStore.js';
 import { objectsGroup } from '../stores/sceneStore';
 import { isViewer, warnViewerReadOnly } from './objectPermissions';
 import { contentBase, fetchIndex, onContentStale } from './contentBase';
+// 36 F20: a template's load is claimed at the click (a leaf: svelte/store only)
+import { claimLoad, isLive, endLoad, updateLoad } from './sceneLoader';
 // 28-A6: the Community source a cloud plugin may install (store-only, no cycle — the
 // objectPermissions import above already reaches cloudHooks' family)
 import { communityProvider } from './cloudHooks';
@@ -304,22 +306,37 @@ export async function loadRemoteScene(entry) {
 	}
 	if (!entry?.sceneUrl) return false;
 	loadingSlug.set(entry.slug);
+	// 36 F20: the load is THIS click's from now — the download, the unzip and the dialogs
+	// all happen inside it, the bar says so at once (F21), and a scene opened meanwhile
+	// supersedes it: then this one stops at its next await and never replaces anything
+	const job = claimLoad(entry.title || entry.slug || 'scene');
 	try {
 		const res = await fetch(entry.sceneUrl);
+		if (!isLive(job)) return false;
 		if (!res.ok) {
+			endLoad(job);
 			showToast(`Could not fetch "${entry.title}" (${res.status})`);
 			return false;
 		}
+		const bytes = await res.arrayBuffer();
+		if (!isLive(job)) return false;
+		updateLoad(job, { phase: 'preparing' });
 		const { importSessionZip, requestLoadSession } = await import('./sessions');
-		const payload = await importSessionZip(await res.arrayBuffer());
-		if (!payload) return false; // V4: user declined a newer-format confirm — silent
-		await requestLoadSession(payload.id);
-		return true;
+		const payload = await importSessionZip(bytes);
+		if (!isLive(job)) return false;
+		if (!payload) {
+			endLoad(job);
+			return false; // V4: user declined a newer-format confirm — silent
+		}
+		return await requestLoadSession(payload.id, { job });
 	} catch {
-		showToast(`Could not load "${entry.title}" — check your connection`);
+		const mine = isLive(job);
+		endLoad(job);
+		if (mine) showToast(`Could not load "${entry.title}" — check your connection`);
 		return false;
 	} finally {
-		loadingSlug.set(null);
+		// a newer click on another card owns the spinner now
+		if (get(loadingSlug) === entry.slug) loadingSlug.set(null);
 	}
 }
 

@@ -27,7 +27,8 @@ export const SLICE_MS = 10;
 
 /**
  * @typedef {{id: number, name: string, verb: string, total: number, done: number, phase: string,
- *   cancellable: boolean, startedAt: number, cancelled: boolean, interrupted: boolean}} LoadJob
+ *   cancellable: boolean, startedAt: number, cancelled: boolean, interrupted: boolean,
+ *   orphaned: (() => void)[]}} LoadJob
  * `interrupted`: this load superseded one that was still BUILDING its scene — what is on
  * screen is half of somebody else's load, not the user's work (no backup is owed for it).
  */
@@ -254,12 +255,19 @@ function publish() {
  * @returns {LoadJob}
  */
 export function beginLoad(name, total, opts = {}) {
-	// only the BUILDING phase leaves a half scene behind ('preparing'/'reading' have not
-	// touched the scene yet; 'models' means it is whole)
-	const interrupted = !!current && current.phase === 'objects';
+	// only the BUILDING phase leaves a half scene behind ('fetching'/'preparing'/'reading'
+	// have not touched the scene yet; 'models' means it is whole)
+	// (or a claim that superseded such a load and had not cleared it yet — 36 F20)
+	const interrupted = !!current && (current.phase === 'objects' || current.orphaned?.length > 0);
+	// 36 F20: a CLAIM (a click whose file is still downloading) supersedes a load that is
+	// building, but it has not cleared anything yet: if the claim is then dropped (a declined
+	// dialog, a failed fetch), the half scene it stopped is taken back by that load's own
+	// Cancel — see `endLoad`. A load that applies takes it over by clearing (`adoptLoad`).
+	const orphaned = !current ? [] : current.phase === 'objects' ? [...cancelHooks] : [...(current.orphaned ?? [])];
 	if (current) cancelLoad({ superseded: true });
 	current = {
 		interrupted,
+		orphaned,
 		id: ++nextId,
 		name: String(name || 'scene'),
 		verb: opts.verb ?? 'Loading',
@@ -309,6 +317,64 @@ export function endLoad(job) {
 	clearTimeout(publishTimer);
 	publishTimer = null;
 	publish();
+	// 36 F20: a claim that ends WITHOUT having replaced the scene, over the half scene of
+	// the load it superseded — that load's own Cancel takes its half back
+	runHooks(job.orphaned);
+	job.orphaned = [];
+}
+
+/** @param {(() => void)[]} hooks */
+function runHooks(hooks) {
+	for (const hook of hooks) {
+		try {
+			hook();
+		} catch {}
+	}
+}
+
+// ---- 36 F20: A LOAD BELONGS TO THE CLICK THAT ASKED FOR IT -------------------------------
+//
+// THE REPORT (1.23, production): open Island Ocean (a slow first load), open another level
+// meanwhile — and later the island finished and REPLACED the level the user had opened.
+// Every person-facing route into a scene replace awaits something BEFORE `applySession`
+// began its job (the template's download, the unzip, the format / module / size dialogs,
+// the keep-or-unload ask, an idb read), and during that wait the click owned no job: the
+// second scene began, loaded and ended, and then the first one's `applySession` started
+// as the newest load of all and won.
+//
+// So the job begins AT THE CLICK. `claimLoad` opens it in the 'fetching' phase (the bar
+// says so at once — 36 F21), supersedes whatever was loading, and every await on the way
+// to the apply is followed by `isLive(job)`; `applySession(payload, {job})` adopts the claim
+// instead of beginning a new job. A claim superseded by a newer click is simply never
+// applied — the newer click is the user's answer.
+
+/**
+ * Begin a load for a click whose payload is not here yet (download, unzip, dialogs).
+ * @param {string} name @param {{verb?: string}} [opts]
+ */
+export function claimLoad(name, opts = {}) {
+	return beginLoad(name, 0, { phase: 'fetching', verb: opts.verb });
+}
+
+/**
+ * The claim reached its apply: true when it is still the load to run (then it is renamed
+ * to the payload and counted from now), false when a newer load or Cancel took over.
+ * @param {LoadJob} job @param {{name?: string, total?: number}} patch
+ */
+export function adoptLoad(job, patch = {}) {
+	if (!isLive(job)) return false;
+	if (patch.name) job.name = String(patch.name);
+	if (patch.total != null) job.total = Math.max(0, patch.total | 0);
+	job.done = 0;
+	job.phase = 'preparing';
+	publish();
+	return true;
+}
+
+/** The apply has cleared the scene: a superseded load's half is gone with it.
+ * @param {LoadJob} job */
+export function scenesCleared(job) {
+	job.orphaned = [];
 }
 
 /** Is THIS job still the one loading (not cancelled, not superseded)? @param {LoadJob} job */
@@ -346,11 +412,9 @@ export function cancelLoad(opts = {}) {
 	clearTimeout(publishTimer);
 	publishTimer = null;
 	publish();
-	for (const hook of hooks) {
-		try {
-			hook();
-		} catch {}
-	}
+	// a user Cancel of a CLAIM over a half scene takes that half back too (36 F20)
+	runHooks(opts.superseded ? [] : [...hooks, ...(job.orphaned ?? [])]);
+	if (!opts.superseded) job.orphaned = [];
 }
 
 /** For the suite: the job object itself (not the published copy). */

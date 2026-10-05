@@ -109,6 +109,105 @@ async function leak(/** @type {any} */ page) {
 	return { flew, chat: chat1 !== chat0 };
 }
 
+/** what the 3D view would show if a pointer gesture reached it: the camera pose + the selection */
+const viewOf = (/** @type {any} */ page) =>
+	page.evaluate(() => {
+		const s = /** @type {any} */ (window).__stores;
+		let c;
+		let sel;
+		s.globalCamera.subscribe((/** @type {any} */ v) => (c = v))();
+		s.selectedObjects.subscribe((/** @type {any} */ v) => (sel = v))();
+		const cam = c?.current ?? c;
+		return { pos: cam ? [cam.position.x, cam.position.y, cam.position.z] : [0, 0, 0], quat: cam ? [cam.quaternion.x, cam.quaternion.y, cam.quaternion.z, cam.quaternion.w] : [0, 0, 0, 1], sel: (/** @type {any[]} */ (sel) ?? []).map((o) => o?.uuid ?? o).sort().join(',') };
+	});
+const viewMoved = (/** @type {any} */ a, /** @type {any} */ b) => dist(a.pos, b.pos) > 0.005 || Math.hypot(...a.quat.map((/** @type {number} */ q, /** @type {number} */ i) => q - b.quat[i])) > 0.002 || a.sel !== b.sel;
+
+/**
+ * S1: wheel, drags (left / middle / right) and a double-click at `p`, inside the panel — did any
+ * of them reach the 3D view? A drag runs TOWARD the panel's centre so it never ends over the canvas.
+ * @param {any} page @param {{x:number,y:number}} p @param {string} root
+ */
+async function mouseLeak(page, p, root) {
+	const r = await page.evaluate((sel) => document.querySelector(sel)?.getBoundingClientRect().toJSON(), root);
+	const cx = r ? r.left + r.width / 2 : p.x;
+	const cy = r ? r.top + r.height / 2 : p.y;
+	const len = Math.hypot(cx - p.x, cy - p.y) || 1;
+	const step = Math.min(60, len * 0.8) / len;
+	const to = { x: p.x + (cx - p.x) * step, y: p.y + (cy - p.y) * step };
+	/** @type {Record<string, boolean>} */
+	const out = {};
+	const settle = async () => {
+		await page.keyboard.press('Escape'); // a menu a right press opened
+		await page.waitForTimeout(150);
+	};
+	let v0 = await viewOf(page);
+	await page.mouse.move(p.x, p.y);
+	await page.mouse.wheel(0, 360);
+	await page.waitForTimeout(350);
+	out.wheel = viewMoved(v0, await viewOf(page));
+	for (const button of /** @type {const} */ (['left', 'middle', 'right'])) {
+		v0 = await viewOf(page);
+		await page.mouse.move(p.x, p.y);
+		await page.mouse.down({ button });
+		for (let i = 1; i <= 8; i++) await page.mouse.move(p.x + ((to.x - p.x) * i) / 8, p.y + ((to.y - p.y) * i) / 8);
+		await page.mouse.up({ button });
+		await page.waitForTimeout(200);
+		out['drag-' + button] = viewMoved(v0, await viewOf(page));
+		await settle();
+	}
+	v0 = await viewOf(page);
+	await page.mouse.dblclick(p.x, p.y);
+	await page.waitForTimeout(350);
+	out.dblclick = viewMoved(v0, await viewOf(page));
+	await settle();
+	// holes: points INSIDE the panel's box where the press would land on the 3D canvas itself
+	out.holes = await page.evaluate((sel) => {
+		const el = document.querySelector(sel);
+		if (!el) return false;
+		const b = el.getBoundingClientRect();
+		let n = 0;
+		for (let gy = 0; gy < 12; gy++)
+			for (let gx = 0; gx < 16; gx++) {
+				const x = b.left + 3 + ((b.width - 6) * (gx + 0.5)) / 16;
+				const y = b.top + 3 + ((b.height - 6) * (gy + 0.5)) / 12;
+				if (x < 0 || y < 0 || x >= innerWidth || y >= innerHeight) continue;
+				const hit = document.elementFromPoint(x, y);
+				if (hit?.tagName === 'CANVAS' && !el.contains(hit)) n++;
+			}
+		return n > 0;
+	}, root);
+	return out;
+}
+
+/** S8: a real undoable edit (a recorded move of the probe box), then Ctrl+Z / Ctrl+Y /
+ * Ctrl+Shift+Z pressed from wherever the keys are now. @param {any} page @param {string} uuid */
+async function undoRedo(page, uuid) {
+	const x = () => S(page, (/** @type {string} */ u) => {
+		let g;
+		/** @type {any} */ (window).__stores.objectsGroup.subscribe((/** @type {any} */ v) => (g = v))();
+		return /** @type {any} */ (g).getObjectByProperty('uuid', u)?.position.x ?? null;
+	}, uuid);
+	const x0 = await x();
+	await S(page, (/** @type {string} */ u) => {
+		const s = /** @type {any} */ (window).__stores;
+		let g;
+		s.objectsGroup.subscribe((/** @type {any} */ v) => (g = v))();
+		const o = /** @type {any} */ (g).getObjectByProperty('uuid', u);
+		const before = { pos: o.position.toArray(), rot: [o.rotation.x, o.rotation.y, o.rotation.z], scale: o.scale.toArray() };
+		o.position.x += 1;
+		const after = { pos: o.position.toArray(), rot: before.rot, scale: before.scale };
+		s.history.recordTransformSet([{ uuid: u, before, after }]);
+	}, uuid);
+	const steps = [];
+	for (const [combo, want] of /** @type {const} */ ([['Control+z', 0], ['Control+y', 1], ['Control+z', 0], ['Control+Shift+Z', 1]])) {
+		await page.keyboard.press(combo);
+		await page.waitForTimeout(160);
+		const now = await x();
+		steps.push(now !== null && x0 !== null && Math.abs(now - (x0 + want)) < 1e-6);
+	}
+	return { ok: steps.every(Boolean), steps };
+}
+
 /**
  * F2: one panel's row. Press its neutral point, then W / C.
  * @param {any} page @param {string} label @param {string} root @param {{exclude?: string, expect?: string}} [o]
@@ -118,7 +217,7 @@ async function panelRow(page, label, root, o = {}) {
 	const p = await neutralPoint(page, root, o.exclude);
 	if (!p) {
 		h.check(false, `F2 ${label}: found a plain spot to press in ${root}`);
-		table.push([label, root, '—', 'no spot', '—']);
+		table.push([label, root, '—', 'no spot', '—', '—', '—', '—', '—', '—', '—']);
 		return;
 	}
 	await page.mouse.click(p.x, p.y);
@@ -126,10 +225,34 @@ async function panelRow(page, label, root, o = {}) {
 	const scope = await scopeNow(page);
 	const r = await leak(page);
 	const leaked = r.flew > 0.01 || r.chat;
-	table.push([label, root + ' (' + p.what + ')', scope, leaked ? `LEAK (W ${r.flew.toFixed(2)}, C ${r.chat ? 'toggled chat' : '—'})` : 'none', '']);
 	h.check(!leaked, `F2 ${label}: W does not fly (${r.flew.toFixed(3)}) and C does not toggle chat (${r.chat}) — scope ${scope}`);
 	if (o.expect) h.check(scope === o.expect, `F2 ${label}: the press gives the keys to "${o.expect}" (${scope})`);
+	if (o.expect === 'panel' || o.expect === 'objects') {
+		// S12: the pane that has the keys wears the ring (data-has-keys), and it is the pressed one
+		const ring = await page.evaluate(({ x, y }) => {
+			const marked = [...document.querySelectorAll('[data-has-keys]')];
+			const hit = document.elementFromPoint(x, y);
+			return { n: marked.length, holds: marked.some((m) => m.contains(hit)), outline: marked[0] ? getComputedStyle(marked[0]).outlineStyle : '' };
+		}, p);
+		h.check(ring.n === 1 && ring.holds && ring.outline === 'solid', `S12 ${label}: exactly one pane wears the keyboard ring, the pressed one (${JSON.stringify(ring)})`);
+	}
+	// S8: undo/redo from this scope (the press above still holds the keys)
+	let undo = '—';
+	if (probeBox[page.__name]) {
+		await page.mouse.click(p.x, p.y);
+		await page.waitForTimeout(120);
+		const u = await undoRedo(page, probeBox[page.__name]);
+		undo = u.ok ? 'works' : 'BROKEN ' + JSON.stringify(u.steps);
+		h.check(u.ok, `S8 ${label}: Ctrl+Z / Ctrl+Y / Ctrl+Z / Ctrl+Shift+Z undo and redo from here (${JSON.stringify(u.steps)})`);
+	}
+	// S1: wheel / drags / double-click
+	const m = await mouseLeak(page, p, root);
+	const mouseLeaks = Object.entries(m).filter(([, v]) => v).map(([k]) => k);
+	h.check(mouseLeaks.length === 0, `S1 ${label}: wheel, left/middle/right drag and double-click never reach the 3D view; no canvas holes (${mouseLeaks.join(', ') || 'none'})`);
+	table.push([label, root + ' (' + p.what + ')', scope, leaked ? `LEAK (W ${r.flew.toFixed(2)}, C ${r.chat ? 'toggled chat' : '—'})` : 'none', ...['wheel', 'drag-left', 'drag-middle', 'drag-right', 'dblclick', 'holes'].map((k) => (m[k] ? 'LEAK' : 'ok')), undo]);
 }
+/** a box per page whose recorded moves the S8 rows undo @type {Record<string, string>} */
+const probeBox = {};
 
 /** behaviour probe module: an api with flow.addNodes (as the behaviours suite) */
 const PROBE = () => {
@@ -248,6 +371,28 @@ async function rightClickMidDrag(page, label, root) {
 	return captured;
 }
 
+/** S8's probe box on a page (spawned once, the Inspector it opens closed again) @param {any} page @param {string} name */
+async function spawnProbe(page, name) {
+	page.__name = name;
+	const had = await S(page, () => {
+		let g;
+		/** @type {any} */ (window).__stores.objectsGroup.subscribe((/** @type {any} */ v) => (g = v))();
+		return /** @type {any} */ (g).children.map((/** @type {any} */ c) => c.uuid);
+	});
+	await S(page, () => /** @type {any} */ (window).__stores.addObjects.spawnAtPoint('/create Box 1 1 1', [-3, 0.5, -8]));
+	await page.waitForTimeout(800);
+	probeBox[name] = await S(page, (/** @type {string[]} */ before) => {
+		const s = /** @type {any} */ (window).__stores;
+		let g;
+		s.objectsGroup.subscribe((/** @type {any} */ v) => (g = v))();
+		const u = /** @type {any} */ (g).children.find((/** @type {any} */ c) => !before.includes(c.uuid) && c.isMesh)?.uuid ?? '';
+		s.objectActions.deselectObject?.();
+		s.inspectorClose.set(true);
+		return u;
+	}, had);
+	h.check(!!probeBox[name], `S8 premise (${name}): a probe box to move and undo`);
+}
+
 h.run(async () => {
 	const browser = await h.launch({ args: h.GPU_ARGS });
 
@@ -255,6 +400,7 @@ h.run(async () => {
 	const A = await h.setupPage(browser, 'A', { context: { viewport: { width: 1500, height: 940 } } });
 	const p = A.page;
 	h.check(await S(p, PROBE), 'probe module up');
+	await spawnProbe(p, 'A');
 
 	// ---- F1 (a): MARBLE MAZE's behaviour, the user's case ---------------------------------------
 	if (MARBLE) {
@@ -339,9 +485,21 @@ h.run(async () => {
 
 	// ---- F2: every DOCKED panel -----------------------------------------------------------------
 	await focusViewport(p);
+	const ctlUndo = await undoRedo(p, probeBox.A);
+	h.check(ctlUndo.ok, `S8 control: undo/redo from the 3D view (${JSON.stringify(ctlUndo.steps)})`);
 	const ctl = await leak(p);
 	h.check(ctl.flew > 0.05 && ctl.chat, `F2 control: from the 3D view W flies (${ctl.flew.toFixed(2)}) and C toggles chat (${ctl.chat})`);
-	table.push(['3D viewport (control)', 'canvas', await scopeNow(p), ctl.flew > 0.05 ? 'flies (wanted)' : 'did not fly?!', '']);
+	// S1 control: the same wheel over the canvas DOES zoom (so the measurement can see a leak)
+	{
+		const cvb = await p.locator('canvas').first().boundingBox();
+		const v0 = await viewOf(p);
+		await p.mouse.move(cvb.x + cvb.width * 0.5, cvb.y + 150);
+		await p.mouse.wheel(0, 360);
+		await p.waitForTimeout(400);
+		const zoomed = viewMoved(v0, await viewOf(p));
+		h.check(zoomed, 'S1 control: a wheel over the 3D view moves its camera');
+		table.push(['3D viewport (control)', 'canvas', await scopeNow(p), ctl.flew > 0.05 ? 'flies (wanted)' : 'did not fly?!', zoomed ? 'zooms (wanted)' : 'no zoom?!', '', '', '', '', '', '']);
+	}
 	await panelRow(p, 'Node editor graph (docked)', '[data-key-scope="nodes"] .svelte-flow__pane', { expect: 'nodes' });
 	await panelRow(p, 'Node editor chrome (docked)', '#flow-list', { exclude: '[data-key-scope="nodes"]', expect: 'panel' });
 	await S(p, () => /** @type {any} */ (window).__stores.flowGraphClose.set(true));
@@ -396,6 +554,19 @@ h.run(async () => {
 	}, cube);
 	await p.waitForTimeout(700);
 	await panelRow(p, 'Inspector', '#inspector', { expect: 'panel' });
+	// S8: with a CONTROL focused (a checkbox / slider / select in the Inspector) Ctrl+Z is still undo
+	const ctlSel = await S(p, () => {
+		const c = [...document.querySelectorAll('#inspector input[type="checkbox"], #inspector input[type="range"], #inspector select')].find((e) => e.getBoundingClientRect().width > 0);
+		if (!c) return '';
+		/** @type {HTMLElement} */ (c).focus();
+		return c.tagName + (c.getAttribute('type') ? '[' + c.getAttribute('type') + ']' : '');
+	});
+	if (ctlSel) {
+		const u = await undoRedo(p, probeBox.A);
+		h.check(u.ok, `S8 Inspector with a ${ctlSel} focused: Ctrl+Z / Ctrl+Y still undo and redo (${JSON.stringify(u.steps)})`);
+		table.push(['Inspector, ' + ctlSel + ' focused', '#inspector', await scopeNow(p), '', '', '', '', '', '', '', u.ok ? 'works' : 'BROKEN']);
+		await S(p, () => /** @type {any} */ (document.activeElement)?.blur?.());
+	} else h.check(false, 'S8 premise: the Inspector shows a checkbox, slider or select');
 	await S(p, () => /** @type {any} */ (window).__stores.inspectorClose.set(true));
 	await S(p, () => /** @type {any} */ (window).__stores.objectListClose.set(false));
 	await p.waitForTimeout(600);
@@ -414,7 +585,7 @@ h.run(async () => {
 			return !(/** @type {any} */ (g).getObjectByProperty('uuid', u));
 		}, victim);
 		h.check(gone, 'F2 Object list: Delete still deletes the selected object (the outliner keeps its selection keys)');
-		table.push(['Object list — Delete', '#object-list', 'objects', gone ? 'deletes the selection (wanted)' : 'did NOT delete', '']);
+		table.push(['Object list — Delete', '#object-list', 'objects', gone ? 'deletes the selection (wanted)' : 'did NOT delete', '', '', '', '', '', '', '']);
 	}
 	await S(p, () => /** @type {any} */ (window).__stores.objectListClose.set(true));
 
@@ -428,7 +599,7 @@ h.run(async () => {
 	await p.keyboard.press('Escape');
 	await p.waitForTimeout(200);
 	h.check((await scopeNow(p)) === 'viewport', 'F2 toolbar: a press on the toolbar after the 3D view leaves the keys with the 3D view');
-	table.push(['Toolbar (Controls pill)', '#controls-pill', 'keep (no move)', 'keys stay with the previous scope', '']);
+	table.push(['Toolbar (Controls pill)', '#controls-pill', 'keep (no move)', 'keys stay with the previous scope', '', '', '', '', '', '', '']);
 	void pb;
 
 	// ================= FLOATING page: F2 floating panels, F3, F4 ===================================
@@ -438,6 +609,7 @@ h.run(async () => {
 	});
 	const q = B.page;
 	h.check(await S(q, PROBE), 'probe module up (B)');
+	await spawnProbe(q, 'B');
 	const floating = [
 		['Node editor (floating)', 'flowGraphClose', '#flow-window', '[data-key-scope="nodes"]'],
 		['Explorer (floating)', 'explorerClose', '#explorer-window', ''],
@@ -542,8 +714,8 @@ h.run(async () => {
 		await shot(p, '05-behaviour-view-after-light.png');
 	}
 
-	console.log('\nF2 LEAK TABLE (panel | pressed | scope | leak)');
-	for (const r of table) console.log('| ' + r.slice(0, 4).join(' | ') + ' |');
+	console.log('\nF2 / S1 / S8 TABLE (panel | pressed | scope | keys W+C | wheel | drag L | drag M | drag R | dblclick | canvas holes | undo/redo)');
+	for (const r of table) console.log('| ' + r.join(' | ') + ' |');
 	console.log('\nF3 (window | contextmenu events during the drag)');
 	for (const [l, c] of f3) console.log('| ' + l + ' | ' + JSON.stringify(c) + ' |');
 	console.log('\nF4 audit (window | header elements treated as grips)');

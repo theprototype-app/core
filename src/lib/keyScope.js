@@ -63,6 +63,21 @@ export function isTextEntry(el) {
 	return tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || !!el.isContentEditable;
 }
 
+/** <input> types you TYPE into (their own Ctrl+Z is the browser's text undo) */
+const TYPING_INPUTS = new Set(['', 'text', 'search', 'url', 'tel', 'email', 'password', 'number', 'date', 'datetime-local', 'month', 'time', 'week']);
+
+/**
+ * Is `el` a field you type into — as opposed to a form CONTROL (slider, checkbox, radio, colour,
+ * button, select) that only keeps its own bare keys (arrows, space, letters to pick an option)?
+ * @param {any} el
+ */
+export function isTypingField(el) {
+	if (!el) return false;
+	if (el.tagName === 'TEXTAREA' || el.isContentEditable) return true;
+	if (el.tagName !== 'INPUT') return false;
+	return TYPING_INPUTS.has(String(el.type ?? el.getAttribute?.('type') ?? '').toLowerCase());
+}
+
 /**
  * The scope an element belongs to (text entry excluded — that is decided per EVENT,
  * because focus inside a field is a property of the key press, not of the pane).
@@ -104,6 +119,16 @@ export function onScopeChange(fn) {
  * @param {string} scope @param {any} [host] the pane element, so a CLOSED pane gives the keys back
  */
 export function setLastScope(scope, host = null) {
+	// 36 S12: the pane that holds the keyboard says so — `data-has-keys` on its host, read by
+	// the shared ring (ui.utilities.css); moving between two panels moves the ring
+	if (host !== pointerHost) {
+		try {
+			pointerHost?.removeAttribute?.('data-has-keys');
+			host?.setAttribute?.('data-has-keys', '');
+		} catch {
+			/* a detached host keeps nothing */
+		}
+	}
 	pointerHost = host;
 	const next = scope || 'viewport';
 	if (next === pointerScope) return;
@@ -140,7 +165,10 @@ function paneShowing(el) {
  */
 export function scopeOfEvent(event) {
 	const target = event?.target;
-	if (isTextEntry(target)) return hostScopeOf(target) === 'code' ? 'code' : 'text';
+	// 36 S8: a focused form CONTROL keeps its bare keys, but a Ctrl/Cmd combo (undo, redo, save)
+	// is the pane's — clicking a checkbox in the Inspector used to leave Ctrl+Z dead
+	const control = isTextEntry(target) && !isTypingField(target) && !!(/** @type {any} */ (event)?.ctrlKey || /** @type {any} */ (event)?.metaKey);
+	if (isTextEntry(target) && !control) return hostScopeOf(target) === 'code' ? 'code' : 'text';
 	if (target && typeof target.closest === 'function' && target.closest('.cm-editor')) return 'code';
 	try {
 		if (vrProbe && vrProbe()) return 'vr';
@@ -224,7 +252,8 @@ export function chainOf(focused) {
  */
 export function movesScope(el) {
 	if (!el || typeof el.closest !== 'function') return true;
-	if (isTextEntry(el) && !el.closest('.cm-editor')) return false;
+	// 36 S8: a TYPING field only — a checkbox or slider in the Inspector is a press in the Inspector
+	if (isTextEntry(el) && isTypingField(el) && !el.closest('.cm-editor')) return false;
 	if (el.closest('[role="menu"], [role="dialog"], [role="listbox"], dialog, [data-key-scope-transient]')) return false;
 	// 36 F2: a toolbar is not a place — the keys stay with whoever had them
 	if (el.closest('[data-key-scope]')?.getAttribute('data-key-scope') === 'keep') return false;

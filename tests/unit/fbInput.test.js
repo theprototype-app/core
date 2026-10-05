@@ -7,7 +7,7 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import fs from 'node:fs';
 import path from 'node:path';
-import { hostScopeOf, scopeOfEvent, pickForScope, setLastScope, viewportHasKeys, movesScope, rowIn, SCOPE_LABELS } from '../../src/lib/keyScope.js';
+import { hostScopeOf, scopeOfEvent, pickForScope, setLastScope, viewportHasKeys, movesScope, rowIn, SCOPE_LABELS, isTypingField } from '../../src/lib/keyScope.js';
 import { isHeaderDrag, isWindowGrip, INTERACTIVE_CHROME } from '../../src/lib/windowGrip.js';
 
 const ROOT = path.resolve(__dirname, '../..');
@@ -92,6 +92,42 @@ describe('36 F2 — panels own the keyboard', () => {
 		expect(hostScopeOf(el({ parent: bar }))).toBe('viewport');
 		setLastScope('panel');
 		expect(scopeOfEvent({ target: el({ parent: bar }) })).toBe('panel');
+	});
+
+	it('S8: a focused CONTROL keeps its bare keys but hands Ctrl/Cmd combos (undo) to its pane', () => {
+		const pane = el({ attrs: { 'data-key-scope': 'panel' } });
+		const box = el({ tag: 'INPUT', attrs: { type: 'checkbox' }, parent: pane });
+		box.type = 'checkbox';
+		const field = el({ tag: 'INPUT', parent: pane });
+		field.type = 'text';
+		setLastScope('panel');
+		expect(scopeOfEvent({ target: box })).toBe('text'); // bare W/arrows: the control's
+		expect(scopeOfEvent({ target: box, ctrlKey: true })).toBe('panel'); // Ctrl+Z: the pane's undo
+		expect(scopeOfEvent({ target: field, ctrlKey: true })).toBe('text'); // a typed field keeps its text undo
+		expect(isTypingField(field) && !isTypingField(box) && !isTypingField(el({ tag: 'SELECT' }))).toBe(true);
+		// a press on a control moves the keyboard to its pane; a press in a typing field does not
+		expect(movesScope(box)).toBe(true);
+		expect(movesScope(field)).toBe(false);
+	});
+
+	it('S12: the pane that holds the keys carries data-has-keys, and only that one', () => {
+		const attrs = (n) => {
+			const a = {};
+			n.setAttribute = (k, v) => (a[k] = v);
+			n.removeAttribute = (k) => delete a[k];
+			return a;
+		};
+		const one = el({ attrs: { 'data-key-scope': 'panel' } });
+		const two = el({ attrs: { 'data-key-scope': 'panel' } });
+		const a1 = attrs(one);
+		const a2 = attrs(two);
+		setLastScope('panel', one);
+		expect('data-has-keys' in a1).toBe(true);
+		setLastScope('panel', two); // panel -> panel: the ring moves although the scope did not
+		expect('data-has-keys' in a1).toBe(false);
+		expect('data-has-keys' in a2).toBe(true);
+		setLastScope('viewport');
+		expect('data-has-keys' in a2).toBe(false);
 	});
 
 	it('both new scopes have a human name (the ? sheet and Settings read it)', () => {

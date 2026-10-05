@@ -1447,6 +1447,8 @@
 	class={'fixed inset-e-0 top-16 z-50 w-80 overflow-y-auto bg-white p-4 dark:bg-gray-800 rounded-tl-lg pt-0' + (bottomRounded ? ' rounded-bl-lg' : '')}
 	id="inspector"
 	data-key-scope="panel"
+	role="region"
+	aria-label="Properties"
 >
 	<!-- bottom-sheet drag handle (shown only in the narrow bottom-sheet layout) -->
 	<div

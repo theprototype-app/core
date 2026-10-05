@@ -186,7 +186,7 @@
 </script>
 
 {#if open}
-	<div id="behaviour-view" data-key-scope="panel" class="absolute inset-0 z-20 flex flex-col bg-gray-900" data-behaviour-view={open.id}>
+	<div id="behaviour-view" data-key-scope="panel" role="region" aria-label="Behaviour graph view" class="absolute inset-0 z-20 flex flex-col bg-gray-900" data-behaviour-view={open.id}>
 		<div class="flex shrink-0 items-center gap-2 border-b border-gray-700 px-2 py-1 text-xs text-gray-200">
 			<button id="behaviour-view-back" class="ui-button-quiet" title="Back to the graph" onclick={() => behaviourViewOpen.set(null)}>← Graph</button>
 			<span class="font-semibold">{graphNode?.data?.name || status?.name || 'Behaviour'}</span>

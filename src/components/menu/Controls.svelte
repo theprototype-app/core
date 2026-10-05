@@ -2269,7 +2269,7 @@
 	/>
 {/if}
 
-<div id="object-list" data-key-scope="objects" class={($objectListClose ? 'hidden' : 'flex') + ' flex-col ui-panel overflow-hidden'} use:dragMe use:focusStack={'objects'}
+<div id="object-list" data-key-scope="objects" role="region" aria-label="Object list" class={($objectListClose ? 'hidden' : 'flex') + ' flex-col ui-panel overflow-hidden'} use:dragMe use:focusStack={'objects'}
 	use:tabbable={{ key: 'objects', title: '☰ Objects', openStore: objectListClose, isOpen: (v) => !v, close: () => objectListClose.set(true) }}
 	use:dockable={{ key: 'objects' }}
 	style="z-index: var(--z-window)">

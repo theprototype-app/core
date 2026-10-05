@@ -146,13 +146,21 @@ const viewMoved = (/** @type {any} */ a, /** @type {any} */ b) => {
  * of them reach the 3D view? A drag runs TOWARD the panel's centre so it never ends over the canvas.
  * @param {any} page @param {{x:number,y:number}} p @param {string} root
  */
-async function mouseLeak(page, p, root) {
+async function mouseLeak(page, p0, root) {
 	const r = await page.evaluate((sel) => document.querySelector(sel)?.getBoundingClientRect().toJSON(), root);
+	// the press point FOLLOWS the panel: a left drag on a floating window's title MOVES the window,
+	// and a gesture at the old point then lands on the 3D canvas — a fake leak (diagnosed: the
+	// "middle drag moves the camera" rows were exactly that, pointerdown@CANVAS)
+	let p = p0;
+	const follow = async () => {
+		const now = await page.evaluate((sel) => document.querySelector(sel)?.getBoundingClientRect().toJSON(), root);
+		p = r && now ? { x: p0.x + now.left - r.left, y: p0.y + now.top - r.top } : p0;
+	};
 	const cx = r ? r.left + r.width / 2 : p.x;
 	const cy = r ? r.top + r.height / 2 : p.y;
 	const len = Math.hypot(cx - p.x, cy - p.y) || 1;
 	const step = Math.min(60, len * 0.8) / len;
-	const to = { x: p.x + (cx - p.x) * step, y: p.y + (cy - p.y) * step };
+	const dv = { x: (cx - p.x) * step, y: (cy - p.y) * step }; // the drag, relative to wherever the point is
 	/** @type {Record<string, any>} */
 	const out = {};
 	const settle = async () => {
@@ -165,15 +173,17 @@ async function mouseLeak(page, p, root) {
 	await page.waitForTimeout(350);
 	out.wheel = viewMoved(v0, await viewOf(page));
 	for (const button of /** @type {const} */ (['left', 'middle', 'right'])) {
+		await follow();
 		v0 = await viewOf(page);
 		await page.mouse.move(p.x, p.y);
 		await page.mouse.down({ button });
-		for (let i = 1; i <= 8; i++) await page.mouse.move(p.x + ((to.x - p.x) * i) / 8, p.y + ((to.y - p.y) * i) / 8);
+		for (let i = 1; i <= 8; i++) await page.mouse.move(p.x + (dv.x * i) / 8, p.y + (dv.y * i) / 8);
 		await page.mouse.up({ button });
 		await page.waitForTimeout(200);
 		out['drag-' + button] = viewMoved(v0, await viewOf(page));
 		await settle();
 	}
+	await follow();
 	v0 = await viewOf(page);
 	await page.mouse.dblclick(p.x, p.y);
 	await page.waitForTimeout(350);
@@ -230,11 +240,20 @@ async function undoRedo(page, uuid) {
 
 /**
  * F2: one panel's row. Press its neutral point, then W / C.
- * @param {any} page @param {string} label @param {string} root @param {{exclude?: string, expect?: string}} [o]
+ * @param {any} page @param {string} label @param {string} root @param {{exclude?: string, expect?: string, edge?: boolean}} [o]
  */
 async function panelRow(page, label, root, o = {}) {
 	await page.waitForSelector(root, { state: 'visible', timeout: 8000 }).catch(() => {});
-	const p = await neutralPoint(page, root, o.exclude);
+	// `edge`: press the panel's own padding at its left edge (a docked dock's chrome is just that)
+	const p = o.edge
+		? await page.evaluate((sel) => {
+				const r = /** @type {Element} */ (document.querySelector(sel)).getBoundingClientRect();
+				const x = r.left + 3;
+				const y = r.top + r.height / 2;
+				const hit = document.elementFromPoint(x, y);
+				return hit === document.querySelector(sel) ? { x, y, what: 'padding' } : null;
+			}, root)
+		: await neutralPoint(page, root, o.exclude);
 	if (!p) {
 		const why = await page.evaluate((sel) => {
 			const el = document.querySelector(sel);
@@ -529,8 +548,8 @@ h.run(async () => {
 		h.check(zoomed, 'S1 control: a wheel over the 3D view moves its camera');
 		table.push(['3D viewport (control)', 'canvas', await scopeNow(p), ctl.flew > 0.05 ? 'flies (wanted)' : 'did not fly?!', zoomed ? 'zooms (wanted)' : 'no zoom?!', '', '', '', '', '', '']);
 	}
-	await panelRow(p, 'Node editor graph (docked)', '[data-key-scope="nodes"] .svelte-flow__pane', { expect: 'nodes' });
-	await panelRow(p, 'Node editor chrome (docked)', '#flow-list', { exclude: '[data-key-scope="nodes"]', expect: 'panel' });
+	await panelRow(p, 'Node editor graph (docked)', '[data-key-scope="nodes"]', { expect: 'nodes' });
+	await panelRow(p, 'Node editor chrome (docked)', '#flow-list', { edge: true, expect: 'panel' });
 	await S(p, () => /** @type {any} */ (window).__stores.flowGraphClose.set(true));
 	const docked = [
 		['Explorer (docked)', 'explorerClose', 'explorer', '#explorer-list', ''],

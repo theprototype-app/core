@@ -1,6 +1,7 @@
 // G1 — the readable-logic contract (roadmap 36, owner 36-dataflow; consumers 36-node-ux,
-// 36-code, 36-games-graphs). A LEAF: it imports nothing, so the runtime, the editor, the
-// code workspace and the template builders can all read it without closing a cycle.
+// 36-code, 36-games-graphs). A LEAF: it imports only builtinCode.js (another leaf), so the
+// runtime, the editor, the code workspace and the template builders can all read it without
+// closing a cycle.
 //
 // What it fixes is the user's own sentence: "nodes do not represent game logic, often not
 // connected, cannot be edited or double-clicked to see the code, functionality hidden
@@ -21,6 +22,8 @@
 // 4. GROUPS AND NOTES ARE VIEWS. The value graph never sees through a group: a group's
 //    children stay ordinary nodes in `nodes[]` and the edges between them stay real. The
 //    runtime ignores `group` and `note` nodes entirely (no value, no effect).
+
+import { isBuiltinCodeType } from './builtinCode.js'; // 36-fb-code (F5)
 
 /** The graph document that is "Main". */
 export const MAIN_GRAPH = 'scene';
@@ -111,6 +114,7 @@ export function nodeHasCode(node, spec) {
 	if (node.type === 'coderef') return true; // a Main-graph link to a module's source
 	if (KIT_TYPE.test(String(node.type))) return true; // the kit piece's source
 	if (spec?.moduleId) return true; // a module's node: the module's source
+	if (isBuiltinCodeType(node.type)) return true; // 36-fb-code (F5): a built-in with its own code (the Player)
 	return !!node.data?.src;
 }
 

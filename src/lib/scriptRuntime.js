@@ -33,10 +33,12 @@ const SIGNATURES = {
 	// 36 (plan 56.3): `api` (object / raycast / keys / spawn) is appended LAST, so a v2 body
 	// compiled before it existed binds exactly the names it did
 	effect: ['object', 'base', 'data', 'time', 'params', 'inputs', 'dist', 'lerp', 'clamp', 'api'],
-	value: ['inputs', 'time', 'dist', 'lerp', 'clamp', 'api']
+	value: ['inputs', 'time', 'dist', 'lerp', 'clamp', 'api'],
+	// 36-fb-code (F5): a built-in's code (builtinCode.js) — the Character Controller's "Player"
+	player: ['settings', 'input', 'time', 'dist', 'lerp', 'clamp']
 };
 
-/** @param {string} code @param {'v1' | 'effect' | 'value'} [shape] */
+/** @param {string} code @param {'v1' | 'effect' | 'value' | 'player'} [shape] */
 function compile(code, shape = 'v1') {
 	const key = shape === 'v1' ? code : shape + ':' + code;
 	let entry = compiled.get(key);
@@ -191,4 +193,23 @@ export function runScriptValue(nodeId, code, inputs, time, outputs, api) {
 	// still needs saying
 	if (value && problems.length) reportError(nodeId, problems.join('; '));
 	return value;
+}
+
+/**
+ * 36-fb-code (F5): run a built-in node's code — the Character Controller's per-frame "Player"
+ * body, `(settings, input, time) -> {mode?, speed?, …}` — under the same lint, loop guard, time
+ * budget and error badge as a Script node. Returns what it returned, or undefined when it failed
+ * (the caller then keeps the card's settings, exactly as for a script that throws).
+ * @param {string} nodeId @param {string} code @param {Record<string, any>} settings
+ * @param {Record<string, any>} input @param {number} time
+ */
+export function runPlayerScript(nodeId, code, settings, input, time) {
+	const entry = compile(code || '', 'player');
+	return timed(nodeId, code, entry, (fn) => fn(settings, input, time, SCRIPT_HELPERS.dist, SCRIPT_HELPERS.lerp, SCRIPT_HELPERS.clamp));
+}
+
+/** report a problem with a built-in's RESULT (a wrong key / type) on its badge, after a clean run
+ * @param {string} nodeId @param {string[]} problems */
+export function reportScriptProblems(nodeId, problems) {
+	if (problems.length) reportError(nodeId, problems.join('; '));
 }

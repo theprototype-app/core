@@ -62,8 +62,16 @@ async function loadScene(page, file) {
 		'the scene finished loading',
 		30000
 	);
+	// the fish SWIM (Path Patrol nodes): a pixel aimed at one is empty a second later, so the
+	// suite stops the scene's logic — the fish rest at their base poses
+	await page.evaluate(() => {
+		const s = window.__stores;
+		s.flowGraphs.set({ scene: { nodes: [], edges: [] } });
+		s.flowNodes.set([]);
+		s.flowEdges.set([]);
+	});
 	await page.evaluate(() => window.__stores.objectActions.deselectObject());
-	await page.waitForTimeout(800);
+	await page.waitForTimeout(1200);
 }
 
 /** the world centre of a named top-level object */
@@ -248,11 +256,10 @@ h.run(async () => {
 		const duck = await centreOf(page, 'Duck 1');
 		const tank = await centreOf(page, 'Water tank');
 		await page.evaluate(({ duck, tank }) => {
-			const dx = duck[0] - tank[0], dz = duck[2] - tank[2];
-			const len = Math.hypot(dx, dz) || 1;
-			// out of the tank on the duck's side, a little below its centre (it floats near the top)
-			const from = [tank[0] + (dx / len) * 3.2, duck[1] - 0.05, tank[2] + (dz / len) * 3.2 + 0.4];
-			window.__stores.objectActions.flyTo(from, [duck[0], duck[1] - 0.05, duck[2]], 0);
+			// straight on from the front, level with the duck (just below its centre — it floats
+			// near the top): only the tank's front wall is between the camera and the duck
+			const from = [duck[0], duck[1] - 0.04, tank[2] + 2.6];
+			window.__stores.objectActions.flyTo(from, [duck[0], duck[1] - 0.04, duck[2]], 0);
 		}, { duck, tank });
 		await page.waitForTimeout(900);
 		const duckAim = await aimThrough(page, 'Duck 1', 'Water tank');

@@ -16,7 +16,8 @@ import {
 import { suspendAnimation, resumeAnimation, fireObjectClick, fireObjectGrab } from './flowRuntime';
 import { velocityFromSamples } from './throwVelocity';
 import { resolvePlaySettings } from './playSettings';
-import { pickStack, primaryIndex } from './selectThrough';
+import { pickStack, primaryIndex, gameRayEntry } from './selectThrough';
+import { gamePass } from './pickPass'; // 36 F22: a game's rays skip water + triggers
 import { nameOf } from './lockControl';
 import { moduleInteractiveGroups, fireClickMiss, runClickHandlers } from './moduleSDK';
 // 30 P3: where play mode aims — the crosshair under a lock, the cursor in a free-cursor game
@@ -263,7 +264,7 @@ export function interactClick(ray) {
 	}
 	// 30 P2: the same see-through rule as the editor's pick — a 0.12-opacity wall in
 	// front of a star must not take the star's click here either
-	const stack = pickStack(sceneHits(ray, { tinyProxies: true }), topLevelObjectOf);
+	const stack = pickStack(sceneHits(ray, { tinyProxies: true }), topLevelObjectOf, gamePass());
 	const entry = stack.length ? stack[primaryIndex(stack)] : null;
 	const hit = entry?.hit ?? null;
 	if (hit && runClickHandlers(hit.object, 'interact')) return 'module-handler';
@@ -370,9 +371,11 @@ function onPointerDown(event) {
 	if (playCursorFree() && !isViewportTarget(event)) return;
 	const mode = interactionMode();
 	if (mode === 'off' || !activeCamera) return;
-	const hits = aimFrom(activeCamera);
-	const hit = hits.find((/** @type {any} */ candidate) => candidate.distance <= REACH);
-	const target = hit ? topLevelObjectOf(hit.object) : null;
+	// 36 F22: the stack, not the nearest hit — a water volume or a trigger in front of the
+	// thing aimed at stands aside (and a 0.12-opacity wall does, as in the editor)
+	const aimed = gameRayEntry(pickStack(aimFrom(activeCamera), topLevelObjectOf, gamePass()), REACH);
+	const hit = aimed?.hit ?? null;
+	const target = aimed?.target ?? null;
 	press = { t: performance.now(), uuid: target?.uuid ?? null, hit: hit ?? null };
 	if (mode !== 'grab' || !target) return;
 	// W4: on TOUCH a press is the look/move gesture, so it may not also start a carry —
@@ -568,9 +571,9 @@ export function tickPlayInteract(delta, camera) {
 	}
 
 	// not carrying: what is the crosshair over?
-	const hits = aimFrom(camera);
-	const hit = hits.find((/** @type {any} */ candidate) => candidate.distance <= REACH);
-	const target = hit ? topLevelObjectOf(hit.object) : null;
+	const aimed = gameRayEntry(pickStack(aimFrom(camera), topLevelObjectOf, gamePass()), REACH);
+	const hit = aimed?.hit ?? null;
+	const target = aimed?.target ?? null;
 	const grabbable =
 		mode === 'grab' && !!target && simRunning() && dynamicUuids().has(target.uuid);
 	const state = get(playInteractState);

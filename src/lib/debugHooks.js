@@ -296,6 +296,10 @@ export const DEBUG_HOOKS = [
 	['lodLevelEdit', () => import('./lodLevelEdit')],
 	['packBehavior', () => import('./packBehavior')],
 	['sceneLoader', () => import('./sceneLoader')],
+	['pickCycle', () => import('./pickCycle')],
+	['pickPass', () => import('./pickPass')],
+	['selectThrough', () => import('./selectThrough')],
+	['vrGameInput', () => import('./vrGameInput')],
 	// 36 L2: the scene start view + the camera hold (startViewDebug, releaseHold, backToStartView)
 	['startView', () => import('./startView')],
 	['sceneSwitch', () => import('./sceneSwitch')],

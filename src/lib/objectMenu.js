@@ -499,7 +499,7 @@ export function buildObjectMenuItems(uuid, opts = {}) {
 		{
 			label: multi ? 'Ping selection' + suffix : 'Ping this object',
 			icon: 'radar',
-			tooltip: 'Everyone sees a pulse here (Alt+click pings anywhere)',
+			tooltip: 'Everyone sees a pulse here (Ctrl+Alt+click pings anywhere)',
 			action: () => (multi ? pingObjects(targets) : pingObject(uuid))
 		},
 		// 15-G audit: a note pins to ONE point on ONE object. The ViewportMenu path

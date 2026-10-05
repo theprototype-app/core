@@ -5,6 +5,7 @@ import { peers, showToast, closeSelectionInspector } from '../stores/appStore';
 import { notifyExternalMove } from '$lib/flowRuntime';
 import { parkEditOverlays, stripEditOverlays } from '$lib/editOverlays';
 import { HISTORY_BYTES, entryBytes } from '$lib/meshBudget';
+import { withWireBatch } from '$lib/wireBatch';
 
 // Undo/redo for local edits; remote peers' changes are not recorded, so
 // histories stay per-user.
@@ -393,7 +394,8 @@ export function undo() {
 	undoStack.update((s) => s.slice(0, -1));
 	applying = true;
 	try {
-		if (applyState(entry, entry.before)) redoStack.update((s) => [...s, entry]);
+		// 37 R1: a multi-object step undoes as ONE replicated batch, the way it was made
+		if (withWireBatch(() => applyState(entry, entry.before))) redoStack.update((s) => [...s, entry]);
 	} finally {
 		applying = false;
 	}
@@ -414,7 +416,7 @@ export function redo() {
 	redoStack.update((s) => s.slice(0, -1));
 	applying = true;
 	try {
-		if (applyState(entry, entry.after)) undoStack.update((s) => [...s, entry]);
+		if (withWireBatch(() => applyState(entry, entry.after))) undoStack.update((s) => [...s, entry]);
 	} finally {
 		applying = false;
 	}

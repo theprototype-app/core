@@ -639,6 +639,9 @@ ROOM_SCOPED.add('kitentity');
 ROOM_SCOPED.add('getkitentities');
 // 34 R3 (D1): a behaviour's document is room content like the kit's
 ROOM_SCOPED.add('bhv');
+// 37 R1: a multi-object edit's ONE envelope (wireBatch.js) — its items are all room content,
+// and each one is gated again on arrival
+ROOM_SCOPED.add('batch');
 
 /**
  * THE ONE PREDICATE, used on both sides of the wire: `broadcast` will not SEND a

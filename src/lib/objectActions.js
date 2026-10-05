@@ -4,6 +4,7 @@ import { dropToSurface } from './snapping';
 import { recordTransform, recordEntry, recordObjectPresence, registerHistoryKind, beginHistoryBatch, endHistoryBatch } from './history';
 import { cascadeJointDeletes } from './joints';
 import { createGroup } from './geometries.svelte';
+import { withWireBatch } from './wireBatch'; // 37 R1: a set's edit = ONE replicated batch
 import { suspendAnimation, resumeAnimation, parkAnimatedAtBase } from './flowRuntime';
 import {
 	objectsGroup,
@@ -433,19 +434,21 @@ export function selectionUuids() {
 export function deleteObjectsByUuid(uuids) {
 	if (!uuids.length) return 0;
 	deselectObject();
-	// P-B: cascade joint deletes at the SENDER (each jointdelete replicates;
-	// receivers only apply)
-	cascadeJointDeletes(uuids);
 	/** @type {any} */
 	const peer = get(peers);
 	const group = get(objectsGroup);
-	for (const uuid of uuids) {
-		const object = group?.getObjectByProperty('uuid', uuid);
-		if (!object) continue;
-		recordObjectPresence('delete', object);
-		object.parent?.remove(object);
-		if (peer) peer.send({ type: 'delete', uuid, peerId: peer.peer.id });
-	}
+	withWireBatch(() => {
+		// P-B: cascade joint deletes at the SENDER (each jointdelete replicates;
+		// receivers only apply)
+		cascadeJointDeletes(uuids);
+		for (const uuid of uuids) {
+			const object = group?.getObjectByProperty('uuid', uuid);
+			if (!object) continue;
+			recordObjectPresence('delete', object);
+			object.parent?.remove(object);
+			if (peer) peer.send({ type: 'delete', uuid, peerId: peer.peer.id });
+		}
+	});
 	pokeScene();
 	return uuids.length;
 }
@@ -948,8 +951,10 @@ export function ungroupObject(groupUuid) {
 	const children = [...grp.children]; // snapshot: attach() mutates .children
 	// 15-G: one undo step, not N+1 (a move per child plus the group delete)
 	beginHistoryBatch();
-	for (const child of children) moveObjectToGroup(child.uuid, 'up');
-	deleteObjectsByUuid([groupUuid]); // now empty -> removes just the group
+	withWireBatch(() => {
+		for (const child of children) moveObjectToGroup(child.uuid, 'up');
+		deleteObjectsByUuid([groupUuid]); // now empty -> removes just the group
+	});
 	endHistoryBatch('Ungroup');
 	return true;
 }
@@ -982,25 +987,29 @@ export function groupSelection() {
 	/** @type {any} */
 	const peer = get(peers);
 	beginHistoryBatch();
-	// empty group (replicated via the same message the /group command uses)
-	const groupUuid = createGroup('/group Selection');
-	const newGroup = group?.getObjectByProperty('uuid', groupUuid);
-	if (peer) peer.send({ type: 'group', command: '/group Selection', uuid: groupUuid });
-	recordObjectPresence('create', newGroup);
-	// move the empty group to the centroid BEFORE attaching (both peers attach
-	// with the group already at the pivot, so member local coords match)
-	if (newGroup) {
-		newGroup.position.copy(centroid);
-		if (peer)
-			peer.send({
-				type: 'move',
-				uuid: groupUuid,
-				pos: newGroup.position.toArray(),
-				rot: newGroup.rotation.toArray(),
-				scale: newGroup.scale.toArray()
-			});
-	}
-	for (const uuid of uuids) moveObjectToGroup(uuid, groupUuid);
+	// 37 R1: the new group, its pose and every member's move leave as ONE replicated batch
+	const groupUuid = withWireBatch(() => {
+		// empty group (replicated via the same message the /group command uses)
+		const made = createGroup('/group Selection');
+		const newGroup = group?.getObjectByProperty('uuid', made);
+		if (peer) peer.send({ type: 'group', command: '/group Selection', uuid: made });
+		recordObjectPresence('create', newGroup);
+		// move the empty group to the centroid BEFORE attaching (both peers attach
+		// with the group already at the pivot, so member local coords match)
+		if (newGroup) {
+			newGroup.position.copy(centroid);
+			if (peer)
+				peer.send({
+					type: 'move',
+					uuid: made,
+					pos: newGroup.position.toArray(),
+					rot: newGroup.rotation.toArray(),
+					scale: newGroup.scale.toArray()
+				});
+		}
+		for (const uuid of uuids) moveObjectToGroup(uuid, made);
+		return made;
+	});
 	endHistoryBatch('Group objects');
 	pokeScene();
 	applySelectionSet([groupUuid]);

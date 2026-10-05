@@ -834,6 +834,17 @@ loadable play content. Everything a user does must be visible to connected peers
   A face may hold MORE than two triangles — dissolve stores its fan as ONE n-gon —
   and the structure wireframe hides every edge internal to a face
   (`internalEdgeKeys`), which is the same rule as the old quad-diagonal skip.
+  19-A P6/P7c (36-mesh-ops) rules for any operator that emits a NEW polygon: fan it in
+  the ORDER of a boundary loop the source triangles already wound (`fanLoop`/`fanBest`),
+  never by testing each triangle against an averaged normal — on a non-planar ring (a
+  dissolved box corner, a bulged bevel chain) the per-triangle test flips one triangle
+  and the seam ends up wound twice the same way; and pick the fan START by quality
+  (`fanBest`: no spoke may duplicate a surviving edge — a box-corner hexagon's far
+  corners are joined by the NEIGHBOURS' diagonals, a spoke there is a four-face edge —
+  and no zero-area slivers from collinear corners). The watertight gate is TWO numbers:
+  0 welded edges used other than twice AND 0 directed edges walked twice the same way.
+  CSG output (three-bvh-csg, `meshBooleanCore`) is full of T-junctions — closed to the
+  eye, cracked to every welded-key tool — so `repairTJunctions` runs on every result.
   Two traps live here. The LIVE PREVIEW (`liveGeometryUpdate`) swaps geometry every
   frame, so topology has to survive the preview or there is nothing left for the
   commit to carry — that was the real reason a rotated band still lost its quads after

@@ -106,8 +106,9 @@ async function outlineVsObject(peer, clip) {
 			for (let x = 0; x < bmp.width; x++) {
 				const i = (y * bmp.width + x) * 4;
 				const r = d[i], gg = d[i + 1], b = d[i + 2];
-				if (gg > r + 80 && gg > b + 80) { acc.gx += x; acc.gy += y; acc.gn++; }
-				else if (r > gg + 50 && b > gg + 30) { acc.mx += x; acc.my += y; acc.mn++; }
+				// RELATIVE hue tests: underwater the fog and the tint pull both colours toward the water's
+				if (gg - Math.max(r, b) > 50) { acc.gx += x; acc.gy += y; acc.gn++; }
+				else if ((r + b) / 2 - gg > 30 && r > gg + 15 && b > gg + 15) { acc.mx += x; acc.my += y; acc.mn++; }
 			}
 		const out = { outline: acc.gn, object: acc.mn, offset: null };
 		if (acc.gn && acc.mn) out.offset = Math.hypot(acc.gx / acc.gn - acc.mx / acc.mn, acc.gy / acc.gn - acc.my / acc.mn);
@@ -237,6 +238,7 @@ h.run(async () => {
 		await A.page.waitForTimeout(1200);
 		const underClip = await h.centeredClip(A, fish.pos, 360);
 		const under = await outlineVsObject(A, underClip);
+		if (SHOTS) await A.page.screenshot({ path: path.join(SHOTS, 'diag-f13b-underwater.png') });
 		await A.page.evaluate(() => window.__stores.waterPrefs.waterQuality.set('low'));
 		await A.page.waitForTimeout(1000);
 		const underRef = await outlineVsObject(A, underClip);
@@ -269,6 +271,7 @@ h.run(async () => {
 		await look(A.page, [duck[0] + 0.2, duck[1] + 1.1, duck[2] + 0.7], duck); // from above: the duck's top is out of the fluid
 		await A.page.waitForTimeout(1000);
 		const dk = await outlineVsObject(A, await h.centeredClip(A, duck, 320));
+		if (SHOTS) await A.page.screenshot({ path: path.join(SHOTS, 'diag-f13b-duck.png') });
 		h.check(dk.offset !== null && dk.offset < 4, `Fluid tank toy: a duck in the fluid sits under its outline (${dk.offset?.toFixed(1)} px; the fluid does not refract)`);
 		await A.page.evaluate(() => {
 			const s = window.__stores;

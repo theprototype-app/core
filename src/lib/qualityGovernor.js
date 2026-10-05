@@ -232,6 +232,17 @@ export function decideNow(t = now()) {
 	return d;
 }
 
+/**
+ * 36-fb-water F27: a renderer that just REBUILT itself for a new tier (the water's materials, a
+ * fluid tank's mode or particle count) asks for a short settle — its own recompile hitch is not
+ * the scene's cost. Without it the water's switch to the Quest tier at "post off" read as a new
+ * overload and the phone cascaded 6 -> 7 -> 8 -> 9 (measured on Aquarium, phone profile).
+ * @param {number} [ms]
+ */
+export function settleQuality(ms = 2500) {
+	governor.settleFor(now(), ms);
+}
+
 /** Keep the current level: no walking back up until released. */
 export function pinQuality() {
 	pinned = true;

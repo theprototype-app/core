@@ -82,39 +82,43 @@ h.run(async () => {
 		);
 	console.log(rows.join('\n'));
 
-	// ── 3. the one-time notice ────────────────────────────────────────────────────────────────
-	await load(A.page, 'aquarium');
-	await A.page.waitForTimeout(3000);
-	await A.page.evaluate(() => sessionStorage.removeItem('water:simplifiedNoticeSeen'));
+	// ── 3. the one-time notice — on a FRESH page: the level sweep above already used this
+	// session's one notice (correctly), and the component remembers that for the page's life
+	h.check((await A.page.evaluate(() => sessionStorage.getItem('water:simplifiedNoticeSeen'))) === '1', 'the sweep\'s first simplified level used the session\'s notice');
+	await A.ctx.close();
+	const B = await h.setupPage(browser, 'phone-notice', { context: PHONE });
+	const A2 = B;
+	await load(A2.page, 'aquarium');
+	await A2.page.waitForTimeout(3000);
 	// in Play first: never shown there
-	await A.page.evaluate(() => {
+	await A2.page.evaluate(() => {
 		window.__stores.isLocked.set(true);
 		window.__stores.qualityGovernor.applyGameQuality(6, 'test');
 	});
-	await A.page.waitForTimeout(1500);
-	h.check((await A.page.$('#simplified-water-notice')) === null, 'no notice while playing');
-	await A.page.evaluate(() => window.__stores.isLocked.set(null));
-	const note = await A.page.waitForSelector('#simplified-water-notice', { timeout: 5000 }).catch(() => null);
+	await A2.page.waitForTimeout(1500);
+	h.check((await A2.page.$('#simplified-water-notice')) === null, 'no notice while playing');
+	await A2.page.evaluate(() => window.__stores.isLocked.set(null));
+	const note = await A2.page.waitForSelector('#simplified-water-notice', { timeout: 5000 }).catch(() => null);
 	h.check(!!note, 'leaving Play, the notice says the water was simplified');
 	const text = note ? await note.textContent() : '';
 	h.check(/Simplified water for this device/.test(text) && /Water quality/.test(text), `...and where to give refraction back ("${text?.trim()}")`);
 	if (OUT && note)
 		for (const t of ['dark', 'light']) {
-			await A.page.evaluate((th) => window.__stores.themes.theme.set(th), t);
-			await A.page.waitForTimeout(300);
-			await A.page.screenshot({ path: path.join(OUT, `72-phone-simplified-notice-${t}.png`) });
+			await A2.page.evaluate((th) => window.__stores.themes.theme.set(th), t);
+			await A2.page.waitForTimeout(300);
+			await A2.page.screenshot({ path: path.join(OUT, `72-phone-simplified-notice-${t}.png`) });
 		}
-	await A.page.evaluate(() => window.__stores.themes.theme.set('dark'));
-	await A.page.click('#simplified-water-notice .sw-x').catch(() => {});
-	await A.page.waitForTimeout(400);
-	h.check((await A.page.$('#simplified-water-notice')) === null, 'dismiss hides it');
+	await A2.page.evaluate(() => window.__stores.themes.theme.set('dark'));
+	await A2.page.click('#simplified-water-notice .sw-x').catch(() => {});
+	await A2.page.waitForTimeout(400);
+	h.check((await A2.page.$('#simplified-water-notice')) === null, 'dismiss hides it');
 	// once per session: down to full and back to simplified -> no second notice
-	await A.page.evaluate(() => window.__stores.qualityGovernor.applyGameQuality(0, 'test'));
-	await A.page.waitForTimeout(1000);
-	await A.page.evaluate(() => window.__stores.qualityGovernor.applyGameQuality(6, 'test'));
-	await A.page.waitForTimeout(1500);
-	h.check((await A.page.$('#simplified-water-notice')) === null, 'once per session: it does not come back');
-	await A.page.evaluate(() => window.__stores.qualityGovernor.applyGameQuality(null));
-	h.check((await h.pageErrors(A)).length === 0, 'no page errors');
+	await A2.page.evaluate(() => window.__stores.qualityGovernor.applyGameQuality(0, 'test'));
+	await A2.page.waitForTimeout(1000);
+	await A2.page.evaluate(() => window.__stores.qualityGovernor.applyGameQuality(6, 'test'));
+	await A2.page.waitForTimeout(1500);
+	h.check((await A2.page.$('#simplified-water-notice')) === null, 'once per session: it does not come back');
+	await A2.page.evaluate(() => window.__stores.qualityGovernor.applyGameQuality(null));
+	h.check((await h.pageErrors(A2)).length === 0, 'no page errors');
 	await h.finish(browser);
 });

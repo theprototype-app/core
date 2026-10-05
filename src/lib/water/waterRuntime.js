@@ -4,7 +4,7 @@ import { get } from 'svelte/store';
 import { objectsGroup, TControls, selectedObjects, lockedObjects } from '../../stores/sceneStore';
 import { HELPER_LAYER } from '../helperLayer';
 import { isEditOverlay } from '../editOverlays';
-import { qualityOverrides } from '../qualityGovernor';
+import { qualityOverrides, settleQuality } from '../qualityGovernor';
 import { noteSimplified } from './simplifiedNotice.js';
 import { sessionNow } from '../sessionClock';
 import { waterVolumes, invertAffine, localBounds } from './volumes.js';
@@ -1346,6 +1346,8 @@ export function tickWater(_delta) {
 	if (nextTier !== tier) {
 		tier = nextTier;
 		for (const e of entries.values()) e.geomKey = '';
+		// 36-fb-water F27: the rebuild below recompiles every water material — not the scene's cost
+		if (entries.size) settleQuality();
 	}
 	const now = performance.now();
 	if (dirty || now - lastScan > 1000) scan();

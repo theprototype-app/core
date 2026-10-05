@@ -369,8 +369,8 @@ void main() {
 	// nothing on this tier); costs a few ALU, no pass, no texture.
 	if (front && uBody < 0.5 && camInside < 0.5) {
 		float see = 1.0 - clamp(absorbO * uOpacity, 0.0, 1.0);
-		float lens = dot(N.xz, vec2(0.7071)) * min(uRefraction * 1.5, 1.5);
-		alpha = clamp(alpha + lens * 0.4 * see, 0.0, 1.0);
+		float lens = dot(N.xz, vec2(0.7071)) * 2.0 * min(uRefraction, 1.0);
+		alpha = clamp(alpha + lens * 0.9 * see, 0.0, 1.0);
 		float glint = caustic(vWorld.xz / uCausticScale + uFlow * t * 0.1, t * uCausticSpeed);
 		col += uShallow * glint * uCaustics * 0.3 * see * max(L.y, 0.2);
 	}

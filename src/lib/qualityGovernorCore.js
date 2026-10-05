@@ -223,8 +223,9 @@ export const TIMING = {
 	 * scene's first frames still link programs, fill fluid tanks, start workers and run the first
 	 * screen-space passes. MEASURED on a phone profile (Fluid tank toy, CPU x4): one p95 of 33 ms
 	 * right after the load stepped 4 -> 5 -> 6 (the fluid's points tier) and the walk back took
-	 * minutes; on a contended box it never came back within 95 s. */
-	loadSettleMs: 5000
+	 * minutes; on a contended box it never came back within 95 s. 8 s: Aquarium's water pre-pass
+	 * and bubbles still hitched at 7 s after its load (phone profile). */
+	loadSettleMs: 8000
 };
 
 /** Nearest-rank percentile (sceneBudget's rule). @param {number[]} sorted @param {number} q */

@@ -4,7 +4,7 @@ import { get } from 'svelte/store';
 import { FluidSolver, pourAndDrain, normalizeFluid, spacingFor, FLUID_MAX_PARTICLES, TANK_WALL } from './fluidCore.js';
 import { FluidVisual } from './fluidRender.js';
 import { sceneGravity } from '../scenePhysics';
-import { qualityOverrides } from '../qualityGovernor';
+import { qualityOverrides, settleQuality } from '../qualityGovernor';
 import { simulating, simPaused, remoteSimPaused, applyImpulse } from '../physics';
 
 /** 36-fb-water S9: the scene's simulation is paused (here or by the peer running it) — the
@@ -321,11 +321,16 @@ function tickTank(root, object, camera, renderer, now) {
 	tank.min = inside.min;
 	tank.max = inside.max;
 	if (tank.key !== key) {
+		// 36-fb-water F27: a re-init after load (the tier's particle cap changed) restarts the solver
+		// and rebuilds the visual — its hitch is not the scene's cost
+		if (tank.key) settleQuality();
 		tank.key = key;
 		initTank(tank, count);
 	}
 	tank.visual.setLook(spec.color, spec.clarity);
-	tank.visual.setMode(low && spec.quality !== 'high' ? 'points' : xr ? 'points' : 'ssf');
+	const mode = low && spec.quality !== 'high' ? 'points' : xr ? 'points' : 'ssf';
+	if (tank.visual.mode !== mode && tank.steps > 0) settleQuality(); // F27: SSF passes compile on first use
+	tank.visual.setMode(mode);
 	// the tank frame: position + rotation, metres (scale is in the interior already)
 	const centerW = inside.center.clone().applyQuaternion(inside.quat).add(inside.pos);
 	tank.frame.compose(centerW, inside.quat, tmpS.set(1, 1, 1));

@@ -29,6 +29,7 @@ let pressedAt = 0;
 /** @type {Promise<boolean> | null} */ let starting = null;
 let cancelled = false;
 /** the last few start/stop calls with their hold lengths (the voice suite reads it when a dictation misbehaves) */
+/** @type {string[]} */
 export const dictationTrace = [];
 /** @param {string} what */
 function trace(what) {

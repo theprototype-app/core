@@ -583,14 +583,14 @@ h.run(async () => {
 		});
 		h.check(!!emitter, 'Water works has a Fluid emitter');
 		if (emitter) await look(A.page, [emitter[0] + 4, emitter[1] + 2, emitter[2] + 4], emitter);
+		// Water works has no dynamic body, so it never runs a simulation (its emitters pour in Edit too): add one
+		// box so there is a run to pause, then start it through the pill
+		await A.page.evaluate(() => window.__stores.commandsHandler.sceneCommand('/create box'));
+		await A.page.waitForTimeout(800);
 		await A.page.evaluate(() => window.__stores.scenePhysics.setScenePhysics({ simOnLoad: true }));
 		await A.page.waitForSelector('#sim-controls', { timeout: 5000 });
-		// Water works starts its own run on load (simOnLoad, deferred until the build is in): wait for it rather than
-		// racing it with a Play press (two toggles = stopped); press Play only if it never comes
-		let ran = false;
-		for (let t = 0; t < 24 && !ran; t++) (ran = !!(await simulating(A.page))) || (await A.page.waitForTimeout(500));
-		if (!ran && !(await simulating(A.page))) await A.page.$eval('#sim-play', (el) => /** @type {any} */ (el).click());
-		await h.eventually(() => simulating(A.page), (v) => v === true, 'the simulation runs (emitters also pour in Edit, so wait for the run itself)', 15000);
+		if (!(await simulating(A.page))) await A.page.$eval('#sim-play', (el) => /** @type {any} */ (el).click());
+		await h.eventually(() => simulating(A.page), (v) => v === true, 'the simulation runs', 15000);
 		await A.page.waitForSelector('#sim-pause', { timeout: 10000 });
 		const emDbg = () => A.page.evaluate(() => window.__stores.sim.fluidEmitterDebug().filter((e) => e.visible));
 		await h.eventually(emDbg, (d) => d.length > 0 && d.every((e) => e.steps > 20 && e.count > 0), 'emitters running', 20000);

@@ -986,9 +986,11 @@ export function bevelSelectedVerts(width = 0.2, profile = 0) {
  * leaves the width/profile scrubbable in the options pane. Same selection
  * translation as `bevelSelectedVerts` (which stays as the one-shot path); the
  * engine owns the commit, the history entry and the selection housekeeping.
- * @param {number} width @param {number} profile @returns {boolean}
+ * @param {number} width @param {number} profile
+ * @param {number} [segments] 19-A P7c: concentric cap rings (1 = the flat/cone cap)
+ * @returns {boolean}
  */
-export function beginVertexBevelAdjust(width = 0.2, profile = 0) {
+export function beginVertexBevelAdjust(width = 0.2, profile = 0, segments = 1) {
 	if (!edited || !handles.length) return false;
 	const keys = selectedVertexKeys();
 	if (!keys.length) {
@@ -997,7 +999,7 @@ export function beginVertexBevelAdjust(width = 0.2, profile = 0) {
 	}
 	return beginOpAdjust(
 		'bevel',
-		{ width, profile },
+		{ width, profile, segments },
 		{ kind: 'vertices', uuid: edited.uuid, vertexKeys: keys }
 	);
 }

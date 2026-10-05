@@ -388,6 +388,65 @@ h.run(async () => {
 	h.check((await facts(A.page, uuid)).tris === 12, '...and nothing changed');
 	await A.page.evaluate(() => window.__stores.faceEdit.exitFaceEdit());
 
+	// ===================================== 5b. P7c: mitered corner + vertex segments
+	// an octahedron has FOUR faces at every vertex — the case the edge bevel used to
+	// refuse. Through the real button at 3 segments: watertight and wound outward.
+	uuid = await A.page.evaluate(() => {
+		const s = window.__stores;
+		s.faceEdit.exitFaceEdit?.();
+		s.meshEdit.exitEditMode?.();
+		s.commandsHandler.sceneCommand('/clear all');
+		s.commandsHandler.sceneCommand('/create Octahedron 1');
+		let g;
+		s.objectsGroup.subscribe((v) => (g = v))();
+		const uuid = g.children[g.children.length - 1].uuid;
+		s.faceEdit.enterFaceEdit(uuid);
+		s.faceEdit.setFaceSubmode('edges');
+		const tris = s.faceEdit.readTriangles(g.getObjectByProperty('uuid', uuid).geometry);
+		const keyOf = (v) => `${Math.round(v.x * 1e4)},${Math.round(v.y * 1e4)},${Math.round(v.z * 1e4)}`;
+		const a = keyOf(tris[0][0]);
+		const b = keyOf(tris[0][1]);
+		s.faceEdit.clearEdgeSelection();
+		s.faceEdit.pickEdge(a < b ? a + '|' + b : b + '|' + a);
+		s.meshToolParams.bevelSegments.set(3);
+		s.meshToolParams.bevelProfile.set(0);
+		return uuid;
+	});
+	const preOct = await facts(A.page, uuid);
+	await A.page.click('#edge-bevel');
+	await A.page.waitForTimeout(300);
+	f = await facts(A.page, uuid);
+	h.check(f.tris > preOct.tris, `the valence-4 edge bevels now (${preOct.tris} -> ${f.tris} tris)`);
+	h.check(f.odd === 0 && f.sameWay === 0, 'mitered at both ends: watertight and consistently wound');
+	h.check(f.volume > 0 && f.volume < preOct.volume, `the chamfer removed material (${preOct.volume.toFixed(4)} -> ${f.volume.toFixed(4)})`);
+	await A.page.evaluate(() => {
+		const fe = window.__stores.faceEdit;
+		for (const n of [1, 2, 5, 8]) fe.reapplyOpAdjust({ segments: n });
+		fe.settleOpAdjust();
+	});
+	f = await facts(A.page, uuid);
+	h.check(f.odd === 0 && f.sameWay === 0, 'scrubbed through 1/2/5/8 segments and settled at 8: still watertight');
+	await undo(A.page);
+	h.check((await facts(A.page, uuid)).soup === preOct.soup, 'ONE undo restores the octahedron');
+	await A.page.evaluate(() => window.__stores.faceEdit.exitFaceEdit());
+	// the vertex bevel's new SEGMENTS row, in vertex mode, on the octahedron's top
+	picked = await pickVerts(A.page, uuid, [[0, 1, 0]]);
+	h.check(picked.size === 1, 'the top vertex is picked');
+	h.check((await A.page.locator('#mesh-vertex-bevel').count()) === 1, 'the vertex bevel button is there');
+	await A.page.evaluate(() => window.__stores.meshToolParams.bevelProfile.set(1));
+	await A.page.click('#mesh-vertex-bevel');
+	await A.page.waitForTimeout(300);
+	h.check((await A.page.locator('#bevel-segments').count()) === 1, 'vertex mode shows a segments row now');
+	f = await facts(A.page, uuid);
+	// 4 faces: their 4 corners -> 8 offsets; the cap: 4 * 2 * (3 - 1) ring tris + 4 fan tris
+	h.check(f.tris === preOct.tris + 4 + 4 * 2 * 2 + 4, `3 segments round the cap: ${preOct.tris} -> ${f.tris} tris`);
+	h.check(f.odd === 0 && f.sameWay === 0, 'the rounded corner is watertight');
+	await undo(A.page);
+	await A.page.evaluate(() => {
+		window.__stores.meshEdit.exitEditMode();
+		window.__stores.meshToolParams.resetToolParams();
+	});
+
 	// ========================================================= 6. TWO PEERS
 	const B = await h.setupPage(browser, 'B');
 	await h.connect(B, A);

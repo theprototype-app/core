@@ -3281,9 +3281,11 @@ function fanPolygon(out, ring, normal, mi, textured, startAt = 0) {
  * Bevel ONE vertex: cut the corner off, rebuild every face around it, cap the hole.
  * @param {any[]} tris @param {string} vertexKey @param {number} width
  * @param {number} profile -1 dished .. 0 flat .. +1 domed
+ * @param {number} [segments] 19-A P7c: concentric rings in the cap (1 = the single fan /
+ *   cone it always was, byte for byte)
  * @returns {{tris: any[], capKeys: string[]}|null} null when the corner cannot be bevelled
  */
-function bevelOneVertex(tris, vertexKey, width, profile) {
+function bevelOneVertex(tris, vertexKey, width, profile, segments = 1) {
 	const atVertex = groupFaces(tris).filter((face) =>
 		face.triIndices.some((/** @type {number} */ ti) =>
 			tris[ti].some((/** @type {any} */ v) => keyOf(v.x, v.y, v.z) === vertexKey)
@@ -3384,7 +3386,51 @@ function bevelOneVertex(tris, vertexKey, width, profile) {
 	// from different faces and would tear, so it takes one small patch value
 	const capUv = plan[0].a.uv;
 	const ring = ordered.map((point) => ({ pos: point, uv: capUv }));
-	if (Math.abs(profile) < 1e-3) {
+	const capStart = out.length;
+	if (segments > 1) {
+		// 19-A P7c SEGMENTS: the cap becomes concentric rings between its border and its
+		// centre. Ring j sits at u = j/segments of the way in, lifted along the corner
+		// normal by profile * width * sin(u * PI/2) — the SAME apex height the one-segment
+		// dome reaches (u = 1), but on a curve that leaves the border at an angle and
+		// flattens toward the top: a rounded corner instead of a cone. Profile 0 gives a
+		// flat cap, just subdivided. The border ring is untouched, so the faces around
+		// the corner meet it exactly as before (watertight by construction).
+		const lift = (/** @type {number} */ u) => profile * width * Math.sin((u * Math.PI) / 2);
+		/** @type {any[][]} */
+		const rings = [ordered.map((p) => p.clone())];
+		for (let j = 1; j < segments; j++) {
+			const u = j / segments;
+			rings.push(ordered.map((p) => p.clone().lerp(centre, u).addScaledVector(normal, lift(u))));
+		}
+		const top = centre.clone().addScaledVector(normal, lift(1));
+		const n = ordered.length;
+		for (let j = 0; j + 1 < rings.length; j++)
+			for (let i = 0; i < n; i++)
+				pushQuad(
+					out,
+					rings[j][i].clone(),
+					rings[j][(i + 1) % n].clone(),
+					rings[j + 1][(i + 1) % n].clone(),
+					rings[j + 1][i].clone(),
+					normal,
+					capMi,
+					capTextured ? [capUv, capUv, capUv, capUv] : undefined
+				);
+		const last = rings[rings.length - 1];
+		for (let i = 0; i < n; i++)
+			fanPolygon(
+				out,
+				[
+					{ pos: top, uv: capUv },
+					{ pos: last[i], uv: capUv },
+					{ pos: last[(i + 1) % n], uv: capUv }
+				],
+				normal,
+				capMi,
+				capTextured,
+				0
+			);
+	} else if (Math.abs(profile) < 1e-3) {
 		fanPolygon(out, ring, normal, capMi, capTextured, 0);
 	} else {
 		// DOMED (+) or DISHED (-): fan from an apex pushed along the corner normal. Flat is
@@ -3393,7 +3439,15 @@ function bevelOneVertex(tris, vertexKey, width, profile) {
 		for (let i = 0; i < ring.length; i++)
 			fanPolygon(out, [apex, ring[i], ring[(i + 1) % ring.length]], normal, capMi, capTextured, 0);
 	}
-	return { tris: out, capKeys: ordered.map((p) => keyOf(p.x, p.y, p.z)) };
+	// the cap's keys = its border + (P7c) every inner ring point and the top, so the
+	// authoring pass claims ALL of the cap's triangles as one face
+	/** @type {Set<string>} */
+	const capKeys = new Set(ordered.map((p) => keyOf(p.x, p.y, p.z)));
+	// (one segment keeps its pre-P7c authoring exactly: border keys only)
+	if (segments > 1)
+		for (let ti = capStart; ti < out.length; ti++)
+			for (const v of out[ti]) capKeys.add(keyOf(v.x, v.y, v.z));
+	return { tris: out, capKeys: [...capKeys] };
 }
 
 /**
@@ -3403,20 +3457,22 @@ function bevelOneVertex(tris, vertexKey, width, profile) {
  * both land correctly), with the width clamped per edge inside `bevelOneVertex`
  * (`clampedBevelWidth`) so two bevels sharing an edge can never cross.
  * @param {any[]} tris @param {string[]} vertexKeys welded position keys
- * @param {{width?: number, profile?: number}} [options] both already clamped
+ * @param {{width?: number, profile?: number, segments?: number}} [options] width/profile
+ *   already clamped; P7c segments 1..8 (clamped here)
  * @returns {{tris: any[], caps: string[][], done: number, skipped: number}}
  *   caps = each bevelled corner's cap ring keys, for the wrapper's authoring
  */
 export function bevelVerticesCore(tris, vertexKeys, options = {}) {
 	const width = options.width ?? 0.2;
 	const profile = options.profile ?? 0;
+	const segments = Math.max(1, Math.min(Math.round(options.segments ?? 1) || 1, 8));
 	let out = tris;
 	/** @type {string[][]} each bevelled corner's cap ring, to author its face */
 	const caps = [];
 	let done = 0;
 	let skipped = 0;
 	for (const key of vertexKeys) {
-		const result = bevelOneVertex(out, key, width, profile);
+		const result = bevelOneVertex(out, key, width, profile, segments);
 		if (!result) {
 			skipped++;
 			continue;
@@ -3436,7 +3492,7 @@ export function bevelVerticesCore(tris, vertexKeys, options = {}) {
  * triangles, so two selected corners of one face both land correctly, and the width is
  * clamped per edge so two bevels sharing an edge can never cross.
  * @param {string} uuid @param {string[]} vertexKeys welded position keys
- * @param {{width?: number, profile?: number}} [options]
+ * @param {{width?: number, profile?: number, segments?: number}} [options]
  * @returns {boolean}
  */
 export function bevelVertices(uuid, vertexKeys, options = {}) {
@@ -3456,7 +3512,7 @@ export function bevelVertices(uuid, vertexKeys, options = {}) {
 		uvs: trisToUVs(inputTris),
 		faces: readStoredFaces(object.geometry)
 	};
-	const result = bevelVerticesCore(inputTris, vertexKeys, { width, profile });
+	const result = bevelVerticesCore(inputTris, vertexKeys, { width, profile, segments: options.segments });
 	const { caps, done, skipped } = result;
 	const tris = result.tris;
 	if (!done) {
@@ -3682,8 +3738,10 @@ export function smoothVertices(uuid, vertexKeys, options = {}) {
  * side), and the remaining face takes BOTH — its corner becomes two, which is the vertex fan.
  * That is exact when an endpoint has exactly THREE faces (a box corner, an extrusion corner,
  * a loop-cut band). With four or more, a face can end up between the two sides with no
- * unambiguous answer — that is what Blender solves with a mitered vertex mesh, and it is
- * refused here rather than guessed.
+ * single answer — 19-A P7c builds the MITERED corner there instead: the endpoint is
+ * bevelled like a vertex (an edge-keyed offset on every other edge, each face takes its
+ * two) and a cap joins the offsets to the strip's whole side chain. Watertight at every
+ * segment count is the gate (tests/unit/meshBevelP7c.test.js).
  */
 /**
  * P1 (19-A): the PURE core of the EDGE bevel — the per-edge chamfer loop,
@@ -3746,7 +3804,7 @@ export function bevelEdges(width = 0.1, segments = 1, profile = 0) {
 	if (!done) {
 		showToast(
 			refusedValence
-				? 'Bevel needs each end of the edge to have exactly THREE faces around it (more than that needs a mitered corner, which is not built yet)'
+				? 'Bevel needs a CORNER at each end of the edge — an end that runs straight on into a flat surface has nothing to fold into (pick the whole line, or a creased edge)'
 				: 'Bevel needs an edge with a face on BOTH sides — a border edge has nothing to fold into'
 		);
 		return false;
@@ -3775,7 +3833,7 @@ export function bevelEdges(width = 0.1, segments = 1, profile = 0) {
 			' in ' +
 			n +
 			(n === 1 ? ' segment' : ' segments') +
-			(refusedValence ? ' (' + refusedValence + ' skipped: corner needs a miter)' : '') +
+			(refusedValence ? ' (' + refusedValence + ' skipped: an end runs straight on into a flat surface)' : '') +
 			(refusedBorder ? ' (' + refusedBorder + ' skipped: border edge)' : '')
 	);
 	return true;
@@ -3841,39 +3899,42 @@ function bevelOneEdge(tris, edgeKeyString, width, segments, profile) {
 	const otherAtA = others(ka);
 	const otherAtB = others(kb);
 	// exactly one other face per endpoint = valence 3, the case with an exact answer
-	if (otherAtA.length !== 1 || otherAtB.length !== 1) return 'valence';
-	/** @type {any[]} */
-	const out = [];
-	/** @type {Set<number>} */
-	const replaced = new Set();
-	for (const face of [...sides.map((s) => s.face), ...otherAtA, ...otherAtB])
-		for (const ti of face.triIndices) replaced.add(ti);
-	tris.forEach((/** @type {any} */ t, /** @type {number} */ ti) => {
-		if (!replaced.has(ti))
-			out.push(withSlot([t[0].clone(), t[1].clone(), t[2].clone()], t.mi, t.uv));
-	});
-	// the two side faces keep their corner COUNT: each corner just moves to its own offset
-	for (const side of sides) {
-		const corners = cornerData(tris, side.face.triIndices);
-		const mi = tris[side.face.triIndices[0]].mi;
-		const textured = !!tris[side.face.triIndices[0]].uv;
-		const ring = side.loop.map((/** @type {any} */ point) => {
-			const key = keyOf(point.x, point.y, point.z);
-			const uv = corners.get(key)?.uv ?? [0, 0];
-			if (key === ka) return { pos: side.a.clone(), uv };
-			if (key === kb) return { pos: side.b.clone(), uv };
-			return { pos: point.clone(), uv };
-		});
-		fanPolygon(out, ring, side.face.normal, mi, textured, 0);
-	}
-	// The CHAMFER STRIP first, because its side points are what the endpoint faces have to
-	// meet. `profile` bulges the interior rings along the average normal — out for a round,
-	// in for a hollow.
+	// (the chain rule below). 19-A P7c: two or more = the MITERED corner. None = the
+	// edge just continues straight into a flat region, which has nothing to fold.
+	if (!otherAtA.length || !otherAtB.length) return 'valence';
+	// 19-A P7c: at a VALENCE-3 end the side point slides ALONG the side face's other edge
+	// there (Blender's offset rule) instead of sitting at the perpendicular offset: the
+	// third face is bounded by exactly that edge, so it stays planar and the chamfer
+	// stays inside the solid. On a box the two points coincide (the edges meet at 90°);
+	// at a pyramid's base corner the perpendicular one dipped BELOW the base. The
+	// distance keeps the strip's perpendicular width (w / sin of the corner angle),
+	// clamped like every bevel width so two bevels on one edge can never cross.
+	for (const side of sides)
+		for (const [endKey, farKey, others, pick] of /** @type {const} */ ([
+			[ka, kb, otherAtA, 'a'],
+			[kb, ka, otherAtB, 'b']
+		])) {
+			if (others.length !== 1) continue;
+			const n = side.keys.length;
+			const i = side.keys.indexOf(endKey);
+			const prev = side.keys[(i - 1 + n) % n];
+			const j = prev === farKey ? (i + 1) % n : (i - 1 + n) % n;
+			const end = side.loop[i];
+			const span = side.loop[j].clone().sub(end);
+			const length = span.length();
+			if (length < 1e-9) continue;
+			span.multiplyScalar(1 / length);
+			const sin = new THREE.Vector3().crossVectors(along, span).length();
+			if (sin < 1e-3) continue; // a near-straight corner: keep the perpendicular point
+			side[pick] = end.clone().addScaledVector(span, Math.min(w / sin, length * 0.45));
+		}
+
+	// The CHAMFER STRIP's rings first: both kinds of endpoint have to meet its side chain.
+	// `profile` bulges the interior rings along the average normal — out for a round, in
+	// for a hollow.
 	const outward = sides[0].face.normal.clone().add(sides[1].face.normal);
 	if (outward.lengthSq() < 1e-12) return null;
 	outward.normalize();
-	const stripMi = tris[sides[0].face.triIndices[0]].mi;
-	const stripTextured = !!tris[sides[0].face.triIndices[0]].uv;
 	/** ring k of the strip: the pair of points at t = k / segments
 	 * @type {{a: any, b: any}[]} */
 	const rings = [];
@@ -3885,6 +3946,145 @@ function bevelOneEdge(tris, edgeKeyString, width, segments, profile) {
 			b: sides[0].b.clone().lerp(sides[1].b, t).addScaledVector(outward, bulge)
 		});
 	}
+
+	/**
+	 * 19-A P7c THE MITERED CORNER — the vertex-bevel cap at the junction. At an endpoint
+	 * with 2+ other faces no single face can take the strip's side chain, so the endpoint
+	 * is bevelled like a vertex: every OTHER edge at it gets ONE offset point at the
+	 * bevel width (keyed by the far vertex, so the two faces sharing that edge use the
+	 * identical point — the vertex bevel's watertightness rule), every face around it
+	 * swaps the vertex for its two replacements (a side face: its strip side point and
+	 * the offset on its other edge), and a CAP closes the hole. The cap is walked from
+	 * the faces' own new edges, each taken the other way round, which runs from one
+	 * strip side point to the other; the strip's WHOLE side chain closes it back (the
+	 * multi-segment endpoint rule — every chain point, or a T-junction at 2+ segments).
+	 * @param {string} vk the endpoint @param {string} wk the edge's other end
+	 * @param {any[]} otherFaces @param {boolean} atA
+	 */
+	const miterPlan = (vk, wk, otherFaces, atA) => {
+		const V = pointOf(vk);
+		if (!V) return null;
+		/** @type {Map<string, any>} far-vertex key -> the edge's offset point */
+		const offsetOn = new Map();
+		const plan = [];
+		for (const face of [...sides.map((side) => side.face), ...otherFaces]) {
+			const loop = boundaryLoop(tris, face.triIndices);
+			if (!loop) return null;
+			const keys = loop.map((/** @type {any} */ p) => keyOf(p.x, p.y, p.z));
+			const i = keys.indexOf(vk);
+			if (i < 0) return null;
+			const n = keys.length;
+			const corners = cornerData(tris, face.triIndices);
+			const vUv = corners.get(vk)?.uv ?? [0, 0];
+			const side = sides.find((sd) => sd.face === face);
+			/** @param {number} j loop index of the neighbour */
+			const replacement = (j) => {
+				const x = keys[j];
+				if (x === wk) return side ? { pos: atA ? side.a : side.b, uv: vUv } : null;
+				const span = loop[j].clone().sub(V);
+				const length = span.length();
+				if (length < 1e-9) return null;
+				const w = clampedBevelWidth(width, length);
+				let q = offsetOn.get(x);
+				if (!q) offsetOn.set(x, (q = V.clone().addScaledVector(span.normalize(), w)));
+				return { pos: q, uv: uvLerp(vUv, corners.get(x)?.uv ?? vUv, w / length) };
+			};
+			const before = replacement((i - 1 + n) % n);
+			const after = replacement((i + 1) % n);
+			if (!before || !after) return null;
+			plan.push({ face, loop, keys, i, before, after, corners });
+		}
+		// the cap: each face's new edge before -> after, taken after -> before
+		/** @type {Map<string, any>} */
+		const next = new Map();
+		/** @type {Set<string>} */
+		const incoming = new Set();
+		for (const entry of plan) {
+			const from = keyOf(entry.after.pos.x, entry.after.pos.y, entry.after.pos.z);
+			const to = keyOf(entry.before.pos.x, entry.before.pos.y, entry.before.pos.z);
+			if (next.has(from)) return null; // two faces leave one point: not a disc
+			next.set(from, entry.before.pos);
+			incoming.add(to);
+		}
+		const startKey = [...next.keys()].find((k) => !incoming.has(k));
+		if (!startKey) return null;
+		const chainKey = (/** @type {number} */ k) => {
+			const p = atA ? rings[k].a : rings[k].b;
+			return keyOf(p.x, p.y, p.z);
+		};
+		/** @type {any[]} */
+		const path = [];
+		let at = startKey;
+		let guard = 0;
+		/** @type {any} */
+		let atPos = plan.find((e) => keyOf(e.after.pos.x, e.after.pos.y, e.after.pos.z) === startKey)?.after.pos;
+		while (atPos && guard++ <= plan.length) {
+			path.push(atPos);
+			const to = next.get(at);
+			if (!to) break;
+			atPos = to;
+			at = keyOf(to.x, to.y, to.z);
+		}
+		if (path.length !== plan.length + 1) return null; // every face's edge, one chain
+		const first = keyOf(path[0].x, path[0].y, path[0].z);
+		const last = keyOf(path[path.length - 1].x, path[path.length - 1].y, path[path.length - 1].z);
+		/** @type {number[]} chain indices back from `last` to `first`, exclusive */
+		let chain;
+		if (last === chainKey(segments) && first === chainKey(0)) {
+			chain = [];
+			for (let k = segments - 1; k >= 1; k--) chain.push(k);
+		} else if (last === chainKey(0) && first === chainKey(segments)) {
+			chain = [];
+			for (let k = 1; k <= segments - 1; k++) chain.push(k);
+		} else return null;
+		const capRing = [...path, ...chain.map((k) => (atA ? rings[k].a : rings[k].b))];
+		return { plan, capRing };
+	};
+	const miterA = otherAtA.length >= 2 ? miterPlan(ka, kb, otherAtA, true) : null;
+	const miterB = otherAtB.length >= 2 ? miterPlan(kb, ka, otherAtB, false) : null;
+	if ((otherAtA.length >= 2 && !miterA) || (otherAtB.length >= 2 && !miterB)) return null;
+
+	/** @type {any[]} */
+	const out = [];
+	/** @type {Set<number>} */
+	const replaced = new Set();
+	for (const face of [...sides.map((s) => s.face), ...otherAtA, ...otherAtB])
+		for (const ti of face.triIndices) replaced.add(ti);
+	tris.forEach((/** @type {any} */ t, /** @type {number} */ ti) => {
+		if (!replaced.has(ti))
+			out.push(withSlot([t[0].clone(), t[1].clone(), t[2].clone()], t.mi, t.uv));
+	});
+	const avoid = survivingEdges(tris, replaced);
+	/** a mitered endpoint's replacement pair for `face`, or null when it is not one
+	 * @param {any} miter @param {any} face */
+	const miterPair = (miter, face) => miter?.plan.find((/** @type {any} */ e) => e.face === face) ?? null;
+	// the two side faces keep their corner COUNT at a valence-3 end (the corner just moves
+	// to its own offset); at a mitered end it becomes two corners, the side point and the
+	// offset on the face's other edge there
+	for (const side of sides) {
+		const corners = cornerData(tris, side.face.triIndices);
+		const mi = tris[side.face.triIndices[0]].mi;
+		const textured = !!tris[side.face.triIndices[0]].uv;
+		const pairA = miterPair(miterA, side.face);
+		const pairB = miterPair(miterB, side.face);
+		const ring = side.loop.flatMap((/** @type {any} */ point) => {
+			const key = keyOf(point.x, point.y, point.z);
+			const uv = corners.get(key)?.uv ?? [0, 0];
+			const pair = key === ka ? pairA : key === kb ? pairB : null;
+			if (pair)
+				return [
+					{ pos: pair.before.pos.clone(), uv: pair.before.uv },
+					{ pos: pair.after.pos.clone(), uv: pair.after.uv }
+				];
+			if (key === ka) return [{ pos: side.a.clone(), uv }];
+			if (key === kb) return [{ pos: side.b.clone(), uv }];
+			return [{ pos: point.clone(), uv }];
+		});
+		if (pairA || pairB) fanBest(out, ring, mi, textured, avoid);
+		else fanPolygon(out, ring, side.face.normal, mi, textured, 0);
+	}
+	const stripMi = tris[sides[0].face.triIndices[0]].mi;
+	const stripTextured = !!tris[sides[0].face.triIndices[0]].uv;
 	for (let k = 0; k < segments; k++) {
 		pushQuad(
 			out,
@@ -3905,15 +4105,48 @@ function bevelOneEdge(tris, edgeKeyString, width, segments, profile) {
 		);
 	}
 
-	// the third face at each endpoint gains corners: its vertex is replaced by the WHOLE
-	// chain of strip side points, not just the two ends. With one segment that is the two
-	// offsets; with more, the chain has interior points too — feeding only the ends left a
-	// T-junction against the strip and the mesh was non-manifold at 2+ segments (measured:
-	// 6 odd edges at 2 segments, 8 at 3, exactly two per extra segment).
+	// MITERED ends: every other face swaps the vertex for its two offsets, then the cap
+	for (const miter of [miterA, miterB]) {
+		if (!miter) continue;
+		for (const entry of miter.plan) {
+			if (sides.some((side) => side.face === entry.face)) continue; // rebuilt above
+			const n = entry.keys.length;
+			/** @type {any[]} */
+			const ring = [];
+			for (let k = 0; k < n; k++) {
+				if (k === entry.i) {
+					ring.push({ pos: entry.before.pos.clone(), uv: entry.before.uv });
+					ring.push({ pos: entry.after.pos.clone(), uv: entry.after.uv });
+				} else
+					ring.push({
+						pos: entry.loop[k].clone(),
+						uv: entry.corners.get(entry.keys[k])?.uv ?? [0, 0]
+					});
+			}
+			const mi = tris[entry.face.triIndices[0]].mi;
+			fanBest(out, ring, mi, !!tris[entry.face.triIndices[0]].uv, avoid);
+		}
+		// the cap is new surface: one small patch of mapping, the vertex bevel's rule
+		const capUv = miter.plan[0].before.uv;
+		fanBest(
+			out,
+			miter.capRing.map((/** @type {any} */ p) => ({ pos: p.clone(), uv: capUv })),
+			stripMi,
+			stripTextured,
+			avoid
+		);
+	}
+
+	// VALENCE-3 ends: the third face at the endpoint gains corners: its vertex is
+	// replaced by the WHOLE chain of strip side points, not just the two ends. With one
+	// segment that is the two offsets; with more, the chain has interior points too —
+	// feeding only the ends left a T-junction against the strip and the mesh was
+	// non-manifold at 2+ segments (measured: 6 odd edges at 2 segments, 8 at 3, exactly
+	// two per extra segment).
 	/** @type {{key: string, face: any}[]} */
 	const endpoints = [
-		{ key: ka, face: otherAtA[0] },
-		{ key: kb, face: otherAtB[0] }
+		...(miterA ? [] : [{ key: ka, face: otherAtA[0] }]),
+		...(miterB ? [] : [{ key: kb, face: otherAtB[0] }])
 	];
 	for (const { key, face } of endpoints) {
 		const loop = boundaryLoop(tris, face.triIndices);
@@ -3927,7 +4160,6 @@ function bevelOneEdge(tris, edgeKeyString, width, segments, profile) {
 		// which side does the PREVIOUS boundary edge belong to? that side ends the chain
 		const previousSide =
 			sides.find((side) => side.keys.includes(previousKey) && side.keys.includes(key)) ?? sides[0];
-		const nextSide = sides.find((side) => side !== previousSide) ?? sides[1];
 		const forward = previousSide === sides[0]; // the chain runs t: 0 -> 1
 		const mi = tris[face.triIndices[0]].mi;
 		const textured = !!tris[face.triIndices[0]].uv;
@@ -3946,10 +4178,15 @@ function bevelOneEdge(tris, edgeKeyString, width, segments, profile) {
 			if (at === (forward ? segments : 0)) continue; // Pnext is already at the front
 			ring.push({ pos: sidePoint(at).clone(), uv });
 		}
-		fanPolygon(out, ring, face.normal, mi, textured, 1);
+		// in RING order (the face's own winding), never by a per-triangle normal test: a
+		// bulged chain leaves the face plane, and the normal test flipped fan triangles
+		// there (measured: 6 reversed edges at 5 segments, profile 0.5). Same start, so
+		// wherever the old test did not flip, the triangles are identical.
+		fanLoop(out, ring, mi, textured, 1);
 	}
 
-	return { tris: out };}
+	return { tris: out };
+}
 
 
 // ---- M9b: KNIFE ------------------------------------------------------------
@@ -8170,7 +8407,8 @@ function mergeAdjustParams(a, patch) {
 		if (a.op === 'inset') p.depth = Math.min(Math.max(p.depth ?? 0, -2), 2);
 	} else if (a.op === 'bevel') {
 		p.width = p.width ?? 0.1;
-		if (a.kind !== 'vertices') p.segments = p.segments ?? 1;
+		// P7c: the vertex bevel has segments too now (concentric cap rings)
+		p.segments = p.segments ?? 1;
 		if (a.kind === 'faces') {
 			// P3: the faces profile is the STEP SCHEDULE (1 = quarter-circle, the
 			// pre-P3 behaviour); direction signs the push. P7a: -1 = the CONCAVE
@@ -8291,7 +8529,7 @@ function runAdjustCore(a) {
 		if (!r.done)
 			return {
 				error: r.refusedValence
-					? 'Bevel needs each end of the edge to have exactly THREE faces around it (more than that needs a mitered corner, which is not built yet)'
+					? 'Bevel needs a CORNER at each end of the edge — an end that runs straight on into a flat surface has nothing to fold into (pick the whole line, or a creased edge)'
 					: 'Bevel needs an edge with a face on BOTH sides — a border edge has nothing to fold into'
 			};
 		return {
@@ -8304,7 +8542,7 @@ function runAdjustCore(a) {
 	if (a.op === 'bevel' && a.kind === 'vertices') {
 		const width = Math.max(p.width ?? 0.2, 1e-4);
 		const profile = Math.min(Math.max(p.profile ?? 0, -1), 1);
-		const r = bevelVerticesCore(a.originalTris, a.target, { width, profile });
+		const r = bevelVerticesCore(a.originalTris, a.target, { width, profile, segments: p.segments });
 		if (!r.done)
 			return {
 				error:
@@ -8507,7 +8745,7 @@ function adjustBeginToast(a, result) {
 				' in ' +
 				segments +
 				(segments === 1 ? ' segment' : ' segments') +
-				(refusedValence ? ' (' + refusedValence + ' skipped: corner needs a miter)' : '') +
+				(refusedValence ? ' (' + refusedValence + ' skipped: an end runs straight on into a flat surface)' : '') +
 				(refusedBorder ? ' (' + refusedBorder + ' skipped: border edge)' : '')
 		);
 	} else if (a.op === 'bevel' && a.kind === 'vertices' && result.info) {

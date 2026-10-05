@@ -460,7 +460,7 @@
 			// three different operators with three different signatures, one entry
 			ok =
 				mode === 'vertices'
-					? beginVertexBevelAdjust($bevelWidth, signedProfile)
+					? beginVertexBevelAdjust($bevelWidth, signedProfile, $bevelSegments)
 					: mode === 'edges'
 						? beginOpAdjust(
 								'bevel',
@@ -1033,7 +1033,7 @@
 				onanimationend={() => (flashOp = '')}
 				aria-pressed={$optionsFocus === 'bevel'}
 				aria-label="Bevel edges"
-				title="Bevel — replace the selected edge with a chamfer strip, adjustable below (P3: with an edge picked the click applies immediately, like the faces grid). Each end needs three faces around it; more than that needs a mitered corner, which is refused rather than guessed."
+				title="Bevel — replace the selected edge with a chamfer strip, adjustable below (P3: with an edge picked the click applies immediately, like the faces grid). An end where four or more faces meet gets a mitered corner (a small cap joining the strip to every face there); an end that runs straight on into a flat surface is refused."
 				onclick={() => runOp('bevel')}><ToolIcon name="bevel" /></button
 			>
 			<button

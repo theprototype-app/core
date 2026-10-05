@@ -78,10 +78,9 @@
 		onRevert = () => {}
 	} = $props();
 
-	// faces bevel takes (width, segments, profile, direction); edges (width,
-	// segments, profile); vertices (width, profile) — the pane mirrors the
-	// operator signatures
-	const showSegments = $derived(mode !== 'vertices');
+	// faces bevel takes (width, segments, profile, direction); edges and (19-A P7c)
+	// vertices (width, segments, profile) — the pane mirrors the operator signatures
+	const showSegments = true;
 	const showProfile = $derived(mode !== 'faces');
 
 	// 19-A P3: what the edge/vertex CORES receive as `profile` — the direction
